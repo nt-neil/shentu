@@ -1,0 +1,38 @@
+version: 2
+project_name: shentu
+builds:
+  - env: [CGO_ENABLED=0]
+    goos: [linux]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags: ["-s -w -X main.version={{.Version}}"]
+    mod_timestamp: "{{ .CommitTimestamp }}"
+archives:
+  - formats: [tar.gz]
+    name_template: "shentu_linux_{{ .Arch }}"
+    files: [LICENSE, README.md, install.sh, packaging/*]
+checksum:
+  name_template: checksums.txt
+sboms:
+  - artifacts: archive
+nfpms:
+  - package_name: shentu
+    homepage: https://github.com/nt-nerdtechnic/shentu
+    description: Security assistant for Linux servers, powered by an LLM.
+    license: Apache-2.0
+    formats: [deb, rpm, apk]
+    bindir: /usr/local/bin
+    contents:
+      - src: packaging/shentu.toml
+        dst: /etc/shentu/shentu.toml
+        type: config|noreplace
+      - src: packaging/shentu-*.service
+        dst: /etc/systemd/system/
+      - src: packaging/shentu-*.timer
+        dst: /etc/systemd/system/
+      - dst: /var/lib/shentu
+        type: dir
+        file_info: {mode: 0700}
+release:
+  extra_files:
+    - glob: install.sh

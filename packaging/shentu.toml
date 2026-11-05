@@ -1,0 +1,30 @@
+# /etc/shentu/shentu.toml — every key is optional; defaults are shown.
+# ${VAR} is read from the environment (systemd: /etc/shentu/env), so secrets stay out of this file.
+
+language = "English"            # language of answers and reports, e.g. "繁體中文"
+state_dir = "/var/lib/shentu"   # state.json and log.jsonl (every tool call)
+
+[llm]
+# Any OpenAI-compatible chat/completions endpoint with tool calling.
+base_url = "http://127.0.0.1:11434/v1"    # Ollama (fully local)
+model    = "qwen2.5:7b"
+# base_url = "https://api.openai.com/v1"     model = "gpt-4.1-mini"   api_key_env = "OPENAI_API_KEY"
+# base_url = "https://api.anthropic.com/v1"  model = "claude-sonnet-5-5" api_key_env = "ANTHROPIC_API_KEY"
+api_key_env = ""
+max_steps = 10
+timeout = "180s"
+
+[notify]
+# telegram://${TG_BOT_TOKEN}@telegram?chats=123456789
+# ntfy://ntfy.sh/your-secret-topic
+# https://example.com/hook   (signed with SHENTU_WEBHOOK_SECRET when set)
+url = ""
+
+[tools]
+log_paths    = ["/var/log/auth.log", "/var/log/secure", "/var/log/syslog", "/var/log/nginx/*.log", "/var/log/apache2/*.log"]
+watch_paths  = ["/etc", "/usr/bin", "/usr/sbin", "/usr/local/bin", "/var/www", "/root/.ssh"]
+cert_targets = []               # e.g. ["localhost:443"]
+
+[patrol]
+ssh_threshold = 10              # failed SSH logins per IP per hour before alerting
+cooldown = "24h"                # do not repeat the same alert within this time
