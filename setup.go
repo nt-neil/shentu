@@ -166,7 +166,7 @@ func memTotalGB() float64 {
 
 func ollamaUp(ctx context.Context) bool {
 	req, _ := http.NewRequestWithContext(ctx, "GET", ollamaURL+"/api/version", nil)
-	resp, err := (&http.Client{Timeout: 3 * time.Second}).Do(req)
+	resp, err := (&http.Client{Timeout: 3 * time.Second, Transport: &http.Transport{DialContext: localDialer}}).Do(req)
 	if err != nil {
 		return false
 	}
@@ -178,7 +178,7 @@ func ollamaPull(ctx context.Context, model string) error {
 	fmt.Println("Downloading", model, "…")
 	b, _ := json.Marshal(map[string]any{"model": model, "stream": true})
 	req, _ := http.NewRequestWithContext(ctx, "POST", ollamaURL+"/api/pull", bytes.NewReader(b))
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := (&http.Client{Transport: &http.Transport{DialContext: localDialer}}).Do(req)
 	if err != nil {
 		return err
 	}

@@ -332,26 +332,25 @@ func AccountsAudit() Accounts {
 	return a
 }
 
-// LoopbackListenerUIDs returns the owner UIDs of TCP listeners on port that a
-// connection to the loopback address would reach (loopback or wildcard binds).
-// The uid column of /proc/net/tcp is readable by everyone, so this works without root.
-func LoopbackListenerUIDs(port int) []string {
-	var uids []string
-	for _, proto := range []string{"tcp", "tcp6"} {
-		for _, e := range readProcNet(proto) {
-			if e.state == "0A" && e.localPort == port && (e.localIP.IsLoopback() || e.localIP.IsUnspecified()) {
-				uids = append(uids, e.uid)
-			}
-		}
-	}
-	return uids
-}
-
 // UIDOf returns the numeric UID of a user name from /etc/passwd.
 func UIDOf(name string) (string, bool) {
 	for uid, n := range userNames() {
 		if n == name {
 			return uid, true
+		}
+	}
+	return "", false
+}
+
+// PeerUID returns the owner UID of the server side of an established local TCP
+// connection, found by its exact 4-tuple in /proc/net/tcp{,6}.
+func PeerUID(local, remote *net.TCPAddr) (string, bool) {
+	for _, proto := range []string{"tcp", "tcp6"} {
+		for _, e := range readProcNet(proto) {
+			if e.localPort == remote.Port && e.remotePort == local.Port &&
+				e.localIP.Equal(remote.IP) && e.remoteIP.Equal(local.IP) {
+				return e.uid, true
+			}
 		}
 	}
 	return "", false

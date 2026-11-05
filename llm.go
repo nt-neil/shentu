@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/url"
 	"runtime"
-	"strconv"
 	"strings"
 	"time"
 
@@ -51,13 +50,14 @@ type llmClient struct {
 }
 
 func newLLM(c *Config) *llmClient {
-	return &llmClient{c.LLM.BaseURL, c.LLM.Model, c.apiKey(), &http.Client{Timeout: dur(c.LLM.Timeout)}}
+	hc := &http.Client{Timeout: dur(c.LLM.Timeout)}
+	if u, err := url.Parse(c.LLM.BaseURL); err == nil && isLoopbackHost(u.Hostname()) {
+		hc.Transport = &http.Transport{DialContext: localDialer, Proxy: nil}
+	}
+	return &llmClient{c.LLM.BaseURL, c.LLM.Model, c.apiKey(), hc}
 }
 
 func (l *llmClient) chat(ctx context.Context, msgs []message, tools []toolDef) (message, error) {
-	if err := checkLocalLLM(l.baseURL); err != nil {
-		return message{}, err
-	}
 	body := map[string]any{"model": l.model, "messages": msgs, "temperature": 0.2}
 	if len(tools) > 0 {
 		body["tools"] = tools
@@ -111,38 +111,32 @@ func truncate(s string, n int) string {
 	return s[:n] + "…"
 }
 
-// checkLocalLLM refuses an endpoint on this machine unless every listener on
-// its port is owned by root or the ollama account. Otherwise any local user could
-// bind the port first and impersonate the model. It fails closed for loopback
-// targets. Linux only (it reads /proc/net/tcp).
-func checkLocalLLM(baseURL string) error {
-	if runtime.GOOS != "linux" {
-		return nil
+// localDialer is used for endpoints on this machine. After connecting it looks up
+// who owns the server side of that exact connection and hangs up unless it is
+// root or the ollama account. Otherwise any local user could bind the port while
+// Ollama is down and impersonate the model. Checking the connected socket itself
+// leaves no gap between check and use.
+func localDialer(ctx context.Context, network, addr string) (net.Conn, error) {
+	conn, err := (&net.Dialer{Timeout: 10 * time.Second}).DialContext(ctx, network, addr)
+	if err != nil || runtime.GOOS != "linux" {
+		return conn, err
 	}
-	u, err := url.Parse(baseURL)
-	if err != nil {
-		return fmt.Errorf("bad LLM base_url: %w", err)
+	local, _ := conn.LocalAddr().(*net.TCPAddr)
+	remote, _ := conn.RemoteAddr().(*net.TCPAddr)
+	if local == nil || remote == nil {
+		conn.Close()
+		return nil, fmt.Errorf("local LLM: not a TCP connection")
 	}
-	if !isLoopbackHost(u.Hostname()) {
-		return nil
+	uid, found := tools.PeerUID(local, remote)
+	allowed := uid == "0"
+	if ou, ok := tools.UIDOf("ollama"); ok && uid == ou {
+		allowed = true
 	}
-	port, _ := strconv.Atoi(u.Port())
-	if port == 0 {
-		port = map[string]int{"http": 80, "https": 443}[u.Scheme]
+	if !found || !allowed {
+		conn.Close()
+		return nil, fmt.Errorf("refusing the local LLM at %s: its listener is owned by uid %q, not root or ollama", addr, uid)
 	}
-	if port == 0 {
-		return fmt.Errorf("cannot tell the port of %s", baseURL)
-	}
-	allowed := map[string]bool{"0": true}
-	if uid, ok := tools.UIDOf("ollama"); ok {
-		allowed[uid] = true
-	}
-	for _, uid := range tools.LoopbackListenerUIDs(port) {
-		if !allowed[uid] {
-			return fmt.Errorf("refusing the local LLM on port %d: a listener there is owned by uid %s, not root or ollama", port, uid)
-		}
-	}
-	return nil // no listener at all: the request simply fails
+	return conn, nil
 }
 
 func isLoopbackHost(host string) bool {
