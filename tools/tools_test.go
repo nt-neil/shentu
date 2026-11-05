@@ -23,6 +23,8 @@ func TestSSHSummary(t *testing.T) {
 		iso + " vm sshd[4]: Accepted publickey for ops from 192.0.2.10 port 5000 ssh2: ED25519 SHA256:x",
 		old + " vm sshd[5]: Failed password for root from 203.0.113.99 port 1 ssh2",
 		iso + " vm CRON[6]: pam_unix(cron:session): session opened",
+		iso + " vm sshd[7]: Invalid user x from 192.0.2.10 port 1 from 203.0.113.50 port 2222",
+		iso + " vm sshd[8]: Failed password for invalid user y from 192.0.2.10 port 1 from 203.0.113.50 port 2223 ssh2",
 	}, "\n")
 	p := filepath.Join(dir, "auth.log")
 	os.WriteFile(p, []byte(log), 0o600)
@@ -42,6 +44,12 @@ func TestSSHSummary(t *testing.T) {
 	}
 	if s := got["192.0.2.10"]; s.Accepted != 1 {
 		t.Errorf("192.0.2.10 = %+v", s)
+	}
+	if s := got["203.0.113.50"]; s.InvalidUser != 1 || s.Failed != 1 {
+		t.Errorf("spoofed user name attributed wrongly: %+v / %+v", s, got["192.0.2.10"])
+	}
+	if s := got["192.0.2.10"]; s.Failed != 0 || s.InvalidUser != 0 {
+		t.Errorf("IP inside a user name was counted: %+v", s)
 	}
 	if _, ok := got["203.0.113.99"]; ok {
 		t.Error("event older than since was counted")

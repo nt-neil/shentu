@@ -14,8 +14,15 @@ main() {
 		*) echo "unsupported architecture: $(uname -m)" >&2; exit 1 ;;
 	esac
 
-	SRC=$(dirname "$0")
-	if [ ! -x "$SRC/shentu" ]; then
+	# Use files next to this script only when it was run as a file from an unpacked
+	# release archive; when piped into sh, $0 is "sh" and we always download.
+	SRC=""
+	case "$0" in
+		*install.sh) [ -f "$0" ] && SRC=$(cd "$(dirname "$0")" && pwd) ;;
+	esac
+	if [ -n "$SRC" ] && [ -x "$SRC/shentu" ]; then
+		echo "installing from $SRC"
+	else
 		TMP=$(mktemp -d)
 		trap 'rm -rf "$TMP"' EXIT
 		BASE="https://github.com/$REPO/releases/latest/download"

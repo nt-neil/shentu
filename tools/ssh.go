@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -45,9 +46,11 @@ type SSHSource struct {
 }
 
 var (
-	reFailed   = regexp.MustCompile(`Failed (?:password|publickey|keyboard-interactive/pam|none) for (?:invalid user )?(\S*) from (\S+) port`)
-	reInvalid  = regexp.MustCompile(`Invalid user (\S*) from (\S+)`)
-	reAccepted = regexp.MustCompile(`Accepted (\S+) for (\S+) from (\S+) port`)
+	// User names are attacker-controlled and may contain "from <ip> port"; the greedy
+	// user group and the anchored sshd suffix make the IP the one sshd wrote last.
+	reFailed   = regexp.MustCompile(`sshd.*?: Failed (?:password|publickey|keyboard-interactive/pam|none) for (?:invalid user )?(.*) from (\S+) port \d+(?: ssh2)?(?: \[preauth\])?\s*$`)
+	reInvalid  = regexp.MustCompile(`sshd.*?: Invalid user (.*) from (\S+) port \d+(?: \[preauth\])?\s*$`)
+	reAccepted = regexp.MustCompile(`sshd.*?: Accepted (\S+) for (.*) from (\S+) port \d+ ssh2(?:: .*)?\s*$`)
 )
 
 // SSHSummary reads auth logs (or journald when there are none) and groups events by IP.
@@ -69,6 +72,12 @@ func SSHSummary(ctx context.Context, env *Env, since time.Time, onlyIP string) (
 			user, ip, kind = m[2], m[3], "accepted"
 		} else {
 			continue
+		}
+		if net.ParseIP(ip) == nil {
+			continue
+		}
+		if len(user) > 64 {
+			user = user[:64] + "…"
 		}
 		if onlyIP != "" && ip != onlyIP {
 			continue

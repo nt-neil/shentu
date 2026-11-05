@@ -163,6 +163,7 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 		answer = b.String()
 	}
 
+	answer = mask(answer)
 	sev := "info"
 	for _, f := range fresh {
 		if f.Severity == "critical" {

@@ -95,7 +95,7 @@ func chat(ctx context.Context, cfg *Config, env *tools.Env, question string) err
 		cfg: cfg, llm: newLLM(cfg), env: env, skills: skills,
 		allowControl: true, actor: "chat", log: newAuditLog(cfg.StateDir),
 		confirm: func(tool, preview string) bool {
-			fmt.Printf("\n⚠️  %s wants to run:\n    %s\nAllow? [y/N] ", tool, preview)
+			fmt.Printf("\n⚠️  %s wants to run:\n    %s\nAllow? [y/N] ", tool, printable(preview))
 			line, _ := in.ReadString('\n')
 			return strings.EqualFold(strings.TrimSpace(line), "y")
 		},
@@ -136,4 +136,15 @@ func chat(ctx context.Context, cfg *Config, env *tools.Env, question string) err
 			fmt.Fprintln(os.Stderr, "error:", err)
 		}
 	}
+}
+
+// printable replaces control characters (ESC, CR, newlines…) so text from the
+// model cannot redraw the terminal and disguise what the operator confirms.
+func printable(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r < 0x20 || (r >= 0x7f && r < 0xa0) {
+			return '?'
+		}
+		return r
+	}, s)
 }

@@ -52,3 +52,9 @@ func TestSkillsLoad(t *testing.T) {
 		}
 	}
 }
+
+func TestPrintable(t *testing.T) {
+	if got := printable("block 1.2.3.4\r\x1b[2Kharmless\n"); strings.ContainsAny(got, "\r\n\x1b") {
+		t.Errorf("control characters left: %q", got)
+	}
+}

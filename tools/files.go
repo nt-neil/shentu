@@ -220,6 +220,15 @@ var logSearch = Tool{
 		if !allowedLog(a.Path, env.LogPaths) {
 			return nil, errors.New("path is not in the allowed log paths: " + strings.Join(env.LogPaths, ", "))
 		}
+		// A symlink inside a log directory must not lead outside the allowlist.
+		real, err := filepath.EvalSymlinks(a.Path)
+		if err != nil {
+			return nil, err
+		}
+		if st, err := os.Stat(real); err != nil || !st.Mode().IsRegular() || !allowedLog(real, env.LogPaths) {
+			return nil, errors.New("path resolves outside the allowed log files: " + real)
+		}
+		a.Path = real
 		re, err := regexp.Compile(a.Pattern)
 		if err != nil {
 			return nil, err
