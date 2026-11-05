@@ -30,8 +30,9 @@ Blocked 203.0.113.7 until tomorrow 09:14. To undo: "unblock 203.0.113.7".
 - **`shentu patrol`**: run by a systemd timer every 30 minutes. It runs fixed checks without the
   LLM. If something new shows up, the LLM explains it and the report goes to Telegram, ntfy or a
   webhook. If the LLM is down, you still get the raw findings.
-- **Bring your own model**: any OpenAI-compatible endpoint. Use Ollama to keep everything on the
-  machine, or OpenAI, Anthropic, OpenRouter or vLLM.
+- **`shentu setup`**: picks the LLM. It can download a local model sized to the server's memory
+  (through Ollama, so nothing leaves the machine), or take an API key for Anthropic, OpenAI or
+  OpenRouter. Any other OpenAI-compatible endpoint can be set in the config.
 
 ## Tools
 
@@ -58,7 +59,8 @@ To add your own, put it in `/etc/shentu/skills/<name>/SKILL.md`.
 
 ```sh
 curl -fsSL https://github.com/nt-nerdtechnic/shentu/releases/latest/download/install.sh | sudo sh
-sudo nano /etc/shentu/shentu.toml        # choose the model and the notify channel
+sudo shentu setup                        # download a local model sized for this server, or enter an API key
+sudo nano /etc/shentu/shentu.toml        # set the notify channel
 sudo shentu chat
 sudo systemctl enable --now shentu-patrol.timer shentu-daily.timer
 ```

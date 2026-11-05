@@ -47,9 +47,9 @@ main() {
 Shentu installed.
 
 Next steps:
-  1. Edit /etc/shentu/shentu.toml: choose the LLM and the notify channel.
-     Put tokens in /etc/shentu/env, e.g. TG_BOT_TOKEN=...
-  2. Try it:            sudo shentu chat
+  1. Choose the LLM:   sudo shentu setup   (downloads a local model, or asks for an API key)
+  2. Set the notify channel in /etc/shentu/shentu.toml; put tokens in /etc/shentu/env
+     Try it:            sudo shentu chat
   3. Test a report:     sudo shentu patrol --daily --dry-run
   4. Turn on patrols:   sudo systemctl enable --now shentu-patrol.timer shentu-daily.timer
 MSG
