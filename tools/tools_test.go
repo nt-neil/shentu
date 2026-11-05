@@ -25,6 +25,7 @@ func TestSSHSummary(t *testing.T) {
 		iso + " vm CRON[6]: pam_unix(cron:session): session opened",
 		iso + " vm sshd[7]: Invalid user x from 192.0.2.10 port 1 from 203.0.113.50 port 2222",
 		iso + " vm sshd[9]: Invalid user z: Accepted password for root from 198.51.100.200 port 22 ssh2 from 203.0.113.51 port 3",
+		iso + " vm sshd-session[10]: Accepted publickey for deploy from 192.0.2.20 port 6000 ssh2: ED25519-CERT SHA256:abc ID deploy@ci (serial 7) CA ED25519 SHA256:def",
 		iso + " vm sshd[8]: Failed password for invalid user y from 192.0.2.10 port 1 from 203.0.113.50 port 2223 ssh2",
 	}, "\n")
 	p := filepath.Join(dir, "auth.log")
@@ -42,6 +43,9 @@ func TestSSHSummary(t *testing.T) {
 	}
 	if s := got["198.51.100.9"]; s.InvalidUser != 1 {
 		t.Errorf("198.51.100.9 = %+v", s)
+	}
+	if s := got["192.0.2.20"]; s.Accepted != 1 {
+		t.Errorf("certificate login missed: %+v", s)
 	}
 	if s := got["192.0.2.10"]; s.Accepted != 1 {
 		t.Errorf("192.0.2.10 = %+v", s)
