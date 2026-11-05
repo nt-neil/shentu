@@ -25,6 +25,8 @@ var version = "dev"
 const usage = `shentu — security assistant for Linux servers
 
 Usage:
+  shentu setup                choose the LLM: download a local model, or enter an API key
+               [--local] [--provider anthropic|openai|openrouter] [--model NAME] [--yes]
   shentu chat [question]      ask in plain language; with a question, answer once and exit
   shentu patrol [--daily]     run the checks once and notify on new findings (for a systemd timer)
                 [--dry-run]   print the report instead of sending it
@@ -51,6 +53,12 @@ func main() {
 	cmd, args := os.Args[1], os.Args[2:]
 	if cmd == "version" || cmd == "--version" {
 		fmt.Println("shentu", version)
+		return
+	}
+	if cmd == "setup" {
+		if err := setup(ctx, args); err != nil {
+			fatal(err)
+		}
 		return
 	}
 	cfg, err := loadConfig(configPath())

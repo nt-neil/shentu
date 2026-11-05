@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -50,16 +51,20 @@ func loadConfig(path string) (*Config, error) {
 	c.StateDir = "/var/lib/shentu"
 	c.Language = "English"
 
+	loadEnvFile(filepath.Join(filepath.Dir(path), "env"))
 	b, err := os.ReadFile(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return c, nil
-	}
-	if err != nil {
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, err
 	}
 	// ${VAR} in the file is taken from the environment, so tokens stay out of it.
 	if _, err := toml.Decode(expandEnv(string(b)), c); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	// llm.toml (written by `shentu setup`) overrides [llm].
+	if lb, err := os.ReadFile(filepath.Join(filepath.Dir(path), "llm.toml")); err == nil {
+		if _, err := toml.Decode(expandEnv(string(lb)), c); err != nil {
+			return nil, fmt.Errorf("llm.toml: %w", err)
+		}
 	}
 	for _, d := range []string{c.LLM.Timeout, c.Patrol.Cooldown} {
 		if _, err := time.ParseDuration(d); err != nil {
@@ -87,4 +92,19 @@ var envRef = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
 // expandEnv replaces only ${VAR}, so a bare $ in regular expressions is left alone.
 func expandEnv(s string) string {
 	return envRef.ReplaceAllStringFunc(s, func(m string) string { return os.Getenv(m[2 : len(m)-1]) })
+}
+
+// loadEnvFile sets KEY=value lines from the env file (the one systemd also loads)
+// for variables that are not already set, so `sudo shentu chat` finds the API key.
+func loadEnvFile(p string) {
+	b, err := os.ReadFile(p)
+	if err != nil {
+		return
+	}
+	for _, l := range strings.Split(string(b), "\n") {
+		k, v, ok := strings.Cut(strings.TrimSpace(l), "=")
+		if ok && k != "" && !strings.HasPrefix(k, "#") && os.Getenv(k) == "" {
+			os.Setenv(k, strings.Trim(v, `"'`))
+		}
+	}
 }
