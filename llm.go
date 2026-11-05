@@ -7,7 +7,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"runtime"
+	"strconv"
 	"time"
+
+	"github.com/nt-nerdtechnic/shentu/tools"
 )
 
 // The one LLM adapter: the OpenAI-compatible chat/completions API with tool calling.
@@ -48,6 +53,9 @@ func newLLM(c *Config) *llmClient {
 }
 
 func (l *llmClient) chat(ctx context.Context, msgs []message, tools []toolDef) (message, error) {
+	if err := checkLocalLLM(l.baseURL); err != nil {
+		return message{}, err
+	}
 	body := map[string]any{"model": l.model, "messages": msgs, "temperature": 0.2}
 	if len(tools) > 0 {
 		body["tools"] = tools
@@ -99,4 +107,27 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "…"
+}
+
+// checkLocalLLM refuses a local endpoint on this machine unless its listener is
+// run by root or the ollama account. Otherwise any local user could bind the
+// port first and impersonate the model. Only enforced on Linux, where /proc exists.
+func checkLocalLLM(baseURL string) error {
+	u, err := url.Parse(baseURL)
+	if err != nil || runtime.GOOS != "linux" {
+		return nil
+	}
+	host := u.Hostname()
+	if host != "127.0.0.1" && host != "localhost" && host != "::1" {
+		return nil
+	}
+	port, _ := strconv.Atoi(u.Port())
+	if port == 0 {
+		return nil
+	}
+	user, exe, found := tools.PortOwner(port)
+	if !found || user == "root" || user == "ollama" {
+		return nil // not found: nothing listens, or we are not root and cannot see the owner
+	}
+	return fmt.Errorf("refusing the local LLM on port %d: it is run by %q (%s), not by root or the ollama account", port, user, exe)
 }

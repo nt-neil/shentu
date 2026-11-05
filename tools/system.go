@@ -330,3 +330,25 @@ func AccountsAudit() Accounts {
 	}
 	return a
 }
+
+// PortOwner reports the user and executable of the process listening on a local TCP port.
+func PortOwner(port int) (user, exe string, found bool) {
+	ports, _ := ListeningPorts()
+	for _, p := range ports {
+		if strings.HasPrefix(p.Proto, "tcp") && p.Port == port && p.PID > 0 {
+			names := userNames()
+			status, _ := os.ReadFile(fmt.Sprintf("/proc/%d/status", p.PID))
+			for _, line := range strings.Split(string(status), "\n") {
+				if v, ok := strings.CutPrefix(line, "Uid:"); ok {
+					uid := strings.Fields(v)[0]
+					user = names[uid]
+					if user == "" {
+						user = uid
+					}
+				}
+			}
+			return user, p.Exe, true
+		}
+	}
+	return "", "", false
+}
