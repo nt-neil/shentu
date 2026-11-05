@@ -58,3 +58,11 @@ func TestPrintable(t *testing.T) {
 		t.Errorf("control characters left: %q", got)
 	}
 }
+
+func TestIsLoopbackHost(t *testing.T) {
+	for h, want := range map[string]bool{"localhost": true, "LOCALHOST": true, "127.0.0.1": true, "127.1.2.3": true, "::1": true, "0.0.0.0": true, "": true, "203.0.113.1": false} {
+		if isLoopbackHost(h) != want {
+			t.Errorf("isLoopbackHost(%q) != %v", h, want)
+		}
+	}
+}

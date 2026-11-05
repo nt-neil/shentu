@@ -68,6 +68,7 @@ type netEntry struct {
 	remoteIP   net.IP
 	remotePort int
 	state      string
+	uid        string
 	inode      string
 }
 
@@ -87,7 +88,7 @@ func readProcNet(proto string) []netEntry {
 		}
 		lip, lport := parseHexAddr(fs[1])
 		rip, rport := parseHexAddr(fs[2])
-		out = append(out, netEntry{lip, lport, rip, rport, fs[3], fs[9]})
+		out = append(out, netEntry{lip, lport, rip, rport, fs[3], fs[7], fs[9]})
 	}
 	return out
 }
@@ -331,24 +332,27 @@ func AccountsAudit() Accounts {
 	return a
 }
 
-// PortOwner reports the user and executable of the process listening on a local TCP port.
-func PortOwner(port int) (user, exe string, found bool) {
-	ports, _ := ListeningPorts()
-	for _, p := range ports {
-		if strings.HasPrefix(p.Proto, "tcp") && p.Port == port && p.PID > 0 {
-			names := userNames()
-			status, _ := os.ReadFile(fmt.Sprintf("/proc/%d/status", p.PID))
-			for _, line := range strings.Split(string(status), "\n") {
-				if v, ok := strings.CutPrefix(line, "Uid:"); ok {
-					uid := strings.Fields(v)[0]
-					user = names[uid]
-					if user == "" {
-						user = uid
-					}
-				}
+// LoopbackListenerUIDs returns the owner UIDs of TCP listeners on port that a
+// connection to the loopback address would reach (loopback or wildcard binds).
+// The uid column of /proc/net/tcp is readable by everyone, so this works without root.
+func LoopbackListenerUIDs(port int) []string {
+	var uids []string
+	for _, proto := range []string{"tcp", "tcp6"} {
+		for _, e := range readProcNet(proto) {
+			if e.state == "0A" && e.localPort == port && (e.localIP.IsLoopback() || e.localIP.IsUnspecified()) {
+				uids = append(uids, e.uid)
 			}
-			return user, p.Exe, true
 		}
 	}
-	return "", "", false
+	return uids
+}
+
+// UIDOf returns the numeric UID of a user name from /etc/passwd.
+func UIDOf(name string) (string, bool) {
+	for uid, n := range userNames() {
+		if n == name {
+			return uid, true
+		}
+	}
+	return "", false
 }

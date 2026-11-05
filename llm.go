@@ -6,10 +6,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"runtime"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/nt-nerdtechnic/shentu/tools"
@@ -109,25 +111,55 @@ func truncate(s string, n int) string {
 	return s[:n] + "…"
 }
 
-// checkLocalLLM refuses a local endpoint on this machine unless its listener is
-// run by root or the ollama account. Otherwise any local user could bind the
-// port first and impersonate the model. Only enforced on Linux, where /proc exists.
+// checkLocalLLM refuses an endpoint on this machine unless every listener on
+// its port is owned by root or the ollama account. Otherwise any local user could
+// bind the port first and impersonate the model. It fails closed for loopback
+// targets. Linux only (it reads /proc/net/tcp).
 func checkLocalLLM(baseURL string) error {
-	u, err := url.Parse(baseURL)
-	if err != nil || runtime.GOOS != "linux" {
+	if runtime.GOOS != "linux" {
 		return nil
 	}
-	host := u.Hostname()
-	if host != "127.0.0.1" && host != "localhost" && host != "::1" {
+	u, err := url.Parse(baseURL)
+	if err != nil {
+		return fmt.Errorf("bad LLM base_url: %w", err)
+	}
+	if !isLoopbackHost(u.Hostname()) {
 		return nil
 	}
 	port, _ := strconv.Atoi(u.Port())
 	if port == 0 {
-		return nil
+		port = map[string]int{"http": 80, "https": 443}[u.Scheme]
 	}
-	user, exe, found := tools.PortOwner(port)
-	if !found || user == "root" || user == "ollama" {
-		return nil // not found: nothing listens, or we are not root and cannot see the owner
+	if port == 0 {
+		return fmt.Errorf("cannot tell the port of %s", baseURL)
 	}
-	return fmt.Errorf("refusing the local LLM on port %d: it is run by %q (%s), not by root or the ollama account", port, user, exe)
+	allowed := map[string]bool{"0": true}
+	if uid, ok := tools.UIDOf("ollama"); ok {
+		allowed[uid] = true
+	}
+	for _, uid := range tools.LoopbackListenerUIDs(port) {
+		if !allowed[uid] {
+			return fmt.Errorf("refusing the local LLM on port %d: a listener there is owned by uid %s, not root or ollama", port, uid)
+		}
+	}
+	return nil // no listener at all: the request simply fails
+}
+
+func isLoopbackHost(host string) bool {
+	if host == "" || strings.EqualFold(host, "localhost") {
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback() || ip.IsUnspecified()
+	}
+	ips, err := net.LookupIP(host)
+	if err != nil {
+		return false
+	}
+	for _, ip := range ips {
+		if ip.IsLoopback() || ip.IsUnspecified() {
+			return true
+		}
+	}
+	return false
 }
