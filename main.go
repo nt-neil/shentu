@@ -15,6 +15,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode"
 
 	"github.com/nt-nerdtechnic/shentu/tools"
 )
@@ -138,11 +139,11 @@ func chat(ctx context.Context, cfg *Config, env *tools.Env, question string) err
 	}
 }
 
-// printable replaces control characters (ESC, CR, newlines…) so text from the
+// printable replaces non-printable characters (ESC, CR, newlines, bidi overrides…) so text from the
 // model cannot redraw the terminal and disguise what the operator confirms.
 func printable(s string) string {
 	return strings.Map(func(r rune) rune {
-		if r < 0x20 || (r >= 0x7f && r < 0xa0) {
+		if !unicode.IsPrint(r) || r == 0x2028 || r == 0x2029 {
 			return '?'
 		}
 		return r

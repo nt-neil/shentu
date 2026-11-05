@@ -48,9 +48,12 @@ type SSHSource struct {
 var (
 	// User names are attacker-controlled and may contain "from <ip> port"; the greedy
 	// user group and the anchored sshd suffix make the IP the one sshd wrote last.
-	reFailed   = regexp.MustCompile(`sshd.*?: Failed (?:password|publickey|keyboard-interactive/pam|none) for (?:invalid user )?(.*) from (\S+) port \d+(?: ssh2)?(?: \[preauth\])?\s*$`)
-	reInvalid  = regexp.MustCompile(`sshd.*?: Invalid user (.*) from (\S+) port \d+(?: \[preauth\])?\s*$`)
-	reAccepted = regexp.MustCompile(`sshd.*?: Accepted (\S+) for (.*) from (\S+) port \d+ ssh2(?:: .*)?\s*$`)
+	// The prefix is "<RFC3339 time> host sshd[pid]: " or "Mon dd hh:mm:ss host sshd[pid]: "
+	// (OpenSSH 9.8+ logs as sshd-session), so injected text cannot start a second message.
+	sshdPrefix = `^(?:\S+|\w{3} +\d+ \d\d:\d\d:\d\d) \S+ sshd(?:-session)?\[\d+\]: `
+	reFailed   = regexp.MustCompile(sshdPrefix + `Failed (?:password|publickey|keyboard-interactive/pam|none) for (?:invalid user )?(.*) from (\S+) port \d+(?: ssh2)?(?: \[preauth\])?\s*$`)
+	reInvalid  = regexp.MustCompile(sshdPrefix + `Invalid user (.*) from (\S+) port \d+(?: \[preauth\])?\s*$`)
+	reAccepted = regexp.MustCompile(sshdPrefix + `Accepted (\S+) for (\S+) from (\S+) port \d+ ssh2(?:: [A-Z0-9-]+ SHA256:\S+)?\s*$`)
 )
 
 // SSHSummary reads auth logs (or journald when there are none) and groups events by IP.
@@ -75,6 +78,9 @@ func SSHSummary(ctx context.Context, env *Env, since time.Time, onlyIP string) (
 		}
 		if net.ParseIP(ip) == nil {
 			continue
+		}
+		if strings.Contains(user, " from ") || strings.Contains(user, ": ") {
+			user = "[crafted user name]" // still an attempt from ip, but do not echo the bait
 		}
 		if len(user) > 64 {
 			user = user[:64] + "…"
