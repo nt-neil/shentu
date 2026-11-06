@@ -68,6 +68,9 @@ sudo systemctl enable --now shentu-patrol.timer shentu-daily.timer
 `.deb`, `.rpm` and `.apk` packages are also attached to each release. Supported systems:
 Ubuntu 22.04 and 24.04, Debian 12, Rocky and Alma 9, and Alpine, on amd64 and arm64.
 
+Not sure which model to use? [Choosing a model](docs/models.md) compares 12 models on the same
+planted intrusion: accuracy, prompt-injection resistance, speed and cost.
+
 ## Configuration
 
 See [`packaging/shentu.toml`](packaging/shentu.toml). Secrets such as bot tokens and API keys go in
