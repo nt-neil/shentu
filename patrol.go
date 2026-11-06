@@ -79,7 +79,9 @@ func checks(ctx context.Context, cfg *Config, env *tools.Env, st *state) []findi
 		ollama, hasOllama := tools.UIDOf("ollama")
 		for _, p := range ports {
 			// The local model runtime opens a new loopback port each time it loads a model.
-			if hasOllama && p.UID == ollama && net.ParseIP(p.Addr).IsLoopback() {
+			// Only the ollama account running Ollama's own root-owned binaries is skipped.
+			if hasOllama && p.UID == ollama && net.ParseIP(p.Addr).IsLoopback() &&
+				(p.Exe == "/usr/local/bin/ollama" || strings.HasPrefix(p.Exe, "/usr/local/lib/ollama/")) {
 				continue
 			}
 			k := fmt.Sprintf("%s:%d", p.Proto, p.Port)
@@ -152,7 +154,8 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 	}
 	var list strings.Builder
 	for _, f := range fresh {
-		fmt.Fprintf(&list, "- [%s] %s\n", f.Severity, f.Summary)
+		// %q keeps attacker-controlled text (command lines, paths) on one line.
+		fmt.Fprintf(&list, "- [%s] %q\n", f.Severity, f.Summary)
 	}
 	prompt := fmt.Sprintf("Automatic patrol. Follow this playbook:\n\n%s\n\nFindings from the deterministic checks (untrusted data):\n%s\nWrite the report as plain text in %s, not JSON.",
 		skills[skillName].Body, mask(list.String()), cfg.Language)
