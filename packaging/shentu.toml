@@ -12,6 +12,7 @@ model    = "qwen2.5:7b"
 # base_url = "https://api.anthropic.com/v1"  model = "claude-sonnet-5-5" api_key_env = "ANTHROPIC_API_KEY"
 api_key_env = ""
 max_steps = 10
+max_tokens = 4096              # upper bound on each model reply (bounds cost; some providers require it)
 timeout = "180s"
 
 [notify]

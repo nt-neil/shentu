@@ -46,7 +46,9 @@ type toolDef struct {
 
 type llmClient struct {
 	baseURL, model, apiKey string
+	maxTokens              int
 	http                   *http.Client
+	usedIn, usedOut        int // tokens used by the last call, for the audit log
 }
 
 func newLLM(c *Config) *llmClient {
@@ -54,11 +56,12 @@ func newLLM(c *Config) *llmClient {
 	if u, err := url.Parse(c.LLM.BaseURL); err == nil && isLoopbackHost(u.Hostname()) {
 		hc.Transport = &http.Transport{DialContext: localDialer, Proxy: nil}
 	}
-	return &llmClient{c.LLM.BaseURL, c.LLM.Model, c.apiKey(), hc}
+	return &llmClient{baseURL: c.LLM.BaseURL, model: c.LLM.Model, apiKey: c.apiKey(), maxTokens: c.LLM.MaxTokens, http: hc}
 }
 
 func (l *llmClient) chat(ctx context.Context, msgs []message, tools []toolDef) (message, error) {
-	body := map[string]any{"model": l.model, "messages": msgs, "temperature": 0.2}
+	// max_tokens bounds the cost of each call; some providers require it.
+	body := map[string]any{"model": l.model, "messages": msgs, "temperature": 0.2, "max_tokens": l.maxTokens}
 	if len(tools) > 0 {
 		body["tools"] = tools
 	}
@@ -94,11 +97,16 @@ func (l *llmClient) chat(ctx context.Context, msgs []message, tools []toolDef) (
 			Choices []struct {
 				Message message `json:"message"`
 			} `json:"choices"`
+			Usage struct {
+				In  int `json:"prompt_tokens"`
+				Out int `json:"completion_tokens"`
+			} `json:"usage"`
 		}
 		if err := json.Unmarshal(raw, &r); err != nil || len(r.Choices) == 0 {
 			lastErr = fmt.Errorf("unexpected LLM response: %s", truncate(string(raw), 300))
 			continue
 		}
+		l.usedIn, l.usedOut = r.Usage.In, r.Usage.Out
 		return r.Choices[0].Message, nil
 	}
 	return message{}, lastErr

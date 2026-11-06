@@ -20,6 +20,7 @@ type Config struct {
 		Model     string `toml:"model"`
 		APIKeyEnv string `toml:"api_key_env"`
 		MaxSteps  int    `toml:"max_steps"`
+		MaxTokens int    `toml:"max_tokens"`
 		Timeout   string `toml:"timeout"`
 	} `toml:"llm"`
 	Notify struct {
@@ -43,6 +44,7 @@ func loadConfig(path string) (*Config, error) {
 	c.LLM.BaseURL = "http://127.0.0.1:11434/v1"
 	c.LLM.Model = "qwen2.5:7b"
 	c.LLM.MaxSteps = 10
+	c.LLM.MaxTokens = 4096
 	c.LLM.Timeout = "180s"
 	c.Tools.LogPaths = []string{"/var/log/auth.log", "/var/log/secure", "/var/log/syslog", "/var/log/nginx/*.log", "/var/log/apache2/*.log"}
 	c.Tools.WatchPaths = []string{"/etc", "/usr/bin", "/usr/sbin", "/usr/local/bin", "/var/www", "/root/.ssh"}

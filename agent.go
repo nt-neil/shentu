@@ -74,6 +74,7 @@ func (a *agent) run(ctx context.Context, msgs []message) (string, []message, err
 	defs := a.toolDefs()
 	for step := 0; step < a.cfg.LLM.MaxSteps; step++ {
 		reply, err := a.llm.chat(ctx, msgs, defs)
+		a.logLLM(err)
 		if err != nil {
 			return "", msgs, err
 		}
@@ -97,11 +98,22 @@ func (a *agent) run(ctx context.Context, msgs []message) (string, []message, err
 	// Out of steps: ask for an answer with what we have.
 	msgs = append(msgs, message{Role: "user", Content: "Stop calling tools. Give your answer now with the evidence you have."})
 	reply, err := a.llm.chat(ctx, msgs, nil)
+	a.logLLM(err)
 	if err != nil {
 		return "", msgs, err
 	}
 	reply.Role = "assistant"
 	return reply.Content, append(msgs, reply), nil
+}
+
+// logLLM records one model call with its token use, so cost can be tracked.
+func (a *agent) logLLM(err error) {
+	e := logEntry{Actor: a.actor, Tool: "llm", Args: a.llm.model, OK: err == nil, InTokens: a.llm.usedIn, OutTokens: a.llm.usedOut}
+	if err != nil {
+		e.Error = err.Error()
+	}
+	a.log.write(e)
+	a.llm.usedIn, a.llm.usedOut = 0, 0
 }
 
 // callTool runs one tool and returns the text the model will see.
@@ -179,6 +191,8 @@ type logEntry struct {
 	Confirmed bool      `json:"confirmed,omitempty"`
 	OK        bool      `json:"ok"`
 	Error     string    `json:"error,omitempty"`
+	InTokens  int       `json:"in_tokens,omitempty"`
+	OutTokens int       `json:"out_tokens,omitempty"`
 }
 
 func newAuditLog(stateDir string) *auditLog {
