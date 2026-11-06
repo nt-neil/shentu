@@ -5,7 +5,8 @@
 Shentu (神荼) is named after one of the two door gods who guard the gate in Chinese tradition.
 It is one static binary. It gives a language model a set of security tools and playbooks, so you
 can ask your server questions in plain language and get short, readable reports. It never changes
-anything on its own: every action waits for a human to confirm it.
+the system on its own: every action that changes something waits for a human to confirm it.
+(Sending a notification does not need confirmation.)
 
 ```
 $ sudo shentu chat
@@ -65,8 +66,9 @@ sudo shentu chat
 sudo systemctl enable --now shentu-patrol.timer shentu-daily.timer
 ```
 
-`.deb`, `.rpm` and `.apk` packages are also attached to each release. Supported systems:
-Ubuntu 22.04 and 24.04, Debian 12, Rocky and Alma 9, and Alpine, on amd64 and arm64.
+`.deb` and `.rpm` packages are also attached to each release. Supported systems
+(systemd is required for the patrol timers): Ubuntu 22.04 and 24.04, Debian 12, Rocky and Alma 9,
+on amd64 and arm64. Tested end to end on Ubuntu 24.04 arm64.
 
 Not sure which model to use? [Choosing a model](docs/models.md) compares 12 models on the same
 planted intrusion: accuracy, prompt-injection resistance, speed and cost.
@@ -75,6 +77,12 @@ planted intrusion: accuracy, prompt-injection resistance, speed and cost.
 
 See [`packaging/shentu.toml`](packaging/shentu.toml). Secrets such as bot tokens and API keys go in
 `/etc/shentu/env` and are referenced as `${VAR}`.
+
+`shentu setup` writes the model choice to `/etc/shentu/llm.toml`, which overrides `[llm]` in
+`shentu.toml`; run `setup` again (or edit `llm.toml`) to change the model. For a non-interactive
+setup, pass the key in `SHENTU_API_KEY`: `sudo SHENTU_API_KEY=… shentu setup --provider anthropic`.
+Default models: `claude-haiku-5-5` (Anthropic), `gpt-6-luna` (OpenAI), and on a local server the
+largest of `qwen2.5:3b`/`7b`/`14b` that fits in memory. `--model` picks another one.
 
 ## Security design
 
@@ -85,8 +93,8 @@ See [`packaging/shentu.toml`](packaging/shentu.toml). Secrets such as bot tokens
   tokens, JWTs and `password=` values.
 - **Self-lockout guards**: `block_ip` refuses loopback, the server's own addresses and the IPs of
   active SSH sessions. Every block has a time limit.
-- **No listening ports, no daemon, no database.** Every tool call is recorded in
-  `/var/lib/shentu/log.jsonl`.
+- **No listening ports, no daemon, no database.** Every tool call and model call is
+  recorded in `/var/lib/shentu/log.jsonl`.
 - **Small attack surface**: one third-party dependency (a TOML parser), and everything else is the
   Go standard library.
 
@@ -96,7 +104,10 @@ Report vulnerabilities as described in [SECURITY.md](SECURITY.md).
 
 ```sh
 CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" .
+go test ./...
 ```
+
+Go 1.23 or later. Issues and pull requests are welcome; please keep the dependency count at one.
 
 ## License
 

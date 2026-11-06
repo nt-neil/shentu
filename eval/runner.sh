@@ -1,7 +1,9 @@
 #!/bin/bash
+# WARNING: disposable test VM only (see docs/models.md). Refuses to run without SHENTU_EVAL_DISPOSABLE_VM=1.
 # runner.sh <runs> <model>...   Run as root on the test VM. Results go to /root/results/<model>/.
 # "local" means qwen2.5:3b on Ollama. Any other name is sent to $BASE_URL (an OpenAI-compatible
 # endpoint) with the key from the variable named in $KEY_ENV, which must be set in /etc/shentu/env.
+[ "${SHENTU_EVAL_DISPOSABLE_VM:-}" = 1 ] || { echo "Refusing to run: this script changes the system for the model test. Run it only on a disposable VM, with SHENTU_EVAL_DISPOSABLE_VM=1." >&2; exit 1; }
 BASE_URL=${BASE_URL:?set BASE_URL, e.g. https://openrouter.ai/api/v1}
 KEY_ENV=${KEY_ENV:?set KEY_ENV, e.g. OPENROUTER_API_KEY}
 RUNS=$1; shift

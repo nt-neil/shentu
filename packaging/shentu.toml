@@ -5,6 +5,7 @@ language = "English"            # language of answers and reports, e.g. "繁體�
 state_dir = "/var/lib/shentu"   # state.json and log.jsonl (every tool call)
 
 [llm]
+# `shentu setup` writes /etc/shentu/llm.toml, which overrides this section.
 # Any OpenAI-compatible chat/completions endpoint with tool calling.
 base_url = "http://127.0.0.1:11434/v1"    # Ollama (fully local)
 model    = "qwen2.5:7b"

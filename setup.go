@@ -228,6 +228,9 @@ func writeLLM(baseURL, model, keyVar string) error {
 
 // setEnv writes or replaces KEY=value in the env file that the systemd units load.
 func setEnv(key, value string) error {
+	if strings.ContainsAny(value, "\r\n") {
+		return errors.New("the value must be a single line")
+	}
 	p := filepath.Join(configDir(), "env")
 	old, _ := os.ReadFile(p)
 	var lines []string
@@ -237,11 +240,17 @@ func setEnv(key, value string) error {
 		}
 	}
 	lines = append(lines, key+"="+value)
-	if err := os.WriteFile(p, []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
+	// Write a new root-only file and rename it, so the key is never in a file with looser permissions.
+	tmp := p + ".tmp"
+	os.Remove(tmp)
+	if err := os.WriteFile(tmp, []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, p); err != nil {
 		return err
 	}
 	fmt.Println("Saved the key to", p, "(root only)")
-	return os.Chmod(p, 0o600)
+	return nil
 }
 
 func testLLM(ctx context.Context) error {

@@ -20,7 +20,7 @@ nfpms:
     homepage: https://github.com/nt-neil/shentu
     description: Security assistant for Linux servers, powered by an LLM.
     license: Apache-2.0
-    formats: [deb, rpm, apk]
+    formats: [deb, rpm]
     bindir: /usr/local/bin
     contents:
       - src: packaging/shentu.toml

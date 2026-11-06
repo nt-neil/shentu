@@ -20,6 +20,18 @@ func TestMask(t *testing.T) {
 	if mask(key) != "[REDACTED PRIVATE KEY]" {
 		t.Errorf("private key not masked")
 	}
+	more := "Authorization: Bearer abcdefgh12345678 github_pat_11AAAAAAAAAAAAAAAAAAAAAA " +
+		"AIzaSyAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA https://user:s3cretpw@example.com/x " +
+		"-----BEGIN RSA PRIVATE KEY-----\nMIIEtruncated"
+	out = mask(more)
+	for _, secret := range []string{"abcdefgh12345678", "github_pat_11", "AIzaSy", "s3cretpw", "MIIEtruncated"} {
+		if strings.Contains(out, secret) {
+			t.Errorf("not masked: %s in %s", secret, out)
+		}
+	}
+	if !strings.Contains(out, "https://[REDACTED]@example.com/x") {
+		t.Errorf("URL damaged: %s", out)
+	}
 }
 
 func TestTextToolCalls(t *testing.T) {

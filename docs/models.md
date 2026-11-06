@@ -28,7 +28,7 @@ Model names are the gateway's; your provider may spell them differently.
 S4 and S6 show how many of the 6 planted problems each of the 3 reports mentioned. S5 counts
 runs that used `package_vulns` and named only real vulnerability IDs; no model invented an ID.
 "Est. per month" assumes one daily report, one patrol alert and two chat questions a day
-(30 × S6 + 30 × S4 + 60 × chat, at the average cost per run measured here).
+(30 × S6 + 30 × S4 + 60 × chat, using the average cost of each scenario measured here).
 
 What we saw:
 
@@ -76,12 +76,13 @@ What we saw:
 
 ### Planted intrusion
 
-[`eval/fixtures.sh`](../eval/fixtures.sh) and [`eval/reset.sh`](../eval/reset.sh) plant the same
-state before each model's runs:
+[`eval/fixtures.sh`](../eval/fixtures.sh) plants this once, and [`eval/reset.sh`](../eval/reset.sh)
+replays the SSH attack and resets Shentu's state before each model, so every model sees the same
+server:
 
 | What | Detail |
 |---|---|
-| SSH brute force | From an attacker network namespace: 20 attempts from 10.99.0.2, 12 from 10.99.0.3, 11 from 10.99.0.4 (user `SYSTEM`); none succeed |
+| SSH brute force | From an attacker network namespace: 20 attempts from 10.99.0.2, 12 from 10.99.0.3, 11 from 10.99.0.4; users `admin0`…, `oracle0`… and `SYSTEM`; none succeed |
 | New listener | `python3 -m http.server 31337` running as `nobody` |
 | Suspicious process | `/tmp/.kworker`, started from /tmp and then deleted |
 | Backdoor account | `toor` with UID 0 |
@@ -117,15 +118,24 @@ sooner or later propose something an operator approves without reading.
 
 ## Repeat the test
 
-On a disposable VM (it plants a real backdoor account and webshell):
+Only on a disposable VM: the scripts plant a real backdoor account and webshell, and they refuse
+to run unless `SHENTU_EVAL_DISPOSABLE_VM=1` is set. The VM needs systemd, openssh-server, rsyslog
+(writing `/var/log/auth.log`), nftables, iproute2, python3, `bc` and Go 1.23.
 
 ```sh
-sudo ./install.sh && sudo shentu setup --local          # or point llm.toml at your endpoint
-sudo bash eval/fixtures.sh
+git clone https://github.com/nt-neil/shentu && cd shentu && git checkout 29d68f2
+CGO_ENABLED=0 go build -o shentu . && sudo ./install.sh     # installs this build, not the latest release
+sudo shentu setup --local --model qwen2.5:3b                # only needed for the "local" model
+export SHENTU_EVAL_DISPOSABLE_VM=1
+sudo -E bash eval/fixtures.sh
 echo 'MY_API_KEY=<your key>' | sudo tee -a /etc/shentu/env
-sudo BASE_URL=https://openrouter.ai/api/v1 KEY_ENV=MY_API_KEY bash eval/runner.sh 3 local <model> <model>…
+sudo -E BASE_URL=https://openrouter.ai/api/v1 KEY_ENV=MY_API_KEY bash eval/runner.sh 3 local <model> <model>…
 # copy /root/results to your machine, then:
 python3 -I eval/score.py results prices.json osv-cache.json
 ```
+
+`prices.json` gives each model's price in USD per million tokens, input then output, for example
+`{"local": [0, 0], "my-model": [0.5, 2.0]}`; use your provider's current prices.
+`osv-cache.json` is created on the first run.
 
 Restore the VM from its snapshot when you are done.

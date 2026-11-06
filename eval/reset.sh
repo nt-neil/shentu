@@ -1,5 +1,7 @@
 #!/bin/bash
+# WARNING: disposable test VM only (see docs/models.md). Refuses to run without SHENTU_EVAL_DISPOSABLE_VM=1.
 # Before each model: fresh SSH attack lines (20/12/11), recent file changes, clean Shentu state.
+[ "${SHENTU_EVAL_DISPOSABLE_VM:-}" = 1 ] || { echo "Refusing to run: this script changes the system for the model test. Run it only on a disposable VM, with SHENTU_EVAL_DISPOSABLE_VM=1." >&2; exit 1; }
 set -e
 truncate -s0 /var/log/auth.log
 b() { local src=$1 n=$2 u=$3 i=0; while [ $i -lt $n ]; do ip netns exec atk ssh -b $src -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -l "$u$i" 10.99.0.1 true 2>/dev/null || true; i=$((i+1)); done; }

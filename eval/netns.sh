@@ -1,5 +1,7 @@
 #!/bin/sh
+# WARNING: disposable test VM only (see docs/models.md). Refuses to run without SHENTU_EVAL_DISPOSABLE_VM=1.
 # An "attacker" network namespace inside the VM: 10.99.0.2 (and .3) -> server 10.99.0.1
+[ "${SHENTU_EVAL_DISPOSABLE_VM:-}" = 1 ] || { echo "Refusing to run: this script changes the system for the model test. Run it only on a disposable VM, with SHENTU_EVAL_DISPOSABLE_VM=1." >&2; exit 1; }
 set -e
 ip netns add atk
 ip link add va type veth peer name vb

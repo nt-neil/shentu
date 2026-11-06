@@ -141,11 +141,11 @@ func (a *agent) callTool(ctx context.Context, name, rawArgs string) string {
 	if t.Control {
 		preview, err := t.Preview(args)
 		if err != nil {
-			entry.Error = err.Error()
+			entry.Error = mask(err.Error())
 			a.log.write(entry)
 			return errText(err.Error())
 		}
-		entry.Preview = preview
+		entry.Preview = mask(preview)
 		if a.confirm == nil || !a.confirm(name, preview) {
 			entry.Error = "declined by operator"
 			a.log.write(entry)
@@ -157,7 +157,7 @@ func (a *agent) callTool(ctx context.Context, name, rawArgs string) string {
 	defer cancel()
 	out, err := t.Run(tctx, a.env, args)
 	if err != nil {
-		entry.Error = err.Error()
+		entry.Error = mask(err.Error())
 		a.log.write(entry)
 		return errText(err.Error())
 	}
