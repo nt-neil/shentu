@@ -255,7 +255,11 @@ func userNames() map[string]string {
 	b, _ := os.ReadFile("/etc/passwd")
 	for _, line := range strings.Split(string(b), "\n") {
 		f := strings.Split(line, ":")
-		if len(f) >= 3 {
+		// The first name wins, so a backdoor account that reuses UID 0 is not shown as the owner of root's files.
+		if len(f) < 3 {
+			continue
+		}
+		if _, dup := m[f[2]]; !dup {
 			m[f[2]] = f[0]
 		}
 	}
