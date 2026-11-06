@@ -17,7 +17,7 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/nt-nerdtechnic/shentu/tools"
+	"github.com/nt-neil/shentu/tools"
 )
 
 var version = "dev"

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nt-nerdtechnic/shentu/tools"
+	"github.com/nt-neil/shentu/tools"
 )
 
 // A finding is one anomaly from the deterministic checks. Key is used to

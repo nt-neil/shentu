@@ -1,11 +1,11 @@
 #!/bin/sh
 # Install Shentu from a release archive. Usage:
-#   curl -fsSL https://github.com/nt-nerdtechnic/shentu/releases/latest/download/install.sh | sudo sh
+#   curl -fsSL https://github.com/nt-neil/shentu/releases/latest/download/install.sh | sudo sh
 # or, from an unpacked archive:  sudo ./install.sh
 set -eu
 
 main() {
-	REPO="nt-nerdtechnic/shentu"
+	REPO="nt-neil/shentu"
 	[ "$(id -u)" -eq 0 ] || { echo "run as root (sudo)" >&2; exit 1; }
 	[ "$(uname -s)" = Linux ] || { echo "Shentu supports Linux only" >&2; exit 1; }
 	case "$(uname -m)" in

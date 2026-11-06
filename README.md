@@ -58,7 +58,7 @@ To add your own, put it in `/etc/shentu/skills/<name>/SKILL.md`.
 ## Install
 
 ```sh
-curl -fsSL https://github.com/nt-nerdtechnic/shentu/releases/latest/download/install.sh | sudo sh
+curl -fsSL https://github.com/nt-neil/shentu/releases/latest/download/install.sh | sudo sh
 sudo shentu setup                        # download a local model sized for this server, or enter an API key
 sudo nano /etc/shentu/shentu.toml        # set the notify channel
 sudo shentu chat

@@ -1,4 +1,4 @@
-module github.com/nt-nerdtechnic/shentu
+module github.com/nt-neil/shentu
 
 go 1.23
 

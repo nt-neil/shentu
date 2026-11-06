@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nt-nerdtechnic/shentu/tools"
+	"github.com/nt-neil/shentu/tools"
 )
 
 // agent runs the tool-calling loop: ask the model, run the tools it asks for,

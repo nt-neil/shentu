@@ -5,7 +5,7 @@ Shentu runs with elevated privileges on servers, so we take reports seriously.
 ## Reporting a vulnerability
 
 Please **do not** open a public issue. Report privately through
-[GitHub Security Advisories](https://github.com/nt-nerdtechnic/shentu/security/advisories/new)
+[GitHub Security Advisories](https://github.com/nt-neil/shentu/security/advisories/new)
 or by email to **SECURITY_CONTACT_TBD**.
 
 Include the version (`shentu version`), the distribution, and steps to reproduce.

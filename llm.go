@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nt-nerdtechnic/shentu/tools"
+	"github.com/nt-neil/shentu/tools"
 )
 
 // The one LLM adapter: the OpenAI-compatible chat/completions API with tool calling.
