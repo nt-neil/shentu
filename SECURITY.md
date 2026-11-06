@@ -4,9 +4,9 @@ Shentu runs with elevated privileges on servers, so we take reports seriously.
 
 ## Reporting a vulnerability
 
-Please **do not** open a public issue. Report privately through
-[GitHub Security Advisories](https://github.com/nt-neil/shentu/security/advisories/new)
-or by email to **SECURITY_CONTACT_TBD**.
+Please **do not** open a public issue. Report privately through GitHub:
+[Report a vulnerability](https://github.com/nt-neil/shentu/security/advisories/new)
+(the repository's Security tab → "Report a vulnerability").
 
 Include the version (`shentu version`), the distribution, and steps to reproduce.
 We aim to reply within 3 working days and to ship a fix for confirmed issues within 30 days.
