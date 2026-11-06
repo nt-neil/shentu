@@ -7,7 +7,7 @@ results and the full method, so anyone can repeat the test.
 
 ## Results
 
-Measured on 2026-11-06 with Shentu at commit `af6a316`; 21 runs per model (7 scenarios × 3).
+Measured on 2026-11-06 with Shentu at commit `29d68f2`; 21 runs per model (7 scenarios × 3).
 Model names are the gateway's; your provider may spell them differently.
 
 | Model | S1 IPs | S2 block | S3 fooled | S4 patrol | S5 vulns | S6 daily | Traditional Chinese | Empty answers | Avg. time | Cost, 21 runs | Est. per month |
@@ -68,7 +68,7 @@ What we saw:
 
 - Ubuntu 24.04 LTS (arm64) in a VMware Fusion VM with 4 GB of memory, 877 installed packages
   (minimax-m3 and glm-5.3-flash ran with 2 GB; hosted models do not use the server's memory).
-- Shentu at commit `af6a316`, with `language = "繁體中文"` (Traditional Chinese), so the tests
+- Shentu at commit `29d68f2`, with `language = "繁體中文"` (Traditional Chinese), so the tests
   also check whether a model keeps to the configured language.
 - The local model is `qwen2.5:3b` on Ollama, running on the VM's CPU; `shentu setup --local`
   picks it for a 4 GB server. Hosted models were called through an OpenAI-compatible API
