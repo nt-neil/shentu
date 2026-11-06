@@ -84,12 +84,32 @@ func PackageVulns(ctx context.Context, hc *http.Client, detailFor string) (map[s
 	}
 	sort.Slice(found, func(i, j int) bool { return len(found[i].IDs) > len(found[j].IDs) })
 	out := map[string]any{"ecosystem": eco, "packages_checked": len(pkgs), "affected_packages": len(found), "total_vulns": total}
+	known := false
+	for _, a := range found {
+		known = known || a.Package == detailFor
+	}
+	if detailFor != "" && !known {
+		// A wrong name (models send "*" or a binary name) gets the overview, not an empty answer.
+		out["note"] = fmt.Sprintf("no affected package is named %q; this is the overview", detailFor)
+		detailFor = ""
+	}
 	if detailFor == "" {
-		if len(found) > 40 {
-			found = found[:40]
-			out["note"] = "only the 40 packages with the most vulnerabilities are listed"
+		// Counts and a few IDs keep the overview small enough for small local models.
+		type row struct {
+			Package string   `json:"package"`
+			Version string   `json:"version"`
+			Count   int      `json:"vulns"`
+			Sample  []string `json:"sample_ids"`
 		}
-		out["affected"] = found
+		var rows []row
+		for i, a := range found {
+			if i >= 20 {
+				out["top"] = "only the 20 packages with the most vulnerabilities are listed; call again with package set for details"
+				break
+			}
+			rows = append(rows, row{a.Package, a.Version, len(a.IDs), a.IDs[:min(3, len(a.IDs))]})
+		}
+		out["affected"] = rows
 		return out, nil
 	}
 	type detail struct {

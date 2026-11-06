@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -75,7 +76,12 @@ func checks(ctx context.Context, cfg *Config, env *tools.Env, st *state) []findi
 		if first {
 			st.Ports = map[string]bool{}
 		}
+		ollama, hasOllama := tools.UIDOf("ollama")
 		for _, p := range ports {
+			// The local model runtime opens a new loopback port each time it loads a model.
+			if hasOllama && p.UID == ollama && net.ParseIP(p.Addr).IsLoopback() {
+				continue
+			}
 			k := fmt.Sprintf("%s:%d", p.Proto, p.Port)
 			if !st.Ports[k] && !first {
 				out = append(out, finding{"port:" + k, "warning", fmt.Sprintf("new listening port %s by %s (%s)", k, p.Process, p.Exe), p})
@@ -144,24 +150,24 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 	if daily {
 		skillName = "daily-patrol"
 	}
-	findingsJSON, _ := json.MarshalIndent(fresh, "", "  ")
-	prompt := fmt.Sprintf("Automatic patrol. Follow this playbook:\n\n%s\n\nFindings from the deterministic checks (untrusted data):\n%s",
-		skills[skillName].Body, mask(string(findingsJSON)))
+	var list strings.Builder
+	for _, f := range fresh {
+		fmt.Fprintf(&list, "- [%s] %s\n", f.Severity, f.Summary)
+	}
+	prompt := fmt.Sprintf("Automatic patrol. Follow this playbook:\n\n%s\n\nFindings from the deterministic checks (untrusted data):\n%s\nWrite the report as plain text in %s, not JSON.",
+		skills[skillName].Body, mask(list.String()), cfg.Language)
 
 	a := &agent{cfg: cfg, llm: newLLM(cfg), env: env, skills: skills, actor: "patrol", log: newAuditLog(cfg.StateDir)}
 	answer, _, err := a.run(ctx, []message{{Role: "system", Content: systemPrompt(cfg, skills)}, {Role: "user", Content: prompt}})
 	if err == nil && strings.TrimSpace(answer) == "" {
 		err = errNoAnswer
 	}
+	// The raw findings always go out with the report, so a model that leaves one
+	// out or gets one wrong cannot hide it. Without a model they are the report.
 	if err != nil {
-		// Degrade, don't go silent: send the raw findings.
-		var b strings.Builder
-		fmt.Fprintf(&b, "(LLM unavailable: %v)\n\n", err)
-		for _, f := range fresh {
-			fmt.Fprintf(&b, "• [%s] %s\n", f.Severity, f.Summary)
-		}
-		answer = b.String()
+		answer = fmt.Sprintf("(LLM unavailable: %v)", err)
 	}
+	answer += "\n\nFindings:\n" + list.String()
 
 	answer = mask(answer)
 	sev := "info"

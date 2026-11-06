@@ -32,6 +32,7 @@ type Port struct {
 	PID     int    `json:"pid,omitempty"`
 	Process string `json:"process,omitempty"`
 	Exe     string `json:"exe,omitempty"`
+	UID     string `json:"uid"`
 }
 
 // ListeningPorts parses /proc/net/{tcp,tcp6,udp,udp6}.
@@ -45,7 +46,7 @@ func ListeningPorts() ([]Port, error) {
 			if (strings.HasPrefix(proto, "tcp") && e.state != "0A") || (strings.HasPrefix(proto, "udp") && e.state != "07") {
 				continue
 			}
-			p := Port{Proto: proto, Addr: e.localIP.String(), Port: e.localPort}
+			p := Port{Proto: proto, Addr: e.localIP.String(), Port: e.localPort, UID: e.uid}
 			if pid, ok := owners[e.inode]; ok {
 				p.PID = pid
 				p.Process = comm(pid)
