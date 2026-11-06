@@ -154,8 +154,8 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 	}
 	var list strings.Builder
 	for _, f := range fresh {
-		// %q keeps attacker-controlled text (command lines, paths) on one line.
-		fmt.Fprintf(&list, "- [%s] %q\n", f.Severity, f.Summary)
+		// Mask first, then %q keeps attacker-controlled text (command lines, paths) on one line.
+		fmt.Fprintf(&list, "- [%s] %q\n", f.Severity, mask(f.Summary))
 	}
 	prompt := fmt.Sprintf("Automatic patrol. Follow this playbook:\n\n%s\n\nFindings from the deterministic checks (untrusted data):\n%s\nWrite the report as plain text in %s, not JSON.",
 		skills[skillName].Body, mask(list.String()), cfg.Language)
