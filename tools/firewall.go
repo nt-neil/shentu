@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -115,6 +116,9 @@ func checkBlock(args json.RawMessage) (ipArgs, net.IP, time.Duration, error) {
 	if ownAddrs()[ip.String()] {
 		return a, nil, 0, errors.New("refusing to block one of this server's own addresses")
 	}
+	if infraAddrs()[ip.String()] {
+		return a, nil, 0, errors.New("refusing to block this server's default gateway or DNS server")
+	}
 	if SSHPeers()[ip.String()] {
 		return a, nil, 0, errors.New("refusing to block an IP with an active SSH session to this server (it may be the operator)")
 	}
@@ -148,6 +152,54 @@ func ownAddrs() map[string]bool {
 		}
 	}
 	return m
+}
+
+// infraAddrs returns the default gateways and DNS servers; blocking them would cut the server off.
+func infraAddrs() map[string]bool {
+	m := map[string]bool{}
+	for _, f := range []string{"/etc/resolv.conf", "/run/systemd/resolve/resolv.conf"} {
+		b, _ := os.ReadFile(f)
+		for _, l := range strings.Split(string(b), "\n") {
+			if f := strings.Fields(l); len(f) >= 2 && f[0] == "nameserver" {
+				if ip := net.ParseIP(f[1]); ip != nil {
+					m[normIP(ip)] = true
+				}
+			}
+		}
+	}
+	// /proc/net/route: Iface Destination Gateway ..., hex in host (little-endian) byte order.
+	b, _ := os.ReadFile("/proc/net/route")
+	for _, l := range strings.Split(string(b), "\n") {
+		f := strings.Fields(l)
+		if len(f) > 2 && f[1] == "00000000" && len(f[2]) == 8 && f[2] != "00000000" {
+			var v [4]byte
+			if _, err := fmt.Sscanf(f[2], "%02x%02x%02x%02x", &v[3], &v[2], &v[1], &v[0]); err == nil {
+				m[net.IP(v[:]).String()] = true
+			}
+		}
+	}
+	// /proc/net/ipv6_route: dest dest_len src src_len next_hop ...
+	b, _ = os.ReadFile("/proc/net/ipv6_route")
+	for _, l := range strings.Split(string(b), "\n") {
+		f := strings.Fields(l)
+		if len(f) > 4 && f[1] == "00" && f[4] != strings.Repeat("0", 32) {
+			if ip := net.ParseIP(hexToIPv6(f[4])); ip != nil {
+				m[normIP(ip)] = true
+			}
+		}
+	}
+	return m
+}
+
+func hexToIPv6(h string) string {
+	if len(h) != 32 {
+		return ""
+	}
+	var parts []string
+	for i := 0; i < 32; i += 4 {
+		parts = append(parts, h[i:i+4])
+	}
+	return strings.Join(parts, ":")
 }
 
 func ensureTable(ctx context.Context) error {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"net"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -110,5 +111,20 @@ func TestWebshellPatterns(t *testing.T) {
 	files := r["files"].([]Changed)
 	if len(files) != 2 || len(files[0].Webshell) == 0 || !strings.HasSuffix(files[0].Path, "x.php") || len(files[1].Webshell) != 0 {
 		t.Errorf("unexpected result: %+v", files)
+	}
+}
+
+func TestCut(t *testing.T) {
+	if got := Cut("封鎖這個位址", 4); got != "封…" {
+		t.Errorf("Cut split a character: %q", got)
+	}
+	if got := Cut("abc", 5); got != "abc" {
+		t.Errorf("Cut changed a short string: %q", got)
+	}
+}
+
+func TestHexToIPv6(t *testing.T) {
+	if got := net.ParseIP(hexToIPv6("fe800000000000000000000000000001")); !got.Equal(net.ParseIP("fe80::1")) {
+		t.Errorf("hexToIPv6 = %v", got)
 	}
 }

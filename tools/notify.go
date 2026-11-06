@@ -57,7 +57,7 @@ func Notify(ctx context.Context, env *Env, title, message, severity string) erro
 		token := u.User.Username()
 		text := fmt.Sprintf("%s [%s] %s\n\n%s", icon(severity), host, title, message)
 		if len(text) > 4000 {
-			text = text[:4000] + "…"
+			text = Cut(text, 4000)
 		}
 		for _, chat := range strings.Split(u.Query().Get("chats"), ",") {
 			body := map[string]any{"chat_id": strings.TrimSpace(chat), "text": text, "disable_web_page_preview": true}

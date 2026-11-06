@@ -83,7 +83,7 @@ func SSHSummary(ctx context.Context, env *Env, since time.Time, onlyIP string) (
 			user = "[crafted user name]" // still an attempt from ip, but do not echo the bait
 		}
 		if len(user) > 64 {
-			user = user[:64] + "…"
+			user = Cut(user, 64)
 		}
 		if onlyIP != "" && ip != onlyIP {
 			continue

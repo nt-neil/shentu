@@ -245,7 +245,7 @@ var logSearch = Tool{
 			if re.MatchString(lines[i]) {
 				l := lines[i]
 				if len(l) > 500 {
-					l = l[:500] + "…"
+					l = Cut(l, 500)
 				}
 				hits = append(hits, l)
 			}

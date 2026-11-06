@@ -84,7 +84,7 @@ func (a *agent) run(ctx context.Context, msgs []message) (string, []message, err
 		}
 		msgs = append(msgs, reply)
 		if len(reply.ToolCalls) == 0 {
-			return reply.Content, msgs, nil
+			return a.answerOnce(ctx, reply.Content, msgs)
 		}
 		for i, call := range reply.ToolCalls {
 			if call.ID == "" {
@@ -97,6 +97,22 @@ func (a *agent) run(ctx context.Context, msgs []message) (string, []message, err
 	}
 	// Out of steps: ask for an answer with what we have.
 	msgs = append(msgs, message{Role: "user", Content: "Stop calling tools. Give your answer now with the evidence you have."})
+	reply, err := a.llm.chat(ctx, msgs, nil)
+	a.logLLM(err)
+	if err != nil {
+		return "", msgs, err
+	}
+	reply.Role = "assistant"
+	return a.answerOnce(ctx, reply.Content, append(msgs, reply))
+}
+
+// answerOnce returns the answer, asking once more if it is empty. Reasoning models
+// sometimes spend the whole max_tokens budget thinking and return no text.
+func (a *agent) answerOnce(ctx context.Context, answer string, msgs []message) (string, []message, error) {
+	if strings.TrimSpace(answer) != "" {
+		return answer, msgs, nil
+	}
+	msgs = append(msgs, message{Role: "user", Content: "Your reply was empty. Answer now in a few short paragraphs, without calling tools and without long reasoning."})
 	reply, err := a.llm.chat(ctx, msgs, nil)
 	a.logLLM(err)
 	if err != nil {
@@ -164,7 +180,7 @@ func (a *agent) callTool(ctx context.Context, name, rawArgs string) string {
 	b, _ := json.Marshal(map[string]any{"untrusted": true, "data": out})
 	text := mask(string(b))
 	if len(text) > 24000 {
-		text = text[:24000] + `…(truncated; narrow the query)`
+		text = tools.Cut(text, 24000) + `(truncated; narrow the query)`
 	}
 	entry.OK = true
 	a.log.write(entry)

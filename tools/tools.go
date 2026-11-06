@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+	"unicode/utf8"
 )
 
 // Env is what tools need from the configuration.
@@ -68,4 +69,15 @@ func hoursAgo(h float64, def float64) time.Time {
 		h = def
 	}
 	return time.Now().Add(-time.Duration(h * float64(time.Hour)))
+}
+
+// Cut shortens s to at most n bytes without splitting a UTF-8 character, adding "…" when it cuts.
+func Cut(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n] + "…"
 }

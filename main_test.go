@@ -1,6 +1,9 @@
 package main
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -76,5 +79,22 @@ func TestIsLoopbackHost(t *testing.T) {
 		if isLoopbackHost(h) != want {
 			t.Errorf("isLoopbackHost(%q) != %v", h, want)
 		}
+	}
+}
+
+func TestAnswerOnceRetriesEmpty(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"ready"}}]}`))
+	}))
+	defer srv.Close()
+	a := &agent{llm: &llmClient{baseURL: srv.URL, http: srv.Client()}, log: newAuditLog(t.TempDir())}
+	got, _, err := a.answerOnce(context.Background(), "  ", nil)
+	if err != nil || got != "ready" || calls != 1 {
+		t.Errorf("answerOnce = %q, %v after %d calls", got, err, calls)
+	}
+	if got, _, _ := a.answerOnce(context.Background(), "done", nil); got != "done" || calls != 1 {
+		t.Errorf("answerOnce asked again for a non-empty answer")
 	}
 }

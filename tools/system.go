@@ -227,7 +227,7 @@ func Processes(all bool) []Proc {
 		cmd, _ := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
 		p.Cmdline = strings.TrimSpace(strings.ReplaceAll(string(cmd), "\x00", " "))
 		if len(p.Cmdline) > 300 {
-			p.Cmdline = p.Cmdline[:300] + "…"
+			p.Cmdline = Cut(p.Cmdline, 300)
 		}
 		if st, err := os.Stat(fmt.Sprintf("/proc/%d", pid)); err == nil {
 			p.Started = st.ModTime().Format(time.RFC3339)

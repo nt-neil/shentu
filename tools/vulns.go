@@ -258,10 +258,7 @@ func osRelease() map[string]string {
 
 func firstLine(s string, n int) string {
 	s, _, _ = strings.Cut(strings.TrimSpace(s), "\n")
-	if len(s) > n {
-		s = s[:n] + "…"
-	}
-	return s
+	return Cut(s, n)
 }
 
 func postJSON(ctx context.Context, hc *http.Client, url string, body, out any) error {

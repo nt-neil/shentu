@@ -52,10 +52,14 @@ type llmClient struct {
 }
 
 func newLLM(c *Config) *llmClient {
-	hc := &http.Client{Timeout: dur(c.LLM.Timeout)}
+	// Every connection goes through localDialer, which checks the owner of the listener
+	// whenever the address it actually connected to is on this machine.
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	tr.DialContext = localDialer
 	if u, err := url.Parse(c.LLM.BaseURL); err == nil && isLoopbackHost(u.Hostname()) {
-		hc.Transport = &http.Transport{DialContext: localDialer, Proxy: nil}
+		tr.Proxy = nil
 	}
+	hc := &http.Client{Timeout: dur(c.LLM.Timeout), Transport: tr}
 	return &llmClient{baseURL: c.LLM.BaseURL, model: c.LLM.Model, apiKey: c.apiKey(), maxTokens: c.LLM.MaxTokens, http: hc}
 }
 
@@ -113,15 +117,13 @@ func (l *llmClient) chat(ctx context.Context, msgs []message, tools []toolDef) (
 }
 
 func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "…"
+	return tools.Cut(s, n)
 }
 
-// localDialer is used for endpoints on this machine. After connecting it looks up
-// who owns the server side of that exact connection and hangs up unless it is
-// root or the ollama account. Otherwise any local user could bind the port while
+// localDialer is used for every LLM connection. When the connected address is on
+// this machine (loopback or one of its own addresses, whatever the host name said),
+// it looks up who owns the server side of that exact connection and hangs up unless
+// it is root or the ollama account. Otherwise any local user could bind the port while
 // Ollama is down and impersonate the model. Checking the connected socket itself
 // leaves no gap between check and use.
 func localDialer(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -135,6 +137,9 @@ func localDialer(ctx context.Context, network, addr string) (net.Conn, error) {
 		conn.Close()
 		return nil, fmt.Errorf("local LLM: not a TCP connection")
 	}
+	if !isLocalIP(remote.IP) {
+		return conn, nil
+	}
 	uid, found := tools.PeerUID(local, remote)
 	allowed := uid == "0"
 	if ou, ok := tools.UIDOf("ollama"); ok && uid == ou {
@@ -145,6 +150,19 @@ func localDialer(ctx context.Context, network, addr string) (net.Conn, error) {
 		return nil, fmt.Errorf("refusing the local LLM at %s: its listener is owned by uid %q, not root or ollama", addr, uid)
 	}
 	return conn, nil
+}
+
+func isLocalIP(ip net.IP) bool {
+	if ip.IsLoopback() || ip.IsUnspecified() {
+		return true
+	}
+	addrs, _ := net.InterfaceAddrs()
+	for _, a := range addrs {
+		if n, ok := a.(*net.IPNet); ok && n.IP.Equal(ip) {
+			return true
+		}
+	}
+	return false
 }
 
 func isLoopbackHost(host string) bool {

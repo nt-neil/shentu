@@ -66,6 +66,12 @@ sudo shentu chat
 sudo systemctl enable --now shentu-patrol.timer shentu-daily.timer
 ```
 
+To read the script before running it, download it first:
+`curl -fsSLO https://github.com/nt-neil/shentu/releases/latest/download/install.sh`, then
+`sudo sh install.sh`. The script checks the archive against `checksums.txt`. Every release file
+also carries a signed build provenance, which you can check with the GitHub CLI:
+`gh attestation verify shentu_linux_amd64.tar.gz --repo nt-neil/shentu`.
+
 `.deb` and `.rpm` packages are also attached to each release. Supported systems
 (systemd is required for the patrol timers): Ubuntu 22.04 and 24.04, Debian 12, Rocky and Alma 9,
 on amd64 and arm64. Tested end to end on Ubuntu 24.04 arm64.
@@ -91,8 +97,8 @@ largest of `qwen2.5:3b`/`7b`/`14b` that fits in memory. `--model` picks another 
   every control action shows the exact command and waits for `y`.
 - **Secrets are masked** before anything reaches the model or the log: private keys, cloud and API
   tokens, JWTs and `password=` values.
-- **Self-lockout guards**: `block_ip` refuses loopback, the server's own addresses and the IPs of
-  active SSH sessions. Every block has a time limit.
+- **Self-lockout guards**: `block_ip` refuses loopback, the server's own addresses, its default
+  gateway and DNS servers, and the IPs of active SSH sessions. Every block has a time limit.
 - **No listening ports, no daemon, no database.** Every tool call and model call is
   recorded in `/var/lib/shentu/log.jsonl`.
 - **Small attack surface**: one third-party dependency (a TOML parser), and everything else is the
