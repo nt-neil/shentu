@@ -8,7 +8,7 @@ state_dir = "/var/lib/shentu"   # state.json and log.jsonl (every tool call)
 # Any OpenAI-compatible chat/completions endpoint with tool calling.
 base_url = "http://127.0.0.1:11434/v1"    # Ollama (fully local)
 model    = "qwen2.5:7b"
-# base_url = "https://api.openai.com/v1"     model = "gpt-4.1-mini"   api_key_env = "OPENAI_API_KEY"
+# base_url = "https://api.openai.com/v1"     model = "gpt-6-luna"     api_key_env = "OPENAI_API_KEY"
 # base_url = "https://api.anthropic.com/v1"  model = "claude-sonnet-5-5" api_key_env = "ANTHROPIC_API_KEY"
 api_key_env = ""
 max_steps = 10

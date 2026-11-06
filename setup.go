@@ -28,7 +28,7 @@ type provider struct {
 
 var providers = []provider{
 	{"anthropic", "https://api.anthropic.com/v1", "claude-haiku-5-5", "ANTHROPIC_API_KEY"},
-	{"openai", "https://api.openai.com/v1", "gpt-4.1-mini", "OPENAI_API_KEY"},
+	{"openai", "https://api.openai.com/v1", "gpt-6-luna", "OPENAI_API_KEY"},
 	{"openrouter", "https://openrouter.ai/api/v1", "anthropic/claude-haiku-5-5", "OPENROUTER_API_KEY"},
 }
 
