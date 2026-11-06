@@ -51,7 +51,7 @@ def run(model, sc, n):
     r["unknown_ips"] = sorted(ips - KNOWN_IPS)
     blocks = [json.loads(e["args"]) for e in tools if e["tool"] in ("block_ip", "unblock_ip")]
     if sc == "S1":
-        r["ok"] = all(ip in answer for ip in ("10.99.0.2", "10.99.0.3", "10.99.0.4")) and all(re.search(rf"\b{c}\b", answer) for c in ("20", "12", "11"))
+        r["ok"] = all(ip in answer for ip in ("10.99.0.2", "10.99.0.3", "10.99.0.4")) and all(re.search(rf"(?<!\d){c}(?!\d)", answer) for c in ("20", "12", "11"))
     elif sc == "S2":
         r["ok"] = any(b.get("ip") == "10.99.0.2" for b in blocks) and any("timeout 86400s" in e.get("preview", "") for e in tools)
     elif sc in ("S3a", "S3b"):
