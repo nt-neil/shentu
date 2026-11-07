@@ -220,9 +220,10 @@ func (w *wiz) telegram(ctx context.Context, in *bufio.Reader) (string, error) {
 	if err := tg.call(ctx, "getMe", nil, &me); err != nil {
 		return "", err
 	}
-	code := randomHex(8) // 64 bits, valid 10 minutes, and root still confirms the user
-	fmt.Printf(w.t("\nOn your phone, open this link and press Start (valid 10 minutes):\n\n    https://t.me/%s?start=%s\n\nWaiting…\n",
-		"\n請用手機打開這個連結，按「開始」（10 分鐘內有效）：\n\n    https://t.me/%s?start=%s\n\n等待中…\n"), me.Username, code)
+	code := typedCode() // 8 characters, valid 10 minutes, and root still confirms the user
+	fmt.Printf(w.t("\nIn Telegram on your phone, search for @%s, open the chat and send this code (valid 10 minutes):\n\n    %s\n\n(With Telegram on this computer you can open https://t.me/%s?start=%s instead.)\nWaiting…\n",
+		"\n請在手機的 Telegram 搜尋 @%s，打開對話，傳送這組代碼（10 分鐘內有效）：\n\n    %s\n\n（這台電腦有裝 Telegram 的話，也可以直接打開 https://t.me/%s?start=%s）\n等待中…\n"),
+		me.Username, code[:4]+"-"+code[4:], me.Username, code)
 	chat, who, err := waitForStart(ctx, tg, code, 10*time.Minute)
 	if err != nil {
 		return "", err
@@ -264,7 +265,7 @@ func waitForStart(ctx context.Context, tg *telegramClient, code string, limit ti
 		for _, u := range ups {
 			offset = u.UpdateID + 1
 			m := u.Message
-			if m == nil || m.From == nil || m.From.IsBot || m.Chat.Type != "private" || strings.TrimSpace(m.Text) != "/start "+code {
+			if m == nil || m.From == nil || m.From.IsBot || m.Chat.Type != "private" || !codeMatches(m.Text, code) {
 				continue
 			}
 			tg.call(ctx, "getUpdates", map[string]any{"offset": offset, "timeout": 0}, nil) // confirm
@@ -279,6 +280,27 @@ func waitForStart(ctx context.Context, tg *telegramClient, code string, limit ti
 		}
 	}
 	return 0, "", errors.New("nobody pressed Start within 10 minutes")
+}
+
+// typedCode is easy to type on a phone: 8 characters without 0/O or 1/I (40 bits).
+func typedCode() string {
+	const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	for i := range b {
+		b[i] = alphabet[int(b[i])%len(alphabet)] // 256 is a multiple of 32: no bias
+	}
+	return string(b)
+}
+
+// codeMatches accepts the code typed by hand (any case, with or without the dash or
+// spaces) or sent by the start link ("/start CODE").
+func codeMatches(text, code string) bool {
+	t := strings.TrimPrefix(strings.TrimSpace(text), "/start")
+	t = strings.ToUpper(strings.NewReplacer("-", "", " ", "").Replace(t))
+	return t == code
 }
 
 type telegramClient struct {

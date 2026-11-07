@@ -25,18 +25,23 @@ func TestWaitForStart(t *testing.T) {
 		}
 		served = true
 		w.Write([]byte(`{"ok":true,"result":[
-			{"update_id":1,"message":{"text":"/start abcd1234","chat":{"id":-5,"type":"group"},"from":{"username":"g"}}},
+			{"update_id":1,"message":{"text":"/start ABCD2345","chat":{"id":-5,"type":"group"},"from":{"username":"g"}}},
 			{"update_id":2,"message":{"text":"/start wrong","chat":{"id":6,"type":"private"},"from":{"username":"x"}}},
-			{"update_id":3,"message":{"text":"/start abcd1234","chat":{"id":7,"type":"private"},"from":{"is_bot":true,"username":"b"}}},
-			{"update_id":4,"message":{"text":"/start abcd1234","chat":{"id":8,"type":"private"},"from":{"username":"owner"}}}]}`))
+			{"update_id":3,"message":{"text":"/start ABCD2345","chat":{"id":7,"type":"private"},"from":{"is_bot":true,"username":"b"}}},
+			{"update_id":4,"message":{"text":"/start ABCD2345","chat":{"id":8,"type":"private"},"from":{"username":"owner"}}}]}`))
 	}))
 	defer srv.Close()
 	tg := &telegramClient{api: srv.URL, token: "1:T", hc: srv.Client()}
-	chat, who, err := waitForStart(context.Background(), tg, "abcd1234", 5*time.Second)
+	for text, want := range map[string]bool{"ABCD2345": true, "abcd-2345": true, " /start ABCD2345": true, "abcd 2345": true, "ABCD234": false, "/start": false} {
+		if codeMatches(text, "ABCD2345") != want {
+			t.Errorf("codeMatches(%q) != %v", text, want)
+		}
+	}
+	chat, who, err := waitForStart(context.Background(), tg, "ABCD2345", 5*time.Second)
 	if err != nil || chat != 8 || who != "@owner" {
 		t.Errorf("waitForStart = %d %q %v, want 8 @owner", chat, who, err)
 	}
-	if _, _, err := waitForStart(context.Background(), tg, "abcd1234", 1500*time.Millisecond); err == nil {
+	if _, _, err := waitForStart(context.Background(), tg, "ABCD2345", 1500*time.Millisecond); err == nil {
 		t.Errorf("no matching /start must time out")
 	}
 }
