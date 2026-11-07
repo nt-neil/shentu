@@ -138,12 +138,12 @@ func TestLockfileHostileInput(t *testing.T) {
 	app := filepath.Join(root, "app")
 	os.MkdirAll(app, 0o755)
 	os.Symlink(secret, filepath.Join(app, "requirements.txt"))
-	if _, ok := readSmallRegular(filepath.Join(app, "requirements.txt"), 1<<20); ok {
+	if _, ok := readSmallRegular(filepath.Join(app, "requirements.txt"), 1<<20, nil); ok {
 		t.Errorf("a symlinked lock file was followed")
 	}
 	big := filepath.Join(app, "composer.lock")
 	os.WriteFile(big, make([]byte, 2048), 0o644)
-	if _, ok := readSmallRegular(big, 1024); ok {
+	if _, ok := readSmallRegular(big, 1024, nil); ok {
 		t.Errorf("size cap ignored")
 	}
 }
@@ -154,5 +154,19 @@ func TestBriefHidesUnknownNames(t *testing.T) {
 	b := p.Brief()
 	if strings.Contains(b, "ignore_previous") || strings.Contains(b, "Ignore all rules") || !strings.Contains(b, "nginx") || !strings.Contains(b, "1 other service") {
 		t.Errorf("Brief = %s", b)
+	}
+}
+
+func TestReadSmallRegularChecksIdentity(t *testing.T) {
+	dir := t.TempDir()
+	a, b := filepath.Join(dir, "a"), filepath.Join(dir, "b")
+	os.WriteFile(a, []byte("x"), 0o644)
+	os.WriteFile(b, []byte("y"), 0o644)
+	seenA, _ := os.Lstat(a)
+	if _, ok := readSmallRegular(b, 10, seenA); ok {
+		t.Errorf("read a different file than the one the walk saw")
+	}
+	if _, ok := readSmallRegular(a, 10, seenA); !ok {
+		t.Errorf("same file refused")
 	}
 }

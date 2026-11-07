@@ -90,7 +90,11 @@ func FindLockfiles(roots []string) []Lockfile {
 			if !ok || !d.Type().IsRegular() {
 				return nil
 			}
-			b, ok := readSmallRegular(p, 20<<20)
+			seen, err := d.Info() // lstat from the walk
+			if err != nil {
+				return nil
+			}
+			b, ok := readSmallRegular(p, 20<<20, seen)
 			if !ok {
 				return nil
 			}
@@ -106,14 +110,16 @@ func FindLockfiles(roots []string) []Lockfile {
 
 // readSmallRegular reads a file that app users may control: it does not follow a
 // symlink swapped in after the walk, checks the open file itself, and reads at most max.
-func readSmallRegular(p string, max int64) ([]byte, bool) {
+// When seen is set, the opened file must be the same file the walk saw, so a parent
+// folder swapped for a symlink in between cannot redirect the read.
+func readSmallRegular(p string, max int64, seen os.FileInfo) ([]byte, bool) {
 	f, err := os.OpenFile(p, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return nil, false
 	}
 	defer f.Close()
 	st, err := f.Stat()
-	if err != nil || !st.Mode().IsRegular() || st.Size() > max {
+	if err != nil || !st.Mode().IsRegular() || st.Size() > max || (seen != nil && !os.SameFile(seen, st)) {
 		return nil, false
 	}
 	b, err := io.ReadAll(io.LimitReader(f, max+1))
