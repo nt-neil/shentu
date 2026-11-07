@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"net/http"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"syscall"
 
 	"github.com/BurntSushi/toml"
 )
@@ -88,15 +90,11 @@ func FindLockfiles(roots []string) []Lockfile {
 			if !ok || !d.Type().IsRegular() {
 				return nil
 			}
-			info, err := d.Info()
-			if err != nil || info.Size() > 20<<20 {
+			b, ok := readSmallRegular(p, 20<<20)
+			if !ok {
 				return nil
 			}
-			b, err := os.ReadFile(p)
-			if err != nil {
-				return nil
-			}
-			out = append(out, Lockfile{Path: p, Ecosystem: lp.eco, pkgs: uniq(lp.parse(b))})
+			out = append(out, Lockfile{Path: p, Ecosystem: lp.eco, pkgs: uniq(safeParse(lp.parse, b))})
 			if len(out) >= 100 {
 				return filepath.SkipAll
 			}
@@ -104,6 +102,35 @@ func FindLockfiles(roots []string) []Lockfile {
 		})
 	}
 	return out
+}
+
+// readSmallRegular reads a file that app users may control: it does not follow a
+// symlink swapped in after the walk, checks the open file itself, and reads at most max.
+func readSmallRegular(p string, max int64) ([]byte, bool) {
+	f, err := os.OpenFile(p, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return nil, false
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil || !st.Mode().IsRegular() || st.Size() > max {
+		return nil, false
+	}
+	b, err := io.ReadAll(io.LimitReader(f, max+1))
+	if err != nil || int64(len(b)) > max {
+		return nil, false
+	}
+	return b, true
+}
+
+// safeParse keeps one malformed lock file from stopping the scan or the patrol.
+func safeParse(parse func([]byte) []pkg, b []byte) (out []pkg) {
+	defer func() {
+		if recover() != nil {
+			out = nil
+		}
+	}()
+	return parse(b)
 }
 
 // AppHit is a vulnerable dependency in a lock file.
@@ -211,11 +238,11 @@ func parseNpmLock(b []byte) []pkg {
 		if k == "" || v.Version == "" {
 			continue
 		}
-		name := k[strings.LastIndex(k, "node_modules/")+len("node_modules/"):]
-		if strings.LastIndex(k, "node_modules/") < 0 {
+		i := strings.LastIndex(k, "node_modules/")
+		if i < 0 {
 			continue // a workspace folder, not an installed package
 		}
-		out = append(out, pkg{name, v.Version})
+		out = append(out, pkg{k[i+len("node_modules/"):], v.Version})
 	}
 	if len(l.Packages) == 0 { // lockfileVersion 1
 		var walk func(map[string]json.RawMessage)

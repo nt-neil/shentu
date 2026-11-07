@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -279,21 +280,29 @@ func cronFiles() []string {
 	return out
 }
 
+var safeName = regexp.MustCompile(`^[a-z_][a-z0-9_.-]{0,31}$`)
+
 // Brief is a short text version of the profile for the model's system prompt.
 func (p SiteProfile) Brief() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "OS: %s, kernel %s. Firewall: %s.\n", p.OS, p.Kernel, p.Firewall)
+	// Process names can be chosen by anyone who runs a program, so only names from the
+	// known roles table reach the prompt; the rest are counted.
 	b.WriteString("Services:")
-	for i, s := range p.Services {
-		if i >= 25 {
-			b.WriteString(" …")
-			break
+	other := 0
+	for _, s := range p.Services {
+		if _, known := roles[s.Name]; !known && s.Name != "php-fpm" {
+			other++
+			continue
 		}
 		where := "local only"
 		if s.Public {
 			where = "network"
 		}
 		fmt.Fprintf(&b, " %s (%s, %s);", s.Name, s.Role, where)
+	}
+	if other > 0 {
+		fmt.Fprintf(&b, " %d other service(s), see site_profile;", other)
 	}
 	if len(p.Stacks) > 0 {
 		fmt.Fprintf(&b, "\nApp stacks: %s.", strings.Join(p.Stacks, ", "))
@@ -302,7 +311,13 @@ func (p SiteProfile) Brief() string {
 	if len(p.Containers) > 0 {
 		fmt.Fprintf(&b, "\nContainers: %s.", strings.Join(p.Containers, ", "))
 	}
-	fmt.Fprintf(&b, "\nLogin accounts: %s.", strings.Join(p.LoginAccounts, ", "))
+	var accounts []string
+	for _, a := range p.LoginAccounts {
+		if safeName.MatchString(a) {
+			accounts = append(accounts, a)
+		}
+	}
+	fmt.Fprintf(&b, "\nLogin accounts: %s.", strings.Join(accounts, ", "))
 	return b.String()
 }
 

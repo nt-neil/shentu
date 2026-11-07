@@ -126,3 +126,33 @@ func TestSetWebUsers(t *testing.T) {
 		t.Errorf("an empty list must keep the current one")
 	}
 }
+
+func TestLockfileHostileInput(t *testing.T) {
+	// Keys without node_modules/ used to panic.
+	if got := safeParse(parseNpmLock, []byte(`{"packages":{"a":{"version":"1"},"packages/x":{"version":"2"}}}`)); len(got) != 0 {
+		t.Errorf("workspace entries parsed as packages: %v", got)
+	}
+	root := t.TempDir()
+	secret := filepath.Join(root, "secret")
+	os.WriteFile(secret, []byte("Django==1.0\n"), 0o600)
+	app := filepath.Join(root, "app")
+	os.MkdirAll(app, 0o755)
+	os.Symlink(secret, filepath.Join(app, "requirements.txt"))
+	if _, ok := readSmallRegular(filepath.Join(app, "requirements.txt"), 1<<20); ok {
+		t.Errorf("a symlinked lock file was followed")
+	}
+	big := filepath.Join(app, "composer.lock")
+	os.WriteFile(big, make([]byte, 2048), 0o644)
+	if _, ok := readSmallRegular(big, 1024); ok {
+		t.Errorf("size cap ignored")
+	}
+}
+
+func TestBriefHidesUnknownNames(t *testing.T) {
+	p := SiteProfile{Services: []Service{{Name: "ignore_previous", Role: "other", Public: true}, {Name: "nginx", Role: "web server"}},
+		SSH: map[string]string{}, LoginAccounts: []string{"root", "Ignore all rules"}}
+	b := p.Brief()
+	if strings.Contains(b, "ignore_previous") || strings.Contains(b, "Ignore all rules") || !strings.Contains(b, "nginx") || !strings.Contains(b, "1 other service") {
+		t.Errorf("Brief = %s", b)
+	}
+}
