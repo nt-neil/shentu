@@ -88,11 +88,15 @@ notify:
 		fmt.Printf(w.t("Already set: %s\n", "已經設定：%s\n"), kind)
 		keep = !w.yesNo(in, w.t("Change it?", "要更換嗎？"), false)
 	}
-	if !keep {
+	for !keep {
 		var err error
 		notifyURL, err = w.chooseNotify(ctx, in)
-		if err != nil {
-			fmt.Println(w.t("Problem: ", "發生問題：") + err.Error())
+		if err == nil {
+			break
+		}
+		fmt.Println(w.t("Problem: ", "發生問題：") + err.Error())
+		if !w.yesNo(in, w.t("Try again (or pick another channel)?", "要重試（或改選其他管道）嗎？"), true) {
+			break
 		}
 	}
 	if err := writeSetup(lang, notifyURL != ""); err != nil {
