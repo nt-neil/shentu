@@ -66,6 +66,9 @@ sudo shentu chat
 sudo systemctl enable --now shentu-patrol.timer shentu-daily.timer
 ```
 
+Step by step, with notify setup and troubleshooting: [Getting started](docs/getting-started.md)
+([繁體中文](docs/getting-started.zh-TW.md)).
+
 To read the script before running it, download it first:
 `curl -fsSLO https://github.com/nt-neil/shentu/releases/latest/download/install.sh`, then
 `sudo sh install.sh`. The script checks the archive against `checksums.txt`. Every release file

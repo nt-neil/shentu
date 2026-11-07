@@ -1,0 +1,154 @@
+# Getting started
+
+From a fresh server to daily reports in about ten minutes. [繁體中文版](getting-started.zh-TW.md)
+
+## 0. Check the server
+
+- Linux on amd64 or arm64. Tested end to end on Ubuntu 24.04, Debian 12 and Rocky 9; Ubuntu 22.04
+  and Alma 9 are also supported.
+- Root access (sudo) and systemd (for the patrol timers).
+- `block_ip` needs nftables, which many cloud images leave out:
+
+  ```sh
+  sudo apt install nftables     # Ubuntu, Debian
+  sudo dnf install nftables     # Rocky, Alma
+  ```
+
+- An LLM: an API key (Anthropic, OpenAI, OpenRouter or AppleToken), or a local model. A local
+  model needs about 4 GB of memory for the smallest one, and nothing leaves the server.
+
+## 1. Install
+
+```sh
+curl -fsSL https://github.com/nt-neil/shentu/releases/latest/download/install.sh | sudo sh
+```
+
+The script:
+
+- checks the download against `checksums.txt`;
+- installs `/usr/local/bin/shentu`, plus a `/usr/bin/shentu` link so that `sudo shentu` works on
+  RHEL-family systems;
+- creates `/etc/shentu/shentu.toml` and the root-only secrets file `/etc/shentu/env`;
+- installs the systemd timers without enabling them.
+
+To read the script first, download it with `curl -fsSLO …/install.sh`, read it, then run
+`sudo sh install.sh`. `.deb` and `.rpm` packages are attached to every release as well.
+Check the install:
+
+```sh
+sudo shentu version
+```
+
+## 2. Choose the LLM
+
+```sh
+sudo shentu setup
+```
+
+| Choice | What happens |
+|---|---|
+| 1. Local model | Installs Ollama with its official script, then downloads the largest of `qwen2.5:3b`/`7b`/`14b` that fits in memory |
+| 2. Anthropic | Asks for the API key; default `claude-haiku-5-5` |
+| 3. OpenAI | Asks for the API key; default `gpt-6-luna` |
+| 4. OpenRouter | Asks for the API key; default `anthropic/claude-haiku-5-5` |
+| 5. AppleToken | Asks for the API key; default `grok-4-1-fast-reasoning` |
+
+Setup writes `/etc/shentu/llm.toml`, stores the key in `/etc/shentu/env` (mode 600) and calls the
+model once. `OK` means it is ready. Without the menu:
+
+```sh
+sudo SHENTU_API_KEY=<your key> shentu setup --provider appletoken
+sudo shentu setup --local --model qwen2.5:3b
+```
+
+`--model` picks another model. [Choosing a model](models.md) compares 12 of them on accuracy,
+prompt-injection resistance, speed and cost.
+
+## 3. Set the notify channel
+
+Webhook URLs and tokens are secrets. Put them in `/etc/shentu/env` and refer to them from the config:
+
+```sh
+# /etc/shentu/env
+NOTIFY_URL=https://hooks.slack.com/services/XXX/YYY/ZZZ
+```
+
+```toml
+# /etc/shentu/shentu.toml
+[notify]
+url = "${NOTIFY_URL}"
+```
+
+| Channel | URL |
+|---|---|
+| Telegram | `telegram://<bot token>@telegram?chats=<chat id>[,<chat id>]` |
+| Slack | `https://hooks.slack.com/services/…` (incoming webhook) |
+| Discord | `https://discord.com/api/webhooks/…` |
+| ntfy | `ntfy://ntfy.sh/<your topic>[?token=<token>]` |
+| Webhook | `https://…`: JSON, signed with `SHENTU_WEBHOOK_SECRET` when it is set |
+
+Long reports are split into several messages. Other useful settings in `shentu.toml`:
+
+- `language = "繁體中文"` for answers and reports in another language;
+- `[tools] log_paths` and `watch_paths` for the logs and directories to watch;
+- `cert_targets = ["localhost:443"]` for certificate expiry checks.
+
+## 4. Try a report
+
+```sh
+sudo shentu patrol --daily --dry-run     # print only
+sudo shentu patrol --daily               # send it, and check that it arrives
+```
+
+## 5. Ask questions
+
+```sh
+sudo shentu chat
+> Did anyone try to brute-force SSH last night?
+> Do installed packages have known vulnerabilities?
+> Which ports are listening, and which programs own them?
+> Any suspicious processes?
+> Which files under /var/www changed recently?
+```
+
+`sudo shentu chat "When do my certificates expire?"` asks once and exits.
+
+To block an address, say "block 203.0.113.7 for 24 hours". Shentu shows the exact `nft` command and
+runs it only after you type `y`. Every block expires on its own, and "unblock 203.0.113.7" removes
+it early.
+
+## 6. Turn on patrols
+
+```sh
+sudo systemctl enable --now shentu-patrol.timer shentu-daily.timer
+systemctl list-timers 'shentu*'
+```
+
+- `shentu-patrol` runs the checks every 30 minutes and notifies only about new findings. The same
+  alert is not repeated within 24 hours.
+- `shentu-daily` sends a report every morning.
+- If the LLM is down, the raw findings are still sent.
+
+## Day to day
+
+- Every tool call and model call is logged in `/var/lib/shentu/log.jsonl`.
+- To change the model, run `sudo shentu setup` again or edit `/etc/shentu/llm.toml`.
+- To add your own playbook, put it in `/etc/shentu/skills/<name>/SKILL.md`.
+
+## Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| `sudo: shentu: command not found` | Install again with the latest `install.sh`, or run `sudo /usr/local/bin/shentu` |
+| A block fails with "nft not found" | Install nftables (step 0) |
+| `LLM unavailable` in a report | Check the key and the network; for a local model, `systemctl status ollama` |
+| Patrol says `notify failed` | Check the URL in `/etc/shentu/env`; findings are kept and sent next time |
+
+## What Shentu will and will not do
+
+- It never changes the system without your `y`. It also refuses to block loopback, the server's own
+  addresses, its gateway and DNS servers, and the addresses of active SSH sessions.
+- Passwords, keys and tokens are masked before anything goes to the model. Log lines still go to the
+  model you chose; use a local model if no data may leave the server.
+- Logs can contain text written by an attacker. Small local models are easier to fool, which is why
+  control actions are also guarded in code and always need confirmation.
