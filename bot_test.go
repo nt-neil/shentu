@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -351,5 +352,31 @@ func TestBotLateAnswerDropped(t *testing.T) {
 		if strings.Contains(h.Content, "old user question") || strings.Contains(h.Content, "OLD-ANSWER") {
 			t.Errorf("the previous pairing's late answer landed in the new history")
 		}
+	}
+}
+
+// An empty final answer is asked again; a photo never reaches the model as an empty message.
+func TestBotEmptyAnswerAndPhoto(t *testing.T) {
+	model := &hostileModel{replies: []string{`{"role":"assistant","content":""}`, `{"role":"assistant","content":"ALL-GOOD"}`}}
+	b, tg := testBot(t, model, false)
+	pairDirectly(t, b)
+	b.handle(context.Background(), msg(pairedUser, pairedChat, "private", "how is it?"))
+	for i := 0; i < 100 && !strings.Contains(fmt.Sprint(tg.sent()), "ALL-GOOD"); i++ {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if !strings.Contains(fmt.Sprint(tg.sent()), "ALL-GOOD") {
+		t.Errorf("empty answer was not retried: %v", tg.sent())
+	}
+	b.mu.Lock()
+	b.busy = false
+	b.mu.Unlock()
+	n := model.count()
+	b.handle(context.Background(), msg(pairedUser, pairedChat, "private", "")) // photo with a caption: no text
+	time.Sleep(100 * time.Millisecond)
+	if model.count() != n {
+		t.Errorf("a message without text reached the model")
+	}
+	if s := fmt.Sprint(tg.sent()); !strings.Contains(s, "only read text") {
+		t.Errorf("no text-only reply: %v", s)
 	}
 }

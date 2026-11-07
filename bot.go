@@ -523,6 +523,10 @@ func (b *bot) handle(ctx context.Context, u tgUpdate) {
 		b.send(ctx, m.Chat.ID, b.t("new"), nil)
 		return
 	}
+	if text == "" { // a photo, sticker, voice note or file: the model only reads text
+		b.send(ctx, m.Chat.ID, b.t("text_only"), nil)
+		return
+	}
 	b.mu.Lock()
 	// A new pairing never sees the previous user's conversation.
 	if who := fmt.Sprintf("%d@%d", st.UserID, st.PairedAt.UnixNano()); b.histFor != who {
@@ -597,8 +601,17 @@ func (b *bot) answer(ctx context.Context, chat int64, text string) {
 	hist = append(hist, message{Role: "user", Content: text})
 	b.send(ctx, chat, "…", nil)
 	answer, msgs, err := a.run(ctx, hist)
+	if err == nil && strings.TrimSpace(answer) == "" { // reasoning models sometimes end with no text: ask once more
+		answer, msgs, err = a.run(ctx, hist)
+		if err == nil && strings.TrimSpace(answer) == "" {
+			err = errNoAnswer
+		}
+	}
 	if err != nil {
-		b.send(ctx, chat, b.t("error")+mask(err.Error()), nil)
+		// The full error is in the audit log; the chat gets its first part only
+		// (an LLM error body can echo the whole prompt).
+		short, _, _ := strings.Cut(err.Error(), ": {")
+		b.send(ctx, chat, b.t("error")+tools.Cut(mask(short), 200)+b.t("error_hint"), nil)
 		return
 	}
 	answer = strings.TrimSpace(answer)
@@ -780,6 +793,8 @@ var botText = map[string][2]string{ // English, Chinese
 	"new":            {"OK, new conversation.", "好，開始新的對話。"},
 	"busy":           {"Still working on the previous question.", "上一個問題還在處理中，請稍候。"},
 	"error":          {"Error: ", "發生錯誤："},
+	"error_hint":     {"\nPlease ask again. Details are in the log on the server.", "\n請再問一次；詳細內容記在伺服器的紀錄裡。"},
+	"text_only":      {"I can only read text messages for now; photos, voice notes and files are not supported.", "我目前只看得懂文字訊息，圖片、語音和檔案還不支援，請改用文字問我。"},
 	"run":            {"✅ Run", "✅ 執行"},
 	"cancel":         {"❌ Cancel", "❌ 取消"},
 	"confirm":        {"⚠️ %s wants to run:\n%s\n\nValid for 5 minutes.", "⚠️ %s 要執行：\n%s\n\n5 分鐘內有效。"},
