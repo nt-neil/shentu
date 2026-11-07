@@ -260,7 +260,7 @@ func botPair(ctx context.Context, cfg *Config, env *tools.Env, audit *auditLog, 
 			// Tell the user in Telegram too; their last message there was "code accepted".
 			if token := botToken(cfg); token != "" {
 				b := &bot{cfg: cfg, token: token, api: telegramBotAPI, hc: &http.Client{Timeout: 30 * time.Second}}
-				b.send(ctx, p.ChatID, b.t("paired"), nil)
+				b.send(ctx, p.ChatID, welcome(botLevels(cfg), b.zh()), nil)
 			}
 			return nil
 		}
@@ -777,7 +777,6 @@ func (b *bot) deleteDue(ctx context.Context) {
 
 var botText = map[string][2]string{ // English, Chinese
 	"accepted":       {"Code accepted. Approve the request on the server terminal to finish pairing.", "已收到配對碼。請在伺服器終端機核准這個要求，才會完成配對。"},
-	"paired":         {"✅ Paired. Ask me anything about this server. /new starts a fresh conversation.", "✅ 配對完成，可以開始提問了。傳 /new 可以開始新的對話。"},
 	"new":            {"OK, new conversation.", "好，開始新的對話。"},
 	"busy":           {"Still working on the previous question.", "上一個問題還在處理中，請稍候。"},
 	"error":          {"Error: ", "發生錯誤："},
@@ -796,7 +795,8 @@ var botText = map[string][2]string{ // English, Chinese
 	"paused_hint":    {"Resume on the server: sudo shentu bot resume", "要恢復請到伺服器執行：sudo shentu bot resume"},
 	"leak_title":     {"Bot token may be leaked", "bot token 可能外洩"},
 	"leak_body":      {"Another program is reading this bot's messages. Revoke the token in @BotFather.", "有其他程式在讀這個 bot 的訊息。請到 @BotFather 撤銷並更換 token。"},
-	"levels_changed": {"Telegram bot levels changed", "Telegram bot 等級已變更"},
+	"levels_changed": {"Telegram bot settings changed", "Telegram bot 的設定改了"},
+	"levels_now":     {"From now on:", "從現在起："},
 	"levels_hint":    {"If you did not change this, check who can log in to the server.", "如果不是你改的，請檢查有誰能登入這台伺服器。"},
 }
 

@@ -50,32 +50,92 @@ func describeLevels(l [4]int, zh bool) string {
 	return b.String()
 }
 
+// levelSentences says what each level means for the person in the chat, in plain words.
+var levelSentences = [4][4][2]string{
+	{{"You will get reports and alerts here.", "這裡會收到報告和告警。"},
+		{"You can ask me questions; I will not change anything on the server.", "你可以直接問我問題，我不會改動伺服器上的任何東西。"},
+		{"You can ask me questions, and ask me to block or unblock an IP.", "你可以直接問我問題，也可以請我封鎖或解除封鎖某個 IP。"},
+		{"You can ask me questions and use every control tool.", "你可以直接問我問題，也可以使用所有控制功能。"}},
+	{{"My answers only say whether something is wrong, so little is left in this chat.", "我的回答只說有沒有問題，聊天室裡留下的資訊最少。"},
+		{"My answers are short summaries with advice, without raw logs.", "我的回答是重點摘要和建議，不附原始紀錄。"},
+		{"My answers are as detailed as on the server, and deleted after 24 hours.", "我的回答會跟在伺服器上一樣詳細，24 小時後自動刪除。"},
+		{"My answers are as detailed as on the server, and kept in this chat.", "我的回答會跟在伺服器上一樣詳細，並保留在聊天室。"}},
+	{{"Before I change anything, someone must approve it on the server.", "要動手的操作，必須到伺服器上核准才會執行。"},
+		{"Before I change anything, press ✅ and type the code from your authenticator app.", "要動手的操作，按 ✅ 之後還要輸入驗證器的動態密碼才會執行。"},
+		{"Before I change anything, I ask you; it runs when you press ✅.", "要動手的操作，我會先問你，按 ✅ 才會執行。"},
+		{"⚠️ Actions run right away, without asking you.", "⚠️ 要動手的操作會直接執行，不會先問你。"}},
+	{{"If someone else uses this bot's token, I stop at once. I reply only 08:00–20:00, at most 50 times a day.", "如果發現有別人在用這個 bot 的 token，我會立刻暫停。我只在 08:00–20:00 回覆，每天最多 50 則。"},
+		{"If someone else uses this bot's token, I stop at once.", "如果發現有別人在用這個 bot 的 token，我會立刻暫停。"},
+		{"If someone else uses this bot's token, I alert you.", "如果發現有別人在用這個 bot 的 token，我會發告警給你。"},
+		{"I do not check whether someone else uses this bot's token.", "我不會檢查是否有別人在用這個 bot 的 token。"}},
+}
+
+// levelLines lists the ranges that matter at these levels, one sentence each.
+func levelLines(l [4]int, ranges []int, zh bool) string {
+	i := 0
+	if zh {
+		i = 1
+	}
+	var b strings.Builder
+	for _, r := range ranges {
+		if r == 2 && l[0] < 3 {
+			continue // nothing to confirm when the chat cannot act
+		}
+		b.WriteString("• " + levelSentences[r][l[r]-1][i] + "\n")
+	}
+	return b.String()
+}
+
+// welcome is the first message in the chat after pairing.
+func welcome(l [4]int, zh bool) string {
+	host, _ := os.Hostname()
+	if zh {
+		return "👋 你好，我是神荼，" + host + " 這台伺服器的保全。配對完成了，從現在起我會在這裡跟你回報。\n\n" +
+			levelLines(l, []int{0, 1, 2, 3}, true) +
+			"• 緊急時傳 /lockdown，我會立刻停止並解除配對。\n\n" +
+			"可以先試試問我：「這台伺服器現在狀況如何？」\n傳 /new 可以開始新的對話；要調整上面這些設定，請到伺服器執行 sudo shentu setup。"
+	}
+	return "👋 Hi, I am Shentu, the guard of " + host + ". We are paired; from now on I report to you here.\n\n" +
+		levelLines(l, []int{0, 1, 2, 3}, false) +
+		"• In an emergency send /lockdown and I stop and unpair at once.\n\n" +
+		"Try asking: \"How is this server doing?\"\n/new starts a fresh conversation; to change these settings, run sudo shentu setup on the server."
+}
+
 // noteLevelChanges compares the configured levels with the ones the service last
-// ran with, and reports every change (raises are warnings).
+// ran with, and reports every change (raises are warnings). On the first start it
+// sends the welcome instead.
 func (b *bot) noteLevelChanges(ctx context.Context) {
 	now := botLevels(b.cfg)
 	var before [4]int
+	var chat int64
 	withBotState(b.cfg.StateDir, func(s *botState) error {
-		before = s.Levels
+		before, chat = s.Levels, s.ChatID
 		s.Levels = now
 		return nil
 	})
-	if before == [4]int{} {
-		before = [4]int{1, 2, 2, 2} // first start: compare with the defaults
-	}
 	if before == now {
 		return
 	}
+	b.log.write(logEntry{Actor: "bot", Tool: "bot_levels", Args: fmt.Sprint(before, " -> ", now), OK: true})
+	if before == [4]int{} { // first start
+		if chat != 0 {
+			b.send(ctx, chat, welcome(now, b.zh()), nil)
+		}
+		return
+	}
 	raised := false // in every range a higher level is less strict
+	var changed []int
 	for r := range now {
 		raised = raised || now[r] > before[r]
+		if now[r] != before[r] {
+			changed = append(changed, r)
+		}
 	}
 	sev := "info"
 	if raised {
 		sev = "warning"
 	}
-	b.log.write(logEntry{Actor: "bot", Tool: "bot_levels", Args: fmt.Sprint(before, " -> ", now), OK: true})
-	tools.Notify(ctx, b.env, b.t("levels_changed"), describeLevels(now, b.zh())+b.t("levels_hint"), sev)
+	tools.Notify(ctx, b.env, b.t("levels_changed"), b.t("levels_now")+"\n"+levelLines(now, changed, b.zh())+"\n"+b.t("levels_hint"), sev)
 }
 
 // answerRule is added to the system prompt for answer levels 1 and 2; maxAnswer caps

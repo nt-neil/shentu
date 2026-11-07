@@ -252,3 +252,22 @@ func TestBotCodeFailuresPause(t *testing.T) {
 		t.Errorf("five wrong codes in total did not pause the bot (fails = %d)", st.CodeFails)
 	}
 }
+
+// The chat gets plain sentences, not level numbers; confirm is left out when the chat cannot act.
+func TestWelcomeIsPlain(t *testing.T) {
+	w := welcome([4]int{3, 2, 3, 2}, true)
+	for _, want := range []string{"封鎖或解除封鎖", "重點摘要", "按 ✅ 才會執行", "立刻暫停", "/lockdown"} {
+		if !strings.Contains(w, want) {
+			t.Errorf("welcome lacks %q:\n%s", want, w)
+		}
+	}
+	if strings.Contains(w, ": 3") || strings.Contains(w, "(") {
+		t.Errorf("welcome shows level numbers:\n%s", w)
+	}
+	if strings.Contains(welcome([4]int{2, 2, 3, 2}, true), "要動手的操作") {
+		t.Errorf("question-only chat is told about confirming actions")
+	}
+	if got := levelLines([4]int{3, 4, 3, 2}, []int{1}, false); strings.Count(got, "•") != 1 {
+		t.Errorf("change notice lists unchanged ranges: %q", got)
+	}
+}
