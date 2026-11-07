@@ -23,6 +23,10 @@ nfpms:
     formats: [deb, rpm]
     bindir: /usr/local/bin
     contents:
+      # RHEL-family sudo has no /usr/local/bin in secure_path.
+      - src: /usr/local/bin/shentu
+        dst: /usr/bin/shentu
+        type: symlink
       - src: packaging/shentu.toml
         dst: /etc/shentu/shentu.toml
         type: config|noreplace

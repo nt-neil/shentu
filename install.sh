@@ -34,6 +34,8 @@ main() {
 	fi
 
 	install -m 0755 "$SRC/shentu" /usr/local/bin/shentu
+	# RHEL-family sudo has no /usr/local/bin in secure_path, so `sudo shentu` would not be found.
+	[ -e /usr/bin/shentu ] || ln -s /usr/local/bin/shentu /usr/bin/shentu
 	install -d -m 0755 /etc/shentu
 	install -d -m 0700 /var/lib/shentu
 	[ -f /etc/shentu/shentu.toml ] || install -m 0644 "$SRC/packaging/shentu.toml" /etc/shentu/shentu.toml
@@ -42,6 +44,8 @@ main() {
 		install -m 0644 "$SRC/packaging/$u" "/etc/systemd/system/$u"
 	done
 	systemctl daemon-reload
+	command -v nft >/dev/null 2>&1 ||
+		echo "Note: nftables is not installed, so block_ip will not work. Install it with apt/dnf install nftables."
 
 	cat <<'MSG'
 Shentu installed.

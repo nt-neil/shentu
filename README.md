@@ -74,7 +74,8 @@ also carries a signed build provenance, which you can check with the GitHub CLI:
 
 `.deb` and `.rpm` packages are also attached to each release. Supported systems
 (systemd is required for the patrol timers): Ubuntu 22.04 and 24.04, Debian 12, Rocky and Alma 9,
-on amd64 and arm64. Tested end to end on Ubuntu 24.04 arm64.
+on amd64 and arm64. Tested end to end on Ubuntu 24.04, Debian 12 and Rocky 9 (arm64). `block_ip` needs
+nftables, which many cloud images leave out: `apt install nftables` or `dnf install nftables`.
 
 Not sure which model to use? [Choosing a model](docs/models.md) compares 12 models on the same
 planted intrusion: accuracy, prompt-injection resistance, speed and cost.

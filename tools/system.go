@@ -294,6 +294,7 @@ type Accounts struct {
 // AccountsAudit reads /etc/passwd, sudoers and authorized_keys.
 func AccountsAudit() Accounts {
 	var a Accounts
+	seenKeys := map[string]bool{}
 	b, _ := os.ReadFile("/etc/passwd")
 	for _, line := range strings.Split(string(b), "\n") {
 		f := strings.Split(line, ":")
@@ -309,6 +310,10 @@ func AccountsAudit() Accounts {
 		}
 		for _, name := range []string{"authorized_keys", "authorized_keys2"} {
 			p := filepath.Join(home, ".ssh", name)
+			if seenKeys[p] { // accounts can share a home (RHEL: operator uses /root)
+				continue
+			}
+			seenKeys[p] = true
 			if st, err := os.Stat(p); err == nil {
 				kb, _ := os.ReadFile(p)
 				n := 0
