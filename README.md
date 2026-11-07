@@ -108,6 +108,11 @@ largest of `qwen2.5:3b`/`7b`/`14b` that fits in memory. `--model` picks another 
   recorded in `/var/lib/shentu/log.jsonl`.
 - **Small attack surface**: one third-party dependency (a TOML parser), and everything else is the
   Go standard library.
+- **Guarantees are tests**: `invariants_test.go` plays a hostile model and checks each rule above
+  (no control tools in patrol, confirmation before every control action, lockout guards, log
+  allowlist, masking, the patrol sandbox, one dependency). A change that breaks one fails CI.
+  `injection_test.go` runs a real model against attacker-written log lines before each release,
+  and `govulncheck` blocks a release with a known reachable vulnerability.
 
 Report vulnerabilities as described in [SECURITY.md](SECURITY.md).
 
