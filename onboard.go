@@ -156,7 +156,7 @@ func (w *wiz) chooseNotify(ctx context.Context, in *bufio.Reader) (string, error
 	case "3":
 		u, err = w.webhook(in, "Discord", "https://discord.com/api/webhooks/")
 	case "4":
-		topic := "shentu-" + randomHex(6)
+		topic := "shentu-" + randomHex(16) // 128 bits: on ntfy.sh the topic name is the only secret
 		t := ask(in, fmt.Sprintf(w.t("ntfy topic (anyone who knows it can read it) [%s]: ", "ntfy 主題（知道名稱的人都能讀取）[%s]："), topic))
 		if t != "" {
 			topic = t
@@ -205,7 +205,7 @@ func (w *wiz) telegram(ctx context.Context, in *bufio.Reader) (string, error) {
 	if err := tg.call(ctx, "getMe", nil, &me); err != nil {
 		return "", err
 	}
-	code := randomHex(8)
+	code := randomHex(8) // 64 bits, valid 10 minutes, and root still confirms the user
 	fmt.Printf(w.t("\nOn your phone, open this link and press Start (valid 10 minutes):\n\n    https://t.me/%s?start=%s\n\nWaiting…\n",
 		"\n請用手機打開這個連結，按「開始」（10 分鐘內有效）：\n\n    https://t.me/%s?start=%s\n\n等待中…\n"), me.Username, code)
 	chat, who, err := waitForStart(ctx, tg, code, 10*time.Minute)
@@ -305,9 +305,12 @@ func (t *telegramClient) call(ctx context.Context, method string, payload, out a
 	return nil
 }
 
+// randomHex returns n random bytes as 2n hex characters.
 func randomHex(n int) string {
-	b := make([]byte, n/2)
-	rand.Read(b)
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
 	return fmt.Sprintf("%x", b)
 }
 
