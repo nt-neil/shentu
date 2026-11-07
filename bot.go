@@ -213,6 +213,11 @@ func botPair(ctx context.Context, cfg *Config, env *tools.Env, audit *auditLog, 
 			audit.write(logEntry{Actor: "bot", Tool: "bot_pair", Args: who, Confirmed: true, OK: true})
 			tools.Notify(ctx, env, "Telegram bot paired", "The bot now accepts questions from "+who+". If this was not you, run: sudo shentu bot unpair", "warning")
 			fmt.Fprintln(out, "Paired.")
+			// Tell the user in Telegram too; their last message there was "code accepted".
+			if token := botToken(cfg); token != "" {
+				b := &bot{cfg: cfg, token: token, api: telegramBotAPI, hc: &http.Client{Timeout: 30 * time.Second}}
+				b.send(ctx, p.ChatID, b.t("paired"), nil)
+			}
 			return nil
 		}
 		select {
@@ -391,7 +396,7 @@ func (b *bot) handle(ctx context.Context, u tgUpdate) {
 		b.mu.Lock()
 		b.history = nil
 		b.mu.Unlock()
-		b.send(ctx, m.Chat.ID, "OK, new conversation.", nil)
+		b.send(ctx, m.Chat.ID, b.t("new"), nil)
 		return
 	}
 	b.mu.Lock()
@@ -401,7 +406,7 @@ func (b *bot) handle(ctx context.Context, u tgUpdate) {
 	}
 	if b.busy {
 		b.mu.Unlock()
-		b.send(ctx, m.Chat.ID, "Still working on the previous question.", nil)
+		b.send(ctx, m.Chat.ID, b.t("busy"), nil)
 		return
 	}
 	b.busy = true
@@ -437,7 +442,7 @@ func (b *bot) tryPair(ctx context.Context, m *tgMessage, code string) {
 		return
 	}
 	b.log.write(logEntry{Actor: "bot", Tool: "bot_pair_request", Args: fmt.Sprintf("user id %d", m.From.ID), OK: true})
-	b.send(ctx, m.Chat.ID, "Code accepted. Approve the request on the server terminal to finish pairing.", nil)
+	b.send(ctx, m.Chat.ID, b.t("accepted"), nil)
 }
 
 // ignored records a refused message, at most once an hour per chat. Strangers get no reply.
@@ -469,7 +474,7 @@ func (b *bot) answer(ctx context.Context, chat int64, text string) {
 	b.send(ctx, chat, "…", nil)
 	answer, msgs, err := a.run(ctx, hist)
 	if err != nil {
-		b.send(ctx, chat, "Error: "+mask(err.Error()), nil)
+		b.send(ctx, chat, b.t("error")+mask(err.Error()), nil)
 		return
 	}
 	b.send(ctx, chat, strings.TrimSpace(answer), nil)
@@ -497,10 +502,10 @@ func (b *bot) confirm(ctx context.Context, chat int64, tool, preview string) boo
 	b.mu.Unlock()
 	defer func() { b.mu.Lock(); delete(b.waiting, nonce); b.mu.Unlock() }()
 	kb := map[string]any{"inline_keyboard": [][]map[string]string{{
-		{"text": "✅ Run", "callback_data": nonce + ":y"},
-		{"text": "❌ Cancel", "callback_data": nonce + ":n"},
+		{"text": b.t("run"), "callback_data": nonce + ":y"},
+		{"text": b.t("cancel"), "callback_data": nonce + ":n"},
 	}}}
-	id, err := b.send(ctx, chat, fmt.Sprintf("⚠️ %s wants to run:\n%s\n\nValid for 5 minutes.", tool, printable(preview)), kb)
+	id, err := b.send(ctx, chat, fmt.Sprintf(b.t("confirm"), tool, printable(preview)), kb)
 	if err != nil {
 		return false
 	}
@@ -514,7 +519,27 @@ func (b *bot) confirm(ctx context.Context, chat int64, tool, preview string) boo
 	if ok {
 		tools.Notify(ctx, b.env, "Approved from Telegram", tool+": "+preview, "warning")
 	} else {
-		b.send(ctx, chat, "Cancelled.", nil)
+		b.send(ctx, chat, b.t("cancelled"), nil)
 	}
 	return ok
+}
+
+var botText = map[string][2]string{ // English, Chinese
+	"accepted":  {"Code accepted. Approve the request on the server terminal to finish pairing.", "已收到配對碼。請在伺服器終端機核准這個要求，才會完成配對。"},
+	"paired":    {"✅ Paired. Ask me anything about this server. /new starts a fresh conversation.", "✅ 配對完成，可以開始提問了。傳 /new 可以開始新的對話。"},
+	"new":       {"OK, new conversation.", "好，開始新的對話。"},
+	"busy":      {"Still working on the previous question.", "上一個問題還在處理中，請稍候。"},
+	"error":     {"Error: ", "發生錯誤："},
+	"run":       {"✅ Run", "✅ 執行"},
+	"cancel":    {"❌ Cancel", "❌ 取消"},
+	"confirm":   {"⚠️ %s wants to run:\n%s\n\nValid for 5 minutes.", "⚠️ %s 要執行：\n%s\n\n5 分鐘內有效。"},
+	"cancelled": {"Cancelled.", "已取消。"},
+}
+
+// t returns a fixed bot message in the configured language (Chinese or English).
+func (b *bot) t(key string) string {
+	if strings.Contains(b.cfg.Language, "中文") || strings.HasPrefix(strings.ToLower(b.cfg.Language), "zh") {
+		return botText[key][1]
+	}
+	return botText[key][0]
 }
