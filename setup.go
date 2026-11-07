@@ -46,27 +46,12 @@ func setup(ctx context.Context, args []string) error {
 		return errors.New("setup writes to /etc/shentu; run it with sudo")
 	}
 	in := bufio.NewReader(os.Stdin)
-	if !*local && *prov == "" {
-		fmt.Println("Which LLM should Shentu use?")
-		fmt.Println("  1) Local model on this server (private, free; needs memory and disk)")
-		fmt.Println("  2) Anthropic Claude (API key)")
-		fmt.Println("  3) OpenAI (API key)")
-		fmt.Println("  4) OpenRouter (API key)")
-		fmt.Println("  5) AppleToken (API key)")
-		switch ask(in, "Choose [1-5]: ") {
-		case "1":
-			*local = true
-		case "2":
-			*prov = "anthropic"
-		case "3":
-			*prov = "openai"
-		case "4":
-			*prov = "openrouter"
-		case "5":
-			*prov = "appletoken"
-		default:
-			return errors.New("no choice made")
+	if !*local && *prov == "" && *model == "" {
+		// No flags: the guided setup, from the model to the first report.
+		if st, err := os.Stdin.Stat(); err != nil || st.Mode()&os.ModeCharDevice == 0 {
+			return errors.New("setup asks questions and needs a terminal; for scripts use flags, e.g. SHENTU_API_KEY=… shentu setup --provider anthropic")
 		}
+		return wizard(ctx, in, *yes)
 	}
 	if *local {
 		return setupLocal(ctx, in, *model, *yes)
@@ -142,6 +127,29 @@ func setupHosted(ctx context.Context, in *bufio.Reader, name, model string) erro
 		return err
 	}
 	return testLLM(ctx)
+}
+
+// chooseLLM asks which model to use and sets it up, including the test call.
+func chooseLLM(ctx context.Context, in *bufio.Reader, w *wiz) error {
+	fmt.Println(w.t("Which AI model should Shentu use?", "Shentu 要用哪個 AI 模型？"))
+	fmt.Println(w.t("  1) Local model on this server (private, free; needs memory and disk)", "  1) 這台伺服器上的本機模型（資料不外流、免費；需要記憶體和磁碟）"))
+	fmt.Println(w.t("  2) Anthropic Claude (API key)", "  2) Anthropic Claude（API 金鑰）"))
+	fmt.Println(w.t("  3) OpenAI (API key)", "  3) OpenAI（API 金鑰）"))
+	fmt.Println(w.t("  4) OpenRouter (API key)", "  4) OpenRouter（API 金鑰）"))
+	fmt.Println(w.t("  5) AppleToken (API key)", "  5) AppleToken（API 金鑰）"))
+	switch ask(in, w.t("Choose [1-5]: ", "請選擇 [1-5]：")) {
+	case "1":
+		return setupLocal(ctx, in, "", w.yes)
+	case "2":
+		return setupHosted(ctx, in, "anthropic", "")
+	case "3":
+		return setupHosted(ctx, in, "openai", "")
+	case "4":
+		return setupHosted(ctx, in, "openrouter", "")
+	case "5":
+		return setupHosted(ctx, in, "appletoken", "")
+	}
+	return errors.New("no choice made")
 }
 
 // modelForMemory picks the largest Qwen 2.5 model (good at tool calling) that fits.
@@ -267,7 +275,7 @@ func testLLM(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("the model did not answer: %w", err)
 	}
-	fmt.Printf("OK (%s)\nNext: sudo shentu chat\n", truncate(strings.TrimSpace(reply.Content), 40))
+	fmt.Printf("OK (%s)\n", truncate(strings.TrimSpace(reply.Content), 40))
 	return nil
 }
 

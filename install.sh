@@ -47,16 +47,17 @@ main() {
 	command -v nft >/dev/null 2>&1 ||
 		echo "Note: nftables is not installed, so block_ip will not work. Install it with apt/dnf install nftables."
 
-	cat <<'MSG'
-Shentu installed.
-
-Next steps:
-  1. Choose the LLM:   sudo shentu setup   (downloads a local model, or asks for an API key)
-  2. Set the notify channel in /etc/shentu/shentu.toml; put tokens in /etc/shentu/env
-     Try it:            sudo shentu chat
-  3. Test a report:     sudo shentu patrol --daily --dry-run
-  4. Turn on patrols:   sudo systemctl enable --now shentu-patrol.timer shentu-daily.timer
-MSG
+	echo "Shentu installed."
+	# Piped into sh, stdin is the script itself; the guided setup reads the terminal instead.
+	# SHENTU_NO_SETUP=1 skips it (for scripts and images).
+	if [ -f /etc/shentu/setup.toml ] || [ -f /etc/shentu/llm.toml ]; then
+		echo "Settings kept. To change them: sudo shentu setup"
+	elif [ -z "${SHENTU_NO_SETUP:-}" ] && [ -r /dev/tty ] && [ -w /dev/tty ] && (exec </dev/tty) 2>/dev/null; then
+		echo "Starting the guided setup (Ctrl-C to stop; run 'sudo shentu setup' any time)..."
+		/usr/local/bin/shentu setup </dev/tty >/dev/tty 2>&1 || echo "Setup did not finish. Run: sudo shentu setup"
+	else
+		echo "Next: sudo shentu setup   (guided: model, notifications, survey, patrols)"
+	fi
 }
 
 main "$@"
