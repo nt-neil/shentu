@@ -36,6 +36,8 @@ curl -fsSL https://github.com/nt-neil/shentu/releases/latest/download/install.sh
 sudo shentu version
 ```
 
+全新安裝時，腳本接著會自動啟動設定精靈（`sudo shentu setup`），用 5 個問題完成第 2 到第 7 步，每一步都有預設值。下面各節說明每個步驟在做什麼，以及怎麼手動設定。
+
 ## 2. 選擇 AI 模型
 
 ```sh

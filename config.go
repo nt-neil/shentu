@@ -70,10 +70,13 @@ func loadConfig(path string) (*Config, error) {
 	if _, err := toml.Decode(expandEnv(string(b)), c); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
-	// llm.toml (written by `shentu setup`) overrides [llm].
-	if lb, err := os.ReadFile(filepath.Join(filepath.Dir(path), "llm.toml")); err == nil {
-		if _, err := toml.Decode(expandEnv(string(lb)), c); err != nil {
-			return nil, fmt.Errorf("llm.toml: %w", err)
+	// Files written by `shentu setup` override shentu.toml: llm.toml ([llm]) and
+	// setup.toml (language, [notify], [bot]).
+	for _, name := range []string{"llm.toml", "setup.toml"} {
+		if lb, err := os.ReadFile(filepath.Join(filepath.Dir(path), name)); err == nil {
+			if _, err := toml.Decode(expandEnv(string(lb)), c); err != nil {
+				return nil, fmt.Errorf("%s: %w", name, err)
+			}
 		}
 	}
 	for _, d := range []string{c.LLM.Timeout, c.Patrol.Cooldown} {

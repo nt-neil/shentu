@@ -69,11 +69,18 @@ To add your own, put it in `/etc/shentu/skills/<name>/SKILL.md`.
 
 ```sh
 curl -fsSL https://github.com/nt-neil/shentu/releases/latest/download/install.sh | sudo sh
-sudo shentu setup                        # download a local model sized for this server, or enter an API key
-sudo nano /etc/shentu/shentu.toml        # set the notify channel
-sudo shentu chat
-sudo systemctl enable --now shentu-patrol.timer shentu-daily.timer
 ```
+
+That one command installs Shentu and starts a guided setup with five questions:
+1. language (English or 繁體中文);
+2. the AI model (a local model, or an API key), tested once;
+3. where alerts go (Telegram, Slack, Discord or ntfy). for Telegram you send the bot a one-time
+   code from your phone and the chat ID is filled in for you; a test message is sent;
+4. a survey of the server, with the risks it finds;
+5. patrols on, plus an optional first report.
+
+Then ask questions with `sudo shentu chat`. Run `sudo shentu setup` again to change anything.
+For scripts, set `SHENTU_NO_SETUP=1` and use `shentu setup --provider … ` with `SHENTU_API_KEY`.
 
 Step by step, with notify setup and troubleshooting: [Getting started](docs/getting-started.md)
 ([繁體中文](docs/getting-started.zh-TW.md)).

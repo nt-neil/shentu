@@ -319,7 +319,8 @@ func AccountsAudit() Accounts {
 		if uid == "0" {
 			a.UID0 = append(a.UID0, user)
 		}
-		if !strings.HasSuffix(shell, "nologin") && !strings.HasSuffix(shell, "false") && shell != "/bin/sync" {
+		// RHEL's shutdown and halt accounts have the commands of those names as their shell.
+		if base := filepath.Base(shell); !strings.HasSuffix(shell, "nologin") && base != "false" && base != "sync" && base != "shutdown" && base != "halt" {
 			a.LoginAccounts = append(a.LoginAccounts, user)
 		}
 		for _, name := range []string{"authorized_keys", "authorized_keys2"} {

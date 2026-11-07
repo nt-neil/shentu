@@ -39,6 +39,10 @@ Check the install:
 sudo shentu version
 ```
 
+On a fresh install the script then starts a guided setup, `sudo shentu setup`, that covers steps 2
+to 7 with five questions and sensible defaults. The sections below explain each step and how to
+do it by hand.
+
 ## 2. Choose the LLM
 
 ```sh
