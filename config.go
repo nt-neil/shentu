@@ -26,9 +26,13 @@ type Config struct {
 	Notify struct {
 		URL string `toml:"url"`
 	} `toml:"notify"`
+	// Telegram interaction: four ranges, each a level from 1 (safest) to 4.
 	Bot struct {
 		TelegramToken string `toml:"telegram_token"` // default: the bot of a telegram:// notify url
-		AllowControl  bool   `toml:"allow_control"`  // let the paired user run block_ip/unblock_ip (each needs ✅)
+		Interaction   int    `toml:"interaction"`    // 1 notifications only, 2 questions, 3 + block/unblock, 4 + every control tool
+		Answers       int    `toml:"answers"`        // 1 problem or not, 2 summary, 3 full (deleted after 24h), 4 full and kept
+		Confirm       int    `toml:"confirm"`        // actions: 1 approve on the server, 2 ✅ + one-time code, 3 ✅, 4 none
+		Protection    int    `toml:"protection"`     // 1 strict, 2 standard, 3 loose, 4 off
 	} `toml:"bot"`
 	Tools struct {
 		LogPaths    []string `toml:"log_paths"`
@@ -58,6 +62,7 @@ func loadConfig(path string) (*Config, error) {
 	c.Tools.AppPaths = []string{"/var/www", "/srv", "/opt", "/home", "/root"}
 	c.Patrol.SSHThreshold = 10
 	c.Patrol.Cooldown = "24h"
+	c.Bot.Interaction, c.Bot.Answers, c.Bot.Confirm, c.Bot.Protection = 1, 2, 2, 2
 	c.StateDir = "/var/lib/shentu"
 	c.Language = "English"
 
@@ -83,6 +88,9 @@ func loadConfig(path string) (*Config, error) {
 		if _, err := time.ParseDuration(d); err != nil {
 			return nil, fmt.Errorf("%s: invalid duration %q", path, d)
 		}
+	}
+	for _, v := range []*int{&c.Bot.Interaction, &c.Bot.Answers, &c.Bot.Confirm, &c.Bot.Protection} {
+		*v = min(max(*v, 1), 4)
 	}
 	c.LLM.BaseURL = strings.TrimSuffix(c.LLM.BaseURL, "/")
 	return c, nil

@@ -35,9 +35,15 @@ Blocked 203.0.113.7 until tomorrow 09:14. To undo: "unblock 203.0.113.7".
   survey as a baseline and reports risky settings (a database open to the network, SSH password
   login) and changes (new accounts, cron files, SSH configuration). The model gets a summary, so its
   answers fit this server.
-- **`shentu bot`**: ask the same questions from Telegram. It answers one paired user only. Pairing
-  needs a one-time code and a `y` on the server. Blocking from Telegram is off unless you turn it
-  on, and then every block needs a ✅ press.
+- **`shentu bot`** (optional): talk to Shentu from Telegram. You choose a level from 1 to 4 for each
+  of four ranges, and the default is notifications only:
+  - interaction: notifications, questions, simple actions, all;
+  - answers: problem or not, summary, full and deleted after 24 hours, full and kept;
+  - action confirmation: on the server, ✅ plus a one-time code, ✅ only, none;
+  - protection: what happens when the token leaks.
+
+  Levels can only be raised on the server, and every change is notified. `/lockdown` stops the bot
+  at any level.
 - **`shentu setup`**: picks the LLM. It can download a local model sized to the server's memory
   (through Ollama, so nothing leaves the machine), or take an API key for Anthropic, OpenAI,
   OpenRouter or AppleToken. Any other OpenAI-compatible endpoint can be set in the config.

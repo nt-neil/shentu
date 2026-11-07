@@ -61,14 +61,17 @@ func testBot(t *testing.T, model *hostileModel, allowControl bool) (*bot, *fakeT
 	cfg := &Config{}
 	cfg.LLM.MaxSteps = 5
 	cfg.StateDir, _ = filepath.EvalSymlinks(t.TempDir())
-	cfg.Bot.AllowControl = allowControl
+	cfg.Bot.Interaction, cfg.Bot.Answers, cfg.Bot.Confirm, cfg.Bot.Protection = 2, 4, 3, 2
+	if allowControl {
+		cfg.Bot.Interaction = 3
+	}
 	if model != nil {
 		m := httptest.NewServer(model)
 		t.Cleanup(m.Close)
 		cfg.LLM.BaseURL = m.URL
 	}
 	return &bot{cfg: cfg, env: &tools.Env{}, token: "1:T", api: srv.URL, hc: srv.Client(), log: newAuditLog(cfg.StateDir),
-		waiting: map[string]chan bool{}, ignoreAt: map[int64]time.Time{}}, tg
+		waiting: map[string]chan bool{}, ignoreAt: map[int64]time.Time{}, canAct: allowControl}, tg
 }
 
 func msg(user, chat int64, chatType, text string) tgUpdate {

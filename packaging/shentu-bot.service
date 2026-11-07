@@ -16,8 +16,9 @@ NoNewPrivileges=yes
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
 ProtectControlGroups=yes
-# CAP_NET_ADMIN is only used when [bot] allow_control = true, and then only after a ✅.
-CapabilityBoundingSet=CAP_DAC_READ_SEARCH CAP_SYS_PTRACE CAP_NET_ADMIN
+# No CAP_NET_ADMIN: the bot cannot change the firewall. `shentu setup` adds it with a
+# drop-in (shentu-bot.service.d/actions.conf) only for [bot] interaction = 3 or 4.
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH CAP_SYS_PTRACE
 AmbientCapabilities=
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
 

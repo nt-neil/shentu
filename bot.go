@@ -64,6 +64,31 @@ type botState struct {
 	CodeTries   int          `json:"code_tries,omitempty"`
 	Pending     *pendingPair `json:"pending,omitempty"`
 	Offset      int64        `json:"offset,omitempty"`
+
+	Levels     [4]int         `json:"levels"`                // what the service last ran with
+	TOTPSecret string         `json:"totp_secret,omitempty"` // confirm = 2
+	TOTPLast   uint64         `json:"totp_last,omitempty"`   // last time step used, never accepted again
+	Action     *pendingAction `json:"action,omitempty"`      // confirm = 1: waiting for `shentu bot approve`
+	Paused     string         `json:"paused,omitempty"`      // why the bot stopped (lockdown, token leak)
+	ToDelete   []sentMsg      `json:"to_delete,omitempty"`   // answers = 1..3: deleted after 24h
+	Day        string         `json:"day,omitempty"`         // protection = 1: answers counted per day
+	DayCount   int            `json:"day_count,omitempty"`
+}
+
+type pendingAction struct {
+	Nonce    string    `json:"nonce"`
+	Tool     string    `json:"tool"`
+	Preview  string    `json:"preview"`
+	At       time.Time `json:"at"`
+	Expires  time.Time `json:"expires"`
+	Decided  bool      `json:"decided"`
+	Approved bool      `json:"approved"`
+}
+
+type sentMsg struct {
+	Chat int64     `json:"chat"`
+	ID   int64     `json:"id"`
+	At   time.Time `json:"at"`
 }
 
 // withBotState loads bot.json under an exclusive lock, lets fn change it and saves it.
@@ -170,11 +195,28 @@ func botCommand(ctx context.Context, cfg *Config, env *tools.Env, args []string)
 			} else {
 				fmt.Printf("Paired with %s (user id %d) since %s.\n", s.UserName, s.UserID, s.PairedAt.Format(time.RFC3339))
 			}
-			fmt.Println("Control actions from Telegram:", map[bool]string{true: "on (each needs ✅)", false: "off"}[cfg.Bot.AllowControl])
+			if s.Paused != "" {
+				fmt.Println("Paused:", s.Paused, "(resume with: sudo shentu bot resume)")
+			}
+			fmt.Print(describeLevels(botLevels(cfg), false))
+			if cfg.Bot.Confirm == 2 && s.TOTPSecret == "" {
+				fmt.Println("No one-time code app enrolled yet: sudo shentu bot totp")
+			}
 			return nil
 		})
+	case "approve":
+		return botApprove(cfg, bufio.NewReader(os.Stdin), os.Stdout)
+	case "totp":
+		return botTOTP(cfg, bufio.NewReader(os.Stdin), os.Stdout)
+	case "resume":
+		err := withBotState(cfg.StateDir, func(s *botState) error { s.Paused = ""; return nil })
+		if err == nil {
+			audit.write(logEntry{Actor: "bot", Tool: "bot_resume", OK: true})
+			fmt.Println("Resumed. Start the service: sudo systemctl restart shentu-bot")
+		}
+		return err
 	}
-	return errors.New("usage: shentu bot [pair|unpair|status]")
+	return errors.New("usage: shentu bot [pair|unpair|status|approve|totp|resume]")
 }
 
 // botPair writes a new code, waits for the bot service to receive it, then asks root.
@@ -277,6 +319,13 @@ type bot struct {
 	histFor  string               // pairing the history belongs to (user id + paired time)
 	waiting  map[string]chan bool // confirmation nonce -> answer
 	ignoreAt map[int64]time.Time  // last audit entry per ignored chat
+	codeWait chan string          // confirm = 2: the next 6-digit message from the paired user
+	canAct   bool                 // interaction >= 3 and the service holds CAP_NET_ADMIN
+	stop     context.CancelFunc   // /lockdown and a token leak stop the service
+}
+
+func (b *bot) zh() bool {
+	return strings.Contains(b.cfg.Language, "中文") || strings.HasPrefix(strings.ToLower(b.cfg.Language), "zh")
 }
 
 func (b *bot) call(ctx context.Context, method string, payload, out any) error {
@@ -322,18 +371,43 @@ func (b *bot) send(ctx context.Context, chat int64, text string, keyboard any) (
 			return 0, err
 		}
 		last = m.MessageID
+		if b.cfg.Bot.Answers <= 3 && m.MessageID != 0 {
+			withBotState(b.cfg.StateDir, func(s *botState) error {
+				s.ToDelete = append(s.ToDelete, sentMsg{chat, m.MessageID, time.Now()})
+				return nil
+			})
+		}
 	}
 	return last, nil
 }
 
 func (b *bot) run(ctx context.Context) error {
 	b.waiting, b.ignoreAt = map[string]chan bool{}, map[int64]time.Time{}
+	if b.cfg.Bot.Interaction <= 1 {
+		fmt.Println("shentu bot: [bot] interaction = 1 (notifications only), so the bot reads no messages. Exiting.")
+		return nil
+	}
+	var paused string
+	withBotState(b.cfg.StateDir, func(s *botState) error { paused = s.Paused; return nil })
+	if paused != "" {
+		fmt.Println("shentu bot: paused (" + paused + "). Resume with: sudo shentu bot resume")
+		return nil
+	}
+	ctx, b.stop = context.WithCancel(ctx)
+	defer b.stop()
+	b.noteLevelChanges(ctx)
+	b.canAct = b.cfg.Bot.Interaction >= 3 && hasNetAdmin()
+	if b.cfg.Bot.Interaction >= 3 && !b.canAct {
+		fmt.Fprintln(os.Stderr, "shentu bot: interaction >= 3 but the service cannot change the firewall; run `sudo shentu setup` (it adds the systemd drop-in). Answering questions only.")
+	}
 	if err := b.call(ctx, "deleteWebhook", map[string]any{}, nil); err != nil {
 		return err
 	}
 	fmt.Println("shentu bot: listening (pair with `sudo shentu bot pair`)")
 	backoff := time.Second
+	lastLeakAlert := time.Time{}
 	for ctx.Err() == nil {
+		b.deleteDue(ctx)
 		var offset int64
 		withBotState(b.cfg.StateDir, func(s *botState) error { offset = s.Offset; return nil })
 		var ups []tgUpdate
@@ -342,7 +416,20 @@ func (b *bot) run(ctx context.Context) error {
 			if ctx.Err() != nil {
 				break
 			}
-			fmt.Fprintln(os.Stderr, "shentu bot:", err) // 409: another program reads this bot's updates
+			fmt.Fprintln(os.Stderr, "shentu bot:", err)
+			// 409: another program is reading this bot's updates, so the token is in other hands.
+			if strings.Contains(err.Error(), "HTTP 409") {
+				switch b.cfg.Bot.Protection {
+				case 1, 2:
+					b.pause(context.Background(), "another program is using this bot's token (Telegram 409); revoke it in @BotFather")
+					return nil
+				case 3:
+					if time.Since(lastLeakAlert) > time.Hour {
+						lastLeakAlert = time.Now()
+						tools.Notify(ctx, b.env, b.t("leak_title"), b.t("leak_body"), "critical")
+					}
+				}
+			}
 			time.Sleep(backoff)
 			backoff = min(backoff*2, 5*time.Minute)
 			continue
@@ -391,6 +478,41 @@ func (b *bot) handle(ctx context.Context, u tgUpdate) {
 		}
 		b.ignored(m.Chat.ID, "not paired")
 		return
+	}
+	if text == "/lockdown" {
+		b.send(ctx, m.Chat.ID, b.t("lockdown"), nil)
+		withBotState(b.cfg.StateDir, func(s *botState) error { s.UserID, s.ChatID = 0, 0; return nil })
+		b.pause(ctx, "locked down from Telegram by the paired user")
+		return
+	}
+	b.mu.Lock()
+	wait := b.codeWait
+	b.mu.Unlock()
+	if wait != nil && len(text) == 6 && strings.Trim(text, "0123456789") == "" {
+		select {
+		case wait <- text:
+		default:
+		}
+		return
+	}
+	if !openNow(b.cfg.Bot.Protection, time.Now()) {
+		b.send(ctx, m.Chat.ID, b.t("closed"), nil)
+		return
+	}
+	if b.cfg.Bot.Protection == 1 {
+		over := false
+		withBotState(b.cfg.StateDir, func(s *botState) error {
+			if d := time.Now().Format("2006-01-02"); s.Day != d {
+				s.Day, s.DayCount = d, 0
+			}
+			s.DayCount++
+			over = s.DayCount > strictDailyLimit
+			return nil
+		})
+		if over {
+			b.send(ctx, m.Chat.ID, b.t("limit"), nil)
+			return
+		}
 	}
 	if text == "/new" {
 		b.mu.Lock()
@@ -463,12 +585,12 @@ func (b *bot) answer(ctx context.Context, chat int64, text string) {
 	skills := loadSkills(filepath.Join(filepath.Dir(configPath()), "skills"))
 	a := &agent{
 		cfg: b.cfg, llm: newLLM(b.cfg), env: b.env, skills: skills,
-		allowControl: b.cfg.Bot.AllowControl, actor: "bot", log: b.log,
+		allowControl: b.canAct, actor: "bot", log: b.log,
 		confirm: func(tool, preview string) bool { return b.confirm(ctx, chat, tool, preview) },
 	}
 	b.mu.Lock()
 	owner := b.histFor // the pairing this answer belongs to
-	hist := append([]message{{Role: "system", Content: systemPrompt(b.cfg, skills)}}, b.history...)
+	hist := append([]message{{Role: "system", Content: systemPrompt(b.cfg, skills) + answerRule(b.cfg.Bot.Answers, b.zh())}}, b.history...)
 	b.mu.Unlock()
 	hist = append(hist, message{Role: "user", Content: text})
 	b.send(ctx, chat, "…", nil)
@@ -477,7 +599,11 @@ func (b *bot) answer(ctx context.Context, chat int64, text string) {
 		b.send(ctx, chat, b.t("error")+mask(err.Error()), nil)
 		return
 	}
-	b.send(ctx, chat, strings.TrimSpace(answer), nil)
+	answer = strings.TrimSpace(answer)
+	if n := maxAnswer(b.cfg.Bot.Answers); n > 0 {
+		answer = tools.Cut(answer, n) // the level is a promise, kept in code
+	}
+	b.send(ctx, chat, answer, nil)
 	var keep []message // keep plain turns only, so tool output does not pile up
 	for _, m := range msgs[1:] {
 		if (m.Role == "user" || m.Role == "assistant") && len(m.ToolCalls) == 0 && m.Content != "" {
@@ -491,8 +617,30 @@ func (b *bot) answer(ctx context.Context, chat int64, text string) {
 	b.mu.Unlock()
 }
 
-// confirm shows the exact command with ✅/❌ and waits for the paired user to press one.
+// confirm applies [bot] confirm: 1 approve on the server, 2 ✅ and a one-time code,
+// 3 ✅ only, 4 none. Every approved action is notified.
 func (b *bot) confirm(ctx context.Context, chat int64, tool, preview string) bool {
+	ok := false
+	switch b.cfg.Bot.Confirm {
+	case 1:
+		ok = b.confirmOnServer(ctx, chat, tool, preview)
+	case 2:
+		ok = b.confirmButton(ctx, chat, tool, preview) && b.confirmCode(ctx, chat)
+	case 3:
+		ok = b.confirmButton(ctx, chat, tool, preview)
+	default:
+		ok = true
+	}
+	if ok {
+		tools.Notify(ctx, b.env, "Approved from Telegram", tool+": "+preview, "warning")
+	} else {
+		b.send(ctx, chat, b.t("cancelled"), nil)
+	}
+	return ok
+}
+
+// confirmButton shows the exact command with ✅/❌ and waits for the paired user to press one.
+func (b *bot) confirmButton(ctx context.Context, chat int64, tool, preview string) bool {
 	nb := make([]byte, 12)
 	rand.Read(nb)
 	nonce := hex.EncodeToString(nb)
@@ -516,29 +664,136 @@ func (b *bot) confirm(ctx context.Context, chat int64, tool, preview string) boo
 	case <-ctx.Done():
 	}
 	b.call(ctx, "editMessageReplyMarkup", map[string]any{"chat_id": chat, "message_id": id, "reply_markup": map[string]any{"inline_keyboard": [][]any{}}}, nil)
-	if ok {
-		tools.Notify(ctx, b.env, "Approved from Telegram", tool+": "+preview, "warning")
-	} else {
-		b.send(ctx, chat, b.t("cancelled"), nil)
-	}
 	return ok
 }
 
+// confirmCode asks for the authenticator code; three wrong codes or 2 minutes cancel.
+func (b *bot) confirmCode(ctx context.Context, chat int64) bool {
+	var secret string
+	var last uint64
+	withBotState(b.cfg.StateDir, func(s *botState) error { secret, last = s.TOTPSecret, s.TOTPLast; return nil })
+	if secret == "" {
+		b.send(ctx, chat, b.t("no_totp"), nil)
+		return false
+	}
+	ch := make(chan string, 1)
+	b.mu.Lock()
+	b.codeWait = ch
+	b.mu.Unlock()
+	defer func() { b.mu.Lock(); b.codeWait = nil; b.mu.Unlock() }()
+	b.send(ctx, chat, b.t("ask_code"), nil)
+	deadline := time.After(2 * time.Minute)
+	for tries := 0; tries < 3; tries++ {
+		select {
+		case code := <-ch:
+			if step, ok := totpCheck(secret, code, last, time.Now()); ok {
+				withBotState(b.cfg.StateDir, func(s *botState) error { s.TOTPLast = step; return nil })
+				return true
+			}
+			b.log.write(logEntry{Actor: "bot", Tool: "bot_code", Error: "wrong one-time code"})
+			if tries < 2 {
+				b.send(ctx, chat, b.t("wrong_code"), nil)
+			}
+		case <-deadline:
+			return false
+		case <-ctx.Done():
+			return false
+		}
+	}
+	return false
+}
+
+// confirmOnServer records the action and waits up to 5 minutes for `shentu bot approve`.
+func (b *bot) confirmOnServer(ctx context.Context, chat int64, tool, preview string) bool {
+	nonce := randomHex(12)
+	withBotState(b.cfg.StateDir, func(s *botState) error {
+		s.Action = &pendingAction{Nonce: nonce, Tool: tool, Preview: preview, At: time.Now(), Expires: time.Now().Add(confirmTimeout)}
+		return nil
+	})
+	defer withBotState(b.cfg.StateDir, func(s *botState) error {
+		if s.Action != nil && s.Action.Nonce == nonce {
+			s.Action = nil
+		}
+		return nil
+	})
+	b.send(ctx, chat, fmt.Sprintf(b.t("on_server"), tool, printable(preview)), nil)
+	for end := time.Now().Add(confirmTimeout); time.Now().Before(end); {
+		var a *pendingAction
+		withBotState(b.cfg.StateDir, func(s *botState) error { a = s.Action; return nil })
+		if a == nil || a.Nonce != nonce {
+			return false
+		}
+		if a.Decided {
+			return a.Approved
+		}
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(time.Second):
+		}
+	}
+	return false
+}
+
+// pause stops the bot until root runs `shentu bot resume`, and says why.
+func (b *bot) pause(ctx context.Context, why string) {
+	withBotState(b.cfg.StateDir, func(s *botState) error { s.Paused = why; return nil })
+	b.log.write(logEntry{Actor: "bot", Tool: "bot_pause", Error: why})
+	tools.Notify(ctx, b.env, b.t("paused_title"), why+"\n"+b.t("paused_hint"), "critical")
+	if b.stop != nil {
+		b.stop()
+	}
+}
+
+// deleteDue removes answers older than 24 hours (answers = 1..3). Telegram allows a
+// bot to delete its own messages for 48 hours.
+func (b *bot) deleteDue(ctx context.Context) {
+	var due []sentMsg
+	withBotState(b.cfg.StateDir, func(s *botState) error {
+		var keep []sentMsg
+		for _, m := range s.ToDelete {
+			if time.Since(m.At) > 24*time.Hour {
+				due = append(due, m)
+			} else {
+				keep = append(keep, m)
+			}
+		}
+		s.ToDelete = keep
+		return nil
+	})
+	for _, m := range due {
+		b.call(ctx, "deleteMessage", map[string]any{"chat_id": m.Chat, "message_id": m.ID}, nil)
+	}
+}
+
 var botText = map[string][2]string{ // English, Chinese
-	"accepted":  {"Code accepted. Approve the request on the server terminal to finish pairing.", "已收到配對碼。請在伺服器終端機核准這個要求，才會完成配對。"},
-	"paired":    {"✅ Paired. Ask me anything about this server. /new starts a fresh conversation.", "✅ 配對完成，可以開始提問了。傳 /new 可以開始新的對話。"},
-	"new":       {"OK, new conversation.", "好，開始新的對話。"},
-	"busy":      {"Still working on the previous question.", "上一個問題還在處理中，請稍候。"},
-	"error":     {"Error: ", "發生錯誤："},
-	"run":       {"✅ Run", "✅ 執行"},
-	"cancel":    {"❌ Cancel", "❌ 取消"},
-	"confirm":   {"⚠️ %s wants to run:\n%s\n\nValid for 5 minutes.", "⚠️ %s 要執行：\n%s\n\n5 分鐘內有效。"},
-	"cancelled": {"Cancelled.", "已取消。"},
+	"accepted":       {"Code accepted. Approve the request on the server terminal to finish pairing.", "已收到配對碼。請在伺服器終端機核准這個要求，才會完成配對。"},
+	"paired":         {"✅ Paired. Ask me anything about this server. /new starts a fresh conversation.", "✅ 配對完成，可以開始提問了。傳 /new 可以開始新的對話。"},
+	"new":            {"OK, new conversation.", "好，開始新的對話。"},
+	"busy":           {"Still working on the previous question.", "上一個問題還在處理中，請稍候。"},
+	"error":          {"Error: ", "發生錯誤："},
+	"run":            {"✅ Run", "✅ 執行"},
+	"cancel":         {"❌ Cancel", "❌ 取消"},
+	"confirm":        {"⚠️ %s wants to run:\n%s\n\nValid for 5 minutes.", "⚠️ %s 要執行：\n%s\n\n5 分鐘內有效。"},
+	"cancelled":      {"Cancelled.", "已取消。"},
+	"lockdown":       {"🔒 Locked down. The bot is unpaired and stopped; re-enable it on the server.", "🔒 已緊急關閉。bot 已解除配對並停止，要重新開啟請到伺服器操作。"},
+	"closed":         {"Outside the hours set on the server (08:00–20:00).", "現在不在伺服器設定的開放時段（08:00–20:00）。"},
+	"limit":          {"Today's limit of answers is reached.", "今天的回答次數已達上限。"},
+	"no_totp":        {"No one-time code app is set up. On the server run: sudo shentu bot totp", "還沒有設定動態密碼。請在伺服器執行：sudo shentu bot totp"},
+	"ask_code":       {"Send the 6-digit code from your authenticator app (2 minutes).", "請傳送驗證器 App 上的 6 位數動態密碼（2 分鐘內）。"},
+	"wrong_code":     {"Wrong code, try again.", "密碼不對，請再試一次。"},
+	"on_server":      {"⚠️ %s wants to run:\n%s\n\nApprove it on the server within 5 minutes: sudo shentu bot approve", "⚠️ %s 要執行：\n%s\n\n請在 5 分鐘內到伺服器核准：sudo shentu bot approve"},
+	"paused_title":   {"Telegram bot paused", "Telegram bot 已暫停"},
+	"paused_hint":    {"Resume on the server: sudo shentu bot resume", "要恢復請到伺服器執行：sudo shentu bot resume"},
+	"leak_title":     {"Bot token may be leaked", "bot token 可能外洩"},
+	"leak_body":      {"Another program is reading this bot's messages. Revoke the token in @BotFather.", "有其他程式在讀這個 bot 的訊息。請到 @BotFather 撤銷並更換 token。"},
+	"levels_changed": {"Telegram bot levels changed", "Telegram bot 等級已變更"},
+	"levels_hint":    {"If you did not change this, check who can log in to the server.", "如果不是你改的，請檢查有誰能登入這台伺服器。"},
 }
 
 // t returns a fixed bot message in the configured language (Chinese or English).
 func (b *bot) t(key string) string {
-	if strings.Contains(b.cfg.Language, "中文") || strings.HasPrefix(strings.ToLower(b.cfg.Language), "zh") {
+	if b.zh() {
 		return botText[key][1]
 	}
 	return botText[key][0]

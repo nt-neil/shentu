@@ -54,7 +54,7 @@ func TestSetupTomlOverrides(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "env"), []byte("NOTIFY_URL=ntfy://ntfy.sh/x\n"), 0o600)
 	os.Unsetenv("NOTIFY_URL")
 	t.Cleanup(func() { os.Unsetenv("NOTIFY_URL") })
-	if err := writeSetup("繁體中文", true); err != nil {
+	if err := writeSetup("繁體中文", true, ""); err != nil {
 		t.Fatal(err)
 	}
 	b, _ := os.ReadFile(filepath.Join(dir, "setup.toml"))
