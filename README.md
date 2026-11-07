@@ -29,8 +29,8 @@ Blocked 203.0.113.7 until tomorrow 09:14. To undo: "unblock 203.0.113.7".
 - **`shentu chat`**: ask about your server's security in plain language. The model chooses
   which tools to run and explains what it found.
 - **`shentu patrol`**: run by a systemd timer every 30 minutes. It runs fixed checks without the
-  LLM. If something new shows up, the LLM explains it and the report goes to Telegram, ntfy or a
-  webhook. If the LLM is down, you still get the raw findings.
+  LLM. If something new shows up, the LLM explains it and the report goes to Telegram, Slack, Discord,
+  ntfy or a webhook. If the LLM is down, you still get the raw findings.
 - **`shentu setup`**: picks the LLM. It can download a local model sized to the server's memory
   (through Ollama, so nothing leaves the machine), or take an API key for Anthropic, OpenAI or
   OpenRouter. Any other OpenAI-compatible endpoint can be set in the config.
@@ -48,7 +48,7 @@ Blocked 203.0.113.7 until tomorrow 09:14. To undo: "unblock 203.0.113.7".
 | `cert_expiry` | TLS certificate expiry |
 | `log_search` | regex search, limited to configured log files |
 | `block_ip` / `unblock_ip` | timed nftables blocks in a separate `inet shentu` table. **Chat only, needs your confirmation.** |
-| `notify` | send a message to your channel |
+| `notify` | send a message to your channel (Telegram, Slack, Discord, ntfy or a signed JSON webhook) |
 
 ## Skills
 

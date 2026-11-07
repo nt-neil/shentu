@@ -19,7 +19,11 @@ timeout = "180s"
 [notify]
 # telegram://${TG_BOT_TOKEN}@telegram?chats=123456789
 # ntfy://ntfy.sh/your-secret-topic
-# https://example.com/hook   (signed with SHENTU_WEBHOOK_SECRET when set)
+# https://hooks.slack.com/services/...   (Slack incoming webhook)
+# https://discord.com/api/webhooks/...   (Discord webhook)
+# https://example.com/hook   (JSON, signed with SHENTU_WEBHOOK_SECRET when set)
+# Long reports are split into several messages. A webhook URL is a secret: put it in /etc/shentu/env
+# and write url = "${NOTIFY_URL}".
 url = ""
 
 [tools]
