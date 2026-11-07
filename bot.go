@@ -560,7 +560,11 @@ func (b *bot) handle(ctx context.Context, u tgUpdate) {
 		}
 	}
 	if text == "/usage" {
-		b.send(ctx, m.Chat.ID, "📊 "+usageReport(b.cfg.StateDir, time.Now(), b.zh()), nil)
+		r := usageReport(b.cfg.StateDir, time.Now(), b.zh())
+		if l := budgetLine(b.cfg, time.Now(), b.zh()); l != "" {
+			r = l + "\n\n" + r
+		}
+		b.send(ctx, m.Chat.ID, "📊 "+r, nil)
 		return
 	}
 	if text == "/new" {
@@ -658,6 +662,10 @@ func (b *bot) answer(ctx context.Context, chat int64, text string) {
 	if err != nil {
 		// The full error is in the audit log; the chat gets its first part only
 		// (an LLM error body can echo the whole prompt).
+		if errors.Is(err, errBudget) {
+			b.send(ctx, chat, b.t("budget_out")+"\n"+budgetLine(b.cfg, time.Now(), b.zh()), nil)
+			return
+		}
 		short, _, _ := strings.Cut(err.Error(), ": {")
 		b.send(ctx, chat, b.t("error")+tools.Cut(mask(short), 200)+b.t("error_hint"), nil)
 		return
@@ -864,6 +872,7 @@ var botText = map[string][2]string{ // English, Chinese
 	"settled_yes":    {"✅ Confirmed.", "✅ 你已確認。"},
 	"settled_no":     {"❌ Not run (cancelled or timed out).", "❌ 沒有執行（已取消或逾時）。"},
 	"cmd_new":        {"Start a fresh conversation", "開始新的對話"},
+	"budget_out":     {"⛔ This month's AI budget is used up, so I cannot answer. Patrol alerts still come. To raise it, run on the server: sudo shentu budget --cost <amount>", "⛔ 這個月的 AI 預算已經用完，暫時不能回答。巡邏告警照常會送出。要提高上限，請在伺服器執行：sudo shentu budget --cost <金額>"},
 	"cmd_usage":      {"Model use and cost", "AI 用量與費用"},
 	"cmd_lockdown":   {"Emergency stop: unpair and stop the bot", "緊急關閉：解除配對並停止 bot"},
 	"working":        {"⏳ Working…", "⏳ 處理中…"},

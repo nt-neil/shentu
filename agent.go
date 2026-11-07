@@ -85,6 +85,10 @@ func (a *agent) toolDefs() []toolDef {
 
 // run continues the conversation in msgs and returns the final answer and the updated history.
 func (a *agent) run(ctx context.Context, msgs []message) (string, []message, error) {
+	if budgetUsed(a.cfg, time.Now()) >= 1 {
+		return "", msgs, errBudget
+	}
+	defer budgetAlert(context.WithoutCancel(ctx), a.cfg, a.env, time.Now())
 	defs := a.toolDefs()
 	for step := 0; step < a.cfg.LLM.MaxSteps; step++ {
 		reply, err := a.llm.chat(ctx, msgs, defs)

@@ -16,6 +16,13 @@ max_steps = 10
 max_tokens = 4096              # upper bound on each model reply (bounds cost; some providers require it)
 timeout = "180s"
 
+# Optional monthly AI budget (0 = none); `shentu budget` and `shentu setup` write it to budget.toml.
+# At 80% an alert goes out; at 100% the model is not called until next month, and
+# patrols still alert with the raw findings. `shentu usage` and /usage show the use.
+# [budget]
+# monthly_cost = 5            # in the provider's currency (AppleToken reports USD per call)
+# monthly_tokens = 2000000    # input + output + reasoning, for providers that do not report cost
+
 [notify]
 # telegram://${TG_BOT_TOKEN}@telegram?chats=123456789
 # ntfy://ntfy.sh/your-secret-topic

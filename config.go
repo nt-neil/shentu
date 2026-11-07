@@ -26,6 +26,12 @@ type Config struct {
 	Notify struct {
 		URL string `toml:"url"`
 	} `toml:"notify"`
+	// Optional monthly limit on model use (0: none). At 80% an alert goes out; at 100%
+	// the model is not called until the next month, and patrols send raw findings.
+	Budget struct {
+		MonthlyCost   float64 `toml:"monthly_cost"`   // in the provider's currency (AppleToken: USD); needs a provider that reports cost
+		MonthlyTokens int     `toml:"monthly_tokens"` // input + output + reasoning tokens
+	} `toml:"budget"`
 	// Telegram interaction: four ranges, each a level from 1 (safest) to 4.
 	Bot struct {
 		TelegramToken string `toml:"telegram_token"` // default: the bot of a telegram:// notify url
@@ -76,8 +82,8 @@ func loadConfig(path string) (*Config, error) {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	// Files written by `shentu setup` override shentu.toml: llm.toml ([llm]) and
-	// setup.toml (language, [notify], [bot]).
-	for _, name := range []string{"llm.toml", "setup.toml"} {
+	// setup.toml (language, [notify], [bot]) and budget.toml ([budget]).
+	for _, name := range []string{"llm.toml", "setup.toml", "budget.toml"} {
 		if lb, err := os.ReadFile(filepath.Join(filepath.Dir(path), name)); err == nil {
 			if _, err := toml.Decode(expandEnv(string(lb)), c); err != nil {
 				return nil, fmt.Errorf("%s: %w", name, err)

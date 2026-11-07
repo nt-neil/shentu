@@ -35,6 +35,8 @@ Usage:
   shentu bot [pair|unpair|status]
                               answer questions from Telegram (a systemd service); pair one user first
   shentu usage                model calls, tokens and cost: today, last 7 and 30 days
+  shentu budget [--cost USD] [--tokens N] [--off]
+                              optional monthly AI limit: alert at 80%, stop calling the model at 100%
   shentu version
 
 Config: /etc/shentu/shentu.toml (override with SHENTU_CONFIG)
@@ -91,6 +93,8 @@ func main() {
 		}
 	case "bot":
 		err = botCommand(ctx, cfg, env, args)
+	case "budget":
+		err = budgetCommand(cfg, args)
 	case "usage":
 		fmt.Println(usageReport(cfg.StateDir, time.Now(), strings.Contains(cfg.Language, "中文") || strings.HasPrefix(strings.ToLower(cfg.Language), "zh")))
 	case "patrol":

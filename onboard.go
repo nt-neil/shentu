@@ -85,6 +85,7 @@ func wizard(ctx context.Context, in *bufio.Reader, yes bool) error {
 	}
 
 notify:
+	w.askBudget(in)
 	w.step(3, "Notifications", "通知管道")
 	notifyURL, keep := "", false
 	if cfg, err := loadConfig(configPath()); err == nil && cfg.Notify.URL != "" {
@@ -477,4 +478,31 @@ func (w *wiz) startBotService(ctx context.Context) {
 		return
 	}
 	fmt.Println(w.t("The bot is running. Send /lockdown to it at any time to stop it.", "bot 已啟動。隨時傳 /lockdown 給它就能緊急關閉。"))
+}
+
+// askBudget offers the optional monthly limit; Enter skips it. Local models cost nothing.
+func (w *wiz) askBudget(in *bufio.Reader) {
+	cfg, err := loadConfig(configPath())
+	if err != nil || cfg.LLM.BaseURL == "" || strings.Contains(cfg.LLM.BaseURL, "127.0.0.1") || strings.Contains(cfg.LLM.BaseURL, "localhost") {
+		return
+	}
+	cur := ""
+	if cfg.Budget.MonthlyCost > 0 {
+		cur = strconv.FormatFloat(cfg.Budget.MonthlyCost, 'f', -1, 64)
+	}
+	fmt.Println(w.t("Optional: a monthly AI budget in USD. At 80% you get an alert; at 100% the AI stops until next month (patrol alerts keep coming).",
+		"可選：每月 AI 預算上限（美元）。用到 80% 會通知你；用完後這個月就不再呼叫 AI（巡邏告警照常送出）。"))
+	a := ask(in, w.t(fmt.Sprintf("Monthly budget, Enter for %s: ", map[bool]string{true: "none", false: cur}[cur == ""]),
+		fmt.Sprintf("每月上限（美元），直接按 Enter %s：", map[bool]string{true: "不設定", false: "維持 " + cur}[cur == ""])))
+	if a == "" {
+		return
+	}
+	v, err := strconv.ParseFloat(strings.TrimPrefix(a, "$"), 64)
+	if err != nil || v < 0 {
+		fmt.Println(w.t("Not a number; skipped. Set it later with: sudo shentu budget --cost 5", "不是數字，已略過。之後可以執行：sudo shentu budget --cost 5"))
+		return
+	}
+	if err := writeBudget(v, cfg.Budget.MonthlyTokens); err != nil {
+		fmt.Println(w.t("Could not save: ", "無法儲存：") + err.Error())
+	}
 }
