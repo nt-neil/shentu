@@ -44,6 +44,7 @@ const (
 	pairCodeTTL     = 10 * time.Minute
 	pairMaxTries    = 5
 	confirmTimeout  = 5 * time.Minute
+	maxCodeFails    = 5
 	botHistoryLimit = 20
 )
 
@@ -68,6 +69,7 @@ type botState struct {
 	Levels     [4]int         `json:"levels"`                // what the service last ran with
 	TOTPSecret string         `json:"totp_secret,omitempty"` // confirm = 2
 	TOTPLast   uint64         `json:"totp_last,omitempty"`   // last time step used, never accepted again
+	CodeFails  int            `json:"code_fails,omitempty"`  // wrong codes since the last right one; 5 pause the bot
 	Action     *pendingAction `json:"action,omitempty"`      // confirm = 1: waiting for `shentu bot approve`
 	Paused     string         `json:"paused,omitempty"`      // why the bot stopped (lockdown, token leak)
 	ToDelete   []sentMsg      `json:"to_delete,omitempty"`   // answers = 1..3: deleted after 24h
@@ -209,7 +211,7 @@ func botCommand(ctx context.Context, cfg *Config, env *tools.Env, args []string)
 	case "totp":
 		return botTOTP(cfg, bufio.NewReader(os.Stdin), os.Stdout)
 	case "resume":
-		err := withBotState(cfg.StateDir, func(s *botState) error { s.Paused = ""; return nil })
+		err := withBotState(cfg.StateDir, func(s *botState) error { s.Paused, s.CodeFails = "", 0; return nil })
 		if err == nil {
 			audit.write(logEntry{Actor: "bot", Tool: "bot_resume", OK: true})
 			fmt.Println("Resumed. Start the service: sudo systemctl restart shentu-bot")
@@ -687,10 +689,17 @@ func (b *bot) confirmCode(ctx context.Context, chat int64) bool {
 		select {
 		case code := <-ch:
 			if step, ok := totpCheck(secret, code, last, time.Now()); ok {
-				withBotState(b.cfg.StateDir, func(s *botState) error { s.TOTPLast = step; return nil })
+				withBotState(b.cfg.StateDir, func(s *botState) error { s.TOTPLast, s.CodeFails = step, 0; return nil })
 				return true
 			}
 			b.log.write(logEntry{Actor: "bot", Tool: "bot_code", Error: "wrong one-time code"})
+			// Failures add up across requests, so asking again and again cannot guess the code.
+			fails := 0
+			withBotState(b.cfg.StateDir, func(s *botState) error { s.CodeFails++; fails = s.CodeFails; return nil })
+			if fails >= maxCodeFails {
+				b.pause(ctx, fmt.Sprintf("%d wrong one-time codes in a row; someone may be guessing", fails))
+				return false
+			}
 			if tries < 2 {
 				b.send(ctx, chat, b.t("wrong_code"), nil)
 			}

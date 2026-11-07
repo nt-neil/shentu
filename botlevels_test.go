@@ -221,3 +221,34 @@ func TestBotUnitHasNoNetAdmin(t *testing.T) {
 		}
 	}
 }
+
+// Wrong codes add up across requests: five in a row pause the bot.
+func TestBotCodeFailuresPause(t *testing.T) {
+	b, _ := levelBot(t, &hostileModel{replies: []string{done}}, [4]int{3, 4, 2, 2})
+	secret := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString([]byte("12345678901234567890"))
+	withBotState(b.cfg.StateDir, func(s *botState) error { s.TOTPSecret, s.CodeFails = secret, 3; return nil })
+	ctx := context.Background()
+	done := make(chan bool)
+	go func() { done <- b.confirmCode(ctx, pairedChat) }()
+	for _, c := range []string{"000000", "111111"} {
+		for i := 0; i < 100; i++ {
+			b.mu.Lock()
+			w := b.codeWait
+			b.mu.Unlock()
+			if w != nil {
+				w <- c
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if <-done {
+		t.Fatal("wrong codes were accepted")
+	}
+	var st botState
+	withBotState(b.cfg.StateDir, func(s *botState) error { st = *s; return nil })
+	if st.Paused == "" {
+		t.Errorf("five wrong codes in total did not pause the bot (fails = %d)", st.CodeFails)
+	}
+}
