@@ -36,6 +36,8 @@ allow_control = false            # true: the paired user may block/unblock IPs, 
 log_paths    = ["/var/log/auth.log", "/var/log/secure", "/var/log/syslog", "/var/log/nginx/*.log", "/var/log/apache2/*.log"]
 watch_paths  = ["/etc", "/usr/bin", "/usr/sbin", "/usr/local/bin", "/var/www", "/root/.ssh"]
 cert_targets = []               # e.g. ["localhost:443"]
+app_paths    = ["/var/www", "/srv", "/opt", "/home", "/root"]   # where app_vulns looks for lock files
+web_users    = ["www-data", "apache", "nginx", "http"]   # add the accounts your apps run as, e.g. "node", "app"
 
 [patrol]
 ssh_threshold = 10              # failed SSH logins per IP per hour before alerting

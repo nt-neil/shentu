@@ -36,13 +36,16 @@ var sshLogins = Tool{
 
 // SSHSource is the per-IP summary.
 type SSHSource struct {
-	IP          string    `json:"ip"`
-	Failed      int       `json:"failed"`
-	InvalidUser int       `json:"invalid_user"`
-	Accepted    int       `json:"accepted"`
-	Users       []string  `json:"users"`
-	First       time.Time `json:"first"`
-	Last        time.Time `json:"last"`
+	IP          string `json:"ip"`
+	Failed      int    `json:"failed"`
+	InvalidUser int    `json:"invalid_user"`
+	Accepted    int    `json:"accepted"`
+	// Kept apart so a model cannot mistake an attempted name for a login that worked.
+	FailedUsers   []string  `json:"failed_users,omitempty"`   // existing accounts, wrong credentials
+	InvalidUsers  []string  `json:"invalid_users,omitempty"`  // names that do not exist here
+	AcceptedUsers []string  `json:"accepted_users,omitempty"` // logged in successfully
+	First         time.Time `json:"first"`
+	Last          time.Time `json:"last"`
 }
 
 var (
@@ -60,7 +63,7 @@ var (
 func SSHSummary(ctx context.Context, env *Env, since time.Time, onlyIP string) (map[string]any, error) {
 	lines, source := authLines(ctx, env, since)
 	by := map[string]*SSHSource{}
-	users := map[string]map[string]bool{}
+	users := map[string]map[string]map[string]bool{} // ip -> kind -> user
 	for _, l := range lines {
 		ts, ok := parseLogTime(l)
 		if !ok || ts.Before(since) {
@@ -92,7 +95,7 @@ func SSHSummary(ctx context.Context, env *Env, since time.Time, onlyIP string) (
 		if s == nil {
 			s = &SSHSource{IP: ip, First: ts}
 			by[ip] = s
-			users[ip] = map[string]bool{}
+			users[ip] = map[string]map[string]bool{"failed": {}, "invalid": {}, "accepted": {}}
 		}
 		switch kind {
 		case "failed":
@@ -108,16 +111,21 @@ func SSHSummary(ctx context.Context, env *Env, since time.Time, onlyIP string) (
 		if ts.After(s.Last) {
 			s.Last = ts
 		}
-		if len(users[ip]) < 20 {
-			users[ip][user] = true
+		if len(users[ip][kind]) < 20 {
+			users[ip][kind][user] = true
 		}
 	}
 	list := make([]SSHSource, 0, len(by))
 	for ip, s := range by {
-		for u := range users[ip] {
-			s.Users = append(s.Users, u)
+		names := func(kind string) []string {
+			var l []string
+			for u := range users[ip][kind] {
+				l = append(l, u)
+			}
+			sort.Strings(l)
+			return l
 		}
-		sort.Strings(s.Users)
+		s.FailedUsers, s.InvalidUsers, s.AcceptedUsers = names("failed"), names("invalid"), names("accepted")
 		list = append(list, *s)
 	}
 	sort.Slice(list, func(i, j int) bool {

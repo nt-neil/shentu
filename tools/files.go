@@ -52,7 +52,8 @@ type Changed struct {
 	Webshell []string  `json:"webshell_patterns,omitempty"`
 }
 
-var webExt = map[string]bool{".php": true, ".phtml": true, ".php5": true, ".jsp": true, ".jspx": true, ".asp": true, ".aspx": true, ".cgi": true, ".pl": true, ".py": true, ".sh": true}
+var webExt = map[string]bool{".php": true, ".phtml": true, ".php5": true, ".jsp": true, ".jspx": true, ".asp": true, ".aspx": true, ".cgi": true, ".pl": true, ".py": true, ".sh": true,
+	".js": true, ".mjs": true, ".cjs": true, ".ts": true}
 
 var webshellPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)eval\s*\(\s*\$_(POST|GET|REQUEST|COOKIE)`),
@@ -60,6 +61,13 @@ var webshellPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)(system|shell_exec|passthru|exec|popen|proc_open)\s*\(\s*\$_(POST|GET|REQUEST|COOKIE)`),
 	regexp.MustCompile(`(?i)Runtime\.getRuntime\(\)\.exec\(\s*request\.getParameter`),
 	regexp.MustCompile(`(?i)preg_replace\s*\(\s*["'].*/e["']`),
+	// Node.js: request data straight into a shell, eval or Function.
+	regexp.MustCompile(`(?:exec|execSync|spawn|spawnSync|execFile)\s*\(\s*req\.(?:query|body|params|headers)`),
+	regexp.MustCompile(`(?:eval|new\s+Function)\s*\(\s*req\.(?:query|body|params|headers)`),
+	regexp.MustCompile(`eval\s*\(\s*Buffer\.from\s*\([^)]*,\s*['"]base64['"]\s*\)`),
+	// Python (Flask/Django style): request data into os/subprocess/eval/exec.
+	regexp.MustCompile(`(?:os\.system|os\.popen|subprocess\.\w+|eval|exec)\s*\(\s*request\.(?:args|form|values|GET|POST|data|json)`),
+	regexp.MustCompile(`exec\s*\(\s*(?:base64\.b64decode|zlib\.decompress|marshal\.loads)`),
 }
 
 // FileChanges walks roots and returns files whose mtime or ctime is after since.

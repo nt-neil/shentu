@@ -34,6 +34,8 @@ type Config struct {
 		LogPaths    []string `toml:"log_paths"`
 		WatchPaths  []string `toml:"watch_paths"`
 		CertTargets []string `toml:"cert_targets"`
+		WebUsers    []string `toml:"web_users"`
+		AppPaths    []string `toml:"app_paths"`
 	} `toml:"tools"`
 	Patrol struct {
 		SSHThreshold int    `toml:"ssh_threshold"`
@@ -52,6 +54,8 @@ func loadConfig(path string) (*Config, error) {
 	c.LLM.Timeout = "180s"
 	c.Tools.LogPaths = []string{"/var/log/auth.log", "/var/log/secure", "/var/log/syslog", "/var/log/nginx/*.log", "/var/log/apache2/*.log"}
 	c.Tools.WatchPaths = []string{"/etc", "/usr/bin", "/usr/sbin", "/usr/local/bin", "/var/www", "/root/.ssh"}
+	c.Tools.WebUsers = []string{"www-data", "apache", "nginx", "http"}
+	c.Tools.AppPaths = []string{"/var/www", "/srv", "/opt", "/home", "/root"}
 	c.Patrol.SSHThreshold = 10
 	c.Patrol.Cooldown = "24h"
 	c.StateDir = "/var/lib/shentu"

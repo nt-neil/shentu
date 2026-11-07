@@ -31,6 +31,10 @@ Blocked 203.0.113.7 until tomorrow 09:14. To undo: "unblock 203.0.113.7".
 - **`shentu patrol`**: run by a systemd timer every 30 minutes. It runs fixed checks without the
   LLM. If something new shows up, the LLM explains it and the report goes to Telegram, Slack, Discord,
   ntfy or a webhook. If the LLM is down, you still get the raw findings.
+- **`shentu survey`**: learns the server first, like a guard walking the premises. Patrol keeps the
+  survey as a baseline and reports risky settings (a database open to the network, SSH password
+  login) and changes (new accounts, cron files, SSH configuration). The model gets a summary, so its
+  answers fit this server.
 - **`shentu bot`**: ask the same questions from Telegram. It answers one paired user only. Pairing
   needs a one-time code and a `y` on the server. Blocking from Telegram is off unless you turn it
   on, and then every block needs a ✅ press.
@@ -44,10 +48,12 @@ Blocked 203.0.113.7 until tomorrow 09:14. To undo: "unblock 203.0.113.7".
 |---|---|
 | `ssh_logins` | failed and successful SSH logins by source IP (auth.log, secure or journald) |
 | `listening_ports` | listening TCP and UDP ports and the process behind each one |
-| `processes` | deleted executables, programs running from /tmp or /dev/shm, shells run by web users |
+| `processes` | deleted executables, programs running from /tmp or /dev/shm, shells run by web users (`web_users`) |
 | `accounts_audit` | extra UID 0 accounts, sudo rules, authorized_keys |
-| `package_vulns` | installed packages checked against [OSV](https://osv.dev) (Ubuntu, Debian, Alpine, Rocky, Alma) |
-| `file_changes` | recently changed files in watched directories, plus webshell patterns |
+| `site_profile` | survey of the server: services and whether the network can reach them, web and app stacks, databases, firewall, effective SSH settings, containers, cron, login accounts, and the risks that follow (e.g. a database listening on all interfaces) |
+| `package_vulns` | installed packages checked against [OSV](https://osv.dev) (Ubuntu, Debian, Alpine, Rocky, Alma); vulnerabilities on CISA's actively exploited list come first, with the upgrade command |
+| `app_vulns` | application lock files (npm, Composer, pip/Pipenv/Poetry, Go, Bundler) checked against OSV and CISA KEV |
+| `file_changes` | recently changed files in watched directories, plus webshell patterns (PHP, JSP, Node.js, Python) |
 | `cert_expiry` | TLS certificate expiry |
 | `log_search` | regex search, limited to configured log files |
 | `block_ip` / `unblock_ip` | timed nftables blocks in a separate `inet shentu` table. **Chat only, needs your confirmation.** |

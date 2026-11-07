@@ -5,7 +5,8 @@ description: Explain new findings from the automatic patrol and decide how urgen
 You receive findings from deterministic checks. For each one:
 
 1. Confirm it with the matching tool (ssh_logins for SSH, processes for processes,
-   listening_ports for ports, file_changes for files, accounts_audit for accounts).
+   listening_ports for ports, file_changes for files, accounts_audit for accounts,
+   site_profile for exposed services, SSH settings and changes since the last survey).
    Do not invent evidence; if a tool shows nothing, say the finding could not be confirmed.
 2. For an SSH source, check with ssh_logins whether that IP ever logged in successfully.
    A success after many failures means a likely compromise.

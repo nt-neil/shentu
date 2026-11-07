@@ -15,6 +15,7 @@ type Env struct {
 	LogPaths    []string
 	WatchPaths  []string
 	CertTargets []string
+	AppPaths    []string
 	NotifyURL   string
 	HTTP        *http.Client
 }
@@ -34,7 +35,7 @@ type Tool struct {
 func All() []Tool {
 	return []Tool{
 		sshLogins, listeningPorts, processesTool, accountsAudit,
-		packageVulns, fileChanges, certExpiry, logSearch,
+		packageVulns, appVulns, siteProfile, fileChanges, certExpiry, logSearch,
 		blockIP, unblockIP, notifyTool,
 	}
 }
