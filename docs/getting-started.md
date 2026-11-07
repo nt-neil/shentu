@@ -87,6 +87,28 @@ url = "${NOTIFY_URL}"
 | ntfy | `ntfy://ntfy.sh/<your topic>[?token=<token>]` |
 | Webhook | `https://…`: JSON, signed with `SHENTU_WEBHOOK_SECRET` when it is set |
 
+**Telegram, step by step**
+
+1. In Telegram, open **@BotFather**, send `/newbot`, and follow the prompts. It replies with the
+   bot token, which looks like `123456789:AA…`.
+2. Open a chat with your new bot and press **Start** (or send any message). A bot cannot write to
+   you first, so this step is required.
+3. Find your chat ID. On the server:
+
+   ```sh
+   curl -s "https://api.telegram.org/bot<bot token>/getUpdates" | grep -o '"chat":{"id":-\?[0-9]*'
+   ```
+
+   The number after `"id":` is the chat ID. For a group, add the bot to the group and send a message
+   there first; group IDs start with `-`.
+4. Put both in `/etc/shentu/env`:
+
+   ```sh
+   NOTIFY_URL=telegram://<bot token>@telegram?chats=<chat id>
+   ```
+
+5. Send a test with `sudo shentu patrol --daily`.
+
 Long reports are split into several messages. Other useful settings in `shentu.toml`:
 
 - `language = "繁體中文"` for answers and reports in another language;

@@ -88,6 +88,25 @@ url = "${NOTIFY_URL}"
 | ntfy | `ntfy://ntfy.sh/<自訂主題>[?token=<token>]`，手機裝 ntfy App 訂閱這個主題就能收到 |
 | 自架 Webhook | `https://…`，送出 JSON；有設 `SHENTU_WEBHOOK_SECRET` 的話會附上簽章 |
 
+**Telegram 設定步驟**
+
+1. 在 Telegram 打開 **@BotFather**，傳 `/newbot`，照提示幫 bot 取名。完成後它會給你 bot token，長得像 `123456789:AA…`。
+2. 打開跟新 bot 的對話，按「開始」（Start），或隨便傳一句話。bot 不能主動找人說話，所以這一步一定要做。
+3. 查出你的 chat ID。在伺服器上執行：
+
+   ```sh
+   curl -s "https://api.telegram.org/bot<bot token>/getUpdates" | grep -o '"chat":{"id":-\?[0-9]*'
+   ```
+
+   `"id":` 後面那串數字就是 chat ID。要發到群組的話，先把 bot 拉進群組，在群組裡傳一句話再查；群組的 ID 開頭是 `-`。
+4. 把兩個值寫進 `/etc/shentu/env`：
+
+   ```sh
+   NOTIFY_URL=telegram://<bot token>@telegram?chats=<chat ID>
+   ```
+
+5. 用 `sudo shentu patrol --daily` 發一份報告測試。
+
 報告太長時，會自動分成好幾則送出。`shentu.toml` 裡另外幾個常用設定：
 
 - `language = "繁體中文"`：回答和報告改用中文；
