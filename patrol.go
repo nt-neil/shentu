@@ -27,6 +27,7 @@ type state struct {
 	Alerted map[string]time.Time `json:"alerted"`
 	Ports   map[string]bool      `json:"ports"` // baseline of listening ports
 	LastRun time.Time            `json:"last_run"`
+	Profile tools.SiteProfile    `json:"profile"` // baseline from the last survey
 }
 
 func loadState(dir string) *state {
@@ -51,8 +52,23 @@ func (s *state) save(dir string) error {
 
 // checks runs the deterministic checks. No LLM is involved, so alerts still
 // work when the model is down.
-func checks(ctx context.Context, cfg *Config, env *tools.Env, st *state) []finding {
+func checks(ctx context.Context, cfg *Config, env *tools.Env, st *state, daily bool) []finding {
 	var out []finding
+	// Survey first: risks that follow from the configuration, and changes since the baseline.
+	surveyEnv := *env
+	if !daily {
+		surveyEnv.AppPaths = nil // walking app folders for lock files is a daily job
+	}
+	prof := tools.Survey(ctx, &surveyEnv)
+	if !daily {
+		prof.Stacks, prof.Lockfiles = st.Profile.Stacks, st.Profile.Lockfiles
+	}
+	for _, r := range append(prof.Risks, tools.Drift(st.Profile, prof)...) {
+		if r.Severity != "info" {
+			out = append(out, finding{r.Key, r.Severity, r.Summary, nil})
+		}
+	}
+	st.Profile = prof
 	since := st.LastRun
 	if since.IsZero() || time.Since(since) > 24*time.Hour {
 		since = time.Now().Add(-1 * time.Hour)
@@ -82,6 +98,11 @@ func checks(ctx context.Context, cfg *Config, env *tools.Env, st *state) []findi
 			// Only the ollama account running Ollama's own root-owned binaries is skipped.
 			if hasOllama && p.UID == ollama && net.ParseIP(p.Addr).IsLoopback() &&
 				(p.Exe == "/usr/local/bin/ollama" || strings.HasPrefix(p.Exe, "/usr/local/lib/ollama/")) {
+				continue
+			}
+			// avahi-daemon opens a random UDP port for unicast mDNS queries on every start;
+			// only its fixed port 5353 is part of the baseline.
+			if strings.HasPrefix(p.Proto, "udp") && p.Exe == "/usr/sbin/avahi-daemon" && p.Port != 5353 {
 				continue
 			}
 			k := fmt.Sprintf("%s:%d", p.Proto, p.Port)
@@ -133,7 +154,7 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 		return err
 	}
 	st := loadState(cfg.StateDir)
-	all := checks(ctx, cfg, env, st)
+	all := checks(ctx, cfg, env, st, daily)
 	if daily {
 		// Once a day: installed packages with vulnerabilities that are being exploited now.
 		if r, err := tools.PackageVulns(ctx, env.HTTP, ""); err == nil {
@@ -141,6 +162,15 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 			for _, e := range list {
 				all = append(all, finding{"kev:" + e.Package + ":" + e.CVE, "critical",
 					fmt.Sprintf("%s %s has %s, which is being exploited in the wild (%s); update it: %v", e.Package, e.Version, e.CVE, e.Name, r["upgrade_command"]), e})
+			}
+		}
+		// The same for application dependencies (npm, PyPI, Composer, Go, RubyGems).
+		if r, err := tools.AppVulns(ctx, env.HTTP, env.AppPaths); err == nil {
+			for _, f := range r["files"].([]tools.AppResult) {
+				for _, e := range f.Exploited {
+					all = append(all, finding{"kev:" + f.Path + ":" + e.Package + ":" + e.CVE, "critical",
+						fmt.Sprintf("%s pins %s %s, which has %s, exploited in the wild (%s); upgrade it", f.Path, e.Package, e.Version, e.CVE, e.Name), e})
+				}
 			}
 		}
 	}

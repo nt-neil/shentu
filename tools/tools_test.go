@@ -39,8 +39,14 @@ func TestSSHSummary(t *testing.T) {
 	for _, s := range r["sources"].([]SSHSource) {
 		got[s.IP] = s
 	}
-	if s := got["203.0.113.7"]; s.Failed != 2 || len(s.Users) != 2 {
+	if s := got["203.0.113.7"]; s.Failed != 2 || len(s.FailedUsers)+len(s.InvalidUsers) != 2 {
 		t.Errorf("203.0.113.7 = %+v", s)
+	}
+	if s := got["192.0.2.10"]; len(s.AcceptedUsers) != 1 || s.AcceptedUsers[0] != "ops" || len(s.InvalidUsers)+len(s.FailedUsers) != 0 {
+		t.Errorf("accepted and attempted users must be listed apart: %+v", s)
+	}
+	if s := got["198.51.100.9"]; len(s.AcceptedUsers) != 0 || len(s.InvalidUsers) != 1 {
+		t.Errorf("an invalid user must not show up as accepted: %+v", s)
 	}
 	if s := got["198.51.100.9"]; s.InvalidUser != 1 {
 		t.Errorf("198.51.100.9 = %+v", s)

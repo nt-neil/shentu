@@ -5,6 +5,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -30,6 +31,7 @@ Usage:
   shentu chat [question]      ask in plain language; with a question, answer once and exit
   shentu patrol [--daily]     run the checks once and notify on new findings (for a systemd timer)
                 [--dry-run]   print the report instead of sending it
+  shentu survey               survey this server (services, exposure, stacks, SSH, firewall) and save it as the baseline
   shentu version
 
 Config: /etc/shentu/shentu.toml (override with SHENTU_CONFIG)
@@ -65,16 +67,25 @@ func main() {
 	if err != nil {
 		fatal(err)
 	}
+	tools.SetWebUsers(cfg.Tools.WebUsers)
 	env := &tools.Env{
 		LogPaths:    cfg.Tools.LogPaths,
 		WatchPaths:  cfg.Tools.WatchPaths,
 		CertTargets: cfg.Tools.CertTargets,
+		AppPaths:    cfg.Tools.AppPaths,
 		NotifyURL:   cfg.Notify.URL,
 		HTTP:        &http.Client{Timeout: 30 * time.Second},
 	}
 	switch cmd {
 	case "chat":
 		err = chat(ctx, cfg, env, strings.Join(args, " "))
+	case "survey":
+		var p tools.SiteProfile
+		p, err = survey(ctx, cfg, env)
+		if err == nil {
+			b, _ := json.MarshalIndent(p, "", "  ")
+			fmt.Println(string(b))
+		}
 	case "patrol":
 		fs := flag.NewFlagSet("patrol", flag.ExitOnError)
 		daily := fs.Bool("daily", false, "always send a full daily report")
@@ -156,4 +167,14 @@ func printable(s string) string {
 		}
 		return r
 	}, s)
+}
+
+// survey runs the site survey and stores it as the baseline that patrol compares with.
+func survey(ctx context.Context, cfg *Config, env *tools.Env) (tools.SiteProfile, error) {
+	if err := os.MkdirAll(cfg.StateDir, 0o700); err != nil {
+		return tools.SiteProfile{}, err
+	}
+	st := loadState(cfg.StateDir)
+	st.Profile = tools.Survey(ctx, env)
+	return st.Profile, st.save(cfg.StateDir)
 }

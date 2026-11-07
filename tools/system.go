@@ -195,6 +195,20 @@ type Proc struct {
 }
 
 var webUsers = map[string]bool{"www-data": true, "apache": true, "nginx": true, "http": true}
+
+// SetWebUsers replaces the accounts that web servers and apps run as (config: [tools] web_users).
+// A shell started by one of them is flagged.
+func SetWebUsers(names []string) {
+	if len(names) == 0 {
+		return
+	}
+	m := map[string]bool{}
+	for _, n := range names {
+		m[n] = true
+	}
+	webUsers = m
+}
+
 var shells = map[string]bool{"sh": true, "bash": true, "dash": true, "zsh": true, "nc": true, "ncat": true, "socat": true, "python": true, "python3": true, "perl": true}
 
 // Processes reads /proc. With all=false only flagged processes are returned.

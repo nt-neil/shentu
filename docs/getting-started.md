@@ -115,14 +115,26 @@ Long reports are split into several messages. Other useful settings in `shentu.t
 - `[tools] log_paths` and `watch_paths` for the logs and directories to watch;
 - `cert_targets = ["localhost:443"]` for certificate expiry checks.
 
-## 4. Try a report
+## 4. Survey the server
+
+```sh
+sudo shentu survey
+```
+
+This lists the services and whether the network can reach them, the web and app stacks, databases,
+firewall, effective SSH settings, containers, cron files and login accounts, with the risks that
+follow. Patrol keeps it as the baseline and reports changes. If your apps live outside `/var/www`,
+`/srv`, `/opt` or the home folders, set `[tools] app_paths`. If they run as their own account (for
+example `node`), add it to `[tools] web_users`.
+
+## 5. Try a report
 
 ```sh
 sudo shentu patrol --daily --dry-run     # print only
 sudo shentu patrol --daily               # send it, and check that it arrives
 ```
 
-## 5. Ask questions
+## 6. Ask questions
 
 ```sh
 sudo shentu chat
@@ -139,7 +151,7 @@ To block an address, say "block 203.0.113.7 for 24 hours". Shentu shows the exac
 runs it only after you type `y`. Every block expires on its own, and "unblock 203.0.113.7" removes
 it early.
 
-## 6. Turn on patrols
+## 7. Turn on patrols
 
 ```sh
 sudo systemctl enable --now shentu-patrol.timer shentu-daily.timer

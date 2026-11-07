@@ -113,14 +113,28 @@ url = "${NOTIFY_URL}"
 - `[tools] log_paths`、`watch_paths`：要讀的 log 檔，以及要監控的目錄；
 - `cert_targets = ["localhost:443"]`：要檢查到期日的憑證。
 
-## 4. 試跑一次
+## 4. 勘查這台伺服器
+
+```sh
+sudo shentu survey
+```
+
+這會列出這台伺服器的現況：
+- 有哪些服務、外部網路連不連得到
+- 網站和應用程式用什麼技術、有哪些資料庫
+- 防火牆和實際生效的 SSH 設定
+- 容器、排程檔和可登入的帳號
+
+接著列出這些設定帶來的風險。巡邏會把這份結果當作基準，之後有變動就通知你。如果你的網站程式不在 `/var/www`、`/srv`、`/opt` 或家目錄底下，請設定 `[tools] app_paths`。如果程式是用自己的帳號執行（例如 `node`），請把那個帳號加進 `[tools] web_users`。
+
+## 5. 試跑一次
 
 ```sh
 sudo shentu patrol --daily --dry-run     # 只印在畫面上，不發送
 sudo shentu patrol --daily               # 實際發送，確認手機有收到
 ```
 
-## 5. 開始對話
+## 6. 開始對話
 
 ```sh
 sudo shentu chat
@@ -135,7 +149,7 @@ sudo shentu chat
 
 要封鎖 IP，就直接說「封鎖 203.0.113.7 24 小時」。Shentu 會先列出要執行的 `nft` 指令，等你按 `y` 才執行。每次封鎖都有期限，時間到會自動解除；要提早解除，就說「解除封鎖 203.0.113.7」。
 
-## 6. 開啟自動巡邏
+## 7. 開啟自動巡邏
 
 ```sh
 sudo systemctl enable --now shentu-patrol.timer shentu-daily.timer
