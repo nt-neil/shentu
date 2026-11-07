@@ -151,6 +151,30 @@ systemctl list-timers 'shentu*'
 - `shentu-daily` sends a report every morning.
 - If the LLM is down, the raw findings are still sent.
 
+## 7. Talk to Shentu from Telegram (optional)
+
+`shentu bot` answers your questions in Telegram, like `shentu chat`. It uses the bot from your
+`telegram://` notify URL, or `[bot] telegram_token`. It connects out to Telegram, so no port is
+opened.
+
+```sh
+sudo systemctl enable --now shentu-bot
+sudo shentu bot pair
+```
+
+`bot pair` prints a code. Send `/pair <code>` to your bot in a private chat. The server terminal
+then asks you to approve that Telegram user with `y`. Until you approve, the bot answers no one.
+
+- Only the paired user, in that private chat, is answered. Groups, forwarded messages and other
+  bots are ignored, and strangers get no reply at all.
+- The code is single use. It lasts 10 minutes and stops working after 5 wrong tries.
+- Pairing and unpairing are sent to your notify channel. `sudo shentu bot unpair` revokes access,
+  and `sudo shentu bot status` shows who is paired.
+- Blocking from Telegram is off. To allow it, set `allow_control = true` under `[bot]` in
+  `/etc/shentu/shentu.toml`. Each block then shows the exact command with ✅/❌ buttons, valid for
+  5 minutes, and runs only after the paired user presses ✅.
+- `/new` starts a fresh conversation.
+
 ## Day to day
 
 - Every tool call and model call is logged in `/var/lib/shentu/log.jsonl`.

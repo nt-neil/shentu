@@ -31,6 +31,9 @@ Blocked 203.0.113.7 until tomorrow 09:14. To undo: "unblock 203.0.113.7".
 - **`shentu patrol`**: run by a systemd timer every 30 minutes. It runs fixed checks without the
   LLM. If something new shows up, the LLM explains it and the report goes to Telegram, Slack, Discord,
   ntfy or a webhook. If the LLM is down, you still get the raw findings.
+- **`shentu bot`**: ask the same questions from Telegram. It answers one paired user only. Pairing
+  needs a one-time code and a `y` on the server. Blocking from Telegram is off unless you turn it
+  on, and then every block needs a ✅ press.
 - **`shentu setup`**: picks the LLM. It can download a local model sized to the server's memory
   (through Ollama, so nothing leaves the machine), or take an API key for Anthropic, OpenAI,
   OpenRouter or AppleToken. Any other OpenAI-compatible endpoint can be set in the config.
@@ -102,6 +105,10 @@ largest of `qwen2.5:3b`/`7b`/`14b` that fits in memory. `--model` picks another 
   every control action shows the exact command and waits for `y`.
 - **Secrets are masked** before anything reaches the model or the log: private keys, cloud and API
   tokens, JWTs and `password=` values.
+- **Telegram pairing has several locks**: only root can create a code. The code is single use,
+  lasts 10 minutes and dies after 5 wrong tries. A correct code still needs a `y` on the server.
+  Pairing covers one user in a private chat. Strangers get no reply, and every pairing change is
+  notified.
 - **Self-lockout guards**: `block_ip` refuses loopback, the server's own addresses, its default
   gateway and DNS servers, and the IPs of active SSH sessions. Every block has a time limit.
 - **No listening ports, no daemon, no database.** Every tool call and model call is

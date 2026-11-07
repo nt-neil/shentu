@@ -26,6 +26,12 @@ timeout = "180s"
 # and write url = "${NOTIFY_URL}".
 url = ""
 
+[bot]
+# `shentu bot` (systemd: shentu-bot.service) answers the paired Telegram user.
+# Pair with `sudo shentu bot pair`; the code must also be approved on the server.
+# telegram_token = "${TG_BOT_TOKEN}"   # default: the bot in a telegram:// notify url
+allow_control = false            # true: the paired user may block/unblock IPs, each with a ✅ press
+
 [tools]
 log_paths    = ["/var/log/auth.log", "/var/log/secure", "/var/log/syslog", "/var/log/nginx/*.log", "/var/log/apache2/*.log"]
 watch_paths  = ["/etc", "/usr/bin", "/usr/sbin", "/usr/local/bin", "/var/www", "/root/.ssh"]

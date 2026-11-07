@@ -84,7 +84,7 @@ func deliver(ctx context.Context, hc *http.Client, kind string, u *url.URL, titl
 			token += ":" + pw
 		}
 		for _, chat := range strings.Split(u.Query().Get("chats"), ",") {
-			for _, part := range chunks(text, 4000) {
+			for _, part := range Chunks(text, 4000) {
 				b, _ := json.Marshal(map[string]any{"chat_id": strings.TrimSpace(chat), "text": part, "disable_web_page_preview": true})
 				if err := post(ctx, hc, telegramAPI+"/bot"+token+"/sendMessage", b, nil); err != nil {
 					return errors.New(strings.ReplaceAll(err.Error(), token, "***"))
@@ -93,7 +93,7 @@ func deliver(ctx context.Context, hc *http.Client, kind string, u *url.URL, titl
 		}
 		return nil
 	case "slack":
-		for _, part := range chunks(text, 3000) {
+		for _, part := range Chunks(text, 3000) {
 			b, _ := json.Marshal(map[string]any{"text": slackEscape(part)})
 			if err := post(ctx, hc, u.String(), b, nil); err != nil {
 				return err
@@ -101,7 +101,7 @@ func deliver(ctx context.Context, hc *http.Client, kind string, u *url.URL, titl
 		}
 		return nil
 	case "discord":
-		for _, part := range chunks(text, 1900) {
+		for _, part := range Chunks(text, 1900) {
 			// parse: [] stops @everyone, @here and role mentions copied from logs.
 			b, _ := json.Marshal(map[string]any{"content": part, "allowed_mentions": map[string]any{"parse": []string{}}})
 			if err := post(ctx, hc, u.String(), b, nil); err != nil {
@@ -177,8 +177,8 @@ func post(ctx context.Context, hc *http.Client, target string, body []byte, hdr 
 	}
 }
 
-// chunks splits s into pieces of at most n runes, preferring to break at a newline.
-func chunks(s string, n int) []string {
+// Chunks splits s into pieces of at most n runes, preferring to break at a newline.
+func Chunks(s string, n int) []string {
 	var out []string
 	for {
 		r := []rune(s)

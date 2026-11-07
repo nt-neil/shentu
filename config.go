@@ -26,6 +26,10 @@ type Config struct {
 	Notify struct {
 		URL string `toml:"url"`
 	} `toml:"notify"`
+	Bot struct {
+		TelegramToken string `toml:"telegram_token"` // default: the bot of a telegram:// notify url
+		AllowControl  bool   `toml:"allow_control"`  // let the paired user run block_ip/unblock_ip (each needs ✅)
+	} `toml:"bot"`
 	Tools struct {
 		LogPaths    []string `toml:"log_paths"`
 		WatchPaths  []string `toml:"watch_paths"`

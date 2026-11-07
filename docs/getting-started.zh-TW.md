@@ -146,6 +146,23 @@ systemctl list-timers 'shentu*'
 - `shentu-daily`：每天早上發一份日報。
 - AI 掛掉的時候，照樣會把原始告警送出。
 
+## 7. 從 Telegram 跟神荼對話（選用）
+
+`shentu bot` 讓你在 Telegram 問問題，用法跟 `shentu chat` 一樣。它用的是 `telegram://` 通知網址裡的 bot，也可以另外在 `[bot] telegram_token` 指定。它是由伺服器主動連到 Telegram，所以不用開任何連接埠。
+
+```sh
+sudo systemctl enable --now shentu-bot
+sudo shentu bot pair
+```
+
+`bot pair` 會印出一組配對碼。在跟 bot 的私訊裡傳 `/pair <配對碼>`，伺服器終端機就會問你是否允許這位 Telegram 使用者，按 `y` 才算配對完成。配對完成之前，bot 不會回應任何人。
+
+- 只回應已配對的那個人，而且只在那個私訊聊天室。群組、轉傳的訊息、其他 bot 一律不理，陌生人完全得不到回應。
+- 配對碼只能用一次，10 分鐘內有效，輸錯 5 次就作廢。
+- 配對成功和解除配對都會發到你的通知管道。`sudo shentu bot unpair` 可以隨時撤銷，`sudo shentu bot status` 可以查看目前跟誰配對。
+- 從 Telegram 封鎖 IP 的功能預設關閉。要開啟，就在 `/etc/shentu/shentu.toml` 的 `[bot]` 下設 `allow_control = true`。開啟後，每次封鎖都會列出確切指令和 ✅/❌ 按鈕，5 分鐘內有效，已配對的人按 ✅ 才會執行。
+- 傳 `/new` 可以開始新的對話。
+
 ## 日常使用
 
 - 每一次工具呼叫和模型呼叫都記錄在 `/var/lib/shentu/log.jsonl`。

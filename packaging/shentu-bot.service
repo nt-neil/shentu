@@ -1,0 +1,25 @@
+[Unit]
+Description=Shentu Telegram bot (answers the paired user only)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/shentu bot
+EnvironmentFile=-/etc/shentu/env
+Restart=on-failure
+RestartSec=30
+ProtectSystem=strict
+ReadWritePaths=/var/lib/shentu
+PrivateTmp=yes
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+# CAP_NET_ADMIN is only used when [bot] allow_control = true, and then only after a ✅.
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH CAP_SYS_PTRACE CAP_NET_ADMIN
+AmbientCapabilities=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+
+[Install]
+WantedBy=multi-user.target
