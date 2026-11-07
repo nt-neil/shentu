@@ -462,6 +462,7 @@ func (b *bot) answer(ctx context.Context, chat int64, text string) {
 		confirm: func(tool, preview string) bool { return b.confirm(ctx, chat, tool, preview) },
 	}
 	b.mu.Lock()
+	owner := b.histFor // the pairing this answer belongs to
 	hist := append([]message{{Role: "system", Content: systemPrompt(b.cfg, skills)}}, b.history...)
 	b.mu.Unlock()
 	hist = append(hist, message{Role: "user", Content: text})
@@ -479,7 +480,9 @@ func (b *bot) answer(ctx context.Context, chat int64, text string) {
 		}
 	}
 	b.mu.Lock()
-	b.history = keep[max(0, len(keep)-botHistoryLimit):]
+	if b.histFor == owner { // the pairing changed while this answer ran: drop it
+		b.history = keep[max(0, len(keep)-botHistoryLimit):]
+	}
 	b.mu.Unlock()
 }
 

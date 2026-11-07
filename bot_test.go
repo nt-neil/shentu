@@ -317,3 +317,36 @@ func (h *hostileModel) count() int {
 	defer h.mu.Unlock()
 	return len(h.requests)
 }
+
+// An answer that finishes after the pairing changed must not land in the new history.
+func TestBotLateAnswerDropped(t *testing.T) {
+	release := make(chan struct{})
+	model := &hostileModel{replies: []string{`{"role":"assistant","content":"OLD-ANSWER"}`}}
+	slow := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { <-release; model.ServeHTTP(w, r) })
+	b, _ := testBot(t, nil, false)
+	m := httptest.NewServer(slow)
+	defer m.Close()
+	b.cfg.LLM.BaseURL = m.URL
+	pairDirectly(t, b)
+	b.handle(context.Background(), msg(pairedUser, pairedChat, "private", "old user question"))
+	time.Sleep(50 * time.Millisecond)
+	withBotState(b.cfg.StateDir, func(s *botState) error { s.UserID, s.ChatID, s.PairedAt = 3003, 3003, time.Now(); return nil })
+	b.handle(context.Background(), msg(3003, 3003, "private", "new user")) // resets history; old answer still running
+	close(release)
+	for i := 0; i < 100; i++ {
+		b.mu.Lock()
+		busy := b.busy
+		b.mu.Unlock()
+		if !busy {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for _, h := range b.history {
+		if strings.Contains(h.Content, "old user question") || strings.Contains(h.Content, "OLD-ANSWER") {
+			t.Errorf("the previous pairing's late answer landed in the new history")
+		}
+	}
+}
