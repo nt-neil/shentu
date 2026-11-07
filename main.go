@@ -26,7 +26,7 @@ const usage = `shentu — security assistant for Linux servers
 
 Usage:
   shentu setup                choose the LLM: download a local model, or enter an API key
-               [--local] [--provider anthropic|openai|openrouter] [--model NAME] [--yes]
+               [--local] [--provider anthropic|openai|openrouter|appletoken] [--model NAME] [--yes]
   shentu chat [question]      ask in plain language; with a question, answer once and exit
   shentu patrol [--daily]     run the checks once and notify on new findings (for a systemd timer)
                 [--dry-run]   print the report instead of sending it

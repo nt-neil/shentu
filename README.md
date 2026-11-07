@@ -32,8 +32,8 @@ Blocked 203.0.113.7 until tomorrow 09:14. To undo: "unblock 203.0.113.7".
   LLM. If something new shows up, the LLM explains it and the report goes to Telegram, Slack, Discord,
   ntfy or a webhook. If the LLM is down, you still get the raw findings.
 - **`shentu setup`**: picks the LLM. It can download a local model sized to the server's memory
-  (through Ollama, so nothing leaves the machine), or take an API key for Anthropic, OpenAI or
-  OpenRouter. Any other OpenAI-compatible endpoint can be set in the config.
+  (through Ollama, so nothing leaves the machine), or take an API key for Anthropic, OpenAI,
+  OpenRouter or AppleToken. Any other OpenAI-compatible endpoint can be set in the config.
 
 ## Tools
 
@@ -88,7 +88,8 @@ See [`packaging/shentu.toml`](packaging/shentu.toml). Secrets such as bot tokens
 `shentu setup` writes the model choice to `/etc/shentu/llm.toml`, which overrides `[llm]` in
 `shentu.toml`; run `setup` again (or edit `llm.toml`) to change the model. For a non-interactive
 setup, pass the key in `SHENTU_API_KEY`: `sudo SHENTU_API_KEY=… shentu setup --provider anthropic`.
-Default models: `claude-haiku-5-5` (Anthropic), `gpt-6-luna` (OpenAI), and on a local server the
+Default models: `claude-haiku-5-5` (Anthropic), `gpt-6-luna` (OpenAI), `anthropic/claude-haiku-5-5` (OpenRouter),
+`grok-4-1-fast-reasoning` (AppleToken), and on a local server the
 largest of `qwen2.5:3b`/`7b`/`14b` that fits in memory. `--model` picks another one.
 
 ## Security design

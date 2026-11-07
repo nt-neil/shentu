@@ -30,6 +30,7 @@ var providers = []provider{
 	{"anthropic", "https://api.anthropic.com/v1", "claude-haiku-5-5", "ANTHROPIC_API_KEY"},
 	{"openai", "https://api.openai.com/v1", "gpt-6-luna", "OPENAI_API_KEY"},
 	{"openrouter", "https://openrouter.ai/api/v1", "anthropic/claude-haiku-5-5", "OPENROUTER_API_KEY"},
+	{"appletoken", "https://appletoken.app/v1", "grok-4-1-fast-reasoning", "APPLETOKEN_API_KEY"},
 }
 
 const ollamaURL = "http://127.0.0.1:11434"
@@ -38,7 +39,7 @@ func setup(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("setup", flag.ExitOnError)
 	local := fs.Bool("local", false, "use a local model (installs Ollama if needed, downloads a model sized for this server)")
 	model := fs.String("model", "", "model name (default: chosen from available memory, or the provider default)")
-	prov := fs.String("provider", "", "hosted provider: anthropic, openai or openrouter; the key is read from SHENTU_API_KEY or prompted")
+	prov := fs.String("provider", "", "hosted provider: anthropic, openai, openrouter or appletoken; the key is read from SHENTU_API_KEY or prompted")
 	yes := fs.Bool("yes", false, "do not ask for confirmation")
 	fs.Parse(args)
 	if os.Geteuid() != 0 {
@@ -51,7 +52,8 @@ func setup(ctx context.Context, args []string) error {
 		fmt.Println("  2) Anthropic Claude (API key)")
 		fmt.Println("  3) OpenAI (API key)")
 		fmt.Println("  4) OpenRouter (API key)")
-		switch ask(in, "Choose [1-4]: ") {
+		fmt.Println("  5) AppleToken (API key)")
+		switch ask(in, "Choose [1-5]: ") {
 		case "1":
 			*local = true
 		case "2":
@@ -60,6 +62,8 @@ func setup(ctx context.Context, args []string) error {
 			*prov = "openai"
 		case "4":
 			*prov = "openrouter"
+		case "5":
+			*prov = "appletoken"
 		default:
 			return errors.New("no choice made")
 		}
