@@ -50,9 +50,11 @@ main() {
 	echo "Shentu installed."
 	# Piped into sh, stdin is the script itself; the guided setup reads the terminal instead.
 	# SHENTU_NO_SETUP=1 skips it (for scripts and images).
-	if [ -f /etc/shentu/setup.toml ] || [ -f /etc/shentu/llm.toml ]; then
+	if [ -f /etc/shentu/setup.toml ]; then
 		echo "Settings kept. To change them: sudo shentu setup"
 	elif [ -z "${SHENTU_NO_SETUP:-}" ] && [ -r /dev/tty ] && [ -w /dev/tty ] && (exec </dev/tty) 2>/dev/null; then
+		# A fresh install, or an upgrade from a version without the guided setup: steps
+		# that are already done (model, notifications, patrols) are offered as "keep".
 		echo "Starting the guided setup (Ctrl-C to stop; run 'sudo shentu setup' any time)..."
 		/usr/local/bin/shentu setup </dev/tty >/dev/tty 2>&1 || echo "Setup did not finish. Run: sudo shentu setup"
 	else

@@ -82,9 +82,18 @@ func wizard(ctx context.Context, in *bufio.Reader, yes bool) error {
 
 notify:
 	w.step(3, "Notifications", "通知管道")
-	notifyURL, err := w.chooseNotify(ctx, in)
-	if err != nil {
-		fmt.Println(w.t("Problem: ", "發生問題：") + err.Error())
+	notifyURL, keep := "", false
+	if cfg, err := loadConfig(configPath()); err == nil && cfg.Notify.URL != "" {
+		kind := strings.SplitN(cfg.Notify.URL, ":", 2)[0]
+		fmt.Printf(w.t("Already set: %s\n", "已經設定：%s\n"), kind)
+		keep = !w.yesNo(in, w.t("Change it?", "要更換嗎？"), false)
+	}
+	if !keep {
+		var err error
+		notifyURL, err = w.chooseNotify(ctx, in)
+		if err != nil {
+			fmt.Println(w.t("Problem: ", "發生問題：") + err.Error())
+		}
 	}
 	if err := writeSetup(lang, notifyURL != ""); err != nil {
 		return err
@@ -115,7 +124,9 @@ notify:
 	}
 
 	w.step(5, "Turn on patrols", "開啟自動巡邏")
-	if w.yesNo(in, w.t("Check every 30 minutes and send a report every morning?", "每 30 分鐘巡邏一次，每天早上發一份日報？"), true) {
+	if exec.CommandContext(ctx, "systemctl", "is-enabled", "--quiet", "shentu-patrol.timer").Run() == nil {
+		fmt.Println(w.t("Patrols are already on.", "巡邏已經是開啟狀態。"))
+	} else if w.yesNo(in, w.t("Check every 30 minutes and send a report every morning?", "每 30 分鐘巡邏一次，每天早上發一份日報？"), true) {
 		out, err := exec.CommandContext(ctx, "systemctl", "enable", "--now", "shentu-patrol.timer", "shentu-daily.timer").CombinedOutput()
 		if err != nil {
 			fmt.Println(w.t("Could not enable the timers: ", "無法開啟排程：") + strings.TrimSpace(string(out)))
