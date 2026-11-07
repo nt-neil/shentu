@@ -26,6 +26,7 @@ type agent struct {
 	confirm      func(tool, preview string) bool // asks the operator; nil means "no"
 	actor        string                          // "chat" or "patrol", for the log
 	log          *auditLog
+	progress     func(tool string) // told before each tool runs; may be nil
 }
 
 func systemPrompt(cfg *Config, skills map[string]skill) string {
@@ -103,6 +104,9 @@ func (a *agent) run(ctx context.Context, msgs []message) (string, []message, err
 			if call.ID == "" {
 				call.ID = fmt.Sprintf("call_%d_%d", step, i)
 				reply.ToolCalls[i].ID = call.ID
+			}
+			if a.progress != nil {
+				a.progress(call.Function.Name)
 			}
 			result := a.callTool(ctx, call.Function.Name, call.Function.Arguments)
 			msgs = append(msgs, message{Role: "tool", ToolCallID: call.ID, Content: result})

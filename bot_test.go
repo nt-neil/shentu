@@ -380,3 +380,25 @@ func TestBotEmptyAnswerAndPhoto(t *testing.T) {
 		t.Errorf("no text-only reply: %v", s)
 	}
 }
+
+// The placeholder shows what is being checked and ends as "done"; the answer is its own message.
+func TestBotProgress(t *testing.T) {
+	model := &hostileModel{replies: []string{call("listening_ports", "{}"), `{"role":"assistant","content":"PORTS-OK"}`}}
+	b, tg := testBot(t, model, false)
+	pairDirectly(t, b)
+	b.handle(context.Background(), msg(pairedUser, pairedChat, "private", "ports?"))
+	for i := 0; i < 100 && !strings.Contains(fmt.Sprint(tg.sent()), "PORTS-OK"); i++ {
+		time.Sleep(20 * time.Millisecond)
+	}
+	tg.mu.Lock()
+	defer tg.mu.Unlock()
+	var edits []string
+	for _, c := range tg.calls {
+		if c.Method == "editMessageText" {
+			edits = append(edits, fmt.Sprint(c.Body["text"]))
+		}
+	}
+	if len(edits) == 0 || !strings.Contains(edits[len(edits)-1], "✅") || !strings.Contains(edits[len(edits)-1], "open ports") {
+		t.Errorf("progress not shown or not finished: %q", edits)
+	}
+}

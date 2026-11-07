@@ -599,14 +599,15 @@ func (b *bot) answer(ctx context.Context, chat int64, text string) {
 	hist := append([]message{{Role: "system", Content: systemPrompt(b.cfg, skills) + answerRule(b.cfg.Bot.Answers, b.zh())}}, b.history...)
 	b.mu.Unlock()
 	hist = append(hist, message{Role: "user", Content: text})
-	b.send(ctx, chat, "…", nil)
+	status, _ := b.send(ctx, chat, b.t("working"), nil)
+	prog := &botProgress{b: b, chat: chat, msg: status, start: time.Now()}
+	a.progress = prog.step
+	b.call(ctx, "sendChatAction", map[string]any{"chat_id": chat, "action": "typing"}, nil)
 	answer, msgs, err := a.run(ctx, hist)
-	if err == nil && strings.TrimSpace(answer) == "" { // reasoning models sometimes end with no text: ask once more
-		answer, msgs, err = a.run(ctx, hist)
-		if err == nil && strings.TrimSpace(answer) == "" {
-			err = errNoAnswer
-		}
+	if err == nil && strings.TrimSpace(answer) == "" {
+		err = errNoAnswer
 	}
+	prog.finish(ctx, err == nil)
 	if err != nil {
 		// The full error is in the audit log; the chat gets its first part only
 		// (an LLM error body can echo the whole prompt).
@@ -793,6 +794,9 @@ var botText = map[string][2]string{ // English, Chinese
 	"new":            {"OK, new conversation.", "好，開始新的對話。"},
 	"busy":           {"Still working on the previous question.", "上一個問題還在處理中，請稍候。"},
 	"error":          {"Error: ", "發生錯誤："},
+	"working":        {"⏳ Working…", "⏳ 處理中…"},
+	"done":           {"✅ Done (%d checks, %ds)", "✅ 完成（查了 %d 項，%d 秒）"},
+	"failed":         {"⚠️ Stopped (%d checks, %ds)", "⚠️ 中斷（查了 %d 項，%d 秒）"},
 	"error_hint":     {"\nPlease ask again. Details are in the log on the server.", "\n請再問一次；詳細內容記在伺服器的紀錄裡。"},
 	"text_only":      {"I can only read text messages for now; photos, voice notes and files are not supported.", "我目前只看得懂文字訊息，圖片、語音和檔案還不支援，請改用文字問我。"},
 	"run":            {"✅ Run", "✅ 執行"},
@@ -821,4 +825,77 @@ func (b *bot) t(key string) string {
 		return botText[key][1]
 	}
 	return botText[key][0]
+}
+
+// toolLabels name the tools in the progress message.
+var toolLabels = map[string][2]string{
+	"site_profile": {"server layout", "勘查伺服器設定"}, "ssh_logins": {"SSH logins", "SSH 登入紀錄"},
+	"listening_ports": {"open ports", "對外連接埠"}, "processes": {"running processes", "執行中的程序"},
+	"accounts_audit": {"accounts and keys", "帳號與金鑰"}, "package_vulns": {"package vulnerabilities", "套件漏洞"},
+	"app_vulns": {"app dependencies", "應用程式套件漏洞"}, "cert_expiry": {"certificates", "憑證到期日"},
+	"file_changes": {"changed files", "最近改動的檔案"}, "log_search": {"logs", "搜尋系統紀錄"},
+	"block_ip": {"block IP", "封鎖 IP"}, "unblock_ip": {"unblock IP", "解除封鎖 IP"},
+	"notify": {"notification", "發送通知"}, "use_skill": {"playbook", "查閱處理步驟"},
+}
+
+// botProgress turns the placeholder message into a live list of what the agent is
+// checking, like a status line, and marks it done at the end.
+type botProgress struct {
+	b     *bot
+	chat  int64
+	msg   int64
+	start time.Time
+	steps []string
+	last  time.Time
+}
+
+func (p *botProgress) label(tool string) string {
+	i := 0
+	if p.b.zh() {
+		i = 1
+	}
+	if l, ok := toolLabels[tool]; ok {
+		return l[i]
+	}
+	return tool
+}
+
+func (p *botProgress) step(tool string) {
+	p.steps = append(p.steps, p.label(tool))
+	if p.msg == 0 || time.Since(p.last) < time.Second { // Telegram limits edits; the next step shows them all
+		return
+	}
+	p.last = time.Now()
+	var b strings.Builder
+	b.WriteString(p.b.t("working"))
+	for i, s := range p.steps {
+		mark := "✓ "
+		if i == len(p.steps)-1 {
+			mark = "… "
+		}
+		b.WriteString("\n" + mark + s)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	p.b.call(ctx, "editMessageText", map[string]any{"chat_id": p.chat, "message_id": p.msg, "text": b.String()}, nil)
+	p.b.call(ctx, "sendChatAction", map[string]any{"chat_id": p.chat, "action": "typing"}, nil)
+}
+
+func (p *botProgress) finish(ctx context.Context, ok bool) {
+	if p.msg == 0 {
+		return
+	}
+	key := "done"
+	if !ok {
+		key = "failed"
+	}
+	text := fmt.Sprintf(p.b.t(key), len(p.steps), int(time.Since(p.start).Seconds()))
+	if len(p.steps) > 0 {
+		sep := ", "
+		if p.b.zh() {
+			sep = "、"
+		}
+		text += "\n" + strings.Join(p.steps, sep)
+	}
+	p.b.call(ctx, "editMessageText", map[string]any{"chat_id": p.chat, "message_id": p.msg, "text": text}, nil)
 }
