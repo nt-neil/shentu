@@ -402,3 +402,24 @@ func TestBotProgress(t *testing.T) {
 		t.Errorf("progress not shown or not finished: %q", edits)
 	}
 }
+
+// If Telegram cannot parse the HTML, the same text goes out again as plain text.
+func TestBotRichFallsBackToPlain(t *testing.T) {
+	var got []map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var m map[string]any
+		json.NewDecoder(r.Body).Decode(&m)
+		got = append(got, m)
+		if m["parse_mode"] != nil {
+			w.Write([]byte(`{"ok":false,"description":"Bad Request: can't parse entities"}`))
+			return
+		}
+		w.Write([]byte(`{"ok":true,"result":{"message_id":7}}`))
+	}))
+	defer srv.Close()
+	b, _ := testBot(t, nil, false)
+	b.api, b.hc = srv.URL, srv.Client()
+	if _, err := b.sendRich(context.Background(), 1, "**x**"); err != nil || len(got) != 2 || got[1]["text"] != "**x**" {
+		t.Errorf("no plain fallback: err=%v calls=%v", err, got)
+	}
+}

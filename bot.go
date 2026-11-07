@@ -362,15 +362,34 @@ func (b *bot) call(ctx context.Context, method string, payload, out any) error {
 }
 
 func (b *bot) send(ctx context.Context, chat int64, text string, keyboard any) (int64, error) {
+	return b.sendAs(ctx, chat, text, keyboard, false)
+}
+
+// sendRich sends model output formatted as HTML, and falls back to plain text when
+// Telegram cannot parse it. Messages that show an exact command stay plain (send).
+func (b *bot) sendRich(ctx context.Context, chat int64, text string) (int64, error) {
+	return b.sendAs(ctx, chat, text, nil, true)
+}
+
+func (b *bot) sendAs(ctx context.Context, chat int64, text string, keyboard any, rich bool) (int64, error) {
 	var last int64
-	for _, part := range tools.Chunks(text, 4000) {
+	for _, part := range tools.Chunks(text, 3500) { // room for the HTML tags
 		p := map[string]any{"chat_id": chat, "text": part, "disable_web_page_preview": true}
 		if keyboard != nil {
 			p["reply_markup"] = keyboard
 		}
 		var m tgMessage
-		if err := b.call(ctx, "sendMessage", p, &m); err != nil {
-			return 0, err
+		err := errors.New("plain")
+		if rich {
+			p["text"], p["parse_mode"] = mdToTelegramHTML(part), "HTML"
+			err = b.call(ctx, "sendMessage", p, &m)
+		}
+		if err != nil {
+			p["text"] = part
+			delete(p, "parse_mode")
+			if err := b.call(ctx, "sendMessage", p, &m); err != nil {
+				return 0, err
+			}
 		}
 		last = m.MessageID
 		if b.cfg.Bot.Answers <= 3 && m.MessageID != 0 {
@@ -405,6 +424,10 @@ func (b *bot) run(ctx context.Context) error {
 	if err := b.call(ctx, "deleteWebhook", map[string]any{}, nil); err != nil {
 		return err
 	}
+	// The Menu button lists the commands; failing only loses the menu.
+	b.call(ctx, "setMyCommands", map[string]any{"commands": []map[string]string{
+		{"command": "new", "description": b.t("cmd_new")}, {"command": "lockdown", "description": b.t("cmd_lockdown")},
+	}}, nil)
 	fmt.Println("shentu bot: listening (pair with `sudo shentu bot pair`)")
 	backoff := time.Second
 	lastLeakAlert := time.Time{}
@@ -619,7 +642,7 @@ func (b *bot) answer(ctx context.Context, chat int64, text string) {
 	if n := maxAnswer(b.cfg.Bot.Answers); n > 0 {
 		answer = tools.Cut(answer, n) // the level is a promise, kept in code
 	}
-	b.send(ctx, chat, answer, nil)
+	b.sendRich(ctx, chat, answer)
 	var keep []message // keep plain turns only, so tool output does not pile up
 	for _, m := range msgs[1:] {
 		if (m.Role == "user" || m.Role == "assistant") && len(m.ToolCalls) == 0 && m.Content != "" {
@@ -679,7 +702,13 @@ func (b *bot) confirmButton(ctx context.Context, chat int64, tool, preview strin
 	case <-time.After(confirmTimeout):
 	case <-ctx.Done():
 	}
-	b.call(ctx, "editMessageReplyMarkup", map[string]any{"chat_id": chat, "message_id": id, "reply_markup": map[string]any{"inline_keyboard": [][]any{}}}, nil)
+	// Show the outcome on the prompt itself and take the buttons away.
+	outcome := b.t("settled_no")
+	if ok {
+		outcome = b.t("settled_yes")
+	}
+	b.call(context.Background(), "editMessageText", map[string]any{"chat_id": chat, "message_id": id,
+		"text": fmt.Sprintf(b.t("confirm"), tool, printable(preview)) + "\n\n" + outcome, "disable_web_page_preview": true}, nil)
 	return ok
 }
 
@@ -794,6 +823,10 @@ var botText = map[string][2]string{ // English, Chinese
 	"new":            {"OK, new conversation.", "好，開始新的對話。"},
 	"busy":           {"Still working on the previous question.", "上一個問題還在處理中，請稍候。"},
 	"error":          {"Error: ", "發生錯誤："},
+	"settled_yes":    {"✅ Confirmed.", "✅ 你已確認。"},
+	"settled_no":     {"❌ Not run (cancelled or timed out).", "❌ 沒有執行（已取消或逾時）。"},
+	"cmd_new":        {"Start a fresh conversation", "開始新的對話"},
+	"cmd_lockdown":   {"Emergency stop: unpair and stop the bot", "緊急關閉：解除配對並停止 bot"},
 	"working":        {"⏳ Working…", "⏳ 處理中…"},
 	"done":           {"✅ Done (%d checks, %ds)", "✅ 完成（查了 %d 項，%d 秒）"},
 	"failed":         {"⚠️ Stopped (%d checks, %ds)", "⚠️ 中斷（查了 %d 項，%d 秒）"},
