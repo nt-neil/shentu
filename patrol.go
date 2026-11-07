@@ -134,6 +134,16 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 	}
 	st := loadState(cfg.StateDir)
 	all := checks(ctx, cfg, env, st)
+	if daily {
+		// Once a day: installed packages with vulnerabilities that are being exploited now.
+		if r, err := tools.PackageVulns(ctx, env.HTTP, ""); err == nil {
+			list, _ := r["actively_exploited"].([]tools.Exploit)
+			for _, e := range list {
+				all = append(all, finding{"kev:" + e.Package + ":" + e.CVE, "critical",
+					fmt.Sprintf("%s %s has %s, which is being exploited in the wild (%s); update it: %v", e.Package, e.Version, e.CVE, e.Name, r["upgrade_command"]), e})
+			}
+		}
+	}
 	var fresh []finding
 	for _, f := range all {
 		if t, ok := st.Alerted[f.Key]; ok && time.Since(t) < dur(cfg.Patrol.Cooldown) {

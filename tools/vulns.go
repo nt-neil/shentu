@@ -10,13 +10,15 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"regexp"
 	"sort"
 	"strings"
+	"sync"
 )
 
 var packageVulns = Tool{
 	Name:        "package_vulns",
-	Description: "Checks installed OS packages against the OSV vulnerability database (online, api.osv.dev). Without arguments returns affected packages and vulnerability IDs; with package set, returns the summary and severity of that package's vulnerabilities.",
+	Description: "Checks installed OS packages against the OSV vulnerability database (online, api.osv.dev) and marks vulnerabilities that CISA lists as actively exploited (KEV); fix those first. Without arguments returns affected packages, vulnerability IDs and the exploited ones; with package set, returns the summary, severity and fixed version of that package's vulnerabilities.",
 	Params: schema(`{"type":"object","properties":{
 		"package":{"type":"string","description":"show details for this package"}}}`),
 	Run: func(ctx context.Context, env *Env, args json.RawMessage) (any, error) {
@@ -82,8 +84,34 @@ func PackageVulns(ctx context.Context, hc *http.Client, detailFor string) (map[s
 			found = append(found, a)
 		}
 	}
-	sort.Slice(found, func(i, j int) bool { return len(found[i].IDs) > len(found[j].IDs) })
 	out := map[string]any{"ecosystem": eco, "packages_checked": len(pkgs), "affected_packages": len(found), "total_vulns": total}
+	if hint := upgradeHint(eco); hint != "" {
+		out["upgrade_command"] = hint
+	}
+	exploited := map[string][]Exploit{} // package -> KEV matches
+	if kev, err := loadKEV(ctx, hc); err != nil {
+		out["kev"] = "CISA KEV list unavailable: " + err.Error()
+	} else {
+		var all []Exploit
+		for _, a := range found {
+			for _, e := range matchKEV(kev, a.IDs, func(id string) []string { return osvCVEs(ctx, hc, id) }) {
+				e.Package, e.Version = a.Package, a.Version
+				exploited[a.Package] = append(exploited[a.Package], e)
+				all = append(all, e)
+			}
+		}
+		out["actively_exploited"] = all
+		if len(all) == 0 {
+			out["kev"] = "none of these vulnerabilities is on the CISA KEV list of actively exploited vulnerabilities"
+		}
+	}
+	sort.SliceStable(found, func(i, j int) bool {
+		ei, ej := len(exploited[found[i].Package]), len(exploited[found[j].Package])
+		if ei != ej {
+			return ei > ej
+		}
+		return len(found[i].IDs) > len(found[j].IDs)
+	})
 	known := false
 	for _, a := range found {
 		known = known || a.Package == detailFor
@@ -100,6 +128,7 @@ func PackageVulns(ctx context.Context, hc *http.Client, detailFor string) (map[s
 			Version string   `json:"version"`
 			Count   int      `json:"vulns"`
 			Sample  []string `json:"sample_ids"`
+			Exploit int      `json:"actively_exploited,omitempty"`
 		}
 		var rows []row
 		for i, a := range found {
@@ -107,7 +136,7 @@ func PackageVulns(ctx context.Context, hc *http.Client, detailFor string) (map[s
 				out["top"] = "only the 20 packages with the most vulnerabilities are listed; call again with package set for details"
 				break
 			}
-			rows = append(rows, row{a.Package, a.Version, len(a.IDs), a.IDs[:min(3, len(a.IDs))]})
+			rows = append(rows, row{a.Package, a.Version, len(a.IDs), a.IDs[:min(3, len(a.IDs))], len(exploited[a.Package])})
 		}
 		out["affected"] = rows
 		return out, nil
@@ -117,6 +146,7 @@ func PackageVulns(ctx context.Context, hc *http.Client, detailFor string) (map[s
 		Summary  string `json:"summary"`
 		Severity any    `json:"severity,omitempty"`
 		Fixed    string `json:"fixed_version,omitempty"`
+		Exploit  string `json:"actively_exploited,omitempty"`
 	}
 	var details []detail
 	for _, a := range found {
@@ -142,6 +172,11 @@ func PackageVulns(ctx context.Context, hc *http.Client, detailFor string) (map[s
 				continue
 			}
 			d := detail{ID: id, Summary: v.Summary, Severity: v.Severity}
+			for _, e := range exploited[a.Package] {
+				if e.ID == id {
+					d.Exploit = e.CVE + ": " + e.Name + " (CISA KEV since " + e.Added + ")"
+				}
+			}
 			if d.Summary == "" {
 				d.Summary = firstLine(v.Details, 200)
 			}
@@ -160,6 +195,103 @@ func PackageVulns(ctx context.Context, hc *http.Client, detailFor string) (map[s
 	out["package"] = detailFor
 	out["vulns"] = details
 	return out, nil
+}
+
+// kevURL is CISA's catalog of vulnerabilities known to be exploited in the wild.
+var kevURL = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
+
+type kevEntry struct {
+	Name       string `json:"vulnerabilityName"`
+	Added      string `json:"dateAdded"`
+	Ransomware string `json:"knownRansomwareCampaignUse"`
+}
+
+// Exploit is an installed package vulnerability that CISA lists as exploited in the wild.
+type Exploit struct {
+	Package    string `json:"package"`
+	Version    string `json:"version"`
+	ID         string `json:"id"`
+	CVE        string `json:"cve"`
+	Name       string `json:"name"`
+	Added      string `json:"kev_since"`
+	Ransomware bool   `json:"used_by_ransomware,omitempty"`
+}
+
+func loadKEV(ctx context.Context, hc *http.Client) (map[string]kevEntry, error) {
+	var feed struct {
+		Vulnerabilities []struct {
+			CVE string `json:"cveID"`
+			kevEntry
+		} `json:"vulnerabilities"`
+	}
+	if err := getJSON(ctx, hc, kevURL, &feed); err != nil {
+		return nil, err
+	}
+	m := make(map[string]kevEntry, len(feed.Vulnerabilities))
+	for _, v := range feed.Vulnerabilities {
+		m[v.CVE] = v.kevEntry
+	}
+	return m, nil
+}
+
+var cveRe = regexp.MustCompile(`CVE-\d{4}-\d{4,}`)
+
+// matchKEV returns the KEV entries for ids. Debian and Ubuntu IDs contain the CVE;
+// others (RLSA, ALSA) are resolved with cves, concurrently and at most 300 of them.
+func matchKEV(kev map[string]kevEntry, ids []string, cves func(id string) []string) []Exploit {
+	var mu sync.Mutex
+	var out []Exploit
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 8)
+	for i, id := range ids {
+		if i >= 300 {
+			break
+		}
+		wg.Add(1)
+		go func(id string) {
+			defer wg.Done()
+			list := cveRe.FindAllString(id, -1)
+			if len(list) == 0 {
+				sem <- struct{}{}
+				list = cves(id)
+				<-sem
+			}
+			for _, c := range list {
+				if e, ok := kev[c]; ok {
+					mu.Lock()
+					out = append(out, Exploit{ID: id, CVE: c, Name: e.Name, Added: e.Added, Ransomware: e.Ransomware == "Known"})
+					mu.Unlock()
+				}
+			}
+		}(id)
+	}
+	wg.Wait()
+	sort.Slice(out, func(i, j int) bool { return out[i].ID+out[i].CVE < out[j].ID+out[j].CVE })
+	return out
+}
+
+// osvCVEs returns the CVEs an OSV advisory covers (aliases and upstream).
+func osvCVEs(ctx context.Context, hc *http.Client, id string) []string {
+	var v struct {
+		Aliases  []string `json:"aliases"`
+		Upstream []string `json:"upstream"`
+	}
+	if getJSON(ctx, hc, osvAPI+"/vulns/"+id, &v) != nil {
+		return nil
+	}
+	return cveRe.FindAllString(strings.Join(append(v.Aliases, v.Upstream...), " "), -1)
+}
+
+func upgradeHint(eco string) string {
+	switch {
+	case strings.HasPrefix(eco, "Debian"), strings.HasPrefix(eco, "Ubuntu"):
+		return "apt-get update && apt-get upgrade"
+	case strings.HasPrefix(eco, "Rocky"), strings.HasPrefix(eco, "AlmaLinux"):
+		return "dnf upgrade --security"
+	case strings.HasPrefix(eco, "Alpine"):
+		return "apk upgrade"
+	}
+	return ""
 }
 
 // installedPackages detects the distro and lists packages in OSV naming.
