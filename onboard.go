@@ -228,7 +228,7 @@ func (w *wiz) telegram(ctx context.Context, in *bufio.Reader) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if !w.yesNo(in, fmt.Sprintf(w.t("Telegram user %s (id %d) pressed Start. Is this you?", "Telegram 使用者 %s（ID %d）按了開始。這是你嗎？"), who, chat), false) {
+	if !w.yesNo(in, fmt.Sprintf(w.t("Telegram user %s (id %d) sent the code. Is this you?", "Telegram 使用者 %s（ID %d）傳來了正確的代碼。這是你嗎？"), who, chat), false) {
 		return "", errors.New(w.t("not confirmed; run `sudo shentu setup` again for a new link", "未確認；請重新執行 `sudo shentu setup` 取得新連結"))
 	}
 	return fmt.Sprintf("telegram://%s@telegram?chats=%d", token, chat), nil
@@ -279,7 +279,7 @@ func waitForStart(ctx context.Context, tg *telegramClient, code string, limit ti
 			return 0, "", ctx.Err()
 		}
 	}
-	return 0, "", errors.New("nobody pressed Start within 10 minutes")
+	return 0, "", errors.New("the code did not arrive within 10 minutes")
 }
 
 // typedCode is easy to type on a phone: 8 characters without 0/O or 1/I (40 bits).
