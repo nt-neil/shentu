@@ -269,6 +269,7 @@ type bot struct {
 	mu       sync.Mutex
 	busy     bool
 	history  []message
+	histFor  string               // pairing the history belongs to (user id + paired time)
 	waiting  map[string]chan bool // confirmation nonce -> answer
 	ignoreAt map[int64]time.Time  // last audit entry per ignored chat
 }
@@ -394,6 +395,10 @@ func (b *bot) handle(ctx context.Context, u tgUpdate) {
 		return
 	}
 	b.mu.Lock()
+	// A new pairing never sees the previous user's conversation.
+	if who := fmt.Sprintf("%d@%d", st.UserID, st.PairedAt.UnixNano()); b.histFor != who {
+		b.history, b.histFor = nil, who
+	}
 	if b.busy {
 		b.mu.Unlock()
 		b.send(ctx, m.Chat.ID, "Still working on the previous question.", nil)

@@ -101,7 +101,7 @@ func TestBotIgnoresStrangers(t *testing.T) {
 	if n := len(tg.sent()); n != 0 {
 		t.Errorf("bot replied %d times to messages it must ignore", n)
 	}
-	if len(model.requests) != 0 {
+	if model.count() != 0 {
 		t.Errorf("an ignored message reached the model")
 	}
 }
@@ -271,6 +271,8 @@ func TestBotControlOffByDefault(t *testing.T) {
 			t.Errorf("a control confirmation was offered with allow_control off")
 		}
 	}
+	model.mu.Lock()
+	defer model.mu.Unlock()
 	for _, req := range model.requests {
 		var body struct{ Tools []toolDef }
 		json.Unmarshal([]byte(req), &body)
@@ -280,4 +282,38 @@ func TestBotControlOffByDefault(t *testing.T) {
 			}
 		}
 	}
+}
+
+// After unpairing and pairing someone else, the old conversation is gone.
+func TestBotHistoryDoesNotCrossPairings(t *testing.T) {
+	model := &hostileModel{replies: []string{`{"role":"assistant","content":"SECRET-ANSWER-1"}`}}
+	b, _ := testBot(t, model, false)
+	pairDirectly(t, b)
+	b.handle(context.Background(), msg(pairedUser, pairedChat, "private", "first user question"))
+	for i := 0; i < 100 && model.count() == 0; i++ {
+		time.Sleep(20 * time.Millisecond)
+	}
+	time.Sleep(100 * time.Millisecond)
+	withBotState(b.cfg.StateDir, func(s *botState) error {
+		s.UserID, s.ChatID, s.PairedAt = 3003, 3003, time.Now()
+		return nil
+	})
+	b.handle(context.Background(), msg(3003, 3003, "private", "second user"))
+	for i := 0; i < 100 && model.count() < 2; i++ {
+		time.Sleep(20 * time.Millisecond)
+	}
+	model.mu.Lock()
+	defer model.mu.Unlock()
+	if len(model.requests) < 2 {
+		t.Fatal("second question never reached the model")
+	}
+	if strings.Contains(model.requests[1], "first user question") || strings.Contains(model.requests[1], "SECRET-ANSWER-1") {
+		t.Errorf("the new pairing received the previous user's conversation")
+	}
+}
+
+func (h *hostileModel) count() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return len(h.requests)
 }
