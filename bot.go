@@ -430,7 +430,8 @@ func (b *bot) run(ctx context.Context) error {
 	}
 	// The Menu button lists the commands; failing only loses the menu.
 	b.call(ctx, "setMyCommands", map[string]any{"commands": []map[string]string{
-		{"command": "new", "description": b.t("cmd_new")}, {"command": "lockdown", "description": b.t("cmd_lockdown")},
+		{"command": "new", "description": b.t("cmd_new")}, {"command": "usage", "description": b.t("cmd_usage")},
+		{"command": "lockdown", "description": b.t("cmd_lockdown")},
 	}}, nil)
 	fmt.Println("shentu bot: listening (pair with `sudo shentu bot pair`)")
 	backoff := time.Second
@@ -557,6 +558,10 @@ func (b *bot) handle(ctx context.Context, u tgUpdate) {
 			b.send(ctx, m.Chat.ID, b.t("limit"), nil)
 			return
 		}
+	}
+	if text == "/usage" {
+		b.send(ctx, m.Chat.ID, "📊 "+usageReport(b.cfg.StateDir, time.Now(), b.zh()), nil)
+		return
 	}
 	if text == "/new" {
 		b.mu.Lock()
@@ -859,6 +864,7 @@ var botText = map[string][2]string{ // English, Chinese
 	"settled_yes":    {"✅ Confirmed.", "✅ 你已確認。"},
 	"settled_no":     {"❌ Not run (cancelled or timed out).", "❌ 沒有執行（已取消或逾時）。"},
 	"cmd_new":        {"Start a fresh conversation", "開始新的對話"},
+	"cmd_usage":      {"Model use and cost", "AI 用量與費用"},
 	"cmd_lockdown":   {"Emergency stop: unpair and stop the bot", "緊急關閉：解除配對並停止 bot"},
 	"working":        {"⏳ Working…", "⏳ 處理中…"},
 	"done":           {"✅ Done (%d checks, %ds)", "✅ 完成（查了 %d 項，%d 秒）"},

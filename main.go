@@ -34,6 +34,7 @@ Usage:
   shentu survey               survey this server (services, exposure, stacks, SSH, firewall) and save it as the baseline
   shentu bot [pair|unpair|status]
                               answer questions from Telegram (a systemd service); pair one user first
+  shentu usage                model calls, tokens and cost: today, last 7 and 30 days
   shentu version
 
 Config: /etc/shentu/shentu.toml (override with SHENTU_CONFIG)
@@ -90,6 +91,8 @@ func main() {
 		}
 	case "bot":
 		err = botCommand(ctx, cfg, env, args)
+	case "usage":
+		fmt.Println(usageReport(cfg.StateDir, time.Now(), strings.Contains(cfg.Language, "中文") || strings.HasPrefix(strings.ToLower(cfg.Language), "zh")))
 	case "patrol":
 		fs := flag.NewFlagSet("patrol", flag.ExitOnError)
 		daily := fs.Bool("daily", false, "always send a full daily report")

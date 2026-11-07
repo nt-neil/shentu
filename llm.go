@@ -48,7 +48,9 @@ type llmClient struct {
 	baseURL, model, apiKey string
 	maxTokens              int
 	http                   *http.Client
-	usedIn, usedOut        int // tokens used by the last call, for the audit log
+	usedIn, usedOut        int     // tokens used by the last call, for the audit log
+	usedReason             int     // reasoning tokens, when the provider reports them
+	usedCost               float64 // what the provider charged, when it says
 }
 
 func newLLM(c *Config) *llmClient {
@@ -102,15 +104,19 @@ func (l *llmClient) chat(ctx context.Context, msgs []message, tools []toolDef) (
 				Message message `json:"message"`
 			} `json:"choices"`
 			Usage struct {
-				In  int `json:"prompt_tokens"`
-				Out int `json:"completion_tokens"`
+				In      int `json:"prompt_tokens"`
+				Out     int `json:"completion_tokens"`
+				Details struct {
+					Reasoning int `json:"reasoning_tokens"`
+				} `json:"completion_tokens_details"`
 			} `json:"usage"`
+			Charged float64 `json:"price_charged"` // AppleToken reports what the call cost
 		}
 		if err := json.Unmarshal(raw, &r); err != nil || len(r.Choices) == 0 {
 			lastErr = fmt.Errorf("unexpected LLM response: %s", truncate(string(raw), 300))
 			continue
 		}
-		l.usedIn, l.usedOut = r.Usage.In, r.Usage.Out
+		l.usedIn, l.usedOut, l.usedReason, l.usedCost = r.Usage.In, r.Usage.Out, r.Usage.Details.Reasoning, r.Charged
 		return r.Choices[0].Message, nil
 	}
 	return message{}, lastErr

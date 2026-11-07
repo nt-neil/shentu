@@ -141,12 +141,13 @@ func (a *agent) answerOnce(ctx context.Context, answer string, msgs []message) (
 
 // logLLM records one model call with its token use, so cost can be tracked.
 func (a *agent) logLLM(err error) {
-	e := logEntry{Actor: a.actor, Tool: "llm", Args: a.llm.model, OK: err == nil, InTokens: a.llm.usedIn, OutTokens: a.llm.usedOut}
+	e := logEntry{Actor: a.actor, Tool: "llm", Args: a.llm.model, OK: err == nil, InTokens: a.llm.usedIn, OutTokens: a.llm.usedOut,
+		ReasonTokens: a.llm.usedReason, Cost: a.llm.usedCost}
 	if err != nil {
 		e.Error = err.Error()
 	}
 	a.log.write(e)
-	a.llm.usedIn, a.llm.usedOut = 0, 0
+	a.llm.usedIn, a.llm.usedOut, a.llm.usedReason, a.llm.usedCost = 0, 0, 0, 0
 }
 
 // callTool runs one tool and returns the text the model will see.
@@ -226,6 +227,9 @@ type logEntry struct {
 	Error     string    `json:"error,omitempty"`
 	InTokens  int       `json:"in_tokens,omitempty"`
 	OutTokens int       `json:"out_tokens,omitempty"`
+	// Reasoning tokens as the provider reports them (some count them in out_tokens, some not).
+	ReasonTokens int     `json:"reasoning_tokens,omitempty"`
+	Cost         float64 `json:"cost,omitempty"` // charged by the provider, in its currency
 }
 
 func newAuditLog(stateDir string) *auditLog {
