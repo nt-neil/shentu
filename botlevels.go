@@ -148,7 +148,7 @@ func answerRule(level int, zh bool) string {
 }
 
 // suggestRule asks for follow-ups; the bot turns them into buttons.
-const suggestRule = "\nAfter the answer, add 2 or 3 short follow-ups the user may want next (a question, or a request such as blocking an IP you found), each on its own line starting with \"» \", at most 30 characters, in the same language as the answer."
+const suggestRule = "\nAfter the answer, add 2 or 3 ways to resolve what you found, as short requests the user can send back, each on its own line starting with \"» \", at most 30 characters, in the same language as the answer. Each one must fix or reduce a risk: an action you can take with your tools (for example blocking an IP you found), or asking you for the exact fix steps for one named problem (for example: give me the commands to update curl). Never offer to check, show or look into something; do that before answering. If nothing needs fixing, add no lines."
 
 func answerLevelRule(level int) string {
 	switch level {
