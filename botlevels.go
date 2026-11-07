@@ -141,6 +141,16 @@ func (b *bot) noteLevelChanges(ctx context.Context) {
 // answerRule is added to the system prompt for answer levels 1 and 2; maxAnswer caps
 // the reply length in code, whatever the model writes.
 func answerRule(level int, zh bool) string {
+	if level >= 2 {
+		return answerLevelRule(level) + suggestRule
+	}
+	return answerLevelRule(level)
+}
+
+// suggestRule asks for follow-ups; the bot turns them into buttons.
+const suggestRule = "\nAfter the answer, add 2 or 3 short follow-ups the user may want next (a question, or a request such as blocking an IP you found), each on its own line starting with \"» \", at most 30 characters, in the same language as the answer."
+
+func answerLevelRule(level int) string {
 	switch level {
 	case 1:
 		return "\nThis reply goes to a phone chat. Answer in at most two sentences: is there a problem, and how serious. Do not include IP addresses, user names, paths, commands or log lines. End with: details: run `sudo shentu chat` on the server."

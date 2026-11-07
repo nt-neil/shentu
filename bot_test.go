@@ -423,3 +423,64 @@ func TestBotRichFallsBackToPlain(t *testing.T) {
 		t.Errorf("no plain fallback: err=%v calls=%v", err, got)
 	}
 }
+
+// Follow-ups become buttons; pressing one asks it as if typed, once, and only for the paired user.
+func TestBotSuggestionButtons(t *testing.T) {
+	model := &hostileModel{replies: []string{`{"role":"assistant","content":"All fine.\n\n» Show SSH failures\n» Block 203.0.113.9"}`}}
+	b, tg := testBot(t, model, false)
+	pairDirectly(t, b)
+	b.handle(context.Background(), msg(pairedUser, pairedChat, "private", "status?"))
+	var kb map[string]any
+	for i := 0; i < 100 && kb == nil; i++ {
+		time.Sleep(20 * time.Millisecond)
+		for _, m := range tg.sent() {
+			if m["text"] == "All fine." {
+				kb, _ = m["reply_markup"].(map[string]any)
+			}
+		}
+	}
+	if kb == nil {
+		t.Fatalf("answer without buttons, or the » lines were not removed: %v", tg.sent())
+	}
+	data := kb["inline_keyboard"].([]any)[0].([]any)[0].(map[string]any)["callback_data"].(string)
+	for i := 0; i < 50; i++ {
+		b.mu.Lock()
+		busy := b.busy
+		b.mu.Unlock()
+		if !busy {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	press := func(user int64) {
+		var u tgUpdate
+		json.Unmarshal([]byte(fmt.Sprintf(`{"callback_query":{"id":"c","data":%q,"from":{"id":%d},"message":{"message_id":5,"chat":{"id":%d,"type":"private"}}}}`, data, user, pairedChat)), &u)
+		b.handle(context.Background(), u)
+	}
+	n := model.count()
+	press(4242) // a stranger
+	time.Sleep(50 * time.Millisecond)
+	if model.count() != n {
+		t.Errorf("a stranger's button press reached the model")
+	}
+	press(pairedUser)
+	for i := 0; i < 100 && model.count() == n; i++ {
+		time.Sleep(20 * time.Millisecond)
+	}
+	model.mu.Lock()
+	last := model.requests[len(model.requests)-1]
+	model.mu.Unlock()
+	if !strings.Contains(last, "Show SSH failures") {
+		t.Errorf("button did not ask its question")
+	}
+	time.Sleep(100 * time.Millisecond)
+	n = model.count()
+	b.mu.Lock()
+	b.busy = false
+	b.mu.Unlock()
+	press(pairedUser) // the same button again
+	time.Sleep(100 * time.Millisecond)
+	if model.count() != n {
+		t.Errorf("a used button worked twice")
+	}
+}

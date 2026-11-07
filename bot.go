@@ -30,6 +30,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -322,6 +323,8 @@ type bot struct {
 	waiting  map[string]chan bool // confirmation nonce -> answer
 	ignoreAt map[int64]time.Time  // last audit entry per ignored chat
 	codeWait chan string          // confirm = 2: the next 6-digit message from the paired user
+	sugNonce string               // the buttons under the latest answer
+	sugText  []string             // what each of those buttons asks
 	canAct   bool                 // interaction >= 3 and the service holds CAP_NET_ADMIN
 	stop     context.CancelFunc   // /lockdown and a token leak stop the service
 }
@@ -373,9 +376,10 @@ func (b *bot) sendRich(ctx context.Context, chat int64, text string) (int64, err
 
 func (b *bot) sendAs(ctx context.Context, chat int64, text string, keyboard any, rich bool) (int64, error) {
 	var last int64
-	for _, part := range tools.Chunks(text, 3500) { // room for the HTML tags
+	parts := tools.Chunks(text, 3500) // room for the HTML tags
+	for i, part := range parts {
 		p := map[string]any{"chat_id": chat, "text": part, "disable_web_page_preview": true}
-		if keyboard != nil {
+		if keyboard != nil && i == len(parts)-1 { // buttons go under the last part
 			p["reply_markup"] = keyboard
 		}
 		var m tgMessage
@@ -481,9 +485,24 @@ func (b *bot) handle(ctx context.Context, u tgUpdate) {
 		b.mu.Lock()
 		ch := b.waiting[nonce]
 		delete(b.waiting, nonce)
+		var ask string
+		if i, err := strconv.Atoi(strings.TrimPrefix(answer, "s")); strings.HasPrefix(answer, "s") && err == nil &&
+			nonce == b.sugNonce && i >= 0 && i < len(b.sugText) {
+			ask = b.sugText[i]
+			b.sugNonce, b.sugText = "", nil // each set of buttons works once
+		}
 		b.mu.Unlock()
 		if ch != nil {
 			ch <- answer == "y"
+		}
+		if ask != "" {
+			// A suggestion button is the same as typing it: it goes through every check below.
+			b.call(ctx, "editMessageReplyMarkup", map[string]any{"chat_id": st.ChatID, "message_id": c.Message.MessageID,
+				"reply_markup": map[string]any{"inline_keyboard": [][]any{}}}, nil)
+			b.send(ctx, st.ChatID, "» "+ask, nil)
+			m := &tgMessage{From: &c.From, Text: ask}
+			m.Chat.ID, m.Chat.Type = c.Message.Chat.ID, "private"
+			b.handle(ctx, tgUpdate{Message: m})
 		}
 		return
 	}
@@ -638,11 +657,25 @@ func (b *bot) answer(ctx context.Context, chat int64, text string) {
 		b.send(ctx, chat, b.t("error")+tools.Cut(mask(short), 200)+b.t("error_hint"), nil)
 		return
 	}
-	answer = strings.TrimSpace(answer)
+	answer, next := splitSuggestions(strings.TrimSpace(answer))
 	if n := maxAnswer(b.cfg.Bot.Answers); n > 0 {
 		answer = tools.Cut(answer, n) // the level is a promise, kept in code
 	}
-	b.sendRich(ctx, chat, answer)
+	var kb any
+	if len(next) > 0 && b.cfg.Bot.Answers >= 2 {
+		nb := make([]byte, 8)
+		rand.Read(nb)
+		nonce := hex.EncodeToString(nb)
+		var rows [][]map[string]string
+		for i, q := range next {
+			rows = append(rows, []map[string]string{{"text": q, "callback_data": fmt.Sprintf("%s:s%d", nonce, i)}})
+		}
+		kb = map[string]any{"inline_keyboard": rows}
+		b.mu.Lock()
+		b.sugNonce, b.sugText = nonce, next
+		b.mu.Unlock()
+	}
+	b.sendAs(ctx, chat, answer, kb, true)
 	var keep []message // keep plain turns only, so tool output does not pile up
 	for _, m := range msgs[1:] {
 		if (m.Role == "user" || m.Role == "assistant") && len(m.ToolCalls) == 0 && m.Content != "" {
@@ -931,4 +964,30 @@ func (p *botProgress) finish(ctx context.Context, ok bool) {
 		text += "\n" + strings.Join(p.steps, sep)
 	}
 	p.b.call(ctx, "editMessageText", map[string]any{"chat_id": p.chat, "message_id": p.msg, "text": text}, nil)
+}
+
+// splitSuggestions takes the "» " lines the model adds at the end (see answerRule)
+// off the answer: at most 3, each short enough for a button.
+func splitSuggestions(answer string) (string, []string) {
+	lines := strings.Split(answer, "\n")
+	var next []string
+	for len(lines) > 0 {
+		l := strings.TrimSpace(lines[len(lines)-1])
+		if l == "" && len(next) > 0 {
+			lines = lines[:len(lines)-1]
+			continue
+		}
+		q, ok := strings.CutPrefix(l, "» ")
+		if !ok {
+			break
+		}
+		if q = strings.TrimSpace(q); q != "" {
+			next = append([]string{tools.Cut(q, 40)}, next...)
+		}
+		lines = lines[:len(lines)-1]
+	}
+	if len(next) > 3 {
+		next = next[len(next)-3:]
+	}
+	return strings.TrimSpace(strings.Join(lines, "\n")), next
 }
