@@ -57,7 +57,7 @@ func newLLM(c *Config) *llmClient {
 	// Every connection goes through localDialer, which checks the owner of the listener
 	// whenever the address it actually connected to is on this machine.
 	tr := http.DefaultTransport.(*http.Transport).Clone()
-	tr.DialContext = localDialer
+	tr.DialContext = llmDial
 	if u, err := url.Parse(c.LLM.BaseURL); err == nil && isLoopbackHost(u.Hostname()) {
 		tr.Proxy = nil
 	}
@@ -125,6 +125,9 @@ func (l *llmClient) chat(ctx context.Context, msgs []message, tools []toolDef) (
 func truncate(s string, n int) string {
 	return tools.Cut(s, n)
 }
+
+// llmDial is localDialer; tests swap it to reach a fake model on a loopback port.
+var llmDial = localDialer
 
 // localDialer is used for every LLM connection. When the connected address is on
 // this machine (loopback or one of its own addresses, whatever the host name said),

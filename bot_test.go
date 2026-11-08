@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -70,6 +71,9 @@ func testBot(t *testing.T, model *hostileModel, allowControl bool) (*bot, *fakeT
 		m := httptest.NewServer(model)
 		t.Cleanup(m.Close)
 		cfg.LLM.BaseURL = m.URL
+		// The fake model listens as the test user, which localDialer rightly refuses on Linux.
+		llmDial = (&net.Dialer{}).DialContext
+		t.Cleanup(func() { llmDial = localDialer })
 	}
 	return &bot{cfg: cfg, env: &tools.Env{}, token: "1:T", api: srv.URL, hc: srv.Client(), log: newAuditLog(cfg.StateDir),
 		waiting: map[string]chan bool{}, ignoreAt: map[int64]time.Time{}, canAct: allowControl}, tg
