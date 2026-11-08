@@ -266,8 +266,17 @@ func matchKEV(kev map[string]kevEntry, ids []string, cves func(id string) []stri
 		}(id)
 	}
 	wg.Wait()
+	// One CVE often has several advisory IDs (DSA, DLA, DEBIAN-CVE, the CVE itself): report it once.
 	sort.Slice(out, func(i, j int) bool { return out[i].ID+out[i].CVE < out[j].ID+out[j].CVE })
-	return out
+	seen := map[string]bool{}
+	var uniq []Exploit
+	for _, e := range out {
+		if !seen[e.CVE] {
+			seen[e.CVE] = true
+			uniq = append(uniq, e)
+		}
+	}
+	return uniq
 }
 
 // osvCVEs returns the CVEs an OSV advisory covers (aliases and upstream).
