@@ -35,7 +35,7 @@ type Tool struct {
 func All() []Tool {
 	return []Tool{
 		sshLogins, listeningPorts, processesTool, accountsAudit,
-		packageVulns, appVulns, siteProfile, fileChanges, certExpiry, logSearch,
+		packageVulns, appVulns, appCodeAudit, siteProfile, fileChanges, certExpiry, logSearch,
 		blockIP, unblockIP, notifyTool,
 	}
 }
