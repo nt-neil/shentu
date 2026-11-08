@@ -173,6 +173,18 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 				}
 			}
 		}
+		// The applications' own files: exposed secrets, debug mode, webshells, keys in code.
+		for _, f := range tools.AppCodeAudit(ctx, env.AppPaths, tools.WebRoots()).Findings {
+			key := fmt.Sprintf("code:%s:%s:%d", f.Kind, f.Path, f.Line)
+			if f.Kind == "webshell" {
+				key = "webshell:" + f.Path // the same key as the hourly file check, so it is told once
+			}
+			where := f.Path
+			if f.Line > 0 {
+				where = fmt.Sprintf("%s line %d", f.Path, f.Line)
+			}
+			all = append(all, finding{key, f.Severity, fmt.Sprintf("%s: %s; fix: %s", where, f.Detail, f.Fix), f})
+		}
 	}
 	var fresh []finding
 	for _, f := range all {

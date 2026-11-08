@@ -9,6 +9,7 @@ Collect, in this order:
 4. processes: any suspicious process.
 5. package_vulns: number of affected packages; name the 3 most affected.
 6. cert_expiry: certificates expiring within 30 days.
+7. app_code_audit: secrets or backups the web server serves, debug mode, webshells, keys in code.
 
 Report:
 - First line: overall status — OK, Needs attention, or Urgent.

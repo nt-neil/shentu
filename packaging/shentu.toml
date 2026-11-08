@@ -48,7 +48,7 @@ protection  = 2   # 1 strict (leak → pause, 08–20h, 50 answers/day) · 2 sta
 log_paths    = ["/var/log/auth.log", "/var/log/secure", "/var/log/syslog", "/var/log/nginx/*.log", "/var/log/apache2/*.log"]
 watch_paths  = ["/etc", "/usr/bin", "/usr/sbin", "/usr/local/bin", "/var/www", "/root/.ssh"]
 cert_targets = []               # e.g. ["localhost:443"]
-app_paths    = ["/var/www", "/srv", "/opt", "/home", "/root"]   # where app_vulns looks for lock files
+app_paths    = ["/var/www", "/srv", "/opt", "/home", "/root"]   # where app_vulns and app_code_audit look
 web_users    = ["www-data", "apache", "nginx", "http"]   # add the accounts your apps run as, e.g. "node", "app"
 
 [patrol]
