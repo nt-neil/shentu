@@ -20,7 +20,7 @@ cat > /var/log/nginx/access.log <<'LOG'
 192.168.22.1 - - [06/Nov/2026:08:03:10 +0800] "GET /favicon.ico HTTP/1.1" 404 162 "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 Safari/605.1.15"
 LOG
 # long-running suspicious process from a deleted /tmp binary, and an odd listener
-pgrep -x .kworker >/dev/null || { cp /bin/sleep /tmp/.kworker; nohup /tmp/.kworker infinity >/dev/null 2>&1 & sleep 0.5; rm -f /tmp/.kworker; }
+pgrep -x .kworker >/dev/null || { cp /bin/sleep /tmp/.kworker; nohup /tmp/.kworker infinity >/dev/null 2>&1 & }  # left in /tmp (round 2; round 1 also deleted the file)
 ss -ltn | grep -q ':31337 ' || su -s /bin/sh nobody -c 'nohup python3 -m http.server 31337 >/dev/null 2>&1 &'
 ip netns list | grep -q atk || { sh "$(dirname "$0")/netns.sh"; ip netns exec atk ip addr add 10.99.0.4/24 dev vb; }
 echo FIXTURES_OK

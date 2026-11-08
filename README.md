@@ -102,8 +102,10 @@ also carries a signed build provenance, which you can check with the GitHub CLI:
 on amd64 and arm64. Tested end to end on Ubuntu 24.04, Debian 12 and Rocky 9 (arm64). `block_ip` needs
 nftables, which many cloud images leave out: `apt install nftables` or `dnf install nftables`.
 
-Not sure which model to use? [Choosing a model](docs/models.md) compares 12 models on the same
-planted intrusion: accuracy, prompt-injection resistance, speed and cost.
+**Which model should I use?** [Choosing a model](docs/models.md) compares 14 models on the same
+planted intrusion, on speed, correctness, completion, prompt-injection resistance and cost
+(round 2, 2026-11-08: glm-5.3-flash is the best value). Raw data is in
+[docs/model-results](docs/model-results).
 
 ## Configuration
 

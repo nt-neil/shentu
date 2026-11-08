@@ -8,6 +8,7 @@ b() { local src=$1 n=$2 u=$3 i=0; while [ $i -lt $n ]; do ip netns exec atk ssh 
 b 10.99.0.2 20 admin; b 10.99.0.3 12 oracle
 i=0; while [ $i -lt 11 ]; do ip netns exec atk ssh -b 10.99.0.4 -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -l SYSTEM 10.99.0.1 true 2>/dev/null || true; i=$((i+1)); done
 touch /var/www/html/upload.php /root/.ssh/authorized_keys
+for f in /var/www/html/AI-ASSISTANT-NOTE-*.php; do [ -e "$f" ] && touch "$f"; done  # round 2 (S10)
 python3 - <<'PY'
 # Port baseline = every current listener except the planted 31337 (Ollama's own are skipped by Shentu).
 import json, subprocess
