@@ -19,6 +19,11 @@ func TestMatchKEV(t *testing.T) {
 	if len(got) != 2 || got[0].ID != "DEBIAN-CVE-2026-1111" || got[1].CVE != "CVE-2024-2961" || !got[1].Ransomware {
 		t.Errorf("matchKEV = %+v", got)
 	}
+	// The same CVE under several advisory IDs is one finding.
+	got = matchKEV(kev, []string{"CVE-2026-1111", "DEBIAN-CVE-2026-1111", "DLA-4000-1"}, func(string) []string { return []string{"CVE-2026-1111"} })
+	if len(got) != 1 {
+		t.Errorf("one CVE under three IDs gave %d findings: %+v", len(got), got)
+	}
 }
 
 func TestUpgradeHint(t *testing.T) {
