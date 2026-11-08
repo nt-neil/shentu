@@ -16,6 +16,13 @@ max_steps = 10
 max_tokens = 4096              # upper bound on each model reply (bounds cost; some providers require it)
 timeout = "180s"
 
+# Optional monthly AI budget (0 = none); `shentu budget` and `shentu setup` write it to budget.toml.
+# At 80% an alert goes out; at 100% the model is not called until next month, and
+# patrols still alert with the raw findings. `shentu usage` and /usage show the use.
+# [budget]
+# monthly_cost = 5            # in the provider's currency (AppleToken reports USD per call)
+# monthly_tokens = 2000000    # input + output + reasoning, for providers that do not report cost
+
 [notify]
 # telegram://${TG_BOT_TOKEN}@telegram?chats=123456789
 # ntfy://ntfy.sh/your-secret-topic
@@ -25,6 +32,17 @@ timeout = "180s"
 # Long reports are split into several messages. A webhook URL is a secret: put it in /etc/shentu/env
 # and write url = "${NOTIFY_URL}".
 url = ""
+
+[bot]
+# `shentu bot` (systemd: shentu-bot.service) answers the paired Telegram user.
+# Pair with `sudo shentu bot pair`; the code must also be approved on the server.
+# telegram_token = "${TG_BOT_TOKEN}"   # default: the bot in a telegram:// notify url
+# Four ranges, each a level from 1 (safest) to 4. Raising a level is only possible here,
+# on the server, and every change is logged and notified. /lockdown works at every level.
+interaction = 1   # 1 notifications only · 2 questions · 3 + block/unblock IPs · 4 + every control tool
+answers     = 2   # 1 problem or not · 2 summary · 3 full, deleted after 24h · 4 full, kept
+confirm     = 2   # actions: 1 approve on the server · 2 ✅ + one-time code · 3 ✅ only · 4 none (dangerous)
+protection  = 2   # 1 strict (leak → pause, 08–20h, 50 answers/day) · 2 standard (leak → pause) · 3 loose (leak → alert) · 4 off
 
 [tools]
 log_paths    = ["/var/log/auth.log", "/var/log/secure", "/var/log/syslog", "/var/log/nginx/*.log", "/var/log/apache2/*.log"]

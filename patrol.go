@@ -211,6 +211,13 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 		answer = fmt.Sprintf("(LLM unavailable: %v)", err)
 	}
 	answer += "\n\nFindings:\n" + list.String()
+	if daily {
+		zh := strings.Contains(cfg.Language, "中文") || strings.HasPrefix(strings.ToLower(cfg.Language), "zh")
+		answer += "\n" + usageBrief(cfg.StateDir, time.Now(), zh)
+		if l := budgetLine(cfg, time.Now(), zh); l != "" {
+			answer += "\n" + l
+		}
+	}
 
 	answer = mask(answer)
 	sev := "info"

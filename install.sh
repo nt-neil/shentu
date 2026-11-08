@@ -40,7 +40,7 @@ main() {
 	install -d -m 0700 /var/lib/shentu
 	[ -f /etc/shentu/shentu.toml ] || install -m 0644 "$SRC/packaging/shentu.toml" /etc/shentu/shentu.toml
 	[ -f /etc/shentu/env ] || install -m 0600 /dev/null /etc/shentu/env
-	for u in shentu-patrol.service shentu-patrol.timer shentu-daily.service shentu-daily.timer; do
+	for u in shentu-patrol.service shentu-patrol.timer shentu-daily.service shentu-daily.timer shentu-bot.service; do
 		install -m 0644 "$SRC/packaging/$u" "/etc/systemd/system/$u"
 	done
 	systemctl daemon-reload

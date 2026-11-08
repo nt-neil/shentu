@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -24,8 +25,11 @@ import (
 )
 
 type wiz struct {
-	zh  bool
-	yes bool
+	zh       bool
+	yes      bool
+	tgChat   int64 // the Telegram chat confirmed in this run (0: none)
+	tgWho    string
+	startBot bool // start shentu-bot once setup.toml has the levels
 }
 
 // t picks the English or the Chinese text.
@@ -81,6 +85,7 @@ func wizard(ctx context.Context, in *bufio.Reader, yes bool) error {
 	}
 
 notify:
+	w.askBudget(in)
 	w.step(3, "Notifications", "通知管道")
 	notifyURL, keep := "", false
 	if cfg, err := loadConfig(configPath()); err == nil && cfg.Notify.URL != "" {
@@ -99,8 +104,20 @@ notify:
 			break
 		}
 	}
-	if err := writeSetup(lang, notifyURL != ""); err != nil {
+	old, _ := os.ReadFile(filepath.Join(configDir(), "setup.toml"))
+	notifyInSetup := notifyURL != "" || keep && strings.Contains(string(old), "${NOTIFY_URL}")
+	botBlock := ""
+	if i := strings.Index(string(old), "\n[bot]"); i >= 0 {
+		botBlock = string(old)[i+1:] // keep earlier choices unless Telegram is set up again
+	}
+	if w.tgChat != 0 {
+		botBlock = w.chooseInteraction(ctx, in)
+	}
+	if err := writeSetup(lang, notifyInSetup, botBlock); err != nil {
 		return err
+	}
+	if w.startBot {
+		w.startBotService(ctx)
 	}
 
 	w.step(4, "Survey this server", "勘查這台伺服器")
@@ -231,6 +248,7 @@ func (w *wiz) telegram(ctx context.Context, in *bufio.Reader) (string, error) {
 	if !w.yesNo(in, fmt.Sprintf(w.t("Telegram user %s (id %d) sent the code. Is this you?", "Telegram 使用者 %s（ID %d）傳來了正確的代碼。這是你嗎？"), who, chat), false) {
 		return "", errors.New(w.t("not confirmed; run `sudo shentu setup` again for a new link", "未確認；請重新執行 `sudo shentu setup` 取得新連結"))
 	}
+	w.tgChat, w.tgWho = chat, who
 	return fmt.Sprintf("telegram://%s@telegram?chats=%d", token, chat), nil
 }
 
@@ -353,12 +371,15 @@ func randomHex(n int) string {
 
 // writeSetup stores the choices that are not secrets in setup.toml, which overrides
 // shentu.toml. The notify URL itself stays in the root-only env file.
-func writeSetup(lang string, notify bool) error {
+func writeSetup(lang string, notify bool, botBlock string) error {
 	var b strings.Builder
 	b.WriteString("# Written by `shentu setup`; overrides shentu.toml. Run setup again to change it.\n")
 	fmt.Fprintf(&b, "language = %q\n", lang)
 	if notify {
 		b.WriteString("\n[notify]\nurl = \"${NOTIFY_URL}\"   # the value is in /etc/shentu/env\n")
+	}
+	if botBlock != "" {
+		b.WriteString("\n" + strings.TrimLeft(botBlock, "\n"))
 	}
 	p := filepath.Join(configDir(), "setup.toml")
 	if err := os.WriteFile(p, []byte(b.String()), 0o644); err != nil {
@@ -366,4 +387,122 @@ func writeSetup(lang string, notify bool) error {
 	}
 	fmt.Println("Saved", p)
 	return nil
+}
+
+// chooseInteraction asks the four Telegram levels for the user confirmed in this run,
+// pairs them (they just proved who they are with the code and root's y), and
+// returns the [bot] block for setup.toml.
+func (w *wiz) chooseInteraction(ctx context.Context, in *bufio.Reader) string {
+	pick := func(r int, def int, risks [4][2]string) int {
+		fmt.Println("\n" + w.t(rangeNames[r][0], rangeNames[r][1]) + ":")
+		for l := 0; l < 4; l++ {
+			star := ""
+			if l+1 == def {
+				star = " ★"
+			}
+			fmt.Printf("  %d) %s%s — %s\n", l+1, w.t(levelNames[r][l][0], levelNames[r][l][1]), star, w.t(risks[l][0], risks[l][1]))
+		}
+		a := ask(in, fmt.Sprintf(w.t("Choose [%d]: ", "請選擇 [%d]："), def))
+		if n, err := strconv.Atoi(a); err == nil && n >= 1 && n <= 4 {
+			return n
+		}
+		return def
+	}
+	fmt.Println(w.t("\nShould this Telegram account also talk to Shentu? Each range has four levels; ★ is the default.",
+		"\n要不要讓這個 Telegram 帳號也能跟神荼對話？每個範圍有四個等級，★ 是預設值。"))
+	l := [4]int{1, 2, 2, 2}
+	l[0] = pick(0, 1, [4][2]string{
+		{"reports and alerts only; the bot reads nothing", "只收報告和告警，bot 不讀任何訊息"},
+		{"ask questions; nothing on the server changes", "可以問問題，伺服器不會有任何改變"},
+		{"also block and unblock IPs", "還可以封鎖、解除封鎖 IP"},
+		{"also every control tool added later", "還包括之後新增的所有控制功能"}})
+	if l[0] >= 2 {
+		l[1] = pick(1, 2, [4][2]string{
+			{"least detail in the chat", "聊天室裡留下的資訊最少"},
+			{"findings and advice, no raw logs", "重點和建議，不附原始 log"},
+			{"as detailed as on the server, deleted after 24h", "跟在伺服器上一樣詳細，24 小時後刪除"},
+			{"detailed and kept in the chat", "詳細內容會一直留在聊天室"}})
+		if l[0] >= 3 {
+			l[2] = pick(2, 2, [4][2]string{
+				{"Telegram only proposes; root runs `shentu bot approve`", "Telegram 只能提出，要到伺服器核准"},
+				{"a stolen phone is not enough without the code app", "手機被偷，沒有驗證器也動不了"},
+				{"a stolen Telegram account can act", "Telegram 帳號被盜就能操作"},
+				{"DANGEROUS: actions run at once", "危險：動作會直接執行"}})
+		}
+		l[3] = pick(3, 2, [4][2]string{
+			{"token leak → pause; 08–20h; 50 answers a day", "token 外洩就暫停；只在 08–20 點；每天 50 次"},
+			{"token leak → pause", "token 外洩就暫停"},
+			{"token leak → alert only", "token 外洩只發告警"},
+			{"no checks", "不做任何偵測"}})
+	}
+	block := fmt.Sprintf("[bot]\ninteraction = %d\nanswers     = %d\nconfirm     = %d\nprotection  = %d\n", l[0], l[1], l[2], l[3])
+	if l[0] < 2 {
+		writeActionDropIn(false)
+		exec.CommandContext(ctx, "systemctl", "disable", "--now", "shentu-bot").Run()
+		return block
+	}
+	cfg, err := loadConfig(configPath())
+	if err == nil {
+		err = withBotState(cfg.StateDir, func(s *botState) error {
+			s.ChatID, s.UserID, s.UserName, s.PairedAt, s.Pending, s.CodeHash, s.Paused = w.tgChat, w.tgChat, w.tgWho, time.Now(), nil, "", ""
+			return nil
+		})
+	}
+	if err != nil {
+		fmt.Println(w.t("Could not pair: ", "無法配對：") + err.Error())
+		return block
+	}
+	newAuditLog(cfg.StateDir).write(logEntry{Actor: "setup", Tool: "bot_pair", Args: fmt.Sprintf("%s (id %d)", w.tgWho, w.tgChat), Confirmed: true, OK: true})
+	if l[0] >= 3 && l[2] == 2 {
+		fmt.Println(w.t("\nSet up the one-time code app now:", "\n現在設定動態密碼 App："))
+		for botTOTP(cfg, in, os.Stdout) != nil {
+			if !w.yesNo(in, w.t("Try again?", "要重試嗎？"), true) {
+				fmt.Println(w.t("Later: sudo shentu bot totp. Until then actions are refused.", "之後可執行：sudo shentu bot totp。在那之前，動作一律拒絕。"))
+				break
+			}
+		}
+	}
+	if err := writeActionDropIn(l[0] >= 3); err != nil {
+		fmt.Println(err)
+	}
+	w.startBot = true
+	return block
+}
+
+// startBotService (re)starts shentu-bot so it reads the levels just saved.
+func (w *wiz) startBotService(ctx context.Context) {
+	exec.CommandContext(ctx, "systemctl", "daemon-reload").Run()
+	exec.CommandContext(ctx, "systemctl", "enable", "shentu-bot").Run()
+	if out, err := exec.CommandContext(ctx, "systemctl", "restart", "shentu-bot").CombinedOutput(); err != nil {
+		fmt.Println(w.t("Could not start the bot: ", "無法啟動 bot：") + strings.TrimSpace(string(out)))
+		return
+	}
+	fmt.Println(w.t("The bot is running. Send /lockdown to it at any time to stop it.", "bot 已啟動。隨時傳 /lockdown 給它就能緊急關閉。"))
+}
+
+// askBudget offers the optional monthly limit; Enter skips it. Local models cost nothing.
+func (w *wiz) askBudget(in *bufio.Reader) {
+	cfg, err := loadConfig(configPath())
+	if err != nil || cfg.LLM.BaseURL == "" || strings.Contains(cfg.LLM.BaseURL, "127.0.0.1") || strings.Contains(cfg.LLM.BaseURL, "localhost") {
+		return
+	}
+	cur := ""
+	if cfg.Budget.MonthlyCost > 0 {
+		cur = strconv.FormatFloat(cfg.Budget.MonthlyCost, 'f', -1, 64)
+	}
+	fmt.Println(w.t("Optional: a monthly AI budget in USD. At 80% you get an alert; at 100% the AI stops until next month (patrol alerts keep coming).",
+		"可選：每月 AI 預算上限（美元）。用到 80% 會通知你；用完後這個月就不再呼叫 AI（巡邏告警照常送出）。"))
+	a := ask(in, w.t(fmt.Sprintf("Monthly budget, Enter for %s: ", map[bool]string{true: "none", false: cur}[cur == ""]),
+		fmt.Sprintf("每月上限（美元），直接按 Enter %s：", map[bool]string{true: "不設定", false: "維持 " + cur}[cur == ""])))
+	if a == "" {
+		return
+	}
+	v, err := strconv.ParseFloat(strings.TrimPrefix(a, "$"), 64)
+	if err != nil || v < 0 {
+		fmt.Println(w.t("Not a number; skipped. Set it later with: sudo shentu budget --cost 5", "不是數字，已略過。之後可以執行：sudo shentu budget --cost 5"))
+		return
+	}
+	if err := writeBudget(v, cfg.Budget.MonthlyTokens); err != nil {
+		fmt.Println(w.t("Could not save: ", "無法儲存：") + err.Error())
+	}
 }

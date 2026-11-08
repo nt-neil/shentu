@@ -162,6 +162,33 @@ systemctl list-timers 'shentu*'
 - `shentu-daily`：每天早上發一份日報。
 - AI 掛掉的時候，照樣會把原始告警送出。
 
+## 8. 從 Telegram 跟神荼對話（選用）
+
+`shentu bot` 讓你在 Telegram 問問題，用法跟 `shentu chat` 一樣。它用的是 `telegram://` 通知網址裡的 bot，也可以另外在 `[bot] telegram_token` 指定。它是由伺服器主動連到 Telegram，所以不用開任何連接埠。
+
+```sh
+sudo systemctl enable --now shentu-bot
+sudo shentu bot pair
+```
+
+`bot pair` 會印出一組配對碼。在跟 bot 的私訊裡傳 `/pair <配對碼>`，伺服器終端機就會問你是否允許這位 Telegram 使用者，按 `y` 才算配對完成。配對完成之前，bot 不會回應任何人。
+
+- 只回應已配對的那個人，而且只在那個私訊聊天室。群組、轉傳的訊息、其他 bot 一律不理，陌生人完全得不到回應。
+- 配對碼只能用一次，10 分鐘內有效，輸錯 5 次就作廢。
+- 配對成功和解除配對都會發到你的通知管道。`sudo shentu bot unpair` 可以隨時撤銷，`sudo shentu bot status` 可以查看目前跟誰配對。
+- bot 能做哪些事，由 `[bot]` 底下的四個範圍決定，每個範圍有 1（最安全）到 4 四個等級，★ 是預設值。在設定精靈裡選 Telegram 時，會依序問這四題。
+
+  | 範圍 | 1 | 2 | 3 | 4 |
+  |---|---|---|---|---|
+  | `interaction` 互動能力 | 只收通知 ★ | 問答 | 加上封鎖、解除封鎖 IP | 所有權限 |
+  | `answers` 回答內容 | 只說有沒有事 | 摘要 ★ | 完整，24 小時後刪除 | 完整並保留 |
+  | `confirm` 操作確認 | 到伺服器核准（`shentu bot approve`） | ✅ 加動態密碼 ★（`shentu bot totp`） | 按 ✅ 就好 | 不用確認 |
+  | `protection` 帳號保護 | 嚴格：token 外洩就暫停、只在 08–20 點、每天 50 次 | 標準：外洩就暫停 ★ | 寬鬆：外洩只告警 | 關閉 |
+
+  等級寫在伺服器的設定檔裡，只有能登入伺服器的人才能調高。每次變更都會記錄並通知。只有互動能力選 3 或 4 時，服務才會拿到改防火牆的權限。不論哪個等級，已配對的人傳 `/lockdown` 都能立刻停止 bot，要恢復請在伺服器執行 `sudo shentu bot resume`。
+- 傳 `/new` 可以開始新的對話。
+- 從舊版升級時，原本的 `shentu.toml` 會保留，不會被覆蓋，所以要自己補上 `[bot]` 區塊（範例見 `packaging/shentu.toml`）；或者直接沿用 `telegram://` 通知網址裡的 bot。
+
 ## 日常使用
 
 - 每一次工具呼叫和模型呼叫都記錄在 `/var/lib/shentu/log.jsonl`。

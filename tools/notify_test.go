@@ -150,15 +150,15 @@ func TestNotifyErrorHidesSecret(t *testing.T) {
 }
 
 func TestChunks(t *testing.T) {
-	if got := chunks("short", 10); len(got) != 1 || got[0] != "short" {
+	if got := Chunks("short", 10); len(got) != 1 || got[0] != "short" {
 		t.Errorf("chunks short = %q", got)
 	}
 	s := strings.Repeat("中", 25)
-	got := chunks(s, 10)
+	got := Chunks(s, 10)
 	if len(got) != 3 || strings.Join(got, "") != s {
 		t.Errorf("chunks CJK = %q", got)
 	}
-	got = chunks("aaaaaaa\nbbbbbbbbbb", 10)
+	got = Chunks("aaaaaaa\nbbbbbbbbbb", 10)
 	if got[0] != "aaaaaaa\n" {
 		t.Errorf("chunks should break at newline: %q", got)
 	}

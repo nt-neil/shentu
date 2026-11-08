@@ -167,6 +167,43 @@ systemctl list-timers 'shentu*'
 - `shentu-daily` sends a report every morning.
 - If the LLM is down, the raw findings are still sent.
 
+## 8. Talk to Shentu from Telegram (optional)
+
+`shentu bot` answers your questions in Telegram, like `shentu chat`. It uses the bot from your
+`telegram://` notify URL, or `[bot] telegram_token`. It connects out to Telegram, so no port is
+opened.
+
+```sh
+sudo systemctl enable --now shentu-bot
+sudo shentu bot pair
+```
+
+`bot pair` prints a code. Send `/pair <code>` to your bot in a private chat. The server terminal
+then asks you to approve that Telegram user with `y`. Until you approve, the bot answers no one.
+
+- Only the paired user, in that private chat, is answered. Groups, forwarded messages and other
+  bots are ignored, and strangers get no reply at all.
+- The code is single use. It lasts 10 minutes and stops working after 5 wrong tries.
+- Pairing and unpairing are sent to your notify channel. `sudo shentu bot unpair` revokes access,
+  and `sudo shentu bot status` shows who is paired.
+- What the bot may do is set by four ranges under `[bot]`, each a level from 1 (safest) to 4. The
+  guided setup asks them when you choose Telegram. Defaults are marked ★.
+
+  | Range | 1 | 2 | 3 | 4 |
+  |---|---|---|---|---|
+  | `interaction` | notifications only ★ | questions | + block/unblock IPs | + every control tool |
+  | `answers` | problem or not | summary ★ | full, deleted after 24h | full, kept |
+  | `confirm` (actions) | approve on the server (`shentu bot approve`) | ✅ + one-time code ★ (`shentu bot totp`) | ✅ only | none |
+  | `protection` | strict: token leak → pause, 08–20h, 50 answers a day | standard: leak → pause ★ | loose: leak → alert | off |
+
+  Levels live in the server's config, so only someone who can log in there can raise them. Every
+  change is logged and notified. Only interaction 3 and 4 give the service the right to change the
+  firewall. `/lockdown` from the paired user stops the bot at any level, and
+  `sudo shentu bot resume` starts it again.
+- `/new` starts a fresh conversation.
+- Upgrading from an older version keeps your `shentu.toml`, so add the `[bot]` section yourself
+  (see `packaging/shentu.toml`), or put the bot in a `telegram://` notify URL.
+
 ## Day to day
 
 - Every tool call and model call is logged in `/var/lib/shentu/log.jsonl`.

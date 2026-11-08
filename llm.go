@@ -48,14 +48,16 @@ type llmClient struct {
 	baseURL, model, apiKey string
 	maxTokens              int
 	http                   *http.Client
-	usedIn, usedOut        int // tokens used by the last call, for the audit log
+	usedIn, usedOut        int     // tokens used by the last call, for the audit log
+	usedReason             int     // reasoning tokens, when the provider reports them
+	usedCost               float64 // what the provider charged, when it says
 }
 
 func newLLM(c *Config) *llmClient {
 	// Every connection goes through localDialer, which checks the owner of the listener
 	// whenever the address it actually connected to is on this machine.
 	tr := http.DefaultTransport.(*http.Transport).Clone()
-	tr.DialContext = localDialer
+	tr.DialContext = llmDial
 	if u, err := url.Parse(c.LLM.BaseURL); err == nil && isLoopbackHost(u.Hostname()) {
 		tr.Proxy = nil
 	}
@@ -102,15 +104,19 @@ func (l *llmClient) chat(ctx context.Context, msgs []message, tools []toolDef) (
 				Message message `json:"message"`
 			} `json:"choices"`
 			Usage struct {
-				In  int `json:"prompt_tokens"`
-				Out int `json:"completion_tokens"`
+				In      int `json:"prompt_tokens"`
+				Out     int `json:"completion_tokens"`
+				Details struct {
+					Reasoning int `json:"reasoning_tokens"`
+				} `json:"completion_tokens_details"`
 			} `json:"usage"`
+			Charged float64 `json:"price_charged"` // AppleToken reports what the call cost
 		}
 		if err := json.Unmarshal(raw, &r); err != nil || len(r.Choices) == 0 {
 			lastErr = fmt.Errorf("unexpected LLM response: %s", truncate(string(raw), 300))
 			continue
 		}
-		l.usedIn, l.usedOut = r.Usage.In, r.Usage.Out
+		l.usedIn, l.usedOut, l.usedReason, l.usedCost = r.Usage.In, r.Usage.Out, r.Usage.Details.Reasoning, r.Charged
 		return r.Choices[0].Message, nil
 	}
 	return message{}, lastErr
@@ -119,6 +125,9 @@ func (l *llmClient) chat(ctx context.Context, msgs []message, tools []toolDef) (
 func truncate(s string, n int) string {
 	return tools.Cut(s, n)
 }
+
+// llmDial is localDialer; tests swap it to reach a fake model on a loopback port.
+var llmDial = localDialer
 
 // localDialer is used for every LLM connection. When the connected address is on
 // this machine (loopback or one of its own addresses, whatever the host name said),

@@ -26,6 +26,20 @@ type Config struct {
 	Notify struct {
 		URL string `toml:"url"`
 	} `toml:"notify"`
+	// Optional monthly limit on model use (0: none). At 80% an alert goes out; at 100%
+	// the model is not called until the next month, and patrols send raw findings.
+	Budget struct {
+		MonthlyCost   float64 `toml:"monthly_cost"`   // in the provider's currency (AppleToken: USD); needs a provider that reports cost
+		MonthlyTokens int     `toml:"monthly_tokens"` // input + output + reasoning tokens
+	} `toml:"budget"`
+	// Telegram interaction: four ranges, each a level from 1 (safest) to 4.
+	Bot struct {
+		TelegramToken string `toml:"telegram_token"` // default: the bot of a telegram:// notify url
+		Interaction   int    `toml:"interaction"`    // 1 notifications only, 2 questions, 3 + block/unblock, 4 + every control tool
+		Answers       int    `toml:"answers"`        // 1 problem or not, 2 summary, 3 full (deleted after 24h), 4 full and kept
+		Confirm       int    `toml:"confirm"`        // actions: 1 approve on the server, 2 ✅ + one-time code, 3 ✅, 4 none
+		Protection    int    `toml:"protection"`     // 1 strict, 2 standard, 3 loose, 4 off
+	} `toml:"bot"`
 	Tools struct {
 		LogPaths    []string `toml:"log_paths"`
 		WatchPaths  []string `toml:"watch_paths"`
@@ -54,6 +68,7 @@ func loadConfig(path string) (*Config, error) {
 	c.Tools.AppPaths = []string{"/var/www", "/srv", "/opt", "/home", "/root"}
 	c.Patrol.SSHThreshold = 10
 	c.Patrol.Cooldown = "24h"
+	c.Bot.Interaction, c.Bot.Answers, c.Bot.Confirm, c.Bot.Protection = 1, 2, 2, 2
 	c.StateDir = "/var/lib/shentu"
 	c.Language = "English"
 
@@ -67,8 +82,8 @@ func loadConfig(path string) (*Config, error) {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	// Files written by `shentu setup` override shentu.toml: llm.toml ([llm]) and
-	// setup.toml (language, [notify], [bot]).
-	for _, name := range []string{"llm.toml", "setup.toml"} {
+	// setup.toml (language, [notify], [bot]) and budget.toml ([budget]).
+	for _, name := range []string{"llm.toml", "setup.toml", "budget.toml"} {
 		if lb, err := os.ReadFile(filepath.Join(filepath.Dir(path), name)); err == nil {
 			if _, err := toml.Decode(expandEnv(string(lb)), c); err != nil {
 				return nil, fmt.Errorf("%s: %w", name, err)
@@ -79,6 +94,9 @@ func loadConfig(path string) (*Config, error) {
 		if _, err := time.ParseDuration(d); err != nil {
 			return nil, fmt.Errorf("%s: invalid duration %q", path, d)
 		}
+	}
+	for _, v := range []*int{&c.Bot.Interaction, &c.Bot.Answers, &c.Bot.Confirm, &c.Bot.Protection} {
+		*v = min(max(*v, 1), 4)
 	}
 	c.LLM.BaseURL = strings.TrimSuffix(c.LLM.BaseURL, "/")
 	return c, nil

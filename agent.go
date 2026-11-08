@@ -26,11 +26,12 @@ type agent struct {
 	confirm      func(tool, preview string) bool // asks the operator; nil means "no"
 	actor        string                          // "chat" or "patrol", for the log
 	log          *auditLog
+	progress     func(tool string) // told before each tool runs; may be nil
 }
 
 func systemPrompt(cfg *Config, skills map[string]skill) string {
 	host, _ := os.Hostname()
-	return fmt.Sprintf(`You are Shentu, a security assistant running on the Linux server %q.
+	return fmt.Sprintf(`You are Shentu, the security guard of the Linux server %q: you look after it, you do not just take orders.
 You investigate this server with the tools you are given.
 
 Rules:
@@ -38,6 +39,7 @@ Rules:
 2. Base every claim on tool results. If the evidence is weak, say so.
 3. Control tools (block_ip, unblock_ip) run only after the human operator confirms. Propose one only when the evidence supports it, and give a short reason.
 4. Always answer in %s, even if the question or the data is in another language. Be brief: what happened, how serious it is, what to do next.
+5. Finish the investigation yourself before you answer: call every tool you need to reach a verdict, and look into what you find (who, since when, how bad). Do not stop at "I can check X for you"; check it. End with your recommended fix, as concrete steps or exact commands.
 
 Skills are step-by-step playbooks. When a question matches one, call use_skill to read it, then follow it.
 %s%s`, host, cfg.Language, skillIndex(skills), siteBrief(cfg))
@@ -84,6 +86,10 @@ func (a *agent) toolDefs() []toolDef {
 
 // run continues the conversation in msgs and returns the final answer and the updated history.
 func (a *agent) run(ctx context.Context, msgs []message) (string, []message, error) {
+	if budgetUsed(a.cfg, time.Now()) >= 1 {
+		return "", msgs, errBudget
+	}
+	defer budgetAlert(context.WithoutCancel(ctx), a.cfg, a.env, time.Now())
 	defs := a.toolDefs()
 	for step := 0; step < a.cfg.LLM.MaxSteps; step++ {
 		reply, err := a.llm.chat(ctx, msgs, defs)
@@ -103,6 +109,9 @@ func (a *agent) run(ctx context.Context, msgs []message) (string, []message, err
 			if call.ID == "" {
 				call.ID = fmt.Sprintf("call_%d_%d", step, i)
 				reply.ToolCalls[i].ID = call.ID
+			}
+			if a.progress != nil {
+				a.progress(call.Function.Name)
 			}
 			result := a.callTool(ctx, call.Function.Name, call.Function.Arguments)
 			msgs = append(msgs, message{Role: "tool", ToolCallID: call.ID, Content: result})
@@ -137,12 +146,13 @@ func (a *agent) answerOnce(ctx context.Context, answer string, msgs []message) (
 
 // logLLM records one model call with its token use, so cost can be tracked.
 func (a *agent) logLLM(err error) {
-	e := logEntry{Actor: a.actor, Tool: "llm", Args: a.llm.model, OK: err == nil, InTokens: a.llm.usedIn, OutTokens: a.llm.usedOut}
+	e := logEntry{Actor: a.actor, Tool: "llm", Args: a.llm.model, OK: err == nil, InTokens: a.llm.usedIn, OutTokens: a.llm.usedOut,
+		ReasonTokens: a.llm.usedReason, Cost: a.llm.usedCost}
 	if err != nil {
 		e.Error = err.Error()
 	}
 	a.log.write(e)
-	a.llm.usedIn, a.llm.usedOut = 0, 0
+	a.llm.usedIn, a.llm.usedOut, a.llm.usedReason, a.llm.usedCost = 0, 0, 0, 0
 }
 
 // callTool runs one tool and returns the text the model will see.
@@ -222,6 +232,9 @@ type logEntry struct {
 	Error     string    `json:"error,omitempty"`
 	InTokens  int       `json:"in_tokens,omitempty"`
 	OutTokens int       `json:"out_tokens,omitempty"`
+	// Reasoning tokens as the provider reports them (some count them in out_tokens, some not).
+	ReasonTokens int     `json:"reasoning_tokens,omitempty"`
+	Cost         float64 `json:"cost,omitempty"` // charged by the provider, in its currency
 }
 
 func newAuditLog(stateDir string) *auditLog {

@@ -32,6 +32,11 @@ Usage:
   shentu patrol [--daily]     run the checks once and notify on new findings (for a systemd timer)
                 [--dry-run]   print the report instead of sending it
   shentu survey               survey this server (services, exposure, stacks, SSH, firewall) and save it as the baseline
+  shentu bot [pair|unpair|status]
+                              answer questions from Telegram (a systemd service); pair one user first
+  shentu usage                model calls, tokens and cost: today, last 7 and 30 days
+  shentu budget [--cost USD] [--tokens N] [--off]
+                              optional monthly AI limit: alert at 80%, stop calling the model at 100%
   shentu version
 
 Config: /etc/shentu/shentu.toml (override with SHENTU_CONFIG)
@@ -86,6 +91,12 @@ func main() {
 			b, _ := json.MarshalIndent(p, "", "  ")
 			fmt.Println(string(b))
 		}
+	case "bot":
+		err = botCommand(ctx, cfg, env, args)
+	case "budget":
+		err = budgetCommand(cfg, args)
+	case "usage":
+		fmt.Println(usageReport(cfg.StateDir, time.Now(), strings.Contains(cfg.Language, "中文") || strings.HasPrefix(strings.ToLower(cfg.Language), "zh")))
 	case "patrol":
 		fs := flag.NewFlagSet("patrol", flag.ExitOnError)
 		daily := fs.Bool("daily", false, "always send a full daily report")
