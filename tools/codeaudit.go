@@ -106,7 +106,12 @@ func served(p string, webRoots []string) bool {
 	if len(webRoots) > 0 {
 		return insideAny(p, webRoots)
 	}
-	for _, part := range strings.Split(filepath.Dir(p), "/") {
+	dir := filepath.Dir(p)
+	// /var/www holds one folder per site, so its own "www" does not make a path served.
+	if dir == "/var/www" || strings.HasPrefix(dir, "/var/www/") {
+		dir = dir[len("/var/www"):]
+	}
+	for _, part := range strings.Split(dir, "/") {
 		if webDirNames[part] {
 			return true
 		}

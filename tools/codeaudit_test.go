@@ -91,6 +91,9 @@ func TestServedFallback(t *testing.T) {
 	if !served("/srv/shop/public/.env", nil) || served("/srv/shop/.env", nil) {
 		t.Error("fallback web folders are wrong")
 	}
+	if served("/var/www/shop/.env", nil) || !served("/var/www/html/.env", nil) || !served("/home/ann/www/.env", nil) {
+		t.Error("/var/www itself must not count as served")
+	}
 	if served("/srv/shop/public/.env", []string{"/var/www/html"}) {
 		t.Error("configured web roots must replace the fallback")
 	}
