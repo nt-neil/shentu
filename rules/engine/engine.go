@@ -235,7 +235,7 @@ func (e *Engine) scan(lang, path string, src []byte) ([]Finding, error) {
 		if !sinkNames(r, names, src) || !hasSink(r, toks) {
 			continue // nothing in the file can be this rule's sink
 		}
-		if e.skipBySources(r, names, src) {
+		if e.skipBySources(r, names, src, toks) {
 			continue // no source of it in the file: nothing to find, in either pass
 		}
 		ruleList = append(ruleList, r)
@@ -293,11 +293,13 @@ func (e *Engine) scan(lang, path string, src []byte) ([]Finding, error) {
 	return out, nil
 }
 
-// hasSink reports whether one of the rule's sinks occurs in the file at all.
+// hasSink reports whether one of the rule's sinks occurs in the file at all,
+// matched as the analysis matches sinks (strictly): exec( is not re.exec(, but
+// is child_process.exec( once the module is normalised (FlagModule).
 func hasSink(r *crule, toks []Token) bool {
 	for i := range toks {
 		for _, s := range r.sinks {
-			if s.text == nil && s.at(toks, i, false) {
+			if s.text == nil && s.at(toks, i, true) {
 				return true
 			}
 		}
@@ -361,6 +363,35 @@ func lex(lang, src string, b *budget) []Token {
 
 // skipBySources reports whether the first pass leaves out rule r for a file
 // with these names (see SourcePrefilter).
-func (e *Engine) skipBySources(r *crule, names map[string]bool, src []byte) bool {
-	return e.SourcePrefilter && !e.Library && !sourceNames(r, names, src)
+func (e *Engine) skipBySources(r *crule, names map[string]bool, src []byte, toks []Token) bool {
+	return e.SourcePrefilter && !e.Library && (!sourceNames(r, names, src) || !hasSource(r, toks))
+}
+
+// hasSource reports whether one of the rule's sources occurs in the file, matched
+// token by token as the analysis matches sources: the names of request.url both
+// being in a large bundle is not request.url.
+func hasSource(r *crule, toks []Token) bool {
+	if len(r.sources) == 0 && len(r.textSources) == 0 {
+		return true
+	}
+	for i := range toks {
+		for _, s := range r.sources {
+			if s.text == nil && s.at(toks, i, false) {
+				return true
+			}
+		}
+		if toks[i].Kind == Str {
+			for _, s := range r.textSources {
+				if s.text.MatchString(toks[i].Text) {
+					return true
+				}
+			}
+			for _, p := range toks[i].Parts {
+				if hasSource(r, p.Toks) {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
