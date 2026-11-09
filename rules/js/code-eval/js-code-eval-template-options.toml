@@ -1,0 +1,37 @@
+id = "js-code-eval-template-options"
+lang = "js"
+class = "code-eval"
+cwe = "CWE-94"
+severity = "critical"
+title = "Whole request object passed as template render data or options, or compiled as a template"
+frameworks = ["express"]
+sources = ["req.query", "req.body"]
+sinks = ["res.render(", "ejs.render(", "ejs.compile(", "_.template(", "Handlebars.compile(", "pug.render("]
+sanitizers = []
+fix = "Pass only the named fields the template needs (res.render('page', { q: String(req.query.q) })); never spread req.query or req.body into render data, which some engines read as options, and never compile user text as a template."
+refs = ["CVE-2022-29078"]
+
+[[samples]]
+kind = "vulnerable"
+note = "engines may read settings / view options from the data object"
+code = '''
+app.get("/page", (req, res) => {
+  res.render("page", req.query);
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+app.post("/preview", (req, res) => {
+  res.send(_.template(req.body.template)({ user: req.user }));
+});
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+app.get("/page", (req, res) => {
+  res.render("page", { q: String(req.query.q || "") });
+});
+'''

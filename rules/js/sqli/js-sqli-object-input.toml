@@ -1,0 +1,32 @@
+id = "js-sqli-object-input"
+lang = "js"
+class = "sqli"
+cwe = "CWE-89"
+severity = "medium"
+title = "Parsed request value (may be an object or array) passed straight into a query-builder condition"
+frameworks = ["express"]
+sources = ["req.query", "req.body"]
+sinks = [".where(", ".whereIn(", ".findOne(", ".findAll(", ".andWhere("]
+sanitizers = ["String(", "Number(", "parseInt(", "typeof"]
+fix = "Coerce each value to the expected scalar type (String(), Number()) or validate with a schema before using it in a condition; qs and JSON bodies can turn ?id=1 into an object."
+refs = ["CVE-2016-20018"]
+
+[[samples]]
+kind = "vulnerable"
+note = "?email[foo]=bar or a JSON object body changes the shape of the condition"
+code = '''
+app.post("/login", async (req, res) => {
+  const user = await knex("users").where({ email: req.body.email }).first();
+  res.json({ found: Boolean(user) });
+});
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+app.post("/login", async (req, res) => {
+  if (typeof req.body.email !== "string") return res.sendStatus(400);
+  const user = await knex("users").where({ email: req.body.email }).first();
+  res.json({ found: Boolean(user) });
+});
+'''

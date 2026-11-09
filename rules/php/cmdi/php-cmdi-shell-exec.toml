@@ -1,0 +1,39 @@
+id = "php-cmdi-shell-exec"
+lang = "php"
+class = "cmdi"
+cwe = "CWE-78"
+severity = "critical"
+title = "Request data (including headers) placed into a shell command"
+frameworks = ["laravel"]
+sources = ["$_GET", "$_POST", "$_REQUEST", "$_SERVER['HTTP_", "$request->input(", "$request->getHost()", "$request->header("]
+sinks = ["exec(", "shell_exec(", "system(", "passthru(", "popen(", "proc_open(", "`"]
+sanitizers = ["escapeshellarg"]
+fix = "Avoid the shell: use a PHP function or an argument array (proc_open with an array, Symfony Process); if a shell is unavoidable, wrap every value in escapeshellarg()."
+refs = ["CVE-2026-54182"]
+
+[[samples]]
+kind = "vulnerable"
+note = "the Host header is attacker-controlled"
+code = '''
+<?php
+$host = $request->getHost();
+exec("curl -s https://stats.example.com/ping?site=" . $host . " > /dev/null 2>&1 &");
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+$ip = $_GET['ip'];
+echo shell_exec("ping -c 1 $ip");
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+$ip = filter_var($_GET['ip'], FILTER_VALIDATE_IP);
+if ($ip !== false) {
+    echo shell_exec('ping -c 1 ' . escapeshellarg($ip));
+}
+'''

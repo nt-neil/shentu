@@ -1,0 +1,29 @@
+id = "python-deserialization-pickle"
+lang = "python"
+class = "deserialization"
+cwe = "CWE-502"
+severity = "critical"
+title = "pickle (or a pickle-based loader) on data from a request, cookie or upload"
+frameworks = ["django", "flask"]
+sources = ["request.GET", "request.POST", "request.body", "request.data", "request.files", "request.FILES", "request.cookies", "base64.b64decode("]
+sinks = ["pickle.loads(", "pickle.load(", "cPickle.loads(", "dill.loads(", "joblib.load(", "pandas.read_pickle(", "jsonpickle.decode("]
+sanitizers = []
+fix = "Exchange plain data as JSON (json.loads) and rebuild objects explicitly; pickle can never be made safe for untrusted input."
+refs = ["CVE-2026-23946", "CVE-2020-14942"]
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+def run_report(request, report_id):
+    params = pickle.loads(base64.b64decode(request.GET["params"]))
+    return render(request, "report.html", build_report(report_id, **params))
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+def run_report(request, report_id):
+    params = json.loads(request.GET["params"])
+    allowed = {k: params[k] for k in ("start", "end", "queue") if k in params}
+    return render(request, "report.html", build_report(report_id, **allowed))
+'''

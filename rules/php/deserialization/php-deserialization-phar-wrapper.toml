@@ -1,0 +1,44 @@
+id = "php-deserialization-phar-wrapper"
+lang = "php"
+class = "deserialization"
+cwe = "CWE-502"
+severity = "critical"
+title = "Filesystem function on a user path that may use the phar:// wrapper"
+frameworks = ["laravel"]
+sources = ["$_GET", "$_POST", "$_REQUEST", "$request->input("]
+sinks = ["file_exists(", "file_get_contents(", "is_file(", "filesize(", "getimagesize(", "fopen(", "IOFactory::load("]
+sanitizers = ["realpath(", "basename("]
+fix = "Reject any path containing '://' (or check the scheme against an allowlist) before passing it to a filesystem function; on PHP < 8 metadata of a phar:// file is unserialized on first touch."
+refs = ["CVE-2021-3129", "CVE-2026-34084"]
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+$file = $request->input('viewFile');
+if (file_exists($file)) {
+    $contents = file_get_contents($file);
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+$sheet = \PhpOffice\PhpSpreadsheet\IOFactory::load($_POST['path']);
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+$file = $request->input('viewFile');
+if (str_contains($file, '://')) {
+    abort(400);
+}
+$base = realpath(resource_path('views')) . DIRECTORY_SEPARATOR;
+$path = realpath($base . $file);
+if ($path !== false && str_starts_with($path, $base)) {
+    $contents = file_get_contents($path);
+}
+'''

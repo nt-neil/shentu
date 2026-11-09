@@ -1,0 +1,44 @@
+id = "python-sqli-dbapi-format"
+lang = "python"
+class = "sqli"
+cwe = "CWE-89"
+severity = "high"
+title = "Request input formatted into a SQL string passed to a DB-API cursor"
+frameworks = ["flask", "django"]
+sources = ["request.args", "request.form", "request.values", "request.json", "request.GET", "request.POST"]
+sinks = [".execute(", ".executemany(", ".executescript("]
+sanitizers = ["int("]
+fix = "Pass values as the second argument of execute() with the driver's placeholder (%s or ?); never use f-strings, % or .format() to build SQL."
+refs = ["CVE-2026-10105"]
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+@app.route("/users")
+def users():
+    name = request.args.get("name", "")
+    cur = db.cursor()
+    cur.execute(f"SELECT id, email FROM users WHERE name = '{name}'")
+    return jsonify(cur.fetchall())
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "% formatting of the SQL string, not driver parameters"
+code = '''
+def search(request):
+    q = request.GET["q"]
+    with connection.cursor() as cur:
+        cur.execute("SELECT * FROM shop_item WHERE title LIKE '%%%s%%'" % q)
+        return JsonResponse({"rows": cur.fetchall()})
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+@app.route("/users")
+def users():
+    cur = db.cursor()
+    cur.execute("SELECT id, email FROM users WHERE name = %s", (request.args.get("name", ""),))
+    return jsonify(cur.fetchall())
+'''

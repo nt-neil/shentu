@@ -1,0 +1,31 @@
+id = "python-sqli-django-kwargs-alias"
+lang = "python"
+class = "sqli"
+cwe = "CWE-89"
+severity = "high"
+title = "Request dictionary expanded into Django ORM keyword arguments (column aliases)"
+frameworks = ["django"]
+sources = ["request.GET", "request.POST", "request.data", "json.loads(request.body"]
+sinks = [".annotate(**", ".aggregate(**", ".extra(", ".alias(**", ".values(*"]
+sanitizers = []
+fix = "Never let the client choose ORM keyword names: build the kwargs from a fixed mapping on the server, and keep Django on a patched release."
+refs = ["CVE-2022-28346", "CVE-2025-59681"]
+
+[[samples]]
+kind = "vulnerable"
+note = "keys become SQL column aliases"
+code = '''
+def report(request):
+    wanted = {k: Count(v) for k, v in request.GET.items()}
+    return JsonResponse(list(Order.objects.values("status").annotate(**wanted)), safe=False)
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+METRICS = {"orders": Count("id"), "customers": Count("customer", distinct=True)}
+
+def report(request):
+    wanted = {k: METRICS[k] for k in request.GET.getlist("m") if k in METRICS}
+    return JsonResponse(list(Order.objects.values("status").annotate(**wanted)), safe=False)
+'''

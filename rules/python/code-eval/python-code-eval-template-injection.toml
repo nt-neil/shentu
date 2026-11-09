@@ -1,0 +1,47 @@
+id = "python-code-eval-template-injection"
+lang = "python"
+class = "code-eval"
+cwe = "CWE-1336"
+severity = "critical"
+title = "User-controlled text compiled as a Jinja2 template (server-side template injection)"
+frameworks = ["flask"]
+sources = ["request.args", "request.form", "request.json", "request.values"]
+sinks = ["render_template_string(", "Template(", "from_string("]
+sanitizers = ["SandboxedEnvironment"]
+fix = "Pass user text as a variable to a fixed template (render_template('page.html', msg=text)); if users must write templates, render them in jinja2.sandbox.SandboxedEnvironment."
+refs = ["CVE-2026-104851", "CVE-2024-34359"]
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+@app.get("/greet")
+def greet():
+    name = request.args.get("name", "guest")
+    return render_template_string("<h1>Hello " + name + "</h1>")
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+@app.post("/preview")
+def preview():
+    return Template(request.form["body"]).render(user=current_user)
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+@app.get("/greet")
+def greet():
+    return render_template_string("<h1>Hello {{ name }}</h1>", name=request.args.get("name", "guest"))
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+env = SandboxedEnvironment()
+
+@app.post("/preview")
+def preview():
+    return env.from_string(request.form["body"]).render(user_name=current_user.name)
+'''

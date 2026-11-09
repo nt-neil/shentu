@@ -1,0 +1,54 @@
+id = "php-path-traversal-laravel-storage"
+lang = "php"
+class = "path-traversal"
+cwe = "CWE-22"
+severity = "high"
+title = "Laravel Storage or download call on a path taken from the request"
+frameworks = ["laravel"]
+sources = ["$request->input(", "$request->get(", "$request->query(", "request("]
+sinks = ["Storage::delete(", "Storage::get(", "Storage::download(", "->delete(", "response()->download(", "response()->file("]
+sanitizers = ["basename(", "Rule::in"]
+fix = "Do not accept storage paths from the client: look the file up from the model record the user is allowed to change, or accept a basename and build the path on the server."
+refs = ["CVE-2026-54178"]
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+public function update(Request $request, Post $post)
+{
+    foreach ((array) $request->input('clear_photos', []) as $path) {
+        Storage::disk('public')->delete($path);
+    }
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+Route::get('/invoice', function (Request $request) {
+    return response()->download(storage_path('app/invoices/' . $request->query('name')));
+});
+'''
+
+[[samples]]
+kind = "safe"
+note = "only paths already stored on this record can be removed"
+code = '''
+<?php
+public function update(Request $request, Post $post)
+{
+    $remove = array_intersect($post->photos, (array) $request->input('clear_photos', []));
+    Storage::disk('public')->delete($remove);
+}
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+Route::get('/invoice/{invoice}', function (Invoice $invoice) {
+    return response()->download(storage_path('app/invoices/' . $invoice->file_name));
+})->can('view', 'invoice');
+'''

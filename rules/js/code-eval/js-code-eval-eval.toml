@@ -1,0 +1,51 @@
+id = "js-code-eval-eval"
+lang = "js"
+class = "code-eval"
+cwe = "CWE-94"
+severity = "critical"
+title = "eval, Function constructor or node:vm on request input"
+frameworks = ["express"]
+sources = ["req.query", "req.body", "req.params"]
+sinks = ["eval(", "new Function(", "Function(", "vm.runInNewContext(", "vm.runInThisContext(", "vm.Script(", "setTimeout("]
+sanitizers = ["JSON.parse(", "Number("]
+fix = "Do not evaluate input: parse it as data (JSON.parse, Number) or use a real expression parser; node:vm is not a security boundary."
+refs = ["CVE-2021-23344", "CVE-2026-69254"]
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+app.post("/calc", (req, res) => {
+  res.json({ result: eval(req.body.expr) });
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "a property path from the request becomes source code"
+code = '''
+app.post("/settings", (req, res) => {
+  const set = new Function("obj", "value", "obj." + req.body.path + " = value;");
+  set(settings, req.body.value);
+  res.sendStatus(204);
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "vm contexts can reach the host through constructor chains"
+code = '''
+app.post("/transform", (req, res) => {
+  const out = vm.runInNewContext(req.body.code, { input: req.body.data }, { timeout: 100 });
+  res.json({ out });
+});
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+app.post("/calc", (req, res) => {
+  const a = Number(req.body.a), b = Number(req.body.b);
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return res.sendStatus(400);
+  res.json({ result: a + b });
+});
+'''

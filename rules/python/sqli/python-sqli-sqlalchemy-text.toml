@@ -1,0 +1,43 @@
+id = "python-sqli-sqlalchemy-text"
+lang = "python"
+class = "sqli"
+cwe = "CWE-89"
+severity = "high"
+title = "Request input formatted into sqlalchemy text() or a raw SQL string"
+frameworks = ["flask"]
+sources = ["request.args", "request.form", "request.json", "request.values"]
+sinks = ["text(", "literal_column(", ".execute("]
+sanitizers = ["bindparams(", "int("]
+fix = "Use text() with :name placeholders and pass values separately; for column names use getattr on the model against an allowlist, never literal_column on input."
+refs = ["CVE-2026-26198"]
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+@app.get("/stats")
+def stats():
+    col = request.args.get("column", "price")
+    row = db.session.execute(text(f"SELECT max({col}) FROM orders")).scalar()
+    return {"max": row}
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+COLUMNS = {"price": Order.price, "quantity": Order.quantity}
+
+@app.get("/stats")
+def stats():
+    col = COLUMNS.get(request.args.get("column"), Order.price)
+    return {"max": db.session.query(func.max(col)).scalar()}
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+@app.get("/orders")
+def orders():
+    stmt = text("SELECT * FROM orders WHERE customer = :c")
+    rows = db.session.execute(stmt, {"c": request.args.get("customer")}).all()
+    return {"rows": [dict(r._mapping) for r in rows]}
+'''

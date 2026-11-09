@@ -1,0 +1,35 @@
+id = "python-cmdi-argument-injection"
+lang = "python"
+class = "cmdi"
+cwe = "CWE-88"
+severity = "high"
+title = "Untrusted value used as a command-line argument that can start with '-'"
+frameworks = ["flask", "django"]
+sources = ["request.args", "request.form", "request.GET", "request.POST", ".filename"]
+sinks = ["subprocess.run([", "subprocess.Popen([", "subprocess.check_output([", "subprocess.call(["]
+sanitizers = ["\"--\"", "\"--end-of-options\"", "os.path.abspath("]
+fix = "Put '--' before positional arguments, or reject values starting with '-'; for file names pass os.path.abspath() of the path so it cannot start with '-'."
+refs = ["CVE-2026-112900"]
+
+[[samples]]
+kind = "vulnerable"
+note = "a value such as --upload-pack=... is read as an option"
+code = '''
+@app.get("/log")
+def log():
+    rev = request.args.get("rev", "HEAD")
+    out = subprocess.run(["git", "-C", "/srv/repo", "log", "-n", "5", rev], capture_output=True)
+    return out.stdout
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+@app.get("/log")
+def log():
+    rev = request.args.get("rev", "HEAD")
+    if rev.startswith("-"):
+        abort(400)
+    out = subprocess.run(["git", "-C", "/srv/repo", "log", "-n", "5", "--end-of-options", rev], capture_output=True)
+    return out.stdout
+'''

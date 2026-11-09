@@ -1,0 +1,30 @@
+id = "python-deserialization-yaml-load"
+lang = "python"
+class = "deserialization"
+cwe = "CWE-502"
+severity = "critical"
+title = "PyYAML load with a loader that can build Python objects"
+frameworks = ["flask", "django"]
+sources = ["request.data", "request.files", "request.FILES", "request.body", "request.get_data("]
+sinks = ["yaml.load(", "yaml.load_all(", "yaml.unsafe_load(", "yaml.full_load(", "Loader=yaml.Loader", "Loader=yaml.FullLoader", "Loader=yaml.UnsafeLoader"]
+sanitizers = ["yaml.safe_load(", "Loader=yaml.SafeLoader"]
+fix = "Use yaml.safe_load() (or Loader=yaml.SafeLoader); never FullLoader, Loader or UnsafeLoader on untrusted text."
+refs = ["CVE-2017-18342", "CVE-2026-24009"]
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+@app.post("/config")
+def upload_config():
+    cfg = yaml.load(request.get_data(as_text=True), Loader=yaml.FullLoader)
+    return {"keys": list(cfg)}
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+@app.post("/config")
+def upload_config():
+    cfg = yaml.safe_load(request.get_data(as_text=True))
+    return {"keys": list(cfg)}
+'''

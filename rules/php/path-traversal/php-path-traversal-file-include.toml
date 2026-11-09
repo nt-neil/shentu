@@ -1,0 +1,42 @@
+id = "php-path-traversal-file-include"
+lang = "php"
+class = "path-traversal"
+cwe = "CWE-98"
+severity = "critical"
+title = "include or require of a path built from user-controlled data"
+sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "$_SERVER['REQUEST_URI']", "$request->input("]
+sinks = ["include ", "include_once", "require ", "require_once", "include(", "require("]
+sanitizers = ["in_array", "basename("]
+fix = "Never include a path derived from input: map the value to a fixed list of files (array lookup or in_array with strict mode) before including."
+refs = ["CVE-2026-41228", "CVE-2026-62858"]
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+$lang = $_COOKIE['lang'] ?? 'en';
+include __DIR__ . '/lang/' . $lang . '.php';
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "a value stored earlier from the request is still user-controlled"
+code = '''
+<?php
+$user->language = $_POST['language'];
+$user->save();
+// later request
+require_once 'languages/' . $user->language . '.lng.php';
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+$available = ['en', 'de', 'zh_TW'];
+$lang = $_COOKIE['lang'] ?? 'en';
+if (!in_array($lang, $available, true)) {
+    $lang = 'en';
+}
+include __DIR__ . '/lang/' . $lang . '.php';
+'''

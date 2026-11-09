@@ -1,0 +1,41 @@
+id = "js-cmdi-exec"
+lang = "js"
+class = "cmdi"
+cwe = "CWE-78"
+severity = "critical"
+title = "Untrusted value placed into a command string run by exec/execSync"
+frameworks = ["express"]
+sources = ["req.query", "req.body", "req.params", "req.headers", "req.file", "originalname"]
+sinks = ["exec(", "execSync(", "shell.exec("]
+sanitizers = ["execFile(", "execFileSync(", "spawn("]
+fix = "Use execFile or spawn with an argument array (no shell) so the value is one argument; never build a command string from input."
+refs = ["CVE-2026-110644", "CVE-2026-59960"]
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+app.post("/convert", upload.single("audio"), (req, res) => {
+  exec(`ffmpeg -i "${req.file.path}" -ar 16000 "/tmp/out/${req.file.originalname}.wav"`, (err) => {
+    res.sendStatus(err ? 500 : 204);
+  });
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+app.get("/lookup", (req, res) => {
+  const out = execSync("nslookup " + req.query.host).toString();
+  res.type("text").send(out);
+});
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+app.get("/lookup", (req, res) => {
+  execFile("nslookup", ["--", String(req.query.host)], (err, stdout) => {
+    res.type("text").send(err ? "lookup failed" : stdout);
+  });
+});
+'''
