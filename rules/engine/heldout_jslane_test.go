@@ -42,6 +42,14 @@ var heldOutJSLane = []struct {
 	{"hapi payload yaml", "js-deserialization-yaml-load", "server.route({ method: 'POST', path: '/cfg', handler: (request) => yaml.load(request.payload, { schema: yaml.DEFAULT_FULL_SCHEMA }) });\n", true, ""},
 	{"koa query compared", "js-code-eval-eval", "router.get('/m', async (ctx) => {\n  ctx.body = ctx.query.mode === 'raw' ? 'raw' : 'cooked';\n});\n", false, ""},
 	{"koa throw guard", "js-sqli-object-input", "router.post('/login', async (ctx) => {\n  if (typeof ctx.request.body.email !== 'string') ctx.throw(400);\n  ctx.body = await knex('users').where({ email: ctx.request.body.email }).first();\n});\n", false, ""},
+	// batch 2: open redirect
+	{"koa redirect query", "js-open-redirect-framework", "router.get('/back', async (ctx) => {\n  ctx.redirect(ctx.query.returnTo || '/');\n});\n", true, ""},
+	{"hapi redirect payload", "js-open-redirect-framework", "server.route({ method: 'POST', path: '/out', handler: (request, h) => h.redirect(request.payload.url) });\n", true, ""},
+	{"koa redirect fixed path", "js-open-redirect-framework", "router.get('/u/:name', async (ctx) => {\n  ctx.redirect('/users/' + encodeURIComponent(ctx.params.name));\n});\n", false, ""},
+	{"location from query", "js-open-redirect-location-header", "app.get('/jump', (req, res) => {\n  res.set('Location', req.query.to);\n  res.sendStatus(302);\n});\n", true, ""},
+	{"location fixed", "js-open-redirect-location-header", "app.get('/jump', (req, res) => {\n  if (req.query.lang === 'fr') res.setHeader('Location', '/fr/');\n  res.end();\n});\n", false, ""},
+	{"host header koa", "js-open-redirect-host-header", "app.use(async (ctx, next) => {\n  if (ctx.protocol === 'http') return ctx.redirect(`https://${ctx.host}${ctx.url}`);\n  await next();\n});\n", true, ""},
+	{"strict slash check", "js-open-redirect-redirect", "app.get('/next', (req, res) => {\n  const u = String(req.query.u);\n  if (!u.startsWith('/') || u.startsWith('//') || u.startsWith('/\\\\')) return res.redirect('/');\n  res.redirect(u);\n});\n", false, ""},
 	// cases from the review of #26 (reviewjs_repro_test.go)
 	{"review H-V1 double-quoted req.get('host')", "js-ssrf-host-header", "app.get('/t', async (req, res) => {\n  const r = await fetch(req.protocol + \"://\" + req.get(\"host\") + \"/internal/x\");\n  res.send(await r.text());\n});\n", true, ""},
 	{"review H-V2 apostrophe shape (ternary + template)", "js-ssrf-host-header", "app.get('/f/*', async (req, res) => {\n  const u = await lookup(req.params[0]);\n  const proxyUrl = u.startsWith('/') ? `${req.protocol}://${req.get('host')}${u}` : u;\n  const r = await fetch(proxyUrl);\n  res.send(await r.text());\n});\n", true, ""},
