@@ -33,7 +33,7 @@ One file per vulnerability, `cves/<id>.toml`. A case holds facts, never code:
 | `ecosystem` | `wordpress-plugin`, `composer`, `pypi` or `npm` |
 | `package` | plugin slug, `owner/repo` on GitHub for Composer, or the registry name |
 | `vulnerable`, `fixed` | the last vulnerable and the first fixed release (git tag for Composer) |
-| `class` | one of the rule classes: `sqli`, `cmdi`, `code-eval`, `deserialization`, `path-traversal` |
+| `class` | one of the rule classes: `sqli`, `cmdi`, `code-eval`, `deserialization`, `path-traversal`, `xss`, `ssrf`, `open-redirect`, `xxe`, `ldapi`, `nosqli`, `file-upload`, `weak-crypto`, `hardcoded-secret` |
 | `lang` | `php`, `python` or `js` |
 | `[[fix_files]]` | each file the fix commit or changeset changed: `path` from the package root, and `vulnerable` / `fixed` lists of `[first, last]` lines it changed in each release |
 | `source_url` | the advisory on CVE.org, NVD, GitHub Advisory or OSV |
