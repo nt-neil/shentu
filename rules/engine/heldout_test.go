@@ -497,6 +497,11 @@ func TestHeldOut(t *testing.T) {
 		{"K11 drupal markup escaped", "php", "<?php\nfunction m_submit(array &$form, FormStateInterface $form_state) {\n  \\Drupal::messenger()->addStatus(Markup::create('Saved ' . Html::escape($form_state->getValue('title'))));\n}\n", false, ""},
 		{"K12 hmac literal domain label", "php", "<?php\n$pre = base64_encode(hash_hmac('sha384', $password, 'app-sha384', true));\n", false, ""},
 		{"K13 delete temp file from download_url", "php", "<?php\nfunction sc($atts) {\n  $tmp = download_url($atts['src']);\n  if (filesize($tmp) > 1000) { wp_delete_file($tmp); }\n}\n", false, ""},
+		// Shortcode attributes, one rule per output context.
+		{"B3 shortcode heredoc", "php", "<?php\nfunction box_sc($atts) {\n  $o = shortcode_atts(['id' => ''], $atts);\n  $id = $o['id'];\n  return <<<HTML\n<div id=\"$id\"></div>\nHTML;\n}\n", true, ""},
+		{"B4 shortcode int only", "php", "<?php\nfunction box_sc($atts) {\n  $o = shortcode_atts(['n' => 3], $atts);\n  return '<ol start=\"' . absint($o['n']) . '\"></ol>';\n}\n", false, ""},
+		{"B5 shortcode extract", "php", "<?php\nfunction box_sc($atts) {\n  extract(shortcode_atts(['t' => ''], $atts));\n  return '<b>' . $t . '</b>';\n}\n", true, ""},
+		{"B35 shortcode esc_attr inside onclick", "php", "<?php\nfunction sc($atts) {\n  $a = shortcode_atts(['id' => ''], $atts);\n  return '<button onclick=\"open(\\'' . esc_attr($a['id']) . '\\')\">Open</button>';\n}\n", true, ""},
 	}
 	pass := 0
 	for _, c := range cases {
