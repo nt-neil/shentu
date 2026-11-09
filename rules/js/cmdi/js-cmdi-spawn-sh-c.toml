@@ -1,0 +1,43 @@
+id = "js-cmdi-spawn-sh-c"
+lang = "js"
+class = "cmdi"
+cwe = "CWE-78"
+severity = "critical"
+tier = "info"
+title = "Request input in a command line handed to a shell as sh -c (or bash -c, cmd /c)"
+frameworks = ["express", "koa", "fastify", "hapi"]
+sources = ["req.query", "req.body", "req.params", "req.headers", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload", "ctx.params", "request.params", "ctx.headers"]
+sinks = ["spawn(", "spawnSync(", "execFile(", "execFileSync(", ".spawn(", ".spawnSync(", ".execFile(", ".execFileSync("]
+sanitizers = []
+fix = "Run the program itself with its arguments in an array (spawn('date', ['-s', value])), not a shell with -c; validate the value against a strict pattern first."
+refs = ["CVE-2026-23515"]
+
+[[args]]
+when = ["'-c'", "'/c'", "'-lc'"]   # the argument list makes a shell run the next string as a command line
+
+[[samples]]
+kind = "vulnerable"
+note = "no shell option, but the program is a shell and -c makes it parse the string"
+code = '''
+app.post("/time", (req, res) => {
+  const child = spawn("sh", ["-c", `date -s "${req.body.datetime}"`]);
+  child.on("close", (code) => res.json({ code }));
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+app.get("/ping", (req, res) => {
+  execFile("bash", ["-lc", "ping -c 1 " + req.query.host], (err, out) => res.send(out));
+});
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+app.post("/time", (req, res) => {
+  const child = spawn("date", ["-s", String(req.body.datetime)]);
+  child.on("close", (code) => res.json({ code }));
+});
+'''

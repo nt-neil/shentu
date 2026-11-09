@@ -1,0 +1,36 @@
+id = "js-path-traversal-exists-probe"
+lang = "js"
+class = "path-traversal"
+cwe = "CWE-22"
+severity = "medium"
+tier = "info"
+title = "Request input names a path whose existence or metadata is checked"
+frameworks = ["express", "koa", "fastify", "hapi"]
+sources = ["req.query", "req.params", "req.body", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload", "ctx.params", "request.params"]
+sinks = ["fs.existsSync(", "fs.statSync(", "fs.stat(", "fs.lstat(", "fs.lstatSync(", "fs.access(", "fs.accessSync(", "fs.promises.stat(", "fs.promises.access("]
+sanitizers = ["path.basename(", ".startsWith("]
+fix = "Resolve the path and require it to start with the base folder plus path.sep (or take only a base name) before checking it, so the answer cannot reveal which files exist elsewhere on the server."
+refs = ["CVE-2026-34523"]
+
+[[samples]]
+kind = "vulnerable"
+note = "a 200 or 404 tells the client whether any file on the server exists"
+code = '''
+app.get("/assets/*", (req, res) => {
+  const file = path.join(ASSETS, decodeURIComponent(req.params[0]));
+  if (!fs.existsSync(file)) return res.sendStatus(404);
+  res.sendStatus(200);
+});
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+const ROOT = path.resolve(ASSETS) + path.sep;
+app.get("/assets/*", (req, res) => {
+  const file = path.resolve(ROOT, decodeURIComponent(req.params[0]));
+  if (!file.startsWith(ROOT)) return res.sendStatus(403);
+  if (!fs.existsSync(file)) return res.sendStatus(404);
+  res.sendStatus(200);
+});
+'''

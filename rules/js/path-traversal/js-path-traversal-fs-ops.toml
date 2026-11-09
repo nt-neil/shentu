@@ -1,0 +1,86 @@
+id = "js-path-traversal-fs-ops"
+lang = "js"
+class = "path-traversal"
+cwe = "CWE-22"
+severity = "high"
+tier = "info"
+title = "Request input names a path that is deleted, created, renamed, listed or written"
+frameworks = ["express", "koa", "fastify", "hapi"]
+sources = ["req.query", "req.body", "req.params", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload", "ctx.params", "request.params"]
+sinks = ["fs.rm(", "fs.rmSync(", "fs.rmdir(", "fs.rmdirSync(", "fs.unlinkSync(", "fs.mkdir(", "fs.mkdirSync(", "fs.rename(", "fs.renameSync(", "fs.copyFile(", "fs.copyFileSync(", "fs.appendFile(", "fs.appendFileSync(", "fs.createWriteStream(", "fs.writeFileSync(", "fs.readdir(", "fs.readdirSync(", "fs.promises.rm(", "fs.promises.mkdir(", "fs.promises.writeFile(", "fs.promises.readdir(", "fs.promises.rename(", "fse.remove(", "fse.ensureDir(", "fse.outputFile(", "fse.writeJson("]
+sanitizers = ["path.basename(", ".startsWith("]
+fix = "Take only a file name from the request (path.basename), or resolve the path and require it to start with the base folder plus path.sep before touching the file system."
+refs = ["CVE-2024-47818", "CVE-2026-40163"]
+
+[[args]]
+sinks = ["fs.rm(", "fs.rmSync(", "fs.rmdir(", "fs.rmdirSync(", "fs.unlinkSync(", "fs.mkdir(", "fs.mkdirSync(", "fs.appendFile(", "fs.appendFileSync(", "fs.createWriteStream(", "fs.writeFileSync(", "fs.readdir(", "fs.readdirSync(", "fs.promises.rm(", "fs.promises.mkdir(", "fs.promises.writeFile(", "fs.promises.readdir(", "fse.remove(", "fse.ensureDir(", "fse.outputFile(", "fse.writeJson("]
+arg = 1   # the path; what is written to it is not the attack
+
+[[samples]]
+kind = "vulnerable"
+note = "dir_name=../../ removes a folder outside the uploads"
+code = '''
+app.post("/files/rmdir", async (req, res) => {
+  await fs.promises.rm(path.join(UPLOADS, req.body.dir_name), { recursive: true, force: true });
+  res.json({ ok: true });
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+app.get("/files/list", (req, res) => {
+  res.json(fs.readdirSync(path.join(UPLOADS, req.query.dir || "")));
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+app.post("/sync", (req, res) => {
+  const dir = path.join(SYNC_DIR, req.body.timestamp);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, "state.json"), JSON.stringify(req.body.state));
+  res.end();
+});
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+app.post("/files/rmdir", async (req, res) => {
+  await fs.promises.rm(path.join(UPLOADS, path.basename(req.body.dir_name)), { recursive: true, force: true });
+  res.json({ ok: true });
+});
+'''
+
+[[samples]]
+kind = "safe"
+note = "resolved and checked against the base folder with a trailing separator"
+code = '''
+const BASE = path.resolve(UPLOADS) + path.sep;
+app.get("/files/list", (req, res) => {
+  const dir = path.resolve(BASE, String(req.query.dir || ""));
+  if (!dir.startsWith(BASE)) return res.sendStatus(400);
+  res.json(fs.readdirSync(dir));
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "Hapi: request.payload"
+code = '''
+server.route({ method: "POST", path: "/notes", handler: async (request, h) => {
+  await fs.promises.writeFile(path.join(NOTES, request.payload.title), request.payload.text);
+  return h.response().code(201);
+} });
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+server.route({ method: "POST", path: "/notes", handler: async (request, h) => {
+  await fs.promises.writeFile(path.join(NOTES, path.basename(request.payload.title)), request.payload.text);
+  return h.response().code(201);
+} });
+'''

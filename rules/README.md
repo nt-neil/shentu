@@ -20,7 +20,7 @@ rules/<lang>/<class>/<id>.toml
 | field | values |
 |---|---|
 | `lang` | `php`, `python`, `js` |
-| `class` | `sqli`, `cmdi`, `path-traversal` (includes file inclusion), `deserialization`, `code-eval`, `xss`, `ssrf`, `open-redirect`, `xxe`, `ldapi`, `nosqli`, `file-upload`, `weak-crypto`, `hardcoded-secret` |
+| `class` | `sqli`, `cmdi`, `path-traversal` (includes file inclusion), `deserialization`, `code-eval`, `xss`, `ssrf`, `open-redirect`, `xxe`, `ldapi`, `nosqli`, `file-upload`, `weak-crypto`, `hardcoded-secret`, `prototype-pollution` |
 
 ## Format
 
@@ -260,6 +260,7 @@ Allowed CWEs per class:
 | `file-upload` | CWE-434 |
 | `weak-crypto` | CWE-327, CWE-328, CWE-916 |
 | `hardcoded-secret` | CWE-798, CWE-259, CWE-321 |
+| `prototype-pollution` | CWE-1321 |
 
 ### Output contexts
 

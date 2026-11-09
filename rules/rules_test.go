@@ -28,10 +28,12 @@ var (
 		"file-upload":      {"CWE-434"},
 		"weak-crypto":      {"CWE-327", "CWE-328", "CWE-916"},
 		"hardcoded-secret": {"CWE-798", "CWE-259", "CWE-321"},
+
+		"prototype-pollution": {"CWE-1321"},
 	}
 	contexts   = map[string]bool{"html": true, "attr": true, "url": true, "js": true}
 	severities = map[string]bool{"critical": true, "high": true, "medium": true, "low": true}
-	frameworks = map[string]bool{"laravel": true, "wordpress": true, "django": true, "flask": true, "express": true}
+	frameworks = map[string]bool{"laravel": true, "wordpress": true, "django": true, "flask": true, "express": true, "koa": true, "fastify": true, "hapi": true}
 
 	refRe = regexp.MustCompile(`^(CVE-\d{4}-\d{4,}|GHSA(-[23456789cfghjmpqrvwx]{4}){3})$`)
 	idRe  = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)+$`)

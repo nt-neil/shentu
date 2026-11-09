@@ -4,8 +4,8 @@ class = "path-traversal"
 cwe = "CWE-22"
 severity = "high"
 title = "Request value joined into a path that is read, written or sent"
-frameworks = ["express"]
-sources = ["req.query", "req.params", "req.body"]
+frameworks = ["express", "koa", "fastify", "hapi"]
+sources = ["req.query", "req.params", "req.body", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload", "ctx.params", "request.params"]
 sinks = ["res.sendFile(", "res.download(", "fs.readFile(", "fs.createReadStream(", "fs.writeFile(", "fs.unlink(", "readFileSync("]
 sanitizers = ["path.basename(", ".startsWith("]
 fix = "Use res.sendFile(name, { root }) or resolve the path and require it to start with the base directory plus path.sep before touching the file."
@@ -54,4 +54,21 @@ app.get("/log", (req, res) => {
   if (!p.startsWith(LOGS)) return res.sendStatus(400);
   fs.createReadStream(p).pipe(res);
 });
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "Hapi: request.params"
+code = '''
+server.route({ method: "GET", path: "/docs/{name}", handler: (request, h) => {
+  return fs.createReadStream(path.join(DOCS, request.params.name));
+} });
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+server.route({ method: "GET", path: "/docs/{name}", handler: (request, h) => {
+  return fs.createReadStream(path.join(DOCS, path.basename(request.params.name)));
+} });
 '''

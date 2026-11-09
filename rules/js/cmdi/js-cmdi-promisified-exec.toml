@@ -1,0 +1,35 @@
+id = "js-cmdi-promisified-exec"
+lang = "js"
+class = "cmdi"
+cwe = "CWE-78"
+severity = "critical"
+tier = "info"
+title = "Request input in a shell command run through a promisified exec"
+frameworks = ["express", "koa", "fastify", "hapi"]
+sources = ["req.query", "req.body", "req.params", "req.headers", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload", "ctx.params", "request.params", "ctx.headers"]
+sinks = ["execAsync(", "execPromise(", "execP(", "pExec(", "util.promisify(exec)(", "promisify(exec)(", "util.promisify(cp.exec)(", "promisify(child_process.exec)("]
+sanitizers = ["execFile(", "execFileSync(", "spawn("]
+fix = "Run the program with execFile or spawn and pass the input as a separate argument (no shell); escaping quotes in a shell string does not stop $(...) or backticks."
+refs = ["CVE-2026-31861"]
+
+[[samples]]
+kind = "vulnerable"
+note = "escaping double quotes still leaves $(...) and backticks to the shell"
+code = '''
+const execAsync = util.promisify(exec);
+router.post("/git-config", async (req, res) => {
+  const name = req.body.gitName.replace(/"/g, '\\"');
+  await execAsync(`git config --global user.name "${name}"`);
+  res.json({ ok: true });
+});
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+const execFileAsync = util.promisify(execFile);
+router.post("/git-config", async (req, res) => {
+  await execFileAsync("git", ["config", "--global", "user.name", String(req.body.gitName)]);
+  res.json({ ok: true });
+});
+'''
