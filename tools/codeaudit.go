@@ -7,9 +7,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -17,7 +19,7 @@ var appCodeAudit = Tool{
 	Name: "app_code_audit",
 	Description: "Offline audit of the web applications' own files under the app paths: secrets and backups the web server would serve " +
 		"(.env, .git, SQL dumps, archives, phpinfo), debug mode left on (Django, Laravel, Flask, PHP display_errors), webshells and " +
-		"PHP files in upload folders, and keys or passwords written into the code (reported by file, line and type; the value is never shown). " +
+		"PHP files in upload folders, WordPress core releases open to an exploited vulnerability, and keys or passwords written into the code (reported by file, line and type; the value is never shown). " +
 		"Each finding has a fix. It reads files only and sends nothing anywhere.",
 	Params: schema(`{"type":"object","properties":{
 		"path":{"type":"string","description":"only audit under this directory (must be inside the app paths)"}}}`),
@@ -42,7 +44,7 @@ var appCodeAudit = Tool{
 
 // CodeFinding is one problem in an application's files.
 type CodeFinding struct {
-	Kind     string `json:"kind"`     // exposed, debug, webshell, upload_script, secret
+	Kind     string `json:"kind"`     // exposed, debug, webshell, upload_script, secret, outdated
 	Severity string `json:"severity"` // critical or warning
 	Path     string `json:"path"`
 	Line     int    `json:"line,omitempty"`
@@ -160,6 +162,8 @@ var auditExt = map[string]bool{".php": true, ".phtml": true, ".php5": true, ".in
 	".cjs": true, ".ts": true, ".json": true, ".yml": true, ".yaml": true, ".ini": true, ".conf": true, ".cfg": true, ".toml": true,
 	".xml": true, ".properties": true, ".htaccess": true, ".user.ini": true, ".env": true}
 
+var wpUpgradeDir = regexp.MustCompile(`/wp-content/upgrade/`)
+
 var uploadDir = regexp.MustCompile(`(?i)/(uploads?|files|media|images|attachments|storage/app/public)/`)
 
 var (
@@ -204,6 +208,15 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 				if skipDirs[name] || strings.Count(p, "/")-base > auditMaxDepth {
 					return filepath.SkipDir
 				}
+				// Read the WordPress version here, before the file limit can stop the walk in wp-content.
+				if st, err := os.Stat(filepath.Join(p, "wp-load.php")); err == nil && st.Mode().IsRegular() {
+					v := filepath.Join(p, "wp-includes", "version.php")
+					if vi, err := os.Lstat(v); err == nil {
+						if b, ok := readSmallRegular(v, auditMaxSize, vi); ok {
+							wordpressCore(p, b, add)
+						}
+					}
+				}
 				return nil
 			}
 			if !d.Type().IsRegular() {
@@ -220,7 +233,11 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 			}
 			ext := strings.ToLower(filepath.Ext(name))
 			isPHP := ext == ".php" || ext == ".phtml" || ext == ".php5"
-			if isPHP && uploadDir.MatchString(p) {
+			if isPHP && wpUpgradeDir.MatchString(p) {
+				add(CodeFinding{"upload_script", "critical", p, 0,
+					"PHP file left in the WordPress upgrade folder, which CVE-2026-119977 (exploited in the wild) uses to run code",
+					"if no core update is running now, check the file and delete it; update WordPress to the fixed release for its branch"})
+			} else if isPHP && uploadDir.MatchString(p) {
 				add(CodeFinding{"upload_script", "critical", p, 0, "PHP file in an upload folder; uploads should never be scripts",
 					"check the file, delete it if it is not yours, and stop PHP from running in the upload folder"})
 			}
@@ -311,3 +328,39 @@ func commented(line string) bool {
 }
 
 func lineAt(b []byte, off int) int { return bytes.Count(b[:off], []byte("\n")) + 1 }
+
+var wpVersion = regexp.MustCompile(`(?m)^\$wp_version\s*=\s*'([0-9]+)\.([0-9]+)(?:\.([0-9]+))?(-[0-9A-Za-z.-]{1,24})?'`)
+
+// wpFixed is the first release of each WordPress branch with the fix for CVE-2026-119977
+// (GHSA-4w3m-c66w-69mg); the fix was backported to every branch from 4.7.
+var wpFixed = map[string]int{"7.1": 4, "7.0": 8, "6.9": 11, "6.8": 12, "6.7": 11, "6.6": 11, "6.5": 14, "6.4": 14,
+	"6.3": 14, "6.2": 15, "6.1": 16, "6.0": 18, "5.9": 20, "5.8": 19, "5.7": 21, "5.6": 23, "5.5": 24, "5.4": 25,
+	"5.3": 27, "5.2": 30, "5.1": 28, "5.0": 31, "4.9": 35, "4.8": 34, "4.7": 39}
+
+// wordpressCore reports a WordPress core release that is still open to CVE-2026-119977.
+// site is the folder that holds wp-load.php, b its wp-includes/version.php.
+func wordpressCore(site string, b []byte, add func(CodeFinding)) {
+	m := wpVersion.FindSubmatch(b)
+	if m == nil {
+		return
+	}
+	major, _ := strconv.Atoi(string(m[1]))
+	minor, _ := strconv.Atoi(string(m[2]))
+	patch, _ := strconv.Atoi(string(m[3]))
+	branch := fmt.Sprintf("%d.%d", major, minor)
+	version := branch
+	if len(m[3]) > 0 {
+		version += "." + string(m[3])
+	}
+	version += string(m[4]) // only a short pre-release tag, so no file text reaches the model
+	// A pre-release (7.1.4-RC1) may predate the fix, so it counts as the release before it.
+	if fixed, ok := wpFixed[branch]; ok && (patch < fixed || patch == fixed && len(m[4]) > 0) {
+		add(CodeFinding{"outdated", "critical", site, 0,
+			fmt.Sprintf("WordPress %s has CVE-2026-119977, exploited in the wild (attackers race a core update to run code)", version),
+			fmt.Sprintf("update to WordPress %s.%d or later (Dashboard > Updates, or wp core update)", branch, fixed)})
+	} else if !ok && (major < 4 || major == 4 && minor < 7) {
+		add(CodeFinding{"outdated", "critical", site, 0,
+			fmt.Sprintf("WordPress %s no longer gets security fixes, including the one for CVE-2026-119977, exploited in the wild", version),
+			"upgrade to a current WordPress release"})
+	}
+}
