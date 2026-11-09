@@ -208,6 +208,15 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 				if skipDirs[name] || strings.Count(p, "/")-base > auditMaxDepth {
 					return filepath.SkipDir
 				}
+				// Read the WordPress version here, before the file limit can stop the walk in wp-content.
+				if st, err := os.Stat(filepath.Join(p, "wp-load.php")); err == nil && st.Mode().IsRegular() {
+					v := filepath.Join(p, "wp-includes", "version.php")
+					if vi, err := os.Lstat(v); err == nil {
+						if b, ok := readSmallRegular(v, auditMaxSize, vi); ok {
+							wordpressCore(p, b, add)
+						}
+					}
+				}
 				return nil
 			}
 			if !d.Type().IsRegular() {
@@ -249,9 +258,6 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 			}
 			res.Files++
 			auditContent(p, name, b, web, isPHP, add)
-			if strings.HasSuffix(p, "/wp-includes/version.php") {
-				wordpressCore(p, b, add)
-			}
 			return nil
 		})
 	}
@@ -323,7 +329,7 @@ func commented(line string) bool {
 
 func lineAt(b []byte, off int) int { return bytes.Count(b[:off], []byte("\n")) + 1 }
 
-var wpVersion = regexp.MustCompile(`(?m)^\$wp_version\s*=\s*'([0-9]+)\.([0-9]+)(?:\.([0-9]+))?`)
+var wpVersion = regexp.MustCompile(`(?m)^\$wp_version\s*=\s*'([0-9]+)\.([0-9]+)(?:\.([0-9]+))?([^']*)'`)
 
 // wpFixed is the first release of each WordPress branch with the fix for CVE-2026-119977
 // (GHSA-4w3m-c66w-69mg); the fix was backported to every branch from 4.7.
@@ -332,7 +338,8 @@ var wpFixed = map[string]int{"7.1": 4, "7.0": 8, "6.9": 11, "6.8": 12, "6.7": 11
 	"5.3": 27, "5.2": 30, "5.1": 28, "5.0": 31, "4.9": 35, "4.8": 34, "4.7": 39}
 
 // wordpressCore reports a WordPress core release that is still open to CVE-2026-119977.
-func wordpressCore(p string, b []byte, add func(CodeFinding)) {
+// site is the folder that holds wp-load.php, b its wp-includes/version.php.
+func wordpressCore(site string, b []byte, add func(CodeFinding)) {
 	m := wpVersion.FindSubmatch(b)
 	if m == nil {
 		return
@@ -345,11 +352,9 @@ func wordpressCore(p string, b []byte, add func(CodeFinding)) {
 	if len(m[3]) > 0 {
 		version += "." + string(m[3])
 	}
-	site := strings.TrimSuffix(p, "/wp-includes/version.php")
-	if _, err := os.Stat(filepath.Join(site, "wp-load.php")); err != nil {
-		return // not a WordPress install, e.g. a copy inside a plugin
-	}
-	if fixed, ok := wpFixed[branch]; ok && patch < fixed {
+	version += string(m[4])
+	// A pre-release (7.1.4-RC1) may predate the fix, so it counts as the release before it.
+	if fixed, ok := wpFixed[branch]; ok && (patch < fixed || patch == fixed && len(m[4]) > 0) {
 		add(CodeFinding{"outdated", "critical", site, 0,
 			fmt.Sprintf("WordPress %s has CVE-2026-119977, exploited in the wild (attackers race a core update to run code)", version),
 			fmt.Sprintf("update to WordPress %s.%d or later (Dashboard > Updates, or wp core update)", branch, fixed)})

@@ -119,15 +119,15 @@ func TestWebRootPatterns(t *testing.T) {
 }
 
 func TestWordpressCore(t *testing.T) {
-	site := t.TempDir()
-	os.WriteFile(filepath.Join(site, "wp-load.php"), []byte("<?php\n"), 0o644)
+	site := "/srv/blog"
 	cases := map[string]bool{ // version → reported
 		"7.1.3": true, "7.1.4": false, "7.1": true, "7.2": false, "6.8.11": true, "6.8.12": false,
 		"4.7.38": true, "4.7.39": false, "4.6.1": true, "3.9": true, "8.0": false,
+		"7.1.4-RC1": true, "6.8-RC1": true, "7.1.5-alpha-1": false,
 	}
 	for v, want := range cases {
 		var got []CodeFinding
-		wordpressCore(filepath.Join(site, "wp-includes/version.php"), []byte("<?php\n$wp_version = '"+v+"';\n"), func(f CodeFinding) { got = append(got, f) })
+		wordpressCore(site, []byte("<?php\n$wp_version = '"+v+"';\n"), func(f CodeFinding) { got = append(got, f) })
 		if (len(got) > 0) != want {
 			t.Errorf("%s: got %+v, want reported=%v", v, got, want)
 		}
