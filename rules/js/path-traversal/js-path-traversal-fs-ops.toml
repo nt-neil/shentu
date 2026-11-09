@@ -7,14 +7,14 @@ tier = "info"
 title = "Request input names a path that is deleted, created, renamed, listed or written"
 frameworks = ["express", "koa", "fastify", "hapi"]
 sources = ["req.query", "req.body", "req.params", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload", "ctx.params", "request.params"]
-sinks = ["fs.rm(", "fs.rmSync(", "fs.rmdir(", "fs.rmdirSync(", "fs.unlinkSync(", "fs.mkdir(", "fs.mkdirSync(", "fs.rename(", "fs.renameSync(", "fs.copyFile(", "fs.copyFileSync(", "fs.appendFile(", "fs.appendFileSync(", "fs.createWriteStream(", "fs.writeFileSync(", "fs.readdir(", "fs.readdirSync(", "fs.promises.rm(", "fs.promises.mkdir(", "fs.promises.writeFile(", "fs.promises.readdir(", "fs.promises.rename(", "fse.remove(", "fse.ensureDir(", "fse.outputFile(", "fse.writeJson("]
+sinks = ["fs.rm(", "fs.rmSync(", "fs.rmdir(", "fs.rmdirSync(", "fs.unlinkSync(", "fs.mkdir(", "fs.mkdirSync(", "fs.rename(", "fs.renameSync(", "fs.copyFile(", "fs.copyFileSync(", "fs.appendFile(", "fs.appendFileSync(", "fs.createWriteStream(", "fs.writeFileSync(", "fs.readdir(", "fs.readdirSync(", "fs.promises.rm(", "fs.promises.mkdir(", "fs.promises.writeFile(", "fs.promises.readdir(", "fs.promises.rename(", "fse.remove(", "fse.ensureDir(", "fse.outputFile(", "fse.writeJson(", "fs.promises.unlink(", "fs.promises.appendFile(", "fs.promises.rmdir(", "fs.promises.copyFile(", "fs.promises.cp(", "fs.promises.symlink(", "fs.cp(", "fs.cpSync(", "fs.symlink(", "fs.symlinkSync(", "fs.unlink("]
 sanitizers = ["path.basename(", ".startsWith("]
 fix = "Take only a file name from the request (path.basename), or resolve the path and require it to start with the base folder plus path.sep before touching the file system."
 refs = ["CVE-2024-47818", "CVE-2026-40163"]
 
 [[args]]
-sinks = ["fs.rm(", "fs.rmSync(", "fs.rmdir(", "fs.rmdirSync(", "fs.unlinkSync(", "fs.mkdir(", "fs.mkdirSync(", "fs.appendFile(", "fs.appendFileSync(", "fs.createWriteStream(", "fs.writeFileSync(", "fs.readdir(", "fs.readdirSync(", "fs.promises.rm(", "fs.promises.mkdir(", "fs.promises.writeFile(", "fs.promises.readdir(", "fse.remove(", "fse.ensureDir(", "fse.outputFile(", "fse.writeJson("]
-arg = 1   # the path; what is written to it is not the attack
+sinks = ["fs.rm(", "fs.rmSync(", "fs.rmdir(", "fs.rmdirSync(", "fs.unlinkSync(", "fs.mkdir(", "fs.mkdirSync(", "fs.appendFile(", "fs.appendFileSync(", "fs.createWriteStream(", "fs.writeFileSync(", "fs.readdir(", "fs.readdirSync(", "fs.promises.rm(", "fs.promises.mkdir(", "fs.promises.writeFile(", "fs.promises.readdir(", "fse.remove(", "fse.ensureDir(", "fse.outputFile(", "fse.writeJson(", "fs.promises.unlink(", "fs.promises.appendFile(", "fs.promises.rmdir("]
+arg = 1   # the path; what is written to it is not the attack (rename, copyFile, cp and symlink take two paths: any argument)
 
 [[samples]]
 kind = "vulnerable"

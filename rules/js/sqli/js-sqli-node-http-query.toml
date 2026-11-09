@@ -6,7 +6,7 @@ severity = "high"
 tier = "info"
 title = "Query string of a plain Node http request concatenated into SQL"
 frameworks = []
-sources = ["url.parse(request.url, true).query", "url.parse(req.url, true).query", "url.parse(request.url, true)", "url.parse(req.url, true)", "querystring.parse(", "qs.parse("]
+sources = ["url.parse(request.url", "url.parse(req.url", "URL(req.url", "URL(request.url", "querystring.parse(req.url", "querystring.parse(request.url"]
 sinks = [".query(", ".execute("]
 sanitizers = ["parseInt(", "Number(", ".escape(", "mysql.escape(", "SqlString.escape("]
 fix = "Pass the values as query parameters (query('... WHERE a = ?', [a])); a table or column name from the query string must come from a fixed list."

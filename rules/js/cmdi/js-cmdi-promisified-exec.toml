@@ -6,7 +6,7 @@ severity = "critical"
 tier = "info"
 title = "Request input in a shell command run through a promisified exec"
 frameworks = ["express", "koa", "fastify", "hapi"]
-sources = ["req.query", "req.body", "req.params", "req.headers", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload", "ctx.params", "request.params", "ctx.headers"]
+sources = ["req.query", "req.body", "req.params", "req.headers", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload", "ctx.params", "request.params", "ctx.headers", "request.headers", "ctx.request.header", "ctx.request.headers", "ctx.get("]
 sinks = ["execAsync(", "execPromise(", "execP(", "pExec(", "util.promisify(exec)(", "promisify(exec)(", "util.promisify(cp.exec)(", "promisify(child_process.exec)("]
 sanitizers = ["execFile(", "execFileSync(", "spawn("]
 fix = "Run the program with execFile or spawn and pass the input as a separate argument (no shell); escaping quotes in a shell string does not stop $(...) or backticks."
@@ -16,20 +16,21 @@ refs = ["CVE-2026-31861"]
 kind = "vulnerable"
 note = "escaping double quotes still leaves $(...) and backticks to the shell"
 code = '''
-const execAsync = util.promisify(exec);
-router.post("/git-config", async (req, res) => {
-  const name = req.body.gitName.replace(/"/g, '\\"');
-  await execAsync(`git config --global user.name "${name}"`);
-  res.json({ ok: true });
+const execAsync = promisify(exec);
+app.post("/profile/signature", async (req, res) => {
+  const quoted = String(req.body.signature).split('"').join('\\"');
+  const { stdout } = await execAsync(`printf "%s" "${quoted}" | fold -w 72`);
+  res.type("text").send(stdout);
 });
 '''
 
 [[samples]]
 kind = "safe"
+note = "as the fix says: execFile with the value as its own argument"
 code = '''
-const execFileAsync = util.promisify(execFile);
-router.post("/git-config", async (req, res) => {
-  await execFileAsync("git", ["config", "--global", "user.name", String(req.body.gitName)]);
-  res.json({ ok: true });
+const execFileAsync = promisify(execFile);
+app.post("/profile/signature", async (req, res) => {
+  const { stdout } = await execFileAsync("fold", ["-w", "72"], { input: String(req.body.signature) });
+  res.type("text").send(stdout);
 });
 '''

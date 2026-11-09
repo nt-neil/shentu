@@ -7,8 +7,8 @@ tier = "info"
 title = "Request input names a path whose existence or metadata is checked"
 frameworks = ["express", "koa", "fastify", "hapi"]
 sources = ["req.query", "req.params", "req.body", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload", "ctx.params", "request.params"]
-sinks = ["fs.existsSync(", "fs.statSync(", "fs.stat(", "fs.lstat(", "fs.lstatSync(", "fs.access(", "fs.accessSync(", "fs.promises.stat(", "fs.promises.access("]
-sanitizers = ["path.basename(", ".startsWith("]
+sinks = ["fs.existsSync(", "fs.statSync(", "fs.stat(", "fs.lstat(", "fs.lstatSync(", "fs.access(", "fs.accessSync(", "fs.promises.stat(", "fs.promises.access(", "fs.promises.lstat(", "fs.exists("]
+sanitizers = ["path.basename(", ".startsWith(", ".digest("]
 fix = "Resolve the path and require it to start with the base folder plus path.sep (or take only a base name) before checking it, so the answer cannot reveal which files exist elsewhere on the server."
 refs = ["CVE-2026-34523"]
 
