@@ -119,22 +119,31 @@ var pamDirs = []string{"lib/security", "lib64/security", "usr/lib/security", "us
 
 // unpackagedPAM returns PAM modules that no package installed.
 func unpackagedPAM() []string {
+	root, err := filepath.EvalSymlinks(sysRoot)
+	if err != nil {
+		root = sysRoot
+	}
 	seen := map[string]bool{}
 	var mods []string
 	for _, d := range pamDirs {
-		found, _ := filepath.Glob(filepath.Join(sysRoot, d, "*.so"))
+		found, _ := filepath.Glob(filepath.Join(root, d, "*.so"))
 		for _, m := range found {
-			r, err := filepath.Rel(sysRoot, m)
-			if err != nil {
-				continue
+			// merged /usr: /lib64 is a link to /usr/lib64, and rpm lists only the /usr path,
+			// so the folder is resolved (the module file itself is not; a package owns the link).
+			p := m
+			if dir, err := filepath.EvalSymlinks(filepath.Dir(m)); err == nil {
+				p = filepath.Join(dir, filepath.Base(m))
 			}
-			if real, err := filepath.EvalSymlinks(m); err == nil {
-				if seen[real] { // merged /usr: /lib/x and /usr/lib/x are one file
+			r, err := filepath.Rel(root, p)
+			if err != nil || strings.HasPrefix(r, "..") {
+				if r, err = filepath.Rel(root, m); err != nil {
 					continue
 				}
-				seen[real] = true
 			}
-			mods = append(mods, "/"+r)
+			if r = "/" + r; !seen[r] {
+				seen[r] = true
+				mods = append(mods, r)
+			}
 		}
 	}
 	return notPackaged(mods)
