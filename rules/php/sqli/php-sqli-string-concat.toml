@@ -6,8 +6,8 @@ severity = "high"
 title = "Request input concatenated or interpolated into a SQL string"
 sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE"]
 sinks = ["mysqli_query", "->query(", "->exec(", "pg_query"]
-sanitizers = ["intval", "(int)", "->prepare(", "pg_query_params"]
-fix = "Use a prepared statement with bound parameters (PDO::prepare + execute, mysqli bind_param); never build SQL with string concatenation or sprintf."
+sanitizers = ["intval", "(int)", "->prepare(", "pg_query_params", "real_escape_string(", "->escape("]
+fix = "Use a prepared statement with bound parameters (PDO::prepare + execute, mysqli bind_param); never build SQL with string concatenation or sprintf. Escaping (mysqli_real_escape_string) only protects a value inside quotes."
 refs = ["CVE-2026-56738"]
 
 [[samples]]

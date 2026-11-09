@@ -7,8 +7,8 @@ title = "Untrusted value used as a command-line argument that can start with '-'
 frameworks = ["flask", "django"]
 sources = ["request.args", "request.form", "request.GET", "request.POST", ".filename"]
 sinks = ["subprocess.run([", "subprocess.Popen([", "subprocess.check_output([", "subprocess.call(["]
-sanitizers = ["\"--\""]
-fix = "Put '--' before positional arguments, or reject values starting with '-'; for file names pass an absolute path the server built."
+sanitizers = ["\"--\"", "\"--end-of-options\"", "os.path.abspath("]
+fix = "Put '--' before positional arguments, or reject values starting with '-'; for file names pass os.path.abspath() of the path so it cannot start with '-'."
 refs = ["CVE-2026-112900"]
 
 [[samples]]

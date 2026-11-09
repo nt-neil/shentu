@@ -9,7 +9,7 @@ sources = ["$_GET", "$_POST", "$_REQUEST", "$request->input("]
 sinks = ["file_get_contents(", "readfile(", "fopen(", "file(", "fpassthru(", "highlight_file("]
 sanitizers = ["basename(", "realpath("]
 fix = "Resolve the path with realpath() and refuse it unless it starts with the intended base directory plus a separator, or look files up by an id instead of a path."
-refs = ["CVE-2014-5368", "CVE-2026-74907"]
+refs = ["CVE-2026-74907"]
 
 [[samples]]
 kind = "vulnerable"

@@ -94,9 +94,24 @@ must be found and no safe sample may be.
    sanitizer and `fix`.
 3. **Write the samples yourself.** A minimal snippet in ordinary framework style that
    shows the same flow, and a fixed version. Do not paste code from the project.
-4. **Record the advisory** in `refs`. A rule may cover several advisories; add new
+4. **Record the advisory** in `refs`, and only one whose fix commit (or WordPress
+   plugin changeset) you have read and found to match the rule. Prefer an advisory in
+   the rule's own language. A rule may cover several advisories; add new
    refs to an existing rule instead of creating a near-duplicate.
 5. Run `go test ./rules -run Rules`.
+
+## Future: argument conditions
+
+The format does not yet describe conditions on a call's arguments, so some rules
+can only say it with sink and sanitizer strings plus samples. To be designed with
+the taint-tracking engine (layer B). Known cases:
+
+- `yaml.load(...)` is safe only with `Loader=yaml.SafeLoader`, dangerous with
+  `Loader`, `FullLoader` or `UnsafeLoader`.
+- `spawn(...)` / `execFile(...)` are safe with an argument array, but become a shell
+  command line when the options contain `shell: true`.
+- `unserialize($x)` is dangerous, but `unserialize($x, ['allowed_classes' => false])`
+  cannot create objects.
 
 Secrets never go into samples. If a sample needs something that looks like a key,
 use an obvious placeholder.

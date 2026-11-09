@@ -6,9 +6,9 @@ severity = "critical"
 title = "Request data (including headers) placed into a shell command"
 frameworks = ["laravel"]
 sources = ["$_GET", "$_POST", "$_REQUEST", "$_SERVER['HTTP_", "$request->input(", "$request->getHost()", "$request->header("]
-sinks = ["exec(", "shell_exec(", "system(", "passthru(", "popen(", "proc_open(", "`"]
+sinks = ["exec(", "shell_exec(", "system(", "passthru(", "popen(", "proc_open(", "`", "mail("]
 sanitizers = ["escapeshellarg"]
-fix = "Avoid the shell: use a PHP function or an argument array (proc_open with an array, Symfony Process); if a shell is unavoidable, wrap every value in escapeshellarg()."
+fix = "Avoid the shell: use a PHP function or an argument array (proc_open with an array, Symfony Process); if a shell is unavoidable, wrap every value in escapeshellarg(). mail()'s fifth argument is passed to sendmail's command line too."
 refs = ["CVE-2026-54182", "CVE-2016-10033"]
 
 [[samples]]
@@ -26,6 +26,25 @@ code = '''
 <?php
 $ip = $_GET['ip'];
 echo shell_exec("ping -c 1 $ip");
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "the fifth argument of mail() goes onto the sendmail command line"
+code = '''
+<?php
+$from = $_POST['from'];
+mail('sales@example.com', 'Contact form', $_POST['message'], '', '-f' . $from);
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+$from = filter_var($_POST['from'], FILTER_VALIDATE_EMAIL);
+if ($from !== false) {
+    mail('sales@example.com', 'Contact form', $_POST['message'], '', '-f' . escapeshellarg($from));
+}
 '''
 
 [[samples]]

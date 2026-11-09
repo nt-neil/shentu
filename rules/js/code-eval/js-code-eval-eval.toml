@@ -9,13 +9,24 @@ sources = ["req.query", "req.body", "req.params"]
 sinks = ["eval(", "new Function(", "Function(", "vm.runInNewContext(", "vm.runInThisContext(", "vm.Script(", "setTimeout("]
 sanitizers = ["JSON.parse(", "Number("]
 fix = "Do not evaluate input: parse it as data (JSON.parse, Number) or use a real expression parser; node:vm is not a security boundary."
-refs = ["CVE-2026-69254", "CVE-2026-69264"]
+refs = ["CVE-2021-23344", "CVE-2026-69254"]
 
 [[samples]]
 kind = "vulnerable"
 code = '''
 app.post("/calc", (req, res) => {
   res.json({ result: eval(req.body.expr) });
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "a property path from the request becomes source code"
+code = '''
+app.post("/settings", (req, res) => {
+  const set = new Function("obj", "value", "obj." + req.body.path + " = value;");
+  set(settings, req.body.value);
+  res.sendStatus(204);
 });
 '''
 

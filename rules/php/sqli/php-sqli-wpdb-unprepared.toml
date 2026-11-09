@@ -9,7 +9,7 @@ sources = ["$_GET", "$_POST", "$_REQUEST", "get_query_var", "->get_param("]
 sinks = ["$wpdb->query", "$wpdb->get_results", "$wpdb->get_row", "$wpdb->get_var", "$wpdb->get_col"]
 sanitizers = ["$wpdb->prepare", "absint", "intval"]
 fix = "Pass every value through $wpdb->prepare() placeholders (%d, %s); sanitize_text_field() and esc_sql() alone do not make a value safe in SQL."
-refs = ["CVE-2026-10207", "CVE-2026-5486"]
+refs = ["CVE-2025-7036"]
 
 [[samples]]
 kind = "vulnerable"
