@@ -486,6 +486,16 @@ func TestHeldOut(t *testing.T) {
 		{"QB30 format_html_join template", "python", "def v(request):\n    return HttpResponse(format_html_join('\\n', '<li>' + request.GET['c'] + '{}</li>', ((x,) for x in ITEMS)))\n", true, ""},
 		{"QB31 df.query request", "python", "@app.get('/q')\ndef q():\n    return df.query(request.args['q']).to_json()\n", true, ""},
 		{"QB32 redirect startswith slash only", "python", "class L(RequestHandler):\n    def get(self):\n        n = self.get_argument('n', '/')\n        if n.startswith('/'):\n            self.redirect(n)\n", true, ""},
+		// Python lane, batch 3: dynamic imports, upload file names, Image.open paths.
+		{"PC1 import_module from query", "python", "@app.get('/w')\ndef w():\n    mod = importlib.import_module(request.args['plugin'])\n    return mod.render()\n", true, ""},
+		{"PC2 import_string from json body", "python", "def v(request):\n    cfg = json.loads(request.body)\n    return JsonResponse(import_string(cfg['handler'])().run())\n", true, ""},
+		{"PC3 import from allowlist membership", "python", "@app.get('/w')\ndef w():\n    name = request.args['plugin']\n    if name not in PLUGINS:\n        abort(404)\n    return importlib.import_module(name).render()\n", false, ""},
+		{"PC4 import of a setting", "python", "def backend():\n    return importlib.import_module(settings.CACHE_MODULE)\n", false, ""},
+		{"PC5 upload filename Path join", "python", "@api.post('/u')\nasync def u(file: UploadFile):\n    with open(Path(UPLOAD_DIR) / file.filename, 'wb') as out:\n        out.write(await file.read())\n", true, ""},
+		{"PC6 upload filename secure_filename", "python", "@app.post('/u')\ndef u():\n    upload = request.files['f']\n    with open(os.path.join(UPLOAD_DIR, secure_filename(upload.filename)), 'wb') as out:\n        out.write(upload.read())\n    return 'ok'\n", false, ""},
+		{"PC7 frame filename not an upload", "python", "def where():\n    frame = inspect.stack()[1]\n    with open(frame.filename) as src:\n        return src.readline()\n", false, ""},
+		{"PC8 Image.open form path", "python", "@app.post('/thumb')\ndef thumb():\n    img = Image.open(request.form['path'])\n    return str(img.size)\n", true, ""},
+		{"PC9 Image.open uploaded bytes", "python", "@app.post('/thumb')\ndef thumb():\n    img = Image.open(io.BytesIO(request.files['img'].read()))\n    return str(img.size)\n", false, ""},
 	}
 	pass := 0
 	for _, c := range cases {

@@ -1,0 +1,58 @@
+id = "python-code-eval-dynamic-import"
+lang = "python"
+class = "code-eval"
+cwe = "CWE-94"
+severity = "high"
+tier = "info"
+title = "Module or object path taken from input and imported (import runs the module's code)"
+frameworks = ["django", "flask"]
+sources = ["request.args", "request.form", "request.values", "request.json", "request.get_json(", "request.GET", "request.POST", "request.data", "request.headers", "request.query_params", "request.json(", "self.get_argument(", "response.headers", "json.loads(request.body", "json.loads(request.data", "json.loads(message"]
+sinks = ["importlib.import_module(", "import_module(", "__import__(", "load_object(", "import_string(", "pydoc.locate(", "locate("]
+sanitizers = []
+fix = "Map the value to a class or module through a fixed table on the server (ALLOWED = {'name': MyView}) or check it against an allowlist of full dotted paths before importing; importing an arbitrary module runs its top-level code."
+refs = ["CVE-2026-61599", "CVE-2026-105782"]
+
+[[args]]
+arg = 1
+
+[[samples]]
+kind = "vulnerable"
+note = "a component path sent over the socket is imported before any check"
+code = '''
+def mount_component(message):
+    payload = json.loads(message)
+    dotted = payload["component"]
+    module_name, _, attr = dotted.rpartition(".")
+    component_cls = getattr(__import__(module_name, fromlist=[attr]), attr)
+    return component_cls()
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "a header value names the class to load"
+code = '''
+def choose_policy(response):
+    policy_name = response.headers.get("X-Policy", "")
+    return load_object(policy_name)()
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+COMPONENTS = {"counter": CounterComponent, "clock": ClockComponent}
+
+def mount_component(message):
+    payload = json.loads(message)
+    component_cls = COMPONENTS.get(payload["component"])
+    if component_cls is None:
+        raise ValueError("unknown component")
+    return component_cls()
+'''
+
+[[samples]]
+kind = "safe"
+note = "the dotted path comes from settings, not from the request"
+code = '''
+def build_backend():
+    return import_string(settings.STORAGE_BACKEND)()
+'''
