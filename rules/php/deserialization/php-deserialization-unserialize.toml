@@ -11,6 +11,9 @@ sanitizers = []
 fix = "Store and exchange plain data with json_encode/json_decode; if unserialize is unavoidable pass ['allowed_classes' => false] and verify an HMAC first."
 refs = ["CVE-2018-15133", "CVE-2026-10721"]
 
+[[args]]
+unless = ["'allowed_classes' => false"]
+
 [[samples]]
 kind = "vulnerable"
 code = '''

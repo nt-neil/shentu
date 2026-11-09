@@ -6,10 +6,13 @@ severity = "critical"
 title = "spawn/execFile with shell: true on a command line that includes untrusted values"
 frameworks = ["express"]
 sources = ["req.query", "req.body", "req.params", "process.env"]
-sinks = ["shell: true"]
+sinks = ["spawn(", "spawnSync(", "execFile(", "execFileSync("]
 sanitizers = []
 fix = "Drop shell: true and pass the program and each value as separate arguments; shell: true turns the joined arguments back into a shell command line."
 refs = ["CVE-2026-119282"]
+
+[[args]]
+when = ["shell: true"]   # an argument array is passed as is; shell: true joins it into a shell command line
 
 [[samples]]
 kind = "vulnerable"

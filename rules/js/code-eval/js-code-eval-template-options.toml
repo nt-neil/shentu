@@ -11,6 +11,11 @@ sanitizers = []
 fix = "Pass only the named fields the template needs (res.render('page', { q: String(req.query.q) })); never spread req.query or req.body into render data, which some engines read as options, and never compile user text as a template."
 refs = ["CVE-2022-29078"]
 
+[[args]]
+sinks = ["res.render("]
+arg = 2
+whole = true   # the danger is the request object as the view data, not one value taken from it
+
 [[samples]]
 kind = "vulnerable"
 note = "engines may read settings / view options from the data object"

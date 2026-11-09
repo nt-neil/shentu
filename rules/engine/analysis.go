@@ -1,0 +1,1287 @@
+package engine
+
+import "strings"
+
+// The analysis walks one function at a time, statement by statement, in order. It
+// keeps a state: which variables (and member or index paths such as $user->lang)
+// hold user input. Two layers share the walk:
+//
+//   - layer A: a sink whose dangerous argument contains a source, not wrapped in
+//     one of the rule's sanitizers, is reported;
+//   - layer B: an assignment from a tainted value taints the variable; taint
+//     flows through concatenation, interpolation, calls, array and member access;
+//     a sanitizer's result is clean; a check that rejects or replaces a value
+//     (an allowlist, a type check, a path containment check) makes it clean on
+//     the paths where the check holds. A sink reached by a tainted variable is
+//     reported.
+//
+// Nothing crosses a function boundary except that closures see the variables of
+// the code around them.
+
+const sepCh = "\x1f" // separates the parts of a path key: "$user" sepCh ".lang"
+
+type entry struct {
+	taint bool
+	src   bool // the key is a source expression a check made clean (req.body.email)
+	sep   bool // the value ends with a path separator ($base = realpath(...) . DIRECTORY_SEPARATOR)
+	san   bool // the value was made by a sanitizer (env = SandboxedEnvironment())
+}
+
+type state map[string]entry
+
+func (s state) clone() state {
+	c := make(state, len(s))
+	for k, v := range s {
+		c[k] = v
+	}
+	return c
+}
+
+// get returns the entry of key or of its longest stored prefix.
+func (s state) get(key string) (entry, bool) {
+	for k := key; k != ""; {
+		if e, ok := s[k]; ok {
+			return e, true
+		}
+		i := strings.LastIndex(k, sepCh)
+		if i < 0 {
+			break
+		}
+		k = k[:i]
+	}
+	return entry{}, false
+}
+
+// del removes key and every path under it.
+func (s state) del(key string) {
+	for k := range s {
+		if k == key || strings.HasPrefix(k, key+sepCh) {
+			delete(s, k)
+		}
+	}
+}
+
+// merge joins the states of two paths: tainted on either path is tainted.
+func merge(x, y state) state {
+	out := make(state, len(x)+len(y))
+	look := func(s state, k string, src bool) entry {
+		if e, ok := s.get(k); ok {
+			return e
+		}
+		return entry{taint: src, src: src}
+	}
+	both := func(a, b entry) entry {
+		return entry{taint: a.taint || b.taint, src: a.src || b.src, sep: a.sep && b.sep, san: a.san && b.san}
+	}
+	for k, e := range x {
+		out[k] = both(e, look(y, k, e.src))
+	}
+	for k, e := range y {
+		if _, ok := x[k]; !ok {
+			out[k] = both(look(x, k, e.src), e)
+		}
+	}
+	return out
+}
+
+type val struct{ taint, san bool }
+
+const (
+	noExit   uint8 = iota
+	softExit       // continue, break
+	hardExit       // return, throw, exit, abort()
+)
+
+type analysis struct {
+	r      *crule
+	php    bool
+	py     bool
+	js     bool
+	b      *budget
+	seen   map[int]bool
+	lines  []int
+	guards []map[string]bool // per enclosing loop: keys a rejecting check validated
+	depth  int
+}
+
+func (a *analysis) report(line int) {
+	if !a.seen[line] {
+		a.seen[line] = true
+		a.lines = append(a.lines, line)
+	}
+}
+
+// ---- statements ----
+
+func (a *analysis) block(ss []*stmt, st state) (state, uint8) {
+	for _, s := range ss {
+		if !a.b.step() {
+			return st, noExit
+		}
+		var e uint8
+		st, e = a.stmt(s, st)
+		if e != noExit {
+			return st, e
+		}
+	}
+	return st, noExit
+}
+
+func (a *analysis) stmt(s *stmt, st state) (state, uint8) {
+	for _, f := range s.funcs {
+		a.function(f, st)
+	}
+	switch s.kind {
+	case sSimple:
+		a.sinks(st, s.toks)
+		a.assignStmt(st, s.toks)
+		return st, a.exitOf(s.toks)
+	case sIf:
+		a.sinks(st, s.toks)
+		t1, _ := a.refine(st, s.toks, true)
+		t1, e1 := a.block(s.body, t1)
+		t2, g2 := a.refine(st, s.toks, false)
+		e2 := noExit
+		if len(s.els) > 0 {
+			t2, e2 = a.block(s.els, t2)
+		}
+		if e1 == hardExit && len(a.guards) > 0 {
+			for _, k := range g2 {
+				a.guards[len(a.guards)-1][k] = true
+			}
+		}
+		switch {
+		case e1 != noExit && e2 != noExit:
+			return t1, min(e1, e2)
+		case e1 != noExit:
+			return t2, noExit
+		case e2 != noExit:
+			return t1, noExit
+		}
+		return merge(t1, t2), noExit
+	case sLoop:
+		return a.loop(s, st), noExit
+	case sWith:
+		for _, item := range splitTop(s.toks, isComma) {
+			x, tg := item, []Token(nil)
+			if i := indexTop(item, 0, isWord("as")); i > 0 {
+				x, tg = item[:i], item[i+1:]
+			}
+			a.sinks(st, x)
+			v := a.expr(st, x, false)
+			for _, t := range a.targetList(tg) {
+				a.setTarget(st, t, v, "=", false)
+			}
+		}
+		return a.block(s.body, st)
+	case sBlock:
+		a.sinks(st, s.toks)
+		if s.alt {
+			t, e := a.block(s.body, st.clone())
+			if e != noExit {
+				return st, noExit
+			}
+			return merge(st, t), noExit
+		}
+		t, e := a.block(s.body, st)
+		if s.noexit {
+			e = noExit
+		}
+		return t, e
+	case sFunc:
+		a.function(s.fn, st)
+	}
+	return st, noExit
+}
+
+func (a *analysis) function(f *fn, st state) {
+	if f == nil || a.depth > maxNest {
+		return
+	}
+	x := state{}
+	if !f.fresh {
+		x = st.clone()
+	}
+	for _, p := range f.params {
+		if p.Kind == Var || p.Kind == Ident {
+			x.del(p.Text)
+		}
+	}
+	a.depth++
+	a.block(f.body, x)
+	a.depth--
+}
+
+func (a *analysis) loop(s *stmt, st state) state {
+	body := s.body
+	var targets, iter, cond []Token
+	switch s.loop {
+	case "for":
+		parts := splitTop(s.toks, isSemi)
+		a.sinks(st, s.toks)
+		a.assignStmt(st, parts[0])
+		if len(parts) > 1 {
+			cond = parts[1]
+		}
+		if len(parts) > 2 && len(parts[2]) > 0 {
+			body = append(append([]*stmt(nil), body...), &stmt{kind: sSimple, toks: parts[2]})
+		}
+	case "each":
+		if i := indexTop(s.toks, 0, isWord("as")); i > 0 {
+			iter = s.toks[:i]
+			for _, side := range splitTop(s.toks[i+1:], isOp("=>")) {
+				targets = append(targets, side...)
+				targets = append(targets, Token{Kind: Op, Text: ","})
+			}
+		}
+	case "in":
+		h := s.toks
+		for len(h) > 0 && h[0].Kind == Ident && (declWords[h[0].Text] || h[0].Text == "await") {
+			h = h[1:]
+		}
+		in := indexTop(h, 0, func(t Token) bool { return t.word("in") || !a.py && t.word("of") })
+		if in > 0 {
+			targets, iter = h[:in], h[in+1:]
+		}
+	case "while":
+		a.sinks(st, s.toks)
+		cond = s.toks
+	}
+	var iv val
+	if iter != nil {
+		a.sinks(st, iter)
+		iv = a.expr(st, iter, false)
+	}
+	tl := a.targetList(targets)
+	bind := func(x state) {
+		for _, t := range tl {
+			a.setTarget(x, t, iv, "=", false)
+		}
+	}
+	enter := func(x state) state {
+		if cond != nil {
+			x, _ = a.refine(x, cond, true)
+			return x
+		}
+		return x.clone()
+	}
+	bind(st)
+	a.guards = append(a.guards, map[string]bool{})
+	s1, _ := a.block(body, enter(st))
+	m := merge(st, s1)
+	bind(m)
+	s2, _ := a.block(body, enter(m))
+	out := merge(m, s2)
+	checked := a.guards[len(a.guards)-1]
+	a.guards = a.guards[:len(a.guards)-1]
+	// Every member was checked and a bad one rejects the whole input (raise,
+	// return), so the collection itself is validated after the loop.
+	if root := a.rootKey(iter); root != "" {
+		for _, t := range tl {
+			if k, _, ok := a.pathKey(t); ok && checked[k] {
+				out[root] = entry{}
+			}
+		}
+	}
+	return out
+}
+
+var declWords = map[string]bool{"const": true, "let": true, "var": true, "global": true, "static": true,
+	"public": true, "private": true, "protected": true, "readonly": true, "final": true}
+
+var exitCalls = map[string]bool{"abort": true, "wp_die": true, "exit": true, "die": true}
+
+func (a *analysis) exitOf(t []Token) uint8 {
+	if len(t) == 0 || t[0].Kind != Ident {
+		return noExit
+	}
+	switch t[0].Text {
+	case "return", "throw", "raise":
+		return hardExit
+	case "continue", "break":
+		return softExit
+	case "exit", "die":
+		if a.php {
+			return hardExit
+		}
+	}
+	if len(t) > 1 && t[1].op("(") && exitCalls[t[0].Text] {
+		return hardExit
+	}
+	if len(t) > 3 && (t[0].Text == "sys" || t[0].Text == "process") && t[1].op(".") && t[2].word("exit") {
+		return hardExit
+	}
+	return noExit
+}
+
+// ---- assignments ----
+
+func isAssignOp(t Token) bool {
+	if t.Kind != Op {
+		return false
+	}
+	switch t.Text {
+	case "=", ".=", "+=", "-=", "*=", "/=", "%=", "??=", "||=", "&&=", "|=", "&=", "^=", "**=", "<<=", ">>=", ":=":
+		return true
+	}
+	return false
+}
+
+func (a *analysis) assignStmt(st state, t []Token) {
+	decl := false
+	for len(t) > 0 && t[0].Kind == Ident && declWords[t[0].Text] {
+		t, decl = t[1:], true
+	}
+	if a.js && decl {
+		for _, d := range splitTop(t, isComma) {
+			a.assign(st, d)
+		}
+		return
+	}
+	a.assign(st, t)
+}
+
+func (a *analysis) assign(st state, t []Token) (val, bool) {
+	k := indexTop(t, 0, isAssignOp)
+	if k <= 0 {
+		return val{}, false
+	}
+	lhs, rhs := t[:k], t[k+1:]
+	if a.py {
+		if c := indexTop(lhs, 0, isOp(":")); c > 0 {
+			lhs = lhs[:c]
+		}
+	}
+	var v val
+	var sep bool
+	if indexTop(rhs, 0, isAssignOp) > 0 {
+		v, sep = a.assign(st, rhs)
+	} else {
+		v, sep = a.expr(st, rhs, false), a.sepEnd(st, rhs)
+	}
+	for _, tg := range a.targetList(lhs) {
+		a.setTarget(st, tg, v, t[k].Text, sep)
+	}
+	return v, sep
+}
+
+// targetList splits an assignment target into the paths it writes: a, [a, b],
+// {a, b: c}, list($a, $b), "k, v" in Python.
+func (a *analysis) targetList(lhs []Token) [][]Token {
+	for len(lhs) > 0 && (lhs[0].Kind == Ident && declWords[lhs[0].Text] || lhs[0].op("&") || lhs[0].op("...") || lhs[0].op("*")) {
+		lhs = lhs[1:]
+	}
+	if len(lhs) == 0 {
+		return nil
+	}
+	if parts := splitTop(lhs, isComma); len(parts) > 1 {
+		var out [][]Token
+		for _, p := range parts {
+			out = append(out, a.targetList(p)...)
+		}
+		return out
+	}
+	inner := []Token(nil)
+	switch {
+	case isOpen(lhs[0]) && closeOf(lhs, 0) == len(lhs)-1:
+		inner = lhs[1 : len(lhs)-1]
+	case a.php && len(lhs) > 2 && (lhs[0].word("list") || lhs[0].word("array")) && lhs[1].op("(") && closeOf(lhs, 1) == len(lhs)-1:
+		inner = lhs[2 : len(lhs)-1]
+	default:
+		return [][]Token{lhs[a.chainStart(lhs, len(lhs)):]}
+	}
+	var out [][]Token
+	for _, e := range splitTop(inner, isComma) {
+		if i := indexTop(e, 0, isOp("=>")); i >= 0 {
+			e = e[i+1:]
+		} else if i := indexTop(e, 0, isOp(":")); i >= 0 && lhs[0].op("{") {
+			e = e[i+1:]
+		}
+		if i := indexTop(e, 0, isOp("=")); i > 0 {
+			e = e[:i]
+		}
+		out = append(out, a.targetList(e)...)
+	}
+	return out
+}
+
+func (a *analysis) setTarget(st state, tg []Token, v val, op string, sep bool) {
+	key, container, ok := a.pathKey(tg)
+	if !ok {
+		return
+	}
+	if container != "" {
+		e, _ := st.get(container)
+		st[container] = entry{taint: e.taint || v.taint}
+		return
+	}
+	if op == "=" || op == ":=" {
+		st.del(key)
+		st[key] = entry{taint: v.taint, san: v.san, sep: sep}
+		return
+	}
+	e, _ := st.get(key)
+	st[key] = entry{taint: e.taint || v.taint, sep: sep}
+}
+
+// pathKey returns the key of a plain path ($x, $x->a, x.y, x["k"]). When the path
+// ends with an index, container is the key of what is indexed: writing $a[] = $x
+// taints $a.
+func (a *analysis) pathKey(t []Token) (key, container string, ok bool) {
+	if len(t) == 0 || t[0].Kind != Var && t[0].Kind != Ident || nonValue[t[0].Text] {
+		return "", "", false
+	}
+	key = t[0].Text
+	for j := 1; j < len(t); {
+		switch {
+		case memberOp(a.php, t[j]) && j+1 < len(t) && (t[j+1].Kind == Ident || t[j+1].Kind == Var):
+			key += sepCh + "." + t[j+1].Text
+			container = ""
+			j += 2
+		case t[j].op("["):
+			c := closeOf(t, j)
+			container = key
+			key += sepCh + "[" + idxKey(inside(t, j, c)) + "]"
+			j = c + 1
+		default:
+			return "", "", false
+		}
+	}
+	return key, container, true
+}
+
+func idxKey(t []Token) string {
+	if len(t) == 1 && (t[0].Kind == Str || t[0].Kind == Num) && len(t[0].Parts) == 0 {
+		return t[0].Text
+	}
+	return "*"
+}
+
+// rootKey is the variable an expression such as zf.namelist() starts from.
+func (a *analysis) rootKey(t []Token) string {
+	if len(t) > 0 && (t[0].Kind == Var || t[0].Kind == Ident) && !nonValue[t[0].Text] {
+		return t[0].Text
+	}
+	return ""
+}
+
+// chainStart walks back from end over a postfix chain (a->b()[c].d) and returns
+// where it starts.
+func (a *analysis) chainStart(t []Token, end int) int {
+	j := end
+	for j > 0 {
+		p := t[j-1]
+		switch {
+		case isClose(p):
+			j = openOf(t, j-1)
+			if j == 0 {
+				return 0
+			}
+			q := t[j-1]
+			if !(q.Kind == Ident && !nonValue[q.Text] || q.Kind == Var || isClose(q) || memberOp(a.php, q)) {
+				return j
+			}
+		case memberOp(a.php, p):
+			j--
+		case p.Kind == Ident && !nonValue[p.Text] || p.Kind == Var || p.Kind == Str || p.Kind == Num:
+			j--
+			if j == 0 || !memberOp(a.php, t[j-1]) {
+				return j
+			}
+		default:
+			return j
+		}
+	}
+	return j
+}
+
+// sepEnd reports whether a value ends with a path separator, so a prefix check
+// against it cannot be passed by a sibling folder (/var/www/assets-private).
+func (a *analysis) sepEnd(st state, rhs []Token) bool {
+	join := "+"
+	if a.php {
+		join = "."
+	}
+	parts := splitTop(rhs, isOp(join))
+	last := parts[len(parts)-1]
+	if len(last) == 0 {
+		return false
+	}
+	if len(last) == 1 && last[0].Kind == Str && len(last[0].Parts) == 0 {
+		return strings.HasSuffix(last[0].Text, "/") || strings.HasSuffix(last[0].Text, "\\")
+	}
+	key, _, ok := a.pathKey(last)
+	if !ok {
+		return false
+	}
+	switch strings.ReplaceAll(key, sepCh, "") {
+	case "DIRECTORY_SEPARATOR", "path.sep", "os.sep", "os.path.sep":
+		return true
+	}
+	e, _ := st.get(key)
+	return e.sep
+}
+
+// ---- expressions ----
+
+// nonValue words are keywords and operators spelled as words; they are skipped
+// when reading an expression and never start a path.
+var nonValue = map[string]bool{
+	"return": true, "throw": true, "yield": true, "await": true, "new": true, "delete": true, "void": true,
+	"typeof": true, "echo": true, "print": true, "clone": true, "include": true, "include_once": true,
+	"require": true, "require_once": true, "raise": true, "in": true, "not": true, "and": true, "or": true,
+	"xor": true, "is": true, "lambda": true, "if": true, "else": true, "case": true, "async": true,
+	"function": true, "fn": true, "use": true, "global": true, "const": true, "let": true, "var": true,
+	"instanceof": true, "of": true, "from": true, "as": true, "del": true, "assert": false,
+}
+
+func isWord(w string) func(Token) bool { return func(t Token) bool { return t.word(w) } }
+func isOp(o string) func(Token) bool   { return func(t Token) bool { return t.op(o) } }
+
+func (a *analysis) isCompare(t Token) bool {
+	switch t.Kind {
+	case Op:
+		switch t.Text {
+		case "==", "===", "!=", "!==", "<", ">", "<=", ">=", "<>", "<=>":
+			return true
+		}
+	case Ident:
+		switch t.Text {
+		case "instanceof":
+			return true
+		case "in":
+			return !a.php
+		case "is", "not":
+			return a.py
+		}
+	}
+	return false
+}
+
+func stripParens(t []Token) []Token {
+	for len(t) >= 2 && t[0].op("(") && closeOf(t, 0) == len(t)-1 {
+		t = t[1 : len(t)-1]
+	}
+	return t
+}
+
+// expr evaluates the taint of an expression. whole asks whether the value itself
+// is user input, not merely an object or array literal holding some.
+func (a *analysis) expr(st state, t []Token, whole bool) val {
+	if len(t) == 0 || !a.b.step() || a.depth > 4*maxNest {
+		return val{}
+	}
+	a.depth++
+	defer func() { a.depth-- }()
+
+	// Conditional expressions: each branch under its condition.
+	if a.py {
+		if t[0].word("lambda") {
+			return val{}
+		}
+		if f := indexTop(t, 0, isWord("for")); f > 0 {
+			return a.comprehension(st, t, f)
+		}
+		if i := indexTop(t, 1, isWord("if")); i > 0 {
+			if e := indexTop(t, i+1, isWord("else")); e > 0 {
+				return a.branches(st, t[i+1:e], t[:i], t[e+1:], whole)
+			}
+		}
+	} else if q := indexTop(t, 0, isOp("?")); q >= 0 {
+		if q+1 < len(t) && t[q+1].op(":") {
+			return or(a.expr(st, t[:q], whole), a.expr(st, t[q+2:], whole))
+		}
+		if c := ternaryColon(t, q); c > 0 {
+			return a.branches(st, t[:q], t[q+1:c], t[c+1:], whole)
+		}
+	}
+
+	// Logical operators: PHP's give a boolean; JavaScript's and Python's give an operand.
+	logic := func(x Token) bool {
+		return x.op("&&") || x.op("||") || x.word("and") || x.word("or") || a.php && x.word("xor")
+	}
+	if indexTop(t, 0, logic) >= 0 {
+		if a.php {
+			return val{}
+		}
+		return a.anyOf(st, splitTop(t, logic), whole)
+	}
+	if indexTop(t, 0, isOp("??")) >= 0 {
+		return a.anyOf(st, splitTop(t, isOp("??")), whole)
+	}
+	if indexTop(t, 0, a.isCompare) >= 0 || t[0].op("!") || a.py && t[0].word("not") {
+		return val{}
+	}
+	if a.php && indexTop(t, 0, isOp("=>")) >= 0 {
+		return a.anyOf(st, splitTop(t, isOp("=>")), whole)
+	}
+	if a.py && indexTop(t, 0, isOp(":")) >= 0 {
+		return a.anyOf(st, splitTop(t, isOp(":")), whole)
+	}
+
+	var v val
+	terms := 0
+	for i := 0; i < len(t); {
+		tk := t[i]
+		if tk.Kind == Op && !isOpen(tk) || tk.Kind == Ident && nonValue[tk.Text] || tk.Kind > Op {
+			if tk.word("typeof") && a.js {
+				_, e := a.term(st, t, i+1, false)
+				i, terms = max(e, i+1), terms+1
+				continue
+			}
+			i++
+			continue
+		}
+		tv, e := a.term(st, t, i, whole)
+		v.taint = v.taint || tv.taint
+		v.san = tv.san
+		terms++
+		i = max(e, i+1)
+	}
+	if terms != 1 {
+		v.san = false
+	}
+	return v
+}
+
+func or(x, y val) val { return val{taint: x.taint || y.taint} }
+
+func (a *analysis) anyOf(st state, parts [][]Token, whole bool) val {
+	var v val
+	for _, p := range parts {
+		v = or(v, a.expr(st, p, whole))
+	}
+	return v
+}
+
+func (a *analysis) branches(st state, cond, yes, no []Token, whole bool) val {
+	s1, _ := a.refine(st, cond, true)
+	s2, _ := a.refine(st, cond, false)
+	return or(a.expr(s1, yes, whole), a.expr(s2, no, whole))
+}
+
+// ternaryColon finds the ":" matching the "?" at q.
+func ternaryColon(t []Token, q int) int {
+	depth, nest := 0, 0
+	for j := q + 1; j < len(t); j++ {
+		switch {
+		case isOpen(t[j]):
+			depth++
+		case isClose(t[j]):
+			depth--
+		case depth == 0 && t[j].op("?"):
+			nest++
+		case depth == 0 && t[j].op(":"):
+			if nest == 0 {
+				return j
+			}
+			nest--
+		}
+	}
+	return -1
+}
+
+// comprehension evaluates a Python comprehension: for clauses bind their targets,
+// if clauses act as checks on them.
+func (a *analysis) comprehension(st state, t []Token, f int) val {
+	x := st.clone()
+	rest := t[f:]
+	clause := func(t Token) bool { return t.word("for") || t.word("if") }
+	for len(rest) > 0 {
+		next := indexTop(rest, 1, clause)
+		if next < 0 {
+			next = len(rest)
+		}
+		switch {
+		case rest[0].word("for"):
+			in := indexTop(rest[:next], 1, isWord("in"))
+			if in < 0 {
+				return a.expr(x, t[:f], false)
+			}
+			v := a.expr(x, rest[in+1:next], false)
+			for _, tg := range a.targetList(rest[1:in]) {
+				a.setTarget(x, tg, v, "=", false)
+			}
+		case rest[0].word("if"):
+			x, _ = a.refine(x, rest[1:next], true)
+		default:
+			return a.expr(x, t[:f], false)
+		}
+		rest = rest[next:]
+	}
+	return a.expr(x, t[:f], false)
+}
+
+// term evaluates one operand starting at i and returns where it ends.
+func (a *analysis) term(st state, t []Token, i int, whole bool) (val, int) {
+	if i >= len(t) {
+		return val{}, i
+	}
+	if end, _, _, ok := a.sanitizerAt(st, t, i); ok {
+		return a.postfix(st, t, i, end, val{san: true}, whole)
+	}
+	tk := t[i]
+	switch {
+	case tk.Kind == Str:
+		return a.postfix(st, t, i, i+1, a.strVal(st, tk), whole)
+	case tk.op("("):
+		c := closeOf(t, i)
+		inner := inside(t, i, c)
+		if a.php && len(inner) == 1 && inner[0].Kind == Ident && phpCasts[strings.ToLower(inner[0].Text)] {
+			return a.term(st, t, c+1, whole) // (string) $x, (array) $x: the value passes through
+		}
+		return a.postfix(st, t, i, c+1, a.expr(st, inner, whole), whole)
+	case tk.op("[") || tk.op("{"):
+		c := closeOf(t, i)
+		return a.postfix(st, t, i, c+1, a.literal(st, inside(t, i, c), tk.Text, whole), whole)
+	case tk.Kind == Var || tk.Kind == Ident:
+		return a.postfix(st, t, i, i+1, val{}, whole)
+	}
+	return val{}, i + 1
+}
+
+var phpCasts = map[string]bool{"int": true, "integer": true, "float": true, "double": true, "bool": true, "boolean": true,
+	"string": true, "array": true, "object": true, "binary": true}
+
+// postfix evaluates the accesses after a base (t[start:baseEnd]): member names,
+// indexes and calls, applying sources, member sanitizers and the state.
+func (a *analysis) postfix(st state, t []Token, start, baseEnd int, v val, whole bool) (val, int) {
+	key := ""
+	if baseEnd == start+1 && (t[start].Kind == Var || t[start].Kind == Ident) && !v.san {
+		key = t[start].Text
+	}
+	srcEnd := -1
+	source := func(pos int) {
+		for _, s := range a.r.sources {
+			if s.text == nil && s.at(t, pos, false) {
+				if e := pos + len(s.toks); srcEnd < 0 || e < srcEnd {
+					srcEnd = e
+				}
+			}
+		}
+	}
+	apply := func(pos int) {
+		if srcEnd >= 0 && pos >= srcEnd {
+			v, srcEnd = val{taint: true}, -2
+		}
+		if key != "" {
+			if e, ok := st[key]; ok {
+				v = val{taint: e.taint, san: e.san}
+			}
+		}
+	}
+	if !v.san {
+		source(start)
+	}
+	apply(baseEnd)
+	j := baseEnd
+	for j < len(t) && a.b.step() {
+		if end, _, _, ok := a.memberSanitizerAt(t, j); ok {
+			v, key, srcEnd = val{san: true}, "", -1
+			j = end
+			continue
+		}
+		source(j)
+		tk := t[j]
+		switch {
+		case memberOp(a.php, tk) && j+1 < len(t) && (t[j+1].Kind == Ident || t[j+1].Kind == Var):
+			if key != "" {
+				key += sepCh + "." + t[j+1].Text
+			}
+			j += 2
+		case tk.op("?.") && j+1 < len(t) && (t[j+1].op("(") || t[j+1].op("[")):
+			j++
+			continue
+		case tk.op("["):
+			c := closeOf(t, j)
+			if key != "" {
+				key += sepCh + "[" + idxKey(inside(t, j, c)) + "]"
+			}
+			j = c + 1
+		case tk.op("("):
+			c := closeOf(t, j)
+			firstOnly := j == baseEnd && a.php && (t[start].word("array_intersect") || t[start].word("array_intersect_key"))
+			if a.argsTaint(st, inside(t, j, c), firstOnly) {
+				v = val{taint: true}
+			}
+			if key != "" {
+				key += sepCh + "()"
+			}
+			j = c + 1
+		default:
+			if srcEnd >= 0 {
+				v = val{taint: true}
+			}
+			return v, j
+		}
+		apply(j)
+	}
+	if srcEnd >= 0 {
+		v = val{taint: true}
+	}
+	return v, j
+}
+
+// argsTaint reports whether a call's arguments carry taint into its result.
+// array_intersect($trusted, $input) returns values of its first argument only.
+func (a *analysis) argsTaint(st state, inner []Token, firstOnly bool) bool {
+	for n, arg := range splitTop(inner, isComma) {
+		if firstOnly && n > 0 {
+			break
+		}
+		if a.argVal(st, arg, false).taint {
+			return true
+		}
+	}
+	return false
+}
+
+// argVal evaluates one call argument, without a keyword (name=, name:) or spread.
+func (a *analysis) argVal(st state, arg []Token, whole bool) val {
+	if len(arg) > 1 && arg[0].Kind == Ident && (a.py && arg[1].op("=") || a.php && arg[1].op(":")) {
+		arg = arg[2:]
+	}
+	for len(arg) > 0 && (arg[0].op("...") || arg[0].op("*") || arg[0].op("**")) {
+		arg, whole = arg[1:], false
+	}
+	return a.expr(st, arg, whole)
+}
+
+func (a *analysis) strVal(st state, tk Token) val {
+	if tk.Flags&FlagRegex != 0 {
+		return val{}
+	}
+	for _, s := range a.r.textSources {
+		if s.text.MatchString(tk.Text) {
+			return val{taint: true}
+		}
+	}
+	for _, p := range tk.Parts {
+		if a.expr(st, p.Toks, false).taint {
+			return val{taint: true}
+		}
+	}
+	return val{}
+}
+
+// literal evaluates an array, object, dict, list or set literal.
+func (a *analysis) literal(st state, inner []Token, open string, whole bool) val {
+	if a.py && indexTop(inner, 0, isWord("for")) > 0 {
+		return a.expr(st, inner, false)
+	}
+	var v val
+	for _, e := range splitTop(inner, isComma) {
+		if len(e) == 0 {
+			continue
+		}
+		spread := e[0].op("...") || e[0].op("**") || e[0].op("*")
+		if whole && !spread {
+			continue
+		}
+		if spread {
+			e = e[1:]
+		}
+		if a.js && open == "{" && len(e) > 1 {
+			if (e[0].Kind == Ident || e[0].Kind == Str || e[0].Kind == Num) && e[1].op(":") {
+				e = e[2:]
+			} else if e[0].op("[") {
+				if c := closeOf(e, 0); c+1 < len(e) && e[c+1].op(":") {
+					v = or(v, a.expr(st, e[1:c], false))
+					e = e[c+2:]
+				}
+			}
+		}
+		v = or(v, a.expr(st, e, false))
+	}
+	return v
+}
+
+// ---- sanitizers and checks ----
+
+// sanitizerAt matches a sanitizer that starts at i (not a method) and returns
+// where its effect ends: after its call, or after the operand of a cast or typeof.
+func (a *analysis) sanitizerAt(st state, t []Token, i int) (end int, s *pat, open int, ok bool) {
+	for _, s := range a.r.sanitizers {
+		if s.member || !s.at(t, i, true) {
+			continue
+		}
+		end, open := a.patEnd(t, i, s)
+		if open < 0 && (s.toks[0].op("(") || len(s.toks) == 1 && s.toks[0].word("typeof")) && end < len(t) {
+			_, end = a.term(st, t, end, false)
+		}
+		return end, s, open, true
+	}
+	return 0, nil, -1, false
+}
+
+// memberSanitizerAt matches a method sanitizer (".resolve(", "->prepare(") at i.
+func (a *analysis) memberSanitizerAt(t []Token, i int) (end int, s *pat, open int, ok bool) {
+	for _, s := range a.r.sanitizers {
+		if s.member && s.at(t, i, false) {
+			end, open := a.patEnd(t, i, s)
+			return end, s, open, true
+		}
+	}
+	return 0, nil, -1, false
+}
+
+// patEnd returns where a matched pattern's call ends and the index of its "(".
+func (a *analysis) patEnd(t []Token, i int, s *pat) (end, open int) {
+	end, open = i+len(s.toks), -1
+	if k := s.callParen(); k >= 0 {
+		open = i + k
+	} else if end < len(t) && t[end].op("(") {
+		open = end
+	}
+	if open >= 0 {
+		end = closeOf(t, open) + 1
+	}
+	return end, open
+}
+
+type keyRef struct {
+	key string
+	src bool
+}
+
+// prefixChecks compare string prefixes; they protect a path only against a base
+// that ends with a separator.
+var prefixChecks = map[string]bool{"str_starts_with": true, "strncmp": true, "strncasecmp": true, "strpos": true,
+	"stripos": true, "startsWith": true, "startswith": true}
+
+// zeroMeansMatch are comparisons for which "=== 0" means the check passed.
+var zeroMeansMatch = map[string]bool{"strncmp": true, "strncasecmp": true, "strcmp": true, "strcasecmp": true,
+	"strpos": true, "stripos": true}
+
+// refine returns a copy of st for the path where cond is truth, with the values
+// that a check in cond validates made clean, and the keys it cleaned.
+func (a *analysis) refine(st state, cond []Token, truth bool) (state, []string) {
+	out := st.clone()
+	cond = stripParens(cond)
+	split := func(t Token) bool { return t.op("||") || t.word("or") }
+	if truth {
+		split = func(t Token) bool { return t.op("&&") || t.word("and") }
+	}
+	var cleaned []string
+	for _, atom := range splitTop(cond, split) {
+		pos, keys := a.guard(st, atom)
+		if keys == nil || pos != truth {
+			continue
+		}
+		for _, k := range keys {
+			out[k.key] = entry{src: k.src}
+			cleaned = append(cleaned, k.key)
+		}
+	}
+	return out, cleaned
+}
+
+// guard reads one condition atom. When it is a check, keys are the values it
+// validates and pos tells whether the atom is true when the check passes.
+func (a *analysis) guard(st state, atom []Token) (pos bool, keys []keyRef) {
+	pos = true
+	atom = stripParens(atom)
+	for len(atom) > 0 && (atom[0].op("!") || a.py && atom[0].word("not")) {
+		pos, atom = !pos, stripParens(atom[1:])
+	}
+	if len(atom) == 0 {
+		return pos, nil
+	}
+	if a.py {
+		if i := indexTop(atom, 0, isWord("in")); i > 0 {
+			x := atom[:i]
+			if atom[i-1].word("not") {
+				pos, x = !pos, atom[:i-1]
+			}
+			if a.allowlist(st, atom[i+1:]) {
+				return pos, a.keysOf(x)
+			}
+			return pos, nil
+		}
+	}
+	if i := indexTop(atom, 0, a.isCompare); i > 0 {
+		lhs, op, rhs := atom[:i], atom[i].Text, atom[i+1:]
+		if isLiteral(lhs) {
+			lhs, rhs = rhs, lhs
+		}
+		eq, ne := op == "==" || op == "===", op == "!=" || op == "!==" || op == "<>"
+		if !eq && !ne || len(lhs) == 0 || len(rhs) != 1 {
+			return pos, nil
+		}
+		if a.js && lhs[0].word("typeof") {
+			if !a.hasSanitizerWord("typeof") || rhs[0].Kind != Str {
+				return pos, nil
+			}
+			if ne {
+				pos = !pos
+			}
+			return pos, a.keysOf(lhs[1:])
+		}
+		switch strings.ToLower(rhs[0].Text) {
+		case "true":
+			if ne {
+				pos = !pos
+			}
+		case "0":
+			if zeroMeansMatch[lhs[0].Text] == ne {
+				pos = !pos
+			}
+		case "false", "null", "none":
+			if eq {
+				pos = !pos
+			}
+		default:
+			return pos, nil
+		}
+		atom = stripParens(lhs)
+	}
+	return pos, a.checkKeys(st, atom)
+}
+
+func isLiteral(t []Token) bool {
+	if len(t) != 1 {
+		return false
+	}
+	switch t[0].Kind {
+	case Num, Str:
+		return true
+	case Ident:
+		switch strings.ToLower(t[0].Text) {
+		case "true", "false", "null", "none", "undefined":
+			return true
+		}
+	}
+	return false
+}
+
+func (a *analysis) hasSanitizerWord(w string) bool {
+	for _, s := range a.r.sanitizers {
+		if len(s.toks) == 1 && s.toks[0].word(w) {
+			return true
+		}
+	}
+	return false
+}
+
+// checkKeys recognises a predicate call: an allowlist lookup, or one of the rule's
+// sanitizers used as a check (in_array, str_starts_with, .startsWith, .is_relative_to).
+func (a *analysis) checkKeys(st state, atom []Token) []keyRef {
+	n := len(atom)
+	// PHP in_array($x, $allowed) and array_key_exists($x, $map).
+	if a.php && n > 2 && (atom[0].word("in_array") || atom[0].word("array_key_exists")) && atom[1].op("(") && closeOf(atom, 1) == n-1 {
+		if args := splitTop(atom[2:n-1], isComma); len(args) >= 2 && a.allowlist(st, args[1]) {
+			return a.keysOf(args[0])
+		}
+	}
+	// JavaScript ALLOWED.includes(x) and ALLOWED.has(x).
+	if a.js && n > 4 && atom[n-1].op(")") {
+		open := openOf(atom, n-1)
+		if open >= 2 && atom[open-2].op(".") && (atom[open-1].word("includes") || atom[open-1].word("has")) &&
+			a.allowlist(st, atom[:open-2]) {
+			return a.keysOf(atom[open+1 : n-1])
+		}
+	}
+	if end, s, open, ok := a.sanitizerAt(st, atom, 0); ok && end == n {
+		var args [][]Token
+		if open >= 0 {
+			args = splitTop(inside(atom, open, end-1), isComma)
+		}
+		if prefixChecks[s.name] && !a.anySep(st, args) {
+			return nil
+		}
+		return a.keysOf(atom)
+	}
+	depth := 0
+	for m := 0; m < n; m++ {
+		switch {
+		case isOpen(atom[m]):
+			depth++
+		case isClose(atom[m]):
+			depth--
+		case depth == 0 && m > 0 && memberOp(a.php, atom[m]):
+			end, s, open, ok := a.memberSanitizerAt(atom, m)
+			if !ok || end != n {
+				continue
+			}
+			var args [][]Token
+			if open >= 0 {
+				args = splitTop(inside(atom, open, end-1), isComma)
+			}
+			if prefixChecks[s.name] && !a.anySep(st, args) {
+				return nil
+			}
+			return append(a.keysOf(atom[:m]), a.keysOf(inside(atom, open, end-1))...)
+		}
+	}
+	return nil
+}
+
+func (a *analysis) anySep(st state, args [][]Token) bool {
+	for _, arg := range args {
+		if a.sepEnd(st, arg) {
+			return true
+		}
+	}
+	return false
+}
+
+// allowlist reports whether t can be a fixed set to look a value up in: not a
+// string (that would be a substring test) and not user input.
+func (a *analysis) allowlist(st state, t []Token) bool {
+	t = stripParens(t)
+	if len(t) == 0 || len(t) == 1 && t[0].Kind == Str {
+		return false
+	}
+	return !a.expr(st, t, false).taint
+}
+
+// keysOf lists the plain paths in t (not function names, not method calls).
+func (a *analysis) keysOf(t []Token) []keyRef {
+	var out []keyRef
+	for i := 0; i < len(t); {
+		tk := t[i]
+		if tk.Kind != Var && tk.Kind != Ident || nonValue[tk.Text] || i > 0 && memberOp(a.php, t[i-1]) {
+			i++
+			continue
+		}
+		j := i + 1
+		for j < len(t) {
+			if memberOp(a.php, t[j]) && j+1 < len(t) && (t[j+1].Kind == Ident || t[j+1].Kind == Var) && !(j+2 < len(t) && t[j+2].op("(")) {
+				j += 2
+			} else if t[j].op("[") {
+				j = closeOf(t, j) + 1
+			} else {
+				break
+			}
+		}
+		if j < len(t) && t[j].op("(") && j == i+1 {
+			i = j // a function name
+			continue
+		}
+		if key, _, ok := a.pathKey(t[i:j]); ok {
+			src := false
+			for k := i; k < j; k++ {
+				for _, s := range a.r.sources {
+					if s.text == nil && s.at(t[:j], k, false) {
+						src = true
+					}
+				}
+			}
+			out = append(out, keyRef{key: key, src: src})
+		}
+		i = j
+	}
+	return out
+}
+
+// ---- sinks ----
+
+func (a *analysis) sinks(st state, t []Token) {
+	for i := range t {
+		for _, s := range a.r.sinks {
+			if s.text == nil && s.at(t, i, true) {
+				a.sink(st, t, i, s)
+			}
+		}
+		if t[i].Kind == Str {
+			for _, s := range a.r.textSinks {
+				if loc := s.text.FindStringIndex(t[i].Text); loc != nil {
+					a.textSink(st, t, i, loc[0])
+				}
+			}
+		}
+	}
+}
+
+func (a *analysis) sink(st state, t []Token, i int, s *pat) {
+	cond := a.r.args[s]
+	end, open := a.patEnd(t, i, s)
+	var region []Token
+	switch {
+	case open >= 0:
+		region = t[open+1 : max(open+1, end-1)]
+	case s.toks[len(s.toks)-1].Flags&FlagShell != 0:
+		region = t[i:end]
+	default:
+		region = t[end:]
+	}
+	if cond != nil {
+		if len(cond.when) > 0 && !anyWithin(cond.when, region) || anyWithin(cond.unless, region) {
+			return
+		}
+	}
+	var recv []Token
+	if s.member {
+		recv = t[a.chainStart(t, i):i]
+		if a.expr(st, recv, false).san {
+			return // a method of an object a sanitizer made (SandboxedEnvironment().from_string)
+		}
+	}
+	whole := cond != nil && cond.whole
+	tainted := false
+	switch {
+	case cond != nil && cond.arg != nil && *cond.arg == 0:
+		tainted = a.expr(st, recv, false).taint
+	case open >= 0:
+		args := splitTop(region, isComma)
+		if cond != nil && cond.arg != nil {
+			if n := *cond.arg; n <= len(args) {
+				tainted = a.argVal(st, args[n-1], whole).taint
+			}
+			break
+		}
+		for _, arg := range args {
+			if a.argVal(st, arg, whole).taint {
+				tainted = true
+				break
+			}
+		}
+	default:
+		tainted = a.expr(st, region, whole).taint
+	}
+	if tainted {
+		a.report(t[i].Line)
+	}
+}
+
+func anyWithin(ps []*pat, t []Token) bool {
+	for _, p := range ps {
+		if p.within(t) {
+			return true
+		}
+	}
+	return false
+}
+
+// textSink handles a sink that is text in a string ("ORDER BY"): what follows the
+// text, in the string's interpolations or in the operands joined after it, must
+// not be user input.
+func (a *analysis) textSink(st state, t []Token, k, off int) {
+	tk := t[k]
+	tainted := false
+	for _, p := range tk.Parts {
+		if p.Off >= off && a.expr(st, p.Toks, false).taint {
+			tainted = true
+		}
+	}
+	if !tainted {
+		end, depth := len(t), 0
+		for j := k + 1; j < len(t) && end == len(t); j++ {
+			switch {
+			case isOpen(t[j]):
+				depth++
+			case isClose(t[j]):
+				if depth == 0 {
+					end = j
+				}
+				depth--
+			case depth == 0 && (t[j].op(",") || t[j].op(";")):
+				end = j
+			}
+		}
+		tainted = a.expr(st, t[k+1:end], false).taint
+	}
+	if tainted {
+		a.report(tk.Line + strings.Count(tk.Text[:off], "\n"))
+	}
+}

@@ -1,8 +1,7 @@
 // Package rules holds Shentu's own rules for injection-class vulnerabilities in
 // application code (PHP, Python, JavaScript). Each rule is one TOML file at
 // rules/<lang>/<class>/<id>.toml; the format and the way rules are added are in
-// README.md. The scanning engine that applies them is not written yet, so for now
-// the package only loads the files, and rules_test.go checks them.
+// README.md. Package rules/engine applies them; rules_test.go checks the format.
 package rules
 
 import (
@@ -30,11 +29,23 @@ type Rule struct {
 	Sources    []string `toml:"sources"`
 	Sinks      []string `toml:"sinks"`
 	Sanitizers []string `toml:"sanitizers"`
+	Text       []string `toml:"text"` // entries of Sources or Sinks matched inside string literals
+	Args       []Args   `toml:"args"` // conditions on a sink call's arguments
 	Fix        string   `toml:"fix"`
 	Refs       []string `toml:"refs"`
 	Samples    []Sample `toml:"samples"`
 
 	File string `toml:"-"` // path inside rules/, set by Load
+}
+
+// Args describes which argument of a sink call carries the attack, and when the
+// call is or is not dangerous because of its other arguments.
+type Args struct {
+	Sinks  []string `toml:"sinks"`  // the rule's sinks this applies to; empty means all
+	Arg    *int     `toml:"arg"`    // the argument (from 1) that must be tainted; 0 is the receiver; nil is any
+	When   []string `toml:"when"`   // the call is a sink only if one of these is among its arguments
+	Unless []string `toml:"unless"` // the call is not a sink if one of these is among its arguments
+	Whole  bool     `toml:"whole"`  // the argument must be the input itself, not a literal holding a part of it
 }
 
 // Sample is a minimal, self-written snippet: "vulnerable" must be reported, "safe" must not.

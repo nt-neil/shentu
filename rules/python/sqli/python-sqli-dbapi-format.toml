@@ -11,6 +11,9 @@ sanitizers = ["int("]
 fix = "Pass values as the second argument of execute() with the driver's placeholder (%s or ?); never use f-strings, % or .format() to build SQL."
 refs = ["CVE-2026-10105"]
 
+[[args]]
+arg = 1   # the SQL text; the parameters argument is safe
+
 [[samples]]
 kind = "vulnerable"
 code = '''

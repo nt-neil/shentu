@@ -2,9 +2,9 @@
 
 Shentu's own rules for injection-class vulnerabilities in application code. Each rule
 describes one pattern: **user input (a source) that reaches a dangerous call (a sink)
-without passing through a sanitizer**. The scanning engine that applies them (token
-matching, then in-function taint tracking) is not written yet; for now `go test
-./rules` only checks that every rule is well formed.
+without passing through a sanitizer**. Package `rules/engine` applies them (see
+[The engine](#the-engine)); `go test ./rules/...` checks that every rule is well
+formed and that the engine finds every vulnerable sample and no safe one.
 
 All rules and samples here are written for Shentu. Nothing is copied from Semgrep,
 Opengrep, Bandit, progpilot, njsscan or any other tool, and no sample is taken from
@@ -34,8 +34,13 @@ frameworks = ["laravel"]           # optional: laravel, wordpress, django, flask
 sources = ["$_GET", "$request->input("]   # where user input comes from
 sinks = ["mysqli_query", "->query("]      # the dangerous calls
 sanitizers = ["intval", "->prepare("]     # calls whose result is safe for these sinks; [] if none
+text = []                          # optional: entries of sources/sinks that are text in strings (below)
 fix = "One sentence the user sees: how to fix it."
 refs = ["CVE-2026-56738"]          # CVE-YYYY-NNNN or GHSA-xxxx-xxxx-xxxx that inspired the rule
+
+[[args]]                           # optional, see "Argument conditions"
+sinks = ["mysqli_query"]
+arg = 2
 
 [[samples]]
 kind = "vulnerable"                # must be reported
@@ -59,6 +64,81 @@ function or member name, with `(` when the call matters and a leading `->` or `.
 when the receiver varies. An empty `sanitizers = []` means no function makes input
 safe for these sinks and the fix is to replace the sink (for example `pickle.loads`).
 
+How the engine reads them:
+
+- Each entry is lexed as code of the rule's language and matched token by token,
+  so it never matches inside a comment or a string literal.
+- A sink or sanitizer that starts with a name is that name called directly:
+  `exec(` matches `exec($cmd)`, not `$pdo->exec(...)` or `regex.exec(s)`. A method
+  on any receiver starts with `->` (PHP) or `.` (Python, JavaScript):
+  `->orderByRaw(`, `.startsWith(`. A module-qualified call must be written out
+  (`os.system(`). Sources match anywhere, so `request.args` also matches
+  `self.request.args`.
+- A string in a pattern compares its content, whatever the quotes; an unclosed
+  one is a prefix: `$_SERVER['HTTP_` matches every `$_SERVER['HTTP_...']`.
+- A **sanitizer** is a call whose result is clean (`intval(`, `shlex.quote(`,
+  `.resolve(`), a cast or `typeof` (clean operand), or a check. A check is a
+  sanitizer used as a condition: `in_array($x, $allowed)`, `typeof x !== "string"`,
+  `p.startsWith(BASE)`, `path.is_relative_to(BASE)`. The checked value is clean
+  where the check holds: inside `if (check)`, and after `if (!check) { return; }`
+  or `if (!check) { $x = 'default'; }`. A prefix check (`str_starts_with`,
+  `strncmp`, `startsWith`) counts only against a base that ends with a separator
+  (`realpath(...) . DIRECTORY_SEPARATOR`, `path.resolve(...) + path.sep`), so
+  `/var/www/assets-private` cannot pass a check for `/var/www/assets`. Lookups in a
+  fixed list are checks in every rule: `in_array`, `array_key_exists`,
+  `x in ALLOWED`, `ALLOWED.includes(x)`, `ALLOWED.has(x)`.
+- Sanitizers are per rule, not per sink. When a sanitizer protects one sink but
+  not another (`escapeshellarg` protects `exec()` but not the fifth argument of
+  `mail()`), the sinks go in separate rules; escaping functions protect a SQL value
+  only inside quotes, so they are not listed as sanitizers.
+
+### Text in strings
+
+Some sources and sinks are not code but text inside a string literal: an SQL
+clause (`ORDER BY`) or a stream URL (`php://input`). List them in `text` as well
+as in `sources` or `sinks`. A text entry matches case-insensitively, with any run
+of spaces, inside string literals only (never in comments). A text source makes
+the string user input; a text sink is reported when what follows the text, in the
+same string's interpolations or in the values joined after it, is user input:
+`"... ORDER BY $orderby"` and `"... ORDER BY " . $sort`, but not
+`"... WHERE a = '$x' ORDER BY id"`. All other entries never match inside strings.
+
+### Argument conditions
+
+`[[args]]` (optional, any number) says which argument of a sink call carries the
+attack, and when other arguments make the call dangerous or safe. Rules without
+it are unchanged: a sink is reported when any argument is tainted.
+
+| field | meaning |
+|---|---|
+| `sinks` | the rule's sinks this entry applies to; omitted means all of them; a sink has at most one entry |
+| `arg` | only this argument counts, from 1; `0` is the receiver of a method sink (`tf.extractall()`: the archive is the input) |
+| `when` | the call is a sink only if one of these appears among its arguments |
+| `unless` | the call is not a sink if one of these appears among its arguments |
+| `whole` | the argument must be the input itself (or spread from it), not an object or array literal holding a value from it |
+
+`when` and `unless` entries are code fragments matched anywhere in the call's
+arguments. Examples from the rules:
+
+```toml
+# yaml.load is safe with the safe loader, dangerous with Loader, FullLoader or UnsafeLoader
+[[args]]
+sinks = ["yaml.load(", "yaml.load_all("]
+unless = ["Loader=yaml.SafeLoader", "Loader=yaml.CSafeLoader", "Loader=SafeLoader", "Loader=CSafeLoader"]
+
+# spawn and execFile take an argument array, unless shell: true joins it into a command line
+[[args]]
+when = ["shell: true"]
+
+# unserialize cannot create objects with allowed_classes => false
+[[args]]
+unless = ["'allowed_classes' => false"]
+
+# only the fifth argument of mail() reaches sendmail
+[[args]]
+arg = 5
+```
+
 Allowed CWEs per class:
 
 | class | CWE |
@@ -76,11 +156,15 @@ Allowed CWEs per class:
 - `id` is unique, follows `<lang>-<class>-<slug>`, and matches the file path;
 - `lang`, `class`, `severity`, `frameworks` are in the allowed lists, and `cwe` belongs to the class;
 - `refs` are well-formed CVE or GHSA ids, without duplicates;
+- `text` entries are sources or sinks; `[[args]]` entries set something, name only
+  the rule's sinks, give each sink at most one entry, and use `arg = 0` only for
+  method sinks;
 - there is at least one `vulnerable` and one `safe` sample, and each vulnerable sample
   contains one of the rule's sources and one of its sinks.
 
-When the engine exists, the same samples become its tests: every vulnerable sample
-must be found and no safe sample may be.
+`engine/samples_test.go` then runs the engine on every sample: each vulnerable
+sample must be reported by its own rule, and no safe sample may be reported by any
+rule of its language.
 
 ## Adding a rule
 
@@ -98,24 +182,41 @@ must be found and no safe sample may be.
    plugin changeset) you have read and found to match the rule. Prefer an advisory in
    the rule's own language. A rule may cover several advisories; add new
    refs to an existing rule instead of creating a near-duplicate.
-5. Run `go test ./rules -run Rules`.
+5. Run `go test ./rules/...` (format checks and the engine on the samples). If a
+   sample needs a construct the engine does not follow, fix the engine, not the sample.
 
-## Future: argument conditions
+## The engine
 
-The format does not yet describe conditions on a call's arguments, so some rules
-can only say it with sink and sanitizer strings plus samples. To be designed with
-the taint-tracking engine (layer B). Known cases:
+`rules/engine` is Shentu's own code, without dependencies. Per file:
 
-- `yaml.load(...)` is safe only with `Loader=yaml.SafeLoader`, dangerous with
-  `Loader`, `FullLoader` or `UnsafeLoader`.
-- `spawn(...)` / `execFile(...)` are safe with an argument array, but become a shell
-  command line when the options contain `shell: true`.
-- `unserialize($x)` is dangerous, but `unserialize($x, ['allowed_classes' => false])`
-  cannot create objects.
-- Sanitizers are per rule, not per sink. When a sanitizer protects one sink but not
-  another (`escapeshellarg` protects `exec()` but not the fifth argument of `mail()`),
-  the sinks go in separate rules; escaping functions protect a SQL value only inside
-  quotes, so they are not listed as sanitizers.
+1. **Lexing.** Hand-written lexers for PHP, Python and JavaScript drop comments and
+   keep string literals whole, so text in comments and plain strings is never
+   code. Interpolations are lexed as code: PHP `"$x"`, `"{$x->y}"`, `"${x}"`,
+   heredoc (nowdoc stays text) and backticks; Python f-strings; JavaScript
+   template literals, nested to any depth. Unterminated strings and comments end
+   at the end of the line or file.
+2. **Statements and scopes.** Statements, `if`/`else`, loops, `try` and function
+   bodies (braces in PHP and JavaScript, indentation in Python). Closures and arrow
+   functions are scopes of their own that see the variables around them; PHP
+   named functions and methods start empty.
+3. **Taint, in order, inside each function.** Layer A: a sink whose argument
+   contains a source that is not wrapped in a sanitizer is reported. Layer B: an
+   assignment from a tainted value taints the variable (also `$obj->prop`,
+   `$arr[] =`, destructuring, loop variables, `with ... as`); taint flows through
+   concatenation, interpolation, f-strings, calls, array and member access;
+   sanitizer results, literals and comparisons are clean; checks clean the values
+   they validate (see above); after an `if`, a value is tainted if it is tainted on
+   any path that goes on.
+
+Findings carry the rule, file, line, severity, title, CWE and fix, never the
+code: application code must not leave the host or reach an AI model. Each file is
+capped in tokens and time (`engine.Limits`); a file over the cap is reported as
+not fully analysed.
+
+What it does not do: follow values across functions or files (input read in a
+controller and used in another class is missed), know framework semantics beyond
+the rules (a lookup in a constant dict is not an allowlist), or prove a finding.
+No finding does not mean no vulnerability.
 
 Secrets never go into samples. If a sample needs something that looks like a key,
 use an obvious placeholder.

@@ -7,9 +7,12 @@ title = "Request input formatted into sqlalchemy text() or a raw SQL string"
 frameworks = ["flask"]
 sources = ["request.args", "request.form", "request.json", "request.values"]
 sinks = ["text(", "literal_column(", ".execute("]
-sanitizers = ["bindparams(", "int("]
+sanitizers = [".bindparams(", "int("]
 fix = "Use text() with :name placeholders and pass values separately; for column names use getattr on the model against an allowlist, never literal_column on input."
 refs = ["CVE-2026-26198"]
+
+[[args]]
+arg = 1   # the SQL text; the parameters argument is safe
 
 [[samples]]
 kind = "vulnerable"

@@ -7,9 +7,13 @@ title = "Request input placed into Sequelize.literal or a raw sequelize.query st
 frameworks = ["express"]
 sources = ["req.query", "req.body", "req.params"]
 sinks = ["Sequelize.literal(", "sequelize.literal(", "sequelize.query(", "Sequelize.fn("]
-sanitizers = ["replacements:", "bind:", "sequelize.escape("]
+sanitizers = ["sequelize.escape("]
 fix = "Keep literal() for constant SQL only; pass values with the replacements or bind options of sequelize.query, or use operator objects ({ [Op.lt]: value })."
 refs = ["CVE-2026-52887"]
+
+[[args]]
+sinks = ["sequelize.query("]
+arg = 1   # the SQL text; replacements and bind values are safe
 
 [[samples]]
 kind = "vulnerable"

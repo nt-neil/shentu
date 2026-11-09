@@ -6,10 +6,11 @@ severity = "high"
 title = "Sort column or direction taken from the request and placed into ORDER BY"
 frameworks = ["laravel", "wordpress"]
 sources = ["$_GET", "$_POST", "$_REQUEST", "$request->input(", "$request->get(", "request("]
-sinks = ["orderByRaw", "DB::raw", "->orderBy(", "ORDER BY"]
+sinks = ["->orderByRaw(", "DB::raw", "->orderBy(", "ORDER BY"]
 sanitizers = ["in_array", "sanitize_sql_orderby", "Rule::in"]
 fix = "Identifiers cannot be bound as parameters: map the requested sort key to a fixed allowlist of column names and force the direction to ASC or DESC."
 refs = ["CVE-2026-13357"]
+text = ["ORDER BY"]
 
 [[samples]]
 kind = "vulnerable"

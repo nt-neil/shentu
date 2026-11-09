@@ -6,10 +6,14 @@ severity = "critical"
 title = "Untrusted value placed into a command run through a shell"
 frameworks = ["flask", "django"]
 sources = ["request.args", "request.form", "request.GET", "request.POST", "request.json", "request.FILES", ".filename"]
-sinks = ["os.system(", "os.popen(", "shell=True", "subprocess.getoutput(", "subprocess.getstatusoutput("]
+sinks = ["os.system(", "os.popen(", "subprocess.run(", "subprocess.Popen(", "subprocess.call(", "subprocess.check_call(", "subprocess.check_output(", "subprocess.getoutput(", "subprocess.getstatusoutput("]
 sanitizers = ["shlex.quote("]
 fix = "Call subprocess.run with a list of arguments and no shell; if a shell is unavoidable wrap each value in shlex.quote()."
 refs = ["CVE-2026-12398", "CVE-2026-55798"]
+
+[[args]]
+sinks = ["subprocess.run(", "subprocess.Popen(", "subprocess.call(", "subprocess.check_call(", "subprocess.check_output("]
+when = ["shell=True"]
 
 [[samples]]
 kind = "vulnerable"

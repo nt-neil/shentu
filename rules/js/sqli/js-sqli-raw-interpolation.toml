@@ -11,6 +11,9 @@ sanitizers = ["parseInt(", "Number("]
 fix = "Use placeholders and pass values separately (query('... WHERE id = ?', [id]), knex.raw('?? = ?', [col, val])); never build SQL with + or template literals."
 refs = ["CVE-2026-47384"]
 
+[[args]]
+arg = 1   # the SQL text; values in the bindings array are safe
+
 [[samples]]
 kind = "vulnerable"
 code = '''

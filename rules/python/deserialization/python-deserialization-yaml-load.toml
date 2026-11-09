@@ -6,10 +6,14 @@ severity = "critical"
 title = "PyYAML load with a loader that can build Python objects"
 frameworks = ["flask", "django"]
 sources = ["request.data", "request.files", "request.FILES", "request.body", "request.get_data("]
-sinks = ["yaml.load(", "yaml.load_all(", "yaml.unsafe_load(", "yaml.full_load(", "Loader=yaml.Loader", "Loader=yaml.FullLoader", "Loader=yaml.UnsafeLoader"]
-sanitizers = ["yaml.safe_load(", "Loader=yaml.SafeLoader"]
+sinks = ["yaml.load(", "yaml.load_all(", "yaml.unsafe_load(", "yaml.full_load("]
+sanitizers = ["yaml.safe_load("]
 fix = "Use yaml.safe_load() (or Loader=yaml.SafeLoader); never FullLoader, Loader or UnsafeLoader on untrusted text."
 refs = ["CVE-2017-18342", "CVE-2026-24009"]
+
+[[args]]
+sinks = ["yaml.load(", "yaml.load_all("]
+unless = ["Loader=yaml.SafeLoader", "Loader=yaml.CSafeLoader", "Loader=SafeLoader", "Loader=CSafeLoader"]
 
 [[samples]]
 kind = "vulnerable"

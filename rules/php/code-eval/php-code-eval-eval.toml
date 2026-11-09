@@ -9,6 +9,7 @@ sinks = ["eval(", "assert(", "create_function(", "preg_replace_callback("]
 sanitizers = []
 fix = "Remove eval and do the same thing in ordinary code: decode input with json_decode or intval, check names against an allowlist, then assign directly (for example $object->{$name . 'Order'} = (int) $key). There is no safe way to escape code for eval."
 refs = ["CVE-2017-9841", "CVE-2026-33479"]
+text = ["php://input"]
 
 [[samples]]
 kind = "vulnerable"
