@@ -22,10 +22,11 @@ const (
 
 // Token flags.
 const (
-	FlagOpen  uint8 = 1 << iota // the string or comment has no end (only accepted in rule patterns)
-	FlagShell                   // PHP `command`
-	FlagRegex                   // JS /regex/
-	FlagNL                      // first token on its line (JS statement ends)
+	FlagOpen      uint8 = 1 << iota // the string or comment has no end (only accepted in rule patterns)
+	FlagShell                       // PHP `command`
+	FlagRegex                       // JS /regex/
+	FlagNL                          // first token on its line (JS statement ends)
+	FlagMultiline                   // JS /regex/m: ^ and $ match at every line
 )
 
 // Token is one lexical unit. Comments are dropped. A string literal keeps its raw

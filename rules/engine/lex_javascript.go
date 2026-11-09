@@ -1,5 +1,7 @@
 package engine
 
+import "strings"
+
 var jsOps = []string{
 	">>>=", "...", "===", "!==", "**=", "<<=", ">>=", ">>>", "&&=", "||=", "??=",
 	"=>", "==", "!=", "<=", ">=", "&&", "||", "??", "?.", "++", "--",
@@ -200,7 +202,9 @@ func (s *scanner) jsRegex() {
 	t := Token{Kind: Str, Flags: FlagRegex, Text: s.src[start:end], Line: line}
 	if s.pos < len(s.src) && s.src[s.pos] == '/' {
 		s.pos++
-		s.ident("")
+		if strings.Contains(s.ident(""), "m") {
+			t.Flags |= FlagMultiline
+		}
 	} else {
 		t.Flags |= FlagOpen
 	}

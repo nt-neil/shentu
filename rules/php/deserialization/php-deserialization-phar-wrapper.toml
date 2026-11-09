@@ -7,9 +7,12 @@ title = "Filesystem function on a user path that may use the phar:// wrapper"
 frameworks = ["laravel"]
 sources = ["$_GET", "$_POST", "$_REQUEST", "$request->input("]
 sinks = ["file_exists(", "file_get_contents(", "is_file(", "filesize(", "getimagesize(", "fopen(", "IOFactory::load("]
-sanitizers = ["realpath(", "basename("]
+sanitizers = ["realpath(", "basename(", "validate_file_to_edit("]
 fix = "Reject any path containing '://' (or check the scheme against an allowlist) before passing it to a filesystem function; on PHP < 8 metadata of a phar:// file is unserialized on first touch."
 refs = ["CVE-2021-3129", "CVE-2026-34084"]
+
+[[args]]
+leading = true
 
 [[samples]]
 kind = "vulnerable"

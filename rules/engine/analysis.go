@@ -25,6 +25,7 @@ type entry struct {
 	src   bool // the key is a source expression a check made clean (req.body.email)
 	sep   bool // the value ends with a path separator ($base = realpath(...) . DIRECTORY_SEPARATOR)
 	san   bool // the value was made by a sanitizer (env = SandboxedEnvironment())
+	pre   bool // the value starts with a fixed part ($p = WP_PLUGIN_DIR . '/' . $name)
 }
 
 type state map[string]entry
@@ -71,7 +72,7 @@ func merge(x, y state) state {
 		return entry{taint: src, src: src}
 	}
 	both := func(a, b entry) entry {
-		return entry{taint: a.taint || b.taint, src: a.src || b.src, sep: a.sep && b.sep, san: a.san && b.san}
+		return entry{taint: a.taint || b.taint, src: a.src || b.src, sep: a.sep && b.sep, san: a.san && b.san, pre: a.pre && b.pre}
 	}
 	for k, e := range x {
 		out[k] = both(e, look(y, k, e.src))
@@ -84,7 +85,7 @@ func merge(x, y state) state {
 	return out
 }
 
-type val struct{ taint, san bool }
+type val struct{ taint, san, pre bool } // pre: see entry.pre; set by assign only
 
 const (
 	noExit    uint8 = iota
@@ -137,6 +138,7 @@ func (a *analysis) stmt(s *stmt, st state) (state, uint8) {
 	case sSimple:
 		a.sinks(st, s.toks)
 		a.assignStmt(st, s.toks)
+		a.assertStmt(st, s.toks)
 		return st, a.exitOf(s.toks)
 	case sIf:
 		a.sinks(st, s.toks)
@@ -453,6 +455,7 @@ func (a *analysis) assign(st state, t []Token) (val, bool) {
 		v, sep = a.assign(st, rhs)
 	} else {
 		v, sep = a.expr(st, rhs, false), a.sepEnd(st, rhs)
+		v.pre = a.fixedStart(st, rhs)
 	}
 	for _, tg := range a.targetList(lhs) {
 		a.setTarget(st, tg, v, t[k].Text, sep)
@@ -508,15 +511,21 @@ func (a *analysis) setTarget(st state, tg []Token, v val, op string, sep bool) {
 	if container != "" {
 		e, _ := st.get(container)
 		st[container] = entry{taint: e.taint || v.taint}
+		if op == "=" && !strings.HasSuffix(key, "[*]") {
+			// $args['limit'] = absint(...): the key itself is known; reading another key
+			// or the whole array still sees the container.
+			st.del(key)
+			st[key] = entry{taint: v.taint, san: v.san, sep: sep, pre: v.pre}
+		}
 		return
 	}
 	if op == "=" || op == ":=" {
 		st.del(key)
-		st[key] = entry{taint: v.taint, san: v.san, sep: sep}
+		st[key] = entry{taint: v.taint, san: v.san, sep: sep, pre: v.pre}
 		return
 	}
 	e, _ := st.get(key)
-	st[key] = entry{taint: e.taint || v.taint, sep: sep}
+	st[key] = entry{taint: e.taint || v.taint, sep: sep, pre: e.pre} // appending keeps the start
 }
 
 // pathKey returns the key of a plain path ($x, $x->a, x.y, x["k"]). When the path
@@ -615,6 +624,32 @@ func (a *analysis) sepEnd(st state, rhs []Token) bool {
 	}
 	e, _ := st.get(key)
 	return e.sep
+}
+
+// fixedStart reports whether a value begins with a part the client does not
+// control: a literal, a constant, a clean call, or a variable that does. Input
+// behind such a prefix cannot choose a stream wrapper (phar://).
+func (a *analysis) fixedStart(st state, t []Token) bool {
+	join := "+"
+	if a.php {
+		join = "."
+	}
+	first := splitTop(t, isOp(join))[0]
+	if len(first) == 0 {
+		return false
+	}
+	if len(first) == 1 && first[0].Kind == Str {
+		if len(first[0].Parts) > 0 {
+			return first[0].Parts[0].Off > 0
+		}
+		return first[0].Text != ""
+	}
+	if key, _, ok := a.pathKey(first); ok {
+		if e, found := st.get(key); found {
+			return e.pre
+		}
+	}
+	return !a.expr(st, first, false).taint && !isLiteral(first)
 }
 
 // ---- expressions ----
@@ -841,16 +876,42 @@ func (a *analysis) term(st state, t []Token, i int, whole bool) (val, int) {
 		c := closeOf(t, i)
 		inner := inside(t, i, c)
 		if a.php && len(inner) == 1 && inner[0].Kind == Ident && phpCasts[strings.ToLower(inner[0].Text)] {
+			if numericCasts[strings.ToLower(inner[0].Text)] {
+				_, e := a.term(st, t, c+1, false)
+				return val{}, e // (int) $x: a number carries no injection
+			}
 			return a.term(st, t, c+1, whole) // (string) $x, (array) $x: the value passes through
 		}
 		return a.postfix(st, t, i, c+1, a.expr(st, inner, whole), whole)
 	case tk.op("[") || tk.op("{"):
 		c := closeOf(t, i)
 		return a.postfix(st, t, i, c+1, a.literal(st, inside(t, i, c), tk.Text, whole), whole)
+	case tk.Kind == Ident && numericFuncs[a.lang()][tk.Text] && i+1 < len(t) && t[i+1].op("(") && (i == 0 || !memberOp(a.php, t[i-1])):
+		return a.postfix(st, t, i, closeOf(t, i+1)+1, val{}, whole) // intval($x), int(x), Number(x)
 	case tk.Kind == Var || tk.Kind == Ident:
 		return a.postfix(st, t, i, i+1, val{}, whole)
 	}
 	return val{}, i + 1
+}
+
+// numericCasts and numericFuncs turn any value into a number (or a boolean), which
+// carries no injection in any rule.
+var numericCasts = map[string]bool{"int": true, "integer": true, "float": true, "double": true, "bool": true, "boolean": true}
+
+var numericFuncs = map[string]map[string]bool{
+	"php":    words("intval absint floatval boolval"),
+	"python": words("int float bool len"),
+	"js":     words("parseInt parseFloat Number Boolean"),
+}
+
+func (a *analysis) lang() string {
+	switch {
+	case a.php:
+		return "php"
+	case a.py:
+		return "python"
+	}
+	return "js"
 }
 
 var phpCasts = map[string]bool{"int": true, "integer": true, "float": true, "double": true, "bool": true, "boolean": true,
@@ -913,8 +974,11 @@ func (a *analysis) postfix(st state, t []Token, start, baseEnd int, v val, whole
 			j = c + 1
 		case tk.op("("):
 			c := closeOf(t, j)
-			firstOnly := j == baseEnd && a.php && (t[start].word("array_intersect") || t[start].word("array_intersect_key"))
-			if a.argsTaint(st, inside(t, j, c), firstOnly) {
+			fn := ""
+			if j == baseEnd && a.php && t[start].Kind == Ident {
+				fn = t[start].Text
+			}
+			if a.argsTaint(st, inside(t, j, c), fn) {
 				v = val{taint: true}
 			}
 			if key != "" {
@@ -935,13 +999,27 @@ func (a *analysis) postfix(st state, t []Token, start, baseEnd int, v val, whole
 	return v, j
 }
 
-// argsTaint reports whether a call's arguments carry taint into its result.
-// array_intersect($trusted, $input) returns values of its first argument only.
-func (a *analysis) argsTaint(st state, inner []Token, firstOnly bool) bool {
-	for n, arg := range splitTop(inner, isComma) {
-		if firstOnly && n > 0 {
-			break
+// argsTaint reports whether a call's arguments carry taint into its result. Most
+// calls pass on any argument's taint. In PHP, array_intersect returns only values
+// that every argument holds, so one clean argument (an allowlist) makes it clean;
+// array_intersect_key returns values of its first argument; WordPress's
+// apply_filters($tag, $value, ...) returns the filtered $value.
+func (a *analysis) argsTaint(st state, inner []Token, fn string) bool {
+	args := splitTop(inner, isComma)
+	switch fn {
+	case "array_intersect":
+		for _, arg := range args {
+			if !a.argVal(st, arg, false).taint {
+				return false
+			}
 		}
+		return len(args) > 0
+	case "array_intersect_key":
+		args = args[:min(len(args), 1)]
+	case "apply_filters":
+		args = args[min(len(args), 1):min(len(args), 2)]
+	}
+	for _, arg := range args {
 		if a.argVal(st, arg, false).taint {
 			return true
 		}
@@ -1068,11 +1146,11 @@ var prefixChecks = map[string]bool{"str_starts_with": true, "strncmp": true, "st
 var predicates = map[string]bool{"in_array": true, "array_key_exists": true, "is_relative_to": true,
 	"ctype_digit": true, "ctype_alnum": true, "is_numeric": true, "is_int": true, "isInteger": true, "isSafeInteger": true,
 	"str_starts_with": true, "strncmp": true, "strncasecmp": true, "strpos": true, "stripos": true,
-	"startsWith": true, "startswith": true}
+	"startsWith": true, "startswith": true, "validate_file": true}
 
 // zeroMeansMatch are comparisons for which "=== 0" means the check passed.
 var zeroMeansMatch = map[string]bool{"strncmp": true, "strncasecmp": true, "strcmp": true, "strcasecmp": true,
-	"strpos": true, "stripos": true}
+	"strpos": true, "stripos": true, "validate_file": true}
 
 // refine returns a copy of st for the path where cond is truth, with the values
 // that a check in cond validates made clean, and the keys it cleaned.
@@ -1110,6 +1188,17 @@ func (a *analysis) guard(st state, atom []Token) (pos bool, keys []keyRef) {
 	if len(atom) == 0 {
 		return pos, nil
 	}
+	// PHP empty($x) and isset($x): an empty or unset value carries no input.
+	if n := len(atom); a.php && n > 3 && (atom[0].word("empty") || atom[0].word("isset")) && atom[1].op("(") && closeOf(atom, 1) == n-1 {
+		arg := atom[2 : n-1]
+		if _, _, ok := a.pathKey(arg); !ok {
+			return pos, nil
+		}
+		if atom[0].word("isset") {
+			pos = !pos // the check (the value is unset) holds when isset is false
+		}
+		return pos, a.keysOf(arg)
+	}
 	if a.py {
 		if i := indexTop(atom, 0, isWord("in")); i > 0 {
 			x := atom[:i]
@@ -1130,6 +1219,14 @@ func (a *analysis) guard(st state, atom []Token) (pos bool, keys []keyRef) {
 		eq, ne := op == "==" || op == "===", op == "!=" || op == "!==" || op == "<>"
 		if !eq && !ne || len(lhs) == 0 || len(rhs) != 1 {
 			return pos, nil
+		}
+		// $order === 'ASC': where it holds, the value is that literal. Loose == is
+		// trusted only against a plain string ("abc" == true holds in PHP).
+		if _, _, ok := a.pathKey(lhs); ok && isLiteral(rhs) && (rhs[0].Kind == Str && len(rhs[0].Parts) == 0 || a.py || op == "===" || op == "!==") {
+			if ne {
+				pos = !pos
+			}
+			return pos, a.keysOf(lhs)
 		}
 		if a.js && lhs[0].word("typeof") {
 			if !a.hasSanitizerWord("typeof") || rhs[0].Kind != Str {
@@ -1157,9 +1254,20 @@ func (a *analysis) guard(st state, atom []Token) (pos bool, keys []keyRef) {
 			return pos, nil
 		}
 		atom = stripParens(lhs)
+	} else if len(atom) > 0 && zeroIsValid[atom[0].Text] {
+		pos = !pos // if (validate_file($f)) { wp_die(); }: a non-zero result means invalid
+	}
+	if keys, onMatch, ok := a.regexCheck(atom); ok {
+		if !onMatch {
+			pos = !pos // preg_match('/[^a-z0-9_]/', $x): a match means invalid
+		}
+		return pos, keys
 	}
 	return pos, a.checkKeys(st, atom)
 }
+
+// zeroIsValid are checks that return 0 for a valid value and an error code otherwise.
+var zeroIsValid = map[string]bool{"validate_file": true}
 
 func isLiteral(t []Token) bool {
 	if len(t) != 1 {
@@ -1342,6 +1450,9 @@ func (a *analysis) sink(st state, t []Token, i int, s *pat) {
 		}
 	}
 	whole := cond != nil && cond.whole
+	reaches := func(arg []Token) bool {
+		return a.argVal(st, arg, whole).taint && !(cond != nil && cond.leading && a.fixedStart(st, arg))
+	}
 	tainted := false
 	switch {
 	case cond != nil && cond.arg != nil && *cond.arg == 0:
@@ -1350,12 +1461,12 @@ func (a *analysis) sink(st state, t []Token, i int, s *pat) {
 		args := splitTop(region, isComma)
 		if cond != nil && cond.arg != nil {
 			if n := *cond.arg; n <= len(args) {
-				tainted = a.argVal(st, args[n-1], whole).taint
+				tainted = reaches(args[n-1])
 			}
 			break
 		}
 		for _, arg := range args {
-			if a.argVal(st, arg, whole).taint {
+			if reaches(arg) {
 				tainted = true
 				break
 			}
@@ -1409,7 +1520,7 @@ func (a *analysis) unless(st state, ps []*pat, region []Token) bool {
 			}
 			if len(p.toks) == 1 && p.toks[0].Kind == Str {
 				start := listStart(region, i)
-				if a.argsTaint(st, region[start:i], false) {
+				if a.argsTaint(st, region[start:i], "") {
 					continue
 				}
 				return true

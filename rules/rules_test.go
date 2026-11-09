@@ -123,8 +123,8 @@ func checkText(t *testing.T, r Rule) {
 func checkArgs(t *testing.T, r Rule) {
 	covered := map[string]bool{}
 	for i, a := range r.Args {
-		if a.Arg == nil && len(a.When) == 0 && len(a.Unless) == 0 && !a.Whole {
-			t.Errorf("%s: args %d sets none of arg, when, unless, whole", r.File, i)
+		if a.Arg == nil && len(a.When) == 0 && len(a.Unless) == 0 && !a.Whole && !a.Leading {
+			t.Errorf("%s: args %d sets none of arg, when, unless, whole, leading", r.File, i)
 		}
 		if a.Arg != nil && (*a.Arg < 0 || *a.Arg > 10) {
 			t.Errorf("%s: args %d: arg %d must be 0 (receiver) to 10", r.File, i, *a.Arg)

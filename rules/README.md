@@ -90,6 +90,29 @@ How the engine reads them:
   `/var/www/assets-private` cannot pass a check for `/var/www/assets`. Lookups in a
   fixed list are checks in every rule: `in_array`, `array_key_exists`,
   `x in ALLOWED`, `ALLOWED.includes(x)`, `ALLOWED.has(x)`.
+- Also built into every rule:
+  - a number carries no injection: `(int)`, `(float)`, `(bool)`, `intval`,
+    `absint`, `floatval`, `int()`, `float()`, `len()`, `parseInt`, `parseFloat`,
+    `Number` give clean values;
+  - comparing a value with a literal validates it where the comparison holds:
+    after `if ('ASC' !== $order) { $order = 'DESC'; }` it is one of the two. Loose
+    `==` counts only against a plain string (in PHP `"../x" == true` holds);
+  - PHP `empty($x)`, or `isset($x)` being false, means `$x` holds nothing;
+  - a regular-expression test is a check when it allows only letters, digits,
+    `_` and `-` from start to end (`preg_match('/^[a-z0-9_]+$/i', $x)`,
+    `re.fullmatch(r'[\w-]+', x)`, `/^\d+$/.test(x)`), or when it looks for any
+    other character (`if (preg_match('|[^a-z0-9_]|', $x)) die();`). A dot, any
+    other character, alternation, or multiline mode (`m`) makes it no check;
+  - PHP `array_intersect` with one clean argument returns only allowed values;
+    `array_intersect_key` returns values of its first argument; WordPress
+    `apply_filters($tag, $value, ...)` returns the filtered `$value`;
+  - WordPress `validate_file($f)` returns 0 for a valid path, so
+    `if (validate_file($f)) wp_die();` validates `$f`, and
+    `validate_file_to_edit($f, $allowed)` as a statement of its own stops the
+    request unless `$f` is allowed. Both count in the rules that list them as
+    sanitizers.
+- Writing one key of an array (`$args['limit'] = absint(...)`) is tracked for that
+  key; reading another key or the whole array still sees the array.
 - Sanitizers are per rule, not per sink. When a sanitizer protects one sink but
   not another (`escapeshellarg` protects `exec()` but not the fifth argument of
   `mail()`), the sinks go in separate rules; escaping functions protect a SQL value
@@ -127,6 +150,7 @@ it are unchanged: a sink is reported when any argument is tainted.
 | `when` | the call is a sink only if one of these appears among its arguments |
 | `unless` | the call is not a sink if one of these appears among its arguments |
 | `whole` | the argument must be the input itself (or spread from it), not an object or array literal holding a value from it |
+| `leading` | the input must be at the start of the argument: a fixed prefix (a literal, a constant, a clean call, or a variable built from one) makes the call safe, as `WP_PLUGIN_DIR . "/$name"` cannot choose a `phar://` stream |
 
 `when` and `unless` entries are code fragments matched anywhere in the call's
 arguments, with two refinements:
@@ -163,6 +187,10 @@ unless = ["'allowed_classes' => false"]
 # only the fifth argument of mail() reaches sendmail
 [[args]]
 arg = 5
+
+# a stream wrapper must be at the start of the path
+[[args]]
+leading = true
 ```
 
 Allowed CWEs per class:

@@ -6,7 +6,7 @@ severity = "critical"
 title = "include or require of a path built from user-controlled data"
 sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "$_SERVER['REQUEST_URI']", "$request->input("]
 sinks = ["include ", "include_once", "require ", "require_once", "include(", "require("]
-sanitizers = ["in_array", "basename("]
+sanitizers = ["in_array", "basename(", "validate_file("]
 fix = "Never include a path derived from input: map the value to a fixed list of files (array lookup or in_array with strict mode) before including."
 refs = ["CVE-2026-41228", "CVE-2026-62858"]
 

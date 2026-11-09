@@ -42,11 +42,12 @@ type Rule struct {
 // Args describes which argument of a sink call carries the attack, and when the
 // call is or is not dangerous because of its other arguments.
 type Args struct {
-	Sinks  []string `toml:"sinks"`  // the rule's sinks this applies to; empty means all
-	Arg    *int     `toml:"arg"`    // the argument (from 1) that must be tainted; 0 is the receiver; nil is any
-	When   []string `toml:"when"`   // the call is a sink only if one of these is among its arguments
-	Unless []string `toml:"unless"` // the call is not a sink if one of these is among its arguments
-	Whole  bool     `toml:"whole"`  // the argument must be the input itself, not a literal holding a part of it
+	Sinks   []string `toml:"sinks"`   // the rule's sinks this applies to; empty means all
+	Arg     *int     `toml:"arg"`     // the argument (from 1) that must be tainted; 0 is the receiver; nil is any
+	When    []string `toml:"when"`    // the call is a sink only if one of these is among its arguments
+	Unless  []string `toml:"unless"`  // the call is not a sink if one of these is among its arguments
+	Whole   bool     `toml:"whole"`   // the argument must be the input itself, not a literal holding a part of it
+	Leading bool     `toml:"leading"` // the input must be at the start of the argument; a fixed prefix makes the call safe
 }
 
 // Sample is a minimal, self-written snippet: "vulnerable" must be reported, "safe" must not.

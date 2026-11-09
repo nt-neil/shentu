@@ -45,9 +45,9 @@ type crule struct {
 }
 
 type argCond struct {
-	arg          *int
-	when, unless []*pat
-	whole        bool
+	arg            *int
+	when, unless   []*pat
+	whole, leading bool
 }
 
 // New compiles rules. A pattern that does not lex as code of its language is an error.
@@ -97,7 +97,7 @@ func compileRule(r rules.Rule) (*crule, error) {
 		return nil, err
 	}
 	for _, a := range r.Args {
-		ac := &argCond{arg: a.Arg, whole: a.Whole}
+		ac := &argCond{arg: a.Arg, whole: a.Whole, leading: a.Leading}
 		for _, list := range []struct {
 			raw []string
 			out *[]*pat
