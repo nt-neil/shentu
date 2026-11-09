@@ -25,7 +25,7 @@ binary (`.goreleaser.yaml` builds the root package alone).
 
 ## Cases
 
-One file per vulnerability, `cves/<id>.toml`. A case holds facts, never code:
+One file per vulnerability, `cves/<id>.toml` (TypeScript cases in `cves-ts/`, run with `-cases bench/cves-ts`). A case holds facts, never code:
 
 | field | |
 |---|---|
