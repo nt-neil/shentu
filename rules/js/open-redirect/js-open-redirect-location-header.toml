@@ -8,7 +8,7 @@ title = "Location header set from the request URL or a request value"
 # res.writeHead(code, { Location: ... }) is not a sink yet: a fixed prefix inside an object literal is not judged.
 frameworks = ["express", "koa", "fastify"]
 sources = ["req.url", "req.originalUrl", "req.query", "req.body", "req.params", "url.parse(req.url", "url.parse(request.url", "ctx.url", "ctx.originalUrl", "ctx.path", "ctx.query", "ctx.request.query", "ctx.request.body", "ctx.params", "request.url", "request.query", "request.body", "request.params"]
-sinks = ["res.set(", "res.header(", "ctx.set(", "ctx.response.set(", "reply.header("]   # res.setHeader and res.writeHead are in js-open-redirect-redirect
+sinks = ["res.setHeader(", "res.set(", "res.header(", "ctx.set(", "ctx.response.set(", "reply.header("]   # res.setHeader with a request value is also in js-open-redirect-redirect (same line, two rules); the request path (req.url) is only here
 sanitizers = ["encodeURIComponent("]
 fix = "Build the Location value from a fixed path on this site with the value only after it ('/docs/' + encodeURIComponent(name)), or from an allowlist; never start it with the request path, which can be //evil.example."
 refs = ["CVE-2021-23387"]
