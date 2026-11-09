@@ -1,0 +1,75 @@
+id = "php-sqli-joomla-query"
+lang = "php"
+class = "sqli"
+cwe = "CWE-89"
+severity = "high"
+tier = "info"
+title = "Joomla request input written into a database query without quote() or a cast"
+sources = ["->getString(", "->getRaw(", "->getHtml(", "->getArray(", "->getBase64(", "->getUserStateFromRequest(", "JRequest::getVar(", "JRequest::getString(",
+           "'STRING'", "'RAW'", "'HTML'", "'ARRAY'", "$_GET", "$_POST", "$_REQUEST"]
+sinks = ["$db->setQuery(", "$this->_db->setQuery(", "$this->db->setQuery(", "$query->where(", "$query->order(", "$query->having(", "$query->select(", "$query->group("]
+sanitizers = ["$db->quote(", "$db->q(", "$this->_db->quote(", "$db->quoteName(", "$db->qn(", "->quote(", "->quoteName(", "(int)", "intval", "absint", "in_array"]
+fix = "Quote every value with $db->quote() (or bind it with $query->bind()), cast ids with (int), and read numbers with $input->getInt(); escape() alone is safe only inside quotes."
+refs = ["CVE-2016-15016", "CVE-2018-8045"]
+
+[[args]]
+arg = 1
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+class ReservationsModelList extends ListModel
+{
+    protected function getListQuery()
+    {
+        $db = $this->getDbo();
+        $guest = Factory::getApplication()->input->getString('guest');
+        $query = $db->getQuery(true)->select('*')->from('#__reservations');
+        $query->where('guest_name = ' . "'" . $guest . "'");
+        return $query;
+    }
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "the STRING filter strips tags, not quotes"
+code = '''
+<?php
+$input = Factory::getApplication()->input;
+$season = $input->get('season', '', 'STRING');
+$db = Factory::getDbo();
+$db->setQuery("SELECT COUNT(*) FROM #__matches WHERE season LIKE '" . $season . "%'");
+$total = $db->loadResult();
+'''
+
+[[samples]]
+kind = "safe"
+note = "the fix: quote the value"
+code = '''
+<?php
+$input = Factory::getApplication()->input;
+$season = $input->get('season', '', 'STRING');
+$db = Factory::getDbo();
+$db->setQuery('SELECT COUNT(*) FROM #__matches WHERE season LIKE ' . $db->quote($season . '%'));
+$total = $db->loadResult();
+'''
+
+[[samples]]
+kind = "safe"
+note = "the default filter of get() is cmd, and getInt() returns a number"
+code = '''
+<?php
+class ReservationsModelList extends ListModel
+{
+    protected function getListQuery()
+    {
+        $db = $this->getDbo();
+        $room = Factory::getApplication()->input->getInt('room');
+        $query = $db->getQuery(true)->select('*')->from('#__reservations');
+        $query->where('room_id = ' . (int) $room);
+        return $query;
+    }
+}
+'''

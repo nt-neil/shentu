@@ -412,6 +412,26 @@ func TestHeldOut(t *testing.T) {
 		{"r25 R13 host allowlist", "php", "<?php\nclass C { public function a(Request $request) {\n  $u = (string) $request->query->get('u');\n  if (parse_url($u, PHP_URL_HOST) !== 'example.com') { $u = '/'; }\n  return new RedirectResponse($u);\n} }\n", false, "a host check on parse_url() of the value is a check on a derived value, which the engine does not follow"},
 		{"r25 C5 Laravel fluent timeout()->run", "php", "<?php\nclass C { public function a(Request $request) {\n  return Process::timeout(30)->run('ping -c 1 ' . $request->input('host'))->output();\n} }\n", true, "a sink reached through a chained facade call (Process::timeout(30)->run(...)) is not matched (engine)"},
 		{"r25 C6 Laravel path()->run", "php", "<?php\nclass C { public function a(Request $request) {\n  return Process::path(base_path())->run('git log ' . $request->input('ref'))->output();\n} }\n", true, "a sink reached through a chained facade call (Process::path(...)->run(...)) is not matched (engine)"},
+		// PHP lane, batch 2: Joomla, Drupal, sockets, XML DTDs, HTTP clients.
+		{"J1 joomla getUserStateFromRequest order", "php", "<?php\nclass M { protected function getListQuery() {\n  $app = Factory::getApplication();\n  $cat = $app->getUserStateFromRequest('com_x.cat', 'cat');\n  $query = $this->getDbo()->getQuery(true);\n  $query->where('a.catid = ' . $cat);\n  return $query;\n} }\n", true, ""},
+		{"J2 joomla cmd default filter", "php", "<?php\nclass M { protected function getListQuery() {\n  $layout = Factory::getApplication()->input->get('layout');\n  $db = $this->getDbo();\n  $query = $db->getQuery(true);\n  $query->where('a.layout = ' . $db->quote($layout));\n  return $query;\n} }\n", false, ""},
+		{"J3 joomla getRaw setQuery", "php", "<?php\n$db = Factory::getDbo();\n$q = Factory::getApplication()->input->getRaw('q');\n$db->setQuery(\"SELECT * FROM #__t WHERE title = '$q'\");\n", true, ""},
+		{"J4 joomla quoteName order", "php", "<?php\n$db = Factory::getDbo();\n$query = $db->getQuery(true);\n$col = Factory::getApplication()->input->getString('sort');\n$query->order($db->quoteName($col) . ' ASC');\n", false, ""},
+		{"J5 drupal db_query_range concat", "php", "<?php\nfunction m_list() {\n  $type = $_GET['type'];\n  return db_query_range(\"SELECT nid FROM {node} WHERE type = '$type'\", 0, 10);\n}\n", true, ""},
+		{"J6 drupal connection placeholders", "php", "<?php\nfunction m_list() {\n  $c = \\Drupal::database();\n  return $c->query('SELECT nid FROM {node} WHERE type = :t', [':t' => $_GET['type']])->fetchCol();\n}\n", false, ""},
+		{"J7 socket pfsockopen post", "php", "<?php\n$h = trim($_POST['smtp_host']);\n$c = pfsockopen($h, 25);\n", true, ""},
+		{"J8 socket fixed host", "php", "<?php\n$port = (int) $_GET['port'];\n$c = fsockopen('tls://mail.example.com', $port);\n", false, ""},
+		{"J9 joomla Folder::delete getString", "php", "<?php\nclass C extends BaseController { public function wipe() {\n  $dir = $this->input->getString('dir');\n  Folder::delete(JPATH_SITE . '/cache/' . $dir);\n} }\n", true, ""},
+		{"J10 joomla File::write fixed name", "php", "<?php\nclass C extends BaseController { public function save() {\n  File::write(JPATH_SITE . '/tmp/export.csv', $this->input->getString('data'));\n} }\n", false, ""},
+		{"J11 xxe SimpleXMLElement dtdattr", "php", "<?php\n$x = new SimpleXMLElement($body, LIBXML_NOCDATA | LIBXML_DTDATTR);\n", true, ""},
+		{"J12 xxe load nonet only", "php", "<?php\n$d = new DOMDocument();\n$d->load($path, LIBXML_NONET);\n", false, ""},
+		{"J13 http client property url", "php", "<?php\nclass S { public function probe(Request $request) {\n  $u = $request->query->get('u');\n  return $this->httpClient->request('HEAD', $u)->getStatusCode();\n} }\n", true, ""},
+		{"J14 guzzle fixed base uri", "php", "<?php\nclass S { public function probe(Request $request) {\n  $client = new Client(['base_uri' => 'https://api.example.com/', 'timeout' => 3]);\n  return $client->request('GET', 'items/' . rawurlencode($request->input('id')))->getBody();\n} }\n", false, ""},
+		{"J15 redis client get", "php", "<?php\n$v = $client->get($_GET['key']);\n$client->request('GET', '/status');\n", false, ""},
+		{"J16 codeigniter4 builder orderBy", "php", "<?php\nclass Items extends BaseController { public function index() {\n  $builder = $this->db->table('items');\n  $s = $this->request->getGet('sort');\n  return $this->response->setJSON($builder->orderBy($s)->get()->getResultArray());\n} }\n", true, ""},
+		{"J17 codeigniter query bindings", "php", "<?php\nclass Items extends CI_Controller { public function one() {\n  $row = $this->db->query('SELECT * FROM items WHERE id = ?', array($this->input->get('id')))->row();\n} }\n", false, ""},
+		{"J18 yii addCondition implode", "php", "<?php\nclass A extends Controller { public function actionInvite() {\n  $ids = Yii::app()->request->getPost('ids');\n  $c = new CDbCriteria();\n  $c->addCondition(\"tid IN ('\" . implode(\"','\", $ids) . \"')\");\n} }\n", true, ""},
+		{"J19 yii addInCondition", "php", "<?php\nclass A extends Controller { public function actionInvite() {\n  $c = new CDbCriteria();\n  $c->addInCondition('tid', Yii::app()->request->getPost('ids'));\n} }\n", false, ""},
 	}
 	pass := 0
 	for _, c := range cases {

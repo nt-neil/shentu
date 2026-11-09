@@ -1,0 +1,43 @@
+id = "php-xxe-libxml-dtdload"
+lang = "php"
+class = "xxe"
+cwe = "CWE-611"
+severity = "high"
+tier = "info"
+title = "XML parsed with LIBXML_DTDLOAD or LIBXML_DTDATTR, which loads external DTDs"
+sources = []
+sinks = ["->loadXML(", "->load(", "simplexml_load_string(", "simplexml_load_file(", "SimpleXMLElement("]
+sanitizers = []
+fix = "Do not pass LIBXML_DTDLOAD or LIBXML_DTDATTR for documents from outside: they make libxml fetch the DTD a document names, and its parameter entities, even though PHP 8 no longer substitutes external entities by default; reject documents with a <!DOCTYPE before parsing."
+refs = ["CVE-2024-52806", "CVE-2024-52596"]
+
+[[args]]
+when = ["LIBXML_DTDLOAD", "LIBXML_DTDATTR"]
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+$doc = new DOMDocument();
+$doc->loadXML($_POST['SAMLResponse'] ?? '', LIBXML_DTDLOAD | LIBXML_NONET);
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+$xml = simplexml_load_string(file_get_contents('php://input'), 'SimpleXMLElement', LIBXML_DTDATTR);
+'''
+
+[[samples]]
+kind = "safe"
+note = "the fix: no DTD options, and documents with a DOCTYPE are refused"
+code = '''
+<?php
+$raw = $_POST['SAMLResponse'] ?? '';
+if (stripos($raw, '<!DOCTYPE') !== false) {
+    exit('invalid');
+}
+$doc = new DOMDocument();
+$doc->loadXML($raw, LIBXML_NONET | LIBXML_NSCLEAN);
+'''
