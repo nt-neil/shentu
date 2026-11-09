@@ -27,6 +27,7 @@ const (
 	FlagRegex                       // JS /regex/
 	FlagNL                          // first token on its line (JS statement ends)
 	FlagMultiline                   // JS /regex/m: ^ and $ match at every line
+	flagCtxShift  = 5               // PHP echo or print after inline HTML: bits 5-6 hold the HTML context it writes into (context.go)
 )
 
 // Token is one lexical unit. Comments are dropped. A string literal keeps its raw
@@ -153,6 +154,9 @@ type scanner struct {
 
 	ctl      []bool // JS: for each open "(", whether it starts an if/while/for header
 	afterCtl bool   // JS: the last ")" closed such a header
+
+	html    string // PHP: the end of the inline HTML so far
+	htmlCtx uint8  // PHP: context of the output at the next opening tag, given to an echo or print right after it
 }
 
 func (s *scanner) peek(off int) byte {
@@ -170,6 +174,12 @@ func (s *scanner) emit(t Token) bool {
 	if s.nl {
 		t.Flags |= FlagNL
 		s.nl = false
+	}
+	if s.htmlCtx != 0 {
+		if t.Kind == Ident && (t.Text == "echo" || t.Text == "print") {
+			t.Flags |= s.htmlCtx << flagCtxShift
+		}
+		s.htmlCtx = 0
 	}
 	s.toks = append(s.toks, t)
 	return s.b.token()

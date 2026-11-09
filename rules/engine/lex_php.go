@@ -30,6 +30,7 @@ func (s *scanner) phpHTML() {
 			s.advance(len(s.src) - s.pos)
 			return
 		}
+		s.inlineHTML(s.src[s.pos : s.pos+i])
 		s.advance(i + 2)
 		switch {
 		case s.has("php"):

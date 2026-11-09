@@ -707,6 +707,18 @@ func (a *analysis) fixedStart(st state, t []Token) bool {
 			switch first[0].Text {
 			case "storage_path", "base_path", "public_path", "resource_path", "app_path", "database_path", "config_path":
 				return true // Laravel: the app's own folder, then the argument
+			case "admin_url", "home_url", "site_url", "network_admin_url", "network_home_url", "network_site_url", "self_admin_url", "rest_url", "plugins_url", "route":
+				return true // WordPress and Laravel: the site's own address, then the argument
+			case "add_query_arg", "remove_query_arg":
+				// WordPress: the URL is the last argument (after a key and value, or an array of
+				// keys); without it, the current request's own path on this site.
+				if n := len(args); n == 3 || n == 2 && len(args[0]) > 0 && (args[0][0].op("[") || args[0][0].word("array") || args[0][0].Kind == Var) {
+					return !a.rawInput(st, args[n-1]) || a.fixedStart(st, args[n-1])
+				}
+				return true
+			case "apply_filters":
+				// WordPress returns the filtered value, the second argument
+				return len(args) >= 2 && (!a.rawInput(st, args[1]) || a.fixedStart(st, args[1]))
 			case "sprintf":
 				if len(args) > 0 && len(args[0]) == 1 && args[0][0].Kind == Str && len(args[0][0].Parts) == 0 {
 					head, _, _ := strings.Cut(args[0][0].Text, "%")
@@ -748,6 +760,9 @@ func requestRoot(name string) bool {
 // being a URL: it holds a character a scheme cannot ("/", "_", " ") before any
 // ":". "phar" or "ph" can be completed into "phar://" by the input; "tpl/" cannot.
 func notScheme(text string) bool {
+	if fixedHost(text) {
+		return true // https://api.example.com/...: the input cannot change the host or the scheme
+	}
 	for i := 0; i < len(text); i++ {
 		c := text[i]
 		if isAlnum(c) || c == '+' || c == '-' || c == '.' {
@@ -1086,7 +1101,9 @@ func (a *analysis) postfix(st state, t []Token, start, baseEnd int, v val, whole
 			if j == baseEnd && a.php && t[start].Kind == Ident {
 				fn = t[start].Text
 			}
-			if a.argsTaint(st, inside(t, j, c), fn) {
+			if a.r.output && a.opaqueAt(t, j) {
+				v = val{} // output rules: what a call returns is not the input (context.go)
+			} else if a.argsTaint(st, inside(t, j, c), fn) {
 				v = val{taint: true}
 			}
 			if key != "" {
@@ -1252,7 +1269,10 @@ var prefixChecks = map[string]bool{"str_starts_with": true, "strncmp": true, "st
 var predicates = map[string]bool{"in_array": true, "array_key_exists": true, "is_relative_to": true,
 	"ctype_digit": true, "ctype_alnum": true, "is_numeric": true, "is_int": true, "isInteger": true, "isSafeInteger": true,
 	"str_starts_with": true, "strncmp": true, "strncasecmp": true, "strpos": true, "stripos": true,
-	"startsWith": true, "startswith": true, "validate_file": true}
+	"startsWith": true, "startswith": true, "validate_file": true,
+	// in the rules that list them: URL and redirect checks, upload type checks, string type checks
+	"wp_http_validate_url": true, "url_has_allowed_host_and_scheme": true, "is_safe_url": true,
+	"allowed_file": true, "is_string": true, "isinstance": true, "wp_check_jsonp_callback": true}
 
 // zeroMeansMatch are comparisons for which "=== 0" means the check passed.
 var zeroMeansMatch = map[string]bool{"strncmp": true, "strncasecmp": true, "strcmp": true, "strcasecmp": true,
@@ -1532,7 +1552,7 @@ func (a *analysis) sinks(st state, t []Token) {
 		if t[i].Kind == Str {
 			for _, s := range a.r.textSinks {
 				if loc := s.text.FindStringIndex(t[i].Text); loc != nil {
-					a.textSink(st, t, i, loc[0])
+					a.textSink(st, t, i, loc[0], loc[1], a.r.args[s])
 				}
 			}
 		}
@@ -1554,6 +1574,13 @@ func (a *analysis) sink(st state, t []Token, i int, s *pat) {
 	if cond != nil && (len(cond.when) > 0 && !a.when(cond.when, region) || a.unless(st, cond.unless, region)) {
 		return
 	}
+	if cond != nil && cond.literal && !a.literalArg(cond, region, open) {
+		return
+	}
+	if a.noSources() {
+		a.report(t[i].Line)
+		return
+	}
 	var recv []Token
 	if s.member {
 		recv = t[a.chainStart(t, i):i]
@@ -1563,6 +1590,9 @@ func (a *analysis) sink(st state, t []Token, i int, s *pat) {
 	}
 	whole := cond != nil && cond.whole
 	reaches := func(arg []Token) bool {
+		if cond != nil && len(cond.context) > 0 {
+			return a.contextTaint(st, t[i], arg, cond.context)
+		}
 		return a.argVal(st, arg, whole).taint && !(cond != nil && cond.leading && a.fixedStart(st, arg))
 	}
 	tainted := false
@@ -1583,6 +1613,8 @@ func (a *analysis) sink(st state, t []Token, i int, s *pat) {
 				break
 			}
 		}
+	case cond != nil && len(cond.context) > 0:
+		tainted = a.contextTaint(st, t[i], region, cond.context)
 	default:
 		tainted = a.expr(st, region, whole).taint
 	}
@@ -1732,7 +1764,7 @@ func listStart(t []Token, i int) int {
 // textSink handles a sink that is text in a string ("ORDER BY"): what follows the
 // text, in the string's interpolations or in the operands joined after it, must
 // not be user input.
-func (a *analysis) textSink(st state, t []Token, k, off int) {
+func (a *analysis) textSink(st state, t []Token, k, off, textEnd int, cond *argCond) {
 	tk := t[k]
 	tainted := false
 	for _, p := range tk.Parts {
@@ -1756,6 +1788,9 @@ func (a *analysis) textSink(st state, t []Token, k, off int) {
 			}
 		}
 		tainted = a.expr(st, t[k+1:end], false).taint
+	}
+	if tainted && cond != nil && cond.leading && a.textLeading(st, t, k, textEnd) {
+		tainted = false
 	}
 	if tainted {
 		a.report(tk.Line + strings.Count(tk.Text[:off], "\n"))

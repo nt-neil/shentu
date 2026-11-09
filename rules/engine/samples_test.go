@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/nt-neil/shentu/rules"
@@ -23,7 +24,7 @@ func TestSamples(t *testing.T) {
 		t.Run(r.ID, func(t *testing.T) {
 			for i, s := range r.Samples {
 				name := fmt.Sprintf("%s sample %d (%s)", r.File, i, s.Kind)
-				fs, err := e.Scan(r.Lang, name, []byte(s.Code))
+				fs, err := e.Scan(r.Lang, name, []byte(sampleCode(s.Code)))
 				if err != nil {
 					t.Errorf("%s: %v", name, err)
 				}
@@ -52,4 +53,10 @@ func TestSamples(t *testing.T) {
 		})
 	}
 	t.Logf("vulnerable samples reported: %d/%d; safe samples clean: %d/%d", vulnOK, vuln, safeOK, safe)
+}
+
+// sampleCode puts a made-up value where a hardcoded-secret sample says
+// __SECRET__, so no value that looks like a credential is kept in the rule files.
+func sampleCode(code string) string {
+	return strings.ReplaceAll(code, "__SECRET__", strings.Join([]string{"not", "a", "real", "value"}, "-"))
 }

@@ -1,0 +1,45 @@
+id = "php-xss-echo-attribute"
+lang = "php"
+class = "xss"
+cwe = "CWE-79"
+severity = "medium"
+tier = "info"
+title = "Request input written into an HTML attribute without attribute escaping"
+frameworks = ["wordpress", "laravel"]
+sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "$_SERVER['PHP_SELF']", "$_SERVER['REQUEST_URI']", "$_SERVER['QUERY_STRING']", "$_SERVER['HTTP_", "get_query_var", "->get_param(", "$request->input(", "$request->query(", "add_query_arg("]
+sinks = ["echo", "print"]
+sanitizers = ["esc_attr", "esc_html", "esc_textarea", "esc_url", "esc_attr__", "esc_html__", "htmlspecialchars", "htmlentities", "sanitize_key", "sanitize_title", "sanitize_html_class", "urlencode", "rawurlencode", "number_format", "e(", "count("]
+fix = "Escape attribute values with esc_attr() or htmlspecialchars($v, ENT_QUOTES); sanitize_text_field() and strip_tags() leave quotes in place, so they do not protect an attribute."
+refs = ["CVE-2026-52881"]
+
+[[args]]
+context = ["attr"]
+
+[[samples]]
+kind = "vulnerable"
+note = "sanitize_text_field keeps the double quote that closes the attribute"
+code = '''
+<?php $s = sanitize_text_field($_GET['s']); ?>
+<input type="search" name="s" value="<?php echo $s; ?>">
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+echo '<div class="box" data-id="' . $_POST['id'] . '">';
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php $s = sanitize_text_field($_GET['s']); ?>
+<input type="search" name="s" value="<?php echo esc_attr($s); ?>">
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+echo '<div class="box" data-id="' . htmlspecialchars($_POST['id'], ENT_QUOTES) . '">';
+'''

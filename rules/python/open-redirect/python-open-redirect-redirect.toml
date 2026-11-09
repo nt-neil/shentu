@@ -1,0 +1,54 @@
+id = "python-open-redirect-redirect"
+lang = "python"
+class = "open-redirect"
+cwe = "CWE-601"
+severity = "medium"
+tier = "info"
+title = "Redirect to a URL taken from the request"
+frameworks = ["django", "flask"]
+sources = ["request.args", "request.form", "request.values", "request.GET", "request.POST", "request.query_params"]
+sinks = ["redirect(", "flask.redirect(", "HttpResponseRedirect(", "HttpResponsePermanentRedirect(", "RedirectResponse("]
+sanitizers = ["url_has_allowed_host_and_scheme(", "is_safe_url(", "url_for(", "reverse("]
+fix = "Check the target with url_has_allowed_host_and_scheme() (Django) or require a relative path on the same site before redirecting; otherwise redirect to url_for() or a fixed page."
+refs = ["CVE-2022-0697", "CVE-2024-41955"]
+
+[[args]]
+arg = 1
+leading = true
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+@app.route('/login', methods=['POST'])
+def login():
+    do_login()
+    return redirect(request.args.get('next', '/'))
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+def logout_view(request):
+    logout(request)
+    return HttpResponseRedirect(request.GET.get('return_to', '/'))
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+def logout_view(request):
+    logout(request)
+    target = request.GET.get('return_to', '/')
+    if not url_has_allowed_host_and_scheme(target, allowed_hosts={request.get_host()}):
+        target = '/'
+    return HttpResponseRedirect(target)
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+@app.route('/login', methods=['POST'])
+def login():
+    do_login()
+    return redirect(url_for('dashboard', tab=request.args.get('tab')))
+'''

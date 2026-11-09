@@ -1,0 +1,56 @@
+id = "js-ssrf-http-request"
+lang = "js"
+class = "ssrf"
+cwe = "CWE-918"
+severity = "high"
+tier = "info"
+title = "Server fetches a URL taken from the request"
+frameworks = ["express"]
+sources = ["req.query", "req.body", "req.params", "req.headers"]
+sinks = ["fetch(", "axios(", "axios.get(", "axios.post(", "axios.put(", "axios.delete(", "axios.head(", "got(", "got.get(", "got.post(", "http.get(", "https.get(", "http.request(", "https.request(", "needle(", "superagent.get("]
+sanitizers = ["parseInt(", "encodeURIComponent("]
+fix = "Keep the scheme and host fixed and take only a path or an id from the request, or parse it with new URL() and require the hostname to be in an allowlist (and to resolve to a public address) before the request."
+refs = ["CVE-2024-32964"]
+
+[[args]]
+arg = 1
+leading = true
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+app.get("/proxy", async (req, res) => {
+  const r = await fetch(req.query.url);
+  res.send(await r.text());
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+app.post("/import", async (req, res) => {
+  const { source } = req.body;
+  const { data } = await axios.get(source);
+  res.json({ size: data.length });
+});
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+app.get("/repo", async (req, res) => {
+  const r = await fetch(`https://api.github.com/repos/${encodeURIComponent(req.query.name)}`);
+  res.json(await r.json());
+});
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+const FEEDS = ["https://cdn.example.com/a.json", "https://cdn.example.com/b.json"];
+app.post("/import", async (req, res) => {
+  if (!FEEDS.includes(req.body.source)) return res.sendStatus(400);
+  const { data } = await axios.get(req.body.source);
+  res.json({ size: data.length });
+});
+'''

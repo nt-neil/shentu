@@ -17,7 +17,9 @@ import (
 var files embed.FS
 
 // Rule describes one source-to-sink pattern: user input (Sources) that reaches a
-// dangerous call (Sinks) without passing through a sanitizer is a finding.
+// dangerous call (Sinks) without passing through a sanitizer is a finding. A rule
+// with no sources is about how a call is made (a weak cipher, a password written
+// in the code): every sink call whose argument conditions hold is a finding.
 type Rule struct {
 	ID         string   `toml:"id"`
 	Lang       string   `toml:"lang"`
@@ -48,6 +50,8 @@ type Args struct {
 	Unless  []string `toml:"unless"`  // the call is not a sink if one of these is among its arguments
 	Whole   bool     `toml:"whole"`   // the argument must be the input itself, not a literal holding a part of it
 	Leading bool     `toml:"leading"` // the input must be at the start of the argument; a fixed prefix makes the call safe
+	Context []string `toml:"context"` // output sinks: only input written in one of these HTML contexts counts (html, attr, url, js)
+	Literal bool     `toml:"literal"` // the argument (arg, or the value of a when option) must be a non-empty string literal
 }
 
 // Sample is a minimal, self-written snippet: "vulnerable" must be reported, "safe" must not.
@@ -76,6 +80,9 @@ func Load() ([]Rule, error) {
 		}
 		if extra := md.Undecoded(); len(extra) > 0 {
 			return fmt.Errorf("%s: unknown keys %v", path, extra)
+		}
+		if !md.IsDefined("sources") {
+			return fmt.Errorf("%s: sources must be present (use [] for a rule about how a call is made, not about input)", path)
 		}
 		if !md.IsDefined("sanitizers") {
 			return fmt.Errorf("%s: sanitizers must be present (use [] when nothing makes input safe for these sinks)", path)

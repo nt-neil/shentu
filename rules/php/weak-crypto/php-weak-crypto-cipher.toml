@@ -1,0 +1,43 @@
+id = "php-weak-crypto-cipher"
+lang = "php"
+class = "weak-crypto"
+cwe = "CWE-327"
+severity = "medium"
+tier = "info"
+title = "Data encrypted with a broken cipher or ECB mode"
+sources = []
+sinks = ["openssl_encrypt(", "openssl_decrypt(", "mcrypt_encrypt(", "mcrypt_decrypt("]
+sanitizers = []
+fix = "Use an authenticated cipher such as aes-256-gcm with a random IV (or sodium_crypto_secretbox); DES, 3DES, RC4, Blowfish and ECB mode do not keep data secret."
+refs = ["CVE-2017-2598"]
+
+[[args]]
+sinks = ["openssl_encrypt(", "openssl_decrypt("]
+arg = 2
+when = ["'des-cbc'", "'des-ecb'", "'des-cfb'", "'des-ofb'", "'des-ede'", "'des-ede-cbc'", "'des-ede3'", "'des-ede3-cbc'", "'rc4'", "'rc4-40'", "'rc4-hmac-md5'", "'rc2-cbc'", "'rc2-ecb'", "'bf-cbc'", "'bf-ecb'", "'aes-128-ecb'", "'aes-192-ecb'", "'aes-256-ecb'", "'DES-CBC'", "'DES-ECB'", "'DES-EDE3'", "'DES-EDE3-CBC'", "'RC4'", "'RC2-CBC'", "'BF-CBC'", "'BF-ECB'", "'AES-128-ECB'", "'AES-192-ECB'", "'AES-256-ECB'"]
+
+[[args]]
+sinks = ["mcrypt_encrypt(", "mcrypt_decrypt("]
+when = ["MCRYPT_DES", "MCRYPT_3DES", "MCRYPT_TRIPLEDES", "MCRYPT_BLOWFISH", "MCRYPT_ARCFOUR", "MCRYPT_MODE_ECB"]
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+$token = base64_encode(openssl_encrypt($payload, 'aes-256-ecb', $key, OPENSSL_RAW_DATA));
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+$plain = openssl_decrypt($blob, 'DES-EDE3-CBC', $key, 0, $iv);
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+$iv = random_bytes(12);
+$ct = openssl_encrypt($payload, 'aes-256-gcm', $key, OPENSSL_RAW_DATA, $iv, $tag);
+'''

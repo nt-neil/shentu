@@ -1,0 +1,61 @@
+id = "php-file-upload-client-name"
+lang = "php"
+class = "file-upload"
+cwe = "CWE-434"
+severity = "high"
+tier = "info"
+title = "Uploaded file stored under the name the client sent, without checking its type"
+frameworks = ["wordpress", "laravel"]
+sources = ["$_FILES", "->getClientOriginalName(", "->getClientOriginalExtension(", "$_POST", "$_GET", "$_REQUEST"]
+sinks = ["move_uploaded_file(", "->storeAs(", "->move(", "->storePubliclyAs("]
+sanitizers = ["wp_unique_filename", "uniqid", "md5", "sha1", "hash", "wp_generate_password", "random_bytes", "bin2hex", "->hashName(", "->extension("]
+fix = "Check the extension and type against an allowlist (wp_check_filetype_and_ext(), in_array(strtolower(pathinfo($name, PATHINFO_EXTENSION)), $allowed, true)) or let wp_handle_upload() do it, and store the file under a name the server makes."
+refs = ["CVE-2025-1025"]
+
+[[args]]
+sinks = ["move_uploaded_file(", "->storeAs(", "->move(", "->storePubliclyAs("]
+arg = 2
+
+[[samples]]
+kind = "vulnerable"
+note = "shell.php keeps its extension and lands in a public folder"
+code = '''
+<?php
+$dir = wp_upload_dir()['basedir'] . '/avatars/';
+move_uploaded_file($_FILES['avatar']['tmp_name'], $dir . sanitize_file_name($_FILES['avatar']['name']));
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+class UploadController {
+    public function store(Request $request) {
+        $file = $request->file('doc');
+        $file->move(public_path('docs'), $file->getClientOriginalName());
+    }
+}
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+$name = $_FILES['avatar']['name'];
+if (!in_array(strtolower(pathinfo($name, PATHINFO_EXTENSION)), ['jpg', 'jpeg', 'png', 'gif'], true)) {
+    wp_die('Unsupported file type');
+}
+move_uploaded_file($_FILES['avatar']['tmp_name'], $dir . sanitize_file_name($name));
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+class UploadController {
+    public function store(Request $request) {
+        $file = $request->file('doc');
+        $file->move(public_path('docs'), $file->hashName());
+    }
+}
+'''

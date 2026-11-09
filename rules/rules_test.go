@@ -14,12 +14,22 @@ import (
 var (
 	langs   = map[string]bool{"php": true, "python": true, "js": true}
 	classes = map[string][]string{
-		"sqli":            {"CWE-89"},
-		"cmdi":            {"CWE-77", "CWE-78", "CWE-88"},
-		"path-traversal":  {"CWE-22", "CWE-23", "CWE-36", "CWE-73", "CWE-98"},
-		"deserialization": {"CWE-502"},
-		"code-eval":       {"CWE-94", "CWE-95", "CWE-1336"},
+		"sqli":             {"CWE-89"},
+		"cmdi":             {"CWE-77", "CWE-78", "CWE-88"},
+		"path-traversal":   {"CWE-22", "CWE-23", "CWE-36", "CWE-73", "CWE-98"},
+		"deserialization":  {"CWE-502"},
+		"code-eval":        {"CWE-94", "CWE-95", "CWE-1336"},
+		"xss":              {"CWE-79", "CWE-80"},
+		"ssrf":             {"CWE-918"},
+		"open-redirect":    {"CWE-601"},
+		"xxe":              {"CWE-611", "CWE-776"},
+		"ldapi":            {"CWE-90"},
+		"nosqli":           {"CWE-943"},
+		"file-upload":      {"CWE-434"},
+		"weak-crypto":      {"CWE-327", "CWE-328", "CWE-916"},
+		"hardcoded-secret": {"CWE-798", "CWE-259", "CWE-321"},
 	}
+	contexts   = map[string]bool{"html": true, "attr": true, "url": true, "js": true}
 	severities = map[string]bool{"critical": true, "high": true, "medium": true, "low": true}
 	frameworks = map[string]bool{"laravel": true, "wordpress": true, "django": true, "flask": true, "express": true}
 
@@ -55,7 +65,12 @@ func TestRulesValid(t *testing.T) {
 				t.Errorf("%s: %s is empty", f, k)
 			}
 		}
-		for k, v := range map[string][]string{"sources": r.Sources, "sinks": r.Sinks, "refs": r.Refs} {
+		for _, s := range r.Sources {
+			if strings.TrimSpace(s) == "" {
+				t.Errorf("%s: blank entry in sources", f)
+			}
+		}
+		for k, v := range map[string][]string{"sinks": r.Sinks, "refs": r.Refs} {
 			if len(v) == 0 {
 				t.Errorf("%s: %s is empty", f, k)
 			}
@@ -123,8 +138,16 @@ func checkText(t *testing.T, r Rule) {
 func checkArgs(t *testing.T, r Rule) {
 	covered := map[string]bool{}
 	for i, a := range r.Args {
-		if a.Arg == nil && len(a.When) == 0 && len(a.Unless) == 0 && !a.Whole && !a.Leading {
-			t.Errorf("%s: args %d sets none of arg, when, unless, whole, leading", r.File, i)
+		if a.Arg == nil && len(a.When) == 0 && len(a.Unless) == 0 && !a.Whole && !a.Leading && len(a.Context) == 0 && !a.Literal {
+			t.Errorf("%s: args %d sets none of arg, when, unless, whole, leading, context, literal", r.File, i)
+		}
+		for _, c := range a.Context {
+			if !contexts[c] {
+				t.Errorf("%s: args %d: context %q must be html, attr, url or js", r.File, i, c)
+			}
+		}
+		if a.Literal && a.Arg == nil && !hasOption(a.When) {
+			t.Errorf("%s: args %d: literal needs arg or a when option (password=, secret:)", r.File, i)
 		}
 		if a.Arg != nil && (*a.Arg < 0 || *a.Arg > 10) {
 			t.Errorf("%s: args %d: arg %d must be 0 (receiver) to 10", r.File, i, *a.Arg)
@@ -167,7 +190,7 @@ func checkSamples(t *testing.T, r Rule) {
 			t.Errorf("%s: sample %d has no code", r.File, i)
 		}
 		if s.Kind == "vulnerable" {
-			if !containsAny(s.Code, r.Sources) {
+			if len(r.Sources) > 0 && !containsAny(s.Code, r.Sources) {
 				t.Errorf("%s: vulnerable sample %d uses none of the sources", r.File, i)
 			}
 			if !containsAny(s.Code, r.Sinks) {
@@ -178,6 +201,15 @@ func checkSamples(t *testing.T, r Rule) {
 	if n["vulnerable"] == 0 || n["safe"] == 0 {
 		t.Errorf("%s: needs at least one vulnerable and one safe sample (has %d, %d)", r.File, n["vulnerable"], n["safe"])
 	}
+}
+
+func hasOption(when []string) bool {
+	for _, w := range when {
+		if strings.HasSuffix(w, "=") || strings.HasSuffix(w, ":") {
+			return true
+		}
+	}
+	return false
 }
 
 func containsAny(code string, needles []string) bool {
