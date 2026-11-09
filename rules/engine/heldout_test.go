@@ -460,6 +460,27 @@ func TestHeldOut(t *testing.T) {
 		{"J17 codeigniter query bindings", "php", "<?php\nclass Items extends CI_Controller { public function one() {\n  $row = $this->db->query('SELECT * FROM items WHERE id = ?', array($this->input->get('id')))->row();\n} }\n", false, ""},
 		{"J18 yii addCondition implode", "php", "<?php\nclass A extends Controller { public function actionInvite() {\n  $ids = Yii::app()->request->getPost('ids');\n  $c = new CDbCriteria();\n  $c->addCondition(\"tid IN ('\" . implode(\"','\", $ids) . \"')\");\n} }\n", true, ""},
 		{"J19 yii addInCondition", "php", "<?php\nclass A extends Controller { public function actionInvite() {\n  $c = new CDbCriteria();\n  $c->addInCondition('tid', Yii::app()->request->getPost('ids'));\n} }\n", false, ""},
+		// PHP lane, batch 3: rules held back from batch 1.
+		{"B16 wp_filesystem delete var", "php", "<?php\nfunction f() { global $wp_filesystem;\n  $dir = WP_CONTENT_DIR . '/cache/';\n  $target = $dir . $_REQUEST['entry'];\n  $wp_filesystem->delete($target, true);\n}\n", true, ""},
+		{"B17 wp_delete_file by attachment", "php", "<?php\nfunction f() {\n  $path = get_attached_file(absint($_POST['id']));\n  wp_delete_file($path);\n}\n", false, ""},
+		{"B20 call_user_func_array method pair", "php", "<?php\nclass A { function go() {\n  $cb = $_REQUEST['cb'];\n  return call_user_func_array($cb, array());\n} }\n", true, ""},
+		{"B21 call_user_func fixed callback", "php", "<?php\n$r = call_user_func('my_render', $_GET['page']);\n", false, ""},
+		{"B32 wp_send_json_error ends the request", "php", "<?php\nfunction f() {\n  $m = $_POST['m'];\n  if (!in_array($m, array('a', 'b'), true)) { wp_send_json_error(); }\n  call_user_func('x_' . $m);\n}\n", false, ""},
+		{"B33 callback from a registered taxonomy", "php", "<?php\nfunction f() {\n  foreach ((array) $_POST['tax'] as $tax => $terms) {\n    $obj = get_taxonomy($tax);\n    if ($obj) { call_user_func($obj->sanitize_cb, $terms); }\n  }\n}\n", false, ""},
+		{"B34 wp_delete_file after realpath prefix check", "php", "<?php\nfunction f() {\n  $base = realpath(WP_CONTENT_DIR . '/cache') . DIRECTORY_SEPARATOR;\n  $p = realpath($base . $_GET['f']);\n  if ($p === false || !str_starts_with($p, $base)) { wp_die(); }\n  wp_delete_file($p);\n}\n", false, ""},
+		// PHP lane, batch 3: templates, URL readers, keys, Drupal markup.
+		{"K1 twig createTemplate post body", "php", "<?php\nclass C { public function a(Request $request) {\n  $body = $request->request->get('body');\n  $t = $this->twig->createTemplate(\"{% autoescape %}\" . $body . \"{% endautoescape %}\");\n  return $t->render();\n} }\n", true, ""},
+		{"K2 twig render fixed file", "php", "<?php\nclass C { public function a(Request $request) {\n  return $this->twig->render('mail/body.twig', ['body' => $request->request->get('body')]);\n} }\n", false, ""},
+		{"K3 blade compileString uri", "php", "<?php\n$html = Blade::compileString(str_replace('#', request()->getRequestUri() . '#', $doc));\n", true, ""},
+		{"K4 exif_read_data url", "php", "<?php\n$meta = exif_read_data($_POST['photo']);\n", true, ""},
+		{"K5 getimagesize uploaded tmp", "php", "<?php\n$size = getimagesize($_FILES['p']['tmp_name']);\n", false, ""},
+		{"K6 SoapClient wsdl from request", "php", "<?php\nclass C { public function a(Request $request) {\n  $c = new SoapClient($request->input('wsdl'));\n} }\n", true, ""},
+		{"K8 hmac key from option", "php", "<?php\nfunction sign($d) { return hash_hmac('sha256', $d, get_option('my_hook_key')); }\n", false, ""},
+		{"K9 openssl key via hash of literal", "php", "<?php\n$key = hash('sha256', 'fixed phrase');\n$c = openssl_encrypt($v, 'aes-256-cbc', $key, 0, $iv);\n", true, "a key derived from a literal (hash('sha256', '...')) and kept in a variable is not seen as written in the code"},
+		{"K10 drupal markup form value", "php", "<?php\nfunction m_submit(array &$form, FormStateInterface $form_state) {\n  \\Drupal::messenger()->addStatus(Markup::create('Saved ' . $form_state->getValue('title')));\n}\n", true, ""},
+		{"K11 drupal markup escaped", "php", "<?php\nfunction m_submit(array &$form, FormStateInterface $form_state) {\n  \\Drupal::messenger()->addStatus(Markup::create('Saved ' . Html::escape($form_state->getValue('title'))));\n}\n", false, ""},
+		{"K12 hmac literal domain label", "php", "<?php\n$pre = base64_encode(hash_hmac('sha384', $password, 'app-sha384', true));\n", false, ""},
+		{"K13 delete temp file from download_url", "php", "<?php\nfunction sc($atts) {\n  $tmp = download_url($atts['src']);\n  if (filesize($tmp) > 1000) { wp_delete_file($tmp); }\n}\n", false, ""},
 	}
 	pass := 0
 	for _, c := range cases {

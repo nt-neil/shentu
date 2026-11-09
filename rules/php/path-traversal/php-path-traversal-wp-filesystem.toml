@@ -1,0 +1,80 @@
+id = "php-path-traversal-wp-filesystem"
+lang = "php"
+class = "path-traversal"
+cwe = "CWE-22"
+severity = "high"
+tier = "info"
+title = "WordPress file API deletes, reads or writes a path taken from the request"
+frameworks = ["wordpress"]
+sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "get_query_var", "->get_param(", "->get_json_params(", "$request['", "shortcode_atts(", "$atts["]
+sinks = ["wp_delete_file(", "wp_delete_file_from_directory(", "$wp_filesystem->delete(", "$wp_filesystem->get_contents(", "$wp_filesystem->put_contents(",
+         "$wp_filesystem->move(", "$wp_filesystem->copy(", "$wp_filesystem->rmdir(", "$wp_filesystem->get_contents_array("]
+sanitizers = ["download_url(", "wp_tempnam(", "basename(", "str_starts_with(", "sanitize_file_name(", "wp_basename(", "validate_file(", "absint", "intval", "in_array"]
+fix = "Take only a file name from the request (sanitize_file_name(), basename()), join it to a fixed directory, and check that realpath() of the result stays inside that directory, or look the file up by an id the server stored."
+refs = ["CVE-2026-120559"]
+
+[[args]]
+sinks = ["$wp_filesystem->put_contents("]
+arg = 1
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+add_action('wp_ajax_remove_export', function () {
+    $upload = wp_upload_dir();
+    $file = $upload['basedir'] . '/exports/' . wp_unslash($_POST['file']);
+    wp_delete_file($file);
+    wp_send_json_success();
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+function my_plugin_read_log() {
+    global $wp_filesystem;
+    WP_Filesystem();
+    echo esc_html($wp_filesystem->get_contents(WP_CONTENT_DIR . '/logs/' . $_GET['log']));
+}
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+add_action('wp_ajax_remove_export', function () {
+    $upload = wp_upload_dir();
+    $file = $upload['basedir'] . '/exports/' . sanitize_file_name(wp_unslash($_POST['file']));
+    wp_delete_file($file);
+    wp_send_json_success();
+});
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+function my_plugin_save_log() {
+    global $wp_filesystem;
+    WP_Filesystem();
+    $wp_filesystem->put_contents(WP_CONTENT_DIR . '/logs/app.log', $_POST['line'], FS_CHMOD_FILE);
+}
+'''
+
+[[samples]]
+kind = "safe"
+note = "the fix: the resolved path must stay inside the exports directory"
+code = '''
+<?php
+add_action('wp_ajax_remove_export', function () {
+    $base = realpath(wp_upload_dir()['basedir'] . '/exports') . DIRECTORY_SEPARATOR;
+    $file = realpath($base . wp_unslash($_POST['file']));
+    if ($file === false || !str_starts_with($file, $base)) {
+        wp_send_json_error();
+    }
+    wp_delete_file($file);
+    wp_send_json_success();
+});
+'''

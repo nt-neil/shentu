@@ -1,0 +1,54 @@
+id = "php-ssrf-url-readers"
+lang = "php"
+class = "ssrf"
+cwe = "CWE-918"
+severity = "medium"
+tier = "info"
+title = "Function that opens URLs called with a URL taken from the request"
+sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "->get_param(", "$request->input(", "$request->query->get(", "$request->request->get(", "$request->get("]
+sinks = ["get_headers(", "getimagesize(", "exif_read_data(", "simplexml_load_file(", "SoapClient(", "md5_file(", "sha1_file(", "imagecreatefromjpeg(", "imagecreatefrompng(", "imagecreatefromgif(", "imagecreatefromwebp("]
+sanitizers = ["in_array", "array_key_exists", "absint", "intval", "basename("]
+fix = "These functions follow http:// and ftp:// URLs (get_headers() also follows redirects): accept only hosts from an allowlist, or only a local file name joined to a fixed directory."
+refs = ["CVE-2026-33039", "CVE-2023-46725"]
+
+[[args]]
+arg = 1
+leading = true
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+$headers = get_headers($_GET['stream'], true);
+header('Content-Type: application/json');
+echo json_encode(['type' => $headers['Content-Type'] ?? null]);
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+class ProductImageController extends Controller
+{
+    public function check(Request $request)
+    {
+        [$w, $h] = getimagesize($request->input('image_url'));
+        return response()->json(['width' => $w, 'height' => $h]);
+    }
+}
+'''
+
+[[samples]]
+kind = "safe"
+note = "the fix: only a file name, joined to a fixed directory"
+code = '''
+<?php
+class ProductImageController extends Controller
+{
+    public function check(Request $request)
+    {
+        [$w, $h] = getimagesize(storage_path('app/images/') . basename($request->input('image')));
+        return response()->json(['width' => $w, 'height' => $h]);
+    }
+}
+'''

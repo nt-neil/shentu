@@ -1,0 +1,71 @@
+id = "php-code-eval-template-string"
+lang = "php"
+class = "code-eval"
+cwe = "CWE-1336"
+severity = "critical"
+tier = "info"
+title = "Request input compiled as a Twig or Blade template"
+frameworks = ["symfony", "laravel"]
+sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "$_SERVER['REQUEST_URI']", "->getRequestUri(", "$request->input(", "$request->get(", "$request->query(", "request(",
+           "$request->query->get(", "$request->request->get(", "->get_param("]
+sinks = ["->createTemplate(", "Blade::render(", "Blade::compileString(", "->renderString("]
+sanitizers = []
+fix = "Never compile text from a request as a template: render a fixed template file and pass the input as a variable ($twig->render('page.html.twig', ['name' => $name]), view('page', ['name' => $name])), where it is escaped as data."
+refs = ["CVE-2025-53833", "CVE-2026-73858"]
+
+[[args]]
+arg = 1
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+class GreetingController extends AbstractController
+{
+    public function show(Request $request, Environment $twig): Response
+    {
+        $tpl = $twig->createTemplate('Hello ' . $request->query->get('name') . '!');
+        return new Response($tpl->render([]));
+    }
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+class PageController extends Controller
+{
+    public function preview(Request $request)
+    {
+        return Blade::render('<h1>' . $request->input('title') . '</h1>');
+    }
+}
+'''
+
+[[samples]]
+kind = "safe"
+note = "the fix: a fixed template, the input passed as a variable"
+code = '''
+<?php
+class GreetingController extends AbstractController
+{
+    public function show(Request $request, Environment $twig): Response
+    {
+        return new Response($twig->render('greeting.html.twig', ['name' => $request->query->get('name')]));
+    }
+}
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+class PageController extends Controller
+{
+    public function preview(Request $request)
+    {
+        return Blade::render('<h1>{{ $title }}</h1>', ['title' => $request->input('title')]);
+    }
+}
+'''
