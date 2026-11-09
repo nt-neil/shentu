@@ -246,18 +246,18 @@ func TestEngineHostile(t *testing.T) {
 	R := strings.Repeat
 	for _, c := range []struct{ name, lang, src string }{
 		{"py [", "python", "x = " + R("[", 290000)},
-		{"js [", "js", "x = " + R("[", 290000)},
+		{"js [", "js", "x = " + R("[\n", 290000)}, // line breaks keep these from looking minified
 		{"php [", "php", "<?php $x = " + R("[", 290000)},
 		{"php (", "php", "<?php $x = " + R("(", 290000)},
-		{"js {", "js", "x = " + R("{", 290000)},
-		{"js f(", "js", "x = " + R("f(", 145000)},
+		{"js {", "js", "x = " + R("{\n", 290000)},
+		{"js f(", "js", "x = " + R("f(\n", 145000)},
 		{"php ternary chain", "php", "<?php $x = " + R("$a ? $b : ", 50000) + "1;"},
 		{"py long line", "python", "x = " + R("a + ", 200000) + "1\n"},
-		{"js long call", "js", "exec(" + R("req.query.a,", 100000) + ")"},
+		{"js long call", "js", "exec(" + R("req.query.a,\n", 100000) + ")"},
 		{"php nested ifs", "php", "<?php " + R("if ($a) { ", 20000) + "system($_GET['x']);" + R("}", 20000)},
-		{"js nested closures", "js", R("function(){", 20000) + "exec(req.query.x)" + R("}", 20000)},
+		{"js nested closures", "js", R("function(){\n", 20000) + "exec(req.query.x)" + R("}\n", 20000)},
 		{"php if/else in a loop", "php", "<?php function f(){ " + R("if ($c) { $a = $_GET['x']; } else { $a = 1; } ", 10000) + " system($a); }"},
-		{"js loops", "js", "function f(){" + R("for (const a of b) { x = x + req.query.y; } ", 10000) + "exec(x);}"},
+		{"js loops", "js", "function f(){" + R("for (const a of b) { x = x + req.query.y; }\n", 10000) + "exec(x);}"},
 	} {
 		start := time.Now()
 		_, err := e.Scan(c.lang, "x", []byte(c.src))
@@ -296,14 +296,16 @@ func TestEngineHostile(t *testing.T) {
 }
 
 func TestMinified(t *testing.T) {
-	long := strings.Repeat("a=1;", 400) // 1600 bytes on one line
+	long := strings.Repeat("a=1;", 400) + "\n" // 1600 non-blank bytes on one line
+	bundle := strings.Repeat(long, 30)         // 48 KB
 	for _, c := range []struct {
 		name, src string
 		want      bool
 	}{
-		{"bundle", long + "\n" + long, true},
-		{"hand-written with one long line", strings.Repeat("const x = req.query.x;\n", 200) + long, false},
-		{"short lines", "a();\nb();\n", false},
+		{"bundle", bundle, true},
+		{"small file with long lines", long + long, false},
+		{"hand-written with one long line", strings.Repeat("const x = req.query.x;\n", 2000) + long, false},
+		{"padded lines", strings.Repeat("exec(req.query.c);"+strings.Repeat(" ", 1200)+"\n", 40), false},
 		{"empty", "", false},
 	} {
 		if got := Minified([]byte(c.src)); got != c.want {
@@ -311,12 +313,31 @@ func TestMinified(t *testing.T) {
 		}
 	}
 	e := engineForTest(t)
-	if _, err := e.Scan("js", "app.min.js", []byte(long+"\n")); !errors.Is(err, ErrMinified) {
+	if _, err := e.Scan("js", "app.min.js", []byte(bundle)); !errors.Is(err, ErrMinified) {
 		t.Errorf("minified file: err = %v, want ErrMinified", err)
 	}
 	// Hand-written lines in a mostly minified file are still read.
-	mixed := long + "\n" + long + "\napp.get('/x', (req, res) => { exec(req.query.c); });\n"
-	if fs, err := e.Scan("js", "mixed.js", []byte(mixed)); !errors.Is(err, ErrMinified) || len(fs) == 0 || fs[0].Line != 3 {
-		t.Errorf("mixed file: %v, %v; want a finding on line 3 and ErrMinified", fs, err)
+	mixed := bundle + "app.get('/x', (req, res) => { exec(req.query.c); });\n"
+	if fs, err := e.Scan("js", "mixed.js", []byte(mixed)); !errors.Is(err, ErrMinified) || len(fs) == 0 || fs[0].Line != 31 {
+		t.Errorf("mixed file: %v, %v; want a finding on line 31 and ErrMinified", fs, err)
+	}
+	// A long line that opened a template literal: without it the rest reads as a
+	// string, and that is reported with the minified file.
+	open := bundle + "const t = `" + strings.Repeat("x", 1200) + "\n`;\nexec(req.query.c);\n"
+	if _, err := e.Scan("js", "open.js", []byte(open)); !errors.Is(err, ErrMinified) || !errors.Is(err, ErrPartial) {
+		t.Errorf("open literal: err = %v, want ErrMinified and ErrPartial", err)
+	}
+}
+
+// An output built from many joined parts is read in one pass: the HTML context
+// is fed part by part, not re-read from the start for every part, so a long
+// concatenation cannot push the file over the limits and out of the analysis.
+func TestContextLinear(t *testing.T) {
+	e := engineForTest(t)
+	src := "<?php\necho '<a href=\"' " + strings.Repeat(". $_GET['a'] . '\" x=\"' ", 20000) + ";\n"
+	start := time.Now()
+	fs, err := e.Scan("php", "concat.php", []byte(src))
+	if el := time.Since(start); errors.Is(err, ErrLimit) || el > 2*time.Second || len(fs) == 0 {
+		t.Errorf("20000 joined parts: %v, err %v, %d findings; want under 2s, no ErrLimit, reported", el, err, len(fs))
 	}
 }

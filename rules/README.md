@@ -105,19 +105,23 @@ How the engine reads them:
     after it, `$cb` is either empty or what the branch made it);
   - `preg_replace` (PHP) or `re.sub` (Python) with a negated class of letters,
     digits, `_` and `-`, an empty replacement and no limit or count leaves only
-    those characters, so its result is clean;
+    those characters, so its result is clean; on a PHP array the keys stay as
+    they were, so `foreach ($clean as $k => $v)` still gives input in `$k`;
   - in the rules that list `check_admin_referer`, `check_ajax_referer` or
     `wp_verify_nonce` as sanitizers, a nonce check that gates the code stops the
     rule there: `check_admin_referer(...)` or `check_ajax_referer(...)` as a
     statement of its own (not with `false` as the third argument), or
     `wp_verify_nonce(...)` in an `if` on the branch where it passed. The request
     then came from the site's own pages, so a third party's link cannot pick the
-    value. The open-redirect rule lists all three. The PHP XSS rules list
-    `current_user_can` too: there `check_ajax_referer` and `wp_verify_nonce` count
-    only with a capability check on the same path (`if (!current_user_can(...))
-    wp_die();`), because a logged-out visitor can get a valid nonce for public
-    AJAX handlers; `check_admin_referer` (admin screens) counts alone. A request
-    value read after such a check is the site's own request too;
+    value. The open-redirect and PHP XSS rules list them with
+    `current_user_can`: `check_ajax_referer` and `wp_verify_nonce` count only with
+    a capability check on the same path (`if (!current_user_can(...)) wp_die();`),
+    because a logged-out visitor can get a valid nonce for public AJAX handlers;
+    `check_admin_referer('action')` (admin screens) counts alone. A request value
+    read after such a check is the site's own request too. `check_ajax_referer`
+    stops only when its third argument is `true` or left out (a variable or a
+    named `die:` does not count), and `check_admin_referer()` without an action
+    checks only the referer;
   - a regular-expression test is a check when it allows only letters, digits,
     `_` and `-` from start to end (`preg_match('/^[a-z0-9_]+$/i', $x)`,
     `re.fullmatch(r'[\w-]+', x)`, `/^\d+$/.test(x)`), or when it looks for any
@@ -176,7 +180,7 @@ it are unchanged: a sink is reported when any argument is tainted.
 | `whole` | the argument must be the input itself (or spread from it), not an object or array literal holding a value from it |
 | `context` | output sinks only (`echo`, `res.send(`): the input counts only when it is written into one of these places of an HTML page: `html` (between tags), `attr` (an attribute value, or inside a tag), `url` (the start of an `href`, `src`, `action`... value), `js` (inside `<script>`, an `on*` handler, or after `javascript:`); see [Output contexts](#output-contexts) |
 | `literal` | the argument named by `arg`, or the value of a `when` option (`password=`, `password:`), must be a non-empty string written in the code; used by rules without sources |
-| `leading` | the input must be at the start of the argument: a fixed prefix makes the call safe, as `WP_PLUGIN_DIR . "/$name"` cannot choose a `phar://` stream. A fixed prefix is a literal (or a run of literals) holding a character no URL scheme has (`/`, `_`, a space) before any `:`, so `'phar' . $x` and `'ph' . 'ar' . $x` are none; a constant; a ternary whose branches both are; a variable assigned one; a property or array key the input never reached (`$this->dir`, `$u['basedir']`), but never a superglobal or request object (`$_COOKIE[...]`, `$_SERVER['HTTP_...']`; `$_SERVER['DOCUMENT_ROOT']` is allowed); a call whose arguments hold no input, even through a sanitizer (`dirname(__FILE__)`, `get_template_directory()`, `strval(intval($x))`, but not `trim(basename($_GET['d']))`); `sprintf` whose format starts with such a literal; a Laravel path helper (`storage_path(...)`); a WordPress or Laravel URL helper (`admin_url(...)`, `home_url(...)`, `get_permalink(...)`, `route(...)`); `add_query_arg` / `remove_query_arg` whose URL argument is fixed (or absent: the request's own path); `apply_filters` whose filtered value is fixed; `trailingslashit`, `user_trailingslashit`, `untrailingslashit` or `rtrim` whose first argument is fixed; or a literal that fixes the scheme and the host (`https://api.example.com/...`). A call on input (`basename($_GET['d'])`) is not; a clean call that returns `""` (`trim(' ')`, an unset `getenv()`) is a known miss |
+| `leading` | the input must be at the start of the argument: a fixed prefix makes the call safe, as `WP_PLUGIN_DIR . "/$name"` cannot choose a `phar://` stream. A fixed prefix is a literal (or a run of literals) holding a character no URL scheme has (`/`, `_`, a space) before any `:`, so `'phar' . $x` and `'ph' . 'ar' . $x` are none; a constant; a ternary whose branches both are; a variable assigned one; a property or array key the input never reached (`$this->dir`, `$u['basedir']`), but never a superglobal or request object (`$_COOKIE[...]`, `$_SERVER['HTTP_...']`; `$_SERVER['DOCUMENT_ROOT']` is allowed); a call whose arguments hold no input, even through a sanitizer (`dirname(__FILE__)`, `get_template_directory()`, `strval(intval($x))`, but not `trim(basename($_GET['d']))`); `sprintf` whose format starts with such a literal; a Laravel path helper (`storage_path(...)`); a WordPress URL helper that ends in a path (`admin_url(...)`, `get_permalink(...)`, `rest_url(...)`; `home_url('/...')` and `site_url('/...')` only with a path); `add_query_arg` / `remove_query_arg` whose URL argument is fixed (or absent: the request's own path); `apply_filters` whose filtered value is fixed; `trailingslashit` or `user_trailingslashit` whose first argument is fixed; In the `ssrf`, `open-redirect` and `xss` rules the prefix must also keep the request on a known host: a literal scheme and host followed by `/`, `?` or `#` (`https://api.example.com/...`), a root path whose second character is neither `/` nor `\` (`/account`, not `/` that the input turns into `//evil.com`), or a relative path (`users.php?id=`); `home_url()` without a path, `untrailingslashit` and `rtrim` are not fixed there. A call on input (`basename($_GET['d'])`) is not; a clean call that returns `""` (`trim(' ')`, an unset `getenv()`) is a known miss |
 
 `when` and `unless` entries are code fragments matched anywhere in the call's
 arguments, with two refinements:
@@ -242,24 +246,57 @@ Allowed CWEs per class:
 
 Which escaping makes a value safe depends on where it lands in the page:
 `esc_html()` is enough between tags, but not in an `href` (a `javascript:` URL
-passes it) nor in an `onclick` handler (the browser decodes the entities before the
-script runs). The XSS rules therefore come in one rule per context, each with the
-sanitizers that suffice there, and an `[[args]]` entry with `context`. The engine
-reads the context from the literal HTML written before the value:
+passes it), not in an unquoted attribute (a space starts a new one) and not in an
+`onclick` handler (the browser decodes the entities before the script runs). The
+XSS rules come one per group of contexts, with an `[[args]] context`:
 
-- for a PHP `echo`, `print` or `<?=` right after inline HTML, from that HTML
-  (`<input value="<?php echo $v ?>">` is `attr`; `<script>` blocks are `js`, except
-  `<script type="text/html">` templates);
-- within one output, from the literal text joined before each value
-  (`echo '<a href="' . $u . '">'`, `` res.send(`<p>${x}</p>`) ``).
+| name | contexts |
+|---|---|
+| `html` | between tags |
+| `attr` | a quoted attribute value; an unquoted one, where an attribute name goes, or `srcdoc` |
+| `url` | the start of a URL attribute value (`href`, `src`, `action`...) |
+| `js` | code in `<script>`; a JavaScript string in a script or a handler; code in an `on*` handler or after `javascript:`; CSS |
 
-In a rule whose sinks all have a context (an output rule), only the input itself and
-calls that pass it on (string edits, decoding, formatting, and escaping meant for
-another context) count: the result of any other call (`shell_exec(...)`, a template
-loader, `render_template(...)`) is what that call produced. An object or a list sent
-by `res.send` or `HttpResponse` is JSON, not markup, and Python keyword arguments
-other than `content=` (`status=`) are not what the page shows. Templates that escape
-by default (`render_template`, `res.render`, Blade `{{ }}`) are not sinks.
+The engine reads the context from the HTML written before the value, with a
+scanner that follows the page byte by byte (tags, attributes and their quotes,
+`<script>` and `<style>` bodies, JavaScript strings in them): for every `echo`
+and `print` of a PHP block, from the inline HTML before the block; within one
+output, from the literal text joined before each value. `<script type="text/html">`
+templates read as HTML.
+
+An escaping call written in the output is judged by the engine's own table of
+the contexts it is safe in, whatever the rule lists: `esc_html`, `esc_attr`,
+Python's `escape` and `escapeHtml` are safe between tags and in quoted
+attributes (`htmlspecialchars` and `htmlentities` in single-quoted ones only with
+`ENT_QUOTES`); `esc_url` in URLs; `esc_url_raw` and `sanitize_url` only in
+double-quoted attributes that are not URLs; `esc_js` in JavaScript strings;
+`wp_json_encode` / `json_encode` in script code outside strings; `urlencode`,
+`rawurlencode` and `quote` everywhere but script code and CSS;
+`encodeURIComponent` between tags, in double-quoted and unquoted attributes and in
+URLs (it keeps `'`); `wp_kses`, `strip_tags`, `sanitize_text_field` and HTML
+sanitizers only between tags. In another context the escaped value is still the
+input. A value escaped earlier and kept in a variable is judged by the rule's
+sanitizers.
+
+In a rule whose sinks all have a context (an output rule), a call passes on the
+input it was given, unless it is an escaper, a number, or a call whose result is
+not the request value: command output (`shell_exec`), file contents
+(`file_get_contents`, `readFile`), counts and hashes, WordPress form helpers
+(`selected`, `checked`), yes-or-no answers (`is_*`, `has_*`), getters (`get_*`,
+`wp_get_*`), template renderers (a name with `render` or `template`), and in PHP a
+method of an object that holds no input (PHP strings have no methods). Input only
+inside an array argument (`plugins_api('info', ['slug' => $s])`, `$q = $_GET` passed
+on) is a lookup key, not the text returned, except for calls that format or join
+containers (`implode`, `print_r`, `sprintf`, `json_encode`, `JSON.stringify`,
+`json.dumps`, `array_*`). A named field of what an unknown call returned
+(`$result['message']`, `$api->name`) is that call's data, unless the field was
+written later or the call decodes or splits its input (`json_decode`, `explode`,
+`parse_url`). An object or a list sent by `res.send` or
+`HttpResponse` is JSON, not markup, and Python keyword arguments other than
+`content=`, `text=` and `body=` (`status=`) are not what the page shows. aiohttp's
+`web.Response(text=...)` is `text/plain` unless `content_type` says HTML, so a rule
+for it should add `when = ["'text/html'"]` (or the content types it is about). Templates that escape by
+default (`render_template`, `res.render`, Blade `{{ }}`) are not sinks.
 
 ### Rules without sources
 
@@ -362,16 +399,21 @@ capped in tokens and time (`engine.Limits`); the time counts every token the
 analysis scans. A file over a cap, or nested deeper than the engine reads (where
 an expression too deep to read counts as user input), returns `ErrLimit`; a
 string or comment that runs to the end of the file returns `ErrPartial`. A
-JavaScript file with at least half of its bytes in lines over 1000 bytes is minified
-or bundled code: it is read without those long lines and returns `ErrMinified` with
-what was found, and the audit lists it as only partly read. Both
+JavaScript file of at least 32 KB with at least half of its non-blank bytes in lines
+of over 1000 non-blank bytes is minified or bundled code: it is read without those
+long lines and returns `ErrMinified` with what was found (joined with `ErrPartial`
+or `ErrLimit` when the lines read hit those), and the audit lists it as only partly
+read. Both
 come with the findings made so far.
 
 What it does not do: follow values across files (input read in a controller and
 used in another class of another file is missed), judge the output context of HTML
 built in a variable and echoed later (the echo's own context is used), see a CSRF
-nonce check, treat a check on a value derived from another (`in_array($ext, ...)`
-after `$ext = pathinfo($name, ...)`) as a check on the original, know framework semantics beyond
+nonce check whose result is kept in a variable, look into XML parser options kept in
+a variable (`$o = LIBXML_NOENT`), treat a check on a value derived from another (`in_array($ext, ...)`
+after `$ext = pathinfo($name, ...)`) as a check on the original, while a check on part
+of a value written in place counts for all of it (`in_array(pathinfo($n, PATHINFO_EXTENSION), ...)`
+cleans `$n` for every rule, path traversal included), know framework semantics beyond
 the rules (a lookup in a constant dict is not an allowlist), look into options
 kept in a variable (`const opts = { shell: true }; spawn(cmd, opts)`), or prove a
 finding.

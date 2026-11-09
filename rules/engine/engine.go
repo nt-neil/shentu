@@ -113,11 +113,11 @@ func compileRule(r rules.Rule) (*crule, error) {
 	for _, a := range r.Args {
 		ac := &argCond{arg: a.Arg, whole: a.Whole, leading: a.Leading, literal: a.Literal}
 		for _, name := range a.Context {
-			c, ok := contextNames[name]
+			cs, ok := contextNames[name]
 			if !ok {
 				return nil, fmt.Errorf("args: unknown context %q", name)
 			}
-			ac.context = append(ac.context, c)
+			ac.context = append(ac.context, cs...)
 		}
 		c.leading = c.leading || a.Leading
 		for _, list := range []struct {
@@ -182,10 +182,7 @@ func (e *Engine) Scan(lang, path string, src []byte) ([]Finding, error) {
 	}
 	if lang == "js" && Minified(src) {
 		out, err := e.Scan(lang, path, dropLong(src))
-		if err == nil || errors.Is(err, ErrPartial) {
-			err = ErrMinified
-		}
-		return out, err
+		return out, errors.Join(ErrMinified, err) // keep both reasons: minified, and unterminated or over a limit
 	}
 	b := newBudget(e.Limits)
 	toks := lex(lang, string(src), b)
@@ -212,8 +209,9 @@ func (e *Engine) Scan(lang, path string, src []byte) ([]Finding, error) {
 	// written out in the file is reported whatever the calls cost.
 	var ruleList []*crule
 	direct := map[*crule][]int{}
+	names := nameSet(toks, map[string]bool{})
 	for _, r := range rs {
-		if !hasSink(r, toks) {
+		if !sinkNames(r, names, src) || !hasSink(r, toks) {
 			continue // nothing in the file can be this rule's sink
 		}
 		ruleList = append(ruleList, r)

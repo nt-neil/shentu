@@ -2,177 +2,6 @@ package engine
 
 import "strings"
 
-// Output contexts. An output sink (echo, res.send) writes into an HTML page, and
-// which escaping makes a value safe depends on where in the page it lands:
-// esc_html is enough between tags, not in an href (javascript:) nor in an
-// onclick handler. A rule's [[args]] context lists the contexts it is about, and
-// the engine reads the context from the literal HTML written before the value:
-// the inline HTML before a PHP echo or <?= (the lexer keeps it on the echo
-// token), and the literal text joined before the value in the same output.
-const (
-	ctxHTML uint8 = iota // between tags (also the default when nothing is known)
-	ctxAttr              // inside a tag: an attribute value, or where an attribute could start
-	ctxURL               // at the start of a URL attribute value (href, src, action, ...)
-	ctxJS                // inside <script>, an on* handler, or after javascript:
-)
-
-var contextNames = map[string]uint8{"html": ctxHTML, "attr": ctxAttr, "url": ctxURL, "js": ctxJS}
-
-var urlAttrs = map[string]bool{"href": true, "src": true, "action": true, "formaction": true, "poster": true,
-	"data": true, "background": true, "cite": true, "xlink:href": true, "srcdoc": true}
-
-const htmlKeep = 2048 // bytes of inline HTML kept to read the context from
-
-// inlineHTML records a run of PHP inline HTML and the context the next output
-// writes into.
-func (s *scanner) inlineHTML(h string) {
-	s.html += h
-	if len(s.html) > htmlKeep {
-		s.html = s.html[len(s.html)-htmlKeep:]
-	}
-	s.htmlCtx = htmlContext(s.html)
-}
-
-// htmlContext returns the context of text written right after h.
-func htmlContext(h string) uint8 {
-	low := strings.ToLower(h)
-	if i := strings.LastIndex(low, "<script"); i >= 0 && !strings.Contains(low[i:], "</script") && strings.Contains(low[i:], ">") {
-		open := low[i : i+strings.Index(low[i:], ">")]
-		if !strings.Contains(open, "type=\"text/") && !strings.Contains(open, "type='text/") || strings.Contains(open, "text/javascript") {
-			return ctxJS
-		}
-		// <script type="text/html">, "text/template": markup kept for later, read as HTML
-		low = low[strings.Index(low[i:], ">")+i+1:]
-	}
-	lt := strings.LastIndex(low, "<")
-	if lt < 0 || lt < strings.LastIndex(low, ">") {
-		return ctxHTML
-	}
-	tag := low[lt+1:]
-	if tag == "" || !isAlnum(tag[0]) {
-		return ctxHTML // "a < b" in text, "</" or "<!--"
-	}
-	name, value, inValue := openAttr(tag)
-	switch {
-	case !inValue:
-		return ctxAttr
-	case strings.HasPrefix(name, "on"):
-		return ctxJS
-	case urlAttrs[name]:
-		v := strings.TrimSpace(value)
-		if strings.HasPrefix(v, "javascript:") {
-			return ctxJS
-		}
-		if !notScheme(v) {
-			return ctxURL // nothing yet, or a start the value can turn into a scheme
-		}
-	}
-	return ctxAttr
-}
-
-// openAttr reads the attributes of a tag that is still open (tag is the text
-// after "<") and reports the attribute whose value is still open, if any.
-func openAttr(tag string) (name, value string, inValue bool) {
-	i := 0
-	for i < len(tag) && !isSpace(tag[i]) {
-		i++ // the tag name
-	}
-	for i < len(tag) {
-		for i < len(tag) && (isSpace(tag[i]) || tag[i] == '/') {
-			i++
-		}
-		start := i
-		for i < len(tag) && !isSpace(tag[i]) && tag[i] != '=' {
-			i++
-		}
-		name = tag[start:i]
-		for i < len(tag) && isSpace(tag[i]) {
-			i++
-		}
-		if i >= len(tag) || tag[i] != '=' {
-			continue
-		}
-		i++
-		for i < len(tag) && isSpace(tag[i]) {
-			i++
-		}
-		if i >= len(tag) {
-			return name, "", true // value=<?php echo ... ?>, unquoted
-		}
-		if q := tag[i]; q == '"' || q == '\'' {
-			end := strings.IndexByte(tag[i+1:], q)
-			if end < 0 {
-				return name, tag[i+1:], true
-			}
-			i += end + 2
-			continue
-		}
-		start = i
-		for i < len(tag) && !isSpace(tag[i]) {
-			i++
-		}
-		if i >= len(tag) {
-			return name, tag[start:], true
-		}
-	}
-	return "", "", false
-}
-
-func isSpace(c byte) bool { return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' }
-
-// contextTaint reports whether out, written by an output sink whose token is
-// sinkTok, writes user input into one of the contexts in want. The operands of
-// out are read in order (joined with "." or "+", or listed with ","); the literal
-// text before an operand decides its context.
-func (a *analysis) contextTaint(st state, sinkTok Token, out []Token, want []uint8) bool {
-	if a.py && len(out) > 1 && out[0].Kind == Ident && out[1].op("=") {
-		if out[0].Text != "content" {
-			return false // status=, headers=: not what the page shows
-		}
-		out = out[2:]
-	}
-	base := sinkTok.Flags >> flagCtxShift & 3
-	join := "+"
-	if a.php {
-		join = "."
-	}
-	lit := ""
-	inAt := func(text string, op []Token) bool {
-		c := base
-		if text != "" && (base == ctxHTML || strings.ContainsAny(text, "<>")) {
-			c = htmlContext(text)
-		}
-		if c == ctxURL && op != nil && a.r.leading && a.fixedStart(st, op) {
-			c = ctxAttr // the value starts with a fixed part ('install.php?l=' . $l): not a scheme
-		}
-		for _, w := range want {
-			if w == c {
-				return true
-			}
-		}
-		return false
-	}
-	for _, op := range splitTop(stripParens(out), func(t Token) bool { return t.op(join) || t.op(",") }) {
-		if len(op) == 1 && op[0].Kind == Str && op[0].Flags&(FlagShell|FlagRegex) == 0 {
-			tk := op[0]
-			for _, p := range tk.Parts {
-				if a.hits(a.expr(st, p.Toks, false)) && inAt(lit+tk.Text[:min(p.Off, len(tk.Text))], p.Toks) {
-					return true
-				}
-			}
-			lit += tk.Text
-			continue
-		}
-		if !a.php && len(op) > 0 && (op[0].op("{") || op[0].op("[")) {
-			continue // an object or a list is sent as JSON, not as markup
-		}
-		if !a.opaqueCall(op) && a.hits(a.expr(st, op, false)) && inAt(lit, op) {
-			return true
-		}
-	}
-	return false
-}
-
 // literalArg reports whether the argument a literal condition names is a
 // non-empty string written in the code: the arg-th argument, or the value of a
 // when option (password=, secret:).
@@ -204,9 +33,34 @@ func (a *analysis) literalArg(cond *argCond, region []Token, open int) bool {
 // call whose argument conditions hold is reported.
 func (a *analysis) noSources() bool { return len(a.r.sources) == 0 && len(a.r.textSources) == 0 }
 
+// netClasses are the classes whose leading condition is about a URL's host:
+// there a prefix is fixed only when it keeps the request on a known host.
+var netClasses = map[string]bool{"ssrf": true, "open-redirect": true, "xss": true}
+
+// fixedText reports whether literal text, put before any input, is a fixed
+// prefix for the rule. For a path or a stream (include, phar) it must name no
+// scheme (notScheme). For a URL it must also fix the host: a scheme and host
+// followed by "/", "?" or "#" (https://api.example.com/), a path from the root
+// whose next character is neither "/" nor "\" ("/account", not "/" that the
+// input turns into //evil.com), or a relative path ("users.php?id=", "?page=").
+func (a *analysis) fixedText(text string) bool {
+	if !netClasses[a.r.rule.Class] {
+		return notScheme(text)
+	}
+	switch {
+	case fixedHost(text):
+		return true
+	case strings.HasPrefix(text, "/"):
+		return len(text) >= 2 && text[1] != '/' && text[1] != '\\'
+	case strings.HasPrefix(text, "\\"):
+		return false
+	}
+	return notScheme(text)
+}
+
 // fixedHost reports whether text starts with a scheme and a host that the input
-// after it cannot change ("https://api.example.com/v1?q="): the request goes to
-// that host, and the input picks only the path or the query.
+// after it cannot change ("https://api.example.com/v1?q="): the host ends with
+// "/", "?" or "#" already, so the input picks only the path or the query.
 func fixedHost(text string) bool {
 	i := strings.Index(text, "://")
 	if i <= 0 {
@@ -236,7 +90,7 @@ func (a *analysis) textLeading(st state, t []Token, k, end int) bool {
 		}
 	}
 	if lit := strings.TrimLeft(tk.Text[min(end, stop):stop], " \t"); lit != "" {
-		return notScheme(lit)
+		return a.fixedText(lit)
 	}
 	if next != nil {
 		return a.fixedStart(st, next)
@@ -263,42 +117,6 @@ func (a *analysis) textLeading(st state, t []Token, k, end int) bool {
 		}
 	}
 	return len(rest) > 0 && a.fixedStart(st, rest)
-}
-
-// passOn are the calls whose result written to a page still carries the input
-// they were given: string edits, decoding, formatting and joining. The result of
-// any other call (shell_exec, file_get_contents, a template loader) is what that
-// call produced, not the request value, so in an output rule (every sink has a
-// context condition) the call's result is clean.
-var passOn = words("trim ltrim rtrim strtolower strtoupper ucfirst ucwords lcfirst stripslashes stripcslashes wp_unslash " +
-	"urldecode rawurldecode base64_decode html_entity_decode htmlspecialchars_decode sprintf vsprintf implode join " +
-	"str_replace str_ireplace preg_replace substr mb_substr str_pad nl2br wpautop print_r var_export strval " +
-	"__ _x apply_filters wp_specialchars_decode stripslashes_deep str_repeat strrev wordwrap " +
-	"decodeURIComponent decodeURI unescape String toString toUpperCase toLowerCase replace replaceAll slice substring " +
-	"concat format str upper lower strip capitalize title unquote unquote_plus get getlist sub subn " +
-	// escaping for one context leaves the value unsafe in another (the rules list the ones that suffice)
-	"esc_html esc_attr esc_textarea esc_js esc_url esc_url_raw esc_html__ esc_attr__ htmlspecialchars htmlentities " +
-	"strip_tags wp_strip_all_tags wp_kses wp_kses_post wp_kses_data sanitize_text_field sanitize_textarea_field " +
-	"urlencode rawurlencode json_encode wp_json_encode addslashes escape escapeHtml encodeURIComponent encodeURI")
-
-// opaqueCall reports whether op is one call (a function, method or static
-// method) whose result is not the input itself (see passOn).
-func (a *analysis) opaqueCall(op []Token) bool {
-	n := len(op)
-	if n < 3 || !op[n-1].op(")") {
-		return false
-	}
-	open := openOf(op, n-1)
-	if open < 1 || a.chainStart(op, n) != 0 || op[open-1].Kind != Ident {
-		return false
-	}
-	return a.opaqueAt(op, open)
-}
-
-// opaqueAt reports whether the call whose "(" is at j has a result that is not
-// the input it was given (see passOn).
-func (a *analysis) opaqueAt(t []Token, j int) bool {
-	return j > 0 && t[j-1].Kind == Ident && !a.kw[t[j-1].Text] && !passOn[t[j-1].Text]
 }
 
 // Keys that mark, in a state, the guards that ran on every path to here (san:
@@ -343,20 +161,30 @@ func (a *analysis) markGuard(st state, name string) {
 }
 
 // nonceStmt records a nonce check that is a statement of its own:
-// check_admin_referer(...) and check_ajax_referer(...) stop a request without a
-// valid nonce (unless check_ajax_referer's third argument is false). Only in the
-// rules that list the check as a sanitizer.
+// check_admin_referer('action') and check_ajax_referer('action') stop a request
+// without a valid nonce: check_ajax_referer only when its third argument is true
+// or left out, check_admin_referer only with an action (without one, or with -1,
+// it checks only the referer). Only in the rules that list the check.
 func (a *analysis) nonceStmt(st state, t []Token) {
 	if !a.php || len(t) < 3 || t[0].Kind != Ident || !t[1].op("(") || closeOf(t, 1) != len(t)-1 && !(closeOf(t, 1) == len(t)-2 && t[len(t)-1].op(";")) {
 		return
 	}
+	args := splitTop(inside(t, 1, closeOf(t, 1)), isComma)
+	for _, x := range args {
+		if len(x) > 1 && x[0].Kind == Ident && x[1].op(":") {
+			return // a named argument (die: false): do not guess whether it stops
+		}
+	}
 	switch name := t[0].Text; name {
 	case "check_ajax_referer":
-		if args := splitTop(inside(t, 1, closeOf(t, 1)), isComma); len(args) >= 3 && len(args[2]) == 1 && falsy(args[2]) {
-			return // returns false instead of stopping
+		if len(args) >= 3 && !(len(args[2]) == 1 && args[2][0].word("true")) {
+			return // stops only when the third argument is true or left out
 		}
 		fallthrough
 	case "check_admin_referer":
+		if len(args) == 0 || len(args[0]) == 0 || len(args[0]) <= 2 && args[0][len(args[0])-1].Text == "1" {
+			return // no action (-1) checks only the referer
+		}
 		a.markGuard(st, name)
 	}
 }
@@ -418,4 +246,170 @@ func (a *analysis) stripAllAt(t []Token, i int) int {
 		return -1
 	}
 	return c + 1
+}
+
+// keysKey marks a variable assigned the result of a stripping preg_replace on
+// input: its values are clean, but on an array the keys are kept as they were.
+const keysKey = "\x00keys:"
+
+// stripKeys records, for $x = preg_replace(...) that strips input, that the keys
+// of $x are still input; any other assignment to $x forgets it.
+func (a *analysis) stripKeys(st state, t []Token) {
+	if !a.php || len(t) < 3 || t[0].Kind != Var || !t[1].op("=") {
+		return
+	}
+	delete(st, keysKey+t[0].Text)
+	if end := a.stripAllAt(t, 2); end >= 0 && (end == len(t) || end == len(t)-1 && t[end].op(";")) {
+		if args := splitTop(inside(t, 3, end-1), isComma); len(args) == 3 && a.hits(a.expr(st, args[2], false)) {
+			st[keysKey+t[0].Text] = entry{taint: true}
+		}
+	}
+}
+
+// keysTainted reports whether the keys of the array iter are input though its
+// values were stripped clean.
+func (a *analysis) keysTainted(st state, iter []Token) bool {
+	iter = stripParens(iter)
+	if !a.php || len(iter) == 0 {
+		return false
+	}
+	if len(iter) == 1 && iter[0].Kind == Var {
+		e, ok := st[keysKey+iter[0].Text]
+		return ok && e.taint
+	}
+	if end := a.stripAllAt(iter, 0); end == len(iter) {
+		args := splitTop(inside(iter, 1, end-1), isComma)
+		return len(args) == 3 && a.hits(a.expr(st, args[2], false))
+	}
+	return false
+}
+
+// allValidate returns the values that every one of the alternatives validates
+// where it holds (empty($x) || 'a' === $x || admin_url() === $x: $x).
+func (a *analysis) allValidate(st state, parts [][]Token) []keyRef {
+	var common map[string]keyRef
+	for _, p := range parts {
+		pos, keys := a.guard(st, p)
+		if keys == nil || !pos {
+			return nil
+		}
+		next := map[string]keyRef{}
+		for _, k := range keys {
+			if common == nil || common[k.key] != (keyRef{}) {
+				next[k.key] = k
+			}
+		}
+		common = next
+		if len(common) == 0 {
+			return nil
+		}
+	}
+	var out []keyRef
+	for _, k := range common {
+		out = append(out, k)
+	}
+	return out
+}
+
+// equalsClean reads $x === expr, where expr holds no input and is not a literal
+// (literals are read by guard itself): where it holds, $x is that clean value.
+// Only strict comparison: loose == can hold between different strings in PHP.
+func (a *analysis) equalsClean(st state, lhs, rhs []Token, op string) []keyRef {
+	if !(op == "===" || op == "!==" || a.py && (op == "==" || op == "!=")) {
+		return nil
+	}
+	for _, pr := range [2][2][]Token{{lhs, rhs}, {rhs, lhs}} {
+		x, y := stripParens(pr[0]), stripParens(pr[1])
+		if _, _, ok := a.pathKey(x); !ok || len(y) == 0 || isLiteral(y) {
+			continue
+		}
+		if !a.rawInput(st, y) {
+			return a.keysOf(x)
+		}
+	}
+	return nil
+}
+
+// Markers for output rules, kept in the state next to the variables.
+const (
+	ctrKey = "\x00ctr:" // the variable holds an array or object literal, or a whole request array
+	resKey = "\x00res:" // the variable holds what an unknown call returned (a structure it built)
+)
+
+// splitters return the input's own parts: their fields are still the input.
+var splitters = words("json_decode unserialize maybe_unserialize explode str_getcsv preg_split parse_url pathinfo " +
+	"wp_parse_args wp_parse_str parse_str wp_unslash stripslashes_deep compact func_get_args getallheaders " +
+	"filter_input_array str_split mb_str_split loads parse_qs urlparse split")
+
+// markAssign records, in output rules, what kind of value $x = ... gives $x.
+func (a *analysis) markAssign(st state, t []Token) {
+	if !a.r.output || len(t) < 3 || !(t[0].Kind == Var || t[0].Kind == Ident && !a.kw[t[0].Text]) {
+		return
+	}
+	if t[1].op("[") || memberOp(a.php, t[1]) {
+		delete(st, resKey+t[0].Text) // $r['x'] = ...: a field written here may be the input
+		return
+	}
+	if !t[1].op("=") {
+		return
+	}
+	name := t[0].Text
+	delete(st, ctrKey+name)
+	delete(st, resKey+name)
+	rhs := stripParens(t[2:])
+	if n := len(rhs); n > 0 && rhs[n-1].op(";") {
+		rhs = rhs[:n-1]
+	}
+	if len(rhs) == 0 {
+		return
+	}
+	switch {
+	case rhs[0].op("[") || rhs[0].op("{") || a.php && (rhs[0].word("array") || rhs[0].word("compact")):
+		st[ctrKey+name] = entry{taint: true}
+	case len(rhs) == 1 && (rhs[0].Text == "$_GET" || rhs[0].Text == "$_POST" || rhs[0].Text == "$_REQUEST" || rhs[0].Text == "$_COOKIE"):
+		st[ctrKey+name] = entry{taint: true}
+	case rhs[len(rhs)-1].op(")") && a.chainStart(rhs, len(rhs)) == 0:
+		open := openOf(rhs, len(rhs)-1)
+		if open >= 1 && rhs[open-1].Kind == Ident && !splitters[rhs[open-1].Text] && !formatFuncs[rhs[open-1].Text] {
+			if _, esc := escapers[rhs[open-1].Text]; !esc {
+				st[resKey+name] = entry{taint: true}
+			}
+		}
+	}
+}
+
+func marked(st state, key string) bool {
+	e, ok := st[key]
+	return ok && e.taint
+}
+
+// container reports whether arg is an array or object: a literal, a whole
+// request array, or a variable assigned one.
+func (a *analysis) container(st state, arg []Token) bool {
+	if len(arg) == 0 {
+		return false
+	}
+	switch {
+	case arg[0].op("[") || arg[0].op("{") || a.php && (arg[0].word("array") || arg[0].word("compact")):
+		return true
+	case len(arg) == 1 && (arg[0].Kind == Var || arg[0].Kind == Ident):
+		return marked(st, ctrKey+arg[0].Text) || arg[0].Text == "$_GET" || arg[0].Text == "$_POST" || arg[0].Text == "$_REQUEST"
+	}
+	return false
+}
+
+// fieldOfResult reports whether op reads a named field of what an unknown call
+// returned ($result['password_message'], $api->name): a structure that call
+// built, not the input it was given.
+func (a *analysis) fieldOfResult(st state, op []Token) bool {
+	if len(op) < 3 || op[0].Kind != Var && op[0].Kind != Ident || !marked(st, resKey+op[0].Text) {
+		return false
+	}
+	switch {
+	case op[1].op("[") && op[2].Kind == Str && len(op[2].Parts) == 0:
+		return true
+	case memberOp(a.php, op[1]) && op[2].Kind == Ident:
+		return true
+	}
+	return false
 }

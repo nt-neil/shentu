@@ -58,6 +58,7 @@ func (s *scanner) php(stop bool) {
 		case !stop && s.has("?>"):
 			s.pos += 2
 			s.emit(Token{Kind: Op, Text: ";", Line: s.line})
+			s.htmlCtx = 0
 			s.phpHTML()
 		case c == '#' && s.peek(1) == '[':
 			s.phpAttribute()

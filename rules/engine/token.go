@@ -27,7 +27,7 @@ const (
 	FlagRegex                       // JS /regex/
 	FlagNL                          // first token on its line (JS statement ends)
 	FlagMultiline                   // JS /regex/m: ^ and $ match at every line
-	flagCtxShift  = 5               // PHP echo or print after inline HTML: bits 5-6 hold the HTML context it writes into (context.go)
+	flagCtxShift  = 5               // PHP echo or print after inline HTML: bits 5-7 hold the HTML context it writes into (htmlctx.go)
 )
 
 // Token is one lexical unit. Comments are dropped. A string literal keeps its raw
@@ -72,8 +72,9 @@ var ErrPartial = errors.New("engine: unterminated string or comment, rest of the
 
 // ErrMinified means a JavaScript file is minified or bundled (most of it is in
 // very long lines, see Minified): only its other lines were analysed. Generated
-// code is not where the application's own flaws are, and it is slow to read.
-var ErrMinified = errors.New("engine: minified JavaScript, not analysed")
+// code is not where the application's own flaws are, and it is slow to read. It
+// may come joined with ErrPartial or ErrLimit for the lines that were read.
+var ErrMinified = errors.New("engine: minified JavaScript, its long lines not analysed")
 
 const maxNest = 24 // interpolation and block nesting; deeper code is read flat or skipped
 
@@ -160,8 +161,8 @@ type scanner struct {
 	ctl      []bool // JS: for each open "(", whether it starts an if/while/for header
 	afterCtl bool   // JS: the last ")" closed such a header
 
-	html    string // PHP: the end of the inline HTML so far
-	htmlCtx uint8  // PHP: context of the output at the next opening tag, given to an echo or print right after it
+	hs      htmlScan // PHP: the inline HTML read so far (htmlctx.go)
+	htmlCtx uint8    // PHP: 1 + the context the current code block writes into, 0 outside one
 }
 
 func (s *scanner) peek(off int) byte {
@@ -180,11 +181,8 @@ func (s *scanner) emit(t Token) bool {
 		t.Flags |= FlagNL
 		s.nl = false
 	}
-	if s.htmlCtx != 0 {
-		if t.Kind == Ident && (t.Text == "echo" || t.Text == "print") {
-			t.Flags |= s.htmlCtx << flagCtxShift
-		}
-		s.htmlCtx = 0
+	if s.htmlCtx != 0 && t.Kind == Ident && (t.Text == "echo" || t.Text == "print") {
+		t.Flags |= (s.htmlCtx - 1) << flagCtxShift
 	}
 	s.toks = append(s.toks, t)
 	return s.b.token()

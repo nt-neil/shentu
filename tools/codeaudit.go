@@ -66,7 +66,8 @@ type CodeFinding struct {
 // "size" (over the size limit, not read), "limit" (too large, slow or deeply nested
 // for the engine), "unterminated" (a string or comment runs to the end of the file),
 // "time" (after the audit's time limit for the rules), "panic" (an engine error) or
-// "minified" (minified or bundled JavaScript, read without its long lines).
+// "minified" (minified or bundled JavaScript, read without its long lines), or
+// "minified-unterminated" / "minified-limit" when the lines read also hit those.
 type UnfinishedFile struct {
 	Path   string `json:"path"`
 	Reason string `json:"reason"`
@@ -293,6 +294,8 @@ func partialFinding(files []UnfinishedFile) CodeFinding {
 		{"size", "over the size limit"}, {"limit", "too large, slow or deeply nested for the engine"},
 		{"unterminated", "with a string or comment that never ends"}, {"time", "after the audit's time limit"},
 		{"panic", "stopped by an engine error"}, {"minified", "minified or bundled JavaScript, read without its long lines"},
+		{"minified-unterminated", "minified JavaScript whose shorter lines hold a string or comment that never ends"},
+		{"minified-limit", "minified JavaScript whose shorter lines were still too large or slow"},
 	} {
 		if n := count[r.reason]; n > 0 {
 			parts = append(parts, fmt.Sprintf("%d %s", n, r.text))
@@ -309,6 +312,10 @@ func unfinishedReason(err error) string {
 	switch {
 	case errors.Is(err, errPanic):
 		return "panic"
+	case errors.Is(err, engine.ErrMinified) && errors.Is(err, engine.ErrLimit):
+		return "minified-limit"
+	case errors.Is(err, engine.ErrMinified) && errors.Is(err, engine.ErrPartial):
+		return "minified-unterminated"
 	case errors.Is(err, engine.ErrLimit):
 		return "limit"
 	case errors.Is(err, engine.ErrPartial):

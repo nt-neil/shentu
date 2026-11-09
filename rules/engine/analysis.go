@@ -171,6 +171,8 @@ func (a *analysis) stmt(s *stmt, st state) (state, uint8) {
 		a.assignStmt(st, s.toks)
 		a.assertStmt(st, s.toks)
 		a.nonceStmt(st, s.toks)
+		a.stripKeys(st, s.toks)
+		a.markAssign(st, s.toks)
 		return st, a.exitOf(s.toks)
 	case sIf:
 		a.sinks(st, s.toks)
@@ -348,6 +350,7 @@ func (a *analysis) function(f *fn, st state) {
 func (a *analysis) loop(s *stmt, st state) state {
 	body := s.body
 	var targets, iter, cond []Token
+	keyed := false // foreach ($a as $k => $v)
 	switch s.loop {
 	case "for":
 		parts := splitTop(s.toks, isSemi)
@@ -362,6 +365,7 @@ func (a *analysis) loop(s *stmt, st state) state {
 	case "each":
 		if i := indexTop(s.toks, 0, isWord("as")); i > 0 {
 			iter = s.toks[:i]
+			keyed = len(splitTop(s.toks[i+1:], isOp("=>"))) == 2
 			for _, side := range splitTop(s.toks[i+1:], isOp("=>")) {
 				targets = append(targets, side...)
 				targets = append(targets, Token{Kind: Op, Text: ","})
@@ -387,8 +391,12 @@ func (a *analysis) loop(s *stmt, st state) state {
 	}
 	tl := a.targetList(targets)
 	bind := func(x state) {
-		for _, t := range tl {
-			a.setTarget(x, t, iv, "=", false)
+		for k, t := range tl {
+			v := iv
+			if k == 0 && keyed && a.keysTainted(x, iter) {
+				v = val{taint: true} // the keys of a cleaned array are still the input's (context.go)
+			}
+			a.setTarget(x, t, v, "=", false)
 		}
 	}
 	enter := func(x state) state {
@@ -711,7 +719,7 @@ func (a *analysis) fixedStart(st state, t []Token) bool {
 		lit += tk.Text
 	}
 	if k > 0 {
-		return notScheme(lit)
+		return a.fixedText(lit)
 	}
 	first := parts[0]
 	n := len(first)
@@ -748,9 +756,16 @@ func (a *analysis) fixedStart(st state, t []Token) bool {
 			switch first[0].Text {
 			case "storage_path", "base_path", "public_path", "resource_path", "app_path", "database_path", "config_path":
 				return true // Laravel: the app's own folder, then the argument
-			case "admin_url", "home_url", "site_url", "network_admin_url", "network_home_url", "network_site_url", "self_admin_url", "rest_url", "plugins_url", "route",
-				"get_permalink", "get_home_url", "get_site_url", "get_admin_url", "get_edit_post_link", "get_term_link", "wp_login_url", "wp_logout_url":
-				return true // WordPress and Laravel: the site's own address, then the argument
+			case "admin_url", "network_admin_url", "self_admin_url", "get_admin_url", "rest_url", "plugins_url",
+				"get_permalink", "get_edit_post_link", "get_term_link", "wp_login_url", "wp_logout_url":
+				return true // WordPress: the site's own address with a path, then the argument
+			case "home_url", "site_url", "network_home_url", "network_site_url", "get_home_url", "get_site_url":
+				// the site's address, with no "/" after the host unless a path is given
+				k := 0
+				if strings.HasPrefix(first[0].Text, "get_") {
+					k = 1 // get_home_url($blog_id, $path)
+				}
+				return len(args) > k && len(args[k]) == 1 && args[k][0].Kind == Str && strings.HasPrefix(args[k][0].Text, "/")
 			case "add_query_arg", "remove_query_arg":
 				// WordPress: the URL is the last argument (after a key and value, or an array of
 				// keys); without it, the current request's own path on this site.
@@ -758,8 +773,12 @@ func (a *analysis) fixedStart(st state, t []Token) bool {
 					return !a.rawInput(st, args[n-1]) || a.fixedStart(st, args[n-1])
 				}
 				return true
-			case "trailingslashit", "user_trailingslashit", "untrailingslashit", "rtrim":
-				// the result starts with the first argument
+			case "untrailingslashit", "rtrim":
+				if netClasses[a.r.rule.Class] {
+					return false // may cut the "/" after the host: https://site . "@evil.com"
+				}
+			case "trailingslashit", "user_trailingslashit":
+				// the result starts with the first argument (untrailingslashit and rtrim may cut its end)
 				return len(args) >= 1 && a.fixedStart(st, args[0])
 			case "apply_filters":
 				// WordPress returns the filtered value, the second argument
@@ -767,7 +786,7 @@ func (a *analysis) fixedStart(st state, t []Token) bool {
 			case "sprintf":
 				if len(args) > 0 && len(args[0]) == 1 && args[0][0].Kind == Str && len(args[0][0].Parts) == 0 {
 					head, _, _ := strings.Cut(args[0][0].Text, "%")
-					return notScheme(head)
+					return a.fixedText(head)
 				}
 			}
 			if n == closeOf(first, 1)+1 {
@@ -805,9 +824,6 @@ func requestRoot(name string) bool {
 // being a URL: it holds a character a scheme cannot ("/", "_", " ") before any
 // ":". "phar" or "ph" can be completed into "phar://" by the input; "tpl/" cannot.
 func notScheme(text string) bool {
-	if fixedHost(text) {
-		return true // https://api.example.com/...: the input cannot change the host or the scheme
-	}
 	for i := 0; i < len(text); i++ {
 		c := text[i]
 		if isAlnum(c) || c == '+' || c == '-' || c == '.' {
@@ -1160,10 +1176,22 @@ func (a *analysis) postfix(st state, t []Token, start, baseEnd int, v val, whole
 			if j-1 == start || j-3 == start && j-2 > start && memberOp(a.php, t[j-2]) {
 				key = a.calleeKey(t, j-1)
 			}
-			if sum := a.summaryOf(key); sum != nil && !a.raw {
+			if a.r.output {
+				// output rules (htmlctx.go): a call returns its input changed only when one
+				// argument is the input itself; the arguments are read once per call
+				switch {
+				case a.opaqueAt(st, t, j, v.taint):
+					v = val{}
+				case !a.wholeArg(st, inside(t, j, c), t[j-1].Text):
+				case key != "" && a.summaryOf(key) != nil && !a.raw:
+					v = a.callVal(st, a.summaryOf(key), callArgs(t, j))
+				default:
+					name := t[j-1].Text
+					v = val{taint: true, emb: t[start].Kind == Str || formatFuncs[name],
+						weak: !(t[start].Kind == Str || formatFuncs[name] || a.passes(t, start, j-1) || key != "" && !a.returnsUnknown(key))}
+				}
+			} else if sum := a.summaryOf(key); sum != nil && !a.raw {
 				v = a.callVal(st, sum, callArgs(t, j))
-			} else if a.r.output && a.opaqueAt(t, j) {
-				v = val{} // output rules: what a call returns is not the input (context.go)
 			} else if a.argsTaint(st, inside(t, j, c), fn) {
 				// "...".format(x), sprintf("... %s", $x), implode(...): the input becomes part of a string
 				name := t[j-1].Text
@@ -1403,6 +1431,18 @@ func (a *analysis) refine(st state, cond []Token, truth bool) (state, []string) 
 	}
 	var cleaned []string
 	for _, atom := range splitTop(cond, split) {
+		if truth {
+			// A || B || C where each validates the same value: where it holds, one did
+			if parts := splitTop(stripParens(atom), func(t Token) bool { return t.op("||") || t.word("or") }); len(parts) > 1 {
+				for _, k := range a.allValidate(st, parts) {
+					e := out[k.key]
+					e.taint, e.src = false, e.src || k.src
+					out[k.key] = e
+					cleaned = append(cleaned, k.key)
+				}
+				continue
+			}
+		}
 		pos, keys := a.guard(st, atom)
 		if keys == nil || pos != truth {
 			continue
@@ -1461,6 +1501,12 @@ func (a *analysis) guard(st state, atom []Token) (pos bool, keys []keyRef) {
 			lhs, rhs = rhs, lhs
 		}
 		eq, ne := op == "==" || op == "===", op == "!=" || op == "!==" || op == "<>"
+		if k := a.equalsClean(st, lhs, rhs, op); k != nil {
+			if ne {
+				pos = !pos
+			}
+			return pos, k
+		}
 		if !eq && !ne || len(lhs) == 0 || len(rhs) != 1 {
 			return pos, nil
 		}
