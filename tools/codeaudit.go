@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/nt-neil/shentu/rules"
 	"github.com/nt-neil/shentu/rules/engine"
@@ -200,6 +201,24 @@ var injectionLang = map[string]string{".php": "php", ".py": "python", ".js": "js
 
 const partialListMax = 10
 
+// injectionMaxTime caps the time the injection rules take in one audit (each file
+// is also capped by the engine's own limits). Files left when it runs out are
+// listed in the partial summary.
+var injectionMaxTime = 2 * time.Minute
+
+var engineScan = (*engine.Engine).Scan // replaced in tests
+
+// injectionScan runs the engine on one file. A panic counts as an unfinished file,
+// so one malformed file cannot stop the audit or the patrol.
+func injectionScan(e *engine.Engine, lang, p string, b []byte) (found []engine.Finding, err error) {
+	defer func() {
+		if recover() != nil {
+			found, err = nil, engine.ErrLimit
+		}
+	}()
+	return engineScan(e, lang, p, b)
+}
+
 var (
 	rulesOnce sync.Once
 	rulesEng  *engine.Engine
@@ -239,7 +258,7 @@ func finding(kind, severity, path string, line int, detail, fix string) CodeFind
 // partialFinding sums up the files the injection rules did not check to the end.
 func partialFinding(paths []string) CodeFinding {
 	f := CodeFinding{Kind: "injection", Severity: "info", Tier: "info",
-		Detail: fmt.Sprintf("%d file(s) were too large or too complex for the injection rules; they were checked only in part or not at all", len(paths)),
+		Detail: fmt.Sprintf("%d file(s) were too large or too complex for the injection rules, or came after the audit's time limit for them; they were checked only in part or not at all", len(paths)),
 		Fix:    "review these files by hand, or split them into smaller files"}
 	f.Paths = paths[:min(len(paths), partialListMax)]
 	return f
@@ -256,6 +275,7 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 			Fix: "report this as a Shentu bug; the other checks ran"})
 	}
 	var partial []string
+	deadline := time.Now().Add(injectionMaxTime)
 	for _, root := range roots {
 		base := strings.Count(filepath.Clean(root), "/")
 		filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
@@ -311,8 +331,12 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 			}
 			res.Files++
 			auditContent(p, name, b, web, isPHP, add)
-			if lang != "" && eng != nil {
-				found, err := eng.Scan(lang, p, b)
+			switch {
+			case lang == "" || eng == nil:
+			case time.Now().After(deadline):
+				partial = append(partial, p)
+			default:
+				found, err := injectionScan(eng, lang, p, b)
 				injectionFindings(found, add)
 				if errors.Is(err, engine.ErrLimit) || errors.Is(err, engine.ErrPartial) {
 					partial = append(partial, p)

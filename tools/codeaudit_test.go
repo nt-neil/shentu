@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/nt-neil/shentu/rules"
+	"github.com/nt-neil/shentu/rules/engine"
 )
 
 func TestAppCodeAudit(t *testing.T) {
@@ -190,5 +191,38 @@ func TestAppCodeAuditPartial(t *testing.T) {
 		if strings.HasSuffix(p, "ok.py") {
 			t.Errorf("a finished file is listed: %s", p)
 		}
+	}
+}
+
+// A panic in the engine and the audit's time limit both leave the file in the summary.
+func TestAppCodeAuditInjectionLimits(t *testing.T) {
+	dir, _ := filepath.EvalSymlinks(t.TempDir())
+	os.WriteFile(filepath.Join(dir, "a.php"), []byte("<?php\necho 1;\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "b.py"), []byte("print(1)\n"), 0o644)
+	summary := func() CodeFinding {
+		for _, f := range AppCodeAudit(context.Background(), []string{dir}, nil).Findings {
+			if f.Kind == "injection" {
+				return f
+			}
+		}
+		return CodeFinding{}
+	}
+	scan := engineScan
+	defer func() { engineScan = scan }()
+	engineScan = func(e *engine.Engine, lang, p string, b []byte) ([]engine.Finding, error) {
+		if lang == "php" {
+			panic("boom")
+		}
+		return scan(e, lang, p, b)
+	}
+	if f := summary(); len(f.Paths) != 1 || !strings.HasSuffix(f.Paths[0], "a.php") {
+		t.Errorf("panic: summary %+v", f)
+	}
+	engineScan = scan
+	max := injectionMaxTime
+	defer func() { injectionMaxTime = max }()
+	injectionMaxTime = 0
+	if f := summary(); len(f.Paths) != 2 {
+		t.Errorf("time limit: summary %+v", f)
 	}
 }
