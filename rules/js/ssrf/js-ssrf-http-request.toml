@@ -9,7 +9,7 @@ frameworks = ["express", "nestjs", "nextjs"]
 sources = ["req.query", "req.body", "req.params", "req.headers", "@Query(", "@Body(", "@Param(", "@Headers(", "@Req(", "req.originalUrl", "^request.nextUrl", "^req.nextUrl", "^request.url", "^req.url", "^searchParams", "^request.json(", "^req.json(", "^request.text(", "^req.text(", "^request.formData(", "^req.formData(", "^formData.get(", "req.get(", "req.header(", "^headers().get("]
 sinks = ["fetch(", "axios(", "axios.get(", "axios.post(", "axios.put(", "axios.delete(", "axios.head(", "got(", "got.get(", "got.post(", "http.get(", "https.get(", "http.request(", "https.request(", "needle(", "superagent.get("]
 sanitizers = ["parseInt(", "encodeURIComponent("]
-fix = "Keep the scheme and host fixed and take only a path or an id from the request, or parse it with new URL() and require the hostname to be in an allowlist (and to resolve to a public address) before the request."
+fix = "Keep the scheme and host fixed and take only an encoded path or id from the request, or accept only URLs from an allowlist. If you parse the URL to check its host, build the request from the checked host (new URL(input) -> allowed host -> 'https://' + host + path), not from the parsed input object: a check on url.hostname is not recognised as cleaning url itself. Make sure the host resolves to a public address."
 refs = ["CVE-2024-32964", "CVE-2024-38514", "CVE-2025-9805", "CVE-2024-47066", "CVE-2026-82477", "GHSA-89v5-38xr-9m4j"]
 
 [[args]]
@@ -102,4 +102,18 @@ export async function GET(req: Request) {
   const r = await fetch("https://feeds.example.com/v1/" + encodeURIComponent(id));
   return new Response(await r.text());
 }
+'''
+
+[[samples]]
+kind = "safe"
+note = "as the fix says: the host is checked against an allowlist and the request is built from the checked host"
+code = '''
+const PARTNERS = new Set(["api.partner-a.example", "api.partner-b.example"]);
+app.get("/partner", async (req, res) => {
+  const asked = new URL(String(req.query.url));
+  const host = PARTNERS.has(asked.hostname) ? asked.hostname : null;
+  if (!host) return res.sendStatus(400);
+  const r = await fetch("https://" + host + "/v2/" + encodeURIComponent(asked.pathname.slice(1)));
+  res.json(await r.json());
+});
 '''

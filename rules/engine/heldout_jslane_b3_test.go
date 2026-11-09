@@ -21,6 +21,9 @@ var heldOutJSLaneB3 = []struct {
 	{"new URL path override", "ts", "js-ssrf-http-request", "export async function GET(req: Request) {\n  const p = new URL(req.url).pathname.slice('/img'.length);\n  return fetch(new URL(p, IMAGE_ORIGIN));\n}\n", true, ""},
 	{"env base with the path in a query", "ts", "js-ssrf-http-request", "export async function middleware(request: NextRequest) {\n  const p = request.nextUrl.pathname;\n  return fetch(`${process.env.CMS_URL}/lookup?path=${p}`);\n}\n", false,
 		"a configured base (${process.env.X}) leading the URL is not counted as a fixed prefix"},
+	{"hostname allowlist on the parsed URL", "js", "js-ssrf-http-request", "app.get('/p', async (req, res) => {\n  const u = new URL(req.query.url);\n  if (!HOSTS.has(u.hostname)) return res.sendStatus(400);\n  res.send(await (await fetch(u)).text());\n});\n", false,
+		"a check on u.hostname validates that member only, not u: needs the engine to clean an object by a check on its host (rules engine)"},
+	{"hostname rebuilt from the allowlist", "js", "js-ssrf-http-request", "app.get('/p', async (req, res) => {\n  const u = new URL(req.query.url);\n  const host = HOSTS.has(u.hostname) ? u.hostname : 'cdn.example.com';\n  res.send(await (await fetch('https://' + host + '/feed')).text());\n});\n", false, ""},
 	// js-open-redirect-next
 	{"next return url", "ts", "js-open-redirect-next", "export async function GET(request: NextRequest) {\n  const next = request.nextUrl.searchParams.get('returnUrl') ?? '/';\n  return NextResponse.redirect(new URL(next, request.url));\n}\n", true, ""},
 	{"server action redirect", "ts", "js-open-redirect-next", "export async function signIn(formData: FormData) {\n  'use server';\n  redirect(formData.get('returnUrl') as string);\n}\n", true, ""},
