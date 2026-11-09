@@ -134,3 +134,28 @@ func TestHexToIPv6(t *testing.T) {
 		t.Errorf("hexToIPv6 = %v", got)
 	}
 }
+
+func TestMinerSigns(t *testing.T) {
+	cases := []struct {
+		exe, cmd string
+		want     bool
+	}{
+		{"/tmp/.x/kswapd0", "kswapd0 -o stratum+tcp://pool.example:3333 -u wallet", true},
+		{"/dev/shm/sys", "sys --donate-level 1 -o 198.51.100.7:443", true},
+		{"/usr/local/bin/xmrig", "xmrig", true},
+		{"/opt/m/run (deleted)", "run -a rx/0 --url 198.51.100.7:80", true},
+		{"/usr/bin/grep", "grep -r stratum+tcp:// /var/log", false},
+		{"/usr/bin/sed", "sed -n /--donate-level/p notes", false},
+		{"/tmp/grep", "grep -o stratum+tcp://pool.example:3333", true},
+		{"/usr/bin/grep (deleted)", "grep --donate-level 1", true},
+		{"/tmp/xmrig (deleted)", "kworker", true},
+		{"/usr/local/bin/dataminer-report", "dataminer-report --daily", false},
+		{"/usr/bin/python3", "python3 manage.py runserver", false},
+		{"/usr/bin/ffmpeg", "ffmpeg -i in.mp4 -a rx/0.mp4", false},
+	}
+	for _, c := range cases {
+		if got := minerSigns(c.exe, c.cmd); got != c.want {
+			t.Errorf("%s %q: got %v, want %v", c.exe, c.cmd, got, c.want)
+		}
+	}
+}
