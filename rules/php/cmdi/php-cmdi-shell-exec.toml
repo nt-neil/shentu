@@ -8,7 +8,7 @@ frameworks = ["laravel"]
 sources = ["$_GET", "$_POST", "$_REQUEST", "$_SERVER['HTTP_", "$request->input(", "$request->getHost()", "$request->header("]
 sinks = ["exec(", "shell_exec(", "system(", "passthru(", "popen(", "proc_open(", "`", "mail("]
 sanitizers = ["escapeshellarg"]
-fix = "Avoid the shell: use a PHP function or an argument array (proc_open with an array, Symfony Process); if a shell is unavoidable, wrap every value in escapeshellarg(). mail()'s fifth argument is passed to sendmail's command line too."
+fix = "Avoid the shell: use a PHP function or an argument array (proc_open with an array, Symfony Process); if a shell is unavoidable, wrap every value in escapeshellarg(). mail()'s fifth argument is passed to sendmail's command line too, and escapeshellarg does not protect it there (mail() escapes it again): leave it out and set sendmail_from instead."
 refs = ["CVE-2026-54182", "CVE-2016-10033"]
 
 [[samples]]
@@ -38,13 +38,20 @@ mail('sales@example.com', 'Contact form', $_POST['message'], '', '-f' . $from);
 '''
 
 [[samples]]
-kind = "safe"
+kind = "vulnerable"
+note = "mail() runs escapeshellcmd over the fifth argument, which undoes escapeshellarg's quoting"
 code = '''
 <?php
 $from = filter_var($_POST['from'], FILTER_VALIDATE_EMAIL);
-if ($from !== false) {
-    mail('sales@example.com', 'Contact form', $_POST['message'], '', '-f' . escapeshellarg($from));
-}
+mail('sales@example.com', 'Contact form', $_POST['message'], '', '-f' . escapeshellarg($from));
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+ini_set('sendmail_from', 'noreply@example.com');
+mail('sales@example.com', 'Contact form', $_POST['message'], 'Reply-To: noreply@example.com');
 '''
 
 [[samples]]

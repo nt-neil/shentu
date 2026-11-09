@@ -7,7 +7,7 @@ title = "Request input placed into Sequelize.literal or a raw sequelize.query st
 frameworks = ["express"]
 sources = ["req.query", "req.body", "req.params"]
 sinks = ["Sequelize.literal(", "sequelize.literal(", "sequelize.query(", "Sequelize.fn("]
-sanitizers = ["replacements:", "bind:", "sequelize.escape(", "Sequelize.where("]
+sanitizers = ["replacements:", "bind:", "sequelize.escape("]
 fix = "Keep literal() for constant SQL only; pass values with the replacements or bind options of sequelize.query, or use operator objects ({ [Op.lt]: value })."
 refs = ["CVE-2026-52887"]
 
@@ -18,6 +18,18 @@ router.get("/messages", async (req, res) => {
   const before = req.query.before;
   const rows = await Message.findAll({
     where: Sequelize.literal(`"createdAt" < '${before}'`),
+  });
+  res.json(rows);
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "Sequelize.where does not clean a literal built from input"
+code = '''
+router.get("/messages", async (req, res) => {
+  const rows = await Message.findAll({
+    where: Sequelize.where(Sequelize.literal(`date_trunc('day', "createdAt") < '${req.query.before}'`), true),
   });
   res.json(rows);
 });
