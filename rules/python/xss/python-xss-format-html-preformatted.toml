@@ -7,13 +7,19 @@ tier = "info"
 title = "Django format_html given a string that already holds the request value"
 frameworks = ["django"]
 sources = ["request.GET", "request.POST", "request.COOKIES", "request.META", "request.headers", "request.body", "request.data", "request.query_params"]
-sinks = ["format_html(", "html.format_html(", "django.utils.html.format_html("]
+sinks = ["format_html(", "html.format_html(", "django.utils.html.format_html(", "format_html_join("]
 sanitizers = ["escape(", "conditional_escape(", "html.escape(", "bleach.clean("]
 fix = "Pass values to format_html as arguments ('<b>{}</b>', value) so it escapes them; format_html only escapes its arguments, never the format string itself."
 refs = ["CVE-2024-23341"]
 
 # Only the format string is trusted as markup; arguments after it are escaped.
 [[args]]
+sinks = ["format_html_join("]   # format_html_join(sep, format_string, args)
+arg = 2
+context = ["html", "attr", "url", "js"]
+
+[[args]]
+sinks = ["format_html(", "html.format_html(", "django.utils.html.format_html("]
 arg = 1
 context = ["html", "attr", "url", "js"]
 

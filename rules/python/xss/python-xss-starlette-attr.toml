@@ -6,7 +6,7 @@ severity = "medium"
 tier = "info"
 title = "FastAPI or Starlette HTML response with a request value in an attribute value without the escaping that context needs"
 sources = ["request.query_params", "request.path_params", "request.form(", "request.json(", "request.body(", "request.headers", "request.cookies", "request.url.path"]
-sinks = ["HTMLResponse(", "responses.HTMLResponse(", "fastapi.responses.HTMLResponse(", "starlette.responses.HTMLResponse(", "Response("]
+sinks = ["HTMLResponse(", "responses.HTMLResponse(", "fastapi.responses.HTMLResponse(", "starlette.responses.HTMLResponse("]
 sanitizers = ["html.escape(", "markupsafe.escape(", "escape(", "urllib.parse.quote(", "quote("]
 fix = "Escape the value with html.escape() (it escapes quotes by default), or render with Jinja2Templates."
 refs = ["CVE-2026-54386"]
@@ -15,11 +15,7 @@ refs = ["CVE-2026-54386"]
 sinks = ["HTMLResponse(", "responses.HTMLResponse(", "fastapi.responses.HTMLResponse(", "starlette.responses.HTMLResponse("]
 context = ["attr"]
 
-# media_type="text/html" or "text/html; charset=...": the string is a prefix
-[[args]]
-sinks = ["Response("]
-when = ['media_type="text/html', "media_type='text/html"]
-context = ["attr"]
+# Response(..., media_type="text/html") is python-xss-response's sink.
 
 [[samples]]
 kind = "vulnerable"
@@ -27,7 +23,7 @@ code = '''
 @app.get("/filter")
 async def filter_page(request: Request):
     tag = request.query_params.get("tag", "")
-    return Response(content=f'<form><input type="text" name="tag" value="{tag}"></form>', media_type="text/html; charset=utf-8")
+    return HTMLResponse(f'<form><input type="text" name="tag" value="{tag}"></form>')
 '''
 
 [[samples]]
@@ -36,5 +32,5 @@ code = '''
 @app.get("/filter")
 async def filter_page(request: Request):
     tag = request.query_params.get("tag", "")
-    return Response(content=f'<form><input type="text" name="tag" value="{html.escape(tag)}"></form>', media_type="text/html; charset=utf-8")
+    return HTMLResponse(f'<form><input type="text" name="tag" value="{html.escape(tag)}"></form>')
 '''

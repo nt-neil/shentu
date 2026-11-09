@@ -39,21 +39,21 @@ def log():
 
 [[samples]]
 kind = "vulnerable"
-note = "an extension name from a Tornado handler's JSON body becomes a pip option"
+note = "a package name from a Tornado handler's JSON body can be read as an option"
 code = '''
-class ExtensionHandler(APIHandler):
+class PluginRemove(tornado.web.RequestHandler):
     async def post(self):
-        name = self.get_json_body()["extension"]
-        proc = subprocess.run([sys.executable, "-m", "pip", "uninstall", "-y", name], capture_output=True)
-        self.finish({"code": proc.returncode})
+        pkg = self.get_json_body()["package"]
+        done = subprocess.run(["pipx", "uninstall", pkg], capture_output=True)
+        self.finish({"status": done.returncode})
 '''
 
 [[samples]]
 kind = "safe"
 code = '''
-class ExtensionHandler(APIHandler):
+class PluginRemove(tornado.web.RequestHandler):
     async def post(self):
-        name = self.get_json_body()["extension"]
-        proc = subprocess.run([sys.executable, "-m", "pip", "uninstall", "-y", "--", name], capture_output=True)
-        self.finish({"code": proc.returncode})
+        pkg = self.get_json_body()["package"]
+        done = subprocess.run(["pipx", "uninstall", "--", pkg], capture_output=True)
+        self.finish({"status": done.returncode})
 '''

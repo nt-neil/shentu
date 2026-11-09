@@ -6,7 +6,7 @@ severity = "medium"
 tier = "info"
 title = "FastAPI or Starlette HTML response with a request value at the start of a URL attribute (href, src, action) without the escaping that context needs"
 sources = ["request.query_params", "request.path_params", "request.form(", "request.json(", "request.body(", "request.headers", "request.cookies", "request.url.path"]
-sinks = ["HTMLResponse(", "responses.HTMLResponse(", "fastapi.responses.HTMLResponse(", "starlette.responses.HTMLResponse(", "Response("]
+sinks = ["HTMLResponse(", "responses.HTMLResponse(", "fastapi.responses.HTMLResponse(", "starlette.responses.HTMLResponse("]
 sanitizers = ["urllib.parse.quote(", "quote(", "int("]
 fix = "HTML escaping does not stop a javascript: URL: build the link on the server, require http(s) and an allowed host, or put the value in the query string with urllib.parse.quote()."
 refs = ["CVE-2026-54386"]
@@ -15,11 +15,7 @@ refs = ["CVE-2026-54386"]
 sinks = ["HTMLResponse(", "responses.HTMLResponse(", "fastapi.responses.HTMLResponse(", "starlette.responses.HTMLResponse("]
 context = ["url"]
 
-# media_type="text/html" or "text/html; charset=...": the string is a prefix
-[[args]]
-sinks = ["Response("]
-when = ['media_type="text/html', "media_type='text/html"]
-context = ["url"]
+# Response(..., media_type="text/html") is python-xss-response's sink.
 
 [[samples]]
 kind = "vulnerable"
