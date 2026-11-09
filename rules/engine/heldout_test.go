@@ -398,7 +398,7 @@ func TestHeldOut(t *testing.T) {
 		{"QB29 argv table lookup", "python", "@app.post('/c')\ndef c():\n    return subprocess.check_output(TOOLS.get(request.form['t'], ['true']))\n", false, ""},
 		{"QB30 format_html_join template", "python", "def v(request):\n    return HttpResponse(format_html_join('\\n', '<li>' + request.GET['c'] + '{}</li>', ((x,) for x in ITEMS)))\n", true, ""},
 		{"QB31 df.query request", "python", "@app.get('/q')\ndef q():\n    return df.query(request.args['q']).to_json()\n", true, ""},
-		{"QB32 redirect startswith slash only", "python", "class L(RequestHandler):\n    def get(self):\n        n = self.get_argument('n', '/')\n        if n.startswith('/'):\n            self.redirect(n)\n", true, "startswith('/') without a '//' check passes //evil.com; the engine accepts any separator-ended prefix as a check (asked of the engine)"},
+		{"QB32 redirect startswith slash only", "python", "class L(RequestHandler):\n    def get(self):\n        n = self.get_argument('n', '/')\n        if n.startswith('/'):\n            self.redirect(n)\n", true, ""},
 	}
 	pass := 0
 	for _, c := range cases {
