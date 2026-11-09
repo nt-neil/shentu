@@ -1,0 +1,33 @@
+id = "js-deserialization-node-serialize"
+lang = "js"
+class = "deserialization"
+cwe = "CWE-502"
+severity = "critical"
+title = "Function-reviving deserializer (node-serialize, serialize-to-js, funcster) on client data"
+frameworks = ["express"]
+sources = ["req.cookies", "req.body", "req.query", "Buffer.from("]
+sinks = ["serialize.unserialize(", "unserialize(", "deserialize("]
+sanitizers = []
+fix = "Use JSON.parse on client data and validate the shape; never use a deserializer that can recreate functions."
+refs = ["CVE-2017-5941"]
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+app.get("/", (req, res) => {
+  const prefs = serialize.unserialize(Buffer.from(req.cookies.prefs || "e30=", "base64").toString());
+  res.render("home", { theme: prefs.theme });
+});
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+app.get("/", (req, res) => {
+  let prefs = {};
+  try {
+    prefs = JSON.parse(Buffer.from(req.cookies.prefs || "e30=", "base64").toString());
+  } catch {}
+  res.render("home", { theme: typeof prefs.theme === "string" ? prefs.theme : "light" });
+});
+'''

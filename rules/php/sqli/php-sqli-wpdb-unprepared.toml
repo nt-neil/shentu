@@ -1,0 +1,51 @@
+id = "php-sqli-wpdb-unprepared"
+lang = "php"
+class = "sqli"
+cwe = "CWE-89"
+severity = "high"
+title = "WordPress $wpdb query built from request input without $wpdb->prepare"
+frameworks = ["wordpress"]
+sources = ["$_GET", "$_POST", "$_REQUEST", "get_query_var", "->get_param("]
+sinks = ["$wpdb->query", "$wpdb->get_results", "$wpdb->get_row", "$wpdb->get_var", "$wpdb->get_col"]
+sanitizers = ["$wpdb->prepare", "absint", "intval"]
+fix = "Pass every value through $wpdb->prepare() placeholders (%d, %s); sanitize_text_field() and esc_sql() alone do not make a value safe in SQL."
+refs = ["CVE-2026-10207", "CVE-2026-5486"]
+
+[[samples]]
+kind = "vulnerable"
+note = "sanitize_text_field strips tags, not quotes"
+code = '''
+<?php
+$uid = sanitize_text_field($_GET['id']);
+$row = $wpdb->get_row("SELECT * FROM {$wpdb->prefix}answers WHERE user_id = $uid");
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+add_action('wp_ajax_find_items', function () {
+    global $wpdb;
+    $q = $_POST['search'];
+    $items = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}items WHERE title LIKE '%$q%'");
+    wp_send_json($items);
+});
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+$row = $wpdb->get_row($wpdb->prepare(
+    "SELECT * FROM {$wpdb->prefix}answers WHERE user_id = %d",
+    $_GET['id']
+));
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+$like = '%' . $wpdb->esc_like($_POST['search']) . '%';
+$items = $wpdb->get_results($wpdb->prepare("SELECT * FROM {$wpdb->prefix}items WHERE title LIKE %s", $like));
+'''

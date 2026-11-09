@@ -1,0 +1,41 @@
+id = "js-path-traversal-archive-extract"
+lang = "js"
+class = "path-traversal"
+cwe = "CWE-22"
+severity = "high"
+title = "Archive entry names used as output paths without containment check (zip slip)"
+frameworks = ["express"]
+sources = ["req.file", "req.files", "entry.entryName", "entry.path", "header.name"]
+sinks = ["fs.writeFile(", "fs.createWriteStream(", "fs.writeFileSync(", ".extractAllTo(", ".extractEntryTo("]
+sanitizers = ["startsWith(", "path.resolve("]
+fix = "Resolve each entry against the destination and skip it unless the result starts with the destination plus path.sep; reject absolute names and links."
+refs = ["CVE-2018-1002204", "CVE-2026-113664"]
+
+[[samples]]
+kind = "vulnerable"
+note = "a literal '../' substring test misses names like './..' and absolute paths"
+code = '''
+app.post("/import", upload.single("bundle"), (req, res) => {
+  const zip = new AdmZip(req.file.path);
+  for (const entry of zip.getEntries()) {
+    if (entry.entryName.includes("../")) continue;
+    fs.writeFileSync(path.join("/srv/app/import", entry.entryName), entry.getData());
+  }
+  res.sendStatus(204);
+});
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+const DEST = path.resolve("/srv/app/import") + path.sep;
+app.post("/import", upload.single("bundle"), (req, res) => {
+  const zip = new AdmZip(req.file.path);
+  for (const entry of zip.getEntries()) {
+    const out = path.resolve(DEST, entry.entryName);
+    if (!out.startsWith(DEST) || entry.isDirectory) continue;
+    fs.writeFileSync(out, entry.getData());
+  }
+  res.sendStatus(204);
+});
+'''

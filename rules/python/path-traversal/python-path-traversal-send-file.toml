@@ -1,0 +1,50 @@
+id = "python-path-traversal-send-file"
+lang = "python"
+class = "path-traversal"
+cwe = "CWE-22"
+severity = "high"
+title = "Request value joined into a file path that is opened or sent"
+frameworks = ["flask", "django"]
+sources = ["request.args", "request.form", "request.GET", "request.POST", "request.view_args"]
+sinks = ["send_file(", "open(", "FileResponse(", "os.path.join(", "Path("]
+sanitizers = ["send_from_directory(", "safe_join(", "secure_filename(", "os.path.realpath(", ".resolve("]
+fix = "Use flask.send_from_directory or werkzeug.utils.safe_join (django.utils._os.safe_join); otherwise resolve the path and check it stays under the base directory."
+refs = ["CVE-2026-116690"]
+
+[[samples]]
+kind = "vulnerable"
+note = "os.path.join discards the base when the second part is absolute"
+code = '''
+@app.get("/download")
+def download():
+    name = request.args["name"]
+    return send_file(os.path.join("/srv/app/exports", name))
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+def attachment(request):
+    path = "/srv/media/" + request.GET["f"]
+    return FileResponse(open(path, "rb"))
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+@app.get("/download")
+def download():
+    return send_from_directory("/srv/app/exports", request.args["name"])
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+BASE = Path("/srv/media").resolve()
+
+def attachment(request):
+    path = (BASE / request.GET["f"]).resolve()
+    if not path.is_relative_to(BASE):
+        raise Http404
+    return FileResponse(path.open("rb"))
+'''

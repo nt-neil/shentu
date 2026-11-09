@@ -1,0 +1,46 @@
+id = "python-path-traversal-archive-extract"
+lang = "python"
+class = "path-traversal"
+cwe = "CWE-22"
+severity = "high"
+title = "Uploaded or downloaded archive extracted without checking member paths"
+frameworks = ["flask", "django"]
+sources = ["request.files", "request.FILES", "urlopen(", "requests.get("]
+sinks = [".extractall(", ".extract("]
+sanitizers = ["filter=\"data\"", "os.path.realpath(", ".resolve("]
+fix = "On Python 3.12+ call extractall(..., filter='data'); otherwise check every member's resolved path stays inside the target directory and reject links."
+refs = ["CVE-2007-4559", "CVE-2026-14966"]
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+@app.post("/import")
+def import_theme():
+    up = request.files["theme"]
+    with tarfile.open(fileobj=up.stream) as tf:
+        tf.extractall("/srv/app/themes")
+    return "imported"
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+@app.post("/import")
+def import_theme():
+    up = request.files["theme"]
+    with tarfile.open(fileobj=up.stream) as tf:
+        tf.extractall("/srv/app/themes", filter="data")
+    return "imported"
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+def unpack(request):
+    dest = Path("/srv/app/plugins").resolve()
+    with zipfile.ZipFile(request.FILES["pkg"]) as zf:
+        for name in zf.namelist():
+            if not (dest / name).resolve().is_relative_to(dest):
+                raise SuspiciousOperation(name)
+        zf.extractall(dest)
+'''

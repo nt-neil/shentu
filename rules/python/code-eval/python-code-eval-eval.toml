@@ -1,0 +1,40 @@
+id = "python-code-eval-eval"
+lang = "python"
+class = "code-eval"
+cwe = "CWE-95"
+severity = "critical"
+title = "eval, exec or an eval-based parser on request input"
+frameworks = ["flask", "django"]
+sources = ["request.args", "request.form", "request.json", "request.GET", "request.POST", "request.data"]
+sinks = ["eval(", "exec(", "compile(", "parse_expr(", "sympify("]
+sanitizers = ["ast.literal_eval(", "int(", "float("]
+fix = "Parse data instead of evaluating it: json.loads or ast.literal_eval for literals, a small expression parser for formulas; SymPy parse_expr and sympify call eval internally."
+refs = ["CVE-2026-55585"]
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+@app.post("/calc")
+def calc():
+    expr = request.json["expr"]
+    return {"result": eval(expr, {"__builtins__": {}})}
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+@app.post("/simplify")
+def simplify_expr():
+    return {"result": str(parse_expr(request.json["expr"]).simplify())}
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+@app.post("/filter")
+def filter_items():
+    ids = ast.literal_eval(request.form["ids"])
+    if not all(isinstance(i, int) for i in ids):
+        abort(400)
+    return {"items": load(ids)}
+'''

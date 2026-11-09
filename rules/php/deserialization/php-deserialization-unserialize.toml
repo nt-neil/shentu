@@ -1,0 +1,41 @@
+id = "php-deserialization-unserialize"
+lang = "php"
+class = "deserialization"
+cwe = "CWE-502"
+severity = "critical"
+title = "unserialize() on data the client can send or tamper with"
+frameworks = ["laravel"]
+sources = ["$_GET", "$_POST", "$_COOKIE", "$_REQUEST", "$request->cookie(", "$request->input(", "base64_decode("]
+sinks = ["unserialize("]
+sanitizers = []
+fix = "Store and exchange plain data with json_encode/json_decode; if unserialize is unavoidable pass ['allowed_classes' => false] and verify an HMAC first."
+refs = ["CVE-2018-15133", "CVE-2026-10721"]
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+$cart = unserialize(base64_decode($_COOKIE['cart']));
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+$state = unserialize($request->input('widget_state'));
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+$cart = json_decode($_COOKIE['cart'] ?? '[]', true, 8, JSON_THROW_ON_ERROR);
+'''
+
+[[samples]]
+kind = "safe"
+note = "no objects can be created"
+code = '''
+<?php
+$cart = unserialize(base64_decode($_COOKIE['cart']), ['allowed_classes' => false]);
+'''

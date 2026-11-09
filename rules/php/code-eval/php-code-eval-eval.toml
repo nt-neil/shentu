@@ -1,0 +1,38 @@
+id = "php-code-eval-eval"
+lang = "php"
+class = "code-eval"
+cwe = "CWE-94"
+severity = "critical"
+title = "eval, assert or create_function on request data"
+sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "php://input", "$request->input("]
+sinks = ["eval(", "assert(", "create_function(", "preg_replace_callback("]
+sanitizers = []
+fix = "Remove eval: parse the input as data (json_decode, intval, an allowlist) and act on it with ordinary code; there is no safe way to escape code for eval."
+refs = ["CVE-2017-9841", "CVE-2026-33479"]
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+eval('?>' . file_get_contents('php://input'));
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "building an array literal for eval from request values"
+code = '''
+<?php
+foreach ($_REQUEST['sections'] as $name => $ids) {
+    eval('$order["' . $name . '"] = [' . $ids . '];');
+}
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+$order = [];
+foreach ((array) ($_REQUEST['sections'] ?? []) as $name => $ids) {
+    $order[(string) $name] = array_map('intval', explode(',', (string) $ids));
+}
+'''

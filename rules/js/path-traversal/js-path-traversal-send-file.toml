@@ -1,0 +1,48 @@
+id = "js-path-traversal-send-file"
+lang = "js"
+class = "path-traversal"
+cwe = "CWE-22"
+severity = "high"
+title = "Request value joined into a path that is read, written or sent"
+frameworks = ["express"]
+sources = ["req.query", "req.params", "req.body"]
+sinks = ["res.sendFile(", "res.download(", "fs.readFile(", "fs.createReadStream(", "fs.writeFile(", "fs.unlink(", "readFileSync("]
+sanitizers = ["path.basename(", "root:", "startsWith("]
+fix = "Use res.sendFile(name, { root }) or resolve the path and require it to start with the base directory plus path.sep before touching the file."
+refs = ["CVE-2014-6394"]
+
+[[samples]]
+kind = "vulnerable"
+note = "path.join normalizes ../ instead of rejecting it"
+code = '''
+app.get("/files/:name", (req, res) => {
+  res.sendFile(path.join(__dirname, "uploads", req.params.name));
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+app.get("/log", (req, res) => {
+  fs.createReadStream("/var/app/logs/" + req.query.file).pipe(res);
+});
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+app.get("/files/:name", (req, res) => {
+  res.sendFile(req.params.name, { root: path.join(__dirname, "uploads"), dotfiles: "deny" });
+});
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+const LOGS = path.resolve("/var/app/logs") + path.sep;
+app.get("/log", (req, res) => {
+  const p = path.resolve(LOGS, String(req.query.file));
+  if (!p.startsWith(LOGS)) return res.sendStatus(400);
+  fs.createReadStream(p).pipe(res);
+});
+'''

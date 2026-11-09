@@ -1,0 +1,45 @@
+id = "php-sqli-orderby-identifier"
+lang = "php"
+class = "sqli"
+cwe = "CWE-89"
+severity = "high"
+title = "Sort column or direction taken from the request and placed into ORDER BY"
+frameworks = ["laravel", "wordpress"]
+sources = ["$_GET", "$_POST", "$_REQUEST", "$request->input(", "$request->get(", "request("]
+sinks = ["orderByRaw", "DB::raw", "->orderBy(", "ORDER BY"]
+sanitizers = ["in_array", "sanitize_sql_orderby", "Rule::in"]
+fix = "Identifiers cannot be bound as parameters: map the requested sort key to a fixed allowlist of column names and force the direction to ASC or DESC."
+refs = ["CVE-2026-13357", "CVE-2026-4668"]
+
+[[samples]]
+kind = "vulnerable"
+note = "orderByRaw puts the string into SQL unchanged"
+code = '''
+<?php
+public function index(Request $request)
+{
+    $sort = $request->input('sort', 'created_at');
+    return Payment::query()->orderByRaw($sort . ' ' . $request->input('dir', 'desc'))->paginate();
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+$orderby = $_GET['orderby'];
+$rows = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}feeds ORDER BY $orderby");
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+$allowed = ['created_at', 'amount', 'status'];
+$sort = $request->input('sort');
+if (!in_array($sort, $allowed, true)) {
+    $sort = 'created_at';
+}
+$dir = $request->input('dir') === 'asc' ? 'asc' : 'desc';
+return Payment::query()->orderBy($sort, $dir)->paginate();
+'''

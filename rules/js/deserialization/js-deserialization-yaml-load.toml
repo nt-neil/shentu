@@ -1,0 +1,31 @@
+id = "js-deserialization-yaml-load"
+lang = "js"
+class = "deserialization"
+cwe = "CWE-502"
+severity = "high"
+title = "js-yaml 3.x load() (or a full schema) on untrusted YAML"
+frameworks = ["express"]
+sources = ["req.body", "req.file", "req.files"]
+sinks = ["yaml.load(", "yaml.loadAll(", "DEFAULT_FULL_SCHEMA"]
+sanitizers = ["yaml.safeLoad(", "FAILSAFE_SCHEMA", "JSON_SCHEMA"]
+fix = "Upgrade to js-yaml 4 (load is safe by default) or call safeLoad on 3.x; never pass DEFAULT_FULL_SCHEMA for untrusted input."
+refs = ["CVE-2013-4660"]
+
+[[samples]]
+kind = "vulnerable"
+note = "js-yaml 3.x: !!js/function tags become callable code"
+code = '''
+app.post("/pipeline", express.text(), (req, res) => {
+  const spec = yaml.load(req.body, { schema: yaml.DEFAULT_FULL_SCHEMA });
+  res.json({ steps: spec.steps.length });
+});
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+app.post("/pipeline", express.text(), (req, res) => {
+  const spec = yaml.safeLoad(req.body);
+  res.json({ steps: spec.steps.length });
+});
+'''

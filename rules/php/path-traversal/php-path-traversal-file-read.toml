@@ -1,0 +1,50 @@
+id = "php-path-traversal-file-read"
+lang = "php"
+class = "path-traversal"
+cwe = "CWE-22"
+severity = "high"
+title = "File name from the request used to read or send a file"
+frameworks = ["wordpress"]
+sources = ["$_GET", "$_POST", "$_REQUEST", "$request->input("]
+sinks = ["file_get_contents(", "readfile(", "fopen(", "file(", "fpassthru(", "highlight_file("]
+sanitizers = ["basename(", "realpath("]
+fix = "Resolve the path with realpath() and refuse it unless it starts with the intended base directory plus a separator, or look files up by an id instead of a path."
+refs = ["CVE-2014-5368", "CVE-2026-74907"]
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+$file = $_GET['file'];
+header('Content-Type: application/octet-stream');
+readfile(WP_CONTENT_DIR . '/uploads/exports/' . $file);
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "a prefix check without a trailing separator lets /var/www/assets-private through"
+code = '''
+<?php
+$path = realpath(__DIR__ . '/assets/' . $_GET['p']);
+if (strpos($path, __DIR__ . '/assets') === 0) {
+    echo file_get_contents($path);
+}
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+$base = realpath(__DIR__ . '/assets') . DIRECTORY_SEPARATOR;
+$path = realpath($base . $_GET['p']);
+if ($path !== false && strncmp($path, $base, strlen($base)) === 0) {
+    echo file_get_contents($path);
+}
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+readfile(WP_CONTENT_DIR . '/uploads/exports/' . basename($_GET['file']));
+'''
