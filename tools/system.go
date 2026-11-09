@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -168,7 +169,7 @@ func normIP(ip net.IP) string {
 
 var processesTool = Tool{
 	Name:        "processes",
-	Description: "Running processes. By default only suspicious ones: executables in /tmp, /dev/shm or /var/tmp, deleted executables, and shells started by web server users.",
+	Description: "Running processes. By default only suspicious ones: executables in /tmp, /dev/shm or /var/tmp, deleted executables, shells started by web server users, and cryptominers (pool URLs, miner options or a known miner binary).",
 	Params: schema(`{"type":"object","properties":{
 		"all":{"type":"boolean","description":"list every process, not only suspicious ones"}}}`),
 	Run: func(ctx context.Context, env *Env, args json.RawMessage) (any, error) {
@@ -254,6 +255,9 @@ func Processes(all bool) []Proc {
 				p.Flags = append(p.Flags, "runs_from_"+strings.Trim(dir, "/"))
 			}
 		}
+		if minerSigns(p.Exe, p.Cmdline) {
+			p.Flags = append(p.Flags, "miner")
+		}
 		if webUsers[p.User] && shells[filepath.Base(strings.TrimSuffix(p.Exe, " (deleted)"))] {
 			p.Flags = append(p.Flags, "shell_as_web_user")
 		}
@@ -262,6 +266,24 @@ func Processes(all bool) []Proc {
 		}
 	}
 	return out
+}
+
+// Cryptominer signs: a mining pool URL or miner-only options in the command line, or a known miner binary.
+var (
+	minerArgs  = regexp.MustCompile(`(?i)\bstratum\+(tcp|ssl|tls)://|--donate-level\b|--randomx-|--cpu-max-threads-hint\b|(^|\s)-a\s+rx/0(\s|$)`)
+	minerNames = map[string]bool{"xmrig": true, "xmr-stak": true, "xmr-stak-rx": true, "cpuminer": true, "minerd": true,
+		"nbminer": true, "t-rex": true, "lolminer": true, "phoenixminer": true, "srbminer-multi": true}
+	// Tools that may show a miner's options as text, e.g. while someone searches for one.
+	minerViewers = map[string]bool{"grep": true, "egrep": true, "rg": true, "ag": true, "less": true, "cat": true, "vi": true,
+		"vim": true, "nano": true, "journalctl": true, "tail": true}
+)
+
+func minerSigns(exe, cmdline string) bool {
+	base := strings.ToLower(filepath.Base(strings.TrimSuffix(exe, " (deleted)")))
+	if minerViewers[base] {
+		return false
+	}
+	return minerNames[base] || minerArgs.MatchString(cmdline)
 }
 
 func userNames() map[string]string {
