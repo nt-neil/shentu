@@ -46,3 +46,14 @@ add_shortcode('team_grid', function ($atts) {
     return ob_get_clean();
 });
 '''
+
+[[samples]]
+kind = "safe"
+note = "get_query_template() takes a template type and candidate file names that locate_template() looks up inside the theme; it is not a sink of this rule"
+code = '''
+<?php
+function my_theme_event_template() {
+    $kind = get_query_var('event_kind');
+    return get_query_template('event', ["event-{$kind}.php", 'event.php']);
+}
+'''
