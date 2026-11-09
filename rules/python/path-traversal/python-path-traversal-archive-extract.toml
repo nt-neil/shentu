@@ -7,9 +7,13 @@ title = "Uploaded or downloaded archive extracted without checking member paths"
 frameworks = ["flask", "django"]
 sources = ["request.files", "request.FILES", "urlopen(", "requests.get("]
 sinks = [".extractall(", ".extract("]
-sanitizers = ["filter=\"data\"", "os.path.realpath(", ".resolve("]
+sanitizers = [".is_relative_to(", ".startswith("]
 fix = "On Python 3.12+ call extractall(..., filter='data'); otherwise check every member's resolved path stays inside the target directory and reject links."
 refs = ["CVE-2007-4559", "CVE-2026-14966"]
+
+[[args]]
+arg = 0   # the archive itself is the input
+unless = ['filter="data"']
 
 [[samples]]
 kind = "vulnerable"

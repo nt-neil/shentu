@@ -6,10 +6,13 @@ severity = "critical"
 title = "User-controlled text compiled as a Jinja2 template (server-side template injection)"
 frameworks = ["flask"]
 sources = ["request.args", "request.form", "request.json", "request.values"]
-sinks = ["render_template_string(", "Template(", "from_string("]
+sinks = ["render_template_string(", "Template(", ".from_string("]
 sanitizers = ["SandboxedEnvironment"]
 fix = "Pass user text as a variable to a fixed template (render_template('page.html', msg=text)); if users must write templates, render them in jinja2.sandbox.SandboxedEnvironment."
 refs = ["CVE-2026-104851", "CVE-2024-34359"]
+
+[[args]]
+arg = 1   # the template source; values passed to render are data
 
 [[samples]]
 kind = "vulnerable"

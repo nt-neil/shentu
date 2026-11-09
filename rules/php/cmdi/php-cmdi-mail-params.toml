@@ -11,6 +11,9 @@ sanitizers = []
 fix = "Leave mail()'s fifth argument out (set sendmail_from in php.ini or with ini_set) or pass only a fixed value; escapeshellarg does not help here because mail() escapes the argument again."
 refs = ["CVE-2016-10033"]
 
+[[args]]
+arg = 5   # the additional_params passed to sendmail
+
 [[samples]]
 kind = "vulnerable"
 code = '''

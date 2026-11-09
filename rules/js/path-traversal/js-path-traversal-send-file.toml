@@ -7,9 +7,18 @@ title = "Request value joined into a path that is read, written or sent"
 frameworks = ["express"]
 sources = ["req.query", "req.params", "req.body"]
 sinks = ["res.sendFile(", "res.download(", "fs.readFile(", "fs.createReadStream(", "fs.writeFile(", "fs.unlink(", "readFileSync("]
-sanitizers = ["path.basename(", "root:", "startsWith("]
+sanitizers = ["path.basename(", ".startsWith("]
 fix = "Use res.sendFile(name, { root }) or resolve the path and require it to start with the base directory plus path.sep before touching the file."
 refs = ["CVE-2014-6394"]
+
+[[args]]
+sinks = ["res.sendFile(", "res.download("]
+arg = 1
+unless = ["root:"]   # with a root, Express rejects paths that leave it
+
+[[args]]
+sinks = ["fs.readFile(", "fs.createReadStream(", "fs.writeFile(", "fs.unlink(", "readFileSync("]
+arg = 1
 
 [[samples]]
 kind = "vulnerable"

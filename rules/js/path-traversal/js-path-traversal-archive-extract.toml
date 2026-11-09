@@ -7,9 +7,17 @@ title = "Archive entry names used as output paths without containment check (zip
 frameworks = ["express"]
 sources = ["req.file", "req.files", "entry.entryName", "entry.path", "header.name"]
 sinks = ["fs.writeFile(", "fs.createWriteStream(", "fs.writeFileSync(", ".extractAllTo(", ".extractEntryTo("]
-sanitizers = ["startsWith(", "path.resolve("]
+sanitizers = [".startsWith("]
 fix = "Resolve each entry against the destination and skip it unless the result starts with the destination plus path.sep; reject absolute names and links."
 refs = ["CVE-2018-1002204", "CVE-2026-113664"]
+
+[[args]]
+sinks = ["fs.writeFile(", "fs.createWriteStream(", "fs.writeFileSync("]
+arg = 1
+
+[[args]]
+sinks = [".extractAllTo(", ".extractEntryTo("]
+arg = 0   # the archive itself is the input
 
 [[samples]]
 kind = "vulnerable"

@@ -6,10 +6,18 @@ severity = "high"
 title = "js-yaml 3.x load() (or a full schema) on untrusted YAML"
 frameworks = ["express"]
 sources = ["req.body", "req.file", "req.files"]
-sinks = ["yaml.load(", "yaml.loadAll(", "DEFAULT_FULL_SCHEMA"]
-sanitizers = ["yaml.safeLoad(", "FAILSAFE_SCHEMA", "JSON_SCHEMA"]
+sinks = ["yaml.load(", "yaml.loadAll(", "yaml.safeLoad(", "yaml.safeLoadAll("]
+sanitizers = []
 fix = "Upgrade to js-yaml 4 (load is safe by default) or call safeLoad on 3.x; never pass DEFAULT_FULL_SCHEMA for untrusted input."
 refs = ["CVE-2013-4660"]
+
+[[args]]
+sinks = ["yaml.load(", "yaml.loadAll("]
+unless = ["schema: yaml.FAILSAFE_SCHEMA", "schema: yaml.JSON_SCHEMA", "schema: FAILSAFE_SCHEMA", "schema: JSON_SCHEMA"]   # schemas without the js/* types
+
+[[args]]
+sinks = ["yaml.safeLoad(", "yaml.safeLoadAll("]
+when = ["DEFAULT_FULL_SCHEMA"]   # safeLoad given the full schema is load
 
 [[samples]]
 kind = "vulnerable"

@@ -7,7 +7,7 @@ title = "Request value joined into a file path that is opened or sent"
 frameworks = ["flask", "django"]
 sources = ["request.args", "request.form", "request.GET", "request.POST", "request.view_args"]
 sinks = ["send_file(", "open(", "FileResponse(", "os.path.join(", "Path("]
-sanitizers = ["send_from_directory(", "safe_join(", "secure_filename(", "os.path.realpath(", ".resolve("]
+sanitizers = ["send_from_directory(", "safe_join(", "secure_filename(", ".is_relative_to(", ".startswith("]
 fix = "Use flask.send_from_directory or werkzeug.utils.safe_join (django.utils._os.safe_join); otherwise resolve the path and check it stays under the base directory."
 refs = ["CVE-2022-31507", "CVE-2022-31506"]
 

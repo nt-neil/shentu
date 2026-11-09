@@ -8,9 +8,8 @@ import (
 	"testing"
 )
 
-// The engine does not exist yet, so these tests check format only: every rule
-// parses, is complete, is unique, and carries the samples the engine will be
-// tested against.
+// These tests check the format: every rule parses, is complete, is unique, and
+// carries the samples that rules/engine is tested against (engine/samples_test.go).
 
 var (
 	langs   = map[string]bool{"php": true, "python": true, "js": true}
@@ -99,7 +98,55 @@ func TestRulesValid(t *testing.T) {
 			}
 			refs[ref] = true
 		}
+		checkText(t, r)
+		checkArgs(t, r)
 		checkSamples(t, r)
+	}
+}
+
+// checkText: every text entry is one of the rule's sources or sinks.
+func checkText(t *testing.T, r Rule) {
+	for _, s := range r.Text {
+		if strings.TrimSpace(s) == "" {
+			t.Errorf("%s: blank entry in text", r.File)
+		} else if !slices.Contains(r.Sources, s) && !slices.Contains(r.Sinks, s) {
+			t.Errorf("%s: text %q is not one of the sources or sinks", r.File, s)
+		}
+	}
+}
+
+// checkArgs: each [[args]] entry says something, names only the rule's own sinks,
+// and no sink gets two entries; arg 0 (the receiver) needs a method sink.
+func checkArgs(t *testing.T, r Rule) {
+	covered := map[string]bool{}
+	for i, a := range r.Args {
+		if a.Arg == nil && len(a.When) == 0 && len(a.Unless) == 0 && !a.Whole {
+			t.Errorf("%s: args %d sets none of arg, when, unless, whole", r.File, i)
+		}
+		if a.Arg != nil && (*a.Arg < 0 || *a.Arg > 10) {
+			t.Errorf("%s: args %d: arg %d must be 0 (receiver) to 10", r.File, i, *a.Arg)
+		}
+		sinks := a.Sinks
+		if len(sinks) == 0 {
+			sinks = r.Sinks
+		}
+		for _, s := range sinks {
+			if !slices.Contains(r.Sinks, s) {
+				t.Errorf("%s: args %d: %q is not one of the sinks", r.File, i, s)
+			}
+			if covered[s] {
+				t.Errorf("%s: args %d: sink %q already has conditions", r.File, i, s)
+			}
+			covered[s] = true
+			if a.Arg != nil && *a.Arg == 0 && !strings.HasPrefix(s, ".") && !strings.HasPrefix(s, "->") {
+				t.Errorf("%s: args %d: arg 0 (the receiver) needs a method sink starting with . or ->, not %q", r.File, i, s)
+			}
+		}
+		for _, f := range append(append([]string{}, a.When...), a.Unless...) {
+			if strings.TrimSpace(f) == "" {
+				t.Errorf("%s: args %d: blank entry in when or unless", r.File, i)
+			}
+		}
 	}
 }
 
