@@ -148,6 +148,7 @@ func TestMinerSigns(t *testing.T) {
 		{"/usr/bin/sed", "sed -n /--donate-level/p notes", false},
 		{"/tmp/grep", "grep -o stratum+tcp://pool.example:3333", true},
 		{"/usr/bin/grep (deleted)", "grep --donate-level 1", true},
+		{"/tmp/xmrig (deleted)", "kworker", true},
 		{"/usr/local/bin/dataminer-report", "dataminer-report --daily", false},
 		{"/usr/bin/python3", "python3 manage.py runserver", false},
 		{"/usr/bin/ffmpeg", "ffmpeg -i in.mp4 -a rx/0.mp4", false},

@@ -281,11 +281,13 @@ var (
 )
 
 func minerSigns(exe, cmdline string) bool {
+	deleted := strings.HasSuffix(exe, " (deleted)")
+	exe = strings.TrimSuffix(exe, " (deleted)")
 	base := strings.ToLower(filepath.Base(exe))
 	if minerNames[base] {
 		return true
 	}
-	if dir := filepath.Dir(exe); minerViewers[base] && (dir == "/usr/bin" || dir == "/bin") {
+	if dir := filepath.Dir(exe); !deleted && minerViewers[base] && (dir == "/usr/bin" || dir == "/bin") {
 		return false
 	}
 	return minerArgs.MatchString(cmdline)
