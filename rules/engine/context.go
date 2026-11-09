@@ -363,8 +363,10 @@ const (
 	resKey = "\x00res:" // the variable holds what an unknown call returned (a structure it built)
 )
 
-// splitters return the input's own parts: their fields are still the input.
+// splitters return the input's own parts, and merges the elements of the arrays
+// they are given: their fields are still the input.
 var splitters = words("json_decode unserialize maybe_unserialize explode str_getcsv preg_split parse_url pathinfo " +
+	"shortcode_atts wp_array_slice_assoc array_merge array_replace array_merge_recursive array_replace_recursive " +
 	"wp_parse_args wp_parse_str parse_str wp_unslash stripslashes_deep compact func_get_args getallheaders " +
 	"filter_input_array str_split mb_str_split loads parse_qs urlparse split")
 
@@ -388,6 +390,12 @@ func (a *analysis) markAssign(st state, t []Token) {
 		rhs = rhs[:n-1]
 	}
 	if len(rhs) == 0 {
+		return
+	}
+	if a.fieldOfResult(st, rhs) {
+		e := st[name] // $m = $r['message']: the same as reading $r['message'] in place
+		e.taint, e.raw = false, false
+		st[name] = e
 		return
 	}
 	switch {
@@ -432,10 +440,10 @@ func (a *analysis) fieldOfResult(st state, op []Token) bool {
 	if len(op) < 3 || op[0].Kind != Var && op[0].Kind != Ident || !marked(st, resKey+op[0].Text) {
 		return false
 	}
-	switch {
-	case op[1].op("[") && op[2].Kind == Str && len(op[2].Parts) == 0:
+	switch { // exactly one field read, nothing joined to it or called on it
+	case len(op) == 4 && op[1].op("[") && op[2].Kind == Str && len(op[2].Parts) == 0 && op[3].op("]"):
 		return true
-	case memberOp(a.php, op[1]) && op[2].Kind == Ident:
+	case len(op) == 3 && memberOp(a.php, op[1]) && op[2].Kind == Ident:
 		return true
 	}
 	return false
