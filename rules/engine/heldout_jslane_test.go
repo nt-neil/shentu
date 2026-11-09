@@ -49,8 +49,7 @@ var heldOutJSLane = []struct {
 	{"location from query", "js-open-redirect-location-header", "app.get('/jump', (req, res) => {\n  res.set('Location', req.query.to);\n  res.sendStatus(302);\n});\n", true, ""},
 	{"location fixed", "js-open-redirect-location-header", "app.get('/jump', (req, res) => {\n  if (req.query.lang === 'fr') res.setHeader('Location', '/fr/');\n  res.end();\n});\n", false, ""},
 	{"host header koa", "js-open-redirect-host-header", "app.use(async (ctx, next) => {\n  if (ctx.protocol === 'http') return ctx.redirect(`https://${ctx.host}${ctx.url}`);\n  await next();\n});\n", true, ""},
-	{"strict slash check", "js-open-redirect-redirect", "app.get('/next', (req, res) => {\n  const u = String(req.query.u);\n  if (!u.startsWith('/') || u.startsWith('//') || u.startsWith('/\\\\')) return res.redirect('/');\n  res.redirect(u);\n});\n", true,
-		"a single-slash check is no redirect check (/\\t/evil.example becomes //evil.example); reported once p1-classes 21e50ae is in"},
+	{"strict slash check", "js-open-redirect-redirect", "app.get('/next', (req, res) => {\n  const u = String(req.query.u);\n  if (!u.startsWith('/') || u.startsWith('//') || u.startsWith('/\\\\')) return res.redirect('/');\n  res.redirect(u);\n});\n", true, ""},
 	// cases from the review of #26 (reviewjs_repro_test.go)
 	{"review H-V1 double-quoted req.get('host')", "js-ssrf-host-header", "app.get('/t', async (req, res) => {\n  const r = await fetch(req.protocol + \"://\" + req.get(\"host\") + \"/internal/x\");\n  res.send(await r.text());\n});\n", true, ""},
 	{"review H-V2 apostrophe shape (ternary + template)", "js-ssrf-host-header", "app.get('/f/*', async (req, res) => {\n  const u = await lookup(req.params[0]);\n  const proxyUrl = u.startsWith('/') ? `${req.protocol}://${req.get('host')}${u}` : u;\n  const r = await fetch(proxyUrl);\n  res.send(await r.text());\n});\n", true, ""},
