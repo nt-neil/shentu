@@ -1509,8 +1509,10 @@ func (a *analysis) hasSanitizerWord(w string) bool {
 // sanitizers used as a check (in_array, str_starts_with, .startsWith, .is_relative_to).
 func (a *analysis) checkKeys(st state, atom []Token) []keyRef {
 	n := len(atom)
-	// hash_equals($expected, $known) and hmac.compare_digest(a, b): an integrity
-	// check (an HMAC over the value) passes only for what the server signed.
+	// hash_equals(sign($v), $_POST['h']), hmac.compare_digest(...): an integrity
+	// check. What it validates is the value fed into a keyed MAC or signature on
+	// one side, never the other side as given (the attacker's), nor a value under
+	// an unkeyed hash (md5($v): the attacker computes that too).
 	if n > 2 && atom[n-1].op(")") && (a.php && atom[0].word("hash_equals") && atom[1].op("(") ||
 		a.py && n > 4 && atom[0].word("hmac") && atom[1].op(".") && atom[2].word("compare_digest") && atom[3].op("(")) {
 		open := 1
@@ -1518,7 +1520,14 @@ func (a *analysis) checkKeys(st state, atom []Token) []keyRef {
 			open = 3
 		}
 		if closeOf(atom, open) == n-1 {
-			return a.keysOf(inside(atom, open, n-1))
+			var keys []keyRef
+			for _, arg := range splitTop(inside(atom, open, n-1), isComma) {
+				keys = append(keys, a.macKeys(st, arg)...)
+			}
+			if len(keys) > 0 {
+				return keys
+			}
+			return nil
 		}
 	}
 	// PHP in_array($x, $allowed) and array_key_exists($x, $map).
@@ -1572,6 +1581,60 @@ func (a *analysis) checkKeys(st state, atom []Token) []keyRef {
 	}
 	return nil
 }
+
+// macKeys returns the values a keyed MAC or signature call validates: the
+// arguments of hash_hmac(algo, $v, $key) with a key that is not input, of
+// Python's hmac.new(key, v), or of a function of the code's own (a method that
+// signs with a secret). Anything else validates nothing.
+func (a *analysis) macKeys(st state, arg []Token) []keyRef {
+	n := len(arg)
+	if n < 3 || !arg[n-1].op(")") {
+		return nil
+	}
+	open := openOf(arg, n-1)
+	if open < 1 || arg[open-1].Kind != Ident {
+		return nil
+	}
+	name := arg[open-1].Text
+	args := splitTop(inside(arg, open, n-1), isComma)
+	switch {
+	case unkeyedHashes[strings.ToLower(name)]:
+		return nil
+	case a.php && strings.EqualFold(name, "hash_hmac"):
+		if len(args) < 3 || a.fromRequest(st, args[2]) {
+			return nil // no key, or a key the attacker chooses
+		}
+		return a.keysOf(args[1])
+	case a.py && name == "new" && open >= 3 && arg[open-3].word("hmac"):
+		if len(args) < 2 || a.fromRequest(st, args[0]) {
+			return nil
+		}
+		return a.keysOf(args[1])
+	case !a.php && !a.py:
+		return nil
+	}
+	var keys []keyRef
+	for _, x := range args {
+		keys = append(keys, a.keysOf(x)...)
+	}
+	return keys
+}
+
+// fromRequest reports whether t carries input, or names request data at all
+// (also while the rule's sources are off, in a summary run).
+func (a *analysis) fromRequest(st state, t []Token) bool {
+	if a.expr(st, t, false).taint {
+		return true
+	}
+	for _, tk := range t {
+		if (tk.Kind == Var || tk.Kind == Ident) && requestRoot(tk.Text) {
+			return true
+		}
+	}
+	return false
+}
+
+var unkeyedHashes = words("md5 sha1 crc32 hash md5_file sha1_file base64_encode hashlib sha256 sha512 md5sum strrev str_rot13 hexdigest digest")
 
 func (a *analysis) anySep(st state, args [][]Token) bool {
 	for _, arg := range args {
