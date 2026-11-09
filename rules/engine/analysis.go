@@ -636,10 +636,13 @@ func (a *analysis) sepEnd(st state, rhs []Token) bool {
 }
 
 // fixedStart reports whether a value begins with a part the client cannot
-// control and that cannot be empty or name a stream: a non-empty literal without
-// ":", a constant, both branches of a ternary that do, or a variable assigned
-// one. A call's result (basename($x), trim(' '), getenv()) is not a prefix: it
-// may be empty. Input behind a fixed prefix cannot choose a wrapper (phar://).
+// control and that names no stream: a non-empty literal without ":", a constant,
+// both branches of a ternary that do, a variable assigned one, a property or array
+// key the input never reached ($this->dir, $u['basedir']), or a call whose
+// arguments are all clean (dirname(__FILE__), get_template_directory()). A call
+// on input (basename($_GET['d'])) is no prefix. Input behind a fixed prefix
+// cannot choose a wrapper (phar://). A clean call that returns "" (trim(' '))
+// is a known miss.
 func (a *analysis) fixedStart(st state, t []Token) bool {
 	if !a.b.charge(len(t) + 1) {
 		return false
@@ -648,7 +651,22 @@ func (a *analysis) fixedStart(st state, t []Token) bool {
 	if a.php {
 		join = "."
 	}
-	first := splitTop(t, isOp(join))[0]
+	parts := splitTop(t, isOp(join))
+	// Literals at the start ('tpl' . '/' . $x, "ph$x") read as one text.
+	lit, k := "", 0
+	for ; k < len(parts) && len(parts[k]) == 1 && parts[k][0].Kind == Str; k++ {
+		tk := parts[k][0]
+		if len(tk.Parts) > 0 {
+			lit += tk.Text[:min(tk.Parts[0].Off, len(tk.Text))]
+			k++
+			break
+		}
+		lit += tk.Text
+	}
+	if k > 0 {
+		return notScheme(lit)
+	}
+	first := parts[0]
 	n := len(first)
 	if n > 2 && first[0].op("(") && closeOf(first, 0) == n-1 {
 		inner := first[1 : n-1]
@@ -661,12 +679,6 @@ func (a *analysis) fixedStart(st state, t []Token) bool {
 		return a.fixedStart(st, inner)
 	}
 	switch {
-	case n == 1 && first[0].Kind == Str:
-		text := first[0].Text
-		if len(first[0].Parts) > 0 {
-			text = text[:min(first[0].Parts[0].Off, len(text))]
-		}
-		return text != "" && !strings.Contains(text, ":")
 	case a.php && n == 1 && first[0].Kind == Ident && !a.kw[first[0].Text] && !isLiteral(first):
 		return true // a constant: WP_PLUGIN_DIR, __DIR__ (in PHP a bare name is no variable)
 	case a.php && n == 3 && first[0].Kind == Ident && first[1].op("::") && first[2].Kind == Ident:
@@ -676,6 +688,46 @@ func (a *analysis) fixedStart(st state, t []Token) bool {
 		if e, found := st.get(key); found {
 			return e.pre
 		}
+		// A property or key that was never assigned here; a plain variable may be "".
+		return n > 1 && !a.expr(st, first, false).taint
+	}
+	if n > 2 && first[n-1].op(")") && a.chainStart(first, n) == 0 {
+		if a.php && first[0].Kind == Ident && first[1].op("(") {
+			args := splitTop(inside(first, 1, n-1), isComma)
+			switch first[0].Text {
+			case "storage_path", "base_path", "public_path", "resource_path", "app_path", "database_path", "config_path":
+				return true // Laravel: the app's own folder, then the argument
+			case "sprintf":
+				if len(args) > 0 && len(args[0]) == 1 && args[0][0].Kind == Str && len(args[0][0].Parts) == 0 {
+					head, _, _ := strings.Cut(args[0][0].Text, "%")
+					return notScheme(head)
+				}
+			}
+			if n == closeOf(first, 1)+1 {
+				// The arguments, not the result: basename($_GET['d']) is a clean name but may be "".
+				for _, arg := range args {
+					if a.argVal(st, arg, false).taint {
+						return false
+					}
+				}
+				return true
+			}
+		}
+		return !a.expr(st, first, false).taint
+	}
+	return false
+}
+
+// notScheme reports whether text, put before any input, keeps the result from
+// being a URL: it holds a character a scheme cannot ("/", "_", " ") before any
+// ":". "phar" or "ph" can be completed into "phar://" by the input; "tpl/" cannot.
+func notScheme(text string) bool {
+	for i := 0; i < len(text); i++ {
+		c := text[i]
+		if isAlnum(c) || c == '+' || c == '-' || c == '.' {
+			continue
+		}
+		return c != ':'
 	}
 	return false
 }

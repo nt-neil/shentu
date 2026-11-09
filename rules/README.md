@@ -154,7 +154,7 @@ it are unchanged: a sink is reported when any argument is tainted.
 | `when` | the call is a sink only if one of these appears among its arguments |
 | `unless` | the call is not a sink if one of these appears among its arguments |
 | `whole` | the argument must be the input itself (or spread from it), not an object or array literal holding a value from it |
-| `leading` | the input must be at the start of the argument: a fixed prefix makes the call safe, as `WP_PLUGIN_DIR . "/$name"` cannot choose a `phar://` stream. A fixed prefix is a non-empty literal without `:`, a constant, a ternary whose branches both are, or a variable assigned one; a call's result (`basename($x)`, `trim(' ')`, `getenv()`) may be empty and never is |
+| `leading` | the input must be at the start of the argument: a fixed prefix makes the call safe, as `WP_PLUGIN_DIR . "/$name"` cannot choose a `phar://` stream. A fixed prefix is a literal (or a run of literals) holding a character no URL scheme has (`/`, `_`, a space) before any `:`, so `'phar' . $x` and `'ph' . 'ar' . $x` are none; a constant; a ternary whose branches both are; a variable assigned one; a property or array key the input never reached (`$this->dir`, `$u['basedir']`); a call whose arguments are all clean (`dirname(__FILE__)`, `get_template_directory()`); `sprintf` whose format starts with such a literal; or a Laravel path helper (`storage_path(...)`). A call on input (`basename($_GET['d'])`) is not; a clean call that returns `""` (`trim(' ')`, an unset `getenv()`) is a known miss |
 
 `when` and `unless` entries are code fragments matched anywhere in the call's
 arguments, with two refinements:
