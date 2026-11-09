@@ -130,16 +130,17 @@ func (s *scanner) jsxOp(o string) {
 	}
 	push := func(state byte) {
 		if n >= maxNest*4 {
-			// Too deep to follow: stop for this file rather than pair a later
-			// closer with a push that never happened.
+			// Too deep to follow: stop JSX handling for this file (the rest
+			// is lexed as plain JavaScript) and report it as not fully analysed.
 			s.jsxLost, s.jsxStack = true, nil
+			s.b.tooDeep()
 			return
 		}
 		s.jsxStack = append(s.jsxStack, state)
 	}
 	switch {
 	case o == "<" && s.pos < len(s.src) && (isIdentStart(s.src[s.pos]) || s.src[s.pos] == '>') &&
-		(top == 'c' || !jsValue(prev)) && !(s.ts && s.typeParams()):
+		(top == 'c' || !jsValue(prev)):
 		push('t') // an element starts where no value ends
 	case o == ";" && top == 't':
 		s.jsxStack = nil // no opening tag holds a ";": the state was wrong
@@ -165,34 +166,6 @@ func (s *scanner) jsxOp(o string) {
 	}
 }
 
-// typeParams reports whether the source after a "<" reads "T>(" or "T, U>(":
-// type parameters of a generic signature in TypeScript, not an element.
-func (s *scanner) typeParams() bool {
-	i := s.pos
-	for {
-		for i < len(s.src) && (isIdentChar(s.src[i]) || s.src[i] == '$') {
-			i++
-		}
-		for i < len(s.src) && (s.src[i] == ' ' || s.src[i] == '\t') {
-			i++
-		}
-		if i < len(s.src) && s.src[i] == ',' {
-			i++
-			for i < len(s.src) && (s.src[i] == ' ' || s.src[i] == '\t') {
-				i++
-			}
-			continue
-		}
-		break
-	}
-	if i >= len(s.src) || s.src[i] != '>' {
-		return false
-	}
-	for i++; i < len(s.src) && (s.src[i] == ' ' || s.src[i] == '\t'); i++ {
-	}
-	return i < len(s.src) && s.src[i] == '('
-}
-
 // jsValue reports whether t ends an operand, so a "<" after it compares.
 func jsValue(t Token) bool {
 	switch t.Kind {
@@ -215,15 +188,7 @@ func (s *scanner) jsxClose() bool {
 	if !s.jsx || n == 0 || !s.toks[n-1].op("<") || s.pos == 0 || s.src[s.pos-1] != '<' {
 		return false
 	}
-	if s.jsxLost {
-		// Not followed: only the exact shape "</name>" or "</>" closes.
-		i := s.pos + 1
-		for i < len(s.src) && (isIdentChar(s.src[i]) || s.src[i] == '.' || s.src[i] == '-' || s.src[i] == ':') {
-			i++
-		}
-		return i < len(s.src) && s.src[i] == '>'
-	}
-	return s.jsxTop() == 'c'
+	return !s.jsxLost && s.jsxTop() == 'c'
 }
 
 func (s *scanner) regexAllowed() bool {

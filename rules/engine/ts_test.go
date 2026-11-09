@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -146,8 +147,12 @@ func TestJSXEvasion(t *testing.T) {
 	}
 	for i, src := range srcs {
 		for _, lang := range []string{"jsx", "tsx"} {
-			if fs, _ := e.Scan(lang, "x", []byte(src)); len(fs) == 0 {
+			fs, err := e.Scan(lang, "x", []byte(src))
+			if len(fs) == 0 {
 				t.Errorf("%s case %d: exec not reported", lang, i)
+			}
+			if deep := strings.Contains(src, "<b><b><b>"); deep != errors.Is(err, ErrLimit) {
+				t.Errorf("%s case %d: err %v; a file whose JSX is too deep to follow must be reported as not fully analysed", lang, i, err)
 			}
 		}
 	}

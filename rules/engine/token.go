@@ -157,7 +157,7 @@ type scanner struct {
 	jsx        bool   // .jsx, .tsx: follow JSX elements, so "</Name" closes one
 	jsxStack   []byte // JSX: open tags, children and braces (see jsxOp)
 	jsxClosing bool   // JSX: inside "</...>"
-	jsxLost    bool   // JSX: nesting too deep to follow in this file
+	jsxLost    bool   // JSX: nesting too deep to follow: plain JavaScript from here
 }
 
 func (s *scanner) peek(off int) byte {
