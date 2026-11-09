@@ -119,8 +119,19 @@ func TestRegexAfterLess(t *testing.T) {
 	}
 }
 
+// TestSinkAfterClosingTag: in .jsx and .tsx a closing tag hides no code after it.
+func TestSinkAfterClosingTag(t *testing.T) {
+	e := engineForTest(t)
+	src := "app.get('/x', (req, res) => { const v = <b>x</b>; exec(req.query.c); });\n"
+	for _, lang := range []string{"jsx", "tsx"} {
+		if fs, _ := e.Scan(lang, "x", []byte(src)); len(fs) == 0 {
+			t.Errorf("%s: exec after a closing tag not reported", lang)
+		}
+	}
+}
+
 func TestLangOfTS(t *testing.T) {
-	for name, want := range map[string]string{"a.ts": "ts", "a.mts": "ts", "a.CTS": "ts", "a.tsx": "tsx", "a.d.ts": "ts", "a.js": "js"} {
+	for name, want := range map[string]string{"a.ts": "ts", "a.mts": "ts", "a.CTS": "ts", "a.tsx": "tsx", "a.d.ts": "ts", "a.js": "js", "a.jsx": "jsx"} {
 		if got := LangOf(name); got != want {
 			t.Errorf("LangOf(%q) = %q, want %q", name, got, want)
 		}

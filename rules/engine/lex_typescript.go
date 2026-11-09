@@ -29,12 +29,12 @@ func lexTS(src string, b *budget, tsx bool) []Token {
 	return stripTS(s.toks, b, tsx)
 }
 
-// isTS reports whether lang is a TypeScript dialect, and baseLang maps it to the
-// language whose rules, parser and analysis it uses.
+// isTS reports whether lang is a TypeScript dialect, and baseLang maps a dialect
+// (jsx, ts, tsx) to the language whose rules, parser and analysis it uses.
 func isTS(lang string) bool { return lang == "ts" || lang == "tsx" }
 
 func baseLang(lang string) string {
-	if isTS(lang) {
+	if isTS(lang) || lang == "jsx" {
 		return "js"
 	}
 	return lang

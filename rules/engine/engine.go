@@ -128,15 +128,17 @@ func compileRule(r rules.Rule) (*crule, error) {
 }
 
 // LangOf returns the language of a file name ("php", "python", "js", or the
-// TypeScript dialects "ts" and "tsx", which use the JavaScript rules), or "".
+// dialects "jsx", "ts" and "tsx", which use the JavaScript rules), or "".
 func LangOf(path string) string {
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".php", ".phtml", ".php5", ".inc":
 		return "php"
 	case ".py":
 		return "python"
-	case ".js", ".mjs", ".cjs", ".jsx":
+	case ".js", ".mjs", ".cjs":
 		return "js"
+	case ".jsx":
+		return "jsx"
 	case ".ts", ".mts", ".cts":
 		return "ts"
 	case ".tsx":
@@ -199,6 +201,10 @@ func lex(lang, src string, b *budget) []Token {
 		return lexPython(src, b)
 	case "js":
 		return lexJS(src, b)
+	case "jsx":
+		s := &scanner{src: src, line: 1, b: b, jsx: true}
+		s.js(false)
+		return s.toks
 	case "ts", "tsx":
 		return lexTS(src, b, lang == "tsx")
 	}

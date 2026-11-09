@@ -100,7 +100,7 @@ func (s *scanner) js(stop bool) {
 	}
 }
 
-// jsxClose reports whether the "/" at s.pos is that of "</Name" or "</>" in .tsx.
+// jsxClose reports whether the "/" at s.pos is that of "</Name" or "</>" in .jsx or .tsx.
 // Only there: in .js and .ts, "a </x'/.test(s)" is a comparison with a regular
 // expression, and reading the "/" as division would let the quote hide the
 // rest of the line.
