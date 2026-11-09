@@ -18,6 +18,7 @@ func (a *analysis) regexCheck(atom []Token) (keys []keyRef, onMatch, ok bool) {
 	n := len(atom)
 	var re string
 	var subject []Token
+	unicode := false           // PHP /u: invalid UTF-8 makes preg_match fail (false), which a "valid when no match" test lets through
 	start, end := false, false // anchors implied by the function
 	switch {
 	case a.php && n > 3 && atom[0].word("preg_match") && atom[1].op("(") && closeOf(atom, 1) == n-1:
@@ -29,7 +30,7 @@ func (a *analysis) regexCheck(atom []Token) (keys []keyRef, onMatch, ok bool) {
 		if !good || strings.ContainsAny(flags, "mx") || strings.Trim(flags, "imsuDU") != "" {
 			return nil, false, false
 		}
-		re, subject = body, args[1]
+		re, subject, unicode = body, args[1], strings.Contains(flags, "u")
 	case a.py && n > 5 && atom[0].word("re") && atom[1].op(".") && atom[3].op("(") && closeOf(atom, 3) == n-1:
 		switch atom[2].Text {
 		case "fullmatch":
@@ -69,7 +70,7 @@ func (a *analysis) regexCheck(atom []Token) (keys []keyRef, onMatch, ok bool) {
 		return nil, false, false
 	case start && end && !anyNegated(items):
 		return a.keysOf(subject), true, true
-	case !start && !end && len(items) == 1 && items[0]:
+	case !start && !end && len(items) == 1 && items[0] && !unicode:
 		return a.keysOf(subject), false, true
 	}
 	return nil, false, false
@@ -134,7 +135,7 @@ func regexClass(re string, i int) (end int, negated, ok bool) {
 			i += 2
 		case c == '-' && (i == first || i+1 < len(re) && re[i+1] == ']'):
 			i++
-		case isAlnum(c) && i+2 < len(re) && re[i+1] == '-' && isAlnum(re[i+2]) && re[i+2] >= c:
+		case isAlnum(c) && i+2 < len(re) && re[i+1] == '-' && sameKind(c, re[i+2]) && re[i+2] >= c:
 			i += 3
 		case isAlnum(c) || c == '_':
 			i++
@@ -164,6 +165,22 @@ func regexQuantifier(re string, i int) int {
 	return i
 }
 
+// sameKind keeps a range inside one of a-z, A-Z and 0-9: A-z also holds [ \ ] ^ ` and _.
+func sameKind(x, y byte) bool {
+	kind := func(c byte) int {
+		switch {
+		case c >= 'a' && c <= 'z':
+			return 1
+		case c >= 'A' && c <= 'Z':
+			return 2
+		case c >= '0' && c <= '9':
+			return 3
+		}
+		return 0
+	}
+	return kind(x) != 0 && kind(x) == kind(y)
+}
+
 func isAlnum(c byte) bool {
 	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9'
 }
@@ -180,7 +197,7 @@ func anyNegated(items []bool) bool {
 // assertCalls stop the request when their first argument is invalid, so as a
 // statement of their own they validate it, in the rules that list them as
 // sanitizers: validate_file_to_edit($file, $allowed_files) (WordPress) dies unless
-// $file is one of the allowed files.
+// $file is one of the allowed files. Without the list it is not a check.
 var assertCalls = map[string]bool{"validate_file_to_edit": true}
 
 func (a *analysis) assertStmt(st state, t []Token) {
@@ -195,8 +212,8 @@ func (a *analysis) assertStmt(st state, t []Token) {
 		return
 	}
 	args := splitTop(inside(t, open, end-1), isComma)
-	if len(args) == 0 {
-		return
+	if len(args) < 2 || !a.allowlist(st, args[1]) {
+		return // without the list of allowed files it checks only for ".."
 	}
 	for _, k := range a.keysOf(args[0]) {
 		e := st[k.key]

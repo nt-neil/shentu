@@ -511,6 +511,10 @@ func (a *analysis) setTarget(st state, tg []Token, v val, op string, sep bool) {
 	if container != "" {
 		e, _ := st.get(container)
 		st[container] = entry{taint: e.taint || v.taint}
+		if strings.HasSuffix(key, "[*]") && v.taint {
+			st.del(container) // $a[$i] = input may overwrite any key: forget what was known per key
+			st[container] = entry{taint: true}
+		}
 		if op == "=" && !strings.HasSuffix(key, "[*]") {
 			// $args['limit'] = absint(...): the key itself is known; reading another key
 			// or the whole array still sees the container.
@@ -1000,21 +1004,13 @@ func (a *analysis) postfix(st state, t []Token, start, baseEnd int, v val, whole
 }
 
 // argsTaint reports whether a call's arguments carry taint into its result. Most
-// calls pass on any argument's taint. In PHP, array_intersect returns only values
-// that every argument holds, so one clean argument (an allowlist) makes it clean;
-// array_intersect_key returns values of its first argument; WordPress's
-// apply_filters($tag, $value, ...) returns the filtered $value.
+// calls pass on any argument's taint. In PHP, array_intersect and
+// array_intersect_key return the values and keys of their first argument;
+// WordPress's apply_filters($tag, $value, ...) returns the filtered $value.
 func (a *analysis) argsTaint(st state, inner []Token, fn string) bool {
 	args := splitTop(inner, isComma)
 	switch fn {
-	case "array_intersect":
-		for _, arg := range args {
-			if !a.argVal(st, arg, false).taint {
-				return false
-			}
-		}
-		return len(args) > 0
-	case "array_intersect_key":
+	case "array_intersect", "array_intersect_key":
 		args = args[:min(len(args), 1)]
 	case "apply_filters":
 		args = args[min(len(args), 1):min(len(args), 2)]
@@ -1319,6 +1315,9 @@ func (a *analysis) checkKeys(st state, atom []Token) []keyRef {
 		}
 		if !predicates[s.name] || prefixChecks[s.name] && !a.anySep(st, args) {
 			return nil
+		}
+		if s.name == "validate_file" && (len(args) < 2 || !a.allowlist(st, args[1])) {
+			return nil // without a list of allowed files it lets /etc/passwd through
 		}
 		return a.keysOf(atom)
 	}

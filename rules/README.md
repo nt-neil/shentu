@@ -102,17 +102,20 @@ How the engine reads them:
     `_` and `-` from start to end (`preg_match('/^[a-z0-9_]+$/i', $x)`,
     `re.fullmatch(r'[\w-]+', x)`, `/^\d+$/.test(x)`), or when it looks for any
     other character (`if (preg_match('|[^a-z0-9_]|', $x)) die();`). A dot, any
-    other character, alternation, or multiline mode (`m`) makes it no check;
-  - PHP `array_intersect` with one clean argument returns only allowed values;
-    `array_intersect_key` returns values of its first argument; WordPress
-    `apply_filters($tag, $value, ...)` returns the filtered `$value`;
-  - WordPress `validate_file($f)` returns 0 for a valid path, so
-    `if (validate_file($f)) wp_die();` validates `$f`, and
+    other character, a range across kinds (`A-z`), alternation, or multiline
+    mode (`m`) makes it no check, and so does `u` on the second form (invalid
+    UTF-8 makes `preg_match` fail, and the failure looks like "no match");
+  - PHP `array_intersect` and `array_intersect_key` return values and keys of
+    their first argument, so `array_intersect($allowed, $input)` is clean;
+    WordPress `apply_filters($tag, $value, ...)` returns the filtered `$value`;
+  - WordPress `validate_file($f, $allowed)` returns 0 for an allowed path, so
+    `if (validate_file($f, $allowed)) wp_die();` validates `$f`, and
     `validate_file_to_edit($f, $allowed)` as a statement of its own stops the
-    request unless `$f` is allowed. Both count in the rules that list them as
-    sanitizers.
+    request unless `$f` is allowed. Without the list both check only for `..`
+    and validate nothing. They count in the rules that list them as sanitizers.
 - Writing one key of an array (`$args['limit'] = absint(...)`) is tracked for that
-  key; reading another key or the whole array still sees the array.
+  key; reading another key or the whole array still sees the array. Writing user
+  input under a key that is not a literal (`$a[$i] = ...`) forgets every key.
 - Sanitizers are per rule, not per sink. When a sanitizer protects one sink but
   not another (`escapeshellarg` protects `exec()` but not the fifth argument of
   `mail()`), the sinks go in separate rules; escaping functions protect a SQL value
