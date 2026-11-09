@@ -13,6 +13,7 @@
 //	go run ./cmd/cvebench                    # all cases, Markdown report on stdout
 //	go run ./cmd/cvebench -only CVE-2023-123 # some cases
 //	go run ./cmd/cvebench -fetch             # download and unpack only, print the directories
+//	go run ./cmd/cvebench -library           # Composer, PyPI and npm packages in the engine's library mode
 package main
 
 import (
@@ -36,15 +37,16 @@ func main() {
 	fetchOnly := flag.Bool("fetch", false, "download and unpack only; print each release's directory")
 	out := flag.String("out", "", "write the report to this file instead of stdout")
 	jobs := flag.Int("j", 2, "cases run at the same time")
+	library := flag.Bool("library", false, "scan Composer, PyPI and npm packages in library mode (WordPress plugins stay in application mode)")
 	flag.Parse()
 
-	if err := run(*casesDir, *cacheDir, *only, *fetchOnly, *out, *jobs); err != nil {
+	if err := run(*casesDir, *cacheDir, *only, *fetchOnly, *out, *jobs, *library); err != nil {
 		fmt.Fprintln(os.Stderr, "cvebench:", err)
 		os.Exit(1)
 	}
 }
 
-func run(casesDir, cacheDir, only string, fetchOnly bool, out string, jobs int) error {
+func run(casesDir, cacheDir, only string, fetchOnly bool, out string, jobs int, library bool) error {
 	cases, err := loadCases(casesDir)
 	if err != nil {
 		return err
@@ -74,6 +76,15 @@ func run(casesDir, cacheDir, only string, fetchOnly bool, out string, jobs int) 
 	if err != nil {
 		return err
 	}
+	libEng := eng
+	if library {
+		if libEng, err = engine.New(rs); err != nil {
+			return err
+		}
+		if err := setLibrary(libEng); err != nil {
+			return err
+		}
+	}
 	f := &fetcher{dir: cacheDir, client: newClient()}
 	cited := ruleSource(rs)
 
@@ -85,7 +96,11 @@ func run(casesDir, cacheDir, only string, fetchOnly bool, out string, jobs int) 
 		go func() {
 			defer wg.Done()
 			for i := range next {
-				results[i] = runCase(f, eng, rs, cited, cases[i], fetchOnly)
+				e := eng
+				if cases[i].Ecosystem != "wordpress-plugin" {
+					e = libEng
+				}
+				results[i] = runCase(f, e, rs, cited, cases[i], fetchOnly)
 			}
 		}()
 	}
