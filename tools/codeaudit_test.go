@@ -18,25 +18,32 @@ func TestAppCodeAudit(t *testing.T) {
 	dbPass := "pa" + "ss" + "w0rdX"
 	files := map[string]string{
 		// should be found
-		pub + "/.env":            "APP_KEY=x\n",
-		pub + "/.git/HEAD":       "ref: refs/heads/main\n",
-		pub + "/dump.sql":        "INSERT INTO users VALUES (1);\n",
-		pub + "/site-backup.zip": "PK",
-		pub + "/info.php":        "<?php\nphpinfo();\n",
-		pub + "/uploads/cat.php": "<?php echo 1;\n",
-		pub + "/shell.php":       "<?php\n\n@eval($_POST['x']);\n",
-		app + "/settings.py":     "SECRET=1\nDEBUG = True\n",
-		app + "/.env":            "APP_ENV=production\nAPP_DEBUG=true\n",
-		app + "/run.py":          "from flask import Flask\napp = Flask(__name__)\napp.run(host='0.0.0.0', debug=True)\n",
-		app + "/config.js":       "module.exports = {\n  key: '" + awsKey + "',\n}\n",
-		app + "/db.py":           "URL = 'postgres://shop:" + dbPass + "@db/shop'\n",
+		pub + "/.env":                     "APP_KEY=x\n",
+		pub + "/.git/HEAD":                "ref: refs/heads/main\n",
+		pub + "/dump.sql":                 "INSERT INTO users VALUES (1);\n",
+		pub + "/site-backup.zip":          "PK",
+		pub + "/info.php":                 "<?php\nphpinfo();\n",
+		pub + "/uploads/cat.php":          "<?php echo 1;\n",
+		pub + "/shell.php":                "<?php\n\n@eval($_POST['x']);\n",
+		app + "/settings.py":              "SECRET=1\nDEBUG = True\n",
+		app + "/.env":                     "APP_ENV=production\nAPP_DEBUG=true\n",
+		app + "/run.py":                   "from flask import Flask\napp = Flask(__name__)\napp.run(host='0.0.0.0', debug=True)\n",
+		app + "/config.js":                "module.exports = {\n  key: '" + awsKey + "',\n}\n",
+		app + "/db.py":                    "URL = 'postgres://shop:" + dbPass + "@db/shop'\n",
+		pub + "/wp-load.php":              "<?php\n",
+		pub + "/wp-includes/version.php":  "<?php\n$wp_version = '6.8.11';\n",
+		pub + "/wp-content/upgrade/x.php": "<?php echo 1;\n",
 		// should not be found
-		dir + "/site/.env":         "APP_DEBUG=false\n",
-		pub + "/.env.example":      "APP_KEY=\n",
-		app + "/other/settings.py": "DEBUG = False\n",
-		app + "/dev.py":            "# app.run(debug=True)\n",
-		app + "/notes.md":          "remember phpinfo() and " + awsKey + "\n",
-		pub + "/index.php":         "<?php echo htmlspecialchars($_GET['q']);\n",
+		dir + "/site/.env":                         "APP_DEBUG=false\n",
+		pub + "/.env.example":                      "APP_KEY=\n",
+		app + "/other/settings.py":                 "DEBUG = False\n",
+		app + "/dev.py":                            "# app.run(debug=True)\n",
+		app + "/notes.md":                          "remember phpinfo() and " + awsKey + "\n",
+		pub + "/index.php":                         "<?php echo htmlspecialchars($_GET['q']);\n",
+		dir + "/site/blog/wp-load.php":             "<?php\n",
+		dir + "/site/blog/wp-includes/version.php": "<?php\n$wp_version = '6.8.12';\n",
+		dir + "/site/blog/wp-content/plugins/seo/wp-includes/version.php": "<?php\n$wp_version = '1.0';\n",
+		dir + "/site/blog/wp-content/plugins/seo/version.php":             "<?php\n$wp_version = '4.0';\n",
 	}
 	for p, c := range files {
 		os.MkdirAll(filepath.Dir(p), 0o755)
@@ -55,6 +62,7 @@ func TestAppCodeAudit(t *testing.T) {
 		"upload_script public/uploads/cat.php": "critical", "webshell public/shell.php": "critical",
 		"debug app/settings.py": "warning", "debug app/.env": "warning", "debug app/run.py": "critical",
 		"secret app/config.js": "warning", "secret app/db.py": "warning",
+		"outdated public": "critical", "upload_script public/wp-content/upgrade/x.php": "critical",
 	}
 	for k, sev := range want {
 		if f, ok := got[k]; !ok || f.Severity != sev {
@@ -107,5 +115,24 @@ func TestWebRootPatterns(t *testing.T) {
 	apache := "<VirtualHost *:80>\n\tDocumentRoot \"/var/www/html\"\n</VirtualHost>\n"
 	if m := apacheRoot.FindStringSubmatch(apache); m == nil || m[1] != "/var/www/html" {
 		t.Errorf("apache root: %v", m)
+	}
+}
+
+func TestWordpressCore(t *testing.T) {
+	site := t.TempDir()
+	os.WriteFile(filepath.Join(site, "wp-load.php"), []byte("<?php\n"), 0o644)
+	cases := map[string]bool{ // version → reported
+		"7.1.3": true, "7.1.4": false, "7.1": true, "7.2": false, "6.8.11": true, "6.8.12": false,
+		"4.7.38": true, "4.7.39": false, "4.6.1": true, "3.9": true, "8.0": false,
+	}
+	for v, want := range cases {
+		var got []CodeFinding
+		wordpressCore(filepath.Join(site, "wp-includes/version.php"), []byte("<?php\n$wp_version = '"+v+"';\n"), func(f CodeFinding) { got = append(got, f) })
+		if (len(got) > 0) != want {
+			t.Errorf("%s: got %+v, want reported=%v", v, got, want)
+		}
+		if len(got) > 0 && got[0].Path != site {
+			t.Errorf("%s: path %s", v, got[0].Path)
+		}
 	}
 }
