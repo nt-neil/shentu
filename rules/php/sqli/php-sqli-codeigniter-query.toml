@@ -7,7 +7,7 @@ tier = "info"
 title = "CodeIgniter request input written into SQL text, a raw where() or order_by()"
 sources = ["$this->input->get(", "$this->input->post(", "$this->input->get_post(", "$this->input->cookie(", "$this->request->getGet(", "$this->request->getPost(",
            "$this->request->getVar(", "$this->request->getJSON(", "request(", "$_GET", "$_POST", "$_REQUEST"]
-sinks = ["$this->db->query(", "$this->db->simple_query(", "->order_by(", "$this->db->where(", "$builder->where(", "$builder->orderBy("]
+sinks = ["$this->db->query(", "$db->query(", "$this->db->simple_query(", "->order_by(", "->where(", "->or_where(", "->orWhere(", "->having(", "->orderBy("]
 sanitizers = ["$this->db->escape(", "$db->escape(", "intval", "(int)", "in_array"]
 fix = "Pass values as query bindings ($this->db->query('... WHERE id = ?', [$id])), let where() quote them (where('name', $name)), and map sort columns and directions to a fixed allowlist; escape_str() is safe only inside quotes."
 refs = ["CVE-2025-50383"]

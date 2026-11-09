@@ -6,14 +6,19 @@ severity = "high"
 tier = "info"
 title = "Server opens a socket to a host taken from the request"
 sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "->get_param(", "$request->input(", "$request->query->get(", "$request->request->get(", "$request->get("]
-sinks = ["fsockopen(", "pfsockopen(", "stream_socket_client("]
+sinks = ["fsockopen(", "pfsockopen(", "stream_socket_client(", "socket_connect("]
 sanitizers = ["in_array", "array_key_exists", "absint", "intval"]
 fix = "Connect only to hosts from a fixed list (in_array($host, $allowed, true)); a check on the name before connecting is not enough, as the name may resolve to another address when the socket opens."
 refs = ["CVE-2026-81889"]
 
 [[args]]
+sinks = ["fsockopen(", "pfsockopen(", "stream_socket_client("]
 arg = 1
 leading = true
+
+[[args]]
+sinks = ["socket_connect("]
+arg = 2
 
 [[samples]]
 kind = "vulnerable"

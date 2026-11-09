@@ -7,13 +7,18 @@ tier = "info"
 title = "Function to call chosen by the request"
 frameworks = ["wordpress", "laravel"]
 sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "->get_param(", "$request['", "$request->input(", "$request->get("]
-sinks = ["call_user_func(", "call_user_func_array(", "forward_static_call(", "forward_static_call_array("]
+sinks = ["call_user_func(", "call_user_func_array(", "forward_static_call(", "forward_static_call_array(", "array_map(", "usort(", "uasort(", "uksort(", "array_filter(", "array_walk(", "iterator_apply("]
 sanitizers = ["in_array", "array_key_exists", "absint", "intval", "get_taxonomy(", "get_post_type_object("]
 fix = "Never let the request name a function or method: map the requested action to a fixed list of callbacks (in_array($action, $allowed, true) or a lookup table) before calling it."
 refs = ["CVE-2026-1929"]
 
 [[args]]
+sinks = ["call_user_func(", "call_user_func_array(", "forward_static_call(", "forward_static_call_array(", "array_map("]
 arg = 1
+
+[[args]]
+sinks = ["usort(", "uasort(", "uksort(", "array_filter(", "array_walk(", "iterator_apply("]
+arg = 2
 
 [[samples]]
 kind = "vulnerable"

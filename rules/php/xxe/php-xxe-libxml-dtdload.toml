@@ -4,15 +4,20 @@ class = "xxe"
 cwe = "CWE-611"
 severity = "high"
 tier = "info"
-title = "XML parsed with LIBXML_DTDLOAD or LIBXML_DTDATTR, which loads external DTDs"
+title = "XML parsed with options that load external DTDs (LIBXML_DTDLOAD, LIBXML_DTDATTR, LIBXML_DTDVALID, XMLReader::LOADDTD)"
 sources = []
-sinks = ["->loadXML(", "->load(", "simplexml_load_string(", "simplexml_load_file(", "SimpleXMLElement("]
+sinks = ["->loadXML(", "->load(", "simplexml_load_string(", "simplexml_load_file(", "SimpleXMLElement(", "->setParserProperty("]
 sanitizers = []
 fix = "Do not pass LIBXML_DTDLOAD or LIBXML_DTDATTR for documents from outside: they make libxml fetch the DTD a document names, and its parameter entities, even though PHP 8 no longer substitutes external entities by default; reject documents with a <!DOCTYPE before parsing."
 refs = ["CVE-2024-52806", "CVE-2024-52596"]
 
 [[args]]
-when = ["LIBXML_DTDLOAD", "LIBXML_DTDATTR"]
+sinks = ["->loadXML(", "->load(", "simplexml_load_string(", "simplexml_load_file(", "SimpleXMLElement("]
+when = ["LIBXML_DTDLOAD", "LIBXML_DTDATTR", "LIBXML_DTDVALID"]
+
+[[args]]
+sinks = ["->setParserProperty("]
+when = ["XMLReader::LOADDTD", "XMLReader::VALIDATE"]
 
 [[samples]]
 kind = "vulnerable"
