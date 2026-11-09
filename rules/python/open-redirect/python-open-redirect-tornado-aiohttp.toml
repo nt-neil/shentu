@@ -7,8 +7,8 @@ tier = "info"
 title = "Tornado or aiohttp redirect to a URL taken from the request"
 sources = ["self.get_argument(", "self.get_query_argument(", "self.get_body_argument(", "self.request.arguments", "self.request.query_arguments", "self.request.headers", "request.query", "request.match_info", "request.post(", "request.headers"]
 sinks = ["self.redirect(", "web.HTTPFound(", "web.HTTPSeeOther(", "web.HTTPTemporaryRedirect(", "web.HTTPMovedPermanently(", "web.HTTPPermanentRedirect(", "HTTPFound(", "HTTPSeeOther("]
-sanitizers = ["url_has_allowed_host_and_scheme(", "is_safe_url(", "self.reverse_url(", "reverse_url(", ".url_for(", ".startswith("]
-fix = "Redirect only to a fixed page or a path you build on the server (reverse_url, router url_for); if a 'next' value must be honoured, require that it starts with '/' but not with '//' or '/\\\\'."
+sanitizers = ["url_has_allowed_host_and_scheme(", "is_safe_url(", "self.reverse_url(", "reverse_url(", ".url_for("]
+fix = "Redirect only to a fixed page or a path you build on the server (reverse_url, router url_for); if a 'next' value must be honoured, check its host with url_has_allowed_host_and_scheme() — a prefix check such as startswith('/') is not enough, since browsers drop tabs and newlines and '/\\t/evil.example' becomes '//evil.example'."
 refs = ["CVE-2024-53995"]
 
 [[args]]
@@ -55,11 +55,12 @@ class SignIn(tornado.web.RequestHandler):
 
 [[samples]]
 kind = "safe"
+note = "a host check, not a prefix check"
 code = '''
 class SignIn(tornado.web.RequestHandler):
     def get(self):
         dest = self.get_argument("return_to", "/")
-        if not dest.startswith("/") or dest.startswith("//"):
+        if not url_has_allowed_host_and_scheme(dest, allowed_hosts={self.request.host}):
             dest = "/"
         self.redirect(dest)
 '''
@@ -69,4 +70,16 @@ kind = "safe"
 code = '''
 async def open_item(request):
     raise web.HTTPFound(request.app.router["item"].url_for(item_id=request.match_info["item_id"]))
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "a prefix check: '/\t/evil.example' passes it and the browser makes it '//evil.example'"
+code = '''
+class SignIn(tornado.web.RequestHandler):
+    def get(self):
+        dest = self.get_argument("return_to", "/")
+        if not dest.startswith("/") or dest.startswith("//") or dest.startswith("/\\"):
+            dest = "/"
+        self.redirect(dest)
 '''
