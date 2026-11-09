@@ -478,7 +478,7 @@ func (a *analysis) targetList(lhs []Token) [][]Token {
 	}
 	inner := []Token(nil)
 	switch {
-	case isOpen(lhs[0]) && closeOf(lhs, 0) == len(lhs)-1:
+	case len(lhs) >= 2 && isOpen(lhs[0]) && closeOf(lhs, 0) == len(lhs)-1:
 		inner = lhs[1 : len(lhs)-1]
 	case a.php && len(lhs) > 2 && (lhs[0].word("list") || lhs[0].word("array")) && lhs[1].op("(") && closeOf(lhs, 1) == len(lhs)-1:
 		inner = lhs[2 : len(lhs)-1]
