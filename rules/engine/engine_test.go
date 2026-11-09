@@ -341,3 +341,25 @@ func TestContextLinear(t *testing.T) {
 		t.Errorf("20000 joined parts: %v, err %v, %d findings; want under 2s, no ErrLimit, reported", el, err, len(fs))
 	}
 }
+
+// Text in a string is matched outside its interpolations: "... $where" holds the
+// PHP variable $where, not the Mongo operator text '$where'.
+func TestTextSinkNotInInterpolation(t *testing.T) {
+	e := engineForTest(t)
+	src := "<?php\n$where = \"WHERE a = '\" . $_GET['a'] . \"'\";\n$rows = $wpdb->get_results(\"SELECT * FROM t $where\");\n"
+	fs, _ := e.Scan("php", "w.php", []byte(src))
+	sqli := false
+	for _, f := range fs {
+		if strings.HasPrefix(f.RuleID, "php-nosqli") {
+			t.Errorf("reported by %s at line %d", f.RuleID, f.Line)
+		}
+		sqli = sqli || strings.HasPrefix(f.RuleID, "php-sqli")
+	}
+	if !sqli {
+		t.Error("the SQL injection itself is not reported")
+	}
+	op := "<?php\n$c->find(array('$where' => \"this.a == '\" . $_GET['a'] . \"'\"));\n"
+	if fs, _ := e.Scan("php", "m.php", []byte(op)); len(fs) == 0 {
+		t.Error("'$where' operator text not reported")
+	}
+}

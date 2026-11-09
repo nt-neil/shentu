@@ -42,3 +42,13 @@ $user = $db->users->findOne(['name' => (string) $_POST['name']]);
 $ok = $user && password_verify((string) $_POST['password'], $user['password_hash']);
 $post = Post::find($request->input('id'));
 '''
+
+[[samples]]
+kind = "safe"
+note = "a variable named $where holding an SQL condition is not the Mongo operator"
+code = '''
+<?php
+$where = $wpdb->prepare('WHERE post_author = %d', $_GET['author']);
+$rows = $wpdb->get_results("SELECT ID FROM {$wpdb->posts} $where");
+$where .= " AND post_status = 'publish'";
+'''

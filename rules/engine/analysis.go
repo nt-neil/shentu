@@ -122,6 +122,8 @@ type analysis struct {
 	noSrc  bool   // the rule's sources are off (a summary run for parameters)
 	cls    string // class of the method being analysed, and its parent
 	parent string
+
+	lits map[int][]Token // values written in the code, kept for argument conditions (context.go)
 }
 
 func (a *analysis) report(line int) { a.reportSink(line, false) }
@@ -173,6 +175,8 @@ func (a *analysis) stmt(s *stmt, st state) (state, uint8) {
 		a.nonceStmt(st, s.toks)
 		a.stripKeys(st, s.toks)
 		a.markAssign(st, s.toks)
+		a.extractStmt(st, s.toks)
+		a.recordLit(st, s.toks)
 		return st, a.exitOf(s.toks)
 	case sIf:
 		a.sinks(st, s.toks)
@@ -430,7 +434,8 @@ func (a *analysis) loop(s *stmt, st state) state {
 var declWords = map[string]bool{"const": true, "let": true, "var": true, "global": true, "static": true,
 	"public": true, "private": true, "protected": true, "readonly": true, "final": true}
 
-var exitCalls = map[string]bool{"abort": true, "wp_die": true, "exit": true, "die": true}
+var exitCalls = map[string]bool{"abort": true, "wp_die": true, "exit": true, "die": true,
+	"wp_send_json": true, "wp_send_json_error": true, "wp_send_json_success": true} // these die after sending
 
 func (a *analysis) exitOf(t []Token) uint8 {
 	if len(t) == 0 || t[0].Kind != Ident {
@@ -1073,6 +1078,8 @@ func (a *analysis) term(st state, t []Token, i int, whole bool) (val, int) {
 	case tk.op("[") || tk.op("{"):
 		c := closeOf(t, i)
 		return a.postfix(st, t, i, c+1, a.literal(st, inside(t, i, c), tk.Text, whole), whole)
+	case tk.Kind == Ident && (i == 0 || !memberOp(a.php, t[i-1])) && a.mapSanAt(t, i) >= 0:
+		return a.postfix(st, t, i, a.mapSanAt(t, i), val{}, whole) // array_map('absint', $x): each value sanitized (context.go)
 	case tk.Kind == Ident && (i == 0 || !memberOp(a.php, t[i-1])) && a.stripAllAt(t, i) >= 0:
 		return a.postfix(st, t, i, a.stripAllAt(t, i), val{}, whole) // preg_replace('/[^a-z0-9_]/', '', $x): only safe characters are left (context.go)
 	case tk.Kind == Ident && numericFuncs[a.lang()][tk.Text] && i+1 < len(t) && t[i+1].op("(") && (i == 0 || !memberOp(a.php, t[i-1])):
@@ -1727,7 +1734,7 @@ func (a *analysis) sinks(st state, t []Token) {
 		}
 		if t[i].Kind == Str {
 			for _, s := range a.r.textSinks {
-				if loc := s.text.FindStringIndex(t[i].Text); loc != nil {
+				if loc := textMatch(s, t[i]); loc != nil {
 					a.textSink(st, t, i, loc[0], loc[1], a.r.args[s])
 				}
 			}
@@ -1748,7 +1755,7 @@ func (a *analysis) sink(st state, t []Token, i int, s *pat) {
 	default:
 		region = t[end:]
 	}
-	if cond != nil && (len(cond.when) > 0 && !a.when(cond.when, region) || a.unless(st, cond.unless, region)) {
+	if lr := a.expandLits(st, region); cond != nil && (len(cond.when) > 0 && !a.when(cond.when, lr) || a.unless(st, cond.unless, lr)) {
 		return
 	}
 	if cond != nil && cond.literal && !a.literalArg(cond, region, open) {

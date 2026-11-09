@@ -1,6 +1,9 @@
 package engine
 
-import "strings"
+import (
+	"strconv"
+	"strings"
+)
 
 // literalArg reports whether the argument a literal condition names is a
 // non-empty string written in the code: the arg-th argument, or the value of a
@@ -264,6 +267,11 @@ func (a *analysis) stripKeys(st state, t []Token) {
 			st[keysKey+t[0].Text] = entry{taint: true}
 		}
 	}
+	if end := a.mapSanAt(t, 2); end >= 0 && (end == len(t) || end == len(t)-1 && t[end].op(";")) {
+		if args := splitTop(inside(t, 3, end-1), isComma); len(args) == 2 && a.hits(a.expr(st, args[1], false)) {
+			st[keysKey+t[0].Text] = entry{taint: true} // array_map keeps the keys of a single array
+		}
+	}
 }
 
 // keysTainted reports whether the keys of the array iter are input though its
@@ -412,4 +420,168 @@ func (a *analysis) fieldOfResult(st state, op []Token) bool {
 		return true
 	}
 	return false
+}
+
+// mapSanAt reports whether t[i:] starts with array_map('cb', $x) where cb is a
+// sanitizer of the rule or a number cast (absint, intval, sanitize_key): every
+// value of the result went through it. It returns where the call ends, or -1.
+// The keys of $x are kept (see stripKeys).
+func (a *analysis) mapSanAt(t []Token, i int) int {
+	if !a.php || a.raw || t[i].Text != "array_map" || i+1 >= len(t) || !t[i+1].op("(") {
+		return -1
+	}
+	c := closeOf(t, i+1)
+	args := splitTop(inside(t, i+1, c), isComma)
+	if len(args) != 2 || len(args[0]) != 1 || args[0][0].Kind != Str || len(args[0][0].Parts) > 0 {
+		return -1
+	}
+	cb := args[0][0].Text
+	if !a.hasSanitizerWord(cb) && !numericFuncs["php"][cb] {
+		return -1
+	}
+	return c + 1
+}
+
+// extractStmt follows extract(shortcode_atts(array('id' => 0, ...), $atts)) and
+// extract(array(...)): each literal key becomes a variable holding what the
+// array holds.
+func (a *analysis) extractStmt(st state, t []Token) {
+	if !a.php || len(t) < 4 || !t[0].word("extract") || !t[1].op("(") {
+		return
+	}
+	c := closeOf(t, 1)
+	args := splitTop(inside(t, 1, c), isComma)
+	if len(args) == 0 {
+		return
+	}
+	inner := stripParens(args[0])
+	lit := inner
+	if len(inner) > 2 && inner[0].word("shortcode_atts") && inner[1].op("(") {
+		if xs := splitTop(inside(inner, 1, closeOf(inner, 1)), isComma); len(xs) > 0 {
+			lit = stripParens(xs[0])
+		}
+	}
+	var body []Token
+	switch {
+	case len(lit) > 1 && lit[0].op("["):
+		body = inside(lit, 0, closeOf(lit, 0))
+	case len(lit) > 2 && lit[0].word("array") && lit[1].op("("):
+		body = inside(lit, 1, closeOf(lit, 1))
+	default:
+		return
+	}
+	v := a.expr(st, inner, false)
+	for _, item := range splitTop(body, isComma) {
+		if len(item) > 2 && item[0].Kind == Str && len(item[0].Parts) == 0 && item[1].op("=>") && isIdentName(item[0].Text) {
+			a.setTarget(st, []Token{{Kind: Var, Text: "$" + item[0].Text, Line: t[0].Line}}, v, "=", false)
+		}
+	}
+}
+
+func isIdentName(s string) bool {
+	if s == "" || !isIdentStart(s[0]) {
+		return false
+	}
+	for i := 1; i < len(s); i++ {
+		if !isIdentChar(s[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+// litKey marks, in a state, that a variable holds a value written in the code
+// with no input in it ($o = ['test_form' => false], const opts = { shell: true },
+// $f = LIBXML_NOENT); the tokens are kept in a.lits under the number after it.
+const litKey = "\x00lit:"
+
+// recordLit records x = <value with no input> for the argument conditions of
+// the sinks, and forgets it on any other assignment to x.
+func (a *analysis) recordLit(st state, t []Token) {
+	for len(t) > 0 && t[0].Kind == Ident && declWords[t[0].Text] {
+		t = t[1:]
+	}
+	if len(t) < 3 || !(t[0].Kind == Var || t[0].Kind == Ident && !a.kw[t[0].Text]) || !t[1].op("=") {
+		return
+	}
+	name := t[0].Text
+	for k := range st {
+		if strings.HasPrefix(k, litKey+name+"\x00") {
+			delete(st, k)
+		}
+	}
+	rhs := t[2:]
+	if n := len(rhs); n > 0 && rhs[n-1].op(";") {
+		rhs = rhs[:n-1]
+	}
+	if len(rhs) == 0 || len(rhs) > 256 || a.rawInput(st, rhs) {
+		return
+	}
+	if a.lits == nil {
+		a.lits = map[int][]Token{}
+	}
+	id := len(a.lits)
+	a.lits[id] = rhs
+	st[litKey+name+"\x00"+strconv.Itoa(id)] = entry{san: true}
+}
+
+// expandLits returns region with each argument that is a variable recorded by
+// recordLit replaced by its value, so when and unless see the options it holds.
+func (a *analysis) expandLits(st state, region []Token) []Token {
+	if len(a.lits) == 0 {
+		return region
+	}
+	var out []Token
+	changed := false
+	for _, arg := range splitTop(region, isComma) {
+		if len(out) > 0 {
+			out = append(out, Token{Kind: Op, Text: ","})
+		}
+		if len(arg) == 1 && (arg[0].Kind == Var || arg[0].Kind == Ident) {
+			if v := a.litOf(st, arg[0].Text); v != nil {
+				out = append(out, v...)
+				changed = true
+				continue
+			}
+		}
+		out = append(out, arg...)
+	}
+	if !changed {
+		return region
+	}
+	return out
+}
+
+func (a *analysis) litOf(st state, name string) []Token {
+	var found []Token
+	n := 0
+	for k, e := range st {
+		if e.san && strings.HasPrefix(k, litKey+name+"\x00") {
+			id, _ := strconv.Atoi(k[len(litKey)+len(name)+1:])
+			found = a.lits[id]
+			n++
+		}
+	}
+	if n != 1 {
+		return nil // assigned differently on two paths: do not guess
+	}
+	return found
+}
+
+// textMatch finds a text pattern in a string literal's text, outside its
+// interpolations: in "SELECT * FROM t $where" the $where is a variable, not text.
+func textMatch(p *pat, tk Token) []int {
+	for _, loc := range p.text.FindAllStringIndex(tk.Text, -1) {
+		inside := false
+		for _, part := range tk.Parts {
+			if loc[0] >= part.Off && loc[0] < skipInterp(tk.Text, min(part.Off, len(tk.Text))) {
+				inside = true
+				break
+			}
+		}
+		if !inside {
+			return loc
+		}
+	}
+	return nil
 }

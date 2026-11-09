@@ -409,13 +409,12 @@ come with the findings made so far.
 What it does not do: follow values across files (input read in a controller and
 used in another class of another file is missed), judge the output context of HTML
 built in a variable and echoed later (the echo's own context is used), see a CSRF
-nonce check whose result is kept in a variable, look into XML parser options kept in
-a variable (`$o = LIBXML_NOENT`), treat a check on a value derived from another (`in_array($ext, ...)`
+nonce check whose result is kept in a variable, treat a check on a value derived from another (`in_array($ext, ...)`
 after `$ext = pathinfo($name, ...)`) as a check on the original, while a check on part
 of a value written in place counts for all of it (`in_array(pathinfo($n, PATHINFO_EXTENSION), ...)`
 cleans `$n` for every rule, path traversal included), know framework semantics beyond
 the rules (a lookup in a constant dict is not an allowlist), look into options
-kept in a variable (`const opts = { shell: true }; spawn(cmd, opts)`), or prove a
+kept in a variable assigned differently on two paths, or prove a
 finding.
 No finding does not mean no vulnerability.
 

@@ -51,3 +51,22 @@ $dom = new DOMDocument();
 $dom->loadXML($body);
 $config->load('settings.ini');
 '''
+
+[[samples]]
+kind = "vulnerable"
+note = "flags kept in a variable are read where the variable is passed"
+code = '''
+<?php
+$flags = LIBXML_NOENT | LIBXML_DTDLOAD;
+$doc = new DOMDocument();
+$doc->loadXML($payload, $flags);
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+$flags = LIBXML_NONET;
+$doc = new DOMDocument();
+$doc->loadXML($payload, $flags);
+'''

@@ -49,3 +49,62 @@ code = '''
 $like = '%' . $wpdb->esc_like($_POST['search']) . '%';
 $items = $wpdb->get_results($wpdb->prepare("SELECT * FROM {$wpdb->prefix}items WHERE title LIKE %s", $like));
 '''
+
+[[samples]]
+kind = "vulnerable"
+note = "array_map with trim keeps each value as it came"
+code = '''
+<?php
+$ids = array_map('trim', $_POST['ids']);
+$wpdb->query("DELETE FROM {$wpdb->prefix}items WHERE id IN (" . implode(',', $ids) . ")");
+'''
+
+[[samples]]
+kind = "safe"
+note = "array_map with absint makes every value a number"
+code = '''
+<?php
+$ids = array_map('absint', $_POST['ids']);
+$wpdb->query("DELETE FROM {$wpdb->prefix}items WHERE id IN (" . implode(',', $ids) . ")");
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "the failed check only logs, the query still runs"
+code = '''
+<?php
+$col = $_GET['orderby'];
+if (!in_array($col, array('date', 'title'), true)) {
+    error_log('unexpected orderby');
+}
+$rows = $wpdb->get_results("SELECT * FROM {$wpdb->posts} ORDER BY $col");
+'''
+
+[[samples]]
+kind = "safe"
+note = "wp_send_json_error ends the request, so after it the column is one of the two"
+code = '''
+<?php
+$col = $_GET['orderby'];
+if (!in_array($col, array('date', 'title'), true)) {
+    wp_send_json_error('bad orderby');
+}
+$rows = $wpdb->get_results("SELECT * FROM {$wpdb->posts} ORDER BY $col");
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "extract makes $id from the shortcode attributes"
+code = '''
+<?php
+extract(shortcode_atts(array('id' => 0, 'title' => ''), $_REQUEST));
+$row = $wpdb->get_row("SELECT * FROM {$wpdb->prefix}items WHERE id = $id");
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+extract(shortcode_atts(array('id' => 0, 'title' => ''), $_REQUEST));
+$row = $wpdb->get_row("SELECT * FROM {$wpdb->prefix}items WHERE id = " . absint($id));
+'''

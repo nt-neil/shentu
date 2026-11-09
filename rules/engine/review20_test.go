@@ -17,7 +17,6 @@ import (
 var r20Known = map[string]string{
 	"O02": "a check on a value derived from the file name (its extension) cleans the whole name; also on the base",
 	"O03": "a check on a value derived from the file name (its extension) cleans the whole name; also on the base",
-	"C03": "XML parser options kept in a variable are not looked into",
 }
 
 type r20case struct {
