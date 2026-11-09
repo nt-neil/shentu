@@ -24,8 +24,8 @@ const (
 
 // unpack extracts a .zip or .tar.gz into dest, an empty directory. It drops the
 // archive's top-level directory and writes only regular files in a rule
-// language (the engine reads nothing else; links, devices and other files are
-// skipped). Every entry name is checked first: one that would land outside
+// language, and composer.json for its PSR-4 autoload (the engine reads nothing
+// else; links, devices and other files are skipped). Every entry name is checked first: one that would land outside
 // dest fails the whole release. Nothing is made executable.
 func unpack(archive, dest string) error {
 	u := &unpacker{dest: dest}
@@ -122,7 +122,7 @@ func (u *unpacker) dir(name string) error {
 
 func (u *unpacker) file(name string, r io.Reader) error {
 	t, err := target(u.dest, name)
-	if err != nil || t == "" || engine.LangOf(t) == "" {
+	if err != nil || t == "" || engine.LangOf(t) == "" && filepath.Base(t) != "composer.json" {
 		return err
 	}
 	if u.files++; u.files > maxFiles {
@@ -143,7 +143,7 @@ func (u *unpacker) file(name string, r io.Reader) error {
 	if err != nil {
 		return err
 	}
-	if n > maxFileSize {
+	if n > maxFileSize || filepath.Base(t) == "composer.json" && n > maxScanFile {
 		return fmt.Errorf("%s is larger than %d MiB", name, maxFileSize>>20)
 	}
 	if u.total += n; u.total > maxTotalSize {

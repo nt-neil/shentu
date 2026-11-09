@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -35,9 +36,10 @@ type scanResult struct {
 	Time       time.Duration
 }
 
-func scan(eng *engine.Engine, root string) scanResult {
+func scan(eng *engine.Engine, root string, perFile bool) scanResult {
 	var r scanResult
 	start := time.Now()
+	var files []string // relative paths, "/"-separated
 	filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
@@ -50,7 +52,16 @@ func scan(eng *engine.Engine, root string) scanResult {
 			}
 			return nil
 		}
-		if !d.Type().IsRegular() || engine.LangOf(rel) == "" {
+		if !d.Type().IsRegular() {
+			return nil
+		}
+		if path.Base(rel) == "composer.json" {
+			if info, err := d.Info(); err == nil && info.Size() <= maxScanFile {
+				files = append(files, rel) // PSR-4 autoload, for the engine's project index
+			}
+			return nil
+		}
+		if engine.LangOf(rel) == "" {
 			return nil
 		}
 		r.Files++
@@ -58,18 +69,31 @@ func scan(eng *engine.Engine, root string) scanResult {
 			r.Unfinished++
 			return nil
 		}
-		src, err := os.ReadFile(p)
+		files = append(files, rel)
+		return nil
+	})
+	read := func(rel string) ([]byte, error) { return os.ReadFile(filepath.Join(root, filepath.FromSlash(rel))) }
+	scanOne := func(rel string, src []byte) ([]engine.Finding, error) { return eng.ScanFile(rel, src) }
+	if !perFile {
+		if ps, ok := projectScanner(eng, files, read); ok {
+			scanOne = ps
+		}
+	}
+	for _, rel := range files {
+		if engine.LangOf(rel) == "" {
+			continue
+		}
+		src, err := read(rel)
 		if err != nil {
 			r.Unfinished++
-			return nil
+			continue
 		}
-		fs, err := eng.ScanFile(rel, src)
+		fs, err := scanOne(rel, src)
 		if errors.Is(err, engine.ErrLimit) || errors.Is(err, engine.ErrPartial) {
 			r.Unfinished++
 		}
 		r.Findings = append(r.Findings, fs...)
-		return nil
-	})
+	}
 	r.Time = time.Since(start)
 	return r
 }

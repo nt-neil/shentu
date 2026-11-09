@@ -38,15 +38,16 @@ func main() {
 	out := flag.String("out", "", "write the report to this file instead of stdout")
 	jobs := flag.Int("j", 2, "cases run at the same time")
 	library := flag.Bool("library", false, "scan Composer, PyPI and npm packages in library mode (WordPress plugins stay in application mode)")
+	perFile := flag.Bool("per-file", false, "scan each file on its own even when the engine can follow calls across files")
 	flag.Parse()
 
-	if err := run(*casesDir, *cacheDir, *only, *fetchOnly, *out, *jobs, *library); err != nil {
+	if err := run(*casesDir, *cacheDir, *only, *fetchOnly, *out, *jobs, *library, *perFile); err != nil {
 		fmt.Fprintln(os.Stderr, "cvebench:", err)
 		os.Exit(1)
 	}
 }
 
-func run(casesDir, cacheDir, only string, fetchOnly bool, out string, jobs int, library bool) error {
+func run(casesDir, cacheDir, only string, fetchOnly bool, out string, jobs int, library, perFile bool) error {
 	cases, err := loadCases(casesDir)
 	if err != nil {
 		return err
@@ -100,7 +101,7 @@ func run(casesDir, cacheDir, only string, fetchOnly bool, out string, jobs int, 
 				if cases[i].Ecosystem != "wordpress-plugin" {
 					e = libEng
 				}
-				results[i] = runCase(f, e, rs, cited, cases[i], fetchOnly)
+				results[i] = runCase(f, e, rs, cited, cases[i], fetchOnly, perFile)
 			}
 		}()
 	}
@@ -134,7 +135,7 @@ func run(casesDir, cacheDir, only string, fetchOnly bool, out string, jobs int, 
 }
 
 // runCase fetches and scans both releases of one case and judges the result.
-func runCase(f *fetcher, eng *engine.Engine, rs []rules.Rule, cited map[string]bool, c Case, fetchOnly bool) caseResult {
+func runCase(f *fetcher, eng *engine.Engine, rs []rules.Rule, cited map[string]bool, c Case, fetchOnly, perFile bool) caseResult {
 	r := caseResult{Case: c, RuleSource: cited[c.ID]}
 	var err error
 	if r.vulnDir, err = f.release(c, c.Vulnerable); err != nil {
@@ -152,8 +153,8 @@ func runCase(f *fetcher, eng *engine.Engine, rs []rules.Rule, cited map[string]b
 	if fetchOnly {
 		return r
 	}
-	r.Vuln = scan(eng, r.vulnDir)
-	r.FixedScan = scan(eng, r.fixedDir)
+	r.Vuln = scan(eng, r.vulnDir, perFile)
+	r.FixedScan = scan(eng, r.fixedDir, perFile)
 	judge(&r, rs)
 	return r
 }
