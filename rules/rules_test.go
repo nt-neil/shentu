@@ -193,7 +193,7 @@ func checkSamples(t *testing.T, r Rule) {
 			if len(r.Sources) > 0 && !containsAny(s.Code, r.Sources) {
 				t.Errorf("%s: vulnerable sample %d uses none of the sources", r.File, i)
 			}
-			if !containsAny(s.Code, r.Sinks) {
+			if !containsAny(s.Code, r.Sinks) && !chainedSink(s.Code, r.Sinks) {
 				t.Errorf("%s: vulnerable sample %d uses none of the sinks", r.File, i)
 			}
 		}
@@ -215,6 +215,18 @@ func hasOption(when []string) bool {
 func containsAny(code string, needles []string) bool {
 	for _, n := range needles {
 		if strings.Contains(code, n) {
+			return true
+		}
+	}
+	return false
+}
+
+// chainedSink: a PHP sink written as a static call (Process::run() also matches
+// at the end of a chain from that class (Process::timeout(30)->run()).
+func chainedSink(code string, sinks []string) bool {
+	for _, s := range sinks {
+		cls, method, ok := strings.Cut(strings.TrimSuffix(s, "("), "::")
+		if ok && strings.HasSuffix(s, "(") && strings.Contains(code, cls+"::") && strings.Contains(code, "->"+method+"(") {
 			return true
 		}
 	}

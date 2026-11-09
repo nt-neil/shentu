@@ -157,6 +157,7 @@ func compileRule(r rules.Rule) (*crule, error) {
 			}
 		}
 	}
+	c.chainSinks()
 	c.output = len(c.sinks) > 0 && len(c.textSinks) == 0
 	for _, s := range c.sinks {
 		if ac := c.args[s]; ac == nil || len(ac.context) == 0 {
