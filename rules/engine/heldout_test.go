@@ -425,7 +425,7 @@ func TestHeldOut(t *testing.T) {
 		{"PY2 tornado body argument sql", "python", "class H(RequestHandler):\n    def post(self):\n        q = \"UPDATE t SET a = '{}'\".format(self.get_body_argument('a'))\n        self.db.execute(q)\n", true, ""},
 		{"PY3 aiohttp match_info open", "python", "async def f(request):\n    p = os.path.join(ROOT, request.match_info['p'])\n    with open(p) as fh:\n        return web.Response(text=fh.read())\n", true, ""},
 		{"PY4 RawSQL annotate", "python", "def v(request):\n    o = request.GET['o']\n    return Item.objects.annotate(x=RawSQL('SELECT ' + o, []))\n", true, ""},
-		{"PY5 upload filename Path join", "python", "async def up(file: UploadFile):\n    target = Path(UPLOAD_DIR) / file.filename\n    with open(target, 'wb') as out:\n        out.write(await file.read())\n", true, ""},
+		{"PY5 upload filename Path join", "python", "async def up(file: UploadFile):\n    target = Path(UPLOAD_DIR) / file.filename\n    with open(target, 'wb') as out:\n        out.write(await file.read())\n", true, "the upload file-name rule was held back: .filename alone also matched non-upload names in Django (E7)"},
 		{"PY6 httpx client stream", "python", "async def p(request):\n    u = (await request.json())['u']\n    async with httpx.AsyncClient() as client:\n        async with client.stream('GET', u) as r:\n            return {'s': r.status_code}\n", true, ""},
 		{"PY7 tornado redirect body", "python", "class H(RequestHandler):\n    def post(self):\n        self.redirect(self.get_body_argument('return_to'))\n", true, ""},
 		{"PY8 torch.load downloaded", "python", "def f(url):\n    buf = io.BytesIO(requests.get(url).content)\n    return torch.load(buf)\n", true, ""},
