@@ -97,3 +97,57 @@ func TestInterprocReview2(t *testing.T) {
 		}
 	}
 }
+
+func TestInterprocReview3(t *testing.T) {
+	e := engineForTest(t)
+	P := "<?php\n"
+	cases := []struct {
+		name, lang, src string
+		want            int // a line that must be reported; 0 = nothing
+	}{
+		{"local helper returning an unknown call through a variable", "php", P + "function load($id) { $p = get_post($id); return $p; }\nfunction q($v) { mysqli_query($db, \"S $v\"); }\nq(load($_REQUEST['id']));\n", 0},
+		{"local helper returning its parameter through a variable", "php", P + "function load($id) { $p = trim($id); return $p; }\nfunction q($v) { mysqli_query($db, \"S $v\"); }\nq(load($_REQUEST['id']));\n", 3},
+		{"subclass overrides the caller too", "php", P + "class A {\n  function h() { $this->q($_GET['x']); }\n  function q($v) { echo 1; }\n}\nclass B extends A {\n  function h() { echo 2; }\n  function q($v) { mysqli_query($db, \"S $v\"); }\n}\n", 0},
+		{"trait used after the method", "php", P + "trait T {\n  function q($v) { mysqli_query($db, \"S $v\"); }\n}\nclass C {\n  function a() { $this->q($_GET['x']); }\n  use T;\n}\n", 3},
+		{"python decode on the receiver", "python", "def run(q):\n    cur.execute(\"SELECT %s\" % q)\n\ndef view(request):\n    run(request.args['q'].decode())\n", 2},
+	}
+	for _, c := range cases {
+		fs, err := e.Scan(c.lang, "f", []byte(c.src))
+		var got []int
+		for _, f := range fs {
+			got = append(got, f.Line)
+		}
+		ok := len(got) == 0
+		if c.want != 0 {
+			ok = false
+			for _, l := range got {
+				ok = ok || l == c.want
+			}
+		}
+		if !ok {
+			t.Errorf("%s: lines %v err %v, want %d", c.name, got, err, c.want)
+		}
+	}
+}
+
+// One file stays within the engine's MaxTime, the second pass included.
+func TestInterprocFileTime(t *testing.T) {
+	e := engineForTest(t)
+	src, want := hostileFile(60, 120)
+	start := time.Now()
+	fs, _ := e.Scan("php", "f", []byte(src))
+	d := time.Since(start)
+	got := map[int]bool{}
+	for _, f := range fs {
+		got[f.Line] = true
+	}
+	for _, l := range want {
+		if !got[l] {
+			t.Errorf("%d bytes: the direct finding at line %d is missing", len(src), l)
+		}
+	}
+	if max := e.Limits.MaxTime + e.Limits.MaxTime/2; d > max {
+		t.Errorf("%d bytes took %v, over %v", len(src), d, max)
+	}
+	t.Logf("%d bytes: %v", len(src), d)
+}

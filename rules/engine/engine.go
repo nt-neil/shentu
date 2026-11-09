@@ -193,17 +193,22 @@ func (e *Engine) Scan(lang, path string, src []byte) ([]Finding, error) {
 			break
 		}
 	}
-	// Then again with calls followed, on a budget of its own. A rule that
-	// finishes takes this result (summaries also clear what a sanitizing helper
-	// returns); one cut short keeps its first result too.
+	// Then again with calls followed, on a token budget of its own and the time
+	// left of the same MaxTime. A rule that finishes with every summary complete
+	// takes this result (summaries also clear what a sanitizing helper returns);
+	// one cut short, or with a summary that hit a cap and may say too little,
+	// keeps its first result as well.
 	limited := b.hit || b.limited
 	finished := map[*crule]bool{}
 	if !b.hit && len(ff.byKey) > 0 {
 		b2 := newBudget(e.Limits)
-		b2.deadline = b.deadline.Add(e.Limits.maxTime()) // a file takes at most twice MaxTime in all
+		b2.deadline = b.deadline // one file stays within MaxTime in all
 		for _, r := range ruleList {
 			sc := newSummaries(ff)
 			a := &analysis{r: r, php: lang == "php", py: lang == "python", js: lang == "js", b: b2, kw: keywords[lang], seen: map[int]bool{}, sc: sc}
+			if !e.Library && !a.crossNeeded(tree) {
+				continue // no call can change this rule's result: the first pass stands
+			}
 			a.block(tree, state{})
 			if e.Library && libClasses[r.rule.Class] && !testPath(path) && !b2.hit {
 				l := &analysis{r: r, php: a.php, py: a.py, js: a.js, b: b2, kw: a.kw, seen: a.seen, sc: sc, lib: true}
@@ -215,10 +220,15 @@ func (e *Engine) Scan(lang, path string, src []byte) ([]Finding, error) {
 				delete(direct, r)
 				break
 			}
+			if sc.capped {
+				add(r, direct[r], a.lines)
+				delete(direct, r)
+				continue
+			}
 			add(r, a.lines)
 			finished[r] = true
 		}
-		limited = limited || b2.hit || b2.limited || time.Now().After(b2.deadline)
+		limited = limited || b2.hit || b2.limited
 	}
 	for _, r := range ruleList {
 		if lines, ok := direct[r]; ok && !finished[r] {

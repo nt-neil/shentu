@@ -85,6 +85,7 @@ type summaries struct {
 	busy   map[string]bool
 	rel    map[string]uint8 // relevance to the rule: 0 not known yet, 1 yes, 2 no, 3 being worked out
 	retUnk map[string]uint8 // 1: the function returns the result of a call the analysis does not know; 2: it does not
+	capped bool             // a summary hit a cap (depth, runs, rounds, parameters) and may say too little
 	runs   int
 	depth  int
 }
@@ -265,11 +266,11 @@ func (a *analysis) calleeKey(t []Token, i int) string {
 	if a.sc == nil {
 		return ""
 	}
-	return a.sc.ff.key(t, i, a.cls, a.parent)
+	return a.sc.ff.key(t, i, a.cls, a.parent, a.fname)
 }
 
-// key resolves the call named at t[i] from a method of class cls (with parent).
-func (ff *fileFuncs) key(t []Token, i int, cls, parent string) string {
+// key resolves the call named at t[i] from method caller of class cls (with parent).
+func (ff *fileFuncs) key(t []Token, i int, cls, parent, caller string) string {
 	if i+1 >= len(t) || !t[i+1].op("(") || t[i].Kind != Ident && !(ff.php && t[i].Kind == Var) {
 		return ""
 	}
@@ -292,7 +293,7 @@ func (ff *fileFuncs) key(t []Token, i int, cls, parent string) string {
 		case ff.php && strings.EqualFold(r, "self"):
 			return ff.method(ff.norm(cls), name, 0) // self:: is the class the code is in
 		case receivers[r] || ff.php && strings.EqualFold(r, "static"):
-			return ff.this(ff.norm(cls), name) // $this, static::, this, self, cls: the object's class may be a subclass
+			return ff.this(ff.norm(cls), name, caller) // $this, static::, this, self, cls: the object's class may be a subclass
 		case ff.php && strings.EqualFold(r, "parent"):
 			return ff.method(ff.norm(parent), name, 0)
 		case t[i-2].Kind == Ident && ff.hasClass(ff.norm(r)):
@@ -348,12 +349,20 @@ func (ff *fileFuncs) method(class, name string, _ int) string {
 	return k
 }
 
-// this resolves $this->name() in class: the method the class has, merged with
-// the overrides of its subclasses in the file, since $this may be one of them.
-func (ff *fileFuncs) this(class, name string) string {
+// this resolves $this->name() in method caller of class: the method the class
+// has, merged with the overrides of its subclasses in the file, since $this may
+// be one of them; not those that override caller too (for them this code does
+// not run).
+func (ff *fileFuncs) this(class, name, caller string) string {
 	base := ff.method(class, name, 0)
+	if ff.php {
+		caller = strings.ToLower(caller)
+	}
 	var subs []string
 	for c := range ff.classes() {
+		if caller != "" && len(ff.byKey[c+"::"+caller]) > 0 {
+			continue
+		}
 		if c != class && ff.inherits(c, class) {
 			if k := c + "::" + name; len(ff.byKey[k]) > 0 && k != base {
 				subs = append(subs, k)
@@ -364,7 +373,7 @@ func (ff *fileFuncs) this(class, name string) string {
 		return base
 	}
 	slices.Sort(subs)
-	vk := "$this " + class + "::" + name // a key of its own for the union
+	vk := "$this " + class + "::" + name + " " + strings.Join(subs, ",") // a key of its own for the union
 	if _, ok := ff.byKey[vk]; !ok {
 		var infos []*fnInfo
 		if base != "" {
@@ -436,7 +445,7 @@ func (ff *fileFuncs) components(b *budget) {
 					return
 				}
 				for i := range t {
-					if c := ff.key(t, i, fi.f.class, fi.f.parent); c != "" && !seen[c] {
+					if c := ff.key(t, i, fi.f.class, fi.f.parent, fi.f.name); c != "" && !seen[c] {
 						seen[c] = true
 						edges[k] = append(edges[k], c)
 						ff.callers[c] = append(ff.callers[c], k)
@@ -531,6 +540,7 @@ func (a *analysis) summaryOf(key string) *summary {
 	}
 	if sc.depth >= maxSumDepth || sc.runs >= maxSumRuns || a.b.hit {
 		a.b.tooDeep()
+		sc.capped = true
 		return nil
 	}
 	sc.ff.components(a.b)
@@ -564,6 +574,7 @@ func (a *analysis) summaryOf(key string) *summary {
 		}
 		if round+1 >= maxSumRounds {
 			a.b.tooDeep() // a recursive cycle that does not settle
+			sc.capped = true
 			break
 		}
 	}
@@ -579,9 +590,34 @@ func (a *analysis) summarizeKey(key string) *summary {
 	return s
 }
 
-// returnsUnknown reports whether a function returns, as its whole value, the
-// result of a call the analysis does not know (return get_post($id)): input it
-// passes through that call is a guess, as with the call written out.
+// crossNeeded reports whether following calls can change the rule's result in
+// this file: some function that matters to the rule is called (by another
+// function, or by the file's top-level code). Otherwise the analysis inside
+// each function is the whole answer.
+func (a *analysis) crossNeeded(tree []*stmt) bool {
+	sc := a.sc
+	a.relevant("") // works out relevance for every function
+	for k, r := range sc.rel {
+		if r == 1 && len(sc.ff.callers[k]) > 0 {
+			return true
+		}
+	}
+	found := false
+	walkToks(tree, 0, func(t []Token) {
+		for i := 0; i < len(t) && !found; i++ {
+			if k := sc.ff.key(t, i, "", "", ""); k != "" && sc.rel[k] == 1 {
+				found = true
+			}
+		}
+	})
+	return found
+}
+
+// returnsUnknown reports whether input a function passes on comes back only
+// through calls the analysis does not know ($p = get_post($id); return $p):
+// it is a guess, as with the call written out. It follows the data: the body is
+// read once with the parameters tainted and the rule's sources off, and the
+// return value is a guess unless it carries a parameter as is.
 func (a *analysis) returnsUnknown(key string) bool {
 	sc := a.sc
 	switch sc.retUnk[key] {
@@ -590,36 +626,20 @@ func (a *analysis) returnsUnknown(key string) bool {
 	case 2:
 		return false
 	}
-	sc.retUnk[key] = 2
+	sc.retUnk[key] = 1
 	for _, fi := range sc.funcs[key] {
-		walkToks(fi.f.body, 0, func(t []Token) {
-			if len(t) < 3 || !t[0].word("return") {
-				return
+		x := &analysis{r: a.r, php: a.php, py: a.py, js: a.js, b: a.b, kw: a.kw, seen: map[int]bool{}, sc: sc,
+			summ: &summRun{lines: map[int]bool{}, emb: map[int]bool{}}, noSrc: true, cls: fi.f.class, parent: fi.f.parent, fname: fi.f.name}
+		st := state{}
+		for _, p := range fi.params {
+			if p != "" {
+				st[p] = entry{taint: true}
 			}
-			// The call's name: the last name of a chain that the whole expression calls.
-			if !t[len(t)-1].op(")") {
-				return
-			}
-			open := openOf(t, len(t)-1)
-			if open < 2 || !t[open].op("(") || t[open-1].Kind != Ident {
-				return
-			}
-			for k := 1; k < open-1; k++ { // a plain chain before it: $this->db->get(...), not "a" . f(...)
-				if t[k].Kind != Ident && t[k].Kind != Var && !memberOp(a.php, t[k]) && !t[k].op(`\`) {
-					return
-				}
-			}
-			for _, i := range []int{open - 1} {
-				n := t[i].Text
-				if formatFuncs[n] || passFuncs[a.lang()][n] || numericFuncs[a.lang()][n] || sc.ff.key(t, i, fi.f.class, fi.f.parent) != "" {
-					continue
-				}
-				if _, _, _, ok := a.sanitizerAt(state{}, t, i); ok {
-					continue
-				}
-				sc.retUnk[key] = 1
-			}
-		})
+		}
+		x.block(fi.f.body, st)
+		if x.summ.ret.taint && !x.summ.ret.weak {
+			sc.retUnk[key] = 2
+		}
 	}
 	return sc.retUnk[key] == 1
 }
@@ -709,10 +729,11 @@ func (a *analysis) summarize(fi *fnInfo, s *summary) {
 	n := min(len(fi.params), maxSumParams)
 	if len(fi.params) > maxSumParams {
 		a.b.tooDeep() // more parameters than a summary tracks: the rest count as passed on (callVal)
+		a.sc.capped = true
 	}
 	run := func(mask uint64, sources bool) *summRun {
 		x := &analysis{r: a.r, php: a.php, py: a.py, js: a.js, b: a.b, kw: a.kw, seen: map[int]bool{}, sc: a.sc,
-			summ: &summRun{lines: map[int]bool{}, emb: map[int]bool{}}, noSrc: !sources, cls: fi.f.class, parent: fi.f.parent}
+			summ: &summRun{lines: map[int]bool{}, emb: map[int]bool{}}, noSrc: !sources, cls: fi.f.class, parent: fi.f.parent, fname: fi.f.name}
 		st := state{}
 		for i := 0; i < n; i++ {
 			if p := fi.params[i]; p != "" && mask&(1<<i) != 0 {

@@ -122,6 +122,7 @@ type analysis struct {
 	noSrc  bool   // the rule's sources are off (a summary run for parameters)
 	cls    string // class of the method being analysed, and its parent
 	parent string
+	fname  string // name of the function being analysed
 }
 
 func (a *analysis) report(line int) { a.reportSink(line, false) }
@@ -332,11 +333,14 @@ func (a *analysis) function(f *fn, st state) {
 		}
 	}
 	a.libParams(f, x)
-	cls, parent := a.cls, a.parent
+	cls, parent, fname := a.cls, a.parent, a.fname
 	if f.method {
 		a.cls, a.parent = f.class, f.parent
 	}
-	defer func() { a.cls, a.parent = cls, parent }()
+	if f.name != "" {
+		a.fname = f.name
+	}
+	defer func() { a.cls, a.parent, a.fname = cls, parent, fname }()
 	a.depth++
 	a.block(f.body, x)
 	a.depth--

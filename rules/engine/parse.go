@@ -484,7 +484,13 @@ func (p *braceParser) classStmt() *stmt {
 	p.inClass, p.class, p.parent, p.traits = true, name, parent, nil
 	defer func() { p.inClass, p.class, p.parent, p.traits = inClass, class, par, traits }()
 	if p.php {
-		return &stmt{kind: sBlock, body: p.nested(func() []*stmt { return p.block(true) })}
+		body := p.nested(func() []*stmt { return p.block(true) })
+		for _, st := range body { // use T; anywhere in the class counts for every method
+			if st.kind == sFunc && st.fn != nil && st.fn.method {
+				st.fn.traits = p.traits
+			}
+		}
+		return &stmt{kind: sBlock, body: body}
 	}
 	return &stmt{kind: sBlock, body: p.nested(p.classBody)}
 }
