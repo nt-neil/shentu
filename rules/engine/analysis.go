@@ -1453,12 +1453,6 @@ func (a *analysis) refine(st state, cond []Token, truth bool) (state, []string) 
 		split = func(t Token) bool { return t.op("&&") || t.word("and") }
 	}
 	var cleaned []string
-	for _, k := range a.slashChecked(st, splitTop(cond, split), truth) {
-		e := out[k.key]
-		e.taint, e.src = false, e.src || k.src
-		out[k.key] = e
-		cleaned = append(cleaned, k.key)
-	}
 	for _, atom := range splitTop(cond, split) {
 		if truth {
 			// A || B || C where each validates the same value: where it holds, one did

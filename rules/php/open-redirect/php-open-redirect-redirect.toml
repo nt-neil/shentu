@@ -10,7 +10,7 @@ sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "get_query_var(", "->get_
 sinks = ["wp_redirect(", "Location:", "redirect(", "redirect()->to(", "redirect()->away(", "Redirect::to(", "Redirect::away(", "->redirect("]
 sanitizers = ["Uri::isInternal(", "JUri::isInternal(", "wp_validate_redirect", "absint", "intval", "str_starts_with(", "check_admin_referer", "check_ajax_referer", "wp_verify_nonce", "current_user_can"]
 text = ["Location:"]
-fix = "Redirect with wp_safe_redirect() or after wp_validate_redirect(), which keep the user on allowed hosts; in Laravel redirect to a named route, or check the target's host before redirecting."
+fix = "Redirect with wp_safe_redirect(), or check the target with wp_validate_redirect() (Joomla: Uri::isInternal()) before redirecting; a prefix check (starts with \"/\" but not \"//\" or \"/\\\\\") can be bypassed with a tab or newline (\"/\\t/evil.example\"), so it does not make the target safe."
 refs = ["CVE-2018-19790"]
 
 [[args]]
@@ -78,8 +78,8 @@ if (str_starts_with($to, '/')) {
 '''
 
 [[samples]]
-kind = "safe"
-note = "a single leading / that is not // or /\\ stays on this site"
+kind = "vulnerable"
+note = "excluding // and /\\ is not enough: the browser drops a tab or newline, so /\\t/evil.example becomes //evil.example"
 code = '''
 <?php
 $to = $_GET['to'];
