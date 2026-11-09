@@ -52,12 +52,15 @@ type crule struct {
 	sanitizers             []*pat
 	args                   map[*pat]*argCond
 	leading                bool // some sink needs a fixed prefix, so values track raw input
+	output                 bool // every sink writes to a page (has a context condition): see context.go
 }
 
 type argCond struct {
 	arg            *int
 	when, unless   []*pat
 	whole, leading bool
+	context        []uint8 // output contexts that count (ctxHTML ...); empty: any
+	literal        bool
 }
 
 // New compiles rules. A pattern that does not lex as code of its language is an error.
@@ -107,7 +110,14 @@ func compileRule(r rules.Rule) (*crule, error) {
 		return nil, err
 	}
 	for _, a := range r.Args {
-		ac := &argCond{arg: a.Arg, whole: a.Whole, leading: a.Leading}
+		ac := &argCond{arg: a.Arg, whole: a.Whole, leading: a.Leading, literal: a.Literal}
+		for _, name := range a.Context {
+			c, ok := contextNames[name]
+			if !ok {
+				return nil, fmt.Errorf("args: unknown context %q", name)
+			}
+			ac.context = append(ac.context, c)
+		}
 		c.leading = c.leading || a.Leading
 		for _, list := range []struct {
 			raw []string
@@ -131,6 +141,12 @@ func compileRule(r rules.Rule) (*crule, error) {
 				return nil, fmt.Errorf("args: %q is not one of the sinks", s)
 			}
 			c.args[p] = ac
+		}
+	}
+	c.output = len(c.sinks) > 0 && len(c.textSinks) == 0
+	for _, s := range c.sinks {
+		if ac := c.args[s]; ac == nil || len(ac.context) == 0 {
+			c.output = false
 		}
 	}
 	return c, nil

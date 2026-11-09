@@ -75,6 +75,8 @@ code = '''
 @app.post("/upload")
 def upload():
     f = request.files["file"]
+    if os.path.splitext(f.filename)[1].lower() not in {".png", ".jpg"}:
+        abort(400)
     f.save("/srv/app/uploads/" + secure_filename(f.filename))
     return "ok"
 '''

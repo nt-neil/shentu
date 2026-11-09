@@ -1,0 +1,44 @@
+id = "php-nosqli-mongo-query"
+lang = "php"
+class = "nosqli"
+cwe = "CWE-943"
+severity = "high"
+tier = "info"
+title = "Request input placed in a MongoDB query without forcing it to a string"
+frameworks = ["laravel"]
+sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "$request->input(", "$request->all(", "$request->get(", "->get_param(", "json_decode(file_get_contents('php://input'"]
+sinks = ["->findOne(", "->find(", "->findOneAndUpdate(", "->findOneAndDelete(", "->updateOne(", "->updateMany(", "->deleteOne(", "->deleteMany(", "->countDocuments(", "->count(", "$where"]
+sanitizers = ["(string)", "strval", "intval", "absint", "(int)", "is_string"]
+text = ["$where"]
+fix = "Cast each request value to the type the field holds ((string), (int)) before it goes into a query, so a value such as user[$ne]= cannot become an operator; never build a $where expression from input."
+refs = ["CVE-2020-35847"]
+
+[[args]]
+sinks = ["->findOne(", "->find(", "->findOneAndUpdate(", "->findOneAndDelete(", "->updateOne(", "->updateMany(", "->deleteOne(", "->deleteMany(", "->countDocuments(", "->count("]
+arg = 1
+when = ["=>"]
+
+[[samples]]
+kind = "vulnerable"
+note = "password[$ne]=x makes the password an operator"
+code = '''
+<?php
+$user = $db->users->findOne(['name' => $_POST['name'], 'password' => $_POST['password']]);
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+$q = $_GET['q'];
+$cursor = $collection->find(['$where' => "this.title == '$q'"]);
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+$user = $db->users->findOne(['name' => (string) $_POST['name']]);
+$ok = $user && password_verify((string) $_POST['password'], $user['password_hash']);
+$post = Post::find($request->input('id'));
+'''

@@ -1,8 +1,9 @@
 # Shentu code rules
 
-Shentu's own rules for injection-class vulnerabilities in application code. Each rule
-describes one pattern: **user input (a source) that reaches a dangerous call (a sink)
-without passing through a sanitizer**. Package `rules/engine` applies them (see
+Shentu's own rules for vulnerabilities in application code. Most rules describe one
+pattern: **user input (a source) that reaches a dangerous call (a sink) without passing
+through a sanitizer**. A rule without sources is about how a call is made instead (a
+weak cipher, a password written in the code); see [Rules without sources](#rules-without-sources). Package `rules/engine` applies them (see
 [The engine](#the-engine)); `go test ./rules/...` checks that every rule is well
 formed and that the engine finds every vulnerable sample and no safe one.
 
@@ -19,7 +20,7 @@ rules/<lang>/<class>/<id>.toml
 | field | values |
 |---|---|
 | `lang` | `php`, `python`, `js` |
-| `class` | `sqli`, `cmdi`, `path-traversal` (includes file inclusion), `deserialization`, `code-eval` |
+| `class` | `sqli`, `cmdi`, `path-traversal` (includes file inclusion), `deserialization`, `code-eval`, `xss`, `ssrf`, `open-redirect`, `xxe`, `ldapi`, `nosqli`, `file-upload`, `weak-crypto`, `hardcoded-secret` |
 
 ## Format
 
@@ -32,7 +33,7 @@ severity = "high"                  # critical | high | medium | low
 tier = "info"                      # optional: info (default) | alert, see "Tiers"
 title = "Request input concatenated into a SQL string"
 frameworks = ["laravel"]           # optional: laravel, wordpress, django, flask, express
-sources = ["$_GET", "$request->input("]   # where user input comes from
+sources = ["$_GET", "$request->input("]   # where user input comes from; [] for a rule without sources
 sinks = ["mysqli_query", "->query("]      # the dangerous calls
 sanitizers = ["intval", "->prepare("]     # calls whose result is safe for these sinks; [] if none
 text = []                          # optional: entries of sources/sinks that are text in strings (below)
@@ -156,7 +157,9 @@ it are unchanged: a sink is reported when any argument is tainted.
 | `when` | the call is a sink only if one of these appears among its arguments |
 | `unless` | the call is not a sink if one of these appears among its arguments |
 | `whole` | the argument must be the input itself (or spread from it), not an object or array literal holding a value from it |
-| `leading` | the input must be at the start of the argument: a fixed prefix makes the call safe, as `WP_PLUGIN_DIR . "/$name"` cannot choose a `phar://` stream. A fixed prefix is a literal (or a run of literals) holding a character no URL scheme has (`/`, `_`, a space) before any `:`, so `'phar' . $x` and `'ph' . 'ar' . $x` are none; a constant; a ternary whose branches both are; a variable assigned one; a property or array key the input never reached (`$this->dir`, `$u['basedir']`), but never a superglobal or request object (`$_COOKIE[...]`, `$_SERVER['HTTP_...']`; `$_SERVER['DOCUMENT_ROOT']` is allowed); a call whose arguments hold no input, even through a sanitizer (`dirname(__FILE__)`, `get_template_directory()`, `strval(intval($x))`, but not `trim(basename($_GET['d']))`); `sprintf` whose format starts with such a literal; or a Laravel path helper (`storage_path(...)`). A call on input (`basename($_GET['d'])`) is not; a clean call that returns `""` (`trim(' ')`, an unset `getenv()`) is a known miss |
+| `context` | output sinks only (`echo`, `res.send(`): the input counts only when it is written into one of these places of an HTML page: `html` (between tags), `attr` (an attribute value, or inside a tag), `url` (the start of an `href`, `src`, `action`... value), `js` (inside `<script>`, an `on*` handler, or after `javascript:`); see [Output contexts](#output-contexts) |
+| `literal` | the argument named by `arg`, or the value of a `when` option (`password=`, `password:`), must be a non-empty string written in the code; used by rules without sources |
+| `leading` | the input must be at the start of the argument: a fixed prefix makes the call safe, as `WP_PLUGIN_DIR . "/$name"` cannot choose a `phar://` stream. A fixed prefix is a literal (or a run of literals) holding a character no URL scheme has (`/`, `_`, a space) before any `:`, so `'phar' . $x` and `'ph' . 'ar' . $x` are none; a constant; a ternary whose branches both are; a variable assigned one; a property or array key the input never reached (`$this->dir`, `$u['basedir']`), but never a superglobal or request object (`$_COOKIE[...]`, `$_SERVER['HTTP_...']`; `$_SERVER['DOCUMENT_ROOT']` is allowed); a call whose arguments hold no input, even through a sanitizer (`dirname(__FILE__)`, `get_template_directory()`, `strval(intval($x))`, but not `trim(basename($_GET['d']))`); `sprintf` whose format starts with such a literal; a Laravel path helper (`storage_path(...)`); a WordPress or Laravel URL helper (`admin_url(...)`, `home_url(...)`, `route(...)`); `add_query_arg` / `remove_query_arg` whose URL argument is fixed (or absent: the request's own path); `apply_filters` whose filtered value is fixed; or a literal that fixes the scheme and the host (`https://api.example.com/...`). A call on input (`basename($_GET['d'])`) is not; a clean call that returns `""` (`trim(' ')`, an unset `getenv()`) is a known miss |
 
 `when` and `unless` entries are code fragments matched anywhere in the call's
 arguments, with two refinements:
@@ -208,6 +211,49 @@ Allowed CWEs per class:
 | `path-traversal` | CWE-22, CWE-23, CWE-36, CWE-73, CWE-98 |
 | `deserialization` | CWE-502 |
 | `code-eval` | CWE-94, CWE-95, CWE-1336 |
+| `xss` | CWE-79, CWE-80 |
+| `ssrf` | CWE-918 |
+| `open-redirect` | CWE-601 |
+| `xxe` | CWE-611, CWE-776 |
+| `ldapi` | CWE-90 |
+| `nosqli` | CWE-943 |
+| `file-upload` | CWE-434 |
+| `weak-crypto` | CWE-327, CWE-328, CWE-916 |
+| `hardcoded-secret` | CWE-798, CWE-259, CWE-321 |
+
+### Output contexts
+
+Which escaping makes a value safe depends on where it lands in the page:
+`esc_html()` is enough between tags, but not in an `href` (a `javascript:` URL
+passes it) nor in an `onclick` handler (the browser decodes the entities before the
+script runs). The XSS rules therefore come in one rule per context, each with the
+sanitizers that suffice there, and an `[[args]]` entry with `context`. The engine
+reads the context from the literal HTML written before the value:
+
+- for a PHP `echo`, `print` or `<?=` right after inline HTML, from that HTML
+  (`<input value="<?php echo $v ?>">` is `attr`; `<script>` blocks are `js`, except
+  `<script type="text/html">` templates);
+- within one output, from the literal text joined before each value
+  (`echo '<a href="' . $u . '">'`, `` res.send(`<p>${x}</p>`) ``).
+
+In a rule whose sinks all have a context (an output rule), only the input itself and
+calls that pass it on (string edits, decoding, formatting, and escaping meant for
+another context) count: the result of any other call (`shell_exec(...)`, a template
+loader, `render_template(...)`) is what that call produced. An object or a list sent
+by `res.send` or `HttpResponse` is JSON, not markup, and Python keyword arguments
+other than `content=` (`status=`) are not what the page shows. Templates that escape
+by default (`render_template`, `res.render`, Blade `{{ }}`) are not sinks.
+
+### Rules without sources
+
+`sources = []` makes a rule about how a call is made, not about where its data comes
+from: every sink call whose `[[args]]` conditions hold is reported. Such rules must
+keep false positives low, so they name exact calls and conditions: a weak cipher in
+the call (`when = ["'aes-128-ecb'"]`), XML entity expansion turned on
+(`when = ["LIBXML_NOENT"]`), or a credential argument that is a string written in the
+code (`literal = true`). Samples of `hardcoded-secret` rules write `__SECRET__` where
+the value goes; the sample test puts a made-up value there at run time, so no
+credential-like string is kept in the repository.
 
 ## What CI checks (`rules_test.go`)
 
@@ -302,7 +348,10 @@ string or comment that runs to the end of the file returns `ErrPartial`. Both
 come with the findings made so far.
 
 What it does not do: follow values across files (input read in a controller and
-used in another class of another file is missed), know framework semantics beyond
+used in another class of another file is missed), judge the output context of HTML
+built in a variable and echoed later (the echo's own context is used), see a CSRF
+nonce check, treat a check on a value derived from another (`in_array($ext, ...)`
+after `$ext = pathinfo($name, ...)`) as a check on the original, know framework semantics beyond
 the rules (a lookup in a constant dict is not an allowlist), look into options
 kept in a variable (`const opts = { shell: true }; spawn(cmd, opts)`), or prove a
 finding.

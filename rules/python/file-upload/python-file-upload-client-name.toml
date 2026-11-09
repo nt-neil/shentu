@@ -1,0 +1,58 @@
+id = "python-file-upload-client-name"
+lang = "python"
+class = "file-upload"
+cwe = "CWE-434"
+severity = "medium"
+tier = "info"
+title = "Uploaded file stored under the name the client sent, without checking its type"
+frameworks = ["django", "flask"]
+sources = ["request.files", "request.FILES", ".filename"]
+sinks = [".save(", "default_storage.save(", "storage.save("]
+sanitizers = ["allowed_file(", "uuid.uuid4(", "secrets.token_hex(", "get_random_string("]
+fix = "Check the extension against an allowlist (os.path.splitext(name)[1].lower() in ALLOWED) before saving and store the file under a name the server makes; secure_filename() removes path parts but keeps the extension."
+refs = ["CVE-2023-30613"]
+
+[[args]]
+arg = 1
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+@app.route('/upload', methods=['POST'])
+def upload():
+    f = request.files['file']
+    f.save(os.path.join(app.config['UPLOAD_FOLDER'], secure_filename(f.filename)))
+    return 'ok'
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+def upload(request):
+    doc = request.FILES['doc']
+    path = default_storage.save('uploads/' + doc.name, doc)
+    return JsonResponse({'path': path})
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+@app.route('/upload', methods=['POST'])
+def upload():
+    f = request.files['file']
+    if not allowed_file(f.filename):
+        abort(400)
+    f.save(os.path.join(app.config['UPLOAD_FOLDER'], secure_filename(f.filename)))
+    return 'ok'
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+def upload(request):
+    doc = request.FILES['doc']
+    if os.path.splitext(doc.name)[1].lower() not in ALLOWED:
+        return HttpResponseBadRequest()
+    path = default_storage.save('uploads/' + doc.name, doc)
+    return JsonResponse({'path': path})
+'''

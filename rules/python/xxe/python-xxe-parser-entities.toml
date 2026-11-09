@@ -1,0 +1,51 @@
+id = "python-xxe-parser-entities"
+lang = "python"
+class = "xxe"
+cwe = "CWE-611"
+severity = "high"
+tier = "info"
+title = "XML parser set up to resolve external entities"
+sources = []
+sinks = ["XMLParser(", "etree.XMLParser(", "lxml.etree.XMLParser(", ".setFeature("]
+sanitizers = []
+fix = "Parse untrusted XML with defusedxml, or with lxml's XMLParser(resolve_entities=False, no_network=True, load_dtd=False); never turn on the SAX external entity features."
+refs = ["CVE-2016-5851"]
+
+[[args]]
+sinks = ["XMLParser(", "etree.XMLParser(", "lxml.etree.XMLParser("]
+when = ["resolve_entities=True", "load_dtd=True", "no_network=False"]
+
+[[args]]
+sinks = [".setFeature("]
+when = ["feature_external_ges", "feature_external_pes"]
+unless = ["False", "0"]
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+parser = etree.XMLParser(resolve_entities=True)
+doc = etree.fromstring(request.data, parser)
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+p = xml.sax.make_parser()
+p.setFeature(xml.sax.handler.feature_external_ges, True)
+p.parse(upload)
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+parser = etree.XMLParser(resolve_entities=False, no_network=True)
+doc = etree.fromstring(request.data, parser)
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+p = xml.sax.make_parser()
+p.setFeature(xml.sax.handler.feature_external_ges, False)
+p.parse(upload)
+'''

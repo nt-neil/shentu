@@ -64,6 +64,9 @@ note = "sanitize_file_name drops path separators"
 code = '''
 <?php
 $f = $_FILES['certificate'];
+if (!in_array(strtolower(pathinfo($f['name'], PATHINFO_EXTENSION)), ['pem', 'crt'], true)) {
+    wp_die('Unsupported file type');
+}
 move_uploaded_file($f['tmp_name'], WP_CONTENT_DIR . '/certs/' . sanitize_file_name($f['name']));
 '''
 

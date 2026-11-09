@@ -1,0 +1,49 @@
+id = "js-xss-response-url"
+lang = "js"
+class = "xss"
+cwe = "CWE-79"
+severity = "medium"
+tier = "info"
+title = "Request value sent back as a link URL or inside a script"
+frameworks = ["express"]
+sources = ["req.query", "req.params", "req.body", "req.cookies", "req.headers"]
+sinks = ["res.send(", "res.write(", "res.end("]
+sanitizers = ["encodeURIComponent(", "serialize(", "jsesc("]
+fix = "In an href or src accept only http(s) URLs (new URL(value) and a protocol check) or encode the value with encodeURIComponent() after a fixed path; inside <script> serialize it with a script-safe encoder, not with HTML escaping."
+refs = ["CVE-2024-43796"]
+
+[[args]]
+context = ["url", "js"]
+
+[[samples]]
+kind = "vulnerable"
+note = "escapeHtml keeps a javascript: URL"
+code = '''
+app.get("/continue", (req, res) => {
+  res.send('<a href="' + escapeHtml(req.query.next) + '">Continue</a>');
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+app.get("/widget", (req, res) => {
+  res.send(`<script>var theme = "${req.query.theme}";</script>`);
+});
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+app.get("/continue", (req, res) => {
+  res.send('<a href="/start?next=' + encodeURIComponent(req.query.next) + '">Continue</a>');
+});
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+app.get("/widget", (req, res) => {
+  res.send(`<script>var theme = ${serialize(req.query.theme)};</script>`);
+});
+'''

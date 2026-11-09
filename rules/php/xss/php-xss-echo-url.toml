@@ -1,0 +1,43 @@
+id = "php-xss-echo-url"
+lang = "php"
+class = "xss"
+cwe = "CWE-79"
+severity = "medium"
+tier = "info"
+title = "Request input written as a link or source URL without esc_url"
+frameworks = ["wordpress", "laravel"]
+sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "$_SERVER['PHP_SELF']", "$_SERVER['REQUEST_URI']", "$_SERVER['QUERY_STRING']", "$_SERVER['HTTP_", "get_query_var", "->get_param(", "$request->input(", "$request->query(", "add_query_arg("]
+sinks = ["echo", "print"]
+sanitizers = ["esc_url", "esc_url_raw", "urlencode", "rawurlencode", "absint", "wp_validate_redirect", "wp_http_validate_url"]
+fix = "Pass URLs through esc_url() (it drops javascript: and other unsafe schemes) or allow only http(s) URLs; esc_attr() and esc_html() leave javascript: links working."
+refs = ["CVE-2026-31859"]
+
+[[args]]
+context = ["url"]
+
+[[samples]]
+kind = "vulnerable"
+note = "esc_attr keeps a javascript: URL"
+code = '''
+<a class="button" href="<?php echo esc_attr($_GET['return']); ?>">Back</a>
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+echo '<form method="post" action="' . $_SERVER['PHP_SELF'] . '">';
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<a class="button" href="<?php echo esc_url($_GET['return']); ?>">Back</a>
+'''
+
+[[samples]]
+kind = "safe"
+note = "after a fixed path the value cannot choose the scheme; the attribute rule judges it"
+code = '''
+<a href="/search?q=<?php echo urlencode($_GET['q']); ?>">Again</a>
+'''

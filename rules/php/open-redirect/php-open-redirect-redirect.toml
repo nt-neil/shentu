@@ -1,0 +1,56 @@
+id = "php-open-redirect-redirect"
+lang = "php"
+class = "open-redirect"
+cwe = "CWE-601"
+severity = "medium"
+tier = "info"
+title = "Redirect to a URL taken from the request"
+frameworks = ["wordpress", "laravel"]
+sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "get_query_var", "->get_param(", "$request->input(", "$request->query(", "$request->get("]
+sinks = ["wp_redirect(", "Location:", "redirect(", "redirect()->to(", "redirect()->away(", "Redirect::to(", "Redirect::away("]
+sanitizers = ["wp_validate_redirect", "absint", "intval"]
+text = ["Location:"]
+fix = "Redirect with wp_safe_redirect() or after wp_validate_redirect(), which keep the user on allowed hosts; in Laravel redirect to a named route, or check the target's host before redirecting."
+refs = ["CVE-2018-19790"]
+
+[[args]]
+leading = true
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+if (isset($_GET['redirect_to'])) {
+    wp_redirect($_GET['redirect_to']);
+    exit;
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+$next = $_POST['next'];
+header("Location: " . $next);
+exit;
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+if (isset($_GET['redirect_to'])) {
+    wp_safe_redirect($_GET['redirect_to']);
+    exit;
+}
+'''
+
+[[samples]]
+kind = "safe"
+note = "a fixed path or the site's own address comes first"
+code = '''
+<?php
+header("Location: /account/orders?id=" . $_POST['order']);
+wp_redirect(admin_url('admin.php?page=' . $_GET['page']));
+exit;
+'''

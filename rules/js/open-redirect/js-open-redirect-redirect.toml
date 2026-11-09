@@ -1,0 +1,54 @@
+id = "js-open-redirect-redirect"
+lang = "js"
+class = "open-redirect"
+cwe = "CWE-601"
+severity = "medium"
+tier = "info"
+title = "Redirect to a URL taken from the request"
+frameworks = ["express"]
+sources = ["req.query", "req.body", "req.params"]
+sinks = ["res.redirect(", "res.location("]
+sanitizers = ["encodeURIComponent("]
+fix = "Redirect only to a relative path on this site (starting with a single \"/\") or to a host in an allowlist; otherwise send the user to a fixed page."
+refs = ["CVE-2022-2237"]
+
+[[args]]
+leading = true
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+app.post("/login", (req, res) => {
+  login(req);
+  res.redirect(req.query.returnTo || "/");
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+app.get("/out", (req, res) => {
+  const { url } = req.query;
+  res.redirect(302, url);
+});
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+app.post("/login", (req, res) => {
+  login(req);
+  res.redirect("/welcome?from=" + encodeURIComponent(req.query.returnTo));
+});
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+const PAGES = ["/", "/account", "/orders"];
+app.get("/out", (req, res) => {
+  const { url } = req.query;
+  if (!PAGES.includes(url)) return res.redirect("/");
+  res.redirect(302, url);
+});
+'''

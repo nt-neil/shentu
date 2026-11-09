@@ -12,6 +12,7 @@ import (
 // failed, and listed in the engine's known limits.
 func TestHeldOut(t *testing.T) {
 	e := engineForTest(t)
+	fake := strings.Join([]string{"made", "up", "for", "tests"}, "-") // never a real credential in the source
 	cases := []struct {
 		name, lang, src string
 		vulnerable      bool
@@ -263,6 +264,75 @@ func TestHeldOut(t *testing.T) {
 		{"review2 K3 sys3", "php", "<?php\n" + "$a['w'] = 'ls ';\n$a['w'] .= $_POST['w'];\nsystem($a['w']);\n", true, ""},
 		{"review2 K3 sys4", "php", "<?php\n" + "$q['w'] = 'a';\n$q['w'] .= $_POST['w'];\nmysqli_query($db, 'SELECT ' . $q['w']);\n", true, ""},
 		{"review2 K3 sys5", "php", "<?php\n" + "$q['w'] = 'a';\n$q['w'] .= $_GET['x'];\nmysqli_query($db, 'SELECT ' . $q['w']);\n", true, ""},
+		// P1a classes: XSS by output context.
+		{"X0 php short echo tag", "php", "<p>Saved: <?= $_POST['title'] ?></p>\n", true, ""},
+		{"X1 php echo list", "php", "<?php\n$n = $_REQUEST['n'];\necho '<li>', $n, '</li>';\n", true, ""},
+		{"X2 php heredoc attr", "php", "<?php\n$c = sanitize_text_field($_GET['color']);\necho <<<HTML\n<span style=\"x\" title=\"$c\">x</span>\nHTML;\n", true, ""},
+		{"X3 php esc_html in href", "php", "<?php $u = $_GET['u']; ?>\n<a href=\"<?php echo esc_html($u); ?>\">x</a>\n", true, ""},
+		{"X4 php script json ok", "php", "<script>\nvar cfg = <?php echo json_encode(['q' => $_GET['q']]); ?>;\n</script>\n", false, ""},
+		{"X5 php wp_kses_post body ok", "php", "<div><?php echo wp_kses_post($_POST['bio']); ?></div>\n", false, ""},
+		{"X6 php template echo of option", "php", "<p><?php echo get_option('blogname'); ?></p>\n", false, ""},
+		{"X7 php echo db result for input", "php", "<?php\n$row = $wpdb->get_var($wpdb->prepare('SELECT t FROM x WHERE id = %d', $_GET['id']));\necho esc_html($row);\n", false, ""},
+		{"X8 php onclick esc_js ok", "php", "<a onclick=\"go('<?php echo esc_js($_GET['t']); ?>')\">x</a>\n", false, ""},
+		{"X9 py HttpResponse format", "python", "def v(request):\n    n = request.GET['n']\n    return HttpResponse('<b>{}</b>'.format(n))\n", true, ""},
+		{"X10 py jsonify ok", "python", "@app.route('/a')\ndef a():\n    return jsonify(q=request.args.get('q'))\n", false, ""},
+		{"X11 py mark_safe escaped", "python", "def v(request):\n    return render(request, 't.html', {'x': mark_safe('<i>' + escape(request.GET['x']) + '</i>')})\n", false, ""},
+		{"X12 js res.end template", "js", "http.createServer((req, res) => {});\napp.get('/e', (req, res) => {\n  const msg = req.query.msg;\n  res.end(`<div class=\"err\">${msg}</div>`);\n});\n", true, ""},
+		{"X13 js res.json ok", "js", "app.get('/e', (req, res) => {\n  res.json({ msg: req.query.msg });\n});\n", false, ""},
+		{"X14 js res.send file contents", "js", "app.get('/f', async (req, res) => {\n  const data = await loadReport(req.query.id);\n  res.send(data);\n});\n", false, ""},
+		{"X15 js innerHTML from hash", "js", "window.addEventListener('hashchange', () => {\n  out.innerHTML = location.hash.substring(1);\n});\n", true, ""},
+		{"X16 js href from query", "js", "app.get('/r', (req, res) => {\n  const back = req.query.back;\n  res.send(`<a href=\"${back}\">back</a>`);\n});\n", true, ""},
+		// SSRF and open redirect.
+		{"S1 php file_get_contents url", "php", "<?php\n$feed = $_GET['feed'];\n$xml = file_get_contents($feed);\n", true, ""},
+		{"S2 php http prefix only", "php", "<?php\n$r = wp_remote_get('http://' . $_POST['host'] . '/status');\n", true, ""},
+		{"S3 php safe remote", "php", "<?php\n$r = wp_safe_remote_get($_POST['url']);\n", false, ""},
+		{"S4 py requests post kw", "python", "@app.post('/hook')\ndef hook():\n    requests.post(request.json['callback'], json={'ok': True})\n", true, ""},
+		{"S5 py fixed host fstring", "python", "@app.get('/u')\ndef u():\n    return requests.get(f'https://api.example.com/users/{int(request.args[\"id\"])}').json()\n", false, ""},
+		{"S6 js got template host", "js", "app.get('/p', async (req, res) => {\n  const r = await got(`http://${req.query.host}/health`);\n  res.send(r.statusCode);\n});\n", true, ""},
+		{"S7 js http.get fixed", "js", "app.get('/p', (req, res) => {\n  https.get('https://status.example.com/v1/' + encodeURIComponent(req.query.s), (r) => res.sendStatus(r.statusCode));\n});\n", false, ""},
+		{"R1 php Location interp", "php", "<?php\n$to = $_GET['to'];\nheader(\"Location: $to\");\n", true, ""},
+		{"R2 php laravel away", "php", "<?php\nclass C { public function go(Request $request) {\n  return redirect()->away($request->input('url'));\n} }\n", true, ""},
+		{"R3 php Location fixed host", "php", "<?php\nheader('Location: https://shop.example.com/cart?item=' . urlencode($_GET['item']));\n", false, ""},
+		{"R4 php wp_validate_redirect", "php", "<?php\nwp_redirect(wp_validate_redirect($_GET['r'], home_url()));\n", false, ""},
+		{"R5 py redirect concat", "python", "@app.get('/go')\ndef go():\n    return redirect(request.args['scheme'] + '://' + request.args['host'])\n", true, ""},
+		{"R6 py redirect relative", "python", "@app.get('/go')\ndef go():\n    return redirect('/search?q=' + quote(request.args['q']))\n", false, ""},
+		{"R7 js res.location", "js", "app.get('/x', (req, res) => {\n  res.location(req.body.next).sendStatus(302);\n});\n", true, ""},
+		{"R8 js redirect fixed", "js", "app.get('/x', (req, res) => {\n  res.redirect('/items/' + encodeURIComponent(req.params.id));\n});\n", false, ""},
+		// XXE, LDAP, NoSQL.
+		{"E1 php SimpleXMLElement noent", "php", "<?php\n$x = new SimpleXMLElement($_POST['xml'], LIBXML_NOENT);\n", true, ""},
+		{"E2 php simplexml default", "php", "<?php\n$x = simplexml_load_string($_POST['xml']);\n", false, ""},
+		{"E3 py lxml no_network False", "python", "p = etree.XMLParser(no_network=False)\ntree = etree.parse(f, p)\n", true, ""},
+		{"E4 py defused", "python", "tree = defusedxml.ElementTree.fromstring(request.data)\n", false, ""},
+		{"E5 js parseXmlString noent", "js", "const doc = libxml.parseXmlString(req.body, { noent: true, nonet: true });\n", true, ""},
+		{"L1 php ldap_list concat", "php", "<?php\n$f = '(&(objectClass=user)(sAMAccountName=' . $_GET['u'] . '))';\n$r = ldap_list($ds, $base, $f);\n", true, ""},
+		{"L2 php ldap escaped", "php", "<?php\n$u = ldap_escape($_GET['u'], '', LDAP_ESCAPE_FILTER);\n$r = ldap_list($ds, $base, '(uid=' . $u . ')');\n", false, ""},
+		{"L3 py search_ext_s", "python", "def v(request):\n    f = '(mail=%s)' % request.POST['mail']\n    l.search_ext_s(BASE, ldap.SCOPE_SUBTREE, f)\n", true, ""},
+		{"L4 js ldap filter string", "js", "app.get('/u', (req, res) => {\n  client.search(BASE, { filter: '(cn=' + req.query.cn + ')' }, cb);\n});\n", true, ""},
+		{"N1 php mongo where", "php", "<?php\n$c->find(['$where' => 'this.age > ' . $_GET['age']]);\n", true, ""},
+		{"N2 php mongo strval", "php", "<?php\n$c->findOne(['email' => strval($_POST['email'])]);\n", false, ""},
+		{"N3 py find json", "python", "@app.post('/s')\ndef s():\n    q = request.json\n    return dumps(db.items.find({'owner': q.get('owner')}))\n", true, ""},
+		{"N4 py str find", "python", "@app.get('/s')\ndef s():\n    i = 'abc'.find(request.args['q'])\n    return str(i)\n", false, ""},
+		{"N5 js deleteMany query", "js", "app.delete('/n', async (req, res) => {\n  await Note.deleteMany({ owner: req.query.owner });\n  res.sendStatus(204);\n});\n", true, ""},
+		{"N6 js typeof check", "js", "app.post('/l', async (req, res) => {\n  const { email } = req.body;\n  if (typeof email !== 'string') return res.sendStatus(400);\n  res.json(await User.findOne({ email }));\n});\n", false, ""},
+		// Uploads.
+		{"U1 php storeAs client name", "php", "<?php\nclass C { public function up(Request $request) {\n  $f = $request->file('f');\n  return $f->storeAs('public', $f->getClientOriginalName());\n} }\n", true, ""},
+		{"U2 php move fixed name", "php", "<?php\nmove_uploaded_file($_FILES['f']['tmp_name'], $dir . '/' . uniqid('up_', true) . '.png');\n", false, ""},
+		{"U3 py save filename", "python", "def up():\n    for f in request.files.getlist('docs'):\n        f.save('/srv/docs/' + f.filename)\n", true, ""},
+		{"U4 js mv name", "js", "app.post('/u', (req, res) => {\n  const { doc } = req.files;\n  doc.mv('/srv/public/' + doc.name);\n  res.end();\n});\n", true, ""},
+		// Weak crypto and hardcoded secrets.
+		{"C1 php sha1 password", "php", "<?php\n$p = $_REQUEST['password'];\n$h = sha1($p);\n", true, ""},
+		{"C2 php openssl gcm", "php", "<?php\n$c = openssl_encrypt($d, 'aes-128-gcm', $k, 0, $iv, $tag);\n", false, ""},
+		{"C3 py hashlib.new md5 password", "python", "def login():\n    h = hashlib.new('md5', request.form.get('password').encode()).hexdigest()\n", true, ""},
+		{"C4 py ARC4", "python", "c = ARC4.new(key)\n", true, ""},
+		{"C5 py AES CBC", "python", "c = AES.new(key, AES.MODE_CBC, iv)\n", false, ""},
+		{"C6 js sha1 password", "js", "app.post('/l', (req, res) => {\n  const h = crypto.createHash('sha1').update(req.body.pwd).digest('hex');\n  res.end();\n});\n", true, ""},
+		{"C7 js des decipher", "js", "const d = crypto.createDecipheriv('des-ede3-cbc', key, iv);\n", true, ""},
+		{"K1 php PDO password literal", "php", "<?php\n$pdo = new PDO('mysql:host=db;dbname=a', 'a', '" + fake + "');\n", true, ""},
+		{"K2 php PDO from config", "php", "<?php\n$pdo = new PDO($dsn, $cfg['user'], $cfg['pass']);\n", false, ""},
+		{"K3 py hmac literal", "python", "sig = hmac.new(b'" + fake + "', body, hashlib.sha256).hexdigest()\n", true, ""},
+		{"K4 py pymysql env", "python", "c = pymysql.connect(host='db', user='a', password=os.getenv('PW'))\n", false, ""},
+		{"K5 js verify literal", "js", "const claims = jwt.verify(token, '" + fake + "');\n", true, ""},
+		{"K6 js hmac env", "js", "const sig = crypto.createHmac('sha256', process.env.HOOK_KEY).update(body).digest('hex');\n", false, ""},
 	}
 	pass := 0
 	for _, c := range cases {

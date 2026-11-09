@@ -1,0 +1,51 @@
+id = "python-xss-mark-safe"
+lang = "python"
+class = "xss"
+cwe = "CWE-79"
+severity = "medium"
+tier = "info"
+title = "Request value marked as safe HTML, so the template does not escape it"
+frameworks = ["django", "flask"]
+sources = ["request.args", "request.form", "request.values", "request.cookies", "request.GET", "request.POST", "request.COOKIES", "request.json", "request.data"]
+sinks = ["mark_safe(", "SafeString(", "Markup(", "markupsafe.Markup("]
+sanitizers = ["escape(", "html.escape(", "markupsafe.escape(", "conditional_escape(", "format_html(", "bleach.clean(", "Markup.escape("]
+fix = "Do not mark request data as safe: pass it to the template as is (it is escaped), build the fragment with format_html() / Markup('...{}').format(value), or clean it with an HTML sanitizer."
+refs = ["CVE-2010-3082"]
+
+[[args]]
+context = ["html", "attr", "url", "js"]
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+def profile(request):
+    bio = request.POST.get('bio', '')
+    return render(request, 'profile.html', {'bio': mark_safe('<p>' + bio + '</p>')})
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+@app.route('/note')
+def note():
+    text = request.args.get('text', '')
+    return render_template('note.html', body=Markup('<em>%s</em>' % text))
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+def profile(request):
+    bio = request.POST.get('bio', '')
+    return render(request, 'profile.html', {'bio': format_html('<p>{}</p>', bio)})
+'''
+
+[[samples]]
+kind = "safe"
+note = "Markup escapes the values formatted into it"
+code = '''
+@app.route('/note')
+def note():
+    text = request.args.get('text', '')
+    return render_template('note.html', body=Markup('<em>%s</em>') % text)
+'''

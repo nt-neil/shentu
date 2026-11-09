@@ -1,0 +1,59 @@
+id = "python-ldapi-filter"
+lang = "python"
+class = "ldapi"
+cwe = "CWE-90"
+severity = "high"
+tier = "info"
+title = "Request value placed in an LDAP search filter without escaping"
+frameworks = ["django", "flask"]
+sources = ["request.args", "request.form", "request.values", "request.json", "request.GET", "request.POST", "request.data"]
+sinks = [".search_s(", ".search_st(", ".search_ext(", ".search_ext_s(", ".search("]
+sanitizers = ["escape_filter_chars(", "ldap.filter.escape_filter_chars(", "filter_format(", "ldap.filter.filter_format(", "escape_rdn(", "int("]
+fix = "Build filters with ldap.filter.filter_format() or escape each value with escape_filter_chars() (ldap3.utils.conv.escape_filter_chars for ldap3)."
+refs = ["CVE-2026-24130"]
+
+[[args]]
+sinks = [".search_s(", ".search_st(", ".search_ext(", ".search_ext_s("]
+arg = 3
+
+[[args]]
+sinks = [".search("]
+arg = 2
+when = ["SUBTREE", "LEVEL", "BASE", "search_scope=", "attributes="]
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+@app.route('/lookup')
+def lookup():
+    uid = request.args.get('uid')
+    res = conn.search_s('ou=people,dc=example,dc=org', ldap.SCOPE_SUBTREE, '(uid=' + uid + ')')
+    return str(len(res))
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+def find(request):
+    name = request.GET['name']
+    conn.search('dc=example,dc=org', f'(cn={name})', search_scope=SUBTREE, attributes=['mail'])
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+@app.route('/lookup')
+def lookup():
+    uid = request.args.get('uid')
+    res = conn.search_s('ou=people,dc=example,dc=org', ldap.SCOPE_SUBTREE, ldap.filter.filter_format('(uid=%s)', [uid]))
+    return str(len(res))
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+def find(request):
+    name = escape_filter_chars(request.GET['name'])
+    conn.search('dc=example,dc=org', f'(cn={name})', search_scope=SUBTREE, attributes=['mail'])
+    m = re.search(r'\w+', request.GET['q'])
+'''
