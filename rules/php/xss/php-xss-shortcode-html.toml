@@ -1,0 +1,38 @@
+id = "php-xss-shortcode-html"
+lang = "php"
+class = "xss"
+cwe = "CWE-79"
+severity = "medium"
+tier = "info"
+title = "Shortcode attribute written between HTML tags without escaping"
+frameworks = ["wordpress"]
+sources = ["shortcode_atts(", "$atts["]
+sinks = ["return", "echo", "print"]
+sanitizers = ["check_admin_referer", "check_ajax_referer", "wp_verify_nonce", "current_user_can", "esc_html", "esc_attr", "esc_textarea", "esc_url", "esc_js", "esc_html__", "esc_attr__", "htmlspecialchars", "htmlentities", "strip_tags", "wp_strip_all_tags", "wp_kses", "wp_kses_post", "wp_kses_data", "sanitize_text_field", "sanitize_textarea_field", "sanitize_key", "sanitize_title", "sanitize_email", "sanitize_file_name", "sanitize_html_class", "sanitize_user", "urlencode", "rawurlencode", "number_format", "e(", "count(", "wp_check_jsonp_callback"]
+fix = "Escape the attribute with esc_html() (or wp_kses_post() when markup is allowed) before it goes between tags."
+refs = ["CVE-2024-11761"]
+
+[[args]]
+context = ["html"]
+
+[[samples]]
+kind = "vulnerable"
+note = "any author who can write a post sets shortcode attributes"
+code = '''
+<?php
+add_shortcode('notice', function ($atts) {
+    $a = shortcode_atts(['text' => ''], $atts);
+    return '<p class="notice">' . $a['text'] . '</p>';
+});
+'''
+
+[[samples]]
+kind = "safe"
+note = "the fix"
+code = '''
+<?php
+add_shortcode('notice', function ($atts) {
+    $a = shortcode_atts(['text' => ''], $atts);
+    return '<p class="notice">' . esc_html($a['text']) . '</p>';
+});
+'''
