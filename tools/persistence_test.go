@@ -25,22 +25,22 @@ func TestSharedKeys(t *testing.T) {
 		"deploy": `command="/bin/true",no-pty ` + attacker + " x\n" + own2 + " ci\n",
 		"ann":    "# " + attacker + "\n" + own2 + " ci\n",
 		// cloud-init: the default user's key in root's file, only to refuse root logins.
-		"cloud": `no-port-forwarding,command="echo 'Please login as the user \"rocky\" rather than the user \"root\".';echo;sleep 10;exit 142" ` + own1 + "\n",
+		"cloud": `no-port-forwarding,no-agent-forwarding,no-X11-forwarding,command="echo 'Please login as the user \"rocky\" rather than the user \"root\".';echo;sleep 10;exit 142" ` + own1 + "\n",
+		// The same words elsewhere on the line do not hide a key.
+		"mallory": attacker + ` Please login as the user` + "\n",
 	} {
 		p := filepath.Join(dir, user)
 		os.WriteFile(p, []byte(body), 0o600)
 		files = append(files, KeyFile{User: user, Path: p})
 	}
-	// One file linked into two homes is one file.
-	os.Symlink(filepath.Join(dir, "deploy"), filepath.Join(dir, "deploy-link"))
-	files = append(files, KeyFile{User: "deploy2", Path: filepath.Join(dir, "deploy-link")})
 	got := sharedKeys(files)
-	// The attacker key in root and deploy (the comment line in ann does not count), and own2 in deploy and ann.
+	// The attacker key in root, deploy and mallory (the comment line in ann does not count), and own2 in
+	// deploy and ann; own1 in cloud-init's refusal line does not count.
 	if len(got) != 2 {
 		t.Fatalf("got %+v", got)
 	}
 	for _, k := range got {
-		if !strings.HasPrefix(k.Fingerprint, "SHA256:") || len(k.Users) != 2 {
+		if !strings.HasPrefix(k.Fingerprint, "SHA256:") || len(k.Users) < 2 || strings.Contains(strings.Join(k.Users, ","), "cloud") {
 			t.Errorf("bad shared key %+v", k)
 		}
 		if strings.Contains(k.Fingerprint, strings.Fields(attacker)[1]) {

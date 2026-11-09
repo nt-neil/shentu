@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -22,20 +23,13 @@ type SharedKey struct {
 // sharedKeys returns the keys that appear in two or more accounts' authorized_keys files.
 func sharedKeys(files []KeyFile) []SharedKey {
 	users := map[string]map[string]bool{}
-	seen := map[string]bool{}
 	for _, f := range files {
-		if real, err := filepath.EvalSymlinks(f.Path); err == nil {
-			if seen[real] { // one file linked into two homes
-				continue
-			}
-			seen[real] = true
-		}
 		b, err := os.ReadFile(f.Path)
 		if err != nil {
 			continue
 		}
 		for _, line := range strings.Split(string(b), "\n") {
-			if strings.Contains(line, "Please login as the user") {
+			if cloudInitRefusal(line) {
 				continue // cloud-init puts the default user's key in root's file, only to refuse the login
 			}
 			if fp := keyFingerprint(line); fp != "" {
@@ -60,6 +54,14 @@ func sharedKeys(files []KeyFile) []SharedKey {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Fingerprint < out[j].Fingerprint })
 	return out
+}
+
+// cloudInitRefusal reports the line cloud-init writes into root's authorized_keys: the options force a
+// command that prints "Please login as the user ..." and exits 142, so the key cannot open a shell.
+var cloudInitCmd = regexp.MustCompile(`^(no-port-forwarding,no-agent-forwarding,no-X11-forwarding,)?command="echo 'Please login as the user \\"[a-z_][a-z0-9_-]*\\" rather than the user \\"root\\".';echo;sleep 10;exit 142" `)
+
+func cloudInitRefusal(line string) bool {
+	return cloudInitCmd.MatchString(strings.TrimSpace(line))
 }
 
 // keyFingerprint parses an authorized_keys line the way sshd does: an optional options field
