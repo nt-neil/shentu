@@ -13,6 +13,7 @@ refs = ["CVE-2026-47384"]
 
 [[args]]
 arg = 1   # the SQL text; values in the bindings array are safe
+whole = true   # query({ sql: "... ?", args: [input] }) binds the input; only SQL text built from input is the attack
 
 [[samples]]
 kind = "vulnerable"
@@ -170,4 +171,15 @@ app.get("/log", async (req, res) => {
   await pool.query("INSERT INTO hits (url) VALUES (?)", [req.originalUrl]);
   res.end();
 });
+'''
+
+[[samples]]
+kind = "safe"
+dialect = "ts"
+note = "libsql / mysql2 object form: the input is bound by args (or values), not part of the SQL text"
+code = '''
+export async function addTodo(formData: FormData) {
+  "use server";
+  await db.execute({ sql: "INSERT INTO todos (description) VALUES (?)", args: [formData.get("description") as string] });
+}
 '''
