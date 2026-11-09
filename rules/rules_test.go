@@ -31,7 +31,7 @@ var (
 	}
 	contexts   = map[string]bool{"html": true, "attr": true, "url": true, "js": true}
 	severities = map[string]bool{"critical": true, "high": true, "medium": true, "low": true}
-	frameworks = map[string]bool{"laravel": true, "wordpress": true, "django": true, "flask": true, "express": true}
+	frameworks = map[string]bool{"laravel": true, "wordpress": true, "django": true, "flask": true, "express": true, "symfony": true, "doctrine": true}
 
 	refRe = regexp.MustCompile(`^(CVE-\d{4}-\d{4,}|GHSA(-[23456789cfghjmpqrvwx]{4}){3})$`)
 	idRe  = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)+$`)
