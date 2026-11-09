@@ -45,7 +45,7 @@ func seeds(f *testing.F, lang string, extra ...string) {
 		f.Fatal(err)
 	}
 	for _, r := range rs {
-		if r.Lang == lang {
+		if r.Lang == baseLang(lang) {
 			for _, s := range r.Samples {
 				f.Add(s.Code)
 			}
@@ -69,4 +69,15 @@ func FuzzLexPython(f *testing.F) {
 func FuzzLexJS(f *testing.F) {
 	seeds(f, "js", "`${`${`${a}`}`}`", "a = b\n/re/g.test(c)", "({ m() { return x => y } })", "class A { #p = 1; static { } get x() {} }")
 	f.Fuzz(func(t *testing.T, src string) { fuzzLex(t, "js", src) })
+}
+
+func FuzzLexTS(f *testing.F) {
+	seeds(f, "ts", "let a: Map<string, Array<number>> = new Map<string, Array<number>>();", "f<T>(x as T)!.y satisfies Z",
+		"@C() class A<T> extends B<T> implements I { constructor(private readonly s: S, @Body() b: D) {} m?(): void; }",
+		"type U = | 'a' | { b: string }\ninterface I { [k: string]: any }\nenum E { A = 1 }\ndeclare module 'm' { }",
+		"x! / 2 / y; a < b > (c); <T,>(x: T): T => x; namespace N.M { }", "`${(a as any)!.b}`")
+	f.Fuzz(func(t *testing.T, src string) {
+		fuzzLex(t, "ts", src)
+		fuzzLex(t, "tsx", src)
+	})
 }

@@ -505,7 +505,7 @@ func (a *analysis) contextTaint(st state, sinkTok Token, out []Token, want []uin
 		}
 		out = out[2:]
 	}
-	base := sinkTok.Flags >> flagCtxShift & 7
+	base := uint8(sinkTok.Flags >> flagCtxShift & 7)
 	var hs htmlScan
 	fresh := base == ctxHTML // no inline HTML before: read the literal text as the start of a page
 	prefix := ""             // literal text written before, in the base context (first 64 bytes)
@@ -666,7 +666,7 @@ func (a *analysis) wholeArg(st state, inner []Token, name string) bool {
 func (s *scanner) echoText(t *Token) {
 	switch {
 	case t.Kind == Ident && (t.Text == "echo" || t.Text == "print") && s.depth == 0:
-		t.Flags |= (s.htmlCtx - 1) << flagCtxShift
+		t.Flags |= uint16(s.htmlCtx-1) << flagCtxShift
 		s.inEcho, s.echoPar = true, 0
 	case !s.inEcho:
 	case t.Kind == Op && t.Text == ";":

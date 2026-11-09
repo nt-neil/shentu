@@ -139,6 +139,16 @@ func TestAppCodeAuditInjection(t *testing.T) {
 			}
 		}
 	}
+	// TypeScript files use the JavaScript rules.
+	for _, r := range rs {
+		for _, s := range r.Samples {
+			if _, done := want["v.ts"]; !done && s.Kind == "vulnerable" && s.Dialect == "ts" {
+				os.WriteFile(filepath.Join(dir, "v.ts"), []byte(s.Code), 0o644)
+				want["v.ts"] = r.ID
+				code = append(code, strings.TrimSpace(s.Code))
+			}
+		}
+	}
 	// Skipped folders stay skipped.
 	os.MkdirAll(filepath.Join(dir, "vendor"), 0o755)
 	os.WriteFile(filepath.Join(dir, "vendor", "v.php"), []byte("<?php\neval($_GET['c']);\n"), 0o644)

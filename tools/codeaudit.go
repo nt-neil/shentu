@@ -185,7 +185,7 @@ func hasSuffix(n string, sfx ...string) bool {
 
 // Files whose content is read: code, templates and configuration.
 var auditExt = map[string]bool{".php": true, ".phtml": true, ".php5": true, ".inc": true, ".py": true, ".js": true, ".mjs": true,
-	".cjs": true, ".ts": true, ".json": true, ".yml": true, ".yaml": true, ".ini": true, ".conf": true, ".cfg": true, ".toml": true,
+	".cjs": true, ".ts": true, ".mts": true, ".cts": true, ".tsx": true, ".json": true, ".yml": true, ".yaml": true, ".ini": true, ".conf": true, ".cfg": true, ".toml": true,
 	".xml": true, ".properties": true, ".htaccess": true, ".user.ini": true, ".env": true}
 
 var uploadDir = regexp.MustCompile(`(?i)/(uploads?|files|media|images|attachments|storage/app/public)/`)
@@ -399,7 +399,7 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 				partial = append(partial, UnfinishedFile{p, "time"})
 			default:
 				found, err := injectionScan(eng, lang, p, b)
-				gen := lang == "js" && engine.Minified(b)
+				gen := (lang == "js" || lang == "jsx" || lang == "ts" || lang == "tsx") && engine.Minified(b)
 				injectionFindings(found, func(f CodeFinding) { f.Generated = gen; add(f) })
 				if r := unfinishedReason(err); r != "" {
 					partial = append(partial, UnfinishedFile{p, r})

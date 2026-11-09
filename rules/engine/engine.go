@@ -1,5 +1,5 @@
-// Package engine applies Shentu's code rules (package rules) to PHP, Python and
-// JavaScript files. It lexes the file by hand, splits it into statements and
+// Package engine applies Shentu's code rules (package rules) to PHP, Python,
+// JavaScript and TypeScript files (TypeScript uses the JavaScript rules). It lexes the file by hand, splits it into statements and
 // function scopes, and follows user input inside each function in order: from a
 // source, through variables, to a sink, unless a sanitizer or a check is in the
 // way. Calls to functions of the same file follow their summaries
@@ -166,15 +166,22 @@ func compileRule(r rules.Rule) (*crule, error) {
 	return c, nil
 }
 
-// LangOf returns the rule language for a file name ("php", "python", "js"), or "".
+// LangOf returns the language of a file name ("php", "python", "js", or the
+// dialects "jsx", "ts" and "tsx", which use the JavaScript rules), or "".
 func LangOf(path string) string {
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".php", ".phtml", ".php5", ".inc":
 		return "php"
 	case ".py":
 		return "python"
-	case ".js", ".mjs", ".cjs", ".jsx":
+	case ".js", ".mjs", ".cjs":
 		return "js"
+	case ".jsx":
+		return "jsx"
+	case ".ts", ".mts", ".cts":
+		return "ts"
+	case ".tsx":
+		return "tsx"
 	}
 	return ""
 }
@@ -185,14 +192,15 @@ func LangOf(path string) string {
 // reason, so the audit can tell generated code from hand-written code.
 func (e *Engine) Scan(lang, path string, src []byte) ([]Finding, error) {
 	out, err := e.scan(lang, path, src)
-	if err != nil && lang == "js" && Minified(src) {
+	if err != nil && baseLang(lang) == "js" && Minified(src) {
 		err = errors.Join(ErrMinified, err)
 	}
 	return out, err
 }
 
 func (e *Engine) scan(lang, path string, src []byte) ([]Finding, error) {
-	rs := e.byLang[lang]
+	base := baseLang(lang)
+	rs := e.byLang[base]
 	if len(rs) == 0 {
 		return nil, nil
 	}
@@ -201,8 +209,8 @@ func (e *Engine) scan(lang, path string, src []byte) ([]Finding, error) {
 	if b.hit {
 		return nil, ErrLimit
 	}
-	tree := parse(lang, toks, b)
-	ff := newFileFuncs(collectFuncs(tree, lang), lang)
+	tree := parse(base, toks, b)
+	ff := newFileFuncs(collectFuncs(tree, base), base)
 	var out []Finding
 	add := func(r *crule, lines ...[]int) {
 		seen := map[int]bool{}
@@ -221,7 +229,7 @@ func (e *Engine) scan(lang, path string, src []byte) ([]Finding, error) {
 	// written out in the file is reported whatever the calls cost.
 	var ruleList []*crule
 	direct := map[*crule][]int{}
-	defs := phpDefines(lang, toks)
+	defs := phpDefines(base, toks)
 	names := nameSet(toks, map[string]bool{})
 	for _, r := range rs {
 		if !sinkNames(r, names, src) || !hasSink(r, toks) {
@@ -231,7 +239,7 @@ func (e *Engine) scan(lang, path string, src []byte) ([]Finding, error) {
 			continue // no source of it in the file: nothing to find, in either pass
 		}
 		ruleList = append(ruleList, r)
-		a := &analysis{r: r, php: lang == "php", py: lang == "python", js: lang == "js", b: b, kw: keywords[lang], seen: map[int]bool{}, defs: defs}
+		a := &analysis{r: r, php: base == "php", py: base == "python", js: base == "js", b: b, kw: keywords[base], seen: map[int]bool{}, defs: defs}
 		a.block(tree, state{})
 		direct[r] = a.lines
 		if b.hit {
@@ -248,7 +256,7 @@ func (e *Engine) scan(lang, path string, src []byte) ([]Finding, error) {
 		b2.deadline = b.deadline.Add(e.Limits.maxTime()) // a file takes at most twice MaxTime in all
 		for _, r := range ruleList {
 			sc := newSummaries(ff)
-			a := &analysis{r: r, php: lang == "php", py: lang == "python", js: lang == "js", b: b2, kw: keywords[lang], seen: map[int]bool{}, sc: sc, defs: defs}
+			a := &analysis{r: r, php: base == "php", py: base == "python", js: base == "js", b: b2, kw: keywords[base], seen: map[int]bool{}, sc: sc, defs: defs}
 			a.block(tree, state{})
 			if e.Library && libClasses[r.rule.Class] && !testPath(path) && !b2.hit {
 				l := &analysis{r: r, php: a.php, py: a.py, js: a.js, b: b2, kw: a.kw, seen: a.seen, sc: sc, lib: true, defs: defs}
@@ -343,6 +351,10 @@ func lex(lang, src string, b *budget) []Token {
 		return lexPython(src, b)
 	case "js":
 		return lexJS(src, b)
+	case "jsx":
+		return lexJSX(src, b, true)
+	case "ts", "tsx":
+		return lexTS(src, b, lang == "tsx")
 	}
 	return nil
 }

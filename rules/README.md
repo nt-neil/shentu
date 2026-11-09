@@ -19,7 +19,7 @@ rules/<lang>/<class>/<id>.toml
 
 | field | values |
 |---|---|
-| `lang` | `php`, `python`, `js` |
+| `lang` | `php`, `python`, `js` (JavaScript rules also apply to TypeScript, see [TypeScript](#typescript)) |
 | `class` | `sqli`, `cmdi`, `path-traversal` (includes file inclusion), `deserialization`, `code-eval`, `xss`, `ssrf`, `open-redirect`, `xxe`, `ldapi`, `nosqli`, `file-upload`, `weak-crypto`, `hardcoded-secret` |
 
 ## Format
@@ -32,7 +32,7 @@ cwe = "CWE-89"                     # must belong to the class (see below)
 severity = "high"                  # critical | high | medium | low
 tier = "info"                      # optional: info (default) | alert, see "Tiers"
 title = "Request input concatenated into a SQL string"
-frameworks = ["laravel"]           # optional: laravel, wordpress, django, flask, express
+frameworks = ["laravel"]           # optional: laravel, wordpress, django, flask, express, nestjs, nextjs
 sources = ["$_GET", "$request->input("]   # where user input comes from; [] for a rule without sources
 sinks = ["mysqli_query", "->query("]      # the dangerous calls
 sanitizers = ["intval", "->prepare("]     # calls whose result is safe for these sinks; [] if none
@@ -74,8 +74,20 @@ How the engine reads them:
   `exec(` matches `exec($cmd)`, not `$pdo->exec(...)` or `regex.exec(s)`. A method
   on any receiver starts with `->` (PHP) or `.` (Python, JavaScript):
   `->orderByRaw(`, `.startsWith(`. A module-qualified call must be written out
-  (`os.system(`). Sources match anywhere, so `request.args` also matches
-  `self.request.args`.
+  (`os.system(`). In JavaScript, the Node modules `fs` (with `fs/promises`),
+  `child_process` and `vm` are read in one form whatever the spelling:
+  `fs.promises.readFile(p)`, `require('node:fs').readFile(p)`, `fsp.readFile(p)`
+  after `import fsp from 'fs/promises'` and `r(p)` after
+  `const { readFile: r } = require('fs')` all read as `fs.readFile(p)`, and a sink
+  written as a bare name (`readFileSync(`) also matches it as a member of one of
+  these modules (`fs.readFileSync(p)`), never as a method of anything else. A name
+  is a module only where the file requires or imports it, and not at all when the
+  file declares the name again (scopes are not followed). Not followed:
+  reassignment, conditional or dynamic `require`, spreads, brackets (`c['exec']`),
+  `.call`, `module.require` and `import()`. Sources match anywhere, so
+  `request.args` also matches `self.request.args`, unless written with a leading
+  `^`: `^request.url` never matches as a member of something else
+  (`this.request.url`).
 - A string in a pattern compares its content, whatever the quotes; an unclosed
   one is a prefix: `$_SERVER['HTTP_` matches every `$_SERVER['HTTP_...']`.
 - A **sanitizer** is a call whose result is clean (`intval(`, `shlex.quote(`,
@@ -159,6 +171,33 @@ How the engine reads them:
   not another (`escapeshellarg` protects `exec()` but not the fifth argument of
   `mail()`), the sinks go in separate rules; escaping functions protect a SQL value
   only inside quotes, so they are not listed as sanitizers.
+
+### TypeScript
+
+TypeScript files (`.ts`, `.mts`, `.cts`, `.tsx`) are checked with the `js` rules.
+The lexer reads them as JavaScript and then takes the type syntax out, since types
+carry no data: annotations, type arguments and parameters (`f<T>(x)`, told apart
+from `a < b` by what follows the `>`), `as` and `satisfies`, the non-null `!`,
+`interface`, `type`, `enum`, `declare`, `namespace` headers, `implements`, and the
+modifiers `public`, `private`, `protected`, `readonly`, `abstract`, `override`. In
+`.tsx`, `<T>x` is an element, not a type assertion. Decorators are dropped, except
+on a parameter, which becomes an assignment at the start of the body:
+`find(@Param('id') id: string) { ... }` reads as `find(id) { id = @Param('id'); ... }`,
+so a decorator is a source like any call (`@Body(`, `@Query(`, `@Param(`,
+`@Headers(`); a destructured parameter (`run(@Body() { cmd }: Dto)`) becomes
+`let { cmd } = @Body();`. With `@Req()` only the parts of the request that come
+from the client are input (`query`, `body`, `params`, `headers`, `cookies`,
+`originalUrl`, `url`, `get()`, `header()`), not what the server put on it
+(`req.user`). A parameter with a NestJS parse pipe (`ParseIntPipe`, `ParseUUIDPipe`,
+...) is not input; a DTO's class-validator decorators are not read. In `.jsx` and
+`.tsx`, element text is not code: quotes, slashes and colons in it are text. A
+declaration whose bracket never closes (`interface I {`) is dropped up to that
+bracket only; the rest is read as code and the file is reported as not fully
+analysed. Next.js route and page `params` are not sources yet (that needs the
+route model).
+
+A sample written in TypeScript says so with `dialect = "ts"` (or `"tsx"`); it is
+lexed as such and must hold the same as any other sample of the rule.
 
 ### Tiers
 
@@ -371,7 +410,8 @@ rule of its language.
 
 `rules/engine` is Shentu's own code, without dependencies. Per file:
 
-1. **Lexing.** Hand-written lexers for PHP, Python and JavaScript drop comments and
+1. **Lexing.** Hand-written lexers for PHP, Python and JavaScript (TypeScript is
+   JavaScript with its types taken out) drop comments and
    keep string literals whole, so text in comments and plain strings is never
    code. Interpolations are lexed as code: PHP `"$x"`, `"{$x->y}"`, `"${x}"`,
    heredoc (nowdoc stays text) and backticks; Python f-strings; JavaScript

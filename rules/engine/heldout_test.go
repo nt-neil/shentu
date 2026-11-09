@@ -85,7 +85,7 @@ func TestHeldOut(t *testing.T) {
 		{"E2 child_process.exec", "js", "const cp = require('child_process');\napp.get('/x', (req, res) => { cp.exec('ls ' + req.query.d); });\n", true, ""},
 		{"E3 mysql param safe", "js", "app.get('/u', (req, res) => {\n  db.query('SELECT * FROM u WHERE id = ?', [req.query.id], cb);\n});\n", false, ""},
 		{"E4 knex raw interp", "js", "router.get('/u', async (req, res) => {\n  const { name } = req.body;\n  await knex.raw(`SELECT * FROM u WHERE name = '${name}'`);\n});\n", true, ""},
-		{"E5 readFile promises", "js", "app.get('/f', async (req, res) => {\n  const data = await fs.promises.readFile(path.join(ROOT, req.query.f));\n  res.send(data);\n});\n", true, "the rule has no fs.promises.readFile sink (left to the weekly rule evolution)"},
+		{"E5 readFile promises", "js", "const fs = require('fs');\napp.get('/f', async (req, res) => {\n  const data = await fs.promises.readFile(path.join(ROOT, req.query.f));\n  res.send(data);\n});\n", true, ""},
 		{"E6 sendFile root safe", "js", "app.get('/f', (req, res) => { res.sendFile(req.params.name, { root: PUBLIC }); });\n", false, ""},
 		{"E7 js reassign kill", "js", "app.get('/x', (req, res) => {\n  let c = req.query.c;\n  c = 'ls';\n  exec(c);\n});\n", false, ""},
 		{"E8 js if-branch partial kill", "js", "app.get('/x', (req, res) => {\n  let c = req.query.c;\n  if (a) { c = 'ls'; }\n  exec(c);\n});\n", true, ""},

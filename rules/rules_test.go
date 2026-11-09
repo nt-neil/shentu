@@ -31,7 +31,7 @@ var (
 	}
 	contexts   = map[string]bool{"html": true, "attr": true, "url": true, "js": true}
 	severities = map[string]bool{"critical": true, "high": true, "medium": true, "low": true}
-	frameworks = map[string]bool{"laravel": true, "wordpress": true, "django": true, "flask": true, "express": true}
+	frameworks = map[string]bool{"laravel": true, "wordpress": true, "django": true, "flask": true, "express": true, "nestjs": true, "nextjs": true}
 
 	refRe = regexp.MustCompile(`^(CVE-\d{4}-\d{4,}|GHSA(-[23456789cfghjmpqrvwx]{4}){3})$`)
 	idRe  = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)+$`)
@@ -178,7 +178,9 @@ func checkArgs(t *testing.T, r Rule) {
 
 // checkSamples needs one vulnerable and one safe sample, and each vulnerable sample
 // must actually contain one of the rule's sources and one of its sinks, so a sample
-// cannot drift away from the rule it is meant to test.
+// cannot drift away from the rule it is meant to test. A JavaScript sink may be
+// spelled another way the engine reads as the same call (fs.promises.readFile,
+// a destructured alias): then its function name must appear as a word.
 func checkSamples(t *testing.T, r Rule) {
 	n := map[string]int{}
 	for i, s := range r.Samples {
@@ -189,11 +191,14 @@ func checkSamples(t *testing.T, r Rule) {
 		if strings.TrimSpace(s.Code) == "" {
 			t.Errorf("%s: sample %d has no code", r.File, i)
 		}
+		if s.Dialect != "" && (r.Lang != "js" || s.Dialect != "ts" && s.Dialect != "tsx") {
+			t.Errorf("%s: sample %d dialect %q: only js rules have the dialects ts and tsx", r.File, i, s.Dialect)
+		}
 		if s.Kind == "vulnerable" {
 			if len(r.Sources) > 0 && !containsAny(s.Code, r.Sources) {
 				t.Errorf("%s: vulnerable sample %d uses none of the sources", r.File, i)
 			}
-			if !containsAny(s.Code, r.Sinks) {
+			if !containsAny(s.Code, r.Sinks) && !(r.Lang == "js" && containsSinkName(s.Code, r.Sinks)) {
 				t.Errorf("%s: vulnerable sample %d uses none of the sinks", r.File, i)
 			}
 		}
@@ -214,7 +219,24 @@ func hasOption(when []string) bool {
 
 func containsAny(code string, needles []string) bool {
 	for _, n := range needles {
-		if strings.Contains(code, n) {
+		if strings.Contains(code, strings.TrimPrefix(n, "^")) {
+			return true
+		}
+	}
+	return false
+}
+
+var wordRe = regexp.MustCompile(`[A-Za-z_$][A-Za-z0-9_$]*`)
+
+// containsSinkName reports whether the last name of one of the sinks occurs in
+// code as a whole word.
+func containsSinkName(code string, sinks []string) bool {
+	words := map[string]bool{}
+	for _, w := range wordRe.FindAllString(code, -1) {
+		words[w] = true
+	}
+	for _, s := range sinks {
+		if ns := wordRe.FindAllString(s, -1); len(ns) > 0 && words[ns[len(ns)-1]] {
 			return true
 		}
 	}

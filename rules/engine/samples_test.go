@@ -24,7 +24,11 @@ func TestSamples(t *testing.T) {
 		t.Run(r.ID, func(t *testing.T) {
 			for i, s := range r.Samples {
 				name := fmt.Sprintf("%s sample %d (%s)", r.File, i, s.Kind)
-				fs, err := e.Scan(r.Lang, name, []byte(sampleCode(s.Code)))
+				lang := r.Lang
+				if s.Dialect != "" {
+					lang = s.Dialect
+				}
+				fs, err := e.Scan(lang, name, []byte(sampleCode(s.Code)))
 				if err != nil {
 					t.Errorf("%s: %v", name, err)
 				}

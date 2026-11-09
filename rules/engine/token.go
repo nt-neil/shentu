@@ -22,12 +22,13 @@ const (
 
 // Token flags.
 const (
-	FlagOpen      uint8 = 1 << iota // the string or comment has no end (only accepted in rule patterns)
-	FlagShell                       // PHP `command`
-	FlagRegex                       // JS /regex/
-	FlagNL                          // first token on its line (JS statement ends)
-	FlagMultiline                   // JS /regex/m: ^ and $ match at every line
-	flagCtxShift  = 5               // PHP echo or print after inline HTML: bits 5-7 hold the HTML context it writes into (htmlctx.go)
+	FlagOpen      uint16 = 1 << iota // the string or comment has no end (only accepted in rule patterns)
+	FlagShell                        // PHP `command`
+	FlagRegex                        // JS /regex/
+	FlagNL                           // first token on its line (JS statement ends)
+	FlagMultiline                    // JS /regex/m: ^ and $ match at every line
+	FlagModule                       // JS: a Node core module (fs, child_process, vm) after normalizeModules
+	flagCtxShift  = 8                // PHP echo or print after inline HTML: bits 8-10 hold the HTML context it writes into (htmlctx.go)
 )
 
 // Token is one lexical unit. Comments are dropped. A string literal keeps its raw
@@ -35,7 +36,7 @@ const (
 // ("$x", "{$x}", f"{x}", `${x}`) are lexed as code into Parts.
 type Token struct {
 	Kind  Kind
-	Flags uint8
+	Flags uint16
 	Line  int
 	Text  string
 	Parts []Part
@@ -157,8 +158,13 @@ type scanner struct {
 	b     *budget
 	depth int // interpolation nesting
 
-	ctl      []bool // JS: for each open "(", whether it starts an if/while/for header
-	afterCtl bool   // JS: the last ")" closed such a header
+	ctl        []bool // JS: for each open "(", whether it starts an if/while/for header
+	afterCtl   bool   // JS: the last ")" closed such a header
+	ts         bool   // TypeScript: "x!" is a postfix operator
+	jsx        bool   // .jsx, .tsx: follow JSX elements, so "</Name" closes one
+	jsxStack   []byte // JSX: open tags, children and braces (see jsxOp)
+	jsxClosing bool   // JSX: inside "</...>"
+	jsxLost    bool   // JSX: nesting too deep to follow: plain JavaScript from here
 
 	hs      htmlScan // PHP: the inline HTML read so far, and the literal text echo wrote (htmlctx.go)
 	htmlCtx uint8    // PHP: 1 + the context the current code block writes into, 0 outside one
