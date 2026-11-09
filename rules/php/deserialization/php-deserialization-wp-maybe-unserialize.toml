@@ -1,0 +1,44 @@
+id = "php-deserialization-wp-maybe-unserialize"
+lang = "php"
+class = "deserialization"
+cwe = "CWE-502"
+severity = "critical"
+tier = "info"
+title = "maybe_unserialize() on data the client sends"
+frameworks = ["wordpress"]
+sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "$_SERVER['HTTP_", "php://input", "->get_param(", "->get_body(", "->get_json_params(", "->get_body_params("]
+sinks = ["maybe_unserialize("]
+sanitizers = []
+text = ["php://input"]
+fix = "maybe_unserialize() calls unserialize() on any string that looks serialized, so a client can send objects: exchange data with json_encode()/json_decode() instead."
+refs = ["CVE-2024-3070", "CVE-2026-104764"]
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+add_action('wp_ajax_nopriv_save_cart', function () {
+    $cart = maybe_unserialize(wp_unslash($_POST['cart']));
+    update_option('pending_cart', $cart);
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+register_rest_route('shop/v1', '/import', ['methods' => 'POST', 'callback' => function ($request) {
+    $rows = maybe_unserialize(base64_decode($request->get_param('rows')));
+    return count($rows);
+}]);
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+add_action('wp_ajax_nopriv_save_cart', function () {
+    $cart = json_decode(wp_unslash($_POST['cart']), true);
+    update_option('pending_cart', is_array($cart) ? $cart : []);
+});
+'''

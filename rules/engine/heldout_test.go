@@ -39,8 +39,8 @@ func TestHeldOut(t *testing.T) {
 		{"js parseInt", "js", "app.get('/i/:id', async (req, res) => {\n  const id = parseInt(req.params.id, 10);\n  res.json(await pool.query('SELECT * FROM t WHERE id = ' + id));\n});\n", false, ""},
 		{"js ternary constants", "js", "app.get('/o', async (req, res) => {\n  const dir = req.query.dir === 'asc' ? 'ASC' : 'DESC';\n  res.json(await knex.raw(`SELECT * FROM t ORDER BY id ${dir}`));\n});\n", false, ""},
 		// Cases from the independent review of 24d77cd.
-		{"L1 laravel DB::select concat", "php", "<?php\nclass C { public function show(Request $request) {\n  $id = $request->input('id');\n  return DB::select(\"SELECT * FROM users WHERE id = $id\");\n} }\n", true, "the rule has no DB::select sink (left to the weekly rule evolution)"},
-		{"L2 laravel whereRaw", "php", "<?php\nclass C { public function idx(Request $request) {\n  $q = $request->input('q');\n  return User::whereRaw(\"name LIKE '%$q%'\")->get();\n} }\n", true, "no PHP rule has a whereRaw sink (left to the weekly rule evolution)"},
+		{"L1 laravel DB::select concat", "php", "<?php\nclass C { public function show(Request $request) {\n  $id = $request->input('id');\n  return DB::select(\"SELECT * FROM users WHERE id = $id\");\n} }\n", true, ""},
+		{"L2 laravel whereRaw", "php", "<?php\nclass C { public function idx(Request $request) {\n  $q = $request->input('q');\n  return User::whereRaw(\"name LIKE '%$q%'\")->get();\n} }\n", true, ""},
 		{"L3 laravel orderBy allowlisted", "php", "<?php\nclass C { public function idx(Request $request) {\n  $sort = $request->input('sort');\n  if (!in_array($sort, ['name','email'], true)) { $sort = 'name'; }\n  return User::orderBy($sort)->get();\n} }\n", false, ""},
 		{"W1 wp get_results interp", "php", "<?php\nfunction my_ajax() { global $wpdb;\n  $s = $_POST['s'];\n  $rows = $wpdb->get_results(\"SELECT * FROM {$wpdb->posts} WHERE post_title = '$s'\");\n}\n", true, ""},
 		{"W2 wp prepare safe", "php", "<?php\nfunction my_ajax() { global $wpdb;\n  $s = sanitize_text_field($_POST['s']);\n  $rows = $wpdb->get_results($wpdb->prepare(\"SELECT * FROM t WHERE a = %s\", $s));\n}\n", false, ""},
@@ -420,6 +420,25 @@ func TestHeldOut(t *testing.T) {
 		{"K4 py pymysql env", "python", "c = pymysql.connect(host='db', user='a', password=os.getenv('PW'))\n", false, ""},
 		{"K5 js verify literal", "js", "const claims = jwt.verify(token, '" + fake + "');\n", true, ""},
 		{"K6 js hmac env", "js", "const sig = crypto.createHmac('sha256', process.env.HOOK_KEY).update(body).digest('hex');\n", false, ""},
+		// PHP lane, batch 1: WordPress, Laravel and Symfony sinks.
+		{"B1 wpdb prepare sprintf text", "php", "<?php\nfunction f() { global $wpdb;\n  $col = $_GET['col'];\n  $sql = $wpdb->prepare(sprintf('SELECT %s FROM t WHERE id = %%d', $col), 5);\n}\n", true, ""},
+		{"B2 wpdb prepare placeholders only", "php", "<?php\nfunction f() { global $wpdb;\n  $sql = $wpdb->prepare(\"SELECT * FROM {$wpdb->prefix}t WHERE a = %s AND b = %d\", $_GET['a'], $_GET['b']);\n}\n", false, ""},
+		{"B6 laravel selectRaw", "php", "<?php\nclass C { public function idx(Request $request) {\n  $f = $request->get('field');\n  return Order::query()->selectRaw('SUM(' . $f . ') AS s')->first();\n} }\n", true, ""},
+		{"B7 laravel statement bindings", "php", "<?php\nclass C { public function del(Request $request) {\n  DB::statement('UPDATE t SET seen = 1 WHERE id = ?', [$request->input('id')]);\n} }\n", false, ""},
+		{"B10 maybe_unserialize cookie", "php", "<?php\n$prefs = maybe_unserialize(stripslashes($_COOKIE['my_prefs']));\n", true, ""},
+		{"B11 maybe_unserialize option", "php", "<?php\n$prefs = maybe_unserialize(get_option('my_prefs'));\nif (isset($_GET['x'])) { echo esc_html($_GET['x']); }\n", false, ""},
+		{"B12 upload_bits post name", "php", "<?php\nfunction f() {\n  $name = sanitize_file_name($_POST['filename']);\n  wp_upload_bits($name, null, base64_decode($_POST['data']));\n}\n", true, ""},
+		{"B13 upload_bits fixed name", "php", "<?php\nfunction f() {\n  wp_upload_bits('export-' . gmdate('Ymd') . '.csv', null, $_POST['data']);\n}\n", false, ""},
+		{"B22 locate_template query var", "php", "<?php\n$view = get_query_var('view');\nlocate_template(array('views/' . $view . '.php'), true);\n", true, ""},
+		{"B23 get_template_part sanitize_key", "php", "<?php\nget_template_part('parts/card', sanitize_key($_GET['style']));\n", false, ""},
+		{"B24 symfony redirect request get", "php", "<?php\nclass C { public function a(Request $request) {\n  $u = (string) $request->get('url');\n  return new RedirectResponse($u, 302);\n} }\n", true, ""},
+		{"B25 symfony redirect fixed path", "php", "<?php\nclass C { public function a(Request $request) {\n  return new RedirectResponse('/account/' . (int) $request->get('id'));\n} }\n", false, ""},
+		{"B26 symfony BinaryFileResponse sprintf", "php", "<?php\nclass C { public function a(Request $request) {\n  $p = sprintf('%s/%s', $this->dir, $request->query->get('f'));\n  return new BinaryFileResponse($p);\n} }\n", true, ""},
+		{"B27 symfony file by id", "php", "<?php\nclass C { public function a(Request $request) {\n  $doc = $this->docs->find((int) $request->query->get('id'));\n  return $this->file($doc->getPath());\n} }\n", false, ""},
+		{"B28 process fromShellCommandline interp", "php", "<?php\nclass C { public function a(Request $request) {\n  $repo = $request->request->get('repo');\n  Process::fromShellCommandline(\"git clone $repo /tmp/r\")->run();\n} }\n", true, ""},
+		{"B29 process escaped arg", "php", "<?php\nclass C { public function a(Request $request) {\n  Process::fromShellCommandline('git clone ' . escapeshellarg($request->request->get('repo')) . ' /tmp/r')->run();\n} }\n", false, ""},
+		{"B30 doctrine executeQuery orderby", "php", "<?php\nclass C { public function a(Request $request) {\n  $s = $request->query->get('sort');\n  return $this->conn->executeQuery('SELECT * FROM t ORDER BY ' . $s)->fetchAllAssociative();\n} }\n", true, ""},
+		{"B31 doctrine executeQuery params", "php", "<?php\nclass C { public function a(Request $request) {\n  return $this->conn->executeQuery('SELECT * FROM t WHERE a = :a', ['a' => $request->query->get('a')])->fetchAllAssociative();\n} }\n", false, ""},
 	}
 	pass := 0
 	for _, c := range cases {

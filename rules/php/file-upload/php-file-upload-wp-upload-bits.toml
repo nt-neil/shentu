@@ -1,0 +1,38 @@
+id = "php-file-upload-wp-upload-bits"
+lang = "php"
+class = "file-upload"
+cwe = "CWE-434"
+severity = "high"
+tier = "info"
+title = "wp_upload_bits() writes a file under a name the client chose"
+frameworks = ["wordpress"]
+sources = ["$_FILES", "$_POST", "$_GET", "$_REQUEST", "->get_param(", "->get_file_params("]
+sinks = ["wp_upload_bits("]
+sanitizers = ["wp_unique_filename", "uniqid", "md5", "sha1", "wp_generate_uuid4", "random_bytes", "bin2hex", "absint", "intval", "wp_generate_password"]
+fix = "wp_upload_bits() checks the extension only against the site's allowed types, which an admin or a filter may widen: check the type yourself with wp_check_filetype_and_ext() and an allowlist, or upload with wp_handle_upload(), and choose the stored name on the server."
+refs = ["CVE-2026-2948"]
+
+[[args]]
+arg = 1
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+add_action('wp_ajax_nopriv_send_resume', function () {
+    $file = $_FILES['resume'];
+    $saved = wp_upload_bits($file['name'], null, file_get_contents($file['tmp_name']));
+    wp_send_json(['url' => $saved['url']]);
+});
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+add_action('wp_ajax_nopriv_send_resume', function () {
+    $file = $_FILES['resume'];
+    $saved = wp_upload_bits('resume-' . wp_generate_uuid4() . '.pdf', null, file_get_contents($file['tmp_name']));
+    wp_send_json(['url' => $saved['url']]);
+});
+'''
