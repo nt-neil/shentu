@@ -5,9 +5,9 @@ cwe = "CWE-90"
 severity = "high"
 tier = "info"
 title = "Request value placed in an LDAP search filter without escaping"
-frameworks = ["express"]
-sources = ["req.query", "req.body", "req.params"]
-sinks = [".search("]
+frameworks = ["express", "nestjs", "nextjs"]
+sources = ["req.query", "req.body", "req.params", "@Query(", "@Body(", "@Param(", "@Req(", "req.originalUrl", "^request.nextUrl", "^req.nextUrl", "^request.url", "^req.url", "^searchParams", "^request.json(", "^req.json(", "^request.text(", "^req.text(", "^request.formData(", "^req.formData(", "^formData.get("]
+sinks = ["client.search(", "ldapClient.search(", "ldap.search(", "adClient.search(", "this.client.search(", "this.ldap.search(", "this.ldapClient.search("]   # ldapjs clients; a bare .search( is any object (a NestJS service, an index)
 sanitizers = ["ldapEscape.filter", "escapeFilter(", "EqualityFilter(", "parseInt("]
 fix = "Build the filter from filter objects (new EqualityFilter({ attribute, value })) or escape each value for LDAP filters before joining it into the string."
 refs = ["CVE-2026-31828"]
@@ -32,4 +32,27 @@ app.post("/login", (req, res) => {
   client.search("ou=people,dc=example,dc=org", { filter, scope: "sub" }, (err, r) => res.sendStatus(err ? 500 : 200));
   const at = req.body.user.search("@");
 });
+'''
+
+[[samples]]
+kind = "vulnerable"
+dialect = "ts"
+note = "Next.js: a query value in an LDAP filter"
+code = '''
+export async function GET(request: NextRequest) {
+  const uid = request.nextUrl.searchParams.get("uid");
+  const entries = await ldap.search("ou=people,dc=example,dc=com", { filter: `(uid=${uid})`, scope: "sub" });
+  return Response.json(entries);
+}
+'''
+
+[[samples]]
+kind = "safe"
+dialect = "ts"
+code = '''
+export async function GET(request: NextRequest) {
+  const uid = request.nextUrl.searchParams.get("uid") ?? "";
+  const entries = await ldap.search("ou=people,dc=example,dc=com", { filter: new EqualityFilter({ attribute: "uid", value: uid }), scope: "sub" });
+  return Response.json(entries);
+}
 '''
