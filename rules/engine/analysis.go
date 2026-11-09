@@ -1435,7 +1435,8 @@ var predicates = map[string]bool{"in_array": true, "array_key_exists": true, "is
 	"startsWith": true, "startswith": true, "validate_file": true,
 	// in the rules that list them: URL and redirect checks, upload type checks, string type checks
 	"wp_http_validate_url": true, "url_has_allowed_host_and_scheme": true, "is_safe_url": true,
-	"allowed_file": true, "is_string": true, "isinstance": true, "wp_check_jsonp_callback": true}
+	"allowed_file": true, "is_string": true, "isinstance": true, "wp_check_jsonp_callback": true,
+	"isBasePath": true, "isAbsolute": true} // Symfony Path::isBasePath($base, $path), Path::isAbsolute($path)
 
 // zeroMeansMatch are comparisons for which "=== 0" means the check passed.
 var zeroMeansMatch = map[string]bool{"strncmp": true, "strncasecmp": true, "strcmp": true, "strcasecmp": true,

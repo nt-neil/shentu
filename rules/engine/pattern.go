@@ -18,6 +18,7 @@ type pat struct {
 	anchored bool           // written with a leading "^": never a member of something else, even as a source
 	text     *regexp.Regexp // text patterns only
 	name     string         // last name in the pattern (to recognise prefix checks)
+	chain    string         // PHP: "->m(" made from the sink "Class::m(": the chain must start at Class:: (chain.go)
 }
 
 func compilePattern(lang, raw string, text bool) (*pat, error) {
@@ -117,6 +118,9 @@ func (p *pat) at(toks []Token, i int, strict bool) bool {
 		if !tokEq(pt, toks[i+k]) {
 			return false
 		}
+	}
+	if p.chain != "" && !chainFrom(toks, i, p.chain) {
+		return false
 	}
 	if !strict || p.member || i == 0 || !memberOp(p.php, toks[i-1]) {
 		return true
