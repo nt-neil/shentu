@@ -52,6 +52,7 @@ type Args struct {
 	Leading bool     `toml:"leading"` // the input must be at the start of the argument; a fixed prefix makes the call safe
 	Context []string `toml:"context"` // output sinks: only input written in one of these HTML contexts counts (html, attr, url, js)
 	Literal bool     `toml:"literal"` // the argument (arg, or the value of a when option) must be a non-empty string literal
+	Key     string   `toml:"key"`     // the argument is an object, dict or array: only the value under this key counts (any case)
 }
 
 // Sample is a minimal, self-written snippet: "vulnerable" must be reported, "safe" must not.

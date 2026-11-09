@@ -68,6 +68,7 @@ type argCond struct {
 	whole, leading bool
 	context        []uint8 // output contexts that count (ctxHTML ...); empty: any
 	literal        bool
+	key            string // the value under this key of an object argument (keyValue)
 }
 
 // New compiles rules. A pattern that does not lex as code of its language is an error.
@@ -117,7 +118,7 @@ func compileRule(r rules.Rule) (*crule, error) {
 		return nil, err
 	}
 	for _, a := range r.Args {
-		ac := &argCond{arg: a.Arg, whole: a.Whole, leading: a.Leading, literal: a.Literal}
+		ac := &argCond{arg: a.Arg, whole: a.Whole, leading: a.Leading, literal: a.Literal, key: a.Key}
 		for _, name := range a.Context {
 			cs, ok := contextNames[name]
 			if !ok {

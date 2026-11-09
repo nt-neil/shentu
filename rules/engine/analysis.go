@@ -1810,6 +1810,11 @@ func (a *analysis) sink(st state, t []Token, i int, s *pat) {
 		return ok
 	}
 	reaches := func(arg []Token) bool {
+		if cond != nil && cond.key != "" {
+			if arg = keyValue(arg, cond.key); arg == nil {
+				return false // { status: 302 } without the key: not this sink
+			}
+		}
 		if cond != nil && len(cond.context) > 0 {
 			return a.contextTaint(st, t[i], arg, cond.context)
 		}

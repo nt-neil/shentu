@@ -432,3 +432,30 @@ func TestSourcePrefilterSwitch(t *testing.T) {
 		t.Error("SourcePrefilter off: the rule must not be skipped")
 	}
 }
+
+// Chained sinks are reported with the source prefilter off (as a project mode
+// runs) and in library mode, where the input comes in as a parameter.
+func TestChainSinkModes(t *testing.T) {
+	rs, err := rules.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	e, err := New(rs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.SourcePrefilter = false
+	src := []byte("<?php\n$r = Process::timeout(30)->run('ls ' . $request->input('d'));\n")
+	if fs, _ := e.Scan("php", "a.php", src); len(fs) == 0 {
+		t.Error("prefilter off: chained Process::run not reported")
+	}
+	js := []byte("app.get('/s', (req, res) => {\n  res.status(200).send(`<p>${req.query.q}</p>`);\n});\n")
+	if fs, _ := e.Scan("js", "a.js", js); len(fs) == 0 {
+		t.Error("prefilter off: chained res.send not reported")
+	}
+	e.Library = true
+	lib := []byte("<?php\nfunction run_in($dir) {\n    return Process::timeout(30)->run('ls ' . $dir);\n}\n")
+	if fs, _ := e.Scan("php", "lib.php", lib); len(fs) == 0 {
+		t.Error("library mode: parameter into a chained Process::run not reported")
+	}
+}
