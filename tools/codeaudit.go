@@ -55,16 +55,18 @@ type CodeFinding struct {
 	Line     int              `json:"line,omitempty"`
 	Detail   string           `json:"detail"`
 	Fix      string           `json:"fix"`
-	Rule     string           `json:"rule,omitempty"`  // injection: the rule id
-	CWE      string           `json:"cwe,omitempty"`   // injection: the weakness
-	Tier     string           `json:"tier,omitempty"`  // injection: "info" is not pushed by the patrol report, "alert" is
-	Files    []UnfinishedFile `json:"files,omitempty"` // the files the summary of unfinished files is about (at most 10)
+	Rule     string           `json:"rule,omitempty"`      // injection: the rule id
+	CWE      string           `json:"cwe,omitempty"`       // injection: the weakness
+	Tier     string           `json:"tier,omitempty"`      // injection: "info" is not pushed by the patrol report, "alert" is
+	Files    []UnfinishedFile `json:"files,omitempty"`     // the files the summary of unfinished files is about (at most 10)
+	TestPath bool             `json:"test_path,omitempty"` // injection: the file is under tests/, test/, examples/ or __tests__/
 }
 
 // UnfinishedFile is a file the injection rules did not check to the end, and why:
 // "size" (over the size limit, not read), "limit" (too large, slow or deeply nested
 // for the engine), "unterminated" (a string or comment runs to the end of the file),
-// "time" (after the audit's time limit for the rules) or "panic" (an engine error).
+// "time" (after the audit's time limit for the rules), "panic" (an engine error) or
+// "minified" (minified or bundled JavaScript, read without its long lines).
 type UnfinishedFile struct {
 	Path   string `json:"path"`
 	Reason string `json:"reason"`
@@ -76,6 +78,9 @@ type CodeAudit struct {
 	Files     int           `json:"files_read"`
 	Findings  []CodeFinding `json:"findings"`
 	Truncated bool          `json:"truncated,omitempty"`
+	// Injection findings, counted apart for files under test and example folders.
+	Injection          int `json:"injection_findings"`
+	InjectionTestPaths int `json:"injection_findings_in_test_paths"`
 }
 
 const (
@@ -254,8 +259,21 @@ func injectionFindings(found []engine.Finding, add func(CodeFinding)) {
 			sev = "critical"
 		}
 		add(CodeFinding{Kind: "injection", Severity: sev, Path: f.Path, Line: f.Line, Detail: f.Title,
-			Fix: f.Fix, Rule: f.RuleID, CWE: f.CWE, Tier: f.Tier})
+			Fix: f.Fix, Rule: f.RuleID, CWE: f.CWE, Tier: f.Tier, TestPath: testPath(f.Path)})
 	}
+}
+
+var testDirs = map[string]bool{"tests": true, "test": true, "examples": true, "__tests__": true}
+
+// testPath reports whether p is under a test or example folder. Findings there
+// are kept, marked and counted apart: such code is rarely deployed, but may be.
+func testPath(p string) bool {
+	for _, seg := range strings.Split(filepath.ToSlash(filepath.Dir(p)), "/") {
+		if testDirs[strings.ToLower(seg)] {
+			return true
+		}
+	}
+	return false
 }
 
 // finding is a code finding of the checks that are not rules.
@@ -274,7 +292,7 @@ func partialFinding(files []UnfinishedFile) CodeFinding {
 	for _, r := range []struct{ reason, text string }{
 		{"size", "over the size limit"}, {"limit", "too large, slow or deeply nested for the engine"},
 		{"unterminated", "with a string or comment that never ends"}, {"time", "after the audit's time limit"},
-		{"panic", "stopped by an engine error"},
+		{"panic", "stopped by an engine error"}, {"minified", "minified or bundled JavaScript, read without its long lines"},
 	} {
 		if n := count[r.reason]; n > 0 {
 			parts = append(parts, fmt.Sprintf("%d %s", n, r.text))
@@ -295,6 +313,8 @@ func unfinishedReason(err error) string {
 		return "limit"
 	case errors.Is(err, engine.ErrPartial):
 		return "unterminated"
+	case errors.Is(err, engine.ErrMinified):
+		return "minified"
 	}
 	return ""
 }
@@ -380,6 +400,15 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 			}
 			return nil
 		})
+	}
+	for _, f := range res.Findings {
+		switch {
+		case f.Kind != "injection" || f.Rule == "":
+		case f.TestPath:
+			res.InjectionTestPaths++
+		default:
+			res.Injection++
+		}
 	}
 	if len(partial) > 0 {
 		add(partialFinding(partial))

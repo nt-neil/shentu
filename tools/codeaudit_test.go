@@ -255,3 +255,19 @@ func TestAppCodeAuditExtensionsAndNUL(t *testing.T) {
 		t.Error("LangOf and the audit disagree on PHP extensions")
 	}
 }
+
+func TestTestPath(t *testing.T) {
+	for p, want := range map[string]bool{
+		"/srv/app/tests/test_views.py":           true,
+		"/srv/app/test/app.router.js":            true,
+		"/srv/app/examples/params/index.js":      true,
+		"/srv/app/src/__tests__/a.js":            true,
+		"/srv/app/src/latest/views.py":           false,
+		"/srv/app/testing.php":                   false,
+		"/srv/app/wp-content/plugins/x/main.php": false,
+	} {
+		if got := testPath(p); got != want {
+			t.Errorf("testPath(%q) = %v, want %v", p, got, want)
+		}
+	}
+}

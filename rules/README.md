@@ -100,7 +100,24 @@ How the engine reads them:
     `==` counts only against a plain string (in PHP `"../x" == true` holds);
   - a source matches after a qualifier too: `request.form` also finds
     `flask.request.form` and `self.request.form`;
-  - PHP `empty($x)`, or `isset($x)` being false, means `$x` holds nothing;
+  - PHP `empty($x)`, or `isset($x)` being false, means `$x` holds nothing, and so
+    does a plain value used as a condition where it is false (`if ($cb) {...}`:
+    after it, `$cb` is either empty or what the branch made it);
+  - `preg_replace` (PHP) or `re.sub` (Python) with a negated class of letters,
+    digits, `_` and `-`, an empty replacement and no limit or count leaves only
+    those characters, so its result is clean;
+  - in the rules that list `check_admin_referer`, `check_ajax_referer` or
+    `wp_verify_nonce` as sanitizers, a nonce check that gates the code stops the
+    rule there: `check_admin_referer(...)` or `check_ajax_referer(...)` as a
+    statement of its own (not with `false` as the third argument), or
+    `wp_verify_nonce(...)` in an `if` on the branch where it passed. The request
+    then came from the site's own pages, so a third party's link cannot pick the
+    value. The open-redirect rule lists all three. The PHP XSS rules list
+    `current_user_can` too: there `check_ajax_referer` and `wp_verify_nonce` count
+    only with a capability check on the same path (`if (!current_user_can(...))
+    wp_die();`), because a logged-out visitor can get a valid nonce for public
+    AJAX handlers; `check_admin_referer` (admin screens) counts alone. A request
+    value read after such a check is the site's own request too;
   - a regular-expression test is a check when it allows only letters, digits,
     `_` and `-` from start to end (`preg_match('/^[a-z0-9_]+$/i', $x)`,
     `re.fullmatch(r'[\w-]+', x)`, `/^\d+$/.test(x)`), or when it looks for any
@@ -159,7 +176,7 @@ it are unchanged: a sink is reported when any argument is tainted.
 | `whole` | the argument must be the input itself (or spread from it), not an object or array literal holding a value from it |
 | `context` | output sinks only (`echo`, `res.send(`): the input counts only when it is written into one of these places of an HTML page: `html` (between tags), `attr` (an attribute value, or inside a tag), `url` (the start of an `href`, `src`, `action`... value), `js` (inside `<script>`, an `on*` handler, or after `javascript:`); see [Output contexts](#output-contexts) |
 | `literal` | the argument named by `arg`, or the value of a `when` option (`password=`, `password:`), must be a non-empty string written in the code; used by rules without sources |
-| `leading` | the input must be at the start of the argument: a fixed prefix makes the call safe, as `WP_PLUGIN_DIR . "/$name"` cannot choose a `phar://` stream. A fixed prefix is a literal (or a run of literals) holding a character no URL scheme has (`/`, `_`, a space) before any `:`, so `'phar' . $x` and `'ph' . 'ar' . $x` are none; a constant; a ternary whose branches both are; a variable assigned one; a property or array key the input never reached (`$this->dir`, `$u['basedir']`), but never a superglobal or request object (`$_COOKIE[...]`, `$_SERVER['HTTP_...']`; `$_SERVER['DOCUMENT_ROOT']` is allowed); a call whose arguments hold no input, even through a sanitizer (`dirname(__FILE__)`, `get_template_directory()`, `strval(intval($x))`, but not `trim(basename($_GET['d']))`); `sprintf` whose format starts with such a literal; a Laravel path helper (`storage_path(...)`); a WordPress or Laravel URL helper (`admin_url(...)`, `home_url(...)`, `route(...)`); `add_query_arg` / `remove_query_arg` whose URL argument is fixed (or absent: the request's own path); `apply_filters` whose filtered value is fixed; or a literal that fixes the scheme and the host (`https://api.example.com/...`). A call on input (`basename($_GET['d'])`) is not; a clean call that returns `""` (`trim(' ')`, an unset `getenv()`) is a known miss |
+| `leading` | the input must be at the start of the argument: a fixed prefix makes the call safe, as `WP_PLUGIN_DIR . "/$name"` cannot choose a `phar://` stream. A fixed prefix is a literal (or a run of literals) holding a character no URL scheme has (`/`, `_`, a space) before any `:`, so `'phar' . $x` and `'ph' . 'ar' . $x` are none; a constant; a ternary whose branches both are; a variable assigned one; a property or array key the input never reached (`$this->dir`, `$u['basedir']`), but never a superglobal or request object (`$_COOKIE[...]`, `$_SERVER['HTTP_...']`; `$_SERVER['DOCUMENT_ROOT']` is allowed); a call whose arguments hold no input, even through a sanitizer (`dirname(__FILE__)`, `get_template_directory()`, `strval(intval($x))`, but not `trim(basename($_GET['d']))`); `sprintf` whose format starts with such a literal; a Laravel path helper (`storage_path(...)`); a WordPress or Laravel URL helper (`admin_url(...)`, `home_url(...)`, `get_permalink(...)`, `route(...)`); `add_query_arg` / `remove_query_arg` whose URL argument is fixed (or absent: the request's own path); `apply_filters` whose filtered value is fixed; `trailingslashit`, `user_trailingslashit`, `untrailingslashit` or `rtrim` whose first argument is fixed; or a literal that fixes the scheme and the host (`https://api.example.com/...`). A call on input (`basename($_GET['d'])`) is not; a clean call that returns `""` (`trim(' ')`, an unset `getenv()`) is a known miss |
 
 `when` and `unless` entries are code fragments matched anywhere in the call's
 arguments, with two refinements:
@@ -344,7 +361,10 @@ code: application code must not leave the host or reach an AI model. Each file i
 capped in tokens and time (`engine.Limits`); the time counts every token the
 analysis scans. A file over a cap, or nested deeper than the engine reads (where
 an expression too deep to read counts as user input), returns `ErrLimit`; a
-string or comment that runs to the end of the file returns `ErrPartial`. Both
+string or comment that runs to the end of the file returns `ErrPartial`. A
+JavaScript file with at least half of its bytes in lines over 1000 bytes is minified
+or bundled code: it is read without those long lines and returns `ErrMinified` with
+what was found, and the audit lists it as only partly read. Both
 come with the findings made so far.
 
 What it does not do: follow values across files (input read in a controller and

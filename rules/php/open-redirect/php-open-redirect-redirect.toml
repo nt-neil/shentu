@@ -8,7 +8,7 @@ title = "Redirect to a URL taken from the request"
 frameworks = ["wordpress", "laravel"]
 sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "get_query_var", "->get_param(", "$request->input(", "$request->query(", "$request->get("]
 sinks = ["wp_redirect(", "Location:", "redirect(", "redirect()->to(", "redirect()->away(", "Redirect::to(", "Redirect::away("]
-sanitizers = ["wp_validate_redirect", "absint", "intval"]
+sanitizers = ["wp_validate_redirect", "absint", "intval", "check_admin_referer", "check_ajax_referer", "wp_verify_nonce"]
 text = ["Location:"]
 fix = "Redirect with wp_safe_redirect() or after wp_validate_redirect(), which keep the user on allowed hosts; in Laravel redirect to a named route, or check the target's host before redirecting."
 refs = ["CVE-2018-19790"]
@@ -43,6 +43,16 @@ if (isset($_GET['redirect_to'])) {
     wp_safe_redirect($_GET['redirect_to']);
     exit;
 }
+'''
+
+[[samples]]
+kind = "safe"
+note = "after a nonce check only the site's own pages can make the request, so a link cannot choose the target"
+code = '''
+<?php
+check_admin_referer('bulk-items');
+wp_redirect(wp_unslash($_REQUEST['_wp_http_referer']));
+exit;
 '''
 
 [[samples]]

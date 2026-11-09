@@ -170,12 +170,15 @@ func (a *analysis) stmt(s *stmt, st state) (state, uint8) {
 		}
 		a.assignStmt(st, s.toks)
 		a.assertStmt(st, s.toks)
+		a.nonceStmt(st, s.toks)
 		return st, a.exitOf(s.toks)
 	case sIf:
 		a.sinks(st, s.toks)
 		t1, _ := a.refine(st, s.toks, true)
+		a.nonceCond(t1, s.toks, true)
 		t1, e1 := a.block(s.body, t1)
 		t2, g2 := a.refine(st, s.toks, false)
+		a.nonceCond(t2, s.toks, false)
 		e2 := noExit
 		if len(s.els) > 0 {
 			t2, e2 = a.block(s.els, t2)
@@ -745,7 +748,8 @@ func (a *analysis) fixedStart(st state, t []Token) bool {
 			switch first[0].Text {
 			case "storage_path", "base_path", "public_path", "resource_path", "app_path", "database_path", "config_path":
 				return true // Laravel: the app's own folder, then the argument
-			case "admin_url", "home_url", "site_url", "network_admin_url", "network_home_url", "network_site_url", "self_admin_url", "rest_url", "plugins_url", "route":
+			case "admin_url", "home_url", "site_url", "network_admin_url", "network_home_url", "network_site_url", "self_admin_url", "rest_url", "plugins_url", "route",
+				"get_permalink", "get_home_url", "get_site_url", "get_admin_url", "get_edit_post_link", "get_term_link", "wp_login_url", "wp_logout_url":
 				return true // WordPress and Laravel: the site's own address, then the argument
 			case "add_query_arg", "remove_query_arg":
 				// WordPress: the URL is the last argument (after a key and value, or an array of
@@ -754,6 +758,9 @@ func (a *analysis) fixedStart(st state, t []Token) bool {
 					return !a.rawInput(st, args[n-1]) || a.fixedStart(st, args[n-1])
 				}
 				return true
+			case "trailingslashit", "user_trailingslashit", "untrailingslashit", "rtrim":
+				// the result starts with the first argument
+				return len(args) >= 1 && a.fixedStart(st, args[0])
 			case "apply_filters":
 				// WordPress returns the filtered value, the second argument
 				return len(args) >= 2 && (!a.rawInput(st, args[1]) || a.fixedStart(st, args[1]))
@@ -1050,6 +1057,8 @@ func (a *analysis) term(st state, t []Token, i int, whole bool) (val, int) {
 	case tk.op("[") || tk.op("{"):
 		c := closeOf(t, i)
 		return a.postfix(st, t, i, c+1, a.literal(st, inside(t, i, c), tk.Text, whole), whole)
+	case tk.Kind == Ident && (i == 0 || !memberOp(a.php, t[i-1])) && a.stripAllAt(t, i) >= 0:
+		return a.postfix(st, t, i, a.stripAllAt(t, i), val{}, whole) // preg_replace('/[^a-z0-9_]/', '', $x): only safe characters are left (context.go)
 	case tk.Kind == Ident && numericFuncs[a.lang()][tk.Text] && i+1 < len(t) && t[i+1].op("(") && (i == 0 || !memberOp(a.php, t[i-1])):
 		return a.postfix(st, t, i, closeOf(t, i+1)+1, val{}, whole) // intval($x), int(x), Number(x)
 	case tk.Kind == Var || tk.Kind == Ident:
@@ -1103,7 +1112,7 @@ func (a *analysis) postfix(st state, t []Token, start, baseEnd int, v val, whole
 	}
 	apply := func(pos int) {
 		if srcEnd >= 0 && pos >= srcEnd {
-			v, srcEnd = val{taint: true}, -2
+			v, srcEnd = val{taint: !a.nonced(st)}, -2 // read after a nonce check: the site's own request (context.go)
 		}
 		if key != "" {
 			if e, ok := st[key]; ok {
@@ -1442,6 +1451,10 @@ func (a *analysis) guard(st state, atom []Token) (pos bool, keys []keyRef) {
 			return pos, nil
 		}
 	}
+	if _, _, ok := a.pathKey(atom); ok && len(atom) > 0 && !requestRoot(atom[0].Text) {
+		// if ($x): where it is false, $x is empty ("", "0", null, 0), which carries no input
+		return !pos, a.keysOf(atom)
+	}
 	if i := indexTop(atom, 0, a.isCompare); i > 0 {
 		lhs, op, rhs := atom[:i], atom[i].Text, atom[i+1:]
 		if isLiteral(lhs) {
@@ -1698,6 +1711,9 @@ func (a *analysis) sink(st state, t []Token, i int, s *pat) {
 	if a.noSources() {
 		a.report(t[i].Line)
 		return
+	}
+	if a.nonced(st) {
+		return // the request carried a valid CSRF nonce, so a third party cannot have made it (context.go)
 	}
 	var recv []Token
 	if s.member {

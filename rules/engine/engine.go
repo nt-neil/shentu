@@ -10,6 +10,7 @@
 package engine
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -143,6 +144,13 @@ func compileRule(r rules.Rule) (*crule, error) {
 			c.args[p] = ac
 		}
 	}
+	for _, ac := range c.args {
+		for _, x := range ac.context {
+			if x == ctxURL {
+				c.leading = true // track fixed prefixes: a value that starts with one cannot pick a scheme
+			}
+		}
+	}
 	c.output = len(c.sinks) > 0 && len(c.textSinks) == 0
 	for _, s := range c.sinks {
 		if ac := c.args[s]; ac == nil || len(ac.context) == 0 {
@@ -171,6 +179,13 @@ func (e *Engine) Scan(lang, path string, src []byte) ([]Finding, error) {
 	rs := e.byLang[lang]
 	if len(rs) == 0 {
 		return nil, nil
+	}
+	if lang == "js" && Minified(src) {
+		out, err := e.Scan(lang, path, dropLong(src))
+		if err == nil || errors.Is(err, ErrPartial) {
+			err = ErrMinified
+		}
+		return out, err
 	}
 	b := newBudget(e.Limits)
 	toks := lex(lang, string(src), b)

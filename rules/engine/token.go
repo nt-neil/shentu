@@ -70,6 +70,11 @@ var ErrLimit = errors.New("engine: file too large, too slow or too deeply nested
 // closed, so the code after its start was read as text and not analysed.
 var ErrPartial = errors.New("engine: unterminated string or comment, rest of the file not analysed")
 
+// ErrMinified means a JavaScript file is minified or bundled (most of it is in
+// very long lines, see Minified): only its other lines were analysed. Generated
+// code is not where the application's own flaws are, and it is slow to read.
+var ErrMinified = errors.New("engine: minified JavaScript, not analysed")
+
 const maxNest = 24 // interpolation and block nesting; deeper code is read flat or skipped
 
 type budget struct {

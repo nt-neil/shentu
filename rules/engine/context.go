@@ -137,10 +137,13 @@ func (a *analysis) contextTaint(st state, sinkTok Token, out []Token, want []uin
 		join = "."
 	}
 	lit := ""
-	in := func(text string) bool {
+	inAt := func(text string, op []Token) bool {
 		c := base
 		if text != "" && (base == ctxHTML || strings.ContainsAny(text, "<>")) {
 			c = htmlContext(text)
+		}
+		if c == ctxURL && op != nil && a.r.leading && a.fixedStart(st, op) {
+			c = ctxAttr // the value starts with a fixed part ('install.php?l=' . $l): not a scheme
 		}
 		for _, w := range want {
 			if w == c {
@@ -153,7 +156,7 @@ func (a *analysis) contextTaint(st state, sinkTok Token, out []Token, want []uin
 		if len(op) == 1 && op[0].Kind == Str && op[0].Flags&(FlagShell|FlagRegex) == 0 {
 			tk := op[0]
 			for _, p := range tk.Parts {
-				if a.hits(a.expr(st, p.Toks, false)) && in(lit+tk.Text[:min(p.Off, len(tk.Text))]) {
+				if a.hits(a.expr(st, p.Toks, false)) && inAt(lit+tk.Text[:min(p.Off, len(tk.Text))], p.Toks) {
 					return true
 				}
 			}
@@ -163,7 +166,7 @@ func (a *analysis) contextTaint(st state, sinkTok Token, out []Token, want []uin
 		if !a.php && len(op) > 0 && (op[0].op("{") || op[0].op("[")) {
 			continue // an object or a list is sent as JSON, not as markup
 		}
-		if !a.opaqueCall(op) && a.hits(a.expr(st, op, false)) && in(lit) {
+		if !a.opaqueCall(op) && a.hits(a.expr(st, op, false)) && inAt(lit, op) {
 			return true
 		}
 	}
@@ -272,7 +275,7 @@ var passOn = words("trim ltrim rtrim strtolower strtoupper ucfirst ucwords lcfir
 	"str_replace str_ireplace preg_replace substr mb_substr str_pad nl2br wpautop print_r var_export strval " +
 	"__ _x apply_filters wp_specialchars_decode stripslashes_deep str_repeat strrev wordwrap " +
 	"decodeURIComponent decodeURI unescape String toString toUpperCase toLowerCase replace replaceAll slice substring " +
-	"concat format str upper lower strip capitalize title unquote unquote_plus get getlist " +
+	"concat format str upper lower strip capitalize title unquote unquote_plus get getlist sub subn " +
 	// escaping for one context leaves the value unsafe in another (the rules list the ones that suffice)
 	"esc_html esc_attr esc_textarea esc_js esc_url esc_url_raw esc_html__ esc_attr__ htmlspecialchars htmlentities " +
 	"strip_tags wp_strip_all_tags wp_kses wp_kses_post wp_kses_data sanitize_text_field sanitize_textarea_field " +
@@ -296,4 +299,123 @@ func (a *analysis) opaqueCall(op []Token) bool {
 // the input it was given (see passOn).
 func (a *analysis) opaqueAt(t []Token, j int) bool {
 	return j > 0 && t[j-1].Kind == Ident && !a.kw[t[j-1].Text] && !passOn[t[j-1].Text]
+}
+
+// Keys that mark, in a state, the guards that ran on every path to here (san:
+// merge keeps a key only when both paths have it).
+const (
+	nonceKey      = "\x00nonce"       // any WordPress nonce check
+	adminNonceKey = "\x00admin-nonce" // check_admin_referer: admin screens only
+	capKey        = "\x00cap"         // current_user_can: a logged-in user with a capability
+)
+
+// nonceFuncs check a WordPress CSRF nonce; current_user_can checks the user.
+var nonceFuncs = map[string]bool{"check_admin_referer": true, "check_ajax_referer": true, "wp_verify_nonce": true}
+
+// nonced reports whether the request here is the site's own: a nonce check ran
+// on every path to here, so a third party's link or form cannot have made it,
+// and request values read here and sinks reached here are not theirs to choose.
+// A rule that also lists current_user_can trusts a nonce from check_ajax_referer
+// or wp_verify_nonce only together with a capability check, since a logged-out
+// visitor can get a valid nonce for public AJAX handlers.
+func (a *analysis) nonced(st state) bool {
+	has := func(k string) bool { e, ok := st[k]; return ok && e.san }
+	switch {
+	case has(adminNonceKey):
+		return true
+	case !has(nonceKey):
+		return false
+	}
+	return !a.hasSanitizerWord("current_user_can") || has(capKey)
+}
+
+func (a *analysis) markGuard(st state, name string) {
+	switch {
+	case !a.hasSanitizerWord(name):
+	case name == "current_user_can":
+		st[capKey] = entry{san: true}
+	default:
+		st[nonceKey] = entry{san: true}
+		if name == "check_admin_referer" {
+			st[adminNonceKey] = entry{san: true}
+		}
+	}
+}
+
+// nonceStmt records a nonce check that is a statement of its own:
+// check_admin_referer(...) and check_ajax_referer(...) stop a request without a
+// valid nonce (unless check_ajax_referer's third argument is false). Only in the
+// rules that list the check as a sanitizer.
+func (a *analysis) nonceStmt(st state, t []Token) {
+	if !a.php || len(t) < 3 || t[0].Kind != Ident || !t[1].op("(") || closeOf(t, 1) != len(t)-1 && !(closeOf(t, 1) == len(t)-2 && t[len(t)-1].op(";")) {
+		return
+	}
+	switch name := t[0].Text; name {
+	case "check_ajax_referer":
+		if args := splitTop(inside(t, 1, closeOf(t, 1)), isComma); len(args) >= 3 && len(args[2]) == 1 && falsy(args[2]) {
+			return // returns false instead of stopping
+		}
+		fallthrough
+	case "check_admin_referer":
+		a.markGuard(st, name)
+	}
+}
+
+// nonceCond records, on the branch of an if where it holds, that a nonce or
+// capability check in the condition passed: if (wp_verify_nonce(...)) { here }
+// and if (!current_user_can('x')) { wp_die(); } here.
+func (a *analysis) nonceCond(st state, cond []Token, truth bool) {
+	if !a.php {
+		return
+	}
+	split := func(t Token) bool { return t.op("||") || t.word("or") }
+	if truth {
+		split = func(t Token) bool { return t.op("&&") || t.word("and") }
+	}
+	for _, atom := range splitTop(stripParens(cond), split) {
+		pos := true
+		atom = stripParens(atom)
+		for len(atom) > 0 && atom[0].op("!") {
+			pos, atom = !pos, stripParens(atom[1:])
+		}
+		if pos == truth && len(atom) > 2 && atom[0].Kind == Ident && (nonceFuncs[atom[0].Text] || atom[0].Text == "current_user_can") &&
+			atom[1].op("(") && closeOf(atom, 1) == len(atom)-1 {
+			a.markGuard(st, atom[0].Text)
+		}
+	}
+}
+
+// stripAllAt reports whether t[i:] starts with a call that deletes every
+// character outside letters, digits, "_" and "-" from its subject:
+// preg_replace('/[^a-z0-9_-]/i', ”, $x) in PHP, re.sub(r'[^\w-]', ”, x) in
+// Python, with exactly those three arguments (a limit or count would leave
+// characters in place). It returns where the call ends, or -1.
+func (a *analysis) stripAllAt(t []Token, i int) int {
+	open := -1
+	switch {
+	case a.php && t[i].Text == "preg_replace" && i+1 < len(t) && t[i+1].op("("):
+		open = i + 1
+	case a.py && t[i].Text == "re" && i+3 < len(t) && t[i+1].op(".") && t[i+2].word("sub") && t[i+3].op("("):
+		open = i + 3
+	default:
+		return -1
+	}
+	c := closeOf(t, open)
+	args := splitTop(inside(t, open, c), isComma)
+	if len(args) != 3 || len(args[0]) != 1 || args[0][0].Kind != Str || len(args[0][0].Parts) > 0 ||
+		len(args[1]) != 1 || args[1][0].Kind != Str || args[1][0].Text != "" {
+		return -1
+	}
+	re := args[0][0].Text
+	if a.php {
+		body, flags, ok := phpDelimited(re)
+		if !ok || strings.Trim(flags, "iu") != "" {
+			return -1
+		}
+		re = body
+	}
+	if items, ok := regexItems(re); !ok || len(items) != 1 || !items[0] {
+		return -1
+	}
+	return c + 1
 }

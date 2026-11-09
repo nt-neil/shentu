@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -291,5 +292,31 @@ func TestEngineHostile(t *testing.T) {
 		if _, err := e.Scan("php", "open.php", []byte(src)); err != ErrPartial {
 			t.Errorf("%q: err %v, want ErrPartial", src, err)
 		}
+	}
+}
+
+func TestMinified(t *testing.T) {
+	long := strings.Repeat("a=1;", 400) // 1600 bytes on one line
+	for _, c := range []struct {
+		name, src string
+		want      bool
+	}{
+		{"bundle", long + "\n" + long, true},
+		{"hand-written with one long line", strings.Repeat("const x = req.query.x;\n", 200) + long, false},
+		{"short lines", "a();\nb();\n", false},
+		{"empty", "", false},
+	} {
+		if got := Minified([]byte(c.src)); got != c.want {
+			t.Errorf("%s: Minified = %v, want %v", c.name, got, c.want)
+		}
+	}
+	e := engineForTest(t)
+	if _, err := e.Scan("js", "app.min.js", []byte(long+"\n")); !errors.Is(err, ErrMinified) {
+		t.Errorf("minified file: err = %v, want ErrMinified", err)
+	}
+	// Hand-written lines in a mostly minified file are still read.
+	mixed := long + "\n" + long + "\napp.get('/x', (req, res) => { exec(req.query.c); });\n"
+	if fs, err := e.Scan("js", "mixed.js", []byte(mixed)); !errors.Is(err, ErrMinified) || len(fs) == 0 || fs[0].Line != 3 {
+		t.Errorf("mixed file: %v, %v; want a finding on line 3 and ErrMinified", fs, err)
 	}
 }
