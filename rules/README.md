@@ -270,6 +270,28 @@ rule of its language.
    any path that goes on. Each `switch` case is a branch (falling through until
    `break`); a `try` body may stop at any statement, so its handlers start from
    the state before or after it.
+4. **Calls inside the file.** A call to a function of the same file (a function,
+   a method through `$this->`, `self::`, `static::`, `parent::`, `this.`,
+   Python's `self.`/`cls.`, or a closure assigned to a variable) uses that
+   function's summary for the rule: which parameters reach a sink and at which
+   lines (a tainted argument reports those lines), which parameters the return
+   value carries (a helper that returns `intval($v)` gives a clean result), and
+   whether it returns input of its own. Summaries are computed on demand, only
+   for functions holding one of the rule's sources, sinks or sanitizers (or
+   calling one that does); recursion is recomputed until it settles. Input that
+   only went through a call the engine does not know (`get_post($_GET['id'])`)
+   still reports inside its own function, as before, but does not cross into
+   another function's sinks. Depth (32), body analyses per rule and file (4000)
+   and recursion rounds (4) are capped; over a cap the file returns `ErrLimit`.
+   A rule whose sinks do not occur in a file is skipped for that file.
+5. **Library mode** (`Engine.Library`, off by default and never on for the server
+   patrol). For a scanned tree that is itself a package: the parameters of
+   public functions and methods (not private/protected, not `_name`/`#name`, not
+   typed `int`/`float`/`bool`) are input, for the `sqli`, `cmdi` and `code-eval`
+   rules only, and not in test files. A finding then needs the parameter
+   embedded in a larger string (concatenated, interpolated, formatted) on its way
+   to the sink: a query or command taken as a whole parameter is what such an API
+   is for.
 
 Findings carry the rule, file, line, severity, title, CWE and fix, never the
 code: application code must not leave the host or reach an AI model. Each file is
@@ -279,8 +301,8 @@ an expression too deep to read counts as user input), returns `ErrLimit`; a
 string or comment that runs to the end of the file returns `ErrPartial`. Both
 come with the findings made so far.
 
-What it does not do: follow values across functions or files (input read in a
-controller and used in another class is missed), know framework semantics beyond
+What it does not do: follow values across files (input read in a controller and
+used in another class of another file is missed), know framework semantics beyond
 the rules (a lookup in a constant dict is not an allowlist), look into options
 kept in a variable (`const opts = { shell: true }; spawn(cmd, opts)`), or prove a
 finding.

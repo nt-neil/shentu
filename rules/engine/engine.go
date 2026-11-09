@@ -2,7 +2,8 @@
 // JavaScript files. It lexes the file by hand, splits it into statements and
 // function scopes, and follows user input inside each function in order: from a
 // source, through variables, to a sink, unless a sanitizer or a check is in the
-// way. It does not follow values across functions or files.
+// way. Calls to functions of the same file follow their summaries
+// (interproc.go); values are not followed across files.
 //
 // Findings name the rule, the file and the line, never the code itself:
 // application code must not leave the host or be sent to an AI model.
@@ -34,6 +35,14 @@ type Finding struct {
 type Engine struct {
 	byLang map[string][]*crule
 	Limits Limits
+	// Library turns on library mode: the parameters of public functions and
+	// methods are treated as input, and a finding needs that input embedded in a
+	// larger string (a query, a command, code), not passed through as is. It
+	// applies to the libClasses only (a library building paths from its
+	// parameters is normal), and not to test files. Set it only when the scanned
+	// tree is itself a package or library whose callers are not part of the
+	// scan; it is off for applications and for the server patrol.
+	Library bool
 }
 
 type crule struct {
@@ -153,10 +162,20 @@ func (e *Engine) Scan(lang, path string, src []byte) ([]Finding, error) {
 		return nil, ErrLimit
 	}
 	tree := parse(lang, toks, b)
+	funcs := collectFuncs(tree, lang)
 	var out []Finding
 	for _, r := range rs {
-		a := &analysis{r: r, php: lang == "php", py: lang == "python", js: lang == "js", b: b, kw: keywords[lang], seen: map[int]bool{}}
+		if !hasSink(r, toks) {
+			continue // nothing in the file can be this rule's sink
+		}
+		sc := newSummaries(funcs)
+		a := &analysis{r: r, php: lang == "php", py: lang == "python", js: lang == "js", b: b, kw: keywords[lang], seen: map[int]bool{}, sc: sc}
 		a.block(tree, state{})
+		if e.Library && libClasses[r.rule.Class] && !testPath(path) && !b.hit {
+			l := &analysis{r: r, php: a.php, py: a.py, js: a.js, b: b, kw: a.kw, seen: a.seen, sc: sc, lib: true}
+			l.block(tree, state{})
+			a.lines = append(a.lines, l.lines...)
+		}
 		for _, line := range a.lines {
 			out = append(out, Finding{RuleID: r.rule.ID, Path: path, Line: line, Severity: r.rule.Severity,
 				Title: r.rule.Title, CWE: r.rule.CWE, Fix: r.rule.Fix, Tier: r.rule.Tier})
@@ -178,6 +197,51 @@ func (e *Engine) Scan(lang, path string, src []byte) ([]Finding, error) {
 		return out, ErrPartial
 	}
 	return out, nil
+}
+
+// hasSink reports whether one of the rule's sinks occurs in the file at all.
+func hasSink(r *crule, toks []Token) bool {
+	for i := range toks {
+		for _, s := range r.sinks {
+			if s.text == nil && s.at(toks, i, false) {
+				return true
+			}
+		}
+		if toks[i].Kind == Str {
+			for _, s := range r.textSinks {
+				if s.text.MatchString(toks[i].Text) {
+					return true
+				}
+			}
+		}
+		if toks[i].Kind == Str && len(toks[i].Parts) > 0 && partsHaveSink(r, toks[i].Parts) {
+			return true
+		}
+	}
+	return false
+}
+
+func partsHaveSink(r *crule, parts []Part) bool {
+	for _, p := range parts {
+		if hasSink(r, p.Toks) {
+			return true
+		}
+	}
+	return false
+}
+
+// libClasses are the rule classes library mode applies to: input embedded in
+// SQL, a shell command or code is the library's own doing.
+var libClasses = map[string]bool{"sqli": true, "cmdi": true, "code-eval": true}
+
+// testPath reports whether a file is test code: tests/ or test/ directories,
+// test_x.py, x_test.py, x.test.js, x.spec.js.
+func testPath(path string) bool {
+	p := "/" + filepath.ToSlash(path)
+	base := filepath.Base(p)
+	return strings.Contains(p, "/tests/") || strings.Contains(p, "/test/") || strings.Contains(p, "/__tests__/") ||
+		strings.HasPrefix(base, "test_") || strings.HasSuffix(base, "_test.py") || strings.HasSuffix(base, "Test.php") ||
+		strings.Contains(base, ".test.") || strings.Contains(base, ".spec.")
 }
 
 // ScanFile is Scan with the language taken from the file name.

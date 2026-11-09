@@ -1,5 +1,7 @@
 package engine
 
+import "strings"
+
 // The parser turns tokens into a light statement tree: simple statements, if/else,
 // loops, blocks and function bodies. It is not a grammar; it only finds what the
 // analysis needs: statement ends, conditions, loop headers and function scopes
@@ -38,7 +40,10 @@ type stmt struct {
 type fn struct {
 	params []Token
 	body   []*stmt
-	fresh  bool // does not see the enclosing scope (PHP named functions and methods)
+	fresh  bool   // does not see the enclosing scope (PHP named functions and methods)
+	name   string // declared name ("" for a literal); see collectFuncs for assigned literals
+	method bool   // declared in a class body
+	public bool   // part of the public API: not private, protected, _name or #name
 }
 
 func parse(lang string, toks []Token, b *budget) []*stmt {
@@ -56,11 +61,12 @@ func isClose(t Token) bool { return t.Kind == Op && (t.Text == ")" || t.Text == 
 // ---- PHP and JavaScript ----
 
 type braceParser struct {
-	t     []Token
-	i     int
-	php   bool
-	b     *budget
-	depth int
+	t       []Token
+	i       int
+	php     bool
+	b       *budget
+	depth   int
+	inClass bool // directly in a class body
 }
 
 func (p *braceParser) at(text string) bool     { return p.i < len(p.t) && p.t[p.i].op(text) }
@@ -181,7 +187,7 @@ func (p *braceParser) statement() *stmt {
 		return s
 	case "function":
 		if n := next(1); n.Kind == Ident || n.op("&") && next(2).Kind == Ident || n.op("*") {
-			return p.funcDecl()
+			return p.funcDecl(true)
 		}
 	case "async":
 		if next(1).word("function") {
@@ -225,8 +231,12 @@ func (p *braceParser) statement() *stmt {
 			j++
 		}
 		if j < len(p.t) && p.t[j].word("function") {
+			public := true
+			for k := p.i; k < j; k++ {
+				public = public && !p.t[k].word("private") && !p.t[k].word("protected")
+			}
 			p.i = j
-			return p.funcDecl()
+			return p.funcDecl(public)
 		}
 	}
 	return p.simple()
@@ -370,18 +380,24 @@ func (p *braceParser) loopStmt() *stmt {
 }
 
 // funcDecl parses a named function or method at the "function" keyword.
-func (p *braceParser) funcDecl() *stmt {
+func (p *braceParser) funcDecl(public bool) *stmt {
 	p.i++
+	name := ""
 	for p.at("&") || p.at("*") || p.i < len(p.t) && p.t[p.i].Kind == Ident && !p.at("(") {
+		if p.t[p.i].Kind == Ident {
+			name = p.t[p.i].Text
+		}
 		p.i++
 		if p.i < len(p.t) && p.t[p.i].op("(") {
 			break
 		}
 	}
+	method := p.inClass
 	f := p.funcRest(p.php)
 	if f == nil {
 		return nil
 	}
+	f.name, f.method, f.public = name, method, public && !strings.HasPrefix(name, "_") || name == "__construct"
 	return &stmt{kind: sFunc, fn: f}
 }
 
@@ -406,6 +422,9 @@ func (p *braceParser) funcRest(fresh bool) *fn {
 		return &fn{params: params, fresh: fresh}
 	}
 	p.i++
+	inClass := p.inClass
+	p.inClass = false
+	defer func() { p.inClass = inClass }()
 	return &fn{params: params, fresh: fresh, body: p.nested(func() []*stmt { return p.block(true) })}
 }
 
@@ -429,6 +448,9 @@ func (p *braceParser) classStmt() *stmt {
 		return nil
 	}
 	p.i++
+	inClass := p.inClass
+	p.inClass = true
+	defer func() { p.inClass = inClass }()
 	if p.php {
 		return &stmt{kind: sBlock, body: p.nested(func() []*stmt { return p.block(true) })}
 	}
@@ -462,8 +484,11 @@ func (p *braceParser) classBody() []*stmt {
 			j = closeOf(p.t, j)
 		}
 		if j+1 < len(p.t) && p.t[j+1].op("(") {
+			name := p.t[j].Text
 			p.i = j + 1
 			if f := p.funcRest(false); f != nil {
+				f.name, f.method = name, true
+				f.public = !strings.HasPrefix(name, "_") && !strings.HasPrefix(name, "#") && p.t[j].Kind == Ident
 				out = append(out, &stmt{kind: sFunc, fn: f})
 			}
 		} else if s := p.simple(); s != nil {
@@ -671,10 +696,11 @@ func (p *braceParser) nestedCollect(mode int) ([]Token, []*fn) {
 // ---- Python ----
 
 type pyParser struct {
-	t     []Token
-	i     int
-	b     *budget
-	depth int
+	t       []Token
+	i       int
+	b       *budget
+	depth   int
+	inClass bool // directly in a class body
 }
 
 var pyCompound = map[string]bool{"if": true, "elif": true, "else": true, "for": true, "while": true, "with": true,
@@ -786,6 +812,10 @@ func (p *pyParser) statement() []*stmt {
 	header := l[1:colon]
 	inline := l[colon+1:]
 	p.i += len(l)
+	method := p.inClass
+	inClass := p.inClass
+	p.inClass = kw.Text == "class" || inClass && kw.Text != "def"
+	defer func() { p.inClass = inClass }()
 	var body []*stmt
 	if len(inline) > 0 {
 		body = simpleStmts(inline)
@@ -822,7 +852,11 @@ func (p *pyParser) statement() []*stmt {
 	case "with":
 		return []*stmt{{kind: sWith, toks: header, body: body}}
 	case "def":
-		f := &fn{body: body}
+		f := &fn{body: body, method: method}
+		if len(header) > 0 && header[0].Kind == Ident {
+			f.name = header[0].Text
+			f.public = !strings.HasPrefix(f.name, "_") || f.name == "__init__"
+		}
 		if len(header) > 1 && header[1].op("(") {
 			f.params = header[2:max(2, closeOf(header, 1))]
 		}

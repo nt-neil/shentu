@@ -15,8 +15,8 @@ import "strings"
 //     the paths where the check holds. A sink reached by a tainted variable is
 //     reported.
 //
-// Nothing crosses a function boundary except that closures see the variables of
-// the code around them.
+// Closures see the variables of the code around them; calls to other functions
+// of the same file go through summaries (interproc.go).
 
 const sepCh = "\x1f" // separates the parts of a path key: "$user" sepCh ".lang"
 
@@ -27,6 +27,8 @@ type entry struct {
 	san   bool // the value was made by a sanitizer (env = SandboxedEnvironment())
 	pre   bool // the value starts with a fixed part ($p = WP_PLUGIN_DIR . '/' . $name)
 	raw   bool // the value came from input, even through a sanitizer ($n = basename($_GET['n']))
+	emb   bool // the input is embedded in a larger string ("WHERE id = " . $id), not passed as is
+	weak  bool // all the input came through the result of a call the analysis does not know (get_post($id))
 }
 
 type state map[string]entry
@@ -74,7 +76,7 @@ func merge(x, y state) state {
 	}
 	both := func(a, b entry) entry {
 		return entry{taint: a.taint || b.taint, src: a.src || b.src, sep: a.sep && b.sep, san: a.san && b.san, pre: a.pre && b.pre,
-			raw: a.raw || b.raw}
+			raw: a.raw || b.raw, emb: a.emb || b.emb, weak: weakOf(a.taint, a.weak, b.taint, b.weak)}
 	}
 	for k, e := range x {
 		out[k] = both(e, look(y, k, e.src))
@@ -87,7 +89,11 @@ func merge(x, y state) state {
 	return out
 }
 
-type val struct{ taint, san, pre, raw bool } // pre, raw: see entry; set by assign only
+type val struct{ taint, san, pre, raw, emb, weak bool } // pre, raw: see entry; set by assign only
+
+// weakOf is the weak flag of a value with two tainted-or-not parts: weak when
+// some part is tainted and every tainted part is weak.
+func weakOf(t1, w1, t2, w2 bool) bool { return (t1 || t2) && (!t1 || w1) && (!t2 || w2) }
 
 const (
 	noExit    uint8 = iota
@@ -108,9 +114,17 @@ type analysis struct {
 	guards []map[string]bool // per enclosing loop: keys a rejecting check validated
 	depth  int
 	raw    bool // evaluating whether a value came from input at all: sanitizers do not clean
+
+	sc   *summaries // this rule's function summaries for the file (interproc.go)
+	summ *summRun   // set while a function body is analysed for its summary
+	lib  bool       // library mode: public parameters are input, and only embedded input is reported
 }
 
 func (a *analysis) report(line int) {
+	if a.summ != nil {
+		a.summ.lines[line] = true
+		return
+	}
 	if !a.seen[line] {
 		a.seen[line] = true
 		a.lines = append(a.lines, line)
@@ -140,6 +154,9 @@ func (a *analysis) stmt(s *stmt, st state) (state, uint8) {
 	switch s.kind {
 	case sSimple:
 		a.sinks(st, s.toks)
+		if a.summ != nil && len(s.toks) > 0 && s.toks[0].word("return") {
+			a.summ.ret = or(a.summ.ret, a.expr(st, s.toks[1:], false))
+		}
 		a.assignStmt(st, s.toks)
 		a.assertStmt(st, s.toks)
 		return st, a.exitOf(s.toks)
@@ -196,7 +213,9 @@ func (a *analysis) stmt(s *stmt, st state) (state, uint8) {
 	case sSwitch:
 		return a.switchStmt(s, st)
 	case sFunc:
-		a.function(s.fn, st)
+		if a.summ == nil || s.fn == nil || s.fn.name == "" { // named functions have summaries of their own
+			a.function(s.fn, st)
+		}
 	}
 	return st, noExit
 }
@@ -301,6 +320,7 @@ func (a *analysis) function(f *fn, st state) {
 			x.del(p.Text)
 		}
 	}
+	a.libParams(f, x)
 	a.depth++
 	a.block(f.body, x)
 	a.depth--
@@ -516,31 +536,33 @@ func (a *analysis) setTarget(st state, tg []Token, v val, op string, sep bool) {
 	}
 	if container != "" {
 		e, _ := st.get(container)
-		st[container] = entry{taint: e.taint || v.taint, raw: e.raw || v.raw}
+		st[container] = entry{taint: e.taint || v.taint, raw: e.raw || v.raw, emb: e.emb || v.emb, weak: weakOf(e.taint, e.weak, v.taint, v.weak)}
 		if strings.HasSuffix(key, "[*]") && v.taint {
 			st.del(container) // $a[$i] = input may overwrite any key: forget what was known per key
-			st[container] = entry{taint: true, raw: true}
+			st[container] = entry{taint: true, raw: true, emb: v.emb, weak: v.weak}
 		}
 		if !strings.HasSuffix(key, "[*]") {
 			// $args['limit'] = absint(...): the key itself is known; reading another key
 			// or the whole array still sees the container.
 			if op == "=" {
 				st.del(key)
-				st[key] = entry{taint: v.taint, san: v.san, sep: sep, pre: v.pre, raw: v.raw}
+				st[key] = entry{taint: v.taint, san: v.san, sep: sep, pre: v.pre, raw: v.raw, emb: v.emb, weak: v.weak}
 			} else {
 				ek, _ := st.get(key) // $q['w'] .= $input taints the key it appends to
-				st[key] = entry{taint: ek.taint || v.taint, sep: sep, pre: ek.pre, raw: ek.raw || v.raw}
+				st[key] = entry{taint: ek.taint || v.taint, sep: sep, pre: ek.pre, raw: ek.raw || v.raw, emb: ek.emb || v.taint,
+					weak: weakOf(ek.taint, ek.weak, v.taint, v.weak)}
 			}
 		}
 		return
 	}
 	if op == "=" || op == ":=" {
 		st.del(key)
-		st[key] = entry{taint: v.taint, san: v.san, sep: sep, pre: v.pre, raw: v.raw}
+		st[key] = entry{taint: v.taint, san: v.san, sep: sep, pre: v.pre, raw: v.raw, emb: v.emb, weak: v.weak}
 		return
 	}
 	e, _ := st.get(key)
-	st[key] = entry{taint: e.taint || v.taint, sep: sep, pre: e.pre, raw: e.raw || v.raw} // appending keeps the start
+	st[key] = entry{taint: e.taint || v.taint, sep: sep, pre: e.pre, raw: e.raw || v.raw, emb: e.emb || v.taint,
+		weak: weakOf(e.taint, e.weak, v.taint, v.weak)} // appending keeps the start
 }
 
 // pathKey returns the key of a plain path ($x, $x->a, x.y, x["k"]). When the path
@@ -887,18 +909,23 @@ func (a *analysis) expr(st state, t []Token, whole bool) val {
 			continue
 		}
 		tv, e := a.term(st, t, i, whole)
+		v.weak = weakOf(v.taint, v.weak, tv.taint, tv.weak)
 		v.taint = v.taint || tv.taint
+		v.emb = v.emb || tv.emb
 		v.san = tv.san
 		terms++
 		i = max(e, i+1)
 	}
 	if terms != 1 {
 		v.san = false
+		v.emb = v.emb || v.taint // "SELECT " . $x, "a" + x, "%s" % x
 	}
 	return v
 }
 
-func or(x, y val) val { return val{taint: x.taint || y.taint} }
+func or(x, y val) val {
+	return val{taint: x.taint || y.taint, emb: x.emb || y.emb, weak: weakOf(x.taint, x.weak, y.taint, y.weak)}
+}
 
 func (a *analysis) anyOf(st state, parts [][]Token, whole bool) val {
 	var v val
@@ -1046,7 +1073,7 @@ func (a *analysis) postfix(st state, t []Token, start, baseEnd int, v val, whole
 		}
 		if key != "" {
 			if e, ok := st[key]; ok {
-				v = val{taint: e.taint || a.raw && e.raw, san: e.san}
+				v = val{taint: e.taint || a.raw && e.raw, san: e.san, emb: e.emb, weak: e.weak}
 			}
 		}
 	}
@@ -1086,8 +1113,16 @@ func (a *analysis) postfix(st state, t []Token, start, baseEnd int, v val, whole
 			if j == baseEnd && a.php && t[start].Kind == Ident {
 				fn = t[start].Text
 			}
-			if a.argsTaint(st, inside(t, j, c), fn) {
-				v = val{taint: true}
+			name := ""
+			if j-1 == start || j-3 == start && j-2 > start && memberOp(a.php, t[j-2]) {
+				name = a.calleeName(t, j-1)
+			}
+			if sum := a.summaryOf(name); sum != nil && !a.raw {
+				v = a.callVal(st, sum, callArgs(t, j))
+			} else if a.argsTaint(st, inside(t, j, c), fn) {
+				// "...".format(x), sprintf("... %s", $x), implode(...): the input becomes part of a string
+				v = val{taint: true, emb: t[start].Kind == Str || formatFuncs[t[j-1].Text] || a.lib && a.argsEmb(st, inside(t, j, c)),
+					weak: !(t[start].Kind == Str || formatFuncs[t[j-1].Text])}
 			}
 			if key != "" {
 				key += sepCh + "()"
@@ -1127,6 +1162,29 @@ func (a *analysis) argsTaint(st state, inner []Token, fn string) bool {
 	return false
 }
 
+// formatFuncs build a string from their arguments.
+var formatFuncs = words("sprintf vsprintf implode join str_replace strtr format")
+
+// argsEmb reports whether an argument carries embedded input.
+func (a *analysis) argsEmb(st state, inner []Token) bool {
+	for _, arg := range splitTop(inner, isComma) {
+		if a.argVal(st, arg, false).emb {
+			return true
+		}
+	}
+	return false
+}
+
+// hits reports whether a value reaching a sink is reported: in library mode
+// only input embedded in a larger string is (a parameter passed as is, such as
+// a query string given to a query method, is what that API is for).
+//
+// Inside a summary run a value that went through a call the analysis does not
+// know does not count either: the summary would carry the guess into callers.
+func (a *analysis) hits(v val) bool {
+	return v.taint && (!a.lib || v.emb) && (a.summ == nil || !v.weak)
+}
+
 // argVal evaluates one call argument, without a keyword (name=, name:) or spread.
 func (a *analysis) argVal(st state, arg []Token, whole bool) val {
 	if len(arg) > 1 && arg[0].Kind == Ident && (a.py && arg[1].op("=") || a.php && arg[1].op(":")) {
@@ -1147,12 +1205,14 @@ func (a *analysis) strVal(st state, tk Token) val {
 			return val{taint: true}
 		}
 	}
+	var v val
 	for _, p := range tk.Parts {
-		if a.expr(st, p.Toks, false).taint {
-			return val{taint: true}
+		if pv := a.expr(st, p.Toks, false); pv.taint {
+			v.weak = weakOf(v.taint, v.weak, true, pv.weak)
+			v.taint, v.emb = true, true // "WHERE id = $id", f"...{x}", `...${x}`
 		}
 	}
-	return val{}
+	return v
 }
 
 // literal evaluates an array, object, dict, list or set literal.
@@ -1404,6 +1464,18 @@ func (a *analysis) hasSanitizerWord(w string) bool {
 // sanitizers used as a check (in_array, str_starts_with, .startsWith, .is_relative_to).
 func (a *analysis) checkKeys(st state, atom []Token) []keyRef {
 	n := len(atom)
+	// hash_equals($expected, $known) and hmac.compare_digest(a, b): an integrity
+	// check (an HMAC over the value) passes only for what the server signed.
+	if n > 2 && atom[n-1].op(")") && (a.php && atom[0].word("hash_equals") && atom[1].op("(") ||
+		a.py && n > 4 && atom[0].word("hmac") && atom[1].op(".") && atom[2].word("compare_digest") && atom[3].op("(")) {
+		open := 1
+		if a.py {
+			open = 3
+		}
+		if closeOf(atom, open) == n-1 {
+			return a.keysOf(inside(atom, open, n-1))
+		}
+	}
 	// PHP in_array($x, $allowed) and array_key_exists($x, $map).
 	if a.php && n > 2 && (atom[0].word("in_array") || atom[0].word("array_key_exists")) && atom[1].op("(") && closeOf(atom, 1) == n-1 {
 		if args := splitTop(atom[2:n-1], isComma); len(args) >= 2 && a.allowlist(st, args[1]) {
@@ -1537,6 +1609,7 @@ func (a *analysis) sinks(st state, t []Token) {
 			}
 		}
 	}
+	a.callSinks(st, t)
 }
 
 func (a *analysis) sink(st state, t []Token, i int, s *pat) {
@@ -1563,12 +1636,12 @@ func (a *analysis) sink(st state, t []Token, i int, s *pat) {
 	}
 	whole := cond != nil && cond.whole
 	reaches := func(arg []Token) bool {
-		return a.argVal(st, arg, whole).taint && !(cond != nil && cond.leading && a.fixedStart(st, arg))
+		return a.hits(a.argVal(st, arg, whole)) && !(cond != nil && cond.leading && a.fixedStart(st, arg))
 	}
 	tainted := false
 	switch {
 	case cond != nil && cond.arg != nil && *cond.arg == 0:
-		tainted = a.expr(st, recv, false).taint
+		tainted = a.hits(a.expr(st, recv, false))
 	case open >= 0:
 		args := splitTop(region, isComma)
 		if cond != nil && cond.arg != nil {
@@ -1584,7 +1657,7 @@ func (a *analysis) sink(st state, t []Token, i int, s *pat) {
 			}
 		}
 	default:
-		tainted = a.expr(st, region, whole).taint
+		tainted = a.hits(a.expr(st, region, whole))
 	}
 	if tainted {
 		a.report(t[i].Line)
