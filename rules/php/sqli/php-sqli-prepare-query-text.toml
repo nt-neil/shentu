@@ -67,3 +67,33 @@ register_rest_route('shop/v1', '/carriers', ['methods' => 'GET', 'callback' => f
     return $wpdb->get_results($wpdb->prepare("SELECT * FROM {$wpdb->prefix}carriers WHERE slug = '" . $name . "' AND active = %d", 1));
 }]);
 '''
+
+[[samples]]
+kind = "safe"
+note = "a fragment that prepare() already filled in is parameterized SQL, not input"
+code = '''
+<?php
+function my_plugin_count_events() {
+    global $wpdb;
+    $extra = '';
+    if (isset($_GET['venue'])) {
+        $extra .= $wpdb->prepare(' AND venue = %s', wp_unslash($_GET['venue']));
+    }
+    return (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}events WHERE status = %s $extra", 'open'));
+}
+'''
+
+[[samples]]
+kind = "safe"
+note = "the fix for a column name: an allowlist, since a placeholder cannot stand for an identifier"
+code = '''
+<?php
+add_action('wp_ajax_sort_members', function () {
+    global $wpdb;
+    $col = sanitize_key(wp_unslash($_POST['col']));
+    if (!in_array($col, ['name', 'joined', 'city'], true)) {
+        $col = 'name';
+    }
+    wp_send_json($wpdb->get_results($wpdb->prepare("SELECT id, $col FROM {$wpdb->prefix}members WHERE status = %s", 'active')));
+});
+'''
