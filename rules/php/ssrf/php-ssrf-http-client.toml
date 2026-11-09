@@ -6,15 +6,20 @@ severity = "high"
 tier = "info"
 title = "Symfony HttpClient or Guzzle requests a URL taken from the request"
 frameworks = ["symfony", "laravel"]
-sources = ["$_GET", "$_POST", "$_REQUEST", "$request->query->get(", "$request->request->get(", "$request->get(", "$request->input(", "request("]
-sinks = ["$this->client->request(", "$this->httpClient->request(", "$httpClient->request(", "$client->request(", "$this->guzzle->request(", "$guzzle->request(", "Client("]
+sources = ["$_GET", "$_POST", "$_REQUEST", "$request->query->get(", "$request->request->get(", "$request->get(", "$request->input(", "request()->input(", "request()->get(", "$this->input->post(", "$this->input->get(", "$this->request->getPost(", "$this->request->getGet(", "$this->request->getVar("]
+sinks = ["$this->client->request(", "$this->httpClient->request(", "$httpClient->request(", "$client->request(", "$this->guzzle->request(", "$guzzle->request(", "$this->http->request(", "$http->request(", "HttpClient::create()->request(", "$client->requestAsync(", "$this->client->requestAsync(", "$guzzle->requestAsync(", "$httpClient->get(", "$this->httpClient->get(", "$guzzle->get(", "$this->guzzle->get(", "$httpClient->post(", "$guzzle->post(", "Client("]
 sanitizers = ["in_array", "array_key_exists", "absint", "intval"]
 fix = "Keep the scheme and host fixed and take only a path or an id from the request, check the host against an allowlist, or wrap the Symfony client in NoPrivateNetworkHttpClient, which refuses local and private addresses."
 refs = ["CVE-2026-50888", "CVE-2026-52840"]
 
 [[args]]
-sinks = ["$this->client->request(", "$this->httpClient->request(", "$httpClient->request(", "$client->request(", "$this->guzzle->request(", "$guzzle->request("]
+sinks = ["$this->client->request(", "$this->httpClient->request(", "$httpClient->request(", "$client->request(", "$this->guzzle->request(", "$guzzle->request(", "$this->http->request(", "$http->request(", "HttpClient::create()->request(", "$client->requestAsync(", "$this->client->requestAsync(", "$guzzle->requestAsync("]
 arg = 2
+leading = true
+
+[[args]]
+sinks = ["$httpClient->get(", "$this->httpClient->get(", "$guzzle->get(", "$this->guzzle->get(", "$httpClient->post(", "$guzzle->post("]
+arg = 1
 leading = true
 
 [[args]]

@@ -6,13 +6,19 @@ severity = "medium"
 tier = "info"
 title = "Function that opens URLs called with a URL taken from the request"
 sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "->get_param(", "$request->input(", "$request->query->get(", "$request->request->get(", "$request->get("]
-sinks = ["get_headers(", "getimagesize(", "exif_read_data(", "simplexml_load_file(", "SoapClient(", "md5_file(", "sha1_file(", "imagecreatefromjpeg(", "imagecreatefrompng(", "imagecreatefromgif(", "imagecreatefromwebp("]
+sinks = ["get_headers(", "getimagesize(", "exif_read_data(", "exif_imagetype(", "simplexml_load_file(", "SoapClient(", "md5_file(", "sha1_file(", "hash_file(", "imagecreatefromjpeg(", "imagecreatefrompng(", "imagecreatefromgif(", "imagecreatefromwebp(", "$dom->load(", "$doc->load(", "$document->load("]
 sanitizers = ["in_array", "array_key_exists", "absint", "intval", "basename("]
-fix = "These functions follow http:// and ftp:// URLs (get_headers() also follows redirects): accept only hosts from an allowlist, or only a local file name joined to a fixed directory."
+fix = "These functions follow http:// and ftp:// URLs (get_headers() also follows redirects): accept only URLs from a fixed list (in_array($url, $allowed, true)), build the URL from a fixed host and an id, or take only a local file name joined to a fixed directory."
 refs = ["CVE-2026-33039", "CVE-2023-46725"]
 
 [[args]]
+sinks = ["get_headers(", "getimagesize(", "exif_read_data(", "exif_imagetype(", "simplexml_load_file(", "md5_file(", "sha1_file(", "imagecreatefromjpeg(", "imagecreatefrompng(", "imagecreatefromgif(", "imagecreatefromwebp(", "$dom->load(", "$doc->load(", "$document->load("]
 arg = 1
+leading = true
+
+[[args]]
+sinks = ["hash_file("]
+arg = 2
 leading = true
 
 [[samples]]

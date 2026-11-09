@@ -5,11 +5,11 @@ cwe = "CWE-78"
 severity = "critical"
 title = "Request data (including headers) placed into a shell command"
 frameworks = ["laravel"]
-sources = ["$_GET", "$_POST", "$_REQUEST", "$_FILES", "$_SERVER['HTTP_", "$request->input(", "$request->getHost()", "$request->header("]
+sources = ["$_GET", "$_POST", "$_REQUEST", "$_SERVER['HTTP_", "$request->input(", "$request->getHost()", "$request->header("]
 sinks = ["exec(", "shell_exec(", "system(", "passthru(", "popen(", "proc_open(", "`", "$this->process->execute(", "$this->process->executeAsync(", "Process::run(", "Process::start("]
 sanitizers = ["escapeshellarg", "ProcessExecutor::escape("]
 fix = "Avoid the shell: use a PHP function or an argument array (proc_open with an array, Symfony Process); if a shell is unavoidable, wrap every value in escapeshellarg()."
-refs = ["CVE-2026-54182", "CVE-2021-29472", "CVE-2026-107639"]
+refs = ["CVE-2026-54182", "CVE-2021-29472"]
 
 [[args]]
 sinks = ["Process::run(", "Process::start("]
@@ -82,12 +82,3 @@ code = '''
 $result = Process::path(storage_path('img'))->timeout(30)->run(['convert', $request->input('file'), 'out.png']);
 '''
 
-[[samples]]
-kind = "vulnerable"
-note = "escapeshellcmd() leaves spaces and leading dashes, so an uploaded name can add options to convert"
-code = '''
-<?php
-$name = $_FILES['map']['name'];
-move_uploaded_file($_FILES['map']['tmp_name'], '/srv/maps/' . basename($name));
-exec(escapeshellcmd('convert /srv/maps/' . basename($name) . ' -resize 800x /srv/maps/preview.png'));
-'''

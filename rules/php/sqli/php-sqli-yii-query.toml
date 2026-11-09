@@ -5,7 +5,7 @@ cwe = "CWE-89"
 severity = "high"
 tier = "info"
 title = "Yii request input written into SQL text, a string condition or a sort expression"
-sources = ["->request->get(", "->request->post(", "->request->getQueryParam(", "->request->getBodyParam(", "->request->getParam(", "->request->getQuery(", "->request->getPost(", "$_GET", "$_POST", "$_REQUEST"]
+sources = ["->request->get(", "->request->post(", "->request->getQueryParam(", "->request->getBodyParam(", "->request->getParam(", "->request->getQuery(", "->request->getPost(", "->getRequest()->get(", "->getRequest()->post(", "->getRequest()->getParam(", "$request->get(", "$request->post(", "$request->getQueryParam(", "$request->getBodyParam(", "$_GET", "$_POST", "$_REQUEST"]
 sinks = ["->createCommand(", "->orderBy(", "->addOrderBy(", "->where(", "->andWhere(", "->orWhere(", "->having(", "->addCondition(", "->groupBy("]
 sanitizers = ["intval", "(int)", "in_array", "array_key_exists", "->quoteValue(", "->quoteColumnName("]
 fix = "Use the hash or operator format (where(['status' => $status]), ['like', 'name', $q]) or bound parameters (createCommand('... WHERE id = :id', [':id' => $id])); map sort fields and directions to a fixed allowlist."
@@ -16,9 +16,13 @@ sinks = ["->createCommand("]
 arg = 1
 
 [[args]]
-sinks = ["->orderBy(", "->addOrderBy(", "->where(", "->andWhere(", "->orWhere(", "->having(", "->addCondition(", "->groupBy("]
+sinks = ["->where(", "->andWhere(", "->orWhere(", "->having(", "->addCondition("]
 arg = 1
 whole = true
+
+[[args]]
+sinks = ["->orderBy(", "->addOrderBy(", "->groupBy("]
+arg = 1
 
 [[samples]]
 kind = "vulnerable"

@@ -5,14 +5,15 @@ cwe = "CWE-89"
 severity = "high"
 tier = "info"
 title = "Request input written into the SQL text of a Drupal database query"
-sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "->query->get(", "->request->get(", "arg("]
-sinks = ["db_query(", "db_query_range(", "\\Drupal::database()->query(", "$this->database->query(", "$this->connection->query(", "$connection->query(", "$database->query("]
-sanitizers = ["(int)", "intval", "db_like(", "->escapeLike(", "in_array", "ctype_digit", "check_plain"]
+sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "->query->get(", "->request->get(", "::request()->get(", "$form_state->getValue(", "$form_state->getUserInput(", "arg("]
+sinks = ["db_query(", "db_query_range(", "\\Drupal::database()->query(", "$this->database->query(", "$this->connection->query(", "$connection->query(", "$database->query(", "Database::getConnection()->query(", "->where("]
+sanitizers = ["(int)", "intval", "in_array", "ctype_digit"]
 fix = "Keep the SQL text fixed and pass values as named placeholders in the arguments array (db_query('... WHERE nid = :nid', [':nid' => $nid])), or use the condition() builder, which binds values."
 refs = ["CVE-2015-7877"]
 
 [[args]]
 arg = 1
+whole = true
 
 [[samples]]
 kind = "vulnerable"
