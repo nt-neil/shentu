@@ -51,42 +51,42 @@ def preview():
 
 [[samples]]
 kind = "vulnerable"
-note = "a prompt template sent to a test endpoint is compiled by a plain Environment"
+note = "a message template sent for preview is compiled by a plain Environment"
 code = '''
-jinja_env = Environment(loader=DictLoader({}))
+renderer = Environment(autoescape=False)
 
-@router.post("/prompts/test")
-async def test_prompt(request: Request):
-    body = await request.json()
-    template = jinja_env.from_string(body["template"])
-    return {"rendered": template.render(**body.get("variables", {}))}
+@api.post("/messages/preview")
+async def preview_message(request: Request):
+    data = await request.json()
+    compiled = renderer.from_string(data["text"])
+    return {"preview": compiled.render(name=data.get("name", ""))}
 '''
 
 [[samples]]
 kind = "vulnerable"
 code = '''
-def preview_email(request):
-    tpl = Environment().from_string(request.POST["body"])
-    return HttpResponse(tpl.render(user=request.user.get_username()))
+def render_banner(request):
+    banner = Environment().from_string(request.POST["banner"])
+    return HttpResponse(banner.render(site=SITE_NAME))
 '''
 
 [[samples]]
 kind = "safe"
 code = '''
-jinja_env = ImmutableSandboxedEnvironment(loader=DictLoader({}))
+renderer = ImmutableSandboxedEnvironment(autoescape=True)
 
-@router.post("/prompts/test")
-async def test_prompt(request: Request):
-    body = await request.json()
-    template = jinja_env.from_string(body["template"])
-    return {"rendered": template.render(**body.get("variables", {}))}
+@api.post("/messages/preview")
+async def preview_message(request: Request):
+    data = await request.json()
+    compiled = renderer.from_string(data["text"])
+    return {"preview": compiled.render(name=data.get("name", ""))}
 '''
 
 [[samples]]
 kind = "safe"
-note = "user text replaces placeholders; it is never compiled"
+note = "user text fills a placeholder; it is never compiled"
 code = '''
-def preview_email(request):
-    text = TEMPLATE_BODY.replace("__REASON__", request.POST["reason"])
+def render_banner(request):
+    text = BANNER_TEXT.replace("[[site]]", request.POST["site"])
     return HttpResponse(text, content_type="text/plain")
 '''

@@ -48,11 +48,11 @@ def checkout():
 kind = "vulnerable"
 note = "the uploaded file's name ends up in a shell command line"
 code = '''
-def import_layer(request):
-    upload = request.FILES["base_file"]
-    commands = ["ogr2ogr", "-f", "PostgreSQL", "-nln", upload.name, "/tmp/import.gpkg"]
-    proc = Popen(" ".join(commands), stdout=PIPE, stderr=PIPE, shell=True)
-    return proc.communicate()
+def convert_upload(request):
+    doc = request.FILES["document"]
+    argv = ["soffice", "--headless", "--convert-to", "pdf", doc.name]
+    job = Popen(" ".join(argv), cwd=SPOOL_DIR, stdout=PIPE, shell=True)
+    return job.wait()
 '''
 
 [[samples]]
@@ -77,9 +77,9 @@ class PingHandler(tornado.web.RequestHandler):
 [[samples]]
 kind = "safe"
 code = '''
-def import_layer(request):
-    upload = request.FILES["base_file"]
-    commands = ["ogr2ogr", "-f", "PostgreSQL", "-nln", upload.name, "/tmp/import.gpkg"]
-    proc = Popen(commands, stdout=PIPE, stderr=PIPE)
-    return proc.communicate()
+def convert_upload(request):
+    doc = request.FILES["document"]
+    argv = ["soffice", "--headless", "--convert-to", "pdf", doc.name]
+    job = Popen(argv, cwd=SPOOL_DIR, stdout=PIPE)
+    return job.wait()
 '''

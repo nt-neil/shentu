@@ -6,9 +6,9 @@ severity = "high"
 tier = "info"
 title = "Request input built into the SQL text of an ORM or async driver raw query"
 sources = ["request.args", "request.form", "request.values", "request.json", "request.get_json(", "request.GET", "request.POST", "request.data", "request.query_params", "request.path_params", "request.form(", "request.json(", "request.query", "request.match_info", "request.post(", "self.get_argument(", "self.get_query_argument(", "self.get_body_argument("]
-sinks = [".raw(", "RawSQL(", ".query_raw(", ".execute_raw(", ".query_first(", ".fetchrow(", ".fetchval(", ".fetch_all(", ".fetch_one(", ".fetch_val("]
+sinks = [".raw(", "RawSQL(", ".query_raw(", ".execute_raw(", ".query_first(", ".execute_query(", ".execute_query_dict(", ".fetchrow(", ".fetchval(", ".fetch_all(", ".fetch_one(", ".fetch_val("]
 sanitizers = ["int("]
-fix = "Keep the SQL text constant and pass values separately: Manager.raw(sql, [value]) and RawSQL(sql, [value]) with %s, prisma query_raw(sql, value) with $1, asyncpg fetch(sql, value), databases fetch_all(query, values={...})."
+fix = "Keep the SQL text constant and pass values separately: Manager.raw(sql, [value]) and RawSQL(sql, [value]) with %s, prisma query_raw(sql, value) with $1, asyncpg fetchrow(sql, value), Tortoise execute_query(sql, [value]), databases fetch_all(query, values={...})."
 refs = ["CVE-2024-5225"]
 
 [[args]]
@@ -17,11 +17,11 @@ arg = 1   # the SQL text; the parameters that follow are safe
 [[samples]]
 kind = "vulnerable"
 code = '''
-@router.get("/spend/logs")
-async def spend_logs(request: Request):
-    api_key = request.query_params.get("api_key")
-    sql = 'SELECT * FROM "MonthlySpend" WHERE "api_key" = \'' + api_key + "'"
-    return await prisma_client.db.query_raw(sql)
+@api.get("/usage")
+async def usage(request: Request):
+    team = request.query_params.get("team")
+    stmt = 'SELECT month, cost FROM "TeamUsage" WHERE "team" = \'' + team + "'"
+    return await db.query_raw(stmt)
 '''
 
 [[samples]]
@@ -45,10 +45,10 @@ async def order(request):
 [[samples]]
 kind = "safe"
 code = '''
-@router.get("/spend/logs")
-async def spend_logs(request: Request):
-    api_key = request.query_params.get("api_key")
-    return await prisma_client.db.query_raw('SELECT * FROM "MonthlySpend" WHERE "api_key" = $1', api_key)
+@api.get("/usage")
+async def usage(request: Request):
+    team = request.query_params.get("team")
+    return await db.query_raw('SELECT month, cost FROM "TeamUsage" WHERE "team" = $1', team)
 '''
 
 [[samples]]

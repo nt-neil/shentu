@@ -17,21 +17,21 @@ arg = 1   # the SQL text; params= is safe
 [[samples]]
 kind = "vulnerable"
 code = '''
-@app.route("/workflow/dag")
-def workflow_dag():
-    run_id = request.args.get("run", "")
-    query = "SELECT task_id, task_func_name FROM task WHERE run_id='%s'" % run_id
-    df = pd.read_sql_query(query, db.engine)
-    return df.to_json()
+@app.route("/reports/sales")
+def sales_report():
+    region = request.args.get("region", "")
+    sql = "SELECT day, total FROM sales WHERE region = '%s' ORDER BY day" % region
+    frame = pd.read_sql_query(sql, engine)
+    return frame.to_json(orient="records")
 '''
 
 [[samples]]
 kind = "safe"
 code = '''
-@app.route("/workflow/dag")
-def workflow_dag():
-    run_id = request.args.get("run", "")
-    query = sqlalchemy.text("SELECT task_id, task_func_name FROM task WHERE run_id = :run_id")
-    df = pd.read_sql_query(query, db.engine, params={"run_id": run_id})
-    return df.to_json()
+@app.route("/reports/sales")
+def sales_report():
+    region = request.args.get("region", "")
+    sql = sqlalchemy.text("SELECT day, total FROM sales WHERE region = :region ORDER BY day")
+    frame = pd.read_sql_query(sql, engine, params={"region": region})
+    return frame.to_json(orient="records")
 '''

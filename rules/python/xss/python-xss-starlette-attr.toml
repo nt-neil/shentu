@@ -1,0 +1,40 @@
+id = "python-xss-starlette-attr"
+lang = "python"
+class = "xss"
+cwe = "CWE-79"
+severity = "medium"
+tier = "info"
+title = "FastAPI or Starlette HTML response with a request value in an attribute value without the escaping that context needs"
+sources = ["request.query_params", "request.path_params", "request.form(", "request.json(", "request.body(", "request.headers", "request.cookies", "request.url.path"]
+sinks = ["HTMLResponse(", "responses.HTMLResponse(", "fastapi.responses.HTMLResponse(", "starlette.responses.HTMLResponse(", "Response("]
+sanitizers = ["html.escape(", "markupsafe.escape(", "escape(", "urllib.parse.quote(", "quote("]
+fix = "Escape the value with html.escape() (it escapes quotes by default), or render with Jinja2Templates."
+refs = ["CVE-2026-54386"]
+
+[[args]]
+sinks = ["HTMLResponse(", "responses.HTMLResponse(", "fastapi.responses.HTMLResponse(", "starlette.responses.HTMLResponse("]
+context = ["attr"]
+
+# media_type="text/html" or "text/html; charset=...": the string is a prefix
+[[args]]
+sinks = ["Response("]
+when = ['media_type="text/html', "media_type='text/html"]
+context = ["attr"]
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+@app.get("/filter")
+async def filter_page(request: Request):
+    tag = request.query_params.get("tag", "")
+    return Response(content=f'<form><input type="text" name="tag" value="{tag}"></form>', media_type="text/html; charset=utf-8")
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+@app.get("/filter")
+async def filter_page(request: Request):
+    tag = request.query_params.get("tag", "")
+    return Response(content=f'<form><input type="text" name="tag" value="{html.escape(tag)}"></form>', media_type="text/html; charset=utf-8")
+'''
