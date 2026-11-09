@@ -111,6 +111,21 @@ func TestUnpackagedPAM(t *testing.T) {
 	if got := unpackagedPAM(); len(got) != 1 || got[0] != "/lib64/security/pam_x.so" {
 		t.Errorf("rpm: got %v", got)
 	}
+	// merged /usr, as on Rocky 9: /lib64 links to /usr/lib64 and rpm lists only /usr/lib64/....
+	os.RemoveAll(filepath.Join(root, "lib64"))
+	w("usr/lib64/security/pam_unix.so", "")
+	w("usr/lib64/security/pam_x.so", "")
+	os.Symlink("usr/lib64", filepath.Join(root, "lib64"))
+	rpmOwned = func(files []string) (map[string]bool, bool) {
+		owned := map[string]bool{}
+		for _, f := range files {
+			owned[f] = f == "/usr/lib64/security/pam_unix.so"
+		}
+		return owned, true
+	}
+	if got := unpackagedPAM(); len(got) != 1 || got[0] != "/usr/lib64/security/pam_x.so" {
+		t.Errorf("rpm, merged /usr: got %v", got)
+	}
 	rpmOwned = func([]string) (map[string]bool, bool) { return nil, false }
 	if got := unpackagedPAM(); got != nil {
 		t.Errorf("no package database: got %v", got)
@@ -119,8 +134,10 @@ func TestUnpackagedPAM(t *testing.T) {
 
 // On the real root the module paths must still match the package lists exactly.
 func TestUnpackagedPAMRealRoot(t *testing.T) {
-	if _, err := os.Stat("/var/lib/dpkg/info"); err != nil {
-		t.Skip("no dpkg here")
+	_, dpkg := os.Stat("/var/lib/dpkg/info")
+	_, rpm := os.Stat("/usr/bin/rpm")
+	if dpkg != nil && rpm != nil {
+		t.Skip("no dpkg or rpm here")
 	}
 	if got := unpackagedPAM(); len(got) > 0 {
 		t.Errorf("stock PAM modules reported as unpackaged: %v", got)
