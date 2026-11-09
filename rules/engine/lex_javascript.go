@@ -268,6 +268,9 @@ func (s *scanner) typeAlias() bool {
 	k := n - 1
 	if k >= 0 && s.toks[k].op(">") {
 		for depth := 0; k >= 0; k-- {
+			if n-k > maxAngles {
+				return false // type parameter lists are short; do not walk back further
+			}
 			if s.toks[k].op(">") {
 				depth++
 			} else if s.toks[k].op("<") {

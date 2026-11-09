@@ -182,6 +182,8 @@ func TestReviewTSHostile(t *testing.T) {
 		{"jsx-open", "tsx", strings.Repeat("<a b={", n) + vuln},
 		{"jsx-lt-c", "tsx", "const v = <p>" + strings.Repeat("<a", n) + vuln},
 		{"require-many", "js", strings.Repeat("const a = require('fs');\n", n/4) + vuln},
+		{"alias-many", "js", strings.Repeat("const run = require('child_process').exec;\nfunction f(run) { run(x); }\n", n/8) + strings.Repeat("run(y);\n", n/4) + vuln},
+		{"type-alias-walk", "tsx", "type A" + strings.Repeat("<B", n/4) + strings.Repeat(">", n/4) + " = <T>(x: T) => T;" + vuln},
 	} {
 		start := time.Now()
 		e.Scan(c.lang, c.name, []byte(c.src))
