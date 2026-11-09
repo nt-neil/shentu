@@ -4,16 +4,18 @@ class = "deserialization"
 cwe = "CWE-502"
 severity = "critical"
 tier = "info"
-title = "Uploaded or downloaded file loaded with torch.load or np.load that can unpickle objects"
-sources = ["request.files", "request.FILES", "request.data", "request.body", "request.get_data(", "request.read(", "self.request.body", "self.request.files", "file.file", "upload.file", "requests.get(", "urlopen(", "urllib.request.urlopen(", "httpx.get("]
+title = "Uploaded or downloaded file loaded with torch.load(weights_only=False) or np.load(allow_pickle=True)"
+sources = ["request.files", "request.FILES", "request.data", "request.body", "request.get_data(", "request.form(", "request.read(", "self.request.body", "self.request.files", "file.file", "upload.file", "requests.get(", "urlopen(", "urllib.request.urlopen(", "httpx.get("]
 sinks = ["torch.load(", "np.load(", "numpy.load("]
 sanitizers = []
-fix = "Call torch.load(..., weights_only=True) (or store tensors as safetensors) and np.load with allow_pickle=False; never unpickle a checkpoint or array file that came from a user or the network."
+fix = "Keep torch.load on its safe default (weights_only=True, the default since PyTorch 2.6) or store tensors as safetensors, and keep np.load on allow_pickle=False; never unpickle a checkpoint or array that came from a user or the network."
 refs = ["CVE-2025-67729", "CVE-2024-34072"]
 
+# Since PyTorch 2.6 torch.load defaults to weights_only=True, so only an explicit
+# weights_only=False unpickles arbitrary objects. Older PyTorch is not flagged.
 [[args]]
 sinks = ["torch.load("]
-unless = ["weights_only=True"]
+when = ["weights_only=False"]
 
 [[args]]
 sinks = ["np.load(", "numpy.load("]
@@ -22,38 +24,38 @@ when = ["allow_pickle=True"]
 [[samples]]
 kind = "vulnerable"
 code = '''
-@app.post("/checkpoints")
-def upload_checkpoint():
-    f = request.files["checkpoint"]
-    state = torch.load(f, map_location="cpu")
-    model.load_state_dict(state)
-    return "ok"
+@app.post("/models/restore")
+def restore_model():
+    blob = request.files["weights"]
+    params = torch.load(blob, map_location="cpu", weights_only=False)
+    net.load_state_dict(params)
+    return "restored"
 '''
 
 [[samples]]
 kind = "vulnerable"
 code = '''
-def predict(request):
-    arr = np.load(io.BytesIO(request.body), allow_pickle=True)
-    return JsonResponse({"shape": list(arr.shape)})
+def score(request):
+    matrix = np.load(io.BytesIO(request.body), allow_pickle=True)
+    return JsonResponse({"rows": int(matrix.shape[0])})
+'''
+
+[[samples]]
+kind = "safe"
+note = "weights_only=True is the default since PyTorch 2.6"
+code = '''
+@app.post("/models/restore")
+def restore_model():
+    blob = request.files["weights"]
+    params = torch.load(blob, map_location="cpu")
+    net.load_state_dict(params)
+    return "restored"
 '''
 
 [[samples]]
 kind = "safe"
 code = '''
-@app.post("/checkpoints")
-def upload_checkpoint():
-    f = request.files["checkpoint"]
-    state = torch.load(f, map_location="cpu", weights_only=True)
-    model.load_state_dict(state)
-    return "ok"
-'''
-
-[[samples]]
-kind = "safe"
-note = "allow_pickle defaults to False"
-code = '''
-def predict(request):
-    arr = np.load(io.BytesIO(request.body))
-    return JsonResponse({"shape": list(arr.shape)})
+def score(request):
+    matrix = np.load(io.BytesIO(request.body))
+    return JsonResponse({"rows": int(matrix.shape[0])})
 '''

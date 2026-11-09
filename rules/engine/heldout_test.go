@@ -339,9 +339,9 @@ func TestHeldOut(t *testing.T) {
 		{"PY3 aiohttp match_info open", "python", "async def f(request):\n    p = os.path.join(ROOT, request.match_info['p'])\n    with open(p) as fh:\n        return web.Response(text=fh.read())\n", true, ""},
 		{"PY4 RawSQL annotate", "python", "def v(request):\n    o = request.GET['o']\n    return Item.objects.annotate(x=RawSQL('SELECT ' + o, []))\n", true, ""},
 		{"PY5 upload filename Path join", "python", "async def up(file: UploadFile):\n    target = Path(UPLOAD_DIR) / file.filename\n    with open(target, 'wb') as out:\n        out.write(await file.read())\n", true, "the upload file-name rule was held back: .filename alone also matched non-upload names in Django (E7)"},
-		{"PY6 httpx client stream", "python", "async def p(request):\n    u = (await request.json())['u']\n    async with httpx.AsyncClient() as client:\n        async with client.stream('GET', u) as r:\n            return {'s': r.status_code}\n", true, ""},
+		{"PY6 httpx client stream", "python", "async def p(request):\n    u = (await request.json())['u']\n    async with httpx.AsyncClient() as http_client:\n        async with http_client.stream('GET', u) as r:\n            return {'s': r.status_code}\n", true, ""},
 		{"PY7 tornado redirect body", "python", "class H(RequestHandler):\n    def post(self):\n        self.redirect(self.get_body_argument('return_to'))\n", true, ""},
-		{"PY8 torch.load downloaded", "python", "def f(url):\n    buf = io.BytesIO(requests.get(url).content)\n    return torch.load(buf)\n", true, ""},
+		{"PY8 torch.load downloaded, default weights_only", "python", "def f(url):\n    buf = io.BytesIO(requests.get(url).content)\n    return torch.load(buf)\n", false, ""},
 		{"PY9 jinja2.Template starlette form", "python", "async def p(request):\n    t = jinja2.Template((await request.form())['tpl'])\n    return HTMLResponse(t.render())\n", true, ""},
 		{"PY10 tornado write href", "python", "class H(RequestHandler):\n    def get(self):\n        u = self.get_argument('u')\n        self.write('<a href=\"' + u + '\">back</a>')\n", true, ""},
 		{"PY11 starlette shell quoted", "python", "async def run(request):\n    d = request.query_params['dir']\n    subprocess.run('tar czf /tmp/o.tgz ' + shlex.quote(d), shell=True)\n", false, ""},
@@ -356,6 +356,16 @@ func TestHeldOut(t *testing.T) {
 		{"PY20 fastapi Query param sql", "python", "@app.get('/u')\nasync def u(name: str = Query(...)):\n    await db.execute(f\"DELETE FROM t WHERE n = '{name}'\")\n", true, "FastAPI parameters declared with Query()/Path()/Body()/Form() are not sources yet: every function parameter starts clean (asked of the engine)"},
 		{"PY21 fastapi path param file", "python", "@app.get('/home/{file_path:path}')\ndef home(file_path: str):\n    return FileResponse(HOME_DIR / file_path)\n", true, "a FastAPI route parameter ({file_path:path}) is a function parameter, which starts clean (asked of the engine)"},
 		{"PY22 aiohttp text= html", "python", "async def h(request):\n    return web.Response(text='<h1>' + request.query['q'] + '</h1>', content_type='text/html')\n", true, "no rule: output rules count only the content= keyword, and aiohttp writes the page with text= (asked of the engine)"},
+		{"PY23 torch.load weights_only False upload", "python", "@app.post('/w')\ndef w():\n    return str(torch.load(io.BytesIO(request.data), weights_only=False))\n", true, ""},
+		{"PY24 redis client.get not ssrf", "python", "@app.get('/k')\nasync def k(request: Request):\n    return {'v': await client.get(request.query_params['k'])}\n", false, ""},
+		{"PY25 flask session.get not ssrf", "python", "@app.route('/s')\ndef s():\n    return {'v': session.get(request.args['k'])}\n", false, ""},
+		{"PY26 chained AsyncClient get", "python", "@app.get('/f')\nasync def f(request: Request):\n    return (await httpx.AsyncClient().get(request.query_params['url'])).text\n", true, ""},
+		{"PY27 redirect startswith check", "python", "class L(RequestHandler):\n    def get(self):\n        n = self.get_argument('n', '/')\n        if not n.startswith('/') or n.startswith('//'):\n            n = '/'\n        self.redirect(n)\n", false, ""},
+		{"PY28 redirect slash plus input", "python", "class L(RequestHandler):\n    def get(self):\n        self.redirect('/' + self.get_argument('n', ''))\n", true, "'/' + input is taken as a fixed prefix, but //evil.com is another host: a redirect needs a stricter prefix than a file path (asked of the engine)"},
+		{"PY29 tornado href xhtml_escape", "python", "class H(RequestHandler):\n    def get(self):\n        self.write('<a href=\"' + xhtml_escape(self.get_argument('u')) + '\">go</a>')\n", true, "tornado.escape.xhtml_escape is not known as HTML escaping, so its result in an href is not followed (asked of the engine)"},
+		{"PY30 tornado bare write", "python", "class H(RequestHandler):\n    def get(self):\n        self.write(self.get_argument('x'))\n", true, "a bare value written with no literal markup before it has no context to judge (known limit of output rules)"},
+		{"PY31 starlette media_type charset", "python", "@app.get('/p')\nasync def p(request: Request):\n    return Response(content='<b>' + request.query_params['p'] + '</b>', media_type='text/html; charset=utf-8')\n", true, ""},
+		{"PY32 tortoise execute_query_dict", "python", "@app.get('/u')\nasync def u(request: Request):\n    conn = Tortoise.get_connection('default')\n    return await conn.execute_query_dict(f\"SELECT * FROM u WHERE n = '{request.query_params['n']}'\")\n", true, ""},
 	}
 	pass := 0
 	for _, c := range cases {

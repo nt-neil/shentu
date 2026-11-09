@@ -1,0 +1,35 @@
+id = "python-xss-tornado-write-url"
+lang = "python"
+class = "xss"
+cwe = "CWE-79"
+severity = "medium"
+tier = "info"
+title = "Tornado handler writes a request value at the start of a URL attribute (href, src, action) without the escaping that context needs"
+sources = ["self.get_argument(", "self.get_arguments(", "self.get_query_argument(", "self.get_query_arguments(", "self.get_body_argument(", "self.get_body_arguments(", "self.get_cookie(", "self.request.arguments", "self.request.query_arguments", "self.request.body_arguments", "self.request.body", "self.request.uri", "self.request.path", "self.request.headers", "self.path_kwargs"]
+sinks = ["self.write(", "self.finish("]
+sanitizers = ["url_escape(", "escape.url_escape(", "tornado.escape.url_escape(", "int("]
+fix = "HTML escaping does not stop a javascript: URL: build the link on the server, require http(s) and an allowed host, or put the value in the query string with tornado.escape.url_escape()."
+refs = ["CVE-2024-35225"]
+
+# RequestHandler.write sends text/html unless the handler sets another type;
+# a dict is sent as JSON, which the context condition leaves out.
+[[args]]
+context = ["url"]
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+class BackLink(tornado.web.RequestHandler):
+    def get(self):
+        target = self.get_argument("back", "/")
+        self.write('<a href="' + target + '">back</a>')
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+class BackLink(tornado.web.RequestHandler):
+    def get(self):
+        target = self.get_argument("back", "")
+        self.write('<a href="/list?from=' + tornado.escape.url_escape(target) + '">back</a>')
+'''
