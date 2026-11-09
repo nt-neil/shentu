@@ -290,3 +290,36 @@ func TestJudge(t *testing.T) {
 		t.Errorf("a finding 11 lines before the range counted: %+v", r)
 	}
 }
+
+// The hold-out set measures the rules on advisories nobody wrote or tuned a
+// rule from: no rule may cite one, and none may repeat a case of bench/cves.
+func TestHoldout(t *testing.T) {
+	hold, err := loadCases("../../bench/holdout")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hold) < 20 || len(hold) > 30 {
+		t.Errorf("%d hold-out cases, want 20 to 30", len(hold))
+	}
+	main, err := loadCases("../../bench/cves")
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	for _, c := range main {
+		seen[c.ID] = true
+	}
+	rs, err := rules.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cited := ruleSource(rs)
+	for _, c := range hold {
+		if seen[c.ID] {
+			t.Errorf("%s is in both bench/cves and bench/holdout", c.ID)
+		}
+		if cited[c.ID] {
+			t.Errorf("%s is a hold-out case but a rule cites it in refs", c.ID)
+		}
+	}
+}
