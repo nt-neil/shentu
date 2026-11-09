@@ -515,11 +515,16 @@ func (a *analysis) setTarget(st state, tg []Token, v val, op string, sep bool) {
 			st.del(container) // $a[$i] = input may overwrite any key: forget what was known per key
 			st[container] = entry{taint: true}
 		}
-		if op == "=" && !strings.HasSuffix(key, "[*]") {
+		if !strings.HasSuffix(key, "[*]") {
 			// $args['limit'] = absint(...): the key itself is known; reading another key
 			// or the whole array still sees the container.
-			st.del(key)
-			st[key] = entry{taint: v.taint, san: v.san, sep: sep, pre: v.pre}
+			if op == "=" {
+				st.del(key)
+				st[key] = entry{taint: v.taint, san: v.san, sep: sep, pre: v.pre}
+			} else {
+				ek, _ := st.get(key) // $q['w'] .= $input taints the key it appends to
+				st[key] = entry{taint: ek.taint || v.taint, sep: sep, pre: ek.pre}
+			}
 		}
 		return
 	}
@@ -630,30 +635,49 @@ func (a *analysis) sepEnd(st state, rhs []Token) bool {
 	return e.sep
 }
 
-// fixedStart reports whether a value begins with a part the client does not
-// control: a literal, a constant, a clean call, or a variable that does. Input
-// behind such a prefix cannot choose a stream wrapper (phar://).
+// fixedStart reports whether a value begins with a part the client cannot
+// control and that cannot be empty or name a stream: a non-empty literal without
+// ":", a constant, both branches of a ternary that do, or a variable assigned
+// one. A call's result (basename($x), trim(' '), getenv()) is not a prefix: it
+// may be empty. Input behind a fixed prefix cannot choose a wrapper (phar://).
 func (a *analysis) fixedStart(st state, t []Token) bool {
+	if !a.b.charge(len(t) + 1) {
+		return false
+	}
 	join := "+"
 	if a.php {
 		join = "."
 	}
 	first := splitTop(t, isOp(join))[0]
-	if len(first) == 0 {
-		return false
-	}
-	if len(first) == 1 && first[0].Kind == Str {
-		if len(first[0].Parts) > 0 {
-			return first[0].Parts[0].Off > 0
+	n := len(first)
+	if n > 2 && first[0].op("(") && closeOf(first, 0) == n-1 {
+		inner := first[1 : n-1]
+		if q := indexTop(inner, 0, isOp("?")); q >= 0 {
+			if c := ternaryColon(inner, q); c > q+1 {
+				return a.fixedStart(st, inner[q+1:c]) && a.fixedStart(st, inner[c+1:])
+			}
+			return false
 		}
-		return first[0].Text != ""
+		return a.fixedStart(st, inner)
+	}
+	switch {
+	case n == 1 && first[0].Kind == Str:
+		text := first[0].Text
+		if len(first[0].Parts) > 0 {
+			text = text[:min(first[0].Parts[0].Off, len(text))]
+		}
+		return text != "" && !strings.Contains(text, ":")
+	case a.php && n == 1 && first[0].Kind == Ident && !a.kw[first[0].Text] && !isLiteral(first):
+		return true // a constant: WP_PLUGIN_DIR, __DIR__ (in PHP a bare name is no variable)
+	case a.php && n == 3 && first[0].Kind == Ident && first[1].op("::") && first[2].Kind == Ident:
+		return true // a class constant: self::BASE
 	}
 	if key, _, ok := a.pathKey(first); ok {
 		if e, found := st.get(key); found {
 			return e.pre
 		}
 	}
-	return !a.expr(st, first, false).taint && !isLiteral(first)
+	return false
 }
 
 // ---- expressions ----
@@ -1361,6 +1385,9 @@ func (a *analysis) allowlist(st state, t []Token) bool {
 	t = stripParens(t)
 	if len(t) == 0 || len(t) == 1 && t[0].Kind == Str {
 		return false
+	}
+	if len(t) == 2 && t[0].op("[") && t[1].op("]") || len(t) == 3 && t[0].word("array") && t[1].op("(") && t[2].op(")") {
+		return false // an empty list allows nothing, and validate_file_to_edit($f, []) checks nothing
 	}
 	return !a.expr(st, t, false).taint
 }

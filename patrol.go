@@ -64,13 +64,14 @@ func replaceOrAppend(all []finding, f finding) []finding {
 	return append(all, f)
 }
 
-// codeAuditFindings turns the code audit into patrol findings. Findings of info-tier
-// rules, and the note about files the rules could not finish, stay in the tool's
-// output and chat; the report does not push them.
+// codeAuditFindings turns the code audit into patrol findings. An injection
+// finding is pushed only when its rule's tier is "alert"; info-tier findings, and
+// the note about files the rules could not finish, stay in the tool's output and
+// chat.
 func codeAuditFindings(audit tools.CodeAudit) []finding {
 	var out []finding
 	for _, f := range audit.Findings {
-		if f.Tier == "info" {
+		if f.Kind == "injection" && f.Tier != "alert" {
 			continue
 		}
 		key := fmt.Sprintf("code:%s:%s:%d", f.Kind, f.Path, f.Line)

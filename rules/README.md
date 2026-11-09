@@ -111,10 +111,11 @@ How the engine reads them:
   - WordPress `validate_file($f, $allowed)` returns 0 for an allowed path, so
     `if (validate_file($f, $allowed)) wp_die();` validates `$f`, and
     `validate_file_to_edit($f, $allowed)` as a statement of its own stops the
-    request unless `$f` is allowed. Without the list both check only for `..`
-    and validate nothing. They count in the rules that list them as sanitizers.
+    request unless `$f` is allowed. Without the list, or with an empty one (`[]`),
+    both check only for `..` and validate nothing. They count in the rules that list them as sanitizers.
 - Writing one key of an array (`$args['limit'] = absint(...)`) is tracked for that
-  key; reading another key or the whole array still sees the array. Writing user
+  key, and appending to it (`$q['w'] .= $input`) taints it; reading another key or
+  the whole array still sees the array. Writing user
   input under a key that is not a literal (`$a[$i] = ...`) forgets every key.
 - Sanitizers are per rule, not per sink. When a sanitizer protects one sink but
   not another (`escapeshellarg` protects `exec()` but not the fifth argument of
@@ -153,7 +154,7 @@ it are unchanged: a sink is reported when any argument is tainted.
 | `when` | the call is a sink only if one of these appears among its arguments |
 | `unless` | the call is not a sink if one of these appears among its arguments |
 | `whole` | the argument must be the input itself (or spread from it), not an object or array literal holding a value from it |
-| `leading` | the input must be at the start of the argument: a fixed prefix (a literal, a constant, a clean call, or a variable built from one) makes the call safe, as `WP_PLUGIN_DIR . "/$name"` cannot choose a `phar://` stream |
+| `leading` | the input must be at the start of the argument: a fixed prefix makes the call safe, as `WP_PLUGIN_DIR . "/$name"` cannot choose a `phar://` stream. A fixed prefix is a non-empty literal without `:`, a constant, a ternary whose branches both are, or a variable assigned one; a call's result (`basename($x)`, `trim(' ')`, `getenv()`) may be empty and never is |
 
 `when` and `unless` entries are code fragments matched anywhere in the call's
 arguments, with two refinements:

@@ -128,7 +128,7 @@ func compileRule(r rules.Rule) (*crule, error) {
 // LangOf returns the rule language for a file name ("php", "python", "js"), or "".
 func LangOf(path string) string {
 	switch strings.ToLower(filepath.Ext(path)) {
-	case ".php", ".phtml", ".inc":
+	case ".php", ".phtml", ".php5", ".inc":
 		return "php"
 	case ".py":
 		return "python"

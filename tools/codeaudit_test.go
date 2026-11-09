@@ -184,12 +184,17 @@ func TestAppCodeAuditPartial(t *testing.T) {
 		t.Fatalf("want one summary finding, got %+v", notes)
 	}
 	n := notes[0]
-	if n.Severity != "info" || n.Tier != "info" || len(n.Paths) != partialListMax || !strings.HasPrefix(n.Detail, "12 file(s)") {
+	if n.Severity != "info" || n.Tier != "info" || len(n.Files) != partialListMax || !strings.HasPrefix(n.Detail, "12 file(s)") ||
+		!strings.Contains(n.Detail, "1 over the size limit") || !strings.Contains(n.Detail, "11 with a string or comment that never ends") {
 		t.Errorf("summary: %+v", n)
 	}
-	for _, p := range n.Paths {
-		if strings.HasSuffix(p, "ok.py") {
-			t.Errorf("a finished file is listed: %s", p)
+	for _, f := range n.Files {
+		want := "unterminated"
+		if strings.HasSuffix(f.Path, "big.php") {
+			want = "size"
+		}
+		if strings.HasSuffix(f.Path, "ok.py") || f.Reason != want {
+			t.Errorf("listed: %+v", f)
 		}
 	}
 }
@@ -215,14 +220,38 @@ func TestAppCodeAuditInjectionLimits(t *testing.T) {
 		}
 		return scan(e, lang, p, b)
 	}
-	if f := summary(); len(f.Paths) != 1 || !strings.HasSuffix(f.Paths[0], "a.php") {
+	if f := summary(); len(f.Files) != 1 || !strings.HasSuffix(f.Files[0].Path, "a.php") || f.Files[0].Reason != "panic" {
 		t.Errorf("panic: summary %+v", f)
 	}
 	engineScan = scan
 	max := injectionMaxTime
 	defer func() { injectionMaxTime = max }()
 	injectionMaxTime = 0
-	if f := summary(); len(f.Paths) != 2 {
+	if f := summary(); len(f.Files) != 2 || f.Files[0].Reason != "time" || f.Files[1].Reason != "time" {
 		t.Errorf("time limit: summary %+v", f)
+	}
+}
+
+// Every PHP extension the audit knows is scanned by the rules, and a NUL byte does
+// not hide a file (the review of 888da12, items 4 and 6).
+func TestAppCodeAuditExtensionsAndNUL(t *testing.T) {
+	dir, _ := filepath.EvalSymlinks(t.TempDir())
+	files := map[string]string{
+		"a.phtml": "<?php\nsystem($_GET['a']);\n",
+		"b.php5":  "<?php\nsystem($_GET['b']);\n",
+		"c.inc":   "<?php\nsystem($_GET['c']);\n",
+		"d.php":   "<?php\n\x00\nsystem($_GET['d']);\n",
+	}
+	for n, c := range files {
+		os.WriteFile(filepath.Join(dir, n), []byte(c), 0o644)
+	}
+	res := AppCodeAudit(context.Background(), []string{dir}, nil)
+	for n := range files {
+		if f := findingFor(res, "injection", n); f.Rule == "" {
+			t.Errorf("%s: not scanned by the rules", n)
+		}
+	}
+	if engine.LangOf("x.php5") != "php" || engine.LangOf("x.phtml") != "php" || engine.LangOf("x.inc") != "php" {
+		t.Error("LangOf and the audit disagree on PHP extensions")
 	}
 }

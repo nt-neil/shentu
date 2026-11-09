@@ -49,16 +49,25 @@ var appCodeAudit = Tool{
 
 // CodeFinding is one problem in an application's files.
 type CodeFinding struct {
-	Kind     string   `json:"kind"`     // exposed, debug, webshell, upload_script, secret, injection
-	Severity string   `json:"severity"` // critical, warning, or info (files the injection rules could not finish)
-	Path     string   `json:"path,omitempty"`
-	Line     int      `json:"line,omitempty"`
-	Detail   string   `json:"detail"`
-	Fix      string   `json:"fix"`
-	Rule     string   `json:"rule,omitempty"`  // injection: the rule id
-	CWE      string   `json:"cwe,omitempty"`   // injection: the weakness
-	Tier     string   `json:"tier,omitempty"`  // injection: "info" is not pushed by the patrol report, "alert" is
-	Paths    []string `json:"paths,omitempty"` // the files an info finding is about (at most 10)
+	Kind     string           `json:"kind"`     // exposed, debug, webshell, upload_script, secret, injection
+	Severity string           `json:"severity"` // critical, warning, or info (files the injection rules could not finish)
+	Path     string           `json:"path,omitempty"`
+	Line     int              `json:"line,omitempty"`
+	Detail   string           `json:"detail"`
+	Fix      string           `json:"fix"`
+	Rule     string           `json:"rule,omitempty"`  // injection: the rule id
+	CWE      string           `json:"cwe,omitempty"`   // injection: the weakness
+	Tier     string           `json:"tier,omitempty"`  // injection: "info" is not pushed by the patrol report, "alert" is
+	Files    []UnfinishedFile `json:"files,omitempty"` // the files the summary of unfinished files is about (at most 10)
+}
+
+// UnfinishedFile is a file the injection rules did not check to the end, and why:
+// "size" (over the size limit, not read), "limit" (too large, slow or deeply nested
+// for the engine), "unterminated" (a string or comment runs to the end of the file),
+// "time" (after the audit's time limit for the rules) or "panic" (an engine error).
+type UnfinishedFile struct {
+	Path   string `json:"path"`
+	Reason string `json:"reason"`
 }
 
 // CodeAudit is the result of AppCodeAudit.
@@ -196,9 +205,6 @@ var secretPatterns = []struct {
 	{"password in a connection URL", regexp.MustCompile(`\b(mysql|postgres(ql)?|mongodb(\+srv)?|redis|amqp)://[^/\s:@"']+:[^/\s@"']{3,}@`)},
 }
 
-// Files the injection rules read, by extension.
-var injectionLang = map[string]string{".php": "php", ".py": "python", ".js": "js", ".mjs": "js", ".cjs": "js", ".jsx": "js"}
-
 const partialListMax = 10
 
 // injectionMaxTime caps the time the injection rules take in one audit (each file
@@ -208,12 +214,14 @@ var injectionMaxTime = 2 * time.Minute
 
 var engineScan = (*engine.Engine).Scan // replaced in tests
 
+var errPanic = errors.New("engine panic")
+
 // injectionScan runs the engine on one file. A panic counts as an unfinished file,
 // so one malformed file cannot stop the audit or the patrol.
 func injectionScan(e *engine.Engine, lang, p string, b []byte) (found []engine.Finding, err error) {
 	defer func() {
 		if recover() != nil {
-			found, err = nil, engine.ErrLimit
+			found, err = nil, errPanic
 		}
 	}()
 	return engineScan(e, lang, p, b)
@@ -255,13 +263,40 @@ func finding(kind, severity, path string, line int, detail, fix string) CodeFind
 	return CodeFinding{Kind: kind, Severity: severity, Path: path, Line: line, Detail: detail, Fix: fix}
 }
 
-// partialFinding sums up the files the injection rules did not check to the end.
-func partialFinding(paths []string) CodeFinding {
-	f := CodeFinding{Kind: "injection", Severity: "info", Tier: "info",
-		Detail: fmt.Sprintf("%d file(s) were too large or too complex for the injection rules, or came after the audit's time limit for them; they were checked only in part or not at all", len(paths)),
-		Fix:    "review these files by hand, or split them into smaller files"}
-	f.Paths = paths[:min(len(paths), partialListMax)]
-	return f
+// partialFinding sums up the files the injection rules did not check to the end,
+// counted by reason.
+func partialFinding(files []UnfinishedFile) CodeFinding {
+	count := map[string]int{}
+	for _, f := range files {
+		count[f.Reason]++
+	}
+	var parts []string
+	for _, r := range []struct{ reason, text string }{
+		{"size", "over the size limit"}, {"limit", "too large, slow or deeply nested for the engine"},
+		{"unterminated", "with a string or comment that never ends"}, {"time", "after the audit's time limit"},
+		{"panic", "stopped by an engine error"},
+	} {
+		if n := count[r.reason]; n > 0 {
+			parts = append(parts, fmt.Sprintf("%d %s", n, r.text))
+		}
+	}
+	return CodeFinding{Kind: "injection", Severity: "info", Tier: "info",
+		Detail: fmt.Sprintf("%d file(s) were checked by the injection rules only in part or not at all: %s", len(files), strings.Join(parts, ", ")),
+		Fix:    "review these files by hand, or split them into smaller files",
+		Files:  files[:min(len(files), partialListMax)]}
+}
+
+// unfinishedReason names why the engine stopped early, or "" when it did not.
+func unfinishedReason(err error) string {
+	switch {
+	case errors.Is(err, errPanic):
+		return "panic"
+	case errors.Is(err, engine.ErrLimit):
+		return "limit"
+	case errors.Is(err, engine.ErrPartial):
+		return "unterminated"
+	}
+	return ""
 }
 
 // AppCodeAudit reads the application files under roots and reports problems.
@@ -274,7 +309,7 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 		add(CodeFinding{Kind: "injection", Severity: "info", Tier: "info", Detail: "the injection rules could not be loaded: " + err.Error(),
 			Fix: "report this as a Shentu bug; the other checks ran"})
 	}
-	var partial []string
+	var partial []UnfinishedFile
 	deadline := time.Now().Add(injectionMaxTime)
 	for _, root := range roots {
 		base := strings.Count(filepath.Clean(root), "/")
@@ -310,7 +345,7 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 				add(finding("upload_script", "critical", p, 0, "PHP file in an upload folder; uploads should never be scripts",
 					"check the file, delete it if it is not yours, and stop PHP from running in the upload folder"))
 			}
-			lang := injectionLang[ext]
+			lang := engine.LangOf(name)
 			if !auditExt[ext] && !auditExt[name] && !strings.HasPrefix(name, ".env") && name != "settings.py" && lang == "" {
 				return nil
 			}
@@ -323,9 +358,10 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 				return nil
 			}
 			b, ok := readSmallRegular(p, auditMaxSize, info)
-			if !ok || bytes.IndexByte(b, 0) >= 0 {
+			// A rule-language file is read even with a NUL byte: PHP runs such a file.
+			if !ok || lang == "" && bytes.IndexByte(b, 0) >= 0 {
 				if lang != "" && eng != nil && info.Size() > auditMaxSize {
-					partial = append(partial, p)
+					partial = append(partial, UnfinishedFile{p, "size"})
 				}
 				return nil
 			}
@@ -334,12 +370,12 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 			switch {
 			case lang == "" || eng == nil:
 			case time.Now().After(deadline):
-				partial = append(partial, p)
+				partial = append(partial, UnfinishedFile{p, "time"})
 			default:
 				found, err := injectionScan(eng, lang, p, b)
 				injectionFindings(found, add)
-				if errors.Is(err, engine.ErrLimit) || errors.Is(err, engine.ErrPartial) {
-					partial = append(partial, p)
+				if r := unfinishedReason(err); r != "" {
+					partial = append(partial, UnfinishedFile{p, r})
 				}
 			}
 			return nil

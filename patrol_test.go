@@ -23,7 +23,8 @@ func TestCodeAuditFindings(t *testing.T) {
 	audit := tools.CodeAudit{Findings: []tools.CodeFinding{
 		{Kind: "injection", Severity: "critical", Path: "/a.php", Line: 3, Detail: "t", Fix: "f", Rule: "php-x-quiet", CWE: "CWE-89", Tier: "info"},
 		{Kind: "injection", Severity: "warning", Path: "/a.php", Line: 3, Detail: "t", Fix: "f", Rule: "php-x-loud", CWE: "CWE-78", Tier: "alert"},
-		{Kind: "injection", Severity: "info", Tier: "info", Detail: "2 file(s) were too large", Paths: []string{"/b.php", "/c.py"}},
+		{Kind: "injection", Severity: "info", Tier: "info", Detail: "2 file(s) were too large", Files: []tools.UnfinishedFile{{Path: "/b.php", Reason: "size"}}},
+		{Kind: "injection", Severity: "critical", Path: "/e.php", Line: 1, Detail: "t", Fix: "f", Rule: "php-x-untiered"}, // no tier: not pushed
 		{Kind: "secret", Severity: "warning", Path: "/k.js", Line: 2, Detail: "d", Fix: "f"},
 		{Kind: "webshell", Severity: "critical", Path: "/w.php", Line: 1, Detail: "d", Fix: "f"},
 	}}
