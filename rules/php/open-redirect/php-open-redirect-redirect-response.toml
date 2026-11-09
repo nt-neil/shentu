@@ -1,0 +1,77 @@
+id = "php-open-redirect-redirect-response"
+lang = "php"
+class = "open-redirect"
+cwe = "CWE-601"
+severity = "medium"
+tier = "info"
+title = "Symfony or Laravel redirect response built from a URL taken from the request"
+frameworks = ["laravel"]
+sources = ["$request->headers->get('referer'", "$request->headers->get('Referer'", "$request->query->get(", "$request->request->get(", "$request->get(", "$request->query->all(", "$request->input(", "$request->query(", "$_GET", "$_POST", "$_REQUEST"]
+sinks = ["RedirectResponse(", "$this->redirect(", "RedirectResponse::create(", "TrustedRedirectResponse("]
+sanitizers = ["absint", "intval", "in_array", "$this->generateUrl(", "route("]
+fix = "Redirect to a route the server names ($this->redirectToRoute(), redirect()->route()), or accept only a relative path or a host from an allowlist before redirecting."
+refs = ["CVE-2026-31819"]
+
+[[args]]
+arg = 1
+leading = true
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+class LoginController extends AbstractController
+{
+    public function done(Request $request): Response
+    {
+        $target = $request->query->get('next', '/');
+        return new RedirectResponse($target);
+    }
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+class LocaleController extends AbstractController
+{
+    public function switch(Request $request): Response
+    {
+        $request->getSession()->set('_locale', 'en');
+        return $this->redirect($request->request->get('back'));
+    }
+}
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+class LoginController extends AbstractController
+{
+    public function done(Request $request): Response
+    {
+        $page = $request->query->get('next', 'home');
+        if (!in_array($page, ['home', 'profile'], true)) {
+            $page = 'home';
+        }
+        return new RedirectResponse($this->generateUrl($page));
+    }
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "the Referer header is set by whoever sends the request"
+code = '''
+<?php
+class ThemeController extends AbstractController
+{
+    public function choose(Request $request, string $theme): Response
+    {
+        $request->getSession()->set('theme', $theme);
+        return new RedirectResponse($request->headers->get('referer'));
+    }
+}
+'''

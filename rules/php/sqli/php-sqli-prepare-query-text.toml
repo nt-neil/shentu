@@ -1,0 +1,69 @@
+id = "php-sqli-prepare-query-text"
+lang = "php"
+class = "sqli"
+cwe = "CWE-89"
+severity = "high"
+tier = "info"
+title = "Request input written into the query text of a prepared statement"
+frameworks = ["wordpress"]
+sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "get_query_var", "->get_param(", "$request['", "->get_json_params(", "->get_body_params(", "->get_query_params(", "$request->input("]
+sinks = ["$wpdb->prepare(", "->prepare("]
+sanitizers = ["absint", "intval", "sanitize_sql_orderby", "in_array", "$wpdb->prepare("]
+fix = "Only placeholders (%s, %d, ? or :name) may stand for values in the query text; pass the values as the following arguments, or to execute(), and map identifiers such as column names to a fixed allowlist."
+refs = ["CVE-2026-109977", "CVE-2026-120558"]
+
+[[args]]
+arg = 1
+
+[[samples]]
+kind = "vulnerable"
+note = "prepare() only escapes the arguments after the query; the search term is already part of the query"
+code = '''
+<?php
+add_action('wp_ajax_lookup_member', function () {
+    global $wpdb;
+    $term = sanitize_text_field(wp_unslash($_POST['term']));
+    $sql = $wpdb->prepare("SELECT id FROM {$wpdb->prefix}members WHERE name LIKE '%$term%' AND status = %s", 'active');
+    wp_send_json($wpdb->get_col($sql));
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+$stmt = $pdo->prepare('SELECT * FROM orders WHERE customer = ' . $_GET['customer']);
+$stmt->execute();
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+add_action('wp_ajax_lookup_member', function () {
+    global $wpdb;
+    $like = '%' . $wpdb->esc_like(wp_unslash($_POST['term'])) . '%';
+    $sql = $wpdb->prepare("SELECT id FROM {$wpdb->prefix}members WHERE name LIKE %s AND status = %s", $like, 'active');
+    wp_send_json($wpdb->get_col($sql));
+});
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+$stmt = $pdo->prepare('SELECT * FROM orders WHERE customer = ?');
+$stmt->execute([$_GET['customer']]);
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "REST parameters read with array access are request input too"
+code = '''
+<?php
+register_rest_route('shop/v1', '/carriers', ['methods' => 'GET', 'callback' => function ($request) {
+    global $wpdb;
+    $name = $request['carrier'];
+    return $wpdb->get_results($wpdb->prepare("SELECT * FROM {$wpdb->prefix}carriers WHERE slug = '" . $name . "' AND active = %d", 1));
+}]);
+'''

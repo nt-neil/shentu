@@ -1,0 +1,66 @@
+id = "php-cmdi-process-shell-commandline"
+lang = "php"
+class = "cmdi"
+cwe = "CWE-78"
+severity = "critical"
+tier = "info"
+title = "Request input in a command line that Symfony Process passes to a shell"
+frameworks = ["laravel"]
+sources = ["$request->query->get(", "$request->request->get(", "$request->get(", "$request->query->all(", "$request->input(", "$request->query(", "$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "->get_param("]
+sinks = ["Process::fromShellCommandline(", "Process::run(", "Process::start(", "Process("]
+sanitizers = ["escapeshellarg", "absint", "intval", "in_array", "ctype_digit", "ctype_alnum"]
+fix = "Pass the command as an array of arguments (new Process(['convert', $in, $out]), Process::run([...]) in Laravel), which no shell parses; never build a command string from input."
+refs = ["CVE-2026-53932"]
+
+[[args]]
+sinks = ["Process(", "Process::run(", "Process::start("]
+arg = 1
+whole = true
+
+[[args]]
+sinks = ["Process::fromShellCommandline("]
+arg = 1
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+class ThumbController extends AbstractController
+{
+    public function make(Request $request): Response
+    {
+        $size = $request->query->get('size', '200x200');
+        $p = Process::fromShellCommandline('convert in.png -resize ' . $size . ' out.png');
+        $p->mustRun();
+        return new Response('ok');
+    }
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+class PingController extends Controller
+{
+    public function ping(Request $request)
+    {
+        $result = Process::run('ping -c 1 ' . $request->input('host'));
+        return $result->output();
+    }
+}
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+class PingController extends Controller
+{
+    public function ping(Request $request)
+    {
+        $result = Process::run(['ping', '-c', '1', $request->input('host')]);
+        return $result->output();
+    }
+}
+'''
