@@ -27,17 +27,156 @@ type modBinding struct {
 // normalizeModules applies the rewrite to a JavaScript (or stripped
 // TypeScript) token stream.
 func normalizeModules(toks []Token) []Token {
-	binds := map[string]modBinding{}
-	cl := closers(toks)
-	collectModuleBindings(toks, cl, binds)
-	// A name declared again anywhere in the file (a local const, a parameter)
-	// may not be the module there: scopes are not followed, so it is dropped.
-	for name, n := range declarations(toks, cl) {
-		if n > 1 {
-			delete(binds, name)
+	t := joinArrays(unwrapCallees(toks))
+	m := &modScope{t: t, cl: closers(t), binds: map[string][]scoped{}, shadows: map[string][]scoped{}}
+	m.enc = enclosing(t, m.cl)
+	m.collect()
+	if len(m.binds) == 0 {
+		return t
+	}
+	m.declarations()
+	return m.rewrite(t, 0)
+}
+
+// scoped is a binding of a name, or a declaration that hides it, from token from
+// to token to (the end of its block or function).
+type scoped struct {
+	modBinding
+	from, to int
+}
+
+type modScope struct {
+	t       []Token
+	cl, enc []int
+	binds   map[string][]scoped // names bound to a module or one of its functions
+	shadows map[string][]scoped // other declarations of those names
+}
+
+// enclosing returns, for each token, the index of the "}" ending the innermost
+// block around it (len(t) at the top level).
+func enclosing(t []Token, cl []int) []int {
+	enc := make([]int, len(t))
+	var stack []int
+	for i, tk := range t {
+		enc[i] = len(t)
+		if n := len(stack); n > 0 {
+			enc[i] = cl[stack[n-1]]
+		}
+		switch {
+		case tk.op("{"):
+			stack = append(stack, i)
+		case tk.op("}") && len(stack) > 0:
+			stack = stack[:len(stack)-1]
 		}
 	}
-	return rewriteModules(toks, binds)
+	return enc
+}
+
+func (m *modScope) at(i int) Token {
+	if i >= 0 && i < len(m.t) {
+		return m.t[i]
+	}
+	return Token{Kind: Op}
+}
+
+func (m *modScope) add(name string, b modBinding, at int) {
+	m.binds[name] = append(m.binds[name], scoped{b, at, m.enc[at]})
+}
+
+// resolve returns the binding of name in force at token u: the latest one whose
+// scope holds u, unless a later declaration of the name in a scope holding u
+// hides it.
+func (m *modScope) resolve(name string, u int) (modBinding, bool) {
+	best := scoped{from: -1}
+	for _, b := range m.binds[name] {
+		if b.from <= u && u <= b.to && b.from > best.from {
+			best = b
+		}
+	}
+	if best.from < 0 {
+		return modBinding{}, false
+	}
+	for _, d := range m.shadows[name] {
+		if d.from > best.from && d.from <= u && u <= d.to {
+			return modBinding{}, false
+		}
+	}
+	return best.modBinding, true
+}
+
+// joinArrays rewrites [a, b].join(s) to (a + s + b), so a value joined from an
+// array of parts is built from each part, as a concatenation is: a sink that
+// needs the SQL text itself built from input then sees it.
+func joinArrays(t []Token) []Token {
+	cl := closers(t)
+	var out []Token
+	for i := 0; i < len(t); i++ {
+		c := closeAt(cl, i)
+		if t[i].op("[") && (len(out) == 0 || !jsValue(out[len(out)-1])) && c+3 < len(t) && t[c+1].op(".") && t[c+2].word("join") && t[c+3].op("(") {
+			e := closeAt(cl, c+3)
+			if e < len(t) && c-i > 1 {
+				sep := t[c+4 : e]
+				if len(sep) == 0 {
+					sep = []Token{{Kind: Str, Text: ",", Line: t[c].Line}}
+				}
+				line := t[i]
+				line.Text = "("
+				out = append(out, line)
+				for k, part := range splitTop(t[i+1:c], isOp(",")) {
+					if len(part) > 0 && part[0].op("...") {
+						part = part[1:]
+					}
+					if k > 0 {
+						out = append(out, Token{Kind: Op, Text: "+", Line: part0Line(part, line.Line)})
+						out = append(out, sep...)
+						out = append(out, Token{Kind: Op, Text: "+", Line: part0Line(part, line.Line)})
+					}
+					out = append(out, part...)
+				}
+				out = append(out, Token{Kind: Op, Text: ")", Line: t[e].Line})
+				i = e
+				continue
+			}
+		}
+		out = append(out, t[i])
+	}
+	return out
+}
+
+func part0Line(part []Token, def int) int {
+	if len(part) > 0 {
+		return part[0].Line
+	}
+	return def
+}
+
+// unwrapCallees rewrites a parenthesised callee to a plain one: (exec)(x) and
+// the indirect call (0, eval)(x) call exec and eval like exec(x) and eval(x).
+func unwrapCallees(t []Token) []Token {
+	var out []Token
+	for i := 0; i < len(t); i++ {
+		if t[i].op("(") && (len(out) == 0 || !jsValue(out[len(out)-1])) {
+			switch {
+			case i+3 < len(t) && t[i+1].Kind == Ident && t[i+2].op(")") && t[i+3].op("("):
+				out = append(out, t[i+1])
+				i += 2
+				continue
+			case i+5 < len(t) && t[i+1].Kind == Num && t[i+2].op(",") && t[i+3].Kind == Ident && t[i+4].op(")") && t[i+5].op("("):
+				out = append(out, t[i+3])
+				i += 4
+				continue
+			}
+		}
+		if out == nil {
+			out = make([]Token, 0, len(t))
+			out = append(out, t[:i]...)
+		}
+		out = append(out, t[i])
+	}
+	if out == nil {
+		return t
+	}
+	return out
 }
 
 // requireAt reports the module of "require('m')" at i and the index after it,
@@ -74,27 +213,23 @@ func closers(t []Token) []int {
 	return cl
 }
 
-func collectModuleBindings(t []Token, cl []int, binds map[string]modBinding) {
-	at := func(i int) Token {
-		if i >= 0 && i < len(t) {
-			return t[i]
-		}
-		return Token{Kind: Op}
-	}
+func (m *modScope) collect() {
+	t, cl := m.t, m.cl
+	at := m.at
 	for i := 0; i < len(t); i++ {
 		switch {
 		case (t[i].word("const") || t[i].word("let") || t[i].word("var")) && at(i+1).Kind == Ident && at(i+2).op("="):
 			// const fs = require('fs'), const fsp = require('fs').promises
-			if m, j := requireAt(t, i+3); m != "" {
+			if mod, j := requireAt(t, i+3); mod != "" {
 				if at(j).op(".") && at(j+1).Kind == Ident && !at(j+2).op("(") {
-					binds[t[i+1].Text] = modBinding{mod: m, member: t[j+1].Text} // const run = require('child_process').exec
+					m.add(t[i+1].Text, modBinding{mod: mod, member: t[j+1].Text}, i) // const run = require('child_process').exec
 				} else {
-					binds[t[i+1].Text] = modBinding{mod: m}
+					m.add(t[i+1].Text, modBinding{mod: mod}, i)
 				}
-			} else if b, ok := binds[at(i+3).Text]; ok && at(i+3).Kind == Ident && b.member == "" && !at(i+4).op(".") && !at(i+4).op("(") {
-				binds[t[i+1].Text] = b // const c = cp0
-			} else if m := moduleOf(at(i + 3).Text); m != "" && at(i+3).Kind == Ident && at(i+4).op(".") && at(i+5).word("promises") {
-				binds[t[i+1].Text] = modBinding{mod: m} // const fsp = fs.promises
+			} else if b, ok := m.resolve(at(i+3).Text, i+3); ok && at(i+3).Kind == Ident && b.member == "" && !at(i+4).op(".") && !at(i+4).op("(") {
+				m.add(t[i+1].Text, b, i) // const c = cp0
+			} else if b, ok := m.resolve(at(i+3).Text, i+3); ok && b.member == "" && at(i+4).op(".") && at(i+5).word("promises") {
+				m.add(t[i+1].Text, b, i) // const fsp = fs.promises
 			}
 		case (t[i].word("const") || t[i].word("let") || t[i].word("var")) && at(i+1).op("{"):
 			// const { readFileSync: r, promises: fsp } = require('fs')
@@ -102,10 +237,10 @@ func collectModuleBindings(t []Token, cl []int, binds map[string]modBinding) {
 			if !at(c + 1).op("=") {
 				continue
 			}
-			if m, _ := requireAt(t, c+2); m != "" {
-				destructure(t[i+2:c], m, ":", binds)
-			} else if b, ok := binds[at(c+2).Text]; ok && at(c+2).Kind == Ident && b.member == "" && !at(c+3).op(".") {
-				destructure(t[i+2:c], b.mod, ":", binds) // const { exec: run } = cp0
+			if mod, _ := requireAt(t, c+2); mod != "" {
+				m.destructure(t[i+2:c], mod, ":", i)
+			} else if b, ok := m.resolve(at(c+2).Text, c+2); ok && at(c+2).Kind == Ident && b.member == "" && !at(c+3).op(".") {
+				m.destructure(t[i+2:c], b.mod, ":", i) // const { exec: run } = cp0
 			}
 		case t[i].word("import") && (i == 0 || !memberOp(false, t[i-1])):
 			// import fs from 'fs'; import * as fs from 'fs'; import { a as b } from 'fs'
@@ -116,21 +251,21 @@ func collectModuleBindings(t []Token, cl []int, binds map[string]modBinding) {
 			if !at(j).word("from") || at(j+1).Kind != Str {
 				continue
 			}
-			m := moduleOf(t[j+1].Text)
-			if m == "" {
+			mod := moduleOf(t[j+1].Text)
+			if mod == "" {
 				continue
 			}
 			for k := i + 1; k < j; k++ {
 				switch {
 				case t[k].op("{"):
 					c := min(closeAt(cl, k), j)
-					destructure(t[k+1:c], m, "as", binds)
+					m.destructure(t[k+1:c], mod, "as", i)
 					k = c
 				case t[k].op("*") && at(k+1).word("as") && at(k+2).Kind == Ident:
-					binds[t[k+2].Text] = modBinding{mod: m}
+					m.add(t[k+2].Text, modBinding{mod: mod}, i)
 					k += 2
 				case t[k].Kind == Ident && !t[k].word("type") && (at(k+1).op(",") || at(k+1).word("from")):
-					binds[t[k].Text] = modBinding{mod: m} // the default import
+					m.add(t[k].Text, modBinding{mod: mod}, i) // the default import
 				}
 			}
 		}
@@ -138,7 +273,7 @@ func collectModuleBindings(t []Token, cl []int, binds map[string]modBinding) {
 }
 
 // destructure reads "a, b: c" (sep ":") or "a, b as c" (sep "as") from module m.
-func destructure(t []Token, m, sep string, binds map[string]modBinding) {
+func (m *modScope) destructure(t []Token, mod, sep string, at int) {
 	for _, part := range splitTop(t, isOp(",")) {
 		if len(part) == 0 || part[0].Kind != Ident {
 			continue
@@ -148,14 +283,16 @@ func destructure(t []Token, m, sep string, binds map[string]modBinding) {
 			local = part[2].Text
 		}
 		if name == "promises" {
-			binds[local] = modBinding{mod: m}
+			m.add(local, modBinding{mod: mod}, at)
 		} else {
-			binds[local] = modBinding{mod: m, member: name}
+			m.add(local, modBinding{mod: mod, member: name}, at)
 		}
 	}
 }
 
-func rewriteModules(t []Token, binds map[string]modBinding) []Token {
+// rewrite rewrites t; base is the index of t[0] in m.t (template fields are
+// rewritten with the scope of the token that holds them).
+func (m *modScope) rewrite(t []Token, base int) []Token {
 	out := make([]Token, 0, len(t))
 	modTok := func(m string, from Token) Token {
 		return Token{Kind: Ident, Text: m, Line: from.Line, Flags: from.Flags&FlagNL | FlagModule}
@@ -166,7 +303,7 @@ func rewriteModules(t []Token, binds map[string]modBinding) []Token {
 		if len(tk.Parts) > 0 {
 			parts := make([]Part, len(tk.Parts))
 			for k, p := range tk.Parts {
-				parts[k] = Part{Off: p.Off, Toks: rewriteModules(p.Toks, binds)}
+				parts[k] = Part{Off: p.Off, Toks: m.rewriteAt(p.Toks, base+i)}
 			}
 			tk.Parts = parts
 		}
@@ -176,7 +313,7 @@ func rewriteModules(t []Token, binds map[string]modBinding) []Token {
 			continue
 		}
 		if tk.Kind == Ident && !member && i+1 < len(t) {
-			b, bound := binds[tk.Text]
+			b, bound := m.resolve(tk.Text, base+i)
 			switch {
 			case bound && b.member == "" && t[i+1].op("."):
 				out = append(out, modTok(b.mod, tk)) // fsp.readFile( -> fs.readFile(
@@ -195,21 +332,58 @@ func rewriteModules(t []Token, binds map[string]modBinding) []Token {
 	return out
 }
 
-// declarations counts, per name, the places a file declares it: let, const and
-// var (also in patterns), function and class names, imports and parameters.
-func declarations(t []Token, cl []int) map[string]int {
-	n := map[string]int{}
-	at := func(i int) Token {
-		if i >= 0 && i < len(t) {
-			return t[i]
-		}
-		return Token{Kind: Op}
+// rewriteAt rewrites the tokens of a template field held by token u.
+func (m *modScope) rewriteAt(t []Token, u int) []Token {
+	out := make([]Token, 0, len(t))
+	modTok := func(mod string, from Token) Token {
+		return Token{Kind: Ident, Text: mod, Line: from.Line, Flags: from.Flags&FlagNL | FlagModule}
 	}
-	var pattern func(i int) int
-	pattern = func(i int) int { // names bound by the pattern at i; returns the index after it
+	for i := 0; i < len(t); i++ {
+		tk := t[i]
+		if mod, j := requireAt(t, i); mod != "" {
+			out = append(out, modTok(mod, tk))
+			i = j - 1
+			continue
+		}
+		if tk.Kind == Ident && !(i > 0 && memberOp(false, t[i-1])) && i+1 < len(t) {
+			if b, ok := m.resolve(tk.Text, u); ok {
+				switch {
+				case b.member == "" && t[i+1].op("."):
+					out = append(out, modTok(b.mod, tk))
+					continue
+				case b.member != "" && t[i+1].op("("):
+					out = append(out, modTok(b.mod, tk), Token{Kind: Op, Text: ".", Line: tk.Line}, Token{Kind: Ident, Text: b.member, Line: tk.Line})
+					continue
+				}
+			}
+		}
+		out = append(out, tk)
+	}
+	return out
+}
+
+// declarations records the other declarations of the bound names, with their
+// scopes: let, const and var (also in patterns) and function and class names up
+// to the end of their block, and parameters up to the end of their function.
+// The declaration that is itself a binding does not count.
+func (m *modScope) declarations() {
+	t, cl, at := m.t, m.cl, m.at
+	decl := func(name string, from, to int) {
+		if _, ok := m.binds[name]; !ok {
+			return
+		}
+		for _, b := range m.binds[name] {
+			if b.from == from {
+				return // the binding itself
+			}
+		}
+		m.shadows[name] = append(m.shadows[name], scoped{from: from, to: to})
+	}
+	var pattern func(i, from, to int) int
+	pattern = func(i, from, to int) int { // names bound by the pattern at i; returns the index after it
 		switch {
 		case at(i).Kind == Ident:
-			n[t[i].Text]++
+			decl(t[i].Text, from, to)
 			return i + 1
 		case at(i).op("{") || at(i).op("["):
 			c := closeAt(cl, i)
@@ -218,12 +392,22 @@ func declarations(t []Token, cl []int) map[string]int {
 				case t[k].Kind == Ident && at(k+1).op(":") && at(i).op("{"):
 					// a key: the name follows the ":"
 				case t[k].Kind == Ident && (at(k-1).op("{") || at(k-1).op(",") || at(k-1).op("[") || at(k-1).op(":") || at(k-1).op("...")):
-					n[t[k].Text]++
+					decl(t[k].Text, from, to)
 				}
 			}
 			return c + 1
 		}
 		return i + 1
+	}
+	// body returns the end of the function whose parameters end at c.
+	body := func(c, def int) int {
+		switch {
+		case at(c + 1).op("{"):
+			return closeAt(cl, c+1)
+		case at(c+1).op("=>") && at(c+2).op("{"):
+			return closeAt(cl, c+2)
+		}
+		return def
 	}
 	for i := 0; i < len(t); i++ {
 		tk := t[i]
@@ -231,32 +415,36 @@ func declarations(t []Token, cl []int) map[string]int {
 		switch {
 		case member:
 		case tk.word("const") || tk.word("let") || tk.word("var"):
-			pattern(i + 1)
+			pattern(i+1, i, m.enc[i])
 		case (tk.word("function") || tk.word("class")) && at(i+1).Kind == Ident:
-			n[t[i+1].Text]++
+			decl(t[i+1].Text, i, m.enc[i])
 		case tk.word("import"):
 			for k := i + 1; k < len(t) && k-i < 256 && !t[k].word("from") && !t[k].op(";"); k++ {
 				if t[k].Kind == Ident && (at(k+1).op(",") || at(k+1).op("}") || at(k+1).word("from")) && !t[k].word("type") {
-					n[t[k].Text]++
+					decl(t[k].Text, i, len(t))
 				}
 			}
 		case tk.Kind == Ident && at(i+1).op("=>"):
-			n[tk.Text]++ // q => ...
+			decl(tk.Text, i, body(i, m.enc[i])) // q => ...
 		case tk.op("("):
 			c := closeAt(cl, i)
-			if !(at(c+1).op("=>") || at(c+1).op("{") && (at(i-1).Kind == Ident || at(i-1).op(")"))) {
+			p := at(i - 1)
+			if p.Kind == Ident && (ctlWords[p.Text] || p.Text == "switch") {
+				continue // if (run): a use, not a parameter
+			}
+			if !(at(c+1).op("=>") || at(c+1).op("{") && (p.Kind == Ident || p.op(")"))) {
 				continue
 			}
+			end := body(c, m.enc[i])
 			for k := i + 1; k < c && k < len(t); k++ { // parameter names at the top of the list
 				if (at(k-1).op("(") || at(k-1).op(",") || at(k-1).op("...")) && (t[k].Kind == Ident || t[k].op("{") || t[k].op("[")) {
-					k = pattern(k) - 1
+					k = pattern(k, i, end) - 1
 				} else if isOpen(t[k]) {
 					k = closeAt(cl, k)
 				}
 			}
 		}
 	}
-	return n
 }
 
 func closeAt(cl []int, i int) int {

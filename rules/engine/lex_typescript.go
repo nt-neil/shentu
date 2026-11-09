@@ -26,6 +26,7 @@ func lexTS(src string, b *budget, tsx bool) []Token {
 		s.skipLine()
 	}
 	s.js(false)
+	s.jsxEnd()
 	return normalizeModules(stripTS(s.toks, b, tsx))
 }
 
@@ -671,8 +672,8 @@ func (x *tsStrip) typeGroup(i, depth int) (int, bool) {
 				return i, false // a call is a value
 			}
 			e, ok := x.typeGroup(j, depth+1)
-			if !ok {
-				return i, false
+			if !ok || x.at(e+1).op("(") {
+				return i, false // (exec)(x), (0, eval)(x): a call
 			}
 			j = e
 		case t.Kind == Ident || t.Kind == Str || t.Kind == Num:
@@ -718,8 +719,8 @@ func (x *tsStrip) angles(i int, check bool) (int, bool) {
 				return i, false // f(a < g(x), b > (y)): a call inside is no type
 			}
 			e, ok := x.typeGroup(j, 0)
-			if !ok {
-				return i, false
+			if !ok || x.at(e+1).op("(") {
+				return i, false // f(a < (exec)(c), b > (0)): a call through parentheses
 			}
 			j = e
 			continue

@@ -49,6 +49,28 @@ func TestReviewTS(t *testing.T) {
 		{"tsx-attr-expr", "tsx", "export async function GET(request: Request) {\n  const v = <A b={x < y ? execSync(request.url) : z} c={<B d={1} />} />;\n}\n", true, ""},
 		{"tsx-nested", "tsx", "export async function GET(request: Request) {\n  const v = <A><B><C>{execSync(request.url)}</C></B></A>;\n}\n", true, ""},
 		{"tsx-generic-arrow", "tsx", "export async function GET(request: Request) {\n  const f = <T,>(x: T) => execSync(x as any);\n  exec(request.url);\n}\n", true, ""},
+		// second review (a8d8c90)
+		{"tsx-type-alias-generic-fn", "tsx", "type F = <T>(x: T) => T;\nexport const h = (req: Request) => execSync(req.query.c as string);\n", true, ""},
+		{"tsx-generic-default", "tsx", "const f = <T = unknown,>(x: T) => x;\nexport const h = (req: Request) => execSync(req.query.c as string);\n", true, ""},
+		{"tsx-generic-extends", "tsx", "const f = <T extends object>(x: T) => x;\nexport const h = (req: Request) => execSync(req.query.c as string);\n", true, ""},
+		{"gen-paren-callee", "ts", h("", "f(a < (exec)(req.query.c), b > (0));"), true, ""},
+		{"gen-indirect-eval", "ts", h("", "f(a < (0, eval)(req.body.code), b > (1));"), true, ""},
+		{"js-paren-callee", "js", h("", "(exec)(req.query.c);"), true, ""},
+		{"next-req-url", "ts", "export async function GET(req: Request) {\n  const { searchParams } = new URL(req.url);\n  await pool.query(`SELECT * FROM t WHERE a = '${searchParams.get('a')}'`);\n}\n", true, ""},
+		{"sql-join", "js", h("", "db.query(['SELECT * FROM u WHERE id =', req.query.id].join(' '));"), true, ""},
+		{"sql-join-spread", "js", h("", "db.query(['SELECT', ...cols, 'FROM u WHERE id =', req.query.id].join(' '));"), true, ""},
+		{"sql-join-safe", "js", h("", "db.query(['SELECT * FROM u', 'WHERE id = ?'].join(' '), [req.query.id]);"), false, ""},
+		{"sql-object-sql", "js", h("", "db.query({ sql: 'SELECT * FROM u WHERE id = ' + req.query.id });"), true,
+			"the SQL argument must be the text itself: an object holding it ({ sql: ... }) is not looked into"},
+		{"sql-join-pushed", "js", h("", "const parts = ['SELECT * FROM u WHERE id ='];\n  parts.push(req.query.id);\n  db.query(parts.join(' '));"), true,
+			"values pushed into an array before .join() are not followed"},
+		{"alias-voided-by-param", "js", "const c = require('child_process');\nfunction noop(c) { return c; }\n" + h("", "c.exec('ls ' + req.query.c);"), true, ""},
+		{"alias-two-handlers", "js", "app.get('/a', (req, res) => {\n  const { exec: run } = require('child_process');\n  run('ls ' + req.query.c);\n});\napp.get('/b', (req, res) => {\n  const { exec: run } = require('child_process');\n  run('ls ' + req.query.d);\n});\n", true, ""},
+		{"alias-if-header", "js", "const run = require('child_process').execSync;\nif (run) { }\n" + h("", "run('ls ' + req.query.c);"), true, ""},
+		{"fp-alias-shadow-inner", "js", "const run = require('child_process').execSync;\n" + h("", "const run = (q) => q;\n  run(req.query.c);"), false, ""},
+		{"fp-alias-shadow-param", "js", "const c = require('child_process');\nfunction f(c) { c.exec(req.query.c); }\n", false, ""},
+		{"fs-no-require", "js", h("", "fs.readFileSync(req.query.f);"), true,
+			"a core module name is a module only where the file requires or imports it"},
 		// type syntax
 		{"ts-string-type", "ts", "type K = '}{';\nlet a: `${'('}` = 'x';" + h("", "exec(req.query.c);"), true, ""},
 		{"ts-cond-type", "ts", "type A<T> = T extends string ? { a: T } : never" + h("", "exec(req.query.c);"), true, ""},
@@ -126,6 +148,19 @@ func TestReviewTSUnclosed(t *testing.T) {
 		}
 		if len(fs) == 0 {
 			t.Errorf("%q: the code after it is not analysed", pre)
+		}
+	}
+}
+
+// TestReviewTSUnclosedJSX: JSX that never closes is reported as partial.
+func TestReviewTSUnclosedJSX(t *testing.T) {
+	e := engineForTest(t)
+	for _, c := range []struct{ lang, src string }{
+		{"tsx", "const v = <p>text\napp.get('/x', (req, res) => { exec(req.query.c); });\n"},
+		{"jsx", "const v = <div><b>x</b>\n"},
+	} {
+		if _, err := e.Scan(c.lang, "x", []byte(c.src)); !errors.Is(err, ErrPartial) {
+			t.Errorf("%s %q: err %v, want ErrPartial", c.lang, c.src, err)
 		}
 	}
 }

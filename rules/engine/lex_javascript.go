@@ -32,7 +32,19 @@ func lexJSX(src string, b *budget, jsx bool) []Token {
 		s.skipLine()
 	}
 	s.js(false)
+	s.jsxEnd()
 	return normalizeModules(s.toks)
+}
+
+// jsxEnd reports a file whose JSX never closed: the rest of it was read as
+// element text, not as code.
+func (s *scanner) jsxEnd() {
+	for _, st := range s.jsxStack {
+		if st == 'c' || st == 't' {
+			s.b.unterminated()
+			return
+		}
+	}
 }
 
 // js lexes code. With stop it returns at an unmatched "}" (the end of "${...}").
@@ -153,7 +165,7 @@ func (s *scanner) jsxOp(o string) {
 	case o == "<" && top == 'c' && s.pos < len(s.src) && s.src[s.pos] == '/':
 		s.jsxClosing = true // </name>
 	case o == "<" && s.pos < len(s.src) && (isIdentStart(s.src[s.pos]) || s.src[s.pos] == '>') &&
-		(top == 'c' || !jsValue(prev)) && !(s.ts && prev.op(":") && s.typeParams()):
+		(top == 'c' || !jsValue(prev)) && !(s.ts && s.typeStart(prev)):
 		push('t') // an element starts where no value ends
 	case o == ";" && top == 't':
 		s.jsxStack = nil // no opening tag holds a ";": the state was wrong
@@ -221,6 +233,52 @@ func (s *scanner) decoratorGap() int {
 		return 0
 	}
 	return i - s.pos
+}
+
+// typeStart reports whether the "<" just read opens TypeScript type parameters,
+// not a JSX element: <T,>, <T = U>, <T extends U> anywhere, and <T>( (a generic
+// function type) after ":" or on the right of a type alias.
+func (s *scanner) typeStart(prev Token) bool {
+	i := s.pos
+	for i < len(s.src) && (s.src[i] == ' ' || s.src[i] == '\t') {
+		i++
+	}
+	j := i
+	for j < len(s.src) && (isIdentChar(s.src[j]) || s.src[j] == '$') {
+		j++
+	}
+	if j == i {
+		return false
+	}
+	k := j
+	for k < len(s.src) && (s.src[k] == ' ' || s.src[k] == '\t') {
+		k++
+	}
+	if k < len(s.src) && (s.src[k] == ',' || s.src[k] == '=' && (k+1 >= len(s.src) || s.src[k+1] != '>')) ||
+		strings.HasPrefix(s.src[k:], "extends ") {
+		return true
+	}
+	return (prev.op(":") || prev.op("=") && s.typeAlias()) && s.typeParams()
+}
+
+// typeAlias reports whether the "=" just read is that of "type Name =" or
+// "type Name<...> =".
+func (s *scanner) typeAlias() bool {
+	n := len(s.toks) - 1 // the "="
+	k := n - 1
+	if k >= 0 && s.toks[k].op(">") {
+		for depth := 0; k >= 0; k-- {
+			if s.toks[k].op(">") {
+				depth++
+			} else if s.toks[k].op("<") {
+				if depth--; depth == 0 {
+					k--
+					break
+				}
+			}
+		}
+	}
+	return k >= 1 && s.toks[k].Kind == Ident && s.toks[k-1].word("type")
 }
 
 // typeParams reports whether the source after a "<" reads "T>(" or "T, U>(": in
