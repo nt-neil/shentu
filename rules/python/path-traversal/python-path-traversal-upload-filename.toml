@@ -1,0 +1,66 @@
+id = "python-path-traversal-upload-filename"
+lang = "python"
+class = "path-traversal"
+cwe = "CWE-22"
+severity = "high"
+tier = "info"
+title = "Upload's client-sent file name used to build a path on the server"
+sources = ["file.filename", "upload.filename", "uploaded.filename", "uploaded_file.filename", "upload_file.filename", "attachment.filename", "document.filename"]
+sinks = ["open(", "io.open(", "os.open(", "aiofiles.open(", "anyio.open_file(", "os.path.join(", "Path(", "pathlib.Path(", "shutil.move(", "shutil.copy(", "shutil.copyfile("]
+sanitizers = ["os.path.basename(", "basename(", "secure_filename(", "werkzeug.utils.secure_filename(", "safe_join(", ".is_relative_to(", ".startswith(", "uuid.uuid4(", "secrets.token_hex("]
+fix = "Never build a path from the uploaded file's name: store it under a name the server makes (uuid4().hex plus an allowlisted extension), or reduce it with os.path.basename()/secure_filename() and check the resolved path stays in the upload directory."
+refs = ["CVE-2026-28786"]
+
+# FastAPI/Starlette UploadFile.filename and Werkzeug FileStorage.filename are the
+# name as the client sent it, slashes and ".." included. Only the receiver names
+# uploads usually get are sources: a bare .filename also matched frames, log
+# records and migration writers.
+[[args]]
+sinks = ["shutil.move(", "shutil.copy(", "shutil.copyfile("]
+arg = 2
+
+[[samples]]
+kind = "vulnerable"
+note = "the extension is cut from the client name, so it can still hold '/'"
+code = '''
+@api.post("/voice-notes")
+async def save_voice_note(file: UploadFile):
+    suffix = file.filename.rsplit(".", 1)[-1]
+    target = f"{NOTES_DIR}/{uuid.uuid4().hex}.{suffix}"
+    with open(target, "wb") as sink:
+        sink.write(await file.read())
+    return {"stored": target}
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+@api.post("/attachments")
+async def keep_attachment(upload: UploadFile):
+    destination = os.path.join(ATTACH_DIR, upload.filename)
+    async with aiofiles.open(destination, "wb") as sink:
+        await sink.write(await upload.read())
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+@api.post("/voice-notes")
+async def save_voice_note(file: UploadFile):
+    plain = os.path.basename(file.filename)
+    target = os.path.join(NOTES_DIR, f"{uuid.uuid4().hex}-{plain}")
+    with open(target, "wb") as sink:
+        sink.write(await file.read())
+'''
+
+[[samples]]
+kind = "safe"
+note = "the client name is only echoed back"
+code = '''
+@api.post("/attachments")
+async def keep_attachment(upload: UploadFile):
+    destination = os.path.join(ATTACH_DIR, uuid.uuid4().hex)
+    with open(destination, "wb") as sink:
+        shutil.copyfileobj(upload.file, sink)
+    return {"name": upload.filename}
+'''
