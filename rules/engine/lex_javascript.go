@@ -33,7 +33,7 @@ func lexJSX(src string, b *budget, jsx bool) []Token {
 	}
 	s.js(false)
 	s.jsxEnd()
-	return normalizeModules(s.toks)
+	return normalizeModules(s.toks, b)
 }
 
 // jsxEnd reports a file whose JSX never closed: the rest of it was read as

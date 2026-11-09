@@ -26,9 +26,9 @@ type modBinding struct {
 
 // normalizeModules applies the rewrite to a JavaScript (or stripped
 // TypeScript) token stream.
-func normalizeModules(toks []Token) []Token {
+func normalizeModules(toks []Token, b *budget) []Token {
 	t := joinArrays(unwrapCallees(toks))
-	m := &modScope{t: t, cl: closers(t), binds: map[string][]scoped{}, shadows: map[string][]scoped{}, tooMany: map[string]modBinding{}}
+	m := &modScope{t: t, cl: closers(t), binds: map[string][]scoped{}, shadows: map[string][]scoped{}, tooMany: map[string]modBinding{}, b: b}
 	m.enc = enclosing(t, m.cl)
 	m.collect()
 	if len(m.binds) == 0 {
@@ -51,6 +51,7 @@ type modScope struct {
 	binds   map[string][]scoped   // names bound to a module or one of its functions
 	shadows map[string][]scoped   // other declarations of those names
 	tooMany map[string]modBinding // names bound or declared too often to follow: the last binding, everywhere
+	b       *budget
 }
 
 // maxScoped bounds the bindings and declarations kept per name, so each look-up
@@ -88,6 +89,7 @@ func (m *modScope) at(i int) Token {
 func (m *modScope) add(name string, b modBinding, at int) {
 	if _, over := m.tooMany[name]; over || len(m.binds[name]) >= maxScoped {
 		m.tooMany[name] = b
+		m.b.tooDeep() // the file is reported as not fully analysed
 		return
 	}
 	m.binds[name] = append(m.binds[name], scoped{b, at, m.enc[at]})
@@ -396,6 +398,7 @@ func (m *modScope) declarations() {
 		if len(m.shadows[name]) >= maxScoped {
 			bs := m.binds[name]
 			m.tooMany[name] = bs[len(bs)-1].modBinding
+			m.b.tooDeep()
 			return
 		}
 		m.shadows[name] = append(m.shadows[name], scoped{from: from, to: to})

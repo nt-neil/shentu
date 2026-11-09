@@ -27,7 +27,7 @@ func lexTS(src string, b *budget, tsx bool) []Token {
 	}
 	s.js(false)
 	s.jsxEnd()
-	return normalizeModules(stripTS(s.toks, b, tsx))
+	return normalizeModules(stripTS(s.toks, b, tsx), b)
 }
 
 // isTS reports whether lang is a TypeScript dialect, and baseLang maps a dialect

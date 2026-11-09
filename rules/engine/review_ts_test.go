@@ -186,13 +186,16 @@ func TestReviewTSHostile(t *testing.T) {
 		{"type-alias-walk", "tsx", "type A" + strings.Repeat("<B", n/4) + strings.Repeat(">", n/4) + " = <T>(x: T) => T;\nexport const h = (req: Request) => execSync(req.query.c as string);\n"},
 	} {
 		start := time.Now()
-		fs, _ := e.Scan(c.lang, c.name, []byte(c.src))
+		fs, err := e.Scan(c.lang, c.name, []byte(c.src))
 		if d := time.Since(start); d > 2*DefaultLimits.MaxTime {
 			t.Errorf("%s: %v, over twice the time limit", c.name, d)
 		}
 		// Past a cap the engine must fail toward detection.
 		if (c.name == "alias-many" || c.name == "type-alias-walk") && len(fs) == 0 {
 			t.Errorf("%s: the vulnerable code at the end is not reported", c.name)
+		}
+		if (c.name == "alias-many" || c.name == "type-alias-walk") && !errors.Is(err, ErrLimit) {
+			t.Errorf("%s: err %v, a file past a cap must be reported as not fully analysed", c.name, err)
 		}
 	}
 }
