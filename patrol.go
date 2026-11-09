@@ -142,6 +142,18 @@ func checks(ctx context.Context, cfg *Config, env *tools.Env, st *state, daily b
 				fmt.Sprintf("authorized_keys changed: %s (%d keys)", k.Path, k.Keys), k})
 		}
 	}
+	for _, k := range acc.SharedKeys {
+		out = append(out, finding{"sharedkey:" + k.Fingerprint, "warning",
+			fmt.Sprintf("one SSH key (%s) is in the authorized_keys of %s; attackers plant one key in every account, check that it is yours", k.Fingerprint, strings.Join(k.Users, ", ")), k})
+	}
+	if len(acc.Preload) > 0 {
+		out = append(out, finding{"preload:" + strings.Join(acc.Preload, ","), "critical",
+			fmt.Sprintf("/etc/ld.so.preload loads %s into every program, a common rootkit trick; check each library with dpkg -S or rpm -qf", strings.Join(acc.Preload, ", ")), acc.Preload})
+	}
+	for _, m := range acc.UnpackagedPAM {
+		out = append(out, finding{"pam:" + m, "warning",
+			fmt.Sprintf("PAM module %s was not installed by a package; a PAM backdoor can let anyone log in by SSH; check it with dpkg -S or rpm -qf %s", m, m), m})
+	}
 
 	if r, err := tools.FileChanges(ctx, env.WatchPaths, since); err == nil {
 		for _, f := range r["files"].([]tools.Changed) {

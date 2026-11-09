@@ -282,7 +282,7 @@ func userNames() map[string]string {
 
 var accountsAudit = Tool{
 	Name:        "accounts_audit",
-	Description: "Accounts that matter for intrusion: extra UID 0 accounts, accounts with a login shell, sudo rules, and authorized_keys files (key count and last change).",
+	Description: "Accounts and persistence that matter for intrusion: extra UID 0 accounts, accounts with a login shell, sudo rules, authorized_keys files (key count and last change), one SSH key planted in several accounts (by fingerprint), libraries in /etc/ld.so.preload, and PAM modules that no package installed.",
 	Params:      schema(noParams),
 	Run: func(ctx context.Context, env *Env, args json.RawMessage) (any, error) {
 		return AccountsAudit(), nil
@@ -299,10 +299,13 @@ type KeyFile struct {
 
 // Accounts is the result of AccountsAudit.
 type Accounts struct {
-	UID0          []string  `json:"uid0_accounts"`
-	LoginAccounts []string  `json:"login_accounts"`
-	SudoRules     []string  `json:"sudo_rules"`
-	KeyFiles      []KeyFile `json:"authorized_keys"`
+	UID0          []string    `json:"uid0_accounts"`
+	LoginAccounts []string    `json:"login_accounts"`
+	SudoRules     []string    `json:"sudo_rules"`
+	KeyFiles      []KeyFile   `json:"authorized_keys"`
+	SharedKeys    []SharedKey `json:"keys_in_several_accounts,omitempty"`
+	Preload       []string    `json:"ld_so_preload,omitempty"`
+	UnpackagedPAM []string    `json:"pam_modules_not_from_a_package,omitempty"`
 }
 
 // AccountsAudit reads /etc/passwd, sudoers and authorized_keys.
@@ -354,6 +357,9 @@ func AccountsAudit() Accounts {
 			}
 		}
 	}
+	a.SharedKeys = sharedKeys(a.KeyFiles)
+	a.Preload = preloadEntries("/etc/ld.so.preload")
+	a.UnpackagedPAM = unpackagedPAM()
 	return a
 }
 
