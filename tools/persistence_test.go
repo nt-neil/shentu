@@ -91,3 +91,13 @@ func TestUnpackagedPAM(t *testing.T) {
 		t.Errorf("rpm: got %v", got)
 	}
 }
+
+// On the real root the module paths must still match the package lists exactly.
+func TestUnpackagedPAMRealRoot(t *testing.T) {
+	if _, err := os.Stat("/var/lib/dpkg/info"); err != nil {
+		t.Skip("no dpkg here")
+	}
+	if got := unpackagedPAM(); len(got) > 0 {
+		t.Errorf("stock PAM modules reported as unpackaged: %v", got)
+	}
+}

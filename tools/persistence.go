@@ -119,7 +119,11 @@ func unpackagedPAM() []string {
 	for _, d := range pamDirs {
 		mods, _ := filepath.Glob(filepath.Join(sysRoot, d, "*.so"))
 		for _, m := range mods {
-			rel := "/" + strings.TrimPrefix(m, filepath.Join(sysRoot)+"/")
+			r, err := filepath.Rel(sysRoot, m)
+			if err != nil {
+				continue
+			}
+			rel := "/" + r
 			if real, err := filepath.EvalSymlinks(m); err == nil {
 				if seen[real] {
 					continue
