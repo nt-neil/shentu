@@ -87,9 +87,10 @@ func merge(x, y state) state {
 type val struct{ taint, san bool }
 
 const (
-	noExit   uint8 = iota
-	softExit       // continue, break
-	hardExit       // return, throw, exit, abort()
+	noExit    uint8 = iota
+	breakExit       // break: ends a switch case or a loop
+	softExit        // continue
+	hardExit        // return, throw, exit, abort()
 )
 
 type analysis struct {
@@ -98,6 +99,7 @@ type analysis struct {
 	py     bool
 	js     bool
 	b      *budget
+	kw     map[string]bool // words that are keywords in this language
 	seen   map[int]bool
 	lines  []int
 	guards []map[string]bool // per enclosing loop: keys a rejecting check validated
@@ -183,19 +185,97 @@ func (a *analysis) stmt(s *stmt, st state) (state, uint8) {
 			}
 			return merge(st, t), noExit
 		}
-		t, e := a.block(s.body, st)
-		if s.noexit {
-			e = noExit
-		}
-		return t, e
+		return a.block(s.body, st)
+	case sTry:
+		return a.try(s, st)
+	case sSwitch:
+		return a.switchStmt(s, st)
 	case sFunc:
 		a.function(s.fn, st)
 	}
 	return st, noExit
 }
 
+// try: the body may stop at any statement, so a handler starts from what the
+// state was before or after it; the code after continues from every path that
+// did not exit.
+func (a *analysis) try(s *stmt, st state) (state, uint8) {
+	s1, e1 := a.block(s.body, st.clone())
+	if e1 == noExit && len(s.orelse) > 0 {
+		s1, e1 = a.block(s.orelse, s1)
+	}
+	from := merge(st, s1)
+	var outs []state
+	exit := hardExit
+	if e1 == noExit {
+		outs = append(outs, s1)
+	} else {
+		exit = min(exit, e1)
+	}
+	for _, h := range s.handlers {
+		sh, eh := a.block(h, from.clone())
+		if eh == noExit {
+			outs = append(outs, sh)
+		} else {
+			exit = min(exit, eh)
+		}
+	}
+	out, e := mergeAll(outs), noExit
+	if out == nil {
+		out, e = from, exit
+	}
+	if len(s.els) > 0 {
+		var ef uint8
+		if out, ef = a.block(s.els, out); ef != noExit {
+			return out, ef
+		}
+	}
+	return out, e
+}
+
+// switchStmt: each case is a branch from the state before the switch, falling
+// through into the next case until it breaks.
+func (a *analysis) switchStmt(s *stmt, st state) (state, uint8) {
+	a.sinks(st, s.toks)
+	var outs []state
+	exit := hardExit
+	for i := range s.cases {
+		x, e := st.clone(), noExit
+		for j := i; j < len(s.cases) && j < i+16 && e == noExit; j++ {
+			x, e = a.block(s.cases[j], x)
+		}
+		if e == noExit || e == breakExit {
+			outs = append(outs, x)
+		} else {
+			exit = min(exit, e)
+		}
+	}
+	if !s.hasDefault {
+		outs = append(outs, st)
+	}
+	if out := mergeAll(outs); out != nil {
+		return out, noExit
+	}
+	return st, exit
+}
+
+func mergeAll(ss []state) state {
+	if len(ss) == 0 {
+		return nil
+	}
+	out := ss[0]
+	for _, x := range ss[1:] {
+		out = merge(out, x)
+	}
+	return out
+}
+
 func (a *analysis) function(f *fn, st state) {
-	if f == nil || a.depth > maxNest {
+	if f == nil {
+		return
+	}
+	if a.depth > maxNest {
+		a.b.tooDeep() // too deeply nested to follow
 		return
 	}
 	x := state{}
@@ -298,7 +378,9 @@ func (a *analysis) exitOf(t []Token) uint8 {
 	switch t[0].Text {
 	case "return", "throw", "raise":
 		return hardExit
-	case "continue", "break":
+	case "break":
+		return breakExit
+	case "continue":
 		return softExit
 	case "exit", "die":
 		if a.php {
@@ -432,7 +514,7 @@ func (a *analysis) setTarget(st state, tg []Token, v val, op string, sep bool) {
 // ends with an index, container is the key of what is indexed: writing $a[] = $x
 // taints $a.
 func (a *analysis) pathKey(t []Token) (key, container string, ok bool) {
-	if len(t) == 0 || t[0].Kind != Var && t[0].Kind != Ident || nonValue[t[0].Text] {
+	if len(t) == 0 || t[0].Kind != Var && t[0].Kind != Ident || a.kw[t[0].Text] {
 		return "", "", false
 	}
 	key = t[0].Text
@@ -463,7 +545,7 @@ func idxKey(t []Token) string {
 
 // rootKey is the variable an expression such as zf.namelist() starts from.
 func (a *analysis) rootKey(t []Token) string {
-	if len(t) > 0 && (t[0].Kind == Var || t[0].Kind == Ident) && !nonValue[t[0].Text] {
+	if len(t) > 0 && (t[0].Kind == Var || t[0].Kind == Ident) && !a.kw[t[0].Text] {
 		return t[0].Text
 	}
 	return ""
@@ -482,12 +564,12 @@ func (a *analysis) chainStart(t []Token, end int) int {
 				return 0
 			}
 			q := t[j-1]
-			if !(q.Kind == Ident && !nonValue[q.Text] || q.Kind == Var || isClose(q) || memberOp(a.php, q)) {
+			if !(q.Kind == Ident && !a.kw[q.Text] || q.Kind == Var || isClose(q) || memberOp(a.php, q)) {
 				return j
 			}
 		case memberOp(a.php, p):
 			j--
-		case p.Kind == Ident && !nonValue[p.Text] || p.Kind == Var || p.Kind == Str || p.Kind == Num:
+		case p.Kind == Ident && !a.kw[p.Text] || p.Kind == Var || p.Kind == Str || p.Kind == Num:
 			j--
 			if j == 0 || !memberOp(a.php, t[j-1]) {
 				return j
@@ -528,15 +610,24 @@ func (a *analysis) sepEnd(st state, rhs []Token) bool {
 
 // ---- expressions ----
 
-// nonValue words are keywords and operators spelled as words; they are skipped
-// when reading an expression and never start a path.
-var nonValue = map[string]bool{
-	"return": true, "throw": true, "yield": true, "await": true, "new": true, "delete": true, "void": true,
-	"typeof": true, "echo": true, "print": true, "clone": true, "include": true, "include_once": true,
-	"require": true, "require_once": true, "raise": true, "in": true, "not": true, "and": true, "or": true,
-	"xor": true, "is": true, "lambda": true, "if": true, "else": true, "case": true, "async": true,
-	"function": true, "fn": true, "use": true, "global": true, "const": true, "let": true, "var": true,
-	"instanceof": true, "of": true, "from": true, "as": true, "del": true, "assert": false,
+// keywords are words that are keywords or operators in each language; they are
+// skipped when reading an expression and never start a path. Anything else may be
+// a variable name: fn, use, echo or from are ordinary names in Python and JS.
+var keywords = map[string]map[string]bool{
+	"php": words("return throw yield new clone echo print include include_once require require_once and or xor " +
+		"instanceof function fn use global const case if else elseif as insteadof"),
+	"python": words("return yield await raise in not and or is lambda if else elif del pass global nonlocal " +
+		"from import as async def class with for while try except finally assert"),
+	"js": words("return throw yield await new delete void typeof in instanceof function case const let var " +
+		"if else do while for switch try catch finally class extends"),
+}
+
+func words(list string) map[string]bool {
+	m := map[string]bool{}
+	for _, w := range strings.Fields(list) {
+		m[w] = true
+	}
+	return m
 }
 
 func isWord(w string) func(Token) bool { return func(t Token) bool { return t.word(w) } }
@@ -572,8 +663,17 @@ func stripParens(t []Token) []Token {
 // expr evaluates the taint of an expression. whole asks whether the value itself
 // is user input, not merely an object or array literal holding some.
 func (a *analysis) expr(st state, t []Token, whole bool) val {
-	if len(t) == 0 || !a.b.step() || a.depth > 4*maxNest {
+	if len(t) == 0 {
 		return val{}
+	}
+	// An expression is scanned about eight times over (conditions, operators,
+	// terms), so it is charged that much: a hostile file cannot outrun the clock.
+	if !a.b.charge(8*len(t) + 1) {
+		return val{}
+	}
+	if a.depth > 4*maxNest {
+		a.b.tooDeep() // too deep to read: assume the worst
+		return val{taint: true}
 	}
 	a.depth++
 	defer func() { a.depth-- }()
@@ -627,7 +727,7 @@ func (a *analysis) expr(st state, t []Token, whole bool) val {
 	terms := 0
 	for i := 0; i < len(t); {
 		tk := t[i]
-		if tk.Kind == Op && !isOpen(tk) || tk.Kind == Ident && nonValue[tk.Text] || tk.Kind > Op {
+		if tk.Kind == Op && !isOpen(tk) || tk.Kind == Ident && a.kw[tk.Text] || tk.Kind > Op {
 			if tk.word("typeof") && a.js {
 				_, e := a.term(st, t, i+1, false)
 				i, terms = max(e, i+1), terms+1
@@ -981,7 +1081,9 @@ func (a *analysis) refine(st state, cond []Token, truth bool) (state, []string) 
 			continue
 		}
 		for _, k := range keys {
-			out[k.key] = entry{src: k.src}
+			e := out[k.key]
+			e.taint, e.src = false, e.src || k.src // keep what else is known (a base's separator)
+			out[k.key] = e
 			cleaned = append(cleaned, k.key)
 		}
 	}
@@ -1152,7 +1254,7 @@ func (a *analysis) keysOf(t []Token) []keyRef {
 	var out []keyRef
 	for i := 0; i < len(t); {
 		tk := t[i]
-		if tk.Kind != Var && tk.Kind != Ident || nonValue[tk.Text] || i > 0 && memberOp(a.php, t[i-1]) {
+		if tk.Kind != Var && tk.Kind != Ident || a.kw[tk.Text] || i > 0 && memberOp(a.php, t[i-1]) {
 			i++
 			continue
 		}
@@ -1189,6 +1291,9 @@ func (a *analysis) keysOf(t []Token) []keyRef {
 // ---- sinks ----
 
 func (a *analysis) sinks(st state, t []Token) {
+	if !a.b.charge(len(t) * (len(a.r.sinks) + len(a.r.textSinks))) {
+		return
+	}
 	for i := range t {
 		for _, s := range a.r.sinks {
 			if s.text == nil && s.at(t, i, true) {
@@ -1217,10 +1322,8 @@ func (a *analysis) sink(st state, t []Token, i int, s *pat) {
 	default:
 		region = t[end:]
 	}
-	if cond != nil {
-		if len(cond.when) > 0 && !anyWithin(cond.when, region) || anyWithin(cond.unless, region) {
-			return
-		}
+	if cond != nil && (len(cond.when) > 0 && !a.when(cond.when, region) || a.unless(st, cond.unless, region)) {
+		return
 	}
 	var recv []Token
 	if s.member {
@@ -1256,13 +1359,102 @@ func (a *analysis) sink(st state, t []Token, i int, s *pat) {
 	}
 }
 
-func anyWithin(ps []*pat, t []Token) bool {
+// when reports whether one of the fragments is among a call's arguments. A
+// fragment ending in ":" or "=" names an option (shell:, shell=): it counts with
+// any value except a literal false, 0, null or None.
+func (a *analysis) when(ps []*pat, region []Token) bool {
 	for _, p := range ps {
-		if p.within(t) {
+		for i := range region {
+			if !p.at(region, i, false) {
+				continue
+			}
+			if v := optionValue(p, region, i); v == nil || !falsy(v) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// unless reports whether one of the fragments makes the call safe. An option
+// fragment (root:) counts only when its value is not user input. A fragment that
+// is a single string ("--") ends the options of a command, so it counts only
+// when no user input comes before it in its list.
+func (a *analysis) unless(st state, ps []*pat, region []Token) bool {
+	for _, p := range ps {
+		for i := range region {
+			if !p.at(region, i, false) {
+				continue
+			}
+			if v := optionValue(p, region, i); v != nil {
+				if !a.expr(st, v, false).taint {
+					return true
+				}
+				continue
+			}
+			if len(p.toks) == 1 && p.toks[0].Kind == Str {
+				start := listStart(region, i)
+				if a.argsTaint(st, region[start:i], false) {
+					continue
+				}
+			}
 			return true
 		}
 	}
 	return false
+}
+
+// optionValue returns the value after an option fragment matched at i, or nil
+// when p is not an option fragment.
+func optionValue(p *pat, t []Token, i int) []Token {
+	last := p.toks[len(p.toks)-1]
+	if last.Kind != Op || last.Text != ":" && last.Text != "=" {
+		return nil
+	}
+	start := i + len(p.toks)
+	end := indexTop(t, start, func(x Token) bool { return x.op(",") })
+	for j, depth := start, 0; j < len(t) && (end < 0 || j < end); j++ {
+		if isOpen(t[j]) {
+			depth++
+		} else if isClose(t[j]) {
+			if depth == 0 {
+				end = j
+				break
+			}
+			depth--
+		}
+	}
+	if end < 0 {
+		end = len(t)
+	}
+	return t[start:end]
+}
+
+func falsy(v []Token) bool {
+	if len(v) != 1 {
+		return false
+	}
+	switch strings.ToLower(v[0].Text) {
+	case "false", "0", "null", "none", "undefined":
+		return v[0].Kind != Str
+	}
+	return false
+}
+
+// listStart returns the index after the bracket that encloses position i (or 0).
+func listStart(t []Token, i int) int {
+	depth := 0
+	for j := i - 1; j >= 0; j-- {
+		if isClose(t[j]) {
+			depth++
+		} else if isOpen(t[j]) {
+			if depth == 0 {
+				return j + 1
+			}
+			depth--
+		}
+	}
+	return 0
 }
 
 // textSink handles a sink that is text in a string ("ORDER BY"): what follows the

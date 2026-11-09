@@ -12,6 +12,9 @@ var regexAfter = map[string]bool{
 	"void": true, "throw": true, "case": true, "do": true, "else": true, "yield": true, "await": true,
 }
 
+// ctlWords are the statements whose header in parentheses is followed by a statement.
+var ctlWords = map[string]bool{"if": true, "while": true, "for": true, "with": true}
+
 // LexJS lexes a JavaScript file. Comments are dropped, template literal fields
 // ${...} are lexed as code, regular expression literals become Str tokens with
 // FlagRegex, and each token records whether it starts a line (for statement
@@ -77,6 +80,16 @@ func (s *scanner) js(stop bool) {
 					depth--
 				}
 			}
+			switch o {
+			case "(":
+				n := len(s.toks)
+				s.ctl = append(s.ctl, n > 0 && s.toks[n-1].Kind == Ident && ctlWords[s.toks[n-1].Text])
+			case ")":
+				s.afterCtl = false
+				if n := len(s.ctl); n > 0 {
+					s.afterCtl, s.ctl = s.ctl[n-1], s.ctl[:n-1]
+				}
+			}
 			s.emit(Token{Kind: Op, Text: o, Line: line})
 		}
 	}
@@ -89,7 +102,10 @@ func (s *scanner) regexAllowed() bool {
 	t := s.toks[len(s.toks)-1]
 	switch t.Kind {
 	case Op:
-		return t.Text != ")" && t.Text != "]" && t.Text != "}" && t.Text != "++" && t.Text != "--"
+		if t.Text == ")" {
+			return s.afterCtl // if (x) /re/.test(s): a statement starts after the header
+		}
+		return t.Text != "]" && t.Text != "}" && t.Text != "++" && t.Text != "--"
 	case Ident:
 		return regexAfter[t.Text]
 	}
@@ -152,6 +168,7 @@ func (s *scanner) jsTemplate() {
 		s.pos++
 	} else {
 		t.Flags |= FlagOpen
+		s.b.unterminated()
 	}
 	s.emit(t)
 }

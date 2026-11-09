@@ -120,17 +120,26 @@ it are unchanged: a sink is reported when any argument is tainted.
 | `whole` | the argument must be the input itself (or spread from it), not an object or array literal holding a value from it |
 
 `when` and `unless` entries are code fragments matched anywhere in the call's
-arguments. Examples from the rules:
+arguments, with two refinements:
+
+- a fragment ending in `:` or `=` names an option. In `when`, `shell:` counts with
+  any value except a literal `false`, `0`, `null` or `None` (`shell: '/bin/bash'`,
+  `shell: isUnix`). In `unless`, `root:` counts only when its value is not user
+  input.
+- a fragment that is a single string (`"--"`) ends a command's options. It counts
+  only when no user input comes before it in its list.
+
+Examples from the rules:
 
 ```toml
 # yaml.load is safe with the safe loader, dangerous with Loader, FullLoader or UnsafeLoader
 [[args]]
 sinks = ["yaml.load(", "yaml.load_all("]
-unless = ["Loader=yaml.SafeLoader", "Loader=yaml.CSafeLoader", "Loader=SafeLoader", "Loader=CSafeLoader"]
+unless = ["SafeLoader", "CSafeLoader"]   # Loader=yaml.SafeLoader, or passed positionally
 
-# spawn and execFile take an argument array, unless shell: true joins it into a command line
+# spawn and execFile take an argument array, unless a shell option joins it into a command line
 [[args]]
-when = ["shell: true"]
+when = ["shell:"]
 
 # unserialize cannot create objects with allowed_classes => false
 [[args]]
@@ -200,7 +209,8 @@ rule of its language.
 2. **Statements and scopes.** Statements, `if`/`else`, loops, `try` and function
    bodies (braces in PHP and JavaScript, indentation in Python). Closures and arrow
    functions are scopes of their own that see the variables around them; PHP
-   named functions and methods start empty.
+   named functions and methods start empty. Keywords are per language, so `fn`,
+   `use` or `from` are variable names in JavaScript and Python.
 3. **Taint, in order, inside each function.** Layer A: a sink whose argument
    contains a source that is not wrapped in a sanitizer is reported. Layer B: an
    assignment from a tainted value taints the variable (also `$obj->prop`,
@@ -208,18 +218,23 @@ rule of its language.
    concatenation, interpolation, f-strings, calls, array and member access;
    sanitizer results, literals and comparisons are clean; checks clean the values
    they validate (see above); after an `if`, a value is tainted if it is tainted on
-   any path that goes on.
+   any path that goes on. Each `switch` case is a branch (falling through until
+   `break`); a `try` body may stop at any statement, so its handlers start from
+   the state before or after it.
 
 Findings carry the rule, file, line, severity, title, CWE and fix, never the
 code: application code must not leave the host or reach an AI model. Each file is
-capped in tokens and time (`engine.Limits`); a file over the cap is reported as
-not fully analysed.
+capped in tokens and time (`engine.Limits`); the time counts every token the
+analysis scans. A file over a cap, or nested deeper than the engine reads (where
+an expression too deep to read counts as user input), returns `ErrLimit`; a
+string or comment that runs to the end of the file returns `ErrPartial`. Both
+come with the findings made so far.
 
 What it does not do: follow values across functions or files (input read in a
 controller and used in another class is missed), know framework semantics beyond
-the rules (a lookup in a constant dict is not an allowlist), look at where or what
-an `unless` fragment is (`"--"` after the input, or `root:` set from the request,
-still silences the call), or prove a finding.
+the rules (a lookup in a constant dict is not an allowlist), look into options
+kept in a variable (`const opts = { shell: true }; spawn(cmd, opts)`), or prove a
+finding.
 No finding does not mean no vulnerability.
 
 Secrets never go into samples. If a sample needs something that looks like a key,

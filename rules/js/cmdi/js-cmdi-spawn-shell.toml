@@ -12,7 +12,7 @@ fix = "Drop shell: true and pass the program and each value as separate argument
 refs = ["CVE-2026-119282"]
 
 [[args]]
-when = ["shell: true"]   # an argument array is passed as is; shell: true joins it into a shell command line
+when = ["shell:"]   # an argument array is passed as is; shell: with any value but a literal false joins it into a shell command line
 
 [[samples]]
 kind = "vulnerable"

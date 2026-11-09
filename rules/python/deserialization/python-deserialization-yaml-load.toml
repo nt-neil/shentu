@@ -13,7 +13,7 @@ refs = ["CVE-2017-18342", "CVE-2026-24009"]
 
 [[args]]
 sinks = ["yaml.load(", "yaml.load_all("]
-unless = ["Loader=yaml.SafeLoader", "Loader=yaml.CSafeLoader", "Loader=SafeLoader", "Loader=CSafeLoader"]
+unless = ["SafeLoader", "CSafeLoader"]   # Loader=yaml.SafeLoader, or passed positionally
 
 [[samples]]
 kind = "vulnerable"

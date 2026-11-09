@@ -194,3 +194,62 @@ func TestEngineLimits(t *testing.T) {
 		t.Errorf("time cap: got %v, want ErrLimit", err)
 	}
 }
+
+// TestEngineHostile: inputs built to be slow must stop near the time cap and say
+// so with ErrLimit; deep nesting counts as tainted; a string that swallows the
+// rest of the file is reported as ErrPartial.
+func TestEngineHostile(t *testing.T) {
+	e := engineForTest(t)
+	const limit = 500 * time.Millisecond
+	e.Limits = Limits{MaxTokens: DefaultLimits.MaxTokens * 4, MaxTime: limit}
+	R := strings.Repeat
+	for _, c := range []struct{ name, lang, src string }{
+		{"py [", "python", "x = " + R("[", 290000)},
+		{"js [", "js", "x = " + R("[", 290000)},
+		{"php [", "php", "<?php $x = " + R("[", 290000)},
+		{"php (", "php", "<?php $x = " + R("(", 290000)},
+		{"js {", "js", "x = " + R("{", 290000)},
+		{"js f(", "js", "x = " + R("f(", 145000)},
+		{"php ternary chain", "php", "<?php $x = " + R("$a ? $b : ", 50000) + "1;"},
+		{"py long line", "python", "x = " + R("a + ", 200000) + "1\n"},
+		{"js long call", "js", "exec(" + R("req.query.a,", 100000) + ")"},
+		{"php nested ifs", "php", "<?php " + R("if ($a) { ", 20000) + "system($_GET['x']);" + R("}", 20000)},
+		{"js nested closures", "js", R("function(){", 20000) + "exec(req.query.x)" + R("}", 20000)},
+		{"php if/else in a loop", "php", "<?php function f(){ " + R("if ($c) { $a = $_GET['x']; } else { $a = 1; } ", 10000) + " system($a); }"},
+		{"js loops", "js", "function f(){" + R("for (const a of b) { x = x + req.query.y; } ", 10000) + "exec(x);}"},
+	} {
+		start := time.Now()
+		_, err := e.Scan(c.lang, "x", []byte(c.src))
+		took := time.Since(start)
+		t.Logf("%-22s %v err=%v", c.name, took.Round(time.Millisecond), err)
+		if took > limit+time.Second {
+			t.Errorf("%s: took %v, cap %v", c.name, took, limit)
+		}
+		if took > limit && err != ErrLimit {
+			t.Errorf("%s: over the cap (%v) but err = %v", c.name, took, err)
+		}
+	}
+
+	e.Limits = DefaultLimits
+	nested := "<?php " + R("if ($a) { ", 200) + "system($_GET['x']);" + R("}", 200)
+	if fs, err := e.Scan("php", "nested.php", []byte(nested)); len(fs) == 0 || err != ErrLimit {
+		t.Errorf("deep blocks: findings %v err %v, want a finding and ErrLimit", fs, err)
+	}
+	deep := "<?php\nsystem(" + R("(", 100) + "$_GET['c']" + R(")", 100) + ");\n"
+	if fs, err := e.Scan("php", "deep.php", []byte(deep)); len(fs) == 0 || err != ErrLimit {
+		t.Errorf("deep nesting: findings %v err %v, want a finding and ErrLimit", fs, err)
+	}
+	regex := "app.get('/x', (req, res) => {\n  if (ok) /`/.test(s);\n  exec(req.query.x);\n});\n"
+	if fs, err := e.Scan("js", "re.js", []byte(regex)); len(fs) == 0 || err != nil {
+		t.Errorf("regex after if (...): findings %v err %v", fs, err)
+	}
+	jsx := "const A = () => <p>it`s here</p>;\napp.get('/x', (req, res) => { exec(req.query.x); });\n"
+	if _, err := e.Scan("js", "a.jsx", []byte(jsx)); err != ErrPartial {
+		t.Errorf("backtick in JSX text: err %v, want ErrPartial", err)
+	}
+	for _, src := range []string{"<?php $a = 'open\nsystem($_GET['x']);", "<?php /* open\nsystem($_GET['x']);"} {
+		if _, err := e.Scan("php", "open.php", []byte(src)); err != ErrPartial {
+			t.Errorf("%q: err %v, want ErrPartial", src, err)
+		}
+	}
+}

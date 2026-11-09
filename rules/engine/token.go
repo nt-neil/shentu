@@ -60,8 +60,13 @@ type Limits struct {
 // DefaultLimits suit ordinary application files; the caller also caps file size.
 var DefaultLimits = Limits{MaxTokens: 300_000, MaxTime: 3 * time.Second}
 
-// ErrLimit means a file hit Limits and was only partly analysed.
-var ErrLimit = errors.New("engine: file too large or too slow to analyse")
+// ErrLimit means a file hit Limits (tokens, time or nesting) and was only partly
+// analysed; what was found is still returned.
+var ErrLimit = errors.New("engine: file too large, too slow or too deeply nested to analyse")
+
+// ErrPartial means a string or comment runs to the end of the file without being
+// closed, so the code after its start was read as text and not analysed.
+var ErrPartial = errors.New("engine: unterminated string or comment, rest of the file not analysed")
 
 const maxNest = 24 // interpolation and block nesting; deeper code is read flat or skipped
 
@@ -69,8 +74,11 @@ type budget struct {
 	tokens   int
 	maxTok   int
 	deadline time.Time
-	steps    int
-	hit      bool
+	work     int  // units of work done: tokens scanned by the parser and the analysis
+	next     int  // work at which the clock is read again
+	hit      bool // over tokens or time: stop
+	limited  bool // something was skipped (nesting too deep): keep going, report ErrLimit
+	partial  bool // an unterminated string or comment swallowed the rest of the file
 }
 
 func newBudget(l Limits) *budget {
@@ -97,19 +105,39 @@ func (b *budget) token() bool {
 
 func (b *budget) hitLimit() bool { return b != nil && b.hit }
 
-// step is called in every loop of the parser and analysis; false once time is up.
-func (b *budget) step() bool {
+// charge accounts for n units of work (one per token scanned) and reads the clock
+// every few thousand units; false once time is up.
+func (b *budget) charge(n int) bool {
 	if b == nil {
 		return true
 	}
 	if b.hit {
 		return false
 	}
-	b.steps++
-	if b.steps&1023 == 0 && time.Now().After(b.deadline) {
-		b.hit = true
+	b.work += n
+	if b.work >= b.next {
+		b.next = b.work + 4096
+		if time.Now().After(b.deadline) {
+			b.hit = true
+		}
 	}
 	return !b.hit
+}
+
+// step is one unit of work in a parser or analysis loop.
+func (b *budget) step() bool { return b.charge(1) }
+
+// tooDeep records that nesting was cut short (read flat or skipped).
+func (b *budget) tooDeep() {
+	if b != nil {
+		b.limited = true
+	}
+}
+
+func (b *budget) unterminated() {
+	if b != nil {
+		b.partial = true
+	}
 }
 
 // scanner is the cursor shared by the three lexers.
@@ -121,6 +149,9 @@ type scanner struct {
 	toks  []Token
 	b     *budget
 	depth int // interpolation nesting
+
+	ctl      []bool // JS: for each open "(", whether it starts an if/while/for header
+	afterCtl bool   // JS: the last ")" closed such a header
 }
 
 func (s *scanner) peek(off int) byte {
@@ -173,6 +204,7 @@ func (s *scanner) skipBlockComment() {
 		}
 		s.advance(1)
 	}
+	s.b.unterminated()
 }
 
 func isIdentStart(c byte) bool {

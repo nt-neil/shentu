@@ -143,6 +143,7 @@ func (s *scanner) phpSingle() {
 		s.pos++
 	} else {
 		t.Flags |= FlagOpen
+		s.b.unterminated()
 	}
 	s.emit(t)
 }
@@ -161,6 +162,7 @@ func (s *scanner) phpDouble(q byte) {
 		s.pos++
 	} else {
 		t.Flags |= FlagOpen
+		s.b.unterminated()
 	}
 	s.emit(t)
 }
@@ -224,6 +226,7 @@ func (s *scanner) heredoc() bool {
 	s.advance(after - s.pos)
 	if open {
 		t.Flags |= FlagOpen
+		s.b.unterminated()
 	}
 	s.emit(t)
 	return true

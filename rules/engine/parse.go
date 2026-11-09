@@ -15,18 +15,24 @@ const (
 	sBlock
 	sFunc
 	sWith
+	sTry    // body, then handlers (catch/except) from any point of it, then els (finally)
+	sSwitch // cases, each a branch; falls through until break
 )
 
 type stmt struct {
-	kind   stmtKind
-	toks   []Token // simple: the statement; if/while: condition; loop: header; with: items; block: switch subject
-	funcs  []*fn   // function literals referenced by Func tokens in toks
-	body   []*stmt
-	els    []*stmt
-	loop   string // "for" (init; cond; step), "each" (PHP foreach), "in" (for-in/of, Python for), "while"
-	alt    bool   // block: an except/catch/else path that may not run
-	noexit bool   // block: a try body, whose early exit does not end the code after it
-	fn     *fn
+	kind  stmtKind
+	toks  []Token // simple: the statement; if/while: condition; loop: header; with: items; block: switch subject
+	funcs []*fn   // function literals referenced by Func tokens in toks
+	body  []*stmt
+	els   []*stmt
+	loop  string // "for" (init; cond; step), "each" (PHP foreach), "in" (for-in/of, Python for), "while"
+	alt   bool   // block: an else path (for/while else, match case) that may not run
+	fn    *fn
+
+	handlers   [][]*stmt // try: catch / except bodies
+	orelse     []*stmt   // try: Python else
+	cases      [][]*stmt // switch
+	hasDefault bool      // switch
 }
 
 type fn struct {
@@ -98,6 +104,7 @@ var phpModifiers = map[string]bool{"public": true, "private": true, "protected":
 func (p *braceParser) statement() *stmt {
 	t := p.t[p.i]
 	if p.depth > maxNest {
+		p.b.tooDeep()
 		return p.simple()
 	}
 	switch {
@@ -132,15 +139,18 @@ func (p *braceParser) statement() *stmt {
 		return s
 	case "switch":
 		p.i++
-		s := &stmt{kind: sBlock}
+		s := &stmt{kind: sSwitch}
 		s.toks, s.funcs = p.group()
 		if p.at("{") {
 			p.i++
-			s.body = p.nested(func() []*stmt { return p.block(true) })
+			p.depth++
+			s.cases, s.hasDefault = p.switchBody("}")
+			p.depth--
 		} else if p.php && p.at(":") {
 			p.i++
-			s.body = p.nested(func() []*stmt { return p.block(false, "endswitch") })
-			p.i++
+			p.depth++
+			s.cases, s.hasDefault = p.switchBody("endswitch")
+			p.depth--
 		}
 		return s
 	case "case":
@@ -156,19 +166,19 @@ func (p *braceParser) statement() *stmt {
 		}
 	case "try":
 		p.i++
-		parts := []*stmt{{kind: sBlock, noexit: true, body: p.bodyStmt()}}
-		for p.atWord("catch") || p.atWord("except") {
+		s := &stmt{kind: sTry, body: p.bodyStmt()}
+		for p.atWord("catch") {
 			p.i++
 			if p.at("(") {
 				p.group()
 			}
-			parts = append(parts, &stmt{kind: sBlock, alt: true, body: p.bodyStmt()})
+			s.handlers = append(s.handlers, p.bodyStmt())
 		}
 		if p.atWord("finally") {
 			p.i++
-			parts = append(parts, &stmt{kind: sBlock, body: p.bodyStmt()})
+			s.els = p.bodyStmt()
 		}
-		return &stmt{kind: sBlock, body: parts}
+		return s
 	case "function":
 		if n := next(1); n.Kind == Ident || n.op("&") && next(2).Kind == Ident || n.op("*") {
 			return p.funcDecl()
@@ -226,6 +236,54 @@ func (p *braceParser) nested(f func() []*stmt) []*stmt {
 	p.depth++
 	defer func() { p.depth-- }()
 	return f()
+}
+
+// switchBody parses switch cases up to "}" or the PHP word end (both consumed).
+// Statements before the first label form a case of their own.
+func (p *braceParser) switchBody(end string) (cases [][]*stmt, hasDefault bool) {
+	for p.i < len(p.t) && p.b.step() {
+		if end == "}" && p.at("}") || end != "}" && p.atWord(end) {
+			p.i++
+			p.skip(";")
+			return
+		}
+		next := Token{}
+		if p.i+1 < len(p.t) {
+			next = p.t[p.i+1]
+		}
+		if p.atWord("case") || p.atWord("default") && (next.op(":") || next.op(";")) {
+			hasDefault = hasDefault || p.atWord("default")
+			depth := 0
+			for p.i < len(p.t) {
+				t := p.t[p.i]
+				if depth == 0 && (t.op(":") || t.op(";")) || depth == 0 && t.op("}") {
+					break
+				}
+				if isOpen(t) {
+					depth++
+				} else if isClose(t) {
+					depth--
+				}
+				p.i++
+			}
+			p.skip(":")
+			p.skip(";")
+			cases = append(cases, nil)
+			continue
+		}
+		start := p.i
+		s := p.statement()
+		if len(cases) == 0 {
+			cases = append(cases, nil)
+		}
+		if s != nil {
+			cases[len(cases)-1] = append(cases[len(cases)-1], s)
+		}
+		if p.i == start {
+			p.i++
+		}
+	}
+	return
 }
 
 // bodyStmt parses the body of if/for/while: a braced block or one statement.
@@ -648,6 +706,7 @@ func (p *pyParser) block() []*stmt {
 
 func (p *pyParser) nested() []*stmt {
 	if p.depth > maxNest {
+		p.b.tooDeep()
 		// Too deep: read the rest of this block flat.
 		var out []*stmt
 		for p.i < len(p.t) && p.t[p.i].Kind != Dedent && p.b.step() {
@@ -771,7 +830,33 @@ func (p *pyParser) statement() []*stmt {
 	case "except", "else", "case":
 		return []*stmt{{kind: sBlock, alt: true, body: body}}
 	case "try":
-		return []*stmt{{kind: sBlock, noexit: true, body: body}}
+		s := &stmt{kind: sTry, body: body}
+		for {
+			for p.i < len(p.t) && p.t[p.i].Kind == Newline {
+				p.i++
+			}
+			if p.i >= len(p.t) {
+				break
+			}
+			w := p.t[p.i]
+			if !w.word("except") && !w.word("else") && !w.word("finally") {
+				break
+			}
+			part := p.statement()
+			var b []*stmt
+			if len(part) == 1 {
+				b = part[0].body
+			}
+			switch w.Text {
+			case "except":
+				s.handlers = append(s.handlers, b)
+			case "else":
+				s.orelse = b
+			case "finally":
+				s.els = b
+			}
+		}
+		return []*stmt{s}
 	}
 	return []*stmt{{kind: sBlock, toks: header, body: body}}
 }

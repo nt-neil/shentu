@@ -160,6 +160,9 @@ func (s *scanner) pyString(prefix string) {
 		s.pos += len(quote)
 	} else {
 		t.Flags |= FlagOpen
+		if len(quote) == 3 {
+			s.b.unterminated()
+		}
 	}
 	s.emit(t)
 }

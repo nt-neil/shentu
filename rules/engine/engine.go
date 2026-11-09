@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/nt-neil/shentu/rules"
 )
@@ -151,7 +152,7 @@ func (e *Engine) Scan(lang, path string, src []byte) ([]Finding, error) {
 	tree := parse(lang, toks, b)
 	var out []Finding
 	for _, r := range rs {
-		a := &analysis{r: r, php: lang == "php", py: lang == "python", js: lang == "js", b: b, seen: map[int]bool{}}
+		a := &analysis{r: r, php: lang == "php", py: lang == "python", js: lang == "js", b: b, kw: keywords[lang], seen: map[int]bool{}}
 		a.block(tree, state{})
 		for _, line := range a.lines {
 			out = append(out, Finding{RuleID: r.rule.ID, Path: path, Line: line, Severity: r.rule.Severity,
@@ -167,8 +168,11 @@ func (e *Engine) Scan(lang, path string, src []byte) ([]Finding, error) {
 		}
 		return out[i].RuleID < out[j].RuleID
 	})
-	if b.hit {
+	switch {
+	case b.hit || b.limited || time.Now().After(b.deadline):
 		return out, ErrLimit
+	case b.partial:
+		return out, ErrPartial
 	}
 	return out, nil
 }
