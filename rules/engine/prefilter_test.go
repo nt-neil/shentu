@@ -49,7 +49,7 @@ func TestPrefilterSound(t *testing.T) {
 				continue
 			}
 			skipped++
-			a := &analysis{r: r, php: c.lang == "php", py: c.lang == "python", js: c.lang == "js", b: b, kw: keywords[c.lang], seen: map[int]bool{}, sc: newSummaries(funcs)}
+			a := &analysis{r: r, php: c.lang == "php", py: c.lang == "python", js: c.lang == "js", b: b, kw: keywords[c.lang], seen: map[int]bool{}, sc: newSummaries(newFileFuncs(funcs, c.lang))}
 			a.block(tree, state{})
 			if len(a.lines) > 0 {
 				t.Errorf("prefilter skipped %s but analysis reports %v on:\n%s", r.rule.ID, a.lines, c.code)

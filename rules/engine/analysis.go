@@ -1144,7 +1144,7 @@ func (a *analysis) postfix(st state, t []Token, start, baseEnd int, v val, whole
 				v = val{taint: true, emb: t[start].Kind == Str || formatFuncs[name] || a.lib && a.argsEmb(st, inside(t, j, c)),
 					// A function of this file left without a summary holds no sanitizer: what goes
 					// through it is the input, not a guess.
-					weak: !(t[start].Kind == Str || formatFuncs[name] || passFuncs[a.lang()][name] || key != "")}
+					weak: !(t[start].Kind == Str || formatFuncs[name] || a.passes(t, start, j-1) || key != "" && !a.returnsUnknown(key))}
 			}
 			if key != "" {
 				key += sepCh + "()"
@@ -1194,6 +1194,18 @@ var passFuncs = map[string]map[string]bool{
 	"python": words("unquote unquote_plus b64decode urlsafe_b64decode decode str bytes"),
 	"js":     words("decodeURIComponent decodeURI unescape atob String trim from"),
 }
+
+// passes reports whether the call named at t[n] (the chain starts at start) is
+// one of passFuncs: a bare call, or one on a module known to hold them
+// (base64.b64decode, urllib.parse.unquote, Buffer.from), not validator.trim().
+func (a *analysis) passes(t []Token, start, n int) bool {
+	if !passFuncs[a.lang()][t[n].Text] {
+		return false
+	}
+	return n == start || n >= start+2 && memberOp(a.php, t[n-1]) && passModules[t[n-2].Text]
+}
+
+var passModules = words("base64 parse binascii codecs html Buffer")
 
 // formatFuncs build a string from their arguments.
 var formatFuncs = words("sprintf vsprintf implode join str_replace strtr format")

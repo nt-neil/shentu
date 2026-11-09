@@ -162,26 +162,66 @@ func (e *Engine) Scan(lang, path string, src []byte) ([]Finding, error) {
 		return nil, ErrLimit
 	}
 	tree := parse(lang, toks, b)
-	funcs := collectFuncs(tree, lang)
+	ff := newFileFuncs(collectFuncs(tree, lang), lang)
 	var out []Finding
+	add := func(r *crule, lines ...[]int) {
+		seen := map[int]bool{}
+		for _, ls := range lines {
+			for _, line := range ls {
+				if seen[line] {
+					continue
+				}
+				seen[line] = true
+				out = append(out, Finding{RuleID: r.rule.ID, Path: path, Line: line, Severity: r.rule.Severity,
+					Title: r.rule.Title, CWE: r.rule.CWE, Fix: r.rule.Fix, Tier: r.rule.Tier})
+			}
+		}
+	}
+	// First every rule inside each function, as without summaries: what is
+	// written out in the file is reported whatever the calls cost.
+	var ruleList []*crule
+	direct := map[*crule][]int{}
 	for _, r := range rs {
 		if !hasSink(r, toks) {
 			continue // nothing in the file can be this rule's sink
 		}
-		sc := newSummaries(funcs)
-		a := &analysis{r: r, php: lang == "php", py: lang == "python", js: lang == "js", b: b, kw: keywords[lang], seen: map[int]bool{}, sc: sc}
+		ruleList = append(ruleList, r)
+		a := &analysis{r: r, php: lang == "php", py: lang == "python", js: lang == "js", b: b, kw: keywords[lang], seen: map[int]bool{}}
 		a.block(tree, state{})
-		if e.Library && libClasses[r.rule.Class] && !testPath(path) && !b.hit {
-			l := &analysis{r: r, php: a.php, py: a.py, js: a.js, b: b, kw: a.kw, seen: a.seen, sc: sc, lib: true}
-			l.block(tree, state{})
-			a.lines = append(a.lines, l.lines...)
-		}
-		for _, line := range a.lines {
-			out = append(out, Finding{RuleID: r.rule.ID, Path: path, Line: line, Severity: r.rule.Severity,
-				Title: r.rule.Title, CWE: r.rule.CWE, Fix: r.rule.Fix, Tier: r.rule.Tier})
-		}
+		direct[r] = a.lines
 		if b.hit {
 			break
+		}
+	}
+	// Then again with calls followed, on a budget of its own. A rule that
+	// finishes takes this result (summaries also clear what a sanitizing helper
+	// returns); one cut short keeps its first result too.
+	limited := b.hit || b.limited
+	finished := map[*crule]bool{}
+	if !b.hit && len(ff.byKey) > 0 {
+		b2 := newBudget(e.Limits)
+		for _, r := range ruleList {
+			sc := newSummaries(ff)
+			a := &analysis{r: r, php: lang == "php", py: lang == "python", js: lang == "js", b: b2, kw: keywords[lang], seen: map[int]bool{}, sc: sc}
+			a.block(tree, state{})
+			if e.Library && libClasses[r.rule.Class] && !testPath(path) && !b2.hit {
+				l := &analysis{r: r, php: a.php, py: a.py, js: a.js, b: b2, kw: a.kw, seen: a.seen, sc: sc, lib: true}
+				l.block(tree, state{})
+				a.lines = append(a.lines, l.lines...)
+			}
+			if b2.hit {
+				add(r, direct[r], a.lines) // flows found before the budget ran out are real
+				delete(direct, r)
+				break
+			}
+			add(r, a.lines)
+			finished[r] = true
+		}
+		limited = limited || b2.hit || b2.limited || time.Now().After(b2.deadline)
+	}
+	for _, r := range ruleList {
+		if lines, ok := direct[r]; ok && !finished[r] {
+			add(r, lines)
 		}
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -191,7 +231,7 @@ func (e *Engine) Scan(lang, path string, src []byte) ([]Finding, error) {
 		return out[i].RuleID < out[j].RuleID
 	})
 	switch {
-	case b.hit || b.limited || time.Now().After(b.deadline):
+	case limited || time.Now().After(b.deadline):
 		return out, ErrLimit
 	case b.partial:
 		return out, ErrPartial

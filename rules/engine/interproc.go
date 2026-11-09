@@ -79,32 +79,65 @@ func (s *summary) reachesSink() bool {
 
 // summaries holds one rule's summaries for one file.
 type summaries struct {
-	funcs   map[string][]*fnInfo // by name for functions, by "Class::name" for methods
-	parents map[string]string    // class → parent, for classes of the file
-	done    map[string]*summary
-	busy    map[string]bool
-	again   map[string]bool  // a call reached the name while its summary was being computed
-	rel     map[string]uint8 // relevance to the rule: 0 not known yet, 1 yes, 2 no, 3 being worked out
-	relPart bool             // a relevance check met one still being worked out
-	order   []string         // summaries in the order they were finished
-	runs    int
-	depth   int
+	ff     *fileFuncs
+	funcs  map[string][]*fnInfo // ff.byKey
+	done   map[string]*summary
+	busy   map[string]bool
+	rel    map[string]uint8 // relevance to the rule: 0 not known yet, 1 yes, 2 no, 3 being worked out
+	retUnk map[string]uint8 // 1: the function returns the result of a call the analysis does not know; 2: it does not
+	runs   int
+	depth  int
 }
 
-func newSummaries(funcs map[string][]*fnInfo) *summaries {
-	if len(funcs) == 0 {
+func newSummaries(ff *fileFuncs) *summaries {
+	if ff == nil || len(ff.byKey) == 0 {
 		return nil
 	}
-	sc := &summaries{funcs: funcs, parents: map[string]string{}, done: map[string]*summary{}, busy: map[string]bool{},
-		again: map[string]bool{}, rel: map[string]uint8{}}
+	return &summaries{ff: ff, funcs: ff.byKey, done: map[string]*summary{}, busy: map[string]bool{},
+		rel: map[string]uint8{}, retUnk: map[string]uint8{}}
+}
+
+// fileFuncs are the named functions of a file and how they call one another,
+// shared by every rule's summaries.
+type fileFuncs struct {
+	php     bool
+	byKey   map[string][]*fnInfo // by name for functions, by "Class::name" for methods (PHP: lower case)
+	parents map[string]string    // class → parent
+	traits  map[string][]string  // class → PHP traits it uses
+	comp    map[string]int       // key → its strongly connected component of the call graph
+	comps   [][]string
+	edges   map[string][]string // key → the keys it calls
+	callers map[string][]string // key → the keys that call it
+	unions  map[string][]string // a $this union key → the keys it merges
+}
+
+func newFileFuncs(funcs map[string][]*fnInfo, lang string) *fileFuncs {
+	ff := &fileFuncs{php: lang == "php", byKey: funcs, parents: map[string]string{}, traits: map[string][]string{}}
 	for _, infos := range funcs {
 		for _, fi := range infos {
-			if fi.f.class != "" && fi.f.parent != "" {
-				sc.parents[fi.f.class] = fi.f.parent
+			if c := fi.f.class; c != "" {
+				c = ff.norm(c)
+				if fi.f.parent != "" {
+					ff.parents[c] = ff.norm(fi.f.parent)
+				}
+				for _, t := range fi.f.traits {
+					if t = ff.norm(t); !slices.Contains(ff.traits[c], t) {
+						ff.traits[c] = append(ff.traits[c], t)
+					}
+				}
 			}
 		}
 	}
-	return sc
+	return ff
+}
+
+// norm is a class name as keys use it: without namespace, PHP in lower case.
+func (ff *fileFuncs) norm(c string) string {
+	c = c[strings.LastIndexAny(c, `\.`)+1:]
+	if ff.php {
+		c = strings.ToLower(c)
+	}
+	return c
 }
 
 // summRun collects what one analysis of a function body found.
@@ -114,12 +147,20 @@ type summRun struct {
 	ret   val
 }
 
-// funcKey is the key of a function in summaries.funcs.
-func funcKey(f *fn, name string) string {
-	if f.method && f.class != "" {
-		return f.class + "::" + name
+// funcKey is the key of a function in fileFuncs.byKey. PHP function, method
+// and class names do not depend on case; a closure's $variable does.
+func funcKey(f *fn, name, lang string) string {
+	low := func(x string) string {
+		if lang == "php" && !strings.HasPrefix(x, "$") {
+			return strings.ToLower(x)
+		}
+		return x
 	}
-	return name
+	if f.method && f.class != "" {
+		c := f.class[strings.LastIndexAny(f.class, `\.`)+1:]
+		return low(c) + "::" + low(name)
+	}
+	return low(name)
 }
 
 // collectFuncs finds the named functions of a file, and closures assigned to a
@@ -129,7 +170,7 @@ func collectFuncs(ss []*stmt, lang string) map[string][]*fnInfo {
 	var walk func(ss []*stmt, depth int)
 	add := func(name string, f *fn) {
 		if name != "" && f != nil {
-			k := funcKey(f, name)
+			k := funcKey(f, name, lang)
 			out[k] = append(out[k], paramInfo(f, lang))
 		}
 	}
@@ -216,64 +257,238 @@ func paramInfo(f *fn, lang string) *fnInfo {
 	return fi
 }
 
-// receivers are the objects through which a call reaches a method of the same class.
-var receivers = map[string]bool{"$this": true, "self": true, "static": true, "this": true, "cls": true}
-
 // calleeKey returns the summaries key a call reaches, when t[i] is the name of
 // a call (t[i+1] is "(") to a function or method of this file, else "".
 func (a *analysis) calleeKey(t []Token, i int) string {
-	if a.sc == nil || i+1 >= len(t) || !t[i+1].op("(") || t[i].Kind != Ident && !(a.php && t[i].Kind == Var) {
+	if a.sc == nil {
+		return ""
+	}
+	return a.sc.ff.key(t, i, a.cls, a.parent)
+}
+
+// key resolves the call named at t[i] from a method of class cls (with parent).
+func (ff *fileFuncs) key(t []Token, i int, cls, parent string) string {
+	if i+1 >= len(t) || !t[i+1].op("(") || t[i].Kind != Ident && !(ff.php && t[i].Kind == Var) {
 		return ""
 	}
 	name := t[i].Text
-	if i > 0 && memberOp(a.php, t[i-1]) {
-		if t[i].Kind != Ident || i < 2 || i > 2 && (memberOp(a.php, t[i-3]) || t[i-3].op("\\")) {
+	if ff.php && t[i].Kind == Ident {
+		name = strings.ToLower(name)
+	}
+	if i > 0 && memberOp(ff.php, t[i-1]) {
+		if t[i].Kind != Ident || i < 2 {
+			return ""
+		}
+		// super().q(), Python; super.q(), JavaScript.
+		if i >= 4 && t[i-2].op(")") && t[i-3].op("(") && t[i-4].word("super") || t[i-2].word("super") {
+			return ff.method(ff.norm(parent), name, 0)
+		}
+		if i > 2 && (memberOp(ff.php, t[i-3]) || t[i-3].op(`\`)) {
 			return ""
 		}
 		switch r := t[i-2].Text; {
-		case receivers[r]:
-			return a.methodKey(a.cls, name)
-		case r == "parent":
-			return a.methodKey(a.parent, name)
-		case t[i-2].Kind == Ident && a.sc.hasClass(r):
-			return a.methodKey(r, name) // ClassName::m() of a class of this file
+		case ff.php && strings.EqualFold(r, "self"):
+			return ff.method(ff.norm(cls), name, 0) // self:: is the class the code is in
+		case receivers[r] || ff.php && strings.EqualFold(r, "static"):
+			return ff.this(ff.norm(cls), name) // $this, static::, this, self, cls: the object's class may be a subclass
+		case ff.php && strings.EqualFold(r, "parent"):
+			return ff.method(ff.norm(parent), name, 0)
+		case t[i-2].Kind == Ident && ff.hasClass(ff.norm(r)):
+			return ff.method(ff.norm(r), name, 0) // ClassName::m() of a class of this file
 		}
 		return ""
 	}
-	if i > 0 && (t[i-1].word("function") || t[i-1].word("def") || t[i-1].word("new") || t[i-1].word("fn") || a.php && t[i-1].op("\\")) {
+	if i > 0 && (t[i-1].word("function") || t[i-1].word("def") || t[i-1].word("new") || t[i-1].word("fn") || ff.php && t[i-1].op(`\`)) {
 		return ""
 	}
-	if len(a.sc.funcs[name]) == 0 {
+	if len(ff.byKey[name]) == 0 {
 		return ""
 	}
 	return name
 }
 
-// methodKey finds method name in class or, going up, in its parents in this file.
-func (a *analysis) methodKey(class, name string) string {
-	for depth := 0; class != "" && depth < 8; depth++ {
-		if k := class + "::" + name; len(a.sc.funcs[k]) > 0 {
+// receivers are the objects through which a call reaches a method of the
+// object's own class (PHP's static:: and self:: are handled apart).
+var receivers = map[string]bool{"$this": true, "this": true, "self": true, "cls": true}
+
+// method finds method name in class, its traits, or, going up, its parents.
+func (ff *fileFuncs) method(class, name string, depth int) string {
+	if class == "" || depth > 8 {
+		return ""
+	}
+	if k := class + "::" + name; len(ff.byKey[k]) > 0 {
+		return k
+	}
+	for _, tr := range ff.traits[class] {
+		if k := ff.method(tr, name, depth+1); k != "" {
 			return k
 		}
-		class = a.sc.parents[class]
 	}
-	return ""
+	return ff.method(ff.parents[class], name, depth+1)
 }
 
-func (sc *summaries) hasClass(c string) bool {
-	if _, ok := sc.parents[c]; ok {
-		return true
+// this resolves $this->name() in class: the method the class has, merged with
+// the overrides of its subclasses in the file, since $this may be one of them.
+func (ff *fileFuncs) this(class, name string) string {
+	base := ff.method(class, name, 0)
+	var subs []string
+	for c := range ff.classes() {
+		if c != class && ff.inherits(c, class) {
+			if k := c + "::" + name; len(ff.byKey[k]) > 0 && k != base {
+				subs = append(subs, k)
+			}
+		}
 	}
-	for k := range sc.funcs {
-		if strings.HasPrefix(k, c+"::") {
+	if len(subs) == 0 {
+		return base
+	}
+	slices.Sort(subs)
+	vk := "$this " + class + "::" + name // a key of its own for the union
+	if _, ok := ff.byKey[vk]; !ok {
+		var infos []*fnInfo
+		if base != "" {
+			infos = append(infos, ff.byKey[base]...)
+		}
+		for _, k := range subs {
+			infos = append(infos, ff.byKey[k]...)
+		}
+		ff.byKey[vk] = infos
+		if ff.unions == nil {
+			ff.unions = map[string][]string{}
+		}
+		if base != "" {
+			ff.unions[vk] = append(ff.unions[vk], base)
+		}
+		ff.unions[vk] = append(ff.unions[vk], subs...)
+	}
+	return vk
+}
+
+func (ff *fileFuncs) classes() map[string]bool {
+	out := map[string]bool{}
+	for k := range ff.byKey {
+		if i := strings.Index(k, "::"); i > 0 && !strings.HasPrefix(k, "$this ") {
+			out[k[:i]] = true
+		}
+	}
+	for c := range ff.parents {
+		out[c] = true
+	}
+	return out
+}
+
+func (ff *fileFuncs) inherits(c, ancestor string) bool {
+	for depth := 0; c != "" && depth < 8; depth++ {
+		if c = ff.parents[c]; c == ancestor {
 			return true
 		}
 	}
 	return false
 }
 
+func (ff *fileFuncs) hasClass(c string) bool { return ff.classes()[c] }
+
+// components computes the strongly connected components of the call graph
+// (Tarjan), so that mutually recursive functions are summarised together.
+func (ff *fileFuncs) components() {
+	if ff.comp != nil {
+		return
+	}
+	ff.comp = map[string]int{}
+	edges := map[string][]string{}
+	ff.edges, ff.callers = edges, map[string][]string{}
+	keys := make([]string, 0, len(ff.byKey))
+	for k := range ff.byKey {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	for _, k := range keys {
+		seen := map[string]bool{}
+		for _, fi := range ff.byKey[k] {
+			walkToks(fi.f.body, 0, func(t []Token) {
+				for i := range t {
+					if c := ff.key(t, i, fi.f.class, fi.f.parent); c != "" && !seen[c] {
+						seen[c] = true
+						edges[k] = append(edges[k], c)
+						ff.callers[c] = append(ff.callers[c], k)
+					}
+				}
+			})
+		}
+	}
+	index, low, onStack := map[string]int{}, map[string]int{}, map[string]bool{}
+	var stack []string
+	n := 0
+	var strong func(v string)
+	strong = func(v string) {
+		index[v], low[v] = n, n
+		n++
+		stack = append(stack, v)
+		onStack[v] = true
+		for _, w := range edges[v] {
+			if _, ok := index[w]; !ok {
+				strong(w)
+				low[v] = min(low[v], low[w])
+			} else if onStack[w] {
+				low[v] = min(low[v], index[w])
+			}
+		}
+		if low[v] == index[v] {
+			var c []string
+			for {
+				w := stack[len(stack)-1]
+				stack = stack[:len(stack)-1]
+				onStack[w] = false
+				ff.comp[w] = len(ff.comps)
+				c = append(c, w)
+				if w == v {
+					break
+				}
+			}
+			if len(c) == 1 && !slices.Contains(edges[v], v) {
+				ff.comp[v] = -1 // not recursive
+			} else {
+				ff.comps = append(ff.comps, c)
+			}
+		}
+	}
+	for _, k := range keys {
+		if _, ok := index[k]; !ok {
+			strong(k)
+		}
+	}
+}
+
+// walkToks calls f with the tokens of every statement under ss.
+func walkToks(ss []*stmt, depth int, f func([]Token)) {
+	if depth > maxNest {
+		return
+	}
+	for _, s := range ss {
+		f(s.toks)
+		for _, fn := range s.funcs {
+			walkToks(fn.body, depth+1, f)
+		}
+		if s.fn != nil && s.fn.name == "" {
+			walkToks(s.fn.body, depth+1, f)
+		}
+		walkToks(s.body, depth+1, f)
+		walkToks(s.els, depth+1, f)
+		walkToks(s.orelse, depth+1, f)
+		for _, h := range s.handlers {
+			walkToks(h, depth+1, f)
+		}
+		for _, c := range s.cases {
+			walkToks(c, depth+1, f)
+		}
+	}
+}
+
 // summaryOf returns the summary of a function of this file, computing it first
-// if needed; nil when the key names none, or while it is being computed.
+// if needed; nil when the key names none or the function does not matter to the
+// rule. A recursive function is summarised with the rest of its strongly
+// connected component: all start from an empty summary and are recomputed in
+// turn until none changes (a worklist fixpoint, at most maxSumRounds rounds).
 func (a *analysis) summaryOf(key string) *summary {
 	sc := a.sc
 	if sc == nil || key == "" {
@@ -282,121 +497,136 @@ func (a *analysis) summaryOf(key string) *summary {
 	if s, ok := sc.done[key]; ok {
 		return s
 	}
-	infos := sc.funcs[key]
-	if len(infos) == 0 || !a.relevant(key) {
-		return nil
-	}
-	if sc.busy[key] {
-		sc.again[key] = true
+	if len(sc.funcs[key]) == 0 || !a.relevant(key) || sc.busy[key] {
 		return nil
 	}
 	if sc.depth >= maxSumDepth || sc.runs >= maxSumRuns || a.b.hit {
 		a.b.tooDeep()
 		return nil
 	}
-	sc.busy[key] = true
-	sc.depth++
-	start := len(sc.order)
-	forget := func() { // summaries finished during this computation may have used a stale one of key
-		for _, k := range sc.order[start:] {
-			delete(sc.done, k)
-		}
-		sc.order = sc.order[:start]
+	sc.ff.components()
+	c, ok := sc.ff.comp[key]
+	if !ok || c < 0 {
+		sc.busy[key] = true
+		sc.depth++
+		s := a.summarizeKey(key)
+		sc.done[key] = s
+		delete(sc.busy, key)
+		sc.depth--
+		return s
 	}
-	var s *summary
-	for round := 0; ; round++ {
-		delete(sc.again, key)
-		n := &summary{}
-		for _, fi := range infos {
-			a.summarize(fi, n)
+	var members []string
+	for _, m := range sc.ff.comps[c] {
+		if _, ok := sc.done[m]; !ok && a.relevant(m) {
+			members = append(members, m)
+			sc.done[m] = &summary{} // the fixpoint starts from "does nothing"
 		}
-		stable := s != nil && n.equal(s)
-		s = n
-		if stable || !sc.again[key] {
+	}
+	sc.depth++
+	for round := 0; ; round++ {
+		changed := false
+		for _, m := range members {
+			if n := a.summarizeKey(m); !n.equal(sc.done[m]) {
+				sc.done[m], changed = n, true
+			}
+		}
+		if !changed || a.b.hit {
 			break
 		}
 		if round+1 >= maxSumRounds {
 			a.b.tooDeep() // a recursive cycle that does not settle
-			forget()
 			break
 		}
-		forget()
-		sc.done[key] = s // the next round sees this one
 	}
-	sc.done[key] = s
-	sc.order = append(sc.order, key)
-	delete(sc.busy, key)
 	sc.depth--
+	return sc.done[key]
+}
+
+func (a *analysis) summarizeKey(key string) *summary {
+	s := &summary{}
+	for _, fi := range a.sc.funcs[key] {
+		a.summarize(fi, s)
+	}
 	return s
 }
 
-// relevant reports whether a function can matter to the rule: its body holds
-// one of the rule's sources, sinks or sanitizers (or a number conversion), or
-// calls a function of the file that does. The others keep the default (the
-// result carries any argument's input), which spares analysing every function
-// of a large file for every rule. A function found irrelevant only because a
-// callee was still being worked out is checked again later.
-func (a *analysis) relevant(key string) bool {
+// returnsUnknown reports whether a function returns the result of a call the
+// analysis does not know (return get_post($id)): input it passes through that
+// call is a guess, as with the call written out.
+func (a *analysis) returnsUnknown(key string) bool {
 	sc := a.sc
-	switch sc.rel[key] {
+	switch sc.retUnk[key] {
 	case 1:
 		return true
 	case 2:
 		return false
-	case 3:
-		sc.relPart = true
-		return false
 	}
-	sc.rel[key] = 3
-	outer := sc.relPart
-	sc.relPart = false
-	ok := false
+	sc.retUnk[key] = 2
 	for _, fi := range sc.funcs[key] {
-		if a.bodyRelevant(fi.f.body, 0) {
-			ok = true
-			break
-		}
+		walkToks(fi.f.body, 0, func(t []Token) {
+			if len(t) == 0 || !t[0].word("return") {
+				return
+			}
+			for i := 1; i+1 < len(t); i++ {
+				if t[i].Kind != Ident || !t[i+1].op("(") {
+					continue
+				}
+				n := t[i].Text
+				if formatFuncs[n] || passFuncs[a.lang()][n] || numericFuncs[a.lang()][n] || sc.ff.key(t, i, fi.f.class, fi.f.parent) != "" {
+					continue
+				}
+				if _, _, _, ok := a.sanitizerAt(state{}, t, i); ok {
+					continue
+				}
+				sc.retUnk[key] = 1
+			}
+		})
 	}
-	switch {
-	case ok:
-		sc.rel[key] = 1
-	case sc.relPart:
-		sc.rel[key] = 0
-	default:
-		sc.rel[key] = 2
-	}
-	sc.relPart = outer || !ok && sc.relPart
-	return ok
+	return sc.retUnk[key] == 1
 }
 
-func (a *analysis) bodyRelevant(ss []*stmt, depth int) bool {
-	if depth > maxNest {
-		return true
+// relevant reports whether a function can matter to the rule: its body holds
+// one of the rule's sources, sinks or sanitizers (or a number conversion), or
+// it calls, directly or not, a function of the file that does. The others keep
+// the default (the result carries any argument's input), which spares
+// analysing every function of a large file for every rule. It is worked out for
+// all functions at once: each body is read once, and relevance goes back along
+// the call graph to the callers.
+func (a *analysis) relevant(key string) bool {
+	sc := a.sc
+	if sc.rel == nil || len(sc.rel) == 0 {
+		sc.rel = map[string]uint8{}
+		sc.ff.components()
+		var work []string
+		for k, infos := range sc.funcs {
+			sc.rel[k] = 2
+			for _, fi := range infos {
+				direct := false
+				walkToks(fi.f.body, 0, func(t []Token) { direct = direct || a.toksRelevant(t) })
+				if direct {
+					sc.rel[k] = 1
+					work = append(work, k)
+					break
+				}
+			}
+		}
+		for len(work) > 0 {
+			k := work[len(work)-1]
+			work = work[:len(work)-1]
+			for _, c := range sc.ff.callers[k] {
+				if sc.rel[c] != 1 {
+					sc.rel[c] = 1
+					work = append(work, c)
+				}
+			}
+		}
 	}
-	for _, s := range ss {
-		if a.toksRelevant(s.toks) {
+	if r, ok := sc.rel[key]; ok {
+		return r == 1
+	}
+	for _, m := range sc.ff.unions[key] { // a $this union made after the graph: its members decide
+		if sc.rel[m] == 1 {
 			return true
-		}
-		for _, f := range s.funcs {
-			if a.bodyRelevant(f.body, depth+1) {
-				return true
-			}
-		}
-		if s.fn != nil && s.fn.name == "" && a.bodyRelevant(s.fn.body, depth+1) {
-			return true
-		}
-		if a.bodyRelevant(s.body, depth+1) || a.bodyRelevant(s.els, depth+1) || a.bodyRelevant(s.orelse, depth+1) {
-			return true
-		}
-		for _, h := range s.handlers {
-			if a.bodyRelevant(h, depth+1) {
-				return true
-			}
-		}
-		for _, c := range s.cases {
-			if a.bodyRelevant(c, depth+1) {
-				return true
-			}
 		}
 	}
 	return false
@@ -426,9 +656,6 @@ func (a *analysis) toksRelevant(t []Token) bool {
 					}
 				}
 			}
-		}
-		if k := a.calleeKey(t, i); k != "" && a.relevant(k) {
-			return true
 		}
 	}
 	return false
@@ -506,16 +733,21 @@ func callArgs(t []Token, open int) [][]Token {
 }
 
 // argIndex maps a call's arguments to the callee's parameters: by position, or
-// by name for PHP named (q: $x) and Python keyword (q=x) arguments. -1 means
-// the argument reaches no known parameter (a spread, a name the callee does not
-// declare, a position past the cap).
+// by name for PHP named (q: $x) and Python keyword (q=x) arguments. anyParam
+// marks an argument that may land in any parameter (a spread, *args, and every
+// argument after one); noParam one that reaches none (a name the callee does
+// not declare, a position past its parameters).
 func (a *analysis) argIndex(s *summary, args [][]Token) []int {
 	out := make([]int, len(args))
-	pos := 0
+	pos, spread := 0, false
 	for k, arg := range args {
-		out[k] = -1
+		out[k] = noParam
 		switch {
-		case len(arg) > 0 && (arg[0].op("...") || arg[0].op("*") || arg[0].op("**")):
+		case len(arg) > 0 && (arg[0].op("...") || arg[0].op("*")):
+			spread = true
+			out[k] = anyParam
+		case len(arg) > 0 && arg[0].op("**"):
+			out[k] = anyParam
 		case len(arg) > 1 && arg[0].Kind == Ident && (a.php && arg[1].op(":") || a.py && arg[1].op("=")):
 			name := arg[0].Text
 			if a.php {
@@ -523,10 +755,17 @@ func (a *analysis) argIndex(s *summary, args [][]Token) []int {
 			}
 			if i := slices.Index(s.params, name); i >= 0 && i < maxSumParams {
 				out[k] = i
+			} else if s.rest {
+				out[k] = anyParam
 			}
+		case spread:
+			out[k] = anyParam
 		default:
-			if pos < len(s.params) && pos < maxSumParams {
+			switch {
+			case pos < len(s.params) && pos < maxSumParams:
 				out[k] = pos
+			case s.rest || pos >= maxSumParams:
+				out[k] = anyParam
 			}
 			pos++
 		}
@@ -534,12 +773,17 @@ func (a *analysis) argIndex(s *summary, args [][]Token) []int {
 	return out
 }
 
+const (
+	noParam  = -1
+	anyParam = -2
+)
+
 // callVal is the value of a call to a summarised function. An argument that
-// reaches no known parameter counts as passed on, as for an unknown function.
+// may land in any parameter counts as passed on, as for an unknown function.
 func (a *analysis) callVal(st state, s *summary, args [][]Token) val {
 	v := val{taint: s.retSrc}
 	for k, i := range a.argIndex(s, args) {
-		if i >= 0 && s.ret&(1<<i) == 0 {
+		if i >= 0 && s.ret&(1<<i) == 0 || i == noParam {
 			continue
 		}
 		av := a.argVal(st, args[k], false)
@@ -550,8 +794,6 @@ func (a *analysis) callVal(st state, s *summary, args [][]Token) val {
 		if i >= 0 {
 			weak = weak || s.retWeak&(1<<i) != 0
 			emb = emb || s.retEmb&(1<<i) != 0
-		} else if !s.rest && len(s.params) <= maxSumParams {
-			weak = true // a name the function does not declare: nothing of it is used
 		}
 		v.weak = weakOf(v.taint, v.weak, true, weak)
 		v.taint, v.emb = true, v.emb || emb
@@ -571,17 +813,24 @@ func (a *analysis) callSinks(st state, t []Token) {
 		}
 		args := callArgs(t, i+1)
 		for k, p := range a.argIndex(s, args) {
-			if p < 0 || len(s.sink[p]) == 0 {
+			if p == noParam {
 				continue
 			}
 			// Only input that did not come through an unknown call crosses into
 			// another function's sinks: get_post($_GET['id']) is not the input.
 			// In library mode the parameter may be embedded inside the callee.
 			v := a.argVal(st, args[k], false)
-			emb := v.emb || s.sinkEmb&(1<<p) != 0
-			if v.taint && !v.weak && (!a.lib || emb) {
-				for _, l := range s.sink[p] {
-					a.reportSink(l, emb)
+			if !v.taint || v.weak {
+				continue
+			}
+			for q := range s.sink {
+				if p >= 0 && q != p || len(s.sink[q]) == 0 {
+					continue
+				}
+				if emb := v.emb || s.sinkEmb&(1<<q) != 0; !a.lib || emb {
+					for _, l := range s.sink[q] {
+						a.reportSink(l, emb)
+					}
 				}
 			}
 		}

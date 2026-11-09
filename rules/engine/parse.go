@@ -40,12 +40,13 @@ type stmt struct {
 type fn struct {
 	params []Token
 	body   []*stmt
-	fresh  bool   // does not see the enclosing scope (PHP named functions and methods)
-	name   string // declared name ("" for a literal); see collectFuncs for assigned literals
-	method bool   // declared in a class body
-	public bool   // part of the public API: not private, protected, _name or #name
-	class  string // the class a method is declared in
-	parent string // that class's parent (extends), as written
+	fresh  bool     // does not see the enclosing scope (PHP named functions and methods)
+	name   string   // declared name ("" for a literal); see collectFuncs for assigned literals
+	method bool     // declared in a class body
+	public bool     // part of the public API: not private, protected, _name or #name
+	class  string   // the class a method is declared in
+	parent string   // that class's parent (extends), as written
+	traits []string // PHP traits the class uses (use T;) before the method
 }
 
 func parse(lang string, toks []Token, b *budget) []*stmt {
@@ -71,6 +72,7 @@ type braceParser struct {
 	inClass bool   // directly in a class body
 	class   string // name of the class being parsed, and its parent
 	parent  string
+	traits  []string
 }
 
 func (p *braceParser) at(text string) bool     { return p.i < len(p.t) && p.t[p.i].op(text) }
@@ -216,6 +218,22 @@ func (p *braceParser) statement() *stmt {
 		if p.php && (next(1).word("class") || next(2).word("class")) {
 			p.i++
 			return p.statement()
+		}
+	case "use":
+		if p.php && p.inClass { // use T1, T2; or use T1, T2 { ... } in a class: traits
+			p.i++
+			for p.i < len(p.t) && !p.at(";") && !p.at("{") {
+				if p.t[p.i].Kind == Ident && (p.i+1 >= len(p.t) || !p.t[p.i+1].op(`\`)) {
+					p.traits = append(p.traits, p.t[p.i].Text)
+				}
+				p.i++
+			}
+			if p.at("{") {
+				p.i = closeOf(p.t, p.i) + 1
+			} else {
+				p.skip(";")
+			}
+			return nil
 		}
 	case "namespace":
 		if p.php {
@@ -403,7 +421,7 @@ func (p *braceParser) funcDecl(public bool) *stmt {
 	}
 	f.name, f.method, f.public = name, method, public && (!strings.HasPrefix(name, "_") || name == "__construct")
 	if method {
-		f.class, f.parent = p.class, p.parent
+		f.class, f.parent, f.traits = p.class, p.parent, p.traits
 	}
 	return &stmt{kind: sFunc, fn: f}
 }
@@ -462,9 +480,9 @@ func (p *braceParser) classStmt() *stmt {
 		return nil
 	}
 	p.i++
-	inClass, class, par := p.inClass, p.class, p.parent
-	p.inClass, p.class, p.parent = true, name, parent
-	defer func() { p.inClass, p.class, p.parent = inClass, class, par }()
+	inClass, class, par, traits := p.inClass, p.class, p.parent, p.traits
+	p.inClass, p.class, p.parent, p.traits = true, name, parent, nil
+	defer func() { p.inClass, p.class, p.parent, p.traits = inClass, class, par, traits }()
 	if p.php {
 		return &stmt{kind: sBlock, body: p.nested(func() []*stmt { return p.block(true) })}
 	}
