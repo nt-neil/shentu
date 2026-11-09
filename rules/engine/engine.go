@@ -200,6 +200,7 @@ func (e *Engine) Scan(lang, path string, src []byte) ([]Finding, error) {
 	finished := map[*crule]bool{}
 	if !b.hit && len(ff.byKey) > 0 {
 		b2 := newBudget(e.Limits)
+		b2.deadline = b.deadline.Add(e.Limits.maxTime()) // a file takes at most twice MaxTime in all
 		for _, r := range ruleList {
 			sc := newSummaries(ff)
 			a := &analysis{r: r, php: lang == "php", py: lang == "python", js: lang == "js", b: b2, kw: keywords[lang], seen: map[int]bool{}, sc: sc}

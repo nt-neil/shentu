@@ -100,15 +100,17 @@ func newSummaries(ff *fileFuncs) *summaries {
 // fileFuncs are the named functions of a file and how they call one another,
 // shared by every rule's summaries.
 type fileFuncs struct {
-	php     bool
-	byKey   map[string][]*fnInfo // by name for functions, by "Class::name" for methods (PHP: lower case)
-	parents map[string]string    // class → parent
-	traits  map[string][]string  // class → PHP traits it uses
-	comp    map[string]int       // key → its strongly connected component of the call graph
-	comps   [][]string
-	edges   map[string][]string // key → the keys it calls
-	callers map[string][]string // key → the keys that call it
-	unions  map[string][]string // a $this union key → the keys it merges
+	php      bool
+	byKey    map[string][]*fnInfo // by name for functions, by "Class::name" for methods (PHP: lower case)
+	parents  map[string]string    // class → parent
+	traits   map[string][]string  // class → PHP traits it uses
+	comp     map[string]int       // key → its strongly connected component of the call graph
+	comps    [][]string
+	edges    map[string][]string // key → the keys it calls
+	callers  map[string][]string // key → the keys that call it
+	unions   map[string][]string // a $this union key → the keys it merges
+	classSet map[string]bool     // classes of the file, worked out once
+	methods  map[string]string   // memo of method(): class + "\x00" + name → key
 }
 
 func newFileFuncs(funcs map[string][]*fnInfo, lang string) *fileFuncs {
@@ -312,19 +314,38 @@ func (ff *fileFuncs) key(t []Token, i int, cls, parent string) string {
 var receivers = map[string]bool{"$this": true, "this": true, "self": true, "cls": true}
 
 // method finds method name in class, its traits, or, going up, its parents.
-func (ff *fileFuncs) method(class, name string, depth int) string {
-	if class == "" || depth > 8 {
+// Each class is visited once per lookup, and lookups are remembered.
+func (ff *fileFuncs) method(class, name string, _ int) string {
+	if class == "" {
 		return ""
 	}
-	if k := class + "::" + name; len(ff.byKey[k]) > 0 {
+	mk := class + "\x00" + name
+	if k, ok := ff.methods[mk]; ok {
 		return k
 	}
-	for _, tr := range ff.traits[class] {
-		if k := ff.method(tr, name, depth+1); k != "" {
+	seen := map[string]bool{}
+	var find func(c string) string
+	find = func(c string) string {
+		if c == "" || seen[c] || len(seen) > 64 {
+			return ""
+		}
+		seen[c] = true
+		if k := c + "::" + name; len(ff.byKey[k]) > 0 {
 			return k
 		}
+		for _, tr := range ff.traits[c] {
+			if k := find(tr); k != "" {
+				return k
+			}
+		}
+		return find(ff.parents[c])
 	}
-	return ff.method(ff.parents[class], name, depth+1)
+	k := find(class)
+	if ff.methods == nil {
+		ff.methods = map[string]string{}
+	}
+	ff.methods[mk] = k
+	return k
 }
 
 // this resolves $this->name() in class: the method the class has, merged with
@@ -365,6 +386,9 @@ func (ff *fileFuncs) this(class, name string) string {
 }
 
 func (ff *fileFuncs) classes() map[string]bool {
+	if ff.classSet != nil {
+		return ff.classSet
+	}
 	out := map[string]bool{}
 	for k := range ff.byKey {
 		if i := strings.Index(k, "::"); i > 0 && !strings.HasPrefix(k, "$this ") {
@@ -374,11 +398,12 @@ func (ff *fileFuncs) classes() map[string]bool {
 	for c := range ff.parents {
 		out[c] = true
 	}
+	ff.classSet = out
 	return out
 }
 
 func (ff *fileFuncs) inherits(c, ancestor string) bool {
-	for depth := 0; c != "" && depth < 8; depth++ {
+	for depth := 0; c != "" && depth < 64; depth++ {
 		if c = ff.parents[c]; c == ancestor {
 			return true
 		}
@@ -389,8 +414,9 @@ func (ff *fileFuncs) inherits(c, ancestor string) bool {
 func (ff *fileFuncs) hasClass(c string) bool { return ff.classes()[c] }
 
 // components computes the strongly connected components of the call graph
-// (Tarjan), so that mutually recursive functions are summarised together.
-func (ff *fileFuncs) components() {
+// (Tarjan), so that mutually recursive functions are summarised together. The
+// tokens it reads are charged to b.
+func (ff *fileFuncs) components(b *budget) {
 	if ff.comp != nil {
 		return
 	}
@@ -406,6 +432,9 @@ func (ff *fileFuncs) components() {
 		seen := map[string]bool{}
 		for _, fi := range ff.byKey[k] {
 			walkToks(fi.f.body, 0, func(t []Token) {
+				if !b.charge(len(t)) {
+					return
+				}
 				for i := range t {
 					if c := ff.key(t, i, fi.f.class, fi.f.parent); c != "" && !seen[c] {
 						seen[c] = true
@@ -504,7 +533,7 @@ func (a *analysis) summaryOf(key string) *summary {
 		a.b.tooDeep()
 		return nil
 	}
-	sc.ff.components()
+	sc.ff.components(a.b)
 	c, ok := sc.ff.comp[key]
 	if !ok || c < 0 {
 		sc.busy[key] = true
@@ -550,9 +579,9 @@ func (a *analysis) summarizeKey(key string) *summary {
 	return s
 }
 
-// returnsUnknown reports whether a function returns the result of a call the
-// analysis does not know (return get_post($id)): input it passes through that
-// call is a guess, as with the call written out.
+// returnsUnknown reports whether a function returns, as its whole value, the
+// result of a call the analysis does not know (return get_post($id)): input it
+// passes through that call is a guess, as with the call written out.
 func (a *analysis) returnsUnknown(key string) bool {
 	sc := a.sc
 	switch sc.retUnk[key] {
@@ -564,13 +593,23 @@ func (a *analysis) returnsUnknown(key string) bool {
 	sc.retUnk[key] = 2
 	for _, fi := range sc.funcs[key] {
 		walkToks(fi.f.body, 0, func(t []Token) {
-			if len(t) == 0 || !t[0].word("return") {
+			if len(t) < 3 || !t[0].word("return") {
 				return
 			}
-			for i := 1; i+1 < len(t); i++ {
-				if t[i].Kind != Ident || !t[i+1].op("(") {
-					continue
+			// The call's name: the last name of a chain that the whole expression calls.
+			if !t[len(t)-1].op(")") {
+				return
+			}
+			open := openOf(t, len(t)-1)
+			if open < 2 || !t[open].op("(") || t[open-1].Kind != Ident {
+				return
+			}
+			for k := 1; k < open-1; k++ { // a plain chain before it: $this->db->get(...), not "a" . f(...)
+				if t[k].Kind != Ident && t[k].Kind != Var && !memberOp(a.php, t[k]) && !t[k].op(`\`) {
+					return
 				}
+			}
+			for _, i := range []int{open - 1} {
 				n := t[i].Text
 				if formatFuncs[n] || passFuncs[a.lang()][n] || numericFuncs[a.lang()][n] || sc.ff.key(t, i, fi.f.class, fi.f.parent) != "" {
 					continue
@@ -596,7 +635,7 @@ func (a *analysis) relevant(key string) bool {
 	sc := a.sc
 	if sc.rel == nil || len(sc.rel) == 0 {
 		sc.rel = map[string]uint8{}
-		sc.ff.components()
+		sc.ff.components(a.b)
 		var work []string
 		for k, infos := range sc.funcs {
 			sc.rel[k] = 2

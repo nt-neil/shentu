@@ -267,3 +267,10 @@ func containsByte(set string, c byte) bool {
 	}
 	return false
 }
+
+func (l Limits) maxTime() time.Duration {
+	if l.MaxTime <= 0 {
+		return DefaultLimits.MaxTime
+	}
+	return l.MaxTime
+}
