@@ -332,6 +332,10 @@ func (a *analysis) assignStmt(st state, t []Token) {
 	for len(t) > 0 && t[0].Kind == Ident && declWords[t[0].Text] {
 		t, decl = t[1:], true
 	}
+	if a.php {
+		// $x = $_GET['a'] or die(); assigns $_GET['a']: "or", "and", "xor" bind looser than "=".
+		t = splitTop(t, func(x Token) bool { return x.word("or") || x.word("and") || x.word("xor") })[0]
+	}
 	if a.js && decl {
 		for _, d := range splitTop(t, isComma) {
 			a.assign(st, d)
@@ -949,6 +953,14 @@ type keyRef struct {
 var prefixChecks = map[string]bool{"str_starts_with": true, "strncmp": true, "strncasecmp": true, "strpos": true,
 	"stripos": true, "startsWith": true, "startswith": true}
 
+// predicates are the sanitizers that answer yes or no about a value, so using
+// them as a condition validates it. A transforming sanitizer (intval, basename,
+// Number) cleans only its result: if (intval($x)) says nothing about $x.
+var predicates = map[string]bool{"in_array": true, "array_key_exists": true, "is_relative_to": true,
+	"ctype_digit": true, "ctype_alnum": true, "is_numeric": true, "is_int": true, "isInteger": true, "isSafeInteger": true,
+	"str_starts_with": true, "strncmp": true, "strncasecmp": true, "strpos": true, "stripos": true,
+	"startsWith": true, "startswith": true}
+
 // zeroMeansMatch are comparisons for which "=== 0" means the check passed.
 var zeroMeansMatch = map[string]bool{"strncmp": true, "strncasecmp": true, "strcmp": true, "strcasecmp": true,
 	"strpos": true, "stripos": true}
@@ -1086,7 +1098,7 @@ func (a *analysis) checkKeys(st state, atom []Token) []keyRef {
 		if open >= 0 {
 			args = splitTop(inside(atom, open, end-1), isComma)
 		}
-		if prefixChecks[s.name] && !a.anySep(st, args) {
+		if !predicates[s.name] || prefixChecks[s.name] && !a.anySep(st, args) {
 			return nil
 		}
 		return a.keysOf(atom)
@@ -1107,7 +1119,7 @@ func (a *analysis) checkKeys(st state, atom []Token) []keyRef {
 			if open >= 0 {
 				args = splitTop(inside(atom, open, end-1), isComma)
 			}
-			if prefixChecks[s.name] && !a.anySep(st, args) {
+			if !predicates[s.name] || prefixChecks[s.name] && !a.anySep(st, args) {
 				return nil
 			}
 			return append(a.keysOf(atom[:m]), a.keysOf(inside(atom, open, end-1))...)

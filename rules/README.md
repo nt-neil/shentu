@@ -78,8 +78,10 @@ How the engine reads them:
   one is a prefix: `$_SERVER['HTTP_` matches every `$_SERVER['HTTP_...']`.
 - A **sanitizer** is a call whose result is clean (`intval(`, `shlex.quote(`,
   `.resolve(`), a cast or `typeof` (clean operand), or a check. A check is a
-  sanitizer used as a condition: `in_array($x, $allowed)`, `typeof x !== "string"`,
-  `p.startsWith(BASE)`, `path.is_relative_to(BASE)`. The checked value is clean
+  sanitizer that answers yes or no, used as a condition: `in_array($x, $allowed)`,
+  `typeof x !== "string"`, `p.startsWith(BASE)`, `path.is_relative_to(BASE)`,
+  `ctype_digit($x)`. A transforming sanitizer used as a condition validates
+  nothing: after `if (intval($x))`, `$x` is still user input. The checked value is clean
   where the check holds: inside `if (check)`, and after `if (!check) { return; }`
   or `if (!check) { $x = 'default'; }`. A prefix check (`str_starts_with`,
   `strncmp`, `startsWith`) counts only against a base that ends with a separator
@@ -215,7 +217,9 @@ not fully analysed.
 
 What it does not do: follow values across functions or files (input read in a
 controller and used in another class is missed), know framework semantics beyond
-the rules (a lookup in a constant dict is not an allowlist), or prove a finding.
+the rules (a lookup in a constant dict is not an allowlist), look at where or what
+an `unless` fragment is (`"--"` after the input, or `root:` set from the request,
+still silences the call), or prove a finding.
 No finding does not mean no vulnerability.
 
 Secrets never go into samples. If a sample needs something that looks like a key,

@@ -159,6 +159,11 @@ func TestEngineFlows(t *testing.T) {
 		{"python comment", "python", "def v(request):\n    # cur.execute(request.args['n'])\n    pass\n", 0},
 		{"python allowlist", "python", "def v(request):\n    n = request.args['n']\n    if n not in ('a', 'b'):\n        return\n    cur.execute(f\"SELECT {n}\")\n", 0},
 		{"js template", "js", "app.get('/', (req, res) => {\n  const n = req.query.n\n  pool.query(`SELECT ${n}`)\n})\n", 3},
+		{"php transforming sanitizer as condition", "php", "<?php\n$id = $_GET['id'];\nif (intval($id)) {\n    mysqli_query($db, \"SELECT $id\");\n}\n", 4},
+		{"php or die", "php", "<?php\n$id = $_GET['id'] or die();\nmysqli_query($db, \"SELECT $id\");\n", 3},
+		{"php static orderByRaw", "php", "<?php\n$s = $request->input('sort');\nreturn Payment::orderByRaw($s)->get();\n", 3},
+		{"python bindparams after text", "python", "def v():\n    col = request.args['c']\n    db.session.execute(text(f'SELECT {col} FROM t WHERE a = :a').bindparams(a=1))\n", 3},
+		{"js qualified spawn", "js", "app.post('/b', (req, res) => {\n  cp.spawn('make', [req.body.t], { shell: true });\n});\n", 2},
 		{"js number", "js", "app.get('/', (req, res) => {\n  const n = Number(req.query.n);\n  pool.query(`SELECT ${n}`);\n});\n", 0},
 	}
 	for _, c := range cases {
