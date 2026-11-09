@@ -202,9 +202,7 @@ func lex(lang, src string, b *budget) []Token {
 	case "js":
 		return lexJS(src, b)
 	case "jsx":
-		s := &scanner{src: src, line: 1, b: b, jsx: true}
-		s.js(false)
-		return s.toks
+		return lexJSX(src, b, true)
 	case "ts", "tsx":
 		return lexTS(src, b, lang == "tsx")
 	}

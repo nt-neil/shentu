@@ -23,8 +23,11 @@ var ctlWords = map[string]bool{"if": true, "while": true, "for": true, "with": t
 // ends without semicolons). Unterminated strings end at the end of the line.
 func LexJS(src string) []Token { return lexJS(src, nil) }
 
-func lexJS(src string, b *budget) []Token {
-	s := &scanner{src: src, line: 1, b: b}
+func lexJS(src string, b *budget) []Token { return lexJSX(src, b, false) }
+
+// lexJSX lexes JavaScript; with jsx it also follows JSX elements (.jsx).
+func lexJSX(src string, b *budget, jsx bool) []Token {
+	s := &scanner{src: src, line: 1, b: b, jsx: jsx}
 	if s.has("#!") {
 		s.skipLine()
 	}
@@ -61,6 +64,9 @@ func (s *scanner) js(stop bool) {
 			s.pos++
 			s.ident("$")
 			s.emit(Token{Kind: Ident, Text: s.src[start:s.pos], Line: line})
+			if s.jsx && s.jsxTop() == 't' && s.src[start:s.pos] == "extends" && len(s.toks) > 2 && s.toks[len(s.toks)-3].op("<") {
+				s.jsxStack = s.jsxStack[:len(s.jsxStack)-1] // <T extends U>(x) => x is a type parameter
+			}
 		case isDigit(c) || c == '.' && isDigit(s.peek(1)):
 			line := s.line
 			s.emit(Token{Kind: Num, Text: s.number(), Line: line})
@@ -95,19 +101,76 @@ func (s *scanner) js(stop bool) {
 					s.afterCtl, s.ctl = s.ctl[n-1], s.ctl[:n-1]
 				}
 			}
+			if s.jsx {
+				s.jsxOp(o)
+			}
 			s.emit(Token{Kind: Op, Text: o, Line: line})
 		}
 	}
 }
 
-// jsxClose reports whether the "/" at s.pos is that of "</Name" or "</>" in .jsx or .tsx.
-// Only there: in .js and .ts, "a </x'/.test(s)" is a comparison with a regular
-// expression, and reading the "/" as division would let the quote hide the
-// rest of the line.
+// JSX states on scanner.jsxStack: 't' inside an opening tag, 'c' among an
+// element's children, 'e' inside braces (code) within either.
+func (s *scanner) jsxTop() byte {
+	if n := len(s.jsxStack); n > 0 {
+		return s.jsxStack[n-1]
+	}
+	return 0
+}
+
+// jsxOp follows JSX elements through the operator o, before it is emitted.
+func (s *scanner) jsxOp(o string) {
+	n, top := len(s.jsxStack), s.jsxTop()
+	prev := Token{Kind: Op}
+	if k := len(s.toks); k > 0 {
+		prev = s.toks[k-1]
+	}
+	switch {
+	case o == "<" && s.pos < len(s.src) && (isIdentStart(s.src[s.pos]) || s.src[s.pos] == '>') &&
+		(top == 'c' || !jsValue(prev)) && n < maxNest*4:
+		s.jsxStack = append(s.jsxStack, 't') // an element starts where no value ends
+	case o == "/" && top == 'c' && prev.op("<"):
+		s.jsxClosing = true
+	case o == ">" && s.jsxClosing:
+		s.jsxClosing = false
+		if top == 'c' {
+			s.jsxStack = s.jsxStack[:n-1]
+		}
+	case o == ">" && top == 't':
+		if prev.op("/") {
+			s.jsxStack = s.jsxStack[:n-1] // <br />
+		} else {
+			s.jsxStack[n-1] = 'c'
+		}
+	case o == "," && top == 't' && prev.Kind == Ident && len(s.toks) > 1 && s.toks[len(s.toks)-2].op("<"):
+		s.jsxStack = s.jsxStack[:n-1] // <T,>(x) => x is a type parameter
+	case o == "{" && n > 0 && n < maxNest*4:
+		s.jsxStack = append(s.jsxStack, 'e')
+	case o == "}" && top == 'e':
+		s.jsxStack = s.jsxStack[:n-1]
+	}
+}
+
+// jsValue reports whether t ends an operand, so a "<" after it compares.
+func jsValue(t Token) bool {
+	switch t.Kind {
+	case Ident:
+		return !regexAfter[t.Text] && !keywords["js"][t.Text]
+	case Num, Str:
+		return true
+	case Op:
+		return t.Text == ")" || t.Text == "]" || t.Text == "}"
+	}
+	return false
+}
+
+// jsxClose reports whether the "/" at s.pos is that of a closing tag: right
+// after "<" among an element's children, in .jsx or .tsx. Anywhere else (and
+// in .js and .ts) "a </x'/.test(s)" compares with a regular expression, and
+// reading the "/" as division would let the quote hide the rest of the line.
 func (s *scanner) jsxClose() bool {
 	n := len(s.toks)
-	return s.jsx && n > 0 && s.toks[n-1].op("<") && s.pos > 0 && s.src[s.pos-1] == '<' &&
-		(isIdentStart(s.peek(1)) || s.peek(1) == '>')
+	return s.jsx && s.jsxTop() == 'c' && n > 0 && s.toks[n-1].op("<") && s.pos > 0 && s.src[s.pos-1] == '<'
 }
 
 func (s *scanner) regexAllowed() bool {

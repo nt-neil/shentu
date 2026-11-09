@@ -151,10 +151,12 @@ type scanner struct {
 	b     *budget
 	depth int // interpolation nesting
 
-	ctl      []bool // JS: for each open "(", whether it starts an if/while/for header
-	afterCtl bool   // JS: the last ")" closed such a header
-	ts       bool   // TypeScript: "x!" is a postfix operator
-	jsx      bool   // .jsx, .tsx: "</Name" closes an element
+	ctl        []bool // JS: for each open "(", whether it starts an if/while/for header
+	afterCtl   bool   // JS: the last ")" closed such a header
+	ts         bool   // TypeScript: "x!" is a postfix operator
+	jsx        bool   // .jsx, .tsx: follow JSX elements, so "</Name" closes one
+	jsxStack   []byte // JSX: open tags, children and braces (see jsxOp)
+	jsxClosing bool   // JSX: inside "</...>"
 }
 
 func (s *scanner) peek(off int) byte {

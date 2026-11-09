@@ -130,6 +130,25 @@ func TestSinkAfterClosingTag(t *testing.T) {
 	}
 }
 
+// TestJSXEvasion: "</" closes a tag only among an element's children, and a
+// .jsx file may start with a hashbang.
+func TestJSXEvasion(t *testing.T) {
+	e := engineForTest(t)
+	srcs := []string{
+		"app.get('/x', (req, res) => { const y = a </x'/.test(s) ? 0 : exec(req.query.c); });\n",
+		"app.get('/x', (req, res) => { const v = <b>{a </b>/.test(s) ? 0 : exec(req.query.c)}</b>; });\n",
+		"app.get('/x', (req, res) => { const v = <b c={a </b>/.test(s) ? 0 : exec(req.query.c)} />; });\n",
+		"#!/usr/bin/env node\napp.get('/x', (req, res) => { const v = <i>x</i>; exec(req.query.c); });\n",
+	}
+	for i, src := range srcs {
+		for _, lang := range []string{"jsx", "tsx"} {
+			if fs, _ := e.Scan(lang, "x", []byte(src)); len(fs) == 0 {
+				t.Errorf("%s case %d: exec not reported", lang, i)
+			}
+		}
+	}
+}
+
 func TestLangOfTS(t *testing.T) {
 	for name, want := range map[string]string{"a.ts": "ts", "a.mts": "ts", "a.CTS": "ts", "a.tsx": "tsx", "a.d.ts": "ts", "a.js": "js", "a.jsx": "jsx"} {
 		if got := LangOf(name); got != want {
