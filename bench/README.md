@@ -30,11 +30,11 @@ One file per vulnerability, `cves/<id>.toml`. A case holds facts, never code:
 | field | |
 |---|---|
 | `id` | CVE or GHSA id, also the file name |
-| `ecosystem` | `wordpress-plugin`, `composer`, `pypi` or `npm` |
-| `package` | plugin slug, `owner/repo` on GitHub for Composer, or the registry name |
-| `vulnerable`, `fixed` | the last vulnerable and the first fixed release (git tag for Composer) |
+| `ecosystem` | `wordpress-plugin`, `composer`, `pypi`, `npm` or `github` (TypeScript projects: npm packages ship compiled JavaScript, so the source comes from the git tag) |
+| `package` | plugin slug, `owner/repo` on GitHub for Composer and github, or the registry name |
+| `vulnerable`, `fixed` | the last vulnerable and the first fixed release (git tag for Composer and github) |
 | `class` | one of the rule classes: `sqli`, `cmdi`, `code-eval`, `deserialization`, `path-traversal` |
-| `lang` | `php`, `python` or `js` |
+| `lang` | `php`, `python`, `js` or `ts` (checked with the js rules) |
 | `[[fix_files]]` | each file the fix commit or changeset changed: `path` from the package root, and `vulnerable` / `fixed` lists of `[first, last]` lines it changed in each release |
 | `source_url` | the advisory on CVE.org, NVD, GitHub Advisory or OSV |
 | `note` | one plain sentence in our own words |

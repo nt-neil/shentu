@@ -21,12 +21,12 @@ import (
 // no code, only these facts.
 type Case struct {
 	ID         string    `toml:"id"`         // CVE or GHSA id
-	Ecosystem  string    `toml:"ecosystem"`  // wordpress-plugin, composer, pypi or npm
+	Ecosystem  string    `toml:"ecosystem"`  // wordpress-plugin, composer, pypi, npm or github
 	Package    string    `toml:"package"`    // plugin slug, owner/repo on GitHub, or registry name
 	Vulnerable string    `toml:"vulnerable"` // release (for composer: git tag) that has the flaw
 	Fixed      string    `toml:"fixed"`      // first release with the fix
 	Class      string    `toml:"class"`      // a rule class: sqli, cmdi, code-eval, deserialization, path-traversal
-	Lang       string    `toml:"lang"`       // php, python or js
+	Lang       string    `toml:"lang"`       // php, python, js or ts
 	FixFiles   []FixFile `toml:"fix_files"`
 	SourceURL  string    `toml:"source_url"` // CVE.org, NVD, GitHub Advisory or OSV
 	Note       string    `toml:"note"`       // one sentence in our own words
@@ -44,15 +44,17 @@ type FixFile struct {
 }
 
 var (
-	ecosystems = map[string]string{"wordpress-plugin": "php", "composer": "php", "pypi": "python", "npm": "js"}
+	ecosystems = map[string]string{"wordpress-plugin": "php", "composer": "php", "pypi": "python", "npm": "js", "github": "ts"}
 	classes    = map[string]bool{"sqli": true, "cmdi": true, "code-eval": true, "deserialization": true, "path-traversal": true}
 	idRe       = regexp.MustCompile(`^(CVE-\d{4}-\d{4,}|GHSA(-[23456789cfghjmpqrvwx]{4}){3})$`)
 	versionRe  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]*$`)
+	tagRe      = regexp.MustCompile(`^(@[a-z0-9][a-z0-9._-]*/)?[A-Za-z0-9][A-Za-z0-9._+-]*@[0-9][A-Za-z0-9._+-]*$`) // monorepo tags: name@1.2.3
 	packageRe  = map[string]*regexp.Regexp{
 		"wordpress-plugin": regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`),
 		"composer":         regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$`),
 		"pypi":             regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`),
 		"npm":              regexp.MustCompile(`^(@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*$`),
+		"github":           regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$`),
 	}
 	// sourceHosts are the only places a case may cite.
 	sourceHosts = map[string]string{"www.cve.org": "", "cve.org": "", "nvd.nist.gov": "/vuln/detail/", "github.com": "/advisories/", "osv.dev": "/vulnerability/"}
@@ -94,12 +96,13 @@ func (c Case) check() error {
 	case filepath.Base(c.file) != c.ID+".toml":
 		return fmt.Errorf("file must be named %s.toml", c.ID)
 	case ecosystems[c.Ecosystem] == "":
-		return fmt.Errorf("ecosystem %q is not one of wordpress-plugin, composer, pypi, npm", c.Ecosystem)
+		return fmt.Errorf("ecosystem %q is not one of wordpress-plugin, composer, pypi, npm, github", c.Ecosystem)
 	case ecosystems[c.Ecosystem] != c.Lang:
 		return fmt.Errorf("lang %q does not fit ecosystem %s", c.Lang, c.Ecosystem)
 	case !packageRe[c.Ecosystem].MatchString(c.Package):
 		return fmt.Errorf("package %q is not a valid %s name", c.Package, c.Ecosystem)
-	case !versionRe.MatchString(c.Vulnerable) || !versionRe.MatchString(c.Fixed):
+	case !versionRe.MatchString(c.Vulnerable) && !(c.Ecosystem == "github" && tagRe.MatchString(c.Vulnerable)) ||
+		!versionRe.MatchString(c.Fixed) && !(c.Ecosystem == "github" && tagRe.MatchString(c.Fixed)):
 		return fmt.Errorf("vulnerable and fixed must be release versions")
 	case c.Vulnerable == c.Fixed:
 		return fmt.Errorf("vulnerable and fixed are the same release")
@@ -124,7 +127,7 @@ func (c Case) check() error {
 			return fmt.Errorf("fix file %s is listed twice", p)
 		}
 		seen[p] = true
-		if engine.LangOf(p) != c.Lang {
+		if l := engine.LangOf(p); l != c.Lang && !(c.Lang == "ts" && l == "tsx") {
 			return fmt.Errorf("fix file %s is not a %s file", p, c.Lang)
 		}
 		if skipped(p) {
