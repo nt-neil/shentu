@@ -36,6 +36,12 @@ type Finding struct {
 type Engine struct {
 	byLang map[string][]*crule
 	Limits Limits
+	// SourcePrefilter (on in New) skips the rules none of whose sources occur in
+	// a file: a file scanned on its own gets input only from them, in the first
+	// pass and in the second, where calls are followed inside the file. A scan
+	// that brings input from elsewhere (other files, framework routes, as a
+	// project mode will) must turn it off. Library mode never uses it.
+	SourcePrefilter bool
 	// Library turns on library mode: the parameters of public functions and
 	// methods are treated as input, and a finding needs that input embedded in a
 	// larger string (a query, a command, code), not passed through as is. It
@@ -66,7 +72,7 @@ type argCond struct {
 
 // New compiles rules. A pattern that does not lex as code of its language is an error.
 func New(rs []rules.Rule) (*Engine, error) {
-	e := &Engine{byLang: map[string][]*crule{}, Limits: DefaultLimits}
+	e := &Engine{byLang: map[string][]*crule{}, Limits: DefaultLimits, SourcePrefilter: true}
 	for _, r := range rs {
 		c, err := compileRule(r)
 		if err != nil {
@@ -218,8 +224,11 @@ func (e *Engine) scan(lang, path string, src []byte) ([]Finding, error) {
 	defs := phpDefines(lang, toks)
 	names := nameSet(toks, map[string]bool{})
 	for _, r := range rs {
-		if !sinkNames(r, names, src) || !e.Library && !sourceNames(r, names, src) || !hasSink(r, toks) {
+		if !sinkNames(r, names, src) || !hasSink(r, toks) {
 			continue // nothing in the file can be this rule's sink
+		}
+		if e.skipBySources(r, names, src) {
+			continue // no source of it in the file: nothing to find, in either pass
 		}
 		ruleList = append(ruleList, r)
 		a := &analysis{r: r, php: lang == "php", py: lang == "python", js: lang == "js", b: b, kw: keywords[lang], seen: map[int]bool{}, defs: defs}
@@ -336,4 +345,10 @@ func lex(lang, src string, b *budget) []Token {
 		return lexJS(src, b)
 	}
 	return nil
+}
+
+// skipBySources reports whether the first pass leaves out rule r for a file
+// with these names (see SourcePrefilter).
+func (e *Engine) skipBySources(r *crule, names map[string]bool, src []byte) bool {
+	return e.SourcePrefilter && !e.Library && !sourceNames(r, names, src)
 }

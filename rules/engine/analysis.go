@@ -744,13 +744,9 @@ func (a *analysis) fixedStart(st state, t []Token) bool {
 	switch {
 	case a.php && n == 1 && first[0].Kind == Ident && !a.kw[first[0].Text] && !isLiteral(first):
 		if netClasses[a.r.rule.Class] {
-			// a URL: only a constant defined in this file whose text fixes the host, or one
-			// that names a folder (__DIR__, ABSPATH, WP_PLUGIN_DIR): a local path is no URL
-			name := first[0].Text
-			if v, ok := a.defs[name]; ok {
-				return a.fixedText(v)
-			}
-			return name == "__DIR__" || name == "__FILE__" || name == "ABSPATH" || strings.HasSuffix(name, "_DIR") || strings.HasSuffix(name, "_PATH")
+			// a URL: only a constant defined in this file whose text fixes the host
+			v, ok := a.defs[first[0].Text]
+			return ok && a.fixedText(v)
 		}
 		return true // a constant: WP_PLUGIN_DIR, __DIR__ (in PHP a bare name is no variable)
 	case a.php && n == 3 && first[0].Kind == Ident && first[1].op("::") && first[2].Kind == Ident:
@@ -1204,8 +1200,8 @@ func (a *analysis) postfix(st state, t []Token, start, baseEnd int, v val, whole
 				case !a.localFunc(t[j-1].Text) && a.opaqueAt(st, t, j, v.taint):
 					v = val{}
 				case !a.wholeArg(st, inside(t, j, c), t[j-1].Text):
-					if a.php && j >= 2 && memberOp(true, t[j-2]) {
-						v = val{} // PHP strings have no methods: the object's own taint is not the text returned
+					if a.php && j >= 2 && memberOp(true, t[j-2]) && j-3 >= 0 && t[j-3].Kind == Var && wpServices[t[j-3].Text] {
+						v = val{} // a WordPress service ($wpdb, $walker): what it returns is not its own state
 					}
 				default:
 					name := t[j-1].Text

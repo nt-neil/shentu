@@ -390,3 +390,45 @@ func TestSourceNamesKeepsFindings(t *testing.T) {
 		}
 	}
 }
+
+// The source prefilter is for a file scanned on its own. Input that arrives
+// through a function's parameters (library mode now; other files and framework
+// routes in a project mode) has no source name in the file, so library mode and
+// SourcePrefilter = false must not skip the rule.
+func TestSourcePrefilterSwitch(t *testing.T) {
+	rs, err := rules.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	e, err := New(rs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := []byte("<?php\nfunction find($name) {\n    return mysqli_query($db, \"SELECT * FROM t WHERE n = '\" . $name . \"'\");\n}\n")
+	toks := lex("php", string(src), newBudget(e.Limits))
+	names := nameSet(toks, map[string]bool{})
+	var r *crule
+	for _, c := range e.byLang["php"] {
+		if c.rule.ID == "php-sqli-string-concat" {
+			r = c
+		}
+	}
+	if r == nil || !hasSink(r, toks) {
+		t.Fatal("php-sqli-string-concat or its sink not found")
+	}
+	if !e.skipBySources(r, names, src) {
+		t.Error("a file without source names is not skipped in the first pass")
+	}
+	e.Library = true
+	if e.skipBySources(r, names, src) {
+		t.Error("library mode: parameters are input, the rule must not be skipped")
+	}
+	fs, _ := e.Scan("php", "lib.php", src)
+	if len(fs) == 0 {
+		t.Error("library mode: parameter -> sink not reported")
+	}
+	e.Library, e.SourcePrefilter = false, false
+	if e.skipBySources(r, names, src) {
+		t.Error("SourcePrefilter off: the rule must not be skipped")
+	}
+}

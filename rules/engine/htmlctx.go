@@ -696,3 +696,8 @@ func hasWord(args [][]Token, w string) bool {
 	}
 	return false
 }
+
+// wpServices are WordPress objects whose methods return data or markup they
+// build (a query, a walk), not the state they were given.
+var wpServices = map[string]bool{"$wpdb": true, "$wp_query": true, "$wp_locale": true, "$wp_rewrite": true,
+	"$wp_scripts": true, "$wp_styles": true, "$wp_filesystem": true, "$walker": true, "$wp_list_table": true}
