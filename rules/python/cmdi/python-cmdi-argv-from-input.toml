@@ -1,0 +1,67 @@
+id = "python-cmdi-argv-from-input"
+lang = "python"
+class = "cmdi"
+cwe = "CWE-78"
+severity = "critical"
+tier = "info"
+title = "Whole command (program and arguments) taken from the request, even without a shell"
+frameworks = ["flask", "django"]
+sources = ["request.args", "request.form", "request.values", "request.json", "request.get_json(", "request.GET", "request.POST", "request.data", "request.query_params", "request.form(", "request.json(", "request.query", "request.post(", "self.get_argument(", "self.get_body_argument(", "self.get_json_body("]
+sinks = ["subprocess.run(", "subprocess.Popen(", "subprocess.call(", "subprocess.check_call(", "subprocess.check_output(", "asyncio.create_subprocess_exec(", "os.execvp(", "os.execv(", "StdioServerParameters("]
+sanitizers = []
+fix = "Choose the program on the server (a fixed path or a lookup in a fixed table) and pass only checked values as its arguments; splitting a request string with shlex.split() still lets the client pick the program."
+refs = ["CVE-2026-45018"]
+
+# The argument itself must be the input (a string, or the list shlex.split or
+# .split() makes from it); a list literal with a fixed program is another rule's
+# business (python-cmdi-argument-injection), and shell=True is python-cmdi-shell.
+[[args]]
+arg = 1
+whole = true
+leading = true   # a fixed program name in front ("ping " + host, no shell) cannot be changed
+unless = ["shell=True"]
+
+[[samples]]
+kind = "vulnerable"
+note = "an MCP stdio server started from a command string the client sent"
+code = '''
+@app.post("/mcp/connect")
+async def connect(request: Request):
+    body = await request.json()
+    parts = shlex.split(body["command"])
+    params = StdioServerParameters(command=parts[0], args=parts[1:])
+    return await start_session(params)
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+@app.post("/tools/run")
+def run_tool():
+    out = subprocess.check_output(shlex.split(request.form["cmd"]), timeout=30)
+    return out.decode()
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+TOOLS = {"lint": ["ruff", "check", "."], "test": ["pytest", "-q"]}
+
+@app.post("/tools/run")
+def run_tool():
+    name = request.form["tool"]
+    if name not in TOOLS:
+        abort(404)
+    out = subprocess.check_output(TOOLS[name], timeout=30)
+    return out.decode()
+'''
+
+[[samples]]
+kind = "safe"
+note = "a fixed program; the value is only an argument"
+code = '''
+@app.post("/clone")
+def clone():
+    subprocess.run(["git", "clone", "--", request.form["url"], "/srv/repo"], check=True)
+    return "ok"
+'''

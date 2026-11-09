@@ -1,0 +1,42 @@
+id = "python-xss-format-html-preformatted"
+lang = "python"
+class = "xss"
+cwe = "CWE-79"
+severity = "medium"
+tier = "info"
+title = "Django format_html given a string that already holds the request value"
+frameworks = ["django"]
+sources = ["request.GET", "request.POST", "request.COOKIES", "request.META", "request.headers", "request.body", "request.data", "request.query_params"]
+sinks = ["format_html(", "html.format_html(", "django.utils.html.format_html("]
+sanitizers = ["escape(", "conditional_escape(", "html.escape(", "bleach.clean("]
+fix = "Pass values to format_html as arguments ('<b>{}</b>', value) so it escapes them; format_html only escapes its arguments, never the format string itself."
+refs = ["CVE-2024-23341"]
+
+# Only the format string is trusted as markup; arguments after it are escaped.
+[[args]]
+arg = 1
+context = ["html", "attr", "url", "js"]
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+def greeting(request):
+    name = request.GET.get("name", "")
+    html = "<p>Hello {}</p>".format(name)
+    return HttpResponse(format_html(html))
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+def badge(request):
+    return HttpResponse(format_html(f'<span class="badge">{request.GET["label"]}</span>'))
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+def greeting(request):
+    name = request.GET.get("name", "")
+    return HttpResponse(format_html("<p>Hello {}</p>", name))
+'''

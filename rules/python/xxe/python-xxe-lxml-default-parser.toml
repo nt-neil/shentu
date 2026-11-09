@@ -1,0 +1,50 @@
+id = "python-xxe-lxml-default-parser"
+lang = "python"
+class = "xxe"
+cwe = "CWE-611"
+severity = "high"
+tier = "info"
+title = "Request XML parsed by lxml with its default parser (entities resolved)"
+frameworks = ["django", "flask"]
+sources = ["request.data", "request.body", "request.get_data(", "request.files", "request.FILES", "request.POST", "request.form", "request.stream", "request.body(", "request.read(", "self.request.body"]
+sinks = ["etree.fromstring(", "etree.XML(", "etree.parse(", "etree.iterparse(", "lxml.etree.fromstring(", "lxml.etree.XML(", "lxml.etree.parse(", "lxml.etree.iterparse("]
+sanitizers = []
+fix = "Parse with a parser that does not resolve entities: etree.fromstring(data, parser=etree.XMLParser(resolve_entities=False, no_network=True)), or use defusedxml.lxml; lxml before 5.0 resolves external entities by default."
+refs = ["CVE-2023-26043", "CVE-2018-25082", "CVE-2024-46455"]
+
+[[args]]
+sinks = ["etree.fromstring(", "etree.XML(", "etree.parse(", "lxml.etree.fromstring(", "lxml.etree.XML(", "lxml.etree.parse("]
+arg = 1
+unless = ["parser=", "parser", "xml_parser", "safe_parser", "self.parser"]   # a parser passed by keyword or as a named variable
+
+[[args]]
+sinks = ["etree.iterparse(", "lxml.etree.iterparse("]
+arg = 1
+unless = ["resolve_entities=False"]
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+@app.route("/wechat", methods=["POST"])
+def wechat():
+    root = etree.fromstring(request.data)
+    return root.findtext("Content") or ""
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+def upload_style(request):
+    sld = request.FILES["sld"].read()
+    dom = etree.XML(sld)
+    return JsonResponse({"name": dom.findtext(".//{*}Name")})
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+@app.route("/wechat", methods=["POST"])
+def wechat():
+    root = etree.fromstring(request.data, parser=etree.XMLParser(resolve_entities=False, no_network=True))
+    return root.findtext("Content") or ""
+'''

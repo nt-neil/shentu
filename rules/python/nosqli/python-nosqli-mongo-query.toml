@@ -6,7 +6,7 @@ severity = "high"
 tier = "info"
 title = "JSON request data placed in a MongoDB query without checking its type"
 frameworks = ["django", "flask"]
-sources = ["request.json", "request.get_json(", "json.loads(request.body", "json.loads(request.data", "request.data"]
+sources = ["request.json", "request.get_json(", "json.loads(request.body", "json.loads(request.data", "request.data", "json.loads(request.args", "json.loads(request.form", "json.loads(request.GET", "json.loads(request.POST", "json.loads(self.request.body", "self.get_json_body(", "request.json("]
 sinks = [".find_one(", ".find(", ".find_one_and_update(", ".find_one_and_delete(", ".update_one(", ".update_many(", ".delete_one(", ".delete_many(", ".count_documents(", ".aggregate(", "$where"]
 sanitizers = ["str(", "int(", "isinstance(", "ObjectId("]
 text = ["$where"]
@@ -38,4 +38,13 @@ def login():
         abort(400)
     user = db.users.find_one({'email': email})
     return jsonify(ok=user is not None and check(user, str(data.get('password'))))
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+@app.get("/search")
+def search():
+    filt = json.loads(request.args.get("filter", "{}"))
+    return {"items": list(db.items.find(filt))}
 '''
