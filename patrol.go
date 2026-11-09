@@ -52,6 +52,18 @@ func (s *state) save(dir string) error {
 
 // checks runs the deterministic checks. No LLM is involved, so alerts still
 // work when the model is down.
+// replaceOrAppend puts f in place of a finding with the same key (the hourly webshell check and
+// the daily code audit report one file), so the report lists it once, with the audit's detail.
+func replaceOrAppend(all []finding, f finding) []finding {
+	for i := range all {
+		if all[i].Key == f.Key {
+			all[i] = f
+			return all
+		}
+	}
+	return append(all, f)
+}
+
 func checks(ctx context.Context, cfg *Config, env *tools.Env, st *state, daily bool) []finding {
 	var out []finding
 	// Survey first: risks that follow from the configuration, and changes since the baseline.
@@ -183,7 +195,7 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 			if f.Line > 0 {
 				where = fmt.Sprintf("%s line %d", f.Path, f.Line)
 			}
-			all = append(all, finding{key, f.Severity, fmt.Sprintf("%s: %s; fix: %s", where, f.Detail, f.Fix), f})
+			all = replaceOrAppend(all, finding{key, f.Severity, fmt.Sprintf("%s: %s; fix: %s", where, f.Detail, f.Fix), f})
 		}
 	}
 	var fresh []finding

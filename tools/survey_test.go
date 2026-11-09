@@ -170,3 +170,19 @@ func TestReadSmallRegularChecksIdentity(t *testing.T) {
 		t.Errorf("same file refused")
 	}
 }
+
+// Patrol cannot list the live ruleset, so it reads the nftables boot config instead.
+func TestNftablesAtBoot(t *testing.T) {
+	root := t.TempDir()
+	nftablesRoot = root
+	t.Cleanup(func() { nftablesRoot = "/" })
+	if s := nftablesAtBoot(); s != "" {
+		t.Errorf("nothing enabled: got %q", s)
+	}
+	os.MkdirAll(filepath.Join(root, "etc/systemd/system/multi-user.target.wants"), 0o755)
+	os.WriteFile(filepath.Join(root, "etc/systemd/system/multi-user.target.wants/nftables.service"), nil, 0o644)
+	os.WriteFile(filepath.Join(root, "etc/nftables.conf"), []byte("table inet filter {\n\tchain input {\n\t}\n\tchain forward {\n\t}\n}\n"), 0o644)
+	if s := nftablesAtBoot(); !strings.Contains(s, "enabled at boot, 2 chains in /etc/nftables.conf") {
+		t.Errorf("got %q", s)
+	}
+}
