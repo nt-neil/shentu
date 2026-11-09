@@ -1,0 +1,102 @@
+id = "php-cmdi-process-shell-commandline"
+lang = "php"
+class = "cmdi"
+cwe = "CWE-78"
+severity = "critical"
+tier = "info"
+title = "Request input in a command line that Symfony Process passes to a shell"
+frameworks = ["symfony", "laravel"]
+sources = ["$request->query->get(", "$request->attributes->get(", "$request->request->get(", "$request->get(", "$request->query->all(", "$request->input(", "$request->query(", "$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "->get_param("]
+sinks = ["Process::fromShellCommandline(", "Process::run(", "Process::start(", "Process("]
+sanitizers = ["escapeshellarg", "absint", "intval", "in_array", "ctype_digit", "ctype_alnum"]
+fix = "Pass the command as an array of arguments (Symfony new Process(['convert', $in, $out]), Laravel Process::run([...])), which no shell parses; never build a command string from input."
+refs = ["CVE-2026-53932"]
+
+[[args]]
+sinks = ["Process::run(", "Process::start("]
+arg = 1
+whole = true
+
+[[args]]
+sinks = ["Process::fromShellCommandline("]
+arg = 1
+
+[[args]]
+sinks = ["Process("]
+arg = 1
+when = ["'-c'"]
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+class ThumbController extends AbstractController
+{
+    public function make(Request $request): Response
+    {
+        $size = $request->query->get('size', '200x200');
+        $p = Process::fromShellCommandline('convert in.png -resize ' . $size . ' out.png');
+        $p->mustRun();
+        return new Response('ok');
+    }
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+class PingController extends Controller
+{
+    public function ping(Request $request)
+    {
+        $result = Process::run('ping -c 1 ' . $request->input('host'));
+        return $result->output();
+    }
+}
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+class PingController extends Controller
+{
+    public function ping(Request $request)
+    {
+        $result = Process::run(['ping', '-c', '1', $request->input('host')]);
+        return $result->output();
+    }
+}
+'''
+
+[[samples]]
+kind = "safe"
+note = "the fix in Symfony: an argument array, which no shell parses"
+code = '''
+<?php
+class ThumbController extends AbstractController
+{
+    public function make(Request $request): Response
+    {
+        $p = new Process(['convert', 'in.png', '-resize', $request->query->get('size', '200x200'), 'out.png']);
+        $p->mustRun();
+        return new Response('ok');
+    }
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "an argument array that starts a shell with -c is a command line again"
+code = '''
+<?php
+class BackupController extends AbstractController
+{
+    public function run(Request $request): Response
+    {
+        (new Process(['sh', '-c', 'tar czf /backups/site.tgz ' . $request->request->get('dir')]))->mustRun();
+        return new Response('started');
+    }
+}
+'''
