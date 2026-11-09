@@ -199,13 +199,38 @@ func firewall(ctx context.Context) string {
 			return fmt.Sprintf("nftables (%d chains)", chains)
 		}
 	} else if !errors.Is(err, exec.ErrNotFound) {
-		// Patrol's sandbox has no CAP_NET_ADMIN, so it cannot list the ruleset.
-		return "unknown (cannot read nftables here; ask in chat)"
+		// Patrol's sandbox has no CAP_NET_ADMIN, so it cannot list the ruleset; the boot config is readable.
+		if s := nftablesAtBoot(); s != "" {
+			return s
+		}
+		return "no firewall enabled at boot (nftables.service is off); rules added at runtime cannot be read here, ask in chat"
 	}
 	if out, err := exec.CommandContext(ctx, "iptables", "-S").Output(); err == nil && strings.Count(string(out), "\n") > 3 {
 		return "iptables rules present"
 	}
 	return "none detected"
+}
+
+// nftablesRoot is "/" except in tests.
+var nftablesRoot = "/"
+
+// nftablesAtBoot describes the nftables rules loaded at boot, read from the config files, which needs no privilege.
+func nftablesAtBoot() string {
+	enabled := false
+	for _, d := range []string{"etc/systemd/system/multi-user.target.wants", "etc/systemd/system/sysinit.target.wants"} {
+		if _, err := os.Stat(filepath.Join(nftablesRoot, d, "nftables.service")); err == nil {
+			enabled = true
+		}
+	}
+	if !enabled {
+		return ""
+	}
+	for _, c := range []string{"etc/nftables.conf", "etc/sysconfig/nftables.conf"} {
+		if b, err := os.ReadFile(filepath.Join(nftablesRoot, c)); err == nil {
+			return fmt.Sprintf("nftables (enabled at boot, %d chains in /%s; live rules: ask in chat)", strings.Count(string(b), "chain "), c)
+		}
+	}
+	return "nftables (enabled at boot; live rules: ask in chat)"
 }
 
 func findProcess(name string) bool {
