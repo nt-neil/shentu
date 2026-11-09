@@ -322,8 +322,8 @@ func (x *tsStrip) ident(t Token, c *tsCtx) {
 		c.decl = true
 	case t.Text == "case":
 		c.caseOpen = true
-	case (t.Text == "import" || t.Text == "export") && start:
-		c.module = true
+	case start && (t.Text == "import" && !n1.op("(") && !n1.op(".") || t.Text == "export" && (n1.op("{") || n1.op("*") || n1.word("type"))):
+		c.module = true // an import or export list: "a as b" renames
 	}
 	if c.kind == 'p' && len(c.decos) > 0 && c.decoName == "" {
 		c.decoName = t.Text

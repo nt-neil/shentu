@@ -5,7 +5,7 @@ cwe = "CWE-22"
 severity = "high"
 title = "Request value joined into a path that is read, written or sent"
 frameworks = ["express", "nestjs", "nextjs"]
-sources = ["req.query", "req.params", "req.body", "@Body(", "@Query(", "@Param(", "@Req(", "request.nextUrl", "req.nextUrl", "request.url", "request.json(", "req.json(", "request.formData(", "req.formData(", "searchParams"]
+sources = ["req.query", "req.params", "req.body", "@Query(", "@Body(", "@Param(", "@Req(", "request.nextUrl", "req.nextUrl", "request.url", "searchParams", "request.json(", "req.json(", "request.formData(", "req.formData("]
 sinks = ["res.sendFile(", "res.download(", "fs.readFile(", "fs.createReadStream(", "fs.writeFile(", "fs.unlink(", "readFileSync("]
 sanitizers = ["path.basename(", ".startsWith("]
 fix = "Use res.sendFile(name, { root }) or resolve the path and require it to start with the base directory plus path.sep before touching the file."
@@ -125,5 +125,18 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ d
   const name = path.basename(String(doc));
   const text = await new Promise<string>((ok) => fs.readFile(`/srv/docs/${name}`, "utf8", (_e, d) => ok(d)));
   return <pre>{text}</pre>;
+}
+'''
+
+[[samples]]
+kind = "safe"
+dialect = "ts"
+note = "the name is checked against a fixed list"
+code = '''
+const DOCS = new Set<string>(["terms.pdf", "privacy.pdf"]);
+export async function GET(request: Request) {
+  const name = new URL(request.url).searchParams.get("doc") ?? "";
+  if (!DOCS.has(name)) return new Response(null, { status: 404 });
+  return new Response(fs.createReadStream(path.join(DOCS_DIR, name)) as unknown as ReadableStream);
 }
 '''

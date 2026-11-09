@@ -54,6 +54,8 @@ func TestLexTS(t *testing.T) {
 		{"as satisfies", "const a = (b as any).c as string; const o = { k: 1 } satisfies R; const l = [1] as const;",
 			`const a = ( b ) . c ; const o = { k : 1 } ; const l = [ 1 ] ;`},
 		{"cast", "const a = <string>b;", `const a = b ;`},
+		{"export satisfies", "export const p = (async () => ({\n  a: 1,\n})) satisfies P<{ a: number }>;\nexport default x as Y;",
+			`export const p = ( async ( ) => ( { a : 1 , } ) ) ; export default x ;`},
 		{"non-null", "const v = a!.b!.c! + d![0]; let e!: number; if (!f) g(!h);", `const v = a . b . c + d [ 0 ] ; let e ; if ( ! f ) g ( ! h ) ;`},
 		{"non-null regex", "const n = x! / 2 / y;", `const n = x / 2 / y ;`},
 		{"ternary object", "const a = b ? { c: d } : e; const f = { g: h ? i : j, k: l };", `const a = b ? { c : d } : e ; const f = { g : h ? i : j , k : l } ;`},
