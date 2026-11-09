@@ -64,7 +64,7 @@ func (s *scanner) js(stop bool) {
 			s.pos++
 			s.ident("$")
 			s.emit(Token{Kind: Ident, Text: s.src[start:s.pos], Line: line})
-			if s.jsx && s.jsxTop() == 't' && s.src[start:s.pos] == "extends" && len(s.toks) > 2 && s.toks[len(s.toks)-3].op("<") {
+			if s.jsx && s.ts && s.jsxTop() == 't' && s.src[start:s.pos] == "extends" && len(s.toks) > 2 && s.toks[len(s.toks)-3].op("<") {
 				s.jsxStack = s.jsxStack[:len(s.jsxStack)-1] // <T extends U>(x) => x is a type parameter
 			}
 		case isDigit(c) || c == '.' && isDigit(s.peek(1)):
@@ -125,10 +125,24 @@ func (s *scanner) jsxOp(o string) {
 	if k := len(s.toks); k > 0 {
 		prev = s.toks[k-1]
 	}
+	if s.jsxLost {
+		return
+	}
+	push := func(state byte) {
+		if n >= maxNest*4 {
+			// Too deep to follow: stop for this file rather than pair a later
+			// closer with a push that never happened.
+			s.jsxLost, s.jsxStack = true, nil
+			return
+		}
+		s.jsxStack = append(s.jsxStack, state)
+	}
 	switch {
 	case o == "<" && s.pos < len(s.src) && (isIdentStart(s.src[s.pos]) || s.src[s.pos] == '>') &&
-		(top == 'c' || !jsValue(prev)) && n < maxNest*4:
-		s.jsxStack = append(s.jsxStack, 't') // an element starts where no value ends
+		(top == 'c' || !jsValue(prev)) && !(s.ts && s.typeParams()):
+		push('t') // an element starts where no value ends
+	case o == ";" && top == 't':
+		s.jsxStack = nil // no opening tag holds a ";": the state was wrong
 	case o == "/" && top == 'c' && prev.op("<"):
 		s.jsxClosing = true
 	case o == ">" && s.jsxClosing:
@@ -144,11 +158,39 @@ func (s *scanner) jsxOp(o string) {
 		}
 	case o == "," && top == 't' && prev.Kind == Ident && len(s.toks) > 1 && s.toks[len(s.toks)-2].op("<"):
 		s.jsxStack = s.jsxStack[:n-1] // <T,>(x) => x is a type parameter
-	case o == "{" && n > 0 && n < maxNest*4:
-		s.jsxStack = append(s.jsxStack, 'e')
+	case o == "{" && n > 0:
+		push('e')
 	case o == "}" && top == 'e':
 		s.jsxStack = s.jsxStack[:n-1]
 	}
+}
+
+// typeParams reports whether the source after a "<" reads "T>(" or "T, U>(":
+// type parameters of a generic signature in TypeScript, not an element.
+func (s *scanner) typeParams() bool {
+	i := s.pos
+	for {
+		for i < len(s.src) && (isIdentChar(s.src[i]) || s.src[i] == '$') {
+			i++
+		}
+		for i < len(s.src) && (s.src[i] == ' ' || s.src[i] == '\t') {
+			i++
+		}
+		if i < len(s.src) && s.src[i] == ',' {
+			i++
+			for i < len(s.src) && (s.src[i] == ' ' || s.src[i] == '\t') {
+				i++
+			}
+			continue
+		}
+		break
+	}
+	if i >= len(s.src) || s.src[i] != '>' {
+		return false
+	}
+	for i++; i < len(s.src) && (s.src[i] == ' ' || s.src[i] == '\t'); i++ {
+	}
+	return i < len(s.src) && s.src[i] == '('
 }
 
 // jsValue reports whether t ends an operand, so a "<" after it compares.
@@ -170,7 +212,18 @@ func jsValue(t Token) bool {
 // reading the "/" as division would let the quote hide the rest of the line.
 func (s *scanner) jsxClose() bool {
 	n := len(s.toks)
-	return s.jsx && s.jsxTop() == 'c' && n > 0 && s.toks[n-1].op("<") && s.pos > 0 && s.src[s.pos-1] == '<'
+	if !s.jsx || n == 0 || !s.toks[n-1].op("<") || s.pos == 0 || s.src[s.pos-1] != '<' {
+		return false
+	}
+	if s.jsxLost {
+		// Not followed: only the exact shape "</name>" or "</>" closes.
+		i := s.pos + 1
+		for i < len(s.src) && (isIdentChar(s.src[i]) || s.src[i] == '.' || s.src[i] == '-' || s.src[i] == ':') {
+			i++
+		}
+		return i < len(s.src) && s.src[i] == '>'
+	}
+	return s.jsxTop() == 'c'
 }
 
 func (s *scanner) regexAllowed() bool {

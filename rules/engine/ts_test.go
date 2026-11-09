@@ -98,6 +98,7 @@ func TestLexTSX(t *testing.T) {
 		{"const e = <div className={a as string}>{b!}</div>;", `const e = < div className = { a } > { b } < / div > ;`},
 		{"const [s, set] = useState<string>('');", `const [ s , set ] = useState ( "" ) ;`},
 		{"const f = <T,>(x: T) => x;", `const f = ( x ) => x ;`},
+		{"let g: <T>(x: T) => T = id;\nconst e = <p>a</p>;", "let g = id ; const e = < p > a < / p > ;"},
 		{"const t = <b>[x]</b>;\nconst s = `${y}`;", "const t = < b > [ x ] < / b > ; const s = `${y}` ;"},
 	}
 	for _, c := range cases {
@@ -130,14 +131,17 @@ func TestSinkAfterClosingTag(t *testing.T) {
 	}
 }
 
-// TestJSXEvasion: "</" closes a tag only among an element's children, and a
-// .jsx file may start with a hashbang.
+// TestJSXEvasion: "</" closes a tag only among an element's children (also
+// after an attribute named extends, and past the nesting the lexer follows),
+// and a .jsx file may start with a hashbang.
 func TestJSXEvasion(t *testing.T) {
 	e := engineForTest(t)
 	srcs := []string{
 		"app.get('/x', (req, res) => { const y = a </x'/.test(s) ? 0 : exec(req.query.c); });\n",
 		"app.get('/x', (req, res) => { const v = <b>{a </b>/.test(s) ? 0 : exec(req.query.c)}</b>; });\n",
 		"app.get('/x', (req, res) => { const v = <b c={a </b>/.test(s) ? 0 : exec(req.query.c)} />; });\n",
+		"app.get('/x', (req, res) => { const v = <b extends>{a </b>/.test(s) ? 0 : exec(req.query.c)}</b>; });\n",
+		"app.get('/x', (req, res) => { const v = " + strings.Repeat("<b>", 200) + "x; exec(req.query.c); });\n",
 		"#!/usr/bin/env node\napp.get('/x', (req, res) => { const v = <i>x</i>; exec(req.query.c); });\n",
 	}
 	for i, src := range srcs {
