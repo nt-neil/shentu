@@ -26,6 +26,7 @@ type entry struct {
 	sep   bool // the value ends with a path separator ($base = realpath(...) . DIRECTORY_SEPARATOR)
 	san   bool // the value was made by a sanitizer (env = SandboxedEnvironment())
 	pre   bool // the value starts with a fixed part ($p = WP_PLUGIN_DIR . '/' . $name)
+	raw   bool // the value came from input, even through a sanitizer ($n = basename($_GET['n']))
 }
 
 type state map[string]entry
@@ -69,10 +70,11 @@ func merge(x, y state) state {
 		if e, ok := s.get(k); ok {
 			return e
 		}
-		return entry{taint: src, src: src}
+		return entry{taint: src, src: src, raw: src}
 	}
 	both := func(a, b entry) entry {
-		return entry{taint: a.taint || b.taint, src: a.src || b.src, sep: a.sep && b.sep, san: a.san && b.san, pre: a.pre && b.pre}
+		return entry{taint: a.taint || b.taint, src: a.src || b.src, sep: a.sep && b.sep, san: a.san && b.san, pre: a.pre && b.pre,
+			raw: a.raw || b.raw}
 	}
 	for k, e := range x {
 		out[k] = both(e, look(y, k, e.src))
@@ -85,7 +87,7 @@ func merge(x, y state) state {
 	return out
 }
 
-type val struct{ taint, san, pre bool } // pre: see entry.pre; set by assign only
+type val struct{ taint, san, pre, raw bool } // pre, raw: see entry; set by assign only
 
 const (
 	noExit    uint8 = iota
@@ -105,6 +107,7 @@ type analysis struct {
 	lines  []int
 	guards []map[string]bool // per enclosing loop: keys a rejecting check validated
 	depth  int
+	raw    bool // evaluating whether a value came from input at all: sanitizers do not clean
 }
 
 func (a *analysis) report(line int) {
@@ -455,7 +458,10 @@ func (a *analysis) assign(st state, t []Token) (val, bool) {
 		v, sep = a.assign(st, rhs)
 	} else {
 		v, sep = a.expr(st, rhs, false), a.sepEnd(st, rhs)
-		v.pre = a.fixedStart(st, rhs)
+		if a.r.leading { // only a leading condition reads these
+			v.pre = a.fixedStart(st, rhs)
+			v.raw = v.taint || a.rawInput(st, rhs)
+		}
 	}
 	for _, tg := range a.targetList(lhs) {
 		a.setTarget(st, tg, v, t[k].Text, sep)
@@ -510,31 +516,31 @@ func (a *analysis) setTarget(st state, tg []Token, v val, op string, sep bool) {
 	}
 	if container != "" {
 		e, _ := st.get(container)
-		st[container] = entry{taint: e.taint || v.taint}
+		st[container] = entry{taint: e.taint || v.taint, raw: e.raw || v.raw}
 		if strings.HasSuffix(key, "[*]") && v.taint {
 			st.del(container) // $a[$i] = input may overwrite any key: forget what was known per key
-			st[container] = entry{taint: true}
+			st[container] = entry{taint: true, raw: true}
 		}
 		if !strings.HasSuffix(key, "[*]") {
 			// $args['limit'] = absint(...): the key itself is known; reading another key
 			// or the whole array still sees the container.
 			if op == "=" {
 				st.del(key)
-				st[key] = entry{taint: v.taint, san: v.san, sep: sep, pre: v.pre}
+				st[key] = entry{taint: v.taint, san: v.san, sep: sep, pre: v.pre, raw: v.raw}
 			} else {
 				ek, _ := st.get(key) // $q['w'] .= $input taints the key it appends to
-				st[key] = entry{taint: ek.taint || v.taint, sep: sep, pre: ek.pre}
+				st[key] = entry{taint: ek.taint || v.taint, sep: sep, pre: ek.pre, raw: ek.raw || v.raw}
 			}
 		}
 		return
 	}
 	if op == "=" || op == ":=" {
 		st.del(key)
-		st[key] = entry{taint: v.taint, san: v.san, sep: sep, pre: v.pre}
+		st[key] = entry{taint: v.taint, san: v.san, sep: sep, pre: v.pre, raw: v.raw}
 		return
 	}
 	e, _ := st.get(key)
-	st[key] = entry{taint: e.taint || v.taint, sep: sep, pre: e.pre} // appending keeps the start
+	st[key] = entry{taint: e.taint || v.taint, sep: sep, pre: e.pre, raw: e.raw || v.raw} // appending keeps the start
 }
 
 // pathKey returns the key of a plain path ($x, $x->a, x.y, x["k"]). When the path
@@ -689,7 +695,11 @@ func (a *analysis) fixedStart(st state, t []Token) bool {
 			return e.pre
 		}
 		// A property or key that was never assigned here; a plain variable may be "".
-		return n > 1 && !a.expr(st, first, false).taint
+		// Superglobals and request objects are input whether or not this rule lists them.
+		if n == 4 && first[0].Text == "$_SERVER" && first[2].Kind == Str && first[2].Text == "DOCUMENT_ROOT" {
+			return true // set by the server, an absolute path
+		}
+		return n > 1 && !requestRoot(first[0].Text) && !a.rawInput(st, first)
 	}
 	if n > 2 && first[n-1].op(")") && a.chainStart(first, n) == 0 {
 		if a.php && first[0].Kind == Ident && first[1].op("(") {
@@ -704,18 +714,34 @@ func (a *analysis) fixedStart(st state, t []Token) bool {
 				}
 			}
 			if n == closeOf(first, 1)+1 {
-				// The arguments, not the result: basename($_GET['d']) is a clean name but may be "".
+				// The arguments, not the result, and before any sanitizer: basename($_GET['d'])
+				// is a clean name but may be "phar". Numbers (intval) carry nothing.
 				for _, arg := range args {
-					if a.argVal(st, arg, false).taint {
+					if a.rawInput(st, arg) || len(arg) > 0 && requestRoot(arg[0].Text) {
 						return false
 					}
 				}
 				return true
 			}
 		}
-		return !a.expr(st, first, false).taint
+		return !a.rawInput(st, first) && !requestRoot(first[0].Text)
 	}
 	return false
+}
+
+// rawInput reports whether t holds input, also when a sanitizer wrapped it.
+func (a *analysis) rawInput(st state, t []Token) bool {
+	if a.raw {
+		return a.expr(st, t, false).taint
+	}
+	a.raw = true
+	defer func() { a.raw = false }()
+	return a.expr(st, t, false).taint
+}
+
+// requestRoot reports whether a path starts at a PHP superglobal or a request object.
+func requestRoot(name string) bool {
+	return strings.HasPrefix(name, "$_") || name == "$GLOBALS" || name == "$request" || name == "request"
 }
 
 // notScheme reports whether text, put before any input, keeps the result from
@@ -1020,7 +1046,7 @@ func (a *analysis) postfix(st state, t []Token, start, baseEnd int, v val, whole
 		}
 		if key != "" {
 			if e, ok := st[key]; ok {
-				v = val{taint: e.taint, san: e.san}
+				v = val{taint: e.taint || a.raw && e.raw, san: e.san}
 			}
 		}
 	}
@@ -1164,6 +1190,9 @@ func (a *analysis) literal(st state, inner []Token, open string, whole bool) val
 // sanitizerAt matches a sanitizer that starts at i (not a method) and returns
 // where its effect ends: after its call, or after the operand of a cast or typeof.
 func (a *analysis) sanitizerAt(st state, t []Token, i int) (end int, s *pat, open int, ok bool) {
+	if a.raw {
+		return 0, nil, -1, false
+	}
 	for _, s := range a.r.sanitizers {
 		if s.member || !s.at(t, i, true) {
 			continue
@@ -1179,6 +1208,9 @@ func (a *analysis) sanitizerAt(st state, t []Token, i int) (end int, s *pat, ope
 
 // memberSanitizerAt matches a method sanitizer (".resolve(", "->prepare(") at i.
 func (a *analysis) memberSanitizerAt(t []Token, i int) (end int, s *pat, open int, ok bool) {
+	if a.raw {
+		return 0, nil, -1, false
+	}
 	for _, s := range a.r.sanitizers {
 		if s.member && s.at(t, i, false) {
 			end, open := a.patEnd(t, i, s)

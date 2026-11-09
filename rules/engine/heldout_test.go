@@ -153,6 +153,13 @@ func TestHeldOut(t *testing.T) {
 		{"review3 scheme in sprintf head", "php", "<?php\nfile_exists(sprintf('phar%s', $_GET['f']));\n", true, ""},
 		{"review3 scheme before interpolation", "php", "<?php\n$f = $_GET['f'];\nfile_exists(\"phar$f\");\n", true, ""},
 		{"review3 folder split over literals", "php", "<?php\nfile_exists('tpl' . '/' . $_GET['f']);\n", false, ""},
+		{"review3 cookie as the prefix", "php", "<?php\nfile_exists($_COOKIE['p'] . $_GET['f']);\n", true, ""},
+		{"review3 header as the prefix", "php", "<?php\nfile_exists($_SERVER['HTTP_X_DIR'] . $_GET['f']);\n", true, ""},
+		{"review3 document root as the prefix", "php", "<?php\nfile_exists($_SERVER['DOCUMENT_ROOT'] . '/x/' . $_GET['f']);\n", false, ""},
+		{"review3 sanitizer inside a clean call", "php", "<?php\nfile_exists(trim(basename($_GET['a'])) . $_GET['b']);\n", true, ""},
+		{"review3 sanitized variable in a call", "php", "<?php\n$n = basename($_GET['a']);\nfile_exists(trim($n) . $_GET['b']);\n", true, ""},
+		{"review3 sanitized variable copied", "php", "<?php\n$n = basename($_GET['a']);\n$m = $n . '';\nfile_exists(strtolower($m) . $_GET['b']);\n", true, ""},
+		{"review3 number inside a call", "php", "<?php\n$n = intval($_GET['a']);\nfile_exists(strval($n) . '/' . $_GET['b']);\n", false, ""},
 		// The independent review of 888da12 (PR 2): regex, casts, comparisons, empty and
 		// isset, constant keys, apply_filters, leading prefixes, validate_file, sources.
 		{"review2 R1 unanchored php", "php", "<?php\n" + "$x=$_GET['x'];\nif (preg_match('/[a-z0-9]+/', $x)) { system('ls ' . $x); }\n", true, ""},

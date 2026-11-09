@@ -42,6 +42,7 @@ type crule struct {
 	textSources, textSinks []*pat // text inside string literals
 	sanitizers             []*pat
 	args                   map[*pat]*argCond
+	leading                bool // some sink needs a fixed prefix, so values track raw input
 }
 
 type argCond struct {
@@ -98,6 +99,7 @@ func compileRule(r rules.Rule) (*crule, error) {
 	}
 	for _, a := range r.Args {
 		ac := &argCond{arg: a.Arg, whole: a.Whole, leading: a.Leading}
+		c.leading = c.leading || a.Leading
 		for _, list := range []struct {
 			raw []string
 			out *[]*pat
