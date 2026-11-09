@@ -750,3 +750,28 @@ func keyValue(arg []Token, key string) []Token {
 	}
 	return nil
 }
+
+// configStart reports whether a string starts with an interpolated value that
+// holds no input (a configured base: process.env.API, settings.BASE_URL, a
+// constant) and the literal text right after it starts a path, a query or a
+// fragment: `${process.env.API}/v1?q=${x}`. The base decides the host; the input
+// after the path cannot. As the base may be empty or a bare path, that path must
+// be a fixed prefix by itself (fixedText): `${base}/${x}` is not.
+func (a *analysis) configStart(st state, tk Token) bool {
+	if tk.Kind != Str || len(tk.Parts) == 0 || tk.Parts[0].Off != 0 && !(tk.Parts[0].Off == 1 && tk.Text[0] == '$') {
+		return false
+	}
+	p := tk.Parts[0]
+	if len(p.Toks) == 0 || a.rawInput(st, p.Toks) {
+		return false
+	}
+	from := min(skipInterp(tk.Text, 0), len(tk.Text))
+	to := len(tk.Text)
+	if len(tk.Parts) > 1 {
+		to = max(from, min(tk.Parts[1].Off, len(tk.Text)))
+	}
+	seg := tk.Text[from:to] // the literal text between the base and the next value
+	// the base may be empty or a bare path, so the text after it must hold on its
+	// own: "/posts?slug=" does, "/" (then //evil.example) does not
+	return seg != "" && strings.IndexByte("/?#", seg[0]) >= 0 && a.fixedText(seg)
+}

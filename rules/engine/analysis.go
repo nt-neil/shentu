@@ -719,6 +719,9 @@ func (a *analysis) fixedStart(st state, t []Token) bool {
 	}
 	parts := splitTop(t, isOp(join))
 	// Literals at the start ('tpl' . '/' . $x, "ph$x") read as one text.
+	if len(parts) > 0 && len(parts[0]) == 1 && a.configStart(st, parts[0][0]) {
+		return true // `${process.env.API}/v1?q=${x}`: a configured base, then a path (context.go)
+	}
 	lit, k := "", 0
 	for ; k < len(parts) && len(parts[k]) == 1 && parts[k][0].Kind == Str; k++ {
 		tk := parts[k][0]
