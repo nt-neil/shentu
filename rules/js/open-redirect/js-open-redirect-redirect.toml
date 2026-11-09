@@ -8,7 +8,7 @@ title = "Redirect to a URL taken from the request"
 frameworks = ["express"]
 sources = ["req.query", "req.body", "req.params"]
 sinks = ["res.redirect(", "res.location("]
-sanitizers = ["encodeURIComponent("]
+sanitizers = ["encodeURIComponent(", ".startsWith("]
 fix = "Redirect only to a relative path on this site (starting with a single \"/\") or to a host in an allowlist; otherwise send the user to a fixed page."
 refs = ["CVE-2022-2237"]
 
@@ -50,5 +50,27 @@ app.get("/out", (req, res) => {
   const { url } = req.query;
   if (!PAGES.includes(url)) return res.redirect("/");
   res.redirect(302, url);
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "a leading / is not enough: //evil.example leaves the site"
+code = '''
+app.get('/after', (req, res) => {
+  const next = String(req.query.next);
+  if (next.startsWith('/')) return res.redirect(next);
+  res.redirect('/');
+});
+'''
+
+[[samples]]
+kind = "safe"
+note = "a single leading / that is not // or /\\ stays on this site"
+code = '''
+app.get('/after', (req, res) => {
+  const next = String(req.query.next);
+  if (next.startsWith('/') && !next.startsWith('//') && !next.startsWith('/\\')) return res.redirect(next);
+  res.redirect('/');
 });
 '''

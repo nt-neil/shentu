@@ -1452,6 +1452,12 @@ func (a *analysis) refine(st state, cond []Token, truth bool) (state, []string) 
 		split = func(t Token) bool { return t.op("&&") || t.word("and") }
 	}
 	var cleaned []string
+	for _, k := range a.slashChecked(st, splitTop(cond, split), truth) {
+		e := out[k.key]
+		e.taint, e.src = false, e.src || k.src
+		out[k.key] = e
+		cleaned = append(cleaned, k.key)
+	}
 	for _, atom := range splitTop(cond, split) {
 		if truth {
 			// A || B || C where each validates the same value: where it holds, one did
@@ -1641,11 +1647,14 @@ func (a *analysis) checkKeys(st state, atom []Token) []keyRef {
 		if open >= 0 {
 			args = splitTop(inside(atom, open, end-1), isComma)
 		}
-		if !predicates[s.name] || prefixChecks[s.name] && !a.anySep(st, args) {
+		if !predicates[s.name] || prefixChecks[s.name] && (!a.anySep(st, args) || !a.netPrefixOK(st, args)) {
 			return nil
 		}
 		if s.name == "validate_file" && (len(args) < 2 || !a.allowlist(st, args[1])) {
 			return nil // without a list of allowed files it lets /etc/passwd through
+		}
+		if prefixChecks[s.name] && netClasses[a.r.rule.Class] {
+			return a.plainSubject(args) // str_starts_with($u, '/x/'): only $u, and only a plain path
 		}
 		return a.keysOf(atom)
 	}
@@ -1665,8 +1674,11 @@ func (a *analysis) checkKeys(st state, atom []Token) []keyRef {
 			if open >= 0 {
 				args = splitTop(inside(atom, open, end-1), isComma)
 			}
-			if !predicates[s.name] || prefixChecks[s.name] && !a.anySep(st, args) {
+			if !predicates[s.name] || prefixChecks[s.name] && (!a.anySep(st, args) || !a.netPrefixOK(st, args)) {
 				return nil
+			}
+			if prefixChecks[s.name] && netClasses[a.r.rule.Class] {
+				return a.plainSubject([][]Token{atom[:m]}) // u.startswith('/x/'): only u, and only a plain path
 			}
 			return append(a.keysOf(atom[:m]), a.keysOf(inside(atom, open, end-1))...)
 		}
@@ -1773,7 +1785,7 @@ func (a *analysis) sink(st state, t []Token, i int, s *pat) {
 	if lr := a.expandLits(st, region); cond != nil && (len(cond.when) > 0 && !a.when(cond.when, lr) || a.unless(st, cond.unless, lr)) {
 		return
 	}
-	if cond != nil && cond.literal && !a.literalArg(cond, region, open) {
+	if cond != nil && cond.literal && !a.literalArg(st, cond, region, open) {
 		return
 	}
 	if a.noSources() {
