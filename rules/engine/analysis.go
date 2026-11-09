@@ -462,6 +462,9 @@ func (a *analysis) exitOf(t []Token) uint8 {
 	if len(t) > 3 && (t[0].Text == "sys" || t[0].Text == "process") && t[1].op(".") && t[2].word("exit") {
 		return hardExit
 	}
+	if a.js && len(t) > 3 && (t[0].Text == "ctx" || t[0].Text == "this") && t[1].op(".") && t[2].word("throw") && t[3].op("(") {
+		return hardExit // Koa: ctx.throw(400) throws, ending the request
+	}
 	return noExit
 }
 
