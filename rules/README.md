@@ -79,8 +79,14 @@ How the engine reads them:
   after `import fsp from 'fs/promises'` and `r(p)` after
   `const { readFile: r } = require('fs')` all read as `fs.readFile(p)`, and a sink
   written as a bare name (`readFileSync(`) also matches it as a member of one of
-  these modules (`fs.readFileSync(p)`), never as a method of anything else. Sources match anywhere, so `request.args` also matches
-  `self.request.args`.
+  these modules (`fs.readFileSync(p)`), never as a method of anything else. A name
+  is a module only where the file requires or imports it, and not at all when the
+  file declares the name again (scopes are not followed). Not followed:
+  reassignment, conditional or dynamic `require`, spreads, brackets (`c['exec']`),
+  `.call`, `module.require` and `import()`. Sources match anywhere, so
+  `request.args` also matches `self.request.args`, unless written with a leading
+  `^`: `^request.url` never matches as a member of something else
+  (`this.request.url`).
 - A string in a pattern compares its content, whatever the quotes; an unclosed
   one is a prefix: `$_SERVER['HTTP_` matches every `$_SERVER['HTTP_...']`.
 - A **sanitizer** is a call whose result is clean (`intval(`, `shlex.quote(`,
@@ -141,11 +147,18 @@ modifiers `public`, `private`, `protected`, `readonly`, `abstract`, `override`. 
 `.tsx`, `<T>x` is an element, not a type assertion. Decorators are dropped, except
 on a parameter, which becomes an assignment at the start of the body:
 `find(@Param('id') id: string) { ... }` reads as `find(id) { id = @Param('id'); ... }`,
-so a decorator is a source like any call (`@Body(`, `@Query(`, `@Param(`). With
-`@Req()` only the parts of the request that come from the client are input
-(`query`, `body`, `params`, `headers`, `cookies`), not what the server put on it
+so a decorator is a source like any call (`@Body(`, `@Query(`, `@Param(`,
+`@Headers(`); a destructured parameter (`run(@Body() { cmd }: Dto)`) becomes
+`let { cmd } = @Body();`. With `@Req()` only the parts of the request that come
+from the client are input (`query`, `body`, `params`, `headers`, `cookies`,
+`originalUrl`, `url`, `get()`, `header()`), not what the server put on it
 (`req.user`). A parameter with a NestJS parse pipe (`ParseIntPipe`, `ParseUUIDPipe`,
-...) is not input.
+...) is not input; a DTO's class-validator decorators are not read. In `.jsx` and
+`.tsx`, element text is not code: quotes, slashes and colons in it are text. A
+declaration whose bracket never closes (`interface I {`) is dropped up to that
+bracket only; the rest is read as code and the file is reported as not fully
+analysed. Next.js route and page `params` are not sources yet (that needs the
+route model).
 
 A sample written in TypeScript says so with `dialect = "ts"` (or `"tsx"`); it is
 lexed as such and must hold the same as any other sample of the rule.
