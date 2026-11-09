@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 // fakeKey makes a public key line at run time, so no key sits in the repository.
@@ -43,8 +42,16 @@ func TestSharedKeys(t *testing.T) {
 			t.Error("the key itself is in the output")
 		}
 	}
-	if fp := keyFingerprint(attacker); fp != keyFingerprint(`from="10.0.0.1" `+attacker+" c") {
+	if fp := keyFingerprint(attacker); fp == "" || fp != keyFingerprint(`from="10.0.0.1" `+attacker+" c") {
 		t.Error("options before the key change its fingerprint")
+	}
+	// A decoy key inside a quoted option must not be taken for the key.
+	decoy := `command="echo ` + own1 + `",no-pty ` + attacker + " c"
+	if keyFingerprint(decoy) != keyFingerprint(attacker) {
+		t.Error("a key inside a quoted option was fingerprinted")
+	}
+	if keyFingerprint(`environment="A=\"x y\"" `+attacker) != keyFingerprint(attacker) {
+		t.Error("escaped quotes in options")
 	}
 }
 
@@ -78,17 +85,22 @@ func TestUnpackagedPAM(t *testing.T) {
 	if got := unpackagedPAM(); len(got) != 1 || got[0] != "/usr/lib/x86_64-linux-gnu/security/pam_sshd.so" {
 		t.Errorf("dpkg: got %v", got)
 	}
-	// rpm: a module newer than the package database.
+	// rpm: rpm -qf says which modules it owns.
 	os.RemoveAll(filepath.Join(root, "var/lib/dpkg"))
 	os.RemoveAll(filepath.Join(root, "usr"))
 	w("lib64/security/pam_unix.so", "")
-	w("var/lib/rpm/rpmdb.sqlite", "")
-	old := time.Now().Add(-time.Hour)
-	os.Chtimes(filepath.Join(root, "lib64/security/pam_unix.so"), old, old)
 	w("lib64/security/pam_x.so", "")
-	os.Chtimes(filepath.Join(root, "var/lib/rpm/rpmdb.sqlite"), old.Add(time.Minute), old.Add(time.Minute))
+	saved := rpmOwned
+	t.Cleanup(func() { rpmOwned = saved })
+	rpmOwned = func(files []string) (map[string]bool, bool) {
+		return map[string]bool{"/lib64/security/pam_unix.so": true}, true
+	}
 	if got := unpackagedPAM(); len(got) != 1 || got[0] != "/lib64/security/pam_x.so" {
 		t.Errorf("rpm: got %v", got)
+	}
+	rpmOwned = func([]string) (map[string]bool, bool) { return nil, false }
+	if got := unpackagedPAM(); got != nil {
+		t.Errorf("no package database: got %v", got)
 	}
 }
 

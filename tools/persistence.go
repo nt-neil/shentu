@@ -4,10 +4,10 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 )
 
 // Persistence that survives a reboot or a password change: one key planted in many accounts,
@@ -52,24 +52,42 @@ func sharedKeys(files []KeyFile) []SharedKey {
 	return out
 }
 
-// keyFingerprint finds the key in an authorized_keys line (options may come first) and returns its SHA256 fingerprint.
+// keyFingerprint parses an authorized_keys line the way sshd does: an optional options field
+// (where quoted text may hold spaces), then the key type and the base64 key. It returns the SHA256 fingerprint.
 func keyFingerprint(line string) string {
-	if strings.HasPrefix(strings.TrimSpace(line), "#") {
+	line = strings.TrimSpace(line)
+	if line == "" || strings.HasPrefix(line, "#") {
 		return ""
 	}
-	f := strings.Fields(line)
-	for i := 0; i+1 < len(f); i++ {
-		t := f[i]
-		if strings.HasPrefix(t, "ssh-") || strings.HasPrefix(t, "ecdsa-") || strings.HasPrefix(t, "sk-") {
-			blob, err := base64.StdEncoding.DecodeString(f[i+1])
-			if err != nil || len(blob) < 16 {
-				continue
+	if !isKeyType(strings.Fields(line)[0]) {
+		quoted := false
+		i := 0
+		for ; i < len(line); i++ {
+			c := line[i]
+			if c == '\\' && quoted && i+1 < len(line) {
+				i++
+			} else if c == '"' {
+				quoted = !quoted
+			} else if (c == ' ' || c == '\t') && !quoted {
+				break
 			}
-			sum := sha256.Sum256(blob)
-			return "SHA256:" + base64.RawStdEncoding.EncodeToString(sum[:])
 		}
+		line = line[i:]
 	}
-	return ""
+	f := strings.Fields(line)
+	if len(f) < 2 || !isKeyType(f[0]) {
+		return ""
+	}
+	blob, err := base64.StdEncoding.DecodeString(f[1])
+	if err != nil || len(blob) < 16 {
+		return ""
+	}
+	sum := sha256.Sum256(blob)
+	return "SHA256:" + base64.RawStdEncoding.EncodeToString(sum[:])
+}
+
+func isKeyType(t string) bool {
+	return strings.HasPrefix(t, "ssh-") || strings.HasPrefix(t, "ecdsa-") || strings.HasPrefix(t, "sk-")
 }
 
 // preloadEntries returns the libraries listed in ld.so.preload, which every program then loads.
@@ -89,8 +107,7 @@ var sysRoot = "/"
 
 var pamDirs = []string{"lib/security", "lib64/security", "usr/lib/security", "usr/lib64/security", "lib/*/security", "usr/lib/*/security"}
 
-// unpackagedPAM returns PAM modules that no package installed. With dpkg the package file lists
-// say it exactly; with rpm, whose database is binary, a module newer than the database is reported.
+// unpackagedPAM returns PAM modules that no package installed: dpkg's file lists say it, or rpm -qf.
 func unpackagedPAM() []string {
 	owned := map[string]bool{}
 	lists, _ := filepath.Glob(filepath.Join(sysRoot, "var/lib/dpkg/info/*.list"))
@@ -101,17 +118,6 @@ func unpackagedPAM() []string {
 				// merged /usr: dpkg may list /lib/... for a file that is also /usr/lib/...
 				owned[strings.TrimPrefix(p, "/usr")] = true
 			}
-		}
-	}
-	var rpmdb time.Time
-	if len(lists) == 0 {
-		for _, d := range []string{"var/lib/rpm/rpmdb.sqlite", "var/lib/rpm/Packages", "usr/lib/sysimage/rpm/rpmdb.sqlite"} {
-			if st, err := os.Stat(filepath.Join(sysRoot, d)); err == nil && st.ModTime().After(rpmdb) {
-				rpmdb = st.ModTime()
-			}
-		}
-		if rpmdb.IsZero() {
-			return nil // no package database to compare with
 		}
 	}
 	seen := map[string]bool{}
@@ -130,15 +136,44 @@ func unpackagedPAM() []string {
 				}
 				seen[real] = true
 			}
-			if len(lists) > 0 {
-				if !owned[strings.TrimPrefix(rel, "/usr")] {
-					out = append(out, rel)
-				}
-			} else if st, err := os.Stat(m); err == nil && st.ModTime().After(rpmdb) {
+			if len(lists) == 0 || !owned[strings.TrimPrefix(rel, "/usr")] {
 				out = append(out, rel)
 			}
 		}
 	}
+	if len(lists) == 0 && len(out) > 0 {
+		// No dpkg: ask rpm, which keeps its file lists in a binary database.
+		owned, ok := rpmOwned(out)
+		if !ok {
+			return nil // no package database to compare with
+		}
+		var not []string
+		for _, p := range out {
+			if !owned[p] {
+				not = append(not, p)
+			}
+		}
+		out = not
+	}
 	sort.Strings(out)
 	return out
+}
+
+// rpmOwned reports which of the files an rpm package owns; ok is false without rpm.
+var rpmOwned = func(files []string) (map[string]bool, bool) {
+	if _, err := exec.LookPath("rpm"); err != nil {
+		return nil, false
+	}
+	// rpm names each file it does not own: "file /x is not owned by any package".
+	out, _ := exec.Command("rpm", append([]string{"-qf", "--queryformat", "%{NAME}\\n"}, files...)...).CombinedOutput()
+	owned := map[string]bool{}
+	for _, f := range files {
+		owned[f] = true
+	}
+	for _, l := range strings.Split(string(out), "\n") {
+		if p, ok := strings.CutSuffix(strings.TrimSpace(l), " is not owned by any package"); ok {
+			owned[strings.TrimPrefix(p, "file ")] = false
+		}
+	}
+	return owned, true
 }
