@@ -1219,6 +1219,9 @@ func (a *analysis) postfix(st state, t []Token, start, baseEnd int, v val, whole
 					// A function of this file left without a summary holds no sanitizer: what goes
 					// through it is the input, not a guess.
 					weak: !(t[start].Kind == Str || formatFuncs[name] || a.passes(t, start, j-1) || key != "" && !a.returnsUnknown(key))}
+				if a.php && j-1 == start && shapeFuncs[name] {
+					v.weak = a.argsWeak(st, inside(t, j, c)) // array_keys($_POST) is input; array_keys of a guess is a guess
+				}
 			}
 			if key != "" {
 				key += sepCh + "()"
@@ -1265,7 +1268,7 @@ var passFuncs = map[string]map[string]bool{
 	"php": words("trim ltrim rtrim base64_decode urldecode rawurldecode stripslashes stripcslashes strtolower strtoupper " +
 		"ucfirst ucwords lcfirst str_replace str_ireplace substr strrev str_pad hex2bin html_entity_decode " +
 		"htmlspecialchars_decode wp_unslash gzinflate gzuncompress gzdecode str_rot13 convert_uudecode strval " +
-		"explode preg_split str_split"),
+		"explode preg_split str_split json_decode unserialize"),
 	"python": words("unquote unquote_plus b64decode urlsafe_b64decode decode str bytes"),
 	"js":     words("decodeURIComponent decodeURI unescape atob String trim from"),
 }
@@ -1284,6 +1287,20 @@ var passModules = words("base64 parse binascii codecs html Buffer")
 
 // formatFuncs build a string from their arguments.
 var formatFuncs = words("sprintf vsprintf implode join str_replace strtr format")
+
+// shapeFuncs rearrange PHP arrays: what comes out is as sure as what went in.
+var shapeFuncs = words("array_keys array_values array_flip array_unique array_merge array_slice array_reverse array_filter array_combine")
+
+// argsWeak reports whether all the input among the arguments is a guess.
+func (a *analysis) argsWeak(st state, inner []Token) bool {
+	weak, any := true, false
+	for _, arg := range splitTop(inner, isComma) {
+		if v := a.argVal(st, arg, false); v.taint {
+			weak, any = weak && v.weak, true
+		}
+	}
+	return any && weak
+}
 
 // argsEmb reports whether an argument carries embedded input.
 func (a *analysis) argsEmb(st state, inner []Token) bool {

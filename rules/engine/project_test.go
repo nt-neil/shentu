@@ -119,6 +119,11 @@ func TestProject(t *testing.T) {
 			"a.php": P + "function edit($args) {\n  $f = $args['f'];\n  if (!in_array($f, explode(',', $args['ok']), true)) { return; }\n  file_get_contents('/t/' . $f);\n}\n",
 			"b.php": P + "edit($_POST);\n",
 		}, []string{"a.php:5"}},
+		{"php allowlists made of request data", map[string]string{
+			"a.php": P + "$f = $_GET['f'];\nif (!in_array($f, json_decode($_GET['ok']), true)) { return; }\nfile_get_contents('/t/' . $f);\n" +
+				"if (!in_array($f, array_keys($_POST), true)) { return; }\nfile_get_contents('/u/' . $f);\n" +
+				"$ok = unserialize($_GET['ok']);\nif (!in_array($f, $ok, true)) { return; }\nfile_get_contents('/v/' . $f);\n",
+		}, []string{"a.php:4", "a.php:6", "a.php:7", "a.php:9"}}, // 7: unserialize is a sink of its own
 		{"php method of the code's own named like a sink", map[string]string{
 			"a.php":   P + "$q = new TermQuery();\n$q->query($_GET['x']);\n",
 			"lib.php": P + "class TermQuery {\n  function query($a) { return count($a); }\n}\n",
