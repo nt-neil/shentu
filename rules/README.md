@@ -112,9 +112,10 @@ the taint-tracking engine (layer B). Known cases:
   command line when the options contain `shell: true`.
 - `unserialize($x)` is dangerous, but `unserialize($x, ['allowed_classes' => false])`
   cannot create objects.
-- Sanitizers are per rule, not per sink: `escapeshellarg` protects `exec()` but not
-  the fifth argument of `mail()`, and escaping functions protect a SQL value only
-  inside quotes. Such cases are covered by vulnerable samples for now.
+- Sanitizers are per rule, not per sink. When a sanitizer protects one sink but not
+  another (`escapeshellarg` protects `exec()` but not the fifth argument of `mail()`),
+  the sinks go in separate rules; escaping functions protect a SQL value only inside
+  quotes, so they are not listed as sanitizers.
 
 Secrets never go into samples. If a sample needs something that looks like a key,
 use an obvious placeholder.

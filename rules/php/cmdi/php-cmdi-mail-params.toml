@@ -1,0 +1,36 @@
+id = "php-cmdi-mail-params"
+lang = "php"
+class = "cmdi"
+cwe = "CWE-88"
+severity = "critical"
+title = "Request data in the fifth (additional_params) argument of mail()"
+sources = ["$_GET", "$_POST", "$_REQUEST", "$request->input("]
+sinks = ["mail("]
+sanitizers = []
+fix = "Leave mail()'s fifth argument out (set sendmail_from in php.ini or with ini_set) or pass only a fixed value; escapeshellarg does not help here because mail() escapes the argument again."
+refs = ["CVE-2016-10033"]
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+$from = $_POST['from'];
+mail('sales@example.com', 'Contact form', $_POST['message'], '', '-f' . $from);
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "mail() runs escapeshellcmd over the fifth argument, which undoes escapeshellarg's quoting"
+code = '''
+<?php
+$from = filter_var($_POST['from'], FILTER_VALIDATE_EMAIL);
+mail('sales@example.com', 'Contact form', $_POST['message'], '', '-f' . escapeshellarg($from));
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+ini_set('sendmail_from', 'noreply@example.com');
+mail('sales@example.com', 'Contact form', $_POST['message'], 'Reply-To: noreply@example.com');
+'''
