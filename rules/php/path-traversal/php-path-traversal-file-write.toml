@@ -1,0 +1,93 @@
+id = "php-path-traversal-file-write"
+lang = "php"
+class = "path-traversal"
+cwe = "CWE-22"
+severity = "high"
+title = "File name from the request used to write, move or delete a file"
+frameworks = ["wordpress"]
+sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "$_FILES", "$request->input("]
+sinks = ["unlink(", "move_uploaded_file(", "file_put_contents(", "copy(", "rename(", "rmdir("]
+sanitizers = ["basename(", "sanitize_file_name(", "wp_unique_filename(", "validate_file("]
+fix = "Build the target from a fixed directory and a name you generate or reduce with basename() or sanitize_file_name(); for a path you must accept, resolve it with realpath() and refuse it unless it starts with the base directory plus a separator."
+refs = ["CVE-2023-6120", "CVE-2026-104746", "CVE-2026-114630"]
+
+# move_uploaded_file(from, to): the upload's temporary name is the server's own;
+# the destination is where a name from the request does harm.
+[[args]]
+sinks = ["move_uploaded_file("]
+arg = 2
+
+# file_put_contents(path, data): the data is not a path.
+[[args]]
+sinks = ["file_put_contents("]
+arg = 1
+
+[[samples]]
+kind = "vulnerable"
+note = "the client chooses the uploaded file's name, ../ included"
+code = '''
+<?php
+$upfile = $_FILES['certificate'];
+move_uploaded_file($upfile['tmp_name'], WP_CONTENT_DIR . '/certs/' . $upfile['name']);
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+$dir = wp_upload_dir();
+unlink($dir['basedir'] . '/exports/' . $_POST['file']);
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+file_put_contents(__DIR__ . '/cache/' . $_GET['key'] . '.json', '{}');
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "a prefix check on the unresolved path: /base/../etc/x starts with /base/"
+code = '''
+<?php
+$base = WP_CONTENT_DIR . '/exports/';
+$p = $base . $_POST['file'];
+if (str_starts_with($p, $base)) {
+    unlink($p);
+}
+'''
+
+[[samples]]
+kind = "safe"
+note = "sanitize_file_name drops path separators"
+code = '''
+<?php
+$f = $_FILES['certificate'];
+move_uploaded_file($f['tmp_name'], WP_CONTENT_DIR . '/certs/' . sanitize_file_name($f['name']));
+'''
+
+[[samples]]
+kind = "safe"
+note = "the destination name is generated, only the temporary file comes from the upload"
+code = '''
+<?php
+$name = wp_generate_password(12, false) . '.pem';
+move_uploaded_file($_FILES['certificate']['tmp_name'], WP_CONTENT_DIR . '/certs/' . $name);
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+$dir = wp_upload_dir();
+unlink($dir['basedir'] . '/exports/' . basename($_POST['file']));
+'''
+
+[[samples]]
+kind = "safe"
+note = "the request decides only what is written, not where"
+code = '''
+<?php
+file_put_contents(__DIR__ . '/cache/settings.json', $_POST['settings']);
+'''

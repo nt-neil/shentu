@@ -1065,6 +1065,8 @@ func (a *analysis) postfix(st state, t []Token, start, baseEnd int, v val, whole
 		tk := t[j]
 		switch {
 		case memberOp(a.php, tk) && j+1 < len(t) && (t[j+1].Kind == Ident || t[j+1].Kind == Var):
+			// flask.request.form, self.request.GET: a source can start at a member.
+			source(j + 1)
 			if key != "" {
 				key += sepCh + "." + t[j+1].Text
 			}

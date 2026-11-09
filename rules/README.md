@@ -97,6 +97,8 @@ How the engine reads them:
   - comparing a value with a literal validates it where the comparison holds:
     after `if ('ASC' !== $order) { $order = 'DESC'; }` it is one of the two. Loose
     `==` counts only against a plain string (in PHP `"../x" == true` holds);
+  - a source matches after a qualifier too: `request.form` also finds
+    `flask.request.form` and `self.request.form`;
   - PHP `empty($x)`, or `isset($x)` being false, means `$x` holds nothing;
   - a regular-expression test is a check when it allows only letters, digits,
     `_` and `-` from start to end (`preg_match('/^[a-z0-9_]+$/i', $x)`,

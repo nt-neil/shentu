@@ -5,11 +5,20 @@ cwe = "CWE-22"
 severity = "high"
 title = "Request value joined into a file path that is opened or sent"
 frameworks = ["flask", "django"]
-sources = ["request.args", "request.form", "request.GET", "request.POST", "request.view_args"]
-sinks = ["send_file(", "open(", "FileResponse(", "os.path.join(", "Path("]
+sources = ["request.args", "request.form", "request.files", "request.GET", "request.POST", "request.view_args"]
+sinks = ["send_file(", "open(", "FileResponse(", "os.path.join(", "Path(", ".save("]
 sanitizers = ["send_from_directory(", "safe_join(", "secure_filename(", ".is_relative_to(", ".startswith("]
 fix = "Use flask.send_from_directory or werkzeug.utils.safe_join (django.utils._os.safe_join); otherwise resolve the path and check it stays under the base directory."
-refs = ["CVE-2022-31507", "CVE-2022-31506"]
+refs = ["CVE-2022-31507", "CVE-2022-31506", "CVE-2025-54140"]
+
+# Werkzeug's FileStorage.filename is the client's name as sent; Django's
+# request.FILES names are already reduced to a base name by its parser, and its
+# storage checks them again, so request.FILES is not a source here.
+# FileStorage.save(dst): the upload itself is the receiver; only a destination
+# built from the request is a path problem.
+[[args]]
+sinks = [".save("]
+arg = 1
 
 [[samples]]
 kind = "vulnerable"
@@ -47,4 +56,36 @@ def attachment(request):
     if not path.is_relative_to(BASE):
         raise Http404
     return FileResponse(path.open("rb"))
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "the client chooses the uploaded file's name"
+code = '''
+@app.post("/upload")
+def upload():
+    f = request.files["file"]
+    f.save("/srv/app/uploads/tmp_" + f.filename)
+    return "ok"
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+@app.post("/upload")
+def upload():
+    f = request.files["file"]
+    f.save("/srv/app/uploads/" + secure_filename(f.filename))
+    return "ok"
+'''
+
+[[samples]]
+kind = "safe"
+note = "a generated destination: the upload is only the data written"
+code = '''
+@app.post("/upload")
+def upload():
+    f = request.files["file"]
+    f.save("/srv/app/uploads/%s.bin" % uuid.uuid4().hex)
+    return "ok"
 '''

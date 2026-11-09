@@ -7,7 +7,7 @@ title = "File name from the request used to read or send a file"
 frameworks = ["wordpress"]
 sources = ["$_GET", "$_POST", "$_REQUEST", "$request->input("]
 sinks = ["file_get_contents(", "readfile(", "fopen(", "file(", "fpassthru(", "highlight_file("]
-sanitizers = ["basename(", "str_starts_with(", "strncmp(", "validate_file(", "validate_file_to_edit("]
+sanitizers = ["basename(", "sanitize_file_name(", "str_starts_with(", "strncmp(", "validate_file(", "validate_file_to_edit("]
 fix = "Resolve the path with realpath() and refuse it unless it starts with the intended base directory plus a separator, or look files up by an id instead of a path."
 refs = ["CVE-2026-74907"]
 

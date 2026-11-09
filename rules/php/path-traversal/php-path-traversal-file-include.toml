@@ -5,10 +5,19 @@ cwe = "CWE-98"
 severity = "critical"
 title = "include or require of a path built from user-controlled data"
 sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "$_SERVER['REQUEST_URI']", "$request->input("]
-sinks = ["include ", "include_once", "require ", "require_once", "include(", "require("]
-sanitizers = ["in_array", "basename(", "validate_file("]
+sinks = ["include ", "include_once", "require ", "require_once", "include(", "require(",
+  "load_template(", "STM_LMS_Templates::load_lms_template("]
+sanitizers = ["in_array", "basename(", "sanitize_file_name(", "validate_file("]
 fix = "Never include a path derived from input: map the value to a fixed list of files (array lookup or in_array with strict mode) before including."
-refs = ["CVE-2026-41228", "CVE-2026-62858"]
+refs = ["CVE-2026-41228", "CVE-2026-62858", "CVE-2024-3136"]
+
+# These template loaders include the file their first argument names; the other
+# arguments are data for the template. (Loaders that also take a template
+# directory, such as llms_get_template, need more than one path argument and are
+# not listed yet.)
+[[args]]
+sinks = ["load_template(", "STM_LMS_Templates::load_lms_template("]
+arg = 1
 
 [[samples]]
 kind = "vulnerable"
@@ -39,4 +48,36 @@ if (!in_array($lang, $available, true)) {
     $lang = 'en';
 }
 include __DIR__ . '/lang/' . $lang . '.php';
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "sanitize_text_field keeps ../ ; the loader includes the resolved file"
+code = '''
+<?php
+$tpl = sanitize_text_field(stripslashes($_GET['template']));
+echo STM_LMS_Templates::load_lms_template($tpl, array('args' => $args));
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+load_template(get_stylesheet_directory() . '/parts/' . $_GET['part'] . '.php');
+'''
+
+[[samples]]
+kind = "safe"
+note = "only the data passed to the template comes from the request"
+code = '''
+<?php
+echo STM_LMS_Templates::load_lms_template('courses/grid', array('page' => $_GET['page']));
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+$part = sanitize_file_name($_GET['part']);
+load_template(get_stylesheet_directory() . '/parts/' . $part . '.php');
 '''

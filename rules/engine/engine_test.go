@@ -165,6 +165,10 @@ func TestEngineFlows(t *testing.T) {
 		{"python bindparams after text", "python", "def v():\n    col = request.args['c']\n    db.session.execute(text(f'SELECT {col} FROM t WHERE a = :a').bindparams(a=1))\n", 3},
 		{"js qualified spawn", "js", "app.post('/b', (req, res) => {\n  cp.spawn('make', [req.body.t], { shell: true });\n});\n", 2},
 		{"js number", "js", "app.get('/', (req, res) => {\n  const n = Number(req.query.n);\n  pool.query(`SELECT ${n}`);\n});\n", 0},
+		// P1: a source after a qualifier.
+		{"python qualified flask request", "python", "def add():\n    f = flask.request.files['f']\n    p = os.path.join('/srv', 'tmp_' + f.filename)\n", 3},
+		{"python self.request", "python", "class V(View):\n    def get(self):\n        cur.execute('SELECT ' + self.request.GET['c'])\n", 3},
+		{"python request attribute of a non-source", "python", "def v():\n    cur.execute('SELECT ' + resp.requests.args)\n", 0},
 		// Found on real projects (E7): numbers, literal comparisons, empty values, filters,
 		// allowlist intersections, fixed path prefixes, WordPress validators, regex checks.
 		{"php int cast", "php", "<?php\n$id = (int) $_GET['id'];\nmysqli_query($db, \"SELECT $id\");\n", 0},
