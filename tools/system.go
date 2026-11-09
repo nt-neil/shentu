@@ -274,16 +274,21 @@ var (
 	minerNames = map[string]bool{"xmrig": true, "xmr-stak": true, "xmr-stak-rx": true, "cpuminer": true, "minerd": true,
 		"nbminer": true, "t-rex": true, "lolminer": true, "phoenixminer": true, "srbminer-multi": true}
 	// Tools that may show a miner's options as text, e.g. while someone searches for one.
-	minerViewers = map[string]bool{"grep": true, "egrep": true, "rg": true, "ag": true, "less": true, "cat": true, "vi": true,
-		"vim": true, "nano": true, "journalctl": true, "tail": true}
+	// Only the system's own copies count, so a miner renamed to /tmp/grep is still caught.
+	minerViewers = map[string]bool{"grep": true, "egrep": true, "fgrep": true, "zgrep": true, "ugrep": true, "rg": true,
+		"ag": true, "less": true, "more": true, "cat": true, "head": true, "tail": true, "sed": true, "awk": true, "gawk": true,
+		"vi": true, "vim": true, "nano": true, "journalctl": true}
 )
 
 func minerSigns(exe, cmdline string) bool {
-	base := strings.ToLower(filepath.Base(strings.TrimSuffix(exe, " (deleted)")))
-	if minerViewers[base] {
+	base := strings.ToLower(filepath.Base(exe))
+	if minerNames[base] {
+		return true
+	}
+	if dir := filepath.Dir(exe); minerViewers[base] && (dir == "/usr/bin" || dir == "/bin") {
 		return false
 	}
-	return minerNames[base] || minerArgs.MatchString(cmdline)
+	return minerArgs.MatchString(cmdline)
 }
 
 func userNames() map[string]string {
