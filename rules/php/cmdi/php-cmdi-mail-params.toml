@@ -4,7 +4,8 @@ class = "cmdi"
 cwe = "CWE-88"
 severity = "critical"
 title = "Request data in the fifth (additional_params) argument of mail()"
-sources = ["$_GET", "$_POST", "$_REQUEST", "$request->input("]
+frameworks = ["laravel"]
+sources = ["$_GET", "$_POST", "$_REQUEST", "$_SERVER['HTTP_", "$request->input(", "$request->getHost()", "$request->header("]
 sinks = ["mail("]
 sanitizers = []
 fix = "Leave mail()'s fifth argument out (set sendmail_from in php.ini or with ini_set) or pass only a fixed value; escapeshellarg does not help here because mail() escapes the argument again."
@@ -25,6 +26,14 @@ code = '''
 <?php
 $from = filter_var($_POST['from'], FILTER_VALIDATE_EMAIL);
 mail('sales@example.com', 'Contact form', $_POST['message'], '', '-f' . escapeshellarg($from));
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "the Host header is attacker-controlled"
+code = '''
+<?php
+mail($to, $subject, $body, '', '-fnoreply@' . $request->getHost());
 '''
 
 [[samples]]
