@@ -28,7 +28,7 @@ type modBinding struct {
 // TypeScript) token stream.
 func normalizeModules(toks []Token) []Token {
 	t := joinArrays(unwrapCallees(toks))
-	m := &modScope{t: t, cl: closers(t), binds: map[string][]scoped{}, shadows: map[string][]scoped{}, tooMany: map[string]bool{}}
+	m := &modScope{t: t, cl: closers(t), binds: map[string][]scoped{}, shadows: map[string][]scoped{}, tooMany: map[string]modBinding{}}
 	m.enc = enclosing(t, m.cl)
 	m.collect()
 	if len(m.binds) == 0 {
@@ -48,13 +48,14 @@ type scoped struct {
 type modScope struct {
 	t       []Token
 	cl, enc []int
-	binds   map[string][]scoped // names bound to a module or one of its functions
-	shadows map[string][]scoped // other declarations of those names
-	tooMany map[string]bool     // names declared too often to follow: never rewritten
+	binds   map[string][]scoped   // names bound to a module or one of its functions
+	shadows map[string][]scoped   // other declarations of those names
+	tooMany map[string]modBinding // names bound or declared too often to follow: the last binding, everywhere
 }
 
 // maxScoped bounds the bindings and declarations kept per name, so each look-up
-// stays cheap on a hostile file; a name over it is left as it is.
+// stays cheap on a hostile file. A name over it fails toward detection: its last
+// binding holds in the whole file and declarations that would hide it are ignored.
 const maxScoped = 64
 
 // enclosing returns, for each token, the index of the "}" ending the innermost
@@ -85,12 +86,8 @@ func (m *modScope) at(i int) Token {
 }
 
 func (m *modScope) add(name string, b modBinding, at int) {
-	if m.tooMany[name] {
-		return
-	}
-	if len(m.binds[name]) >= maxScoped {
-		m.tooMany[name] = true
-		delete(m.binds, name)
+	if _, over := m.tooMany[name]; over || len(m.binds[name]) >= maxScoped {
+		m.tooMany[name] = b
 		return
 	}
 	m.binds[name] = append(m.binds[name], scoped{b, at, m.enc[at]})
@@ -100,8 +97,8 @@ func (m *modScope) add(name string, b modBinding, at int) {
 // scope holds u, unless a later declaration of the name in a scope holding u
 // hides it.
 func (m *modScope) resolve(name string, u int) (modBinding, bool) {
-	if m.tooMany[name] {
-		return modBinding{}, false
+	if b, over := m.tooMany[name]; over {
+		return b, true
 	}
 	best := scoped{from: -1}
 	for _, b := range m.binds[name] {
@@ -385,7 +382,10 @@ func (m *modScope) rewriteAt(t []Token, u int) []Token {
 func (m *modScope) declarations() {
 	t, cl, at := m.t, m.cl, m.at
 	decl := func(name string, from, to int) {
-		if _, ok := m.binds[name]; !ok || m.tooMany[name] {
+		if _, ok := m.binds[name]; !ok {
+			return
+		}
+		if _, over := m.tooMany[name]; over {
 			return
 		}
 		for _, b := range m.binds[name] {
@@ -394,7 +394,8 @@ func (m *modScope) declarations() {
 			}
 		}
 		if len(m.shadows[name]) >= maxScoped {
-			m.tooMany[name] = true
+			bs := m.binds[name]
+			m.tooMany[name] = bs[len(bs)-1].modBinding
 			return
 		}
 		m.shadows[name] = append(m.shadows[name], scoped{from: from, to: to})

@@ -182,13 +182,17 @@ func TestReviewTSHostile(t *testing.T) {
 		{"jsx-open", "tsx", strings.Repeat("<a b={", n) + vuln},
 		{"jsx-lt-c", "tsx", "const v = <p>" + strings.Repeat("<a", n) + vuln},
 		{"require-many", "js", strings.Repeat("const a = require('fs');\n", n/4) + vuln},
-		{"alias-many", "js", strings.Repeat("const run = require('child_process').exec;\nfunction f(run) { run(x); }\n", n/8) + strings.Repeat("run(y);\n", n/4) + vuln},
-		{"type-alias-walk", "tsx", "type A" + strings.Repeat("<B", n/4) + strings.Repeat(">", n/4) + " = <T>(x: T) => T;" + vuln},
+		{"alias-many", "js", strings.Repeat("const run = require('child_process').exec;\nfunction f(run) { run(x); }\n", n/8) + strings.Repeat("run(y);\n", n/4) + "app.get('/x', (req, res) => { run('ls ' + req.query.c); });\n"},
+		{"type-alias-walk", "tsx", "type A" + strings.Repeat("<B", n/4) + strings.Repeat(">", n/4) + " = <T>(x: T) => T;\nexport const h = (req: Request) => execSync(req.query.c as string);\n"},
 	} {
 		start := time.Now()
-		e.Scan(c.lang, c.name, []byte(c.src))
+		fs, _ := e.Scan(c.lang, c.name, []byte(c.src))
 		if d := time.Since(start); d > 2*DefaultLimits.MaxTime {
 			t.Errorf("%s: %v, over twice the time limit", c.name, d)
+		}
+		// Past a cap the engine must fail toward detection.
+		if (c.name == "alias-many" || c.name == "type-alias-walk") && len(fs) == 0 {
+			t.Errorf("%s: the vulnerable code at the end is not reported", c.name)
 		}
 	}
 }

@@ -266,13 +266,27 @@ func (s *scanner) typeStart(prev Token) bool {
 func (s *scanner) typeAlias() bool {
 	n := len(s.toks) - 1 // the "="
 	k := n - 1
-	if k >= 0 && s.toks[k].op(">") {
+	closer := func(t Token) int { // ">" closes one list, ">>" two, ">>>" three
+		switch {
+		case t.op(">"):
+			return 1
+		case t.op(">>"):
+			return 2
+		case t.op(">>>"):
+			return 3
+		}
+		return 0
+	}
+	if k >= 0 && closer(s.toks[k]) > 0 {
 		for depth := 0; k >= 0; k-- {
 			if n-k > maxAngles {
-				return false // type parameter lists are short; do not walk back further
+				// Too long to check: take it for a type alias (code stays code)
+				// and report the file as not fully analysed.
+				s.b.tooDeep()
+				return true
 			}
-			if s.toks[k].op(">") {
-				depth++
+			if c := closer(s.toks[k]); c > 0 {
+				depth += c
 			} else if s.toks[k].op("<") {
 				if depth--; depth == 0 {
 					k--
