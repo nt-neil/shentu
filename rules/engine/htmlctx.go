@@ -632,7 +632,9 @@ func (a *analysis) opaqueAt(st0 state, t []Token, j int, recvTaint bool) bool {
 // array argument is in their result: implode(', ', $tags), print_r($a, true),
 // json_encode($a), JSON.stringify({ q }), json.dumps({...}).
 var joiners = words("implode join print_r var_export var_dump vsprintf sprintf http_build_query serialize json_encode " +
-	"wp_json_encode stringify dumps format str_replace str_ireplace preg_replace strtr")
+	"wp_json_encode stringify dumps format str_replace str_ireplace preg_replace strtr " +
+	// merges: the elements of the arrays they are given are in the array they return
+	"shortcode_atts wp_parse_args wp_array_slice_assoc")
 
 // wholeArg reports whether one of a call's arguments is the input itself, not an
 // array or object literal holding it: mb_strtolower($q) and JSON.stringify(q)
