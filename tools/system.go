@@ -305,6 +305,7 @@ type Accounts struct {
 	KeyFiles      []KeyFile   `json:"authorized_keys"`
 	SharedKeys    []SharedKey `json:"keys_in_several_accounts,omitempty"`
 	Preload       []string    `json:"ld_so_preload,omitempty"`
+	PreloadNotPkg []string    `json:"ld_so_preload_not_from_a_package,omitempty"`
 	UnpackagedPAM []string    `json:"pam_modules_not_from_a_package,omitempty"`
 }
 
@@ -359,6 +360,7 @@ func AccountsAudit() Accounts {
 	}
 	a.SharedKeys = sharedKeys(a.KeyFiles)
 	a.Preload = preloadEntries("/etc/ld.so.preload")
+	a.PreloadNotPkg = notPackaged(a.Preload)
 	a.UnpackagedPAM = unpackagedPAM()
 	return a
 }

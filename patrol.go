@@ -147,8 +147,14 @@ func checks(ctx context.Context, cfg *Config, env *tools.Env, st *state, daily b
 			fmt.Sprintf("one SSH key (%s) is in the authorized_keys of %s; attackers plant one key in every account, check that it is yours", k.Fingerprint, strings.Join(k.Users, ", ")), k})
 	}
 	if len(acc.Preload) > 0 {
-		out = append(out, finding{"preload:" + strings.Join(acc.Preload, ","), "critical",
-			fmt.Sprintf("/etc/ld.so.preload loads %s into every program, a common rootkit trick; check each library with dpkg -S or rpm -qf", strings.Join(acc.Preload, ", ")), acc.Preload})
+		// A packaged library (jemalloc, snoopy) is a choice; one from no package is how rootkits hide.
+		sev := "warning"
+		if len(acc.PreloadNotPkg) > 0 {
+			sev = "critical"
+		}
+		out = append(out, finding{"preload:" + strings.Join(acc.Preload, ","), sev,
+			fmt.Sprintf("/etc/ld.so.preload loads %s into every program, a common rootkit trick (not from a package: %s); check each library with dpkg -S or rpm -qf",
+				strings.Join(acc.Preload, ", "), strings.Join(acc.PreloadNotPkg, ", ")), acc})
 	}
 	for _, m := range acc.UnpackagedPAM {
 		out = append(out, finding{"pam:" + m, "warning",

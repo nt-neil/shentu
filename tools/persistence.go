@@ -22,12 +22,22 @@ type SharedKey struct {
 // sharedKeys returns the keys that appear in two or more accounts' authorized_keys files.
 func sharedKeys(files []KeyFile) []SharedKey {
 	users := map[string]map[string]bool{}
+	seen := map[string]bool{}
 	for _, f := range files {
+		if real, err := filepath.EvalSymlinks(f.Path); err == nil {
+			if seen[real] { // one file linked into two homes
+				continue
+			}
+			seen[real] = true
+		}
 		b, err := os.ReadFile(f.Path)
 		if err != nil {
 			continue
 		}
 		for _, line := range strings.Split(string(b), "\n") {
+			if strings.Contains(line, "Please login as the user") {
+				continue // cloud-init puts the default user's key in root's file, only to refuse the login
+			}
 			if fp := keyFingerprint(line); fp != "" {
 				if users[fp] == nil {
 					users[fp] = map[string]bool{}
@@ -60,16 +70,14 @@ func keyFingerprint(line string) string {
 		return ""
 	}
 	if !isKeyType(strings.Fields(line)[0]) {
+		// The options field, scanned as OpenSSH's sshkey_advance_past_options does.
 		quoted := false
 		i := 0
-		for ; i < len(line); i++ {
-			c := line[i]
-			if c == '\\' && quoted && i+1 < len(line) {
+		for ; i < len(line) && (quoted || (line[i] != ' ' && line[i] != '\t')); i++ {
+			if line[i] == '\\' && i+1 < len(line) && line[i+1] == '"' {
 				i++
-			} else if c == '"' {
+			} else if line[i] == '"' {
 				quoted = !quoted
-			} else if (c == ' ' || c == '\t') && !quoted {
-				break
 			}
 		}
 		line = line[i:]
@@ -107,73 +115,93 @@ var sysRoot = "/"
 
 var pamDirs = []string{"lib/security", "lib64/security", "usr/lib/security", "usr/lib64/security", "lib/*/security", "usr/lib/*/security"}
 
-// unpackagedPAM returns PAM modules that no package installed: dpkg's file lists say it, or rpm -qf.
+// unpackagedPAM returns PAM modules that no package installed.
 func unpackagedPAM() []string {
-	owned := map[string]bool{}
-	lists, _ := filepath.Glob(filepath.Join(sysRoot, "var/lib/dpkg/info/*.list"))
-	for _, l := range lists {
-		b, _ := os.ReadFile(l)
-		for _, p := range strings.Split(string(b), "\n") {
-			if strings.HasSuffix(p, ".so") {
-				// merged /usr: dpkg may list /lib/... for a file that is also /usr/lib/...
-				owned[strings.TrimPrefix(p, "/usr")] = true
-			}
-		}
-	}
 	seen := map[string]bool{}
-	var out []string
+	var mods []string
 	for _, d := range pamDirs {
-		mods, _ := filepath.Glob(filepath.Join(sysRoot, d, "*.so"))
-		for _, m := range mods {
+		found, _ := filepath.Glob(filepath.Join(sysRoot, d, "*.so"))
+		for _, m := range found {
 			r, err := filepath.Rel(sysRoot, m)
 			if err != nil {
 				continue
 			}
-			rel := "/" + r
 			if real, err := filepath.EvalSymlinks(m); err == nil {
-				if seen[real] {
+				if seen[real] { // merged /usr: /lib/x and /usr/lib/x are one file
 					continue
 				}
 				seen[real] = true
 			}
-			if len(lists) == 0 || !owned[strings.TrimPrefix(rel, "/usr")] {
-				out = append(out, rel)
-			}
+			mods = append(mods, "/"+r)
 		}
 	}
-	if len(lists) == 0 && len(out) > 0 {
-		// No dpkg: ask rpm, which keeps its file lists in a binary database.
-		owned, ok := rpmOwned(out)
-		if !ok {
-			return nil // no package database to compare with
-		}
-		var not []string
-		for _, p := range out {
-			if !owned[p] {
-				not = append(not, p)
+	return notPackaged(mods)
+}
+
+// notPackaged returns the files that no package installed: dpkg's file lists say it, or rpm -qf.
+// It returns nil when there is no package database to ask.
+func notPackaged(files []string) []string {
+	if len(files) == 0 {
+		return nil
+	}
+	var owned map[string]bool
+	lists, _ := filepath.Glob(filepath.Join(sysRoot, "var/lib/dpkg/info/*.list"))
+	if len(lists) > 0 {
+		owned = map[string]bool{}
+		for _, l := range lists {
+			b, _ := os.ReadFile(l)
+			for _, p := range strings.Split(string(b), "\n") {
+				// merged /usr: dpkg may list /lib/... for a file that is also /usr/lib/...
+				owned[strings.TrimPrefix(p, "/usr")] = true
 			}
 		}
-		out = not
+		for i, f := range files {
+			if owned[strings.TrimPrefix(f, "/usr")] {
+				owned[files[i]] = true
+			}
+		}
+	} else {
+		var ok bool
+		if owned, ok = rpmOwned(files); !ok {
+			return nil
+		}
+	}
+	var out []string
+	for _, f := range files {
+		if !owned[f] {
+			out = append(out, f)
+		}
 	}
 	sort.Strings(out)
 	return out
 }
 
-// rpmOwned reports which of the files an rpm package owns; ok is false without rpm.
+// rpmOwned reports which of the files an rpm package owns, matching rpm's full file list
+// exactly; ok is false when rpm cannot be asked.
 var rpmOwned = func(files []string) (map[string]bool, bool) {
-	if _, err := exec.LookPath("rpm"); err != nil {
+	bin := ""
+	for _, b := range []string{"/usr/bin/rpm", "/bin/rpm"} {
+		if _, err := os.Stat(b); err == nil {
+			bin = b
+			break
+		}
+	}
+	if bin == "" {
 		return nil, false
 	}
-	// rpm names each file it does not own: "file /x is not owned by any package".
-	out, _ := exec.Command("rpm", append([]string{"-qf", "--queryformat", "%{NAME}\\n"}, files...)...).CombinedOutput()
+	cmd := exec.Command(bin, "-qal")
+	cmd.Env = append(os.Environ(), "LC_ALL=C")
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, false
+	}
+	all := map[string]bool{}
+	for _, l := range strings.Split(string(out), "\n") {
+		all[l] = true
+	}
 	owned := map[string]bool{}
 	for _, f := range files {
-		owned[f] = true
-	}
-	for _, l := range strings.Split(string(out), "\n") {
-		if p, ok := strings.CutSuffix(strings.TrimSpace(l), " is not owned by any package"); ok {
-			owned[strings.TrimPrefix(p, "file ")] = false
-		}
+		owned[f] = all[f]
 	}
 	return owned, true
 }

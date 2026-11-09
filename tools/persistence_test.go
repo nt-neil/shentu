@@ -24,11 +24,16 @@ func TestSharedKeys(t *testing.T) {
 		"root":   own1 + " admin@laptop\n" + attacker + "\n",
 		"deploy": `command="/bin/true",no-pty ` + attacker + " x\n" + own2 + " ci\n",
 		"ann":    "# " + attacker + "\n" + own2 + " ci\n",
+		// cloud-init: the default user's key in root's file, only to refuse root logins.
+		"cloud": `no-port-forwarding,command="echo 'Please login as the user \"rocky\" rather than the user \"root\".';echo;sleep 10;exit 142" ` + own1 + "\n",
 	} {
 		p := filepath.Join(dir, user)
 		os.WriteFile(p, []byte(body), 0o600)
 		files = append(files, KeyFile{User: user, Path: p})
 	}
+	// One file linked into two homes is one file.
+	os.Symlink(filepath.Join(dir, "deploy"), filepath.Join(dir, "deploy-link"))
+	files = append(files, KeyFile{User: "deploy2", Path: filepath.Join(dir, "deploy-link")})
 	got := sharedKeys(files)
 	// The attacker key in root and deploy (the comment line in ann does not count), and own2 in deploy and ann.
 	if len(got) != 2 {
@@ -52,6 +57,14 @@ func TestSharedKeys(t *testing.T) {
 	}
 	if keyFingerprint(`environment="A=\"x y\"" `+attacker) != keyFingerprint(attacker) {
 		t.Error("escaped quotes in options")
+	}
+	// As in OpenSSH: \" never closes a quote, so this line has no key sshd would use either.
+	if fp := keyFingerprint(`environment="A=\\" ` + attacker); fp != "" {
+		t.Errorf("unterminated quote: got %s", fp)
+	}
+	// An escaped quote outside quotes does not open a quoted part.
+	if keyFingerprint(`from=\"x `+attacker) != keyFingerprint(attacker) {
+		t.Error("an escaped quote outside quotes")
 	}
 }
 
