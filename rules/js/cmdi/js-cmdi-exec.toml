@@ -90,3 +90,26 @@ export async function POST(req: NextRequest) {
   return new Response(out);
 }
 '''
+
+[[samples]]
+kind = "vulnerable"
+note = "exec imported under another name, and execSync on require('node:child_process')"
+code = '''
+const { exec: run } = require("child_process");
+app.post("/ping", (req, res) => {
+  run("ping -c 1 " + req.body.host, () => res.end());
+  require("node:child_process").execSync("nslookup " + req.body.host);
+});
+'''
+
+[[samples]]
+kind = "safe"
+note = "re.exec is a regular expression method, not child_process"
+code = '''
+const { execFile: run } = require("child_process");
+const HOST = /^[a-z0-9.-]+$/;
+app.post("/ping", (req, res) => {
+  const m = HOST.exec(req.body.host);
+  run("ping", ["-c", "1", "--", String(req.body.host)], () => res.end());
+});
+'''

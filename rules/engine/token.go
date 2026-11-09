@@ -27,6 +27,7 @@ const (
 	FlagRegex                       // JS /regex/
 	FlagNL                          // first token on its line (JS statement ends)
 	FlagMultiline                   // JS /regex/m: ^ and $ match at every line
+	FlagModule                      // JS: a Node core module (fs, child_process, vm) after normalizeModules
 )
 
 // Token is one lexical unit. Comments are dropped. A string literal keeps its raw

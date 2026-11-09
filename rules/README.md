@@ -73,7 +73,13 @@ How the engine reads them:
   `exec(` matches `exec($cmd)`, not `$pdo->exec(...)` or `regex.exec(s)`. A method
   on any receiver starts with `->` (PHP) or `.` (Python, JavaScript):
   `->orderByRaw(`, `.startsWith(`. A module-qualified call must be written out
-  (`os.system(`). Sources match anywhere, so `request.args` also matches
+  (`os.system(`). In JavaScript, the Node modules `fs` (with `fs/promises`),
+  `child_process` and `vm` are read in one form whatever the spelling:
+  `fs.promises.readFile(p)`, `require('node:fs').readFile(p)`, `fsp.readFile(p)`
+  after `import fsp from 'fs/promises'` and `r(p)` after
+  `const { readFile: r } = require('fs')` all read as `fs.readFile(p)`, and a sink
+  written as a bare name (`readFileSync(`) also matches it as a member of one of
+  these modules (`fs.readFileSync(p)`), never as a method of anything else. Sources match anywhere, so `request.args` also matches
   `self.request.args`.
 - A string in a pattern compares its content, whatever the quotes; an unclosed
   one is a prefix: `$_SERVER['HTTP_` matches every `$_SERVER['HTTP_...']`.

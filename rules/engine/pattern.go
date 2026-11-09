@@ -100,6 +100,7 @@ func tokEq(p, c Token) bool {
 // at reports whether p matches toks at i. A strict match also requires that a
 // pattern starting with a name is not a member of something else: "exec(" matches
 // exec($x) but not $pdo->exec($x) or re.exec(s); write "->exec(" or ".exec(" for those.
+// In JavaScript it is allowed as a member of a Node core module: fs.readFileSync(.
 func (p *pat) at(toks []Token, i int, strict bool) bool {
 	if p.text != nil || i+len(p.toks) > len(toks) {
 		return false
@@ -109,7 +110,12 @@ func (p *pat) at(toks []Token, i int, strict bool) bool {
 			return false
 		}
 	}
-	return !strict || p.member || i == 0 || !memberOp(p.php, toks[i-1])
+	if !strict || p.member || i == 0 || !memberOp(p.php, toks[i-1]) {
+		return true
+	}
+	// readFileSync( also matches fs.readFileSync( when fs is a core module
+	// (FlagModule, set by normalizeModules), never re.exec( on any object.
+	return !p.php && i >= 2 && toks[i-1].op(".") && toks[i-2].Flags&FlagModule != 0 && (i == 2 || !memberOp(false, toks[i-3]))
 }
 
 // within reports whether p occurs anywhere in toks (argument fragments).

@@ -32,7 +32,7 @@ func lexJSX(src string, b *budget, jsx bool) []Token {
 		s.skipLine()
 	}
 	s.js(false)
-	return s.toks
+	return normalizeModules(s.toks)
 }
 
 // js lexes code. With stop it returns at an unmatched "}" (the end of "${...}").

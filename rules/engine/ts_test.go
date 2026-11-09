@@ -158,6 +158,24 @@ func TestJSXEvasion(t *testing.T) {
 	}
 }
 
+// TestModules: every spelling of a core module call reads as module.function.
+func TestModules(t *testing.T) {
+	cases := []struct{ src, want string }{
+		{"fs.promises.readFile(p); require('node:fs').readFileSync(p);", `fs . readFile ( p ) ; fs . readFileSync ( p ) ;`},
+		{"const f = require('fs'); f.readFileSync(p);", `const f = fs ; fs . readFileSync ( p ) ;`},
+		{"const { readFileSync: r, promises: q } = require('fs'); r(p); q.readFile(p);",
+			`const { readFileSync : r , promises : q } = fs ; fs . readFileSync ( p ) ; fs . readFile ( p ) ;`},
+		{"import fsp from 'fs/promises'; import { exec as run } from 'child_process'; fsp.readFile(p); run(c);",
+			`import fsp from "fs/promises" ; import { exec as run } from "child_process" ; fs . readFile ( p ) ; child_process . exec ( c ) ;`},
+		{"re.exec(s); x.fs.readFile(p); const r = other(); r(p);", `re . exec ( s ) ; x . fs . readFile ( p ) ; const r = other ( ) ; r ( p ) ;`},
+	}
+	for _, c := range cases {
+		if got := tsText(LexJS(c.src)); got != c.want {
+			t.Errorf("%s:\n got %s\nwant %s", c.src, got, c.want)
+		}
+	}
+}
+
 func TestLangOfTS(t *testing.T) {
 	for name, want := range map[string]string{"a.ts": "ts", "a.mts": "ts", "a.CTS": "ts", "a.tsx": "tsx", "a.d.ts": "ts", "a.js": "js", "a.jsx": "jsx"} {
 		if got := LangOf(name); got != want {
