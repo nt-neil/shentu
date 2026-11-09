@@ -8,8 +8,8 @@ frameworks = ["flask", "django"]
 sources = ["request.files", "request.FILES", "urlopen(", "requests.get(", "request.form(", "request.body(", "request.read(", "self.request.files", "self.request.body", "file.file", "upload.file"]
 sinks = [".extractall(", ".extract(", "shutil.unpack_archive("]
 sanitizers = [".is_relative_to(", ".startswith("]
-fix = "On Python 3.12+ call extractall(..., filter='data'); otherwise check every member's resolved path stays inside the target directory and reject links."
-refs = ["CVE-2007-4559", "CVE-2026-14966", "CVE-2026-68922"]
+fix = "Pass filter=\"data\" to tarfile extractall (the default from Python 3.14; 3.12 and 3.13 warn and still extract unsafely), or check that every member's resolved path stays inside the target directory and reject links. zipfile.extractall already drops \"..\" and leading \"/\" from names, but the engine cannot tell a zip from a tar."
+refs = ["CVE-2007-4559", "CVE-2026-14966"]
 
 [[args]]
 sinks = [".extractall(", ".extract("]
@@ -67,17 +67,17 @@ def upload_trace(request):
 [[samples]]
 kind = "vulnerable"
 code = '''
-@app.post("/import")
-async def import_zip(upload: UploadFile):
-    with zipfile.ZipFile(upload.file) as zf:
-        zf.extractall(IMPORT_DIR)
+@app.post("/bundles")
+async def unpack_bundle(upload: UploadFile):
+    with tarfile.open(fileobj=upload.file) as tf:
+        tf.extractall(BUNDLE_DIR)
 '''
 
 [[samples]]
 kind = "safe"
 code = '''
-@app.post("/import")
-async def import_zip(upload: UploadFile):
+@app.post("/bundles")
+async def unpack_bundle(upload: UploadFile):
     with tarfile.open(fileobj=upload.file) as tf:
-        tf.extractall(IMPORT_DIR, filter="data")
+        tf.extractall(BUNDLE_DIR, filter="data")
 '''

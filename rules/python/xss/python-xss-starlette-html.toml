@@ -6,7 +6,7 @@ severity = "medium"
 tier = "info"
 title = "FastAPI or Starlette HTML response with a request value between tags without the escaping that context needs"
 sources = ["request.query_params", "request.path_params", "request.form(", "request.json(", "request.body(", "request.headers", "request.cookies", "request.url.path"]
-sinks = ["HTMLResponse(", "responses.HTMLResponse(", "fastapi.responses.HTMLResponse(", "starlette.responses.HTMLResponse(", "Response("]
+sinks = ["HTMLResponse(", "responses.HTMLResponse(", "fastapi.responses.HTMLResponse(", "starlette.responses.HTMLResponse("]
 sanitizers = ["html.escape(", "markupsafe.escape(", "escape(", "urllib.parse.quote(", "quote("]
 fix = "Escape the value with html.escape(), or render with Jinja2Templates (it escapes by default)."
 refs = ["CVE-2026-54386"]
@@ -15,11 +15,7 @@ refs = ["CVE-2026-54386"]
 sinks = ["HTMLResponse(", "responses.HTMLResponse(", "fastapi.responses.HTMLResponse(", "starlette.responses.HTMLResponse("]
 context = ["html"]
 
-# media_type="text/html" or "text/html; charset=...": the string is a prefix
-[[args]]
-sinks = ["Response("]
-when = ['media_type="text/html', "media_type='text/html"]
-context = ["html"]
+# Response(..., media_type="text/html") is python-xss-response's sink.
 
 [[samples]]
 kind = "vulnerable"
