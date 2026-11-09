@@ -48,16 +48,17 @@ type fnInfo struct {
 type summary struct {
 	params  []string            // the parameters' names, for named arguments
 	rest    bool                // the function takes further arguments
-	sink    [maxSumParams][]int // per parameter: the sink lines it reaches
+	sink    [maxSumParams][]loc // per parameter: the sink lines it reaches, in this or another file
 	sinkEmb uint64              // parameters embedded in a larger string on the way to a sink
 	ret     uint64              // parameters whose input the return value carries
 	retWeak uint64              // ... only through calls the analysis does not know
 	retEmb  uint64              // ... embedded in a larger string
+	checks  uint64              // parameters the function validates when it returns true (a validator)
 	retSrc  bool                // the return value carries input of its own
 }
 
 func (s *summary) equal(o *summary) bool {
-	if s.ret != o.ret || s.retSrc != o.retSrc || s.retEmb != o.retEmb || s.retWeak != o.retWeak || s.sinkEmb != o.sinkEmb {
+	if s.ret != o.ret || s.retSrc != o.retSrc || s.retEmb != o.retEmb || s.retWeak != o.retWeak || s.sinkEmb != o.sinkEmb || s.checks != o.checks {
 		return false
 	}
 	for i := range s.sink {
@@ -145,9 +146,10 @@ func (ff *fileFuncs) norm(c string) string {
 
 // summRun collects what one analysis of a function body found.
 type summRun struct {
-	lines map[int]bool
-	emb   map[int]bool // lines reached by input embedded in a larger string
-	ret   val
+	lines  map[loc]bool
+	emb    map[loc]bool      // lines reached by input embedded in a larger string
+	checks []map[string]bool // per return that can be true: the paths it validates
+	ret    val
 }
 
 // funcKey is the key of a function in fileFuncs.byKey. PHP function, method
@@ -193,6 +195,8 @@ func collectFuncs(ss []*stmt, lang string) map[string][]*fnInfo {
 				}
 				if len(t) == 3 && (t[0].Kind == Ident || t[0].Kind == Var) && t[1].op("=") && t[2].Kind == Func && t[2].Fn < len(s.funcs) {
 					add(t[0].Text, s.funcs[t[2].Fn])
+				} else if n := len(t); n >= 5 && t[n-1].Kind == Func && t[n-1].Fn < len(s.funcs) && t[n-2].op("=") && t[n-3].Kind == Ident && dotted(t[:n-2]) {
+					add(t[n-3].Text, s.funcs[t[n-1].Fn]) // exports.f = function, module.exports.f = (x) => ...
 				}
 			}
 			for _, f := range s.funcs {
@@ -211,6 +215,16 @@ func collectFuncs(ss []*stmt, lang string) map[string][]*fnInfo {
 	}
 	walk(ss, 0)
 	return out
+}
+
+// dotted reports whether t is a plain dotted name (a.b.c).
+func dotted(t []Token) bool {
+	for i, tk := range t {
+		if i%2 == 0 && tk.Kind != Ident || i%2 == 1 && !tk.op(".") {
+			return false
+		}
+	}
+	return len(t)%2 == 1
 }
 
 // paramInfo reads parameter names and numeric type declarations.
@@ -308,6 +322,57 @@ func (ff *fileFuncs) key(t []Token, i int, cls, parent, caller string) string {
 		return ""
 	}
 	return name
+}
+
+// callee is the function a call names, for resolving it in another file: name,
+// and how it is reached. recv is "" for a plain call, "this" for the object's
+// own class, "parent" for parent::/super, and otherwise the receiver as
+// written (Foo::, $mailer->, module.).
+type callee struct{ name, recv string }
+
+func (a *analysis) callee(t []Token, i int) (callee, bool) {
+	if i+1 >= len(t) || !t[i+1].op("(") || t[i].Kind != Ident && !(a.php && t[i].Kind == Var) {
+		return callee{}, false
+	}
+	if i > 0 && memberOp(a.php, t[i-1]) {
+		if t[i].Kind != Ident || i < 2 {
+			return callee{}, false
+		}
+		if i >= 4 && t[i-2].op(")") && t[i-3].op("(") && t[i-4].word("super") || t[i-2].word("super") {
+			return callee{t[i].Text, "parent"}, true
+		}
+		if i > 2 && (memberOp(a.php, t[i-3]) || t[i-3].op("\\")) || t[i-2].Kind != Ident && t[i-2].Kind != Var {
+			return callee{}, false
+		}
+		r := t[i-2].Text
+		switch {
+		case a.php && strings.EqualFold(r, "parent"):
+			r = "parent"
+		case receivers[r] || a.php && (strings.EqualFold(r, "self") || strings.EqualFold(r, "static")):
+			r = "this"
+		}
+		return callee{t[i].Text, r}, true
+	}
+	if i > 0 && (t[i-1].word("function") || t[i-1].word("def") || t[i-1].word("new") || t[i-1].word("fn")) {
+		return callee{}, false
+	}
+	return callee{t[i].Text, ""}, true
+}
+
+// callSummary returns the summary of the function the call at t[i] reaches: the
+// one of this file at key, or, when there is none, one of another file of the
+// project.
+func (a *analysis) callSummary(t []Token, i int, key string) *summary {
+	if key != "" {
+		return a.summaryOf(key)
+	}
+	if a.proj == nil {
+		return nil
+	}
+	if c, ok := a.callee(t, i); ok {
+		return a.proj.summary(a, c)
+	}
+	return nil
 }
 
 // receivers are the objects through which a call reaches a method of the
@@ -614,6 +679,9 @@ func (a *analysis) summarizeKey(key string) *summary {
 // each function is the whole answer.
 func (a *analysis) crossNeeded(tree []*stmt) bool {
 	sc := a.sc
+	if sc == nil {
+		return false
+	}
 	a.relevant("") // works out relevance for every function
 	for k, r := range sc.rel {
 		if r == 1 && len(sc.ff.callers[k]) > 0 {
@@ -621,13 +689,26 @@ func (a *analysis) crossNeeded(tree []*stmt) bool {
 		}
 	}
 	found := false
-	walkToks(tree, 0, func(t []Token) {
+	look := func(t []Token) {
 		for i := 0; i < len(t) && !found; i++ {
 			if k := sc.ff.key(t, i, "", "", ""); k != "" && sc.rel[k] == 1 {
 				found = true
+			} else if k == "" && a.proj != nil && i+1 < len(t) && t[i+1].op("(") && t[i].Kind == Ident &&
+				a.proj.declaredElsewhere(a.lang(), t[i].Text, a.file) {
+				found = true // may call into another file of the project (types are known only later)
 			}
 		}
-	})
+	}
+	walkToks(tree, 0, look)
+	if a.proj != nil {
+		for _, infos := range sc.funcs { // and inside the file's functions, for calls into other files
+			for _, fi := range infos {
+				if !found {
+					walkToks(fi.f.body, 0, look)
+				}
+			}
+		}
+	}
 	return found
 }
 
@@ -646,8 +727,9 @@ func (a *analysis) returnsUnknown(key string) bool {
 	}
 	sc.retUnk[key] = 1
 	for _, fi := range sc.funcs[key] {
-		x := &analysis{r: a.r, php: a.php, py: a.py, js: a.js, b: a.b, kw: a.kw, seen: map[int]bool{}, sc: sc,
-			summ: &summRun{lines: map[int]bool{}, emb: map[int]bool{}}, noSrc: true, cls: fi.f.class, parent: fi.f.parent, fname: fi.f.name}
+		x := &analysis{r: a.r, php: a.php, py: a.py, js: a.js, b: a.b, kw: a.kw, seen: map[loc]bool{}, sc: sc,
+			summ: &summRun{lines: map[loc]bool{}, emb: map[loc]bool{}}, noSrc: true, cls: fi.f.class, parent: fi.f.parent, fname: fi.f.name,
+			file: a.file, proj: a.proj}
 		st := state{}
 		for _, p := range fi.params {
 			if p != "" {
@@ -713,6 +795,13 @@ func (a *analysis) toksRelevant(t []Token) bool {
 	if !a.b.charge(len(t)) {
 		return true
 	}
+	if len(t) > 1 && t[0].word("return") { // a validator: return in_array($c, $cols, true);
+		for _, tk := range t[1:] {
+			if tk.Kind == Ident && checkWords[tk.Text] {
+				return true
+			}
+		}
+	}
 	for i := range t {
 		if t[i].Kind == Ident && i+1 < len(t) && t[i+1].op("(") && numericFuncs[a.lang()][t[i].Text] ||
 			a.php && t[i].op("(") && i+2 < len(t) && t[i+2].op(")") && numericCasts[strings.ToLower(t[i+1].Text)] {
@@ -734,9 +823,18 @@ func (a *analysis) toksRelevant(t []Token) bool {
 				}
 			}
 		}
+		if a.proj != nil && t[i].Kind == Ident && i+1 < len(t) && t[i+1].op("(") && a.calleeKey(t, i) == "" {
+			if c, ok := a.callee(t, i); ok && a.proj.relevant(a, c) {
+				return true // a call into a function of another file that matters
+			}
+		}
 	}
 	return false
 }
+
+// checkWords are calls a validator's return is commonly made of.
+var checkWords = words("in_array array_key_exists preg_match ctype_digit ctype_alnum ctype_alpha is_numeric filter_var " +
+	"fullmatch match includes has test startsWith")
 
 // summarize adds what fi does to s.
 func (a *analysis) summarize(fi *fnInfo, s *summary) {
@@ -750,9 +848,11 @@ func (a *analysis) summarize(fi *fnInfo, s *summary) {
 		a.sc.capped = true
 	}
 	run := func(mask uint64, sources bool) *summRun {
-		x := &analysis{r: a.r, php: a.php, py: a.py, js: a.js, b: a.b, kw: a.kw, seen: map[int]bool{}, sc: a.sc,
-			summ: &summRun{lines: map[int]bool{}, emb: map[int]bool{}}, noSrc: !sources, cls: fi.f.class, parent: fi.f.parent, fname: fi.f.name}
+		x := &analysis{r: a.r, php: a.php, py: a.py, js: a.js, b: a.b, kw: a.kw, seen: map[loc]bool{}, sc: a.sc,
+			summ: &summRun{lines: map[loc]bool{}, emb: map[loc]bool{}}, noSrc: !sources, cls: fi.f.class, parent: fi.f.parent, fname: fi.f.name,
+			file: a.file, proj: a.proj}
 		st := state{}
+		x.paramTypes(fi.f)
 		for i := 0; i < n; i++ {
 			if p := fi.params[i]; p != "" && mask&(1<<i) != 0 {
 				st[p] = entry{taint: true}
@@ -765,8 +865,23 @@ func (a *analysis) summarize(fi *fnInfo, s *summary) {
 	// With the rule's sources and no parameter: input of its own. Only input
 	// returned as is counts (sanitize_locale_name($_GET['l']) is left out, as it
 	// was before calls were followed).
-	if base := run(0, true); base.ret.taint && !base.ret.weak {
+	base := run(0, true)
+	if base.ret.taint && !base.ret.weak {
 		s.retSrc = true
+	}
+	// A validator: every return that can be true is a check of the parameter
+	// (return in_array($column, $columns, true);), so a true result means the
+	// argument passed it.
+	if len(base.checks) > 0 {
+		for i := 0; i < n; i++ {
+			all := fi.params[i] != ""
+			for _, c := range base.checks {
+				all = all && c[fi.params[i]]
+			}
+			if all {
+				s.checks |= 1 << i
+			}
+		}
 	}
 	if n == 0 || a.b.hit {
 		return
@@ -788,7 +903,12 @@ func (a *analysis) summarize(fi *fnInfo, s *summary) {
 				s.sinkEmb |= 1 << i
 			}
 		}
-		slices.Sort(s.sink[i])
+		slices.SortFunc(s.sink[i], func(x, y loc) int {
+			if x.path != y.path {
+				return strings.Compare(x.path, y.path)
+			}
+			return x.line - y.line
+		})
 		if r.ret.taint {
 			s.ret |= 1 << i
 			if r.ret.weak {
@@ -881,11 +1001,11 @@ func (a *analysis) callVal(st state, s *summary, args [][]Token) val {
 
 // callSinks reports the sinks a call reaches through the callee's parameters.
 func (a *analysis) callSinks(st state, t []Token) {
-	if a.sc == nil {
+	if a.sc == nil && a.proj == nil {
 		return
 	}
 	for i := 0; i+1 < len(t); i++ {
-		s := a.summaryOf(a.calleeKey(t, i))
+		s := a.callSummary(t, i, a.calleeKey(t, i))
 		if s == nil || !s.reachesSink() {
 			continue
 		}

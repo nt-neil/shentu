@@ -1,6 +1,10 @@
 package engine
 
-import "strings"
+import (
+	"maps"
+	"slices"
+	"strings"
+)
 
 // The analysis walks one function at a time, statement by statement, in order. It
 // keeps a state: which variables (and member or index paths such as $user->lang)
@@ -109,8 +113,8 @@ type analysis struct {
 	js     bool
 	b      *budget
 	kw     map[string]bool // words that are keywords in this language
-	seen   map[int]bool
-	lines  []int
+	seen   map[loc]bool
+	lines  []loc
 	guards []map[string]bool // per enclosing loop: keys a rejecting check validated
 	depth  int
 	raw    bool // evaluating whether a value came from input at all: sanitizers do not clean
@@ -123,23 +127,33 @@ type analysis struct {
 	cls    string // class of the method being analysed, and its parent
 	parent string
 	fname  string // name of the function being analysed
+
+	file  string            // the file analysed, for findings and for calls into other files
+	proj  *Project          // the project the file belongs to, or nil (project.go)
+	types map[string]string // variable → class of the object assigned to it ($x = new Foo)
 }
 
-func (a *analysis) report(line int) { a.reportSink(line, false) }
+// loc is a place a sink is reached: a line of a file.
+type loc struct {
+	path string
+	line int
+}
+
+func (a *analysis) report(line int) { a.reportSink(loc{a.file, line}, false) }
 
 // reportSink reports a sink reached at line; emb tells whether the input was
 // embedded in a larger string, which a summary keeps for library mode.
-func (a *analysis) reportSink(line int, emb bool) {
+func (a *analysis) reportSink(l loc, emb bool) {
 	if a.summ != nil {
-		a.summ.lines[line] = true
+		a.summ.lines[l] = true
 		if emb {
-			a.summ.emb[line] = true
+			a.summ.emb[l] = true
 		}
 		return
 	}
-	if !a.seen[line] {
-		a.seen[line] = true
-		a.lines = append(a.lines, line)
+	if !a.seen[l] {
+		a.seen[l] = true
+		a.lines = append(a.lines, l)
 	}
 }
 
@@ -168,6 +182,15 @@ func (a *analysis) stmt(s *stmt, st state) (state, uint8) {
 		a.sinks(st, s.toks)
 		if a.summ != nil && len(s.toks) > 0 && s.toks[0].word("return") {
 			a.summ.ret = or(a.summ.ret, a.expr(st, s.toks[1:], false))
+			if rest := s.toks[1:]; !(len(rest) == 1 && falsy(rest)) {
+				set := map[string]bool{}
+				if _, cleaned := a.refine(st, rest, true); len(cleaned) > 0 {
+					for _, k := range cleaned {
+						set[k] = true
+					}
+				}
+				a.summ.checks = append(a.summ.checks, set)
+			}
 		}
 		a.assignStmt(st, s.toks)
 		a.assertStmt(st, s.toks)
@@ -333,14 +356,20 @@ func (a *analysis) function(f *fn, st state) {
 		}
 	}
 	a.libParams(f, x)
-	cls, parent, fname := a.cls, a.parent, a.fname
+	cls, parent, fname, types := a.cls, a.parent, a.fname, a.types
 	if f.method {
 		a.cls, a.parent = f.class, f.parent
 	}
 	if f.name != "" {
 		a.fname = f.name
 	}
-	defer func() { a.cls, a.parent, a.fname = cls, parent, fname }()
+	if f.fresh || f.name != "" {
+		a.types = map[string]string{}
+	} else {
+		a.types = maps.Clone(types)
+	}
+	a.paramTypes(f)
+	defer func() { a.cls, a.parent, a.fname, a.types = cls, parent, fname, types }()
 	a.depth++
 	a.block(f.body, x)
 	a.depth--
@@ -503,11 +532,50 @@ func (a *analysis) assign(st state, t []Token) (val, bool) {
 			v.raw = v.taint || a.rawInput(st, rhs)
 		}
 	}
+	cls := a.newClass(rhs)
 	for _, tg := range a.targetList(lhs) {
 		a.setTarget(st, tg, v, t[k].Text, sep)
+		if cls != "" && len(tg) == 1 {
+			a.setType(tg[0].Text, cls)
+		}
 	}
 	return v, sep
 }
+
+// newClass returns the class an expression makes: new Foo(...), Python Foo(...).
+func (a *analysis) newClass(t []Token) string {
+	switch {
+	case len(t) > 1 && !a.py && t[0].word("new") && (t[1].Kind == Ident || t[1].op(`\`)):
+		return strings.TrimPrefix(qualifiedName(t, 1), `\`)
+	case len(t) > 2 && a.py && t[0].Kind == Ident && t[1].op("(") && closeOf(t, 1) == len(t)-1 && t[0].Text[0] >= 'A' && t[0].Text[0] <= 'Z':
+		return t[0].Text
+	}
+	return ""
+}
+
+func (a *analysis) setType(name, cls string) {
+	if a.types == nil {
+		a.types = map[string]string{}
+	}
+	a.types[name] = cls
+}
+
+// paramTypes records parameters declared with a class type (Foo $x, x: Foo).
+func (a *analysis) paramTypes(f *fn) {
+	for _, part := range splitTop(f.params, isComma) {
+		for k := 0; k+1 < len(part); k++ {
+			switch {
+			case a.php && part[k].Kind == Ident && part[k+1].Kind == Var && !numericCasts[strings.ToLower(part[k].Text)] &&
+				!scalarTypes[strings.ToLower(part[k].Text)]:
+				a.setType(part[k+1].Text, part[k].Text)
+			case a.py && k == 0 && len(part) > 2 && part[0].Kind == Ident && part[1].op(":") && part[2].Kind == Ident:
+				a.setType(part[0].Text, part[2].Text)
+			}
+		}
+	}
+}
+
+var scalarTypes = words("string array mixed callable iterable object self static void null")
 
 // targetList splits an assignment target into the paths it writes: a, [a, b],
 // {a, b: c}, list($a, $b), "k, v" in Python.
@@ -1136,11 +1204,13 @@ func (a *analysis) postfix(st state, t []Token, start, baseEnd int, v val, whole
 			if j == baseEnd && a.php && t[start].Kind == Ident {
 				fn = t[start].Text
 			}
+			var sum *summary
 			key := ""
 			if j-1 == start || j-3 == start && j-2 > start && memberOp(a.php, t[j-2]) {
 				key = a.calleeKey(t, j-1)
+				sum = a.callSummary(t, j-1, key)
 			}
-			if sum := a.summaryOf(key); sum != nil && !a.raw {
+			if sum != nil && !a.raw {
 				v = a.callVal(st, sum, callArgs(t, j))
 			} else if a.argsTaint(st, inside(t, j, c), fn) {
 				// "...".format(x), sprintf("... %s", $x), implode(...): the input becomes part of a string
@@ -1188,13 +1258,14 @@ func (a *analysis) argsTaint(st state, inner []Token, fn string) bool {
 	return false
 }
 
-// passFuncs return their input reshaped but whole (decoded, trimmed, case or
+// passFuncs return their input reshaped but whole (decoded, trimmed, split, case or
 // slashes changed): input through them is still the input, not a guess, so a
 // webshell's system(base64_decode($c)) is followed into other functions.
 var passFuncs = map[string]map[string]bool{
 	"php": words("trim ltrim rtrim base64_decode urldecode rawurldecode stripslashes stripcslashes strtolower strtoupper " +
 		"ucfirst ucwords lcfirst str_replace str_ireplace substr strrev str_pad hex2bin html_entity_decode " +
-		"htmlspecialchars_decode wp_unslash gzinflate gzuncompress gzdecode str_rot13 convert_uudecode strval"),
+		"htmlspecialchars_decode wp_unslash gzinflate gzuncompress gzdecode str_rot13 convert_uudecode strval " +
+		"explode preg_split str_split"),
 	"python": words("unquote unquote_plus b64decode urlsafe_b64decode decode str bytes"),
 	"js":     words("decodeURIComponent decodeURI unescape atob String trim from"),
 }
@@ -1377,6 +1448,33 @@ func (a *analysis) refine(st state, cond []Token, truth bool) (state, []string) 
 		split = func(t Token) bool { return t.op("&&") || t.word("and") }
 	}
 	var cleaned []string
+	other := func(t Token) bool { return t.op("&&") || t.word("and") }
+	if truth {
+		other = func(t Token) bool { return t.op("||") || t.word("or") }
+	}
+	if parts := splitTop(cond, other); len(parts) > 1 && len(splitTop(cond, split)) == 1 {
+		// !(A && B) is !A || !B, and A || B holds with A or with B: a value is
+		// validated where every part on its own validates it.
+		var common map[string]bool
+		for _, p := range parts {
+			_, ck := a.refine(st, p, truth)
+			set := map[string]bool{}
+			for _, k := range ck {
+				if common == nil || common[k] {
+					set[k] = true
+				}
+			}
+			common = set
+		}
+		for k := range common {
+			e := out[k]
+			e.taint = false
+			out[k] = e
+			cleaned = append(cleaned, k)
+		}
+		slices.Sort(cleaned)
+		return out, cleaned
+	}
 	for _, atom := range splitTop(cond, split) {
 		pos, keys := a.guard(st, atom)
 		if keys == nil || pos != truth {
@@ -1513,6 +1611,9 @@ func (a *analysis) hasSanitizerWord(w string) bool {
 // sanitizers used as a check (in_array, str_starts_with, .startsWith, .is_relative_to).
 func (a *analysis) checkKeys(st state, atom []Token) []keyRef {
 	n := len(atom)
+	if keys := a.validatorKeys(st, atom); keys != nil {
+		return keys
+	}
 	// hash_equals(sign($v), $_POST['h']), hmac.compare_digest(...): an integrity
 	// check. What it validates is the value fed into a keyed MAC or signature on
 	// one side, never the other side as given (the attacker's), nor a value under
@@ -1534,8 +1635,10 @@ func (a *analysis) checkKeys(st state, atom []Token) []keyRef {
 			return nil
 		}
 	}
-	// PHP in_array($x, $allowed) and array_key_exists($x, $map).
-	if a.php && n > 2 && (atom[0].word("in_array") || atom[0].word("array_key_exists")) && atom[1].op("(") && closeOf(atom, 1) == n-1 {
+	// PHP in_array($x, $allowed), array_key_exists($x, $map), and WordPress
+	// validate_file($x, $allowed), which ends in the same in_array check.
+	if a.php && n > 2 && (atom[0].word("in_array") || atom[0].word("array_key_exists") || atom[0].word("validate_file")) &&
+		atom[1].op("(") && closeOf(atom, 1) == n-1 {
 		if args := splitTop(atom[2:n-1], isComma); len(args) >= 2 && a.allowlist(st, args[1]) {
 			return a.keysOf(args[0])
 		}
@@ -1624,6 +1727,32 @@ func (a *analysis) macKeys(st state, arg []Token) []keyRef {
 	return keys
 }
 
+// validatorKeys returns what a call to a validator of the code's own checks
+// (if (!is_valid_column($t, $c)) return;): the arguments its summary says a
+// true result validates.
+func (a *analysis) validatorKeys(st state, atom []Token) []keyRef {
+	n := len(atom)
+	if n < 3 || !atom[n-1].op(")") || a.sc == nil && a.proj == nil {
+		return nil
+	}
+	open := openOf(atom, n-1)
+	if open < 1 || open > 4 || !atom[open].op("(") {
+		return nil
+	}
+	s := a.callSummary(atom, open-1, a.calleeKey(atom, open-1))
+	if s == nil || s.checks == 0 {
+		return nil
+	}
+	args := callArgs(atom, open)
+	var keys []keyRef
+	for k, p := range a.argIndex(s, args) {
+		if p >= 0 && s.checks&(1<<p) != 0 {
+			keys = append(keys, a.keysOf(args[k])...)
+		}
+	}
+	return keys
+}
+
 // fromRequest reports whether t carries input, or names request data at all
 // (also while the rule's sources are off, in a summary run).
 func (a *analysis) fromRequest(st state, t []Token) bool {
@@ -1659,7 +1788,10 @@ func (a *analysis) allowlist(st state, t []Token) bool {
 	if len(t) == 2 && t[0].op("[") && t[1].op("]") || len(t) == 3 && t[0].word("array") && t[1].op("(") && t[2].op(")") {
 		return false // an empty list allows nothing, and validate_file_to_edit($f, []) checks nothing
 	}
-	return !a.expr(st, t, false).taint
+	// A list an unknown function returns (the files of a theme, the keys of a
+	// registry) holds what that function found, not the input it was given.
+	v := a.expr(st, t, false)
+	return !v.taint || v.weak
 }
 
 // keysOf lists the plain paths in t (not function names, not method calls).
@@ -1741,6 +1873,9 @@ func (a *analysis) sink(st state, t []Token, i int, s *pat) {
 	}
 	var recv []Token
 	if s.member {
+		if a.ownMethod(t, i+1) {
+			return // $term_query->query($args): a method of the code's own, followed by its summary
+		}
 		recv = t[a.chainStart(t, i):i]
 		if a.expr(st, recv, false).san {
 			return // a method of an object a sanitizer made (SandboxedEnvironment().from_string)
@@ -1778,8 +1913,31 @@ func (a *analysis) sink(st state, t []Token, i int, s *pat) {
 		tainted = hit(a.expr(st, region, whole))
 	}
 	if tainted {
-		a.reportSink(t[i].Line, emb)
+		a.reportSink(loc{a.file, t[i].Line}, emb)
 	}
+}
+
+// ownMethod reports whether the method called at t[j] resolves to a function of
+// the code's own. A sink named by its method alone (->query) is then that
+// function, not a database driver's method: whatever reaches a real sink inside
+// it is found through its summary. (Where following calls is cut short, the
+// file's result keeps what was found without them.)
+func (a *analysis) ownMethod(t []Token, j int) bool {
+	if j >= len(t) || t[j].Kind != Ident || a.b.hit {
+		return false
+	}
+	if a.calleeKey(t, j) != "" {
+		return true
+	}
+	if a.proj == nil {
+		return false
+	}
+	c, ok := a.callee(t, j)
+	if !ok {
+		return false
+	}
+	f, _ := a.proj.resolve(a, c)
+	return f != ""
 }
 
 // when reports whether one of the fragments is among a call's arguments. A

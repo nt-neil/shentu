@@ -169,6 +169,9 @@ func TestEngineFlows(t *testing.T) {
 		{"python qualified flask request", "python", "def add():\n    f = flask.request.files['f']\n    p = os.path.join('/srv', 'tmp_' + f.filename)\n", 3},
 		{"python self.request", "python", "class V(View):\n    def get(self):\n        cur.execute('SELECT ' + self.request.GET['c'])\n", 3},
 		{"python request attribute of a non-source", "python", "def v():\n    cur.execute('SELECT ' + resp.requests.args)\n", 0},
+		{"php every part of a failed && validates", "php", "<?php\n$c = $_GET['c'];\nif (!empty($c) && !in_array($c, array('id'), true)) { exit; }\nmysqli_query($db, \"SELECT $c\");\n", 0},
+		{"php one part of a failed && does not", "php", "<?php\n$c = $_GET['c'];\nif ($x && !in_array($c, array('id'), true)) { exit; }\nmysqli_query($db, \"SELECT $c\");\n", 4},
+		{"python or of two checks", "python", "def v(request):\n    c = request.args['c']\n    if c == 'a' or c == 'b':\n        cur.execute(f\"SELECT {c}\")\n", 0},
 		// Found on real projects (E7): numbers, literal comparisons, empty values, filters,
 		// allowlist intersections, fixed path prefixes, WordPress validators, regex checks.
 		{"php int cast", "php", "<?php\n$id = (int) $_GET['id'];\nmysqli_query($db, \"SELECT $id\");\n", 0},

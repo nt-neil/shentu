@@ -176,7 +176,7 @@ func TestAppCodeAuditPartial(t *testing.T) {
 	res := AppCodeAudit(context.Background(), []string{dir}, nil)
 	var notes []CodeFinding
 	for _, f := range res.Findings {
-		if f.Kind == "injection" {
+		if f.Kind == "injection" && !strings.Contains(f.Detail, "calls across files") {
 			notes = append(notes, f)
 		}
 	}
@@ -206,7 +206,7 @@ func TestAppCodeAuditInjectionLimits(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "b.py"), []byte("print(1)\n"), 0o644)
 	summary := func() CodeFinding {
 		for _, f := range AppCodeAudit(context.Background(), []string{dir}, nil).Findings {
-			if f.Kind == "injection" {
+			if f.Kind == "injection" && !strings.Contains(f.Detail, "calls across files") {
 				return f
 			}
 		}
@@ -255,3 +255,6 @@ func TestAppCodeAuditExtensionsAndNUL(t *testing.T) {
 		t.Error("LangOf and the audit disagree on PHP extensions")
 	}
 }
+
+// The audits in these tests keep no code index.
+func init() { codeIndexFile = func() string { return "" } }

@@ -11,6 +11,12 @@ fix = "Remove eval and do the same thing in ordinary code: decode input with jso
 refs = ["CVE-2017-9841", "CVE-2026-33479"]
 text = ["php://input"]
 
+# preg_replace_callback(pattern, callback, subject): input in the subject is
+# only text being matched; code runs when the request names the callback.
+[[args]]
+sinks = ["preg_replace_callback("]
+arg = 2
+
 [[samples]]
 kind = "vulnerable"
 code = '''
@@ -36,4 +42,20 @@ $order = [];
 foreach ((array) ($_REQUEST['sections'] ?? []) as $name => $ids) {
     $order[(string) $name] = array_map('intval', explode(',', (string) $ids));
 }
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "the request names the function called for every match"
+code = '''
+<?php
+echo preg_replace_callback('/\w+/', $_GET['fn'], $text);
+'''
+
+[[samples]]
+kind = "safe"
+note = "a fixed callback; the input is only the text matched"
+code = '''
+<?php
+echo preg_replace_callback('/&#(\d+);/', 'decode_entity', $_POST['content']);
 '''

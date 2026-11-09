@@ -152,8 +152,8 @@ func TestInterprocDeepChain(t *testing.T) {
 	}
 	b.WriteString("function f40($x) { system($x); }\n")
 	fs, err := e.Scan("php", "f", []byte(b.String()))
-	if !errors.Is(err, ErrLimit) {
-		t.Errorf("a chain deeper than the cap: err %v, want ErrLimit", err)
+	if !errors.Is(err, ErrCalls) {
+		t.Errorf("a chain deeper than the cap: err %v, want ErrCalls (checked function by function, calls cut short)", err)
 	}
 	if len(fs) == 0 || fs[0].Line != 2 {
 		t.Errorf("the direct finding is lost: %+v", fs)
