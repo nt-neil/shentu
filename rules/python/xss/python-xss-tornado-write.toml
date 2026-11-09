@@ -1,0 +1,70 @@
+id = "python-xss-tornado-write"
+lang = "python"
+class = "xss"
+cwe = "CWE-79"
+severity = "medium"
+tier = "info"
+title = "Tornado handler writes a request value into the page without escaping"
+sources = ["self.get_argument(", "self.get_arguments(", "self.get_query_argument(", "self.get_query_arguments(", "self.get_body_argument(", "self.get_body_arguments(", "self.get_cookie(", "self.request.arguments", "self.request.query_arguments", "self.request.body_arguments", "self.request.body", "self.request.uri", "self.request.path", "self.request.headers", "self.path_kwargs"]
+sinks = ["self.write(", "self.finish("]
+sanitizers = ["xhtml_escape(", "escape.xhtml_escape(", "tornado.escape.xhtml_escape(", "html.escape(", "markupsafe.escape(", "url_escape(", "escape.url_escape(", "tornado.escape.url_escape("]
+fix = "Render the page with a template (Tornado templates escape by default), raise tornado.web.HTTPError for error text, or wrap each value in tornado.escape.xhtml_escape() before writing it."
+refs = ["CVE-2024-35225"]
+
+# RequestHandler.write sends text/html unless the handler sets another type;
+# a dict is sent as JSON, which the context condition leaves out.
+[[args]]
+context = ["html", "attr", "url", "js"]
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+class GreetHandler(tornado.web.RequestHandler):
+    def get(self):
+        name = self.get_argument("name", "")
+        self.write("<p>Hello " + name + "</p>")
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "an error message that repeats the rejected value"
+code = '''
+class ProxyHandler(tornado.web.RequestHandler):
+    async def get(self):
+        host = self.get_query_argument("host")
+        if host not in self.settings["allowed_hosts"]:
+            self.set_status(403)
+            self.finish(f"<h1>Forbidden</h1><p>Host '{host}' is not allowed.</p>")
+            return
+        await self.proxy(host)
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+class GreetHandler(tornado.web.RequestHandler):
+    def get(self):
+        name = self.get_argument("name", "")
+        self.write("<p>Hello " + tornado.escape.xhtml_escape(name) + "</p>")
+'''
+
+[[samples]]
+kind = "safe"
+note = "HTTPError escapes its message when Tornado renders the error page"
+code = '''
+class ProxyHandler(tornado.web.RequestHandler):
+    async def get(self):
+        host = self.get_query_argument("host")
+        if host not in self.settings["allowed_hosts"]:
+            raise tornado.web.HTTPError(403, f"Host '{host}' is not allowed.")
+        await self.proxy(host)
+'''
+
+[[samples]]
+kind = "safe"
+note = "a dict is written as JSON"
+code = '''
+class EchoHandler(tornado.web.RequestHandler):
+    def get(self):
+        self.write({"name": self.get_argument("name", "")})
+'''

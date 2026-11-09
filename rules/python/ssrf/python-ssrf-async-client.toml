@@ -1,0 +1,78 @@
+id = "python-ssrf-async-client"
+lang = "python"
+class = "ssrf"
+cwe = "CWE-918"
+severity = "high"
+tier = "info"
+title = "httpx, aiohttp or Tornado client fetches a URL taken from the request"
+sources = ["request.query_params", "request.path_params", "request.form(", "request.json(", "request.body(", "request.query", "request.match_info", "request.post(", "self.get_argument(", "self.get_query_argument(", "self.get_body_argument(", "self.request.body", "request.args", "request.form", "request.values", "request.json", "request.get_json(", "request.GET", "request.POST", "request.data"]
+sinks = ["client.get(", "client.post(", "client.put(", "client.patch(", "client.request(", "client.stream(", "session.get(", "session.post(", "session.request(", "httpx.stream(", "httpx.put(", "httpx.patch(", "httpx.delete(", "httpx.head(", "http_client.fetch(", "AsyncHTTPClient().fetch("]
+sanitizers = ["url_has_allowed_host_and_scheme(", "int("]
+fix = "Keep the scheme and host fixed and take only a path or an id from the request, or parse the URL, require its host to be in an allowlist and resolve it to a public address before the client connects (and check every redirect)."
+refs = ["CVE-2026-67426"]
+
+# session.get(Model, id) in SQLAlchemy has the model first: only a URL argument counts.
+[[args]]
+sinks = ["client.request(", "client.stream(", "session.request(", "httpx.stream("]
+arg = 2
+leading = true
+
+[[args]]
+sinks = ["client.get(", "client.post(", "client.put(", "client.patch(", "session.get(", "session.post(", "httpx.put(", "httpx.patch(", "httpx.delete(", "httpx.head(", "http_client.fetch(", "AsyncHTTPClient().fetch("]
+arg = 1
+leading = true
+
+[[samples]]
+kind = "vulnerable"
+note = "a callback URL from the request body"
+code = '''
+@app.post("/run")
+async def run(request: Request):
+    body = await request.json()
+    result = await execute(body["job"])
+    async with httpx.AsyncClient(timeout=10) as client:
+        await client.post(body["callback_url"], json=result)
+    return {"queued": True}
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+async def preview(request):
+    url = request.query["url"]
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as resp:
+            return web.json_response({"status": resp.status})
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+class FetchHandler(tornado.web.RequestHandler):
+    async def get(self):
+        http_client = AsyncHTTPClient()
+        resp = await http_client.fetch(self.get_argument("url"))
+        self.write({"size": len(resp.body)})
+'''
+
+[[samples]]
+kind = "safe"
+note = "scheme and host are fixed; the request picks only the item"
+code = '''
+@app.get("/items")
+async def item(request: Request):
+    item_id = request.query_params["id"]
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(f"https://api.example.com/items/{item_id}")
+    return resp.json()
+'''
+
+[[samples]]
+kind = "safe"
+note = "SQLAlchemy session.get takes the model first"
+code = '''
+@app.route("/user")
+def user():
+    u = session.get(User, request.args["id"])
+    return {"name": u.name}
+'''

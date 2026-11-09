@@ -1,0 +1,37 @@
+id = "python-sqli-pandas-read-sql"
+lang = "python"
+class = "sqli"
+cwe = "CWE-89"
+severity = "high"
+tier = "info"
+title = "Request input formatted into SQL read with pandas read_sql"
+sources = ["request.args", "request.form", "request.values", "request.json", "request.view_args", "request.GET", "request.POST", "request.query_params", "request.path_params", "request.query", "request.match_info", "self.get_argument("]
+sinks = ["pd.read_sql(", "pd.read_sql_query(", "pandas.read_sql(", "pandas.read_sql_query(", "read_sql(", "read_sql_query("]
+sanitizers = ["int("]
+fix = "Keep the query text constant and pass values with params= (read_sql_query(text('... WHERE id = :id'), engine, params={'id': value}))."
+refs = ["CVE-2026-21892"]
+
+[[args]]
+arg = 1   # the SQL text; params= is safe
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+@app.route("/workflow/dag")
+def workflow_dag():
+    run_id = request.args.get("run", "")
+    query = "SELECT task_id, task_func_name FROM task WHERE run_id='%s'" % run_id
+    df = pd.read_sql_query(query, db.engine)
+    return df.to_json()
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+@app.route("/workflow/dag")
+def workflow_dag():
+    run_id = request.args.get("run", "")
+    query = sqlalchemy.text("SELECT task_id, task_func_name FROM task WHERE run_id = :run_id")
+    df = pd.read_sql_query(query, db.engine, params={"run_id": run_id})
+    return df.to_json()
+'''

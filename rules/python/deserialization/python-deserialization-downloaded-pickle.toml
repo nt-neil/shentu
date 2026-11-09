@@ -1,0 +1,47 @@
+id = "python-deserialization-downloaded-pickle"
+lang = "python"
+class = "deserialization"
+cwe = "CWE-502"
+severity = "critical"
+tier = "info"
+title = "Downloaded model or data file deserialized with pickle, jsonpickle, joblib or dill"
+sources = ["requests.get(", "requests.post(", "urlopen(", "urllib.request.urlopen(", "urlretrieve(", "urllib.request.urlretrieve(", "httpx.get("]
+sinks = ["pickle.loads(", "pickle.load(", "cPickle.loads(", "jsonpickle.decode(", "jsonpickle.loads(", "joblib.load(", "dill.loads(", "dill.load(", "cloudpickle.loads(", "cloudpickle.load(", "pd.read_pickle(", "pandas.read_pickle("]
+sanitizers = []
+fix = "Exchange models and data in formats that cannot run code (safetensors, ONNX, JSON, skops with trusted types) and verify a signature or hash of what was downloaded; pickle, jsonpickle, joblib and dill run code while loading."
+refs = ["CVE-2024-49375"]
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+def fetch_model(url):
+    resp = requests.get(url, timeout=30)
+    resp.raise_for_status()
+    return pickle.loads(resp.content)
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+def load_featurizer(model_url):
+    path, _ = urllib.request.urlretrieve(model_url)
+    with open(path) as fh:
+        return jsonpickle.decode(fh.read())
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+def fetch_model(url):
+    resp = requests.get(url, timeout=30)
+    resp.raise_for_status()
+    return json.loads(resp.content)
+'''
+
+[[samples]]
+kind = "safe"
+note = "a local file shipped with the application"
+code = '''
+def load_classifier():
+    return joblib.load(os.path.join(BASE_DIR, "models", "classifier.joblib"))
+'''
