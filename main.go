@@ -32,8 +32,11 @@ Usage:
   shentu patrol [--daily]     run the checks once and notify on new findings (for a systemd timer)
                 [--dry-run]   print the report instead of sending it
   shentu survey               survey this server (services, exposure, stacks, SSH, firewall) and save it as the baseline
-  shentu bot [pair|unpair|status]
+  shentu bot [pair|unpair|status|approve|totp|resume]
                               answer questions from Telegram (a systemd service); pair one user first
+                approve       show the action proposed from Telegram and run it or not (confirm = 1)
+                totp          enrol an authenticator app; actions from Telegram then ask for its code (confirm = 2)
+                resume        unpause the bot after /lockdown, then restart the service
   shentu usage                model calls, tokens and cost: today, last 7 and 30 days
   shentu budget [--cost USD] [--tokens N] [--off]
                               optional monthly AI limit: alert at 80%, stop calling the model at 100%
