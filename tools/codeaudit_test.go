@@ -3,10 +3,13 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/nt-neil/shentu/rules"
 )
 
 func TestAppCodeAudit(t *testing.T) {
@@ -52,7 +55,7 @@ func TestAppCodeAudit(t *testing.T) {
 	want := map[string]string{ // kind + path → severity
 		"exposed public/.env": "critical", "exposed public/.git": "critical", "exposed public/dump.sql": "critical",
 		"exposed public/site-backup.zip": "warning", "exposed public/info.php": "warning",
-		"upload_script public/uploads/cat.php": "critical", "webshell public/shell.php": "critical",
+		"upload_script public/uploads/cat.php": "critical", "webshell public/shell.php": "critical", "injection public/shell.php": "critical",
 		"debug app/settings.py": "warning", "debug app/.env": "warning", "debug app/run.py": "critical",
 		"secret app/config.js": "warning", "secret app/db.py": "warning",
 	}
@@ -107,5 +110,85 @@ func TestWebRootPatterns(t *testing.T) {
 	apache := "<VirtualHost *:80>\n\tDocumentRoot \"/var/www/html\"\n</VirtualHost>\n"
 	if m := apacheRoot.FindStringSubmatch(apache); m == nil || m[1] != "/var/www/html" {
 		t.Errorf("apache root: %v", m)
+	}
+}
+
+// Injection findings name the rule, the file and the line. One vulnerable sample per
+// language comes from the rules themselves, so the test follows the rules.
+func TestAppCodeAuditInjection(t *testing.T) {
+	rs, err := rules.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir, _ := filepath.EvalSymlinks(t.TempDir())
+	ext := map[string]string{"php": ".php", "python": ".py", "js": ".jsx"}
+	want := map[string]string{} // file name → rule id
+	var code []string
+	for _, r := range rs {
+		if _, done := want["v"+ext[r.Lang]]; done {
+			continue
+		}
+		for _, s := range r.Samples {
+			if s.Kind == "vulnerable" {
+				name := "v" + ext[r.Lang]
+				os.WriteFile(filepath.Join(dir, name), []byte(s.Code), 0o644)
+				want[name] = r.ID
+				code = append(code, strings.TrimSpace(s.Code))
+				break
+			}
+		}
+	}
+	// Skipped folders stay skipped.
+	os.MkdirAll(filepath.Join(dir, "vendor"), 0o755)
+	os.WriteFile(filepath.Join(dir, "vendor", "v.php"), []byte("<?php\neval($_GET['c']);\n"), 0o644)
+	res := AppCodeAudit(context.Background(), []string{dir}, nil)
+	for name, id := range want {
+		f := findingFor(res, "injection", name)
+		if f.Rule != id || f.Line == 0 || f.CWE == "" || f.Fix == "" || f.Tier != "info" {
+			t.Errorf("%s: want a finding of %s, got %+v", name, id, f)
+		}
+	}
+	for _, f := range res.Findings {
+		if strings.Contains(f.Path, "vendor") {
+			t.Errorf("vendor/ was read: %+v", f)
+		}
+	}
+	out, _ := json.Marshal(res)
+	for _, c := range code {
+		for _, line := range strings.Split(c, "\n") {
+			if len(line) > 12 && strings.Contains(string(out), line) {
+				t.Errorf("the audit result contains code: %q", line)
+			}
+		}
+	}
+}
+
+// Files the rules could not finish are summed up in one info finding with at most 10 paths.
+func TestAppCodeAuditPartial(t *testing.T) {
+	dir, _ := filepath.EvalSymlinks(t.TempDir())
+	for i := range 11 {
+		os.WriteFile(filepath.Join(dir, fmt.Sprintf("open%02d.php", i)), []byte("<?php\n$a = 'never closed\n"), 0o644)
+	}
+	big := "<?php\n" + strings.Repeat("$a = 1;\n", auditMaxSize/8+1)
+	os.WriteFile(filepath.Join(dir, "big.php"), []byte(big), 0o644)
+	os.WriteFile(filepath.Join(dir, "ok.py"), []byte("print(1)\n"), 0o644)
+	res := AppCodeAudit(context.Background(), []string{dir}, nil)
+	var notes []CodeFinding
+	for _, f := range res.Findings {
+		if f.Kind == "injection" {
+			notes = append(notes, f)
+		}
+	}
+	if len(notes) != 1 {
+		t.Fatalf("want one summary finding, got %+v", notes)
+	}
+	n := notes[0]
+	if n.Severity != "info" || n.Tier != "info" || len(n.Paths) != partialListMax || !strings.HasPrefix(n.Detail, "12 file(s)") {
+		t.Errorf("summary: %+v", n)
+	}
+	for _, p := range n.Paths {
+		if strings.HasSuffix(p, "ok.py") {
+			t.Errorf("a finished file is listed: %s", p)
+		}
 	}
 }

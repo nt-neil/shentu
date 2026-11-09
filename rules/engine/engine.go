@@ -27,6 +27,7 @@ type Finding struct {
 	Title    string `json:"title"`
 	CWE      string `json:"cwe"`
 	Fix      string `json:"fix"`
+	Tier     string `json:"tier"` // the rule's tier: "info" or "alert"
 }
 
 // Engine holds compiled rules. It is safe for concurrent use.
@@ -156,7 +157,7 @@ func (e *Engine) Scan(lang, path string, src []byte) ([]Finding, error) {
 		a.block(tree, state{})
 		for _, line := range a.lines {
 			out = append(out, Finding{RuleID: r.rule.ID, Path: path, Line: line, Severity: r.rule.Severity,
-				Title: r.rule.Title, CWE: r.rule.CWE, Fix: r.rule.Fix})
+				Title: r.rule.Title, CWE: r.rule.CWE, Fix: r.rule.Fix, Tier: r.rule.Tier})
 		}
 		if b.hit {
 			break

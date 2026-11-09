@@ -83,6 +83,9 @@ func TestRulesValid(t *testing.T) {
 		if !severities[r.Severity] {
 			t.Errorf("%s: severity %q not allowed", f, r.Severity)
 		}
+		if r.Tier != "info" && r.Tier != "alert" {
+			t.Errorf("%s: tier %q must be info or alert", f, r.Tier)
+		}
 		for _, fw := range r.Frameworks {
 			if !frameworks[fw] {
 				t.Errorf("%s: framework %q not allowed", f, fw)

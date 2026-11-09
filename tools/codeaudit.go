@@ -5,19 +5,25 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
+
+	"github.com/nt-neil/shentu/rules"
+	"github.com/nt-neil/shentu/rules/engine"
 )
 
 var appCodeAudit = Tool{
 	Name: "app_code_audit",
 	Description: "Offline audit of the web applications' own files under the app paths: secrets and backups the web server would serve " +
 		"(.env, .git, SQL dumps, archives, phpinfo), debug mode left on (Django, Laravel, Flask, PHP display_errors), webshells and " +
-		"PHP files in upload folders, and keys or passwords written into the code (reported by file, line and type; the value is never shown). " +
+		"PHP files in upload folders, keys or passwords written into the code (reported by file, line and type; the value is never shown), " +
+		"and injection flaws in PHP, Python and JavaScript found by Shentu's rules (rule, CWE, file and line; no code is shown). " +
 		"Each finding has a fix. It reads files only and sends nothing anywhere.",
 	Params: schema(`{"type":"object","properties":{
 		"path":{"type":"string","description":"only audit under this directory (must be inside the app paths)"}}}`),
@@ -42,12 +48,16 @@ var appCodeAudit = Tool{
 
 // CodeFinding is one problem in an application's files.
 type CodeFinding struct {
-	Kind     string `json:"kind"`     // exposed, debug, webshell, upload_script, secret
-	Severity string `json:"severity"` // critical or warning
-	Path     string `json:"path"`
-	Line     int    `json:"line,omitempty"`
-	Detail   string `json:"detail"`
-	Fix      string `json:"fix"`
+	Kind     string   `json:"kind"`     // exposed, debug, webshell, upload_script, secret, injection
+	Severity string   `json:"severity"` // critical, warning, or info (files the injection rules could not finish)
+	Path     string   `json:"path,omitempty"`
+	Line     int      `json:"line,omitempty"`
+	Detail   string   `json:"detail"`
+	Fix      string   `json:"fix"`
+	Rule     string   `json:"rule,omitempty"`  // injection: the rule id
+	CWE      string   `json:"cwe,omitempty"`   // injection: the weakness
+	Tier     string   `json:"tier,omitempty"`  // injection: "info" is not pushed by the patrol report, "alert" is
+	Paths    []string `json:"paths,omitempty"` // the files an info finding is about (at most 10)
 }
 
 // CodeAudit is the result of AppCodeAudit.
@@ -185,11 +195,67 @@ var secretPatterns = []struct {
 	{"password in a connection URL", regexp.MustCompile(`\b(mysql|postgres(ql)?|mongodb(\+srv)?|redis|amqp)://[^/\s:@"']+:[^/\s@"']{3,}@`)},
 }
 
+// Files the injection rules read, by extension.
+var injectionLang = map[string]string{".php": "php", ".py": "python", ".js": "js", ".mjs": "js", ".cjs": "js", ".jsx": "js"}
+
+const partialListMax = 10
+
+var (
+	rulesOnce sync.Once
+	rulesEng  *engine.Engine
+	rulesErr  error
+)
+
+// injectionEngine compiles the rules embedded in the binary once.
+func injectionEngine() (*engine.Engine, error) {
+	rulesOnce.Do(func() {
+		rs, err := rules.Load()
+		if err == nil {
+			rulesEng, err = engine.New(rs)
+		}
+		rulesErr = err
+	})
+	return rulesEng, rulesErr
+}
+
+// injectionFindings turns the engine's findings for one file into code findings.
+// They carry the rule, never the code.
+func injectionFindings(found []engine.Finding, add func(CodeFinding)) {
+	for _, f := range found {
+		sev := "warning"
+		if f.Severity == "critical" {
+			sev = "critical"
+		}
+		add(CodeFinding{Kind: "injection", Severity: sev, Path: f.Path, Line: f.Line, Detail: f.Title,
+			Fix: f.Fix, Rule: f.RuleID, CWE: f.CWE, Tier: f.Tier})
+	}
+}
+
+// finding is a code finding of the checks that are not rules.
+func finding(kind, severity, path string, line int, detail, fix string) CodeFinding {
+	return CodeFinding{Kind: kind, Severity: severity, Path: path, Line: line, Detail: detail, Fix: fix}
+}
+
+// partialFinding sums up the files the injection rules did not check to the end.
+func partialFinding(paths []string) CodeFinding {
+	f := CodeFinding{Kind: "injection", Severity: "info", Tier: "info",
+		Detail: fmt.Sprintf("%d file(s) were too large or too complex for the injection rules; they were checked only in part or not at all", len(paths)),
+		Fix:    "review these files by hand, or split them into smaller files"}
+	f.Paths = paths[:min(len(paths), partialListMax)]
+	return f
+}
+
 // AppCodeAudit reads the application files under roots and reports problems.
 // webRoots are the folders the web server serves (see WebRoots).
 func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 	res := CodeAudit{WebRoots: webRoots, Findings: []CodeFinding{}}
 	add := func(f CodeFinding) { res.Findings = append(res.Findings, f) }
+	eng, err := injectionEngine()
+	if err != nil {
+		add(CodeFinding{Kind: "injection", Severity: "info", Tier: "info", Detail: "the injection rules could not be loaded: " + err.Error(),
+			Fix: "report this as a Shentu bug; the other checks ran"})
+	}
+	var partial []string
 	for _, root := range roots {
 		base := strings.Count(filepath.Clean(root), "/")
 		filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
@@ -199,7 +265,7 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 			name := d.Name()
 			if d.IsDir() {
 				if name == ".git" && served(p, webRoots) {
-					add(CodeFinding{"exposed", "critical", p, 0, exposedNames[1].detail, exposedNames[1].fix})
+					add(finding("exposed", "critical", p, 0, exposedNames[1].detail, exposedNames[1].fix))
 				}
 				if skipDirs[name] || strings.Count(p, "/")-base > auditMaxDepth {
 					return filepath.SkipDir
@@ -213,7 +279,7 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 			if web {
 				for i, e := range exposedNames {
 					if i != 1 && e.match(name) {
-						add(CodeFinding{"exposed", e.severity, p, 0, e.detail, e.fix})
+						add(finding("exposed", e.severity, p, 0, e.detail, e.fix))
 						break
 					}
 				}
@@ -221,10 +287,11 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 			ext := strings.ToLower(filepath.Ext(name))
 			isPHP := ext == ".php" || ext == ".phtml" || ext == ".php5"
 			if isPHP && uploadDir.MatchString(p) {
-				add(CodeFinding{"upload_script", "critical", p, 0, "PHP file in an upload folder; uploads should never be scripts",
-					"check the file, delete it if it is not yours, and stop PHP from running in the upload folder"})
+				add(finding("upload_script", "critical", p, 0, "PHP file in an upload folder; uploads should never be scripts",
+					"check the file, delete it if it is not yours, and stop PHP from running in the upload folder"))
 			}
-			if !auditExt[ext] && !auditExt[name] && !strings.HasPrefix(name, ".env") && name != "settings.py" {
+			lang := injectionLang[ext]
+			if !auditExt[ext] && !auditExt[name] && !strings.HasPrefix(name, ".env") && name != "settings.py" && lang == "" {
 				return nil
 			}
 			if res.Files >= auditMaxFiles {
@@ -237,12 +304,25 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 			}
 			b, ok := readSmallRegular(p, auditMaxSize, info)
 			if !ok || bytes.IndexByte(b, 0) >= 0 {
+				if lang != "" && eng != nil && info.Size() > auditMaxSize {
+					partial = append(partial, p)
+				}
 				return nil
 			}
 			res.Files++
 			auditContent(p, name, b, web, isPHP, add)
+			if lang != "" && eng != nil {
+				found, err := eng.Scan(lang, p, b)
+				injectionFindings(found, add)
+				if errors.Is(err, engine.ErrLimit) || errors.Is(err, engine.ErrPartial) {
+					partial = append(partial, p)
+				}
+			}
 			return nil
 		})
+	}
+	if len(partial) > 0 {
+		add(partialFinding(partial))
 	}
 	sort.SliceStable(res.Findings, func(i, j int) bool {
 		if res.Findings[i].Severity != res.Findings[j].Severity {
@@ -259,9 +339,9 @@ func auditContent(p, name string, b []byte, web, isPHP bool, add func(CodeFindin
 	if webExt[strings.ToLower(filepath.Ext(name))] {
 		for _, re := range webshellPatterns {
 			if loc := re.FindIndex(b); loc != nil {
-				add(CodeFinding{"webshell", "critical", p, lineAt(b, loc[0]),
+				add(finding("webshell", "critical", p, lineAt(b, loc[0]),
 					"code that runs commands or code taken straight from the request (webshell pattern)",
-					"check the file now; if you did not write it, take the site offline, delete it and look for how it got there"})
+					"check the file now; if you did not write it, take the site offline, delete it and look for how it got there"))
 				break
 			}
 		}
@@ -274,31 +354,31 @@ func auditContent(p, name string, b []byte, web, isPHP bool, add func(CodeFindin
 		line := sc.Text()
 		switch {
 		case isPHP && web && phpinfoCall.MatchString(line) && !commented(line):
-			add(CodeFinding{"exposed", "warning", p, n, "phpinfo() in a served file shows the server's configuration to anyone",
-				"delete the file or remove the phpinfo() call"})
+			add(finding("exposed", "warning", p, n, "phpinfo() in a served file shows the server's configuration to anyone",
+				"delete the file or remove the phpinfo() call"))
 		case name == "settings.py" && djangoDebug.MatchString(line):
-			add(CodeFinding{"debug", "warning", p, n, "Django DEBUG = True: errors show code, settings and SQL to visitors",
-				"set DEBUG = False in production (read it from the environment) and set ALLOWED_HOSTS"})
+			add(finding("debug", "warning", p, n, "Django DEBUG = True: errors show code, settings and SQL to visitors",
+				"set DEBUG = False in production (read it from the environment) and set ALLOWED_HOSTS"))
 		case strings.HasSuffix(name, ".py") && flaskDebug.MatchString(line) && !commented(line):
-			add(CodeFinding{"debug", "critical", p, n, "Flask debug=True: the debugger lets visitors run Python code",
-				"remove debug=True and run the app with a WSGI server such as gunicorn"})
+			add(finding("debug", "critical", p, n, "Flask debug=True: the debugger lets visitors run Python code",
+				"remove debug=True and run the app with a WSGI server such as gunicorn"))
 		case envFile && laravelDebug.MatchString(line):
-			add(CodeFinding{"debug", "warning", p, n, "Laravel APP_DEBUG=true: errors show code and environment values to visitors",
-				"set APP_DEBUG=false and APP_ENV=production, then run php artisan config:cache"})
+			add(finding("debug", "warning", p, n, "Laravel APP_DEBUG=true: errors show code and environment values to visitors",
+				"set APP_DEBUG=false and APP_ENV=production, then run php artisan config:cache"))
 		case envFile && flaskEnv.MatchString(line):
-			add(CodeFinding{"debug", "critical", p, n, "FLASK_DEBUG is on: the debugger lets visitors run Python code",
-				"set FLASK_DEBUG=0 in production"})
+			add(finding("debug", "critical", p, n, "FLASK_DEBUG is on: the debugger lets visitors run Python code",
+				"set FLASK_DEBUG=0 in production"))
 		case (name == ".htaccess" || name == ".user.ini" || name == "php.ini") && phpDisplay.MatchString(line):
-			add(CodeFinding{"debug", "warning", p, n, "PHP display_errors is on: errors show paths and code to visitors",
-				"set display_errors = Off and log errors instead (log_errors = On)"})
+			add(finding("debug", "warning", p, n, "PHP display_errors is on: errors show paths and code to visitors",
+				"set display_errors = Off and log errors instead (log_errors = On)"))
 		}
 		if envFile {
 			continue // an env file is where secrets belong; exposure is checked separately
 		}
 		for _, s := range secretPatterns {
 			if s.re.MatchString(line) {
-				add(CodeFinding{"secret", "warning", p, n, s.kind + " written in the file (value not shown)",
-					"move it to an environment variable or a secrets file outside the code, and rotate it if the code was ever shared"})
+				add(finding("secret", "warning", p, n, s.kind+" written in the file (value not shown)",
+					"move it to an environment variable or a secrets file outside the code, and rotate it if the code was ever shared"))
 				break
 			}
 		}

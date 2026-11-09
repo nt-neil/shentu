@@ -29,6 +29,7 @@ lang = "php"
 class = "sqli"
 cwe = "CWE-89"                     # must belong to the class (see below)
 severity = "high"                  # critical | high | medium | low
+tier = "info"                      # optional: info (default) | alert, see "Tiers"
 title = "Request input concatenated into a SQL string"
 frameworks = ["laravel"]           # optional: laravel, wordpress, django, flask, express
 sources = ["$_GET", "$request->input("]   # where user input comes from
@@ -93,6 +94,14 @@ How the engine reads them:
   not another (`escapeshellarg` protects `exec()` but not the fifth argument of
   `mail()`), the sinks go in separate rules; escaping functions protect a SQL value
   only inside quotes, so they are not listed as sanitizers.
+
+### Tiers
+
+`tier` decides where a finding is shown. An `info` rule (the default) is listed by
+the `app_code_audit` tool and in chat, but the daily patrol report does not push
+it. An `alert` rule is pushed as well. Every new rule starts as `info`; it becomes
+`alert` only after it has been run on real, clean projects and its false-positive
+rate is low, and the change says which measurement justified it.
 
 ### Text in strings
 
@@ -171,7 +180,7 @@ Allowed CWEs per class:
 - every file parses, and has no unknown keys;
 - required fields are present and non-empty (`sanitizers` must be present, may be `[]`);
 - `id` is unique, follows `<lang>-<class>-<slug>`, and matches the file path;
-- `lang`, `class`, `severity`, `frameworks` are in the allowed lists, and `cwe` belongs to the class;
+- `lang`, `class`, `severity`, `tier`, `frameworks` are in the allowed lists, and `cwe` belongs to the class;
 - `refs` are well-formed CVE or GHSA ids, without duplicates;
 - `text` entries are sources or sinks; `[[args]]` entries set something, name only
   the rule's sinks, give each sink at most one entry, and use `arg = 0` only for

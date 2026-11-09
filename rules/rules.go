@@ -24,6 +24,7 @@ type Rule struct {
 	Class      string   `toml:"class"`
 	CWE        string   `toml:"cwe"`
 	Severity   string   `toml:"severity"`
+	Tier       string   `toml:"tier"` // "info" (the default): shown in app_code_audit and chat only; "alert": also in the patrol report
 	Title      string   `toml:"title"`
 	Frameworks []string `toml:"frameworks"`
 	Sources    []string `toml:"sources"`
@@ -77,6 +78,9 @@ func Load() ([]Rule, error) {
 		}
 		if !md.IsDefined("sanitizers") {
 			return fmt.Errorf("%s: sanitizers must be present (use [] when nothing makes input safe for these sinks)", path)
+		}
+		if r.Tier == "" {
+			r.Tier = "info"
 		}
 		r.File = path
 		out = append(out, r)

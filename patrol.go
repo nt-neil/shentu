@@ -64,6 +64,35 @@ func replaceOrAppend(all []finding, f finding) []finding {
 	return append(all, f)
 }
 
+// codeAuditFindings turns the code audit into patrol findings. Findings of info-tier
+// rules, and the note about files the rules could not finish, stay in the tool's
+// output and chat; the report does not push them.
+func codeAuditFindings(audit tools.CodeAudit) []finding {
+	var out []finding
+	for _, f := range audit.Findings {
+		if f.Tier == "info" {
+			continue
+		}
+		key := fmt.Sprintf("code:%s:%s:%d", f.Kind, f.Path, f.Line)
+		switch f.Kind {
+		case "webshell":
+			key = "webshell:" + f.Path // the same key as the hourly file check, so it is told once
+		case "injection":
+			key += ":" + f.Rule
+		}
+		where := f.Path
+		if f.Line > 0 {
+			where = fmt.Sprintf("%s line %d", f.Path, f.Line)
+		}
+		detail := f.Detail
+		if f.Rule != "" {
+			detail = fmt.Sprintf("%s (%s, rule %s)", f.Detail, f.CWE, f.Rule)
+		}
+		out = append(out, finding{key, f.Severity, fmt.Sprintf("%s: %s; fix: %s", where, detail, f.Fix), f})
+	}
+	return out
+}
+
 func checks(ctx context.Context, cfg *Config, env *tools.Env, st *state, daily bool) []finding {
 	var out []finding
 	// Survey first: risks that follow from the configuration, and changes since the baseline.
@@ -197,17 +226,9 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 				}
 			}
 		}
-		// The applications' own files: exposed secrets, debug mode, webshells, keys in code.
-		for _, f := range tools.AppCodeAudit(ctx, env.AppPaths, tools.WebRoots()).Findings {
-			key := fmt.Sprintf("code:%s:%s:%d", f.Kind, f.Path, f.Line)
-			if f.Kind == "webshell" {
-				key = "webshell:" + f.Path // the same key as the hourly file check, so it is told once
-			}
-			where := f.Path
-			if f.Line > 0 {
-				where = fmt.Sprintf("%s line %d", f.Path, f.Line)
-			}
-			all = replaceOrAppend(all, finding{key, f.Severity, fmt.Sprintf("%s: %s; fix: %s", where, f.Detail, f.Fix), f})
+		// The applications' own files: exposed secrets, debug mode, webshells, keys in code, injection.
+		for _, f := range codeAuditFindings(tools.AppCodeAudit(ctx, env.AppPaths, tools.WebRoots())) {
+			all = replaceOrAppend(all, f)
 		}
 	}
 	var fresh []finding
