@@ -52,8 +52,7 @@ func (s *scanner) js(stop bool) {
 			s.jsQuoted(c)
 		case c == '`':
 			s.jsTemplate()
-		case c == '/' && s.regexAllowed() && !(s.pos > 0 && s.src[s.pos-1] == '<'):
-			// "</" closes a JSX element; a regular expression right after "<" needs a space.
+		case c == '/' && s.regexAllowed() && !s.jsxClose():
 			s.jsRegex()
 		case isIdentStart(c) || c == '$' || (c == '#' || c == '@') && isIdentStart(s.peek(1)):
 			// A decorator name (@Body) is one token, so a rule can name it as a source.
@@ -99,6 +98,16 @@ func (s *scanner) js(stop bool) {
 			s.emit(Token{Kind: Op, Text: o, Line: line})
 		}
 	}
+}
+
+// jsxClose reports whether the "/" at s.pos is that of "</Name" or "</>" in .tsx.
+// Only there: in .js and .ts, "a </x'/.test(s)" is a comparison with a regular
+// expression, and reading the "/" as division would let the quote hide the
+// rest of the line.
+func (s *scanner) jsxClose() bool {
+	n := len(s.toks)
+	return s.jsx && n > 0 && s.toks[n-1].op("<") && s.pos > 0 && s.src[s.pos-1] == '<' &&
+		(isIdentStart(s.peek(1)) || s.peek(1) == '>')
 }
 
 func (s *scanner) regexAllowed() bool {
@@ -166,7 +175,7 @@ func (s *scanner) jsTemplate() {
 			p := Part{Off: s.pos - start}
 			s.pos += 2
 			if s.depth < maxNest {
-				sub := &scanner{src: s.src, pos: s.pos, line: s.line, b: s.b, depth: s.depth + 1, ts: s.ts}
+				sub := &scanner{src: s.src, pos: s.pos, line: s.line, b: s.b, depth: s.depth + 1, ts: s.ts, jsx: s.jsx}
 				sub.js(true)
 				p.Toks = sub.toks
 				s.pos, s.line = sub.pos, sub.line

@@ -21,7 +21,7 @@ func LexTS(src string) []Token { return lexTS(src, nil, false) }
 func LexTSX(src string) []Token { return lexTS(src, nil, true) }
 
 func lexTS(src string, b *budget, tsx bool) []Token {
-	s := &scanner{src: src, line: 1, b: b, ts: true}
+	s := &scanner{src: src, line: 1, b: b, ts: true, jsx: tsx}
 	if s.has("#!") {
 		s.skipLine()
 	}

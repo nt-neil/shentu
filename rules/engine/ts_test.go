@@ -107,6 +107,18 @@ func TestLexTSX(t *testing.T) {
 	}
 }
 
+// TestRegexAfterLess: outside .tsx, "</" may start a regular expression, so a
+// quote inside it cannot hide the code after it.
+func TestRegexAfterLess(t *testing.T) {
+	e := engineForTest(t)
+	src := "app.get('/x', (req, res) => { if (a </'/.test(b)) exec(req.query.c); });\n"
+	for _, lang := range []string{"js", "ts"} {
+		if fs, _ := e.Scan(lang, "x", []byte(src)); len(fs) == 0 {
+			t.Errorf("%s: exec after a </'/ regular expression not reported", lang)
+		}
+	}
+}
+
 func TestLangOfTS(t *testing.T) {
 	for name, want := range map[string]string{"a.ts": "ts", "a.mts": "ts", "a.CTS": "ts", "a.tsx": "tsx", "a.d.ts": "ts", "a.js": "js"} {
 		if got := LangOf(name); got != want {
