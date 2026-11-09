@@ -5,9 +5,31 @@ import "strings"
 // literalArg reports whether the argument a literal condition names is a
 // non-empty string written in the code: the arg-th argument, or the value of a
 // when option (password=, secret:).
-func (a *analysis) literalArg(cond *argCond, region []Token, open int) bool {
-	isLit := func(v []Token) bool {
-		return len(v) == 1 && v[0].Kind == Str && len(v[0].Parts) == 0 && v[0].Flags&(FlagShell|FlagRegex) == 0 && v[0].Text != ""
+func (a *analysis) literalArg(st state, cond *argCond, region []Token, open int) bool {
+	var isLit func(v []Token, depth int) bool
+	isLit = func(v []Token, depth int) bool {
+		if len(v) == 1 && v[0].Kind == Str && len(v[0].Parts) == 0 && v[0].Flags&(FlagShell|FlagRegex) == 0 && v[0].Text != "" {
+			return true
+		}
+		// a name holding such a string: assigned in this function, a module-level
+		// constant (SECRET_KEY = "..."), or a PHP constant defined in this file;
+		// followed a few names deep, so A = B; B = A cannot loop
+		if depth >= 4 || len(v) != 1 || v[0].Kind != Ident && v[0].Kind != Var {
+			return false
+		}
+		name := v[0].Text
+		if lv := a.litOf(st, name); lv != nil {
+			return len(lv) == 1 && isLit(lv, depth+1)
+		}
+		if constName(name) {
+			if lv := a.lits[name]; len(lv) == 1 {
+				return isLit(lv, depth+1)
+			}
+			if d, ok := a.defs[name]; ok {
+				return d != ""
+			}
+		}
+		return false
 	}
 	if cond.arg != nil {
 		if open < 0 {
@@ -15,12 +37,12 @@ func (a *analysis) literalArg(cond *argCond, region []Token, open int) bool {
 		}
 		args := splitTop(region, isComma)
 		n := *cond.arg
-		return n >= 1 && n <= len(args) && isLit(stripParens(args[n-1]))
+		return n >= 1 && n <= len(args) && isLit(stripParens(args[n-1]), 0)
 	}
 	for _, p := range cond.when {
 		for i := range region {
 			if p.at(region, i, false) {
-				if v := optionValue(p, region, i); v != nil && isLit(v) {
+				if v := optionValue(p, region, i); v != nil && isLit(v, 0) {
 					return true
 				}
 			}
@@ -508,7 +530,7 @@ func (a *analysis) recordLit(st state, t []Token) {
 	if n := len(rhs); n > 0 && rhs[n-1].op(";") {
 		rhs = rhs[:n-1]
 	}
-	if len(rhs) == 0 || len(rhs) > 256 || a.rawInput(st, rhs) {
+	if len(rhs) == 0 || len(rhs) > 256 || len(rhs) == 1 && rhs[0].Text == name || a.rawInput(st, rhs) {
 		if _, ok := st[litKey+name]; ok {
 			delete(st, litKey+name)
 		}
@@ -642,4 +664,129 @@ func phpDefines(lang string, toks []Token) map[string]string {
 		out[toks[i+2].Text] = toks[i+4].Text
 	}
 	return out
+}
+
+// constName reports whether name is written as a constant (SECRET_KEY, JWT_KEY).
+func constName(name string) bool {
+	upper := false
+	for i := 0; i < len(name); i++ {
+		switch c := name[i]; {
+		case c >= 'A' && c <= 'Z':
+			upper = true
+		case c >= '0' && c <= '9' || c == '_':
+		default:
+			return false
+		}
+	}
+	return upper
+}
+
+// netPrefixOK: in ssrf, open-redirect and xss a prefix check must compare with a
+// prefix that keeps the request on a known host (fixedText): startswith('/')
+// alone lets "//evil.com" and "/\\evil.com" through.
+func (a *analysis) netPrefixOK(st state, args [][]Token) bool {
+	if !netClasses[a.r.rule.Class] {
+		return true
+	}
+	for _, arg := range args {
+		if len(arg) == 1 && arg[0].Kind == Str && len(arg[0].Parts) == 0 && a.fixedText(arg[0].Text) {
+			return true
+		}
+	}
+	return false
+}
+
+// slashChecked finds, in ssrf, open-redirect and xss, the values that the atoms
+// of a condition (all true on this branch: the && of a true one, the || of a
+// false one) prove to be a path on this site: they start with "/" and with
+// neither "//" nor "/\\".
+func (a *analysis) slashChecked(st state, atoms [][]Token, truth bool) []keyRef {
+	if !netClasses[a.r.rule.Class] || len(atoms) < 3 {
+		return nil
+	}
+	type facts struct {
+		slash, notDouble, notBack bool
+		ref                       []keyRef
+	}
+	by := map[string]*facts{}
+	for _, atom := range atoms {
+		key, refs, lit, holds, ok := a.prefixAtom(atom)
+		if !ok {
+			continue
+		}
+		holds = holds == truth // the atom is true on the branch where truth holds
+		f := by[key]
+		if f == nil {
+			f = &facts{ref: refs}
+			by[key] = f
+		}
+		switch {
+		case lit == "/" && holds:
+			f.slash = true
+		case lit == "//" && !holds:
+			f.notDouble = true
+		case (lit == "/\\" || lit == "/\\\\") && !holds:
+			f.notBack = true
+		}
+	}
+	var out []keyRef
+	for _, f := range by {
+		if f.slash && f.notDouble && f.notBack {
+			out = append(out, f.ref...)
+		}
+	}
+	return out
+}
+
+// prefixAtom reads str_starts_with($u, 'lit'), u.startswith('lit') or
+// u.startsWith('lit'), with any ! or not before it. holds tells whether the atom
+// is true when the value starts with lit.
+func (a *analysis) prefixAtom(atom []Token) (key string, refs []keyRef, lit string, holds bool, ok bool) {
+	holds = true
+	atom = stripParens(atom)
+	for len(atom) > 0 && (atom[0].op("!") || a.py && atom[0].word("not")) {
+		holds, atom = !holds, stripParens(atom[1:])
+	}
+	n := len(atom)
+	if n < 4 || !atom[n-1].op(")") {
+		return "", nil, "", false, false
+	}
+	open := openOf(atom, n-1)
+	args := splitTop(inside(atom, open, n-1), isComma)
+	var subject, prefix []Token
+	switch {
+	case a.php && open == 1 && atom[0].word("str_starts_with") && len(args) == 2:
+		subject, prefix = args[0], args[1]
+	case !a.php && open >= 3 && atom[open-2].op(".") && (atom[open-1].word("startswith") || atom[open-1].word("startsWith")) && len(args) == 1:
+		subject, prefix = atom[:open-2], args[0]
+	default:
+		return "", nil, "", false, false
+	}
+	if len(prefix) != 1 || prefix[0].Kind != Str || len(prefix[0].Parts) > 0 {
+		return "", nil, "", false, false
+	}
+	k, _, okk := a.pathKey(subject)
+	if !okk {
+		return "", nil, "", false, false
+	}
+	return k, a.keysOf(subject), prefix[0].Text, holds, true
+}
+
+// plainSubject returns the key of the value a prefix check is about, when it is
+// a plain variable or path: urlparse(u).path.startswith('/app/') checks a part
+// of u, so it cleans nothing, and neither do the names in the prefix.
+func (a *analysis) plainSubject(args [][]Token) []keyRef {
+	if len(args) == 0 {
+		return nil
+	}
+	subject := stripParens(args[0])
+	if _, _, ok := a.pathKey(subject); !ok {
+		return nil
+	}
+	for _, t := range subject {
+		if t.op("(") {
+			return nil // a call in the path
+		}
+	}
+	return a.keysOf(subject)
 }

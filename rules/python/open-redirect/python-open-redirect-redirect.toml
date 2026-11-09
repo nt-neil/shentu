@@ -8,7 +8,7 @@ title = "Redirect to a URL taken from the request"
 frameworks = ["django", "flask"]
 sources = ["request.args", "request.form", "request.values", "request.GET", "request.POST", "request.query_params"]
 sinks = ["redirect(", "flask.redirect(", "HttpResponseRedirect(", "HttpResponsePermanentRedirect(", "RedirectResponse("]
-sanitizers = ["url_has_allowed_host_and_scheme(", "is_safe_url(", "url_for(", "reverse("]
+sanitizers = ["url_has_allowed_host_and_scheme(", "is_safe_url(", "url_for(", "reverse(", ".startswith("]
 fix = "Check the target with url_has_allowed_host_and_scheme() (Django) or require a relative path on the same site before redirecting; otherwise redirect to url_for() or a fixed page."
 refs = ["CVE-2022-0697", "CVE-2024-41955"]
 
@@ -51,4 +51,28 @@ code = '''
 def login():
     do_login()
     return redirect(url_for('dashboard', tab=request.args.get('tab')))
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "a leading / is not enough: //evil.example and /\\evil.example leave the site"
+code = '''
+@app.route('/after')
+def after():
+    target = request.args.get('next', '/')
+    if target.startswith('/'):
+        return redirect(target)
+    return redirect('/')
+'''
+
+[[samples]]
+kind = "safe"
+note = "a single leading / that is not // or /\\ stays on this site"
+code = '''
+@app.route('/after')
+def after():
+    target = request.args.get('next', '/')
+    if target.startswith('/') and not target.startswith('//') and not target.startswith('/\\'):
+        return redirect(target)
+    return redirect('/')
 '''
