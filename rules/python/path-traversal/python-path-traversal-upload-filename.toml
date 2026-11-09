@@ -1,0 +1,64 @@
+id = "python-path-traversal-upload-filename"
+lang = "python"
+class = "path-traversal"
+cwe = "CWE-22"
+severity = "high"
+tier = "info"
+title = "Upload's client-sent file name used to build a path on the server"
+sources = [".filename"]
+sinks = ["open(", "io.open(", "os.open(", "aiofiles.open(", "anyio.open_file(", "os.path.join(", "Path(", "pathlib.Path(", "shutil.move(", "shutil.copy(", "shutil.copyfile("]
+sanitizers = ["os.path.basename(", "basename(", "secure_filename(", "werkzeug.utils.secure_filename(", "safe_join(", ".is_relative_to(", ".startswith(", "uuid.uuid4(", "secrets.token_hex("]
+fix = "Never build a path from the uploaded file's name: store it under a name the server makes (uuid4().hex plus an allowlisted extension), or reduce it with os.path.basename()/secure_filename() and check the resolved path stays in the upload directory."
+refs = ["CVE-2026-28786"]
+
+# FastAPI/Starlette UploadFile.filename and Werkzeug FileStorage.filename are
+# the name as the client sent it, slashes and ".." included.
+[[args]]
+sinks = ["shutil.move(", "shutil.copy(", "shutil.copyfile("]
+arg = 2
+
+[[samples]]
+kind = "vulnerable"
+note = "the extension is cut from the client name, so it can still hold '/'"
+code = '''
+@router.post("/transcriptions")
+async def transcribe(file: UploadFile = File(...)):
+    ext = file.filename.split(".")[-1]
+    path = f"{UPLOAD_DIR}/{uuid.uuid4()}.{ext}"
+    with open(path, "wb") as out:
+        out.write(await file.read())
+    return {"path": path}
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+@app.post("/files")
+async def upload(upload: UploadFile):
+    dest = os.path.join(UPLOAD_DIR, upload.filename)
+    async with aiofiles.open(dest, "wb") as out:
+        await out.write(await upload.read())
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+@router.post("/transcriptions")
+async def transcribe(file: UploadFile = File(...)):
+    name = os.path.basename(file.filename)
+    path = os.path.join(UPLOAD_DIR, f"{uuid.uuid4()}-{name}")
+    with open(path, "wb") as out:
+        out.write(await file.read())
+'''
+
+[[samples]]
+kind = "safe"
+note = "the file name is only reported back"
+code = '''
+@app.post("/files")
+async def upload(upload: UploadFile):
+    dest = os.path.join(UPLOAD_DIR, uuid.uuid4().hex)
+    with open(dest, "wb") as out:
+        shutil.copyfileobj(upload.file, out)
+    return {"stored": dest, "name": upload.filename}
+'''

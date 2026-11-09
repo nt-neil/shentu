@@ -5,7 +5,7 @@ cwe = "CWE-89"
 severity = "high"
 title = "Request input formatted into a SQL string passed to a DB-API cursor"
 frameworks = ["flask", "django"]
-sources = ["request.args", "request.form", "request.values", "request.json", "request.GET", "request.POST"]
+sources = ["request.args", "request.form", "request.values", "request.json", "request.GET", "request.POST", "request.query_params", "request.path_params", "request.form(", "request.json(", "request.body(", "request.query", "request.match_info", "request.post(", "request.text(", "request.read(", "self.get_argument(", "self.get_arguments(", "self.get_query_argument(", "self.get_body_argument(", "self.request.body", "self.request.arguments"]
 sinks = [".execute(", ".executemany(", ".executescript("]
 sanitizers = ["int("]
 fix = "Pass values as the second argument of execute() with the driver's placeholder (%s or ?); never use f-strings, % or .format() to build SQL."
@@ -44,4 +44,32 @@ def users():
     cur = db.cursor()
     cur.execute("SELECT id, email FROM users WHERE name = %s", (request.args.get("name", ""),))
     return jsonify(cur.fetchall())
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+@app.get("/users")
+async def users(request: Request):
+    name = request.query_params.get("name", "")
+    async with pool.acquire() as conn:
+        return await conn.execute(f"DELETE FROM sessions WHERE user = '{name}'")
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+class UserHandler(tornado.web.RequestHandler):
+    def get(self):
+        cur = self.application.db.cursor()
+        cur.execute("SELECT * FROM users WHERE name = '%s'" % self.get_argument("name"))
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+class UserHandler(tornado.web.RequestHandler):
+    def get(self):
+        cur = self.application.db.cursor()
+        cur.execute("SELECT * FROM users WHERE name = %s", (self.get_argument("name"),))
 '''

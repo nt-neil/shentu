@@ -1,0 +1,61 @@
+id = "python-sqli-orm-raw-query"
+lang = "python"
+class = "sqli"
+cwe = "CWE-89"
+severity = "high"
+tier = "info"
+title = "Request input built into the SQL text of an ORM or async driver raw query"
+sources = ["request.args", "request.form", "request.values", "request.json", "request.get_json(", "request.GET", "request.POST", "request.data", "request.query_params", "request.path_params", "request.form(", "request.json(", "request.query", "request.match_info", "request.post(", "self.get_argument(", "self.get_query_argument(", "self.get_body_argument("]
+sinks = [".raw(", "RawSQL(", ".query_raw(", ".execute_raw(", ".query_first(", ".fetchrow(", ".fetchval(", ".fetch_all(", ".fetch_one(", ".fetch_val("]
+sanitizers = ["int("]
+fix = "Keep the SQL text constant and pass values separately: Manager.raw(sql, [value]) and RawSQL(sql, [value]) with %s, prisma query_raw(sql, value) with $1, asyncpg fetch(sql, value), databases fetch_all(query, values={...})."
+refs = ["CVE-2024-5225"]
+
+[[args]]
+arg = 1   # the SQL text; the parameters that follow are safe
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+@router.get("/spend/logs")
+async def spend_logs(request: Request):
+    api_key = request.query_params.get("api_key")
+    sql = 'SELECT * FROM "MonthlySpend" WHERE "api_key" = \'' + api_key + "'"
+    return await prisma_client.db.query_raw(sql)
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+def find_users(request):
+    name = request.GET.get("name", "")
+    users = User.objects.raw(f"SELECT * FROM auth_user WHERE username LIKE '%{name}%'")
+    return render(request, "users.html", {"users": users})
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+async def order(request):
+    conn = request.app["db"]
+    row = await conn.fetchrow("SELECT * FROM orders WHERE ref = '%s'" % request.match_info["ref"])
+    return web.json_response(dict(row))
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+@router.get("/spend/logs")
+async def spend_logs(request: Request):
+    api_key = request.query_params.get("api_key")
+    return await prisma_client.db.query_raw('SELECT * FROM "MonthlySpend" WHERE "api_key" = $1', api_key)
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+def find_users(request):
+    name = request.GET.get("name", "")
+    users = User.objects.raw("SELECT * FROM auth_user WHERE username LIKE %s", ["%" + name + "%"])
+    return render(request, "users.html", {"users": users})
+'''

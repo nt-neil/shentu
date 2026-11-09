@@ -1,0 +1,54 @@
+id = "python-open-redirect-tornado-aiohttp"
+lang = "python"
+class = "open-redirect"
+cwe = "CWE-601"
+severity = "medium"
+tier = "info"
+title = "Tornado or aiohttp redirect to a URL taken from the request"
+sources = ["self.get_argument(", "self.get_query_argument(", "self.get_body_argument(", "self.request.arguments", "self.request.query_arguments", "request.query", "request.match_info", "request.post("]
+sinks = ["self.redirect(", "web.HTTPFound(", "web.HTTPSeeOther(", "web.HTTPTemporaryRedirect(", "web.HTTPMovedPermanently(", "web.HTTPPermanentRedirect(", "HTTPFound(", "HTTPSeeOther("]
+sanitizers = ["url_has_allowed_host_and_scheme(", "is_safe_url(", "self.reverse_url(", "reverse_url("]
+fix = "Redirect only to a fixed page or a path you build on the server; if a 'next' value must be honoured, require a relative path that starts with a single '/' and has no scheme or host."
+refs = ["CVE-2024-53995"]
+
+[[args]]
+arg = 1
+leading = true
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+class LoginHandler(tornado.web.RequestHandler):
+    def post(self):
+        if not self.check_password(self.get_body_argument("username"), self.get_body_argument("password")):
+            raise tornado.web.HTTPError(401)
+        next_ = self.get_query_argument("next", "/")
+        self.redirect(next_)
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+async def logout(request):
+    await forget(request)
+    raise web.HTTPFound(request.query.get("next", "/"))
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+class LoginHandler(tornado.web.RequestHandler):
+    def post(self):
+        if not self.check_password(self.get_body_argument("username"), self.get_body_argument("password")):
+            raise tornado.web.HTTPError(401)
+        self.redirect("/" + self.settings["default_page"] + "/")
+'''
+
+[[samples]]
+kind = "safe"
+note = "a fixed path; the request only fills the query string"
+code = '''
+async def logout(request):
+    await forget(request)
+    raise web.HTTPFound("/login?" + urlencode({"user": request.query.get("user", "")}))
+'''
