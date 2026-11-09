@@ -1,6 +1,9 @@
 package engine
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // TestHeldOut runs cases written apart from the rule samples, so the engine is not
 // only tuned to them: vulnerable code written differently from any sample, and
@@ -120,6 +123,12 @@ func TestHeldOut(t *testing.T) {
 		{"O1 js shell: false", "js", "app.get('/x', (req, res) => { spawn('git', ['log', req.query.r], { shell: false }); });\n", false, ""},
 		{"O2 py shell=False", "python", "def v():\n    subprocess.run('ping ' + request.args['h'], shell=False)\n", false, ""},
 		{"O3 py -- after the input", "python", "def v():\n    subprocess.run(['git', 'log', request.args['r'], '--'])\n", true, ""},
+		{"O5 py SafeLoader only on one branch", "python", "def v(request):\n    data = yaml.load(request.body, Loader=yaml.SafeLoader if trusted else yaml.Loader)\n", true, ""},
+		{"O6 py SafeLoader keyword", "python", "def v(request):\n    data = yaml.load(request.body, Loader=yaml.SafeLoader)\n", false, ""},
+		{"O7 js safe schema", "js", "app.post('/y', (req, res) => { yaml.load(req.body, { schema: yaml.JSON_SCHEMA }); });\n", false, ""},
+		{"O8 php allowed_classes from the request", "php", "<?php\n$o = unserialize($_COOKIE['c'], ['allowed_classes' => $_GET['k']]);\n", true, ""},
+		{"S4 switch falls through 20 cases", "php", "<?php\nswitch ($m) {\n  case 0: $a = $_GET['a'];\n" + strings.Repeat("  case 9:\n", 20) + "  default: system($a);\n}\n", true, ""},
+		{"X1 js member named if is not a header", "js", "app.get('/x', (req, res) => { const y = o.if(a) / 2; exec(req.query.x); const z = 1 / 3; });\n", true, ""},
 		{"O4 js root from the request", "js", "app.get('/f', (req, res) => { res.sendFile(req.params.name, { root: req.query.dir }); });\n", true, ""},
 	}
 	pass := 0

@@ -126,8 +126,13 @@ arguments, with two refinements:
   any value except a literal `false`, `0`, `null` or `None` (`shell: '/bin/bash'`,
   `shell: isUnix`). In `unless`, `root:` counts only when its value is not user
   input.
+- in `unless`, a fragment with an option and a value (`Loader=yaml.SafeLoader`,
+  `'allowed_classes' => false`) counts only when the option's whole value is
+  exactly that, so `Loader=yaml.SafeLoader if x else yaml.Loader` does not
+  silence the call;
 - a fragment that is a single string (`"--"`) ends a command's options. It counts
-  only when no user input comes before it in its list.
+  only when no user input comes before it in its list;
+- any other `unless` fragment (`yaml.SafeLoader`) must be a whole argument.
 
 Examples from the rules:
 
@@ -135,7 +140,8 @@ Examples from the rules:
 # yaml.load is safe with the safe loader, dangerous with Loader, FullLoader or UnsafeLoader
 [[args]]
 sinks = ["yaml.load(", "yaml.load_all("]
-unless = ["SafeLoader", "CSafeLoader"]   # Loader=yaml.SafeLoader, or passed positionally
+unless = ["Loader=yaml.SafeLoader", "Loader=yaml.CSafeLoader", "Loader=SafeLoader", "Loader=CSafeLoader",
+          "yaml.SafeLoader", "yaml.CSafeLoader", "SafeLoader", "CSafeLoader"]
 
 # spawn and execFile take an argument array, unless a shell option joins it into a command line
 [[args]]

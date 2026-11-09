@@ -13,7 +13,7 @@ refs = ["CVE-2013-4660"]
 
 [[args]]
 sinks = ["yaml.load(", "yaml.loadAll("]
-unless = ["FAILSAFE_SCHEMA", "JSON_SCHEMA"]   # schemas without the js/* types
+unless = ["schema: yaml.FAILSAFE_SCHEMA", "schema: yaml.JSON_SCHEMA", "schema: FAILSAFE_SCHEMA", "schema: JSON_SCHEMA"]   # schemas without the js/* types
 
 [[args]]
 sinks = ["yaml.safeLoad(", "yaml.safeLoadAll("]

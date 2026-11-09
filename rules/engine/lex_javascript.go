@@ -83,7 +83,9 @@ func (s *scanner) js(stop bool) {
 			switch o {
 			case "(":
 				n := len(s.toks)
-				s.ctl = append(s.ctl, n > 0 && s.toks[n-1].Kind == Ident && ctlWords[s.toks[n-1].Text])
+				// o.if(x) is a method call, not an if header.
+				s.ctl = append(s.ctl, n > 0 && s.toks[n-1].Kind == Ident && ctlWords[s.toks[n-1].Text] &&
+					!(n > 1 && memberOp(false, s.toks[n-2])))
 			case ")":
 				s.afterCtl = false
 				if n := len(s.ctl); n > 0 {

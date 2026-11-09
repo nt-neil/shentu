@@ -233,22 +233,31 @@ func (a *analysis) try(s *stmt, st state) (state, uint8) {
 	return out, e
 }
 
-// switchStmt: each case is a branch from the state before the switch, falling
-// through into the next case until it breaks.
+// switchStmt: each case is entered from the state before the switch or by
+// falling through from the case above it, in one pass.
 func (a *analysis) switchStmt(s *stmt, st state) (state, uint8) {
 	a.sinks(st, s.toks)
 	var outs []state
+	var fall state // state falling into the next case, nil when the case above exited
 	exit := hardExit
-	for i := range s.cases {
-		x, e := st.clone(), noExit
-		for j := i; j < len(s.cases) && j < i+16 && e == noExit; j++ {
-			x, e = a.block(s.cases[j], x)
+	for _, c := range s.cases {
+		in := st.clone()
+		if fall != nil {
+			in = merge(st, fall)
 		}
-		if e == noExit || e == breakExit {
+		x, e := a.block(c, in)
+		fall = nil
+		switch e {
+		case noExit:
+			fall = x
+		case breakExit:
 			outs = append(outs, x)
-		} else {
+		default:
 			exit = min(exit, e)
 		}
+	}
+	if fall != nil {
+		outs = append(outs, fall)
 	}
 	if !s.hasDefault {
 		outs = append(outs, st)
@@ -1386,6 +1395,12 @@ func (a *analysis) unless(st state, ps []*pat, region []Token) bool {
 			if !p.at(region, i, false) {
 				continue
 			}
+			if k := optionWithValue(p); k >= 0 {
+				if tokensEqual(valueAt(region, i+k+1), p.toks[k+1:]) {
+					return true
+				}
+				continue
+			}
 			if v := optionValue(p, region, i); v != nil {
 				if !a.expr(st, v, false).taint {
 					return true
@@ -1397,11 +1412,61 @@ func (a *analysis) unless(st state, ps []*pat, region []Token) bool {
 				if a.argsTaint(st, region[start:i], false) {
 					continue
 				}
+				return true
 			}
-			return true
+		}
+		// Any other fragment (yaml.SafeLoader) must be a whole argument.
+		for _, arg := range splitTop(region, isComma) {
+			if tokensEqual(arg, p.toks) {
+				return true
+			}
 		}
 	}
 	return false
+}
+
+// optionWithValue returns the index of the ":", "=" or "=>" in a fragment that
+// names an option and its value (Loader=yaml.SafeLoader), or -1.
+func optionWithValue(p *pat) int {
+	for k, t := range p.toks {
+		if k > 0 && k < len(p.toks)-1 && t.Kind == Op && (t.Text == "=" || t.Text == ":" || t.Text == "=>") {
+			return k
+		}
+	}
+	return -1
+}
+
+// valueAt returns an option's value starting at start: up to the next "," or
+// closing bracket at the same depth.
+func valueAt(t []Token, start int) []Token {
+	end := len(t)
+	for j, depth := start, 0; j < len(t); j++ {
+		if isOpen(t[j]) {
+			depth++
+		} else if isClose(t[j]) {
+			if depth == 0 {
+				end = j
+				break
+			}
+			depth--
+		} else if depth == 0 && t[j].op(",") {
+			end = j
+			break
+		}
+	}
+	return t[min(start, end):end]
+}
+
+func tokensEqual(a, b []Token) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if !tokEq(b[i], a[i]) {
+			return false
+		}
+	}
+	return true
 }
 
 // optionValue returns the value after an option fragment matched at i, or nil
@@ -1411,23 +1476,7 @@ func optionValue(p *pat, t []Token, i int) []Token {
 	if last.Kind != Op || last.Text != ":" && last.Text != "=" {
 		return nil
 	}
-	start := i + len(p.toks)
-	end := indexTop(t, start, func(x Token) bool { return x.op(",") })
-	for j, depth := start, 0; j < len(t) && (end < 0 || j < end); j++ {
-		if isOpen(t[j]) {
-			depth++
-		} else if isClose(t[j]) {
-			if depth == 0 {
-				end = j
-				break
-			}
-			depth--
-		}
-	}
-	if end < 0 {
-		end = len(t)
-	}
-	return t[start:end]
+	return valueAt(t, i+len(p.toks))
 }
 
 func falsy(v []Token) bool {
