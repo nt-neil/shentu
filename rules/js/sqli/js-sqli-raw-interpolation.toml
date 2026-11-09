@@ -5,7 +5,7 @@ cwe = "CWE-89"
 severity = "high"
 title = "Request input concatenated or interpolated into SQL for a driver or knex.raw"
 frameworks = ["express", "nestjs", "nextjs"]
-sources = ["req.query", "req.body", "req.params", "req.cookies", "@Query(", "@Body(", "@Param(", "@Req(", "request.nextUrl", "req.nextUrl", "request.url", "searchParams", "request.json(", "req.json(", "request.formData(", "req.formData("]
+sources = ["req.query", "req.body", "req.params", "req.cookies", "@Query(", "@Body(", "@Param(", "@Req(", "req.originalUrl", "^request.nextUrl", "^req.nextUrl", "^request.url", "^searchParams", "^request.json(", "^req.json(", "^request.formData(", "^req.formData(", "^formData.get(", "^cookies().get("]
 sinks = [".query(", ".execute(", "knex.raw(", ".raw(", ".whereRaw(", ".orderByRaw("]
 sanitizers = ["parseInt(", "Number("]
 fix = "Use placeholders and pass values separately (query('... WHERE id = ?', [id]), knex.raw('?? = ?', [col, val])); never build SQL with + or template literals."
@@ -109,4 +109,65 @@ export async function GET(request: NextRequest) {
   const [rows] = await pool.query<RowDataPacket[]>("SELECT id FROM posts WHERE title LIKE ?", [`%${q}%`]);
   return Response.json(rows satisfies RowDataPacket[]);
 }
+'''
+
+[[samples]]
+kind = "vulnerable"
+dialect = "ts"
+note = "Next.js: cookies() from next/headers"
+code = '''
+export async function GET() {
+  const team = cookies().get("team")?.value;
+  return Response.json(await pool.query(`SELECT * FROM boards WHERE team = '${team}'`));
+}
+'''
+
+[[samples]]
+kind = "safe"
+dialect = "ts"
+code = '''
+export async function GET() {
+  const team = cookies().get("team")?.value ?? "";
+  return Response.json(await pool.query("SELECT * FROM boards WHERE team = ?", [team]));
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+dialect = "ts"
+note = "Next.js Server Action: the form data comes from the client"
+code = '''
+export async function rename(formData: FormData) {
+  "use server";
+  await pool.query(`UPDATE boards SET name = '${formData.get("name")}' WHERE id = 1`);
+}
+'''
+
+[[samples]]
+kind = "safe"
+dialect = "ts"
+code = '''
+export async function rename(formData: FormData) {
+  "use server";
+  await pool.query("UPDATE boards SET name = ? WHERE id = 1", [String(formData.get("name"))]);
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "req.originalUrl holds the query string"
+code = '''
+app.get("/log", async (req, res) => {
+  await pool.query("INSERT INTO hits (url) VALUES ('" + req.originalUrl + "')");
+  res.end();
+});
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+app.get("/log", async (req, res) => {
+  await pool.query("INSERT INTO hits (url) VALUES (?)", [req.originalUrl]);
+  res.end();
+});
 '''

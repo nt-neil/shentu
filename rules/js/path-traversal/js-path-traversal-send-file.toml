@@ -5,7 +5,7 @@ cwe = "CWE-22"
 severity = "high"
 title = "Request value joined into a path that is read, written or sent"
 frameworks = ["express", "nestjs", "nextjs"]
-sources = ["req.query", "req.params", "req.body", "@Query(", "@Body(", "@Param(", "@Req(", "request.nextUrl", "req.nextUrl", "request.url", "searchParams", "request.json(", "req.json(", "request.formData(", "req.formData("]
+sources = ["req.query", "req.params", "req.body", "@Query(", "@Body(", "@Param(", "@Req(", "req.originalUrl", "^request.nextUrl", "^req.nextUrl", "^request.url", "^searchParams", "^request.json(", "^req.json(", "^request.formData(", "^req.formData(", "^formData.get("]
 sinks = ["res.sendFile(", "res.download(", "fs.readFile(", "fs.createReadStream(", "fs.writeFile(", "fs.unlink(", "readFileSync("]
 sanitizers = ["path.basename(", ".startsWith("]
 fix = "Use res.sendFile(name, { root }) or resolve the path and require it to start with the base directory plus path.sep before touching the file."
@@ -145,6 +145,7 @@ export async function GET(request: Request) {
 kind = "vulnerable"
 note = "a member of fs, called through fs.promises"
 code = '''
+const fs = require("fs");
 app.get("/doc", async (req, res) => {
   res.send(await fs.promises.readFile(path.join(DOCS, req.query.name), "utf8"));
 });
@@ -153,6 +154,7 @@ app.get("/doc", async (req, res) => {
 [[samples]]
 kind = "safe"
 code = '''
+const fs = require("fs");
 app.get("/doc", async (req, res) => {
   res.send(await fs.promises.readFile(path.join(DOCS, path.basename(String(req.query.name))), "utf8"));
 });
@@ -162,6 +164,7 @@ app.get("/doc", async (req, res) => {
 kind = "vulnerable"
 note = "readFileSync as a member of fs and of require('fs')"
 code = '''
+import fs from "fs";
 app.get("/raw", (req, res) => {
   const a = fs.readFileSync(path.join(DOCS, req.query.a));
   const b = require("node:fs").readFileSync("/srv/docs/" + req.query.b);

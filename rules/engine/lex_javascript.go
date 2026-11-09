@@ -40,6 +40,10 @@ func (s *scanner) js(stop bool) {
 	depth := 0
 	for s.pos < len(s.src) && !s.b.hitLimit() {
 		c := s.src[s.pos]
+		if s.jsx && !s.jsxLost && !s.jsxClosing && s.jsxTop() == 'c' && c != '<' && c != '{' {
+			s.jsxText() // element text is not code: quotes, slashes and colons in it are text
+			continue
+		}
 		switch {
 		case c == '\n':
 			s.line++
@@ -57,6 +61,13 @@ func (s *scanner) js(stop bool) {
 			s.jsTemplate()
 		case c == '/' && s.regexAllowed() && !s.jsxClose():
 			s.jsRegex()
+		case c == '@' && s.decoratorGap() > 0:
+			// "@ Body()": a decorator name after spaces is still one token, "@Body".
+			line := s.line
+			s.pos += s.decoratorGap()
+			start := s.pos
+			s.ident("$")
+			s.emit(Token{Kind: Ident, Text: "@" + s.src[start:s.pos], Line: line})
 		case isIdentStart(c) || c == '$' || (c == '#' || c == '@') && isIdentStart(s.peek(1)):
 			// A decorator name (@Body) is one token, so a rule can name it as a source.
 			line := s.line
@@ -139,13 +150,13 @@ func (s *scanner) jsxOp(o string) {
 		s.jsxStack = append(s.jsxStack, state)
 	}
 	switch {
+	case o == "<" && top == 'c' && s.pos < len(s.src) && s.src[s.pos] == '/':
+		s.jsxClosing = true // </name>
 	case o == "<" && s.pos < len(s.src) && (isIdentStart(s.src[s.pos]) || s.src[s.pos] == '>') &&
-		(top == 'c' || !jsValue(prev)):
+		(top == 'c' || !jsValue(prev)) && !(s.ts && prev.op(":") && s.typeParams()):
 		push('t') // an element starts where no value ends
 	case o == ";" && top == 't':
 		s.jsxStack = nil // no opening tag holds a ";": the state was wrong
-	case o == "/" && top == 'c' && prev.op("<"):
-		s.jsxClosing = true
 	case o == ">" && s.jsxClosing:
 		s.jsxClosing = false
 		if top == 'c' {
@@ -185,10 +196,63 @@ func jsValue(t Token) bool {
 // reading the "/" as division would let the quote hide the rest of the line.
 func (s *scanner) jsxClose() bool {
 	n := len(s.toks)
-	if !s.jsx || n == 0 || !s.toks[n-1].op("<") || s.pos == 0 || s.src[s.pos-1] != '<' {
+	return s.jsx && !s.jsxLost && s.jsxClosing && n > 0 && s.toks[n-1].op("<") && s.pos > 0 && s.src[s.pos-1] == '<'
+}
+
+// jsxText skips element text up to the next "<" or "{".
+func (s *scanner) jsxText() {
+	for s.pos < len(s.src) && s.src[s.pos] != '<' && s.src[s.pos] != '{' {
+		if s.src[s.pos] == '\n' {
+			s.line++
+			s.nl = true
+		}
+		s.pos++
+	}
+}
+
+// decoratorGap returns the length of "@" and the spaces before a name ("@ Body"),
+// or 0.
+func (s *scanner) decoratorGap() int {
+	i := s.pos + 1
+	for i < len(s.src) && (s.src[i] == ' ' || s.src[i] == '\t') {
+		i++
+	}
+	if i == s.pos+1 || i >= len(s.src) || !isIdentStart(s.src[i]) {
+		return 0
+	}
+	return i - s.pos
+}
+
+// typeParams reports whether the source after a "<" reads "T>(" or "T, U>(": in
+// a type position (after ":") those are type parameters of a function type.
+func (s *scanner) typeParams() bool {
+	i := s.pos
+	sp := func() {
+		for i < len(s.src) && (s.src[i] == ' ' || s.src[i] == '\t') {
+			i++
+		}
+	}
+	for {
+		if i >= len(s.src) || !isIdentStart(s.src[i]) {
+			return false
+		}
+		for i < len(s.src) && (isIdentChar(s.src[i]) || s.src[i] == '$') {
+			i++
+		}
+		sp()
+		if i < len(s.src) && s.src[i] == ',' {
+			i++
+			sp()
+			continue
+		}
+		break
+	}
+	if i >= len(s.src) || s.src[i] != '>' {
 		return false
 	}
-	return !s.jsxLost && s.jsxTop() == 'c'
+	i++
+	sp()
+	return i < len(s.src) && s.src[i] == '('
 }
 
 func (s *scanner) regexAllowed() bool {

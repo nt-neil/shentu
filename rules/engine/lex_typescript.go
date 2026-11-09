@@ -59,6 +59,7 @@ type tsCtx struct {
 	module    bool    // inside an import/export statement
 	decos     []Token // 'p': decorators of the parameter being read
 	decoName  string  // 'p': that parameter's name
+	decoPat   int     // 'p': index in out of a decorated parameter's pattern ({ a } or [a]), or -1
 	inject    []Token // 'p': statements for the body that follows
 	openAt    int     // index in out of the opening token
 }
@@ -77,7 +78,7 @@ type tsStrip struct {
 }
 
 func stripTS(in []Token, b *budget, tsx bool) []Token {
-	x := &tsStrip{in: in, b: b, tsx: tsx, ctx: []*tsCtx{{kind: 'b', openAt: -1}}, lastOpen: -1}
+	x := &tsStrip{in: in, b: b, tsx: tsx, ctx: []*tsCtx{{kind: 'b', openAt: -1, decoPat: -1}}, lastOpen: -1}
 	x.run()
 	return x.out
 }
@@ -244,7 +245,9 @@ func (x *tsStrip) ident(t Token, c *tsCtx) {
 			j = max(x.skipType(j), j+1)
 		}
 		if x.at(j).op("{") {
-			j = x.match(j) + 1
+			if e, ok := x.matchOK(j); ok {
+				j = e + 1
+			} // unclosed: only the header goes, the rest is read as code (and reported partial)
 		}
 		x.unexport()
 		x.drop(x.i, j)
@@ -271,7 +274,11 @@ func (x *tsStrip) ident(t Token, c *tsCtx) {
 			x.out = x.out[:len(x.out)-1]
 		}
 		x.unexport()
-		x.drop(x.i, x.match(x.i+2)+1)
+		if e, ok := x.matchOK(x.i + 2); ok {
+			x.drop(x.i, e+1)
+		} else {
+			x.drop(x.i, x.i+2) // unclosed: the body is read as code (and reported partial)
+		}
 		return
 	case start && t.Text == "declare" && n1.Kind == Ident && sameLine(n1) && c.kind != 'c':
 		x.unexport()
@@ -386,7 +393,8 @@ func (x *tsStrip) angle(t Token, c *tsCtx) {
 // memberName reports whether the last token in out is a class member's name.
 func (x *tsStrip) memberName() bool {
 	p, b := x.back(1), x.back(2)
-	return p.Kind == Ident && (p.Flags&FlagNL != 0 || b.op("{") || b.op(";") || b.op("}") || b.word("static") || b.word("async"))
+	return p.Kind == Ident && (b.op("{") || b.op(";") || b.op("}") || b.word("static") || b.word("async") ||
+		p.Flags&FlagNL != 0 && (b.Kind != Op || b.op(")"))) // not "h =\n ok ? a : b"
 }
 
 // validPipes are NestJS pipes that turn a parameter into a number, boolean, UUID or enum value.
@@ -398,7 +406,12 @@ func (x *tsStrip) decorator(c *tsCtx) {
 		j += 2
 	}
 	if x.at(j).op("(") {
-		j = x.match(j) + 1
+		e, ok := x.matchOK(j)
+		if !ok {
+			x.drop(x.i, j) // @D( unclosed: the arguments are read as code (and reported partial)
+			return
+		}
+		j = e + 1
 	}
 	if c.kind == 'p' {
 		c.decos = append(c.decos, x.in[x.i:min(j, len(x.in))]...)
@@ -409,6 +422,26 @@ func (x *tsStrip) decorator(c *tsCtx) {
 // paramEnd closes the parameter being read: a decorated parameter becomes an
 // assignment at the start of the body.
 func (x *tsStrip) paramEnd(c *tsCtx) {
+	target := []Token{{Kind: Ident, Text: c.decoName}}
+	if c.decoPat >= 0 {
+		// let { cmd } = @Body(); (a fresh copy of the pattern, without line starts)
+		end, depth := c.decoPat, 0
+		for k := c.decoPat; k < len(x.out); k++ {
+			if isOpen(x.out[k]) {
+				depth++
+			} else if isClose(x.out[k]) {
+				if depth--; depth == 0 {
+					end = k
+					break
+				}
+			}
+		}
+		target = []Token{{Kind: Ident, Text: "let"}}
+		for _, t := range x.out[c.decoPat : end+1] {
+			t.Flags &^= FlagNL
+			target = append(target, t)
+		}
+	}
 	if len(c.decos) > 0 && c.decoName != "" {
 	decos:
 		for _, d := range splitDecos(c.decos) {
@@ -419,17 +452,19 @@ func (x *tsStrip) paramEnd(c *tsCtx) {
 			}
 			if d[0].word("@Req") || d[0].word("@Request") {
 				// The whole request is not input (req.user is the server's own), its parts are.
-				for _, k := range []string{"query", "body", "params", "headers", "cookies"} {
-					c.inject = append(c.inject, Token{Kind: Ident, Text: c.decoName}, Token{Kind: Op, Text: "."}, Token{Kind: Ident, Text: k}, Token{Kind: Op, Text: "="})
-					c.inject = append(append(c.inject, d...), Token{Kind: Op, Text: ";"})
+				if c.decoPat < 0 {
+					for _, k := range []string{"query", "body", "params", "headers", "cookies", "originalUrl", "url", "get", "header"} {
+						c.inject = append(c.inject, Token{Kind: Ident, Text: c.decoName}, Token{Kind: Op, Text: "."}, Token{Kind: Ident, Text: k}, Token{Kind: Op, Text: "="})
+						c.inject = append(append(c.inject, d...), Token{Kind: Op, Text: ";"})
+					}
+					continue
 				}
-				continue
 			}
-			c.inject = append(c.inject, Token{Kind: Ident, Text: c.decoName}, Token{Kind: Op, Text: "="})
+			c.inject = append(append(c.inject, target...), Token{Kind: Op, Text: "="})
 			c.inject = append(append(c.inject, d...), Token{Kind: Op, Text: ";"})
 		}
 	}
-	c.decos, c.decoName = nil, ""
+	c.decos, c.decoName, c.decoPat = nil, "", -1
 }
 
 func splitDecos(t []Token) [][]Token {
@@ -501,8 +536,11 @@ func (x *tsStrip) declName(p Token, c *tsCtx) bool {
 }
 
 func (x *tsStrip) open(t Token, c *tsCtx) {
-	n := &tsCtx{kind: 'p'}
+	n := &tsCtx{kind: 'p', decoPat: -1}
 	p := x.back(1)
+	if c.kind == 'p' && len(c.decos) > 0 && c.decoName == "" && (t.op("{") || t.op("[")) {
+		c.decoName, c.decoPat = "{", len(x.out) // run(@Body() { cmd }: Dto)
+	}
 	switch t.Text {
 	case "(":
 		n.ctl = p.Kind == Ident && ctlWords[p.Text] && !x.back(2).op(".")
@@ -572,6 +610,10 @@ func (x *tsStrip) declEnd(i int) int {
 			return j
 		}
 	}
+	if depth > 0 {
+		x.b.unterminated() // declare module 'm' { unclosed: only "declare" goes
+		return i
+	}
 	return len(x.in)
 }
 
@@ -594,6 +636,55 @@ func (x *tsStrip) match(i int) int {
 		}
 	}
 	return len(x.in) - 1
+}
+
+// matchOK is match for code that is dropped: an unclosed bracket is reported
+// (ErrPartial) instead of taking the rest of the file with it.
+func (x *tsStrip) matchOK(i int) (int, bool) {
+	depth := 0
+	for j := i; j < len(x.in) && x.b.step(); j++ {
+		if isOpen(x.in[j]) {
+			depth++
+		} else if isClose(x.in[j]) {
+			if depth--; depth <= 0 {
+				return j, true
+			}
+		}
+	}
+	x.b.unterminated()
+	return i, false
+}
+
+// typeGroup checks the bracket group at i inside type arguments: types only,
+// no call (exec(x)) and no value operators. It returns the index of its closer.
+func (x *tsStrip) typeGroup(i, depth int) (int, bool) {
+	if depth > maxNest {
+		return i, false
+	}
+	for j := i + 1; j < len(x.in) && x.b.step(); j++ {
+		t := x.in[j]
+		switch {
+		case isClose(t):
+			return j, true
+		case isOpen(t):
+			if t.op("(") && j > i+1 && x.in[j-1].Kind == Ident && !x.in[j-1].word("new") {
+				return i, false // a call is a value
+			}
+			e, ok := x.typeGroup(j, depth+1)
+			if !ok {
+				return i, false
+			}
+			j = e
+		case t.Kind == Ident || t.Kind == Str || t.Kind == Num:
+		case t.Kind == Op && (typeOps[t.Text] || t.Text == ";" || t.Text == "<" || t.Text == ">" || t.Text == ">>"):
+		default:
+			return i, false
+		}
+		if j-i > maxAngles {
+			return i, false
+		}
+	}
+	return i, false
 }
 
 // maxAngles bounds the look-ahead of a "<" that may be a comparison.
@@ -619,7 +710,18 @@ func (x *tsStrip) angles(i int, check bool) (int, bool) {
 		case t.op(">>>"):
 			depth -= 3
 		case t.op("(") || t.op("[") || t.op("{"):
-			j = x.match(j)
+			if !check {
+				j = x.match(j)
+				continue
+			}
+			if t.op("(") && j > i && x.in[j-1].Kind == Ident && !x.in[j-1].word("new") {
+				return i, false // f(a < g(x), b > (y)): a call inside is no type
+			}
+			e, ok := x.typeGroup(j, 0)
+			if !ok {
+				return i, false
+			}
+			j = e
 			continue
 		case t.Kind == Ident || t.Kind == Str || t.Kind == Num:
 			continue
@@ -686,7 +788,11 @@ func (x *tsStrip) skipPostfix(i int) int {
 		return i
 	}
 	for x.at(j).op("[") && x.at(j).Flags&FlagNL == 0 && x.b.step() {
-		j = x.match(j) + 1
+		e, ok := x.matchOK(j)
+		if !ok {
+			return j
+		}
+		j = e + 1
 	}
 	return j
 }
@@ -721,9 +827,16 @@ func (x *tsStrip) skipPrimary(i int) int {
 	case t.op("-") && x.at(i+1).Kind == Num:
 		return i + 2
 	case t.op("{") || t.op("["):
-		return x.match(i) + 1
+		if e, ok := x.matchOK(i); ok {
+			return e + 1
+		}
+		return i // unclosed: read as code (and reported partial)
 	case t.op("("):
-		j := x.match(i) + 1
+		e, ok := x.matchOK(i)
+		if !ok {
+			return i
+		}
+		j := e + 1
 		if x.at(j).op("=>") {
 			return x.skipType(j + 1)
 		}

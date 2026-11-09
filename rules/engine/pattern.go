@@ -11,16 +11,21 @@ import (
 // matches inside comments or string literals. A text pattern (listed in the rule's
 // `text`) is matched case-insensitively inside string literals instead.
 type pat struct {
-	raw    string
-	php    bool
-	toks   []Token
-	member bool           // starts with ".", "->" or "?->": a method on any receiver
-	text   *regexp.Regexp // text patterns only
-	name   string         // last name in the pattern (to recognise prefix checks)
+	raw      string
+	php      bool
+	toks     []Token
+	member   bool           // starts with ".", "->" or "?->": a method on any receiver
+	anchored bool           // written with a leading "^": never a member of something else, even as a source
+	text     *regexp.Regexp // text patterns only
+	name     string         // last name in the pattern (to recognise prefix checks)
 }
 
 func compilePattern(lang, raw string, text bool) (*pat, error) {
 	p := &pat{raw: raw, php: lang == "php"}
+	if !text && strings.HasPrefix(raw, "^") {
+		// "^request.url" matches request.url but not this.request.url.
+		p.anchored, raw = true, raw[1:]
+	}
 	if text {
 		words := strings.Fields(raw)
 		if len(words) == 0 {
@@ -103,6 +108,9 @@ func tokEq(p, c Token) bool {
 // In JavaScript it is allowed as a member of a Node core module: fs.readFileSync(.
 func (p *pat) at(toks []Token, i int, strict bool) bool {
 	if p.text != nil || i+len(p.toks) > len(toks) {
+		return false
+	}
+	if p.anchored && i > 0 && memberOp(p.php, toks[i-1]) {
 		return false
 	}
 	for k, pt := range p.toks {

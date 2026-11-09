@@ -74,7 +74,7 @@ func TestLexTS(t *testing.T) {
 			`export class U { find ( id , q ) { id = @Param ( "id" ) ; q = @Query ( ) ; return id ; } }`},
 		{"decorator pipe", "class U { m(@Param('id', ParseIntPipe) id: number, @Body() b: B) { } }", `class U { m ( id , b ) { b = @Body ( ) ; } }`},
 		{"decorator req", "class U { m(@Req() r: Request): void { } }",
-			`class U { m ( r ) { r . query = @Req ( ) ; r . body = @Req ( ) ; r . params = @Req ( ) ; r . headers = @Req ( ) ; r . cookies = @Req ( ) ; } }`},
+			`class U { m ( r ) { r . query = @Req ( ) ; r . body = @Req ( ) ; r . params = @Req ( ) ; r . headers = @Req ( ) ; r . cookies = @Req ( ) ; r . originalUrl = @Req ( ) ; r . url = @Req ( ) ; r . get = @Req ( ) ; r . header = @Req ( ) ; } }`},
 		{"optional chain", "const a = b?.c?.[d]?.(e) ?? f;", `const a = b ?. c ?. [ d ] ?. ( e ) ?? f ;`},
 		{"template", "const s = `a${(x as any).y}b`;", "const s = `a${( x ) . y}b` ;"},
 		{"namespace", "namespace N.M { export const a = 1; }", `{ export const a = 1 ; }`},
@@ -93,14 +93,14 @@ func TestLexTS(t *testing.T) {
 }
 
 // TestLexTSX: in .tsx, "<T>" after an operator is an element (lexed as in .jsx),
-// and "</" closes one.
+// "</" closes one, and element text is not code (it leaves no tokens).
 func TestLexTSX(t *testing.T) {
 	cases := []struct{ src, want string }{
 		{"const e = <div className={a as string}>{b!}</div>;", `const e = < div className = { a } > { b } < / div > ;`},
 		{"const [s, set] = useState<string>('');", `const [ s , set ] = useState ( "" ) ;`},
 		{"const f = <T,>(x: T) => x;", `const f = ( x ) => x ;`},
-		{"let g: <T>(x: T) => T = id;\nconst e = <p>a</p>;", "let g = id ; const e = < p > a < / p > ;"},
-		{"const t = <b>[x]</b>;\nconst s = `${y}`;", "const t = < b > [ x ] < / b > ; const s = `${y}` ;"},
+		{"let g: <T>(x: T) => T = id;\nconst e = <p>a</p>;", "let g = id ; const e = < p > < / p > ;"},
+		{"const t = <b>[x]</b>;\nconst s = `${y}`;", "const t = < b > < / b > ; const s = `${y}` ;"},
 	}
 	for _, c := range cases {
 		if got := tsText(LexTSX(c.src)); got != c.want {
@@ -158,10 +158,17 @@ func TestJSXEvasion(t *testing.T) {
 	}
 }
 
-// TestModules: every spelling of a core module call reads as module.function.
+// TestModules: every spelling of a core module call reads as module.function;
+// a name is a module only where the file requires or imports it, and not where
+// the file declares the name again.
 func TestModules(t *testing.T) {
 	cases := []struct{ src, want string }{
-		{"fs.promises.readFile(p); require('node:fs').readFileSync(p);", `fs . readFile ( p ) ; fs . readFileSync ( p ) ;`},
+		{"const fs = require('fs'); fs.promises.readFile(p); require('node:fs').readFileSync(p);", `const fs = fs ; fs . readFile ( p ) ; fs . readFileSync ( p ) ;`},
+		{"fs.promises.readFile(p); const vm = /re/; vm.exec(s);", `fs . promises . readFile ( p ) ; const vm = "re" ; vm . exec ( s ) ;`},
+		{"const { execSync: run } = require('child_process'); function f() { const run = (q) => q; run(x); }",
+			`const { execSync : run } = child_process ; function f ( ) { const run = ( q ) => q ; run ( x ) ; }`},
+		{"const run = require('child_process').exec; const c0 = require('child_process'); const c = c0; const { execSync: s } = c0; run(a); c.exec(b); s(d);",
+			`const run = child_process . exec ; const c0 = child_process ; const c = c0 ; const { execSync : s } = c0 ; child_process . exec ( a ) ; child_process . exec ( b ) ; child_process . execSync ( d ) ;`},
 		{"const f = require('fs'); f.readFileSync(p);", `const f = fs ; fs . readFileSync ( p ) ;`},
 		{"const { readFileSync: r, promises: q } = require('fs'); r(p); q.readFile(p);",
 			`const { readFileSync : r , promises : q } = fs ; fs . readFileSync ( p ) ; fs . readFile ( p ) ;`},

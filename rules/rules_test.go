@@ -187,7 +187,7 @@ func checkSamples(t *testing.T, r Rule) {
 
 func containsAny(code string, needles []string) bool {
 	for _, n := range needles {
-		if strings.Contains(code, n) {
+		if strings.Contains(code, strings.TrimPrefix(n, "^")) {
 			return true
 		}
 	}
