@@ -7,12 +7,25 @@ tier = "info"
 title = "Redirect to a URL taken from the request"
 frameworks = ["express"]
 sources = ["req.query", "req.body", "req.params"]
-sinks = ["res.redirect(", "res.location("]
+sinks = ["res.redirect(", "res.location(", "res.writeHead(", "res.setHeader("]
 sanitizers = ["encodeURIComponent(", ".startsWith("]
-fix = "Redirect only to a relative path on this site (starting with a single \"/\") or to a host in an allowlist; otherwise send the user to a fixed page."
+fix = "Redirect only to a host or path in an allowlist (parse it with new URL() and compare the origin); a prefix check (startsWith('/') without '//' or '/\\\\') can be bypassed with a tab or newline ('/\\t/evil.example'), so it does not make the target safe."
 refs = ["CVE-2022-2237"]
 
 [[args]]
+sinks = ["res.redirect(", "res.location("]
+leading = true
+
+[[args]]
+sinks = ["res.writeHead("]
+arg = 2
+key = "Location"
+leading = true
+
+[[args]]
+sinks = ["res.setHeader("]
+arg = 2
+when = ["'Location'", "'location'"]
 leading = true
 
 [[samples]]
@@ -65,12 +78,33 @@ app.get('/after', (req, res) => {
 '''
 
 [[samples]]
-kind = "safe"
-note = "a single leading / that is not // or /\\ stays on this site"
+kind = "vulnerable"
+note = "excluding // and /\\ is not enough: the browser drops a tab or newline, so /\\t/evil.example becomes //evil.example"
 code = '''
 app.get('/after', (req, res) => {
   const next = String(req.query.next);
   if (next.startsWith('/') && !next.startsWith('//') && !next.startsWith('/\\')) return res.redirect(next);
   res.redirect('/');
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "Node http: the Location header in writeHead"
+code = '''
+http.createServer((req, res) => {
+  const url = new URL(req.url, 'http://localhost');
+  res.writeHead(302, { Location: req.query.next });
+  res.end();
+});
+'''
+
+[[samples]]
+kind = "safe"
+note = "a fixed path first: the value cannot leave the site"
+code = '''
+app.get('/go', (req, res) => {
+  res.writeHead(302, { Location: '/fixed/' + encodeURIComponent(req.query.page), 'Cache-Control': req.query.cc });
+  res.end();
 });
 '''

@@ -1436,7 +1436,8 @@ var predicates = map[string]bool{"in_array": true, "array_key_exists": true, "is
 	// in the rules that list them: URL and redirect checks, upload type checks, string type checks
 	"wp_http_validate_url": true, "url_has_allowed_host_and_scheme": true, "is_safe_url": true,
 	"allowed_file": true, "is_string": true, "isinstance": true, "wp_check_jsonp_callback": true,
-	"isBasePath": true, "isAbsolute": true} // Symfony Path::isBasePath($base, $path), Path::isAbsolute($path)
+	"isBasePath": true, "isAbsolute": true, // Symfony Path::isBasePath($base, $path), Path::isAbsolute($path)
+	"isInternal": true} // Joomla Uri::isInternal($url): the URL stays on this site
 
 // zeroMeansMatch are comparisons for which "=== 0" means the check passed.
 var zeroMeansMatch = map[string]bool{"strncmp": true, "strncasecmp": true, "strcmp": true, "strcasecmp": true,
@@ -1452,12 +1453,6 @@ func (a *analysis) refine(st state, cond []Token, truth bool) (state, []string) 
 		split = func(t Token) bool { return t.op("&&") || t.word("and") }
 	}
 	var cleaned []string
-	for _, k := range a.slashChecked(st, splitTop(cond, split), truth) {
-		e := out[k.key]
-		e.taint, e.src = false, e.src || k.src
-		out[k.key] = e
-		cleaned = append(cleaned, k.key)
-	}
 	for _, atom := range splitTop(cond, split) {
 		if truth {
 			// A || B || C where each validates the same value: where it holds, one did
@@ -1810,6 +1805,11 @@ func (a *analysis) sink(st state, t []Token, i int, s *pat) {
 		return ok
 	}
 	reaches := func(arg []Token) bool {
+		if cond != nil && cond.key != "" {
+			if arg = keyValue(arg, cond.key); arg == nil {
+				return false // { status: 302 } without the key: not this sink
+			}
+		}
 		if cond != nil && len(cond.context) > 0 {
 			return a.contextTaint(st, t[i], arg, cond.context)
 		}

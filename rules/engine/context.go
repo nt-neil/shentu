@@ -363,8 +363,10 @@ const (
 	resKey = "\x00res:" // the variable holds what an unknown call returned (a structure it built)
 )
 
-// splitters return the input's own parts: their fields are still the input.
+// splitters return the input's own parts, and merges the elements of the arrays
+// they are given: their fields are still the input.
 var splitters = words("json_decode unserialize maybe_unserialize explode str_getcsv preg_split parse_url pathinfo " +
+	"shortcode_atts wp_array_slice_assoc array_merge array_replace array_merge_recursive array_replace_recursive " +
 	"wp_parse_args wp_parse_str parse_str wp_unslash stripslashes_deep compact func_get_args getallheaders " +
 	"filter_input_array str_split mb_str_split loads parse_qs urlparse split")
 
@@ -388,6 +390,12 @@ func (a *analysis) markAssign(st state, t []Token) {
 		rhs = rhs[:n-1]
 	}
 	if len(rhs) == 0 {
+		return
+	}
+	if a.fieldOfResult(st, rhs) {
+		e := st[name] // $m = $r['message']: the same as reading $r['message'] in place
+		e.taint, e.raw = false, false
+		st[name] = e
 		return
 	}
 	switch {
@@ -432,10 +440,10 @@ func (a *analysis) fieldOfResult(st state, op []Token) bool {
 	if len(op) < 3 || op[0].Kind != Var && op[0].Kind != Ident || !marked(st, resKey+op[0].Text) {
 		return false
 	}
-	switch {
-	case op[1].op("[") && op[2].Kind == Str && len(op[2].Parts) == 0:
+	switch { // exactly one field read, nothing joined to it or called on it
+	case len(op) == 4 && op[1].op("[") && op[2].Kind == Str && len(op[2].Parts) == 0 && op[3].op("]"):
 		return true
-	case memberOp(a.php, op[1]) && op[2].Kind == Ident:
+	case len(op) == 3 && memberOp(a.php, op[1]) && op[2].Kind == Ident:
 		return true
 	}
 	return false
@@ -682,8 +690,11 @@ func constName(name string) bool {
 }
 
 // netPrefixOK: in ssrf, open-redirect and xss a prefix check must compare with a
-// prefix that keeps the request on a known host (fixedText): startswith('/')
-// alone lets "//evil.com" and "/\\evil.com" through.
+// prefix that keeps the request on a known host (fixedText). startswith('/') lets
+// "//evil.com" through, and excluding "//" and "/\\" as well is not enough: the
+// browser drops tabs and newlines from a URL, so "/\t/evil.com" becomes
+// "//evil.com". Only a host check (url_has_allowed_host_and_scheme,
+// wp_validate_redirect, Uri::isInternal) makes the target safe.
 func (a *analysis) netPrefixOK(st state, args [][]Token) bool {
 	if !netClasses[a.r.rule.Class] {
 		return true
@@ -694,82 +705,6 @@ func (a *analysis) netPrefixOK(st state, args [][]Token) bool {
 		}
 	}
 	return false
-}
-
-// slashChecked finds, in ssrf, open-redirect and xss, the values that the atoms
-// of a condition (all true on this branch: the && of a true one, the || of a
-// false one) prove to be a path on this site: they start with "/" and with
-// neither "//" nor "/\\".
-func (a *analysis) slashChecked(st state, atoms [][]Token, truth bool) []keyRef {
-	if !netClasses[a.r.rule.Class] || len(atoms) < 3 {
-		return nil
-	}
-	type facts struct {
-		slash, notDouble, notBack bool
-		ref                       []keyRef
-	}
-	by := map[string]*facts{}
-	for _, atom := range atoms {
-		key, refs, lit, holds, ok := a.prefixAtom(atom)
-		if !ok {
-			continue
-		}
-		holds = holds == truth // the atom is true on the branch where truth holds
-		f := by[key]
-		if f == nil {
-			f = &facts{ref: refs}
-			by[key] = f
-		}
-		switch {
-		case lit == "/" && holds:
-			f.slash = true
-		case lit == "//" && !holds:
-			f.notDouble = true
-		case (lit == "/\\" || lit == "/\\\\") && !holds:
-			f.notBack = true
-		}
-	}
-	var out []keyRef
-	for _, f := range by {
-		if f.slash && f.notDouble && f.notBack {
-			out = append(out, f.ref...)
-		}
-	}
-	return out
-}
-
-// prefixAtom reads str_starts_with($u, 'lit'), u.startswith('lit') or
-// u.startsWith('lit'), with any ! or not before it. holds tells whether the atom
-// is true when the value starts with lit.
-func (a *analysis) prefixAtom(atom []Token) (key string, refs []keyRef, lit string, holds bool, ok bool) {
-	holds = true
-	atom = stripParens(atom)
-	for len(atom) > 0 && (atom[0].op("!") || a.py && atom[0].word("not")) {
-		holds, atom = !holds, stripParens(atom[1:])
-	}
-	n := len(atom)
-	if n < 4 || !atom[n-1].op(")") {
-		return "", nil, "", false, false
-	}
-	open := openOf(atom, n-1)
-	args := splitTop(inside(atom, open, n-1), isComma)
-	var subject, prefix []Token
-	switch {
-	case a.php && open == 1 && atom[0].word("str_starts_with") && len(args) == 2:
-		subject, prefix = args[0], args[1]
-	case !a.php && open >= 3 && atom[open-2].op(".") && (atom[open-1].word("startswith") || atom[open-1].word("startsWith")) && len(args) == 1:
-		subject, prefix = atom[:open-2], args[0]
-	default:
-		return "", nil, "", false, false
-	}
-	if len(prefix) != 1 || prefix[0].Kind != Str || len(prefix[0].Parts) > 0 {
-		return "", nil, "", false, false
-	}
-	k, _, okk := a.pathKey(subject)
-	if !okk {
-		return "", nil, "", false, false
-	}
-	return k, a.keysOf(subject), prefix[0].Text, holds, true
 }
 
 // plainSubject returns the key of the value a prefix check is about, when it is
@@ -789,4 +724,29 @@ func (a *analysis) plainSubject(args [][]Token) []keyRef {
 		}
 	}
 	return a.keysOf(subject)
+}
+
+// keyValue returns the value under key (any case) in an object, dict or array
+// literal: { Location: v }, {'Location': v}, ['Location' => v], array(...), or
+// nil when arg is not such a literal or has no such key.
+func keyValue(arg []Token, key string) []Token {
+	arg = stripParens(arg)
+	var body []Token
+	switch {
+	case len(arg) > 1 && (arg[0].op("{") || arg[0].op("[")) && closeOf(arg, 0) == len(arg)-1:
+		body = inside(arg, 0, len(arg)-1)
+	case len(arg) > 2 && arg[0].word("array") && arg[1].op("(") && closeOf(arg, 1) == len(arg)-1:
+		body = inside(arg, 1, len(arg)-1)
+	default:
+		return nil
+	}
+	for _, item := range splitTop(body, isComma) {
+		if len(item) < 3 || !(item[1].op(":") || item[1].op("=>")) || item[0].Kind != Ident && item[0].Kind != Str {
+			continue
+		}
+		if strings.EqualFold(item[0].Text, key) {
+			return item[2:]
+		}
+	}
+	return nil
 }
