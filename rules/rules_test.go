@@ -138,8 +138,8 @@ func checkText(t *testing.T, r Rule) {
 func checkArgs(t *testing.T, r Rule) {
 	covered := map[string]bool{}
 	for i, a := range r.Args {
-		if a.Arg == nil && len(a.When) == 0 && len(a.Unless) == 0 && !a.Whole && !a.Leading && len(a.Context) == 0 && !a.Literal {
-			t.Errorf("%s: args %d sets none of arg, when, unless, whole, leading, context, literal", r.File, i)
+		if a.Arg == nil && len(a.When) == 0 && len(a.Unless) == 0 && !a.Whole && !a.Leading && len(a.Context) == 0 && !a.Literal && a.Key == "" {
+			t.Errorf("%s: args %d sets none of arg, when, unless, whole, leading, context, literal, key", r.File, i)
 		}
 		for _, c := range a.Context {
 			if !contexts[c] {

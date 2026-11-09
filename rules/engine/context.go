@@ -790,3 +790,28 @@ func (a *analysis) plainSubject(args [][]Token) []keyRef {
 	}
 	return a.keysOf(subject)
 }
+
+// keyValue returns the value under key (any case) in an object, dict or array
+// literal: { Location: v }, {'Location': v}, ['Location' => v], array(...), or
+// nil when arg is not such a literal or has no such key.
+func keyValue(arg []Token, key string) []Token {
+	arg = stripParens(arg)
+	var body []Token
+	switch {
+	case len(arg) > 1 && (arg[0].op("{") || arg[0].op("[")) && closeOf(arg, 0) == len(arg)-1:
+		body = inside(arg, 0, len(arg)-1)
+	case len(arg) > 2 && arg[0].word("array") && arg[1].op("(") && closeOf(arg, 1) == len(arg)-1:
+		body = inside(arg, 1, len(arg)-1)
+	default:
+		return nil
+	}
+	for _, item := range splitTop(body, isComma) {
+		if len(item) < 3 || !(item[1].op(":") || item[1].op("=>")) || item[0].Kind != Ident && item[0].Kind != Str {
+			continue
+		}
+		if strings.EqualFold(item[0].Text, key) {
+			return item[2:]
+		}
+	}
+	return nil
+}
