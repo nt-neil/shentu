@@ -5,15 +5,22 @@ cwe = "CWE-89"
 severity = "high"
 tier = "info"
 title = "Request input written into the query text of a prepared statement"
-frameworks = ["wordpress"]
-sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "get_query_var", "->get_param(", "$request['", "->get_json_params(", "->get_body_params(", "->get_query_params(", "$request->input("]
-sinks = ["$wpdb->prepare(", "->prepare("]
+frameworks = ["wordpress", "doctrine"]
+sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "get_query_var", "->get_param(", "$request['", "shortcode_atts(", "$atts[", "$request->query->get(", "$request->request->get(", "$request->get(", "->get_json_params(", "->get_body_params(", "->get_query_params(", "$request->input("]
+sinks = ["$wpdb->prepare(", "$pdo->prepare(", "$db->prepare(", "$dbh->prepare(", "$conn->prepare(", "$connection->prepare(", "$mysqli->prepare(",
+         "$this->db->prepare(", "$this->pdo->prepare(", "$this->conn->prepare(", "$this->connection->prepare(", "mysqli_prepare("]
 sanitizers = ["absint", "intval", "sanitize_sql_orderby", "in_array", "$wpdb->prepare("]
 fix = "Only placeholders (%s, %d, ? or :name) may stand for values in the query text; pass the values as the following arguments, or to execute(), and map identifiers such as column names to a fixed allowlist."
 refs = ["CVE-2026-109977", "CVE-2026-120558"]
 
 [[args]]
+sinks = ["$wpdb->prepare(", "$pdo->prepare(", "$db->prepare(", "$dbh->prepare(", "$conn->prepare(", "$connection->prepare(", "$mysqli->prepare(",
+         "$this->db->prepare(", "$this->pdo->prepare(", "$this->conn->prepare(", "$this->connection->prepare("]
 arg = 1
+
+[[args]]
+sinks = ["mysqli_prepare("]
+arg = 2
 
 [[samples]]
 kind = "vulnerable"

@@ -5,10 +5,10 @@ cwe = "CWE-22"
 severity = "high"
 tier = "info"
 title = "Symfony file response sends a path taken from the request"
-frameworks = ["laravel"]
-sources = ["$request->query->get(", "$request->request->get(", "$request->get(", "$request->query->all(", "$request->input(", "$request->query(", "$_GET", "$_POST", "$_REQUEST"]
+frameworks = ["symfony"]
+sources = ["$request->query->get(", "$request->attributes->get(", "$request->request->get(", "$request->get(", "$request->query->all(", "$request->input(", "$request->query(", "$_GET", "$_POST", "$_REQUEST"]
 sinks = ["BinaryFileResponse(", "$this->file(", "SplFileObject("]
-sanitizers = ["basename(", "absint", "intval", "in_array", "ctype_digit", "ctype_alnum"]
+sanitizers = ["basename(", "str_starts_with(", "Path::isBasePath(", "absint", "intval", "in_array", "ctype_digit", "ctype_alnum"]
 fix = "Take only a file name from the request (basename()), join it to a fixed directory and check that realpath() of the result stays inside that directory, or look the file up by an id."
 refs = ["CVE-2026-107844"]
 
@@ -52,6 +52,25 @@ class DownloadController extends AbstractController
     {
         $name = basename($request->query->get('file'));
         return new BinaryFileResponse($this->getParameter('invoice_dir') . '/' . $name);
+    }
+}
+'''
+
+[[samples]]
+kind = "safe"
+note = "the fix: the resolved path must stay inside the directory, checked against a base that ends with a separator"
+code = '''
+<?php
+class DownloadController extends AbstractController
+{
+    public function report(Request $request): Response
+    {
+        $base = realpath($this->getParameter('report_dir')) . DIRECTORY_SEPARATOR;
+        $path = realpath($base . $request->query->get('file'));
+        if ($path === false || !str_starts_with($path, $base)) {
+            throw $this->createNotFoundException();
+        }
+        return new BinaryFileResponse($path);
     }
 }
 '''
