@@ -118,11 +118,22 @@ type analysis struct {
 	sc   *summaries // this rule's function summaries for the file (interproc.go)
 	summ *summRun   // set while a function body is analysed for its summary
 	lib  bool       // library mode: public parameters are input, and only embedded input is reported
+
+	noSrc  bool   // the rule's sources are off (a summary run for parameters)
+	cls    string // class of the method being analysed, and its parent
+	parent string
 }
 
-func (a *analysis) report(line int) {
+func (a *analysis) report(line int) { a.reportSink(line, false) }
+
+// reportSink reports a sink reached at line; emb tells whether the input was
+// embedded in a larger string, which a summary keeps for library mode.
+func (a *analysis) reportSink(line int, emb bool) {
 	if a.summ != nil {
 		a.summ.lines[line] = true
+		if emb {
+			a.summ.emb[line] = true
+		}
 		return
 	}
 	if !a.seen[line] {
@@ -321,6 +332,11 @@ func (a *analysis) function(f *fn, st state) {
 		}
 	}
 	a.libParams(f, x)
+	cls, parent := a.cls, a.parent
+	if f.method {
+		a.cls, a.parent = f.class, f.parent
+	}
+	defer func() { a.cls, a.parent = cls, parent }()
 	a.depth++
 	a.block(f.body, x)
 	a.depth--
@@ -1059,6 +1075,9 @@ func (a *analysis) postfix(st state, t []Token, start, baseEnd int, v val, whole
 	}
 	srcEnd := -1
 	source := func(pos int) {
+		if a.noSrc {
+			return
+		}
 		for _, s := range a.r.sources {
 			if s.text == nil && s.at(t, pos, false) {
 				if e := pos + len(s.toks); srcEnd < 0 || e < srcEnd {
@@ -1113,16 +1132,19 @@ func (a *analysis) postfix(st state, t []Token, start, baseEnd int, v val, whole
 			if j == baseEnd && a.php && t[start].Kind == Ident {
 				fn = t[start].Text
 			}
-			name := ""
+			key := ""
 			if j-1 == start || j-3 == start && j-2 > start && memberOp(a.php, t[j-2]) {
-				name = a.calleeName(t, j-1)
+				key = a.calleeKey(t, j-1)
 			}
-			if sum := a.summaryOf(name); sum != nil && !a.raw {
+			if sum := a.summaryOf(key); sum != nil && !a.raw {
 				v = a.callVal(st, sum, callArgs(t, j))
 			} else if a.argsTaint(st, inside(t, j, c), fn) {
 				// "...".format(x), sprintf("... %s", $x), implode(...): the input becomes part of a string
-				v = val{taint: true, emb: t[start].Kind == Str || formatFuncs[t[j-1].Text] || a.lib && a.argsEmb(st, inside(t, j, c)),
-					weak: !(t[start].Kind == Str || formatFuncs[t[j-1].Text])}
+				name := t[j-1].Text
+				v = val{taint: true, emb: t[start].Kind == Str || formatFuncs[name] || a.lib && a.argsEmb(st, inside(t, j, c)),
+					// A function of this file left without a summary holds no sanitizer: what goes
+					// through it is the input, not a guess.
+					weak: !(t[start].Kind == Str || formatFuncs[name] || passFuncs[a.lang()][name] || key != "")}
 			}
 			if key != "" {
 				key += sepCh + "()"
@@ -1160,6 +1182,17 @@ func (a *analysis) argsTaint(st state, inner []Token, fn string) bool {
 		}
 	}
 	return false
+}
+
+// passFuncs return their input reshaped but whole (decoded, trimmed, case or
+// slashes changed): input through them is still the input, not a guess, so a
+// webshell's system(base64_decode($c)) is followed into other functions.
+var passFuncs = map[string]map[string]bool{
+	"php": words("trim ltrim rtrim base64_decode urldecode rawurldecode stripslashes stripcslashes strtolower strtoupper " +
+		"ucfirst ucwords lcfirst str_replace str_ireplace substr strrev str_pad hex2bin html_entity_decode " +
+		"htmlspecialchars_decode wp_unslash gzinflate gzuncompress gzdecode str_rot13 convert_uudecode strval"),
+	"python": words("unquote unquote_plus b64decode urlsafe_b64decode decode str bytes"),
+	"js":     words("decodeURIComponent decodeURI unescape atob String trim from"),
 }
 
 // formatFuncs build a string from their arguments.
@@ -1201,7 +1234,7 @@ func (a *analysis) strVal(st state, tk Token) val {
 		return val{}
 	}
 	for _, s := range a.r.textSources {
-		if s.text.MatchString(tk.Text) {
+		if !a.noSrc && s.text.MatchString(tk.Text) {
 			return val{taint: true}
 		}
 	}
@@ -1635,13 +1668,19 @@ func (a *analysis) sink(st state, t []Token, i int, s *pat) {
 		}
 	}
 	whole := cond != nil && cond.whole
+	emb := false
+	hit := func(v val) bool {
+		ok := a.hits(v)
+		emb = emb || ok && v.emb
+		return ok
+	}
 	reaches := func(arg []Token) bool {
-		return a.hits(a.argVal(st, arg, whole)) && !(cond != nil && cond.leading && a.fixedStart(st, arg))
+		return hit(a.argVal(st, arg, whole)) && !(cond != nil && cond.leading && a.fixedStart(st, arg))
 	}
 	tainted := false
 	switch {
 	case cond != nil && cond.arg != nil && *cond.arg == 0:
-		tainted = a.hits(a.expr(st, recv, false))
+		tainted = hit(a.expr(st, recv, false))
 	case open >= 0:
 		args := splitTop(region, isComma)
 		if cond != nil && cond.arg != nil {
@@ -1657,10 +1696,10 @@ func (a *analysis) sink(st state, t []Token, i int, s *pat) {
 			}
 		}
 	default:
-		tainted = a.hits(a.expr(st, region, whole))
+		tainted = hit(a.expr(st, region, whole))
 	}
 	if tainted {
-		a.report(t[i].Line)
+		a.reportSink(t[i].Line, emb)
 	}
 }
 

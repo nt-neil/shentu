@@ -1,6 +1,11 @@
 package engine
 
-import "testing"
+import (
+	"errors"
+	"fmt"
+	"strings"
+	"testing"
+)
 
 func TestInterproc(t *testing.T) {
 	e := engineForTest(t)
@@ -32,6 +37,29 @@ func TestInterproc(t *testing.T) {
 		{"python self method", "python", "class V:\n    def get(self, request):\n        self.q(request.GET['c'])\n\n    def q(self, c):\n        cur.execute(f\"SELECT {c}\")\n", 6},
 		{"js function", "js", "function q(x) { pool.query(\"SELECT \" + x) }\napp.get('/', (req, res) => { q(req.query.a) })\n", 1},
 		{"js this method", "js", "class S {\n  h(req) { this.q(req.body.n) }\n  q(n) { pool.query(`SELECT ${n}`) }\n}\n", 3},
+		// From the review of #21.
+		{"weak: base64_decode inside callee (cmdi)", "php", P + "function run($c) { system(base64_decode($c)); }\nrun($_POST['c']);\n", 2},
+		{"weak: trim inside callee (sqli)", "php", P + "function q($id) { mysqli_query($db, \"SELECT * FROM t WHERE id=\" . trim($id)); }\nq($_GET['id']);\n", 2},
+		{"weak: urldecode at call site", "php", P + "function run($c) { system($c); }\nrun(urldecode($_GET['c']));\n", 2},
+		{"weak py: callee strips", "python", "def run(q):\n    cur.execute(\"SELECT %s\" % q.strip())\n\ndef view(request):\n    run(request.args['q'])\n", 2},
+		{"regression: weak base return hides param", "php", P + "function pick($v) {\n  if (isset($_GET['d'])) { return trim($_GET['d']); }\n  return $v;\n}\n$id = pick($_GET['id']);\nmysqli_query($db, \"SELECT $id\");\n", 7},
+		{"retWeak shared across params", "php", P + "function pick($a, $b) { if ($b) { return strtolower($b); } return $a; }\nfunction run($q) { $x = pick($q, ''); mysqli_query($db, \"SELECT $x\"); }\nrun($_GET['q']);\n", 3},
+		{"regression: php named args", "php", P + "function build($prefix, $q) { $n = intval($prefix); return \"SELECT \" . $q; }\n$sql = build(q: $_GET['q'], prefix: 'x');\nmysqli_query($db, $sql);\n", 4},
+		{"regression: python kwargs", "python", "def build(prefix, q):\n    n = int(prefix)\n    return \"SELECT \" + q\n\ndef view(request):\n    sql = build(q=request.args['q'], prefix='x')\n    cur.execute(sql)\n", 7},
+		{"python kwargs into sink", "python", "def run(prefix, q):\n    cur.execute(\"SELECT %s\" % q)\n\ndef view(request):\n    run(q=request.args['q'], prefix='x')\n", 2},
+		{"regression: 17th param returned", "php", P + "function b($a1,$a2,$a3,$a4,$a5,$a6,$a7,$a8,$a9,$a10,$a11,$a12,$a13,$a14,$a15,$a16,$a17) { $n = intval($a1); return \"SELECT \" . $a17; }\n$s = b(1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,$_GET['x']);\nmysqli_query($db, $s);\n", 4},
+		{"17th param into sink", "php", P + "function b($a1,$a2,$a3,$a4,$a5,$a6,$a7,$a8,$a9,$a10,$a11,$a12,$a13,$a14,$a15,$a16,$a17) { mysqli_query($db, \"SELECT $a17\"); }\nb(1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,$_GET['x']);\n", 2},
+		{"return array", "php", P + "function wrap($x) { return ['q' => $x]; }\n$a = wrap($_GET['x']);\nmysqli_query($db, \"S \" . $a['q']);\n", 4},
+		{"php arrow fn in var", "php", P + "$f = fn($v) => mysqli_query($db, \"S $v\");\n$f($_GET['a']);\n", 2},
+		{"js arrow in const", "js", "const q = (x) => pool.query(\"SELECT \" + x)\napp.get('/', (req, res) => { q(req.query.a) })\n", 1},
+		{"js function expr in const", "js", "const q = function (x) { pool.query(\"SELECT \" + x) }\napp.get('/', (req, res) => { q(req.query.a) })\n", 1},
+		{"parent::", "php", P + "class A { static function q($v) { mysqli_query($db, \"S $v\"); } }\nclass B extends A { static function h() { parent::q($_GET['x']); } }\n", 2},
+		{"static::", "php", P + "class A { static function q($v) { mysqli_query($db, \"S $v\"); }\n static function h() { static::q($_GET['x']); } }\n", 2},
+		{"ClassName::", "php", P + "class A { static function q($v) { mysqli_query($db, \"S $v\"); } }\nA::q($_GET['x']);\n", 2},
+		{"FP: same-named method of another class", "php", P + "class Safe {\n  function save($v) { mysqli_query($db, \"S \" . intval($v)); }\n  function h() { $this->save($_GET['x']); }\n}\nclass Other {\n  function save($v) { mysqli_query($db, \"S $v\"); }\n}\n", 0},
+		{"mutual recursion stale member", "php", P + "f('const');\nfunction f($x) { if ($x != '') { g($x); } system($x); }\nfunction g($y) { f($y); }\ng($_GET['c']);\n", 3},
+		{"mutual recursion stale member, g relevant on its own", "php", P + "f('const');\nfunction f($x) { if ($x != '') { g($x); } system($x); }\nfunction g($y) { $k = escapeshellarg('k'); f($y); }\ng($_GET['c']);\n", 3},
+		{"mutual recursion, f defined first", "php", P + "function f($x) { if ($x != '') { g($x); } system($x); }\nfunction g($y) { f($y); }\ng($_GET['c']);\n", 2},
 	}
 	for _, c := range cases {
 		fs, err := e.Scan(c.lang, "f", []byte(c.src))
@@ -67,6 +95,10 @@ func TestLibraryMode(t *testing.T) {
 		{"python underscore is private", "python", "def _trunc(kind):\n    cursor.execute(\"SELECT '%s'\" % kind)\n", 0},
 		{"js builds code", "js", "function template(variable) {\n  return Function('obj', 'with (' + variable + ') { return 1 }')\n}\n", 2},
 		{"js code as is", "js", "function run(src) {\n  return eval(src)\n}\n", 0},
+		{"lib: public wrapper, private helper embeds", "php", P + "class Q {\n  public function find($id) { return $this->run($id); }\n  private function run($id) { return $this->db->query(\"SELECT * FROM t WHERE id = $id\"); }\n}\n", 4},
+		{"lib FP: private __construct", "php", P + "class Q {\n  private function __construct($t) { $this->db->query(\"SELECT * FROM $t\"); }\n}\n", 0},
+		{"lib FP: python nested def in private fn", "python", "def _helper():\n    def inner(kind):\n        cursor.execute(\"SELECT '%s'\" % kind)\n    return inner\n", 0},
+		{"lib FP: protected implicit via phpdoc? (public static ok)", "php", P + "class Q {\n  public static function t($k) { return $this->db->query(\"SELECT '$k'\"); }\n}\n", 3},
 		{"php path from a parameter", "php", P + "class F {\n  public function load($name) { return file_get_contents('/srv/data/' . $name); }\n}\n", 0},
 	}
 	if fs, _ := lib.Scan("python", "tests/test_q.py", []byte("def trunc(kind):\n    cursor.execute(\"SELECT '%s'\" % kind)\n")); len(fs) > 0 {
@@ -87,5 +119,39 @@ func TestLibraryMode(t *testing.T) {
 		if got != c.want {
 			t.Errorf("%s: library mode reported line %d, want %d (%+v)", c.name, got, c.want, fs)
 		}
+	}
+}
+
+// Known gaps, kept as cases so a fix shows up: by-reference output parameters
+// and Python lambdas are not followed.
+func TestInterprocGaps(t *testing.T) {
+	e := engineForTest(t)
+	P := "<?php\n"
+	for _, c := range []struct {
+		name, lang, src string
+		want            int
+	}{
+		{"by-ref out param", "php", P + "function fill(&$out, $in) { $out = \"SELECT \" . $in; }\nfill($sql, $_GET['x']);\nmysqli_query($db, $sql);\n", 4},
+		{"python lambda", "python", "q = lambda x: cur.execute(\"SELECT %s\" % x)\n\ndef view(request):\n    q(request.args['q'])\n", 1},
+	} {
+		fs, _ := e.Scan(c.lang, "f", []byte(c.src))
+		t.Logf("known gap, %s: reported %d finding(s), the right answer is line %d", c.name, len(fs), c.want)
+	}
+}
+
+func TestInterprocDeepChain(t *testing.T) {
+	e := engineForTest(t)
+	var b strings.Builder
+	b.WriteString("<?php\nsystem($_GET['direct']);\nf0($_GET['c']);\n")
+	for i := 0; i < 40; i++ {
+		fmt.Fprintf(&b, "function f%d($x) { f%d($x); }\n", i, i+1)
+	}
+	b.WriteString("function f40($x) { system($x); }\n")
+	fs, err := e.Scan("php", "f", []byte(b.String()))
+	if !errors.Is(err, ErrLimit) {
+		t.Errorf("a chain deeper than the cap: err %v, want ErrLimit", err)
+	}
+	if len(fs) == 0 || fs[0].Line != 2 {
+		t.Errorf("the direct finding is lost: %+v", fs)
 	}
 }

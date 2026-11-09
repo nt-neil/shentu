@@ -12,20 +12,25 @@ import (
 // function of the same file then uses the summary instead of the default (the
 // result carries any argument's input, and no sink is reached).
 //
-// A call resolves to a summary when it names a function, a method through
-// $this->, self::, static::, parent::, this. or Python's self./cls., or a
-// variable a closure was assigned to ($cb = function ...; $cb($x)). Functions
-// and methods share one name space per file; same-named ones are merged.
+// A call resolves to a summary when it names a function or a variable a
+// closure was assigned to ($cb = function ...; $cb($x)), or a method: through
+// $this->, self::, static::, this. or Python's self./cls. in the class the call
+// is in (then up its parents in the file), parent:: from the parent, ClassName::
+// of a class of the file. Arguments map to parameters by position, and by name
+// for PHP named and Python keyword arguments.
 //
-// Summaries are computed when a call first needs them, for the parameters in
-// isolation: once with no parameter tainted, once with all of them, and, only
-// when that differs, once per parameter. Recursion is resolved by recomputing
-// the summary at the head of the cycle until it no longer changes. Depth, the
-// number of runs per rule and file, and the rounds are capped; a file that hits
-// a cap is reported with ErrLimit, as for any other limit.
+// Summaries are computed when a call first needs them: once with the rule's
+// sources (does the function return input of its own?), and with the sources
+// off and the parameters tainted, all at once and, when that reaches anything,
+// one at a time. Recursion is resolved by recomputing the summary at the head of
+// the cycle until it no longer changes; the summaries of the other members are
+// thrown away and recomputed each round, so none is kept from a stale round.
+// Depth, the number of runs per rule and file, the rounds and the parameters
+// are capped; a file that hits a cap is reported with ErrLimit, as for any other
+// limit, and an argument past the parameter cap counts as passed on.
 
 const (
-	maxSumParams = 16   // parameters a summary tracks
+	maxSumParams = 64   // parameters a summary tracks
 	maxSumDepth  = 32   // summaries being computed inside one another
 	maxSumRuns   = 4000 // analyses of function bodies per rule and file
 	maxSumRounds = 4    // recomputations at the head of a recursive cycle
@@ -37,18 +42,22 @@ type fnInfo struct {
 	params  []string // parameter names in order ("" where there is no plain name)
 	numeric []bool   // declared int, float or bool
 	self    bool     // a Python method whose first parameter (self, cls) is the receiver
+	rest    bool     // takes any further arguments (...$a, *args, **kwargs)
 }
 
 type summary struct {
+	params  []string            // the parameters' names, for named arguments
+	rest    bool                // the function takes further arguments
 	sink    [maxSumParams][]int // per parameter: the sink lines it reaches
-	ret     uint32              // parameters whose input the return value carries
+	sinkEmb uint64              // parameters embedded in a larger string on the way to a sink
+	ret     uint64              // parameters whose input the return value carries
+	retWeak uint64              // ... only through calls the analysis does not know
+	retEmb  uint64              // ... embedded in a larger string
 	retSrc  bool                // the return value carries input of its own
-	retEmb  bool                // the returned input is embedded in a larger string
-	retWeak bool                // the returned parameters' input went through calls the analysis does not know
 }
 
 func (s *summary) equal(o *summary) bool {
-	if s.ret != o.ret || s.retSrc != o.retSrc || s.retEmb != o.retEmb || s.retWeak != o.retWeak {
+	if s.ret != o.ret || s.retSrc != o.retSrc || s.retEmb != o.retEmb || s.retWeak != o.retWeak || s.sinkEmb != o.sinkEmb {
 		return false
 	}
 	for i := range s.sink {
@@ -70,26 +79,47 @@ func (s *summary) reachesSink() bool {
 
 // summaries holds one rule's summaries for one file.
 type summaries struct {
-	funcs map[string][]*fnInfo
-	done  map[string]*summary
-	busy  map[string]bool
-	again map[string]bool  // a call reached the name while its summary was being computed
-	rel   map[string]uint8 // relevance to the rule: 0 not known yet, 1 yes, 2 no, 3 being worked out
-	runs  int
-	depth int
+	funcs   map[string][]*fnInfo // by name for functions, by "Class::name" for methods
+	parents map[string]string    // class → parent, for classes of the file
+	done    map[string]*summary
+	busy    map[string]bool
+	again   map[string]bool  // a call reached the name while its summary was being computed
+	rel     map[string]uint8 // relevance to the rule: 0 not known yet, 1 yes, 2 no, 3 being worked out
+	relPart bool             // a relevance check met one still being worked out
+	order   []string         // summaries in the order they were finished
+	runs    int
+	depth   int
 }
 
 func newSummaries(funcs map[string][]*fnInfo) *summaries {
 	if len(funcs) == 0 {
 		return nil
 	}
-	return &summaries{funcs: funcs, done: map[string]*summary{}, busy: map[string]bool{}, again: map[string]bool{}, rel: map[string]uint8{}}
+	sc := &summaries{funcs: funcs, parents: map[string]string{}, done: map[string]*summary{}, busy: map[string]bool{},
+		again: map[string]bool{}, rel: map[string]uint8{}}
+	for _, infos := range funcs {
+		for _, fi := range infos {
+			if fi.f.class != "" && fi.f.parent != "" {
+				sc.parents[fi.f.class] = fi.f.parent
+			}
+		}
+	}
+	return sc
 }
 
 // summRun collects what one analysis of a function body found.
 type summRun struct {
 	lines map[int]bool
+	emb   map[int]bool // lines reached by input embedded in a larger string
 	ret   val
+}
+
+// funcKey is the key of a function in summaries.funcs.
+func funcKey(f *fn, name string) string {
+	if f.method && f.class != "" {
+		return f.class + "::" + name
+	}
+	return name
 }
 
 // collectFuncs finds the named functions of a file, and closures assigned to a
@@ -99,7 +129,8 @@ func collectFuncs(ss []*stmt, lang string) map[string][]*fnInfo {
 	var walk func(ss []*stmt, depth int)
 	add := func(name string, f *fn) {
 		if name != "" && f != nil {
-			out[name] = append(out[name], paramInfo(f, lang))
+			k := funcKey(f, name)
+			out[k] = append(out[k], paramInfo(f, lang))
 		}
 	}
 	walk = func(ss []*stmt, depth int) {
@@ -146,6 +177,9 @@ func paramInfo(f *fn, lang string) *fnInfo {
 		switch lang {
 		case "php":
 			for _, tk := range part {
+				if tk.op("...") {
+					fi.rest = true
+				}
 				if tk.Kind == Var {
 					name = tk.Text
 					break
@@ -157,7 +191,7 @@ func paramInfo(f *fn, lang string) *fnInfo {
 		case "python":
 			p := part
 			for len(p) > 0 && (p[0].op("*") || p[0].op("**")) {
-				p = p[1:]
+				p, fi.rest = p[1:], true
 			}
 			if len(p) > 0 && p[0].Kind == Ident {
 				name = p[0].Text
@@ -166,6 +200,9 @@ func paramInfo(f *fn, lang string) *fnInfo {
 				numeric = numericCasts[p[c+1].Text] || p[c+1].Text == "int" || p[c+1].Text == "float"
 			}
 		case "js":
+			if len(part) > 0 && part[0].op("...") {
+				fi.rest = true
+			}
 			if len(part) > 0 && part[0].Kind == Ident {
 				name = part[0].Text
 			}
@@ -180,99 +217,155 @@ func paramInfo(f *fn, lang string) *fnInfo {
 }
 
 // receivers are the objects through which a call reaches a method of the same class.
-var receivers = map[string]bool{"$this": true, "self": true, "static": true, "parent": true, "this": true, "cls": true}
+var receivers = map[string]bool{"$this": true, "self": true, "static": true, "this": true, "cls": true}
 
-// calleeName returns the name a call resolves through, when t[i] is the name
-// of a call (t[i+1] is "(") that may reach a function of this file.
-func (a *analysis) calleeName(t []Token, i int) string {
+// calleeKey returns the summaries key a call reaches, when t[i] is the name of
+// a call (t[i+1] is "(") to a function or method of this file, else "".
+func (a *analysis) calleeKey(t []Token, i int) string {
 	if a.sc == nil || i+1 >= len(t) || !t[i+1].op("(") || t[i].Kind != Ident && !(a.php && t[i].Kind == Var) {
 		return ""
 	}
-	if i > 0 && (memberOp(a.php, t[i-1]) || a.php && t[i-1].op("\\")) {
-		if t[i].Kind != Ident || i < 2 || !receivers[t[i-2].Text] || i > 2 && (memberOp(a.php, t[i-3]) || t[i-3].op("\\")) {
+	name := t[i].Text
+	if i > 0 && memberOp(a.php, t[i-1]) {
+		if t[i].Kind != Ident || i < 2 || i > 2 && (memberOp(a.php, t[i-3]) || t[i-3].op("\\")) {
 			return ""
 		}
-		return t[i].Text
-	}
-	if i > 0 && (t[i-1].word("function") || t[i-1].word("def") || t[i-1].word("new") || t[i-1].word("fn")) {
+		switch r := t[i-2].Text; {
+		case receivers[r]:
+			return a.methodKey(a.cls, name)
+		case r == "parent":
+			return a.methodKey(a.parent, name)
+		case t[i-2].Kind == Ident && a.sc.hasClass(r):
+			return a.methodKey(r, name) // ClassName::m() of a class of this file
+		}
 		return ""
 	}
-	return t[i].Text
+	if i > 0 && (t[i-1].word("function") || t[i-1].word("def") || t[i-1].word("new") || t[i-1].word("fn") || a.php && t[i-1].op("\\")) {
+		return ""
+	}
+	if len(a.sc.funcs[name]) == 0 {
+		return ""
+	}
+	return name
+}
+
+// methodKey finds method name in class or, going up, in its parents in this file.
+func (a *analysis) methodKey(class, name string) string {
+	for depth := 0; class != "" && depth < 8; depth++ {
+		if k := class + "::" + name; len(a.sc.funcs[k]) > 0 {
+			return k
+		}
+		class = a.sc.parents[class]
+	}
+	return ""
+}
+
+func (sc *summaries) hasClass(c string) bool {
+	if _, ok := sc.parents[c]; ok {
+		return true
+	}
+	for k := range sc.funcs {
+		if strings.HasPrefix(k, c+"::") {
+			return true
+		}
+	}
+	return false
 }
 
 // summaryOf returns the summary of a function of this file, computing it first
-// if needed; nil when the name is not one, or while it is being computed.
-func (a *analysis) summaryOf(name string) *summary {
+// if needed; nil when the key names none, or while it is being computed.
+func (a *analysis) summaryOf(key string) *summary {
 	sc := a.sc
-	if sc == nil || name == "" {
+	if sc == nil || key == "" {
 		return nil
 	}
-	if s, ok := sc.done[name]; ok {
+	if s, ok := sc.done[key]; ok {
 		return s
 	}
-	infos := sc.funcs[name]
-	if len(infos) == 0 || !a.relevant(name) {
+	infos := sc.funcs[key]
+	if len(infos) == 0 || !a.relevant(key) {
 		return nil
 	}
-	if sc.busy[name] {
-		sc.again[name] = true
+	if sc.busy[key] {
+		sc.again[key] = true
 		return nil
 	}
 	if sc.depth >= maxSumDepth || sc.runs >= maxSumRuns || a.b.hit {
 		a.b.tooDeep()
 		return nil
 	}
-	sc.busy[name] = true
+	sc.busy[key] = true
 	sc.depth++
+	start := len(sc.order)
+	forget := func() { // summaries finished during this computation may have used a stale one of key
+		for _, k := range sc.order[start:] {
+			delete(sc.done, k)
+		}
+		sc.order = sc.order[:start]
+	}
 	var s *summary
 	for round := 0; ; round++ {
-		delete(sc.again, name)
+		delete(sc.again, key)
 		n := &summary{}
 		for _, fi := range infos {
 			a.summarize(fi, n)
 		}
 		stable := s != nil && n.equal(s)
 		s = n
-		if stable || !sc.again[name] {
+		if stable || !sc.again[key] {
 			break
 		}
 		if round+1 >= maxSumRounds {
 			a.b.tooDeep() // a recursive cycle that does not settle
+			forget()
 			break
 		}
-		sc.done[name] = s // the next round sees this one
+		forget()
+		sc.done[key] = s // the next round sees this one
 	}
-	sc.done[name] = s
-	delete(sc.busy, name)
+	sc.done[key] = s
+	sc.order = append(sc.order, key)
+	delete(sc.busy, key)
 	sc.depth--
 	return s
 }
 
 // relevant reports whether a function can matter to the rule: its body holds
 // one of the rule's sources, sinks or sanitizers (or a number conversion), or
-// calls a function of the file that does.
-// The others keep the default (the result carries any argument's input), which
-// spares analysing every function of a large file for every rule.
-func (a *analysis) relevant(name string) bool {
+// calls a function of the file that does. The others keep the default (the
+// result carries any argument's input), which spares analysing every function
+// of a large file for every rule. A function found irrelevant only because a
+// callee was still being worked out is checked again later.
+func (a *analysis) relevant(key string) bool {
 	sc := a.sc
-	switch sc.rel[name] {
+	switch sc.rel[key] {
 	case 1:
 		return true
-	case 2, 3:
+	case 2:
+		return false
+	case 3:
+		sc.relPart = true
 		return false
 	}
-	sc.rel[name] = 3
+	sc.rel[key] = 3
+	outer := sc.relPart
+	sc.relPart = false
 	ok := false
-	for _, fi := range sc.funcs[name] {
+	for _, fi := range sc.funcs[key] {
 		if a.bodyRelevant(fi.f.body, 0) {
 			ok = true
 			break
 		}
 	}
-	sc.rel[name] = 2
-	if ok {
-		sc.rel[name] = 1
+	switch {
+	case ok:
+		sc.rel[key] = 1
+	case sc.relPart:
+		sc.rel[key] = 0
+	default:
+		sc.rel[key] = 2
 	}
+	sc.relPart = outer || !ok && sc.relPart
 	return ok
 }
 
@@ -334,7 +427,7 @@ func (a *analysis) toksRelevant(t []Token) bool {
 				}
 			}
 		}
-		if name := a.calleeName(t, i); name != "" && len(a.sc.funcs[name]) > 0 && a.relevant(name) {
+		if k := a.calleeKey(t, i); k != "" && a.relevant(k) {
 			return true
 		}
 	}
@@ -343,10 +436,17 @@ func (a *analysis) toksRelevant(t []Token) bool {
 
 // summarize adds what fi does to s.
 func (a *analysis) summarize(fi *fnInfo, s *summary) {
+	if s.params == nil {
+		s.params = fi.params
+	}
+	s.rest = s.rest || fi.rest
 	n := min(len(fi.params), maxSumParams)
-	run := func(mask uint32) (map[int]bool, val) {
+	if len(fi.params) > maxSumParams {
+		a.b.tooDeep() // more parameters than a summary tracks: the rest count as passed on (callVal)
+	}
+	run := func(mask uint64, sources bool) *summRun {
 		x := &analysis{r: a.r, php: a.php, py: a.py, js: a.js, b: a.b, kw: a.kw, seen: map[int]bool{}, sc: a.sc,
-			summ: &summRun{lines: map[int]bool{}}}
+			summ: &summRun{lines: map[int]bool{}, emb: map[int]bool{}}, noSrc: !sources, cls: fi.f.class, parent: fi.f.parent}
 		st := state{}
 		for i := 0; i < n; i++ {
 			if p := fi.params[i]; p != "" && mask&(1<<i) != 0 {
@@ -355,49 +455,45 @@ func (a *analysis) summarize(fi *fnInfo, s *summary) {
 		}
 		a.sc.runs++
 		x.block(fi.f.body, st)
-		return x.summ.lines, x.summ.ret
+		return x.summ
 	}
-	base, baseRet := run(0)
-	if baseRet.taint && !baseRet.weak {
-		// Only input returned as is counts: a source passed through a call the
-		// analysis does not know (sanitize_locale_name($_GET['l'])) is left out,
-		// as it was before calls were followed.
+	// With the rule's sources and no parameter: input of its own. Only input
+	// returned as is counts (sanitize_locale_name($_GET['l']) is left out, as it
+	// was before calls were followed).
+	if base := run(0, true); base.ret.taint && !base.ret.weak {
 		s.retSrc = true
-		s.retEmb = s.retEmb || baseRet.emb
 	}
 	if n == 0 || a.b.hit {
 		return
 	}
-	all, allRet := run(1<<n - 1)
-	if !extra(all, base) && allRet.taint == baseRet.taint {
+	// With the sources off, whatever reaches a sink or the return came from a parameter.
+	if all := run(1<<n-1, false); len(all.lines) == 0 && !all.ret.taint {
 		return
 	}
 	for i := 0; i < n && !a.b.hit; i++ {
 		if fi.params[i] == "" {
 			continue
 		}
-		lines, ret := run(1 << i)
-		for l := range lines {
-			if !base[l] && !slices.Contains(s.sink[i], l) {
+		r := run(1<<i, false)
+		for l := range r.lines {
+			if !slices.Contains(s.sink[i], l) {
 				s.sink[i] = append(s.sink[i], l)
+			}
+			if r.emb[l] {
+				s.sinkEmb |= 1 << i
 			}
 		}
 		slices.Sort(s.sink[i])
-		if ret.taint && !baseRet.taint {
+		if r.ret.taint {
 			s.ret |= 1 << i
-			s.retEmb = s.retEmb || ret.emb
-			s.retWeak = s.retWeak || ret.weak
+			if r.ret.weak {
+				s.retWeak |= 1 << i
+			}
+			if r.ret.emb {
+				s.retEmb |= 1 << i
+			}
 		}
 	}
-}
-
-func extra(x, base map[int]bool) bool {
-	for l := range x {
-		if !base[l] {
-			return true
-		}
-	}
-	return false
 }
 
 // callArgs returns the arguments of the call whose "(" is at open.
@@ -409,19 +505,56 @@ func callArgs(t []Token, open int) [][]Token {
 	return splitTop(inside(t, open, c), isComma)
 }
 
-// callVal is the value of a call to a summarised function.
-func (a *analysis) callVal(st state, s *summary, args [][]Token) val {
-	v := val{taint: s.retSrc, emb: s.retEmb}
-	for i, arg := range args {
-		if i >= maxSumParams {
-			break
-		}
-		if s.ret&(1<<i) != 0 {
-			if av := a.argVal(st, arg, false); av.taint {
-				v.weak = weakOf(v.taint, v.weak, true, av.weak || s.retWeak)
-				v.taint, v.emb = true, v.emb || av.emb || s.retEmb
+// argIndex maps a call's arguments to the callee's parameters: by position, or
+// by name for PHP named (q: $x) and Python keyword (q=x) arguments. -1 means
+// the argument reaches no known parameter (a spread, a name the callee does not
+// declare, a position past the cap).
+func (a *analysis) argIndex(s *summary, args [][]Token) []int {
+	out := make([]int, len(args))
+	pos := 0
+	for k, arg := range args {
+		out[k] = -1
+		switch {
+		case len(arg) > 0 && (arg[0].op("...") || arg[0].op("*") || arg[0].op("**")):
+		case len(arg) > 1 && arg[0].Kind == Ident && (a.php && arg[1].op(":") || a.py && arg[1].op("=")):
+			name := arg[0].Text
+			if a.php {
+				name = "$" + name
 			}
+			if i := slices.Index(s.params, name); i >= 0 && i < maxSumParams {
+				out[k] = i
+			}
+		default:
+			if pos < len(s.params) && pos < maxSumParams {
+				out[k] = pos
+			}
+			pos++
 		}
+	}
+	return out
+}
+
+// callVal is the value of a call to a summarised function. An argument that
+// reaches no known parameter counts as passed on, as for an unknown function.
+func (a *analysis) callVal(st state, s *summary, args [][]Token) val {
+	v := val{taint: s.retSrc}
+	for k, i := range a.argIndex(s, args) {
+		if i >= 0 && s.ret&(1<<i) == 0 {
+			continue
+		}
+		av := a.argVal(st, args[k], false)
+		if !av.taint {
+			continue
+		}
+		weak, emb := av.weak, av.emb
+		if i >= 0 {
+			weak = weak || s.retWeak&(1<<i) != 0
+			emb = emb || s.retEmb&(1<<i) != 0
+		} else if !s.rest && len(s.params) <= maxSumParams {
+			weak = true // a name the function does not declare: nothing of it is used
+		}
+		v.weak = weakOf(v.taint, v.weak, true, weak)
+		v.taint, v.emb = true, v.emb || emb
 	}
 	return v
 }
@@ -432,23 +565,23 @@ func (a *analysis) callSinks(st state, t []Token) {
 		return
 	}
 	for i := 0; i+1 < len(t); i++ {
-		name := a.calleeName(t, i)
-		if name == "" {
-			continue
-		}
-		s := a.summaryOf(name)
+		s := a.summaryOf(a.calleeKey(t, i))
 		if s == nil || !s.reachesSink() {
 			continue
 		}
-		for k, arg := range callArgs(t, i+1) {
-			if k >= maxSumParams || len(s.sink[k]) == 0 {
+		args := callArgs(t, i+1)
+		for k, p := range a.argIndex(s, args) {
+			if p < 0 || len(s.sink[p]) == 0 {
 				continue
 			}
 			// Only input that did not come through an unknown call crosses into
 			// another function's sinks: get_post($_GET['id']) is not the input.
-			if v := a.argVal(st, arg, false); a.hits(v) && !v.weak {
-				for _, l := range s.sink[k] {
-					a.report(l)
+			// In library mode the parameter may be embedded inside the callee.
+			v := a.argVal(st, args[k], false)
+			emb := v.emb || s.sinkEmb&(1<<p) != 0
+			if v.taint && !v.weak && (!a.lib || emb) {
+				for _, l := range s.sink[p] {
+					a.reportSink(l, emb)
 				}
 			}
 		}

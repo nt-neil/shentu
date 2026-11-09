@@ -44,6 +44,8 @@ type fn struct {
 	name   string // declared name ("" for a literal); see collectFuncs for assigned literals
 	method bool   // declared in a class body
 	public bool   // part of the public API: not private, protected, _name or #name
+	class  string // the class a method is declared in
+	parent string // that class's parent (extends), as written
 }
 
 func parse(lang string, toks []Token, b *budget) []*stmt {
@@ -66,7 +68,9 @@ type braceParser struct {
 	php     bool
 	b       *budget
 	depth   int
-	inClass bool // directly in a class body
+	inClass bool   // directly in a class body
+	class   string // name of the class being parsed, and its parent
+	parent  string
 }
 
 func (p *braceParser) at(text string) bool     { return p.i < len(p.t) && p.t[p.i].op(text) }
@@ -397,7 +401,10 @@ func (p *braceParser) funcDecl(public bool) *stmt {
 	if f == nil {
 		return nil
 	}
-	f.name, f.method, f.public = name, method, public && !strings.HasPrefix(name, "_") || name == "__construct"
+	f.name, f.method, f.public = name, method, public && (!strings.HasPrefix(name, "_") || name == "__construct")
+	if method {
+		f.class, f.parent = p.class, p.parent
+	}
 	return &stmt{kind: sFunc, fn: f}
 }
 
@@ -430,9 +437,16 @@ func (p *braceParser) funcRest(fresh bool) *fn {
 
 func (p *braceParser) classStmt() *stmt {
 	p.i++
+	name, parent := "", ""
+	if p.i < len(p.t) && p.t[p.i].Kind == Ident {
+		name = p.t[p.i].Text
+	}
 	depth := 0
 	for p.i < len(p.t) {
 		t := p.t[p.i]
+		if depth == 0 && t.word("extends") && p.i+1 < len(p.t) {
+			parent = qualifiedName(p.t, p.i+1)
+		}
 		if depth == 0 && (t.op("{") || t.op(";")) {
 			break
 		}
@@ -448,9 +462,9 @@ func (p *braceParser) classStmt() *stmt {
 		return nil
 	}
 	p.i++
-	inClass := p.inClass
-	p.inClass = true
-	defer func() { p.inClass = inClass }()
+	inClass, class, par := p.inClass, p.class, p.parent
+	p.inClass, p.class, p.parent = true, name, parent
+	defer func() { p.inClass, p.class, p.parent = inClass, class, par }()
 	if p.php {
 		return &stmt{kind: sBlock, body: p.nested(func() []*stmt { return p.block(true) })}
 	}
@@ -487,7 +501,7 @@ func (p *braceParser) classBody() []*stmt {
 			name := p.t[j].Text
 			p.i = j + 1
 			if f := p.funcRest(false); f != nil {
-				f.name, f.method = name, true
+				f.name, f.method, f.class, f.parent = name, true, p.class, p.parent
 				f.public = !strings.HasPrefix(name, "_") && !strings.HasPrefix(name, "#") && p.t[j].Kind == Ident
 				out = append(out, &stmt{kind: sFunc, fn: f})
 			}
@@ -701,6 +715,9 @@ type pyParser struct {
 	b       *budget
 	depth   int
 	inClass bool // directly in a class body
+	class   string
+	parent  string
+	inDef   int // inside this many function bodies
 }
 
 var pyCompound = map[string]bool{"if": true, "elif": true, "else": true, "for": true, "while": true, "with": true,
@@ -813,9 +830,20 @@ func (p *pyParser) statement() []*stmt {
 	inline := l[colon+1:]
 	p.i += len(l)
 	method := p.inClass
-	inClass := p.inClass
+	inClass, class, par := p.inClass, p.class, p.parent
 	p.inClass = kw.Text == "class" || inClass && kw.Text != "def"
-	defer func() { p.inClass = inClass }()
+	if kw.Text == "class" && len(header) > 0 && header[0].Kind == Ident {
+		p.class, p.parent = header[0].Text, ""
+		if len(header) > 2 && header[1].op("(") {
+			p.parent = qualifiedName(header, 2)
+		}
+	}
+	defer func() { p.inClass, p.class, p.parent = inClass, class, par }()
+	inDef := p.inDef
+	if kw.Text == "def" {
+		p.inDef++
+	}
+	defer func() { p.inDef = inDef }()
 	var body []*stmt
 	if len(inline) > 0 {
 		body = simpleStmts(inline)
@@ -853,9 +881,12 @@ func (p *pyParser) statement() []*stmt {
 		return []*stmt{{kind: sWith, toks: header, body: body}}
 	case "def":
 		f := &fn{body: body, method: method}
+		if method {
+			f.class, f.parent = class, par
+		}
 		if len(header) > 0 && header[0].Kind == Ident {
 			f.name = header[0].Text
-			f.public = !strings.HasPrefix(f.name, "_") || f.name == "__init__"
+			f.public = inDef == 0 && (!strings.HasPrefix(f.name, "_") || f.name == "__init__") // a nested def is no API
 		}
 		if len(header) > 1 && header[1].op("(") {
 			f.params = header[2:max(2, closeOf(header, 1))]
@@ -893,6 +924,25 @@ func (p *pyParser) statement() []*stmt {
 		return []*stmt{s}
 	}
 	return []*stmt{{kind: sBlock, toks: header, body: body}}
+}
+
+// qualifiedName reads a name at i that may be qualified (Foo\\Bar, foo.bar).
+func qualifiedName(t []Token, i int) string {
+	var b strings.Builder
+	for ; i < len(t); i++ {
+		switch {
+		case t[i].Kind == Ident:
+			b.WriteString(t[i].Text)
+		case t[i].op("\\") || t[i].op("."):
+			b.WriteString(t[i].Text)
+		default:
+			return b.String()
+		}
+		if i+1 < len(t) && t[i].Kind == Ident && t[i+1].Kind == Ident {
+			break
+		}
+	}
+	return b.String()
 }
 
 // ---- token helpers shared with the analysis ----
