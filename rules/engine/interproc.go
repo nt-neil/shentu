@@ -360,8 +360,8 @@ func (ff *fileFuncs) this(class, name, caller string) string {
 	}
 	var subs []string
 	for c := range ff.classes() {
-		if caller != "" && len(ff.byKey[c+"::"+caller]) > 0 {
-			continue
+		if caller != "" && len(ff.byKey[c+"::"+caller]) > 0 && !ff.callsParent(c+"::"+caller, caller) {
+			continue // c overrides the calling method and never runs it
 		}
 		if c != class && ff.inherits(c, class) {
 			if k := c + "::" + name; len(ff.byKey[k]) > 0 && k != base {
@@ -392,6 +392,24 @@ func (ff *fileFuncs) this(class, name, caller string) string {
 		ff.unions[vk] = append(ff.unions[vk], subs...)
 	}
 	return vk
+}
+
+// callsParent reports whether the method at key calls its parent's version
+// (parent::name(), super().name(), super.name()), so the parent's code still runs.
+func (ff *fileFuncs) callsParent(key, name string) bool {
+	found := false
+	for _, fi := range ff.byKey[key] {
+		walkToks(fi.f.body, 0, func(t []Token) {
+			for i := 2; i+1 < len(t) && !found; i++ {
+				if !t[i+1].op("(") || !memberOp(ff.php, t[i-1]) || !strings.EqualFold(t[i].Text, name) {
+					continue
+				}
+				found = t[i-2].word("super") || ff.php && strings.EqualFold(t[i-2].Text, "parent") ||
+					i >= 4 && t[i-2].op(")") && t[i-3].op("(") && t[i-4].word("super")
+			}
+		})
+	}
+	return found
 }
 
 func (ff *fileFuncs) classes() map[string]bool {

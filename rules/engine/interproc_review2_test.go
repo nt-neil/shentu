@@ -108,6 +108,7 @@ func TestInterprocReview3(t *testing.T) {
 		{"local helper returning an unknown call through a variable", "php", P + "function load($id) { $p = get_post($id); return $p; }\nfunction q($v) { mysqli_query($db, \"S $v\"); }\nq(load($_REQUEST['id']));\n", 0},
 		{"local helper returning its parameter through a variable", "php", P + "function load($id) { $p = trim($id); return $p; }\nfunction q($v) { mysqli_query($db, \"S $v\"); }\nq(load($_REQUEST['id']));\n", 3},
 		{"subclass overrides the caller too", "php", P + "class A {\n  function h() { $this->q($_GET['x']); }\n  function q($v) { echo 1; }\n}\nclass B extends A {\n  function h() { echo 2; }\n  function q($v) { mysqli_query($db, \"S $v\"); }\n}\n", 0},
+		{"subclass overrides the caller but calls the parent's", "php", P + "class A {\n  function h() { $this->q($_GET['x']); }\n  function q($v) { echo 1; }\n}\nclass B extends A {\n  function h() { parent::h(); }\n  function q($v) { mysqli_query($db, \"S $v\"); }\n}\n", 8},
 		{"trait used after the method", "php", P + "trait T {\n  function q($v) { mysqli_query($db, \"S $v\"); }\n}\nclass C {\n  function a() { $this->q($_GET['x']); }\n  use T;\n}\n", 3},
 		{"python decode on the receiver", "python", "def run(q):\n    cur.execute(\"SELECT %s\" % q)\n\ndef view(request):\n    run(request.args['q'].decode())\n", 2},
 	}
