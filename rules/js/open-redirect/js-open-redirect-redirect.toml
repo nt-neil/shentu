@@ -9,7 +9,7 @@ frameworks = ["express"]
 sources = ["req.query", "req.body", "req.params"]
 sinks = ["res.redirect(", "res.location(", "res.writeHead(", "res.setHeader("]
 sanitizers = ["encodeURIComponent(", ".startsWith("]
-fix = "Redirect only to a relative path on this site (starting with a single \"/\") or to a host in an allowlist; otherwise send the user to a fixed page."
+fix = "Redirect only to a host or path in an allowlist (parse it with new URL() and compare the origin); a prefix check (startsWith('/') without '//' or '/\\\\') can be bypassed with a tab or newline ('/\\t/evil.example'), so it does not make the target safe."
 refs = ["CVE-2022-2237"]
 
 [[args]]
@@ -78,8 +78,8 @@ app.get('/after', (req, res) => {
 '''
 
 [[samples]]
-kind = "safe"
-note = "a single leading / that is not // or /\\ stays on this site"
+kind = "vulnerable"
+note = "excluding // and /\\ is not enough: the browser drops a tab or newline, so /\\t/evil.example becomes //evil.example"
 code = '''
 app.get('/after', (req, res) => {
   const next = String(req.query.next);
