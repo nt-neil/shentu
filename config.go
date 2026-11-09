@@ -46,6 +46,10 @@ type Config struct {
 		CertTargets []string `toml:"cert_targets"`
 		WebUsers    []string `toml:"web_users"`
 		AppPaths    []string `toml:"app_paths"`
+		// app_code_audit's memory (MB) and files scanned at once; 0 sizes them to
+		// the machine. The service's systemd MemoryMax= and CPUQuota= still apply.
+		AuditMaxMemoryMB int `toml:"audit_max_memory_mb"`
+		AuditWorkers     int `toml:"audit_workers"`
 	} `toml:"tools"`
 	Patrol struct {
 		SSHThreshold int    `toml:"ssh_threshold"`

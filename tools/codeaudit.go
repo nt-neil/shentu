@@ -14,7 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
+	"runtime/debug"
 	"slices"
 	"sort"
 	"strings"
@@ -214,10 +214,6 @@ var secretPatterns = []struct {
 
 const partialListMax = 10
 
-// auditWorkers is how many files the injection rules scan at once: the cores
-// Go may use, at most 4, so an audit on a busy server leaves the rest free.
-func auditWorkers() int { return min(runtime.GOMAXPROCS(0), 4) }
-
 // injectionMaxTime caps the time the injection rules take in one audit (each file
 // is also capped by the engine's own limits). Files left when it runs out are
 // listed in the partial summary.
@@ -387,6 +383,13 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 	seen := map[string]fs.FileInfo{}
 	hash := map[string]string{} // content of the rule-language files, for the results kept between audits
 	deadline := time.Now().Add(injectionMaxTime)
+	budget := currentBudget()
+	// While the audit runs the GC keeps the process under the budget's limit
+	// (never raising a lower one set before).
+	if prev := debug.SetMemoryLimit(-1); budget.limit > 0 && uint64(prev) > budget.limit {
+		debug.SetMemoryLimit(int64(budget.limit))
+		defer debug.SetMemoryLimit(prev)
+	}
 	for _, root := range roots {
 		base := strings.Count(filepath.Clean(root), "/")
 		filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
@@ -504,7 +507,7 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 		out := make([]scanned, len(files))
 		var next atomic.Int64
 		var wg sync.WaitGroup
-		for range auditWorkers() {
+		for range budget.workers {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
@@ -561,7 +564,8 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 		done, covered, now, reason, cut := 0, 0, 0, "", false
 		slowRules, slowFiles := 0, 0
 		if left := time.Until(deadline); left > 0 && ctx.Err() == nil {
-			pr := eng.NewProject(code, read, engine.ProjectOptions{CacheFile: codeIndexFile(), MaxTime: left})
+			pr := eng.NewProject(code, read, engine.ProjectOptions{CacheFile: codeIndexFile(), MaxTime: left,
+				MaxHeap: budget.heap, MaxTokens: budget.projectTokens()})
 			st.useDigests(pr, []string{"php", "python", "js"})
 			order := make([]string, 0, len(files))
 			var retry []string
