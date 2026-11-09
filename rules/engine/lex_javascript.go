@@ -52,7 +52,8 @@ func (s *scanner) js(stop bool) {
 			s.jsQuoted(c)
 		case c == '`':
 			s.jsTemplate()
-		case c == '/' && s.regexAllowed():
+		case c == '/' && s.regexAllowed() && !(s.pos > 0 && s.src[s.pos-1] == '<'):
+			// "</" closes a JSX element; a regular expression right after "<" needs a space.
 			s.jsRegex()
 		case isIdentStart(c) || c == '$' || (c == '#' || c == '@') && isIdentStart(s.peek(1)):
 			// A decorator name (@Body) is one token, so a rule can name it as a source.

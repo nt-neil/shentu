@@ -91,12 +91,14 @@ func TestLexTS(t *testing.T) {
 	}
 }
 
-// TestLexTSX: in .tsx, "<T>" after an operator is an element (lexed as in .jsx).
+// TestLexTSX: in .tsx, "<T>" after an operator is an element (lexed as in .jsx),
+// and "</" closes one.
 func TestLexTSX(t *testing.T) {
 	cases := []struct{ src, want string }{
-		{"const e = <div className={a as string}>{b!}</div>;", `const e = < div className = { a } > { b } < "div>;"`},
+		{"const e = <div className={a as string}>{b!}</div>;", `const e = < div className = { a } > { b } < / div > ;`},
 		{"const [s, set] = useState<string>('');", `const [ s , set ] = useState ( "" ) ;`},
 		{"const f = <T,>(x: T) => x;", `const f = ( x ) => x ;`},
+		{"const t = <b>[x]</b>;\nconst s = `${y}`;", "const t = < b > [ x ] < / b > ; const s = `${y}` ;"},
 	}
 	for _, c := range cases {
 		if got := tsText(LexTSX(c.src)); got != c.want {
