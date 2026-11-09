@@ -329,7 +329,7 @@ func commented(line string) bool {
 
 func lineAt(b []byte, off int) int { return bytes.Count(b[:off], []byte("\n")) + 1 }
 
-var wpVersion = regexp.MustCompile(`(?m)^\$wp_version\s*=\s*'([0-9]+)\.([0-9]+)(?:\.([0-9]+))?([^']*)'`)
+var wpVersion = regexp.MustCompile(`(?m)^\$wp_version\s*=\s*'([0-9]+)\.([0-9]+)(?:\.([0-9]+))?(-[0-9A-Za-z.-]{1,24})?'`)
 
 // wpFixed is the first release of each WordPress branch with the fix for CVE-2026-119977
 // (GHSA-4w3m-c66w-69mg); the fix was backported to every branch from 4.7.
@@ -352,7 +352,7 @@ func wordpressCore(site string, b []byte, add func(CodeFinding)) {
 	if len(m[3]) > 0 {
 		version += "." + string(m[3])
 	}
-	version += string(m[4])
+	version += string(m[4]) // only a short pre-release tag, so no file text reaches the model
 	// A pre-release (7.1.4-RC1) may predate the fix, so it counts as the release before it.
 	if fixed, ok := wpFixed[branch]; ok && (patch < fixed || patch == fixed && len(m[4]) > 0) {
 		add(CodeFinding{"outdated", "critical", site, 0,
