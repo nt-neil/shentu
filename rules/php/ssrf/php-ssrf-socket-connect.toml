@@ -1,0 +1,46 @@
+id = "php-ssrf-socket-connect"
+lang = "php"
+class = "ssrf"
+cwe = "CWE-918"
+severity = "high"
+tier = "info"
+title = "Server opens a socket to a host taken from the request"
+sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "->get_param(", "$request->input(", "$request->query->get(", "$request->request->get(", "$request->get("]
+sinks = ["fsockopen(", "pfsockopen(", "stream_socket_client("]
+sanitizers = ["in_array", "array_key_exists", "absint", "intval"]
+fix = "Connect only to hosts from a fixed list (in_array($host, $allowed, true)); a check on the name before connecting is not enough, as the name may resolve to another address when the socket opens."
+refs = ["CVE-2026-81889"]
+
+[[args]]
+arg = 1
+leading = true
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+$host = $_GET['host'];
+$fp = fsockopen($host, 80, $errno, $errstr, 5);
+fwrite($fp, "HEAD / HTTP/1.0\r\nHost: $host\r\n\r\n");
+echo htmlspecialchars(fgets($fp));
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+$target = parse_url($_POST['feed'], PHP_URL_HOST);
+$s = stream_socket_client("tcp://$target:443", $errno, $errstr, 5);
+'''
+
+[[samples]]
+kind = "safe"
+note = "the fix: the host must be one of a fixed list"
+code = '''
+<?php
+$host = $_GET['host'];
+if (!in_array($host, ['status.example.com', 'api.example.com'], true)) {
+    exit('unknown host');
+}
+$fp = fsockopen($host, 443, $errno, $errstr, 5);
+'''

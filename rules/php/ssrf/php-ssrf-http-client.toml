@@ -1,0 +1,70 @@
+id = "php-ssrf-http-client"
+lang = "php"
+class = "ssrf"
+cwe = "CWE-918"
+severity = "high"
+tier = "info"
+title = "Symfony HttpClient or Guzzle requests a URL taken from the request"
+frameworks = ["symfony", "laravel"]
+sources = ["$_GET", "$_POST", "$_REQUEST", "$request->query->get(", "$request->request->get(", "$request->get(", "$request->input(", "request("]
+sinks = ["$this->client->request(", "$this->httpClient->request(", "$httpClient->request(", "$client->request(", "$this->guzzle->request(", "$guzzle->request(", "Client("]
+sanitizers = ["in_array", "array_key_exists", "absint", "intval"]
+fix = "Keep the scheme and host fixed and take only a path or an id from the request, check the host against an allowlist, or wrap the Symfony client in NoPrivateNetworkHttpClient, which refuses local and private addresses."
+refs = ["CVE-2026-50888", "CVE-2026-52840"]
+
+[[args]]
+sinks = ["$this->client->request(", "$this->httpClient->request(", "$httpClient->request(", "$client->request(", "$this->guzzle->request(", "$guzzle->request("]
+arg = 2
+leading = true
+
+[[args]]
+sinks = ["Client("]
+arg = 1
+when = ["'base_uri' =>", "\"base_uri\" =>"]
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+class CoverController extends AbstractController
+{
+    public function __construct(private HttpClientInterface $client) {}
+
+    public function fetch(Request $request): Response
+    {
+        $res = $this->client->request('GET', $request->request->get('cover_url'));
+        return new Response($res->getContent(), 200, ['Content-Type' => 'image/jpeg']);
+    }
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+class CalendarController
+{
+    public function test(Request $request)
+    {
+        $client = new Client(['base_uri' => rtrim($request->input('server_url'), '/') . '/', 'timeout' => 5]);
+        return $client->request('PROPFIND', '')->getStatusCode();
+    }
+}
+'''
+
+[[samples]]
+kind = "safe"
+note = "the fix: a fixed host, only an id from the request"
+code = '''
+<?php
+class CoverController extends AbstractController
+{
+    public function __construct(private HttpClientInterface $client) {}
+
+    public function fetch(Request $request): Response
+    {
+        $res = $this->client->request('GET', 'https://covers.example.com/' . (int) $request->request->get('id') . '.jpg');
+        return new Response($res->getContent(), 200, ['Content-Type' => 'image/jpeg']);
+    }
+}
+'''

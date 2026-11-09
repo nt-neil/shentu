@@ -1,0 +1,61 @@
+id = "php-sqli-drupal-db-query"
+lang = "php"
+class = "sqli"
+cwe = "CWE-89"
+severity = "high"
+tier = "info"
+title = "Request input written into the SQL text of a Drupal database query"
+sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "->query->get(", "->request->get(", "arg("]
+sinks = ["db_query(", "db_query_range(", "\\Drupal::database()->query(", "$this->database->query(", "$this->connection->query(", "$connection->query(", "$database->query("]
+sanitizers = ["(int)", "intval", "db_like(", "->escapeLike(", "in_array", "ctype_digit", "check_plain"]
+fix = "Keep the SQL text fixed and pass values as named placeholders in the arguments array (db_query('... WHERE nid = :nid', [':nid' => $nid])), or use the condition() builder, which binds values."
+refs = ["CVE-2015-7877"]
+
+[[args]]
+arg = 1
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+function mymodule_save_layout() {
+    $region = $_POST['region'];
+    db_query("UPDATE {mymodule_blocks} SET region = '" . $region . "' WHERE uid = :uid", array(':uid' => $GLOBALS['user']->uid));
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+class ReportController extends ControllerBase {
+  public function search() {
+    $term = \Drupal::request()->query->get('term');
+    $rows = $this->database->query("SELECT nid, title FROM {node_field_data} WHERE title LIKE '%$term%'")->fetchAll();
+    return ['#theme' => 'item_list', '#items' => array_column($rows, 'title')];
+  }
+}
+'''
+
+[[samples]]
+kind = "safe"
+note = "the fix: placeholders, the value in the arguments array"
+code = '''
+<?php
+function mymodule_save_layout() {
+    db_query("UPDATE {mymodule_blocks} SET region = :region WHERE uid = :uid", array(':region' => $_POST['region'], ':uid' => $GLOBALS['user']->uid));
+}
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+class ReportController extends ControllerBase {
+  public function search() {
+    $term = \Drupal::request()->query->get('term');
+    $rows = $this->database->query('SELECT nid, title FROM {node_field_data} WHERE title LIKE :t', [':t' => '%' . $this->database->escapeLike($term) . '%'])->fetchAll();
+    return ['#theme' => 'item_list', '#items' => array_column($rows, 'title')];
+  }
+}
+'''

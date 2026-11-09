@@ -1,0 +1,56 @@
+id = "php-file-upload-wp-upload-bits"
+lang = "php"
+class = "file-upload"
+cwe = "CWE-434"
+severity = "low"
+tier = "info"
+title = "wp_upload_bits() stores a file under the name the client sent"
+frameworks = ["wordpress"]
+sources = ["$_FILES", "$request['", "$_POST", "$_GET", "$_REQUEST", "->get_param(", "->get_file_params("]
+sinks = ["wp_upload_bits("]
+sanitizers = ["uniqid", "md5", "sha1", "wp_generate_uuid4", "random_bytes", "bin2hex", "absint", "intval", "wp_generate_password"]
+fix = "wp_upload_bits() refuses an extension outside the site's allowed types unless the user has unfiltered_upload, but it never looks at the content and an admin, a multisite super admin or an upload_mimes filter widens what passes: choose the stored name on the server (wp_generate_uuid4() plus a fixed extension) or upload through wp_handle_upload() with a mimes allowlist."
+refs = ["CVE-2024-4397"]
+
+[[args]]
+arg = 1
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+add_action('wp_ajax_nopriv_send_resume', function () {
+    $file = $_FILES['resume'];
+    $saved = wp_upload_bits($file['name'], null, file_get_contents($file['tmp_name']));
+    wp_send_json(['url' => $saved['url']]);
+});
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+add_action('wp_ajax_nopriv_send_resume', function () {
+    $file = $_FILES['resume'];
+    $saved = wp_upload_bits('resume-' . wp_generate_uuid4() . '.pdf', null, file_get_contents($file['tmp_name']));
+    wp_send_json(['url' => $saved['url']]);
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "checking the type after the file is written leaves it on disk"
+code = '''
+<?php
+register_rest_route('course/v1', '/attachments', ['methods' => 'POST', 'callback' => function ($request) {
+    $files = $request->get_file_params();
+    foreach ($files['doc']['name'] as $i => $name) {
+        $saved = wp_upload_bits($name, null, file_get_contents($files['doc']['tmp_name'][$i]));
+        if (!in_array(wp_check_filetype($saved['file'])['ext'], ['pdf', 'txt'], true)) {
+            continue;
+        }
+        add_post_meta(absint($request['course']), '_attachment', $saved['url']);
+    }
+    return true;
+}]);
+'''

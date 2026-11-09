@@ -1,0 +1,59 @@
+id = "php-path-traversal-wp-template-loader"
+lang = "php"
+class = "path-traversal"
+cwe = "CWE-98"
+severity = "high"
+tier = "info"
+title = "Theme or WooCommerce template loaded from a name taken from the request"
+frameworks = ["wordpress"]
+sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "get_query_var", "->get_param(", "shortcode_atts(", "$atts[", "$request['"]
+sinks = ["get_template_part(", "locate_template(", "wc_get_template(", "wc_get_template_part(", "wc_locate_template("]
+sanitizers = ["in_array", "array_key_exists", "sanitize_key", "sanitize_file_name", "basename(", "validate_file(", "absint", "intval"]
+fix = "Template names may hold ../ and reach any PHP file: accept only names from a fixed list (in_array($name, $allowed, true)) or reduce the value with sanitize_key() before passing it to the template loader."
+refs = ["CVE-2024-8252"]
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+add_shortcode('team_grid', function ($atts) {
+    $a = shortcode_atts(['layout' => 'grid'], $atts);
+    ob_start();
+    get_template_part('partials/team', $a['layout']);
+    return ob_get_clean();
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+add_action('wp_ajax_nopriv_load_tab', function () {
+    wc_get_template('myaccount/' . wp_unslash($_POST['tab']) . '.php', [], '', MY_PLUGIN_DIR . 'templates/');
+    wp_die();
+});
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+add_shortcode('team_grid', function ($atts) {
+    $a = shortcode_atts(['layout' => 'grid'], $atts);
+    $layout = in_array($a['layout'], ['grid', 'list'], true) ? $a['layout'] : 'grid';
+    ob_start();
+    get_template_part('partials/team', $layout);
+    return ob_get_clean();
+});
+'''
+
+[[samples]]
+kind = "safe"
+note = "get_query_template() takes a template type and candidate file names that locate_template() looks up inside the theme; it is not a sink of this rule"
+code = '''
+<?php
+function my_theme_event_template() {
+    $kind = get_query_var('event_kind');
+    return get_query_template('event', ["event-{$kind}.php", 'event.php']);
+}
+'''
