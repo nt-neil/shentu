@@ -52,9 +52,10 @@ type Args struct {
 
 // Sample is a minimal, self-written snippet: "vulnerable" must be reported, "safe" must not.
 type Sample struct {
-	Kind string `toml:"kind"`
-	Code string `toml:"code"`
-	Note string `toml:"note"`
+	Kind    string `toml:"kind"`
+	Code    string `toml:"code"`
+	Note    string `toml:"note"`
+	Dialect string `toml:"dialect"` // js rules only: "ts" or "tsx" when the sample is TypeScript
 }
 
 // Load parses every rule file. Unknown keys are an error, so a typo in a field

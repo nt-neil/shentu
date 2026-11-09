@@ -18,7 +18,7 @@ rules/<lang>/<class>/<id>.toml
 
 | field | values |
 |---|---|
-| `lang` | `php`, `python`, `js` |
+| `lang` | `php`, `python`, `js` (JavaScript rules also apply to TypeScript, see [TypeScript](#typescript)) |
 | `class` | `sqli`, `cmdi`, `path-traversal` (includes file inclusion), `deserialization`, `code-eval` |
 
 ## Format
@@ -31,7 +31,7 @@ cwe = "CWE-89"                     # must belong to the class (see below)
 severity = "high"                  # critical | high | medium | low
 tier = "info"                      # optional: info (default) | alert, see "Tiers"
 title = "Request input concatenated into a SQL string"
-frameworks = ["laravel"]           # optional: laravel, wordpress, django, flask, express
+frameworks = ["laravel"]           # optional: laravel, wordpress, django, flask, express, nestjs, nextjs
 sources = ["$_GET", "$request->input("]   # where user input comes from
 sinks = ["mysqli_query", "->query("]      # the dangerous calls
 sanitizers = ["intval", "->prepare("]     # calls whose result is safe for these sinks; [] if none
@@ -123,6 +123,26 @@ How the engine reads them:
   not another (`escapeshellarg` protects `exec()` but not the fifth argument of
   `mail()`), the sinks go in separate rules; escaping functions protect a SQL value
   only inside quotes, so they are not listed as sanitizers.
+
+### TypeScript
+
+TypeScript files (`.ts`, `.mts`, `.cts`, `.tsx`) are checked with the `js` rules.
+The lexer reads them as JavaScript and then takes the type syntax out, since types
+carry no data: annotations, type arguments and parameters (`f<T>(x)`, told apart
+from `a < b` by what follows the `>`), `as` and `satisfies`, the non-null `!`,
+`interface`, `type`, `enum`, `declare`, `namespace` headers, `implements`, and the
+modifiers `public`, `private`, `protected`, `readonly`, `abstract`, `override`. In
+`.tsx`, `<T>x` is an element, not a type assertion. Decorators are dropped, except
+on a parameter, which becomes an assignment at the start of the body:
+`find(@Param('id') id: string) { ... }` reads as `find(id) { id = @Param('id'); ... }`,
+so a decorator is a source like any call (`@Body(`, `@Query(`, `@Param(`). With
+`@Req()` only the parts of the request that come from the client are input
+(`query`, `body`, `params`, `headers`, `cookies`), not what the server put on it
+(`req.user`). A parameter with a NestJS parse pipe (`ParseIntPipe`, `ParseUUIDPipe`,
+...) is not input.
+
+A sample written in TypeScript says so with `dialect = "ts"` (or `"tsx"`); it is
+lexed as such and must hold the same as any other sample of the rule.
 
 ### Tiers
 
@@ -249,7 +269,8 @@ rule of its language.
 
 `rules/engine` is Shentu's own code, without dependencies. Per file:
 
-1. **Lexing.** Hand-written lexers for PHP, Python and JavaScript drop comments and
+1. **Lexing.** Hand-written lexers for PHP, Python and JavaScript (TypeScript is
+   JavaScript with its types taken out) drop comments and
    keep string literals whole, so text in comments and plain strings is never
    code. Interpolations are lexed as code: PHP `"$x"`, `"{$x->y}"`, `"${x}"`,
    heredoc (nowdoc stays text) and backticks; Python f-strings; JavaScript

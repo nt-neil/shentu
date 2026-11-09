@@ -4,8 +4,8 @@ class = "cmdi"
 cwe = "CWE-78"
 severity = "critical"
 title = "spawn/execFile with shell: true on a command line that includes untrusted values"
-frameworks = ["express"]
-sources = ["req.query", "req.body", "req.params", "process.env"]
+frameworks = ["express", "nestjs", "nextjs"]
+sources = ["req.query", "req.body", "req.params", "process.env", "@Body(", "@Query(", "@Param(", "@Req(", "request.nextUrl", "req.nextUrl", "request.url", "request.json(", "req.json(", "request.formData(", "req.formData(", "searchParams"]
 sinks = ["spawn(", "spawnSync(", "execFile(", "execFileSync(", ".spawn(", ".spawnSync(", ".execFile(", ".execFileSync("]
 sanitizers = []
 fix = "Drop shell: true and pass the program and each value as separate arguments; shell: true turns the joined arguments back into a shell command line."
@@ -30,4 +30,30 @@ app.post("/build", (req, res) => {
   const child = spawn("gradle", ["build", `-Pflavor=${String(req.body.flavor)}`]);
   child.on("close", (code) => res.json({ code }));
 });
+'''
+
+[[samples]]
+kind = "vulnerable"
+dialect = "ts"
+code = '''
+@Controller("build")
+export class BuildController {
+  @Post()
+  build(@Query("flavor") flavor: string): void {
+    spawn("gradle", ["build", `-Pflavor=${flavor}`], { shell: true });
+  }
+}
+'''
+
+[[samples]]
+kind = "safe"
+dialect = "ts"
+code = '''
+@Controller("build")
+export class BuildController {
+  @Post()
+  build(@Query("flavor") flavor: string): void {
+    spawn("gradle", ["build", `-Pflavor=${flavor}`]);
+  }
+}
 '''

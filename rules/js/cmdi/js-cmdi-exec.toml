@@ -4,8 +4,8 @@ class = "cmdi"
 cwe = "CWE-78"
 severity = "critical"
 title = "Untrusted value placed into a command string run by exec/execSync"
-frameworks = ["express"]
-sources = ["req.query", "req.body", "req.params", "req.headers", "req.file", "originalname"]
+frameworks = ["express", "nestjs", "nextjs"]
+sources = ["req.query", "req.body", "req.params", "req.headers", "req.file", "originalname", "@Body(", "@Query(", "@Param(", "@Req(", "request.nextUrl", "req.nextUrl", "request.url", "request.json(", "req.json(", "request.formData(", "req.formData(", "searchParams"]
 sinks = ["exec(", "execSync(", ".execSync(", "child_process.exec(", "childProcess.exec(", "cp.exec(", "require('child_process').exec(", "shell.exec("]
 sanitizers = ["execFile(", "execFileSync(", "spawn("]
 fix = "Use execFile or spawn with an argument array (no shell) so the value is one argument; never build a command string from input."
@@ -38,4 +38,55 @@ app.get("/lookup", (req, res) => {
     res.type("text").send(err ? "lookup failed" : stdout);
   });
 });
+'''
+
+[[samples]]
+kind = "vulnerable"
+dialect = "ts"
+code = '''
+class PingDto { readonly host!: string }
+
+@Controller("tools")
+export class ToolsController {
+  @Post("ping")
+  ping(@Body() dto: PingDto): Promise<string> {
+    return new Promise((resolve) => exec(`ping -c 1 ${dto.host}`, (_e, out) => resolve(out)));
+  }
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+dialect = "ts"
+code = '''
+export async function POST(req: NextRequest) {
+  const data = await req.formData();
+  const name = data.get("name") as string | null;
+  const out = execSync("convert upload.png " + name!).toString();
+  return new Response(out);
+}
+'''
+
+[[samples]]
+kind = "safe"
+dialect = "ts"
+code = '''
+@Controller("tools")
+export class ToolsController {
+  @Get("lookup")
+  lookup(@Query("host") host: string) {
+    execFile("nslookup", ["--", String(host)], (_e: Error | null, out: string) => console.log(out));
+  }
+}
+'''
+
+[[samples]]
+kind = "safe"
+dialect = "ts"
+code = '''
+export async function POST(req: NextRequest) {
+  const data = await req.formData();
+  const out = execFileSync("convert", ["upload.png", String(data.get("name"))]).toString();
+  return new Response(out);
+}
 '''

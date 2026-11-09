@@ -4,8 +4,8 @@ class = "path-traversal"
 cwe = "CWE-22"
 severity = "high"
 title = "Request value joined into a path that is read, written or sent"
-frameworks = ["express"]
-sources = ["req.query", "req.params", "req.body"]
+frameworks = ["express", "nestjs", "nextjs"]
+sources = ["req.query", "req.params", "req.body", "@Body(", "@Query(", "@Param(", "@Req(", "request.nextUrl", "req.nextUrl", "request.url", "request.json(", "req.json(", "request.formData(", "req.formData(", "searchParams"]
 sinks = ["res.sendFile(", "res.download(", "fs.readFile(", "fs.createReadStream(", "fs.writeFile(", "fs.unlink(", "readFileSync("]
 sanitizers = ["path.basename(", ".startsWith("]
 fix = "Use res.sendFile(name, { root }) or resolve the path and require it to start with the base directory plus path.sep before touching the file."
@@ -54,4 +54,76 @@ app.get("/log", (req, res) => {
   if (!p.startsWith(LOGS)) return res.sendStatus(400);
   fs.createReadStream(p).pipe(res);
 });
+'''
+
+[[samples]]
+kind = "vulnerable"
+dialect = "ts"
+code = '''
+@Controller("files")
+export class FilesController {
+  @Get(":name")
+  get(@Param("name") name: string, @Res() res: Response): void {
+    res.sendFile(path.join(UPLOADS, name));
+  }
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+dialect = "ts"
+note = "Next.js: new URL(request.url).searchParams"
+code = '''
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const file = searchParams.get("file") ?? "";
+  return new Response(fs.createReadStream(path.join(LOGS, file)) as unknown as ReadableStream);
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+dialect = "tsx"
+note = "Next.js page: searchParams is a prop"
+code = '''
+export default async function Page({ searchParams }: { searchParams: Promise<{ doc?: string }> }) {
+  const { doc } = await searchParams;
+  const text = await new Promise<string>((ok) => fs.readFile(`/srv/docs/${doc}`, "utf8", (_e, d) => ok(d)));
+  return <pre>{text}</pre>;
+}
+'''
+
+[[samples]]
+kind = "safe"
+dialect = "ts"
+code = '''
+@Controller("files")
+export class FilesController {
+  @Get(":name")
+  get(@Param("name") name: string, @Res() res: Response): void {
+    res.sendFile(path.basename(name), { root: UPLOADS });
+  }
+}
+'''
+
+[[samples]]
+kind = "safe"
+dialect = "ts"
+code = '''
+export async function GET(req: NextRequest) {
+  const file = path.basename(req.nextUrl.searchParams.get("file") ?? "");
+  return new Response(fs.createReadStream(path.join(LOGS, file)) as unknown as ReadableStream);
+}
+'''
+
+[[samples]]
+kind = "safe"
+dialect = "tsx"
+code = '''
+export default async function Page({ searchParams }: { searchParams: Promise<{ doc?: string }> }) {
+  const { doc } = await searchParams;
+  const name = path.basename(String(doc));
+  const text = await new Promise<string>((ok) => fs.readFile(`/srv/docs/${name}`, "utf8", (_e, d) => ok(d)));
+  return <pre>{text}</pre>;
+}
 '''

@@ -4,8 +4,8 @@ class = "sqli"
 cwe = "CWE-89"
 severity = "high"
 title = "Request input placed into Sequelize.literal or a raw sequelize.query string"
-frameworks = ["express"]
-sources = ["req.query", "req.body", "req.params"]
+frameworks = ["express", "nestjs", "nextjs"]
+sources = ["req.query", "req.body", "req.params", "@Body(", "@Query(", "@Param(", "@Req(", "request.nextUrl", "req.nextUrl", "request.url", "request.json(", "req.json(", "request.formData(", "req.formData(", "searchParams"]
 sinks = ["Sequelize.literal(", "sequelize.literal(", "sequelize.query(", "Sequelize.fn("]
 sanitizers = ["sequelize.escape("]
 fix = "Keep literal() for constant SQL only; pass values with the replacements or bind options of sequelize.query, or use operator objects ({ [Op.lt]: value })."
@@ -60,4 +60,44 @@ router.get("/search", async (req, res) => {
   });
   res.json(rows);
 });
+'''
+
+[[samples]]
+kind = "vulnerable"
+dialect = "ts"
+code = '''
+@Controller("messages")
+export class MessagesController {
+  @Get(":day")
+  list(@Param("day") day: string) {
+    return Message.findAll({ where: Sequelize.literal(`date("createdAt") = '${day}'`) });
+  }
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+dialect = "ts"
+note = "Next.js: a form field from request.formData()"
+code = '''
+export async function POST(request: Request) {
+  const form = await request.formData();
+  const tag = form.get("tag") as string;
+  const rows = await sequelize.query(`SELECT * FROM items WHERE tag = '${tag}'`);
+  return Response.json(rows);
+}
+'''
+
+[[samples]]
+kind = "safe"
+dialect = "ts"
+code = '''
+export async function POST(request: Request) {
+  const form = await request.formData();
+  const rows = await sequelize.query("SELECT * FROM items WHERE tag = :tag", {
+    replacements: { tag: String(form.get("tag")) },
+    type: QueryTypes.SELECT,
+  });
+  return Response.json(rows);
+}
 '''

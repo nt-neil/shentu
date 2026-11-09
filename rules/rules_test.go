@@ -21,7 +21,7 @@ var (
 		"code-eval":       {"CWE-94", "CWE-95", "CWE-1336"},
 	}
 	severities = map[string]bool{"critical": true, "high": true, "medium": true, "low": true}
-	frameworks = map[string]bool{"laravel": true, "wordpress": true, "django": true, "flask": true, "express": true}
+	frameworks = map[string]bool{"laravel": true, "wordpress": true, "django": true, "flask": true, "express": true, "nestjs": true, "nextjs": true}
 
 	refRe = regexp.MustCompile(`^(CVE-\d{4}-\d{4,}|GHSA(-[23456789cfghjmpqrvwx]{4}){3})$`)
 	idRe  = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)+$`)
@@ -165,6 +165,9 @@ func checkSamples(t *testing.T, r Rule) {
 		}
 		if strings.TrimSpace(s.Code) == "" {
 			t.Errorf("%s: sample %d has no code", r.File, i)
+		}
+		if s.Dialect != "" && (r.Lang != "js" || s.Dialect != "ts" && s.Dialect != "tsx") {
+			t.Errorf("%s: sample %d dialect %q: only js rules have the dialects ts and tsx", r.File, i, s.Dialect)
 		}
 		if s.Kind == "vulnerable" {
 			if !containsAny(s.Code, r.Sources) {

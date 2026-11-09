@@ -4,8 +4,8 @@ class = "deserialization"
 cwe = "CWE-502"
 severity = "high"
 title = "js-yaml 3.x load() (or a full schema) on untrusted YAML"
-frameworks = ["express"]
-sources = ["req.body", "req.file", "req.files"]
+frameworks = ["express", "nestjs", "nextjs"]
+sources = ["req.body", "req.file", "req.files", "@Body(", "@Query(", "@Param(", "@Req(", "request.nextUrl", "req.nextUrl", "request.url", "request.json(", "req.json(", "request.formData(", "req.formData(", "searchParams"]
 sinks = ["yaml.load(", "yaml.loadAll(", "yaml.safeLoad(", "yaml.safeLoadAll("]
 sanitizers = []
 fix = "Upgrade to js-yaml 4 (load is safe by default) or call safeLoad on 3.x; never pass DEFAULT_FULL_SCHEMA for untrusted input."
@@ -36,4 +36,32 @@ app.post("/pipeline", express.text(), (req, res) => {
   const spec = yaml.safeLoad(req.body);
   res.json({ steps: spec.steps.length });
 });
+'''
+
+[[samples]]
+kind = "vulnerable"
+dialect = "ts"
+code = '''
+@Controller("pipeline")
+export class PipelineController {
+  @Post()
+  load(@Body() body: string) {
+    const spec = yaml.load(body, { schema: yaml.DEFAULT_FULL_SCHEMA }) as { steps: unknown[] };
+    return { steps: spec.steps.length };
+  }
+}
+'''
+
+[[samples]]
+kind = "safe"
+dialect = "ts"
+code = '''
+@Controller("pipeline")
+export class PipelineController {
+  @Post()
+  load(@Body() body: string) {
+    const spec = yaml.safeLoad(body) as { steps: unknown[] };
+    return { steps: spec.steps.length };
+  }
+}
 '''

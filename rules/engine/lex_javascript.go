@@ -54,7 +54,8 @@ func (s *scanner) js(stop bool) {
 			s.jsTemplate()
 		case c == '/' && s.regexAllowed():
 			s.jsRegex()
-		case isIdentStart(c) || c == '$' || c == '#' && isIdentStart(s.peek(1)):
+		case isIdentStart(c) || c == '$' || (c == '#' || c == '@') && isIdentStart(s.peek(1)):
+			// A decorator name (@Body) is one token, so a rule can name it as a source.
 			line := s.line
 			start := s.pos
 			s.pos++
@@ -109,6 +110,21 @@ func (s *scanner) regexAllowed() bool {
 		if t.Text == ")" {
 			return s.afterCtl // if (x) /re/.test(s): a statement starts after the header
 		}
+		if s.ts && t.Text == "!" && t.Flags&FlagNL == 0 && len(s.toks) > 1 {
+			// x! / 2: a non-null assertion ends an operand.
+			switch p := s.toks[len(s.toks)-2]; p.Kind {
+			case Ident:
+				if !regexAfter[p.Text] {
+					return false
+				}
+			case Num, Str:
+				return false
+			case Op:
+				if p.Text == "]" || p.Text == ")" && !s.afterCtl {
+					return false
+				}
+			}
+		}
 		return t.Text != "]" && t.Text != "}" && t.Text != "++" && t.Text != "--"
 	case Ident:
 		return regexAfter[t.Text]
@@ -149,7 +165,7 @@ func (s *scanner) jsTemplate() {
 			p := Part{Off: s.pos - start}
 			s.pos += 2
 			if s.depth < maxNest {
-				sub := &scanner{src: s.src, pos: s.pos, line: s.line, b: s.b, depth: s.depth + 1}
+				sub := &scanner{src: s.src, pos: s.pos, line: s.line, b: s.b, depth: s.depth + 1, ts: s.ts}
 				sub.js(true)
 				p.Toks = sub.toks
 				s.pos, s.line = sub.pos, sub.line

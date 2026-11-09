@@ -4,8 +4,8 @@ class = "sqli"
 cwe = "CWE-89"
 severity = "high"
 title = "Request input concatenated or interpolated into SQL for a driver or knex.raw"
-frameworks = ["express"]
-sources = ["req.query", "req.body", "req.params", "req.cookies"]
+frameworks = ["express", "nestjs", "nextjs"]
+sources = ["req.query", "req.body", "req.params", "req.cookies", "@Body(", "@Query(", "@Param(", "@Req(", "request.nextUrl", "req.nextUrl", "request.url", "request.json(", "req.json(", "request.formData(", "req.formData(", "searchParams"]
 sinks = [".query(", ".execute(", "knex.raw(", ".raw(", ".whereRaw(", ".orderByRaw("]
 sanitizers = ["parseInt(", "Number("]
 fix = "Use placeholders and pass values separately (query('... WHERE id = ?', [id]), knex.raw('?? = ?', [col, val])); never build SQL with + or template literals."
@@ -52,4 +52,61 @@ router.post("/group", async (req, res) => {
   const rows = await knex("orders").select(knex.raw("count(*) as n, ??", [col])).groupBy(col);
   res.json(rows);
 });
+'''
+
+[[samples]]
+kind = "vulnerable"
+dialect = "ts"
+note = "NestJS: @Body() binds the request body to the parameter"
+code = '''
+interface CreateUserDto { name: string; email?: string }
+
+@Controller("users")
+export class UsersController {
+  constructor(private readonly ds: DataSource) {}
+
+  @Post()
+  async create(@Body() dto: CreateUserDto): Promise<void> {
+    await this.ds.query(`INSERT INTO users (name) VALUES ('${dto.name}')`);
+  }
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+dialect = "ts"
+note = "Next.js route handler: the query string of request.nextUrl"
+code = '''
+export async function GET(request: NextRequest): Promise<Response> {
+  const q = request.nextUrl.searchParams.get("q")!;
+  const [rows] = (await pool.query(`SELECT id FROM posts WHERE title LIKE '%${q}%'`)) as [RowDataPacket[], FieldPacket[]];
+  return Response.json(rows);
+}
+'''
+
+[[samples]]
+kind = "safe"
+dialect = "ts"
+note = "ParseIntPipe turns the route parameter into a number"
+code = '''
+@Controller("users")
+export class UsersController {
+  constructor(private readonly ds: DataSource) {}
+
+  @Get(":id")
+  findOne(@Param("id", ParseIntPipe) id: number) {
+    return this.ds.query(`SELECT * FROM users WHERE id = ${id}`);
+  }
+}
+'''
+
+[[samples]]
+kind = "safe"
+dialect = "ts"
+code = '''
+export async function GET(request: NextRequest) {
+  const q = request.nextUrl.searchParams.get("q") ?? "";
+  const [rows] = await pool.query<RowDataPacket[]>("SELECT id FROM posts WHERE title LIKE ?", [`%${q}%`]);
+  return Response.json(rows satisfies RowDataPacket[]);
+}
 '''

@@ -1,5 +1,5 @@
-// Package engine applies Shentu's code rules (package rules) to PHP, Python and
-// JavaScript files. It lexes the file by hand, splits it into statements and
+// Package engine applies Shentu's code rules (package rules) to PHP, Python,
+// JavaScript and TypeScript files (TypeScript uses the JavaScript rules). It lexes the file by hand, splits it into statements and
 // function scopes, and follows user input inside each function in order: from a
 // source, through variables, to a sink, unless a sanitizer or a check is in the
 // way. It does not follow values across functions or files.
@@ -127,7 +127,8 @@ func compileRule(r rules.Rule) (*crule, error) {
 	return c, nil
 }
 
-// LangOf returns the rule language for a file name ("php", "python", "js"), or "".
+// LangOf returns the language of a file name ("php", "python", "js", or the
+// TypeScript dialects "ts" and "tsx", which use the JavaScript rules), or "".
 func LangOf(path string) string {
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".php", ".phtml", ".php5", ".inc":
@@ -136,6 +137,10 @@ func LangOf(path string) string {
 		return "python"
 	case ".js", ".mjs", ".cjs", ".jsx":
 		return "js"
+	case ".ts", ".mts", ".cts":
+		return "ts"
+	case ".tsx":
+		return "tsx"
 	}
 	return ""
 }
@@ -143,7 +148,8 @@ func LangOf(path string) string {
 // Scan applies the rules of lang to one file. When the file hits the Limits it
 // returns what was found so far and ErrLimit.
 func (e *Engine) Scan(lang, path string, src []byte) ([]Finding, error) {
-	rs := e.byLang[lang]
+	base := baseLang(lang)
+	rs := e.byLang[base]
 	if len(rs) == 0 {
 		return nil, nil
 	}
@@ -152,10 +158,10 @@ func (e *Engine) Scan(lang, path string, src []byte) ([]Finding, error) {
 	if b.hit {
 		return nil, ErrLimit
 	}
-	tree := parse(lang, toks, b)
+	tree := parse(base, toks, b)
 	var out []Finding
 	for _, r := range rs {
-		a := &analysis{r: r, php: lang == "php", py: lang == "python", js: lang == "js", b: b, kw: keywords[lang], seen: map[int]bool{}}
+		a := &analysis{r: r, php: base == "php", py: base == "python", js: base == "js", b: b, kw: keywords[base], seen: map[int]bool{}}
 		a.block(tree, state{})
 		for _, line := range a.lines {
 			out = append(out, Finding{RuleID: r.rule.ID, Path: path, Line: line, Severity: r.rule.Severity,
@@ -193,6 +199,8 @@ func lex(lang, src string, b *budget) []Token {
 		return lexPython(src, b)
 	case "js":
 		return lexJS(src, b)
+	case "ts", "tsx":
+		return lexTS(src, b, lang == "tsx")
 	}
 	return nil
 }

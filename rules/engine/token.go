@@ -153,6 +153,7 @@ type scanner struct {
 
 	ctl      []bool // JS: for each open "(", whether it starts an if/while/for header
 	afterCtl bool   // JS: the last ")" closed such a header
+	ts       bool   // TypeScript: "x!" is a postfix operator
 }
 
 func (s *scanner) peek(off int) byte {
