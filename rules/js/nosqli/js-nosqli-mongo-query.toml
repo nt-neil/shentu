@@ -5,8 +5,8 @@ cwe = "CWE-943"
 severity = "high"
 tier = "info"
 title = "Request data placed in a MongoDB query without forcing it to a string"
-frameworks = ["express"]
-sources = ["req.body", "req.query"]
+frameworks = ["express", "nestjs", "nextjs"]
+sources = ["req.body", "req.query", "@Query(", "@Body(", "@Req(", "^request.json(", "^req.json("]
 sinks = [".findOne(", ".find(", ".findOneAndUpdate(", ".findOneAndDelete(", ".updateOne(", ".updateMany(", ".deleteOne(", ".deleteMany(", ".countDocuments(", ".exists(", "$where"]
 sanitizers = ["String(", ".toString(", "mongoSanitize(", "sanitize(", "parseInt(", "ObjectId(", "typeof"]
 fix = "Convert each value to the type the field holds (String(), Number()) or reject non-strings (typeof x !== \"string\") before it goes into the filter; enable sanitizeFilter in Mongoose; never build $where from input."
@@ -42,4 +42,33 @@ app.post("/login", async (req, res) => {
   const item = items.find((i) => i.id === req.body.id);
   res.json({ ok: !!user && !!item });
 });
+'''
+
+[[samples]]
+kind = "vulnerable"
+dialect = "ts"
+note = "NestJS: a JSON body value can be an operator object"
+code = '''
+@Controller("session")
+export class SessionController {
+  constructor(@InjectModel("User") private users: Model<User>) {}
+  @Post()
+  async login(@Body() dto: LoginDto) {
+    return this.users.findOne({ email: dto.email, password: dto.password });
+  }
+}
+'''
+
+[[samples]]
+kind = "safe"
+dialect = "ts"
+code = '''
+@Controller("session")
+export class SessionController {
+  constructor(@InjectModel("User") private users: Model<User>) {}
+  @Post()
+  async login(@Body() dto: LoginDto) {
+    return this.users.findOne({ email: String(dto.email) });
+  }
+}
 '''

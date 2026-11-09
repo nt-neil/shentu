@@ -5,12 +5,12 @@ cwe = "CWE-918"
 severity = "high"
 tier = "info"
 title = "Server fetches a URL taken from the request"
-frameworks = ["express"]
-sources = ["req.query", "req.body", "req.params", "req.headers"]
+frameworks = ["express", "nestjs", "nextjs"]
+sources = ["req.query", "req.body", "req.params", "req.headers", "@Query(", "@Body(", "@Param(", "@Headers(", "@Req(", "req.originalUrl", "^request.nextUrl", "^req.nextUrl", "^request.url", "^req.url", "^searchParams", "^request.json(", "^req.json(", "^request.text(", "^req.text(", "^request.formData(", "^req.formData(", "^formData.get(", "req.get(", "req.header(", "^headers().get("]
 sinks = ["fetch(", "axios(", "axios.get(", "axios.post(", "axios.put(", "axios.delete(", "axios.head(", "got(", "got.get(", "got.post(", "http.get(", "https.get(", "http.request(", "https.request(", "needle(", "superagent.get("]
 sanitizers = ["parseInt(", "encodeURIComponent("]
 fix = "Keep the scheme and host fixed and take only a path or an id from the request, or parse it with new URL() and require the hostname to be in an allowlist (and to resolve to a public address) before the request."
-refs = ["CVE-2024-32964"]
+refs = ["CVE-2024-32964", "CVE-2024-38514", "CVE-2025-9805", "CVE-2024-47066", "CVE-2026-82477", "GHSA-89v5-38xr-9m4j"]
 
 [[args]]
 arg = 1
@@ -53,4 +53,53 @@ app.post("/import", async (req, res) => {
   const { data } = await axios.get(req.body.source);
   res.json({ size: data.length });
 });
+'''
+
+[[samples]]
+kind = "vulnerable"
+dialect = "ts"
+note = "Next.js route handler: the target comes from the query string"
+code = '''
+export async function GET(req: Request) {
+  const target = new URL(req.url).searchParams.get("feed")!;
+  const r = await fetch(target);
+  return new Response(await r.text());
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+dialect = "ts"
+note = "NestJS: a URL from the body goes to axios"
+code = '''
+@Controller("connect")
+export class ConnectController {
+  @Post()
+  async probe(@Body() dto: { baseUrl: string }) {
+    const { data } = await axios.get(`${dto.baseUrl}/api/version`);
+    return data;
+  }
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+dialect = "ts"
+note = "Next.js: the body itself is the URL"
+code = '''
+export async function POST(req: Request) {
+  const page = await fetch(await req.text());
+  return new Response(await page.text());
+}
+'''
+
+[[samples]]
+kind = "safe"
+dialect = "ts"
+code = '''
+export async function GET(req: Request) {
+  const id = new URL(req.url).searchParams.get("feed") ?? "";
+  const r = await fetch("https://feeds.example.com/v1/" + encodeURIComponent(id));
+  return new Response(await r.text());
+}
 '''
