@@ -70,11 +70,10 @@ var ErrLimit = errors.New("engine: file too large, too slow or too deeply nested
 // closed, so the code after its start was read as text and not analysed.
 var ErrPartial = errors.New("engine: unterminated string or comment, rest of the file not analysed")
 
-// ErrMinified means a JavaScript file is minified or bundled (most of it is in
-// very long lines, see Minified): only its other lines were analysed. Generated
-// code is not where the application's own flaws are, and it is slow to read. It
-// may come joined with ErrPartial or ErrLimit for the lines that were read.
-var ErrMinified = errors.New("engine: minified JavaScript, its long lines not analysed")
+// ErrMinified comes joined with ErrLimit or ErrPartial when a JavaScript file
+// that stopped early is minified or bundled (see Minified): generated code, not
+// the application's own.
+var ErrMinified = errors.New("engine: minified JavaScript")
 
 const maxNest = 24 // interpolation and block nesting; deeper code is read flat or skipped
 
@@ -161,8 +160,10 @@ type scanner struct {
 	ctl      []bool // JS: for each open "(", whether it starts an if/while/for header
 	afterCtl bool   // JS: the last ")" closed such a header
 
-	hs      htmlScan // PHP: the inline HTML read so far (htmlctx.go)
+	hs      htmlScan // PHP: the inline HTML read so far, and the literal text echo wrote (htmlctx.go)
 	htmlCtx uint8    // PHP: 1 + the context the current code block writes into, 0 outside one
+	inEcho  bool     // PHP: in an echo or print statement
+	echoPar int      // PHP: brackets open in it
 }
 
 func (s *scanner) peek(off int) byte {
@@ -181,8 +182,8 @@ func (s *scanner) emit(t Token) bool {
 		t.Flags |= FlagNL
 		s.nl = false
 	}
-	if s.htmlCtx != 0 && t.Kind == Ident && (t.Text == "echo" || t.Text == "print") {
-		t.Flags |= (s.htmlCtx - 1) << flagCtxShift
+	if s.htmlCtx != 0 {
+		s.echoText(&t)
 	}
 	s.toks = append(s.toks, t)
 	return s.b.token()

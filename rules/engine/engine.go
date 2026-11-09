@@ -174,15 +174,21 @@ func LangOf(path string) string {
 }
 
 // Scan applies the rules of lang to one file. When the file hits the Limits it
-// returns what was found so far and ErrLimit.
+// returns what was found so far and ErrLimit. Every line is read; when a
+// minified or bundled JavaScript file stops early, ErrMinified is joined to the
+// reason, so the audit can tell generated code from hand-written code.
 func (e *Engine) Scan(lang, path string, src []byte) ([]Finding, error) {
+	out, err := e.scan(lang, path, src)
+	if err != nil && lang == "js" && Minified(src) {
+		err = errors.Join(ErrMinified, err)
+	}
+	return out, err
+}
+
+func (e *Engine) scan(lang, path string, src []byte) ([]Finding, error) {
 	rs := e.byLang[lang]
 	if len(rs) == 0 {
 		return nil, nil
-	}
-	if lang == "js" && Minified(src) {
-		out, err := e.Scan(lang, path, dropLong(src))
-		return out, errors.Join(ErrMinified, err) // keep both reasons: minified, and unterminated or over a limit
 	}
 	b := newBudget(e.Limits)
 	toks := lex(lang, string(src), b)
@@ -209,13 +215,14 @@ func (e *Engine) Scan(lang, path string, src []byte) ([]Finding, error) {
 	// written out in the file is reported whatever the calls cost.
 	var ruleList []*crule
 	direct := map[*crule][]int{}
+	defs := phpDefines(lang, toks)
 	names := nameSet(toks, map[string]bool{})
 	for _, r := range rs {
-		if !sinkNames(r, names, src) || !hasSink(r, toks) {
+		if !sinkNames(r, names, src) || !e.Library && !sourceNames(r, names, src) || !hasSink(r, toks) {
 			continue // nothing in the file can be this rule's sink
 		}
 		ruleList = append(ruleList, r)
-		a := &analysis{r: r, php: lang == "php", py: lang == "python", js: lang == "js", b: b, kw: keywords[lang], seen: map[int]bool{}}
+		a := &analysis{r: r, php: lang == "php", py: lang == "python", js: lang == "js", b: b, kw: keywords[lang], seen: map[int]bool{}, defs: defs}
 		a.block(tree, state{})
 		direct[r] = a.lines
 		if b.hit {
@@ -232,10 +239,10 @@ func (e *Engine) Scan(lang, path string, src []byte) ([]Finding, error) {
 		b2.deadline = b.deadline.Add(e.Limits.maxTime()) // a file takes at most twice MaxTime in all
 		for _, r := range ruleList {
 			sc := newSummaries(ff)
-			a := &analysis{r: r, php: lang == "php", py: lang == "python", js: lang == "js", b: b2, kw: keywords[lang], seen: map[int]bool{}, sc: sc}
+			a := &analysis{r: r, php: lang == "php", py: lang == "python", js: lang == "js", b: b2, kw: keywords[lang], seen: map[int]bool{}, sc: sc, defs: defs}
 			a.block(tree, state{})
 			if e.Library && libClasses[r.rule.Class] && !testPath(path) && !b2.hit {
-				l := &analysis{r: r, php: a.php, py: a.py, js: a.js, b: b2, kw: a.kw, seen: a.seen, sc: sc, lib: true}
+				l := &analysis{r: r, php: a.php, py: a.py, js: a.js, b: b2, kw: a.kw, seen: a.seen, sc: sc, lib: true, defs: defs}
 				l.block(tree, state{})
 				a.lines = append(a.lines, l.lines...)
 			}

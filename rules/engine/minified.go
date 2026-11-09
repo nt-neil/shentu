@@ -9,11 +9,9 @@ const (
 
 // Minified reports whether a JavaScript file is minified or bundled: it is at
 // least minifiedSize bytes and at least half of its non-blank bytes are in lines
-// with more than minifiedLine non-blank bytes. Blank padding does not count, so
-// a padded line in a hand-written file does not make it look generated. Scan
-// then reads the file without its long lines (dropLong) and returns ErrMinified
-// with what it found, joined with ErrPartial or ErrLimit when the shortened
-// file has an unterminated string or hits a limit.
+// with more than minifiedLine non-blank bytes. Blank padding does not count.
+// Such a file is read like any other, every line of it; when it stops early,
+// Scan joins ErrMinified to ErrLimit or ErrPartial.
 func Minified(src []byte) bool {
 	if len(src) < minifiedSize {
 		return false
@@ -42,24 +40,4 @@ func nonBlank(line []byte) int {
 		}
 	}
 	return n
-}
-
-// dropLong blanks every line with more than minifiedLine non-blank bytes,
-// keeping the line breaks, so line numbers stay the same.
-func dropLong(src []byte) []byte {
-	out := make([]byte, 0, len(src)/4)
-	for rest := src; len(rest) > 0; {
-		i := bytes.IndexByte(rest, '\n')
-		if i < 0 {
-			i = len(rest)
-		}
-		if nonBlank(rest[:i]) <= minifiedLine {
-			out = append(out, rest[:i]...)
-		}
-		if i < len(rest) {
-			out = append(out, '\n')
-		}
-		rest = rest[min(i+1, len(rest)):]
-	}
-	return out
 }

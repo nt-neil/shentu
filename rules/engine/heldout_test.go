@@ -300,6 +300,8 @@ func TestHeldOut(t *testing.T) {
 		{"X8t php htmlspecialchars single quote", "php", "<?php\necho \"<input value='\" . htmlspecialchars($_GET['v']) . \"'>\";\n", true, ""},
 		{"X8u php htmlspecialchars ENT_QUOTES single quote", "php", "<?php\necho \"<input value='\" . htmlspecialchars($_GET['v'], ENT_QUOTES) . \"'>\";\n", false, ""},
 		{"X8v php esc_url_raw in href", "php", "<a href=\"<?php echo esc_url_raw($_GET['u']); ?>\">x</a>\n", true, ""},
+		{"X8w tornado xhtml_escape text", "python", "def v(request):\n    return HttpResponse('<p>' + tornado.escape.xhtml_escape(request.GET['q']) + '</p>')\n", false, ""},
+		{"X8x xhtml_escape in href", "python", "def v(request):\n    return HttpResponse('<a href=\"' + xhtml_escape(request.GET['u']) + '\">x</a>')\n", true, ""},
 		{"X9 py HttpResponse format", "python", "def v(request):\n    n = request.GET['n']\n    return HttpResponse('<b>{}</b>'.format(n))\n", true, ""},
 		{"X10 py jsonify ok", "python", "@app.route('/a')\ndef a():\n    return jsonify(q=request.args.get('q'))\n", false, ""},
 		{"X11 py mark_safe escaped", "python", "def v(request):\n    return render(request, 't.html', {'x': mark_safe('<i>' + escape(request.GET['x']) + '</i>')})\n", false, ""},

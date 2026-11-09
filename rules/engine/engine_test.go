@@ -313,17 +313,13 @@ func TestMinified(t *testing.T) {
 		}
 	}
 	e := engineForTest(t)
-	if _, err := e.Scan("js", "app.min.js", []byte(bundle)); !errors.Is(err, ErrMinified) {
-		t.Errorf("minified file: err = %v, want ErrMinified", err)
-	}
-	// Hand-written lines in a mostly minified file are still read.
+	// Every line is read, also in a minified file: nothing is skipped quietly.
 	mixed := bundle + "app.get('/x', (req, res) => { exec(req.query.c); });\n"
-	if fs, err := e.Scan("js", "mixed.js", []byte(mixed)); !errors.Is(err, ErrMinified) || len(fs) == 0 || fs[0].Line != 31 {
-		t.Errorf("mixed file: %v, %v; want a finding on line 31 and ErrMinified", fs, err)
+	if fs, err := e.Scan("js", "mixed.js", []byte(mixed)); err != nil || len(fs) == 0 || fs[0].Line != 31 {
+		t.Errorf("mixed file: %v, %v; want a finding on line 31 and no error", fs, err)
 	}
-	// A long line that opened a template literal: without it the rest reads as a
-	// string, and that is reported with the minified file.
-	open := bundle + "const t = `" + strings.Repeat("x", 1200) + "\n`;\nexec(req.query.c);\n"
+	// A minified file that stops early says so.
+	open := bundle + "const t = `" + strings.Repeat("x", 1200) + "\n"
 	if _, err := e.Scan("js", "open.js", []byte(open)); !errors.Is(err, ErrMinified) || !errors.Is(err, ErrPartial) {
 		t.Errorf("open literal: err = %v, want ErrMinified and ErrPartial", err)
 	}
@@ -361,5 +357,36 @@ func TestTextSinkNotInInterpolation(t *testing.T) {
 	op := "<?php\n$c->find(array('$where' => \"this.a == '\" . $_GET['a'] . \"'\"));\n"
 	if fs, _ := e.Scan("php", "m.php", []byte(op)); len(fs) == 0 {
 		t.Error("'$where' operator text not reported")
+	}
+}
+
+// The source prefilter never drops a rule from a file where it reports: every
+// vulnerable sample keeps its own rule.
+func TestSourceNamesKeepsFindings(t *testing.T) {
+	rs, err := rules.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	e, err := New(rs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range rs {
+		for _, c := range e.byLang[r.Lang] {
+			if c.rule.ID != r.ID {
+				continue
+			}
+			for i, s := range r.Samples {
+				if s.Kind != "vulnerable" {
+					continue
+				}
+				code := sampleCode(s.Code)
+				b := newBudget(e.Limits)
+				names := nameSet(lex(r.Lang, code, b), map[string]bool{})
+				if !sourceNames(c, names, []byte(code)) {
+					t.Errorf("%s sample %d: source prefilter drops the rule", r.ID, i)
+				}
+			}
+		}
 	}
 }

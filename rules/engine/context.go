@@ -1,9 +1,6 @@
 package engine
 
-import (
-	"strconv"
-	"strings"
-)
+import "strings"
 
 // literalArg reports whether the argument a literal condition names is a
 // non-empty string written in the code: the arg-th argument, or the value of a
@@ -492,7 +489,9 @@ func isIdentName(s string) bool {
 
 // litKey marks, in a state, that a variable holds a value written in the code
 // with no input in it ($o = ['test_form' => false], const opts = { shell: true },
-// $f = LIBXML_NOENT); the tokens are kept in a.lits under the number after it.
+// $f = LIBXML_NOENT); the value is kept in a.lits. One key per name, so the state
+// does not grow with every assignment; a name given two different values in the
+// file counts as not known.
 const litKey = "\x00lit:"
 
 // recordLit records x = <value with no input> for the argument conditions of
@@ -505,24 +504,25 @@ func (a *analysis) recordLit(st state, t []Token) {
 		return
 	}
 	name := t[0].Text
-	for k := range st {
-		if strings.HasPrefix(k, litKey+name+"\x00") {
-			delete(st, k)
-		}
-	}
 	rhs := t[2:]
 	if n := len(rhs); n > 0 && rhs[n-1].op(";") {
 		rhs = rhs[:n-1]
 	}
 	if len(rhs) == 0 || len(rhs) > 256 || a.rawInput(st, rhs) {
+		if _, ok := st[litKey+name]; ok {
+			delete(st, litKey+name)
+		}
 		return
 	}
 	if a.lits == nil {
-		a.lits = map[int][]Token{}
+		a.lits = map[string][]Token{}
 	}
-	id := len(a.lits)
-	a.lits[id] = rhs
-	st[litKey+name+"\x00"+strconv.Itoa(id)] = entry{san: true}
+	if old, seen := a.lits[name]; seen && (old == nil || !tokensEqual(old, rhs)) {
+		a.lits[name] = nil // two different values: not known
+	} else {
+		a.lits[name] = rhs
+	}
+	st[litKey+name] = entry{san: true}
 }
 
 // expandLits returns region with each argument that is a variable recorded by
@@ -553,19 +553,10 @@ func (a *analysis) expandLits(st state, region []Token) []Token {
 }
 
 func (a *analysis) litOf(st state, name string) []Token {
-	var found []Token
-	n := 0
-	for k, e := range st {
-		if e.san && strings.HasPrefix(k, litKey+name+"\x00") {
-			id, _ := strconv.Atoi(k[len(litKey)+len(name)+1:])
-			found = a.lits[id]
-			n++
-		}
+	if e, ok := st[litKey+name]; ok && e.san {
+		return a.lits[name] // nil when the name was given different values
 	}
-	if n != 1 {
-		return nil // assigned differently on two paths: do not guess
-	}
-	return found
+	return nil
 }
 
 // textMatch finds a text pattern in a string literal's text, outside its
@@ -584,4 +575,71 @@ func textMatch(p *pat, tk Token) []int {
 		}
 	}
 	return nil
+}
+
+// localFunc reports whether a function or method of this name is defined in the
+// file: then what it returns is not guessed from its name (get_, render_): it
+// passes on an argument that is the input, unless its summary says otherwise.
+func (a *analysis) localFunc(name string) bool {
+	if a.sc == nil {
+		return false
+	}
+	if a.locals == nil {
+		a.locals = map[string]bool{}
+		for _, infos := range a.sc.funcs {
+			for _, fi := range infos {
+				a.locals[fi.f.name] = true
+			}
+		}
+	}
+	return a.locals[name]
+}
+
+// condAssign follows assignments written in a condition: if ($x = $_GET['y']),
+// if ($x === 'a' || ($x = f())).
+func (a *analysis) condAssign(st state, cond []Token) {
+	var walk func(t []Token, depth int)
+	walk = func(t []Token, depth int) {
+		t = stripParens(t)
+		if depth > 8 || len(t) == 0 {
+			return
+		}
+		parts := splitTop(t, func(x Token) bool { return x.op("&&") || x.op("||") || x.word("and") || x.word("or") })
+		if len(parts) > 1 {
+			for _, p := range parts {
+				walk(p, depth+1)
+			}
+			return
+		}
+		for len(t) > 0 && t[0].op("!") {
+			t = stripParens(t[1:])
+		}
+		if i := indexTop(t, 0, isAssignOp); i > 0 && t[i].Text == "=" {
+			a.assignStmt(st, t)
+		}
+	}
+	walk(cond, 0)
+}
+
+// phpDefines reads define('NAME', 'text') with literal arguments in a PHP file.
+func phpDefines(lang string, toks []Token) map[string]string {
+	if lang != "php" {
+		return nil
+	}
+	var out map[string]string
+	for i := 0; i+5 < len(toks); i++ {
+		if !toks[i].word("define") || !toks[i+1].op("(") || toks[i+2].Kind != Str || !toks[i+3].op(",") || toks[i+4].Kind != Str ||
+			len(toks[i+4].Parts) > 0 || !toks[i+5].op(")") || i > 0 && memberOp(true, toks[i-1]) {
+			continue
+		}
+		if out == nil {
+			out = map[string]string{}
+		}
+		if _, dup := out[toks[i+2].Text]; dup {
+			out[toks[i+2].Text] = "" // defined twice: not known
+			continue
+		}
+		out[toks[i+2].Text] = toks[i+4].Text
+	}
+	return out
 }

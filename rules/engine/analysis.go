@@ -123,7 +123,9 @@ type analysis struct {
 	cls    string // class of the method being analysed, and its parent
 	parent string
 
-	lits map[int][]Token // values written in the code, kept for argument conditions (context.go)
+	lits   map[string][]Token // values written in the code, kept for argument conditions (context.go)
+	locals map[string]bool    // names of the file's own functions and methods (context.go)
+	defs   map[string]string  // PHP: define('NAME', 'text') in this file (context.go)
 }
 
 func (a *analysis) report(line int) { a.reportSink(line, false) }
@@ -180,6 +182,7 @@ func (a *analysis) stmt(s *stmt, st state) (state, uint8) {
 		return st, a.exitOf(s.toks)
 	case sIf:
 		a.sinks(st, s.toks)
+		a.condAssign(st, s.toks)
 		t1, _ := a.refine(st, s.toks, true)
 		a.nonceCond(t1, s.toks, true)
 		t1, e1 := a.block(s.body, t1)
@@ -740,6 +743,15 @@ func (a *analysis) fixedStart(st state, t []Token) bool {
 	}
 	switch {
 	case a.php && n == 1 && first[0].Kind == Ident && !a.kw[first[0].Text] && !isLiteral(first):
+		if netClasses[a.r.rule.Class] {
+			// a URL: only a constant defined in this file whose text fixes the host, or one
+			// that names a folder (__DIR__, ABSPATH, WP_PLUGIN_DIR): a local path is no URL
+			name := first[0].Text
+			if v, ok := a.defs[name]; ok {
+				return a.fixedText(v)
+			}
+			return name == "__DIR__" || name == "__FILE__" || name == "ABSPATH" || strings.HasSuffix(name, "_DIR") || strings.HasSuffix(name, "_PATH")
+		}
 		return true // a constant: WP_PLUGIN_DIR, __DIR__ (in PHP a bare name is no variable)
 	case a.php && n == 3 && first[0].Kind == Ident && first[1].op("::") && first[2].Kind == Ident:
 		return true // a class constant: self::BASE
@@ -802,7 +814,7 @@ func (a *analysis) fixedStart(st state, t []Token) bool {
 						return false
 					}
 				}
-				return true
+				return !a.rawInput(st, first) // a call that is a source itself (get_query_var('u')) is input
 			}
 		}
 		return !a.rawInput(st, first) && !requestRoot(first[0].Text)
@@ -1187,11 +1199,14 @@ func (a *analysis) postfix(st state, t []Token, start, baseEnd int, v val, whole
 				// output rules (htmlctx.go): a call returns its input changed only when one
 				// argument is the input itself; the arguments are read once per call
 				switch {
-				case a.opaqueAt(st, t, j, v.taint):
+				case key != "" && a.summaryOf(key) != nil && !a.raw:
+					v = a.callVal(st, a.summaryOf(key), callArgs(t, j)) // a function of this file: its summary knows
+				case !a.localFunc(t[j-1].Text) && a.opaqueAt(st, t, j, v.taint):
 					v = val{}
 				case !a.wholeArg(st, inside(t, j, c), t[j-1].Text):
-				case key != "" && a.summaryOf(key) != nil && !a.raw:
-					v = a.callVal(st, a.summaryOf(key), callArgs(t, j))
+					if a.php && j >= 2 && memberOp(true, t[j-2]) {
+						v = val{} // PHP strings have no methods: the object's own taint is not the text returned
+					}
 				default:
 					name := t[j-1].Text
 					v = val{taint: true, emb: t[start].Kind == Str || formatFuncs[name],

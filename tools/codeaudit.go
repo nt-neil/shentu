@@ -49,25 +49,26 @@ var appCodeAudit = Tool{
 
 // CodeFinding is one problem in an application's files.
 type CodeFinding struct {
-	Kind     string           `json:"kind"`     // exposed, debug, webshell, upload_script, secret, injection
-	Severity string           `json:"severity"` // critical, warning, or info (files the injection rules could not finish)
-	Path     string           `json:"path,omitempty"`
-	Line     int              `json:"line,omitempty"`
-	Detail   string           `json:"detail"`
-	Fix      string           `json:"fix"`
-	Rule     string           `json:"rule,omitempty"`      // injection: the rule id
-	CWE      string           `json:"cwe,omitempty"`       // injection: the weakness
-	Tier     string           `json:"tier,omitempty"`      // injection: "info" is not pushed by the patrol report, "alert" is
-	Files    []UnfinishedFile `json:"files,omitempty"`     // the files the summary of unfinished files is about (at most 10)
-	TestPath bool             `json:"test_path,omitempty"` // injection: the file is under tests/, test/, examples/ or __tests__/
+	Kind      string           `json:"kind"`     // exposed, debug, webshell, upload_script, secret, injection
+	Severity  string           `json:"severity"` // critical, warning, or info (files the injection rules could not finish)
+	Path      string           `json:"path,omitempty"`
+	Line      int              `json:"line,omitempty"`
+	Detail    string           `json:"detail"`
+	Fix       string           `json:"fix"`
+	Rule      string           `json:"rule,omitempty"`      // injection: the rule id
+	CWE       string           `json:"cwe,omitempty"`       // injection: the weakness
+	Tier      string           `json:"tier,omitempty"`      // injection: "info" is not pushed by the patrol report, "alert" is
+	Files     []UnfinishedFile `json:"files,omitempty"`     // the files the summary of unfinished files is about (at most 10)
+	TestPath  bool             `json:"test_path,omitempty"` // injection: the file is under tests/, test/, examples/ or __tests__/
+	Generated bool             `json:"generated,omitempty"` // injection: the file is minified or bundled JavaScript
 }
 
 // UnfinishedFile is a file the injection rules did not check to the end, and why:
 // "size" (over the size limit, not read), "limit" (too large, slow or deeply nested
 // for the engine), "unterminated" (a string or comment runs to the end of the file),
 // "time" (after the audit's time limit for the rules), "panic" (an engine error) or
-// "minified" (minified or bundled JavaScript, read without its long lines), or
-// "minified-unterminated" / "minified-limit" when the lines read also hit those.
+// "minified-unterminated" or "minified-limit" (minified or bundled JavaScript that
+// stopped early for that reason).
 type UnfinishedFile struct {
 	Path   string `json:"path"`
 	Reason string `json:"reason"`
@@ -82,6 +83,7 @@ type CodeAudit struct {
 	// Injection findings, counted apart for files under test and example folders.
 	Injection          int `json:"injection_findings"`
 	InjectionTestPaths int `json:"injection_findings_in_test_paths"`
+	InjectionGenerated int `json:"injection_findings_in_generated_code"` // minified or bundled JavaScript
 }
 
 const (
@@ -293,9 +295,8 @@ func partialFinding(files []UnfinishedFile) CodeFinding {
 	for _, r := range []struct{ reason, text string }{
 		{"size", "over the size limit"}, {"limit", "too large, slow or deeply nested for the engine"},
 		{"unterminated", "with a string or comment that never ends"}, {"time", "after the audit's time limit"},
-		{"panic", "stopped by an engine error"}, {"minified", "minified or bundled JavaScript, read without its long lines"},
-		{"minified-unterminated", "minified JavaScript whose shorter lines hold a string or comment that never ends"},
-		{"minified-limit", "minified JavaScript whose shorter lines were still too large or slow"},
+		{"panic", "stopped by an engine error"}, {"minified-unterminated", "minified JavaScript with a string or comment that never ends"},
+		{"minified-limit", "minified JavaScript too large or slow for the engine"},
 	} {
 		if n := count[r.reason]; n > 0 {
 			parts = append(parts, fmt.Sprintf("%d %s", n, r.text))
@@ -320,8 +321,6 @@ func unfinishedReason(err error) string {
 		return "limit"
 	case errors.Is(err, engine.ErrPartial):
 		return "unterminated"
-	case errors.Is(err, engine.ErrMinified):
-		return "minified"
 	}
 	return ""
 }
@@ -400,7 +399,8 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 				partial = append(partial, UnfinishedFile{p, "time"})
 			default:
 				found, err := injectionScan(eng, lang, p, b)
-				injectionFindings(found, add)
+				gen := lang == "js" && engine.Minified(b)
+				injectionFindings(found, func(f CodeFinding) { f.Generated = gen; add(f) })
 				if r := unfinishedReason(err); r != "" {
 					partial = append(partial, UnfinishedFile{p, r})
 				}
@@ -413,6 +413,8 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 		case f.Kind != "injection" || f.Rule == "":
 		case f.TestPath:
 			res.InjectionTestPaths++
+		case f.Generated:
+			res.InjectionGenerated++
 		default:
 			res.Injection++
 		}

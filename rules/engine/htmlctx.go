@@ -56,6 +56,12 @@ type htmlScan struct {
 	end      int    // bytes of "</script" or "</style" matched
 	jsq      byte   // the quote of the JavaScript string we are in, in a script or a handler
 	jsEsc    bool
+	jsCom    uint8 // 1: in a // comment, 2: in a /* */ comment
+	jsStar   bool  // the last byte of a block comment was "*"
+	jsRe     bool  // in a regular expression literal
+	jsClass  bool  // in a [...] class of one
+	jsSlash  bool  // a "/" was read in code: a comment, a regular expression or a division
+	jsPrev   byte  // the last code byte that was not blank
 }
 
 func lowerByte(c byte) byte {
@@ -75,7 +81,8 @@ func (h *htmlScan) feed(s string) {
 			case l == pat[h.end]:
 				h.end++
 				if h.end == len(pat) {
-					h.mode, h.closing, h.named, h.tag, h.end, h.jsq, h.raw = hsTag, true, true, h.raw, 0, 0, ""
+					h.mode, h.closing, h.named, h.tag, h.end, h.raw = hsTag, true, true, h.raw, 0, ""
+					h.resetJS()
 					continue
 				}
 			case l == '<':
@@ -113,24 +120,80 @@ func (h *htmlScan) feed(s string) {
 }
 
 func (h *htmlScan) resetAttr() {
-	h.attr, h.attrEnd, h.afterEq, h.inVal, h.quote, h.val, h.jsq, h.jsEsc = "", false, false, false, 0, "", 0, false
+	h.attr, h.attrEnd, h.afterEq, h.inVal, h.quote, h.val = "", false, false, false, 0, ""
+	h.resetJS()
 }
 
-// js follows JavaScript string literals (comments and regular expressions are
-// not told apart).
+// js follows JavaScript strings, template literals, comments and regular
+// expression literals, so a quote inside a comment or a regex does not open a
+// string.
 func (h *htmlScan) js(c byte) {
 	switch {
-	case h.jsq == 0:
-		if c == '\'' || c == '"' || c == '`' {
-			h.jsq = c
+	case h.jsCom == 1:
+		if c == '\n' {
+			h.jsCom = 0
 		}
-	case h.jsEsc:
-		h.jsEsc = false
-	case c == '\\':
-		h.jsEsc = true
-	case c == h.jsq:
-		h.jsq = 0
+		return
+	case h.jsCom == 2:
+		if h.jsStar && c == '/' {
+			h.jsCom = 0
+		}
+		h.jsStar = c == '*'
+		return
+	case h.jsq != 0:
+		switch {
+		case h.jsEsc:
+			h.jsEsc = false
+		case c == '\\':
+			h.jsEsc = true
+		case c == h.jsq:
+			h.jsq = 0
+			h.jsPrev = 'a'
+		}
+		return
+	case h.jsRe:
+		switch {
+		case h.jsEsc:
+			h.jsEsc = false
+		case c == '\\':
+			h.jsEsc = true
+		case h.jsClass:
+			h.jsClass = c != ']'
+		case c == '[':
+			h.jsClass = true
+		case c == '/':
+			h.jsRe, h.jsPrev = false, 'a'
+		}
+		return
 	}
+	if h.jsSlash {
+		h.jsSlash = false
+		switch {
+		case c == '/':
+			h.jsCom = 1
+			return
+		case c == '*':
+			h.jsCom, h.jsStar = 2, false
+			return
+		case h.jsPrev == 0 || strings.IndexByte("(,=:[!&|?{};+-*%<>~^", h.jsPrev) >= 0:
+			h.jsRe = true // a "/" where a value starts: a regular expression
+			h.js(c)
+			return
+		}
+		h.jsPrev = '/'
+	}
+	switch {
+	case c == '/':
+		h.jsSlash = true
+	case c == '\'' || c == '"' || c == '`':
+		h.jsq = c
+	case !isSpace(c):
+		h.jsPrev = c
+	}
+}
+
+func (h *htmlScan) resetJS() {
+	h.jsq, h.jsEsc, h.jsCom, h.jsStar, h.jsRe, h.jsClass, h.jsSlash, h.jsPrev = 0, false, 0, false, false, false, false, 0
 }
 
 func (h *htmlScan) tagByte(c, l byte) {
@@ -194,7 +257,8 @@ func (h *htmlScan) tagByte(c, l byte) {
 func (h *htmlScan) closeTag() {
 	h.mode = hsText
 	if !h.closing && (h.tag == "script" || h.tag == "style") {
-		h.mode, h.raw, h.end, h.jsq = hsRaw, h.tag, 0, 0
+		h.mode, h.raw, h.end = hsRaw, h.tag, 0
+		h.resetJS()
 		t := h.typ
 		h.scriptJS = h.tag == "script" && (t == "" || strings.Contains(t, "javascript") || strings.Contains(t, "ecmascript") || t == "module")
 	}
@@ -211,10 +275,8 @@ func (h *htmlScan) ctx() uint8 {
 			return ctxJSAttr // CSS: only what holds no quote, space or parenthesis is safe
 		case !h.scriptJS:
 			return ctxHTML // <script type="text/html">: markup kept for later
-		case h.jsq != 0:
-			return ctxJSStr
 		}
-		return ctxJS
+		return h.jsCtx(ctxJS)
 	case hsLT:
 		return ctxAttrBare // <<?= $x ?>: the tag name
 	case hsTag:
@@ -223,10 +285,7 @@ func (h *htmlScan) ctx() uint8 {
 		case h.closing || !h.inVal && !h.afterEq:
 			return ctxAttrBare // where an attribute name goes
 		case strings.HasPrefix(name, "on"):
-			if h.jsq != 0 {
-				return ctxJSStr
-			}
-			return ctxJSAttr
+			return h.jsCtx(ctxJSAttr)
 		case name == "style":
 			return ctxJSAttr // CSS
 		case name == "srcdoc":
@@ -234,10 +293,7 @@ func (h *htmlScan) ctx() uint8 {
 		case urlAttrs[name]:
 			v := strings.TrimSpace(strings.ToLower(h.val))
 			if strings.HasPrefix(v, "javascript:") {
-				if h.jsq != 0 {
-					return ctxJSStr
-				}
-				return ctxJSAttr
+				return h.jsCtx(ctxJSAttr)
 			}
 			if !notScheme(v) {
 				return ctxURL // nothing yet, or a start the value can turn into a scheme
@@ -252,6 +308,18 @@ func (h *htmlScan) ctx() uint8 {
 		return ctxAttrBare
 	}
 	return ctxHTML
+}
+
+// jsCtx is the context inside JavaScript whose code context is code: a string,
+// or a template literal (where ${ runs code and only URL-encoding is safe).
+func (h *htmlScan) jsCtx(code uint8) uint8 {
+	switch {
+	case h.jsq == '`':
+		return ctxJSAttr
+	case h.jsq != 0:
+		return ctxJSStr
+	}
+	return code
 }
 
 func isSpace(c byte) bool { return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' }
@@ -301,7 +369,8 @@ var escapers = map[string]uint16{
 	"e": textAttr, // Laravel
 	// Python
 	"escape": textAttr, "html.escape": textAttr, "markupsafe.escape": textAttr, "Markup.escape": textAttr,
-	"conditional_escape": textAttr, "format_html": textAttr, "bleach.clean": ctxBits(ctxHTML), "escapejs": ctxBits(ctxJSStr),
+	"conditional_escape": textAttr, "format_html": textAttr,
+	"xhtml_escape": ctxBits(ctxHTML, ctxAttr), "escape.xhtml_escape": ctxBits(ctxHTML, ctxAttr), "tornado.escape.xhtml_escape": ctxBits(ctxHTML, ctxAttr), "bleach.clean": ctxBits(ctxHTML), "escapejs": ctxBits(ctxJSStr),
 	"quote": encoded, "quote_plus": encoded, "urllib.parse.quote": encoded, "urllib.parse.quote_plus": encoded, "parse.quote": encoded,
 	// JavaScript
 	"escapeHtml": textAttr, "he.encode": textAttr, "he.escape": textAttr, "validator.escape": textAttr, "_.escape": textAttr,
@@ -347,9 +416,15 @@ func (a *analysis) escaperCall(op []Token) (safe uint16, arg []Token, ok bool) {
 	}
 	for _, x := range args {
 		for _, t := range x {
-			if t.word("ENT_NOQUOTES") || len(x) == 3 && x[0].word("quote") && x[2].word("False") {
+			switch {
+			case t.word("ENT_NOQUOTES") || len(x) == 3 && x[0].word("quote") && x[2].word("False"):
 				safe &= ctxBits(ctxHTML) // quotes left as they are: not for attributes
+			case t.word("JSON_UNESCAPED_SLASHES") && !hasWord(args, "JSON_HEX_TAG"):
+				safe &^= ctxBits(ctxJS) // "</script>" stays as it is (JSON_HEX_TAG would encode < and >)
 			}
+		}
+		if len(x) == 3 && x[0].word("safe") && x[1].op("=") && x[2].Kind == Str && strings.ContainsAny(x[2].Text, ":<>\"'") {
+			safe &^= ctxBits(ctxURL) // quote(x, safe=':/') keeps "javascript:"
 		}
 	}
 	if len(args) > 0 {
@@ -367,7 +442,7 @@ func (a *analysis) ctxHits(st state, op []Token, c uint8, depth int) bool {
 		}
 		return arg != nil && a.ctxHits(st, arg, c, depth+1) // escaped for another context: still the input
 	}
-	return !a.opaqueCall(st, op) && !a.fieldOfResult(st, op) && a.hits(a.expr(st, op, false))
+	return !a.fieldOfResult(st, op) && a.hits(a.expr(st, op, false)) // calls are judged where they are read (postfix)
 }
 
 // skipInterp returns where the interpolation at off in a string's text ends:
@@ -511,7 +586,9 @@ var cleanResult = words("shell_exec exec system passthru file_get_contents fread
 	"wp_remote_retrieve_body curl_exec count strlen sizeof md5 sha1 hash crc32 uniqid wp_create_nonce " +
 	"number_format date gmdate human_time_diff readFile readFileSync " +
 	// WordPress form helpers return a fixed attribute (" selected='selected'") or ""
-	"selected checked disabled wp_readonly readonly")
+	"selected checked disabled wp_readonly readonly " +
+	// WordPress Walker classes render objects to markup; the arguments are depth and paging
+	"walk paged_walk")
 
 // opaqueCall reports whether op is one call (a function, method or static
 // method) whose result is not the input itself (see cleanResult).
@@ -564,7 +641,11 @@ var joiners = words("implode join print_r var_export var_dump vsprintf sprintf h
 // for the calls that format or join containers (joiners, array_*).
 func (a *analysis) wholeArg(st state, inner []Token, name string) bool {
 	joins := joiners[name] || strings.HasPrefix(name, "array_")
-	for _, arg := range splitTop(inner, isComma) {
+	args := splitTop(inner, isComma)
+	if a.php && name == "apply_filters" {
+		args = args[min(len(args), 1):min(len(args), 2)] // returns the filtered value, the second argument
+	}
+	for _, arg := range args {
 		arg = stripParens(arg)
 		if a.container(st, arg) {
 			if joins && a.hits(a.argVal(st, arg, false)) {
@@ -574,6 +655,43 @@ func (a *analysis) wholeArg(st state, inner []Token, name string) bool {
 		}
 		if a.hits(a.argVal(st, arg, true)) {
 			return true
+		}
+	}
+	return false
+}
+
+// echoText gives an echo or print the context the page is in, and feeds the
+// literal text an echo writes (outside brackets: not a call's arguments) to the
+// scanner, so echo '<a href="'; echo esc_attr($u); is read as one tag.
+func (s *scanner) echoText(t *Token) {
+	switch {
+	case t.Kind == Ident && (t.Text == "echo" || t.Text == "print") && s.depth == 0:
+		t.Flags |= (s.htmlCtx - 1) << flagCtxShift
+		s.inEcho, s.echoPar = true, 0
+	case !s.inEcho:
+	case t.Kind == Op && t.Text == ";":
+		s.inEcho = false
+	case isOpen(*t):
+		s.echoPar++
+	case isClose(*t):
+		s.echoPar--
+	case t.Kind == Str && s.echoPar == 0 && s.depth == 0 && t.Flags&FlagShell == 0:
+		prev := 0
+		for _, p := range t.Parts {
+			s.hs.feed(t.Text[min(prev, p.Off):min(p.Off, len(t.Text))])
+			prev = skipInterp(t.Text, min(p.Off, len(t.Text)))
+		}
+		s.hs.feed(t.Text[min(prev, len(t.Text)):])
+		s.htmlCtx = s.hs.ctx() + 1
+	}
+}
+
+func hasWord(args [][]Token, w string) bool {
+	for _, x := range args {
+		for _, t := range x {
+			if t.word(w) {
+				return true
+			}
 		}
 	}
 	return false

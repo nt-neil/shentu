@@ -92,6 +92,20 @@ How the engine reads them:
   fixed list are checks in every rule: `in_array`, `array_key_exists`,
   `x in ALLOWED`, `ALLOWED.includes(x)`, `ALLOWED.has(x)`.
 - Also built into every rule:
+  - `wp_die`, `wp_send_json`, `wp_send_json_error` and `wp_send_json_success` end
+    the request, so `if (!in_array($x, $allowed)) { wp_send_json_error(); }`
+    validates `$x` after it;
+  - `array_map('absint', $x)` (any sanitizer of the rule, or a number cast, as the
+    callback) returns sanitized values, with the keys of `$x`;
+  - `extract(shortcode_atts(array('id' => 0, ...), $atts))` and `extract(array(...))`
+    define one variable per literal key;
+  - an assignment written in a condition (`if ($x = $_GET['y'])`) is followed;
+  - a variable holding a value written in the code (`$o = array('test_form' =>
+    false)`, `const opts = { shell: true }`, `$f = LIBXML_NOENT`) is read in its place
+    by the argument conditions `when` and `unless`; a name given two different values
+    in the file is not known;
+  - text sinks match outside string interpolations: `"... $where"` is the variable
+    `$where`, not the operator text `'$where'`;
   - a number carries no injection: `(int)`, `(float)`, `(bool)`, `intval`,
     `absint`, `floatval`, `int()`, `float()`, `len()`, `parseInt`, `parseFloat`,
     `Number` give clean values;
@@ -180,7 +194,7 @@ it are unchanged: a sink is reported when any argument is tainted.
 | `whole` | the argument must be the input itself (or spread from it), not an object or array literal holding a value from it |
 | `context` | output sinks only (`echo`, `res.send(`): the input counts only when it is written into one of these places of an HTML page: `html` (between tags), `attr` (an attribute value, or inside a tag), `url` (the start of an `href`, `src`, `action`... value), `js` (inside `<script>`, an `on*` handler, or after `javascript:`); see [Output contexts](#output-contexts) |
 | `literal` | the argument named by `arg`, or the value of a `when` option (`password=`, `password:`), must be a non-empty string written in the code; used by rules without sources |
-| `leading` | the input must be at the start of the argument: a fixed prefix makes the call safe, as `WP_PLUGIN_DIR . "/$name"` cannot choose a `phar://` stream. A fixed prefix is a literal (or a run of literals) holding a character no URL scheme has (`/`, `_`, a space) before any `:`, so `'phar' . $x` and `'ph' . 'ar' . $x` are none; a constant; a ternary whose branches both are; a variable assigned one; a property or array key the input never reached (`$this->dir`, `$u['basedir']`), but never a superglobal or request object (`$_COOKIE[...]`, `$_SERVER['HTTP_...']`; `$_SERVER['DOCUMENT_ROOT']` is allowed); a call whose arguments hold no input, even through a sanitizer (`dirname(__FILE__)`, `get_template_directory()`, `strval(intval($x))`, but not `trim(basename($_GET['d']))`); `sprintf` whose format starts with such a literal; a Laravel path helper (`storage_path(...)`); a WordPress URL helper that ends in a path (`admin_url(...)`, `get_permalink(...)`, `rest_url(...)`; `home_url('/...')` and `site_url('/...')` only with a path); `add_query_arg` / `remove_query_arg` whose URL argument is fixed (or absent: the request's own path); `apply_filters` whose filtered value is fixed; `trailingslashit` or `user_trailingslashit` whose first argument is fixed; In the `ssrf`, `open-redirect` and `xss` rules the prefix must also keep the request on a known host: a literal scheme and host followed by `/`, `?` or `#` (`https://api.example.com/...`), a root path whose second character is neither `/` nor `\` (`/account`, not `/` that the input turns into `//evil.com`), or a relative path (`users.php?id=`); `home_url()` without a path, `untrailingslashit` and `rtrim` are not fixed there. A call on input (`basename($_GET['d'])`) is not; a clean call that returns `""` (`trim(' ')`, an unset `getenv()`) is a known miss |
+| `leading` | the input must be at the start of the argument: a fixed prefix makes the call safe, as `WP_PLUGIN_DIR . "/$name"` cannot choose a `phar://` stream. A fixed prefix is a literal (or a run of literals) holding a character no URL scheme has (`/`, `_`, a space) before any `:`, so `'phar' . $x` and `'ph' . 'ar' . $x` are none; a constant; a ternary whose branches both are; a variable assigned one; a property or array key the input never reached (`$this->dir`, `$u['basedir']`), but never a superglobal or request object (`$_COOKIE[...]`, `$_SERVER['HTTP_...']`; `$_SERVER['DOCUMENT_ROOT']` is allowed); a call whose arguments hold no input, even through a sanitizer (`dirname(__FILE__)`, `get_template_directory()`, `strval(intval($x))`, but not `trim(basename($_GET['d']))`); `sprintf` whose format starts with such a literal; a Laravel path helper (`storage_path(...)`); a WordPress URL helper that ends in a path (`admin_url(...)`, `get_permalink(...)`, `rest_url(...)`; `home_url('/...')` and `site_url('/...')` only with a path); `add_query_arg` / `remove_query_arg` whose URL argument is fixed (or absent: the request's own path); `apply_filters` whose filtered value is fixed; `trailingslashit` or `user_trailingslashit` whose first argument is fixed; In the `ssrf`, `open-redirect` and `xss` rules the prefix must also keep the request on a known host: a literal scheme and host followed by `/`, `?` or `#` (`https://api.example.com/...`), a root path whose second character is neither `/` nor `\` (`/account`, not `/` that the input turns into `//evil.com`), or a relative path (`users.php?id=`); `home_url()` without a path, `untrailingslashit` and `rtrim` are not fixed there, and a PHP constant is fixed only when this file defines it (`define('API', 'https://api.example.com/')`) with such a text, or when it names a folder (`__DIR__`, `ABSPATH`, `*_DIR`, `*_PATH`). A call on input (`basename($_GET['d'])`) is not; a clean call that returns `""` (`trim(' ')`, an unset `getenv()`) is a known miss |
 
 `when` and `unless` entries are code fragments matched anywhere in the call's
 arguments, with two refinements:
@@ -259,9 +273,11 @@ XSS rules come one per group of contexts, with an `[[args]] context`:
 
 The engine reads the context from the HTML written before the value, with a
 scanner that follows the page byte by byte (tags, attributes and their quotes,
-`<script>` and `<style>` bodies, JavaScript strings in them): for every `echo`
-and `print` of a PHP block, from the inline HTML before the block; within one
-output, from the literal text joined before each value. `<script type="text/html">`
+`<script>` and `<style>` bodies, JavaScript strings, template literals, comments
+and regular expressions in them): the inline HTML of a PHP file and the literal
+text its `echo` and `print` statements write are fed to it in order, so
+`echo '<a href="'; echo esc_attr($u);` is one tag; within one output, the literal
+text joined before each value decides its context. `<script type="text/html">`
 templates read as HTML.
 
 An escaping call written in the output is judged by the engine's own table of
@@ -270,8 +286,11 @@ Python's `escape` and `escapeHtml` are safe between tags and in quoted
 attributes (`htmlspecialchars` and `htmlentities` in single-quoted ones only with
 `ENT_QUOTES`); `esc_url` in URLs; `esc_url_raw` and `sanitize_url` only in
 double-quoted attributes that are not URLs; `esc_js` in JavaScript strings;
-`wp_json_encode` / `json_encode` in script code outside strings; `urlencode`,
-`rawurlencode` and `quote` everywhere but script code and CSS;
+`wp_json_encode` / `json_encode` in script code outside strings (not with
+`JSON_UNESCAPED_SLASHES` unless `JSON_HEX_TAG` is also given); Tornado's
+`xhtml_escape` between tags and in double-quoted attributes; `urlencode`,
+`rawurlencode` and `quote` everywhere but script code, template literals and CSS
+(`quote` with a `safe=` holding `:` not in URLs);
 `encodeURIComponent` between tags, in double-quoted and unquoted attributes and in
 URLs (it keeps `'`); `wp_kses`, `strip_tags`, `sanitize_text_field` and HTML
 sanitizers only between tags. In another context the escaped value is still the
@@ -283,8 +302,11 @@ input it was given, unless it is an escaper, a number, or a call whose result is
 not the request value: command output (`shell_exec`), file contents
 (`file_get_contents`, `readFile`), counts and hashes, WordPress form helpers
 (`selected`, `checked`), yes-or-no answers (`is_*`, `has_*`), getters (`get_*`,
-`wp_get_*`), template renderers (a name with `render` or `template`), and in PHP a
-method of an object that holds no input (PHP strings have no methods). Input only
+`wp_get_*`), template renderers (a name with `render` or `template`, WordPress walkers), and
+in PHP a method of an object that holds no input (PHP strings have no methods; a
+method's result follows its arguments). A function or method defined in the same
+file is never judged by its name: its summary decides, or, without one, whether an
+argument is the input. Input only
 inside an array argument (`plugins_api('info', ['slug' => $s])`, `$q = $_GET` passed
 on) is a lookup key, not the text returned, except for calls that format or join
 containers (`implode`, `print_r`, `sprintf`, `json_encode`, `JSON.stringify`,
@@ -399,11 +421,13 @@ capped in tokens and time (`engine.Limits`); the time counts every token the
 analysis scans. A file over a cap, or nested deeper than the engine reads (where
 an expression too deep to read counts as user input), returns `ErrLimit`; a
 string or comment that runs to the end of the file returns `ErrPartial`. A
-JavaScript file of at least 32 KB with at least half of its non-blank bytes in lines
-of over 1000 non-blank bytes is minified or bundled code: it is read without those
-long lines and returns `ErrMinified` with what was found (joined with `ErrPartial`
-or `ErrLimit` when the lines read hit those), and the audit lists it as only partly
-read. Both
+JavaScript file of at least 8 KB with at least half of its non-blank bytes in lines
+of over 1000 non-blank bytes is minified or bundled code. It is read like any other
+file, every line of it; when it stops early, `ErrMinified` is joined to `ErrLimit`
+or `ErrPartial`, and the audit marks its findings `generated` and counts them apart.
+Before the analysis, a rule is skipped for a file that holds none of the names of its
+sinks or, outside library mode, of its sources: patterns match token by token, so
+such a file cannot give it a finding. Both
 come with the findings made so far.
 
 What it does not do: follow values across files (input read in a controller and

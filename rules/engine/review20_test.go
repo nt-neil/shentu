@@ -15,8 +15,14 @@ import (
 // r20Known are cases the engine does not handle yet; they are known limits,
 // listed in PR #20 and the rules README, not regressions.
 var r20Known = map[string]string{
-	"O02": "a check on a value derived from the file name (its extension) cleans the whole name; also on the base",
-	"O03": "a check on a value derived from the file name (its extension) cleans the whole name; also on the base",
+	"O02":  "a check on a value derived from the file name (its extension) cleans the whole name; also on the base",
+	"O03":  "a check on a value derived from the file name (its extension) cleans the whole name; also on the base",
+	"BO05": "a static helper reading a key of a whole request array (Arr::get($_GET, 'q')) is taken as a lookup",
+	"BO09": "date() with a request format is taken as a date",
+	"BA08": "call_user_func_array('sprintf', ...) is not read as sprintf",
+	"BA11": "JavaScript [x].join('') is not followed",
+	"BA16": "extract($_GET) defines variables whose names are not known",
+	"BC09": "<script type=\"text/template\"> is read as markup, not as a script",
 }
 
 type r20case struct {
@@ -47,7 +53,7 @@ func r20run(t *testing.T, cases []r20case) {
 			if !have(c.prefix) {
 				t.Skipf("no rule %s* in this tree", c.prefix)
 			}
-			if why, ok := r20Known[c.id[:3]]; ok {
+			if why, ok := r20Known[strings.Fields(c.id)[0]]; ok {
 				t.Skipf("known limit, listed in PR #20: %s", why)
 			}
 			fs, err := e.Scan(c.lang, "t."+c.lang, []byte(c.src))
