@@ -37,8 +37,17 @@ type callState struct {
 type fileState struct {
 	Hash  string      `json:"h"`
 	Own   *passResult `json:"o,omitempty"` // the file on its own (Engine.Scan)
-	Calls *passResult `json:"c,omitempty"` // its calls across files (Project.ScanCallsTimed)
+	Calls *passResult `json:"c,omitempty"` // its calls across files (Project.ScanCallsPart)
+	Part  *partResult `json:"p,omitempty"` // ... when the clock cut them short: the rules done so far
 	Deps  []string    `json:"d,omitempty"` // files its functions' calls were followed into
+}
+
+// partResult is how far following a file's calls got in audits the clock
+// cut short: the rules followed to their end and what they found.
+type partResult struct {
+	Rules []string         `json:"r"`
+	Found []engine.Finding `json:"f,omitempty"`
+	Cut   bool             `json:"c,omitempty"` // a cap cut one of them short
 }
 
 type passResult struct {
@@ -161,7 +170,7 @@ func (st *callState) useDigests(pr *engine.Project, langs []string) {
 		st.Digest[lang] = d
 		for p, fs := range st.Files {
 			if engine.LangOf(p) == lang {
-				fs.Calls, fs.Deps = nil, nil
+				fs.Calls, fs.Part, fs.Deps = nil, nil, nil
 			}
 		}
 	}
@@ -204,7 +213,7 @@ func (st *callState) dropStale(hash map[string]string) map[string]bool {
 	// still holds while the file is unchanged.
 	for f := range bad {
 		if fs := st.Files[f]; fs != nil {
-			fs.Calls = nil
+			fs.Calls, fs.Part = nil, nil
 		}
 	}
 	return bad

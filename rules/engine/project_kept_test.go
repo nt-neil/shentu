@@ -48,3 +48,30 @@ func TestProjectKeptResults(t *testing.T) {
 		t.Error("the second caller of an unread callee is not unsteady")
 	}
 }
+
+// ScanCallsPart leaves out the rules it is told were done, and reports the
+// rules it followed to their end.
+func TestProjectScanCallsPart(t *testing.T) {
+	e := engineForTest(t)
+	files := map[string]string{
+		"a.php": "<?php\nrequire 'b.php';\nrun_cmd($_GET['x']);\n",
+		"b.php": "<?php\nfunction run_cmd($x) {\n\tsystem('ls ' . $x);\n}\n",
+	}
+	read := func(p string) ([]byte, error) { return []byte(files[p]), nil }
+	pr := e.NewProject([]string{"a.php", "b.php"}, read, ProjectOptions{})
+	all, done, cut, timed, err := pr.ScanCallsPart("a.php", []byte(files["a.php"]), nil)
+	if len(all) != 1 || len(done) < 2 || cut || timed || err != nil {
+		t.Fatalf("whole: %v done %v cut %v timed %v err %v", all, done, cut, timed, err)
+	}
+	skip := map[string]bool{}
+	for _, r := range done {
+		if r != all[0].RuleID {
+			skip[r] = true
+		}
+	}
+	pr = e.NewProject([]string{"a.php", "b.php"}, read, ProjectOptions{})
+	rest, done2, _, _, _ := pr.ScanCallsPart("a.php", []byte(files["a.php"]), skip)
+	if !reflect.DeepEqual(rest, all) || !reflect.DeepEqual(done2, []string{all[0].RuleID}) {
+		t.Errorf("the rest: %v done %v, want %v done [%s]", rest, done2, all, all[0].RuleID)
+	}
+}

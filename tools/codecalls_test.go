@@ -19,8 +19,10 @@ type keptAudit struct {
 	t          *testing.T
 	dir, state string
 	own, calls []string
-	cutAfter   int  // > 0: the clock runs out after this many files' calls in one audit
-	cutAll     bool // the clock runs out during every file's calls
+	cutAfter   int        // > 0: the clock runs out after this many files' calls in one audit
+	cutAll     bool       // the clock runs out during every file's calls
+	oneRule    bool       // the clock runs out in each file after one more rule
+	skips      [][]string // the rules each scan was told to leave out
 }
 
 func newKeptAudit(t *testing.T, files map[string]string) *keptAudit {
@@ -36,13 +38,30 @@ func newKeptAudit(t *testing.T, files map[string]string) *keptAudit {
 		k.own = append(k.own, filepath.Base(p))
 		return scan(e, lang, p, b)
 	}
-	projectScan = func(pr *engine.Project, p string, b []byte) ([]engine.Finding, bool, error) {
+	projectScan = func(pr *engine.Project, p string, b []byte, skip map[string]bool) ([]engine.Finding, []string, bool, bool, error) {
 		k.calls = append(k.calls, filepath.Base(p))
-		f, timed, err := calls(pr, p, b)
-		if k.cutAll || k.cutAfter > 0 && len(k.calls) > k.cutAfter {
-			timed = true // as if the clock had run out during this file
+		var sk []string
+		for r := range skip {
+			sk = append(sk, r)
 		}
-		return f, timed, err
+		sort.Strings(sk)
+		k.skips = append(k.skips, sk)
+		f, done, cut, timed, err := calls(pr, p, b, skip)
+		if k.oneRule && len(done) > 1 {
+			keep := done[0] // as if the clock ran out right after this rule
+			var kept []engine.Finding
+			for _, x := range f {
+				if x.RuleID == keep {
+					kept = append(kept, x)
+				}
+			}
+			return kept, done[:1], cut, true, err
+		}
+		if k.cutAll || k.cutAfter > 0 && len(k.calls) > k.cutAfter {
+			// As if the clock had run out during this file, before any rule was done.
+			return nil, nil, false, true, err
+		}
+		return f, done, cut, timed, err
 	}
 	return k
 }
@@ -50,7 +69,7 @@ func newKeptAudit(t *testing.T, files map[string]string) *keptAudit {
 // run audits once and returns the injection findings (base:line rule) and the
 // summary of calls across files ("" when every file's calls were followed).
 func (k *keptAudit) run() (found []string, summary string) {
-	k.own, k.calls = nil, nil
+	k.own, k.calls, k.skips = nil, nil, nil
 	for _, f := range AppCodeAudit(context.Background(), []string{k.dir}, nil).Findings {
 		switch {
 		case f.Kind != "injection":
@@ -180,6 +199,29 @@ func TestAppCodeAuditEveryCallerAgain(t *testing.T) {
 	found, _ := k.run()
 	if !reflect.DeepEqual(k.calls, []string{"a.php", "b.php", "d.php"}) || len(found) == 0 {
 		t.Errorf("after the change: followed %v, found %v", k.calls, found)
+	}
+}
+
+// A file the clock cuts short in every audit still gets done, a rule at a
+// time: each audit goes on from the rules the last ones finished.
+func TestAppCodeAuditResumesWithinAFile(t *testing.T) {
+	whole, _ := newKeptAudit(t, keptFiles).run()
+	k := newKeptAudit(t, keptFiles)
+	k.oneRule = true
+	var got []string
+	grew := true
+	for i := 0; i < 200 && grew; i++ {
+		got, _ = k.run()
+		grew = len(k.calls) > 0
+		if i > 0 && grew && len(k.skips[0]) == 0 {
+			t.Fatalf("audit %d started the file over: %v", i+1, k.skips)
+		}
+	}
+	if grew {
+		t.Fatal("the file was never done")
+	}
+	if !reflect.DeepEqual(got, whole) {
+		t.Errorf("done a rule at a time %v, in one audit %v", got, whole)
 	}
 }
 

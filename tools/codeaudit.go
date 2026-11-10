@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -222,8 +223,8 @@ func auditWorkers() int { return min(runtime.GOMAXPROCS(0), 4) }
 var injectionMaxTime = 2 * time.Minute
 
 var (
-	engineScan  = (*engine.Engine).ScanTimed       // replaced in tests
-	projectScan = (*engine.Project).ScanCallsTimed // replaced in tests
+	engineScan  = (*engine.Engine).ScanTimed      // replaced in tests
+	projectScan = (*engine.Project).ScanCallsPart // replaced in tests
 )
 
 var errPanic = errors.New("engine panic")
@@ -241,13 +242,13 @@ func injectionScan(e *engine.Engine, lang, p string, b []byte) (found []engine.F
 }
 
 // injectionCalls follows one file's calls into the project's other files.
-func injectionCalls(pr *engine.Project, p string, b []byte) (found []engine.Finding, timed bool, err error) {
+func injectionCalls(pr *engine.Project, p string, b []byte, skip map[string]bool) (found []engine.Finding, done []string, cut, timed bool, err error) {
 	defer func() {
 		if recover() != nil {
-			found, timed, err = nil, false, errPanic
+			found, done, cut, timed, err = nil, nil, false, false, errPanic
 		}
 	}()
-	return projectScan(pr, p, b)
+	return projectScan(pr, p, b, skip)
 }
 
 // codeIndexFile is where the index of the scanned code is cached between audits
@@ -552,23 +553,47 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 					break
 				}
 				var k *passResult
+				var part *partResult
 				if fs := st.Files[p]; fs != nil && fs.Hash == hash[p] && !stale[p] {
-					k = fs.Calls
+					k, part = fs.Calls, fs.Part
 				}
 				if k == nil && !cut && !time.Now().After(deadline) && pr.Stopped() == "" {
 					if b, err := read(p); err == nil {
-						found, timed, err := injectionCalls(pr, p, b)
-						if timed || errors.Is(err, errPanic) {
-							addNew(found)      // what it found holds; how far it got does not
-							cut = cut || timed // the clock or the heap ran out: no more this audit
-							continue
+						// A file the clock cut short before goes on from the rules it had done.
+						var skip map[string]bool
+						if part != nil {
+							skip = map[string]bool{}
+							for _, r := range part.Rules {
+								skip[r] = true
+							}
 						}
-						if pr.Unsteady() { // a callee changed during the audit: holds now, not kept
+						found, done, rcut, timed, err := injectionCalls(pr, p, b, skip)
+						if part != nil {
+							found = append(slices.Clone(part.Found), found...)
+							done = append(slices.Clone(part.Rules), done...)
+							rcut = rcut || part.Cut
+						}
+						switch {
+						case errors.Is(err, errPanic):
 							addNew(found)
+							continue
+						case pr.Unsteady(): // a callee changed during the audit: holds now, not kept
+							addNew(found)
+							continue
+						case timed:
+							// The clock or the heap ran out: what the finished rules found
+							// is kept, and the next audit goes on from there.
+							addNew(found)
+							st.entry(p, hash[p]).Part = &partResult{Rules: done, Found: found, Cut: rcut}
+							cut = true
 							continue
 						}
 						k = &passResult{Found: found, Reason: unfinishedReason(err)}
-						st.entry(p, hash[p]).Calls = k
+						if k.Reason == "" && rcut {
+							k.Reason = "calls"
+						}
+						fs := st.entry(p, hash[p])
+						fs.Calls, fs.Part = k, nil
 						now++
 					}
 				}

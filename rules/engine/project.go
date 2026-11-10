@@ -59,6 +59,9 @@ type Project struct {
 	byMachine bool                       // stopped by the clock or the heap: where depends on the machine
 	unsteady  bool                       // the current scan met a file it could not read, or parse in time
 	unread    map[string]bool            // files that could not be read, or parsed in time, since indexed
+	skip      map[string]bool            // ScanCallsPart: rules to leave out
+	part      []string                   // ... rules followed to their end in this scan
+	partCut   bool                       // ... one of them cut short by a cap
 	deps      map[string]map[string]bool // file → files its functions' calls were followed into
 	busy      int                        // summaries asked for while being worked out (cycles across files)
 	relGuess  int                        // relevance asked for while being worked out

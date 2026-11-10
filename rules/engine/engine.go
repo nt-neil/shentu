@@ -190,6 +190,18 @@ func (p *Project) ScanCallsTimed(path string, src []byte) ([]Finding, bool, erro
 	return p.e.scan(LangOf(path), path, src, p, true, false)
 }
 
+// ScanCallsPart is ScanCallsTimed that leaves out the rules in skip, whose
+// calls were followed in an earlier audit, and tells which rules it followed
+// to their end (done): their findings are what it returns, also when the
+// clock cut the scan short (timed), so a file too slow for one audit is done
+// a few rules at a time. cut tells whether a cap cut one of done short.
+func (p *Project) ScanCallsPart(path string, src []byte, skip map[string]bool) (found []Finding, done []string, cut, timed bool, err error) {
+	p.skip, p.part, p.partCut = skip, nil, false
+	defer func() { p.skip, p.part = nil, nil }()
+	found, timed, err = p.e.scan(LangOf(path), path, src, p, true, false)
+	return found, p.part, p.partCut, timed, err
+}
+
 // scan is Scan in all its forms; dedup leaves out what the project returned
 // already, and timed tells whether a clock or the project's heap cap cut it short.
 func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, dedup bool) (_ []Finding, timed bool, _ error) {
@@ -273,6 +285,15 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 			perRule = DefaultLimits.MaxCallWork
 		}
 		for _, r := range ruleList {
+			if proj != nil && proj.skip[r.rule.ID] {
+				continue // followed in an earlier audit (ScanCallsPart)
+			}
+			ruleDone := func() {
+				if proj != nil {
+					proj.part = append(proj.part, r.rule.ID)
+					proj.partCut = proj.partCut || callsCut || b2.limited
+				}
+			}
 			b2.maxWork = b2.work + perRule // each rule's own work cap
 			sc := newSummaries(ff)
 			if proj != nil {
@@ -284,6 +305,7 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 			a := &analysis{r: r, php: lang == "php", py: lang == "python", js: lang == "js", b: b2, kw: keywords[lang], seen: map[loc]bool{}, sc: sc,
 				file: path, proj: proj}
 			if !e.Library && !a.crossNeeded(tree) {
+				ruleDone()
 				continue // no call can change this rule's result: the first pass stands
 			}
 			a.block(tree, state{})
@@ -308,16 +330,19 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 				add(r, direct[r], a.lines)
 				delete(direct, r)
 				b2.hit = false
+				ruleDone()
 				continue
 			}
 			if sc.capped {
 				add(r, direct[r], a.lines)
 				delete(direct, r)
 				callsCut = true
+				ruleDone()
 				continue
 			}
 			add(r, a.lines)
 			finished[r] = true
+			ruleDone()
 		}
 		callsCut = callsCut || b2.hit || b2.limited
 		timed = timed || b2.timeHit
