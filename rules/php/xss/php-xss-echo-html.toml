@@ -85,3 +85,14 @@ function find_handler() {
 	wp_send_json( array( 'ok' => true ) );
 }
 '''
+
+[[samples]]
+kind = "vulnerable"
+note = "a helper of the code base that only shares a sanitizer's name is followed into its body"
+code = '''
+<?php
+function e( $text ) {
+	echo $text;
+}
+e( $_GET['q'] );
+'''

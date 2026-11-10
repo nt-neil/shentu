@@ -841,6 +841,9 @@ func (a *analysis) callVal(st state, s *summary, args [][]Token) val {
 }
 
 // callSinks reports the sinks a call reaches through the callee's parameters.
+// jsonResponders send their argument as JSON and end the request.
+var jsonResponders = map[string]bool{"wp_send_json": true, "wp_send_json_error": true, "wp_send_json_success": true}
+
 func (a *analysis) callSinks(st state, t []Token) {
 	if a.sc == nil {
 		return
@@ -850,10 +853,14 @@ func (a *analysis) callSinks(st state, t []Token) {
 		if s == nil || !s.reachesSink() {
 			continue
 		}
-		// A call the rule names as a sanitizer does not take its arguments into
-		// its body's sinks: wp_send_json echoes, but as JSON, then ends the request.
-		if _, _, _, ok := a.sanitizerAt(st, t, i); ok {
-			continue
+		// A JSON responder the rule lists as a sanitizer does not take its
+		// arguments into its body's sinks: wp_send_json echoes, but as JSON, then
+		// ends the request. Other sanitizer names (e, count) still do, so a helper
+		// of the code base that only shares the name is followed as before.
+		if jsonResponders[t[i].Text] {
+			if _, _, _, ok := a.sanitizerAt(st, t, i); ok {
+				continue
+			}
 		}
 		args := callArgs(t, i+1)
 		for k, p := range a.argIndex(s, args) {
