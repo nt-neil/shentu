@@ -49,24 +49,24 @@ func TestAuditBudget(t *testing.T) {
 		workers       int
 	}{
 		{"2 GB, 2 cores", map[string]string{"proc/meminfo": vps2gb, "proc/loadavg": "0.30 0.2 0.1 1/90 9\n", unit: v2,
-			svc + "cpu.max": "200000 100000\n", svc + "memory.max": "max\n"}, 0, 0, 400000 << 10, 800000 << 10, 1},
+			svc + "cpu.max": "200000 100000\n", svc + "memory.max": "max\n"}, 0, 0, 400000 << 10, 400000 << 10, 1},
 		{"8 GB, 8 cores", map[string]string{"proc/meminfo": "MemAvailable:    6500000 kB\n", unit: v2,
-			svc + "cpu.max": "800000 100000\n"}, 0, 0, 1 << 30, 2 << 30, 4},
+			svc + "cpu.max": "800000 100000\n"}, 0, 0, 1 << 30, 1 << 30, 4},
 		{"systemd MemoryMax=512M", map[string]string{"proc/meminfo": "MemAvailable:    6500000 kB\n", unit: v2,
-			svc + "memory.max": "536870912\n", "cgroup/system.slice/memory.max": "max\n"}, 0, 0, 256 * mib, 384 * mib, 4},
+			svc + "memory.max": "536870912\n", "cgroup/system.slice/memory.max": "max\n"}, 0, 0, 256 * mib, 256 * mib, 4},
 		{"a parent cgroup's limit counts", map[string]string{unit: v2, "cgroup/system.slice/memory.max": "268435456\n",
-			svc + "memory.max": "max\n"}, 0, 0, 128 * mib, 192 * mib, 4},
+			svc + "memory.max": "max\n"}, 0, 0, 128 * mib, 128 * mib, 4},
 		{"configured memory stays under MemoryMax", map[string]string{unit: v2, svc + "memory.max": "536870912\n"},
-			2048, 0, 256 * mib, 384 * mib, 4},
-		{"configured memory without a cgroup", map[string]string{"proc/meminfo": vps2gb}, 300, 0, 300 * mib, 600 * mib, 4},
+			2048, 0, 256 * mib, 256 * mib, 4},
+		{"configured memory without a cgroup", map[string]string{"proc/meminfo": vps2gb}, 300, 0, 300 * mib, 300 * mib, 4},
 		{"configured workers stay under CPUQuota", map[string]string{unit: v2, svc + "cpu.max": "200000 100000\n"},
-			0, 8, 1 << 30, 2 << 30, 2},
+			0, 8, 1 << 30, 1 << 30, 2},
 		{"load above the CPUs", map[string]string{unit: v2, svc + "cpu.max": "200000 100000\n", "proc/loadavg": "2.50 1 1 1/90 9\n"},
-			0, 2, 1 << 30, 2 << 30, 1},
+			0, 2, 1 << 30, 1 << 30, 1},
 		{"cgroup v1", map[string]string{"proc/self/cgroup": "5:memory:/shentu\n4:cpu,cpuacct:/shentu\n",
 			"cgroup/memory/shentu/memory.limit_in_bytes": "1073741824\n", "cgroup/memory/memory.limit_in_bytes": "9223372036854771712\n",
 			"cgroup/cpu,cpuacct/shentu/cpu.cfs_quota_us": "150000\n", "cgroup/cpu,cpuacct/shentu/cpu.cfs_period_us": "100000\n"},
-			0, 0, 512 * mib, 768 * mib, 1},
+			0, 0, 512 * mib, 512 * mib, 1},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -81,9 +81,10 @@ func TestAuditBudget(t *testing.T) {
 	}
 }
 
-// Under a cgroup limit of 512 MB the whole audit, the process included, stays
-// within it: calls stop crossing files at the heap budget, the GC is held to
-// the soft limit, and the audit still says how far it got.
+// Under a cgroup limit of 512 MB (a heap budget of 256 MB) the whole audit,
+// the process included, stays within the budget with a fifth on top for the
+// runtime: calls stop crossing files at the heap budget, the GC is held to
+// the budget, and the audit still says how far it got.
 func TestAuditMemoryUnderCgroup(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds and scans a large project")
@@ -115,8 +116,11 @@ func TestAuditMemoryUnderCgroup(t *testing.T) {
 	res := AppCodeAudit(context.Background(), []string{dir}, nil)
 	close(done)
 
-	if p := peak.Load(); p > 512*mib {
-		t.Errorf("memory in use peaked at %d MiB, over the 512 MiB cgroup limit", p/mib)
+	if res.MemoryBudgetMB != 256 || res.MemoryLimitMB != 256 {
+		t.Errorf("budget %d MiB, Go memory limit %d MiB, want 256 and 256", res.MemoryBudgetMB, res.MemoryLimitMB)
+	}
+	if p := peak.Load(); p > 256*mib*12/10 {
+		t.Errorf("memory in use peaked at %d MiB, over the 256 MiB budget and a fifth", p/mib)
 	} else {
 		t.Logf("memory in use peaked at %d MiB", p/mib)
 	}

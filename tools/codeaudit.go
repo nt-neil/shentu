@@ -83,6 +83,10 @@ type CodeAudit struct {
 	Files     int           `json:"files_read"`
 	Findings  []CodeFinding `json:"findings"`
 	Truncated bool          `json:"truncated,omitempty"`
+	// The memory the audit kept to: its heap budget and Go's memory limit
+	// while it ran (MiB).
+	MemoryBudgetMB int `json:"memory_budget_mb"`
+	MemoryLimitMB  int `json:"go_memory_limit_mb"`
 }
 
 const (
@@ -390,6 +394,7 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 		debug.SetMemoryLimit(int64(budget.limit))
 		defer debug.SetMemoryLimit(prev)
 	}
+	res.MemoryBudgetMB, res.MemoryLimitMB = int(budget.heap>>20), int(debug.SetMemoryLimit(-1)>>20)
 	for _, root := range roots {
 		base := strings.Count(filepath.Clean(root), "/")
 		filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
