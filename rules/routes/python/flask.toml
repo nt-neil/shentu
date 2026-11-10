@@ -1,0 +1,34 @@
+[[route]]
+id = "flask-route"
+lang = "python"
+framework = "flask"
+title = "A view's parameters are the URL's <placeholders>"
+decorator = ["*.route", "*.get", "*.post", "*.put", "*.patch", "*.delete"]
+template = true
+requires = ["flask"]
+note = "Converters int, float and uuid give values that cannot carry an attack and are left out."
+refs = ["https://flask.palletsprojects.com/en/stable/quickstart/#variable-rules"]
+
+[[route.samples]]
+kind = "vulnerable"
+code = '''
+from flask import Flask
+import subprocess
+app = Flask(__name__)
+
+@app.route('/ping/<host>')
+def ping(host):
+    return subprocess.check_output('ping -c 1 ' + host, shell=True)
+'''
+
+[[route.samples]]
+kind = "safe"
+code = '''
+from flask import Flask
+import subprocess
+app = Flask(__name__)
+
+@app.route('/ping/<int:count>')
+def ping(count):
+    return subprocess.check_output('ping -c %d localhost' % count, shell=True)
+'''

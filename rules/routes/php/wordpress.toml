@@ -1,0 +1,131 @@
+# WordPress hands request data to plugin and theme functions through hooks.
+
+[[route]]
+id = "wp-shortcode"
+lang = "php"
+framework = "wordpress"
+title = "Shortcode attributes and content are written by any user who can edit a post"
+register = ["add_shortcode"]
+handler = 2
+params = [1, 2]
+note = "Contributors and up write [tag attr=\"...\"]content[/tag] in a post; the callback gets $atts and $content."
+refs = ["https://developer.wordpress.org/reference/functions/add_shortcode/"]
+
+[[route.samples]]
+kind = "vulnerable"
+code = '''<?php
+add_shortcode('box', 'box_render');
+function box_render($atts, $content = '') {
+	global $wpdb;
+	return $wpdb->get_var("SELECT title FROM {$wpdb->prefix}boxes WHERE slug = '" . $atts['slug'] . "'");
+}
+'''
+
+[[route.samples]]
+kind = "safe"
+code = '''<?php
+add_shortcode('box', 'box_render');
+function box_render($atts, $content = '') {
+	global $wpdb;
+	return $wpdb->get_var($wpdb->prepare("SELECT title FROM {$wpdb->prefix}boxes WHERE slug = %s", $atts['slug']));
+}
+'''
+
+[[route]]
+id = "wp-rest-route"
+lang = "php"
+framework = "wordpress"
+title = "A REST route's callback gets the request ($request['id'], $request->get_param())"
+register = ["register_rest_route"]
+handler = 3
+key = "callback"
+params = [1]
+refs = ["https://developer.wordpress.org/reference/functions/register_rest_route/"]
+
+[[route.samples]]
+kind = "vulnerable"
+code = '''<?php
+add_action('rest_api_init', function () {
+	register_rest_route('shop/v1', '/item', array('methods' => 'GET', 'callback' => 'shop_item', 'permission_callback' => '__return_true'));
+});
+function shop_item($request) {
+	global $wpdb;
+	return $wpdb->get_results("SELECT * FROM {$wpdb->prefix}items WHERE id = " . $request['id']);
+}
+'''
+
+[[route.samples]]
+kind = "safe"
+code = '''<?php
+add_action('rest_api_init', function () {
+	register_rest_route('shop/v1', '/item', array('methods' => 'GET', 'callback' => 'shop_item', 'permission_callback' => '__return_true'));
+});
+function shop_item($request) {
+	global $wpdb;
+	return $wpdb->get_results($wpdb->prepare("SELECT * FROM {$wpdb->prefix}items WHERE id = %d", $request['id']));
+}
+'''
+
+[[route]]
+id = "wp-widget-instance"
+lang = "php"
+framework = "wordpress"
+title = "A widget's settings ($instance) come from the widget form"
+extends = "WP_Widget"
+method = "widget"
+params = [2]
+note = "Users who can edit widgets (administrators; on multisite also site admins without unfiltered_html) set them."
+refs = ["https://developer.wordpress.org/reference/classes/wp_widget/widget/"]
+
+[[route.samples]]
+kind = "vulnerable"
+code = '''<?php
+class Note_Widget extends WP_Widget {
+	public function widget($args, $instance) {
+		echo shell_exec('fortune ' . $instance['topic']);
+	}
+}
+'''
+
+[[route.samples]]
+kind = "safe"
+code = '''<?php
+class Note_Widget extends WP_Widget {
+	public function widget($args, $instance) {
+		echo shell_exec('fortune ' . escapeshellarg($instance['topic']));
+	}
+}
+'''
+
+[[route]]
+id = "elementor-widget-settings"
+lang = "php"
+framework = "wordpress"
+title = "An Elementor widget's settings are written by any user who can edit with Elementor"
+sources = ["get_settings_for_display(", "get_settings("]
+note = "Elementor widgets (render()) read their controls with get_settings_for_display(); contributors and up set them."
+refs = ["https://developers.elementor.com/docs/widgets/widget-rendering/"]
+
+[[route.samples]]
+kind = "vulnerable"
+code = '''<?php
+class Box_Widget extends \Elementor\Widget_Base {
+	protected function render() {
+		global $wpdb;
+		$s = $this->get_settings_for_display();
+		echo $wpdb->get_var("SELECT name FROM {$wpdb->prefix}teams WHERE id = " . $s['team']);
+	}
+}
+'''
+
+[[route.samples]]
+kind = "safe"
+code = '''<?php
+class Box_Widget extends \Elementor\Widget_Base {
+	protected function render() {
+		global $wpdb;
+		$s = $this->get_settings_for_display();
+		echo $wpdb->get_var("SELECT name FROM {$wpdb->prefix}teams WHERE id = " . absint($s['team']));
+	}
+}
+'''

@@ -1,0 +1,34 @@
+[[route]]
+id = "fastapi-route"
+lang = "python"
+framework = "fastapi"
+title = "A path operation's parameters are the request's path, query, body, header, cookie and form values"
+decorator = ["*.get", "*.post", "*.put", "*.patch", "*.delete", "*.api_route", "*.websocket"]
+requires = ["fastapi"]
+exclude = ["Depends", "Security", "BackgroundTasks", "Request", "Response", "WebSocket"]
+note = "Every parameter of a path operation is read from the request (Query, Path, Body, Form, Header, Cookie, File, Annotated[...]) except dependencies; int and bool annotations cannot carry an attack."
+refs = ["https://fastapi.tiangolo.com/tutorial/query-params/", "https://fastapi.tiangolo.com/tutorial/path-params/"]
+
+[[route.samples]]
+kind = "vulnerable"
+code = '''
+from fastapi import FastAPI, Query
+import subprocess
+app = FastAPI()
+
+@app.get('/lookup')
+def lookup(domain: str = Query(...)):
+    return subprocess.run('nslookup ' + domain, shell=True)
+'''
+
+[[route.samples]]
+kind = "safe"
+code = '''
+from fastapi import FastAPI, Query
+import subprocess
+app = FastAPI()
+
+@app.get('/lookup')
+def lookup(domain: str = Query(...)):
+    return subprocess.run(['nslookup', '--', domain])
+'''

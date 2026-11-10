@@ -63,7 +63,7 @@ type Sample struct {
 func Load() ([]Rule, error) {
 	var out []Rule
 	err := fs.WalkDir(files, ".", func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".toml") {
+		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".toml") || strings.HasPrefix(path, "routes/") {
 			return err
 		}
 		b, err := files.ReadFile(path)
@@ -86,6 +86,74 @@ func Load() ([]Rule, error) {
 		}
 		r.File = path
 		out = append(out, r)
+		return nil
+	})
+	return out, err
+}
+
+// Route is a framework's route model (rules/routes/<lang>/<framework>.toml):
+// how the framework hands request data to the application's own functions,
+// so that their parameters count as input for every rule of the language,
+// without each rule listing them as sources.
+//
+// A handler is found three ways: a call registering it (Register: the
+// handler is argument Handler, or the value of Key in that argument);
+// a decorator above it (Decorator, Python); or a method of that name in a
+// class extending Extends. Its parameters carrying input are Params (from
+// 1; empty: all), or with Template only those named in the route's path
+// (the first argument: Flask <name>, FastAPI and Laravel {name}); Members
+// limits the input to those members of the parameter (Express req.query).
+type Route struct {
+	ID        string   `toml:"id"`
+	Lang      string   `toml:"lang"`
+	Framework string   `toml:"framework"`
+	Title     string   `toml:"title"`
+	Register  []string `toml:"register"`  // calls registering a handler: add_shortcode, Route::get, *.get (any receiver)
+	Decorator []string `toml:"decorator"` // decorators marking the function under them: *.route
+	Extends   string   `toml:"extends"`   // with Method: a method of a class extending this one (WP_Widget::widget)
+	Method    string   `toml:"method"`
+	Handler   int      `toml:"handler"`  // the argument (from 1) holding the handler; -1: the last
+	Key       string   `toml:"key"`      // the handler is this key of that argument (register_rest_route's 'callback')
+	Path      bool     `toml:"path"`     // the call counts only when its first argument is a path ('/...')
+	Params    []int    `toml:"params"`   // the handler's parameters (from 1) carrying input; empty: all
+	Template  bool     `toml:"template"` // only the parameters the path template names
+	Members   []string `toml:"members"`  // only these members of the parameters (query, params, body)
+	Requires  []string `toml:"requires"` // the model applies to a file naming one of these (an import: fastapi)
+	Exclude   []string `toml:"exclude"`  // a parameter declared with one of these is no input (Depends)
+	Bound     bool     `toml:"bound"`    // a parameter declared with a class type is an object the framework looked up (Laravel route model binding), no input
+	Sources   []string `toml:"sources"`  // further sources for every rule of the language (get_settings_for_display)
+	Note      string   `toml:"note"`
+	Refs      []string `toml:"refs"`
+	Samples   []Sample `toml:"samples"`
+
+	File string `toml:"-"`
+}
+
+// LoadRoutes parses the route models. As with rules, unknown keys are an error.
+func LoadRoutes() ([]Route, error) {
+	var out []Route
+	err := fs.WalkDir(files, "routes", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".toml") {
+			return err
+		}
+		b, err := files.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		var f struct {
+			Route []Route `toml:"route"`
+		}
+		md, err := toml.Decode(string(b), &f)
+		if err != nil {
+			return fmt.Errorf("%s: %w", path, err)
+		}
+		if extra := md.Undecoded(); len(extra) > 0 {
+			return fmt.Errorf("%s: unknown keys %v", path, extra)
+		}
+		for i := range f.Route {
+			f.Route[i].File = path
+		}
+		out = append(out, f.Route...)
 		return nil
 	})
 	return out, err

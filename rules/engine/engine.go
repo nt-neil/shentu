@@ -44,6 +44,8 @@ type Engine struct {
 	// tree is itself a package or library whose callers are not part of the
 	// scan; it is off for applications and for the server patrol.
 	Library bool
+
+	routes map[string][]*croute // route models by language (routes.go)
 }
 
 type crule struct {
@@ -64,13 +66,20 @@ type argCond struct {
 
 // New compiles rules. A pattern that does not lex as code of its language is an error.
 func New(rs []rules.Rule) (*Engine, error) {
-	e := &Engine{byLang: map[string][]*crule{}, Limits: DefaultLimits}
+	e := &Engine{byLang: map[string][]*crule{}, Limits: DefaultLimits, routes: map[string][]*croute{}}
 	for _, r := range rs {
 		c, err := compileRule(r)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", r.ID, err)
 		}
 		e.byLang[r.Lang] = append(e.byLang[r.Lang], c)
+	}
+	routes, err := rules.LoadRoutes()
+	if err == nil {
+		err = e.compileRoutes(routes)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("route models: %w", err)
 	}
 	return e, nil
 }
@@ -228,6 +237,7 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 	}
 	tree := parse(lang, toks, b)
 	ff := newFileFuncs(collectFuncs(tree, lang), lang)
+	routeFns := e.handlers(lang, toks, tree, ff) // functions a framework calls with request data (routes.go)
 	if proj != nil {
 		proj.keep(path, &fileCtx{lang: lang, tree: tree, ff: ff, tokens: len(toks)})
 	}
@@ -259,12 +269,14 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 	direct := map[*crule][]loc{}
 	for _, r := range rs {
 		hs := hasSink(r, toks)
-		if !hs && (proj == nil || !hasSource(r, toks)) {
+		// In a project a file without a sink may pass input, its own or a route
+		// handler's parameters, to another file's sink.
+		if !hs && (proj == nil || !hasSource(r, toks) && len(routeFns) == 0) {
 			continue
 		}
 		ruleList = append(ruleList, r)
 		if hs && !callsOnly {
-			a := &analysis{r: r, php: lang == "php", py: lang == "python", js: lang == "js", b: b, kw: keywords[lang], seen: map[loc]bool{}, file: path}
+			a := &analysis{r: r, php: lang == "php", py: lang == "python", js: lang == "js", b: b, kw: keywords[lang], seen: map[loc]bool{}, file: path, routes: routeFns}
 			a.block(tree, state{})
 			direct[r] = a.lines
 		}
@@ -312,14 +324,14 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 				proj.sums[r.rule.ID+"\x00"+path] = sc
 			}
 			a := &analysis{r: r, php: lang == "php", py: lang == "python", js: lang == "js", b: b2, kw: keywords[lang], seen: map[loc]bool{}, sc: sc,
-				file: path, proj: proj}
+				file: path, proj: proj, routes: routeFns}
 			if !e.Library && !a.crossNeeded(tree) {
 				ruleDone()
 				continue // no call can change this rule's result: the first pass stands
 			}
 			a.block(tree, state{})
 			if e.Library && libClasses[r.rule.Class] && !testPath(path) && !b2.hit {
-				l := &analysis{r: r, php: a.php, py: a.py, js: a.js, b: b2, kw: a.kw, seen: a.seen, sc: sc, lib: true, file: path, proj: proj}
+				l := &analysis{r: r, php: a.php, py: a.py, js: a.js, b: b2, kw: a.kw, seen: a.seen, sc: sc, lib: true, file: path, proj: proj, routes: routeFns}
 				l.block(tree, state{})
 				a.lines = append(a.lines, l.lines...)
 			}
