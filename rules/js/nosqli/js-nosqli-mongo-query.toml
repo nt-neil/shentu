@@ -5,8 +5,8 @@ cwe = "CWE-943"
 severity = "high"
 tier = "info"
 title = "Request data placed in a MongoDB query without forcing it to a string"
-frameworks = ["express", "nestjs", "nextjs"]
-sources = ["req.body", "req.query", "@Query(", "@Body(", "@Req(", "^request.json(", "^req.json("]
+frameworks = ["express", "nestjs", "nextjs", "koa", "fastify", "hapi"]
+sources = ["req.body", "req.query", "@Query(", "@Body(", "@Req(", "^request.json(", "^req.json(", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload"]
 sinks = [".findOne(", ".find(", ".findOneAndUpdate(", ".findOneAndDelete(", ".updateOne(", ".updateMany(", ".deleteOne(", ".deleteMany(", ".countDocuments(", ".exists(", "$where"]
 sanitizers = ["String(", ".toString(", "mongoSanitize(", "sanitize(", "parseInt(", "ObjectId(", "typeof"]
 fix = "Convert each value to the type the field holds (String(), Number()) or reject non-strings (typeof x !== \"string\") before it goes into the filter; enable sanitizeFilter in Mongoose; never build $where from input."

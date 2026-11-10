@@ -5,8 +5,8 @@ cwe = "CWE-918"
 severity = "high"
 tier = "info"
 title = "Server fetches a URL taken from the request"
-frameworks = ["express", "nestjs", "nextjs"]
-sources = ["req.query", "req.body", "req.params", "req.headers", "@Query(", "@Body(", "@Param(", "@Headers(", "@Req(", "req.originalUrl", "^request.nextUrl", "^req.nextUrl", "^request.url", "^req.url", "^searchParams", "^request.json(", "^req.json(", "^request.text(", "^req.text(", "^request.formData(", "^req.formData(", "^formData.get(", "req.get(", "req.header(", "^headers().get("]
+frameworks = ["express", "nestjs", "nextjs", "koa", "fastify", "hapi"]
+sources = ["req.query", "req.body", "req.params", "req.headers", "@Query(", "@Body(", "@Param(", "@Headers(", "@Req(", "req.originalUrl", "^request.nextUrl", "^req.nextUrl", "^request.url", "^req.url", "^searchParams", "^request.json(", "^req.json(", "^request.text(", "^req.text(", "^request.formData(", "^req.formData(", "^formData.get(", "req.get(", "req.header(", "^headers().get(", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload", "ctx.params", "request.params", "ctx.headers", "request.headers", "ctx.request.header", "ctx.request.headers", "ctx.get("]
 sinks = ["fetch(", "axios(", "axios.get(", "axios.post(", "axios.put(", "axios.delete(", "axios.head(", "got(", "got.get(", "got.post(", "http.get(", "https.get(", "http.request(", "https.request(", "needle(", "superagent.get("]
 sanitizers = ["parseInt(", "encodeURIComponent("]
 fix = "Keep the scheme and host fixed and take only an encoded path or id from the request, or accept only URLs from an allowlist. If you parse the URL to check its host, build the request from the checked host (new URL(input) -> allowed host -> 'https://' + host + path), not from the parsed input object: a check on url.hostname is not recognised as cleaning url itself. Make sure the host resolves to a public address."
@@ -115,5 +115,43 @@ app.get("/partner", async (req, res) => {
   if (!host) return res.sendStatus(400);
   const r = await fetch("https://" + host + "/v2/" + encodeURIComponent(asked.pathname.slice(1)));
   res.json(await r.json());
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "Koa: ctx.request.query"
+code = '''
+router.get("/preview", async (ctx) => {
+  const r = await fetch(ctx.request.query.url);
+  ctx.body = await r.text();
+});
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+router.get("/preview", async (ctx) => {
+  const r = await fetch("https://cdn.example.com/" + encodeURIComponent(ctx.request.query.id));
+  ctx.body = await r.text();
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "Fastify: request.query"
+code = '''
+fastify.get("/fetch", async (request, reply) => {
+  const r = await axios.get(request.query.target);
+  return r.data;
+});
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+fastify.get("/fetch", async (request, reply) => {
+  const r = await axios.get("https://api.example.com/items/" + parseInt(request.query.id, 10));
+  return r.data;
 });
 '''

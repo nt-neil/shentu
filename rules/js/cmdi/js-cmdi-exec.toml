@@ -4,8 +4,8 @@ class = "cmdi"
 cwe = "CWE-78"
 severity = "critical"
 title = "Untrusted value placed into a command string run by exec/execSync"
-frameworks = ["express", "nestjs", "nextjs"]
-sources = ["req.query", "req.body", "req.params", "req.headers", "req.file", "originalname", "@Query(", "@Body(", "@Param(", "@Headers(", "@Req(", "req.originalUrl", "^request.nextUrl", "^req.nextUrl", "^request.url", "^req.url", "^searchParams", "^request.json(", "^req.json(", "^request.text(", "^req.text(", "^request.formData(", "^req.formData(", "^formData.get(", "req.get(", "req.header(", "^headers().get("]
+frameworks = ["express", "nestjs", "nextjs", "koa", "fastify", "hapi"]
+sources = ["req.query", "req.body", "req.params", "req.headers", "req.file", "originalname", "@Query(", "@Body(", "@Param(", "@Headers(", "@Req(", "req.originalUrl", "^request.nextUrl", "^req.nextUrl", "^request.url", "^req.url", "^searchParams", "^request.json(", "^req.json(", "^request.text(", "^req.text(", "^request.formData(", "^req.formData(", "^formData.get(", "req.get(", "req.header(", "^headers().get(", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload", "ctx.params", "request.params", "ctx.headers", "request.headers", "ctx.request.header", "ctx.request.headers", "ctx.get("]
 sinks = ["exec(", "execSync(", ".execSync(", "child_process.exec(", "childProcess.exec(", "cp.exec(", "require('child_process').exec(", "shell.exec("]
 sanitizers = ["execFile(", "execFileSync(", "spawn("]
 fix = "Use execFile or spawn with an argument array (no shell) so the value is one argument; never build a command string from input."
@@ -178,4 +178,38 @@ code = '''
 export async function GET() {
   execFileSync("locale-gen", ["--", String(headers().get("x-locale"))]);
 }
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "Fastify: request.body"
+code = '''
+fastify.post("/convert", async (request, reply) => {
+  exec(`convert ${request.body.file} out.png`, () => reply.send({ ok: true }));
+});
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+fastify.post("/convert", async (request, reply) => {
+  execFile("convert", [String(request.body.file), "out.png"], () => reply.send({ ok: true }));
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "Koa: a request header"
+code = '''
+router.get("/trace", async (ctx) => {
+  ctx.body = execSync("traceroute " + ctx.headers["x-target"]).toString();
+});
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+router.get("/trace", async (ctx) => {
+  ctx.body = execFileSync("traceroute", ["--", String(ctx.headers["x-target"])]).toString();
+});
 '''
