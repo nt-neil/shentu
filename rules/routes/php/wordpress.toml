@@ -108,8 +108,8 @@ lang = "php"
 framework = "wordpress"
 title = "An attachment's path and metadata, looked up by its id, are what WordPress stored, not the request's input"
 clears = ["get_attached_file(", "wp_get_original_image_path(", "wp_get_attachment_metadata(", "get_post_mime_type(", "wp_get_attachment_url("]
-clears_for = ["path-traversal", "deserialization", "ssrf"]
-note = "A request may choose which attachment (its id); the file's path, URL, metadata and type were written by WordPress when the file was uploaded, so for a path, a phar:// wrapper or a fetch of the site's own file they are no longer the request's input. Only for those classes: post meta, a comment or a user field may hold what an attacker wrote, and are not cleared."
+clears_for = ["path-traversal", "deserialization"]
+note = "A request may choose which attachment (its id); the file's path, URL, metadata and type were written by WordPress when the file was uploaded, so for a path or a phar:// wrapper they are no longer the request's input. Only for those classes: post meta, a comment or a user field may hold what an attacker wrote, and are not cleared."
 refs = ["https://developer.wordpress.org/reference/functions/get_attached_file/"]
 
 [[route.samples]]
@@ -131,5 +131,31 @@ add_action('rest_api_init', function () {
 });
 function media_raw($request) {
 	return file_get_contents(get_attached_file($request['id']));
+}
+'''
+
+[[route]]
+id = "wp-attachment-local-path"
+lang = "php"
+framework = "wordpress"
+applies = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "$_SERVER", "$_FILES", "$request"]
+title = "An attachment's file path, looked up by its id, is a local file WordPress wrote: no URL to fetch"
+clears = ["get_attached_file(", "wp_get_original_image_path("]
+clears_for = ["ssrf"]
+note = "Only the local paths: an attachment's URL (wp_get_attachment_url) may be rewritten by a plugin to another host (offloaded media), so fetching it stays an SSRF finding."
+
+[[route.samples]]
+kind = "vulnerable"
+code = '''<?php
+function fetch_media() {
+	return wp_remote_get(wp_get_attachment_url($_GET['id']));
+}
+'''
+
+[[route.samples]]
+kind = "safe"
+code = '''<?php
+function fetch_media() {
+	return file_get_contents(get_attached_file($_GET['id']));
 }
 '''

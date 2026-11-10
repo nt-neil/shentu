@@ -39,7 +39,7 @@ func TestRouteSamples(t *testing.T) {
 			}
 			switch s.Kind {
 			case "vulnerable":
-				if len(fs) == 0 {
+				if len(fs) == 0 && !missingClasses(e, r) {
 					t.Errorf("%s sample %d (vulnerable): not reported", r.ID, i)
 				}
 				if len(r.Sources) == 0 {
@@ -213,4 +213,19 @@ func TestRouteClearsForTheirClasses(t *testing.T) {
 	if fs, _ := e.Scan("php", "a.php", []byte(query)); len(fs) == 0 {
 		t.Error("query: the clear is not for SQL")
 	}
+}
+
+// missingClasses reports whether none of the rule classes a model's clears
+// are for exists in this rule set (ssrf rules come with integ): its
+// vulnerable sample cannot be reported here.
+func missingClasses(e *Engine, r rules.Route) bool {
+	if len(r.ClearsFor) == 0 {
+		return false
+	}
+	for _, cr := range e.byLang[r.Lang] {
+		if slices.Contains(r.ClearsFor, cr.rule.Class) {
+			return false
+		}
+	}
+	return true
 }
