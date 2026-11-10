@@ -460,7 +460,7 @@ func TestHeldOut(t *testing.T) {
 		{"QB4 Markup format", "python", "@app.get('/n')\ndef n():\n    return Markup('<b>{}</b>'.format(request.args['n']))\n", true, ""},
 		{"QB5 HttpResponseRedirect next", "python", "def v(request):\n    return HttpResponseRedirect(request.GET.get('next', '/'))\n", true, ""},
 		{"QB6 pymongo $where concat", "python", "@app.get('/u')\ndef u():\n    return list(db.users.find({'$where': \"this.name == '\" + request.json['n'] + \"'\"}))\n", true, ""},
-		{"QB7 ldap3 keyword json", "python", "@app.post('/u')\ndef u():\n    uid = request.json['uid']\n    conn.search('dc=example,dc=com', search_filter=f'(uid={uid})')\n    return 'ok'\n", true, "ldap3 search_filter= by keyword: the rule waits until the engine can pick an argument by name (input only in attributes= must not count)"},
+		{"QB7 ldap3 keyword json", "python", "@app.post('/u')\ndef u():\n    uid = request.json['uid']\n    conn.search('dc=example,dc=com', search_filter=f'(uid={uid})')\n    return 'ok'\n", true, ""},
 		{"QB8 lxml parse upload, lxml 5+ default parser", "python", "@app.post('/x')\ndef x():\n    doc = etree.parse(request.files['doc'])\n    return doc.getroot().tag\n", false, ""},
 		{"QB9 sax external entities on", "python", "p = xml.sax.make_parser()\np.setFeature(xml.sax.handler.feature_external_ges, True)\n", true, ""},
 		{"QB10 tarfile upload extractall", "python", "@app.post('/t')\ndef t():\n    tarfile.open(fileobj=request.files['t']).extractall('/srv/data')\n    return 'ok'\n", true, ""},
@@ -470,7 +470,7 @@ func TestHeldOut(t *testing.T) {
 		{"QB14 pandas eval", "python", "@app.get('/e')\ndef e():\n    return str(pd.eval(request.args['e']))\n", true, ""},
 		{"QB15 format_html percent", "python", "def v(request):\n    return HttpResponse(format_html('<i>%s</i>' % request.GET['x']))\n", true, ""},
 		{"QB16 ET.fromstring flask, expat 2.4.1+ refuses entity expansion", "python", "@app.post('/x')\ndef x():\n    return ET.fromstring(request.data).tag\n", false, ""},
-		{"QB17 extra with params", "python", "def v(request):\n    return Item.objects.extra(where=['name = %s'], params=[request.GET['n']])\n", false, "values passed with params= are not told apart from where= SQL text: the engine cannot pick an argument by keyword name (asked of the engine)"},
+		{"QB17 extra with params", "python", "def v(request):\n    return Item.objects.extra(where=['name = %s'], params=[request.GET['n']])\n", false, ""},
 		{"QB18 redirect checked", "python", "def v(request):\n    nxt = request.GET.get('next', '/')\n    if not url_has_allowed_host_and_scheme(nxt, allowed_hosts={request.get_host()}):\n        nxt = '/'\n    return HttpResponseRedirect(nxt)\n", false, ""},
 		{"QB19 mark_safe escaped", "python", "def v(request):\n    return HttpResponse(mark_safe('<b>' + escape(request.GET['n']) + '</b>'))\n", false, ""},
 		{"QB20 ldap3 escaped inline", "python", "@app.post('/u')\ndef u():\n    conn.search('dc=example,dc=com', search_filter=f\"(uid={escape_filter_chars(request.json['uid'])})\")\n    return 'ok'\n", false, ""},
@@ -496,6 +496,15 @@ func TestHeldOut(t *testing.T) {
 		{"PC7 frame filename not an upload", "python", "def where():\n    frame = inspect.stack()[1]\n    with open(frame.filename) as src:\n        return src.readline()\n", false, ""},
 		{"PC8 Image.open form path", "python", "@app.post('/thumb')\ndef thumb():\n    img = Image.open(request.form['path'])\n    return str(img.size)\n", true, ""},
 		{"PC9 Image.open uploaded bytes", "python", "@app.post('/thumb')\ndef thumb():\n    img = Image.open(io.BytesIO(request.files['img'].read()))\n    return str(img.size)\n", false, ""},
+		// Python lane, batch 4: arguments by keyword name, route parameters as input.
+		{"QD1 extra where flask route param", "python", "from flask import Flask\napp = Flask(__name__)\n\n@app.route('/t/<tag>')\ndef t(tag):\n    return str(list(Post.objects.extra(where=[\"tag = '\" + tag + \"'\"])))\n", true, ""},
+		{"QD2 extra where params keyword only", "python", "def v(request):\n    return Post.objects.extra(params=[request.GET['t']], where=['tag = %s'])\n", false, ""},
+		{"QD3 extra select from input", "python", "def v(request):\n    return Post.objects.extra(select={'x': request.GET['e']})\n", true, ""},
+		{"QD4 ldap3 filter fastapi param", "python", "from fastapi import FastAPI\napp = FastAPI()\n\n@app.get('/u')\ndef u(uid: str):\n    conn.search('dc=t', search_filter='(uid=' + uid + ')')\n    return conn.entries\n", true, ""},
+		{"QD5 ldap3 attributes only", "python", "@app.get('/u')\ndef u():\n    conn.search('dc=t', search_filter='(uid=admin)', attributes=[request.args['a']])\n    return 'ok'\n", false, ""},
+		{"QD6 paged_search keyword filter", "python", "@app.get('/d')\ndef d():\n    return list(conn.extend.standard.paged_search(search_base='dc=t', search_filter='(cn=' + request.args['q'] + ')'))\n", true, ""},
+		{"QD7 fastapi int param", "python", "from fastapi import FastAPI\napp = FastAPI()\n\n@app.get('/n')\ndef n(page: int):\n    return Post.objects.extra(where=['id > %d' % page])\n", false, ""},
+		{"QD8 extra kwargs from body", "python", "def v(request):\n    return Post.objects.extra(**json.loads(request.body))\n", true, ""},
 	}
 	pass := 0
 	for _, c := range cases {

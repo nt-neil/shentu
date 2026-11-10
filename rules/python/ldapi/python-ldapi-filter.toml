@@ -6,24 +6,28 @@ severity = "high"
 tier = "info"
 title = "Request value placed in an LDAP search filter without escaping"
 frameworks = ["django", "flask"]
-sources = ["request.args", "request.form", "request.values", "request.json", "request.GET", "request.POST", "request.data"]
+sources = ["request.args", "request.form", "request.values", "request.json", "request.GET", "request.POST", "request.data", "request.query_params", "request.form(", "request.json(", "self.get_argument(", "self.get_body_argument("]
 sinks = [".search_s(", ".search_st(", ".search_ext(", ".search_ext_s(", ".search(", ".paged_search("]
 sanitizers = ["escape_filter_chars(", "ldap.filter.escape_filter_chars(", "filter_format(", "ldap.filter.filter_format(", "escape_rdn(", "int("]
 fix = "Build filters with ldap.filter.filter_format() or escape each value with escape_filter_chars() (ldap3.utils.conv.escape_filter_chars for ldap3)."
-refs = ["CVE-2026-24130"]
+refs = ["CVE-2026-24130", "CVE-2025-12764"]
 
 [[args]]
 sinks = [".search_s(", ".search_st(", ".search_ext(", ".search_ext_s("]
 arg = 3
 
 [[args]]
-sinks = [".paged_search("]   # ldap3 extend.standard.paged_search(base, filter, ...)
+sinks = [".paged_search("]   # ldap3 extend.standard.paged_search(search_base, search_filter, ...)
 arg = 2
+name = "search_filter"
 
+# ldap3 Connection.search(search_base, search_filter, ...): only the filter
+# counts, given second or as search_filter=; a value in attributes= does not.
 [[args]]
 sinks = [".search("]
 arg = 2
-when = ["SUBTREE", "LEVEL", "BASE", "search_scope=", "attributes="]
+name = "search_filter"
+when = ["SUBTREE", "LEVEL", "BASE", "search_scope=", "attributes=", "search_filter="]
 
 [[samples]]
 kind = "vulnerable"
@@ -70,4 +74,51 @@ def directory():
     who = request.args.get("who", "")
     pages = conn.extend.standard.paged_search("ou=staff,dc=corp,dc=test", "(displayName=*" + who + "*)", attributes=["mail"])
     return {"hits": [p["dn"] for p in pages]}
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "ldap3 with keywords: the filter is built with format()"
+code = '''
+@app.post("/members/check")
+def member_check():
+    login = request.form["login"]
+    flt = "(&(objectClass=person)({0}={1}))".format(LOGIN_ATTR, login)
+    directory.search(search_base=PEOPLE_DN, search_filter=flt, attributes=["memberOf"])
+    return {"member": bool(directory.entries)}
+'''
+
+[[samples]]
+kind = "safe"
+note = "the same call with the value escaped"
+code = '''
+@app.post("/members/check")
+def member_check():
+    login = escape_filter_chars(request.form["login"])
+    flt = "(&(objectClass=person)({0}={1}))".format(LOGIN_ATTR, login)
+    directory.search(search_base=PEOPLE_DN, search_filter=flt, attributes=["memberOf"])
+    return {"member": bool(directory.entries)}
+'''
+
+[[samples]]
+kind = "safe"
+note = "input only picks the attributes returned; the filter is fixed"
+code = '''
+@app.get("/me")
+def me():
+    directory.search(PEOPLE_DN, "(uid=%s)" % escape_filter_chars(g.user), attributes=request.args.getlist("attr"))
+    return {"e": str(directory.entries)}
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "a URL placeholder in the filter; no request name in the view"
+code = '''
+from flask import Flask
+app = Flask(__name__)
+
+@app.route("/people/<uid>")
+def person(uid):
+    directory.search(search_base=PEOPLE_DN, search_filter="(uid=" + uid + ")", attributes=["cn"])
+    return {"cn": str(directory.entries)}
 '''
