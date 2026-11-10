@@ -69,6 +69,11 @@ var ErrLimit = errors.New("engine: file too large, too slow or too deeply nested
 
 // ErrPartial means a string or comment runs to the end of the file without being
 // closed, so the code after its start was read as text and not analysed.
+// ErrCalls means the file was checked function by function to the end, but
+// following its calls into other functions or files was cut short by a limit:
+// what calls would have added may be missing.
+var ErrCalls = errors.New("engine: calls were not followed to the end; the file was checked function by function")
+
 var ErrPartial = errors.New("engine: unterminated string or comment, rest of the file not analysed")
 
 // ErrMinified comes joined with ErrLimit or ErrPartial when a JavaScript file
@@ -286,11 +291,4 @@ func containsByte(set string, c byte) bool {
 		}
 	}
 	return false
-}
-
-func (l Limits) maxTime() time.Duration {
-	if l.MaxTime <= 0 {
-		return DefaultLimits.MaxTime
-	}
-	return l.MaxTime
 }

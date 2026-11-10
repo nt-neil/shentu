@@ -31,6 +31,10 @@ func TestInterproc(t *testing.T) {
 		{"php returned source through an unknown call", "php", P + "function locale() { return sanitize_locale_name($_GET['l']); }\nmysqli_query($db, \"S \" . locale());\n", 0},
 		{"php unknown call in the same function still reports", "php", P + "$p = get_post($_REQUEST['post_id']);\nmysqli_query($db, \"S $p\");\n", 3},
 		{"php hmac checked before unserialize", "php", P + "function load($v) {\n  if (!hash_equals(sign($v), $_POST['h'])) { return; }\n  return unserialize($v);\n}\nload($_POST['data']);\n", 0},
+		{"php hash_equals of two inputs", "php", P + "function load($v) {\n  if (!hash_equals($v, $_POST['h'])) { return; }\n  return unserialize($v);\n}\nload($_POST['data']);\n", 4},
+		{"php unkeyed hash is no check", "php", P + "function load($v) {\n  if (!hash_equals(md5($v), $_POST['h'])) { return; }\n  return unserialize($v);\n}\nload($_POST['data']);\n", 4},
+		{"php hash_hmac with a secret", "php", P + "function load($v) {\n  if (!hash_equals(hash_hmac('sha256', $v, SECRET_KEY), $_POST['h'])) { return; }\n  return unserialize($v);\n}\nload($_POST['data']);\n", 0},
+		{"php hash_hmac with the attacker's key", "php", P + "function load($v) {\n  if (!hash_equals(hash_hmac('sha256', $v, $_POST['k']), $_POST['h'])) { return; }\n  return unserialize($v);\n}\nload($_POST['data']);\n", 4},
 		{"php no hmac check", "php", P + "function load($v) {\n  return unserialize($v);\n}\nload($_POST['data']);\n", 3},
 		{"php uncalled function", "php", P + "function q($v) { mysqli_query($db, \"S $v\"); }\n", 0},
 		{"python function", "python", "def run(q):\n    cur.execute(\"SELECT %s\" % q)\n\ndef view(request):\n    run(request.args['q'])\n", 2},
@@ -148,8 +152,8 @@ func TestInterprocDeepChain(t *testing.T) {
 	}
 	b.WriteString("function f40($x) { system($x); }\n")
 	fs, err := e.Scan("php", "f", []byte(b.String()))
-	if !errors.Is(err, ErrLimit) {
-		t.Errorf("a chain deeper than the cap: err %v, want ErrLimit", err)
+	if !errors.Is(err, ErrCalls) {
+		t.Errorf("a chain deeper than the cap: err %v, want ErrCalls (checked function by function, calls cut short)", err)
 	}
 	if len(fs) == 0 || fs[0].Line != 2 {
 		t.Errorf("the direct finding is lost: %+v", fs)

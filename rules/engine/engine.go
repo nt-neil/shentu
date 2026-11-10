@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -65,6 +66,7 @@ type crule struct {
 
 type argCond struct {
 	arg            *int
+	name           string // the argument's parameter name, when passed by name
 	when, unless   []*pat
 	whole, leading bool
 	context        []uint8 // output contexts that count (ctxHTML ...); empty: any
@@ -138,7 +140,7 @@ func compileRule(r rules.Rule) (*crule, error) {
 		return nil, err
 	}
 	for _, a := range r.Args {
-		ac := &argCond{arg: a.Arg, whole: a.Whole, leading: a.Leading, literal: a.Literal, key: a.Key, keys: a.Keys, minLen: a.MinLen}
+		ac := &argCond{arg: a.Arg, name: a.Name, whole: a.Whole, leading: a.Leading, literal: a.Literal, key: a.Key, keys: a.Keys, minLen: a.MinLen}
 		if (a.MinLen != 0 || len(a.Exclude) > 0) && !a.Literal {
 			return nil, fmt.Errorf("args: min_len and exclude need literal")
 		}
@@ -223,14 +225,28 @@ func LangOf(path string) string {
 // minified or bundled JavaScript file stops early, ErrMinified is joined to the
 // reason, so the audit can tell generated code from hand-written code.
 func (e *Engine) Scan(lang, path string, src []byte) ([]Finding, error) {
-	out, err := e.scan(lang, path, src)
+	out, err := e.scan(lang, path, src, nil, false)
 	if err != nil && baseLang(lang) == "js" && Minified(src) {
 		err = errors.Join(ErrMinified, err)
 	}
 	return out, err
 }
 
-func (e *Engine) scan(lang, path string, src []byte) ([]Finding, error) {
+// Scan applies the rules to one file of the project, following its calls into
+// the project's other files. A finding can name another file: the line in the
+// callee a tainted argument reaches. Each finding is returned once per project.
+func (p *Project) Scan(path string, src []byte) ([]Finding, error) {
+	return p.e.scan(LangOf(path), path, src, p, false)
+}
+
+// ScanCalls is Scan without the analysis of each function on its own: only
+// what following calls finds, for a file already scanned with Engine.Scan. It
+// returns ErrCalls when following calls was cut short.
+func (p *Project) ScanCalls(path string, src []byte) ([]Finding, error) {
+	return p.e.scan(LangOf(path), path, src, p, true)
+}
+
+func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly bool) ([]Finding, error) {
 	base := baseLang(lang)
 	rs := e.byLang[base]
 	if len(rs) == 0 {
@@ -243,55 +259,86 @@ func (e *Engine) scan(lang, path string, src []byte) ([]Finding, error) {
 	}
 	tree := parse(base, toks, b)
 	ff := newFileFuncs(collectFuncs(tree, base), base)
+	if proj != nil {
+		proj.keep(path, &fileCtx{lang: base, tree: tree, ff: ff, tokens: len(toks)})
+	}
 	var out []Finding
-	add := func(r *crule, lines ...[]int) {
-		seen := map[int]bool{}
+	add := func(r *crule, lines ...[]loc) {
+		seen := map[loc]bool{}
 		for _, ls := range lines {
-			for _, line := range ls {
-				if seen[line] {
+			for _, l := range ls {
+				if seen[l] {
 					continue
 				}
-				seen[line] = true
-				out = append(out, Finding{RuleID: r.rule.ID, Path: path, Line: line, Severity: r.rule.Severity,
+				seen[l] = true
+				if proj != nil {
+					k := r.rule.ID + "\x00" + l.path + "\x00" + strconv.Itoa(l.line)
+					if proj.seen[k] {
+						continue
+					}
+					proj.seen[k] = true
+				}
+				out = append(out, Finding{RuleID: r.rule.ID, Path: l.path, Line: l.line, Severity: r.rule.Severity,
 					Title: r.rule.Title, CWE: r.rule.CWE, Fix: r.rule.Fix, Tier: r.rule.Tier})
 			}
 		}
 	}
 	// First every rule inside each function, as without summaries: what is
-	// written out in the file is reported whatever the calls cost.
+	// written out in the file is reported whatever the calls cost. In a project
+	// a file without a sink may still pass its input to another file's sink.
 	var ruleList []*crule
-	direct := map[*crule][]int{}
+	direct := map[*crule][]loc{}
 	defs := phpDefines(base, toks)
 	names := nameSet(toks, map[string]bool{})
 	for _, r := range rs {
-		if !sinkNames(r, names, src) || !hasSink(r, toks) {
-			continue // nothing in the file can be this rule's sink
+		hs := sinkNames(r, names, src) && hasSink(r, toks)
+		if !hs && (proj == nil || len(r.sources) == 0 && len(r.textSources) == 0 || !hasSource(r, toks)) {
+			continue // nothing in the file can be this rule's sink; in a project, nor its source
 		}
-		if e.skipBySources(r, names, src, toks) {
-			continue // no source of it in the file: nothing to find, in either pass
+		if proj == nil && e.skipBySources(r, names, src, toks) {
+			// no source of it in the file: nothing to find, in either pass. Never in
+			// a project, where input also comes from the other files.
+			continue
 		}
 		ruleList = append(ruleList, r)
-		a := &analysis{r: r, php: base == "php", py: base == "python", js: base == "js", b: b, kw: keywords[base], seen: map[int]bool{}, defs: defs}
-		a.block(tree, state{})
-		direct[r] = a.lines
+		if hs && !callsOnly {
+			a := &analysis{r: r, php: base == "php", py: base == "python", js: base == "js", b: b, kw: keywords[base], seen: map[loc]bool{}, defs: defs, file: path}
+			a.block(tree, state{})
+			direct[r] = a.lines
+		}
 		if b.hit {
 			break
 		}
 	}
-	// Then again with calls followed, on a budget of its own. A rule that
-	// finishes takes this result (summaries also clear what a sanitizing helper
-	// returns); one cut short keeps its first result too.
-	limited := b.hit || b.limited
+	// Then again with calls followed, on a token budget of its own and the time
+	// left of the same MaxTime. A rule that finishes with every summary complete
+	// takes this result (summaries also clear what a sanitizing helper returns);
+	// one cut short, or with a summary that hit a cap and may say too little,
+	// keeps its first result as well.
+	limited := b.hit || b.limited || time.Now().After(b.deadline) // the first pass did not finish
+	callsCut := false
 	finished := map[*crule]bool{}
-	if !b.hit && len(ff.byKey) > 0 {
+	if !b.hit && (len(ff.byKey) > 0 || proj != nil) {
 		b2 := newBudget(e.Limits)
-		b2.deadline = b.deadline.Add(e.Limits.maxTime()) // a file takes at most twice MaxTime in all
+		b2.deadline = b.deadline // one file stays within MaxTime in all
 		for _, r := range ruleList {
 			sc := newSummaries(ff)
-			a := &analysis{r: r, php: base == "php", py: base == "python", js: base == "js", b: b2, kw: keywords[base], seen: map[int]bool{}, sc: sc, defs: defs}
+			if proj != nil {
+				if sc == nil {
+					sc = &summaries{ff: ff, funcs: ff.byKey, done: map[string]*summary{}, busy: map[string]bool{}, rel: map[string]uint8{}, retUnk: map[string]uint8{}}
+				}
+				proj.sums[r.rule.ID+"\x00"+path] = sc
+			}
+			a := &analysis{r: r, php: base == "php", py: base == "python", js: base == "js", b: b2, kw: keywords[base], seen: map[loc]bool{}, sc: sc,
+				defs: defs, file: path, proj: proj}
+			if !e.Library && !a.r.output && !a.crossNeeded(tree) {
+				// no call can change this rule's result: the first pass stands. Output
+				// rules read calls to the file's own functions in this pass only (htmlctx.go).
+				continue
+			}
 			a.block(tree, state{})
 			if e.Library && libClasses[r.rule.Class] && !testPath(path) && !b2.hit {
-				l := &analysis{r: r, php: a.php, py: a.py, js: a.js, b: b2, kw: a.kw, seen: a.seen, sc: sc, lib: true, defs: defs}
+				l := &analysis{r: r, php: a.php, py: a.py, js: a.js, b: b2, kw: a.kw, seen: a.seen, sc: sc, lib: true, defs: defs, file: path, proj: proj}
 				l.block(tree, state{})
 				a.lines = append(a.lines, l.lines...)
 			}
@@ -300,10 +347,20 @@ func (e *Engine) scan(lang, path string, src []byte) ([]Finding, error) {
 				delete(direct, r)
 				break
 			}
+			if sc.capped {
+				add(r, direct[r], a.lines)
+				delete(direct, r)
+				callsCut = true
+				continue
+			}
 			add(r, a.lines)
 			finished[r] = true
 		}
-		limited = limited || b2.hit || b2.limited || time.Now().After(b2.deadline)
+		callsCut = callsCut || b2.hit || b2.limited
+	}
+	// Past a project cap calls no longer cross files: say so, not "clean".
+	if proj != nil && proj.stopped != "" {
+		callsCut = true
 	}
 	for _, r := range ruleList {
 		if lines, ok := direct[r]; ok && !finished[r] {
@@ -311,16 +368,21 @@ func (e *Engine) scan(lang, path string, src []byte) ([]Finding, error) {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool {
+		if out[i].Path != out[j].Path {
+			return out[i].Path < out[j].Path
+		}
 		if out[i].Line != out[j].Line {
 			return out[i].Line < out[j].Line
 		}
 		return out[i].RuleID < out[j].RuleID
 	})
 	switch {
-	case limited || time.Now().After(b.deadline):
+	case limited:
 		return out, ErrLimit
 	case b.partial:
 		return out, ErrPartial
+	case callsCut:
+		return out, ErrCalls
 	}
 	return out, nil
 }

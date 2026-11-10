@@ -47,6 +47,7 @@ type Rule struct {
 type Args struct {
 	Sinks   []string `toml:"sinks"`   // the rule's sinks this applies to; empty means all
 	Arg     *int     `toml:"arg"`     // the argument (from 1) that must be tainted; 0 is the receiver; nil is any
+	Name    string   `toml:"name"`    // that argument's parameter name, for PHP named (name: $x) and Python keyword (name=x) arguments
 	When    []string `toml:"when"`    // the call is a sink only if one of these is among its arguments
 	Unless  []string `toml:"unless"`  // the call is not a sink if one of these is among its arguments
 	Whole   bool     `toml:"whole"`   // the argument must be the input itself, not a literal holding a part of it

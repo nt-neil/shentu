@@ -8,11 +8,14 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/nt-neil/shentu/rules"
@@ -215,17 +218,24 @@ var secretPatterns = []struct {
 
 const partialListMax = 10
 
+// auditWorkers is how many files the injection rules scan at once: the cores
+// Go may use, at most 4, so an audit on a busy server leaves the rest free.
+func auditWorkers() int { return min(runtime.GOMAXPROCS(0), 4) }
+
 // injectionMaxTime caps the time the injection rules take in one audit (each file
 // is also capped by the engine's own limits). Files left when it runs out are
 // listed in the partial summary.
 var injectionMaxTime = 2 * time.Minute
 
-var engineScan = (*engine.Engine).Scan // replaced in tests
+var (
+	engineScan  = (*engine.Engine).Scan       // replaced in tests
+	projectScan = (*engine.Project).ScanCalls // replaced in tests
+)
 
 var errPanic = errors.New("engine panic")
 
-// injectionScan runs the engine on one file. A panic counts as an unfinished file,
-// so one malformed file cannot stop the audit or the patrol.
+// injectionScan runs the engine on one file. A panic counts as an unfinished
+// file, so one malformed file cannot stop the audit or the patrol.
 func injectionScan(e *engine.Engine, lang, p string, b []byte) (found []engine.Finding, err error) {
 	defer func() {
 		if recover() != nil {
@@ -233,6 +243,37 @@ func injectionScan(e *engine.Engine, lang, p string, b []byte) (found []engine.F
 		}
 	}()
 	return engineScan(e, lang, p, b)
+}
+
+// injectionCalls follows one file's calls into the project's other files.
+func injectionCalls(pr *engine.Project, p string, b []byte) (found []engine.Finding, err error) {
+	defer func() {
+		if recover() != nil {
+			found, err = nil, errPanic
+		}
+	}()
+	return projectScan(pr, p, b)
+}
+
+// codeIndexFile is where the index of the scanned code is cached between audits
+// (file and function names, never code; mode 0600): the state directory when it
+// can be written (the service runs as root), else the user's cache directory.
+var codeIndexFile = func() string {
+	if info, err := os.Stat("/var/lib/shentu"); err == nil && info.IsDir() && os.Geteuid() == 0 {
+		return "/var/lib/shentu/codeindex.json"
+	}
+	if d, err := os.UserCacheDir(); err == nil {
+		return filepath.Join(d, "shentu", "codeindex.json")
+	}
+	return ""
+}
+
+// crossFileFinding tells that calls were followed across files for only part
+// of the files; every file was still checked on its own.
+func crossFileFinding(done, total int, reason string) CodeFinding {
+	return CodeFinding{Kind: "injection", Severity: "info", Tier: "info",
+		Detail: fmt.Sprintf("the injection rules followed calls across files for %d of %d file(s) (%s); every file was checked on its own", done, total, reason),
+		Fix:    "nothing to do; a smaller audit root or a quieter server lets the next audit follow more"}
 }
 
 var (
@@ -251,6 +292,11 @@ func injectionEngine() (*engine.Engine, error) {
 		rulesErr = err
 	})
 	return rulesEng, rulesErr
+}
+
+// generated reports whether a file is minified or bundled JavaScript.
+func generated(lang string, b []byte) bool {
+	return (lang == "js" || lang == "jsx" || lang == "ts" || lang == "tsx") && engine.Minified(b)
 }
 
 // injectionFindings turns the engine's findings for one file into code findings.
@@ -297,6 +343,7 @@ func partialFinding(files []UnfinishedFile) CodeFinding {
 		{"unterminated", "with a string or comment that never ends"}, {"time", "after the audit's time limit"},
 		{"panic", "stopped by an engine error"}, {"minified-unterminated", "minified JavaScript with a string or comment that never ends"},
 		{"minified-limit", "minified JavaScript too large or slow for the engine"},
+		{"calls", "checked function by function, its calls not followed to the end (a time or size limit)"},
 	} {
 		if n := count[r.reason]; n > 0 {
 			parts = append(parts, fmt.Sprintf("%d %s", n, r.text))
@@ -321,6 +368,8 @@ func unfinishedReason(err error) string {
 		return "limit"
 	case errors.Is(err, engine.ErrPartial):
 		return "unterminated"
+	case errors.Is(err, engine.ErrCalls):
+		return "calls"
 	}
 	return ""
 }
@@ -336,6 +385,8 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 			Fix: "report this as a Shentu bug; the other checks ran"})
 	}
 	var partial []UnfinishedFile
+	var code []string // rule-language files, scanned once all are known
+	seen := map[string]fs.FileInfo{}
 	deadline := time.Now().Add(injectionMaxTime)
 	for _, root := range roots {
 		base := strings.Count(filepath.Clean(root), "/")
@@ -393,21 +444,123 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 			}
 			res.Files++
 			auditContent(p, name, b, web, isPHP, add)
-			switch {
-			case lang == "" || eng == nil:
-			case time.Now().After(deadline):
-				partial = append(partial, UnfinishedFile{p, "time"})
-			default:
-				found, err := injectionScan(eng, lang, p, b)
-				gen := (lang == "js" || lang == "jsx" || lang == "ts" || lang == "tsx") && engine.Minified(b)
-				injectionFindings(found, func(f CodeFinding) { f.Generated = gen; add(f) })
-				if r := unfinishedReason(err); r != "" {
-					partial = append(partial, UnfinishedFile{p, r})
-				}
+			if lang != "" && eng != nil || name == "composer.json" {
+				code = append(code, p)
+				seen[p] = info
 			}
 			return nil
 		})
 	}
+	if eng != nil && len(code) > 0 {
+		// Read again the way the walk did (no symlinks, regular files under the
+		// size cap), and only the file the walk saw: one swapped since is skipped.
+		read := func(p string) ([]byte, error) {
+			b, ok := readSmallRegular(p, auditMaxSize, seen[p])
+			if !ok {
+				return nil, errors.New("not read")
+			}
+			return b, nil
+		}
+		var files []string
+		for _, p := range code {
+			if engine.LangOf(p) != "" {
+				files = append(files, p)
+			}
+		}
+		// First every file on its own (calls inside the file are followed): all
+		// files get this before any time goes to calls across files.
+		reported := map[string]bool{}
+		addNew := func(found []engine.Finding, gen bool) {
+			var fresh []engine.Finding
+			for _, f := range found {
+				k := f.RuleID + "\x00" + f.Path + "\x00" + fmt.Sprint(f.Line)
+				if !reported[k] {
+					reported[k] = true
+					fresh = append(fresh, f)
+				}
+			}
+			injectionFindings(fresh, func(f CodeFinding) { f.Generated = gen; add(f) })
+		}
+		// Files are scanned on several cores; results are taken in file order.
+		type scanned struct {
+			found        []engine.Finding
+			err          error
+			late, unread bool
+			gen          bool // minified or bundled JavaScript
+		}
+		out := make([]scanned, len(files))
+		var next atomic.Int64
+		var wg sync.WaitGroup
+		for range auditWorkers() {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for {
+					i := int(next.Add(1) - 1)
+					if i >= len(files) || ctx.Err() != nil {
+						return
+					}
+					p := files[i]
+					if time.Now().After(deadline) {
+						out[i].late = true
+						continue
+					}
+					b, err := read(p)
+					if err != nil {
+						out[i].unread = true
+						continue
+					}
+					lang := engine.LangOf(p)
+					out[i].found, out[i].err = injectionScan(eng, lang, p, b)
+					out[i].gen = generated(lang, b)
+				}
+			}()
+		}
+		wg.Wait()
+		for i, p := range files {
+			switch r := out[i]; {
+			case ctx.Err() != nil || r.unread:
+			case r.late:
+				partial = append(partial, UnfinishedFile{p, "time"})
+			default:
+				addNew(r.found, r.gen)
+				if why := unfinishedReason(r.err); why != "" { // "calls": its own calls were cut short
+					partial = append(partial, UnfinishedFile{p, why})
+				}
+			}
+		}
+		// Then, with the time left, calls across files: index the files, follow
+		// each one's calls into the others. What runs out of time stays checked on
+		// its own, and the summary says how far this got.
+		done, reason := 0, ""
+		if left := time.Until(deadline); left > 0 && ctx.Err() == nil {
+			pr := eng.NewProject(code, read, engine.ProjectOptions{CacheFile: codeIndexFile(), MaxTime: left})
+			for _, p := range files {
+				if ctx.Err() != nil || time.Now().After(deadline) || pr.Stopped() != "" {
+					break
+				}
+				b, err := read(p)
+				if err != nil {
+					continue
+				}
+				found, err := injectionCalls(pr, p, b)
+				addNew(found, generated(engine.LangOf(p), b))
+				if !errors.Is(err, engine.ErrCalls) && !errors.Is(err, errPanic) {
+					done++ // limits of the file itself were reported by the first pass
+				}
+			}
+			reason = pr.Stopped()
+			if reason == "" && done < len(files) {
+				reason = "some files' calls were cut short by the time or size limits"
+			}
+		} else {
+			reason = "no time was left for it"
+		}
+		if done < len(files) {
+			add(crossFileFinding(done, len(files), reason))
+		}
+	}
+
 	for _, f := range res.Findings {
 		switch {
 		case f.Kind != "injection" || f.Rule == "":
@@ -420,6 +573,9 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 		}
 	}
 	if len(partial) > 0 {
+		// Files left unchecked come first in the list; those checked function by
+		// function after them.
+		sort.SliceStable(partial, func(i, j int) bool { return partial[i].Reason != "calls" && partial[j].Reason == "calls" })
 		add(partialFinding(partial))
 	}
 	sort.SliceStable(res.Findings, func(i, j int) bool {
