@@ -33,6 +33,7 @@ import (
 const (
 	maxSumParams = 64   // parameters a summary tracks
 	maxSumDepth  = 32   // summaries being computed inside one another
+	maxSumHeight = 128  // the longest chain of summaries under one: past it the summary counts as cut short
 	maxSumRuns   = 4000 // analyses of function bodies per rule and file
 	maxSumRounds = 4    // recomputations at the head of a recursive cycle
 )
@@ -755,7 +756,9 @@ func (a *analysis) used(s *summary) *summary {
 
 // maxOwnNest bounds summaries worked out inside one another (a chain of calls
 // none of which has its summary yet); past it a summary is not worked out.
-const maxOwnNest = 256
+// It is twice maxSumHeight: a chain that deep is cut by its height whichever
+// summaries were ready.
+const maxOwnNest = 2 * maxSumHeight
 
 // own works out a summary in a budget and a nesting of its own, not the
 // asker's: the same summary comes out whoever asks for it and whatever was
@@ -782,9 +785,12 @@ func (a *analysis) own(work func(x *analysis)) (capped, keep bool, height, cost 
 	x.b, x.nest, x.heights = nb, a.nest+1, &under
 	work(&x)
 	height, cost = under+1, nb.work-nb.paid // its own work: what it paid for its callees is theirs
-	// A chain of summaries longer than maxSumDepth is cut: by the chain's own
-	// length under this summary, which no asker changes.
-	capped = sc.capped || nb.limited || nb.hit && !nb.timeHit || height > maxSumDepth
+	// A chain of summaries longer than maxSumHeight is cut: by the chain's own
+	// length under this summary, which no asker changes. (The real chains are
+	// much shorter: 45 at most in WordPress. A cap near them would make the
+	// result depend on the scan order, as a chain through a cycle across files
+	// is a step or two longer or shorter depending on where it was entered.)
+	capped = sc.capped || nb.limited || nb.hit && !nb.timeHit || height > maxSumHeight
 	sc.depth, sc.runs, sc.capped = depth, runs, was
 	if a.proj != nil {
 		a.proj.depth = pdepth
