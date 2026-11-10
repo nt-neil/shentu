@@ -8,7 +8,7 @@ title = "Request data placed in a MongoDB query without forcing it to a string"
 frameworks = ["express", "nestjs", "nextjs", "koa", "fastify", "hapi"]
 sources = ["req.body", "req.query", "@Query(", "@Body(", "@Req(", "^request.json(", "^req.json(", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload"]
 sinks = [".findOne(", ".find(", ".findOneAndUpdate(", ".findOneAndDelete(", ".updateOne(", ".updateMany(", ".deleteOne(", ".deleteMany(", ".countDocuments(", ".exists(", "$where"]
-sanitizers = ["String(", ".toString(", "mongoSanitize(", "sanitize(", "parseInt(", "ObjectId(", "typeof"]
+sanitizers = ["String(", ".toString(", "mongoSanitize(", "sanitize(", "parseInt(", "ObjectId(", "ObjectID(", "Binary(", "mongodb.Binary(", "bson.Binary(", "BSON.Binary(", "typeof", ".launder.string(", ".launder.strings(", ".launder.id(", ".launder.ids(", ".launder.integer(", ".launder.float(", ".launder.boolean("]   # BSON constructors make a value, not an operator object; ApostropheCMS launder returns scalars
 fix = "Convert each value to the type the field holds (String(), Number()) or reject non-strings (typeof x !== \"string\") before it goes into the filter; enable sanitizeFilter in Mongoose; never build $where from input."
 refs = ["GHSA-f5cv-xrv9-r8w7"]
 
@@ -71,4 +71,24 @@ export class SessionController {
     return this.users.findOne({ email: String(dto.email) });
   }
 }
+'''
+
+[[samples]]
+kind = "safe"
+note = "ApostropheCMS: launder.string() turns any body value into a string"
+code = '''
+async function resumeJob(req) {
+  const jobId = self.apos.launder.string(req.body.jobId);
+  return jobs.findOne({ _id: jobId });
+}
+'''
+
+[[samples]]
+kind = "safe"
+note = "a query value only picks the subtype of a BSON Binary built by the server"
+code = '''
+app.get("/doc/:id", async (req, res) => {
+  const key = new mongodb.Binary(Buffer.from(req.params.id, "base64"), Number(req.query.subtype) === 4 ? 4 : 3);
+  res.json(await docs.findOne({ _id: key }));
+});
 '''
