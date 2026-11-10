@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>安裝與使用 · Shentu</title>
+<meta name="description" content="給 Linux 伺服器用的小型開源資安助理，由 LLM 驅動。">
+<link rel="stylesheet" href="../site.css">
+<link rel="alternate" type="application/atom+xml" title="Shentu releases" href="../feed.xml">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="index.html">Shentu <span>神荼</span></a>
+  <nav>
+    <a href="index.html">首頁</a>
+    <a href="rules.html">規則</a>
+    <a href="bench.html">實測</a>
+    <a href="install.html" aria-current="page">安裝</a>
+    <a href="releases.html">更新紀錄</a>
+    <a class="lang" href="../install.html">English</a>
+  </nav>
+</header>
+<main>
+
+<h1>安裝與使用</h1>
+
+<p>一行指令安裝，並啟動五個問題的引導設定：</p>
+<pre><code>curl -fsSL https://github.com/nt-neil/shentu/releases/latest/download/install.sh | sudo sh</code></pre>
+<ol>
+  <li>語言（English 或繁體中文）；</li>
+  <li>AI 模型（本機模型或 API 金鑰），會測試一次；</li>
+  <li>警示要送到哪裡（Telegram、Slack、Discord 或 ntfy），並送出測試訊息；</li>
+  <li>盤點伺服器，列出發現的風險；</li>
+  <li>開啟巡邏，可選擇先產出第一份報告。</li>
+</ol>
+<p>之後用 <code>sudo shentu chat</code> 直接用白話提問；要改設定就再跑一次 <code>sudo shentu setup</code>。</p>
+<h2>主要指令</h2>
+<ul>
+  <li><code>shentu chat</code>：用白話問伺服器的資安狀況，模型自己挑工具執行並說明結果。</li>
+  <li><code>shentu patrol</code>：由 systemd timer 每 30 分鐘執行固定檢查，包括稽核網站應用程式的原始碼；有新發現時，由 LLM 說明後送到通知管道。LLM 掛了也照樣送出原始發現。</li>
+  <li><code>shentu survey</code>：先認識伺服器，當作巡邏的基準。</li>
+  <li><code>shentu bot</code>（選用）：從 Telegram 跟 Shentu 對話，權限分級、預設只收通知。</li>
+</ul>
+<h2>支援的系統</h2>
+<p>Ubuntu 22.04、24.04，Debian 12，Rocky 與 Alma 9，amd64 與 arm64（需要 systemd）。每個 release 附 <code>.deb</code> 與 <code>.rpm</code>，以及可用 <code>gh attestation verify</code> 驗證的簽章建置來源。</p>
+<p>它不會自己改動系統：每個會改變系統的動作都要人確認。詳細步驟見<a href="https://github.com/nt-neil/shentu/blob/main/docs/getting-started.zh-TW.md">入門指南</a>。</p>
+
+
+</main>
+<footer>
+  <p>Apache-2.0 授權。本站由 cmd/sitegen 從 repo 產生。 <a href="https://github.com/nt-neil/shentu">GitHub</a> · <a href="../feed.xml">Atom 訂閱</a></p>
+</footer>
+</body>
+</html>
+

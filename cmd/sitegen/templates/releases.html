@@ -1,0 +1,6 @@
+{{define "title"}}{{t "releases.title"}} · Shentu{{end}}
+{{define "main"}}
+<h1>{{t "releases.title"}}</h1>
+<p>{{t "changelog.note"}} <a href="{{.L.Root}}feed.xml">{{t "feed"}}</a></p>
+{{template "releaselist" .Releases}}
+{{end}}

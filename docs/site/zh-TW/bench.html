@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>在真實漏洞上實測 · Shentu</title>
+<meta name="description" content="給 Linux 伺服器用的小型開源資安助理，由 LLM 驅動。">
+<link rel="stylesheet" href="../site.css">
+<link rel="alternate" type="application/atom+xml" title="Shentu releases" href="../feed.xml">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="index.html">Shentu <span>神荼</span></a>
+  <nav>
+    <a href="index.html">首頁</a>
+    <a href="rules.html">規則</a>
+    <a href="bench.html" aria-current="page">實測</a>
+    <a href="install.html">安裝</a>
+    <a href="releases.html">更新紀錄</a>
+    <a class="lang" href="../bench.html">English</a>
+  </nav>
+</header>
+<main>
+
+<h1>在真實漏洞上實測</h1>
+<p>規則會在已公開漏洞（CVE.org、NVD、GitHub Advisory、OSV）的最後一個有漏洞版本與第一個修補版本上執行。同類別的規則在修補改動的程式碼 10 行內報出，就算抓到；修補後仍在那裡報出，算修補版誤報。數字由實測結果檔產生，不是手打。</p>
+
+<h2>主組</h2>
+<p class="meta">量測日期 2026-11-10 (integ-3205c10), 70 條規則。</p>
+
+<table class="num"><tr><th>分組</th><th>案例</th><th>抓到</th><th>抓到率</th><th>修補版誤報</th><th>修補版誤報率</th></tr>
+<tr><td>全部</td><td>97</td><td>15</td><td>15.5%</td><td>0</td><td>0.0%</td></tr><tr><td>規則依據的案例</td><td>23</td><td>5</td><td>21.7%</td><td>0</td><td>0.0%</td></tr><tr><td>獨立案例</td><td>74</td><td>10</td><td>13.5%</td><td>0</td><td>0.0%</td></tr><tr><td>composer</td><td>18</td><td>2</td><td>11.1%</td><td>0</td><td>0.0%</td></tr><tr><td>npm</td><td>19</td><td>0</td><td>0.0%</td><td>0</td><td>-</td></tr><tr><td>pypi</td><td>21</td><td>1</td><td>4.8%</td><td>0</td><td>0.0%</td></tr><tr><td>wordpress-plugin</td><td>39</td><td>12</td><td>30.8%</td><td>0</td><td>0.0%</td></tr><tr><td>命令注入</td><td>3</td><td>0</td><td>0.0%</td><td>0</td><td>-</td></tr><tr><td>程式碼執行</td><td>7</td><td>1</td><td>14.3%</td><td>0</td><td>0.0%</td></tr><tr><td>不安全的反序列化</td><td>9</td><td>2</td><td>22.2%</td><td>0</td><td>0.0%</td></tr><tr><td>危險的檔案上傳</td><td>5</td><td>0</td><td>0.0%</td><td>0</td><td>-</td></tr><tr><td>寫死的憑證</td><td>3</td><td>0</td><td>0.0%</td><td>0</td><td>-</td></tr><tr><td>LDAP 注入</td><td>3</td><td>0</td><td>0.0%</td><td>0</td><td>-</td></tr><tr><td>NoSQL 注入</td><td>4</td><td>0</td><td>0.0%</td><td>0</td><td>-</td></tr><tr><td>開放重新導向</td><td>5</td><td>0</td><td>0.0%</td><td>0</td><td>-</td></tr><tr><td>路徑穿越</td><td>20</td><td>7</td><td>35.0%</td><td>0</td><td>0.0%</td></tr><tr><td>SQL 注入</td><td>20</td><td>3</td><td>15.0%</td><td>0</td><td>0.0%</td></tr><tr><td>伺服器端請求偽造（SSRF）</td><td>5</td><td>1</td><td>20.0%</td><td>0</td><td>0.0%</td></tr><tr><td>弱加密</td><td>4</td><td>0</td><td>0.0%</td><td>0</td><td>-</td></tr><tr><td>跨站腳本（XSS）</td><td>5</td><td>0</td><td>0.0%</td><td>0</td><td>-</td></tr><tr><td>XML 外部實體（XXE）</td><td>4</td><td>1</td><td>25.0%</td><td>0</td><td>0.0%</td></tr>
+</table>
+
+<h3>抓到的案例 (15)</h3>
+<table><tr><th>案例</th><th>套件</th><th>類別</th><th>規則</th></tr>
+<tr><td>CVE-2017-9841</td><td>composer sebastianbergmann/phpunit</td><td>程式碼執行</td><td><code>php-code-eval-eval</code></td></tr><tr><td>CVE-2022-3342</td><td>wordpress-plugin zero-bs-crm</td><td>不安全的反序列化</td><td><code>php-deserialization-phar-wrapper</code></td></tr><tr><td>CVE-2023-3452</td><td>wordpress-plugin canto</td><td>路徑穿越</td><td><code>php-path-traversal-file-include</code></td></tr><tr><td>CVE-2023-6120</td><td>wordpress-plugin usc-e-shop</td><td>路徑穿越</td><td><code>php-path-traversal-file-write</code></td></tr><tr><td>CVE-2024-12032</td><td>wordpress-plugin tourfic</td><td>SQL 注入</td><td><code>php-sqli-wpdb-unprepared</code></td></tr><tr><td>CVE-2024-12850</td><td>wordpress-plugin database-backup</td><td>路徑穿越</td><td><code>php-path-traversal-file-read</code></td></tr><tr><td>CVE-2024-3136</td><td>wordpress-plugin masterstudy-lms-learning-management-system</td><td>路徑穿越</td><td><code>php-path-traversal-file-include</code></td></tr><tr><td>CVE-2024-4359</td><td>wordpress-plugin bdthemes-element-pack-lite</td><td>路徑穿越</td><td><code>php-path-traversal-file-read</code></td></tr><tr><td>CVE-2024-8392</td><td>wordpress-plugin sogrid</td><td>路徑穿越</td><td><code>php-path-traversal-file-include</code></td></tr><tr><td>CVE-2025-13378</td><td>wordpress-plugin ays-chatgpt-assistant</td><td>伺服器端請求偽造（SSRF）</td><td><code>php-ssrf-http-request</code></td></tr><tr><td>CVE-2025-14071</td><td>wordpress-plugin live-composer-page-builder</td><td>不安全的反序列化</td><td><code>php-deserialization-unserialize</code></td></tr><tr><td>CVE-2025-48882</td><td>composer PHPOffice/Math</td><td>XML 外部實體（XXE）</td><td><code>php-xxe-libxml-noent</code></td></tr><tr><td>CVE-2025-54140</td><td>pypi pyload-ng</td><td>路徑穿越</td><td><code>python-path-traversal-send-file</code></td></tr><tr><td>CVE-2025-9462</td><td>wordpress-plugin wp2leads</td><td>SQL 注入</td><td><code>php-sqli-orderby-identifier</code></td></tr><tr><td>CVE-2026-13357</td><td>wordpress-plugin houzez-property-feed</td><td>SQL 注入</td><td><code>php-sqli-orderby-identifier</code></td></tr>
+</table>
+<h3>沒抓到的案例 (82)</h3>
+<p>大部分公開漏洞目前仍抓不到。以下是主組中沒有任何規則抓到的案例：</p>
+<table><tr><th>案例</th><th>套件</th><th>類別</th></tr>
+<tr><td>CVE-2014-6394</td><td>npm send</td><td>路徑穿越</td></tr><tr><td>CVE-2015-7294</td><td>npm ldapauth-fork</td><td>LDAP 注入</td></tr><tr><td>CVE-2016-10928</td><td>composer onelogin/wordpress-saml</td><td>寫死的憑證</td></tr><tr><td>CVE-2016-20018</td><td>npm knex</td><td>SQL 注入</td></tr><tr><td>CVE-2017-14596</td><td>composer joomla/joomla-cms</td><td>LDAP 注入</td></tr><tr><td>CVE-2017-20289</td><td>wordpress-plugin ad-widget</td><td>路徑穿越</td></tr><tr><td>CVE-2018-1002204</td><td>npm adm-zip</td><td>路徑穿越</td></tr><tr><td>CVE-2018-15133</td><td>composer laravel/framework</td><td>不安全的反序列化</td></tr><tr><td>CVE-2018-3758</td><td>npm express-cart</td><td>危險的檔案上傳</td></tr><tr><td>CVE-2020-10799</td><td>pypi svglib</td><td>XML 外部實體（XXE）</td></tr><tr><td>CVE-2020-12265</td><td>npm decompress</td><td>路徑穿越</td></tr><tr><td>CVE-2020-29128</td><td>pypi petl</td><td>XML 外部實體（XXE）</td></tr><tr><td>CVE-2020-36326</td><td>composer PHPMailer/PHPMailer</td><td>不安全的反序列化</td></tr><tr><td>CVE-2021-21315</td><td>npm systeminformation</td><td>命令注入</td></tr><tr><td>CVE-2021-23337</td><td>npm lodash</td><td>程式碼執行</td></tr><tr><td>CVE-2021-23344</td><td>npm total.js</td><td>程式碼執行</td></tr><tr><td>CVE-2021-23664</td><td>npm @isomorphic-git/cors-proxy</td><td>伺服器端請求偽造（SSRF）</td></tr><tr><td>CVE-2021-29454</td><td>composer smarty-php/smarty</td><td>程式碼執行</td></tr><tr><td>CVE-2021-29472</td><td>composer composer/composer</td><td>命令注入</td></tr><tr><td>CVE-2021-3129</td><td>composer facade/ignition</td><td>不安全的反序列化</td></tr><tr><td>CVE-2021-35042</td><td>pypi Django</td><td>SQL 注入</td></tr><tr><td>CVE-2021-39182</td><td>pypi enrocrypt</td><td>弱加密</td></tr><tr><td>CVE-2022-22817</td><td>pypi Pillow</td><td>程式碼執行</td></tr><tr><td>CVE-2022-24439</td><td>pypi GitPython</td><td>命令注入</td></tr><tr><td>CVE-2022-28346</td><td>pypi Django</td><td>SQL 注入</td></tr><tr><td>CVE-2022-2872</td><td>pypi OctoPrint</td><td>危險的檔案上傳</td></tr><tr><td>CVE-2022-29078</td><td>npm ejs</td><td>程式碼執行</td></tr><tr><td>CVE-2022-34265</td><td>pypi Django</td><td>SQL 注入</td></tr><tr><td>CVE-2022-41343</td><td>composer dompdf/dompdf</td><td>不安全的反序列化</td></tr><tr><td>CVE-2023-0297</td><td>pypi pyload-ng</td><td>程式碼執行</td></tr><tr><td>CVE-2023-25813</td><td>npm sequelize</td><td>SQL 注入</td></tr><tr><td>CVE-2023-28115</td><td>composer KnpLabs/snappy</td><td>不安全的反序列化</td></tr><tr><td>CVE-2023-46233</td><td>npm crypto-js</td><td>弱加密</td></tr><tr><td>CVE-2024-21641</td><td>composer flarum/flarum-core</td><td>開放重新導向</td></tr><tr><td>CVE-2024-22205</td><td>pypi whoogle-search</td><td>伺服器端請求偽造（SSRF）</td></tr><tr><td>CVE-2024-34345</td><td>npm @cyclonedx/cyclonedx-library</td><td>XML 外部實體（XXE）</td></tr><tr><td>CVE-2024-34914</td><td>composer php-censor/php-censor</td><td>弱加密</td></tr><tr><td>CVE-2024-42353</td><td>pypi webob</td><td>開放重新導向</td></tr><tr><td>CVE-2024-4887</td><td>wordpress-plugin qi-addons-for-elementor</td><td>路徑穿越</td></tr><tr><td>CVE-2025-11167</td><td>wordpress-plugin cm-invitation-codes</td><td>開放重新導向</td></tr><tr><td>CVE-2025-13145</td><td>wordpress-plugin wp-ultimate-csv-importer</td><td>不安全的反序列化</td></tr><tr><td>CVE-2025-1324</td><td>wordpress-plugin wp-recall</td><td>跨站腳本（XSS）</td></tr><tr><td>CVE-2025-13393</td><td>wordpress-plugin featured-image-from-url</td><td>伺服器端請求偽造（SSRF）</td></tr><tr><td>CVE-2025-13641</td><td>wordpress-plugin nextgen-gallery</td><td>路徑穿越</td></tr><tr><td>CVE-2025-13999</td><td>wordpress-plugin html5-audio-player</td><td>伺服器端請求偽造（SSRF）</td></tr><tr><td>CVE-2025-14383</td><td>wordpress-plugin booking</td><td>SQL 注入</td></tr><tr><td>CVE-2025-1783</td><td>wordpress-plugin gallery-styles</td><td>跨站腳本（XSS）</td></tr><tr><td>CVE-2025-27411</td><td>composer redaxo/redaxo</td><td>危險的檔案上傳</td></tr><tr><td>CVE-2025-32379</td><td>npm koa</td><td>跨站腳本（XSS）</td></tr><tr><td>CVE-2025-3914</td><td>wordpress-plugin aeropage-sync-for-airtable</td><td>危險的檔案上傳</td></tr><tr><td>CVE-2025-55449</td><td>pypi astrbot</td><td>寫死的憑證</td></tr><tr><td>CVE-2025-59681</td><td>pypi Django</td><td>SQL 注入</td></tr><tr><td>CVE-2025-62595</td><td>npm koa</td><td>開放重新導向</td></tr><tr><td>CVE-2025-67502</td><td>pypi taguette</td><td>開放重新導向</td></tr><tr><td>CVE-2025-67724</td><td>pypi tornado</td><td>跨站腳本（XSS）</td></tr><tr><td>CVE-2025-69971</td><td>npm @frangoteam/fuxa</td><td>寫死的憑證</td></tr><tr><td>CVE-2025-7036</td><td>wordpress-plugin cleverreach-wp</td><td>SQL 注入</td></tr><tr><td>CVE-2025-8897</td><td>wordpress-plugin beaver-builder-lite-version</td><td>跨站腳本（XSS）</td></tr><tr><td>CVE-2026-101325</td><td>wordpress-plugin newsletters-lite</td><td>SQL 注入</td></tr><tr><td>CVE-2026-103914</td><td>wordpress-plugin anywhere-elementor</td><td>SQL 注入</td></tr><tr><td>CVE-2026-104746</td><td>wordpress-plugin motors-car-dealership-classified-listings</td><td>路徑穿越</td></tr><tr><td>CVE-2026-104899</td><td>wordpress-plugin geodirectory</td><td>路徑穿越</td></tr><tr><td>CVE-2026-106119</td><td>npm @langchain/mongodb</td><td>NoSQL 注入</td></tr><tr><td>CVE-2026-110284</td><td>wordpress-plugin lifterlms</td><td>路徑穿越</td></tr><tr><td>CVE-2026-114630</td><td>wordpress-plugin elex-helpdesk-customer-support-ticket-system</td><td>路徑穿越</td></tr><tr><td>CVE-2026-118192</td><td>wordpress-plugin joomsport-sports-league-results-management</td><td>SQL 注入</td></tr><tr><td>CVE-2026-118698</td><td>wordpress-plugin joomsport-sports-league-results-management</td><td>SQL 注入</td></tr><tr><td>CVE-2026-119163</td><td>wordpress-plugin wp-marketing-automations</td><td>SQL 注入</td></tr><tr><td>CVE-2026-120043</td><td>wordpress-plugin slicewp</td><td>SQL 注入</td></tr><tr><td>CVE-2026-120530</td><td>wordpress-plugin wp-migration-duplicator</td><td>SQL 注入</td></tr><tr><td>CVE-2026-122265</td><td>wordpress-plugin vanquish-upload-files-for-woocommerce</td><td>路徑穿越</td></tr><tr><td>CVE-2026-1756</td><td>wordpress-plugin wp-foft-loader</td><td>危險的檔案上傳</td></tr><tr><td>CVE-2026-24009</td><td>pypi docling-core</td><td>不安全的反序列化</td></tr><tr><td>CVE-2026-26198</td><td>pypi ormar</td><td>SQL 注入</td></tr><tr><td>CVE-2026-29793</td><td>npm @feathersjs/mongodb</td><td>NoSQL 注入</td></tr><tr><td>CVE-2026-41228</td><td>composer froxlor/froxlor</td><td>路徑穿越</td></tr><tr><td>CVE-2026-46745</td><td>pypi apache-airflow-providers-fab</td><td>LDAP 注入</td></tr><tr><td>CVE-2026-48488</td><td>composer thorsten/phpMyFAQ</td><td>弱加密</td></tr><tr><td>CVE-2026-56738</td><td>composer thorsten/phpMyFAQ</td><td>SQL 注入</td></tr><tr><td>CVE-2026-88023</td><td>composer mongodb/mongo-php-library</td><td>NoSQL 注入</td></tr><tr><td>CVE-2026-88029</td><td>pypi pymongo</td><td>NoSQL 注入</td></tr><tr><td>CVE-2026-9231</td><td>wordpress-plugin wp-travel-engine</td><td>路徑穿越</td></tr>
+</table>
+
+
+<h2>保留組（holdout）</h2>
+<p>另一組沒有任何規則以它為依據或據以調整的案例，只用來量測。案例清單不公開，才能持續當作公正的量尺。</p>
+<p class="meta">量測日期 2026-11-10 (integ-3205c10)。</p>
+
+<table class="num"><tr><th>分組</th><th>案例</th><th>抓到</th><th>抓到率</th><th>修補版誤報</th><th>修補版誤報率</th></tr>
+<tr><td>全部</td><td>30</td><td>2</td><td>6.7%</td><td>0</td><td>0.0%</td></tr>
+</table>
+
+
+
+<h2>TypeScript 組</h2>
+<p class="meta">量測日期 2026-11-10 (integ-3205c10)。</p>
+
+<table class="num"><tr><th>分組</th><th>案例</th><th>抓到</th><th>抓到率</th><th>修補版誤報</th><th>修補版誤報率</th></tr>
+<tr><td>全部</td><td>18</td><td>1</td><td>5.6%</td><td>1</td><td>100.0%</td></tr>
+</table>
+
+
+
+</main>
+<footer>
+  <p>Apache-2.0 授權。本站由 cmd/sitegen 從 repo 產生。 <a href="https://github.com/nt-neil/shentu">GitHub</a> · <a href="../feed.xml">Atom 訂閱</a></p>
+</footer>
+</body>
+</html>
+

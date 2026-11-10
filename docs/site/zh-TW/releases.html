@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>更新紀錄 · Shentu</title>
+<meta name="description" content="給 Linux 伺服器用的小型開源資安助理，由 LLM 驅動。">
+<link rel="stylesheet" href="../site.css">
+<link rel="alternate" type="application/atom+xml" title="Shentu releases" href="../feed.xml">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="index.html">Shentu <span>神荼</span></a>
+  <nav>
+    <a href="index.html">首頁</a>
+    <a href="rules.html">規則</a>
+    <a href="bench.html">實測</a>
+    <a href="install.html">安裝</a>
+    <a href="releases.html" aria-current="page">更新紀錄</a>
+    <a class="lang" href="../releases.html">English</a>
+  </nav>
+</header>
+<main>
+
+<h1>更新紀錄</h1>
+<p>更新內容為英文原文（取自 CHANGELOG.md）。 <a href="../feed.xml">Atom 訂閱</a></p>
+
+<article class="release" id="v0.2.5">
+  <h3>v0.2.5 <small>尚未發布</small></h3>
+  <ul><li><code>app_code_audit</code> follows calls across files: input read in one file and used in a sink of another is reported at the sink, with the file it came from.</li><li>Framework route models: the parameters of WordPress hooks, shortcodes and REST routes, Laravel routes, Django URLs, Flask and FastAPI views and Express handlers are input, also when the route is registered in another file.</li><li>New rule classes: LDAP injection, NoSQL operator injection, dangerous file uploads, weak cryptography and hard-coded credentials; TypeScript files are checked with the JavaScript rules.</li><li>Audits keep their results between runs, so a large application is covered over a few patrols instead of one.</li><li>The audit sizes itself to the server: heap at most min(1 GiB, 25% of available memory, 50% of the service&#39;s cgroup), workers from the CPU count and the load.</li><li>Fewer false positives: <code>wp_send_json</code> output, <code>JSON_HEX_TAG</code> data blocks, MongoDB queries on objects that are not collections, and Django <code>_meta.get_field</code> checks.</li><li>Known issue: an audit spread over several runs can still report a few findings that differ from one run without a time limit; a fix is in progress.</li></ul>
+  <dl class="facts">
+    <dt>此版規則數</dt><dd>70</dd>
+    <dt>新增規則 (37)</dt><dd><code>js-file-upload-client-name</code> <code>js-hardcoded-secret-credentials</code> <code>js-ldapi-filter</code> <code>js-nosqli-mongo-query</code> <code>js-open-redirect-redirect</code> <code>js-ssrf-http-request</code> <code>js-weak-crypto-cipher</code> <code>js-weak-crypto-password-hash</code> <code>js-xss-dom</code> <code>js-xss-response</code> <code>js-xss-response-url</code> <code>js-xxe-libxmljs-noent</code> <code>php-file-upload-client-name</code> <code>php-hardcoded-secret-credentials</code> <code>php-ldapi-filter</code> <code>php-nosqli-mongo-query</code> <code>php-open-redirect-redirect</code> <code>php-path-traversal-file-write</code> <code>php-ssrf-http-request</code> <code>php-weak-crypto-cipher</code> <code>php-weak-crypto-password-hash</code> <code>php-xss-echo-attribute</code> <code>php-xss-echo-html</code> <code>php-xss-echo-script</code> <code>php-xss-echo-url</code> <code>php-xxe-libxml-noent</code> <code>python-file-upload-client-name</code> <code>python-hardcoded-secret-credentials</code> <code>python-ldapi-filter</code> <code>python-nosqli-mongo-query</code> <code>python-open-redirect-redirect</code> <code>python-ssrf-http-request</code> <code>python-weak-crypto-cipher</code> <code>python-weak-crypto-password-hash</code> <code>python-xss-mark-safe</code> <code>python-xss-response</code> <code>python-xxe-parser-entities</code> </dd>
+    
+    <dt>新支援的框架路由模型</dt><dd>django, express, fastapi, flask, laravel, wordpress</dd>
+    <dt>主組實測</dt><dd>15/97 (15.5%), 修補版誤報 0</dd>
+  </dl>
+</article>
+
+<article class="release" id="v0.2.4">
+  <h3>v0.2.4 <small>2026-11-09</small></h3>
+  <ul><li>Rules move to their own format, checked in CI, starting with 33 rules.</li><li><code>accounts_audit</code> reports shared SSH keys, <code>ld.so.preload</code> and PAM modules that belong to no package.</li><li><code>processes</code> flags cryptominers.</li><li>Patrol reports one line per webshell.</li></ul>
+  <dl class="facts">
+    <dt>此版規則數</dt><dd>33</dd>
+    <dt>新增規則 (33)</dt><dd><code>js-cmdi-exec</code> <code>js-cmdi-spawn-shell</code> <code>js-code-eval-eval</code> <code>js-code-eval-template-options</code> <code>js-deserialization-node-serialize</code> <code>js-deserialization-yaml-load</code> <code>js-path-traversal-archive-extract</code> <code>js-path-traversal-send-file</code> <code>js-sqli-object-input</code> <code>js-sqli-raw-interpolation</code> <code>js-sqli-sequelize-literal</code> <code>php-cmdi-mail-params</code> <code>php-cmdi-shell-exec</code> <code>php-code-eval-eval</code> <code>php-deserialization-phar-wrapper</code> <code>php-deserialization-unserialize</code> <code>php-path-traversal-file-include</code> <code>php-path-traversal-file-read</code> <code>php-path-traversal-laravel-storage</code> <code>php-sqli-orderby-identifier</code> <code>php-sqli-string-concat</code> <code>php-sqli-wpdb-unprepared</code> <code>python-cmdi-argument-injection</code> <code>python-cmdi-shell</code> <code>python-code-eval-eval</code> <code>python-code-eval-template-injection</code> <code>python-deserialization-pickle</code> <code>python-deserialization-yaml-load</code> <code>python-path-traversal-archive-extract</code> <code>python-path-traversal-send-file</code> <code>python-sqli-dbapi-format</code> <code>python-sqli-django-kwargs-alias</code> <code>python-sqli-sqlalchemy-text</code> </dd>
+    
+    
+    
+  </dl>
+</article>
+
+<article class="release" id="v0.2.3">
+  <h3>v0.2.3 <small>2026-11-09</small></h3>
+  <ul><li><code>app_code_audit</code>: an offline audit of the applications&#39; own files.</li></ul>
+  <dl class="facts">
+    <dt>此版規則數</dt><dd>0</dd>
+    
+    
+    
+    
+  </dl>
+</article>
+
+<article class="release" id="v0.2.2">
+  <h3>v0.2.2 <small>2026-11-08</small></h3>
+  <ul><li><code>package_vulns</code> reports each actively exploited CVE once.</li></ul>
+  <dl class="facts">
+    <dt>此版規則數</dt><dd>0</dd>
+    
+    
+    
+    
+  </dl>
+</article>
+
+<article class="release" id="v0.2.1">
+  <h3>v0.2.1 <small>2026-11-08</small></h3>
+  <ul><li><code>shentu bot</code>: talk to Shentu from Telegram, with guarded pairing and four ranges of levels.</li><li>Usage tracking and an optional monthly AI budget.</li><li>Round 2 of the model comparison: 14 models, 11 scenarios.</li></ul>
+  <dl class="facts">
+    <dt>此版規則數</dt><dd>0</dd>
+    
+    
+    
+    
+  </dl>
+</article>
+
+<article class="release" id="v0.2.0">
+  <h3>v0.2.0 <small>2026-11-07</small></h3>
+  <ul><li>One command from install to running: a guided setup.</li><li>Site survey and an application dependency scan.</li></ul>
+  <dl class="facts">
+    <dt>此版規則數</dt><dd>0</dd>
+    
+    
+    
+    
+  </dl>
+</article>
+
+<article class="release" id="v0.1.1">
+  <h3>v0.1.1 <small>2026-11-07</small></h3>
+  <ul><li><code>package_vulns</code> marks actively exploited vulnerabilities (CISA KEV).</li><li>Slack and Discord webhooks.</li><li>Security invariant tests, a prompt-injection suite and govulncheck before each release.</li></ul>
+  <dl class="facts">
+    <dt>此版規則數</dt><dd>0</dd>
+    
+    
+    
+    
+  </dl>
+</article>
+
+<article class="release" id="v0.1.0">
+  <h3>v0.1.0 <small>2026-11-07</small></h3>
+  <ul><li>First release: <code>shentu chat</code> and <code>shentu patrol</code> for Linux servers, with <code>shentu setup</code> for a local model or an API key.</li></ul>
+  <dl class="facts">
+    <dt>此版規則數</dt><dd>0</dd>
+    
+    
+    
+    
+  </dl>
+</article>
+
+
+</main>
+<footer>
+  <p>Apache-2.0 授權。本站由 cmd/sitegen 從 repo 產生。 <a href="https://github.com/nt-neil/shentu">GitHub</a> · <a href="../feed.xml">Atom 訂閱</a></p>
+</footer>
+</body>
+</html>
+

@@ -1,0 +1,47 @@
+{{define "title"}}{{t "install.title"}} · Shentu{{end}}
+{{define "main"}}
+<h1>{{t "install.title"}}</h1>
+{{if eq .L.Code "zh-TW"}}
+<p>一行指令安裝，並啟動五個問題的引導設定：</p>
+<pre><code>curl -fsSL https://github.com/nt-neil/shentu/releases/latest/download/install.sh | sudo sh</code></pre>
+<ol>
+  <li>語言（English 或繁體中文）；</li>
+  <li>AI 模型（本機模型或 API 金鑰），會測試一次；</li>
+  <li>警示要送到哪裡（Telegram、Slack、Discord 或 ntfy），並送出測試訊息；</li>
+  <li>盤點伺服器，列出發現的風險；</li>
+  <li>開啟巡邏，可選擇先產出第一份報告。</li>
+</ol>
+<p>之後用 <code>sudo shentu chat</code> 直接用白話提問；要改設定就再跑一次 <code>sudo shentu setup</code>。</p>
+<h2>主要指令</h2>
+<ul>
+  <li><code>shentu chat</code>：用白話問伺服器的資安狀況，模型自己挑工具執行並說明結果。</li>
+  <li><code>shentu patrol</code>：由 systemd timer 每 30 分鐘執行固定檢查，包括稽核網站應用程式的原始碼；有新發現時，由 LLM 說明後送到通知管道。LLM 掛了也照樣送出原始發現。</li>
+  <li><code>shentu survey</code>：先認識伺服器，當作巡邏的基準。</li>
+  <li><code>shentu bot</code>（選用）：從 Telegram 跟 Shentu 對話，權限分級、預設只收通知。</li>
+</ul>
+<h2>支援的系統</h2>
+<p>Ubuntu 22.04、24.04，Debian 12，Rocky 與 Alma 9，amd64 與 arm64（需要 systemd）。每個 release 附 <code>.deb</code> 與 <code>.rpm</code>，以及可用 <code>gh attestation verify</code> 驗證的簽章建置來源。</p>
+<p>它不會自己改動系統：每個會改變系統的動作都要人確認。詳細步驟見<a href="https://github.com/nt-neil/shentu/blob/main/docs/getting-started.zh-TW.md">入門指南</a>。</p>
+{{else}}
+<p>One command installs Shentu and starts a guided setup with five questions:</p>
+<pre><code>curl -fsSL https://github.com/nt-neil/shentu/releases/latest/download/install.sh | sudo sh</code></pre>
+<ol>
+  <li>language (English or 繁體中文);</li>
+  <li>the AI model (a local model, or an API key), tested once;</li>
+  <li>where alerts go (Telegram, Slack, Discord or ntfy), with a test message;</li>
+  <li>a survey of the server, with the risks it finds;</li>
+  <li>patrols on, plus an optional first report.</li>
+</ol>
+<p>Then ask questions with <code>sudo shentu chat</code>. Run <code>sudo shentu setup</code> again to change anything.</p>
+<h2>Commands</h2>
+<ul>
+  <li><code>shentu chat</code>: ask about your server's security in plain language; the model chooses which tools to run and explains what it found.</li>
+  <li><code>shentu patrol</code>: run by a systemd timer every 30 minutes, with fixed checks that include the audit of the web applications' code. New findings are explained by the LLM and sent to your notification channel; if the LLM is down, you still get the raw findings.</li>
+  <li><code>shentu survey</code>: learns the server first, as the baseline for patrols.</li>
+  <li><code>shentu bot</code> (optional): talk to Shentu from Telegram, with levels you choose; notifications only by default.</li>
+</ul>
+<h2>Supported systems</h2>
+<p>Ubuntu 22.04 and 24.04, Debian 12, Rocky and Alma 9, on amd64 and arm64 (systemd is required). Each release carries <code>.deb</code> and <code>.rpm</code> packages and a signed build provenance you can check with <code>gh attestation verify</code>.</p>
+<p>It never changes the system on its own: every action that changes something waits for a human to confirm it. Step by step: <a href="https://github.com/nt-neil/shentu/blob/main/docs/getting-started.md">Getting started</a>.</p>
+{{end}}
+{{end}}

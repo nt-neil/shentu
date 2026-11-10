@@ -1,0 +1,18 @@
+{{define "main"}}
+<section class="hero">
+  <h1>Shentu</h1>
+  <p class="tagline">{{t "tagline"}}</p>
+  <p>{{t "pitch"}}</p>
+  <p><a class="button" href="install.html">{{t "nav.install"}}</a> <a class="button ghost" href="rules.html">{{.Count}} {{t "rules.count"}}</a></p>
+</section>
+<section class="strengths">
+  <article><h2>{{t "s1.title"}}</h2><p>{{t "s1.body"}}</p></article>
+  <article><h2>{{t "s2.title"}}</h2><p>{{t "s2.body"}}</p></article>
+  <article><h2>{{t "s3.title"}}</h2><p>{{t "s3.body"}}</p></article>
+</section>
+<section>
+  <h2>{{t "latest"}}</h2>
+  {{template "releaselist" .Latest}}
+  <p><a href="releases.html">{{t "all.releases"}}</a> · <a href="{{.L.Root}}feed.xml">{{t "feed"}}</a></p>
+</section>
+{{end}}

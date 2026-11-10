@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="{{t "lang"}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{block "title" .}}Shentu{{end}}</title>
+<meta name="description" content="{{t "tagline"}}">
+<link rel="stylesheet" href="{{.L.Root}}site.css">
+<link rel="alternate" type="application/atom+xml" title="Shentu releases" href="{{.L.Root}}feed.xml">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="index.html">Shentu <span>神荼</span></a>
+  <nav>
+    <a href="index.html"{{if eq .Page "index.html"}} aria-current="page"{{end}}>{{t "nav.home"}}</a>
+    <a href="rules.html"{{if eq .Page "rules.html"}} aria-current="page"{{end}}>{{t "nav.rules"}}</a>
+    <a href="bench.html"{{if eq .Page "bench.html"}} aria-current="page"{{end}}>{{t "nav.bench"}}</a>
+    <a href="install.html"{{if eq .Page "install.html"}} aria-current="page"{{end}}>{{t "nav.install"}}</a>
+    <a href="releases.html"{{if eq .Page "releases.html"}} aria-current="page"{{end}}>{{t "nav.releases"}}</a>
+    <a class="lang" href="{{.L.Other}}{{.Page}}">{{.L.OtherN}}</a>
+  </nav>
+</header>
+<main>
+{{block "main" .}}{{end}}
+</main>
+<footer>
+  <p>{{t "footer"}} <a href="https://github.com/nt-neil/shentu">GitHub</a> · <a href="{{.L.Root}}feed.xml">{{t "feed"}}</a></p>
+</footer>
+</body>
+</html>
+{{define "releaselist"}}{{range .}}
+<article class="release" id="v{{.Version}}">
+  <h3>v{{.Version}} <small>{{if .Date}}{{.Date}}{{else}}{{t "unreleased"}}{{end}}</small></h3>
+  <ul>{{range .Items}}<li>{{item .}}</li>{{end}}</ul>
+  <dl class="facts">
+    {{if ge .Rules 0}}<dt>{{t "rules.total"}}</dt><dd>{{.Rules}}</dd>{{end}}
+    {{if .Added}}<dt>{{t "rules.added"}} ({{len .Added}})</dt><dd>{{range .Added}}<code>{{.}}</code> {{end}}</dd>{{end}}
+    {{if .Removed}}<dt>{{t "rules.removed"}} ({{len .Removed}})</dt><dd>{{range .Removed}}<code>{{.}}</code> {{end}}</dd>{{end}}
+    {{if .Frameworks}}<dt>{{t "fw.new"}}</dt><dd>{{join .Frameworks ", "}}</dd>{{end}}
+    {{if .Bench}}<dt>{{t "bench.change"}}</dt><dd>{{.Bench.All.Caught}}/{{.Bench.All.Cases}} ({{.Bench.All.Rate}}), {{t "fixedfp"}} {{.Bench.All.FixedFP}}{{if .PrevBench}} ({{signed (sub .Bench.All.Caught .PrevBench.All.Caught)}}){{end}}</dd>{{end}}
+  </dl>
+</article>
+{{end}}{{end}}
