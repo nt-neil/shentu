@@ -35,7 +35,8 @@ func hasSourceByScan(r *crule, toks []Token) bool {
 }
 
 // TestSourceIndexAsScan: for every rule and every sample of its language, the
-// index finds a source exactly where reading every token does.
+// index finds a source, a sink and their names exactly where reading every
+// token for every rule does.
 func TestSourceIndexAsScan(t *testing.T) {
 	e := engineForTest(t)
 	checked, found := 0, 0
@@ -48,10 +49,20 @@ func TestSourceIndexAsScan(t *testing.T) {
 				}
 				toks := lex(l, s.Code, newBudget(e.Limits))
 				si := newSrcIndex(toks, nil)
+				src, names := []byte(s.Code), nameSet(toks, map[string]bool{})
 				for _, r := range rs {
 					want := hasSourceByScan(r, toks)
 					if got := si.hasSource(r); got != want {
 						t.Errorf("%s on a sample of %s: index %v, scan %v", r.rule.ID, owner.rule.ID, got, want)
+					}
+					if got, want := si.hasSink(r), hasSink(r, toks); got != want {
+						t.Errorf("%s on a sample of %s: sink by the index %v, by scan %v", r.rule.ID, owner.rule.ID, got, want)
+					}
+					if got, want := si.names(r.sinks, r.textSinks, names, src), sinkNames(r, names, src); got != want {
+						t.Errorf("%s on a sample of %s: sink names by the index %v, without %v", r.rule.ID, owner.rule.ID, got, want)
+					}
+					if got, want := e.skipBySources(r, names, src, si), !sourceNames(r, names, src) || !want; got != want {
+						t.Errorf("%s on a sample of %s: skipped by the index %v, without %v", r.rule.ID, owner.rule.ID, got, want)
 					}
 					checked++
 					if want {
