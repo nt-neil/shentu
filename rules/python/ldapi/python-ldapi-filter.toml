@@ -110,15 +110,3 @@ def me():
     return {"e": str(directory.entries)}
 '''
 
-[[samples]]
-kind = "vulnerable"
-note = "a URL placeholder in the filter; no request name in the view"
-code = '''
-from flask import Flask
-app = Flask(__name__)
-
-@app.route("/people/<uid>")
-def person(uid):
-    directory.search(search_base=PEOPLE_DN, search_filter="(uid=" + uid + ")", attributes=["cn"])
-    return {"cn": str(directory.entries)}
-'''

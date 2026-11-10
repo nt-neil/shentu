@@ -7,7 +7,7 @@ tier = "info"
 title = "Module or object path taken from input and imported (import runs the module's code)"
 frameworks = ["django", "flask"]
 sources = ["request.args", "request.form", "request.values", "request.json", "request.get_json(", "request.GET", "request.POST", "request.data", "request.headers", "request.query_params", "request.json(", "self.get_argument(", "response.headers", "json.loads(request.body", "json.loads(request.data", "json.loads(message"]
-sinks = ["importlib.import_module(", "import_module(", "__import__(", "load_object(", "import_string(", "pydoc.locate(", "locate("]
+sinks = ["importlib.import_module(", "import_module(", "__import__(", "load_object(", "import_string(", "pydoc.locate("]
 sanitizers = []
 fix = "Map the value to a class or module through a fixed table on the server (ALLOWED = {'name': MyView}) or check it against an allowlist of full dotted paths before importing; importing an arbitrary module runs its top-level code."
 refs = ["CVE-2026-61599", "CVE-2026-105782"]

@@ -9,7 +9,7 @@ sources = ["request.args", "request.form", "request.values", "request.json", "re
 sinks = [".execute(", ".executemany(", ".executescript("]
 sanitizers = ["int("]
 fix = "Pass values as the second argument of execute() with the driver's placeholder (%s or ?); never use f-strings, % or .format() to build SQL."
-refs = ["CVE-2026-10105"]
+refs = ["CVE-2026-10105", "CVE-2022-41892"]
 
 [[args]]
 arg = 1   # the SQL text; the parameters argument is safe
@@ -72,4 +72,37 @@ class UserHandler(tornado.web.RequestHandler):
     def get(self):
         cur = self.application.db.cursor()
         cur.execute("SELECT * FROM users WHERE name = %s", (self.get_argument("name"),))
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "the search term goes by keyword into a helper that builds the SQL"
+code = '''
+def child_nodes(parent, term=None):
+    clause = ""
+    if term:
+        clause = "AND label ILIKE '%%%s%%'" % term.lower()
+    sql = "SELECT id, label FROM node WHERE parent = %s {extra}".format(extra=clause)
+    with connection.cursor() as cur:
+        cur.execute(sql, [parent])
+        return cur.fetchall()
+
+def options(request):
+    rows = child_nodes(request.GET["parent"], term=request.GET.get("q"))
+    return JsonResponse(rows, safe=False)
+'''
+
+[[samples]]
+kind = "safe"
+note = "the same helper with the term bound as a parameter"
+code = '''
+def child_nodes(parent, term=None):
+    sql = "SELECT id, label FROM node WHERE parent = %s AND label ILIKE %s"
+    with connection.cursor() as cur:
+        cur.execute(sql, [parent, "%" + (term or "") + "%"])
+        return cur.fetchall()
+
+def options(request):
+    rows = child_nodes(request.GET["parent"], term=request.GET.get("q"))
+    return JsonResponse(rows, safe=False)
 '''

@@ -505,6 +505,11 @@ func TestHeldOut(t *testing.T) {
 		{"QD6 paged_search keyword filter", "python", "@app.get('/d')\ndef d():\n    return list(conn.extend.standard.paged_search(search_base='dc=t', search_filter='(cn=' + request.args['q'] + ')'))\n", true, ""},
 		{"QD7 fastapi int param", "python", "from fastapi import FastAPI\napp = FastAPI()\n\n@app.get('/n')\ndef n(page: int):\n    return Post.objects.extra(where=['id > %d' % page])\n", false, ""},
 		{"QD8 extra kwargs from body", "python", "def v(request):\n    return Post.objects.extra(**json.loads(request.body))\n", true, ""},
+		{"QD9 sql built in a method of an instance", "python", "class Repo:\n    def by_label(self, label):\n        with connection.cursor() as cur:\n            cur.execute(\"SELECT * FROM t WHERE label = '%s'\" % label)\n\ndef v(request):\n    Repo().by_label(request.GET['l'])\n", true, "a call on an instance (Repo().by_label, repo.by_label) is not followed into the class's method (asked of the engine)"},
+		{"QD10 local function named locate", "python", "def locate(name):\n    return CATALOG.get(name)\n\ndef v(request):\n    return JsonResponse({'item': locate(request.GET['n'])})\n", false, ""},
+		{"QD11 ldap3 filter flask route placeholder", "python", "from flask import Flask\napp = Flask(__name__)\n\n@app.route(\"/people/<uid>\")\ndef person(uid):\n    directory.search(search_base=PEOPLE_DN, search_filter=\"(uid=\" + uid + \")\", attributes=[\"cn\"])\n    return {\"cn\": str(directory.entries)}\n", true, ""},
+		{"QD12 path through helpers from a flask route placeholder", "python", "from flask import Flask, abort\napp = Flask(__name__)\n\ndef locate(name):\n    full = (DROP_DIR / name).absolute()\n    if not str(full).startswith(str(DROP_DIR)):\n        abort(404)\n    return full\n\ndef sidecar(full):\n    return Path(str(full) + \".info\")\n\n@app.route(\"/drop/<path:name>\")\ndef drop_info(name):\n    with sidecar(locate(name)).open() as fh:\n        return fh.read()\n", true, ""},
+		{"QD13 extra where django path placeholder", "python", "from django.urls import path\n\ndef by_label(request, label):\n    rows = Ticket.objects.extra(where=[\"label = '%s'\" % label])\n    return render(request, \"tickets.html\", {\"rows\": rows})\n\nurlpatterns = [path(\"label/<str:label>/\", by_label)]\n", true, ""},
 	}
 	pass := 0
 	for _, c := range cases {

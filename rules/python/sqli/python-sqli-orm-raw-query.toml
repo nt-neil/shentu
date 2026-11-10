@@ -68,18 +68,6 @@ def find_users(request):
     return render(request, "users.html", {"users": users})
 '''
 
-[[samples]]
-kind = "vulnerable"
-note = "a URL placeholder put into extra(where=...); no request name in the view"
-code = '''
-from django.urls import path
-
-def by_label(request, label):
-    rows = Ticket.objects.extra(where=["label = '%s'" % label])
-    return render(request, "tickets.html", {"rows": rows})
-
-urlpatterns = [path("label/<str:label>/", by_label)]
-'''
 
 [[samples]]
 kind = "safe"

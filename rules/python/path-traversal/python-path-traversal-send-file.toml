@@ -9,7 +9,7 @@ sources = ["request.args", "request.form", "request.files", "request.GET", "requ
 sinks = ["send_file(", "open(", "FileResponse(", "os.path.join(", "Path(", ".save(", "web.FileResponse(", "aiofiles.open(", "anyio.open_file("]
 sanitizers = ["send_from_directory(", "safe_join(", "secure_filename(", ".is_relative_to(", ".startswith("]
 fix = "Use flask.send_from_directory or werkzeug.utils.safe_join (django.utils._os.safe_join); otherwise resolve the path and check it stays under the base directory."
-refs = ["CVE-2022-31507", "CVE-2022-31506", "CVE-2025-54140", "CVE-2026-44716", "GHSA-62mm-xwmv-crhg"]
+refs = ["CVE-2022-31507", "CVE-2022-31506", "CVE-2025-54140", "CVE-2026-44716", "GHSA-62mm-xwmv-crhg", "CVE-2020-15239"]
 
 # Werkzeug's FileStorage.filename is the client's name as sent; Django's
 # request.FILES names are already reduced to a base name by its parser, and its
@@ -116,4 +116,47 @@ async def asset(request):
     if not target.is_relative_to(ASSET_ROOT.resolve()):
         raise HTTPException(status_code=404)
     return FileResponse(target)
+'''
+
+
+[[samples]]
+kind = "safe"
+note = "the same helpers built on safe_join"
+code = '''
+from flask import Flask, abort
+from werkzeug.utils import safe_join
+app = Flask(__name__)
+
+def locate(name):
+    full = safe_join(str(DROP_DIR), name)
+    if full is None:
+        abort(404)
+    return full
+
+def sidecar(full):
+    return Path(full + ".info")
+
+@app.route("/drop/<path:name>")
+def drop_info(name):
+    with sidecar(locate(name)).open() as fh:
+        return fh.read()
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "a query value passed through helpers; a prefix check on an unresolved path does not stop .."
+code = '''
+def locate(name):
+    full = (DROP_DIR / name).absolute()
+    if not str(full).startswith(str(DROP_DIR)):
+        abort(404)
+    return full
+
+def sidecar(full):
+    return Path(str(full) + ".info")
+
+@app.get("/drop")
+def drop_info():
+    with sidecar(locate(request.args["name"])).open() as fh:
+        return fh.read()
 '''
