@@ -184,7 +184,7 @@ func (e *Engine) registrations(php bool, s *stmt, rs []*croute, ff *fileFuncs, m
 			}
 			h := args[k]
 			if c.r.Key != "" {
-				h = keyValue(h, c.r.Key)
+				h = routeKeyValue(h, c.r.Key)
 			}
 			var template []Token
 			if len(args) > 0 {
@@ -308,9 +308,9 @@ func handlerFuncs(php bool, s *stmt, h []Token, ff *fileFuncs) []*fn {
 	return nil
 }
 
-// keyValue returns the value of key in an array or object literal
+// routeKeyValue returns the value of key in an array or object literal
 // (array('callback' => f), ['callback' => f], {callback: f}).
-func keyValue(t []Token, key string) []Token {
+func routeKeyValue(t []Token, key string) []Token {
 	if len(t) == 0 {
 		return nil
 	}
@@ -476,7 +476,7 @@ func (e *Engine) routeRefs(lang string, tree []*stmt) []routeRef {
 				}
 				h := args[k]
 				if c.r.Key != "" {
-					h = keyValue(h, c.r.Key)
+					h = routeKeyValue(h, c.r.Key)
 				}
 				ref, ok := namedHandler(php, h)
 				if !ok {
