@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -242,10 +243,10 @@ func injectionScan(e *engine.Engine, lang, p string, b []byte) (found []engine.F
 }
 
 // injectionCalls follows one file's calls into the project's other files.
-func injectionCalls(pr *engine.Project, p string, b []byte, skip map[string]bool) (found []engine.Finding, done []string, cut, timed bool, err error) {
+func injectionCalls(pr *engine.Project, p string, b []byte, skip map[string]bool) (res engine.CallsPart, err error) {
 	defer func() {
 		if recover() != nil {
-			found, done, cut, timed, err = nil, nil, false, false, errPanic
+			res, err = engine.CallsPart{}, errPanic
 		}
 	}()
 	return projectScan(pr, p, b, skip)
@@ -266,16 +267,28 @@ var codeIndexFile = func() string {
 
 // crossFileFinding tells that calls were followed across files for only part
 // of the files; every file was still checked on its own.
+// slowTries is how many audits in a row the clock may cut one rule of one
+// file short before that rule is left out for the file, until it changes.
+const slowTries = 3
+
 // Results kept from earlier audits count: covered files had their calls
-// followed in this audit (now of them) or an earlier one, done of them to the end.
-func crossFileFinding(done, covered, now, total int, reason string) CodeFinding {
+// followed in this audit (now of them) or an earlier one, done of them to the
+// end; slowRules rules of slowFiles of the covered files were left out as too
+// slow for one audit.
+func crossFileFinding(done, covered, now, total, slowRules, slowFiles int, reason string) CodeFinding {
 	if covered == total {
 		reason = "the rest were cut short by the size limits or by names that could not be pinned to one file"
 	}
+	slow := ""
+	if slowFiles > 0 {
+		slow = fmt.Sprintf(", %d of them with %d rule(s) left out as too slow for one audit's time (cut short %d audits in a row; tried again when the file changes)",
+			slowFiles, slowRules, slowTries)
+	}
 	return CodeFinding{Kind: "injection", Severity: "info", Tier: "info",
 		Detail: fmt.Sprintf("the injection rules followed calls across files for %d of %d file(s) (%s); every file was checked on its own. "+
-			"Calls across files are covered for %d of %d file(s) (%.1f%%) so far, %d of them in this audit; "+
-			"unchanged files keep their results and the next audits go on from there", done, total, reason, covered, total, 100*float64(covered)/float64(max(total, 1)), now),
+			"Calls across files are covered for %d of %d file(s) (%.1f%%) so far%s, %d of them in this audit; "+
+			"unchanged files keep their results and the next audits go on from there",
+			done, total, reason, covered, total, 100*float64(covered)/float64(max(total, 1)), slow, now),
 		Fix: "nothing to do; a smaller audit root or a quieter server lets the next audit follow more"}
 }
 
@@ -543,36 +556,48 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 		// its own, and the summary says how far this got.
 		// Results kept from earlier audits are taken while the file, the files its
 		// calls reached and the names the project declares are unchanged; the
-		// time goes to the other files, in order.
+		// time goes to the other files, in order, those never tried before those
+		// the clock cut short.
 		done, covered, now, reason, cut := 0, 0, 0, "", false
+		slowRules, slowFiles := 0, 0
 		if left := time.Until(deadline); left > 0 && ctx.Err() == nil {
 			pr := eng.NewProject(code, read, engine.ProjectOptions{CacheFile: codeIndexFile(), MaxTime: left})
 			st.useDigests(pr, []string{"php", "python", "js"})
+			order := make([]string, 0, len(files))
+			var retry []string
 			for _, p := range files {
+				if fs := st.Files[p]; fs != nil && fs.Hash == hash[p] && fs.Calls == nil && fs.Part != nil {
+					retry = append(retry, p)
+				} else {
+					order = append(order, p)
+				}
+			}
+			for _, p := range append(order, retry...) {
 				if ctx.Err() != nil {
 					break
 				}
 				var k *passResult
 				var part *partResult
+				var slow []string
 				if fs := st.Files[p]; fs != nil && fs.Hash == hash[p] && !stale[p] {
-					k, part = fs.Calls, fs.Part
+					k, part, slow = fs.Calls, fs.Part, fs.Slow
 				}
 				if k == nil && !cut && !time.Now().After(deadline) && pr.Stopped() == "" {
 					if b, err := read(p); err == nil {
-						// A file the clock cut short before goes on from the rules it had done.
-						var skip map[string]bool
-						if part != nil {
-							skip = map[string]bool{}
-							for _, r := range part.Rules {
-								skip[r] = true
-							}
+						// A file the clock cut short before goes on from the rules it had
+						// done; a rule too slow for an audit's time is left out.
+						skip := map[string]bool{}
+						for _, r := range slow {
+							skip[r] = true
 						}
-						found, done, rcut, timed, err := injectionCalls(pr, p, b, skip)
-						if part != nil {
-							found = append(slices.Clone(part.Found), found...)
-							done = append(slices.Clone(part.Rules), done...)
-							rcut = rcut || part.Cut
+						if part == nil {
+							part = &partResult{}
 						}
+						for _, r := range part.Rules {
+							skip[r] = true
+						}
+						res, err := injectionCalls(pr, p, b, skip)
+						found := append(slices.Clone(part.Found), res.Found...)
 						switch {
 						case errors.Is(err, errPanic):
 							addNew(found)
@@ -580,16 +605,28 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 						case pr.Unsteady(): // a callee changed during the audit: holds now, not kept
 							addNew(found)
 							continue
-						case timed:
+						case res.Timed:
 							// The clock or the heap ran out: what the finished rules found
 							// is kept, and the next audit goes on from there.
 							addNew(found)
-							st.entry(p, hash[p]).Part = &partResult{Rules: done, Found: found, Cut: rcut}
+							fs := st.entry(p, hash[p])
+							next := &partResult{Rules: append(slices.Clone(part.Rules), res.Done...), Found: found,
+								Cut: part.Cut || res.Cut, Tries: maps.Clone(part.Tries)}
+							if res.At != "" {
+								if next.Tries == nil {
+									next.Tries = map[string]int{}
+								}
+								if next.Tries[res.At]++; next.Tries[res.At] >= slowTries {
+									fs.Slow = append(fs.Slow, res.At)
+									delete(next.Tries, res.At)
+								}
+							}
+							fs.Part = next
 							cut = true
 							continue
 						}
 						k = &passResult{Found: found, Reason: unfinishedReason(err)}
-						if k.Reason == "" && rcut {
+						if k.Reason == "" && (part.Cut || res.Cut || len(slow) > 0) {
 							k.Reason = "calls"
 						}
 						fs := st.entry(p, hash[p])
@@ -604,6 +641,10 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 				covered++
 				if k.Reason != "calls" {
 					done++ // limits of the file itself were reported by the first pass
+				}
+				if len(slow) > 0 {
+					slowFiles++
+					slowRules += len(slow)
 				}
 			}
 			for _, p := range files {
@@ -621,7 +662,7 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 		st.keepOnly(hash)
 		saveCallState(stateFile, st)
 		if done < len(files) {
-			add(crossFileFinding(done, covered, now, len(files), reason))
+			add(crossFileFinding(done, covered, now, len(files), slowRules, slowFiles, reason))
 		}
 	}
 

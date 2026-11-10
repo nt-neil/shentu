@@ -23,6 +23,10 @@ type keptAudit struct {
 	cutAll     bool       // the clock runs out during every file's calls
 	oneRule    bool       // the clock runs out in each file after one more rule
 	skips      [][]string // the rules each scan was told to leave out
+	slowFile   string     // the clock always runs out in slowRule of this file
+	slowRule   string
+	wasCut     map[string]bool // files a rule of which oneRule cut short
+	restarted  []string        // ... scanned again from their first rule
 }
 
 func newKeptAudit(t *testing.T, files map[string]string) *keptAudit {
@@ -38,7 +42,7 @@ func newKeptAudit(t *testing.T, files map[string]string) *keptAudit {
 		k.own = append(k.own, filepath.Base(p))
 		return scan(e, lang, p, b)
 	}
-	projectScan = func(pr *engine.Project, p string, b []byte, skip map[string]bool) ([]engine.Finding, []string, bool, bool, error) {
+	projectScan = func(pr *engine.Project, p string, b []byte, skip map[string]bool) (engine.CallsPart, error) {
 		k.calls = append(k.calls, filepath.Base(p))
 		var sk []string
 		for r := range skip {
@@ -46,22 +50,32 @@ func newKeptAudit(t *testing.T, files map[string]string) *keptAudit {
 		}
 		sort.Strings(sk)
 		k.skips = append(k.skips, sk)
-		f, done, cut, timed, err := calls(pr, p, b, skip)
-		if k.oneRule && len(done) > 1 {
-			keep := done[0] // as if the clock ran out right after this rule
+		if k.slowFile == filepath.Base(p) && !skip[k.slowRule] {
+			return engine.CallsPart{At: k.slowRule, Timed: true}, nil // the clock always runs out in this rule
+		}
+		res, err := calls(pr, p, b, skip)
+		if k.wasCut[filepath.Base(p)] && len(skip) == 0 {
+			k.restarted = append(k.restarted, filepath.Base(p))
+		}
+		if k.oneRule && len(res.Done) > 1 {
+			if k.wasCut == nil {
+				k.wasCut = map[string]bool{}
+			}
+			k.wasCut[filepath.Base(p)] = true
+			keep := res.Done[0] // as if the clock ran out right after this rule
 			var kept []engine.Finding
-			for _, x := range f {
+			for _, x := range res.Found {
 				if x.RuleID == keep {
 					kept = append(kept, x)
 				}
 			}
-			return kept, done[:1], cut, true, err
+			return engine.CallsPart{Found: kept, Done: res.Done[:1], At: res.Done[1], Cut: res.Cut, Timed: true}, err
 		}
 		if k.cutAll || k.cutAfter > 0 && len(k.calls) > k.cutAfter {
 			// As if the clock had run out during this file, before any rule was done.
-			return nil, nil, false, true, err
+			return engine.CallsPart{Timed: true}, err
 		}
-		return f, done, cut, timed, err
+		return res, err
 	}
 	return k
 }
@@ -156,7 +170,8 @@ func TestAppCodeAuditResumes(t *testing.T) {
 		}
 		sums = append(sums, sum)
 	}
-	want := [][]string{{"a.php", "b.php"}, {"b.php", "c.php"}, {"c.php"}}
+	// The second audit tries c.php, never tried, before b.php, cut short in the first.
+	want := [][]string{{"a.php", "b.php"}, {"b.php", "c.php"}, {"b.php"}}
 	if !reflect.DeepEqual(followed, want) {
 		t.Errorf("followed %v, want %v", followed, want)
 	}
@@ -213,8 +228,8 @@ func TestAppCodeAuditResumesWithinAFile(t *testing.T) {
 	for i := 0; i < 200 && grew; i++ {
 		got, _ = k.run()
 		grew = len(k.calls) > 0
-		if i > 0 && grew && len(k.skips[0]) == 0 {
-			t.Fatalf("audit %d started the file over: %v", i+1, k.skips)
+		if len(k.restarted) > 0 {
+			t.Fatalf("audit %d started %v over", i+1, k.restarted)
 		}
 	}
 	if grew {
@@ -222,6 +237,43 @@ func TestAppCodeAuditResumesWithinAFile(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, whole) {
 		t.Errorf("done a rule at a time %v, in one audit %v", got, whole)
+	}
+}
+
+// A rule of one file the clock cuts short in every audit holds back neither
+// the other files, done first, nor the file's other rules: after three audits
+// in a row it is left out for that file, the summary says so, and it is tried
+// again once the file changes.
+func TestAppCodeAuditSlowRuleLeftOut(t *testing.T) {
+	k := newKeptAudit(t, keptFiles)
+	k.slowFile, k.slowRule = "a.php", "php-cmdi-shell-exec"
+	var followed [][]string
+	var sum string
+	for range 10 {
+		_, sum = k.run()
+		followed = append(followed, k.calls)
+		if strings.Contains(sum, "(100.0%)") {
+			break
+		}
+	}
+	want := [][]string{{"a.php"}, {"a.php", "b.php", "c.php"}, {"a.php"}, {"a.php"}}
+	if !reflect.DeepEqual(followed, want) {
+		t.Errorf("followed %v, want %v", followed, want)
+	}
+	if !strings.Contains(sum, "covered for 3 of 3 file(s) (100.0%) so far, 1 of them with 1 rule(s) left out as too slow") {
+		t.Errorf("summary: %q", sum)
+	}
+	if k.skips[len(k.skips)-1][0] != k.slowRule && !slicesHasPrefix(k.skips[len(k.skips)-1], k.slowRule) {
+		t.Errorf("the last scan of a.php was not told to leave the rule out: %v", k.skips)
+	}
+	k.run()
+	if len(k.calls) != 0 {
+		t.Errorf("left out, then tried again although nothing changed: %v", k.calls)
+	}
+	os.WriteFile(filepath.Join(k.dir, "a.php"), []byte(keptFiles["a.php"]+"\n"), 0o644)
+	k.run()
+	if len(k.skips) == 0 || len(k.skips[0]) != 0 {
+		t.Errorf("after a change the rule was not tried again: %v", k.skips)
 	}
 }
 

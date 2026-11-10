@@ -59,9 +59,10 @@ func TestProjectScanCallsPart(t *testing.T) {
 	}
 	read := func(p string) ([]byte, error) { return []byte(files[p]), nil }
 	pr := e.NewProject([]string{"a.php", "b.php"}, read, ProjectOptions{})
-	all, done, cut, timed, err := pr.ScanCallsPart("a.php", []byte(files["a.php"]), nil)
-	if len(all) != 1 || len(done) < 2 || cut || timed || err != nil {
-		t.Fatalf("whole: %v done %v cut %v timed %v err %v", all, done, cut, timed, err)
+	whole, err := pr.ScanCallsPart("a.php", []byte(files["a.php"]), nil)
+	all, done := whole.Found, whole.Done
+	if len(all) != 1 || len(done) < 2 || whole.Cut || whole.Timed || whole.At != "" || err != nil {
+		t.Fatalf("whole: %+v err %v", whole, err)
 	}
 	skip := map[string]bool{}
 	for _, r := range done {
@@ -70,7 +71,8 @@ func TestProjectScanCallsPart(t *testing.T) {
 		}
 	}
 	pr = e.NewProject([]string{"a.php", "b.php"}, read, ProjectOptions{})
-	rest, done2, _, _, _ := pr.ScanCallsPart("a.php", []byte(files["a.php"]), skip)
+	part, _ := pr.ScanCallsPart("a.php", []byte(files["a.php"]), skip)
+	rest, done2 := part.Found, part.Done
 	if !reflect.DeepEqual(rest, all) || !reflect.DeepEqual(done2, []string{all[0].RuleID}) {
 		t.Errorf("the rest: %v done %v, want %v done [%s]", rest, done2, all, all[0].RuleID)
 	}

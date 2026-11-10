@@ -39,6 +39,7 @@ type fileState struct {
 	Own   *passResult `json:"o,omitempty"` // the file on its own (Engine.Scan)
 	Calls *passResult `json:"c,omitempty"` // its calls across files (Project.ScanCallsPart)
 	Part  *partResult `json:"p,omitempty"` // ... when the clock cut them short: the rules done so far
+	Slow  []string    `json:"s,omitempty"` // rules left out for this content: too slow for one audit
 	Deps  []string    `json:"d,omitempty"` // files its functions' calls were followed into
 }
 
@@ -48,6 +49,7 @@ type partResult struct {
 	Rules []string         `json:"r"`
 	Found []engine.Finding `json:"f,omitempty"`
 	Cut   bool             `json:"c,omitempty"` // a cap cut one of them short
+	Tries map[string]int   `json:"t,omitempty"` // rule → audits in a row the clock cut it short
 }
 
 type passResult struct {

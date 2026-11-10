@@ -62,6 +62,7 @@ type Project struct {
 	skip      map[string]bool            // ScanCallsPart: rules to leave out
 	part      []string                   // ... rules followed to their end in this scan
 	partCut   bool                       // ... one of them cut short by a cap
+	partAt    string                     // ... the rule the clock cut short
 	deps      map[string]map[string]bool // file → files its functions' calls were followed into
 	busy      int                        // summaries asked for while being worked out (cycles across files)
 	relGuess  int                        // relevance asked for while being worked out

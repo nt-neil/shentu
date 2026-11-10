@@ -190,16 +190,25 @@ func (p *Project) ScanCallsTimed(path string, src []byte) ([]Finding, bool, erro
 	return p.e.scan(LangOf(path), path, src, p, true, false)
 }
 
+// CallsPart is what ScanCallsPart did with one file.
+type CallsPart struct {
+	Found []Finding // the findings of the rules in Done
+	Done  []string  // the rules whose calls were followed to their end
+	At    string    // the rule the clock cut short ("" when it did not)
+	Cut   bool      // a cap cut one of Done short (as ErrCalls)
+	Timed bool      // the clock or the heap cut the scan short (as ScanCallsTimed)
+}
+
 // ScanCallsPart is ScanCallsTimed that leaves out the rules in skip, whose
 // calls were followed in an earlier audit, and tells which rules it followed
-// to their end (done): their findings are what it returns, also when the
-// clock cut the scan short (timed), so a file too slow for one audit is done
-// a few rules at a time. cut tells whether a cap cut one of done short.
-func (p *Project) ScanCallsPart(path string, src []byte, skip map[string]bool) (found []Finding, done []string, cut, timed bool, err error) {
-	p.skip, p.part, p.partCut = skip, nil, false
+// to their end: their findings are what it returns, also when the clock cut
+// the scan short, so a file too slow for one audit is done a few rules at a
+// time.
+func (p *Project) ScanCallsPart(path string, src []byte, skip map[string]bool) (CallsPart, error) {
+	p.skip, p.part, p.partCut, p.partAt = skip, nil, false, ""
 	defer func() { p.skip, p.part = nil, nil }()
-	found, timed, err = p.e.scan(LangOf(path), path, src, p, true, false)
-	return found, p.part, p.partCut, timed, err
+	found, timed, err := p.e.scan(LangOf(path), path, src, p, true, false)
+	return CallsPart{Found: found, Done: p.part, At: p.partAt, Cut: p.partCut, Timed: timed}, err
 }
 
 // scan is Scan in all its forms; dedup leaves out what the project returned
@@ -322,6 +331,9 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 					// time for may be the check that clears a flow.
 					add(r, direct[r])
 					delete(direct, r)
+					if proj != nil {
+						proj.partAt = r.rule.ID
+					}
 					break
 				}
 				// Cut short by its work cap, the flows found so far are kept (the
