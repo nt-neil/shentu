@@ -15,8 +15,8 @@ refs = ["https://expressjs.com/en/4x/api.html#req"]
 kind = "vulnerable"
 code = '''
 const { exec } = require('child_process');
-app.get('/ping', function (request, response) {
-  exec('ping -c 1 ' + request.query.host, (e, out) => response.send(out));
+app.get('/ping', function (rq, rs) {
+  exec('ping -c 1 ' + rq.query.host, (e, out) => rs.send(out));
 });
 '''
 
