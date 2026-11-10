@@ -1,0 +1,41 @@
+id = "php-xss-drupal-markup-create"
+lang = "php"
+class = "xss"
+cwe = "CWE-79"
+severity = "medium"
+tier = "info"
+title = "Request input marked as safe HTML with Drupal Markup::create()"
+sources = ["$_GET", "$_POST", "$_REQUEST", "->query->get(", "->request->get(", "::request()->get(", "$form_state->getValue(", "$form_state->getUserInput("]
+sinks = ["Markup::create(", "ViewsRenderPipelineMarkup::create(", "FormattableMarkup("]
+sanitizers = ["Html::escape(", "Xss::filter(", "Xss::filterAdmin(", "check_plain(", "htmlspecialchars", "strip_tags", "absint", "intval", "$this->t(", "t("]
+fix = "Markup::create() tells the renderer that the string is already safe, so nothing escapes it: pass user text as '#plain_text' or a @placeholder of FormattableMarkup/t(), or filter it with Xss::filter() first."
+refs = ["CVE-2025-10926"]
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+class GreetingController extends ControllerBase {
+  public function page() {
+    $name = \Drupal::request()->query->get('name');
+    return ['#markup' => Markup::create('<p>Welcome back, ' . $name . '</p>')];
+  }
+}
+'''
+
+[[samples]]
+kind = "safe"
+note = "the fix: a placeholder, which escapes the value"
+code = '''
+<?php
+class GreetingController extends ControllerBase {
+  public function page() {
+    $name = \Drupal::request()->query->get('name');
+    return ['#markup' => $this->t('<p>Welcome back, @name</p>', ['@name' => $name])];
+  }
+}
+'''
+
+[[args]]
+sinks = ["FormattableMarkup("]
+arg = 1

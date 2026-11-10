@@ -81,3 +81,4 @@ code = '''
 <?php
 $result = Process::path(storage_path('img'))->timeout(30)->run(['convert', $request->input('file'), 'out.png']);
 '''
+
