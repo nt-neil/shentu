@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -69,6 +70,9 @@ type argCond struct {
 	context        []uint8 // output contexts that count (ctxHTML ...); empty: any
 	literal        bool
 	key            string // the value under this key of an object argument (keyValue)
+	keys           bool   // an array, object or dict literal argument counts by its keys (keysVal)
+	minLen         int    // literal: the shortest string that counts
+	exclude        []*regexp.Regexp
 }
 
 // New compiles rules. A pattern that does not lex as code of its language is an error.
@@ -106,8 +110,24 @@ func compileRule(r rules.Rule) (*crule, error) {
 		}
 		return byRaw, nil
 	}
-	if _, err := compile(r.Sources, &c.sources, &c.textSources); err != nil {
+	srcs, err := compile(r.Sources, &c.sources, &c.textSources)
+	if err != nil {
 		return nil, err
+	}
+	for _, sa := range r.SourceArgs {
+		if sa.Arg < 1 || len(sa.Values) == 0 || len(sa.Sources) == 0 {
+			return nil, fmt.Errorf("source_args: needs sources, arg (from 1) and values")
+		}
+		for _, s := range sa.Sources {
+			p, ok := srcs[s]
+			if !ok || p.text != nil || p.callParen() < 0 {
+				return nil, fmt.Errorf("source_args: %q is not one of the call sources", s)
+			}
+			p.srcArg, p.srcVals = sa.Arg, map[string]bool{}
+			for _, v := range sa.Values {
+				p.srcVals[strings.ToLower(v)] = true
+			}
+		}
 	}
 	sinks, err := compile(r.Sinks, &c.sinks, &c.textSinks)
 	if err != nil {
@@ -118,7 +138,17 @@ func compileRule(r rules.Rule) (*crule, error) {
 		return nil, err
 	}
 	for _, a := range r.Args {
-		ac := &argCond{arg: a.Arg, whole: a.Whole, leading: a.Leading, literal: a.Literal, key: a.Key}
+		ac := &argCond{arg: a.Arg, whole: a.Whole, leading: a.Leading, literal: a.Literal, key: a.Key, keys: a.Keys, minLen: a.MinLen}
+		if (a.MinLen != 0 || len(a.Exclude) > 0) && !a.Literal {
+			return nil, fmt.Errorf("args: min_len and exclude need literal")
+		}
+		for _, x := range a.Exclude {
+			re, err := regexp.Compile("(?i)" + x)
+			if err != nil {
+				return nil, fmt.Errorf("args: exclude %q: %w", x, err)
+			}
+			ac.exclude = append(ac.exclude, re)
+		}
 		for _, name := range a.Context {
 			cs, ok := contextNames[name]
 			if !ok {
@@ -378,7 +408,7 @@ func hasSource(r *crule, toks []Token) bool {
 	}
 	for i := range toks {
 		for _, s := range r.sources {
-			if s.text == nil && s.at(toks, i, false) {
+			if s.text == nil && (s.at(toks, i, false) || s.baseAt(toks, i)) {
 				return true
 			}
 		}

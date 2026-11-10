@@ -523,8 +523,37 @@ func (a *analysis) assign(st state, t []Token) (val, bool) {
 	}
 	for _, tg := range a.targetList(lhs) {
 		a.setTarget(st, tg, v, t[k].Text, sep)
+		a.sourceParts(st, tg, rhs, t[k].Text)
+		if key, _, ok := a.pathKey(tg); ok {
+			if t[k].Text == "=" && a.canonical(st, rhs) {
+				st[canonKey+key] = entry{san: true}
+			} else if _, had := st[canonKey+key]; had {
+				delete(st, canonKey+key)
+			}
+		}
 	}
 	return v, sep
+}
+
+// sourceParts: after $f = $_FILES['doc'], with the source $_FILES[*]['name'],
+// $f['name'] is input; the rest of $f ($f['tmp_name']) is not.
+func (a *analysis) sourceParts(st state, tg, rhs []Token, op string) {
+	if a.noSrc || op != "=" {
+		return
+	}
+	rhs = stripParens(rhs)
+	if _, _, ok := a.pathKey(rhs); !ok {
+		return
+	}
+	for _, s := range a.r.sources {
+		r := s.rest(rhs)
+		if r == nil || len(rhs) > 0 && memberOp(a.php, rhs[0]) {
+			continue
+		}
+		if key, _, ok := a.pathKey(append(append([]Token{}, tg...), r...)); ok {
+			st[key] = entry{taint: !a.nonced(st), raw: true}
+		}
+	}
 }
 
 // targetList splits an assignment target into the paths it writes: a, [a, b],
@@ -1092,6 +1121,9 @@ func (a *analysis) term(st state, t []Token, i int, whole bool) (val, int) {
 	case tk.op("[") || tk.op("{"):
 		c := closeOf(t, i)
 		return a.postfix(st, t, i, c+1, a.literal(st, inside(t, i, c), tk.Text, whole), whole)
+	case a.php && tk.word("match") && i+1 < len(t) && t[i+1].op("(") && closeOf(t, i+1)+1 < len(t) && t[closeOf(t, i+1)+1].op("{") &&
+		(i == 0 || !memberOp(true, t[i-1])):
+		return a.matchExpr(st, t, i, whole)
 	case tk.Kind == Ident && (i == 0 || !memberOp(a.php, t[i-1])) && a.mapSanAt(t, i) >= 0:
 		return a.postfix(st, t, i, a.mapSanAt(t, i), val{}, whole) // array_map('absint', $x): each value sanitized (context.go)
 	case tk.Kind == Ident && (i == 0 || !memberOp(a.php, t[i-1])) && a.stripAllAt(t, i) >= 0:
@@ -1102,6 +1134,23 @@ func (a *analysis) term(st state, t []Token, i int, whole bool) (val, int) {
 		return a.postfix(st, t, i, i+1, val{}, whole)
 	}
 	return val{}, i + 1
+}
+
+// matchExpr evaluates PHP 8 match ($x) { 'a' => 'col_a', default => 'id' }:
+// its value is one of the arms' results, never the subject, so arms that are
+// all fixed give a clean value. An arm that throws gives no value.
+func (a *analysis) matchExpr(st state, t []Token, i int, whole bool) (val, int) {
+	open := closeOf(t, i+1) + 1
+	end := closeOf(t, open)
+	var v val
+	for _, arm := range splitTop(inside(t, open, end), isComma) {
+		k := indexTop(arm, 0, isOp("=>"))
+		if k < 0 || k+1 >= len(arm) || arm[k+1].word("throw") {
+			continue
+		}
+		v = or(v, a.expr(st, arm[k+1:], whole))
+	}
+	return a.postfix(st, t, i, end+1, v, whole)
 }
 
 // numericCasts and numericFuncs turn any value into a number (or a boolean), which
@@ -1140,10 +1189,8 @@ func (a *analysis) postfix(st state, t []Token, start, baseEnd int, v val, whole
 			return
 		}
 		for _, s := range a.r.sources {
-			if s.text == nil && s.at(t, pos, false) {
-				if e := pos + len(s.toks); srcEnd < 0 || e < srcEnd {
-					srcEnd = e
-				}
+			if e, ok := a.srcMatch(s, t, pos); ok && (srcEnd < 0 || e < srcEnd) {
+				srcEnd = e
 			}
 		}
 	}
@@ -1240,6 +1287,35 @@ func (a *analysis) postfix(st state, t []Token, start, baseEnd int, v val, whole
 		v = val{taint: true}
 	}
 	return v, j
+}
+
+// srcMatch matches a code source at i and returns where it ends. A source
+// that is a function call by name (request(, get_query_var() matches only the
+// function, not a method of that name: ->request( is something else. A source
+// with source_args is input only when its argument says so (Joomla's
+// ->get($k, $d, 'raw')); written another way, or left out, it is not.
+func (a *analysis) srcMatch(s *pat, t []Token, i int) (int, bool) {
+	if s.text != nil {
+		return 0, false
+	}
+	strict := len(s.toks) > 1 && s.toks[0].Kind == Ident && s.toks[1].op("(")
+	end, ok := s.match(t, i, strict)
+	if !ok || s.srcArg == 0 {
+		return end, ok
+	}
+	open := i + s.callParen()
+	if open >= len(t) || !t[open].op("(") {
+		return 0, false
+	}
+	args := splitTop(inside(t, open, closeOf(t, open)), isComma)
+	if s.srcArg > len(args) {
+		return 0, false
+	}
+	arg := stripParens(args[s.srcArg-1])
+	if len(arg) > 1 && arg[0].Kind == Ident && arg[1].op(":") {
+		arg = arg[2:] // a named argument: filter: 'raw'
+	}
+	return end, len(arg) == 1 && arg[0].Kind == Str && len(arg[0].Parts) == 0 && s.srcVals[strings.ToLower(arg[0].Text)]
 }
 
 // argsTaint reports whether a call's arguments carry taint into its result. Most
@@ -1645,7 +1721,7 @@ func (a *analysis) checkKeys(st state, atom []Token) []keyRef {
 		if open >= 0 {
 			args = splitTop(inside(atom, open, end-1), isComma)
 		}
-		if !predicates[s.name] || prefixChecks[s.name] && (!a.anySep(st, args) || !a.netPrefixOK(st, args)) {
+		if !predicates[s.name] || prefixChecks[s.name] && (!a.anySep(st, args) || !a.netPrefixOK(st, args) || !a.canonPrefix(st, args)) {
 			return nil
 		}
 		if s.name == "validate_file" && (len(args) < 2 || !a.allowlist(st, args[1])) {
@@ -1672,7 +1748,7 @@ func (a *analysis) checkKeys(st state, atom []Token) []keyRef {
 			if open >= 0 {
 				args = splitTop(inside(atom, open, end-1), isComma)
 			}
-			if !predicates[s.name] || prefixChecks[s.name] && (!a.anySep(st, args) || !a.netPrefixOK(st, args)) {
+			if !predicates[s.name] || prefixChecks[s.name] && (!a.anySep(st, args) || !a.netPrefixOK(st, args) || !a.canonPrefix(st, append(args, atom[:m]))) {
 				return nil
 			}
 			if prefixChecks[s.name] && netClasses[a.r.rule.Class] {
@@ -1733,7 +1809,7 @@ func (a *analysis) keysOf(t []Token) []keyRef {
 			src := false
 			for k := i; k < j; k++ {
 				for _, s := range a.r.sources {
-					if s.text == nil && s.at(t[:j], k, false) {
+					if _, ok := a.srcMatch(s, t[:j], k); ok {
 						src = true
 					}
 				}
@@ -1813,6 +1889,16 @@ func (a *analysis) sink(st state, t []Token, i int, s *pat) {
 				return false // { status: 302 } without the key: not this sink
 			}
 		}
+		if cond != nil && cond.keys {
+			if keys, ok := literalKeys(arg, a.php); ok {
+				for _, k := range keys {
+					if !(a.js && len(k) == 1 && k[0].Kind == Ident) && hit(a.expr(st, k, false)) {
+						return true // { name: 1 } in JavaScript: the name is written, not a variable
+					}
+				}
+				return false
+			}
+		}
 		if cond != nil && len(cond.context) > 0 {
 			return a.contextTaint(st, t[i], arg, cond.context)
 		}
@@ -1848,16 +1934,37 @@ func (a *analysis) sink(st state, t []Token, i int, s *pat) {
 
 // when reports whether one of the fragments is among a call's arguments. A
 // fragment ending in ":" or "=" names an option (shell:, shell=): it counts with
-// any value except a literal false, 0, null or None.
+// any value except a literal false, 0, null or None. A flag taken out with "~"
+// ($flags & ~LIBXML_DTDLOAD, & ~(A | B)) is not set.
 func (a *analysis) when(ps []*pat, region []Token) bool {
 	for _, p := range ps {
 		for i := range region {
-			if !p.at(region, i, false) {
+			if !p.at(region, i, false) || negated(region, i) {
 				continue
 			}
 			if v := optionValue(p, region, i); v == nil || !falsy(v) {
 				return true
 			}
+		}
+	}
+	return false
+}
+
+// negated reports whether the operand at i is under a bitwise "~": right after
+// it, or inside a group of flags joined by "|" that follows it: ~(A | B). In
+// ~A | B, "~" binds tighter, so B is set.
+func negated(t []Token, i int) bool {
+	if i > 0 && t[i-1].op("~") {
+		return true
+	}
+	for j := i - 1; j >= 0; j-- {
+		switch {
+		case t[j].op("("):
+			return j > 0 && t[j-1].op("~")
+		case t[j].op("|") || t[j].Kind == Ident:
+			continue // another flag of the same group
+		default:
+			return false
 		}
 	}
 	return false
