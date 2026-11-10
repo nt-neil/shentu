@@ -105,11 +105,29 @@ func (c *croute) takes(r *crule) bool {
 	return false
 }
 
-// field reports whether a source is one field under a request root.
+// field reports whether a source is one field under a request root:
+// root[...] ($_POST['pass), root.name or root->name (req.body.password,
+// $request->password), or a method of the root given a field's name
+// ($request->input('pass, request.form.get('password). A method taking
+// no literal name ($request->input(, request.GET.get() is the input in general.
 func (c *croute) field(s string) bool {
 	for root := range c.applies {
-		if rest, ok := strings.CutPrefix(s, root); ok && (strings.HasPrefix(rest, ".") || strings.HasPrefix(rest, "[")) {
+		rest, ok := strings.CutPrefix(s, root)
+		if !ok {
+			continue
+		}
+		if strings.HasPrefix(rest, "[") {
 			return true
+		}
+		for _, op := range []string{"->", "."} {
+			if m, ok := strings.CutPrefix(rest, op); ok {
+				name := strings.TrimLeftFunc(m, func(r rune) bool {
+					return r == '_' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9'
+				})
+				if len(name) < len(m) && (name == "" || strings.HasPrefix(name, "('") || strings.HasPrefix(name, "(\"")) {
+					return true
+				}
+			}
 		}
 	}
 	return false

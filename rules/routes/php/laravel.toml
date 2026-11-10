@@ -1,7 +1,7 @@
 [[route]]
 id = "laravel-route-closure"
 lang = "php"
-applies = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "$_SERVER", "$_FILES"]
+applies = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "$_SERVER", "$_FILES", "$request"]
 framework = "laravel"
 title = "A route closure's parameters are the URL's {placeholders}"
 register = ["Route::get", "Route::post", "Route::put", "Route::patch", "Route::delete", "Route::any", "Route::options"]

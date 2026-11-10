@@ -184,3 +184,19 @@ func TestRouteRulesLeftOut(t *testing.T) {
 		}
 	}
 }
+
+// Which sources are one field of the request (the rule is left out) and which
+// are the input in general.
+func TestRouteFieldSources(t *testing.T) {
+	c := &croute{applies: map[string]bool{"$_POST": true, "$request": true, "req.body": true, "request.form": true}}
+	for s, want := range map[string]bool{
+		"$_POST['pass": true, "$request->password": true, "$request->input('pass": true, "req.body.password": true,
+		"request.form.get('password": true, "request.form['pw": true,
+		"$_POST": false, "$request->input(": false, "$request->get(": false, "req.body": false, "request.form.get(": false,
+		"$_GET": false, "request.files": false,
+	} {
+		if got := c.field(s); got != want {
+			t.Errorf("field(%q) = %v, want %v", s, got, want)
+		}
+	}
+}
