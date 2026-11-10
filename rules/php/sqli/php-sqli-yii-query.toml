@@ -23,6 +23,7 @@ whole = true
 [[args]]
 sinks = ["->orderBy(", "->addOrderBy(", "->groupBy("]
 arg = 1
+keys = true   # orderBy([$column => SORT_ASC]): the key is the column, the value only a direction
 
 [[samples]]
 kind = "vulnerable"
