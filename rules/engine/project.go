@@ -865,35 +865,39 @@ func (p *Project) ok() bool {
 	}
 	if now := time.Now(); now.Sub(p.heapAt) > 100*time.Millisecond {
 		p.heapAt = now
-		heap := heapInUse()
+		// What the last GC found in use, not what is allocated since: with Go's
+		// memory limit at the cap (app_code_audit), the heap fills up to it with
+		// garbage before each GC, which is no reason to let caches go, still
+		// less to stop.
+		live := heapLive()
 		// Past 60% of the cap the parsed files go, past 80% after that the
 		// summaries and relevance too: being the same whoever works them out
 		// (own, relevance.go), they come back the same, only later. The parsed
 		// files first: they are most of the memory, and parsing one again is
 		// cheap, while summaries let go of in the middle of a chain of them are
 		// worked out again many times over. Only what is still over the cap
-		// after both stops calls crossing files.
-		if heap > p.opt.MaxHeap/10*6 && now.Sub(p.shrunk) > time.Second {
+		// after both, and a GC, stops calls crossing files.
+		if live > p.opt.MaxHeap/10*6 && (now.Sub(p.shrunk) > time.Second || live > p.opt.MaxHeap) {
 			p.shrunk = now
 			p.shrink(false)
 			runtime.GC()
-			if heap = heapInUse(); heap > p.opt.MaxHeap/10*8 {
+			if live = heapLive(); live > p.opt.MaxHeap/10*8 {
 				p.shrink(true)
 				runtime.GC()
-				heap = heapInUse()
+				live = heapLive()
 			}
-		}
-		if heap > p.opt.MaxHeap {
-			p.stop("following calls across files reached the memory limit")
-			p.byMachine = true
-			return false
+			if live > p.opt.MaxHeap {
+				p.stop("following calls across files reached the memory limit")
+				p.byMachine = true
+				return false
+			}
 		}
 	}
 	return true
 }
 
-func heapInUse() uint64 {
-	sample := []metrics.Sample{{Name: "/memory/classes/heap/objects:bytes"}}
+func heapLive() uint64 {
+	sample := []metrics.Sample{{Name: "/gc/heap/live:bytes"}}
 	metrics.Read(sample)
 	if sample[0].Value.Kind() != metrics.KindUint64 {
 		return 0
