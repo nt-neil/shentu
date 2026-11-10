@@ -20,12 +20,14 @@ refs = ["CVE-2026-45018"]
 sinks = ["subprocess.run(", "subprocess.Popen(", "subprocess.call(", "subprocess.check_call(", "subprocess.check_output(", "run(", "Popen(", "check_output(", "check_call(", "asyncio.create_subprocess_exec(", "os.execvp(", "os.execv("]
 arg = 1
 name = "args"
+whole = true
 unless = ["shell=True"]
 
 [[args]]
 sinks = ["StdioServerParameters("]
 arg = 1
 name = "command"
+whole = true
 
 [[samples]]
 kind = "vulnerable"
