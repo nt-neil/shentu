@@ -74,7 +74,9 @@ func (e *Engine) compileRoutes(rs []rules.Route) error {
 				return err
 			}
 			for _, cr := range e.byLang[r.Lang] {
-				cr.sources = append(cr.sources, p)
+				if len(cr.sources) > 0 || len(cr.textSources) > 0 { // a rule without sources reports its sink alone (a weak cipher): it stays so
+					cr.sources = append(cr.sources, p)
+				}
 			}
 		}
 		if len(c.register) > 0 || len(c.deco) > 0 || r.Extends != "" {
