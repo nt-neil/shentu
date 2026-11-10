@@ -112,18 +112,19 @@ type Route struct {
 	Decorator []string `toml:"decorator"` // decorators marking the function under them: *.route
 	Extends   string   `toml:"extends"`   // with Method: a method of a class extending this one (WP_Widget::widget)
 	Method    string   `toml:"method"`
-	Handler   int      `toml:"handler"`  // the argument (from 1) holding the handler; -1: the last
-	Key       string   `toml:"key"`      // the handler is this key of that argument (register_rest_route's 'callback')
-	Path      bool     `toml:"path"`     // the call counts only when its first argument is a path ('/...')
-	Params    []int    `toml:"params"`   // the handler's parameters (from 1) carrying input; empty: all
-	Template  bool     `toml:"template"` // only the parameters the path template names
-	Members   []string `toml:"members"`  // only these members of the parameters (query, params, body)
-	Requires  []string `toml:"requires"` // the model applies to a file naming one of these (an import: fastapi)
-	Exclude   []string `toml:"exclude"`  // a parameter declared with one of these is no input (Depends)
-	Bound     bool     `toml:"bound"`    // a parameter declared with a class type is an object the framework looked up (Laravel route model binding), no input
-	Sources   []string `toml:"sources"`  // further sources (get_settings_for_display), for the rules the model is for
-	Clears    []string `toml:"clears"`   // calls returning the application's stored data looked up by an id (get_attached_file(): not the request's input), for every rule of the language
-	Applies   []string `toml:"applies"`  // the request's roots ($_POST, req.body): a rule all of whose sources are one field under them (a password) is not one the model is for
+	Handler   int      `toml:"handler"`    // the argument (from 1) holding the handler; -1: the last
+	Key       string   `toml:"key"`        // the handler is this key of that argument (register_rest_route's 'callback')
+	Path      bool     `toml:"path"`       // the call counts only when its first argument is a path ('/...')
+	Params    []int    `toml:"params"`     // the handler's parameters (from 1) carrying input; empty: all
+	Template  bool     `toml:"template"`   // only the parameters the path template names
+	Members   []string `toml:"members"`    // only these members of the parameters (query, params, body)
+	Requires  []string `toml:"requires"`   // the model applies to a file naming one of these (an import: fastapi)
+	Exclude   []string `toml:"exclude"`    // a parameter declared with one of these is no input (Depends)
+	Bound     bool     `toml:"bound"`      // a parameter declared with a class type is an object the framework looked up (Laravel route model binding), no input
+	Sources   []string `toml:"sources"`    // further sources (get_settings_for_display), for the rules the model is for
+	Clears    []string `toml:"clears"`     // calls returning what the framework itself stored for an id (get_attached_file(): a path it wrote), not the request's input
+	ClearsFor []string `toml:"clears_for"` // the rule classes Clears is for (path-traversal): a stored value may still be one an attacker wrote, so not for every class
+	Applies   []string `toml:"applies"`    // the request's roots ($_POST, req.body): a rule all of whose sources are one field under them (a password) is not one the model is for
 	Note      string   `toml:"note"`
 	Refs      []string `toml:"refs"`
 	Samples   []Sample `toml:"samples"`

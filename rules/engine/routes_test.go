@@ -200,3 +200,17 @@ func TestRouteFieldSources(t *testing.T) {
 		}
 	}
 }
+
+// A route model's clears are for its classes only: an attachment's path
+// looked up by id clears a file read, not a query.
+func TestRouteClearsForTheirClasses(t *testing.T) {
+	e := engineForTest(t)
+	read := "<?php\nfunction f() {\n\treturn file_get_contents(get_attached_file($_GET['id']));\n}\n"
+	query := "<?php\nfunction f() {\n\tglobal $wpdb;\n\treturn $wpdb->query(\"DELETE FROM t WHERE path = '\" . get_attached_file($_GET['id']) . \"'\");\n}\n"
+	if fs, _ := e.Scan("php", "a.php", []byte(read)); len(fs) != 0 {
+		t.Errorf("file read of an attachment's path: %v", fs)
+	}
+	if fs, _ := e.Scan("php", "a.php", []byte(query)); len(fs) == 0 {
+		t.Error("query: the clear is not for SQL")
+	}
+}

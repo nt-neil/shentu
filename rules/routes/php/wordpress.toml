@@ -106,9 +106,10 @@ class Box_Widget extends \Elementor\Widget_Base {
 id = "wp-stored-lookups"
 lang = "php"
 framework = "wordpress"
-title = "What WordPress looks up by an id is the site's stored data, not the request's input"
-clears = ["get_attached_file(", "wp_get_original_image_path(", "wp_get_attachment_metadata(", "get_post_mime_type(", "get_post(", "get_post_field(", "get_post_meta(", "get_userdata(", "get_user_meta(", "get_term(", "get_term_meta(", "get_comment(", "get_comment_meta(", "wp_get_attachment_url("]
-note = "A request may choose which record (an attachment id); the path or value stored with it was written by WordPress or the site, so it is no longer the request's input. Stored values an attacker can write (post meta from a form) are another source, not this one."
+title = "An attachment's path and metadata, looked up by its id, are what WordPress stored, not the request's input"
+clears = ["get_attached_file(", "wp_get_original_image_path(", "wp_get_attachment_metadata(", "get_post_mime_type(", "wp_get_attachment_url("]
+clears_for = ["path-traversal", "deserialization"]
+note = "A request may choose which attachment (its id); the file's path, URL, metadata and type were written by WordPress when the file was uploaded, so for a path or a phar:// wrapper they are no longer the request's input. Only for those classes: post meta, a comment or a user field may hold what an attacker wrote, and are not cleared."
 refs = ["https://developer.wordpress.org/reference/functions/get_attached_file/"]
 
 [[route.samples]]

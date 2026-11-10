@@ -79,7 +79,9 @@ func (e *Engine) compileRoutes(rs []rules.Route) error {
 				return err
 			}
 			for _, cr := range e.byLang[r.Lang] {
-				cr.sanitizers = append(cr.sanitizers, p)
+				if slices.Contains(r.ClearsFor, cr.rule.Class) {
+					cr.sanitizers = append(cr.sanitizers, p)
+				}
 			}
 		}
 		for _, raw := range r.Sources {
