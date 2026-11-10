@@ -34,10 +34,11 @@
   <ul>{{range .Items}}<li>{{item .}}</li>{{end}}</ul>
   <dl class="facts">
     {{if ge .Rules 0}}<dt>{{t "rules.total"}}</dt><dd>{{.Rules}}</dd>{{end}}
-    {{if .Added}}<dt>{{t "rules.added"}} ({{len .Added}})</dt><dd>{{range .Added}}<code>{{.}}</code> {{end}}</dd>{{end}}
-    {{if .Removed}}<dt>{{t "rules.removed"}} ({{len .Removed}})</dt><dd>{{range .Removed}}<code>{{.}}</code> {{end}}</dd>{{end}}
+    {{if .Added}}<dt>{{t "rules.added"}} ({{len .Added}})</dt><dd>{{template "ids" .AddedBy}}</dd>{{end}}
+    {{if .Removed}}<dt>{{t "rules.removed"}} ({{len .Removed}})</dt><dd>{{template "ids" .RemovedBy}}</dd>{{end}}
     {{if .Frameworks}}<dt>{{t "fw.new"}}</dt><dd>{{join .Frameworks ", "}}</dd>{{end}}
     {{if .Bench}}<dt>{{t "bench.change"}}</dt><dd>{{.Bench.All.Caught}}/{{.Bench.All.Cases}} ({{.Bench.All.Rate}}), {{t "fixedfp"}} {{.Bench.All.FixedFP}}{{if .PrevBench}} ({{signed (sub .Bench.All.Caught .PrevBench.All.Caught)}}){{end}}</dd>{{end}}
   </dl>
 </article>
 {{end}}{{end}}
+{{define "ids"}}{{range .}}<details class="ids"><summary>{{or (langName .Lang) .Lang}} ({{len .IDs}})</summary><p>{{range .IDs}}<code>{{.}}</code> {{end}}</p></details>{{end}}{{end}}
