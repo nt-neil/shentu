@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
@@ -83,7 +84,7 @@ type ProjectOptions struct {
 }
 
 // indexVersion changes whenever fileIndex changes, so an old cache is ignored.
-const indexVersion = "2"
+const indexVersion = "3"
 
 type fileIndex struct {
 	Hash      string            `json:"h"`
@@ -96,6 +97,8 @@ type fileIndex struct {
 	Imports   map[string]imp    `json:"i,omitempty"` // Python, JS: local name → module and name in it; JS re-exports too ("*1": export * from)
 	Default   string            `json:"d,omitempty"` // JS: the name of the default export
 	Limited   bool              `json:"x,omitempty"` // could not be read to the end: not used for calls
+	Empty     []string          `json:"e,omitempty"` // top-level functions with an empty body (stubs: noop.php)
+	Guarded   []string          `json:"g,omitempty"` // PHP: "f:name" / "c:name" (lower case) declared under if (!function_exists / !class_exists)
 }
 
 type classIndex struct {
@@ -308,14 +311,20 @@ func (p *Project) add(f string, fi *fileIndex) {
 	if p.declared[fi.Lang] == nil {
 		p.declared[fi.Lang] = map[string][]string{}
 	}
+	// once per file: a name declared twice in it (if/else) is still that file's
+	once := func(m map[string][]string, n string) {
+		if l := m[n]; len(l) == 0 || l[len(l)-1] != f {
+			m[n] = append(l, f)
+		}
+	}
 	declare := func(n string) {
 		if fi.Lang == "php" {
 			n = strings.ToLower(n)
 		}
-		p.declared[fi.Lang][n] = append(p.declared[fi.Lang][n], f)
+		once(p.declared[fi.Lang], n)
 	}
 	for _, fn := range fi.Funcs {
-		p.funcs[fi.Lang][fn] = append(p.funcs[fi.Lang][fn], f)
+		once(p.funcs[fi.Lang], fn)
 		declare(fn)
 	}
 	for _, c := range fi.Classes {
@@ -328,9 +337,9 @@ func (p *Project) add(f string, fi *fileIndex) {
 		if fi.Lang == "php" {
 			name, q = strings.ToLower(name), strings.ToLower(q) // PHP class names ignore case
 		}
-		p.classes[fi.Lang][name] = append(p.classes[fi.Lang][name], f)
+		once(p.classes[fi.Lang], name)
 		if fi.Namespace != "" {
-			p.classes[fi.Lang][q] = append(p.classes[fi.Lang][q], f)
+			once(p.classes[fi.Lang], q)
 		}
 	}
 }
@@ -392,6 +401,9 @@ func indexFile(e *Engine, lang string, src []byte) *fileIndex {
 			if x.f.class == "" {
 				if !x.f.method {
 					fi.Funcs = append(fi.Funcs, name)
+					if len(x.f.body) == 0 && x.f.name != "" && len(infos) == 1 {
+						fi.Empty = append(fi.Empty, name)
+					}
 				}
 				continue
 			}
@@ -405,6 +417,7 @@ func indexFile(e *Engine, lang string, src []byte) *fileIndex {
 		}
 	}
 	sort.Strings(fi.Funcs)
+	sort.Strings(fi.Empty)
 	sort.Strings(order)
 	for _, n := range order {
 		sort.Strings(classes[n].Methods)
@@ -413,6 +426,7 @@ func indexFile(e *Engine, lang string, src []byte) *fileIndex {
 	switch lang {
 	case "php":
 		indexPHP(toks, fi)
+		fi.Guarded = guardedDecls(tree)
 	case "python":
 		indexPython(toks, fi)
 	case "js":
@@ -422,6 +436,70 @@ func indexFile(e *Engine, lang string, src []byte) *fileIndex {
 		fi.Limited = true
 	}
 	return fi
+}
+
+// guardedDecls lists the functions ("f:name") and classes ("c:name"), in lower
+// case, declared inside if (!function_exists('name')) or if (!class_exists('Name')).
+func guardedDecls(tree []*stmt) []string {
+	set := map[string]bool{}
+	var walk func(ss []*stmt, guards map[string]bool, depth int)
+	walk = func(ss []*stmt, guards map[string]bool, depth int) {
+		if depth > maxNest {
+			return
+		}
+		for _, s := range ss {
+			if s.fn != nil && s.fn.name != "" {
+				if s.fn.class == "" && !s.fn.method && guards["f:"+strings.ToLower(s.fn.name)] {
+					set["f:"+strings.ToLower(s.fn.name)] = true
+				}
+				if s.fn.class != "" && guards["c:"+strings.ToLower(s.fn.class)] {
+					set["c:"+strings.ToLower(s.fn.class)] = true
+				}
+				continue // a function's body declares nothing the file declares
+			}
+			inner := guards
+			if s.kind == sIf {
+				if g := existsGuards(s.toks); len(g) > 0 {
+					inner = maps.Clone(guards)
+					if inner == nil {
+						inner = map[string]bool{}
+					}
+					maps.Copy(inner, g)
+				}
+			}
+			walk(s.body, inner, depth+1)
+			walk(s.els, guards, depth+1)
+		}
+	}
+	walk(tree, nil, 0)
+	out := slices.Sorted(maps.Keys(set))
+	return out
+}
+
+// existsGuards reads !function_exists('f') and !class_exists('C') in a condition.
+func existsGuards(t []Token) map[string]bool {
+	var g map[string]bool
+	for i := 1; i+2 < len(t); i++ {
+		kind := ""
+		switch strings.ToLower(t[i].Text) {
+		case "function_exists":
+			kind = "f:"
+		case "class_exists":
+			kind = "c:"
+		}
+		j := i - 1
+		if j > 0 && t[j].op(`\`) {
+			j-- // !\function_exists(
+		}
+		if kind == "" || t[i].Kind != Ident || !t[j].op("!") || !t[i+1].op("(") || t[i+2].Kind != Str || len(t[i+2].Parts) > 0 {
+			continue
+		}
+		if g == nil {
+			g = map[string]bool{}
+		}
+		g[kind+strings.ToLower(strings.TrimPrefix(t[i+2].Text, `\`))] = true
+	}
+	return g
 }
 
 func indexPHP(t []Token, fi *fileIndex) {
@@ -971,7 +1049,43 @@ func (p *Project) function1(from string, fi *fileIndex, name string) string {
 			}
 		}
 	}
+	if c := p.preferred(fi.Lang, name, cands); c != "" {
+		if c == from {
+			return ""
+		}
+		return c
+	}
 	return "?" // declared in several files and none included: ambiguous
+}
+
+// preferred picks, among files declaring a function, the one that runs: a
+// stub with an empty body (WordPress's noop.php, for load-scripts.php) adds
+// nothing, and one declared under if (!function_exists(...)) is a fallback,
+// used only when no other file declared the function first (pluggable.php,
+// cache-compat.php). "" when that leaves no single file.
+func (p *Project) preferred(lang, name string, cands []string) string {
+	pick := func(keep func(*fileIndex) bool) []string {
+		var out []string
+		for _, c := range cands {
+			if fi := p.files[c]; fi != nil && keep(fi) {
+				out = append(out, c)
+			}
+		}
+		return out
+	}
+	if full := pick(func(fi *fileIndex) bool { return !slices.Contains(fi.Empty, name) }); len(full) > 0 {
+		cands = full
+	}
+	if len(cands) > 1 && lang == "php" {
+		g := "f:" + strings.ToLower(name)
+		if first := pick(func(fi *fileIndex) bool { return !slices.Contains(fi.Guarded, g) }); len(first) > 0 {
+			cands = first
+		}
+	}
+	if len(cands) == 1 {
+		return cands[0]
+	}
+	return ""
 }
 
 // includes lists the files a PHP file includes, to the given depth.
@@ -1068,6 +1182,18 @@ func (p *Project) class(from string, fi *fileIndex, name string) (string, classI
 					cands = []string{inc}
 					break
 				}
+			}
+		}
+		if len(cands) > 1 { // one declared under if (!class_exists(...)) is a fallback
+			g := "c:" + strings.ToLower(name)
+			var first []string
+			for _, c := range cands {
+				if cf := p.files[c]; cf != nil && !slices.Contains(cf.Guarded, g) {
+					first = append(first, c)
+				}
+			}
+			if len(first) == 1 {
+				cands = first
 			}
 		}
 	}
