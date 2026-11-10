@@ -154,32 +154,52 @@ func LangOf(path string) string {
 // Scan applies the rules of lang to one file. When the file hits the Limits it
 // returns what was found so far and ErrLimit.
 func (e *Engine) Scan(lang, path string, src []byte) ([]Finding, error) {
-	return e.scan(lang, path, src, nil, false)
+	out, _, err := e.scan(lang, path, src, nil, false, false)
+	return out, err
+}
+
+// ScanTimed is Scan, and also tells whether a time limit cut the scan short:
+// such a result depends on how busy the machine was, so it is not one to keep
+// for a later audit.
+func (e *Engine) ScanTimed(lang, path string, src []byte) ([]Finding, bool, error) {
+	return e.scan(lang, path, src, nil, false, false)
 }
 
 // Scan applies the rules to one file of the project, following its calls into
 // the project's other files. A finding can name another file: the line in the
 // callee a tainted argument reaches. Each finding is returned once per project.
 func (p *Project) Scan(path string, src []byte) ([]Finding, error) {
-	return p.e.scan(LangOf(path), path, src, p, false)
+	out, _, err := p.e.scan(LangOf(path), path, src, p, false, true)
+	return out, err
 }
 
 // ScanCalls is Scan without the analysis of each function on its own: only
 // what following calls finds, for a file already scanned with Engine.Scan. It
 // returns ErrCalls when following calls was cut short.
 func (p *Project) ScanCalls(path string, src []byte) ([]Finding, error) {
-	return p.e.scan(LangOf(path), path, src, p, true)
+	out, _, err := p.e.scan(LangOf(path), path, src, p, true, true)
+	return out, err
 }
 
-func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly bool) ([]Finding, error) {
+// ScanCallsTimed is ScanCalls for a result kept from one audit to the next:
+// every finding of the file is returned, also those another file's scan
+// returned already, and timed tells whether the clock, or another of the
+// project's caps that depend on the machine (heap), cut it short.
+func (p *Project) ScanCallsTimed(path string, src []byte) ([]Finding, bool, error) {
+	return p.e.scan(LangOf(path), path, src, p, true, false)
+}
+
+// scan is Scan in all its forms; dedup leaves out what the project returned
+// already, and timed tells whether a clock or the project's heap cap cut it short.
+func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, dedup bool) (_ []Finding, timed bool, _ error) {
 	rs := e.byLang[lang]
 	if len(rs) == 0 {
-		return nil, nil
+		return nil, false, nil
 	}
 	b := newBudget(e.Limits)
 	toks := lex(lang, string(src), b)
 	if b.hit {
-		return nil, ErrLimit
+		return nil, b.timeHit, ErrLimit
 	}
 	tree := parse(lang, toks, b)
 	ff := newFileFuncs(collectFuncs(tree, lang), lang)
@@ -195,7 +215,7 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly bo
 					continue
 				}
 				seen[l] = true
-				if proj != nil {
+				if dedup && proj != nil {
 					k := r.rule.ID + "\x00" + l.path + "\x00" + strconv.Itoa(l.line)
 					if proj.seen[k] {
 						continue
@@ -233,6 +253,7 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly bo
 	// one cut short, or with a summary that hit a cap and may say too little,
 	// keeps its first result as well.
 	limited := b.hit || b.limited || time.Now().After(b.deadline) // the first pass did not finish
+	timed = b.timeHit || time.Now().After(b.deadline)
 	callsCut := false
 	finished := map[*crule]bool{}
 	if !b.hit && (len(ff.byKey) > 0 || proj != nil) {
@@ -295,10 +316,12 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly bo
 			finished[r] = true
 		}
 		callsCut = callsCut || b2.hit || b2.limited
+		timed = timed || b2.timeHit
 	}
 	// Past a project cap calls no longer cross files: say so, not "clean".
 	if proj != nil && proj.stopped != "" {
 		callsCut = true
+		timed = timed || proj.byMachine // the clock or the heap, not the file limit
 	}
 	for _, r := range ruleList {
 		if lines, ok := direct[r]; ok && !finished[r] {
@@ -316,13 +339,13 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly bo
 	})
 	switch {
 	case limited:
-		return out, ErrLimit
+		return out, timed, ErrLimit
 	case b.partial:
-		return out, ErrPartial
+		return out, timed, ErrPartial
 	case callsCut:
-		return out, ErrCalls
+		return out, timed, ErrCalls
 	}
-	return out, nil
+	return out, timed, nil
 }
 
 // hasSink reports whether one of the rule's sinks occurs in the file at all.

@@ -36,33 +36,35 @@ import (
 // following calls across files, scans each file on its own as before, and
 // Stopped tells why. A Project is not safe for concurrent use.
 type Project struct {
-	e        *Engine
-	opt      ProjectOptions
-	files    map[string]*fileIndex
-	bySuffix map[string][]string // "pkg/mod.py", "mod.py" → paths
-	byClean  map[string]string   // cleaned slash path → path
-	read     func(string) ([]byte, error)
-	funcs    map[string]map[string][]string // lang → top-level function name → paths
-	classes  map[string]map[string][]string // lang → class name (short and qualified) → paths
-	psr4     []psr4Prefix
-	declared map[string]map[string][]string // lang → function or method name (PHP: lower case) → paths
-	ctx      map[string]*fileCtx
-	lru      []string
-	resident int
-	sums     map[string]*summaries          // rule id + "\x00" + path
-	kept     map[string]map[string]*summary // finished summaries of files no longer kept parsed
-	incl     map[string][]string            // memo of includes()
-	fnMemo   map[string]string              // memo of function(): from + "\x00" + name → file
-	relMemo  map[string]bool                // memo of relevant(): rule, file, key
-	seen     map[string]bool                // findings already returned: rule, path, line
-	stopped  string
-	busy     int    // summaries asked for while being worked out (cycles across files)
-	relGuess int    // relevance asked for while being worked out
-	unsure   bool   // the last resolution met a name it could not pin to one file
-	ambig    string // ... a PHP function declared in several files
-	deadline time.Time
-	depth    int
-	heapAt   time.Time
+	e         *Engine
+	opt       ProjectOptions
+	files     map[string]*fileIndex
+	bySuffix  map[string][]string // "pkg/mod.py", "mod.py" → paths
+	byClean   map[string]string   // cleaned slash path → path
+	read      func(string) ([]byte, error)
+	funcs     map[string]map[string][]string // lang → top-level function name → paths
+	classes   map[string]map[string][]string // lang → class name (short and qualified) → paths
+	psr4      []psr4Prefix
+	declared  map[string]map[string][]string // lang → function or method name (PHP: lower case) → paths
+	ctx       map[string]*fileCtx
+	lru       []string
+	resident  int
+	sums      map[string]*summaries          // rule id + "\x00" + path
+	kept      map[string]map[string]*summary // finished summaries of files no longer kept parsed
+	incl      map[string][]string            // memo of includes()
+	fnMemo    map[string]string              // memo of function(): from + "\x00" + name → file
+	relMemo   map[string]bool                // memo of relevant(): rule, file, key
+	seen      map[string]bool                // findings already returned: rule, path, line
+	stopped   string
+	byMachine bool                       // stopped by the clock or the heap: where depends on the machine
+	deps      map[string]map[string]bool // file → files its functions' calls were followed into
+	busy      int                        // summaries asked for while being worked out (cycles across files)
+	relGuess  int                        // relevance asked for while being worked out
+	unsure    bool                       // the last resolution met a name it could not pin to one file
+	ambig     string                     // ... a PHP function declared in several files
+	deadline  time.Time
+	depth     int
+	heapAt    time.Time
 }
 
 // ProjectOptions are the caps of a Project. Zero values take the defaults.
@@ -130,7 +132,7 @@ func (e *Engine) NewProject(paths []string, read func(string) ([]byte, error), o
 	p := &Project{e: e, opt: opt, read: read, files: map[string]*fileIndex{}, bySuffix: map[string][]string{}, byClean: map[string]string{},
 		funcs: map[string]map[string][]string{}, classes: map[string]map[string][]string{}, declared: map[string]map[string][]string{},
 		ctx: map[string]*fileCtx{}, sums: map[string]*summaries{}, kept: map[string]map[string]*summary{}, seen: map[string]bool{},
-		incl: map[string][]string{}, fnMemo: map[string]string{}, relMemo: map[string]bool{},
+		incl: map[string][]string{}, fnMemo: map[string]string{}, relMemo: map[string]bool{}, deps: map[string]map[string]bool{},
 		deadline: time.Now().Add(opt.MaxTime)}
 	cache := loadIndexCache(opt.CacheFile)
 	fresh := map[string]*fileIndex{}
@@ -151,6 +153,7 @@ func (e *Engine) NewProject(paths []string, read func(string) ([]byte, error), o
 		}
 		if time.Now().After(p.deadline) {
 			p.stop("indexing ran out of time")
+			p.byMachine = true
 			break
 		}
 		b, err := read(f)
@@ -202,6 +205,54 @@ func (p *Project) importedRelative(file string, t []Token, i int) bool {
 	}
 	m, ok := fi.Imports[name]
 	return ok && strings.HasPrefix(m.Module, ".")
+}
+
+// Deps lists the files whose functions calls in file f's functions were
+// followed into, by any scan of the project so far. A result that followed
+// calls from f depends on these files, theirs on their own Deps, and all of
+// them on the names the project declares (IndexDigest).
+func (p *Project) Deps(f string) []string {
+	var out []string
+	for g := range p.deps[f] {
+		out = append(out, g)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// IndexDigest is a digest of what the project declares in one language: its
+// files' paths and names (functions, classes, includes, imports), not their
+// code, and for PHP the composer.json PSR-4 prefixes. Calls are resolved
+// through these, so a result that followed calls holds while the digest of its
+// language stays the same and its Deps' content does too.
+func (p *Project) IndexDigest(lang string) string {
+	h := sha256.New()
+	var paths []string
+	for f := range p.files {
+		paths = append(paths, f)
+	}
+	sort.Strings(paths)
+	for _, f := range paths {
+		fi := *p.files[f]
+		if fi.Lang != lang {
+			fmt.Fprintf(h, "%q\n", f) // other languages' files still name modules (bySuffix)
+			continue
+		}
+		fi.Hash = ""
+		b, _ := json.Marshal(fi)
+		fmt.Fprintf(h, "%q %s\n", f, b)
+	}
+	if lang == "php" {
+		var ps []string
+		for _, x := range p.psr4 {
+			ps = append(ps, fmt.Sprintf("psr4 %q %q\n", x.ns, x.dir))
+		}
+		sort.Strings(ps) // read from a JSON object: no order of their own
+		for _, x := range ps {
+			h.Write([]byte(x))
+		}
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 // Stopped tells why calls stopped crossing files, or "" when they did not.
@@ -632,6 +683,12 @@ func (p *Project) analysisFor(a *analysis, f string) *analysis {
 	if ctx == nil {
 		return nil
 	}
+	if f != a.file {
+		if p.deps[a.file] == nil {
+			p.deps[a.file] = map[string]bool{}
+		}
+		p.deps[a.file][f] = true
+	}
 	key := a.r.rule.ID + "\x00" + f
 	sc, ok := p.sums[key]
 	if !ok {
@@ -701,6 +758,7 @@ func (p *Project) ok() bool {
 	}
 	if time.Now().After(p.deadline) {
 		p.stop("following calls across files ran out of time")
+		p.byMachine = true
 		return false
 	}
 	// The heap is read at most every 100ms, and without stopping the program
@@ -711,6 +769,7 @@ func (p *Project) ok() bool {
 		metrics.Read(sample)
 		if sample[0].Value.Kind() == metrics.KindUint64 && sample[0].Value.Uint64() > p.opt.MaxHeap {
 			p.stop("following calls across files reached the memory limit")
+			p.byMachine = true
 			return false
 		}
 	}
