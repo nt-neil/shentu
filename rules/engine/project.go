@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
@@ -36,33 +37,41 @@ import (
 // following calls across files, scans each file on its own as before, and
 // Stopped tells why. A Project is not safe for concurrent use.
 type Project struct {
-	e        *Engine
-	opt      ProjectOptions
-	files    map[string]*fileIndex
-	bySuffix map[string][]string // "pkg/mod.py", "mod.py" → paths
-	byClean  map[string]string   // cleaned slash path → path
-	read     func(string) ([]byte, error)
-	funcs    map[string]map[string][]string // lang → top-level function name → paths
-	classes  map[string]map[string][]string // lang → class name (short and qualified) → paths
-	psr4     []psr4Prefix
-	declared map[string]map[string][]string // lang → function or method name (PHP: lower case) → paths
-	ctx      map[string]*fileCtx
-	lru      []string
-	resident int
-	sums     map[string]*summaries          // rule id + "\x00" + path
-	kept     map[string]map[string]*summary // finished summaries of files no longer kept parsed
-	incl     map[string][]string            // memo of includes()
-	fnMemo   map[string]string              // memo of function(): from + "\x00" + name → file
-	relMemo  map[string]bool                // memo of relevant(): rule, file, key
-	seen     map[string]bool                // findings already returned: rule, path, line
-	stopped  string
-	busy     int    // summaries asked for while being worked out (cycles across files)
-	relGuess int    // relevance asked for while being worked out
-	unsure   bool   // the last resolution met a name it could not pin to one file
-	ambig    string // ... a PHP function declared in several files
-	deadline time.Time
-	depth    int
-	heapAt   time.Time
+	e         *Engine
+	opt       ProjectOptions
+	files     map[string]*fileIndex
+	bySuffix  map[string][]string // "pkg/mod.py", "mod.py" → paths
+	byClean   map[string]string   // cleaned slash path → path
+	read      func(string) ([]byte, error)
+	funcs     map[string]map[string][]string // lang → top-level function name → paths
+	classes   map[string]map[string][]string // lang → class name (short and qualified) → paths
+	psr4      []psr4Prefix
+	declared  map[string]map[string][]string // lang → function or method name (PHP: lower case) → paths
+	ctx       map[string]*fileCtx
+	lru       []string
+	resident  int
+	sums      map[string]*summaries          // rule id + "\x00" + path
+	kept      map[string]map[string]*summary // finished summaries of files no longer kept parsed
+	incl      map[string][]string            // memo of includes()
+	fnMemo    map[string]string              // memo of function(): from + "\x00" + name → file
+	relMemo   map[string]bool                // memo of relevant(): rule, file, key
+	seen      map[string]bool                // findings already returned: rule, path, line
+	stopped   string
+	byMachine bool                       // stopped by the clock or the heap: where depends on the machine
+	unsteady  bool                       // the current scan met a file it could not read, or parse in time
+	unread    map[string]bool            // files that could not be read, or parsed in time, since indexed
+	skip      map[string]bool            // ScanCallsPart: rules to leave out
+	part      []string                   // ... rules followed to their end in this scan
+	partCut   bool                       // ... one of them cut short by a cap
+	partAt    string                     // ... the rule the clock cut short
+	deps      map[string]map[string]bool // file → files its functions' calls were followed into
+	busy      int                        // summaries asked for while being worked out (cycles across files)
+	relGuess  int                        // relevance asked for while being worked out
+	unsure    bool                       // the last resolution met a name it could not pin to one file
+	ambig     string                     // ... a PHP function declared in several files
+	deadline  time.Time
+	depth     int
+	heapAt    time.Time
 }
 
 // ProjectOptions are the caps of a Project. Zero values take the defaults.
@@ -75,7 +84,7 @@ type ProjectOptions struct {
 }
 
 // indexVersion changes whenever fileIndex changes, so an old cache is ignored.
-const indexVersion = "2"
+const indexVersion = "3"
 
 type fileIndex struct {
 	Hash      string            `json:"h"`
@@ -88,6 +97,8 @@ type fileIndex struct {
 	Imports   map[string]imp    `json:"i,omitempty"` // Python, JS: local name → module and name in it; JS re-exports too ("*1": export * from)
 	Default   string            `json:"d,omitempty"` // JS: the name of the default export
 	Limited   bool              `json:"x,omitempty"` // could not be read to the end: not used for calls
+	Empty     []string          `json:"e,omitempty"` // top-level functions with an empty body (stubs: noop.php)
+	Guarded   []string          `json:"g,omitempty"` // PHP: "f:name" / "c:name" (lower case) declared under if (!function_exists / !class_exists)
 }
 
 type classIndex struct {
@@ -131,7 +142,7 @@ func (e *Engine) NewProject(paths []string, read func(string) ([]byte, error), o
 	p := &Project{e: e, opt: opt, read: read, files: map[string]*fileIndex{}, bySuffix: map[string][]string{}, byClean: map[string]string{},
 		funcs: map[string]map[string][]string{}, classes: map[string]map[string][]string{}, declared: map[string]map[string][]string{},
 		ctx: map[string]*fileCtx{}, sums: map[string]*summaries{}, kept: map[string]map[string]*summary{}, seen: map[string]bool{},
-		incl: map[string][]string{}, fnMemo: map[string]string{}, relMemo: map[string]bool{},
+		incl: map[string][]string{}, fnMemo: map[string]string{}, relMemo: map[string]bool{}, deps: map[string]map[string]bool{}, unread: map[string]bool{},
 		deadline: time.Now().Add(opt.MaxTime)}
 	cache := loadIndexCache(opt.CacheFile)
 	fresh := map[string]*fileIndex{}
@@ -153,6 +164,7 @@ func (e *Engine) NewProject(paths []string, read func(string) ([]byte, error), o
 		}
 		if time.Now().After(p.deadline) {
 			p.stop("indexing ran out of time")
+			p.byMachine = true
 			break
 		}
 		b, err := read(f)
@@ -206,6 +218,70 @@ func (p *Project) importedRelative(file string, t []Token, i int) bool {
 	return ok && strings.HasPrefix(m.Module, ".")
 }
 
+// dep records that a call in file from was followed into file to.
+func (p *Project) dep(from, to string) {
+	if to == "" || to == from {
+		return
+	}
+	if p.deps[from] == nil {
+		p.deps[from] = map[string]bool{}
+	}
+	p.deps[from][to] = true
+}
+
+// Deps lists the files whose functions calls in file f's functions were
+// followed into, by any scan of the project so far. A result that followed
+// calls from f depends on these files, theirs on their own Deps, and all of
+// them on the names the project declares (IndexDigest).
+func (p *Project) Deps(f string) []string {
+	var out []string
+	for g := range p.deps[f] {
+		out = append(out, g)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// IndexDigest is a digest of what the project declares in one language: its
+// files' paths and names (functions, classes, includes, imports), not their
+// code, and for PHP the composer.json PSR-4 prefixes. Calls are resolved
+// through these, so a result that followed calls holds while the digest of its
+// language stays the same and its Deps' content does too.
+func (p *Project) IndexDigest(lang string) string {
+	h := sha256.New()
+	var paths []string
+	for f := range p.files {
+		paths = append(paths, f)
+	}
+	sort.Strings(paths)
+	for _, f := range paths {
+		fi := *p.files[f]
+		if fi.Lang != lang {
+			fmt.Fprintf(h, "%q\n", f) // other languages' files still name modules (bySuffix)
+			continue
+		}
+		fi.Hash = ""
+		b, _ := json.Marshal(fi)
+		fmt.Fprintf(h, "%q %s\n", f, b)
+	}
+	if lang == "php" {
+		var ps []string
+		for _, x := range p.psr4 {
+			ps = append(ps, fmt.Sprintf("psr4 %q %q\n", x.ns, x.dir))
+		}
+		sort.Strings(ps) // read from a JSON object: no order of their own
+		for _, x := range ps {
+			h.Write([]byte(x))
+		}
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// Unsteady reports whether the last scan met a file it could not read (gone
+// or changed since it was indexed) or parse in time: its result holds for
+// this audit but is not one to keep for the next.
+func (p *Project) Unsteady() bool { return p.unsteady }
+
 // Stopped tells why calls stopped crossing files, or "" when they did not.
 func (p *Project) Stopped() string { return p.stopped }
 
@@ -237,14 +313,20 @@ func (p *Project) add(f string, fi *fileIndex) {
 	if p.declared[fi.Lang] == nil {
 		p.declared[fi.Lang] = map[string][]string{}
 	}
+	// once per file: a name declared twice in it (if/else) is still that file's
+	once := func(m map[string][]string, n string) {
+		if l := m[n]; len(l) == 0 || l[len(l)-1] != f {
+			m[n] = append(l, f)
+		}
+	}
 	declare := func(n string) {
 		if fi.Lang == "php" {
 			n = strings.ToLower(n)
 		}
-		p.declared[fi.Lang][n] = append(p.declared[fi.Lang][n], f)
+		once(p.declared[fi.Lang], n)
 	}
 	for _, fn := range fi.Funcs {
-		p.funcs[fi.Lang][fn] = append(p.funcs[fi.Lang][fn], f)
+		once(p.funcs[fi.Lang], fn)
 		declare(fn)
 	}
 	for _, c := range fi.Classes {
@@ -257,9 +339,9 @@ func (p *Project) add(f string, fi *fileIndex) {
 		if fi.Lang == "php" {
 			name, q = strings.ToLower(name), strings.ToLower(q) // PHP class names ignore case
 		}
-		p.classes[fi.Lang][name] = append(p.classes[fi.Lang][name], f)
+		once(p.classes[fi.Lang], name)
 		if fi.Namespace != "" {
-			p.classes[fi.Lang][q] = append(p.classes[fi.Lang][q], f)
+			once(p.classes[fi.Lang], q)
 		}
 	}
 }
@@ -323,6 +405,9 @@ func indexFile(e *Engine, lang string, src []byte) *fileIndex {
 			if x.f.class == "" {
 				if !x.f.method {
 					fi.Funcs = append(fi.Funcs, name)
+					if len(x.f.body) == 0 && x.f.name != "" && len(infos) == 1 {
+						fi.Empty = append(fi.Empty, name)
+					}
 				}
 				continue
 			}
@@ -336,6 +421,7 @@ func indexFile(e *Engine, lang string, src []byte) *fileIndex {
 		}
 	}
 	sort.Strings(fi.Funcs)
+	sort.Strings(fi.Empty)
 	sort.Strings(order)
 	for _, n := range order {
 		sort.Strings(classes[n].Methods)
@@ -344,6 +430,7 @@ func indexFile(e *Engine, lang string, src []byte) *fileIndex {
 	switch lang {
 	case "php":
 		indexPHP(toks, fi)
+		fi.Guarded = guardedDecls(tree)
 	case "python":
 		indexPython(toks, fi)
 	case "js":
@@ -353,6 +440,70 @@ func indexFile(e *Engine, lang string, src []byte) *fileIndex {
 		fi.Limited = true
 	}
 	return fi
+}
+
+// guardedDecls lists the functions ("f:name") and classes ("c:name"), in lower
+// case, declared inside if (!function_exists('name')) or if (!class_exists('Name')).
+func guardedDecls(tree []*stmt) []string {
+	set := map[string]bool{}
+	var walk func(ss []*stmt, guards map[string]bool, depth int)
+	walk = func(ss []*stmt, guards map[string]bool, depth int) {
+		if depth > maxNest {
+			return
+		}
+		for _, s := range ss {
+			if s.fn != nil && s.fn.name != "" {
+				if s.fn.class == "" && !s.fn.method && guards["f:"+strings.ToLower(s.fn.name)] {
+					set["f:"+strings.ToLower(s.fn.name)] = true
+				}
+				if s.fn.class != "" && guards["c:"+strings.ToLower(s.fn.class)] {
+					set["c:"+strings.ToLower(s.fn.class)] = true
+				}
+				continue // a function's body declares nothing the file declares
+			}
+			inner := guards
+			if s.kind == sIf {
+				if g := existsGuards(s.toks); len(g) > 0 {
+					inner = maps.Clone(guards)
+					if inner == nil {
+						inner = map[string]bool{}
+					}
+					maps.Copy(inner, g)
+				}
+			}
+			walk(s.body, inner, depth+1)
+			walk(s.els, guards, depth+1)
+		}
+	}
+	walk(tree, nil, 0)
+	out := slices.Sorted(maps.Keys(set))
+	return out
+}
+
+// existsGuards reads !function_exists('f') and !class_exists('C') in a condition.
+func existsGuards(t []Token) map[string]bool {
+	var g map[string]bool
+	for i := 1; i+2 < len(t); i++ {
+		kind := ""
+		switch strings.ToLower(t[i].Text) {
+		case "function_exists":
+			kind = "f:"
+		case "class_exists":
+			kind = "c:"
+		}
+		j := i - 1
+		if j > 0 && t[j].op(`\`) {
+			j-- // !\function_exists(
+		}
+		if kind == "" || t[i].Kind != Ident || !t[j].op("!") || !t[i+1].op("(") || t[i+2].Kind != Str || len(t[i+2].Parts) > 0 {
+			continue
+		}
+		if g == nil {
+			g = map[string]bool{}
+		}
+		g[kind+strings.ToLower(strings.TrimPrefix(t[i+2].Text, `\`))] = true
+	}
+	return g
 }
 
 func indexPHP(t []Token, fi *fileIndex) {
@@ -623,7 +774,7 @@ func (p *Project) relevant(a *analysis, c callee) bool {
 	}
 	guess := p.relGuess
 	r := x != nil && x.sc != nil && len(x.sc.funcs[name]) > 0 && x.relevant(name)
-	if p.relGuess == guess {
+	if p.relGuess == guess && (x != nil || !p.unread[f]) { // an unread file is asked again, so each caller hears of it
 		p.relMemo[mk] = r
 	}
 	return r
@@ -636,6 +787,7 @@ func (p *Project) analysisFor(a *analysis, f string) *analysis {
 	if ctx == nil {
 		return nil
 	}
+	p.dep(a.file, f)
 	key := a.r.rule.ID + "\x00" + f
 	sc, ok := p.sums[key]
 	if !ok {
@@ -659,16 +811,27 @@ func (p *Project) context(f string) *fileCtx {
 	if fi == nil || fi.Limited || !p.ok() {
 		return nil
 	}
+	if p.unread[f] {
+		p.unsteady = true
+		return nil
+	}
 	src, err := p.read(f)
 	if err != nil {
+		p.unread[f], p.unsteady = true, true // gone or changed since it was indexed
 		return nil
 	}
 	b := newBudget(p.e.Limits)
 	toks := lex(LangOf(f), string(src), b)
 	if b.hit {
+		if b.timeHit {
+			p.unread[f], p.unsteady = true, true
+		}
 		return nil
 	}
 	c := &fileCtx{lang: fi.Lang, tree: parse(fi.Lang, toks, b), tokens: len(toks), rdefs: fileRecvDefs(fi.Lang, toks)}
+	if b.timeHit {
+		p.unread[f], p.unsteady = true, true
+	}
 	c.ff = newFileFuncs(collectFuncs(c.tree, fi.Lang), fi.Lang)
 	p.keep(f, c)
 	return c
@@ -705,6 +868,7 @@ func (p *Project) ok() bool {
 	}
 	if time.Now().After(p.deadline) {
 		p.stop("following calls across files ran out of time")
+		p.byMachine = true
 		return false
 	}
 	// The heap is read at most every 100ms, and without stopping the program
@@ -715,6 +879,7 @@ func (p *Project) ok() bool {
 		metrics.Read(sample)
 		if sample[0].Value.Kind() == metrics.KindUint64 && sample[0].Value.Uint64() > p.opt.MaxHeap {
 			p.stop("following calls across files reached the memory limit")
+			p.byMachine = true
 			return false
 		}
 	}
@@ -725,6 +890,7 @@ func (p *Project) ok() bool {
 func (p *Project) resolve(a *analysis, c callee) (string, string) {
 	p.unsure, p.ambig = false, ""
 	f, name := p.resolve1(a, c)
+	p.dep(a.file, f) // also when the answer about f comes from a memo
 	unsure, ambig := p.unsure, p.ambig
 	p.unsure, p.ambig = false, ""
 	if f == "" && ambig != "" {
@@ -887,7 +1053,43 @@ func (p *Project) function1(from string, fi *fileIndex, name string) string {
 			}
 		}
 	}
+	if c := p.preferred(fi.Lang, name, cands); c != "" {
+		if c == from {
+			return ""
+		}
+		return c
+	}
 	return "?" // declared in several files and none included: ambiguous
+}
+
+// preferred picks, among files declaring a function, the one that runs: a
+// stub with an empty body (WordPress's noop.php, for load-scripts.php) adds
+// nothing, and one declared under if (!function_exists(...)) is a fallback,
+// used only when no other file declared the function first (pluggable.php,
+// cache-compat.php). "" when that leaves no single file.
+func (p *Project) preferred(lang, name string, cands []string) string {
+	pick := func(keep func(*fileIndex) bool) []string {
+		var out []string
+		for _, c := range cands {
+			if fi := p.files[c]; fi != nil && keep(fi) {
+				out = append(out, c)
+			}
+		}
+		return out
+	}
+	if full := pick(func(fi *fileIndex) bool { return !slices.Contains(fi.Empty, name) }); len(full) > 0 {
+		cands = full
+	}
+	if len(cands) > 1 && lang == "php" {
+		g := "f:" + strings.ToLower(name)
+		if first := pick(func(fi *fileIndex) bool { return !slices.Contains(fi.Guarded, g) }); len(first) > 0 {
+			cands = first
+		}
+	}
+	if len(cands) == 1 {
+		return cands[0]
+	}
+	return ""
 }
 
 // includes lists the files a PHP file includes, to the given depth.
@@ -984,6 +1186,18 @@ func (p *Project) class(from string, fi *fileIndex, name string) (string, classI
 					cands = []string{inc}
 					break
 				}
+			}
+		}
+		if len(cands) > 1 { // one declared under if (!class_exists(...)) is a fallback
+			g := "c:" + strings.ToLower(name)
+			var first []string
+			for _, c := range cands {
+				if cf := p.files[c]; cf != nil && !slices.Contains(cf.Guarded, g) {
+					first = append(first, c)
+				}
+			}
+			if len(first) == 1 {
+				cands = first
 			}
 		}
 	}

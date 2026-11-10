@@ -224,7 +224,7 @@ func TestAppCodeAuditInjectionLimits(t *testing.T) {
 	}
 	scan := engineScan
 	defer func() { engineScan = scan }()
-	engineScan = func(e *engine.Engine, lang, p string, b []byte) ([]engine.Finding, error) {
+	engineScan = func(e *engine.Engine, lang, p string, b []byte) ([]engine.Finding, bool, error) {
 		if lang == "php" {
 			panic("boom")
 		}
@@ -293,9 +293,9 @@ func TestAppCodeAuditCallsListed(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "b.php"), []byte("<?php\n$a = 'never closed\n"), 0o644)
 	scan := engineScan
 	defer func() { engineScan = scan }()
-	engineScan = func(e *engine.Engine, lang, p string, b []byte) ([]engine.Finding, error) {
+	engineScan = func(e *engine.Engine, lang, p string, b []byte) ([]engine.Finding, bool, error) {
 		if filepath.Base(p) == "a.php" {
-			return nil, engine.ErrCalls
+			return nil, false, engine.ErrCalls
 		}
 		return scan(e, lang, p, b)
 	}
