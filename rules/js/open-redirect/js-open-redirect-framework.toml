@@ -1,0 +1,55 @@
+id = "js-open-redirect-framework"
+lang = "js"
+class = "open-redirect"
+cwe = "CWE-601"
+severity = "medium"
+tier = "info"
+title = "Koa, Fastify or Hapi redirect to a URL taken from the request"
+frameworks = ["koa", "fastify", "hapi"]
+sources = ["ctx.query", "ctx.request.query", "ctx.request.body", "ctx.params", "ctx.originalUrl", "ctx.url", "ctx.request.url", "ctx.path", "this.request.url", "this.query", "request.query", "request.body", "request.payload", "request.params"]
+sinks = ["ctx.redirect(", "ctx.response.redirect(", "this.redirect(", "reply.redirect(", "h.redirect("]
+sanitizers = ["encodeURIComponent("]
+fix = "Redirect to a fixed path on this site with the value only after it ('/account/' + encodeURIComponent(id)), or to a URL from an allowlist; a value that starts the URL can be //evil.example."
+refs = ["CVE-2021-23384", "CVE-2018-3743"]
+
+[[args]]
+leading = true
+
+[[samples]]
+kind = "vulnerable"
+note = "a path like //evil.example/ turns into a protocol-relative redirect"
+code = '''
+app.use(async (ctx, next) => {
+  if (ctx.path.length > 1 && ctx.path.endsWith("/")) {
+    return ctx.redirect(ctx.path.slice(0, -1) + ctx.search);
+  }
+  await next();
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+fastify.get("/go", (request, reply) => {
+  reply.redirect(request.query.to);
+});
+'''
+
+[[samples]]
+kind = "safe"
+note = "as the fix says: a fixed path first, the value encoded after it"
+code = '''
+router.get("/go/:id", async (ctx) => {
+  ctx.redirect("/account/" + encodeURIComponent(ctx.params.id));
+});
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+const TARGETS = new Set(["/", "/orders", "/help"]);
+fastify.get("/go", (request, reply) => {
+  const to = TARGETS.has(request.query.to) ? request.query.to : "/";
+  reply.redirect(to);
+});
+'''
