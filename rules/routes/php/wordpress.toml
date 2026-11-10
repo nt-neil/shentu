@@ -1,0 +1,161 @@
+# WordPress hands request data to plugin and theme functions through hooks.
+
+[[route]]
+id = "wp-shortcode"
+lang = "php"
+applies = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "$_SERVER", "$_FILES", "$request"]
+framework = "wordpress"
+title = "Shortcode attributes and content are written by any user who can edit a post"
+register = ["add_shortcode"]
+handler = 2
+params = [1, 2]
+note = "Contributors and up write [tag attr=\"...\"]content[/tag] in a post; the callback gets $atts and $content."
+refs = ["https://developer.wordpress.org/reference/functions/add_shortcode/"]
+
+[[route.samples]]
+kind = "vulnerable"
+code = '''<?php
+add_shortcode('box', 'box_render');
+function box_render($atts, $content = '') {
+	global $wpdb;
+	return $wpdb->get_var("SELECT title FROM {$wpdb->prefix}boxes WHERE slug = '" . $atts['slug'] . "'");
+}
+'''
+
+[[route.samples]]
+kind = "safe"
+code = '''<?php
+add_shortcode('box', 'box_render');
+function box_render($atts, $content = '') {
+	global $wpdb;
+	return $wpdb->get_var($wpdb->prepare("SELECT title FROM {$wpdb->prefix}boxes WHERE slug = %s", $atts['slug']));
+}
+'''
+
+[[route]]
+id = "wp-rest-route"
+lang = "php"
+applies = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "$_SERVER", "$_FILES", "$request"]
+framework = "wordpress"
+title = "A REST route's callback gets the request ($request['id'], $request->get_param())"
+register = ["register_rest_route"]
+handler = 3
+key = "callback"
+params = [1]
+refs = ["https://developer.wordpress.org/reference/functions/register_rest_route/"]
+
+[[route.samples]]
+kind = "vulnerable"
+code = '''<?php
+add_action('rest_api_init', function () {
+	register_rest_route('shop/v1', '/item', array('methods' => 'GET', 'callback' => 'shop_item', 'permission_callback' => '__return_true'));
+});
+function shop_item($request) {
+	global $wpdb;
+	return $wpdb->get_results("SELECT * FROM {$wpdb->prefix}items WHERE id = " . $request['id']);
+}
+'''
+
+[[route.samples]]
+kind = "safe"
+code = '''<?php
+add_action('rest_api_init', function () {
+	register_rest_route('shop/v1', '/item', array('methods' => 'GET', 'callback' => 'shop_item', 'permission_callback' => '__return_true'));
+});
+function shop_item($request) {
+	global $wpdb;
+	return $wpdb->get_results($wpdb->prepare("SELECT * FROM {$wpdb->prefix}items WHERE id = %d", $request['id']));
+}
+'''
+
+[[route]]
+id = "elementor-widget-settings"
+lang = "php"
+applies = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "$_SERVER", "$_FILES", "$request"]
+framework = "wordpress"
+title = "An Elementor widget's settings are written by any user who can edit with Elementor"
+sources = ["->get_settings_for_display(", "->get_settings("]
+note = "Elementor widgets (render()) read their controls with get_settings_for_display(); contributors and up set them."
+refs = ["https://developers.elementor.com/docs/widgets/widget-rendering/"]
+
+[[route.samples]]
+kind = "vulnerable"
+code = '''<?php
+class Box_Widget extends \Elementor\Widget_Base {
+	protected function render() {
+		global $wpdb;
+		$s = $this->get_settings_for_display();
+		echo $wpdb->get_var("SELECT name FROM {$wpdb->prefix}teams WHERE id = " . $s['team']);
+	}
+}
+'''
+
+[[route.samples]]
+kind = "safe"
+code = '''<?php
+class Box_Widget extends \Elementor\Widget_Base {
+	protected function render() {
+		global $wpdb;
+		$s = $this->get_settings_for_display();
+		echo $wpdb->get_var("SELECT name FROM {$wpdb->prefix}teams WHERE id = " . absint($s['team']));
+	}
+}
+'''
+
+[[route]]
+id = "wp-stored-lookups"
+lang = "php"
+framework = "wordpress"
+title = "An attachment's path and metadata, looked up by its id, are what WordPress stored, not the request's input"
+clears = ["get_attached_file(", "wp_get_original_image_path(", "wp_get_attachment_metadata(", "get_post_mime_type(", "wp_get_attachment_url("]
+clears_for = ["path-traversal", "deserialization"]
+note = "A request may choose which attachment (its id); the file's path, URL, metadata and type were written by WordPress when the file was uploaded, so for a path or a phar:// wrapper they are no longer the request's input. Only for those classes: post meta, a comment or a user field may hold what an attacker wrote, and are not cleared."
+refs = ["https://developer.wordpress.org/reference/functions/get_attached_file/"]
+
+[[route.samples]]
+kind = "vulnerable"
+code = '''<?php
+add_action('rest_api_init', function () {
+	register_rest_route('media/v1', '/raw', array('methods' => 'GET', 'callback' => 'media_raw', 'permission_callback' => '__return_true'));
+});
+function media_raw($request) {
+	return file_get_contents(WP_CONTENT_DIR . '/uploads/' . $request['file']);
+}
+'''
+
+[[route.samples]]
+kind = "safe"
+code = '''<?php
+add_action('rest_api_init', function () {
+	register_rest_route('media/v1', '/raw', array('methods' => 'GET', 'callback' => 'media_raw', 'permission_callback' => '__return_true'));
+});
+function media_raw($request) {
+	return file_get_contents(get_attached_file($request['id']));
+}
+'''
+
+[[route]]
+id = "wp-attachment-local-path"
+lang = "php"
+framework = "wordpress"
+applies = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "$_SERVER", "$_FILES", "$request"]
+title = "An attachment's file path, looked up by its id, is a local file WordPress wrote: no URL to fetch"
+clears = ["get_attached_file(", "wp_get_original_image_path("]
+clears_for = ["ssrf"]
+note = "Only the local paths: an attachment's URL (wp_get_attachment_url) may be rewritten by a plugin to another host (offloaded media), so fetching it stays an SSRF finding."
+
+[[route.samples]]
+kind = "vulnerable"
+code = '''<?php
+function fetch_media() {
+	return wp_remote_get(wp_get_attachment_url($_GET['id']));
+}
+'''
+
+[[route.samples]]
+kind = "safe"
+code = '''<?php
+function fetch_media() {
+	return file_get_contents(get_attached_file($_GET['id']));
+}
+'''

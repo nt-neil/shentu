@@ -76,6 +76,7 @@ func main() {
 		fatal(err)
 	}
 	tools.SetWebUsers(cfg.Tools.WebUsers)
+	tools.SetAuditLimits(cfg.Tools.AuditMaxMemoryMB, cfg.Tools.AuditWorkers)
 	env := &tools.Env{
 		LogPaths:    cfg.Tools.LogPaths,
 		WatchPaths:  cfg.Tools.WatchPaths,

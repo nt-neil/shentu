@@ -1,0 +1,36 @@
+[[route]]
+id = "django-urls"
+lang = "python"
+applies = ["request.GET", "request.POST", "request.FILES", "request.COOKIES", "request.META", "request.headers"]
+framework = "django"
+title = "A view's parameters after the request are the URL's <placeholders>"
+register = ["path", "re_path", "url"]
+handler = 2
+template = true
+requires = ["django"]
+note = "path('u/<slug:name>/', views.profile) and re_path(r'^u/(?P<name>[^/]+)/$', ...) pass the captured text to the view; int and uuid converters cannot carry an attack. The view is usually in another file (views.py): the project's index resolves it."
+refs = ["https://docs.djangoproject.com/en/stable/topics/http/urls/#path-converters"]
+
+[[route.samples]]
+kind = "vulnerable"
+code = '''
+from django.urls import path
+import os
+
+def report(request, name):
+    return os.popen('cat /srv/reports/' + name).read()
+
+urlpatterns = [path('report/<str:name>/', report)]
+'''
+
+[[route.samples]]
+kind = "safe"
+code = '''
+from django.urls import path
+import os
+
+def report(request, number):
+    return os.popen('cat /srv/reports/%d' % number).read()
+
+urlpatterns = [path('report/<int:number>/', report)]
+'''

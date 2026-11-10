@@ -52,6 +52,9 @@ type Engine struct {
 	// tree is itself a package or library whose callers are not part of the
 	// scan; it is off for applications and for the server patrol.
 	Library bool
+
+	routes    map[string][]*croute // route models by language (routes.go)
+	routeByID map[string]*croute
 }
 
 type crule struct {
@@ -80,13 +83,20 @@ type argCond struct {
 
 // New compiles rules. A pattern that does not lex as code of its language is an error.
 func New(rs []rules.Rule) (*Engine, error) {
-	e := &Engine{byLang: map[string][]*crule{}, Limits: DefaultLimits, SourcePrefilter: true}
+	e := &Engine{byLang: map[string][]*crule{}, Limits: DefaultLimits, SourcePrefilter: true, routes: map[string][]*croute{}, routeByID: map[string]*croute{}}
 	for _, r := range rs {
 		c, err := compileRule(r)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", r.ID, err)
 		}
 		e.byLang[r.Lang] = append(e.byLang[r.Lang], c)
+	}
+	routes, err := rules.LoadRoutes()
+	if err == nil {
+		err = e.compileRoutes(routes)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("route models: %w", err)
 	}
 	return e, nil
 }
@@ -308,6 +318,10 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 	}
 	tree := parse(base, toks, b)
 	ff := newFileFuncs(collectFuncs(tree, base), base)
+	routeFns := e.handlers(base, toks, tree, ff) // functions a framework calls with request data (routes.go)
+	local := len(routeFns)
+	routeFns = e.projectHandlers(proj, path, ff, routeFns) // ... registered in another file (urls.py, routes/web.php)
+	viaProject := len(routeFns) > local
 	if proj != nil {
 		proj.keep(path, &fileCtx{lang: base, tree: tree, ff: ff, tokens: len(toks), rdefs: fileRecvDefs(base, toks)})
 	}
@@ -341,17 +355,23 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 	names := nameSet(toks, map[string]bool{})
 	for _, r := range rs {
 		hs := sinkNames(r, names, src) && hasSink(r, toks)
-		if !hs && (proj == nil || len(r.sources) == 0 && len(r.textSources) == 0 || !hasSource(r, toks)) {
-			continue // nothing in the file can be this rule's sink; in a project, nor its source
+		// In a project a file without a sink may pass input, its own or a route
+		// handler's parameters, to another file's sink; on its own it has nothing
+		// to find.
+		noSource := (len(r.sources) == 0 && len(r.textSources) == 0) || !hasSource(r, toks)
+		if !hs && (proj == nil || (noSource && len(routeFns) == 0)) {
+			continue
 		}
-		if proj == nil && e.skipBySources(r, names, src, toks) {
-			// no source of it in the file: nothing to find, in either pass. Never in
-			// a project, where input also comes from the other files.
+		// No source of it in the file: nothing to find, in either pass. Only for
+		// a file on its own without route handlers: in a project input also comes
+		// from the other files, and a handler's parameters are input with no
+		// source name in the file.
+		if proj == nil && len(routeFns) == 0 && e.skipBySources(r, names, src, toks) {
 			continue
 		}
 		ruleList = append(ruleList, r)
 		if hs && !callsOnly {
-			a := &analysis{r: r, php: base == "php", py: base == "python", js: base == "js", b: b, kw: keywords[base], seen: map[loc]bool{}, defs: defs, file: path, ftoks: toks}
+			a := &analysis{r: r, php: base == "php", py: base == "python", js: base == "js", b: b, kw: keywords[base], seen: map[loc]bool{}, defs: defs, file: path, ftoks: toks, routes: routeFns}
 			a.block(tree, state{})
 			direct[r] = a.lines
 		}
@@ -399,16 +419,17 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 				proj.sums[r.rule.ID+"\x00"+path] = sc
 			}
 			a := &analysis{r: r, php: base == "php", py: base == "python", js: base == "js", b: b2, kw: keywords[base], seen: map[loc]bool{}, sc: sc,
-				defs: defs, file: path, proj: proj, ftoks: toks}
-			if !e.Library && !a.r.output && !a.crossNeeded(tree) {
+				defs: defs, file: path, proj: proj, ftoks: toks, routes: routeFns}
+			if !e.Library && !a.r.output && !viaProject && !a.crossNeeded(tree) {
 				// no call can change this rule's result: the first pass stands. Output
-				// rules read calls to the file's own functions in this pass only (htmlctx.go).
+				// rules read calls to the file's own functions in this pass only
+				// (htmlctx.go); handlers registered in another file need it too.
 				ruleDone()
 				continue
 			}
 			a.block(tree, state{})
 			if e.Library && libClasses[r.rule.Class] && !testPath(path) && !b2.hit {
-				l := &analysis{r: r, php: a.php, py: a.py, js: a.js, b: b2, kw: a.kw, seen: a.seen, sc: sc, lib: true, defs: defs, file: path, proj: proj, ftoks: toks}
+				l := &analysis{r: r, php: a.php, py: a.py, js: a.js, b: b2, kw: a.kw, seen: a.seen, sc: sc, lib: true, defs: defs, file: path, proj: proj, ftoks: toks, routes: routeFns}
 				l.block(tree, state{})
 				a.lines = append(a.lines, l.lines...)
 			}
