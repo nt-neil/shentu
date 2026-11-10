@@ -63,8 +63,10 @@ type Limits struct {
 }
 
 // DefaultLimits suit ordinary application files; the caller also caps file size.
-// At MaxCallWork, 9 of WordPress core's 1,512 PHP files stop following calls.
-var DefaultLimits = Limits{MaxTokens: 300_000, MaxTime: 3 * time.Second, MaxCallWork: 10_000_000}
+// MaxCallWork is about what MaxTime allows at the ~10M units a second measured
+// on a busy machine, so the work cap, not the clock, is what usually stops a
+// file; 2 of WordPress core's 1,512 PHP files reach it.
+var DefaultLimits = Limits{MaxTokens: 300_000, MaxTime: 3 * time.Second, MaxCallWork: 30_000_000}
 
 // ErrLimit means a file hit Limits (tokens, time or nesting) and was only partly
 // analysed; what was found is still returned.
