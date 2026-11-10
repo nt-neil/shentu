@@ -184,7 +184,8 @@ func (p *Project) ScanCalls(path string, src []byte) ([]Finding, error) {
 // ScanCallsTimed is ScanCalls for a result kept from one audit to the next:
 // every finding of the file is returned, also those another file's scan
 // returned already, and timed tells whether the clock, or another of the
-// project's caps that depend on the machine (heap), cut it short.
+// project's caps that depend on the machine (heap), cut it short. See also
+// Unsteady.
 func (p *Project) ScanCallsTimed(path string, src []byte) ([]Finding, bool, error) {
 	return p.e.scan(LangOf(path), path, src, p, true, false)
 }
@@ -325,9 +326,6 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 	if proj != nil && proj.stopped != "" {
 		callsCut = true
 		timed = timed || proj.byMachine // the clock or the heap, not the file limit
-	}
-	if proj != nil {
-		timed = timed || proj.unsteady // a callee it could not read, or parse in time
 	}
 	for _, r := range ruleList {
 		if lines, ok := direct[r]; ok && !finished[r] {

@@ -563,6 +563,10 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 							cut = cut || timed // the clock or the heap ran out: no more this audit
 							continue
 						}
+						if pr.Unsteady() { // a callee changed during the audit: holds now, not kept
+							addNew(found)
+							continue
+						}
 						k = &passResult{Found: found, Reason: unfinishedReason(err)}
 						st.entry(p, hash[p]).Calls = k
 						now++

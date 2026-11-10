@@ -38,9 +38,13 @@ func TestProjectKeptResults(t *testing.T) {
 	}
 
 	gone = "b.php"
-	pr = e.NewProject([]string{"a.php", "b.php"}, func(p string) ([]byte, error) { return []byte(files[p]), nil }, ProjectOptions{})
+	pr = e.NewProject([]string{"a.php", "b.php", "d.php"}, func(p string) ([]byte, error) { return []byte(files[p]), nil }, ProjectOptions{})
 	pr.read = read
-	if _, timed, _ := pr.ScanCallsTimed("a.php", []byte(files["a.php"])); !timed {
-		t.Error("a callee that could not be read: the result is not marked as one not to keep")
+	if _, timed, _ := pr.ScanCallsTimed("a.php", []byte(files["a.php"])); timed || !pr.Unsteady() {
+		t.Errorf("a callee that could not be read: timed %v, unsteady %v; want only unsteady", timed, pr.Unsteady())
+	}
+	// Asked again from another caller, after the first caller's answer was remembered.
+	if _, _, _ = pr.ScanCallsTimed("d.php", []byte(files["d.php"])); !pr.Unsteady() {
+		t.Error("the second caller of an unread callee is not unsteady")
 	}
 }

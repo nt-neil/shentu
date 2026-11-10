@@ -58,6 +58,7 @@ type Project struct {
 	stopped   string
 	byMachine bool                       // stopped by the clock or the heap: where depends on the machine
 	unsteady  bool                       // the current scan met a file it could not read, or parse in time
+	unread    map[string]bool            // files that could not be read, or parsed in time, since indexed
 	deps      map[string]map[string]bool // file → files its functions' calls were followed into
 	busy      int                        // summaries asked for while being worked out (cycles across files)
 	relGuess  int                        // relevance asked for while being worked out
@@ -133,7 +134,7 @@ func (e *Engine) NewProject(paths []string, read func(string) ([]byte, error), o
 	p := &Project{e: e, opt: opt, read: read, files: map[string]*fileIndex{}, bySuffix: map[string][]string{}, byClean: map[string]string{},
 		funcs: map[string]map[string][]string{}, classes: map[string]map[string][]string{}, declared: map[string]map[string][]string{},
 		ctx: map[string]*fileCtx{}, sums: map[string]*summaries{}, kept: map[string]map[string]*summary{}, seen: map[string]bool{},
-		incl: map[string][]string{}, fnMemo: map[string]string{}, relMemo: map[string]bool{}, deps: map[string]map[string]bool{},
+		incl: map[string][]string{}, fnMemo: map[string]string{}, relMemo: map[string]bool{}, deps: map[string]map[string]bool{}, unread: map[string]bool{},
 		deadline: time.Now().Add(opt.MaxTime)}
 	cache := loadIndexCache(opt.CacheFile)
 	fresh := map[string]*fileIndex{}
@@ -266,6 +267,11 @@ func (p *Project) IndexDigest(lang string) string {
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }
+
+// Unsteady reports whether the last scan met a file it could not read (gone
+// or changed since it was indexed) or parse in time: its result holds for
+// this audit but is not one to keep for the next.
+func (p *Project) Unsteady() bool { return p.unsteady }
 
 // Stopped tells why calls stopped crossing files, or "" when they did not.
 func (p *Project) Stopped() string { return p.stopped }
@@ -682,7 +688,7 @@ func (p *Project) relevant(a *analysis, c callee) bool {
 	}
 	guess := p.relGuess
 	r := x != nil && x.sc != nil && len(x.sc.funcs[name]) > 0 && x.relevant(name)
-	if p.relGuess == guess {
+	if p.relGuess == guess && (x != nil || !p.unread[f]) { // an unread file is asked again, so each caller hears of it
 		p.relMemo[mk] = r
 	}
 	return r
@@ -719,19 +725,27 @@ func (p *Project) context(f string) *fileCtx {
 	if fi == nil || fi.Limited || !p.ok() {
 		return nil
 	}
+	if p.unread[f] {
+		p.unsteady = true
+		return nil
+	}
 	src, err := p.read(f)
 	if err != nil {
-		p.unsteady = true // gone or changed since it was indexed
+		p.unread[f], p.unsteady = true, true // gone or changed since it was indexed
 		return nil
 	}
 	b := newBudget(p.e.Limits)
 	toks := lex(fi.Lang, string(src), b)
 	if b.hit {
-		p.unsteady = p.unsteady || b.timeHit
+		if b.timeHit {
+			p.unread[f], p.unsteady = true, true
+		}
 		return nil
 	}
 	c := &fileCtx{lang: fi.Lang, tree: parse(fi.Lang, toks, b), tokens: len(toks)}
-	p.unsteady = p.unsteady || b.timeHit
+	if b.timeHit {
+		p.unread[f], p.unsteady = true, true
+	}
 	c.ff = newFileFuncs(collectFuncs(c.tree, fi.Lang), fi.Lang)
 	p.keep(f, c)
 	return c
