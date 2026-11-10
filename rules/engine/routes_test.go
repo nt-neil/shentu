@@ -42,7 +42,7 @@ func TestRouteSamples(t *testing.T) {
 				if len(fs) == 0 && !missingClasses(e, r) {
 					t.Errorf("%s sample %d (vulnerable): not reported", r.ID, i)
 				}
-				if len(r.Sources) == 0 {
+				if len(r.Sources) == 0 && len(r.Clears) == 0 { // a model that only adds sources or clears shows its effect in the safe sample
 					if without, _ := bare.Scan(r.Lang, ext[r.Lang], []byte(s.Code)); len(without) != 0 {
 						t.Errorf("%s sample %d: reported without the route model too (%v): it shows nothing", r.ID, i, without)
 					}
