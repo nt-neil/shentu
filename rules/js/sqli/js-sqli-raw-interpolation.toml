@@ -5,7 +5,7 @@ cwe = "CWE-89"
 severity = "high"
 title = "Request input concatenated or interpolated into SQL for a driver or knex.raw"
 frameworks = ["express", "nestjs", "nextjs"]
-sources = ["req.query", "req.body", "req.params", "req.cookies", "@Query(", "@Body(", "@Param(", "@Req(", "req.originalUrl", "^request.nextUrl", "^req.nextUrl", "^request.url", "^req.url", "^searchParams", "^request.json(", "^req.json(", "^request.formData(", "^req.formData(", "^formData.get(", "^cookies().get("]
+sources = ["req.query", "req.body", "req.params", "req.cookies", "@Query(", "@Body(", "@Param(", "@Req(", "req.originalUrl", "^request.nextUrl", "^req.nextUrl", "^request.url", "^req.url", "^searchParams", "^request.json(", "^req.json(", "^request.text(", "^req.text(", "^request.formData(", "^req.formData(", "^formData.get(", "^cookies().get("]
 sinks = [".query(", ".execute(", "knex.raw(", ".raw(", ".whereRaw(", ".orderByRaw("]
 sanitizers = ["parseInt(", "Number("]
 fix = "Use placeholders and pass values separately (query('... WHERE id = ?', [id]), knex.raw('?? = ?', [col, val])); never build SQL with + or template literals."
