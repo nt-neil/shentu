@@ -17,8 +17,15 @@ refs = ["CVE-2026-45018"]
 # source here; a request value as the first element of a list literal is
 # python-cmdi-argument-injection, and shell=True is python-cmdi-shell.
 [[args]]
+sinks = ["subprocess.run(", "subprocess.Popen(", "subprocess.call(", "subprocess.check_call(", "subprocess.check_output(", "run(", "Popen(", "check_output(", "check_call(", "asyncio.create_subprocess_exec(", "os.execvp(", "os.execv("]
 arg = 1
+name = "args"
 unless = ["shell=True"]
+
+[[args]]
+sinks = ["StdioServerParameters("]
+arg = 1
+name = "command"
 
 [[samples]]
 kind = "vulnerable"
