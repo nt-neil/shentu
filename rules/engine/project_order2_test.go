@@ -5,7 +5,9 @@ import (
 	"math/rand/v2"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
+	"time"
 )
 
 // What following one file's calls finds, and whether a cap cut it short, does
@@ -48,6 +50,67 @@ func TestProjectResultPerFileWhateverTheOrder(t *testing.T) {
 	for _, order := range orders {
 		if got := scanAll(order); !reflect.DeepEqual(got, want) {
 			t.Errorf("order %v:\n got %v\nwant %v", order, got, want)
+		}
+	}
+}
+
+// The same with calls cycling across files, functions declared in several
+// files, and files reaching the work cap (the project of
+// TestProjectDeterministic), scanned forward, reversed and shuffled.
+func TestProjectCyclesWhateverTheOrder(t *testing.T) {
+	files := map[string]string{}
+	var paths []string
+	const n = 12
+	for i := range n {
+		var b strings.Builder
+		b.WriteString("<?php\n")
+		for j := range 4 {
+			next := fmt.Sprintf("f%d_%d", (i+1)%n, (j+3)%4)
+			back := fmt.Sprintf("f%d_%d", (i+n-1)%n, j)
+			fmt.Fprintf(&b, "function f%d_%d($v, $w) {\n  if ($v == 'a') { return %s($w, $v); }\n  if (!in_array($w, array('x', 'y'), true)) { %s($v, $w); }\n"+
+				"  system('ls ' . $v);\n  return trim($w);\n}\n", i, j, next, back)
+		}
+		if i%4 == 0 {
+			b.WriteString("function dup($v) { system('id ' . $v); }\n")
+			fmt.Fprintf(&b, "f%d_0($_GET['a'], dup($_POST['b']));\n", i)
+		}
+		p := fmt.Sprintf("m%02d.php", i)
+		files[p] = b.String()
+		paths = append(paths, p)
+	}
+	read := func(p string) ([]byte, error) { return []byte(files[p]), nil }
+	for _, work := range []int{0, 20_000, 60_000} {
+		scan := func(order []string) map[string]string {
+			e := engineForTest(t)
+			e.Limits.MaxTime = time.Minute
+			e.Limits.MaxCallWork = work
+			pr := e.NewProject(paths, read, ProjectOptions{MaxTime: time.Hour})
+			out := map[string]string{}
+			for _, p := range order {
+				fs, timed, err := pr.ScanCallsTimed(p, []byte(files[p]))
+				out[p] = fmt.Sprint(fs, timed, err)
+			}
+			return out
+		}
+		want := scan(paths)
+		rev := slices.Clone(paths)
+		slices.Reverse(rev)
+		orders := [][]string{rev}
+		rnd := rand.New(rand.NewPCG(3, 4))
+		for range 3 {
+			o := slices.Clone(paths)
+			rnd.Shuffle(len(o), func(i, j int) { o[i], o[j] = o[j], o[i] })
+			orders = append(orders, o)
+		}
+		for _, o := range orders {
+			if got := scan(o); !reflect.DeepEqual(got, want) {
+				for _, p := range paths {
+					if got[p] != want[p] {
+						t.Errorf("work %d, order %v, %s:\n got %s\nwant %s", work, o, p, got[p], want[p])
+						break
+					}
+				}
+			}
 		}
 	}
 }

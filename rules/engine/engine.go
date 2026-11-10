@@ -313,7 +313,17 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 				if sc == nil {
 					sc = &summaries{ff: ff, funcs: ff.byKey, done: map[string]*summary{}, busy: map[string]bool{}, rel: map[string]uint8{}, retUnk: map[string]uint8{}}
 				}
-				proj.sums[r.rule.ID+"\x00"+path] = sc
+				// Summaries are worked out the same whoever asks (own): those the
+				// project has of this file already (as another file's callee, or a
+				// cycle settled through it) are the ones this scan would work out.
+				key := r.rule.ID + "\x00" + path
+				if old := proj.sums[key]; old != nil {
+					sc.done = old.done
+				} else if kept := proj.kept[key]; kept != nil {
+					sc.done = kept
+					delete(proj.kept, key)
+				}
+				proj.sums[key] = sc
 			}
 			a := &analysis{r: r, php: lang == "php", py: lang == "python", js: lang == "js", b: b2, kw: keywords[lang], seen: map[loc]bool{}, sc: sc,
 				file: path, proj: proj}

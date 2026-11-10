@@ -59,6 +59,7 @@ type summary struct {
 	retSrc     bool                // the return value carries input of its own
 	capped     bool                // a cap of its own work cut it short: what it says may be too little
 	height     int                 // the longest chain of summaries under it, itself included
+	cost       int                 // the work it took, the summaries it used included: what using it costs
 }
 
 func (s *summary) equal(o *summary) bool {
@@ -656,13 +657,13 @@ func (a *analysis) summaryOf(key string) *summary {
 		sc.busy[key] = true
 		idx := a.proj.push(a, []string{key})
 		var s *summary
-		capped, keep, height := a.own(func(x *analysis) { s = x.summarizeKey(key) })
+		capped, keep, height, cost := a.own(func(x *analysis) { s = x.summarizeKey(key) })
 		delete(sc.busy, key)
 		fr := a.proj.pop()
 		if s == nil { // nested too deep: not worked out
 			return nil
 		}
-		s.capped, s.height = capped, height
+		s.capped, s.height, s.cost = capped, height, cost
 		switch {
 		case !keep:
 			a.proj.drop(fr)
@@ -684,7 +685,7 @@ func (a *analysis) summaryOf(key string) *summary {
 		}
 	}
 	idx := a.proj.push(a, members)
-	capped, keep, height := a.own(func(x *analysis) {
+	capped, keep, height, cost := a.own(func(x *analysis) {
 		for round := 0; ; round++ {
 			changed := false
 			for _, m := range members {
@@ -705,7 +706,7 @@ func (a *analysis) summaryOf(key string) *summary {
 	got := map[string]*summary{}
 	for _, m := range members {
 		delete(sc.busy, m)
-		sc.done[m].capped, sc.done[m].height = capped, height
+		sc.done[m].capped, sc.done[m].height, sc.done[m].cost = capped, height, cost
 		got[m] = sc.done[m]
 	}
 	s := sc.done[key]
@@ -733,6 +734,16 @@ func (a *analysis) used(s *summary) *summary {
 	if s != nil && s.capped {
 		a.b.tooDeep()
 	}
+	// The asker pays what working it out cost, once, whether it was ready or
+	// not: so its own caps fall at the same place either way, and a rule's
+	// work in a file, summaries included, stays within its cap.
+	if s != nil && s.cost > 0 && !a.b.charged[s] {
+		if a.b.charged == nil {
+			a.b.charged = map[*summary]bool{}
+		}
+		a.b.charged[s] = true
+		a.b.charge(s.cost)
+	}
 	if s != nil && a.heights != nil && s.height > *a.heights {
 		*a.heights = s.height
 	}
@@ -750,11 +761,11 @@ const maxOwnNest = 256
 // on which summaries it found ready. capped tells whether the summary's own
 // caps cut it short (said by the summary itself, see used); keep is false
 // when it cannot be kept: cut by the clock, or nested too deep.
-func (a *analysis) own(work func(x *analysis)) (capped, keep bool, height int) {
+func (a *analysis) own(work func(x *analysis)) (capped, keep bool, height, cost int) {
 	sc := a.sc
 	if a.nest >= maxOwnNest {
 		a.b.tooDeep()
-		return true, false, 0
+		return true, false, 0, 0
 	}
 	nb := &budget{maxTok: a.b.maxTok, deadline: a.b.deadline, maxWork: a.b.sumWork, sumWork: a.b.sumWork}
 	under := 0 // the highest summary this one uses
@@ -767,7 +778,7 @@ func (a *analysis) own(work func(x *analysis)) (capped, keep bool, height int) {
 	x := *a
 	x.b, x.nest, x.heights = nb, a.nest+1, &under
 	work(&x)
-	height = under + 1
+	height, cost = under+1, nb.work
 	// A chain of summaries longer than maxSumDepth is cut: by the chain's own
 	// length under this summary, which no asker changes.
 	capped = sc.capped || nb.limited || nb.hit && !nb.timeHit || height > maxSumDepth
@@ -782,9 +793,9 @@ func (a *analysis) own(work func(x *analysis)) (capped, keep bool, height int) {
 			a.proj.byMachine = true
 		}
 		a.b.hit, a.b.timeHit = true, true
-		return capped, false, height
+		return capped, false, height, cost
 	}
-	return capped, true, height
+	return capped, true, height, cost
 }
 
 // freeBudget is for work kept for the whole file (its call graph): charged to
@@ -884,6 +895,22 @@ func (a *analysis) relevant(key string) bool {
 		sc.relBusy = true
 		defer func() { sc.relBusy = false }()
 		sc.ff.components(freeBudget())
+		// Worked out once for the file and kept: charged to nobody, so that
+		// the asker who happens to be first does not pay more than the others;
+		// bounded by the clock only (and the file's size).
+		rb := &budget{maxTok: 1 << 40, deadline: a.b.deadline}
+		defer func() {
+			if rb.timeHit {
+				sc.rel = nil // not worked out to the end: not kept
+				if a.proj != nil {
+					a.proj.stop("following calls across files ran out of time")
+					a.proj.byMachine = true
+				}
+				a.b.hit, a.b.timeHit = true, true
+			}
+		}()
+		a := *a
+		a.b = rb
 		var work []string
 		keys := make([]string, 0, len(sc.funcs))
 		for k := range sc.funcs {

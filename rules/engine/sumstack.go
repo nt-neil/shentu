@@ -122,11 +122,13 @@ func (p *Project) settle(fr *sumFrame, key string) *summary {
 		m.a.sc.done[m.key] = &summary{} // the fixed point starts from "does nothing"
 	}
 	capped, height := false, 0
+	cost := map[sumMember]int{} // each member's work in the last round
 	for round := 0; ; round++ {
 		changed := false
 		for _, m := range members {
 			var n *summary
-			c, keep, h := m.a.own(func(x *analysis) { n = x.summarizeKey(m.key) })
+			c, keep, h, w := m.a.own(func(x *analysis) { n = x.summarizeKey(m.key) })
+			cost[m] = w
 			if !keep || n == nil { // the clock: nothing of the cycle is kept
 				for _, m := range members {
 					delete(m.a.sc.done, m.key)
@@ -147,7 +149,8 @@ func (p *Project) settle(fr *sumFrame, key string) *summary {
 		}
 	}
 	for _, m := range members {
-		m.a.sc.done[m.key].capped, m.a.sc.done[m.key].height = capped, height
+		d := m.a.sc.done[m.key]
+		d.capped, d.height, d.cost = capped, height, cost[m]
 	}
 	return fr.a.sc.done[key]
 }
