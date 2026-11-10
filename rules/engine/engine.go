@@ -405,7 +405,10 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 				continue // followed in an earlier audit (ScanCallsPart)
 			}
 			ruleDone := func() {
-				if proj != nil {
+				// Once the project stopped (its clock, its heap), calls no longer
+				// cross files and resolve to nothing without a word: a rule
+				// finished then followed none of them and is not done.
+				if proj != nil && proj.stopped == "" {
 					proj.part = append(proj.part, r.rule.ID)
 					proj.partCut = proj.partCut || callsCut || b2.limited
 				}
@@ -432,6 +435,14 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 				l := &analysis{r: r, php: a.php, py: a.py, js: a.js, b: b2, kw: a.kw, seen: a.seen, sc: sc, lib: true, defs: defs, file: path, proj: proj, ftoks: toks, routes: routeFns}
 				l.block(tree, state{})
 				a.lines = append(a.lines, l.lines...)
+			}
+			if proj != nil && proj.byMachine {
+				// The project stopped during the rule (its clock, its heap): calls
+				// stopped crossing files part way, as with the scan's own clock.
+				callsCut, timed = true, true
+				add(r, direct[r])
+				delete(direct, r)
+				break
 			}
 			if b2.hit {
 				callsCut = true
