@@ -5,11 +5,18 @@ cwe = "CWE-22"
 severity = "high"
 title = "File name from the request used to read or send a file"
 frameworks = ["wordpress"]
-sources = ["$_GET", "$_POST", "$_REQUEST", "$request->input("]
+sources = ["$_GET", "$_POST", "$_REQUEST", "$request->input(", "->get("]
 sinks = ["file_get_contents(", "readfile(", "fopen(", "file(", "fpassthru(", "highlight_file("]
 sanitizers = ["basename(", "sanitize_file_name(", "str_starts_with(", "strncmp(", "validate_file(", "validate_file_to_edit(", "Path::isBasePath("]
 fix = "Resolve the path with realpath() and refuse it unless it starts with the intended base directory plus a separator, or look files up by an id instead of a path."
 refs = ["CVE-2026-74907"]
+
+# Joomla: $input->get($name, $default, $filter) is raw input only with one of
+# these filters; the default ('cmd') keeps letters, digits, ".", "-" and "_".
+[[source_args]]
+sources = ["->get("]
+arg = 3
+values = ["raw", "string", "path", "html", "array", "trim"]
 
 [[samples]]
 kind = "vulnerable"
@@ -69,4 +76,71 @@ if (!Path::isBasePath($base, $path)) {
     throw new \RuntimeException('outside the reports folder');
 }
 readfile($path);
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "Joomla: the RAW filter returns the value as sent"
+code = '''
+<?php
+$name = Factory::getApplication()->input->get('file', '', 'RAW');
+readfile(JPATH_ROOT . '/exports/' . $name);
+'''
+
+[[samples]]
+kind = "safe"
+note = "Joomla: the default filter (cmd) and the word filter leave no / or .. in the name"
+code = '''
+<?php
+$input = Factory::getApplication()->input;
+readfile(JPATH_ROOT . '/exports/' . $input->get('file'));
+readfile(JPATH_ROOT . '/exports/' . $input->get('file', 'report', 'word'));
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "a prefix check on a path that was never resolved: exports/../../wp-config.php starts with exports/"
+code = '''
+<?php
+$path = WP_CONTENT_DIR . '/exports/' . $_GET['file'];
+if (str_starts_with($path, WP_CONTENT_DIR . '/exports/')) {
+    readfile($path);
+}
+'''
+
+[[samples]]
+kind = "safe"
+note = "the prefix check is on the path realpath() resolved"
+code = '''
+<?php
+$base = realpath(WP_CONTENT_DIR . '/exports') . '/';
+$path = realpath($base . $_GET['file']);
+if ($path !== false && str_starts_with($path, $base)) {
+    readfile($path);
+}
+'''
+
+[[samples]]
+kind = "safe"
+note = "PHP 8 match: every arm is a fixed file name"
+code = '''
+<?php
+$file = match ($_GET['type']) {
+    'csv' => 'export.csv',
+    'json' => 'export.json',
+    default => throw new InvalidArgumentException('unknown type'),
+};
+readfile(__DIR__ . '/exports/' . $file);
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "PHP 8 match: the default arm returns the request value"
+code = '''
+<?php
+$file = match ($_GET['type']) {
+    'csv' => 'export.csv',
+    default => $_GET['type'],
+};
+readfile(__DIR__ . '/exports/' . $file);
 '''

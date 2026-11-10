@@ -75,7 +75,13 @@ How the engine reads them:
   on any receiver starts with `->` (PHP) or `.` (Python, JavaScript):
   `->orderByRaw(`, `.startsWith(`. A module-qualified call must be written out
   (`os.system(`). Sources match anywhere, so `request.args` also matches
-  `self.request.args`.
+  `self.request.args`; but a source that is a call by name (`request(`,
+  `get_query_var(`) matches the function only, not a method of that name
+  (`->request(`).
+- `[*]` in a pattern matches any one index: the source `$_FILES[*]['name']`
+  matches `$_FILES['doc']['name']` (and `$_FILES['doc']['name'][$i]`) but not
+  `$_FILES['doc']['tmp_name']`. After `$f = $_FILES['doc']`, `$f['name']` is input
+  and `$f['tmp_name']` is not.
 - A string in a pattern compares its content, whatever the quotes; an unclosed
   one is a prefix: `$_SERVER['HTTP_` matches every `$_SERVER['HTTP_...']`.
 - A **sanitizer** is a call whose result is clean (`intval(`, `shlex.quote(`,
@@ -88,10 +94,18 @@ How the engine reads them:
   or `if (!check) { $x = 'default'; }`. A prefix check (`str_starts_with`,
   `strncmp`, `startsWith`) counts only against a base that ends with a separator
   (`realpath(...) . DIRECTORY_SEPARATOR`, `path.resolve(...) + path.sep`), so
-  `/var/www/assets-private` cannot pass a check for `/var/www/assets`. Lookups in a
+  `/var/www/assets-private` cannot pass a check for `/var/www/assets`. In
+  `path-traversal` rules the path checked must also be canonical: a `realpath()`
+  result (Python `os.path.realpath`, `abspath`, `normpath`, `Path.resolve()`;
+  JavaScript `path.resolve`, `path.normalize`, `fs.realpathSync`), inline or in a
+  variable assigned one, since `uploads/../../wp-config.php` starts with
+  `uploads/`. Lookups in a
   fixed list are checks in every rule: `in_array`, `array_key_exists`,
   `x in ALLOWED`, `ALLOWED.includes(x)`, `ALLOWED.has(x)`.
 - Also built into every rule:
+  - PHP 8 `match ($x) { 'a' => 'col_a', default => 'id' }` is one of its arms'
+    values, never the subject: arms that are all fixed give a clean value, and an
+    arm that throws gives none;
   - `wp_die`, `wp_send_json`, `wp_send_json_error` and `wp_send_json_success` end
     the request, so `if (!in_array($x, $allowed)) { wp_send_json_error(); }`
     validates `$x` after it;
@@ -198,12 +212,18 @@ it are unchanged: a sink is reported when any argument is tainted.
 | `whole` | the argument must be the input itself (or spread from it), not an object or array literal holding a value from it |
 | `context` | output sinks only (`echo`, `res.send(`): the input counts only when it is written into one of these places of an HTML page: `html` (between tags), `attr` (an attribute value, or inside a tag), `url` (the start of an `href`, `src`, `action`... value), `js` (inside `<script>`, an `on*` handler, or after `javascript:`); see [Output contexts](#output-contexts) |
 | `key` | the argument is an object, dict or array literal (`{ Location: v }`, `['Location' => v]`): only the value under this key, in any case, counts; without the key the call is not this sink |
-| `literal` | the argument named by `arg`, or the value of a `when` option (`password=`, `password:`), must be a non-empty string written in the code; used by rules without sources |
+| `keys` | an argument that is an array, object or dict literal counts by its keys only: Yii's `orderBy([$column => SORT_ASC])` puts the key in the query, while the value only picks a direction. An item without a key (`[$column]`) counts as a key; an argument that is not a literal counts whole |
+| `literal` | the argument named by `arg`, or the value of a `when` option (`password=`, `password:`), must be a non-empty string written in the code; used by rules without sources. The string may be reached through a variable, a constant, a PHP class constant (`self::KEY`), a property declared with it (`$this->key`, `self::$key`; not when the file assigns the property elsewhere), a concatenation, or a call that only reshapes it (`hash('sha256', '...')`, `base64_decode`, `substr`...), at most four steps deep; a name given two different values in the file is not known |
+| `min_len` | with `literal`: one of the strings the value is made from must be at least this long |
+| `exclude` | with `literal`: regular expressions (any case); a string matching one does not count, so `exclude = ["^[a-z0-9_]+-(sha\|md5)[0-9]*$"]` leaves out a purpose label such as `'wp-sha384'` |
 | `leading` | the input must be at the start of the argument: a fixed prefix makes the call safe, as `WP_PLUGIN_DIR . "/$name"` cannot choose a `phar://` stream. A fixed prefix is a literal (or a run of literals) holding a character no URL scheme has (`/`, `_`, a space) before any `:`, so `'phar' . $x` and `'ph' . 'ar' . $x` are none; a constant; a ternary whose branches both are; a variable assigned one; a property or array key the input never reached (`$this->dir`, `$u['basedir']`), but never a superglobal or request object (`$_COOKIE[...]`, `$_SERVER['HTTP_...']`; `$_SERVER['DOCUMENT_ROOT']` is allowed); a call whose arguments hold no input, even through a sanitizer (`dirname(__FILE__)`, `get_template_directory()`, `strval(intval($x))`, but not `trim(basename($_GET['d']))`); `sprintf` whose format starts with such a literal; a Laravel path helper (`storage_path(...)`); a WordPress URL helper that ends in a path (`admin_url(...)`, `get_permalink(...)`, `rest_url(...)`; `home_url('/...')` and `site_url('/...')` only with a path); `add_query_arg` / `remove_query_arg` whose URL argument is fixed (or absent: the request's own path); `apply_filters` whose filtered value is fixed; `trailingslashit` or `user_trailingslashit` whose first argument is fixed; In the `ssrf`, `open-redirect` and `xss` rules the prefix must also keep the request on a known host: a literal scheme and host followed by `/`, `?` or `#` (`https://api.example.com/...`), a root path whose second character is neither `/` nor `\` (`/account`, not `/` that the input turns into `//evil.com`), or a relative path (`users.php?id=`); `home_url()` without a path, `untrailingslashit` and `rtrim` are not fixed there, and a PHP constant is fixed only when this file defines it (`define('API', 'https://api.example.com/')`) with such a text, or when it names a folder (`__DIR__`, `ABSPATH`, `*_DIR`, `*_PATH`). A call on input (`basename($_GET['d'])`) is not; a clean call that returns `""` (`trim(' ')`, an unset `getenv()`) is a known miss |
 
 `when` and `unless` entries are code fragments matched anywhere in the call's
-arguments, with two refinements:
+arguments, with these refinements:
 
+- in `when`, a flag taken out with `~` is not set: `$flags & ~LIBXML_DTDLOAD`
+  and `& ~(LIBXML_NOENT | LIBXML_DTDLOAD)` set neither; in `~LIBXML_DTDLOAD |
+  LIBXML_NOENT`, `~` binds tighter, so `LIBXML_NOENT` is set;
 - a fragment ending in `:` or `=` names an option. In `when`, `shell:` counts with
   any value except a literal `false`, `0`, `null` or `None` (`shell: '/bin/bash'`,
   `shell: isUnix`). In `unless`, `root:` counts only when its value is not user
@@ -325,6 +345,22 @@ written later or the call decodes or splits its input (`json_decode`, `explode`,
 for it should add `when = ["'text/html'"]` (or the content types it is about). Templates that escape by
 default (`render_template`, `res.render`, Blade `{{ }}`) are not sinks.
 
+### Source arguments
+
+A call source can depend on one of its arguments. Joomla's
+`$input->get($name, $default, $filter)` returns the raw value with the `raw`
+filter, but only letters, digits, `.`, `-` and `_` with the default (`cmd`):
+
+```toml
+[[source_args]]
+sources = ["->get("]     # call sources of the rule
+arg = 3                  # the argument (from 1) that must be a string literal
+values = ["raw", "string", "path", "html", "array", "trim"]   # any case
+```
+
+The call is input only when that argument is written as one of the values; with
+another value, a variable, or no such argument it is not.
+
 ### Rules without sources
 
 `sources = []` makes a rule about how a call is made, not about where its data comes
@@ -345,7 +381,9 @@ credential-like string is kept in the repository.
 - `refs` are well-formed CVE or GHSA ids, without duplicates;
 - `text` entries are sources or sinks; `[[args]]` entries set something, name only
   the rule's sinks, give each sink at most one entry, and use `arg = 0` only for
-  method sinks;
+  method sinks; `min_len` and `exclude` come with `literal`, and `keys` not with
+  `key`; `[[source_args]]` entries name call sources of the rule, an argument and
+  values;
 - there is at least one `vulnerable` and one `safe` sample, and each vulnerable sample
   contains one of the rule's sources and one of its sinks.
 

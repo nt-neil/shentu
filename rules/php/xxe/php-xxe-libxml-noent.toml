@@ -70,3 +70,22 @@ $flags = LIBXML_NONET;
 $doc = new DOMDocument();
 $doc->loadXML($payload, $flags);
 '''
+
+[[samples]]
+kind = "safe"
+note = "the flags are taken out with & ~"
+code = '''
+<?php
+$doc = new DOMDocument();
+$doc->loadXML($xml, $options & ~(LIBXML_NOENT | LIBXML_DTDLOAD));
+$sx = simplexml_load_string($xml, 'SimpleXMLElement', LIBXML_NONET & ~LIBXML_DTDLOAD);
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "~ takes out only the flag right after it: LIBXML_NOENT stays set"
+code = '''
+<?php
+$doc = new DOMDocument();
+$doc->loadXML($xml, ~LIBXML_DTDLOAD | LIBXML_NOENT);
+'''

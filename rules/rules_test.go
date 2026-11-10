@@ -118,6 +118,7 @@ func TestRulesValid(t *testing.T) {
 		}
 		checkText(t, r)
 		checkArgs(t, r)
+		checkSourceArgs(t, r)
 		checkSamples(t, r)
 	}
 }
@@ -138,8 +139,17 @@ func checkText(t *testing.T, r Rule) {
 func checkArgs(t *testing.T, r Rule) {
 	covered := map[string]bool{}
 	for i, a := range r.Args {
-		if a.Arg == nil && len(a.When) == 0 && len(a.Unless) == 0 && !a.Whole && !a.Leading && len(a.Context) == 0 && !a.Literal && a.Key == "" {
-			t.Errorf("%s: args %d sets none of arg, when, unless, whole, leading, context, literal, key", r.File, i)
+		if a.Arg == nil && len(a.When) == 0 && len(a.Unless) == 0 && !a.Whole && !a.Leading && len(a.Context) == 0 && !a.Literal && a.Key == "" && !a.Keys {
+			t.Errorf("%s: args %d sets none of arg, when, unless, whole, leading, context, literal, key, keys", r.File, i)
+		}
+		if (a.MinLen != 0 || len(a.Exclude) > 0) && !a.Literal {
+			t.Errorf("%s: args %d: min_len and exclude need literal", r.File, i)
+		}
+		if a.MinLen < 0 {
+			t.Errorf("%s: args %d: min_len must not be negative", r.File, i)
+		}
+		if a.Keys && a.Key != "" {
+			t.Errorf("%s: args %d: keys and key do not go together", r.File, i)
 		}
 		for _, c := range a.Context {
 			if !contexts[c] {
@@ -171,6 +181,21 @@ func checkArgs(t *testing.T, r Rule) {
 		for _, f := range append(append([]string{}, a.When...), a.Unless...) {
 			if strings.TrimSpace(f) == "" {
 				t.Errorf("%s: args %d: blank entry in when or unless", r.File, i)
+			}
+		}
+	}
+}
+
+// checkSourceArgs: each [[source_args]] entry names call sources of the rule,
+// an argument from 1 and at least one value.
+func checkSourceArgs(t *testing.T, r Rule) {
+	for i, sa := range r.SourceArgs {
+		if sa.Arg < 1 || sa.Arg > 10 || len(sa.Values) == 0 || len(sa.Sources) == 0 {
+			t.Errorf("%s: source_args %d needs sources, arg 1 to 10 and values", r.File, i)
+		}
+		for _, s := range sa.Sources {
+			if !slices.Contains(r.Sources, s) || !strings.HasSuffix(s, "(") {
+				t.Errorf("%s: source_args %d: %q is not one of the call sources", r.File, i, s)
 			}
 		}
 	}
@@ -214,6 +239,9 @@ func hasOption(when []string) bool {
 
 func containsAny(code string, needles []string) bool {
 	for _, n := range needles {
+		if i := strings.Index(n, "[*]"); i > 0 {
+			n = n[:i] // $_FILES[*]['name']: any index of $_FILES
+		}
 		if strings.Contains(code, n) {
 			return true
 		}

@@ -6,7 +6,7 @@ severity = "high"
 tier = "info"
 title = "Uploaded file stored under the name the client sent, without checking its type"
 frameworks = ["wordpress", "laravel"]
-sources = ["$_FILES", "->getClientOriginalName(", "->getClientOriginalExtension(", "$_POST", "$_GET", "$_REQUEST"]
+sources = ["$_FILES[*]['name']", "$_FILES[*]['type']", "->getClientOriginalName(", "->getClientOriginalExtension(", "$_POST", "$_GET", "$_REQUEST"]
 sinks = ["move_uploaded_file(", "->storeAs(", "->move(", "->storePubliclyAs("]
 sanitizers = ["wp_unique_filename", "uniqid", "md5", "sha1", "hash", "wp_generate_password", "random_bytes", "bin2hex", "->hashName(", "->extension("]
 fix = "Check the extension and type against an allowlist (wp_check_filetype_and_ext(), in_array(strtolower(pathinfo($name, PATHINFO_EXTENSION)), $allowed, true)) or let wp_handle_upload() do it, and store the file under a name the server makes."
@@ -58,4 +58,22 @@ class UploadController {
         $file->move(public_path('docs'), $file->hashName());
     }
 }
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "the name is read from a variable holding the upload"
+code = '''
+<?php
+$file = $_FILES['document'];
+move_uploaded_file($file['tmp_name'], $upload_dir . '/' . $file['name']);
+'''
+
+[[samples]]
+kind = "safe"
+note = "tmp_name and size are set by PHP, not by the client"
+code = '''
+<?php
+$file = $_FILES['document'];
+move_uploaded_file($file['tmp_name'], $upload_dir . '/' . sha1_file($file['tmp_name']) . '-' . $file['size'] . '.pdf');
 '''

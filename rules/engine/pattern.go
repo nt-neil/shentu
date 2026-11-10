@@ -18,6 +18,11 @@ type pat struct {
 	text   *regexp.Regexp // text patterns only
 	name   string         // last name in the pattern (to recognise prefix checks)
 	chain  string         // PHP: "->m(" made from the sink "Class::m(": the chain must start at Class:: (chain.go)
+	wild   bool           // holds "[*]", which matches any one index: $_FILES[*]['name']
+	// sources only (source_args): the call is input only when its srcArg-th
+	// argument is a string literal among srcVals (lower case)
+	srcArg  int
+	srcVals map[string]bool
 }
 
 func compilePattern(lang, raw string, text bool) (*pat, error) {
@@ -62,6 +67,11 @@ func compilePattern(lang, raw string, text bool) (*pat, error) {
 		toks[i].Line, toks[i].Flags = 0, toks[i].Flags&^FlagNL
 	}
 	p.toks = toks
+	for k := 0; k+2 < len(toks); k++ {
+		if toks[k].op("[") && toks[k+1].op("*") && toks[k+2].op("]") {
+			p.wild = true
+		}
+	}
 	p.member = memberOp(p.php, toks[0]) && toks[0].Text != "::"
 	for _, t := range toks {
 		if t.Kind == Ident {
@@ -102,15 +112,64 @@ func tokEq(p, c Token) bool {
 // pattern starting with a name is not a member of something else: "exec(" matches
 // exec($x) but not $pdo->exec($x) or re.exec(s); write "->exec(" or ".exec(" for those.
 func (p *pat) at(toks []Token, i int, strict bool) bool {
+	_, ok := p.match(toks, i, strict)
+	return ok
+}
+
+// match is at that also returns where the match ends: a "[*]" in the pattern
+// takes a whole index of the code, so the length can differ from the pattern's.
+func (p *pat) match(toks []Token, i int, strict bool) (int, bool) {
 	if p.text != nil || i+len(p.toks) > len(toks) {
-		return false
+		return 0, false
 	}
-	for k, pt := range p.toks {
-		if !tokEq(pt, toks[i+k]) {
-			return false
+	j := i
+	for k := 0; k < len(p.toks); k++ {
+		if p.wild && k+2 < len(p.toks) && p.toks[k].op("[") && p.toks[k+1].op("*") && p.toks[k+2].op("]") {
+			if j >= len(toks) || !toks[j].op("[") {
+				return 0, false
+			}
+			j, k = closeOf(toks, j)+1, k+2
+			continue
 		}
+		if j >= len(toks) || !tokEq(p.toks[k], toks[j]) {
+			return 0, false
+		}
+		j++
 	}
-	return (!strict || p.member || i == 0 || !memberOp(p.php, toks[i-1])) && (p.chain == "" || chainFrom(toks, i, p.chain))
+	return j, (!strict || p.member || i == 0 || !memberOp(p.php, toks[i-1])) && (p.chain == "" || chainFrom(toks, i, p.chain))
+}
+
+// rest returns what is left of the pattern after it matched all of toks, when
+// that is a list of fixed indexes: for $_FILES[*]['name'] and $_FILES['doc'],
+// ['name']. A variable holding $_FILES['doc'] then holds input under 'name'.
+func (p *pat) rest(toks []Token) []Token {
+	if p.text != nil || !p.toks[len(p.toks)-1].op("]") {
+		return nil
+	}
+	j := 0
+	for k := 0; k < len(p.toks); k++ {
+		if j == len(toks) {
+			r := p.toks[k:]
+			for m := 0; m < len(r); m += 3 {
+				if m+2 >= len(r) || !r[m].op("[") || r[m+1].Kind != Str || !r[m+2].op("]") {
+					return nil
+				}
+			}
+			return r
+		}
+		if p.wild && k+2 < len(p.toks) && p.toks[k].op("[") && p.toks[k+1].op("*") && p.toks[k+2].op("]") {
+			if !toks[j].op("[") {
+				return nil
+			}
+			j, k = closeOf(toks, j)+1, k+2
+			continue
+		}
+		if !tokEq(p.toks[k], toks[j]) {
+			return nil
+		}
+		j++
+	}
+	return nil
 }
 
 // within reports whether p occurs anywhere in toks (argument fragments).

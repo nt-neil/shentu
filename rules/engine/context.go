@@ -2,34 +2,92 @@ package engine
 
 import "strings"
 
+// maxLitDepth bounds how many names, constants and calls literalArg follows
+// to reach the string, so A = B; B = A cannot loop and a long chain costs little.
+const maxLitDepth = 4
+
+// litFuncs turn a string written in the code into another one that is just as
+// fixed: $k = hash('sha256', 'secret') is a key written in the code.
+var litFuncs = words("hash hash_hmac md5 sha1 crc32 base64_decode base64_encode hex2bin bin2hex trim substr strtolower strtoupper strrev str_rot13 pack")
+
 // literalArg reports whether the argument a literal condition names is a
 // non-empty string written in the code: the arg-th argument, or the value of a
-// when option (password=, secret:).
+// when option (password=, secret:). The string may sit in a variable, a
+// constant, a class constant (self::KEY) or property ($this->key, self::$key)
+// declared in this file, or be made from such strings by a litFuncs call or a
+// concatenation. One of the strings it is made from must also be min_len long
+// and match no exclude pattern ('wp-sha384' is a label, not a key).
 func (a *analysis) literalArg(st state, cond *argCond, region []Token, open int) bool {
-	var isLit func(v []Token, depth int) bool
-	isLit = func(v []Token, depth int) bool {
+	passes := func(s string) bool {
+		if len(s) < cond.minLen {
+			return false
+		}
+		for _, re := range cond.exclude {
+			if re.MatchString(s) {
+				return false
+			}
+		}
+		return true
+	}
+	join := "+"
+	if a.php {
+		join = "."
+	}
+	// lit: v is written in the code; ok: one of its strings passes
+	var walk func(v []Token, depth int) (lit, ok bool)
+	walk = func(v []Token, depth int) (bool, bool) {
+		v = stripParens(v)
 		if len(v) == 1 && v[0].Kind == Str && len(v[0].Parts) == 0 && v[0].Flags&(FlagShell|FlagRegex) == 0 && v[0].Text != "" {
-			return true
+			return true, passes(v[0].Text)
+		}
+		if depth >= maxLitDepth || len(v) == 0 {
+			return false, false
+		}
+		if len(v) == 1 && (v[0].Kind == Num || v[0].word("true") || v[0].word("false")) {
+			return true, false // hash_hmac(..., true), substr($k, 0, 16)
+		}
+		if parts := splitTop(v, isOp(join)); len(parts) > 1 {
+			lit, ok := true, false
+			for _, p := range parts {
+				l, o := walk(p, depth+1)
+				lit, ok = lit && l, ok || o
+			}
+			return lit, lit && ok
+		}
+		if a.php && len(v) > 2 && v[0].Kind == Ident && litFuncs[strings.ToLower(v[0].Text)] && v[1].op("(") && closeOf(v, 1) == len(v)-1 {
+			lit, ok := true, false
+			for _, arg := range splitTop(inside(v, 1, len(v)-1), isComma) {
+				l, o := walk(arg, depth+1)
+				lit, ok = lit && l, ok || o
+			}
+			return lit, lit && ok
+		}
+		if key := memberLitKey(v); key != "" {
+			d, found := a.defs[key]
+			return found && d != "", found && d != "" && passes(d)
 		}
 		// a name holding such a string: assigned in this function, a module-level
-		// constant (SECRET_KEY = "..."), or a PHP constant defined in this file;
-		// followed a few names deep, so A = B; B = A cannot loop
-		if depth >= 4 || len(v) != 1 || v[0].Kind != Ident && v[0].Kind != Var {
-			return false
+		// constant (SECRET_KEY = "..."), or a PHP constant defined in this file
+		if len(v) != 1 || v[0].Kind != Ident && v[0].Kind != Var {
+			return false, false
 		}
 		name := v[0].Text
 		if lv := a.litOf(st, name); lv != nil {
-			return len(lv) == 1 && isLit(lv, depth+1)
+			return walk(lv, depth+1)
 		}
 		if constName(name) {
 			if lv := a.lits[name]; len(lv) == 1 {
-				return isLit(lv, depth+1)
+				return walk(lv, depth+1)
 			}
 			if d, ok := a.defs[name]; ok {
-				return d != ""
+				return d != "", d != "" && passes(d)
 			}
 		}
-		return false
+		return false, false
+	}
+	isLit := func(v []Token, depth int) bool {
+		lit, ok := walk(v, depth)
+		return lit && ok
 	}
 	if cond.arg != nil {
 		if open < 0 {
@@ -651,12 +709,90 @@ func (a *analysis) condAssign(st state, cond []Token) {
 	walk(cond, 0)
 }
 
-// phpDefines reads define('NAME', 'text') with literal arguments in a PHP file.
+// memberLitKey returns the phpDefines key of a class constant or property read:
+// self::KEY and static::KEY give "::KEY", self::$key "::$key", $this->key "->key".
+func memberLitKey(v []Token) string {
+	if len(v) != 3 {
+		return ""
+	}
+	switch {
+	case v[0].Kind == Ident && v[1].op("::") && (v[2].Kind == Ident || v[2].Kind == Var):
+		return "::" + v[2].Text
+	case v[0].Kind == Var && v[0].Text == "$this" && (v[1].op("->") || v[1].op("?->")) && v[2].Kind == Ident:
+		return "->" + v[2].Text
+	}
+	return ""
+}
+
+// propMods start a PHP property declaration.
+var propMods = words("public protected private var static readonly")
+
+// phpDefines reads define('NAME', 'text') with literal arguments in a PHP file,
+// and the class constants and properties declared with a literal string:
+// const KEY = '...' as "::KEY", private $key = '...' as "->key", static $key
+// as "::$key". A name declared twice with different values, or a property the
+// file assigns elsewhere ($this->key = getenv(...)), is not known ("").
 func phpDefines(lang string, toks []Token) map[string]string {
 	if lang != "php" {
 		return nil
 	}
 	var out map[string]string
+	put := func(k, v string) {
+		if out == nil {
+			out = map[string]string{}
+		}
+		if old, dup := out[k]; dup && old != v {
+			v = ""
+		}
+		out[k] = v
+	}
+	litAt := func(i int) (string, bool) { // a plain string ending the declaration at i
+		if i+1 < len(toks) && toks[i].Kind == Str && len(toks[i].Parts) == 0 && toks[i].Flags&FlagShell == 0 && (toks[i+1].op(";") || toks[i+1].op(",")) {
+			return toks[i].Text, true
+		}
+		return "", false
+	}
+	for i := 0; i+3 < len(toks); i++ {
+		switch {
+		case toks[i].word("const") && !(i > 0 && memberOp(true, toks[i-1])):
+			n := i + 1
+			if n+1 < len(toks) && toks[n].Kind == Ident && toks[n+1].Kind == Ident {
+				n++ // const string KEY = ...
+			}
+			if n+2 < len(toks) && toks[n].Kind == Ident && toks[n+1].op("=") {
+				v, ok := litAt(n + 2)
+				if !ok {
+					v = ""
+				}
+				put("::"+toks[n].Text, v)
+			}
+		case toks[i].Kind == Var && toks[i+1].op("=") && i > 0:
+			m := i - 1
+			for m > 0 && (toks[m].Kind == Ident && !propMods[toks[m].Text] || toks[m].op("?") || toks[m].op("|")) {
+				m-- // the type: ?string, int|string
+			}
+			if !propMods[toks[m].Text] || toks[m].Kind != Ident {
+				continue
+			}
+			static := false
+			for k := m; k >= 0 && toks[k].Kind == Ident && propMods[toks[k].Text]; k-- {
+				static = static || toks[k].Text == "static"
+			}
+			v, ok := litAt(i + 2)
+			if !ok {
+				v = ""
+			}
+			if static {
+				put("::"+toks[i].Text, v)
+			} else {
+				put("->"+toks[i].Text[1:], v)
+			}
+		case toks[i].Kind == Var && toks[i].Text == "$this" && (toks[i+1].op("->") || toks[i+1].op("?->")) && toks[i+2].Kind == Ident && isAssignOp(toks[i+3]):
+			put("->"+toks[i+2].Text, "") // assigned in a method: not the declared value
+		case toks[i].Kind == Ident && (toks[i].Text == "self" || toks[i].Text == "static") && toks[i+1].op("::") && toks[i+2].Kind == Var && isAssignOp(toks[i+3]):
+			put("::"+toks[i+2].Text, "")
+		}
+	}
 	for i := 0; i+5 < len(toks); i++ {
 		if !toks[i].word("define") || !toks[i+1].op("(") || toks[i+2].Kind != Str || !toks[i+3].op(",") || toks[i+4].Kind != Str ||
 			len(toks[i+4].Parts) > 0 || !toks[i+5].op(")") || i > 0 && memberOp(true, toks[i-1]) {
@@ -749,6 +885,101 @@ func keyValue(arg []Token, key string) []Token {
 		}
 	}
 	return nil
+}
+
+// canonKey marks, in a state, that a variable holds a canonical path: the
+// result of realpath() and the like, with no "..", "." or link left in it.
+const canonKey = "\x00canon:"
+
+// canonFuncs make a path canonical, per language: the whole call must be one.
+var canonFuncs = func() map[string][]*pat {
+	out := map[string][]*pat{}
+	for lang, list := range map[string][]string{
+		"php":    {"realpath("},
+		"python": {"os.path.realpath(", "os.path.abspath(", "os.path.normpath(", "realpath(", "abspath(", "normpath("},
+		"js":     {"path.resolve(", "path.normalize(", "fs.realpathSync(", "realpathSync(", "fs.promises.realpath("},
+	} {
+		for _, f := range list {
+			p, err := compilePattern(lang, f, false)
+			if err != nil {
+				panic(err)
+			}
+			out[lang] = append(out[lang], p)
+		}
+	}
+	return out
+}()
+
+// canonical reports whether t is a canonical path: a canonFuncs call, a
+// Python Path ending in .resolve(), or a variable assigned one.
+func (a *analysis) canonical(st state, t []Token) bool {
+	t = stripParens(t)
+	for len(t) > 0 && (t[0].word("await") || t[0].op("@")) {
+		t = t[1:]
+	}
+	if len(t) == 0 {
+		return false
+	}
+	if key, _, ok := a.pathKey(t); ok {
+		e, found := st[canonKey+key]
+		return found && e.san
+	}
+	n := len(t)
+	if a.py && n >= 4 && t[n-1].op(")") && t[n-2].op("(") && t[n-3].word("resolve") && t[n-4].op(".") {
+		return true
+	}
+	for _, p := range canonFuncs[a.lang()] {
+		if m := len(p.toks); m < n && p.at(t, 0, true) && closeOf(t, m-1) == n-1 {
+			return true
+		}
+	}
+	return false
+}
+
+// canonPrefix: a prefix check on a path (str_starts_with($p, $base),
+// strpos($p, $base) === 0) means nothing unless the path checked is canonical:
+// "/var/www/uploads/../../etc/passwd" starts with "/var/www/uploads/". One of
+// the values compared must be such a path. Only path-traversal compares
+// paths; other classes (URLs in ssrf, options in cmdi) are not about them.
+func (a *analysis) canonPrefix(st state, args [][]Token) bool {
+	if a.r.rule.Class != "path-traversal" {
+		return true
+	}
+	for _, arg := range args {
+		if a.canonical(st, arg) {
+			return true
+		}
+	}
+	return false
+}
+
+// literalKeys returns the keys of an array, object or dict literal: [$f => SORT_ASC]
+// gives $f. An item without a key ([$f], a list) is its own key, as a column
+// list is; a spread (...$x) counts whole. ok is false when arg is not a literal.
+func literalKeys(arg []Token, php bool) (keys [][]Token, ok bool) {
+	arg = stripParens(arg)
+	var body []Token
+	switch {
+	case len(arg) > 1 && (arg[0].op("{") || arg[0].op("[")) && closeOf(arg, 0) == len(arg)-1:
+		body = inside(arg, 0, len(arg)-1)
+	case php && len(arg) > 2 && arg[0].word("array") && arg[1].op("(") && closeOf(arg, 1) == len(arg)-1:
+		body = inside(arg, 1, len(arg)-1)
+	default:
+		return nil, false
+	}
+	sep := isOp(":")
+	if php {
+		sep = isOp("=>")
+	}
+	for _, item := range splitTop(body, isComma) {
+		if k := indexTop(item, 0, sep); k > 0 {
+			item = item[:k]
+		}
+		if len(item) > 0 {
+			keys = append(keys, item)
+		}
+	}
+	return keys, true
 }
 
 // configStart reports whether a string starts with an interpolated value that
