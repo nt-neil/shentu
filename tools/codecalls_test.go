@@ -19,7 +19,8 @@ type keptAudit struct {
 	t          *testing.T
 	dir, state string
 	own, calls []string
-	cutAfter   int // > 0: the clock runs out after this many files' calls in one audit
+	cutAfter   int  // > 0: the clock runs out after this many files' calls in one audit
+	cutAll     bool // the clock runs out during every file's calls
 }
 
 func newKeptAudit(t *testing.T, files map[string]string) *keptAudit {
@@ -38,7 +39,7 @@ func newKeptAudit(t *testing.T, files map[string]string) *keptAudit {
 	projectScan = func(pr *engine.Project, p string, b []byte) ([]engine.Finding, bool, error) {
 		k.calls = append(k.calls, filepath.Base(p))
 		f, timed, err := calls(pr, p, b)
-		if k.cutAfter > 0 && len(k.calls) > k.cutAfter {
+		if k.cutAll || k.cutAfter > 0 && len(k.calls) > k.cutAfter {
 			timed = true // as if the clock had run out during this file
 		}
 		return f, timed, err
@@ -146,6 +147,39 @@ func TestAppCodeAuditResumes(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, whole) {
 		t.Errorf("covered over several audits %v, in one %v", got, whole)
+	}
+}
+
+// A result that a change made stale is dropped at once: when that audit has
+// no time to scan the file again, the next one still does.
+func TestAppCodeAuditStaleNotKept(t *testing.T) {
+	k := newKeptAudit(t, keptFiles)
+	k.run()
+	os.WriteFile(filepath.Join(k.dir, "b.php"), []byte("<?php\n// moved\nfunction run_cmd($x) {\n\tsystem('ls ' . $x);\n}\n"), 0o644)
+	k.cutAll = true
+	k.run()
+	k.cutAll = false
+	found, _ := k.run()
+	if !reflect.DeepEqual(k.calls, []string{"a.php", "b.php"}) || len(found) == 0 || !strings.HasPrefix(found[0], "b.php:4 ") {
+		t.Errorf("after an audit cut short: followed %v, found %v", k.calls, found)
+	}
+}
+
+// Every caller of a changed file is scanned again, also one whose answer about
+// it came from what the project remembered from another caller.
+func TestAppCodeAuditEveryCallerAgain(t *testing.T) {
+	k := newKeptAudit(t, map[string]string{
+		"a.php": "<?php\nrequire 'b.php';\nquiet($_GET['x']);\n",
+		"b.php": "<?php\nfunction quiet($x) {\n\techo 1;\n}\n",
+		"d.php": "<?php\nrequire 'b.php';\nquiet($_GET['y']);\n",
+	})
+	if found, _ := k.run(); len(found) != 0 {
+		t.Fatalf("before: %v", found)
+	}
+	os.WriteFile(filepath.Join(k.dir, "b.php"), []byte("<?php\nfunction quiet($x) {\n\tsystem('ls ' . $x);\n}\n"), 0o644)
+	found, _ := k.run()
+	if !reflect.DeepEqual(k.calls, []string{"a.php", "b.php", "d.php"}) || len(found) == 0 {
+		t.Errorf("after the change: followed %v, found %v", k.calls, found)
 	}
 }
 

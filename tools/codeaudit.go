@@ -458,7 +458,7 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 		}
 		stateFile := callStateFile(roots)
 		st := loadCallState(stateFile, auditBuild(eng))
-		stale := st.stale(hash) // before this audit's results replace the old ones
+		stale := st.dropStale(hash) // before this audit's results replace the old ones
 		// First every file on its own (calls inside the file are followed): all
 		// files get this before any time goes to calls across files.
 		reported := map[string]bool{}

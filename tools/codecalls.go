@@ -167,9 +167,10 @@ func (st *callState) useDigests(pr *engine.Project, langs []string) {
 	}
 }
 
-// stale lists the files whose kept result across files no longer holds: the
-// file changed, or one its calls reached (or theirs, in turn) changed or is gone.
-func (st *callState) stale(hash map[string]string) map[string]bool {
+// dropStale drops and lists the kept results across files that no longer
+// hold: the file changed, or one its calls reached (or theirs, in turn)
+// changed or is gone.
+func (st *callState) dropStale(hash map[string]string) map[string]bool {
 	bad := map[string]bool{}
 	callers := map[string][]string{}
 	var queue []string
@@ -195,6 +196,15 @@ func (st *callState) stale(hash map[string]string) map[string]bool {
 		queue = queue[1:]
 		for _, c := range callers[f] {
 			mark(c)
+		}
+	}
+	// Their results go now, not when they are scanned again: an audit that has
+	// no time for one must not keep it for the next, where the change it
+	// depended on would no longer show. What the file's own calls reach (Deps)
+	// still holds while the file is unchanged.
+	for f := range bad {
+		if fs := st.Files[f]; fs != nil {
+			fs.Calls = nil
 		}
 	}
 	return bad

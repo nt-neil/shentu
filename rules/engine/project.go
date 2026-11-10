@@ -207,6 +207,17 @@ func (p *Project) importedRelative(file string, t []Token, i int) bool {
 	return ok && strings.HasPrefix(m.Module, ".")
 }
 
+// dep records that a call in file from was followed into file to.
+func (p *Project) dep(from, to string) {
+	if to == "" || to == from {
+		return
+	}
+	if p.deps[from] == nil {
+		p.deps[from] = map[string]bool{}
+	}
+	p.deps[from][to] = true
+}
+
 // Deps lists the files whose functions calls in file f's functions were
 // followed into, by any scan of the project so far. A result that followed
 // calls from f depends on these files, theirs on their own Deps, and all of
@@ -683,12 +694,7 @@ func (p *Project) analysisFor(a *analysis, f string) *analysis {
 	if ctx == nil {
 		return nil
 	}
-	if f != a.file {
-		if p.deps[a.file] == nil {
-			p.deps[a.file] = map[string]bool{}
-		}
-		p.deps[a.file][f] = true
-	}
+	p.dep(a.file, f)
 	key := a.r.rule.ID + "\x00" + f
 	sc, ok := p.sums[key]
 	if !ok {
@@ -780,6 +786,7 @@ func (p *Project) ok() bool {
 func (p *Project) resolve(a *analysis, c callee) (string, string) {
 	p.unsure, p.ambig = false, ""
 	f, name := p.resolve1(a, c)
+	p.dep(a.file, f) // also when the answer about f comes from a memo
 	unsure, ambig := p.unsure, p.ambig
 	p.unsure, p.ambig = false, ""
 	if f == "" && ambig != "" {
