@@ -135,3 +135,12 @@ export class AuthController {
   }
 }
 '''
+
+[[samples]]
+kind = "safe"
+note = "as the fix says: a fixed path first, the value encoded after it"
+code = '''
+app.get("/orders/:id/view", (req, res) => {
+  res.redirect("/account/orders/" + encodeURIComponent(req.params.id));
+});
+'''
