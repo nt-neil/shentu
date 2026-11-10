@@ -196,6 +196,9 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 	if len(rs) == 0 {
 		return nil, false, nil
 	}
+	if proj != nil {
+		proj.unsteady = false
+	}
 	b := newBudget(e.Limits)
 	toks := lex(lang, string(src), b)
 	if b.hit {
@@ -322,6 +325,9 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 	if proj != nil && proj.stopped != "" {
 		callsCut = true
 		timed = timed || proj.byMachine // the clock or the heap, not the file limit
+	}
+	if proj != nil {
+		timed = timed || proj.unsteady // a callee it could not read, or parse in time
 	}
 	for _, r := range ruleList {
 		if lines, ok := direct[r]; ok && !finished[r] {

@@ -448,6 +448,13 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 			if !ok {
 				return nil, errors.New("not read")
 			}
+			// Results are kept under the hash the walk took: a file rewritten
+			// since is not scanned under it.
+			if h := hash[p]; h != "" {
+				if sum := sha256.Sum256(b); hex.EncodeToString(sum[:]) != h {
+					return nil, errors.New("changed during the audit")
+				}
+			}
 			return b, nil
 		}
 		var files []string

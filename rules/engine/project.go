@@ -57,6 +57,7 @@ type Project struct {
 	seen      map[string]bool                // findings already returned: rule, path, line
 	stopped   string
 	byMachine bool                       // stopped by the clock or the heap: where depends on the machine
+	unsteady  bool                       // the current scan met a file it could not read, or parse in time
 	deps      map[string]map[string]bool // file → files its functions' calls were followed into
 	busy      int                        // summaries asked for while being worked out (cycles across files)
 	relGuess  int                        // relevance asked for while being worked out
@@ -720,14 +721,17 @@ func (p *Project) context(f string) *fileCtx {
 	}
 	src, err := p.read(f)
 	if err != nil {
+		p.unsteady = true // gone or changed since it was indexed
 		return nil
 	}
 	b := newBudget(p.e.Limits)
 	toks := lex(fi.Lang, string(src), b)
 	if b.hit {
+		p.unsteady = p.unsteady || b.timeHit
 		return nil
 	}
 	c := &fileCtx{lang: fi.Lang, tree: parse(fi.Lang, toks, b), tokens: len(toks)}
+	p.unsteady = p.unsteady || b.timeHit
 	c.ff = newFileFuncs(collectFuncs(c.tree, fi.Lang), fi.Lang)
 	p.keep(f, c)
 	return c
