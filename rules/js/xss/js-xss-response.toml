@@ -7,7 +7,7 @@ tier = "info"
 title = "Request value sent back in an HTML response without escaping"
 frameworks = ["express", "nestjs", "nextjs", "koa", "fastify", "hapi"]
 sources = ["req.query", "req.params", "req.body", "req.cookies", "req.headers", "@Query(", "@Body(", "@Param(", "@Headers(", "^request.nextUrl", "^req.nextUrl", "^searchParams", "^request.json(", "^req.json(", "^request.text(", "^req.text(", "^request.formData(", "^req.formData(", "^formData.get(", "req.get(", "req.header(", "^headers().get(", "^cookies().get(", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload", "ctx.params", "request.params", "ctx.headers", "ctx.cookies.get(", "request.headers", "ctx.request.header", "ctx.request.headers", "ctx.get("]
-sinks = ["res.send(", "res.write(", "res.end("]
+sinks = ["res.send(", "res.write(", "res.end(", "ctx.body =", "ctx.response.body ="]   # Koa sends a string body starting with "<" as text/html
 sanitizers = ["escapeHtml(", "escape(", "he.encode(", "he.escape(", "validator.escape(", "_.escape(", "DOMPurify.sanitize(", "sanitizeHtml(", "xss(", "encodeURIComponent("]
 fix = "Render with a template engine that escapes by default (res.render), send JSON with res.json(), or escape each value (escape-html, he.encode) before putting it into HTML."
 refs = ["CVE-2013-7370"]
@@ -76,4 +76,31 @@ export class SearchController {
     res.send("<h1>Results for " + escapeHtml(q) + "</h1>");
   }
 }
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "Koa: a string body that starts with '<' is sent as text/html"
+code = '''
+router.get("/hello", async (ctx) => {
+  ctx.body = "<h1>Hello " + ctx.query.who + "</h1>";
+});
+'''
+
+[[samples]]
+kind = "safe"
+note = "as the fix says: the value is escaped before it goes into the HTML"
+code = '''
+router.get("/hello", async (ctx) => {
+  ctx.response.body = "<h1>Hello " + escapeHtml(String(ctx.query.who)) + "</h1>";
+});
+'''
+
+[[samples]]
+kind = "safe"
+note = "Koa: an object body is sent as JSON"
+code = '''
+router.get("/hello", async (ctx) => {
+  ctx.body = { greeting: "Hello " + ctx.query.who };
+});
 '''

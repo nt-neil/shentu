@@ -7,10 +7,10 @@ tier = "info"
 title = "Request value sent back as a link URL or inside a script"
 frameworks = ["express", "nestjs", "nextjs", "koa", "fastify", "hapi"]
 sources = ["req.query", "req.params", "req.body", "req.cookies", "req.headers", "@Query(", "@Body(", "@Param(", "@Headers(", "^request.nextUrl", "^req.nextUrl", "^searchParams", "^request.json(", "^req.json(", "^request.text(", "^req.text(", "^request.formData(", "^req.formData(", "^formData.get(", "req.get(", "req.header(", "^headers().get(", "^cookies().get(", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload", "ctx.params", "request.params", "ctx.headers", "ctx.cookies.get(", "request.headers", "ctx.request.header", "ctx.request.headers", "ctx.get("]
-sinks = ["res.send(", "res.write(", "res.end("]
+sinks = ["res.send(", "res.write(", "res.end(", "ctx.body =", "ctx.response.body ="]   # Koa sends a string body starting with "<" as text/html
 sanitizers = ["encodeURIComponent(", "serialize(", "jsesc("]
 fix = "In an href or src accept only http(s) URLs (new URL(value) and a protocol check) or encode the value with encodeURIComponent() after a fixed path; inside <script> serialize it with a script-safe encoder, not with HTML escaping."
-refs = ["CVE-2024-43796"]
+refs = ["CVE-2024-43796", "CVE-2020-8176"]
 
 [[args]]
 context = ["url", "js"]
@@ -72,5 +72,28 @@ export class GoController {
   link(@Query("to") to: string, @Res() res: Response) {
     res.send(`<a href="/out?to=${encodeURIComponent(to)}">continue</a>`);
   }
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "REF shape (CVE-2020-8176): a Koa handler puts a query value inside a <script> of the HTML it assigns to ctx.body"
+code = '''
+async function cookieGate(ctx) {
+  const { store } = ctx.query;
+  ctx.body = `<html><body><script>
+    window.parent.location.assign("https://${store}/apps/next");
+  </script></body></html>`;
+}
+'''
+
+[[samples]]
+kind = "safe"
+note = "as the fix says: a script-safe encoder writes the value into the script"
+code = '''
+async function cookieGate(ctx) {
+  ctx.body = `<html><body><script>
+    window.parent.location.assign("https://" + ${serialize(String(ctx.query.store))} + "/apps/next");
+  </script></body></html>`;
 }
 '''
