@@ -106,7 +106,7 @@ lang = "php"
 applies = ["$_GET", "$_POST", "$_REQUEST"]
 framework = "wordpress"
 title = "An Elementor widget's settings are written by any user who can edit with Elementor"
-sources = ["get_settings_for_display(", "get_settings("]
+sources = ["->get_settings_for_display(", "->get_settings("]
 note = "Elementor widgets (render()) read their controls with get_settings_for_display(); contributors and up set them."
 refs = ["https://developers.elementor.com/docs/widgets/widget-rendering/"]
 
