@@ -23,8 +23,8 @@ func TestCases(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cases) < 40 || len(cases) > 60 {
-		t.Errorf("%d cases, want 40 to 60", len(cases))
+	if len(cases) < 40 || len(cases) > 120 {
+		t.Errorf("%d cases, want 40 to 120", len(cases))
 	}
 	wp := 0
 	for _, c := range cases {
@@ -47,7 +47,7 @@ func TestCaseChecks(t *testing.T) {
 	for name, mod := range map[string]func(*Case){
 		"file name":         func(c *Case) { c.file = "x/other.toml" },
 		"lang":              func(c *Case) { c.Lang = "php" },
-		"class":             func(c *Case) { c.Class = "xss" },
+		"class":             func(c *Case) { c.Class = "csrf" },
 		"same versions":     func(c *Case) { c.Fixed = c.Vulnerable },
 		"version slash":     func(c *Case) { c.Fixed = "../1" },
 		"source host":       func(c *Case) { c.SourceURL = "https://example.com/CVE-2024-12345" },

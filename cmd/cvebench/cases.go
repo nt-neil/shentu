@@ -25,7 +25,7 @@ type Case struct {
 	Package    string    `toml:"package"`    // plugin slug, owner/repo on GitHub, or registry name
 	Vulnerable string    `toml:"vulnerable"` // release (for composer: git tag) that has the flaw
 	Fixed      string    `toml:"fixed"`      // first release with the fix
-	Class      string    `toml:"class"`      // a rule class: sqli, cmdi, code-eval, deserialization, path-traversal
+	Class      string    `toml:"class"`      // a rule class, a key of classes
 	Lang       string    `toml:"lang"`       // php, python or js
 	FixFiles   []FixFile `toml:"fix_files"`
 	SourceURL  string    `toml:"source_url"` // CVE.org, NVD, GitHub Advisory or OSV
@@ -45,7 +45,7 @@ type FixFile struct {
 
 var (
 	ecosystems = map[string]string{"wordpress-plugin": "php", "composer": "php", "pypi": "python", "npm": "js"}
-	classes    = map[string]bool{"sqli": true, "cmdi": true, "code-eval": true, "deserialization": true, "path-traversal": true}
+	classes    = map[string]bool{"sqli": true, "cmdi": true, "code-eval": true, "deserialization": true, "path-traversal": true, "xss": true, "ssrf": true, "open-redirect": true, "xxe": true, "ldapi": true, "nosqli": true, "file-upload": true, "weak-crypto": true, "hardcoded-secret": true} // ldapi: LDAP injection, nosqli: NoSQL operator injection, file-upload: dangerous file type accepted, weak-crypto: broken algorithm or hash, hardcoded-secret: credential in source
 	idRe       = regexp.MustCompile(`^(CVE-\d{4}-\d{4,}|GHSA(-[23456789cfghjmpqrvwx]{4}){3})$`)
 	versionRe  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]*$`)
 	packageRe  = map[string]*regexp.Regexp{
