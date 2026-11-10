@@ -307,6 +307,7 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 				}
 			}
 			b2.maxWork = b2.work + perRule // each rule's own work cap
+			b2.sumWork = perRule           // and each summary its own (interproc.go, own)
 			sc := newSummaries(ff)
 			if proj != nil {
 				if sc == nil {

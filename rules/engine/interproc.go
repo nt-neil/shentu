@@ -3,6 +3,7 @@ package engine
 import (
 	"slices"
 	"strings"
+	"time"
 )
 
 // Calls inside one file are followed through function summaries. A summary
@@ -56,6 +57,8 @@ type summary struct {
 	checks     uint64              // parameters the function validates when it returns true (a validator)
 	condChecks uint64              // ... only where the call's other arguments carry no input (the list may be one)
 	retSrc     bool                // the return value carries input of its own
+	capped     bool                // a cap of its own work cut it short: what it says may be too little
+	height     int                 // the longest chain of summaries under it, itself included
 }
 
 func (s *summary) equal(o *summary) bool {
@@ -635,66 +638,158 @@ func (a *analysis) summaryOf(key string) *summary {
 		return nil
 	}
 	if s, ok := sc.done[key]; ok {
-		return s
+		return a.used(s)
+	}
+	if s := a.proj.provisional(sc, key); s != nil {
+		return a.used(s) // a member of a cycle across files still being settled
 	}
 	if len(sc.funcs[key]) == 0 || !a.relevant(key) || sc.busy[key] {
 		return nil
 	}
-	// A summary worked out while a function of another file it calls (back)
-	// was itself being worked out saw that one as unknown: it is used, not kept,
-	// and worked out again when asked next (a cycle across files).
-	hits := a.proj.busyCount()
-	if sc.depth >= maxSumDepth || sc.runs >= maxSumRuns || a.b.hit {
+	if a.b.hit {
 		a.b.tooDeep()
-		sc.capped = true
 		return nil
 	}
-	sc.ff.components(a.b)
+	sc.ff.components(freeBudget())
 	c, ok := sc.ff.comp[key]
 	if !ok || c < 0 {
 		sc.busy[key] = true
-		sc.depth++
-		s := a.summarizeKey(key)
-		if a.proj.busyCount() == hits {
+		idx := a.proj.push(a, []string{key})
+		var s *summary
+		capped, keep, height := a.own(func(x *analysis) { s = x.summarizeKey(key) })
+		delete(sc.busy, key)
+		fr := a.proj.pop()
+		if s == nil { // nested too deep: not worked out
+			return nil
+		}
+		s.capped, s.height = capped, height
+		switch {
+		case !keep:
+			a.proj.drop(fr)
+		case fr != nil && fr.root < idx: // part of a cycle across files whose first member is below
+			a.proj.hold(fr, map[string]*summary{key: s})
+		case fr != nil && len(fr.members) > 0: // the first member of a cycle across files: settle it
+			return a.used(a.proj.settle(fr, key))
+		default:
 			sc.done[key] = s
 		}
-		delete(sc.busy, key)
-		sc.depth--
-		return s
+		return a.used(s)
 	}
 	var members []string
 	for _, m := range sc.ff.comps[c] {
 		if _, ok := sc.done[m]; !ok && a.relevant(m) {
 			members = append(members, m)
 			sc.done[m] = &summary{} // the fixpoint starts from "does nothing"
+			sc.busy[m] = true       // another file asking for one meets a cycle
 		}
 	}
-	sc.depth++
-	for round := 0; ; round++ {
-		changed := false
-		for _, m := range members {
-			if n := a.summarizeKey(m); !n.equal(sc.done[m]) {
-				sc.done[m], changed = n, true
+	idx := a.proj.push(a, members)
+	capped, keep, height := a.own(func(x *analysis) {
+		for round := 0; ; round++ {
+			changed := false
+			for _, m := range members {
+				if n := x.summarizeKey(m); !n.equal(sc.done[m]) {
+					sc.done[m], changed = n, true
+				}
+			}
+			if !changed || x.b.hit {
+				break
+			}
+			if round+1 >= maxSumRounds {
+				x.b.tooDeep() // a recursive cycle that does not settle
+				break
 			}
 		}
-		if !changed || a.b.hit {
-			break
-		}
-		if round+1 >= maxSumRounds {
-			a.b.tooDeep() // a recursive cycle that does not settle
-			sc.capped = true
-			break
-		}
+	})
+	fr := a.proj.pop()
+	got := map[string]*summary{}
+	for _, m := range members {
+		delete(sc.busy, m)
+		sc.done[m].capped, sc.done[m].height = capped, height
+		got[m] = sc.done[m]
 	}
-	sc.depth--
 	s := sc.done[key]
-	if a.proj.busyCount() != hits {
+	switch {
+	case !keep:
 		for _, m := range members {
 			delete(sc.done, m)
 		}
+		a.proj.drop(fr)
+	case fr != nil && fr.root < idx:
+		for _, m := range members {
+			delete(sc.done, m)
+		}
+		a.proj.hold(fr, got)
+	case fr != nil && len(fr.members) > 0:
+		s = a.proj.settle(fr, key)
+	}
+	return a.used(s)
+}
+
+// used returns a summary to the analysis that asked for it: one a cap cut
+// short may say too little, so the asker's result says calls were not
+// followed to the end, whether the summary was worked out now or before.
+func (a *analysis) used(s *summary) *summary {
+	if s != nil && s.capped {
+		a.b.tooDeep()
+	}
+	if s != nil && a.heights != nil && s.height > *a.heights {
+		*a.heights = s.height
 	}
 	return s
 }
+
+// maxOwnNest bounds summaries worked out inside one another (a chain of calls
+// none of which has its summary yet); past it a summary is not worked out.
+const maxOwnNest = 256
+
+// own works out a summary in a budget and a nesting of its own, not the
+// asker's: the same summary comes out whoever asks for it and whatever was
+// worked out before, so a summary kept and used later is the one any later
+// asker would have worked out, and what the asker's caps cut does not depend
+// on which summaries it found ready. capped tells whether the summary's own
+// caps cut it short (said by the summary itself, see used); keep is false
+// when it cannot be kept: cut by the clock, or nested too deep.
+func (a *analysis) own(work func(x *analysis)) (capped, keep bool, height int) {
+	sc := a.sc
+	if a.nest >= maxOwnNest {
+		a.b.tooDeep()
+		return true, false, 0
+	}
+	nb := &budget{maxTok: a.b.maxTok, deadline: a.b.deadline, maxWork: a.b.sumWork, sumWork: a.b.sumWork}
+	under := 0 // the highest summary this one uses
+	depth, runs, was := sc.depth, sc.runs, sc.capped
+	sc.depth, sc.runs, sc.capped = 0, 0, false
+	pdepth := 0
+	if a.proj != nil {
+		pdepth, a.proj.depth = a.proj.depth, 0
+	}
+	x := *a
+	x.b, x.nest, x.heights = nb, a.nest+1, &under
+	work(&x)
+	height = under + 1
+	// A chain of summaries longer than maxSumDepth is cut: by the chain's own
+	// length under this summary, which no asker changes.
+	capped = sc.capped || nb.limited || nb.hit && !nb.timeHit || height > maxSumDepth
+	sc.depth, sc.runs, sc.capped = depth, runs, was
+	if a.proj != nil {
+		a.proj.depth = pdepth
+	}
+	if nb.timeHit {
+		// The clock: nothing to keep, and the asker is cut by it as well.
+		if a.proj != nil {
+			a.proj.stop("following calls across files ran out of time")
+			a.proj.byMachine = true
+		}
+		a.b.hit, a.b.timeHit = true, true
+		return capped, false, height
+	}
+	return capped, true, height
+}
+
+// freeBudget is for work kept for the whole file (its call graph): charged to
+// nobody, so that no asker pays for it more than another.
+func freeBudget() *budget { return &budget{maxTok: 1 << 40, deadline: time.Now().Add(24 * time.Hour)} }
 
 func (a *analysis) summarizeKey(key string) *summary {
 	s := &summary{}
@@ -788,7 +883,7 @@ func (a *analysis) relevant(key string) bool {
 		sc.rel = map[string]uint8{}
 		sc.relBusy = true
 		defer func() { sc.relBusy = false }()
-		sc.ff.components(a.b)
+		sc.ff.components(freeBudget())
 		var work []string
 		keys := make([]string, 0, len(sc.funcs))
 		for k := range sc.funcs {
@@ -889,7 +984,7 @@ func (a *analysis) summarize(fi *fnInfo, s *summary) {
 	run := func(mask uint64, sources bool) *summRun {
 		x := &analysis{r: a.r, php: a.php, py: a.py, js: a.js, b: a.b, kw: a.kw, seen: map[loc]bool{}, sc: a.sc,
 			summ: &summRun{lines: map[loc]bool{}, emb: map[loc]bool{}}, noSrc: !sources, cls: fi.f.class, parent: fi.f.parent, fname: fi.f.name,
-			file: a.file, proj: a.proj}
+			file: a.file, proj: a.proj, nest: a.nest, heights: a.heights}
 		st := state{}
 		x.paramTypes(fi.f)
 		for i := 0; i < n; i++ {

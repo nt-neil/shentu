@@ -92,6 +92,7 @@ type budget struct {
 	next     int  // work at which the clock is read again
 	hit      bool // over tokens, work or time: stop
 	maxWork  int  // work cap (0: none)
+	sumWork  int  // the work cap of each summary, worked out in a budget of its own (own)
 	timeHit  bool // hit because time ran out: the result depends on the machine
 	limited  bool // something was skipped (nesting too deep): keep going, report ErrLimit
 	partial  bool // an unterminated string or comment swallowed the rest of the file

@@ -65,10 +65,11 @@ type Project struct {
 	partCut   bool                       // ... one of them cut short by a cap
 	partAt    string                     // ... the rule the clock cut short
 	deps      map[string]map[string]bool // file → files its functions' calls were followed into
-	busy      int                        // summaries asked for while being worked out (cycles across files)
-	relGuess  int                        // relevance asked for while being worked out
-	unsure    bool                       // the last resolution met a name it could not pin to one file
-	ambig     string                     // ... a PHP function declared in several files
+	stack     []*sumFrame                // summaries being worked out, the first asked first (sumstack.go)
+	held      map[*summaries]map[string]heldSum
+	relGuess  int    // relevance asked for while being worked out
+	unsure    bool   // the last resolution met a name it could not pin to one file
+	ambig     string // ... a PHP function declared in several files
 	deadline  time.Time
 	depth     int
 	heapAt    time.Time
@@ -731,23 +732,13 @@ func (p *Project) summary(a *analysis, c callee) *summary {
 		return nil
 	}
 	if x.sc.busy[name] {
-		p.busy++ // a cycle across files: the caller's summary is not kept (summaryOf)
-		return nil
+		// A cycle across files: the summary asked for is being worked out below.
+		// It counts as doing nothing for now; every summary above it on the way
+		// here joins the cycle, which its first member settles (sumstack.go).
+		p.cycleTo(p.frameOf(x.sc, name))
+		return &summary{}
 	}
-	s := x.summaryOf(name)
-	if a.b.hit && s != nil { // computed with the caller's budget cut short: do not keep it
-		delete(x.sc.done, name)
-	}
-	return s // name is the key in that file (Class::m for a method)
-}
-
-// busyCount is how often a summary was asked for while being worked out in
-// another file (0 outside a project).
-func (p *Project) busyCount() int {
-	if p == nil {
-		return 0
-	}
-	return p.busy
+	return x.summaryOf(name) // worked out in a budget of its own (own): kept whoever asked // name is the key in that file (Class::m for a method)
 }
 
 // relevant reports whether a call reaches a function of another file that
@@ -795,7 +786,7 @@ func (p *Project) analysisFor(a *analysis, f string) *analysis {
 		p.sums[key] = sc
 	}
 	return &analysis{r: a.r, php: ctx.lang == "php", py: ctx.lang == "python", js: ctx.lang == "js", b: a.b,
-		kw: keywords[ctx.lang], seen: map[loc]bool{}, sc: sc, proj: p, file: f}
+		kw: keywords[ctx.lang], seen: map[loc]bool{}, sc: sc, proj: p, file: f, nest: a.nest, heights: a.heights}
 }
 
 // context returns the parsed file, parsing it if it is not kept.
