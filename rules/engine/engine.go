@@ -321,11 +321,17 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly bo
 	if !b.hit && (len(ff.byKey) > 0 || proj != nil) {
 		b2 := newBudget(e.Limits)
 		b2.deadline = b.deadline // one file stays within MaxTime in all
-		b2.maxWork = e.Limits.MaxCallWork
-		if b2.maxWork <= 0 {
-			b2.maxWork = DefaultLimits.MaxCallWork
+		if proj != nil {
+			// Across files the project's clock applies (an audit's time left):
+			// more rules must not mean less followed per rule.
+			b2.deadline = proj.deadline
+		}
+		perRule := e.Limits.MaxCallWork
+		if perRule <= 0 {
+			perRule = DefaultLimits.MaxCallWork
 		}
 		for _, r := range ruleList {
+			b2.maxWork = b2.work + perRule // each rule's own work cap
 			sc := newSummaries(ff)
 			if proj != nil {
 				if sc == nil {
@@ -347,17 +353,22 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly bo
 				a.lines = append(a.lines, l.lines...)
 			}
 			if b2.hit {
-				// Cut short by the work cap, the flows found so far are kept: the cap
-				// falls at the same place every time. Cut short by the clock, they
-				// are not: how far it got depends on the machine's load, and a
-				// summary it had no time for may be the check that clears a flow.
+				callsCut = true
 				if b2.timeHit {
+					// Cut short by the clock, the flows found so far are not kept: how
+					// far it got depends on the machine's load, and a summary it had no
+					// time for may be the check that clears a flow.
 					add(r, direct[r])
-				} else {
-					add(r, direct[r], a.lines)
+					delete(direct, r)
+					break
 				}
+				// Cut short by its work cap, the flows found so far are kept (the
+				// cap falls at the same place every time), and the next rule starts
+				// with a cap of its own.
+				add(r, direct[r], a.lines)
 				delete(direct, r)
-				break
+				b2.hit = false
+				continue
 			}
 			if sc.capped {
 				add(r, direct[r], a.lines)
