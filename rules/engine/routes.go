@@ -2,6 +2,7 @@ package engine
 
 import (
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/nt-neil/shentu/rules"
@@ -78,6 +79,7 @@ func (e *Engine) compileRoutes(rs []rules.Route) error {
 		}
 		if len(c.register) > 0 || len(c.deco) > 0 || r.Extends != "" {
 			e.routes[r.Lang] = append(e.routes[r.Lang], c)
+			e.routeByID[r.ID] = c
 		}
 	}
 	return nil
@@ -409,4 +411,199 @@ func (a *analysis) routeParams(f *fn, x state) {
 			x[p+sepCh+"."+m] = entry{taint: true}
 		}
 	}
+}
+
+// routeRef is a registration naming a handler that may be in another file
+// (urls.py's path('u/<name>/', views.profile), routes/web.php's
+// Route::get('/u/{id}', [UserController::class, 'show'])): kept in the
+// project's index (fileIndex.Routes) and resolved once all files are indexed.
+type routeRef struct {
+	Route string   `json:"r"`
+	Class string   `json:"c,omitempty"` // PHP: the controller class as written
+	Recv  string   `json:"v,omitempty"` // Python: the module the view is named through (views)
+	Func  string   `json:"f"`
+	Names []string `json:"n,omitempty"` // the path template's parameters
+}
+
+// routeRefs lists a file's registrations whose handler is named rather than
+// written in place: a method of a class, a function of a module, a name.
+func (e *Engine) routeRefs(lang string, tree []*stmt) []routeRef {
+	idents := map[string]bool{}
+	walkToks(tree, 0, func(t []Token) {
+		for _, tk := range t {
+			if tk.Kind == Ident {
+				idents[tk.Text] = true
+			}
+		}
+	})
+	var rs []*croute
+	for _, c := range e.routes[lang] {
+		if len(c.register) == 0 {
+			continue
+		}
+		ok := len(c.requires) == 0
+		for w := range c.requires {
+			ok = ok || idents[w]
+		}
+		if ok {
+			rs = append(rs, c)
+		}
+	}
+	if len(rs) == 0 {
+		return nil
+	}
+	php := lang == "php"
+	var out []routeRef
+	walkToks(tree, 0, func(t []Token) {
+		for i := 0; i+1 < len(t); i++ {
+			if t[i].Kind != Ident || !t[i+1].op("(") {
+				continue
+			}
+			for _, c := range rs {
+				if !callMatches(php, t, i, c.register) {
+					continue
+				}
+				args := splitTop(inside(t, i+1, closeOf(t, i+1)), isComma)
+				if c.r.Path && (len(args) == 0 || !pathLiteral(args[0])) {
+					continue
+				}
+				k := c.r.Handler - 1
+				if c.r.Handler < 0 {
+					k = len(args) - 1
+				}
+				if k < 0 || k >= len(args) {
+					continue
+				}
+				h := args[k]
+				if c.r.Key != "" {
+					h = keyValue(h, c.r.Key)
+				}
+				ref, ok := namedHandler(php, h)
+				if !ok {
+					continue
+				}
+				ref.Route = c.r.ID
+				if c.r.Template && len(args) > 0 {
+					for n := range templateNames(args[0]) {
+						ref.Names = append(ref.Names, n)
+					}
+					slices.Sort(ref.Names)
+				}
+				out = append(out, ref)
+			}
+		}
+	})
+	return out
+}
+
+// namedHandler reads a handler named rather than written in place:
+// [Foo::class, 'm'], 'Foo@m', 'Foo::m' (PHP); views.profile, profile (Python).
+func namedHandler(php bool, h []Token) (routeRef, bool) {
+	switch {
+	case php && len(h) > 0 && h[0].op("["):
+		parts := splitTop(inside(h, 0, closeOf(h, 0)), isComma)
+		if len(parts) == 2 && len(parts[1]) == 1 && parts[1][0].Kind == Str {
+			c := parts[0]
+			if n := len(c); n >= 3 && c[n-1].word("class") && c[n-2].op("::") {
+				var q strings.Builder
+				for _, tk := range c[:n-2] {
+					q.WriteString(tk.Text)
+				}
+				return routeRef{Class: q.String(), Func: parts[1][0].Text}, true
+			}
+		}
+	case php && len(h) == 1 && h[0].Kind == Str && len(h[0].Parts) == 0:
+		for _, sep := range []string{"@", "::"} {
+			if c, m, ok := strings.Cut(h[0].Text, sep); ok && c != "" && m != "" {
+				return routeRef{Class: c, Func: m}, true
+			}
+		}
+	case !php && len(h) == 3 && h[0].Kind == Ident && h[1].op(".") && h[2].Kind == Ident:
+		return routeRef{Recv: h[0].Text, Func: h[2].Text}, true
+	case !php && len(h) == 1 && h[0].Kind == Ident:
+		return routeRef{Func: h[0].Text}, true
+	}
+	return routeRef{}, false
+}
+
+// routeTarget is a handler of a file, found through another file's registration.
+type routeTarget struct {
+	key   string // the function's key in its file (Class::m in lower case for PHP)
+	route string
+	names []string
+}
+
+// resolveRoutes finds, for every file's registrations, the file and function
+// they name (once, after indexing).
+func (p *Project) resolveRoutes() {
+	p.routeTo = map[string][]routeTarget{}
+	var paths []string
+	for f, fi := range p.files {
+		if len(fi.Routes) > 0 {
+			paths = append(paths, f)
+		}
+	}
+	slices.Sort(paths)
+	for _, f := range paths {
+		fi := p.files[f]
+		for _, ref := range fi.Routes {
+			file, key := "", ""
+			switch {
+			case ref.Class != "":
+				cf, ci := p.class(f, fi, ref.Class)
+				if cf != "" {
+					file, key = cf, strings.ToLower(shortClass(ci.Name))+"::"+strings.ToLower(ref.Func)
+				}
+			case ref.Recv != "":
+				if m, ok := fi.Imports[ref.Recv]; ok {
+					mod := m.Module
+					if m.Name != "" { // from . import views: the module .views
+						if !strings.HasSuffix(mod, ".") {
+							mod += "."
+						}
+						mod += m.Name
+					}
+					file, key = p.module(f, fi.Lang, mod, ""), ref.Func
+				}
+			default:
+				if m, ok := fi.Imports[ref.Func]; ok && m.Name != "" { // from .views import profile
+					file, key = p.module(f, fi.Lang, m.Module, m.Name), m.Name
+				}
+			}
+			p.unsure, p.ambig = false, ""
+			if file != "" {
+				p.routeTo[file] = append(p.routeTo[file], routeTarget{key: key, route: ref.Route, names: ref.Names})
+			}
+		}
+	}
+}
+
+// projectHandlers adds to a file's handlers those other files' registrations name.
+func (e *Engine) projectHandlers(proj *Project, path string, ff *fileFuncs, out map[*fn]*seed) map[*fn]*seed {
+	if proj == nil || len(proj.routeTo[path]) == 0 {
+		return out
+	}
+	for _, t := range proj.routeTo[path] {
+		c := e.routeByID[t.route]
+		if c == nil {
+			continue
+		}
+		for _, fi := range ff.byKey[t.key] {
+			if out == nil {
+				out = map[*fn]*seed{}
+			}
+			if out[fi.f] != nil {
+				continue
+			}
+			sd := &seed{params: c.params, members: c.r.Members, exclude: c.exclude, bound: c.r.Bound}
+			if c.r.Template {
+				sd.names = map[string]bool{}
+				for _, n := range t.names {
+					sd.names[n] = true
+				}
+			}
+			out[fi.f] = sd
+		}
+	}
+	return out
 }

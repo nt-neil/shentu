@@ -1,6 +1,9 @@
 package engine
 
 import (
+	"fmt"
+	"maps"
+	"slices"
 	"testing"
 
 	"github.com/nt-neil/shentu/rules"
@@ -80,5 +83,64 @@ func TestRouteHandlerAcrossFiles(t *testing.T) {
 	bare.routes = nil
 	if fs := scan(bare); len(fs) != 0 {
 		t.Errorf("without it: %v", fs)
+	}
+}
+
+// Registrations naming a handler in another file: Django's urls.py and a
+// view in views.py, Laravel's routes/web.php and a controller method. The
+// view or method is analyzed with the path's parameters as input, in the
+// pass that follows calls across files (the file on its own cannot know).
+func TestRouteRegisteredInAnotherFile(t *testing.T) {
+	cases := []struct {
+		name  string
+		files map[string]string
+		safe  map[string]string // replaced in files for the safe variant
+		at    string
+	}{
+		{"django", map[string]string{
+			"app/urls.py":  "from django.urls import path\nfrom . import views\n\nurlpatterns = [path('report/<str:name>/', views.report)]\n",
+			"app/views.py": "import os\n\ndef report(request, name):\n    return os.popen('cat /srv/' + name).read()\n",
+		}, map[string]string{
+			"app/urls.py": "from django.urls import path\nfrom . import views\n\nurlpatterns = [path('report/<int:name>/', views.report)]\n",
+		}, "app/views.py:4"},
+		{"django from-import", map[string]string{
+			"app/urls.py":  "from django.urls import re_path\nfrom .views import report\n\nurlpatterns = [re_path(r'^report/(?P<name>[^/]+)/$', report)]\n",
+			"app/views.py": "import os\n\ndef report(request, name):\n    return os.popen('cat /srv/' + name).read()\n",
+		}, map[string]string{
+			"app/views.py": "import os\nimport shlex\n\ndef report(request, name):\n    return os.popen('cat /srv/' + shlex.quote(name)).read()\n",
+		}, "app/views.py:4"},
+		{"laravel controller", map[string]string{
+			"routes/web.php": "<?php\nuse App\\Http\\Controllers\\HostController;\nuse Illuminate\\Support\\Facades\\Route;\nRoute::get('/lookup/{host}', [HostController::class, 'show']);\n",
+			"app/Http/Controllers/HostController.php": "<?php\nnamespace App\\Http\\Controllers;\nclass HostController {\n\tpublic function show($host) {\n\t\treturn shell_exec('host ' . $host);\n\t}\n}\n",
+		}, map[string]string{
+			"app/Http/Controllers/HostController.php": "<?php\nnamespace App\\Http\\Controllers;\nclass HostController {\n\tpublic function show($host) {\n\t\treturn shell_exec('host ' . escapeshellarg($host));\n\t}\n}\n",
+		}, "app/Http/Controllers/HostController.php:5"},
+	}
+	for _, c := range cases {
+		run := func(files map[string]string) []string {
+			e := engineForTest(t)
+			var paths []string
+			for p := range files {
+				paths = append(paths, p)
+			}
+			slices.Sort(paths)
+			pr := e.NewProject(paths, func(p string) ([]byte, error) { return []byte(files[p]), nil }, ProjectOptions{})
+			var at []string
+			for _, p := range paths {
+				fs, _ := pr.ScanCalls(p, []byte(files[p]))
+				for _, f := range fs {
+					at = append(at, fmt.Sprintf("%s:%d", f.Path, f.Line))
+				}
+			}
+			return at
+		}
+		if at := run(c.files); !slices.Contains(at, c.at) {
+			t.Errorf("%s, vulnerable: %v, want %s", c.name, at, c.at)
+		}
+		safe := maps.Clone(c.files)
+		maps.Copy(safe, c.safe)
+		if at := run(safe); len(at) != 0 {
+			t.Errorf("%s, safe: %v", c.name, at)
+		}
 	}
 }

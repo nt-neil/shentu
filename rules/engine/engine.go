@@ -45,7 +45,8 @@ type Engine struct {
 	// scan; it is off for applications and for the server patrol.
 	Library bool
 
-	routes map[string][]*croute // route models by language (routes.go)
+	routes    map[string][]*croute // route models by language (routes.go)
+	routeByID map[string]*croute
 }
 
 type crule struct {
@@ -66,7 +67,7 @@ type argCond struct {
 
 // New compiles rules. A pattern that does not lex as code of its language is an error.
 func New(rs []rules.Rule) (*Engine, error) {
-	e := &Engine{byLang: map[string][]*crule{}, Limits: DefaultLimits, routes: map[string][]*croute{}}
+	e := &Engine{byLang: map[string][]*crule{}, Limits: DefaultLimits, routes: map[string][]*croute{}, routeByID: map[string]*croute{}}
 	for _, r := range rs {
 		c, err := compileRule(r)
 		if err != nil {
@@ -238,6 +239,9 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 	tree := parse(lang, toks, b)
 	ff := newFileFuncs(collectFuncs(tree, lang), lang)
 	routeFns := e.handlers(lang, toks, tree, ff) // functions a framework calls with request data (routes.go)
+	local := len(routeFns)
+	routeFns = e.projectHandlers(proj, path, ff, routeFns) // ... registered in another file (urls.py, routes/web.php)
+	viaProject := len(routeFns) > local
 	if proj != nil {
 		proj.keep(path, &fileCtx{lang: lang, tree: tree, ff: ff, tokens: len(toks)})
 	}
@@ -325,7 +329,7 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 			}
 			a := &analysis{r: r, php: lang == "php", py: lang == "python", js: lang == "js", b: b2, kw: keywords[lang], seen: map[loc]bool{}, sc: sc,
 				file: path, proj: proj, routes: routeFns}
-			if !e.Library && !a.crossNeeded(tree) {
+			if !e.Library && !viaProject && !a.crossNeeded(tree) {
 				ruleDone()
 				continue // no call can change this rule's result: the first pass stands
 			}

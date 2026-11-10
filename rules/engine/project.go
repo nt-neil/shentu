@@ -65,6 +65,7 @@ type Project struct {
 	partCut   bool                       // ... one of them cut short by a cap
 	partAt    string                     // ... the rule the clock cut short
 	deps      map[string]map[string]bool // file → files its functions' calls were followed into
+	routeTo   map[string][]routeTarget   // file → its functions other files register as handlers (routes.go)
 	busy      int                        // summaries asked for while being worked out (cycles across files)
 	relGuess  int                        // relevance asked for while being worked out
 	unsure    bool                       // the last resolution met a name it could not pin to one file
@@ -84,7 +85,7 @@ type ProjectOptions struct {
 }
 
 // indexVersion changes whenever fileIndex changes, so an old cache is ignored.
-const indexVersion = "3"
+const indexVersion = "4"
 
 type fileIndex struct {
 	Hash      string            `json:"h"`
@@ -92,13 +93,14 @@ type fileIndex struct {
 	Funcs     []string          `json:"f,omitempty"` // top-level functions (and closures assigned to a name)
 	Classes   []classIndex      `json:"c,omitempty"`
 	Namespace string            `json:"ns,omitempty"`
-	Uses      map[string]string `json:"u,omitempty"` // PHP: short class name → qualified name
-	Includes  []string          `json:"n,omitempty"` // PHP: include/require targets as written, relative paths
-	Imports   map[string]imp    `json:"i,omitempty"` // Python, JS: local name → module and name in it; JS re-exports too ("*1": export * from)
-	Default   string            `json:"d,omitempty"` // JS: the name of the default export
-	Limited   bool              `json:"x,omitempty"` // could not be read to the end: not used for calls
-	Empty     []string          `json:"e,omitempty"` // top-level functions with an empty body (stubs: noop.php)
-	Guarded   []string          `json:"g,omitempty"` // PHP: "f:name" / "c:name" (lower case) declared under if (!function_exists / !class_exists)
+	Uses      map[string]string `json:"u,omitempty"`  // PHP: short class name → qualified name
+	Includes  []string          `json:"n,omitempty"`  // PHP: include/require targets as written, relative paths
+	Imports   map[string]imp    `json:"i,omitempty"`  // Python, JS: local name → module and name in it; JS re-exports too ("*1": export * from)
+	Default   string            `json:"d,omitempty"`  // JS: the name of the default export
+	Limited   bool              `json:"x,omitempty"`  // could not be read to the end: not used for calls
+	Empty     []string          `json:"e,omitempty"`  // top-level functions with an empty body (stubs: noop.php)
+	Guarded   []string          `json:"g,omitempty"`  // PHP: "f:name" / "c:name" (lower case) declared under if (!function_exists / !class_exists)
+	Routes    []routeRef        `json:"rt,omitempty"` // registrations naming a handler, maybe in another file (routes.go)
 }
 
 type classIndex struct {
@@ -180,6 +182,7 @@ func (e *Engine) NewProject(paths []string, read func(string) ([]byte, error), o
 		p.add(f, fi)
 	}
 	saveIndexCache(opt.CacheFile, fresh)
+	p.resolveRoutes()
 	return p
 }
 
@@ -427,8 +430,10 @@ func indexFile(e *Engine, lang string, src []byte) *fileIndex {
 	case "php":
 		indexPHP(toks, fi)
 		fi.Guarded = guardedDecls(tree)
+		fi.Routes = e.routeRefs(lang, tree)
 	case "python":
 		indexPython(toks, fi)
+		fi.Routes = e.routeRefs(lang, tree)
 	case "js":
 		indexJS(toks, fi)
 	}
@@ -565,7 +570,7 @@ func indexPython(t []Token, fi *fileIndex) {
 	dotted := func(i int) (string, int) { // a.b.c, .mod, ..pkg.mod: names and dots alternate
 		var b strings.Builder
 		for ; i < len(t) && (t[i].Kind == Ident || t[i].op(".")); i++ {
-			if t[i].Kind == Ident && i > 0 && t[i-1].Kind == Ident && b.Len() > 0 {
+			if t[i].Kind == Ident && i > 0 && t[i-1].Kind == Ident && b.Len() > 0 || t[i].word("import") { // from . import x: the module is "."
 				break
 			}
 			b.WriteString(t[i].Text)
