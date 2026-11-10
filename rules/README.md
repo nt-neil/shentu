@@ -446,7 +446,9 @@ rule of its language.
    calling one that does); recursion is recomputed until it settles. Input that
    only went through a call the engine does not know (`get_post($_GET['id'])`)
    still reports inside its own function, as before, but does not cross into
-   another function's sinks. Depth (32), body analyses per rule and file (4000)
+   another function's sinks, and neither does an argument of a call the rule
+   lists as a sanitizer (`wp_send_json` echoes JSON and ends the request, so
+   the XSS rules list it). Depth (32), body analyses per rule and file (4000)
    and recursion rounds (4) are capped; over a cap the file returns `ErrLimit`.
    A rule whose sinks do not occur in a file is skipped for that file.
 5. **Library mode** (`Engine.Library`, off by default and never on for the server

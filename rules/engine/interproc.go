@@ -850,6 +850,11 @@ func (a *analysis) callSinks(st state, t []Token) {
 		if s == nil || !s.reachesSink() {
 			continue
 		}
+		// A call the rule names as a sanitizer does not take its arguments into
+		// its body's sinks: wp_send_json echoes, but as JSON, then ends the request.
+		if _, _, _, ok := a.sanitizerAt(st, t, i); ok {
+			continue
+		}
 		args := callArgs(t, i+1)
 		for k, p := range a.argIndex(s, args) {
 			if p == noParam {
