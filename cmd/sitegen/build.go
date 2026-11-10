@@ -77,8 +77,15 @@ func build(root, src, out, base string) error {
 	if err := fillReleases(rels, src, currentSnapshot(rs, routes)); err != nil {
 		return err
 	}
-	p := page{Base: base, Releases: rels, Routes: map[string][]string{}, Count: len(rs)}
-	p.Latest = rels[:min(3, len(rels))]
+	zhPath := filepath.Join(root, "CHANGELOG.zh-TW.md")
+	zhRels, err := parseChangelog(zhPath)
+	if err != nil {
+		return err
+	}
+	if zhRels, err = translate(rels, zhRels, zhPath); err != nil {
+		return err
+	}
+	p := page{Base: base, Routes: map[string][]string{}, Count: len(rs)}
 	for _, r := range rs {
 		p.Rules = append(p.Rules, view(r))
 	}
@@ -154,7 +161,11 @@ func build(root, src, out, base string) error {
 			if err != nil {
 				return err
 			}
-			p.L, p.Page = l, name+".html"
+			p.L, p.Page, p.Releases = l, name+".html", rels
+			if l.Code == "zh-TW" {
+				p.Releases = zhRels
+			}
+			p.Latest = p.Releases[:min(3, len(p.Releases))]
 			var b bytes.Buffer
 			if err := t.Execute(&b, p); err != nil {
 				return fmt.Errorf("%s%s: %w", l.Dir, name, err)

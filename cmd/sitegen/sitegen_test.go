@@ -81,6 +81,45 @@ func TestChangelogAndRuleDiff(t *testing.T) {
 	}
 }
 
+// Every release has items in both changelogs, under the same version and date.
+func TestChangelogTranslated(t *testing.T) {
+	en, err := parseChangelog("../../CHANGELOG.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	zh, err := parseChangelog("../../CHANGELOG.zh-TW.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := translate(en, zh, "CHANGELOG.zh-TW.md"); err != nil {
+		t.Fatal(err)
+	}
+	for i := range en {
+		if strings.Join(en[i].Items, "") == strings.Join(zh[i].Items, "") {
+			t.Errorf("v%s: CHANGELOG.zh-TW.md has the English items", en[i].Version)
+		}
+	}
+	if _, err := translate(en, zh[1:], "x"); err == nil {
+		t.Error("a missing release was not reported")
+	}
+	short := append([]Release(nil), zh...)
+	short[0].Items = nil
+	if _, err := translate(en, short, "x"); err == nil {
+		t.Error("a release with no items was not reported")
+	}
+}
+
+func TestByLang(t *testing.T) {
+	got := byLang([]string{"js-a", "php-b", "python-c", "php-d"})
+	var parts []string
+	for _, g := range got {
+		parts = append(parts, g.Lang+":"+strings.Join(g.IDs, ","))
+	}
+	if s := strings.Join(parts, " "); s != "php:php-b,php-d python:python-c js:js-a" {
+		t.Errorf("byLang = %q", s)
+	}
+}
+
 func TestMask(t *testing.T) {
 	for in, want := range map[string]string{
 		"$k = '__SECRET__';":                          "$k = 'EXAMPLE-NOT-A-SECRET';",

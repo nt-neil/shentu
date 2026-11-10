@@ -21,6 +21,8 @@ type Release struct {
 	Items      []string
 	Added      []string // rule ids new in this release
 	Removed    []string // rule ids gone in this release
+	AddedBy    []IDGroup
+	RemovedBy  []IDGroup
 	Frameworks []string // route models new in this release
 	Rules      int      // rules in this release (-1 when no snapshot)
 	Bench      *Bench   // the main CVE bench of this release, if measured
@@ -181,11 +183,56 @@ func fillReleases(rels []Release, src string, current Snapshot) error {
 		rels[i].Added = minus(snaps[i].Rules, prev.Rules)
 		rels[i].Removed = minus(prev.Rules, snaps[i].Rules)
 		rels[i].Frameworks = minus(snaps[i].Frameworks, prev.Frameworks)
+		rels[i].AddedBy, rels[i].RemovedBy = byLang(rels[i].Added), byLang(rels[i].Removed)
 		for j := i + 1; j < len(rels) && rels[i].PrevBench == nil; j++ {
 			rels[i].PrevBench = rels[j].Bench
 		}
 	}
 	return nil
+}
+
+// IDGroup is the rule ids of one language, as a release lists them.
+type IDGroup struct {
+	Lang string
+	IDs  []string
+}
+
+// byLang groups rule ids by the language their id starts with ("php-...").
+func byLang(ids []string) []IDGroup {
+	var out []IDGroup
+	for _, id := range ids {
+		l, _, _ := strings.Cut(id, "-")
+		i := 0
+		for i < len(out) && out[i].Lang != l {
+			i++
+		}
+		if i == len(out) {
+			out = append(out, IDGroup{Lang: l})
+		}
+		out[i].IDs = append(out[i].IDs, id)
+	}
+	sort.SliceStable(out, func(i, j int) bool { return langOrder(out[i].Lang) < langOrder(out[j].Lang) })
+	return out
+}
+
+// translate returns the releases with their items taken from a translated
+// changelog, which must have the same releases, each with items.
+func translate(rels, tr []Release, path string) ([]Release, error) {
+	if len(tr) != len(rels) {
+		return nil, fmt.Errorf("%s has %d releases, CHANGELOG.md has %d", path, len(tr), len(rels))
+	}
+	out := make([]Release, len(rels))
+	for i, r := range rels {
+		if tr[i].Version != r.Version || tr[i].Date != r.Date {
+			return nil, fmt.Errorf("%s: release %d is v%s %s, CHANGELOG.md has v%s %s", path, i+1, tr[i].Version, tr[i].Date, r.Version, r.Date)
+		}
+		if len(r.Items) == 0 || len(tr[i].Items) == 0 {
+			return nil, fmt.Errorf("v%s has no items in CHANGELOG.md or %s", r.Version, path)
+		}
+		out[i] = r
+		out[i].Items = tr[i].Items
+	}
+	return out, nil
 }
 
 // Bench is a cvebench result: its summary rows and its cases.

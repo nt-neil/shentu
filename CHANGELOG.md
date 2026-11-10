@@ -3,7 +3,8 @@
 Each release has one section: `## vX.Y.Z — YYYY-MM-DD` (or `## vX.Y.Z (unreleased)`).
 The website (`go generate ./cmd/sitegen`) reads this file. The rules added or removed in
 a release are not written here: they are worked out from the rule snapshots in
-`docs/site-src/rules-history/`.
+`docs/site-src/rules-history/`. `CHANGELOG.zh-TW.md` holds the same releases in Traditional
+Chinese for the zh-TW pages; keep the two in step.
 
 ## v0.2.5 (unreleased)
 

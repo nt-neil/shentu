@@ -167,6 +167,6 @@ var zh = map[string]string{
 	"rules.total":        "此版規則數",
 	"fw.new":             "新支援的框架路由模型",
 	"bench.change":       "主組實測",
-	"changelog.note":     "更新內容為英文原文（取自 CHANGELOG.md）。",
+	"changelog.note":     "",
 	"footer":             "Apache-2.0 授權。本站由 cmd/sitegen 從 repo 產生。",
 }
