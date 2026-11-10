@@ -58,7 +58,7 @@ kind = "safe"
 note = "a fixed callback; the input is only the text matched"
 code = '''
 <?php
-echo preg_replace_callback('/&#(\d+);/', 'decode_entity', $_POST['content']);
+$text = preg_replace_callback('/&#(\d+);/', 'decode_entity', $_POST['content']);
 '''
 
 [[samples]]
