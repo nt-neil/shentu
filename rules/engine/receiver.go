@@ -11,7 +11,7 @@ func recvDefs(toks []Token) map[string][][]Token {
 		depth := 0
 		j := i
 		for ; j < len(toks); j++ {
-			if depth == 0 && j > i && toks[j].Line != toks[j-1].Line || depth == 0 && toks[j].op(";") {
+			if depth == 0 && (j > i && toks[j].Line != toks[j-1].Line || toks[j].op(";") || toks[j].Kind == Newline) {
 				break
 			}
 			switch {
@@ -29,8 +29,40 @@ func recvDefs(toks []Token) map[string][][]Token {
 		}
 		return toks[i:j]
 	}
-	for i := 0; i+2 < len(toks); i++ {
-		if toks[i].Kind != Ident {
+	for i := 0; i < len(toks); i++ {
+		// from pkg.mod import a, b as c / import pkg.mod as m: the module path is
+		// what the name holds. A relative import (from .db import mongo) says
+		// nothing about it, so the name stays unknown.
+		if toks[i].word("from") && lineStart(toks, i) {
+			line := stmt(i)
+			k := 1
+			for k < len(line) && !line[k].word("import") {
+				k++
+			}
+			if k >= len(line) || k == 1 || line[1].op(".") {
+				continue
+			}
+			mod := line[1:k]
+			for _, part := range splitTop(stripParens(line[k+1:]), isComma) {
+				if n := len(part); n > 0 && part[n-1].Kind == Ident {
+					defs[part[n-1].Text] = append(defs[part[n-1].Text], mod)
+				}
+			}
+			continue
+		}
+		if toks[i].word("import") && lineStart(toks, i) {
+			for _, part := range splitTop(stmt(i+1), isComma) {
+				if n := len(part); n > 0 && part[n-1].Kind == Ident {
+					name := part[0].Text
+					if n > 2 && part[n-2].word("as") {
+						name = part[n-1].Text
+					}
+					defs[name] = append(defs[name], part)
+				}
+			}
+			continue
+		}
+		if i+2 >= len(toks) || toks[i].Kind != Ident {
 			continue
 		}
 		key, k := toks[i].Text, i+1
@@ -66,9 +98,12 @@ func recvDefs(toks []Token) map[string][][]Token {
 	return defs
 }
 
-// recvIs reports whether the receiver of a method sink is one of the kinds the
-// patterns name: one appears in it, or in what its root (x, self.x) is assigned
-// or annotated with in the file, followed a few steps.
+// recvIs reports whether the receiver of a method sink may be one of the kinds
+// the patterns name: one appears in it, or in what its root (x, self.x) is
+// assigned, annotated or imported with in the file, followed a few steps. A
+// root the file says nothing about (db imported with a relative import, a
+// parameter without a type, a name from another file) may be one; a literal
+// or a name the file ties only to other things is not.
 func (a *analysis) recvIs(ps []*pat, recv []Token) bool {
 	if a.rdefs == nil {
 		a.rdefs = recvDefs(a.ftoks)
@@ -94,7 +129,11 @@ func (a *analysis) recvIs(ps []*pat, recv []Token) bool {
 			return false
 		}
 		seen[key] = true
-		for _, d := range a.rdefs[key] {
+		ds, ok := a.rdefs[key]
+		if !ok {
+			return depth == 0 // the receiver's own root not known here: it may be a collection
+		}
+		for _, d := range ds {
 			if is(d, depth+1) {
 				return true
 			}
@@ -102,4 +141,8 @@ func (a *analysis) recvIs(ps []*pat, recv []Token) bool {
 		return false
 	}
 	return is(recv, 0)
+}
+
+func lineStart(toks []Token, i int) bool {
+	return i == 0 || toks[i-1].Line != toks[i].Line || toks[i-1].Kind == Newline || toks[i-1].Kind == Indent || toks[i-1].Kind == Dedent
 }

@@ -89,3 +89,12 @@ def has():
     data = request.get_json()
     return jsonify(found=data['text'].find(data['needle']) >= 0)
 '''
+
+[[samples]]
+kind = "vulnerable"
+note = "a db the file does not define may be a collection"
+code = '''
+@app.route('/items', methods=['POST'])
+def items():
+    return jsonify(list(db.items.find(request.get_json())))
+'''
