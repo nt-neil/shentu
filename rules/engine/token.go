@@ -94,6 +94,7 @@ type budget struct {
 	maxWork  int               // work cap (0: none)
 	sumWork  int               // the work cap of each summary, worked out in a budget of its own (own)
 	charged  map[*summary]bool // summaries whose cost this budget paid (used)
+	paid     int               // the work those costs came to
 	timeHit  bool              // hit because time ran out: the result depends on the machine
 	limited  bool              // something was skipped (nesting too deep): keep going, report ErrLimit
 	partial  bool              // an unterminated string or comment swallowed the rest of the file

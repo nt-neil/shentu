@@ -59,7 +59,7 @@ type summary struct {
 	retSrc     bool                // the return value carries input of its own
 	capped     bool                // a cap of its own work cut it short: what it says may be too little
 	height     int                 // the longest chain of summaries under it, itself included
-	cost       int                 // the work it took, the summaries it used included: what using it costs
+	cost       int                 // its own work, not its callees': what an asker pays for using it
 }
 
 func (s *summary) equal(o *summary) bool {
@@ -85,16 +85,17 @@ func (s *summary) reachesSink() bool {
 
 // summaries holds one rule's summaries for one file.
 type summaries struct {
-	ff      *fileFuncs
-	funcs   map[string][]*fnInfo // ff.byKey
-	done    map[string]*summary
-	busy    map[string]bool
-	rel     map[string]uint8 // relevance to the rule: 0 not known yet, 1 yes, 2 no, 3 being worked out
-	relBusy bool             // rel is being worked out (another file asking meanwhile learns nothing yet)
-	retUnk  map[string]uint8 // 1: the function returns the result of a call the analysis does not know; 2: it does not
-	capped  bool             // a summary hit a cap (depth, runs, rounds, parameters) and may say too little
-	runs    int
-	depth   int
+	ff     *fileFuncs
+	funcs  map[string][]*fnInfo // ff.byKey
+	done   map[string]*summary
+	busy   map[string]bool
+	rel    map[string]uint8     // relevance to the rule, once known: 1 yes, 2 no (relevance.go)
+	direct map[string]bool      // what in the function itself matters to the rule, calls aside; nil until worked out
+	cross  map[string][]relNode // the functions of other files the function calls
+	retUnk map[string]uint8     // 1: the function returns the result of a call the analysis does not know; 2: it does not
+	capped bool                 // a summary hit a cap (depth, runs, rounds, parameters) and may say too little
+	runs   int
+	depth  int
 }
 
 func newSummaries(ff *fileFuncs) *summaries {
@@ -742,6 +743,7 @@ func (a *analysis) used(s *summary) *summary {
 			a.b.charged = map[*summary]bool{}
 		}
 		a.b.charged[s] = true
+		a.b.paid += s.cost
 		a.b.charge(s.cost)
 	}
 	if s != nil && a.heights != nil && s.height > *a.heights {
@@ -778,7 +780,7 @@ func (a *analysis) own(work func(x *analysis)) (capped, keep bool, height, cost 
 	x := *a
 	x.b, x.nest, x.heights = nb, a.nest+1, &under
 	work(&x)
-	height, cost = under+1, nb.work
+	height, cost = under+1, nb.work-nb.paid // its own work: what it paid for its callees is theirs
 	// A chain of summaries longer than maxSumDepth is cut: by the chain's own
 	// length under this summary, which no asker changes.
 	capped = sc.capped || nb.limited || nb.hit && !nb.timeHit || height > maxSumDepth
@@ -819,16 +821,21 @@ func (a *analysis) crossNeeded(tree []*stmt) bool {
 	if sc == nil {
 		return false
 	}
-	a.relevant("") // works out relevance for every function
-	for k, r := range sc.rel {
-		if r == 1 && len(sc.ff.callers[k]) > 0 {
+	sc.ff.components(freeBudget())
+	keys := make([]string, 0, len(sc.funcs))
+	for k := range sc.funcs {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	for _, k := range keys {
+		if len(sc.ff.callers[k]) > 0 && a.relevant(k) {
 			return true
 		}
 	}
 	found := false
 	look := func(t []Token) {
 		for i := 0; i < len(t) && !found; i++ {
-			if k := sc.ff.key(t, i, "", "", ""); k != "" && sc.rel[k] == 1 {
+			if k := sc.ff.key(t, i, "", "", ""); k != "" && a.relevant(k) {
 				found = true
 			} else if k == "" && a.proj != nil && i+1 < len(t) && t[i+1].op("(") && t[i].Kind == Ident &&
 				(a.proj.declaredElsewhere(a.lang(), t[i].Text, a.file) || a.proj.importedRelative(a.file, t, i)) {
@@ -888,68 +895,13 @@ func (a *analysis) returnsUnknown(key string) bool {
 // analysing every function of a large file for every rule. It is worked out for
 // all functions at once: each body is read once, and relevance goes back along
 // the call graph to the callers.
+// relevant reports whether the function key of a's file matters to the rule
+// (relevance.go).
 func (a *analysis) relevant(key string) bool {
-	sc := a.sc
-	if sc.rel == nil || len(sc.rel) == 0 {
-		sc.rel = map[string]uint8{}
-		sc.relBusy = true
-		defer func() { sc.relBusy = false }()
-		sc.ff.components(freeBudget())
-		// Worked out once for the file and kept: charged to nobody, so that
-		// the asker who happens to be first does not pay more than the others;
-		// bounded by the clock only (and the file's size).
-		rb := &budget{maxTok: 1 << 40, deadline: a.b.deadline}
-		defer func() {
-			if rb.timeHit {
-				sc.rel = nil // not worked out to the end: not kept
-				if a.proj != nil {
-					a.proj.stop("following calls across files ran out of time")
-					a.proj.byMachine = true
-				}
-				a.b.hit, a.b.timeHit = true, true
-			}
-		}()
-		a := *a
-		a.b = rb
-		var work []string
-		keys := make([]string, 0, len(sc.funcs))
-		for k := range sc.funcs {
-			keys = append(keys, k)
-		}
-		slices.Sort(keys) // a fixed order: what a cycle across files guesses must not vary
-		for _, k := range keys {
-			infos := sc.funcs[k]
-			sc.rel[k] = 2
-			for _, fi := range infos {
-				direct := false
-				walkToks(fi.f.body, 0, func(t []Token) { direct = direct || a.toksRelevant(t) })
-				if direct {
-					sc.rel[k] = 1
-					work = append(work, k)
-					break
-				}
-			}
-		}
-		for len(work) > 0 {
-			k := work[len(work)-1]
-			work = work[:len(work)-1]
-			for _, c := range sc.ff.callers[k] {
-				if sc.rel[c] != 1 {
-					sc.rel[c] = 1
-					work = append(work, c)
-				}
-			}
-		}
+	if key == "" {
+		return false
 	}
-	if r, ok := sc.rel[key]; ok {
-		return r == 1
-	}
-	for _, m := range sc.ff.unions[key] { // a $this union made after the graph: its members decide
-		if sc.rel[m] == 1 {
-			return true
-		}
-	}
-	return false
+	return a.reach(relNode{a.file, key})
 }
 
 func (a *analysis) toksRelevant(t []Token) bool {
@@ -982,11 +934,6 @@ func (a *analysis) toksRelevant(t []Token) bool {
 						return true
 					}
 				}
-			}
-		}
-		if a.proj != nil && t[i].Kind == Ident && i+1 < len(t) && t[i+1].op("(") && a.calleeKey(t, i) == "" {
-			if c, ok := a.callee(t, i); ok && a.proj.relevant(a, c) {
-				return true // a call into a function of another file that matters
 			}
 		}
 	}

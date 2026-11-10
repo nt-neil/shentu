@@ -318,7 +318,7 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 				// cycle settled through it) are the ones this scan would work out.
 				key := r.rule.ID + "\x00" + path
 				if old := proj.sums[key]; old != nil {
-					sc.done = old.done
+					sc.done, sc.rel, sc.direct, sc.cross = old.done, old.rel, old.direct, old.cross
 				} else if kept := proj.kept[key]; kept != nil {
 					sc.done = kept
 					delete(proj.kept, key)

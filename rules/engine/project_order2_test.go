@@ -79,12 +79,14 @@ func TestProjectCyclesWhateverTheOrder(t *testing.T) {
 		paths = append(paths, p)
 	}
 	read := func(p string) ([]byte, error) { return []byte(files[p]), nil }
-	for _, work := range []int{0, 20_000, 60_000} {
+	for _, c := range []struct{ work, tokens int }{{0, 0}, {20_000, 0}, {60_000, 0}, {0, 200}, {20_000, 200}} {
+		work := c.work
 		scan := func(order []string) map[string]string {
 			e := engineForTest(t)
 			e.Limits.MaxTime = time.Minute
 			e.Limits.MaxCallWork = work
-			pr := e.NewProject(paths, read, ProjectOptions{MaxTime: time.Hour})
+			// tokens 200: files are let go of all the time (LRU), cycles being settled included
+			pr := e.NewProject(paths, read, ProjectOptions{MaxTime: time.Hour, MaxTokens: c.tokens})
 			out := map[string]string{}
 			for _, p := range order {
 				fs, timed, err := pr.ScanCallsTimed(p, []byte(files[p]))
@@ -106,7 +108,7 @@ func TestProjectCyclesWhateverTheOrder(t *testing.T) {
 			if got := scan(o); !reflect.DeepEqual(got, want) {
 				for _, p := range paths {
 					if got[p] != want[p] {
-						t.Errorf("work %d, order %v, %s:\n got %s\nwant %s", work, o, p, got[p], want[p])
+						t.Errorf("work %d, tokens %d, order %v, %s:\n got %s\nwant %s", work, c.tokens, o, p, got[p], want[p])
 						break
 					}
 				}

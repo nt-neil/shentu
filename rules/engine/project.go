@@ -54,7 +54,6 @@ type Project struct {
 	kept      map[string]map[string]*summary // finished summaries of files no longer kept parsed
 	incl      map[string][]string            // memo of includes()
 	fnMemo    map[string]string              // memo of function(): from + "\x00" + name → file
-	relMemo   map[string]bool                // memo of relevant(): rule, file, key
 	seen      map[string]bool                // findings already returned: rule, path, line
 	stopped   string
 	byMachine bool                       // stopped by the clock or the heap: where depends on the machine
@@ -67,7 +66,6 @@ type Project struct {
 	deps      map[string]map[string]bool // file → files its functions' calls were followed into
 	stack     []*sumFrame                // summaries being worked out, the first asked first (sumstack.go)
 	held      map[*summaries]map[string]heldSum
-	relGuess  int    // relevance asked for while being worked out
 	unsure    bool   // the last resolution met a name it could not pin to one file
 	ambig     string // ... a PHP function declared in several files
 	deadline  time.Time
@@ -142,7 +140,7 @@ func (e *Engine) NewProject(paths []string, read func(string) ([]byte, error), o
 	p := &Project{e: e, opt: opt, read: read, files: map[string]*fileIndex{}, bySuffix: map[string][]string{}, byClean: map[string]string{},
 		funcs: map[string]map[string][]string{}, classes: map[string]map[string][]string{}, declared: map[string]map[string][]string{},
 		ctx: map[string]*fileCtx{}, sums: map[string]*summaries{}, kept: map[string]map[string]*summary{}, seen: map[string]bool{},
-		incl: map[string][]string{}, fnMemo: map[string]string{}, relMemo: map[string]bool{}, deps: map[string]map[string]bool{}, unread: map[string]bool{},
+		incl: map[string][]string{}, fnMemo: map[string]string{}, deps: map[string]map[string]bool{}, unread: map[string]bool{},
 		deadline: time.Now().Add(opt.MaxTime)}
 	cache := loadIndexCache(opt.CacheFile)
 	fresh := map[string]*fileIndex{}
@@ -741,32 +739,6 @@ func (p *Project) summary(a *analysis, c callee) *summary {
 	return x.summaryOf(name) // worked out in a budget of its own (own): kept whoever asked // name is the key in that file (Class::m for a method)
 }
 
-// relevant reports whether a call reaches a function of another file that
-// matters to the rule.
-func (p *Project) relevant(a *analysis, c callee) bool {
-	f, name := p.resolve(a, c)
-	if f == "" {
-		return false
-	}
-	mk := a.r.rule.ID + "\x00" + f + "\x00" + name
-	if r, ok := p.relMemo[mk]; ok {
-		return r
-	}
-	x := p.analysisFor(a, f)
-	if x != nil && x.sc != nil && x.sc.relBusy {
-		// That file's relevance is being worked out (a cycle across files): not
-		// known yet. Nothing worked out from this answer is remembered.
-		p.relGuess++
-		return false
-	}
-	guess := p.relGuess
-	r := x != nil && x.sc != nil && len(x.sc.funcs[name]) > 0 && x.relevant(name)
-	if p.relGuess == guess && (x != nil || !p.unread[f]) { // an unread file is asked again, so each caller hears of it
-		p.relMemo[mk] = r
-	}
-	return r
-}
-
 // analysisFor returns an analysis of file f for the same rule, sharing the
 // caller's budget and the project's summaries of f.
 func (p *Project) analysisFor(a *analysis, f string) *analysis {
@@ -828,24 +800,37 @@ func (p *Project) keep(f string, c *fileCtx) {
 	p.ctx[f] = c
 	p.lru = append(p.lru, f)
 	p.resident += c.tokens
-	for p.resident > p.opt.MaxTokens && len(p.lru) > 1 {
-		old := p.lru[0]
-		p.lru = p.lru[1:]
+	for i := 0; p.resident > p.opt.MaxTokens && i < len(p.lru)-1; {
+		old := p.lru[i]
+		if p.inUse(old) {
+			i++ // a summary of it is being worked out: its summaries stay where they are
+			continue
+		}
+		p.lru = slices.Delete(p.lru, i, i+1)
 		if oc, ok := p.ctx[old]; ok {
 			p.resident -= oc.tokens
 			delete(p.ctx, old)
 			// Keep what was worked out, drop the tree: the summaries are small and
-			// computing them again is what costs.
+			// computing them again is what costs. The map itself is kept, so what
+			// is still written to it (a cycle being settled) is kept too.
 			for k, sc := range p.sums {
 				if strings.HasSuffix(k, "\x00"+old) {
-					if len(sc.done) > 0 {
-						p.kept[k] = sc.done
-					}
+					p.kept[k] = sc.done
 					delete(p.sums, k)
 				}
 			}
 		}
 	}
+}
+
+// inUse reports whether a summary of file f is being worked out (on the stack).
+func (p *Project) inUse(f string) bool {
+	for _, fr := range p.stack {
+		if fr.a.file == f {
+			return true
+		}
+	}
+	return false
 }
 
 // ok checks the time and heap caps; once one is passed, calls stop crossing files.
