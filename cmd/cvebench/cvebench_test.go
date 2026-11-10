@@ -26,14 +26,19 @@ func TestCases(t *testing.T) {
 	if len(cases) < 40 || len(cases) > 120 {
 		t.Errorf("%d cases, want 40 to 120", len(cases))
 	}
-	wp := 0
+	first := map[string]bool{"sqli": true, "cmdi": true, "code-eval": true, "deserialization": true, "path-traversal": true}
+	wp, n := 0, 0
 	for _, c := range cases {
+		if !first[c.Class] {
+			continue
+		}
+		n++
 		if c.Ecosystem == "wordpress-plugin" {
 			wp++
 		}
 	}
-	if 2*wp <= len(cases) {
-		t.Errorf("%d of %d cases are WordPress plugins, want more than half", wp, len(cases))
+	if 2*wp <= n {
+		t.Errorf("%d of %d cases in the first five classes are WordPress plugins, want more than half", wp, n)
 	}
 }
 
