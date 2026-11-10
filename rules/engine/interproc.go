@@ -60,6 +60,7 @@ type summary struct {
 	capped     bool                // a cap of its own work cut it short: what it says may be too little
 	height     int                 // the longest chain of summaries under it, itself included
 	cost       int                 // its own work, not its callees': what an asker pays for using it
+	id         string              // file and key: the same summary worked out again (after a cache let it go) is paid for once
 }
 
 func (s *summary) equal(o *summary) bool {
@@ -664,7 +665,7 @@ func (a *analysis) summaryOf(key string) *summary {
 		if s == nil { // nested too deep: not worked out
 			return nil
 		}
-		s.capped, s.height, s.cost = capped, height, cost
+		s.capped, s.height, s.cost, s.id = capped, height, cost, a.file+"\x00"+key
 		switch {
 		case !keep:
 			a.proj.drop(fr)
@@ -707,7 +708,7 @@ func (a *analysis) summaryOf(key string) *summary {
 	got := map[string]*summary{}
 	for _, m := range members {
 		delete(sc.busy, m)
-		sc.done[m].capped, sc.done[m].height, sc.done[m].cost = capped, height, cost
+		sc.done[m].capped, sc.done[m].height, sc.done[m].cost, sc.done[m].id = capped, height, cost, a.file+"\x00"+m
 		got[m] = sc.done[m]
 	}
 	s := sc.done[key]
@@ -738,11 +739,11 @@ func (a *analysis) used(s *summary) *summary {
 	// The asker pays what working it out cost, once, whether it was ready or
 	// not: so its own caps fall at the same place either way, and a rule's
 	// work in a file, summaries included, stays within its cap.
-	if s != nil && s.cost > 0 && !a.b.charged[s] {
+	if s != nil && s.cost > 0 && !a.b.charged[s.id] {
 		if a.b.charged == nil {
-			a.b.charged = map[*summary]bool{}
+			a.b.charged = map[string]bool{}
 		}
-		a.b.charged[s] = true
+		a.b.charged[s.id] = true
 		a.b.paid += s.cost
 		a.b.charge(s.cost)
 	}

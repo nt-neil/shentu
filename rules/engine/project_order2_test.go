@@ -116,3 +116,62 @@ func TestProjectCyclesWhateverTheOrder(t *testing.T) {
 		}
 	}
 }
+
+// Letting the caches go (as the memory cap makes the project do) changes
+// nothing but the time: summaries and relevance worked out again are the
+// same, and paid for once.
+func TestProjectResultWhateverTheCachesLetGo(t *testing.T) {
+	files := map[string]string{}
+	var paths []string
+	const n = 10
+	for i := range n {
+		var b strings.Builder
+		b.WriteString("<?php\n")
+		for j := range 3 {
+			fmt.Fprintf(&b, "function f%d_%d($v, $w) {\n  if ($v == 'a') { return f%d_%d($w, $v); }\n  f%d_%d($v, $w);\n  system('ls ' . $v);\n  return trim($w);\n}\n",
+				i, j, (i+1)%n, (j+2)%3, (i+n-1)%n, j)
+		}
+		if i%3 == 0 {
+			fmt.Fprintf(&b, "f%d_0($_GET['a'], $_POST['b']);\n", i)
+		}
+		p := fmt.Sprintf("m%02d.php", i)
+		files[p] = b.String()
+		paths = append(paths, p)
+	}
+	read := func(p string) ([]byte, error) { return []byte(files[p]), nil }
+	for _, work := range []int{0, 20_000} {
+		scan := func(every int, all bool, order []string) map[string]string {
+			e := engineForTest(t)
+			e.Limits.MaxTime = time.Minute
+			e.Limits.MaxCallWork = work
+			pr := e.NewProject(paths, read, ProjectOptions{MaxTime: time.Hour})
+			pr.shrinkEvery, pr.shrinkAll = every, all
+			out := map[string]string{}
+			for _, p := range order {
+				fs, timed, err := pr.ScanCallsTimed(p, []byte(files[p]))
+				out[p] = fmt.Sprint(fs, timed, err)
+			}
+			return out
+		}
+		want := scan(0, false, paths)
+		rev := slices.Clone(paths)
+		slices.Reverse(rev)
+		// The parsed files go often; summaries and relevance as well, less often
+		// (each time they go, those of a chain being worked out are worked out again).
+		for _, c := range []struct {
+			every int
+			all   bool
+		}{{1, false}, {3, false}, {7, false}, {50, true}, {200, true}} {
+			for _, o := range [][]string{paths, rev} {
+				if got := scan(c.every, c.all, o); !reflect.DeepEqual(got, want) {
+					for _, p := range paths {
+						if got[p] != want[p] {
+							t.Errorf("work %d, caches let go every %d checks (all %v), %s:\n got %s\nwant %s", work, c.every, c.all, p, got[p], want[p])
+							break
+						}
+					}
+				}
+			}
+		}
+	}
+}

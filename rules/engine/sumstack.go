@@ -109,6 +109,10 @@ func (p *Project) provisional(sc *summaries, key string) *summary {
 // settle works out the cycle whose first member is fr to its least fixed
 // point and keeps every member; it returns key's summary of fr.
 func (p *Project) settle(fr *sumFrame, key string) *summary {
+	// The cycle's files stay in use while it is settled: the caches let go of
+	// under memory pressure (shrink) are not theirs.
+	p.stack = append(p.stack, &sumFrame{a: fr.a, keys: fr.keys, members: fr.members, root: len(p.stack)})
+	defer func() { p.stack = p.stack[:len(p.stack)-1] }()
 	members := slices.Clone(fr.members)
 	for _, k := range fr.keys {
 		members = append(members, sumMember{fr.a, k})
@@ -150,7 +154,7 @@ func (p *Project) settle(fr *sumFrame, key string) *summary {
 	}
 	for _, m := range members {
 		d := m.a.sc.done[m.key]
-		d.capped, d.height, d.cost = capped, height, cost[m]
+		d.capped, d.height, d.cost, d.id = capped, height, cost[m], m.a.file+"\x00"+m.key
 	}
 	return fr.a.sc.done[key]
 }

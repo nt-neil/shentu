@@ -220,6 +220,8 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 	}
 	if proj != nil {
 		proj.unsteady = false
+		proj.scanning = path
+		defer func() { proj.scanning = "" }()
 	}
 	b := newBudget(e.Limits)
 	toks := lex(lang, string(src), b)
