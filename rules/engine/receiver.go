@@ -31,15 +31,17 @@ func recvDefs(toks []Token) map[string][][]Token {
 	}
 	for i := 0; i < len(toks); i++ {
 		// from pkg.mod import a, b as c / import pkg.mod as m: the module path is
-		// what the name holds. A relative import (from .db import mongo) says
-		// nothing about it, so the name stays unknown.
+		// what the name holds, but only for the standard library and well-known
+		// packages that are not MongoDB (notMongo). A module of the project
+		// itself (from app.db import mongo, from .db import mongo) or any other
+		// package says nothing about it, so the name stays unknown.
 		if toks[i].word("from") && lineStart(toks, i) {
 			line := stmt(i)
 			k := 1
 			for k < len(line) && !line[k].word("import") {
 				k++
 			}
-			if k >= len(line) || k == 1 || line[1].op(".") {
+			if k >= len(line) || k == 1 || !notMongo[line[1].Text] {
 				continue
 			}
 			mod := line[1:k]
@@ -52,7 +54,7 @@ func recvDefs(toks []Token) map[string][][]Token {
 		}
 		if toks[i].word("import") && lineStart(toks, i) {
 			for _, part := range splitTop(stmt(i+1), isComma) {
-				if n := len(part); n > 0 && part[n-1].Kind == Ident {
+				if n := len(part); n > 0 && part[n-1].Kind == Ident && notMongo[part[0].Text] {
 					name := part[0].Text
 					if n > 2 && part[n-2].word("as") {
 						name = part[n-1].Text
@@ -146,3 +148,15 @@ func (a *analysis) recvIs(ps []*pat, recv []Token) bool {
 func lineStart(toks []Token, i int) bool {
 	return i == 0 || toks[i-1].Line != toks[i].Line || toks[i-1].Kind == Newline || toks[i-1].Kind == Indent || toks[i-1].Kind == Dedent
 }
+
+// notMongo are top-level Python modules of the standard library and well-known
+// packages that hold no MongoDB client: a name imported from one is not a
+// collection.
+var notMongo = words("os posixpath ntpath re json sys io pathlib shutil glob fnmatch subprocess string typing " +
+	"collections itertools functools operator datetime time calendar logging urllib http xml html csv base64 " +
+	"binascii hashlib hmac secrets random math statistics decimal fractions tempfile zipfile tarfile gzip bz2 " +
+	"lzma pickle copy uuid enum abc dataclasses contextlib inspect ast textwrap unicodedata email mimetypes " +
+	"socket ssl sqlite3 configparser argparse warnings traceback threading multiprocessing asyncio concurrent " +
+	"queue struct codecs gettext locale difflib pprint shlex platform signal weakref heapq bisect array " +
+	"django flask werkzeug jinja2 markupsafe starlette fastapi pydantic sqlalchemy requests httpx urllib3 " +
+	"bs4 lxml yaml rest_framework celery numpy pandas PIL")

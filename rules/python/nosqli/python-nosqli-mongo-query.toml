@@ -98,3 +98,14 @@ code = '''
 def items():
     return jsonify(list(db.items.find(request.get_json())))
 '''
+
+[[samples]]
+kind = "vulnerable"
+note = "a collection imported from a module of the project is not known here, so it may be one"
+code = '''
+from app.db import mongo
+
+@app.route('/items', methods=['POST'])
+def items():
+    return jsonify(list(mongo.find(request.get_json())))
+'''
