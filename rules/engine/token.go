@@ -56,10 +56,15 @@ func (t Token) word(text string) bool          { return t.Kind == Ident && t.Tex
 type Limits struct {
 	MaxTokens int           // tokens per file, counting those inside string interpolations
 	MaxTime   time.Duration // lexing, parsing and analysis of one file, all rules together
+	// MaxCallWork caps the work of following calls in one file (tokens read,
+	// summaries included). Unlike MaxTime it does not depend on how busy the
+	// machine is, so the same code gives the same result every time.
+	MaxCallWork int
 }
 
 // DefaultLimits suit ordinary application files; the caller also caps file size.
-var DefaultLimits = Limits{MaxTokens: 300_000, MaxTime: 3 * time.Second}
+// At MaxCallWork, 9 of WordPress core's 1,512 PHP files stop following calls.
+var DefaultLimits = Limits{MaxTokens: 300_000, MaxTime: 3 * time.Second, MaxCallWork: 10_000_000}
 
 // ErrLimit means a file hit Limits (tokens, time or nesting) and was only partly
 // analysed; what was found is still returned.
@@ -82,7 +87,9 @@ type budget struct {
 	deadline time.Time
 	work     int  // units of work done: tokens scanned by the parser and the analysis
 	next     int  // work at which the clock is read again
-	hit      bool // over tokens or time: stop
+	hit      bool // over tokens, work or time: stop
+	maxWork  int  // work cap (0: none)
+	timeHit  bool // hit because time ran out: the result depends on the machine
 	limited  bool // something was skipped (nesting too deep): keep going, report ErrLimit
 	partial  bool // an unterminated string or comment swallowed the rest of the file
 }
@@ -121,10 +128,14 @@ func (b *budget) charge(n int) bool {
 		return false
 	}
 	b.work += n
+	if b.maxWork > 0 && b.work > b.maxWork {
+		b.hit = true
+		return false
+	}
 	if b.work >= b.next {
 		b.next = b.work + 4096
 		if time.Now().After(b.deadline) {
-			b.hit = true
+			b.hit, b.timeHit = true, true
 		}
 	}
 	return !b.hit

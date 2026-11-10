@@ -238,6 +238,10 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly bo
 	if !b.hit && (len(ff.byKey) > 0 || proj != nil) {
 		b2 := newBudget(e.Limits)
 		b2.deadline = b.deadline // one file stays within MaxTime in all
+		b2.maxWork = e.Limits.MaxCallWork
+		if b2.maxWork <= 0 {
+			b2.maxWork = DefaultLimits.MaxCallWork
+		}
 		for _, r := range ruleList {
 			sc := newSummaries(ff)
 			if proj != nil {
@@ -258,7 +262,15 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly bo
 				a.lines = append(a.lines, l.lines...)
 			}
 			if b2.hit {
-				add(r, direct[r], a.lines) // flows found before the budget ran out are real
+				// Cut short by the work cap, the flows found so far are kept: the cap
+				// falls at the same place every time. Cut short by the clock, they
+				// are not: how far it got depends on the machine's load, and a
+				// summary it had no time for may be the check that clears a flow.
+				if b2.timeHit {
+					add(r, direct[r])
+				} else {
+					add(r, direct[r], a.lines)
+				}
 				delete(direct, r)
 				break
 			}
