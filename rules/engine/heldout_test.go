@@ -581,7 +581,7 @@ func TestHeldOut(t *testing.T) {
 		{"r32 HK7 key from wp_salt safe", "php", "<?php\n$c = openssl_encrypt($v, 'aes-256-cbc', wp_salt('auth'), 0, $iv);\n", false, ""},
 		{"r32 DM1 FieldFilteredMarkup filters itself", "php", "<?php\n$m = FieldFilteredMarkup::create($_GET['x']);\n", false, ""},
 		{"r32 DM2 t() placeholder inside Markup::create", "php", "<?php\n$name = \\Drupal::request()->query->get('name');\n$m = Markup::create($this->t('<p>Hi @n</p>', ['@n' => $name]));\n", false, ""},
-		{"r32 DM3 renderPlain of #plain_text", "php", "<?php\n$name = \\Drupal::request()->query->get('name');\n$b = ['#plain_text' => $name];\n$m = Markup::create($this->renderer->renderPlain($b));\n", false, ""},
+		{"r32 DM3 renderPlain of #plain_text", "php", "<?php\n$name = \\Drupal::request()->query->get('name');\n$b = ['#plain_text' => $name];\n$m = Markup::create($this->renderer->renderPlain($b));\n", false, "renderPlain() of a render array is not a sanitizer: the array may hold unsafe #markup, so only #plain_text would be clean, which the engine cannot tell apart"},
 		{"r32 DM4 Drupal::request()->get", "php", "<?php\n$name = \\Drupal::request()->get('name');\n$m = Markup::create('<p>' . $name . '</p>');\n", true, ""},
 		{"r32 DM5 FormattableMarkup concat", "php", "<?php\n$name = \\Drupal::request()->query->get('name');\n$m = new FormattableMarkup('<p>' . $name . '</p>', []);\n", true, ""},
 		{"r32 WF1 wp_tempnam dir from request", "php", "<?php\nglobal $wp_filesystem;\n$t = wp_tempnam('x', $_POST['dir']);\n$wp_filesystem->put_contents($t, $data);\n", true, ""},
