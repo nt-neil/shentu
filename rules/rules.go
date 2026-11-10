@@ -121,7 +121,8 @@ type Route struct {
 	Requires  []string `toml:"requires"` // the model applies to a file naming one of these (an import: fastapi)
 	Exclude   []string `toml:"exclude"`  // a parameter declared with one of these is no input (Depends)
 	Bound     bool     `toml:"bound"`    // a parameter declared with a class type is an object the framework looked up (Laravel route model binding), no input
-	Sources   []string `toml:"sources"`  // further sources for every rule of the language (get_settings_for_display)
+	Sources   []string `toml:"sources"`  // further sources (get_settings_for_display), for the rules Applies names
+	Applies   []string `toml:"applies"`  // the model is for rules taking one of these sources: rules for the request's input in general, not one field of it (a password)
 	Note      string   `toml:"note"`
 	Refs      []string `toml:"refs"`
 	Samples   []Sample `toml:"samples"`

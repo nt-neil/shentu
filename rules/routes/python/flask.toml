@@ -1,6 +1,7 @@
 [[route]]
 id = "flask-route"
 lang = "python"
+applies = ["request.args", "request.form", "request.values", "request.GET", "request.POST"]
 framework = "flask"
 title = "A view's parameters are the URL's <placeholders>"
 decorator = ["*.route", "*.get", "*.post", "*.put", "*.patch", "*.delete"]

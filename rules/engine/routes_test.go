@@ -144,3 +144,22 @@ func TestRouteRegisteredInAnotherFile(t *testing.T) {
 		}
 	}
 }
+
+// A route model is for rules taking the request's input in general (Applies):
+// a rule for one field of it (a password) does not get every handler
+// parameter as input.
+func TestRouteOnlyForGeneralRules(t *testing.T) {
+	rule := func(id string, sources ...string) rules.Rule {
+		return rules.Rule{ID: id, Lang: "js", Class: "weak-crypto", Severity: "medium", Title: "t", Sources: sources,
+			Sinks: []string{"md5("}, Sanitizers: []string{}}
+	}
+	e, err := New([]rules.Rule{rule("general", "req.body"), rule("password", "req.body.password")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := "app.post('/signup', function (request, response) {\n  md5(request.body.name);\n});\n"
+	fs, _ := e.Scan("js", "a.js", []byte(src))
+	if len(fs) != 1 || fs[0].RuleID != "general" {
+		t.Errorf("%v: want the general rule only", fs)
+	}
+}

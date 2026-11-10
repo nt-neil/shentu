@@ -1,6 +1,7 @@
 [[route]]
 id = "express-handler"
 lang = "js"
+applies = ["req.query", "req.body", "req.params"]
 framework = "express"
 title = "A route handler's request carries query, params, body, headers and cookies, whatever the parameter is called"
 register = ["*.get", "*.post", "*.put", "*.patch", "*.delete", "*.all", "*.use"]

@@ -16,6 +16,7 @@ import (
 
 type croute struct {
 	r        rules.Route
+	applies  map[string]bool
 	register []callName
 	deco     []callName
 	requires map[string]bool
@@ -43,13 +44,17 @@ type seed struct {
 	members []string        // only these members of each parameter
 	exclude map[string]bool // a parameter declared with one of these words is no input
 	bound   bool            // a parameter declared with a class type is no input (route model binding)
+	route   *croute
 }
 
 // compileRoutes adds the route models to the engine: their handlers by
 // language, and their sources to every rule of the language.
 func (e *Engine) compileRoutes(rs []rules.Route) error {
 	for _, r := range rs {
-		c := &croute{r: r, requires: map[string]bool{}, exclude: map[string]bool{}}
+		c := &croute{r: r, requires: map[string]bool{}, exclude: map[string]bool{}, applies: map[string]bool{}}
+		for _, s := range r.Applies {
+			c.applies[s] = true
+		}
 		for _, n := range r.Register {
 			c.register = append(c.register, parseCallName(n))
 		}
@@ -74,7 +79,7 @@ func (e *Engine) compileRoutes(rs []rules.Route) error {
 				return err
 			}
 			for _, cr := range e.byLang[r.Lang] {
-				if len(cr.sources) > 0 || len(cr.textSources) > 0 { // a rule without sources reports its sink alone (a weak cipher): it stays so
+				if c.takes(cr) { // not a rule without sources (a weak cipher reports its sink alone), nor one for a password field
 					cr.sources = append(cr.sources, p)
 				}
 			}
@@ -85,6 +90,17 @@ func (e *Engine) compileRoutes(rs []rules.Route) error {
 		}
 	}
 	return nil
+}
+
+// takes reports whether a rule is one the model is for: it takes one of the
+// request sources Applies names.
+func (c *croute) takes(r *crule) bool {
+	for _, s := range r.rule.Sources {
+		if c.applies[s] {
+			return true
+		}
+	}
+	return false
 }
 
 // handlers finds the functions of a file that the route models make entry points.
@@ -103,7 +119,7 @@ func (e *Engine) handlers(lang string, toks []Token, tree []*stmt, ff *fileFuncs
 		if f == nil || out[f] != nil {
 			return
 		}
-		sd := &seed{params: c.params, members: c.r.Members, exclude: c.exclude, bound: c.r.Bound}
+		sd := &seed{params: c.params, members: c.r.Members, exclude: c.exclude, bound: c.r.Bound, route: c}
 		if c.r.Template {
 			sd.names = templateNames(template)
 		}
@@ -390,7 +406,7 @@ func classTyped(part []Token) bool {
 // routeParams taints the parameters a route model makes input.
 func (a *analysis) routeParams(f *fn, x state) {
 	sd := a.routes[f]
-	if sd == nil {
+	if sd == nil || !sd.route.takes(a.r) {
 		return
 	}
 	fi := paramInfo(f, a.lang())
@@ -597,7 +613,7 @@ func (e *Engine) projectHandlers(proj *Project, path string, ff *fileFuncs, out 
 			if out[fi.f] != nil {
 				continue
 			}
-			sd := &seed{params: c.params, members: c.r.Members, exclude: c.exclude, bound: c.r.Bound}
+			sd := &seed{params: c.params, members: c.r.Members, exclude: c.exclude, bound: c.r.Bound, route: c}
 			if c.r.Template {
 				sd.names = map[string]bool{}
 				for _, n := range t.names {
