@@ -136,7 +136,7 @@ func (f *fetcher) locate(c Case, version string) (location, error) {
 	switch c.Ecosystem {
 	case "wordpress-plugin":
 		return location{url: "https://downloads.wordpress.org/plugin/" + c.Package + "." + version + ".zip", ext: ".zip"}, nil
-	case "composer":
+	case "composer", "github":
 		return location{url: "https://codeload.github.com/" + c.Package + "/tar.gz/refs/tags/" + url.PathEscape(version), ext: ".tar.gz"}, nil
 	case "pypi":
 		b, err := f.get("https://pypi.org/pypi/" + c.Package + "/" + version + "/json")

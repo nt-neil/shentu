@@ -139,7 +139,7 @@ func judge(r *caseResult, rs []rules.Rule) {
 		files[ff.Path] = true
 	}
 	for _, rule := range rs {
-		if rule.Lang != r.Lang || rule.Class != r.Class {
+		if rule.Lang != r.Lang && !(rule.Lang == "js" && r.Lang == "ts") || rule.Class != r.Class {
 			continue
 		}
 		for _, f := range r.Vuln.Findings {
