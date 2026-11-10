@@ -73,6 +73,7 @@ type argCond struct {
 	keys           bool   // an array, object or dict literal argument counts by its keys (keysVal)
 	minLen         int    // literal: the shortest string that counts
 	exclude        []*regexp.Regexp
+	receiver       []*pat // a method sink counts only on a receiver these name (receiver.go)
 }
 
 // New compiles rules. A pattern that does not lex as code of its language is an error.
@@ -160,7 +161,7 @@ func compileRule(r rules.Rule) (*crule, error) {
 		for _, list := range []struct {
 			raw []string
 			out *[]*pat
-		}{{a.When, &ac.when}, {a.Unless, &ac.unless}} {
+		}{{a.When, &ac.when}, {a.Unless, &ac.unless}, {a.Receiver, &ac.receiver}} {
 			for _, raw := range list.raw {
 				p, err := compilePattern(r.Lang, raw, false)
 				if err != nil {
@@ -263,7 +264,7 @@ func (e *Engine) scan(lang, path string, src []byte) ([]Finding, error) {
 			continue // no source of it in the file: nothing to find, in either pass
 		}
 		ruleList = append(ruleList, r)
-		a := &analysis{r: r, php: lang == "php", py: lang == "python", js: lang == "js", b: b, kw: keywords[lang], seen: map[int]bool{}, defs: defs}
+		a := &analysis{r: r, php: lang == "php", py: lang == "python", js: lang == "js", b: b, kw: keywords[lang], seen: map[int]bool{}, defs: defs, ftoks: toks}
 		a.block(tree, state{})
 		direct[r] = a.lines
 		if b.hit {
@@ -280,10 +281,10 @@ func (e *Engine) scan(lang, path string, src []byte) ([]Finding, error) {
 		b2.deadline = b.deadline.Add(e.Limits.maxTime()) // a file takes at most twice MaxTime in all
 		for _, r := range ruleList {
 			sc := newSummaries(ff)
-			a := &analysis{r: r, php: lang == "php", py: lang == "python", js: lang == "js", b: b2, kw: keywords[lang], seen: map[int]bool{}, sc: sc, defs: defs}
+			a := &analysis{r: r, php: lang == "php", py: lang == "python", js: lang == "js", b: b2, kw: keywords[lang], seen: map[int]bool{}, sc: sc, defs: defs, ftoks: toks}
 			a.block(tree, state{})
 			if e.Library && libClasses[r.rule.Class] && !testPath(path) && !b2.hit {
-				l := &analysis{r: r, php: a.php, py: a.py, js: a.js, b: b2, kw: a.kw, seen: a.seen, sc: sc, lib: true, defs: defs}
+				l := &analysis{r: r, php: a.php, py: a.py, js: a.js, b: b2, kw: a.kw, seen: a.seen, sc: sc, lib: true, defs: defs, ftoks: toks}
 				l.block(tree, state{})
 				a.lines = append(a.lines, l.lines...)
 			}

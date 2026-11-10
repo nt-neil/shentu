@@ -96,3 +96,19 @@ function e( $text ) {
 }
 e( $_GET['q'] );
 '''
+
+[[samples]]
+kind = "safe"
+note = "JSON_HEX_TAG encodes < and >, so the data block cannot be closed"
+code = '''
+<?php $data = array( 'title' => $_GET['title'] ); ?>
+<script type="application/json" class="playlist"><?php echo wp_json_encode( $data, JSON_HEX_TAG | JSON_UNESCAPED_SLASHES ); ?></script>
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "without JSON_HEX_TAG, a title holding </script> ends the data block"
+code = '''
+<?php $data = array( 'title' => $_GET['title'] ); ?>
+<script type="application/json" class="playlist"><?php echo wp_json_encode( $data, JSON_UNESCAPED_SLASHES ); ?></script>
+'''

@@ -7,7 +7,7 @@ title = "Request dictionary expanded into Django ORM keyword arguments (column a
 frameworks = ["django"]
 sources = ["request.GET", "request.POST", "request.data", "json.loads(request.body"]
 sinks = [".annotate(**", ".aggregate(**", ".extra(", ".alias(**", ".values(*"]
-sanitizers = []
+sanitizers = ["._meta.get_field("]
 fix = "Never let the client choose ORM keyword names: build the kwargs from a fixed mapping on the server, and keep Django on a patched release."
 refs = ["CVE-2022-28346", "CVE-2025-59681"]
 
@@ -28,4 +28,26 @@ METRICS = {"orders": Count("id"), "customers": Count("customer", distinct=True)}
 def report(request):
     wanted = {k: METRICS[k] for k in request.GET.getlist("m") if k in METRICS}
     return JsonResponse(list(Order.objects.values("status").annotate(**wanted)), safe=False)
+'''
+
+[[samples]]
+kind = "safe"
+note = "get_field raises FieldDoesNotExist unless the name is a field of the model"
+code = '''
+def totals(request):
+    name = request.GET["field"]
+    try:
+        Order._meta.get_field(name)
+    except FieldDoesNotExist:
+        raise Http404("no such field")
+    return JsonResponse(list(Order.objects.annotate(**{"%s_total" % name: Sum(name)}).values()), safe=False)
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "the same alias without the field check"
+code = '''
+def totals(request):
+    name = request.GET["field"]
+    return JsonResponse(list(Order.objects.annotate(**{"%s_total" % name: Sum(name)}).values()), safe=False)
 '''

@@ -221,3 +221,31 @@ func (a *analysis) assertStmt(st state, t []Token) {
 		st[k.key] = e
 	}
 }
+
+// raisingCheckStmt: Django's Model._meta.get_field(name) raises
+// FieldDoesNotExist unless name is a field of the model, so after the call
+// (in a rule that lists it as a sanitizer) name is one of the model's fields.
+// In a try, the handler starts from the state before the call.
+func (a *analysis) raisingCheckStmt(st state, t []Token) {
+	if !a.py {
+		return
+	}
+	for i := 0; i+4 < len(t); i++ {
+		if !t[i].op(".") || !t[i+1].word("_meta") || !t[i+2].op(".") || !t[i+3].word("get_field") || !t[i+4].op("(") {
+			continue
+		}
+		end, _, open, ok := a.memberSanitizerAt(t, i)
+		if !ok || open < 0 {
+			continue
+		}
+		args := splitTop(inside(t, open, end-1), isComma)
+		if len(args) == 0 {
+			continue
+		}
+		for _, k := range a.keysOf(args[0]) {
+			e := st[k.key]
+			e.taint, e.src = false, e.src || k.src
+			st[k.key] = e
+		}
+	}
+}

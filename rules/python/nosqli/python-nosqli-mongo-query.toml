@@ -16,10 +16,13 @@ refs = ["CVE-2026-55253"]
 [[args]]
 sinks = [".find_one(", ".find(", ".find_one_and_update(", ".find_one_and_delete(", ".update_one(", ".update_many(", ".delete_one(", ".delete_many(", ".count_documents(", ".aggregate("]
 arg = 1
+receiver = ["MongoClient(", "AsyncMongoClient(", "AsyncIOMotorClient(", "PyMongo(", "Collection", "Database", "AsyncCollection", "AsyncDatabase", "AsyncIOMotorCollection", "AsyncIOMotorDatabase", ".get_collection(", ".get_database(", ".get_default_database("]
 
 [[samples]]
 kind = "vulnerable"
 code = '''
+db = MongoClient(os.environ['MONGO_URL']).shop
+
 @app.route('/login', methods=['POST'])
 def login():
     data = request.get_json()
@@ -30,6 +33,8 @@ def login():
 [[samples]]
 kind = "safe"
 code = '''
+db = MongoClient(os.environ['MONGO_URL']).shop
+
 @app.route('/login', methods=['POST'])
 def login():
     data = request.get_json()
@@ -38,4 +43,49 @@ def login():
         abort(400)
     user = db.users.find_one({'email': email})
     return jsonify(ok=user is not None and check(user, str(data.get('password'))))
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "Flask-PyMongo: the collection comes from the PyMongo object"
+code = '''
+mongo = PyMongo(app)
+
+@app.route('/items', methods=['POST'])
+def items():
+    q = request.get_json()
+    return jsonify(list(mongo.db.items.find(q['filter'])))
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "a collection kept on the object, typed in the constructor"
+code = '''
+class Store:
+    def __init__(self, db: Database):
+        self._items = db['items']
+
+    def remove(self):
+        self._items.delete_many(request.json['match'])
+'''
+
+[[samples]]
+kind = "safe"
+note = "a finder of static files is not a MongoDB collection"
+code = '''
+from django.contrib.staticfiles import finders
+
+def locate(request):
+    data = json.loads(request.body)
+    return JsonResponse({'path': finders.find(data['path'])})
+'''
+
+[[samples]]
+kind = "safe"
+note = "str.find on the request text"
+code = '''
+@app.route('/has', methods=['POST'])
+def has():
+    data = request.get_json()
+    return jsonify(found=data['text'].find(data['needle']) >= 0)
 '''

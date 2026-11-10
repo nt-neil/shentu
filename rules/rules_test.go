@@ -139,8 +139,8 @@ func checkText(t *testing.T, r Rule) {
 func checkArgs(t *testing.T, r Rule) {
 	covered := map[string]bool{}
 	for i, a := range r.Args {
-		if a.Arg == nil && len(a.When) == 0 && len(a.Unless) == 0 && !a.Whole && !a.Leading && len(a.Context) == 0 && !a.Literal && a.Key == "" && !a.Keys {
-			t.Errorf("%s: args %d sets none of arg, when, unless, whole, leading, context, literal, key, keys", r.File, i)
+		if a.Arg == nil && len(a.When) == 0 && len(a.Unless) == 0 && !a.Whole && !a.Leading && len(a.Context) == 0 && !a.Literal && a.Key == "" && !a.Keys && len(a.Receiver) == 0 {
+			t.Errorf("%s: args %d sets none of arg, when, unless, whole, leading, context, literal, key, keys, receiver", r.File, i)
 		}
 		if (a.MinLen != 0 || len(a.Exclude) > 0) && !a.Literal {
 			t.Errorf("%s: args %d: min_len and exclude need literal", r.File, i)
@@ -174,6 +174,9 @@ func checkArgs(t *testing.T, r Rule) {
 				t.Errorf("%s: args %d: sink %q already has conditions", r.File, i, s)
 			}
 			covered[s] = true
+			if len(a.Receiver) > 0 && !strings.HasPrefix(s, ".") && !strings.HasPrefix(s, "->") {
+				t.Errorf("%s: args %d: receiver needs a method sink starting with . or ->, not %q", r.File, i, s)
+			}
 			if a.Arg != nil && *a.Arg == 0 && !strings.HasPrefix(s, ".") && !strings.HasPrefix(s, "->") {
 				t.Errorf("%s: args %d: arg 0 (the receiver) needs a method sink starting with . or ->, not %q", r.File, i, s)
 			}

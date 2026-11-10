@@ -711,7 +711,7 @@ func (a *analysis) summarize(fi *fnInfo, s *summary) {
 		a.b.tooDeep() // more parameters than a summary tracks: the rest count as passed on (callVal)
 	}
 	run := func(mask uint64, sources bool) *summRun {
-		x := &analysis{r: a.r, php: a.php, py: a.py, js: a.js, b: a.b, kw: a.kw, seen: map[int]bool{}, sc: a.sc, defs: a.defs,
+		x := &analysis{r: a.r, php: a.php, py: a.py, js: a.js, b: a.b, kw: a.kw, seen: map[int]bool{}, sc: a.sc, defs: a.defs, ftoks: a.ftoks, rdefs: a.rdefs,
 			summ: &summRun{lines: map[int]bool{}, emb: map[int]bool{}}, noSrc: !sources, cls: fi.f.class, parent: fi.f.parent}
 		st := state{}
 		for i := 0; i < n; i++ {
