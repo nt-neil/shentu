@@ -344,9 +344,12 @@ func (a *analysis) callee(t []Token, i int) (callee, bool) {
 			return callee{t[i].Text, "parent"}, true
 		}
 		if a.php && i > 2 && t[i-1].op("::") && t[i-2].Kind == Ident && t[i-3].op(`\`) { // \App\Users::find()
-			j := i - 2
-			for j > 0 && (t[j-1].Kind == Ident || t[j-1].op(`\`)) {
-				j--
+			j := i - 2 // back over Name\Name\..., names and backslashes in turn: return App\Run:: is App\Run
+			for j >= 2 && t[j-1].op(`\`) && t[j-2].Kind == Ident {
+				j -= 2
+			}
+			if j >= 1 && t[j-1].op(`\`) {
+				j-- // \App\Run, fully qualified
 			}
 			if j > 0 && memberOp(true, t[j-1]) {
 				return callee{}, false
