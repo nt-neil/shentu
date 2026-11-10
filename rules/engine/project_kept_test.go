@@ -77,3 +77,26 @@ func TestProjectScanCallsPart(t *testing.T) {
 		t.Errorf("the rest: %v done %v, want %v done [%s]", rest, done2, all, all[0].RuleID)
 	}
 }
+
+// A rule run after the project's clock ran out followed no call across files
+// (resolution stops silently once the project stops): it is not done, and
+// its findings are not the rule's. Only rules finished before are, so that
+// the next audit runs the rest again (an audit took a rule's result without
+// its cross-file flows as complete, and the findings never came back).
+func TestProjectScanCallsPartAfterTheClock(t *testing.T) {
+	e := engineForTest(t)
+	files := map[string]string{
+		"a.php": "<?php\nrequire 'b.php';\nrun_cmd($_GET['x']);\n",
+		"b.php": "<?php\nfunction run_cmd($x) {\n\tsystem('ls ' . $x);\n}\n",
+	}
+	read := func(p string) ([]byte, error) { return []byte(files[p]), nil }
+	pr := e.NewProject([]string{"a.php", "b.php"}, read, ProjectOptions{})
+	// The project's clock (or heap) stopped calls crossing files during the
+	// scan; the scan's own clock, read every few thousand steps, has not yet.
+	pr.stop("following calls across files ran out of time")
+	pr.byMachine = true
+	part, _ := pr.ScanCallsPart("a.php", []byte(files["a.php"]), nil)
+	if !part.Timed || len(part.Done) != 0 || len(part.Found) != 0 {
+		t.Errorf("after the project stopped: %+v, want timed with no rule done", part)
+	}
+}
