@@ -46,19 +46,20 @@ type fnInfo struct {
 }
 
 type summary struct {
-	params  []string            // the parameters' names, for named arguments
-	rest    bool                // the function takes further arguments
-	sink    [maxSumParams][]loc // per parameter: the sink lines it reaches, in this or another file
-	sinkEmb uint64              // parameters embedded in a larger string on the way to a sink
-	ret     uint64              // parameters whose input the return value carries
-	retWeak uint64              // ... only through calls the analysis does not know
-	retEmb  uint64              // ... embedded in a larger string
-	checks  uint64              // parameters the function validates when it returns true (a validator)
-	retSrc  bool                // the return value carries input of its own
+	params     []string            // the parameters' names, for named arguments
+	rest       bool                // the function takes further arguments
+	sink       [maxSumParams][]loc // per parameter: the sink lines it reaches, in this or another file
+	sinkEmb    uint64              // parameters embedded in a larger string on the way to a sink
+	ret        uint64              // parameters whose input the return value carries
+	retWeak    uint64              // ... only through calls the analysis does not know
+	retEmb     uint64              // ... embedded in a larger string
+	checks     uint64              // parameters the function validates when it returns true (a validator)
+	condChecks uint64              // ... only where the call's other arguments carry no input (the list may be one)
+	retSrc     bool                // the return value carries input of its own
 }
 
 func (s *summary) equal(o *summary) bool {
-	if s.ret != o.ret || s.retSrc != o.retSrc || s.retEmb != o.retEmb || s.retWeak != o.retWeak || s.sinkEmb != o.sinkEmb || s.checks != o.checks {
+	if s.ret != o.ret || s.retSrc != o.retSrc || s.retEmb != o.retEmb || s.retWeak != o.retWeak || s.sinkEmb != o.sinkEmb || s.checks != o.checks || s.condChecks != o.condChecks {
 		return false
 	}
 	for i := range s.sink {
@@ -80,15 +81,16 @@ func (s *summary) reachesSink() bool {
 
 // summaries holds one rule's summaries for one file.
 type summaries struct {
-	ff     *fileFuncs
-	funcs  map[string][]*fnInfo // ff.byKey
-	done   map[string]*summary
-	busy   map[string]bool
-	rel    map[string]uint8 // relevance to the rule: 0 not known yet, 1 yes, 2 no, 3 being worked out
-	retUnk map[string]uint8 // 1: the function returns the result of a call the analysis does not know; 2: it does not
-	capped bool             // a summary hit a cap (depth, runs, rounds, parameters) and may say too little
-	runs   int
-	depth  int
+	ff      *fileFuncs
+	funcs   map[string][]*fnInfo // ff.byKey
+	done    map[string]*summary
+	busy    map[string]bool
+	rel     map[string]uint8 // relevance to the rule: 0 not known yet, 1 yes, 2 no, 3 being worked out
+	relBusy bool             // rel is being worked out (another file asking meanwhile learns nothing yet)
+	retUnk  map[string]uint8 // 1: the function returns the result of a call the analysis does not know; 2: it does not
+	capped  bool             // a summary hit a cap (depth, runs, rounds, parameters) and may say too little
+	runs    int
+	depth   int
 }
 
 func newSummaries(ff *fileFuncs) *summaries {
@@ -340,6 +342,20 @@ func (a *analysis) callee(t []Token, i int) (callee, bool) {
 		}
 		if i >= 4 && t[i-2].op(")") && t[i-3].op("(") && t[i-4].word("super") || t[i-2].word("super") {
 			return callee{t[i].Text, "parent"}, true
+		}
+		if a.php && i > 2 && t[i-1].op("::") && t[i-2].Kind == Ident && t[i-3].op(`\`) { // \App\Users::find()
+			j := i - 2
+			for j > 0 && (t[j-1].Kind == Ident || t[j-1].op(`\`)) {
+				j--
+			}
+			if j > 0 && memberOp(true, t[j-1]) {
+				return callee{}, false
+			}
+			var q strings.Builder
+			for _, tk := range t[j : i-1] {
+				q.WriteString(tk.Text)
+			}
+			return callee{t[i].Text, q.String()}, true
 		}
 		if i > 2 && (memberOp(a.php, t[i-3]) || t[i-3].op("\\")) || t[i-2].Kind != Ident && t[i-2].Kind != Var {
 			return callee{}, false
@@ -621,6 +637,10 @@ func (a *analysis) summaryOf(key string) *summary {
 	if len(sc.funcs[key]) == 0 || !a.relevant(key) || sc.busy[key] {
 		return nil
 	}
+	// A summary worked out while a function of another file it calls (back)
+	// was itself being worked out saw that one as unknown: it is used, not kept,
+	// and worked out again when asked next (a cycle across files).
+	hits := a.proj.busyCount()
 	if sc.depth >= maxSumDepth || sc.runs >= maxSumRuns || a.b.hit {
 		a.b.tooDeep()
 		sc.capped = true
@@ -632,7 +652,9 @@ func (a *analysis) summaryOf(key string) *summary {
 		sc.busy[key] = true
 		sc.depth++
 		s := a.summarizeKey(key)
-		sc.done[key] = s
+		if a.proj.busyCount() == hits {
+			sc.done[key] = s
+		}
 		delete(sc.busy, key)
 		sc.depth--
 		return s
@@ -662,7 +684,13 @@ func (a *analysis) summaryOf(key string) *summary {
 		}
 	}
 	sc.depth--
-	return sc.done[key]
+	s := sc.done[key]
+	if a.proj.busyCount() != hits {
+		for _, m := range members {
+			delete(sc.done, m)
+		}
+	}
+	return s
 }
 
 func (a *analysis) summarizeKey(key string) *summary {
@@ -694,7 +722,7 @@ func (a *analysis) crossNeeded(tree []*stmt) bool {
 			if k := sc.ff.key(t, i, "", "", ""); k != "" && sc.rel[k] == 1 {
 				found = true
 			} else if k == "" && a.proj != nil && i+1 < len(t) && t[i+1].op("(") && t[i].Kind == Ident &&
-				a.proj.declaredElsewhere(a.lang(), t[i].Text, a.file) {
+				(a.proj.declaredElsewhere(a.lang(), t[i].Text, a.file) || a.proj.importedRelative(a.file, t, i)) {
 				found = true // may call into another file of the project (types are known only later)
 			}
 		}
@@ -755,6 +783,8 @@ func (a *analysis) relevant(key string) bool {
 	sc := a.sc
 	if sc.rel == nil || len(sc.rel) == 0 {
 		sc.rel = map[string]uint8{}
+		sc.relBusy = true
+		defer func() { sc.relBusy = false }()
 		sc.ff.components(a.b)
 		var work []string
 		for k, infos := range sc.funcs {
@@ -869,25 +899,30 @@ func (a *analysis) summarize(fi *fnInfo, s *summary) {
 	if base.ret.taint && !base.ret.weak {
 		s.retSrc = true
 	}
-	// A validator: every return that can be true is a check of the parameter
-	// (return in_array($column, $columns, true);), so a true result means the
-	// argument passed it.
-	if len(base.checks) > 0 {
-		for i := 0; i < n; i++ {
-			all := fi.params[i] != ""
-			for _, c := range base.checks {
-				all = all && c[fi.params[i]]
-			}
-			if all {
-				s.checks |= 1 << i
-			}
-		}
-	}
 	if n == 0 || a.b.hit {
 		return
 	}
+	// A validator: every return that can be true checks the value the
+	// parameter was given (return in_array($column, $columns, true);), so a
+	// true result means the argument passed it. With every parameter tainted,
+	// a check against a list another parameter brings does not count: such a
+	// function validates only where the call passes clean other arguments
+	// (condChecks).
+	validates := func(r *summRun, i int) bool {
+		ok := fi.params[i] != "" && len(r.checks) > 0
+		for _, c := range r.checks {
+			ok = ok && c[fi.params[i]]
+		}
+		return ok
+	}
 	// With the sources off, whatever reaches a sink or the return came from a parameter.
-	if all := run(1<<n-1, false); len(all.lines) == 0 && !all.ret.taint {
+	all := run(1<<n-1, false)
+	for i := 0; i < n; i++ {
+		if validates(all, i) {
+			s.checks |= 1 << i
+		}
+	}
+	if len(all.lines) == 0 && !all.ret.taint && len(all.checks) == 0 {
 		return
 	}
 	for i := 0; i < n && !a.b.hit; i++ {
@@ -895,6 +930,9 @@ func (a *analysis) summarize(fi *fnInfo, s *summary) {
 			continue
 		}
 		r := run(1<<i, false)
+		if s.checks&(1<<i) == 0 && validates(r, i) {
+			s.condChecks |= 1 << i
+		}
 		for l := range r.lines {
 			if !slices.Contains(s.sink[i], l) {
 				s.sink[i] = append(s.sink[i], l)

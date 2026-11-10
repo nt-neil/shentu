@@ -16,6 +16,7 @@ text = ["php://input"]
 [[args]]
 sinks = ["preg_replace_callback("]
 arg = 2
+name = "callback"
 
 [[samples]]
 kind = "vulnerable"
@@ -58,4 +59,12 @@ note = "a fixed callback; the input is only the text matched"
 code = '''
 <?php
 echo preg_replace_callback('/&#(\d+);/', 'decode_entity', $_POST['content']);
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "the callback passed by name, after the subject"
+code = '''
+<?php
+echo preg_replace_callback(subject: $text, pattern: '/\w+/', callback: $_POST['fn']);
 '''

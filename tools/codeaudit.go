@@ -490,7 +490,7 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 				partial = append(partial, UnfinishedFile{p, "time"})
 			default:
 				addNew(r.found)
-				if why := unfinishedReason(r.err); why != "" && why != "calls" {
+				if why := unfinishedReason(r.err); why != "" { // "calls": its own calls were cut short
 					partial = append(partial, UnfinishedFile{p, why})
 				}
 			}
@@ -528,6 +528,9 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 	}
 
 	if len(partial) > 0 {
+		// Files left unchecked come first in the list; those checked function by
+		// function after them.
+		sort.SliceStable(partial, func(i, j int) bool { return partial[i].Reason != "calls" && partial[j].Reason == "calls" })
 		add(partialFinding(partial))
 	}
 	sort.SliceStable(res.Findings, func(i, j int) bool {

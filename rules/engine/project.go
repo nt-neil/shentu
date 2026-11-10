@@ -4,10 +4,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path"
 	"path/filepath"
 	"runtime/metrics"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -54,6 +56,10 @@ type Project struct {
 	relMemo  map[string]bool                // memo of relevant(): rule, file, key
 	seen     map[string]bool                // findings already returned: rule, path, line
 	stopped  string
+	busy     int    // summaries asked for while being worked out (cycles across files)
+	relGuess int    // relevance asked for while being worked out
+	unsure   bool   // the last resolution met a name it could not pin to one file
+	ambig    string // ... a PHP function declared in several files
 	deadline time.Time
 	depth    int
 	heapAt   time.Time
@@ -69,7 +75,7 @@ type ProjectOptions struct {
 }
 
 // indexVersion changes whenever fileIndex changes, so an old cache is ignored.
-const indexVersion = "1"
+const indexVersion = "2"
 
 type fileIndex struct {
 	Hash      string            `json:"h"`
@@ -79,7 +85,8 @@ type fileIndex struct {
 	Namespace string            `json:"ns,omitempty"`
 	Uses      map[string]string `json:"u,omitempty"` // PHP: short class name → qualified name
 	Includes  []string          `json:"n,omitempty"` // PHP: include/require targets as written, relative paths
-	Imports   map[string]imp    `json:"i,omitempty"` // Python, JS: local name → module and name in it
+	Imports   map[string]imp    `json:"i,omitempty"` // Python, JS: local name → module and name in it; JS re-exports too ("*1": export * from)
+	Default   string            `json:"d,omitempty"` // JS: the name of the default export
 	Limited   bool              `json:"x,omitempty"` // could not be read to the end: not used for calls
 }
 
@@ -181,6 +188,22 @@ func (p *Project) declaredElsewhere(lang, name, file string) bool {
 	return false
 }
 
+// importedRelative reports whether the call at t[i] names something the file
+// imports from a module of its own project (./m, .mod): the call goes there,
+// found or not.
+func (p *Project) importedRelative(file string, t []Token, i int) bool {
+	fi := p.files[file]
+	if fi == nil || p.stopped != "" {
+		return false
+	}
+	name := t[i].Text
+	if i >= 2 && memberOp(fi.Lang == "php", t[i-1]) {
+		name = t[i-2].Text // db.q(): the module db
+	}
+	m, ok := fi.Imports[name]
+	return ok && strings.HasPrefix(m.Module, ".")
+}
+
 // Stopped tells why calls stopped crossing files, or "" when they did not.
 func (p *Project) Stopped() string { return p.stopped }
 
@@ -228,9 +251,12 @@ func (p *Project) add(f string, fi *fileIndex) {
 		}
 	}
 	for _, c := range fi.Classes {
-		p.classes[fi.Lang][c.Name] = append(p.classes[fi.Lang][c.Name], f)
+		name, q := c.Name, fi.Namespace+`\`+c.Name
+		if fi.Lang == "php" {
+			name, q = strings.ToLower(name), strings.ToLower(q) // PHP class names ignore case
+		}
+		p.classes[fi.Lang][name] = append(p.classes[fi.Lang][name], f)
 		if fi.Namespace != "" {
-			q := fi.Namespace + `\` + c.Name
 			p.classes[fi.Lang][q] = append(p.classes[fi.Lang][q], f)
 		}
 	}
@@ -353,18 +379,26 @@ func indexPHP(t []Token, fi *fileIndex) {
 			if fi.Uses == nil {
 				fi.Uses = map[string]string{}
 			}
-			fi.Uses[short] = q
+			fi.Uses[strings.ToLower(short)] = q // PHP class names ignore case
 		case "include", "include_once", "require", "require_once":
 			// The last string literal of the statement that names a PHP file:
 			// __DIR__ . '/inc/a.php', dirname(__FILE__) . '/a.php', 'a.php'.
-			last := ""
+			// A variable in the path ($dir . '/run.php') leaves the folder unknown:
+			// such an include is marked "?" and counts only where the file name is unique.
+			last, varying := "", false
 			for j := i + 1; j < len(t) && !t[j].op(";") && t[j].Line-tk.Line < 3; j++ {
-				if t[j].Kind == Str && len(t[j].Parts) == 0 && strings.HasSuffix(strings.ToLower(t[j].Text), ".php") {
+				if t[j].Kind == Str && len(t[j].Parts) == 0 && LangOf(t[j].Text) == "php" { // .php, .inc, .phtml, .php5
 					last = t[j].Text
+				} else if t[j].Kind == Var || t[j].Kind == Str && len(t[j].Parts) > 0 {
+					varying = true
 				}
 			}
 			if last != "" {
-				fi.Includes = append(fi.Includes, strings.TrimPrefix(last, "/"))
+				inc := strings.TrimPrefix(last, "/")
+				if varying {
+					inc = "?" + inc
+				}
+				fi.Includes = append(fi.Includes, inc)
 			}
 		}
 	}
@@ -457,6 +491,42 @@ func indexJS(t []Token, fi *fileIndex) {
 					}
 				}
 			}
+		// export default function q() {}; export default q;
+		case t[i].word("export") && i+1 < len(t) && t[i+1].word("default"):
+			j := i + 2
+			if j < len(t) && t[j].word("async") {
+				j++
+			}
+			if j+1 < len(t) && (t[j].word("function") || t[j].word("class")) && t[j+1].Kind == Ident {
+				fi.Default = t[j+1].Text
+			} else if j < len(t) && t[j].Kind == Ident && (j+1 >= len(t) || t[j+1].op(";") || t[j+1].Line > t[j].Line) {
+				fi.Default = t[j].Text
+			}
+		// export {a, b as c} from './m'; export * from './m'
+		case t[i].word("export") && i+1 < len(t) && (t[i+1].op("{") || t[i+1].op("*")):
+			j := i + 1
+			if t[j].op("{") {
+				j = closeOf(t, j)
+			}
+			if j < 0 || j+2 >= len(t) || !t[j+1].word("from") || t[j+2].Kind != Str {
+				continue
+			}
+			mod := t[j+2].Text
+			if t[i+1].op("*") {
+				add(fmt.Sprintf("*%d", len(fi.Imports)+1), mod, "")
+				continue
+			}
+			for _, part := range splitTop(t[i+2:j], isComma) {
+				if len(part) == 1 && part[0].Kind == Ident {
+					add(part[0].Text, mod, part[0].Text)
+				} else if len(part) == 3 && part[1].word("as") && part[0].Kind == Ident && part[2].Kind == Ident {
+					add(part[2].Text, mod, part[0].Text)
+				}
+			}
+		// module.exports = require('./impl')
+		case t[i].word("module") && i+7 < len(t) && t[i+1].op(".") && t[i+2].word("exports") && t[i+3].op("=") &&
+			t[i+4].word("require") && t[i+5].op("(") && t[i+6].Kind == Str && t[i+7].op(")"):
+			add(fmt.Sprintf("*%d", len(fi.Imports)+1), t[i+6].Text, "")
 		// import x from './m'; import {a, b as c} from './m'; import * as x from './m';
 		case t[i].word("import") && (i == 0 || !t[i-1].op(".")):
 			j := i + 1
@@ -509,11 +579,24 @@ func (p *Project) summary(a *analysis, c callee) *summary {
 		a.b.tooDeep()
 		return nil
 	}
+	if x.sc.busy[name] {
+		p.busy++ // a cycle across files: the caller's summary is not kept (summaryOf)
+		return nil
+	}
 	s := x.summaryOf(name)
 	if a.b.hit && s != nil { // computed with the caller's budget cut short: do not keep it
 		delete(x.sc.done, name)
 	}
 	return s // name is the key in that file (Class::m for a method)
+}
+
+// busyCount is how often a summary was asked for while being worked out in
+// another file (0 outside a project).
+func (p *Project) busyCount() int {
+	if p == nil {
+		return 0
+	}
+	return p.busy
 }
 
 // relevant reports whether a call reaches a function of another file that
@@ -528,8 +611,17 @@ func (p *Project) relevant(a *analysis, c callee) bool {
 		return r
 	}
 	x := p.analysisFor(a, f)
+	if x != nil && x.sc != nil && x.sc.relBusy {
+		// That file's relevance is being worked out (a cycle across files): not
+		// known yet. Nothing worked out from this answer is remembered.
+		p.relGuess++
+		return false
+	}
+	guess := p.relGuess
 	r := x != nil && x.sc != nil && len(x.sc.funcs[name]) > 0 && x.relevant(name)
-	p.relMemo[mk] = r
+	if p.relGuess == guess {
+		p.relMemo[mk] = r
+	}
 	return r
 }
 
@@ -627,6 +719,27 @@ func (p *Project) ok() bool {
 
 // resolve finds the file and the function name a call in a's file reaches.
 func (p *Project) resolve(a *analysis, c callee) (string, string) {
+	p.unsure, p.ambig = false, ""
+	f, name := p.resolve1(a, c)
+	unsure, ambig := p.unsure, p.ambig
+	p.unsure, p.ambig = false, ""
+	if f == "" && ambig != "" {
+		// Several files declare it and none is included: unsure only if one of
+		// them matters to the rule.
+		for _, cand := range p.funcs["php"][ambig] {
+			if x := p.analysisFor(a, cand); x != nil && x.sc != nil && len(x.sc.funcs[ambig]) > 0 && x.relevant(ambig) {
+				unsure = true
+				break
+			}
+		}
+	}
+	if f == "" && unsure {
+		a.b.tooDeep() // the call may reach another file: the file's result says calls were not followed
+	}
+	return f, name
+}
+
+func (p *Project) resolve1(a *analysis, c callee) (string, string) {
 	from := p.files[a.file]
 	if from == nil || !p.ok() {
 		return "", ""
@@ -635,8 +748,10 @@ func (p *Project) resolve(a *analysis, c callee) (string, string) {
 	switch {
 	case c.recv == "":
 		if m, ok := from.Imports[c.name]; ok && m.Name != "" { // from mod import f; const {f} = require('./m')
-			if f := p.module(a.file, lang, m.Module, m.Name); f != "" && p.declares(f, m.Name) {
-				return f, m.Name
+			if f := p.module(a.file, lang, m.Module, m.Name); f != "" {
+				if g, n := p.exported(f, m.Name, 0); g != "" {
+					return g, n
+				}
 			}
 		}
 		name := c.name
@@ -654,8 +769,8 @@ func (p *Project) resolve(a *analysis, c callee) (string, string) {
 		return p.method(a.file, from, a.parent, c.name, 0)
 	}
 	if m, ok := from.Imports[c.recv]; ok && m.Name == "" { // import mod; mod.f()  /  const m = require('./m'); m.f()
-		if f := p.module(a.file, lang, m.Module, ""); f != "" && p.declares(f, c.name) {
-			return f, c.name
+		if f := p.module(a.file, lang, m.Module, ""); f != "" {
+			return p.exported(f, c.name, 0)
 		}
 		return "", ""
 	}
@@ -667,6 +782,46 @@ func (p *Project) resolve(a *analysis, c callee) (string, string) {
 		return "", ""
 	}
 	return p.method(a.file, from, cls, c.name, 0)
+}
+
+// exported finds where the name a module exports is declared: in the module,
+// or through its re-exports (export {q} from './impl', export * from,
+// module.exports = require('./impl')); "default" is the default export.
+func (p *Project) exported(f, name string, depth int) (string, string) {
+	fi := p.files[f]
+	if fi == nil || depth > 5 {
+		return "", ""
+	}
+	if name == "default" {
+		if fi.Default == "" {
+			return "", ""
+		}
+		name = fi.Default
+	}
+	if p.declares(f, name) {
+		return f, name
+	}
+	if m, ok := fi.Imports[name]; ok && m.Name != "" {
+		if g := p.module(f, fi.Lang, m.Module, m.Name); g != "" {
+			return p.exported(g, m.Name, depth+1)
+		}
+		return "", ""
+	}
+	var stars []string
+	for k := range fi.Imports {
+		if strings.HasPrefix(k, "*") {
+			stars = append(stars, k)
+		}
+	}
+	sort.Strings(stars)
+	for _, k := range stars {
+		if g := p.module(f, fi.Lang, fi.Imports[k].Module, ""); g != "" {
+			if r, n := p.exported(g, name, depth+1); r != "" {
+				return r, n
+			}
+		}
+	}
+	return "", ""
 }
 
 func (p *Project) declares(f, name string) bool {
@@ -695,10 +850,18 @@ func (p *Project) declares(f, name string) bool {
 func (p *Project) function(from string, fi *fileIndex, name string) string {
 	mk := from + "\x00" + name
 	if f, ok := p.fnMemo[mk]; ok {
+		if f == "?" {
+			p.ambig = name
+			return ""
+		}
 		return f
 	}
 	f := p.function1(from, fi, name)
 	p.fnMemo[mk] = f
+	if f == "?" {
+		p.ambig = name
+		return ""
+	}
 	return f
 }
 
@@ -720,7 +883,7 @@ func (p *Project) function1(from string, fi *fileIndex, name string) string {
 			}
 		}
 	}
-	return "" // declared in several files and none included: ambiguous
+	return "?" // declared in several files and none included: ambiguous
 }
 
 // includes lists the files a PHP file includes, to the given depth.
@@ -742,8 +905,10 @@ func (p *Project) includes1(from string, fi *fileIndex, depth int) []string {
 			return
 		}
 		for _, inc := range fi.Includes {
-			t := p.byPath(path.Join(path.Dir(filepath.ToSlash(f)), inc))
-			if t == "" {
+			t := ""
+			if rest, ok := strings.CutPrefix(inc, "?"); ok {
+				t = p.unique(rest)
+			} else if t = p.byPath(path.Join(path.Dir(filepath.ToSlash(f)), inc)); t == "" {
 				t = p.unique(inc)
 			}
 			if t != "" && !seen[t] {
@@ -787,8 +952,8 @@ func (p *Project) class(from string, fi *fileIndex, name string) (string, classI
 	if lang == "php" {
 		short := name[strings.LastIndex(name, `\`)+1:]
 		switch {
-		case fi.Uses[short] != "" && !strings.Contains(name, `\`):
-			q = fi.Uses[short]
+		case fi.Uses[strings.ToLower(short)] != "" && !strings.Contains(name, `\`):
+			q = fi.Uses[strings.ToLower(short)]
 		case !strings.Contains(name, `\`) && fi.Namespace != "":
 			q = fi.Namespace + `\` + name
 		}
@@ -798,13 +963,24 @@ func (p *Project) class(from string, fi *fileIndex, name string) (string, classI
 			return p.classIn(f, m.Name)
 		}
 	}
-	cands := p.classes[lang][q]
+	kq, kn := q, name
+	if lang == "php" {
+		kq, kn = strings.ToLower(q), strings.ToLower(name)
+	}
+	cands := p.classes[lang][kq]
 	if len(cands) == 0 {
-		cands = p.classes[lang][name]
+		cands = p.classes[lang][kn]
 	}
 	if len(cands) > 1 && lang == "php" {
 		if f := p.psr4Path(q); f != "" {
 			cands = []string{f}
+		} else {
+			for _, inc := range p.includes(from, fi, 3) { // require 'a/Db.php'; Db::run()
+				if slices.Contains(cands, inc) {
+					cands = []string{inc}
+					break
+				}
+			}
 		}
 	}
 	if len(cands) != 1 {
@@ -812,6 +988,9 @@ func (p *Project) class(from string, fi *fileIndex, name string) (string, classI
 			if c == from {
 				return p.classIn(c, name)
 			}
+		}
+		if len(cands) > 1 {
+			p.unsure = true // a class of this name in several files, none of them sure
 		}
 		return "", classIndex{}
 	}
@@ -862,18 +1041,25 @@ func (p *Project) module(from, lang, mod, name string) string {
 				}
 			} else if f := p.unique(c); f != "" {
 				return f
+			} else if len(p.bySuffix[path.Clean(c)]) > 1 {
+				p.unsure = true // two util.py: which one the import means depends on sys.path
+				return ""
 			}
+		}
+		if base != "" {
+			p.unsure = true // a relative import of a module the project does not have
 		}
 	case "js":
 		if !strings.HasPrefix(mod, ".") {
 			return "" // a package from node_modules
 		}
 		p1 := path.Join(dir, mod)
-		for _, c := range []string{p1, p1 + ".js", p1 + ".mjs", p1 + ".cjs", p1 + "/index.js"} {
+		for _, c := range []string{p1, p1 + ".js", p1 + ".mjs", p1 + ".cjs", p1 + ".jsx", p1 + "/index.js", p1 + "/index.jsx"} {
 			if f := p.byPath(c); f != "" {
 				return f
 			}
 		}
+		p.unsure = true // a relative module the project does not have
 	}
 	return ""
 }

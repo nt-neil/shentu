@@ -57,6 +57,7 @@ type crule struct {
 
 type argCond struct {
 	arg            *int
+	name           string // the argument's parameter name, when passed by name
 	when, unless   []*pat
 	whole, leading bool
 }
@@ -108,7 +109,7 @@ func compileRule(r rules.Rule) (*crule, error) {
 		return nil, err
 	}
 	for _, a := range r.Args {
-		ac := &argCond{arg: a.Arg, whole: a.Whole, leading: a.Leading}
+		ac := &argCond{arg: a.Arg, name: a.Name, whole: a.Whole, leading: a.Leading}
 		c.leading = c.leading || a.Leading
 		for _, list := range []struct {
 			raw []string
@@ -264,12 +265,17 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly bo
 			if sc.capped {
 				add(r, direct[r], a.lines)
 				delete(direct, r)
+				callsCut = true
 				continue
 			}
 			add(r, a.lines)
 			finished[r] = true
 		}
-		callsCut = b2.hit || b2.limited
+		callsCut = callsCut || b2.hit || b2.limited
+	}
+	// Past a project cap calls no longer cross files: say so, not "clean".
+	if proj != nil && proj.stopped != "" {
+		callsCut = true
 	}
 	for _, r := range ruleList {
 		if lines, ok := direct[r]; ok && !finished[r] {

@@ -117,6 +117,7 @@ type analysis struct {
 	lines  []loc
 	guards []map[string]bool // per enclosing loop: keys a rejecting check validated
 	depth  int
+	nested int  // functions defined inside the one analysed: their returns are not its returns
 	raw    bool // evaluating whether a value came from input at all: sanitizers do not clean
 
 	sc   *summaries // this rule's function summaries for the file (interproc.go)
@@ -182,11 +183,16 @@ func (a *analysis) stmt(s *stmt, st state) (state, uint8) {
 		a.sinks(st, s.toks)
 		if a.summ != nil && len(s.toks) > 0 && s.toks[0].word("return") {
 			a.summ.ret = or(a.summ.ret, a.expr(st, s.toks[1:], false))
-			if rest := s.toks[1:]; !(len(rest) == 1 && falsy(rest)) {
+			// What a return that can be true checks: values that still held a
+			// parameter's input there ($c = 'id'; return in_array($c, ...) checks
+			// nothing passed in). A closure's return is not one of these.
+			if rest := s.toks[1:]; a.nested == 0 && !(len(rest) == 1 && falsy(rest)) {
 				set := map[string]bool{}
 				if _, cleaned := a.refine(st, rest, true); len(cleaned) > 0 {
 					for _, k := range cleaned {
-						set[k] = true
+						if st[k].taint {
+							set[k] = true
+						}
 					}
 				}
 				a.summ.checks = append(a.summ.checks, set)
@@ -371,7 +377,9 @@ func (a *analysis) function(f *fn, st state) {
 	a.paramTypes(f)
 	defer func() { a.cls, a.parent, a.fname, a.types = cls, parent, fname, types }()
 	a.depth++
+	a.nested++
 	a.block(f.body, x)
+	a.nested--
 	a.depth--
 }
 
@@ -1219,9 +1227,6 @@ func (a *analysis) postfix(st state, t []Token, start, baseEnd int, v val, whole
 					// A function of this file left without a summary holds no sanitizer: what goes
 					// through it is the input, not a guess.
 					weak: !(t[start].Kind == Str || formatFuncs[name] || a.passes(t, start, j-1) || key != "" && !a.returnsUnknown(key))}
-				if a.php && j-1 == start && shapeFuncs[name] {
-					v.weak = a.argsWeak(st, inside(t, j, c)) // array_keys($_POST) is input; array_keys of a guess is a guess
-				}
 			}
 			if key != "" {
 				key += sepCh + "()"
@@ -1261,14 +1266,13 @@ func (a *analysis) argsTaint(st state, inner []Token, fn string) bool {
 	return false
 }
 
-// passFuncs return their input reshaped but whole (decoded, trimmed, split, case or
+// passFuncs return their input reshaped but whole (decoded, trimmed, case or
 // slashes changed): input through them is still the input, not a guess, so a
 // webshell's system(base64_decode($c)) is followed into other functions.
 var passFuncs = map[string]map[string]bool{
 	"php": words("trim ltrim rtrim base64_decode urldecode rawurldecode stripslashes stripcslashes strtolower strtoupper " +
 		"ucfirst ucwords lcfirst str_replace str_ireplace substr strrev str_pad hex2bin html_entity_decode " +
-		"htmlspecialchars_decode wp_unslash gzinflate gzuncompress gzdecode str_rot13 convert_uudecode strval " +
-		"explode preg_split str_split json_decode unserialize"),
+		"htmlspecialchars_decode wp_unslash gzinflate gzuncompress gzdecode str_rot13 convert_uudecode strval"),
 	"python": words("unquote unquote_plus b64decode urlsafe_b64decode decode str bytes"),
 	"js":     words("decodeURIComponent decodeURI unescape atob String trim from"),
 }
@@ -1287,20 +1291,6 @@ var passModules = words("base64 parse binascii codecs html Buffer")
 
 // formatFuncs build a string from their arguments.
 var formatFuncs = words("sprintf vsprintf implode join str_replace strtr format")
-
-// shapeFuncs rearrange PHP arrays: what comes out is as sure as what went in.
-var shapeFuncs = words("array_keys array_values array_flip array_unique array_merge array_slice array_reverse array_filter array_combine")
-
-// argsWeak reports whether all the input among the arguments is a guess.
-func (a *analysis) argsWeak(st state, inner []Token) bool {
-	weak, any := true, false
-	for _, arg := range splitTop(inner, isComma) {
-		if v := a.argVal(st, arg, false); v.taint {
-			weak, any = weak && v.weak, true
-		}
-	}
-	return any && weak
-}
 
 // argsEmb reports whether an argument carries embedded input.
 func (a *analysis) argsEmb(st state, inner []Token) bool {
@@ -1654,11 +1644,15 @@ func (a *analysis) checkKeys(st state, atom []Token) []keyRef {
 	}
 	// PHP in_array($x, $allowed), array_key_exists($x, $map), and WordPress
 	// validate_file($x, $allowed), which ends in the same in_array check.
+	// The list decides: a rule listing in_array as a sanitizer gets no other way
+	// round a list made of input.
 	if a.php && n > 2 && (atom[0].word("in_array") || atom[0].word("array_key_exists") || atom[0].word("validate_file")) &&
 		atom[1].op("(") && closeOf(atom, 1) == n-1 {
-		if args := splitTop(atom[2:n-1], isComma); len(args) >= 2 && a.allowlist(st, args[1]) {
+		args := splitTop(atom[2:n-1], isComma)
+		if len(args) >= 2 && a.allowlist(st, args[1]) && !(atom[0].word("in_array") && looseNumbers(args)) {
 			return a.keysOf(args[0])
 		}
+		return nil
 	}
 	// JavaScript ALLOWED.includes(x) and ALLOWED.has(x).
 	if a.js && n > 4 && atom[n-1].op(")") {
@@ -1704,6 +1698,20 @@ func (a *analysis) checkKeys(st state, atom []Token) []keyRef {
 		}
 	}
 	return nil
+}
+
+// looseNumbers reports an in_array without strict comparison against a list
+// holding numbers: before PHP 8, "1 OR 1=1" == 1 holds.
+func looseNumbers(args [][]Token) bool {
+	if len(args) >= 3 && len(args[2]) == 1 && args[2][0].word("true") {
+		return false
+	}
+	for _, tk := range args[1] {
+		if tk.Kind == Num {
+			return true
+		}
+	}
+	return false
 }
 
 // macKeys returns the values a keyed MAC or signature call validates: the
@@ -1757,13 +1765,27 @@ func (a *analysis) validatorKeys(st state, atom []Token) []keyRef {
 		return nil
 	}
 	s := a.callSummary(atom, open-1, a.calleeKey(atom, open-1))
-	if s == nil || s.checks == 0 {
+	if s == nil || s.checks|s.condChecks == 0 {
 		return nil
 	}
 	args := callArgs(atom, open)
+	idx := a.argIndex(s, args)
 	var keys []keyRef
-	for k, p := range a.argIndex(s, args) {
-		if p >= 0 && s.checks&(1<<p) != 0 {
+	for k, p := range idx {
+		if p < 0 {
+			continue
+		}
+		ok := s.checks&(1<<p) != 0
+		if !ok && s.condChecks&(1<<p) != 0 {
+			// ok($c, explode(',', $_GET['l'])): the list it checks against is input
+			ok = true
+			for j, arg := range args {
+				if j != k && a.argVal(st, arg, false).taint {
+					ok = false
+				}
+			}
+		}
+		if ok {
 			keys = append(keys, a.keysOf(args[k])...)
 		}
 	}
@@ -1805,10 +1827,9 @@ func (a *analysis) allowlist(st state, t []Token) bool {
 	if len(t) == 2 && t[0].op("[") && t[1].op("]") || len(t) == 3 && t[0].word("array") && t[1].op("(") && t[2].op(")") {
 		return false // an empty list allows nothing, and validate_file_to_edit($f, []) checks nothing
 	}
-	// A list an unknown function returns (the files of a theme, the keys of a
-	// registry) holds what that function found, not the input it was given.
-	v := a.expr(st, t, false)
-	return !v.taint || v.weak
+	// Only a list made with no input at all: a list an unknown function made
+	// from input (array_map('trim', $_GET['l'])) may hold anything.
+	return !a.expr(st, t, false).taint
 }
 
 // keysOf lists the plain paths in t (not function names, not method calls).
@@ -1914,9 +1935,11 @@ func (a *analysis) sink(st state, t []Token, i int, s *pat) {
 		tainted = hit(a.expr(st, recv, false))
 	case open >= 0:
 		args := splitTop(region, isComma)
-		if cond != nil && cond.arg != nil {
-			if n := *cond.arg; n <= len(args) {
-				tainted = reaches(args[n-1])
+		if cond != nil && (cond.arg != nil || cond.name != "") {
+			if arg, ok := a.condArg(args, cond); ok {
+				tainted = reaches(arg)
+			} else if spread := a.spreadArg(args); spread != nil {
+				tainted = reaches(spread) // ...$args may hold it
 			}
 			break
 		}
@@ -1939,12 +1962,15 @@ func (a *analysis) sink(st state, t []Token, i int, s *pat) {
 // function, not a database driver's method: whatever reaches a real sink inside
 // it is found through its summary. (Where following calls is cut short, the
 // file's result keeps what was found without them.)
+//
+// An interface or abstract method has no body: the object is some other class,
+// maybe the driver's, so the sink still applies.
 func (a *analysis) ownMethod(t []Token, j int) bool {
 	if j >= len(t) || t[j].Kind != Ident || a.b.hit {
 		return false
 	}
-	if a.calleeKey(t, j) != "" {
-		return true
+	if k := a.calleeKey(t, j); k != "" {
+		return hasBody(a.sc.funcs[k])
 	}
 	if a.proj == nil {
 		return false
@@ -1953,8 +1979,59 @@ func (a *analysis) ownMethod(t []Token, j int) bool {
 	if !ok {
 		return false
 	}
-	f, _ := a.proj.resolve(a, c)
-	return f != ""
+	f, k := a.proj.resolve(a, c)
+	if f == "" {
+		return false
+	}
+	x := a.proj.analysisFor(a, f)
+	return x != nil && x.sc != nil && hasBody(x.sc.funcs[k])
+}
+
+// hasBody reports whether every definition found has code in it.
+func hasBody(infos []*fnInfo) bool {
+	for _, fi := range infos {
+		if len(fi.f.body) == 0 {
+			return false
+		}
+	}
+	return len(infos) > 0
+}
+
+// condArg finds the argument an [[args]] condition names: by its name when it
+// is passed by name (preg_replace_callback(callback: $f, ...)), otherwise by
+// position among the arguments before the first named one.
+func (a *analysis) condArg(args [][]Token, cond *argCond) ([]Token, bool) {
+	positional := len(args)
+	for i, arg := range args {
+		if name, ok := a.argName(arg); ok {
+			positional = min(positional, i)
+			if cond.name != "" && name == cond.name {
+				return arg, true
+			}
+		}
+	}
+	if cond.arg != nil && *cond.arg >= 1 && *cond.arg <= positional {
+		return args[*cond.arg-1], true
+	}
+	return nil, false
+}
+
+// argName returns the name of an argument passed by name (PHP name: $x, Python name=x).
+func (a *analysis) argName(arg []Token) (string, bool) {
+	if len(arg) > 1 && arg[0].Kind == Ident && (a.php && arg[1].op(":") || a.py && arg[1].op("=")) {
+		return arg[0].Text, true
+	}
+	return "", false
+}
+
+// spreadArg returns an argument that spreads a list into the call (...$a, *a, **kw).
+func (a *analysis) spreadArg(args [][]Token) []Token {
+	for _, arg := range args {
+		if len(arg) > 0 && (arg[0].op("...") || arg[0].op("*") || arg[0].op("**")) {
+			return arg
+		}
+	}
+	return nil
 }
 
 // when reports whether one of the fragments is among a call's arguments. A

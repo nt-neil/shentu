@@ -258,3 +258,29 @@ func TestAppCodeAuditExtensionsAndNUL(t *testing.T) {
 
 // The audits in these tests keep no code index.
 func init() { codeIndexFile = func() string { return "" } }
+
+// A file whose calls were cut short in the per-file pass is listed by name,
+// with reason "calls", after the files left unchecked (the review of #27).
+func TestAppCodeAuditCallsListed(t *testing.T) {
+	dir, _ := filepath.EvalSymlinks(t.TempDir())
+	os.WriteFile(filepath.Join(dir, "a.php"), []byte("<?php\necho 1;\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "b.php"), []byte("<?php\n$a = 'never closed\n"), 0o644)
+	scan := engineScan
+	defer func() { engineScan = scan }()
+	engineScan = func(e *engine.Engine, lang, p string, b []byte) ([]engine.Finding, error) {
+		if filepath.Base(p) == "a.php" {
+			return nil, engine.ErrCalls
+		}
+		return scan(e, lang, p, b)
+	}
+	var n CodeFinding
+	for _, f := range AppCodeAudit(context.Background(), []string{dir}, nil).Findings {
+		if f.Kind == "injection" && !strings.Contains(f.Detail, "calls across files") {
+			n = f
+		}
+	}
+	if len(n.Files) != 2 || filepath.Base(n.Files[0].Path) != "b.php" || n.Files[0].Reason != "unterminated" ||
+		filepath.Base(n.Files[1].Path) != "a.php" || n.Files[1].Reason != "calls" || !strings.Contains(n.Detail, "1 checked function by function") {
+		t.Errorf("summary: %+v", n)
+	}
+}
