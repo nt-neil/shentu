@@ -56,17 +56,18 @@ func (t Token) word(text string) bool          { return t.Kind == Ident && t.Tex
 type Limits struct {
 	MaxTokens int           // tokens per file, counting those inside string interpolations
 	MaxTime   time.Duration // lexing, parsing and analysis of one file, all rules together
-	// MaxCallWork caps the work of following calls in one file (tokens read,
-	// summaries included). Unlike MaxTime it does not depend on how busy the
-	// machine is, so the same code gives the same result every time.
+	// MaxCallWork caps the work of following one rule's calls in one file
+	// (tokens read, summaries included). Unlike MaxTime it does not depend on how
+	// busy the machine is, so the same code gives the same result every time;
+	// and being per rule, more rules do not leave each one less. In a project
+	// the clock for following calls is the project's (ProjectOptions.MaxTime).
 	MaxCallWork int
 }
 
 // DefaultLimits suit ordinary application files; the caller also caps file size.
-// MaxCallWork is about what MaxTime allows at the ~10M units a second measured
-// on a busy machine, so the work cap, not the clock, is what usually stops a
-// file; 2 of WordPress core's 1,512 PHP files reach it.
-var DefaultLimits = Limits{MaxTokens: 300_000, MaxTime: 3 * time.Second, MaxCallWork: 30_000_000}
+// MaxCallWork is about a second of one rule's work on a busy machine (~10M units
+// a second).
+var DefaultLimits = Limits{MaxTokens: 300_000, MaxTime: 3 * time.Second, MaxCallWork: 10_000_000}
 
 // ErrLimit means a file hit Limits (tokens, time or nesting) and was only partly
 // analysed; what was found is still returned.
