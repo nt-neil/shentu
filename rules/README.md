@@ -121,6 +121,9 @@ How the engine reads them:
   - `wp_die`, `wp_send_json`, `wp_send_json_error` and `wp_send_json_success` end
     the request, so `if (!in_array($x, $allowed)) { wp_send_json_error(); }`
     validates `$x` after it;
+  - Django's `Model._meta.get_field(name)` raises unless `name` is a field of the
+    model, so in a rule that lists `._meta.get_field(` as a sanitizer, `name` is
+    clean after the call (inside a `try`, the handler starts from before it);
   - `array_map('absint', $x)` (any sanitizer of the rule, or a number cast, as the
     callback) returns sanitized values, with the keys of `$x`;
   - `extract(shortcode_atts(array('id' => 0, ...), $atts))` and `extract(array(...))`
@@ -255,6 +258,7 @@ it are unchanged: a sink is reported when any argument is tainted.
 | `literal` | the argument named by `arg`, or the value of a `when` option (`password=`, `password:`), must be a non-empty string written in the code; used by rules without sources. The string may be reached through a variable, a constant, a PHP class constant (`self::KEY`), a property declared with it (`$this->key`, `self::$key`; not when the file assigns the property elsewhere), a concatenation, or a call that only reshapes it (`hash('sha256', '...')`, `base64_decode`, `substr`...), at most four steps deep; a name given two different values in the file is not known |
 | `min_len` | with `literal`: one of the strings the value is made from must be at least this long |
 | `exclude` | with `literal`: regular expressions (any case); a string matching one does not count, so `exclude = ["^[a-z0-9_]+-(sha\|md5)[0-9]*$"]` leaves out a purpose label such as `'wp-sha384'` |
+| `receiver` | method sinks only: the call does not count when the file shows its receiver is another kind of object than these. The receiver qualifies when one of the fragments appears in it, or in what its root name (`db`, `self._files`) is assigned, annotated or imported with in the file (`db = MongoClient(url).shop`, `def __init__(self, db: Database)`, `from pymongo.collection import Collection`), followed up to four steps; an import says what a name holds only when it comes from the standard library or a well-known package that is not MongoDB (`os`, `re`, `django`, `flask`...). A root the file says nothing about (no assignment, an import from a module of the project such as `from app.db import mongo` or `from .db import mongo`, a parameter without a type) still counts. So `finders.find(path)` after `from django.contrib.staticfiles import finders`, `'abc'.find(x)` and `data['text'].find(x)` after `data = request.get_json()` are not MongoDB queries, while `mongo.find(x)` after `from app.db import mongo` is; a `.find(` on an object of the project that is not a collection is then still reported (a false positive, kept over a miss) |
 | `leading` | the input must be at the start of the argument: a fixed prefix makes the call safe, as `WP_PLUGIN_DIR . "/$name"` cannot choose a `phar://` stream. A fixed prefix is a literal (or a run of literals) holding a character no URL scheme has (`/`, `_`, a space) before any `:`, so `'phar' . $x` and `'ph' . 'ar' . $x` are none; a constant; a ternary whose branches both are; a variable assigned one; a property or array key the input never reached (`$this->dir`, `$u['basedir']`), but never a superglobal or request object (`$_COOKIE[...]`, `$_SERVER['HTTP_...']`; `$_SERVER['DOCUMENT_ROOT']` is allowed); a call whose arguments hold no input, even through a sanitizer (`dirname(__FILE__)`, `get_template_directory()`, `strval(intval($x))`, but not `trim(basename($_GET['d']))`); `sprintf` whose format starts with such a literal; a Laravel path helper (`storage_path(...)`); a WordPress URL helper that ends in a path (`admin_url(...)`, `get_permalink(...)`, `rest_url(...)`; `home_url('/...')` and `site_url('/...')` only with a path); `add_query_arg` / `remove_query_arg` whose URL argument is fixed (or absent: the request's own path); `apply_filters` whose filtered value is fixed; `trailingslashit` or `user_trailingslashit` whose first argument is fixed; In the `ssrf`, `open-redirect` and `xss` rules the prefix must also keep the request on a known host: a literal scheme and host followed by `/`, `?` or `#` (`https://api.example.com/...`), a root path whose second character is neither `/` nor `\` (`/account`, not `/` that the input turns into `//evil.com`), or a relative path (`users.php?id=`); `home_url()` without a path, `untrailingslashit` and `rtrim` are not fixed there, and a PHP constant is fixed only when this file defines it (`define('API', 'https://api.example.com/')`) with such a text, or when it names a folder (`__DIR__`, `ABSPATH`, `*_DIR`, `*_PATH`). A call on input (`basename($_GET['d'])`) is not; a clean call that returns `""` (`trim(' ')`, an unset `getenv()`) is a known miss |
 
 `when` and `unless` entries are code fragments matched anywhere in the call's
@@ -351,7 +355,9 @@ attributes (`htmlspecialchars` and `htmlentities` in single-quoted ones only wit
 `ENT_QUOTES`); `esc_url` in URLs; `esc_url_raw` and `sanitize_url` only in
 double-quoted attributes that are not URLs; `esc_js` in JavaScript strings;
 `wp_json_encode` / `json_encode` in script code outside strings (not with
-`JSON_UNESCAPED_SLASHES` unless `JSON_HEX_TAG` is also given); Tornado's
+`JSON_UNESCAPED_SLASHES` unless `JSON_HEX_TAG` is also given), and with
+`JSON_HEX_TAG` also between tags, which covers a `<script type="application/json">`
+data block; Tornado's
 `xhtml_escape` between tags and in double-quoted attributes; `urlencode`,
 `rawurlencode` and `quote` everywhere but script code, template literals and CSS
 (`quote` with a `safe=` holding `:` not in URLs);
@@ -486,7 +492,10 @@ rule of its language.
    calling one that does); recursion is recomputed until it settles. Input that
    only went through a call the engine does not know (`get_post($_GET['id'])`)
    still reports inside its own function, as before, but does not cross into
-   another function's sinks. Depth (32), body analyses per rule and file (4000)
+   another function's sinks, and neither does an argument of `wp_send_json`,
+   `wp_send_json_success` or `wp_send_json_error` in a rule that lists it as a
+   sanitizer (it echoes JSON and ends the request; the XSS rules list them).
+   Other sanitizer names are followed into their bodies as any function. Depth (32), body analyses per rule and file (4000)
    and recursion rounds (4) are capped; over a cap the file returns `ErrLimit`.
    A rule whose sinks do not occur in a file is skipped for that file.
 5. **Library mode** (`Engine.Library`, off by default and never on for the server

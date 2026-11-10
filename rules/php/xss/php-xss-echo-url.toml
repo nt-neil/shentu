@@ -8,7 +8,7 @@ title = "Request input written as a link or source URL without esc_url"
 frameworks = ["wordpress", "laravel"]
 sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "$_SERVER['PHP_SELF']", "$_SERVER['REQUEST_URI']", "$_SERVER['QUERY_STRING']", "$_SERVER['HTTP_", "get_query_var(", "->get_param(", "$request->input(", "$request->query(", "get_search_query(false", "$wp_query->get("]
 sinks = ["echo", "print"]
-sanitizers = ["check_admin_referer", "check_ajax_referer", "wp_verify_nonce", "current_user_can", "esc_url", "esc_url_raw", "urlencode", "rawurlencode", "absint", "wp_validate_redirect", "wp_http_validate_url"]
+sanitizers = ["check_admin_referer", "check_ajax_referer", "wp_verify_nonce", "current_user_can", "esc_url", "esc_url_raw", "urlencode", "rawurlencode", "absint", "wp_validate_redirect", "wp_http_validate_url", "wp_send_json", "wp_send_json_success", "wp_send_json_error"]
 fix = "Pass URLs through esc_url() (it drops javascript: and other unsafe schemes) or allow only http(s) URLs; esc_attr() and esc_html() leave javascript: links working."
 refs = ["CVE-2026-31859"]
 

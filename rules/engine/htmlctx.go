@@ -414,6 +414,9 @@ func (a *analysis) escaperCall(op []Token) (safe uint16, arg []Token, ok bool) {
 			}
 		}
 	}
+	if name := op[open-1].Text; (name == "wp_json_encode" || name == "json_encode") && len(args) > 1 && hasWord(args[1:], "JSON_HEX_TAG") {
+		safe |= ctxBits(ctxHTML) // < and > encoded: no tag between tags or in a <script type="application/json"> block
+	}
 	for _, x := range args {
 		for _, t := range x {
 			switch {

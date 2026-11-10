@@ -110,6 +110,7 @@ type fileCtx struct {
 	tree   []*stmt
 	ff     *fileFuncs
 	tokens int
+	rdefs  map[string][][]Token // Python: what the file's names hold, for the receiver condition (receiver.go)
 }
 
 // NewProject indexes the files at paths. read returns a file's content; paths
@@ -646,7 +647,7 @@ func (p *Project) analysisFor(a *analysis, f string) *analysis {
 		p.sums[key] = sc
 	}
 	return &analysis{r: a.r, php: ctx.lang == "php", py: ctx.lang == "python", js: ctx.lang == "js", b: a.b,
-		kw: keywords[ctx.lang], seen: map[loc]bool{}, sc: sc, proj: p, file: f}
+		kw: keywords[ctx.lang], seen: map[loc]bool{}, sc: sc, proj: p, file: f, rdefs: ctx.rdefs}
 }
 
 // context returns the parsed file, parsing it if it is not kept.
@@ -667,7 +668,7 @@ func (p *Project) context(f string) *fileCtx {
 	if b.hit {
 		return nil
 	}
-	c := &fileCtx{lang: fi.Lang, tree: parse(fi.Lang, toks, b), tokens: len(toks)}
+	c := &fileCtx{lang: fi.Lang, tree: parse(fi.Lang, toks, b), tokens: len(toks), rdefs: fileRecvDefs(fi.Lang, toks)}
 	c.ff = newFileFuncs(collectFuncs(c.tree, fi.Lang), fi.Lang)
 	p.keep(f, c)
 	return c

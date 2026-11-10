@@ -757,7 +757,7 @@ func (a *analysis) returnsUnknown(key string) bool {
 	for _, fi := range sc.funcs[key] {
 		x := &analysis{r: a.r, php: a.php, py: a.py, js: a.js, b: a.b, kw: a.kw, seen: map[loc]bool{}, sc: sc,
 			summ: &summRun{lines: map[loc]bool{}, emb: map[loc]bool{}}, noSrc: true, cls: fi.f.class, parent: fi.f.parent, fname: fi.f.name,
-			file: a.file, proj: a.proj}
+			file: a.file, proj: a.proj, ftoks: a.ftoks, rdefs: a.rdefs}
 		st := state{}
 		for _, p := range fi.params {
 			if p != "" {
@@ -886,7 +886,7 @@ func (a *analysis) summarize(fi *fnInfo, s *summary) {
 	run := func(mask uint64, sources bool) *summRun {
 		x := &analysis{r: a.r, php: a.php, py: a.py, js: a.js, b: a.b, kw: a.kw, seen: map[loc]bool{}, sc: a.sc, defs: a.defs,
 			summ: &summRun{lines: map[loc]bool{}, emb: map[loc]bool{}}, noSrc: !sources, cls: fi.f.class, parent: fi.f.parent, fname: fi.f.name,
-			file: a.file, proj: a.proj}
+			file: a.file, proj: a.proj, ftoks: a.ftoks, rdefs: a.rdefs}
 		st := state{}
 		x.paramTypes(fi.f)
 		for i := 0; i < n; i++ {
@@ -1044,6 +1044,9 @@ func (a *analysis) callVal(st state, s *summary, args [][]Token) val {
 }
 
 // callSinks reports the sinks a call reaches through the callee's parameters.
+// jsonResponders send their argument as JSON and end the request.
+var jsonResponders = map[string]bool{"wp_send_json": true, "wp_send_json_error": true, "wp_send_json_success": true}
+
 func (a *analysis) callSinks(st state, t []Token) {
 	if a.sc == nil && a.proj == nil {
 		return
@@ -1052,6 +1055,15 @@ func (a *analysis) callSinks(st state, t []Token) {
 		s := a.callSummary(t, i, a.calleeKey(t, i))
 		if s == nil || !s.reachesSink() {
 			continue
+		}
+		// A JSON responder the rule lists as a sanitizer does not take its
+		// arguments into its body's sinks: wp_send_json echoes, but as JSON, then
+		// ends the request. Other sanitizer names (e, count) still do, so a helper
+		// of the code base that only shares the name is followed as before.
+		if jsonResponders[t[i].Text] {
+			if _, _, _, ok := a.sanitizerAt(st, t, i); ok {
+				continue
+			}
 		}
 		args := callArgs(t, i+1)
 		for k, p := range a.argIndex(s, args) {

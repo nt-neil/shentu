@@ -136,6 +136,9 @@ type analysis struct {
 	file  string            // the file analysed, for findings and for calls into other files
 	proj  *Project          // the project the file belongs to, or nil (project.go)
 	types map[string]string // variable → class of the object assigned to it ($x = new Foo)
+
+	ftoks []Token              // the file's tokens, for the receiver condition (receiver.go)
+	rdefs map[string][][]Token // what names of the file are assigned or annotated with, built on first use
 }
 
 // loc is a place a sink is reached: a line of a file.
@@ -204,6 +207,7 @@ func (a *analysis) stmt(s *stmt, st state) (state, uint8) {
 		}
 		a.assignStmt(st, s.toks)
 		a.assertStmt(st, s.toks)
+		a.raisingCheckStmt(st, s.toks)
 		a.nonceStmt(st, s.toks)
 		a.stripKeys(st, s.toks)
 		a.markAssign(st, s.toks)
@@ -2114,6 +2118,9 @@ func (a *analysis) sink(st state, t []Token, i int, s *pat) {
 		recv = t[a.chainStart(t, i):i]
 		if a.expr(st, recv, false).san {
 			return // a method of an object a sanitizer made (SandboxedEnvironment().from_string)
+		}
+		if cond != nil && len(cond.receiver) > 0 && !a.recvIs(cond.receiver, recv) {
+			return // finders.find(path) is not a MongoDB collection
 		}
 	}
 	whole := cond != nil && cond.whole

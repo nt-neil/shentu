@@ -75,6 +75,7 @@ type argCond struct {
 	keys           bool   // an array, object or dict literal argument counts by its keys (keysVal)
 	minLen         int    // literal: the shortest string that counts
 	exclude        []*regexp.Regexp
+	receiver       []*pat // a method sink counts only on a receiver these name (receiver.go)
 }
 
 // New compiles rules. A pattern that does not lex as code of its language is an error.
@@ -162,7 +163,7 @@ func compileRule(r rules.Rule) (*crule, error) {
 		for _, list := range []struct {
 			raw []string
 			out *[]*pat
-		}{{a.When, &ac.when}, {a.Unless, &ac.unless}} {
+		}{{a.When, &ac.when}, {a.Unless, &ac.unless}, {a.Receiver, &ac.receiver}} {
 			for _, raw := range list.raw {
 				p, err := compilePattern(r.Lang, raw, false)
 				if err != nil {
@@ -260,7 +261,7 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly bo
 	tree := parse(base, toks, b)
 	ff := newFileFuncs(collectFuncs(tree, base), base)
 	if proj != nil {
-		proj.keep(path, &fileCtx{lang: base, tree: tree, ff: ff, tokens: len(toks)})
+		proj.keep(path, &fileCtx{lang: base, tree: tree, ff: ff, tokens: len(toks), rdefs: fileRecvDefs(base, toks)})
 	}
 	var out []Finding
 	add := func(r *crule, lines ...[]loc) {
@@ -302,7 +303,7 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly bo
 		}
 		ruleList = append(ruleList, r)
 		if hs && !callsOnly {
-			a := &analysis{r: r, php: base == "php", py: base == "python", js: base == "js", b: b, kw: keywords[base], seen: map[loc]bool{}, defs: defs, file: path}
+			a := &analysis{r: r, php: base == "php", py: base == "python", js: base == "js", b: b, kw: keywords[base], seen: map[loc]bool{}, defs: defs, file: path, ftoks: toks}
 			a.block(tree, state{})
 			direct[r] = a.lines
 		}
@@ -340,7 +341,7 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly bo
 				proj.sums[r.rule.ID+"\x00"+path] = sc
 			}
 			a := &analysis{r: r, php: base == "php", py: base == "python", js: base == "js", b: b2, kw: keywords[base], seen: map[loc]bool{}, sc: sc,
-				defs: defs, file: path, proj: proj}
+				defs: defs, file: path, proj: proj, ftoks: toks}
 			if !e.Library && !a.r.output && !a.crossNeeded(tree) {
 				// no call can change this rule's result: the first pass stands. Output
 				// rules read calls to the file's own functions in this pass only (htmlctx.go).
@@ -348,7 +349,7 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly bo
 			}
 			a.block(tree, state{})
 			if e.Library && libClasses[r.rule.Class] && !testPath(path) && !b2.hit {
-				l := &analysis{r: r, php: a.php, py: a.py, js: a.js, b: b2, kw: a.kw, seen: a.seen, sc: sc, lib: true, defs: defs, file: path, proj: proj}
+				l := &analysis{r: r, php: a.php, py: a.py, js: a.js, b: b2, kw: a.kw, seen: a.seen, sc: sc, lib: true, defs: defs, file: path, proj: proj, ftoks: toks}
 				l.block(tree, state{})
 				a.lines = append(a.lines, l.lines...)
 			}
