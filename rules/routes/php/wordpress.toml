@@ -108,8 +108,8 @@ lang = "php"
 framework = "wordpress"
 title = "An attachment's path and metadata, looked up by its id, are what WordPress stored, not the request's input"
 clears = ["get_attached_file(", "wp_get_original_image_path(", "wp_get_attachment_metadata(", "get_post_mime_type(", "wp_get_attachment_url("]
-clears_for = ["path-traversal", "deserialization"]
-note = "A request may choose which attachment (its id); the file's path, URL, metadata and type were written by WordPress when the file was uploaded, so for a path or a phar:// wrapper they are no longer the request's input. Only for those classes: post meta, a comment or a user field may hold what an attacker wrote, and are not cleared."
+clears_for = ["path-traversal", "deserialization", "ssrf"]
+note = "A request may choose which attachment (its id); the file's path, URL, metadata and type were written by WordPress when the file was uploaded, so for a path, a phar:// wrapper or a fetch of the site's own file they are no longer the request's input. Only for those classes: post meta, a comment or a user field may hold what an attacker wrote, and are not cleared."
 refs = ["https://developer.wordpress.org/reference/functions/get_attached_file/"]
 
 [[route.samples]]
