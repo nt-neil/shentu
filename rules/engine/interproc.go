@@ -787,7 +787,13 @@ func (a *analysis) relevant(key string) bool {
 		defer func() { sc.relBusy = false }()
 		sc.ff.components(a.b)
 		var work []string
-		for k, infos := range sc.funcs {
+		keys := make([]string, 0, len(sc.funcs))
+		for k := range sc.funcs {
+			keys = append(keys, k)
+		}
+		slices.Sort(keys) // a fixed order: what a cycle across files guesses must not vary
+		for _, k := range keys {
+			infos := sc.funcs[k]
 			sc.rel[k] = 2
 			for _, fi := range infos {
 				direct := false
