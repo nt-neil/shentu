@@ -1,7 +1,7 @@
 [[route]]
 id = "django-urls"
 lang = "python"
-applies = ["request.args", "request.form", "request.values", "request.GET", "request.POST"]
+applies = ["request.GET", "request.POST", "request.FILES", "request.COOKIES", "request.META", "request.headers"]
 framework = "django"
 title = "A view's parameters after the request are the URL's <placeholders>"
 register = ["path", "re_path", "url"]

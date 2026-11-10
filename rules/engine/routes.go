@@ -92,11 +92,23 @@ func (e *Engine) compileRoutes(rs []rules.Route) error {
 	return nil
 }
 
-// takes reports whether a rule is one the model is for: it takes one of the
-// request sources Applies names.
+// takes reports whether a rule is one the model is for: a rule with sources,
+// not all of them one field under a request root (Applies: req.body.password,
+// $_POST['password']). A rule for one field of the request does not take every
+// handler parameter; any other rule with sources does.
 func (c *croute) takes(r *crule) bool {
 	for _, s := range r.rule.Sources {
-		if c.applies[s] {
+		if !c.field(s) {
+			return true
+		}
+	}
+	return false
+}
+
+// field reports whether a source is one field under a request root.
+func (c *croute) field(s string) bool {
+	for root := range c.applies {
+		if rest, ok := strings.CutPrefix(s, root); ok && (strings.HasPrefix(rest, ".") || strings.HasPrefix(rest, "[")) {
 			return true
 		}
 	}

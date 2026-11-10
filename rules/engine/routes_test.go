@@ -163,3 +163,24 @@ func TestRouteOnlyForGeneralRules(t *testing.T) {
 		t.Errorf("%v: want the general rule only", fs)
 	}
 }
+
+// The rules a route model is not for are exactly those for one field of the
+// request (a password) and those without sources: every other rule with
+// sources gets the handlers' parameters.
+func TestRouteRulesLeftOut(t *testing.T) {
+	e := engineForTest(t)
+	for lang, routes := range e.routes {
+		for _, c := range routes {
+			for _, r := range e.byLang[lang] {
+				if c.takes(r) || len(r.rule.Sources) == 0 {
+					continue
+				}
+				for _, s := range r.rule.Sources {
+					if !c.field(s) {
+						t.Errorf("%s leaves out %s, whose source %q is no field of a request root", c.r.ID, r.rule.ID, s)
+					}
+				}
+			}
+		}
+	}
+}

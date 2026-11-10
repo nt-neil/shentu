@@ -1,7 +1,7 @@
 [[route]]
 id = "fastapi-route"
 lang = "python"
-applies = ["request.args", "request.form", "request.values", "request.GET", "request.POST"]
+applies = ["request.query_params", "request.path_params", "request.headers", "request.cookies"]
 framework = "fastapi"
 title = "A path operation's parameters are the request's path, query, body, header, cookie and form values"
 decorator = ["*.get", "*.post", "*.put", "*.patch", "*.delete", "*.api_route", "*.websocket"]

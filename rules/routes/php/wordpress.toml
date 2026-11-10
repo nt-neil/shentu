@@ -3,7 +3,7 @@
 [[route]]
 id = "wp-shortcode"
 lang = "php"
-applies = ["$_GET", "$_POST", "$_REQUEST"]
+applies = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "$_SERVER", "$_FILES"]
 framework = "wordpress"
 title = "Shortcode attributes and content are written by any user who can edit a post"
 register = ["add_shortcode"]
@@ -35,7 +35,7 @@ function box_render($atts, $content = '') {
 [[route]]
 id = "wp-rest-route"
 lang = "php"
-applies = ["$_GET", "$_POST", "$_REQUEST"]
+applies = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "$_SERVER", "$_FILES"]
 framework = "wordpress"
 title = "A REST route's callback gets the request ($request['id'], $request->get_param())"
 register = ["register_rest_route"]
@@ -71,7 +71,7 @@ function shop_item($request) {
 [[route]]
 id = "wp-widget-instance"
 lang = "php"
-applies = ["$_GET", "$_POST", "$_REQUEST"]
+applies = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "$_SERVER", "$_FILES"]
 framework = "wordpress"
 title = "A widget's settings ($instance) come from the widget form"
 extends = "WP_Widget"
@@ -103,7 +103,7 @@ class Note_Widget extends WP_Widget {
 [[route]]
 id = "elementor-widget-settings"
 lang = "php"
-applies = ["$_GET", "$_POST", "$_REQUEST"]
+applies = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "$_SERVER", "$_FILES"]
 framework = "wordpress"
 title = "An Elementor widget's settings are written by any user who can edit with Elementor"
 sources = ["->get_settings_for_display(", "->get_settings("]
