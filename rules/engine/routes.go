@@ -73,6 +73,15 @@ func (e *Engine) compileRoutes(rs []rules.Route) error {
 				c.params[p] = true
 			}
 		}
+		for _, raw := range r.Clears {
+			p, err := compilePattern(r.Lang, raw, false)
+			if err != nil {
+				return err
+			}
+			for _, cr := range e.byLang[r.Lang] {
+				cr.sanitizers = append(cr.sanitizers, p)
+			}
+		}
 		for _, raw := range r.Sources {
 			p, err := compilePattern(r.Lang, raw, false)
 			if err != nil {

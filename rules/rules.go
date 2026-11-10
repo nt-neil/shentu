@@ -122,6 +122,7 @@ type Route struct {
 	Exclude   []string `toml:"exclude"`  // a parameter declared with one of these is no input (Depends)
 	Bound     bool     `toml:"bound"`    // a parameter declared with a class type is an object the framework looked up (Laravel route model binding), no input
 	Sources   []string `toml:"sources"`  // further sources (get_settings_for_display), for the rules the model is for
+	Clears    []string `toml:"clears"`   // calls returning the application's stored data looked up by an id (get_attached_file(): not the request's input), for every rule of the language
 	Applies   []string `toml:"applies"`  // the request's roots ($_POST, req.body): a rule all of whose sources are one field under them (a password) is not one the model is for
 	Note      string   `toml:"note"`
 	Refs      []string `toml:"refs"`
