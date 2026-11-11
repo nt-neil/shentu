@@ -52,16 +52,25 @@ func (s *state) save(dir string) error {
 
 // checks runs the deterministic checks. No LLM is involved, so alerts still
 // work when the model is down.
-// replaceOrAppend puts f in place of a finding with the same key (the hourly webshell check and
-// the daily code audit report one file), so the report lists it once, with the audit's detail.
-func replaceOrAppend(all []finding, f finding) []finding {
-	for i := range all {
-		if all[i].Key == f.Key {
-			all[i] = f
-			return all
+// replaceOrAppend puts each of add in place of a finding with the same key (the hourly webshell
+// check and the daily code audit report one file), so the report lists it once, with the audit's
+// detail; the others are appended.
+func replaceOrAppend(all, add []finding) []finding {
+	at := make(map[string]int, len(all)+len(add))
+	for i, f := range all {
+		if _, ok := at[f.Key]; !ok {
+			at[f.Key] = i
 		}
 	}
-	return append(all, f)
+	for _, f := range add {
+		if i, ok := at[f.Key]; ok {
+			all[i] = f
+			continue
+		}
+		at[f.Key] = len(all)
+		all = append(all, f)
+	}
+	return all
 }
 
 // codeAuditFindings turns the code audit into patrol findings. An injection
@@ -71,7 +80,7 @@ func replaceOrAppend(all []finding, f finding) []finding {
 func codeAuditFindings(audit tools.CodeAudit) []finding {
 	var out []finding
 	for _, f := range audit.Findings {
-		if f.Kind == "injection" && f.Tier != "alert" {
+		if f.Kind == "injection" && f.Tier != "alert" || f.Kind == "audit" { // "audit": the summaries of the audit itself
 			continue
 		}
 		key := fmt.Sprintf("code:%s:%s:%d", f.Kind, f.Path, f.Line)
@@ -228,9 +237,7 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 			}
 		}
 		// The applications' own files: exposed secrets, debug mode, webshells, keys in code, injection.
-		for _, f := range codeAuditFindings(tools.AppCodeAudit(ctx, env.AppPaths, tools.WebRoots())) {
-			all = replaceOrAppend(all, f)
-		}
+		all = replaceOrAppend(all, codeAuditFindings(tools.AppCodeAudit(ctx, env.AppPaths, tools.WebRoots())))
 	}
 	var fresh []finding
 	for _, f := range all {
