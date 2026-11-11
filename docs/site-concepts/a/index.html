@@ -12,7 +12,7 @@
 :root {
   --paper: #ebe6dc; --ink: #1d1915; --muted: #6a5f55; --line: rgba(29, 25, 21, .14);
   --seal: #b3261e; --gold: #b38a3a;
-  --img-filter: grayscale(1) contrast(1.2) brightness(1.06) sepia(.12);
+  --img-filter: grayscale(1) contrast(1.45) brightness(1.02) sepia(.18);
   --img-blend: multiply;
   --serif: "Shentu Serif", "Noto Serif TC", "Songti TC", serif;
   --sans: system-ui, -apple-system, "PingFang TC", "Segoe UI", sans-serif;
@@ -31,13 +31,14 @@ a { color: inherit; }
 .stage { position: relative; min-height: 100vh; min-height: 100svh; overflow: hidden; display: grid; grid-template-rows: auto 1fr auto; }
 /* the guardian: huge, cropped, monochrome, faded into the paper on the left */
 .figure {
-  position: absolute; inset: 0 0 0 30%; background: var(--guardian) 78% 40% / cover no-repeat;
+  position: absolute; inset: 0 0 0 34%; background: var(--guardian) 92% 34% / auto 165% no-repeat;
   filter: var(--img-filter); mix-blend-mode: var(--img-blend);
   -webkit-mask-image: linear-gradient(90deg, transparent, #000 34%, #000 92%, transparent);
           mask-image: linear-gradient(90deg, transparent, #000 34%, #000 92%, transparent);
   transform-origin: 70% 40%;
-  animation: approach 2.8s cubic-bezier(.2, .7, .1, 1) both;
+  animation: approach 2.8s cubic-bezier(.2, .7, .1, 1) both, drift 22s 2.8s ease-in-out infinite alternate;
 }
+@keyframes drift { from { transform: scale(1); } to { transform: scale(1.07) translateX(-1.5%); } }
 @keyframes approach { from { transform: scale(1.12); filter: var(--img-filter) brightness(1.5); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 
 /* daylight moving slowly across the relief: the one continuous motion */
@@ -90,7 +91,7 @@ h1 span:nth-child(2) i { animation-delay: .14s; }
 footer { position: relative; z-index: 2; display: flex; gap: 32px; padding: 0 clamp(20px, 4vw, 56px) 26px; font-size: 13px; color: var(--muted); }
 
 @media (max-width: 720px) {
-  .figure { inset: 0 0 38% 0; background-position: 72% 30%; -webkit-mask-image: linear-gradient(transparent 0, #000 18%, #000 60%, transparent); mask-image: linear-gradient(transparent 0, #000 18%, #000 60%, transparent); }
+  .figure { inset: 0 0 38% 0; background-position: 64% 26%; background-size: auto 150%; -webkit-mask-image: linear-gradient(transparent 0, #000 18%, #000 60%, transparent); mask-image: linear-gradient(transparent 0, #000 18%, #000 60%, transparent); }
   .seam { left: 50%; bottom: 52%; }
   .sun { inset: 0 0 38% 0; -webkit-mask-image: none; mask-image: none; }
   nav { display: none; }
@@ -111,7 +112,6 @@ footer { position: relative; z-index: 2; display: flex; gap: 32px; padding: 0 cl
 <div class="stage">
   <div class="figure" role="img" aria-label="Shentu, the door guardian, carved on a temple door"></div>
   <div class="sun" aria-hidden="true"></div>
-  <div class="seam" aria-hidden="true"></div>
   <header>
     <a class="mark" href="#"><span class="seal" lang="zh-Hant">神荼</span><span class="word">Shentu</span></a>
     <nav aria-label="Site"><a href="#">Rules</a><a href="#">Measured</a><a href="#">Releases</a><a href="#">GitHub</a></nav>
@@ -121,11 +121,10 @@ footer { position: relative; z-index: 2; display: flex; gap: 32px; padding: 0 cl
     <p class="couplet" lang="zh-Hant" aria-label="Door couplet"><span>日巡主機無遺漏</span><span>夜審原碼不外流</span></p>
     <div>
       <h1><span><i>Keep</i></span><span><i>the door.</i></span></h1>
-      <p class="lede">Shentu is an open-source guardian for Linux servers. It patrols the machine, reads your web apps’ code where it runs, and tells you in plain words what it found.</p>
+      <p class="lede">An open-source guardian for Linux servers. It patrols, reads your code where it runs, and tells you plainly.</p>
       <p class="actions"><a class="install" href="#">Install</a><a class="more" href="#">Read the 70 rules</a></p>
     </div>
   </main>
-  <footer><span>Apache-2.0</span><span>The guardian is generated for this site</span></footer>
 </div>
 </body>
 </html>
