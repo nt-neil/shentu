@@ -21,17 +21,19 @@ func nameSet(toks []Token, set map[string]bool) map[string]bool {
 // Reading the names once per file keeps the cost of many rules low; hasSink then
 // decides.
 func sinkNames(r *crule, names map[string]bool, src []byte) bool {
-	return anyName(r.sinks, r.textSinks, names, src)
+	return anyName(r.sinks, r.textSinks, names, func(p *pat) bool { return p.text.Match(src) })
 }
 
 // sourceNames: a rule with sources reports only from one of them (outside
 // library mode, where parameters are input), so a file holding none of their
 // names cannot give it a finding.
 func sourceNames(r *crule, names map[string]bool, src []byte) bool {
-	return len(r.sources) == 0 && len(r.textSources) == 0 || anyName(r.sources, r.textSources, names, src)
+	return len(r.sources) == 0 && len(r.textSources) == 0 || anyName(r.sources, r.textSources, names, func(p *pat) bool { return p.text.Match(src) })
 }
 
-func anyName(code, text []*pat, names map[string]bool, src []byte) bool {
+// anyName: a code pattern whose names are all in names, or a text pattern
+// in the file (inSrc).
+func anyName(code, text []*pat, names map[string]bool, inSrc func(*pat) bool) bool {
 	for _, p := range code {
 		all := true // every name of the pattern is matched token by token, so each must be in the file
 		for _, t := range p.toks {
@@ -45,7 +47,7 @@ func anyName(code, text []*pat, names map[string]bool, src []byte) bool {
 		}
 	}
 	for _, p := range text {
-		if p.text.Match(src) {
+		if inSrc(p) {
 			return true
 		}
 	}
