@@ -4,10 +4,11 @@
   <h1 class="plaque small">{{t "bench.title"}}</h1>
   <p class="intro">{{t "bench.intro"}}</p>
 </header>
+<p class="scores-key">{{t "bench.key"}}</p>
 <dl class="scores">
-  {{with .Main}}{{$a := .All}}<div><dt>{{t "bench.main"}}</dt><dd>{{$a.Caught}}<small>/ {{$a.Cases}}</small><span>{{t "rate"}} {{$a.Rate}}, {{t "fixedfp"}} {{$a.FixedFP}}</span></dd></div>{{end}}
-  {{with .Holdout}}{{$a := index .Groups 0}}<div><dt>{{t "bench.holdout"}}</dt><dd>{{$a.Caught}}<small>/ {{$a.Cases}}</small><span>{{t "rate"}} {{$a.Rate}}, {{t "fixedfp"}} {{$a.FixedFP}}</span></dd></div>{{end}}
-  {{with .TS}}{{$a := index .Groups 0}}<div><dt>{{t "bench.ts"}}</dt><dd>{{$a.Caught}}<small>/ {{$a.Cases}}</small><span>{{t "rate"}} {{$a.Rate}}, {{t "fixedfp"}} {{$a.FixedFP}}</span></dd></div>{{end}}
+  {{with .Main}}{{$a := .All}}<div><dt>{{t "bench.main"}}</dt><dd>{{$a.Caught}}<small>/ {{$a.Cases}}</small><span>{{t "rate"}} {{$a.Rate}}, {{t "fixedfp"}} {{$a.FixedFP}}</span></dd><dd class="dots" aria-hidden="true">{{range $i, $_ := seq $a.Cases}}<i{{if lt $i $a.Caught}} class="lit"{{end}}></i>{{end}}</dd></div>{{end}}
+  {{with .Holdout}}{{$a := index .Groups 0}}<div><dt>{{t "bench.holdout"}}</dt><dd>{{$a.Caught}}<small>/ {{$a.Cases}}</small><span>{{t "rate"}} {{$a.Rate}}, {{t "fixedfp"}} {{$a.FixedFP}}</span></dd><dd class="dots" aria-hidden="true">{{range $i, $_ := seq $a.Cases}}<i{{if lt $i $a.Caught}} class="lit"{{end}}></i>{{end}}</dd></div>{{end}}
+  {{with .TS}}{{$a := index .Groups 0}}<div><dt>{{t "bench.ts"}}</dt><dd>{{$a.Caught}}<small>/ {{$a.Cases}}</small><span>{{t "rate"}} {{$a.Rate}}, {{t "fixedfp"}} {{$a.FixedFP}}</span></dd><dd class="dots" aria-hidden="true">{{range $i, $_ := seq $a.Cases}}<i{{if lt $i $a.Caught}} class="lit"{{end}}></i>{{end}}</dd></div>{{end}}
 </dl>
 {{with .Main}}
 <h2>{{t "bench.main"}}</h2>

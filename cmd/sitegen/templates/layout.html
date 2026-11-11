@@ -49,8 +49,10 @@
     <rect x="18" y="88" width="24" height="9" rx="2" fill="var(--gold)"/>
     <path d="M24 97l-1 30M28 97v32M32 97v32M36 97l1 30" stroke="var(--lantern)" stroke-width="2"/>
   </symbol>
-  <symbol id="cloud" viewBox="0 0 120 40">
-    <path d="M6 32c0-9 8-14 15-11 2-9 13-13 20-7 5-8 18-8 22 1 7-4 16 0 16 8h30M41 32c0-5 5-8 9-5M70 32c0-4 4-6 7-4" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+  <symbol id="cloud" viewBox="0 0 160 48">
+    <g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M6 40h148M40 40c-14 0-20-10-14-18 5-7 16-5 17 2 1 6-7 8-9 3M44 26c2-12 16-18 27-12 7-9 24-8 29 4 9-4 20 2 19 12-1 7-9 10-14 10M71 14c6 2 8 8 5 12-3 5-10 3-10-2 0-4 5-5 6-2M100 18c4 3 4 9 0 11-4 2-8-1-7-5M120 40c10 0 16-6 14-13-2-6-10-7-13-2-2 4 1 7 4 6"/>
+    </g>
   </symbol>
 </svg>
 <header class="top">
@@ -71,7 +73,7 @@
 {{block "main" .}}{{end}}
 </main>
 <footer class="foot">
-  <svg class="clouds" aria-hidden="true" viewBox="0 0 120 40" preserveAspectRatio="xMidYMid meet"><use href="#cloud"/></svg>
+  <svg class="clouds" aria-hidden="true" viewBox="0 0 160 48"><use href="#cloud"/></svg>
   <p>{{t "footer"}}</p>
   <ul>
     <li><a href="https://github.com/nt-neil/shentu">GitHub</a></li>

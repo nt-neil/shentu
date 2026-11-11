@@ -33,8 +33,10 @@
     <rect x="18" y="88" width="24" height="9" rx="2" fill="var(--gold)"/>
     <path d="M24 97l-1 30M28 97v32M32 97v32M36 97l1 30" stroke="var(--lantern)" stroke-width="2"/>
   </symbol>
-  <symbol id="cloud" viewBox="0 0 120 40">
-    <path d="M6 32c0-9 8-14 15-11 2-9 13-13 20-7 5-8 18-8 22 1 7-4 16 0 16 8h30M41 32c0-5 5-8 9-5M70 32c0-4 4-6 7-4" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+  <symbol id="cloud" viewBox="0 0 160 48">
+    <g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M6 40h148M40 40c-14 0-20-10-14-18 5-7 16-5 17 2 1 6-7 8-9 3M44 26c2-12 16-18 27-12 7-9 24-8 29 4 9-4 20 2 19 12-1 7-9 10-14 10M71 14c6 2 8 8 5 12-3 5-10 3-10-2 0-4 5-5 6-2M100 18c4 3 4 9 0 11-4 2-8-1-7-5M120 40c10 0 16-6 14-13-2-6-10-7-13-2-2 4 1 7 4 6"/>
+    </g>
   </symbol>
 </svg>
 <header class="top">
@@ -57,7 +59,8 @@
   <h1 class="plaque small">更新紀錄</h1>
   <p class="intro"><a href="../feed.xml">Atom 訂閱</a></p>
 </header>
-<div class="steles timeline">
+<div class="rel-layout">
+  <div class="steles timeline">
 <article class="release" id="v0.2.5">
   <h3><span class="ver">v0.2.5</span> <small>尚未發布</small></h3>
   <ul><li><code>app_code_audit</code> 會跨檔追蹤呼叫：在一個檔案讀進來、在另一個檔案的危險呼叫用掉的輸入， 會在危險呼叫處報出，並標明來源檔案。</li><li>框架路由模型：WordPress 的 hook、shortcode 與 REST 路由，Laravel 路由、Django URL、 Flask 與 FastAPI 的 view，以及 Express handler 的參數都視為輸入，路由註冊在別的檔案也一樣。</li><li>新的規則類別：LDAP 注入、NoSQL 運算子注入、危險的檔案上傳、弱加密與寫死的憑證； TypeScript 檔案用 JavaScript 規則檢查。</li><li>稽核結果會在多次執行之間保留，大型應用程式分幾次巡邏就能掃完，不必一次跑完。</li><li>稽核依伺服器調整自己：記憶體上限取 min(1 GiB、可用記憶體的 25%、服務 cgroup 的 50%)， 並行數依 CPU 數與系統負載決定。</li><li>誤報更少：<code>wp_send_json</code> 的輸出、<code>JSON_HEX_TAG</code> 的資料區塊、不是 collection 的物件上的 MongoDB 查詢，以及 Django 的 <code>_meta.get_field</code> 檢查。</li><li>已知問題：分成多次執行的稽核，仍可能有少數結果和不限時間的單次執行不同；修正進行中。</li></ul>
@@ -122,10 +125,23 @@
   
 </article>
 </div>
+  
+  <aside class="stele" aria-label="最新更新">
+    <p class="stele-ver">v0.2.5</p>
+    <p class="stele-date">尚未發布</p>
+    <dl>
+      <div><dt>此版規則數</dt><dd>70</dd></div>
+      <div><dt>主組實測</dt><dd>15/97</dd></div>
+      <div><dt>新增規則</dt><dd>37</dd></div>
+    </dl>
+    <p><a href="../feed.xml">Atom 訂閱</a></p>
+  </aside>
+  
+</div>
 
 </main>
 <footer class="foot">
-  <svg class="clouds" aria-hidden="true" viewBox="0 0 120 40" preserveAspectRatio="xMidYMid meet"><use href="#cloud"/></svg>
+  <svg class="clouds" aria-hidden="true" viewBox="0 0 160 48"><use href="#cloud"/></svg>
   <p>Apache-2.0 授權。本站由 cmd/sitegen 從 repo 產生。</p>
   <ul>
     <li><a href="https://github.com/nt-neil/shentu">GitHub</a></li>

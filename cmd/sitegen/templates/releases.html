@@ -4,5 +4,19 @@
   <h1 class="plaque small">{{t "releases.title"}}</h1>
   <p class="intro">{{with t "changelog.note"}}{{.}} {{end}}<a href="{{.L.Root}}feed.xml">{{t "feed"}}</a></p>
 </header>
-<div class="steles timeline">{{template "releaselist" .Releases}}</div>
+<div class="rel-layout">
+  <div class="steles timeline">{{template "releaselist" .Releases}}</div>
+  {{with index .Releases 0}}
+  <aside class="stele" aria-label="{{t "latest"}}">
+    <p class="stele-ver">v{{.Version}}</p>
+    <p class="stele-date">{{if .Date}}{{.Date}}{{else}}{{t "unreleased"}}{{end}}</p>
+    <dl>
+      {{if gt .Rules 0}}<div><dt>{{t "rules.total"}}</dt><dd>{{.Rules}}</dd></div>{{end}}
+      {{if .Bench}}<div><dt>{{t "bench.change"}}</dt><dd>{{.Bench.All.Caught}}/{{.Bench.All.Cases}}</dd></div>{{end}}
+      {{if .Added}}<div><dt>{{t "rules.added"}}</dt><dd>{{len .Added}}</dd></div>{{end}}
+    </dl>
+    <p><a href="{{$.L.Root}}feed.xml">{{t "feed"}}</a></p>
+  </aside>
+  {{end}}
+</div>
 {{end}}
