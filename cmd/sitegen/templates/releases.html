@@ -11,7 +11,7 @@
   <li class="era{{if not $r.Date}} pending{{end}}" id="v{{$r.Version}}" style="--old: {{age $i $n}}">
     <div class="mark">
       <p class="when">{{if $r.Date}}<time datetime="{{$r.Date}}">{{$r.Date}}</time>{{else}}{{t "unreleased"}}{{end}}</p>
-      <h2><span class="word">{{t (chron $r (eq $i 0))}}</span> <span class="ver">v{{$r.Version}}</span></h2>
+      {{$w := chron $r (eq $i 0)}}<h2><span class="word">{{if eq $w "hist.mend"}}{{len $r.Items}} {{t "hist.changes"}}{{else}}{{t $w}}{{end}}</span> <span class="ver">v{{$r.Version}}</span></h2>
     </div>
     <div class="body">
       {{if $r.Items}}<ul class="items">{{range $r.Items}}<li>{{item .}}</li>{{end}}</ul>{{else}}<p class="note">{{t "release.empty"}}</p>{{end}}

@@ -83,7 +83,7 @@
       </a>
       <p class="acc">{{if gt $r.Rules 0}}<span><b>{{$r.Rules}}</b> {{t "hist.rules"}}</span>{{end}}{{with $r.Bench}}<span><b>{{.All.Caught}}</b>/{{.All.Cases}} {{t "river.caught"}}</span>{{end}}</p>
       {{if not $now}}<div class="peek" id="rv-{{$r.Version}}">
-        <p class="word">{{t (chron $r (eq $i 0))}}</p>
+        {{$w := chron $r (eq $i 0)}}<p class="word">{{if eq $w "hist.mend"}}{{len $r.Items}} {{t "hist.changes"}}{{else}}{{t $w}}{{end}}</p>
         <ul>{{range $k, $it := $r.Items}}{{if lt $k 3}}<li>{{item $it}}</li>{{end}}{{end}}</ul>
       </div>{{end}}
     </li>

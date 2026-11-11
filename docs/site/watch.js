@@ -5,6 +5,8 @@
 (function () {
   var d = document, root = d.documentElement, run = d.getElementById('watch');
   if (!run) return;
+  /* a trial look, only when asked for in the address: ?tone=duotone */
+  if (/[?&]tone=duotone\b/.test(location.search)) d.body.dataset.tone = 'duotone';
   var still = matchMedia('(prefers-reduced-motion: reduce)').matches;
   var q = function (s) { return run.querySelector(s); }, qa = function (s) { return run.querySelectorAll(s); };
 
@@ -14,9 +16,10 @@
     clearInterval(typing);
     if (still) { text.textContent = str; return; }
     var i = 0; text.textContent = '';
-    typing = setInterval(function () { i += 2; text.textContent = str.slice(0, i); if (i >= str.length) clearInterval(typing); }, 28);
+    typing = setInterval(function () { i += 2; text.textContent = str.slice(0, i); if (i >= str.length) { clearInterval(typing); talk.classList.add('said'); } }, 28);
   }
-  text.addEventListener('click', function () { clearInterval(typing); text.textContent = text.dataset.now || full; });
+  /* the choices wait until the words are out; a click on the words brings them out at once */
+  text.addEventListener('click', function () { clearInterval(typing); text.textContent = text.dataset.now || full; talk.classList.add('said'); });
   qa('.talk-opts button').forEach(function (b) {
     b.addEventListener('click', function () {
       qa('.talk-opts button').forEach(function (o) { o.setAttribute('aria-pressed', o === b); });
@@ -28,7 +31,7 @@
 
   root.classList.add('walking');
   var stage = q('.stage'), sky = q('.sky'), world = q('.world'), haze = q('.haze'), boughs = q('.boughs'), scenes = qa('.scene'), walker = q('.walker'), evil = q('.evil'),
-      st = qa('.station'), checks = q('.checks'), items = qa('.checks li'), hudName = q('.hud-name'), hudBar = q('.hud b'), cue = q('.cue');
+      st = qa('.station'), checks = q('.checks'), roll = q('.checks ul'), items = qa('.checks li'), poses = qa('.walker i'), names = [].map.call(qa('.station'), function (e) { return e.querySelector('h2'); }), hudName = q('.hud-name'), hudBar = q('.hud b'), cue = q('.cue');
   var hud = JSON.parse(run.dataset.hud || '[]');
   var top = 0, span = 1, vw = 1, vh = 1, last = -1, ticking = false, moving = 0, N = scenes.length - 1;
 
@@ -56,10 +59,14 @@
     /* stations: always the nearest one, so the screen never goes without words; the report box takes over at the end */
     var cur = s < 4.55 ? Math.min(st.length - 1, Math.round(s)) : -1;
     for (var k = 0; k < st.length; k++) st[k].classList.toggle('on', k === cur);
+    /* the name of the station drifts past as the walk goes on, so the guardian walks in front of every word in turn */
+    if (cur > 0) names[cur].style.transform = 'translate3d(' + ((cur - s) * .25 * vw).toFixed(1) + 'px,0,0)';
     cue.style.opacity = (1 - ease(ramp(s, 0, .12))).toFixed(3);
     /* the checks: lit as the lantern passes them */
     checks.style.opacity = (ease(ramp(s, .65, .95)) * (1 - ease(ramp(s, 4.45, 4.75)))).toFixed(3);
-    for (var j = 0; j < items.length; j++) items[j].classList.toggle('lit', s >= +items[j].dataset.at);
+    var now = 0;
+    for (var j = 0; j < items.length; j++) { var lit = s >= +items[j].dataset.at; items[j].classList.toggle('lit', lit); if (lit) now = j; }
+    roll.style.setProperty('--k', now);
     /* the find: the door shakes, the miasma rises, the light turns red */
     var red = near(s, 4, .7);
     evil.style.opacity = red.toFixed(3);
@@ -74,7 +81,10 @@
     var at = Math.min(N, Math.round(s));
     if (hudName.dataset.at != at) { hudName.dataset.at = at; hudName.textContent = hud[at] || ''; }
     hudBar.style.transform = 'scaleX(' + p.toFixed(4) + ')';
-    /* a step in the walk while the page moves */
+    /* a step for each stretch of road: the scroll picks the pose and the rise and fall */
+    var ph = s * 7, half = ph % 1;
+    poses[1].style.opacity = Math.floor(ph) % 2;
+    walker.style.transform = 'translate3d(0,' + (-Math.sin(half * Math.PI) * 6).toFixed(1) + 'px,0)';
     walker.classList.add('step'); clearTimeout(moving); moving = setTimeout(function () { walker.classList.remove('step'); }, 160);
   }
   addEventListener('scroll', function () { if (!ticking) { ticking = true; requestAnimationFrame(frame); } }, { passive: true });
