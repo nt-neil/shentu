@@ -170,6 +170,7 @@ var en = map[string]string{
 	"hist.intro":         "From the first release to the newest, oldest first. Each release is cut into the record with what it brought.",
 	"hist.rules":         "rules",
 	"hist.caught":        "published vulnerabilities caught",
+	"skip.intro":         "Skip",
 	"footer":             "Apache-2.0. Generated from the repository by cmd/sitegen.",
 }
 
@@ -304,5 +305,6 @@ var zh = map[string]string{
 	"hist.intro":         "從立廟到現在，由舊到新。每一版都刻下它帶來的改變。",
 	"hist.rules":         "條規則",
 	"hist.caught":        "個公開漏洞已抓到",
+	"skip.intro":         "略過",
 	"footer":             "Apache-2.0 授權。本站由 cmd/sitegen 從 repo 產生。",
 }

@@ -12,6 +12,16 @@
 <link rel="preload" href="../img/guardian-night.webp" as="image">
 <link rel="stylesheet" href="../site.css">
 <link rel="alternate" type="application/atom+xml" title="Shentu releases" href="../feed.xml">
+<script>
+ 
+(function () {
+  try {
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches || sessionStorage.getItem('shentu-gate')) return;
+    sessionStorage.setItem('shentu-gate', '1');
+  } catch (e) { return; }
+  document.documentElement.classList.add('intro');
+})();
+</script>
 </head>
 <body class="p-index">
 <a class="skip" href="#main">跳到內容</a>
@@ -34,8 +44,12 @@
   <canvas class="dust" aria-hidden="true"></canvas>
   <div class="veil" aria-hidden="true"></div>
   <div class="shade" aria-hidden="true"></div>
+  <div class="bloom" aria-hidden="true"></div>
+  <div class="gdoor gdoor-l" aria-hidden="true"></div>
+  <div class="gdoor gdoor-r" aria-hidden="true"></div>
+  <button type="button" class="skip-intro">略過</button>
   <div class="hero-title">
-    <h1 id="title"><span>夜裡，</span> <span>有人守門。</span></h1>
+    <h1 id="title"><span class="line"><i>夜裡，</i></span> <span class="line"><i>有人守門。</i></span></h1>
     <p class="lede">你睡覺的時候，Shentu 在你的 Linux 伺服器上巡邏；有狀況，你只會收到一則白話訊息。</p>
     <p class="actions"><a class="button" href="install.html">安裝</a><a class="link" href="https://github.com/nt-neil/shentu">原始碼在 GitHub</a></p>
   </div>
@@ -43,7 +57,7 @@
 </section>
 
 <div class="after">
-<section class="patrol" id="patrol" aria-labelledby="patrol-title">
+<section data-reveal class="patrol" id="patrol" aria-labelledby="patrol-title">
   <div class="patrol-head">
     <h2 id="patrol-title">一次巡邏</h2>
     <p class="example">示範</p>
@@ -56,9 +70,11 @@
         <button type="button" role="tab" id="tab-2" aria-controls="scene-2" aria-selected="false" tabindex="-1"><time>03:13</time> 回報</button>
       </div>
       <div class="viewport">
+        <div class="curtain" aria-hidden="true"><i class="cl"></i><i class="cr"></i><b class="sweep"></b></div>
+        <div class="flash" aria-hidden="true"></div>
         <div class="track">
           <article class="card on" id="scene-0" role="tabpanel" aria-labelledby="tab-0">
-            <div><h3>它巡過整台伺服器。</h3><p>登入紀錄、程序、套件、對外連接埠，以及機器上每個網站的原始碼，都在本機讀。</p></div>
+            <div><h3 class="line"><i>它巡過整台伺服器。</i></h3><p class="line"><i>登入紀錄、程序、套件、對外連接埠，以及機器上每個網站的原始碼，都在本機讀。</i></p></div>
             <ul class="log">
               <li class="lit"><span>SSH 登入</span><span>正常</span></li>
               <li class="lit"><span>對外連接埠</span><span>正常</span></li>
@@ -69,7 +85,7 @@
             </ul>
           </article>
           <article class="card find" id="scene-1" role="tabpanel" aria-labelledby="tab-1" inert>
-            <div><h3>它找到那個不對勁的地方。</h3><p>上傳資料夾多了一個檔案：陌生人送什麼過來，它就執行什麼。</p></div>
+            <div><h3 class="line"><i>它找到那個不對勁的地方。</i></h3><p class="line"><i>上傳資料夾多了一個檔案：陌生人送什麼過來，它就執行什麼。</i></p></div>
             <ul class="log">
               <li class="lit"><span>有已知漏洞的套件</span><span>正常</span></li>
               <li class="bad"><span>shop / wp-content / uploads</span><span>網頁後門</span></li>
@@ -77,7 +93,7 @@
             </ul>
           </article>
           <article class="card" id="scene-2" role="tabpanel" aria-labelledby="tab-2" inert>
-            <div><h3>它用白話告訴你。</h3><p>一則訊息，說清楚發生了什麼、該怎麼做。你說好之前，什麼都不會改。</p></div>
+            <div><h3 class="line"><i>它用白話告訴你。</i></h3><p class="line"><i>一則訊息，說清楚發生了什麼、該怎麼做。你說好之前，什麼都不會改。</i></p></div>
             <p class="msg"><b>Shentu</b> 03:07 商店的上傳資料夾出現網頁後門。任何知道網址的人，都能在你的伺服器上執行程式。建議先隔離這個檔案，再查 03:07 前後的存取紀錄。</p>
           </article>
         </div>
@@ -93,7 +109,7 @@
 </section>
 
 
-<section class="tally" aria-labelledby="tally-title">
+<section data-reveal class="tally" aria-labelledby="tally-title">
   <h2 id="tally-title">目前能查的</h2>
   <dl>
     <div><dd>70</dd><dt>條程式碼稽核規則</dt></div>
@@ -104,7 +120,7 @@
 </section>
 
 
-<section class="open" id="open-source" aria-labelledby="open-title">
+<section data-reveal class="open" id="open-source" aria-labelledby="open-title">
   <h2 id="open-title">開源</h2>
   <p class="lede">Shentu 是 Apache-2.0 授權的自由軟體。程式、規則和這個網站，都在同一個公開的 repo 裡。</p>
   <dl class="os">
@@ -117,7 +133,7 @@
   </dl>
 </section>
 
-<section class="latest" aria-labelledby="latest-title">
+<section data-reveal class="latest" aria-labelledby="latest-title">
   <h2 id="latest-title">最新更新</h2>
   <div class="timeline">
 <article class="release" id="v0.2.5">
@@ -140,21 +156,62 @@
 
 <script>
 (function () {
-  var still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var still = matchMedia('(prefers-reduced-motion: reduce)').matches, d = document, root = d.documentElement;
+  var EXPO_IN = 'cubic-bezier(.7, 0, .84, 0)', EXPO_OUT = 'cubic-bezier(.16, 1, .3, 1)';
+
    
-  var deck = document.querySelector('.deck'), track = deck.querySelector('.track'), tabs = deck.querySelectorAll('[role=tab]'),
-      cards = deck.querySelectorAll('.card'), dots = deck.querySelectorAll('.dots i'), prev = deck.querySelector('.prev'), next = deck.querySelector('.next'), at = 0;
-  function go(i, focus) {
-    at = Math.max(0, Math.min(cards.length - 1, i));
-    track.style.transform = 'translate3d(' + (-100 * at) + '%,0,0)';
+  var gate = d.getElementById('gate'), skip = gate.querySelector('.skip-intro'), anims = [];
+  function endIntro() { anims.forEach(function (a) { a.finish(); }); root.classList.remove('intro'); }
+  if (root.classList.contains('intro')) {
+    var L = gate.querySelector('.gdoor-l'), R = gate.querySelector('.gdoor-r'), bloom = gate.querySelector('.bloom'),
+        dawn = matchMedia('(prefers-color-scheme: light)').matches,
+        gap = Math.max(gate.clientWidth, gate.clientHeight * 1.778) * .082, half = gate.clientWidth / 2,
+        to = dawn ? half - gap : half + 40;
+    anims.push(L.animate([{ transform: 'translate3d(0,0,0)' }, { transform: 'translate3d(' + (-to) + 'px,0,0)' }], { duration: 1700, delay: 250, easing: 'cubic-bezier(.65, 0, .15, 1)', fill: 'forwards' }));
+    anims.push(R.animate([{ transform: 'translate3d(0,0,0)' }, { transform: 'translate3d(' + to + 'px,0,0)' }], { duration: 1700, delay: 250, easing: 'cubic-bezier(.65, 0, .15, 1)', fill: 'forwards' }));
+    anims.push(bloom.animate([{ opacity: 0, transform: 'scale(.6)' }, { opacity: 1, transform: 'scale(1.1)', offset: .45 }, { opacity: .35, transform: 'scale(1.3)' }], { duration: 1900, delay: 300, easing: EXPO_OUT, fill: 'forwards' }));
+    gate.querySelectorAll('.hero-title .line i, .hero-title .lede, .hero-title .actions').forEach(function (el, k) {
+      anims.push(el.animate([{ transform: 'translate3d(0,110%,0)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 900, delay: 1300 + k * 110, easing: EXPO_OUT, fill: 'backwards' }));
+    });
+    anims[0].finished.then(function () { setTimeout(endIntro, 250); });
+    skip.addEventListener('click', endIntro);
+    addEventListener('keydown', function (e) { if (e.key === 'Escape') endIntro(); }, { once: true });
+  }
+
+   
+  var deck = d.querySelector('.deck'), track = deck.querySelector('.track'), tabs = deck.querySelectorAll('[role=tab]'),
+      cards = deck.querySelectorAll('.card'), dots = deck.querySelectorAll('.dots i'), prev = deck.querySelector('.prev'), next = deck.querySelector('.next'),
+      cl = deck.querySelector('.cl'), cr = deck.querySelector('.cr'), sweep = deck.querySelector('.sweep'), flash = deck.querySelector('.flash'), at = 0, busy = false;
+  function show(i) {
+    track.style.transform = 'translate3d(' + (-100 * i) + '%,0,0)';
     for (var k = 0; k < cards.length; k++) {
-      var on = k === at;
+      var on = k === i;
       cards[k].classList.toggle('on', on); cards[k].inert = !on;
       tabs[k].setAttribute('aria-selected', on); tabs[k].tabIndex = on ? 0 : -1;
       dots[k].classList.toggle('on', on);
     }
-    deck.dataset.at = at; prev.disabled = at === 0; next.disabled = at === cards.length - 1;
+    deck.dataset.at = i; prev.disabled = i === 0; next.disabled = i === cards.length - 1;
+  }
+  function go(i, focus) {
+    i = Math.max(0, Math.min(cards.length - 1, i));
+    if (i === at || busy) { if (focus) tabs[at].focus(); return; }
+    at = i;
     if (focus) tabs[at].focus();
+    if (still) { show(at); return; }
+    busy = true;
+     
+    var close = { duration: 330, easing: EXPO_IN, fill: 'forwards' }, open = { duration: 520, easing: EXPO_OUT, fill: 'forwards' };
+    cl.animate([{ transform: 'translate3d(-101%,0,0)' }, { transform: 'translate3d(0,0,0)' }], close);
+    cr.animate([{ transform: 'translate3d(101%,0,0)' }, { transform: 'translate3d(0,0,0)' }], close).finished.then(function () {
+      show(at);
+      sweep.animate([{ transform: 'translate3d(-30%,0,0) skewX(-12deg)', opacity: 0 }, { opacity: 1, offset: .3 }, { transform: 'translate3d(130%,0,0) skewX(-12deg)', opacity: 0 }], { duration: 620, easing: 'cubic-bezier(.3, .7, .2, 1)' });
+      cl.animate([{ transform: 'translate3d(0,0,0)' }, { transform: 'translate3d(-101%,0,0)' }], open);
+      cr.animate([{ transform: 'translate3d(0,0,0)' }, { transform: 'translate3d(101%,0,0)' }], open).finished.then(function () { busy = false; });
+      cards[at].querySelectorAll('.line i, .log, .msg').forEach(function (el, k) {
+        el.animate([{ transform: 'translate3d(0,105%,0)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 640, delay: 140 + k * 70, easing: EXPO_OUT, fill: 'backwards' });
+      });
+      if (at === 1) flash.animate([{ opacity: 0 }, { opacity: .55, offset: .18 }, { opacity: .08, offset: .45 }, { opacity: .32, offset: .62 }, { opacity: 0 }], { duration: 900, easing: 'ease-out' });
+    });
   }
   tabs.forEach(function (t, k) { t.addEventListener('click', function () { go(k); }); });
   deck.querySelector('[role=tablist]').addEventListener('keydown', function (e) {
@@ -169,25 +226,33 @@
     if (x0 === null) return; var dx = e.clientX - x0, dy = e.clientY - y0; x0 = null;
     if (Math.abs(dx) > 50 && Math.abs(dx) > 1.5 * Math.abs(dy)) go(at + (dx < 0 ? 1 : -1));
   });
-  go(0);
+  show(0);
+
+   
+  if (!still && 'IntersectionObserver' in window) {
+    root.classList.add('reveal');
+    var io = new IntersectionObserver(function (es) { es.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add('seen'); io.unobserve(e.target); } }); }, { rootMargin: '0px 0px -10% 0px' });
+    d.querySelectorAll('[data-reveal]').forEach(function (el) { io.observe(el); });
+  }
 
    
   if (still) return;
-  var c = document.querySelector('canvas.dust'), x = c.getContext('2d'), P = [], w, h, run = true, dpr = Math.min(devicePixelRatio || 1, 2);
+  var c = d.querySelector('canvas.dust'), x = c.getContext('2d'), P = [], w, h, run = true, dpr = Math.min(devicePixelRatio || 1, 2), t0 = performance.now();
   function size() { w = c.clientWidth; h = c.clientHeight; c.width = w * dpr; c.height = h * dpr; x.setTransform(dpr, 0, 0, dpr, 0, 0); }
   size(); addEventListener('resize', size);
-  for (var k = 0; k < 80; k++) P.push({ x: Math.random(), y: Math.random(), r: Math.random() * 1.5 + .3, v: Math.random() * .00025 + .00008, p: Math.random() * 6.28 });
+  for (var k = 0; k < 90; k++) P.push({ x: Math.random(), y: Math.random(), r: Math.random() * 1.5 + .3, v: Math.random() * .00025 + .00008, p: Math.random() * 6.28 });
   function frame(t) {
     if (!run) return;
+    var gust = root.classList.contains('intro') ? 1 + 14 * Math.max(0, 1 - (t - t0) / 2200) : 1;
     x.clearRect(0, 0, w, h);
     for (var k = 0; k < P.length; k++) {
-      var e = P[k], s = Math.sin(t / 900 + e.p); e.y -= e.v; if (e.y < 0) e.y = 1;
+      var e = P[k], s = Math.sin(t / 900 + e.p); e.y -= e.v * gust; if (e.y < 0) e.y = 1;
       x.fillStyle = 'rgba(255, 214, 150,' + (.22 + .35 * s * s) + ')';
-      x.beginPath(); x.arc((.5 + (e.x - .5) * .16 + Math.sin(t / 2400 + e.p) * .005) * w, e.y * h, e.r, 0, 6.29); x.fill();
+      x.beginPath(); x.arc((.5 + (e.x - .5) * .16 * gust ** .3 + Math.sin(t / 2400 + e.p) * .005) * w, e.y * h, e.r, 0, 6.29); x.fill();
     }
     requestAnimationFrame(frame);
   }
-  new IntersectionObserver(function (es) { var was = run; run = es[0].isIntersecting; if (run && !was) requestAnimationFrame(frame); }).observe(document.getElementById('gate'));
+  new IntersectionObserver(function (es) { var was = run; run = es[0].isIntersecting; if (run && !was) requestAnimationFrame(frame); }).observe(gate);
   requestAnimationFrame(frame);
 })();
 </script>
