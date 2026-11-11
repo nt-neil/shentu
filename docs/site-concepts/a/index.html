@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shentu · Concept A</title>
+<meta name="color-scheme" content="light dark">
+<link rel="preload" href="../assets/guardian-relief.webp" as="image">
+<style>
+@font-face { font-family: "Shentu Serif"; src: url(../fonts/serif-light.woff2) format("woff2"); font-weight: 300; font-display: swap; }
+@font-face { font-family: "Shentu Serif"; src: url(../fonts/serif-black.woff2) format("woff2"); font-weight: 900; font-display: swap; }
+:root {
+  --paper: #ebe6dc; --ink: #1d1915; --muted: #6a5f55; --line: rgba(29, 25, 21, .14);
+  --seal: #b3261e; --gold: #b38a3a;
+  --img-filter: grayscale(1) contrast(1.2) brightness(1.06) sepia(.12);
+  --img-blend: multiply;
+  --serif: "Shentu Serif", "Noto Serif TC", "Songti TC", serif;
+  --sans: system-ui, -apple-system, "PingFang TC", "Segoe UI", sans-serif;
+  /* the background picture: swap the file to change it */
+  --guardian: url(../assets/guardian-relief.webp);
+}
+@media (prefers-color-scheme: dark) {
+  :root { --paper: #15120f; --ink: #ece4d6; --muted: #a39686; --line: rgba(236, 228, 214, .14); --seal: #c8382c; --gold: #c9a24a;
+    --img-filter: grayscale(1) contrast(1.15) brightness(.85) sepia(.18); --img-blend: screen; }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--paper); color: var(--ink); font: 17px/1.6 var(--sans); overflow-x: hidden; }
+a { color: inherit; }
+
+.stage { position: relative; min-height: 100vh; min-height: 100svh; overflow: hidden; display: grid; grid-template-rows: auto 1fr auto; }
+/* the guardian: huge, cropped, monochrome, faded into the paper on the left */
+.figure {
+  position: absolute; inset: 0 0 0 30%; background: var(--guardian) 78% 40% / cover no-repeat;
+  filter: var(--img-filter); mix-blend-mode: var(--img-blend);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 34%, #000 92%, transparent);
+          mask-image: linear-gradient(90deg, transparent, #000 34%, #000 92%, transparent);
+  transform-origin: 70% 40%;
+  animation: approach 2.8s cubic-bezier(.2, .7, .1, 1) both;
+}
+@keyframes approach { from { transform: scale(1.12); filter: var(--img-filter) brightness(1.5); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+/* daylight moving slowly across the relief: the one continuous motion */
+.sun {
+  position: absolute; inset: 0 0 0 30%; pointer-events: none; mix-blend-mode: soft-light;
+  background: radial-gradient(38% 60% at var(--sx, 30%) 38%, rgba(255, 246, 225, .85), transparent 70%);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 34%); mask-image: linear-gradient(90deg, transparent, #000 34%);
+  animation: sun 14s 1.5s ease-in-out infinite alternate;
+}
+@property --sx { syntax: "<percentage>"; inherits: false; initial-value: 30%; }
+@keyframes sun { to { --sx: 85%; } }
+@media (prefers-color-scheme: dark) { .sun { background: radial-gradient(34% 55% at var(--sx, 30%) 38%, rgba(255, 214, 150, .5), transparent 70%); mix-blend-mode: overlay; } }
+
+/* the seam between the doors: one gold hairline, a light runs down it once */
+.seam { position: absolute; top: 0; bottom: 0; left: 30%; width: 1px; background: var(--line); }
+.seam::after {
+  content: ""; position: absolute; left: -1px; width: 3px; height: 26vh; top: -26vh;
+  background: linear-gradient(transparent, var(--gold), transparent);
+  animation: run 3.4s 1s cubic-bezier(.5, 0, .3, 1) forwards;
+}
+@keyframes run { to { top: 100%; } }
+
+header { position: relative; z-index: 2; display: flex; align-items: center; gap: clamp(24px, 4vw, 64px); padding: 28px clamp(20px, 4vw, 56px); }
+.mark { display: flex; align-items: center; gap: 14px; text-decoration: none; }
+.seal {
+  display: grid; place-items: center; width: 34px; height: 34px; background: var(--seal); color: #fbf3e4;
+  font: 900 13px/1.05 var(--serif); writing-mode: vertical-rl; letter-spacing: .05em;
+}
+.word { font: 300 26px/1 var(--serif); letter-spacing: .01em; }
+nav { display: flex; gap: clamp(14px, 2.4vw, 34px); font-size: 15px; }
+nav a { text-decoration: none; color: var(--muted); padding: 10px 0; }
+nav a:hover { color: var(--ink); }
+.lang { margin-left: auto; text-decoration: none; font-size: 15px; padding: 6px 12px; background: var(--paper); border: 1px solid var(--line); }
+
+main { position: relative; z-index: 2; align-self: center; padding: 0 clamp(20px, 4vw, 56px); display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 0 28px; }
+.couplet { display: flex; gap: 10px; color: var(--muted); font: 300 14px/1 var(--serif); letter-spacing: .5em; writing-mode: vertical-rl; padding-top: 18px; }
+h1 { margin: 0; font: 300 clamp(64px, 9vw, 148px)/.92 var(--serif); letter-spacing: -.015em; }
+h1 span { display: block; overflow: hidden; padding-bottom: .06em; }
+h1 span i { display: block; font-style: normal; animation: rise 1.3s cubic-bezier(.2, .8, .1, 1) both; }
+h1 span:nth-child(2) i { animation-delay: .14s; }
+@keyframes rise { from { transform: translateY(105%); } }
+.lede { max-width: 25em; margin: 34px 0 0; color: var(--muted); font-size: 18px; animation: fade 1.2s .6s both; }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 28px; margin-top: 34px; animation: fade 1.2s .8s both; }
+@keyframes fade { from { opacity: 0; transform: translateY(8px); } }
+.install { display: inline-flex; align-items: center; gap: 12px; min-height: 52px; padding: 0 26px; background: var(--ink); color: var(--paper); text-decoration: none; font-weight: 600; letter-spacing: .02em; }
+.install::before { content: ""; width: 8px; height: 8px; background: var(--seal); }
+.more { text-decoration: none; border-bottom: 1px solid var(--line); padding: 6px 0; }
+.more:hover { border-color: var(--ink); }
+
+footer { position: relative; z-index: 2; display: flex; gap: 32px; padding: 0 clamp(20px, 4vw, 56px) 26px; font-size: 13px; color: var(--muted); }
+
+@media (max-width: 720px) {
+  .figure { inset: 0 0 38% 0; background-position: 72% 30%; -webkit-mask-image: linear-gradient(transparent 0, #000 18%, #000 60%, transparent); mask-image: linear-gradient(transparent 0, #000 18%, #000 60%, transparent); }
+  .seam { left: 50%; bottom: 52%; }
+  .sun { inset: 0 0 38% 0; -webkit-mask-image: none; mask-image: none; }
+  nav { display: none; }
+  main { grid-template-columns: 1fr; align-self: end; padding-bottom: 8px; }
+  .couplet { display: none; }
+  h1 { font-size: clamp(56px, 16vw, 88px); }
+  .lede { font-size: 16px; margin-top: 20px; }
+  .actions { gap: 20px; margin-top: 24px; }
+  footer span:last-child { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; }
+  .seam::after { display: none; }
+}
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="figure" role="img" aria-label="Shentu, the door guardian, carved on a temple door"></div>
+  <div class="sun" aria-hidden="true"></div>
+  <div class="seam" aria-hidden="true"></div>
+  <header>
+    <a class="mark" href="#"><span class="seal" lang="zh-Hant">神荼</span><span class="word">Shentu</span></a>
+    <nav aria-label="Site"><a href="#">Rules</a><a href="#">Measured</a><a href="#">Releases</a><a href="#">GitHub</a></nav>
+    <a class="lang" href="#" lang="zh-Hant">中文</a>
+  </header>
+  <main>
+    <p class="couplet" lang="zh-Hant" aria-label="Door couplet"><span>日巡主機無遺漏</span><span>夜審原碼不外流</span></p>
+    <div>
+      <h1><span><i>Keep</i></span><span><i>the door.</i></span></h1>
+      <p class="lede">Shentu is an open-source guardian for Linux servers. It patrols the machine, reads your web apps’ code where it runs, and tells you in plain words what it found.</p>
+      <p class="actions"><a class="install" href="#">Install</a><a class="more" href="#">Read the 70 rules</a></p>
+    </div>
+  </main>
+  <footer><span>Apache-2.0</span><span>The guardian is generated for this site</span></footer>
+</div>
+</body>
+</html>
