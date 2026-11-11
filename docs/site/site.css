@@ -138,7 +138,7 @@ canvas.dust { position: absolute; inset: 0; width: 100%; height: 100%; pointer-e
 .beam { align-self: stretch; position: relative; }
 .beam::before { content: ""; position: absolute; inset: 0; background: var(--guardian) 50% 50% / cover no-repeat fixed; filter: var(--img-filter); opacity: .6; transition: filter .8s, opacity .8s;
   -webkit-mask-image: linear-gradient(transparent, #000 18%, #000 82%, transparent); mask-image: linear-gradient(transparent, #000 18%, #000 82%, transparent); }
-.pin.find .beam::before { filter: var(--img-filter) sepia(1) saturate(4) hue-rotate(-28deg); opacity: .8; }
+.pin.find .beam::before { filter: var(--img-filter) sepia(1) saturate(7) hue-rotate(-42deg) brightness(.95); opacity: .9; }
 .acts { position: relative; min-height: 16em; }
 .act { position: absolute; inset: 0; opacity: 0; transform: translateY(24px); transition: opacity .35s, transform .35s; }
 .act.on { opacity: 1; transform: none; transition: opacity .6s .35s, transform .6s .35s; }
