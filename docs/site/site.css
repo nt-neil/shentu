@@ -437,17 +437,21 @@ canvas.near { position: absolute; inset: 0; width: 100%; height: 100%; pointer-e
 .station h2 { margin: 12px 0 10px; font-size: clamp(30px, 3.4vw, 54px); }
 .station p { color: var(--muted); margin: 0; }
 .st5 time, .st5 h2 { color: var(--alarm); }
+/* the words of a station never sit on the picture bare: a dark plate with soft edges, above every layer */
+.station:not(.st1) { z-index: 7; padding: 22px 26px 24px; background: rgba(11, 8, 6, .8); box-shadow: 0 0 70px 40px rgba(11, 8, 6, .6); border-left: 2px solid var(--ember); }
+.st5:not(.st1) { border-left-color: var(--alarm); }
+.station:not(.st1) p { color: #d8c9b2; }
 .st1 { top: auto; bottom: 14vh; opacity: 1; width: min(38vw, 520px); }
 .st1 h1 { margin: 0; font-size: clamp(54px, 6.6vw, 112px); line-height: .98; }
 .st1 h1 span { display: block; }
 .st1 .lede { color: var(--muted); margin: 18px 0 0; }
 .st1 .actions { display: flex; flex-wrap: wrap; gap: 14px 24px; align-items: center; margin: 22px 0 0; }
 .cue { margin: 26px 0 0; font: 13px/1 var(--mono); color: var(--ember); letter-spacing: .06em; }
-.checks { position: absolute; z-index: 4; right: var(--gutter); top: 22vh; width: min(30vw, 380px); opacity: 0; font: 14px/2.3 var(--mono); padding: 14px 18px; background: rgba(11, 8, 6, .72); border-top: 2px solid var(--ember); }
+.checks { position: absolute; z-index: 7; right: var(--gutter); top: 22vh; width: min(32vw, 420px); opacity: 0; font: 16px/2.4 var(--mono); padding: 16px 20px; background: rgba(11, 8, 6, .86); border-top: 2px solid var(--ember); box-shadow: 0 0 60px 30px rgba(11, 8, 6, .5); }
 .checks ul { margin: 0; padding: 0; }
-.checks li { list-style: none; display: flex; justify-content: space-between; gap: 14px; border-bottom: 1px solid var(--line); color: var(--muted); opacity: .4; transition: opacity .4s, color .4s; max-width: none; }
+.checks li { list-style: none; display: flex; justify-content: space-between; gap: 14px; border-bottom: 1px solid rgba(239, 227, 207, .16); color: #b9a98f; opacity: .7; transition: opacity .4s, color .4s; max-width: none; }
 .checks li b { font-weight: 400; color: var(--ember); opacity: 0; transform: scale(.4); transition: opacity .3s, transform .4s cubic-bezier(.3, 1.6, .5, 1); }
-.checks li.lit { opacity: 1; color: var(--ink); }
+.checks li.lit { opacity: 1; color: #f3e8d6; text-shadow: 0 0 12px rgba(242, 180, 92, .35); }
 .checks li.lit b { opacity: 1; transform: none; }
 .checks li.flag.lit, .checks li.flag.lit b { color: var(--alarm); }
 .talk { position: absolute; z-index: 5; left: var(--gutter); right: var(--gutter); bottom: 7vh; display: grid; grid-template-columns: clamp(90px, 10vw, 150px) 1fr; gap: 22px; padding: 18px 22px; opacity: 0;
@@ -463,7 +467,7 @@ canvas.near { position: absolute; inset: 0; width: 100%; height: 100%; pointer-e
 .hud { position: absolute; z-index: 6; right: var(--gutter); bottom: 22px; display: flex; align-items: center; gap: 12px; width: min(320px, 50vw); font: 13px/1 var(--mono); color: var(--muted); }
 .hud i { flex: 1; height: 2px; background: var(--line); position: relative; overflow: hidden; }
 .hud b { position: absolute; inset: 0; background: var(--ember); transform-origin: 0 50%; transform: scaleX(0); }
-@media (prefers-color-scheme: light) { .walk .stage { background: #0b0806; color: #efe3cf; } .walk .stage .station p, .walk .stage .checks li { color: #c9b9a0; } .walk .shade { background: linear-gradient(90deg, rgba(11, 8, 6, .75), transparent 42%), linear-gradient(#0b0806, transparent 16%, transparent 72%, #0b0806); } }
+@media (prefers-color-scheme: light) { .walk .stage { background: #0b0806; color: #efe3cf; } .walk .stage .station p { color: #d8c9b2; } .walk .stage .checks li { color: #b9a98f; } .walk .stage .checks li.lit { color: #f3e8d6; } .walk .stage .station time { color: #f2b45c; } .walk .stage .st5 time, .walk .stage .st5 h2 { color: #ff6a4d; } .walk .shade { background: linear-gradient(90deg, rgba(11, 8, 6, .75), transparent 42%), linear-gradient(#0b0806, transparent 16%, transparent 72%, #0b0806); } }
 
 @media (max-width: 860px) {
   .tally dl { grid-template-columns: 1fr; gap: 6px; }
@@ -496,7 +500,7 @@ canvas.near { position: absolute; inset: 0; width: 100%; height: 100%; pointer-e
   .station { top: 92px; left: var(--gutter); right: var(--gutter); width: auto; }
   .st1 { top: auto; bottom: 6vh; width: auto; right: var(--gutter); }
   .st1 h1 { font-size: clamp(42px, 12vw, 58px); }
-  .checks { top: auto; bottom: 64px; left: var(--gutter); right: var(--gutter); width: auto; font-size: 12px; line-height: 2.1; }
+  .checks { top: auto; bottom: 64px; left: var(--gutter); right: var(--gutter); width: auto; font-size: 14px; line-height: 2.1; padding: 10px 14px; }
   .talk { grid-template-columns: 64px 1fr; gap: 12px; padding: 14px; bottom: 5vh; }
   .os { grid-template-columns: 1fr; }
   .chronicle { padding-left: 26px; }

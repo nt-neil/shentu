@@ -89,7 +89,7 @@
     <li class="era-node{{if $now}} now{{end}}" style="--old: {{age $i $n}}; --x: {{xpos $i $n}}">
       <a class="lamp" href="{{$.L.Root}}{{if eq $.L.Code "zh-TW"}}zh-TW/{{end}}releases.html#v{{$r.Version}}" aria-describedby="rv-{{$r.Version}}">
         <i aria-hidden="true"></i><span class="ver">v{{$r.Version}}</span>
-        {{if $r.Date}}<time datetime="{{$r.Date}}">{{$r.Date}}</time>{{else}}<b class="badge">{{t "soon"}}</b>{{end}}
+        {{if $r.Date}}<time datetime="{{$r.Date}}">{{slice $r.Date 5}}</time>{{else}}<b class="badge">{{t "soon"}}</b>{{end}}
       </a>
       <p class="acc">{{if gt $r.Rules 0}}<span><b>{{$r.Rules}}</b> {{t "hist.rules"}}</span>{{end}}{{with $r.Bench}}<span><b>{{.All.Caught}}</b>/{{.All.Cases}} {{t "river.caught"}}</span>{{end}}</p>
       {{if not $now}}<div class="peek" id="rv-{{$r.Version}}">
