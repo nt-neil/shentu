@@ -75,10 +75,13 @@ func TestHostileGrowth(t *testing.T) {
 }
 
 // Building a file's call graph is bounded by the file's clock, like the rest
-// of its analysis, and a scan it stops says so (it used to have a day).
+// of its analysis, and a scan it stops says so (it used to have a day). The
+// file takes about 75ms with no cap, so a cap of 10ms always cuts it; where
+// the clock runs out (the graph, or following calls: ErrCalls) depends on
+// the machine, and either way the scan must say it did not finish.
 func TestCallGraphClock(t *testing.T) {
 	e := engineForTest(t)
-	const limit = 100 * time.Millisecond
+	const limit = 10 * time.Millisecond
 	e.Limits = Limits{MaxTokens: DefaultLimits.MaxTokens * 4, MaxTime: limit}
 	var b strings.Builder
 	b.WriteString("<?php\n")
@@ -93,8 +96,8 @@ func TestCallGraphClock(t *testing.T) {
 	if took > limit+time.Second {
 		t.Errorf("took %v, cap %v", took, limit)
 	}
-	if took > limit && err != ErrLimit {
-		t.Errorf("over the cap (%v) but err = %v", took, err)
+	if took > limit && err != ErrLimit && err != ErrCalls {
+		t.Errorf("over the cap (%v) but err = %v, want ErrLimit or ErrCalls", took, err)
 	}
 }
 
