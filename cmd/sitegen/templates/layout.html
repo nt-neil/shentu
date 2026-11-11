@@ -39,6 +39,7 @@
     <a class="lang" href="{{.L.Other}}{{.Page}}" lang="{{if eq .L.Code "en"}}zh-Hant{{else}}en{{end}}" hreflang="{{if eq .L.Code "en"}}zh-TW{{else}}en{{end}}">{{.L.OtherN}}</a>
   </nav>
 </header>
+{{- if ne .Page "index.html"}}<div class="slit" aria-hidden="true"></div>{{end}}
 <main id="main">
 {{block "main" .}}{{end}}
 </main>

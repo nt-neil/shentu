@@ -82,16 +82,14 @@ body.p-index main { max-width: none; padding: 0; }
 
 /* inner pages open with a slice of the gate: the beam on the right, the title on the left */
 .hall { position: relative; padding: clamp(40px, 9vh, 96px) 0 28px; margin-bottom: 12px; }
-.hall::before {
-  content: ""; position: absolute; top: 0; bottom: 0; right: calc(-1 * var(--gutter)); width: min(34vw, 420px);
-  background: var(--guardian) 50% 18% / auto 170% no-repeat; filter: var(--img-filter); opacity: .55;
-  -webkit-mask-image: linear-gradient(90deg, transparent, #000 45%); mask-image: linear-gradient(90deg, transparent, #000 45%);
-  pointer-events: none;
-}
-.hall::after { content: ""; position: absolute; left: 0; right: calc(-1 * var(--gutter)); bottom: 0; height: 60%; background: linear-gradient(transparent, var(--bg)); pointer-events: none; }
-.hall h1 { position: relative; z-index: 1; margin: 0; font-size: clamp(46px, 7vw, 104px); line-height: .98; max-width: 11em; padding-left: 22px; }
-.hall h1::before { content: ""; position: absolute; left: 0; top: .12em; bottom: .1em; width: 2px; background: linear-gradient(var(--ember), transparent); box-shadow: 0 0 14px var(--glow); }
-.hall .intro { position: relative; z-index: 1; color: var(--muted); margin: 22px 0 0 22px; }
+/* inner pages: the gate stays open at the edge of the screen, a narrow gap with the guardian in it */
+.slit { position: fixed; z-index: 0; top: 0; bottom: 0; right: max(0px, calc((100vw - var(--wrap)) / 2 - 104px)); width: 96px; pointer-events: none;
+  background: var(--guardian) 50% 50% / auto 100% no-repeat; filter: var(--img-filter); opacity: .8;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 30%, #000 70%, transparent); mask-image: linear-gradient(90deg, transparent, #000 30%, #000 70%, transparent); }
+body:not(.p-index) .top, body:not(.p-index) main, body:not(.p-index) .foot { position: relative; z-index: 1; }
+@media (max-width: 1239px) { .slit { right: 0; width: 3px; background: linear-gradient(transparent, var(--ember) 30%, var(--ember) 70%, transparent); box-shadow: 0 0 12px var(--glow); filter: none; opacity: .6; -webkit-mask-image: none; mask-image: none; } }
+.hall h1 { margin: 0; font-size: clamp(46px, 7vw, 104px); line-height: .98; max-width: 11em; }
+.hall .intro { color: var(--muted); margin: 22px 0 0; }
 
 /* buttons */
 .button { display: inline-flex; align-items: center; justify-content: center; min-height: 50px; padding: 0 24px; background: var(--ember); color: var(--on-ember); text-decoration: none; font-weight: 700; letter-spacing: .01em; transition: box-shadow .3s; }
@@ -224,9 +222,8 @@ canvas.dust { position: absolute; inset: 0; width: 100%; height: 100%; pointer-e
 .sev { position: relative; display: inline-flex; flex-direction: column; align-items: center; gap: 4px; width: 56px; font-size: 13px; color: var(--muted); line-height: 1.2; }
 .sev i { font: 900 18px/1 var(--serif); font-style: normal; display: grid; place-items: center; width: 32px; height: 32px; border: 1px solid currentColor; }
 .sev b { font-weight: 400; }
-.sev.critical, .sev.high { color: var(--alarm); }
-.sev.critical i { background: var(--alarm); color: var(--bg); border-color: var(--alarm); }
-.sev.medium { color: var(--ember); }
+.sev.critical, .sev.high { color: var(--ember); }
+.sev.critical i { background: var(--ember); color: var(--on-ember); border-color: var(--ember); }
 .sev.low i { border-style: dashed; }
 html[lang^="zh"] .sev { width: 40px; }
 html[lang^="zh"] .sev b { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
@@ -235,20 +232,21 @@ html[lang^="zh"] .sev b { position: absolute; width: 1px; height: 1px; overflow:
 .samples { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap: 16px; }
 .sample { min-width: 0; }
 .samples h3 { font: 600 14px/1 var(--sans); margin: 14px 0 8px; letter-spacing: .02em; }
-.bad { color: var(--alarm); }
-.good { color: var(--ember); }
-.bad-s pre { border-left-color: var(--alarm); }
-.good-s pre { border-left-color: var(--ember); }
+.bad { color: var(--ember); }
+.good { color: var(--muted); }
+.bad-s pre { border-left-color: var(--ember); }
+.good-s pre { border-left-color: var(--line); }
 
 /* bench: one light for each case, lit where a rule caught it */
-.scores { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); gap: 20px; margin: 24px 0 6px; }
+.scores { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); gap: 20px; margin: 24px 0 0; }
 .scores div { border-top: 1px solid var(--line); padding-top: 16px; }
 .scores dt { color: var(--muted); font-size: 15px; }
 .scores dd { margin: 6px 0 0; font: 300 64px/1 var(--serif); }
 .scores dd small { font-size: .38em; color: var(--muted); margin-left: .15em; }
 .scores dd span { display: block; margin-top: 8px; font: 14px/1.4 var(--sans); color: var(--muted); }
-.scores-key { margin: 6px 0 0; color: var(--muted); font-size: 15px; }
-main > h2 { margin-top: 72px; }
+.scores-key { margin: 12px 0 0; color: var(--muted); font-size: 15px; }
+main > h2 { margin-top: 112px; }
+.sum { display: none; }
 .dots { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 14px; font-size: 0; }
 .dots i { width: 8px; height: 8px; border-radius: 50%; background: var(--bg-3); }
 .dots i.lit { background: var(--ember); box-shadow: 0 0 8px var(--glow); }
@@ -313,9 +311,8 @@ table.num .cid { font: 600 15px/1.4 var(--sans); }
   table.cases tr, table.num tr { padding: 10px 0; border-bottom: 1px solid var(--line); }
   table.cases td, table.num td { border: 0; padding: 2px 0; text-align: left !important; }
   table.cases td[data-l]::before { content: attr(data-l); display: inline-block; min-width: 9em; color: var(--muted); font-size: 14px; }
-  table.num tr { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px 8px; }
-  table.num td.cid { grid-column: 1 / -1; }
-  table.num td[data-l]::before { content: attr(data-l); display: block; color: var(--muted); font-size: 13px; line-height: 1.25; min-height: 2.5em; }
+  table.num td:not(.cid) { display: none; }
+  .sum { display: block; font: 400 15px/1.5 var(--sans); color: var(--muted); margin-top: 2px; }
   table.num tr.sect { display: block; padding: 0; }
   table.num tr.sect th { display: block; padding: 24px 0 4px; }
   .row-dots { max-width: none; }
