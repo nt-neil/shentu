@@ -48,32 +48,42 @@ type fnInfo struct {
 }
 
 type summary struct {
-	params     []string            // the parameters' names, for named arguments
-	rest       bool                // the function takes further arguments
-	sink       [maxSumParams][]loc // per parameter: the sink lines it reaches, in this or another file
-	sinkEmb    uint64              // parameters embedded in a larger string on the way to a sink
-	ret        uint64              // parameters whose input the return value carries
-	retWeak    uint64              // ... only through calls the analysis does not know
-	retEmb     uint64              // ... embedded in a larger string
-	checks     uint64              // parameters the function validates when it returns true (a validator)
-	condChecks uint64              // ... only where the call's other arguments carry no input (the list may be one)
-	retSrc     bool                // the return value carries input of its own
-	capped     bool                // a cap of its own work cut it short: what it says may be too little
-	height     int                 // the longest chain of summaries under it, itself included
-	cost       int                 // its own work, not its callees': what an asker pays for using it
-	id         string              // file and key: the same summary worked out again (after a cache let it go) is paid for once
+	params     []string // the parameters' names, for named arguments
+	rest       bool     // the function takes further arguments
+	sink       [][]loc  // per parameter: the sink lines it reaches, in this or another file (up to the last that reaches one)
+	sinkEmb    uint64   // parameters embedded in a larger string on the way to a sink
+	ret        uint64   // parameters whose input the return value carries
+	retWeak    uint64   // ... only through calls the analysis does not know
+	retEmb     uint64   // ... embedded in a larger string
+	checks     uint64   // parameters the function validates when it returns true (a validator)
+	condChecks uint64   // ... only where the call's other arguments carry no input (the list may be one)
+	retSrc     bool     // the return value carries input of its own
+	capped     bool     // a cap of its own work cut it short: what it says may be too little
+	height     int      // the longest chain of summaries under it, itself included
+	cost       int      // its own work, not its callees': what an asker pays for using it
+	id         string   // file and key: the same summary worked out again (after a cache let it go) is paid for once
 }
 
 func (s *summary) equal(o *summary) bool {
 	if s.ret != o.ret || s.retSrc != o.retSrc || s.retEmb != o.retEmb || s.retWeak != o.retWeak || s.sinkEmb != o.sinkEmb || s.checks != o.checks || s.condChecks != o.condChecks {
 		return false
 	}
-	for i := range s.sink {
-		if !slices.Equal(s.sink[i], o.sink[i]) {
+	for i := range max(len(s.sink), len(o.sink)) {
+		if !slices.Equal(s.sinkOf(i), o.sinkOf(i)) {
 			return false
 		}
 	}
 	return true
+}
+
+// sinkOf is the sink lines parameter i reaches. A summary holds as many lists
+// as it needs, not one per parameter it could track: there are a summary per
+// rule and function, most reaching no sink at all.
+func (s *summary) sinkOf(i int) []loc {
+	if i < len(s.sink) {
+		return s.sink[i]
+	}
+	return nil
 }
 
 func (s *summary) reachesSink() bool {
@@ -1019,6 +1029,9 @@ func (a *analysis) summarize(fi *fnInfo, s *summary) {
 			s.condChecks |= 1 << i
 		}
 		for l := range r.lines {
+			for len(s.sink) <= i {
+				s.sink = append(s.sink, nil)
+			}
 			if !slices.Contains(s.sink[i], l) {
 				s.sink[i] = append(s.sink[i], l)
 			}
@@ -1026,7 +1039,7 @@ func (a *analysis) summarize(fi *fnInfo, s *summary) {
 				s.sinkEmb |= 1 << i
 			}
 		}
-		slices.SortFunc(s.sink[i], func(x, y loc) int {
+		slices.SortFunc(s.sinkOf(i), func(x, y loc) int {
 			if x.path != y.path {
 				return strings.Compare(x.path, y.path)
 			}
