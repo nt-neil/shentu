@@ -1,6 +1,7 @@
 /* Shentu: the night watch. One light source, a gap in a temple door with the
    guardian standing in it; everything else is dark. Light mode is the same gate
-   at dawn, in negative.
+   at dawn: the doors take the colour of the paper, the guardian stays a dark
+   figure against pale gold light.
    Faces: Noto Serif TC Light for titles, Black for the Chinese accents (subsets,
    OFL); the system face for reading; the system mono for logs and code. */
 @font-face { font-family: "Shentu Serif"; src: url(fonts/serif-light.woff2) format("woff2"); font-weight: 300; font-display: swap; }
@@ -38,7 +39,7 @@
     --alarm: #a8261b;
     --on-ember: #fbf4e8;
     --glow: rgba(138, 74, 16, .18);
-    --img-filter: grayscale(1) invert(1) sepia(.45) contrast(1.02) brightness(1.03);
+    --img-filter: sepia(.35) saturate(.85) brightness(1.08) contrast(1.05);
     color-scheme: light;
   }
 }
@@ -108,6 +109,13 @@ body:not(.p-index) .top, body:not(.p-index) main, body:not(.p-index) .foot { pos
 }
 @property --gap { syntax: "<length>"; inherits: false; initial-value: 60vw; }
 .gate-shut .veil { animation: open 4.2s .3s cubic-bezier(.65, 0, .25, 1) both; }
+/* the gap in the picture is about 16.5% of its width; the picture covers the screen */
+@media (prefers-color-scheme: light) {
+  .veil { --gap: calc(max(100vw, 177.8vh) * .082); }
+  .gate-shut .veil { animation-name: open-dawn; }
+  canvas.dust { display: none; }
+}
+@keyframes open-dawn { from { --gap: 0px; } to { --gap: calc(max(100vw, 177.8vh) * .082); } }
 @keyframes open { from { --gap: 0px; } to { --gap: 60vw; } }
 canvas.dust { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; mix-blend-mode: screen; }
 .shade { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse at 50% 45%, transparent 30%, var(--bg) 92%), linear-gradient(transparent 70%, var(--bg)); }
