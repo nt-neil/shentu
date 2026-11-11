@@ -1,7 +1,7 @@
 {{define "title"}}{{t "releases.title"}} · Shentu{{end}}
 {{define "main"}}
-<header class="hall-head">
-  <h1 class="plaque small">{{t "releases.title"}}</h1>
+<header class="hall">
+  <h1>{{t "releases.title"}}</h1>
   <p class="intro">{{with t "changelog.note"}}{{.}} {{end}}<a href="{{.L.Root}}feed.xml">{{t "feed"}}</a></p>
 </header>
 <div class="rel-layout">
@@ -10,7 +10,7 @@
   <aside class="stele" aria-label="{{t "latest"}}">
     <p class="stele-ver">v{{.Version}}</p>
     <p class="stele-date">{{if .Date}}{{.Date}}{{else}}{{t "unreleased"}}{{end}}</p>
-    <p class="stele-go"><a class="button" href="install.html">{{t "aside.install"}}</a></p>
+    <p><a class="button" href="install.html">{{t "aside.install"}}</a></p>
     <ul>
       <li><a href="https://github.com/nt-neil/shentu/releases">{{t "aside.all"}}</a></li>
     </ul>

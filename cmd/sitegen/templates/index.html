@@ -1,105 +1,97 @@
 {{define "main"}}
-<section class="gate" aria-labelledby="title" style="--rows: {{div .Count 10}}">
-  <svg class="roof" aria-hidden="true" viewBox="0 0 1200 190" preserveAspectRatio="xMidYMax meet">
-    <defs>
-      <pattern id="tiles" width="18" height="90" patternUnits="userSpaceOnUse"><rect width="18" height="90" fill="var(--roof)"/><rect x="13" width="5" height="90" fill="var(--roof-line)"/></pattern>
-      <pattern id="eave" x="12" y="164" width="30" height="18" patternUnits="userSpaceOnUse"><circle cx="15" cy="9" r="4.5" fill="var(--gold)"/></pattern>
-    </defs>
-    <path d="M196 92h808c22 34 74 60 166 72v10H30v-10c92-12 144-38 166-72z" fill="url(#tiles)"/>
-    <path d="M30 164h1140v18H30z" fill="var(--beam)"/>
-    <path d="M30 164h1140v18H30z" fill="url(#eave)"/>
-    <path d="M150 70h900v22H150z" fill="var(--beam)"/>
-    <path d="M150 66h900v6H150z" fill="var(--gold)"/>
-    <use href="#tail" x="40" y="22" width="150" height="60" color="var(--beam)"/>
-    <use href="#tail" x="-1160" y="22" width="150" height="60" color="var(--beam)" transform="scale(-1 1)"/>
-    <g class="pearl"><circle cx="600" cy="44" r="15" fill="var(--gold)"/><path d="M600 14c8 10 2 14 6 20-6-2-6-8-6-8s0 6-6 8c4-6-2-10 6-20z" fill="var(--gold)"/></g>
-    <path d="M520 66c20-14 40-14 62-6M680 66c-20-14-40-14-62-6" stroke="var(--gold)" stroke-width="5" fill="none" stroke-linecap="round"/>
-  </svg>
-  <svg class="lantern lantern-l" aria-hidden="true"><use href="#lantern"/></svg>
-  <svg class="lantern lantern-r" aria-hidden="true"><use href="#lantern"/></svg>
-  <h1 id="title" class="plaque"><span class="plaque-zh" lang="zh-Hant">神荼</span><span class="plaque-en">Shentu</span></h1>
-  <div class="portal">
-    <p class="post post-up" lang="zh-Hant">{{t "couplet.up"}}</p>
-    <div class="doorway">
-      <p class="lintel" lang="zh-Hant">{{t "couplet.top"}}</p>
-      <div class="opening">
-        <svg class="altar" aria-hidden="true" viewBox="0 0 120 120"><defs><radialGradient id="glow"><stop offset="0" stop-color="#ffcf7a" stop-opacity=".75"/><stop offset="1" stop-color="#ffcf7a" stop-opacity="0"/></radialGradient></defs><circle cx="60" cy="70" r="56" fill="url(#glow)"/><path d="M52 50c-4-8 4-12 0-20M60 48c-4-10 6-14 0-24M68 50c-4-8 4-12 0-20" fill="none" stroke="var(--ink-2)" stroke-width="1.6" stroke-linecap="round" opacity=".55"/><path d="M53 52v14M60 50v16M67 52v14" stroke="var(--red-deep)" stroke-width="2"/><path d="M34 66h52l-5 20H39z" fill="var(--gold)"/><path d="M30 64h60v5H30z" fill="var(--gold-ink)"/><path d="M42 86l-6 14M78 86l6 14M60 86v14" stroke="var(--gold-ink)" stroke-width="4" stroke-linecap="round"/><path d="M28 70c-6 0-8 8-2 10M92 70c6 0 8 8 2 10" fill="none" stroke="var(--gold-ink)" stroke-width="3"/></svg>
-        <div class="leaf leaf-l" aria-hidden="true"><svg class="knocker"><use href="#ring"/></svg></div>
-        <div class="leaf leaf-r" aria-hidden="true"><svg class="knocker"><use href="#ring"/></svg></div>
-      </div>
+<section class="gate" aria-labelledby="title">
+  <div class="night" role="img" aria-label="{{t "night.img"}}"></div>
+  <canvas class="dust" aria-hidden="true"></canvas>
+  <div class="veil" aria-hidden="true"></div>
+  <div class="shade" aria-hidden="true"></div>
+  <div class="hero-title">
+    <h1 id="title"><span><i>{{t "night.l1"}}</i></span><span><i>{{t "night.l2"}}</i></span></h1>
+    <p class="lede">{{t "night.lede"}}</p>
+    <p class="actions"><a class="button" href="install.html">{{t "nav.install"}}</a><a class="link" href="#story">{{t "night.follow"}}</a></p>
+  </div>
+  <p class="watch" lang="zh-Hant" aria-hidden="true">夜巡</p>
+</section>
+
+<section class="story" id="story" aria-label="{{t "story.label"}}">
+  <div class="pin">
+    <div class="acts">
+      <div class="act on"><time>03:00</time><h2>{{t "act1.t"}}</h2><p>{{t "act1.p"}}</p></div>
+      <div class="act"><time>03:12</time><h2>{{t "act2.t"}}</h2><p>{{t "act2.p"}}</p></div>
+      <div class="act"><time>03:13</time><h2>{{t "act3.t"}}</h2><p>{{t "act3.p"}}</p></div>
     </div>
-    <p class="post post-down" lang="zh-Hant">{{t "couplet.down"}}</p>
-  </div>
-  <div class="hall">
-    <p class="lead">{{t "hero"}}</p>
-    <p class="pitch">{{t "pitch"}}</p>
-    <p class="actions"><a class="button" href="install.html">{{t "nav.install"}}</a><a class="button ghost" href="rules.html">{{t "cta.rules"}}</a></p>
-  </div>
-  <div class="threshold" aria-hidden="true"></div>
-  {{with t "couplet.en"}}<p class="couplet-en">{{.}}</p>{{end}}
-</section>
-
-<section class="guard" aria-labelledby="guard-title">
-  <h2 id="guard-title" class="section-title">{{t "guard.title"}}</h2>
-  <div class="tablets">
-    <article class="tablet"><h3>{{t "s1.title"}}</h3><p>{{t "s1.body"}}</p></article>
-    <article class="tablet"><h3>{{t "s2.title"}}</h3><p>{{t "s2.body"}}</p></article>
-    <article class="tablet"><h3>{{t "s3.title"}}</h3><p>{{t "s3.body"}}</p></article>
+    <div class="beam" aria-hidden="true"></div>
+    <div class="log">
+      <p class="example">{{t "story.example"}}</p>
+      <ul>
+        <li><span>{{t "log.ssh"}}</span><span>{{t "log.ok"}}</span></li>
+        <li><span>{{t "log.ports"}}</span><span>{{t "log.ok"}}</span></li>
+        <li><span>{{t "log.proc"}}</span><span>{{t "log.ok"}}</span></li>
+        <li><span>{{t "log.pkg"}}</span><span>{{t "log.ok"}}</span></li>
+        <li><span>shop / wp-content / uploads</span><span data-bad="{{t "log.bad"}}">{{t "log.ok"}}</span></li>
+        <li><span>{{t "log.code"}}{{t "lp"}}{{.Count}} {{t "rules.count"}}{{t "rp"}}</span><span>{{t "log.ok"}}</span></li>
+      </ul>
+      <p class="msg" aria-live="polite"><b>Shentu</b> {{t "story.msg"}}</p>
+    </div>
   </div>
 </section>
 
-<div class="fret" aria-hidden="true"></div>
-
-<section class="demo" aria-labelledby="demo-title">
-  <div class="demo-text">
-    <h2 id="demo-title" class="section-title">{{t "demo.title"}}</h2>
-    <p>{{t "demo.note"}}</p>
-    <p class="channels">{{t "demo.where"}}</p>
-    <ul class="chan">{{range (list "Telegram" "Slack" "Discord" "ntfy")}}<li>{{.}}</li>{{end}}</ul>
-  </div>
-  <figure class="report">
-    <figcaption><span class="stamp">{{t "demo.tag"}}</span><span class="who"><svg class="mark" aria-hidden="true"><use href="#ring"/></svg>Shentu</span><span class="when">{{t "demo.time"}}</span></figcaption>
-    <p class="find">{{t "demo.find"}}</p>
-    <p>{{t "demo.explain"}}</p>
-    <p>{{t "demo.next"}}</p>
-    <p class="choices"><span class="choice yes">{{t "demo.b1"}}</span><span class="choice">{{t "demo.b2"}}</span></p>
-    <p class="note">{{t "demo.confirm"}}</p>
-  </figure>
-</section>
-
-<div class="fret" aria-hidden="true"></div>
-
+<div class="after">
 {{with .Main}}{{$all := .All}}
-<section class="nails" aria-labelledby="nails-title">
-  <h2 id="nails-title" class="section-title">{{t "nails.title"}}</h2>
-  <div class="nails-body">
-    <div class="studs" aria-hidden="true">{{range seq $.Count}}<i></i>{{end}}</div>
-    <dl class="tally">
-      <div><dt>{{t "nails.rules"}}</dt><dd>{{$.Count}}</dd></div>
-      <div><dt>{{t "nails.bench"}}</dt><dd>{{$all.Caught}}<span>/{{$all.Cases}}</span></dd></div>
-      <div><dt>{{t "nails.fp"}}</dt><dd>{{$all.FixedFP}}</dd></div>
-    </dl>
-  </div>
+<section class="tally" aria-labelledby="tally-title">
+  <h2 id="tally-title">{{t "tally.title"}}</h2>
+  <dl>
+    <div><dd>{{$.Count}}</dd><dt>{{t "nails.rules"}}</dt></div>
+    <div><dd>{{$all.Caught}}<small>/ {{$all.Cases}}</small></dd><dt>{{t "nails.bench"}}</dt></div>
+    <div><dd>{{$all.FixedFP}}</dd><dt>{{t "nails.fp"}}</dt></div>
+  </dl>
   <p><a href="bench.html">{{t "nails.more"}}</a></p>
 </section>
 {{end}}
 
-<div class="fret" aria-hidden="true"></div>
-
 <section class="latest" aria-labelledby="latest-title">
-  <h2 id="latest-title" class="section-title">{{t "latest"}}</h2>
-  <div class="steles">{{template "releaselist" .Latest}}</div>
+  <h2 id="latest-title">{{t "latest"}}</h2>
+  <div class="timeline">{{template "releaselist" (slice .Latest 0 1)}}</div>
   <p class="more"><a href="releases.html">{{t "all.releases"}}</a> <a href="{{.L.Root}}feed.xml">{{t "feed"}}</a></p>
 </section>
+</div>
+
 <script>
 (function () {
-  var f = document.querySelectorAll('.fret');
-  if (!('IntersectionObserver' in window)) return;
-  document.documentElement.classList.add('reveal');
-  var io = new IntersectionObserver(function (es) {
-    es.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add('seen'); io.unobserve(e.target); } });
-  }, { rootMargin: '0px 0px -15% 0px' });
-  f.forEach(function (x) { io.observe(x); });
+  var still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  /* dust in the beam: the one continuous motion */
+  var c = document.querySelector('canvas.dust'), x = c.getContext('2d'), P = [], w, h, dpr = Math.min(devicePixelRatio || 1, 2), run = true;
+  function size() { w = c.clientWidth; h = c.clientHeight; c.width = w * dpr; c.height = h * dpr; x.setTransform(dpr, 0, 0, dpr, 0, 0); }
+  size(); addEventListener('resize', size);
+  for (var i = 0; i < 90; i++) P.push({ x: Math.random(), y: Math.random(), r: Math.random() * 1.6 + .3, v: Math.random() * .00025 + .00008, p: Math.random() * 6.28 });
+  function frame(t) {
+    if (!run) return;
+    x.clearRect(0, 0, w, h);
+    P.forEach(function (d) {
+      d.y -= d.v; if (d.y < 0) d.y = 1;
+      var px = (.5 + (d.x - .5) * .22 + Math.sin(t / 2400 + d.p) * .006) * w, py = d.y * h, s = Math.sin(t / 900 + d.p);
+      x.fillStyle = 'rgba(255, 214, 150,' + (.25 + .35 * s * s) + ')'; x.beginPath(); x.arc(px, py, d.r, 0, 6.29); x.fill();
+    });
+    requestAnimationFrame(frame);
+  }
+  /* stop drawing when the gate is out of sight */
+  if (!still) {
+    new IntersectionObserver(function (e) { var was = run; run = e[0].isIntersecting; if (run && !was) requestAnimationFrame(frame); }).observe(c);
+    requestAnimationFrame(frame);
+  }
+
+  /* the patrol follows the scroll */
+  var story = document.getElementById('story'), pin = story.querySelector('.pin'), acts = story.querySelectorAll('.act'),
+      rows = story.querySelectorAll('.log li'), flag = rows[4].lastElementChild, msg = story.querySelector('.msg'), ok = flag.textContent;
+  function step() {
+    var r = story.getBoundingClientRect(), span = r.height - innerHeight, p = Math.min(1, Math.max(0, -r.top / span));
+    var act = p < .38 ? 0 : p < .7 ? 1 : 2, lit = Math.floor(Math.min(1, p / .36) * rows.length);
+    acts.forEach(function (a, i) { a.classList.toggle('on', i === act); });
+    rows.forEach(function (row, i) { row.classList.toggle('lit', i < lit); row.classList.toggle('bad', act > 0 && i === 4); });
+    flag.textContent = act > 0 ? flag.dataset.bad : ok;
+    msg.classList.toggle('on', act === 2);
+    pin.classList.toggle('find', act === 1);
+  }
+  addEventListener('scroll', step, { passive: true }); step();
 })();
 </script>
 {{end}}

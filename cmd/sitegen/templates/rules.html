@@ -1,7 +1,7 @@
 {{define "title"}}{{t "rules.title"}} · Shentu{{end}}
 {{define "main"}}
-<header class="hall-head">
-  <h1 class="plaque small">{{t "rules.title"}}</h1>
+<header class="hall">
+  <h1>{{t "rules.title"}}</h1>
   <p class="intro">{{t "rules.intro"}}</p>
 </header>
 <form class="filters" onsubmit="return false" role="search">
@@ -9,10 +9,7 @@
   <label>{{t "language"}} <select id="fl"><option value="">{{t "all"}}</option>{{range .Langs}}<option value="{{.}}">{{langName .}}</option>{{end}}</select></label>
   <label>{{t "class"}} <select id="fc"><option value="">{{t "all"}}</option>{{range .Classes}}<option value="{{.}}">{{className .}}</option>{{end}}</select></label>
   <label>{{t "severity"}} <select id="fs"><option value="">{{t "all"}}</option><option value="critical">{{t "sev.critical"}}</option><option value="high">{{t "sev.high"}}</option><option value="medium">{{t "sev.medium"}}</option><option value="low">{{t "sev.low"}}</option></select></label>
-  <div class="door-tally">
-    <p class="count" aria-live="polite"><strong id="shown">{{len .Rules}}</strong> / {{len .Rules}} {{t "rules.count"}}</p>
-    <div class="dots minis" aria-hidden="true">{{range seq (len .Rules)}}<i class="lit"></i>{{end}}</div>
-  </div>
+  <p class="count" aria-live="polite"><strong id="shown">{{len .Rules}}</strong> / {{len .Rules}} {{t "rules.count"}}</p>
 </form>
 <section class="routes">
   <h2>{{t "routes"}}</h2>
@@ -47,7 +44,6 @@
     });
     document.querySelectorAll('.group').forEach(function (g) { g.hidden = !g.querySelector('.rule:not([hidden])'); });
     document.getElementById('shown').textContent = n;
-    document.querySelectorAll('.minis i').forEach(function (d, i) { d.classList.toggle('lit', i < n); });
   }
   [q, fl, fc, fs].forEach(function (e) { e.addEventListener('input', apply); });
 })();

@@ -15,7 +15,7 @@ import (
 	"github.com/nt-neil/shentu/rules"
 )
 
-//go:embed templates/*.html templates/site.css templates/fonts
+//go:embed templates/*.html templates/site.css templates/fonts templates/img
 var tmplFS embed.FS
 
 // Lang is one language of the site: where its pages go and its words.
@@ -151,16 +151,17 @@ func build(root, src, out, base string) error {
 	if err := os.WriteFile(filepath.Join(out, "site.css"), css, 0o644); err != nil {
 		return err
 	}
-	// The display face, a subset of Noto Serif TC (OFL), with its license.
-	if err := os.MkdirAll(filepath.Join(out, "fonts"), 0o755); err != nil {
-		return err
-	}
-	for _, f := range []string{"shentu-serif.woff2", "OFL.txt"} {
-		b, err := tmplFS.ReadFile("templates/fonts/" + f)
+	// The display faces, subsets of Noto Serif TC (OFL) with their license,
+	// and the guardian picture with its credits.
+	for _, f := range []string{"fonts/serif-light.woff2", "fonts/serif-black.woff2", "fonts/OFL.txt", "img/guardian-night.webp", "img/CREDITS.md"} {
+		b, err := tmplFS.ReadFile("templates/" + f)
 		if err != nil {
 			return err
 		}
-		if err := os.WriteFile(filepath.Join(out, "fonts", f), b, 0o644); err != nil {
+		if err := os.MkdirAll(filepath.Join(out, filepath.Dir(f)), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(out, f), b, 0o644); err != nil {
 			return err
 		}
 	}

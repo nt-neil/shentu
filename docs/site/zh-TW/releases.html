@@ -5,58 +5,29 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>更新紀錄 · Shentu</title>
 <meta name="description" content="給 Linux 伺服器用的小型開源資安助理，由 LLM 驅動。">
-<meta name="color-scheme" content="light dark">
-<meta name="theme-color" content="#8a1c16">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http%3A//www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='10' fill='%23b3261e'/%3E%3Ccircle cx='32' cy='24' r='11' fill='%23c9a24a'/%3E%3Ccircle cx='32' cy='38' r='15' fill='none' stroke='%23c9a24a' stroke-width='5'/%3E%3C/svg%3E">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0b0806">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http%3A//www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%230b0806'/%3E%3Crect x='28' y='8' width='8' height='48' fill='%23f2b45c'/%3E%3C/svg%3E">
+<link rel="preload" href="../fonts/serif-light.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="../site.css">
 <link rel="alternate" type="application/atom+xml" title="Shentu releases" href="../feed.xml">
 </head>
 <body class="p-releases">
 <a class="skip" href="#main">跳到內容</a>
-<svg width="0" height="0" class="sprite" aria-hidden="true">
-  <symbol id="ring" viewBox="0 0 64 64">
-    <path d="M32 6l6 4h7l2 7 5 5-2 7 2 7-5 5-2 7h-7l-6 4-6-4h-7l-2-7-5-5 2-7-2-7 5-5 2-7h7z" fill="currentColor"/>
-    <circle cx="32" cy="29" r="9" fill="none" stroke="var(--ring-cut, #8a1c16)" stroke-width="2.5"/>
-    <circle cx="32" cy="29" r="3" fill="var(--ring-cut, #8a1c16)"/>
-    <circle cx="32" cy="45" r="13" fill="none" stroke="currentColor" stroke-width="4.5"/>
-  </symbol>
-  <symbol id="tail" viewBox="0 0 120 48">
-    <path d="M120 40H58C38 40 22 30 9 8L3 0l15 7c9 13 22 21 40 21h62z" fill="currentColor"/>
-    <path d="M64 40C44 42 29 37 16 26l-6-5 13 2c11 7 24 9 41 9z" fill="currentColor" opacity=".7"/>
-  </symbol>
-  <symbol id="lantern" viewBox="0 0 60 130">
-    <path d="M30 0v14" stroke="var(--gold)" stroke-width="2"/>
-    <rect x="18" y="12" width="24" height="9" rx="2" fill="var(--gold)"/>
-    <ellipse cx="30" cy="55" rx="27" ry="36" fill="var(--lantern)"/>
-    <path d="M30 19c-12 8-12 64 0 72M30 19c12 8 12 64 0 72M30 19c-24 10-24 62 0 72M30 19c24 10 24 62 0 72" fill="none" stroke="rgba(0,0,0,.22)" stroke-width="1.2"/>
-    <text x="30" y="64" text-anchor="middle" font-family="Shentu Serif, serif" font-weight="900" font-size="24" fill="var(--gold-soft)">神</text>
-    <rect x="18" y="88" width="24" height="9" rx="2" fill="var(--gold)"/>
-    <path d="M24 97l-1 30M28 97v32M32 97v32M36 97l1 30" stroke="var(--lantern)" stroke-width="2"/>
-  </symbol>
-  <symbol id="cloud" viewBox="0 0 160 48">
-    <g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M6 40h148M40 40c-14 0-20-10-14-18 5-7 16-5 17 2 1 6-7 8-9 3M44 26c2-12 16-18 27-12 7-9 24-8 29 4 9-4 20 2 19 12-1 7-9 10-14 10M71 14c6 2 8 8 5 12-3 5-10 3-10-2 0-4 5-5 6-2M100 18c4 3 4 9 0 11-4 2-8-1-7-5M120 40c10 0 16-6 14-13-2-6-10-7-13-2-2 4 1 7 4 6"/>
-    </g>
-  </symbol>
-</svg>
 <header class="top">
-  <div class="topbar">
-    <a class="brand" href="index.html"><svg class="mark" aria-hidden="true"><use href="#ring"/></svg><span class="brand-en">Shentu</span><span class="brand-zh" lang="zh-Hant">神荼</span></a>
-    <nav aria-label="Site">
-      <a href="index.html">首頁</a>
-      <a href="rules.html">規則</a>
-      <a href="bench.html">實測</a>
-      <a class="cta" href="install.html">安裝</a>
-      <a href="releases.html" aria-current="page">更新紀錄</a>
-      <a class="lang" href="../releases.html" lang="en" hreflang="en">English</a>
-    </nav>
-  </div>
-  <div class="ridge" aria-hidden="true"><svg class="tail"><use href="#tail"/></svg><span></span><svg class="tail flip"><use href="#tail"/></svg></div>
+  <a class="brand" href="index.html">Shentu <b lang="zh-Hant">神荼</b></a>
+  <nav aria-label="Site">
+    <a href="rules.html">規則</a>
+    <a href="bench.html">實測</a>
+    <a href="releases.html" aria-current="page">更新紀錄</a>
+    <a class="cta" href="install.html">安裝</a>
+    <a class="lang" href="../releases.html" lang="en" hreflang="en">English</a>
+  </nav>
 </header>
 <main id="main">
 
-<header class="hall-head">
-  <h1 class="plaque small">更新紀錄</h1>
+<header class="hall">
+  <h1>更新紀錄</h1>
   <p class="intro"><a href="../feed.xml">Atom 訂閱</a></p>
 </header>
 <div class="rel-layout">
@@ -129,7 +100,7 @@
   <aside class="stele" aria-label="最新更新">
     <p class="stele-ver">v0.2.5</p>
     <p class="stele-date">尚未發布</p>
-    <p class="stele-go"><a class="button" href="install.html">安裝最新版</a></p>
+    <p><a class="button" href="install.html">安裝最新版</a></p>
     <ul>
       <li><a href="https://github.com/nt-neil/shentu/releases">到 GitHub 下載全部檔案</a></li>
     </ul>
@@ -139,11 +110,11 @@
 
 </main>
 <footer class="foot">
-  <svg class="clouds" aria-hidden="true" viewBox="0 0 160 48"><use href="#cloud"/></svg>
   <p>Apache-2.0 授權。本站由 cmd/sitegen 從 repo 產生。</p>
   <ul>
     <li><a href="https://github.com/nt-neil/shentu">GitHub</a></li>
     <li><a href="../feed.xml">Atom 訂閱</a></li>
+    <li><a href="../img/CREDITS.md">圖片來源</a></li>
     <li><a href="../fonts/OFL.txt">Noto Serif TC (OFL)</a></li>
   </ul>
 </footer>

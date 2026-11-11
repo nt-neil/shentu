@@ -5,159 +5,90 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Shentu</title>
 <meta name="description" content="A small, open-source security assistant for Linux servers, powered by an LLM.">
-<meta name="color-scheme" content="light dark">
-<meta name="theme-color" content="#8a1c16">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http%3A//www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='10' fill='%23b3261e'/%3E%3Ccircle cx='32' cy='24' r='11' fill='%23c9a24a'/%3E%3Ccircle cx='32' cy='38' r='15' fill='none' stroke='%23c9a24a' stroke-width='5'/%3E%3C/svg%3E">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0b0806">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http%3A//www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%230b0806'/%3E%3Crect x='28' y='8' width='8' height='48' fill='%23f2b45c'/%3E%3C/svg%3E">
+<link rel="preload" href="fonts/serif-light.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="img/guardian-night.webp" as="image">
 <link rel="stylesheet" href="site.css">
 <link rel="alternate" type="application/atom+xml" title="Shentu releases" href="feed.xml">
 <script>
  
 (function () {
-  var d = document.documentElement;
   try {
     if (matchMedia('(prefers-reduced-motion: reduce)').matches || sessionStorage.getItem('shentu-gate')) return;
     sessionStorage.setItem('shentu-gate', '1');
   } catch (e) { return; }
-  d.classList.add('gate-shut');
-   
-  setTimeout(function () { d.classList.add('gate-opening'); d.classList.remove('gate-shut'); }, 450);
+  document.documentElement.classList.add('gate-shut');
 })();
 </script>
 </head>
 <body class="p-index">
 <a class="skip" href="#main">Skip to content</a>
-<svg width="0" height="0" class="sprite" aria-hidden="true">
-  <symbol id="ring" viewBox="0 0 64 64">
-    <path d="M32 6l6 4h7l2 7 5 5-2 7 2 7-5 5-2 7h-7l-6 4-6-4h-7l-2-7-5-5 2-7-2-7 5-5 2-7h7z" fill="currentColor"/>
-    <circle cx="32" cy="29" r="9" fill="none" stroke="var(--ring-cut, #8a1c16)" stroke-width="2.5"/>
-    <circle cx="32" cy="29" r="3" fill="var(--ring-cut, #8a1c16)"/>
-    <circle cx="32" cy="45" r="13" fill="none" stroke="currentColor" stroke-width="4.5"/>
-  </symbol>
-  <symbol id="tail" viewBox="0 0 120 48">
-    <path d="M120 40H58C38 40 22 30 9 8L3 0l15 7c9 13 22 21 40 21h62z" fill="currentColor"/>
-    <path d="M64 40C44 42 29 37 16 26l-6-5 13 2c11 7 24 9 41 9z" fill="currentColor" opacity=".7"/>
-  </symbol>
-  <symbol id="lantern" viewBox="0 0 60 130">
-    <path d="M30 0v14" stroke="var(--gold)" stroke-width="2"/>
-    <rect x="18" y="12" width="24" height="9" rx="2" fill="var(--gold)"/>
-    <ellipse cx="30" cy="55" rx="27" ry="36" fill="var(--lantern)"/>
-    <path d="M30 19c-12 8-12 64 0 72M30 19c12 8 12 64 0 72M30 19c-24 10-24 62 0 72M30 19c24 10 24 62 0 72" fill="none" stroke="rgba(0,0,0,.22)" stroke-width="1.2"/>
-    <text x="30" y="64" text-anchor="middle" font-family="Shentu Serif, serif" font-weight="900" font-size="24" fill="var(--gold-soft)">神</text>
-    <rect x="18" y="88" width="24" height="9" rx="2" fill="var(--gold)"/>
-    <path d="M24 97l-1 30M28 97v32M32 97v32M36 97l1 30" stroke="var(--lantern)" stroke-width="2"/>
-  </symbol>
-  <symbol id="cloud" viewBox="0 0 160 48">
-    <g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M6 40h148M40 40c-14 0-20-10-14-18 5-7 16-5 17 2 1 6-7 8-9 3M44 26c2-12 16-18 27-12 7-9 24-8 29 4 9-4 20 2 19 12-1 7-9 10-14 10M71 14c6 2 8 8 5 12-3 5-10 3-10-2 0-4 5-5 6-2M100 18c4 3 4 9 0 11-4 2-8-1-7-5M120 40c10 0 16-6 14-13-2-6-10-7-13-2-2 4 1 7 4 6"/>
-    </g>
-  </symbol>
-</svg>
 <header class="top">
-  <div class="topbar">
-    <a class="brand" href="index.html"><svg class="mark" aria-hidden="true"><use href="#ring"/></svg><span class="brand-en">Shentu</span><span class="brand-zh" lang="zh-Hant">神荼</span></a>
-    <nav aria-label="Site">
-      <a href="index.html" aria-current="page">Home</a>
-      <a href="rules.html">Rules</a>
-      <a href="bench.html">Measured</a>
-      <a class="cta" href="install.html">Install</a>
-      <a href="releases.html">Releases</a>
-      <a class="lang" href="zh-TW/index.html" lang="zh-Hant" hreflang="zh-TW">繁體中文</a>
-    </nav>
-  </div>
-  <div class="ridge" aria-hidden="true"><svg class="tail"><use href="#tail"/></svg><span></span><svg class="tail flip"><use href="#tail"/></svg></div>
+  <a class="brand" href="index.html">Shentu <b lang="zh-Hant">神荼</b></a>
+  <nav aria-label="Site">
+    <a href="rules.html">Rules</a>
+    <a href="bench.html">Measured</a>
+    <a href="releases.html">Releases</a>
+    <a class="cta" href="install.html">Install</a>
+    <a class="lang" href="zh-TW/index.html" lang="zh-Hant" hreflang="zh-TW">繁體中文</a>
+  </nav>
 </header>
 <main id="main">
 
-<section class="gate" aria-labelledby="title" style="--rows: 7">
-  <svg class="roof" aria-hidden="true" viewBox="0 0 1200 190" preserveAspectRatio="xMidYMax meet">
-    <defs>
-      <pattern id="tiles" width="18" height="90" patternUnits="userSpaceOnUse"><rect width="18" height="90" fill="var(--roof)"/><rect x="13" width="5" height="90" fill="var(--roof-line)"/></pattern>
-      <pattern id="eave" x="12" y="164" width="30" height="18" patternUnits="userSpaceOnUse"><circle cx="15" cy="9" r="4.5" fill="var(--gold)"/></pattern>
-    </defs>
-    <path d="M196 92h808c22 34 74 60 166 72v10H30v-10c92-12 144-38 166-72z" fill="url(#tiles)"/>
-    <path d="M30 164h1140v18H30z" fill="var(--beam)"/>
-    <path d="M30 164h1140v18H30z" fill="url(#eave)"/>
-    <path d="M150 70h900v22H150z" fill="var(--beam)"/>
-    <path d="M150 66h900v6H150z" fill="var(--gold)"/>
-    <use href="#tail" x="40" y="22" width="150" height="60" color="var(--beam)"/>
-    <use href="#tail" x="-1160" y="22" width="150" height="60" color="var(--beam)" transform="scale(-1 1)"/>
-    <g class="pearl"><circle cx="600" cy="44" r="15" fill="var(--gold)"/><path d="M600 14c8 10 2 14 6 20-6-2-6-8-6-8s0 6-6 8c4-6-2-10 6-20z" fill="var(--gold)"/></g>
-    <path d="M520 66c20-14 40-14 62-6M680 66c-20-14-40-14-62-6" stroke="var(--gold)" stroke-width="5" fill="none" stroke-linecap="round"/>
-  </svg>
-  <svg class="lantern lantern-l" aria-hidden="true"><use href="#lantern"/></svg>
-  <svg class="lantern lantern-r" aria-hidden="true"><use href="#lantern"/></svg>
-  <h1 id="title" class="plaque"><span class="plaque-zh" lang="zh-Hant">神荼</span><span class="plaque-en">Shentu</span></h1>
-  <div class="portal">
-    <p class="post post-up" lang="zh-Hant">日巡主機無遺漏</p>
-    <div class="doorway">
-      <p class="lintel" lang="zh-Hant">神荼守門</p>
-      <div class="opening">
-        <svg class="altar" aria-hidden="true" viewBox="0 0 120 120"><defs><radialGradient id="glow"><stop offset="0" stop-color="#ffcf7a" stop-opacity=".75"/><stop offset="1" stop-color="#ffcf7a" stop-opacity="0"/></radialGradient></defs><circle cx="60" cy="70" r="56" fill="url(#glow)"/><path d="M52 50c-4-8 4-12 0-20M60 48c-4-10 6-14 0-24M68 50c-4-8 4-12 0-20" fill="none" stroke="var(--ink-2)" stroke-width="1.6" stroke-linecap="round" opacity=".55"/><path d="M53 52v14M60 50v16M67 52v14" stroke="var(--red-deep)" stroke-width="2"/><path d="M34 66h52l-5 20H39z" fill="var(--gold)"/><path d="M30 64h60v5H30z" fill="var(--gold-ink)"/><path d="M42 86l-6 14M78 86l6 14M60 86v14" stroke="var(--gold-ink)" stroke-width="4" stroke-linecap="round"/><path d="M28 70c-6 0-8 8-2 10M92 70c6 0 8 8 2 10" fill="none" stroke="var(--gold-ink)" stroke-width="3"/></svg>
-        <div class="leaf leaf-l" aria-hidden="true"><svg class="knocker"><use href="#ring"/></svg></div>
-        <div class="leaf leaf-r" aria-hidden="true"><svg class="knocker"><use href="#ring"/></svg></div>
-      </div>
+<section class="gate" aria-labelledby="title">
+  <div class="night" role="img" aria-label="The door guardian, backlit, seen through the gap of a temple door at night"></div>
+  <canvas class="dust" aria-hidden="true"></canvas>
+  <div class="veil" aria-hidden="true"></div>
+  <div class="shade" aria-hidden="true"></div>
+  <div class="hero-title">
+    <h1 id="title"><span><i>The night</i></span><span><i>watch.</i></span></h1>
+    <p class="lede">While you sleep, Shentu patrols your Linux server. If something is wrong, you get one message in plain words.</p>
+    <p class="actions"><a class="button" href="install.html">Install</a><a class="link" href="#story">Follow a patrol</a></p>
+  </div>
+  <p class="watch" lang="zh-Hant" aria-hidden="true">夜巡</p>
+</section>
+
+<section class="story" id="story" aria-label="A patrol, step by step">
+  <div class="pin">
+    <div class="acts">
+      <div class="act on"><time>03:00</time><h2>It walks the server.</h2><p>Logins, processes, packages, open ports, and the code of every site on the machine, read where it runs.</p></div>
+      <div class="act"><time>03:12</time><h2>It finds the one thing wrong.</h2><p>A new file in the uploads folder runs whatever a stranger posts to it.</p></div>
+      <div class="act"><time>03:13</time><h2>It tells you, plainly.</h2><p>One message with what happened and what to do. Nothing changes until you say so.</p></div>
     </div>
-    <p class="post post-down" lang="zh-Hant">夜審原碼不外流</p>
-  </div>
-  <div class="hall">
-    <p class="lead">Guards your Linux server day and night, and tells you in plain words what it finds.</p>
-    <p class="pitch">One static binary that patrols your server, explains what it finds in plain language, and audits the code of the web applications it hosts, without slowing them down and without sending that code anywhere.</p>
-    <p class="actions"><a class="button" href="install.html">Install</a><a class="button ghost" href="rules.html">Read the rules</a></p>
-  </div>
-  <div class="threshold" aria-hidden="true"></div>
-  <p class="couplet-en">On the door posts: by day it patrols the hosts and misses nothing; by night it reads the code and lets none of it out.</p>
-</section>
-
-<section class="guard" aria-labelledby="guard-title">
-  <h2 id="guard-title" class="section-title">Three things it guards</h2>
-  <div class="tablets">
-    <article class="tablet"><h3>Runs on production servers without slowing the site</h3><p>The code audit takes only what the server can spare: its memory stays well below what is free, and it runs fewer workers when the machine is busy.</p></article>
-    <article class="tablet"><h3>Follows input across files and frameworks</h3><p>Input read in one file and used in another is followed to the sink. Route models know which handler parameters carry request data in WordPress, Laravel, Django, Flask, FastAPI and Express.</p></article>
-    <article class="tablet"><h3>Your source code stays on your server</h3><p>The audit runs locally with its own rules. No application code is sent to any AI service.</p></article>
+    <div class="beam" aria-hidden="true"></div>
+    <div class="log">
+      <p class="example">Example</p>
+      <ul>
+        <li><span>ssh logins</span><span>ok</span></li>
+        <li><span>listening ports</span><span>ok</span></li>
+        <li><span>processes</span><span>ok</span></li>
+        <li><span>packages with known exploits</span><span>ok</span></li>
+        <li><span>shop / wp-content / uploads</span><span data-bad="web shell">ok</span></li>
+        <li><span>shop / app code (70 rules)</span><span>ok</span></li>
+      </ul>
+      <p class="msg" aria-live="polite"><b>Shentu</b> A web shell appeared at 03:07 in the shop&#39;s uploads folder. Anyone who knows its address can run programs on your server. Quarantine it first, then check the access log around 03:07.</p>
+    </div>
   </div>
 </section>
 
-<div class="fret" aria-hidden="true"></div>
+<div class="after">
 
-<section class="demo" aria-labelledby="demo-title">
-  <div class="demo-text">
-    <h2 id="demo-title" class="section-title">What a patrol report looks like</h2>
-    <p>An invented example of the kind of message Shentu sends, not a real server.</p>
-    <p class="channels">Reports go where you already read messages:</p>
-    <ul class="chan"><li>Telegram</li><li>Slack</li><li>Discord</li><li>ntfy</li></ul>
-  </div>
-  <figure class="report">
-    <figcaption><span class="stamp">Example</span><span class="who"><svg class="mark" aria-hidden="true"><use href="#ring"/></svg>Shentu</span><span class="when">Patrol, 03:12</span></figcaption>
-    <p class="find">New file in /var/www/shop/wp-content/uploads/2026/11/: cache.php. It decodes a POST parameter from base64 and passes it to eval.</p>
-    <p>This is a common web shell: anyone who knows its address can run programs on your server. The uploads folder should only hold images, and this file was created at 03:07 by the site&#39;s own account, www-data.</p>
-    <p>Move the file to quarantine first, then look at the access log around 03:07 to find how it was uploaded.</p>
-    <p class="choices"><span class="choice yes">Quarantine the file</span><span class="choice">Not now</span></p>
-    <p class="note">Nothing changes until you confirm.</p>
-  </figure>
-</section>
-
-<div class="fret" aria-hidden="true"></div>
-
-
-<section class="nails" aria-labelledby="nails-title">
-  <h2 id="nails-title" class="section-title">One door nail for each rule</h2>
-  <div class="nails-body">
-    <div class="studs" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
-    <dl class="tally">
-      <div><dt>rules in the code audit</dt><dd>70</dd></div>
-      <div><dt>published vulnerabilities caught in the main bench set</dt><dd>15<span>/97</span></dd></div>
-      <div><dt>reports on the fixed versions</dt><dd>0</dd></div>
-    </dl>
-  </div>
+<section class="tally" aria-labelledby="tally-title">
+  <h2 id="tally-title">What it checks today</h2>
+  <dl>
+    <div><dd>70</dd><dt>rules in the code audit</dt></div>
+    <div><dd>15<small>/ 97</small></dd><dt>published vulnerabilities caught in the main bench set</dt></div>
+    <div><dd>0</dd><dt>reports on the fixed versions</dt></div>
+  </dl>
   <p><a href="bench.html">How they were measured</a></p>
 </section>
 
 
-<div class="fret" aria-hidden="true"></div>
-
 <section class="latest" aria-labelledby="latest-title">
-  <h2 id="latest-title" class="section-title">Latest releases</h2>
-  <div class="steles">
+  <h2 id="latest-title">Latest releases</h2>
+  <div class="timeline">
 <article class="release" id="v0.2.5">
   <h3><span class="ver">v0.2.5</span> <small>unreleased</small></h3>
   <ul><li><code>app_code_audit</code> follows calls across files: input read in one file and used in a sink of another is reported at the sink, with the file it came from.</li><li>Framework route models: the parameters of WordPress hooks, shortcodes and REST routes, Laravel routes, Django URLs, Flask and FastAPI views and Express handlers are input, also when the route is registered in another file.</li><li>New rule classes: LDAP injection, NoSQL operator injection, dangerous file uploads, weak cryptography and hard-coded credentials; TypeScript files are checked with the JavaScript rules.</li><li>Audits keep their results between runs, so a large application is covered over a few patrols instead of one.</li><li>The audit sizes itself to the server: heap at most min(1 GiB, 25% of available memory, 50% of the service&#39;s cgroup), workers from the CPU count and the load.</li><li>Fewer false positives: <code>wp_send_json</code> output, <code>JSON_HEX_TAG</code> data blocks, MongoDB queries on objects that are not collections, and Django <code>_meta.get_field</code> checks.</li><li>Known issue: an audit spread over several runs can still report a few findings that differ from one run without a time limit; a fix is in progress.</li></ul>
@@ -171,48 +102,58 @@
   </dl>
   
 </article>
-
-<article class="release" id="v0.2.4">
-  <h3><span class="ver">v0.2.4</span> <small><time datetime="2026-11-09">2026-11-09</time></small></h3>
-  <ul><li>Rules move to their own format, checked in CI, starting with 33 rules.</li><li><code>accounts_audit</code> reports shared SSH keys, <code>ld.so.preload</code> and PAM modules that belong to no package.</li><li><code>processes</code> flags cryptominers.</li><li>Patrol reports one line per webshell.</li></ul>
-  
-  <dl class="facts">
-    <div><dt>Rules in this release</dt><dd>33</dd></div>
-    
-    
-    <div class="wide"><dt>Rules added (33)</dt><dd><details class="ids"><summary>PHP <span class="n">11</span></summary><p><code>php-cmdi-mail-params</code> <code>php-cmdi-shell-exec</code> <code>php-code-eval-eval</code> <code>php-deserialization-phar-wrapper</code> <code>php-deserialization-unserialize</code> <code>php-path-traversal-file-include</code> <code>php-path-traversal-file-read</code> <code>php-path-traversal-laravel-storage</code> <code>php-sqli-orderby-identifier</code> <code>php-sqli-string-concat</code> <code>php-sqli-wpdb-unprepared</code> </p></details><details class="ids"><summary>Python <span class="n">11</span></summary><p><code>python-cmdi-argument-injection</code> <code>python-cmdi-shell</code> <code>python-code-eval-eval</code> <code>python-code-eval-template-injection</code> <code>python-deserialization-pickle</code> <code>python-deserialization-yaml-load</code> <code>python-path-traversal-archive-extract</code> <code>python-path-traversal-send-file</code> <code>python-sqli-dbapi-format</code> <code>python-sqli-django-kwargs-alias</code> <code>python-sqli-sqlalchemy-text</code> </p></details><details class="ids"><summary>JavaScript / TypeScript <span class="n">11</span></summary><p><code>js-cmdi-exec</code> <code>js-cmdi-spawn-shell</code> <code>js-code-eval-eval</code> <code>js-code-eval-template-options</code> <code>js-deserialization-node-serialize</code> <code>js-deserialization-yaml-load</code> <code>js-path-traversal-archive-extract</code> <code>js-path-traversal-send-file</code> <code>js-sqli-object-input</code> <code>js-sqli-raw-interpolation</code> <code>js-sqli-sequelize-literal</code> </p></details></dd></div>
-    
-  </dl>
-  
-</article>
-
-<article class="release" id="v0.2.3">
-  <h3><span class="ver">v0.2.3</span> <small><time datetime="2026-11-09">2026-11-09</time></small></h3>
-  <ul><li><code>app_code_audit</code>: an offline audit of the applications&#39; own files.</li></ul>
-  
-</article>
 </div>
   <p class="more"><a href="releases.html">All releases</a> <a href="feed.xml">Atom feed</a></p>
 </section>
+</div>
+
 <script>
 (function () {
-  var f = document.querySelectorAll('.fret');
-  if (!('IntersectionObserver' in window)) return;
-  document.documentElement.classList.add('reveal');
-  var io = new IntersectionObserver(function (es) {
-    es.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add('seen'); io.unobserve(e.target); } });
-  }, { rootMargin: '0px 0px -15% 0px' });
-  f.forEach(function (x) { io.observe(x); });
+  var still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+   
+  var c = document.querySelector('canvas.dust'), x = c.getContext('2d'), P = [], w, h, dpr = Math.min(devicePixelRatio || 1, 2), run = true;
+  function size() { w = c.clientWidth; h = c.clientHeight; c.width = w * dpr; c.height = h * dpr; x.setTransform(dpr, 0, 0, dpr, 0, 0); }
+  size(); addEventListener('resize', size);
+  for (var i = 0; i < 90; i++) P.push({ x: Math.random(), y: Math.random(), r: Math.random() * 1.6 + .3, v: Math.random() * .00025 + .00008, p: Math.random() * 6.28 });
+  function frame(t) {
+    if (!run) return;
+    x.clearRect(0, 0, w, h);
+    P.forEach(function (d) {
+      d.y -= d.v; if (d.y < 0) d.y = 1;
+      var px = (.5 + (d.x - .5) * .22 + Math.sin(t / 2400 + d.p) * .006) * w, py = d.y * h, s = Math.sin(t / 900 + d.p);
+      x.fillStyle = 'rgba(255, 214, 150,' + (.25 + .35 * s * s) + ')'; x.beginPath(); x.arc(px, py, d.r, 0, 6.29); x.fill();
+    });
+    requestAnimationFrame(frame);
+  }
+   
+  if (!still) {
+    new IntersectionObserver(function (e) { var was = run; run = e[0].isIntersecting; if (run && !was) requestAnimationFrame(frame); }).observe(c);
+    requestAnimationFrame(frame);
+  }
+
+   
+  var story = document.getElementById('story'), pin = story.querySelector('.pin'), acts = story.querySelectorAll('.act'),
+      rows = story.querySelectorAll('.log li'), flag = rows[4].lastElementChild, msg = story.querySelector('.msg'), ok = flag.textContent;
+  function step() {
+    var r = story.getBoundingClientRect(), span = r.height - innerHeight, p = Math.min(1, Math.max(0, -r.top / span));
+    var act = p < .38 ? 0 : p < .7 ? 1 : 2, lit = Math.floor(Math.min(1, p / .36) * rows.length);
+    acts.forEach(function (a, i) { a.classList.toggle('on', i === act); });
+    rows.forEach(function (row, i) { row.classList.toggle('lit', i < lit); row.classList.toggle('bad', act > 0 && i === 4); });
+    flag.textContent = act > 0 ? flag.dataset.bad : ok;
+    msg.classList.toggle('on', act === 2);
+    pin.classList.toggle('find', act === 1);
+  }
+  addEventListener('scroll', step, { passive: true }); step();
 })();
 </script>
 
 </main>
 <footer class="foot">
-  <svg class="clouds" aria-hidden="true" viewBox="0 0 160 48"><use href="#cloud"/></svg>
   <p>Apache-2.0. Generated from the repository by cmd/sitegen.</p>
   <ul>
     <li><a href="https://github.com/nt-neil/shentu">GitHub</a></li>
     <li><a href="feed.xml">Atom feed</a></li>
+    <li><a href="img/CREDITS.md">Image credits</a></li>
     <li><a href="fonts/OFL.txt">Noto Serif TC (OFL)</a></li>
   </ul>
 </footer>
