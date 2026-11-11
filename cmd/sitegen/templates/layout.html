@@ -20,9 +20,8 @@
     sessionStorage.setItem('shentu-gate', '1');
   } catch (e) { return; }
   d.classList.add('gate-shut');
-  addEventListener('DOMContentLoaded', function () {
-    setTimeout(function () { d.classList.add('gate-opening'); d.classList.remove('gate-shut'); }, 350);
-  });
+  /* timed from here, not from the DOM: a slow page never keeps the gate shut */
+  setTimeout(function () { d.classList.add('gate-opening'); d.classList.remove('gate-shut'); }, 450);
 })();
 </script>
 {{- end}}

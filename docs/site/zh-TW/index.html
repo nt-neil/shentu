@@ -19,9 +19,8 @@
     sessionStorage.setItem('shentu-gate', '1');
   } catch (e) { return; }
   d.classList.add('gate-shut');
-  addEventListener('DOMContentLoaded', function () {
-    setTimeout(function () { d.classList.add('gate-opening'); d.classList.remove('gate-shut'); }, 350);
-  });
+   
+  setTimeout(function () { d.classList.add('gate-opening'); d.classList.remove('gate-shut'); }, 450);
 })();
 </script>
 </head>
@@ -124,6 +123,8 @@
   <div class="demo-text">
     <h2 id="demo-title" class="section-title">巡邏回報長這樣</h2>
     <p>這是虛構的示範，呈現 Shentu 會送出的訊息樣式，不是真實的伺服器。</p>
+    <p class="channels">回報會送到你平常看訊息的地方：</p>
+    <ul class="chan"><li>Telegram</li><li>Slack</li><li>Discord</li><li>ntfy</li></ul>
   </div>
   <figure class="report">
     <figcaption><span class="stamp">示範</span><span class="who"><svg class="mark" aria-hidden="true"><use href="#ring"/></svg>Shentu</span><span class="when">03:12 巡邏</span></figcaption>

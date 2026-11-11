@@ -19,9 +19,8 @@
     sessionStorage.setItem('shentu-gate', '1');
   } catch (e) { return; }
   d.classList.add('gate-shut');
-  addEventListener('DOMContentLoaded', function () {
-    setTimeout(function () { d.classList.add('gate-opening'); d.classList.remove('gate-shut'); }, 350);
-  });
+   
+  setTimeout(function () { d.classList.add('gate-opening'); d.classList.remove('gate-shut'); }, 450);
 })();
 </script>
 </head>
@@ -124,6 +123,8 @@
   <div class="demo-text">
     <h2 id="demo-title" class="section-title">What a patrol report looks like</h2>
     <p>An invented example of the kind of message Shentu sends, not a real server.</p>
+    <p class="channels">Reports go where you already read messages:</p>
+    <ul class="chan"><li>Telegram</li><li>Slack</li><li>Discord</li><li>ntfy</li></ul>
   </div>
   <figure class="report">
     <figcaption><span class="stamp">Example</span><span class="who"><svg class="mark" aria-hidden="true"><use href="#ring"/></svg>Shentu</span><span class="when">Patrol, 03:12</span></figcaption>

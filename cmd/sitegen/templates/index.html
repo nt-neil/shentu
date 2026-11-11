@@ -54,6 +54,8 @@
   <div class="demo-text">
     <h2 id="demo-title" class="section-title">{{t "demo.title"}}</h2>
     <p>{{t "demo.note"}}</p>
+    <p class="channels">{{t "demo.where"}}</p>
+    <ul class="chan">{{range (list "Telegram" "Slack" "Discord" "ntfy")}}<li>{{.}}</li>{{end}}</ul>
   </div>
   <figure class="report">
     <figcaption><span class="stamp">{{t "demo.tag"}}</span><span class="who"><svg class="mark" aria-hidden="true"><use href="#ring"/></svg>Shentu</span><span class="when">{{t "demo.time"}}</span></figcaption>

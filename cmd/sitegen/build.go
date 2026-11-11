@@ -278,6 +278,7 @@ func funcs(l Lang) template.FuncMap {
 		"sub":       func(a, b int) int { return a - b },
 		"seq":       func(n int) []int { return make([]int, n) },
 		"div":       func(a, b int) int { return (a + b - 1) / b },
+		"list":      func(s ...string) []string { return s },
 		"benchKind": benchKind,
 		// the character on a severity's seal
 		"seal": func(sev string) string {

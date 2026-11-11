@@ -143,6 +143,7 @@ var en = map[string]string{
 	"bk.class":      "By class",
 	"aside.install": "Install the latest",
 	"aside.all":     "All downloads on GitHub",
+	"demo.where":    "Reports go where you already read messages:",
 	"footer":        "Apache-2.0. Generated from the repository by cmd/sitegen.",
 }
 
@@ -250,5 +251,6 @@ var zh = map[string]string{
 	"bk.class":      "依漏洞類別",
 	"aside.install": "安裝最新版",
 	"aside.all":     "到 GitHub 下載全部檔案",
+	"demo.where":    "回報會送到你平常看訊息的地方：",
 	"footer":        "Apache-2.0 授權。本站由 cmd/sitegen 從 repo 產生。",
 }
