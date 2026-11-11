@@ -62,7 +62,7 @@
       <a href="index.html"{{if eq .Page "index.html"}} aria-current="page"{{end}}>{{t "nav.home"}}</a>
       <a href="rules.html"{{if eq .Page "rules.html"}} aria-current="page"{{end}}>{{t "nav.rules"}}</a>
       <a href="bench.html"{{if eq .Page "bench.html"}} aria-current="page"{{end}}>{{t "nav.bench"}}</a>
-      <a href="install.html"{{if eq .Page "install.html"}} aria-current="page"{{end}}>{{t "nav.install"}}</a>
+      <a class="cta" href="install.html"{{if eq .Page "install.html"}} aria-current="page"{{end}}>{{t "nav.install"}}</a>
       <a href="releases.html"{{if eq .Page "releases.html"}} aria-current="page"{{end}}>{{t "nav.releases"}}</a>
       <a class="lang" href="{{.L.Other}}{{.Page}}" lang="{{if eq .L.Code "en"}}zh-Hant{{else}}en{{end}}" hreflang="{{if eq .L.Code "en"}}zh-TW{{else}}en{{end}}">{{.L.OtherN}}</a>
     </nav>

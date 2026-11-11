@@ -46,7 +46,7 @@
       <a href="index.html">Home</a>
       <a href="rules.html">Rules</a>
       <a href="bench.html" aria-current="page">Measured</a>
-      <a href="install.html">Install</a>
+      <a class="cta" href="install.html">Install</a>
       <a href="releases.html">Releases</a>
       <a class="lang" href="zh-TW/bench.html" lang="zh-Hant" hreflang="zh-TW">繁體中文</a>
     </nav>
@@ -59,12 +59,12 @@
   <h1 class="plaque small">Measured on real vulnerabilities</h1>
   <p class="intro">The rules are run on the last vulnerable and the first fixed release of published vulnerabilities (CVE.org, NVD, GitHub Advisory, OSV). A case counts as caught when a rule of its class reports within 10 lines of the code the fix changed; a fixed false positive is a rule that still reports there after the fix. The numbers are generated from the bench results, not written by hand.</p>
 </header>
-<p class="scores-key">One stud for each published vulnerability. The lit studs are the ones a rule caught.</p>
 <dl class="scores">
   <div><dt>Main set</dt><dd>15<small>/ 97</small><span>Catch rate 15.5%, Fixed FP 0</span></dd><dd class="dots" aria-hidden="true"><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></dd></div>
   <div><dt>Hold-out set</dt><dd>2<small>/ 30</small><span>Catch rate 6.7%, Fixed FP 0</span></dd><dd class="dots" aria-hidden="true"><i class="lit"></i><i class="lit"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></dd></div>
   <div><dt>TypeScript set</dt><dd>1<small>/ 18</small><span>Catch rate 5.6%, Fixed FP 1</span></dd><dd class="dots" aria-hidden="true"><i class="lit"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></dd></div>
 </dl>
+<p class="scores-key">One stud for each published vulnerability. The lit studs are the ones a rule caught.</p>
 
 <h2>Main set</h2>
 <p class="meta">Measured on 2026-11-10 (integ-3205c10), 70 rules.</p>

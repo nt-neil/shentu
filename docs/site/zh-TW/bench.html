@@ -46,7 +46,7 @@
       <a href="index.html">首頁</a>
       <a href="rules.html">規則</a>
       <a href="bench.html" aria-current="page">實測</a>
-      <a href="install.html">安裝</a>
+      <a class="cta" href="install.html">安裝</a>
       <a href="releases.html">更新紀錄</a>
       <a class="lang" href="../bench.html" lang="en" hreflang="en">English</a>
     </nav>
@@ -59,12 +59,12 @@
   <h1 class="plaque small">在真實漏洞上實測</h1>
   <p class="intro">規則會在已公開漏洞（CVE.org、NVD、GitHub Advisory、OSV）的最後一個有漏洞版本與第一個修補版本上執行。同類別的規則在修補改動的程式碼 10 行內報出，就算抓到；修補後仍在那裡報出，算修補版誤報。數字由實測結果檔產生，不是手打。</p>
 </header>
-<p class="scores-key">一個公開漏洞一顆門釘，點亮的是有規則抓到的。</p>
 <dl class="scores">
   <div><dt>主組</dt><dd>15<small>/ 97</small><span>抓到率 15.5%，修補版誤報 0</span></dd><dd class="dots" aria-hidden="true"><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></dd></div>
   <div><dt>保留組（holdout）</dt><dd>2<small>/ 30</small><span>抓到率 6.7%，修補版誤報 0</span></dd><dd class="dots" aria-hidden="true"><i class="lit"></i><i class="lit"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></dd></div>
   <div><dt>TypeScript 組</dt><dd>1<small>/ 18</small><span>抓到率 5.6%，修補版誤報 1</span></dd><dd class="dots" aria-hidden="true"><i class="lit"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></dd></div>
 </dl>
+<p class="scores-key">一個公開漏洞一顆門釘，點亮的是有規則抓到的。</p>
 
 <h2>主組</h2>
 <p class="meta">量測日期 2026-11-10（integ-3205c10），70 條規則。</p>
