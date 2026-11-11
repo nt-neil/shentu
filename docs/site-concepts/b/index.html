@@ -50,7 +50,7 @@ nav { display: flex; gap: clamp(14px, 2.4vw, 32px); font-size: 15px; }
 nav a { text-decoration: none; color: var(--muted); padding: 10px 0; }
 nav a:hover { color: var(--ink); }
 
-.title { position: absolute; z-index: 3; left: clamp(20px, 4vw, 52px); bottom: clamp(28px, 7vh, 72px); max-width: 60rem; }
+.title { position: absolute; left: clamp(20px, 4vw, 52px); bottom: clamp(28px, 7vh, 72px); max-width: 60rem; }
 .title .lede, .title .actions { max-width: 30rem; }
 h1 { margin: 0; font: 300 clamp(64px, 10.5vw, 168px)/.9 var(--serif); letter-spacing: -.02em; }
 h1 span { display: block; overflow: hidden; padding-bottom: .14em; margin-bottom: -.14em; }
@@ -92,6 +92,7 @@ h1 span + span i { animation-delay: 2.36s; }
   .shade { background: radial-gradient(ellipse at 50% 35%, transparent 25%, var(--bg) 95%), linear-gradient(transparent 38%, var(--bg) 78%); }
   .title { right: 20px; }
   .watch { display: none; }
+  .gate::before { content: ""; position: absolute; inset: 0 0 auto; height: 120px; background: linear-gradient(var(--bg), transparent); z-index: 2; pointer-events: none; }
   .pin { grid-template-columns: 1fr; align-content: center; gap: 28px; }
   .pin::before { width: 40vw; margin-left: -20vw; opacity: .3; }
   .acts { min-height: 12em; }
