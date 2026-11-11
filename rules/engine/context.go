@@ -979,11 +979,27 @@ func (a *analysis) relativeOf(st state, t []Token) []keyRef {
 	if len(args) != 2 || a.expr(st, args[0], false).taint {
 		return nil
 	}
+	// Only a plain path: what the check says of a + b is not said of a or b.
+	if _, _, ok := a.pathKey(stripParens(args[1])); !ok {
+		return nil
+	}
 	return a.keysOf(args[1])
 }
 
-// setRelative records, after rel = rhs, what rel is the relative path of.
+// setRelative records, after rel = rhs, what rel is the relative path of. Any
+// assignment forgets the relative paths of the value it changes (x = ... after
+// rel = path.relative(base, x) leaves rel about the old x). relKey alone marks
+// a state that holds any, so a state without one costs no walk.
 func (a *analysis) setRelative(st state, key string, rhs []Token, plain bool) {
+	if _, any := st[relKey]; any {
+		for k := range st {
+			if x, ok := strings.CutPrefix(k, relKey); ok {
+				if i := strings.Index(x, "\x00"); i >= 0 && (x[i+1:] == key || strings.HasPrefix(x[i+1:], key+sepCh)) {
+					delete(st, k)
+				}
+			}
+		}
+	}
 	if _, had := st[relKey+key]; had {
 		pre := relKey + key + "\x00"
 		for k := range st {
@@ -999,7 +1015,7 @@ func (a *analysis) setRelative(st state, key string, rhs []Token, plain bool) {
 	if len(xs) == 0 || len(stripParens(rhs)) == 1 {
 		return // a copy of another relative path is not followed
 	}
-	st[relKey+key] = entry{san: true}
+	st[relKey], st[relKey+key] = entry{san: true}, entry{san: true}
 	for _, x := range xs {
 		st[relKey+key+"\x00"+x.key] = entry{san: true, src: x.src}
 	}
@@ -1009,7 +1025,9 @@ func (a *analysis) setRelative(st state, key string, rhs []Token, plain bool) {
 // (path.relative(base, x), or a variable holding one): it is true when x leaves
 // the base, so where it is false x stays inside. "../" and ".." + path.sep
 // leave out rel === ".." alone, the base's parent folder itself, which no file
-// sink can read or write as a file.
+// sink can read or write as a file. Shentu runs on Linux, where the relative
+// path of one absolute path to another is never absolute (on Windows a path on
+// another drive is, which path.isAbsolute(rel) would have to catch).
 func (a *analysis) escapeCheck(st state, atom []Token) []keyRef {
 	n := len(atom)
 	if !a.js || a.r.rule.Class != "path-traversal" || n < 6 || !atom[n-1].op(")") {

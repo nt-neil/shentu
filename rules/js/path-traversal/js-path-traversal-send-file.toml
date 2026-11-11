@@ -315,3 +315,29 @@ app.get("/blob/:key", (req, res) => {
   res.sendFile(file);
 });
 '''
+
+[[samples]]
+kind = "vulnerable"
+note = "the path is replaced after its relative form was taken"
+code = '''
+const STORE = "/var/lib/app/store";
+app.get("/blob/:key", (req, res) => {
+  let file = path.join(STORE, "index.json");
+  const rel = path.relative(STORE, file);
+  file = String(req.query.path);
+  if (rel.startsWith("..")) return res.sendStatus(403);
+  res.sendFile(file);
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "the check covers the joined parts, not the part that is sent"
+code = '''
+const STORE = "/var/lib/app/store";
+app.get("/blob", (req, res) => {
+  const dir = String(req.query.dir);
+  if (path.relative(STORE, STORE + "/" + dir + "/x").startsWith("..")) return res.sendStatus(403);
+  res.sendFile(dir);
+});
+'''
