@@ -141,6 +141,38 @@ func saveCallState(name string, st *callState) {
 		return
 	}
 	ok = os.Rename(tmp.Name(), name) == nil
+	if ok {
+		pruneCallStates(filepath.Dir(name), callStateMax)
+	}
+}
+
+// callStateMax is how many sets of roots keep their results: each narrower
+// audit path has its own file. The ones used longest ago go first.
+const callStateMax = 16
+
+// pruneCallStates removes the kept results beyond keep, the least recently
+// written first (every audit of those roots writes its file again).
+func pruneCallStates(dir string, keep int) {
+	names, _ := filepath.Glob(filepath.Join(dir, "codecalls-*.json"))
+	if len(names) <= keep {
+		return
+	}
+	type aged struct {
+		name string
+		mod  int64
+	}
+	var all []aged
+	for _, n := range names {
+		if info, err := os.Lstat(n); err == nil && info.Mode().IsRegular() {
+			all = append(all, aged{n, info.ModTime().UnixNano()})
+		}
+	}
+	sort.Slice(all, func(i, j int) bool {
+		return all[i].mod > all[j].mod || all[i].mod == all[j].mod && all[i].name < all[j].name
+	})
+	for _, a := range all[min(keep, len(all)):] {
+		os.Remove(a.name)
+	}
 }
 
 // own returns the kept result of the file on its own, if its content is the same.

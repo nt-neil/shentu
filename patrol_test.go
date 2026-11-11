@@ -10,9 +10,9 @@ import (
 // The hourly webshell check and the daily code audit report the same file once, with the audit's detail.
 func TestReplaceOrAppend(t *testing.T) {
 	all := []finding{{Key: "webshell:/w/s.php", Summary: "possible webshell: /w/s.php"}, {Key: "other"}}
-	all = replaceOrAppend(all, finding{Key: "webshell:/w/s.php", Summary: "/w/s.php line 3: webshell"})
-	all = replaceOrAppend(all, finding{Key: "code:secret:/a.js:2"})
-	if len(all) != 3 || all[0].Summary != "/w/s.php line 3: webshell" {
+	all = replaceOrAppend(all, []finding{{Key: "webshell:/w/s.php", Summary: "/w/s.php line 3: webshell"}, {Key: "code:secret:/a.js:2"}})
+	all = replaceOrAppend(all, []finding{{Key: "code:secret:/a.js:2", Summary: "again"}})
+	if len(all) != 3 || all[0].Summary != "/w/s.php line 3: webshell" || all[2].Summary != "again" {
 		t.Errorf("got %+v", all)
 	}
 }
@@ -27,12 +27,14 @@ func TestCodeAuditFindings(t *testing.T) {
 		{Kind: "injection", Severity: "critical", Path: "/e.php", Line: 1, Detail: "t", Fix: "f", Rule: "php-x-untiered"}, // no tier: not pushed
 		{Kind: "secret", Severity: "warning", Path: "/k.js", Line: 2, Detail: "d", Fix: "f"},
 		{Kind: "webshell", Severity: "critical", Path: "/w.php", Line: 1, Detail: "d", Fix: "f"},
+		{Kind: "audit", Severity: "info", Detail: "the audit is unfinished: its time ran out"}, // pushed as a warning, after the findings
+		{Kind: "audit", Severity: "info", Detail: "3 more finding(s) are not listed"},
 	}}
 	var keys []string
 	for _, f := range codeAuditFindings(audit) {
 		keys = append(keys, f.Key)
 	}
-	want := []string{"code:injection:/a.php:3:php-x-loud", "code:secret:/k.js:2", "webshell:/w.php"}
+	want := []string{"code:injection:/a.php:3:php-x-loud", "code:secret:/k.js:2", "webshell:/w.php", "code:audit:unfinished", "code:audit:truncated"}
 	if !slices.Equal(keys, want) {
 		t.Errorf("keys = %v, want %v", keys, want)
 	}

@@ -1,0 +1,59 @@
+package tools
+
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"syscall"
+	"time"
+)
+
+// One code audit runs at a time, in this process and across processes (the
+// bot, the patrol and the CLI): each sets Go's memory limit and takes the
+// memory budget for itself, and each writes the code index and the kept
+// results. A second audit waits for the first one; it is not refused.
+var auditSlot = make(chan struct{}, 1)
+
+// auditLockPoll is how often a waiting audit tries the lock of another process.
+var auditLockPoll = 100 * time.Millisecond
+
+// lockAudit waits for the audit slot and the lock file next to the code index
+// ("" for none: the slot alone). It fails only when ctx ends first.
+func lockAudit(ctx context.Context) (unlock func(), err error) {
+	select {
+	case auditSlot <- struct{}{}:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	release := func() { <-auditSlot }
+	idx := codeIndexFile()
+	if idx == "" || os.MkdirAll(filepath.Dir(idx), 0o700) != nil {
+		return release, nil
+	}
+	f, err := os.OpenFile(filepath.Join(filepath.Dir(idx), "audit.lock"), os.O_RDWR|os.O_CREATE, 0o600)
+	if err != nil {
+		return release, nil // the lock is for the shared files; without it the audit still runs
+	}
+	for {
+		err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+		if err == nil {
+			break
+		}
+		if err != syscall.EWOULDBLOCK {
+			f.Close() // a file system without locks: the slot alone
+			return release, nil
+		}
+		select {
+		case <-ctx.Done():
+			f.Close()
+			release()
+			return nil, ctx.Err()
+		case <-time.After(auditLockPoll):
+		}
+	}
+	return func() {
+		syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		f.Close()
+		release()
+	}, nil
+}
