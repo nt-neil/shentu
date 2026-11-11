@@ -1345,7 +1345,17 @@ func (p *Project) module(from, lang, mod, name string) string {
 			return "" // a package from node_modules
 		}
 		p1 := path.Join(dir, mod)
-		for _, c := range []string{p1, p1 + ".js", p1 + ".mjs", p1 + ".cjs", p1 + ".jsx", p1 + "/index.js", p1 + "/index.jsx"} {
+		cs := []string{p1, p1 + ".js", p1 + ".mjs", p1 + ".cjs", p1 + ".jsx", p1 + ".ts", p1 + ".tsx", p1 + ".mts", p1 + ".cts",
+			p1 + "/index.js", p1 + "/index.jsx", p1 + "/index.ts", p1 + "/index.tsx"}
+		if ext := path.Ext(p1); ext == ".js" || ext == ".jsx" || ext == ".mjs" || ext == ".cjs" {
+			// TypeScript imports the file it compiles to: './util.js' is util.ts.
+			s := strings.TrimSuffix(p1, ext)
+			cs = append(cs, s+strings.NewReplacer(".js", ".ts", ".jsx", ".tsx", ".mjs", ".mts", ".cjs", ".cts").Replace(ext))
+			if ext == ".js" {
+				cs = append(cs, s+".tsx")
+			}
+		}
+		for _, c := range cs {
 			if f := p.byPath(c); f != "" {
 				return f
 			}
