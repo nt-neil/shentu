@@ -197,14 +197,14 @@ func TestRouteInputOff(t *testing.T) {
 }
 
 // The rules a route model is not for are exactly those for one field of the
-// request (a password) and those without sources: every other rule with
-// sources gets the handlers' parameters.
+// request (a password), those without sources and those saying route_input =
+// false: every other rule with sources gets the handlers' parameters.
 func TestRouteRulesLeftOut(t *testing.T) {
 	e := engineForTest(t)
 	for lang, routes := range e.routes {
 		for _, c := range routes {
 			for _, r := range e.byLang[lang] {
-				if c.takes(r) || len(r.rule.Sources) == 0 {
+				if c.takes(r) || len(r.rule.Sources) == 0 || r.rule.RouteInput != nil && !*r.rule.RouteInput {
 					continue
 				}
 				for _, s := range r.rule.Sources {
