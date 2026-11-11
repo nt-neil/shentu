@@ -111,17 +111,28 @@ body:not(.p-index) .top, body:not(.p-index) main, body:not(.p-index) .foot { pos
 .gate-shut .veil { animation: open 4.2s .3s cubic-bezier(.65, 0, .25, 1) both; }
 /* the gap in the picture is about 16.5% of its width; the picture covers the screen */
 @media (prefers-color-scheme: light) {
-  .veil { --gap: calc(max(100vw, 177.8vh) * .082); }
+  .veil { --gap: calc(max(100vw, 177.8vh) * .082);
+    background:
+      linear-gradient(90deg, transparent calc(50% - var(--gap) - 90px), rgba(60, 40, 20, .22) calc(50% - var(--gap)), transparent calc(50% - var(--gap)), transparent calc(50% + var(--gap)), rgba(60, 40, 20, .22) calc(50% + var(--gap)), transparent calc(50% + var(--gap) + 90px)),
+      repeating-linear-gradient(90deg, rgba(90, 60, 30, .05) 0 1px, transparent 1px 9px),
+      linear-gradient(90deg, transparent 49.9%, rgba(60, 40, 20, .25) 49.9% 50.1%, transparent 50.1%),
+      var(--bg); }
   .gate-shut .veil { animation-name: open-dawn; }
   canvas.dust { display: none; }
 }
+@media (prefers-color-scheme: light) and (max-width: 640px) {
+  .veil { --gap: calc(max(100vw, (54svh - 112px) * 1.778) * .082); }
+  .gate-shut .veil { animation-name: open-dawn-phone; }
+}
+@keyframes open-dawn-phone { from { --gap: 0px; } to { --gap: calc(max(100vw, (54svh - 112px) * 1.778) * .082); } }
 @keyframes open-dawn { from { --gap: 0px; } to { --gap: calc(max(100vw, 177.8vh) * .082); } }
 @keyframes open { from { --gap: 0px; } to { --gap: 60vw; } }
 canvas.dust { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; mix-blend-mode: screen; }
 .shade { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse at 50% 45%, transparent 30%, var(--bg) 92%), linear-gradient(transparent 70%, var(--bg)); }
 .hero-title { position: absolute; left: var(--gutter); right: var(--gutter); bottom: clamp(28px, 8vh, 80px); }
-.hero-title h1 { margin: 0; font-size: clamp(60px, 9.5vw, 156px); line-height: .9; letter-spacing: -.02em; }
-.hero-title h1 span { display: block; overflow: hidden; padding-bottom: .14em; margin-bottom: -.14em; }
+.hero-title h1 { margin: 0; font-size: clamp(56px, 7.6vw, 132px); line-height: .92; letter-spacing: -.02em; max-width: calc(50vw - 9.5vw - var(--gutter)); }
+html[lang^="zh"] .hero-title h1 { font-size: clamp(48px, 6.4vw, 112px); line-height: 1.06; }
+.hero-title h1 span { display: block; overflow: hidden; padding: .02em 0 .12em; }
 .hero-title h1 i { display: block; font-style: normal; }
 .gate-shut .hero-title h1 i { animation: rise 1.5s 2.1s cubic-bezier(.2, .8, .1, 1) both; }
 .gate-shut .hero-title h1 span + span i { animation-delay: 2.25s; }
@@ -139,6 +150,10 @@ canvas.dust { position: absolute; inset: 0; width: 100%; height: 100%; pointer-e
 .beam::before { content: ""; position: absolute; inset: 0; background: var(--guardian) 50% 50% / cover no-repeat fixed; filter: var(--img-filter); opacity: .6; transition: filter .8s, opacity .8s;
   -webkit-mask-image: linear-gradient(transparent, #000 18%, #000 82%, transparent); mask-image: linear-gradient(transparent, #000 18%, #000 82%, transparent); }
 .pin.find .beam::before { filter: var(--img-filter) sepia(1) saturate(7) hue-rotate(-42deg) brightness(.95); opacity: .9; }
+.ray { position: absolute; z-index: 2; height: 2px; left: 0; width: 0; top: 0; pointer-events: none; transform-origin: 0 50%; transform: scaleX(0);
+  background: linear-gradient(90deg, var(--ember), transparent); box-shadow: 0 0 14px var(--glow); transition: transform .9s cubic-bezier(.3, .7, .2, 1), top .6s, background .6s; }
+.pin.find .ray { background: linear-gradient(90deg, var(--alarm), rgba(255, 106, 77, .2)); box-shadow: 0 0 16px rgba(255, 106, 77, .5); }
+.pin.find .ray, .pin.told .ray { transform: scaleX(1); }
 .acts { position: relative; min-height: 16em; }
 .act { position: absolute; inset: 0; opacity: 0; transform: translateY(24px); transition: opacity .35s, transform .35s; }
 .act.on { opacity: 1; transform: none; transition: opacity .6s .35s, transform .6s .35s; }
@@ -301,11 +316,13 @@ table.num .cid { font: 600 15px/1.4 var(--sans); }
   .top { padding: 14px var(--gutter); }
   nav { width: 100%; justify-content: space-between; margin: 0 -8px; gap: 0; }
   nav a { padding: 0 6px; font-size: 15px; }
-  body.p-index nav a:not(.lang):not(.cta) { display: none; }
-  body.p-index nav { width: auto; margin: 0; gap: 8px; }
-  .gate::before { content: ""; position: absolute; inset: 0 0 auto; height: 130px; background: linear-gradient(var(--bg), transparent); z-index: 2; pointer-events: none; }
-  .night { background-position: 50% 40%; }
-  .shade { background: radial-gradient(ellipse at 50% 35%, transparent 25%, var(--bg) 95%), linear-gradient(transparent 38%, var(--bg) 78%); }
+  /* phones: the picture sits between the header and the words */
+  .night, .veil, canvas.dust { top: 112px; bottom: 46%; height: auto; }
+  .night { background-position: 50% 30%; transform: none; animation: none; }
+  .shade { top: 111px; bottom: calc(46% - 2px); background: linear-gradient(var(--bg), transparent 12%, transparent 72%, var(--bg)); }
+  .hero-title h1, html[lang^="zh"] .hero-title h1 { max-width: none; font-size: clamp(46px, 13vw, 64px); }
+  .story { height: 260vh; }
+  .pin { align-content: start; padding-top: 14vh; }
   .watch { display: none; }
   .hero-title .actions .button { flex: 1 1 100%; }
   .filters { position: static; }

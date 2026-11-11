@@ -20,6 +20,7 @@
       <div class="act"><time>03:13</time><h2>{{t "act3.t"}}</h2><p>{{t "act3.p"}}</p></div>
     </div>
     <div class="beam" aria-hidden="true"></div>
+    <div class="ray" aria-hidden="true"></div>
     <div class="log">
       <p class="example">{{t "story.example"}}</p>
       <ul>
@@ -90,8 +91,18 @@
     flag.textContent = act > 0 ? flag.dataset.bad : ok;
     msg.classList.toggle('on', act === 2);
     pin.classList.toggle('find', act === 1);
+    pin.classList.toggle('told', act === 2);
+    aim(act === 2 ? msg : rows[4]);
   }
-  addEventListener('scroll', step, { passive: true }); step();
+  /* the ray leaves the gap and ends at what it points to */
+  var ray = story.querySelector('.ray'), beam = story.querySelector('.beam');
+  function aim(el) {
+    var p = pin.getBoundingClientRect(), b = beam.getBoundingClientRect(), e = el.getBoundingClientRect();
+    ray.style.left = (b.right - p.left) + 'px';
+    ray.style.width = Math.max(0, e.left - b.right + 24) + 'px';
+    ray.style.top = (e.top - p.top + Math.min(e.height, 40) / 2) + 'px';
+  }
+  addEventListener('scroll', step, { passive: true }); addEventListener('resize', step); step();
 })();
 </script>
 {{end}}
