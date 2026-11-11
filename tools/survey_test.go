@@ -218,6 +218,10 @@ func TestSSHDropInUnreadable(t *testing.T) {
 	if got := risks(); len(got) != 1 || got["ssh:unreadable"] != "info" {
 		t.Errorf("unreadable drop-in file: %v", got)
 	}
+	ssh, _, unread := sshdSettings()
+	if r := sshRisks(ssh, unread); len(r) != 1 || !strings.Contains(r[0].Summary, "run Shentu as root") {
+		t.Errorf("permission: %+v", r)
+	}
 	os.Chmod(drop, 0o644)
 	os.Chmod(d, 0)
 	defer os.Chmod(d, 0o755)
@@ -225,6 +229,15 @@ func TestSSHDropInUnreadable(t *testing.T) {
 		t.Errorf("unreadable drop-in folder: %v", got)
 	}
 	os.Chmod(d, 0o755)
+	// Another error than permission is told as it is, not as "run as root".
+	os.Chmod(drop, 0o644)
+	os.Remove(drop)
+	os.Mkdir(drop, 0o755) // a folder where the file was: "is a directory"
+	ssh, _, unread = sshdSettings()
+	if r := sshRisks(ssh, unread); len(r) != 1 || strings.Contains(r[0].Summary, "root") || !strings.Contains(r[0].Summary, "is a directory") {
+		t.Errorf("other error: %+v", r)
+	}
+	os.Remove(drop)
 	// Without an Include, the main file's yes is a warning as before.
 	os.WriteFile(sshdConfig, []byte("PasswordAuthentication yes\nPermitRootLogin yes\n"), 0o644)
 	if got := risks(); got["ssh:password"] != "warning" || got["ssh:root"] != "warning" || len(got) != 2 {

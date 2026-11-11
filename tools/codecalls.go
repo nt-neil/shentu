@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -25,7 +26,7 @@ import (
 // a part at a time and the summary tells how far that has got.
 
 // callStateVersion changes whenever callState or what it means changes.
-const callStateVersion = "1"
+const callStateVersion = "2" // 2: findings capped per rule and file
 
 type callState struct {
 	Version string                `json:"v"`
@@ -47,13 +48,15 @@ type fileState struct {
 // cut short: the rules followed to their end and what they found.
 type partResult struct {
 	Rules []string         `json:"r"`
-	Found []engine.Finding `json:"f,omitempty"`
+	Found []engine.Finding `json:"f,omitempty"` // at most auditMaxPerFile of one rule in one file
+	Over  int              `json:"n,omitempty"` // the findings the cap left out
 	Cut   bool             `json:"c,omitempty"` // a cap cut one of them short
 	Tries map[string]int   `json:"t,omitempty"` // rule → audits in a row the clock cut it short
 }
 
 type passResult struct {
-	Found  []engine.Finding `json:"f,omitempty"`
+	Found  []engine.Finding `json:"f,omitempty"` // at most auditMaxPerFile of one rule in one file
+	Over   int              `json:"n,omitempty"` // the findings the cap left out
 	Reason string           `json:"r,omitempty"` // unfinishedReason; "" when it ran to the end
 	Gen    bool             `json:"g,omitempty"` // the file is minified or bundled JavaScript
 }
@@ -213,8 +216,9 @@ func (st *callState) useDigests(pr *engine.Project, langs []string) {
 
 // dropStale drops and lists the kept results across files that no longer
 // hold: the file changed, or one its calls reached (or theirs, in turn)
-// changed or is gone.
-func (st *callState) dropStale(hash map[string]string) map[string]bool {
+// changed or is gone. walked: the audit's walk reached every file; when it did
+// not, a file it did not reach (not in hash) is not taken as gone.
+func (st *callState) dropStale(hash map[string]string, walked bool) map[string]bool {
 	bad := map[string]bool{}
 	callers := map[string][]string{}
 	var queue []string
@@ -224,13 +228,17 @@ func (st *callState) dropStale(hash map[string]string) map[string]bool {
 			queue = append(queue, f)
 		}
 	}
+	unknown := func(f string) bool {
+		_, ok := hash[f]
+		return !walked && !ok
+	}
 	for f, fs := range st.Files {
-		if fs.Hash != hash[f] {
+		if fs.Hash != hash[f] && !unknown(f) {
 			mark(f)
 		}
 		for _, d := range fs.Deps {
 			callers[d] = append(callers[d], f)
-			if g := st.Files[d]; g == nil || g.Hash != hash[d] {
+			if g := st.Files[d]; (g == nil || g.Hash != hash[d]) && !unknown(d) {
 				mark(d)
 			}
 		}
@@ -268,6 +276,14 @@ func (fs *fileState) addDeps(deps []string) {
 	for d := range set {
 		fs.Deps = append(fs.Deps, d)
 	}
+	sort.Strings(fs.Deps)
+}
+
+// setDeps records the files a file's calls were followed into when every one
+// of its rules was followed in this audit: they replace the old ones, so a
+// file no longer called does not keep it stale.
+func (fs *fileState) setDeps(deps []string) {
+	fs.Deps = slices.Clone(deps)
 	sort.Strings(fs.Deps)
 }
 

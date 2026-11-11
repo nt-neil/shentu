@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -253,8 +254,12 @@ func sshRisks(ssh map[string]string, unread []string) []Risk {
 		out = append(out, Risk{"ssh:root", "warning", "SSH allows root to log in with a password (PermitRootLogin yes)"})
 	}
 	if ssh["passwordauthentication"] == "unknown" || ssh["permitrootlogin"] == "unknown" {
+		why := "; check that the files are there and readable"
+		if slices.ContainsFunc(unread, func(u string) bool { return strings.HasSuffix(u, "(permission denied)") }) {
+			why = "; run Shentu as root, as sshd reads them"
+		}
 		out = append(out, Risk{"ssh:unreadable", "info", "cannot tell the SSH settings (PasswordAuthentication, PermitRootLogin): " +
-			strings.Join(unread, ", ") + " cannot be read without the permission; run Shentu as root"})
+			strings.Join(unread, ", ") + " could not be read" + why})
 	}
 	return out
 }
@@ -270,8 +275,14 @@ func sshdSettings() (map[string]string, string, []string) {
 	got := map[string]bool{}
 	h := sha256.New()
 	var unread []string
-	unknown := func(path string) {
-		unread = append(unread, path)
+	unknown := func(path string, err error) {
+		why := err.Error()
+		if errors.Is(err, fs.ErrPermission) { // EACCES, EPERM
+			why = "permission denied"
+		} else if pe := (*fs.PathError)(nil); errors.As(err, &pe) {
+			why = pe.Err.Error()
+		}
+		unread = append(unread, path+" ("+why+")")
 		for k := range want {
 			if !got[k] {
 				want[k], got[k] = "unknown", true
@@ -286,7 +297,7 @@ func sshdSettings() (map[string]string, string, []string) {
 		b, err := os.ReadFile(path)
 		if err != nil {
 			if !errors.Is(err, fs.ErrNotExist) {
-				unknown(path)
+				unknown(path, err)
 			}
 			return true
 		}
@@ -307,7 +318,7 @@ func sshdSettings() (map[string]string, string, []string) {
 					}
 					// Glob says nothing of a folder it cannot list.
 					if _, err := os.ReadDir(filepath.Dir(pat)); err != nil && !errors.Is(err, fs.ErrNotExist) {
-						unknown(filepath.Dir(pat))
+						unknown(filepath.Dir(pat), err)
 					}
 					files, _ := filepath.Glob(pat)
 					sort.Strings(files)
