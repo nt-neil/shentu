@@ -68,14 +68,77 @@ function shop_item($request) {
 }
 '''
 
+[[route.samples]]
+kind = "vulnerable"
+note = "one array per method, as WordPress core and most plugins write it: each callback gets the request"
+code = '''<?php
+add_action('rest_api_init', function () {
+	register_rest_route('shop/v1', '/item', array(
+		array('methods' => 'GET', 'callback' => 'shop_item', 'permission_callback' => '__return_true'),
+		array('methods' => 'DELETE', 'callback' => 'shop_drop', 'permission_callback' => '__return_true'),
+	));
+});
+function shop_item($request) {
+	return array();
+}
+function shop_drop($request) {
+	global $wpdb;
+	return $wpdb->query("DELETE FROM {$wpdb->prefix}items WHERE id = " . $request['id']);
+}
+'''
+
+[[route]]
+id = "wp-rest-permission"
+lang = "php"
+applies = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "$_SERVER", "$_FILES", "$request"]
+framework = "wordpress"
+title = "A REST route's permission_callback gets the request too, before the callback runs"
+register = ["register_rest_route"]
+handler = 3
+key = "permission_callback"
+params = [1]
+refs = ["https://developer.wordpress.org/reference/functions/register_rest_route/"]
+
+[[route.samples]]
+kind = "vulnerable"
+code = '''<?php
+add_action('rest_api_init', function () {
+	register_rest_route('shop/v1', '/item', array(
+		array('methods' => 'GET', 'callback' => 'shop_item', 'permission_callback' => 'shop_can'),
+	));
+});
+function shop_item($request) {
+	return array();
+}
+function shop_can($request) {
+	global $wpdb;
+	return (bool) $wpdb->get_var("SELECT 1 FROM {$wpdb->prefix}keys WHERE k = '" . $request['key'] . "'");
+}
+'''
+
+[[route.samples]]
+kind = "safe"
+code = '''<?php
+add_action('rest_api_init', function () {
+	register_rest_route('shop/v1', '/item', array('methods' => 'GET', 'callback' => 'shop_item', 'permission_callback' => 'shop_can'));
+});
+function shop_item($request) {
+	return array();
+}
+function shop_can($request) {
+	global $wpdb;
+	return (bool) $wpdb->get_var($wpdb->prepare("SELECT 1 FROM {$wpdb->prefix}keys WHERE k = %s", $request['key']));
+}
+'''
+
 [[route]]
 id = "elementor-widget-settings"
 lang = "php"
 applies = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "$_SERVER", "$_FILES", "$request"]
 framework = "wordpress"
 title = "An Elementor widget's settings are written by any user who can edit with Elementor"
-sources = ["->get_settings_for_display(", "->get_settings("]
-note = "Elementor widgets (render()) read their controls with get_settings_for_display(); contributors and up set them."
+sources = ["->get_settings_for_display("]
+note = "Elementor widgets (render()) read their controls with get_settings_for_display(); contributors and up set them. Not get_settings(): WP_Widget and WooCommerce settings pages have one of that name too, and what it returns there is set by administrators."
 refs = ["https://developers.elementor.com/docs/widgets/widget-rendering/"]
 
 [[route.samples]]
@@ -98,6 +161,19 @@ class Box_Widget extends \Elementor\Widget_Base {
 		global $wpdb;
 		$s = $this->get_settings_for_display();
 		echo $wpdb->get_var("SELECT name FROM {$wpdb->prefix}teams WHERE id = " . absint($s['team']));
+	}
+}
+'''
+
+[[route.samples]]
+kind = "safe"
+note = "WP_Widget::get_settings() returns what an administrator saved for the widget"
+code = '''<?php
+class Box_Widget extends WP_Widget {
+	public function widget($args, $instance) {
+		global $wpdb;
+		$all = $this->get_settings();
+		echo $wpdb->get_var("SELECT name FROM {$wpdb->prefix}teams WHERE id = " . $all[$this->number]['team']);
 	}
 }
 '''

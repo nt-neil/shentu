@@ -41,6 +41,10 @@ func baseLang(lang string) string {
 	return lang
 }
 
+// BaseLang is baseLang for callers outside the engine: a file of LangOf p
+// indexes, and has its calls followed, as BaseLang(LangOf(p)).
+func BaseLang(lang string) string { return baseLang(lang) }
+
 // tsModifiers are dropped before a member or parameter name.
 var tsModifiers = words("public private protected readonly abstract override declare accessor")
 
@@ -76,6 +80,10 @@ type tsStrip struct {
 	inject    []Token // statements to put at the start of the next "{" if it comes next
 	lastOpen  int     // index in out of the opener of the last closed bracket
 	stmtColon bool    // the last ":" ended a case or a label
+	injected  int     // tokens decorated parameters added (injectOK)
+	depth     int     // nesting of skipType and skipPrimary
+	pairs     []int   // index of the bracket closing each one, -1 if none (closer)
+	angleEnd  []int   // index after the ">" closing each "<", -1 if none (angleEnds)
 }
 
 func stripTS(in []Token, b *budget, tsx bool) []Token {
@@ -454,6 +462,9 @@ func (x *tsStrip) paramEnd(c *tsCtx) {
 			if d[0].word("@Req") || d[0].word("@Request") {
 				// The whole request is not input (req.user is the server's own), its parts are.
 				if c.decoPat < 0 {
+					if !x.injectOK(9 * (len(d) + 5)) {
+						break
+					}
 					for _, k := range []string{"query", "body", "params", "headers", "cookies", "originalUrl", "url", "get", "header"} {
 						c.inject = append(c.inject, Token{Kind: Ident, Text: c.decoName}, Token{Kind: Op, Text: "."}, Token{Kind: Ident, Text: k}, Token{Kind: Op, Text: "="})
 						c.inject = append(append(c.inject, d...), Token{Kind: Op, Text: ";"})
@@ -461,11 +472,27 @@ func (x *tsStrip) paramEnd(c *tsCtx) {
 					continue
 				}
 			}
+			if !x.injectOK(len(target) + len(d) + 2) {
+				break
+			}
 			c.inject = append(append(c.inject, target...), Token{Kind: Op, Text: "="})
 			c.inject = append(append(c.inject, d...), Token{Kind: Op, Text: ";"})
 		}
 	}
 	c.decos, c.decoName, c.decoPat = nil, "", -1
+}
+
+// injectOK accounts for n tokens a decorated parameter adds to the body. Each
+// decorator of a pattern copies the pattern, and a pattern may hold decorated
+// parameters of its own, so the copies are bounded by the file's size: past
+// that, the rest are left out and the file is reported limited.
+func (x *tsStrip) injectOK(n int) bool {
+	if x.injected+n > 4*len(x.in)+1024 {
+		x.b.tooDeep()
+		return false
+	}
+	x.injected += n
+	return true
 }
 
 func splitDecos(t []Token) [][]Token {
@@ -624,17 +651,38 @@ func continues(t Token) bool {
 		t.Text == "=>" || t.Text == "." || t.Text == "?" || t.Text == "<")
 }
 
-// match returns the index of the bracket closing the one at i (or the last token).
-func (x *tsStrip) match(i int) int {
-	depth := 0
-	for j := i; j < len(x.in) && x.b.step(); j++ {
-		if isOpen(x.in[j]) {
-			depth++
-		} else if isClose(x.in[j]) {
-			if depth--; depth <= 0 {
-				return j
+// closer returns the index of the bracket closing the one at i, or -1. Any
+// closer closes the last open bracket. The pairs are found in one pass over the
+// file, so an unclosed bracket is not read to the end again from each place
+// that asks.
+func (x *tsStrip) closer(i int) int {
+	if x.pairs == nil {
+		x.pairs = make([]int, len(x.in))
+		var open []int
+		for j, t := range x.in {
+			x.pairs[j] = -1
+			if isOpen(t) {
+				open = append(open, j)
+			} else if isClose(t) && len(open) > 0 {
+				x.pairs[open[len(open)-1]] = j
+				open = open[:len(open)-1]
 			}
 		}
+		x.b.charge(len(x.in))
+	}
+	if i < 0 || i >= len(x.in) {
+		return -1
+	}
+	if isClose(x.in[i]) {
+		return i
+	}
+	return x.pairs[i]
+}
+
+// match returns the index of the bracket closing the one at i (or the last token).
+func (x *tsStrip) match(i int) int {
+	if e := x.closer(i); e >= 0 {
+		return e
 	}
 	return len(x.in) - 1
 }
@@ -642,15 +690,8 @@ func (x *tsStrip) match(i int) int {
 // matchOK is match for code that is dropped: an unclosed bracket is reported
 // (ErrPartial) instead of taking the rest of the file with it.
 func (x *tsStrip) matchOK(i int) (int, bool) {
-	depth := 0
-	for j := i; j < len(x.in) && x.b.step(); j++ {
-		if isOpen(x.in[j]) {
-			depth++
-		} else if isClose(x.in[j]) {
-			if depth--; depth <= 0 {
-				return j, true
-			}
-		}
+	if e := x.closer(i); e >= 0 {
+		return e, true
 	}
 	x.b.unterminated()
 	return i, false
@@ -695,6 +736,12 @@ const maxAngles = 512
 // content must look like types (no operators that only values have), and the
 // look-ahead is bounded.
 func (x *tsStrip) angles(i int, check bool) (int, bool) {
+	if !check && x.at(i).op("<") {
+		if e := x.angleEnds()[i]; e >= 0 {
+			return e, true
+		}
+		return i, false
+	}
 	depth := 0
 	for j := i; j < len(x.in) && x.b.step(); j++ {
 		if check && j-i > maxAngles {
@@ -743,6 +790,60 @@ func (x *tsStrip) angles(i int, check bool) (int, bool) {
 	return i, false
 }
 
+// angleEnds is what angles(i, false) returns for every "<" in the file, worked
+// out in one pass: the index after its closing ">", or -1. Unchecked, angles
+// reads one bracket level (groups are skipped whole) up to the first ">" that
+// brings the depth back to 0 (success) or below it, a ";" or a closer of the
+// level (failure). So an unclosed "<" is not read to the end again from each "<".
+func (x *tsStrip) angleEnds() []int {
+	if x.angleEnd != nil {
+		return x.angleEnd
+	}
+	type start struct{ at, depth int } // a "<" waiting for its ">", and the depth before it
+	type level struct {
+		depth int
+		wait  []start
+	}
+	x.angleEnd = make([]int, len(x.in))
+	for j := range x.angleEnd {
+		x.angleEnd[j] = -1
+	}
+	x.closer(0)
+	levels := []*level{{}}
+	for j, t := range x.in {
+		l := levels[len(levels)-1]
+		switch {
+		case isOpen(t):
+			if x.pairs[j] < 0 {
+				l.wait = l.wait[:0] // unclosed: angles skips to the end of the file, nothing waiting closes
+			}
+			levels = append(levels, &level{})
+		case isClose(t):
+			if len(levels) > 1 {
+				levels = levels[:len(levels)-1] // what waits inside stays unclosed
+			} else {
+				l.wait = l.wait[:0] // a closer of no group ends the level
+			}
+		case t.op(";"):
+			l.wait = l.wait[:0]
+		case t.op("<"):
+			l.wait = append(l.wait, start{j, l.depth})
+			l.depth++
+		case t.op(">") || t.op(">>") || t.op(">>>"):
+			l.depth -= len(t.Text)
+			for len(l.wait) > 0 && l.wait[len(l.wait)-1].depth >= l.depth {
+				s := l.wait[len(l.wait)-1]
+				l.wait = l.wait[:len(l.wait)-1]
+				if s.depth == l.depth {
+					x.angleEnd[s.at] = j + 1
+				}
+			}
+		}
+	}
+	x.b.charge(len(x.in))
+	return x.angleEnd
+}
+
 var typeOps = words(". , | & ? : => = ... -")
 
 // typeStart reports whether t can begin a type.
@@ -752,6 +853,10 @@ func (x *tsStrip) typeStart(t Token) bool {
 
 // skipType returns the index after the type starting at i.
 func (x *tsStrip) skipType(i int) int {
+	if !x.deeper() {
+		return i
+	}
+	defer func() { x.depth-- }()
 	i = x.skipUnion(i)
 	if t := x.at(i); t.word("extends") && t.Flags&FlagNL == 0 {
 		i = x.skipUnion(i + 1)
@@ -798,11 +903,30 @@ func (x *tsStrip) skipPostfix(i int) int {
 	return j
 }
 
+// deeper enters one more level of skipType or skipPrimary; false (and the file
+// reported limited) past maxTypeDepth, where the rest of the type is read as code.
+func (x *tsStrip) deeper() bool {
+	if x.depth >= maxTypeDepth {
+		x.b.tooDeep()
+		return false
+	}
+	x.depth++
+	return true
+}
+
+// maxTypeDepth bounds the nesting of a type: each "x is", "keyof", "() =>" or
+// "B extends C ? D :" takes a level or two.
+const maxTypeDepth = 4 * maxNest
+
 func (x *tsStrip) skipPrimary(i int) int {
 	t := x.at(i)
 	if i >= len(x.in) {
 		return i
 	}
+	if !x.deeper() {
+		return i
+	}
+	defer func() { x.depth-- }()
 	switch {
 	case t.word("typeof") || t.word("keyof") || t.word("readonly") || t.word("unique") || t.word("infer") || t.word("asserts"):
 		if x.at(i+1).op("|") || x.at(i+1).op("&") || x.at(i+1).op(",") || x.at(i+1).op(")") || x.at(i+1).op(">") || x.at(i+1).op("=") || x.at(i+1).op(";") {

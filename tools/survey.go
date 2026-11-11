@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net"
 	"os"
 	"os/exec"
@@ -139,13 +140,9 @@ func Survey(ctx context.Context, env *Env) SiteProfile {
 	}
 	sort.Strings(p.Stacks)
 
-	p.SSH, p.SSHHash = sshdSettings()
-	if p.SSH["passwordauthentication"] == "yes" {
-		p.Risks = append(p.Risks, Risk{"ssh:password", "warning", "SSH accepts passwords (PasswordAuthentication yes); key-only login stops brute force"})
-	}
-	if p.SSH["permitrootlogin"] == "yes" {
-		p.Risks = append(p.Risks, Risk{"ssh:root", "warning", "SSH allows root to log in with a password (PermitRootLogin yes)"})
-	}
+	var unread []string
+	p.SSH, p.SSHHash, unread = sshdSettings()
+	p.Risks = append(p.Risks, sshRisks(p.SSH, unread)...)
 	if p.Firewall == "none detected" && hasPublic(p.Services) {
 		p.Risks = append(p.Risks, Risk{"firewall:none", "info", "no host firewall detected (nftables, ufw, firewalld); fine only if a cloud firewall covers this server"})
 	}
@@ -242,18 +239,55 @@ func findProcess(name string) bool {
 	return false
 }
 
+// sshdConfig is the sshd configuration read; relative Include paths are under its folder.
+var sshdConfig = "/etc/ssh/sshd_config"
+
+// sshRisks are the risks of the sshd settings. A setting a file that could not
+// be read may have set ("unknown") is not judged: it is reported as unknown.
+func sshRisks(ssh map[string]string, unread []string) []Risk {
+	var out []Risk
+	if ssh["passwordauthentication"] == "yes" {
+		out = append(out, Risk{"ssh:password", "warning", "SSH accepts passwords (PasswordAuthentication yes); key-only login stops brute force"})
+	}
+	if ssh["permitrootlogin"] == "yes" {
+		out = append(out, Risk{"ssh:root", "warning", "SSH allows root to log in with a password (PermitRootLogin yes)"})
+	}
+	if ssh["passwordauthentication"] == "unknown" || ssh["permitrootlogin"] == "unknown" {
+		out = append(out, Risk{"ssh:unreadable", "info", "cannot tell the SSH settings (PasswordAuthentication, PermitRootLogin): " +
+			strings.Join(unread, ", ") + " cannot be read without the permission; run Shentu as root"})
+	}
+	return out
+}
+
 // sshdSettings returns the effective global sshd settings that matter for security,
 // following Include in place; the first value wins, as in sshd. Match blocks are not
-// evaluated. The hash covers every line read, to notice any change.
-func sshdSettings() (map[string]string, string) {
+// evaluated. The hash covers every line read, to notice any change. A file or
+// Include folder that cannot be read (sshd reads it as root) leaves every setting
+// not set before it "unknown"; unread lists them.
+func sshdSettings() (map[string]string, string, []string) {
 	want := map[string]string{"port": "22", "permitrootlogin": "prohibit-password", "passwordauthentication": "yes",
 		"pubkeyauthentication": "yes", "permitemptypasswords": "no", "x11forwarding": "no"}
 	got := map[string]bool{}
 	h := sha256.New()
+	var unread []string
+	unknown := func(path string) {
+		unread = append(unread, path)
+		for k := range want {
+			if !got[k] {
+				want[k], got[k] = "unknown", true
+			}
+		}
+	}
 	var read func(path string, depth int) bool // false stops at a Match block
 	read = func(path string, depth int) bool {
+		if depth > 4 {
+			return true
+		}
 		b, err := os.ReadFile(path)
-		if err != nil || depth > 4 {
+		if err != nil {
+			if !errors.Is(err, fs.ErrNotExist) {
+				unknown(path)
+			}
 			return true
 		}
 		h.Write(b)
@@ -269,7 +303,11 @@ func sshdSettings() (map[string]string, string) {
 			if key == "include" {
 				for _, pat := range f[1:] {
 					if !filepath.IsAbs(pat) {
-						pat = filepath.Join("/etc/ssh", pat)
+						pat = filepath.Join(filepath.Dir(sshdConfig), pat)
+					}
+					// Glob says nothing of a folder it cannot list.
+					if _, err := os.ReadDir(filepath.Dir(pat)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+						unknown(filepath.Dir(pat))
 					}
 					files, _ := filepath.Glob(pat)
 					sort.Strings(files)
@@ -287,8 +325,8 @@ func sshdSettings() (map[string]string, string) {
 		}
 		return true
 	}
-	read("/etc/ssh/sshd_config", 0)
-	return want, hex.EncodeToString(h.Sum(nil))[:16]
+	read(sshdConfig, 0)
+	return want, hex.EncodeToString(h.Sum(nil))[:16], unread
 }
 
 func cronFiles() []string {

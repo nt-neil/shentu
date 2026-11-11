@@ -32,6 +32,7 @@ import (
 const (
 	maxSumParams = 64   // parameters a summary tracks
 	maxSumDepth  = 32   // summaries being computed inside one another
+	maxSumHeight = 128  // the longest chain of summaries under one: past it the summary counts as cut short
 	maxSumRuns   = 4000 // analyses of function bodies per rule and file
 	maxSumRounds = 4    // recomputations at the head of a recursive cycle
 )
@@ -46,28 +47,42 @@ type fnInfo struct {
 }
 
 type summary struct {
-	params     []string            // the parameters' names, for named arguments
-	rest       bool                // the function takes further arguments
-	sink       [maxSumParams][]loc // per parameter: the sink lines it reaches, in this or another file
-	sinkEmb    uint64              // parameters embedded in a larger string on the way to a sink
-	ret        uint64              // parameters whose input the return value carries
-	retWeak    uint64              // ... only through calls the analysis does not know
-	retEmb     uint64              // ... embedded in a larger string
-	checks     uint64              // parameters the function validates when it returns true (a validator)
-	condChecks uint64              // ... only where the call's other arguments carry no input (the list may be one)
-	retSrc     bool                // the return value carries input of its own
+	params     []string // the parameters' names, for named arguments
+	rest       bool     // the function takes further arguments
+	sink       [][]loc  // per parameter: the sink lines it reaches, in this or another file (up to the last that reaches one)
+	sinkEmb    uint64   // parameters embedded in a larger string on the way to a sink
+	ret        uint64   // parameters whose input the return value carries
+	retWeak    uint64   // ... only through calls the analysis does not know
+	retEmb     uint64   // ... embedded in a larger string
+	checks     uint64   // parameters the function validates when it returns true (a validator)
+	condChecks uint64   // ... only where the call's other arguments carry no input (the list may be one)
+	retSrc     bool     // the return value carries input of its own
+	capped     bool     // a cap of its own work cut it short: what it says may be too little
+	height     int      // the longest chain of summaries under it, itself included
+	cost       int      // its own work, not its callees': what an asker pays for using it
+	id         string   // file and key: the same summary worked out again (after a cache let it go) is paid for once
 }
 
 func (s *summary) equal(o *summary) bool {
 	if s.ret != o.ret || s.retSrc != o.retSrc || s.retEmb != o.retEmb || s.retWeak != o.retWeak || s.sinkEmb != o.sinkEmb || s.checks != o.checks || s.condChecks != o.condChecks {
 		return false
 	}
-	for i := range s.sink {
-		if !slices.Equal(s.sink[i], o.sink[i]) {
+	for i := range max(len(s.sink), len(o.sink)) {
+		if !slices.Equal(s.sinkOf(i), o.sinkOf(i)) {
 			return false
 		}
 	}
 	return true
+}
+
+// sinkOf is the sink lines parameter i reaches. A summary holds as many lists
+// as it needs, not one per parameter it could track: there are a summary per
+// rule and function, most reaching no sink at all.
+func (s *summary) sinkOf(i int) []loc {
+	if i < len(s.sink) {
+		return s.sink[i]
+	}
+	return nil
 }
 
 func (s *summary) reachesSink() bool {
@@ -81,16 +96,17 @@ func (s *summary) reachesSink() bool {
 
 // summaries holds one rule's summaries for one file.
 type summaries struct {
-	ff      *fileFuncs
-	funcs   map[string][]*fnInfo // ff.byKey
-	done    map[string]*summary
-	busy    map[string]bool
-	rel     map[string]uint8 // relevance to the rule: 0 not known yet, 1 yes, 2 no, 3 being worked out
-	relBusy bool             // rel is being worked out (another file asking meanwhile learns nothing yet)
-	retUnk  map[string]uint8 // 1: the function returns the result of a call the analysis does not know; 2: it does not
-	capped  bool             // a summary hit a cap (depth, runs, rounds, parameters) and may say too little
-	runs    int
-	depth   int
+	ff     *fileFuncs
+	funcs  map[string][]*fnInfo // ff.byKey
+	done   map[string]*summary
+	busy   map[string]bool
+	rel    map[string]uint8     // relevance to the rule, once known: 1 yes, 2 no (relevance.go)
+	direct map[string]bool      // what in the function itself matters to the rule, calls aside; nil until worked out
+	cross  map[string][]relNode // the functions of other files the function calls
+	retUnk map[string]uint8     // 1: the function returns the result of a call the analysis does not know; 2: it does not
+	capped bool                 // a summary hit a cap (depth, runs, rounds, parameters) and may say too little
+	runs   int
+	depth  int
 }
 
 func newSummaries(ff *fileFuncs) *summaries {
@@ -115,6 +131,8 @@ type fileFuncs struct {
 	unions   map[string][]string // a $this union key → the keys it merges
 	classSet map[string]bool     // classes of the file, worked out once
 	methods  map[string]string   // memo of method(): class + "\x00" + name → key
+	desc     map[string][]string // class → the classes of the file under it, worked out once
+	callsUp  map[string]bool     // memo of callsParent(): key + "\x00" + name
 }
 
 func newFileFuncs(funcs map[string][]*fnInfo, lang string) *fileFuncs {
@@ -443,14 +461,12 @@ func (ff *fileFuncs) this(class, name, caller string) string {
 		caller = strings.ToLower(caller)
 	}
 	var subs []string
-	for c := range ff.classes() {
+	for _, c := range ff.descendants()[class] {
 		if caller != "" && len(ff.byKey[c+"::"+caller]) > 0 && !ff.callsParent(c+"::"+caller, caller) {
 			continue // c overrides the calling method and never runs it
 		}
-		if c != class && ff.inherits(c, class) {
-			if k := c + "::" + name; len(ff.byKey[k]) > 0 && k != base {
-				subs = append(subs, k)
-			}
+		if k := c + "::" + name; len(ff.byKey[k]) > 0 && k != base {
+			subs = append(subs, k)
 		}
 	}
 	if len(subs) == 0 {
@@ -478,9 +494,36 @@ func (ff *fileFuncs) this(class, name, caller string) string {
 	return vk
 }
 
+// descendants maps each class to the classes of the file that inherit it
+// (up to 64 parents up), so that $this->name() is resolved without
+// going over every class of the file each time.
+func (ff *fileFuncs) descendants() map[string][]string {
+	if ff.desc != nil {
+		return ff.desc
+	}
+	ff.desc = map[string][]string{}
+	for c := range ff.classes() {
+		a := c
+		for depth := 0; a != "" && depth < 64; depth++ {
+			if a = ff.parents[a]; a != "" && a != c && (len(ff.desc[a]) == 0 || ff.desc[a][len(ff.desc[a])-1] != c) {
+				ff.desc[a] = append(ff.desc[a], c) // once, also when the parents go round in a cycle
+			}
+		}
+	}
+	return ff.desc
+}
+
 // callsParent reports whether the method at key calls its parent's version
 // (parent::name(), super().name(), super.name()), so the parent's code still runs.
+// It is worked out once per method: $this->name() asks it for every call.
 func (ff *fileFuncs) callsParent(key, name string) bool {
+	mk := key + "\x00" + name
+	if v, ok := ff.callsUp[mk]; ok {
+		return v
+	}
+	if ff.callsUp == nil {
+		ff.callsUp = map[string]bool{}
+	}
 	found := false
 	for _, fi := range ff.byKey[key] {
 		walkToks(fi.f.body, 0, func(t []Token) {
@@ -493,6 +536,7 @@ func (ff *fileFuncs) callsParent(key, name string) bool {
 			}
 		})
 	}
+	ff.callsUp[mk] = found
 	return found
 }
 
@@ -511,15 +555,6 @@ func (ff *fileFuncs) classes() map[string]bool {
 	}
 	ff.classSet = out
 	return out
-}
-
-func (ff *fileFuncs) inherits(c, ancestor string) bool {
-	for depth := 0; c != "" && depth < 64; depth++ {
-		if c = ff.parents[c]; c == ancestor {
-			return true
-		}
-	}
-	return false
 }
 
 func (ff *fileFuncs) hasClass(c string) bool { return ff.classes()[c] }
@@ -555,6 +590,10 @@ func (ff *fileFuncs) components(b *budget) {
 				}
 			})
 		}
+	}
+	if b.hit { // the clock ran out: no partial graph is kept
+		ff.comp, ff.edges, ff.callers = nil, nil, nil
+		return
 	}
 	index, low, onStack := map[string]int{}, map[string]int{}, map[string]bool{}
 	var stack []string
@@ -635,65 +674,185 @@ func (a *analysis) summaryOf(key string) *summary {
 		return nil
 	}
 	if s, ok := sc.done[key]; ok {
-		return s
+		return a.used(s)
+	}
+	if s := a.proj.provisional(sc, key); s != nil {
+		return a.used(s) // a member of a cycle across files still being settled
 	}
 	if len(sc.funcs[key]) == 0 || !a.relevant(key) || sc.busy[key] {
 		return nil
 	}
-	// A summary worked out while a function of another file it calls (back)
-	// was itself being worked out saw that one as unknown: it is used, not kept,
-	// and worked out again when asked next (a cycle across files).
-	hits := a.proj.busyCount()
-	if sc.depth >= maxSumDepth || sc.runs >= maxSumRuns || a.b.hit {
+	if a.b.hit {
 		a.b.tooDeep()
-		sc.capped = true
 		return nil
 	}
-	sc.ff.components(a.b)
+	if !a.graph() {
+		return nil
+	}
 	c, ok := sc.ff.comp[key]
 	if !ok || c < 0 {
 		sc.busy[key] = true
-		sc.depth++
-		s := a.summarizeKey(key)
-		if a.proj.busyCount() == hits {
+		idx := a.proj.push(a, []string{key})
+		var s *summary
+		capped, keep, height, cost := a.own(func(x *analysis) { s = x.summarizeKey(key) })
+		delete(sc.busy, key)
+		fr := a.proj.pop()
+		if s == nil { // nested too deep: not worked out
+			return nil
+		}
+		s.capped, s.height, s.cost, s.id = capped, height, cost, a.file+"\x00"+key
+		switch {
+		case !keep:
+			a.proj.drop(fr)
+		case fr != nil && fr.root < idx: // part of a cycle across files whose first member is below
+			a.proj.hold(fr, map[string]*summary{key: s})
+		case fr != nil && len(fr.members) > 0: // the first member of a cycle across files: settle it
+			return a.used(a.proj.settle(fr, key))
+		default:
 			sc.done[key] = s
 		}
-		delete(sc.busy, key)
-		sc.depth--
-		return s
+		return a.used(s)
 	}
 	var members []string
 	for _, m := range sc.ff.comps[c] {
 		if _, ok := sc.done[m]; !ok && a.relevant(m) {
 			members = append(members, m)
 			sc.done[m] = &summary{} // the fixpoint starts from "does nothing"
+			sc.busy[m] = true       // another file asking for one meets a cycle
 		}
 	}
-	sc.depth++
-	for round := 0; ; round++ {
-		changed := false
-		for _, m := range members {
-			if n := a.summarizeKey(m); !n.equal(sc.done[m]) {
-				sc.done[m], changed = n, true
+	idx := a.proj.push(a, members)
+	capped, keep, height, cost := a.own(func(x *analysis) {
+		for round := 0; ; round++ {
+			changed := false
+			for _, m := range members {
+				if n := x.summarizeKey(m); !n.equal(sc.done[m]) {
+					sc.done[m], changed = n, true
+				}
+			}
+			if !changed || x.b.hit {
+				break
+			}
+			if round+1 >= maxSumRounds {
+				x.b.tooDeep() // a recursive cycle that does not settle
+				break
 			}
 		}
-		if !changed || a.b.hit {
-			break
-		}
-		if round+1 >= maxSumRounds {
-			a.b.tooDeep() // a recursive cycle that does not settle
-			sc.capped = true
-			break
-		}
+	})
+	fr := a.proj.pop()
+	got := map[string]*summary{}
+	for _, m := range members {
+		delete(sc.busy, m)
+		sc.done[m].capped, sc.done[m].height, sc.done[m].cost, sc.done[m].id = capped, height, cost, a.file+"\x00"+m
+		got[m] = sc.done[m]
 	}
-	sc.depth--
 	s := sc.done[key]
-	if a.proj.busyCount() != hits {
+	switch {
+	case !keep:
 		for _, m := range members {
 			delete(sc.done, m)
 		}
+		a.proj.drop(fr)
+	case fr != nil && fr.root < idx:
+		for _, m := range members {
+			delete(sc.done, m)
+		}
+		a.proj.hold(fr, got)
+	case fr != nil && len(fr.members) > 0:
+		s = a.proj.settle(fr, key)
+	}
+	return a.used(s)
+}
+
+// used returns a summary to the analysis that asked for it: one a cap cut
+// short may say too little, so the asker's result says calls were not
+// followed to the end, whether the summary was worked out now or before.
+func (a *analysis) used(s *summary) *summary {
+	if s != nil && s.capped {
+		a.b.tooDeep()
+	}
+	// The asker pays what working it out cost, once, whether it was ready or
+	// not: so its own caps fall at the same place either way, and a rule's
+	// work in a file, summaries included, stays within its cap.
+	if s != nil && s.cost > 0 && !a.b.charged[s.id] {
+		if a.b.charged == nil {
+			a.b.charged = map[string]bool{}
+		}
+		a.b.charged[s.id] = true
+		a.b.paid += s.cost
+		a.b.charge(s.cost)
+	}
+	if s != nil && a.heights != nil && s.height > *a.heights {
+		*a.heights = s.height
 	}
 	return s
+}
+
+// maxOwnNest bounds summaries worked out inside one another (a chain of calls
+// none of which has its summary yet); past it a summary is not worked out.
+// It is twice maxSumHeight: a chain that deep is cut by its height whichever
+// summaries were ready.
+const maxOwnNest = 2 * maxSumHeight
+
+// own works out a summary in a budget and a nesting of its own, not the
+// asker's: the same summary comes out whoever asks for it and whatever was
+// worked out before, so a summary kept and used later is the one any later
+// asker would have worked out, and what the asker's caps cut does not depend
+// on which summaries it found ready. capped tells whether the summary's own
+// caps cut it short (said by the summary itself, see used); keep is false
+// when it cannot be kept: cut by the clock, or nested too deep.
+func (a *analysis) own(work func(x *analysis)) (capped, keep bool, height, cost int) {
+	sc := a.sc
+	if a.nest >= maxOwnNest {
+		a.b.tooDeep()
+		return true, false, 0, 0
+	}
+	nb := &budget{maxTok: a.b.maxTok, deadline: a.b.deadline, maxWork: a.b.sumWork, sumWork: a.b.sumWork}
+	under := 0 // the highest summary this one uses
+	depth, runs, was := sc.depth, sc.runs, sc.capped
+	sc.depth, sc.runs, sc.capped = 0, 0, false
+	pdepth := 0
+	if a.proj != nil {
+		pdepth, a.proj.depth = a.proj.depth, 0
+	}
+	x := *a
+	x.b, x.nest, x.heights = nb, a.nest+1, &under
+	work(&x)
+	height, cost = under+1, nb.work-nb.paid // its own work: what it paid for its callees is theirs
+	// A chain of summaries longer than maxSumHeight is cut: by the chain's own
+	// length under this summary, which no asker changes. (The real chains are
+	// much shorter: 45 at most in WordPress. A cap near them would make the
+	// result depend on the scan order, as a chain through a cycle across files
+	// is a step or two longer or shorter depending on where it was entered.)
+	capped = sc.capped || nb.limited || nb.hit && !nb.timeHit || height > maxSumHeight
+	sc.depth, sc.runs, sc.capped = depth, runs, was
+	if a.proj != nil {
+		a.proj.depth = pdepth
+	}
+	if nb.timeHit {
+		// The clock: nothing to keep, and the asker is cut by it as well.
+		if a.proj != nil {
+			a.proj.stop("following calls across files ran out of time")
+			a.proj.byMachine = true
+		}
+		a.b.hit, a.b.timeHit = true, true
+		return capped, false, height, cost
+	}
+	return capped, true, height, cost
+}
+
+// graph builds the file's call graph, work kept for the whole file: charged to
+// nobody, so that no asker pays for it more than another, but within the
+// asker's clock. False when the clock ran out: the asker is cut by it as well,
+// and the next asker builds the graph again.
+func (a *analysis) graph() bool {
+	b := &budget{maxTok: 1 << 40, deadline: a.b.deadline}
+	a.sc.ff.components(b)
+	if b.hit {
+		a.b.hit, a.b.timeHit = true, true
+		return false
+	}
+	return true
 }
 
 func (a *analysis) summarizeKey(key string) *summary {
@@ -713,16 +872,23 @@ func (a *analysis) crossNeeded(tree []*stmt) bool {
 	if sc == nil {
 		return false
 	}
-	a.relevant("") // works out relevance for every function
-	for k, r := range sc.rel {
-		if r == 1 && len(sc.ff.callers[k]) > 0 {
+	if !a.graph() {
+		return false
+	}
+	keys := make([]string, 0, len(sc.funcs))
+	for k := range sc.funcs {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	for _, k := range keys {
+		if len(sc.ff.callers[k]) > 0 && a.relevant(k) {
 			return true
 		}
 	}
 	found := false
 	look := func(t []Token) {
 		for i := 0; i < len(t) && !found; i++ {
-			if k := sc.ff.key(t, i, "", "", ""); k != "" && sc.rel[k] == 1 {
+			if k := sc.ff.key(t, i, "", "", ""); k != "" && a.relevant(k) {
 				found = true
 			} else if k == "" && a.proj != nil && i+1 < len(t) && t[i+1].op("(") && t[i].Kind == Ident &&
 				(a.proj.declaredElsewhere(a.lang(), t[i].Text, a.file) || a.proj.importedRelative(a.file, t, i)) {
@@ -782,52 +948,13 @@ func (a *analysis) returnsUnknown(key string) bool {
 // analysing every function of a large file for every rule. It is worked out for
 // all functions at once: each body is read once, and relevance goes back along
 // the call graph to the callers.
+// relevant reports whether the function key of a's file matters to the rule
+// (relevance.go).
 func (a *analysis) relevant(key string) bool {
-	sc := a.sc
-	if sc.rel == nil || len(sc.rel) == 0 {
-		sc.rel = map[string]uint8{}
-		sc.relBusy = true
-		defer func() { sc.relBusy = false }()
-		sc.ff.components(a.b)
-		var work []string
-		keys := make([]string, 0, len(sc.funcs))
-		for k := range sc.funcs {
-			keys = append(keys, k)
-		}
-		slices.Sort(keys) // a fixed order: what a cycle across files guesses must not vary
-		for _, k := range keys {
-			infos := sc.funcs[k]
-			sc.rel[k] = 2
-			for _, fi := range infos {
-				direct := false
-				walkToks(fi.f.body, 0, func(t []Token) { direct = direct || a.toksRelevant(t) })
-				if direct {
-					sc.rel[k] = 1
-					work = append(work, k)
-					break
-				}
-			}
-		}
-		for len(work) > 0 {
-			k := work[len(work)-1]
-			work = work[:len(work)-1]
-			for _, c := range sc.ff.callers[k] {
-				if sc.rel[c] != 1 {
-					sc.rel[c] = 1
-					work = append(work, c)
-				}
-			}
-		}
+	if key == "" {
+		return false
 	}
-	if r, ok := sc.rel[key]; ok {
-		return r == 1
-	}
-	for _, m := range sc.ff.unions[key] { // a $this union made after the graph: its members decide
-		if sc.rel[m] == 1 {
-			return true
-		}
-	}
-	return false
+	return a.reach(relNode{a.file, key})
 }
 
 func (a *analysis) toksRelevant(t []Token) bool {
@@ -862,11 +989,6 @@ func (a *analysis) toksRelevant(t []Token) bool {
 				}
 			}
 		}
-		if a.proj != nil && t[i].Kind == Ident && i+1 < len(t) && t[i+1].op("(") && a.calleeKey(t, i) == "" {
-			if c, ok := a.callee(t, i); ok && a.proj.relevant(a, c) {
-				return true // a call into a function of another file that matters
-			}
-		}
 	}
 	return false
 }
@@ -889,7 +1011,7 @@ func (a *analysis) summarize(fi *fnInfo, s *summary) {
 	run := func(mask uint64, sources bool) *summRun {
 		x := &analysis{r: a.r, php: a.php, py: a.py, js: a.js, b: a.b, kw: a.kw, seen: map[loc]bool{}, sc: a.sc, defs: a.defs,
 			summ: &summRun{lines: map[loc]bool{}, emb: map[loc]bool{}}, noSrc: !sources, cls: fi.f.class, parent: fi.f.parent, fname: fi.f.name,
-			file: a.file, proj: a.proj, ftoks: a.ftoks, rdefs: a.rdefs}
+			file: a.file, proj: a.proj, ftoks: a.ftoks, rdefs: a.rdefs, nest: a.nest, heights: a.heights}
 		st := state{}
 		x.paramTypes(fi.f)
 		for i := 0; i < n; i++ {
@@ -943,6 +1065,9 @@ func (a *analysis) summarize(fi *fnInfo, s *summary) {
 			s.condChecks |= 1 << i
 		}
 		for l := range r.lines {
+			for len(s.sink) <= i {
+				s.sink = append(s.sink, nil)
+			}
 			if !slices.Contains(s.sink[i], l) {
 				s.sink[i] = append(s.sink[i], l)
 			}
@@ -950,7 +1075,7 @@ func (a *analysis) summarize(fi *fnInfo, s *summary) {
 				s.sinkEmb |= 1 << i
 			}
 		}
-		slices.SortFunc(s.sink[i], func(x, y loc) int {
+		slices.SortFunc(s.sinkOf(i), func(x, y loc) int {
 			if x.path != y.path {
 				return strings.Compare(x.path, y.path)
 			}

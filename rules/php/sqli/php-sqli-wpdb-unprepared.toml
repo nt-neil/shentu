@@ -6,10 +6,16 @@ severity = "high"
 title = "WordPress $wpdb query built from request input without $wpdb->prepare"
 frameworks = ["wordpress"]
 sources = ["$_GET", "$_POST", "$_REQUEST", "get_query_var(", "->get_param("]
-sinks = ["$wpdb->query", "$wpdb->get_results", "$wpdb->get_row", "$wpdb->get_var", "$wpdb->get_col"]
-sanitizers = ["$wpdb->prepare", "absint", "intval"]
+sinks = ["$wpdb->query", "$wpdb->get_results", "$wpdb->get_row", "$wpdb->get_var", "$wpdb->get_col", "$wpdb->prepare("]
+sanitizers = ["$wpdb->prepare", "absint", "intval", "count(", "sanitize_sql_orderby("]
 fix = "Pass every value through $wpdb->prepare() placeholders (%d, %s); sanitize_text_field() and esc_sql() alone do not make a value safe in SQL."
 refs = ["CVE-2025-7036"]
+
+# prepare() binds only the values after the format string: input written
+# into the format itself is SQL, and prepare cleans just what it binds.
+[[args]]
+sinks = ["$wpdb->prepare("]
+arg = 1
 
 [[samples]]
 kind = "vulnerable"
@@ -107,4 +113,54 @@ code = '''
 <?php
 extract(shortcode_atts(array('id' => 0, 'title' => ''), $_REQUEST));
 $row = $wpdb->get_row("SELECT * FROM {$wpdb->prefix}items WHERE id = " . absint($id));
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "prepare binds only the values after the format: input written into the format is SQL"
+code = '''
+<?php
+add_action('wp_ajax_drop_items', function () {
+    global $wpdb;
+    $wpdb->query($wpdb->prepare("DELETE FROM {$wpdb->prefix}items WHERE id IN ({$_POST['ids']}) AND owner = %d", get_current_user_id()));
+});
+'''
+
+[[samples]]
+kind = "safe"
+note = "the input is bound as a value, not written into the format"
+code = '''
+<?php
+add_action('wp_ajax_drop_item', function () {
+    global $wpdb;
+    $wpdb->query($wpdb->prepare("DELETE FROM {$wpdb->prefix}items WHERE id = %d AND owner = %d", $_POST['id'], get_current_user_id()));
+});
+'''
+
+[[samples]]
+kind = "safe"
+note = "the format gets one placeholder per value; count() is a number"
+code = '''
+<?php
+add_action('wp_ajax_drop_items', function () {
+    global $wpdb;
+    $ids = array_map('absint', (array) $_POST['ids']);
+    $marks = implode(',', array_fill(0, count($ids), '%d'));
+    $wpdb->query($wpdb->prepare("DELETE FROM {$wpdb->prefix}items WHERE id IN ($marks)", $ids));
+});
+'''
+
+[[samples]]
+kind = "safe"
+note = "sanitize_sql_orderby returns false unless the value is a column list with ASC or DESC"
+code = '''
+<?php
+function list_rows() {
+    global $wpdb;
+    $sql = "SELECT * FROM {$wpdb->prefix}rows";
+    if (!empty($_GET['orderby'])) {
+        $sql .= ' ORDER BY ' . sanitize_sql_orderby($_GET['orderby'] . ' ' . $_GET['order']);
+    }
+    return $wpdb->get_results($wpdb->prepare($sql . ' LIMIT %d', 20));
+}
 '''
