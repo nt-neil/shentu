@@ -875,8 +875,11 @@ func (p *Project) ok() bool {
 		// (own, relevance.go), they come back the same, only later. The parsed
 		// files first: they are most of the memory, and parsing one again is
 		// cheap, while summaries let go of in the middle of a chain of them are
-		// worked out again many times over. Only what is still over the cap
-		// after both, and a GC, stops calls crossing files.
+		// worked out again many times over. What is still over 80% of the cap
+		// after both, and a GC, stops calls crossing files: it is what the
+		// files and summaries in use take (a chain of calls through large
+		// files), and with less room the GC would run all the time and the
+		// caches go and come back without end.
 		if live > p.opt.MaxHeap/10*6 && (now.Sub(p.shrunk) > time.Second || live > p.opt.MaxHeap) {
 			p.shrunk = now
 			p.shrink(false)
@@ -886,7 +889,7 @@ func (p *Project) ok() bool {
 				runtime.GC()
 				live = heapLive()
 			}
-			if live > p.opt.MaxHeap {
+			if live > p.opt.MaxHeap/10*8 {
 				p.stop("following calls across files reached the memory limit")
 				p.byMachine = true
 				return false
