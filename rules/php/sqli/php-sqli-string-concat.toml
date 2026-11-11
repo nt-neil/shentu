@@ -4,7 +4,7 @@ class = "sqli"
 cwe = "CWE-89"
 severity = "high"
 title = "Request input concatenated or interpolated into a SQL string"
-sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE"]
+sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "get_query_var(", "->get_param("]
 sinks = ["mysqli_query", "->query(", "->exec(", "pg_query", "->prepare("]
 sanitizers = ["intval", "(int)", "->prepare(", "pg_query_params", "count(", "sizeof(", "sanitize_sql_orderby("]
 fix = "Use a prepared statement with bound parameters (PDO::prepare + execute, mysqli bind_param); never build SQL with string concatenation or sprintf. Escaping (mysqli_real_escape_string) only protects a value inside quotes."
@@ -120,4 +120,37 @@ add_action('wp_ajax_drop_items', function () {
     $marks = implode(',', array_fill(0, sizeof($ids), '%d'));
     $wpdb->query($wpdb->prepare("DELETE FROM {$wpdb->prefix}items WHERE id IN ($marks)", $ids));
 });
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "a query var written into prepare()'s format"
+code = '''
+<?php
+add_action('template_redirect', function () {
+    global $wpdb;
+    $slug = get_query_var('book');
+    $row = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$wpdb->prefix}books WHERE slug = '$slug' AND status = %s", 'live'));
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+function shop_items($req) {
+    global $wpdb;
+    $col = $req->get_param('sort');
+    return $wpdb->get_results($wpdb->prepare("SELECT * FROM {$wpdb->prefix}items ORDER BY $col LIMIT %d", 10));
+}
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+function shop_items($req) {
+    global $wpdb;
+    return $wpdb->get_results($wpdb->prepare("SELECT * FROM {$wpdb->prefix}items WHERE cat = %s LIMIT %d", $req->get_param('cat'), 10));
+}
 '''
