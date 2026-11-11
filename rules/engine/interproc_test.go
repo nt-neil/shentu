@@ -147,10 +147,11 @@ func TestInterprocDeepChain(t *testing.T) {
 	e := engineForTest(t)
 	var b strings.Builder
 	b.WriteString("<?php\nsystem($_GET['direct']);\nf0($_GET['c']);\n")
-	for i := 0; i < 40; i++ {
+	n := maxSumHeight + 10 // a chain longer than the cap
+	for i := 0; i < n; i++ {
 		fmt.Fprintf(&b, "function f%d($x) { f%d($x); }\n", i, i+1)
 	}
-	b.WriteString("function f40($x) { system($x); }\n")
+	fmt.Fprintf(&b, "function f%d($x) { system($x); }\n", n)
 	fs, err := e.Scan("php", "f", []byte(b.String()))
 	if !errors.Is(err, ErrCalls) {
 		t.Errorf("a chain deeper than the cap: err %v, want ErrCalls (checked function by function, calls cut short)", err)
