@@ -1,0 +1,62 @@
+/* Shared by the three motion studies: the night-watch palette, the hero and the plain sections. */
+@font-face { font-family: "Shentu Serif"; src: url(../../site/fonts/serif-light.woff2) format("woff2"); font-weight: 300; font-display: swap; }
+@font-face { font-family: "Shentu Serif"; src: url(../../site/fonts/serif-black.woff2) format("woff2"); font-weight: 900; font-display: swap; }
+:root {
+  --bg: #0b0806; --bg-2: #15100c; --ink: #efe3cf; --muted: #a8977f; --line: rgba(239, 227, 207, .13);
+  --ember: #f2b45c; --alarm: #ff6a4d; --on-ember: #160f08; --glow: rgba(242, 180, 92, .45);
+  --serif: "Shentu Serif", "Noto Serif TC", serif; --sans: system-ui, -apple-system, "PingFang TC", sans-serif; --mono: ui-monospace, Menlo, monospace;
+  --gutter: clamp(20px, 4vw, 52px); --guardian: url(../../site/img/guardian-night.webp);
+}
+* { box-sizing: border-box; }
+html { background: var(--bg); }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 17px/1.8 var(--sans); letter-spacing: .02em; overflow-x: hidden; }
+a { color: var(--ember); }
+h1, h2, h3 { font-family: var(--serif); font-weight: 300; line-height: 1.1; word-break: keep-all; margin: 0; }
+.top { position: absolute; z-index: 10; inset: 0 0 auto; display: flex; justify-content: space-between; align-items: center; padding: 22px var(--gutter); }
+.brand { color: var(--ink); text-decoration: none; font: 300 26px/1 var(--serif); }
+.brand b { font-weight: 900; font-size: 19px; color: var(--ember); margin-left: 10px; }
+nav { display: flex; gap: 22px; font-size: 15px; }
+nav a { color: var(--muted); text-decoration: none; padding: 10px 0; }
+nav a.cta { color: var(--ember); }
+
+/* the hero: the guardian whole and centred; the words on the left, clear of the gap */
+.hero { position: relative; height: 100vh; height: 100svh; min-height: 600px; overflow: hidden; }
+.layer { position: absolute; inset: 0; background: var(--guardian) 50% 50% / cover no-repeat; }
+.shade { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse at 50% 45%, transparent 35%, var(--bg) 95%), linear-gradient(transparent 72%, var(--bg)); }
+canvas.dust { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; mix-blend-mode: screen; }
+.copy { position: absolute; z-index: 3; left: var(--gutter); bottom: clamp(36px, 9vh, 90px); width: min(30vw, 440px); }
+.copy h1 { font-size: clamp(48px, 5.6vw, 96px); }
+.copy p { color: var(--muted); margin: 20px 0 0; }
+.button { display: inline-flex; align-items: center; min-height: 50px; padding: 0 24px; background: var(--ember); color: var(--on-ember); text-decoration: none; font-weight: 700; margin-top: 24px; }
+.watch { position: absolute; z-index: 3; right: var(--gutter); bottom: clamp(36px, 9vh, 90px); margin: 0; writing-mode: vertical-rl; font: 900 15px/1 var(--serif); letter-spacing: .6em; color: var(--ember); }
+
+/* plain sections below */
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 var(--gutter); }
+section.block { padding: 110px 0 0; }
+.block h2 { font-size: clamp(34px, 4vw, 56px); margin-bottom: 26px; }
+.acts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 32px; }
+.act { border-top: 1px solid var(--line); padding-top: 18px; }
+.act time { font: 14px/1 var(--mono); color: var(--ember); letter-spacing: .08em; }
+.act h3 { font-size: 30px; margin: 12px 0 10px; }
+.act p { color: var(--muted); margin: 0; }
+.act.find time, .act.find h3 { color: var(--alarm); }
+.tally dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 32px; margin: 0; }
+.tally div { border-top: 1px solid var(--line); padding-top: 16px; }
+.tally dd { margin: 0; font: 300 clamp(60px, 7vw, 110px)/1 var(--serif); }
+.tally dd small { font-size: .32em; color: var(--muted); }
+.tally dt { color: var(--muted); }
+.foot { margin-top: 120px; padding: 26px var(--gutter) 60px; border-top: 1px solid var(--line); color: var(--muted); font-size: 15px; }
+
+/* phones: the guardian in a band under the header, the words beneath it */
+@media (max-width: 640px) {
+  nav a:not(.cta) { display: none; }
+  .hero { height: auto; min-height: 0; overflow: visible; }
+  .hero .stagebox { position: relative; height: 62svh; overflow: hidden; margin-top: 76px; }
+  .copy { position: static; width: auto; padding: 18px var(--gutter) 0; }
+  .copy h1 { font-size: clamp(44px, 12.5vw, 60px); }
+  .watch { display: none; }
+  .acts, .tally dl { grid-template-columns: 1fr; gap: 18px; }
+  section.block { padding-top: 80px; }
+}
+@media (min-width: 641px) { .hero .stagebox { position: absolute; inset: 0; } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } canvas.dust { display: none; } }

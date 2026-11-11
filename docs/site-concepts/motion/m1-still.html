@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shentu · 動態方案 1 靜幕</title>
+<link rel="preload" href="../../site/img/guardian-night.webp" as="image">
+<link rel="stylesheet" href="common.css">
+<style>
+.reveal [data-reveal] { opacity: 0; transform: translate3d(0, 24px, 0); transition: opacity .9s ease, transform .9s cubic-bezier(.2, .7, .2, 1); }
+.reveal [data-reveal].seen { opacity: 1; transform: none; }
+.reveal .acts .act:nth-child(2) { transition-delay: .12s; } .reveal .acts .act:nth-child(3) { transition-delay: .24s; }
+/* the light breathes: one soft glow over the gap, opacity only */
+.breath { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(18% 55% at 50% 42%, rgba(255, 210, 140, .55), transparent 70%); mix-blend-mode: screen; opacity: .25; animation: breathe 5.5s ease-in-out infinite alternate; }
+@keyframes breathe { to { opacity: .75; } }
+</style>
+</head>
+<body>
+<header class="top"><a class="brand" href="#">Shentu<b>神荼</b></a><nav><a href="#">規則</a><a href="#">實測</a><a href="#">更新紀錄</a><a class="cta" href="#">安裝</a></nav></header>
+<section class="hero" id="hero">
+  <div class="stagebox">
+    <div class="layer" role="img" aria-label="夜裡，從廟門的門縫看見逆光的門神"></div>
+    <div class="breath" aria-hidden="true"></div>
+    <canvas class="dust" aria-hidden="true"></canvas>
+    <div class="shade" aria-hidden="true"></div>
+  </div>
+  <div class="copy">
+    <h1>夜裡，有人守門。</h1>
+    <p>你睡覺的時候，Shentu 在你的 Linux 伺服器上巡邏；有狀況，你只會收到一則白話訊息。</p>
+    <a class="button" href="#">安裝</a>
+  </div>
+  <p class="watch" aria-hidden="true">夜巡</p>
+</section>
+<section class="block wrap" data-reveal>
+  <h2>一次巡邏</h2>
+  <div class="acts">
+    <div class="act" data-reveal><time>03:00</time><h3>它巡過整台伺服器。</h3><p>登入紀錄、程序、套件、對外連接埠，以及機器上每個網站的原始碼，都在本機讀。</p></div>
+    <div class="act find" data-reveal><time>03:12</time><h3>它找到那個不對勁的地方。</h3><p>上傳資料夾多了一個檔案：陌生人送什麼過來，它就執行什麼。</p></div>
+    <div class="act" data-reveal><time>03:13</time><h3>它用白話告訴你。</h3><p>一則訊息，說清楚發生了什麼、該怎麼做。你說好之前，什麼都不會改。</p></div>
+  </div>
+</section>
+<section class="block wrap tally" data-reveal>
+  <h2>目前能查的</h2>
+  <dl><div><dd>70</dd><dt>條程式碼稽核規則</dt></div><div><dd>15<small>/ 97</small></dd><dt>個主組公開漏洞已抓到</dt></div><div><dd>0</dd><dt>次修補版誤報</dt></div></dl>
+</section>
+<footer class="foot">Apache-2.0 授權。本站由 cmd/sitegen 從 repo 產生。</footer>
+<script src="common.js"></script>
+<script>
+shentuDust(document.querySelector('canvas.dust'), document.getElementById('hero'));
+shentuReveal();
+</script>
+</body>
+</html>
