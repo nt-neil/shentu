@@ -328,8 +328,9 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 	local := len(routeFns)
 	routeFns = e.projectHandlers(proj, path, ff, routeFns) // ... registered in another file (urls.py, routes/web.php)
 	viaProject := len(routeFns) > local
+	defs := phpDefines(base, toks)
 	if proj != nil {
-		proj.keep(path, &fileCtx{lang: base, tree: tree, ff: ff, tokens: len(toks), rdefs: fileRecvDefs(base, toks)})
+		proj.keep(path, &fileCtx{lang: base, tree: tree, ff: ff, tokens: len(toks), rdefs: fileRecvDefs(base, toks), defs: defs})
 	}
 	var out []Finding
 	add := func(r *crule, lines ...[]loc) {
@@ -357,7 +358,6 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 	// a file without a sink may still pass its input to another file's sink.
 	var ruleList []*crule
 	direct := map[*crule][]loc{}
-	defs := phpDefines(base, toks)
 	names := nameSet(toks, map[string]bool{})
 	si := newSrcIndex(toks, b)
 	for _, r := range rs {

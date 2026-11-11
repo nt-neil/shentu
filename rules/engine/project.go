@@ -128,6 +128,7 @@ type fileCtx struct {
 	ff     *fileFuncs
 	tokens int
 	rdefs  map[string][][]Token // Python: what the file's names hold, for the receiver condition (receiver.go)
+	defs   map[string]string    // PHP: define('NAME', 'text') in the file (context.go)
 }
 
 // NewProject indexes the files at paths. read returns a file's content; paths
@@ -150,7 +151,8 @@ func (e *Engine) NewProject(paths []string, read func(string) ([]byte, error), o
 		ctx: map[string]*fileCtx{}, sums: map[string]*summaries{}, kept: map[string]map[string]*summary{}, seen: map[string]bool{},
 		incl: map[string][]string{}, fnMemo: map[string]string{}, deps: map[string]map[string]bool{}, unread: map[string]bool{},
 		deadline: time.Now().Add(opt.MaxTime)}
-	cache := loadIndexCache(opt.CacheFile)
+	key := e.indexKey()
+	cache := loadIndexCache(opt.CacheFile, key)
 	fresh := map[string]*fileIndex{}
 	n := 0
 	for _, f := range paths {
@@ -187,7 +189,7 @@ func (e *Engine) NewProject(paths []string, read func(string) ([]byte, error), o
 		fresh[f] = fi
 		p.add(f, fi)
 	}
-	saveIndexCache(opt.CacheFile, fresh)
+	saveIndexCache(opt.CacheFile, key, fresh)
 	p.resolveRoutes()
 	return p
 }
@@ -772,7 +774,7 @@ func (p *Project) analysisFor(a *analysis, f string) *analysis {
 		p.sums[key] = sc
 	}
 	return &analysis{r: a.r, php: ctx.lang == "php", py: ctx.lang == "python", js: ctx.lang == "js", b: a.b,
-		kw: keywords[ctx.lang], seen: map[loc]bool{}, sc: sc, proj: p, file: f, rdefs: ctx.rdefs, nest: a.nest, heights: a.heights}
+		kw: keywords[ctx.lang], seen: map[loc]bool{}, sc: sc, proj: p, file: f, rdefs: ctx.rdefs, defs: ctx.defs, nest: a.nest, heights: a.heights}
 }
 
 // context returns the parsed file, parsing it if it is not kept.
@@ -801,7 +803,7 @@ func (p *Project) context(f string) *fileCtx {
 		}
 		return nil
 	}
-	c := &fileCtx{lang: fi.Lang, tree: parse(fi.Lang, toks, b), tokens: len(toks), rdefs: fileRecvDefs(fi.Lang, toks)}
+	c := &fileCtx{lang: fi.Lang, tree: parse(fi.Lang, toks, b), tokens: len(toks), rdefs: fileRecvDefs(fi.Lang, toks), defs: phpDefines(fi.Lang, toks)}
 	if b.timeHit {
 		p.unread[f], p.unsteady = true, true
 	}
@@ -811,6 +813,10 @@ func (p *Project) context(f string) *fileCtx {
 }
 
 func (p *Project) keep(f string, c *fileCtx) {
+	if old, ok := p.ctx[f]; ok { // parsed for another file's call, now scanned itself
+		p.resident -= old.tokens
+		p.lru = slices.DeleteFunc(p.lru, func(x string) bool { return x == f })
+	}
 	p.ctx[f] = c
 	p.lru = append(p.lru, f)
 	p.resident += c.tokens
@@ -1373,7 +1379,22 @@ type indexCache struct {
 	Files   map[string]*fileIndex `json:"files"`
 }
 
-func loadIndexCache(name string) map[string]*fileIndex {
+// indexKey names what a file's index depends on besides its content: the
+// index format, the route models (Routes) and the limits (Limited). A cache
+// written under another key is not used.
+func (e *Engine) indexKey() string {
+	h := sha256.New()
+	enc := json.NewEncoder(h)
+	enc.Encode(e.Limits)
+	for _, lang := range slices.Sorted(maps.Keys(e.routes)) {
+		for _, c := range e.routes[lang] {
+			enc.Encode(c.r)
+		}
+	}
+	return indexVersion + "-" + hex.EncodeToString(h.Sum(nil))
+}
+
+func loadIndexCache(name, key string) map[string]*fileIndex {
 	if name == "" {
 		return nil
 	}
@@ -1382,7 +1403,7 @@ func loadIndexCache(name string) map[string]*fileIndex {
 		return nil
 	}
 	var c indexCache
-	if json.Unmarshal(b, &c) != nil || c.Version != indexVersion {
+	if json.Unmarshal(b, &c) != nil || c.Version != key {
 		return nil
 	}
 	return c.Files
@@ -1390,11 +1411,11 @@ func loadIndexCache(name string) map[string]*fileIndex {
 
 // saveIndexCache writes the index with mode 0600 (it names the application's
 // files and functions), replacing the old one in one step.
-func saveIndexCache(name string, files map[string]*fileIndex) {
+func saveIndexCache(name, key string, files map[string]*fileIndex) {
 	if name == "" {
 		return
 	}
-	b, err := json.Marshal(indexCache{Version: indexVersion, Files: files})
+	b, err := json.Marshal(indexCache{Version: key, Files: files})
 	if err != nil {
 		return
 	}
