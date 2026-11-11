@@ -1,5 +1,7 @@
 package engine
 
+import "strings"
+
 // recvDefs maps, for one file, a name to what the code says it holds: the
 // right side of each assignment to it (x = ..., self.x = ..., with or without
 // an annotation) and the annotation of a parameter or variable of that name
@@ -64,7 +66,7 @@ func recvDefs(toks []Token) map[string][][]Token {
 			}
 			continue
 		}
-		if i+2 >= len(toks) || toks[i].Kind != Ident {
+		if i+2 >= len(toks) || toks[i].Kind != Ident && toks[i].Kind != Var {
 			continue
 		}
 		key, k := toks[i].Text, i+1
@@ -151,6 +153,45 @@ func (a *analysis) recvIs(ps []*pat, recv []Token) bool {
 			}
 		}
 		return false
+	}
+	return is(recv, 0)
+}
+
+// recvSurely reports whether the receiver of a method sink is surely an object
+// of one of the classes the patterns name: new Class(...) itself, or a name
+// whose every assignment in the file is one, followed a few steps. A name the
+// file says nothing about, or assigns anything else too, is not.
+func (a *analysis) recvSurely(ps []*pat, recv []Token) bool {
+	if a.rdefs == nil {
+		a.rdefs = recvDefs(a.ftoks)
+	}
+	seen := map[string]bool{}
+	var is func(t []Token, depth int) bool
+	is = func(t []Token, depth int) bool {
+		t = stripParens(t)
+		if len(t) >= 2 && strings.EqualFold(t[0].Text, "new") && t[0].Kind == Ident {
+			k := 1
+			if t[k].op("\\") && len(t) > 2 {
+				k++ // new \WP_Query
+			}
+			for _, p := range ps {
+				if p.at(t, k, false) {
+					return true
+				}
+			}
+			return false
+		}
+		if depth >= 4 || len(t) != 1 || t[0].Kind != Ident && t[0].Kind != Var || seen[t[0].Text] {
+			return false
+		}
+		seen[t[0].Text] = true
+		ds := a.rdefs[t[0].Text]
+		for _, d := range ds {
+			if !is(d, depth+1) {
+				return false
+			}
+		}
+		return len(ds) > 0
 	}
 	return is(recv, 0)
 }
