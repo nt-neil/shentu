@@ -160,11 +160,15 @@ func (a *analysis) recvIs(ps []*pat, recv []Token) bool {
 // recvSurely reports whether the receiver of a method sink is surely an object
 // of one of the classes the patterns name (PHP): new Class(...) itself, or a
 // variable that the file only ever assigns such an object ($q = new Class) and
-// otherwise only calls or reads through ($q->...). Any other use of the name
-// anywhere in the file (a parameter, global, foreach ... as, list(), a
-// reference, another value, an argument) leaves it unknown, and the sink
-// counts: the file is read as a whole, so a name of the same spelling in
-// another function counts too.
+// otherwise only calls or reads through ($q->...) or passes to a call
+// (update_post_thumbnail_cache($q)), unless the file declares a function or
+// method of that name with a parameter by reference (function f(&$x)), which
+// could rebind it; a callee declared in another file is not seen, and is
+// taken not to (README). Any other use of
+// the name anywhere in the file (a parameter, global, foreach ... as,
+// list(), a reference, another value) leaves it unknown, and the sink counts:
+// the file is read as a whole, so a name of the same spelling in another
+// function counts too.
 func (a *analysis) recvSurely(ps []*pat, recv []Token) bool {
 	t := stripParens(recv)
 	if a.newOf(ps, t) {
@@ -180,6 +184,7 @@ func (a *analysis) recvSurely(ps []*pat, recv []Token) bool {
 		}
 		switch {
 		case i+1 < len(toks) && toks[i+1].op("->"):
+		case a.passedToCall(toks, i):
 		case i+1 < len(toks) && toks[i+1].op("=") && (i == 0 || !toks[i-1].op("&") && !toks[i-1].op("->") && !toks[i-1].op("::")):
 			j := i + 2
 			for depth := 0; j < len(toks) && !(depth == 0 && toks[j].op(";")); j++ {
@@ -200,6 +205,65 @@ func (a *analysis) recvSurely(ps []*pat, recv []Token) bool {
 		}
 	}
 	return defs > 0
+}
+
+// passedToCall reports whether the variable at i is a whole argument of a
+// call: f($q), $o->m($a, $q), not a function's parameter, list($q), use ($q),
+// array($q) = ..., and not to a function or method the file declares with a
+// parameter by reference.
+func (a *analysis) passedToCall(toks []Token, i int) bool {
+	if i == 0 || i+1 >= len(toks) || !(toks[i-1].op("(") || toks[i-1].op(",")) || !(toks[i+1].op(")") || toks[i+1].op(",")) {
+		return false
+	}
+	depth := 0
+	for j := i - 1; j >= 0 && i-j < 256; j-- {
+		switch {
+		case isClose(toks[j]):
+			depth++
+		case isOpen(toks[j]) && depth > 0:
+			depth--
+		case isOpen(toks[j]):
+			if !toks[j].op("(") || j == 0 || toks[j-1].Kind != Ident {
+				return false // (...) of an expression, [...], {...}
+			}
+			name := strings.ToLower(toks[j-1].Text)
+			if name == "function" || name == "fn" || name == "list" || name == "use" || name == "array" || name == "unset" ||
+				j > 1 && (toks[j-2].word("function") || toks[j-2].word("fn") || toks[j-2].op("&")) {
+				return false // a declaration, a destructuring or a closure's use list
+			}
+			return !a.declaredByRef(name)
+		}
+	}
+	return false
+}
+
+// declaredByRef reports whether the file declares a function or method of
+// this name (any case) with a parameter by reference.
+func (a *analysis) declaredByRef(name string) bool {
+	if a.byRef == nil {
+		a.byRef = map[string]bool{}
+		t := a.ftoks
+		for i := 0; i+2 < len(t); i++ {
+			if !t[i].word("function") {
+				continue
+			}
+			k := i + 1
+			if t[k].op("&") {
+				k++ // function &name(: returns by reference
+			}
+			if k+1 >= len(t) || t[k].Kind != Ident || !t[k+1].op("(") {
+				continue
+			}
+			c := closeOf(t, k+1)
+			for j := k + 2; j < c; j++ {
+				if t[j].op("&") {
+					a.byRef[strings.ToLower(t[k].Text)] = true
+					break
+				}
+			}
+		}
+	}
+	return a.byRef[name]
 }
 
 // newOf reports whether t is new Class or new Class(...), and nothing more,
