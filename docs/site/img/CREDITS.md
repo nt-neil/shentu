@@ -36,7 +36,7 @@ The maintainer chose the whole third batch (g13 to g16).
 | `scroll/walker.webp` | g12 | the guardian walking with a lantern, first step | cropped to the figure, scaled to 760 px high; the black ground keyed out to transparency (the lantern halo kept as soft alpha), cwebp -q 72 -alpha_q 80 |
 | `scroll/guardian-front.webp` | g13 | the guardian appearing for the report | cwebp -resize 1600 0 -q 60 |
 | `scroll/smoke.webp` | g14 | incense haze for the near layer (screened in) | cwebp -resize 1600 0 -q 55 |
-| `scroll/branches.webp` | g15 | banyan boughs for the near layer (multiplied in) | greyscale, 1600 px wide, cwebp -q 55 |
+| `scroll/branches.webp` | g15 | banyan boughs for the near layer (multiplied in) | greyscale, 960 px wide, cwebp -q 50 |
 | `scroll/walker2.webp` | g16 | the guardian walking, second step (made with g12 as the reference image) | cropped and keyed like walker.webp, cwebp -q 72 -alpha_q 80 |
 
 Prompts:

@@ -321,7 +321,7 @@ var zh = map[string]string{
 	"hud.4":              "發現",
 	"hud.5":              "回報",
 	"river.title":        "版本長河",
-	"river.caught":       "抓到",
+	"river.caught":       "樣本抓到",
 	"soon":               "即將發布",
 	"grp.reach":          "看得更遠",
 	"grp.sharp":          "看得更準",

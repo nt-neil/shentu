@@ -48,7 +48,7 @@
 html { -webkit-text-size-adjust: 100%; background: var(--bg); scroll-padding-top: 24px; }
 body { margin: 0; min-width: 320px; background: var(--bg); color: var(--ink); font: 17px/1.65 var(--sans); overflow-wrap: anywhere; }
 html[lang^="zh"] body { line-height: 1.85; letter-spacing: .02em; }
-html[lang^="zh"] :is(h1, h2, h3, .lede, .act p) { word-break: keep-all; }
+html[lang^="zh"] :is(h1, h2, h3, .lede) { word-break: keep-all; }
 ::selection { background: var(--ember); color: var(--on-ember); }
 :focus-visible { outline: 2px solid var(--ember); outline-offset: 3px; }
 a { color: var(--ember); text-decoration-thickness: 1px; text-underline-offset: .22em; }
@@ -98,23 +98,8 @@ body:not(.p-index) .top, body:not(.p-index) main, body:not(.p-index) .foot { pos
 .link { color: var(--muted); text-decoration: none; border-bottom: 1px solid currentColor; padding: 4px 0; }
 .link:hover { color: var(--ink); }
 
-/* home, scene 0: the gate opens onto the guardian */
-@keyframes breathe { to { transform: scale(1.12); } }
-/* the gap in the picture is about 16.5% of its width; the picture covers the screen */
-@media (prefers-color-scheme: light) {
-}
-@media (prefers-color-scheme: light) and (max-width: 640px) {
-}
-/* the dust lives in the beam only: a narrow canvas, so a frame paints little */
 .shade { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse at 50% 45%, transparent 30%, var(--bg) 92%), linear-gradient(transparent 70%, var(--bg)); }
-/* the light in the gap breathes; opacity only */
-@media (prefers-color-scheme: light) { .breath { display: none; } }
-
-/* home: the patrol in three scenes you turn; the beam beside them changes with the scene */
-.patrol-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 18px; }
 .example { display: inline-block; margin: 0; font-size: 12px; letter-spacing: .06em; color: var(--ember); border: 1px solid var(--ember); padding: 3px 8px; }
-.beam-calm { filter: var(--img-filter); }
-.beam-alarm { filter: var(--img-filter) sepia(1) saturate(7) hue-rotate(-42deg) brightness(.95); opacity: 0; }
 
 /* home: open source */
 .open { padding: clamp(70px, 12vh, 120px) 0 0; }
@@ -187,10 +172,6 @@ html:not([lang^="zh"]) .era .word { font-weight: 300; font-size: .6em; letter-sp
 .ids .n { color: var(--muted); }
 .ids p { margin: 8px 0; max-width: none; line-height: 2.1; }
 .more { display: flex; flex-wrap: wrap; gap: 8px 26px; }
-.timeline { position: relative; padding-left: 34px; }
-.timeline::before { content: ""; position: absolute; left: 6px; top: 10px; bottom: 0; width: 2px; background: linear-gradient(var(--ember), var(--line) 30%, transparent); box-shadow: 0 0 12px var(--glow); }
-.timeline .release::before { content: ""; position: absolute; left: -33px; top: 34px; width: 12px; height: 12px; border-radius: 50%; background: var(--bg); border: 2px solid var(--ember); }
-.timeline .release:first-child::before { background: var(--ember); box-shadow: 0 0 16px var(--glow); }
 
 /* rule catalog */
 .filters { position: sticky; top: 0; z-index: 4; display: flex; flex-wrap: wrap; align-items: end; gap: 12px 18px; padding: 14px 0; background: var(--bg); border-bottom: 1px solid var(--line); }
@@ -353,9 +334,6 @@ html:not([lang^="zh"]) .newest-head .word { font-weight: 600; font-family: var(-
 .scene.shake { animation: shake .18s steps(2) infinite; }
 @keyframes shake { 0% { transform: translate3d(-3px, 1px, 0); } 50% { transform: translate3d(3px, -1px, 0); } 100% { transform: translate3d(-1px, 2px, 0); } }
 .walk .evil { position: absolute; inset: 0; pointer-events: none; opacity: 0; background: radial-gradient(60% 70% at 55% 70%, rgba(200, 30, 15, .5), transparent 70%), linear-gradient(transparent 55%, rgba(120, 10, 5, .45)); }
-/* trial: the scenes pressed into two inks, gold and vermilion (only with ?tone=duotone) */
-body[data-tone="duotone"] .walk .scene:not(.sc1):not(.sc6), body[data-tone="duotone"] .walk .sky { filter: grayscale(1) sepia(1) saturate(2.4) hue-rotate(-14deg) contrast(1.25) brightness(.72); }
-body[data-tone="duotone"] .walk .stage::after { content: ""; position: absolute; inset: 0; z-index: 4; pointer-events: none; background: radial-gradient(120% 90% at 50% 55%, transparent 45%, rgba(0, 0, 0, .7)); }
 canvas.near { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .walker { position: absolute; left: 22vw; bottom: 5vh; height: 38vh; aspect-ratio: 442 / 760; z-index: 3; will-change: transform, opacity; }
 /* the figure stands on the ground: a shadow under the feet, a pool of lantern light ahead */
@@ -478,8 +456,6 @@ html:not(.walking) .st1 { opacity: 1; transform: none; }
   .row-dots { max-width: none; }
   .slip pre { padding-right: 18px; padding-bottom: 68px; }
   .copy { top: auto; bottom: 12px; transform: none; }
-  .timeline { padding-left: 30px; }
-  .timeline .release::before { left: -29px; }
 }
 @media (max-width: 400px) { .rid { white-space: normal; } }
 @media (prefers-reduced-motion: reduce) {
@@ -497,4 +473,4 @@ html:not(.walking) .st1 { opacity: 1; transform: none; }
   ::view-transition-old(root), ::view-transition-new(root) { animation: none !important; }
   .reveal [data-reveal] { clip-path: none; transform: none; filter: none; }
 }
-@media print { .gate, .filters, .slit { display: none; } }
+@media print { .filters, .slit { display: none; } }

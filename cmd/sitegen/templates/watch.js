@@ -5,8 +5,6 @@
 (function () {
   var d = document, root = d.documentElement, run = d.getElementById('watch');
   if (!run) return;
-  /* a trial look, only when asked for in the address: ?tone=duotone */
-  if (/[?&]tone=duotone\b/.test(location.search)) d.body.dataset.tone = 'duotone';
   var still = matchMedia('(prefers-reduced-motion: reduce)').matches;
   var q = function (s) { return run.querySelector(s); }, qa = function (s) { return run.querySelectorAll(s); };
 
