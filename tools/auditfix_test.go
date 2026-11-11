@@ -320,65 +320,77 @@ func isolateAudit(t *testing.T) string {
 
 // A file with a finding on every line is capped where the findings come
 // from: the heap and the kept results stay bounded, the counts take them all
-// (the review of 3df48d5, R1).
+// (the review of 3df48d5, R1). Under one memory budget, twice the files take
+// no more heap: nothing grows with the input. (Following calls across files
+// keeps the files it read while the budget allows, so without a set budget
+// the heap grows up to it, 1 GiB at most.)
 func TestAppCodeAuditFindingsBoundedAtTheSource(t *testing.T) {
 	if testing.Short() {
-		t.Skip("scans 4MB")
+		t.Skip("scans 12MB")
 	}
-	state := isolateAudit(t)
-	dir, _ := filepath.EvalSymlinks(t.TempDir())
-	line := "system($_GET['a']);\n"
-	body := "<?php\n" + strings.Repeat(line, 100<<10/len(line)) // 100KB, under the engine's limits
-	const n = 40                                                // 4MB in all
-	for i := range n {
-		os.WriteFile(filepath.Join(dir, fmt.Sprintf("f%02d.php", i)), []byte(body), 0o644)
-	}
-	var peak atomic.Uint64
-	done := make(chan struct{})
-	go func() {
-		var m runtime.MemStats
-		for {
-			select {
-			case <-done:
-				return
-			case <-time.After(20 * time.Millisecond):
-				runtime.ReadMemStats(&m)
-				if m.HeapAlloc > peak.Load() {
-					peak.Store(m.HeapAlloc)
+	max := injectionMaxTime
+	defer func() { injectionMaxTime = max; SetAuditLimits(0, 0) }()
+	injectionMaxTime = 10 * time.Minute
+	const budgetMB = 256
+	SetAuditLimits(budgetMB, 0)
+	peaks := map[int]uint64{}
+	for _, n := range []int{40, 80} { // 4MB and 8MB
+		state := isolateAudit(t)
+		dir, _ := filepath.EvalSymlinks(t.TempDir())
+		line := "system($_GET['a']);\n"
+		body := "<?php\n" + strings.Repeat(line, 100<<10/len(line)) // 100KB, under the engine's limits
+		for i := range n {
+			os.WriteFile(filepath.Join(dir, fmt.Sprintf("f%02d.php", i)), []byte(body), 0o644)
+		}
+		runtime.GC()
+		var peak atomic.Uint64
+		done := make(chan struct{})
+		go func() {
+			var m runtime.MemStats
+			for {
+				select {
+				case <-done:
+					return
+				case <-time.After(20 * time.Millisecond):
+					runtime.ReadMemStats(&m)
+					if m.HeapAlloc > peak.Load() {
+						peak.Store(m.HeapAlloc)
+					}
 				}
 			}
+		}()
+		res := AppCodeAudit(context.Background(), []string{dir}, nil)
+		close(done)
+		listed := 0
+		for _, f := range res.Findings {
+			if f.Kind == "injection" && f.Rule != "" && f.Rule != "-" {
+				listed++
+			}
 		}
-	}()
-	max := injectionMaxTime
-	defer func() { injectionMaxTime = max }()
-	injectionMaxTime = 10 * time.Minute
-	res := AppCodeAudit(context.Background(), []string{dir}, nil)
-	close(done)
-	listed := 0
-	for _, f := range res.Findings {
-		if f.Kind == "injection" && f.Rule != "" && f.Rule != "-" {
-			listed++
+		var stateSize int64
+		files, _ := filepath.Glob(filepath.Join(state, "codecalls-*.json"))
+		for _, f := range files {
+			if info, err := os.Stat(f); err == nil {
+				stateSize += info.Size()
+			}
+		}
+		peaks[n] = peak.Load()
+		t.Logf("%d files: injection %d, listed %d, peak heap %dMB, kept results %dKB", n, res.Injection, listed, peak.Load()>>20, stateSize>>10)
+		if listed > n*auditMaxPerFile*2 || !res.Truncated {
+			t.Errorf("%d files: listed %d, truncated %v", n, listed, res.Truncated)
+		}
+		if res.Injection < n*auditMaxPerFile*10 {
+			t.Errorf("%d files: the counts lost the findings left out: %d", n, res.Injection)
+		}
+		if stateSize > int64(n)<<14 { // 16KB a file
+			t.Errorf("%d files: kept results %d bytes", n, stateSize)
+		}
+		if peak.Load() > budgetMB<<20 {
+			t.Errorf("%d files: peak heap %dMB", n, peak.Load()>>20)
 		}
 	}
-	var stateSize int64
-	files, _ := filepath.Glob(filepath.Join(state, "codecalls-*.json"))
-	for _, f := range files {
-		if info, err := os.Stat(f); err == nil {
-			stateSize += info.Size()
-		}
-	}
-	t.Logf("injection %d, listed %d, peak heap %dMB, kept results %dKB", res.Injection, listed, peak.Load()>>20, stateSize>>10)
-	if listed > n*auditMaxPerFile*2 || !res.Truncated {
-		t.Errorf("listed %d, truncated %v", listed, res.Truncated)
-	}
-	if res.Injection < n*auditMaxPerFile*10 {
-		t.Errorf("the counts lost the findings left out: %d", res.Injection)
-	}
-	if stateSize > 1<<20 {
-		t.Errorf("kept results %d bytes", stateSize)
-	}
-	if peak.Load() > 300<<20 {
-		t.Errorf("peak heap %dMB", peak.Load()>>20)
+	if peaks[80] > peaks[40]*3/2 {
+		t.Errorf("the heap grows with the files: %dMB for 40, %dMB for 80", peaks[40]>>20, peaks[80]>>20)
 	}
 }
 
