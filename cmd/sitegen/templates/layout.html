@@ -11,21 +11,11 @@
 <link rel="preload" href="{{.L.Root}}fonts/serif-light.woff2" as="font" type="font/woff2" crossorigin>
 {{- if eq .Page "index.html"}}
 <link rel="preload" href="{{.L.Root}}img/guardian-night.webp" as="image">
+<link rel="preload" href="{{.L.Root}}img/scroll/sky.webp" as="image">
 {{- end}}
 <link rel="stylesheet" href="{{.L.Root}}site.css">
 <link rel="alternate" type="application/atom+xml" title="Shentu releases" href="{{.L.Root}}feed.xml">
-{{- if eq .Page "index.html"}}
-<script>
-/* the gate opens on the first visit of a session, never with reduced motion */
-(function () {
-  try {
-    if (matchMedia('(prefers-reduced-motion: reduce)').matches || sessionStorage.getItem('shentu-gate')) return;
-    sessionStorage.setItem('shentu-gate', '1');
-  } catch (e) { return; }
-  document.documentElement.classList.add('intro');
-})();
-</script>
-{{- end}}
+
 </head>
 <body class="p-{{slice .Page 0 (sub (len .Page) 5)}}">
 <a class="skip" href="#main">{{t "skip"}}</a>

@@ -53,11 +53,9 @@
     boughs.style.transform = 'translate3d(' + (-s * vw * 1.25).toFixed(1) + 'px,0,0)';
     /* scenes come in as the walk nears them */
     for (var i = 0; i < scenes.length; i++) if (scenes[i].dataset.bg && s > i - 1.6) { scenes[i].style.backgroundImage = 'url(' + scenes[i].dataset.bg + ')'; delete scenes[i].dataset.bg; }
-    /* stations: the hero at the gate, then one text per scene */
-    for (var k = 0; k < st.length; k++) {
-      var o = k === 0 ? 1 - ease(ramp(s, .12, .45)) : near(s, k, .55);
-      st[k].style.opacity = o.toFixed(3); st[k].style.transform = 'translate3d(0,' + (18 * (1 - o)).toFixed(1) + 'px,0)';
-    }
+    /* stations: always the nearest one, so the screen never goes without words; the report box takes over at the end */
+    var cur = s < 4.55 ? Math.min(st.length - 1, Math.round(s)) : -1;
+    for (var k = 0; k < st.length; k++) st[k].classList.toggle('on', k === cur);
     cue.style.opacity = (1 - ease(ramp(s, 0, .12))).toFixed(3);
     /* the checks: lit as the lantern passes them */
     checks.style.opacity = (ease(ramp(s, .65, .95)) * (1 - ease(ramp(s, 4.45, 4.75)))).toFixed(3);
