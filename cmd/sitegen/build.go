@@ -57,7 +57,11 @@ type page struct {
 	Holdout  *Bench
 	TS       *Bench
 	Count    int
+	Repo     string // the public repository, for every link to the source
 }
+
+// repo is where Shentu's source, issues and releases are.
+const repo = "https://github.com/nt-neil/shentu"
 
 var langNames = map[string]string{"php": "PHP", "python": "Python", "js": "JavaScript / TypeScript"}
 
@@ -85,7 +89,7 @@ func build(root, src, out, base string) error {
 	if zhRels, err = translate(rels, zhRels, zhPath); err != nil {
 		return err
 	}
-	p := page{Base: base, Routes: map[string][]string{}, Count: len(rs)}
+	p := page{Base: base, Routes: map[string][]string{}, Count: len(rs), Repo: repo}
 	for _, r := range rs {
 		p.Rules = append(p.Rules, view(r))
 	}
@@ -280,6 +284,38 @@ func funcs(l Lang) template.FuncMap {
 		"seq":       func(n int) []int { return make([]int, n) },
 		"div":       func(a, b int) int { return (a + b - 1) / b },
 		"list":      func(s ...string) []string { return s },
+		// the release history, oldest first, and how old each entry looks
+		"rev": func(rs []Release) []Release {
+			out := make([]Release, len(rs))
+			for i, r := range rs {
+				out[len(rs)-1-i] = r
+			}
+			return out
+		},
+		"age": func(i, n int) string {
+			if n < 2 {
+				return "0"
+			}
+			return fmt.Sprintf("%.2f", 1-float64(i)/float64(n-1))
+		},
+		"pct": func(a, b int) string {
+			if b <= 0 {
+				return "0%"
+			}
+			return fmt.Sprintf("%.1f%%", 100*float64(a)/float64(b))
+		},
+		// the words of the chronicle: founded, rules enshrined, restored, in progress
+		"chron": func(r Release, first bool) string {
+			switch {
+			case first:
+				return "hist.found"
+			case r.Date == "":
+				return "hist.pending"
+			case len(r.Added) > 0:
+				return "hist.add"
+			}
+			return "hist.mend"
+		},
 		"benchKind": benchKind,
 		// the character on a severity's seal
 		"seal": func(sev string) string {

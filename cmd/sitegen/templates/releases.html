@@ -2,19 +2,34 @@
 {{define "main"}}
 <header class="hall">
   <h1>{{t "releases.title"}}</h1>
-  <p class="intro">{{with t "changelog.note"}}{{.}} {{end}}<a href="{{.L.Root}}feed.xml">{{t "feed"}}</a></p>
+  <p class="intro">{{t "hist.intro"}} {{with t "changelog.note"}}{{.}} {{end}}<a href="{{.L.Root}}feed.xml">{{t "feed"}}</a></p>
 </header>
-<div class="rel-layout">
-  <div class="steles timeline">{{template "releaselist" .Releases}}</div>
-  {{with index .Releases 0}}
-  <aside class="stele" aria-label="{{t "latest"}}">
-    <p class="stele-ver">v{{.Version}}</p>
-    <p class="stele-date">{{if .Date}}{{.Date}}{{else}}{{t "unreleased"}}{{end}}</p>
-    <p><a class="button" href="install.html">{{t "aside.install"}}</a></p>
-    <ul>
-      <li><a href="https://github.com/nt-neil/shentu/releases">{{t "aside.all"}}</a></li>
-    </ul>
-  </aside>
-  {{end}}
-</div>
+{{$n := len .Releases}}{{$count := .Count}}
+<ol class="chronicle">
+{{range $i, $r := rev .Releases}}
+  <li class="era{{if not $r.Date}} pending{{end}}" id="v{{$r.Version}}" style="--old: {{age $i $n}}">
+    <div class="mark">
+      <p class="when">{{if $r.Date}}<time datetime="{{$r.Date}}">{{$r.Date}}</time>{{else}}{{t "unreleased"}}{{end}}</p>
+      <h2><span class="word">{{t (chron $r (eq $i 0))}}</span> <span class="ver">v{{$r.Version}}</span></h2>
+    </div>
+    <div class="body">
+      {{if $r.Items}}<ul class="items">{{range $r.Items}}<li>{{item .}}</li>{{end}}</ul>{{else}}<p class="note">{{t "release.empty"}}</p>{{end}}
+      {{if or (gt $r.Rules 0) $r.Bench}}
+      <div class="grow">
+        {{if gt $r.Rules 0}}<p><span class="bar" style="--w: {{pct $r.Rules $count}}"></span><b>{{$r.Rules}}</b> {{t "hist.rules"}}{{if $r.Added}}<small>{{t "lp"}}+{{len $r.Added}}{{t "rp"}}</small>{{end}}</p>{{end}}
+        {{with $r.Bench}}<p><span class="bar" style="--w: {{pct .All.Caught .All.Cases}}"></span><b>{{.All.Caught}}</b> / {{.All.Cases}} {{t "hist.caught"}}</p>{{end}}
+      </div>
+      {{end}}
+      {{if or $r.Frameworks $r.Added $r.Removed}}
+      <dl class="facts">
+        {{if $r.Frameworks}}<div class="wide"><dt>{{t "fw.new"}}</dt><dd>{{join $r.Frameworks ", "}}</dd></div>{{end}}
+        {{if $r.Added}}<div class="wide"><dt>{{t "rules.added"}} ({{len $r.Added}})</dt><dd>{{template "ids" $r.AddedBy}}</dd></div>{{end}}
+        {{if $r.Removed}}<div class="wide"><dt>{{t "rules.removed"}} ({{len $r.Removed}})</dt><dd>{{template "ids" $r.RemovedBy}}</dd></div>{{end}}
+      </dl>
+      {{end}}
+    </div>
+  </li>
+{{end}}
+</ol>
+<p class="more"><a class="button" href="install.html">{{t "aside.install"}}</a> <a href="{{.Repo}}/releases">{{t "aside.all"}}</a></p>
 {{end}}

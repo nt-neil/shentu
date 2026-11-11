@@ -12,16 +12,6 @@
 <link rel="preload" href="../img/guardian-night.webp" as="image">
 <link rel="stylesheet" href="../site.css">
 <link rel="alternate" type="application/atom+xml" title="Shentu releases" href="../feed.xml">
-<script>
- 
-(function () {
-  try {
-    if (matchMedia('(prefers-reduced-motion: reduce)').matches || sessionStorage.getItem('shentu-gate')) return;
-    sessionStorage.setItem('shentu-gate', '1');
-  } catch (e) { return; }
-  document.documentElement.classList.add('gate-shut');
-})();
-</script>
 </head>
 <body class="p-index">
 <a class="skip" href="#main">跳到內容</a>
@@ -31,50 +21,77 @@
     <a href="rules.html">規則</a>
     <a href="bench.html">實測</a>
     <a href="releases.html">更新紀錄</a>
+    <a class="gh" href="https://github.com/nt-neil/shentu">GitHub</a>
     <a class="cta" href="install.html">安裝</a>
     <a class="lang" href="../index.html" lang="en" hreflang="en">English</a>
   </nav>
 </header>
 <main id="main">
 
-<section class="gate" aria-labelledby="title">
+<section class="gate" id="gate" aria-labelledby="title">
   <div class="night" role="img" aria-label="夜裡，從廟門的門縫看見逆光的門神"></div>
+  <div class="breath" aria-hidden="true"></div>
   <canvas class="dust" aria-hidden="true"></canvas>
   <div class="veil" aria-hidden="true"></div>
   <div class="shade" aria-hidden="true"></div>
   <div class="hero-title">
-    <h1 id="title"><span><i>夜裡，</i></span><span><i>有人守門。</i></span></h1>
+    <h1 id="title"><span>夜裡，</span> <span>有人守門。</span></h1>
     <p class="lede">你睡覺的時候，Shentu 在你的 Linux 伺服器上巡邏；有狀況，你只會收到一則白話訊息。</p>
-    <p class="actions"><a class="button" href="install.html">安裝</a><a class="link" href="#story">看一次巡邏</a></p>
+    <p class="actions"><a class="button" href="install.html">安裝</a><a class="link" href="https://github.com/nt-neil/shentu">原始碼在 GitHub</a></p>
   </div>
   <p class="watch" lang="zh-Hant" aria-hidden="true">夜巡</p>
 </section>
 
-<section class="story" id="story" aria-label="一次巡邏，一步一步">
-  <div class="pin">
-    <div class="acts">
-      <div class="act on"><time>03:00</time><h2>它巡過整台伺服器。</h2><p>登入紀錄、程序、套件、對外連接埠，以及機器上每個網站的原始碼，都在本機讀。</p></div>
-      <div class="act"><time>03:12</time><h2>它找到那個不對勁的地方。</h2><p>上傳資料夾多了一個檔案：陌生人送什麼過來，它就執行什麼。</p></div>
-      <div class="act"><time>03:13</time><h2>它用白話告訴你。</h2><p>一則訊息，說清楚發生了什麼、該怎麼做。你說好之前，什麼都不會改。</p></div>
+<div class="after">
+<section class="patrol" id="patrol" aria-labelledby="patrol-title">
+  <div class="patrol-head">
+    <h2 id="patrol-title">一次巡邏</h2>
+    <p class="example">示範</p>
+  </div>
+  <div class="deck" data-at="0">
+    <div class="deck-main">
+      <div class="tabs" role="tablist" aria-label="巡邏的三幕">
+        <button type="button" role="tab" id="tab-0" aria-controls="scene-0" aria-selected="true"><time>03:00</time> 巡邏</button>
+        <button type="button" role="tab" id="tab-1" aria-controls="scene-1" aria-selected="false" tabindex="-1" class="alarm"><time>03:12</time> 發現</button>
+        <button type="button" role="tab" id="tab-2" aria-controls="scene-2" aria-selected="false" tabindex="-1"><time>03:13</time> 回報</button>
+      </div>
+      <div class="viewport">
+        <div class="track">
+          <article class="card on" id="scene-0" role="tabpanel" aria-labelledby="tab-0">
+            <div><h3>它巡過整台伺服器。</h3><p>登入紀錄、程序、套件、對外連接埠，以及機器上每個網站的原始碼，都在本機讀。</p></div>
+            <ul class="log">
+              <li class="lit"><span>SSH 登入</span><span>正常</span></li>
+              <li class="lit"><span>對外連接埠</span><span>正常</span></li>
+              <li class="lit"><span>程序</span><span>正常</span></li>
+              <li class="lit"><span>有已知漏洞的套件</span><span>正常</span></li>
+              <li><span>shop / wp-content / uploads</span><span>…</span></li>
+              <li><span>shop / 網站程式碼（70 條規則）</span><span>…</span></li>
+            </ul>
+          </article>
+          <article class="card find" id="scene-1" role="tabpanel" aria-labelledby="tab-1" inert>
+            <div><h3>它找到那個不對勁的地方。</h3><p>上傳資料夾多了一個檔案：陌生人送什麼過來，它就執行什麼。</p></div>
+            <ul class="log">
+              <li class="lit"><span>有已知漏洞的套件</span><span>正常</span></li>
+              <li class="bad"><span>shop / wp-content / uploads</span><span>網頁後門</span></li>
+              <li class="lit"><span>shop / 網站程式碼（70 條規則）</span><span>正常</span></li>
+            </ul>
+          </article>
+          <article class="card" id="scene-2" role="tabpanel" aria-labelledby="tab-2" inert>
+            <div><h3>它用白話告訴你。</h3><p>一則訊息，說清楚發生了什麼、該怎麼做。你說好之前，什麼都不會改。</p></div>
+            <p class="msg"><b>Shentu</b> 03:07 商店的上傳資料夾出現網頁後門。任何知道網址的人，都能在你的伺服器上執行程式。建議先隔離這個檔案，再查 03:07 前後的存取紀錄。</p>
+          </article>
+        </div>
+      </div>
+      <div class="controls">
+        <button type="button" class="prev" aria-label="上一幕" disabled><span aria-hidden="true">←</span></button>
+        <p class="dots" aria-hidden="true"><i class="on"></i><i></i><i></i></p>
+        <button type="button" class="next" aria-label="下一幕"><span aria-hidden="true">→</span></button>
+      </div>
     </div>
-    <div class="beam" aria-hidden="true"></div>
-    <div class="ray" aria-hidden="true"></div>
-    <div class="log">
-      <p class="example">示範</p>
-      <ul>
-        <li><span>SSH 登入</span><span>正常</span></li>
-        <li><span>對外連接埠</span><span>正常</span></li>
-        <li><span>程序</span><span>正常</span></li>
-        <li><span>有已知漏洞的套件</span><span>正常</span></li>
-        <li><span>shop / wp-content / uploads</span><span data-bad="網頁後門">正常</span></li>
-        <li><span>shop / 網站程式碼（70 條規則）</span><span>正常</span></li>
-      </ul>
-      <p class="msg" aria-live="polite"><b>Shentu</b> 03:07 商店的上傳資料夾出現網頁後門。任何知道網址的人，都能在你的伺服器上執行程式。建議先隔離這個檔案，再查 03:07 前後的存取紀錄。</p>
-    </div>
+    <div class="beam" aria-hidden="true"><div class="beam-calm"></div><div class="beam-alarm"></div></div>
   </div>
 </section>
 
-<div class="after">
 
 <section class="tally" aria-labelledby="tally-title">
   <h2 id="tally-title">目前能查的</h2>
@@ -86,6 +103,19 @@
   <p><a href="bench.html">看實測方法與完整結果</a></p>
 </section>
 
+
+<section class="open" id="open-source" aria-labelledby="open-title">
+  <h2 id="open-title">開源</h2>
+  <p class="lede">Shentu 是 Apache-2.0 授權的自由軟體。程式、規則和這個網站，都在同一個公開的 repo 裡。</p>
+  <dl class="os">
+    <div><dt><a href="https://github.com/nt-neil/shentu">原始碼</a></dt><dd>全部都在 GitHub 上的同一個 repo。 <code>github.com/nt-neil/shentu</code></dd></div>
+    <div><dt><a href="https://github.com/nt-neil/shentu/blob/main/LICENSE">授權</a></dt><dd>Apache-2.0：可以使用、修改、散布。</dd></div>
+    <div><dt><a href="https://github.com/nt-neil/shentu/releases">下載</a></dt><dd>每一版都有 .deb、.rpm 與可驗證的簽章建置來源。</dd></div>
+    <div><dt><a href="https://github.com/nt-neil/shentu/issues">回報問題</a></dt><dd>在 GitHub 開 issue。</dd></div>
+    <div><dt><a href="https://github.com/nt-neil/shentu/security/advisories/new">回報安全漏洞</a></dt><dd>請透過 GitHub 的私下回報（Security advisories），不要開公開 issue。 <a href="https://github.com/nt-neil/shentu/blob/main/SECURITY.md">安全政策</a></dd></div>
+    <div><dt><a href="https://github.com/nt-neil/shentu/blob/main/rules/README.md">貢獻規則或程式</a></dt><dd>規則怎麼寫、怎麼測；程式請看 README。 <a href="https://github.com/nt-neil/shentu/blob/main/rules/README.md">撰寫規則</a>, <a href="https://github.com/nt-neil/shentu#readme">README</a></dd></div>
+  </dl>
+</section>
 
 <section class="latest" aria-labelledby="latest-title">
   <h2 id="latest-title">最新更新</h2>
@@ -112,49 +142,53 @@
 (function () {
   var still = matchMedia('(prefers-reduced-motion: reduce)').matches;
    
-  var c = document.querySelector('canvas.dust'), x = c.getContext('2d'), P = [], w, h, dpr = Math.min(devicePixelRatio || 1, 2), run = true;
+  var deck = document.querySelector('.deck'), track = deck.querySelector('.track'), tabs = deck.querySelectorAll('[role=tab]'),
+      cards = deck.querySelectorAll('.card'), dots = deck.querySelectorAll('.dots i'), prev = deck.querySelector('.prev'), next = deck.querySelector('.next'), at = 0;
+  function go(i, focus) {
+    at = Math.max(0, Math.min(cards.length - 1, i));
+    track.style.transform = 'translate3d(' + (-100 * at) + '%,0,0)';
+    for (var k = 0; k < cards.length; k++) {
+      var on = k === at;
+      cards[k].classList.toggle('on', on); cards[k].inert = !on;
+      tabs[k].setAttribute('aria-selected', on); tabs[k].tabIndex = on ? 0 : -1;
+      dots[k].classList.toggle('on', on);
+    }
+    deck.dataset.at = at; prev.disabled = at === 0; next.disabled = at === cards.length - 1;
+    if (focus) tabs[at].focus();
+  }
+  tabs.forEach(function (t, k) { t.addEventListener('click', function () { go(k); }); });
+  deck.querySelector('[role=tablist]').addEventListener('keydown', function (e) {
+    var to = { ArrowRight: at + 1, ArrowLeft: at - 1, Home: 0, End: cards.length - 1 }[e.key];
+    if (to !== undefined) { e.preventDefault(); go(to, true); }
+  });
+  prev.addEventListener('click', function () { go(at - 1); });
+  next.addEventListener('click', function () { go(at + 1); });
+  var x0 = null, y0 = 0, vp = deck.querySelector('.viewport');
+  vp.addEventListener('pointerdown', function (e) { x0 = e.clientX; y0 = e.clientY; });
+  vp.addEventListener('pointerup', function (e) {
+    if (x0 === null) return; var dx = e.clientX - x0, dy = e.clientY - y0; x0 = null;
+    if (Math.abs(dx) > 50 && Math.abs(dx) > 1.5 * Math.abs(dy)) go(at + (dx < 0 ? 1 : -1));
+  });
+  go(0);
+
+   
+  if (still) return;
+  var c = document.querySelector('canvas.dust'), x = c.getContext('2d'), P = [], w, h, run = true, dpr = Math.min(devicePixelRatio || 1, 2);
   function size() { w = c.clientWidth; h = c.clientHeight; c.width = w * dpr; c.height = h * dpr; x.setTransform(dpr, 0, 0, dpr, 0, 0); }
   size(); addEventListener('resize', size);
-  for (var i = 0; i < 90; i++) P.push({ x: Math.random(), y: Math.random(), r: Math.random() * 1.6 + .3, v: Math.random() * .00025 + .00008, p: Math.random() * 6.28 });
+  for (var k = 0; k < 80; k++) P.push({ x: Math.random(), y: Math.random(), r: Math.random() * 1.5 + .3, v: Math.random() * .00025 + .00008, p: Math.random() * 6.28 });
   function frame(t) {
     if (!run) return;
     x.clearRect(0, 0, w, h);
-    P.forEach(function (d) {
-      d.y -= d.v; if (d.y < 0) d.y = 1;
-      var px = (.5 + (d.x - .5) * .22 + Math.sin(t / 2400 + d.p) * .006) * w, py = d.y * h, s = Math.sin(t / 900 + d.p);
-      x.fillStyle = 'rgba(255, 214, 150,' + (.25 + .35 * s * s) + ')'; x.beginPath(); x.arc(px, py, d.r, 0, 6.29); x.fill();
-    });
+    for (var k = 0; k < P.length; k++) {
+      var e = P[k], s = Math.sin(t / 900 + e.p); e.y -= e.v; if (e.y < 0) e.y = 1;
+      x.fillStyle = 'rgba(255, 214, 150,' + (.22 + .35 * s * s) + ')';
+      x.beginPath(); x.arc((.5 + (e.x - .5) * .16 + Math.sin(t / 2400 + e.p) * .005) * w, e.y * h, e.r, 0, 6.29); x.fill();
+    }
     requestAnimationFrame(frame);
   }
-   
-  if (!still) {
-    new IntersectionObserver(function (e) { var was = run; run = e[0].isIntersecting; if (run && !was) requestAnimationFrame(frame); }).observe(c);
-    requestAnimationFrame(frame);
-  }
-
-   
-  var story = document.getElementById('story'), pin = story.querySelector('.pin'), acts = story.querySelectorAll('.act'),
-      rows = story.querySelectorAll('.log li'), flag = rows[4].lastElementChild, msg = story.querySelector('.msg'), ok = flag.textContent;
-  function step() {
-    var r = story.getBoundingClientRect(), span = r.height - innerHeight, p = Math.min(1, Math.max(0, -r.top / span));
-    var act = p < .38 ? 0 : p < .7 ? 1 : 2, lit = Math.floor(Math.min(1, p / .36) * rows.length);
-    acts.forEach(function (a, i) { a.classList.toggle('on', i === act); });
-    rows.forEach(function (row, i) { row.classList.toggle('lit', i < lit); row.classList.toggle('bad', act > 0 && i === 4); });
-    flag.textContent = act > 0 ? flag.dataset.bad : ok;
-    msg.classList.toggle('on', act === 2);
-    pin.classList.toggle('find', act === 1);
-    pin.classList.toggle('told', act === 2);
-    aim(act === 2 ? msg : rows[4]);
-  }
-   
-  var ray = story.querySelector('.ray'), beam = story.querySelector('.beam');
-  function aim(el) {
-    var p = pin.getBoundingClientRect(), b = beam.getBoundingClientRect(), e = el.getBoundingClientRect();
-    ray.style.left = (b.right - p.left) + 'px';
-    ray.style.width = Math.max(0, e.left - b.right + 24) + 'px';
-    ray.style.top = (e.top - p.top + Math.min(e.height, 40) / 2) + 'px';
-  }
-  addEventListener('scroll', step, { passive: true }); addEventListener('resize', step); step();
+  new IntersectionObserver(function (es) { var was = run; run = es[0].isIntersecting; if (run && !was) requestAnimationFrame(frame); }).observe(document.getElementById('gate'));
+  requestAnimationFrame(frame);
 })();
 </script>
 
@@ -163,7 +197,9 @@
   <p>Apache-2.0 授權。本站由 cmd/sitegen 從 repo 產生。</p>
   <ul>
     <li><a href="https://github.com/nt-neil/shentu">GitHub</a></li>
-    <li><a href="../feed.xml">Atom 訂閱</a></li>
+    <li><a href="https://github.com/nt-neil/shentu/blob/main/LICENSE">授權 Apache-2.0</a></li>
+    <li><a href="https://github.com/nt-neil/shentu/blob/main/SECURITY.md">安全政策</a></li>
+    <li><a href="../feed.xml">Atom 訂閱 (RSS)</a></li>
     <li><a href="../img/CREDITS.md">圖片來源</a></li>
     <li><a href="../fonts/OFL.txt">Noto Serif TC (OFL)</a></li>
   </ul>

@@ -1,42 +1,68 @@
 {{define "main"}}
-<section class="gate" aria-labelledby="title">
+<section class="gate" id="gate" aria-labelledby="title">
   <div class="night" role="img" aria-label="{{t "night.img"}}"></div>
+  <div class="breath" aria-hidden="true"></div>
   <canvas class="dust" aria-hidden="true"></canvas>
   <div class="veil" aria-hidden="true"></div>
   <div class="shade" aria-hidden="true"></div>
   <div class="hero-title">
-    <h1 id="title"><span><i>{{t "night.l1"}}</i></span><span><i>{{t "night.l2"}}</i></span></h1>
+    <h1 id="title"><span>{{t "night.l1"}}</span> <span>{{t "night.l2"}}</span></h1>
     <p class="lede">{{t "night.lede"}}</p>
-    <p class="actions"><a class="button" href="install.html">{{t "nav.install"}}</a><a class="link" href="#story">{{t "night.follow"}}</a></p>
+    <p class="actions"><a class="button" href="install.html">{{t "nav.install"}}</a><a class="link" href="{{.Repo}}">{{t "hero.source"}}</a></p>
   </div>
   <p class="watch" lang="zh-Hant" aria-hidden="true">夜巡</p>
 </section>
 
-<section class="story" id="story" aria-label="{{t "story.label"}}">
-  <div class="pin">
-    <div class="acts">
-      <div class="act on"><time>03:00</time><h2>{{t "act1.t"}}</h2><p>{{t "act1.p"}}</p></div>
-      <div class="act"><time>03:12</time><h2>{{t "act2.t"}}</h2><p>{{t "act2.p"}}</p></div>
-      <div class="act"><time>03:13</time><h2>{{t "act3.t"}}</h2><p>{{t "act3.p"}}</p></div>
+<div class="after">
+<section class="patrol" id="patrol" aria-labelledby="patrol-title">
+  <div class="patrol-head">
+    <h2 id="patrol-title">{{t "patrol.title"}}</h2>
+    <p class="example">{{t "story.example"}}</p>
+  </div>
+  <div class="deck" data-at="0">
+    <div class="deck-main">
+      <div class="tabs" role="tablist" aria-label="{{t "scenes"}}">
+        <button type="button" role="tab" id="tab-0" aria-controls="scene-0" aria-selected="true"><time>03:00</time> {{t "tab.1"}}</button>
+        <button type="button" role="tab" id="tab-1" aria-controls="scene-1" aria-selected="false" tabindex="-1" class="alarm"><time>03:12</time> {{t "tab.2"}}</button>
+        <button type="button" role="tab" id="tab-2" aria-controls="scene-2" aria-selected="false" tabindex="-1"><time>03:13</time> {{t "tab.3"}}</button>
+      </div>
+      <div class="viewport">
+        <div class="track">
+          <article class="card on" id="scene-0" role="tabpanel" aria-labelledby="tab-0">
+            <div><h3>{{t "act1.t"}}</h3><p>{{t "act1.p"}}</p></div>
+            <ul class="log">
+              <li class="lit"><span>{{t "log.ssh"}}</span><span>{{t "log.ok"}}</span></li>
+              <li class="lit"><span>{{t "log.ports"}}</span><span>{{t "log.ok"}}</span></li>
+              <li class="lit"><span>{{t "log.proc"}}</span><span>{{t "log.ok"}}</span></li>
+              <li class="lit"><span>{{t "log.pkg"}}</span><span>{{t "log.ok"}}</span></li>
+              <li><span>shop / wp-content / uploads</span><span>…</span></li>
+              <li><span>{{t "log.code"}}{{t "lp"}}{{.Count}} {{t "rules.count"}}{{t "rp"}}</span><span>…</span></li>
+            </ul>
+          </article>
+          <article class="card find" id="scene-1" role="tabpanel" aria-labelledby="tab-1" inert>
+            <div><h3>{{t "act2.t"}}</h3><p>{{t "act2.p"}}</p></div>
+            <ul class="log">
+              <li class="lit"><span>{{t "log.pkg"}}</span><span>{{t "log.ok"}}</span></li>
+              <li class="bad"><span>shop / wp-content / uploads</span><span>{{t "log.bad"}}</span></li>
+              <li class="lit"><span>{{t "log.code"}}{{t "lp"}}{{.Count}} {{t "rules.count"}}{{t "rp"}}</span><span>{{t "log.ok"}}</span></li>
+            </ul>
+          </article>
+          <article class="card" id="scene-2" role="tabpanel" aria-labelledby="tab-2" inert>
+            <div><h3>{{t "act3.t"}}</h3><p>{{t "act3.p"}}</p></div>
+            <p class="msg"><b>Shentu</b> {{t "story.msg"}}</p>
+          </article>
+        </div>
+      </div>
+      <div class="controls">
+        <button type="button" class="prev" aria-label="{{t "prev"}}" disabled><span aria-hidden="true">←</span></button>
+        <p class="dots" aria-hidden="true"><i class="on"></i><i></i><i></i></p>
+        <button type="button" class="next" aria-label="{{t "next"}}"><span aria-hidden="true">→</span></button>
+      </div>
     </div>
-    <div class="beam" aria-hidden="true"></div>
-    <div class="ray" aria-hidden="true"></div>
-    <div class="log">
-      <p class="example">{{t "story.example"}}</p>
-      <ul>
-        <li><span>{{t "log.ssh"}}</span><span>{{t "log.ok"}}</span></li>
-        <li><span>{{t "log.ports"}}</span><span>{{t "log.ok"}}</span></li>
-        <li><span>{{t "log.proc"}}</span><span>{{t "log.ok"}}</span></li>
-        <li><span>{{t "log.pkg"}}</span><span>{{t "log.ok"}}</span></li>
-        <li><span>shop / wp-content / uploads</span><span data-bad="{{t "log.bad"}}">{{t "log.ok"}}</span></li>
-        <li><span>{{t "log.code"}}{{t "lp"}}{{.Count}} {{t "rules.count"}}{{t "rp"}}</span><span>{{t "log.ok"}}</span></li>
-      </ul>
-      <p class="msg" aria-live="polite"><b>Shentu</b> {{t "story.msg"}}</p>
-    </div>
+    <div class="beam" aria-hidden="true"><div class="beam-calm"></div><div class="beam-alarm"></div></div>
   </div>
 </section>
 
-<div class="after">
 {{with .Main}}{{$all := .All}}
 <section class="tally" aria-labelledby="tally-title">
   <h2 id="tally-title">{{t "tally.title"}}</h2>
@@ -49,6 +75,19 @@
 </section>
 {{end}}
 
+<section class="open" id="open-source" aria-labelledby="open-title">
+  <h2 id="open-title">{{t "os.title"}}</h2>
+  <p class="lede">{{t "os.lede"}}</p>
+  <dl class="os">
+    <div><dt><a href="{{.Repo}}">{{t "os.source"}}</a></dt><dd>{{t "os.source.d"}} <code>{{slice .Repo 8}}</code></dd></div>
+    <div><dt><a href="{{.Repo}}/blob/main/LICENSE">{{t "os.license"}}</a></dt><dd>{{t "os.license.d"}}</dd></div>
+    <div><dt><a href="{{.Repo}}/releases">{{t "os.download"}}</a></dt><dd>{{t "os.download.d"}}</dd></div>
+    <div><dt><a href="{{.Repo}}/issues">{{t "os.issues"}}</a></dt><dd>{{t "os.issues.d"}}</dd></div>
+    <div><dt><a href="{{.Repo}}/security/advisories/new">{{t "os.security"}}</a></dt><dd>{{t "os.security.d"}} <a href="{{.Repo}}/blob/main/SECURITY.md">{{t "os.security.policy"}}</a></dd></div>
+    <div><dt><a href="{{.Repo}}/blob/main/rules/README.md">{{t "os.contrib"}}</a></dt><dd>{{t "os.contrib.d"}} <a href="{{.Repo}}/blob/main/rules/README.md">{{t "os.contrib.rules"}}</a>, <a href="{{.Repo}}#readme">README</a></dd></div>
+  </dl>
+</section>
+
 <section class="latest" aria-labelledby="latest-title">
   <h2 id="latest-title">{{t "latest"}}</h2>
   <div class="timeline">{{template "releaselist" (slice .Latest 0 1)}}</div>
@@ -59,50 +98,54 @@
 <script>
 (function () {
   var still = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  /* dust in the beam: the one continuous motion */
-  var c = document.querySelector('canvas.dust'), x = c.getContext('2d'), P = [], w, h, dpr = Math.min(devicePixelRatio || 1, 2), run = true;
+  /* the scenes turn by click, arrow keys or a sideways swipe; nothing plays by itself */
+  var deck = document.querySelector('.deck'), track = deck.querySelector('.track'), tabs = deck.querySelectorAll('[role=tab]'),
+      cards = deck.querySelectorAll('.card'), dots = deck.querySelectorAll('.dots i'), prev = deck.querySelector('.prev'), next = deck.querySelector('.next'), at = 0;
+  function go(i, focus) {
+    at = Math.max(0, Math.min(cards.length - 1, i));
+    track.style.transform = 'translate3d(' + (-100 * at) + '%,0,0)';
+    for (var k = 0; k < cards.length; k++) {
+      var on = k === at;
+      cards[k].classList.toggle('on', on); cards[k].inert = !on;
+      tabs[k].setAttribute('aria-selected', on); tabs[k].tabIndex = on ? 0 : -1;
+      dots[k].classList.toggle('on', on);
+    }
+    deck.dataset.at = at; prev.disabled = at === 0; next.disabled = at === cards.length - 1;
+    if (focus) tabs[at].focus();
+  }
+  tabs.forEach(function (t, k) { t.addEventListener('click', function () { go(k); }); });
+  deck.querySelector('[role=tablist]').addEventListener('keydown', function (e) {
+    var to = { ArrowRight: at + 1, ArrowLeft: at - 1, Home: 0, End: cards.length - 1 }[e.key];
+    if (to !== undefined) { e.preventDefault(); go(to, true); }
+  });
+  prev.addEventListener('click', function () { go(at - 1); });
+  next.addEventListener('click', function () { go(at + 1); });
+  var x0 = null, y0 = 0, vp = deck.querySelector('.viewport');
+  vp.addEventListener('pointerdown', function (e) { x0 = e.clientX; y0 = e.clientY; });
+  vp.addEventListener('pointerup', function (e) {
+    if (x0 === null) return; var dx = e.clientX - x0, dy = e.clientY - y0; x0 = null;
+    if (Math.abs(dx) > 50 && Math.abs(dx) > 1.5 * Math.abs(dy)) go(at + (dx < 0 ? 1 : -1));
+  });
+  go(0);
+
+  /* dust in the beam, drawn only while the gate is on screen */
+  if (still) return;
+  var c = document.querySelector('canvas.dust'), x = c.getContext('2d'), P = [], w, h, run = true, dpr = Math.min(devicePixelRatio || 1, 2);
   function size() { w = c.clientWidth; h = c.clientHeight; c.width = w * dpr; c.height = h * dpr; x.setTransform(dpr, 0, 0, dpr, 0, 0); }
   size(); addEventListener('resize', size);
-  for (var i = 0; i < 90; i++) P.push({ x: Math.random(), y: Math.random(), r: Math.random() * 1.6 + .3, v: Math.random() * .00025 + .00008, p: Math.random() * 6.28 });
+  for (var k = 0; k < 80; k++) P.push({ x: Math.random(), y: Math.random(), r: Math.random() * 1.5 + .3, v: Math.random() * .00025 + .00008, p: Math.random() * 6.28 });
   function frame(t) {
     if (!run) return;
     x.clearRect(0, 0, w, h);
-    P.forEach(function (d) {
-      d.y -= d.v; if (d.y < 0) d.y = 1;
-      var px = (.5 + (d.x - .5) * .22 + Math.sin(t / 2400 + d.p) * .006) * w, py = d.y * h, s = Math.sin(t / 900 + d.p);
-      x.fillStyle = 'rgba(255, 214, 150,' + (.25 + .35 * s * s) + ')'; x.beginPath(); x.arc(px, py, d.r, 0, 6.29); x.fill();
-    });
+    for (var k = 0; k < P.length; k++) {
+      var e = P[k], s = Math.sin(t / 900 + e.p); e.y -= e.v; if (e.y < 0) e.y = 1;
+      x.fillStyle = 'rgba(255, 214, 150,' + (.22 + .35 * s * s) + ')';
+      x.beginPath(); x.arc((.5 + (e.x - .5) * .16 + Math.sin(t / 2400 + e.p) * .005) * w, e.y * h, e.r, 0, 6.29); x.fill();
+    }
     requestAnimationFrame(frame);
   }
-  /* stop drawing when the gate is out of sight */
-  if (!still) {
-    new IntersectionObserver(function (e) { var was = run; run = e[0].isIntersecting; if (run && !was) requestAnimationFrame(frame); }).observe(c);
-    requestAnimationFrame(frame);
-  }
-
-  /* the patrol follows the scroll */
-  var story = document.getElementById('story'), pin = story.querySelector('.pin'), acts = story.querySelectorAll('.act'),
-      rows = story.querySelectorAll('.log li'), flag = rows[4].lastElementChild, msg = story.querySelector('.msg'), ok = flag.textContent;
-  function step() {
-    var r = story.getBoundingClientRect(), span = r.height - innerHeight, p = Math.min(1, Math.max(0, -r.top / span));
-    var act = p < .38 ? 0 : p < .7 ? 1 : 2, lit = Math.floor(Math.min(1, p / .36) * rows.length);
-    acts.forEach(function (a, i) { a.classList.toggle('on', i === act); });
-    rows.forEach(function (row, i) { row.classList.toggle('lit', i < lit); row.classList.toggle('bad', act > 0 && i === 4); });
-    flag.textContent = act > 0 ? flag.dataset.bad : ok;
-    msg.classList.toggle('on', act === 2);
-    pin.classList.toggle('find', act === 1);
-    pin.classList.toggle('told', act === 2);
-    aim(act === 2 ? msg : rows[4]);
-  }
-  /* the ray leaves the gap and ends at what it points to */
-  var ray = story.querySelector('.ray'), beam = story.querySelector('.beam');
-  function aim(el) {
-    var p = pin.getBoundingClientRect(), b = beam.getBoundingClientRect(), e = el.getBoundingClientRect();
-    ray.style.left = (b.right - p.left) + 'px';
-    ray.style.width = Math.max(0, e.left - b.right + 24) + 'px';
-    ray.style.top = (e.top - p.top + Math.min(e.height, 40) / 2) + 'px';
-  }
-  addEventListener('scroll', step, { passive: true }); addEventListener('resize', step); step();
+  new IntersectionObserver(function (es) { var was = run; run = es[0].isIntersecting; if (run && !was) requestAnimationFrame(frame); }).observe(document.getElementById('gate'));
+  requestAnimationFrame(frame);
 })();
 </script>
 {{end}}
