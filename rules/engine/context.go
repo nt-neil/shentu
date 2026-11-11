@@ -2,6 +2,7 @@ package engine
 
 import (
 	"slices"
+	"sort"
 	"strings"
 )
 
@@ -653,15 +654,18 @@ func (a *analysis) litOf(st state, name string) []Token {
 // textMatch finds a text pattern in a string literal's text, outside its
 // interpolations: in "SELECT * FROM t $where" the $where is a variable, not text.
 func textMatch(p *pat, tk Token) []int {
+	var ends []int // where each interpolation ends, worked out once
 	for _, loc := range p.text.FindAllStringIndex(tk.Text, -1) {
-		inside := false
-		for _, part := range tk.Parts {
-			if loc[0] >= part.Off && loc[0] < skipInterp(tk.Text, min(part.Off, len(tk.Text))) {
-				inside = true
-				break
+		if ends == nil {
+			ends = make([]int, len(tk.Parts))
+			for k := range tk.Parts {
+				ends[k] = partEnd(tk, k)
 			}
 		}
-		if !inside {
+		// The last interpolation starting at or before the match: the
+		// interpolations follow each other, so only it can hold the match.
+		k := sort.Search(len(tk.Parts), func(k int) bool { return tk.Parts[k].Off > loc[0] }) - 1
+		if k < 0 || loc[0] >= ends[k] {
 			return loc
 		}
 	}

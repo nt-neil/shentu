@@ -3,7 +3,6 @@ package engine
 import (
 	"slices"
 	"strings"
-	"time"
 )
 
 // Calls inside one file are followed through function summaries. A summary
@@ -132,6 +131,8 @@ type fileFuncs struct {
 	unions   map[string][]string // a $this union key → the keys it merges
 	classSet map[string]bool     // classes of the file, worked out once
 	methods  map[string]string   // memo of method(): class + "\x00" + name → key
+	desc     map[string][]string // class → the classes of the file under it, worked out once
+	callsUp  map[string]bool     // memo of callsParent(): key + "\x00" + name
 }
 
 func newFileFuncs(funcs map[string][]*fnInfo, lang string) *fileFuncs {
@@ -460,14 +461,12 @@ func (ff *fileFuncs) this(class, name, caller string) string {
 		caller = strings.ToLower(caller)
 	}
 	var subs []string
-	for c := range ff.classes() {
+	for _, c := range ff.descendants()[class] {
 		if caller != "" && len(ff.byKey[c+"::"+caller]) > 0 && !ff.callsParent(c+"::"+caller, caller) {
 			continue // c overrides the calling method and never runs it
 		}
-		if c != class && ff.inherits(c, class) {
-			if k := c + "::" + name; len(ff.byKey[k]) > 0 && k != base {
-				subs = append(subs, k)
-			}
+		if k := c + "::" + name; len(ff.byKey[k]) > 0 && k != base {
+			subs = append(subs, k)
 		}
 	}
 	if len(subs) == 0 {
@@ -495,9 +494,36 @@ func (ff *fileFuncs) this(class, name, caller string) string {
 	return vk
 }
 
+// descendants maps each class to the classes of the file that inherit it
+// (up to 64 parents up), so that $this->name() is resolved without
+// going over every class of the file each time.
+func (ff *fileFuncs) descendants() map[string][]string {
+	if ff.desc != nil {
+		return ff.desc
+	}
+	ff.desc = map[string][]string{}
+	for c := range ff.classes() {
+		a := c
+		for depth := 0; a != "" && depth < 64; depth++ {
+			if a = ff.parents[a]; a != "" && a != c && (len(ff.desc[a]) == 0 || ff.desc[a][len(ff.desc[a])-1] != c) {
+				ff.desc[a] = append(ff.desc[a], c) // once, also when the parents go round in a cycle
+			}
+		}
+	}
+	return ff.desc
+}
+
 // callsParent reports whether the method at key calls its parent's version
 // (parent::name(), super().name(), super.name()), so the parent's code still runs.
+// It is worked out once per method: $this->name() asks it for every call.
 func (ff *fileFuncs) callsParent(key, name string) bool {
+	mk := key + "\x00" + name
+	if v, ok := ff.callsUp[mk]; ok {
+		return v
+	}
+	if ff.callsUp == nil {
+		ff.callsUp = map[string]bool{}
+	}
 	found := false
 	for _, fi := range ff.byKey[key] {
 		walkToks(fi.f.body, 0, func(t []Token) {
@@ -510,6 +536,7 @@ func (ff *fileFuncs) callsParent(key, name string) bool {
 			}
 		})
 	}
+	ff.callsUp[mk] = found
 	return found
 }
 
@@ -528,15 +555,6 @@ func (ff *fileFuncs) classes() map[string]bool {
 	}
 	ff.classSet = out
 	return out
-}
-
-func (ff *fileFuncs) inherits(c, ancestor string) bool {
-	for depth := 0; c != "" && depth < 64; depth++ {
-		if c = ff.parents[c]; c == ancestor {
-			return true
-		}
-	}
-	return false
 }
 
 func (ff *fileFuncs) hasClass(c string) bool { return ff.classes()[c] }
@@ -572,6 +590,10 @@ func (ff *fileFuncs) components(b *budget) {
 				}
 			})
 		}
+	}
+	if b.hit { // the clock ran out: no partial graph is kept
+		ff.comp, ff.edges, ff.callers = nil, nil, nil
+		return
 	}
 	index, low, onStack := map[string]int{}, map[string]int{}, map[string]bool{}
 	var stack []string
@@ -664,7 +686,9 @@ func (a *analysis) summaryOf(key string) *summary {
 		a.b.tooDeep()
 		return nil
 	}
-	sc.ff.components(freeBudget())
+	if !a.graph() {
+		return nil
+	}
 	c, ok := sc.ff.comp[key]
 	if !ok || c < 0 {
 		sc.busy[key] = true
@@ -817,9 +841,19 @@ func (a *analysis) own(work func(x *analysis)) (capped, keep bool, height, cost 
 	return capped, true, height, cost
 }
 
-// freeBudget is for work kept for the whole file (its call graph): charged to
-// nobody, so that no asker pays for it more than another.
-func freeBudget() *budget { return &budget{maxTok: 1 << 40, deadline: time.Now().Add(24 * time.Hour)} }
+// graph builds the file's call graph, work kept for the whole file: charged to
+// nobody, so that no asker pays for it more than another, but within the
+// asker's clock. False when the clock ran out: the asker is cut by it as well,
+// and the next asker builds the graph again.
+func (a *analysis) graph() bool {
+	b := &budget{maxTok: 1 << 40, deadline: a.b.deadline}
+	a.sc.ff.components(b)
+	if b.hit {
+		a.b.hit, a.b.timeHit = true, true
+		return false
+	}
+	return true
+}
 
 func (a *analysis) summarizeKey(key string) *summary {
 	s := &summary{}
@@ -838,7 +872,9 @@ func (a *analysis) crossNeeded(tree []*stmt) bool {
 	if sc == nil {
 		return false
 	}
-	sc.ff.components(freeBudget())
+	if !a.graph() {
+		return false
+	}
 	keys := make([]string, 0, len(sc.funcs))
 	for k := range sc.funcs {
 		keys = append(keys, k)
