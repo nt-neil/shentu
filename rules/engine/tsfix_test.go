@@ -138,3 +138,24 @@ func TestTSFixImportExtensions(t *testing.T) {
 		}
 	}
 }
+
+// B6: './util.js' is util.ts only when there is no util.js: a real file wins.
+func TestTSFixImportRealFileFirst(t *testing.T) {
+	e := engineForTest(t)
+	sink := "const { exec } = require('child_process');\nexport function run(c) {\n  exec('ls ' + c);\n}\n"
+	safe := "export function run(c) {\n  return c;\n}\n"
+	route := "import { run } from './util.js';\napp.get('/x', (req, res) => { run(req.query.c); });\n"
+	for _, c := range []struct{ js, ts, want string }{
+		{sink, safe, "src/util.js:3"},
+		{safe, sink, ""},
+	} {
+		got, _, errs := projectScanErrs(t, e, map[string]string{"src/a.ts": route, "src/util.js": c.js, "src/util.ts": c.ts}, ProjectOptions{})
+		var want []string
+		if c.want != "" {
+			want = []string{c.want}
+		}
+		if !sameSet(got, want) || len(errs) != 0 {
+			t.Errorf("util.js and util.ts both there: %v %v, want %v (the real util.js)", got, errs, want)
+		}
+	}
+}
