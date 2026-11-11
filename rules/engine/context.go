@@ -953,7 +953,7 @@ var relativePat = func() *pat {
 }()
 
 // relativeOf returns the keys of x when t is path.relative(base, x), or a
-// variable assigned one, the base is clean and x a canonical, anchored path. Walking the
+// variable assigned one, the base is clean and x a canonical, absolute path. Walking the
 // state is charged to the budget, so the work limit and the clock bound it.
 func (a *analysis) relativeOf(st state, t []Token) []keyRef {
 	t = stripParens(t)
@@ -992,13 +992,13 @@ func (a *analysis) relativeOf(st state, t []Token) []keyRef {
 		return nil
 	}
 	if e, found := st[anchorKey+key]; !found || !e.san {
-		return nil // path.normalize(input) is canonical, not anchored
+		return nil // path.normalize(input) is canonical, not absolute
 	}
 	return a.keysOf(args[1])
 }
 
-// anchorKey marks, in a state, that a variable holds a path anchored at a
-// base no input chose: one path.relative resolves as the sinks do.
+// anchorKey marks, in a state, that a variable holds an absolute path: one
+// path.relative and every sink resolve alike.
 const anchorKey = "\x00anchor:"
 
 var absCalls, joinCalls = func() ([]*pat, []*pat) {
@@ -1016,13 +1016,12 @@ var absCalls, joinCalls = func() ([]*pat, []*pat) {
 	return mk("path.resolve(", "fs.realpathSync(", "realpathSync(", "fs.promises.realpath("), mk("path.join(", "path.normalize(")
 }()
 
-// anchored reports whether t is a path anchored at a base no input chose, so
-// that once normalized it cannot start with "..": path.resolve() or realpath()
-// of anything (absolute), path.join() or path.normalize() of such a first part,
-// a concatenation starting with one, or a clean value that is not a literal
-// starting with "." (this.dir, "/srv", "media"). path.normalize(input) is not:
-// path.relative resolves "../srv/x" from the working directory, while
-// path.join(base, "../srv/x") leaves the base.
+// anchored reports whether t is provably an absolute path: a literal starting
+// with "/", __dirname, path.resolve() or realpath() of anything, path.join() or
+// path.normalize() of such a first part, a concatenation starting with one, or a
+// name holding one. Anything else fails closed: a relative path, even with a
+// clean first part, normalizes to one that may start with ".." (from /app,
+// "../app/media/f" is inside media), which a join to another folder follows out.
 func (a *analysis) anchored(st state, t []Token, depth int) bool {
 	t = stripParens(t)
 	for len(t) > 0 && t[0].word("await") {
@@ -1033,7 +1032,10 @@ func (a *analysis) anchored(st state, t []Token, depth int) bool {
 		return false
 	}
 	if n == 1 && t[0].Kind == Str {
-		return !strings.HasPrefix(t[0].Text, ".") && (len(t[0].Parts) == 0 || t[0].Parts[0].Off > 0)
+		return strings.HasPrefix(t[0].Text, "/") && (len(t[0].Parts) == 0 || t[0].Parts[0].Off > 0)
+	}
+	if n == 1 && t[0].word("__dirname") {
+		return true
 	}
 	for _, p := range absCalls {
 		if m := len(p.toks); m < n && p.at(t, 0, true) && closeOf(t, m-1) == n-1 {
@@ -1059,7 +1061,7 @@ func (a *analysis) anchored(st state, t []Token, depth int) bool {
 			}
 		}
 	}
-	return !a.expr(st, t, false).taint // a clean value: a base the code chose
+	return false
 }
 
 // setRelative records, after rel = rhs, what rel is the relative path of. Any
