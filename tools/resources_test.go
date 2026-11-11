@@ -7,10 +7,13 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/metrics"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/nt-neil/shentu/rules/engine"
 )
 
 // fakeSystem points the budget at a made-up /proc and /sys/fs/cgroup.
@@ -84,7 +87,8 @@ func TestAuditBudget(t *testing.T) {
 // Under a cgroup limit of 512 MB (a heap budget of 256 MB) the whole audit,
 // the process included, stays within the budget with a fifth on top for the
 // runtime: calls stop crossing files at the heap budget, the GC is held to
-// the budget, and the audit still says how far it got.
+// the budget, and the audit still says how far it got, which files are left
+// and that it needs more memory. The next audit goes on from there.
 func TestAuditMemoryUnderCgroup(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds and scans a large project")
@@ -92,6 +96,15 @@ func TestAuditMemoryUnderCgroup(t *testing.T) {
 	fakeSystem(t, map[string]string{unit: "0::/shentu.service\n", "cgroup/shentu.service/memory.max": "536870912\n"})
 	dir := t.TempDir()
 	writeLargeProject(t, dir, 1200, 60)
+	state := t.TempDir() // the results kept between audits
+	idx, calls := codeIndexFile, projectScan
+	codeIndexFile = func() string { return filepath.Join(state, "codeindex.json") }
+	var tried []string // files whose calls an audit followed, in order
+	projectScan = func(pr *engine.Project, p string, b []byte, skip map[string]bool) (engine.CallsPart, error) {
+		tried = append(tried, filepath.Base(p))
+		return calls(pr, p, b, skip)
+	}
+	defer func() { codeIndexFile, projectScan = idx, calls }()
 	runtime.GC()
 
 	var peak atomic.Uint64
@@ -124,14 +137,28 @@ func TestAuditMemoryUnderCgroup(t *testing.T) {
 	} else {
 		t.Logf("memory in use peaked at %d MiB", p/mib)
 	}
-	var cross string
+	var cross CodeFinding
 	for _, f := range res.Findings {
 		if f.Kind == "injection" && strings.Contains(f.Detail, "calls across files") {
-			cross = f.Detail
+			cross = f
 		}
 	}
-	if !strings.Contains(cross, "memory limit") {
-		t.Errorf("want the summary to say calls stopped at the memory limit, got %q", cross)
+	first := tried
+	if !strings.Contains(cross.Detail, "memory limit") {
+		t.Errorf("want the summary to say calls stopped at the memory limit, got %q", cross.Detail)
+	}
+	if len(cross.Files) == 0 || !strings.Contains(cross.Fix, "audit_max_memory_mb = 512") {
+		t.Errorf("want the files left and more memory asked for: files %v, fix %q", cross.Files, cross.Fix)
+	}
+	// The next audit goes on from there: from a file the first never tried, the
+	// one the limit stopped in the middle of after those (every file of this
+	// project is on one chain of calls through all of them, too long for 256 MB).
+	tried = nil
+	AppCodeAudit(context.Background(), []string{dir}, nil)
+	if len(first) == 0 || len(tried) == 0 || slices.Contains(first, tried[0]) {
+		t.Errorf("first audit followed %v, the next started with %v: want a file not tried before", first, tried[:min(len(tried), 3)])
+	} else {
+		t.Logf("first audit followed %v, the next %v", first, tried)
 	}
 }
 
