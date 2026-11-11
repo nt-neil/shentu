@@ -1,6 +1,9 @@
 package engine
 
-import "strings"
+import (
+	"slices"
+	"strings"
+)
 
 // maxLitDepth bounds how many names, constants and calls literalArg follows
 // to reach the string, so A = B; B = A cannot loop and a long chain costs little.
@@ -897,7 +900,7 @@ var canonFuncs = func() map[string][]*pat {
 	for lang, list := range map[string][]string{
 		"php":    {"realpath("},
 		"python": {"os.path.realpath(", "os.path.abspath(", "os.path.normpath(", "realpath(", "abspath(", "normpath("},
-		"js":     {"path.resolve(", "path.normalize(", "fs.realpathSync(", "realpathSync(", "fs.promises.realpath("},
+		"js":     {"path.resolve(", "path.normalize(", "path.join(", "fs.realpathSync(", "realpathSync(", "fs.promises.realpath("}, // Node's join normalizes; Python's does not
 	} {
 		for _, f := range list {
 			p, err := compilePattern(lang, f, false)
@@ -934,6 +937,99 @@ func (a *analysis) canonical(st state, t []Token) bool {
 		}
 	}
 	return false
+}
+
+// relKey marks, in a state, that a variable holds path.relative(base, x) for a
+// base no input reached: relKey+rel+"\x00"+x, with relKey+rel itself set, so a
+// new value of rel can drop what it knew.
+const relKey = "\x00rel:"
+
+var relativePat = func() *pat {
+	p, err := compilePattern("js", "path.relative(", false)
+	if err != nil {
+		panic(err)
+	}
+	return p
+}()
+
+// relativeOf returns the keys of x when t is path.relative(base, x), or a
+// variable assigned one, and the base is clean.
+func (a *analysis) relativeOf(st state, t []Token) []keyRef {
+	t = stripParens(t)
+	n := len(t)
+	if key, _, ok := a.pathKey(t); ok {
+		if e, found := st[relKey+key]; !found || !e.san {
+			return nil
+		}
+		var out []keyRef
+		pre := relKey + key + "\x00"
+		for k, e := range st {
+			if e.san && strings.HasPrefix(k, pre) {
+				out = append(out, keyRef{key: k[len(pre):], src: e.src})
+			}
+		}
+		slices.SortFunc(out, func(x, y keyRef) int { return strings.Compare(x.key, y.key) })
+		return out
+	}
+	m := len(relativePat.toks)
+	if m >= n || !relativePat.at(t, 0, true) || closeOf(t, m-1) != n-1 {
+		return nil
+	}
+	args := splitTop(t[m:n-1], isComma)
+	if len(args) != 2 || a.expr(st, args[0], false).taint {
+		return nil
+	}
+	return a.keysOf(args[1])
+}
+
+// setRelative records, after rel = rhs, what rel is the relative path of.
+func (a *analysis) setRelative(st state, key string, rhs []Token, plain bool) {
+	if _, had := st[relKey+key]; had {
+		pre := relKey + key + "\x00"
+		for k := range st {
+			if k == relKey+key || strings.HasPrefix(k, pre) {
+				delete(st, k)
+			}
+		}
+	}
+	if !plain {
+		return
+	}
+	xs := a.relativeOf(st, rhs)
+	if len(xs) == 0 || len(stripParens(rhs)) == 1 {
+		return // a copy of another relative path is not followed
+	}
+	st[relKey+key] = entry{san: true}
+	for _, x := range xs {
+		st[relKey+key+"\x00"+x.key] = entry{san: true, src: x.src}
+	}
+}
+
+// escapeCheck reads rel.startsWith("..") on a relative path from a clean base
+// (path.relative(base, x), or a variable holding one): it is true when x leaves
+// the base, so where it is false x stays inside. "../" and ".." + path.sep
+// leave out rel === ".." alone, the base's parent folder itself, which no file
+// sink can read or write as a file.
+func (a *analysis) escapeCheck(st state, atom []Token) []keyRef {
+	n := len(atom)
+	if !a.js || a.r.rule.Class != "path-traversal" || n < 6 || !atom[n-1].op(")") {
+		return nil
+	}
+	open := openOf(atom, n-1)
+	if open < 2 || !atom[open-1].word("startsWith") || !atom[open-2].op(".") {
+		return nil
+	}
+	arg := atom[open+1 : n-1]
+	switch parts := splitTop(arg, isOp("+")); {
+	case len(arg) == 1 && arg[0].Kind == Str && len(arg[0].Parts) == 0 && (arg[0].Text == ".." || arg[0].Text == "../"):
+	case len(parts) == 2 && len(parts[0]) == 1 && parts[0][0].Kind == Str && len(parts[0][0].Parts) == 0 && parts[0][0].Text == "..":
+		if key, _, ok := a.pathKey(parts[1]); !ok || strings.ReplaceAll(key, sepCh, "") != "path.sep" {
+			return nil
+		}
+	default:
+		return nil
+	}
+	return a.relativeOf(st, atom[:open-2])
 }
 
 // canonPrefix: a prefix check on a path (str_starts_with($p, $base),
