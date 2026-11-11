@@ -419,11 +419,11 @@ func TestSourcePrefilterSwitch(t *testing.T) {
 	if r == nil || !hasSink(r, toks) {
 		t.Fatal("php-sqli-string-concat or its sink not found")
 	}
-	if !e.skipBySources(r, names, src, toks) {
+	if !e.skipBySources(r, names, src, newSrcIndex(toks, nil)) {
 		t.Error("a file without source names is not skipped in the first pass")
 	}
 	e.Library = true
-	if e.skipBySources(r, names, src, toks) {
+	if e.skipBySources(r, names, src, newSrcIndex(toks, nil)) {
 		t.Error("library mode: parameters are input, the rule must not be skipped")
 	}
 	fs, _ := e.Scan("php", "lib.php", src)
@@ -431,7 +431,7 @@ func TestSourcePrefilterSwitch(t *testing.T) {
 		t.Error("library mode: parameter -> sink not reported")
 	}
 	e.Library, e.SourcePrefilter = false, false
-	if e.skipBySources(r, names, src, toks) {
+	if e.skipBySources(r, names, src, newSrcIndex(toks, nil)) {
 		t.Error("SourcePrefilter off: the rule must not be skipped")
 	}
 }

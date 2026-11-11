@@ -27,7 +27,7 @@ func TestPrefilterTokens(t *testing.T) {
 		src := []byte(c.src)
 		toks := lex("js", c.src, newBudget(e.Limits))
 		names := nameSet(toks, map[string]bool{})
-		scan := sinkNames(r, names, src) && hasSink(r, toks) && !e.skipBySources(r, names, src, toks)
+		scan := sinkNames(r, names, src) && hasSink(r, toks) && !e.skipBySources(r, names, src, newSrcIndex(toks, nil))
 		if scan != c.scan {
 			t.Errorf("%q: scanned %v, want %v", c.src, scan, c.scan)
 		}
@@ -53,7 +53,7 @@ func TestSourcePrefilterSound(t *testing.T) {
 				names := nameSet(toks, map[string]bool{})
 				for _, r := range rs {
 					checked++
-					if !sinkNames(r, names, src) || !hasSink(r, toks) || !e.skipBySources(r, names, src, toks) {
+					if !sinkNames(r, names, src) || !hasSink(r, toks) || !e.skipBySources(r, names, src, newSrcIndex(toks, nil)) {
 						continue
 					}
 					skipped++
