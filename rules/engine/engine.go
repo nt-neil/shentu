@@ -230,6 +230,8 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 	}
 	if proj != nil {
 		proj.unsteady = false
+		proj.scanning = path
+		defer func() { proj.scanning = "" }()
 	}
 	b := newBudget(e.Limits)
 	toks := lex(lang, string(src), b)
@@ -314,18 +316,32 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 				continue // followed in an earlier audit (ScanCallsPart)
 			}
 			ruleDone := func() {
-				if proj != nil {
+				// Once the project stopped (its clock, its heap), calls no longer
+				// cross files and resolve to nothing without a word: a rule
+				// finished then followed none of them and is not done.
+				if proj != nil && proj.stopped == "" {
 					proj.part = append(proj.part, r.rule.ID)
 					proj.partCut = proj.partCut || callsCut || b2.limited
 				}
 			}
 			b2.maxWork = b2.work + perRule // each rule's own work cap
+			b2.sumWork = perRule           // and each summary its own (interproc.go, own)
 			sc := newSummaries(ff)
 			if proj != nil {
 				if sc == nil {
 					sc = &summaries{ff: ff, funcs: ff.byKey, done: map[string]*summary{}, busy: map[string]bool{}, rel: map[string]uint8{}, retUnk: map[string]uint8{}}
 				}
-				proj.sums[r.rule.ID+"\x00"+path] = sc
+				// Summaries are worked out the same whoever asks (own): those the
+				// project has of this file already (as another file's callee, or a
+				// cycle settled through it) are the ones this scan would work out.
+				key := r.rule.ID + "\x00" + path
+				if old := proj.sums[key]; old != nil {
+					sc.done, sc.rel, sc.direct, sc.cross = old.done, old.rel, old.direct, old.cross
+				} else if kept := proj.kept[key]; kept != nil {
+					sc.done = kept
+					delete(proj.kept, key)
+				}
+				proj.sums[key] = sc
 			}
 			a := &analysis{r: r, php: lang == "php", py: lang == "python", js: lang == "js", b: b2, kw: keywords[lang], seen: map[loc]bool{}, sc: sc,
 				file: path, proj: proj, routes: routeFns}
@@ -338,6 +354,14 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 				l := &analysis{r: r, php: a.php, py: a.py, js: a.js, b: b2, kw: a.kw, seen: a.seen, sc: sc, lib: true, file: path, proj: proj, routes: routeFns}
 				l.block(tree, state{})
 				a.lines = append(a.lines, l.lines...)
+			}
+			if proj != nil && proj.byMachine {
+				// The project stopped during the rule (its clock, its heap): calls
+				// stopped crossing files part way, as with the scan's own clock.
+				callsCut, timed = true, true
+				add(r, direct[r])
+				delete(direct, r)
+				break
 			}
 			if b2.hit {
 				callsCut = true

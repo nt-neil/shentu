@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"runtime/metrics"
 	"slices"
 	"sort"
@@ -37,42 +38,45 @@ import (
 // following calls across files, scans each file on its own as before, and
 // Stopped tells why. A Project is not safe for concurrent use.
 type Project struct {
-	e         *Engine
-	opt       ProjectOptions
-	files     map[string]*fileIndex
-	bySuffix  map[string][]string // "pkg/mod.py", "mod.py" → paths
-	byClean   map[string]string   // cleaned slash path → path
-	read      func(string) ([]byte, error)
-	funcs     map[string]map[string][]string // lang → top-level function name → paths
-	classes   map[string]map[string][]string // lang → class name (short and qualified) → paths
-	psr4      []psr4Prefix
-	declared  map[string]map[string][]string // lang → function or method name (PHP: lower case) → paths
-	ctx       map[string]*fileCtx
-	lru       []string
-	resident  int
-	sums      map[string]*summaries          // rule id + "\x00" + path
-	kept      map[string]map[string]*summary // finished summaries of files no longer kept parsed
-	incl      map[string][]string            // memo of includes()
-	fnMemo    map[string]string              // memo of function(): from + "\x00" + name → file
-	relMemo   map[string]bool                // memo of relevant(): rule, file, key
-	seen      map[string]bool                // findings already returned: rule, path, line
-	stopped   string
-	byMachine bool                       // stopped by the clock or the heap: where depends on the machine
-	unsteady  bool                       // the current scan met a file it could not read, or parse in time
-	unread    map[string]bool            // files that could not be read, or parsed in time, since indexed
-	skip      map[string]bool            // ScanCallsPart: rules to leave out
-	part      []string                   // ... rules followed to their end in this scan
-	partCut   bool                       // ... one of them cut short by a cap
-	partAt    string                     // ... the rule the clock cut short
-	deps      map[string]map[string]bool // file → files its functions' calls were followed into
-	routeTo   map[string][]routeTarget   // file → its functions other files register as handlers (routes.go)
-	busy      int                        // summaries asked for while being worked out (cycles across files)
-	relGuess  int                        // relevance asked for while being worked out
-	unsure    bool                       // the last resolution met a name it could not pin to one file
-	ambig     string                     // ... a PHP function declared in several files
-	deadline  time.Time
-	depth     int
-	heapAt    time.Time
+	e                    *Engine
+	opt                  ProjectOptions
+	files                map[string]*fileIndex
+	bySuffix             map[string][]string // "pkg/mod.py", "mod.py" → paths
+	byClean              map[string]string   // cleaned slash path → path
+	read                 func(string) ([]byte, error)
+	funcs                map[string]map[string][]string // lang → top-level function name → paths
+	classes              map[string]map[string][]string // lang → class name (short and qualified) → paths
+	psr4                 []psr4Prefix
+	declared             map[string]map[string][]string // lang → function or method name (PHP: lower case) → paths
+	ctx                  map[string]*fileCtx
+	lru                  []string
+	resident             int
+	sums                 map[string]*summaries          // rule id + "\x00" + path
+	kept                 map[string]map[string]*summary // finished summaries of files no longer kept parsed
+	incl                 map[string][]string            // memo of includes()
+	fnMemo               map[string]string              // memo of function(): from + "\x00" + name → file
+	seen                 map[string]bool                // findings already returned: rule, path, line
+	stopped              string
+	byMachine            bool                       // stopped by the clock or the heap: where depends on the machine
+	unsteady             bool                       // the current scan met a file it could not read, or parse in time
+	unread               map[string]bool            // files that could not be read, or parsed in time, since indexed
+	skip                 map[string]bool            // ScanCallsPart: rules to leave out
+	part                 []string                   // ... rules followed to their end in this scan
+	partCut              bool                       // ... one of them cut short by a cap
+	partAt               string                     // ... the rule the clock cut short
+	deps                 map[string]map[string]bool // file → files its functions' calls were followed into
+	stack                []*sumFrame                // summaries being worked out, the first asked first (sumstack.go)
+	held                 map[*summaries]map[string]heldSum
+	unsure               bool   // the last resolution met a name it could not pin to one file
+	ambig                string // ... a PHP function declared in several files
+	deadline             time.Time
+	depth                int
+	heapAt               time.Time
+	shrunk               time.Time                // when the caches were last let go of (ok)
+	scanning             string                   // the file being scanned: its caches stay
+	shrinkEvery, okCalls int                      // tests: let the caches go every shrinkEvery checks
+	shrinkAll            bool                     // ... summaries and relevance too
+	routeTo              map[string][]routeTarget // file → its functions other files register as handlers (routes.go)
 }
 
 // ProjectOptions are the caps of a Project. Zero values take the defaults.
@@ -143,7 +147,7 @@ func (e *Engine) NewProject(paths []string, read func(string) ([]byte, error), o
 	p := &Project{e: e, opt: opt, read: read, files: map[string]*fileIndex{}, bySuffix: map[string][]string{}, byClean: map[string]string{},
 		funcs: map[string]map[string][]string{}, classes: map[string]map[string][]string{}, declared: map[string]map[string][]string{},
 		ctx: map[string]*fileCtx{}, sums: map[string]*summaries{}, kept: map[string]map[string]*summary{}, seen: map[string]bool{},
-		incl: map[string][]string{}, fnMemo: map[string]string{}, relMemo: map[string]bool{}, deps: map[string]map[string]bool{}, unread: map[string]bool{},
+		incl: map[string][]string{}, fnMemo: map[string]string{}, deps: map[string]map[string]bool{}, unread: map[string]bool{},
 		deadline: time.Now().Add(opt.MaxTime)}
 	cache := loadIndexCache(opt.CacheFile)
 	fresh := map[string]*fileIndex{}
@@ -736,49 +740,13 @@ func (p *Project) summary(a *analysis, c callee) *summary {
 		return nil
 	}
 	if x.sc.busy[name] {
-		p.busy++ // a cycle across files: the caller's summary is not kept (summaryOf)
-		return nil
+		// A cycle across files: the summary asked for is being worked out below.
+		// It counts as doing nothing for now; every summary above it on the way
+		// here joins the cycle, which its first member settles (sumstack.go).
+		p.cycleTo(p.frameOf(x.sc, name))
+		return &summary{}
 	}
-	s := x.summaryOf(name)
-	if a.b.hit && s != nil { // computed with the caller's budget cut short: do not keep it
-		delete(x.sc.done, name)
-	}
-	return s // name is the key in that file (Class::m for a method)
-}
-
-// busyCount is how often a summary was asked for while being worked out in
-// another file (0 outside a project).
-func (p *Project) busyCount() int {
-	if p == nil {
-		return 0
-	}
-	return p.busy
-}
-
-// relevant reports whether a call reaches a function of another file that
-// matters to the rule.
-func (p *Project) relevant(a *analysis, c callee) bool {
-	f, name := p.resolve(a, c)
-	if f == "" {
-		return false
-	}
-	mk := a.r.rule.ID + "\x00" + f + "\x00" + name
-	if r, ok := p.relMemo[mk]; ok {
-		return r
-	}
-	x := p.analysisFor(a, f)
-	if x != nil && x.sc != nil && x.sc.relBusy {
-		// That file's relevance is being worked out (a cycle across files): not
-		// known yet. Nothing worked out from this answer is remembered.
-		p.relGuess++
-		return false
-	}
-	guess := p.relGuess
-	r := x != nil && x.sc != nil && len(x.sc.funcs[name]) > 0 && x.relevant(name)
-	if p.relGuess == guess && (x != nil || !p.unread[f]) { // an unread file is asked again, so each caller hears of it
-		p.relMemo[mk] = r
-	}
-	return r
+	return x.summaryOf(name) // worked out in a budget of its own (own): kept whoever asked // name is the key in that file (Class::m for a method)
 }
 
 // analysisFor returns an analysis of file f for the same rule, sharing the
@@ -800,7 +768,7 @@ func (p *Project) analysisFor(a *analysis, f string) *analysis {
 		p.sums[key] = sc
 	}
 	return &analysis{r: a.r, php: ctx.lang == "php", py: ctx.lang == "python", js: ctx.lang == "js", b: a.b,
-		kw: keywords[ctx.lang], seen: map[loc]bool{}, sc: sc, proj: p, file: f}
+		kw: keywords[ctx.lang], seen: map[loc]bool{}, sc: sc, proj: p, file: f, nest: a.nest, heights: a.heights}
 }
 
 // context returns the parsed file, parsing it if it is not kept.
@@ -842,24 +810,45 @@ func (p *Project) keep(f string, c *fileCtx) {
 	p.ctx[f] = c
 	p.lru = append(p.lru, f)
 	p.resident += c.tokens
-	for p.resident > p.opt.MaxTokens && len(p.lru) > 1 {
-		old := p.lru[0]
-		p.lru = p.lru[1:]
+	for i := 0; p.resident > p.opt.MaxTokens && i < len(p.lru)-1; {
+		old := p.lru[i]
+		if p.inUse(old) {
+			i++ // a summary of it is being worked out: its summaries stay where they are
+			continue
+		}
+		p.lru = slices.Delete(p.lru, i, i+1)
 		if oc, ok := p.ctx[old]; ok {
 			p.resident -= oc.tokens
 			delete(p.ctx, old)
 			// Keep what was worked out, drop the tree: the summaries are small and
-			// computing them again is what costs.
+			// computing them again is what costs. The map itself is kept, so what
+			// is still written to it (a cycle being settled) is kept too.
 			for k, sc := range p.sums {
 				if strings.HasSuffix(k, "\x00"+old) {
-					if len(sc.done) > 0 {
-						p.kept[k] = sc.done
-					}
+					p.kept[k] = sc.done
 					delete(p.sums, k)
 				}
 			}
 		}
 	}
+}
+
+// inUse reports whether a summary of file f is being worked out (on the stack).
+func (p *Project) inUse(f string) bool {
+	if f == p.scanning {
+		return true
+	}
+	for _, fr := range p.stack {
+		if fr.a.file == f {
+			return true
+		}
+		for _, m := range fr.members { // held until its cycle is settled
+			if m.a.file == f {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // ok checks the time and heap caps; once one is passed, calls stop crossing files.
@@ -874,26 +863,92 @@ func (p *Project) ok() bool {
 	}
 	// The heap is read at most every 100ms, and without stopping the program
 	// (runtime/metrics; ReadMemStats stops the world and cost more than the scan).
+	if p.shrinkEvery > 0 { // tests: let the caches go often, at fixed points
+		if p.okCalls++; p.okCalls%p.shrinkEvery == 0 {
+			p.shrink(p.shrinkAll)
+		}
+	}
 	if now := time.Now(); now.Sub(p.heapAt) > 100*time.Millisecond {
 		p.heapAt = now
-		sample := []metrics.Sample{{Name: "/memory/classes/heap/objects:bytes"}}
-		metrics.Read(sample)
-		if sample[0].Value.Kind() == metrics.KindUint64 && sample[0].Value.Uint64() > p.opt.MaxHeap {
-			p.stop("following calls across files reached the memory limit")
-			p.byMachine = true
-			return false
+		// What the last GC found in use, not what is allocated since: with Go's
+		// memory limit at the cap (app_code_audit), the heap fills up to it with
+		// garbage before each GC, which is no reason to let caches go, still
+		// less to stop.
+		live := heapLive()
+		// Past half the cap the parsed files go, past 70% after that the
+		// summaries and relevance too: being the same whoever works them out
+		// (own, relevance.go), they come back the same, only later. The parsed
+		// files first: they are most of the memory, and parsing one again is
+		// cheap, while summaries let go of in the middle of a chain of them are
+		// worked out again many times over. What is still over 70% of the cap
+		// after both, and a GC, stops calls crossing files: it is what the
+		// files and summaries in use take (a chain of calls through large
+		// files), and with less room the GC would run all the time (Go's
+		// memory limit is the cap: at 512 MB, 80% in use cost a third of the
+		// CPU) and the caches go and come back without end.
+		if live > p.opt.MaxHeap/10*5 && (now.Sub(p.shrunk) > time.Second || live > p.opt.MaxHeap) {
+			p.shrunk = now
+			p.shrink(false)
+			runtime.GC()
+			if live = heapLive(); live > p.opt.MaxHeap/10*7 {
+				p.shrink(true)
+				runtime.GC()
+				live = heapLive()
+			}
+			if live > p.opt.MaxHeap/10*7 {
+				p.stop("following calls across files reached the memory limit")
+				p.byMachine = true
+				return false
+			}
 		}
 	}
 	return true
 }
 
+func heapLive() uint64 {
+	sample := []metrics.Sample{{Name: "/gc/heap/live:bytes"}}
+	metrics.Read(sample)
+	if sample[0].Value.Kind() != metrics.KindUint64 {
+		return 0
+	}
+	return sample[0].Value.Uint64()
+}
+
+// shrink lets go of the parsed files and, with all, of every other cache
+// that can be worked out again: summaries and relevance, and the summaries
+// kept for files let go of. Not those of a file being scanned or whose
+// summary is being worked out.
+func (p *Project) shrink(all bool) {
+	for f, c := range p.ctx {
+		if p.inUse(f) {
+			continue
+		}
+		p.resident -= c.tokens
+		delete(p.ctx, f)
+	}
+	p.lru = slices.DeleteFunc(p.lru, func(f string) bool { _, ok := p.ctx[f]; return !ok })
+	if !all {
+		// The summaries stay, with the file's functions: a file parsed again
+		// gets them back (analysisFor), as when the LRU lets it go (keep).
+		for k, sc := range p.sums {
+			if !p.inUse(k[strings.IndexByte(k, 0)+1:]) {
+				p.kept[k] = sc.done
+				delete(p.sums, k)
+			}
+		}
+		return
+	}
+	for k := range p.sums {
+		if !p.inUse(k[strings.IndexByte(k, 0)+1:]) {
+			delete(p.sums, k)
+		}
+	}
+	clear(p.kept)
+}
+
 // resolve finds the file and the function name a call in a's file reaches.
 func (p *Project) resolve(a *analysis, c callee) (string, string) {
-	p.unsure, p.ambig = false, ""
-	f, name := p.resolve1(a, c)
-	p.dep(a.file, f) // also when the answer about f comes from a memo
-	unsure, ambig := p.unsure, p.ambig
-	p.unsure, p.ambig = false, ""
+	f, name, unsure, ambig := p.target(a, c)
 	if f == "" && ambig != "" {
 		// Several files declare it and none is included: unsure only if one of
 		// them matters to the rule.
@@ -908,6 +963,19 @@ func (p *Project) resolve(a *analysis, c callee) (string, string) {
 		a.b.tooDeep() // the call may reach another file: the file's result says calls were not followed
 	}
 	return f, name
+}
+
+// target is resolve without asking, of a name several files declare (ambig),
+// whether one of them matters to the rule: relevance.go reads a file's calls
+// with it, as asking would read those files' calls, and through them maybe
+// this file's again, half read.
+func (p *Project) target(a *analysis, c callee) (f, name string, unsure bool, ambig string) {
+	p.unsure, p.ambig = false, ""
+	f, name = p.resolve1(a, c)
+	p.dep(a.file, f) // also when the answer about f comes from a memo
+	unsure, ambig = p.unsure, p.ambig
+	p.unsure, p.ambig = false, ""
+	return f, name, unsure, ambig
 }
 
 func (p *Project) resolve1(a *analysis, c callee) (string, string) {
