@@ -90,7 +90,7 @@
   {{if or (gt .Rules 0) .Added .Removed .Frameworks .Bench}}
   <dl class="facts">
     {{if gt .Rules 0}}<div><dt>{{t "rules.total"}}</dt><dd>{{.Rules}}</dd></div>{{end}}
-    {{if .Bench}}<div><dt>{{t "bench.change"}}</dt><dd>{{.Bench.All.Caught}}/{{.Bench.All.Cases}} ({{.Bench.All.Rate}}), {{t "fixedfp"}} {{.Bench.All.FixedFP}}{{if .PrevBench}} ({{signed (sub .Bench.All.Caught .PrevBench.All.Caught)}}){{end}}</dd></div>{{end}}
+    {{if .Bench}}<div><dt>{{t "bench.change"}}</dt><dd>{{.Bench.All.Caught}}/{{.Bench.All.Cases}}{{t "lp"}}{{.Bench.All.Rate}}{{t "rp"}}{{t "comma"}}{{t "fixedfp"}} {{.Bench.All.FixedFP}}{{if .PrevBench}}{{t "lp"}}{{signed (sub .Bench.All.Caught .PrevBench.All.Caught)}}{{t "rp"}}{{end}}</dd></div>{{end}}
     {{if .Frameworks}}<div class="wide"><dt>{{t "fw.new"}}</dt><dd>{{join .Frameworks ", "}}</dd></div>{{end}}
     {{if .Added}}<div class="wide"><dt>{{t "rules.added"}} ({{len .Added}})</dt><dd>{{template "ids" .AddedBy}}</dd></div>{{end}}
     {{if .Removed}}<div class="wide"><dt>{{t "rules.removed"}} ({{len .Removed}})</dt><dd>{{template "ids" .RemovedBy}}</dd></div>{{end}}

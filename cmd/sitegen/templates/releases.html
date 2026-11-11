@@ -10,12 +10,11 @@
   <aside class="stele" aria-label="{{t "latest"}}">
     <p class="stele-ver">v{{.Version}}</p>
     <p class="stele-date">{{if .Date}}{{.Date}}{{else}}{{t "unreleased"}}{{end}}</p>
-    <dl>
-      {{if gt .Rules 0}}<div><dt>{{t "rules.total"}}</dt><dd>{{.Rules}}</dd></div>{{end}}
-      {{if .Bench}}<div><dt>{{t "bench.change"}}</dt><dd>{{.Bench.All.Caught}}/{{.Bench.All.Cases}}</dd></div>{{end}}
-      {{if .Added}}<div><dt>{{t "rules.added"}}</dt><dd>{{len .Added}}</dd></div>{{end}}
-    </dl>
-    <p><a href="{{$.L.Root}}feed.xml">{{t "feed"}}</a></p>
+    <p class="stele-go"><a class="button" href="install.html">{{t "aside.install"}}</a></p>
+    <ul>
+      <li><a href="https://github.com/nt-neil/shentu/releases">{{t "aside.all"}}</a></li>
+      <li><a href="{{$.L.Root}}feed.xml">{{t "feed"}}</a></li>
+    </ul>
   </aside>
   {{end}}
 </div>

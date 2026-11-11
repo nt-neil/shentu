@@ -277,6 +277,8 @@ func funcs(l Lang) template.FuncMap {
 		"join":      strings.Join,
 		"sub":       func(a, b int) int { return a - b },
 		"seq":       func(n int) []int { return make([]int, n) },
+		"div":       func(a, b int) int { return (a + b - 1) / b },
+		"benchKind": benchKind,
 		// the character on a severity's seal
 		"seal": func(sev string) string {
 			return map[string]string{"critical": "極", "high": "高", "medium": "中", "low": "低"}[sev]
@@ -290,10 +292,29 @@ func funcs(l Lang) template.FuncMap {
 	}
 }
 
+// benchKind sorts a bench summary row into its section: the total, the
+// source of the cases, the package ecosystem or the vulnerability class.
+func benchKind(group string) string {
+	switch group {
+	case "all":
+		return "total"
+	case "rule source", "independent":
+		return "source"
+	case "composer", "npm", "pypi", "wordpress-plugin", "go", "maven", "nuget", "rubygems", "crates.io":
+		return "registry"
+	}
+	return "class"
+}
+
 var codeRe = regexp.MustCompile("`([^`]+)`")
+
+// cjkSpace is a space against full-width punctuation, which Chinese text
+// never has (the code tags around it already keep it apart).
+var cjkSpace = regexp.MustCompile(` +([，。、；：！？）」』])|([（「『，。、；：！？]) +`)
 
 // item renders a changelog line: text, with `code` in code tags.
 func item(s string) template.HTML {
+	s = cjkSpace.ReplaceAllString(s, "$1$2")
 	var b strings.Builder
 	last := 0
 	for _, m := range codeRe.FindAllStringSubmatchIndex(s, -1) {

@@ -69,7 +69,7 @@
 </header>
 <main id="main">
 
-<section class="gate" aria-labelledby="title">
+<section class="gate" aria-labelledby="title" style="--rows: 7">
   <svg class="roof" aria-hidden="true" viewBox="0 0 1200 190" preserveAspectRatio="xMidYMax meet">
     <defs>
       <pattern id="tiles" width="18" height="90" patternUnits="userSpaceOnUse"><rect width="18" height="90" fill="var(--roof)"/><rect x="13" width="5" height="90" fill="var(--roof-line)"/></pattern>
@@ -93,6 +93,7 @@
     <div class="doorway">
       <p class="lintel" lang="zh-Hant">神荼守門</p>
       <div class="opening">
+        <svg class="altar" aria-hidden="true" viewBox="0 0 120 120"><defs><radialGradient id="glow"><stop offset="0" stop-color="#ffcf7a" stop-opacity=".75"/><stop offset="1" stop-color="#ffcf7a" stop-opacity="0"/></radialGradient></defs><circle cx="60" cy="70" r="56" fill="url(#glow)"/><path d="M52 50c-4-8 4-12 0-20M60 48c-4-10 6-14 0-24M68 50c-4-8 4-12 0-20" fill="none" stroke="var(--ink-2)" stroke-width="1.6" stroke-linecap="round" opacity=".55"/><path d="M53 52v14M60 50v16M67 52v14" stroke="var(--red-deep)" stroke-width="2"/><path d="M34 66h52l-5 20H39z" fill="var(--gold)"/><path d="M30 64h60v5H30z" fill="var(--gold-ink)"/><path d="M42 86l-6 14M78 86l6 14M60 86v14" stroke="var(--gold-ink)" stroke-width="4" stroke-linecap="round"/><path d="M28 70c-6 0-8 8-2 10M92 70c6 0 8 8 2 10" fill="none" stroke="var(--gold-ink)" stroke-width="3"/></svg>
         <div class="leaf leaf-l" aria-hidden="true"><svg class="knocker"><use href="#ring"/></svg></div>
         <div class="leaf leaf-r" aria-hidden="true"><svg class="knocker"><use href="#ring"/></svg></div>
       </div>
@@ -100,7 +101,7 @@
     <p class="post post-down" lang="zh-Hant">夜審原碼不外流</p>
   </div>
   <div class="hall">
-    <p class="lead">A small, open-source security assistant for Linux servers, powered by an LLM.</p>
+    <p class="lead">Guards your Linux server day and night, and tells you in plain words what it finds.</p>
     <p class="pitch">One static binary that patrols your server, explains what it finds in plain language, and audits the code of the web applications it hosts, without slowing them down and without sending that code anywhere.</p>
     <p class="actions"><a class="button" href="install.html">Install</a><a class="button ghost" href="rules.html">Read the rules</a></p>
   </div>
@@ -111,7 +112,7 @@
 <section class="guard" aria-labelledby="guard-title">
   <h2 id="guard-title" class="section-title">Three things it guards</h2>
   <div class="tablets">
-    <article class="tablet"><h3>Runs on production servers without slowing the site</h3><p>The code audit sizes itself to the machine: its heap is at most min(1 GiB, 25% of available memory, 50% of the service&#39;s cgroup limit), and the number of workers follows the CPU count and the load.</p></article>
+    <article class="tablet"><h3>Runs on production servers without slowing the site</h3><p>The code audit takes only what the server can spare: its memory stays well below what is free, and it runs fewer workers when the machine is busy.</p></article>
     <article class="tablet"><h3>Follows input across files and frameworks</h3><p>Input read in one file and used in another is followed to the sink. Route models know which handler parameters carry request data in WordPress, Laravel, Django, Flask, FastAPI and Express.</p></article>
     <article class="tablet"><h3>Your source code stays on your server</h3><p>The audit runs locally with its own rules. No application code is sent to any AI service.</p></article>
   </div>

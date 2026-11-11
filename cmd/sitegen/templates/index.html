@@ -1,5 +1,5 @@
 {{define "main"}}
-<section class="gate" aria-labelledby="title">
+<section class="gate" aria-labelledby="title" style="--rows: {{div .Count 10}}">
   <svg class="roof" aria-hidden="true" viewBox="0 0 1200 190" preserveAspectRatio="xMidYMax meet">
     <defs>
       <pattern id="tiles" width="18" height="90" patternUnits="userSpaceOnUse"><rect width="18" height="90" fill="var(--roof)"/><rect x="13" width="5" height="90" fill="var(--roof-line)"/></pattern>
@@ -23,6 +23,7 @@
     <div class="doorway">
       <p class="lintel" lang="zh-Hant">{{t "couplet.top"}}</p>
       <div class="opening">
+        <svg class="altar" aria-hidden="true" viewBox="0 0 120 120"><defs><radialGradient id="glow"><stop offset="0" stop-color="#ffcf7a" stop-opacity=".75"/><stop offset="1" stop-color="#ffcf7a" stop-opacity="0"/></radialGradient></defs><circle cx="60" cy="70" r="56" fill="url(#glow)"/><path d="M52 50c-4-8 4-12 0-20M60 48c-4-10 6-14 0-24M68 50c-4-8 4-12 0-20" fill="none" stroke="var(--ink-2)" stroke-width="1.6" stroke-linecap="round" opacity=".55"/><path d="M53 52v14M60 50v16M67 52v14" stroke="var(--red-deep)" stroke-width="2"/><path d="M34 66h52l-5 20H39z" fill="var(--gold)"/><path d="M30 64h60v5H30z" fill="var(--gold-ink)"/><path d="M42 86l-6 14M78 86l6 14M60 86v14" stroke="var(--gold-ink)" stroke-width="4" stroke-linecap="round"/><path d="M28 70c-6 0-8 8-2 10M92 70c6 0 8 8 2 10" fill="none" stroke="var(--gold-ink)" stroke-width="3"/></svg>
         <div class="leaf leaf-l" aria-hidden="true"><svg class="knocker"><use href="#ring"/></svg></div>
         <div class="leaf leaf-r" aria-hidden="true"><svg class="knocker"><use href="#ring"/></svg></div>
       </div>
@@ -30,7 +31,7 @@
     <p class="post post-down" lang="zh-Hant">{{t "couplet.down"}}</p>
   </div>
   <div class="hall">
-    <p class="lead">{{t "tagline"}}</p>
+    <p class="lead">{{t "hero"}}</p>
     <p class="pitch">{{t "pitch"}}</p>
     <p class="actions"><a class="button" href="install.html">{{t "nav.install"}}</a><a class="button ghost" href="rules.html">{{t "cta.rules"}}</a></p>
   </div>

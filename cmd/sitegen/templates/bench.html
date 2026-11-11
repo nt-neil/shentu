@@ -6,13 +6,13 @@
 </header>
 <p class="scores-key">{{t "bench.key"}}</p>
 <dl class="scores">
-  {{with .Main}}{{$a := .All}}<div><dt>{{t "bench.main"}}</dt><dd>{{$a.Caught}}<small>/ {{$a.Cases}}</small><span>{{t "rate"}} {{$a.Rate}}, {{t "fixedfp"}} {{$a.FixedFP}}</span></dd><dd class="dots" aria-hidden="true">{{range $i, $_ := seq $a.Cases}}<i{{if lt $i $a.Caught}} class="lit"{{end}}></i>{{end}}</dd></div>{{end}}
-  {{with .Holdout}}{{$a := index .Groups 0}}<div><dt>{{t "bench.holdout"}}</dt><dd>{{$a.Caught}}<small>/ {{$a.Cases}}</small><span>{{t "rate"}} {{$a.Rate}}, {{t "fixedfp"}} {{$a.FixedFP}}</span></dd><dd class="dots" aria-hidden="true">{{range $i, $_ := seq $a.Cases}}<i{{if lt $i $a.Caught}} class="lit"{{end}}></i>{{end}}</dd></div>{{end}}
-  {{with .TS}}{{$a := index .Groups 0}}<div><dt>{{t "bench.ts"}}</dt><dd>{{$a.Caught}}<small>/ {{$a.Cases}}</small><span>{{t "rate"}} {{$a.Rate}}, {{t "fixedfp"}} {{$a.FixedFP}}</span></dd><dd class="dots" aria-hidden="true">{{range $i, $_ := seq $a.Cases}}<i{{if lt $i $a.Caught}} class="lit"{{end}}></i>{{end}}</dd></div>{{end}}
+  {{with .Main}}{{$a := .All}}<div><dt>{{t "bench.main"}}</dt><dd>{{$a.Caught}}<small>/ {{$a.Cases}}</small><span>{{t "rate"}} {{$a.Rate}}{{t "comma"}}{{t "fixedfp"}} {{$a.FixedFP}}</span></dd><dd class="dots" aria-hidden="true">{{range $i, $_ := seq $a.Cases}}<i{{if lt $i $a.Caught}} class="lit"{{end}}></i>{{end}}</dd></div>{{end}}
+  {{with .Holdout}}{{$a := index .Groups 0}}<div><dt>{{t "bench.holdout"}}</dt><dd>{{$a.Caught}}<small>/ {{$a.Cases}}</small><span>{{t "rate"}} {{$a.Rate}}{{t "comma"}}{{t "fixedfp"}} {{$a.FixedFP}}</span></dd><dd class="dots" aria-hidden="true">{{range $i, $_ := seq $a.Cases}}<i{{if lt $i $a.Caught}} class="lit"{{end}}></i>{{end}}</dd></div>{{end}}
+  {{with .TS}}{{$a := index .Groups 0}}<div><dt>{{t "bench.ts"}}</dt><dd>{{$a.Caught}}<small>/ {{$a.Cases}}</small><span>{{t "rate"}} {{$a.Rate}}{{t "comma"}}{{t "fixedfp"}} {{$a.FixedFP}}</span></dd><dd class="dots" aria-hidden="true">{{range $i, $_ := seq $a.Cases}}<i{{if lt $i $a.Caught}} class="lit"{{end}}></i>{{end}}</dd></div>{{end}}
 </dl>
 {{with .Main}}
 <h2>{{t "bench.main"}}</h2>
-<p class="meta">{{t "bench.measured"}} {{.Date}}{{with .Measure}} ({{.}}){{end}}, {{.Rules}} {{t "bench.rules"}}{{t "end"}}</p>
+<p class="meta">{{t "bench.measured"}} {{.Date}}{{with .Measure}}{{t "lp"}}{{.}}{{t "rp"}}{{end}}{{t "comma"}}{{.Rules}} {{t "bench.rules"}}{{t "end"}}</p>
 {{template "groups" .Groups}}
 <h3>{{t "bench.caught"}} ({{len .CaughtCases}})</h3>
 <table class="cases"><thead><tr><th>{{t "case"}}</th><th>{{t "package"}}</th><th>{{t "class"}}</th><th>{{t "rule"}}</th></tr></thead><tbody>
@@ -27,17 +27,17 @@
 {{with .Holdout}}
 <h2>{{t "bench.holdout"}}</h2>
 <p>{{t "bench.holdout.note"}}</p>
-<p class="meta">{{t "bench.measured"}} {{.Date}}{{with .Measure}} ({{.}}){{end}}{{t "end"}}</p>
+<p class="meta">{{t "bench.measured"}} {{.Date}}{{with .Measure}}{{t "lp"}}{{.}}{{t "rp"}}{{end}}{{t "end"}}</p>
 {{template "groups" (slice .Groups 0 1)}}
 {{end}}
 {{with .TS}}
 <h2>{{t "bench.ts"}}</h2>
-<p class="meta">{{t "bench.measured"}} {{.Date}}{{with .Measure}} ({{.}}){{end}}{{t "end"}}</p>
+<p class="meta">{{t "bench.measured"}} {{.Date}}{{with .Measure}}{{t "lp"}}{{.}}{{t "rp"}}{{end}}{{t "end"}}</p>
 {{template "groups" (slice .Groups 0 1)}}
 {{end}}
 {{end}}
 {{define "groups"}}
 <table class="num"><thead><tr><th>{{t "group"}}</th><th>{{t "cases"}}</th><th>{{t "caught"}}</th><th>{{t "rate"}}</th><th>{{t "fixedfp"}}</th><th>{{t "fprate"}}</th></tr></thead><tbody>
-{{range .}}<tr><td class="cid">{{className .Group}}</td><td data-l="{{t "cases"}}">{{.Cases}}</td><td data-l="{{t "caught"}}">{{.Caught}}</td><td data-l="{{t "rate"}}" class="rate"><span class="bar" style="--w: {{.Rate}}"></span>{{.Rate}}</td><td data-l="{{t "fixedfp"}}">{{.FixedFP}}</td><td data-l="{{t "fprate"}}">{{.FPRate}}</td></tr>{{end}}
+{{$k := ""}}{{range .}}{{if ne (benchKind .Group) $k}}{{$k = benchKind .Group}}<tr class="sect"><th colspan="6" scope="rowgroup">{{t (print "bk." $k)}}</th></tr>{{end}}<tr><td class="cid">{{className .Group}}<span class="dots row-dots" aria-hidden="true">{{$c := .Caught}}{{range $i, $_ := seq .Cases}}<i{{if lt $i $c}} class="lit"{{end}}></i>{{end}}</span></td><td data-l="{{t "cases"}}">{{.Cases}}</td><td data-l="{{t "caught"}}">{{.Caught}}</td><td data-l="{{t "rate"}}" class="rate"><span class="bar" style="--w: {{.Rate}}"></span>{{.Rate}}</td><td data-l="{{t "fixedfp"}}">{{.FixedFP}}</td><td data-l="{{t "fprate"}}">{{.FPRate}}</td></tr>{{end}}
 </tbody></table>
 {{end}}

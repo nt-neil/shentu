@@ -69,7 +69,7 @@
 </header>
 <main id="main">
 
-<section class="gate" aria-labelledby="title">
+<section class="gate" aria-labelledby="title" style="--rows: 7">
   <svg class="roof" aria-hidden="true" viewBox="0 0 1200 190" preserveAspectRatio="xMidYMax meet">
     <defs>
       <pattern id="tiles" width="18" height="90" patternUnits="userSpaceOnUse"><rect width="18" height="90" fill="var(--roof)"/><rect x="13" width="5" height="90" fill="var(--roof-line)"/></pattern>
@@ -93,6 +93,7 @@
     <div class="doorway">
       <p class="lintel" lang="zh-Hant">神荼守門</p>
       <div class="opening">
+        <svg class="altar" aria-hidden="true" viewBox="0 0 120 120"><defs><radialGradient id="glow"><stop offset="0" stop-color="#ffcf7a" stop-opacity=".75"/><stop offset="1" stop-color="#ffcf7a" stop-opacity="0"/></radialGradient></defs><circle cx="60" cy="70" r="56" fill="url(#glow)"/><path d="M52 50c-4-8 4-12 0-20M60 48c-4-10 6-14 0-24M68 50c-4-8 4-12 0-20" fill="none" stroke="var(--ink-2)" stroke-width="1.6" stroke-linecap="round" opacity=".55"/><path d="M53 52v14M60 50v16M67 52v14" stroke="var(--red-deep)" stroke-width="2"/><path d="M34 66h52l-5 20H39z" fill="var(--gold)"/><path d="M30 64h60v5H30z" fill="var(--gold-ink)"/><path d="M42 86l-6 14M78 86l6 14M60 86v14" stroke="var(--gold-ink)" stroke-width="4" stroke-linecap="round"/><path d="M28 70c-6 0-8 8-2 10M92 70c6 0 8 8 2 10" fill="none" stroke="var(--gold-ink)" stroke-width="3"/></svg>
         <div class="leaf leaf-l" aria-hidden="true"><svg class="knocker"><use href="#ring"/></svg></div>
         <div class="leaf leaf-r" aria-hidden="true"><svg class="knocker"><use href="#ring"/></svg></div>
       </div>
@@ -100,7 +101,7 @@
     <p class="post post-down" lang="zh-Hant">夜審原碼不外流</p>
   </div>
   <div class="hall">
-    <p class="lead">給 Linux 伺服器用的小型開源資安助理，由 LLM 驅動。</p>
+    <p class="lead">日夜守著你的 Linux 伺服器，有狀況就用白話告訴你。</p>
     <p class="pitch">一個靜態執行檔：巡邏伺服器、用白話說明發現的問題，並稽核伺服器上網站應用程式的原始碼——不拖慢網站，也不把程式碼送到任何地方。</p>
     <p class="actions"><a class="button" href="install.html">安裝</a><a class="button ghost" href="rules.html">看規則目錄</a></p>
   </div>
@@ -111,7 +112,7 @@
 <section class="guard" aria-labelledby="guard-title">
   <h2 id="guard-title" class="section-title">守護的三件事</h2>
   <div class="tablets">
-    <article class="tablet"><h3>跑在正式伺服器上，不拖慢網站</h3><p>程式碼稽核依機器調整自己：記憶體上限取 min(1 GiB、可用記憶體的 25%、服務 cgroup 上限的 50%)，並行數依 CPU 數與系統負載自動調整。</p></article>
+    <article class="tablet"><h3>跑在正式伺服器上，不拖慢網站</h3><p>程式碼稽核只用伺服器騰得出來的資源：記憶體用量遠低於可用量，機器忙的時候就少開幾個工作。</p></article>
     <article class="tablet"><h3>跨檔追蹤，懂框架路由</h3><p>在一個檔案讀進來、在另一個檔案用掉的輸入，會一路追到危險的呼叫。路由模型知道 WordPress、Laravel、Django、Flask、FastAPI、Express 的哪些 handler 參數帶著請求資料。</p></article>
     <article class="tablet"><h3>原始碼留在你的伺服器上</h3><p>稽核在本機用自己的規則執行，不會把任何應用程式原始碼送給 AI 服務。</p></article>
   </div>
@@ -158,11 +159,11 @@
   <div class="steles">
 <article class="release" id="v0.2.5">
   <h3><span class="ver">v0.2.5</span> <small>尚未發布</small></h3>
-  <ul><li><code>app_code_audit</code> 會跨檔追蹤呼叫：在一個檔案讀進來、在另一個檔案的危險呼叫用掉的輸入， 會在危險呼叫處報出，並標明來源檔案。</li><li>框架路由模型：WordPress 的 hook、shortcode 與 REST 路由，Laravel 路由、Django URL、 Flask 與 FastAPI 的 view，以及 Express handler 的參數都視為輸入，路由註冊在別的檔案也一樣。</li><li>新的規則類別：LDAP 注入、NoSQL 運算子注入、危險的檔案上傳、弱加密與寫死的憑證； TypeScript 檔案用 JavaScript 規則檢查。</li><li>稽核結果會在多次執行之間保留，大型應用程式分幾次巡邏就能掃完，不必一次跑完。</li><li>稽核依伺服器調整自己：記憶體上限取 min(1 GiB、可用記憶體的 25%、服務 cgroup 的 50%)， 並行數依 CPU 數與系統負載決定。</li><li>誤報更少：<code>wp_send_json</code> 的輸出、<code>JSON_HEX_TAG</code> 的資料區塊、不是 collection 的物件上的 MongoDB 查詢，以及 Django 的 <code>_meta.get_field</code> 檢查。</li><li>已知問題：分成多次執行的稽核，仍可能有少數結果和不限時間的單次執行不同；修正進行中。</li></ul>
+  <ul><li><code>app_code_audit</code> 會跨檔追蹤呼叫：在一個檔案讀進來、在另一個檔案的危險呼叫用掉的輸入，會在危險呼叫處報出，並標明來源檔案。</li><li>框架路由模型：WordPress 的 hook、shortcode 與 REST 路由，Laravel 路由、Django URL、Flask 與 FastAPI 的 view，以及 Express handler 的參數都視為輸入，路由註冊在別的檔案也一樣。</li><li>新的規則類別：LDAP 注入、NoSQL 運算子注入、危險的檔案上傳、弱加密與寫死的憑證；TypeScript 檔案用 JavaScript 規則檢查。</li><li>稽核結果會在多次執行之間保留，大型應用程式分幾次巡邏就能掃完，不必一次跑完。</li><li>稽核依伺服器調整自己：記憶體上限取 min(1 GiB、可用記憶體的 25%、服務 cgroup 的 50%)，並行數依 CPU 數與系統負載決定。</li><li>誤報更少：<code>wp_send_json</code> 的輸出、<code>JSON_HEX_TAG</code> 的資料區塊、不是 collection 的物件上的 MongoDB 查詢，以及 Django 的 <code>_meta.get_field</code> 檢查。</li><li>已知問題：分成多次執行的稽核，仍可能有少數結果和不限時間的單次執行不同；修正進行中。</li></ul>
   
   <dl class="facts">
     <div><dt>此版規則數</dt><dd>70</dd></div>
-    <div><dt>主組實測</dt><dd>15/97 (15.5%), 修補版誤報 0</dd></div>
+    <div><dt>主組實測</dt><dd>15/97（15.5%），修補版誤報 0</dd></div>
     <div class="wide"><dt>新支援的框架路由模型</dt><dd>django, express, fastapi, flask, laravel, wordpress</dd></div>
     <div class="wide"><dt>新增規則 (37)</dt><dd><details class="ids"><summary>PHP <span class="n">14</span></summary><p><code>php-file-upload-client-name</code> <code>php-hardcoded-secret-credentials</code> <code>php-ldapi-filter</code> <code>php-nosqli-mongo-query</code> <code>php-open-redirect-redirect</code> <code>php-path-traversal-file-write</code> <code>php-ssrf-http-request</code> <code>php-weak-crypto-cipher</code> <code>php-weak-crypto-password-hash</code> <code>php-xss-echo-attribute</code> <code>php-xss-echo-html</code> <code>php-xss-echo-script</code> <code>php-xss-echo-url</code> <code>php-xxe-libxml-noent</code> </p></details><details class="ids"><summary>Python <span class="n">11</span></summary><p><code>python-file-upload-client-name</code> <code>python-hardcoded-secret-credentials</code> <code>python-ldapi-filter</code> <code>python-nosqli-mongo-query</code> <code>python-open-redirect-redirect</code> <code>python-ssrf-http-request</code> <code>python-weak-crypto-cipher</code> <code>python-weak-crypto-password-hash</code> <code>python-xss-mark-safe</code> <code>python-xss-response</code> <code>python-xxe-parser-entities</code> </p></details><details class="ids"><summary>JavaScript / TypeScript <span class="n">12</span></summary><p><code>js-file-upload-client-name</code> <code>js-hardcoded-secret-credentials</code> <code>js-ldapi-filter</code> <code>js-nosqli-mongo-query</code> <code>js-open-redirect-redirect</code> <code>js-ssrf-http-request</code> <code>js-weak-crypto-cipher</code> <code>js-weak-crypto-password-hash</code> <code>js-xss-dom</code> <code>js-xss-response</code> <code>js-xss-response-url</code> <code>js-xxe-libxmljs-noent</code> </p></details></dd></div>
     
