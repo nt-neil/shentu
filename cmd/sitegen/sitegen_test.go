@@ -141,6 +141,9 @@ func TestTemplateKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, f := range files {
+		if f.IsDir() {
+			continue
+		}
 		b, err := tmplFS.ReadFile("templates/" + f.Name())
 		if err != nil {
 			t.Fatal(err)
@@ -152,5 +155,45 @@ func TestTemplateKeys(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// The display font is a subset: every character of the site must be in it, or
+// a heading falls back to another face glyph by glyph. Rebuild the subset with
+// fontsubset.py when this fails.
+func TestFontCoversSite(t *testing.T) {
+	out := t.TempDir()
+	if err := build("../..", "../../docs/site-src", out, "https://example.test/"); err != nil {
+		t.Fatal(err)
+	}
+	chars, err := os.ReadFile("templates/fonts/chars.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	have := map[rune]bool{}
+	for _, r := range string(chars) {
+		have[r] = true
+	}
+	tag := regexp.MustCompile(`(?s)<script.*?</script>|<[^>]+>`)
+	missing := map[rune]bool{}
+	for _, f := range []string{"index.html", "rules.html", "bench.html", "install.html", "releases.html"} {
+		for _, dir := range []string{"", "zh-TW"} {
+			b, err := os.ReadFile(filepath.Join(out, dir, f))
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, r := range tag.ReplaceAllString(string(b), " ") {
+				if r >= 0x2E80 && !have[r] {
+					missing[r] = true
+				}
+			}
+		}
+	}
+	if len(missing) > 0 {
+		var s []string
+		for r := range missing {
+			s = append(s, string(r))
+		}
+		t.Errorf("the display font lacks %d characters the site uses: %s", len(s), strings.Join(s, ""))
 	}
 }

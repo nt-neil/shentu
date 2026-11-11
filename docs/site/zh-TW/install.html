@@ -5,28 +5,61 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>安裝與使用 · Shentu</title>
 <meta name="description" content="給 Linux 伺服器用的小型開源資安助理，由 LLM 驅動。">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#8a1c16">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http%3A//www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='10' fill='%23b3261e'/%3E%3Ccircle cx='32' cy='24' r='11' fill='%23c9a24a'/%3E%3Ccircle cx='32' cy='38' r='15' fill='none' stroke='%23c9a24a' stroke-width='5'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="../site.css">
 <link rel="alternate" type="application/atom+xml" title="Shentu releases" href="../feed.xml">
 </head>
-<body>
+<body class="p-install">
+<a class="skip" href="#main">跳到內容</a>
+<svg width="0" height="0" class="sprite" aria-hidden="true">
+  <symbol id="ring" viewBox="0 0 64 64">
+    <path d="M32 6l6 4h7l2 7 5 5-2 7 2 7-5 5-2 7h-7l-6 4-6-4h-7l-2-7-5-5 2-7-2-7 5-5 2-7h7z" fill="currentColor"/>
+    <circle cx="32" cy="29" r="9" fill="none" stroke="var(--ring-cut, #8a1c16)" stroke-width="2.5"/>
+    <circle cx="32" cy="29" r="3" fill="var(--ring-cut, #8a1c16)"/>
+    <circle cx="32" cy="45" r="13" fill="none" stroke="currentColor" stroke-width="4.5"/>
+  </symbol>
+  <symbol id="tail" viewBox="0 0 120 48">
+    <path d="M120 40H58C38 40 22 30 9 8L3 0l15 7c9 13 22 21 40 21h62z" fill="currentColor"/>
+    <path d="M64 40C44 42 29 37 16 26l-6-5 13 2c11 7 24 9 41 9z" fill="currentColor" opacity=".7"/>
+  </symbol>
+  <symbol id="lantern" viewBox="0 0 60 130">
+    <path d="M30 0v14" stroke="var(--gold)" stroke-width="2"/>
+    <rect x="18" y="12" width="24" height="9" rx="2" fill="var(--gold)"/>
+    <ellipse cx="30" cy="55" rx="27" ry="36" fill="var(--lantern)"/>
+    <path d="M30 19c-12 8-12 64 0 72M30 19c12 8 12 64 0 72M30 19c-24 10-24 62 0 72M30 19c24 10 24 62 0 72" fill="none" stroke="rgba(0,0,0,.22)" stroke-width="1.2"/>
+    <text x="30" y="64" text-anchor="middle" font-family="Shentu Serif, serif" font-weight="900" font-size="24" fill="var(--gold-soft)">神</text>
+    <rect x="18" y="88" width="24" height="9" rx="2" fill="var(--gold)"/>
+    <path d="M24 97l-1 30M28 97v32M32 97v32M36 97l1 30" stroke="var(--lantern)" stroke-width="2"/>
+  </symbol>
+  <symbol id="cloud" viewBox="0 0 120 40">
+    <path d="M6 32c0-9 8-14 15-11 2-9 13-13 20-7 5-8 18-8 22 1 7-4 16 0 16 8h30M41 32c0-5 5-8 9-5M70 32c0-4 4-6 7-4" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+  </symbol>
+</svg>
 <header class="top">
-  <a class="brand" href="index.html">Shentu <span>神荼</span></a>
-  <nav>
-    <a href="index.html">首頁</a>
-    <a href="rules.html">規則</a>
-    <a href="bench.html">實測</a>
-    <a href="install.html" aria-current="page">安裝</a>
-    <a href="releases.html">更新紀錄</a>
-    <a class="lang" href="../install.html">English</a>
-  </nav>
+  <div class="topbar">
+    <a class="brand" href="index.html"><svg class="mark" aria-hidden="true"><use href="#ring"/></svg><span class="brand-en">Shentu</span><span class="brand-zh" lang="zh-Hant">神荼</span></a>
+    <nav aria-label="Site">
+      <a href="index.html">首頁</a>
+      <a href="rules.html">規則</a>
+      <a href="bench.html">實測</a>
+      <a href="install.html" aria-current="page">安裝</a>
+      <a href="releases.html">更新紀錄</a>
+      <a class="lang" href="../install.html" lang="en" hreflang="en">English</a>
+    </nav>
+  </div>
+  <div class="ridge" aria-hidden="true"><svg class="tail"><use href="#tail"/></svg><span></span><svg class="tail flip"><use href="#tail"/></svg></div>
 </header>
-<main>
+<main id="main">
 
-<h1>安裝與使用</h1>
+<header class="hall-head">
+  <h1 class="plaque small">安裝與使用</h1>
+</header>
 
 <p>一行指令安裝，並啟動五個問題的引導設定：</p>
-<pre><code>curl -fsSL https://github.com/nt-neil/shentu/releases/latest/download/install.sh | sudo sh</code></pre>
-<ol>
+<div class="slip"><pre><code>curl -fsSL https://github.com/nt-neil/shentu/releases/latest/download/install.sh | sudo sh</code></pre><button type="button" class="copy" data-done="已複製">複製</button></div>
+<ol class="steps">
   <li>語言（English 或繁體中文）；</li>
   <li>AI 模型（本機模型或 API 金鑰），會測試一次；</li>
   <li>警示要送到哪裡（Telegram、Slack、Discord 或 ntfy），並送出測試訊息；</li>
@@ -45,10 +78,26 @@
 <p>Ubuntu 22.04、24.04，Debian 12，Rocky 與 Alma 9，amd64 與 arm64（需要 systemd）。每個 release 附 <code>.deb</code> 與 <code>.rpm</code>，以及可用 <code>gh attestation verify</code> 驗證的簽章建置來源。</p>
 <p>它不會自己改動系統：每個會改變系統的動作都要人確認。詳細步驟見<a href="https://github.com/nt-neil/shentu/blob/main/docs/getting-started.zh-TW.md">入門指南</a>。</p>
 
+<script>
+document.querySelectorAll('.copy').forEach(function (b) {
+  b.addEventListener('click', function () {
+    var t = b.previousElementSibling.textContent, label = b.textContent;
+    (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(function () {
+      b.textContent = b.dataset.done; setTimeout(function () { b.textContent = label; }, 1600);
+    }, function () {});
+  });
+});
+</script>
 
 </main>
-<footer>
-  <p>Apache-2.0 授權。本站由 cmd/sitegen 從 repo 產生。 <a href="https://github.com/nt-neil/shentu">GitHub</a> · <a href="../feed.xml">Atom 訂閱</a></p>
+<footer class="foot">
+  <svg class="clouds" aria-hidden="true" viewBox="0 0 120 40" preserveAspectRatio="xMidYMid meet"><use href="#cloud"/></svg>
+  <p>Apache-2.0 授權。本站由 cmd/sitegen 從 repo 產生。</p>
+  <ul>
+    <li><a href="https://github.com/nt-neil/shentu">GitHub</a></li>
+    <li><a href="../feed.xml">Atom 訂閱</a></li>
+    <li><a href="../fonts/OFL.txt">Noto Serif TC (OFL)</a></li>
+  </ul>
 </footer>
 </body>
 </html>

@@ -1,18 +1,102 @@
 {{define "main"}}
-<section class="hero">
-  <h1>Shentu</h1>
-  <p class="tagline">{{t "tagline"}}</p>
-  <p>{{t "pitch"}}</p>
-  <p><a class="button" href="install.html">{{t "nav.install"}}</a> <a class="button ghost" href="rules.html">{{.Count}} {{t "rules.count"}}</a></p>
+<section class="gate" aria-labelledby="title">
+  <svg class="roof" aria-hidden="true" viewBox="0 0 1200 190" preserveAspectRatio="xMidYMax meet">
+    <defs>
+      <pattern id="tiles" width="18" height="90" patternUnits="userSpaceOnUse"><rect width="18" height="90" fill="var(--roof)"/><rect x="13" width="5" height="90" fill="var(--roof-line)"/></pattern>
+      <pattern id="eave" x="12" y="164" width="30" height="18" patternUnits="userSpaceOnUse"><circle cx="15" cy="9" r="4.5" fill="var(--gold)"/></pattern>
+    </defs>
+    <path d="M196 92h808c22 34 74 60 166 72v10H30v-10c92-12 144-38 166-72z" fill="url(#tiles)"/>
+    <path d="M30 164h1140v18H30z" fill="var(--beam)"/>
+    <path d="M30 164h1140v18H30z" fill="url(#eave)"/>
+    <path d="M150 70h900v22H150z" fill="var(--beam)"/>
+    <path d="M150 66h900v6H150z" fill="var(--gold)"/>
+    <use href="#tail" x="40" y="22" width="150" height="60" color="var(--beam)"/>
+    <use href="#tail" x="-1160" y="22" width="150" height="60" color="var(--beam)" transform="scale(-1 1)"/>
+    <g class="pearl"><circle cx="600" cy="44" r="15" fill="var(--gold)"/><path d="M600 14c8 10 2 14 6 20-6-2-6-8-6-8s0 6-6 8c4-6-2-10 6-20z" fill="var(--gold)"/></g>
+    <path d="M520 66c20-14 40-14 62-6M680 66c-20-14-40-14-62-6" stroke="var(--gold)" stroke-width="5" fill="none" stroke-linecap="round"/>
+  </svg>
+  <svg class="lantern lantern-l" aria-hidden="true"><use href="#lantern"/></svg>
+  <svg class="lantern lantern-r" aria-hidden="true"><use href="#lantern"/></svg>
+  <h1 id="title" class="plaque"><span class="plaque-zh" lang="zh-Hant">神荼</span><span class="plaque-en">Shentu</span></h1>
+  <div class="portal">
+    <p class="post post-up" lang="zh-Hant">{{t "couplet.up"}}</p>
+    <div class="doorway">
+      <p class="lintel" lang="zh-Hant">{{t "couplet.top"}}</p>
+      <div class="opening">
+        <div class="hall">
+          <p class="lead">{{t "tagline"}}</p>
+          <p class="pitch">{{t "pitch"}}</p>
+          <p class="actions"><a class="button" href="install.html">{{t "nav.install"}}</a><a class="button ghost" href="rules.html">{{t "cta.rules"}}</a></p>
+        </div>
+        <div class="leaf leaf-l" aria-hidden="true"><svg class="knocker"><use href="#ring"/></svg></div>
+        <div class="leaf leaf-r" aria-hidden="true"><svg class="knocker"><use href="#ring"/></svg></div>
+      </div>
+    </div>
+    <p class="post post-down" lang="zh-Hant">{{t "couplet.down"}}</p>
+  </div>
+  <div class="threshold" aria-hidden="true"></div>
+  {{with t "couplet.en"}}<p class="couplet-en">{{.}}</p>{{end}}
 </section>
-<section class="strengths">
-  <article><h2>{{t "s1.title"}}</h2><p>{{t "s1.body"}}</p></article>
-  <article><h2>{{t "s2.title"}}</h2><p>{{t "s2.body"}}</p></article>
-  <article><h2>{{t "s3.title"}}</h2><p>{{t "s3.body"}}</p></article>
+
+<section class="guard" aria-labelledby="guard-title">
+  <h2 id="guard-title" class="section-title">{{t "guard.title"}}</h2>
+  <div class="tablets">
+    <article class="tablet"><h3>{{t "s1.title"}}</h3><p>{{t "s1.body"}}</p></article>
+    <article class="tablet"><h3>{{t "s2.title"}}</h3><p>{{t "s2.body"}}</p></article>
+    <article class="tablet"><h3>{{t "s3.title"}}</h3><p>{{t "s3.body"}}</p></article>
+  </div>
 </section>
-<section>
-  <h2>{{t "latest"}}</h2>
-  {{template "releaselist" .Latest}}
-  <p><a href="releases.html">{{t "all.releases"}}</a> · <a href="{{.L.Root}}feed.xml">{{t "feed"}}</a></p>
+
+<div class="fret" aria-hidden="true"></div>
+
+<section class="demo" aria-labelledby="demo-title">
+  <div class="demo-text">
+    <h2 id="demo-title" class="section-title">{{t "demo.title"}}</h2>
+    <p>{{t "demo.note"}}</p>
+  </div>
+  <figure class="report">
+    <figcaption><span class="stamp">{{t "demo.tag"}}</span><span class="who"><svg class="mark" aria-hidden="true"><use href="#ring"/></svg>Shentu</span><span class="when">{{t "demo.time"}}</span></figcaption>
+    <p class="find">{{t "demo.find"}}</p>
+    <p>{{t "demo.explain"}}</p>
+    <p>{{t "demo.next"}}</p>
+    <p class="choices"><span class="choice yes">{{t "demo.b1"}}</span><span class="choice">{{t "demo.b2"}}</span></p>
+    <p class="note">{{t "demo.confirm"}}</p>
+  </figure>
 </section>
+
+<div class="fret" aria-hidden="true"></div>
+
+{{with .Main}}{{$all := .All}}
+<section class="nails" aria-labelledby="nails-title">
+  <h2 id="nails-title" class="section-title">{{t "nails.title"}}</h2>
+  <div class="nails-body">
+    <div class="studs" aria-hidden="true">{{range seq $.Count}}<i></i>{{end}}</div>
+    <dl class="tally">
+      <div><dt>{{t "nails.rules"}}</dt><dd>{{$.Count}}</dd></div>
+      <div><dt>{{t "nails.bench"}}</dt><dd>{{$all.Caught}}<span>/{{$all.Cases}}</span></dd></div>
+      <div><dt>{{t "nails.fp"}}</dt><dd>{{$all.FixedFP}}</dd></div>
+    </dl>
+  </div>
+  <p><a href="bench.html">{{t "nails.more"}}</a></p>
+</section>
+{{end}}
+
+<div class="fret" aria-hidden="true"></div>
+
+<section class="latest" aria-labelledby="latest-title">
+  <h2 id="latest-title" class="section-title">{{t "latest"}}</h2>
+  <div class="steles">{{template "releaselist" .Latest}}</div>
+  <p class="more"><a href="releases.html">{{t "all.releases"}}</a> <a href="{{.L.Root}}feed.xml">{{t "feed"}}</a></p>
+</section>
+<script>
+(function () {
+  var f = document.querySelectorAll('.fret');
+  if (!('IntersectionObserver' in window)) return;
+  document.documentElement.classList.add('reveal');
+  var io = new IntersectionObserver(function (es) {
+    es.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add('seen'); io.unobserve(e.target); } });
+  }, { rootMargin: '0px 0px -15% 0px' });
+  f.forEach(function (x) { io.observe(x); });
+})();
+</script>
 {{end}}

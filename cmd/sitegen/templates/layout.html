@@ -5,40 +5,95 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{block "title" .}}Shentu{{end}}</title>
 <meta name="description" content="{{t "tagline"}}">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#8a1c16">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http%3A//www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='10' fill='%23b3261e'/%3E%3Ccircle cx='32' cy='24' r='11' fill='%23c9a24a'/%3E%3Ccircle cx='32' cy='38' r='15' fill='none' stroke='%23c9a24a' stroke-width='5'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="{{.L.Root}}site.css">
 <link rel="alternate" type="application/atom+xml" title="Shentu releases" href="{{.L.Root}}feed.xml">
+{{- if eq .Page "index.html"}}
+<script>
+/* The gate opens once per visit (per browser session), never with reduced motion. */
+(function () {
+  var d = document.documentElement;
+  try {
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches || sessionStorage.getItem('shentu-gate')) return;
+    sessionStorage.setItem('shentu-gate', '1');
+  } catch (e) { return; }
+  d.classList.add('gate-shut');
+  addEventListener('DOMContentLoaded', function () {
+    setTimeout(function () { d.classList.add('gate-opening'); d.classList.remove('gate-shut'); }, 350);
+  });
+})();
+</script>
+{{- end}}
 </head>
-<body>
+<body class="p-{{slice .Page 0 (sub (len .Page) 5)}}">
+<a class="skip" href="#main">{{t "skip"}}</a>
+<svg width="0" height="0" class="sprite" aria-hidden="true">
+  <symbol id="ring" viewBox="0 0 64 64">
+    <path d="M32 6l6 4h7l2 7 5 5-2 7 2 7-5 5-2 7h-7l-6 4-6-4h-7l-2-7-5-5 2-7-2-7 5-5 2-7h7z" fill="currentColor"/>
+    <circle cx="32" cy="29" r="9" fill="none" stroke="var(--ring-cut, #8a1c16)" stroke-width="2.5"/>
+    <circle cx="32" cy="29" r="3" fill="var(--ring-cut, #8a1c16)"/>
+    <circle cx="32" cy="45" r="13" fill="none" stroke="currentColor" stroke-width="4.5"/>
+  </symbol>
+  <symbol id="tail" viewBox="0 0 120 48">
+    <path d="M120 40H58C38 40 22 30 9 8L3 0l15 7c9 13 22 21 40 21h62z" fill="currentColor"/>
+    <path d="M64 40C44 42 29 37 16 26l-6-5 13 2c11 7 24 9 41 9z" fill="currentColor" opacity=".7"/>
+  </symbol>
+  <symbol id="lantern" viewBox="0 0 60 130">
+    <path d="M30 0v14" stroke="var(--gold)" stroke-width="2"/>
+    <rect x="18" y="12" width="24" height="9" rx="2" fill="var(--gold)"/>
+    <ellipse cx="30" cy="55" rx="27" ry="36" fill="var(--lantern)"/>
+    <path d="M30 19c-12 8-12 64 0 72M30 19c12 8 12 64 0 72M30 19c-24 10-24 62 0 72M30 19c24 10 24 62 0 72" fill="none" stroke="rgba(0,0,0,.22)" stroke-width="1.2"/>
+    <text x="30" y="64" text-anchor="middle" font-family="Shentu Serif, serif" font-weight="900" font-size="24" fill="var(--gold-soft)">神</text>
+    <rect x="18" y="88" width="24" height="9" rx="2" fill="var(--gold)"/>
+    <path d="M24 97l-1 30M28 97v32M32 97v32M36 97l1 30" stroke="var(--lantern)" stroke-width="2"/>
+  </symbol>
+  <symbol id="cloud" viewBox="0 0 120 40">
+    <path d="M6 32c0-9 8-14 15-11 2-9 13-13 20-7 5-8 18-8 22 1 7-4 16 0 16 8h30M41 32c0-5 5-8 9-5M70 32c0-4 4-6 7-4" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+  </symbol>
+</svg>
 <header class="top">
-  <a class="brand" href="index.html">Shentu <span>神荼</span></a>
-  <nav>
-    <a href="index.html"{{if eq .Page "index.html"}} aria-current="page"{{end}}>{{t "nav.home"}}</a>
-    <a href="rules.html"{{if eq .Page "rules.html"}} aria-current="page"{{end}}>{{t "nav.rules"}}</a>
-    <a href="bench.html"{{if eq .Page "bench.html"}} aria-current="page"{{end}}>{{t "nav.bench"}}</a>
-    <a href="install.html"{{if eq .Page "install.html"}} aria-current="page"{{end}}>{{t "nav.install"}}</a>
-    <a href="releases.html"{{if eq .Page "releases.html"}} aria-current="page"{{end}}>{{t "nav.releases"}}</a>
-    <a class="lang" href="{{.L.Other}}{{.Page}}">{{.L.OtherN}}</a>
-  </nav>
+  <div class="topbar">
+    <a class="brand" href="index.html"><svg class="mark" aria-hidden="true"><use href="#ring"/></svg><span class="brand-en">Shentu</span><span class="brand-zh" lang="zh-Hant">神荼</span></a>
+    <nav aria-label="Site">
+      <a href="index.html"{{if eq .Page "index.html"}} aria-current="page"{{end}}>{{t "nav.home"}}</a>
+      <a href="rules.html"{{if eq .Page "rules.html"}} aria-current="page"{{end}}>{{t "nav.rules"}}</a>
+      <a href="bench.html"{{if eq .Page "bench.html"}} aria-current="page"{{end}}>{{t "nav.bench"}}</a>
+      <a href="install.html"{{if eq .Page "install.html"}} aria-current="page"{{end}}>{{t "nav.install"}}</a>
+      <a href="releases.html"{{if eq .Page "releases.html"}} aria-current="page"{{end}}>{{t "nav.releases"}}</a>
+      <a class="lang" href="{{.L.Other}}{{.Page}}" lang="{{if eq .L.Code "en"}}zh-Hant{{else}}en{{end}}" hreflang="{{if eq .L.Code "en"}}zh-TW{{else}}en{{end}}">{{.L.OtherN}}</a>
+    </nav>
+  </div>
+  <div class="ridge" aria-hidden="true"><svg class="tail"><use href="#tail"/></svg><span></span><svg class="tail flip"><use href="#tail"/></svg></div>
 </header>
-<main>
+<main id="main">
 {{block "main" .}}{{end}}
 </main>
-<footer>
-  <p>{{t "footer"}} <a href="https://github.com/nt-neil/shentu">GitHub</a> · <a href="{{.L.Root}}feed.xml">{{t "feed"}}</a></p>
+<footer class="foot">
+  <svg class="clouds" aria-hidden="true" viewBox="0 0 120 40" preserveAspectRatio="xMidYMid meet"><use href="#cloud"/></svg>
+  <p>{{t "footer"}}</p>
+  <ul>
+    <li><a href="https://github.com/nt-neil/shentu">GitHub</a></li>
+    <li><a href="{{.L.Root}}feed.xml">{{t "feed"}}</a></li>
+    <li><a href="{{.L.Root}}fonts/OFL.txt">Noto Serif TC (OFL)</a></li>
+  </ul>
 </footer>
 </body>
 </html>
 {{define "releaselist"}}{{range .}}
 <article class="release" id="v{{.Version}}">
-  <h3>v{{.Version}} <small>{{if .Date}}{{.Date}}{{else}}{{t "unreleased"}}{{end}}</small></h3>
-  <ul>{{range .Items}}<li>{{item .}}</li>{{end}}</ul>
+  <h3><span class="ver">v{{.Version}}</span> <small>{{if .Date}}<time datetime="{{.Date}}">{{.Date}}</time>{{else}}{{t "unreleased"}}{{end}}</small></h3>
+  {{if .Items}}<ul>{{range .Items}}<li>{{item .}}</li>{{end}}</ul>{{else}}<p class="note">{{t "release.empty"}}</p>{{end}}
+  {{if or (gt .Rules 0) .Added .Removed .Frameworks .Bench}}
   <dl class="facts">
-    {{if ge .Rules 0}}<dt>{{t "rules.total"}}</dt><dd>{{.Rules}}</dd>{{end}}
-    {{if .Added}}<dt>{{t "rules.added"}} ({{len .Added}})</dt><dd>{{template "ids" .AddedBy}}</dd>{{end}}
-    {{if .Removed}}<dt>{{t "rules.removed"}} ({{len .Removed}})</dt><dd>{{template "ids" .RemovedBy}}</dd>{{end}}
-    {{if .Frameworks}}<dt>{{t "fw.new"}}</dt><dd>{{join .Frameworks ", "}}</dd>{{end}}
-    {{if .Bench}}<dt>{{t "bench.change"}}</dt><dd>{{.Bench.All.Caught}}/{{.Bench.All.Cases}} ({{.Bench.All.Rate}}), {{t "fixedfp"}} {{.Bench.All.FixedFP}}{{if .PrevBench}} ({{signed (sub .Bench.All.Caught .PrevBench.All.Caught)}}){{end}}</dd>{{end}}
+    {{if gt .Rules 0}}<div><dt>{{t "rules.total"}}</dt><dd>{{.Rules}}</dd></div>{{end}}
+    {{if .Bench}}<div><dt>{{t "bench.change"}}</dt><dd>{{.Bench.All.Caught}}/{{.Bench.All.Cases}} ({{.Bench.All.Rate}}), {{t "fixedfp"}} {{.Bench.All.FixedFP}}{{if .PrevBench}} ({{signed (sub .Bench.All.Caught .PrevBench.All.Caught)}}){{end}}</dd></div>{{end}}
+    {{if .Frameworks}}<div class="wide"><dt>{{t "fw.new"}}</dt><dd>{{join .Frameworks ", "}}</dd></div>{{end}}
+    {{if .Added}}<div class="wide"><dt>{{t "rules.added"}} ({{len .Added}})</dt><dd>{{template "ids" .AddedBy}}</dd></div>{{end}}
+    {{if .Removed}}<div class="wide"><dt>{{t "rules.removed"}} ({{len .Removed}})</dt><dd>{{template "ids" .RemovedBy}}</dd></div>{{end}}
   </dl>
+  {{end}}
 </article>
 {{end}}{{end}}
-{{define "ids"}}{{range .}}<details class="ids"><summary>{{or (langName .Lang) .Lang}} ({{len .IDs}})</summary><p>{{range .IDs}}<code>{{.}}</code> {{end}}</p></details>{{end}}{{end}}
+{{define "ids"}}{{range .}}<details class="ids"><summary>{{or (langName .Lang) .Lang}} <span class="n">{{len .IDs}}</span></summary><p>{{range .IDs}}<code>{{.}}</code> {{end}}</p></details>{{end}}{{end}}

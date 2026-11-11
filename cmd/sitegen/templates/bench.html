@@ -1,20 +1,27 @@
 {{define "title"}}{{t "bench.title"}} · Shentu{{end}}
 {{define "main"}}
-<h1>{{t "bench.title"}}</h1>
-<p>{{t "bench.intro"}}</p>
+<header class="hall-head">
+  <h1 class="plaque small">{{t "bench.title"}}</h1>
+  <p class="intro">{{t "bench.intro"}}</p>
+</header>
+<dl class="scores">
+  {{with .Main}}{{$a := .All}}<div><dt>{{t "bench.main"}}</dt><dd>{{$a.Caught}}<small>/ {{$a.Cases}}</small><span>{{t "rate"}} {{$a.Rate}}, {{t "fixedfp"}} {{$a.FixedFP}}</span></dd></div>{{end}}
+  {{with .Holdout}}{{$a := index .Groups 0}}<div><dt>{{t "bench.holdout"}}</dt><dd>{{$a.Caught}}<small>/ {{$a.Cases}}</small><span>{{t "rate"}} {{$a.Rate}}, {{t "fixedfp"}} {{$a.FixedFP}}</span></dd></div>{{end}}
+  {{with .TS}}{{$a := index .Groups 0}}<div><dt>{{t "bench.ts"}}</dt><dd>{{$a.Caught}}<small>/ {{$a.Cases}}</small><span>{{t "rate"}} {{$a.Rate}}, {{t "fixedfp"}} {{$a.FixedFP}}</span></dd></div>{{end}}
+</dl>
 {{with .Main}}
 <h2>{{t "bench.main"}}</h2>
 <p class="meta">{{t "bench.measured"}} {{.Date}}{{with .Measure}} ({{.}}){{end}}, {{.Rules}} {{t "bench.rules"}}{{t "end"}}</p>
 {{template "groups" .Groups}}
 <h3>{{t "bench.caught"}} ({{len .CaughtCases}})</h3>
-<table><tr><th>{{t "case"}}</th><th>{{t "package"}}</th><th>{{t "class"}}</th><th>{{t "rule"}}</th></tr>
-{{range .CaughtCases}}<tr><td>{{.ID}}</td><td>{{.Package}}</td><td>{{className .Class}}</td><td><code>{{.Rule}}</code></td></tr>{{end}}
+<table class="cases"><thead><tr><th>{{t "case"}}</th><th>{{t "package"}}</th><th>{{t "class"}}</th><th>{{t "rule"}}</th></tr></thead><tbody>
+{{range .CaughtCases}}<tr><td class="cid">{{.ID}}</td><td data-l="{{t "package"}}">{{.Package}}</td><td data-l="{{t "class"}}">{{className .Class}}</td><td data-l="{{t "rule"}}"><code>{{.Rule}}</code></td></tr>{{end}}</tbody>
 </table>
 <h3>{{t "bench.missed"}} ({{len .Missed}})</h3>
 <p>{{t "bench.missed.note"}}</p>
-<table><tr><th>{{t "case"}}</th><th>{{t "package"}}</th><th>{{t "class"}}</th></tr>
-{{range .Missed}}<tr><td>{{.ID}}</td><td>{{.Package}}</td><td>{{className .Class}}</td></tr>{{end}}
-</table>
+<details class="missed"><summary>{{len .Missed}} {{t "cases"}}</summary><table class="cases"><thead><tr><th>{{t "case"}}</th><th>{{t "package"}}</th><th>{{t "class"}}</th></tr></thead><tbody>
+{{range .Missed}}<tr><td class="cid">{{.ID}}</td><td data-l="{{t "package"}}">{{.Package}}</td><td data-l="{{t "class"}}">{{className .Class}}</td></tr>{{end}}</tbody>
+</table></details>
 {{end}}
 {{with .Holdout}}
 <h2>{{t "bench.holdout"}}</h2>
@@ -29,7 +36,7 @@
 {{end}}
 {{end}}
 {{define "groups"}}
-<table class="num"><tr><th>{{t "group"}}</th><th>{{t "cases"}}</th><th>{{t "caught"}}</th><th>{{t "rate"}}</th><th>{{t "fixedfp"}}</th><th>{{t "fprate"}}</th></tr>
-{{range .}}<tr><td>{{className .Group}}</td><td>{{.Cases}}</td><td>{{.Caught}}</td><td>{{.Rate}}</td><td>{{.FixedFP}}</td><td>{{.FPRate}}</td></tr>{{end}}
-</table>
+<table class="num"><thead><tr><th>{{t "group"}}</th><th>{{t "cases"}}</th><th>{{t "caught"}}</th><th>{{t "rate"}}</th><th>{{t "fixedfp"}}</th><th>{{t "fprate"}}</th></tr></thead><tbody>
+{{range .}}<tr><td class="cid">{{className .Group}}</td><td data-l="{{t "cases"}}">{{.Cases}}</td><td data-l="{{t "caught"}}">{{.Caught}}</td><td data-l="{{t "rate"}}" class="rate"><span class="bar" style="--w: {{.Rate}}"></span>{{.Rate}}</td><td data-l="{{t "fixedfp"}}">{{.FixedFP}}</td><td data-l="{{t "fprate"}}">{{.FPRate}}</td></tr>{{end}}
+</tbody></table>
 {{end}}

@@ -15,7 +15,7 @@ import (
 	"github.com/nt-neil/shentu/rules"
 )
 
-//go:embed templates/*.html templates/site.css
+//go:embed templates/*.html templates/site.css templates/fonts
 var tmplFS embed.FS
 
 // Lang is one language of the site: where its pages go and its words.
@@ -151,6 +151,19 @@ func build(root, src, out, base string) error {
 	if err := os.WriteFile(filepath.Join(out, "site.css"), css, 0o644); err != nil {
 		return err
 	}
+	// The display face, a subset of Noto Serif TC (OFL), with its license.
+	if err := os.MkdirAll(filepath.Join(out, "fonts"), 0o755); err != nil {
+		return err
+	}
+	for _, f := range []string{"shentu-serif.woff2", "OFL.txt"} {
+		b, err := tmplFS.ReadFile("templates/fonts/" + f)
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(out, "fonts", f), b, 0o644); err != nil {
+			return err
+		}
+	}
 	// Pages served as files: no Jekyll processing on GitHub Pages.
 	if err := os.WriteFile(filepath.Join(out, ".nojekyll"), nil, 0o644); err != nil {
 		return err
@@ -263,6 +276,11 @@ func funcs(l Lang) template.FuncMap {
 		"item":      item,
 		"join":      strings.Join,
 		"sub":       func(a, b int) int { return a - b },
+		"seq":       func(n int) []int { return make([]int, n) },
+		// the character on a severity's seal
+		"seal": func(sev string) string {
+			return map[string]string{"critical": "極", "high": "高", "medium": "中", "low": "低"}[sev]
+		},
 		"signed": func(n int) string {
 			if n > 0 {
 				return fmt.Sprintf("+%d", n)

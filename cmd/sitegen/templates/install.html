@@ -1,10 +1,12 @@
 {{define "title"}}{{t "install.title"}} · Shentu{{end}}
 {{define "main"}}
-<h1>{{t "install.title"}}</h1>
+<header class="hall-head">
+  <h1 class="plaque small">{{t "install.title"}}</h1>
+</header>
 {{if eq .L.Code "zh-TW"}}
 <p>一行指令安裝，並啟動五個問題的引導設定：</p>
-<pre><code>curl -fsSL https://github.com/nt-neil/shentu/releases/latest/download/install.sh | sudo sh</code></pre>
-<ol>
+<div class="slip"><pre><code>curl -fsSL https://github.com/nt-neil/shentu/releases/latest/download/install.sh | sudo sh</code></pre><button type="button" class="copy" data-done="{{t "copied"}}">{{t "copy"}}</button></div>
+<ol class="steps">
   <li>語言（English 或繁體中文）；</li>
   <li>AI 模型（本機模型或 API 金鑰），會測試一次；</li>
   <li>警示要送到哪裡（Telegram、Slack、Discord 或 ntfy），並送出測試訊息；</li>
@@ -24,8 +26,8 @@
 <p>它不會自己改動系統：每個會改變系統的動作都要人確認。詳細步驟見<a href="https://github.com/nt-neil/shentu/blob/main/docs/getting-started.zh-TW.md">入門指南</a>。</p>
 {{else}}
 <p>One command installs Shentu and starts a guided setup with five questions:</p>
-<pre><code>curl -fsSL https://github.com/nt-neil/shentu/releases/latest/download/install.sh | sudo sh</code></pre>
-<ol>
+<div class="slip"><pre><code>curl -fsSL https://github.com/nt-neil/shentu/releases/latest/download/install.sh | sudo sh</code></pre><button type="button" class="copy" data-done="{{t "copied"}}">{{t "copy"}}</button></div>
+<ol class="steps">
   <li>language (English or 繁體中文);</li>
   <li>the AI model (a local model, or an API key), tested once;</li>
   <li>where alerts go (Telegram, Slack, Discord or ntfy), with a test message;</li>
@@ -44,4 +46,14 @@
 <p>Ubuntu 22.04 and 24.04, Debian 12, Rocky and Alma 9, on amd64 and arm64 (systemd is required). Each release carries <code>.deb</code> and <code>.rpm</code> packages and a signed build provenance you can check with <code>gh attestation verify</code>.</p>
 <p>It never changes the system on its own: every action that changes something waits for a human to confirm it. Step by step: <a href="https://github.com/nt-neil/shentu/blob/main/docs/getting-started.md">Getting started</a>.</p>
 {{end}}
+<script>
+document.querySelectorAll('.copy').forEach(function (b) {
+  b.addEventListener('click', function () {
+    var t = b.previousElementSibling.textContent, label = b.textContent;
+    (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(function () {
+      b.textContent = b.dataset.done; setTimeout(function () { b.textContent = label; }, 1600);
+    }, function () {});
+  });
+});
+</script>
 {{end}}
