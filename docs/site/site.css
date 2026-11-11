@@ -421,14 +421,24 @@ html:not([lang^="zh"]) .newest-head .word { font-weight: 600; font-family: var(-
 .scene { position: relative; flex: 0 0 100vw; height: 100%; background: var(--bg-2) 50% 55% / cover no-repeat;
   -webkit-mask-image: linear-gradient(90deg, transparent, #000 14%, #000 86%, transparent); mask-image: linear-gradient(90deg, transparent, #000 14%, #000 86%, transparent); }
 .sc1 { background-image: var(--guardian); -webkit-mask-image: linear-gradient(90deg, #000 86%, transparent); mask-image: linear-gradient(90deg, #000 86%, transparent); }
-.sc6 { background-image: var(--guardian); background-position: 50% 40%; transform-origin: 50% 45%; }
+.sc6 { background-position: 50% 30%; transform-origin: 50% 40%; }
+/* the near layers: incense haze (light on black, screened in) and banyan boughs (dark on white, multiplied in) */
+.walk .haze, .walk .boughs { position: absolute; top: 0; left: 0; width: 700vw; pointer-events: none; will-change: transform; }
+.walk .haze { height: 100%; background: url(img/scroll/smoke.webp) 0 60% / auto 70% repeat-x; mix-blend-mode: screen; opacity: .55; }
+.walk .boughs { z-index: 5; height: 34%; background: url(img/scroll/branches.webp) 0 0 / auto 100% repeat-x; mix-blend-mode: multiply; opacity: .85; }
 .scene.shake { animation: shake .18s steps(2) infinite; }
 @keyframes shake { 0% { transform: translate3d(-3px, 1px, 0); } 50% { transform: translate3d(3px, -1px, 0); } 100% { transform: translate3d(-1px, 2px, 0); } }
 .walk .evil { position: absolute; inset: 0; pointer-events: none; opacity: 0; background: radial-gradient(60% 70% at 55% 70%, rgba(200, 30, 15, .5), transparent 70%), linear-gradient(transparent 55%, rgba(120, 10, 5, .45)); }
 canvas.near { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .walker { position: absolute; left: 22vw; bottom: 7vh; width: min(17vh, 150px); aspect-ratio: 442 / 760; z-index: 3; mix-blend-mode: screen; will-change: transform, opacity; }
 .walker i { position: absolute; inset: 0; background: url(img/scroll/walker.webp) 50% 100% / contain no-repeat; animation: sway 2.6s ease-in-out infinite alternate; transform-origin: 50% 100%; }
+.walker .f2 { background-image: url(img/scroll/walker2.webp); opacity: 0; }
+/* walking: the two poses take turns, with a little rise and fall */
 .walker.step i { animation: stride .42s ease-in-out infinite alternate; }
+.walker.step .f1 { animation: stride .42s ease-in-out infinite alternate, pose-a .84s steps(1) infinite; }
+.walker.step .f2 { animation: stride .42s ease-in-out infinite alternate, pose-b .84s steps(1) infinite; }
+@keyframes pose-a { 0% { opacity: 1; } 50% { opacity: 0; } }
+@keyframes pose-b { 0% { opacity: 0; } 50% { opacity: 1; } }
 @keyframes sway { to { transform: rotate(-1.2deg) translateY(-2px); } }
 @keyframes stride { from { transform: translateY(0) rotate(-1.5deg); } to { transform: translateY(-7px) rotate(1.5deg); } }
 .walk .shade { position: absolute; inset: 0; pointer-events: none; background: linear-gradient(90deg, rgba(11, 8, 6, .75), transparent 42%), linear-gradient(var(--bg), transparent 16%, transparent 72%, var(--bg)); }
@@ -456,7 +466,7 @@ canvas.near { position: absolute; inset: 0; width: 100%; height: 100%; pointer-e
 .checks li.flag.lit, .checks li.flag.lit b { color: var(--alarm); }
 .talk { position: absolute; z-index: 5; left: var(--gutter); right: var(--gutter); bottom: 7vh; display: grid; grid-template-columns: clamp(90px, 10vw, 150px) 1fr; gap: 22px; padding: 18px 22px; opacity: 0;
   background: rgba(12, 8, 6, .92); border: 2px solid var(--ember); box-shadow: inset 0 0 0 4px rgba(12, 8, 6, .92), inset 0 0 0 5px rgba(242, 180, 92, .4); }
-.face { aspect-ratio: 1; background: var(--guardian) 50% 22% / auto 300% no-repeat; border: 1px solid var(--line); }
+.face { aspect-ratio: 1; background: url(img/scroll/guardian-front.webp) 50% 18% / auto 260% no-repeat; border: 1px solid var(--line); }
 .talk-name { margin: 0; font: 900 15px/1 var(--serif); color: var(--ember); letter-spacing: .14em; display: flex; gap: 12px; align-items: center; }
 .talk-text { margin: 10px 0 14px; font: 300 clamp(18px, 1.7vw, 24px)/1.6 var(--serif); color: #efe3cf; min-height: 3.2em; max-width: none; cursor: pointer; }
 .talk-opts { display: flex; flex-wrap: wrap; gap: 10px; margin: 0; }
@@ -542,7 +552,7 @@ canvas.near { position: absolute; inset: 0; width: 100%; height: 100%; pointer-e
   /* the walk becomes still cards */
   .walk { height: auto; }
   .walk .stage { position: static; height: auto; overflow: visible; display: grid; gap: 0; }
-  .walk .sky, .walk .evil, canvas.near, .walker, .walk .shade, .hud, .cue { display: none; }
+  .walk .sky, .walk .evil, canvas.near, .walker, .walk .shade, .hud, .cue, .walk .haze, .walk .boughs { display: none; }
   .walk .world { position: static; display: grid; width: auto; transform: none !important; }
   .scene { height: 46vh; -webkit-mask-image: none; mask-image: none; transform: none !important; }
   .station, .checks, .talk { position: static; opacity: 1 !important; transform: none !important; width: auto; margin: 22px var(--gutter); }

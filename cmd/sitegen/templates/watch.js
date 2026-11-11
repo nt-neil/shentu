@@ -27,7 +27,7 @@
   if (still) return;
 
   root.classList.add('walking');
-  var stage = q('.stage'), sky = q('.sky'), world = q('.world'), scenes = qa('.scene'), walker = q('.walker'), evil = q('.evil'),
+  var stage = q('.stage'), sky = q('.sky'), world = q('.world'), haze = q('.haze'), boughs = q('.boughs'), scenes = qa('.scene'), walker = q('.walker'), evil = q('.evil'),
       st = qa('.station'), checks = q('.checks'), items = qa('.checks li'), hudName = q('.hud-name'), hudBar = q('.hud b'), cue = q('.cue');
   var hud = JSON.parse(run.dataset.hud || '[]');
   var top = 0, span = 1, vw = 1, vh = 1, last = -1, ticking = false, moving = 0, N = scenes.length - 1;
@@ -49,6 +49,8 @@
     if (s === last) return; last = s;
     world.style.transform = 'translate3d(' + (-s * vw).toFixed(1) + 'px,0,0)';
     sky.style.transform = 'translate3d(' + (-s * vw * .18).toFixed(1) + 'px,0,0)';
+    haze.style.transform = 'translate3d(' + (-s * vw * 1.12).toFixed(1) + 'px,0,0)';
+    boughs.style.transform = 'translate3d(' + (-s * vw * 1.25).toFixed(1) + 'px,0,0)';
     /* scenes come in as the walk nears them */
     for (var i = 0; i < scenes.length; i++) if (scenes[i].dataset.bg && s > i - 1.6) { scenes[i].style.backgroundImage = 'url(' + scenes[i].dataset.bg + ')'; delete scenes[i].dataset.bg; }
     /* stations: the hero at the gate, then one text per scene */
