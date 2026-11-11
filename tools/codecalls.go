@@ -167,7 +167,9 @@ func pruneCallStates(dir string, keep int) {
 			all = append(all, aged{n, info.ModTime().UnixNano()})
 		}
 	}
-	sort.Slice(all, func(i, j int) bool { return all[i].mod > all[j].mod || all[i].mod == all[j].mod && all[i].name < all[j].name })
+	sort.Slice(all, func(i, j int) bool {
+		return all[i].mod > all[j].mod || all[i].mod == all[j].mod && all[i].name < all[j].name
+	})
 	for _, a := range all[min(keep, len(all)):] {
 		os.Remove(a.name)
 	}

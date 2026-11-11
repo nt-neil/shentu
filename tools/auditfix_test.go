@@ -127,6 +127,10 @@ func TestAppCodeAuditCaps(t *testing.T) {
 			t.Errorf("%s: %d findings", p, c)
 		}
 	}
+	// The critical .env comes after the list is full of warnings, and is listed.
+	if f := findingFor(res, "exposed", ".env"); f.Severity != "critical" {
+		t.Error("a critical finding was left out for warnings")
+	}
 	if f := res.Findings[0]; f.Kind != "audit" || !strings.Contains(f.Detail, "more finding(s) are not listed") {
 		t.Errorf("first: %+v", f)
 	}
@@ -262,6 +266,10 @@ func TestUploadFolder(t *testing.T) {
 		"/srv/shop/src/Media/Images.php":                                  false,
 		"/srv/shop/app/Files/Upload.php":                                  false,
 		"/srv/shop/lib/images/resize.php":                                 false,
+		"/srv/wordpress/wp-content/uploads/src/vendor/x.php":              true,
+		"/srv/wordpress/wp-content/Uploads/x.php":                         true,
+		"/srv/shop/public/Uploads/a.php":                                  true,
+		"/srv/shop/storage/app/public/src/a.php":                          true,
 	} {
 		if got := uploadFolder(p, nil); got != want {
 			t.Errorf("uploadFolder(%q) = %v, want %v", p, got, want)

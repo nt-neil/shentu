@@ -80,7 +80,7 @@ func replaceOrAppend(all, add []finding) []finding {
 func codeAuditFindings(audit tools.CodeAudit) []finding {
 	var out []finding
 	for _, f := range audit.Findings {
-		if f.Kind == "injection" && f.Tier != "alert" || f.Kind == "audit" { // "audit": the summaries of the audit itself
+		if f.Kind == "injection" && f.Tier != "alert" || f.Kind == "audit" { // "audit": the audit's own summaries, below
 			continue
 		}
 		key := fmt.Sprintf("code:%s:%s:%d", f.Kind, f.Path, f.Line)
@@ -99,6 +99,18 @@ func codeAuditFindings(audit tools.CodeAudit) []finding {
 			detail = fmt.Sprintf("%s (%s, rule %s)", f.Detail, f.CWE, f.Rule)
 		}
 		out = append(out, finding{key, f.Severity, fmt.Sprintf("%s: %s; fix: %s", where, detail, f.Fix), f})
+	}
+	// An audit that did not check everything, or listed only part of what it
+	// found, says so: silence would read as nothing found.
+	for _, f := range audit.Findings {
+		if f.Kind != "audit" {
+			continue
+		}
+		key := "code:audit:truncated"
+		if strings.Contains(f.Detail, "unfinished") {
+			key = "code:audit:unfinished"
+		}
+		out = append(out, finding{key, "warning", fmt.Sprintf("code audit: %s; fix: %s", f.Detail, f.Fix), f})
 	}
 	return out
 }

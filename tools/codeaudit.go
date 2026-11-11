@@ -204,7 +204,7 @@ var auditExt = map[string]bool{".php": true, ".phtml": true, ".php5": true, ".in
 	".cjs": true, ".ts": true, ".mts": true, ".cts": true, ".tsx": true, ".json": true, ".yml": true, ".yaml": true, ".ini": true, ".conf": true, ".cfg": true, ".toml": true,
 	".xml": true, ".properties": true, ".htaccess": true, ".user.ini": true, ".env": true}
 
-// Folders uploads land in: named so (in lower case) right under a web root,
+// Folders uploads land in: named so (in any case) right under a web root,
 // wp-content/uploads in WordPress and storage/app/public in Laravel. A folder
 // so named inside code (a library's src/Files/, vendor/) holds the code's own
 // files.
@@ -219,30 +219,29 @@ var (
 func uploadFolder(p string, webRoots []string) bool {
 	dir := filepath.ToSlash(filepath.Dir(p))
 	segs := strings.Split(dir, "/")
-	for _, s := range segs {
-		if notUploadDirs[s] {
-			return false
-		}
-	}
-	if i := strings.Index(dir+"/", "/wp-content/"); i >= 0 {
-		return strings.HasPrefix(dir[i:]+"/", "/wp-content/uploads/")
-	}
-	if strings.Contains(dir+"/", "/storage/app/public/") {
-		return true
-	}
+	// Only the folders above the upload folder can make it code's own: what is
+	// under an upload folder is uploads, whatever the folders there are named.
+	code := false
 	for i, s := range segs {
-		if i == 0 || !uploadNames[s] {
-			continue
+		low := strings.ToLower(s)
+		if i > 0 && strings.EqualFold(segs[i-1], "wp-content") {
+			if low == "uploads" {
+				return !code
+			}
+			code = true // wp-content/plugins, themes and the like hold code
 		}
-		parent := strings.Join(segs[:i], "/")
-		if len(webRoots) > 0 {
-			if slices.Contains(webRoots, parent) {
+		if low == "public" && i > 1 && strings.EqualFold(segs[i-1], "app") && strings.EqualFold(segs[i-2], "storage") {
+			return !code
+		}
+		if !code && i > 0 && uploadNames[low] {
+			parent := strings.Join(segs[:i], "/")
+			if len(webRoots) > 0 && slices.Contains(webRoots, parent) ||
+				len(webRoots) == 0 && (webDirNames[strings.ToLower(segs[i-1])] || parent == "/var/www" || filepath.Dir(parent) == "/var/www") {
 				return true
 			}
-			continue
 		}
-		if webDirNames[segs[i-1]] || parent == "/var/www" || filepath.Dir(parent) == "/var/www" {
-			return true
+		if notUploadDirs[low] {
+			code = true
 		}
 	}
 	return false
@@ -516,6 +515,8 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 	// At most auditMaxPerFile findings of one rule or check in one file and
 	// auditMaxFindings in all are listed; the injection counts take them all.
 	perFile, left := map[string]int{}, 0
+	var ranks [3]int // listed findings by severityRank
+	worst := 0       // the lowest severity listed
 	add := func(f CodeFinding) {
 		if f.Kind == "injection" {
 			switch {
@@ -528,11 +529,34 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 			}
 		}
 		k := f.Kind + "\x00" + f.Rule + "\x00" + f.Path
-		if len(res.Findings) >= auditMaxFindings || perFile[k] >= auditMaxPerFile {
+		if perFile[k] >= auditMaxPerFile {
 			left++
 			return
 		}
+		if len(res.Findings) >= auditMaxFindings {
+			// Full: a finding of a higher severity takes the place of one of the
+			// lowest listed, so critical ones are never left out for warnings.
+			r := severityRank(f.Severity)
+			if r >= worst {
+				left++
+				return
+			}
+			for i := len(res.Findings) - 1; i >= 0; i-- {
+				if g := res.Findings[i]; severityRank(g.Severity) == worst {
+					perFile[g.Kind+"\x00"+g.Rule+"\x00"+g.Path]--
+					res.Findings = slices.Delete(res.Findings, i, i+1)
+					ranks[worst]--
+					break
+				}
+			}
+			left++
+			for worst > 0 && ranks[worst] == 0 {
+				worst--
+			}
+		}
 		perFile[k]++
+		ranks[severityRank(f.Severity)]++
+		worst = max(worst, severityRank(f.Severity))
 		res.Findings = append(res.Findings, f)
 	}
 	eng, err := injectionEngine()
