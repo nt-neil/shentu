@@ -15,7 +15,7 @@ import (
 	"github.com/nt-neil/shentu/rules"
 )
 
-//go:embed templates/*.html templates/site.css templates/fonts templates/img
+//go:embed templates/*.html templates/site.css templates/watch.js templates/fonts templates/img
 var tmplFS embed.FS
 
 // Lang is one language of the site: where its pages go and its words.
@@ -155,9 +155,23 @@ func build(root, src, out, base string) error {
 	if err := os.WriteFile(filepath.Join(out, "site.css"), css, 0o644); err != nil {
 		return err
 	}
+	js, err := tmplFS.ReadFile("templates/watch.js")
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(out, "watch.js"), js, 0o644); err != nil {
+		return err
+	}
 	// The display faces, subsets of Noto Serif TC (OFL) with their license,
 	// and the guardian picture with its credits.
-	for _, f := range []string{"fonts/serif-light.woff2", "fonts/serif-black.woff2", "fonts/OFL.txt", "img/guardian-night.webp", "img/CREDITS.md"} {
+	assets := []string{"fonts/serif-light.woff2", "fonts/serif-black.woff2", "fonts/OFL.txt", "img/guardian-night.webp", "img/CREDITS.md"}
+	// the scenes of the night-watch scroll, when they are there
+	if scenes, err := tmplFS.ReadDir("templates/img/scroll"); err == nil {
+		for _, e := range scenes {
+			assets = append(assets, "img/scroll/"+e.Name())
+		}
+	}
+	for _, f := range assets {
 		b, err := tmplFS.ReadFile("templates/" + f)
 		if err != nil {
 			return err
@@ -298,6 +312,14 @@ func funcs(l Lang) template.FuncMap {
 			}
 			return fmt.Sprintf("%.2f", 1-float64(i)/float64(n-1))
 		},
+		// where a release sits along the river, in percent of its width
+		"xpos": func(i, n int) string {
+			if n < 2 {
+				return "50"
+			}
+			return fmt.Sprintf("%.1f", 7+86*float64(i)/float64(n-1))
+		},
+		"groups": groups,
 		"pct": func(a, b int) string {
 			if b <= 0 {
 				return "0%"
@@ -342,6 +364,40 @@ func benchKind(group string) string {
 		return "registry"
 	}
 	return "class"
+}
+
+// itemGroup is the lines of a release under one heading of the river.
+type itemGroup struct {
+	Key   string // the words of the heading: grp.reach, grp.sharp or grp.light
+	Items []string
+}
+
+var (
+	lightRe = regexp.MustCompile(`(?i)heap|cgroup|memory|workers|記憶體|並行`)
+	sharpRe = regexp.MustCompile(`(?i)false positive|known issue|誤報|已知問題`)
+)
+
+// groups sorts a release's lines into what Shentu now sees (reach), how
+// precisely (sharp) and how lightly it runs (light), for the river's card.
+func groups(items []string) []itemGroup {
+	g := []itemGroup{{Key: "grp.reach"}, {Key: "grp.sharp"}, {Key: "grp.light"}}
+	for _, it := range items {
+		switch {
+		case lightRe.MatchString(it):
+			g[2].Items = append(g[2].Items, it)
+		case sharpRe.MatchString(it):
+			g[1].Items = append(g[1].Items, it)
+		default:
+			g[0].Items = append(g[0].Items, it)
+		}
+	}
+	out := g[:0]
+	for _, x := range g {
+		if len(x.Items) > 0 {
+			out = append(out, x)
+		}
+	}
+	return out
 }
 
 var codeRe = regexp.MustCompile("`([^`]+)`")

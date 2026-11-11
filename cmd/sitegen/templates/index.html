@@ -1,74 +1,61 @@
 {{define "main"}}
-<section class="gate" id="gate" aria-labelledby="title">
-  <div class="night" role="img" aria-label="{{t "night.img"}}"></div>
-  <div class="breath" aria-hidden="true"></div>
-  <canvas class="dust" aria-hidden="true"></canvas>
-  <div class="veil" aria-hidden="true"></div>
-  <div class="shade" aria-hidden="true"></div>
-  <div class="bloom" aria-hidden="true"></div>
-  <div class="gdoor gdoor-l" aria-hidden="true"></div>
-  <div class="gdoor gdoor-r" aria-hidden="true"></div>
-  <button type="button" class="skip-intro">{{t "skip.intro"}}</button>
-  <div class="hero-title">
-    <h1 id="title"><span class="line"><i>{{t "night.l1"}}</i></span> <span class="line"><i>{{t "night.l2"}}</i></span></h1>
-    <p class="lede">{{t "night.lede"}}</p>
-    <p class="actions"><a class="button" href="install.html">{{t "nav.install"}}</a><a class="link" href="{{.Repo}}">{{t "hero.source"}}</a></p>
+<!-- The night-watch scroll: one stage, pinned while the page scrolls past it.
+     Scrolling down walks the guardian to the right, through six stations. -->
+<section class="walk" id="watch" aria-labelledby="title" data-hud='["{{t "hud.0"}}","{{t "hud.1"}}","{{t "hud.2"}}","{{t "hud.3"}}","{{t "hud.4"}}","{{t "hud.5"}}"]'>
+  <div class="stage">
+    <div class="sky" aria-hidden="true"></div>
+    <div class="world">
+      <div class="scene sc1" role="img" aria-label="{{t "night.img"}}"></div>
+      <div class="scene sc2" data-bg="{{.L.Root}}img/scroll/court.webp" aria-hidden="true"></div>
+      <div class="scene sc3" data-bg="{{.L.Root}}img/scroll/hall.webp" aria-hidden="true"></div>
+      <div class="scene sc4" data-bg="{{.L.Root}}img/scroll/rear.webp" aria-hidden="true"></div>
+      <div class="scene sc5" data-bg="{{.L.Root}}img/scroll/door.webp" aria-hidden="true"></div>
+      <div class="scene sc6" aria-hidden="true"></div>
+    </div>
+    <div class="evil" aria-hidden="true"></div>
+    <canvas class="near" aria-hidden="true"></canvas>
+    <div class="walker" aria-hidden="true"><i></i></div>
+    <div class="shade" aria-hidden="true"></div>
+
+    <div class="station st1">
+      <h1 id="title"><span>{{t "night.l1"}}</span> <span>{{t "night.l2"}}</span></h1>
+      <p class="lede">{{t "night.lede"}}</p>
+      <p class="actions"><a class="button" href="install.html">{{t "nav.install"}}</a><a class="link" href="{{.Repo}}">{{t "hero.source"}}</a></p>
+      <p class="cue" aria-hidden="true">{{t "scroll.cue"}}</p>
+    </div>
+    <div class="station st2"><time>03:00</time><h2>{{t "st2.t"}}</h2><p>{{t "st2.p"}}</p></div>
+    <div class="station st3"><time>03:04</time><h2>{{t "st3.t"}}</h2><p>{{t "st3.p"}}</p></div>
+    <div class="station st4"><time>03:09</time><h2>{{t "st4.t"}}</h2><p>{{t "st4.p"}}</p></div>
+    <div class="station st5"><time>03:12</time><h2>{{t "act2.t"}}</h2><p>{{t "act2.p"}}</p></div>
+
+    <div class="checks" aria-hidden="true">
+      <p class="example">{{t "story.example"}}</p>
+      <ul>
+        <li data-at="1.25"><span>{{t "log.ssh"}}</span><b>✓</b></li>
+        <li data-at="1.6"><span>{{t "log.ports"}}</span><b>✓</b></li>
+        <li data-at="2.2"><span>{{t "log.proc"}}</span><b>✓</b></li>
+        <li data-at="2.55"><span>{{t "log.pkg"}}</span><b>✓</b></li>
+        <li data-at="3.3"><span>{{t "log.code"}}{{t "lp"}}{{.Count}} {{t "rules.count"}}{{t "rp"}}</span><b>✓</b></li>
+        <li data-at="4.05" class="flag"><span>shop / wp-content / uploads</span><b>{{t "log.bad"}}</b></li>
+      </ul>
+    </div>
+
+    <div class="talk" role="group" aria-labelledby="talk-name">
+      <div class="face" aria-hidden="true"></div>
+      <div class="talk-body">
+        <p class="talk-name" id="talk-name">神荼 · 03:13 <span class="example">{{t "story.example"}}</span></p>
+        <p class="talk-text" data-full="{{t "story.msg"}}" aria-live="polite">{{t "story.msg"}}</p>
+        <p class="talk-opts">
+          <button type="button" data-say="{{t "talk.yes.r"}}">{{t "talk.yes"}}</button>
+          <button type="button" data-say="{{t "talk.no.r"}}">{{t "talk.no"}}</button>
+        </p>
+      </div>
+    </div>
+    <div class="hud" aria-hidden="true"><span class="hud-name">{{t "hud.0"}}</span><i><b></b></i></div>
   </div>
-  <p class="watch" lang="zh-Hant" aria-hidden="true">夜巡</p>
 </section>
 
 <div class="after">
-<section data-reveal class="patrol" id="patrol" aria-labelledby="patrol-title">
-  <div class="patrol-head">
-    <h2 id="patrol-title">{{t "patrol.title"}}</h2>
-    <p class="example">{{t "story.example"}}</p>
-  </div>
-  <div class="deck" data-at="0">
-    <div class="deck-main">
-      <div class="tabs" role="tablist" aria-label="{{t "scenes"}}">
-        <button type="button" role="tab" id="tab-0" aria-controls="scene-0" aria-selected="true"><time>03:00</time> {{t "tab.1"}}</button>
-        <button type="button" role="tab" id="tab-1" aria-controls="scene-1" aria-selected="false" tabindex="-1" class="alarm"><time>03:12</time> {{t "tab.2"}}</button>
-        <button type="button" role="tab" id="tab-2" aria-controls="scene-2" aria-selected="false" tabindex="-1"><time>03:13</time> {{t "tab.3"}}</button>
-      </div>
-      <div class="viewport">
-        <div class="curtain" aria-hidden="true"><i class="cl"></i><i class="cr"></i><b class="sweep"></b></div>
-        <div class="flash" aria-hidden="true"></div>
-        <div class="track">
-          <article class="card on" id="scene-0" role="tabpanel" aria-labelledby="tab-0">
-            <div><h3 class="line"><i>{{t "act1.t"}}</i></h3><p class="line"><i>{{t "act1.p"}}</i></p></div>
-            <ul class="log">
-              <li class="lit"><span>{{t "log.ssh"}}</span><span>{{t "log.ok"}}</span></li>
-              <li class="lit"><span>{{t "log.ports"}}</span><span>{{t "log.ok"}}</span></li>
-              <li class="lit"><span>{{t "log.proc"}}</span><span>{{t "log.ok"}}</span></li>
-              <li class="lit"><span>{{t "log.pkg"}}</span><span>{{t "log.ok"}}</span></li>
-              <li><span>shop / wp-content / uploads</span><span>…</span></li>
-              <li><span>{{t "log.code"}}{{t "lp"}}{{.Count}} {{t "rules.count"}}{{t "rp"}}</span><span>…</span></li>
-            </ul>
-          </article>
-          <article class="card find" id="scene-1" role="tabpanel" aria-labelledby="tab-1" inert>
-            <div><h3 class="line"><i>{{t "act2.t"}}</i></h3><p class="line"><i>{{t "act2.p"}}</i></p></div>
-            <ul class="log">
-              <li class="lit"><span>{{t "log.pkg"}}</span><span>{{t "log.ok"}}</span></li>
-              <li class="bad"><span>shop / wp-content / uploads</span><span>{{t "log.bad"}}</span></li>
-              <li class="lit"><span>{{t "log.code"}}{{t "lp"}}{{.Count}} {{t "rules.count"}}{{t "rp"}}</span><span>{{t "log.ok"}}</span></li>
-            </ul>
-          </article>
-          <article class="card" id="scene-2" role="tabpanel" aria-labelledby="tab-2" inert>
-            <div><h3 class="line"><i>{{t "act3.t"}}</i></h3><p class="line"><i>{{t "act3.p"}}</i></p></div>
-            <p class="msg"><b>Shentu</b> {{t "story.msg"}}</p>
-          </article>
-        </div>
-      </div>
-      <div class="controls">
-        <button type="button" class="prev" aria-label="{{t "prev"}}" disabled><span aria-hidden="true">←</span></button>
-        <p class="dots" aria-hidden="true"><i class="on"></i><i></i><i></i></p>
-        <button type="button" class="next" aria-label="{{t "next"}}"><span aria-hidden="true">→</span></button>
-      </div>
-    </div>
-    <div class="beam" aria-hidden="true"><div class="beam-calm"></div><div class="beam-alarm"></div></div>
-  </div>
-</section>
-
 {{with .Main}}{{$all := .All}}
 <section data-reveal class="tally" aria-labelledby="tally-title">
   <h2 id="tally-title">{{t "tally.title"}}</h2>
@@ -95,112 +82,11 @@
 </section>
 
 <section data-reveal class="latest" aria-labelledby="latest-title">
-  <h2 id="latest-title">{{t "latest"}}</h2>
-  <div class="timeline">{{template "releaselist" (slice .Latest 0 1)}}</div>
+  <h2 id="latest-title">{{t "river.title"}}</h2>
+  {{template "river" .}}
   <p class="more"><a href="releases.html">{{t "all.releases"}}</a> <a href="{{.L.Root}}feed.xml">{{t "feed"}}</a></p>
 </section>
 </div>
 
-<script>
-(function () {
-  var still = matchMedia('(prefers-reduced-motion: reduce)').matches, d = document, root = d.documentElement;
-  var EXPO_IN = 'cubic-bezier(.7, 0, .84, 0)', EXPO_OUT = 'cubic-bezier(.16, 1, .3, 1)';
-
-  /* first visit: the gate opens (about 1.8 s), once per session, and can be skipped */
-  var gate = d.getElementById('gate'), skip = gate.querySelector('.skip-intro'), anims = [];
-  function endIntro() { anims.forEach(function (a) { a.finish(); }); root.classList.remove('intro'); }
-  if (root.classList.contains('intro')) {
-    var L = gate.querySelector('.gdoor-l'), R = gate.querySelector('.gdoor-r'), bloom = gate.querySelector('.bloom'),
-        dawn = matchMedia('(prefers-color-scheme: light)').matches,
-        gap = Math.max(gate.clientWidth, gate.clientHeight * 1.778) * .082, half = gate.clientWidth / 2,
-        to = dawn ? half - gap : half + 40;
-    anims.push(L.animate([{ transform: 'translate3d(0,0,0)' }, { transform: 'translate3d(' + (-to) + 'px,0,0)' }], { duration: 1700, delay: 250, easing: 'cubic-bezier(.65, 0, .15, 1)', fill: 'forwards' }));
-    anims.push(R.animate([{ transform: 'translate3d(0,0,0)' }, { transform: 'translate3d(' + to + 'px,0,0)' }], { duration: 1700, delay: 250, easing: 'cubic-bezier(.65, 0, .15, 1)', fill: 'forwards' }));
-    anims.push(bloom.animate([{ opacity: 0, transform: 'scale(.6)' }, { opacity: 1, transform: 'scale(1.1)', offset: .45 }, { opacity: .35, transform: 'scale(1.3)' }], { duration: 1900, delay: 300, easing: EXPO_OUT, fill: 'forwards' }));
-    gate.querySelectorAll('.hero-title .line i, .hero-title .lede, .hero-title .actions').forEach(function (el, k) {
-      anims.push(el.animate([{ transform: 'translate3d(0,110%,0)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 900, delay: 1300 + k * 110, easing: EXPO_OUT, fill: 'backwards' }));
-    });
-    anims[0].finished.then(function () { setTimeout(endIntro, 250); });
-    skip.addEventListener('click', endIntro);
-    addEventListener('keydown', function (e) { if (e.key === 'Escape') endIntro(); }, { once: true });
-  }
-
-  /* the patrol: three scenes, turned by click, arrow keys or a swipe; nothing plays by itself */
-  var deck = d.querySelector('.deck'), track = deck.querySelector('.track'), tabs = deck.querySelectorAll('[role=tab]'),
-      cards = deck.querySelectorAll('.card'), dots = deck.querySelectorAll('.dots i'), prev = deck.querySelector('.prev'), next = deck.querySelector('.next'),
-      cl = deck.querySelector('.cl'), cr = deck.querySelector('.cr'), sweep = deck.querySelector('.sweep'), flash = deck.querySelector('.flash'), at = 0, busy = false;
-  function show(i) {
-    track.style.transform = 'translate3d(' + (-100 * i) + '%,0,0)';
-    for (var k = 0; k < cards.length; k++) {
-      var on = k === i;
-      cards[k].classList.toggle('on', on); cards[k].inert = !on;
-      tabs[k].setAttribute('aria-selected', on); tabs[k].tabIndex = on ? 0 : -1;
-      dots[k].classList.toggle('on', on);
-    }
-    deck.dataset.at = i; prev.disabled = i === 0; next.disabled = i === cards.length - 1;
-  }
-  function go(i, focus) {
-    i = Math.max(0, Math.min(cards.length - 1, i));
-    if (i === at || busy) { if (focus) tabs[at].focus(); return; }
-    at = i;
-    if (focus) tabs[at].focus();
-    if (still) { show(at); return; }
-    busy = true;
-    /* the doors close on the scene (expo in), the next one is set while they are shut, they open again (expo out) */
-    var close = { duration: 330, easing: EXPO_IN, fill: 'forwards' }, open = { duration: 520, easing: EXPO_OUT, fill: 'forwards' };
-    cl.animate([{ transform: 'translate3d(-101%,0,0)' }, { transform: 'translate3d(0,0,0)' }], close);
-    cr.animate([{ transform: 'translate3d(101%,0,0)' }, { transform: 'translate3d(0,0,0)' }], close).finished.then(function () {
-      show(at);
-      sweep.animate([{ transform: 'translate3d(-30%,0,0) skewX(-12deg)', opacity: 0 }, { opacity: 1, offset: .3 }, { transform: 'translate3d(130%,0,0) skewX(-12deg)', opacity: 0 }], { duration: 620, easing: 'cubic-bezier(.3, .7, .2, 1)' });
-      cl.animate([{ transform: 'translate3d(0,0,0)' }, { transform: 'translate3d(-101%,0,0)' }], open);
-      cr.animate([{ transform: 'translate3d(0,0,0)' }, { transform: 'translate3d(101%,0,0)' }], open).finished.then(function () { busy = false; });
-      cards[at].querySelectorAll('.line i, .log, .msg').forEach(function (el, k) {
-        el.animate([{ transform: 'translate3d(0,105%,0)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 640, delay: 140 + k * 70, easing: EXPO_OUT, fill: 'backwards' });
-      });
-      if (at === 1) flash.animate([{ opacity: 0 }, { opacity: .55, offset: .18 }, { opacity: .08, offset: .45 }, { opacity: .32, offset: .62 }, { opacity: 0 }], { duration: 900, easing: 'ease-out' });
-    });
-  }
-  tabs.forEach(function (t, k) { t.addEventListener('click', function () { go(k); }); });
-  deck.querySelector('[role=tablist]').addEventListener('keydown', function (e) {
-    var to = { ArrowRight: at + 1, ArrowLeft: at - 1, Home: 0, End: cards.length - 1 }[e.key];
-    if (to !== undefined) { e.preventDefault(); go(to, true); }
-  });
-  prev.addEventListener('click', function () { go(at - 1); });
-  next.addEventListener('click', function () { go(at + 1); });
-  var x0 = null, y0 = 0, vp = deck.querySelector('.viewport');
-  vp.addEventListener('pointerdown', function (e) { x0 = e.clientX; y0 = e.clientY; });
-  vp.addEventListener('pointerup', function (e) {
-    if (x0 === null) return; var dx = e.clientX - x0, dy = e.clientY - y0; x0 = null;
-    if (Math.abs(dx) > 50 && Math.abs(dx) > 1.5 * Math.abs(dy)) go(at + (dx < 0 ? 1 : -1));
-  });
-  show(0);
-
-  /* sections rise out of the light as they come into view */
-  if (!still && 'IntersectionObserver' in window) {
-    root.classList.add('reveal');
-    var io = new IntersectionObserver(function (es) { es.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add('seen'); io.unobserve(e.target); } }); }, { rootMargin: '0px 0px -10% 0px' });
-    d.querySelectorAll('[data-reveal]').forEach(function (el) { io.observe(el); });
-  }
-
-  /* dust in the beam, drawn only while the gate is on screen; it rises fast while the gate opens */
-  if (still) return;
-  var c = d.querySelector('canvas.dust'), x = c.getContext('2d'), P = [], w, h, run = true, dpr = Math.min(devicePixelRatio || 1, 2), t0 = performance.now();
-  function size() { w = c.clientWidth; h = c.clientHeight; c.width = w * dpr; c.height = h * dpr; x.setTransform(dpr, 0, 0, dpr, 0, 0); }
-  size(); addEventListener('resize', size);
-  for (var k = 0; k < 90; k++) P.push({ x: Math.random(), y: Math.random(), r: Math.random() * 1.5 + .3, v: Math.random() * .00025 + .00008, p: Math.random() * 6.28 });
-  function frame(t) {
-    if (!run) return;
-    var gust = root.classList.contains('intro') ? 1 + 14 * Math.max(0, 1 - (t - t0) / 2200) : 1;
-    x.clearRect(0, 0, w, h);
-    for (var k = 0; k < P.length; k++) {
-      var e = P[k], s = Math.sin(t / 900 + e.p); e.y -= e.v * gust; if (e.y < 0) e.y = 1;
-      x.fillStyle = 'rgba(255, 214, 150,' + (.22 + .35 * s * s) + ')';
-      x.beginPath(); x.arc((.5 + (e.x - .5) * .44 * Math.min(2, gust ** .3) + Math.sin(t / 2400 + e.p) * .014) * w, e.y * h, e.r, 0, 6.29); x.fill();
-    }
-    requestAnimationFrame(frame);
-  }
-  new IntersectionObserver(function (es) { var was = run; run = es[0].isIntersecting; if (run && !was) requestAnimationFrame(frame); }).observe(gate);
-  requestAnimationFrame(frame);
-})();
-</script>
+<script src="{{.L.Root}}watch.js" defer></script>
 {{end}}

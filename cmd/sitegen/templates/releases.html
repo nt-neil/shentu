@@ -4,6 +4,7 @@
   <h1>{{t "releases.title"}}</h1>
   <p class="intro">{{t "hist.intro"}} {{with t "changelog.note"}}{{.}} {{end}}<a href="{{.L.Root}}feed.xml">{{t "feed"}}</a></p>
 </header>
+{{template "river" .}}
 {{$n := len .Releases}}{{$count := .Count}}
 <ol class="chronicle">
 {{range $i, $r := rev .Releases}}
