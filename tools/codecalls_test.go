@@ -20,6 +20,7 @@ type keptAudit struct {
 	dir, state string
 	own, calls []string
 	cutAfter   int        // > 0: the clock runs out after this many files' calls in one audit
+	fileClock  string     // this file always runs over its own time limit (not the audit's clock)
 	cutAll     bool       // the clock runs out during every file's calls
 	oneRule    bool       // the clock runs out in each file after one more rule
 	skips      [][]string // the rules each scan was told to leave out
@@ -70,6 +71,9 @@ func newKeptAudit(t *testing.T, files map[string]string) *keptAudit {
 				}
 			}
 			return engine.CallsPart{Found: kept, Done: res.Done[:1], At: res.Done[1], Cut: res.Cut, Timed: true}, err
+		}
+		if k.fileClock == filepath.Base(p) {
+			return engine.CallsPart{Timed: true, FileTime: true}, err
 		}
 		if k.cutAll || k.cutAfter > 0 && len(k.calls) > k.cutAfter {
 			// As if the clock had run out during this file, before any rule was done.
@@ -181,6 +185,25 @@ func TestAppCodeAuditResumes(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, whole) {
 		t.Errorf("covered over several audits %v, in one %v", got, whole)
+	}
+}
+
+// A file over its own time limit (a busy server) waits for the next audit;
+// this one goes on with the other files instead of stopping there.
+func TestAppCodeAuditGoesOnPastASlowFile(t *testing.T) {
+	k := newKeptAudit(t, keptFiles)
+	k.fileClock = "a.php"
+	_, sum := k.run()
+	if want := []string{"a.php", "b.php", "c.php"}; !reflect.DeepEqual(k.calls, want) {
+		t.Errorf("followed %v, want %v: the files after the slow one too", k.calls, want)
+	}
+	if !strings.Contains(sum, "covered for 2 of 3 file(s)") {
+		t.Errorf("summary %q, want 2 of 3 covered", sum)
+	}
+	k.fileClock = ""
+	_, sum = k.run()
+	if want := []string{"a.php"}; !reflect.DeepEqual(k.calls, want) || sum != "" {
+		t.Errorf("next audit followed %v (summary %q), want only the file left: %v", k.calls, sum, want)
 	}
 }
 

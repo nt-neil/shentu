@@ -91,6 +91,10 @@ type CodeAudit struct {
 	Injection          int `json:"injection_findings"`
 	InjectionTestPaths int `json:"injection_findings_in_test_paths"`
 	InjectionGenerated int `json:"injection_findings_in_generated_code"` // minified or bundled JavaScript
+	// The memory the audit kept to: its heap budget and Go's memory limit
+	// while it ran (MiB).
+	MemoryBudgetMB int `json:"memory_budget_mb"`
+	MemoryLimitMB  int `json:"go_memory_limit_mb"`
 }
 
 const (
@@ -278,8 +282,9 @@ const slowTries = 3
 // Results kept from earlier audits count: covered files had their calls
 // followed in this audit (now of them) or an earlier one, done of them to the
 // end; slowRules rules of slowFiles of the covered files were left out as too
-// slow for one audit.
-func crossFileFinding(done, covered, now, total, slowRules, slowFiles int, reason string) CodeFinding {
+// slow for one audit. waiting are the files whose calls across files are not
+// covered yet, in the order the next audits take them.
+func crossFileFinding(done, covered, now, total, slowRules, slowFiles int, reason string, waiting []UnfinishedFile) CodeFinding {
 	if covered == total {
 		reason = "the rest were cut short by the size limits or by names that could not be pinned to one file"
 	}
@@ -288,12 +293,20 @@ func crossFileFinding(done, covered, now, total, slowRules, slowFiles int, reaso
 		slow = fmt.Sprintf(", %d of them with %d rule(s) left out as too slow for one audit's time (cut short %d audits in a row; tried again when the file changes)",
 			slowFiles, slowRules, slowTries)
 	}
-	return CodeFinding{Kind: "injection", Severity: "info", Tier: "info",
+	f := CodeFinding{Kind: "injection", Severity: "info", Tier: "info",
 		Detail: fmt.Sprintf("the injection rules followed calls across files for %d of %d file(s) (%s); every file was checked on its own. "+
 			"Calls across files are covered for %d of %d file(s) (%.1f%%) so far%s, %d of them in this audit; "+
 			"unchanged files keep their results and the next audits go on from there",
 			done, total, reason, covered, total, 100*float64(covered)/float64(max(total, 1)), slow, now),
-		Fix: "nothing to do; a smaller audit root or a quieter server lets the next audit follow more"}
+		Fix:   "nothing to do; a smaller audit root or a quieter server lets the next audit follow more",
+		Files: waiting[:min(len(waiting), partialListMax)]}
+	if strings.Contains(reason, "memory limit") {
+		// The files and summaries a chain of calls needs at once did not fit:
+		// going on would not make them fit.
+		f.Fix = "give the audit more memory: [tools] audit_max_memory_mb = 512 or more (following calls across files needs " +
+			"the files on a chain of calls at once); the next audits go on from the files listed"
+	}
+	return f
 }
 
 var (
@@ -421,6 +434,7 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 		debug.SetMemoryLimit(int64(budget.limit))
 		defer debug.SetMemoryLimit(prev)
 	}
+	res.MemoryBudgetMB, res.MemoryLimitMB = int(budget.heap>>20), int(debug.SetMemoryLimit(-1)>>20)
 	for _, root := range roots {
 		base := strings.Count(filepath.Clean(root), "/")
 		filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
@@ -596,6 +610,7 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 		// time goes to the other files, in order, those never tried before those
 		// the clock cut short.
 		done, covered, now, reason, cut := 0, 0, 0, "", false
+		var waiting []UnfinishedFile // calls across files not covered yet
 		slowRules, slowFiles := 0, 0
 		if left := time.Until(deadline); left > 0 && ctx.Err() == nil {
 			pr := eng.NewProject(code, read, engine.ProjectOptions{CacheFile: codeIndexFile(), MaxTime: left,
@@ -646,7 +661,10 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 							continue
 						case res.Timed:
 							// The clock or the heap ran out: what the finished rules found
-							// is kept, and the next audit goes on from there.
+							// is kept, and the next audit goes on from there. Only the
+							// audit's clock or heap stops the other files: a file over its
+							// own time limit (a busy server, a large file) waits for the
+							// next audit, and this one goes on with the rest.
 							addNew(found, gen)
 							fs := st.entry(p, hash[p])
 							next := &partResult{Rules: append(slices.Clone(part.Rules), res.Done...), Found: found,
@@ -661,7 +679,7 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 								}
 							}
 							fs.Part = next
-							cut = true
+							cut = !res.FileTime
 							continue
 						}
 						k = &passResult{Found: found, Reason: unfinishedReason(err), Gen: gen}
@@ -674,6 +692,7 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 					}
 				}
 				if k == nil {
+					waiting = append(waiting, UnfinishedFile{p, "calls"})
 					continue
 				}
 				addNew(k.Found, k.Gen)
@@ -701,7 +720,7 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 		st.keepOnly(hash)
 		saveCallState(stateFile, st)
 		if done < len(files) {
-			add(crossFileFinding(done, covered, now, len(files), slowRules, slowFiles, reason))
+			add(crossFileFinding(done, covered, now, len(files), slowRules, slowFiles, reason, waiting))
 		}
 	}
 

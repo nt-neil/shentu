@@ -120,10 +120,12 @@ type analysis struct {
 	nested int  // functions defined inside the one analysed: their returns are not its returns
 	raw    bool // evaluating whether a value came from input at all: sanitizers do not clean
 
-	sc     *summaries    // this rule's function summaries for the file (interproc.go)
-	summ   *summRun      // set while a function body is analysed for its summary
-	lib    bool          // library mode: public parameters are input, and only embedded input is reported
-	routes map[*fn]*seed // functions a framework calls with request data, and which parameters carry it (routes.go)
+	sc      *summaries    // this rule's function summaries for the file (interproc.go)
+	summ    *summRun      // set while a function body is analysed for its summary
+	lib     bool          // library mode: public parameters are input, and only embedded input is reported
+	nest    int           // summaries worked out inside one another to here (own)
+	heights *int          // the highest summary used by the summary being worked out (own)
+	routes  map[*fn]*seed // functions a framework calls with request data, and which parameters carry it (routes.go)
 
 	noSrc  bool   // the rule's sources are off (a summary run for parameters)
 	cls    string // class of the method being analysed, and its parent
