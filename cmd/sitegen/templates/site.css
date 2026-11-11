@@ -248,6 +248,7 @@ html[lang^="zh"] .sev b { position: absolute; width: 1px; height: 1px; overflow:
 .scores dd small { font-size: .38em; color: var(--muted); margin-left: .15em; }
 .scores dd span { display: block; margin-top: 8px; font: 14px/1.4 var(--sans); color: var(--muted); }
 .scores-key { margin: 6px 0 0; color: var(--muted); font-size: 15px; }
+main > h2 { margin-top: 72px; }
 .dots { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 14px; font-size: 0; }
 .dots i { width: 8px; height: 8px; border-radius: 50%; background: var(--bg-3); }
 .dots i.lit { background: var(--ember); box-shadow: 0 0 8px var(--glow); }
