@@ -939,11 +939,7 @@ func (p *Project) shrink(all bool) {
 
 // resolve finds the file and the function name a call in a's file reaches.
 func (p *Project) resolve(a *analysis, c callee) (string, string) {
-	p.unsure, p.ambig = false, ""
-	f, name := p.resolve1(a, c)
-	p.dep(a.file, f) // also when the answer about f comes from a memo
-	unsure, ambig := p.unsure, p.ambig
-	p.unsure, p.ambig = false, ""
+	f, name, unsure, ambig := p.target(a, c)
 	if f == "" && ambig != "" {
 		// Several files declare it and none is included: unsure only if one of
 		// them matters to the rule.
@@ -958,6 +954,19 @@ func (p *Project) resolve(a *analysis, c callee) (string, string) {
 		a.b.tooDeep() // the call may reach another file: the file's result says calls were not followed
 	}
 	return f, name
+}
+
+// target is resolve without asking, of a name several files declare (ambig),
+// whether one of them matters to the rule: relevance.go reads a file's calls
+// with it, as asking would read those files' calls, and through them maybe
+// this file's again, half read.
+func (p *Project) target(a *analysis, c callee) (f, name string, unsure bool, ambig string) {
+	p.unsure, p.ambig = false, ""
+	f, name = p.resolve1(a, c)
+	p.dep(a.file, f) // also when the answer about f comes from a memo
+	unsure, ambig = p.unsure, p.ambig
+	p.unsure, p.ambig = false, ""
+	return f, name, unsure, ambig
 }
 
 func (p *Project) resolve1(a *analysis, c callee) (string, string) {

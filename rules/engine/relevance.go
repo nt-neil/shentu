@@ -114,7 +114,7 @@ func (a *analysis) build() bool {
 						continue
 					}
 					if c, ok := x.callee(t, i); ok {
-						if f, name := a.proj.resolve(&x, c); f != "" {
+						if f, name, _, _ := a.proj.target(&x, c); f != "" {
 							cross[k] = append(cross[k], relNode{f, name})
 						}
 					}
