@@ -578,6 +578,9 @@ func (a *analysis) assign(st state, t []Token) (val, bool) {
 			} else if _, had := st[canonKey+key]; had {
 				delete(st, canonKey+key)
 			}
+			if a.js {
+				a.setRelative(st, key, rhs, t[k].Text == "=")
+			}
 		}
 		if cls != "" && len(tg) == 1 {
 			a.setType(tg[0].Text, cls)
@@ -1684,6 +1687,9 @@ func (a *analysis) guard(st state, atom []Token) (pos bool, keys []keyRef) {
 	}
 	if len(atom) == 0 {
 		return pos, nil
+	}
+	if keys := a.escapeCheck(st, atom); keys != nil {
+		return !pos, keys // the check passes where the path does not escape
 	}
 	// PHP empty($x) and isset($x): an empty or unset value carries no input.
 	if n := len(atom); a.php && n > 3 && (atom[0].word("empty") || atom[0].word("isset")) && atom[1].op("(") && closeOf(atom, 1) == n-1 {
