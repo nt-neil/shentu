@@ -74,8 +74,8 @@ lang = "php"
 applies = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "$_SERVER", "$_FILES", "$request"]
 framework = "wordpress"
 title = "An Elementor widget's settings are written by any user who can edit with Elementor"
-sources = ["->get_settings_for_display(", "->get_settings("]
-note = "Elementor widgets (render()) read their controls with get_settings_for_display(); contributors and up set them."
+sources = ["->get_settings_for_display("]
+note = "Elementor widgets (render()) read their controls with get_settings_for_display(); contributors and up set them. Not get_settings(): WP_Widget and WooCommerce settings pages have one of that name too, and what it returns there is set by administrators."
 refs = ["https://developers.elementor.com/docs/widgets/widget-rendering/"]
 
 [[route.samples]]
@@ -98,6 +98,19 @@ class Box_Widget extends \Elementor\Widget_Base {
 		global $wpdb;
 		$s = $this->get_settings_for_display();
 		echo $wpdb->get_var("SELECT name FROM {$wpdb->prefix}teams WHERE id = " . absint($s['team']));
+	}
+}
+'''
+
+[[route.samples]]
+kind = "safe"
+note = "WP_Widget::get_settings() returns what an administrator saved for the widget"
+code = '''<?php
+class Box_Widget extends WP_Widget {
+	public function widget($args, $instance) {
+		global $wpdb;
+		$all = $this->get_settings();
+		echo $wpdb->get_var("SELECT name FROM {$wpdb->prefix}teams WHERE id = " . $all[$this->number]['team']);
 	}
 }
 '''
