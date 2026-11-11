@@ -2132,6 +2132,9 @@ func (a *analysis) sink(st state, t []Token, i int, s *pat) {
 		if cond != nil && len(cond.receiver) > 0 && !a.recvIs(cond.receiver, recv) {
 			return // finders.find(path) is not a MongoDB collection
 		}
+		if cond != nil && len(cond.notReceiver) > 0 && a.recvSurely(cond.notReceiver, recv) {
+			return // (new WP_Query)->query($args): a query built from an arguments array, not SQL
+		}
 	}
 	whole := cond != nil && cond.whole
 	emb := false

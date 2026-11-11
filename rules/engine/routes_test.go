@@ -260,3 +260,38 @@ func missingClasses(e *Engine, r rules.Route) bool {
 	}
 	return true
 }
+
+// register_rest_route's handlers in one array, or one array per method (as
+// WordPress core and most plugins write it): every callback and
+// permission_callback, in a function or a method of the class, gets the request.
+func TestRouteRestNestedArrays(t *testing.T) {
+	e := engineForTest(t)
+	sink := func(name string) string {
+		return "\tpublic function " + name + "($request) {\n\t\tglobal $wpdb;\n\t\treturn $wpdb->query(\"DELETE FROM t WHERE id = \" . $request['id']);\n\t}\n"
+	}
+	class := func(args string) string {
+		return "<?php\nclass Items {\n\tpublic function routes() {\n\t\tregister_rest_route('shop/v1', '/item', " + args + ");\n\t}\n" +
+			sink("get_item") + sink("drop_item") + sink("can") + "}\n"
+	}
+	for _, c := range []struct {
+		name, args string
+		want       []int // lines of the queries reported
+	}{
+		{"one array", "array('methods' => 'GET', 'callback' => array($this, 'get_item'), 'permission_callback' => '__return_true')", []int{8}},
+		{"one array per method", "array(array('methods' => 'GET', 'callback' => array($this, 'get_item'), 'permission_callback' => array($this, 'can')), " +
+			"array('methods' => 'DELETE', 'callback' => array($this, 'drop_item')), 'schema' => array($this, 'schema'))", []int{8, 12, 16}},
+		{"short arrays", "[['methods' => 'GET', 'callback' => [$this, 'get_item']], ['methods' => 'DELETE', 'callback' => [$this, 'drop_item']]]", []int{8, 12}},
+	} {
+		fs, err := e.Scan("php", "a.php", []byte(class(c.args)))
+		var got []int
+		for _, f := range fs {
+			if !slices.Contains(got, f.Line) {
+				got = append(got, f.Line)
+			}
+		}
+		slices.Sort(got)
+		if err != nil || !slices.Equal(got, c.want) {
+			t.Errorf("%s: reported at %v (err %v), want %v", c.name, got, err, c.want)
+		}
+	}
+}

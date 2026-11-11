@@ -27,7 +27,7 @@ type modBinding struct {
 // normalizeModules applies the rewrite to a JavaScript (or stripped
 // TypeScript) token stream.
 func normalizeModules(toks []Token, b *budget) []Token {
-	t := joinArrays(unwrapCallees(toks))
+	t := joinArrays(unwrapCallees(toks), b)
 	m := &modScope{t: t, cl: closers(t), binds: map[string][]scoped{}, shadows: map[string][]scoped{}, tooMany: map[string]modBinding{}, b: b}
 	m.enc = enclosing(t, m.cl)
 	m.collect()
@@ -121,8 +121,12 @@ func (m *modScope) resolve(name string, u int) (modBinding, bool) {
 
 // joinArrays rewrites [a, b].join(s) to (a + s + b), so a value joined from an
 // array of parts is built from each part, as a concatenation is: a sink that
-// needs the SQL text itself built from input then sees it.
-func joinArrays(t []Token) []Token {
+// needs the SQL text itself built from input then sees it. The separator is
+// written between the parts as long as that at most doubles the join's tokens;
+// past that (a long separator between many parts: the copies grow with the
+// product of the two) the other gaps get an empty string, the separator having
+// been read once already. The tokens added count toward the file's cap.
+func joinArrays(t []Token, b *budget) []Token {
 	cl := closers(t)
 	var out []Token
 	for i := 0; i < len(t); i++ {
@@ -137,14 +141,26 @@ func joinArrays(t []Token) []Token {
 				line := t[i]
 				line.Text = "("
 				out = append(out, line)
+				room := e - i // separator tokens that may still be copied
 				for k, part := range splitTop(t[i+1:c], isOp(",")) {
 					if len(part) > 0 && part[0].op("...") {
 						part = part[1:]
 					}
 					if k > 0 {
-						out = append(out, Token{Kind: Op, Text: "+", Line: part0Line(part, line.Line)})
-						out = append(out, sep...)
-						out = append(out, Token{Kind: Op, Text: "+", Line: part0Line(part, line.Line)})
+						l := part0Line(part, line.Line)
+						out = append(out, Token{Kind: Op, Text: "+", Line: l})
+						added := 3
+						if k == 1 || len(sep) <= room {
+							out = append(out, sep...)
+							room -= len(sep)
+							added = len(sep) + 2
+						} else {
+							out = append(out, Token{Kind: Str, Line: l})
+						}
+						out = append(out, Token{Kind: Op, Text: "+", Line: l})
+						for range added {
+							b.token()
+						}
 					}
 					out = append(out, part...)
 				}
@@ -411,8 +427,23 @@ func (m *modScope) declarations() {
 			return i + 1
 		case at(i).op("{") || at(i).op("["):
 			c := closeAt(cl, i)
+			// Each token is read once: a default value (an expression, not
+			// names) and a declaration of its own inside it are skipped, the
+			// loop below reading that one. Nested, each was read again by
+			// every pattern around it.
 			for k := i + 1; k < c && k < len(t); k++ {
+				if !m.b.step() {
+					return c + 1
+				}
 				switch {
+				case t[k].op("="):
+					for k+1 < c && !t[k+1].op(",") && !isClose(t[k+1]) {
+						if k++; isOpen(t[k]) {
+							k = closeAt(cl, k)
+						}
+					}
+				case (t[k].word("const") || t[k].word("let") || t[k].word("var")) && (at(k+1).op("{") || at(k+1).op("[")):
+					k = closeAt(cl, k+1)
 				case t[k].Kind == Ident && at(k+1).op(":") && at(i).op("{"):
 					// a key: the name follows the ":"
 				case t[k].Kind == Ident && (at(k-1).op("{") || at(k-1).op(",") || at(k-1).op("[") || at(k-1).op(":") || at(k-1).op("...")):
@@ -434,6 +465,9 @@ func (m *modScope) declarations() {
 		return def
 	}
 	for i := 0; i < len(t); i++ {
+		if !m.b.step() {
+			return // the clock ran out: the scan says so (ErrLimit)
+		}
 		tk := t[i]
 		member := i > 0 && memberOp(false, t[i-1])
 		switch {

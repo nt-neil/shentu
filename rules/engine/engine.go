@@ -79,6 +79,7 @@ type argCond struct {
 	minLen         int    // literal: the shortest string that counts
 	exclude        []*regexp.Regexp
 	receiver       []*pat // a method sink counts only on a receiver these name (receiver.go)
+	notReceiver    []*pat // nor on an object surely of one of these classes (receiver.go)
 }
 
 // New compiles rules. A pattern that does not lex as code of its language is an error.
@@ -173,7 +174,7 @@ func compileRule(r rules.Rule) (*crule, error) {
 		for _, list := range []struct {
 			raw []string
 			out *[]*pat
-		}{{a.When, &ac.when}, {a.Unless, &ac.unless}, {a.Receiver, &ac.receiver}} {
+		}{{a.When, &ac.when}, {a.Unless, &ac.unless}, {a.Receiver, &ac.receiver}, {a.NotReceiver, &ac.notReceiver}} {
 			for _, raw := range list.raw {
 				p, err := compilePattern(r.Lang, raw, false)
 				if err != nil {

@@ -1,5 +1,7 @@
 package engine
 
+import "strings"
+
 // recvDefs maps, for one file, a name to what the code says it holds: the
 // right side of each assignment to it (x = ..., self.x = ..., with or without
 // an annotation) and the annotation of a parameter or variable of that name
@@ -153,6 +155,75 @@ func (a *analysis) recvIs(ps []*pat, recv []Token) bool {
 		return false
 	}
 	return is(recv, 0)
+}
+
+// recvSurely reports whether the receiver of a method sink is surely an object
+// of one of the classes the patterns name (PHP): new Class(...) itself, or a
+// variable that the file only ever assigns such an object ($q = new Class) and
+// otherwise only calls or reads through ($q->...). Any other use of the name
+// anywhere in the file (a parameter, global, foreach ... as, list(), a
+// reference, another value, an argument) leaves it unknown, and the sink
+// counts: the file is read as a whole, so a name of the same spelling in
+// another function counts too.
+func (a *analysis) recvSurely(ps []*pat, recv []Token) bool {
+	t := stripParens(recv)
+	if a.newOf(ps, t) {
+		return true
+	}
+	if len(t) != 1 || t[0].Kind != Var {
+		return false
+	}
+	toks, defs := a.ftoks, 0
+	for i, tk := range toks {
+		if tk.Kind != Var || tk.Text != t[0].Text {
+			continue
+		}
+		switch {
+		case i+1 < len(toks) && toks[i+1].op("->"):
+		case i+1 < len(toks) && toks[i+1].op("=") && (i == 0 || !toks[i-1].op("&") && !toks[i-1].op("->") && !toks[i-1].op("::")):
+			j := i + 2
+			for depth := 0; j < len(toks) && !(depth == 0 && toks[j].op(";")); j++ {
+				if isOpen(toks[j]) {
+					depth++
+				} else if isClose(toks[j]) {
+					if depth--; depth < 0 {
+						break
+					}
+				}
+			}
+			if !a.newOf(ps, stripParens(toks[i+2:j])) {
+				return false
+			}
+			defs++
+		default:
+			return false
+		}
+	}
+	return defs > 0
+}
+
+// newOf reports whether t is new Class or new Class(...), and nothing more,
+// with Class one of the patterns (\Class too).
+func (a *analysis) newOf(ps []*pat, t []Token) bool {
+	if len(t) < 2 || t[0].Kind != Ident || !strings.EqualFold(t[0].Text, "new") {
+		return false
+	}
+	k := 1
+	if t[k].op("\\") {
+		k++
+	}
+	if k >= len(t) || t[k].Kind != Ident {
+		return false
+	}
+	if k+1 < len(t) && !(t[k+1].op("(") && closeOf(t, k+1) == len(t)-1) {
+		return false // new Class\Sub, new Class()->member, new Class() . $x
+	}
+	for _, p := range ps {
+		if p.at(t, k, false) {
+			return true
+		}
+	}
+	return false
 }
 
 func lineStart(toks []Token, i int) bool {

@@ -90,7 +90,9 @@ func (a *analysis) build() bool {
 	if sc.direct != nil {
 		return true
 	}
-	sc.ff.components(freeBudget())
+	if !a.graph() {
+		return false
+	}
 	rb := &budget{maxTok: 1 << 40, deadline: a.b.deadline}
 	direct, cross := map[string]bool{}, map[string][]relNode{}
 	keys := make([]string, 0, len(sc.funcs))

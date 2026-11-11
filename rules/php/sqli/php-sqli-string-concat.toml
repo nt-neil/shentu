@@ -53,3 +53,28 @@ code = '''
 $id = intval($_GET['id']);
 $rows = mysqli_query($db, "SELECT * FROM posts WHERE id = $id");
 '''
+
+[[samples]]
+kind = "safe"
+note = "WordPress's query classes take an array of arguments and build the SQL themselves, escaping it"
+code = '''
+<?php
+$q = new WP_Query;
+$posts = $q->query(array('s' => $_GET['s'], 'post_type' => 'post'));
+$users = (new WP_User_Query())->query(array('search' => $_GET['user']));
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "a receiver the file says nothing about may be a database connection"
+code = '''
+<?php
+function rows($db) {
+	return $db->query("SELECT * FROM t WHERE name = '" . $_GET['name'] . "'");
+}
+'''
+
+# WordPress's *_Query classes: query() takes an arguments array, not SQL.
+[[args]]
+sinks = ["->query("]
+not_receiver = ["WP_Query", "WP_Comment_Query", "WP_User_Query", "WP_Term_Query", "WP_Site_Query", "WP_Network_Query"]
