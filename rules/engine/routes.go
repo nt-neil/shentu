@@ -467,7 +467,9 @@ func (a *analysis) routeParams(f *fn, x state) {
 			continue
 		}
 		for _, m := range sd.members {
-			x[p+sepCh+"."+m] = entry{taint: true}
+			if rm := a.r.rule.RouteMembers; rm == nil || slices.Contains(rm, m) {
+				x[p+sepCh+"."+m] = entry{taint: true}
+			}
 		}
 	}
 }

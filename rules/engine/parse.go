@@ -1,6 +1,9 @@
 package engine
 
-import "strings"
+import (
+	"slices"
+	"strings"
+)
 
 // The parser turns tokens into a light statement tree: simple statements, if/else,
 // loops, blocks and function bodies. It is not a grammar; it only finds what the
@@ -697,13 +700,13 @@ func (p *braceParser) funcLiteral(out *[]Token) (*fn, bool) {
 		var params []Token
 		switch n := len(o); {
 		case n > 0 && o[n-1].Kind == Ident:
-			params, o = o[n-1:], o[:n-1]
+			params, o = slices.Clone(o[n-1:]), o[:n-1]
 		case n > 0 && o[n-1].op(")"):
 			open := openOf(o, n-1)
 			if !o[open].op("(") {
 				return nil, false
 			}
-			params, o = o[open+1:n-1], o[:open]
+			params, o = slices.Clone(o[open+1:n-1]), o[:open] // a copy: what is gathered next is written over o
 		default:
 			return nil, false
 		}
