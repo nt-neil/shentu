@@ -18,6 +18,7 @@ func TestNotReceiver(t *testing.T) {
 		{"$wpdb", "<?php\nglobal $wpdb;\n$wpdb->query(\"DELETE FROM t WHERE id = \" . $_GET['x']);\n", true},
 		{"receiver of unknown type", "<?php\nfunction f($db, $sql) {\n\treturn $db->query($sql . $_GET['x']);\n}\n", true},
 		{"assigned a query class and something else", "<?php\n$q = new WP_Query;\nif ($raw) { $q = $db; }\n$q->query('SELECT ' . $_GET['x']);\n", true},
+		{"also passed to a call", "<?php\n$q = new WP_Query();\n$r = $q->query(array('s' => $_GET['x']));\nupdate_post_thumbnail_cache($q);\n$this->log($q, 1);\n", false},
 		// Not surely a query class: each of these may be a database connection.
 		{"ternary naming $wpdb", "<?php\nglobal $wpdb;\n$q = $c ? $wpdb : new WP_Query;\n$wpdb->query('DELETE FROM t WHERE id = ' . $_GET['x']);\n", true},
 		{"parameter of the same name", "<?php\n$q = new WP_Query;\nfunction f($q) {\n\treturn $q->query('SELECT ' . $_GET['x']);\n}\n", true},
@@ -27,6 +28,10 @@ func TestNotReceiver(t *testing.T) {
 		{"new of a member", "<?php\n$r = (new WP_Query())->db->query('SELECT ' . $_GET['x']);\n", true},
 		{"a class of a longer name", "<?php\n$q = new WP_QueryX;\n$q->query('SELECT ' . $_GET['x']);\n", true},
 		{"a class under its namespace", "<?php\n$q = new WP_Query\\Db;\n$q->query('SELECT ' . $_GET['x']);\n", true},
+		{"passed to a function of the file taking it by reference", "<?php\nfunction swap(&$x) { global $db; $x = $db; }\n$q = new WP_Query();\nswap($q);\n$q->query('SELECT ' . $_GET['x']);\n", true},
+		{"passed to a method of the file taking it by reference", "<?php\nclass C { function pick($a, &$x) { $x = $a; } }\n$q = new WP_Query();\n$c->pick($db, $q);\n$q->query('SELECT ' . $_GET['x']);\n", true},
+		{"closure use of the same name", "<?php\n$q = new WP_Query;\n$f = function () use ($q) { return 1; };\nfunction g($db) { $q = $db; return $q->query('SELECT ' . $_GET['x']); }\n", true},
+		{"a parameter declared by reference", "<?php\n$q = new WP_Query;\nfunction g(&$q) {\n\treturn $q->query('SELECT ' . $_GET['x']);\n}\n", true},
 		{"by reference", "<?php\n$q = new WP_Query;\n$q = &$db;\n$q->query('SELECT ' . $_GET['x']);\n", true},
 	} {
 		fs, err := e.Scan("php", "a.php", []byte(c.src))
