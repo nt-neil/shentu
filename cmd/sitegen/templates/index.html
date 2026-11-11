@@ -195,7 +195,7 @@
     for (var k = 0; k < P.length; k++) {
       var e = P[k], s = Math.sin(t / 900 + e.p); e.y -= e.v * gust; if (e.y < 0) e.y = 1;
       x.fillStyle = 'rgba(255, 214, 150,' + (.22 + .35 * s * s) + ')';
-      x.beginPath(); x.arc((.5 + (e.x - .5) * .16 * gust ** .3 + Math.sin(t / 2400 + e.p) * .005) * w, e.y * h, e.r, 0, 6.29); x.fill();
+      x.beginPath(); x.arc((.5 + (e.x - .5) * .44 * Math.min(2, gust ** .3) + Math.sin(t / 2400 + e.p) * .014) * w, e.y * h, e.r, 0, 6.29); x.fill();
     }
     requestAnimationFrame(frame);
   }
