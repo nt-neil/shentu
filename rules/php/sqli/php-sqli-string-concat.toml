@@ -5,10 +5,16 @@ cwe = "CWE-89"
 severity = "high"
 title = "Request input concatenated or interpolated into a SQL string"
 sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE"]
-sinks = ["mysqli_query", "->query(", "->exec(", "pg_query"]
-sanitizers = ["intval", "(int)", "->prepare(", "pg_query_params"]
+sinks = ["mysqli_query", "->query(", "->exec(", "pg_query", "->prepare("]
+sanitizers = ["intval", "(int)", "->prepare(", "pg_query_params", "count(", "sanitize_sql_orderby("]
 fix = "Use a prepared statement with bound parameters (PDO::prepare + execute, mysqli bind_param); never build SQL with string concatenation or sprintf. Escaping (mysqli_real_escape_string) only protects a value inside quotes."
 refs = ["CVE-2026-56738"]
+
+# prepare() binds the values given later to execute(); input written into the
+# statement it prepares is SQL.
+[[args]]
+sinks = ["->prepare("]
+arg = 1
 
 [[samples]]
 kind = "vulnerable"
@@ -52,6 +58,15 @@ code = '''
 <?php
 $id = intval($_GET['id']);
 $rows = mysqli_query($db, "SELECT * FROM posts WHERE id = $id");
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "prepare does not help a value written into the statement it prepares"
+code = '''
+<?php
+$stmt = $pdo->prepare("SELECT id, email FROM users WHERE name = '" . $_GET['name'] . "'");
+$stmt->execute();
 '''
 
 [[samples]]
