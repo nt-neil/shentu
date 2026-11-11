@@ -13,6 +13,9 @@ refs = ["CVE-2026-56738"]
 # prepare() binds the values given later to execute() (PDO, mysqli) or after
 # the format ($wpdb->prepare); input written into the statement or format
 # itself is SQL. This rule alone reports it, also for $wpdb.
+# Known false positive (kept over a miss): a placeholder list made by a
+# callback that returns a constant, implode(',', array_map(fn($v) => '%d', $ids)),
+# is still taken for input (engine, v0.2.6); array_fill(0, count($ids), '%d') is not.
 [[args]]
 sinks = ["->prepare("]
 arg = 1
