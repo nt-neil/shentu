@@ -617,7 +617,10 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 							continue
 						case res.Timed:
 							// The clock or the heap ran out: what the finished rules found
-							// is kept, and the next audit goes on from there.
+							// is kept, and the next audit goes on from there. Only the
+							// audit's clock or heap stops the other files: a file over its
+							// own time limit (a busy server, a large file) waits for the
+							// next audit, and this one goes on with the rest.
 							addNew(found)
 							fs := st.entry(p, hash[p])
 							next := &partResult{Rules: append(slices.Clone(part.Rules), res.Done...), Found: found,
@@ -632,7 +635,7 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 								}
 							}
 							fs.Part = next
-							cut = true
+							cut = !res.FileTime
 							continue
 						}
 						k = &passResult{Found: found, Reason: unfinishedReason(err)}
