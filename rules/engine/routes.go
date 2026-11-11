@@ -108,6 +108,9 @@ func (e *Engine) compileRoutes(rs []rules.Route) error {
 // $_POST['password']). A rule for one field of the request does not take every
 // handler parameter; any other rule with sources does.
 func (c *croute) takes(r *crule) bool {
+	if r.rule.RouteInput != nil && !*r.rule.RouteInput {
+		return false // the rule says so: only its own sources (route_input = false)
+	}
 	for _, s := range r.rule.Sources {
 		if !c.field(s) {
 			return true
@@ -462,12 +465,16 @@ func (a *analysis) routeParams(f *fn, x state) {
 		if sd.bound && i < len(parts) && classTyped(parts[i]) {
 			continue // Laravel's Invoice $invoice: the model the framework looked up
 		}
-		if len(sd.members) == 0 {
+		members := sd.members
+		if m, ok := sd.route.r.NamedMembers[p]; ok {
+			members = m
+		}
+		if len(members) == 0 {
 			x[p] = entry{taint: true}
 			continue
 		}
-		for _, m := range sd.members {
-			x[p+sepCh+"."+m] = entry{taint: true}
+		for _, m := range members {
+			x[p+sepCh+"."+strings.ReplaceAll(m, ".", sepCh+".")] = entry{taint: true}
 		}
 	}
 }

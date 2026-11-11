@@ -164,6 +164,38 @@ func TestRouteOnlyForGeneralRules(t *testing.T) {
 	}
 }
 
+// A rule with route_input = false (one for the Host header) takes its own
+// sources only, not what a route model makes input: req.query.next is not the
+// host, req.get('host') still is.
+func TestRouteInputOff(t *testing.T) {
+	off := false
+	rule := func(id string, routeInput *bool) rules.Rule {
+		return rules.Rule{ID: id, Lang: "js", Class: "open-redirect", CWE: "CWE-601", Severity: "medium", Title: "t",
+			Sources: []string{"req.get('host')", "req.hostname"}, Sinks: []string{"res.redirect("}, Sanitizers: []string{}, RouteInput: routeInput}
+	}
+	e, err := New([]rules.Rule{rule("default", nil), rule("host-only", &off)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		src  string
+		want []string
+	}{
+		{"app.get('/go', (req, res) => {\n  res.redirect(req.query.next);\n});\n", []string{"default"}},
+		{"app.get('/go', (req, res) => {\n  res.redirect('https://' + req.get('host') + '/x');\n});\n", []string{"default", "host-only"}},
+	} {
+		fs, _ := e.Scan("js", "a.js", []byte(c.src))
+		var got []string
+		for _, f := range fs {
+			got = append(got, f.RuleID)
+		}
+		slices.Sort(got)
+		if !slices.Equal(got, c.want) {
+			t.Errorf("%q: reported by %v, want %v", c.src, got, c.want)
+		}
+	}
+}
+
 // The rules a route model is not for are exactly those for one field of the
 // request (a password) and those without sources: every other rule with
 // sources gets the handlers' parameters.

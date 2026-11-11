@@ -33,6 +33,7 @@ severity = "high"                  # critical | high | medium | low
 tier = "info"                      # optional: info (default) | alert, see "Tiers"
 title = "Request input concatenated into a SQL string"
 frameworks = ["laravel"]           # optional: laravel, wordpress, django, flask, express, nestjs, nextjs
+route_input = false                # optional: route handlers' parameters are not this rule's input, only its sources (a rule for the Host header)
 sources = ["$_GET", "$request->input("]   # where user input comes from; [] for a rule without sources
 sinks = ["mysqli_query", "->query("]      # the dangerous calls
 sanitizers = ["intval", "->prepare("]     # calls whose result is safe for these sinks; [] if none
