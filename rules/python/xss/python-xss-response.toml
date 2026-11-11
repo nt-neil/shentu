@@ -1,0 +1,60 @@
+id = "python-xss-response"
+lang = "python"
+class = "xss"
+cwe = "CWE-79"
+severity = "medium"
+tier = "info"
+title = "Request value written into an HTML response without escaping"
+frameworks = ["django", "flask"]
+sources = ["request.args", "request.form", "request.values", "request.cookies", "request.GET", "request.POST", "request.COOKIES", "request.query_params", "request.path", "request.headers"]
+sinks = ["HttpResponse(", "HttpResponseBadRequest(", "HttpResponseNotFound(", "make_response(", "Response(", "flask.Response("]
+sanitizers = ["escape(", "html.escape(", "markupsafe.escape(", "conditional_escape(", "format_html(", "bleach.clean(", "urllib.parse.quote(", "quote("]
+fix = "Render the page with a template (Django and Jinja templates escape by default), or escape each value with django.utils.html.escape() / markupsafe.escape() before building HTML by hand."
+refs = ["CVE-2023-49277"]
+
+[[args]]
+context = ["html", "attr", "url", "js"]
+unless = ["content_type=\"application/json\"", "content_type=\"text/plain\"", "mimetype=\"application/json\"", "mimetype=\"text/plain\"", "content_type='application/json'", "content_type='text/plain'", "mimetype='application/json'", "mimetype='text/plain'"]
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+def search(request):
+    q = request.GET.get('q', '')
+    return HttpResponse('<h1>No results for ' + q + '</h1>')
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+@app.route('/hello')
+def hello():
+    name = request.args.get('name', '')
+    return make_response(f"<p>Hello {name}</p>", 200)
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+def search(request):
+    q = request.GET.get('q', '')
+    return HttpResponse('<h1>No results for ' + escape(q) + '</h1>')
+'''
+
+[[samples]]
+kind = "safe"
+note = "templates escape the values they are given"
+code = '''
+@app.route('/hello')
+def hello():
+    name = request.args.get('name', '')
+    return make_response(render_template('hello.html', name=name), 200)
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+@app.route('/echo')
+def echo_text():
+    return Response(request.args.get('m', ''), mimetype='text/plain')
+'''

@@ -4,8 +4,8 @@ class = "path-traversal"
 cwe = "CWE-22"
 severity = "high"
 title = "Request value joined into a path that is read, written or sent"
-frameworks = ["express"]
-sources = ["req.query", "req.params", "req.body"]
+frameworks = ["express", "nestjs", "nextjs"]
+sources = ["req.query", "req.params", "req.body", "@Query(", "@Body(", "@Param(", "@Req(", "req.originalUrl", "^request.nextUrl", "^req.nextUrl", "^request.url", "^req.url", "^searchParams", "^request.json(", "^req.json(", "^request.formData(", "^req.formData(", "^formData.get("]
 sinks = ["res.sendFile(", "res.download(", "fs.readFile(", "fs.createReadStream(", "fs.writeFile(", "fs.unlink(", "readFileSync("]
 sanitizers = ["path.basename(", ".startsWith("]
 fix = "Use res.sendFile(name, { root }) or resolve the path and require it to start with the base directory plus path.sep before touching the file."
@@ -53,5 +53,365 @@ app.get("/log", (req, res) => {
   const p = path.resolve(LOGS, String(req.query.file));
   if (!p.startsWith(LOGS)) return res.sendStatus(400);
   fs.createReadStream(p).pipe(res);
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+dialect = "ts"
+code = '''
+@Controller("files")
+export class FilesController {
+  @Get(":name")
+  get(@Param("name") name: string, @Res() res: Response): void {
+    res.sendFile(path.join(UPLOADS, name));
+  }
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+dialect = "ts"
+note = "Next.js: new URL(request.url).searchParams"
+code = '''
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const file = searchParams.get("file") ?? "";
+  return new Response(fs.createReadStream(path.join(LOGS, file)) as unknown as ReadableStream);
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+dialect = "tsx"
+note = "Next.js page: searchParams is a prop"
+code = '''
+export default async function Page({ searchParams }: { searchParams: Promise<{ doc?: string }> }) {
+  const { doc } = await searchParams;
+  const text = await new Promise<string>((ok) => fs.readFile(`/srv/docs/${doc}`, "utf8", (_e, d) => ok(d)));
+  return <pre>{text}</pre>;
+}
+'''
+
+[[samples]]
+kind = "safe"
+dialect = "ts"
+code = '''
+@Controller("files")
+export class FilesController {
+  @Get(":name")
+  get(@Param("name") name: string, @Res() res: Response): void {
+    res.sendFile(path.basename(name), { root: UPLOADS });
+  }
+}
+'''
+
+[[samples]]
+kind = "safe"
+dialect = "ts"
+code = '''
+export async function GET(req: NextRequest) {
+  const file = path.basename(req.nextUrl.searchParams.get("file") ?? "");
+  return new Response(fs.createReadStream(path.join(LOGS, file)) as unknown as ReadableStream);
+}
+'''
+
+[[samples]]
+kind = "safe"
+dialect = "tsx"
+code = '''
+export default async function Page({ searchParams }: { searchParams: Promise<{ doc?: string }> }) {
+  const { doc } = await searchParams;
+  const name = path.basename(String(doc));
+  const text = await new Promise<string>((ok) => fs.readFile(`/srv/docs/${name}`, "utf8", (_e, d) => ok(d)));
+  return <pre>{text}</pre>;
+}
+'''
+
+[[samples]]
+kind = "safe"
+dialect = "ts"
+note = "the name is checked against a fixed list"
+code = '''
+const DOCS = new Set<string>(["terms.pdf", "privacy.pdf"]);
+export async function GET(request: Request) {
+  const name = new URL(request.url).searchParams.get("doc") ?? "";
+  if (!DOCS.has(name)) return new Response(null, { status: 404 });
+  return new Response(fs.createReadStream(path.join(DOCS_DIR, name)) as unknown as ReadableStream);
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "a member of fs, called through fs.promises"
+code = '''
+const fs = require("fs");
+app.get("/doc", async (req, res) => {
+  res.send(await fs.promises.readFile(path.join(DOCS, req.query.name), "utf8"));
+});
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+const fs = require("fs");
+app.get("/doc", async (req, res) => {
+  res.send(await fs.promises.readFile(path.join(DOCS, path.basename(String(req.query.name))), "utf8"));
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "readFileSync as a member of fs and of require('fs')"
+code = '''
+import fs from "fs";
+app.get("/raw", (req, res) => {
+  const a = fs.readFileSync(path.join(DOCS, req.query.a));
+  const b = require("node:fs").readFileSync("/srv/docs/" + req.query.b);
+  res.send(Buffer.concat([a, b]));
+});
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+app.get("/raw", (req, res) => {
+  const a = fs.readFileSync(path.join(DOCS, path.basename(String(req.query.a))));
+  const b = require("node:fs").readFileSync(path.join(DOCS, "index.txt"));
+  res.send(Buffer.concat([a, b]));
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "a destructured alias of readFileSync"
+code = '''
+const { readFileSync: load } = require("fs");
+app.get("/raw", (req, res) => {
+  res.send(load(path.join(DOCS, req.params.file)));
+});
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+const { readFileSync: load } = require("fs");
+app.get("/raw", (req, res) => {
+  res.send(load(path.join(DOCS, path.basename(req.params.file))));
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+dialect = "ts"
+note = "fs/promises imported under another name"
+code = '''
+import fsp from "node:fs/promises";
+export async function GET(request: NextRequest) {
+  const name = request.nextUrl.searchParams.get("f") ?? "";
+  return new Response(await fsp.readFile(`/srv/files/${name}`));
+}
+'''
+
+[[samples]]
+kind = "safe"
+dialect = "ts"
+code = '''
+import fsp from "node:fs/promises";
+export async function GET(request: NextRequest) {
+  const name = path.basename(request.nextUrl.searchParams.get("f") ?? "");
+  return new Response(await fsp.readFile(`/srv/files/${name}`));
+}
+'''
+
+[[samples]]
+kind = "safe"
+note = "path.join normalizes, and the result must start with the base plus a separator"
+code = '''
+const REPORTS = "/var/app/reports";
+app.get("/report/:name", (req, res) => {
+  const file = path.join(REPORTS, req.params.name);
+  if (!file.startsWith(REPORTS + path.sep)) return res.sendStatus(404);
+  res.sendFile(file);
+});
+'''
+
+[[samples]]
+kind = "safe"
+dialect = "ts"
+note = "a path whose relative form from the base starts with .. leaves the base"
+code = '''
+const STORE = "/var/lib/app/store";
+function storedFile(key: string): string {
+  const file = path.join(STORE, key);
+  if (path.relative(STORE, file).startsWith("..")) throw new Error("outside the store");
+  return file;
+}
+app.get("/blob/:key", (req: Request, res: Response) => {
+  const file = path.join(STORE, req.params.key);
+  if (path.relative(STORE, file).startsWith("..")) throw new Error("outside the store");
+  res.download(file);
+});
+'''
+
+[[samples]]
+kind = "safe"
+note = "the relative path kept in a variable, checked for .. and ../"
+code = '''
+const MEDIA = path.resolve("media");
+app.get("/media", (req, res) => {
+  const target = path.resolve(MEDIA, String(req.query.p));
+  const rel = path.relative(MEDIA, target);
+  if (rel === ".." || rel.startsWith(".." + path.sep)) return res.status(403).end();
+  fs.createReadStream(target).pipe(res);
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "the check only logs: the request goes on to the file"
+code = '''
+const STORE = "/var/lib/app/store";
+app.get("/blob/:key", (req, res) => {
+  const file = path.join(STORE, req.params.key);
+  if (path.relative(STORE, file).startsWith("..")) console.warn("odd key", req.params.key);
+  res.sendFile(file);
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "the base itself comes from the request"
+code = '''
+app.get("/blob/:key", (req, res) => {
+  const file = path.join("/var/lib/app/store", req.params.key);
+  if (path.relative(String(req.query.root), file).startsWith("..")) return res.sendStatus(403);
+  res.sendFile(file);
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "the relative path is replaced before the check"
+code = '''
+const STORE = "/var/lib/app/store";
+app.get("/blob/:key", (req, res) => {
+  const file = path.join(STORE, req.params.key);
+  let rel = path.relative(STORE, file);
+  rel = String(req.query.hint ?? "");
+  if (rel.startsWith("..")) return res.sendStatus(403);
+  res.sendFile(file);
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "a prefix check without a separator also lets /var/lib/app/store-old through"
+code = '''
+const STORE = "/var/lib/app/store";
+app.get("/blob/:key", (req, res) => {
+  const file = path.join(STORE, req.params.key);
+  if (!file.startsWith(STORE)) return res.sendStatus(403);
+  res.sendFile(file);
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "the path is replaced after its relative form was taken"
+code = '''
+const STORE = "/var/lib/app/store";
+app.get("/blob/:key", (req, res) => {
+  let file = path.join(STORE, "index.json");
+  const rel = path.relative(STORE, file);
+  file = String(req.query.path);
+  if (rel.startsWith("..")) return res.sendStatus(403);
+  res.sendFile(file);
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "the check covers the joined parts, not the part that is sent"
+code = '''
+const STORE = "/var/lib/app/store";
+app.get("/blob", (req, res) => {
+  const dir = String(req.query.dir);
+  if (path.relative(STORE, STORE + "/" + dir + "/x").startsWith("..")) return res.sendStatus(403);
+  res.sendFile(dir);
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "the raw input is checked, but path.relative resolves it from the working directory, not the base"
+code = '''
+const STORE = "/var/lib/app/store";
+app.get("/blob/:key", (req, res) => {
+  const key = req.params.key;
+  if (path.relative(STORE, key).startsWith("..")) return res.sendStatus(403);
+  res.sendFile(path.join(STORE, key));
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "path.normalize keeps a relative input relative, so path.relative resolves it from the working directory"
+code = '''
+const STORE = "/var/lib/app/store";
+app.get("/blob/:key", (req, res) => {
+  const key = path.normalize(req.params.key);
+  if (path.relative(STORE, key).startsWith("..")) return res.sendStatus(403);
+  res.sendFile(path.join(STORE, key));
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "a base of .. lets the checked path start with .., which a join to another folder follows out"
+code = '''
+const STORE = "/var/lib/app/store";
+app.get("/blob/:key", (req, res) => {
+  const key = path.join("..", req.params.key);
+  if (path.relative("..", key).startsWith("..")) return res.sendStatus(403);
+  res.sendFile(path.join(STORE, key));
+});
+'''
+
+[[samples]]
+kind = "safe"
+note = "a class resolves the path in its configured folder and checks it"
+code = '''
+class Store {
+  constructor(dir) { this.dir = dir; }
+  open(id, res) {
+    const file = path.resolve(this.dir, id);
+    if (path.relative(this.dir, file).startsWith("..")) throw new Error("outside the store");
+    res.sendFile(file);
+  }
+}
+app.get("/blob/:id", (req, res) => store.open(req.params.id, res));
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "a relative base: from /app the checked path ../app/media/f is inside media, and the join leaves the store"
+code = '''
+const STORE = "/var/lib/app/store";
+app.get("/blob/:key", (req, res) => {
+  const key = path.join("media", req.params.key);
+  if (path.relative("media", key).startsWith("..")) return res.sendStatus(403);
+  res.sendFile(path.join(STORE, key));
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "a configured folder of unknown form is not taken as absolute"
+code = '''
+app.get("/blob/:id", (req, res) => {
+  const file = path.join(config.dir, req.params.id);
+  if (path.relative(config.dir, file).startsWith("..")) return res.sendStatus(403);
+  res.sendFile(path.join("/var/lib/app/store", file));
 });
 '''

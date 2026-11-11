@@ -4,8 +4,8 @@ class = "sqli"
 cwe = "CWE-89"
 severity = "medium"
 title = "Parsed request value (may be an object or array) passed straight into a query-builder condition"
-frameworks = ["express"]
-sources = ["req.query", "req.body"]
+frameworks = ["express", "nestjs", "nextjs"]
+sources = ["req.query", "req.body", "@Query(", "@Body(", "@Req(", "^request.json(", "^req.json("]
 sinks = [".where(", ".whereIn(", ".findOne(", ".findAll(", ".andWhere("]
 sanitizers = ["String(", "Number(", "parseInt(", "typeof"]
 fix = "Coerce each value to the expected scalar type (String(), Number()) or validate with a schema before using it in a condition; qs and JSON bodies can turn ?id=1 into an object."
@@ -29,4 +29,41 @@ app.post("/login", async (req, res) => {
   const user = await knex("users").where({ email: req.body.email }).first();
   res.json({ found: Boolean(user) });
 });
+'''
+
+[[samples]]
+kind = "vulnerable"
+dialect = "ts"
+note = "NestJS: an untyped @Query() object can carry nested operators"
+code = '''
+@Controller("users")
+export class UsersController {
+  @Get()
+  async list(@Query() filter: Record<string, unknown>) {
+    return knex("users").where(filter as object).select("id");
+  }
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+dialect = "ts"
+code = '''
+export async function POST(req: Request) {
+  const body = (await req.json()) as { email: string };
+  const user = await knex("users").where({ email: body.email }).first();
+  return Response.json({ found: Boolean(user) });
+}
+'''
+
+[[samples]]
+kind = "safe"
+dialect = "ts"
+code = '''
+export async function POST(req: Request) {
+  const body = (await req.json()) as { email: unknown };
+  if (typeof body.email !== "string") return new Response(null, { status: 400 });
+  const user = await knex("users").where({ email: body.email }).first();
+  return Response.json({ found: Boolean(user) });
+}
 '''

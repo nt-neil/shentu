@@ -106,6 +106,17 @@ func TestProject(t *testing.T) {
 			"a.php":   P + "$id = clean($_GET['id']);\nmysqli_query($db, \"S $id\");\n",
 			"lib.php": P + "function clean($v) { return intval($v); }\n",
 		}, nil, nil},
+		// The receiver condition reads the names of the file the sink is in, not
+		// the caller's: a collection made with pymongo there is one, a Django
+		// finder there is not, whatever the calling file imports.
+		{"py receiver from the callee's file: pymongo", map[string]string{
+			"views.py": "from django.http import JsonResponse\nfrom store import q\n\ndef view(request):\n    q(request.get_json())\n",
+			"store.py": "import pymongo\n\ncoll = pymongo.MongoClient().app.items\n\ndef q(x):\n    return coll.find(x)\n",
+		}, []string{"store.py:6"}, nil},
+		{"py receiver from the callee's file: not MongoDB", map[string]string{
+			"views.py": "import pymongo\nfrom store import q\n\ndef view(request):\n    coll = pymongo.MongoClient().app.items\n    q(request.get_json())\n",
+			"store.py": "from django.contrib.staticfiles import finders as coll\n\ndef q(x):\n    return coll.find(x)\n",
+		}, nil, nil},
 		{"php ambiguous function", map[string]string{
 			"a.php": P + "run($_GET['x']);\n",
 			"b.php": P + "function run($v) { system('ls ' . $v); }\n",

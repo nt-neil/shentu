@@ -1,0 +1,91 @@
+id = "php-xxe-libxml-noent"
+lang = "php"
+class = "xxe"
+cwe = "CWE-611"
+severity = "high"
+tier = "info"
+title = "XML parsed with external entities or DTD loading turned on"
+sources = []
+sinks = ["simplexml_load_string(", "simplexml_load_file(", "SimpleXMLElement(", "->loadXML(", "->load(", "->xml(", "libxml_disable_entity_loader("]
+sanitizers = []
+fix = "Parse untrusted XML without LIBXML_NOENT and LIBXML_DTDLOAD (PHP 8 then loads no external entities); if a DTD is really needed, parse only XML the application wrote itself."
+refs = ["CVE-2025-47778", "CVE-2023-38490"]
+
+[[args]]
+sinks = ["simplexml_load_string(", "simplexml_load_file(", "SimpleXMLElement(", "->loadXML(", "->load(", "->xml("]
+when = ["LIBXML_NOENT", "LIBXML_DTDLOAD", "LIBXML_DTDATTR"]
+
+[[args]]
+sinks = ["libxml_disable_entity_loader("]
+when = ["false"]
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+$xml = file_get_contents('php://input');
+$doc = simplexml_load_string($xml, 'SimpleXMLElement', LIBXML_NOENT);
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+$dom = new DOMDocument();
+$dom->loadXML($body, LIBXML_DTDLOAD | LIBXML_NOENT);
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+$xml = file_get_contents('php://input');
+$doc = simplexml_load_string($xml, 'SimpleXMLElement', LIBXML_NONET);
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+$dom = new DOMDocument();
+$dom->loadXML($body);
+$config->load('settings.ini');
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "flags kept in a variable are read where the variable is passed"
+code = '''
+<?php
+$flags = LIBXML_NOENT | LIBXML_DTDLOAD;
+$doc = new DOMDocument();
+$doc->loadXML($payload, $flags);
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+$flags = LIBXML_NONET;
+$doc = new DOMDocument();
+$doc->loadXML($payload, $flags);
+'''
+
+[[samples]]
+kind = "safe"
+note = "the flags are taken out with & ~"
+code = '''
+<?php
+$doc = new DOMDocument();
+$doc->loadXML($xml, $options & ~(LIBXML_NOENT | LIBXML_DTDLOAD));
+$sx = simplexml_load_string($xml, 'SimpleXMLElement', LIBXML_NONET & ~LIBXML_DTDLOAD);
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "~ takes out only the flag right after it: LIBXML_NOENT stays set"
+code = '''
+<?php
+$doc = new DOMDocument();
+$doc->loadXML($xml, ~LIBXML_DTDLOAD | LIBXML_NOENT);
+'''

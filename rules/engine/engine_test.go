@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -248,18 +249,18 @@ func TestEngineHostile(t *testing.T) {
 	R := strings.Repeat
 	for _, c := range []struct{ name, lang, src string }{
 		{"py [", "python", "x = " + R("[", 290000)},
-		{"js [", "js", "x = " + R("[", 290000)},
+		{"js [", "js", "x = " + R("[\n", 290000)}, // line breaks keep these from looking minified
 		{"php [", "php", "<?php $x = " + R("[", 290000)},
 		{"php (", "php", "<?php $x = " + R("(", 290000)},
-		{"js {", "js", "x = " + R("{", 290000)},
-		{"js f(", "js", "x = " + R("f(", 145000)},
+		{"js {", "js", "x = " + R("{\n", 290000)},
+		{"js f(", "js", "x = " + R("f(\n", 145000)},
 		{"php ternary chain", "php", "<?php $x = " + R("$a ? $b : ", 50000) + "1;"},
 		{"py long line", "python", "x = " + R("a + ", 200000) + "1\n"},
-		{"js long call", "js", "exec(" + R("req.query.a,", 100000) + ")"},
+		{"js long call", "js", "exec(" + R("req.query.a,\n", 100000) + ")"},
 		{"php nested ifs", "php", "<?php " + R("if ($a) { ", 20000) + "system($_GET['x']);" + R("}", 20000)},
-		{"js nested closures", "js", R("function(){", 20000) + "exec(req.query.x)" + R("}", 20000)},
+		{"js nested closures", "js", R("function(){\n", 20000) + "exec(req.query.x)" + R("}\n", 20000)},
 		{"php if/else in a loop", "php", "<?php function f(){ " + R("if ($c) { $a = $_GET['x']; } else { $a = 1; } ", 10000) + " system($a); }"},
-		{"js loops", "js", "function f(){" + R("for (const a of b) { x = x + req.query.y; } ", 10000) + "exec(x);}"},
+		{"js loops", "js", "function f(){" + R("for (const a of b) { x = x + req.query.y; }\n", 10000) + "exec(x);}"},
 	} {
 		start := time.Now()
 		_, err := e.Scan(c.lang, "x", []byte(c.src))
@@ -294,5 +295,170 @@ func TestEngineHostile(t *testing.T) {
 		if _, err := e.Scan("php", "open.php", []byte(src)); err != ErrPartial {
 			t.Errorf("%q: err %v, want ErrPartial", src, err)
 		}
+	}
+}
+
+func TestMinified(t *testing.T) {
+	long := strings.Repeat("a=1;", 400) + "\n" // 1600 non-blank bytes on one line
+	bundle := strings.Repeat(long, 30)         // 48 KB
+	for _, c := range []struct {
+		name, src string
+		want      bool
+	}{
+		{"bundle", bundle, true},
+		{"small file with long lines", long + long, false},
+		{"hand-written with one long line", strings.Repeat("const x = req.query.x;\n", 2000) + long, false},
+		{"padded lines", strings.Repeat("exec(req.query.c);"+strings.Repeat(" ", 1200)+"\n", 40), false},
+		{"empty", "", false},
+	} {
+		if got := Minified([]byte(c.src)); got != c.want {
+			t.Errorf("%s: Minified = %v, want %v", c.name, got, c.want)
+		}
+	}
+	e := engineForTest(t)
+	// Every line is read, also in a minified file: nothing is skipped quietly.
+	mixed := bundle + "app.get('/x', (req, res) => { exec(req.query.c); });\n"
+	if fs, err := e.Scan("js", "mixed.js", []byte(mixed)); err != nil || len(fs) == 0 || fs[0].Line != 31 {
+		t.Errorf("mixed file: %v, %v; want a finding on line 31 and no error", fs, err)
+	}
+	// A minified file that stops early says so.
+	open := bundle + "const t = `" + strings.Repeat("x", 1200) + "\n"
+	if _, err := e.Scan("js", "open.js", []byte(open)); !errors.Is(err, ErrMinified) || !errors.Is(err, ErrPartial) {
+		t.Errorf("open literal: err = %v, want ErrMinified and ErrPartial", err)
+	}
+}
+
+// An output built from many joined parts is read in one pass: the HTML context
+// is fed part by part, not re-read from the start for every part, so a long
+// concatenation cannot push the file over the limits and out of the analysis.
+func TestContextLinear(t *testing.T) {
+	e := engineForTest(t)
+	src := "<?php\necho '<a href=\"' " + strings.Repeat(". $_GET['a'] . '\" x=\"' ", 20000) + ";\n"
+	start := time.Now()
+	fs, err := e.Scan("php", "concat.php", []byte(src))
+	if el := time.Since(start); errors.Is(err, ErrLimit) || el > 2*time.Second || len(fs) == 0 {
+		t.Errorf("20000 joined parts: %v, err %v, %d findings; want under 2s, no ErrLimit, reported", el, err, len(fs))
+	}
+}
+
+// Text in a string is matched outside its interpolations: "... $where" holds the
+// PHP variable $where, not the Mongo operator text '$where'.
+func TestTextSinkNotInInterpolation(t *testing.T) {
+	e := engineForTest(t)
+	src := "<?php\n$where = \"WHERE a = '\" . $_GET['a'] . \"'\";\n$rows = $wpdb->get_results(\"SELECT * FROM t $where\");\n"
+	fs, _ := e.Scan("php", "w.php", []byte(src))
+	sqli := false
+	for _, f := range fs {
+		if strings.HasPrefix(f.RuleID, "php-nosqli") {
+			t.Errorf("reported by %s at line %d", f.RuleID, f.Line)
+		}
+		sqli = sqli || strings.HasPrefix(f.RuleID, "php-sqli")
+	}
+	if !sqli {
+		t.Error("the SQL injection itself is not reported")
+	}
+	op := "<?php\n$c->find(array('$where' => \"this.a == '\" . $_GET['a'] . \"'\"));\n"
+	if fs, _ := e.Scan("php", "m.php", []byte(op)); len(fs) == 0 {
+		t.Error("'$where' operator text not reported")
+	}
+}
+
+// The source prefilter never drops a rule from a file where it reports: every
+// vulnerable sample keeps its own rule.
+func TestSourceNamesKeepsFindings(t *testing.T) {
+	rs, err := rules.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	e, err := New(rs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range rs {
+		for _, c := range e.byLang[r.Lang] {
+			if c.rule.ID != r.ID {
+				continue
+			}
+			for i, s := range r.Samples {
+				if s.Kind != "vulnerable" {
+					continue
+				}
+				code := sampleCode(s.Code)
+				b := newBudget(e.Limits)
+				names := nameSet(lex(r.Lang, code, b), map[string]bool{})
+				if !sourceNames(c, names, []byte(code)) {
+					t.Errorf("%s sample %d: source prefilter drops the rule", r.ID, i)
+				}
+			}
+		}
+	}
+}
+
+// The source prefilter is for a file scanned on its own. Input that arrives
+// through a function's parameters (library mode now; other files and framework
+// routes in a project mode) has no source name in the file, so library mode and
+// SourcePrefilter = false must not skip the rule.
+func TestSourcePrefilterSwitch(t *testing.T) {
+	rs, err := rules.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	e, err := New(rs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := []byte("<?php\nfunction find($name) {\n    return mysqli_query($db, \"SELECT * FROM t WHERE n = '\" . $name . \"'\");\n}\n")
+	toks := lex("php", string(src), newBudget(e.Limits))
+	names := nameSet(toks, map[string]bool{})
+	var r *crule
+	for _, c := range e.byLang["php"] {
+		if c.rule.ID == "php-sqli-string-concat" {
+			r = c
+		}
+	}
+	if r == nil || !hasSink(r, toks) {
+		t.Fatal("php-sqli-string-concat or its sink not found")
+	}
+	if !e.skipBySources(r, names, src, newSrcIndex(toks, nil)) {
+		t.Error("a file without source names is not skipped in the first pass")
+	}
+	e.Library = true
+	if e.skipBySources(r, names, src, newSrcIndex(toks, nil)) {
+		t.Error("library mode: parameters are input, the rule must not be skipped")
+	}
+	fs, _ := e.Scan("php", "lib.php", src)
+	if len(fs) == 0 {
+		t.Error("library mode: parameter -> sink not reported")
+	}
+	e.Library, e.SourcePrefilter = false, false
+	if e.skipBySources(r, names, src, newSrcIndex(toks, nil)) {
+		t.Error("SourcePrefilter off: the rule must not be skipped")
+	}
+}
+
+// Chained sinks are reported with the source prefilter off (as a project mode
+// runs) and in library mode, where the input comes in as a parameter.
+func TestChainSinkModes(t *testing.T) {
+	rs, err := rules.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	e, err := New(rs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.SourcePrefilter = false
+	src := []byte("<?php\n$r = Process::timeout(30)->run('ls ' . $request->input('d'));\n")
+	if fs, _ := e.Scan("php", "a.php", src); len(fs) == 0 {
+		t.Error("prefilter off: chained Process::run not reported")
+	}
+	js := []byte("app.get('/s', (req, res) => {\n  res.status(200).send(`<p>${req.query.q}</p>`);\n});\n")
+	if fs, _ := e.Scan("js", "a.js", js); len(fs) == 0 {
+		t.Error("prefilter off: chained res.send not reported")
+	}
+	e.Library = true
+	lib := []byte("<?php\nfunction run_in($dir) {\n    return Process::timeout(30)->run('ls ' . $dir);\n}\n")
+	if fs, _ := e.Scan("php", "lib.php", lib); len(fs) == 0 {
+		t.Error("library mode: parameter into a chained Process::run not reported")
 	}
 }

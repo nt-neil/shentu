@@ -1,0 +1,114 @@
+id = "php-xss-echo-html"
+lang = "php"
+class = "xss"
+cwe = "CWE-79"
+severity = "medium"
+tier = "info"
+title = "Request input written into the page without HTML escaping"
+frameworks = ["wordpress", "laravel"]
+sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "$_SERVER['PHP_SELF']", "$_SERVER['REQUEST_URI']", "$_SERVER['QUERY_STRING']", "$_SERVER['HTTP_", "get_query_var(", "->get_param(", "$request->input(", "$request->query(", "get_search_query(false", "$wp_query->get("]
+sinks = ["echo", "print", "printf(", "vprintf("]
+sanitizers = ["check_admin_referer", "check_ajax_referer", "wp_verify_nonce", "current_user_can", "esc_html", "esc_attr", "esc_textarea", "esc_url", "esc_js", "esc_html__", "esc_attr__", "htmlspecialchars", "htmlentities", "strip_tags", "wp_strip_all_tags", "wp_kses", "wp_kses_post", "wp_kses_data", "sanitize_text_field", "sanitize_textarea_field", "sanitize_key", "sanitize_title", "sanitize_email", "sanitize_file_name", "sanitize_html_class", "sanitize_user", "urlencode", "rawurlencode", "number_format", "e(", "count(", "wp_check_jsonp_callback", "wp_send_json", "wp_send_json_success", "wp_send_json_error"]
+fix = "Escape for the place the value lands: esc_html() or htmlspecialchars() between tags (esc_attr() in attributes, esc_url() in links), or render it through an auto-escaping template."
+refs = ["CVE-2026-52847"]
+
+[[args]]
+context = ["html"]
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+$q = $_GET['q'];
+echo '<h2>Results for ' . $q . '</h2>';
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "inline HTML around an echo"
+code = '''
+<p class="notice">Saved: <?php echo $_POST['title'] ?></p>
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+echo '<h2>Results for ' . esc_html($_GET['q']) . '</h2>';
+'''
+
+[[samples]]
+kind = "safe"
+note = "sanitize_text_field strips tags, so between tags it is enough"
+code = '''
+<p class="notice">Saved: <?php echo sanitize_text_field($_POST['title']); ?></p>
+'''
+
+[[samples]]
+kind = "safe"
+note = "written into an attribute, which php-xss-echo-attribute judges"
+code = '''
+<input name="t" value="<?php echo esc_attr($_POST['title']); ?>">
+'''
+
+[[samples]]
+kind = "safe"
+note = "wp_send_json sends JSON and ends the request, so its echo is not a page"
+code = '''
+<?php
+function wp_send_json( $response ) {
+	header( 'Content-Type: application/json; charset=utf-8' );
+	echo wp_json_encode( $response );
+	die;
+}
+add_action( 'wp_ajax_find', 'find_handler' );
+function find_handler() {
+	$q = $_GET['q'];
+	wp_send_json( $q );
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "the same handler echoing the input itself"
+code = '''
+<?php
+function wp_send_json( $response ) {
+	header( 'Content-Type: application/json; charset=utf-8' );
+	echo wp_json_encode( $response );
+	die;
+}
+add_action( 'wp_ajax_find', 'find_handler' );
+function find_handler() {
+	$q = $_GET['q'];
+	echo '<p>' . $q . '</p>';
+	wp_send_json( array( 'ok' => true ) );
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "a helper of the code base that only shares a sanitizer's name is followed into its body"
+code = '''
+<?php
+function e( $text ) {
+	echo $text;
+}
+e( $_GET['q'] );
+'''
+
+[[samples]]
+kind = "safe"
+note = "JSON_HEX_TAG encodes < and >, so the data block cannot be closed"
+code = '''
+<?php $data = array( 'title' => $_GET['title'] ); ?>
+<script type="application/json" class="playlist"><?php echo wp_json_encode( $data, JSON_HEX_TAG | JSON_UNESCAPED_SLASHES ); ?></script>
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "without JSON_HEX_TAG, a title holding </script> ends the data block"
+code = '''
+<?php $data = array( 'title' => $_GET['title'] ); ?>
+<script type="application/json" class="playlist"><?php echo wp_json_encode( $data, JSON_UNESCAPED_SLASHES ); ?></script>
+'''

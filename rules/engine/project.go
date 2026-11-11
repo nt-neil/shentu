@@ -65,6 +65,7 @@ type Project struct {
 	partCut              bool                       // ... one of them cut short by a cap
 	partAt               string                     // ... the rule the clock cut short
 	deps                 map[string]map[string]bool // file → files its functions' calls were followed into
+	routeTo              map[string][]routeTarget   // file → its functions other files register as handlers (routes.go)
 	stack                []*sumFrame                // summaries being worked out, the first asked first (sumstack.go)
 	held                 map[*summaries]map[string]heldSum
 	unsure               bool   // the last resolution met a name it could not pin to one file
@@ -72,11 +73,10 @@ type Project struct {
 	deadline             time.Time
 	depth                int
 	heapAt               time.Time
-	shrunk               time.Time                // when the caches were last let go of (ok)
-	scanning             string                   // the file being scanned: its caches stay
-	shrinkEvery, okCalls int                      // tests: let the caches go every shrinkEvery checks
-	shrinkAll            bool                     // ... summaries and relevance too
-	routeTo              map[string][]routeTarget // file → its functions other files register as handlers (routes.go)
+	shrunk               time.Time // when the caches were last let go of (ok)
+	scanning             string    // the file being scanned: its caches stay
+	shrinkEvery, okCalls int       // tests: let the caches go every shrinkEvery checks
+	shrinkAll            bool      // ... summaries and relevance too
 }
 
 // ProjectOptions are the caps of a Project. Zero values take the defaults.
@@ -127,6 +127,7 @@ type fileCtx struct {
 	tree   []*stmt
 	ff     *fileFuncs
 	tokens int
+	rdefs  map[string][][]Token // Python: what the file's names hold, for the receiver condition (receiver.go)
 }
 
 // NewProject indexes the files at paths. read returns a file's content; paths
@@ -153,7 +154,8 @@ func (e *Engine) NewProject(paths []string, read func(string) ([]byte, error), o
 	fresh := map[string]*fileIndex{}
 	n := 0
 	for _, f := range paths {
-		lang := LangOf(f)
+		full := LangOf(f) // jsx, ts and tsx lex on their own and index as js
+		lang := baseLang(full)
 		if lang == "" {
 			if path.Base(filepath.ToSlash(f)) == "composer.json" {
 				if b, err := read(f); err == nil {
@@ -179,7 +181,7 @@ func (e *Engine) NewProject(paths []string, read func(string) ([]byte, error), o
 		h := hex.EncodeToString(sum[:])
 		fi := cache[f]
 		if fi == nil || fi.Hash != h || fi.Lang != lang {
-			fi = safeIndex(e, lang, b)
+			fi = safeIndex(e, full, b)
 			fi.Hash = h
 		}
 		fresh[f] = fi
@@ -384,16 +386,18 @@ func (p *Project) readComposer(f string, b []byte) {
 func safeIndex(e *Engine, lang string, src []byte) (fi *fileIndex) {
 	defer func() {
 		if recover() != nil {
-			fi = &fileIndex{Lang: lang, Limited: true}
+			fi = &fileIndex{Lang: baseLang(lang), Limited: true}
 		}
 	}()
 	return indexFile(e, lang, src)
 }
 
-// indexFile reads one file's declarations and the names it imports.
+// indexFile reads one file's declarations and the names it imports. lang is
+// the file's own (LangOf); the index keeps the base language (baseLang).
 func indexFile(e *Engine, lang string, src []byte) *fileIndex {
 	b := newBudget(e.Limits)
 	toks := lex(lang, string(src), b)
+	lang = baseLang(lang)
 	fi := &fileIndex{Lang: lang}
 	if b.hit {
 		fi.Limited = true
@@ -768,7 +772,7 @@ func (p *Project) analysisFor(a *analysis, f string) *analysis {
 		p.sums[key] = sc
 	}
 	return &analysis{r: a.r, php: ctx.lang == "php", py: ctx.lang == "python", js: ctx.lang == "js", b: a.b,
-		kw: keywords[ctx.lang], seen: map[loc]bool{}, sc: sc, proj: p, file: f, nest: a.nest, heights: a.heights}
+		kw: keywords[ctx.lang], seen: map[loc]bool{}, sc: sc, proj: p, file: f, rdefs: ctx.rdefs, nest: a.nest, heights: a.heights}
 }
 
 // context returns the parsed file, parsing it if it is not kept.
@@ -790,14 +794,14 @@ func (p *Project) context(f string) *fileCtx {
 		return nil
 	}
 	b := newBudget(p.e.Limits)
-	toks := lex(fi.Lang, string(src), b)
+	toks := lex(LangOf(f), string(src), b)
 	if b.hit {
 		if b.timeHit {
 			p.unread[f], p.unsteady = true, true
 		}
 		return nil
 	}
-	c := &fileCtx{lang: fi.Lang, tree: parse(fi.Lang, toks, b), tokens: len(toks)}
+	c := &fileCtx{lang: fi.Lang, tree: parse(fi.Lang, toks, b), tokens: len(toks), rdefs: fileRecvDefs(fi.Lang, toks)}
 	if b.timeHit {
 		p.unread[f], p.unsteady = true, true
 	}

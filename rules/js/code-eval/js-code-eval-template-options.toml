@@ -4,8 +4,8 @@ class = "code-eval"
 cwe = "CWE-94"
 severity = "critical"
 title = "Whole request object passed as template render data or options, or compiled as a template"
-frameworks = ["express"]
-sources = ["req.query", "req.body"]
+frameworks = ["express", "nestjs", "nextjs"]
+sources = ["req.query", "req.body", "@Query(", "@Body(", "@Req(", "req.originalUrl", "^request.nextUrl", "^req.nextUrl", "^request.url", "^req.url", "^searchParams", "^request.json(", "^req.json(", "^request.formData(", "^req.formData(", "^formData.get("]
 sinks = ["res.render(", "ejs.render(", "ejs.compile(", "_.template(", "Handlebars.compile(", "pug.render("]
 sanitizers = []
 fix = "Pass only the named fields the template needs (res.render('page', { q: String(req.query.q) })); never spread req.query or req.body into render data, which some engines read as options, and never compile user text as a template."
@@ -39,4 +39,31 @@ code = '''
 app.get("/page", (req, res) => {
   res.render("page", { q: String(req.query.q || "") });
 });
+'''
+
+[[samples]]
+kind = "vulnerable"
+dialect = "ts"
+note = "the whole query object becomes the view data"
+code = '''
+@Controller()
+export class PageController {
+  @Get("page")
+  page(@Query() query: Record<string, string>, @Res() res: Response) {
+    res.render("page", query);
+  }
+}
+'''
+
+[[samples]]
+kind = "safe"
+dialect = "ts"
+code = '''
+@Controller()
+export class PageController {
+  @Get("page")
+  page(@Query("q") q: string, @Res() res: Response) {
+    res.render("page", { q: String(q ?? "") });
+  }
+}
 '''

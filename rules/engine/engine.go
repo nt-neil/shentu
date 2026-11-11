@@ -1,5 +1,5 @@
-// Package engine applies Shentu's code rules (package rules) to PHP, Python and
-// JavaScript files. It lexes the file by hand, splits it into statements and
+// Package engine applies Shentu's code rules (package rules) to PHP, Python,
+// JavaScript and TypeScript files (TypeScript uses the JavaScript rules). It lexes the file by hand, splits it into statements and
 // function scopes, and follows user input inside each function in order: from a
 // source, through variables, to a sink, unless a sanitizer or a check is in the
 // way. Calls to functions of the same file follow their summaries
@@ -10,8 +10,10 @@
 package engine
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -36,6 +38,12 @@ type Finding struct {
 type Engine struct {
 	byLang map[string][]*crule
 	Limits Limits
+	// SourcePrefilter (on in New) skips the rules none of whose sources occur in
+	// a file: a file scanned on its own gets input only from them, in the first
+	// pass and in the second, where calls are followed inside the file. A scan
+	// that brings input from elsewhere (other files, framework routes, as a
+	// project mode will) must turn it off. Library mode never uses it.
+	SourcePrefilter bool
 	// Library turns on library mode: the parameters of public functions and
 	// methods are treated as input, and a finding needs that input embedded in a
 	// larger string (a query, a command, code), not passed through as is. It
@@ -56,6 +64,7 @@ type crule struct {
 	sanitizers             []*pat
 	args                   map[*pat]*argCond
 	leading                bool // some sink needs a fixed prefix, so values track raw input
+	output                 bool // every sink writes to a page (has a context condition): see context.go
 }
 
 type argCond struct {
@@ -63,11 +72,18 @@ type argCond struct {
 	name           string // the argument's parameter name, when passed by name
 	when, unless   []*pat
 	whole, leading bool
+	context        []uint8 // output contexts that count (ctxHTML ...); empty: any
+	literal        bool
+	key            string // the value under this key of an object argument (keyValue)
+	keys           bool   // an array, object or dict literal argument counts by its keys (keysVal)
+	minLen         int    // literal: the shortest string that counts
+	exclude        []*regexp.Regexp
+	receiver       []*pat // a method sink counts only on a receiver these name (receiver.go)
 }
 
 // New compiles rules. A pattern that does not lex as code of its language is an error.
 func New(rs []rules.Rule) (*Engine, error) {
-	e := &Engine{byLang: map[string][]*crule{}, Limits: DefaultLimits, routes: map[string][]*croute{}, routeByID: map[string]*croute{}}
+	e := &Engine{byLang: map[string][]*crule{}, Limits: DefaultLimits, SourcePrefilter: true, routes: map[string][]*croute{}, routeByID: map[string]*croute{}}
 	for _, r := range rs {
 		c, err := compileRule(r)
 		if err != nil {
@@ -107,8 +123,24 @@ func compileRule(r rules.Rule) (*crule, error) {
 		}
 		return byRaw, nil
 	}
-	if _, err := compile(r.Sources, &c.sources, &c.textSources); err != nil {
+	srcs, err := compile(r.Sources, &c.sources, &c.textSources)
+	if err != nil {
 		return nil, err
+	}
+	for _, sa := range r.SourceArgs {
+		if sa.Arg < 1 || len(sa.Values) == 0 || len(sa.Sources) == 0 {
+			return nil, fmt.Errorf("source_args: needs sources, arg (from 1) and values")
+		}
+		for _, s := range sa.Sources {
+			p, ok := srcs[s]
+			if !ok || p.text != nil || p.callParen() < 0 {
+				return nil, fmt.Errorf("source_args: %q is not one of the call sources", s)
+			}
+			p.srcArg, p.srcVals = sa.Arg, map[string]bool{}
+			for _, v := range sa.Values {
+				p.srcVals[strings.ToLower(v)] = true
+			}
+		}
 	}
 	sinks, err := compile(r.Sinks, &c.sinks, &c.textSinks)
 	if err != nil {
@@ -119,12 +151,29 @@ func compileRule(r rules.Rule) (*crule, error) {
 		return nil, err
 	}
 	for _, a := range r.Args {
-		ac := &argCond{arg: a.Arg, name: a.Name, whole: a.Whole, leading: a.Leading}
+		ac := &argCond{arg: a.Arg, name: a.Name, whole: a.Whole, leading: a.Leading, literal: a.Literal, key: a.Key, keys: a.Keys, minLen: a.MinLen}
+		if (a.MinLen != 0 || len(a.Exclude) > 0) && !a.Literal {
+			return nil, fmt.Errorf("args: min_len and exclude need literal")
+		}
+		for _, x := range a.Exclude {
+			re, err := regexp.Compile("(?i)" + x)
+			if err != nil {
+				return nil, fmt.Errorf("args: exclude %q: %w", x, err)
+			}
+			ac.exclude = append(ac.exclude, re)
+		}
+		for _, name := range a.Context {
+			cs, ok := contextNames[name]
+			if !ok {
+				return nil, fmt.Errorf("args: unknown context %q", name)
+			}
+			ac.context = append(ac.context, cs...)
+		}
 		c.leading = c.leading || a.Leading
 		for _, list := range []struct {
 			raw []string
 			out *[]*pat
-		}{{a.When, &ac.when}, {a.Unless, &ac.unless}} {
+		}{{a.When, &ac.when}, {a.Unless, &ac.unless}, {a.Receiver, &ac.receiver}} {
 			for _, raw := range list.raw {
 				p, err := compilePattern(r.Lang, raw, false)
 				if err != nil {
@@ -145,26 +194,52 @@ func compileRule(r rules.Rule) (*crule, error) {
 			c.args[p] = ac
 		}
 	}
+	for _, ac := range c.args {
+		for _, x := range ac.context {
+			if x == ctxURL {
+				c.leading = true // track fixed prefixes: a value that starts with one cannot pick a scheme
+			}
+		}
+	}
+	c.chainSinks()
+	c.output = len(c.sinks) > 0 && len(c.textSinks) == 0
+	for _, s := range c.sinks {
+		if ac := c.args[s]; ac == nil || len(ac.context) == 0 {
+			c.output = false
+		}
+	}
 	return c, nil
 }
 
-// LangOf returns the rule language for a file name ("php", "python", "js"), or "".
+// LangOf returns the language of a file name ("php", "python", "js", or the
+// dialects "jsx", "ts" and "tsx", which use the JavaScript rules), or "".
 func LangOf(path string) string {
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".php", ".phtml", ".php5", ".inc":
 		return "php"
 	case ".py":
 		return "python"
-	case ".js", ".mjs", ".cjs", ".jsx":
+	case ".js", ".mjs", ".cjs":
 		return "js"
+	case ".jsx":
+		return "jsx"
+	case ".ts", ".mts", ".cts":
+		return "ts"
+	case ".tsx":
+		return "tsx"
 	}
 	return ""
 }
 
 // Scan applies the rules of lang to one file. When the file hits the Limits it
-// returns what was found so far and ErrLimit.
+// returns what was found so far and ErrLimit. Every line is read; when a
+// minified or bundled JavaScript file stops early, ErrMinified is joined to the
+// reason, so the audit can tell generated code from hand-written code.
 func (e *Engine) Scan(lang, path string, src []byte) ([]Finding, error) {
 	out, _, err := e.scan(lang, path, src, nil, false, false)
+	if err != nil && baseLang(lang) == "js" && Minified(src) {
+		err = errors.Join(ErrMinified, err)
+	}
 	return out, err
 }
 
@@ -172,7 +247,11 @@ func (e *Engine) Scan(lang, path string, src []byte) ([]Finding, error) {
 // such a result depends on how busy the machine was, so it is not one to keep
 // for a later audit.
 func (e *Engine) ScanTimed(lang, path string, src []byte) ([]Finding, bool, error) {
-	return e.scan(lang, path, src, nil, false, false)
+	out, timed, err := e.scan(lang, path, src, nil, false, false)
+	if err != nil && baseLang(lang) == "js" && Minified(src) {
+		err = errors.Join(ErrMinified, err)
+	}
+	return out, timed, err
 }
 
 // Scan applies the rules to one file of the project, following its calls into
@@ -228,7 +307,8 @@ func (p *Project) ScanCallsPart(path string, src []byte, skip map[string]bool) (
 // scan is Scan in all its forms; dedup leaves out what the project returned
 // already, and timed tells whether a clock or the project's heap cap cut it short.
 func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, dedup bool) (_ []Finding, timed bool, _ error) {
-	rs := e.byLang[lang]
+	base := baseLang(lang)
+	rs := e.byLang[base]
 	if len(rs) == 0 {
 		return nil, false, nil
 	}
@@ -242,14 +322,14 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 	if b.hit {
 		return nil, b.timeHit, ErrLimit
 	}
-	tree := parse(lang, toks, b)
-	ff := newFileFuncs(collectFuncs(tree, lang), lang)
-	routeFns := e.handlers(lang, toks, tree, ff) // functions a framework calls with request data (routes.go)
+	tree := parse(base, toks, b)
+	ff := newFileFuncs(collectFuncs(tree, base), base)
+	routeFns := e.handlers(base, toks, tree, ff) // functions a framework calls with request data (routes.go)
 	local := len(routeFns)
 	routeFns = e.projectHandlers(proj, path, ff, routeFns) // ... registered in another file (urls.py, routes/web.php)
 	viaProject := len(routeFns) > local
 	if proj != nil {
-		proj.keep(path, &fileCtx{lang: lang, tree: tree, ff: ff, tokens: len(toks)})
+		proj.keep(path, &fileCtx{lang: base, tree: tree, ff: ff, tokens: len(toks), rdefs: fileRecvDefs(base, toks)})
 	}
 	var out []Finding
 	add := func(r *crule, lines ...[]loc) {
@@ -277,16 +357,31 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 	// a file without a sink may still pass its input to another file's sink.
 	var ruleList []*crule
 	direct := map[*crule][]loc{}
+	defs := phpDefines(base, toks)
+	names := nameSet(toks, map[string]bool{})
+	si := newSrcIndex(toks, b)
 	for _, r := range rs {
-		hs := hasSink(r, toks)
+		if time.Now().After(b.deadline) { // cheap: once per rule
+			b.hit, b.timeHit = true, true
+			break
+		}
+		hs := si.names(r.sinks, r.textSinks, names, src) && si.hasSink(r)
 		// In a project a file without a sink may pass input, its own or a route
-		// handler's parameters, to another file's sink.
-		if !hs && (proj == nil || !hasSource(r, toks) && len(routeFns) == 0) {
+		// handler's parameters, to another file's sink; on its own it has nothing
+		// to find.
+		if !hs && (proj == nil || len(routeFns) == 0 && (len(r.sources) == 0 && len(r.textSources) == 0 || !si.hasSource(r))) {
+			continue
+		}
+		// No source of it in the file: nothing to find, in either pass. Only for
+		// a file on its own without route handlers: in a project input also comes
+		// from the other files, and a handler's parameters are input with no
+		// source name in the file.
+		if proj == nil && len(routeFns) == 0 && e.skipBySources(r, names, src, si) {
 			continue
 		}
 		ruleList = append(ruleList, r)
 		if hs && !callsOnly {
-			a := &analysis{r: r, php: lang == "php", py: lang == "python", js: lang == "js", b: b, kw: keywords[lang], seen: map[loc]bool{}, file: path, routes: routeFns}
+			a := &analysis{r: r, php: base == "php", py: base == "python", js: base == "js", b: b, kw: keywords[base], seen: map[loc]bool{}, defs: defs, file: path, ftoks: toks, routes: routeFns}
 			a.block(tree, state{})
 			direct[r] = a.lines
 		}
@@ -347,15 +442,18 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 				}
 				proj.sums[key] = sc
 			}
-			a := &analysis{r: r, php: lang == "php", py: lang == "python", js: lang == "js", b: b2, kw: keywords[lang], seen: map[loc]bool{}, sc: sc,
-				file: path, proj: proj, routes: routeFns}
-			if !e.Library && !viaProject && !a.crossNeeded(tree) {
+			a := &analysis{r: r, php: base == "php", py: base == "python", js: base == "js", b: b2, kw: keywords[base], seen: map[loc]bool{}, sc: sc,
+				defs: defs, file: path, proj: proj, ftoks: toks, routes: routeFns}
+			if !e.Library && !a.r.output && !viaProject && !a.crossNeeded(tree) {
+				// no call can change this rule's result: the first pass stands. Output
+				// rules read calls to the file's own functions in this pass only
+				// (htmlctx.go); handlers registered in another file need it too.
 				ruleDone()
-				continue // no call can change this rule's result: the first pass stands
+				continue
 			}
 			a.block(tree, state{})
 			if e.Library && libClasses[r.rule.Class] && !testPath(path) && !b2.hit {
-				l := &analysis{r: r, php: a.php, py: a.py, js: a.js, b: b2, kw: a.kw, seen: a.seen, sc: sc, lib: true, file: path, proj: proj, routes: routeFns}
+				l := &analysis{r: r, php: a.php, py: a.py, js: a.js, b: b2, kw: a.kw, seen: a.seen, sc: sc, lib: true, defs: defs, file: path, proj: proj, ftoks: toks, routes: routeFns}
 				l.block(tree, state{})
 				a.lines = append(a.lines, l.lines...)
 			}
@@ -433,11 +531,13 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 	return out, timed, nil
 }
 
-// hasSink reports whether one of the rule's sinks occurs in the file at all.
+// hasSink reports whether one of the rule's sinks occurs in the file at all,
+// matched as the analysis matches sinks (strictly): exec( is not re.exec(, but
+// is child_process.exec( once the module is normalised (FlagModule).
 func hasSink(r *crule, toks []Token) bool {
 	for i := range toks {
 		for _, s := range r.sinks {
-			if s.text == nil && s.at(toks, i, false) {
+			if s.text == nil && s.at(toks, i, true) {
 				return true
 			}
 		}
@@ -459,18 +559,6 @@ func partsHaveSink(r *crule, parts []Part) bool {
 	for _, p := range parts {
 		if hasSink(r, p.Toks) {
 			return true
-		}
-	}
-	return false
-}
-
-// hasSource reports whether one of the rule's sources occurs in the file.
-func hasSource(r *crule, toks []Token) bool {
-	for i := range toks {
-		for _, s := range r.sources {
-			if s.text == nil && s.at(toks, i, false) {
-				return true
-			}
 		}
 	}
 	return false
@@ -503,6 +591,159 @@ func lex(lang, src string, b *budget) []Token {
 		return lexPython(src, b)
 	case "js":
 		return lexJS(src, b)
+	case "jsx":
+		return lexJSX(src, b, true)
+	case "ts", "tsx":
+		return lexTS(src, b, lang == "tsx")
 	}
 	return nil
+}
+
+// skipBySources reports whether the first pass leaves out rule r for a file
+// with these names (see SourcePrefilter).
+func (e *Engine) skipBySources(r *crule, names map[string]bool, src []byte, si *srcIndex) bool {
+	noSources := len(r.sources) == 0 && len(r.textSources) == 0 // sourceNames, with the index
+	return e.SourcePrefilter && !e.Library && (!noSources && !si.names(r.sources, r.textSources, names, src) || !si.hasSource(r))
+}
+
+// srcIndex finds the rules' sources and sinks in one file without reading the
+// file once per rule: where each token is, inside string interpolations too,
+// is listed once (on the first search), a pattern is tried only where its
+// first token is, and what was found for a pattern holds for every rule
+// listing it. The cost stays the file's tokens and the places tried, whatever
+// the number of rules.
+type srcIndex struct {
+	toks  []Token             // until the first search
+	lists [][]Token           // the file's tokens, then each interpolation's
+	at    map[tokKey][]srcPos // where each token other than a string literal is
+	strs  []srcPos            // where each string literal is
+	found map[string]bool     // per pattern, whether it occurs
+	b     *budget             // the file's: its clock bounds the search
+	tries int
+}
+
+type tokKey struct {
+	kind Kind
+	text string
+}
+
+type srcPos struct{ list, i int32 }
+
+// newSrcIndex is the index of toks; b may be nil (no clock).
+func newSrcIndex(toks []Token, b *budget) *srcIndex {
+	return &srcIndex{toks: toks, found: map[string]bool{}, b: b}
+}
+
+// build lists where the tokens are.
+func (si *srcIndex) build() {
+	si.at = map[tokKey][]srcPos{}
+	var add func(toks []Token)
+	add = func(toks []Token) {
+		l := int32(len(si.lists))
+		si.lists = append(si.lists, toks)
+		for i, t := range toks {
+			if t.Kind == Str {
+				si.strs = append(si.strs, srcPos{l, int32(i)})
+				for _, p := range t.Parts {
+					add(p.Toks)
+				}
+				continue
+			}
+			k := tokKey{t.Kind, t.Text}
+			si.at[k] = append(si.at[k], srcPos{l, int32(i)})
+		}
+	}
+	add(si.toks)
+	si.toks = nil
+}
+
+// hasSource reports whether one of the rule's sources occurs in the file, matched
+// token by token as the analysis matches sources: the names of request.url both
+// being in a large bundle is not request.url. Out of time it says yes, and the
+// file's scan stops on its clock.
+func (si *srcIndex) hasSource(r *crule) bool {
+	if len(r.sources) == 0 && len(r.textSources) == 0 {
+		return true
+	}
+	for _, s := range r.sources {
+		if s.text == nil && si.has("c"+s.raw, s, false) {
+			return true
+		}
+	}
+	for _, s := range r.textSources {
+		if si.has("t"+s.text.String(), s, false) {
+			return true
+		}
+	}
+	return false
+}
+
+// hasSink reports whether one of the rule's sinks occurs in the file at all,
+// matched as the analysis matches sinks (strictly, see the function hasSink).
+func (si *srcIndex) hasSink(r *crule) bool {
+	for _, s := range r.sinks {
+		if s.text == nil && si.has("s"+s.raw+"\x00"+s.chain, s, true) {
+			return true
+		}
+	}
+	for _, s := range r.textSinks {
+		if si.has("t"+s.text.String(), s, true) { // in string literals, as a text source
+			return true
+		}
+	}
+	return false
+}
+
+// names is anyName with each text pattern matched against src once per file.
+func (si *srcIndex) names(code, text []*pat, names map[string]bool, src []byte) bool {
+	return anyName(code, text, names, func(p *pat) bool {
+		key := "m" + p.text.String()
+		f, ok := si.found[key]
+		if !ok {
+			f = p.text.Match(src)
+			si.found[key] = f
+		}
+		return f
+	})
+}
+
+// has reports whether pattern s occurs, looking it up once per file under key.
+func (si *srcIndex) has(key string, s *pat, strict bool) bool {
+	if f, ok := si.found[key]; ok {
+		return f
+	}
+	if si.at == nil {
+		si.build()
+	}
+	f := si.search(s, strict)
+	if !si.b.hitLimit() {
+		si.found[key] = f
+	}
+	return f
+}
+
+func (si *srcIndex) search(s *pat, strict bool) bool {
+	try := func(ps []srcPos, ok func(toks []Token, i int) bool) bool {
+		for _, p := range ps {
+			if si.tries++; si.tries&1023 == 0 && si.b != nil && time.Now().After(si.b.deadline) {
+				si.b.hit, si.b.timeHit = true, true
+				return true
+			}
+			if ok(si.lists[p.list], int(p.i)) {
+				return true
+			}
+		}
+		return false
+	}
+	if s.text != nil {
+		return try(si.strs, func(toks []Token, i int) bool { return s.text.MatchString(toks[i].Text) })
+	}
+	at := func(toks []Token, i int) bool { return s.at(toks, i, false) || s.baseAt(toks, i) } // a source
+	if strict {
+		at = func(toks []Token, i int) bool { return s.at(toks, i, true) } // a sink
+	}
+	if first := s.toks[0]; first.Kind != Str {
+		return try(si.at[tokKey{first.Kind, first.Text}], at)
+	}
+	return try(si.strs, at) // a string literal matches by more than its text (tokEq)
 }

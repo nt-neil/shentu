@@ -1,0 +1,36 @@
+id = "python-weak-crypto-cipher"
+lang = "python"
+class = "weak-crypto"
+cwe = "CWE-327"
+severity = "medium"
+tier = "info"
+title = "Data encrypted with a broken cipher or ECB mode"
+sources = []
+sinks = ["DES.new(", "DES3.new(", "ARC4.new(", "ARC2.new(", "Blowfish.new(", "AES.new(", "algorithms.TripleDES(", "algorithms.ARC4(", "algorithms.Blowfish(", "algorithms.IDEA(", "modes.ECB("]
+sanitizers = []
+fix = "Use an authenticated mode such as AES-GCM (cryptography's AESGCM) or Fernet with a random nonce; DES, 3DES, RC4, Blowfish and ECB mode do not keep data secret."
+refs = ["CVE-2012-3458"]
+
+[[args]]
+sinks = ["AES.new("]
+when = ["AES.MODE_ECB", "MODE_ECB"]
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+cipher = AES.new(key, AES.MODE_ECB)
+token = cipher.encrypt(pad(data, 16))
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+c = Cipher(algorithms.TripleDES(key), modes.CBC(iv))
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+cipher = AES.new(key, AES.MODE_GCM)
+ct, tag = cipher.encrypt_and_digest(data)
+'''

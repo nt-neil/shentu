@@ -55,6 +55,7 @@ type partResult struct {
 type passResult struct {
 	Found  []engine.Finding `json:"f,omitempty"`
 	Reason string           `json:"r,omitempty"` // unfinishedReason; "" when it ran to the end
+	Gen    bool             `json:"g,omitempty"` // the file is minified or bundled JavaScript
 }
 
 // callStateFile is where the results for these roots are kept ("" for none):

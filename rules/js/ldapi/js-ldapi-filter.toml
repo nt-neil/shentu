@@ -1,0 +1,35 @@
+id = "js-ldapi-filter"
+lang = "js"
+class = "ldapi"
+cwe = "CWE-90"
+severity = "high"
+tier = "info"
+title = "Request value placed in an LDAP search filter without escaping"
+frameworks = ["express"]
+sources = ["req.query", "req.body", "req.params"]
+sinks = [".search("]
+sanitizers = ["ldapEscape.filter", "escapeFilter(", "EqualityFilter(", "parseInt("]
+fix = "Build the filter from filter objects (new EqualityFilter({ attribute, value })) or escape each value for LDAP filters before joining it into the string."
+refs = ["CVE-2026-31828"]
+
+[[args]]
+arg = 2
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+app.post("/login", (req, res) => {
+  const opts = { filter: `(&(uid=${req.body.user})(objectClass=person))`, scope: "sub" };
+  client.search("ou=people,dc=example,dc=org", opts, (err, r) => res.sendStatus(err ? 500 : 200));
+});
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+app.post("/login", (req, res) => {
+  const filter = new EqualityFilter({ attribute: "uid", value: req.body.user });
+  client.search("ou=people,dc=example,dc=org", { filter, scope: "sub" }, (err, r) => res.sendStatus(err ? 500 : 200));
+  const at = req.body.user.search("@");
+});
+'''

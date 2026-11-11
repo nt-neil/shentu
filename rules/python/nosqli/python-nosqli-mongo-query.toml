@@ -1,0 +1,111 @@
+id = "python-nosqli-mongo-query"
+lang = "python"
+class = "nosqli"
+cwe = "CWE-943"
+severity = "high"
+tier = "info"
+title = "JSON request data placed in a MongoDB query without checking its type"
+frameworks = ["django", "flask"]
+sources = ["request.json", "request.get_json(", "json.loads(request.body", "json.loads(request.data", "request.data"]
+sinks = [".find_one(", ".find(", ".find_one_and_update(", ".find_one_and_delete(", ".update_one(", ".update_many(", ".delete_one(", ".delete_many(", ".count_documents(", ".aggregate(", "$where"]
+sanitizers = ["str(", "int(", "isinstance(", "ObjectId("]
+text = ["$where"]
+fix = "Check that each value is a plain str or int (isinstance) or convert it (str(), int()) before it goes into the query, so a JSON object such as {\"$ne\": null} cannot become an operator; never build $where from input."
+refs = ["CVE-2026-55253"]
+
+[[args]]
+sinks = [".find_one(", ".find(", ".find_one_and_update(", ".find_one_and_delete(", ".update_one(", ".update_many(", ".delete_one(", ".delete_many(", ".count_documents(", ".aggregate("]
+arg = 1
+receiver = ["MongoClient(", "AsyncMongoClient(", "AsyncIOMotorClient(", "PyMongo(", "Collection", "Database", "AsyncCollection", "AsyncDatabase", "AsyncIOMotorCollection", "AsyncIOMotorDatabase", ".get_collection(", ".get_database(", ".get_default_database("]
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+db = MongoClient(os.environ['MONGO_URL']).shop
+
+@app.route('/login', methods=['POST'])
+def login():
+    data = request.get_json()
+    user = db.users.find_one({'email': data['email'], 'password': data['password']})
+    return jsonify(ok=user is not None)
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+db = MongoClient(os.environ['MONGO_URL']).shop
+
+@app.route('/login', methods=['POST'])
+def login():
+    data = request.get_json()
+    email = data.get('email')
+    if not isinstance(email, str):
+        abort(400)
+    user = db.users.find_one({'email': email})
+    return jsonify(ok=user is not None and check(user, str(data.get('password'))))
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "Flask-PyMongo: the collection comes from the PyMongo object"
+code = '''
+mongo = PyMongo(app)
+
+@app.route('/items', methods=['POST'])
+def items():
+    q = request.get_json()
+    return jsonify(list(mongo.db.items.find(q['filter'])))
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "a collection kept on the object, typed in the constructor"
+code = '''
+class Store:
+    def __init__(self, db: Database):
+        self._items = db['items']
+
+    def remove(self):
+        self._items.delete_many(request.json['match'])
+'''
+
+[[samples]]
+kind = "safe"
+note = "a finder of static files is not a MongoDB collection"
+code = '''
+from django.contrib.staticfiles import finders
+
+def locate(request):
+    data = json.loads(request.body)
+    return JsonResponse({'path': finders.find(data['path'])})
+'''
+
+[[samples]]
+kind = "safe"
+note = "str.find on the request text"
+code = '''
+@app.route('/has', methods=['POST'])
+def has():
+    data = request.get_json()
+    return jsonify(found=data['text'].find(data['needle']) >= 0)
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "a db the file does not define may be a collection"
+code = '''
+@app.route('/items', methods=['POST'])
+def items():
+    return jsonify(list(db.items.find(request.get_json())))
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "a collection imported from a module of the project is not known here, so it may be one"
+code = '''
+from app.db import mongo
+
+@app.route('/items', methods=['POST'])
+def items():
+    return jsonify(list(mongo.find(request.get_json())))
+'''

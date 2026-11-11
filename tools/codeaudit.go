@@ -56,22 +56,26 @@ var appCodeAudit = Tool{
 
 // CodeFinding is one problem in an application's files.
 type CodeFinding struct {
-	Kind     string           `json:"kind"`     // exposed, debug, webshell, upload_script, secret, injection
-	Severity string           `json:"severity"` // critical, warning, or info (files the injection rules could not finish)
-	Path     string           `json:"path,omitempty"`
-	Line     int              `json:"line,omitempty"`
-	Detail   string           `json:"detail"`
-	Fix      string           `json:"fix"`
-	Rule     string           `json:"rule,omitempty"`  // injection: the rule id
-	CWE      string           `json:"cwe,omitempty"`   // injection: the weakness
-	Tier     string           `json:"tier,omitempty"`  // injection: "info" is not pushed by the patrol report, "alert" is
-	Files    []UnfinishedFile `json:"files,omitempty"` // the files the summary of unfinished files is about (at most 10)
+	Kind      string           `json:"kind"`     // exposed, debug, webshell, upload_script, secret, injection
+	Severity  string           `json:"severity"` // critical, warning, or info (files the injection rules could not finish)
+	Path      string           `json:"path,omitempty"`
+	Line      int              `json:"line,omitempty"`
+	Detail    string           `json:"detail"`
+	Fix       string           `json:"fix"`
+	Rule      string           `json:"rule,omitempty"`      // injection: the rule id
+	CWE       string           `json:"cwe,omitempty"`       // injection: the weakness
+	Tier      string           `json:"tier,omitempty"`      // injection: "info" is not pushed by the patrol report, "alert" is
+	Files     []UnfinishedFile `json:"files,omitempty"`     // the files the summary of unfinished files is about (at most 10)
+	TestPath  bool             `json:"test_path,omitempty"` // injection: the file is under tests/, test/, examples/ or __tests__/
+	Generated bool             `json:"generated,omitempty"` // injection: the file is minified or bundled JavaScript
 }
 
 // UnfinishedFile is a file the injection rules did not check to the end, and why:
 // "size" (over the size limit, not read), "limit" (too large, slow or deeply nested
 // for the engine), "unterminated" (a string or comment runs to the end of the file),
-// "time" (after the audit's time limit for the rules) or "panic" (an engine error).
+// "time" (after the audit's time limit for the rules), "panic" (an engine error) or
+// "minified-unterminated" or "minified-limit" (minified or bundled JavaScript that
+// stopped early for that reason).
 type UnfinishedFile struct {
 	Path   string `json:"path"`
 	Reason string `json:"reason"`
@@ -83,6 +87,10 @@ type CodeAudit struct {
 	Files     int           `json:"files_read"`
 	Findings  []CodeFinding `json:"findings"`
 	Truncated bool          `json:"truncated,omitempty"`
+	// Injection findings, counted apart for files under test and example folders.
+	Injection          int `json:"injection_findings"`
+	InjectionTestPaths int `json:"injection_findings_in_test_paths"`
+	InjectionGenerated int `json:"injection_findings_in_generated_code"` // minified or bundled JavaScript
 	// The memory the audit kept to: its heap budget and Go's memory limit
 	// while it ran (MiB).
 	MemoryBudgetMB int `json:"memory_budget_mb"`
@@ -188,7 +196,7 @@ func hasSuffix(n string, sfx ...string) bool {
 
 // Files whose content is read: code, templates and configuration.
 var auditExt = map[string]bool{".php": true, ".phtml": true, ".php5": true, ".inc": true, ".py": true, ".js": true, ".mjs": true,
-	".cjs": true, ".ts": true, ".json": true, ".yml": true, ".yaml": true, ".ini": true, ".conf": true, ".cfg": true, ".toml": true,
+	".cjs": true, ".ts": true, ".mts": true, ".cts": true, ".tsx": true, ".json": true, ".yml": true, ".yaml": true, ".ini": true, ".conf": true, ".cfg": true, ".toml": true,
 	".xml": true, ".properties": true, ".htaccess": true, ".user.ini": true, ".env": true}
 
 var uploadDir = regexp.MustCompile(`(?i)/(uploads?|files|media|images|attachments|storage/app/public)/`)
@@ -324,6 +332,11 @@ func injectionEngine() (*engine.Engine, error) {
 	return rulesEng, rulesErr
 }
 
+// generated reports whether a file is minified or bundled JavaScript.
+func generated(lang string, b []byte) bool {
+	return (lang == "js" || lang == "jsx" || lang == "ts" || lang == "tsx") && engine.Minified(b)
+}
+
 // injectionFindings turns the engine's findings for one file into code findings.
 // They carry the rule, never the code.
 func injectionFindings(found []engine.Finding, add func(CodeFinding)) {
@@ -333,8 +346,21 @@ func injectionFindings(found []engine.Finding, add func(CodeFinding)) {
 			sev = "critical"
 		}
 		add(CodeFinding{Kind: "injection", Severity: sev, Path: f.Path, Line: f.Line, Detail: f.Title,
-			Fix: f.Fix, Rule: f.RuleID, CWE: f.CWE, Tier: f.Tier})
+			Fix: f.Fix, Rule: f.RuleID, CWE: f.CWE, Tier: f.Tier, TestPath: testPath(f.Path)})
 	}
+}
+
+var testDirs = map[string]bool{"tests": true, "test": true, "examples": true, "__tests__": true}
+
+// testPath reports whether p is under a test or example folder. Findings there
+// are kept, marked and counted apart: such code is rarely deployed, but may be.
+func testPath(p string) bool {
+	for _, seg := range strings.Split(filepath.ToSlash(filepath.Dir(p)), "/") {
+		if testDirs[strings.ToLower(seg)] {
+			return true
+		}
+	}
+	return false
 }
 
 // finding is a code finding of the checks that are not rules.
@@ -353,7 +379,8 @@ func partialFinding(files []UnfinishedFile) CodeFinding {
 	for _, r := range []struct{ reason, text string }{
 		{"size", "over the size limit"}, {"limit", "too large, slow or deeply nested for the engine"},
 		{"unterminated", "with a string or comment that never ends"}, {"time", "after the audit's time limit"},
-		{"panic", "stopped by an engine error"},
+		{"panic", "stopped by an engine error"}, {"minified-unterminated", "minified JavaScript with a string or comment that never ends"},
+		{"minified-limit", "minified JavaScript too large or slow for the engine"},
 		{"calls", "checked function by function, its calls not followed to the end (a time or size limit)"},
 	} {
 		if n := count[r.reason]; n > 0 {
@@ -371,6 +398,10 @@ func unfinishedReason(err error) string {
 	switch {
 	case errors.Is(err, errPanic):
 		return "panic"
+	case errors.Is(err, engine.ErrMinified) && errors.Is(err, engine.ErrLimit):
+		return "minified-limit"
+	case errors.Is(err, engine.ErrMinified) && errors.Is(err, engine.ErrPartial):
+		return "minified-unterminated"
 	case errors.Is(err, engine.ErrLimit):
 		return "limit"
 	case errors.Is(err, engine.ErrPartial):
@@ -500,7 +531,7 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 		// First every file on its own (calls inside the file are followed): all
 		// files get this before any time goes to calls across files.
 		reported := map[string]bool{}
-		addNew := func(found []engine.Finding) {
+		addNew := func(found []engine.Finding, gen bool) {
 			var fresh []engine.Finding
 			for _, f := range found {
 				k := f.RuleID + "\x00" + f.Path + "\x00" + fmt.Sprint(f.Line)
@@ -509,13 +540,14 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 					fresh = append(fresh, f)
 				}
 			}
-			injectionFindings(fresh, add)
+			injectionFindings(fresh, func(f CodeFinding) { f.Generated = gen; add(f) })
 		}
 		// Files are scanned on several cores; results are taken in file order.
 		type scanned struct {
 			found               []engine.Finding
 			err                 error
 			late, unread, timed bool
+			gen                 bool // minified or bundled JavaScript
 			kept                *passResult
 		}
 		out := make([]scanned, len(files))
@@ -544,7 +576,9 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 						out[i].unread = true
 						continue
 					}
-					out[i].found, out[i].timed, out[i].err = injectionScan(eng, engine.LangOf(p), p, b)
+					lang := engine.LangOf(p)
+					out[i].found, out[i].timed, out[i].err = injectionScan(eng, lang, p, b)
+					out[i].gen = generated(lang, b)
 				}
 			}()
 		}
@@ -557,12 +591,12 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 			default:
 				k := r.kept
 				if k == nil {
-					k = &passResult{Found: r.found, Reason: unfinishedReason(r.err)}
+					k = &passResult{Found: r.found, Reason: unfinishedReason(r.err), Gen: r.gen}
 					if !r.timed && k.Reason != "panic" {
 						st.entry(p, hash[p]).Own = k
 					}
 				}
-				addNew(k.Found)
+				addNew(k.Found, k.Gen)
 				if k.Reason != "" { // "calls": its own calls were cut short
 					partial = append(partial, UnfinishedFile{p, k.Reason})
 				}
@@ -603,6 +637,7 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 				}
 				if k == nil && !cut && !time.Now().After(deadline) && pr.Stopped() == "" {
 					if b, err := read(p); err == nil {
+						gen := generated(engine.LangOf(p), b)
 						// A file the clock cut short before goes on from the rules it had
 						// done; a rule too slow for an audit's time is left out.
 						skip := map[string]bool{}
@@ -619,10 +654,10 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 						found := append(slices.Clone(part.Found), res.Found...)
 						switch {
 						case errors.Is(err, errPanic):
-							addNew(found)
+							addNew(found, gen)
 							continue
 						case pr.Unsteady(): // a callee changed during the audit: holds now, not kept
-							addNew(found)
+							addNew(found, gen)
 							continue
 						case res.Timed:
 							// The clock or the heap ran out: what the finished rules found
@@ -630,7 +665,7 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 							// audit's clock or heap stops the other files: a file over its
 							// own time limit (a busy server, a large file) waits for the
 							// next audit, and this one goes on with the rest.
-							addNew(found)
+							addNew(found, gen)
 							fs := st.entry(p, hash[p])
 							next := &partResult{Rules: append(slices.Clone(part.Rules), res.Done...), Found: found,
 								Cut: part.Cut || res.Cut, Tries: maps.Clone(part.Tries)}
@@ -647,7 +682,7 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 							cut = !res.FileTime
 							continue
 						}
-						k = &passResult{Found: found, Reason: unfinishedReason(err)}
+						k = &passResult{Found: found, Reason: unfinishedReason(err), Gen: gen}
 						if k.Reason == "" && (part.Cut || res.Cut || len(slow) > 0) {
 							k.Reason = "calls"
 						}
@@ -660,7 +695,7 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 					waiting = append(waiting, UnfinishedFile{p, "calls"})
 					continue
 				}
-				addNew(k.Found)
+				addNew(k.Found, k.Gen)
 				covered++
 				if k.Reason != "calls" {
 					done++ // limits of the file itself were reported by the first pass
@@ -689,6 +724,17 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 		}
 	}
 
+	for _, f := range res.Findings {
+		switch {
+		case f.Kind != "injection" || f.Rule == "":
+		case f.TestPath:
+			res.InjectionTestPaths++
+		case f.Generated:
+			res.InjectionGenerated++
+		default:
+			res.Injection++
+		}
+	}
 	if len(partial) > 0 {
 		// Files left unchecked come first in the list; those checked function by
 		// function after them.

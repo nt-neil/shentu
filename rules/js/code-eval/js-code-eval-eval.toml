@@ -4,8 +4,8 @@ class = "code-eval"
 cwe = "CWE-94"
 severity = "critical"
 title = "eval, Function constructor or node:vm on request input"
-frameworks = ["express"]
-sources = ["req.query", "req.body", "req.params"]
+frameworks = ["express", "nestjs", "nextjs"]
+sources = ["req.query", "req.body", "req.params", "@Query(", "@Body(", "@Param(", "@Req(", "req.originalUrl", "^request.nextUrl", "^req.nextUrl", "^request.url", "^req.url", "^searchParams", "^request.json(", "^req.json(", "^request.formData(", "^req.formData(", "^formData.get("]
 sinks = ["eval(", "new Function(", "Function(", "vm.runInNewContext(", "vm.runInThisContext(", "vm.Script(", "setTimeout("]
 sanitizers = ["JSON.parse(", "Number("]
 fix = "Do not evaluate input: parse it as data (JSON.parse, Number) or use a real expression parser; node:vm is not a security boundary."
@@ -48,4 +48,65 @@ app.post("/calc", (req, res) => {
   if (!Number.isFinite(a) || !Number.isFinite(b)) return res.sendStatus(400);
   res.json({ result: a + b });
 });
+'''
+
+[[samples]]
+kind = "vulnerable"
+dialect = "ts"
+code = '''
+type CalcDto = { expr: string };
+
+@Controller("calc")
+export class CalcController {
+  @Post()
+  run(@Body() dto: CalcDto): number {
+    return eval(dto.expr) as number;
+  }
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+dialect = "ts"
+code = '''
+export async function POST(request: Request) {
+  const { code } = (await request.json()) as { code: string };
+  const fn = new Function("ctx", code);
+  return Response.json({ result: fn({}) });
+}
+'''
+
+[[samples]]
+kind = "safe"
+dialect = "ts"
+code = '''
+@Controller("calc")
+export class CalcController {
+  @Post()
+  run(@Body() dto: { a: string; b: string }): number {
+    const a = Number(dto.a), b = Number(dto.b);
+    return a + b;
+  }
+}
+'''
+
+[[samples]]
+kind = "safe"
+dialect = "ts"
+code = '''
+export async function POST(request: Request) {
+  const raw = await request.json();
+  const cfg = JSON.parse(JSON.stringify(raw)) as Record<string, unknown>;
+  return Response.json({ keys: Object.keys(cfg).length });
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+dialect = "ts"
+code = '''
+export function GET(req: NextRequest) {
+  const expr = req.nextUrl.searchParams.get("expr") ?? "0";
+  return Response.json({ value: vm.runInNewContext(expr, {}) as number });
+}
 '''

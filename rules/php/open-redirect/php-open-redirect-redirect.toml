@@ -1,0 +1,111 @@
+id = "php-open-redirect-redirect"
+lang = "php"
+class = "open-redirect"
+cwe = "CWE-601"
+severity = "medium"
+tier = "info"
+title = "Redirect to a URL taken from the request"
+frameworks = ["wordpress", "laravel"]
+sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "get_query_var(", "->get_param(", "$request->input(", "$request->query(", "$request->get(", "->input->get(", "->input->getString("]
+sinks = ["wp_redirect(", "Location:", "redirect(", "redirect()->to(", "redirect()->away(", "Redirect::to(", "Redirect::away(", "->redirect("]
+sanitizers = ["Uri::isInternal(", "JUri::isInternal(", "wp_validate_redirect", "absint", "intval", "str_starts_with(", "check_admin_referer", "check_ajax_referer", "wp_verify_nonce", "current_user_can"]
+text = ["Location:"]
+fix = "Redirect with wp_safe_redirect(), or check the target with wp_validate_redirect() (Joomla: Uri::isInternal()) before redirecting; a prefix check (starts with \"/\" but not \"//\" or \"/\\\\\") can be bypassed with a tab or newline (\"/\\t/evil.example\"), so it does not make the target safe."
+refs = ["CVE-2018-19790"]
+
+[[args]]
+leading = true
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+if (isset($_GET['redirect_to'])) {
+    wp_redirect($_GET['redirect_to']);
+    exit;
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+$next = $_POST['next'];
+header("Location: " . $next);
+exit;
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+if (isset($_GET['redirect_to'])) {
+    wp_safe_redirect($_GET['redirect_to']);
+    exit;
+}
+'''
+
+[[samples]]
+kind = "safe"
+note = "after a nonce check only the site's own pages can make the request, so a link cannot choose the target"
+code = '''
+<?php
+check_admin_referer('bulk-items');
+wp_redirect(wp_unslash($_REQUEST['_wp_http_referer']));
+exit;
+'''
+
+[[samples]]
+kind = "safe"
+note = "a fixed path or the site's own address comes first"
+code = '''
+<?php
+header("Location: /account/orders?id=" . $_POST['order']);
+wp_redirect(admin_url('admin.php?page=' . $_GET['page']));
+exit;
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "a leading / is not enough: //evil.example leaves the site"
+code = '''
+<?php
+$to = $_GET['to'];
+if (str_starts_with($to, '/')) {
+    wp_redirect($to);
+    exit;
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "excluding // and /\\ is not enough: the browser drops a tab or newline, so /\\t/evil.example becomes //evil.example"
+code = '''
+<?php
+$to = $_GET['to'];
+if (str_starts_with($to, '/') && !str_starts_with($to, '//') && !str_starts_with($to, '/\\')) {
+    wp_redirect($to);
+    exit;
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "Joomla: the return parameter is decoded and redirected to as it is"
+code = '''
+<?php
+$return = base64_decode($this->input->get('return', '', 'base64'));
+$this->app->redirect($return);
+'''
+
+[[samples]]
+kind = "safe"
+note = "as Joomla's fixes do: a return URL that is not internal is dropped"
+code = '''
+<?php
+$return = base64_decode($this->input->get('return', '', 'base64'));
+if (!Uri::isInternal($return)) {
+    $return = '';
+}
+$this->app->redirect($return);
+'''

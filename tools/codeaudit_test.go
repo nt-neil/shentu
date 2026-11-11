@@ -139,6 +139,16 @@ func TestAppCodeAuditInjection(t *testing.T) {
 			}
 		}
 	}
+	// TypeScript files use the JavaScript rules.
+	for _, r := range rs {
+		for _, s := range r.Samples {
+			if _, done := want["v.ts"]; !done && s.Kind == "vulnerable" && s.Dialect == "ts" {
+				os.WriteFile(filepath.Join(dir, "v.ts"), []byte(s.Code), 0o644)
+				want["v.ts"] = r.ID
+				code = append(code, strings.TrimSpace(s.Code))
+			}
+		}
+	}
 	// Skipped folders stay skipped.
 	os.MkdirAll(filepath.Join(dir, "vendor"), 0o755)
 	os.WriteFile(filepath.Join(dir, "vendor", "v.php"), []byte("<?php\neval($_GET['c']);\n"), 0o644)
@@ -253,6 +263,22 @@ func TestAppCodeAuditExtensionsAndNUL(t *testing.T) {
 	}
 	if engine.LangOf("x.php5") != "php" || engine.LangOf("x.phtml") != "php" || engine.LangOf("x.inc") != "php" {
 		t.Error("LangOf and the audit disagree on PHP extensions")
+	}
+}
+
+func TestTestPath(t *testing.T) {
+	for p, want := range map[string]bool{
+		"/srv/app/tests/test_views.py":           true,
+		"/srv/app/test/app.router.js":            true,
+		"/srv/app/examples/params/index.js":      true,
+		"/srv/app/src/__tests__/a.js":            true,
+		"/srv/app/src/latest/views.py":           false,
+		"/srv/app/testing.php":                   false,
+		"/srv/app/wp-content/plugins/x/main.php": false,
+	} {
+		if got := testPath(p); got != want {
+			t.Errorf("testPath(%q) = %v, want %v", p, got, want)
+		}
 	}
 }
 

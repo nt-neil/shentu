@@ -130,11 +130,18 @@ type analysis struct {
 	noSrc  bool   // the rule's sources are off (a summary run for parameters)
 	cls    string // class of the method being analysed, and its parent
 	parent string
-	fname  string // name of the function being analysed
+
+	lits   map[string][]Token // values written in the code, kept for argument conditions (context.go)
+	locals map[string]bool    // names of the file's own functions and methods (context.go)
+	defs   map[string]string  // PHP: define('NAME', 'text') in this file (context.go)
+	fname  string             // name of the function being analysed
 
 	file  string            // the file analysed, for findings and for calls into other files
 	proj  *Project          // the project the file belongs to, or nil (project.go)
 	types map[string]string // variable → class of the object assigned to it ($x = new Foo)
+
+	ftoks []Token              // the file's tokens, for the receiver condition (receiver.go)
+	rdefs map[string][][]Token // what names of the file are assigned or annotated with, built on first use
 }
 
 // loc is a place a sink is reached: a line of a file.
@@ -203,12 +210,21 @@ func (a *analysis) stmt(s *stmt, st state) (state, uint8) {
 		}
 		a.assignStmt(st, s.toks)
 		a.assertStmt(st, s.toks)
+		a.raisingCheckStmt(st, s.toks)
+		a.nonceStmt(st, s.toks)
+		a.stripKeys(st, s.toks)
+		a.markAssign(st, s.toks)
+		a.extractStmt(st, s.toks)
+		a.recordLit(st, s.toks)
 		return st, a.exitOf(s.toks)
 	case sIf:
 		a.sinks(st, s.toks)
+		a.condAssign(st, s.toks)
 		t1, _ := a.refine(st, s.toks, true)
+		a.nonceCond(t1, s.toks, true)
 		t1, e1 := a.block(s.body, t1)
 		t2, g2 := a.refine(st, s.toks, false)
+		a.nonceCond(t2, s.toks, false)
 		e2 := noExit
 		if len(s.els) > 0 {
 			t2, e2 = a.block(s.els, t2)
@@ -390,6 +406,7 @@ func (a *analysis) function(f *fn, st state) {
 func (a *analysis) loop(s *stmt, st state) state {
 	body := s.body
 	var targets, iter, cond []Token
+	keyed := false // foreach ($a as $k => $v)
 	switch s.loop {
 	case "for":
 		parts := splitTop(s.toks, isSemi)
@@ -404,6 +421,7 @@ func (a *analysis) loop(s *stmt, st state) state {
 	case "each":
 		if i := indexTop(s.toks, 0, isWord("as")); i > 0 {
 			iter = s.toks[:i]
+			keyed = len(splitTop(s.toks[i+1:], isOp("=>"))) == 2
 			for _, side := range splitTop(s.toks[i+1:], isOp("=>")) {
 				targets = append(targets, side...)
 				targets = append(targets, Token{Kind: Op, Text: ","})
@@ -429,8 +447,12 @@ func (a *analysis) loop(s *stmt, st state) state {
 	}
 	tl := a.targetList(targets)
 	bind := func(x state) {
-		for _, t := range tl {
-			a.setTarget(x, t, iv, "=", false)
+		for k, t := range tl {
+			v := iv
+			if k == 0 && keyed && a.keysTainted(x, iter) {
+				v = val{taint: true} // the keys of a cleaned array are still the input's (context.go)
+			}
+			a.setTarget(x, t, v, "=", false)
 		}
 	}
 	enter := func(x state) state {
@@ -464,7 +486,8 @@ func (a *analysis) loop(s *stmt, st state) state {
 var declWords = map[string]bool{"const": true, "let": true, "var": true, "global": true, "static": true,
 	"public": true, "private": true, "protected": true, "readonly": true, "final": true}
 
-var exitCalls = map[string]bool{"abort": true, "wp_die": true, "exit": true, "die": true}
+var exitCalls = map[string]bool{"abort": true, "wp_die": true, "exit": true, "die": true,
+	"wp_send_json": true, "wp_send_json_error": true, "wp_send_json_success": true} // these die after sending
 
 func (a *analysis) exitOf(t []Token) uint8 {
 	if len(t) == 0 || t[0].Kind != Ident {
@@ -487,6 +510,9 @@ func (a *analysis) exitOf(t []Token) uint8 {
 	}
 	if len(t) > 3 && (t[0].Text == "sys" || t[0].Text == "process") && t[1].op(".") && t[2].word("exit") {
 		return hardExit
+	}
+	if a.js && len(t) > 3 && (t[0].Text == "ctx" || t[0].Text == "this") && t[1].op(".") && t[2].word("throw") && t[3].op("(") {
+		return hardExit // Koa: ctx.throw(400) throws, ending the request
 	}
 	return noExit
 }
@@ -547,11 +573,43 @@ func (a *analysis) assign(st state, t []Token) (val, bool) {
 	cls := a.newClass(rhs)
 	for _, tg := range a.targetList(lhs) {
 		a.setTarget(st, tg, v, t[k].Text, sep)
+		a.sourceParts(st, tg, rhs, t[k].Text)
+		if key, _, ok := a.pathKey(tg); ok {
+			if t[k].Text == "=" && a.canonical(st, rhs) {
+				st[canonKey+key] = entry{san: true}
+			} else if _, had := st[canonKey+key]; had {
+				delete(st, canonKey+key)
+			}
+			if a.js {
+				a.setRelative(st, key, rhs, t[k].Text == "=")
+			}
+		}
 		if cls != "" && len(tg) == 1 {
 			a.setType(tg[0].Text, cls)
 		}
 	}
 	return v, sep
+}
+
+// sourceParts: after $f = $_FILES['doc'], with the source $_FILES[*]['name'],
+// $f['name'] is input; the rest of $f ($f['tmp_name']) is not.
+func (a *analysis) sourceParts(st state, tg, rhs []Token, op string) {
+	if a.noSrc || op != "=" {
+		return
+	}
+	rhs = stripParens(rhs)
+	if _, _, ok := a.pathKey(rhs); !ok {
+		return
+	}
+	for _, s := range a.r.sources {
+		r := s.rest(rhs)
+		if r == nil || len(rhs) > 0 && memberOp(a.php, rhs[0]) {
+			continue
+		}
+		if key, _, ok := a.pathKey(append(append([]Token{}, tg...), r...)); ok {
+			st[key] = entry{taint: !a.nonced(st), raw: true}
+		}
+	}
 }
 
 // newClass returns the class an expression makes: new Foo(...), Python Foo(...).
@@ -781,6 +839,9 @@ func (a *analysis) fixedStart(st state, t []Token) bool {
 	}
 	parts := splitTop(t, isOp(join))
 	// Literals at the start ('tpl' . '/' . $x, "ph$x") read as one text.
+	if len(parts) > 0 && len(parts[0]) == 1 && a.configStart(st, parts[0][0]) {
+		return true // `${process.env.API}/v1?q=${x}`: a configured base, then a path (context.go)
+	}
 	lit, k := "", 0
 	for ; k < len(parts) && len(parts[k]) == 1 && parts[k][0].Kind == Str; k++ {
 		tk := parts[k][0]
@@ -792,7 +853,7 @@ func (a *analysis) fixedStart(st state, t []Token) bool {
 		lit += tk.Text
 	}
 	if k > 0 {
-		return notScheme(lit)
+		return a.fixedText(lit)
 	}
 	first := parts[0]
 	n := len(first)
@@ -808,6 +869,11 @@ func (a *analysis) fixedStart(st state, t []Token) bool {
 	}
 	switch {
 	case a.php && n == 1 && first[0].Kind == Ident && !a.kw[first[0].Text] && !isLiteral(first):
+		if netClasses[a.r.rule.Class] {
+			// a URL: only a constant defined in this file whose text fixes the host
+			v, ok := a.defs[first[0].Text]
+			return ok && a.fixedText(v)
+		}
 		return true // a constant: WP_PLUGIN_DIR, __DIR__ (in PHP a bare name is no variable)
 	case a.php && n == 3 && first[0].Kind == Ident && first[1].op("::") && first[2].Kind == Ident:
 		return true // a class constant: self::BASE
@@ -829,10 +895,37 @@ func (a *analysis) fixedStart(st state, t []Token) bool {
 			switch first[0].Text {
 			case "storage_path", "base_path", "public_path", "resource_path", "app_path", "database_path", "config_path":
 				return true // Laravel: the app's own folder, then the argument
+			case "admin_url", "network_admin_url", "self_admin_url", "get_admin_url", "rest_url", "plugins_url",
+				"get_permalink", "get_edit_post_link", "get_term_link", "wp_login_url", "wp_logout_url":
+				return true // WordPress: the site's own address with a path, then the argument
+			case "home_url", "site_url", "network_home_url", "network_site_url", "get_home_url", "get_site_url":
+				// the site's address, with no "/" after the host unless a path is given
+				k := 0
+				if strings.HasPrefix(first[0].Text, "get_") {
+					k = 1 // get_home_url($blog_id, $path)
+				}
+				return len(args) > k && len(args[k]) == 1 && args[k][0].Kind == Str && strings.HasPrefix(args[k][0].Text, "/")
+			case "add_query_arg", "remove_query_arg":
+				// WordPress: the URL is the last argument (after a key and value, or an array of
+				// keys); without it, the current request's own path on this site.
+				if n := len(args); n == 3 || n == 2 && len(args[0]) > 0 && (args[0][0].op("[") || args[0][0].word("array") || args[0][0].Kind == Var) {
+					return !a.rawInput(st, args[n-1]) || a.fixedStart(st, args[n-1])
+				}
+				return true
+			case "untrailingslashit", "rtrim":
+				if netClasses[a.r.rule.Class] {
+					return false // may cut the "/" after the host: https://site . "@evil.com"
+				}
+			case "trailingslashit", "user_trailingslashit":
+				// the result starts with the first argument (untrailingslashit and rtrim may cut its end)
+				return len(args) >= 1 && a.fixedStart(st, args[0])
+			case "apply_filters":
+				// WordPress returns the filtered value, the second argument
+				return len(args) >= 2 && (!a.rawInput(st, args[1]) || a.fixedStart(st, args[1]))
 			case "sprintf":
 				if len(args) > 0 && len(args[0]) == 1 && args[0][0].Kind == Str && len(args[0][0].Parts) == 0 {
 					head, _, _ := strings.Cut(args[0][0].Text, "%")
-					return notScheme(head)
+					return a.fixedText(head)
 				}
 			}
 			if n == closeOf(first, 1)+1 {
@@ -843,7 +936,7 @@ func (a *analysis) fixedStart(st state, t []Token) bool {
 						return false
 					}
 				}
-				return true
+				return !a.rawInput(st, first) // a call that is a source itself (get_query_var('u')) is input
 			}
 		}
 		return !a.rawInput(st, first) && !requestRoot(first[0].Text)
@@ -1119,12 +1212,36 @@ func (a *analysis) term(st state, t []Token, i int, whole bool) (val, int) {
 	case tk.op("[") || tk.op("{"):
 		c := closeOf(t, i)
 		return a.postfix(st, t, i, c+1, a.literal(st, inside(t, i, c), tk.Text, whole), whole)
+	case a.php && tk.word("match") && i+1 < len(t) && t[i+1].op("(") && closeOf(t, i+1)+1 < len(t) && t[closeOf(t, i+1)+1].op("{") &&
+		(i == 0 || !memberOp(true, t[i-1])):
+		return a.matchExpr(st, t, i, whole)
+	case tk.Kind == Ident && (i == 0 || !memberOp(a.php, t[i-1])) && a.mapSanAt(t, i) >= 0:
+		return a.postfix(st, t, i, a.mapSanAt(t, i), val{}, whole) // array_map('absint', $x): each value sanitized (context.go)
+	case tk.Kind == Ident && (i == 0 || !memberOp(a.php, t[i-1])) && a.stripAllAt(t, i) >= 0:
+		return a.postfix(st, t, i, a.stripAllAt(t, i), val{}, whole) // preg_replace('/[^a-z0-9_]/', '', $x): only safe characters are left (context.go)
 	case tk.Kind == Ident && numericFuncs[a.lang()][tk.Text] && i+1 < len(t) && t[i+1].op("(") && (i == 0 || !memberOp(a.php, t[i-1])):
 		return a.postfix(st, t, i, closeOf(t, i+1)+1, val{}, whole) // intval($x), int(x), Number(x)
 	case tk.Kind == Var || tk.Kind == Ident:
 		return a.postfix(st, t, i, i+1, val{}, whole)
 	}
 	return val{}, i + 1
+}
+
+// matchExpr evaluates PHP 8 match ($x) { 'a' => 'col_a', default => 'id' }:
+// its value is one of the arms' results, never the subject, so arms that are
+// all fixed give a clean value. An arm that throws gives no value.
+func (a *analysis) matchExpr(st state, t []Token, i int, whole bool) (val, int) {
+	open := closeOf(t, i+1) + 1
+	end := closeOf(t, open)
+	var v val
+	for _, arm := range splitTop(inside(t, open, end), isComma) {
+		k := indexTop(arm, 0, isOp("=>"))
+		if k < 0 || k+1 >= len(arm) || arm[k+1].word("throw") {
+			continue
+		}
+		v = or(v, a.expr(st, arm[k+1:], whole))
+	}
+	return a.postfix(st, t, i, end+1, v, whole)
 }
 
 // numericCasts and numericFuncs turn any value into a number (or a boolean), which
@@ -1163,16 +1280,14 @@ func (a *analysis) postfix(st state, t []Token, start, baseEnd int, v val, whole
 			return
 		}
 		for _, s := range a.r.sources {
-			if s.text == nil && s.at(t, pos, false) {
-				if e := pos + len(s.toks); srcEnd < 0 || e < srcEnd {
-					srcEnd = e
-				}
+			if e, ok := a.srcMatch(s, t, pos); ok && (srcEnd < 0 || e < srcEnd) {
+				srcEnd = e
 			}
 		}
 	}
 	apply := func(pos int) {
 		if srcEnd >= 0 && pos >= srcEnd {
-			v, srcEnd = val{taint: true}, -2
+			v, srcEnd = val{taint: !a.nonced(st)}, -2 // read after a nonce check: the site's own request (context.go)
 		}
 		if key != "" {
 			if e, ok := st[key]; ok {
@@ -1222,7 +1337,24 @@ func (a *analysis) postfix(st state, t []Token, start, baseEnd int, v val, whole
 				key = a.calleeKey(t, j-1)
 				sum = a.callSummary(t, j-1, key)
 			}
-			if sum != nil && !a.raw {
+			if a.r.output {
+				// output rules (htmlctx.go): a call returns its input changed only when one
+				// argument is the input itself; the arguments are read once per call
+				switch {
+				case sum != nil && !a.raw:
+					v = a.callVal(st, sum, callArgs(t, j)) // a function of this file: its summary knows
+				case !a.localFunc(t[j-1].Text) && a.opaqueAt(st, t, j, v.taint):
+					v = val{}
+				case !a.wholeArg(st, inside(t, j, c), t[j-1].Text):
+					if a.php && j >= 2 && memberOp(true, t[j-2]) && j-3 >= 0 && t[j-3].Kind == Var && wpServices[t[j-3].Text] {
+						v = val{} // a WordPress service ($wpdb, $walker): what it returns is not its own state
+					}
+				default:
+					name := t[j-1].Text
+					v = val{taint: true, emb: t[start].Kind == Str || formatFuncs[name],
+						weak: !(t[start].Kind == Str || formatFuncs[name] || a.passes(t, start, j-1) || key != "" && !a.returnsUnknown(key))}
+				}
+			} else if sum != nil && !a.raw {
 				v = a.callVal(st, sum, callArgs(t, j))
 			} else if a.argsTaint(st, inside(t, j, c), fn) {
 				// "...".format(x), sprintf("... %s", $x), implode(...): the input becomes part of a string
@@ -1248,6 +1380,35 @@ func (a *analysis) postfix(st state, t []Token, start, baseEnd int, v val, whole
 		v = val{taint: true}
 	}
 	return v, j
+}
+
+// srcMatch matches a code source at i and returns where it ends. A source
+// that is a function call by name (request(, get_query_var() matches only the
+// function, not a method of that name: ->request( is something else. A source
+// with source_args is input only when its argument says so (Joomla's
+// ->get($k, $d, 'raw')); written another way, or left out, it is not.
+func (a *analysis) srcMatch(s *pat, t []Token, i int) (int, bool) {
+	if s.text != nil {
+		return 0, false
+	}
+	strict := len(s.toks) > 1 && s.toks[0].Kind == Ident && s.toks[1].op("(")
+	end, ok := s.match(t, i, strict)
+	if !ok || s.srcArg == 0 {
+		return end, ok
+	}
+	open := i + s.callParen()
+	if open >= len(t) || !t[open].op("(") {
+		return 0, false
+	}
+	args := splitTop(inside(t, open, closeOf(t, open)), isComma)
+	if s.srcArg > len(args) {
+		return 0, false
+	}
+	arg := stripParens(args[s.srcArg-1])
+	if len(arg) > 1 && arg[0].Kind == Ident && arg[1].op(":") {
+		arg = arg[2:] // a named argument: filter: 'raw'
+	}
+	return end, len(arg) == 1 && arg[0].Kind == Str && len(arg[0].Parts) == 0 && s.srcVals[strings.ToLower(arg[0].Text)]
 }
 
 // argsTaint reports whether a call's arguments carry taint into its result. Most
@@ -1443,7 +1604,12 @@ var prefixChecks = map[string]bool{"str_starts_with": true, "strncmp": true, "st
 var predicates = map[string]bool{"in_array": true, "array_key_exists": true, "is_relative_to": true,
 	"ctype_digit": true, "ctype_alnum": true, "is_numeric": true, "is_int": true, "isInteger": true, "isSafeInteger": true,
 	"str_starts_with": true, "strncmp": true, "strncasecmp": true, "strpos": true, "stripos": true,
-	"startsWith": true, "startswith": true, "validate_file": true}
+	"startsWith": true, "startswith": true, "validate_file": true,
+	// in the rules that list them: URL and redirect checks, upload type checks, string type checks
+	"wp_http_validate_url": true, "url_has_allowed_host_and_scheme": true, "is_safe_url": true,
+	"allowed_file": true, "is_string": true, "isinstance": true, "wp_check_jsonp_callback": true,
+	"isBasePath": true, "isAbsolute": true, // Symfony Path::isBasePath($base, $path), Path::isAbsolute($path)
+	"isInternal": true} // Joomla Uri::isInternal($url): the URL stays on this site
 
 // zeroMeansMatch are comparisons for which "=== 0" means the check passed.
 var zeroMeansMatch = map[string]bool{"strncmp": true, "strncasecmp": true, "strcmp": true, "strcasecmp": true,
@@ -1487,6 +1653,18 @@ func (a *analysis) refine(st state, cond []Token, truth bool) (state, []string) 
 		return out, cleaned
 	}
 	for _, atom := range splitTop(cond, split) {
+		if truth {
+			// A || B || C where each validates the same value: where it holds, one did
+			if parts := splitTop(stripParens(atom), func(t Token) bool { return t.op("||") || t.word("or") }); len(parts) > 1 {
+				for _, k := range a.allValidate(st, parts) {
+					e := out[k.key]
+					e.taint, e.src = false, e.src || k.src
+					out[k.key] = e
+					cleaned = append(cleaned, k.key)
+				}
+				continue
+			}
+		}
 		pos, keys := a.guard(st, atom)
 		if keys == nil || pos != truth {
 			continue
@@ -1512,6 +1690,9 @@ func (a *analysis) guard(st state, atom []Token) (pos bool, keys []keyRef) {
 	if len(atom) == 0 {
 		return pos, nil
 	}
+	if keys := a.escapeCheck(st, atom); keys != nil {
+		return !pos, keys // the check passes where the path does not escape
+	}
 	// PHP empty($x) and isset($x): an empty or unset value carries no input.
 	if n := len(atom); a.php && n > 3 && (atom[0].word("empty") || atom[0].word("isset")) && atom[1].op("(") && closeOf(atom, 1) == n-1 {
 		arg := atom[2 : n-1]
@@ -1535,12 +1716,22 @@ func (a *analysis) guard(st state, atom []Token) (pos bool, keys []keyRef) {
 			return pos, nil
 		}
 	}
+	if _, _, ok := a.pathKey(atom); ok && len(atom) > 0 && !requestRoot(atom[0].Text) {
+		// if ($x): where it is false, $x is empty ("", "0", null, 0), which carries no input
+		return !pos, a.keysOf(atom)
+	}
 	if i := indexTop(atom, 0, a.isCompare); i > 0 {
 		lhs, op, rhs := atom[:i], atom[i].Text, atom[i+1:]
 		if isLiteral(lhs) {
 			lhs, rhs = rhs, lhs
 		}
 		eq, ne := op == "==" || op == "===", op == "!=" || op == "!==" || op == "<>"
+		if k := a.equalsClean(st, lhs, rhs, op); k != nil {
+			if ne {
+				pos = !pos
+			}
+			return pos, k
+		}
 		if !eq && !ne || len(lhs) == 0 || len(rhs) != 1 {
 			return pos, nil
 		}
@@ -1671,11 +1862,14 @@ func (a *analysis) checkKeys(st state, atom []Token) []keyRef {
 		if open >= 0 {
 			args = splitTop(inside(atom, open, end-1), isComma)
 		}
-		if !predicates[s.name] || prefixChecks[s.name] && !a.anySep(st, args) {
+		if !predicates[s.name] || prefixChecks[s.name] && (!a.anySep(st, args) || !a.netPrefixOK(st, args) || !a.canonPrefix(st, args)) {
 			return nil
 		}
 		if s.name == "validate_file" && (len(args) < 2 || !a.allowlist(st, args[1])) {
 			return nil // without a list of allowed files it lets /etc/passwd through
+		}
+		if prefixChecks[s.name] && netClasses[a.r.rule.Class] {
+			return a.plainSubject(args) // str_starts_with($u, '/x/'): only $u, and only a plain path
 		}
 		return a.keysOf(atom)
 	}
@@ -1695,8 +1889,11 @@ func (a *analysis) checkKeys(st state, atom []Token) []keyRef {
 			if open >= 0 {
 				args = splitTop(inside(atom, open, end-1), isComma)
 			}
-			if !predicates[s.name] || prefixChecks[s.name] && !a.anySep(st, args) {
+			if !predicates[s.name] || prefixChecks[s.name] && (!a.anySep(st, args) || !a.netPrefixOK(st, args) || !a.canonPrefix(st, append(args, atom[:m]))) {
 				return nil
+			}
+			if prefixChecks[s.name] && netClasses[a.r.rule.Class] {
+				return a.plainSubject([][]Token{atom[:m]}) // u.startswith('/x/'): only u, and only a plain path
 			}
 			return append(a.keysOf(atom[:m]), a.keysOf(inside(atom, open, end-1))...)
 		}
@@ -1863,7 +2060,7 @@ func (a *analysis) keysOf(t []Token) []keyRef {
 			src := false
 			for k := i; k < j; k++ {
 				for _, s := range a.r.sources {
-					if s.text == nil && s.at(t[:j], k, false) {
+					if _, ok := a.srcMatch(s, t[:j], k); ok {
 						src = true
 					}
 				}
@@ -1889,8 +2086,8 @@ func (a *analysis) sinks(st state, t []Token) {
 		}
 		if t[i].Kind == Str {
 			for _, s := range a.r.textSinks {
-				if loc := s.text.FindStringIndex(t[i].Text); loc != nil {
-					a.textSink(st, t, i, loc[0])
+				if loc := textMatch(s, t[i]); loc != nil {
+					a.textSink(st, t, i, loc[0], loc[1], a.r.args[s])
 				}
 			}
 		}
@@ -1910,8 +2107,18 @@ func (a *analysis) sink(st state, t []Token, i int, s *pat) {
 	default:
 		region = t[end:]
 	}
-	if cond != nil && (len(cond.when) > 0 && !a.when(cond.when, region) || a.unless(st, cond.unless, region)) {
+	if lr := a.expandLits(st, region); cond != nil && (len(cond.when) > 0 && !a.when(cond.when, lr) || a.unless(st, cond.unless, lr)) {
 		return
+	}
+	if cond != nil && cond.literal && !a.literalArg(st, cond, region, open) {
+		return
+	}
+	if a.noSources() {
+		a.report(t[i].Line)
+		return
+	}
+	if a.nonced(st) {
+		return // the request carried a valid CSRF nonce, so a third party cannot have made it (context.go)
 	}
 	var recv []Token
 	if s.member {
@@ -1922,6 +2129,9 @@ func (a *analysis) sink(st state, t []Token, i int, s *pat) {
 		if a.expr(st, recv, false).san {
 			return // a method of an object a sanitizer made (SandboxedEnvironment().from_string)
 		}
+		if cond != nil && len(cond.receiver) > 0 && !a.recvIs(cond.receiver, recv) {
+			return // finders.find(path) is not a MongoDB collection
+		}
 	}
 	whole := cond != nil && cond.whole
 	emb := false
@@ -1931,6 +2141,24 @@ func (a *analysis) sink(st state, t []Token, i int, s *pat) {
 		return ok
 	}
 	reaches := func(arg []Token) bool {
+		if cond != nil && cond.key != "" {
+			if arg = keyValue(arg, cond.key); arg == nil {
+				return false // { status: 302 } without the key: not this sink
+			}
+		}
+		if cond != nil && cond.keys {
+			if keys, ok := literalKeys(arg, a.php); ok {
+				for _, k := range keys {
+					if !(a.js && len(k) == 1 && k[0].Kind == Ident) && hit(a.expr(st, k, false)) {
+						return true // { name: 1 } in JavaScript: the name is written, not a variable
+					}
+				}
+				return false
+			}
+		}
+		if cond != nil && len(cond.context) > 0 {
+			return a.contextTaint(st, t[i], arg, cond.context)
+		}
 		return hit(a.argVal(st, arg, whole)) && !(cond != nil && cond.leading && a.fixedStart(st, arg))
 	}
 	tainted := false
@@ -1953,6 +2181,8 @@ func (a *analysis) sink(st state, t []Token, i int, s *pat) {
 				break
 			}
 		}
+	case cond != nil && len(cond.context) > 0:
+		tainted = a.contextTaint(st, t[i], region, cond.context)
 	default:
 		tainted = hit(a.expr(st, region, whole))
 	}
@@ -2040,16 +2270,37 @@ func (a *analysis) spreadArg(args [][]Token) []Token {
 
 // when reports whether one of the fragments is among a call's arguments. A
 // fragment ending in ":" or "=" names an option (shell:, shell=): it counts with
-// any value except a literal false, 0, null or None.
+// any value except a literal false, 0, null or None. A flag taken out with "~"
+// ($flags & ~LIBXML_DTDLOAD, & ~(A | B)) is not set.
 func (a *analysis) when(ps []*pat, region []Token) bool {
 	for _, p := range ps {
 		for i := range region {
-			if !p.at(region, i, false) {
+			if !p.at(region, i, false) || negated(region, i) {
 				continue
 			}
 			if v := optionValue(p, region, i); v == nil || !falsy(v) {
 				return true
 			}
+		}
+	}
+	return false
+}
+
+// negated reports whether the operand at i is under a bitwise "~": right after
+// it, or inside a group of flags joined by "|" that follows it: ~(A | B). In
+// ~A | B, "~" binds tighter, so B is set.
+func negated(t []Token, i int) bool {
+	if i > 0 && t[i-1].op("~") {
+		return true
+	}
+	for j := i - 1; j >= 0; j-- {
+		switch {
+		case t[j].op("("):
+			return j > 0 && t[j-1].op("~")
+		case t[j].op("|") || t[j].Kind == Ident:
+			continue // another flag of the same group
+		default:
+			return false
 		}
 	}
 	return false
@@ -2179,7 +2430,7 @@ func listStart(t []Token, i int) int {
 // textSink handles a sink that is text in a string ("ORDER BY"): what follows the
 // text, in the string's interpolations or in the operands joined after it, must
 // not be user input.
-func (a *analysis) textSink(st state, t []Token, k, off int) {
+func (a *analysis) textSink(st state, t []Token, k, off, textEnd int, cond *argCond) {
 	tk := t[k]
 	tainted := false
 	for _, p := range tk.Parts {
@@ -2203,6 +2454,9 @@ func (a *analysis) textSink(st state, t []Token, k, off int) {
 			}
 		}
 		tainted = a.expr(st, t[k+1:end], false).taint
+	}
+	if tainted && cond != nil && cond.leading && a.textLeading(st, t, k, textEnd) {
+		tainted = false
 	}
 	if tainted {
 		a.report(tk.Line + strings.Count(tk.Text[:off], "\n"))

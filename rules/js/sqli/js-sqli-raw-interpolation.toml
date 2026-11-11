@@ -4,8 +4,8 @@ class = "sqli"
 cwe = "CWE-89"
 severity = "high"
 title = "Request input concatenated or interpolated into SQL for a driver or knex.raw"
-frameworks = ["express"]
-sources = ["req.query", "req.body", "req.params", "req.cookies"]
+frameworks = ["express", "nestjs", "nextjs"]
+sources = ["req.query", "req.body", "req.params", "req.cookies", "@Query(", "@Body(", "@Param(", "@Req(", "req.originalUrl", "^request.nextUrl", "^req.nextUrl", "^request.url", "^req.url", "^searchParams", "^request.json(", "^req.json(", "^request.formData(", "^req.formData(", "^formData.get(", "^cookies().get("]
 sinks = [".query(", ".execute(", "knex.raw(", ".raw(", ".whereRaw(", ".orderByRaw("]
 sanitizers = ["parseInt(", "Number("]
 fix = "Use placeholders and pass values separately (query('... WHERE id = ?', [id]), knex.raw('?? = ?', [col, val])); never build SQL with + or template literals."
@@ -13,6 +13,7 @@ refs = ["CVE-2026-47384"]
 
 [[args]]
 arg = 1   # the SQL text; values in the bindings array are safe
+whole = true   # query({ sql: "... ?", args: [input] }) binds the input; only SQL text built from input is the attack
 
 [[samples]]
 kind = "vulnerable"
@@ -52,4 +53,133 @@ router.post("/group", async (req, res) => {
   const rows = await knex("orders").select(knex.raw("count(*) as n, ??", [col])).groupBy(col);
   res.json(rows);
 });
+'''
+
+[[samples]]
+kind = "vulnerable"
+dialect = "ts"
+note = "NestJS: @Body() binds the request body to the parameter"
+code = '''
+interface CreateUserDto { name: string; email?: string }
+
+@Controller("users")
+export class UsersController {
+  constructor(private readonly ds: DataSource) {}
+
+  @Post()
+  async create(@Body() dto: CreateUserDto): Promise<void> {
+    await this.ds.query(`INSERT INTO users (name) VALUES ('${dto.name}')`);
+  }
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+dialect = "ts"
+note = "Next.js route handler: the query string of request.nextUrl"
+code = '''
+export async function GET(request: NextRequest): Promise<Response> {
+  const q = request.nextUrl.searchParams.get("q")!;
+  const [rows] = (await pool.query(`SELECT id FROM posts WHERE title LIKE '%${q}%'`)) as [RowDataPacket[], FieldPacket[]];
+  return Response.json(rows);
+}
+'''
+
+[[samples]]
+kind = "safe"
+dialect = "ts"
+note = "ParseIntPipe turns the route parameter into a number"
+code = '''
+@Controller("users")
+export class UsersController {
+  constructor(private readonly ds: DataSource) {}
+
+  @Get(":id")
+  findOne(@Param("id", ParseIntPipe) id: number) {
+    return this.ds.query(`SELECT * FROM users WHERE id = ${id}`);
+  }
+}
+'''
+
+[[samples]]
+kind = "safe"
+dialect = "ts"
+code = '''
+export async function GET(request: NextRequest) {
+  const q = request.nextUrl.searchParams.get("q") ?? "";
+  const [rows] = await pool.query<RowDataPacket[]>("SELECT id FROM posts WHERE title LIKE ?", [`%${q}%`]);
+  return Response.json(rows satisfies RowDataPacket[]);
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+dialect = "ts"
+note = "Next.js: cookies() from next/headers"
+code = '''
+export async function GET() {
+  const team = cookies().get("team")?.value;
+  return Response.json(await pool.query(`SELECT * FROM boards WHERE team = '${team}'`));
+}
+'''
+
+[[samples]]
+kind = "safe"
+dialect = "ts"
+code = '''
+export async function GET() {
+  const team = cookies().get("team")?.value ?? "";
+  return Response.json(await pool.query("SELECT * FROM boards WHERE team = ?", [team]));
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+dialect = "ts"
+note = "Next.js Server Action: the form data comes from the client"
+code = '''
+export async function rename(formData: FormData) {
+  "use server";
+  await pool.query(`UPDATE boards SET name = '${formData.get("name")}' WHERE id = 1`);
+}
+'''
+
+[[samples]]
+kind = "safe"
+dialect = "ts"
+code = '''
+export async function rename(formData: FormData) {
+  "use server";
+  await pool.query("UPDATE boards SET name = ? WHERE id = 1", [String(formData.get("name"))]);
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "req.originalUrl holds the query string"
+code = '''
+app.get("/log", async (req, res) => {
+  await pool.query("INSERT INTO hits (url) VALUES ('" + req.originalUrl + "')");
+  res.end();
+});
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+app.get("/log", async (req, res) => {
+  await pool.query("INSERT INTO hits (url) VALUES (?)", [req.originalUrl]);
+  res.end();
+});
+'''
+
+[[samples]]
+kind = "safe"
+dialect = "ts"
+note = "libsql / mysql2 object form: the input is bound by args (or values), not part of the SQL text"
+code = '''
+export async function addTodo(formData: FormData) {
+  "use server";
+  await db.execute({ sql: "INSERT INTO todos (description) VALUES (?)", args: [formData.get("description") as string] });
+}
 '''

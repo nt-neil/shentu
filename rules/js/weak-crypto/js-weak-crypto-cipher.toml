@@ -1,0 +1,36 @@
+id = "js-weak-crypto-cipher"
+lang = "js"
+class = "weak-crypto"
+cwe = "CWE-327"
+severity = "medium"
+tier = "info"
+title = "Data encrypted with a broken cipher, ECB mode or the deprecated createCipher"
+sources = []
+sinks = ["crypto.createCipher(", "crypto.createDecipher(", "crypto.createCipheriv(", "crypto.createDecipheriv(", "createCipheriv(", "createDecipheriv("]
+sanitizers = []
+fix = "Use crypto.createCipheriv('aes-256-gcm', key, randomIv) and check the auth tag; createCipher derives the key with MD5 and no salt, and DES, 3DES, RC4, Blowfish and ECB mode do not keep data secret."
+refs = ["CVE-2022-35513"]
+
+[[args]]
+sinks = ["crypto.createCipheriv(", "crypto.createDecipheriv(", "createCipheriv(", "createDecipheriv("]
+arg = 1
+when = ["'des-cbc'", "'des-ecb'", "'des-cfb'", "'des-ofb'", "'des-ede'", "'des-ede-cbc'", "'des-ede3'", "'des-ede3-cbc'", "'rc4'", "'rc4-40'", "'rc4-hmac-md5'", "'rc2-cbc'", "'rc2-ecb'", "'bf-cbc'", "'bf-ecb'", "'aes-128-ecb'", "'aes-192-ecb'", "'aes-256-ecb'", "'DES-CBC'", "'DES-ECB'", "'DES-EDE3'", "'DES-EDE3-CBC'", "'RC4'", "'RC2-CBC'", "'BF-CBC'", "'BF-ECB'", "'AES-128-ECB'", "'AES-192-ECB'", "'AES-256-ECB'"]
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+const c = crypto.createCipheriv("aes-128-ecb", key, null);
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+const c = crypto.createCipher("aes192", password);
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+const iv = crypto.randomBytes(12);
+const c = crypto.createCipheriv("aes-256-gcm", key, iv);
+'''
