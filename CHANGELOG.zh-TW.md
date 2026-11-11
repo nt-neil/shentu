@@ -16,7 +16,21 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
   並行數依 CPU 數與系統負載決定。
 - 誤報更少：`wp_send_json` 的輸出、`JSON_HEX_TAG` 的資料區塊、不是 collection 的物件上的
   MongoDB 查詢，以及 Django 的 `_meta.get_field` 檢查。
-- 已知問題：分成多次執行的稽核，仍可能有少數結果和不限時間的單次執行不同；修正進行中。
+
+### 已知問題
+
+- 分成多次執行的稽核，仍可能有少數結果和不限時間的單次執行不同；修正進行中。
+- `php-deserialization-phar-wrapper` 會把 WordPress REST attachments controller 裡對上傳暫存路徑做的
+  `filesize()` 報出來，這是誤報：那個路徑是 PHP 自己產生的，但引擎還分不出上傳檔的 `tmp_name`
+  和客戶端填的 `name`。
+- js-nosqli-mongo-query 會把 SQL 資料庫上的 TypeORM repository 呼叫當成 MongoDB 查詢，也就是 options
+  的 where 由請求值組成的 find/findOne（例如 n8n 的公開 API 和查 credential 的地方）。TypeORM 會把
+  這些值當成 SQL 參數，所以這些是誤報；v0.2.6 會改用能認出 TypeORM 的 receiver 檢查來區分。
+- `js-cmdi-spawn-shell` 在指令和參數都固定、只有 options（例如 `cwd` 或 `env`）帶到請求值時，
+  `spawn()` 和 `execFile()` 仍然會被報出。
+- js-xss-response 不再對 Server-Sent Events 例外：在 text/event-stream 的 handler 裡寫
+  res.write("data: " + 值) 會被報成 XSS（誤報），但不會因為 SSE 而漏報；依 handler 的
+  Content-Type 分辨串流的功能排在 v0.2.6。
 
 ## v0.2.4 — 2026-11-09
 

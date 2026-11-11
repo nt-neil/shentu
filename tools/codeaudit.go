@@ -229,12 +229,13 @@ func uploadFolder(p string, webRoots []string) bool {
 		}
 		return true
 	}
+	code := len(low) // below wp-content/plugins, themes and the like: code, not uploads
 	for i := range low {
 		switch {
-		case low[i] == "wp-content":
-			return at(i+1, "uploads") // plugins, themes and the like hold code
-		case at(i, "sites", "*", "files"), at(i, "pub", "media"), at(i, "storage", "app", "public"):
+		case at(i, "wp-content", "uploads"), at(i, "sites", "*", "files"), at(i, "pub", "media"), at(i, "storage", "app", "public"):
 			return true
+		case low[i] == "wp-content" && code == len(low):
+			code = i
 		}
 	}
 	root := ""
@@ -244,7 +245,7 @@ func uploadFolder(p string, webRoots []string) bool {
 		}
 	}
 	for i := 1; i < len(segs); i++ {
-		if !uploadNames[low[i]] {
+		if !uploadNames[low[i]] || i > code {
 			continue
 		}
 		parent := strings.Join(segs[:i], "/")

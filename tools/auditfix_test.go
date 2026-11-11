@@ -278,13 +278,16 @@ func TestUploadFolder(t *testing.T) {
 		"/srv/shop/public/Uploads/a.php":                                  true,
 		"/srv/shop/storage/app/public/src/a.php":                          true,
 		// The review of 3df48d5 (N7): only the path below the site's root counts.
-		"/usr/src/app/wp-content/uploads/x.php":          true,
-		"/home/u/src/site/wp-content/uploads/2024/x.php": true,
-		"/var/www/drupal/sites/default/files/x.php":      true,
-		"/var/www/magento/pub/media/x.php":               true,
-		"/var/www/files/index.php":                       false, // a site named files
-		"/var/www/files/lib/a.php":                       false,
-		"/var/www/files/uploads/a.php":                   true,
+		"/usr/src/app/wp-content/uploads/x.php":            true,
+		"/home/u/src/site/wp-content/uploads/2024/x.php":   true,
+		"/var/www/drupal/sites/default/files/x.php":        true,
+		"/var/www/magento/pub/media/x.php":                 true,
+		"/var/www/files/index.php":                         false, // a site named files
+		"/var/www/files/lib/a.php":                         false,
+		"/var/www/files/uploads/a.php":                     true,
+		"/var/www/html/uploads/wp-content/x.php":           true, // a wp-content inside uploads hides nothing
+		"/var/www/html/uploads/wp-content/plugins/x.php":   true,
+		"/var/www/html/wp-content/plugins/p/uploads/x.php": false,
 	} {
 		if got := uploadFolder(p, nil); got != want {
 			t.Errorf("uploadFolder(%q) = %v, want %v", p, got, want)
