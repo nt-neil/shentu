@@ -442,7 +442,7 @@ func TestHeldOut(t *testing.T) {
 		{"PY19 pandas read_sql params", "python", "def v():\n    return pd.read_sql('SELECT * FROM t WHERE a = %(a)s', con, params={'a': request.args['a']})\n", false, ""},
 		{"PY20 fastapi Query param sql", "python", "@app.get('/u')\nasync def u(name: str = Query(...)):\n    await db.execute(f\"DELETE FROM t WHERE n = '{name}'\")\n", true, "the snippet does not import fastapi, and the FastAPI route model applies only to files that do"},
 		{"PY21 fastapi path param file", "python", "@app.get('/home/{file_path:path}')\ndef home(file_path: str):\n    return FileResponse(HOME_DIR / file_path)\n", true, "the snippet does not import fastapi, and the FastAPI route model applies only to files that do"},
-		{"PY22 aiohttp text= html", "python", "async def h(request):\n    return web.Response(text='<h1>' + request.query['q'] + '</h1>', content_type='text/html')\n", true, "no rule: output rules count only the content= keyword, and aiohttp writes the page with text= (asked of the engine)"},
+		{"PY22 aiohttp text= html", "python", "async def h(request):\n    return web.Response(text='<h1>' + request.query['q'] + '</h1>', content_type='text/html')\n", true, ""},
 		{"PY23 torch.load weights_only False upload", "python", "@app.post('/w')\ndef w():\n    return str(torch.load(io.BytesIO(request.data), weights_only=False))\n", true, ""},
 		{"PY24 redis client.get not ssrf", "python", "@app.get('/k')\nasync def k(request: Request):\n    return {'v': await client.get(request.query_params['k'])}\n", false, ""},
 		{"PY25 flask session.get not ssrf", "python", "@app.route('/s')\ndef s():\n    return {'v': session.get(request.args['k'])}\n", false, ""},
@@ -510,6 +510,8 @@ func TestHeldOut(t *testing.T) {
 		{"QD11 ldap3 filter flask route placeholder", "python", "from flask import Flask\napp = Flask(__name__)\n\n@app.route(\"/people/<uid>\")\ndef person(uid):\n    directory.search(search_base=PEOPLE_DN, search_filter=\"(uid=\" + uid + \")\", attributes=[\"cn\"])\n    return {\"cn\": str(directory.entries)}\n", true, ""},
 		{"QD12 path through helpers from a flask route placeholder", "python", "from flask import Flask, abort\napp = Flask(__name__)\n\ndef locate(name):\n    full = (DROP_DIR / name).absolute()\n    if not str(full).startswith(str(DROP_DIR)):\n        abort(404)\n    return full\n\ndef sidecar(full):\n    return Path(str(full) + \".info\")\n\n@app.route(\"/drop/<path:name>\")\ndef drop_info(name):\n    with sidecar(locate(name)).open() as fh:\n        return fh.read()\n", true, ""},
 		{"QD13 extra where django path placeholder", "python", "from django.urls import path\n\ndef by_label(request, label):\n    rows = Ticket.objects.extra(where=[\"label = '%s'\" % label])\n    return render(request, \"tickets.html\", {\"rows\": rows})\n\nurlpatterns = [path(\"label/<str:label>/\", by_label)]\n", true, ""},
+		{"QD14 aiohttp text= html via post form", "python", "async def h(request):\n    data = await request.post()\n    return web.Response(text='<td>%s</td>' % data['c'], content_type='text/html')\n", true, ""},
+		{"QD15 aiohttp html body in an attribute", "python", "async def h(request):\n    return web.Response(text='<img alt=\"' + request.query['a'] + '\">', content_type='text/html')\n", true, "only input between tags is counted for aiohttp text=; an attribute value needs an attr rule of its own"},
 	}
 	pass := 0
 	for _, c := range cases {

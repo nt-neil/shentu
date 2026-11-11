@@ -1,0 +1,55 @@
+id = "python-xss-aiohttp-text-html"
+lang = "python"
+class = "xss"
+cwe = "CWE-79"
+severity = "medium"
+tier = "info"
+title = "aiohttp text/html response built from a request value without escaping"
+sources = ["request.query", "request.match_info", "request.post(", "request.text(", "request.rel_url", "request.path", "request.headers", "request.cookies"]
+sinks = ["web.Response(", "aiohttp.web.Response("]
+sanitizers = ["html.escape(", "escape(", "markupsafe.escape(", "urllib.parse.quote(", "quote("]
+fix = "Render pages with a template engine that escapes by default (aiohttp_jinja2 with autoescape), or wrap each value in html.escape(..., quote=True) before building HTML."
+refs = ["CVE-2024-27306"]
+
+# web.Response(body, status, reason, text, ..., content_type): the page is the
+# text= argument. aiohttp's default content type is text/plain; only text/html
+# is a page. Input written between tags only (other contexts: other rules).
+[[args]]
+arg = 4
+name = "text"
+when = ['content_type="text/html"', "content_type='text/html'"]
+context = ["html"]
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+async def greet(request):
+    who = request.query.get("name", "guest")
+    page = "<p>Welcome back, " + who + "</p>"
+    return web.Response(text=page, content_type="text/html")
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+async def greet(request):
+    who = html.escape(request.query.get("name", "guest"))
+    page = "<p>Welcome back, " + who + "</p>"
+    return web.Response(text=page, content_type="text/html")
+'''
+
+[[samples]]
+kind = "safe"
+note = "text/plain is not rendered as HTML"
+code = '''
+async def greet(request):
+    return web.Response(text="Welcome back, " + request.query.get("name", "guest"))
+'''
+
+[[samples]]
+kind = "safe"
+note = "input only in a response header, the page is fixed"
+code = '''
+async def greet(request):
+    return web.Response(text="<p>ok</p>", content_type="text/html", headers={"X-Req": request.query["id"]})
+'''
