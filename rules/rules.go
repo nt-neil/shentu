@@ -39,6 +39,11 @@ type Rule struct {
 	Refs       []string     `toml:"refs"`
 	Samples    []Sample     `toml:"samples"`
 
+	// RouteMembers: of the members a route model makes input (Express req.query,
+	// req.params), only these are this rule's (a rule for a query object: a
+	// path parameter is always a string). Unset: all of them.
+	RouteMembers []string `toml:"route_members"`
+
 	File string `toml:"-"` // path inside rules/, set by Load
 }
 

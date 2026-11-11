@@ -6,6 +6,7 @@ severity = "high"
 tier = "info"
 title = "Request data placed in a MongoDB query without forcing it to a string"
 frameworks = ["express"]
+route_members = ["query", "body"]
 sources = ["req.body", "req.query"]
 sinks = [".findOne(", ".find(", ".findOneAndUpdate(", ".findOneAndDelete(", ".updateOne(", ".updateMany(", ".deleteOne(", ".deleteMany(", ".countDocuments(", ".exists(", "$where"]
 sanitizers = ["String(", ".toString(", "mongoSanitize(", "sanitize(", "parseInt(", "ObjectId(", "typeof"]

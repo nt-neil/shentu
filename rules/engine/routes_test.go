@@ -185,6 +185,37 @@ func TestRouteRulesLeftOut(t *testing.T) {
 	}
 }
 
+// A rule with route_members takes only those members of a handler's request:
+// a query object rule gets req.query and req.body, not req.params (a path
+// parameter is always a string, it cannot carry {$gt: ...}). A rule without
+// it still takes req.params.
+func TestRouteMembers(t *testing.T) {
+	rule := func(id string, members []string) rules.Rule {
+		return rules.Rule{ID: id, Lang: "js", Class: "nosqli", CWE: "CWE-943", Severity: "high", Title: "t",
+			Sources: []string{"req.body", "req.query"}, Sinks: []string{".findOne("}, Sanitizers: []string{}, RouteMembers: members}
+	}
+	e, err := New([]rules.Rule{rule("all", nil), rule("objects", []string{"query", "body"})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for in, want := range map[string][]string{
+		"req.params.id": {"all"},
+		"req.body.id":   {"all", "objects"},
+		"req.query.id":  {"all", "objects"},
+	} {
+		src := "router.get('/item/:id', (req, res) => {\n  db.items.findOne({_id: " + in + "}, (err, item) => res.json(item));\n});\n"
+		fs, _ := e.Scan("js", "a.js", []byte(src))
+		var got []string
+		for _, f := range fs {
+			got = append(got, f.RuleID)
+		}
+		slices.Sort(got)
+		if !slices.Equal(got, want) {
+			t.Errorf("%s: reported by %v, want %v", in, got, want)
+		}
+	}
+}
+
 // Which sources are one field of the request (the rule is left out) and which
 // are the input in general.
 func TestRouteFieldSources(t *testing.T) {

@@ -5,6 +5,7 @@ cwe = "CWE-89"
 severity = "medium"
 title = "Parsed request value (may be an object or array) passed straight into a query-builder condition"
 frameworks = ["express", "nestjs", "nextjs"]
+route_members = ["query", "body"]
 sources = ["req.query", "req.body", "@Query(", "@Body(", "@Req(", "^request.json(", "^req.json("]
 sinks = [".where(", ".whereIn(", ".findOne(", ".findAll(", ".andWhere("]
 sanitizers = ["String(", "Number(", "parseInt(", "typeof"]
