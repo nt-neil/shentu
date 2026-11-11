@@ -353,20 +353,24 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 	direct := map[*crule][]loc{}
 	defs := phpDefines(base, toks)
 	names := nameSet(toks, map[string]bool{})
+	si := newSrcIndex(toks, b)
 	for _, r := range rs {
-		hs := sinkNames(r, names, src) && hasSink(r, toks)
+		if time.Now().After(b.deadline) { // cheap: once per rule
+			b.hit, b.timeHit = true, true
+			break
+		}
+		hs := si.names(r.sinks, r.textSinks, names, src) && si.hasSink(r)
 		// In a project a file without a sink may pass input, its own or a route
 		// handler's parameters, to another file's sink; on its own it has nothing
 		// to find.
-		noSource := (len(r.sources) == 0 && len(r.textSources) == 0) || !hasSource(r, toks)
-		if !hs && (proj == nil || (noSource && len(routeFns) == 0)) {
+		if !hs && (proj == nil || len(routeFns) == 0 && (len(r.sources) == 0 && len(r.textSources) == 0 || !si.hasSource(r))) {
 			continue
 		}
 		// No source of it in the file: nothing to find, in either pass. Only for
 		// a file on its own without route handlers: in a project input also comes
 		// from the other files, and a handler's parameters are input with no
 		// source name in the file.
-		if proj == nil && len(routeFns) == 0 && e.skipBySources(r, names, src, toks) {
+		if proj == nil && len(routeFns) == 0 && e.skipBySources(r, names, src, si) {
 			continue
 		}
 		ruleList = append(ruleList, r)
@@ -580,35 +584,149 @@ func lex(lang, src string, b *budget) []Token {
 
 // skipBySources reports whether the first pass leaves out rule r for a file
 // with these names (see SourcePrefilter).
-func (e *Engine) skipBySources(r *crule, names map[string]bool, src []byte, toks []Token) bool {
-	return e.SourcePrefilter && !e.Library && (!sourceNames(r, names, src) || !hasSource(r, toks))
+func (e *Engine) skipBySources(r *crule, names map[string]bool, src []byte, si *srcIndex) bool {
+	noSources := len(r.sources) == 0 && len(r.textSources) == 0 // sourceNames, with the index
+	return e.SourcePrefilter && !e.Library && (!noSources && !si.names(r.sources, r.textSources, names, src) || !si.hasSource(r))
+}
+
+// srcIndex finds the rules' sources and sinks in one file without reading the
+// file once per rule: where each token is, inside string interpolations too,
+// is listed once (on the first search), a pattern is tried only where its
+// first token is, and what was found for a pattern holds for every rule
+// listing it. The cost stays the file's tokens and the places tried, whatever
+// the number of rules.
+type srcIndex struct {
+	toks  []Token             // until the first search
+	lists [][]Token           // the file's tokens, then each interpolation's
+	at    map[tokKey][]srcPos // where each token other than a string literal is
+	strs  []srcPos            // where each string literal is
+	found map[string]bool     // per pattern, whether it occurs
+	b     *budget             // the file's: its clock bounds the search
+	tries int
+}
+
+type tokKey struct {
+	kind Kind
+	text string
+}
+
+type srcPos struct{ list, i int32 }
+
+// newSrcIndex is the index of toks; b may be nil (no clock).
+func newSrcIndex(toks []Token, b *budget) *srcIndex {
+	return &srcIndex{toks: toks, found: map[string]bool{}, b: b}
+}
+
+// build lists where the tokens are.
+func (si *srcIndex) build() {
+	si.at = map[tokKey][]srcPos{}
+	var add func(toks []Token)
+	add = func(toks []Token) {
+		l := int32(len(si.lists))
+		si.lists = append(si.lists, toks)
+		for i, t := range toks {
+			if t.Kind == Str {
+				si.strs = append(si.strs, srcPos{l, int32(i)})
+				for _, p := range t.Parts {
+					add(p.Toks)
+				}
+				continue
+			}
+			k := tokKey{t.Kind, t.Text}
+			si.at[k] = append(si.at[k], srcPos{l, int32(i)})
+		}
+	}
+	add(si.toks)
+	si.toks = nil
 }
 
 // hasSource reports whether one of the rule's sources occurs in the file, matched
 // token by token as the analysis matches sources: the names of request.url both
-// being in a large bundle is not request.url.
-func hasSource(r *crule, toks []Token) bool {
+// being in a large bundle is not request.url. Out of time it says yes, and the
+// file's scan stops on its clock.
+func (si *srcIndex) hasSource(r *crule) bool {
 	if len(r.sources) == 0 && len(r.textSources) == 0 {
 		return true
 	}
-	for i := range toks {
-		for _, s := range r.sources {
-			if s.text == nil && (s.at(toks, i, false) || s.baseAt(toks, i)) {
-				return true
-			}
+	for _, s := range r.sources {
+		if s.text == nil && si.has("c"+s.raw, s, false) {
+			return true
 		}
-		if toks[i].Kind == Str {
-			for _, s := range r.textSources {
-				if s.text.MatchString(toks[i].Text) {
-					return true
-				}
-			}
-			for _, p := range toks[i].Parts {
-				if hasSource(r, p.Toks) {
-					return true
-				}
-			}
+	}
+	for _, s := range r.textSources {
+		if si.has("t"+s.text.String(), s, false) {
+			return true
 		}
 	}
 	return false
+}
+
+// hasSink reports whether one of the rule's sinks occurs in the file at all,
+// matched as the analysis matches sinks (strictly, see the function hasSink).
+func (si *srcIndex) hasSink(r *crule) bool {
+	for _, s := range r.sinks {
+		if s.text == nil && si.has("s"+s.raw+"\x00"+s.chain, s, true) {
+			return true
+		}
+	}
+	for _, s := range r.textSinks {
+		if si.has("t"+s.text.String(), s, true) { // in string literals, as a text source
+			return true
+		}
+	}
+	return false
+}
+
+// names is anyName with each text pattern matched against src once per file.
+func (si *srcIndex) names(code, text []*pat, names map[string]bool, src []byte) bool {
+	return anyName(code, text, names, func(p *pat) bool {
+		key := "m" + p.text.String()
+		f, ok := si.found[key]
+		if !ok {
+			f = p.text.Match(src)
+			si.found[key] = f
+		}
+		return f
+	})
+}
+
+// has reports whether pattern s occurs, looking it up once per file under key.
+func (si *srcIndex) has(key string, s *pat, strict bool) bool {
+	if f, ok := si.found[key]; ok {
+		return f
+	}
+	if si.at == nil {
+		si.build()
+	}
+	f := si.search(s, strict)
+	if !si.b.hitLimit() {
+		si.found[key] = f
+	}
+	return f
+}
+
+func (si *srcIndex) search(s *pat, strict bool) bool {
+	try := func(ps []srcPos, ok func(toks []Token, i int) bool) bool {
+		for _, p := range ps {
+			if si.tries++; si.tries&1023 == 0 && si.b != nil && time.Now().After(si.b.deadline) {
+				si.b.hit, si.b.timeHit = true, true
+				return true
+			}
+			if ok(si.lists[p.list], int(p.i)) {
+				return true
+			}
+		}
+		return false
+	}
+	if s.text != nil {
+		return try(si.strs, func(toks []Token, i int) bool { return s.text.MatchString(toks[i].Text) })
+	}
+	at := func(toks []Token, i int) bool { return s.at(toks, i, false) || s.baseAt(toks, i) } // a source
+	if strict {
+		at = func(toks []Token, i int) bool { return s.at(toks, i, true) } // a sink
+	}
+	if first := s.toks[0]; first.Kind != Str {
+		return try(si.at[tokKey{first.Kind, first.Text}], at)
+	}
+	return try(si.strs, at) // a string literal matches by more than its text (tokEq)
 }
