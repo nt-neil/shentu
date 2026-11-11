@@ -47,6 +47,14 @@ type Risk struct {
 	Summary  string `json:"summary"`
 }
 
+// uncheckedRisks are the risks that say a check could not tell (a file it
+// needs could not be read): reports list them apart, every time, and never
+// push them as alerts.
+var uncheckedRisks = map[string]bool{"ssh:unreadable": true}
+
+// Unchecked reports whether r says a check could not tell.
+func Unchecked(r Risk) bool { return uncheckedRisks[r.Key] }
+
 // SiteProfile is the survey result. It is stored by patrol as the baseline.
 type SiteProfile struct {
 	Time          time.Time         `json:"time"`

@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/nt-neil/shentu/tools"
@@ -58,5 +59,24 @@ func TestMostSevere(t *testing.T) {
 	}
 	if few := mostSevere(fs[:3], patrolListMax); len(few) != 3 {
 		t.Error("a short list is cut")
+	}
+}
+
+// A check that could not tell (sshd_config unreadable when not run as root)
+// is listed at the end of every report, apart from the findings, and is not
+// a finding itself (pushed or held back by the cooldown).
+func TestUncheckedSection(t *testing.T) {
+	risks := []tools.Risk{
+		{Key: "ssh:unreadable", Severity: "info", Summary: "cannot tell the SSH settings (PasswordAuthentication, PermitRootLogin): /etc/ssh/sshd_config.d (permission denied) could not be read; run Shentu as root, as sshd reads them"},
+		{Key: "firewall:none", Severity: "info", Summary: "no host firewall detected"},
+		{Key: "ssh:password", Severity: "warning", Summary: "SSH accepts passwords"},
+	}
+	s := uncheckedSection(risks)
+	if !strings.Contains(s, "Not checked") || !strings.Contains(s, "sshd_config.d (permission denied)") ||
+		strings.Contains(s, "firewall") || strings.Contains(s, "accepts passwords") {
+		t.Errorf("section %q", s)
+	}
+	if uncheckedSection(risks[1:]) != "" {
+		t.Error("a section with nothing unchecked")
 	}
 }

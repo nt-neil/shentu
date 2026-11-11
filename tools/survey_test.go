@@ -219,7 +219,7 @@ func TestSSHDropInUnreadable(t *testing.T) {
 		t.Errorf("unreadable drop-in file: %v", got)
 	}
 	ssh, _, unread := sshdSettings()
-	if r := sshRisks(ssh, unread); len(r) != 1 || !strings.Contains(r[0].Summary, "run Shentu as root") {
+	if r := sshRisks(ssh, unread); len(r) != 1 || !strings.Contains(r[0].Summary, "run Shentu as root") || !Unchecked(r[0]) {
 		t.Errorf("permission: %+v", r)
 	}
 	os.Chmod(drop, 0o644)

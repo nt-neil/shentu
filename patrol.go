@@ -75,6 +75,22 @@ func replaceOrAppend(all, add []finding) []finding {
 	return all
 }
 
+// uncheckedSection lists, at the end of a report, the checks that could not
+// tell (a file they need could not be read, e.g. when not run as root), so a
+// silent part is not read as a clean one. "" when there are none.
+func uncheckedSection(risks []tools.Risk) string {
+	var b strings.Builder
+	for _, r := range risks {
+		if tools.Unchecked(r) {
+			fmt.Fprintf(&b, "- %q\n", mask(r.Summary))
+		}
+	}
+	if b.Len() == 0 {
+		return ""
+	}
+	return "\n\nNot checked (the permission to read what they need was missing; run Shentu as root):\n" + b.String()
+}
+
 // patrolListMax is how many findings one patrol report lists.
 const patrolListMax = 50
 
@@ -256,6 +272,7 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 	}
 	st := loadState(cfg.StateDir)
 	all := checks(ctx, cfg, env, st, daily)
+	unchecked := uncheckedSection(st.Profile.Risks) // listed in every report, never pushed
 	if daily {
 		// Once a day: installed packages with vulnerabilities that are being exploited now.
 		if r, err := tools.PackageVulns(ctx, env.HTTP, ""); err == nil {
@@ -322,6 +339,7 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 		answer = fmt.Sprintf("(LLM unavailable: %v)", err)
 	}
 	answer += "\n\nFindings:\n" + list.String()
+	answer += unchecked
 	if daily {
 		zh := strings.Contains(cfg.Language, "中文") || strings.HasPrefix(strings.ToLower(cfg.Language), "zh")
 		answer += "\n" + usageBrief(cfg.StateDir, time.Now(), zh)
