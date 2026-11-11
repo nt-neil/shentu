@@ -341,3 +341,15 @@ app.get("/blob", (req, res) => {
   res.sendFile(dir);
 });
 '''
+
+[[samples]]
+kind = "vulnerable"
+note = "the raw input is checked, but path.relative resolves it from the working directory, not the base"
+code = '''
+const STORE = "/var/lib/app/store";
+app.get("/blob/:key", (req, res) => {
+  const key = req.params.key;
+  if (path.relative(STORE, key).startsWith("..")) return res.sendStatus(403);
+  res.sendFile(path.join(STORE, key));
+});
+'''

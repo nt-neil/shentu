@@ -953,12 +953,16 @@ var relativePat = func() *pat {
 }()
 
 // relativeOf returns the keys of x when t is path.relative(base, x), or a
-// variable assigned one, and the base is clean.
+// variable assigned one, the base is clean and x a canonical path. Walking the
+// state is charged to the budget, so the work limit and the clock bound it.
 func (a *analysis) relativeOf(st state, t []Token) []keyRef {
 	t = stripParens(t)
 	n := len(t)
 	if key, _, ok := a.pathKey(t); ok {
 		if e, found := st[relKey+key]; !found || !e.san {
+			return nil
+		}
+		if !a.b.charge(len(st)) {
 			return nil
 		}
 		var out []keyRef
@@ -979,8 +983,11 @@ func (a *analysis) relativeOf(st state, t []Token) []keyRef {
 	if len(args) != 2 || a.expr(st, args[0], false).taint {
 		return nil
 	}
-	// Only a plain path: what the check says of a + b is not said of a or b.
-	if _, _, ok := a.pathKey(stripParens(args[1])); !ok {
+	// Only a plain path, and a canonical one: what the check says of a + b is
+	// not said of a or b, and Node resolves a relative x against the working
+	// directory, not the base (path.relative("/srv/f", "../srv/f/x") is "x" from
+	// /app, while path.join("/srv/f", "../srv/f/x") is /srv/srv/f/x).
+	if _, _, ok := a.pathKey(stripParens(args[1])); !ok || !a.canonical(st, args[1]) {
 		return nil
 	}
 	return a.keysOf(args[1])
@@ -991,7 +998,7 @@ func (a *analysis) relativeOf(st state, t []Token) []keyRef {
 // rel = path.relative(base, x) leaves rel about the old x). relKey alone marks
 // a state that holds any, so a state without one costs no walk.
 func (a *analysis) setRelative(st state, key string, rhs []Token, plain bool) {
-	if _, any := st[relKey]; any {
+	if _, any := st[relKey]; any && a.b.charge(len(st)) {
 		for k := range st {
 			if x, ok := strings.CutPrefix(k, relKey); ok {
 				if i := strings.Index(x, "\x00"); i >= 0 && (x[i+1:] == key || strings.HasPrefix(x[i+1:], key+sepCh)) {
@@ -1000,7 +1007,7 @@ func (a *analysis) setRelative(st state, key string, rhs []Token, plain bool) {
 			}
 		}
 	}
-	if _, had := st[relKey+key]; had {
+	if _, had := st[relKey+key]; had && a.b.charge(len(st)) {
 		pre := relKey + key + "\x00"
 		for k := range st {
 			if k == relKey+key || strings.HasPrefix(k, pre) {
