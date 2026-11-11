@@ -204,7 +204,7 @@ func (st *callState) useDigests(pr *engine.Project, langs []string) {
 		}
 		st.Digest[lang] = d
 		for p, fs := range st.Files {
-			if engine.LangOf(p) == lang {
+			if engine.BaseLang(engine.LangOf(p)) == lang { // .ts, .tsx and .jsx index as js
 				fs.Calls, fs.Part, fs.Deps = nil, nil, nil
 			}
 		}
