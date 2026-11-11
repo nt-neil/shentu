@@ -66,7 +66,7 @@ func recvDefs(toks []Token) map[string][][]Token {
 			}
 			continue
 		}
-		if i+2 >= len(toks) || toks[i].Kind != Ident && toks[i].Kind != Var {
+		if i+2 >= len(toks) || toks[i].Kind != Ident {
 			continue
 		}
 		key, k := toks[i].Text, i+1
@@ -158,42 +158,72 @@ func (a *analysis) recvIs(ps []*pat, recv []Token) bool {
 }
 
 // recvSurely reports whether the receiver of a method sink is surely an object
-// of one of the classes the patterns name: new Class(...) itself, or a name
-// whose every assignment in the file is one, followed a few steps. A name the
-// file says nothing about, or assigns anything else too, is not.
+// of one of the classes the patterns name (PHP): new Class(...) itself, or a
+// variable that the file only ever assigns such an object ($q = new Class) and
+// otherwise only calls or reads through ($q->...). Any other use of the name
+// anywhere in the file (a parameter, global, foreach ... as, list(), a
+// reference, another value, an argument) leaves it unknown, and the sink
+// counts: the file is read as a whole, so a name of the same spelling in
+// another function counts too.
 func (a *analysis) recvSurely(ps []*pat, recv []Token) bool {
-	if a.rdefs == nil {
-		a.rdefs = recvDefs(a.ftoks)
+	t := stripParens(recv)
+	if a.newOf(ps, t) {
+		return true
 	}
-	seen := map[string]bool{}
-	var is func(t []Token, depth int) bool
-	is = func(t []Token, depth int) bool {
-		t = stripParens(t)
-		if len(t) >= 2 && strings.EqualFold(t[0].Text, "new") && t[0].Kind == Ident {
-			k := 1
-			if t[k].op("\\") && len(t) > 2 {
-				k++ // new \WP_Query
-			}
-			for _, p := range ps {
-				if p.at(t, k, false) {
-					return true
+	if len(t) != 1 || t[0].Kind != Var {
+		return false
+	}
+	toks, defs := a.ftoks, 0
+	for i, tk := range toks {
+		if tk.Kind != Var || tk.Text != t[0].Text {
+			continue
+		}
+		switch {
+		case i+1 < len(toks) && toks[i+1].op("->"):
+		case i+1 < len(toks) && toks[i+1].op("=") && (i == 0 || !toks[i-1].op("&") && !toks[i-1].op("->") && !toks[i-1].op("::")):
+			j := i + 2
+			for depth := 0; j < len(toks) && !(depth == 0 && toks[j].op(";")); j++ {
+				if isOpen(toks[j]) {
+					depth++
+				} else if isClose(toks[j]) {
+					if depth--; depth < 0 {
+						break
+					}
 				}
 			}
-			return false
-		}
-		if depth >= 4 || len(t) != 1 || t[0].Kind != Ident && t[0].Kind != Var || seen[t[0].Text] {
-			return false
-		}
-		seen[t[0].Text] = true
-		ds := a.rdefs[t[0].Text]
-		for _, d := range ds {
-			if !is(d, depth+1) {
+			if !a.newOf(ps, stripParens(toks[i+2:j])) {
 				return false
 			}
+			defs++
+		default:
+			return false
 		}
-		return len(ds) > 0
 	}
-	return is(recv, 0)
+	return defs > 0
+}
+
+// newOf reports whether t is new Class or new Class(...), and nothing more,
+// with Class one of the patterns (\Class too).
+func (a *analysis) newOf(ps []*pat, t []Token) bool {
+	if len(t) < 2 || t[0].Kind != Ident || !strings.EqualFold(t[0].Text, "new") {
+		return false
+	}
+	k := 1
+	if t[k].op("\\") {
+		k++
+	}
+	if k >= len(t) || t[k].Kind != Ident {
+		return false
+	}
+	if k+1 < len(t) && !(t[k+1].op("(") && closeOf(t, k+1) == len(t)-1) {
+		return false // new Class\Sub, new Class()->member, new Class() . $x
+	}
+	for _, p := range ps {
+		if p.at(t, k, false) {
+			return true
+		}
+	}
+	return false
 }
 
 func lineStart(toks []Token, i int) bool {
