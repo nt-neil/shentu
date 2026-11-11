@@ -346,7 +346,9 @@ html:not([lang^="zh"]) .newest-head .word { font-weight: 600; font-family: var(-
 .sc6 { background-position: 50% 30%; transform-origin: 50% 40%; }
 /* the near layers: incense haze (light on black, screened in) and banyan boughs (dark on white, multiplied in) */
 .walk .haze, .walk .boughs { position: absolute; top: 0; left: 0; width: 700vw; pointer-events: none; will-change: transform; }
-.walk .haze { height: 100%; background: url(img/scroll/smoke.webp) 0 60% / auto 70% repeat-x; mix-blend-mode: screen; opacity: .55; }
+/* each tile of haze fades out at its edges, so the tiles meet without a seam */
+.walk .haze { height: 100%; background: url(img/scroll/smoke.webp) 0 60% / 112vh 63vh repeat-x; mix-blend-mode: screen; opacity: .55;
+  -webkit-mask: radial-gradient(closest-side, #000 55%, transparent) 0 60% / 112vh 63vh repeat-x; mask: radial-gradient(closest-side, #000 55%, transparent) 0 60% / 112vh 63vh repeat-x; }
 .walk .boughs { z-index: 5; height: 34%; background: url(img/scroll/branches.webp) 0 0 / auto 100% repeat-x; mix-blend-mode: multiply; opacity: .85; }
 .scene.shake { animation: shake .18s steps(2) infinite; }
 @keyframes shake { 0% { transform: translate3d(-3px, 1px, 0); } 50% { transform: translate3d(3px, -1px, 0); } 100% { transform: translate3d(-1px, 2px, 0); } }
@@ -402,6 +404,10 @@ html:not(.walking) .st1 { opacity: 1; transform: none; }
 .hud { position: absolute; z-index: 6; right: var(--gutter); bottom: 22px; display: flex; align-items: center; gap: 12px; width: min(320px, 50vw); font: 13px/1 var(--mono); color: var(--muted); }
 .hud i { flex: 1; height: 2px; background: var(--line); position: relative; overflow: hidden; }
 .hud b { position: absolute; inset: 0; background: var(--ember); transform-origin: 0 50%; transform: scaleX(0); }
+/* the walk is a night scene in both schemes: its stage and the header over it keep the night palette */
+@media (prefers-color-scheme: light) {
+  .walk .stage, body.p-index .top { --bg: #0b0806; --bg-2: #15100c; --bg-3: #1f1812; --ink: #efe3cf; --muted: #a8977f; --line: rgba(239, 227, 207, .13); --ember: #f2b45c; --alarm: #ff6a4d; --on-ember: #160f08; --glow: rgba(242, 180, 92, .45); color: var(--ink); }
+}
 @media (prefers-color-scheme: light) { .walk .stage { background: #0b0806; color: #efe3cf; } .walk .stage .station p { color: #d8c9b2; } .walk .stage .checks li { color: #b9a98f; } .walk .stage .checks li.lit { color: #f3e8d6; } .walk .stage .station time { color: #f2b45c; } .walk .stage .st5 time, .walk .stage .st5 h2 { color: #ff6a4d; } .walk .shade { background: linear-gradient(90deg, rgba(11, 8, 6, .75), transparent 42%), linear-gradient(#0b0806, transparent 16%, transparent 72%, #0b0806); } }
 
 @media (max-width: 860px) {
