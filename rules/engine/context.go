@@ -953,7 +953,7 @@ var relativePat = func() *pat {
 }()
 
 // relativeOf returns the keys of x when t is path.relative(base, x), or a
-// variable assigned one, the base is clean and x a canonical path. Walking the
+// variable assigned one, the base is clean and x a canonical, anchored path. Walking the
 // state is charged to the budget, so the work limit and the clock bound it.
 func (a *analysis) relativeOf(st state, t []Token) []keyRef {
 	t = stripParens(t)
@@ -987,10 +987,79 @@ func (a *analysis) relativeOf(st state, t []Token) []keyRef {
 	// not said of a or b, and Node resolves a relative x against the working
 	// directory, not the base (path.relative("/srv/f", "../srv/f/x") is "x" from
 	// /app, while path.join("/srv/f", "../srv/f/x") is /srv/srv/f/x).
-	if _, _, ok := a.pathKey(stripParens(args[1])); !ok || !a.canonical(st, args[1]) {
+	key, _, ok := a.pathKey(stripParens(args[1]))
+	if !ok || !a.canonical(st, args[1]) {
 		return nil
 	}
+	if e, found := st[anchorKey+key]; !found || !e.san {
+		return nil // path.normalize(input) is canonical, not anchored
+	}
 	return a.keysOf(args[1])
+}
+
+// anchorKey marks, in a state, that a variable holds a path anchored at a
+// base no input chose: one path.relative resolves as the sinks do.
+const anchorKey = "\x00anchor:"
+
+var absCalls, joinCalls = func() ([]*pat, []*pat) {
+	mk := func(list ...string) []*pat {
+		var out []*pat
+		for _, f := range list {
+			p, err := compilePattern("js", f, false)
+			if err != nil {
+				panic(err)
+			}
+			out = append(out, p)
+		}
+		return out
+	}
+	return mk("path.resolve(", "fs.realpathSync(", "realpathSync(", "fs.promises.realpath("), mk("path.join(", "path.normalize(")
+}()
+
+// anchored reports whether t is a path anchored at a base no input chose, so
+// that once normalized it cannot start with "..": path.resolve() or realpath()
+// of anything (absolute), path.join() or path.normalize() of such a first part,
+// a concatenation starting with one, or a clean value that is not a literal
+// starting with "." (this.dir, "/srv", "media"). path.normalize(input) is not:
+// path.relative resolves "../srv/x" from the working directory, while
+// path.join(base, "../srv/x") leaves the base.
+func (a *analysis) anchored(st state, t []Token, depth int) bool {
+	t = stripParens(t)
+	for len(t) > 0 && t[0].word("await") {
+		t = t[1:]
+	}
+	n := len(t)
+	if n == 0 || depth > maxLitDepth {
+		return false
+	}
+	if n == 1 && t[0].Kind == Str {
+		return !strings.HasPrefix(t[0].Text, ".") && (len(t[0].Parts) == 0 || t[0].Parts[0].Off > 0)
+	}
+	for _, p := range absCalls {
+		if m := len(p.toks); m < n && p.at(t, 0, true) && closeOf(t, m-1) == n-1 {
+			return true
+		}
+	}
+	for _, p := range joinCalls {
+		if m := len(p.toks); m < n && p.at(t, 0, true) && closeOf(t, m-1) == n-1 {
+			args := splitTop(t[m:n-1], isComma)
+			return len(args) > 0 && a.anchored(st, args[0], depth+1)
+		}
+	}
+	if parts := splitTop(t, isOp("+")); len(parts) > 1 {
+		return a.anchored(st, parts[0], depth+1)
+	}
+	if key, _, ok := a.pathKey(t); ok {
+		if e, found := st[anchorKey+key]; found && e.san {
+			return true
+		}
+		if n == 1 {
+			if lv := a.litOf(st, t[0].Text); lv != nil {
+				return a.anchored(st, lv, depth+1)
+			}
+		}
+	}
+	return !a.expr(st, t, false).taint // a clean value: a base the code chose
 }
 
 // setRelative records, after rel = rhs, what rel is the relative path of. Any
@@ -1014,6 +1083,11 @@ func (a *analysis) setRelative(st state, key string, rhs []Token, plain bool) {
 				delete(st, k)
 			}
 		}
+	}
+	if plain && a.anchored(st, rhs, 0) {
+		st[anchorKey+key] = entry{san: true}
+	} else {
+		delete(st, anchorKey+key)
 	}
 	if !plain {
 		return

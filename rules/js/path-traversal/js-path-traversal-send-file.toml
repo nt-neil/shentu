@@ -353,3 +353,42 @@ app.get("/blob/:key", (req, res) => {
   res.sendFile(path.join(STORE, key));
 });
 '''
+
+[[samples]]
+kind = "vulnerable"
+note = "path.normalize keeps a relative input relative, so path.relative resolves it from the working directory"
+code = '''
+const STORE = "/var/lib/app/store";
+app.get("/blob/:key", (req, res) => {
+  const key = path.normalize(req.params.key);
+  if (path.relative(STORE, key).startsWith("..")) return res.sendStatus(403);
+  res.sendFile(path.join(STORE, key));
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "a base of .. lets the checked path start with .., which a join to another folder follows out"
+code = '''
+const STORE = "/var/lib/app/store";
+app.get("/blob/:key", (req, res) => {
+  const key = path.join("..", req.params.key);
+  if (path.relative("..", key).startsWith("..")) return res.sendStatus(403);
+  res.sendFile(path.join(STORE, key));
+});
+'''
+
+[[samples]]
+kind = "safe"
+note = "a helper of a class joins to its configured folder and checks before returning"
+code = '''
+class Store {
+  constructor(dir) { this.dir = dir; }
+  open(id, res) {
+    const file = path.join(this.dir, id);
+    if (path.relative(this.dir, file).startsWith("..")) throw new Error("outside the store");
+    res.sendFile(file);
+  }
+}
+app.get("/blob/:id", (req, res) => store.open(req.params.id, res));
+'''
