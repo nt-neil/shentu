@@ -25,8 +25,7 @@ kind = "vulnerable"
 code = '''
 async def avatar(request):
     who = request.query.get("user", "guest")
-    page = '<img class="avatar" title="' + who + '" src="/static/a.png">'
-    return web.Response(text=page, content_type="text/html")
+    return web.Response(text='<img class="avatar" title="' + who + '" src="/static/a.png">', content_type="text/html")
 '''
 
 [[samples]]
@@ -34,8 +33,7 @@ kind = "safe"
 code = '''
 async def avatar(request):
     who = html.escape(request.query.get("user", "guest"))
-    page = '<img class="avatar" title="' + who + '" src="/static/a.png">'
-    return web.Response(text=page, content_type="text/html")
+    return web.Response(text='<img class="avatar" title="' + who + '" src="/static/a.png">', content_type="text/html")
 '''
 
 [[samples]]
