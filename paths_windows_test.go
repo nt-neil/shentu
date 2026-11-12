@@ -254,3 +254,28 @@ func TestStateDirParentsChecked(t *testing.T) {
 		t.Errorf("Users may delete the parent's children: %v", err)
 	}
 }
+
+// Round 2 review: the state path is absolute on a drive; folders above it
+// that do not exist are created protected; links are refused.
+func TestStateDirParentsForms(t *testing.T) {
+	for _, bad := range []string{`state`, `C:state`, `\\server\share\state`} {
+		if err := trustedParents(bad); err == nil {
+			t.Errorf("%q must be refused", bad)
+		}
+	}
+	base := t.TempDir()
+	dir := filepath.Join(base, "new", "deeper", "state")
+	if err := ensureStateDir(dir); err != nil {
+		t.Fatal(err)
+	}
+	if sids, protected := aceSIDs(t, filepath.Join(base, "new")); !protected || strings.Join(sids, ",") != "BA,OW,SY" {
+		t.Errorf("a missing parent is created protected: %v %v", protected, sids)
+	}
+	link := filepath.Join(base, "link")
+	if err := os.Symlink(base, link); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureStateDir(filepath.Join(link, "x", "state")); err == nil || !strings.Contains(err.Error(), "link") {
+		t.Errorf("a link above the state directory must be refused: %v", err)
+	}
+}

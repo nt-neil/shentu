@@ -258,20 +258,46 @@ func ensureStateDir(dir string) error {
 
 // trustedParents checks the folders above a state directory configured
 // outside %ProgramData%\Shentu: whoever may delete, move or re-permission
-// one of them could swap the state directory for their own.
+// one of them could swap the state directory for their own. The path must
+// be absolute on a drive (no UNC, no drive-relative form); every existing
+// folder above it must be a plain folder (no link or junction) that only
+// administrators may change; a missing one is created here, with the
+// protected descriptor, never with inherited permissions.
 func trustedParents(dir string) error {
 	root := filepath.Join(programData(), "Shentu")
-	if rel, err := filepath.Rel(root, dir); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+	if rel, err := filepath.Rel(root, dir); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) &&
+		filepath.IsAbs(dir) {
 		return nil // under %ProgramData%\Shentu, secured above
 	}
+	vol := filepath.VolumeName(dir)
+	if !filepath.IsAbs(dir) || len(vol) != 2 || vol[1] != ':' {
+		return fmt.Errorf("refusing state directory %q: it must be an absolute path on a drive, such as D:\\Shentu\\state", dir)
+	}
+	var parents []string // from the drive root down
 	for p := filepath.Dir(filepath.Clean(dir)); ; p = filepath.Dir(p) {
+		parents = append([]string{p}, parents...)
+		if filepath.Dir(p) == p {
+			break
+		}
+	}
+	for _, p := range parents {
+		fi, err := os.Lstat(p)
+		switch {
+		case errors.Is(err, fs.ErrNotExist):
+			if err := secureDir(p, false); err != nil { // created with stateSDDL in one step
+				return fmt.Errorf("refusing state directory %s: %w", dir, err)
+			}
+			continue
+		case err != nil:
+			return fmt.Errorf("refusing state directory %s: %w", dir, err)
+		case fi.Mode()&(fs.ModeSymlink|fs.ModeIrregular) != 0 && filepath.Dir(p) != p:
+			return fmt.Errorf("refusing state directory %s: %s is a link or junction", dir, p)
+		}
 		if err := checkRights(p, true, parentRights, true); err != nil {
 			return fmt.Errorf("refusing state directory %s: a folder above it is not safe: %w", dir, err)
 		}
-		if filepath.Dir(p) == p {
-			return nil
-		}
 	}
+	return nil
 }
 
 // installStateDir is ensureStateDir for service install, the one place
