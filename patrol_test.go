@@ -102,3 +102,18 @@ func TestWebrootACLUnknownNotPushed(t *testing.T) {
 		t.Error("nothing to list, no section")
 	}
 }
+
+// A linked authorized_keys file warns even when every line parses.
+func TestKeyFileSymlinkNoUnparsed(t *testing.T) {
+	got := keyFileFindings([]tools.KeyFile{
+		{Path: "/home/a/.ssh/authorized_keys", Keys: 1, SymlinkOutsideHome: "/srv/shared/keys"},
+		{Path: "/home/b/.ssh/authorized_keys", Keys: 2},
+	})
+	if len(got) != 1 || got[0].Key != "authorized_keys_symlink:/home/a/.ssh/authorized_keys" || got[0].Severity != "warning" {
+		t.Fatalf("got %+v", got)
+	}
+	got = keyFileFindings([]tools.KeyFile{{Path: "/home/c/.ssh/authorized_keys", Keys: 1, SymlinkOutsideHome: "/srv/k", Unparsed: []int{3}}})
+	if len(got) != 2 || got[1].Key != "authorized_key_unparsed:/home/c/.ssh/authorized_keys" {
+		t.Fatalf("got %+v", got)
+	}
+}
