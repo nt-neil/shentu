@@ -7,7 +7,7 @@ tier = "info"
 title = "Function that opens URLs called with a URL taken from the request"
 sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "->get_param(", "$request->input(", "$request->query->get(", "$request->request->get(", "$request->get("]
 sinks = ["get_headers(", "getimagesize(", "exif_read_data(", "exif_imagetype(", "simplexml_load_file(", "SoapClient(", "md5_file(", "sha1_file(", "hash_file(", "imagecreatefromjpeg(", "imagecreatefrompng(", "imagecreatefromgif(", "imagecreatefromwebp(", "$dom->load(", "$doc->load(", "$document->load("]
-sanitizers = ["in_array", "array_key_exists", "absint", "intval", "basename("]
+sanitizers = ["in_array", "array_key_exists", "absint", "intval", "basename(", "->get_file_params("]
 fix = "These functions follow http:// and ftp:// URLs (get_headers() also follows redirects): accept only URLs from a fixed list (in_array($url, $allowed, true)), build the URL from a fixed host and an id, or take only a local file name joined to a fixed directory."
 refs = ["CVE-2026-33039", "CVE-2023-46725"]
 
@@ -56,5 +56,21 @@ class ProductImageController extends Controller
         [$w, $h] = getimagesize(storage_path('app/images/') . basename($request->input('image')));
         return response()->json(['width' => $w, 'height' => $h]);
     }
+}
+'''
+
+[[samples]]
+kind = "safe"
+note = "uploads are not input here ($_FILES is not a source): the path PHP stored the upload at is not a URL"
+code = '''
+<?php
+add_action('rest_api_init', function () {
+    register_rest_route('gallery/v1', '/photos', array(
+        array('methods' => 'POST', 'callback' => 'gallery_add', 'permission_callback' => 'gallery_can_add'),
+    ));
+});
+function gallery_add($request) {
+    $files = $request->get_file_params();
+    return array('md5' => md5_file($files['photo']['tmp_name']));
 }
 '''
