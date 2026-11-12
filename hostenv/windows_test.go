@@ -979,6 +979,24 @@ func TestWindowsSSHInclude(t *testing.T) {
 		t.Errorf("include in a user-writable folder: %+v", s)
 	}
 
+	// A user-writable folder a glob lists is untrusted even with no file
+	// matching yet: a user could add one (security review of 191da81).
+	w = base()
+	w.files[winSSHDConfig] = "Include C:/conf/ssh/*.conf\nPasswordAuthentication no\n"
+	w.dirs(`C:\conf\ssh`, "readme.txt")
+	w.sec = map[string]WinFileSecurity{`C:\conf\ssh`: {Owner: "S-1-5-18", Writers: []string{"S-1-5-32-545"}}}
+	if s := collect(w); s.Status != StatusUnknown || s.Reason != ReasonUntrusted {
+		t.Errorf("writable glob folder, nothing matching: %+v", s)
+	}
+	// So is a folder further up that a user may change.
+	w = base()
+	w.files[winSSHDConfig] = "Include C:/conf/ssh/x.conf\n"
+	w.files[`C:\conf\ssh\x.conf`] = "PasswordAuthentication no\n"
+	w.sec = map[string]WinFileSecurity{`C:\conf`: {Owner: "S-1-5-21-1-2-3-1001"}}
+	if s := collect(w); s.Status != StatusUnknown || s.Reason != ReasonUntrusted {
+		t.Errorf("untrusted ancestor: %+v", s)
+	}
+
 	// An include that cannot be read: what is not set before it is unknown,
 	// the fact is partial and names the file.
 	w = base()

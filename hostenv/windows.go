@@ -1022,6 +1022,28 @@ func winSSH(ws WinSource, svcs []WinService, svcErr error) Obs[SSHConfig] {
 			}
 		}
 	}
+	// Who may add, replace or rename an included file matters as much as
+	// the file: every folder between it and the drive (the folders a glob
+	// lists too, even with nothing matching yet) must be trusted, up to
+	// %ProgramData%\ssh, %ProgramData% or the drive root, which are not
+	// judged here (ProgramData and the root let users create folders by
+	// design, not replace one that exists).
+	checked := map[string]bool{strings.ToLower(winSSHDir): true}
+	stop := func(d string) bool {
+		return len(d) <= 3 || strings.EqualFold(d, winParent(winSSHDir))
+	}
+	chain := func(p string) (Obs[SSHConfig], bool) {
+		for d := p; !stop(d); d = winParent(d) {
+			if checked[strings.ToLower(d)] {
+				continue
+			}
+			checked[strings.ToLower(d)] = true
+			if o, ok := trusted(d); !ok {
+				return o, false
+			}
+		}
+		return Obs[SSHConfig]{}, true
+	}
 	var refused *Obs[SSHConfig]
 	var read func(b []byte, depth int) bool // false: stopped (Match, or an untrusted file)
 	read = func(b []byte, depth int) bool {
@@ -1043,12 +1065,18 @@ func winSSH(ws WinSource, svcs []WinService, svcErr error) Obs[SSHConfig] {
 				unread(pat, "Include nested too deep", ReasonNotCollected)
 				continue
 			}
-			files, dir, err := winGlob(ws, pat)
+			files, listed, dir, err := winGlob(ws, pat)
+			for _, d := range append(listed, winParent(pat)) {
+				if o, ok := chain(d); !ok {
+					refused = &o
+					return false
+				}
+			}
 			if err != nil {
 				unread(dir, whyUnread(err), Classify(err))
 			}
 			for _, inc := range files {
-				if o, ok := trusted(winParent(inc), inc); !ok {
+				if o, ok := chain(inc); !ok {
 					refused = &o
 					return false
 				}
@@ -1106,10 +1134,10 @@ func winParent(p string) string {
 }
 
 // winGlob expands a full Windows path pattern (each component may hold *,
-// ? or [...], matched without regard to case) through ws, sorted. A folder
-// that cannot be listed is returned with its error: what it holds is
-// hidden.
-func winGlob(ws WinSource, pattern string) (files []string, dir string, err error) {
+// ? or [...], matched without regard to case) through ws, sorted, with the
+// folders it listed. A folder that cannot be listed is returned with its
+// error: what it holds is hidden.
+func winGlob(ws WinSource, pattern string) (files, listed []string, dir string, err error) {
 	paths := []string{pattern[:2]}
 	for _, part := range strings.Split(pattern[3:], `\`) {
 		var next []string
@@ -1122,6 +1150,7 @@ func winGlob(ws WinSource, pattern string) (files []string, dir string, err erro
 			if len(ld) == 2 { // "C:" alone is the drive's current folder
 				ld += `\`
 			}
+			listed = append(listed, d)
 			names, lerr := ws.ReadDir(ld)
 			if lerr != nil {
 				if !errors.Is(lerr, fs.ErrNotExist) && err == nil {
@@ -1138,7 +1167,7 @@ func winGlob(ws WinSource, pattern string) (files []string, dir string, err erro
 		paths = next
 	}
 	sort.Strings(paths)
-	return paths, dir, err
+	return paths, listed, dir, err
 }
 
 // winRDP follows Windows defaults when a value is missing: RDP off
