@@ -152,7 +152,8 @@ jobs:
           sc.exe qc ShentuBot > "$RUNNER_TEMP/botsvc.txt"
           grep -q -- "service run --bot" "$RUNNER_TEMP/botsvc.txt" || { echo "FAIL: unexpected bot command line"; exit 1; }
           if grep -qF "$tok" "$RUNNER_TEMP/botsvc.txt"; then echo "FAIL: token in the service command line"; exit 1; fi
-          wevtutil.exe qe Application "/q:*[System[Provider[@Name='ShentuBot']]]" /f:text > "$RUNNER_TEMP/botlog.txt"
+          # Git Bash would rewrite /q: and /f: as paths.
+          MSYS_NO_PATHCONV=1 wevtutil.exe qe Application "/q:*[System[Provider[@Name='ShentuBot']]]" /f:text > "$RUNNER_TEMP/botlog.txt"
           if grep -qF "$tok" "$RUNNER_TEMP/botlog.txt"; then echo "FAIL: token in the event log"; exit 1; fi
           grep -q "ShentuBot stopped" "$RUNNER_TEMP/botlog.txt" || { echo "FAIL: the bot's error was not logged"; exit 1; }
           echo "bot error logged, token absent from the log and the command line"
