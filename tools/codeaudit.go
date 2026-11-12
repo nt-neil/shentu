@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"maps"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -157,12 +158,12 @@ func served(p string, webRoots []string) bool {
 	if len(webRoots) > 0 {
 		return insideAny(p, webRoots)
 	}
-	dir := filepath.Dir(p)
+	dir := filepath.ToSlash(filepath.Dir(p))
 	// /var/www holds one folder per site, so its own "www" does not make a path served.
 	if dir == "/var/www" || strings.HasPrefix(dir, "/var/www/") {
 		dir = dir[len("/var/www"):]
 	}
-	for _, part := range strings.Split(filepath.ToSlash(dir), "/") {
+	for _, part := range strings.Split(dir, "/") {
 		if webDirNames[part] {
 			return true
 		}
@@ -262,7 +263,7 @@ func uploadFolder(p string, webRoots []string) bool {
 			}
 			continue
 		}
-		if webDirNames[low[i-1]] && parent != "/var/www" || filepath.Dir(parent) == "/var/www" {
+		if webDirNames[low[i-1]] && parent != "/var/www" || path.Dir(parent) == "/var/www" {
 			return true
 		}
 	}

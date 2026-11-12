@@ -3,6 +3,7 @@ package tools
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -191,6 +192,9 @@ func TestNftablesAtBoot(t *testing.T) {
 // sshd_config.d is 0700) leaves the SSH settings unknown: no warning from the
 // main file's lines, one info instead. Readable, the drop-in's no holds.
 func TestSSHDropInUnreadable(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Linux host test: Unix file permissions")
+	}
 	if os.Geteuid() == 0 {
 		t.Skip("root reads every file")
 	}

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -127,7 +128,7 @@ func TestAppCodeAuditKeepsResults(t *testing.T) {
 	}
 	info, _ := os.Stat(states[0])
 	b, _ := os.ReadFile(states[0])
-	if info.Mode().Perm() != 0o600 || strings.Contains(string(b), "system(") || strings.Contains(string(b), "$_GET") {
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 || strings.Contains(string(b), "system(") || strings.Contains(string(b), "$_GET") {
 		t.Errorf("state file: mode %v, %s", info.Mode().Perm(), b)
 	}
 
