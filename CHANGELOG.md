@@ -39,6 +39,14 @@ Chinese for the zh-TW pages; keep the two in step.
 - js-xss-response has no Server-Sent Events exception: res.write("data: " + value) in a
   text/event-stream handler is reported as XSS (a false positive), and nothing is missed
   because of SSE; telling streams apart by the handler's Content-Type is planned for v0.2.6.
+- `->get_settings()` counts as Elementor widget input in every class, so `WP_Widget::get_settings()`
+  and WooCommerce `WC_Settings_Page::get_settings()` values (saved by administrators) are reported
+  too. Limiting the source to classes extending `\Elementor\Widget_Base` needs class-scoped sources
+  in the engine (planned for v0.2.6).
+- In `$wpdb->prepare()`/`->prepare()` formats, a placeholder list built by a callback that returns
+  a constant (`implode(',', array_map(fn($v) => '%d', $ids))`) is still treated as input and
+  reported. `array_fill(0, count($ids), '%d')` and `sizeof()` are recognised. Reading a callback's
+  return value needs an engine change (planned for v0.2.6).
 
 ## v0.2.4 — 2026-11-09
 
