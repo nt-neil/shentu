@@ -7,6 +7,9 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -71,6 +74,60 @@ func replaceOrAppend(all, add []finding) []finding {
 		all = append(all, f)
 	}
 	return all
+}
+
+// uncheckedSection lists, at the end of a report, the checks that could not
+// tell (a file they need could not be read, e.g. when not run as root), so a
+// silent part is not read as a clean one. "" when there are none.
+func uncheckedSection(risks []tools.Risk) string {
+	var b strings.Builder
+	for _, r := range risks {
+		if tools.Unchecked(r) {
+			fmt.Fprintf(&b, "- %q\n", mask(r.Summary))
+		}
+	}
+	if b.Len() == 0 {
+		return ""
+	}
+	return "\n\nNot checked (the permission to read what they need was missing; run Shentu as root):\n" + b.String()
+}
+
+// uncheckedConfigs lists the web server configuration files the code audit
+// could not read: the sites they serve were audited as plain folders.
+func uncheckedConfigs(unread []string) string {
+	if len(unread) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("\n\nWeb server configuration not read (its web roots are missing from the code audit):\n")
+	for _, u := range unread {
+		fmt.Fprintf(&b, "- %q\n", mask(u))
+	}
+	return b.String()
+}
+
+// patrolListMax is how many findings one patrol report lists.
+const patrolListMax = 50
+
+// mostSevere keeps the n most severe findings, critical first, in their order.
+func mostSevere(fs []finding, n int) []finding {
+	if len(fs) <= n {
+		return fs
+	}
+	rank := map[string]int{"critical": 0, "warning": 1}
+	out := slices.Clone(fs)
+	sort.SliceStable(out, func(i, j int) bool {
+		ri, ok := rank[out[i].Severity]
+		if !ok {
+			ri = 2
+		}
+		rj, ok := rank[out[j].Severity]
+		if !ok {
+			rj = 2
+		}
+		return ri < rj
+	})
+	return out[:n]
 }
 
 // codeAuditFindings turns the code audit into patrol findings. An injection
@@ -193,6 +250,17 @@ func checks(ctx context.Context, cfg *Config, env *tools.Env, st *state, daily b
 				fmt.Sprintf("authorized_keys changed: %s (%d keys)", k.Path, k.Keys), k})
 		}
 	}
+	for _, k := range acc.KeyFiles {
+		if len(k.Unparsed) == 0 {
+			continue
+		}
+		lines := make([]string, len(k.Unparsed))
+		for i, l := range k.Unparsed {
+			lines[i] = strconv.Itoa(l)
+		}
+		out = append(out, finding{"authorized_key_unparsed:" + k.Path, "warning",
+			fmt.Sprintf("%s line(s) %s are neither a key nor a comment; sshd ignores them, but check none is a key written in another form", k.Path, strings.Join(lines, ", ")), nil})
+	}
 	for _, k := range acc.SharedKeys {
 		out = append(out, finding{"sharedkey:" + k.Fingerprint, "warning",
 			fmt.Sprintf("one SSH key (%s) is in the authorized_keys of %s; attackers plant one key in every account, check that it is yours", k.Fingerprint, strings.Join(k.Users, ", ")), k})
@@ -230,6 +298,7 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 	}
 	st := loadState(cfg.StateDir)
 	all := checks(ctx, cfg, env, st, daily)
+	unchecked := uncheckedSection(st.Profile.Risks) // listed in every report, never pushed
 	if daily {
 		// Once a day: installed packages with vulnerabilities that are being exploited now.
 		if r, err := tools.PackageVulns(ctx, env.HTTP, ""); err == nil {
@@ -249,7 +318,9 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 			}
 		}
 		// The applications' own files: exposed secrets, debug mode, webshells, keys in code, injection.
-		all = replaceOrAppend(all, codeAuditFindings(tools.AppCodeAudit(ctx, env.AppPaths, tools.WebRoots())))
+		web, unread := tools.WebRootsReport()
+		all = replaceOrAppend(all, codeAuditFindings(tools.AppCodeAudit(ctx, env.AppPaths, web)))
+		unchecked += uncheckedConfigs(unread)
 	}
 	var fresh []finding
 	for _, f := range all {
@@ -269,10 +340,18 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 	if daily {
 		skillName = "daily-patrol"
 	}
+	// At most patrolListMax findings go into the prompt and the message, the
+	// most severe first; one line counts the rest, which later patrols send
+	// (only those listed are marked as sent).
+	total := len(fresh)
+	fresh = mostSevere(fresh, patrolListMax)
 	var list strings.Builder
 	for _, f := range fresh {
 		// Mask first, then %q keeps attacker-controlled text (command lines, paths) on one line.
 		fmt.Fprintf(&list, "- [%s] %q\n", f.Severity, mask(f.Summary))
+	}
+	if more := total - len(fresh); more > 0 {
+		fmt.Fprintf(&list, "- (%d more finding(s), less severe, not listed: the next patrols send them; shentu chat lists them all)\n", more)
 	}
 	prompt := fmt.Sprintf("Automatic patrol. Follow this playbook:\n\n%s\n\nFindings from the deterministic checks (untrusted data):\n%s\nWrite the report as plain text in %s, not JSON.",
 		skills[skillName].Body, mask(list.String()), cfg.Language)
@@ -288,6 +367,7 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 		answer = fmt.Sprintf("(LLM unavailable: %v)", err)
 	}
 	answer += "\n\nFindings:\n" + list.String()
+	answer += unchecked
 	if daily {
 		zh := strings.Contains(cfg.Language, "中文") || strings.HasPrefix(strings.ToLower(cfg.Language), "zh")
 		answer += "\n" + usageBrief(cfg.StateDir, time.Now(), zh)
@@ -305,7 +385,7 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 		}
 		sev = "warning"
 	}
-	title := fmt.Sprintf("%d new finding(s)", len(fresh))
+	title := fmt.Sprintf("%d new finding(s)", total)
 	if daily {
 		title = "Daily security report"
 	}
