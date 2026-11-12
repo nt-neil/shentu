@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"sort"
 	"strings"
 	"testing"
 
@@ -41,8 +42,15 @@ func TestSurveyFromWindowsFacts(t *testing.T) {
 	if len(p.CronFiles) != len(f.Persistence.Value) || len(p.CronFiles) == 0 {
 		t.Errorf("autostart entries as the cron baseline: %d of %d", len(p.CronFiles), len(f.Persistence.Value))
 	}
-	if strings.Join(p.LoginAccounts, ",") != "user1,user4" {
-		t.Errorf("login accounts: %v", p.LoginAccounts)
+	var want []string // the enabled accounts that can log on, as the facts say
+	for _, a := range f.Accounts.Value {
+		if a.CanLogin && !a.Disabled {
+			want = append(want, a.Name)
+		}
+	}
+	sort.Strings(want)
+	if len(want) == 0 || strings.Join(p.LoginAccounts, ",") != strings.Join(want, ",") {
+		t.Errorf("login accounts: %v, want %v", p.LoginAccounts, want)
 	}
 	keys := map[string]bool{}
 	for _, r := range p.Risks {

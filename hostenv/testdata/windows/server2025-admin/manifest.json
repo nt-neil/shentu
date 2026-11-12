@@ -4,7 +4,7 @@
     "goos": "windows",
     "goarch": "amd64",
     "elevated": true,
-    "recorded_at": "2026-11-12T14:12:25.1929023Z"
+    "recorded_at": "2026-11-12T16:52:18.0662101Z"
   },
   "entries": [
     {
@@ -215,7 +215,7 @@
     {
       "op": "reg",
       "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList\\S-1-5-21-1000000000-1000000000-1000000000-500",
-      "blob": "blobs/d2f147a5b2b648c1"
+      "blob": "blobs/00d16d0a7cb56726"
     },
     {
       "op": "reg",
@@ -2675,7 +2675,7 @@
     {
       "op": "reg",
       "path": "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Terminal Server",
-      "blob": "blobs/34f55d0479229597"
+      "blob": "blobs/0e41d2ba1e4883ff"
     },
     {
       "op": "reg",
@@ -2695,7 +2695,7 @@
     {
       "op": "reg",
       "path": "HKU\\S-1-5-21-1000000000-1000000000-1000000000-500\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
-      "err": "not_exist"
+      "blob": "blobs/44136fa355b3678a"
     },
     {
       "op": "reg",
@@ -2744,7 +2744,7 @@
     {
       "op": "winevt",
       "path": "System|5000|*[System[(EventID=104 or EventID=7045) and TimeCreated[timediff(@SystemTime) \u003c= 86400000]]]",
-      "blob": "blobs/33af3e0966a12706"
+      "blob": "blobs/44f2b9fd61d5be56"
     },
     {
       "op": "winfw",
@@ -2757,19 +2757,19 @@
     },
     {
       "op": "winproc",
-      "blob": "blobs/e6714075e98a6048"
+      "blob": "blobs/eb3796ff7939892e"
     },
     {
       "op": "winsock",
-      "blob": "blobs/7cf3c11e42a0d2f5"
+      "blob": "blobs/5a244e7ba8a734cd"
     },
     {
       "op": "winsvc",
-      "blob": "blobs/a1479051eb7626f5"
+      "blob": "blobs/6620952b7b1bc894"
     },
     {
       "op": "wintask",
-      "blob": "blobs/67f2ab422718f038"
+      "blob": "blobs/56049cb4a7cba061"
     },
     {
       "op": "winuser",
