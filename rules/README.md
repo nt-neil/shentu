@@ -244,7 +244,10 @@ same string's interpolations or in the values joined after it, is user input:
 
 `[[args]]` (optional, any number) says which argument of a sink call carries the
 attack, and when other arguments make the call dangerous or safe. Rules without
-it are unchanged: a sink is reported when any argument is tainted.
+it are unchanged: a sink is reported when any argument is tainted. A sink may
+have several blocks, each naming its `arg`: the call is reported when any one of
+them holds (`spawn(cmd, args, { shell: true, cwd })`: the command or its
+arguments, not the options).
 
 | field | meaning |
 |---|---|

@@ -2103,7 +2103,21 @@ func (a *analysis) sinks(st state, t []Token) {
 }
 
 func (a *analysis) sink(st state, t []Token, i int, s *pat) {
-	cond := a.r.args[s]
+	if more := a.r.argsMore[s]; len(more) > 0 {
+		// several [[args]] blocks for one sink: a finding when any one holds
+		for _, cond := range append([]*argCond{a.r.args[s]}, more...) {
+			if a.sinkWith(st, t, i, s, cond) {
+				return
+			}
+		}
+		return
+	}
+	a.sinkWith(st, t, i, s, a.r.args[s])
+}
+
+// sinkWith is sink under one [[args]] block (cond, nil for none), reporting
+// whether it reported the call.
+func (a *analysis) sinkWith(st state, t []Token, i int, s *pat, cond *argCond) bool {
 	end, open := a.patEnd(t, i, s)
 	var region []Token
 	switch {
@@ -2115,32 +2129,32 @@ func (a *analysis) sink(st state, t []Token, i int, s *pat) {
 		region = t[end:]
 	}
 	if lr := a.expandLits(st, region); cond != nil && (len(cond.when) > 0 && !a.when(cond.when, lr) || a.unless(st, cond.unless, lr)) {
-		return
+		return false
 	}
 	if cond != nil && cond.literal && !a.literalArg(st, cond, region, open) {
-		return
+		return false
 	}
 	if a.noSources() {
 		a.report(t[i].Line)
-		return
+		return true
 	}
 	if a.nonced(st) {
-		return // the request carried a valid CSRF nonce, so a third party cannot have made it (context.go)
+		return false // the request carried a valid CSRF nonce, so a third party cannot have made it (context.go)
 	}
 	var recv []Token
 	if s.member {
 		if a.ownMethod(t, i+1) {
-			return // $term_query->query($args): a method of the code's own, followed by its summary
+			return false // $term_query->query($args): a method of the code's own, followed by its summary
 		}
 		recv = t[a.chainStart(t, i):i]
 		if a.expr(st, recv, false).san {
-			return // a method of an object a sanitizer made (SandboxedEnvironment().from_string)
+			return false // a method of an object a sanitizer made (SandboxedEnvironment().from_string)
 		}
 		if cond != nil && len(cond.receiver) > 0 && !a.recvIs(cond.receiver, recv) {
-			return // finders.find(path) is not a MongoDB collection
+			return false // finders.find(path) is not a MongoDB collection
 		}
 		if cond != nil && len(cond.notReceiver) > 0 && a.recvSurely(cond.notReceiver, recv) {
-			return // (new WP_Query)->query($args): a query built from an arguments array, not SQL
+			return false // (new WP_Query)->query($args): a query built from an arguments array, not SQL
 		}
 	}
 	whole := cond != nil && cond.whole
@@ -2199,6 +2213,7 @@ func (a *analysis) sink(st state, t []Token, i int, s *pat) {
 	if tainted {
 		a.reportSink(loc{a.file, t[i].Line}, emb)
 	}
+	return tainted
 }
 
 // ownMethod reports whether the method called at t[j] resolves to a function of
