@@ -5,8 +5,8 @@ cwe = "CWE-918"
 severity = "high"
 tier = "info"
 title = "Server fetches a URL taken from the request"
-frameworks = ["express"]
-sources = ["req.query", "req.body", "req.params", "req.headers"]
+frameworks = ["express", "koa", "fastify", "hapi"]
+sources = ["req.query", "req.body", "req.params", "req.headers", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload", "ctx.params", "request.params", "ctx.headers", "request.headers", "ctx.request.header", "ctx.request.headers", "ctx.get("]
 sinks = ["fetch(", "axios(", "axios.get(", "axios.post(", "axios.put(", "axios.delete(", "axios.head(", "got(", "got.get(", "got.post(", "http.get(", "https.get(", "http.request(", "https.request(", "needle(", "superagent.get("]
 sanitizers = ["parseInt(", "encodeURIComponent("]
 fix = "Keep the scheme and host fixed and take only a path or an id from the request, or parse it with new URL() and require the hostname to be in an allowlist (and to resolve to a public address) before the request."
@@ -52,5 +52,43 @@ app.post("/import", async (req, res) => {
   if (!FEEDS.includes(req.body.source)) return res.sendStatus(400);
   const { data } = await axios.get(req.body.source);
   res.json({ size: data.length });
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "Koa: ctx.request.query"
+code = '''
+router.get("/preview", async (ctx) => {
+  const r = await fetch(ctx.request.query.url);
+  ctx.body = await r.text();
+});
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+router.get("/preview", async (ctx) => {
+  const r = await fetch("https://cdn.example.com/" + encodeURIComponent(ctx.request.query.id));
+  ctx.body = await r.text();
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "Fastify: request.query"
+code = '''
+fastify.get("/fetch", async (request, reply) => {
+  const r = await axios.get(request.query.target);
+  return r.data;
+});
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+fastify.get("/fetch", async (request, reply) => {
+  const r = await axios.get("https://api.example.com/items/" + parseInt(request.query.id, 10));
+  return r.data;
 });
 '''

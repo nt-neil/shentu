@@ -4,8 +4,8 @@ class = "cmdi"
 cwe = "CWE-78"
 severity = "critical"
 title = "Untrusted value placed into a command string run by exec/execSync"
-frameworks = ["express"]
-sources = ["req.query", "req.body", "req.params", "req.headers", "req.file", "originalname"]
+frameworks = ["express", "koa", "fastify", "hapi"]
+sources = ["req.query", "req.body", "req.params", "req.headers", "req.file", "originalname", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload", "ctx.params", "request.params", "ctx.headers", "request.headers", "ctx.request.header", "ctx.request.headers", "ctx.get("]
 sinks = ["exec(", "execSync(", ".execSync(", "child_process.exec(", "childProcess.exec(", "cp.exec(", "require('child_process').exec(", "shell.exec("]
 sanitizers = ["execFile(", "execFileSync(", "spawn("]
 fix = "Use execFile or spawn with an argument array (no shell) so the value is one argument; never build a command string from input."
@@ -37,5 +37,39 @@ app.get("/lookup", (req, res) => {
   execFile("nslookup", ["--", String(req.query.host)], (err, stdout) => {
     res.type("text").send(err ? "lookup failed" : stdout);
   });
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "Fastify: request.body"
+code = '''
+fastify.post("/convert", async (request, reply) => {
+  exec(`convert ${request.body.file} out.png`, () => reply.send({ ok: true }));
+});
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+fastify.post("/convert", async (request, reply) => {
+  execFile("convert", [String(request.body.file), "out.png"], () => reply.send({ ok: true }));
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "Koa: a request header"
+code = '''
+router.get("/trace", async (ctx) => {
+  ctx.body = execSync("traceroute " + ctx.headers["x-target"]).toString();
+});
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+router.get("/trace", async (ctx) => {
+  ctx.body = execFileSync("traceroute", ["--", String(ctx.headers["x-target"])]).toString();
 });
 '''

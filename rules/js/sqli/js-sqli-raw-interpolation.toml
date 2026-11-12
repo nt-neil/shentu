@@ -4,8 +4,8 @@ class = "sqli"
 cwe = "CWE-89"
 severity = "high"
 title = "Request input concatenated or interpolated into SQL for a driver or knex.raw"
-frameworks = ["express"]
-sources = ["req.query", "req.body", "req.params", "req.cookies"]
+frameworks = ["express", "koa", "fastify", "hapi"]
+sources = ["req.query", "req.body", "req.params", "req.cookies", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload", "ctx.params", "request.params", "ctx.cookies.get("]
 sinks = [".query(", ".execute(", "knex.raw(", ".raw(", ".whereRaw(", ".orderByRaw("]
 sanitizers = ["parseInt(", "Number("]
 fix = "Use placeholders and pass values separately (query('... WHERE id = ?', [id]), knex.raw('?? = ?', [col, val])); never build SQL with + or template literals."
@@ -51,5 +51,43 @@ router.post("/group", async (req, res) => {
   const col = COLUMNS.has(req.body.column) ? req.body.column : "status";
   const rows = await knex("orders").select(knex.raw("count(*) as n, ??", [col])).groupBy(col);
   res.json(rows);
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "Koa: ctx.query and ctx.params"
+code = '''
+router.get("/users/:org", async (ctx) => {
+  const [rows] = await pool.query(`SELECT * FROM users WHERE org = '${ctx.params.org}' AND name LIKE '%${ctx.query.q}%'`);
+  ctx.body = rows;
+});
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+router.get("/users/:org", async (ctx) => {
+  const [rows] = await pool.query("SELECT * FROM users WHERE org = ? AND name LIKE ?", [ctx.params.org, `%${ctx.query.q}%`]);
+  ctx.body = rows;
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "Koa: a cookie read with ctx.cookies.get"
+code = '''
+router.get("/prefs", async (ctx) => {
+  const theme = ctx.cookies.get("theme");
+  ctx.body = await pool.query("SELECT * FROM themes WHERE name = '" + theme + "'");
+});
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+router.get("/prefs", async (ctx) => {
+  const theme = ctx.cookies.get("theme");
+  ctx.body = await pool.query("SELECT * FROM themes WHERE name = ?", [theme]);
 });
 '''
