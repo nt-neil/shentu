@@ -18,6 +18,9 @@ jobs:
       run:
         shell: bash
     steps:
+      # Git for Windows defaults to autocrlf=true; golden files are compared byte for byte.
+      - name: keep LF line endings
+        run: git config --global core.autocrlf false
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
@@ -30,10 +33,12 @@ jobs:
       - name: test hostenv and checks
         run: go test ./hostenv/ ./checks/
       - name: fuzz VARIANT / SAFEARRAY decoding
+        if: ${{ !cancelled() }}
         run: |
           go test -run '^$' -fuzz '^FuzzDecodeBSTRArray$' -fuzztime 30s ./hostenv/
           go test -run '^$' -fuzz '^FuzzDecodeScalarVariant$' -fuzztime 30s ./hostenv/
       - name: hostfacts smoke (live facts, no panic; prints statuses only)
+        if: ${{ !cancelled() }}
         run: |
           go build -o hostfacts.exe ./cmd/hostfacts/
           # Live output stays on the runner: it is unmasked. Only the masked
@@ -73,6 +78,7 @@ jobs:
           sys.exit(0 if ok else 1)
           EOF
       - name: keep the masked fixture for review (not committed automatically)
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: hostfacts-fixture-${{ matrix.os }}
