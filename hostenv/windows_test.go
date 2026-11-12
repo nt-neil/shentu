@@ -450,7 +450,7 @@ func TestWindowsSSH(t *testing.T) {
 	if s.Status != StatusOK || s.Value.Settings["passwordauthentication"] != "yes" || s.Value.Settings["permitrootlogin"] != "no" {
 		t.Errorf("sshd_config up to the first Match: %+v", s)
 	}
-	w.denied[winSSHDConfig] = true
+	w.fakeHost.denied[winSSHDConfig] = true // files go through the embedded fake host
 	if s := (WindowsCollector{}).Collect(context.Background(), w).RemoteAccess.SSH; s.Status != StatusPartial || s.Value.Settings["passwordauthentication"] != "unknown" {
 		t.Errorf("unreadable sshd_config: %+v", s)
 	}

@@ -172,9 +172,9 @@ func TestPackagesCommandMissing(t *testing.T) {
 
 func TestUnsupportedPlatform(t *testing.T) {
 	h := newFake(true)
-	h.info.GOOS = "windows"
+	h.info.GOOS = "freebsd" // no collector yet (Windows has one since Phase 2)
 	f := Collect(context.Background(), h)
-	if f.Processes.Status != StatusUnknown || f.Processes.Reason != ReasonUnsupported || f.Platform.Value.OS != "windows" {
+	if f.Processes.Status != StatusUnknown || f.Processes.Reason != ReasonUnsupported || f.Platform.Value.OS != "freebsd" {
 		t.Errorf("unsupported %+v", f.Processes)
 	}
 }

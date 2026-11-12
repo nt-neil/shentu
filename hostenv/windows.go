@@ -1222,7 +1222,10 @@ func wmiRef(path string) (class, name string) {
 	if !ok {
 		return "", ""
 	}
-	return class, strings.ReplaceAll(strings.Trim(val, `"`), `\"`, `"`)
+	if len(val) >= 2 && val[0] == '"' && val[len(val)-1] == '"' {
+		val = val[1 : len(val)-1]
+	}
+	return class, strings.ReplaceAll(val, `\"`, `"`)
 }
 
 func asString(v any) string {
