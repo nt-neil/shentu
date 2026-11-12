@@ -171,16 +171,39 @@ var typedNameEvents = map[int]bool{4625: true, 4648: true, 4768: true, 4771: tru
 var typedNameFields = map[string]bool{"TargetUserName": true, "TargetDomainName": true, "TargetOutboundUserName": true,
 	"TargetOutboundDomainName": true, "Workstation": true}
 
-// sshTypedName is the name in an OpenSSH message about a failed or
-// invalid login ("for invalid user X from", "Invalid user X from").
-var sshTypedName = regexp.MustCompile(`(?i)\b((?:for |)invalid user |for )(\S+)( from )`)
+// sshNameWord starts the part of an OpenSSH message that names a user
+// ("for X", "user X"); sshAddr is the source address and port.
+var (
+	sshNameWord = regexp.MustCompile(`(?i)\b(?:for|user)\b`)
+	sshAddr     = regexp.MustCompile(`(?i)\b((?:\d{1,3}\.){3}\d{1,3}|[0-9a-f]*:[0-9a-f:.]+)\s+port\s+(\d+)`)
+)
+
+// sshSkeleton keeps of an OpenSSH message that names a user only what it
+// did, the source and port: "Failed password [name] from 203.0.113.9 port
+// 22". Default deny: a name may hold spaces or look like anything, so
+// everything after the first "for"/"user" goes, whatever its layout.
+func sshSkeleton(v string) string {
+	loc := sshNameWord.FindStringIndex(v)
+	if loc == nil {
+		return v
+	}
+	out := strings.TrimSpace(v[:loc[0]]) + " [name]"
+	if m := sshAddr.FindStringSubmatch(v[loc[0]:]); m != nil {
+		out += " from " + m[1] + " port " + m[2]
+	}
+	if strings.Contains(v, "[preauth]") {
+		out += " [preauth]"
+	}
+	return out
+}
 
 // ParseEventText renders one event (EvtRenderEventXml) as one searchable
 // line: time, channel, ID and every EventData/UserData field as
 // Name=value, secret-masked (command lines included: they are worth
 // searching, and MaskSecrets takes the credentials out). What someone
 // typed at a failed logon never appears: the typed-name fields of
-// typedNameEvents are dropped, and OpenSSH's messages lose the name.
+// typedNameEvents are dropped, and OpenSSH's messages that name a user are
+// cut to a skeleton (sshSkeleton).
 func ParseEventText(s string) (string, error) {
 	var x eventXML
 	if err := xml.Unmarshal([]byte(s), &x); err != nil {
@@ -195,7 +218,7 @@ func ParseEventText(s string) (string, error) {
 		}
 		value = strings.Join(strings.Fields(value), " ")
 		if ssh {
-			value = sshTypedName.ReplaceAllString(value, "${1}[name]${3}")
+			value = sshSkeleton(value)
 		}
 		fmt.Fprintf(&b, " %s=%s", name, value)
 	}

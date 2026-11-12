@@ -807,3 +807,19 @@ func TestParseEventText(t *testing.T) {
 		t.Errorf("OpenSSH names typed at a failed login must be dropped: %q", got)
 	}
 }
+
+func TestSSHSkeleton(t *testing.T) {
+	for in, want := range map[string]string{
+		"Failed password for invalid user Bob Smith from 203.0.113.9 port 22 ssh2":           "Failed password [name] from 203.0.113.9 port 22",
+		"Failed password for admin from 203.0.113.9 port 22 ssh2":                            "Failed password [name] from 203.0.113.9 port 22",
+		"Invalid user x y from 203.0.113.9 port 5":                                           "Invalid [name] from 203.0.113.9 port 5",
+		"Disconnected from invalid user Hunter2 pass 203.0.113.9 port 22 [preauth]":          "Disconnected from invalid [name] from 203.0.113.9 port 22 [preauth]",
+		"Connection closed by authenticating user root 2001:db8::7 port 50022 [preauth]":     "Connection closed by authenticating [name] from 2001:db8::7 port 50022 [preauth]",
+		"Accepted publickey for alice from 198.51.100.4 port 40000 ssh2: ED25519 SHA256:abc": "Accepted publickey [name] from 198.51.100.4 port 40000",
+		"Server listening on 0.0.0.0 port 22.":                                               "Server listening on 0.0.0.0 port 22.",
+	} {
+		if got := sshSkeleton(in); got != want {
+			t.Errorf("%q:\n got %q\nwant %q", in, got, want)
+		}
+	}
+}
