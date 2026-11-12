@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -236,6 +237,9 @@ var logSearch = Tool{
 		}
 		if err := decode(args, &a); err != nil {
 			return nil, err
+		}
+		if runtime.GOOS == "windows" {
+			return winLogSearch(a.Path, a.Pattern, a.Limit)
 		}
 		if !allowedLog(a.Path, env.LogPaths) {
 			return nil, errors.New("path is not in the allowed log paths: " + strings.Join(env.LogPaths, ", "))

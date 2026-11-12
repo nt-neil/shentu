@@ -9,6 +9,7 @@ import (
 	"encoding/binary"
 	"encoding/xml"
 	"errors"
+	"fmt"
 	"net"
 	"strings"
 	"unicode/utf16"
@@ -156,6 +157,32 @@ func ParseEventXML(s string) (WinEvent, error) {
 		e.Data = nil
 	}
 	return e, nil
+}
+
+// ParseEventText renders one event (EvtRenderEventXml) as one searchable
+// line: time, channel, ID and every EventData/UserData field as
+// Name=value, secret-masked. A failed logon's typed name (4625
+// TargetUserName, sometimes a password) is left out, as in ParseEventXML.
+func ParseEventText(s string) (string, error) {
+	var x eventXML
+	if err := xml.Unmarshal([]byte(s), &x); err != nil {
+		return "", err
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s %s %d:", x.System.TimeCreated.SystemTime, x.System.Channel, x.System.EventID)
+	field := func(name, value string) {
+		if name == "" || x.System.EventID == 4625 && name == "TargetUserName" {
+			return
+		}
+		fmt.Fprintf(&b, " %s=%s", name, strings.Join(strings.Fields(value), " "))
+	}
+	for _, d := range x.EventData.Data {
+		field(d.Name, d.Value)
+	}
+	for _, d := range x.UserData.Inner.Fields {
+		field(d.XMLName.Local, d.Value)
+	}
+	return MaskSecrets(b.String()), nil
 }
 
 type taskXML struct {

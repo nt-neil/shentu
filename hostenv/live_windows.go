@@ -553,39 +553,64 @@ const (
 )
 
 func (l *Live) Events(channel, xpath string, max int) ([]WinEvent, error) {
+	var out []WinEvent
+	err := eachEvent(channel, xpath, func(s string) bool {
+		if ev, err := ParseEventXML(s); err == nil {
+			out = append(out, ev)
+		}
+		return len(out) < max
+	})
+	return out, err
+}
+
+// EachEventText calls f with each matching event of channel as one line
+// (ParseEventText), newest first, until f returns false or after max
+// events. For log_search: the events pass by, they are not collected.
+func (l *Live) EachEventText(channel, xpath string, max int, f func(string) bool) error {
+	n := 0
+	return eachEvent(channel, xpath, func(s string) bool {
+		n++
+		if t, err := ParseEventText(s); err == nil && !f(t) {
+			return false
+		}
+		return n < max
+	})
+}
+
+// eachEvent renders each event of the query as XML, newest first, until f
+// returns false.
+func eachEvent(channel, xpath string, f func(xml string) bool) error {
 	if err := procEvtQuery.Find(); err != nil {
-		return nil, winErr("EvtQuery", channel, err)
+		return winErr("EvtQuery", channel, err)
 	}
 	ch, _ := windows.UTF16PtrFromString(channel)
 	q, _ := windows.UTF16PtrFromString(xpath)
 	rs, _, e := procEvtQuery.Call(0, uintptr(unsafe.Pointer(ch)), uintptr(unsafe.Pointer(q)), evtQueryChannelPath|evtQueryReverseDirection)
 	if rs == 0 {
-		return nil, winErr("EvtQuery", channel, e)
+		return winErr("EvtQuery", channel, e)
 	}
 	defer procEvtClose.Call(rs)
-	var out []WinEvent
 	handles := make([]uintptr, evtBatch)
-	for len(out) < max {
+	more := true
+	for more {
 		var got uint32
 		r, _, e := procEvtNext.Call(rs, evtBatch, uintptr(unsafe.Pointer(&handles[0])), 5000, 0, uintptr(unsafe.Pointer(&got)))
 		if r == 0 {
 			if errno, ok := e.(syscall.Errno); ok && errno == errorNoMoreItems {
-				break
+				return nil
 			}
-			return out, winErr("EvtNext", channel, e)
+			return winErr("EvtNext", channel, e)
 		}
 		for _, h := range handles[:got] {
-			if len(out) < max {
+			if more {
 				if s, err := renderEvent(h); err == nil {
-					if ev, err := ParseEventXML(s); err == nil {
-						out = append(out, ev)
-					}
+					more = f(s)
 				}
 			}
 			procEvtClose.Call(h)
 		}
 	}
-	return out, nil
+	return nil
 }
 
 func renderEvent(h uintptr) (string, error) {

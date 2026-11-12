@@ -776,3 +776,19 @@ func fixtureText(t *testing.T, dir string) string {
 	}
 	return all.String()
 }
+
+func TestParseEventText(t *testing.T) {
+	x := `<Event><System><EventID>4625</EventID><Channel>Security</Channel><TimeCreated SystemTime="2026-11-12T15:00:00.1Z"/></System>` +
+		`<EventData><Data Name="TargetUserName">Hunter2Password</Data><Data Name="IpAddress">203.0.113.9</Data>` +
+		`<Data Name="CommandLine">run --password=s3cr3t-value-xyz now</Data></EventData></Event>`
+	got, err := ParseEventText(x)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(got, "2026-11-12T15:00:00.1Z Security 4625:") || !strings.Contains(got, "IpAddress=203.0.113.9") {
+		t.Errorf("line: %q", got)
+	}
+	if strings.Contains(got, "Hunter2Password") || strings.Contains(got, "s3cr3t-value-xyz") {
+		t.Errorf("a failed logon's typed name and secrets must not appear: %q", got)
+	}
+}
