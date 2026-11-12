@@ -228,9 +228,18 @@ func (st *callState) dropStale(hash map[string]string, walked bool) map[string]b
 			queue = append(queue, f)
 		}
 	}
+	// A file the walk did not reach is unknown while it is still there; one
+	// that is gone is stale, and its results go.
+	gone := map[string]bool{}
 	unknown := func(f string) bool {
-		_, ok := hash[f]
-		return !walked && !ok
+		if _, ok := hash[f]; ok || walked {
+			return false
+		}
+		if _, err := os.Lstat(f); err != nil {
+			gone[f] = true
+			return false
+		}
+		return true
 	}
 	for f, fs := range st.Files {
 		if fs.Hash != hash[f] && !unknown(f) {
@@ -258,6 +267,9 @@ func (st *callState) dropStale(hash map[string]string, walked bool) map[string]b
 		if fs := st.Files[f]; fs != nil {
 			fs.Calls, fs.Part = nil, nil
 		}
+	}
+	for f := range gone {
+		delete(st.Files, f)
 	}
 	return bad
 }

@@ -430,19 +430,29 @@ func TestAppCodeAuditLateNotAllChecked(t *testing.T) {
 // A walk cut short does not take the files it did not reach as gone: their
 // kept results stay for the next audit (N9).
 func TestDropStaleWalkCut(t *testing.T) {
+	dir := t.TempDir()
+	a, b := filepath.Join(dir, "a.php"), filepath.Join(dir, "b.php")
+	os.WriteFile(a, []byte("<?php\n"), 0o644)
+	os.WriteFile(b, []byte("<?php\n"), 0o644)
 	newState := func() *callState {
 		return &callState{Files: map[string]*fileState{
-			"/a.php": {Hash: "1", Calls: &passResult{}, Deps: []string{"/b.php"}},
-			"/b.php": {Hash: "2", Calls: &passResult{}},
+			a: {Hash: "1", Calls: &passResult{}, Deps: []string{b}},
+			b: {Hash: "2", Calls: &passResult{}},
 		}}
 	}
 	st := newState()
-	if bad := st.dropStale(map[string]string{"/a.php": "1"}, false); len(bad) != 0 || st.Files["/a.php"].Calls == nil {
-		t.Errorf("walk cut: dropped %v", bad)
+	if bad := st.dropStale(map[string]string{a: "1"}, false); len(bad) != 0 || st.Files[a].Calls == nil {
+		t.Errorf("walk cut, b still there: dropped %v", bad)
 	}
 	st = newState()
-	if bad := st.dropStale(map[string]string{"/a.php": "1"}, true); !bad["/b.php"] || !bad["/a.php"] {
+	if bad := st.dropStale(map[string]string{a: "1"}, true); !bad[b] || !bad[a] {
 		t.Errorf("walk done: dropped %v, want b and its caller a", bad)
+	}
+	// Walk cut, b deleted (F2): its caller is stale and b's results go.
+	os.Remove(b)
+	st = newState()
+	if bad := st.dropStale(map[string]string{a: "1"}, false); !bad[a] || st.Files[b] != nil {
+		t.Errorf("walk cut, b gone: dropped %v, b kept %v", bad, st.Files[b] != nil)
 	}
 }
 
