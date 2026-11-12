@@ -2,10 +2,13 @@ package tools
 
 import (
 	"context"
+	"encoding/binary"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+	"unicode/utf16"
 )
 
 func withASP(t *testing.T) {
@@ -28,7 +31,7 @@ func TestASPWebshellPatterns(t *testing.T) {
 		"behinder.aspx": "byte[] c = Request.BinaryRead(Request.ContentLength);\nSystem.Reflection.Assembly.Load(new RijndaelManaged().CreateDecryptor(k, k).TransformFinalBlock(c, 0, c.Length)).CreateInstance(\"U\");",
 	}
 	for name, src := range bad {
-		if aspWebshellAt(name, []byte(src)) < 0 {
+		if aspWebshellLine(name, []byte(src)) == 0 {
 			t.Errorf("%s not flagged: %s", name, src)
 		}
 	}
@@ -41,12 +44,12 @@ func TestASPWebshellPatterns(t *testing.T) {
 		"shell.php":    `<% eval request("pass") %>`, // not an IIS page type
 	}
 	for name, src := range good {
-		if aspWebshellAt(name, []byte(src)) >= 0 {
+		if aspWebshellLine(name, []byte(src)) > 0 {
 			t.Errorf("%s flagged: %s", name, src)
 		}
 	}
 	aspAudit = false
-	if aspWebshellAt("chopper.asp", []byte(bad["chopper.asp"])) >= 0 || aspWebshellMatches("chopper.asp", []byte(bad["chopper.asp"])) != nil {
+	if aspWebshellLine("chopper.asp", []byte(bad["chopper.asp"])) > 0 || aspWebshellMatches("chopper.asp", []byte(bad["chopper.asp"])) != nil {
 		t.Error("ASP patterns must stay off outside Windows")
 	}
 }
@@ -97,5 +100,66 @@ func TestSamePath(t *testing.T) {
 	foldPaths = true
 	if !samePath("C:/inetpub/wwwroot", "c:/INETPUB/wwwroot") {
 		t.Error("Windows paths ignore case")
+	}
+}
+
+// utf16File is s as a UTF-16 file with a BOM, as Visual Studio may save a page.
+func utf16File(s string, big bool) []byte {
+	u := utf16.Encode([]rune(s))
+	b := make([]byte, 2+2*len(u))
+	order := binary.ByteOrder(binary.LittleEndian)
+	b[0], b[1] = 0xFF, 0xFE
+	if big {
+		order = binary.BigEndian
+		b[0], b[1] = 0xFE, 0xFF
+	}
+	for i, c := range u {
+		order.PutUint16(b[2+2*i:], c)
+	}
+	return b
+}
+
+func TestASPWebshellUTF16(t *testing.T) {
+	withASP(t)
+	src := "<%@ Page Language=\"Jscript\"%>\r\n<%eval(Request.Item[\"pass\"],\"unsafe\");%>"
+	for _, big := range []bool{false, true} {
+		b := utf16File(src, big)
+		if line := aspWebshellLine("x.aspx", b); line != 2 {
+			t.Errorf("UTF-16 (big %v): line %d, want 2", big, line)
+		}
+		if len(aspWebshellMatches("x.aspx", b)) == 0 {
+			t.Errorf("UTF-16 (big %v): no match for the file-change scan", big)
+		}
+	}
+	root := t.TempDir()
+	p := filepath.Join(root, "utf16.aspx")
+	if err := os.WriteFile(p, utf16File(src, false), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var hit bool
+	for _, f := range AppCodeAudit(context.Background(), []string{root}, []string{root}).Findings {
+		hit = hit || f.Kind == "webshell" && f.Path == p && f.Line == 2
+	}
+	if !hit {
+		t.Error("the code audit skipped a UTF-16 page")
+	}
+	changes := func() []Changed {
+		m, err := FileChanges(context.Background(), []string{root}, time.Now().Add(-time.Hour))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return m["files"].([]Changed)
+	}
+	if ch := changes(); len(ch) != 1 || len(ch[0].Webshell) == 0 {
+		t.Errorf("file-change scan: %+v", ch)
+	}
+	q := filepath.Join(root, "h.ashx") // not in webExt: read for the ASP check alone
+	os.WriteFile(q, []byte(`<% eval request("x") %>`), 0o644)
+	found := false
+	for _, c := range changes() {
+		found = found || c.Path == q && len(c.Webshell) > 0
+	}
+	if !found {
+		t.Error(".ashx not scanned by the file-change scan")
 	}
 }

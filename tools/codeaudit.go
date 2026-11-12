@@ -667,12 +667,12 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 				add(finding("upload_script", "critical", p, 0, "PHP file in an upload folder; uploads should never be scripts",
 					"check the file, delete it if it is not yours, and stop PHP from running in the upload folder"))
 			}
-			if aspAudit && aspExt[ext] && uploadFolder(p, webRoots) {
+			if aspPage(name) && uploadFolder(p, webRoots) {
 				add(finding("upload_script", "critical", p, 0, "ASP or ASP.NET page in an upload folder; uploads should never be scripts",
 					"check the file, delete it if it is not yours, and remove script and execute permission from the upload folder in IIS"))
 			}
 			lang := engine.LangOf(name)
-			if !auditExt[ext] && !auditExt[name] && !strings.HasPrefix(name, ".env") && name != "settings.py" && lang == "" && !(aspAudit && aspExt[ext]) {
+			if !auditExt[ext] && !auditExt[name] && !strings.HasPrefix(name, ".env") && name != "settings.py" && lang == "" && !aspPage(name) {
 				return nil
 			}
 			if res.Files >= auditMaxFiles {
@@ -685,7 +685,8 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 			}
 			b, ok := readSmallRegular(p, auditMaxSize, info)
 			// A rule-language file is read even with a NUL byte: PHP runs such a file.
-			if !ok || lang == "" && bytes.IndexByte(b, 0) >= 0 {
+			// An ASP page may be UTF-16, full of NULs; IIS still runs it.
+			if !ok || lang == "" && !aspPage(name) && bytes.IndexByte(b, 0) >= 0 {
 				if lang != "" && eng != nil && info.Size() > auditMaxSize {
 					partial = append(partial, UnfinishedFile{p, "size"})
 				}
@@ -1024,20 +1025,20 @@ func severityRank(s string) int {
 // auditContent checks one file's lines. Secrets are matched but never copied out.
 func auditContent(p, name string, b []byte, web, isPHP bool, add func(CodeFinding)) {
 	envFile := name == ".env" || strings.HasPrefix(name, ".env.")
-	at := -1
+	line := 0
 	if webExt[strings.ToLower(filepath.Ext(name))] {
 		for _, re := range webshellPatterns {
 			if loc := re.FindIndex(b); loc != nil {
-				at = loc[0]
+				line = lineAt(b, loc[0])
 				break
 			}
 		}
 	}
-	if at < 0 {
-		at = aspWebshellAt(name, b)
+	if line == 0 {
+		line = aspWebshellLine(name, b)
 	}
-	if at >= 0 {
-		add(finding("webshell", "critical", p, lineAt(b, at),
+	if line > 0 {
+		add(finding("webshell", "critical", p, line,
 			"code that runs commands or code taken straight from the request (webshell pattern)",
 			"check the file now; if you did not write it, take the site offline, delete it and look for how it got there"))
 	}

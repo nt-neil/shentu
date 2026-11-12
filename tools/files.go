@@ -108,7 +108,7 @@ func FileChanges(ctx context.Context, roots []string, since time.Time) (map[stri
 				return filepath.SkipAll
 			}
 			c := Changed{Path: p, Size: info.Size(), Mode: info.Mode().String(), Owner: owner, Modified: mt}
-			if webExt[strings.ToLower(filepath.Ext(p))] && info.Size() < 512*1024 {
+			if (webExt[strings.ToLower(filepath.Ext(p))] || aspPage(p)) && info.Size() < 512*1024 {
 				if b, err := os.ReadFile(p); err == nil {
 					for _, re := range webshellPatterns {
 						if m := re.Find(b); m != nil {

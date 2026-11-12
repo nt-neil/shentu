@@ -1,10 +1,13 @@
 package tools
 
 import (
+	"bytes"
+	"encoding/binary"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
+	"unicode/utf16"
 
 	"github.com/nt-neil/shentu/hostenv"
 )
@@ -43,18 +46,33 @@ var aspWebshellPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)request\.binaryread\s*\([\s\S]{0,400}?assembly\.load\s*\(`),
 }
 
-// aspWebshellAt returns the offset of the first ASP webshell pattern in a
-// page IIS would run, or -1.
-func aspWebshellAt(name string, b []byte) int {
-	if !aspAudit || !aspExt[strings.ToLower(filepath.Ext(name))] {
-		return -1
+// aspText is the page as IIS reads it: UTF-16 (little- or big-endian,
+// as Visual Studio can save it) and a UTF-8 BOM decoded, so a webshell
+// cannot hide behind an encoding the byte-level patterns do not see.
+func aspText(b []byte) []byte {
+	if bytes.HasPrefix(b, []byte{0xFE, 0xFF}) {
+		u := make([]uint16, (len(b)-2)/2)
+		for i := range u {
+			u[i] = binary.BigEndian.Uint16(b[2+2*i:])
+		}
+		return []byte(string(utf16.Decode(u)))
 	}
+	return []byte(hostenv.DecodeText(b))
+}
+
+// aspWebshellLine returns the 1-based line of the first ASP webshell
+// pattern in a page IIS would run, or 0.
+func aspWebshellLine(name string, b []byte) int {
+	if !aspAudit || !aspExt[strings.ToLower(filepath.Ext(name))] {
+		return 0
+	}
+	t := aspText(b)
 	for _, re := range aspWebshellPatterns {
-		if loc := re.FindIndex(b); loc != nil {
-			return loc[0]
+		if loc := re.FindIndex(t); loc != nil {
+			return lineAt(t, loc[0])
 		}
 	}
-	return -1
+	return 0
 }
 
 // aspWebshellMatches returns the matched text of every ASP webshell
@@ -63,13 +81,19 @@ func aspWebshellMatches(name string, b []byte) []string {
 	if !aspAudit || !aspExt[strings.ToLower(filepath.Ext(name))] {
 		return nil
 	}
+	t := aspText(b)
 	var out []string
 	for _, re := range aspWebshellPatterns {
-		if m := re.Find(b); m != nil {
+		if m := re.Find(t); m != nil {
 			out = append(out, string(m))
 		}
 	}
 	return out
+}
+
+// aspPage reports a page the ASP checks read (on Windows only).
+func aspPage(name string) bool {
+	return aspAudit && aspExt[strings.ToLower(filepath.Ext(name))]
 }
 
 // samePath compares two slash-separated paths, ignoring case on Windows.
