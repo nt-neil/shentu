@@ -9,7 +9,7 @@ frameworks = ["wordpress"]
 sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "get_query_var", "->get_param(", "->get_json_params(", "$request['", "shortcode_atts(", "$atts["]
 sinks = ["wp_delete_file(", "wp_delete_file_from_directory(", "$wp_filesystem->delete(", "$wp_filesystem->get_contents(", "$wp_filesystem->put_contents(",
          "$wp_filesystem->move(", "$wp_filesystem->copy(", "$wp_filesystem->rmdir(", "$wp_filesystem->get_contents_array("]
-sanitizers = ["download_url(", "basename(", "str_starts_with(", "sanitize_file_name(", "wp_basename(", "validate_file(", "absint", "intval", "in_array", "->get_file_params(", "wp_handle_upload(", "wp_handle_sideload("]
+sanitizers = ["download_url(", "basename(", "str_starts_with(", "sanitize_file_name(", "wp_basename(", "validate_file(", "absint", "intval", "in_array", "->get_file_params(", "wp_handle_upload(", "wp_handle_sideload(", "filesize("]
 fix = "Take only a file name from the request (sanitize_file_name(), basename()), join it to a fixed directory, and check that realpath() of the result stays inside that directory, or look the file up by an id the server stored."
 refs = ["CVE-2026-120559"]
 
