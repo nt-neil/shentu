@@ -159,8 +159,13 @@ func TestAlpineCollector(t *testing.T) {
 			t.Errorf("missing %s in %v", k, got)
 		}
 	}
-	if n := f.AuthEvents.Value.FailedBySrc["203.0.113.66"]; f.AuthEvents.Status != StatusOK || n != 30 {
+	if n := f.AuthEvents.Value.FailedBySrc["203.0.113.66"]; f.AuthEvents.Status != StatusOK || n != 30 || !strings.Contains(f.AuthEvents.Detail, "unverified") {
 		t.Errorf("busybox syslog sshd lines: %+v", f.AuthEvents)
+	}
+	// Another facility (logger -p user.info -t sshd) does not count.
+	h.files["/var/log/messages"] = strings.ReplaceAll(h.files["/var/log/messages"], "auth.info", "user.info")
+	if n := Collect(context.Background(), h).AuthEvents.Value.FailedBySrc["203.0.113.66"]; n != 0 {
+		t.Errorf("user.info sshd lines counted: %d", n)
 	}
 }
 

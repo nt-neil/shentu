@@ -51,8 +51,8 @@ var (
 	// The prefix is "<RFC3339 time> host sshd[pid]: " or "Mon dd hh:mm:ss host sshd[pid]: "
 	// (OpenSSH 9.8+ logs as sshd-session), so injected text cannot start a second message.
 	// Busybox syslogd (Alpine) writes the facility and level after the host
-	// ("auth.info"): one token of that exact shape is allowed there.
-	sshdPrefix = `^(?:\S+|\w{3} +\d+ \d\d:\d\d:\d\d) \S+ (?:[a-z0-9]+\.[a-z]+ )?sshd(?:-session)?\[\d+\]: `
+	// ("auth.info"): only the auth facilities are allowed there.
+	sshdPrefix = `^(?:\S+|\w{3} +\d+ \d\d:\d\d:\d\d) \S+ (?:auth(?:priv)?\.[a-z]+ )?sshd(?:-session)?\[\d+\]: `
 	reFailed   = regexp.MustCompile(sshdPrefix + `Failed (?:password|publickey|keyboard-interactive/pam|none) for (?:invalid user )?(.*) from (\S+) port \d+(?: ssh2)?(?: \[preauth\])?\s*$`)
 	reInvalid  = regexp.MustCompile(sshdPrefix + `Invalid user (.*) from (\S+) port \d+(?: \[preauth\])?\s*$`)
 	reAccepted = regexp.MustCompile(sshdPrefix + `Accepted (\S+) for (\S+) from (\S+) port \d+ ssh2(?:: .*)?$`)
@@ -97,7 +97,9 @@ func (LinuxCollector) ScanAuthLogs(ctx context.Context, src Source, logPaths []s
 			}
 		}
 		if len(used) > 0 {
-			return strings.Join(used, ","), nil
+			// busybox syslogd does not record who sent a line: any local
+			// user can log one as sshd with logger(1). Said in the source.
+			return strings.Join(used, ",") + " (unverified: busybox syslog does not record the sender; local users can forge sshd lines)", nil
 		}
 	}
 	if err == nil && res.ExitCode != 0 {
