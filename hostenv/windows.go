@@ -60,6 +60,19 @@ func RedactRegValues(v map[string]RegValue) map[string]RegValue {
 	return v
 }
 
+// WinFirewallPolicy is what INetFwPolicy2 reports. Profiles are keyed
+// Domain, Private and Public; Active lists the profiles in force now.
+type WinFirewallPolicy struct {
+	Active   []string                      `json:"active"`
+	Profiles map[string]WinFirewallProfile `json:"profiles"`
+}
+
+type WinFirewallProfile struct {
+	Enabled         bool `json:"enabled"`
+	BlockAllInbound bool `json:"block_all_inbound"`
+	InboundAllowed  bool `json:"inbound_allowed"` // DefaultInboundAction is NET_FW_ACTION_ALLOW
+}
+
 // WinService is one SCM entry (EnumServicesStatusEx + QueryServiceConfig).
 type WinService struct {
 	Name        string `json:"name"`
@@ -142,6 +155,9 @@ type WinSource interface {
 	// WMI runs one WQL query and returns the named properties of each row:
 	// string, bool, int64, uint64, float64, nil or []any of those.
 	WMI(namespace, query string, props []string) ([]map[string]any, error)
+	// FirewallPolicy reads INetFwPolicy2: the firewall state in force, with
+	// group policy already merged in.
+	FirewallPolicy() (WinFirewallPolicy, error)
 }
 
 // WMI namespaces and queries the collector runs.
@@ -919,7 +935,64 @@ func isNotExist(err error) bool { return Classify(err) == ReasonNotInstalled }
 // the local one. A stopped firewall service (MpsSvc) filters nothing,
 // whatever the switches say.
 func winFirewall(ws WinSource, svcs []WinService, svcErr error) Obs[Firewall] {
-	fw := Firewall{Backend: "windows", Profiles: map[string]bool{}}
+	fw := Firewall{Backend: "windows", Profiles: map[string]bool{}, Extra: map[string]string{}}
+	var firstErr error
+	if pol, err := ws.FirewallPolicy(); err == nil && len(pol.Profiles) > 0 {
+		winFirewallPolicy(&fw, pol)
+	} else {
+		firstErr = winFirewallRegistry(ws, &fw)
+	}
+	if s, ok := findService(svcs, "MpsSvc"); ok {
+		fw.Extra["service"] = s.State
+		if s.State != "running" {
+			for k := range fw.Profiles {
+				fw.Profiles[k] = false
+			}
+			if fw.DefaultInbound != "" {
+				fw.DefaultInbound = "allow"
+			}
+		}
+	}
+	if len(fw.Extra) == 0 {
+		fw.Extra = nil
+	}
+	for _, on := range fw.Profiles {
+		fw.Enabled = fw.Enabled || on
+	}
+	switch {
+	case len(fw.Profiles) == 0:
+		return unknownFrom[Firewall](KeyFirewallPolicy, firstErr)
+	case firstErr != nil:
+		return Partial(fw, Classify(firstErr), "some firewall profiles unreadable")
+	case svcErr != nil:
+		return Partial(fw, Classify(svcErr), "firewall service state unknown")
+	}
+	return OK(fw)
+}
+
+// winFirewallPolicy fills fw from INetFwPolicy2. Inbound traffic counts
+// as allowed by default when any active profile is off, or lets
+// unmatched inbound connections through.
+func winFirewallPolicy(fw *Firewall, pol WinFirewallPolicy) {
+	for name, p := range pol.Profiles {
+		fw.Profiles[name] = p.Enabled
+	}
+	if len(pol.Active) == 0 {
+		return
+	}
+	fw.Extra["active_profiles"] = strings.Join(pol.Active, ",")
+	fw.DefaultInbound = "block"
+	for _, n := range pol.Active {
+		if p := pol.Profiles[n]; !p.Enabled || (!p.BlockAllInbound && p.InboundAllowed) {
+			fw.DefaultInbound = "allow"
+		}
+	}
+}
+
+// winFirewallRegistry fills fw.Profiles from the registry, group policy
+// first, when INetFwPolicy2 cannot be read. It returns the first read
+// error other than an absent key.
+func winFirewallRegistry(ws WinSource, fw *Firewall) error {
 	var firstErr error
 	for _, p := range []struct{ local, gpo, name string }{
 		{"DomainProfile", "DomainProfile", "Domain"}, {"StandardProfile", "PrivateProfile", "Private"}, {"PublicProfile", "PublicProfile", "Public"},
@@ -944,26 +1017,7 @@ func winFirewall(ws WinSource, svcs []WinService, svcErr error) Obs[Firewall] {
 		}
 		fw.Profiles[p.name] = regInt(v, "EnableFirewall", 1) == 1
 	}
-	if s, ok := findService(svcs, "MpsSvc"); ok {
-		fw.Extra = map[string]string{"service": s.State}
-		if s.State != "running" {
-			for k := range fw.Profiles {
-				fw.Profiles[k] = false
-			}
-		}
-	}
-	for _, on := range fw.Profiles {
-		fw.Enabled = fw.Enabled || on
-	}
-	switch {
-	case len(fw.Profiles) == 0:
-		return unknownFrom[Firewall](KeyFirewallPolicy, firstErr)
-	case firstErr != nil:
-		return Partial(fw, Classify(firstErr), "some firewall profiles unreadable")
-	case svcErr != nil:
-		return Partial(fw, Classify(svcErr), "firewall service state unknown")
-	}
-	return OK(fw)
+	return firstErr
 }
 
 // winDefender reads Defender's state from the registry and the WinDefend

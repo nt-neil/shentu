@@ -323,3 +323,11 @@ func (r *Recorder) WMI(namespace, query string, props []string) ([]map[string]an
 func (rp *Replay) WMI(namespace, query string, props []string) ([]map[string]any, error) {
 	return replayWin[[]map[string]any](rp, "wmi", wmiKey(namespace, query, props))
 }
+
+func (r *Recorder) FirewallPolicy() (WinFirewallPolicy, error) {
+	return recordWin(r, "winfw", "", func(ws WinSource) (WinFirewallPolicy, error) { return ws.FirewallPolicy() })
+}
+
+func (rp *Replay) FirewallPolicy() (WinFirewallPolicy, error) {
+	return replayWin[WinFirewallPolicy](rp, "winfw", "")
+}

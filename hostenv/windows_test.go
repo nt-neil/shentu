@@ -32,7 +32,14 @@ type fakeWin struct {
 	dirList map[string][]string         // Windows directory listings
 	wmi     map[string][]map[string]any // by namespace + "|" + query
 	wmiNS   map[string]bool             // namespaces that exist
+	fw      *WinFirewallPolicy          // nil: INetFwPolicy2 unavailable
 }
+
+var (
+	_ WinSource = (*fakeWin)(nil)
+	_ WinSource = (*Recorder)(nil)
+	_ WinSource = (*Replay)(nil)
+)
 
 func newFakeWin() *fakeWin {
 	h := newFake(true)
@@ -81,6 +88,13 @@ func pick[T any](w *fakeWin, k string, v T) (T, error) {
 		return zero, denied(k, k)
 	}
 	return v, nil
+}
+
+func (w *fakeWin) FirewallPolicy() (WinFirewallPolicy, error) {
+	if w.fw == nil {
+		return WinFirewallPolicy{}, &fs.PathError{Op: "INetFwPolicy2", Path: "fake", Err: fs.ErrNotExist}
+	}
+	return pick(w, "fw", *w.fw)
 }
 
 func (w *fakeWin) Services() ([]WinService, error)  { return pick(w, "svc", w.svcs) }
@@ -374,6 +388,45 @@ func TestWindowsCollectorNeedsWinSource(t *testing.T) {
 	}
 	if ForOS("windows").Name() != "windows" {
 		t.Error("ForOS(windows) must return the Windows collector")
+	}
+}
+
+func TestWindowsFirewallPolicy(t *testing.T) {
+	collect := func(w *fakeWin) Obs[Firewall] {
+		t.Helper()
+		return WindowsCollector{}.Collect(context.Background(), w).Firewall
+	}
+	w := weakServer() // registry: Public off
+	w.fw = &WinFirewallPolicy{Active: []string{"Public"}, Profiles: map[string]WinFirewallProfile{
+		"Domain": {Enabled: true}, "Private": {Enabled: true}, "Public": {Enabled: true, InboundAllowed: true}}}
+	fw := collect(w)
+	if fw.Status != StatusOK || !fw.Value.Profiles["Public"] || fw.Value.DefaultInbound != "allow" || fw.Value.Extra["active_profiles"] != "Public" {
+		t.Errorf("INetFwPolicy2 must win over the registry: %+v", fw)
+	}
+	p := w.fw.Profiles["Public"]
+	p.BlockAllInbound = true
+	w.fw.Profiles["Public"] = p
+	if fw := collect(w); fw.Value.DefaultInbound != "block" {
+		t.Errorf("block-all on the active profile: %+v", fw.Value)
+	}
+	w.fw.Active = []string{"Domain", "Private"}
+	w.fw.Profiles["Private"] = WinFirewallProfile{}
+	if fw := collect(w); fw.Value.DefaultInbound != "allow" || fw.Value.Profiles["Private"] || fw.Value.Extra["active_profiles"] != "Domain,Private" {
+		t.Errorf("an active profile that is off lets inbound through: %+v", fw.Value)
+	}
+	for i := range w.svcs {
+		if w.svcs[i].Name == "MpsSvc" {
+			w.svcs[i].State = "stopped"
+		}
+	}
+	if fw := collect(w); fw.Value.Enabled || fw.Value.DefaultInbound != "allow" {
+		t.Errorf("stopped MpsSvc: %+v", fw.Value)
+	}
+	w = weakServer()
+	w.fw = &WinFirewallPolicy{}
+	w.denied["fw"] = true
+	if fw := collect(w); fw.Status != StatusOK || fw.Value.Profiles["Public"] || fw.Value.DefaultInbound != "" {
+		t.Errorf("unreadable INetFwPolicy2 falls back to the registry: %+v", fw)
 	}
 }
 

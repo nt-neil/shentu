@@ -207,3 +207,16 @@ func TestWMILive(t *testing.T) {
 		t.Errorf("missing namespace must be not-exist: %v", err)
 	}
 }
+
+// INetFwPolicy2 on the runner: all three profiles, at least one active.
+func TestFirewallPolicyLive(t *testing.T) {
+	pol, err := (&Live{}).FirewallPolicy()
+	if err != nil || len(pol.Profiles) != 3 || len(pol.Active) == 0 {
+		t.Fatalf("INetFwPolicy2: %v %+v", err, pol)
+	}
+	for _, n := range pol.Active {
+		if _, ok := pol.Profiles[n]; !ok {
+			t.Errorf("active profile %q not among the profiles", n)
+		}
+	}
+}

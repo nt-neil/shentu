@@ -207,18 +207,28 @@ func (l *Live) WMI(namespace, query string, props []string) ([]map[string]any, e
 	return r.rows, nil
 }
 
-func execWQL(namespace, query string, props []string) ([]map[string]any, error) {
+// comInit loads the COM DLLs and joins the multithreaded apartment on
+// the calling (locked) OS thread. Call windows.CoUninitialize after a
+// nil error.
+func comInit() error {
 	if err := modole32.Load(); err != nil {
-		return nil, err
+		return err
 	}
 	if err := modoleaut32.Load(); err != nil {
-		return nil, err
+		return err
 	}
 	if err := windows.CoInitializeEx(0, windows.COINIT_MULTITHREADED); err != nil {
 		var errno syscall.Errno
 		if !errors.As(err, &errno) || (uint32(errno) != hrSFalse && uint32(errno) != hrRPCEChangedMode) {
-			return nil, err
+			return err
 		}
+	}
+	return nil
+}
+
+func execWQL(namespace, query string, props []string) ([]map[string]any, error) {
+	if err := comInit(); err != nil {
+		return nil, err
 	}
 	defer windows.CoUninitialize()
 	// Process-wide security; another caller may have set it already.
