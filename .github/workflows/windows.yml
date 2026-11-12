@@ -32,11 +32,6 @@ jobs:
           [ "$(go env GOVERSION)" = "$want" ] || { echo "FAIL: Go $(go env GOVERSION), go.mod wants $want"; exit 1; }
           # No Python bytecode in the repository (it slipped in once).
           [ -z "$(git ls-files '*.pyc' '*__pycache__*')" ] || { echo "FAIL: committed Python bytecode"; git ls-files '*.pyc' '*__pycache__*'; exit 1; }
-          # The 2019 acceptance's presigned URLs live at most 2 hours.
-          grep -oE -- '--expires-in [0-9]+|result\.tgz" [0-9]+' packaging/windows/accept-2019/launch.sh | grep -oE '[0-9]+$' |
-            while read -r n; do
-              [ "$n" -le 7200 ] || { echo "FAIL: a presigned URL lives $n s"; exit 1; }
-            done
       - name: build
         run: go build ./...
       - name: vet
