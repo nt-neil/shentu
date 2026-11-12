@@ -64,3 +64,28 @@ func TestMaskHardwareIDMixed(t *testing.T) {
 		t.Errorf("%s", got)
 	}
 }
+
+// Round-2 review: what only looks like a hardware id stays as it is.
+func TestMaskHardwareIDLookalikes(t *testing.T) {
+	m := &Masker{}
+	m.init()
+	for _, keep := range []string{
+		"inet6 2001:db8:0:0:1:2:3:4/64",                           // IPv6 with 3- and 4-digit groups
+		"via fe80::a:b:c:d dev eth0",                              // after ::
+		"route 2001:db8::1:2:3:4",                                 // after ::
+		"MD5:12:34:56:78:9a:bc:de:f0:12:34:56:78:9a:bc:de:f0 key", // fingerprint
+		"12:34:56:78:9a:bc:de:f0:12:34:56:78:9a:bc:de:f0 (RSA)",   // bare MD5 fingerprint
+		"Name=ip-10-20-30-40.ec2.internal",                        // a cloud host name
+	} {
+		if got := m.text(keep, false, true); got != keep {
+			t.Errorf("%q masked as a hardware id: %q", keep, got)
+		}
+	}
+	// Real ids are still masked.
+	got := m.text("link/ether 00:0c:29:59:f3:3f iaid 29:59:f3:3f win 00-0C-29-59-F3-3F", false, true)
+	for _, leak := range []string{"0c:29:59", "29:59:f3:3f", "0C-29-59"} {
+		if strings.Contains(got, leak) {
+			t.Errorf("%q left in %q", leak, got)
+		}
+	}
+}

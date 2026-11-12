@@ -8,6 +8,7 @@ import (
 	"net"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -147,7 +148,7 @@ func (m *Masker) text(s string, ips, users bool) string {
 		}
 	}
 	names(true)
-	s = hwIDRe.ReplaceAllStringFunc(s, m.hwID)
+	s = m.hwIDs(s)
 	names(false)
 	if ips {
 		s = ipv4Re.ReplaceAllStringFunc(s, func(t string) string {
@@ -166,6 +167,49 @@ func (m *Masker) text(s string, ips, users bool) string {
 		})
 	}
 	return s
+}
+
+// hwIDs masks the hardware ids in s (hwIDRe), except runs that only look
+// like one (notHWID).
+func (m *Masker) hwIDs(s string) string {
+	var b strings.Builder
+	last := 0
+	for _, loc := range hwIDRe.FindAllStringIndex(s, -1) {
+		if notHWID(s, loc[0], loc[1]) {
+			continue
+		}
+		b.WriteString(s[last:loc[0]])
+		b.WriteString(m.hwID(s[loc[0]:loc[1]]))
+		last = loc[1]
+	}
+	b.WriteString(s[last:])
+	return b.String()
+}
+
+// notHWID tells a hwIDRe match s[i:j] that is something else: part of a
+// longer colon run (an IPv6 address with 3- and 4-digit groups, such as
+// 2001:db8:0:0:1:2:3:4, or one after "::"), an MD5 key fingerprint
+// ("MD5:" before it, or sixteen colon groups), or an IPv4 address written
+// with dashes (ip-10-20-30-40, as cloud host names are).
+func notHWID(s string, i, j int) bool {
+	t := s[i:j]
+	if strings.Contains(t, ":") {
+		if i > 0 && s[i-1] == ':' || j < len(s) && s[j] == ':' {
+			return true
+		}
+		if i >= 4 && strings.EqualFold(s[i-4:i], "MD5:") || strings.Count(t, ":") == 15 {
+			return true
+		}
+	}
+	if g := strings.Split(t, "-"); len(g) == 4 {
+		for _, x := range g {
+			if n, err := strconv.Atoi(x); err != nil || n > 255 {
+				return false
+			}
+		}
+		return true
+	}
+	return false
 }
 
 // hwShaped: two-digit groups only, no "::" - part of a MAC or DUID, which
