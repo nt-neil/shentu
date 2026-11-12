@@ -181,7 +181,7 @@ func TestBroadExclusion(t *testing.T) {
 		`%SystemDrive%\`: true, `%ProgramFiles%`: true, `C:\PROGRA~1`: true, `C:\Users\Public\`: true,
 		`\\server\share`: true, `\\?\GLOBALROOT\Device\HarddiskVolume1`: true, `\\localhost\admin$\Temp`: true,
 		`C:\Windows. \System32`: true, `C:\*\Temp`: true, `C:\*.*`: true, `C:\W*\x`: true, `C:\Windows\System32\drivers`: true,
-		`C:\Windows\...\System32`: true, `C:\Win*`: true, `C:\Windows\Sys*32`: true, `C:\?:\x`: true, `*.log`: false,
+		`C:\Windows\...\System32`: true, `C:\Win*`: true, `C:\Windows\Sys*32`: true, `C:\?:\x`: true, `*.log`: false, `*xe`: true, `*e`: true, `log`: false,
 		`D:\data`: false, `C:\inetpub\logs`: false, `C:\ProgramData\Vendor\cache`: false, `sqlservr.exe`: false,
 	} {
 		if got := broadExclusion(x); got != want {

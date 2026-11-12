@@ -316,7 +316,7 @@ func broadExclusion(x string) bool {
 
 var (
 	shortName     = regexp.MustCompile(`~[0-9]`)
-	bareExtension = regexp.MustCompile(`^\*?\.?[a-z0-9]{1,8}$|^\*\.[a-z0-9]{1,8}$`)
+	bareExtension = regexp.MustCompile(`^\*\.[a-z0-9]{1,8}$`) // "*.log"; "*xe" or "*" are not
 )
 
 // canonExclusion lower-cases, uses "/", strips \\?\ and \\.\ prefixes,
