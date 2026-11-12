@@ -16,6 +16,9 @@ refs = ["CVE-2013-7370"]
 
 [[args]]
 context = ["html", "attr"]
+# a Server-Sent Events stream (Content-Type text/event-stream set on every path before the write)
+# is read by EventSource as text, not rendered as a page
+unless_content_type = ["text/event-stream"]
 
 [[samples]]
 kind = "vulnerable"
@@ -50,6 +53,39 @@ code = '''
 app.get("/item", (req, res) => {
   if (req.query.format === "json") return res.send({ id: req.query.id });
   res.render("item", { id: req.query.id });
+});
+'''
+
+[[samples]]
+kind = "safe"
+note = "Server-Sent Events: the handler sets text/event-stream, and EventSource reads each line as text"
+code = '''
+app.get("/events", (req, res) => {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.write(`event: search\n`);
+  res.write(`data: ${JSON.stringify({ q: req.query.q })}\n\n`);
+  res.write("data: " + req.query.q + "\n\n");
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "a data: line without a text/event-stream Content-Type is sent as HTML"
+code = '''
+app.get("/events", (req, res) => {
+  res.send("data: " + req.query.q + "\n\n");
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "the stream's Content-Type is set in one branch only; the other sends HTML"
+code = '''
+app.get("/feed", (req, res) => {
+  if (req.query.stream) {
+    res.writeHead(200, { "Content-Type": "text/event-stream" });
+  }
+  res.write("<p>" + req.query.q + "</p>");
 });
 '''
 

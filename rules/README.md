@@ -252,6 +252,7 @@ it are unchanged: a sink is reported when any argument is tainted.
 | `arg` | only this argument counts, from 1; `0` is the receiver of a method sink (`tf.extractall()`: the archive is the input) |
 | `when` | the call is a sink only if one of these appears among its arguments |
 | `unless` | the call is not a sink if one of these appears among its arguments |
+| `unless_content_type` | the call is not a sink once the response's Content-Type was set to one of these on every path before it in the same function: `res.setHeader("Content-Type", ...)`, `res.set`, `res.header`, `res.type`, `res.contentType`, `res.writeHead(200, {...})`, each as a statement of its own. Set in one branch only, asked about (`req.accepts(...)`) or set elsewhere (middleware) does not count. For Server-Sent Events: `text/event-stream` is read by EventSource, not rendered |
 | `whole` | the argument must be the input itself (or spread from it), not an object or array literal holding a value from it |
 | `context` | output sinks only (`echo`, `res.send(`): the input counts only when it is written into one of these places of an HTML page: `html` (between tags), `attr` (an attribute value, or inside a tag), `url` (the start of an `href`, `src`, `action`... value), `js` (inside `<script>`, an `on*` handler, or after `javascript:`); see [Output contexts](#output-contexts) |
 | `key` | the argument is an object, dict or array literal (`{ Location: v }`, `['Location' => v]`): only the value under this key, in any case, counts; without the key the call is not this sink |

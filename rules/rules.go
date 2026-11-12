@@ -69,6 +69,12 @@ type Args struct {
 	// file gives such an object ($q = new WP_Query; $q->query($args)). A
 	// receiver the file says nothing about still counts.
 	NotReceiver []string `toml:"not_receiver"`
+	// UnlessContentType: the call is not a sink once the response's
+	// Content-Type was set to one of these on every path before it, in the
+	// same function (res.setHeader("Content-Type", "text/event-stream"),
+	// res.type(...), res.writeHead(200, {...})): a
+	// Server-Sent Events stream is read by EventSource, not rendered.
+	UnlessContentType []string `toml:"unless_content_type"`
 }
 
 // SourceArgs makes call sources input only when an argument is one of a few

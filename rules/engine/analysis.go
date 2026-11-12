@@ -213,6 +213,7 @@ func (a *analysis) stmt(s *stmt, st state) (state, uint8) {
 		a.assertStmt(st, s.toks)
 		a.raisingCheckStmt(st, s.toks)
 		a.nonceStmt(st, s.toks)
+		a.contentTypeStmt(st, s.toks)
 		a.stripKeys(st, s.toks)
 		a.markAssign(st, s.toks)
 		a.extractStmt(st, s.toks)
@@ -2116,6 +2117,9 @@ func (a *analysis) sink(st state, t []Token, i int, s *pat) {
 	}
 	if lr := a.expandLits(st, region); cond != nil && (len(cond.when) > 0 && !a.when(cond.when, lr) || a.unless(st, cond.unless, lr)) {
 		return
+	}
+	if cond != nil && len(cond.unlessCT) > 0 && contentTypeSet(st, cond.unlessCT) {
+		return // a Server-Sent Events stream: EventSource reads it as text
 	}
 	if cond != nil && cond.literal && !a.literalArg(st, cond, region, open) {
 		return
