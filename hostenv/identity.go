@@ -37,10 +37,10 @@ type pair struct {
 }
 
 var (
-	ipv4Re    = regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}\b`)
-	ipv6Re    = regexp.MustCompile(`(?i)\b(?:[0-9a-f]{1,4}:){2,7}[0-9a-f]{1,4}\b|(?i)\b(?:[0-9a-f]{1,4}:)+:(?:[0-9a-f]{1,4}(?::[0-9a-f]{1,4})*)?\b`)
-	sshKeyRe  = regexp.MustCompile(`\bAAAA[0-9A-Za-z+/]{16,}={0,3}`)
-	akLineRe  = regexp.MustCompile(`^(.*?\b(?:ssh-[a-z0-9-]+|ecdsa-sha2-[a-z0-9-]+|sk-[a-z0-9@.-]+))\s+(\S+)(?:\s+.*)?$`)
+	ipv4Re   = regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}\b`)
+	ipv6Re   = regexp.MustCompile(`(?i)\b(?:[0-9a-f]{1,4}:){2,7}[0-9a-f]{1,4}\b|(?i)\b(?:[0-9a-f]{1,4}:)+:(?:[0-9a-f]{1,4}(?::[0-9a-f]{1,4})*)?\b`)
+	sshKeyRe = regexp.MustCompile(`\bAAAA[0-9A-Za-z+/]{16,}={0,3}`)
+	akLineRe = regexp.MustCompile(`^(.*?\b(?:ssh-[a-z0-9-]+|ecdsa-sha2-[a-z0-9-]+|sk-[a-z0-9@.-]+))\s+(\S+)(?:\s+.*)?$`)
 	// hwIDRe is four or more hex bytes joined by ":" (or "-"): a MAC
 	// address, a DHCPv6 DUID, an IAID (dhcpcd logs them), all derived from
 	// the network card. Times (12:34:56) have three groups and stay.
