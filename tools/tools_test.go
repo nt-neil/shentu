@@ -3,15 +3,19 @@ package tools
 import (
 	"context"
 	"encoding/json"
-	"os"
 	"net"
+	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 )
 
 func TestSSHSummary(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Linux host test: Linux auth log files")
+	}
 	dir := t.TempDir()
 	now := time.Now()
 	iso := now.UTC().Format("2006-01-02T15:04:05.000000-07:00")
@@ -84,6 +88,9 @@ func TestBlockGuards(t *testing.T) {
 }
 
 func TestLogPathAllowlist(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Linux host test: Linux /var/log paths")
+	}
 	pats := []string{"/var/log/auth.log", "/var/log/nginx/*.log"}
 	for p, want := range map[string]bool{
 		"/var/log/auth.log": true, "/var/log/auth.log.1": true, "/var/log/nginx/access.log": true,
@@ -125,6 +132,9 @@ func TestHexToIPv6(t *testing.T) {
 }
 
 func TestMinerSigns(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Linux host test: Linux /proc executable paths")
+	}
 	cases := []struct {
 		exe, cmd string
 		want     bool

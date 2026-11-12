@@ -476,6 +476,9 @@ func TestListRank(t *testing.T) {
 // to a file root does not own or others can write, or in a loop is not, and
 // is listed with why.
 func TestWebRootsSymlinks(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Linux host test: Unix symlinks and file owners")
+	}
 	etc, _ := filepath.EvalSymlinks(t.TempDir())
 	other, _ := filepath.EvalSymlinks(t.TempDir()) // stands for /tmp
 	root, owner := webConfRoot, webConfOwner
