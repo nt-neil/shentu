@@ -3,6 +3,7 @@ package checks
 import (
 	"fmt"
 	"net"
+	"path"
 	"regexp"
 	"sort"
 	"strings"
@@ -262,36 +263,34 @@ func antimalware(f *hostenv.Facts) []Finding {
 }
 
 // broadExclusion: a drive root, a temp folder anywhere, a system or shared
-// root, an environment variable that expands to one, or a bare wildcard
-// for a whole file type. Paths are normalised first: "/" and "\" alike,
-// trailing "\" and "\*" stripped, case folded.
+// root on any drive, any path built on an environment variable, an 8.3
+// short name (which can hide one), or a bare wildcard for a whole file
+// type. The path is canonicalised first.
 func broadExclusion(x string) bool {
-	l := strings.ToLower(strings.TrimSpace(strings.ReplaceAll(x, "/", `\`)))
-	for {
-		t := strings.TrimSuffix(strings.TrimSuffix(l, `*`), `\`)
-		if t == l {
-			break
-		}
-		l = t
+	l := canonExclusion(x)
+	if l == "" || l == "/" || (len(l) == 2 && l[1] == ':') {
+		return true // "", "*", "C:", "\\?\C:\"
 	}
-	if l == "" || (len(l) == 2 && l[1] == ':') {
-		return true // "", "*", "C:"
+	if strings.HasPrefix(l, "%") {
+		return true // %TEMP%, %SystemDrive%, %ProgramFiles%…: too wide to judge, worth a look
 	}
-	for _, v := range []string{"%temp%", "%tmp%", "%appdata%", "%localappdata%", "%programdata%", "%public%", "%userprofile%", "%systemroot%", "%windir%"} {
-		if strings.HasPrefix(l, v) {
+	segs := strings.Split(l, "/")
+	for _, seg := range segs {
+		if seg == "temp" || seg == "tmp" || seg == "downloads" || shortName.MatchString(seg) {
 			return true
 		}
 	}
-	for _, seg := range strings.Split(l, `\`) {
-		if seg == "temp" || seg == "tmp" || seg == "downloads" {
-			return true
-		}
+	// System and shared roots, on whatever drive.
+	rest := l
+	if len(l) >= 2 && l[1] == ':' {
+		rest = l[2:]
 	}
-	switch l {
-	case `c:\windows`, `c:\windows\system32`, `c:\users`, `c:\users\public`, `c:\programdata`, `c:\program files`, `c:\program files (x86)`:
+	switch rest {
+	case "/windows", "/windows/system32", "/windows/syswow64", "/users", "/users/public", "/programdata",
+		"/program files", "/program files (x86)", "/perflogs":
 		return true
 	}
-	if strings.HasPrefix(l, `c:\users\public\`) {
+	if strings.HasPrefix(rest, "/users/public/") {
 		return true
 	}
 	// Extensions (ExclusionExtension holds "ps1" or ".ps1") and wildcards.
@@ -300,6 +299,46 @@ func broadExclusion(x string) bool {
 		return true
 	}
 	return false
+}
+
+var shortName = regexp.MustCompile(`~[0-9]`)
+
+// canonExclusion lower-cases, uses "/", strips \\?\ and \\.\ prefixes,
+// maps \\localhost\c$ and \\127.0.0.1\c$ to c:, resolves . and .., and
+// drops trailing "/" and "/*".
+func canonExclusion(x string) string {
+	l := strings.ToLower(strings.TrimSpace(strings.ReplaceAll(x, `\`, "/")))
+	for _, p := range []string{"//?/unc/", "//?/", "//./"} {
+		if strings.HasPrefix(l, p) {
+			l = strings.TrimPrefix(l, p)
+			if p == "//?/unc/" {
+				l = "//" + l
+			}
+			break
+		}
+	}
+	for _, h := range []string{"//localhost/", "//127.0.0.1/", "//./"} {
+		if rest, ok := strings.CutPrefix(l, h); ok && len(rest) >= 2 && rest[1] == '$' {
+			l = rest[:1] + ":" + rest[2:]
+		}
+	}
+	for {
+		t := strings.TrimSuffix(strings.TrimSuffix(l, "*"), "/")
+		if t == l {
+			break
+		}
+		l = t
+	}
+	if len(l) >= 2 && l[1] == ':' {
+		if c := path.Clean("/" + l[2:]); c != "/" {
+			return l[:2] + c
+		}
+		return l[:2]
+	}
+	if strings.HasPrefix(l, "/") {
+		return path.Clean(l)
+	}
+	return l
 }
 
 func smb(f *hostenv.Facts) []Finding {

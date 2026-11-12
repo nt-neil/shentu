@@ -177,6 +177,8 @@ func TestBroadExclusion(t *testing.T) {
 	for x, want := range map[string]bool{
 		`C:\`: true, `c:`: true, `*`: true, `C:\Windows\Temp\*`: true, `C:\Users\bob\AppData\Local\Temp`: true,
 		`%TEMP%\x`: true, `C:/ProgramData/`: true, `C:\Users\Public\Downloads`: true, `ps1`: true, `*.exe`: true,
+		`\\?\C:\`: true, `\\localhost\c$\Windows\Temp`: true, `C:\data\..\Windows`: true, `D:\Windows\System32`: true,
+		`%SystemDrive%\`: true, `%ProgramFiles%`: true, `C:\PROGRA~1`: true, `C:\Users\Public\`: true,
 		`D:\data`: false, `C:\inetpub\logs`: false, `C:\ProgramData\Vendor\cache`: false, `sqlservr.exe`: false,
 	} {
 		if got := broadExclusion(x); got != want {
