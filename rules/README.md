@@ -252,6 +252,7 @@ it are unchanged: a sink is reported when any argument is tainted.
 | `arg` | only this argument counts, from 1; `0` is the receiver of a method sink (`tf.extractall()`: the archive is the input) |
 | `when` | the call is a sink only if one of these appears among its arguments |
 | `unless` | the call is not a sink if one of these appears among its arguments |
+| `unless_at` | where `unless` looks: `start`, only at the start of the argument (`arg`, or the first): a Server-Sent Events line `"data: " + x`, not a ternary one branch of which is a line; `top`, only as an element or key of the argument itself (`arg`, or any one), not inside what it holds: TypeORM's `{ relations: [...] }`, not `{ projection: { relations: 1 } }`. Empty: anywhere among the arguments |
 | `whole` | the argument must be the input itself (or spread from it), not an object or array literal holding a value from it |
 | `context` | output sinks only (`echo`, `res.send(`): the input counts only when it is written into one of these places of an HTML page: `html` (between tags), `attr` (an attribute value, or inside a tag), `url` (the start of an `href`, `src`, `action`... value), `js` (inside `<script>`, an `on*` handler, or after `javascript:`); see [Output contexts](#output-contexts) |
 | `key` | the argument is an object, dict or array literal (`{ Location: v }`, `['Location' => v]`): only the value under this key, in any case, counts; without the key the call is not this sink |
