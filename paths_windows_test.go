@@ -151,3 +151,15 @@ func TestSkillsNeedTrustedFolder(t *testing.T) {
 		t.Error("a skill in the trusted folder loads")
 	}
 }
+
+// N13: chat and bot refuse a state directory Shentu did not make.
+func TestStateReadyRefusesForeignState(t *testing.T) {
+	squat := filepath.Join(t.TempDir(), "state")
+	if err := os.Mkdir(squat, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	err := stateReady(squat)
+	if err == nil || !strings.Contains(err.Error(), "service install") {
+		t.Errorf("want a refusal pointing to service install: %v", err)
+	}
+}

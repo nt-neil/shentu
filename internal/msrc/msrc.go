@@ -389,6 +389,12 @@ func (c *Client) writeCache(name string, out any) {
 	if err != nil {
 		return
 	}
+	// The cache folder may be created only inside a state directory that
+	// already exists (Shentu made it, with its protected permissions on
+	// Windows): never the state directory itself, as whoever runs this.
+	if _, err := os.Stat(filepath.Dir(c.CacheDir)); err != nil {
+		return
+	}
 	dir := filepath.Dir(c.cachePath(name))
 	if os.MkdirAll(dir, 0o700) != nil {
 		return

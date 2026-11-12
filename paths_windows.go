@@ -243,3 +243,13 @@ const (
 	botRestartHint = "Start the bot again: shentu bot (in an elevated prompt)"
 	botRunningHint = "The bot must be running (shentu bot in another elevated prompt)"
 )
+
+// stateReady is checked before chat and bot: the state directory must be
+// Shentu's own, made by an elevated run (service install), never created
+// here by whoever runs the command.
+func stateReady(dir string) error {
+	if err := ensureStateDir(dir); err != nil {
+		return fmt.Errorf("%w; run shentu service install from an elevated prompt first, or run this elevated", err)
+	}
+	return nil
+}

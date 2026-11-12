@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -204,5 +206,21 @@ func TestCheckProductNeverNamed(t *testing.T) {
 	}
 	if r, err := Check("Windows Server 2019", "10.0.17763.1", nil, []string{"a", "b"}, 24, get); err == nil || len(r.Missing) != 0 {
 		t.Errorf("a product no release names must be an error: %+v %v", r, err)
+	}
+}
+
+// N13: the cache never creates the state directory it lives in.
+func TestCacheNeedsStateDir(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, cvrf(prods, "CVE-1|1|5001|10.0.20348.100|Critical"))
+	}))
+	defer srv.Close()
+	state := filepath.Join(t.TempDir(), "state") // not made
+	c := &Client{HTTP: srv.Client(), API: srv.URL, CacheDir: filepath.Join(state, "cache")}
+	if _, err := c.Month(context.Background(), "2026-Nov", true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(state); !os.IsNotExist(err) {
+		t.Errorf("the cache created the state directory: %v", err)
 	}
 }

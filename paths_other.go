@@ -39,3 +39,7 @@ const (
 	botRestartHint = "Start the service: sudo systemctl restart shentu-bot"
 	botRunningHint = "The bot service must be running (systemctl start shentu-bot)"
 )
+
+// stateReady is checked before chat and bot; on Unix a state directory
+// that cannot be made only turns the audit log off, as before.
+func stateReady(string) error { return nil }

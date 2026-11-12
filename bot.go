@@ -97,7 +97,7 @@ type sentMsg struct {
 // withBotState loads bot.json under an exclusive lock, lets fn change it and saves it.
 // The bot service and `shentu bot pair` both write the file.
 func withBotState(dir string, fn func(*botState) error) error {
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err := ensureStateDir(dir); err != nil {
 		return err
 	}
 	lock, err := os.OpenFile(filepath.Join(dir, "bot.lock"), os.O_CREATE|os.O_RDWR, 0o600)

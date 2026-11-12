@@ -113,7 +113,9 @@ func main() {
 	}
 	switch cmd {
 	case "chat":
-		err = chat(ctx, cfg, env, strings.Join(args, " "))
+		if err = stateReady(cfg.StateDir); err == nil {
+			err = chat(ctx, cfg, env, strings.Join(args, " "))
+		}
 	case "survey":
 		var p tools.SiteProfile
 		p, err = survey(ctx, cfg, env)
@@ -122,7 +124,9 @@ func main() {
 			fmt.Println(string(b))
 		}
 	case "bot":
-		err = botCommand(ctx, cfg, env, args)
+		if err = stateReady(cfg.StateDir); err == nil {
+			err = botCommand(ctx, cfg, env, args)
+		}
 	case "budget":
 		err = budgetCommand(cfg, args)
 	case "usage":
