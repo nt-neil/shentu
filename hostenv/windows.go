@@ -821,6 +821,15 @@ func regText(r RegValue) string {
 // winIISConfig is applicationHost.config under the system root.
 const winIISConfig = `\System32\inetsrv\config\applicationHost.config`
 
+// Processes reports the process list alone, for the processes tool.
+func (WindowsCollector) Processes(src Source) Obs[[]Process] {
+	ws, ok := src.(WinSource)
+	if !ok {
+		return Unknown[[]Process](ReasonUnsupported, "not a Windows source")
+	}
+	return winProcesses(ws.Processes())
+}
+
 // PatchLevel reports the platform and installed patches alone, for the
 // MSRC check, without a full collection.
 func (WindowsCollector) PatchLevel(src Source) (Obs[Platform], Obs[[]Patch]) {

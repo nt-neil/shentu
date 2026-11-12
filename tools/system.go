@@ -141,6 +141,9 @@ var processesTool = Tool{
 		if err := decode(args, &a); err != nil {
 			return nil, err
 		}
+		if runtime.GOOS == "windows" {
+			return winProcesses(a.All)
+		}
 		return Processes(a.All), nil
 	},
 }

@@ -22,7 +22,7 @@ func TestWinLogonSummary(t *testing.T) {
 		return []hostenv.WinEvent{
 			ev(4625, "203.0.113.9", ""), ev(4625, "203.0.113.9", ""), ev(4625, "203.0.113.9", ""),
 			ev(4624, "203.0.113.9", "admin"),
-			ev(4624, "198.51.100.7", "DC01$"),          // a computer account
+			ev(4624, "198.51.100.7", "DC01$"),           // a computer account
 			ev(4624, "198.51.100.8", "ANONYMOUS LOGON"), // not a person
 			ev(4624, "-", "localuser"),                  // not remote
 			ev(4625, "-", ""),                           // a failed local logon
