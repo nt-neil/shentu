@@ -184,3 +184,68 @@ jobs:
             fixture/
             replayed.json
           retention-days: 1
+
+  # GoReleaser snapshot of the release (nothing is published): the Linux
+  # archives and packages must hold exactly what hostenv-p1's configuration
+  # builds, and the Windows zips shentu.exe, README, LICENSE, INSTALL.md
+  # and the sample configuration.
+  release-dry-run:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: hostenv-p1
+          path: base
+          fetch-depth: 0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version: stable
+          check-latest: true
+      - uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+      - name: snapshot of hostenv-p1 (the Linux baseline)
+        uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6.4.0
+        with:
+          version: "~> v2"
+          args: release --snapshot --clean
+          workdir: base
+      - name: snapshot of this branch
+        uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6.4.0
+        with:
+          version: "~> v2"
+          args: release --snapshot --clean
+      - name: compare the artifacts
+        run: |
+          list() { # the file list of a release artifact
+            case "$1" in
+              *.tar.gz) tar -tzf "$1" ;;
+              *.zip) unzip -Z1 "$1" ;;
+              *.deb) dpkg-deb -c "$1" | awk '{print $NF}' ;;
+              *.rpm) rpm -qlp "$1" 2>/dev/null ;;
+            esac | sort
+          }
+          fail=0
+          for f in base/dist/*.tar.gz base/dist/*.deb base/dist/*.rpm; do
+            n=$(basename "$f")
+            # Package names carry the snapshot version: match by kind and arch.
+            ext=${n##*.}
+            tok=$(echo "$n" | grep -oE 'amd64|arm64|x86_64|aarch64' | head -1)
+            new=$(find dist -maxdepth 1 -name "*${tok}*.${ext}" | head -1)
+            [ -n "$new" ] || { echo "MISSING: $n"; fail=1; continue; }
+            if diff <(list "$f") <(list "$new") > /dev/null; then
+              echo "same: $n"
+            else
+              echo "DIFFERENT: $n"; diff <(list "$f") <(list "$new"); fail=1
+            fi
+          done
+          for a in amd64 arm64; do
+            got=$(list "dist/shentu_windows_$a.zip" | tr '\n' ' ')
+            echo "shentu_windows_$a.zip: $got"
+            [ "$got" = "INSTALL.md LICENSE README.md shentu.exe shentu.toml " ] || fail=1
+          done
+          exit $fail
