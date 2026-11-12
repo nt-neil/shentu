@@ -49,3 +49,18 @@ func TestMaskHardwareIDForms(t *testing.T) {
 		t.Errorf("unpadded MAC got another placeholder than %s: %s", want, got)
 	}
 }
+
+// Mixed padding is taken whole, and a short name cannot split an id.
+func TestMaskHardwareIDMixed(t *testing.T) {
+	m := &Masker{Users: []string{"f3"}}
+	m.init()
+	got := m.text("a 00:0c:29:59:f:3f b 00:0c:29:59:f3:3f user f3 ver 1:2:3:4", true, true)
+	for _, leak := range []string{"59:f", "0c:29", ":3f"} {
+		if strings.Contains(got, leak) {
+			t.Errorf("%q left in: %s", leak, got)
+		}
+	}
+	if !strings.Contains(got, "user user1") || !strings.Contains(got, "ver 1:2:3:4") {
+		t.Errorf("%s", got)
+	}
+}
