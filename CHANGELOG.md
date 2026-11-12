@@ -29,6 +29,9 @@ Chinese for the zh-TW pages; keep the two in step.
   a synthetic fixture and SLES on no real host yet.
 - The daily report says when a vulnerability check failed or covered only part, and a
   package list that parsed to nothing is "cannot tell" instead of "no vulnerabilities".
+- A code audit root written with a trailing slash (`/var/www/html/`) or as `/` is no longer
+  skipped when an audit resumes inside it. Roots are now cleaned, so the first audit after
+  the upgrade does not find the place the last one stopped and walks from the start once.
 
 ## v0.2.5 — 2026-11-13
 
