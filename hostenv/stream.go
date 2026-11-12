@@ -35,7 +35,14 @@ type LineRunner interface {
 // .gz), secret-masked, without holding the file in memory. Sources that
 // cannot stream fall back to ReadFile (bounded by MaxFileBytes).
 func ScanLines(src Source, path string, fn func(line string)) error {
+	return scanFile(src, path, true, fn)
+}
+
+// scanFile streams path's lines; masked says whether each is secret-masked.
+// Only tables that hold numbers (/proc/net) skip it, for speed.
+func scanFile(src Source, path string, masked bool, fn func(line string)) error {
 	var r io.Reader
+	var cut error // a ReadFile fallback that was cut short: the lines read count, the scan is not complete
 	if o, ok := src.(Opener); ok {
 		f, err := o.Open(path)
 		if err != nil {
@@ -48,6 +55,7 @@ func ScanLines(src Source, path string, fn func(line string)) error {
 		if err != nil && !errors.Is(err, ErrTruncated) {
 			return err
 		}
+		cut = err
 		r = bytes.NewReader(b)
 	}
 	if strings.HasSuffix(path, ".gz") {
@@ -58,7 +66,21 @@ func ScanLines(src Source, path string, fn func(line string)) error {
 		defer gz.Close()
 		r = gz
 	}
-	return scan(r, fn)
+	var err error
+	if masked {
+		err = scan(r, fn)
+	} else {
+		sc := bufio.NewScanner(r)
+		sc.Buffer(make([]byte, 64*1024), MaxLineBytes)
+		for sc.Scan() {
+			fn(sc.Text())
+		}
+		err = sc.Err()
+	}
+	if err == nil {
+		err = cut
+	}
+	return err
 }
 
 // A private key block spans lines, so line-by-line masking alone would

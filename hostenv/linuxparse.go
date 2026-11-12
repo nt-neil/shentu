@@ -92,20 +92,38 @@ type ProcNetEntry struct {
 func ParseProcNet(b []byte) []ProcNetEntry {
 	var out []ProcNetEntry
 	sc := bufio.NewScanner(strings.NewReader(string(b)))
-	sc.Scan() // header
 	for sc.Scan() {
-		f := strings.Fields(sc.Text())
-		if len(f) < 10 {
-			continue
+		if e, ok := ParseProcNetLine(sc.Text()); ok {
+			out = append(out, e)
 		}
-		lip, lport := parseHexAddr(f[1])
-		rip, rport := parseHexAddr(f[2])
-		if lip == nil {
-			continue
-		}
-		out = append(out, ProcNetEntry{lip, lport, rip, rport, f[3], f[7], f[9]})
 	}
 	return out
+}
+
+// ParseProcNetLine reads one row of a /proc/net table; the header and
+// anything else that is not a row give false.
+func ParseProcNetLine(l string) (ProcNetEntry, bool) {
+	f := strings.Fields(l)
+	if len(f) < 10 {
+		return ProcNetEntry{}, false
+	}
+	lip, lport := parseHexAddr(f[1])
+	rip, rport := parseHexAddr(f[2])
+	if lip == nil {
+		return ProcNetEntry{}, false
+	}
+	return ProcNetEntry{lip, lport, rip, rport, f[3], f[7], f[9]}, true
+}
+
+// ScanProcNet streams /proc/net/<proto> row by row: a busy server's table
+// (tens of thousands of sockets, many MiB) is never held whole and never
+// cut at a size cap; only a single line is limited (MaxLineBytes).
+func ScanProcNet(src Source, proto string, fn func(ProcNetEntry)) error {
+	return scanFile(src, "/proc/net/"+proto, false, func(l string) { // hex numbers: nothing to mask
+		if e, ok := ParseProcNetLine(l); ok {
+			fn(e)
+		}
+	})
 }
 
 // parseHexAddr decodes "0100007F:0016" (little-endian 32-bit words).
@@ -205,7 +223,9 @@ func ParsePasswd(b []byte) []PasswdEntry {
 	var out []PasswdEntry
 	for _, l := range strings.Split(string(b), "\n") {
 		f := strings.Split(l, ":")
-		if len(f) != 7 || strings.HasPrefix(f[0], "#") || f[0] == "" {
+		// A line with extra fields still counts: a UID 0 account hidden behind
+		// a stray colon must be listed, as v0.2.5 did.
+		if len(f) < 7 || strings.HasPrefix(f[0], "#") || f[0] == "" {
 			continue
 		}
 		out = append(out, PasswdEntry{f[0], f[2], f[3], f[5], f[6]})

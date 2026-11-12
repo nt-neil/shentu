@@ -81,16 +81,14 @@ func rawExe(p hostenv.Process) string {
 // the table could not be read in full (cut short, or unreadable); a table
 // that does not exist is complete. The rows read are still returned.
 func procNet(proto string) (rows []hostenv.ProcNetEntry, complete bool) {
-	b, err := hostSource().ReadFile("/proc/net/" + proto)
+	err := hostenv.ScanProcNet(hostSource(), proto, func(e hostenv.ProcNetEntry) { rows = append(rows, e) })
 	switch {
 	case err == nil:
-		return hostenv.ParseProcNet(b), true
-	case errors.Is(err, hostenv.ErrTruncated):
-		return hostenv.ParseProcNet(b), false
+		return rows, true
 	case errors.Is(err, fs.ErrNotExist): // no such table: no IPv6, or not Linux
 		return nil, true
 	}
-	return nil, false
+	return rows, false
 }
 
 // SSHPeers returns the remote IPs of established connections to local port 22.
