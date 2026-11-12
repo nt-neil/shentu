@@ -1,0 +1,2839 @@
+{
+  "format": "hostenv-fixture/1",
+  "info": {
+    "goos": "windows",
+    "goarch": "amd64",
+    "elevated": true,
+    "recorded_at": "2026-11-12T13:53:32.7202711Z"
+  },
+  "entries": [
+    {
+      "op": "dir",
+      "path": "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\StartUp",
+      "names": [
+        "Service Fabric Local Cluster Manager.lnk",
+        "desktop.ini"
+      ]
+    },
+    {
+      "op": "dir",
+      "path": "C:\\Users\\user1\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup",
+      "names": [
+        "desktop.ini"
+      ]
+    },
+    {
+      "op": "file",
+      "path": "C:\\ProgramData\\ssh\\sshd_config",
+      "blob": "blobs/fb46b8f386771448"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows Defender",
+      "blob": "blobs/362719bac93bcd9f"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows Defender\\Exclusions\\Extensions",
+      "blob": "blobs/44136fa355b3678a"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows Defender\\Exclusions\\Paths",
+      "blob": "blobs/4748896e7bfcc437"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows Defender\\Exclusions\\Processes",
+      "blob": "blobs/44136fa355b3678a"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows Defender\\Real-Time Protection",
+      "blob": "blobs/15a1b55a5126f914"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion",
+      "blob": "blobs/aa0958665767f989"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\DefenderAgentScan.exe",
+      "blob": "blobs/81cf7e6715d0b229"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\ExtExport.exe",
+      "blob": "blobs/df081b4ee6b7fe67"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\LSASS.exe",
+      "blob": "blobs/845150da2fecdcbf"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\MRT.exe",
+      "blob": "blobs/35b9249934bb050c"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\MicrosoftEdgeUpdate.exe",
+      "blob": "blobs/30eb3e720452c7df"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\MsMpEng.exe",
+      "blob": "blobs/35b9249934bb050c"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\MsSense.exe",
+      "blob": "blobs/b6122f2603d172d8"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\PresentationHost.exe",
+      "blob": "blobs/7074e81a8e02627b"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\SystemSettings.exe",
+      "blob": "blobs/022f73472dcd0e2f"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\VBoxHeadless.exe",
+      "blob": "blobs/596a46be0300366e"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\VBoxNetDHCP.exe",
+      "blob": "blobs/596a46be0300366e"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\VirtualBox.exe",
+      "blob": "blobs/596a46be0300366e"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\VirtualBoxVM.exe",
+      "blob": "blobs/596a46be0300366e"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\appverif.exe",
+      "blob": "blobs/64fae06528e09793"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\ie4uinit.exe",
+      "blob": "blobs/df081b4ee6b7fe67"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\ieUnatt.exe",
+      "blob": "blobs/df081b4ee6b7fe67"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\ieinstal.exe",
+      "blob": "blobs/df081b4ee6b7fe67"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\ielowutil.exe",
+      "blob": "blobs/df081b4ee6b7fe67"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\iexplore.exe",
+      "blob": "blobs/0f74015f1e47463a"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\mscorsvw.exe",
+      "blob": "blobs/022f73472dcd0e2f"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\msfeedssync.exe",
+      "blob": "blobs/df081b4ee6b7fe67"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\mshta.exe",
+      "blob": "blobs/df081b4ee6b7fe67"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\ngen.exe",
+      "blob": "blobs/022f73472dcd0e2f"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\ngentask.exe",
+      "blob": "blobs/022f73472dcd0e2f"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\runtimebroker.exe",
+      "blob": "blobs/022f73472dcd0e2f"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\svchost.exe",
+      "blob": "blobs/997883e1e01dbe4f"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\windows10universal.exe",
+      "blob": "blobs/596a46be0300366e"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\wpr.exe",
+      "blob": "blobs/6488ff69876ac8be"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\wprui.exe",
+      "blob": "blobs/6488ff69876ac8be"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\{ApplicationVerifierGlobalSettings}",
+      "blob": "blobs/180d5f436f17cfca"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList\\S-1-5-21-1000000000-1000000000-1000000000-500",
+      "blob": "blobs/9cf181afe19117e4"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Windows",
+      "blob": "blobs/5c27e35ef2e351b8"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon",
+      "blob": "blobs/e78388920a23a218"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Component Based Servicing\\Packages\\Package_10_for_KB5127690~31bf3856ad364e35~amd64~~10.0.9363.1",
+      "blob": "blobs/863612d39e561993"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Component Based Servicing\\Packages\\Package_11_for_KB5127690~31bf3856ad364e35~amd64~~10.0.9363.1",
+      "blob": "blobs/863612d39e561993"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Component Based Servicing\\Packages\\Package_12_for_KB5127690~31bf3856ad364e35~amd64~~10.0.9363.1",
+      "blob": "blobs/863612d39e561993"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Component Based Servicing\\Packages\\Package_13_for_KB5127690~31bf3856ad364e35~amd64~~10.0.9363.1",
+      "blob": "blobs/863612d39e561993"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Component Based Servicing\\Packages\\Package_14_for_KB5127690~31bf3856ad364e35~amd64~~10.0.9363.1",
+      "blob": "blobs/863612d39e561993"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Component Based Servicing\\Packages\\Package_15_for_KB5127690~31bf3856ad364e35~amd64~~10.0.9363.1",
+      "blob": "blobs/863612d39e561993"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Component Based Servicing\\Packages\\Package_16_for_KB5127690~31bf3856ad364e35~amd64~~10.0.9363.1",
+      "blob": "blobs/863612d39e561993"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Component Based Servicing\\Packages\\Package_17_for_KB5127690~31bf3856ad364e35~amd64~~10.0.9363.1",
+      "blob": "blobs/623b258092b1147e"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Component Based Servicing\\Packages\\Package_18_for_KB5127690~31bf3856ad364e35~amd64~~10.0.9363.1",
+      "blob": "blobs/4311f1426dee3ea1"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Component Based Servicing\\Packages\\Package_19_for_KB5127690~31bf3856ad364e35~amd64~~10.0.9363.1",
+      "blob": "blobs/863612d39e561993"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Component Based Servicing\\Packages\\Package_20_for_KB5127690~31bf3856ad364e35~amd64~~10.0.9363.1",
+      "blob": "blobs/863612d39e561993"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Component Based Servicing\\Packages\\Package_21_for_KB5127690~31bf3856ad364e35~amd64~~10.0.9363.1",
+      "blob": "blobs/863612d39e561993"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Component Based Servicing\\Packages\\Package_22_for_KB5127690~31bf3856ad364e35~amd64~~10.0.9363.1",
+      "blob": "blobs/863612d39e561993"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Component Based Servicing\\Packages\\Package_23_for_KB5127690~31bf3856ad364e35~amd64~~10.0.9363.1",
+      "blob": "blobs/22139129cc9c05da"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Component Based Servicing\\Packages\\Package_6_for_KB5127690~31bf3856ad364e35~amd64~~10.0.9363.1",
+      "blob": "blobs/863612d39e561993"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Component Based Servicing\\Packages\\Package_7_for_KB5127690~31bf3856ad364e35~amd64~~10.0.9363.1",
+      "blob": "blobs/863612d39e561993"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Component Based Servicing\\Packages\\Package_8_for_KB5127690~31bf3856ad364e35~amd64~~10.0.9363.1",
+      "blob": "blobs/863612d39e561993"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Component Based Servicing\\Packages\\Package_9_for_KB5127690~31bf3856ad364e35~amd64~~10.0.9363.1",
+      "blob": "blobs/863612d39e561993"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer\\Run",
+      "err": "not_exist"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run",
+      "blob": "blobs/3d4fb5f1a219fdf3"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\RunOnce",
+      "blob": "blobs/44136fa355b3678a"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\7-Zip",
+      "blob": "blobs/12b5e5c859e157dc"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\AddressBook",
+      "blob": "blobs/44136fa355b3678a"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Connection Manager",
+      "blob": "blobs/44136fa355b3678a"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\DXM_Runtime",
+      "blob": "blobs/44136fa355b3678a"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\DirectDrawEx",
+      "blob": "blobs/44136fa355b3678a"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Fontcore",
+      "blob": "blobs/44136fa355b3678a"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Git_is1",
+      "blob": "blobs/6796f710d289e0f7"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\IE40",
+      "blob": "blobs/44136fa355b3678a"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\IE4Data",
+      "blob": "blobs/44136fa355b3678a"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\IE5BAKEX",
+      "blob": "blobs/44136fa355b3678a"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\IEData",
+      "blob": "blobs/44136fa355b3678a"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\ImageMagick 7.1.2 Q16-HDRI (64-bit)_is1",
+      "blob": "blobs/60cda1e33db94095"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\MPlayer2",
+      "blob": "blobs/44136fa355b3678a"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Miniconda3 py314_26.9.4-0 (Python 3.14.9 64-bit)",
+      "blob": "blobs/c73f718cc55c6841"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\MobileOptionPack",
+      "blob": "blobs/44136fa355b3678a"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Mozilla Firefox",
+      "blob": "blobs/43fb119bcea69e36"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\MozillaMaintenanceService",
+      "blob": "blobs/f36e8f87253d1d6f"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\OpenSSL (64-bit)_is1",
+      "blob": "blobs/6416e98abb5e7056"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\PostgreSQL 17",
+      "blob": "blobs/5d8904e175e226ed"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\R for Windows 4.6.2_is1",
+      "blob": "blobs/c1afd1f45d0c8b8a"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Rtools45_is1",
+      "blob": "blobs/e7a7d4a8e1d5a4f1"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\SchedulingAgent",
+      "blob": "blobs/44136fa355b3678a"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\ServiceFabric",
+      "blob": "blobs/a92375e5bff1bffe"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\SnippingTool-ee6eb196-db28-4d99-816d-fa9a63b4a377",
+      "blob": "blobs/44136fa355b3678a"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Unity Technologies - Hub",
+      "blob": "blobs/2cda90d4bf9a8769"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\WIC",
+      "blob": "blobs/44136fa355b3678a"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\mspaint-b330ad9e-f80b-4c96-9949-4b4228be9a6e",
+      "blob": "blobs/44136fa355b3678a"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\mstsc-4b0a31aa-df6a-4307-9b47-d5cc50009643",
+      "blob": "blobs/44136fa355b3678a"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{00E07ADB-2076-43C7-8E73-2AD8B1FF2072}",
+      "blob": "blobs/911cce31b55d7488"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{0158093D-F809-455B-9429-6D16A4B5D118}",
+      "blob": "blobs/21312fdbb9f0a579"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{01F171AF-1F21-435E-BEE4-FCC4360C896C}",
+      "blob": "blobs/2331ea80183c7c68"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{02B2BF21-C40E-4AA8-A44E-53C00BED66F3}",
+      "blob": "blobs/2802987b77e35a30"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{042CD8F5-C23A-49BD-9DAB-5B9AB842629D}",
+      "blob": "blobs/d6446b4f682220c9"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{04AB0737-B64C-48B5-8A40-C891E30F77DC}",
+      "blob": "blobs/d0a7d9ccc27a5b88"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{08274920-8908-45c2-9258-8ad67ff77b09}.sdb",
+      "blob": "blobs/8fdb23494202eea3"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{090EA6FF-A1A4-454A-8334-1DFCBA68D075}",
+      "blob": "blobs/88f8a83113c8b625"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{096EB890-F0D1-443F-ABC1-E3B65953E0E2}",
+      "blob": "blobs/fdd4caf888bf40db"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{0AA77D70-3C7E-4004-9607-30BA39904D5A}",
+      "blob": "blobs/4f44bf1255f5b610"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{0B03472C-994C-432B-A079-643AB5E8B808}",
+      "blob": "blobs/22dc26b848604b76"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{0C826CF1-3BD7-4A22-BDD2-6F1F19CF8AF5}",
+      "blob": "blobs/9e8525725ea54af8"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{0D0BD025-7CEC-44ED-AC9F-06B8A57F1CBA}",
+      "blob": "blobs/8fb49c09e1f30652"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{0D362DBB-FFB1-4DD5-A1F5-B325A32DE52F}",
+      "blob": "blobs/8edfb069e8fc18a9"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{0DF34FE9-11BE-4C78-B1CE-216B94F17562}",
+      "blob": "blobs/04adb4410b0964ba"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{0E0F96AC-80DE-4400-A40C-429D63293651}",
+      "blob": "blobs/ced81552aedd0a11"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{0E359BC1-76FA-1014-8E4D-A688F4A101C4}",
+      "blob": "blobs/e83c65538d720fc3"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{0EC44598-223D-4EA8-AFD5-A924B90E6154}",
+      "blob": "blobs/f72842cc233959f0"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{0F113663-8C98-4AA8-866D-4F4E9743CD4B}",
+      "blob": "blobs/b100aea3e1010b22"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{1038C46D-4919-44C2-9FE5-BA78B90106F1}",
+      "blob": "blobs/b70a6af58c017d74"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{115B9CA4-A771-4B6B-849B-455E71EA596A}",
+      "blob": "blobs/ba24711849c58920"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{11C2E64A-A24D-4C07-8834-2FFD590D72E0}",
+      "blob": "blobs/fd8ac90dcbf0bda8"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{18135783-1332-428B-8E2D-C23AABCCCF28}",
+      "blob": "blobs/ec334124cf1066bc"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{18147411-4C94-48F8-B243-026D997F9D20}",
+      "blob": "blobs/0c569f09405628a9"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{18DF3488-2245-432B-A023-3AA05C2A00C8}",
+      "blob": "blobs/b86cb5ee9b85ce75"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{19B555A4-088E-41C9-8ADB-4CA1E5038CD8}",
+      "blob": "blobs/c9d14b3a1d425ece"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{1B5B4A14-9986-4123-A6FB-22E301F9413E}",
+      "blob": "blobs/e5fa10da750b023c"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{1CE068B9-9B9B-4C8F-8A7A-89433BFFB201}",
+      "blob": "blobs/f9e2d8fbfcf5104f"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{1D653E80-09B2-40AB-9530-7DF12E632F8A}",
+      "blob": "blobs/37a88761e11bb26b"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{1D701FC9-914A-48C9-B78E-73B8939A194F}",
+      "blob": "blobs/454643dc7039d124"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{1E4641CE-4DCA-410D-AB23-0393727AF45A}",
+      "blob": "blobs/103e62af80aa9423"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{1E8C325A-7F76-321C-8696-9DEA8EF44209}",
+      "blob": "blobs/20e2b6f4ee56a73f"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{1F16F8CD-BC1A-41EB-9C3F-62FA188071C9}",
+      "blob": "blobs/3a7364047674b795"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{210A0DC6-B716-407E-BEEE-CE06F5E25A4A}",
+      "blob": "blobs/8f1a879f8101f2e2"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{22221111-1111-1111-1111-111111111111}.sdb",
+      "blob": "blobs/ca8035780d3be136"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{224CBFCA-2D3A-406C-B947-2D8DAAE1B84E}",
+      "blob": "blobs/e5b4c1fa5a7ec5b1"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{239CAE84-4938-4D7A-9F8C-0CAEE546C395}",
+      "blob": "blobs/03fb77a0f69972b4"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{274809B9-783B-2FA4-5D44-F8EC2E951E7F}",
+      "blob": "blobs/e3217d6f87815daf"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{27523A97-7D77-4331-BAB7-2DBB89E1EC0A}",
+      "blob": "blobs/ee18de60b9df9124"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{283F4895-CCD8-42BD-BEE9-3211DA514697}",
+      "blob": "blobs/9babe5a01acbf8d3"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{28440FF5-96DB-40C2-B4D4-F647AF9987CD}",
+      "blob": "blobs/1dc3ce46c6bd95f5"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{29CEC70F-9D96-472B-B6A1-AE7578376985}",
+      "blob": "blobs/3f91cb5bc1cda426"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{2A3835B8-EF0A-4A9E-B969-A80AE384FB7B}",
+      "blob": "blobs/01ab48b8de1f79ee"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{2B61EB43-F279-46B5-B5D6-36AB08F6D47D}",
+      "blob": "blobs/42850038aeffeebd"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{2D92E6AF-35B2-4109-893F-59E4A4F2D550}",
+      "blob": "blobs/7cce735f6a855dcb"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{2DB42E4F-3AD1-4B53-818B-AE89FF2F651B}",
+      "blob": "blobs/49b07369471bb99a"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{2F453F5A-23E4-4AE8-A333-C7D4E5026A68}",
+      "blob": "blobs/2983ca07d8cc1f6c"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{2FA155B9-155C-47D7-A055-25622D209355}",
+      "blob": "blobs/a5505691ddfb65d4"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{2FC9E03B-6AD3-4BEA-A44C-692B8699D4A3}",
+      "blob": "blobs/6b53af4932de66c3"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{33B225D7-7E61-4BB8-9316-20B209E5AC13}",
+      "blob": "blobs/99224e60ce59f446"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{34A429A0-C5D6-46A1-82E4-214FF9F1F9F1}",
+      "blob": "blobs/be78561860106901"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{35A3AC44-8278-021E-9270-E99D8B6882D1}",
+      "blob": "blobs/66ff5c50cf3dcda8"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{364DB261-CDF3-44D0-A9A8-E698D382FFBA}",
+      "blob": "blobs/a918126eb7174643"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{3852044F-91AB-44A9-B03B-441C97E19C6E}",
+      "blob": "blobs/3da945233b525d5f"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{3861D616-89DD-4E91-9B02-9ED2601371D4}",
+      "blob": "blobs/9c00202584ffa45c"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{3887007B-C74B-4DF7-8155-F3838C013D2C}",
+      "blob": "blobs/9f2f24f8ef652801"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{3A323A38-6579-4FEA-903A-A1ADD4AFAA60}",
+      "blob": "blobs/5e0bbe9720ab742a"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{3AEAE65A-589C-47F3-9FBB-1CB560109A05}",
+      "blob": "blobs/de541aad7740b189"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{3B1BBB97-C952-4564-BE69-723F5DF090C3}",
+      "blob": "blobs/141bdb6716889f4d"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{3CDD3E9D-B7B2-4FF2-9E51-0CB74B6EFD19}",
+      "blob": "blobs/74e4e8e9f9a10454"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{3D801AF4-EA19-4A69-866F-42C2749C0359}",
+      "blob": "blobs/10630e58ea8805e5"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{3E5591D3-E5B6-4E45-A325-EA98623D901D}",
+      "blob": "blobs/9e55016359ede6d5"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{3F02CA4B-2CAA-4C2E-AC39-53BBD89BE7E4}",
+      "blob": "blobs/046236d2a25cbb6f"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{3FA39B9D-DA9A-4DE1-81BE-B91E2938E3EA}",
+      "blob": "blobs/c06e4554b0f117bf"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{418663C6-227B-4F95-AAEB-5C87E780E39B}",
+      "blob": "blobs/cd52eaa60b0bd04f"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{41C0DB18-1790-465E-B0DD-D9CAA35CACBE}",
+      "blob": "blobs/e8f7aba09bb1fec0"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{4218C7EF-A93A-4237-BD8D-6525D8A1E4F5}",
+      "blob": "blobs/1dd427124e01b1ee"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{421FF48B-DF15-46CA-96A1-CFBD38E83A42}",
+      "blob": "blobs/837990d288b579df"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{425B36E9-4EA6-47B4-88C3-E798BA903188}",
+      "blob": "blobs/309e5384eb32e426"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{454E4664-1784-4DF6-B45D-25CFCFD226B4}",
+      "blob": "blobs/29ad8547bf875fad"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{466C7796-E8F8-4372-8C0D-18360D0BCA18}",
+      "blob": "blobs/83b96096965ec06d"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{46705EE9-F242-4E3D-9DB6-314A2F7EC673}",
+      "blob": "blobs/a965d74ac4473d2b"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{46ABFBF0-3420-4E3D-A164-C92CDC40CA9B}",
+      "blob": "blobs/81efe2a3ac2db367"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{46B9AB10-949A-4893-BC25-691848DE04F9}",
+      "blob": "blobs/aa860607db6b7977"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{47D78337-9B23-40D0-B509-9A691D24EEEF}",
+      "blob": "blobs/ca7eaebb63e90927"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{4964941B-B5D0-BD30-271C-02DF4C5D1B6C}",
+      "blob": "blobs/814bbec39a5e1913"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{4B3E159A-1CA1-4484-AE21-C3F905548D45}",
+      "blob": "blobs/ee6d108992664d74"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{4BFB652A-E510-4B01-B7A4-B532E2721FAE}",
+      "blob": "blobs/903e0e6fe770613f"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{4CD54AAE-0A9F-4A31-B7DF-1C5DB3717C33}",
+      "blob": "blobs/a9bd8b9ab2f14180"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{4D0D5C48-CCFF-4E37-B925-7D33C3A2F938}",
+      "blob": "blobs/20e534dcbf335367"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{4D38C3A3-B685-4AB5-BD6D-FD88BCED5805}",
+      "blob": "blobs/ffc8ddedcfb2aa70"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{50354927-E098-35AA-A0B1-3226D8CB43B6}",
+      "blob": "blobs/9260fcccc0298891"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{507FE283-43E6-4676-81D5-F53C735C2802}",
+      "blob": "blobs/ba733d648064db6e"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{53C6CAB9-A77C-4590-BC3A-90ED427C536A}",
+      "blob": "blobs/dc18d074e16cefff"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{5417B253-1A6D-4638-BC94-743A6EC2E6F4}",
+      "blob": "blobs/eea835a9d1d6d2e8"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{546722C9-57EA-4D96-BD1A-86DB6713D8C4}",
+      "blob": "blobs/9bf40ee51adfbfab"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{558C4CF1-82E8-4C42-BC91-5F1E96E9C99C}",
+      "blob": "blobs/f7c62e066a21a4e2"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{56C2908F-2965-4F99-841B-43F32C73A77A}",
+      "blob": "blobs/91fed3e29d84ef46"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{5740BD44-B58D-321A-AFC0-6D3D4556DD6C}",
+      "blob": "blobs/7d7004688f95d32f"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{57AC2A86-EC99-4E9C-9FF9-15DAA88D1FAE}",
+      "blob": "blobs/7935ea31cad71d1c"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{598A79D5-0F0D-472B-91B8-EA759CCE4D94}",
+      "blob": "blobs/944866a566df98e8"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{59A92B05-3DD2-46FA-9091-ED014AE9163B}",
+      "blob": "blobs/fd2a35539100d92c"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{5B65F2D8-FC44-4C7D-A0FC-0E04EB964809}",
+      "blob": "blobs/c4ab95ea770c911b"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{5BC7E9EB-13E8-45DB-8A60-F2481FEB4595}",
+      "blob": "blobs/c45cbbe996e3d870"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{5EE43FB0-70E7-40E1-9D07-CD1C664FF8BC}",
+      "blob": "blobs/e42aa1f34b735951"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{6361F810-69F8-4F82-91F0-8D08D741AF37}",
+      "blob": "blobs/96b3570b4f766c77"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{63F529A9-C021-44B0-907C-8FF7C85096E7}",
+      "blob": "blobs/4f9ad36b8f56faf9"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{64BFC674-D664-480B-AFF2-D47C5531D6D2}",
+      "blob": "blobs/8c139edda5f81bdd"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{64DFA77E-4DBA-4DE2-AB1B-FC51ADED3639}",
+      "blob": "blobs/4bf158159cd82dab"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{66674362-34AE-4C92-854B-AEF1C07E3F15}",
+      "blob": "blobs/2beca4faba3f6459"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{68BC1B8E-E4B7-4CBE-917D-2482D281129C}",
+      "blob": "blobs/95f811911fb7262c"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{69CD1F2D-DF68-4E23-9108-1B70783F2855}",
+      "blob": "blobs/e1213a8a8fe7783d"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{6C1EDC0A-E71D-44D2-821C-213A5CD15498}",
+      "blob": "blobs/c2a7b7ab6a65344f"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{6D57FC95-4E59-4869-A71E-8551B11D8900}",
+      "blob": "blobs/d9cf17cd03ef6819"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{6F320B93-EE3C-4826-85E0-ADF79F8D4C61}",
+      "blob": "blobs/fea8a84a345669e7"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{6F4D49FA-E2CA-20B5-86AE-BB9DD924A4F5}",
+      "blob": "blobs/392c24a4bb1de5fa"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{6FA797CF-6B76-4B6D-87EE-768F92008720}",
+      "blob": "blobs/cd710667f42f0110"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{70F4084C-D57F-49B6-AD9B-C9743C753C30}",
+      "blob": "blobs/d33d39338dd75f64"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{711FC301-B296-4A6D-8A4F-EB1F70A2FCA3}",
+      "blob": "blobs/584a8704c6aa5513"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{720993DF-0608-45F1-8119-C8B475BB47E7}",
+      "blob": "blobs/fb5002994b390c8e"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{722D35C3-0D8E-450C-9A69-9A7438CF958C}",
+      "blob": "blobs/2c5e23ebeac7b482"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{725E9F7C-C7B3-47DF-B86F-CC37789D2409}",
+      "blob": "blobs/cb40863d239bf21e"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{73DF3ECF-1176-4928-B377-54E78C363B81}",
+      "blob": "blobs/5ce452d8c9427ccc"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{75485683-EF03-41E6-BF21-D1491694548C}",
+      "blob": "blobs/546ffee6a7ce88c8"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{781C873D-4722-4206-989B-94A55561E2BD}",
+      "blob": "blobs/d93250a2f1c04d13"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{7A1A9C6B-1386-478E-9C35-7242968A5634}",
+      "blob": "blobs/ecfadd57ce5554f9"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{7CDACDEF-E664-4D4B-A975-DC7F9B805173}",
+      "blob": "blobs/1a71e4de26345129"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{7E8C62E5-B67D-4D2E-B056-88613B37793E}",
+      "blob": "blobs/88f149c46a02e056"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{7F743AA5-74BF-42E4-B1EB-051B5F054002}",
+      "blob": "blobs/e089bcf3c988b481"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{800DDF86-A239-41BB-ADFD-5B905B6BB1FF}",
+      "blob": "blobs/68fb9d3c7de18c1a"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{8080398B-76C6-4497-B4BD-DABE4DD99747}",
+      "blob": "blobs/c424939131e0cfde"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{819BE571-060C-48C8-A2A4-D4202B8A08FE}",
+      "blob": "blobs/916f1ec928a5bc42"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{8241B3C0-2A52-43AB-A86E-AA2A2ABA04AB}",
+      "blob": "blobs/950488ce4ae83cfe"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{847A4777-748F-4E53-B248-19FF26E88A3D}",
+      "blob": "blobs/ed494ad03dcdc771"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{850AB042-23C9-4DB0-9DF0-C608D6490AA3}",
+      "blob": "blobs/4566ba31e3115cd2"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{862313B3-2047-40C4-B33F-FCCF3B60253A}",
+      "blob": "blobs/521853417d923cbc"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{86AE8880-001B-4252-A8A9-2182E91218A2}",
+      "blob": "blobs/f6bdf018a0ba6900"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{89021744-C588-4449-B55C-F9FFF8B997E5}",
+      "blob": "blobs/d8cd158ec825c728"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{8B5049E4-77C4-4637-825C-77C6C1080778}",
+      "blob": "blobs/06ed9404b8e78ed7"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{8D4D2D6C-CF32-4327-B1BC-2F4C4575B69C}",
+      "blob": "blobs/3a66445f6b77b4f8"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{916AB5D9-C368-4822-830E-72BBC6B2AE82}",
+      "blob": "blobs/987dfb22df7e2577"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{931A2CF0-2404-45EA-82F5-345735AE6A90}",
+      "blob": "blobs/32e457e030752c28"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{940E35B9-1368-448D-9C39-FC6E3D942E3E}",
+      "blob": "blobs/fb7b97ab51490c1d"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{941B1F64-FCD9-4C40-B927-E75F49DD96D8}",
+      "blob": "blobs/13ac9a2b5fe3d154"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{945C7592-59B8-462E-AB14-133A49D729D1}",
+      "blob": "blobs/5b6f56be5b93163d"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{9652399F-8D53-497E-996D-E3568B77FBF4}",
+      "blob": "blobs/e37aab9d80b73efe"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{966C5618-AFD4-4D3E-AEF3-59D550B7AD7C}",
+      "blob": "blobs/49ad85d499b045b7"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{97F4DFA3-4BDB-40B7-9E0F-A1EE5FAF0F24}",
+      "blob": "blobs/91bbf69b04ddc882"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{998A78CE-49A3-409C-8D26-957F4ADB9EC7}",
+      "blob": "blobs/069fd1016a0cafbf"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{99B1B215-9315-462D-8C49-89CF843E73AF}",
+      "blob": "blobs/47cc8b4bde67028f"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{9A5537F9-CEF1-3603-AEA1-6ED5743A8B4C}",
+      "blob": "blobs/050cb048a3b4725f"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{9AFDC691-40E5-4B15-835F-9A524AC4672C}",
+      "blob": "blobs/bf375e4fd3b222ab"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{9B07B82B-CDA6-414E-9F25-A5230BED00DC}",
+      "blob": "blobs/c3f26262541ef9d3"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{9C0B3717-AED9-4BBB-8116-F00B0FEC3DA0}",
+      "blob": "blobs/46d6117ecc3ee9c6"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{9C215D62-3658-4D50-B518-9BF0C2B225B8}",
+      "blob": "blobs/636167ebe886ca3b"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{9D09C9EF-A57C-422A-B79A-CC922079653A}",
+      "blob": "blobs/8f4bc5c4227b4754"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{9E43DE89-BFB0-49E5-A622-E9A01F1C63DB}",
+      "blob": "blobs/2ab65824168dc921"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{A1090555-03C8-475B-BE98-FA895930C72D}",
+      "blob": "blobs/24f72185230abc2f"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{A1482205-2BF9-411C-A9BE-FD0227CB02A3}",
+      "blob": "blobs/bf972a67ddeb314f"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{A3863DD9-B4D3-4987-BB70-6F5F3AD4887B}",
+      "blob": "blobs/6b21476716b6d8e6"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{A52D5175-AEDA-4C79-8E48-40B2F94BA308}",
+      "blob": "blobs/603b162ae3242f75"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{A5B947FD-875D-448C-AB7C-A737CA9FEA4C}",
+      "blob": "blobs/46baaeb0d47f3e12"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{A7036CFB-B403-4598-85FF-D397ABB88173}",
+      "blob": "blobs/c8c5d80a61bad6d4"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{A785CE7C-D7B0-441D-9E02-26364E96B27C}",
+      "blob": "blobs/eb090d13aa27ff92"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{A9F91BE3-1B3B-4CB4-A169-19E13DD70BEA}",
+      "blob": "blobs/63553424e43b6958"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{AA38E6F3-35A2-4EC9-A142-C20524268E6B}",
+      "blob": "blobs/cb08bce939567df9"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{AAB90E47-AC75-4DDC-8C56-6F26280EDDA8}",
+      "blob": "blobs/8ae75ffbd68cdf87"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{AB5D92ED-5692-4708-A601-499CE2592A0E}",
+      "blob": "blobs/b56677145cf58c3b"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{AB79F6CD-B2F6-4A48-A467-432D5360EEE2}",
+      "blob": "blobs/71dc31e31d7c0f0c"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{AF65D793-A0A3-4D7A-8CD6-34EBC92D9758}",
+      "blob": "blobs/b49fbd4eb6329bc7"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{AFBBF911-12CF-425F-AC3C-AE0B8ABD87CE}",
+      "blob": "blobs/34e6c7b44974bf81"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{AFFC3E2E-B4E9-40CE-8F85-9D104554535C}",
+      "blob": "blobs/1960546702599105"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{B0062CEF-95B3-450F-9736-878E429BFFC6}",
+      "blob": "blobs/c1e613e996a725e2"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{B074012B-9B85-4049-BA01-A58A8C4C2236}",
+      "blob": "blobs/f63f57e9fb544df7"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{B0D7B910-43A8-4CC8-9FD3-A999D909ACCB}",
+      "blob": "blobs/05087f481bf841ce"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{B323723C-B536-4F5C-AA3C-CD99375669FC}",
+      "blob": "blobs/5edb080f964c9a0b"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{B345E1A0-F543-44AE-819B-B10BFC18A2E9}",
+      "blob": "blobs/10c6726f154da340"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{B626CF8A-E520-413A-8DBE-EAD2E83D93E3}",
+      "blob": "blobs/15aa704b21ddf934"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{B68EF683-68C8-4823-82A8-3357F5393FC1}",
+      "blob": "blobs/8e1f19b98b4659bc"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{B9763EB7-C04A-478B-8426-FB265B6004D4}",
+      "blob": "blobs/c23673f089459f82"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{B976F477-DFB4-4C4D-A476-B902C605E29B}",
+      "blob": "blobs/a8de9063d3c4412f"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{BC7E7CD1-8B30-4BF1-B7F8-D7E14CD0F404}",
+      "blob": "blobs/ee309bd96abd5961"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{BD2321D2-0D66-31A7-AD98-A36B7BF88304}",
+      "blob": "blobs/33dee459bf43bc8f"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{BD95A57C-D483-44AF-8A84-B22D0EEC7664}",
+      "blob": "blobs/0b3d083fce8591e8"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{BE5C28EC-821C-4124-9436-E48380E5ED4F}",
+      "blob": "blobs/0766fe3744f3437c"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{BE9DF6A9-B823-46A8-9C83-34F484542309}",
+      "blob": "blobs/eb0d71488d28b912"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{BF77625C-A16F-44B6-8DDE-728D5435860F}",
+      "blob": "blobs/868e3b1aae4af77c"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{C038789C-DCB5-42D3-8C51-3BC9DDB26B90}",
+      "blob": "blobs/6609aaa42659827e"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{C107FE3B-067F-46A3-A7A4-40B19BBF8A3F}",
+      "blob": "blobs/9484f05febf7bf0d"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{C21221FC-C5DD-488F-AA88-9C936DB25907}",
+      "blob": "blobs/24cadbfcede34faa"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{C340E546-2498-4BE8-99A1-06D526AA2F09}",
+      "blob": "blobs/3fa09be639fb21c0"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{C6A0A583-DE12-43E0-9454-2D65C9119C65}",
+      "blob": "blobs/3c8f837d5628c0e7"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{C6CD0BDC-FC2E-47EF-A90C-E5FA56E07F68}",
+      "blob": "blobs/c3e9c3146c4578c2"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{C8EADAA3-9C41-4E17-9DD7-9A501AB7F978}",
+      "blob": "blobs/e79a683ce288f8bb"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{C9622360-8DEC-4206-908A-5D5DB0757742}",
+      "blob": "blobs/76bb71cd2a5bed3b"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{C9ABD5E0-7919-4C94-8C49-539FB6226580}",
+      "blob": "blobs/1de86ca23943bb08"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{CB0238CA-3B36-47AB-86FD-D60F4C47607A}",
+      "blob": "blobs/2c79847723cc55fb"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{CB0836EC-B072-368D-82B2-D3470BF95707}",
+      "blob": "blobs/d729b69a45bc5be3"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{CBD50981-4132-AB43-1A5A-D0E3E3CBA8AB}",
+      "blob": "blobs/c06fd5756c294fb9"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{CCB00615-1BF8-47F9-9253-2C35353D3B7D}",
+      "blob": "blobs/1f74e73f4051e0dc"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{CD0A1663-DC2D-41BD-89AF-E1089E841822}",
+      "blob": "blobs/f95b0bf2bb0db112"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{CD3B00FB-588E-4AD9-99CD-06E224C3DE1D}",
+      "blob": "blobs/6efd9a5db523bc56"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{CDF4A529-FD37-4272-8C3E-545D4AF76092}",
+      "blob": "blobs/09f569f0a2b652a5"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{CE51715C-C564-437E-92AA-1AB8EB258B78}",
+      "blob": "blobs/a98924f8693a61f1"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{CEE03ABD-D5F9-4104-BFA5-520711B8D71F}",
+      "blob": "blobs/1cd65bb61ab26a48"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{CF482EC2-1283-4368-B407-CCCA0AF4D57B}",
+      "blob": "blobs/f2c02d26767d6b1b"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{D113B5D0-D291-4FCD-8609-17265878F921}",
+      "blob": "blobs/6a4387c7d1f12fa4"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{D2FB83D0-ABF6-402C-BC36-CCBFD1405468}",
+      "blob": "blobs/376762e8cd9784ba"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{D411A281-8C19-4AF2-BB02-CA01043F07C5}",
+      "blob": "blobs/8ed1d0a2bded95e0"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{D98F571E-0B0A-4EE9-8625-E0C90E5AABBE}",
+      "blob": "blobs/e63a5c4beab940ad"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{D9B9D8D6-119C-492B-B7CE-CDA816C5DBCD}",
+      "blob": "blobs/ff371bc23c5093f6"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{D9BC9DD5-D2CA-4F3F-AEBB-2C0A3CBF966D}",
+      "blob": "blobs/00f5cafd650ce1a8"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{DAC30545-E0EF-4714-BE89-50A8BB6A26BA}",
+      "blob": "blobs/de7e32bb6d0b8fd6"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{DB301453-81CD-4694-8A78-746617513B00}",
+      "blob": "blobs/43afb3b8f944ecb6"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{DD449F28-B66D-419E-9F49-45839B5913A4}",
+      "blob": "blobs/72a99c92909f50c3"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{DE12B597-D4BF-4B1B-BF5F-C5CE41AFBDFC}",
+      "blob": "blobs/fcd2dbf30796eaf5"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{DE4FFB86-1944-4273-B040-92E920BD6861}",
+      "blob": "blobs/7e38c84cbbc40473"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{DE9C1CD1-0D25-4425-99FE-8046806C0C0A}",
+      "blob": "blobs/b478c436ccfbba85"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{DE9FC591-0C21-40EE-ADDB-0A9A4B146119}",
+      "blob": "blobs/1238ca061bc1bf1b"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{DEE88809-AD6B-4DA5-AFC6-34F836E484D8}",
+      "blob": "blobs/284f3601d1eec0b5"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{DF1E9467-4F18-4001-B4E7-6B7D14FE9749}",
+      "blob": "blobs/ccff2d884d62731e"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{E143E432-D521-48B7-AFD4-8EBAA7B89108}",
+      "blob": "blobs/67357e6741061ecd"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{E2D6439F-F2EE-48DF-8297-A5BB55D9E6E7}",
+      "blob": "blobs/4c28d66b96935ca4"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{E3560EB7-6DAB-4412-AEB1-C126757C0598}",
+      "blob": "blobs/7683e01449c503be"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{E3806E56-5AF2-4467-A6B8-F78331A9F194}",
+      "blob": "blobs/89660d11aa2e04dc"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{E418A0DF-8F0A-46F3-AF80-8C37771541A1}",
+      "blob": "blobs/bf141769fa6de499"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{E717747A-9049-4A19-806D-AE27A4F8C173}",
+      "blob": "blobs/f4811c10e1495387"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{E8717434-E3C0-4B3C-8132-FD1BC65A0AC9}",
+      "blob": "blobs/7e2b6383fc79e7d8"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{E9279A3D-A613-4CA7-8B09-A6C4C5C5AB5A}",
+      "blob": "blobs/cafee122e5fce0f8"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{E95307CE-229C-43BD-AB84-7C412E6DB7EF}",
+      "blob": "blobs/173a23aab199ba02"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{EA697E20-E82A-4EC4-AE44-1C3FBD117B14}",
+      "blob": "blobs/83da57d7e5a5032c"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{EECA6C3D-EDE4-4BE4-ABC6-4011A0FCEB73}",
+      "blob": "blobs/e1c09965b61e0363"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{EF4A3D60-9A53-4697-A18D-D3353F8554E6}",
+      "blob": "blobs/61e5bc0041d5e839"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{F0E9CE77-BF19-4BBE-B228-A42F782F82E4}",
+      "blob": "blobs/d92c545b6cc907a1"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{F0F0AEBC-3FF8-46E4-80EC-625C2CCF241D}",
+      "blob": "blobs/c28057474bec8406"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{F1194919-869E-44D3-AFA1-6F2CA29DBA3F}",
+      "blob": "blobs/29785c7749bb4d1b"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{F4AECE9D-3EED-4A8E-AA8E-121748EBA734}",
+      "blob": "blobs/45c3a82820796f9c"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{F5796163-6EC6-488A-B2DE-E1E94477F6AD}",
+      "blob": "blobs/c008a997789d8979"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{F7F70D15-A1C1-42D5-A47F-AD0AC223C5AD}",
+      "blob": "blobs/38d1d2a2efcebc39"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{F841DD72-84BA-424D-BDAA-1380FED9A44A}",
+      "blob": "blobs/a69f1f7ebbef5e2e"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{F88188C9-CDDF-4229-B5A0-71E054594115}",
+      "blob": "blobs/c35c5acd8a5066ef"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{F8B9E8C8-61E8-4E9E-879D-F3F498AD0230}",
+      "blob": "blobs/060c5935b36d2a64"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{FAFEE5E3-E00A-4CE8-B495-8F66A5FAB236}",
+      "blob": "blobs/8c124e6561b2f5e9"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{FBD6181A-FACE-4219-A484-E94F495E2F93}",
+      "blob": "blobs/f98925dfb7420b05"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{FF0DDF94-1EDD-4923-B491-FC78746ED9FE}",
+      "blob": "blobs/a1fae0da295554f5"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{FF12B2ED-6B96-4536-A34F-0C9EB92B3C27}",
+      "blob": "blobs/336e38f18174cd3d"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{ad846bae-d44b-4722-abad-f7420e08bcd9}.sdb",
+      "blob": "blobs/dd9da4731d345301"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\WSMAN\\Service",
+      "blob": "blobs/78186e7002ee580d"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows Defender",
+      "err": "not_exist"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows Defender\\Exclusions\\Extensions",
+      "err": "not_exist"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows Defender\\Exclusions\\Paths",
+      "err": "not_exist"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows Defender\\Exclusions\\Processes",
+      "err": "not_exist"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows Defender\\Real-Time Protection",
+      "err": "not_exist"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\WindowsFirewall\\DomainProfile",
+      "err": "not_exist"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\WindowsFirewall\\PrivateProfile",
+      "err": "not_exist"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\WindowsFirewall\\PublicProfile",
+      "err": "not_exist"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\WinRM\\Service",
+      "err": "not_exist"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer\\Run",
+      "err": "not_exist"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Run",
+      "blob": "blobs/44136fa355b3678a"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\RunOnce",
+      "blob": "blobs/44136fa355b3678a"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\5529bf1c",
+      "blob": "blobs/285e8f6d8f067f7f"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\AddressBook",
+      "blob": "blobs/44136fa355b3678a"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Connection Manager",
+      "blob": "blobs/44136fa355b3678a"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\DXM_Runtime",
+      "blob": "blobs/44136fa355b3678a"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\DirectDrawEx",
+      "blob": "blobs/44136fa355b3678a"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Fontcore",
+      "blob": "blobs/44136fa355b3678a"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\IE40",
+      "blob": "blobs/44136fa355b3678a"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\IE4Data",
+      "blob": "blobs/44136fa355b3678a"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\IE5BAKEX",
+      "blob": "blobs/44136fa355b3678a"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\IEData",
+      "blob": "blobs/44136fa355b3678a"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Inno Setup 6_is1",
+      "blob": "blobs/c5cee02f8df08ffd"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\LLVM",
+      "blob": "blobs/c09817046478ded7"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\MPlayer2",
+      "blob": "blobs/44136fa355b3678a"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Microsoft Edge Update",
+      "blob": "blobs/1315d88a6d2ae119"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Microsoft EdgeWebView",
+      "blob": "blobs/38236c7faf1a3942"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\MobileOptionPack",
+      "blob": "blobs/44136fa355b3678a"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\SchedulingAgent",
+      "blob": "blobs/44136fa355b3678a"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\WIC",
+      "blob": "blobs/44136fa355b3678a"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{02BD05CF-44F8-6CB0-76AD-E0EAA3747B2B}",
+      "blob": "blobs/732326708c364ae9"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{0302F837-6D4E-935D-8831-FF94B8874265}",
+      "blob": "blobs/7b6741f7ad42b3d9"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{03A14A81-A3F8-5480-E34A-2CC6F23D8C9D}",
+      "blob": "blobs/d5df5abad165d18a"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{0460C87B-7F4C-3170-FAC9-B7A6AE5CE4E9}",
+      "blob": "blobs/e0dd807fe9c5b641"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{074ABF02-D68A-4C41-B1F8-D62F04502864}",
+      "blob": "blobs/8dad76d7034f509e"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{087BBF93-D9E3-4D27-BDBE-9C702E0066FC}",
+      "blob": "blobs/84a81a34c25c40c6"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{08F5A8B5-7150-4C2B-A6E3-18CE3ACC4AEC}",
+      "blob": "blobs/2380f97e3ea298de"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{0E3FA629-0DFD-6B54-8CEC-21ACB8D76408}",
+      "blob": "blobs/0c32b58a44033855"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{0F1538AF-2F64-46BA-B465-142B8581742F}",
+      "blob": "blobs/6a0ebbdb01cc8a9e"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{0FD6097F-AD1F-A5F4-0269-92F6AE4D02E3}",
+      "blob": "blobs/2a049df3d2bd9237"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{0e3bb569-69d6-4c34-bff9-c2f81db5e5f0}",
+      "blob": "blobs/e94cc1ae261e7f81"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{10C73EFA-0EE3-471E-46D7-890F15F069FF}",
+      "blob": "blobs/04c6c7dea5e6d506"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{118AE3B2-6465-8F73-F985-F5908526D661}",
+      "blob": "blobs/a910b1b4ca4df44b"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{11DAE34E-7053-2C01-CAD5-0F06882265CD}",
+      "blob": "blobs/68802cacfdaf6ff4"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{12702494-9E6A-3F5E-9441-2B7D258A639B}",
+      "blob": "blobs/a3069c1607851a00"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{138E3866-87ED-4A8F-B308-19A9197603EF}",
+      "blob": "blobs/9a6f79e8ed4d4343"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{15C84E1B-4ACC-B47D-77DA-43B1CA470CDC}",
+      "blob": "blobs/74242f65806acb2b"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{15FB238A-AB2E-AEA9-4B74-E8FC5B95DAEB}",
+      "blob": "blobs/85fcc8ec445b99c2"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{16D8AED0-BB0E-4BCA-8505-98163476092E}",
+      "blob": "blobs/15f3852d3f38670b"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{1784A8CD-F7FE-47E2-A87D-1F31E7242D0D}",
+      "blob": "blobs/edf56b7ff7c3257c"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{178EBAD0-51AD-7ABE-6CA3-EF4FF0E041C6}",
+      "blob": "blobs/dc4ab5011ddf292b"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{1851460E-0E63-4117-B5BA-25A2F045801B}",
+      "blob": "blobs/d35a7c14b6c4d0c0"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{196906EC-41B5-3868-AEF9-EDA710820A02}",
+      "blob": "blobs/18dd21214c962939"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{1986DBC1-158E-16E6-B249-DDE41604C1DE}",
+      "blob": "blobs/9cb247bff5734201"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{1A9C3A1A-566B-4CFA-8B27-71FC623963BE}",
+      "blob": "blobs/36de6493942b3665"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{1D05F58D-2CDF-3BCB-995A-903991A4976E}",
+      "blob": "blobs/1c0c60497955c91a"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{1E303504-3BFC-4B58-B1F7-292B3AB6CC9F}",
+      "blob": "blobs/0dfbc332bc87e9a7"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{1E3E6279-9ADF-B93F-7330-F19B4C40E809}",
+      "blob": "blobs/f19352383786fcbe"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{1FE5859D-5396-4CA9-BCE0-E6C3581556BB}",
+      "blob": "blobs/f57ee0aeb41f53c3"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{25857977-2CF7-4941-8C70-A1EB1FC71402}",
+      "blob": "blobs/d2a63c22a04eaffc"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{27E5F4F3-6114-AE5F-CDFB-2F73825F90F0}",
+      "blob": "blobs/a8d93a0e57cd55af"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{2877A631-A593-424A-B4ED-48314FB60580}",
+      "blob": "blobs/02abd8a8a3e4b109"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{2D67FA59-8137-4B10-AA99-F040B437B493}",
+      "blob": "blobs/7f8e37110e5c9e23"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{2DA63617-7940-4788-BBBF-5C8AA841A5AF}",
+      "blob": "blobs/134da1544e09fdde"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{2EECE069-6684-D12F-2B20-9A92A172D99E}",
+      "blob": "blobs/ca1a8020a3eae854"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{30DF2927-726F-CE76-55DE-58DF21A0D672}",
+      "blob": "blobs/a28545c51c5355ff"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{3139DB21-8B0D-42F4-9AFE-6678A4F6BAD0}",
+      "blob": "blobs/1c63a00743a3f9ea"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{3193C6F3-8C79-30A0-AE89-121FE521ABFF}",
+      "blob": "blobs/0a693144b7680c11"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{33EB71F2-7B69-333D-B553-52FC3B29D297}",
+      "blob": "blobs/d5c7a6b1f3c7b064"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{341C15C6-CC8F-4BB9-88E0-02B286DEF8EF}",
+      "blob": "blobs/a3121c0d4fc42347"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{35C5CA74-634C-462B-8C49-2CFF2CF232EF}",
+      "blob": "blobs/514d8dc541dfa3d8"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{3B05CB49-0C0D-44E4-85E7-109BFEEEB098}",
+      "blob": "blobs/959bd1c033106cef"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{3C4F85C9-6A8E-30C3-8F44-9B175F3DA4D7}",
+      "blob": "blobs/8ae7ae18fcc96769"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{3D2396AE-3E42-48AB-8894-4BD87622CE50}",
+      "blob": "blobs/5f7b45d14934c036"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{3D978191-31EA-5058-1F6A-A35E749BBDFF}",
+      "blob": "blobs/8830334430afbb2d"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{42872F01-2E82-DFE4-553B-195AD47AFEA7}",
+      "blob": "blobs/4f1acecfaf4266b7"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{43506B27-889E-2F0F-F8BE-4AEBE7CC9249}",
+      "blob": "blobs/693f6e4241922bc2"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{439FF1C4-28A6-4441-A082-1474AFD7401E}",
+      "blob": "blobs/0cf73294973065f6"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{45e335f3-c807-43b8-9ed1-43666cfcf939}",
+      "blob": "blobs/b16941245a67bb05"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{47769A8E-2976-460D-8217-852B9D5F3C30}",
+      "blob": "blobs/789978a68fef8a4b"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{48A8BEA1-B0C5-B648-A765-E767AEC8C881}",
+      "blob": "blobs/18a371fbbb836f34"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{49E3DBF7-ADA6-45E8-A77C-82A7DA67B7B6}",
+      "blob": "blobs/9631e595750286c0"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{49F425DD-2A94-4C75-94BE-4EFF866E608B}",
+      "blob": "blobs/500cbe0b8a799ba2"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{4BF7CE18-E151-449F-9190-6CDBED0BB4A2}",
+      "blob": "blobs/8e10c218dbffec67"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{4CE7B183-BD03-4F2A-9192-698F25FE2089}",
+      "blob": "blobs/fc0b6302317f77df"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{4F91293C-541D-4561-BD33-C0342F993E96}",
+      "blob": "blobs/6cf4f43a21fd1b53"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{4F9F4161-0D82-8BEF-BE02-0CEB0D6DA514}",
+      "blob": "blobs/779de95cdc71487c"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{5686C5E9-A3B3-451E-A2EA-4C246CDE5CC9}",
+      "blob": "blobs/645c85ca0ad70dda"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{58126AFC-1540-49A5-831B-A43F13C14B5B}",
+      "blob": "blobs/15ff682e281ac59b"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{582BA719-E6F1-4651-A873-049E6A0DDDAF}",
+      "blob": "blobs/f879aa05b0386a32"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{590F6252-6C81-E69E-AC9D-C582F89E7675}",
+      "blob": "blobs/974ccb41872ee7ff"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{5A91573C-6747-3BF8-9365-99CB241C857E}",
+      "blob": "blobs/382843785c807496"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{5B7F8E19-114A-4C49-96B2-6E2AB84965FD}",
+      "blob": "blobs/274b0fcf6d41aaa7"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{5F25EC82-E419-51C6-25F0-0709BABDA440}",
+      "blob": "blobs/d0654fc42b698d9f"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{616201EA-7D05-40AB-9749-B532B42A7889}",
+      "blob": "blobs/806de32f8ad06c29"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{6340F50F-E676-6EBF-8AB8-83F617F65EFA}",
+      "blob": "blobs/964f9aedfb488df0"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{63ADC044-F877-3661-924A-5B4C44BC7010}",
+      "blob": "blobs/ffa33b285d03b615"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{648434ED-41CD-44E2-BD20-A1CF40B2B763}",
+      "blob": "blobs/bb5f0451153bf594"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{64B7878B-A5EB-39EF-81E0-BD26DA4166BF}",
+      "blob": "blobs/a43ce90faa671e8f"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{6B37ACC2-2F29-45BB-9B22-2B04EFDF734C}",
+      "blob": "blobs/e52ec38ce68de75c"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{6BD90AD2-5528-4AFE-82AE-A56EBCB79CEA}",
+      "blob": "blobs/c96868b9a0b2fdaf"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{6C6A2E9D-E41D-3E0A-B867-8E78616CBDB2}",
+      "blob": "blobs/5cb0887a1b5929d9"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{6CFFD8C5-5A95-4518-9852-1775826BF9BE}",
+      "blob": "blobs/97de732f46f091bf"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{6EECBFA2-DF8F-4561-51DF-5BE135DFE715}",
+      "blob": "blobs/d92a39d6e650b8c7"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{6FF12BB3-1207-4575-B263-642D44C019A7}",
+      "blob": "blobs/3c4120cd77181897"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{70A7EA05-A86B-4E12-A4DA-63D0B12FD2F1}",
+      "blob": "blobs/133218e5108144d8"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{737FDDA7-B944-4CB5-92D9-3D56373BD301}",
+      "blob": "blobs/afe61d9f4458dc39"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{74995560-eb15-4f17-aaf1-15437f5be64b}",
+      "blob": "blobs/aad5c665a297b9ce"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{74AAB6B7-AE6B-4A82-8751-7B8FB450663B}",
+      "blob": "blobs/42130267cf056310"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{751BBC57-C3BF-C11E-6790-22F9152BE123}",
+      "blob": "blobs/3b9caad13e82b9b1"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{7597E0A6-BCC8-99EB-AC98-86E23FA6420C}",
+      "blob": "blobs/20b46a249a1ec576"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{7759E979-055E-4001-B5CF-CF3DD44FB715}",
+      "blob": "blobs/a6f6790fe56f1115"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{79DF42A2-8EA9-4D2D-8C91-B73A421EB415}",
+      "blob": "blobs/cc93805b1ec6dbc9"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{7A59C3E4-C4CB-452B-BA0F-C8738F3C9392}",
+      "blob": "blobs/1f5528f6653dbb40"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{7F86DEBA-AF7D-43F2-8312-DBCB65F116A9}",
+      "blob": "blobs/d4e72e15c288a561"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{81EF376F-C9A1-42A3-8997-22A1DE4687F0}",
+      "blob": "blobs/32c10ff68036ffc1"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{825C2C4B-93C8-7F94-8C0D-6D5C4E50B1BD}",
+      "blob": "blobs/bc72bb72ff9f8091"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{829CB0F4-AB51-4DB7-8CA2-1C93CCC36D5E}",
+      "blob": "blobs/d1de519457c6cc35"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{833BC900-0AF9-9D25-AC57-7DFD5A5D5794}",
+      "blob": "blobs/740f0fbc1dc26b5a"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{87475ca3-0418-47e5-a51f-de5bd3d0d9fb}",
+      "blob": "blobs/0c12f899a72f8ede"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{8754D14F-30DF-9ABC-FA84-12E6756851DD}",
+      "blob": "blobs/db0c7844e2ae2e7c"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{87AACB51-F897-46BA-A037-D088E995D3B1}",
+      "blob": "blobs/43014d99cf536455"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{88D02F77-DD15-A50D-BA1C-B9D8141DF8EA}",
+      "blob": "blobs/836687201da8d87e"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{8B6BF4BD-2CF5-4680-9DA6-541280E43FF0}",
+      "blob": "blobs/7dacf946983fa2d7"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{8CE8E247-ABBC-421E-B5C2-F0E486B1E3AE}",
+      "blob": "blobs/7807d432152ce1d0"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{8DD67B10-D676-4CCF-B141-E17A6B135016}",
+      "blob": "blobs/8f66c7473425f081"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{8E150D2C-DB64-0839-05C9-5B87FC8E1FB0}",
+      "blob": "blobs/4bad6f6ee95ac8bf"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{8F5A2690-2EBD-4017-B995-C522C9204312}",
+      "blob": "blobs/86061e976249719d"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{902F9C3B-80A7-64C6-B368-206D608117FD}",
+      "blob": "blobs/4a476fe80b176d0c"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{936FC939-1EEF-4228-B1BE-A99F0EC5008D}",
+      "blob": "blobs/aa762e0256d06146"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{9417911F-2AC7-405F-80B7-112BA4F448A7}",
+      "blob": "blobs/45c0e8dea243ea57"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{949C0535-171C-480F-9CF4-D25C9E60FE88}",
+      "blob": "blobs/b5759075f1a5c543"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{94B0AC56-F07A-5155-D924-D143BAE21686}",
+      "blob": "blobs/04e76fbb82450629"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{9746AF18-4BD7-9222-8B1C-D040C84AB8FD}",
+      "blob": "blobs/651a1df347569433"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{97A881AD-5134-4CD2-A6A8-371C83E5622B}",
+      "blob": "blobs/8c91ac83891086ed"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{9C30FAF9-2839-49B9-8B79-4B919EC36B22}",
+      "blob": "blobs/0a981b68d03d3a7d"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{9F7D5D8E-6012-B0D1-508E-B97A2E661EC4}",
+      "blob": "blobs/be713f133248d405"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{9a6ce18d-11c0-4452-aa35-9f2b8437c686}",
+      "blob": "blobs/f3c3095c9df7ce99"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{A104C886-78AE-4A4F-BD8F-53C636221ABF}",
+      "blob": "blobs/b4150ee2abd9d00b"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{A18D4C2A-07A8-40E4-9797-DD324E6EA4FC}",
+      "blob": "blobs/ce364948c74a8e2c"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{A1B3147F-3C9C-4961-9DEE-B8BDA06564C0}",
+      "blob": "blobs/a0ed1a678575b00c"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{A1BFFE40-9AF3-253F-31EA-AD4E8E364B6D}",
+      "blob": "blobs/8ced8a114f56e4d6"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{A3039020-C786-B9C3-4E3D-59367928F228}",
+      "blob": "blobs/e18bea14e331ebf1"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{A304E528-86BF-476D-AEED-72B7D88CA4BC}",
+      "blob": "blobs/d09f815ea9b77f7f"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{A3FA1FD6-15C0-3EA2-75EF-69436BB9E130}",
+      "blob": "blobs/4aaca4cec133ce94"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{A4EA9EE5-7CFF-4C5F-B159-B9B4E5D2BDE2}",
+      "blob": "blobs/e1428e52ca5b8f75"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{A56553DF-5CA0-ADD9-8782-5BC53738E118}",
+      "blob": "blobs/18b1438e8331b4b2"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{A8CC45FD-E295-48EB-A4B9-00D322B46096}",
+      "blob": "blobs/d54563c574aa8b29"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{AAF8E6F9-9D47-7FD6-F3CE-7758DA6CD869}",
+      "blob": "blobs/0151920d596dab88"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{B11AE338-9486-47B9-833E-54A7717D421A}",
+      "blob": "blobs/ff265e6f15896292"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{B2E8D471-884F-4A33-958E-BBAC5A1DE9D4}",
+      "blob": "blobs/ad47f79db159ea18"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{B3A95BF5-1BDD-3AE2-0FFF-35336BF25606}",
+      "blob": "blobs/963fb682f1d0337e"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{B517DBD3-B542-4FC8-9957-FFB2C3E65D1D}",
+      "blob": "blobs/02bfd538af76df63"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{B5457B14-37D3-3BA2-72B3-5D724A0ECEDE}",
+      "blob": "blobs/be7d74052a10335f"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{B5A87EE5-0C95-5269-BEA8-9A8F36DEBD10}",
+      "blob": "blobs/4a8d4987929e3378"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{B641D58F-EBA3-4774-8FA1-69EBE8F2007D}",
+      "blob": "blobs/c5540a40bfab29b9"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{B6E31D6A-BE34-45C1-9C94-3BD052071273}",
+      "blob": "blobs/3018e37afaac6c88"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{B7992E32-77BA-4DA5-AE7F-08C157BA4402}",
+      "blob": "blobs/027382fa55c396fe"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{B7AAA66E-8A3C-46F8-8412-286B10A63DFC}",
+      "blob": "blobs/4255951a2d55485d"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{BA1407DA-AEF4-D4EB-AA0A-19A8CE1B6F16}",
+      "blob": "blobs/b762428de14a9612"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{BAAF5851-0759-422D-A1E9-90061B597188}",
+      "blob": "blobs/b9aaf2e1731da3a0"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{BBC48EDC-C71B-FC87-D95A-70DF1F278A3B}",
+      "blob": "blobs/31c90c134edfe768"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{BD324FBB-1812-D6FF-B07A-C1A6E0F96F7D}",
+      "blob": "blobs/b87f8959b82186e8"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{BDF8C840-5B9A-4D9B-9BCA-CE4163973563}",
+      "blob": "blobs/229cd750fdf359d7"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{BE00F49A-2FA1-46E6-B30F-A2653BF7CD75}",
+      "blob": "blobs/7fa2575c3ac1102b"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{C075DEA9-7BB6-E24B-A6A2-5097B8C35464}",
+      "blob": "blobs/468dd93a2c46277c"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{C0A2B576-1630-4449-93B8-06C8FBBAF369}",
+      "blob": "blobs/f6517a4437414065"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{C2595DA0-9477-A724-A5B4-44A89D30897A}",
+      "blob": "blobs/c9a0e74130b74740"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{C48EA765-34BB-3C3A-8DEF-020444411BF0}",
+      "blob": "blobs/d4fdb84fc3745621"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{C49E181B-C19F-4A1F-BE76-D463E7E3B2B5}",
+      "blob": "blobs/234a708b5946939b"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{C49F2ED9-A19B-4D79-BEFC-686FEB8BA149}",
+      "blob": "blobs/bb5f0451153bf594"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{C756420B-C91C-4410-8092-F49C24CEF594}",
+      "blob": "blobs/b8b3ad746da2b4bd"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{C8023D3F-F555-432F-80D1-BC6D875790DE}",
+      "blob": "blobs/5e13c1fe5ac338ac"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{C80951BD-6904-474F-BBC5-03A6C777F37C}",
+      "blob": "blobs/15793c71d6b18866"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{C80FB5D6-AC12-63FD-7BE4-98118492B36D}",
+      "blob": "blobs/4c3e917ef8ec6ef4"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{C8891AD2-C223-45CD-A9BE-617A68923B61}",
+      "blob": "blobs/060c5935b36d2a64"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{CCA39F48-DBB2-132A-7992-A452AA75EE5B}",
+      "blob": "blobs/2db810f23865ad7b"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{CE07BE71-510D-414A-92D4-DFF47631848A}",
+      "blob": "blobs/4d31fc822c37e94e"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{CEB8ED19-EFAD-3612-A6CE-EE68263B10AF}",
+      "blob": "blobs/b4f50edf87c1756c"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{CF2F6E51-AA4C-4779-A77A-86F16D6E3218}",
+      "blob": "blobs/e0750be93dfaa0b9"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{CFBB41CD-858A-4AEB-BFD7-34780D2FA2E9}",
+      "blob": "blobs/1ae90697b81e258d"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{D108F8C6-2E33-53DE-E6B5-7ECAD00CB834}",
+      "blob": "blobs/c2cb299fc069c08a"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{D23E482E-DB9A-7C2E-78BC-F0A8D1FF401A}",
+      "blob": "blobs/04afaa70c2b6b3d9"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{D4326770-A6EC-4709-A8D1-0854E555035D}",
+      "blob": "blobs/23bdf0bdcf18fd9e"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{D58B9B8C-86C6-A0B1-9455-A63374A71B75}",
+      "blob": "blobs/05531ca2be6e5629"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{DF7A47A1-DD77-C163-8B1C-59F39B587932}",
+      "blob": "blobs/85450455740477cd"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{E15748CF-C6DD-02DF-2FB7-B0D6DDE179C0}",
+      "blob": "blobs/d4fa59381c8dca49"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{E22B6C8C-1B15-4324-B5B6-283F51AA1948}",
+      "blob": "blobs/98fa7da08415e77c"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{E37CC245-4D0F-0663-5CCA-29C1C05F12E2}",
+      "blob": "blobs/e30d4f5d16200718"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{E4445DE5-29F0-8442-F9CF-024BFC237F5F}",
+      "blob": "blobs/8b05c2ae49161f67"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{E51299F3-4186-3F12-ACBC-5D7DE6095969}",
+      "blob": "blobs/a778c9b644d5152d"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{E5B61001-CAE9-4667-AC0D-0B0FFCE995C3}",
+      "blob": "blobs/4b20074f97733c89"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{EC073C7E-990D-4BB1-BFA9-45C6704E3571}",
+      "blob": "blobs/68690b5c360b6e1a"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{ECC668B0-7BAD-63A1-2F07-9BFB2422285E}",
+      "blob": "blobs/4be9ede0cff88e50"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{EDC103FC-C084-43B2-B558-98790C616C15}",
+      "blob": "blobs/de88491a27615c42"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{EEECB382-9A53-DA0C-736D-74BBB0C3175A}",
+      "blob": "blobs/d5a86fcbfaf01299"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{EF0C772D-F5E3-36D0-BDAB-FD378533CD40}",
+      "blob": "blobs/275014f8c380b349"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{F082D9A3-413C-D9DB-845C-03D337790265}",
+      "blob": "blobs/682236e1f07414c3"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{F5E3C41A-DB6E-4B5E-B884-C6262685C91F}",
+      "blob": "blobs/368da1e59f855795"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{F6E4F431-4A50-4822-A71E-CC17E087BDB7}",
+      "blob": "blobs/b85f75758e018f98"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{FA8ADA03-D867-E798-C0BA-98A57E90737D}",
+      "blob": "blobs/1c6cd3c219aa1808"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{FDA5F591-B2CA-4B4D-A0CE-931AB8B5834E}",
+      "blob": "blobs/9ed6e3dbd5508b7e"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{c0b93b80-d0a4-47fc-a4d1-21a4008a63ca}",
+      "blob": "blobs/6fa4ec678c1f8efd"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{cef0d74c-33bc-432b-941f-6e17bea1f9d3}",
+      "blob": "blobs/603b162ae3242f75"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{ef6b00ec-13e1-4c25-9064-b2f383cb8412}",
+      "blob": "blobs/de090d498d57eeec"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Terminal Server",
+      "blob": "blobs/988cc3fdff533395"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Terminal Server\\WinStations\\RDP-Tcp",
+      "blob": "blobs/61353edf5f1f31c3"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SYSTEM\\CurrentControlSet\\Services\\LanmanServer\\Parameters",
+      "blob": "blobs/d3721d49c2548913"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SYSTEM\\CurrentControlSet\\Services\\SharedAccess\\Parameters\\FirewallPolicy\\DomainProfile",
+      "blob": "blobs/6b63ad5274895d3b"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SYSTEM\\CurrentControlSet\\Services\\SharedAccess\\Parameters\\FirewallPolicy\\PublicProfile",
+      "blob": "blobs/6b63ad5274895d3b"
+    },
+    {
+      "op": "reg",
+      "path": "HKLM\\SYSTEM\\CurrentControlSet\\Services\\SharedAccess\\Parameters\\FirewallPolicy\\StandardProfile",
+      "blob": "blobs/6b63ad5274895d3b"
+    },
+    {
+      "op": "reg",
+      "path": "HKU\\S-1-5-21-1000000000-1000000000-1000000000-500\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer\\Run",
+      "err": "not_exist"
+    },
+    {
+      "op": "reg",
+      "path": "HKU\\S-1-5-21-1000000000-1000000000-1000000000-500\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+      "err": "not_exist"
+    },
+    {
+      "op": "reg",
+      "path": "HKU\\S-1-5-21-1000000000-1000000000-1000000000-500\\Software\\Microsoft\\Windows\\CurrentVersion\\RunOnce",
+      "err": "not_exist"
+    },
+    {
+      "op": "subkeys",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options",
+      "blob": "blobs/e08c4a0fe5df96f4"
+    },
+    {
+      "op": "subkeys",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList",
+      "blob": "blobs/0b466357ebb12af0"
+    },
+    {
+      "op": "subkeys",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Component Based Servicing\\Packages",
+      "blob": "blobs/f31f5116c6ddc67c"
+    },
+    {
+      "op": "subkeys",
+      "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall",
+      "blob": "blobs/ba06b83f3640b731"
+    },
+    {
+      "op": "subkeys",
+      "path": "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall",
+      "blob": "blobs/0fdec643c054be3a"
+    },
+    {
+      "op": "subkeys",
+      "path": "HKU",
+      "blob": "blobs/1a46fe7b06b21690"
+    },
+    {
+      "op": "subkeys",
+      "path": "HKU\\S-1-5-21-1000000000-1000000000-1000000000-500\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall",
+      "err": "not_exist"
+    },
+    {
+      "op": "winevt",
+      "path": "Security|5000|*[System[(EventID=4625 or EventID=1102 or EventID=4720 or EventID=4732) and TimeCreated[timediff(@SystemTime) \u003c= 86400000]]]"
+    },
+    {
+      "op": "winevt",
+      "path": "System|5000|*[System[(EventID=104 or EventID=7045) and TimeCreated[timediff(@SystemTime) \u003c= 86400000]]]",
+      "blob": "blobs/87204d52c64d52f7"
+    },
+    {
+      "op": "wingroup",
+      "path": "S-1-5-32-544",
+      "blob": "blobs/80525a595f905746"
+    },
+    {
+      "op": "winproc",
+      "blob": "blobs/6204913d4105e3d9"
+    },
+    {
+      "op": "winsock",
+      "blob": "blobs/d88f62c1aab419e5"
+    },
+    {
+      "op": "winsvc",
+      "blob": "blobs/d097c0e800584cc3"
+    },
+    {
+      "op": "wintask",
+      "blob": "blobs/67f2ab422718f038"
+    },
+    {
+      "op": "winuser",
+      "blob": "blobs/0a269d8f4a980589"
+    },
+    {
+      "op": "wmi",
+      "path": "root\\Microsoft\\Windows\\Defender|SELECT * FROM MSFT_MpComputerStatus|AMRunningMode,AMServiceEnabled,AntivirusEnabled,RealTimeProtectionEnabled,AntivirusSignatureAge",
+      "blob": "blobs/eb8682ce1a57ec4d"
+    },
+    {
+      "op": "wmi",
+      "path": "root\\default|SELECT * FROM ActiveScriptEventConsumer|Name,ScriptingEngine,ScriptFileName,ScriptText"
+    },
+    {
+      "op": "wmi",
+      "path": "root\\default|SELECT * FROM CommandLineEventConsumer|Name,CommandLineTemplate,ExecutablePath"
+    },
+    {
+      "op": "wmi",
+      "path": "root\\default|SELECT * FROM __EventFilter|Name,Query,EventNamespace"
+    },
+    {
+      "op": "wmi",
+      "path": "root\\default|SELECT * FROM __FilterToConsumerBinding|Filter,Consumer"
+    },
+    {
+      "op": "wmi",
+      "path": "root\\subscription|SELECT * FROM ActiveScriptEventConsumer|Name,ScriptingEngine,ScriptFileName,ScriptText"
+    },
+    {
+      "op": "wmi",
+      "path": "root\\subscription|SELECT * FROM CommandLineEventConsumer|Name,CommandLineTemplate,ExecutablePath"
+    },
+    {
+      "op": "wmi",
+      "path": "root\\subscription|SELECT * FROM __EventFilter|Name,Query,EventNamespace",
+      "blob": "blobs/ef70a1ec135adec4"
+    },
+    {
+      "op": "wmi",
+      "path": "root\\subscription|SELECT * FROM __FilterToConsumerBinding|Filter,Consumer",
+      "blob": "blobs/85c9da162790eca7"
+    }
+  ]
+}
