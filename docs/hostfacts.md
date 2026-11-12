@@ -63,25 +63,25 @@ A missing or unreadable fact never passes a check. A check that needs a fact the
 
 ## Fields
 
-| field | type | Linux source (collector 0.1.0) | Windows source (Phase 2) |
+| field | type | Linux source | Windows source |
 |---|---|---|---|
 | `platform` | `os`, `family`, `distro`, `version`, `pretty_name`, `build`, `kernel`, `arch`, `in_container`, `server_core` | `/etc/os-release`, `/proc/sys/kernel/osrelease`, container markers | registry `CurrentVersion` (`CurrentBuild`, `UBR`, `InstallationType`) |
 | `privilege` | `elevated` | effective uid 0 | token elevation |
-| `resources` | `mem_total_bytes`, `mem_available_bytes`, `load1`, `cgroup_memory_limit`, `cgroup_cpus` | `/proc/meminfo`, `/proc/loadavg`, the collector's own cgroup limits | `GlobalMemoryStatusEx` (Phase 2) |
+| `resources` | `mem_total_bytes`, `mem_available_bytes`, `load1`, `cgroup_memory_limit`, `cgroup_cpus` | `/proc/meminfo`, `/proc/loadavg`, the collector's own cgroup limits | not collected yet |
 | `packages` | `manager`, `ecosystem` (OSV), `items[]` (`name`, `source`, `version`, `arch`) | `dpkg-query`, `rpm -qa`, `/lib/apk/db/installed` | registry `Uninstall` keys (HKLM, WOW6432Node, HKU) |
-| `patches` | `[]{id, installed_on}` | not applicable (patches are package versions) | WMI `Win32_QuickFixEngineering`; build+UBR is the main signal |
-| `services` | `[]{name, exe, start_mode, state, run_as}` | not collected yet (Phase 1c) | SCM (`svc/mgr`) |
-| `processes` | `[]{pid, ppid, name, exe, exe_known, exe_exists, in_temp, cmdline, user, uid, started, start_ticks}` | `/proc/<pid>/{comm,status,cmdline,exe,stat}`, mtime of `/proc/<pid>` | Toolhelp32 + `QueryFullProcessImageName`; WMI for command lines |
+| `patches` | `[]{id, installed_on}` | not applicable (patches are package versions) | registry Component Based Servicing packages, one per KB in the Installed state; build+UBR in `platform` is the main signal |
+| `services` | `[]{name, exe, start_mode, state, run_as}` | not collected yet | SCM (`svc/mgr`) |
+| `processes` | `[]{pid, ppid, name, exe, exe_known, exe_exists, in_temp, cmdline, user, uid, started, start_ticks}` | `/proc/<pid>/{comm,status,cmdline,exe,stat}`, mtime of `/proc/<pid>` | Toolhelp32 + `QueryFullProcessImageName`; `NtQueryInformationProcess` (ProcessCommandLineInformation) for command lines |
 | `accounts` | `[]{name, uid, home, shell, can_login, is_admin, disabled}` | `/etc/passwd`, `/etc/group` (sudo, wheel, admin) | `NetUserEnum`, Administrators (S-1-5-32-544) members |
 | `listeners` | `[]{proto, addr, port, pid, process, uid}` (one row per owner: a second process on a port stays visible) | `/proc/net/{tcp,udp}{,6}` + `/proc/*/fd` | `GetExtendedTcpTable` / `GetExtendedUdpTable` |
-| `persistence` | `[]{kind, location, command, detail}` | cron and cron files, `ld.so.preload`, `rc.local`, `/etc/systemd/system`, `authorized_keys`, sudo rules, PAM modules no package installed |
-| `ssh_keys` | `[]{user, path, modified, keys[{line, type, fingerprint, options, cloud_init_refusal}], unparsed_lines, unread}` | `~/.ssh/authorized_keys{,2}` of every account, read without following a final symlink | Phase 2 (`administrators_authorized_keys`) | Run keys, services, scheduled tasks, WMI subscriptions, startup folders, IFEO |
+| `persistence` | `[]{kind, location, command, detail}` | cron and cron files, `ld.so.preload`, `rc.local`, `/etc/systemd/system`, `authorized_keys`, sudo rules, PAM modules no package installed | Run keys, services, scheduled tasks, WMI subscriptions, startup folders, IFEO |
+| `ssh_keys` | `[]{user, path, modified, keys[{line, type, fingerprint, options, cloud_init_refusal}], unparsed_lines, unread}` | `~/.ssh/authorized_keys{,2}` of every account, read without following a final symlink | not collected yet |
 | `firewall` | `backend`, `enabled`, `default_inbound`, `profiles`, `extra` | ufw config, firewalld running, `nft list ruleset`, nftables at boot, `iptables -S`; `extra.summary` is survey's line | `INetFwPolicy2` / registry `FirewallPolicy` |
 | `remote_access.ssh` | `config_path`, `settings`, `unread`, `hash` | `sshd_config` with `Include`, up to the first `Match` | `C:\ProgramData\ssh\sshd_config` (same parser) |
 | `remote_access.rdp` | `enabled`, `nla`, `port`, `security_layer` | not applicable | registry `Terminal Server`, `RDP-Tcp` |
 | `remote_access.winrm` | `running`, `http_listener`, `allow_unencrypted`, `basic_auth` | not applicable | registry `WSMAN\Service`, policy keys, ports 5985/5986 |
 | `remote_access.smb` | `smb1_enabled`, `signing_required`, `writable_shares` | not collected yet (Samba) | registry `LanmanServer\Parameters`, `NetShareEnum` |
-| `antimalware` | `product`, `real_time`, `signature_age_days`, `exclusions` | not applicable | WMI `MSFT_MpComputerStatus`, `MSFT_MpPreference` |
+| `antimalware` | `product`, `real_time`, `signature_age_days`, `exclusions` | not applicable | WMI `MSFT_MpComputerStatus`; exclusions from the registry (Defender `Exclusions` and its policy key) |
 | `auth_events` | `window_hours`, `failed_by_source`, `notable[]` | journald's ssh and sshd units first, then the ssh@ and sshd@ units of a socket-activated sshd (since the snapshot minus 24 h, at most `JournalTimeout`, 60 s): ok. No sshd entry and no text auth log to compare: partial with `unverified_source` (journald may not keep them). Text auth/secure logs (rotated, gzipped, streamed) when journald is missing, fails, times out or has no sshd entries: partial with `unverified_source`. Neither readable: unknown (a journal that hides the system's entries from a non-root user is `permission_denied`, not "no failed logins") | Event Log 4625, 4624 type 10, 1102, 4720, 4732, 7045 |
 | `web` | `server`, `webroots`, `upload_dirs`, `config_unreadable` ("path (why)") | nginx `root` and Apache `DocumentRoot` lines (upload folders: the code audit) | `applicationHost.config` |
 
@@ -120,8 +120,8 @@ Collectors list every command they may run as an exact argv (`Collector.Allowlis
 - caps stdout at 4 MiB and stderr at 64 KiB;
 - passes a fixed environment and no stdin.
 
-On Windows the plan is to run no commands at all, using registry, SCM, WMI and the Event Log
-instead.
+On Windows no command is run (the allowlist is empty): the collector reads the registry, SCM,
+WMI, the Event Log and Win32 APIs.
 
 ## Fixtures
 
