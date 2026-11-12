@@ -126,7 +126,7 @@ func TestLinuxCollectorRoot(t *testing.T) {
 	if !reflect.DeepEqual(kinds, map[string]int{"cron": 1, "ld_preload": 1, "systemd": 1, "authorized_key": 1}) {
 		t.Errorf("persistence kinds %v", kinds)
 	}
-	if f.RemoteAccess.RDP.Status != StatusNotApplicable || f.Firewall.Status != StatusUnknown || f.Firewall.Reason != ReasonNotCollected {
+	if f.RemoteAccess.RDP.Status != StatusNotApplicable || f.Firewall.Status != StatusOK || f.Firewall.Value.Extra["summary"] != "none detected" {
 		t.Errorf("rdp/firewall %+v %+v", f.RemoteAccess.RDP, f.Firewall)
 	}
 }
