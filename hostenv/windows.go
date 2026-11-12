@@ -296,17 +296,22 @@ func winPlatform(ws WinSource, info SourceInfo) Obs[Platform] {
 	return OK(p)
 }
 
-// WindowsServerName maps a server build number to its marketing name.
+// WindowsServerName maps a Windows Server build to the product name MSRC
+// uses. Only long-term releases and Server 2022 23H2 are named: the
+// semi-annual builds (18362, 18363, 19041, 19042) and any build not listed
+// give "", so nothing is guessed from a nearby number.
 func WindowsServerName(build string) string {
 	n, _ := strconv.Atoi(strings.SplitN(build, ".", 2)[0])
-	switch {
-	case n >= 26100:
+	switch n {
+	case 26100:
 		return "Windows Server 2025"
-	case n >= 20348:
+	case 25398:
+		return "Windows Server 2022, 23H2 Edition"
+	case 20348:
 		return "Windows Server 2022"
-	case n >= 17763:
+	case 17763:
 		return "Windows Server 2019"
-	case n >= 14393:
+	case 14393:
 		return "Windows Server 2016"
 	}
 	return ""

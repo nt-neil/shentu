@@ -824,3 +824,16 @@ func TestSSHSkeleton(t *testing.T) {
 		}
 	}
 }
+
+// N8: exact Server builds only; semi-annual and client builds have no name.
+func TestWindowsServerName(t *testing.T) {
+	for b, want := range map[string]string{
+		"26100.2314": "Windows Server 2025", "25398.1189": "Windows Server 2022, 23H2 Edition",
+		"20348.2762": "Windows Server 2022", "17763.6414": "Windows Server 2019", "14393.7428": "Windows Server 2016",
+		"19041.1": "", "19042.1": "", "18362.1": "", "18363.1": "", "22631.4317": "", "19045.5011": "", "": "",
+	} {
+		if got := WindowsServerName(b); got != want {
+			t.Errorf("%q: %q, want %q", b, got, want)
+		}
+	}
+}

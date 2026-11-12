@@ -38,13 +38,9 @@ func msrcVulns(ctx context.Context, hc *http.Client, cacheDir string, src hosten
 		return nil, fmt.Errorf("Windows version unknown: %s", plat.Detail)
 	}
 	p := plat.Value
-	name := hostenv.WindowsServerName(p.Build)
-	if name == "" || !strings.Contains(p.Build, ".") {
-		return nil, errors.New("package_vulns covers Windows Server 2016 and later; this build is " + p.Build)
-	}
-	product := name
-	if p.ServerCore {
-		product += " (Server Core installation)"
+	product, err := msrcProduct(p)
+	if err != nil {
+		return nil, err
 	}
 	kbs := map[string]bool{}
 	for _, x := range patches.Value {
@@ -122,4 +118,22 @@ func msrcVulns(ctx context.Context, hc *http.Client, cacheDir string, src hosten
 	}
 	out["missing"] = list
 	return out, nil
+}
+
+// msrcProduct is the MSRC product name of a host. Client Windows shares
+// build numbers with Server (20348 is 2022, 22631 is Windows 11): the
+// install type decides, and only builds with a known Server name count.
+func msrcProduct(p hostenv.Platform) (string, error) {
+	if p.Family != "windows-server" {
+		return "", errors.New("cannot tell: the MSRC comparison supports Windows Server only (this is " +
+			strings.TrimSpace(p.PrettyName+" "+p.Family) + ")")
+	}
+	name := hostenv.WindowsServerName(p.Build)
+	if name == "" || !strings.Contains(p.Build, ".") {
+		return "", errors.New("cannot tell: the MSRC comparison covers Windows Server 2016, 2019, 2022 (and its 23H2 edition) and 2025; this build is " + p.Build)
+	}
+	if p.ServerCore {
+		name += " (Server Core installation)"
+	}
+	return name, nil
 }

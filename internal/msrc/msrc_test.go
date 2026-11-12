@@ -155,3 +155,31 @@ func TestClientCache(t *testing.T) {
 		t.Error("a release id with a path in it must be refused")
 	}
 }
+
+// N9: a CVE with a cumulative update and a hotpatch (as Server 2022 and
+// 2025 have in MSRC's 2025-Mar release) is covered by either.
+func TestCheckAnyFixCovers(t *testing.T) {
+	m := Month{Products: map[string][]Fix{"Windows Server 2022": {
+		{CVE: "CVE-2024-9157", KB: "5053603", FixedBuild: "10.0.20348.3328"}, // Security Update
+		{CVE: "CVE-2024-9157", KB: "5053638", FixedBuild: "10.0.20348.3270"}, // SecurityHotpatchUpdate
+	}}}
+	get := func(string) (Month, error) { return m, nil }
+	r, err := Check("Windows Server 2022", "10.0.20348.3270", nil, []string{"2025-Mar"}, 24, get)
+	if err != nil || len(r.Missing) != 0 || r.Current != "2025-Mar" {
+		t.Errorf("a hotpatched host has the fix: %+v %v", r, err)
+	}
+	r, _ = Check("Windows Server 2022", "10.0.20348.3207", nil, []string{"2025-Mar"}, 24, get)
+	if len(r.Missing) != 1 || r.Missing[0].KB != "5053603" {
+		t.Errorf("one missing CVE, reported with its cumulative update: %+v", r.Missing)
+	}
+}
+
+// N7: no checked release names the product: unknown, not "nothing missing".
+func TestCheckProductNeverNamed(t *testing.T) {
+	get := func(string) (Month, error) {
+		return Month{Products: map[string][]Fix{"Windows Server 2025": {{CVE: "CVE-1", FixedBuild: "10.0.26100.1"}}}}, nil
+	}
+	if r, err := Check("Windows Server 2019", "10.0.17763.1", nil, []string{"a", "b"}, 24, get); err == nil || len(r.Missing) != 0 {
+		t.Errorf("a product no release names must be an error: %+v %v", r, err)
+	}
+}

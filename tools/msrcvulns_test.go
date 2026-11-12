@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/nt-neil/shentu/hostenv"
@@ -78,5 +79,29 @@ func TestMSRCVulns(t *testing.T) {
 	msrcAPI = srv.URL + "/down"
 	if _, err := msrcVulns(context.Background(), srv.Client(), "", src); err == nil {
 		t.Error("MSRC unreachable must be an error, not an empty result")
+	}
+}
+
+// B3: the product comes from the install type, not from the build alone.
+func TestMSRCProduct(t *testing.T) {
+	for _, c := range []struct {
+		p    hostenv.Platform
+		want string
+	}{
+		{hostenv.Platform{Family: "windows-server", Build: "20348.2762"}, "Windows Server 2022"},
+		{hostenv.Platform{Family: "windows-server", Build: "26100.2314", ServerCore: true}, "Windows Server 2025 (Server Core installation)"},
+		{hostenv.Platform{Family: "windows-server", Build: "25398.1189", ServerCore: true}, "Windows Server 2022, 23H2 Edition (Server Core installation)"},
+		{hostenv.Platform{Family: "windows-client", Build: "20348.2762", PrettyName: "Windows 10 Enterprise"}, ""}, // same build, not a server
+		{hostenv.Platform{Family: "windows-client", Build: "26100.2314", PrettyName: "Windows 11 Pro"}, ""},
+		{hostenv.Platform{Family: "windows-server", Build: "19042.1"}, ""}, // semi-annual channel
+		{hostenv.Platform{Build: "17763.1"}, ""}, // install type unknown
+	} {
+		got, err := msrcProduct(c.p)
+		if got != c.want || (c.want == "") != (err != nil) {
+			t.Errorf("%+v: %q, %v; want %q", c.p, got, err, c.want)
+		}
+		if err != nil && !strings.Contains(err.Error(), "cannot tell") {
+			t.Errorf("%+v: the error must say it cannot tell: %v", c.p, err)
+		}
 	}
 }

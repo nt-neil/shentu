@@ -190,11 +190,15 @@ type Result struct {
 }
 
 // Check walks months (newest first, fetched lazily by get) for product
-// until it reaches a month whose every fixed build the host has. A fix
-// counts as present when the host build is at least its fixed build or
-// its KB is installed.
+// until it reaches a month whose every CVE the host has a fix for. One CVE
+// may list several fixes for a product (the cumulative update and a
+// hotpatch, or a monthly rollup and a security-only update): any one of
+// them covers it. A fix counts as present when the host build is at least
+// its fixed build or its KB is installed. When no checked month names the
+// product at all, the answer is unknown: an error, not "nothing missing".
 func Check(product, hostBuild string, installedKB map[string]bool, ids []string, maxMonths int, get func(id string) (Month, error)) (Result, error) {
 	res := Result{Product: product, HostBuild: hostBuild}
+	named := false
 	for _, id := range ids {
 		if len(res.Months) >= maxMonths {
 			break
@@ -208,22 +212,38 @@ func Check(product, hostBuild string, installedKB map[string]bool, ids []string,
 		if len(fixes) == 0 {
 			continue
 		}
-		lacking := 0
-		seen := map[string]bool{}
+		named = true
+		var order []string
+		byCVE := map[string][]Fix{}
 		for _, f := range fixes {
-			if CompareBuild(hostBuild, f.FixedBuild) >= 0 || installedKB[f.KB] {
-				continue
+			if _, ok := byCVE[f.CVE]; !ok {
+				order = append(order, f.CVE)
 			}
-			lacking++
-			if !seen[f.CVE] {
-				seen[f.CVE] = true
-				res.Missing = append(res.Missing, Missing{f, id})
+			byCVE[f.CVE] = append(byCVE[f.CVE], f)
+		}
+		lacking := 0
+		for _, cve := range order {
+			covered, newest := false, byCVE[cve][0]
+			for _, f := range byCVE[cve] {
+				if CompareBuild(hostBuild, f.FixedBuild) >= 0 || installedKB[f.KB] {
+					covered = true
+				}
+				if CompareBuild(f.FixedBuild, newest.FixedBuild) > 0 {
+					newest = f // report the cumulative update, the usual way to fix it
+				}
+			}
+			if !covered {
+				lacking++
+				res.Missing = append(res.Missing, Missing{newest, id})
 			}
 		}
 		if lacking == 0 {
 			res.Current = id
 			break
 		}
+	}
+	if !named {
+		return res, fmt.Errorf("msrc: none of the %d releases checked names %q", len(res.Months), product)
 	}
 	return res, nil
 }
