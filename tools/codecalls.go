@@ -4,7 +4,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -235,11 +237,11 @@ func (st *callState) dropStale(hash map[string]string, walked bool) map[string]b
 		if _, ok := hash[f]; ok || walked {
 			return false
 		}
-		if _, err := os.Lstat(f); err != nil {
+		if _, err := os.Lstat(f); errors.Is(err, fs.ErrNotExist) {
 			gone[f] = true
 			return false
 		}
-		return true
+		return true // there, or not readable now (EACCES): kept, not taken as deleted
 	}
 	for f, fs := range st.Files {
 		if fs.Hash != hash[f] && !unknown(f) {

@@ -629,3 +629,26 @@ func TestAppCodeAuditWalkResumesRootSpelling(t *testing.T) {
 		t.Errorf("cleanRoots: %q", got)
 	}
 }
+
+// A file the walk did not reach and that cannot be looked at now (EACCES)
+// is not taken as deleted: its kept results stay.
+func TestDropStaleUnreadableIsNotGone(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("needs a folder this user cannot search")
+	}
+	dir := t.TempDir()
+	locked := filepath.Join(dir, "locked")
+	os.Mkdir(locked, 0o755)
+	a, b := filepath.Join(dir, "a.php"), filepath.Join(locked, "b.php")
+	os.WriteFile(a, []byte("<?php\n"), 0o644)
+	os.WriteFile(b, []byte("<?php\n"), 0o644)
+	os.Chmod(locked, 0o000)
+	t.Cleanup(func() { os.Chmod(locked, 0o755) })
+	st := &callState{Files: map[string]*fileState{
+		a: {Hash: "1", Calls: &passResult{}, Deps: []string{b}},
+		b: {Hash: "2", Calls: &passResult{}},
+	}}
+	if bad := st.dropStale(map[string]string{a: "1"}, false); len(bad) != 0 || st.Files[b] == nil {
+		t.Errorf("unreadable b taken as gone: dropped %v, b kept %v", bad, st.Files[b] != nil)
+	}
+}

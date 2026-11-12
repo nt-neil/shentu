@@ -33,6 +33,7 @@ func TestAuthEventsSourceOrder(t *testing.T) {
 		return now.Add(-time.Hour).UTC().Format(time.RFC3339) + " vm sshd[1]: Failed password for root from " + ip + " port 22 ssh2"
 	}
 	jline, tline := at("203.0.113.1"), at("203.0.113.2")
+	oldLine := now.Add(-48*time.Hour).UTC().Format(time.RFC3339) + " vm sshd[1]: Failed password for root from 203.0.113.3 port 22 ssh2"
 	hint := "Hint: You are currently not seeing messages from other users and the system.\n"
 	for _, c := range []struct {
 		name    string
@@ -48,6 +49,7 @@ func TestAuthEventsSourceOrder(t *testing.T) {
 		{"journald cut short: what it gave is kept", fakeJournal{lines: []string{jline}, err: ErrTruncated}, tline, StatusPartial, ReasonUnverified, "203.0.113.1,203.0.113.2", "journald was cut short"},
 		{"journald timed out, no text log", fakeJournal{lines: []string{jline}, err: ErrTimeout}, "", StatusPartial, ReasonTimeout, "203.0.113.1", "no text auth log"},
 		{"journald empty, text has sshd lines", fakeJournal{lines: []string{"-- No entries --"}}, tline, StatusPartial, ReasonUnverified, "203.0.113.2", "journald has no sshd entries"},
+		{"journald empty, text with only sshd lines older than the window", fakeJournal{lines: []string{"-- No entries --"}}, oldLine, StatusOK, "", "", "from journald"},
 		{"journald empty, text without sshd lines", fakeJournal{lines: []string{"-- No entries --"}}, "x CRON[1]: ok", StatusOK, "", "", "from journald"},
 		{"journald empty, no text log: cannot tell", fakeJournal{lines: []string{"-- No entries --"}}, "", StatusPartial, ReasonUnverified, "", "journald may not keep them"},
 		{"journald empty, text unreadable", fakeJournal{lines: []string{"-- No entries --"}}, "-", StatusUnknown, ReasonPermission, "", "unreadable"},
@@ -143,5 +145,22 @@ func TestAuthEventsSocketActivated(t *testing.T) {
 		if !r.Allowed(argv) {
 			t.Errorf("not allowlisted: %q", argv)
 		}
+	}
+}
+
+// One text log read and one not: the detail says which was not, and the
+// counts are partial.
+func TestAuthEventsTextPartlyUnreadable(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("mode 0 does not stop reading on Windows")
+	}
+	now := time.Now()
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "auth.log"), []byte(now.Add(-time.Hour).UTC().Format(time.RFC3339)+" vm sshd[1]: Failed password for root from 203.0.113.4 port 22 ssh2\n"), 0o600)
+	os.WriteFile(filepath.Join(dir, "secure"), []byte("x\n"), 0o000)
+	src := &fakeJournal{Live: &Live{Remap: map[string]string{"/var/log": dir}}, err: &fs.PathError{Op: "exec", Path: "journalctl", Err: fs.ErrNotExist}}
+	f := LinuxCollector{}.AuthEvents(context.Background(), src, now, []string{"/var/log/auth.log", "/var/log/secure"})
+	if f.Status != StatusPartial || f.Value.FailedBySrc["203.0.113.4"] != 1 || !strings.Contains(f.Detail, "unreadable: /var/log/secure") {
+		t.Errorf("%s %s %q %v", f.Status, f.Reason, f.Detail, f.Value.FailedBySrc)
 	}
 }

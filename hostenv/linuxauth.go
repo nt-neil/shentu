@@ -127,7 +127,8 @@ func (LinuxCollector) ScanAuthLogs(ctx context.Context, src Source, logPaths []s
 	fn := sink()
 	var used, unread []string
 	var cut, uerr error
-	sshd := 0
+	sshd := 0 // sshd lines in the window: older ones say nothing about the last day
+	now := time.Now()
 	for _, f := range files {
 		// A file that fails half way (a line over MaxLineBytes) gave its
 		// earlier lines: it counts as read, cut short.
@@ -135,7 +136,9 @@ func (LinuxCollector) ScanAuthLogs(ctx context.Context, src Source, logPaths []s
 		err := ScanLinesUnmasked(src, f, func(l string) {
 			lines++
 			if reSSHDLine.MatchString(l) {
-				sshd++
+				if t, ok := ParseLogTime(l, now); ok && !t.Before(since) {
+					sshd++
+				}
 			}
 			fn(l)
 		})
@@ -156,7 +159,14 @@ func (LinuxCollector) ScanAuthLogs(ctx context.Context, src Source, logPaths []s
 	}
 	switch {
 	case sshd > 0 || (jerr != nil && len(used) > 0):
-		return strings.Join(used, ",") + " (unverified: " + why + "; " + unverifiedText + ")", false, cut
+		read := strings.Join(used, ",")
+		if len(unread) > 0 { // some of the text logs: the counts are a lower bound
+			read += "; unreadable: " + strings.Join(unread, ",")
+			if cut == nil {
+				cut = fmt.Errorf("%w: %s unreadable", ErrTruncated, strings.Join(unread, ","))
+			}
+		}
+		return read + " (unverified: " + why + "; " + unverifiedText + ")", false, cut
 	case len(used) > 0: // journald and the text logs agree: no sshd entries
 		return "journald", true, nil
 	}
