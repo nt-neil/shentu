@@ -1,0 +1,30 @@
+[[route]]
+id = "express-handler"
+lang = "js"
+applies = ["req.query", "req.body", "req.params", "req.headers", "req.cookies", "req.file", "req.files"]
+framework = "express"
+title = "A route handler's request carries query, params, body, headers and cookies, whatever the parameter is called"
+register = ["*.get", "*.post", "*.put", "*.patch", "*.delete", "*.all", "*.use"]
+handler = -1
+path = true
+params = [1]
+members = ["query", "params", "body", "headers", "cookies"]
+refs = ["https://expressjs.com/en/4x/api.html#req"]
+
+[[route.samples]]
+kind = "vulnerable"
+code = '''
+const { exec } = require('child_process');
+app.get('/ping', function (request, response) {
+  exec('ping -c 1 ' + request.query.host, (e, out) => response.send(out));
+});
+'''
+
+[[route.samples]]
+kind = "safe"
+code = '''
+const { execFile } = require('child_process');
+app.get('/ping', function (request, response) {
+  execFile('ping', ['-c', '1', request.query.host], (e, out) => response.send(out));
+});
+'''

@@ -4,8 +4,8 @@ class = "deserialization"
 cwe = "CWE-502"
 severity = "critical"
 title = "Function-reviving deserializer (node-serialize, serialize-to-js, funcster) on client data"
-frameworks = ["express"]
-sources = ["req.cookies", "req.body", "req.query", "Buffer.from("]
+frameworks = ["express", "nestjs", "nextjs"]
+sources = ["req.cookies", "req.body", "req.query", "Buffer.from(", "@Query(", "@Body(", "@Req(", "req.originalUrl", "^request.nextUrl", "^req.nextUrl", "^request.url", "^req.url", "^searchParams", "^request.json(", "^req.json(", "^request.formData(", "^req.formData(", "^formData.get(", "^cookies().get("]
 sinks = ["serialize.unserialize(", "unserialize(", "deserialize("]
 sanitizers = []
 fix = "Use JSON.parse on client data and validate the shape; never use a deserializer that can recreate functions."
@@ -30,4 +30,34 @@ app.get("/", (req, res) => {
   } catch {}
   res.render("home", { theme: typeof prefs.theme === "string" ? prefs.theme : "light" });
 });
+'''
+
+[[samples]]
+kind = "vulnerable"
+dialect = "ts"
+note = "@Req() gives the request: its cookies are client data"
+code = '''
+@Controller()
+export class HomeController {
+  @Get()
+  home(@Req() req: Request) {
+    const prefs = serialize.unserialize(Buffer.from(req.cookies.prefs ?? "e30=", "base64").toString());
+    return { theme: prefs?.theme };
+  }
+}
+'''
+
+[[samples]]
+kind = "safe"
+dialect = "ts"
+note = "what the server put on the request (req.user) is not client data"
+code = '''
+@Controller()
+export class HomeController {
+  @Get()
+  home(@Req() req: Request & { user: { prefs: string } }) {
+    const prefs = serialize.unserialize(req.user.prefs);
+    return { theme: prefs?.theme };
+  }
+}
 '''

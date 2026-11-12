@@ -1,0 +1,51 @@
+id = "js-file-upload-client-name"
+lang = "js"
+class = "file-upload"
+cwe = "CWE-434"
+severity = "high"
+tier = "info"
+title = "Uploaded file stored under the name the client sent, without checking its type"
+frameworks = ["express"]
+sources = ["req.files", "req.file", ".originalname"]
+sinks = [".mv(", "fs.rename(", "fs.renameSync(", "fs.promises.rename(", "fs.copyFile(", "fs.copyFileSync("]
+sanitizers = ["crypto.randomUUID(", "randomUUID(", "uuidv4(", "nanoid("]
+fix = "Check the extension and MIME type against an allowlist before storing, and save the file under a name the server makes (crypto.randomUUID() plus a fixed extension) outside the web root."
+refs = ["CVE-2026-30821"]
+
+[[args]]
+sinks = [".mv("]
+arg = 1
+
+[[args]]
+sinks = ["fs.rename(", "fs.renameSync(", "fs.promises.rename(", "fs.copyFile(", "fs.copyFileSync("]
+arg = 2
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+app.post("/upload", (req, res) => {
+  const f = req.files.photo;
+  f.mv(path.join(__dirname, "public/uploads", f.name), () => res.sendStatus(201));
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+app.post("/avatar", upload.single("avatar"), (req, res) => {
+  fs.renameSync(req.file.path, path.join(PUBLIC, req.file.originalname));
+  res.sendStatus(201);
+});
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+const TYPES = [".jpg", ".png"];
+app.post("/upload", (req, res) => {
+  const f = req.files.photo;
+  const ext = path.extname(f.name).toLowerCase();
+  if (!TYPES.includes(ext)) return res.sendStatus(400);
+  f.mv(path.join(__dirname, "public/uploads", crypto.randomUUID() + ext), () => res.sendStatus(201));
+});
+'''

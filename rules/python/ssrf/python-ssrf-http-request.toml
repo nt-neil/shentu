@@ -1,0 +1,63 @@
+id = "python-ssrf-http-request"
+lang = "python"
+class = "ssrf"
+cwe = "CWE-918"
+severity = "high"
+tier = "info"
+title = "Server fetches a URL taken from the request"
+frameworks = ["django", "flask"]
+sources = ["request.args", "request.form", "request.values", "request.json", "request.get_json(", "request.GET", "request.POST", "request.data", "request.query_params"]
+sinks = ["requests.get(", "requests.post(", "requests.put(", "requests.patch(", "requests.delete(", "requests.head(", "requests.request(", "urlopen(", "urllib.request.urlopen(", "httpx.get(", "httpx.post(", "httpx.request(", "aiohttp.request("]
+sanitizers = ["url_has_allowed_host_and_scheme(", "int("]
+fix = "Keep the scheme and host fixed and take only a path or an id from the request, or parse the URL and require its host to be in an allowlist (and resolve it to a public address) before fetching."
+refs = ["CVE-2022-0339"]
+
+[[args]]
+sinks = ["requests.request(", "httpx.request(", "aiohttp.request("]
+arg = 2
+leading = true
+
+[[args]]
+sinks = ["requests.get(", "requests.post(", "requests.put(", "requests.patch(", "requests.delete(", "requests.head(", "urlopen(", "urllib.request.urlopen(", "httpx.get(", "httpx.post("]
+arg = 1
+leading = true
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+@app.route('/preview')
+def preview():
+    url = request.args.get('url')
+    r = requests.get(url, timeout=5)
+    return r.text[:200]
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+def webhook_test(request):
+    target = request.POST['target']
+    with urllib.request.urlopen(target) as f:
+        return HttpResponse(status=f.status)
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+@app.route('/weather')
+def weather():
+    city = request.args.get('city', '')
+    r = requests.get(f"https://api.example.com/weather?q={quote(city)}", timeout=5)
+    return r.json()
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+def webhook_test(request):
+    target = request.POST['target']
+    if not url_has_allowed_host_and_scheme(target, allowed_hosts={'hooks.example.com'}, require_https=True):
+        return HttpResponseBadRequest()
+    with urllib.request.urlopen(target) as f:
+        return HttpResponse(status=f.status)
+'''

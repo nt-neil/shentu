@@ -50,6 +50,10 @@ watch_paths  = ["/etc", "/usr/bin", "/usr/sbin", "/usr/local/bin", "/var/www", "
 cert_targets = []               # e.g. ["localhost:443"]
 app_paths    = ["/var/www", "/srv", "/opt", "/home", "/root"]   # where app_vulns and app_code_audit look
 web_users    = ["www-data", "apache", "nginx", "http"]   # add the accounts your apps run as, e.g. "node", "app"
+# app_code_audit sizes itself to the server: memory min(1 GiB, 25% of available, 50% of the
+# service's MemoryMax), files at once min(4, CPUs/2) and 1 under high load. 0 keeps that.
+audit_max_memory_mb = 0
+audit_workers       = 0
 
 [patrol]
 ssh_threshold = 10              # failed SSH logins per IP per hour before alerting

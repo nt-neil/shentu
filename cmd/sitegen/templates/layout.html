@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="{{t "lang"}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{block "title" .}}Shentu{{end}}</title>
+<meta name="description" content="{{t "tagline"}}">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0b0806">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http%3A//www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%230b0806'/%3E%3Crect x='28' y='8' width='8' height='48' fill='%23f2b45c'/%3E%3C/svg%3E">
+<link rel="preload" href="{{.L.Root}}fonts/serif-light.woff2" as="font" type="font/woff2" crossorigin>
+{{- if eq .Page "index.html"}}
+<link rel="preload" href="{{.L.Root}}img/guardian-night.webp" as="image">
+<link rel="preload" href="{{.L.Root}}img/scroll/sky.webp" as="image">
+{{- end}}
+<link rel="stylesheet" href="{{.L.Root}}site.css">
+<link rel="alternate" type="application/atom+xml" title="Shentu releases" href="{{.L.Root}}feed.xml">
+
+</head>
+<body class="p-{{slice .Page 0 (sub (len .Page) 5)}}">
+<a class="skip" href="#main">{{t "skip"}}</a>
+<header class="top">
+  <a class="brand" href="index.html">Shentu <b lang="zh-Hant">神荼</b></a>
+  <nav aria-label="Site">
+    <a href="rules.html"{{if eq .Page "rules.html"}} aria-current="page"{{end}}>{{t "nav.rules"}}</a>
+    <a href="bench.html"{{if eq .Page "bench.html"}} aria-current="page"{{end}}>{{t "nav.bench"}}</a>
+    <a href="releases.html"{{if eq .Page "releases.html"}} aria-current="page"{{end}}>{{t "nav.releases"}}</a>
+    <a class="gh" href="{{.Repo}}">GitHub</a>
+    <a class="cta" href="install.html"{{if eq .Page "install.html"}} aria-current="page"{{end}}>{{t "nav.install"}}</a>
+    <a class="lang" href="{{.L.Other}}{{.Page}}" lang="{{if eq .L.Code "en"}}zh-Hant{{else}}en{{end}}" hreflang="{{if eq .L.Code "en"}}zh-TW{{else}}en{{end}}">{{.L.OtherN}}</a>
+  </nav>
+</header>
+{{- if ne .Page "index.html"}}<div class="slit" aria-hidden="true"></div>{{end}}
+<main id="main">
+{{block "main" .}}{{end}}
+</main>
+<footer class="foot">
+  <p>{{t "footer"}}</p>
+  <ul>
+    <li><a href="{{.Repo}}">GitHub</a></li>
+    <li><a href="{{.Repo}}/blob/main/LICENSE">{{t "license"}} Apache-2.0</a></li>
+    <li><a href="{{.Repo}}/blob/main/SECURITY.md">{{t "security"}}</a></li>
+    <li><a href="{{.L.Root}}feed.xml">{{t "feed"}} (RSS)</a></li>
+    <li><a href="{{.L.Root}}img/CREDITS.md">{{t "credits"}}</a></li>
+    <li><a href="{{.L.Root}}fonts/OFL.txt">Noto Serif TC (OFL)</a></li>
+  </ul>
+</footer>
+</body>
+</html>
+{{define "releaselist"}}{{range .}}
+<article class="release" id="v{{.Version}}">
+  <h3><span class="ver">v{{.Version}}</span> <small>{{if .Date}}<time datetime="{{.Date}}">{{.Date}}</time>{{else}}{{t "unreleased"}}{{end}}</small></h3>
+  {{if .Items}}<ul>{{range .Items}}<li>{{item .}}</li>{{end}}</ul>{{else}}<p class="note">{{t "release.empty"}}</p>{{end}}
+  {{if or (gt .Rules 0) .Added .Removed .Frameworks .Bench}}
+  <dl class="facts">
+    {{if gt .Rules 0}}<div><dt>{{t "rules.total"}}</dt><dd>{{.Rules}}</dd></div>{{end}}
+    {{if .Bench}}<div><dt>{{t "bench.change"}}</dt><dd>{{.Bench.All.Caught}}/{{.Bench.All.Cases}}{{t "lp"}}{{.Bench.All.Rate}}{{t "rp"}}{{t "comma"}}{{t "fixedfp"}} {{.Bench.All.FixedFP}}{{if .PrevBench}}{{t "lp"}}{{signed (sub .Bench.All.Caught .PrevBench.All.Caught)}}{{t "rp"}}{{end}}</dd></div>{{end}}
+    {{if .Frameworks}}<div class="wide"><dt>{{t "fw.new"}}</dt><dd>{{join .Frameworks ", "}}</dd></div>{{end}}
+    {{if .Added}}<div class="wide"><dt>{{t "rules.added"}} ({{len .Added}})</dt><dd>{{template "ids" .AddedBy}}</dd></div>{{end}}
+    {{if .Removed}}<div class="wide"><dt>{{t "rules.removed"}} ({{len .Removed}})</dt><dd>{{template "ids" .RemovedBy}}</dd></div>{{end}}
+  </dl>
+  {{end}}
+</article>
+{{end}}{{end}}
+{{define "ids"}}{{range .}}<details class="ids"><summary>{{or (langName .Lang) .Lang}} <span class="n">{{len .IDs}}</span></summary><p>{{range .IDs}}<code>{{.}}</code> {{end}}</p></details>{{end}}{{end}}
+{{define "river"}}{{$n := len .Releases}}
+<div class="river">
+  <svg class="flow" viewBox="0 0 1200 160" preserveAspectRatio="none" aria-hidden="true">
+    <defs>
+      <linearGradient id="rv-fade" x1="0" x2="1"><stop offset="0" stop-color="#f2b45c" stop-opacity=".06"/><stop offset=".7" stop-color="#f2b45c" stop-opacity=".35"/><stop offset="1" stop-color="#f2b45c" stop-opacity=".75"/></linearGradient>
+      <linearGradient id="rv-shine" x1="0" x2="1"><stop offset="0" stop-color="#fff1cf" stop-opacity="0"/><stop offset=".5" stop-color="#fff1cf" stop-opacity=".55"/><stop offset="1" stop-color="#fff1cf" stop-opacity="0"/></linearGradient>
+      <clipPath id="rv-bed"><path d="M0 84C160 64 300 108 450 86S760 50 900 78S1100 112 1200 70V100C1100 140 1000 112 900 108S620 80 450 108S160 96 0 100Z"/></clipPath>
+    </defs>
+    <path d="M0 84C160 64 300 108 450 86S760 50 900 78S1100 112 1200 70V100C1100 140 1000 112 900 108S620 80 450 108S160 96 0 100Z" fill="url(#rv-fade)"/>
+    <g clip-path="url(#rv-bed)"><rect class="shine" x="0" y="0" width="420" height="160" fill="url(#rv-shine)"/><rect class="shine late" x="0" y="0" width="300" height="160" fill="url(#rv-shine)"/></g>
+  </svg>
+  <ol class="eras">
+  {{range $i, $r := rev .Releases}}{{$now := eq $i (sub $n 1)}}
+    <li class="era-node{{if $now}} now{{end}}" style="--old: {{age $i $n}}; --x: {{xpos $i $n}}">
+      <a class="lamp" href="{{$.L.Root}}{{if eq $.L.Code "zh-TW"}}zh-TW/{{end}}releases.html#v{{$r.Version}}" aria-describedby="rv-{{$r.Version}}">
+        <i aria-hidden="true"></i><span class="ver">v{{$r.Version}}</span>
+        {{if $r.Date}}<time datetime="{{$r.Date}}">{{slice $r.Date 5}}</time>{{else}}<b class="badge">{{t "soon"}}</b>{{end}}
+      </a>
+      <p class="acc">{{if gt $r.Rules 0}}<span><b>{{$r.Rules}}</b> {{t "hist.rules"}}</span>{{end}}{{with $r.Bench}}<span><b>{{.All.Caught}}</b>/{{.All.Cases}} {{t "river.caught"}}</span>{{end}}</p>
+      {{if not $now}}<div class="peek" id="rv-{{$r.Version}}">
+        {{$w := chron $r (eq $i 0)}}<p class="word">{{if eq $w "hist.mend"}}{{len $r.Items}} {{t "hist.changes"}}{{else}}{{t $w}}{{end}}</p>
+        <ul>{{range $k, $it := $r.Items}}{{if lt $k 3}}<li>{{item $it}}</li>{{end}}{{end}}</ul>
+      </div>{{end}}
+    </li>
+  {{end}}
+  </ol>
+</div>
+{{with index .Releases 0}}
+<div class="newest" id="rv-{{.Version}}">
+  <div class="newest-head"><p class="word">{{t (chron . (eq (len $.Releases) 1))}}</p><span class="ver">v{{.Version}}</span>{{if .Date}}<time datetime="{{.Date}}">{{.Date}}</time>{{else}}<b class="badge">{{t "soon"}}</b>{{end}}</div>
+  {{range groups .Items}}<div class="grp grp-{{slice .Key 4}}"><h4><i aria-hidden="true"></i>{{t .Key}}</h4><ul>{{range .Items}}<li>{{item .}}</li>{{end}}</ul></div>{{end}}
+</div>
+{{end}}
+{{end}}

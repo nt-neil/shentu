@@ -22,10 +22,13 @@ const (
 
 // Token flags.
 const (
-	FlagOpen  uint8 = 1 << iota // the string or comment has no end (only accepted in rule patterns)
-	FlagShell                   // PHP `command`
-	FlagRegex                   // JS /regex/
-	FlagNL                      // first token on its line (JS statement ends)
+	FlagOpen      uint16 = 1 << iota // the string or comment has no end (only accepted in rule patterns)
+	FlagShell                        // PHP `command`
+	FlagRegex                        // JS /regex/
+	FlagNL                           // first token on its line (JS statement ends)
+	FlagMultiline                    // JS /regex/m: ^ and $ match at every line
+	FlagModule                       // JS: a Node core module (fs, child_process, vm) after normalizeModules
+	flagCtxShift  = 8                // PHP echo or print after inline HTML: bits 8-10 hold the HTML context it writes into (htmlctx.go)
 )
 
 // Token is one lexical unit. Comments are dropped. A string literal keeps its raw
@@ -33,7 +36,7 @@ const (
 // ("$x", "{$x}", f"{x}", `${x}`) are lexed as code into Parts.
 type Token struct {
 	Kind  Kind
-	Flags uint8
+	Flags uint16
 	Line  int
 	Text  string
 	Parts []Part
@@ -55,10 +58,18 @@ func (t Token) word(text string) bool          { return t.Kind == Ident && t.Tex
 type Limits struct {
 	MaxTokens int           // tokens per file, counting those inside string interpolations
 	MaxTime   time.Duration // lexing, parsing and analysis of one file, all rules together
+	// MaxCallWork caps the work of following one rule's calls in one file
+	// (tokens read, summaries included). Unlike MaxTime it does not depend on how
+	// busy the machine is, so the same code gives the same result every time;
+	// and being per rule, more rules do not leave each one less. In a project
+	// the clock for following calls is the project's (ProjectOptions.MaxTime).
+	MaxCallWork int
 }
 
 // DefaultLimits suit ordinary application files; the caller also caps file size.
-var DefaultLimits = Limits{MaxTokens: 300_000, MaxTime: 3 * time.Second}
+// MaxCallWork is about a second of one rule's work on a busy machine (~10M units
+// a second).
+var DefaultLimits = Limits{MaxTokens: 300_000, MaxTime: 3 * time.Second, MaxCallWork: 10_000_000}
 
 // ErrLimit means a file hit Limits (tokens, time or nesting) and was only partly
 // analysed; what was found is still returned.
@@ -66,7 +77,17 @@ var ErrLimit = errors.New("engine: file too large, too slow or too deeply nested
 
 // ErrPartial means a string or comment runs to the end of the file without being
 // closed, so the code after its start was read as text and not analysed.
+// ErrCalls means the file was checked function by function to the end, but
+// following its calls into other functions or files was cut short by a limit:
+// what calls would have added may be missing.
+var ErrCalls = errors.New("engine: calls were not followed to the end; the file was checked function by function")
+
 var ErrPartial = errors.New("engine: unterminated string or comment, rest of the file not analysed")
+
+// ErrMinified comes joined with ErrLimit or ErrPartial when a JavaScript file
+// that stopped early is minified or bundled (see Minified): generated code, not
+// the application's own.
+var ErrMinified = errors.New("engine: minified JavaScript")
 
 const maxNest = 24 // interpolation and block nesting; deeper code is read flat or skipped
 
@@ -74,11 +95,16 @@ type budget struct {
 	tokens   int
 	maxTok   int
 	deadline time.Time
-	work     int  // units of work done: tokens scanned by the parser and the analysis
-	next     int  // work at which the clock is read again
-	hit      bool // over tokens or time: stop
-	limited  bool // something was skipped (nesting too deep): keep going, report ErrLimit
-	partial  bool // an unterminated string or comment swallowed the rest of the file
+	work     int             // units of work done: tokens scanned by the parser and the analysis
+	next     int             // work at which the clock is read again
+	hit      bool            // over tokens, work or time: stop
+	maxWork  int             // work cap (0: none)
+	sumWork  int             // the work cap of each summary, worked out in a budget of its own (own)
+	charged  map[string]bool // summaries whose cost this budget paid, by file and key (used)
+	paid     int             // the work those costs came to
+	timeHit  bool            // hit because time ran out: the result depends on the machine
+	limited  bool            // something was skipped (nesting too deep): keep going, report ErrLimit
+	partial  bool            // an unterminated string or comment swallowed the rest of the file
 }
 
 func newBudget(l Limits) *budget {
@@ -115,10 +141,14 @@ func (b *budget) charge(n int) bool {
 		return false
 	}
 	b.work += n
+	if b.maxWork > 0 && b.work > b.maxWork {
+		b.hit = true
+		return false
+	}
 	if b.work >= b.next {
 		b.next = b.work + 4096
 		if time.Now().After(b.deadline) {
-			b.hit = true
+			b.hit, b.timeHit = true, true
 		}
 	}
 	return !b.hit
@@ -150,8 +180,18 @@ type scanner struct {
 	b     *budget
 	depth int // interpolation nesting
 
-	ctl      []bool // JS: for each open "(", whether it starts an if/while/for header
-	afterCtl bool   // JS: the last ")" closed such a header
+	ctl        []bool // JS: for each open "(", whether it starts an if/while/for header
+	afterCtl   bool   // JS: the last ")" closed such a header
+	ts         bool   // TypeScript: "x!" is a postfix operator
+	jsx        bool   // .jsx, .tsx: follow JSX elements, so "</Name" closes one
+	jsxStack   []byte // JSX: open tags, children and braces (see jsxOp)
+	jsxClosing bool   // JSX: inside "</...>"
+	jsxLost    bool   // JSX: nesting too deep to follow: plain JavaScript from here
+
+	hs      htmlScan // PHP: the inline HTML read so far, and the literal text echo wrote (htmlctx.go)
+	htmlCtx uint8    // PHP: 1 + the context the current code block writes into, 0 outside one
+	inEcho  bool     // PHP: in an echo or print statement
+	echoPar int      // PHP: brackets open in it
 }
 
 func (s *scanner) peek(off int) byte {
@@ -169,6 +209,9 @@ func (s *scanner) emit(t Token) bool {
 	if s.nl {
 		t.Flags |= FlagNL
 		s.nl = false
+	}
+	if s.htmlCtx != 0 {
+		s.echoText(&t)
 	}
 	s.toks = append(s.toks, t)
 	return s.b.token()

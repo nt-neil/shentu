@@ -59,7 +59,7 @@ Blocked 203.0.113.7 until tomorrow 09:14. To undo: "unblock 203.0.113.7".
 | `site_profile` | survey of the server: services and whether the network can reach them, web and app stacks, databases, firewall, effective SSH settings, containers, cron, login accounts, and the risks that follow (e.g. a database listening on all interfaces) |
 | `package_vulns` | installed packages checked against [OSV](https://osv.dev) (Ubuntu, Debian, Alpine, Rocky, Alma); vulnerabilities on CISA's actively exploited list come first, with the upgrade command |
 | `app_vulns` | application lock files (npm, Composer, pip/Pipenv/Poetry, Go, Bundler) checked against OSV and CISA KEV |
-| `app_code_audit` | the applications' own files, offline: `.env`, `.git`, dumps and backups the web server would serve, debug mode left on (Django, Laravel, Flask, PHP), webshells and PHP in upload folders, keys and passwords written in code (file and line only, never the value) |
+| `app_code_audit` | the applications' own files, offline: `.env`, `.git`, dumps and backups the web server would serve, debug mode left on (Django, Laravel, Flask, PHP), webshells and PHP in upload folders, keys and passwords written in code (file and line only, never the value), injection flaws in PHP, Python and JavaScript found by the rules in `rules/` (rule, CWE, file and line, never the code; `info`-tier rules are not pushed by the daily report) |
 | `file_changes` | recently changed files in watched directories, plus webshell patterns (PHP, JSP, Node.js, Python) |
 | `cert_expiry` | TLS certificate expiry |
 | `log_search` | regex search, limited to configured log files |

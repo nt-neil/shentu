@@ -1,0 +1,40 @@
+[[route]]
+id = "laravel-route-closure"
+lang = "php"
+applies = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "$_SERVER", "$_FILES", "$request"]
+framework = "laravel"
+title = "A route closure's parameters are the URL's {placeholders}"
+register = ["Route::get", "Route::post", "Route::put", "Route::patch", "Route::delete", "Route::any", "Route::options"]
+handler = 2
+template = true
+bound = true
+note = "A parameter declared with a model class (Invoice $invoice) is route model binding: the framework passes the record it looked up, not the URL's text."
+refs = ["https://laravel.com/docs/routing#route-parameters"]
+
+[[route.samples]]
+kind = "vulnerable"
+code = '''<?php
+use Illuminate\Support\Facades\Route;
+Route::get('/lookup/{host}', function ($host) {
+	return shell_exec('host ' . $host);
+});
+'''
+
+[[route.samples]]
+kind = "safe"
+code = '''<?php
+use Illuminate\Support\Facades\Route;
+Route::get('/lookup/{host}', function ($host) {
+	return shell_exec('host ' . escapeshellarg($host));
+});
+'''
+
+[[route.samples]]
+kind = "safe"
+note = "route model binding: $invoice is the record, not the URL's text"
+code = '''<?php
+use Illuminate\Support\Facades\Route;
+Route::get('/invoice/{invoice}', function (Invoice $invoice) {
+	return shell_exec('cat /srv/invoices/' . $invoice->file_name);
+});
+'''

@@ -1,0 +1,44 @@
+id = "js-xss-dom"
+lang = "js"
+class = "xss"
+cwe = "CWE-79"
+severity = "medium"
+tier = "info"
+title = "Value from the page URL written into the document as HTML"
+sources = ["location.hash", "location.search", "location.href", "document.URL", "document.documentURI", "document.referrer", "window.name", "document.location"]
+sinks = [".innerHTML =", ".outerHTML =", ".innerHTML +=", "document.write(", "document.writeln(", ".insertAdjacentHTML("]
+sanitizers = ["DOMPurify.sanitize(", "encodeURIComponent(", "escapeHtml(", "sanitizeHtml("]
+fix = "Write text with textContent or createTextNode, or clean the HTML with DOMPurify.sanitize() before assigning innerHTML."
+refs = ["GHSA-2fvv-qxrq-7jq6"]
+
+[[args]]
+sinks = [".insertAdjacentHTML("]
+arg = 2
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+const params = new URLSearchParams(location.search);
+document.getElementById("greeting").innerHTML = "Hello " + params.get("name");
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+const tab = decodeURIComponent(location.hash.slice(1));
+panel.insertAdjacentHTML("beforeend", "<h2>" + tab + "</h2>");
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+const params = new URLSearchParams(location.search);
+document.getElementById("greeting").textContent = "Hello " + params.get("name");
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+const tab = decodeURIComponent(location.hash.slice(1));
+panel.insertAdjacentHTML("beforeend", DOMPurify.sanitize("<h2>" + tab + "</h2>"));
+'''

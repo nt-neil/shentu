@@ -1,0 +1,33 @@
+id = "js-xxe-libxmljs-noent"
+lang = "js"
+class = "xxe"
+cwe = "CWE-611"
+severity = "high"
+tier = "info"
+title = "XML parsed with entity substitution turned on"
+sources = []
+sinks = [".parseXml(", ".parseXmlString(", ".parseXmlAsync(", "parseXml("]
+sanitizers = []
+fix = "Do not set noent (or dtdload) when parsing untrusted XML with libxmljs; without them external entities are not substituted."
+refs = ["CVE-2023-46035"]
+
+[[args]]
+when = ["noent:", "dtdload:"]
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+app.post("/import", express.text({ type: "application/xml" }), (req, res) => {
+  const doc = libxmljs.parseXml(req.body, { noent: true });
+  res.json({ root: doc.root().name() });
+});
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+app.post("/import", express.text({ type: "application/xml" }), (req, res) => {
+  const doc = libxmljs.parseXml(req.body, { noent: false, nonet: true });
+  res.json({ root: doc.root().name() });
+});
+'''

@@ -5,11 +5,14 @@ cwe = "CWE-89"
 severity = "high"
 title = "WordPress $wpdb query built from request input without $wpdb->prepare"
 frameworks = ["wordpress"]
-sources = ["$_GET", "$_POST", "$_REQUEST", "get_query_var", "->get_param("]
+sources = ["$_GET", "$_POST", "$_REQUEST", "get_query_var(", "->get_param("]
 sinks = ["$wpdb->query", "$wpdb->get_results", "$wpdb->get_row", "$wpdb->get_var", "$wpdb->get_col"]
-sanitizers = ["$wpdb->prepare", "absint", "intval"]
+sanitizers = ["$wpdb->prepare", "absint", "intval", "count(", "sizeof(", "sanitize_sql_orderby("]
 fix = "Pass every value through $wpdb->prepare() placeholders (%d, %s); sanitize_text_field() and esc_sql() alone do not make a value safe in SQL."
 refs = ["CVE-2025-7036"]
+
+# Input written into prepare()'s format (not bound by it) is reported by
+# php-sqli-string-concat, whose ->prepare( sink covers $wpdb->prepare too.
 
 [[samples]]
 kind = "vulnerable"
@@ -48,4 +51,103 @@ code = '''
 <?php
 $like = '%' . $wpdb->esc_like($_POST['search']) . '%';
 $items = $wpdb->get_results($wpdb->prepare("SELECT * FROM {$wpdb->prefix}items WHERE title LIKE %s", $like));
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "array_map with trim keeps each value as it came"
+code = '''
+<?php
+$ids = array_map('trim', $_POST['ids']);
+$wpdb->query("DELETE FROM {$wpdb->prefix}items WHERE id IN (" . implode(',', $ids) . ")");
+'''
+
+[[samples]]
+kind = "safe"
+note = "array_map with absint makes every value a number"
+code = '''
+<?php
+$ids = array_map('absint', $_POST['ids']);
+$wpdb->query("DELETE FROM {$wpdb->prefix}items WHERE id IN (" . implode(',', $ids) . ")");
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "the failed check only logs, the query still runs"
+code = '''
+<?php
+$col = $_GET['orderby'];
+if (!in_array($col, array('date', 'title'), true)) {
+    error_log('unexpected orderby');
+}
+$rows = $wpdb->get_results("SELECT * FROM {$wpdb->posts} ORDER BY $col");
+'''
+
+[[samples]]
+kind = "safe"
+note = "wp_send_json_error ends the request, so after it the column is one of the two"
+code = '''
+<?php
+$col = $_GET['orderby'];
+if (!in_array($col, array('date', 'title'), true)) {
+    wp_send_json_error('bad orderby');
+}
+$rows = $wpdb->get_results("SELECT * FROM {$wpdb->posts} ORDER BY $col");
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "extract makes $id from the shortcode attributes"
+code = '''
+<?php
+extract(shortcode_atts(array('id' => 0, 'title' => ''), $_REQUEST));
+$row = $wpdb->get_row("SELECT * FROM {$wpdb->prefix}items WHERE id = $id");
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+extract(shortcode_atts(array('id' => 0, 'title' => ''), $_REQUEST));
+$row = $wpdb->get_row("SELECT * FROM {$wpdb->prefix}items WHERE id = " . absint($id));
+'''
+
+
+[[samples]]
+kind = "safe"
+note = "the input is bound as a value, not written into the format"
+code = '''
+<?php
+add_action('wp_ajax_drop_item', function () {
+    global $wpdb;
+    $wpdb->query($wpdb->prepare("DELETE FROM {$wpdb->prefix}items WHERE id = %d AND owner = %d", $_POST['id'], get_current_user_id()));
+});
+'''
+
+[[samples]]
+kind = "safe"
+note = "the format gets one placeholder per value; count() is a number"
+code = '''
+<?php
+add_action('wp_ajax_drop_items', function () {
+    global $wpdb;
+    $ids = array_map('absint', (array) $_POST['ids']);
+    $marks = implode(',', array_fill(0, count($ids), '%d'));
+    $wpdb->query($wpdb->prepare("DELETE FROM {$wpdb->prefix}items WHERE id IN ($marks)", $ids));
+});
+'''
+
+[[samples]]
+kind = "safe"
+note = "sanitize_sql_orderby returns false unless the value is a column list with ASC or DESC"
+code = '''
+<?php
+function list_rows() {
+    global $wpdb;
+    $sql = "SELECT * FROM {$wpdb->prefix}rows";
+    if (!empty($_GET['orderby'])) {
+        $sql .= ' ORDER BY ' . sanitize_sql_orderby($_GET['orderby'] . ' ' . $_GET['order']);
+    }
+    return $wpdb->get_results($wpdb->prepare($sql . ' LIMIT %d', 20));
+}
 '''

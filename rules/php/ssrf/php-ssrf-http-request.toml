@@ -1,0 +1,62 @@
+id = "php-ssrf-http-request"
+lang = "php"
+class = "ssrf"
+cwe = "CWE-918"
+severity = "high"
+tier = "info"
+title = "Server fetches a URL taken from the request"
+frameworks = ["wordpress", "laravel"]
+sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "get_query_var(", "->get_param(", "$request->input(", "$request->query("]
+sinks = ["wp_remote_get(", "wp_remote_post(", "wp_remote_request(", "wp_remote_head(", "download_url(", "curl_init(", "curl_setopt(", "file_get_contents(", "fopen(", "Http::get(", "Http::post(", "Http::head("]
+sanitizers = ["wp_http_validate_url", "realpath", "absint", "intval"]
+fix = "Do not let the client choose the host: keep the scheme and host fixed and take only a path or an id from the request, check the host against an allowlist, or use wp_safe_remote_get(), which refuses local and private addresses."
+refs = ["GHSA-wxjx-r2j2-96fx"]
+
+[[args]]
+sinks = ["curl_setopt("]
+arg = 3
+when = ["CURLOPT_URL"]
+leading = true
+
+[[args]]
+sinks = ["wp_remote_get(", "wp_remote_post(", "wp_remote_request(", "wp_remote_head(", "download_url(", "curl_init(", "file_get_contents(", "fopen(", "Http::get(", "Http::post(", "Http::head("]
+arg = 1
+leading = true
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+add_action('wp_ajax_fetch_preview', function () {
+    $resp = wp_remote_get($_POST['url']);
+    wp_send_json(['body' => wp_remote_retrieve_body($resp)]);
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+$ch = curl_init();
+curl_setopt($ch, CURLOPT_URL, $_GET['feed']);
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+$xml = curl_exec($ch);
+'''
+
+[[samples]]
+kind = "safe"
+note = "the host is fixed; the input is only a query value"
+code = '''
+<?php
+$resp = wp_remote_get('https://api.example.com/v2/lookup?code=' . rawurlencode($_GET['code']));
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+$url = $_POST['url'];
+if (wp_http_validate_url($url)) {
+    $resp = wp_remote_get($url);
+}
+'''

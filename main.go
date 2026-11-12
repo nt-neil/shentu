@@ -9,6 +9,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/signal"
@@ -52,15 +53,32 @@ func configPath() string {
 	return "/etc/shentu/shentu.toml"
 }
 
+// printUsage prints the usage for help (help, --help, -h) to stdout and
+// returns 0; for a missing or unknown command, to stderr and returns 2.
+func printUsage(cmd string, stdout, stderr io.Writer) int {
+	if cmd == "help" || cmd == "--help" || cmd == "-h" {
+		fmt.Fprint(stdout, usage)
+		return 0
+	}
+	fmt.Fprint(stderr, usage)
+	return 2
+}
+
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Print(usage)
-		os.Exit(2)
+		os.Exit(printUsage("", os.Stdout, os.Stderr))
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	cmd, args := os.Args[1], os.Args[2:]
+	switch cmd { // before the config: help and a mistyped command need none
+	case "help", "--help", "-h":
+		os.Exit(printUsage(cmd, os.Stdout, os.Stderr))
+	case "version", "--version", "setup", "chat", "survey", "bot", "budget", "usage", "patrol":
+	default:
+		os.Exit(printUsage(cmd, os.Stdout, os.Stderr))
+	}
 	if cmd == "version" || cmd == "--version" {
 		fmt.Println("shentu", version)
 		return
@@ -76,6 +94,7 @@ func main() {
 		fatal(err)
 	}
 	tools.SetWebUsers(cfg.Tools.WebUsers)
+	tools.SetAuditLimits(cfg.Tools.AuditMaxMemoryMB, cfg.Tools.AuditWorkers)
 	env := &tools.Env{
 		LogPaths:    cfg.Tools.LogPaths,
 		WatchPaths:  cfg.Tools.WatchPaths,
@@ -107,8 +126,7 @@ func main() {
 		fs.Parse(args)
 		err = patrol(ctx, cfg, env, *daily, *dry)
 	default:
-		fmt.Print(usage)
-		os.Exit(2)
+		os.Exit(printUsage(cmd, os.Stdout, os.Stderr))
 	}
 	if err != nil {
 		fatal(err)

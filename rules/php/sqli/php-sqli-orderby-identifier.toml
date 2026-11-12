@@ -5,12 +5,18 @@ cwe = "CWE-89"
 severity = "high"
 title = "Sort column or direction taken from the request and placed into ORDER BY"
 frameworks = ["laravel", "wordpress"]
-sources = ["$_GET", "$_POST", "$_REQUEST", "$request->input(", "$request->get(", "request("]
+sources = ["$_GET", "$_POST", "$_REQUEST", "$request->input(", "$request->get(", "request(", "Yii::$app->request->get("]
 sinks = ["->orderByRaw(", "::orderByRaw(", "DB::raw", "->orderBy(", "::orderBy(", "ORDER BY"]
 sanitizers = ["in_array", "sanitize_sql_orderby", "Rule::in"]
 fix = "Identifiers cannot be bound as parameters: map the requested sort key to a fixed allowlist of column names and force the direction to ASC or DESC."
 refs = ["CVE-2026-13357"]
 text = ["ORDER BY"]
+
+# Yii: orderBy([$column => SORT_ASC]) quotes nothing in the key; the value is
+# only compared with SORT_DESC.
+[[args]]
+sinks = ["->orderBy(", "::orderBy("]
+keys = true
 
 [[samples]]
 kind = "vulnerable"
@@ -43,4 +49,30 @@ if (!in_array($sort, $allowed, true)) {
 }
 $dir = $request->input('dir') === 'asc' ? 'asc' : 'desc';
 return Payment::query()->orderBy($sort, $dir)->paginate();
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "Yii: the column name is the array key"
+code = '''
+<?php
+$sort = Yii::$app->request->get('sort', 'id');
+$rows = Post::find()->orderBy([$sort => SORT_DESC])->all();
+'''
+
+[[samples]]
+kind = "safe"
+note = "Yii: the request picks only the direction, an array value"
+code = '''
+<?php
+$rows = Post::find()->orderBy(['created_at' => Yii::$app->request->get('dir')])->all();
+'''
+
+[[samples]]
+kind = "safe"
+note = "->request( is a method of another object, not Laravel's request() helper"
+code = '''
+<?php
+$sort = $this->settings->request('default_sort');
+$rows = DB::table('posts')->orderBy($sort)->get();
 '''

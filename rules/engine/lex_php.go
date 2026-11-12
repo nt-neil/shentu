@@ -30,6 +30,7 @@ func (s *scanner) phpHTML() {
 			s.advance(len(s.src) - s.pos)
 			return
 		}
+		s.inlineHTML(s.src[s.pos : s.pos+i])
 		s.advance(i + 2)
 		switch {
 		case s.has("php"):
@@ -57,6 +58,7 @@ func (s *scanner) php(stop bool) {
 		case !stop && s.has("?>"):
 			s.pos += 2
 			s.emit(Token{Kind: Op, Text: ";", Line: s.line})
+			s.htmlCtx = 0
 			s.phpHTML()
 		case c == '#' && s.peek(1) == '[':
 			s.phpAttribute()

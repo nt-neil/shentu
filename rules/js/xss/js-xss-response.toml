@@ -1,0 +1,82 @@
+id = "js-xss-response"
+lang = "js"
+class = "xss"
+cwe = "CWE-79"
+severity = "medium"
+tier = "info"
+title = "Request value sent back in an HTML response without escaping"
+frameworks = ["express"]
+# Headers by name in brackets (user-agent) and the referrer: req.headers.host is
+# the host-header rules' input
+sources = ["req.query", "req.params", "req.body", "req.cookies", "req.headers[", "req.headers.referer", "req.headers.referrer", "req.headers.origin"]
+sinks = ["res.send(", "res.write(", "res.end("]
+sanitizers = ["escapeHtml(", "escape(", "he.encode(", "he.escape(", "validator.escape(", "_.escape(", "DOMPurify.sanitize(", "sanitizeHtml(", "xss(", "encodeURIComponent("]
+fix = "Render with a template engine that escapes by default (res.render), send JSON with res.json(), or escape each value (escape-html, he.encode) before putting it into HTML."
+refs = ["CVE-2013-7370"]
+
+[[args]]
+context = ["html", "attr"]
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+app.get("/search", (req, res) => {
+  res.send(`<h1>No results for ${req.query.q}</h1>`);
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+app.post("/comment", (req, res) => {
+  const name = req.body.name;
+  res.write('<input name="n" value="' + name + '">');
+  res.end();
+});
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+app.get("/search", (req, res) => {
+  res.send(`<h1>No results for ${escapeHtml(req.query.q)}</h1>`);
+});
+'''
+
+[[samples]]
+kind = "safe"
+note = "an object is sent as JSON; a template escapes"
+code = '''
+app.get("/item", (req, res) => {
+  if (req.query.format === "json") return res.send({ id: req.query.id });
+  res.render("item", { id: req.query.id });
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "the words data: and event: inside an HTML page do not make it a stream"
+code = '''
+app.get("/status", (req, res) => {
+  res.write(`<p>data: ${req.query.q}</p>`);
+  res.end();
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+app.get("/back", (req, res) => {
+  res.send(`<a href="/">home</a> <p>You came from ${req.headers.referer}</p><p>${req.headers["user-agent"]}</p>`);
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "an event-stream literal in one branch does not make the HTML in the other safe"
+code = '''
+app.get("/hello", (req, res) => {
+  const stream = req.accepts("text/event-stream");
+  res.send(stream ? "data: ready\n\n" : "<h1>Hello " + req.query.name + "</h1>");
+});
+'''

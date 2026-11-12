@@ -3,10 +3,15 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/nt-neil/shentu/rules"
+	"github.com/nt-neil/shentu/rules/engine"
 )
 
 func TestAppCodeAudit(t *testing.T) {
@@ -52,7 +57,7 @@ func TestAppCodeAudit(t *testing.T) {
 	want := map[string]string{ // kind + path → severity
 		"exposed public/.env": "critical", "exposed public/.git": "critical", "exposed public/dump.sql": "critical",
 		"exposed public/site-backup.zip": "warning", "exposed public/info.php": "warning",
-		"upload_script public/uploads/cat.php": "critical", "webshell public/shell.php": "critical",
+		"upload_script public/uploads/cat.php": "critical", "webshell public/shell.php": "critical", "injection public/shell.php": "critical",
 		"debug app/settings.py": "warning", "debug app/.env": "warning", "debug app/run.py": "critical",
 		"secret app/config.js": "warning", "secret app/db.py": "warning",
 	}
@@ -107,5 +112,208 @@ func TestWebRootPatterns(t *testing.T) {
 	apache := "<VirtualHost *:80>\n\tDocumentRoot \"/var/www/html\"\n</VirtualHost>\n"
 	if m := apacheRoot.FindStringSubmatch(apache); m == nil || m[1] != "/var/www/html" {
 		t.Errorf("apache root: %v", m)
+	}
+}
+
+// Injection findings name the rule, the file and the line. One vulnerable sample per
+// language comes from the rules themselves, so the test follows the rules.
+func TestAppCodeAuditInjection(t *testing.T) {
+	rs, err := rules.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir, _ := filepath.EvalSymlinks(t.TempDir())
+	ext := map[string]string{"php": ".php", "python": ".py", "js": ".jsx"}
+	want := map[string]string{} // file name → rule id
+	var code []string
+	for _, r := range rs {
+		if _, done := want["v"+ext[r.Lang]]; done {
+			continue
+		}
+		for _, s := range r.Samples {
+			if s.Kind == "vulnerable" {
+				name := "v" + ext[r.Lang]
+				os.WriteFile(filepath.Join(dir, name), []byte(s.Code), 0o644)
+				want[name] = r.ID
+				code = append(code, strings.TrimSpace(s.Code))
+				break
+			}
+		}
+	}
+	// TypeScript files use the JavaScript rules.
+	for _, r := range rs {
+		for _, s := range r.Samples {
+			if _, done := want["v.ts"]; !done && s.Kind == "vulnerable" && s.Dialect == "ts" {
+				os.WriteFile(filepath.Join(dir, "v.ts"), []byte(s.Code), 0o644)
+				want["v.ts"] = r.ID
+				code = append(code, strings.TrimSpace(s.Code))
+			}
+		}
+	}
+	// Skipped folders stay skipped.
+	os.MkdirAll(filepath.Join(dir, "vendor"), 0o755)
+	os.WriteFile(filepath.Join(dir, "vendor", "v.php"), []byte("<?php\neval($_GET['c']);\n"), 0o644)
+	res := AppCodeAudit(context.Background(), []string{dir}, nil)
+	for name, id := range want {
+		f := findingFor(res, "injection", name)
+		if f.Rule != id || f.Line == 0 || f.CWE == "" || f.Fix == "" || f.Tier != "info" {
+			t.Errorf("%s: want a finding of %s, got %+v", name, id, f)
+		}
+	}
+	for _, f := range res.Findings {
+		if strings.Contains(f.Path, "vendor") {
+			t.Errorf("vendor/ was read: %+v", f)
+		}
+	}
+	out, _ := json.Marshal(res)
+	for _, c := range code {
+		for _, line := range strings.Split(c, "\n") {
+			if len(line) > 12 && strings.Contains(string(out), line) {
+				t.Errorf("the audit result contains code: %q", line)
+			}
+		}
+	}
+}
+
+// Files the rules could not finish are summed up in one info finding with at most 10 paths.
+func TestAppCodeAuditPartial(t *testing.T) {
+	dir, _ := filepath.EvalSymlinks(t.TempDir())
+	for i := range 11 {
+		os.WriteFile(filepath.Join(dir, fmt.Sprintf("open%02d.php", i)), []byte("<?php\n$a = 'never closed\n"), 0o644)
+	}
+	big := "<?php\n" + strings.Repeat("$a = 1;\n", auditMaxSize/8+1)
+	os.WriteFile(filepath.Join(dir, "big.php"), []byte(big), 0o644)
+	os.WriteFile(filepath.Join(dir, "ok.py"), []byte("print(1)\n"), 0o644)
+	res := AppCodeAudit(context.Background(), []string{dir}, nil)
+	var notes []CodeFinding
+	for _, f := range res.Findings {
+		if f.Kind == "injection" && !strings.Contains(f.Detail, "calls across files") {
+			notes = append(notes, f)
+		}
+	}
+	if len(notes) != 1 {
+		t.Fatalf("want one summary finding, got %+v", notes)
+	}
+	n := notes[0]
+	if n.Severity != "info" || n.Tier != "info" || len(n.Files) != partialListMax || !strings.HasPrefix(n.Detail, "12 file(s)") ||
+		!strings.Contains(n.Detail, "1 over the size limit") || !strings.Contains(n.Detail, "11 with a string or comment that never ends") {
+		t.Errorf("summary: %+v", n)
+	}
+	for _, f := range n.Files {
+		want := "unterminated"
+		if strings.HasSuffix(f.Path, "big.php") {
+			want = "size"
+		}
+		if strings.HasSuffix(f.Path, "ok.py") || f.Reason != want {
+			t.Errorf("listed: %+v", f)
+		}
+	}
+}
+
+// A panic in the engine and the audit's time limit both leave the file in the summary.
+func TestAppCodeAuditInjectionLimits(t *testing.T) {
+	dir, _ := filepath.EvalSymlinks(t.TempDir())
+	os.WriteFile(filepath.Join(dir, "a.php"), []byte("<?php\necho 1;\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "b.py"), []byte("print(1)\n"), 0o644)
+	summary := func() CodeFinding {
+		for _, f := range AppCodeAudit(context.Background(), []string{dir}, nil).Findings {
+			if f.Kind == "injection" && !strings.Contains(f.Detail, "calls across files") {
+				return f
+			}
+		}
+		return CodeFinding{}
+	}
+	scan := engineScan
+	defer func() { engineScan = scan }()
+	engineScan = func(e *engine.Engine, lang, p string, b []byte) ([]engine.Finding, bool, error) {
+		if lang == "php" {
+			panic("boom")
+		}
+		return scan(e, lang, p, b)
+	}
+	if f := summary(); len(f.Files) != 1 || !strings.HasSuffix(f.Files[0].Path, "a.php") || f.Files[0].Reason != "panic" {
+		t.Errorf("panic: summary %+v", f)
+	}
+	// The time runs out while the first file is scanned (one worker; the walk
+	// stops at the same deadline, so it must have ended before).
+	max := injectionMaxTime
+	defer func() { injectionMaxTime = max; SetAuditLimits(0, 0) }()
+	injectionMaxTime = 300 * time.Millisecond
+	SetAuditLimits(0, 1)
+	engineScan = func(e *engine.Engine, lang, p string, b []byte) ([]engine.Finding, bool, error) {
+		time.Sleep(400 * time.Millisecond)
+		return scan(e, lang, p, b)
+	}
+	if f := summary(); len(f.Files) != 1 || f.Files[0].Reason != "time" || !strings.HasSuffix(f.Files[0].Path, "b.py") {
+		t.Errorf("time limit: summary %+v", f)
+	}
+}
+
+// Every PHP extension the audit knows is scanned by the rules, and a NUL byte does
+// not hide a file (the review of 888da12, items 4 and 6).
+func TestAppCodeAuditExtensionsAndNUL(t *testing.T) {
+	dir, _ := filepath.EvalSymlinks(t.TempDir())
+	files := map[string]string{
+		"a.phtml": "<?php\nsystem($_GET['a']);\n",
+		"b.php5":  "<?php\nsystem($_GET['b']);\n",
+		"c.inc":   "<?php\nsystem($_GET['c']);\n",
+		"d.php":   "<?php\n\x00\nsystem($_GET['d']);\n",
+	}
+	for n, c := range files {
+		os.WriteFile(filepath.Join(dir, n), []byte(c), 0o644)
+	}
+	res := AppCodeAudit(context.Background(), []string{dir}, nil)
+	for n := range files {
+		if f := findingFor(res, "injection", n); f.Rule == "" {
+			t.Errorf("%s: not scanned by the rules", n)
+		}
+	}
+	if engine.LangOf("x.php5") != "php" || engine.LangOf("x.phtml") != "php" || engine.LangOf("x.inc") != "php" {
+		t.Error("LangOf and the audit disagree on PHP extensions")
+	}
+}
+
+func TestTestPath(t *testing.T) {
+	for p, want := range map[string]bool{
+		"/srv/app/tests/test_views.py":           true,
+		"/srv/app/test/app.router.js":            true,
+		"/srv/app/examples/params/index.js":      true,
+		"/srv/app/src/__tests__/a.js":            true,
+		"/srv/app/src/latest/views.py":           false,
+		"/srv/app/testing.php":                   false,
+		"/srv/app/wp-content/plugins/x/main.php": false,
+	} {
+		if got := testPath(p); got != want {
+			t.Errorf("testPath(%q) = %v, want %v", p, got, want)
+		}
+	}
+}
+
+// The audits in these tests keep no code index.
+func init() { codeIndexFile = func() string { return "" } }
+
+// A file whose calls were cut short in the per-file pass is listed by name,
+// with reason "calls", after the files left unchecked (the review of #27).
+func TestAppCodeAuditCallsListed(t *testing.T) {
+	dir, _ := filepath.EvalSymlinks(t.TempDir())
+	os.WriteFile(filepath.Join(dir, "a.php"), []byte("<?php\necho 1;\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "b.php"), []byte("<?php\n$a = 'never closed\n"), 0o644)
+	scan := engineScan
+	defer func() { engineScan = scan }()
+	engineScan = func(e *engine.Engine, lang, p string, b []byte) ([]engine.Finding, bool, error) {
+		if filepath.Base(p) == "a.php" {
+			return nil, false, engine.ErrCalls
+		}
+		return scan(e, lang, p, b)
+	}
+	var n CodeFinding
+	for _, f := range AppCodeAudit(context.Background(), []string{dir}, nil).Findings {
+		if f.Kind == "injection" && !strings.Contains(f.Detail, "calls across files") {
+			n = f
+		}
+	}
+	if len(n.Files) != 2 || filepath.Base(n.Files[0].Path) != "b.php" || n.Files[0].Reason != "unterminated" ||
+		filepath.Base(n.Files[1].Path) != "a.php" || n.Files[1].Reason != "calls" || !strings.Contains(n.Detail, "1 checked function by function") {
+		t.Errorf("summary: %+v", n)
 	}
 }

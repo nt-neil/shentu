@@ -1,0 +1,64 @@
+id = "js-nosqli-mongo-query"
+lang = "js"
+class = "nosqli"
+cwe = "CWE-943"
+severity = "high"
+tier = "info"
+title = "Request data placed in a MongoDB query without forcing it to a string"
+frameworks = ["express"]
+route_members = ["query", "body"]
+sources = ["req.body", "req.query"]
+sinks = [".findOne(", ".find(", ".findOneAndUpdate(", ".findOneAndDelete(", ".updateOne(", ".updateMany(", ".deleteOne(", ".deleteMany(", ".countDocuments(", ".exists(", "$where"]
+sanitizers = ["String(", ".toString(", "mongoSanitize(", "sanitize(", "parseInt(", "ObjectId(", "typeof"]
+fix = "Convert each value to the type the field holds (String(), Number()) or reject non-strings (typeof x !== \"string\") before it goes into the filter; enable sanitizeFilter in Mongoose; never build $where from input."
+refs = ["GHSA-f5cv-xrv9-r8w7"]
+
+[[args]]
+sinks = [".findOne(", ".find(", ".findOneAndUpdate(", ".findOneAndDelete(", ".updateOne(", ".updateMany(", ".deleteOne(", ".deleteMany(", ".countDocuments(", ".exists("]
+arg = 1
+
+[[samples]]
+kind = "vulnerable"
+note = "a JSON body {\"password\": {\"$ne\": \"\"}} matches any password"
+code = '''
+app.post("/login", async (req, res) => {
+  const user = await User.findOne({ username: req.body.username, password: req.body.password });
+  res.json({ ok: !!user });
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+app.get("/posts", async (req, res) => {
+  res.json(await db.collection("posts").find({ $where: "this.author == '" + req.query.author + "'" }).toArray());
+});
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+app.post("/login", async (req, res) => {
+  const user = await User.findOne({ username: String(req.body.username) });
+  const item = items.find((i) => i.id === req.body.id);
+  res.json({ ok: !!user && !!item });
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "MongoDB options (sort, limit) beside the filter do not make it safe"
+code = '''
+app.get("/posts", async (req, res) => {
+  res.json(await db.collection("posts").find({ author: req.query.author }, { sort: { at: -1 }, limit: 10 }).toArray());
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "a field named relations in the options (here a projection) is no TypeORM call"
+code = '''
+app.get("/people", async (req, res) => {
+  res.json(await db.collection("people").find({ name: req.query.name }, { projection: { relations: 1 } }).toArray());
+});
+'''

@@ -1,0 +1,78 @@
+id = "python-open-redirect-redirect"
+lang = "python"
+class = "open-redirect"
+cwe = "CWE-601"
+severity = "medium"
+tier = "info"
+title = "Redirect to a URL taken from the request"
+frameworks = ["django", "flask"]
+sources = ["request.args", "request.form", "request.values", "request.GET", "request.POST", "request.query_params"]
+sinks = ["redirect(", "flask.redirect(", "HttpResponseRedirect(", "HttpResponsePermanentRedirect(", "RedirectResponse("]
+sanitizers = ["url_has_allowed_host_and_scheme(", "is_safe_url(", "url_for(", "reverse(", ".startswith("]
+fix = "Check the target with url_has_allowed_host_and_scheme() (Django) before redirecting, or redirect to url_for() or a fixed page; a prefix check (startswith('/') without '//' or '/\\\\') can be bypassed with a tab or newline ('/\\t/evil.example'), so it does not make the target safe."
+refs = ["CVE-2022-0697", "CVE-2024-41955"]
+
+[[args]]
+arg = 1
+leading = true
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+@app.route('/login', methods=['POST'])
+def login():
+    do_login()
+    return redirect(request.args.get('next', '/'))
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+def logout_view(request):
+    logout(request)
+    return HttpResponseRedirect(request.GET.get('return_to', '/'))
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+def logout_view(request):
+    logout(request)
+    target = request.GET.get('return_to', '/')
+    if not url_has_allowed_host_and_scheme(target, allowed_hosts={request.get_host()}):
+        target = '/'
+    return HttpResponseRedirect(target)
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+@app.route('/login', methods=['POST'])
+def login():
+    do_login()
+    return redirect(url_for('dashboard', tab=request.args.get('tab')))
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "a leading / is not enough: //evil.example and /\\evil.example leave the site"
+code = '''
+@app.route('/after')
+def after():
+    target = request.args.get('next', '/')
+    if target.startswith('/'):
+        return redirect(target)
+    return redirect('/')
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "excluding // and /\\ is not enough: the browser drops a tab or newline, so /\\t/evil.example becomes //evil.example"
+code = '''
+@app.route('/after')
+def after():
+    target = request.args.get('next', '/')
+    if target.startswith('/') and not target.startswith('//') and not target.startswith('/\\'):
+        return redirect(target)
+    return redirect('/')
+'''

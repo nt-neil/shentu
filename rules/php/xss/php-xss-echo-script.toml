@@ -1,0 +1,45 @@
+id = "php-xss-echo-script"
+lang = "php"
+class = "xss"
+cwe = "CWE-79"
+severity = "medium"
+tier = "info"
+title = "Request input written into a script or an event handler without JavaScript escaping"
+frameworks = ["wordpress", "laravel"]
+sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "$_SERVER['PHP_SELF']", "$_SERVER['REQUEST_URI']", "$_SERVER['QUERY_STRING']", "$_SERVER['HTTP_", "get_query_var(", "->get_param(", "$request->input(", "$request->query(", "get_search_query(false", "$wp_query->get("]
+sinks = ["echo", "print"]
+sanitizers = ["check_admin_referer", "check_ajax_referer", "wp_verify_nonce", "current_user_can", "esc_js", "wp_json_encode", "json_encode", "absint", "number_format", "wp_send_json", "wp_send_json_success", "wp_send_json_error"]
+fix = "Inside <script> or an on* attribute, encode values with wp_json_encode() or json_encode() (esc_js() for a quoted string in a handler); HTML escaping is undone before the script runs."
+refs = ["CVE-2026-43878"]
+
+[[args]]
+context = ["js"]
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<script>
+var tab = '<?php echo $_GET['tab']; ?>';
+</script>
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "the browser decodes the entities esc_attr adds before it runs the handler"
+code = '''
+<button onclick="select('<?php echo esc_attr($_GET['tab']); ?>')">Go</button>
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<script>
+var tab = <?php echo wp_json_encode($_GET['tab']); ?>;
+</script>
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<button onclick="select('<?php echo esc_js($_GET['tab']); ?>')">Go</button>
+'''

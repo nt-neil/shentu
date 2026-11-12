@@ -5,9 +5,11 @@ cwe = "CWE-502"
 severity = "critical"
 title = "unserialize() on data the client can send or tamper with"
 frameworks = ["laravel"]
-sources = ["$_GET", "$_POST", "$_COOKIE", "$_REQUEST", "$request->cookie(", "$request->input(", "base64_decode("]
+sources = ["$_GET", "$_POST", "$_COOKIE", "$_REQUEST", "$_SERVER['HTTP_", "php://input", "$request->cookie(", "$request->input(",
+           "$request->query(", "$request->get(", "request()->cookie(", "request()->input(", "Cookie::get("]
 sinks = ["unserialize("]
 sanitizers = []
+text = ["php://input"]
 fix = "Store and exchange plain data with json_encode/json_decode; if unserialize is unavoidable pass ['allowed_classes' => false] and verify an HMAC first."
 refs = ["CVE-2018-15133", "CVE-2026-10721"]
 
