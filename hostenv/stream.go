@@ -62,41 +62,40 @@ func ScanLines(src Source, path string, fn func(line string)) error {
 }
 
 // A private key block spans lines, so line-by-line masking alone would
-// let its body through. A block starts only at a line that is exactly a
-// BEGIN ... PRIVATE KEY marker (a log line always has a prefix, so text an
-// attacker puts into a log message cannot open one), holds only PEM-shaped
-// lines (base64, a "Name: value" header, blank), and is at most
-// maxKeyLines long; anything else ends it and is passed on, masked.
+// let its body through. A BEGIN ... PRIVATE KEY marker anywhere in a line
+// opens a block (the rest of that line is masked); the block then swallows
+// PEM-shaped lines only (base64, optionally quoted or ending in "\n", a
+// "Name: value" header, blank) until its END line. The first line that is
+// not PEM-shaped ends it and is passed on, masked: a log line always has a
+// time stamp and spaces, so a marker an attacker writes into a log message
+// cannot hide the lines after it.
 var (
-	pemBeginLine = regexp.MustCompile(`^-----BEGIN [A-Z ]*PRIVATE KEY-----$`)
-	pemEndLine   = regexp.MustCompile(`^-----END [A-Z ]*PRIVATE KEY-----`)
-	pemBody      = regexp.MustCompile(`^(?:[A-Za-z0-9+/=]*|[A-Za-z-]+: .*)$`)
+	pemBegin = regexp.MustCompile(`-----BEGIN [A-Z ]*PRIVATE KEY-----`)
+	pemEnd   = regexp.MustCompile(`-----END [A-Z ]*PRIVATE KEY-----`)
+	pemBody  = regexp.MustCompile(`^(?:["']?[A-Za-z0-9+/=]*(?:\\n)?["']?,?|[A-Za-z-]+: .*)$`)
 )
 
-const maxKeyLines = 120 // a 8192-bit RSA key in PEM is about 100 lines
-
 // keyMasker is the line state machine shared by scans and recordings.
-type keyMasker struct {
-	inKey bool
-	lines int
-}
+type keyMasker struct{ inKey bool }
 
 // line returns what to pass on for l, and false to pass nothing.
 func (k *keyMasker) line(l string) (string, bool) {
-	t := strings.TrimSpace(l)
 	if k.inKey {
-		if pemEndLine.MatchString(t) {
+		if loc := pemEnd.FindStringIndex(l); loc != nil {
 			k.inKey = false
+			if rest := strings.TrimSpace(l[loc[1]:]); rest != "" {
+				return k.line(l[loc[1]:])
+			}
 			return "", false
 		}
-		if k.lines++; k.lines <= maxKeyLines && pemBody.MatchString(t) {
+		if pemBody.MatchString(strings.TrimSpace(l)) {
 			return "", false // the key body never leaves
 		}
 		k.inKey = false // not a key after all: back to normal lines
 	}
-	if pemBeginLine.MatchString(t) {
-		k.inKey, k.lines = true, 0
-		return "[REDACTED PRIVATE KEY]", true
+	if loc := pemBegin.FindStringIndex(l); loc != nil && pemEnd.FindStringIndex(l[loc[1]:]) == nil {
+		k.inKey = true
+		return MaskSecrets(l[:loc[0]]) + "[REDACTED PRIVATE KEY]", true
 	}
 	return MaskSecrets(l), true
 }

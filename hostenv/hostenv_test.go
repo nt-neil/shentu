@@ -276,6 +276,13 @@ func TestMaskSecretsMatchesRoot(t *testing.T) {
 
 func readTree(t *testing.T, dir string) string {
 	var sb strings.Builder
+	blobs, err := loadBlobs(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, b := range blobs { // what is inside blobs.tgz, not its compressed bytes
+		sb.Write(b)
+	}
 	filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
 		if err == nil && !d.IsDir() {
 			b, _ := os.ReadFile(p)

@@ -189,6 +189,13 @@ func TestScanRedactsKeyBlocks(t *testing.T) {
 	if len(after) != 2 || !strings.Contains(after[1], "Accepted") {
 		t.Errorf("unterminated block swallowed lines: %q", after)
 	}
+	// A marker inside a line opens a block too; a long key has no cap.
+	long := strings.Repeat(body+"\n", 300)
+	var mid []string
+	scan(strings.NewReader("key = \""+pk("BEGIN", "RSA")+"\n"+long+pk("END", "RSA")+"\"\nnext\n"), func(l string) { mid = append(mid, l) })
+	if strings.Contains(strings.Join(mid, "\n"), body) || mid[len(mid)-1] != "next" {
+		t.Errorf("in-line marker or long key: %q", mid)
+	}
 	// Recorder masks the whole stream it keeps for a fixture.
 	h := newFake(true)
 	h.files["/var/log/x.log"] = log

@@ -170,7 +170,11 @@ func (l *Live) read(path string, noFollow bool, max int64) ([]byte, error) {
 	if truncated {
 		b = b[:max]
 	}
-	b = maskLines(b) // line by line: a planted BEGIN marker hides a bounded block at most
+	// Contents go to parsers raw: masking here corrupted facts (sudo's
+	// NOPASSWD:ALL, sshd's sk-ssh-ed25519-cert-v01@openssh.com, and with it
+	// the config hash). What leaves as text is masked where it leaves:
+	// command lines and cron/systemd commands in facts, streamed log lines,
+	// fixtures (Masker). Whole files are never stored in facts.
 	if truncated {
 		return b, ErrTruncated
 	}

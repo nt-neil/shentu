@@ -19,7 +19,9 @@
 // Rules for anything that runs a command (see Runner):
 //   - read-only, exact-argv allowlist, absolute paths, no shell
 //   - timeout, stdout/stderr caps, fixed minimal environment, no stdin
-//   - output is secret-masked before it leaves the Source
+//   - file contents reach parsers raw (masking them corrupted facts);
+//     what leaves as text is masked where it leaves: command lines and
+//     commands in facts, streamed log lines, fixtures
 //   - a permission problem is reported as StatusUnknown with
 //     ReasonPermission, never as "nothing found"
 package hostenv

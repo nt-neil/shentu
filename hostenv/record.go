@@ -1,12 +1,16 @@
 package hostenv
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -18,7 +22,9 @@ import (
 // FixtureFormat names the on-disk layout written by Recorder.Save:
 //
 //	<dir>/manifest.json   info + one entry per request, sorted
-//	<dir>/blobs/<sha16>   file contents and command stdout, by content hash
+//	<dir>/blobs.tgz       file contents and command stdout, by content hash
+//	                      (blobs/<sha16> inside; a plain blobs/ folder is
+//	                      read too)
 const FixtureFormat = "hostenv-fixture/1"
 
 type fixture struct {
@@ -99,13 +105,18 @@ func codeErr(code, path string) error {
 }
 
 // Recorder passes every request through to Inner and remembers the answer.
+// Its Info is taken once, when it is made, so the time a collector reads
+// (the auth window, CollectedAt) is the time the fixture replays.
 type Recorder struct {
 	Inner Source
+	info  SourceInfo
 	mu    sync.Mutex
 	got   map[string]*entry
 }
 
-func NewRecorder(inner Source) *Recorder { return &Recorder{Inner: inner, got: map[string]*entry{}} }
+func NewRecorder(inner Source) *Recorder {
+	return &Recorder{Inner: inner, info: inner.Info(), got: map[string]*entry{}}
+}
 
 func (r *Recorder) put(e *entry) {
 	r.mu.Lock()
@@ -113,7 +124,7 @@ func (r *Recorder) put(e *entry) {
 	r.got[e.key()] = e
 }
 
-func (r *Recorder) Info() SourceInfo { return r.Inner.Info() }
+func (r *Recorder) Info() SourceInfo { return r.info }
 
 func (r *Recorder) ReadFile(path string) ([]byte, error) {
 	b, err := r.Inner.ReadFile(path)
@@ -179,14 +190,14 @@ func (r *Recorder) Save(dir string, m *Masker) error {
 		entries = append(entries, e)
 	}
 	r.mu.Unlock()
-	info := r.Inner.Info()
+	info := r.info
 	if m != nil {
 		entries = m.apply(entries)
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].key() < entries[j].key() })
-	if err := os.Mkdir(filepath.Join(dir, "blobs"), 0o700); err != nil {
-		return err
-	}
+	var tgz bytes.Buffer
+	zw := gzip.NewWriter(&tgz)
+	tw := tar.NewWriter(zw)
 	written := map[string]bool{}
 	for _, e := range entries {
 		if e.data == nil {
@@ -198,9 +209,21 @@ func (r *Recorder) Save(dir string, m *Masker) error {
 			continue
 		}
 		written[e.Blob] = true
-		if err := writeNew(filepath.Join(dir, filepath.FromSlash(e.Blob)), e.data); err != nil {
+		if err := tw.WriteHeader(&tar.Header{Name: e.Blob, Mode: 0o600, Size: int64(len(e.data)), Typeflag: tar.TypeReg}); err != nil {
 			return err
 		}
+		if _, err := tw.Write(e.data); err != nil {
+			return err
+		}
+	}
+	if err := tw.Close(); err != nil {
+		return err
+	}
+	if err := zw.Close(); err != nil {
+		return err
+	}
+	if err := writeNew(filepath.Join(dir, "blobs.tgz"), tgz.Bytes()); err != nil {
+		return err
 	}
 	b, err := json.MarshalIndent(fixture{Format: FixtureFormat, Info: info, Entries: entries}, "", "  ")
 	if err != nil {
@@ -242,19 +265,60 @@ func LoadReplay(dir string) (*Replay, error) {
 	if fx.Format != FixtureFormat {
 		return nil, fmt.Errorf("hostenv: fixture format %q, want %q", fx.Format, FixtureFormat)
 	}
+	blobs, err := loadBlobs(dir)
+	if err != nil {
+		return nil, err
+	}
 	rp := &Replay{info: fx.Info, byK: map[string]*entry{}}
 	for _, e := range fx.Entries {
 		if e.Blob != "" {
 			if strings.Contains(e.Blob, "..") {
 				return nil, fmt.Errorf("hostenv: bad blob path %q", e.Blob)
 			}
-			if e.data, err = os.ReadFile(filepath.Join(dir, filepath.FromSlash(e.Blob))); err != nil {
+			if blobs != nil {
+				var ok bool
+				if e.data, ok = blobs[e.Blob]; !ok {
+					return nil, fmt.Errorf("hostenv: %s missing from blobs.tgz", e.Blob)
+				}
+			} else if e.data, err = os.ReadFile(filepath.Join(dir, filepath.FromSlash(e.Blob))); err != nil {
 				return nil, err
 			}
 		}
 		rp.byK[e.key()] = e
 	}
 	return rp, nil
+}
+
+// loadBlobs reads blobs.tgz (nil, nil when the fixture has a blobs folder).
+func loadBlobs(dir string) (map[string][]byte, error) {
+	f, err := os.Open(filepath.Join(dir, "blobs.tgz"))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	zr, err := gzip.NewReader(f)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string][]byte{}
+	tr := tar.NewReader(zr)
+	for {
+		h, err := tr.Next()
+		if err == io.EOF {
+			return out, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		b, err := io.ReadAll(io.LimitReader(tr, 1<<30))
+		if err != nil {
+			return nil, err
+		}
+		out[h.Name] = b
+	}
 }
 
 func (rp *Replay) Info() SourceInfo { return rp.info }

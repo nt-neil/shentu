@@ -1,6 +1,6 @@
 {
   "schema": "hostfacts/1",
-  "collected_at": "2026-11-12T02:39:48.773271199Z",
+  "collected_at": "2026-11-12T05:51:23.222936988Z",
   "collector": {
     "name": "linux",
     "version": "0.1.0"
@@ -25,13 +25,11 @@
     }
   },
   "resources": {
-    "status": "partial",
-    "reason": "not_recorded",
-    "detail": "/proc/meminfo: hostenv: not in fixture: file /proc/meminfo",
+    "status": "ok",
     "value": {
-      "mem_total_bytes": 0,
-      "mem_available_bytes": 0,
-      "load1": 0
+      "mem_total_bytes": 2041720832,
+      "mem_available_bytes": 1060003840,
+      "load1": 0.41
     }
   },
   "packages": {
@@ -8688,7 +8686,8 @@
         "in_temp": false,
         "cmdline": "/sbin/init splash",
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:47+08:00"
       },
       {
         "pid": 10,
@@ -8698,10 +8697,11 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00"
       },
       {
-        "pid": 1088,
+        "pid": 1081,
         "ppid": 1,
         "name": "cupsd",
         "exe": "/usr/sbin/cupsd",
@@ -8710,10 +8710,12 @@
         "in_temp": false,
         "cmdline": "/usr/sbin/cupsd -l",
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:50:21+08:00",
+        "start_ticks": 3450
       },
       {
-        "pid": 1093,
+        "pid": 1084,
         "ppid": 1,
         "name": "unattended-upgr",
         "exe": "/usr/bin/python3.12",
@@ -8722,7 +8724,37 @@
         "in_temp": false,
         "cmdline": "/usr/bin/python3 /usr/share/unattended-upgrades/unattended-upgrade-shutdown --wait-for-signal",
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:50:21+08:00",
+        "start_ticks": 3450
+      },
+      {
+        "pid": 1098,
+        "ppid": 1,
+        "name": "gdm3",
+        "exe": "/usr/sbin/gdm3",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "/usr/sbin/gdm3",
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:50:21+08:00",
+        "start_ticks": 3452
+      },
+      {
+        "pid": 1099,
+        "ppid": 1081,
+        "name": "dbus",
+        "exe": "/usr/lib/cups/notifier/dbus",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "/usr/lib/cups/notifier/dbus dbus://",
+        "user": "lp",
+        "uid": "7",
+        "started": "2026-11-12T13:50:21+08:00",
+        "start_ticks": 3452
       },
       {
         "pid": 11,
@@ -8732,11 +8764,12 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00"
       },
       {
-        "pid": 1105,
-        "ppid": 1088,
+        "pid": 1100,
+        "ppid": 1081,
         "name": "dbus",
         "exe": "/usr/lib/cups/notifier/dbus",
         "exe_known": true,
@@ -8744,11 +8777,13 @@
         "in_temp": false,
         "cmdline": "/usr/lib/cups/notifier/dbus dbus://",
         "user": "lp",
-        "uid": "7"
+        "uid": "7",
+        "started": "2026-11-12T13:50:21+08:00",
+        "start_ticks": 3452
       },
       {
-        "pid": 1106,
-        "ppid": 1088,
+        "pid": 1101,
+        "ppid": 1081,
         "name": "dbus",
         "exe": "/usr/lib/cups/notifier/dbus",
         "exe_known": true,
@@ -8756,23 +8791,13 @@
         "in_temp": false,
         "cmdline": "/usr/lib/cups/notifier/dbus dbus://",
         "user": "lp",
-        "uid": "7"
+        "uid": "7",
+        "started": "2026-11-12T13:50:21+08:00",
+        "start_ticks": 3452
       },
       {
-        "pid": 1107,
-        "ppid": 1,
-        "name": "gdm3",
-        "exe": "/usr/sbin/gdm3",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "/usr/sbin/gdm3",
-        "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 1115,
-        "ppid": 1107,
+        "pid": 1108,
+        "ppid": 1098,
         "name": "gdm-session-wor",
         "exe": "/usr/libexec/gdm-session-worker",
         "exe_known": true,
@@ -8780,20 +8805,24 @@
         "in_temp": false,
         "cmdline": "gdm-session-worker [pam/gdm-autologin]",
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:50:21+08:00",
+        "start_ticks": 3455
       },
       {
-        "pid": 1121,
+        "pid": 1114,
         "ppid": 2,
         "name": "psimon",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:50:23+08:00",
+        "start_ticks": 3460
       },
       {
-        "pid": 1123,
+        "pid": 1116,
         "ppid": 1,
         "name": "systemd",
         "exe": "/usr/lib/systemd/systemd",
@@ -8802,11 +8831,13 @@
         "in_temp": false,
         "cmdline": "/usr/lib/systemd/systemd --user",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:50:22+08:00",
+        "start_ticks": 3460
       },
       {
-        "pid": 1124,
-        "ppid": 1123,
+        "pid": 1117,
+        "ppid": 1116,
         "name": "(sd-pam)",
         "exe": "/usr/lib/systemd/systemd-executor",
         "exe_known": true,
@@ -8814,10 +8845,12 @@
         "in_temp": false,
         "cmdline": "(sd-pam)",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:50:22+08:00",
+        "start_ticks": 3460
       },
       {
-        "pid": 1131,
+        "pid": 1126,
         "ppid": 1,
         "name": "cups-browsed",
         "exe": "/usr/sbin/cups-browsed",
@@ -8826,31 +8859,51 @@
         "in_temp": false,
         "cmdline": "/usr/sbin/cups-browsed",
         "user": "cups-browsed",
-        "uid": "115"
+        "uid": "115",
+        "started": "2026-11-12T13:50:22+08:00",
+        "start_ticks": 3467
       },
       {
         "pid": 1133,
-        "ppid": 1,
-        "name": "kerneloops",
-        "exe": "/usr/sbin/kerneloops",
+        "ppid": 1116,
+        "name": "pipewire",
+        "exe": "/usr/bin/pipewire",
         "exe_known": true,
         "exe_exists": true,
         "in_temp": false,
-        "cmdline": "/usr/sbin/kerneloops --test",
-        "user": "kernoops",
-        "uid": "106"
+        "cmdline": "/usr/bin/pipewire",
+        "user": "user1",
+        "uid": "1000",
+        "started": "2026-11-12T13:50:22+08:00",
+        "start_ticks": 3467
       },
       {
-        "pid": 1136,
-        "ppid": 1,
-        "name": "sshd",
-        "exe": "/usr/sbin/sshd",
+        "pid": 1134,
+        "ppid": 1116,
+        "name": "pipewire",
+        "exe": "/usr/bin/pipewire",
         "exe_known": true,
         "exe_exists": true,
         "in_temp": false,
-        "cmdline": "sshd: /usr/sbin/sshd -D [listener] 0 of 10-100 startups",
-        "user": "root",
-        "uid": "0"
+        "cmdline": "/usr/bin/pipewire -c filter-chain.conf",
+        "user": "user1",
+        "uid": "1000",
+        "started": "2026-11-12T13:50:22+08:00",
+        "start_ticks": 3467
+      },
+      {
+        "pid": 1137,
+        "ppid": 1116,
+        "name": "wireplumber",
+        "exe": "/usr/bin/wireplumber",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "/usr/bin/wireplumber",
+        "user": "user1",
+        "uid": "1000",
+        "started": "2026-11-12T13:50:22+08:00",
+        "start_ticks": 3468
       },
       {
         "pid": 1138,
@@ -8860,49 +8913,15 @@
         "exe_known": true,
         "exe_exists": true,
         "in_temp": false,
-        "cmdline": "/usr/sbin/kerneloops",
+        "cmdline": "/usr/sbin/kerneloops --test",
         "user": "kernoops",
-        "uid": "106"
+        "uid": "106",
+        "started": "2026-11-12T13:50:22+08:00",
+        "start_ticks": 3468
       },
       {
-        "pid": 1149,
-        "ppid": 1123,
-        "name": "pipewire",
-        "exe": "/usr/bin/pipewire",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "/usr/bin/pipewire",
-        "user": "user1",
-        "uid": "1000"
-      },
-      {
-        "pid": 1151,
-        "ppid": 1123,
-        "name": "pipewire",
-        "exe": "/usr/bin/pipewire",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "/usr/bin/pipewire -c filter-chain.conf",
-        "user": "user1",
-        "uid": "1000"
-      },
-      {
-        "pid": 1153,
-        "ppid": 1123,
-        "name": "wireplumber",
-        "exe": "/usr/bin/wireplumber",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "/usr/bin/wireplumber",
-        "user": "user1",
-        "uid": "1000"
-      },
-      {
-        "pid": 1155,
-        "ppid": 1123,
+        "pid": 1140,
+        "ppid": 1116,
         "name": "pipewire-pulse",
         "exe": "/usr/bin/pipewire",
         "exe_known": true,
@@ -8910,11 +8929,27 @@
         "in_temp": false,
         "cmdline": "/usr/bin/pipewire-pulse",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:50:22+08:00",
+        "start_ticks": 3468
       },
       {
-        "pid": 1156,
-        "ppid": 1123,
+        "pid": 1142,
+        "ppid": 1,
+        "name": "sshd",
+        "exe": "/usr/sbin/sshd",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "sshd: /usr/sbin/sshd -D [listener] 0 of 10-100 startups",
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:50:22+08:00",
+        "start_ticks": 3468
+      },
+      {
+        "pid": 1150,
+        "ppid": 1116,
         "name": "gnome-keyring-d",
         "exe": "/usr/bin/gnome-keyring-daemon",
         "exe_known": true,
@@ -8922,11 +8957,27 @@
         "in_temp": false,
         "cmdline": "/usr/bin/gnome-keyring-daemon --foreground --components=pkcs11,secrets --control-directory=/run/user/1000/keyring",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:50:22+08:00",
+        "start_ticks": 3468
       },
       {
-        "pid": 1161,
-        "ppid": 1123,
+        "pid": 1151,
+        "ppid": 1,
+        "name": "kerneloops",
+        "exe": "/usr/sbin/kerneloops",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "/usr/sbin/kerneloops",
+        "user": "kernoops",
+        "uid": "106",
+        "started": "2026-11-12T13:50:22+08:00",
+        "start_ticks": 3468
+      },
+      {
+        "pid": 1155,
+        "ppid": 1116,
         "name": "dbus-daemon",
         "exe": "/usr/bin/dbus-daemon",
         "exe_known": true,
@@ -8934,10 +8985,26 @@
         "in_temp": false,
         "cmdline": "/usr/bin/dbus-daemon --session --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:50:22+08:00",
+        "start_ticks": 3469
       },
       {
         "pid": 1171,
+        "ppid": 1116,
+        "name": "xdg-document-po",
+        "exe": "/usr/libexec/xdg-document-portal",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "/usr/libexec/xdg-document-portal",
+        "user": "user1",
+        "uid": "1000",
+        "started": "2026-11-12T13:50:22+08:00",
+        "start_ticks": 3471
+      },
+      {
+        "pid": 1172,
         "ppid": 1,
         "name": "rtkit-daemon",
         "exe": "/usr/libexec/rtkit-daemon",
@@ -8946,23 +9013,13 @@
         "in_temp": false,
         "cmdline": "/usr/libexec/rtkit-daemon",
         "user": "rtkit",
-        "uid": "117"
+        "uid": "117",
+        "started": "2026-11-12T13:50:22+08:00",
+        "start_ticks": 3471
       },
       {
-        "pid": 1184,
-        "ppid": 1123,
-        "name": "xdg-document-po",
-        "exe": "/usr/libexec/xdg-document-portal",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "/usr/libexec/xdg-document-portal",
-        "user": "user1",
-        "uid": "1000"
-      },
-      {
-        "pid": 1190,
-        "ppid": 1115,
+        "pid": 1181,
+        "ppid": 1108,
         "name": "gdm-wayland-ses",
         "exe": "/usr/libexec/gdm-wayland-session",
         "exe_known": true,
@@ -8970,7 +9027,37 @@
         "in_temp": false,
         "cmdline": "/usr/libexec/gdm-wayland-session env GNOME_SHELL_SESSION_MODE=ubuntu /usr/bin/gnome-session --session=ubuntu",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:50:22+08:00",
+        "start_ticks": 3472
+      },
+      {
+        "pid": 1183,
+        "ppid": 1116,
+        "name": "xdg-permission-",
+        "exe": "/usr/libexec/xdg-permission-store",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "/usr/libexec/xdg-permission-store",
+        "user": "user1",
+        "uid": "1000",
+        "started": "2026-11-12T13:50:22+08:00",
+        "start_ticks": 3472
+      },
+      {
+        "pid": 1192,
+        "ppid": 1181,
+        "name": "gnome-session-b",
+        "exe": "/usr/libexec/gnome-session-binary",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "/usr/libexec/gnome-session-binary --session=ubuntu",
+        "user": "user1",
+        "uid": "1000",
+        "started": "2026-11-12T13:50:22+08:00",
+        "start_ticks": 3472
       },
       {
         "pid": 12,
@@ -8980,35 +9067,12 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00"
       },
       {
-        "pid": 1205,
-        "ppid": 1190,
-        "name": "gnome-session-b",
-        "exe": "/usr/libexec/gnome-session-binary",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "/usr/libexec/gnome-session-binary --session=ubuntu",
-        "user": "user1",
-        "uid": "1000"
-      },
-      {
-        "pid": 1213,
-        "ppid": 1123,
-        "name": "xdg-permission-",
-        "exe": "/usr/libexec/xdg-permission-store",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "/usr/libexec/xdg-permission-store",
-        "user": "user1",
-        "uid": "1000"
-      },
-      {
-        "pid": 1239,
-        "ppid": 1184,
+        "pid": 1211,
+        "ppid": 1171,
         "name": "fusermount3",
         "exe": "/usr/bin/fusermount3",
         "exe_known": true,
@@ -9016,7 +9080,9 @@
         "in_temp": false,
         "cmdline": "fusermount3 -o rw,nosuid,nodev,fsname=portal,auto_unmount,subtype=portal -- /run/user/1000/doc",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:50:22+08:00",
+        "start_ticks": 3473
       },
       {
         "pid": 13,
@@ -9026,17 +9092,8 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 130,
-        "ppid": 2,
-        "name": "kworker/u16:4-async",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00"
       },
       {
         "pid": 131,
@@ -9046,41 +9103,37 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 17
       },
       {
         "pid": 132,
         "ppid": 2,
-        "name": "kworker/u16:6-async",
+        "name": "kworker/u16:6-events_freezable_pwr_efficient",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 17
       },
       {
         "pid": 133,
         "ppid": 2,
-        "name": "kworker/u16:7-events_freezable_pwr_efficient",
+        "name": "kworker/u16:7-async",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 17
       },
       {
-        "pid": 134,
-        "ppid": 2,
-        "name": "kworker/u16:8-async",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 1342,
-        "ppid": 1123,
+        "pid": 1335,
+        "ppid": 1116,
         "name": "gcr-ssh-agent",
         "exe": "/usr/libexec/gcr-ssh-agent",
         "exe_known": true,
@@ -9088,11 +9141,13 @@
         "in_temp": false,
         "cmdline": "/usr/libexec/gcr-ssh-agent --base-dir /run/user/1000/gcr",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:50:22+08:00",
+        "start_ticks": 3481
       },
       {
-        "pid": 1343,
-        "ppid": 1123,
+        "pid": 1336,
+        "ppid": 1116,
         "name": "gnome-session-c",
         "exe": "/usr/libexec/gnome-session-ctl",
         "exe_known": true,
@@ -9100,21 +9155,37 @@
         "in_temp": false,
         "cmdline": "/usr/libexec/gnome-session-ctl --monitor",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:50:22+08:00",
+        "start_ticks": 3481
       },
       {
-        "pid": 135,
+        "pid": 134,
         "ppid": 2,
-        "name": "kworker/u16:9-loop8",
+        "name": "kworker/u16:8-loop5",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 17
       },
       {
-        "pid": 1357,
-        "ppid": 1123,
+        "pid": 135,
+        "ppid": 2,
+        "name": "kworker/u16:9-async",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 18
+      },
+      {
+        "pid": 1352,
+        "ppid": 1116,
         "name": "gvfsd",
         "exe": "/usr/libexec/gvfsd",
         "exe_known": true,
@@ -9122,21 +9193,13 @@
         "in_temp": false,
         "cmdline": "/usr/libexec/gvfsd",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:50:22+08:00",
+        "start_ticks": 3482
       },
       {
-        "pid": 136,
-        "ppid": 2,
-        "name": "kworker/u16:10-loop7",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 1365,
-        "ppid": 1123,
+        "pid": 1358,
+        "ppid": 1116,
         "name": "gvfsd-fuse",
         "exe": "/usr/libexec/gvfsd-fuse",
         "exe_known": true,
@@ -9144,11 +9207,25 @@
         "in_temp": false,
         "cmdline": "/usr/libexec/gvfsd-fuse /run/user/1000/gvfs -f",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:50:22+08:00",
+        "start_ticks": 3483
       },
       {
-        "pid": 1368,
-        "ppid": 1123,
+        "pid": 136,
+        "ppid": 2,
+        "name": "kworker/u16:10-async",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 18
+      },
+      {
+        "pid": 1361,
+        "ppid": 1116,
         "name": "gnome-session-b",
         "exe": "/usr/libexec/gnome-session-binary",
         "exe_known": true,
@@ -9156,17 +9233,21 @@
         "in_temp": false,
         "cmdline": "/usr/libexec/gnome-session-binary --systemd-service --session=ubuntu",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:50:22+08:00",
+        "start_ticks": 3483
       },
       {
         "pid": 137,
         "ppid": 2,
-        "name": "kworker/u16:11-async",
+        "name": "kworker/u16:11-events_unbound",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 18
       },
       {
         "pid": 138,
@@ -9176,7 +9257,9 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 18
       },
       {
         "pid": 139,
@@ -9186,19 +9269,23 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 18
       },
       {
-        "pid": 1399,
-        "ppid": 1123,
-        "name": "gnome-shell",
-        "exe": "/usr/bin/gnome-shell",
+        "pid": 1396,
+        "ppid": 1361,
+        "name": "at-spi-bus-laun",
+        "exe": "/usr/libexec/at-spi-bus-launcher",
         "exe_known": true,
         "exe_exists": true,
         "in_temp": false,
-        "cmdline": "/usr/bin/gnome-shell",
+        "cmdline": "/usr/libexec/at-spi-bus-launcher --launch-immediately",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:50:22+08:00",
+        "start_ticks": 3486
       },
       {
         "pid": 14,
@@ -9208,7 +9295,8 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00"
       },
       {
         "pid": 140,
@@ -9218,19 +9306,37 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 18
       },
       {
         "pid": 1400,
-        "ppid": 1368,
-        "name": "at-spi-bus-laun",
-        "exe": "/usr/libexec/at-spi-bus-launcher",
+        "ppid": 1116,
+        "name": "gnome-shell",
+        "exe": "/usr/bin/gnome-shell",
         "exe_known": true,
         "exe_exists": true,
         "in_temp": false,
-        "cmdline": "/usr/libexec/at-spi-bus-launcher --launch-immediately",
+        "cmdline": "/usr/bin/gnome-shell",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:50:22+08:00",
+        "start_ticks": 3486
+      },
+      {
+        "pid": 1407,
+        "ppid": 1396,
+        "name": "dbus-daemon",
+        "exe": "/usr/bin/dbus-daemon",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "/usr/bin/dbus-daemon --config-file=/usr/share/defaults/at-spi2/accessibility.conf --nofork --print-address 11 --address=unix:path=/run/user/1000/at-spi/bus",
+        "user": "user1",
+        "uid": "1000",
+        "started": "2026-11-12T13:50:22+08:00",
+        "start_ticks": 3486
       },
       {
         "pid": 141,
@@ -9240,19 +9346,9 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 1412,
-        "ppid": 1400,
-        "name": "dbus-daemon",
-        "exe": "/usr/bin/dbus-daemon",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "/usr/bin/dbus-daemon --config-file=/usr/share/defaults/at-spi2/accessibility.conf --nofork --print-address 11 --address=unix:path=/run/user/1000/at-spi/bus",
-        "user": "user1",
-        "uid": "1000"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 18
       },
       {
         "pid": 142,
@@ -9262,7 +9358,9 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 18
       },
       {
         "pid": 143,
@@ -9272,7 +9370,9 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 18
       },
       {
         "pid": 144,
@@ -9282,7 +9382,9 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 18
       },
       {
         "pid": 145,
@@ -9292,7 +9394,9 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 18
       },
       {
         "pid": 146,
@@ -9302,17 +9406,21 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 18
       },
       {
         "pid": 147,
         "ppid": 2,
-        "name": "kworker/u16:21-writeback",
+        "name": "kworker/u16:21-async",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 18
       },
       {
         "pid": 148,
@@ -9322,17 +9430,21 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 18
       },
       {
         "pid": 149,
         "ppid": 2,
-        "name": "kworker/0:2-cgroup_free",
+        "name": "kworker/u16:23-async",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 18
       },
       {
         "pid": 15,
@@ -9342,31 +9454,72 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00"
       },
       {
-        "pid": 1509,
+        "pid": 150,
         "ppid": 2,
-        "name": "kworker/u17:1",
+        "name": "kworker/u16:24-events_freezable_pwr_efficient",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 18
       },
       {
-        "pid": 1510,
+        "pid": 1500,
+        "ppid": 2,
+        "name": "kworker/u17:1-ttm",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:50:23+08:00",
+        "start_ticks": 3509
+      },
+      {
+        "pid": 1501,
         "ppid": 2,
         "name": "kworker/u17:2-ttm",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:50:23+08:00",
+        "start_ticks": 3509
       },
       {
-        "pid": 1558,
-        "ppid": 1123,
+        "pid": 1502,
+        "ppid": 2,
+        "name": "kworker/u17:3-ttm",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:50:23+08:00",
+        "start_ticks": 3509
+      },
+      {
+        "pid": 151,
+        "ppid": 2,
+        "name": "kworker/u16:25-flush-259:0",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 18
+      },
+      {
+        "pid": 1512,
+        "ppid": 1116,
         "name": "at-spi2-registr",
         "exe": "/usr/libexec/at-spi2-registryd",
         "exe_known": true,
@@ -9374,10 +9527,12 @@
         "in_temp": false,
         "cmdline": "/usr/libexec/at-spi2-registryd --use-gnome-session",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:50:22+08:00",
+        "start_ticks": 3527
       },
       {
-        "pid": 1559,
+        "pid": 1514,
         "ppid": 1,
         "name": "colord",
         "exe": "/usr/libexec/colord",
@@ -9386,11 +9541,37 @@
         "in_temp": false,
         "cmdline": "/usr/libexec/colord",
         "user": "colord",
-        "uid": "118"
+        "uid": "118",
+        "started": "2026-11-12T13:50:22+08:00",
+        "start_ticks": 3527
       },
       {
-        "pid": 1586,
-        "ppid": 1123,
+        "pid": 152,
+        "ppid": 2,
+        "name": "kworker/u16:26-flush-259:0",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 18
+      },
+      {
+        "pid": 153,
+        "ppid": 2,
+        "name": "kworker/3:2-events",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 18
+      },
+      {
+        "pid": 1582,
+        "ppid": 1116,
         "name": "gnome-shell-cal",
         "exe": "/usr/libexec/gnome-shell-calendar-server",
         "exe_known": true,
@@ -9398,11 +9579,13 @@
         "in_temp": false,
         "cmdline": "/usr/libexec/gnome-shell-calendar-server",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:50:22+08:00",
+        "start_ticks": 3544
       },
       {
-        "pid": 1599,
-        "ppid": 1123,
+        "pid": 1593,
+        "ppid": 1116,
         "name": "evolution-sourc",
         "exe": "/usr/libexec/evolution-source-registry",
         "exe_known": true,
@@ -9410,7 +9593,51 @@
         "in_temp": false,
         "cmdline": "/usr/libexec/evolution-source-registry",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:50:22+08:00",
+        "start_ticks": 3546
+      },
+      {
+        "pid": 1596,
+        "ppid": 1116,
+        "name": "gjs",
+        "exe": "/usr/bin/gjs-console",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "/usr/bin/gjs -m /usr/share/gnome-shell/org.gnome.Shell.Notifications",
+        "user": "user1",
+        "uid": "1000",
+        "started": "2026-11-12T13:50:22+08:00",
+        "start_ticks": 3547
+      },
+      {
+        "pid": 1597,
+        "ppid": 1,
+        "name": "packagekitd",
+        "exe": "/usr/libexec/packagekitd",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "/usr/libexec/packagekitd",
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:50:22+08:00",
+        "start_ticks": 3547
+      },
+      {
+        "pid": 1598,
+        "ppid": 1,
+        "name": "upowerd",
+        "exe": "/usr/libexec/upowerd",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "/usr/libexec/upowerd",
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:50:22+08:00",
+        "start_ticks": 3547
       },
       {
         "pid": 16,
@@ -9420,47 +9647,12 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00"
       },
       {
-        "pid": 1601,
-        "ppid": 1123,
-        "name": "gjs",
-        "exe": "/usr/bin/gjs-console",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "/usr/bin/gjs -m /usr/share/gnome-shell/org.gnome.Shell.Notifications",
-        "user": "user1",
-        "uid": "1000"
-      },
-      {
-        "pid": 1602,
-        "ppid": 1,
-        "name": "packagekitd",
-        "exe": "/usr/libexec/packagekitd",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "/usr/libexec/packagekitd",
-        "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 1603,
-        "ppid": 1,
-        "name": "upowerd",
-        "exe": "/usr/libexec/upowerd",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "/usr/libexec/upowerd",
-        "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 1621,
-        "ppid": 1123,
+        "pid": 1612,
+        "ppid": 1116,
         "name": "ibus-daemon",
         "exe": "/usr/bin/ibus-daemon",
         "exe_known": true,
@@ -9468,11 +9660,13 @@
         "in_temp": false,
         "cmdline": "/usr/bin/ibus-daemon --panel disable",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:50:22+08:00",
+        "start_ticks": 3548
       },
       {
-        "pid": 1622,
-        "ppid": 1123,
+        "pid": 1613,
+        "ppid": 1116,
         "name": "gsd-a11y-settin",
         "exe": "/usr/libexec/gsd-a11y-settings",
         "exe_known": true,
@@ -9480,11 +9674,13 @@
         "in_temp": false,
         "cmdline": "/usr/libexec/gsd-a11y-settings",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:50:22+08:00",
+        "start_ticks": 3548
       },
       {
-        "pid": 1624,
-        "ppid": 1123,
+        "pid": 1620,
+        "ppid": 1116,
         "name": "gsd-color",
         "exe": "/usr/libexec/gsd-color",
         "exe_known": true,
@@ -9492,11 +9688,13 @@
         "in_temp": false,
         "cmdline": "/usr/libexec/gsd-color",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:50:22+08:00",
+        "start_ticks": 3548
       },
       {
-        "pid": 1625,
-        "ppid": 1123,
+        "pid": 1624,
+        "ppid": 1116,
         "name": "gsd-datetime",
         "exe": "/usr/libexec/gsd-datetime",
         "exe_known": true,
@@ -9504,11 +9702,13 @@
         "in_temp": false,
         "cmdline": "/usr/libexec/gsd-datetime",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:50:22+08:00",
+        "start_ticks": 3548
       },
       {
-        "pid": 1626,
-        "ppid": 1123,
+        "pid": 1625,
+        "ppid": 1116,
         "name": "gsd-housekeepin",
         "exe": "/usr/libexec/gsd-housekeeping",
         "exe_known": true,
@@ -9516,21 +9716,13 @@
         "in_temp": false,
         "cmdline": "/usr/libexec/gsd-housekeeping",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:50:22+08:00",
+        "start_ticks": 3548
       },
       {
-        "pid": 163,
-        "ppid": 2,
-        "name": "kworker/2:2-cgroup_free",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 1633,
-        "ppid": 1123,
+        "pid": 1626,
+        "ppid": 1116,
         "name": "gsd-keyboard",
         "exe": "/usr/libexec/gsd-keyboard",
         "exe_known": true,
@@ -9538,11 +9730,13 @@
         "in_temp": false,
         "cmdline": "/usr/libexec/gsd-keyboard",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:50:22+08:00",
+        "start_ticks": 3548
       },
       {
-        "pid": 1635,
-        "ppid": 1123,
+        "pid": 1627,
+        "ppid": 1116,
         "name": "gsd-media-keys",
         "exe": "/usr/libexec/gsd-media-keys",
         "exe_known": true,
@@ -9550,11 +9744,13 @@
         "in_temp": false,
         "cmdline": "/usr/libexec/gsd-media-keys",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:50:22+08:00",
+        "start_ticks": 3548
       },
       {
-        "pid": 1638,
-        "ppid": 1123,
+        "pid": 1629,
+        "ppid": 1116,
         "name": "gsd-power",
         "exe": "/usr/libexec/gsd-power",
         "exe_known": true,
@@ -9562,11 +9758,13 @@
         "in_temp": false,
         "cmdline": "/usr/libexec/gsd-power",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:50:22+08:00",
+        "start_ticks": 3548
       },
       {
-        "pid": 1639,
-        "ppid": 1123,
+        "pid": 1630,
+        "ppid": 1116,
         "name": "gsd-print-notif",
         "exe": "/usr/libexec/gsd-print-notifications",
         "exe_known": true,
@@ -9574,21 +9772,13 @@
         "in_temp": false,
         "cmdline": "/usr/libexec/gsd-print-notifications",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:50:22+08:00",
+        "start_ticks": 3548
       },
       {
-        "pid": 164,
-        "ppid": 2,
-        "name": "kworker/R-nvme-wq",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 1640,
-        "ppid": 1123,
+        "pid": 1631,
+        "ppid": 1116,
         "name": "gsd-rfkill",
         "exe": "/usr/libexec/gsd-rfkill",
         "exe_known": true,
@@ -9596,11 +9786,13 @@
         "in_temp": false,
         "cmdline": "/usr/libexec/gsd-rfkill",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:50:22+08:00",
+        "start_ticks": 3548
       },
       {
-        "pid": 1642,
-        "ppid": 1123,
+        "pid": 1633,
+        "ppid": 1116,
         "name": "gsd-screensaver",
         "exe": "/usr/libexec/gsd-screensaver-proxy",
         "exe_known": true,
@@ -9608,11 +9800,13 @@
         "in_temp": false,
         "cmdline": "/usr/libexec/gsd-screensaver-proxy",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:50:22+08:00",
+        "start_ticks": 3548
       },
       {
-        "pid": 1643,
-        "ppid": 1123,
+        "pid": 1637,
+        "ppid": 1116,
         "name": "gsd-sharing",
         "exe": "/usr/libexec/gsd-sharing",
         "exe_known": true,
@@ -9620,11 +9814,13 @@
         "in_temp": false,
         "cmdline": "/usr/libexec/gsd-sharing",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:50:22+08:00",
+        "start_ticks": 3549
       },
       {
-        "pid": 1648,
-        "ppid": 1123,
+        "pid": 1639,
+        "ppid": 1116,
         "name": "gsd-smartcard",
         "exe": "/usr/libexec/gsd-smartcard",
         "exe_known": true,
@@ -9632,21 +9828,13 @@
         "in_temp": false,
         "cmdline": "/usr/libexec/gsd-smartcard",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:50:22+08:00",
+        "start_ticks": 3549
       },
       {
-        "pid": 165,
-        "ppid": 2,
-        "name": "kworker/R-nvme-reset-wq",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 1650,
-        "ppid": 1123,
+        "pid": 1641,
+        "ppid": 1116,
         "name": "gsd-sound",
         "exe": "/usr/libexec/gsd-sound",
         "exe_known": true,
@@ -9654,11 +9842,13 @@
         "in_temp": false,
         "cmdline": "/usr/libexec/gsd-sound",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:50:22+08:00",
+        "start_ticks": 3549
       },
       {
-        "pid": 1652,
-        "ppid": 1123,
+        "pid": 1644,
+        "ppid": 1116,
         "name": "gsd-wacom",
         "exe": "/usr/libexec/gsd-wacom",
         "exe_known": true,
@@ -9666,21 +9856,37 @@
         "in_temp": false,
         "cmdline": "/usr/libexec/gsd-wacom",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:50:22+08:00",
+        "start_ticks": 3549
       },
       {
-        "pid": 166,
+        "pid": 167,
         "ppid": 2,
-        "name": "kworker/R-nvme-delete-wq",
+        "name": "kworker/1:2-events",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 23
       },
       {
-        "pid": 1695,
-        "ppid": 1368,
+        "pid": 168,
+        "ppid": 2,
+        "name": "kworker/2:2-events",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 23
+      },
+      {
+        "pid": 1681,
+        "ppid": 1361,
         "name": "evolution-alarm",
         "exe": "/usr/libexec/evolution-data-server/evolution-alarm-notify",
         "exe_known": true,
@@ -9688,11 +9894,13 @@
         "in_temp": false,
         "cmdline": "/usr/libexec/evolution-data-server/evolution-alarm-notify",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:50:22+08:00",
+        "start_ticks": 3551
       },
       {
-        "pid": 1696,
-        "ppid": 1368,
+        "pid": 1688,
+        "ppid": 1361,
         "name": "gsd-disk-utilit",
         "exe": "/usr/libexec/gsd-disk-utility-notify",
         "exe_known": true,
@@ -9700,7 +9908,21 @@
         "in_temp": false,
         "cmdline": "/usr/libexec/gsd-disk-utility-notify",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:50:22+08:00",
+        "start_ticks": 3552
+      },
+      {
+        "pid": 169,
+        "ppid": 2,
+        "name": "scsi_eh_0",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 24
       },
       {
         "pid": 17,
@@ -9710,57 +9932,130 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00"
       },
       {
-        "pid": 175,
-        "ppid": 2,
-        "name": "scsi_eh_0",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 176,
+        "pid": 170,
         "ppid": 2,
         "name": "kworker/R-scsi_tmf_0",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 24
       },
       {
-        "pid": 177,
+        "pid": 171,
+        "ppid": 2,
+        "name": "kworker/R-nvme-wq",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 24
+      },
+      {
+        "pid": 172,
+        "ppid": 2,
+        "name": "kworker/R-nvme-reset-wq",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 24
+      },
+      {
+        "pid": 173,
+        "ppid": 2,
+        "name": "kworker/R-nvme-delete-wq",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 24
+      },
+      {
+        "pid": 174,
         "ppid": 2,
         "name": "kworker/R-nvme-auth-wq",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 24
       },
       {
-        "pid": 178,
+        "pid": 175,
         "ppid": 2,
         "name": "scsi_eh_1",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 24
       },
       {
-        "pid": 179,
+        "pid": 176,
         "ppid": 2,
         "name": "kworker/R-scsi_tmf_1",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 24
+      },
+      {
+        "pid": 177,
+        "ppid": 2,
+        "name": "scsi_eh_2",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 24
+      },
+      {
+        "pid": 178,
+        "ppid": 2,
+        "name": "kworker/R-scsi_tmf_2",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 24
+      },
+      {
+        "pid": 1790,
+        "ppid": 1116,
+        "name": "gvfs-udisks2-vo",
+        "exe": "/usr/libexec/gvfs-udisks2-volume-monitor",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "/usr/libexec/gvfs-udisks2-volume-monitor",
+        "user": "user1",
+        "uid": "1000",
+        "started": "2026-11-12T13:50:22+08:00",
+        "start_ticks": 3555
       },
       {
         "pid": 18,
@@ -9770,21 +10065,12 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00"
       },
       {
-        "pid": 180,
-        "ppid": 2,
-        "name": "scsi_eh_2",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 1805,
-        "ppid": 1621,
+        "pid": 1808,
+        "ppid": 1612,
         "name": "ibus-dconf",
         "exe": "/usr/libexec/ibus-dconf",
         "exe_known": true,
@@ -9792,11 +10078,13 @@
         "in_temp": false,
         "cmdline": "/usr/libexec/ibus-dconf",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:50:23+08:00",
+        "start_ticks": 3556
       },
       {
-        "pid": 1806,
-        "ppid": 1621,
+        "pid": 1809,
+        "ppid": 1612,
         "name": "ibus-extension-",
         "exe": "/usr/libexec/ibus-extension-gtk3",
         "exe_known": true,
@@ -9804,21 +10092,13 @@
         "in_temp": false,
         "cmdline": "/usr/libexec/ibus-extension-gtk3",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:50:23+08:00",
+        "start_ticks": 3556
       },
       {
-        "pid": 181,
-        "ppid": 2,
-        "name": "kworker/R-scsi_tmf_2",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 1811,
-        "ppid": 1123,
+        "pid": 1815,
+        "ppid": 1116,
         "name": "ibus-portal",
         "exe": "/usr/libexec/ibus-portal",
         "exe_known": true,
@@ -9826,43 +10106,25 @@
         "in_temp": false,
         "cmdline": "/usr/libexec/ibus-portal",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:50:23+08:00",
+        "start_ticks": 3556
       },
       {
-        "pid": 1813,
-        "ppid": 1123,
-        "name": "gvfs-udisks2-vo",
-        "exe": "/usr/libexec/gvfs-udisks2-volume-monitor",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "/usr/libexec/gvfs-udisks2-volume-monitor",
-        "user": "user1",
-        "uid": "1000"
-      },
-      {
-        "pid": 182,
+        "pid": 183,
         "ppid": 2,
         "name": "scsi_eh_3",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 25
       },
       {
-        "pid": 183,
-        "ppid": 2,
-        "name": "kworker/R-scsi_tmf_3",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 1835,
-        "ppid": 1123,
+        "pid": 1831,
+        "ppid": 1116,
         "name": "gvfs-mtp-volume",
         "exe": "/usr/libexec/gvfs-mtp-volume-monitor",
         "exe_known": true,
@@ -9870,21 +10132,25 @@
         "in_temp": false,
         "cmdline": "/usr/libexec/gvfs-mtp-volume-monitor",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:50:23+08:00",
+        "start_ticks": 3557
       },
       {
-        "pid": 184,
+        "pid": 1832,
         "ppid": 2,
-        "name": "scsi_eh_4",
+        "name": "kworker/2:3-events",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:50:23+08:00",
+        "start_ticks": 3558
       },
       {
-        "pid": 1840,
-        "ppid": 1123,
+        "pid": 1837,
+        "ppid": 1116,
         "name": "gvfs-goa-volume",
         "exe": "/usr/libexec/gvfs-goa-volume-monitor",
         "exe_known": true,
@@ -9892,21 +10158,13 @@
         "in_temp": false,
         "cmdline": "/usr/libexec/gvfs-goa-volume-monitor",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:50:23+08:00",
+        "start_ticks": 3558
       },
       {
-        "pid": 185,
-        "ppid": 2,
-        "name": "kworker/R-scsi_tmf_4",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 1850,
-        "ppid": 1123,
+        "pid": 1842,
+        "ppid": 1116,
         "name": "goa-daemon",
         "exe": "/usr/libexec/goa-daemon",
         "exe_known": true,
@@ -9914,11 +10172,25 @@
         "in_temp": false,
         "cmdline": "/usr/libexec/goa-daemon",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:50:23+08:00",
+        "start_ticks": 3559
       },
       {
-        "pid": 1859,
-        "ppid": 1123,
+        "pid": 185,
+        "ppid": 2,
+        "name": "kworker/R-scsi_tmf_3",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 25
+      },
+      {
+        "pid": 1850,
+        "ppid": 1116,
         "name": "goa-identity-se",
         "exe": "/usr/libexec/goa-identity-service",
         "exe_known": true,
@@ -9926,21 +10198,13 @@
         "in_temp": false,
         "cmdline": "/usr/libexec/goa-identity-service",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:50:23+08:00",
+        "start_ticks": 3560
       },
       {
-        "pid": 186,
-        "ppid": 2,
-        "name": "scsi_eh_5",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 1867,
-        "ppid": 1123,
+        "pid": 1863,
+        "ppid": 1116,
         "name": "gvfs-afc-volume",
         "exe": "/usr/libexec/gvfs-afc-volume-monitor",
         "exe_known": true,
@@ -9948,11 +10212,13 @@
         "in_temp": false,
         "cmdline": "/usr/libexec/gvfs-afc-volume-monitor",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:50:23+08:00",
+        "start_ticks": 3561
       },
       {
-        "pid": 1869,
-        "ppid": 1123,
+        "pid": 1871,
+        "ppid": 1116,
         "name": "evolution-calen",
         "exe": "/usr/libexec/evolution-calendar-factory",
         "exe_known": true,
@@ -9960,21 +10226,13 @@
         "in_temp": false,
         "cmdline": "/usr/libexec/evolution-calendar-factory",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:50:23+08:00",
+        "start_ticks": 3563
       },
       {
-        "pid": 187,
-        "ppid": 2,
-        "name": "kworker/R-scsi_tmf_5",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 1875,
-        "ppid": 1123,
+        "pid": 1872,
+        "ppid": 1116,
         "name": "gvfs-gphoto2-vo",
         "exe": "/usr/libexec/gvfs-gphoto2-volume-monitor",
         "exe_known": true,
@@ -9982,31 +10240,13 @@
         "in_temp": false,
         "cmdline": "/usr/libexec/gvfs-gphoto2-volume-monitor",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:50:23+08:00",
+        "start_ticks": 3563
       },
       {
-        "pid": 188,
-        "ppid": 2,
-        "name": "scsi_eh_6",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 189,
-        "ppid": 2,
-        "name": "kworker/R-scsi_tmf_6",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 1891,
-        "ppid": 1123,
+        "pid": 1889,
+        "ppid": 1116,
         "name": "evolution-addre",
         "exe": "/usr/libexec/evolution-addressbook-factory",
         "exe_known": true,
@@ -10014,7 +10254,21 @@
         "in_temp": false,
         "cmdline": "/usr/libexec/evolution-addressbook-factory",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:50:23+08:00",
+        "start_ticks": 3566
+      },
+      {
+        "pid": 189,
+        "ppid": 2,
+        "name": "scsi_eh_4",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 25
       },
       {
         "pid": 19,
@@ -10024,31 +10278,25 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 1
       },
       {
         "pid": 190,
         "ppid": 2,
-        "name": "scsi_eh_7",
+        "name": "kworker/R-scsi_tmf_4",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 25
       },
       {
-        "pid": 191,
-        "ppid": 2,
-        "name": "kworker/R-scsi_tmf_7",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 1912,
-        "ppid": 1621,
+        "pid": 1907,
+        "ppid": 1612,
         "name": "ibus-engine-sim",
         "exe": "/usr/libexec/ibus-engine-simple",
         "exe_known": true,
@@ -10056,11 +10304,49 @@
         "in_temp": false,
         "cmdline": "/usr/libexec/ibus-engine-simple",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:50:23+08:00",
+        "start_ticks": 3569
       },
       {
-        "pid": 1916,
-        "ppid": 1123,
+        "pid": 191,
+        "ppid": 2,
+        "name": "scsi_eh_5",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 25
+      },
+      {
+        "pid": 192,
+        "ppid": 2,
+        "name": "kworker/R-scsi_tmf_5",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 25
+      },
+      {
+        "pid": 193,
+        "ppid": 2,
+        "name": "scsi_eh_6",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 25
+      },
+      {
+        "pid": 1931,
+        "ppid": 1116,
         "name": "dconf-service",
         "exe": "/usr/libexec/dconf-service",
         "exe_known": true,
@@ -10068,30 +10354,12 @@
         "in_temp": false,
         "cmdline": "/usr/libexec/dconf-service",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:50:23+08:00",
+        "start_ticks": 3571
       },
       {
-        "pid": 192,
-        "ppid": 2,
-        "name": "scsi_eh_8",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 193,
-        "ppid": 2,
-        "name": "kworker/R-scsi_tmf_8",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 1938,
+        "pid": 1936,
         "ppid": 1,
         "name": "geoclue",
         "exe": "/usr/libexec/geoclue",
@@ -10100,31 +10368,37 @@
         "in_temp": false,
         "cmdline": "/usr/libexec/geoclue",
         "user": "geoclue",
-        "uid": "114"
+        "uid": "114",
+        "started": "2026-11-12T13:50:23+08:00",
+        "start_ticks": 3572
       },
       {
         "pid": 194,
         "ppid": 2,
-        "name": "scsi_eh_9",
+        "name": "kworker/R-scsi_tmf_6",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 25
       },
       {
         "pid": 195,
         "ppid": 2,
-        "name": "kworker/R-scsi_tmf_9",
+        "name": "scsi_eh_7",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 25
       },
       {
-        "pid": 1952,
-        "ppid": 1357,
+        "pid": 1950,
+        "ppid": 1352,
         "name": "gvfsd-trash",
         "exe": "/usr/libexec/gvfsd-trash",
         "exe_known": true,
@@ -10132,41 +10406,49 @@
         "in_temp": false,
         "cmdline": "/usr/libexec/gvfsd-trash --spawner :1.19 /org/gtk/gvfs/exec_spaw/0",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:50:23+08:00",
+        "start_ticks": 3578
       },
       {
         "pid": 196,
         "ppid": 2,
-        "name": "scsi_eh_10",
+        "name": "kworker/R-scsi_tmf_7",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 25
       },
       {
         "pid": 197,
         "ppid": 2,
-        "name": "kworker/R-scsi_tmf_10",
+        "name": "scsi_eh_8",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 25
       },
       {
         "pid": 198,
         "ppid": 2,
-        "name": "scsi_eh_11",
+        "name": "kworker/R-scsi_tmf_8",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 25
       },
       {
-        "pid": 1980,
-        "ppid": 1123,
+        "pid": 1982,
+        "ppid": 1116,
         "name": "gjs",
         "exe": "/usr/bin/gjs-console",
         "exe_known": true,
@@ -10174,53 +10456,21 @@
         "in_temp": false,
         "cmdline": "/usr/bin/gjs -m /usr/share/gnome-shell/org.gnome.ScreenSaver",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:50:23+08:00",
+        "start_ticks": 3592
       },
       {
         "pid": 199,
         "ppid": 2,
-        "name": "kworker/R-scsi_tmf_11",
+        "name": "scsi_eh_9",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 1991,
-        "ppid": 1123,
-        "name": "gsd-printer",
-        "exe": "/usr/libexec/gsd-printer",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "/usr/libexec/gsd-printer",
-        "user": "user1",
-        "uid": "1000"
-      },
-      {
-        "pid": 1992,
-        "ppid": 1123,
-        "name": "gnome-initial-s",
-        "exe": "/usr/libexec/gnome-initial-setup",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "/usr/libexec/gnome-initial-setup --existing-user",
-        "user": "user1",
-        "uid": "1000"
-      },
-      {
-        "pid": 1996,
-        "ppid": 1123,
-        "name": "tracker-miner-f",
-        "exe": "/usr/libexec/tracker-miner-fs-3",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "/usr/libexec/tracker-miner-fs-3",
-        "user": "user1",
-        "uid": "1000"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 26
       },
       {
         "pid": 2,
@@ -10230,7 +10480,8 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00"
       },
       {
         "pid": 20,
@@ -10240,31 +10491,25 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 1
       },
       {
         "pid": 200,
         "ppid": 2,
-        "name": "scsi_eh_12",
+        "name": "kworker/R-scsi_tmf_9",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 26
       },
       {
-        "pid": 201,
-        "ppid": 2,
-        "name": "kworker/R-scsi_tmf_12",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 2017,
-        "ppid": 1123,
+        "pid": 2004,
+        "ppid": 1116,
         "name": "xdg-desktop-por",
         "exe": "/usr/libexec/xdg-desktop-portal",
         "exe_known": true,
@@ -10272,21 +10517,131 @@
         "in_temp": false,
         "cmdline": "/usr/libexec/xdg-desktop-portal",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:50:23+08:00",
+        "start_ticks": 3597
       },
       {
-        "pid": 202,
+        "pid": 2009,
+        "ppid": 1400,
+        "name": "gjs",
+        "exe": "/usr/bin/gjs-console",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "gjs /usr/share/gnome-shell/extensions/ding@rastersoft.com/app/ding.js -E -P /usr/share/gnome-shell/extensions/ding@rastersoft.com/app",
+        "user": "user1",
+        "uid": "1000",
+        "started": "2026-11-12T13:50:23+08:00",
+        "start_ticks": 3609
+      },
+      {
+        "pid": 201,
         "ppid": 2,
-        "name": "scsi_eh_13",
+        "name": "scsi_eh_10",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 26
       },
       {
-        "pid": 2022,
-        "ppid": 1123,
+        "pid": 202,
+        "ppid": 2,
+        "name": "kworker/R-scsi_tmf_10",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 26
+      },
+      {
+        "pid": 2020,
+        "ppid": 1116,
+        "name": "gvfsd-metadata",
+        "exe": "/usr/libexec/gvfsd-metadata",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "/usr/libexec/gvfsd-metadata",
+        "user": "user1",
+        "uid": "1000",
+        "started": "2026-11-12T13:50:23+08:00",
+        "start_ticks": 3616
+      },
+      {
+        "pid": 203,
+        "ppid": 2,
+        "name": "scsi_eh_11",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 26
+      },
+      {
+        "pid": 2039,
+        "ppid": 1116,
+        "name": "gsd-printer",
+        "exe": "/usr/libexec/gsd-printer",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "/usr/libexec/gsd-printer",
+        "user": "user1",
+        "uid": "1000",
+        "started": "2026-11-12T13:50:24+08:00",
+        "start_ticks": 3660
+      },
+      {
+        "pid": 204,
+        "ppid": 2,
+        "name": "kworker/R-scsi_tmf_11",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 26
+      },
+      {
+        "pid": 2040,
+        "ppid": 1116,
+        "name": "gnome-initial-s",
+        "exe": "/usr/libexec/gnome-initial-setup",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "/usr/libexec/gnome-initial-setup --existing-user",
+        "user": "user1",
+        "uid": "1000",
+        "started": "2026-11-12T13:50:24+08:00",
+        "start_ticks": 3661
+      },
+      {
+        "pid": 2046,
+        "ppid": 1116,
+        "name": "tracker-miner-f",
+        "exe": "/usr/libexec/tracker-miner-fs-3",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "/usr/libexec/tracker-miner-fs-3",
+        "user": "user1",
+        "uid": "1000",
+        "started": "2026-11-12T13:50:24+08:00",
+        "start_ticks": 3661
+      },
+      {
+        "pid": 2047,
+        "ppid": 1116,
         "name": "xdg-desktop-por",
         "exe": "/usr/libexec/xdg-desktop-portal-gnome",
         "exe_known": true,
@@ -10294,40 +10649,74 @@
         "in_temp": false,
         "cmdline": "/usr/libexec/xdg-desktop-portal-gnome",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:50:24+08:00",
+        "start_ticks": 3661
       },
       {
-        "pid": 203,
+        "pid": 205,
+        "ppid": 2,
+        "name": "scsi_eh_12",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 26
+      },
+      {
+        "pid": 206,
+        "ppid": 2,
+        "name": "kworker/R-scsi_tmf_12",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 26
+      },
+      {
+        "pid": 2063,
+        "ppid": 1116,
+        "name": "xdg-desktop-por",
+        "exe": "/usr/libexec/xdg-desktop-portal-gtk",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "/usr/libexec/xdg-desktop-portal-gtk",
+        "user": "user1",
+        "uid": "1000",
+        "started": "2026-11-12T13:50:24+08:00",
+        "start_ticks": 3667
+      },
+      {
+        "pid": 207,
+        "ppid": 2,
+        "name": "scsi_eh_13",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 26
+      },
+      {
+        "pid": 208,
         "ppid": 2,
         "name": "kworker/R-scsi_tmf_13",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 26
       },
       {
-        "pid": 204,
-        "ppid": 2,
-        "name": "scsi_eh_14",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 205,
-        "ppid": 2,
-        "name": "kworker/R-scsi_tmf_14",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 2050,
+        "pid": 2085,
         "ppid": 1,
         "name": "ubuntu-advantag",
         "exe": "/usr/libexec/ubuntu-advantage-desktop-daemon",
@@ -10336,83 +10725,21 @@
         "in_temp": false,
         "cmdline": "/usr/libexec/ubuntu-advantage-desktop-daemon",
         "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 2053,
-        "ppid": 1123,
-        "name": "xdg-desktop-por",
-        "exe": "/usr/libexec/xdg-desktop-portal-gtk",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "/usr/libexec/xdg-desktop-portal-gtk",
-        "user": "user1",
-        "uid": "1000"
-      },
-      {
-        "pid": 206,
-        "ppid": 2,
-        "name": "scsi_eh_15",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 2063,
-        "ppid": 1399,
-        "name": "gjs",
-        "exe": "/usr/bin/gjs-console",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "gjs /usr/share/gnome-shell/extensions/ding@rastersoft.com/app/ding.js -E -P /usr/share/gnome-shell/extensions/ding@rastersoft.com/app",
-        "user": "user1",
-        "uid": "1000"
-      },
-      {
-        "pid": 207,
-        "ppid": 2,
-        "name": "kworker/R-scsi_tmf_15",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 208,
-        "ppid": 2,
-        "name": "scsi_eh_16",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 2085,
-        "ppid": 1123,
-        "name": "gvfsd-metadata",
-        "exe": "/usr/libexec/gvfsd-metadata",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "/usr/libexec/gvfsd-metadata",
-        "user": "user1",
-        "uid": "1000"
+        "uid": "0",
+        "started": "2026-11-12T13:50:24+08:00",
+        "start_ticks": 3671
       },
       {
         "pid": 209,
         "ppid": 2,
-        "name": "kworker/R-scsi_tmf_16",
+        "name": "scsi_eh_14",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 26
       },
       {
         "pid": 21,
@@ -10422,41 +10749,49 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 1
       },
       {
         "pid": 210,
         "ppid": 2,
-        "name": "scsi_eh_17",
+        "name": "kworker/R-scsi_tmf_14",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 26
       },
       {
         "pid": 211,
         "ppid": 2,
-        "name": "kworker/R-scsi_tmf_17",
+        "name": "scsi_eh_15",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 26
       },
       {
         "pid": 212,
         "ppid": 2,
-        "name": "scsi_eh_18",
+        "name": "kworker/R-scsi_tmf_15",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 26
       },
       {
-        "pid": 2129,
-        "ppid": 1123,
+        "pid": 2120,
+        "ppid": 1116,
         "name": "user-session-he",
         "exe": "/snap/snapd-desktop-integration/396/usr/bin/user-session-helper",
         "exe_known": true,
@@ -10464,71 +10799,97 @@
         "in_temp": false,
         "cmdline": "/snap/snapd-desktop-integration/396/usr/bin/user-session-helper /snap/snapd-desktop-integration/396/usr/bin/snapd-desktop-integration",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:50:26+08:00",
+        "start_ticks": 3903
       },
       {
         "pid": 213,
+        "ppid": 2,
+        "name": "scsi_eh_16",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 26
+      },
+      {
+        "pid": 214,
+        "ppid": 2,
+        "name": "kworker/R-scsi_tmf_16",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 26
+      },
+      {
+        "pid": 215,
+        "ppid": 2,
+        "name": "scsi_eh_17",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 26
+      },
+      {
+        "pid": 216,
+        "ppid": 2,
+        "name": "kworker/R-scsi_tmf_17",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 26
+      },
+      {
+        "pid": 217,
+        "ppid": 2,
+        "name": "scsi_eh_18",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 26
+      },
+      {
+        "pid": 218,
         "ppid": 2,
         "name": "kworker/R-scsi_tmf_18",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 26
       },
       {
-        "pid": 214,
+        "pid": 219,
         "ppid": 2,
         "name": "scsi_eh_19",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 26
       },
       {
-        "pid": 215,
-        "ppid": 2,
-        "name": "kworker/R-scsi_tmf_19",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 216,
-        "ppid": 2,
-        "name": "scsi_eh_20",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 217,
-        "ppid": 2,
-        "name": "kworker/R-scsi_tmf_20",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 218,
-        "ppid": 2,
-        "name": "scsi_eh_21",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 2187,
-        "ppid": 2129,
+        "pid": 2199,
+        "ppid": 2120,
         "name": "snapd-desktop-i",
         "exe": "/snap/snapd-desktop-integration/396/usr/bin/snapd-desktop-integration",
         "exe_known": true,
@@ -10536,17 +10897,9 @@
         "in_temp": false,
         "cmdline": "/snap/snapd-desktop-integration/396/usr/bin/snapd-desktop-integration",
         "user": "user1",
-        "uid": "1000"
-      },
-      {
-        "pid": 219,
-        "ppid": 2,
-        "name": "kworker/R-scsi_tmf_21",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
+        "uid": "1000",
+        "started": "2026-11-12T13:50:26+08:00",
+        "start_ticks": 3912
       },
       {
         "pid": 22,
@@ -10556,60 +10909,60 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 1
       },
       {
         "pid": 220,
         "ppid": 2,
-        "name": "scsi_eh_22",
+        "name": "kworker/R-scsi_tmf_19",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 26
       },
       {
         "pid": 221,
         "ppid": 2,
-        "name": "kworker/R-scsi_tmf_22",
+        "name": "scsi_eh_20",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 26
       },
       {
         "pid": 222,
         "ppid": 2,
-        "name": "scsi_eh_23",
+        "name": "kworker/R-scsi_tmf_20",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 26
       },
       {
         "pid": 223,
         "ppid": 2,
-        "name": "kworker/R-scsi_tmf_23",
+        "name": "scsi_eh_21",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 26
       },
       {
-        "pid": 224,
-        "ppid": 2,
-        "name": "scsi_eh_24",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 2246,
+        "pid": 2236,
         "ppid": 1,
         "name": "power-profiles-",
         "exe": "/usr/libexec/power-profiles-daemon",
@@ -10618,57 +10971,93 @@
         "in_temp": false,
         "cmdline": "/usr/libexec/power-profiles-daemon",
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:50:42+08:00",
+        "start_ticks": 5503
+      },
+      {
+        "pid": 224,
+        "ppid": 2,
+        "name": "kworker/R-scsi_tmf_21",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 26
       },
       {
         "pid": 225,
         "ppid": 2,
-        "name": "kworker/R-scsi_tmf_24",
+        "name": "scsi_eh_22",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 26
+      },
+      {
+        "pid": 2250,
+        "ppid": 2,
+        "name": "kworker/2:4",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:51:19+08:00",
+        "start_ticks": 6593
       },
       {
         "pid": 226,
         "ppid": 2,
-        "name": "scsi_eh_25",
+        "name": "kworker/R-scsi_tmf_22",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 26
       },
       {
         "pid": 227,
         "ppid": 2,
-        "name": "kworker/R-scsi_tmf_25",
+        "name": "scsi_eh_23",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 26
       },
       {
         "pid": 228,
         "ppid": 2,
-        "name": "scsi_eh_26",
+        "name": "kworker/R-scsi_tmf_23",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 26
       },
       {
         "pid": 229,
         "ppid": 2,
-        "name": "kworker/R-scsi_tmf_26",
+        "name": "scsi_eh_24",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 26
       },
       {
         "pid": 23,
@@ -10678,91 +11067,109 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 1
       },
       {
         "pid": 230,
+        "ppid": 2,
+        "name": "kworker/R-scsi_tmf_24",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 26
+      },
+      {
+        "pid": 231,
+        "ppid": 2,
+        "name": "scsi_eh_25",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 26
+      },
+      {
+        "pid": 232,
+        "ppid": 2,
+        "name": "kworker/R-scsi_tmf_25",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 26
+      },
+      {
+        "pid": 233,
+        "ppid": 2,
+        "name": "scsi_eh_26",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 26
+      },
+      {
+        "pid": 234,
+        "ppid": 2,
+        "name": "kworker/R-scsi_tmf_26",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 26
+      },
+      {
+        "pid": 235,
         "ppid": 2,
         "name": "scsi_eh_27",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 26
       },
       {
-        "pid": 231,
+        "pid": 236,
         "ppid": 2,
         "name": "kworker/R-scsi_tmf_27",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 26
       },
       {
-        "pid": 232,
+        "pid": 237,
         "ppid": 2,
         "name": "scsi_eh_28",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 26
       },
       {
-        "pid": 233,
-        "ppid": 2,
-        "name": "kworker/R-scsi_tmf_28",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 234,
-        "ppid": 2,
-        "name": "scsi_eh_29",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 235,
-        "ppid": 2,
-        "name": "kworker/R-scsi_tmf_29",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 236,
-        "ppid": 2,
-        "name": "kworker/u16:23-events_unbound",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 237,
-        "ppid": 2,
-        "name": "kworker/u16:24-events_unbound",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 2378,
-        "ppid": 1136,
+        "pid": 2373,
+        "ppid": 1142,
         "name": "sshd",
         "exe": "/usr/sbin/sshd",
         "exe_known": true,
@@ -10770,27 +11177,33 @@
         "in_temp": false,
         "cmdline": "sshd: user1 [priv]",
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:51:19+08:00",
+        "start_ticks": 9179
       },
       {
         "pid": 238,
         "ppid": 2,
-        "name": "kworker/u16:25-flush-259:0",
+        "name": "kworker/R-scsi_tmf_28",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 26
       },
       {
         "pid": 239,
         "ppid": 2,
-        "name": "kworker/u16:26-loop5",
+        "name": "scsi_eh_29",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 26
       },
       {
         "pid": 24,
@@ -10800,41 +11213,49 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 1
       },
       {
         "pid": 240,
         "ppid": 2,
-        "name": "kworker/u16:27-events_unbound",
+        "name": "kworker/R-scsi_tmf_29",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 26
       },
       {
         "pid": 241,
         "ppid": 2,
-        "name": "kworker/u16:28-flush-259:0",
+        "name": "kworker/u16:27-flush-259:0",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 26
       },
       {
         "pid": 242,
         "ppid": 2,
-        "name": "kworker/u16:29-flush-259:0",
+        "name": "kworker/u16:28-events_unbound",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 26
       },
       {
-        "pid": 2423,
-        "ppid": 2378,
+        "pid": 2421,
+        "ppid": 2373,
         "name": "sshd",
         "exe": "/usr/sbin/sshd",
         "exe_known": true,
@@ -10842,223 +11263,267 @@
         "in_temp": false,
         "cmdline": "sshd: user1@notty",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:51:19+08:00",
+        "start_ticks": 9188
       },
       {
-        "pid": 2424,
-        "ppid": 2423,
+        "pid": 2422,
+        "ppid": 2421,
         "name": "bash",
         "exe": "/usr/bin/bash",
         "exe_known": true,
         "exe_exists": true,
         "in_temp": false,
-        "cmdline": "bash -c cd /tmp/hf \u0026\u0026 chmod 0755 hostfacts \u0026\u0026 sudo -n ./hostfacts -record /tmp/hf/root -mask-host host1 -mask-host host2 -mask-user user3 -mask-user user2 \u003e root.facts.json 2\u003e root.err; echo root=$?; ./hostfacts -record /tmp/hf/user -mask-host host1 -mask-host host2 -mask-user user3 -mask-user user2 \u003e user.facts.json 2\u003e user.err; echo user=$?; sudo -n chown -R $(id -u):$(id -g) /tmp/hf; du -sh root user",
+        "cmdline": "bash -c cd /tmp/hf \u0026\u0026 sudo -n install -m 0755 hostfacts /usr/local/bin/hostfacts \u0026\u0026 chmod 0755 shentu-old shentu-new \u0026\u0026  sudo -n /usr/local/bin/hostfacts -record /tmp/hf/root -mask-host host1 -mask-host host2 -mask-user user3 -mask-user user2 \u003e /dev/null 2\u003e root.err; echo rec_root=$?;  /usr/local/bin/hostfacts -record /tmp/hf/user -mask-host host1 -mask-host host2 -mask-user user3 -mask-user user2 \u003e /dev/null 2\u003e user.err; echo rec_user=$?;  for b in old new; do for w in root user; do sed \"s#^state_dir = .*#…",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:51:19+08:00",
+        "start_ticks": 9189
       },
       {
         "pid": 2426,
-        "ppid": 2424,
+        "ppid": 2422,
         "name": "sudo",
         "exe": "/usr/bin/sudo",
         "exe_known": true,
         "exe_exists": true,
         "in_temp": false,
-        "cmdline": "sudo -n ./hostfacts -record /tmp/hf/root -mask-host host1 -mask-host host2 -mask-user user3 -mask-user user2",
+        "cmdline": "sudo -n /usr/local/bin/hostfacts -record /tmp/hf/root -mask-host host1 -mask-host host2 -mask-user user3 -mask-user user2",
         "user": "user1",
-        "uid": "1000"
+        "uid": "1000",
+        "started": "2026-11-12T13:51:19+08:00",
+        "start_ticks": 9190
       },
       {
         "pid": 2427,
         "ppid": 2426,
         "name": "hostfacts",
-        "exe": "/tmp/hf/hostfacts",
+        "exe": "/usr/local/bin/hostfacts",
         "exe_known": true,
         "exe_exists": true,
-        "in_temp": true,
-        "cmdline": "./hostfacts -record /tmp/hf/root -mask-host host1 -mask-host host2 -mask-user user3 -mask-user user2",
+        "in_temp": false,
+        "cmdline": "/usr/local/bin/hostfacts -record /tmp/hf/root -mask-host host1 -mask-host host2 -mask-user user3 -mask-user user2",
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:51:19+08:00",
+        "start_ticks": 9191
       },
       {
         "pid": 243,
+        "ppid": 2,
+        "name": "kworker/u16:29-events_unbound",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 26
+      },
+      {
+        "pid": 244,
         "ppid": 2,
         "name": "kworker/u16:30-scsi_tmf_0",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 26
       },
       {
-        "pid": 244,
+        "pid": 245,
         "ppid": 2,
         "name": "kworker/u16:31-scsi_tmf_1",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 26
       },
       {
-        "pid": 245,
+        "pid": 246,
         "ppid": 2,
         "name": "kworker/u16:32-scsi_tmf_2",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 26
       },
       {
-        "pid": 246,
+        "pid": 247,
         "ppid": 2,
-        "name": "kworker/u16:33-scsi_tmf_3",
+        "name": "kworker/u16:33-sync_wq",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 26
       },
       {
-        "pid": 247,
+        "pid": 248,
         "ppid": 2,
         "name": "kworker/u16:34-scsi_tmf_4",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 26
       },
       {
-        "pid": 248,
+        "pid": 249,
         "ppid": 2,
         "name": "kworker/u16:35-scsi_tmf_5",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 249,
-        "ppid": 2,
-        "name": "kworker/u16:36-scsi_tmf_6",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 26
       },
       {
         "pid": 25,
         "ppid": 2,
-        "name": "kworker/1:0-cgroup_free",
+        "name": "kworker/1:0-mm_percpu_wq",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 1
       },
       {
         "pid": 250,
         "ppid": 2,
-        "name": "kworker/u16:37-scsi_tmf_7",
+        "name": "kworker/u16:36-pm",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 27
       },
       {
         "pid": 251,
+        "ppid": 2,
+        "name": "kworker/u16:37-events_unbound",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 27
+      },
+      {
+        "pid": 252,
         "ppid": 2,
         "name": "kworker/u16:38-scsi_tmf_8",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 27
       },
       {
-        "pid": 252,
+        "pid": 253,
         "ppid": 2,
         "name": "kworker/u16:39-scsi_tmf_9",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 27
       },
       {
-        "pid": 253,
+        "pid": 254,
         "ppid": 2,
         "name": "kworker/u16:40-scsi_tmf_10",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 27
       },
       {
-        "pid": 254,
+        "pid": 255,
         "ppid": 2,
         "name": "kworker/u16:41-scsi_tmf_11",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 27
       },
       {
-        "pid": 255,
+        "pid": 256,
         "ppid": 2,
         "name": "kworker/u16:42-scsi_tmf_12",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 27
       },
       {
-        "pid": 256,
+        "pid": 257,
         "ppid": 2,
         "name": "kworker/u16:43-scsi_tmf_13",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 27
       },
       {
-        "pid": 257,
+        "pid": 258,
         "ppid": 2,
         "name": "kworker/u16:44-scsi_tmf_14",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 27
       },
       {
-        "pid": 258,
+        "pid": 259,
         "ppid": 2,
         "name": "kworker/u16:45-scsi_tmf_15",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 259,
-        "ppid": 2,
-        "name": "kworker/u16:46-scsi_tmf_16",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 27
       },
       {
         "pid": 26,
@@ -11068,107 +11533,129 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 1
       },
       {
         "pid": 260,
+        "ppid": 2,
+        "name": "kworker/u16:46-scsi_tmf_16",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 27
+      },
+      {
+        "pid": 261,
         "ppid": 2,
         "name": "kworker/u16:47-scsi_tmf_17",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 27
       },
       {
-        "pid": 261,
+        "pid": 262,
         "ppid": 2,
         "name": "kworker/u16:48-scsi_tmf_18",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 27
       },
       {
-        "pid": 262,
+        "pid": 263,
         "ppid": 2,
         "name": "kworker/u16:49-scsi_tmf_19",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 27
       },
       {
-        "pid": 263,
+        "pid": 264,
         "ppid": 2,
         "name": "kworker/u16:50-scsi_tmf_20",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 27
       },
       {
-        "pid": 264,
+        "pid": 265,
         "ppid": 2,
         "name": "kworker/u16:51-scsi_tmf_21",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 27
       },
       {
-        "pid": 265,
+        "pid": 266,
         "ppid": 2,
-        "name": "kworker/u16:52-sync_wq",
+        "name": "kworker/u16:52-scsi_tmf_22",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 27
       },
       {
-        "pid": 266,
+        "pid": 267,
         "ppid": 2,
         "name": "kworker/u16:53-scsi_tmf_23",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 27
       },
       {
-        "pid": 267,
+        "pid": 268,
         "ppid": 2,
         "name": "kworker/u16:54-scsi_tmf_24",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 268,
-        "ppid": 2,
-        "name": "kworker/u16:55-pm",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 27
       },
       {
         "pid": 269,
         "ppid": 2,
-        "name": "kworker/u16:56-pm",
+        "name": "kworker/u16:55-scsi_tmf_25",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 27
       },
       {
         "pid": 27,
@@ -11178,57 +11665,69 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 1
       },
       {
         "pid": 270,
         "ppid": 2,
-        "name": "kworker/u16:57-events_unbound",
+        "name": "kworker/u16:56-scsi_tmf_26",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 27
       },
       {
         "pid": 271,
+        "ppid": 2,
+        "name": "kworker/u16:57-sync_wq",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 27
+      },
+      {
+        "pid": 272,
         "ppid": 2,
         "name": "kworker/u16:58-scsi_tmf_28",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 27
       },
       {
-        "pid": 272,
+        "pid": 273,
         "ppid": 2,
         "name": "kworker/u16:59-scsi_tmf_29",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 27
       },
       {
-        "pid": 273,
+        "pid": 274,
         "ppid": 2,
         "name": "kworker/u16:60",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 274,
-        "ppid": 2,
-        "name": "kworker/u16:61-sync_wq",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 27
       },
       {
         "pid": 275,
@@ -11238,27 +11737,33 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 59
       },
       {
         "pid": 276,
-        "ppid": 2,
-        "name": "kworker/2:1H-kblockd",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 279,
         "ppid": 2,
         "name": "kworker/3:1H-kblockd",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 60
+      },
+      {
+        "pid": 278,
+        "ppid": 2,
+        "name": "kworker/2:1H-kblockd",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 72
       },
       {
         "pid": 28,
@@ -11268,17 +11773,21 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 1
       },
       {
         "pid": 280,
         "ppid": 2,
-        "name": "kworker/3:2-inode_switch_wbs",
+        "name": "kworker/1:1H-kblockd",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 76
       },
       {
         "pid": 29,
@@ -11288,7 +11797,9 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 1
       },
       {
         "pid": 3,
@@ -11298,7 +11809,8 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00"
       },
       {
         "pid": 30,
@@ -11308,7 +11820,9 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 1
       },
       {
         "pid": 31,
@@ -11318,7 +11832,33 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 1
+      },
+      {
+        "pid": 317,
+        "ppid": 2,
+        "name": "jbd2/nvme0n1p2-8",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 237
+      },
+      {
+        "pid": 318,
+        "ppid": 2,
+        "name": "kworker/R-ext4-rsv-conversion",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 237
       },
       {
         "pid": 32,
@@ -11328,27 +11868,9 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 321,
-        "ppid": 2,
-        "name": "jbd2/nvme0n1p2-8",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 322,
-        "ppid": 2,
-        "name": "kworker/R-ext4-rsv-conversion",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 1
       },
       {
         "pid": 33,
@@ -11358,7 +11880,21 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 1
+      },
+      {
+        "pid": 332,
+        "ppid": 2,
+        "name": "kworker/0:2-cgroup_free",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 244
       },
       {
         "pid": 34,
@@ -11368,7 +11904,9 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 1
       },
       {
         "pid": 35,
@@ -11378,7 +11916,9 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 1
       },
       {
         "pid": 36,
@@ -11388,17 +11928,23 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 1
       },
       {
-        "pid": 361,
-        "ppid": 2,
-        "name": "kworker/1:1H-kblockd",
-        "exe_known": false,
-        "exe_exists": false,
+        "pid": 368,
+        "ppid": 1,
+        "name": "systemd-journal",
+        "exe": "/usr/lib/systemd/systemd-journald",
+        "exe_known": true,
+        "exe_exists": true,
         "in_temp": false,
+        "cmdline": "/usr/lib/systemd/systemd-journald",
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:50:20+08:00",
+        "start_ticks": 3285
       },
       {
         "pid": 37,
@@ -11408,19 +11954,9 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 372,
-        "ppid": 1,
-        "name": "systemd-journal",
-        "exe": "/usr/lib/systemd/systemd-journald",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "/usr/lib/systemd/systemd-journald",
-        "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 1
       },
       {
         "pid": 38,
@@ -11430,7 +11966,9 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 1
       },
       {
         "pid": 39,
@@ -11440,7 +11978,9 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 1
       },
       {
         "pid": 4,
@@ -11450,7 +11990,8 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00"
       },
       {
         "pid": 40,
@@ -11460,7 +12001,9 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 1
       },
       {
         "pid": 41,
@@ -11470,7 +12013,9 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 1
       },
       {
         "pid": 42,
@@ -11480,7 +12025,9 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 1
       },
       {
         "pid": 43,
@@ -11490,10 +12037,12 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 1
       },
       {
-        "pid": 439,
+        "pid": 434,
         "ppid": 1,
         "name": "systemd-udevd",
         "exe": "/usr/bin/udevadm",
@@ -11502,7 +12051,9 @@
         "in_temp": false,
         "cmdline": "/usr/lib/systemd/systemd-udevd",
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:50:20+08:00",
+        "start_ticks": 3290
       },
       {
         "pid": 44,
@@ -11512,7 +12063,21 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 1
+      },
+      {
+        "pid": 447,
+        "ppid": 2,
+        "name": "psimon",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:50:21+08:00",
+        "start_ticks": 3292
       },
       {
         "pid": 45,
@@ -11522,17 +12087,9 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 451,
-        "ppid": 2,
-        "name": "psimon",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 1
       },
       {
         "pid": 46,
@@ -11542,27 +12099,9 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 461,
-        "ppid": 2,
-        "name": "kworker/3:3-rcu_gp",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 465,
-        "ppid": 2,
-        "name": "kworker/3:4-events",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 1
       },
       {
         "pid": 47,
@@ -11572,7 +12111,9 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 1
       },
       {
         "pid": 48,
@@ -11582,27 +12123,45 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 481,
-        "ppid": 2,
-        "name": "kworker/1:2-events",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 1
       },
       {
         "pid": 482,
         "ppid": 2,
-        "name": "kworker/1:3",
+        "name": "irq/65-vmw_vmci",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:50:21+08:00",
+        "start_ticks": 3302
+      },
+      {
+        "pid": 483,
+        "ppid": 2,
+        "name": "irq/66-vmw_vmci",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:50:21+08:00",
+        "start_ticks": 3302
+      },
+      {
+        "pid": 484,
+        "ppid": 2,
+        "name": "irq/67-vmw_vmci",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:50:21+08:00",
+        "start_ticks": 3302
       },
       {
         "pid": 49,
@@ -11612,37 +12171,9 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 490,
-        "ppid": 2,
-        "name": "irq/65-vmw_vmci",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 491,
-        "ppid": 2,
-        "name": "irq/66-vmw_vmci",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 492,
-        "ppid": 2,
-        "name": "irq/67-vmw_vmci",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 1
       },
       {
         "pid": 5,
@@ -11652,7 +12183,8 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00"
       },
       {
         "pid": 50,
@@ -11662,17 +12194,93 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 1
       },
       {
-        "pid": 509,
+        "pid": 503,
         "ppid": 2,
         "name": "irq/68-vmwgfx",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:50:21+08:00",
+        "start_ticks": 3306
+      },
+      {
+        "pid": 504,
+        "ppid": 2,
+        "name": "irq/69-vmwgfx",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:50:21+08:00",
+        "start_ticks": 3306
+      },
+      {
+        "pid": 505,
+        "ppid": 2,
+        "name": "irq/70-vmwgfx",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:50:21+08:00",
+        "start_ticks": 3306
+      },
+      {
+        "pid": 506,
+        "ppid": 2,
+        "name": "irq/71-vmwgfx",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:50:21+08:00",
+        "start_ticks": 3306
+      },
+      {
+        "pid": 507,
+        "ppid": 2,
+        "name": "irq/72-vmwgfx",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:50:21+08:00",
+        "start_ticks": 3306
+      },
+      {
+        "pid": 508,
+        "ppid": 2,
+        "name": "irq/73-vmwgfx",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:50:21+08:00",
+        "start_ticks": 3306
+      },
+      {
+        "pid": 509,
+        "ppid": 2,
+        "name": "kworker/R-ttm",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:50:21+08:00",
+        "start_ticks": 3306
       },
       {
         "pid": 51,
@@ -11682,67 +12290,9 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 510,
-        "ppid": 2,
-        "name": "irq/69-vmwgfx",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 511,
-        "ppid": 2,
-        "name": "irq/70-vmwgfx",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 512,
-        "ppid": 2,
-        "name": "irq/71-vmwgfx",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 513,
-        "ppid": 2,
-        "name": "irq/72-vmwgfx",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 515,
-        "ppid": 2,
-        "name": "irq/73-vmwgfx",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 517,
-        "ppid": 2,
-        "name": "kworker/R-ttm",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 1
       },
       {
         "pid": 52,
@@ -11752,7 +12302,9 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 1
       },
       {
         "pid": 53,
@@ -11762,17 +12314,21 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 1
       },
       {
         "pid": 54,
         "ppid": 2,
-        "name": "kworker/1:1-events",
+        "name": "kworker/1:1-cgroup_free",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 1
       },
       {
         "pid": 55,
@@ -11782,7 +12338,9 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 2
       },
       {
         "pid": 56,
@@ -11792,7 +12350,9 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 2
       },
       {
         "pid": 57,
@@ -11802,7 +12362,9 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 2
       },
       {
         "pid": 58,
@@ -11812,7 +12374,9 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 2
       },
       {
         "pid": 59,
@@ -11822,7 +12386,9 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 2
       },
       {
         "pid": 6,
@@ -11832,7 +12398,8 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00"
       },
       {
         "pid": 60,
@@ -11842,7 +12409,9 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 2
       },
       {
         "pid": 61,
@@ -11852,7 +12421,9 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 2
       },
       {
         "pid": 62,
@@ -11862,27 +12433,33 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 2
       },
       {
         "pid": 63,
-        "ppid": 2,
-        "name": "kworker/3:1-inode_switch_wbs",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 64,
         "ppid": 2,
         "name": "kworker/R-quota_events_unbound",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 2
+      },
+      {
+        "pid": 64,
+        "ppid": 2,
+        "name": "kworker/3:1-cgroup_free",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 4
       },
       {
         "pid": 65,
@@ -11892,7 +12469,9 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 4
       },
       {
         "pid": 66,
@@ -11902,7 +12481,9 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 4
       },
       {
         "pid": 67,
@@ -11912,7 +12493,9 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 4
       },
       {
         "pid": 68,
@@ -11922,7 +12505,9 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 4
       },
       {
         "pid": 69,
@@ -11932,7 +12517,9 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 5
       },
       {
         "pid": 7,
@@ -11942,50 +12529,71 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00"
       },
       {
         "pid": 70,
-        "ppid": 2,
-        "name": "kworker/2:1-events",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 71,
         "ppid": 2,
         "name": "kworker/u16:3-async",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 6
       },
       {
-        "pid": 72,
+        "pid": 71,
         "ppid": 2,
         "name": "kworker/R-mld",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 6
       },
       {
-        "pid": 73,
+        "pid": 72,
         "ppid": 2,
         "name": "kworker/R-ipv6_addrconf",
         "exe_known": false,
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 6
       },
       {
-        "pid": 736,
+        "pid": 73,
+        "ppid": 2,
+        "name": "kworker/R-kstrp",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 6
+      },
+      {
+        "pid": 74,
+        "ppid": 2,
+        "name": "kworker/2:1-inode_switch_wbs",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 6
+      },
+      {
+        "pid": 757,
         "ppid": 1,
         "name": "systemd-oomd",
         "exe": "/usr/lib/systemd/systemd-oomd",
@@ -11994,41 +12602,9 @@
         "in_temp": false,
         "cmdline": "/usr/lib/systemd/systemd-oomd",
         "user": "systemd-oom",
-        "uid": "990"
-      },
-      {
-        "pid": 74,
-        "ppid": 2,
-        "name": "kworker/R-kstrp",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 747,
-        "ppid": 1,
-        "name": "systemd-resolve",
-        "exe": "/usr/lib/systemd/systemd-resolved",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "/usr/lib/systemd/systemd-resolved",
-        "user": "systemd-resolve",
-        "uid": "991"
-      },
-      {
-        "pid": 748,
-        "ppid": 1,
-        "name": "systemd-timesyn",
-        "exe": "/usr/lib/systemd/systemd-timesyncd",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "/usr/lib/systemd/systemd-timesyncd",
-        "user": "systemd-timesync",
-        "uid": "996"
+        "uid": "990",
+        "started": "2026-11-12T13:50:21+08:00",
+        "start_ticks": 3392
       },
       {
         "pid": 76,
@@ -12038,7 +12614,49 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 7
+      },
+      {
+        "pid": 778,
+        "ppid": 1,
+        "name": "systemd-resolve",
+        "exe": "/usr/lib/systemd/systemd-resolved",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "/usr/lib/systemd/systemd-resolved",
+        "user": "systemd-resolve",
+        "uid": "991",
+        "started": "2026-11-12T13:50:21+08:00",
+        "start_ticks": 3392
+      },
+      {
+        "pid": 78,
+        "ppid": 2,
+        "name": "kworker/u16:4-async",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 8
+      },
+      {
+        "pid": 783,
+        "ppid": 1,
+        "name": "systemd-timesyn",
+        "exe": "/usr/lib/systemd/systemd-timesyncd",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "/usr/lib/systemd/systemd-timesyncd",
+        "user": "systemd-timesync",
+        "uid": "996",
+        "started": "2026-11-12T13:50:21+08:00",
+        "start_ticks": 3392
       },
       {
         "pid": 8,
@@ -12048,10 +12666,11 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00"
       },
       {
-        "pid": 854,
+        "pid": 846,
         "ppid": 1,
         "name": "avahi-daemon",
         "exe": "/usr/sbin/avahi-daemon",
@@ -12060,10 +12679,12 @@
         "in_temp": false,
         "cmdline": "avahi-daemon: running [host3.local]",
         "user": "avahi",
-        "uid": "108"
+        "uid": "108",
+        "started": "2026-11-12T13:50:21+08:00",
+        "start_ticks": 3401
       },
       {
-        "pid": 855,
+        "pid": 847,
         "ppid": 1,
         "name": "dbus-daemon",
         "exe": "/usr/bin/dbus-daemon",
@@ -12072,10 +12693,12 @@
         "in_temp": false,
         "cmdline": "@dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only",
         "user": "messagebus",
-        "uid": "101"
+        "uid": "101",
+        "started": "2026-11-12T13:50:21+08:00",
+        "start_ticks": 3401
       },
       {
-        "pid": 858,
+        "pid": 850,
         "ppid": 1,
         "name": "gnome-remote-de",
         "exe": "/usr/libexec/gnome-remote-desktop-daemon",
@@ -12084,10 +12707,12 @@
         "in_temp": false,
         "cmdline": "/usr/libexec/gnome-remote-desktop-daemon --system",
         "user": "gnome-remote-desktop",
-        "uid": "988"
+        "uid": "988",
+        "started": "2026-11-12T13:50:21+08:00",
+        "start_ticks": 3402
       },
       {
-        "pid": 861,
+        "pid": 853,
         "ppid": 1,
         "name": "polkitd",
         "exe": "/usr/lib/polkit-1/polkitd",
@@ -12096,10 +12721,12 @@
         "in_temp": false,
         "cmdline": "/usr/lib/polkit-1/polkitd --no-debug",
         "user": "polkitd",
-        "uid": "987"
+        "uid": "987",
+        "started": "2026-11-12T13:50:21+08:00",
+        "start_ticks": 3403
       },
       {
-        "pid": 866,
+        "pid": 858,
         "ppid": 1,
         "name": "snapd",
         "exe": "/usr/lib/snapd/snapd",
@@ -12108,10 +12735,12 @@
         "in_temp": false,
         "cmdline": "/usr/lib/snapd/snapd",
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:50:21+08:00",
+        "start_ticks": 3404
       },
       {
-        "pid": 867,
+        "pid": 859,
         "ppid": 1,
         "name": "accounts-daemon",
         "exe": "/usr/libexec/accounts-daemon",
@@ -12120,10 +12749,12 @@
         "in_temp": false,
         "cmdline": "/usr/libexec/accounts-daemon",
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:50:21+08:00",
+        "start_ticks": 3404
       },
       {
-        "pid": 868,
+        "pid": 860,
         "ppid": 1,
         "name": "cron",
         "exe": "/usr/sbin/cron",
@@ -12132,10 +12763,12 @@
         "in_temp": false,
         "cmdline": "/usr/sbin/cron -f -P",
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:50:21+08:00",
+        "start_ticks": 3404
       },
       {
-        "pid": 869,
+        "pid": 861,
         "ppid": 1,
         "name": "switcheroo-cont",
         "exe": "/usr/libexec/switcheroo-control",
@@ -12144,10 +12777,12 @@
         "in_temp": false,
         "cmdline": "/usr/libexec/switcheroo-control",
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:50:21+08:00",
+        "start_ticks": 3404
       },
       {
-        "pid": 871,
+        "pid": 864,
         "ppid": 1,
         "name": "systemd-logind",
         "exe": "/usr/lib/systemd/systemd-logind",
@@ -12156,10 +12791,12 @@
         "in_temp": false,
         "cmdline": "/usr/lib/systemd/systemd-logind",
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:50:21+08:00",
+        "start_ticks": 3404
       },
       {
-        "pid": 872,
+        "pid": 865,
         "ppid": 1,
         "name": "udisksd",
         "exe": "/usr/libexec/udisks2/udisksd",
@@ -12168,21 +12805,13 @@
         "in_temp": false,
         "cmdline": "/usr/libexec/udisks2/udisksd",
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:50:21+08:00",
+        "start_ticks": 3404
       },
       {
-        "pid": 88,
-        "ppid": 2,
-        "name": "kworker/R-charger_manager",
-        "exe_known": false,
-        "exe_exists": false,
-        "in_temp": false,
-        "user": "root",
-        "uid": "0"
-      },
-      {
-        "pid": 882,
-        "ppid": 854,
+        "pid": 875,
+        "ppid": 846,
         "name": "avahi-daemon",
         "exe": "/usr/sbin/avahi-daemon",
         "exe_known": true,
@@ -12190,10 +12819,12 @@
         "in_temp": false,
         "cmdline": "avahi-daemon: chroot helper",
         "user": "avahi",
-        "uid": "108"
+        "uid": "108",
+        "started": "2026-11-12T13:50:21+08:00",
+        "start_ticks": 3405
       },
       {
-        "pid": 891,
+        "pid": 883,
         "ppid": 1,
         "name": "rsyslogd",
         "exe": "/usr/sbin/rsyslogd",
@@ -12202,7 +12833,21 @@
         "in_temp": false,
         "cmdline": "/usr/sbin/rsyslogd -n -iNONE",
         "user": "syslog",
-        "uid": "102"
+        "uid": "102",
+        "started": "2026-11-12T13:50:21+08:00",
+        "start_ticks": 3407
+      },
+      {
+        "pid": 89,
+        "ppid": 2,
+        "name": "kworker/R-charger_manager",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00",
+        "start_ticks": 10
       },
       {
         "pid": 9,
@@ -12212,10 +12857,11 @@
         "exe_exists": false,
         "in_temp": false,
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:49:49+08:00"
       },
       {
-        "pid": 927,
+        "pid": 922,
         "ppid": 1,
         "name": "NetworkManager",
         "exe": "/usr/sbin/NetworkManager",
@@ -12224,10 +12870,12 @@
         "in_temp": false,
         "cmdline": "/usr/sbin/NetworkManager --no-daemon",
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:50:21+08:00",
+        "start_ticks": 3417
       },
       {
-        "pid": 932,
+        "pid": 931,
         "ppid": 1,
         "name": "wpa_supplicant",
         "exe": "/usr/sbin/wpa_supplicant",
@@ -12236,10 +12884,12 @@
         "in_temp": false,
         "cmdline": "/usr/sbin/wpa_supplicant -u -s -O DIR=/run/wpa_supplicant GROUP=netdev",
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:50:21+08:00",
+        "start_ticks": 3418
       },
       {
-        "pid": 949,
+        "pid": 950,
         "ppid": 1,
         "name": "ModemManager",
         "exe": "/usr/sbin/ModemManager",
@@ -12248,7 +12898,9 @@
         "in_temp": false,
         "cmdline": "/usr/sbin/ModemManager",
         "user": "root",
-        "uid": "0"
+        "uid": "0",
+        "started": "2026-11-12T13:50:21+08:00",
+        "start_ticks": 3420
       }
     ]
   },
@@ -12662,41 +13314,41 @@
     "value": [
       {
         "proto": "tcp",
+        "addr": "0.0.0.0",
+        "port": 22,
+        "pid": 1142,
+        "process": "sshd",
+        "uid": "0"
+      },
+      {
+        "proto": "tcp",
         "addr": "127.0.0.54",
         "port": 53,
-        "pid": 747,
+        "pid": 778,
         "process": "systemd-resolve",
         "uid": "991"
       },
       {
         "proto": "tcp",
-        "addr": "0.0.0.0",
-        "port": 22,
-        "pid": 1136,
-        "process": "sshd",
-        "uid": "0"
+        "addr": "127.0.0.53",
+        "port": 53,
+        "pid": 778,
+        "process": "systemd-resolve",
+        "uid": "991"
       },
       {
         "proto": "tcp",
         "addr": "127.0.0.1",
         "port": 631,
-        "pid": 1088,
+        "pid": 1081,
         "process": "cupsd",
         "uid": "0"
-      },
-      {
-        "proto": "tcp",
-        "addr": "127.0.0.53",
-        "port": 53,
-        "pid": 747,
-        "process": "systemd-resolve",
-        "uid": "991"
       },
       {
         "proto": "tcp6",
         "addr": "::1",
         "port": 631,
-        "pid": 1088,
+        "pid": 1081,
         "process": "cupsd",
         "uid": "0"
       },
@@ -12704,15 +13356,31 @@
         "proto": "tcp6",
         "addr": "::",
         "port": 22,
-        "pid": 1136,
+        "pid": 1142,
         "process": "sshd",
         "uid": "0"
       },
       {
         "proto": "udp",
+        "addr": "0.0.0.0",
+        "port": 5353,
+        "pid": 846,
+        "process": "avahi-daemon",
+        "uid": "108"
+      },
+      {
+        "proto": "udp",
+        "addr": "0.0.0.0",
+        "port": 58828,
+        "pid": 846,
+        "process": "avahi-daemon",
+        "uid": "108"
+      },
+      {
+        "proto": "udp",
         "addr": "127.0.0.54",
         "port": 53,
-        "pid": 747,
+        "pid": 778,
         "process": "systemd-resolve",
         "uid": "991"
       },
@@ -12720,48 +13388,30 @@
         "proto": "udp",
         "addr": "127.0.0.53",
         "port": 53,
-        "pid": 747,
+        "pid": 778,
         "process": "systemd-resolve",
         "uid": "991"
       },
       {
-        "proto": "udp",
-        "addr": "0.0.0.0",
+        "proto": "udp6",
+        "addr": "::",
         "port": 5353,
-        "pid": 854,
-        "process": "avahi-daemon",
-        "uid": "108"
-      },
-      {
-        "proto": "udp",
-        "addr": "0.0.0.0",
-        "port": 57802,
-        "pid": 854,
+        "pid": 846,
         "process": "avahi-daemon",
         "uid": "108"
       },
       {
         "proto": "udp6",
         "addr": "::",
-        "port": 5353,
-        "pid": 854,
-        "process": "avahi-daemon",
-        "uid": "108"
-      },
-      {
-        "proto": "udp6",
-        "addr": "::",
-        "port": 34198,
-        "pid": 854,
+        "port": 55535,
+        "pid": 846,
         "process": "avahi-daemon",
         "uid": "108"
       }
     ]
   },
   "persistence": {
-    "status": "partial",
-    "reason": "permission_denied",
-    "detail": "not fully read: authorized_keys: not fully read: /root/.ssh/authorized_keys (not_recorded), /root/.ssh/authorized_keys2 (not_recorded), /usr/sbin/.ssh/authorized_keys (not_recorded), /usr/sbin/.ssh/authorized_keys2 (not_recorded), /bin/.ssh/authorized_keys (not_recorded), /bin/.ssh/authorized_keys2 (not_recorded), /dev/.ssh/authorized_keys (not_recorded), /dev/.ssh/authorized_keys2 (not_recorded), /usr/games/.ssh/authorized_keys (not_recorded), /usr/games/.ssh/authorized_keys2 (not_recorded), /var/cache/man/.ssh/authorized_keys (not_recorded), /var/cache/man/.ssh/authorized_keys2 (not_recorded), /var/spool/lpd/.ssh/authorized_keys (not_recorded), /var/spool/lpd/.ssh/authorized_keys2 (not_recorded), /var/mail/.ssh/authorized_keys (not_recorded), /var/mail/.ssh/authorized_keys2 (not_recorded), /var/spool/news/.ssh/authorized_keys (not_recorded), /var/spool/news/.ssh/authorized_keys2 (not_recorded), /var/spool/uucp/.ssh/authorized_keys (not_recorded), /var/spool/uucp/.ssh/authorized_keys2 (not_recorded), /var/www/.ssh/authorized_keys (not_recorded), /var/www/.ssh/authorized_keys2 (not_recorded), /var/backups/.ssh/authorized_keys (not_recorded), /var/backups/.ssh/authorized_keys2 (not_recorded), /var/list/.ssh/authorized_keys (not_recorded), /var/list/.ssh/authorized_keys2 (not_recorded), /run/ircd/.ssh/authorized_keys (not_recorded), /run/ircd/.ssh/authorized_keys2 (not_recorded), /nonexistent/.ssh/authorized_keys (not_recorded), /nonexistent/.ssh/authorized_keys2 (not_recorded), /.ssh/authorized_keys (not_recorded), /.ssh/authorized_keys2 (not_recorded), /usr/lib/dhcpcd/.ssh/authorized_keys (not_recorded), /usr/lib/dhcpcd/.ssh/authorized_keys2 (not_recorded), /run/uuidd/.ssh/authorized_keys (not_recorded), /run/uuidd/.ssh/authorized_keys2 (not_recorded), /var/lib/usbmux/.ssh/authorized_keys (not_recorded), /var/lib/usbmux/.ssh/authorized_keys2 (not_recorded), /var/lib/tpm/.ssh/authorized_keys (not_recorded), /var/lib/tpm/.ssh/authorized_keys2 (not_recorded), /var/lib/misc/.ssh/authorized_keys (not_recorded), /var/lib/misc/.ssh/authorized_keys2 (not_recorded), /run/avahi-daemon/.ssh/authorized_keys (not_recorded), /run/avahi-daemon/.ssh/authorized_keys2 (not_recorded), /var/lib/sss/.ssh/authorized_keys (not_recorded), /var/lib/sss/.ssh/authorized_keys2 (not_recorded), /run/speech-dispatcher/.ssh/authorized_keys (not_recorded), /run/speech-dispatcher/.ssh/authorized_keys2 (not_recorded), /var/lib/fwupd/.ssh/authorized_keys (not_recorded), /var/lib/fwupd/.ssh/authorized_keys2 (not_recorded), /var/lib/saned/.ssh/authorized_keys (not_recorded), /var/lib/saned/.ssh/authorized_keys2 (not_recorded), /var/lib/geoclue/.ssh/authorized_keys (not_recorded), /var/lib/geoclue/.ssh/authorized_keys2 (not_recorded), /run/hplip/.ssh/authorized_keys (not_recorded), /run/hplip/.ssh/authorized_keys2 (not_recorded), /var/lib/gnome-remote-desktop/.ssh/authorized_keys (not_recorded), /var/lib/gnome-remote-desktop/.ssh/authorized_keys2 (not_recorded), /proc/.ssh/authorized_keys (not_recorded), /proc/.ssh/authorized_keys2 (not_recorded), /var/lib/colord/.ssh/authorized_keys (not_recorded), /var/lib/colord/.ssh/authorized_keys2 (not_recorded), /run/gnome-initial-setup/.ssh/authorized_keys (not_recorded), /run/gnome-initial-setup/.ssh/authorized_keys2 (not_recorded), /var/lib/gdm3/.ssh/authorized_keys (not_recorded), /var/lib/gdm3/.ssh/authorized_keys2 (not_recorded), /var/lib/openvpn/chroot/.ssh/authorized_keys (not_recorded), /var/lib/openvpn/chroot/.ssh/authorized_keys2 (not_recorded), /home/user1/.ssh/authorized_keys (not_recorded), /home/user1/.ssh/authorized_keys2 (not_recorded), /run/sshd/.ssh/authorized_keys (not_recorded), /run/sshd/.ssh/authorized_keys2 (not_recorded), unreadable: /etc/sudoers.d, /etc/sudoers",
+    "status": "ok",
     "value": [
       {
         "kind": "cron",
@@ -12890,24 +13540,84 @@
         "kind": "systemd",
         "location": "/etc/systemd/system/syslog.service",
         "command": "/usr/sbin/rsyslogd -n -iNONE"
+      },
+      {
+        "kind": "authorized_key",
+        "location": "/home/user1/.ssh/authorized_keys",
+        "detail": "ssh-ed25519 SHA256:if5lagV3+cn24JciSw1Y2Yzki8slHfaLKN2EEnc0Keo"
+      },
+      {
+        "kind": "sudo_rule",
+        "location": "/etc/sudoers",
+        "command": "root\tALL=(ALL:ALL) ALL"
+      },
+      {
+        "kind": "sudo_rule",
+        "location": "/etc/sudoers",
+        "command": "%admin ALL=(ALL) ALL"
+      },
+      {
+        "kind": "sudo_rule",
+        "location": "/etc/sudoers",
+        "command": "%sudo\tALL=(ALL:ALL) ALL"
+      },
+      {
+        "kind": "sudo_rule",
+        "location": "/etc/sudoers.d/90-user1",
+        "command": "user1 ALL=(ALL) NOPASSWD:ALL"
+      },
+      {
+        "kind": "cron_file",
+        "location": "/etc/cron.d/.placeholder"
+      },
+      {
+        "kind": "cron_file",
+        "location": "/etc/cron.d/anacron"
+      },
+      {
+        "kind": "cron_file",
+        "location": "/etc/cron.d/e2scrub_all"
+      },
+      {
+        "kind": "cron_file",
+        "location": "/etc/cron.d/sysstat"
+      },
+      {
+        "kind": "cron_file",
+        "location": "/etc/crontab"
       }
     ]
   },
   "ssh_keys": {
-    "status": "partial",
-    "reason": "not_recorded",
-    "detail": "not fully read: /root/.ssh/authorized_keys (not_recorded), /root/.ssh/authorized_keys2 (not_recorded), /usr/sbin/.ssh/authorized_keys (not_recorded), /usr/sbin/.ssh/authorized_keys2 (not_recorded), /bin/.ssh/authorized_keys (not_recorded), /bin/.ssh/authorized_keys2 (not_recorded), /dev/.ssh/authorized_keys (not_recorded), /dev/.ssh/authorized_keys2 (not_recorded), /usr/games/.ssh/authorized_keys (not_recorded), /usr/games/.ssh/authorized_keys2 (not_recorded), /var/cache/man/.ssh/authorized_keys (not_recorded), /var/cache/man/.ssh/authorized_keys2 (not_recorded), /var/spool/lpd/.ssh/authorized_keys (not_recorded), /var/spool/lpd/.ssh/authorized_keys2 (not_recorded), /var/mail/.ssh/authorized_keys (not_recorded), /var/mail/.ssh/authorized_keys2 (not_recorded), /var/spool/news/.ssh/authorized_keys (not_recorded), /var/spool/news/.ssh/authorized_keys2 (not_recorded), /var/spool/uucp/.ssh/authorized_keys (not_recorded), /var/spool/uucp/.ssh/authorized_keys2 (not_recorded), /var/www/.ssh/authorized_keys (not_recorded), /var/www/.ssh/authorized_keys2 (not_recorded), /var/backups/.ssh/authorized_keys (not_recorded), /var/backups/.ssh/authorized_keys2 (not_recorded), /var/list/.ssh/authorized_keys (not_recorded), /var/list/.ssh/authorized_keys2 (not_recorded), /run/ircd/.ssh/authorized_keys (not_recorded), /run/ircd/.ssh/authorized_keys2 (not_recorded), /nonexistent/.ssh/authorized_keys (not_recorded), /nonexistent/.ssh/authorized_keys2 (not_recorded), /.ssh/authorized_keys (not_recorded), /.ssh/authorized_keys2 (not_recorded), /usr/lib/dhcpcd/.ssh/authorized_keys (not_recorded), /usr/lib/dhcpcd/.ssh/authorized_keys2 (not_recorded), /run/uuidd/.ssh/authorized_keys (not_recorded), /run/uuidd/.ssh/authorized_keys2 (not_recorded), /var/lib/usbmux/.ssh/authorized_keys (not_recorded), /var/lib/usbmux/.ssh/authorized_keys2 (not_recorded), /var/lib/tpm/.ssh/authorized_keys (not_recorded), /var/lib/tpm/.ssh/authorized_keys2 (not_recorded), /var/lib/misc/.ssh/authorized_keys (not_recorded), /var/lib/misc/.ssh/authorized_keys2 (not_recorded), /run/avahi-daemon/.ssh/authorized_keys (not_recorded), /run/avahi-daemon/.ssh/authorized_keys2 (not_recorded), /var/lib/sss/.ssh/authorized_keys (not_recorded), /var/lib/sss/.ssh/authorized_keys2 (not_recorded), /run/speech-dispatcher/.ssh/authorized_keys (not_recorded), /run/speech-dispatcher/.ssh/authorized_keys2 (not_recorded), /var/lib/fwupd/.ssh/authorized_keys (not_recorded), /var/lib/fwupd/.ssh/authorized_keys2 (not_recorded), /var/lib/saned/.ssh/authorized_keys (not_recorded), /var/lib/saned/.ssh/authorized_keys2 (not_recorded), /var/lib/geoclue/.ssh/authorized_keys (not_recorded), /var/lib/geoclue/.ssh/authorized_keys2 (not_recorded), /run/hplip/.ssh/authorized_keys (not_recorded), /run/hplip/.ssh/authorized_keys2 (not_recorded), /var/lib/gnome-remote-desktop/.ssh/authorized_keys (not_recorded), /var/lib/gnome-remote-desktop/.ssh/authorized_keys2 (not_recorded), /proc/.ssh/authorized_keys (not_recorded), /proc/.ssh/authorized_keys2 (not_recorded), /var/lib/colord/.ssh/authorized_keys (not_recorded), /var/lib/colord/.ssh/authorized_keys2 (not_recorded), /run/gnome-initial-setup/.ssh/authorized_keys (not_recorded), /run/gnome-initial-setup/.ssh/authorized_keys2 (not_recorded), /var/lib/gdm3/.ssh/authorized_keys (not_recorded), /var/lib/gdm3/.ssh/authorized_keys2 (not_recorded), /var/lib/openvpn/chroot/.ssh/authorized_keys (not_recorded), /var/lib/openvpn/chroot/.ssh/authorized_keys2 (not_recorded), /home/user1/.ssh/authorized_keys (not_recorded), /home/user1/.ssh/authorized_keys2 (not_recorded), /run/sshd/.ssh/authorized_keys (not_recorded), /run/sshd/.ssh/authorized_keys2 (not_recorded)",
-    "value": null
+    "status": "ok",
+    "value": [
+      {
+        "user": "root",
+        "path": "/root/.ssh/authorized_keys",
+        "lines": 0,
+        "modified": "2026-11-04T23:42:48.235000017+08:00"
+      },
+      {
+        "user": "user1",
+        "path": "/home/user1/.ssh/authorized_keys",
+        "lines": 1,
+        "modified": "2026-11-04T23:42:46.562007557+08:00",
+        "keys": [
+          {
+            "type": "ssh-ed25519",
+            "fingerprint": "SHA256:if5lagV3+cn24JciSw1Y2Yzki8slHfaLKN2EEnc0Keo"
+          }
+        ]
+      }
+    ]
   },
   "firewall": {
-    "status": "partial",
-    "reason": "permission_denied",
-    "detail": "live nftables rules unreadable",
+    "status": "ok",
     "value": {
-      "backend": "nftables",
+      "backend": "",
       "enabled": false,
       "extra": {
-        "summary": "no firewall enabled at boot (nftables.service is off); rules added at runtime cannot be read here, ask in chat"
+        "summary": "none detected"
       }
     }
   },
@@ -12963,15 +13673,18 @@
     }
   },
   "auth_events": {
-    "status": "unknown",
-    "reason": "not_recorded",
-    "detail": "none (no auth log readable and journalctl failed: hostenv: not in fixture: cmd /usr/bin/journalctl -u ssh -u sshd --since 2026-11-11 02:39:48 UTC -o short-iso --no-pager)",
+    "status": "ok",
+    "detail": "from /var/log/auth.log",
     "value": {
       "window_hours": 24
     }
   },
   "web": {
     "status": "ok",
-    "value": {}
+    "value": {
+      "webroots": [
+        "/opt/acme/web"
+      ]
+    }
   }
 }

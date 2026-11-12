@@ -102,8 +102,10 @@ active source that never logged in makes room). Measured: a 200 MB auth.log peak
 ## What never goes into facts
 
 - File contents. Facts keep paths, hashes and the parsed fields that checks need.
-- Secrets. Every Source runs its output through `MaskSecrets` before a parser sees it, and command
-  lines are masked again and capped at 512 bytes.
+- Secrets. File contents reach the parsers raw (masking them corrupted facts such as sudo's
+  `NOPASSWD:ALL` or sshd's `sk-ssh-ed25519-cert-v01@openssh.com`), but every free-text field that
+  leaves — command lines (capped at 512 bytes), cron and systemd commands, streamed log lines,
+  command output — is masked with `MaskSecrets`, and fixtures are masked by the Masker.
 - SSH public keys. Only the type and the SHA256 fingerprint are kept.
 
 ## Commands
