@@ -131,6 +131,11 @@ func (LinuxCollector) Packages(ctx context.Context, src Source, osr map[string]s
 		return Unknown[PackageSet](ReasonNotCollected, "no os-release, distribution unknown")
 	}
 	feed := PatchFeedFor(osr)
+	if feed.Kind == "alas" && feed.Release == "2" {
+		if b, err := src.ReadFile(AL2ExtrasRepo); err == nil {
+			feed.Repos = ParseAL2Extras(b)
+		}
+	}
 	set := PackageSet{Ecosystem: OSVEcosystem(osr)}
 	if feed.Kind != "" {
 		set.Feed = &feed

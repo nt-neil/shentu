@@ -91,7 +91,8 @@ func TestScanUpdateInfo(t *testing.T) {
 	if err := ScanUpdateInfo(strings.NewReader(xml), map[string]bool{"openssl": true}, func(a Advisory) { got = append(got, a) }); err != nil {
 		t.Fatal(err)
 	}
-	want := []Advisory{{ID: "ALAS2023-2024-001", Severity: "Important", CVEs: []string{"CVE-2024-0001"}, Fixed: map[string]string{"openssl": "1:3.0.8-1.amzn2023.0.12"}}}
+	want := []Advisory{{ID: "ALAS2023-2024-001", Severity: "Important", CVEs: []string{"CVE-2024-0001"}, Fixed: map[string]string{"openssl": "1:3.0.8-1.amzn2023.0.12"},
+		FixedArch: map[string]string{FixedKey("openssl", "x86_64"): "1:3.0.8-1.amzn2023.0.12", FixedKey("openssl", "aarch64"): "1:3.0.8-1.amzn2023.0.12"}}}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %+v", got)
 	}
@@ -187,5 +188,26 @@ func TestRPMDistros(t *testing.T) {
 			(c.eco != "" && p.Feed.Ecosystems[0] != c.eco) {
 			t.Errorf("%s: family %q, packages %+v feed %+v", f.Platform.Value.PrettyName+f.Platform.Value.Distro, f.Platform.Value.Family, p.Manager, p.Feed)
 		}
+	}
+}
+
+// N15: amazon-linux-extras topics, and Amazon Linux 1 without a feed.
+func TestAL2Extras(t *testing.T) {
+	repo := "[amzn2extra-docker]\nenabled = 1\nmirrorlist=x\n\n[amzn2extra-kernel-5.10]\nenabled=1\n[amzn2extra-php8.2]\nenabled = 0\n" +
+		"[amzn2extra-bad/../x]\nenabled=1\n[amzn2-core]\nenabled=1\n"
+	if got := ParseAL2Extras([]byte(repo)); !reflect.DeepEqual(got, []string{"docker", "kernel-5.10"}) {
+		t.Errorf("topics %v", got)
+	}
+	if u := ALASExtrasMirrorList("kernel-5.10", "aarch64"); u != "https://cdn.amazonlinux.com/2/extras/kernel-5.10/latest/aarch64/mirror.list" {
+		t.Errorf("url %q", u)
+	}
+	if u := ALASExtrasMirrorList("../core", "x86_64"); u != "" {
+		t.Errorf("a topic made a path: %q", u)
+	}
+	if f := PatchFeedFor(map[string]string{"ID": "amzn", "VERSION_ID": "2018.03"}); f.Kind != "" {
+		t.Errorf("Amazon Linux 1: %+v", f)
+	}
+	if f := PatchFeedFor(map[string]string{"ID": "amzn", "VERSION_ID": "2"}); f.Kind != "alas" || f.Release != "2" {
+		t.Errorf("Amazon Linux 2: %+v", f)
 	}
 }

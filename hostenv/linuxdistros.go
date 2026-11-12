@@ -8,6 +8,8 @@ package hostenv
 import (
 	"encoding/xml"
 	"io"
+	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode"
@@ -18,6 +20,7 @@ type PatchFeed struct {
 	Kind       string   `json:"kind"`                  // osv, alas; "" when none is known
 	Ecosystems []string `json:"ecosystems,omitempty"`  // OSV ecosystems to query (SLES: one per module)
 	Release    string   `json:"release,omitempty"`     // alas: "2" or "2023"
+	Repos      []string `json:"repos,omitempty"`       // alas 2: the amazon-linux-extras topics enabled (kernel-5.10, php8.2)
 	Upgrade    string   `json:"upgrade,omitempty"`     // the command that installs the fixes
 	VersionFmt string   `json:"version_fmt,omitempty"` // how OSV spells versions: "evr" (epoch:version-release) or "vr" (no epoch when 0)
 }
@@ -58,11 +61,14 @@ func PatchFeedFor(osr map[string]string) PatchFeed {
 		}
 		return PatchFeed{Kind: "osv", Ecosystems: ecos, Upgrade: "zypper patch --category security", VersionFmt: "vr"}
 	case "amzn":
-		up := "dnf upgrade --security"
-		if ver == "2" {
-			up = "yum update --security"
+		switch ver {
+		case "2":
+			return PatchFeed{Kind: "alas", Release: ver, Upgrade: "yum update --security"}
+		case "2023":
+			return PatchFeed{Kind: "alas", Release: ver, Upgrade: "dnf upgrade --security"}
 		}
-		return PatchFeed{Kind: "alas", Release: ver, Upgrade: up}
+		// Amazon Linux 1 (2018.03) is past its end of life: no feed, so
+		// its packages cannot be told vulnerable or not.
 	}
 	return PatchFeed{}
 }
@@ -94,6 +100,51 @@ func ALASMirrorList(release, arch string) string {
 	return "https://cdn.amazonlinux.com/al2023/core/mirrors/latest/" + arch + "/mirror.list"
 }
 
+// AL2ExtrasRepo is where amazon-linux-extras keeps its repositories.
+const AL2ExtrasRepo = "/etc/yum.repos.d/amzn2-extras.repo"
+
+var extrasTopic = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]*$`)
+
+// ParseAL2Extras returns the topics amzn2-extras.repo enables: sections
+// [amzn2extra-<topic>] with enabled=1, sorted.
+func ParseAL2Extras(b []byte) []string {
+	var out []string
+	topic, enabled := "", false
+	flush := func() {
+		if topic != "" && enabled && extrasTopic.MatchString(topic) {
+			out = append(out, topic)
+		}
+	}
+	for _, l := range strings.Split(string(b), "\n") {
+		l = strings.TrimSpace(l)
+		switch {
+		case strings.HasPrefix(l, "[") && strings.HasSuffix(l, "]"):
+			flush()
+			name := strings.Trim(l, "[]")
+			topic, enabled = strings.TrimPrefix(name, "amzn2extra-"), false
+			if topic == name { // not an extras section
+				topic = ""
+			}
+		case strings.HasPrefix(l, "enabled"):
+			if _, v, ok := strings.Cut(l, "="); ok {
+				enabled = strings.TrimSpace(v) == "1"
+			}
+		}
+	}
+	flush()
+	sort.Strings(out)
+	return out
+}
+
+// ALASExtrasMirrorList is where an amazon-linux-extras topic's repository
+// is published (Amazon Linux 2 only); "" for a name that is not a topic.
+func ALASExtrasMirrorList(topic, arch string) string {
+	if !extrasTopic.MatchString(topic) {
+		return ""
+	}
+	return "https://cdn.amazonlinux.com/2/extras/" + topic + "/latest/" + arch + "/mirror.list"
+}
+
 // RPMArch is the rpm name of a GOARCH.
 func RPMArch(goarch string) string {
 	switch goarch {
@@ -111,8 +162,14 @@ type Advisory struct {
 	ID       string
 	Severity string
 	CVEs     []string
-	Fixed    map[string]string // package name -> fixed epoch:version-release
+	Fixed    map[string]string // package name -> fixed epoch:version-release (highest of any arch)
+	// FixedArch is the fix per package and architecture (FixedKey):
+	// an advisory may fix one architecture only.
+	FixedArch map[string]string
 }
+
+// FixedKey is the FixedArch key of a package and architecture.
+func FixedKey(name, arch string) string { return name + "\x00" + arch }
 
 // ScanUpdateInfo reads an updateinfo.xml stream and calls fn for each
 // security advisory that names one of the installed packages, holding one
@@ -134,7 +191,7 @@ func ScanUpdateInfo(r io.Reader, installed map[string]bool, fn func(Advisory)) e
 		case xml.StartElement:
 			switch t.Name.Local {
 			case "update":
-				adv, security = &Advisory{Fixed: map[string]string{}}, attr(t, "type") == "security"
+				adv, security = &Advisory{Fixed: map[string]string{}, FixedArch: map[string]string{}}, attr(t, "type") == "security"
 			case "id", "severity":
 				field = t.Name.Local
 			case "reference":
@@ -154,6 +211,10 @@ func ScanUpdateInfo(r io.Reader, installed map[string]bool, fn func(Advisory)) e
 					// An advisory lists every architecture: keep the highest fix.
 					if old, ok := adv.Fixed[name]; !ok || CompareEVR(evr, old) > 0 {
 						adv.Fixed[name] = evr
+					}
+					k := FixedKey(name, attr(t, "arch"))
+					if old, ok := adv.FixedArch[k]; !ok || CompareEVR(evr, old) > 0 {
+						adv.FixedArch[k] = evr
 					}
 				}
 			}

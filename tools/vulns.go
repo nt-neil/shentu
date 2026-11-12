@@ -38,10 +38,11 @@ const osvAPI = "https://api.osv.dev/v1"
 
 // PackageVulns queries OSV for every installed package.
 func PackageVulns(ctx context.Context, hc *http.Client, detailFor string) (map[string]any, error) {
-	eco, feed, pkgs, err := installedPackages(ctx)
+	eco, feed, items, err := installedSet(ctx)
 	if err != nil {
 		return nil, err
 	}
+	pkgs := pkgsOf(items)
 	type affected struct {
 		Package string   `json:"package"`
 		Version string   `json:"version"`
@@ -53,7 +54,7 @@ func PackageVulns(ctx context.Context, hc *http.Client, detailFor string) (map[s
 	switch feed.Kind {
 	case "alas":
 		plat, _ := hostPlatform()
-		hits, advs, err := alasAffected(ctx, hc, feed.Release, hostenv.RPMArch(plat.Arch), pkgs)
+		hits, advs, err := alasAffected(ctx, hc, feed, hostenv.RPMArch(plat.Arch), items)
 		if err != nil {
 			return nil, fmt.Errorf("Amazon Linux security advisories (ALAS) unavailable (is the server online?): %w", err)
 		}
@@ -351,10 +352,38 @@ func upgradeHint(eco string) string {
 // (Debian, Ubuntu, Alpine, Rocky, Alma, SUSE, openSUSE) or ALAS (Amazon
 // Linux). eco names the distribution in the result.
 func installedPackages(ctx context.Context) (string, hostenv.PatchFeed, []pkg, error) {
+	eco, feed, items, err := installedSet(ctx)
+	if err != nil {
+		return "", feed, nil, err
+	}
+	return eco, feed, pkgsOf(items), nil
+}
+
+// pkgsOf names each item as the security feed does (dpkg's source
+// package), one per name and version.
+func pkgsOf(items []hostenv.Package) []pkg {
+	var pkgs []pkg
+	for _, p := range items {
+		name := p.Name
+		if p.Source != "" {
+			name = p.Source
+		}
+		pkgs = append(pkgs, pkg{name, p.Version})
+	}
+	return uniq(pkgs)
+}
+
+// installedSet is the package fact as collected: every item (several
+// versions of one name, with their architecture) and the feed (with the
+// amazon-linux-extras topics on Amazon Linux 2).
+func installedSet(ctx context.Context) (string, hostenv.PatchFeed, []hostenv.Package, error) {
 	_, osr := hostPlatform()
 	id, ver := osr["ID"], osr["VERSION_ID"]
 	feed := hostenv.PatchFeedFor(osr)
 	if feed.Kind == "" {
+		if id == "amzn" {
+			return "", feed, nil, errors.New("cannot tell: Amazon Linux " + ver + " is past its end of life and has no security feed here")
+		}
 		return "", feed, nil, errors.New("unsupported distribution for package_vulns: " + id + " " + ver)
 	}
 	eco := ""
@@ -372,15 +401,10 @@ func installedPackages(ctx context.Context) (string, hostenv.PatchFeed, []pkg, e
 		}
 		return "", feed, nil, fmt.Errorf("%s: %s", cmd, set.Detail)
 	}
-	var pkgs []pkg
-	for _, p := range set.Value.Items {
-		name := p.Name
-		if p.Source != "" {
-			name = p.Source
-		}
-		pkgs = append(pkgs, pkg{name, p.Version})
+	if set.Value.Feed != nil {
+		feed = *set.Value.Feed
 	}
-	return eco, feed, uniq(pkgs), nil
+	return eco, feed, set.Value.Items, nil
 }
 
 func uniq(in []pkg) []pkg {
