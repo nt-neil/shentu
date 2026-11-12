@@ -1,0 +1,20 @@
+[Unit]
+Description=Shentu security patrol
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/shentu patrol
+EnvironmentFile=-/etc/shentu/env
+# Patrol only reads. It gets no control tools, so it needs no write access outside its state.
+ProtectSystem=strict
+ReadWritePaths=/var/lib/shentu
+PrivateTmp=yes
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH CAP_SYS_PTRACE
+AmbientCapabilities=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK

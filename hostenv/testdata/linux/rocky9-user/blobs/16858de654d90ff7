@@ -1,0 +1,58 @@
+Name:	systemd
+Umask:	0022
+State:	S (sleeping)
+Tgid:	2036
+Ngid:	0
+Pid:	2036
+PPid:	1
+TracerPid:	0
+Uid:	1000	1000	1000	1000
+Gid:	1000	1000	1000	1000
+FDSize:	128
+Groups:	1000 
+NStgid:	2036
+NSpid:	2036
+NSpgid:	2036
+NSsid:	2036
+VmPeak:	   24728 kB
+VmSize:	   24728 kB
+VmLck:	       0 kB
+VmPin:	       0 kB
+VmHWM:	   13604 kB
+VmRSS:	   13604 kB
+RssAnon:	    3756 kB
+RssFile:	    9848 kB
+RssShmem:	       0 kB
+VmData:	    2980 kB
+VmStk:	     132 kB
+VmExe:	      80 kB
+VmLib:	   17320 kB
+VmPTE:	      88 kB
+VmSwap:	       0 kB
+HugetlbPages:	       0 kB
+CoreDumping:	0
+THP_enabled:	1
+untag_mask:	0xffffffffffffff
+Threads:	1
+SigQ:	0/6798
+SigPnd:	0000000000000000
+ShdPnd:	0000000000000000
+SigBlk:	7fe3c0fe28014a03
+SigIgn:	0000000000001000
+SigCgt:	0000000000000000
+CapInh:	0000000000000000
+CapPrm:	0000000000000000
+CapEff:	0000000000000000
+CapBnd:	000001ffffffffff
+CapAmb:	0000000000000000
+NoNewPrivs:	0
+Seccomp:	0
+Seccomp_filters:	0
+Speculation_Store_Bypass:	vulnerable
+SpeculationIndirectBranch:	unknown
+Cpus_allowed:	3
+Cpus_allowed_list:	0-1
+Mems_allowed:	00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000001
+Mems_allowed_list:	0
+voluntary_ctxt_switches:	12
+nonvoluntary_ctxt_switches:	12

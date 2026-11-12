@@ -1,0 +1,58 @@
+Name:	dbus-broker-lau
+Umask:	0022
+State:	S (sleeping)
+Tgid:	793
+Ngid:	0
+Pid:	793
+PPid:	1
+TracerPid:	0
+Uid:	81	81	81	81
+Gid:	81	81	81	81
+FDSize:	64
+Groups:	 
+NStgid:	793
+NSpid:	793
+NSpgid:	793
+NSsid:	793
+VmPeak:	   10576 kB
+VmSize:	   10576 kB
+VmLck:	       0 kB
+VmPin:	       0 kB
+VmHWM:	    4116 kB
+VmRSS:	    4116 kB
+RssAnon:	     668 kB
+RssFile:	    3444 kB
+RssShmem:	       4 kB
+VmData:	     660 kB
+VmStk:	     132 kB
+VmExe:	     116 kB
+VmLib:	    6100 kB
+VmPTE:	      60 kB
+VmSwap:	       0 kB
+HugetlbPages:	       0 kB
+CoreDumping:	0
+THP_enabled:	1
+untag_mask:	0xffffffffffffff
+Threads:	1
+SigQ:	0/6798
+SigPnd:	0000000000000000
+ShdPnd:	0000000000000000
+SigBlk:	0000000000014003
+SigIgn:	0000000000001000
+SigCgt:	0000000000000000
+CapInh:	0000000000000000
+CapPrm:	0000000000000000
+CapEff:	0000000000000000
+CapBnd:	000001fff7fdffff
+CapAmb:	0000000000000000
+NoNewPrivs:	0
+Seccomp:	2
+Seccomp_filters:	2
+Speculation_Store_Bypass:	vulnerable
+SpeculationIndirectBranch:	unknown
+Cpus_allowed:	3
+Cpus_allowed_list:	0-1
+Mems_allowed:	00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000001
+Mems_allowed_list:	0
+voluntary_ctxt_switches:	87
+nonvoluntary_ctxt_switches:	1

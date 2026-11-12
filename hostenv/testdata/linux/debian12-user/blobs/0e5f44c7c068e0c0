@@ -1,0 +1,57 @@
+Name:	sshd
+Umask:	0022
+State:	S (sleeping)
+Tgid:	521
+Ngid:	0
+Pid:	521
+PPid:	1
+TracerPid:	0
+Uid:	0	0	0	0
+Gid:	0	0	0	0
+FDSize:	128
+Groups:	 
+NStgid:	521
+NSpid:	521
+NSpgid:	521
+NSsid:	521
+VmPeak:	   16284 kB
+VmSize:	   16280 kB
+VmLck:	       0 kB
+VmPin:	       0 kB
+VmHWM:	    8848 kB
+VmRSS:	    8848 kB
+RssAnon:	    1304 kB
+RssFile:	    7544 kB
+RssShmem:	       0 kB
+VmData:	     804 kB
+VmStk:	     132 kB
+VmExe:	    1244 kB
+VmLib:	   11492 kB
+VmPTE:	      72 kB
+VmSwap:	       0 kB
+HugetlbPages:	       0 kB
+CoreDumping:	0
+THP_enabled:	1
+Threads:	1
+SigQ:	1/7511
+SigPnd:	0000000000000000
+ShdPnd:	0000000000000000
+SigBlk:	0000000000000000
+SigIgn:	0000000000001000
+SigCgt:	0000000000014005
+CapInh:	0000000000000000
+CapPrm:	000001ffffffffff
+CapEff:	000001ffffffffff
+CapBnd:	000001ffffffffff
+CapAmb:	0000000000000000
+NoNewPrivs:	0
+Seccomp:	0
+Seccomp_filters:	0
+Speculation_Store_Bypass:	vulnerable
+SpeculationIndirectBranch:	unknown
+Cpus_allowed:	3
+Cpus_allowed_list:	0-1
+Mems_allowed:	0001
+Mems_allowed_list:	0
+voluntary_ctxt_switches:	24
+nonvoluntary_ctxt_switches:	9

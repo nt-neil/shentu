@@ -1,0 +1,57 @@
+Name:	systemd-resolve
+Umask:	0022
+State:	S (sleeping)
+Tgid:	447
+Ngid:	0
+Pid:	447
+PPid:	1
+TracerPid:	0
+Uid:	996	996	996	996
+Gid:	996	996	996	996
+FDSize:	128
+Groups:	996 
+NStgid:	447
+NSpid:	447
+NSpgid:	447
+NSsid:	447
+VmPeak:	   21208 kB
+VmSize:	   21204 kB
+VmLck:	       0 kB
+VmPin:	       0 kB
+VmHWM:	   11872 kB
+VmRSS:	   11872 kB
+RssAnon:	    2292 kB
+RssFile:	    9580 kB
+RssShmem:	       0 kB
+VmData:	    1832 kB
+VmStk:	     132 kB
+VmExe:	     488 kB
+VmLib:	   16104 kB
+VmPTE:	      80 kB
+VmSwap:	       0 kB
+HugetlbPages:	       0 kB
+CoreDumping:	0
+THP_enabled:	1
+Threads:	1
+SigQ:	0/7511
+SigPnd:	0000000000000000
+ShdPnd:	0000000000000000
+SigBlk:	0000000400004a02
+SigIgn:	0000000000001000
+SigCgt:	0000000000000000
+CapInh:	0000000000002000
+CapPrm:	0000000000002000
+CapEff:	0000000000002000
+CapBnd:	0000000000002000
+CapAmb:	0000000000002000
+NoNewPrivs:	1
+Seccomp:	2
+Seccomp_filters:	22
+Speculation_Store_Bypass:	vulnerable
+SpeculationIndirectBranch:	unknown
+Cpus_allowed:	3
+Cpus_allowed_list:	0-1
+Mems_allowed:	0001
+Mems_allowed_list:	0
+voluntary_ctxt_switches:	84
+nonvoluntary_ctxt_switches:	548949

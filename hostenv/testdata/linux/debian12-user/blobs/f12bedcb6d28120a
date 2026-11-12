@@ -1,0 +1,57 @@
+Name:	(sd-pam)
+Umask:	0022
+State:	S (sleeping)
+Tgid:	588
+Ngid:	0
+Pid:	588
+PPid:	587
+TracerPid:	0
+Uid:	1000	1000	1000	1000
+Gid:	1000	1000	1000	1000
+FDSize:	64
+Groups:	 
+NStgid:	588
+NSpid:	588
+NSpgid:	587
+NSsid:	587
+VmPeak:	  104176 kB
+VmSize:	  104176 kB
+VmLck:	       0 kB
+VmPin:	       0 kB
+VmHWM:	    4624 kB
+VmRSS:	    4624 kB
+RssAnon:	    3004 kB
+RssFile:	    1620 kB
+RssShmem:	       0 kB
+VmData:	   18664 kB
+VmStk:	     132 kB
+VmExe:	      84 kB
+VmLib:	   15812 kB
+VmPTE:	      84 kB
+VmSwap:	       0 kB
+HugetlbPages:	       0 kB
+CoreDumping:	0
+THP_enabled:	1
+Threads:	1
+SigQ:	0/7511
+SigPnd:	0000000000000000
+ShdPnd:	0000000000000000
+SigBlk:	0000000000000000
+SigIgn:	0000000000001000
+SigCgt:	0000000100000000
+CapInh:	0000000000000000
+CapPrm:	0000000000000000
+CapEff:	0000000000000000
+CapBnd:	000001ffffffffff
+CapAmb:	0000000000000000
+NoNewPrivs:	0
+Seccomp:	0
+Seccomp_filters:	0
+Speculation_Store_Bypass:	vulnerable
+SpeculationIndirectBranch:	unknown
+Cpus_allowed:	3
+Cpus_allowed_list:	0-1
+Mems_allowed:	0001
+Mems_allowed_list:	0
+voluntary_ctxt_switches:	1
+nonvoluntary_ctxt_switches:	0

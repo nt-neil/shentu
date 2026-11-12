@@ -1,0 +1,59 @@
+Name:	systemd-timesyn
+Umask:	0022
+State:	S (sleeping)
+Tgid:	748
+Ngid:	0
+Pid:	748
+PPid:	1
+TracerPid:	0
+Uid:	996	996	996	996
+Gid:	996	996	996	996
+FDSize:	128
+Groups:	996 
+NStgid:	748
+NSpid:	748
+NSpgid:	748
+NSsid:	748
+Kthread:	0
+VmPeak:	  156372 kB
+VmSize:	   90968 kB
+VmLck:	       0 kB
+VmPin:	       0 kB
+VmHWM:	    7104 kB
+VmRSS:	    7104 kB
+RssAnon:	     932 kB
+RssFile:	    6172 kB
+RssShmem:	       0 kB
+VmData:	    8804 kB
+VmStk:	     132 kB
+VmExe:	      52 kB
+VmLib:	   14148 kB
+VmPTE:	      84 kB
+VmSwap:	       0 kB
+HugetlbPages:	       0 kB
+CoreDumping:	0
+THP_enabled:	1
+untag_mask:	0xffffffffffffff
+Threads:	2
+SigQ:	0/7000
+SigPnd:	0000000000000000
+ShdPnd:	0000000000000000
+SigBlk:	0008000000004002
+SigIgn:	0000000000001000
+SigCgt:	0000000100000000
+CapInh:	0000000002000000
+CapPrm:	0000000002000000
+CapEff:	0000000002000000
+CapBnd:	0000000002000000
+CapAmb:	0000000002000000
+NoNewPrivs:	1
+Seccomp:	2
+Seccomp_filters:	20
+Speculation_Store_Bypass:	vulnerable
+SpeculationIndirectBranch:	unknown
+Cpus_allowed:	f
+Cpus_allowed_list:	0-3
+Mems_allowed:	00000000,00000001
+Mems_allowed_list:	0
+voluntary_ctxt_switches:	59
+nonvoluntary_ctxt_switches:	20

@@ -1,0 +1,58 @@
+Name:	chronyd
+Umask:	0022
+State:	S (sleeping)
+Tgid:	805
+Ngid:	0
+Pid:	805
+PPid:	1
+TracerPid:	0
+Uid:	995	995	995	995
+Gid:	995	995	995	995
+FDSize:	64
+Groups:	 
+NStgid:	805
+NSpid:	805
+NSpgid:	804
+NSsid:	804
+VmPeak:	  150864 kB
+VmSize:	   85832 kB
+VmLck:	       0 kB
+VmPin:	       0 kB
+VmHWM:	    3864 kB
+VmRSS:	    3864 kB
+RssAnon:	     752 kB
+RssFile:	    3112 kB
+RssShmem:	       0 kB
+VmData:	    8936 kB
+VmStk:	     132 kB
+VmExe:	     348 kB
+VmLib:	    9456 kB
+VmPTE:	      64 kB
+VmSwap:	       0 kB
+HugetlbPages:	       0 kB
+CoreDumping:	0
+THP_enabled:	1
+untag_mask:	0xffffffffffffff
+Threads:	1
+SigQ:	0/6798
+SigPnd:	0000000000000000
+ShdPnd:	0000000000000000
+SigBlk:	0000000000000000
+SigIgn:	0000000000001000
+SigCgt:	0000000100004007
+CapInh:	0000000000000000
+CapPrm:	0000000002000400
+CapEff:	0000000002000400
+CapBnd:	000001c08380fddf
+CapAmb:	0000000000000000
+NoNewPrivs:	1
+Seccomp:	2
+Seccomp_filters:	19
+Speculation_Store_Bypass:	vulnerable
+SpeculationIndirectBranch:	unknown
+Cpus_allowed:	3
+Cpus_allowed_list:	0-1
+Mems_allowed:	00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000001
+Mems_allowed_list:	0
+voluntary_ctxt_switches:	38
+nonvoluntary_ctxt_switches:	0
