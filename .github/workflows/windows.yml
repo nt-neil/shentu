@@ -33,40 +33,50 @@ jobs:
         run: |
           go test -run '^$' -fuzz '^FuzzDecodeBSTRArray$' -fuzztime 30s ./hostenv/
           go test -run '^$' -fuzz '^FuzzDecodeScalarVariant$' -fuzztime 30s ./hostenv/
-      - name: hostfacts smoke (live facts, no panic)
+      - name: hostfacts smoke (live facts, no panic; prints statuses only)
         run: |
           go build -o hostfacts.exe ./cmd/hostfacts/
-          ./hostfacts.exe > facts.json
-          ./hostfacts.exe -checks > findings.json
+          # Live output stays on the runner: it is unmasked. Only the masked
+          # fixture (written by -record, which runs the Masker) and facts
+          # replayed from it are uploaded.
+          ./hostfacts.exe > "$RUNNER_TEMP/facts.json"
+          ./hostfacts.exe -checks > "$RUNNER_TEMP/findings.json"
           ./hostfacts.exe -record fixture > /dev/null
           ./hostfacts.exe -replay fixture > replayed.json
-          python - <<'EOF'
-          import json
-          f = json.load(open("facts.json"))
-          assert f["schema"] == "hostfacts/1", f["schema"]
-          assert f["collector"]["name"] == "windows", f["collector"]
-          p = f["platform"]
-          assert p["status"] == "ok" and p["value"]["family"] == "windows-server", p
-          assert f["privilege"]["value"]["elevated"], "runner should be elevated"
+          python - "$RUNNER_TEMP/facts.json" "$RUNNER_TEMP/findings.json" <<'EOF'
+          import json, sys
+          f = json.load(open(sys.argv[1]))
+          ok = True
+          def need(cond, what):
+              global ok
+              if not cond:
+                  ok = False
+                  print("FAIL:", what)
+          need(f["schema"] == "hostfacts/1", "schema")
+          need(f["collector"]["name"] == "windows", "collector name")
+          need(f["platform"]["status"] == "ok", "platform status")
+          need(f["platform"]["value"].get("family") == "windows-server", "platform family")
+          need(f["privilege"]["value"]["elevated"], "runner elevated")
+          # Status and reason only: detail and values can hold paths and names.
           for k in ["packages", "patches", "services", "processes", "accounts", "listeners",
                     "persistence", "firewall", "antimalware", "auth_events"]:
               o = f[k]
-              print(f"{k:12} {o['status']:8} {o.get('reason', ''):20} {o.get('detail', '')[:100]}")
-              assert o["status"] in ("ok", "partial"), (k, o)
+              print(f"{k:12} {o['status']:8} {o.get('reason', '')}")
+              need(o["status"] in ("ok", "partial"), k)
           for k, o in f["remote_access"].items():
               print(f"{k:12} {o['status']:8} {o.get('reason', '')}")
-              assert o["status"] in ("ok", "partial", "not_applicable"), (k, o)
+              need(o["status"] in ("ok", "partial", "not_applicable"), k)
           r = json.load(open("replayed.json"))
           for k in ["platform", "packages", "patches", "services", "accounts", "listeners", "persistence"]:
-              assert r[k]["status"] == f[k]["status"], ("replay differs", k, r[k]["status"], f[k]["status"])
-          print("findings:", len(json.load(open("findings.json"))))
+              need(r[k]["status"] == f[k]["status"], "replay status of " + k)
+          print("findings:", len(json.load(open(sys.argv[2]))))
+          sys.exit(0 if ok else 1)
           EOF
       - name: keep the masked fixture for review (not committed automatically)
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: hostfacts-${{ matrix.os }}
+          name: hostfacts-fixture-${{ matrix.os }}
           path: |
-            facts.json
-            findings.json
             fixture/
-          retention-days: 3
+            replayed.json
+          retention-days: 1
