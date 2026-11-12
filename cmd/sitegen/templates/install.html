@@ -23,6 +23,7 @@
 </ul>
 <h2>支援的系統</h2>
 <p>Ubuntu 22.04、24.04，Debian 12，Rocky 與 Alma 9，amd64 與 arm64（需要 systemd）。每個 release 附 <code>.deb</code> 與 <code>.rpm</code>，以及可用 <code>gh attestation verify</code> 驗證的簽章建置來源。</p>
+<p>Windows Server 2022 與 2025（v0.3.0 起，amd64；2019 尚未在實機驗證）：下載 <code>shentu_windows_amd64.zip</code>，以系統管理員身分安裝成服務，只讀不寫。步驟見 <a href="https://github.com/nt-neil/shentu/blob/main/packaging/windows/INSTALL.md">Windows 安裝說明</a>。</p>
 <p>它不會自己改動系統：每個會改變系統的動作都要人確認。詳細步驟見<a href="https://github.com/nt-neil/shentu/blob/main/docs/getting-started.zh-TW.md">入門指南</a>。</p>
 {{else}}
 <p>One command installs Shentu and starts a guided setup with five questions:</p>
@@ -44,6 +45,7 @@
 </ul>
 <h2>Supported systems</h2>
 <p>Ubuntu 22.04 and 24.04, Debian 12, Rocky and Alma 9, on amd64 and arm64 (systemd is required). Each release carries <code>.deb</code> and <code>.rpm</code> packages and a signed build provenance you can check with <code>gh attestation verify</code>.</p>
+<p>Windows Server 2022 and 2025 (from v0.3.0, amd64; 2019 not yet checked on a real host): download <code>shentu_windows_amd64.zip</code> and install it as a service from an elevated prompt; it only reads. Step by step: <a href="https://github.com/nt-neil/shentu/blob/main/packaging/windows/INSTALL.md">Windows install</a>.</p>
 <p>It never changes the system on its own: every action that changes something waits for a human to confirm it. Step by step: <a href="https://github.com/nt-neil/shentu/blob/main/docs/getting-started.md">Getting started</a>.</p>
 {{end}}
 <script>
