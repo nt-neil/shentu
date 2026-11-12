@@ -26,6 +26,22 @@
     {
       "op": "cmd",
       "argv": [
+        "/usr/bin/journalctl",
+        "-u",
+        "ssh@*",
+        "-u",
+        "sshd@*",
+        "--since",
+        "2026-11-11 21:07:08 UTC",
+        "-o",
+        "short-iso",
+        "--no-pager"
+      ],
+      "blob": "blobs/19c4e28b2f54ea8f"
+    },
+    {
+      "op": "cmd",
+      "argv": [
         "/usr/bin/rpm",
         "-qa",
         "--qf",

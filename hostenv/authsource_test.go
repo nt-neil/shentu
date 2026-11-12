@@ -49,7 +49,7 @@ func TestAuthEventsSourceOrder(t *testing.T) {
 		{"journald timed out, no text log", fakeJournal{lines: []string{jline}, err: ErrTimeout}, "", StatusPartial, ReasonTimeout, "203.0.113.1", "no text auth log"},
 		{"journald empty, text has sshd lines", fakeJournal{lines: []string{"-- No entries --"}}, tline, StatusPartial, ReasonUnverified, "203.0.113.2", "journald has no sshd entries"},
 		{"journald empty, text without sshd lines", fakeJournal{lines: []string{"-- No entries --"}}, "x CRON[1]: ok", StatusOK, "", "", "from journald"},
-		{"journald empty, no text log", fakeJournal{lines: []string{"-- No entries --"}}, "", StatusOK, "", "", "from journald"},
+		{"journald empty, no text log: cannot tell", fakeJournal{lines: []string{"-- No entries --"}}, "", StatusPartial, ReasonUnverified, "", "journald may not keep them"},
 		{"journald empty, text unreadable", fakeJournal{lines: []string{"-- No entries --"}}, "-", StatusUnknown, ReasonPermission, "", "unreadable"},
 		{"journald hidden from this user", fakeJournal{lines: []string{"-- No entries --"}, stderr: hint}, tline, StatusPartial, ReasonUnverified, "203.0.113.2", "hides the system's entries"},
 		{"journald hidden, text unreadable", fakeJournal{stderr: hint}, "-", StatusUnknown, ReasonPermission, "", "none"},
@@ -109,5 +109,39 @@ func TestAuthEventsTimeoutTakesMax(t *testing.T) {
 	got, _ := MaxLogins(a, nil, b)
 	if len(got) != 1 || got[0].Failed != 1 || !got[0].First.Before(got[0].Last) {
 		t.Errorf("MaxLogins %+v", got)
+	}
+}
+
+// sockJournal has sshd entries only under the socket-activated units.
+type sockJournal struct {
+	*Live
+	asked []string
+}
+
+func (j *sockJournal) RunLinesUnmasked(_ context.Context, argv []string, fn func(string)) (CmdResult, error) {
+	j.asked = append(j.asked, argv[2])
+	if argv[2] == "ssh@*" {
+		fn(time.Now().Add(-time.Hour).UTC().Format(time.RFC3339) + " vm sshd[9]: Invalid user x from 203.0.113.5 port 22")
+	} else {
+		fn("-- No entries --")
+	}
+	return CmdResult{}, nil
+}
+
+// A socket-activated sshd (ssh@*.service) is read from journald, verified;
+// the sock units are asked only when ssh and sshd have nothing.
+func TestAuthEventsSocketActivated(t *testing.T) {
+	src := &sockJournal{Live: &Live{Remap: map[string]string{"/var/log": t.TempDir()}}}
+	f := LinuxCollector{}.AuthEvents(context.Background(), src, time.Now(), []string{"/var/log/auth.log"})
+	if f.Status != StatusOK || f.Value.FailedBySrc["203.0.113.5"] != 1 || strings.Join(src.asked, ",") != "ssh,ssh@*" {
+		t.Errorf("%s %q %v asked %v", f.Status, f.Detail, f.Value.FailedBySrc, src.asked)
+	}
+	r, _ := NewRunner(LinuxCollector{}.Allowlist())
+	for _, a := range [][]string{journalSockArgv, journalSockBinArgv} {
+		argv := append([]string(nil), a...)
+		argv[6] = "2026-11-13 00:00:00 UTC"
+		if !r.Allowed(argv) {
+			t.Errorf("not allowlisted: %q", argv)
+		}
 	}
 }
