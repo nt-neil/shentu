@@ -17,9 +17,16 @@ var auditSlot = make(chan struct{}, 1)
 // auditLockPoll is how often a waiting audit tries the lock of another process.
 var auditLockPoll = 100 * time.Millisecond
 
+// auditLockWait is the longest an audit waits for another one, for a caller
+// without a time limit of its own (the patrol): an audit holds the turn for
+// about injectionMaxTime, so this outlasts one.
+var auditLockWait = 3 * time.Minute
+
 // lockAudit waits for the audit slot and the lock file next to the code index
 // ("" for none: the slot alone). It fails only when ctx ends first.
 func lockAudit(ctx context.Context) (unlock func(), err error) {
+	ctx, cancel := context.WithTimeout(ctx, auditLockWait)
+	defer cancel()
 	select {
 	case auditSlot <- struct{}{}:
 	case <-ctx.Done():
@@ -30,7 +37,7 @@ func lockAudit(ctx context.Context) (unlock func(), err error) {
 	if idx == "" || os.MkdirAll(filepath.Dir(idx), 0o700) != nil {
 		return release, nil
 	}
-	f, err := os.OpenFile(filepath.Join(filepath.Dir(idx), "audit.lock"), os.O_RDWR|os.O_CREATE, 0o600)
+	f, err := os.OpenFile(filepath.Join(filepath.Dir(idx), "audit.lock"), os.O_RDWR|os.O_CREATE|syscall.O_NOFOLLOW, 0o600)
 	if err != nil {
 		return release, nil // the lock is for the shared files; without it the audit still runs
 	}

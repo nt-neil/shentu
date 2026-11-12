@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -20,6 +22,7 @@ func isNote(f CodeFinding) bool { return f.Kind == "audit" || f.Kind == "injecti
 // When the caller's time runs out the findings scanned so far stay, and the
 // result says the audit is unfinished (the review of cff48b1, B4).
 func TestAppCodeAuditKeepsFindingsWhenCtxEnds(t *testing.T) {
+	isolateAudit(t)
 	dir, _ := filepath.EvalSymlinks(t.TempDir())
 	for i := range 40 {
 		os.WriteFile(filepath.Join(dir, fmt.Sprintf("a%02d.php", i)), []byte("<?php\nsystem($_GET['a']);\n"), 0o644)
@@ -53,6 +56,7 @@ func TestAppCodeAuditKeepsFindingsWhenCtxEnds(t *testing.T) {
 
 // A walk the caller's time cuts short lists its root as not walked to the end.
 func TestAppCodeAuditWalkCut(t *testing.T) {
+	isolateAudit(t)
 	dir, _ := filepath.EvalSymlinks(t.TempDir())
 	os.WriteFile(filepath.Join(dir, "a.php"), []byte("<?php\necho 1;\n"), 0o644)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -68,6 +72,7 @@ func TestAppCodeAuditWalkCut(t *testing.T) {
 // the files they had no time for are "time" in the summary, the result is
 // complete, and it is back before the caller's time is up.
 func TestAppCodeAuditStopsBeforeCtx(t *testing.T) {
+	isolateAudit(t)
 	dir, _ := filepath.EvalSymlinks(t.TempDir())
 	for i := range 100 {
 		os.WriteFile(filepath.Join(dir, fmt.Sprintf("a%02d.php", i)), []byte("<?php\nsystem($_GET['a']);\n"), 0o644)
@@ -95,6 +100,7 @@ func TestAppCodeAuditStopsBeforeCtx(t *testing.T) {
 // Findings are capped per rule and file and in all; the summaries come first
 // and are never left out (S8, S10).
 func TestAppCodeAuditCaps(t *testing.T) {
+	isolateAudit(t)
 	dir, _ := filepath.EvalSymlinks(t.TempDir())
 	awsKey := "AKIA" + strings.Repeat("Q7", 8)
 	line := "k = '" + awsKey + "'\n"
@@ -145,6 +151,7 @@ func TestAppCodeAuditCaps(t *testing.T) {
 
 // Severity sorts critical, warning, then the rest, then by path and line.
 func TestAppCodeAuditOrder(t *testing.T) {
+	isolateAudit(t)
 	dir, _ := filepath.EvalSymlinks(t.TempDir())
 	awsKey := "AKIA" + strings.Repeat("Q7", 8)
 	os.MkdirAll(filepath.Join(dir, "public"), 0o755)
@@ -270,13 +277,307 @@ func TestUploadFolder(t *testing.T) {
 		"/srv/wordpress/wp-content/Uploads/x.php":                         true,
 		"/srv/shop/public/Uploads/a.php":                                  true,
 		"/srv/shop/storage/app/public/src/a.php":                          true,
+		// The review of 3df48d5 (N7): only the path below the site's root counts.
+		"/usr/src/app/wp-content/uploads/x.php":            true,
+		"/home/u/src/site/wp-content/uploads/2024/x.php":   true,
+		"/var/www/drupal/sites/default/files/x.php":        true,
+		"/var/www/magento/pub/media/x.php":                 true,
+		"/var/www/files/index.php":                         false, // a site named files
+		"/var/www/files/lib/a.php":                         false,
+		"/var/www/files/uploads/a.php":                     true,
+		"/var/www/html/uploads/wp-content/x.php":           true, // a wp-content inside uploads hides nothing
+		"/var/www/html/uploads/wp-content/plugins/x.php":   true,
+		"/var/www/html/wp-content/plugins/p/uploads/x.php": false,
+		"/srv/app/vendor/acme/pkg/public/images/x.php":     false, // review of d4a8ea9, F4
+		"/srv/wp/wp-content/plugins/foo/pub/media/a.php":   false,
+		"/srv/wp/wp-content/themes/t/sites/x/files/a.php":  false,
+		"/srv/app/node_modules/m/public/uploads/a.php":     false,
+		"/srv/wp/wp-includes/x/public/uploads/a.php":       false,
+		"/srv/app/vendor/x/wp-content/uploads/a.php":       true, // wp-content/uploads always is
 	} {
 		if got := uploadFolder(p, nil); got != want {
 			t.Errorf("uploadFolder(%q) = %v, want %v", p, got, want)
 		}
 	}
 	// With the web server's configuration, the folder is right under a web root.
-	if !uploadFolder("/srv/app/web/media/x.php", []string{"/srv/app/web"}) || uploadFolder("/srv/app/lib/media/x.php", []string{"/srv/app/web"}) {
+	roots := []string{"/srv/app/web", "/var/www/files"}
+	if !uploadFolder("/srv/app/web/media/x.php", roots) || uploadFolder("/srv/app/web/lib/media/x.php", roots) {
 		t.Error("web roots")
+	}
+	if uploadFolder("/var/www/files/index.php", roots) || uploadFolder("/var/www/files/x/y.php", roots) {
+		t.Error("a web root named files is not an upload folder")
+	}
+	// An app path outside every web root still has the folders it is known by.
+	if !uploadFolder("/srv/other/public/uploads/x.php", roots) || !uploadFolder("/opt/wp/wp-content/uploads/x.php", roots) {
+		t.Error("app paths outside the web roots")
+	}
+}
+
+// isolateAudit keeps an audit's code index, kept results and lock in a
+// folder of the test, never /var/lib/shentu or the user's cache.
+func isolateAudit(t *testing.T) string {
+	t.Helper()
+	state := t.TempDir()
+	idx := codeIndexFile
+	t.Cleanup(func() { codeIndexFile = idx })
+	codeIndexFile = func() string { return filepath.Join(state, "codeindex.json") }
+	return state
+}
+
+// A file with a finding on every line is capped where the findings come
+// from: the heap and the kept results stay bounded, the counts take them all
+// (the review of 3df48d5, R1). Under one memory budget, twice the files take
+// no more heap: nothing grows with the input. (Following calls across files
+// keeps the files it read while the budget allows, so without a set budget
+// the heap grows up to it, 1 GiB at most.)
+func TestAppCodeAuditFindingsBoundedAtTheSource(t *testing.T) {
+	if testing.Short() {
+		t.Skip("scans 12MB")
+	}
+	max := injectionMaxTime
+	defer func() { injectionMaxTime = max; SetAuditLimits(0, 0) }()
+	injectionMaxTime = 10 * time.Minute
+	const budgetMB = 256
+	SetAuditLimits(budgetMB, 0)
+	peaks := map[int]uint64{}
+	for _, n := range []int{40, 80} { // 4MB and 8MB
+		state := isolateAudit(t)
+		dir, _ := filepath.EvalSymlinks(t.TempDir())
+		line := "system($_GET['a']);\n"
+		body := "<?php\n" + strings.Repeat(line, 100<<10/len(line)) // 100KB, under the engine's limits
+		for i := range n {
+			os.WriteFile(filepath.Join(dir, fmt.Sprintf("f%02d.php", i)), []byte(body), 0o644)
+		}
+		runtime.GC()
+		var peak atomic.Uint64
+		done := make(chan struct{})
+		go func() {
+			var m runtime.MemStats
+			for {
+				select {
+				case <-done:
+					return
+				case <-time.After(20 * time.Millisecond):
+					runtime.ReadMemStats(&m)
+					if m.HeapAlloc > peak.Load() {
+						peak.Store(m.HeapAlloc)
+					}
+				}
+			}
+		}()
+		res := AppCodeAudit(context.Background(), []string{dir}, nil)
+		close(done)
+		listed := 0
+		for _, f := range res.Findings {
+			if f.Kind == "injection" && f.Rule != "" && f.Rule != "-" {
+				listed++
+			}
+		}
+		var stateSize int64
+		files, _ := filepath.Glob(filepath.Join(state, "codecalls-*.json"))
+		for _, f := range files {
+			if info, err := os.Stat(f); err == nil {
+				stateSize += info.Size()
+			}
+		}
+		peaks[n] = peak.Load()
+		t.Logf("%d files: injection %d, listed %d, peak heap %dMB, kept results %dKB", n, res.Injection, listed, peak.Load()>>20, stateSize>>10)
+		if listed > n*auditMaxPerFile*2 || !res.Truncated {
+			t.Errorf("%d files: listed %d, truncated %v", n, listed, res.Truncated)
+		}
+		if res.Injection < n*auditMaxPerFile*10 {
+			t.Errorf("%d files: the counts lost the findings left out: %d", n, res.Injection)
+		}
+		if stateSize > int64(n)<<14 { // 16KB a file
+			t.Errorf("%d files: kept results %d bytes", n, stateSize)
+		}
+		if peak.Load() > budgetMB<<20 {
+			t.Errorf("%d files: peak heap %dMB", n, peak.Load()>>20)
+		}
+	}
+	if peaks[80] > peaks[40]*3/2 {
+		t.Errorf("the heap grows with the files: %dMB for 40, %dMB for 80", peaks[40]>>20, peaks[80]>>20)
+	}
+}
+
+// A file left for the rules' time limit means not every file was checked on
+// its own: the cross-file summary does not say it was (N8).
+func TestAppCodeAuditLateNotAllChecked(t *testing.T) {
+	isolateAudit(t)
+	dir, _ := filepath.EvalSymlinks(t.TempDir())
+	os.WriteFile(filepath.Join(dir, "a.php"), []byte("<?php\necho 1;\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "b.py"), []byte("print(1)\n"), 0o644)
+	scan := engineScan
+	max := injectionMaxTime
+	defer func() { engineScan, injectionMaxTime = scan, max; SetAuditLimits(0, 0) }()
+	injectionMaxTime = 300 * time.Millisecond
+	SetAuditLimits(0, 1)
+	engineScan = func(e *engine.Engine, lang, p string, b []byte) ([]engine.Finding, bool, error) {
+		time.Sleep(400 * time.Millisecond)
+		return scan(e, lang, p, b)
+	}
+	var cross string
+	for _, f := range AppCodeAudit(context.Background(), []string{dir}, nil).Findings {
+		if strings.Contains(f.Detail, "calls across files") {
+			cross = f.Detail
+		}
+	}
+	if cross == "" || strings.Contains(cross, "every file was checked on its own") {
+		t.Errorf("cross-file summary: %q", cross)
+	}
+}
+
+// A walk cut short does not take the files it did not reach as gone: their
+// kept results stay for the next audit (N9).
+func TestDropStaleWalkCut(t *testing.T) {
+	dir := t.TempDir()
+	a, b := filepath.Join(dir, "a.php"), filepath.Join(dir, "b.php")
+	os.WriteFile(a, []byte("<?php\n"), 0o644)
+	os.WriteFile(b, []byte("<?php\n"), 0o644)
+	newState := func() *callState {
+		return &callState{Files: map[string]*fileState{
+			a: {Hash: "1", Calls: &passResult{}, Deps: []string{b}},
+			b: {Hash: "2", Calls: &passResult{}},
+		}}
+	}
+	st := newState()
+	if bad := st.dropStale(map[string]string{a: "1"}, false); len(bad) != 0 || st.Files[a].Calls == nil {
+		t.Errorf("walk cut, b still there: dropped %v", bad)
+	}
+	st = newState()
+	if bad := st.dropStale(map[string]string{a: "1"}, true); !bad[b] || !bad[a] {
+		t.Errorf("walk done: dropped %v, want b and its caller a", bad)
+	}
+	// Walk cut, b deleted (F2): its caller is stale and b's results go.
+	os.Remove(b)
+	st = newState()
+	if bad := st.dropStale(map[string]string{a: "1"}, false); !bad[a] || st.Files[b] != nil {
+		t.Errorf("walk cut, b gone: dropped %v, b kept %v", bad, st.Files[b] != nil)
+	}
+}
+
+// The files a file's calls reach are replaced when all its rules were
+// followed again: a callee no longer called does not keep it stale (S9).
+func TestSetDepsReplaces(t *testing.T) {
+	fs := &fileState{Deps: []string{"/gone.php", "/kept.php"}}
+	fs.setDeps([]string{"/new.php", "/kept.php"})
+	if strings.Join(fs.Deps, ",") != "/kept.php,/new.php" {
+		t.Errorf("deps %v", fs.Deps)
+	}
+	st := &callState{Files: map[string]*fileState{"/a.php": {Hash: "1", Calls: &passResult{}, Deps: fs.Deps},
+		"/kept.php": {Hash: "2"}, "/new.php": {Hash: "3"}}}
+	if bad := st.dropStale(map[string]string{"/a.php": "1", "/kept.php": "2", "/new.php": "3"}, true); len(bad) != 0 {
+		t.Errorf("stale %v", bad)
+	}
+}
+
+// When the list is full, alerts outrank info-tier injection findings (and
+// those in test or generated code) whatever their severity (N10).
+func TestListRank(t *testing.T) {
+	alertCrit := CodeFinding{Kind: "injection", Severity: "critical", Tier: "alert", Rule: "r"}
+	infoCrit := CodeFinding{Kind: "injection", Severity: "critical", Tier: "info", Rule: "r"}
+	testCrit := CodeFinding{Kind: "injection", Severity: "critical", Tier: "alert", Rule: "r", TestPath: true}
+	minCrit := CodeFinding{Kind: "injection", Severity: "critical", Tier: "alert", Rule: "r", Generated: true}
+	secret := CodeFinding{Kind: "secret", Severity: "warning"}
+	exposed := CodeFinding{Kind: "exposed", Severity: "critical"}
+	if !(listRank(exposed) == listRank(alertCrit) && listRank(alertCrit) < listRank(secret) && listRank(secret) < listRank(infoCrit) &&
+		listRank(infoCrit) == listRank(testCrit) && listRank(testCrit) == listRank(minCrit)) {
+		t.Errorf("ranks: alert %d, exposed %d, secret %d, info %d, test %d, minified %d", listRank(alertCrit), listRank(exposed),
+			listRank(secret), listRank(infoCrit), listRank(testCrit), listRank(minCrit))
+	}
+}
+
+// A site enabled by a symlink (Debian, Ubuntu: sites-enabled/a ->
+// ../sites-available/a) is read; a symlink out of the configuration's root,
+// to a file root does not own or others can write, or in a loop is not, and
+// is listed with why.
+func TestWebRootsSymlinks(t *testing.T) {
+	etc, _ := filepath.EvalSymlinks(t.TempDir())
+	other, _ := filepath.EvalSymlinks(t.TempDir()) // stands for /tmp
+	root, owner := webConfRoot, webConfOwner
+	defer func() { webConfRoot, webConfOwner = root, owner }()
+	webConfRoot, webConfOwner = etc, uint32(os.Getuid()) // the test's user stands for root
+	avail, enabled := filepath.Join(etc, "nginx", "sites-available"), filepath.Join(etc, "nginx", "sites-enabled")
+	os.MkdirAll(avail, 0o755)
+	os.MkdirAll(enabled, 0o755)
+	os.WriteFile(filepath.Join(avail, "a"), []byte("server {\n  root /srv/a/public;\n}\n"), 0o644)
+	os.Symlink("../sites-available/a", filepath.Join(enabled, "a"))
+	os.WriteFile(filepath.Join(enabled, "plain"), []byte("server {\n  root /srv/plain;\n}\n"), 0o644)
+	os.WriteFile(filepath.Join(other, "evil"), []byte("server { root /srv/evil; }\n"), 0o644)
+	os.Symlink(filepath.Join(other, "evil"), filepath.Join(enabled, "evil"))
+	os.WriteFile(filepath.Join(avail, "open"), []byte("server { root /srv/open; }\n"), 0o666)
+	os.Chmod(filepath.Join(avail, "open"), 0o666)
+	os.Symlink("../sites-available/open", filepath.Join(enabled, "open"))
+	os.Symlink("loop2", filepath.Join(enabled, "loop1"))
+	os.Symlink("loop1", filepath.Join(enabled, "loop2"))
+	roots, unread := webRootsFrom([]string{filepath.Join(enabled, "*")})
+	if strings.Join(roots, ",") != "/srv/a/public,/srv/plain" {
+		t.Errorf("roots %v", roots)
+	}
+	why := strings.Join(unread, "\n")
+	for _, want := range []string{"evil (symlink to " + filepath.Join(other, "evil") + ", outside", "open (symlink to", "writable by others",
+		"loop1 (symlink:", "loop2 (symlink:"} {
+		if !strings.Contains(why, want) {
+			t.Errorf("unreadable lacks %q:\n%s", want, why)
+		}
+	}
+	// Owned by another user than root: not read.
+	webConfOwner = uint32(os.Getuid()) + 1
+	if roots, unread := webRootsFrom([]string{filepath.Join(enabled, "a")}); len(roots) != 0 || len(unread) != 1 || !strings.Contains(unread[0], "not owned by root") {
+		t.Errorf("not root's: roots %v, unreadable %v", roots, unread)
+	}
+}
+
+// The walk's light checks do not stop at the rules' time limit (review of
+// d4a8ea9, F1): with no time for the rules, an upload script is still found.
+func TestAppCodeAuditWalkIgnoresRuleDeadline(t *testing.T) {
+	isolateAudit(t)
+	dir, _ := filepath.EvalSymlinks(t.TempDir())
+	os.MkdirAll(filepath.Join(dir, "public", "uploads"), 0o755)
+	os.WriteFile(filepath.Join(dir, "public", "uploads", "x.php"), []byte("<?php echo 1;\n"), 0o644)
+	max := injectionMaxTime
+	defer func() { injectionMaxTime = max }()
+	injectionMaxTime = 0
+	if f := findingFor(AppCodeAudit(context.Background(), []string{dir}, nil), "upload_script", "x.php"); f.Severity != "critical" {
+		t.Errorf("upload_script not reported: %+v", f)
+	}
+}
+
+// A walk cut short goes on from where it stopped in the next audit and round
+// from the start: every file is covered, and the place is cleared after.
+func TestAppCodeAuditWalkResumes(t *testing.T) {
+	isolateAudit(t)
+	dir, _ := filepath.EvalSymlinks(t.TempDir())
+	for _, d := range []string{"a", "m", "z"} {
+		os.MkdirAll(filepath.Join(dir, "public", "uploads", d), 0o755)
+		os.WriteFile(filepath.Join(dir, "public", "uploads", d, "s.php"), []byte("<?php echo 1;\n"), 0o644)
+	}
+	roots := []string{dir}
+	// The last audit stopped in m/.
+	saveWalkPos(walkPosFile(roots), &walkPos{0, filepath.Join(dir, "public", "uploads", "m")})
+	res := AppCodeAudit(context.Background(), roots, nil)
+	n := 0
+	for _, f := range res.Findings {
+		if f.Kind == "upload_script" {
+			n++
+		}
+	}
+	if n != 3 || res.Unfinished {
+		t.Errorf("resumed walk found %d of 3 upload scripts, unfinished %v", n, res.Unfinished)
+	}
+	if _, ok := loadWalkPos(walkPosFile(roots)); ok {
+		t.Error("the place was kept after a full round")
+	}
+	// Cut at once: the place is kept for the next audit.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if r := auditUnlocked(ctx, roots, nil); !r.Unfinished {
+		t.Error("a cut walk is not unfinished")
+	}
+	if _, ok := loadWalkPos(walkPosFile(roots)); !ok {
+		t.Error("a cut walk kept no place")
+	}
+	if pathCmp("/r/a/b", "/r/a-c") >= 0 || pathCmp("/r/a", "/r/a/b") >= 0 || pathCmp("/r/b", "/r/a/z") <= 0 {
+		t.Error("pathCmp does not follow WalkDir's order")
 	}
 }
