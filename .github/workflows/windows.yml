@@ -29,11 +29,11 @@ jobs:
       - name: build
         run: go build ./...
       - name: vet
-        run: go vet ./hostenv/ ./checks/ ./cmd/hostfacts/
-      - name: test hostenv and checks
+        run: go vet ./...
+      - name: test hostenv, checks, tools and msrc
         env:
           HOSTENV_REQUIRE_SDK: "1" # vtable slots must be checked against the SDK headers, not skipped
-        run: go test -v -run 'TestVtableSlotsMatchSDK|TestCollectLeavesHostUnchanged|TestFirewallPolicyLive' ./hostenv/ && go test ./hostenv/ ./checks/
+        run: go test -v -run 'TestVtableSlotsMatchSDK|TestCollectLeavesHostUnchanged|TestFirewallPolicyLive' ./hostenv/ && go test ./hostenv/ ./checks/ ./tools/ ./internal/msrc/
       - name: fuzz VARIANT / SAFEARRAY decoding
         if: ${{ !cancelled() }}
         run: |

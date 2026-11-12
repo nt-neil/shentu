@@ -95,6 +95,7 @@ func main() {
 	}
 	tools.SetWebUsers(cfg.Tools.WebUsers)
 	tools.SetAuditLimits(cfg.Tools.AuditMaxMemoryMB, cfg.Tools.AuditWorkers)
+	tools.SetCacheDir(filepath.Join(cfg.StateDir, "cache"))
 	env := &tools.Env{
 		LogPaths:    cfg.Tools.LogPaths,
 		WatchPaths:  cfg.Tools.WatchPaths,

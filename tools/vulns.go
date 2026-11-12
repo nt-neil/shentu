@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -37,6 +38,9 @@ const osvAPI = "https://api.osv.dev/v1"
 
 // PackageVulns queries OSV for every installed package.
 func PackageVulns(ctx context.Context, hc *http.Client, detailFor string) (map[string]any, error) {
+	if runtime.GOOS == "windows" {
+		return msrcVulns(ctx, hc, cacheDir, winSource())
+	}
 	eco, pkgs, err := installedPackages(ctx)
 	if err != nil {
 		return nil, err
