@@ -43,3 +43,15 @@ func TestReadFileIfSameWindows(t *testing.T) {
 		t.Errorf("the new file has its own ID: %q, was %q", st2.ID, st.ID)
 	}
 }
+
+// Round 3 re-review: with no file ID to compare, ReadFileIfSame refuses
+// and says why, never reads unchecked.
+func TestReadFileIfSameNoID(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "a.conf")
+	if err := os.WriteFile(p, []byte("one"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := (&Live{}).ReadFileIfSame(p, FileStat{}); !errors.Is(err, ErrChanged) {
+		t.Errorf("no ID: %v", err)
+	}
+}

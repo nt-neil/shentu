@@ -169,6 +169,9 @@ func (l *Live) ReadFileNoFollow(path string) ([]byte, error) { return l.read(pat
 func (l *Live) ReadFileMax(path string, max int64) ([]byte, error) { return l.read(path, false, max) }
 
 func (l *Live) ReadFileIfSame(path string, want FileStat) ([]byte, error) {
+	if want.ID == "" { // no ID to compare: say so, never read unchecked
+		return nil, &fs.PathError{Op: "read", Path: path, Err: fmt.Errorf("%w (file ID unknown, not compared)", ErrChanged)}
+	}
 	return l.readFile(path, true, MaxFileBytes, want.ID)
 }
 
