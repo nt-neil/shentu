@@ -8,8 +8,10 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sync"
 	"unsafe"
 
+	"github.com/nt-neil/shentu/hostenv"
 	"golang.org/x/sys/windows"
 )
 
@@ -94,6 +96,23 @@ func trustedSID(s *windows.SID) bool {
 		trustedInstaller != nil && s.Equals(trustedInstaller))
 }
 
+// adminMembers are the direct members of the local Administrators group
+// (an administrator who saves shentu.toml owns it as themselves).
+var adminMembers = sync.OnceValue(func() map[string]bool {
+	m := map[string]bool{}
+	sids, _ := (&hostenv.Live{}).GroupMembers("S-1-5-32-544")
+	for _, s := range sids {
+		m[s] = true
+	}
+	return m
+})
+
+// trustedOwner accepts SYSTEM, Administrators, TrustedInstaller and the
+// accounts in the Administrators group.
+func trustedOwner(s *windows.SID) bool {
+	return trustedSID(s) || s != nil && adminMembers()[s.String()]
+}
+
 // fileDeleteChild is FILE_DELETE_CHILD (winnt.h), missing from x/sys.
 const fileDeleteChild = 0x40
 
@@ -114,8 +133,8 @@ func checkTrusted(path string) error {
 		return fmt.Errorf("%s: %w", path, err)
 	}
 	owner, _, err := sd.Owner()
-	if err != nil || !trustedSID(owner) {
-		return fmt.Errorf("%s is owned by %v, not SYSTEM or Administrators", path, owner)
+	if err != nil || !trustedOwner(owner) {
+		return fmt.Errorf("%s is owned by %v, not SYSTEM or an administrator", path, owner)
 	}
 	dacl, _, err := sd.DACL()
 	if err != nil || dacl == nil {
@@ -141,19 +160,32 @@ func checkTrusted(path string) error {
 // Windows users may create folders under %ProgramData%, so a folder made
 // before installation, with a shentu.toml, env file or skills in it, must
 // not be loaded by the service running as SYSTEM. Every entry of the
-// folder is checked (see checkTrusted) and links or junctions anywhere in
-// it are refused. A missing folder is created right away with the
-// trusted ACL, so nobody can plant one between this check and a later
-// read; when that is not possible (not elevated) nothing is read and the
-// defaults apply.
+// folder is checked (see trustedTree). A missing folder is created right
+// away with the trusted ACL, so nobody can plant one between this check
+// and a later read. Only when that fails for lack of privilege (not
+// elevated) are the defaults used, with nothing read; any other failure,
+// such as a folder that appeared meanwhile, is a refusal.
 func trustConfig(path string) (load bool, err error) {
 	dir := filepath.Dir(path)
 	if _, err := os.Lstat(dir); errors.Is(err, fs.ErrNotExist) {
-		if secureDir(dir) != nil {
-			return false, nil
+		if err := secureDir(dir); err != nil {
+			if errors.Is(err, windows.ERROR_ACCESS_DENIED) || errors.Is(err, windows.ERROR_PRIVILEGE_NOT_HELD) ||
+				errors.Is(err, windows.ERROR_INVALID_OWNER) {
+				return false, nil
+			}
+			return false, fmt.Errorf("refusing the configuration: %w", err)
 		}
 	}
-	err = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+	if err := trustedTree(dir); err != nil {
+		return false, fmt.Errorf("refusing the configuration: %w; remove the folder or reset its owner and permissions as an administrator", err)
+	}
+	return true, nil
+}
+
+// trustedTree checks dir and everything in it with checkTrusted and
+// refuses links and junctions anywhere.
+func trustedTree(dir string) error {
+	return filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -162,11 +194,12 @@ func trustConfig(path string) (load bool, err error) {
 		}
 		return checkTrusted(p)
 	})
-	if err != nil {
-		return false, fmt.Errorf("refusing the configuration: %w; remove the folder or reset its owner and permissions as an administrator", err)
-	}
-	return true, nil
 }
+
+// trustSkills is checked where skills are read: the configuration folder
+// holding them must be trusted then (it also decides whether a missing
+// skills folder could still be planted).
+func trustSkills(dir string) bool { return trustedTree(filepath.Dir(dir)) == nil }
 
 // ensureStateDir secures %ProgramData%\Shentu (config, env file with
 // tokens, state) and the state directory, wherever it is configured.

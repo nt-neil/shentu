@@ -16,3 +16,6 @@ func ensureStateDir(dir string) error { return os.MkdirAll(dir, 0o700) }
 // trustConfig decides whether the configuration may be read; on Unix the
 // files' own modes and /etc's ownership already decide that.
 func trustConfig(string) (load bool, err error) { return true, nil }
+
+// trustSkills is true on Unix: the config folder's mode decides.
+func trustSkills(string) bool { return true }

@@ -32,6 +32,9 @@ func loadSkills(extraDir string) map[string]skill {
 		}
 		return nil
 	})
+	if !trustSkills(extraDir) { // Windows: a planted config folder adds no skills
+		return out
+	}
 	files, _ := filepath.Glob(filepath.Join(extraDir, "*", "SKILL.md"))
 	for _, f := range files {
 		if b, err := os.ReadFile(f); err == nil {

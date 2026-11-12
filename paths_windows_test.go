@@ -125,3 +125,29 @@ func TestTrustConfigMissingAndLinks(t *testing.T) {
 		t.Errorf("a link in the config folder must be refused: %v", err)
 	}
 }
+
+func TestSkillsNeedTrustedFolder(t *testing.T) {
+	skill := "---\nname: planted-skill\ndescription: test\n---\nbody\n"
+	write := func(dir string) {
+		p := filepath.Join(dir, "skills", "planted", "SKILL.md")
+		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(skill), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	plain := t.TempDir()
+	write(plain)
+	if _, ok := loadSkills(filepath.Join(plain, "skills"))["planted-skill"]; ok {
+		t.Error("a skill in an untrusted folder must not load")
+	}
+	secured := filepath.Join(t.TempDir(), "Shentu")
+	if err := secureDir(secured); err != nil {
+		t.Fatal(err)
+	}
+	write(secured)
+	if _, ok := loadSkills(filepath.Join(secured, "skills"))["planted-skill"]; !ok {
+		t.Error("a skill in the trusted folder loads")
+	}
+}
