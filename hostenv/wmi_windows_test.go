@@ -208,11 +208,39 @@ func TestWMILive(t *testing.T) {
 	}
 }
 
-// INetFwPolicy2 on the runner: all three profiles, at least one active.
+// INetFwPolicy2 on the runner: all three profiles, at least one active,
+// agreeing with the local registry policy and leaving it untouched.
 func TestFirewallPolicyLive(t *testing.T) {
-	pol, err := (&Live{}).FirewallPolicy()
+	l := &Live{}
+	snapshot := func() map[string]map[string]RegValue {
+		m := map[string]map[string]RegValue{}
+		for _, k := range []string{"DomainProfile", "StandardProfile", "PublicProfile"} {
+			m[k], _ = l.RegValues(KeyFirewallPolicy + `\` + k)
+		}
+		return m
+	}
+	before := snapshot()
+	pol, err := l.FirewallPolicy()
 	if err != nil || len(pol.Profiles) != 3 || len(pol.Active) == 0 {
 		t.Fatalf("INetFwPolicy2: %v %+v", err, pol)
+	}
+	if after := snapshot(); !reflect.DeepEqual(before, after) {
+		t.Fatalf("reading the policy changed it:\n before %+v\n after  %+v", before, after)
+	}
+	gpo := false
+	for _, k := range []string{"DomainProfile", "PrivateProfile", "PublicProfile"} {
+		if v, err := l.RegValues(KeyFirewallGPO + `\` + k); err == nil && len(v) > 0 {
+			gpo = true
+		}
+	}
+	for reg, name := range map[string]string{"DomainProfile": "Domain", "StandardProfile": "Private", "PublicProfile": "Public"} {
+		v := before[reg]
+		if gpo || v == nil {
+			continue
+		}
+		if p := pol.Profiles[name]; p.Enabled != (regInt(v, "EnableFirewall", 1) == 1) || p.InboundAllowed != (regInt(v, "DefaultInboundAction", 1) == 0) {
+			t.Errorf("%s: INetFwPolicy2 %+v disagrees with the registry %+v", name, p, v)
+		}
 	}
 	for _, n := range pol.Active {
 		if _, ok := pol.Profiles[n]; !ok {
