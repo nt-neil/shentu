@@ -270,11 +270,25 @@ func (r *Recorder) Open(path string) (io.ReadCloser, error) {
 		data = maskLines(data) // the scan's own bounded rules, line by line
 	}
 	r.put(&entry{Op: "file", Path: path, Err: errCode(err), data: data})
-	if err != nil {
-		return nil, err
-	}
-	return io.NopCloser(bytes.NewReader(data)), nil
+	return cutReader(data, err)
 }
+
+// cutReader reads data; a file kept only in part (ErrTruncated) gives its
+// first MaxFileBytes and then ErrTruncated instead of EOF, so the lines
+// before the cut count and the scan says it was cut.
+func cutReader(data []byte, err error) (io.ReadCloser, error) {
+	switch {
+	case err == nil:
+		return io.NopCloser(bytes.NewReader(data)), nil
+	case errors.Is(err, ErrTruncated):
+		return io.NopCloser(io.MultiReader(bytes.NewReader(data), errReader{err})), nil
+	}
+	return nil, err
+}
+
+type errReader struct{ err error }
+
+func (e errReader) Read([]byte) (int, error) { return 0, e.err }
 
 // ScanLinesRaw copies at most MaxFileBytes of path (not gunzipped) to w.
 func ScanLinesRaw(src Source, path string, w io.Writer) error {
@@ -337,9 +351,5 @@ func (r *Recorder) RunLines(ctx context.Context, argv []string, fn func(line str
 }
 
 func (rp *Replay) Open(path string) (io.ReadCloser, error) {
-	b, err := rp.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	return io.NopCloser(bytes.NewReader(b)), nil
+	return cutReader(rp.ReadFile(path))
 }
