@@ -130,6 +130,7 @@ type analysis struct {
 	noSrc  bool   // the rule's sources are off (a summary run for parameters)
 	cls    string // class of the method being analysed, and its parent
 	parent string
+	sfuncs []*fn // the function literals of the statement being analysed
 
 	lits   map[string][]Token // values written in the code, kept for argument conditions (context.go)
 	locals map[string]bool    // names of the file's own functions and methods (context.go)
@@ -186,6 +187,8 @@ func (a *analysis) block(ss []*stmt, st state) (state, uint8) {
 }
 
 func (a *analysis) stmt(s *stmt, st state) (state, uint8) {
+	defer func(old []*fn) { a.sfuncs = old }(a.sfuncs)
+	a.sfuncs = s.funcs // the function literals its Func tokens name (mapSanAt)
 	for _, f := range s.funcs {
 		a.function(f, st)
 	}
