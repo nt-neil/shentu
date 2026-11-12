@@ -152,10 +152,16 @@ jobs:
           sc.exe qc ShentuBot > "$RUNNER_TEMP/botsvc.txt"
           grep -q -- "service run --bot" "$RUNNER_TEMP/botsvc.txt" || { echo "FAIL: unexpected bot command line"; exit 1; }
           if grep -qF "$tok" "$RUNNER_TEMP/botsvc.txt"; then echo "FAIL: token in the service command line"; exit 1; fi
-          # Git Bash would rewrite /q: and /f: as paths.
-          MSYS_NO_PATHCONV=1 wevtutil.exe qe Application "/q:*[System[Provider[@Name='ShentuBot']]]" /f:text > "$RUNNER_TEMP/botlog.txt"
+          # Telegram may be slow to refuse (the bot's client waits up to 70 s):
+          # wait for the error entry rather than a fixed time.
+          for _ in $(seq 1 18); do
+            # Git Bash would rewrite /q: and /f: as paths.
+            MSYS_NO_PATHCONV=1 wevtutil.exe qe Application "/q:*[System[Provider[@Name='ShentuBot']]]" /f:text > "$RUNNER_TEMP/botlog.txt"
+            grep -q "ShentuBot stopped" "$RUNNER_TEMP/botlog.txt" && break
+            sleep 5
+          done
           if grep -qF "$tok" "$RUNNER_TEMP/botlog.txt"; then echo "FAIL: token in the event log"; exit 1; fi
-          grep -q "ShentuBot stopped" "$RUNNER_TEMP/botlog.txt" || { echo "FAIL: the bot's error was not logged"; exit 1; }
+          grep -q "ShentuBot stopped" "$RUNNER_TEMP/botlog.txt" || { echo "FAIL: the bot's error was not logged within 90 s"; exit 1; }
           echo "bot error logged, token absent from the log and the command line"
           "$dest/shentu.exe" service stop --bot > /dev/null 2>&1 || true
           echo "bot: $("$dest/shentu.exe" service status --bot); patrol still: $("$dest/shentu.exe" service status)"
