@@ -172,3 +172,22 @@ func TestMinerSigns(t *testing.T) {
 		}
 	}
 }
+
+// emptyJournal answers journalctl with no entry.
+type emptyJournal struct{ *hostenv.Live }
+
+func (emptyJournal) RunLinesUnmasked(_ context.Context, _ []string, fn func(string)) (hostenv.CmdResult, error) {
+	fn("-- No entries --")
+	return hostenv.CmdResult{}, nil
+}
+
+// An empty journal with no text log to confirm it is not complete.
+func TestSSHSummaryEmptyJournalIncomplete(t *testing.T) {
+	prevHost := hostSource
+	hostSource = func() hostenv.Source { return emptyJournal{&hostenv.Live{Remap: map[string]string{"/var/log": t.TempDir()}}} }
+	t.Cleanup(func() { hostSource = prevHost })
+	r, err := SSHSummary(context.Background(), &Env{LogPaths: []string{"/var/log/auth.log"}}, time.Now().Add(-time.Hour), "")
+	if err != nil || r["complete"] != false || r["verified"] != false {
+		t.Errorf("%v %v", r, err)
+	}
+}

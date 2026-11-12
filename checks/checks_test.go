@@ -231,3 +231,27 @@ func TestBruteforceUnverifiedSource(t *testing.T) {
 		t.Errorf("truncated: %+v", out)
 	}
 }
+
+// The ssh.settings note says the reason the settings are unknown; only a
+// permission problem asks for root.
+func TestSSHSettingsUnknownReason(t *testing.T) {
+	cfg := hostenv.SSHConfig{ConfigPath: "/etc/ssh/sshd_config", Settings: map[string]string{"passwordauthentication": "unknown", "permitrootlogin": "unknown"},
+		Unread: []string{"/etc/ssh/n5 (Include nested more than 4 deep)"}}
+	for _, c := range []struct {
+		reason hostenv.Reason
+		root   bool
+	}{{hostenv.ReasonPermission, true}, {hostenv.ReasonCommandFailed, false}, {hostenv.ReasonNotRecorded, false}} {
+		f := &hostenv.Facts{}
+		f.RemoteAccess.SSH = hostenv.Partial(cfg, c.reason, "x")
+		var got *Finding
+		for _, x := range sshSettings(f) {
+			if x.Check == "ssh.settings" {
+				x := x
+				got = &x
+			}
+		}
+		if got == nil || strings.Contains(got.Title, "run Shentu as root") != c.root || got.Reason != string(c.reason) {
+			t.Errorf("%s: %+v", c.reason, got)
+		}
+	}
+}
