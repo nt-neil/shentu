@@ -213,7 +213,10 @@ var iisSessionKeyRe = regexp.MustCompile(`(?i)\bsessionKey="[^"]*"`)
 
 // machineSIDRe matches the machine or domain part of an account SID. It
 // identifies the host, so fixtures keep only the RID.
-var machineSIDRe = regexp.MustCompile(`\bS-1-5-21-\d+-\d+-\d+\b`)
+// No word boundary at either end: an underscore is a word character, and
+// task names such as "...Configuration_S-1-5-21-..." or keys such as
+// "HKU\<SID>_Classes" put one right next to the SID.
+var machineSIDRe = regexp.MustCompile(`S-1-5-21-\d+-\d+-\d+`)
 
 func maskMachineSIDs(s string) string {
 	return machineSIDRe.ReplaceAllString(s, "S-1-5-21-1000000000-1000000000-1000000000")

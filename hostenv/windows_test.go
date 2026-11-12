@@ -837,3 +837,18 @@ func TestWindowsServerName(t *testing.T) {
 		}
 	}
 }
+
+// N2: SIDs next to an underscore are masked too (a task name, _Classes).
+func TestMaskMachineSIDsUnderscore(t *testing.T) {
+	for _, in := range []string{
+		`OneDrive Reporting Task-S-1-5-21-1050603217-1473503526-312271715-1000`,
+		`OneDrive Per-Machine Standalone Update Task Configuration_S-1-5-21-3289802278-1561746829-1498425070-500`,
+		`HKU\S-1-5-21-3708201392-4242277230-667464164-1001_Classes`,
+	} {
+		got := maskMachineSIDs(in)
+		if strings.Contains(got, "1050603217") || strings.Contains(got, "3289802278") || strings.Contains(got, "3708201392") ||
+			!strings.Contains(got, "S-1-5-21-1000000000-1000000000-1000000000-") {
+			t.Errorf("%q -> %q", in, got)
+		}
+	}
+}
