@@ -60,6 +60,9 @@ type Config struct {
 }
 
 func loadConfig(path string) (*Config, error) {
+	if err := trustConfig(path); err != nil {
+		return nil, err
+	}
 	c := &Config{}
 	c.LLM.BaseURL = "http://127.0.0.1:11434/v1"
 	c.LLM.Model = "qwen2.5:7b"

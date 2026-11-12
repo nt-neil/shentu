@@ -12,3 +12,7 @@ func osDefaults(*Config) {}
 
 // ensureStateDir creates the state directory, readable by its owner only.
 func ensureStateDir(dir string) error { return os.MkdirAll(dir, 0o700) }
+
+// trustConfig refuses configuration others could have written; on Unix
+// the files' own modes and /etc's ownership already decide that.
+func trustConfig(string) error { return nil }

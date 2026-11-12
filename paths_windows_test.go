@@ -47,3 +47,59 @@ func TestSecureDir(t *testing.T) {
 		t.Errorf("a file inside inherits only BA and SY: %v", sids)
 	}
 }
+
+func TestTrustConfig(t *testing.T) {
+	plain := t.TempDir() // the runner user's own ACL: not trusted
+	if err := trustConfig(filepath.Join(plain, "shentu.toml")); err == nil {
+		t.Error("a folder under a user profile must be refused")
+	}
+
+	dir := filepath.Join(t.TempDir(), "Shentu")
+	if err := secureDir(dir); err != nil {
+		t.Fatal(err)
+	}
+	cfg := filepath.Join(dir, "shentu.toml")
+	if err := os.WriteFile(cfg, []byte("language = \"English\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := trustConfig(cfg); err != nil {
+		t.Errorf("secured folder refused: %v", err)
+	}
+	if _, err := loadConfig(cfg); err != nil {
+		t.Errorf("loadConfig of a secured config: %v", err)
+	}
+
+	// BUILTIN\Users may add files: a planted env file could follow.
+	sd, err := windows.SecurityDescriptorFromString("D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;;0x2;;;BU)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dacl, _, _ := sd.DACL()
+	if err := windows.SetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT,
+		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION, nil, nil, dacl, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := trustConfig(cfg); err == nil || !strings.Contains(err.Error(), "S-1-5-32-545") {
+		t.Errorf("Users with write access must be refused: %v", err)
+	}
+	if _, err := loadConfig(cfg); err == nil {
+		t.Error("loadConfig must refuse it too")
+	}
+}
+
+func TestSecureDirRefusesSquatted(t *testing.T) {
+	squat := filepath.Join(t.TempDir(), "Shentu") // created by the runner user, as a squatter would
+	if err := os.Mkdir(squat, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := secureDir(squat); err == nil {
+		t.Error("a folder someone else created first must be refused, not taken over")
+	}
+	again := filepath.Join(t.TempDir(), "Shentu")
+	if err := secureDir(again); err != nil {
+		t.Fatal(err)
+	}
+	if err := secureDir(again); err != nil {
+		t.Errorf("a folder secureDir made is trusted the next time: %v", err)
+	}
+}
