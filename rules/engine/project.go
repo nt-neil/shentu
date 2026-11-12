@@ -128,6 +128,7 @@ type fileCtx struct {
 	ff     *fileFuncs
 	tokens int
 	rdefs  map[string][][]Token // Python: what the file's names hold, for the receiver condition (receiver.go)
+	ifacts map[string]bool      // JavaScript: the imports and names unless_imports looks for (imports.go)
 	defs   map[string]string    // PHP: define('NAME', 'text') in the file (context.go)
 }
 
@@ -774,7 +775,7 @@ func (p *Project) analysisFor(a *analysis, f string) *analysis {
 		p.sums[key] = sc
 	}
 	return &analysis{r: a.r, php: ctx.lang == "php", py: ctx.lang == "python", js: ctx.lang == "js", b: a.b,
-		kw: keywords[ctx.lang], seen: map[loc]bool{}, sc: sc, proj: p, file: f, rdefs: ctx.rdefs, defs: ctx.defs, nest: a.nest, heights: a.heights}
+		kw: keywords[ctx.lang], seen: map[loc]bool{}, sc: sc, proj: p, file: f, rdefs: ctx.rdefs, ifacts: ctx.ifacts, defs: ctx.defs, nest: a.nest, heights: a.heights}
 }
 
 // context returns the parsed file, parsing it if it is not kept.
@@ -803,7 +804,7 @@ func (p *Project) context(f string) *fileCtx {
 		}
 		return nil
 	}
-	c := &fileCtx{lang: fi.Lang, tree: parse(fi.Lang, toks, b), tokens: len(toks), rdefs: fileRecvDefs(fi.Lang, toks), defs: phpDefines(fi.Lang, toks)}
+	c := &fileCtx{lang: fi.Lang, tree: parse(fi.Lang, toks, b), tokens: len(toks), rdefs: fileRecvDefs(fi.Lang, toks), ifacts: p.e.importFacts(fi.Lang, toks), defs: phpDefines(fi.Lang, toks)}
 	if b.timeHit {
 		p.unread[f], p.unsteady = true, true
 	}
