@@ -59,8 +59,9 @@ func configPath() string {
 func printUsage(cmd string, stdout, stderr io.Writer) int {
 	u := strings.Replace(usage, "/etc/shentu/shentu.toml", defaultConfigPath(), 1) // the same text on Unix
 	if runtime.GOOS == "windows" {
-		u = strings.Replace(u, "  shentu version\n", "  shentu service install|uninstall|start|stop|status\n"+
-			"                              run patrol as a Windows service (LocalSystem): every 30 minutes, daily report at 09:00\n  shentu version\n", 1)
+		u = strings.Replace(u, "  shentu version\n", "  shentu service install|uninstall|start|stop|status [--bot]\n"+
+			"                              run patrol as a Windows service (LocalSystem): every 30 minutes, daily report at 09:00;\n"+
+			"                              --bot: the Telegram bot as its own service (ShentuBot)\n  shentu version\n", 1)
 	}
 	if cmd == "help" || cmd == "--help" || cmd == "-h" {
 		fmt.Fprint(stdout, u)

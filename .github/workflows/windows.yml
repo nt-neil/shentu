@@ -137,11 +137,37 @@ jobs:
           st=$("$dest/shentu.exe" service status)
           echo "after stop: $st"
           [ "$st" = stopped ]
+          # ShentuBot beside it, with a fake token made here (never stored in
+          # the repository). Telegram refuses it, so the bot stops with an
+          # error: the event log must hold that error without the token, and
+          # the service command line must not hold the token either.
+          tok="$RANDOM$RANDOM:ci-fake-$(date +%s%N)"
+          printf '[bot]\ninteraction = 2\ntelegram_token = "%s"\n' "$tok" > "/c/ProgramData/Shentu/setup.toml"
+          "$dest/shentu.exe" service start
+          "$dest/shentu.exe" service install --bot
+          "$dest/shentu.exe" service start --bot
+          sleep 10
+          echo "patrol service with the bot beside it: $("$dest/shentu.exe" service status)"
+          [ "$("$dest/shentu.exe" service status)" = running ]
+          sc.exe qc ShentuBot > "$RUNNER_TEMP/botsvc.txt"
+          grep -q -- "service run --bot" "$RUNNER_TEMP/botsvc.txt" || { echo "FAIL: unexpected bot command line"; exit 1; }
+          if grep -qF "$tok" "$RUNNER_TEMP/botsvc.txt"; then echo "FAIL: token in the service command line"; exit 1; fi
+          wevtutil.exe qe Application "/q:*[System[Provider[@Name='ShentuBot']]]" /f:text > "$RUNNER_TEMP/botlog.txt"
+          if grep -qF "$tok" "$RUNNER_TEMP/botlog.txt"; then echo "FAIL: token in the event log"; exit 1; fi
+          grep -q "ShentuBot stopped" "$RUNNER_TEMP/botlog.txt" || { echo "FAIL: the bot's error was not logged"; exit 1; }
+          echo "bot error logged, token absent from the log and the command line"
+          "$dest/shentu.exe" service stop --bot > /dev/null 2>&1 || true
+          echo "bot: $("$dest/shentu.exe" service status --bot); patrol still: $("$dest/shentu.exe" service status)"
+          [ "$("$dest/shentu.exe" service status)" = running ]
+          "$dest/shentu.exe" service uninstall --bot
           "$dest/shentu.exe" service uninstall
-          if "$dest/shentu.exe" service status > /dev/null 2>&1; then
-            echo "FAIL: still installed"; exit 1
-          fi
-          echo "uninstalled"
+          rm -f "/c/ProgramData/Shentu/setup.toml"
+          for f in "" --bot; do
+            if "$dest/shentu.exe" service status $f > /dev/null 2>&1; then
+              echo "FAIL: still installed ($f)"; exit 1
+            fi
+          done
+          echo "both uninstalled"
       - name: keep the masked fixture for review (not committed automatically)
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
