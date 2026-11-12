@@ -1,7 +1,9 @@
 package main
 
 import (
+	"fmt"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/nt-neil/shentu/tools"
@@ -37,5 +39,50 @@ func TestCodeAuditFindings(t *testing.T) {
 	want := []string{"code:injection:/a.php:3:php-x-loud", "code:secret:/k.js:2", "webshell:/w.php", "code:audit:unfinished", "code:audit:truncated"}
 	if !slices.Equal(keys, want) {
 		t.Errorf("keys = %v, want %v", keys, want)
+	}
+}
+
+// A patrol report lists at most patrolListMax findings, the most severe first
+// (N11: 2000 findings went whole into the prompt and ~150 Telegram messages).
+func TestMostSevere(t *testing.T) {
+	var fs []finding
+	for i := range 2000 {
+		sev := "warning"
+		if i%100 == 7 {
+			sev = "critical"
+		}
+		fs = append(fs, finding{Key: fmt.Sprint(i), Severity: sev})
+	}
+	got := mostSevere(fs, patrolListMax)
+	if len(got) != patrolListMax || got[0].Key != "7" || got[19].Key != "1907" || got[20].Severity != "warning" || got[20].Key != "0" {
+		t.Errorf("got %d, first %+v, 20th %+v", len(got), got[0], got[20])
+	}
+	if few := mostSevere(fs[:3], patrolListMax); len(few) != 3 {
+		t.Error("a short list is cut")
+	}
+}
+
+// A check that could not tell (sshd_config unreadable when not run as root)
+// is listed at the end of every report, apart from the findings, and is not
+// a finding itself (pushed or held back by the cooldown).
+func TestUncheckedSection(t *testing.T) {
+	risks := []tools.Risk{
+		{Key: "ssh:unreadable", Severity: "info", Summary: "cannot tell the SSH settings (PasswordAuthentication, PermitRootLogin): /etc/ssh/sshd_config.d (permission denied) could not be read; run Shentu as root, as sshd reads them"},
+		{Key: "firewall:none", Severity: "info", Summary: "no host firewall detected"},
+		{Key: "ssh:password", Severity: "warning", Summary: "SSH accepts passwords"},
+	}
+	s := uncheckedSection(risks)
+	if !strings.Contains(s, "Not checked") || !strings.Contains(s, "sshd_config.d (permission denied)") ||
+		strings.Contains(s, "firewall") || strings.Contains(s, "accepts passwords") {
+		t.Errorf("section %q", s)
+	}
+	if uncheckedSection(risks[1:]) != "" {
+		t.Error("a section with nothing unchecked")
+	}
+	if c := uncheckedConfigs([]string{"/etc/nginx/sites-enabled/a (symlink to /tmp/a, outside /etc)"}); !strings.Contains(c, "not read") || !strings.Contains(c, "outside /etc") {
+		t.Errorf("configs %q", c)
+	}
+	if uncheckedConfigs(nil) != "" {
+		t.Error("a section with every configuration read")
 	}
 }

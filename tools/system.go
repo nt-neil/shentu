@@ -2,6 +2,7 @@ package tools
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/hex"
 	"encoding/json"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -217,6 +219,8 @@ func Processes(all bool) []Proc {
 	names := userNames()
 	self := os.Getpid()
 	var out []Proc
+	var seen []Proc
+	start := map[int]int64{} // clock ticks after boot
 	for _, pid := range pids() {
 		if pid == self {
 			continue
@@ -247,6 +251,9 @@ func Processes(all bool) []Proc {
 		if st, err := os.Stat(fmt.Sprintf("/proc/%d", pid)); err == nil {
 			p.Started = st.ModTime().Format(time.RFC3339)
 		}
+		if t, ok := procStart(pid); ok {
+			start[pid] = t
+		}
 		if strings.HasSuffix(p.Exe, " (deleted)") {
 			p.Flags = append(p.Flags, "deleted_executable")
 		}
@@ -261,11 +268,66 @@ func Processes(all bool) []Proc {
 		if webUsers[p.User] && shells[filepath.Base(strings.TrimSuffix(p.Exe, " (deleted)"))] {
 			p.Flags = append(p.Flags, "shell_as_web_user")
 		}
+		seen = append(seen, p)
+	}
+	for _, p := range unflagBootSurvivors(seen, start) {
 		if all || len(p.Flags) > 0 {
 			out = append(out, p)
 		}
 	}
 	return out
+}
+
+// bootWindow bounds how soon after boot an initramfs process started: two
+// minutes, in clock ticks (USER_HZ is 100 on Linux).
+const bootWindow = 120 * 100
+
+// procStart is when the process started, in clock ticks after boot (field 22
+// of /proc/PID/stat).
+func procStart(pid int) (int64, bool) {
+	b, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+	if err != nil {
+		return 0, false
+	}
+	i := bytes.LastIndexByte(b, ')') // the name may hold spaces and parentheses
+	if i < 0 {
+		return 0, false
+	}
+	f := strings.Fields(string(b[i+1:]))
+	if len(f) < 20 {
+		return 0, false
+	}
+	t, err := strconv.ParseInt(f[19], 10, 64)
+	return t, err == nil
+}
+
+// A process started from the initramfs, before the boot switched to the real
+// root file system, shows its executable as deleted once the initramfs is
+// freed (plymouthd). It started before every process the real root started:
+// before the earliest process, other than PID 1 and kernel threads, whose
+// executable is still there. A process started after that whose executable
+// was then deleted is flagged, whatever it is named; so is one started later
+// than bootWindow after boot, should every early process have ended since.
+func unflagBootSurvivors(ps []Proc, start map[int]int64) []Proc {
+	first, ok := int64(0), false
+	for _, p := range ps {
+		t, has := start[p.PID]
+		if p.PID == 1 || p.Exe == "" || strings.HasSuffix(p.Exe, " (deleted)") || !has {
+			continue
+		}
+		if !ok || t < first {
+			first, ok = t, true
+		}
+	}
+	if !ok {
+		return ps
+	}
+	for i, p := range ps {
+		if t, has := start[p.PID]; has && t < first && t <= bootWindow && slices.Contains(p.Flags, "deleted_executable") {
+			ps[i].Flags = slices.DeleteFunc(slices.Clone(p.Flags), func(f string) bool { return f == "deleted_executable" })
+		}
+	}
+	return ps
 }
 
 // Cryptominer signs: a mining pool URL or miner-only options in the command line, or a known miner binary.
@@ -324,6 +386,32 @@ type KeyFile struct {
 	Path     string    `json:"path"`
 	Keys     int       `json:"keys"`
 	Modified time.Time `json:"modified"`
+	// Each key by the type written in it and its fingerprint (never the key).
+	KeyList []KeyEntry `json:"key_list,omitempty"`
+	// Lines that are neither a key nor a comment: sshd ignores them, but a
+	// key written in a form not read here would hide among them.
+	Unparsed []int `json:"unparsed_lines,omitempty"`
+}
+
+// KeyEntry is one key of an authorized_keys file.
+type KeyEntry struct {
+	Line        int    `json:"line"`
+	Type        string `json:"type"`
+	Fingerprint string `json:"fingerprint"`
+}
+
+// readKeyFile reads an authorized_keys file's keys and unparsed lines.
+func readKeyFile(b []byte) (keys []KeyEntry, unparsed []int) {
+	for i, l := range strings.Split(string(b), "\n") {
+		t, fp, bad := parseKeyLine(l)
+		switch {
+		case fp != "":
+			keys = append(keys, KeyEntry{i + 1, t, fp})
+		case bad:
+			unparsed = append(unparsed, i+1)
+		}
+	}
+	return keys, unparsed
 }
 
 // Accounts is the result of AccountsAudit.
@@ -363,13 +451,8 @@ func AccountsAudit() Accounts {
 			seenKeys[p] = true
 			if st, err := os.Stat(p); err == nil {
 				kb, _ := os.ReadFile(p)
-				n := 0
-				for _, l := range strings.Split(string(kb), "\n") {
-					if l = strings.TrimSpace(l); l != "" && !strings.HasPrefix(l, "#") {
-						n++
-					}
-				}
-				a.KeyFiles = append(a.KeyFiles, KeyFile{user, p, n, st.ModTime()})
+				keys, bad := readKeyFile(kb)
+				a.KeyFiles = append(a.KeyFiles, KeyFile{User: user, Path: p, Keys: len(keys), Modified: st.ModTime(), KeyList: keys, Unparsed: bad})
 			}
 		}
 	}
