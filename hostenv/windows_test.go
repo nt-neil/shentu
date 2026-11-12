@@ -1,9 +1,12 @@
 package hostenv
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -598,15 +601,7 @@ func TestWindowsRecordReplay(t *testing.T) {
 	if err := rec.Save(masked, &Masker{}); err != nil {
 		t.Fatal(err)
 	}
-	var all strings.Builder
-	filepath.Walk(masked, func(p string, info os.FileInfo, err error) error {
-		if err == nil && !info.IsDir() {
-			b, _ := os.ReadFile(p)
-			all.Write(b)
-		}
-		return nil
-	})
-	s := all.String()
+	s := fixtureText(t, masked)
 	for _, leak := range []string{"backdoor", "111-222-333", "hunter22", "AutoLogon#2026", "kiosk", "192.0.2.77", "s3cr3t-value-xyz"} {
 		if strings.Contains(s, leak) {
 			t.Errorf("fixture leaks %q", leak)
@@ -622,4 +617,47 @@ func TestWindowsRecordReplay(t *testing.T) {
 	if f := Collect(context.Background(), rp); f.Accounts.Status != StatusOK || len(f.Accounts.Value) != 3 || !f.Accounts.Value[0].IsAdmin {
 		t.Errorf("masked replay lost admin membership: %+v", f.Accounts)
 	}
+}
+
+// fixtureText is everything a fixture puts on disk, decompressed: the
+// manifest plus every blob inside blobs.tgz. Searching the raw files would
+// miss compressed blobs and let a leak pass unseen.
+func fixtureText(t *testing.T, dir string) string {
+	t.Helper()
+	var all strings.Builder
+	m, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	all.Write(m)
+	f, err := os.Open(filepath.Join(dir, "blobs.tgz"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	zr, err := gzip.NewReader(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr := tar.NewReader(zr)
+	blobs := 0
+	for {
+		_, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := io.ReadAll(tr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		all.Write(b)
+		blobs++
+	}
+	if blobs == 0 {
+		t.Fatal("fixture has no blobs: the leak checks would see nothing")
+	}
+	return all.String()
 }
