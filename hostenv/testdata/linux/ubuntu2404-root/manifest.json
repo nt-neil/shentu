@@ -73,6 +73,31 @@
     },
     {
       "op": "dir",
+      "path": "/etc/periodic/15min",
+      "err": "not_exist"
+    },
+    {
+      "op": "dir",
+      "path": "/etc/periodic/daily",
+      "err": "not_exist"
+    },
+    {
+      "op": "dir",
+      "path": "/etc/periodic/hourly",
+      "err": "not_exist"
+    },
+    {
+      "op": "dir",
+      "path": "/etc/periodic/monthly",
+      "err": "not_exist"
+    },
+    {
+      "op": "dir",
+      "path": "/etc/periodic/weekly",
+      "err": "not_exist"
+    },
+    {
+      "op": "dir",
       "path": "/etc/ssh/sshd_config.d",
       "names": [
         "50-cloud-init.conf"

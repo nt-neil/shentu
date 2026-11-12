@@ -70,6 +70,13 @@ func (c LinuxCollector) Collect(ctx context.Context, src Source) *Facts {
 		f.Services = svcs
 		if f.Persistence.Known() {
 			f.Persistence.Value = append(f.Persistence.Value, items...)
+			if apkOwned == nil && osr != nil && LinuxFamily(osr["ID"], osr["ID_LIKE"]) == "alpine" {
+				// Without apk's database a script no package installed looks like any other: say so.
+				if f.Persistence.Status == StatusOK {
+					f.Persistence.Status, f.Persistence.Reason = StatusPartial, f.Packages.Reason
+				}
+				f.Persistence.Detail = strings.TrimPrefix(f.Persistence.Detail+"; which OpenRC scripts a package installed is unknown (apk database: "+f.Packages.Detail+")", "; ")
+			}
 			if svcs.Status != StatusOK { // what OpenRC could not read is missing from persistence too
 				if f.Persistence.Status == StatusOK {
 					f.Persistence.Status, f.Persistence.Reason = StatusPartial, svcs.Reason
@@ -142,9 +149,15 @@ func (LinuxCollector) packages(ctx context.Context, src Source, osr map[string]s
 	}
 	var apkOwned map[string]bool
 	feed := PatchFeedFor(osr)
+	extrasErr, extrasReason := "", Reason("")
 	if feed.Kind == "alas" && feed.Release == "2" {
-		if b, err := src.ReadFile(AL2ExtrasRepo); err == nil {
+		b, err := src.ReadFile(AL2ExtrasRepo)
+		switch {
+		case err == nil:
 			feed.Repos = ParseAL2Extras(b)
+		case !missing(err): // the topics' packages would go unchecked without a word
+			extrasReason = Classify(err)
+			extrasErr = AL2ExtrasRepo + " (" + string(extrasReason) + "): amazon-linux-extras topics not checked"
 		}
 	}
 	set := PackageSet{Ecosystem: OSVEcosystem(osr)}
@@ -181,6 +194,9 @@ func (LinuxCollector) packages(ctx context.Context, src Source, osr map[string]s
 		return Unknown[PackageSet](ReasonCommandFailed, fmt.Sprintf("%s exit %d: %s", set.Manager, res.ExitCode, firstLine(res.Stderr))), nil
 	}
 	set.Items = items
+	if extrasErr != "" {
+		return Partial(set, extrasReason, "not fully read: "+extrasErr), apkOwned
+	}
 	return OK(set), apkOwned
 }
 
@@ -554,7 +570,7 @@ func (c LinuxCollector) persistence(ctx context.Context, src Source, keys Obs[[]
 	cronDir("/var/spool/cron", "crontabs", "atjobs", "atspool", "lastrun")
 	cronDir("/var/spool/cron/crontabs")
 	cronDir("/etc/crontabs") // busybox crond (Alpine)
-	for _, it := range PeriodicScripts(src) {
+	for _, it := range PeriodicScripts(src, note) {
 		add(it)
 	}
 

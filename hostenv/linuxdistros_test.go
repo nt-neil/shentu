@@ -227,3 +227,35 @@ func TestAL2Extras(t *testing.T) {
 		t.Errorf("Amazon Linux 2: %+v", f)
 	}
 }
+
+// Read errors that used to pass silently now show in partial: an unreadable
+// amzn2-extras.repo, /etc/periodic folder, or apk database.
+func TestDistroReadErrorsSaid(t *testing.T) {
+	h := newFake(true)
+	h.files["/etc/os-release"] = "NAME=\"Amazon Linux\"\nVERSION=\"2\"\nID=\"amzn\"\nID_LIKE=\"centos rhel fedora\"\nVERSION_ID=\"2\"\n"
+	h.files["/etc/passwd"] = "root:x:0:0::/root:/bin/bash\n"
+	h.cmds[argvKey(rpmArgv)] = CmdResult{Stdout: []byte("bash\t0:4.2.46-34.amzn2\taarch64\n")}
+	h.files[AL2ExtrasRepo] = "[amzn2extra-docker]\nenabled=1\n"
+	h.denied[AL2ExtrasRepo] = true
+	if p := Collect(context.Background(), h).Packages; p.Status != StatusPartial || !strings.Contains(p.Detail, "amazon-linux-extras topics not checked") || len(p.Value.Items) != 1 {
+		t.Errorf("AL2 extras unreadable: %s %q", p.Status, p.Detail)
+	}
+
+	a := alpineHost()
+	a.denied["/etc/periodic/daily"] = true
+	if p := Collect(context.Background(), statFake{a}).Persistence; p.Status != StatusPartial || !strings.Contains(p.Detail, "/etc/periodic/daily (permission_denied)") {
+		t.Errorf("periodic unreadable: %s %q", p.Status, p.Detail)
+	}
+
+	a = alpineHost()
+	a.denied[ApkInstalledDB] = true
+	f := Collect(context.Background(), statFake{a})
+	if f.Persistence.Status != StatusPartial || !strings.Contains(f.Persistence.Detail, "which OpenRC scripts a package installed is unknown") {
+		t.Errorf("apk database unreadable: %s %q", f.Persistence.Status, f.Persistence.Detail)
+	}
+	for _, it := range f.Persistence.Value {
+		if strings.Contains(it.Detail, "no package installed") {
+			t.Errorf("flag kept without the database: %+v", it)
+		}
+	}
+}

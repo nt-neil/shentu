@@ -303,3 +303,38 @@ func TestALASRepomdOneEntry(t *testing.T) {
 		t.Errorf("read %q", b)
 	}
 }
+
+// A cached updateinfo that does not parse, with no checksum in repomd to
+// catch it, is dropped and said, so the next run fetches it again.
+func TestALASUnparsableCacheDropped(t *testing.T) {
+	srv, downloads := fakeALAS(t, map[string]string{"core": "<updates/>", "kernel-5.10": kernelFix}, true)
+	feed := hostenv.PatchFeed{Kind: "alas", Release: "2", Repos: []string{"kernel-5.10"}}
+	items := []hostenv.Package{{Name: "kernel", Version: "0:5.10.199-1.amzn2", Arch: "aarch64"}}
+	if _, _, _, err := alasAffected(context.Background(), srv.Client(), feed, "aarch64", items); err != nil {
+		t.Fatal(err)
+	}
+	cached, _ := filepath.Glob(filepath.Join(alasCacheDir(), "alas-*.gz"))
+	for _, f := range cached {
+		var b bytes.Buffer
+		zw := gzip.NewWriter(&b)
+		zw.Write([]byte("<updates><update")) // damaged, still gzip
+		zw.Close()
+		os.WriteFile(f, b.Bytes(), 0o600)
+	}
+	_, _, failed, err := alasAffected(context.Background(), srv.Client(), feed, "aarch64", items)
+	if err == nil || !strings.Contains(err.Error(), "cached copy dropped") {
+		t.Errorf("core: err %v failed %v", err, failed)
+	}
+	if left, _ := filepath.Glob(filepath.Join(alasCacheDir(), "alas-*.gz")); len(left) != 1 {
+		t.Errorf("cache after: %v", left) // core dropped (it stops the run); the topic was not reached
+	}
+	// Next run: core fetched again; the topic's damaged copy is found now,
+	// dropped and listed as not checked (partial).
+	if _, _, failed, err := alasAffected(context.Background(), srv.Client(), feed, "aarch64", items); err != nil || len(failed) != 1 || !strings.Contains(failed[0], "cached copy dropped") {
+		t.Errorf("topic: err %v failed %v", err, failed)
+	}
+	before := *downloads
+	if hits, _, failed, err := alasAffected(context.Background(), srv.Client(), feed, "aarch64", items); err != nil || len(hits) != 1 || len(failed) != 0 || *downloads == before {
+		t.Errorf("after: %+v %v %v, downloads %d->%d", hits, failed, err, before, *downloads)
+	}
+}

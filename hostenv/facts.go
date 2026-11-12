@@ -186,7 +186,7 @@ type Listener struct {
 // PersistenceItem is anything that makes code run again without a person
 // starting it.
 type PersistenceItem struct {
-	Kind     string `json:"kind"` // cron, cron_file, systemd, ld_preload, rc_local, authorized_key, sudo_rule, pam_unpackaged, run_key, schtask, service, wmi_subscription, startup_folder, launchd
+	Kind     string `json:"kind"` // cron, cron_file, systemd, openrc, local_d, inittab, ld_preload, rc_local, authorized_key, authorized_key_unparsed, authorized_keys_symlink, sudo_rule, pam_unpackaged, run_key, schtask, service, wmi_subscription, startup_folder, launchd
 	Location string `json:"location"`
 	Command  string `json:"command,omitempty"` // secret-masked
 	Detail   string `json:"detail,omitempty"`

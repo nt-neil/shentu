@@ -195,31 +195,9 @@ func ParseRpmQA(b []byte) []Package {
 	return out
 }
 
-// ApkOwnedFiles lists the files apk's database says a package installed
-// ("F:" folder lines, "R:" file lines), as absolute paths.
-func ApkOwnedFiles(b []byte) map[string]bool {
-	owned := map[string]bool{}
-	dir := ""
-	for _, l := range strings.Split(string(b), "\n") {
-		switch {
-		case l == "":
-			dir = ""
-		case strings.HasPrefix(l, "F:"):
-			dir = l[2:]
-		case strings.HasPrefix(l, "R:"):
-			owned["/"+path.Join(dir, l[2:])] = true
-		}
-	}
-	return owned
-}
-
-// ApkInstalledDB is apk's database of installed packages and their files;
-// with many packages it outgrows MaxFileBytes, so it is read up to
-// MaxApkDBBytes.
-const (
-	ApkInstalledDB = "/lib/apk/db/installed"
-	MaxApkDBBytes  = 128 << 20
-)
+// ApkInstalledDB is apk's database of installed packages and their files,
+// streamed (ScanApkDB): with many packages it outgrows MaxFileBytes.
+const ApkInstalledDB = "/lib/apk/db/installed"
 
 // ScanApkDB streams apk's database once, line by line: the packages, and
 // for each file keep asks about (nil: none) whether a package installed it.

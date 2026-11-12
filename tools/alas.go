@@ -127,6 +127,13 @@ func alasAffected(ctx context.Context, hc *http.Client, feed hostenv.PatchFeed, 
 			}
 		})
 		r.Close()
+		if err != nil && cached != "" {
+			// Unreadable as cached: without a checksum in repomd (or a file
+			// damaged after the check) it would fail the same way every run.
+			os.Remove(cached)
+			delete(used, cached)
+			err = fmt.Errorf("%w (cached copy dropped, fetched again next time)", err)
+		}
 		if err != nil && i == 0 {
 			return nil, nil, nil, fmt.Errorf("updateinfo: %w", err)
 		}

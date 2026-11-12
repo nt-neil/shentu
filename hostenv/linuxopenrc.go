@@ -167,10 +167,11 @@ func InittabEntries(b []byte) []PersistenceItem {
 
 // PeriodicScripts are busybox crond's /etc/periodic/<interval>/ scripts
 // (Alpine), run by the root crontab's run-parts lines.
-func PeriodicScripts(src Source) []PersistenceItem {
+func PeriodicScripts(src Source, note func(dir string, err error)) []PersistenceItem {
 	var out []PersistenceItem
 	for _, iv := range []string{"15min", "hourly", "daily", "weekly", "monthly"} {
-		names, _ := src.ReadDir("/etc/periodic/" + iv)
+		names, err := src.ReadDir("/etc/periodic/" + iv)
+		note("/etc/periodic/"+iv, err) // a folder that is not there is fine; one not readable is said
 		for _, n := range names {
 			out = append(out, PersistenceItem{Kind: "cron", Location: "/etc/periodic/" + iv + "/" + n, Detail: "periodic script, run " + iv})
 		}
