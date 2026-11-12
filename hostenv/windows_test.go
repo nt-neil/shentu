@@ -937,8 +937,12 @@ func TestFileSecurityUntrusted(t *testing.T) {
 // Round 3 (N-W1): Include is followed in place and the first value wins,
 // as in sshd. Round 2's test asserted the opposite: with "Include x.conf"
 // before "PasswordAuthentication no" and "yes" in x.conf, sshd uses yes.
-// OpenSSH added Include to sshd_config in 8.2; what the CI runners ship is
-// noted in windows.yml's "OpenSSH on the runner" step.
+// OpenSSH added Include to sshd_config in 8.2. On the CI runners (windows.yml
+// run 43319376027, "OpenSSH on the runner"): windows-2025 has sshd
+// OpenSSH_for_Windows_9.5p2, which reads Include; windows-2022 has no sshd
+// installed (its ssh client is 9.5p2), so Include support of the sshd a
+// 2022 host would install is not checked there. Followed either way: a
+// host whose sshd reads Include is judged by what it actually uses.
 func TestWindowsSSHInclude(t *testing.T) {
 	collect := func(w *fakeWin) Obs[SSHConfig] {
 		return WindowsCollector{}.Collect(context.Background(), w).RemoteAccess.SSH
