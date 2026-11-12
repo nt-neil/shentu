@@ -26,26 +26,39 @@ var maskRules = []struct {
 	{regexp.MustCompile(`(?i)((?:password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key)\\?"?\s*[=:]\s*\\?"?)[^\s"\\,;]{3,}`), "${1}[REDACTED]"},
 }
 
-// mask keeps sudoers' upper-case NOPASSWD: and PASSWD: tags: they are not
-// password assignments, and "NOPASSWD:[REDACTED]" would hide what a sudo
-// rule grants. Real secrets (password: x, PASSWORD=x) are still masked.
+// mask removes secrets. sudoers' NOPASSWD: and PASSWD: tags in sudoers
+// syntax are kept: they are not password assignments, and
+// "NOPASSWD:[REDACTED]" would hide what a sudo rule grants.
 // hostenv.MaskSecrets does the same; keep the two in step.
 func mask(s string) string {
-	shielded := sudoTag.MatchString(s)
-	if shielded {
-		s = sudoTag.ReplaceAllStringFunc(s, func(m string) string { return strings.Replace(m, "PASSWD", "PA"+maskShield+"SSWD", 1) })
+	locs := sudoTag.FindAllStringSubmatchIndex(s, -1)
+	if len(locs) == 0 {
+		return applyMaskRules(s)
 	}
+	// Mask the text between the tags, never the tags themselves: no
+	// sentinel bytes, so nothing in the input can be mistaken for one.
+	var b strings.Builder
+	last := 0
+	for _, m := range locs {
+		b.WriteString(applyMaskRules(s[last:m[2]]))
+		b.WriteString(s[m[2]:m[3]])
+		last = m[3]
+	}
+	b.WriteString(applyMaskRules(s[last:]))
+	return b.String()
+}
+
+// sudoTag is a sudoers NOPASSWD: or PASSWD: tag where sudoers puts one:
+// after a runas spec ")" or another tag, and before a command (ALL, an
+// absolute path, "!" or another tag). Group 1 is the tag. "PASSWD: x" or
+// "X-PASSWD: x" elsewhere is not a tag and is masked as a secret would be.
+// (A double-quoted pattern, so the rule-parity test, which reads
+// back-quoted patterns, skips it.)
+var sudoTag = regexp.MustCompile("(?:\\)|[A-Z]+:)[ \\t]*((?:NO)?PASSWD:)[ \\t]*(?:ALL\\b|/|!|[A-Z]+:)")
+
+func applyMaskRules(s string) string {
 	for _, r := range maskRules {
 		s = r.re.ReplaceAllString(s, r.repl)
 	}
-	if shielded {
-		s = strings.ReplaceAll(s, maskShield, "")
-	}
 	return s
 }
-
-// A double-quoted pattern, so hostenv's rule-parity test (back-quoted
-// patterns) does not count it as a masking rule.
-var sudoTag = regexp.MustCompile("\\b(?:NO)?PASSWD:")
-
-const maskShield = "\x00\x01"
