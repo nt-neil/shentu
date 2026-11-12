@@ -20,6 +20,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/nt-neil/shentu/rules"
@@ -50,7 +51,10 @@ var appCodeAudit = Tool{
 			}
 			roots = []string{clean}
 		}
-		return AppCodeAudit(ctx, roots, WebRoots()), nil
+		web, unread := WebRootsReport()
+		res := AppCodeAudit(ctx, roots, web)
+		res.WebConfigUnreadable = unread
+		return res, nil
 	},
 }
 
@@ -83,10 +87,13 @@ type UnfinishedFile struct {
 
 // CodeAudit is the result of AppCodeAudit.
 type CodeAudit struct {
-	WebRoots  []string      `json:"web_roots"`
-	Files     int           `json:"files_read"`
-	Findings  []CodeFinding `json:"findings"`            // the summaries (kind "audit", and injection ones without a rule) first
-	Truncated bool          `json:"truncated,omitempty"` // files or findings over the caps were left out
+	WebRoots []string `json:"web_roots"`
+	// Web server configuration files that could not be read, with why: the
+	// web roots they name are missing from WebRoots.
+	WebConfigUnreadable []string      `json:"web_config_unreadable,omitempty"`
+	Files               int           `json:"files_read"`
+	Findings            []CodeFinding `json:"findings"`            // the summaries (kind "audit", and injection ones without a rule) first
+	Truncated           bool          `json:"truncated,omitempty"` // files or findings over the caps were left out
 	// The audit's time ran out before the end: what was found until then is
 	// listed, and a summary names what was not checked.
 	Unfinished bool `json:"unfinished,omitempty"`
@@ -120,13 +127,76 @@ var (
 
 // WebRoots returns the folders nginx or Apache serve, read from their configuration.
 func WebRoots() []string {
+	roots, _ := WebRootsReport()
+	return roots
+}
+
+// WebRootsReport returns the folders nginx or Apache serve, and the
+// configuration files it could not read, each with why ("path (why)").
+func WebRootsReport() (roots, unreadable []string) { return webRootsFrom(webConfGlob) }
+
+// The configuration a symlink in it may point to: a regular file under
+// webConfRoot, owned by webConfOwner (root), that only its owner can write
+// (Debian and Ubuntu enable a site by a symlink in sites-enabled). Variables
+// for the tests.
+var (
+	webConfRoot  = "/etc"
+	webConfOwner = uint32(0)
+)
+
+// readWebConf reads one web server configuration file. Unlike readSmallRegular
+// elsewhere, it follows a symlink, to a file webConfRoot holds and only root
+// can write; why says what kept it from being read.
+func readWebConf(p string) (b []byte, why string) {
+	li, err := os.Lstat(p)
+	if err != nil {
+		return nil, errWhy(err)
+	}
+	target := p
+	if li.Mode()&os.ModeSymlink != 0 {
+		if target, err = filepath.EvalSymlinks(p); err != nil { // a loop ends here too
+			return nil, "symlink: " + errWhy(err)
+		}
+		if !insideAny(target, []string{webConfRoot}) {
+			return nil, "symlink to " + target + ", outside " + webConfRoot
+		}
+		st, err := os.Lstat(target)
+		if err != nil {
+			return nil, errWhy(err)
+		}
+		sys, ok := st.Sys().(*syscall.Stat_t)
+		switch {
+		case !st.Mode().IsRegular():
+			return nil, "symlink to " + target + ", not a regular file"
+		case !ok || sys.Uid != webConfOwner:
+			return nil, "symlink to " + target + ", not owned by root"
+		case st.Mode().Perm()&0o022 != 0:
+			return nil, "symlink to " + target + ", writable by others than its owner"
+		}
+		li = st
+	}
+	b, ok := readSmallRegular(target, 1<<20, li) // no symlink left; the file the checks saw
+	if !ok {
+		return nil, "not a regular file of at most 1 MiB, or changed while read"
+	}
+	return b, ""
+}
+
+func errWhy(err error) string {
+	if pe := (*fs.PathError)(nil); errors.As(err, &pe) {
+		return pe.Err.Error()
+	}
+	return err.Error()
+}
+
+func webRootsFrom(globs []string) (out, unreadable []string) {
 	seen := map[string]bool{}
-	var out []string
-	for _, g := range webConfGlob {
+	for _, g := range globs {
 		files, _ := filepath.Glob(g)
 		for _, f := range files {
-			b, ok := readSmallRegular(f, 1<<20, nil)
-			if !ok {
+			b, why := readWebConf(f)
+			if why != "" {
+				unreadable = append(unreadable, f+" ("+why+")")
 				continue
 			}
 			for _, re := range []*regexp.Regexp{nginxRoot, apacheRoot} {
@@ -141,7 +211,7 @@ func WebRoots() []string {
 		}
 	}
 	sort.Strings(out)
-	return out
+	return out, unreadable
 }
 
 // served reports whether p is inside a folder the web server serves. Without any

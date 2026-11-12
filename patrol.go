@@ -91,6 +91,20 @@ func uncheckedSection(risks []tools.Risk) string {
 	return "\n\nNot checked (the permission to read what they need was missing; run Shentu as root):\n" + b.String()
 }
 
+// uncheckedConfigs lists the web server configuration files the code audit
+// could not read: the sites they serve were audited as plain folders.
+func uncheckedConfigs(unread []string) string {
+	if len(unread) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("\n\nWeb server configuration not read (its web roots are missing from the code audit):\n")
+	for _, u := range unread {
+		fmt.Fprintf(&b, "- %q\n", mask(u))
+	}
+	return b.String()
+}
+
 // patrolListMax is how many findings one patrol report lists.
 const patrolListMax = 50
 
@@ -298,7 +312,9 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 			}
 		}
 		// The applications' own files: exposed secrets, debug mode, webshells, keys in code, injection.
-		all = replaceOrAppend(all, codeAuditFindings(tools.AppCodeAudit(ctx, env.AppPaths, tools.WebRoots())))
+		web, unread := tools.WebRootsReport()
+		all = replaceOrAppend(all, codeAuditFindings(tools.AppCodeAudit(ctx, env.AppPaths, web)))
+		unchecked += uncheckedConfigs(unread)
 	}
 	var fresh []finding
 	for _, f := range all {

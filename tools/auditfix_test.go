@@ -470,3 +470,44 @@ func TestListRank(t *testing.T) {
 			listRank(secret), listRank(infoCrit), listRank(testCrit), listRank(minCrit))
 	}
 }
+
+// A site enabled by a symlink (Debian, Ubuntu: sites-enabled/a ->
+// ../sites-available/a) is read; a symlink out of the configuration's root,
+// to a file root does not own or others can write, or in a loop is not, and
+// is listed with why.
+func TestWebRootsSymlinks(t *testing.T) {
+	etc, _ := filepath.EvalSymlinks(t.TempDir())
+	other, _ := filepath.EvalSymlinks(t.TempDir()) // stands for /tmp
+	root, owner := webConfRoot, webConfOwner
+	defer func() { webConfRoot, webConfOwner = root, owner }()
+	webConfRoot, webConfOwner = etc, uint32(os.Getuid()) // the test's user stands for root
+	avail, enabled := filepath.Join(etc, "nginx", "sites-available"), filepath.Join(etc, "nginx", "sites-enabled")
+	os.MkdirAll(avail, 0o755)
+	os.MkdirAll(enabled, 0o755)
+	os.WriteFile(filepath.Join(avail, "a"), []byte("server {\n  root /srv/a/public;\n}\n"), 0o644)
+	os.Symlink("../sites-available/a", filepath.Join(enabled, "a"))
+	os.WriteFile(filepath.Join(enabled, "plain"), []byte("server {\n  root /srv/plain;\n}\n"), 0o644)
+	os.WriteFile(filepath.Join(other, "evil"), []byte("server { root /srv/evil; }\n"), 0o644)
+	os.Symlink(filepath.Join(other, "evil"), filepath.Join(enabled, "evil"))
+	os.WriteFile(filepath.Join(avail, "open"), []byte("server { root /srv/open; }\n"), 0o666)
+	os.Chmod(filepath.Join(avail, "open"), 0o666)
+	os.Symlink("../sites-available/open", filepath.Join(enabled, "open"))
+	os.Symlink("loop2", filepath.Join(enabled, "loop1"))
+	os.Symlink("loop1", filepath.Join(enabled, "loop2"))
+	roots, unread := webRootsFrom([]string{filepath.Join(enabled, "*")})
+	if strings.Join(roots, ",") != "/srv/a/public,/srv/plain" {
+		t.Errorf("roots %v", roots)
+	}
+	why := strings.Join(unread, "\n")
+	for _, want := range []string{"evil (symlink to " + filepath.Join(other, "evil") + ", outside", "open (symlink to", "writable by others",
+		"loop1 (symlink:", "loop2 (symlink:"} {
+		if !strings.Contains(why, want) {
+			t.Errorf("unreadable lacks %q:\n%s", want, why)
+		}
+	}
+	// Owned by another user than root: not read.
+	webConfOwner = uint32(os.Getuid()) + 1
+	if roots, unread := webRootsFrom([]string{filepath.Join(enabled, "a")}); len(roots) != 0 || len(unread) != 1 || !strings.Contains(unread[0], "not owned by root") {
+		t.Errorf("not root's: roots %v, unreadable %v", roots, unread)
+	}
+}
