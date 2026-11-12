@@ -50,17 +50,18 @@ func configPath() string {
 	if p := os.Getenv("SHENTU_CONFIG"); p != "" {
 		return p
 	}
-	return "/etc/shentu/shentu.toml"
+	return defaultConfigPath()
 }
 
 // printUsage prints the usage for help (help, --help, -h) to stdout and
 // returns 0; for a missing or unknown command, to stderr and returns 2.
 func printUsage(cmd string, stdout, stderr io.Writer) int {
+	u := strings.Replace(usage, "/etc/shentu/shentu.toml", defaultConfigPath(), 1) // the same text on Unix
 	if cmd == "help" || cmd == "--help" || cmd == "-h" {
-		fmt.Fprint(stdout, usage)
+		fmt.Fprint(stdout, u)
 		return 0
 	}
-	fmt.Fprint(stderr, usage)
+	fmt.Fprint(stderr, u)
 	return 2
 }
 

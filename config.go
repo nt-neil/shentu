@@ -75,6 +75,7 @@ func loadConfig(path string) (*Config, error) {
 	c.Bot.Interaction, c.Bot.Answers, c.Bot.Confirm, c.Bot.Protection = 1, 2, 2, 2
 	c.StateDir = "/var/lib/shentu"
 	c.Language = "English"
+	osDefaults(c)
 
 	loadEnvFile(filepath.Join(filepath.Dir(path), "env"))
 	b, err := os.ReadFile(path)
