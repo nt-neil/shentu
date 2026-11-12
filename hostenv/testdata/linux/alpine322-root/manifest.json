@@ -10,6 +10,22 @@
     {
       "op": "cmd",
       "argv": [
+        "/bin/journalctl",
+        "-u",
+        "ssh",
+        "-u",
+        "sshd",
+        "--since",
+        "2026-11-11 14:06:33 UTC",
+        "-o",
+        "short-iso",
+        "--no-pager"
+      ],
+      "err": "not_exist"
+    },
+    {
+      "op": "cmd",
+      "argv": [
         "/sbin/iptables",
         "-S"
       ],
@@ -6688,7 +6704,7 @@
     {
       "op": "file",
       "path": "/var/log/messages",
-      "blob": "blobs/156c6e723c208cbc"
+      "blob": "blobs/30c5be138d371e96"
     },
     {
       "op": "file",
