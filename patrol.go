@@ -250,6 +250,10 @@ func checks(ctx context.Context, cfg *Config, env *tools.Env, st *state, daily b
 		}
 	}
 	for _, k := range acc.KeyFiles {
+		if k.SymlinkOutsideHome != "" {
+			out = append(out, finding{"authorized_keys_symlink:" + k.Path, "warning",
+				fmt.Sprintf("%s links to %s, outside the home; sshd reads the keys there (%d keys), check who can write that file", k.Path, k.SymlinkOutsideHome, k.Keys), k})
+		}
 		for _, l := range k.Unparsed {
 			out = append(out, finding{fmt.Sprintf("authorized_key_unparsed:%s:%d", k.Path, l), "warning",
 				fmt.Sprintf("%s line %d is neither a key nor a comment; sshd ignores it, but check it is not a key written in another form", k.Path, l), nil})

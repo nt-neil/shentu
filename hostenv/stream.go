@@ -35,7 +35,14 @@ type LineRunner interface {
 // .gz), secret-masked, without holding the file in memory. Sources that
 // cannot stream fall back to ReadFile (bounded by MaxFileBytes).
 func ScanLines(src Source, path string, fn func(line string)) error {
+	return scanFile(src, path, true, fn)
+}
+
+// scanFile streams path's lines; masked says whether each is secret-masked.
+// Only tables that hold numbers (/proc/net) skip it, for speed.
+func scanFile(src Source, path string, masked bool, fn func(line string)) error {
 	var r io.Reader
+	var cut error // a ReadFile fallback that was cut short: the lines read count, the scan is not complete
 	if o, ok := src.(Opener); ok {
 		f, err := o.Open(path)
 		if err != nil {
@@ -48,6 +55,7 @@ func ScanLines(src Source, path string, fn func(line string)) error {
 		if err != nil && !errors.Is(err, ErrTruncated) {
 			return err
 		}
+		cut = err
 		r = bytes.NewReader(b)
 	}
 	if strings.HasSuffix(path, ".gz") {
@@ -58,7 +66,16 @@ func ScanLines(src Source, path string, fn func(line string)) error {
 		defer gz.Close()
 		r = gz
 	}
-	return scan(r, fn)
+	var err error
+	if masked {
+		err = scan(r, fn)
+	} else {
+		err = scanPlain(r, fn)
+	}
+	if err == nil {
+		err = cut
+	}
+	return err
 }
 
 // A private key block spans lines, so line-by-line masking alone would
@@ -100,6 +117,22 @@ func (k *keyMasker) line(l string) (string, bool) {
 	return MaskSecrets(l), true
 }
 
+// ScanLinesUnmasked is ScanLines without masking, for parsers that match
+// the text as written (sshd's log lines: a mask must not change a count)
+// and mask only what they output.
+func ScanLinesUnmasked(src Source, path string, fn func(line string)) error {
+	return scanFile(src, path, false, fn)
+}
+
+func scanPlain(r io.Reader, fn func(string)) error {
+	sc := bufio.NewScanner(r)
+	sc.Buffer(make([]byte, 64*1024), MaxLineBytes)
+	for sc.Scan() {
+		fn(sc.Text())
+	}
+	return sc.Err()
+}
+
 func scan(r io.Reader, fn func(string)) error {
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 64*1024), MaxLineBytes)
@@ -134,6 +167,32 @@ func maskLines(b []byte) []byte {
 		}
 	}
 	return []byte(out.String())
+}
+
+// RawLineRunner is implemented by Sources that can stream a command's
+// stdout unmasked.
+type RawLineRunner interface {
+	RunLinesUnmasked(ctx context.Context, argv []string, fn func(line string)) (CmdResult, error)
+}
+
+// RunLinesUnmasked is RunLines without masking (see ScanLinesUnmasked).
+// A Source that cannot give the text unmasked (a replayed fixture, already
+// masked) gives what it has.
+func RunLinesUnmasked(ctx context.Context, src Source, argv []string, fn func(line string)) (CmdResult, error) {
+	if lr, ok := src.(RawLineRunner); ok {
+		return lr.RunLinesUnmasked(ctx, argv, fn)
+	}
+	if lr, ok := src.(LineRunner); ok {
+		return lr.RunLines(ctx, argv, fn)
+	}
+	res, err := src.Run(ctx, argv)
+	if err == nil || errors.Is(err, ErrTruncated) {
+		if serr := scanPlain(bytes.NewReader(res.Stdout), fn); serr != nil && err == nil {
+			err = serr
+		}
+	}
+	res.Stdout = nil
+	return res, err
 }
 
 // RunLines streams argv's stdout to fn line by line through src; Sources
@@ -175,6 +234,11 @@ func (l *Live) RunLines(ctx context.Context, argv []string, fn func(line string)
 	return l.Runner.RunLines(ctx, argv, fn)
 }
 
+// RunLinesUnmasked streams an allowlisted command's stdout as written.
+func (l *Live) RunLinesUnmasked(ctx context.Context, argv []string, fn func(line string)) (CmdResult, error) {
+	return l.Runner.RunLinesUnmasked(ctx, argv, fn)
+}
+
 // Recorder streams through the inner Source and keeps at most
 // MaxFileBytes of what passed, for the fixture.
 func (r *Recorder) Open(path string) (io.ReadCloser, error) {
@@ -205,6 +269,23 @@ func ScanLinesRaw(src Source, path string, w io.Writer) error {
 	b, err := src.ReadFile(path)
 	w.Write(b)
 	return err
+}
+
+// RunLinesUnmasked passes the text as written to fn and keeps it masked
+// for the fixture.
+func (r *Recorder) RunLinesUnmasked(ctx context.Context, argv []string, fn func(line string)) (CmdResult, error) {
+	var buf bytes.Buffer
+	var km keyMasker
+	res, err := RunLinesUnmasked(ctx, r.Inner, argv, func(l string) {
+		if m, ok := km.line(l); ok && buf.Len() < MaxFileBytes {
+			buf.WriteString(m)
+			buf.WriteByte('\n')
+		}
+		fn(l)
+	})
+	r.put(&entry{Op: "cmd", Argv: append([]string(nil), argv...), Err: errCode(err), data: buf.Bytes(),
+		ExitCode: res.ExitCode, Stderr: res.Stderr})
+	return res, err
 }
 
 func (r *Recorder) RunLines(ctx context.Context, argv []string, fn func(line string)) (CmdResult, error) {

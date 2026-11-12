@@ -155,6 +155,11 @@ func insideAny(p string, roots []string) bool {
 // own separator and, on Windows, compares without case, so C:\inetpub and
 // c:\INETPUB\wwwroot agree and "/var/www-old" is not inside "/var/www".
 func inside(p, root string) bool {
+	// A filesystem root (/, C:\) contains only itself, as in v0.2.5: a
+	// path list of "/" must not open the whole machine.
+	if r := filepath.Clean(root); filepath.Dir(r) == r {
+		return filepath.Clean(p) == r
+	}
 	rel, err := filepath.Rel(filepath.Clean(root), filepath.Clean(p))
 	if err != nil || filepath.IsAbs(rel) {
 		return false

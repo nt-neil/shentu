@@ -29,7 +29,7 @@ var (
 )
 
 func (LinuxCollector) Allowlist() [][]string {
-	return [][]string{dpkgArgv, rpmArgv, rpmQalArgv, nftListArgv, iptablesArgv, iptablesSbin, journalArgv}
+	return [][]string{dpkgArgv, rpmArgv, rpmQalArgv, nftListArgv, iptablesArgv, iptablesSbin, journalArgv, journalBinArgv}
 }
 
 func (c LinuxCollector) Collect(ctx context.Context, src Source) *Facts {
@@ -284,17 +284,11 @@ func (LinuxCollector) Listeners(src Source, owners map[string]int) Obs[[]Listene
 	read, unowned := 0, 0
 	seen := map[string]bool{}
 	for _, proto := range []string{"tcp", "tcp6", "udp", "udp6"} {
-		b, err := src.ReadFile("/proc/net/" + proto)
-		if err != nil {
-			if !errors.Is(err, fs.ErrNotExist) && firstErr == nil { // no IPv6 is fine
-				firstErr = err
-			}
-			continue
-		}
-		read++
-		for _, e := range ParseProcNet(b) {
+		rows := 0
+		err := ScanProcNet(src, proto, func(e ProcNetEntry) {
+			rows++
 			if !e.IsListening(proto) {
-				continue
+				return
 			}
 			l := Listener{Proto: proto, Addr: e.LocalIP.String(), Port: e.LocalPort, UID: e.UID}
 			if pid, ok := owners[e.Inode]; ok {
@@ -307,10 +301,22 @@ func (LinuxCollector) Listeners(src Source, owners map[string]int) Obs[[]Listene
 			// port visible, which is how a port gets hijacked.
 			key := fmt.Sprintf("%s/%s/%d/%d/%s", proto, l.Addr, l.Port, l.PID, l.UID)
 			if seen[key] {
-				continue
+				return
 			}
 			seen[key] = true
 			out = append(out, l)
+		})
+		switch {
+		case err == nil:
+			read++
+		case errors.Is(err, fs.ErrNotExist): // no IPv6 is fine
+		default:
+			if rows > 0 { // the rows before the error count; the fact is partial
+				read++
+			}
+			if firstErr == nil {
+				firstErr = err
+			}
 		}
 	}
 	switch {
@@ -318,6 +324,8 @@ func (LinuxCollector) Listeners(src Source, owners map[string]int) Obs[[]Listene
 		return unknownFrom[[]Listener]("/proc/net", firstErr)
 	case read == 0:
 		return Unknown[[]Listener](ReasonNotInstalled, "/proc/net tables missing")
+	case firstErr != nil:
+		return Partial(out, Classify(firstErr), "/proc/net not fully read: "+firstErr.Error())
 	case unowned > 0 && !src.Info().Elevated:
 		return Partial(out, ReasonPermission, fmt.Sprintf("owner of %d sockets not visible without root", unowned))
 		// As root an ownerless socket belongs to the kernel (NFS, WireGuard):
@@ -456,7 +464,9 @@ func Glob(src Source, pattern string) []string {
 	}
 	var out []string
 	for _, p := range paths {
-		if exists(src, p) {
+		// A dangling link matches too, as with filepath.Glob: its reader
+		// says why it could not be read, rather than nothing at all.
+		if _, lerr := src.Readlink(p); lerr == nil || exists(src, p) {
 			out = append(out, p)
 		}
 	}
@@ -583,6 +593,10 @@ func (c LinuxCollector) persistence(ctx context.Context, src Source, keys Obs[[]
 				d += " (cloud-init refusal)"
 			}
 			add(PersistenceItem{Kind: "authorized_key", Location: kf.Path, Detail: d})
+		}
+		if kf.OutsideHome {
+			add(PersistenceItem{Kind: "authorized_keys_symlink", Location: kf.Path,
+				Detail: "links to " + kf.SymlinkTarget + ", outside the home; sshd reads the keys there"})
 		}
 	}
 	if keys.Status == StatusPartial || !keys.Known() {

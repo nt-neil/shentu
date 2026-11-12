@@ -58,6 +58,7 @@ A missing or unreadable fact never passes a check. A check that needs a fact the
 | `command_failed`        | non-zero exit, or another failure                           |
 | `symlink_not_followed`  | a user-controlled path was a link and was not followed      |
 | `not_regular_file`      | a FIFO, device or socket where a file was expected          |
+| `untrusted_owner`       | readable, but owned or writable by someone other than root (Windows: SYSTEM, Administrators, TrustedInstaller); the content is not used |
 
 ## Fields
 

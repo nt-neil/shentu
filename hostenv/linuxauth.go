@@ -8,6 +8,7 @@ import (
 	"container/heap"
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"net"
 	"regexp"
@@ -23,9 +24,16 @@ var DefaultLogPaths = []string{"/var/log/auth.log", "/var/log/secure", "/var/log
 
 var journalArgv = []string{"/usr/bin/journalctl", "-u", "ssh", "-u", "sshd", "--since", SlotTime, "-o", "short-iso", "--no-pager"}
 
+// journalBinArgv is the same at /bin, where some systems keep it without
+// the /usr merge.
+var journalBinArgv = append([]string{"/bin/journalctl"}, journalArgv[1:]...)
+
 // Streamed (no stdout cap applies); a day of a busy journal can take
 // minutes to read, so it may run longer than MaxTimeout.
-func init() { registerBig(journalArgv, 0, 15*time.Minute) }
+func init() {
+	registerBig(journalArgv, 0, 15*time.Minute)
+	registerBig(journalBinArgv, 0, 15*time.Minute)
+}
 
 // SSHSource is the per-IP summary of SSH login attempts.
 type SSHSource struct {
@@ -62,9 +70,11 @@ var (
 // (patterns naming "auth" or "secure", with their ".1"; .gz is unpacked
 // on the fly) to fn, skipping files untouched since since; without any,
 // journald's ssh and sshd units. Memory does not grow with the logs.
-// source names what was read.
+// source names what was read. Lines reach fn unmasked, so masking cannot
+// change what a parser matches; fn masks whatever it outputs.
 func (LinuxCollector) ScanAuthLogs(ctx context.Context, src Source, logPaths []string, since time.Time, fn func(line string)) (source string, err error) {
 	var used []string
+	var cut error
 	for _, pattern := range logPaths {
 		if !strings.Contains(pattern, "auth") && !strings.Contains(pattern, "secure") {
 			continue
@@ -74,24 +84,38 @@ func (LinuxCollector) ScanAuthLogs(ctx context.Context, src Source, logPaths []s
 			if err != nil || st.ModTime.Before(since) {
 				continue
 			}
-			// A file that fails half way (a line over MaxLineBytes) still
-			// gave its earlier lines, as before; it is not counted as read.
-			if err := ScanLines(src, f, fn); err == nil {
+			// A file that fails half way (a line over MaxLineBytes) gave its
+			// earlier lines: it counts as read, cut short, so journald is not
+			// read on top of it and nothing is counted twice.
+			lines := 0
+			err = ScanLinesUnmasked(src, f, func(l string) { lines++; fn(l) })
+			switch {
+			case err == nil:
 				used = append(used, f)
+			case lines > 0:
+				used = append(used, f+" (cut short)")
+				if cut == nil {
+					cut = fmt.Errorf("%w: %s: %v", ErrTruncated, f, err)
+				}
 			}
 		}
 	}
 	if len(used) > 0 {
-		return strings.Join(used, ","), nil
+		return strings.Join(used, ","), cut
 	}
-	argv := append([]string(nil), journalArgv...)
-	argv[6] = since.UTC().Format("2006-01-02 15:04:05") + " UTC" // journalctl reads a bare time as local
-	res, err := RunLines(ctx, src, argv, fn)
+	var res CmdResult
+	for _, base := range [][]string{journalArgv, journalBinArgv} {
+		argv := append([]string(nil), base...)
+		argv[6] = since.UTC().Format("2006-01-02 15:04:05") + " UTC" // journalctl reads a bare time as local
+		if res, err = RunLinesUnmasked(ctx, src, argv, fn); !errors.Is(err, fs.ErrNotExist) {
+			break // found (a missing binary is the only reason to try the other path)
+		}
+	}
 	if errors.Is(err, fs.ErrNotExist) {
 		// No journald (Alpine, busybox syslogd): sshd writes to the system log.
 		for _, f := range []string{"/var/log/messages.0", "/var/log/messages"} {
 			if st, serr := Stat(src, f); serr == nil && !st.ModTime.Before(since) {
-				if ScanLines(src, f, fn) == nil {
+				if ScanLinesUnmasked(src, f, fn) == nil {
 					used = append(used, f)
 				}
 			}
@@ -226,6 +250,7 @@ func (c *SSHLogins) Add(l string) {
 	if strings.Contains(user, " from ") || strings.Contains(user, ": ") {
 		user = "[crafted user name]" // still an attempt from ip, but do not echo the bait
 	}
+	user = MaskSecrets(user) // masked whole, then cut: a cut secret would no longer match its rule
 	if len(user) > 64 {
 		user = CutString(user, 64)
 	}
@@ -292,7 +317,7 @@ func (c *SSHLogins) Result() []SSHSource {
 		names := func(kind string) []string {
 			var l []string
 			for u := range s.users[kind] {
-				l = append(l, u)
+				l = append(l, u) // masked in Add
 			}
 			sort.Strings(l)
 			return l
@@ -328,6 +353,9 @@ func (c LinuxCollector) AuthEvents(ctx context.Context, src Source, at time.Time
 		if n := s.Failed + s.InvalidUser; n > 0 {
 			ev.FailedBySrc[s.IP] = n
 		}
+	}
+	if errors.Is(err, ErrTruncated) && source != "" && !strings.HasPrefix(source, "none") {
+		return Partial(ev, ReasonTruncated, "from "+source+": "+err.Error())
 	}
 	if err != nil {
 		r := Classify(err)

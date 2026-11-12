@@ -307,6 +307,7 @@ func mustJSON(t *testing.T, v any) string {
 func TestPersistenceFailClosed(t *testing.T) {
 	h := debianHost(true)
 	h.links["/home/alice/.ssh/authorized_keys2"] = "/etc/shadow" // planted link
+	h.files["/etc/shadow"] = "root:$6$x:19000:0:99999:7:::\n"
 	var cron strings.Builder
 	for i := 0; i < MaxPersistenceItems+5; i++ {
 		cron.WriteString("* * * * * root /bin/true\n")
@@ -316,12 +317,16 @@ func TestPersistenceFailClosed(t *testing.T) {
 	if f.Persistence.Status != StatusPartial || f.Persistence.Reason != ReasonTruncated {
 		t.Errorf("cap: %s %s %q", f.Persistence.Status, f.Persistence.Reason, f.Persistence.Detail)
 	}
-	if !strings.Contains(f.Persistence.Detail, "authorized_keys2 (symlink_not_followed)") {
-		t.Errorf("symlink not reported: %q", f.Persistence.Detail)
-	}
+	// N4: sshd follows the link, so it is read; leaving the home is a warning.
 	n := map[string]int{}
+	warned := false
 	for _, it := range f.Persistence.Value {
 		n[it.Kind]++
+		warned = warned || it.Kind == "authorized_keys_symlink" && it.Location == "/home/alice/.ssh/authorized_keys2" &&
+			strings.Contains(it.Detail, "/etc/shadow")
+	}
+	if !warned {
+		t.Errorf("symlink out of the home not reported: %+v", f.Persistence.Value)
 	}
 	if n["cron"] != MaxPersistenceItems || n["ld_preload"] != 1 || n["authorized_key"] != 1 {
 		t.Errorf("per-kind cap starved other kinds: %v", n)
