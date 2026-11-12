@@ -351,6 +351,20 @@ func saveWalkPos(name string, p *walkPos) {
 
 // pathCmp orders paths the way filepath.WalkDir visits them: name by name,
 // a folder before what it holds.
+// walkHolds says folder dir holds path ("/" holds every absolute path).
+func walkHolds(dir, path string) bool {
+	return strings.HasPrefix(path, strings.TrimSuffix(dir, "/")+"/")
+}
+
+// cleanRoots is roots with filepath.Clean applied, in a new slice.
+func cleanRoots(roots []string) []string {
+	out := make([]string, len(roots))
+	for i, r := range roots {
+		out[i] = filepath.Clean(r)
+	}
+	return out
+}
+
 func pathCmp(a, b string) int {
 	as, bs := strings.Split(a, "/"), strings.Split(b, "/")
 	for i := 0; i < len(as) && i < len(bs); i++ {

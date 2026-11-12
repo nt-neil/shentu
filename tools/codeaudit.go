@@ -605,6 +605,7 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 }
 
 func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
+	roots = cleanRoots(roots) // "/var/www/html/" would sort before its own files and be skipped
 	res := CodeAudit{WebRoots: webRoots, Findings: []CodeFinding{}}
 	var notes []CodeFinding // summaries: listed first, never left out
 	// At most auditMaxPerFile findings of one rule or check in one file and
@@ -729,13 +730,13 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 					walkCut = append(walkCut, UnfinishedFile{root, "walk"})
 					return filepath.SkipAll
 				}
-				if resumed {
+				if resumed && p != root { // the root holds every place: always walked into
 					before := at(ri, p)
 					if second && !before {
 						return filepath.SkipAll // round to where it started
 					}
 					if !second && before {
-						if d != nil && d.IsDir() && !(ri == pos.Root && strings.HasPrefix(pos.Path, p+"/")) {
+						if d != nil && d.IsDir() && !(ri == pos.Root && walkHolds(p, pos.Path)) {
 							return filepath.SkipDir
 						}
 						return nil
