@@ -4,7 +4,7 @@
     "goos": "windows",
     "goarch": "amd64",
     "elevated": true,
-    "recorded_at": "2026-11-12T14:04:48.9946768Z"
+    "recorded_at": "2026-11-12T14:12:25.1929023Z"
   },
   "entries": [
     {
@@ -26,6 +26,11 @@
       "op": "file",
       "path": "C:\\ProgramData\\ssh\\sshd_config",
       "blob": "blobs/fb46b8f386771448"
+    },
+    {
+      "op": "file",
+      "path": "C:\\Windows\\System32\\inetsrv\\config\\applicationHost.config",
+      "blob": "blobs/8fe3560670196a05"
     },
     {
       "op": "reg",
@@ -55,7 +60,7 @@
     {
       "op": "reg",
       "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion",
-      "blob": "blobs/aa0958665767f989"
+      "blob": "blobs/efe09e5ef2133076"
     },
     {
       "op": "reg",
@@ -210,7 +215,7 @@
     {
       "op": "reg",
       "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList\\S-1-5-21-1000000000-1000000000-1000000000-500",
-      "blob": "blobs/44c51e312ab143d1"
+      "blob": "blobs/d2f147a5b2b648c1"
     },
     {
       "op": "reg",
@@ -2670,7 +2675,7 @@
     {
       "op": "reg",
       "path": "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Terminal Server",
-      "blob": "blobs/fc1b3c5f4b7ff273"
+      "blob": "blobs/34f55d0479229597"
     },
     {
       "op": "reg",
@@ -2739,7 +2744,7 @@
     {
       "op": "winevt",
       "path": "System|5000|*[System[(EventID=104 or EventID=7045) and TimeCreated[timediff(@SystemTime) \u003c= 86400000]]]",
-      "blob": "blobs/08e9eb120ff12442"
+      "blob": "blobs/33af3e0966a12706"
     },
     {
       "op": "winfw",
@@ -2752,15 +2757,15 @@
     },
     {
       "op": "winproc",
-      "blob": "blobs/046c3408b393a4d0"
+      "blob": "blobs/e6714075e98a6048"
     },
     {
       "op": "winsock",
-      "blob": "blobs/83d3ec2736c1b77c"
+      "blob": "blobs/7cf3c11e42a0d2f5"
     },
     {
       "op": "winsvc",
-      "blob": "blobs/21ec064910658108"
+      "blob": "blobs/a1479051eb7626f5"
     },
     {
       "op": "wintask",

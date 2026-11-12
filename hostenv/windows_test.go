@@ -507,7 +507,7 @@ const iisConfig = "\xef\xbb\xbf" + `<?xml version="1.0" encoding="UTF-8"?>
 <configuration>
   <system.applicationHost>
     <applicationPools>
-      <add name="Shop"><processModel identityType="SpecificUser" userName="CORP\shopsvc" password="[enc:IISCngProvider:QUJDREVGRw==:enc]" /></add>
+      <add name="Shop" sessionKey="AQIAAA0mAAAAAAAA1234SESSIONKEYBLOB"><processModel identityType="SpecificUser" userName="CORP\shopsvc" password="[enc:IISCngProvider:QUJDREVGRw==:enc]" /></add>
     </applicationPools>
     <sites>
       <site name="Default Web Site" id="1">
@@ -717,7 +717,7 @@ func TestWindowsRecordReplay(t *testing.T) {
 	}
 	s := fixtureText(t, masked)
 	for _, leak := range []string{"backdoor", "111-222-333", "hunter22", "AutoLogon#2026", "kiosk", "192.0.2.77", "s3cr3t-value-xyz",
-		"Jane Q Operator", "198.51.100.23", "BACKDOOR", `\\host\`, "OPERAT~1", "operator.jane", "shopsvc", "CORP", "QUJDREVGRw"} {
+		"Jane Q Operator", "198.51.100.23", "BACKDOOR", `\\host\`, "OPERAT~1", "operator.jane", "shopsvc", "CORP", "QUJDREVGRw", "SESSIONKEYBLOB"} {
 		if strings.Contains(s, leak) {
 			t.Errorf("fixture leaks %q", leak)
 		}

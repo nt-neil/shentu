@@ -4,7 +4,7 @@
     "goos": "windows",
     "goarch": "amd64",
     "elevated": true,
-    "recorded_at": "2026-11-12T14:04:40.6557239Z"
+    "recorded_at": "2026-11-12T14:12:12.3677397Z"
   },
   "entries": [
     {
@@ -24,13 +24,18 @@
     },
     {
       "op": "dir",
-      "path": "C:\\Users\\user3\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup",
+      "path": "C:\\Users\\user4\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup",
       "err": "not_exist"
     },
     {
       "op": "file",
       "path": "C:\\ProgramData\\ssh\\sshd_config",
       "err": "not_exist"
+    },
+    {
+      "op": "file",
+      "path": "C:\\Windows\\System32\\inetsrv\\config\\applicationHost.config",
+      "blob": "blobs/b5da3c1383a2a6e3"
     },
     {
       "op": "reg",
@@ -60,7 +65,7 @@
     {
       "op": "reg",
       "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion",
-      "blob": "blobs/29a1cfcc6a708a14"
+      "blob": "blobs/07cc649ea31698e3"
     },
     {
       "op": "reg",
@@ -200,12 +205,12 @@
     {
       "op": "reg",
       "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList\\S-1-5-21-1000000000-1000000000-1000000000-1000",
-      "blob": "blobs/996d44666891140d"
+      "blob": "blobs/ff5f5b9956240a3a"
     },
     {
       "op": "reg",
       "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList\\S-1-5-21-1000000000-1000000000-1000000000-500",
-      "blob": "blobs/07a5a556cbeb5e6b"
+      "blob": "blobs/13d5b96fc24edf48"
     },
     {
       "op": "reg",
@@ -3905,7 +3910,7 @@
     {
       "op": "reg",
       "path": "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Terminal Server",
-      "blob": "blobs/64aeb3a90baf9e28"
+      "blob": "blobs/eed419a3c1b0e14a"
     },
     {
       "op": "reg",
@@ -3974,7 +3979,7 @@
     {
       "op": "winevt",
       "path": "System|5000|*[System[(EventID=104 or EventID=7045) and TimeCreated[timediff(@SystemTime) \u003c= 86400000]]]",
-      "blob": "blobs/fe789c879caced42"
+      "blob": "blobs/5cb0cdbb47142ac9"
     },
     {
       "op": "winfw",
@@ -3987,15 +3992,15 @@
     },
     {
       "op": "winproc",
-      "blob": "blobs/9dd3a5da114b398a"
+      "blob": "blobs/642f06c8e754e8fb"
     },
     {
       "op": "winsock",
-      "blob": "blobs/921a03ac5709628d"
+      "blob": "blobs/25a80081afcabc4b"
     },
     {
       "op": "winsvc",
-      "blob": "blobs/20f9a0e600153ae1"
+      "blob": "blobs/12b6188a581d13a9"
     },
     {
       "op": "wintask",
@@ -4003,7 +4008,7 @@
     },
     {
       "op": "winuser",
-      "blob": "blobs/67de1b87a5c1bcd6"
+      "blob": "blobs/26856add48b6b5ff"
     },
     {
       "op": "wmi",

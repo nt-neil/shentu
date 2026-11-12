@@ -208,6 +208,9 @@ func shortNames(n string) []string {
 // iisUserRe finds the userName attributes of an applicationHost.config.
 var iisUserRe = regexp.MustCompile(`\buserName="([^"]+)"`)
 
+// iisSessionKeyRe finds the AesProvider's encrypted session key.
+var iisSessionKeyRe = regexp.MustCompile(`(?i)\bsessionKey="[^"]*"`)
+
 // machineSIDRe matches the machine or domain part of an account SID. It
 // identifies the host, so fixtures keep only the RID.
 var machineSIDRe = regexp.MustCompile(`\bS-1-5-21-\d+-\d+-\d+\b`)
@@ -295,6 +298,8 @@ func winMaskPrep(entries []*entry) (out []string) {
 				}
 			}
 		case e.Op == "file" && strings.HasSuffix(strings.ToLower(e.Path), `\applicationhost.config`):
+			// The AesProvider's sessionKey is an encrypted key: never recorded.
+			e.data = iisSessionKeyRe.ReplaceAll(e.data, []byte(`sessionKey="[REDACTED]"`))
 			// Accounts IIS logs on as (app pool identities, UNC content).
 			for _, m := range iisUserRe.FindAllStringSubmatch(string(e.data), -1) {
 				u := m[1]

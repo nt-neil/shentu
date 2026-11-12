@@ -1,6 +1,6 @@
 {
   "schema": "hostfacts/1",
-  "collected_at": "2026-11-12T14:04:40.6557239Z",
+  "collected_at": "2026-11-12T14:12:12.3677397Z",
   "collector": {
     "name": "windows",
     "version": "0.1.0"
@@ -3383,7 +3383,7 @@
         "name": "AppReadiness",
         "exe": "C:\\Windows\\System32\\svchost.exe",
         "start_mode": "manual",
-        "state": "running",
+        "state": "stopped",
         "run_as": "LocalSystem"
       },
       {
@@ -3397,7 +3397,7 @@
         "name": "AppXSvc",
         "exe": "C:\\Windows\\system32\\svchost.exe",
         "start_mode": "manual",
-        "state": "running",
+        "state": "stopped",
         "run_as": "LocalSystem"
       },
       {
@@ -3471,7 +3471,7 @@
         "run_as": "LocalSystem"
       },
       {
-        "name": "CaptureService_aa180",
+        "name": "CaptureService_96218",
         "exe": "C:\\Windows\\system32\\svchost.exe",
         "start_mode": "manual",
         "state": "stopped"
@@ -3487,11 +3487,11 @@
         "name": "ClipSVC",
         "exe": "C:\\Windows\\System32\\svchost.exe",
         "start_mode": "manual",
-        "state": "running",
+        "state": "stopped",
         "run_as": "LocalSystem"
       },
       {
-        "name": "ConsentUxUserSvc_aa180",
+        "name": "ConsentUxUserSvc_96218",
         "exe": "C:\\Windows\\system32\\svchost.exe",
         "start_mode": "manual",
         "state": "stopped"
@@ -3504,7 +3504,7 @@
         "run_as": "NT AUTHORITY\\LocalService"
       },
       {
-        "name": "CredentialEnrollmentManagerUserSvc_aa180",
+        "name": "CredentialEnrollmentManagerUserSvc_96218",
         "exe": "C:\\Windows\\system32\\CredentialEnrollmentManager.exe",
         "start_mode": "manual",
         "state": "stopped"
@@ -3545,7 +3545,7 @@
         "run_as": "LocalSystem"
       },
       {
-        "name": "DeviceAssociationBrokerSvc_aa180",
+        "name": "DeviceAssociationBrokerSvc_96218",
         "exe": "C:\\Windows\\system32\\svchost.exe",
         "start_mode": "manual",
         "state": "stopped"
@@ -3565,13 +3565,13 @@
         "run_as": "LocalSystem"
       },
       {
-        "name": "DevicePickerUserSvc_aa180",
+        "name": "DevicePickerUserSvc_96218",
         "exe": "C:\\Windows\\system32\\svchost.exe",
         "start_mode": "disabled",
         "state": "stopped"
       },
       {
-        "name": "DevicesFlowUserSvc_aa180",
+        "name": "DevicesFlowUserSvc_96218",
         "exe": "C:\\Windows\\system32\\svchost.exe",
         "start_mode": "manual",
         "state": "stopped"
@@ -3829,7 +3829,7 @@
         "run_as": "LocalSystem"
       },
       {
-        "name": "LxssManagerUser_aa180",
+        "name": "LxssManagerUser_96218",
         "exe": "C:\\Windows\\system32\\svchost.exe",
         "start_mode": "manual",
         "state": "stopped"
@@ -3929,7 +3929,7 @@
         "name": "NetSetupSvc",
         "exe": "C:\\Windows\\System32\\svchost.exe",
         "start_mode": "manual",
-        "state": "running",
+        "state": "stopped",
         "run_as": "LocalSystem"
       },
       {
@@ -4024,7 +4024,7 @@
         "run_as": "LocalSystem"
       },
       {
-        "name": "PrintWorkflowUserSvc_aa180",
+        "name": "PrintWorkflowUserSvc_96218",
         "exe": "C:\\Windows\\system32\\svchost.exe",
         "start_mode": "manual",
         "state": "stopped"
@@ -4089,7 +4089,7 @@
         "name": "RemoteRegistry",
         "exe": "C:\\Windows\\system32\\svchost.exe",
         "start_mode": "auto",
-        "state": "running",
+        "state": "stopped",
         "run_as": "NT AUTHORITY\\LocalService"
       },
       {
@@ -4359,7 +4359,7 @@
         "run_as": "LocalSystem"
       },
       {
-        "name": "UdkUserSvc_aa180",
+        "name": "UdkUserSvc_96218",
         "exe": "C:\\Windows\\system32\\svchost.exe",
         "start_mode": "manual",
         "state": "stopped"
@@ -4522,7 +4522,7 @@
         "name": "WdiSystemHost",
         "exe": "C:\\Windows\\System32\\svchost.exe",
         "start_mode": "manual",
-        "state": "running",
+        "state": "stopped",
         "run_as": "LocalSystem"
       },
       {
@@ -4596,7 +4596,7 @@
         "run_as": "LocalSystem"
       },
       {
-        "name": "WpnUserService_aa180",
+        "name": "WpnUserService_96218",
         "exe": "C:\\Windows\\system32\\svchost.exe",
         "start_mode": "auto",
         "state": "running"
@@ -4623,7 +4623,7 @@
         "run_as": "LocalSystem"
       },
       {
-        "name": "cbdhsvc_aa180",
+        "name": "cbdhsvc_96218",
         "exe": "C:\\Windows\\system32\\svchost.exe",
         "start_mode": "auto",
         "state": "running"
@@ -4660,7 +4660,7 @@
         "name": "docker",
         "exe": "C:\\Windows\\system32\\dockerd.exe",
         "start_mode": "auto",
-        "state": "running",
+        "state": "stopped",
         "run_as": "LocalSystem"
       },
       {
@@ -4828,7 +4828,7 @@
         "name": "smphost",
         "exe": "C:\\Windows\\System32\\svchost.exe",
         "start_mode": "manual",
-        "state": "running",
+        "state": "stopped",
         "run_as": "NT AUTHORITY\\NetworkService"
       },
       {
@@ -4982,7 +4982,7 @@
         "name": "wlidsvc",
         "exe": "C:\\Windows\\system32\\svchost.exe",
         "start_mode": "manual",
-        "state": "running",
+        "state": "stopped",
         "run_as": "LocalSystem"
       },
       {
@@ -5041,19 +5041,7 @@
         "uid": "S-1-5-18"
       },
       {
-        "pid": 432,
-        "ppid": 728,
-        "name": "fontdrvhost.exe",
-        "exe": "C:\\Windows\\System32\\fontdrvhost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "\"fontdrvhost.exe\"",
-        "user": "Font Driver Host\\UMFD-0",
-        "uid": "S-1-5-96-0-0"
-      },
-      {
-        "pid": 496,
+        "pid": 492,
         "ppid": 4,
         "name": "smss.exe",
         "exe": "C:\\Windows\\System32\\smss.exe",
@@ -5065,8 +5053,8 @@
         "uid": "S-1-5-18"
       },
       {
-        "pid": 624,
-        "ppid": 612,
+        "pid": 632,
+        "ppid": 620,
         "name": "csrss.exe",
         "exe": "C:\\Windows\\System32\\csrss.exe",
         "exe_known": true,
@@ -5077,8 +5065,8 @@
         "uid": "S-1-5-18"
       },
       {
-        "pid": 688,
-        "ppid": 840,
+        "pid": 636,
+        "ppid": 848,
         "name": "svchost.exe",
         "exe": "C:\\Windows\\System32\\svchost.exe",
         "exe_known": true,
@@ -5090,7 +5078,7 @@
       },
       {
         "pid": 728,
-        "ppid": 612,
+        "ppid": 620,
         "name": "wininit.exe",
         "exe": "C:\\Windows\\System32\\wininit.exe",
         "exe_known": true,
@@ -5101,20 +5089,20 @@
         "uid": "S-1-5-18"
       },
       {
-        "pid": 744,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
+        "pid": 756,
+        "ppid": 8084,
+        "name": "hostfacts.exe",
+        "exe": "D:\\a\\shentu\\shentu\\hostfacts.exe",
         "exe_known": true,
         "exe_exists": true,
         "in_temp": false,
-        "cmdline": "C:\\Windows\\system32\\svchost.exe -k netsvcs -p -s wlidsvc",
-        "user": "NT AUTHORITY\\SYSTEM",
-        "uid": "S-1-5-18"
+        "cmdline": "D:\\a\\shentu\\shentu\\hostfacts.exe -record fixture",
+        "user": "host1\\user1",
+        "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
       },
       {
-        "pid": 836,
-        "ppid": 840,
+        "pid": 840,
+        "ppid": 848,
         "name": "svchost.exe",
         "exe": "C:\\Windows\\System32\\svchost.exe",
         "exe_known": true,
@@ -5125,7 +5113,7 @@
         "uid": "S-1-5-18"
       },
       {
-        "pid": 840,
+        "pid": 848,
         "ppid": 728,
         "name": "services.exe",
         "exe": "C:\\Windows\\System32\\services.exe",
@@ -5137,7 +5125,7 @@
         "uid": "S-1-5-18"
       },
       {
-        "pid": 860,
+        "pid": 868,
         "ppid": 728,
         "name": "LsaIso.exe",
         "exe": "C:\\Windows\\System32\\LsaIso.exe",
@@ -5148,7 +5136,7 @@
         "uid": "S-1-5-18"
       },
       {
-        "pid": 868,
+        "pid": 876,
         "ppid": 728,
         "name": "lsass.exe",
         "exe": "C:\\Windows\\System32\\lsass.exe",
@@ -5160,32 +5148,8 @@
         "uid": "S-1-5-18"
       },
       {
-        "pid": 892,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\system32\\svchost.exe -k LocalService -p -s CDPSvc",
-        "user": "NT AUTHORITY\\LOCAL SERVICE",
-        "uid": "S-1-5-19"
-      },
-      {
-        "pid": 960,
-        "ppid": 1460,
-        "name": "ServiceFabricLocalClusterManager.exe",
-        "exe": "C:\\Program Files\\Microsoft SDKs\\Service Fabric\\Tools\\ServiceFabricLocalClusterManager\\ServiceFabricLocalClusterManager.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "\"C:\\Program Files\\Microsoft SDKs\\Service Fabric\\Tools\\ServiceFabricLocalClusterManager\\ServiceFabricLocalClusterManager.exe\" ",
-        "user": "host1\\user1",
-        "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
-      },
-      {
-        "pid": 996,
-        "ppid": 840,
+        "pid": 992,
+        "ppid": 848,
         "name": "svchost.exe",
         "exe": "C:\\Windows\\System32\\svchost.exe",
         "exe_known": true,
@@ -5196,20 +5160,20 @@
         "uid": "S-1-5-18"
       },
       {
-        "pid": 1104,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
+        "pid": 1020,
+        "ppid": 728,
+        "name": "fontdrvhost.exe",
+        "exe": "C:\\Windows\\System32\\fontdrvhost.exe",
         "exe_known": true,
         "exe_exists": true,
         "in_temp": false,
-        "cmdline": "C:\\Windows\\System32\\svchost.exe -k netsvcs -p -s NetSetupSvc",
-        "user": "NT AUTHORITY\\SYSTEM",
-        "uid": "S-1-5-18"
+        "cmdline": "\"fontdrvhost.exe\"",
+        "user": "Font Driver Host\\UMFD-0",
+        "uid": "S-1-5-96-0-0"
       },
       {
-        "pid": 1120,
-        "ppid": 840,
+        "pid": 1136,
+        "ppid": 848,
         "name": "svchost.exe",
         "exe": "C:\\Windows\\System32\\svchost.exe",
         "exe_known": true,
@@ -5221,19 +5185,7 @@
       },
       {
         "pid": 1180,
-        "ppid": 1928,
-        "name": "taskhostw.exe",
-        "exe": "C:\\Windows\\System32\\taskhostw.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "taskhostw.exe SyncFromCloud",
-        "user": "host1\\user1",
-        "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
-      },
-      {
-        "pid": 1184,
-        "ppid": 840,
+        "ppid": 848,
         "name": "svchost.exe",
         "exe": "C:\\Windows\\System32\\svchost.exe",
         "exe_known": true,
@@ -5244,8 +5196,8 @@
         "uid": "S-1-5-18"
       },
       {
-        "pid": 1280,
-        "ppid": 840,
+        "pid": 1260,
+        "ppid": 848,
         "name": "svchost.exe",
         "exe": "C:\\Windows\\System32\\svchost.exe",
         "exe_known": true,
@@ -5256,20 +5208,8 @@
         "uid": "S-1-5-18"
       },
       {
-        "pid": 1320,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\System32\\svchost.exe -k LocalServiceNoNetwork -p -s DPS",
-        "user": "NT AUTHORITY\\LOCAL SERVICE",
-        "uid": "S-1-5-19"
-      },
-      {
-        "pid": 1344,
-        "ppid": 840,
+        "pid": 1280,
+        "ppid": 848,
         "name": "svchost.exe",
         "exe": "C:\\Windows\\System32\\svchost.exe",
         "exe_known": true,
@@ -5280,68 +5220,8 @@
         "uid": "S-1-5-19"
       },
       {
-        "pid": 1360,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\system32\\svchost.exe -k ICService -p -s vmicheartbeat",
-        "user": "NT AUTHORITY\\SYSTEM",
-        "uid": "S-1-5-18"
-      },
-      {
-        "pid": 1368,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\system32\\svchost.exe -k LocalSystemNetworkRestricted -p -s vmickvpexchange",
-        "user": "NT AUTHORITY\\SYSTEM",
-        "uid": "S-1-5-18"
-      },
-      {
-        "pid": 1376,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\system32\\svchost.exe -k LocalSystemNetworkRestricted -p -s vmicshutdown",
-        "user": "NT AUTHORITY\\SYSTEM",
-        "uid": "S-1-5-18"
-      },
-      {
-        "pid": 1424,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\system32\\svchost.exe -k LocalServiceNetworkRestricted -p -s vmictimesync",
-        "user": "NT AUTHORITY\\LOCAL SERVICE",
-        "uid": "S-1-5-19"
-      },
-      {
-        "pid": 1460,
-        "ppid": 1564,
-        "name": "explorer.exe",
-        "exe": "C:\\Windows\\explorer.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\Explorer.EXE",
-        "user": "host1\\user1",
-        "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
-      },
-      {
-        "pid": 1492,
-        "ppid": 840,
+        "pid": 1348,
+        "ppid": 848,
         "name": "svchost.exe",
         "exe": "C:\\Windows\\System32\\svchost.exe",
         "exe_known": true,
@@ -5352,440 +5232,56 @@
         "uid": "S-1-5-19"
       },
       {
-        "pid": 1664,
-        "ppid": 840,
+        "pid": 1360,
+        "ppid": 848,
         "name": "svchost.exe",
         "exe": "C:\\Windows\\System32\\svchost.exe",
         "exe_known": true,
         "exe_exists": true,
         "in_temp": false,
-        "cmdline": "C:\\Windows\\system32\\svchost.exe -k netsvcs -p -s Winmgmt",
+        "cmdline": "C:\\Windows\\system32\\svchost.exe -k ICService -p -s vmicheartbeat",
         "user": "NT AUTHORITY\\SYSTEM",
         "uid": "S-1-5-18"
       },
       {
-        "pid": 1700,
-        "ppid": 840,
+        "pid": 1380,
+        "ppid": 848,
         "name": "svchost.exe",
         "exe": "C:\\Windows\\System32\\svchost.exe",
         "exe_known": true,
         "exe_exists": true,
         "in_temp": false,
-        "cmdline": "C:\\Windows\\system32\\svchost.exe -k LocalService -p -s nsi",
+        "cmdline": "C:\\Windows\\system32\\svchost.exe -k LocalSystemNetworkRestricted -p -s vmickvpexchange",
+        "user": "NT AUTHORITY\\SYSTEM",
+        "uid": "S-1-5-18"
+      },
+      {
+        "pid": 1392,
+        "ppid": 848,
+        "name": "svchost.exe",
+        "exe": "C:\\Windows\\System32\\svchost.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\Windows\\system32\\svchost.exe -k LocalSystemNetworkRestricted -p -s vmicshutdown",
+        "user": "NT AUTHORITY\\SYSTEM",
+        "uid": "S-1-5-18"
+      },
+      {
+        "pid": 1436,
+        "ppid": 848,
+        "name": "svchost.exe",
+        "exe": "C:\\Windows\\System32\\svchost.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\Windows\\system32\\svchost.exe -k LocalServiceNetworkRestricted -p -s vmictimesync",
         "user": "NT AUTHORITY\\LOCAL SERVICE",
         "uid": "S-1-5-19"
       },
       {
-        "pid": 1720,
-        "ppid": 1564,
-        "name": "SystemPropertiesPerformance.exe",
-        "exe": "C:\\Windows\\System32\\SystemPropertiesPerformance.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "\"C:\\Windows\\System32\\SystemPropertiesPerformance.exe\" /pagefile",
-        "user": "host1\\user1",
-        "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
-      },
-      {
-        "pid": 1728,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\system32\\svchost.exe -k LocalServiceNetworkRestricted -p -s Dhcp",
-        "user": "NT AUTHORITY\\LOCAL SERVICE",
-        "uid": "S-1-5-19"
-      },
-      {
-        "pid": 1748,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\system32\\svchost.exe -k netsvcs -p -s gpsvc",
-        "user": "NT AUTHORITY\\SYSTEM",
-        "uid": "S-1-5-18"
-      },
-      {
-        "pid": 1820,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\System32\\svchost.exe -k NetworkService -p -s NlaSvc",
-        "user": "NT AUTHORITY\\NETWORK SERVICE",
-        "uid": "S-1-5-20"
-      },
-      {
-        "pid": 1852,
-        "ppid": 840,
-        "name": "vmms.exe",
-        "exe": "C:\\Windows\\System32\\vmms.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\system32\\vmms.exe",
-        "user": "NT AUTHORITY\\SYSTEM",
-        "uid": "S-1-5-18"
-      },
-      {
-        "pid": 1868,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\system32\\svchost.exe -k NetworkService -p -s Dnscache",
-        "user": "NT AUTHORITY\\NETWORK SERVICE",
-        "uid": "S-1-5-20"
-      },
-      {
-        "pid": 1928,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\system32\\svchost.exe -k netsvcs -p -s Schedule",
-        "user": "NT AUTHORITY\\SYSTEM",
-        "uid": "S-1-5-18"
-      },
-      {
-        "pid": 2020,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\System32\\svchost.exe -k LocalService -p -s netprofm",
-        "user": "NT AUTHORITY\\LOCAL SERVICE",
-        "uid": "S-1-5-19"
-      },
-      {
-        "pid": 2104,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\System32\\svchost.exe -k LocalSystemNetworkRestricted -p -s UmRdpService",
-        "user": "NT AUTHORITY\\SYSTEM",
-        "uid": "S-1-5-18"
-      },
-      {
-        "pid": 2160,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\system32\\svchost.exe -k LocalServiceNetworkRestricted -p -s TimeBrokerSvc",
-        "user": "NT AUTHORITY\\LOCAL SERVICE",
-        "uid": "S-1-5-19"
-      },
-      {
-        "pid": 2168,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\system32\\svchost.exe -k NetSvcs -p -s hns",
-        "user": "NT AUTHORITY\\SYSTEM",
-        "uid": "S-1-5-18"
-      },
-      {
-        "pid": 2284,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\system32\\svchost.exe -k netsvcs -s CertPropSvc",
-        "user": "NT AUTHORITY\\SYSTEM",
-        "uid": "S-1-5-18"
-      },
-      {
-        "pid": 2344,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\System32\\svchost.exe -k NetworkService -p -s LanmanWorkstation",
-        "user": "NT AUTHORITY\\NETWORK SERVICE",
-        "uid": "S-1-5-20"
-      },
-      {
-        "pid": 2384,
-        "ppid": 1928,
-        "name": "taskhostw.exe",
-        "exe": "C:\\Windows\\System32\\taskhostw.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "taskhostw.exe GAEvents|$(Arg0)",
-        "user": "NT AUTHORITY\\SYSTEM",
-        "uid": "S-1-5-18"
-      },
-      {
-        "pid": 2416,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\system32\\svchost.exe -k LocalServiceNetworkRestricted -p -s WinHttpAutoProxySvc",
-        "user": "NT AUTHORITY\\LOCAL SERVICE",
-        "uid": "S-1-5-19"
-      },
-      {
-        "pid": 2424,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\system32\\svchost.exe -k wsappx -p -s AppXSvc",
-        "user": "NT AUTHORITY\\SYSTEM",
-        "uid": "S-1-5-18"
-      },
-      {
-        "pid": 2456,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\System32\\svchost.exe -k SessionEnvSvc -p -s SessionEnv",
-        "user": "NT AUTHORITY\\SYSTEM",
-        "uid": "S-1-5-18"
-      },
-      {
-        "pid": 2476,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\System32\\svchost.exe -k netsvcs -p -s Themes",
-        "user": "NT AUTHORITY\\SYSTEM",
-        "uid": "S-1-5-18"
-      },
-      {
-        "pid": 2480,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\system32\\svchost.exe -k netsvcs -p -s ProfSvc",
-        "user": "NT AUTHORITY\\SYSTEM",
-        "uid": "S-1-5-18"
-      },
-      {
-        "pid": 2496,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\system32\\svchost.exe -k LocalService -p -s EventSystem",
-        "user": "NT AUTHORITY\\LOCAL SERVICE",
-        "uid": "S-1-5-19"
-      },
-      {
-        "pid": 2536,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\system32\\svchost.exe -k netsvcs -p -s UsoSvc",
-        "user": "NT AUTHORITY\\SYSTEM",
-        "uid": "S-1-5-18"
-      },
-      {
-        "pid": 2616,
-        "ppid": 3812,
-        "name": "Runner.Listener.exe",
-        "exe": "C:\\actions-runner\\cached\\2.338.2\\bin\\Runner.Listener.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\actions-runner\\cached\\2.338.2\\bin\\Runner.Listener.exe run",
-        "user": "host1\\user1",
-        "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
-      },
-      {
-        "pid": 2668,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\system32\\svchost.exe -k netsvcs -p -s SENS",
-        "user": "NT AUTHORITY\\SYSTEM",
-        "uid": "S-1-5-18"
-      },
-      {
-        "pid": 2736,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\system32\\svchost.exe -k netsvcs -p -s UserManager",
-        "user": "NT AUTHORITY\\SYSTEM",
-        "uid": "S-1-5-18"
-      },
-      {
-        "pid": 2744,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\System32\\svchost.exe -k AppReadiness -p -s AppReadiness",
-        "user": "NT AUTHORITY\\SYSTEM",
-        "uid": "S-1-5-18"
-      },
-      {
-        "pid": 2768,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\system32\\svchost.exe -k NetSvcs -s nvagent",
-        "user": "NT AUTHORITY\\SYSTEM",
-        "uid": "S-1-5-18"
-      },
-      {
-        "pid": 2800,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\System32\\svchost.exe -k wsappx -p -s ClipSVC",
-        "user": "NT AUTHORITY\\SYSTEM",
-        "uid": "S-1-5-18"
-      },
-      {
-        "pid": 2828,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\system32\\svchost.exe -k LocalServiceNetworkRestricted -p",
-        "user": "NT AUTHORITY\\LOCAL SERVICE",
-        "uid": "S-1-5-19"
-      },
-      {
-        "pid": 2860,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\System32\\svchost.exe -k netsvcs -p -s ShellHWDetection",
-        "user": "NT AUTHORITY\\SYSTEM",
-        "uid": "S-1-5-18"
-      },
-      {
-        "pid": 2896,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\system32\\svchost.exe -k LocalService -p -s FontCache",
-        "user": "NT AUTHORITY\\LOCAL SERVICE",
-        "uid": "S-1-5-19"
-      },
-      {
-        "pid": 2920,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\system32\\svchost.exe -k LocalServiceNoNetworkFirewall -p",
-        "user": "NT AUTHORITY\\LOCAL SERVICE",
-        "uid": "S-1-5-19"
-      },
-      {
-        "pid": 3116,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\system32\\svchost.exe -k LocalServiceNoNetwork -p",
-        "user": "NT AUTHORITY\\LOCAL SERVICE",
-        "uid": "S-1-5-19"
-      },
-      {
-        "pid": 3168,
-        "ppid": 840,
-        "name": "spoolsv.exe",
-        "exe": "C:\\Windows\\System32\\spoolsv.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\System32\\spoolsv.exe",
-        "user": "NT AUTHORITY\\SYSTEM",
-        "uid": "S-1-5-18"
-      },
-      {
-        "pid": 3184,
-        "ppid": 5752,
-        "name": "hostfacts.exe",
-        "exe": "D:\\a\\shentu\\shentu\\hostfacts.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "D:\\a\\shentu\\shentu\\hostfacts.exe -record fixture",
-        "user": "host1\\user1",
-        "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
-      },
-      {
-        "pid": 3204,
-        "ppid": 996,
+        "pid": 1500,
+        "ppid": 992,
         "name": "RuntimeBroker.exe",
         "exe": "C:\\Windows\\System32\\RuntimeBroker.exe",
         "exe_known": true,
@@ -5796,572 +5292,8 @@
         "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
       },
       {
-        "pid": 3208,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\system32\\svchost.exe -k apphost -s AppHostSvc",
-        "user": "NT AUTHORITY\\SYSTEM",
-        "uid": "S-1-5-18"
-      },
-      {
-        "pid": 3224,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\System32\\svchost.exe -k NetSvcs -p -s iphlpsvc",
-        "user": "NT AUTHORITY\\SYSTEM",
-        "uid": "S-1-5-18"
-      },
-      {
-        "pid": 3232,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\system32\\svchost.exe -k NetworkService -p -s CryptSvc",
-        "user": "NT AUTHORITY\\NETWORK SERVICE",
-        "uid": "S-1-5-20"
-      },
-      {
-        "pid": 3284,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\system32\\svchost.exe -k iissvcs",
-        "user": "NT AUTHORITY\\SYSTEM",
-        "uid": "S-1-5-18"
-      },
-      {
-        "pid": 3324,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\System32\\svchost.exe -k netsvcs -p -s sacsvr",
-        "user": "NT AUTHORITY\\SYSTEM",
-        "uid": "S-1-5-18"
-      },
-      {
-        "pid": 3340,
-        "ppid": 2616,
-        "name": "Runner.Worker.exe",
-        "exe": "C:\\actions-runner\\cached\\2.338.2\\bin\\Runner.Worker.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "\"C:\\actions-runner\\cached\\2.338.2\\bin\\Runner.Worker.exe\" spawnclient 1720 1732",
-        "user": "host1\\user1",
-        "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
-      },
-      {
-        "pid": 3352,
-        "ppid": 840,
-        "name": "WUDFHost.exe",
-        "exe": "C:\\Windows\\System32\\WUDFHost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "\"C:\\Windows\\System32\\WUDFHost.exe\" -HostGUID:{193a1820-d9ac-4997-8c55-be817523f6aa} -IoEventPortName:\\UMDFCommunicationPorts\\WUDF\\HostProcess-2e05b248-f749-4c87-b96b-184a59fd7929 -SystemEventPortName:\\UMDFCommunicationPorts\\WUDF\\HostProcess-5667aa59-e34a-4463-8527-1eaa6b4c3a82 -IoCancelEventPortName:\\UMDFCommunicationPorts\\WUDF\\HostProcess-adff230c-dd1c-4d06-835e-00c8b0a7d243 -NonStateChangingEventPortName:\\UMDFCommunicationPorts\\WUDF\\HostProcess-9ab97db9-d6ad-4308-9858-38a7b5deba6e -LifetimeId:55efb7a3-e91…",
-        "user": "NT AUTHORITY\\LOCAL SERVICE",
-        "uid": "S-1-5-19"
-      },
-      {
-        "pid": 3368,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\System32\\svchost.exe -k NetworkService -p -s WinRM",
-        "user": "NT AUTHORITY\\NETWORK SERVICE",
-        "uid": "S-1-5-20"
-      },
-      {
-        "pid": 3376,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\system32\\svchost.exe -k LocalService -s W32Time",
-        "user": "NT AUTHORITY\\LOCAL SERVICE",
-        "uid": "S-1-5-19"
-      },
-      {
-        "pid": 3404,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\system32\\svchost.exe -k netsvcs -p -s WpnService",
-        "user": "NT AUTHORITY\\SYSTEM",
-        "uid": "S-1-5-18"
-      },
-      {
-        "pid": 3412,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\system32\\svchost.exe -k appmodel -p -s StateRepository",
-        "user": "NT AUTHORITY\\SYSTEM",
-        "uid": "S-1-5-18"
-      },
-      {
-        "pid": 3420,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\system32\\svchost.exe -k localService -p -s RemoteRegistry",
-        "user": "NT AUTHORITY\\LOCAL SERVICE",
-        "uid": "S-1-5-19"
-      },
-      {
-        "pid": 3436,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\System32\\svchost.exe -k LocalSystemNetworkRestricted -p -s TrkWks",
-        "user": "NT AUTHORITY\\SYSTEM",
-        "uid": "S-1-5-18"
-      },
-      {
-        "pid": 3504,
-        "ppid": 840,
-        "name": "sqlwriter.exe",
-        "exe": "C:\\Program Files\\Microsoft SQL Server\\90\\Shared\\sqlwriter.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "\"C:\\Program Files\\Microsoft SQL Server\\90\\Shared\\sqlwriter.exe\"",
-        "user": "NT AUTHORITY\\SYSTEM",
-        "uid": "S-1-5-18"
-      },
-      {
-        "pid": 3524,
-        "ppid": 840,
-        "name": "WindowsAzureGuestAgent.exe",
-        "exe": "C:\\WindowsAzure\\GuestAgent_2.7.41491.1243_2026-11-01_211032\\WindowsAzureGuestAgent.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\WindowsAzure\\GuestAgent_2.7.41491.1243_2026-11-01_211032\\WindowsAzureGuestAgent.exe",
-        "user": "NT AUTHORITY\\SYSTEM",
-        "uid": "S-1-5-18"
-      },
-      {
-        "pid": 3588,
-        "ppid": 840,
-        "name": "WaAppAgent.exe",
-        "exe": "C:\\WindowsAzure\\GuestAgent_2.7.41491.1243_2026-11-01_211032\\WaAppAgent.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\WindowsAzure\\GuestAgent_2.7.41491.1243_2026-11-01_211032\\WaAppAgent.exe",
-        "user": "NT AUTHORITY\\SYSTEM",
-        "uid": "S-1-5-18"
-      },
-      {
-        "pid": 3616,
-        "ppid": 840,
-        "name": "SMSvcHost.exe",
-        "exe": "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\SMSvcHost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\SMSvcHost.exe",
-        "user": "NT AUTHORITY\\LOCAL SERVICE",
-        "uid": "S-1-5-19"
-      },
-      {
-        "pid": 3636,
-        "ppid": 840,
-        "name": "MsMpEng.exe",
-        "exe": "C:\\ProgramData\\Microsoft\\Windows Defender\\Platform\\4.18.26100.4-0\\MsMpEng.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "\"C:\\ProgramData\\Microsoft\\Windows Defender\\Platform\\4.18.26100.4-0\\MsMpEng.exe\"",
-        "user": "NT AUTHORITY\\SYSTEM",
-        "uid": "S-1-5-18"
-      },
-      {
-        "pid": 3656,
-        "ppid": 840,
-        "name": "MpDefenderCoreService.exe",
-        "exe": "C:\\ProgramData\\Microsoft\\Windows Defender\\Platform\\4.18.26100.4-0\\MpDefenderCoreService.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "\"C:\\ProgramData\\Microsoft\\Windows Defender\\Platform\\4.18.26100.4-0\\MpDefenderCoreService.exe\"",
-        "user": "NT AUTHORITY\\SYSTEM",
-        "uid": "S-1-5-18"
-      },
-      {
-        "pid": 3772,
-        "ppid": 840,
-        "name": "mqsvc.exe",
-        "exe": "C:\\Windows\\System32\\mqsvc.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\system32\\mqsvc.exe",
-        "user": "NT AUTHORITY\\NETWORK SERVICE",
-        "uid": "S-1-5-20"
-      },
-      {
-        "pid": 3812,
-        "ppid": 1928,
-        "name": "hosted-compute-agent",
-        "exe": "C:\\ProgramData\\GitHub\\HostedComputeAgent\\hosted-compute-agent",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "\"C:\\ProgramData\\GitHub\\HostedComputeAgent\\hosted-compute-agent\"",
-        "user": "host1\\user1",
-        "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
-      },
-      {
-        "pid": 3828,
-        "ppid": 3812,
-        "name": "conhost.exe",
-        "exe": "C:\\Windows\\System32\\conhost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "\\??\\C:\\Windows\\system32\\conhost.exe 0x4",
-        "user": "host1\\user1",
-        "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
-      },
-      {
-        "pid": 3856,
-        "ppid": 840,
-        "name": "dockerd.exe",
-        "exe": "C:\\Windows\\System32\\dockerd.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\system32\\dockerd.exe --run-service --service-name docker",
-        "user": "NT AUTHORITY\\SYSTEM",
-        "uid": "S-1-5-18"
-      },
-      {
-        "pid": 3888,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\System32\\svchost.exe -k smbsvcs -s LanmanServer",
-        "user": "NT AUTHORITY\\SYSTEM",
-        "uid": "S-1-5-18"
-      },
-      {
-        "pid": 4424,
-        "ppid": 840,
-        "name": "SMSvcHost.exe",
-        "exe": "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\SMSvcHost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "\"C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\SMSvcHost.exe\" -NetMsmqActivator",
-        "user": "NT AUTHORITY\\NETWORK SERVICE",
-        "uid": "S-1-5-20"
-      },
-      {
-        "pid": 4452,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\system32\\svchost.exe -k LocalService -p -s DispBrokerDesktopSvc",
-        "user": "NT AUTHORITY\\LOCAL SERVICE",
-        "uid": "S-1-5-19"
-      },
-      {
-        "pid": 4468,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\system32\\svchost.exe -k netsvcs -p -s TokenBroker",
-        "user": "NT AUTHORITY\\SYSTEM",
-        "uid": "S-1-5-18"
-      },
-      {
-        "pid": 4804,
-        "ppid": 996,
-        "name": "WmiPrvSE.exe",
-        "exe": "C:\\Windows\\System32\\wbem\\WmiPrvSE.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\system32\\wbem\\wmiprvse.exe",
-        "user": "NT AUTHORITY\\NETWORK SERVICE",
-        "uid": "S-1-5-20"
-      },
-      {
-        "pid": 4852,
-        "ppid": 840,
-        "name": "vmcompute.exe",
-        "exe": "C:\\Windows\\System32\\vmcompute.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\system32\\vmcompute.exe",
-        "user": "NT AUTHORITY\\SYSTEM",
-        "uid": "S-1-5-18"
-      },
-      {
-        "pid": 4992,
-        "ppid": 996,
-        "name": "dllhost.exe",
-        "exe": "C:\\Windows\\System32\\dllhost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\system32\\DllHost.exe /Processid:{3EB3C877-1F16-487C-9050-104DBCD66683}",
-        "user": "NT AUTHORITY\\SYSTEM",
-        "uid": "S-1-5-18"
-      },
-      {
-        "pid": 5004,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\system32\\svchost.exe -k ClipboardSvcGroup -p -s cbdhsvc",
-        "user": "host1\\user1",
-        "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
-      },
-      {
-        "pid": 5104,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\system32\\svchost.exe -k LocalSystemNetworkRestricted -p -s UALSVC",
-        "user": "NT AUTHORITY\\SYSTEM",
-        "uid": "S-1-5-18"
-      },
-      {
-        "pid": 5172,
-        "ppid": 840,
-        "name": "vds.exe",
-        "exe": "C:\\Windows\\System32\\vds.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\System32\\vds.exe",
-        "user": "NT AUTHORITY\\SYSTEM",
-        "uid": "S-1-5-18"
-      },
-      {
-        "pid": 5204,
-        "ppid": 3636,
-        "name": "DefenderSessionHelper.exe",
-        "exe": "C:\\ProgramData\\Microsoft\\Windows Defender\\Platform\\4.18.26100.4-0\\DefenderSessionHelper.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "\"C:\\ProgramData\\Microsoft\\Windows Defender\\Platform\\4.18.26100.4-0\\DefenderSessionHelper.exe\"",
-        "user": "host1\\user1",
-        "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
-      },
-      {
-        "pid": 5300,
-        "ppid": 3588,
-        "name": "WaSecAgentProv.exe",
-        "exe": "C:\\WindowsAzure\\SecAgent\\WaSecAgentProv.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "\"C:\\WindowsAzure\\SecAgent\\WaSecAgentProv.exe\" -startPoll C:\\WindowsAzure\\Logs\\ 198.51.100.1 5248000 3600000 21600000",
-        "user": "NT AUTHORITY\\SYSTEM",
-        "uid": "S-1-5-18"
-      },
-      {
-        "pid": 5372,
-        "ppid": 3340,
-        "name": "conhost.exe",
-        "exe": "C:\\Windows\\System32\\conhost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "\\??\\C:\\Windows\\system32\\conhost.exe 0x4",
-        "user": "host1\\user1",
-        "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
-      },
-      {
-        "pid": 5468,
-        "ppid": 1928,
-        "name": "taskhostw.exe",
-        "exe": "C:\\Windows\\System32\\taskhostw.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "taskhostw.exe LocalUserSyncDataAvailable",
-        "user": "host1\\user1",
-        "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
-      },
-      {
-        "pid": 5588,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\System32\\svchost.exe -k LocalServiceNoNetwork -p -s pla",
-        "user": "NT AUTHORITY\\LOCAL SERVICE",
-        "uid": "S-1-5-19"
-      },
-      {
-        "pid": 5648,
-        "ppid": 996,
-        "name": "WmiPrvSE.exe",
-        "exe": "C:\\Windows\\System32\\wbem\\WmiPrvSE.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\system32\\wbem\\wmiprvse.exe",
-        "user": "NT AUTHORITY\\SYSTEM",
-        "uid": "S-1-5-18"
-      },
-      {
-        "pid": 5716,
-        "ppid": 996,
-        "name": "smartscreen.exe",
-        "exe": "C:\\Windows\\System32\\smartscreen.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\System32\\smartscreen.exe -Embedding",
-        "user": "host1\\user1",
-        "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
-      },
-      {
-        "pid": 5724,
-        "ppid": 996,
-        "name": "WmiPrvSE.exe",
-        "exe": "C:\\Windows\\System32\\wbem\\WmiPrvSE.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\system32\\wbem\\wmiprvse.exe",
-        "user": "NT AUTHORITY\\LOCAL SERVICE",
-        "uid": "S-1-5-19"
-      },
-      {
-        "pid": 5752,
-        "ppid": 6088,
-        "name": "bash.exe",
-        "exe": "C:\\Program Files\\Git\\usr\\bin\\bash.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "\"C:\\Program Files\\Git\\bin\\..\\usr\\bin\\bash.exe\" --noprofile --norc -e -o pipefail D:\\a\\_temp\\fffea837-db6c-4907-9a40-c48b5cd16538.sh",
-        "user": "host1\\user1",
-        "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
-      },
-      {
-        "pid": 5816,
-        "ppid": 1928,
-        "name": "taskhostw.exe",
-        "exe": "C:\\Windows\\System32\\taskhostw.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "taskhostw.exe {222A245B-E637-4AE9-A93F-A59CA119A75E}",
-        "user": "host1\\user1",
-        "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
-      },
-      {
-        "pid": 5888,
-        "ppid": 840,
-        "name": "svchost.exe",
-        "exe": "C:\\Windows\\System32\\svchost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\system32\\svchost.exe -k UnistackSvcGroup -s WpnUserService",
-        "user": "host1\\user1",
-        "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
-      },
-      {
-        "pid": 6044,
-        "ppid": 2736,
-        "name": "sihost.exe",
-        "exe": "C:\\Windows\\System32\\sihost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "sihost.exe",
-        "user": "host1\\user1",
-        "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
-      },
-      {
-        "pid": 6088,
-        "ppid": 7368,
-        "name": "bash.exe",
-        "exe": "C:\\Program Files\\Git\\usr\\bin\\bash.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "\"C:\\Program Files\\Git\\bin\\..\\usr\\bin\\bash.exe\" --noprofile --norc -e -o pipefail D:\\a\\_temp\\fffea837-db6c-4907-9a40-c48b5cd16538.sh",
-        "user": "host1\\user1",
-        "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
-      },
-      {
-        "pid": 6092,
-        "ppid": 5300,
-        "name": "conhost.exe",
-        "exe": "C:\\Windows\\System32\\conhost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "\\??\\C:\\Windows\\system32\\conhost.exe 0x4",
-        "user": "NT AUTHORITY\\SYSTEM",
-        "uid": "S-1-5-18"
-      },
-      {
-        "pid": 6280,
-        "ppid": 1460,
+        "pid": 1584,
+        "ppid": 6016,
         "name": "AzureArcSysTray.exe",
         "exe": "C:\\Windows\\AzureArcSetup\\Systray\\AzureArcSysTray.exe",
         "exe_known": true,
@@ -6372,32 +5304,116 @@
         "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
       },
       {
-        "pid": 6300,
-        "ppid": 6320,
-        "name": "ctfmon.exe",
-        "exe": "C:\\Windows\\System32\\ctfmon.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "\"ctfmon.exe\"",
-        "user": "host1\\user1",
-        "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
-      },
-      {
-        "pid": 6320,
-        "ppid": 840,
+        "pid": 1616,
+        "ppid": 848,
         "name": "svchost.exe",
         "exe": "C:\\Windows\\System32\\svchost.exe",
         "exe_known": true,
         "exe_exists": true,
         "in_temp": false,
-        "cmdline": "C:\\Windows\\System32\\svchost.exe -k LocalSystemNetworkRestricted -p -s TabletInputService",
+        "cmdline": "C:\\Windows\\system32\\svchost.exe -k LocalService -p -s nsi",
+        "user": "NT AUTHORITY\\LOCAL SERVICE",
+        "uid": "S-1-5-19"
+      },
+      {
+        "pid": 1648,
+        "ppid": 848,
+        "name": "svchost.exe",
+        "exe": "C:\\Windows\\System32\\svchost.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\Windows\\system32\\svchost.exe -k LocalServiceNetworkRestricted -p -s Dhcp",
+        "user": "NT AUTHORITY\\LOCAL SERVICE",
+        "uid": "S-1-5-19"
+      },
+      {
+        "pid": 1668,
+        "ppid": 848,
+        "name": "svchost.exe",
+        "exe": "C:\\Windows\\System32\\svchost.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\Windows\\system32\\svchost.exe -k netsvcs -p -s Winmgmt",
         "user": "NT AUTHORITY\\SYSTEM",
         "uid": "S-1-5-18"
       },
       {
-        "pid": 6516,
-        "ppid": 840,
+        "pid": 1676,
+        "ppid": 848,
+        "name": "svchost.exe",
+        "exe": "C:\\Windows\\System32\\svchost.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\Windows\\system32\\svchost.exe -k netsvcs -p -s gpsvc",
+        "user": "NT AUTHORITY\\SYSTEM",
+        "uid": "S-1-5-18"
+      },
+      {
+        "pid": 1756,
+        "ppid": 848,
+        "name": "svchost.exe",
+        "exe": "C:\\Windows\\System32\\svchost.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\Windows\\System32\\svchost.exe -k NetworkService -p -s NlaSvc",
+        "user": "NT AUTHORITY\\NETWORK SERVICE",
+        "uid": "S-1-5-20"
+      },
+      {
+        "pid": 1808,
+        "ppid": 848,
+        "name": "svchost.exe",
+        "exe": "C:\\Windows\\System32\\svchost.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\Windows\\system32\\svchost.exe -k NetworkService -p -s Dnscache",
+        "user": "NT AUTHORITY\\NETWORK SERVICE",
+        "uid": "S-1-5-20"
+      },
+      {
+        "pid": 1836,
+        "ppid": 848,
+        "name": "vmms.exe",
+        "exe": "C:\\Windows\\System32\\vmms.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\Windows\\system32\\vmms.exe",
+        "user": "NT AUTHORITY\\SYSTEM",
+        "uid": "S-1-5-18"
+      },
+      {
+        "pid": 1844,
+        "ppid": 848,
+        "name": "svchost.exe",
+        "exe": "C:\\Windows\\System32\\svchost.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\Windows\\system32\\svchost.exe -k netsvcs -p -s Schedule",
+        "user": "NT AUTHORITY\\SYSTEM",
+        "uid": "S-1-5-18"
+      },
+      {
+        "pid": 1940,
+        "ppid": 848,
+        "name": "svchost.exe",
+        "exe": "C:\\Windows\\System32\\svchost.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\Windows\\System32\\svchost.exe -k LocalService -p -s netprofm",
+        "user": "NT AUTHORITY\\LOCAL SERVICE",
+        "uid": "S-1-5-19"
+      },
+      {
+        "pid": 1960,
+        "ppid": 848,
         "name": "svchost.exe",
         "exe": "C:\\Windows\\System32\\svchost.exe",
         "exe_known": true,
@@ -6408,176 +5424,140 @@
         "uid": "S-1-5-18"
       },
       {
-        "pid": 6640,
-        "ppid": 840,
+        "pid": 2052,
+        "ppid": 848,
         "name": "svchost.exe",
         "exe": "C:\\Windows\\System32\\svchost.exe",
         "exe_known": true,
         "exe_exists": true,
         "in_temp": false,
-        "cmdline": "C:\\Windows\\System32\\svchost.exe -k LocalService -p -s LicenseManager",
+        "cmdline": "C:\\Windows\\System32\\svchost.exe -k LocalSystemNetworkRestricted -p -s UmRdpService",
+        "user": "NT AUTHORITY\\SYSTEM",
+        "uid": "S-1-5-18"
+      },
+      {
+        "pid": 2140,
+        "ppid": 848,
+        "name": "svchost.exe",
+        "exe": "C:\\Windows\\System32\\svchost.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\Windows\\system32\\svchost.exe -k NetSvcs -p -s hns",
+        "user": "NT AUTHORITY\\SYSTEM",
+        "uid": "S-1-5-18"
+      },
+      {
+        "pid": 2148,
+        "ppid": 848,
+        "name": "svchost.exe",
+        "exe": "C:\\Windows\\System32\\svchost.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\Windows\\system32\\svchost.exe -k LocalServiceNetworkRestricted -p -s TimeBrokerSvc",
         "user": "NT AUTHORITY\\LOCAL SERVICE",
         "uid": "S-1-5-19"
       },
       {
-        "pid": 6696,
-        "ppid": 6684,
-        "name": "csrss.exe",
-        "exe": "C:\\Windows\\System32\\csrss.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "%SystemRoot%\\system32\\csrss.exe ObjectDirectory=\\Windows SharedSection=1024,20480,768 Windows=On SubSystemType=Windows ServerDll=basesrv,1 ServerDll=winsrv:UserServerDllInitialization,3 ServerDll=sxssrv,4 ProfileControl=Off MaxRequestThreads=16",
-        "user": "NT AUTHORITY\\SYSTEM",
-        "uid": "S-1-5-18"
-      },
-      {
-        "pid": 6744,
-        "ppid": 6684,
-        "name": "winlogon.exe",
-        "exe": "C:\\Windows\\System32\\winlogon.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "winlogon.exe",
-        "user": "NT AUTHORITY\\SYSTEM",
-        "uid": "S-1-5-18"
-      },
-      {
-        "pid": 6792,
-        "ppid": 6744,
-        "name": "fontdrvhost.exe",
-        "exe": "C:\\Windows\\System32\\fontdrvhost.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "\"fontdrvhost.exe\"",
-        "user": "Font Driver Host\\UMFD-2",
-        "uid": "S-1-5-96-0-2"
-      },
-      {
-        "pid": 6824,
-        "ppid": 6744,
-        "name": "dwm.exe",
-        "exe": "C:\\Windows\\System32\\dwm.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "\"dwm.exe\"",
-        "user": "Window Manager\\DWM-2",
-        "uid": "S-1-5-90-0-2"
-      },
-      {
-        "pid": 7080,
-        "ppid": 840,
+        "pid": 2228,
+        "ppid": 848,
         "name": "svchost.exe",
         "exe": "C:\\Windows\\System32\\svchost.exe",
         "exe_known": true,
         "exe_exists": true,
         "in_temp": false,
-        "cmdline": "C:\\Windows\\system32\\svchost.exe -k netsvcs -p -s LxssManager",
+        "cmdline": "C:\\Windows\\system32\\svchost.exe -k netsvcs -s CertPropSvc",
         "user": "NT AUTHORITY\\SYSTEM",
         "uid": "S-1-5-18"
       },
       {
-        "pid": 7100,
-        "ppid": 996,
-        "name": "RuntimeBroker.exe",
-        "exe": "C:\\Windows\\System32\\RuntimeBroker.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "C:\\Windows\\System32\\RuntimeBroker.exe -Embedding",
-        "user": "host1\\user1",
-        "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
-      },
-      {
-        "pid": 7296,
-        "ppid": 840,
+        "pid": 2300,
+        "ppid": 848,
         "name": "svchost.exe",
         "exe": "C:\\Windows\\System32\\svchost.exe",
         "exe_known": true,
         "exe_exists": true,
         "in_temp": false,
-        "cmdline": "C:\\Windows\\System32\\svchost.exe -k smphost",
+        "cmdline": "C:\\Windows\\System32\\svchost.exe -k NetworkService -p -s LanmanWorkstation",
         "user": "NT AUTHORITY\\NETWORK SERVICE",
         "uid": "S-1-5-20"
       },
       {
-        "pid": 7368,
-        "ppid": 3340,
-        "name": "bash.exe",
-        "exe": "C:\\Program Files\\Git\\bin\\bash.exe",
+        "pid": 2336,
+        "ppid": 848,
+        "name": "svchost.exe",
+        "exe": "C:\\Windows\\System32\\svchost.exe",
         "exe_known": true,
         "exe_exists": true,
         "in_temp": false,
-        "cmdline": "\"C:\\Program Files\\Git\\bin\\bash.EXE\" --noprofile --norc -e -o pipefail D:\\a\\_temp\\fffea837-db6c-4907-9a40-c48b5cd16538.sh",
-        "user": "host1\\user1",
-        "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
+        "cmdline": "C:\\Windows\\system32\\svchost.exe -k LocalServiceNetworkRestricted -p -s WinHttpAutoProxySvc",
+        "user": "NT AUTHORITY\\LOCAL SERVICE",
+        "uid": "S-1-5-19"
       },
       {
-        "pid": 7396,
-        "ppid": 996,
-        "name": "TextInputHost.exe",
-        "exe": "C:\\Windows\\SystemApps\\MicrosoftWindows.Client.CBS_cw5n1h2txyewy\\TextInputHost.exe",
+        "pid": 2396,
+        "ppid": 848,
+        "name": "svchost.exe",
+        "exe": "C:\\Windows\\System32\\svchost.exe",
         "exe_known": true,
         "exe_exists": true,
         "in_temp": false,
-        "cmdline": "\"C:\\Windows\\SystemApps\\MicrosoftWindows.Client.CBS_cw5n1h2txyewy\\TextInputHost.exe\" -ServerName:InputApp.AppXjd5de1g66v206tj52m9d0dtpppx4cgpn.mca",
-        "user": "host1\\user1",
-        "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
+        "cmdline": "C:\\Windows\\system32\\svchost.exe -k netsvcs -p -s UsoSvc",
+        "user": "NT AUTHORITY\\SYSTEM",
+        "uid": "S-1-5-18"
       },
       {
-        "pid": 7472,
-        "ppid": 996,
-        "name": "StartMenuExperienceHost.exe",
-        "exe": "C:\\Windows\\SystemApps\\Microsoft.Windows.StartMenuExperienceHost_cw5n1h2txyewy\\StartMenuExperienceHost.exe",
+        "pid": 2404,
+        "ppid": 848,
+        "name": "svchost.exe",
+        "exe": "C:\\Windows\\System32\\svchost.exe",
         "exe_known": true,
         "exe_exists": true,
         "in_temp": false,
-        "cmdline": "\"C:\\Windows\\SystemApps\\Microsoft.Windows.StartMenuExperienceHost_cw5n1h2txyewy\\StartMenuExperienceHost.exe\" -ServerName:App.AppXywbrabmsek0gm3tkwpr5kwzbs55tkqay.mca",
-        "user": "host1\\user1",
-        "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
+        "cmdline": "C:\\Windows\\system32\\svchost.exe -k LocalService -p -s EventSystem",
+        "user": "NT AUTHORITY\\LOCAL SERVICE",
+        "uid": "S-1-5-19"
       },
       {
-        "pid": 7512,
-        "ppid": 3812,
-        "name": "provjobd.exe219666566",
-        "exe": "C:\\Users\\user5\\AppData\\Local\\Temp\\provjobd.exe219666566",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": true,
-        "cmdline": "C:\\Users\\user5\\AppData\\Local\\Temp\\provjobd.exe219666566",
-        "user": "host1\\user1",
-        "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
-      },
-      {
-        "pid": 7576,
-        "ppid": 996,
-        "name": "RuntimeBroker.exe",
-        "exe": "C:\\Windows\\System32\\RuntimeBroker.exe",
+        "pid": 2412,
+        "ppid": 848,
+        "name": "svchost.exe",
+        "exe": "C:\\Windows\\System32\\svchost.exe",
         "exe_known": true,
         "exe_exists": true,
         "in_temp": false,
-        "cmdline": "C:\\Windows\\System32\\RuntimeBroker.exe -Embedding",
-        "user": "host1\\user1",
-        "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
+        "cmdline": "C:\\Windows\\System32\\svchost.exe -k netsvcs -p -s Themes",
+        "user": "NT AUTHORITY\\SYSTEM",
+        "uid": "S-1-5-18"
       },
       {
-        "pid": 7632,
-        "ppid": 840,
-        "name": "msdtc.exe",
-        "exe": "C:\\Windows\\System32\\msdtc.exe",
+        "pid": 2420,
+        "ppid": 848,
+        "name": "svchost.exe",
+        "exe": "C:\\Windows\\System32\\svchost.exe",
         "exe_known": true,
         "exe_exists": true,
         "in_temp": false,
-        "cmdline": "C:\\Windows\\System32\\msdtc.exe",
-        "user": "NT AUTHORITY\\NETWORK SERVICE",
-        "uid": "S-1-5-20"
+        "cmdline": "C:\\Windows\\System32\\svchost.exe -k SessionEnvSvc -p -s SessionEnv",
+        "user": "NT AUTHORITY\\SYSTEM",
+        "uid": "S-1-5-18"
       },
       {
-        "pid": 7656,
-        "ppid": 996,
+        "pid": 2432,
+        "ppid": 848,
+        "name": "svchost.exe",
+        "exe": "C:\\Windows\\System32\\svchost.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\Windows\\system32\\svchost.exe -k netsvcs -p -s ProfSvc",
+        "user": "NT AUTHORITY\\SYSTEM",
+        "uid": "S-1-5-18"
+      },
+      {
+        "pid": 2440,
+        "ppid": 992,
         "name": "ShellExperienceHost.exe",
         "exe": "C:\\Windows\\SystemApps\\ShellExperienceHost_cw5n1h2txyewy\\ShellExperienceHost.exe",
         "exe_known": true,
@@ -6588,32 +5568,596 @@
         "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
       },
       {
-        "pid": 7676,
-        "ppid": 996,
-        "name": "SearchApp.exe",
-        "exe": "C:\\Windows\\SystemApps\\Microsoft.Windows.Search_cw5n1h2txyewy\\SearchApp.exe",
-        "exe_known": true,
-        "exe_exists": true,
-        "in_temp": false,
-        "cmdline": "\"C:\\Windows\\SystemApps\\Microsoft.Windows.Search_cw5n1h2txyewy\\SearchApp.exe\" -ServerName:CortanaUI.AppX8z9r6jm96hw4bsbneegw0kyxx296wr9t.mca",
-        "user": "host1\\user1",
-        "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
-      },
-      {
-        "pid": 7768,
-        "ppid": 840,
+        "pid": 2600,
+        "ppid": 848,
         "name": "svchost.exe",
         "exe": "C:\\Windows\\System32\\svchost.exe",
         "exe_known": true,
         "exe_exists": true,
         "in_temp": false,
-        "cmdline": "C:\\Windows\\System32\\svchost.exe -k LocalSystemNetworkRestricted -p -s WdiSystemHost",
+        "cmdline": "C:\\Windows\\system32\\svchost.exe -k netsvcs -p -s SENS",
         "user": "NT AUTHORITY\\SYSTEM",
         "uid": "S-1-5-18"
       },
       {
-        "pid": 7796,
-        "ppid": 996,
+        "pid": 2624,
+        "ppid": 848,
+        "name": "svchost.exe",
+        "exe": "C:\\Windows\\System32\\svchost.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\Windows\\system32\\svchost.exe -k NetSvcs -s nvagent",
+        "user": "NT AUTHORITY\\SYSTEM",
+        "uid": "S-1-5-18"
+      },
+      {
+        "pid": 2708,
+        "ppid": 848,
+        "name": "svchost.exe",
+        "exe": "C:\\Windows\\System32\\svchost.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\Windows\\system32\\svchost.exe -k netsvcs -p -s UserManager",
+        "user": "NT AUTHORITY\\SYSTEM",
+        "uid": "S-1-5-18"
+      },
+      {
+        "pid": 2792,
+        "ppid": 848,
+        "name": "svchost.exe",
+        "exe": "C:\\Windows\\System32\\svchost.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\Windows\\system32\\svchost.exe -k LocalServiceNetworkRestricted -p",
+        "user": "NT AUTHORITY\\LOCAL SERVICE",
+        "uid": "S-1-5-19"
+      },
+      {
+        "pid": 2816,
+        "ppid": 848,
+        "name": "svchost.exe",
+        "exe": "C:\\Windows\\System32\\svchost.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\Windows\\System32\\svchost.exe -k netsvcs -p -s ShellHWDetection",
+        "user": "NT AUTHORITY\\SYSTEM",
+        "uid": "S-1-5-18"
+      },
+      {
+        "pid": 2844,
+        "ppid": 848,
+        "name": "svchost.exe",
+        "exe": "C:\\Windows\\System32\\svchost.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\Windows\\system32\\svchost.exe -k LocalService -p -s FontCache",
+        "user": "NT AUTHORITY\\LOCAL SERVICE",
+        "uid": "S-1-5-19"
+      },
+      {
+        "pid": 2884,
+        "ppid": 848,
+        "name": "svchost.exe",
+        "exe": "C:\\Windows\\System32\\svchost.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\Windows\\system32\\svchost.exe -k LocalServiceNoNetworkFirewall -p",
+        "user": "NT AUTHORITY\\LOCAL SERVICE",
+        "uid": "S-1-5-19"
+      },
+      {
+        "pid": 2968,
+        "ppid": 848,
+        "name": "svchost.exe",
+        "exe": "C:\\Windows\\System32\\svchost.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\Windows\\system32\\svchost.exe -k LocalServiceNoNetwork -p",
+        "user": "NT AUTHORITY\\LOCAL SERVICE",
+        "uid": "S-1-5-19"
+      },
+      {
+        "pid": 3076,
+        "ppid": 848,
+        "name": "spoolsv.exe",
+        "exe": "C:\\Windows\\System32\\spoolsv.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\Windows\\System32\\spoolsv.exe",
+        "user": "NT AUTHORITY\\SYSTEM",
+        "uid": "S-1-5-18"
+      },
+      {
+        "pid": 3140,
+        "ppid": 848,
+        "name": "svchost.exe",
+        "exe": "C:\\Windows\\System32\\svchost.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\Windows\\system32\\svchost.exe -k NetworkService -p -s CryptSvc",
+        "user": "NT AUTHORITY\\NETWORK SERVICE",
+        "uid": "S-1-5-20"
+      },
+      {
+        "pid": 3152,
+        "ppid": 848,
+        "name": "svchost.exe",
+        "exe": "C:\\Windows\\System32\\svchost.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\Windows\\System32\\svchost.exe -k NetSvcs -p -s iphlpsvc",
+        "user": "NT AUTHORITY\\SYSTEM",
+        "uid": "S-1-5-18"
+      },
+      {
+        "pid": 3160,
+        "ppid": 848,
+        "name": "svchost.exe",
+        "exe": "C:\\Windows\\System32\\svchost.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\Windows\\system32\\svchost.exe -k apphost -s AppHostSvc",
+        "user": "NT AUTHORITY\\SYSTEM",
+        "uid": "S-1-5-18"
+      },
+      {
+        "pid": 3208,
+        "ppid": 848,
+        "name": "svchost.exe",
+        "exe": "C:\\Windows\\System32\\svchost.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\Windows\\system32\\svchost.exe -k iissvcs",
+        "user": "NT AUTHORITY\\SYSTEM",
+        "uid": "S-1-5-18"
+      },
+      {
+        "pid": 3252,
+        "ppid": 848,
+        "name": "svchost.exe",
+        "exe": "C:\\Windows\\System32\\svchost.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\Windows\\System32\\svchost.exe -k netsvcs -p -s sacsvr",
+        "user": "NT AUTHORITY\\SYSTEM",
+        "uid": "S-1-5-18"
+      },
+      {
+        "pid": 3292,
+        "ppid": 848,
+        "name": "svchost.exe",
+        "exe": "C:\\Windows\\System32\\svchost.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\Windows\\system32\\svchost.exe -k appmodel -p -s StateRepository",
+        "user": "NT AUTHORITY\\SYSTEM",
+        "uid": "S-1-5-18"
+      },
+      {
+        "pid": 3316,
+        "ppid": 848,
+        "name": "SMSvcHost.exe",
+        "exe": "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\SMSvcHost.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\SMSvcHost.exe",
+        "user": "NT AUTHORITY\\LOCAL SERVICE",
+        "uid": "S-1-5-19"
+      },
+      {
+        "pid": 3324,
+        "ppid": 848,
+        "name": "sqlwriter.exe",
+        "exe": "C:\\Program Files\\Microsoft SQL Server\\90\\Shared\\sqlwriter.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "\"C:\\Program Files\\Microsoft SQL Server\\90\\Shared\\sqlwriter.exe\"",
+        "user": "NT AUTHORITY\\SYSTEM",
+        "uid": "S-1-5-18"
+      },
+      {
+        "pid": 3360,
+        "ppid": 848,
+        "name": "svchost.exe",
+        "exe": "C:\\Windows\\System32\\svchost.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\Windows\\System32\\svchost.exe -k LocalSystemNetworkRestricted -p -s TrkWks",
+        "user": "NT AUTHORITY\\SYSTEM",
+        "uid": "S-1-5-18"
+      },
+      {
+        "pid": 3368,
+        "ppid": 848,
+        "name": "MpDefenderCoreService.exe",
+        "exe": "C:\\ProgramData\\Microsoft\\Windows Defender\\Platform\\4.18.26100.4-0\\MpDefenderCoreService.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "\"C:\\ProgramData\\Microsoft\\Windows Defender\\Platform\\4.18.26100.4-0\\MpDefenderCoreService.exe\"",
+        "user": "NT AUTHORITY\\SYSTEM",
+        "uid": "S-1-5-18"
+      },
+      {
+        "pid": 3380,
+        "ppid": 848,
+        "name": "WaAppAgent.exe",
+        "exe": "C:\\WindowsAzure\\GuestAgent_2.7.41491.1243_2026-11-01_211032\\WaAppAgent.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\WindowsAzure\\GuestAgent_2.7.41491.1243_2026-11-01_211032\\WaAppAgent.exe",
+        "user": "NT AUTHORITY\\SYSTEM",
+        "uid": "S-1-5-18"
+      },
+      {
+        "pid": 3392,
+        "ppid": 848,
+        "name": "svchost.exe",
+        "exe": "C:\\Windows\\System32\\svchost.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\Windows\\system32\\svchost.exe -k LocalService -s W32Time",
+        "user": "NT AUTHORITY\\LOCAL SERVICE",
+        "uid": "S-1-5-19"
+      },
+      {
+        "pid": 3468,
+        "ppid": 848,
+        "name": "WindowsAzureGuestAgent.exe",
+        "exe": "C:\\WindowsAzure\\GuestAgent_2.7.41491.1243_2026-11-01_211032\\WindowsAzureGuestAgent.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\WindowsAzure\\GuestAgent_2.7.41491.1243_2026-11-01_211032\\WindowsAzureGuestAgent.exe",
+        "user": "NT AUTHORITY\\SYSTEM",
+        "uid": "S-1-5-18"
+      },
+      {
+        "pid": 3480,
+        "ppid": 848,
+        "name": "MsMpEng.exe",
+        "exe": "C:\\ProgramData\\Microsoft\\Windows Defender\\Platform\\4.18.26100.4-0\\MsMpEng.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "\"C:\\ProgramData\\Microsoft\\Windows Defender\\Platform\\4.18.26100.4-0\\MsMpEng.exe\"",
+        "user": "NT AUTHORITY\\SYSTEM",
+        "uid": "S-1-5-18"
+      },
+      {
+        "pid": 3496,
+        "ppid": 848,
+        "name": "svchost.exe",
+        "exe": "C:\\Windows\\System32\\svchost.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\Windows\\system32\\svchost.exe -k netsvcs -p -s WpnService",
+        "user": "NT AUTHORITY\\SYSTEM",
+        "uid": "S-1-5-18"
+      },
+      {
+        "pid": 3520,
+        "ppid": 848,
+        "name": "mqsvc.exe",
+        "exe": "C:\\Windows\\System32\\mqsvc.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\Windows\\system32\\mqsvc.exe",
+        "user": "NT AUTHORITY\\NETWORK SERVICE",
+        "uid": "S-1-5-20"
+      },
+      {
+        "pid": 3612,
+        "ppid": 848,
+        "name": "svchost.exe",
+        "exe": "C:\\Windows\\System32\\svchost.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\Windows\\System32\\svchost.exe -k NetworkService -p -s WinRM",
+        "user": "NT AUTHORITY\\NETWORK SERVICE",
+        "uid": "S-1-5-20"
+      },
+      {
+        "pid": 3624,
+        "ppid": 4160,
+        "name": "Runner.Worker.exe",
+        "exe": "C:\\actions-runner\\cached\\2.338.2\\bin\\Runner.Worker.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "\"C:\\actions-runner\\cached\\2.338.2\\bin\\Runner.Worker.exe\" spawnclient 1728 1740",
+        "user": "host1\\user1",
+        "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
+      },
+      {
+        "pid": 3664,
+        "ppid": 848,
+        "name": "svchost.exe",
+        "exe": "C:\\Windows\\System32\\svchost.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\Windows\\System32\\svchost.exe -k smbsvcs -s LanmanServer",
+        "user": "NT AUTHORITY\\SYSTEM",
+        "uid": "S-1-5-18"
+      },
+      {
+        "pid": 3764,
+        "ppid": 848,
+        "name": "msdtc.exe",
+        "exe": "C:\\Windows\\System32\\msdtc.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\Windows\\System32\\msdtc.exe",
+        "user": "NT AUTHORITY\\NETWORK SERVICE",
+        "uid": "S-1-5-20"
+      },
+      {
+        "pid": 3844,
+        "ppid": 992,
+        "name": "WmiPrvSE.exe",
+        "exe": "C:\\Windows\\System32\\wbem\\WmiPrvSE.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\Windows\\system32\\wbem\\wmiprvse.exe",
+        "user": "NT AUTHORITY\\LOCAL SERVICE",
+        "uid": "S-1-5-19"
+      },
+      {
+        "pid": 4076,
+        "ppid": 848,
+        "name": "svchost.exe",
+        "exe": "C:\\Windows\\System32\\svchost.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\Windows\\system32\\svchost.exe -k LocalService -p -s DispBrokerDesktopSvc",
+        "user": "NT AUTHORITY\\LOCAL SERVICE",
+        "uid": "S-1-5-19"
+      },
+      {
+        "pid": 4160,
+        "ppid": 7004,
+        "name": "Runner.Listener.exe",
+        "exe": "C:\\actions-runner\\cached\\2.338.2\\bin\\Runner.Listener.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\actions-runner\\cached\\2.338.2\\bin\\Runner.Listener.exe run",
+        "user": "host1\\user1",
+        "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
+      },
+      {
+        "pid": 4340,
+        "ppid": 848,
+        "name": "SMSvcHost.exe",
+        "exe": "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\SMSvcHost.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "\"C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\SMSvcHost.exe\" -NetMsmqActivator",
+        "user": "NT AUTHORITY\\NETWORK SERVICE",
+        "uid": "S-1-5-20"
+      },
+      {
+        "pid": 4580,
+        "ppid": 848,
+        "name": "vmcompute.exe",
+        "exe": "C:\\Windows\\System32\\vmcompute.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\Windows\\system32\\vmcompute.exe",
+        "user": "NT AUTHORITY\\SYSTEM",
+        "uid": "S-1-5-18"
+      },
+      {
+        "pid": 4880,
+        "ppid": 992,
+        "name": "dllhost.exe",
+        "exe": "C:\\Windows\\System32\\dllhost.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\Windows\\system32\\DllHost.exe /Processid:{3EB3C877-1F16-487C-9050-104DBCD66683}",
+        "user": "NT AUTHORITY\\SYSTEM",
+        "uid": "S-1-5-18"
+      },
+      {
+        "pid": 5096,
+        "ppid": 3624,
+        "name": "conhost.exe",
+        "exe": "C:\\Windows\\System32\\conhost.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "\\??\\C:\\Windows\\system32\\conhost.exe 0x4",
+        "user": "host1\\user1",
+        "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
+      },
+      {
+        "pid": 5144,
+        "ppid": 3380,
+        "name": "WaSecAgentProv.exe",
+        "exe": "C:\\WindowsAzure\\SecAgent\\WaSecAgentProv.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "\"C:\\WindowsAzure\\SecAgent\\WaSecAgentProv.exe\" -startPoll C:\\WindowsAzure\\Logs\\ 198.51.100.3 5248000 3600000 21600000",
+        "user": "NT AUTHORITY\\SYSTEM",
+        "uid": "S-1-5-18"
+      },
+      {
+        "pid": 5152,
+        "ppid": 848,
+        "name": "svchost.exe",
+        "exe": "C:\\Windows\\System32\\svchost.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\Windows\\System32\\svchost.exe -k LocalService -p -s LicenseManager",
+        "user": "NT AUTHORITY\\LOCAL SERVICE",
+        "uid": "S-1-5-19"
+      },
+      {
+        "pid": 5232,
+        "ppid": 5144,
+        "name": "conhost.exe",
+        "exe": "C:\\Windows\\System32\\conhost.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "\\??\\C:\\Windows\\system32\\conhost.exe 0x4",
+        "user": "NT AUTHORITY\\SYSTEM",
+        "uid": "S-1-5-18"
+      },
+      {
+        "pid": 5280,
+        "ppid": 848,
+        "name": "svchost.exe",
+        "exe": "C:\\Windows\\System32\\svchost.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\Windows\\System32\\svchost.exe -k LocalServiceNoNetwork -p -s pla",
+        "user": "NT AUTHORITY\\LOCAL SERVICE",
+        "uid": "S-1-5-19"
+      },
+      {
+        "pid": 5688,
+        "ppid": 848,
+        "name": "svchost.exe",
+        "exe": "C:\\Windows\\System32\\svchost.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\Windows\\system32\\svchost.exe -k netsvcs -p -s LxssManager",
+        "user": "NT AUTHORITY\\SYSTEM",
+        "uid": "S-1-5-18"
+      },
+      {
+        "pid": 5720,
+        "ppid": 992,
+        "name": "WmiPrvSE.exe",
+        "exe": "C:\\Windows\\System32\\wbem\\WmiPrvSE.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\Windows\\system32\\wbem\\wmiprvse.exe",
+        "user": "NT AUTHORITY\\NETWORK SERVICE",
+        "uid": "S-1-5-20"
+      },
+      {
+        "pid": 5816,
+        "ppid": 848,
+        "name": "svchost.exe",
+        "exe": "C:\\Windows\\System32\\svchost.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\Windows\\system32\\svchost.exe -k netsvcs -p -s TokenBroker",
+        "user": "NT AUTHORITY\\SYSTEM",
+        "uid": "S-1-5-18"
+      },
+      {
+        "pid": 6016,
+        "ppid": 6008,
+        "name": "explorer.exe",
+        "exe": "C:\\Windows\\explorer.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\Windows\\Explorer.EXE",
+        "user": "host1\\user1",
+        "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
+      },
+      {
+        "pid": 6032,
+        "ppid": 6256,
+        "name": "ctfmon.exe",
+        "exe": "C:\\Windows\\System32\\ctfmon.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "\"ctfmon.exe\"",
+        "user": "host1\\user1",
+        "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
+      },
+      {
+        "pid": 6120,
+        "ppid": 1844,
+        "name": "taskhostw.exe",
+        "exe": "C:\\Windows\\System32\\taskhostw.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "taskhostw.exe GAEvents|$(Arg0)",
+        "user": "NT AUTHORITY\\SYSTEM",
+        "uid": "S-1-5-18"
+      },
+      {
+        "pid": 6176,
+        "ppid": 1844,
+        "name": "taskhostw.exe",
+        "exe": "C:\\Windows\\System32\\taskhostw.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "taskhostw.exe",
+        "user": "host1\\user1",
+        "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
+      },
+      {
+        "pid": 6240,
+        "ppid": 848,
+        "name": "svchost.exe",
+        "exe": "C:\\Windows\\System32\\svchost.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\Windows\\system32\\svchost.exe -k ClipboardSvcGroup -p -s cbdhsvc",
+        "user": "host1\\user1",
+        "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
+      },
+      {
+        "pid": 6256,
+        "ppid": 848,
+        "name": "svchost.exe",
+        "exe": "C:\\Windows\\System32\\svchost.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\Windows\\System32\\svchost.exe -k LocalSystemNetworkRestricted -p -s TabletInputService",
+        "user": "NT AUTHORITY\\SYSTEM",
+        "uid": "S-1-5-18"
+      },
+      {
+        "pid": 6268,
+        "ppid": 992,
         "name": "RuntimeBroker.exe",
         "exe": "C:\\Windows\\System32\\RuntimeBroker.exe",
         "exe_known": true,
@@ -6624,8 +6168,68 @@
         "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
       },
       {
-        "pid": 8108,
-        "ppid": 996,
+        "pid": 6280,
+        "ppid": 1844,
+        "name": "taskhostw.exe",
+        "exe": "C:\\Windows\\System32\\taskhostw.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "taskhostw.exe {222A245B-E637-4AE9-A93F-A59CA119A75E}",
+        "user": "host1\\user1",
+        "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
+      },
+      {
+        "pid": 6316,
+        "ppid": 6300,
+        "name": "csrss.exe",
+        "exe": "C:\\Windows\\System32\\csrss.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "%SystemRoot%\\system32\\csrss.exe ObjectDirectory=\\Windows SharedSection=1024,20480,768 Windows=On SubSystemType=Windows ServerDll=basesrv,1 ServerDll=winsrv:UserServerDllInitialization,3 ServerDll=sxssrv,4 ProfileControl=Off MaxRequestThreads=16",
+        "user": "NT AUTHORITY\\SYSTEM",
+        "uid": "S-1-5-18"
+      },
+      {
+        "pid": 6364,
+        "ppid": 6300,
+        "name": "winlogon.exe",
+        "exe": "C:\\Windows\\System32\\winlogon.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "winlogon.exe",
+        "user": "NT AUTHORITY\\SYSTEM",
+        "uid": "S-1-5-18"
+      },
+      {
+        "pid": 6412,
+        "ppid": 6364,
+        "name": "fontdrvhost.exe",
+        "exe": "C:\\Windows\\System32\\fontdrvhost.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "\"fontdrvhost.exe\"",
+        "user": "Font Driver Host\\UMFD-2",
+        "uid": "S-1-5-96-0-2"
+      },
+      {
+        "pid": 6460,
+        "ppid": 6364,
+        "name": "dwm.exe",
+        "exe": "C:\\Windows\\System32\\dwm.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "\"dwm.exe\"",
+        "user": "Window Manager\\DWM-2",
+        "uid": "S-1-5-90-0-2"
+      },
+      {
+        "pid": 6476,
+        "ppid": 992,
         "name": "OpenWith.exe",
         "exe": "C:\\Windows\\System32\\OpenWith.exe",
         "exe_known": true,
@@ -6636,16 +6240,232 @@
         "uid": "S-1-5-18"
       },
       {
-        "pid": 8132,
-        "ppid": 1664,
-        "name": "WMIADAP.exe",
-        "exe": "C:\\Windows\\System32\\wbem\\WMIADAP.exe",
+        "pid": 6820,
+        "ppid": 848,
+        "name": "vds.exe",
+        "exe": "C:\\Windows\\System32\\vds.exe",
         "exe_known": true,
         "exe_exists": true,
         "in_temp": false,
-        "cmdline": "wmiadap.exe /F /T /R",
+        "cmdline": "C:\\Windows\\System32\\vds.exe",
         "user": "NT AUTHORITY\\SYSTEM",
         "uid": "S-1-5-18"
+      },
+      {
+        "pid": 7004,
+        "ppid": 1844,
+        "name": "hosted-compute-agent",
+        "exe": "C:\\ProgramData\\GitHub\\HostedComputeAgent\\hosted-compute-agent",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "\"C:\\ProgramData\\GitHub\\HostedComputeAgent\\hosted-compute-agent\"",
+        "user": "host1\\user1",
+        "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
+      },
+      {
+        "pid": 7048,
+        "ppid": 3480,
+        "name": "DefenderSessionHelper.exe",
+        "exe": "C:\\ProgramData\\Microsoft\\Windows Defender\\Platform\\4.18.26100.4-0\\DefenderSessionHelper.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "\"C:\\ProgramData\\Microsoft\\Windows Defender\\Platform\\4.18.26100.4-0\\DefenderSessionHelper.exe\"",
+        "user": "host1\\user1",
+        "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
+      },
+      {
+        "pid": 7076,
+        "ppid": 848,
+        "name": "svchost.exe",
+        "exe": "C:\\Windows\\System32\\svchost.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\Windows\\system32\\svchost.exe -k UnistackSvcGroup -s WpnUserService",
+        "user": "host1\\user1",
+        "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
+      },
+      {
+        "pid": 7092,
+        "ppid": 2708,
+        "name": "sihost.exe",
+        "exe": "C:\\Windows\\System32\\sihost.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "sihost.exe",
+        "user": "host1\\user1",
+        "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
+      },
+      {
+        "pid": 7148,
+        "ppid": 7004,
+        "name": "provjobd.exe2313538146",
+        "exe": "C:\\Users\\user9\\AppData\\Local\\Temp\\provjobd.exe2313538146",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": true,
+        "cmdline": "C:\\Users\\user9\\AppData\\Local\\Temp\\provjobd.exe2313538146",
+        "user": "host1\\user1",
+        "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
+      },
+      {
+        "pid": 7216,
+        "ppid": 6016,
+        "name": "ServiceFabricLocalClusterManager.exe",
+        "exe": "C:\\Program Files\\Microsoft SDKs\\Service Fabric\\Tools\\ServiceFabricLocalClusterManager\\ServiceFabricLocalClusterManager.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "\"C:\\Program Files\\Microsoft SDKs\\Service Fabric\\Tools\\ServiceFabricLocalClusterManager\\ServiceFabricLocalClusterManager.exe\" ",
+        "user": "host1\\user1",
+        "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
+      },
+      {
+        "pid": 7256,
+        "ppid": 992,
+        "name": "TextInputHost.exe",
+        "exe": "C:\\Windows\\SystemApps\\MicrosoftWindows.Client.CBS_cw5n1h2txyewy\\TextInputHost.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "\"C:\\Windows\\SystemApps\\MicrosoftWindows.Client.CBS_cw5n1h2txyewy\\TextInputHost.exe\" -ServerName:InputApp.AppXjd5de1g66v206tj52m9d0dtpppx4cgpn.mca",
+        "user": "host1\\user1",
+        "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
+      },
+      {
+        "pid": 7372,
+        "ppid": 992,
+        "name": "StartMenuExperienceHost.exe",
+        "exe": "C:\\Windows\\SystemApps\\Microsoft.Windows.StartMenuExperienceHost_cw5n1h2txyewy\\StartMenuExperienceHost.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "\"C:\\Windows\\SystemApps\\Microsoft.Windows.StartMenuExperienceHost_cw5n1h2txyewy\\StartMenuExperienceHost.exe\" -ServerName:App.AppXywbrabmsek0gm3tkwpr5kwzbs55tkqay.mca",
+        "user": "host1\\user1",
+        "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
+      },
+      {
+        "pid": 7452,
+        "ppid": 992,
+        "name": "RuntimeBroker.exe",
+        "exe": "C:\\Windows\\System32\\RuntimeBroker.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\Windows\\System32\\RuntimeBroker.exe -Embedding",
+        "user": "host1\\user1",
+        "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
+      },
+      {
+        "pid": 7604,
+        "ppid": 992,
+        "name": "SearchApp.exe",
+        "exe": "C:\\Windows\\SystemApps\\Microsoft.Windows.Search_cw5n1h2txyewy\\SearchApp.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "\"C:\\Windows\\SystemApps\\Microsoft.Windows.Search_cw5n1h2txyewy\\SearchApp.exe\" -ServerName:CortanaUI.AppX8z9r6jm96hw4bsbneegw0kyxx296wr9t.mca",
+        "user": "host1\\user1",
+        "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
+      },
+      {
+        "pid": 7612,
+        "ppid": 848,
+        "name": "svchost.exe",
+        "exe": "C:\\Windows\\System32\\svchost.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\Windows\\system32\\svchost.exe -k LocalSystemNetworkRestricted -p -s UALSVC",
+        "user": "NT AUTHORITY\\SYSTEM",
+        "uid": "S-1-5-18"
+      },
+      {
+        "pid": 7648,
+        "ppid": 992,
+        "name": "RuntimeBroker.exe",
+        "exe": "C:\\Windows\\System32\\RuntimeBroker.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\Windows\\System32\\RuntimeBroker.exe -Embedding",
+        "user": "host1\\user1",
+        "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
+      },
+      {
+        "pid": 7668,
+        "ppid": 8108,
+        "name": "bash.exe",
+        "exe": "C:\\Program Files\\Git\\usr\\bin\\bash.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "\"C:\\Program Files\\Git\\bin\\..\\usr\\bin\\bash.exe\" --noprofile --norc -e -o pipefail D:\\a\\_temp\\263c2e11-61c5-4b5b-9584-f954bd7a8582.sh",
+        "user": "host1\\user1",
+        "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
+      },
+      {
+        "pid": 8012,
+        "ppid": 848,
+        "name": "svchost.exe",
+        "exe": "C:\\Windows\\System32\\svchost.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\Windows\\System32\\svchost.exe -k LocalServiceNoNetwork -p -s DPS",
+        "user": "NT AUTHORITY\\LOCAL SERVICE",
+        "uid": "S-1-5-19"
+      },
+      {
+        "pid": 8016,
+        "ppid": 848,
+        "name": "svchost.exe",
+        "exe": "C:\\Windows\\System32\\svchost.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "C:\\Windows\\system32\\svchost.exe -k LocalService -p -s CDPSvc",
+        "user": "NT AUTHORITY\\LOCAL SERVICE",
+        "uid": "S-1-5-19"
+      },
+      {
+        "pid": 8084,
+        "ppid": 7668,
+        "name": "bash.exe",
+        "exe": "C:\\Program Files\\Git\\usr\\bin\\bash.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "\"C:\\Program Files\\Git\\bin\\..\\usr\\bin\\bash.exe\" --noprofile --norc -e -o pipefail D:\\a\\_temp\\263c2e11-61c5-4b5b-9584-f954bd7a8582.sh",
+        "user": "host1\\user1",
+        "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
+      },
+      {
+        "pid": 8108,
+        "ppid": 3624,
+        "name": "bash.exe",
+        "exe": "C:\\Program Files\\Git\\bin\\bash.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "\"C:\\Program Files\\Git\\bin\\bash.EXE\" --noprofile --norc -e -o pipefail D:\\a\\_temp\\263c2e11-61c5-4b5b-9584-f954bd7a8582.sh",
+        "user": "host1\\user1",
+        "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
+      },
+      {
+        "pid": 8188,
+        "ppid": 7004,
+        "name": "conhost.exe",
+        "exe": "C:\\Windows\\System32\\conhost.exe",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "\\??\\C:\\Windows\\system32\\conhost.exe 0x4",
+        "user": "host1\\user1",
+        "uid": "S-1-5-21-1000000000-1000000000-1000000000-500"
       }
     ]
   },
@@ -6680,7 +6500,7 @@
         "is_admin": true
       },
       {
-        "name": "user3",
+        "name": "user4",
         "uid": "S-1-5-21-1000000000-1000000000-1000000000-1000",
         "can_login": true,
         "is_admin": true
@@ -6692,13 +6512,6 @@
     "value": [
       {
         "proto": "tcp",
-        "addr": "10.0.0.2",
-        "port": 53,
-        "pid": 3856,
-        "process": "dockerd.exe"
-      },
-      {
-        "proto": "tcp",
         "addr": "0.0.0.0",
         "port": 80,
         "pid": 4,
@@ -6708,7 +6521,7 @@
         "proto": "tcp",
         "addr": "0.0.0.0",
         "port": 135,
-        "pid": 688,
+        "pid": 636,
         "process": "svchost.exe"
       },
       {
@@ -6720,13 +6533,6 @@
       },
       {
         "proto": "tcp",
-        "addr": "10.0.0.2",
-        "port": 139,
-        "pid": 4,
-        "process": "System"
-      },
-      {
-        "proto": "tcp",
         "addr": "0.0.0.0",
         "port": 445,
         "pid": 4,
@@ -6736,42 +6542,42 @@
         "proto": "tcp",
         "addr": "0.0.0.0",
         "port": 1801,
-        "pid": 3772,
+        "pid": 3520,
         "process": "mqsvc.exe"
       },
       {
         "proto": "tcp",
         "addr": "0.0.0.0",
         "port": 2103,
-        "pid": 3772,
+        "pid": 3520,
         "process": "mqsvc.exe"
       },
       {
         "proto": "tcp",
         "addr": "0.0.0.0",
         "port": 2105,
-        "pid": 3772,
+        "pid": 3520,
         "process": "mqsvc.exe"
       },
       {
         "proto": "tcp",
         "addr": "0.0.0.0",
         "port": 2107,
-        "pid": 3772,
+        "pid": 3520,
         "process": "mqsvc.exe"
       },
       {
         "proto": "tcp",
         "addr": "0.0.0.0",
         "port": 2179,
-        "pid": 1852,
+        "pid": 1836,
         "process": "vmms.exe"
       },
       {
         "proto": "tcp",
         "addr": "0.0.0.0",
         "port": 3389,
-        "pid": 1120,
+        "pid": 1136,
         "process": "svchost.exe"
       },
       {
@@ -6799,7 +6605,7 @@
         "proto": "tcp",
         "addr": "0.0.0.0",
         "port": 49664,
-        "pid": 868,
+        "pid": 876,
         "process": "lsass.exe"
       },
       {
@@ -6813,43 +6619,43 @@
         "proto": "tcp",
         "addr": "0.0.0.0",
         "port": 49666,
-        "pid": 1492,
+        "pid": 1348,
         "process": "svchost.exe"
       },
       {
         "proto": "tcp",
         "addr": "0.0.0.0",
         "port": 49667,
-        "pid": 1928,
+        "pid": 1844,
         "process": "svchost.exe"
       },
       {
         "proto": "tcp",
         "addr": "0.0.0.0",
         "port": 49668,
-        "pid": 2456,
+        "pid": 2420,
         "process": "svchost.exe"
       },
       {
         "proto": "tcp",
         "addr": "0.0.0.0",
-        "port": 61120,
-        "pid": 840,
-        "process": "services.exe"
+        "port": 49670,
+        "pid": 3076,
+        "process": "spoolsv.exe"
       },
       {
         "proto": "tcp",
         "addr": "0.0.0.0",
-        "port": 61862,
-        "pid": 3772,
+        "port": 52606,
+        "pid": 3520,
         "process": "mqsvc.exe"
       },
       {
         "proto": "tcp",
         "addr": "0.0.0.0",
-        "port": 63337,
-        "pid": 3168,
-        "process": "spoolsv.exe"
+        "port": 54595,
+        "pid": 848,
+        "process": "services.exe"
       },
       {
         "proto": "tcp6",
@@ -6862,7 +6668,7 @@
         "proto": "tcp6",
         "addr": "::",
         "port": 135,
-        "pid": 688,
+        "pid": 636,
         "process": "svchost.exe"
       },
       {
@@ -6876,42 +6682,42 @@
         "proto": "tcp6",
         "addr": "::",
         "port": 1801,
-        "pid": 3772,
+        "pid": 3520,
         "process": "mqsvc.exe"
       },
       {
         "proto": "tcp6",
         "addr": "::",
         "port": 2103,
-        "pid": 3772,
+        "pid": 3520,
         "process": "mqsvc.exe"
       },
       {
         "proto": "tcp6",
         "addr": "::",
         "port": 2105,
-        "pid": 3772,
+        "pid": 3520,
         "process": "mqsvc.exe"
       },
       {
         "proto": "tcp6",
         "addr": "::",
         "port": 2107,
-        "pid": 3772,
+        "pid": 3520,
         "process": "mqsvc.exe"
       },
       {
         "proto": "tcp6",
         "addr": "::",
         "port": 2179,
-        "pid": 1852,
+        "pid": 1836,
         "process": "vmms.exe"
       },
       {
         "proto": "tcp6",
         "addr": "::",
         "port": 3389,
-        "pid": 1120,
+        "pid": 1136,
         "process": "svchost.exe"
       },
       {
@@ -6939,7 +6745,7 @@
         "proto": "tcp6",
         "addr": "::",
         "port": 49664,
-        "pid": 868,
+        "pid": 876,
         "process": "lsass.exe"
       },
       {
@@ -6953,56 +6759,49 @@
         "proto": "tcp6",
         "addr": "::",
         "port": 49666,
-        "pid": 1492,
+        "pid": 1348,
         "process": "svchost.exe"
       },
       {
         "proto": "tcp6",
         "addr": "::",
         "port": 49667,
-        "pid": 1928,
+        "pid": 1844,
         "process": "svchost.exe"
       },
       {
         "proto": "tcp6",
         "addr": "::",
         "port": 49668,
-        "pid": 2456,
+        "pid": 2420,
         "process": "svchost.exe"
       },
       {
         "proto": "tcp6",
         "addr": "::",
-        "port": 61120,
-        "pid": 840,
-        "process": "services.exe"
+        "port": 49670,
+        "pid": 3076,
+        "process": "spoolsv.exe"
       },
       {
         "proto": "tcp6",
         "addr": "::",
-        "port": 61862,
-        "pid": 3772,
+        "port": 52606,
+        "pid": 3520,
         "process": "mqsvc.exe"
       },
       {
         "proto": "tcp6",
         "addr": "::",
-        "port": 63337,
-        "pid": 3168,
-        "process": "spoolsv.exe"
-      },
-      {
-        "proto": "udp",
-        "addr": "10.0.0.2",
-        "port": 53,
-        "pid": 3856,
-        "process": "dockerd.exe"
+        "port": 54595,
+        "pid": 848,
+        "process": "services.exe"
       },
       {
         "proto": "udp",
         "addr": "0.0.0.0",
         "port": 123,
-        "pid": 3376,
+        "pid": 3392,
         "process": "svchost.exe"
       },
       {
@@ -7014,21 +6813,7 @@
       },
       {
         "proto": "udp",
-        "addr": "10.0.0.2",
-        "port": 137,
-        "pid": 4,
-        "process": "System"
-      },
-      {
-        "proto": "udp",
         "addr": "10.0.0.1",
-        "port": 138,
-        "pid": 4,
-        "process": "System"
-      },
-      {
-        "proto": "udp",
-        "addr": "10.0.0.2",
         "port": 138,
         "pid": 4,
         "process": "System"
@@ -7037,84 +6822,84 @@
         "proto": "udp",
         "addr": "0.0.0.0",
         "port": 3389,
-        "pid": 1120,
+        "pid": 1136,
         "process": "svchost.exe"
       },
       {
         "proto": "udp",
         "addr": "0.0.0.0",
         "port": 5353,
-        "pid": 1868,
+        "pid": 1808,
         "process": "svchost.exe"
       },
       {
         "proto": "udp",
         "addr": "0.0.0.0",
         "port": 5355,
-        "pid": 1868,
+        "pid": 1808,
         "process": "svchost.exe"
       },
       {
         "proto": "udp",
         "addr": "127.0.0.1",
-        "port": 53957,
-        "pid": 3224,
+        "port": 51211,
+        "pid": 3152,
         "process": "svchost.exe"
       },
       {
         "proto": "udp",
         "addr": "0.0.0.0",
-        "port": 63916,
-        "pid": 1868,
+        "port": 59565,
+        "pid": 1808,
         "process": "svchost.exe"
       },
       {
         "proto": "udp",
         "addr": "0.0.0.0",
-        "port": 64369,
-        "pid": 1868,
+        "port": 63541,
+        "pid": 1808,
         "process": "svchost.exe"
       },
       {
         "proto": "udp6",
         "addr": "::",
         "port": 123,
-        "pid": 3376,
+        "pid": 3392,
         "process": "svchost.exe"
       },
       {
         "proto": "udp6",
         "addr": "::",
         "port": 3389,
-        "pid": 1120,
+        "pid": 1136,
         "process": "svchost.exe"
       },
       {
         "proto": "udp6",
         "addr": "::",
         "port": 5353,
-        "pid": 1868,
+        "pid": 1808,
         "process": "svchost.exe"
       },
       {
         "proto": "udp6",
         "addr": "::",
         "port": 5355,
-        "pid": 1868,
+        "pid": 1808,
         "process": "svchost.exe"
       },
       {
         "proto": "udp6",
         "addr": "::",
-        "port": 63916,
-        "pid": 1868,
+        "port": 59565,
+        "pid": 1808,
         "process": "svchost.exe"
       },
       {
         "proto": "udp6",
         "addr": "::",
-        "port": 64369,
-        "pid": 1868,
+        "port": 63541,
+        "pid": 1808,
         "process": "svchost.exe"
       }
     ]
@@ -8442,13 +8227,13 @@
       },
       {
         "kind": "service",
-        "location": "service:WpnUserService_aa180",
+        "location": "service:WpnUserService_96218",
         "command": "C:\\Windows\\system32\\svchost.exe -k UnistackSvcGroup",
         "detail": "auto"
       },
       {
         "kind": "service",
-        "location": "service:cbdhsvc_aa180",
+        "location": "service:cbdhsvc_96218",
         "command": "C:\\Windows\\system32\\svchost.exe -k ClipboardSvcGroup -p",
         "detail": "auto"
       },
@@ -8581,30 +8366,18 @@
       "notable": [
         {
           "kind": "service_installed",
-          "when": "2026-11-12T14:00:35.6908993Z",
-          "who": "Microsoft Azure Network Adapter Virtual Bus"
-        },
-        {
-          "kind": "service_installed",
-          "when": "2026-11-12T14:00:35.9076530Z",
-          "who": "Microsoft Azure Network Adapter"
-        },
-        {
-          "kind": "service_installed",
-          "when": "2026-11-12T14:01:22.7106720Z",
-          "who": "WPD File System driver"
+          "when": "2026-11-12T13:14:16.9284010Z",
+          "who": "Mellanox WinOF-2 Networking Driver"
         }
       ]
     }
   },
   "web": {
-    "status": "partial",
-    "reason": "not_recorded",
-    "detail": "applicationHost.config unreadable; its web roots are missing",
+    "status": "ok",
     "value": {
       "server": "iis",
-      "config_unreadable": [
-        "C:\\Windows\\System32\\inetsrv\\config\\applicationHost.config (not_recorded)"
+      "webroots": [
+        "C:\\inetpub\\wwwroot"
       ]
     }
   }
