@@ -1,0 +1,35 @@
+id = "python-code-eval-numexpr"
+lang = "python"
+class = "code-eval"
+cwe = "CWE-95"
+severity = "critical"
+tier = "info"
+title = "Request text evaluated by numexpr.evaluate, pandas.eval or DataFrame.query/eval"
+frameworks = ["flask", "django"]
+sources = ["request.args", "request.form", "request.values", "request.json", "request.get_json(", "request.GET", "request.POST", "request.data", "request.query_params", "request.json(", "self.get_argument("]
+sinks = ["numexpr.evaluate(", "ne.evaluate(", "pd.eval(", "pandas.eval(", "df.query(", "df.eval("]
+sanitizers = ["int(", "float("]
+fix = "Do not hand request text to numexpr or pandas.eval: parse the formula with a small grammar of your own (numbers, operators, known column names) and evaluate the parsed tree; older numexpr versions pass the text to eval."
+refs = ["CVE-2023-39631"]
+
+[[args]]
+arg = 1
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+@app.get("/calc")
+def calc():
+    expr = request.args.get("expr", "0")
+    return {"result": float(numexpr.evaluate(expr))}
+'''
+
+[[samples]]
+kind = "safe"
+note = "the expression is fixed; the request only supplies a number"
+code = '''
+@app.get("/calc")
+def calc():
+    a = float(request.args.get("a", "0"))
+    return {"result": float(numexpr.evaluate("2*a + 1", local_dict={"a": a}))}
+'''

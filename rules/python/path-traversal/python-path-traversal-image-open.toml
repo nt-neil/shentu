@@ -1,0 +1,40 @@
+id = "python-path-traversal-image-open"
+lang = "python"
+class = "path-traversal"
+cwe = "CWE-73"
+severity = "high"
+tier = "info"
+title = "Image opened from a path or file: URL taken from the request"
+frameworks = ["django", "flask"]
+sources = ["request.args", "request.form", "request.values", "request.json", "request.get_json(", "request.GET", "request.POST", "request.data", "request.query_params", "request.json(", "self.get_argument("]
+sinks = ["Image.open(", "PIL.Image.open("]
+sanitizers = ["BytesIO(", "io.BytesIO(", "os.path.basename(", ".is_relative_to("]
+fix = "Accept image bytes (an upload or base64 data decoded into io.BytesIO) or an http(s) URL fetched through an SSRF guard, never a path or file: URL; Image.open reads any file the server can read."
+refs = ["CVE-2026-73560"]
+
+[[args]]
+arg = 1
+
+[[samples]]
+kind = "vulnerable"
+note = "an image reference in the request may be a local path"
+code = '''
+@api.post("/v1/describe")
+async def describe(request: Request):
+    body = await request.json()
+    ref = body["image"]
+    if ref.startswith("file://"):
+        ref = ref[len("file://"):]
+    picture = Image.open(ref)
+    return {"size": picture.size}
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+@api.post("/v1/describe")
+async def describe(request: Request):
+    body = await request.json()
+    picture = Image.open(io.BytesIO(base64.b64decode(body["image_b64"])))
+    return {"size": picture.size}
+'''

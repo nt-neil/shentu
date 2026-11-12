@@ -5,11 +5,11 @@ cwe = "CWE-78"
 severity = "critical"
 title = "Untrusted value placed into a command run through a shell"
 frameworks = ["flask", "django"]
-sources = ["request.args", "request.form", "request.GET", "request.POST", "request.json", "request.FILES", ".filename"]
+sources = ["request.args", "request.form", "request.GET", "request.POST", "request.json", "request.FILES", ".filename", "request.query_params", "request.path_params", "request.form(", "request.json(", "request.body(", "request.query", "request.match_info", "request.post(", "request.text(", "request.read(", "self.get_argument(", "self.get_arguments(", "self.get_query_argument(", "self.get_body_argument(", "self.request.body", "self.request.arguments"]
 sinks = ["os.system(", "os.popen(", "subprocess.run(", "subprocess.Popen(", "subprocess.call(", "subprocess.check_call(", "subprocess.check_output(", "run(", "Popen(", "call(", "check_call(", "check_output(", ".run(", ".Popen(", ".call(", ".check_call(", ".check_output(", "subprocess.getoutput(", "subprocess.getstatusoutput(", "asyncio.create_subprocess_shell(", ".create_subprocess_shell(", "create_subprocess_shell("]
 sanitizers = ["shlex.quote("]
 fix = "Call subprocess.run with a list of arguments and no shell; if a shell is unavoidable wrap each value in shlex.quote()."
-refs = ["CVE-2026-12398", "CVE-2026-55798"]
+refs = ["CVE-2026-12398", "CVE-2026-55798", "CVE-2026-33050"]
 
 [[args]]
 sinks = ["subprocess.run(", "subprocess.Popen(", "subprocess.call(", "subprocess.check_call(", "subprocess.check_output(", "run(", "Popen(", "call(", "check_call(", "check_output(", ".run(", ".Popen(", ".call(", ".check_call(", ".check_output("]   # also "import subprocess as sp" and "from subprocess import run"
@@ -42,4 +42,44 @@ def checkout():
     ref = request.form["ref"]
     subprocess.run(["git", "-C", "/srv/repo", "checkout", "--", ref], check=True)
     return "ok"
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "the uploaded file's name ends up in a shell command line"
+code = '''
+def convert_upload(request):
+    doc = request.FILES["document"]
+    argv = ["soffice", "--headless", "--convert-to", "pdf", doc.name]
+    job = Popen(" ".join(argv), cwd=SPOOL_DIR, stdout=PIPE, shell=True)
+    return job.wait()
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+@app.get("/ping")
+async def ping(request: Request):
+    host = request.query_params["host"]
+    proc = await asyncio.create_subprocess_shell(f"ping -c 1 {host}", stdout=asyncio.subprocess.PIPE)
+    out, _ = await proc.communicate()
+    return {"out": out.decode()}
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+class PingHandler(tornado.web.RequestHandler):
+    def get(self):
+        os.system("ping -c 1 " + self.get_argument("host"))
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+def convert_upload(request):
+    doc = request.FILES["document"]
+    argv = ["soffice", "--headless", "--convert-to", "pdf", doc.name]
+    job = Popen(argv, cwd=SPOOL_DIR, stdout=PIPE)
+    return job.wait()
 '''

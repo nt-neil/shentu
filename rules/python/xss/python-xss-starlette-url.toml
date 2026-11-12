@@ -1,0 +1,36 @@
+id = "python-xss-starlette-url"
+lang = "python"
+class = "xss"
+cwe = "CWE-79"
+severity = "medium"
+tier = "info"
+title = "FastAPI or Starlette HTML response with a request value at the start of a URL attribute (href, src, action) without the escaping that context needs"
+sources = ["request.query_params", "request.path_params", "request.form(", "request.json(", "request.body(", "request.headers", "request.cookies", "request.url.path"]
+sinks = ["HTMLResponse(", "responses.HTMLResponse(", "fastapi.responses.HTMLResponse(", "starlette.responses.HTMLResponse("]
+sanitizers = ["urllib.parse.quote(", "quote(", "int("]
+fix = "HTML escaping does not stop a javascript: URL: build the link on the server, require http(s) and an allowed host, or put the value in the query string with urllib.parse.quote()."
+refs = ["CVE-2026-54386"]
+
+[[args]]
+sinks = ["HTMLResponse(", "responses.HTMLResponse(", "fastapi.responses.HTMLResponse(", "starlette.responses.HTMLResponse("]
+context = ["url"]
+
+# Response(..., media_type="text/html") is python-xss-response's sink.
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+@app.get("/continue")
+async def continue_page(request: Request):
+    dest = request.query_params.get("dest", "/")
+    return HTMLResponse(f'<p><a href="{html.escape(dest)}">Continue</a></p>')
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+@app.get("/continue")
+async def continue_page(request: Request):
+    dest = request.query_params.get("dest", "")
+    return HTMLResponse(f'<p><a href="/start?dest={urllib.parse.quote(dest, safe="")}">Continue</a></p>')
+'''

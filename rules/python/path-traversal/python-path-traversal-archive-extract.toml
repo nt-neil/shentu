@@ -5,14 +5,20 @@ cwe = "CWE-22"
 severity = "high"
 title = "Uploaded or downloaded archive extracted without checking member paths"
 frameworks = ["flask", "django"]
-sources = ["request.files", "request.FILES", "urlopen(", "requests.get("]
-sinks = [".extractall(", ".extract("]
+sources = ["request.files", "request.FILES", "urlopen(", "requests.get(", "request.form(", "request.body(", "request.read(", "self.request.files", "self.request.body", "file.file", "upload.file"]
+sinks = [".extractall(", ".extract(", "shutil.unpack_archive("]
 sanitizers = [".is_relative_to(", ".startswith("]
-fix = "On Python 3.12+ call extractall(..., filter='data'); otherwise check every member's resolved path stays inside the target directory and reject links."
+fix = "Pass filter=\"data\" to tarfile extractall (the default from Python 3.14; 3.12 and 3.13 warn and still extract unsafely), or check that every member's resolved path stays inside the target directory and reject links. zipfile.extractall already drops \"..\" and leading \"/\" from names, but the engine cannot tell a zip from a tar."
 refs = ["CVE-2007-4559", "CVE-2026-14966"]
 
 [[args]]
+sinks = [".extractall(", ".extract("]
 arg = 0   # the archive itself is the input
+unless = ['filter="data"']
+
+[[args]]
+sinks = ["shutil.unpack_archive("]
+arg = 1
 unless = ['filter="data"']
 
 [[samples]]
@@ -47,4 +53,31 @@ def unpack(request):
             if not (dest / name).resolve().is_relative_to(dest):
                 raise SuspiciousOperation(name)
         zf.extractall(dest)
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "an uploaded tarball unpacked as is"
+code = '''
+def upload_trace(request):
+    upload = request.FILES["trace"]
+    shutil.unpack_archive(upload.temporary_file_path(), os.path.join(UPLOADS, "unpacked"), format="tar")
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+@app.post("/bundles")
+async def unpack_bundle(upload: UploadFile):
+    with tarfile.open(fileobj=upload.file) as tf:
+        tf.extractall(BUNDLE_DIR)
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+@app.post("/bundles")
+async def unpack_bundle(upload: UploadFile):
+    with tarfile.open(fileobj=upload.file) as tf:
+        tf.extractall(BUNDLE_DIR, filter="data")
 '''

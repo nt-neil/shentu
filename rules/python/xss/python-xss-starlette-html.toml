@@ -1,0 +1,36 @@
+id = "python-xss-starlette-html"
+lang = "python"
+class = "xss"
+cwe = "CWE-79"
+severity = "medium"
+tier = "info"
+title = "FastAPI or Starlette HTML response with a request value between tags without the escaping that context needs"
+sources = ["request.query_params", "request.path_params", "request.form(", "request.json(", "request.body(", "request.headers", "request.cookies", "request.url.path"]
+sinks = ["HTMLResponse(", "responses.HTMLResponse(", "fastapi.responses.HTMLResponse(", "starlette.responses.HTMLResponse("]
+sanitizers = ["html.escape(", "markupsafe.escape(", "escape(", "urllib.parse.quote(", "quote("]
+fix = "Escape the value with html.escape(), or render with Jinja2Templates (it escapes by default)."
+refs = ["CVE-2026-54386"]
+
+[[args]]
+sinks = ["HTMLResponse(", "responses.HTMLResponse(", "fastapi.responses.HTMLResponse(", "starlette.responses.HTMLResponse("]
+context = ["html"]
+
+# Response(..., media_type="text/html") is python-xss-response's sink.
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+@app.get("/greet")
+async def greet(request: Request):
+    who = request.query_params.get("who", "")
+    return HTMLResponse("<main><h2>Welcome, " + who + "</h2></main>")
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+@app.get("/greet")
+async def greet(request: Request):
+    who = request.query_params.get("who", "")
+    return HTMLResponse("<main><h2>Welcome, " + html.escape(who) + "</h2></main>")
+'''
