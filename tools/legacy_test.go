@@ -50,13 +50,6 @@ func fixtures(t *testing.T) map[string]*hostenv.Replay {
 	return out
 }
 
-// withHost points the tools at src for one test.
-func withHost(t *testing.T, src hostenv.Source) {
-	old := hostSource
-	hostSource = func() hostenv.Source { return src }
-	t.Cleanup(func() { hostSource = old })
-}
-
 // legacyOSRelease is tools/vulns.go osRelease before 1c.
 func legacyOSRelease(b []byte) map[string]string {
 	m := map[string]string{}
@@ -388,22 +381,6 @@ func TestLegacyAccounts(t *testing.T) {
 	if !reflect.DeepEqual(a.UID0, uid0) || !reflect.DeepEqual(a.LoginAccounts, login) || userNames()["0"] != names["0"] {
 		t.Errorf("edge: %v %v / %v %v", a.UID0, a.LoginAccounts, uid0, login)
 	}
-}
-
-// memHost is a tiny file-only Source for edge cases.
-type memHost map[string]string
-
-func (memHost) Info() hostenv.SourceInfo { return hostenv.SourceInfo{GOOS: "linux"} }
-func (m memHost) ReadFile(p string) ([]byte, error) {
-	if s, ok := m[p]; ok {
-		return []byte(s), nil
-	}
-	return nil, os.ErrNotExist
-}
-func (memHost) ReadDir(string) ([]string, error) { return nil, os.ErrNotExist }
-func (memHost) Readlink(string) (string, error)  { return "", os.ErrNotExist }
-func (memHost) Run(context.Context, []string) (hostenv.CmdResult, error) {
-	return hostenv.CmdResult{}, os.ErrNotExist
 }
 
 // legacyPackages is installedPackages before 1c, run on the same package
@@ -739,29 +716,6 @@ func TestLegacySSHD(t *testing.T) {
 			t.Logf("%s: unread %q", name, wu)
 		}
 	}
-}
-
-// scriptHost is a Source with files, links and canned command results.
-type scriptHost struct {
-	memHost
-	cmds map[string]hostenv.CmdResult
-	stat map[string]bool
-}
-
-func (h scriptHost) Run(_ context.Context, argv []string) (hostenv.CmdResult, error) {
-	if r, ok := h.cmds[strings.Join(argv, " ")]; ok {
-		return r, nil
-	}
-	return hostenv.CmdResult{}, os.ErrNotExist
-}
-func (h scriptHost) Stat(p string) (hostenv.FileStat, error) {
-	if h.stat[p] {
-		return hostenv.FileStat{}, nil
-	}
-	if _, ok := h.memHost[p]; ok {
-		return hostenv.FileStat{}, nil
-	}
-	return hostenv.FileStat{}, os.ErrNotExist
 }
 
 // legacyFirewall is survey's firewall() before 1c; "err != nil" of exec is
