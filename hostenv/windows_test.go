@@ -934,19 +934,84 @@ func TestFileSecurityUntrusted(t *testing.T) {
 	}
 }
 
-// Round 2 (N2-2): Include is not followed on Windows, so an included file,
-// trusted or not, is never read: the fact is partial and its settings
-// come from sshd_config alone.
-func TestWindowsSSHIncludeNotFollowed(t *testing.T) {
-	w := weakServer()
-	w.svcs = append(w.svcs, WinService{Name: "sshd", State: "running", StartType: "auto"})
-	inc := `C:\ProgramData\ssh\sshd_config.d\evil.conf`
-	w.files[winSSHDConfig] = "Include " + inc + "\nPasswordAuthentication no\n"
-	w.files[inc] = "PasswordAuthentication yes\n"
-	w.sec = map[string]WinFileSecurity{inc: {Owner: "S-1-5-21-1-2-3-1001"}}
-	s := WindowsCollector{}.Collect(context.Background(), w).RemoteAccess.SSH
-	if s.Status != StatusPartial || s.Reason != ReasonNotCollected || s.Value.Settings["passwordauthentication"] != "no" {
-		t.Errorf("Include must not be followed: %+v", s)
+// Round 3 (N-W1): Include is followed in place and the first value wins,
+// as in sshd. Round 2's test asserted the opposite: with "Include x.conf"
+// before "PasswordAuthentication no" and "yes" in x.conf, sshd uses yes.
+// OpenSSH added Include to sshd_config in 8.2; what the CI runners ship is
+// noted in windows.yml's "OpenSSH on the runner" step.
+func TestWindowsSSHInclude(t *testing.T) {
+	collect := func(w *fakeWin) Obs[SSHConfig] {
+		return WindowsCollector{}.Collect(context.Background(), w).RemoteAccess.SSH
+	}
+	base := func() *fakeWin {
+		w := weakServer()
+		w.svcs = append(w.svcs, WinService{Name: "sshd", State: "running", StartType: "auto"})
+		return w
+	}
+	incDir := `C:\ProgramData\ssh\sshd_config.d`
+
+	// The included value comes first, so it wins; a relative glob is
+	// under %ProgramData%\ssh, expanded in sorted order, case ignored.
+	w := base()
+	w.files[winSSHDConfig] = "Include sshd_config.d/*.CONF\nPasswordAuthentication no\nPermitRootLogin no\n"
+	w.dirs(incDir, "b.conf", "a.conf", "notes.txt")
+	w.files[incDir+`\a.conf`] = "PasswordAuthentication yes\n"
+	w.files[incDir+`\b.conf`] = "PasswordAuthentication no\nPermitRootLogin yes\n"
+	s := collect(w)
+	if s.Status != StatusOK || s.Value.Settings["passwordauthentication"] != "yes" || s.Value.Settings["permitrootlogin"] != "yes" {
+		t.Errorf("Include followed, first value wins: %+v", s)
+	}
+
+	// An included file someone else may change makes the whole config untrusted.
+	w = base()
+	w.files[winSSHDConfig] = "Include sshd_config.d\\evil.conf\nPasswordAuthentication no\n"
+	w.files[incDir+`\evil.conf`] = "PasswordAuthentication no\n"
+	w.sec = map[string]WinFileSecurity{incDir + `\evil.conf`: {Owner: "S-1-5-21-1-2-3-1001"}}
+	if s := collect(w); s.Status != StatusUnknown || s.Reason != ReasonUntrusted || s.Value.Settings["passwordauthentication"] != "unknown" {
+		t.Errorf("untrusted include: %+v", s)
+	}
+	// So does a folder outside %ProgramData%\ssh that a user may write to.
+	w = base()
+	w.files[winSSHDConfig] = "Include C:/Users/Public/ssh.conf\n"
+	w.files[`C:\Users\Public\ssh.conf`] = "PasswordAuthentication no\n"
+	w.sec = map[string]WinFileSecurity{`C:\Users\Public`: {Owner: "S-1-5-18", Writers: []string{"S-1-5-11"}}}
+	if s := collect(w); s.Status != StatusUnknown || s.Reason != ReasonUntrusted {
+		t.Errorf("include in a user-writable folder: %+v", s)
+	}
+
+	// An include that cannot be read: what is not set before it is unknown,
+	// the fact is partial and names the file.
+	w = base()
+	w.files[winSSHDConfig] = "PermitRootLogin no\nInclude locked.conf\nPasswordAuthentication no\n"
+	w.files[`C:\ProgramData\ssh\locked.conf`] = "x"
+	w.fakeHost.denied[`C:\ProgramData\ssh\locked.conf`] = true
+	s = collect(w)
+	if s.Status != StatusPartial || s.Value.Settings["permitrootlogin"] != "no" || s.Value.Settings["passwordauthentication"] != "unknown" ||
+		len(s.Value.Unread) != 1 || !strings.Contains(s.Value.Unread[0], "locked.conf") {
+		t.Errorf("unreadable include: %+v", s)
+	}
+
+	// A network path is not followed: partial, the rest unknown.
+	w = base()
+	w.files[winSSHDConfig] = "Include \\\\server\\share\\x.conf\nPasswordAuthentication no\n"
+	if s := collect(w); s.Status != StatusPartial || s.Value.Settings["passwordauthentication"] != "unknown" {
+		t.Errorf("network include: %+v", s)
+	}
+}
+
+func TestWinSSHIncludePath(t *testing.T) {
+	for in, want := range map[string]string{
+		"sshd_config.d/*.conf":       `C:\ProgramData\ssh\sshd_config.d\*.conf`,
+		`__PROGRAMDATA__/ssh/x.conf`: `C:\ProgramData\ssh\x.conf`,
+		`D:\conf\..\ssh\x.conf`:      `D:\ssh\x.conf`,
+		`\etc\x.conf`:                `C:\etc\x.conf`,
+	} {
+		if got, ok := winSSHInclude(in); !ok || got != want {
+			t.Errorf("%s: %s %v, want %s", in, got, ok, want)
+		}
+	}
+	if _, ok := winSSHInclude(`\\srv\share\x.conf`); ok {
+		t.Error("a network path must be refused")
 	}
 }
 

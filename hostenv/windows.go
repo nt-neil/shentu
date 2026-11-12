@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"path"
 	"sort"
 	"strconv"
 	"strings"
@@ -959,10 +960,14 @@ func findService(svcs []WinService, name string) (WinService, bool) {
 
 // winSSH reads the OpenSSH Server config with the shared parser, up to the
 // first Match (the stock file ends with "Match Group administrators").
+// Include is followed in place, as sshd does: a relative pattern is under
+// %ProgramData%\ssh, a glob is expanded and sorted, and the first value
+// wins across all the files.
 func winSSH(ws WinSource, svcs []WinService, svcErr error) Obs[SSHConfig] {
 	// OpenSSH itself refuses an sshd_config that someone other than SYSTEM
-	// or Administrators owns or may change; so does Shentu: such content
-	// is not used, the settings are unknown.
+	// or Administrators owns or may change; so does Shentu, for every file
+	// it reads (an included one too): such content is not used, the
+	// settings are unknown.
 	unknown := func(p, why string, r Reason) Obs[SSHConfig] {
 		cfg := SSHConfig{ConfigPath: winSSHDConfig, Settings: SSHDDefaults(), Unread: []string{p + " (" + why + ")"}}
 		for k := range cfg.Settings {
@@ -970,17 +975,23 @@ func winSSH(ws WinSource, svcs []WinService, svcErr error) Obs[SSHConfig] {
 		}
 		return Obs[SSHConfig]{Status: StatusUnknown, Reason: r, Detail: why + "; its content is not used", Value: cfg}
 	}
-	for _, p := range []string{winSSHDir, winSSHDConfig} {
-		sec, err := ws.FileSecurity(p)
-		switch {
-		case isNotExist(err):
-			continue // no OpenSSH: the read below says so
-		case err != nil: // who may change it is unknown: not trusted either
-			return unknown(p, "owner and permissions unreadable: "+string(Classify(err)), Classify(err))
+	trusted := func(paths ...string) (Obs[SSHConfig], bool) {
+		for _, p := range paths {
+			sec, err := ws.FileSecurity(p)
+			switch {
+			case isNotExist(err):
+				continue // not there: the read says so
+			case err != nil: // who may change it is unknown: not trusted either
+				return unknown(p, "owner and permissions unreadable: "+string(Classify(err)), Classify(err)), false
+			}
+			if bad := sec.Untrusted(); len(bad) > 0 {
+				return unknown(p, p+" is owned or writable by "+strings.Join(bad, ", "), ReasonUntrusted), false
+			}
 		}
-		if bad := sec.Untrusted(); len(bad) > 0 {
-			return unknown(p, p+" is owned or writable by "+strings.Join(bad, ", "), ReasonUntrusted)
-		}
+		return Obs[SSHConfig]{}, true
+	}
+	if o, ok := trusted(winSSHDir, winSSHDConfig); !ok {
+		return o
 	}
 	b, err := ws.ReadFile(winSSHDConfig)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -997,24 +1008,137 @@ func winSSH(ws WinSource, svcs []WinService, svcErr error) Obs[SSHConfig] {
 		cfg.Unread = []string{winSSHDConfig}
 		return Partial(cfg, Classify(err), "sshd_config unreadable; settings are \"unknown\"")
 	}
-	sum := sha256.Sum256(b)
-	cfg.Hash = hex.EncodeToString(sum[:])[:16]
-	dirs, _ := ParseSSHDConfig(b)
 	got := map[string]bool{}
-	include := false
-	for _, d := range dirs {
-		if d.Key == "include" {
-			include = true
-			continue
+	h := sha256.New()
+	reason := Reason("")
+	unread := func(p, why string, r Reason) { // what is not set yet is unknown from here on
+		if reason == "" || r == ReasonPermission {
+			reason = r
 		}
-		if _, want := cfg.Settings[d.Key]; want && !got[d.Key] {
-			cfg.Settings[d.Key], got[d.Key] = d.Value, true
+		cfg.Unread = append(cfg.Unread, p+" ("+why+")")
+		for k := range cfg.Settings {
+			if !got[k] {
+				cfg.Settings[k], got[k] = "unknown", true
+			}
 		}
 	}
-	if include {
-		return Partial(cfg, ReasonNotCollected, "Include is not followed on Windows yet")
+	var refused *Obs[SSHConfig]
+	var read func(b []byte, depth int) bool // false: stopped (Match, or an untrusted file)
+	read = func(b []byte, depth int) bool {
+		h.Write(b)
+		dirs, sawMatch := ParseSSHDConfig(b)
+		for _, d := range dirs {
+			if d.Key != "include" {
+				if _, want := cfg.Settings[d.Key]; want && !got[d.Key] {
+					cfg.Settings[d.Key], got[d.Key] = d.Value, true
+				}
+				continue
+			}
+			pat, ok := winSSHInclude(d.Value)
+			if !ok {
+				unread(d.Value, "a network path is not followed", ReasonNotCollected)
+				continue
+			}
+			if depth >= 4 {
+				unread(pat, "Include nested too deep", ReasonNotCollected)
+				continue
+			}
+			files, dir, err := winGlob(ws, pat)
+			if err != nil {
+				unread(dir, whyUnread(err), Classify(err))
+			}
+			for _, inc := range files {
+				if o, ok := trusted(winParent(inc), inc); !ok {
+					refused = &o
+					return false
+				}
+				ib, err := ws.ReadFile(inc)
+				if err != nil {
+					if !errors.Is(err, fs.ErrNotExist) {
+						unread(inc, whyUnread(err), Classify(err))
+					}
+					continue
+				}
+				if !read(ib, depth+1) {
+					return false
+				}
+			}
+		}
+		return !sawMatch
+	}
+	read(b, 0)
+	if refused != nil {
+		return *refused
+	}
+	cfg.Hash = hex.EncodeToString(h.Sum(nil))[:16]
+	if len(cfg.Unread) > 0 {
+		return Partial(cfg, reason, "some sshd config files or Include patterns could not be read; their settings are \"unknown\"")
 	}
 	return OK(cfg)
+}
+
+// winSSHInclude makes an Include argument a full Windows path: relative
+// ones are under %ProgramData%\ssh, __PROGRAMDATA__ is expanded as sshd
+// does, / is taken as \. A network path (\\server\share) is refused.
+func winSSHInclude(v string) (string, bool) {
+	v = strings.ReplaceAll(v, "/", `\`)
+	if strings.HasPrefix(strings.ToUpper(v), "__PROGRAMDATA__") {
+		v = winParent(winSSHDir) + v[len("__PROGRAMDATA__"):]
+	}
+	if strings.HasPrefix(v, `\\`) {
+		return "", false
+	}
+	switch {
+	case strings.HasPrefix(v, `\`): // the root of sshd's own drive
+		v = winSSHDir[:2] + v
+	case !(len(v) >= 3 && v[1] == ':' && v[2] == '\\'):
+		v = winSSHDir + `\` + v
+	}
+	return v[:2] + strings.ReplaceAll(path.Clean(strings.ReplaceAll(v[2:], `\`, "/")), "/", `\`), true
+}
+
+// winParent is the folder holding a full Windows path.
+func winParent(p string) string {
+	if i := strings.LastIndex(p, `\`); i > 2 {
+		return p[:i]
+	}
+	return p[:3]
+}
+
+// winGlob expands a full Windows path pattern (each component may hold *,
+// ? or [...], matched without regard to case) through ws, sorted. A folder
+// that cannot be listed is returned with its error: what it holds is
+// hidden.
+func winGlob(ws WinSource, pattern string) (files []string, dir string, err error) {
+	paths := []string{pattern[:2]}
+	for _, part := range strings.Split(pattern[3:], `\`) {
+		var next []string
+		for _, d := range paths {
+			if !strings.ContainsAny(part, "*?[") {
+				next = append(next, d+`\`+part)
+				continue
+			}
+			ld := d
+			if len(ld) == 2 { // "C:" alone is the drive's current folder
+				ld += `\`
+			}
+			names, lerr := ws.ReadDir(ld)
+			if lerr != nil {
+				if !errors.Is(lerr, fs.ErrNotExist) && err == nil {
+					dir, err = d, lerr
+				}
+				continue
+			}
+			for _, n := range names {
+				if ok, _ := path.Match(strings.ToLower(part), strings.ToLower(n)); ok {
+					next = append(next, d+`\`+n)
+				}
+			}
+		}
+		paths = next
+	}
+	sort.Strings(paths)
+	return paths, dir, err
 }
 
 // winRDP follows Windows defaults when a value is missing: RDP off

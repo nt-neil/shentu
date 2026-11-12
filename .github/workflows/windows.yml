@@ -32,6 +32,11 @@ jobs:
           [ "$(go env GOVERSION)" = "$want" ] || { echo "FAIL: Go $(go env GOVERSION), go.mod wants $want"; exit 1; }
           # No Python bytecode in the repository (it slipped in once).
           [ -z "$(git ls-files '*.pyc' '*__pycache__*')" ] || { echo "FAIL: committed Python bytecode"; git ls-files '*.pyc' '*__pycache__*'; exit 1; }
+      - name: OpenSSH on the runner (sshd_config Include needs OpenSSH 8.2 or later)
+        run: |
+          for f in /c/Windows/System32/OpenSSH/sshd.exe /c/Windows/System32/OpenSSH/ssh.exe "/c/Program Files/OpenSSH/sshd.exe"; do
+            if [ -e "$f" ]; then echo "$f: $("$f" -V 2>&1 | grep -m1 -o 'OpenSSH[^ ,]*' || echo 'no version line')"; else echo "$f: not installed"; fi
+          done
       - name: build
         run: go build ./...
       - name: vet
