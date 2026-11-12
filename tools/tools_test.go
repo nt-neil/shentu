@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/nt-neil/shentu/hostenv"
 )
 
 func TestSSHSummary(t *testing.T) {
@@ -35,9 +37,18 @@ func TestSSHSummary(t *testing.T) {
 	}, "\n")
 	p := filepath.Join(dir, "auth.log")
 	os.WriteFile(p, []byte(log), 0o600)
+	// No journalctl, as on a host without journald: the runner's own journal
+	// would be read first otherwise.
+	noCmds, _ := hostenv.NewRunner(nil)
+	prevHost := hostSource
+	hostSource = func() hostenv.Source { return &hostenv.Live{Runner: noCmds} }
+	t.Cleanup(func() { hostSource = prevHost })
 	r, err := SSHSummary(context.Background(), &Env{LogPaths: []string{p}}, now.Add(-24*time.Hour), "")
 	if err != nil {
 		t.Fatal(err)
+	}
+	if r["verified"] != false {
+		t.Errorf("a text log is not verified: %v", r["verified"])
 	}
 	got := map[string]SSHSource{}
 	for _, s := range r["sources"].([]SSHSource) {
