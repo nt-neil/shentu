@@ -5,7 +5,8 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 
 ## v0.3.0 (unreleased)
 
-- 支援 Windows Server 2022 與 2025（amd64，另建置 arm64）：Windows 收集器只透過 Windows API
+- 支援 Windows Server 2022 與 2025，已在實機（GitHub 的 Windows runner）上驗證（amd64，
+  另建置 arm64）：Windows 收集器只透過 Windows API
   讀取主機（登錄檔、服務、程序、通訊埠、帳號、排程工作、事件記錄、WMI 與防火牆），不用
   PowerShell，也不執行外部指令。
 - Windows 檢查：自動啟動項目（Run 機碼、服務、排程工作、啟動資料夾、WMI 事件訂閱）、未啟用
@@ -24,7 +25,8 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 ### 已知問題
 
 - Windows 版只讀不寫：不支援 `block_ip` 與 `unblock_ip`。
-- Windows Server 2019 尚未在實機上驗證。
+- Windows Server 2019 為 best effort：預期可用（相同的 Windows API，build 17763），但沒有
+  實機驗證。
 - `shentu setup` 還不能在 Windows 上執行，設定需要手動撰寫。
 - Windows 執行檔沒有程式碼簽章，也沒有 MSI；SmartScreen 或防毒軟體可能發出警告。
 

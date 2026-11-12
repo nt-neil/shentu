@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/nt-neil/shentu/hostenv"
+	"github.com/nt-neil/shentu/internal/msrc"
 )
 
 // month is a CVRF document with Windows Server 2022 fixes "CVE|KB|build|severity".
@@ -103,5 +104,38 @@ func TestMSRCProduct(t *testing.T) {
 		if err != nil && !strings.Contains(err.Error(), "cannot tell") {
 			t.Errorf("%+v: the error must say it cannot tell: %v", c.p, err)
 		}
+	}
+}
+
+// Windows Server 2019 (build 17763) is best effort: not checked on a real
+// host, but its product name, CVRF parsing and comparison path work.
+func TestMSRCServer2019(t *testing.T) {
+	for _, c := range []struct {
+		p    hostenv.Platform
+		want string
+	}{
+		{hostenv.Platform{Family: "windows-server", Build: "17763.6414"}, "Windows Server 2019"},
+		{hostenv.Platform{Family: "windows-server", Build: "17763.6414", ServerCore: true}, "Windows Server 2019 (Server Core installation)"},
+	} {
+		if got, err := msrcProduct(c.p); got != c.want || err != nil {
+			t.Fatalf("%+v: %q %v", c.p, got, err)
+		}
+	}
+	doc := `{"ProductTree":{"FullProductName":[{"ProductID":"19","Value":"Windows Server 2019"},` +
+		`{"ProductID":"22","Value":"Windows Server 2022"}]},"Vulnerability":[{"CVE":"CVE-2026-1919",` +
+		`"Threats":[{"Type":3,"Description":{"Value":"Critical"},"ProductID":["19"]}],` +
+		`"Remediations":[{"Type":2,"SubType":"Security Update","Description":{"Value":"5070001"},"ProductID":["19"],"FixedBuild":"10.0.17763.7000"}]}]}`
+	prods, err := msrc.ParseCVRF(strings.NewReader(doc), msrc.Server)
+	if err != nil || len(prods["Windows Server 2019"]) != 1 {
+		t.Fatalf("2019 kept by the parser: %+v %v", prods, err)
+	}
+	get := func(string) (msrc.Month, error) { return msrc.Month{Products: prods}, nil }
+	r, err := msrc.Check("Windows Server 2019", "10.0.17763.6414", nil, []string{"2026-Nov"}, 24, get)
+	if err != nil || len(r.Missing) != 1 || r.Missing[0].CVE != "CVE-2026-1919" || r.Missing[0].Severity != "Critical" {
+		t.Errorf("an older 2019 build lacks the fix: %+v %v", r, err)
+	}
+	r, err = msrc.Check("Windows Server 2019", "10.0.17763.7000", nil, []string{"2026-Nov"}, 24, get)
+	if err != nil || len(r.Missing) != 0 || r.Current != "2026-Nov" {
+		t.Errorf("the fixed 2019 build is current: %+v %v", r, err)
 	}
 }

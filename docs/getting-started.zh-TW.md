@@ -197,8 +197,8 @@ sudo shentu bot pair
 
 ## Windows Server（v0.3.0 起）
 
-支援 Windows Server 2022 與 2025（amd64；arm64 也有建置），已在 GitHub 的 Windows runner
-上測試。Windows Server 2019 預期可用，但還沒在實機上驗證。
+支援 Windows Server 2022 與 2025（amd64；arm64 也有建置），已在實機（GitHub 的 Windows
+runner）上驗證。Windows Server 2019 為 best effort：預期可用（相同的 Windows API，build 17763），但沒有實機驗證。
 
 1. 下載 `shentu_windows_amd64.zip`，用 `checksums.txt` 或
    `gh attestation verify shentu_windows_amd64.zip --repo nt-neil/shentu` 核對。

@@ -212,9 +212,9 @@ then asks you to approve that Telegram user with `y`. Until you approve, the bot
 
 ## Windows Server (from v0.3.0)
 
-Windows Server 2022 and 2025 are supported (amd64; arm64 is built too), tested on GitHub's
-Windows runners. Windows Server 2019 is expected to work but has not been checked on a real
-host yet.
+Windows Server 2022 and 2025 are supported (amd64; arm64 is built too), checked on real hosts
+(GitHub's Windows runners). Windows Server 2019 is best effort: expected to work (the same
+Windows APIs, build 17763) but not checked on a real host.
 
 1. Download `shentu_windows_amd64.zip` and check it against `checksums.txt` or with
    `gh attestation verify shentu_windows_amd64.zip --repo nt-neil/shentu`.

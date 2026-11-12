@@ -8,7 +8,8 @@ Chinese for the zh-TW pages; keep the two in step.
 
 ## v0.3.0 (unreleased)
 
-- Windows Server 2022 and 2025 (amd64, arm64 built too): a Windows collector reads the host
+- Windows Server 2022 and 2025, checked on real hosts (GitHub's Windows runners; amd64, arm64
+  built too): a Windows collector reads the host
   through the Windows APIs only (registry, services, processes, sockets, accounts, scheduled
   tasks, the event log, WMI and the firewall), no PowerShell and no external commands.
 - Windows checks: autostart entries (Run keys, services, scheduled tasks, startup folders, WMI
@@ -27,7 +28,8 @@ Chinese for the zh-TW pages; keep the two in step.
 ### Known issues
 
 - Windows is read-only: `block_ip` and `unblock_ip` are not supported there.
-- Windows Server 2019 has not been checked on a real host yet.
+- Windows Server 2019 is best effort: expected to work (the same Windows APIs, build 17763)
+  but not checked on a real host.
 - `shentu setup` does not run on Windows yet; the configuration is written by hand.
 - The Windows binary is not code-signed and there is no MSI; SmartScreen or an antivirus may
   warn about it.
