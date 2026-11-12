@@ -45,7 +45,10 @@ func osDefaults(c *Config) {
 // stateSDDL is the DACL of %ProgramData%\Shentu and the state directory:
 // protected (no inherited entries), full control for SYSTEM and the
 // Administrators group only, inherited by everything created inside.
-const stateSDDL = "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
+// OWNER RIGHTS (OW) gets read only, which takes away an owner's implicit
+// right to rewrite the DACL: an account later dropped from Administrators
+// keeps no hold over files it once created here.
+const stateSDDL = "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FR;;;OW)"
 
 // secureDir makes dir a folder that only SYSTEM and Administrators control.
 // A missing dir is created with its owner and DACL in one step
@@ -70,8 +73,12 @@ func secureDir(dir string) error {
 		if err != nil {
 			return err
 		}
+		owner, _, err := sd.Owner()
+		if err != nil {
+			return err
+		}
 		return windows.SetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT,
-			windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION, nil, nil, dacl, nil)
+			windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION, owner, nil, dacl, nil)
 	}
 	if err := os.MkdirAll(filepath.Dir(dir), 0o700); err != nil {
 		return err
@@ -107,10 +114,14 @@ var adminMembers = sync.OnceValue(func() map[string]bool {
 	return m
 })
 
-// trustedOwner accepts SYSTEM, Administrators, TrustedInstaller and the
-// accounts in the Administrators group.
-func trustedOwner(s *windows.SID) bool {
-	return trustedSID(s) || s != nil && adminMembers()[s.String()]
+// trustedOwner accepts SYSTEM, Administrators and TrustedInstaller; with
+// memberOK also an account in the Administrators group, as the owner of
+// what an administrator saved inside the folder. Only the top folder,
+// which a user could have created first, needs the strict owner: inside
+// it only administrators can write, and the inherited OWNER RIGHTS entry
+// leaves an owner no implicit right to change the DACL.
+func trustedOwner(s *windows.SID, memberOK bool) bool {
+	return trustedSID(s) || memberOK && s != nil && adminMembers()[s.String()]
 }
 
 // fileDeleteChild is FILE_DELETE_CHILD (winnt.h), missing from x/sys.
@@ -123,7 +134,11 @@ const writeRights = windows.FILE_WRITE_DATA | windows.FILE_APPEND_DATA | windows
 
 // checkTrusted refuses path when someone other than SYSTEM, Administrators
 // or TrustedInstaller owns it or may write it. A missing path is fine.
-func checkTrusted(path string) error {
+func checkTrusted(path string) error { return checkTrustedAs(path, false) }
+
+// checkTrustedAs is checkTrusted, accepting an administrator's own
+// account as owner when memberOK (see trustedOwner).
+func checkTrustedAs(path string, memberOK bool) error {
 	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
 		windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)
 	if errors.Is(err, windows.ERROR_FILE_NOT_FOUND) || errors.Is(err, windows.ERROR_PATH_NOT_FOUND) {
@@ -133,7 +148,7 @@ func checkTrusted(path string) error {
 		return fmt.Errorf("%s: %w", path, err)
 	}
 	owner, _, err := sd.Owner()
-	if err != nil || !trustedOwner(owner) {
+	if err != nil || !trustedOwner(owner, memberOK) {
 		return fmt.Errorf("%s is owned by %v, not SYSTEM or an administrator", path, owner)
 	}
 	dacl, _, err := sd.DACL()
@@ -192,7 +207,7 @@ func trustedTree(dir string) error {
 		if d.Type()&(fs.ModeSymlink|fs.ModeIrregular) != 0 {
 			return fmt.Errorf("%s is a link or junction", p)
 		}
-		return checkTrusted(p)
+		return checkTrustedAs(p, p != dir)
 	})
 }
 

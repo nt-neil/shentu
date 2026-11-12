@@ -36,14 +36,14 @@ func TestSecureDir(t *testing.T) {
 		t.Fatal(err) // CI runs elevated, as the service does
 	}
 	sids, protected := aceSIDs(t, dir)
-	if !protected || strings.Join(sids, ",") != "BA,SY" {
-		t.Errorf("state dir DACL: protected %v, trustees %v; want protected, BA and SY only", protected, sids)
+	if !protected || strings.Join(sids, ",") != "BA,OW,SY" {
+		t.Errorf("state dir DACL: protected %v, trustees %v; want protected, BA, SY and OWNER RIGHTS (read) only", protected, sids)
 	}
 	f := filepath.Join(dir, "state.json")
 	if err := os.WriteFile(f, []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if sids, _ := aceSIDs(t, f); strings.Join(sids, ",") != "BA,SY" {
+	if sids, _ := aceSIDs(t, f); strings.Join(sids, ",") != "BA,OW,SY" {
 		t.Errorf("a file inside inherits only BA and SY: %v", sids)
 	}
 }
@@ -110,7 +110,7 @@ func TestTrustConfigMissingAndLinks(t *testing.T) {
 	if load, err := trustConfig(cfg); err != nil || !load {
 		t.Fatalf("missing folder: load %v, %v", load, err)
 	}
-	if sids, protected := aceSIDs(t, filepath.Dir(cfg)); !protected || strings.Join(sids, ",") != "BA,SY" {
+	if sids, protected := aceSIDs(t, filepath.Dir(cfg)); !protected || strings.Join(sids, ",") != "BA,OW,SY" {
 		t.Errorf("created folder: %v %v", protected, sids)
 	}
 	// A link inside (a skill pointing out of the folder) is refused.
