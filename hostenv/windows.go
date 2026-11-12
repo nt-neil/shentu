@@ -1,82 +1,117 @@
 package hostenv
 
-// Draft of the Windows collector (Phase 2). The file name has no _windows
-// suffix on purpose: the collector and its mappings are pure and are tested
-// on every OS against a fake WinSource. Only the WinSource implementation
-// (x/sys/windows registry and svc/mgr, WMI, wevtapi, iphlpapi, netapi32)
-// will carry a windows build tag. No PowerShell, no commands.
-//
-// Not wired into ForOS yet: until Phase 2 lands, Windows hosts get the
-// Unsupported collector, so every fact says "unsupported_platform".
+// The Windows collector. The file name has no _windows suffix on purpose:
+// the collector and its mappings are pure and are tested on every OS
+// against a fake WinSource and replayed fixtures. Only the live WinSource
+// (live_windows.go: x/sys/windows, registry, SCM, Toolhelp32, iphlpapi,
+// netapi32, wevtapi) carries a windows build tag. No PowerShell, no WMI,
+// no commands.
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/binary"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"io/fs"
+	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
-// RegValue is one registry value, decoded.
+// RegValue is one registry value, decoded. Strings are secret-masked;
+// binary values are capped at MaxRegBinary bytes.
 type RegValue struct {
 	Type    string   `json:"type"` // SZ, EXPAND_SZ, MULTI_SZ, DWORD, QWORD, BINARY
 	String  string   `json:"string,omitempty"`
 	Strings []string `json:"strings,omitempty"`
 	Int     uint64   `json:"int,omitempty"`
+	Bytes   []byte   `json:"bytes,omitempty"`
 }
 
-// WinService is one SCM entry (svc/mgr Config + Query).
+// MaxRegBinary caps a REG_BINARY value; the collector only needs FILETIMEs.
+const MaxRegBinary = 4096
+
+// WinService is one SCM entry (EnumServicesStatusEx + QueryServiceConfig).
 type WinService struct {
-	Name, DisplayName, BinaryPath, StartType, State, Account string
+	Name        string `json:"name"`
+	DisplayName string `json:"display_name,omitempty"`
+	BinaryPath  string `json:"binary_path,omitempty"`
+	StartType   string `json:"start_type,omitempty"` // boot, system, auto, manual, disabled
+	State       string `json:"state,omitempty"`      // running, stopped, …
+	Account     string `json:"account,omitempty"`
+	PID         int    `json:"pid,omitempty"`
+	ConfigErr   string `json:"config_err,omitempty"` // why the config could not be read (errCode)
 }
 
-// WinProcess is one Toolhelp32 entry, with the image path and command
-// line when they could be read.
+// WinProcess is one Toolhelp32 entry, with the image path, owner and
+// command line when they could be read.
 type WinProcess struct {
-	PID, PPID       int
-	Name, Exe, User string
-	Cmdline         string
-	ExeErr          error // why Exe is empty: permission, or the process exited
+	PID        int    `json:"pid"`
+	PPID       int    `json:"ppid"`
+	Name       string `json:"name"`
+	Exe        string `json:"exe,omitempty"`
+	ExeErr     string `json:"exe_err,omitempty"` // errCode of the failed image-path read
+	ExeMissing bool   `json:"exe_missing,omitempty"`
+	User       string `json:"user,omitempty"` // DOMAIN\name
+	SID        string `json:"sid,omitempty"`
+	Cmdline    string `json:"cmdline,omitempty"` // masked and capped by the source
 }
 
 // WinSocket is one row of GetExtendedTcpTable / GetExtendedUdpTable.
 type WinSocket struct {
-	Proto    string // tcp, tcp6, udp, udp6
-	Addr     string
-	Port     int
-	State    string // LISTEN, ESTABLISHED, …; empty for UDP
-	OwnerPID int
+	Proto    string `json:"proto"` // tcp, tcp6, udp, udp6
+	Addr     string `json:"addr"`
+	Port     int    `json:"port"`
+	State    string `json:"state,omitempty"` // LISTEN for TCP; empty for UDP
+	OwnerPID int    `json:"owner_pid"`
 }
 
 // WinUser is one NetUserEnum entry.
 type WinUser struct {
-	Name, SID          string
-	Disabled, NoExpire bool
-	LastLogon          string
+	Name     string `json:"name"`
+	SID      string `json:"sid,omitempty"`
+	Home     string `json:"home,omitempty"`
+	Disabled bool   `json:"disabled,omitempty"`
+	NoExpire bool   `json:"no_expire,omitempty"`
+}
+
+// WinTask is one scheduled task from C:\Windows\System32\Tasks.
+type WinTask struct {
+	Path     string   `json:"path"` // \Microsoft\Windows\…\Name
+	Enabled  bool     `json:"enabled"`
+	RunAs    string   `json:"run_as,omitempty"`
+	Triggers []string `json:"triggers,omitempty"`
+	Actions  []string `json:"actions,omitempty"` // command plus arguments, masked
+	Err      string   `json:"err,omitempty"`     // errCode when the task file could not be read
 }
 
 // WinEvent is one rendered Event Log record.
 type WinEvent struct {
-	Channel string
-	ID      int
-	Time    string
-	Data    map[string]string // EventData Name -> value
+	Channel string            `json:"channel"`
+	ID      int               `json:"id"`
+	Time    string            `json:"time"`
+	Data    map[string]string `json:"data,omitempty"` // EventData/UserData Name -> value
 }
 
 // WinSource is everything the Windows collector reads. Every method is
 // read-only. Errors carry fs.ErrPermission / fs.ErrNotExist (or wrap them)
 // so Classify maps them to reasons as on Linux.
 //
-// Keys are full paths with the hive spelled out: `HKLM\SYSTEM\...`.
+// Keys are full paths with the hive spelled out: `HKLM\SYSTEM\...`, `HKU\<SID>\...`.
 type WinSource interface {
-	Source // Info, plus ReadFile/ReadDir for applicationHost.config and Tasks XML
+	Source // Info, plus ReadFile/ReadDir for sshd_config and startup folders
 
 	RegValues(key string) (map[string]RegValue, error)
 	RegSubkeys(key string) ([]string, error)
 	Services() ([]WinService, error)
 	Processes() ([]WinProcess, error)
-	Sockets() ([]WinSocket, error)
+	Sockets() ([]WinSocket, error) // TCP listeners and bound UDP sockets
 	Users() ([]WinUser, error)
 	GroupMembers(sid string) ([]string, error) // member SIDs of a local group
-	WMI(namespace, query string) ([]map[string]any, error)
+	Tasks() ([]WinTask, error)
 	Events(channel, xpath string, max int) ([]WinEvent, error)
 }
 
@@ -89,12 +124,30 @@ const (
 	KeyWinRMService   = `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\WSMAN\Service`
 	KeyWinRMPolicy    = `HKLM\SOFTWARE\Policies\Microsoft\Windows\WinRM\Service`
 	KeyFirewallPolicy = `HKLM\SYSTEM\CurrentControlSet\Services\SharedAccess\Parameters\FirewallPolicy`
+	KeyFirewallGPO    = `HKLM\SOFTWARE\Policies\Microsoft\WindowsFirewall`
+	KeyDefender       = `HKLM\SOFTWARE\Microsoft\Windows Defender`
+	KeyDefenderPolicy = `HKLM\SOFTWARE\Policies\Microsoft\Windows Defender`
+	KeyUninstall      = `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall`
+	KeyUninstall32    = `HKLM\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall`
+	KeyCBSPackages    = `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\Packages`
+	KeyProfileList    = `HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList`
+	KeyWinlogon       = `HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon`
+	KeyWindowsNT      = `HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows`
+	KeyIFEO           = `HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options`
 	SIDAdministrators = "S-1-5-32-544"
-	NamespaceDefender = `root\Microsoft\Windows\Defender`
+
+	winSSHDConfig     = `C:\ProgramData\ssh\sshd_config`
+	winStartupAll     = `C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp`
+	winStartupPerUser = `AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup`
 )
 
-// WindowsCollector reads a WinSource. Facts it does not gather yet stay
-// not_collected.
+// Event Log queries: the last AuthWindowHours, at most MaxEvents each.
+const (
+	AuthWindowHours = 24
+	MaxEvents       = 5000
+)
+
+// WindowsCollector reads a WinSource.
 type WindowsCollector struct{}
 
 func (WindowsCollector) Name() string          { return "windows" }
@@ -110,12 +163,23 @@ func (c WindowsCollector) Collect(ctx context.Context, src Source) *Facts {
 		return f
 	}
 	f.Platform = winPlatform(ws, info)
-	f.RemoteAccess.SSH = NotApplicable[SSHConfig]() // OpenSSH Server: Phase 2, reusing ParseSSHDConfig
+	procs, procErr := ws.Processes()
+	svcs, svcErr := ws.Services()
+	socks, sockErr := ws.Sockets()
+	f.Processes = winProcesses(procs, procErr)
+	f.Services = winServices(svcs, svcErr)
+	f.Listeners = winListeners(socks, sockErr, procs)
+	f.Accounts = winAccounts(ws)
+	f.Packages = winPackages(ws)
+	f.Patches = winPatches(ws)
+	f.Persistence = winPersistence(ws, svcs, svcErr)
+	f.RemoteAccess.SSH = winSSH(ws, svcs, svcErr)
 	f.RemoteAccess.RDP = winRDP(ws)
 	f.RemoteAccess.SMB = winSMB(ws)
-	f.RemoteAccess.WinRM = winWinRM(ws)
-	f.Firewall = winFirewall(ws)
-	f.Antimalware = winDefender(ws)
+	f.RemoteAccess.WinRM = winWinRM(ws, socks, sockErr)
+	f.Firewall = winFirewall(ws, svcs, svcErr)
+	f.Antimalware = winDefender(ws, svcs, svcErr)
+	f.AuthEvents = winAuthEvents(ws)
 	return f
 }
 
@@ -156,8 +220,573 @@ func winPlatform(ws WinSource, info SourceInfo) Obs[Platform] {
 	p.Family = "windows-client"
 	if strings.HasPrefix(typ, "Server") {
 		p.Family = "windows-server"
+		// ProductName still says "Windows Server 2019" on 2022 and 2025
+		// images that were upgraded in place; the build is authoritative.
+		if name := WindowsServerName(p.Build); name != "" && !strings.Contains(p.PrettyName, name) {
+			p.PrettyName = strings.TrimSpace(p.PrettyName + " (" + name + " by build)")
+		}
 	}
 	return OK(p)
+}
+
+// WindowsServerName maps a server build number to its marketing name.
+func WindowsServerName(build string) string {
+	n, _ := strconv.Atoi(strings.SplitN(build, ".", 2)[0])
+	switch {
+	case n >= 26100:
+		return "Windows Server 2025"
+	case n >= 20348:
+		return "Windows Server 2022"
+	case n >= 17763:
+		return "Windows Server 2019"
+	case n >= 14393:
+		return "Windows Server 2016"
+	}
+	return ""
+}
+
+// winProcesses: Idle (0), System (4) and the kernel's pseudo-processes have
+// no image path by design; any other unreadable path makes the list partial.
+func winProcesses(procs []WinProcess, err error) Obs[[]Process] {
+	if err != nil {
+		return unknownFrom[[]Process]("process snapshot", err)
+	}
+	out := make([]Process, 0, len(procs))
+	hidden := 0
+	var why Reason
+	for _, p := range procs {
+		q := Process{PID: p.PID, PPID: p.PPID, Name: p.Name, Exe: p.Exe, ExeKnown: p.Exe != "",
+			Cmdline: capCmdline(p.Cmdline), User: p.User, UID: p.SID}
+		if q.ExeKnown {
+			q.ExeExists = !p.ExeMissing
+			q.InTemp = WinInTempDir(p.Exe)
+		} else if !winKernelProcess(p) {
+			hidden++
+			if why == "" {
+				why = Classify(codeErr(p.ExeErr, p.Name))
+			}
+		}
+		out = append(out, q)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].PID < out[j].PID })
+	if hidden > 0 {
+		if why == "" || why == ReasonCommandFailed {
+			why = ReasonPermission
+		}
+		return Partial(out, why, fmt.Sprintf("%d processes hide their image path", hidden))
+	}
+	return OK(out)
+}
+
+func winKernelProcess(p WinProcess) bool {
+	switch p.PID {
+	case 0, 4:
+		return true
+	}
+	switch strings.ToLower(p.Name) {
+	case "registry", "memory compression", "secure system", "vmmem", "vmmemwsl":
+		return true
+	}
+	return false
+}
+
+func capCmdline(s string) string {
+	s = MaskSecrets(s)
+	if len(s) > MaxCmdline {
+		s = s[:MaxCmdline] + "…"
+	}
+	return s
+}
+
+// WinInTempDir reports an executable under a folder any user can write to:
+// the Windows and per-user temp folders, C:\Users\Public, the root of
+// C:\ProgramData, the recycle bin and C:\PerfLogs.
+func WinInTempDir(exe string) bool {
+	p := strings.ToLower(strings.ReplaceAll(exe, "/", `\`))
+	p = strings.TrimPrefix(p, `\\?\`)
+	if len(p) >= 2 && p[1] == ':' {
+		p = p[2:]
+	}
+	for _, d := range []string{`\windows\temp\`, `\users\public\`, `\$recycle.bin\`, `\perflogs\`} {
+		if strings.HasPrefix(p, d) {
+			return true
+		}
+	}
+	if strings.Contains(p, `\appdata\local\temp\`) {
+		return true
+	}
+	if rest, ok := strings.CutPrefix(p, `\programdata\`); ok && !strings.Contains(rest, `\`) {
+		return true
+	}
+	return false
+}
+
+func winServices(svcs []WinService, err error) Obs[[]Service] {
+	if err != nil {
+		return unknownFrom[[]Service]("service control manager", err)
+	}
+	out := make([]Service, 0, len(svcs))
+	unread := 0
+	for _, s := range svcs {
+		if s.ConfigErr != "" {
+			unread++
+		}
+		out = append(out, Service{Name: s.Name, Exe: ServiceImage(s.BinaryPath), StartMode: s.StartType, State: s.State, RunAs: s.Account})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	if unread > 0 {
+		return Partial(out, ReasonPermission, fmt.Sprintf("%d service configurations unreadable", unread))
+	}
+	return OK(out)
+}
+
+// ServiceImage extracts the executable from a service command line. An
+// unquoted path with spaces is resolved the way the SCM tries it, shortest
+// first, stopping at the first segment ending in .exe.
+func ServiceImage(cmd string) string {
+	cmd = strings.TrimSpace(cmd)
+	if strings.HasPrefix(cmd, `"`) {
+		if end := strings.Index(cmd[1:], `"`); end >= 0 {
+			return cmd[1 : end+1]
+		}
+		return strings.Trim(cmd, `"`)
+	}
+	lower := strings.ToLower(cmd)
+	if i := strings.Index(lower, ".exe"); i >= 0 {
+		return cmd[:i+4]
+	}
+	if i := strings.IndexByte(cmd, ' '); i >= 0 {
+		return cmd[:i]
+	}
+	return cmd
+}
+
+// UnquotedServicePath reports the classic privilege-escalation shape: the
+// image path has a space before .exe and no quotes.
+func UnquotedServicePath(cmd string) bool {
+	cmd = strings.TrimSpace(cmd)
+	if cmd == "" || strings.HasPrefix(cmd, `"`) {
+		return false
+	}
+	return strings.Contains(ServiceImage(cmd), " ")
+}
+
+func winListeners(socks []WinSocket, err error, procs []WinProcess) Obs[[]Listener] {
+	if err != nil {
+		return unknownFrom[[]Listener]("socket tables", err)
+	}
+	names := map[int]string{}
+	for _, p := range procs {
+		names[p.PID] = p.Name
+	}
+	out := make([]Listener, 0, len(socks))
+	for _, s := range socks {
+		if strings.HasPrefix(s.Proto, "tcp") && s.State != "LISTEN" {
+			continue
+		}
+		out = append(out, Listener{Proto: s.Proto, Addr: s.Addr, Port: s.Port, PID: s.OwnerPID, Process: names[s.OwnerPID]})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		a, b := out[i], out[j]
+		if a.Proto != b.Proto {
+			return a.Proto < b.Proto
+		}
+		if a.Port != b.Port {
+			return a.Port < b.Port
+		}
+		return a.Addr < b.Addr
+	})
+	return OK(out)
+}
+
+func winAccounts(ws WinSource) Obs[[]Account] {
+	users, err := ws.Users()
+	if err != nil {
+		return unknownFrom[[]Account]("NetUserEnum", err)
+	}
+	admins := map[string]bool{}
+	members, merr := ws.GroupMembers(SIDAdministrators)
+	for _, m := range members {
+		admins[m] = true
+	}
+	out := make([]Account, 0, len(users))
+	for _, u := range users {
+		out = append(out, Account{Name: u.Name, UID: u.SID, Home: u.Home, CanLogin: !u.Disabled, IsAdmin: admins[u.SID], Disabled: u.Disabled})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	if merr != nil {
+		return Partial(out, Classify(merr), "Administrators membership unreadable: is_admin unknown")
+	}
+	return OK(out)
+}
+
+// userHives are the loaded per-user hives (HKU\S-1-5-21-…), without the
+// _Classes companions.
+func userHives(ws WinSource) ([]string, error) {
+	names, err := ws.RegSubkeys(`HKU`)
+	var out []string
+	for _, n := range names {
+		if strings.HasPrefix(n, "S-1-5-21-") && !strings.HasSuffix(n, "_Classes") {
+			out = append(out, `HKU\`+n)
+		}
+	}
+	return out, err
+}
+
+// winPackages reads the Uninstall keys: 64-bit, 32-bit and each loaded
+// user hive. Updates (ParentKeyName) and entries without a DisplayName are
+// not programs and are skipped.
+func winPackages(ws WinSource) Obs[PackageSet] {
+	set := PackageSet{Manager: "msi-registry"}
+	roots := []struct{ key, arch string }{{KeyUninstall, "x64"}, {KeyUninstall32, "x86"}}
+	hives, herr := userHives(ws)
+	for _, h := range hives {
+		roots = append(roots, struct{ key, arch string }{h + `\Software\Microsoft\Windows\CurrentVersion\Uninstall`, ""})
+	}
+	var unread []string
+	if herr != nil {
+		unread = append(unread, `HKU (`+string(Classify(herr))+`)`)
+	}
+	seen := map[string]bool{}
+	readOne := false
+	for _, r := range roots {
+		subs, err := ws.RegSubkeys(r.key)
+		if err != nil {
+			if !isNotExist(err) {
+				unread = append(unread, r.key+" ("+string(Classify(err))+")")
+			}
+			continue
+		}
+		readOne = true
+		for _, s := range subs {
+			v, err := ws.RegValues(r.key + `\` + s)
+			if err != nil {
+				if !isNotExist(err) {
+					unread = append(unread, r.key+`\`+s+" ("+string(Classify(err))+")")
+				}
+				continue
+			}
+			name := strings.TrimSpace(regString(v, "DisplayName"))
+			if name == "" || regString(v, "ParentKeyName") != "" {
+				continue
+			}
+			p := Package{Name: name, Version: strings.TrimSpace(regString(v, "DisplayVersion")), Arch: r.arch}
+			k := p.Name + "\x00" + p.Version + "\x00" + p.Arch
+			if !seen[k] {
+				seen[k] = true
+				set.Items = append(set.Items, p)
+			}
+		}
+	}
+	sort.Slice(set.Items, func(i, j int) bool {
+		a, b := set.Items[i], set.Items[j]
+		if a.Name != b.Name {
+			return a.Name < b.Name
+		}
+		return a.Version+a.Arch < b.Version+b.Arch
+	})
+	if !readOne {
+		return Unknown[PackageSet](ReasonPermission, "no Uninstall key readable: "+strings.Join(unread, "; "))
+	}
+	if len(unread) > 0 {
+		return Partial(set, ReasonPermission, "unreadable: "+strings.Join(unread, "; "))
+	}
+	return OK(set)
+}
+
+// cbsInstalled is CBS CurrentState "Installed" (0x70). 0x50 is "Staged",
+// 0x20 "Install Pending"; neither protects the host yet.
+const cbsInstalled = 0x70
+
+// winPatches reads Component Based Servicing packages: one entry per KB
+// that has a package in the Installed state. The build and UBR in platform
+// stay the main signal, as cumulative updates do not always name their KB.
+func winPatches(ws WinSource) Obs[[]Patch] {
+	subs, err := ws.RegSubkeys(KeyCBSPackages)
+	if err != nil {
+		return unknownFrom[[]Patch](KeyCBSPackages, err)
+	}
+	byKB := map[string]string{}
+	unread := 0
+	var firstErr error
+	for _, s := range subs {
+		kb := CBSPackageKB(s)
+		if kb == "" {
+			continue
+		}
+		v, err := ws.RegValues(KeyCBSPackages + `\` + s)
+		if err != nil {
+			unread++
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		if regInt(v, "CurrentState", 0) != cbsInstalled {
+			continue
+		}
+		when := filetimeDate(regInt(v, "InstallTimeHigh", 0), regInt(v, "InstallTimeLow", 0))
+		if old, ok := byKB[kb]; !ok || (when != "" && (old == "" || when < old)) {
+			byKB[kb] = when
+		}
+	}
+	out := make([]Patch, 0, len(byKB))
+	for kb, when := range byKB {
+		out = append(out, Patch{ID: kb, InstalledOn: when})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	if unread > 0 {
+		return Partial(out, Classify(firstErr), fmt.Sprintf("%d servicing packages unreadable", unread))
+	}
+	return OK(out)
+}
+
+// CBSPackageKB pulls "KB5034439" out of a CBS package key such as
+// "Package_for_KB5034439~31bf3856ad364e35~amd64~~20348.2227.1.3" or
+// "Package_1_for_KB5034439~…".
+func CBSPackageKB(name string) string {
+	i := strings.Index(name, "_KB")
+	if i < 0 || !strings.HasPrefix(name, "Package_") {
+		return ""
+	}
+	j := i + 3
+	for j < len(name) && name[j] >= '0' && name[j] <= '9' {
+		j++
+	}
+	if j == i+3 {
+		return ""
+	}
+	return name[i+1 : j]
+}
+
+// filetimeDate turns a FILETIME split in two DWORDs into YYYY-MM-DD.
+func filetimeDate(high, low uint64) string {
+	t, ok := filetime(high<<32 | low)
+	if !ok {
+		return ""
+	}
+	return t.Format("2006-01-02")
+}
+
+func filetime(ft uint64) (time.Time, bool) {
+	const epochDiff = 116444736000000000 // 1601-01-01 to 1970-01-01 in 100ns
+	if ft <= epochDiff {
+		return time.Time{}, false
+	}
+	return time.Unix(0, 0).Add(time.Duration(ft-epochDiff) * 100).UTC(), true
+}
+
+// winPersistence gathers autostart locations. WMI event subscriptions need
+// WMI and are not read, so the result is at best partial.
+func winPersistence(ws WinSource, svcs []WinService, svcErr error) Obs[[]PersistenceItem] {
+	var out []PersistenceItem
+	var unread []string
+	perKind := map[string]int{}
+	dropped := 0
+	add := func(it PersistenceItem) {
+		if perKind[it.Kind] >= MaxPersistenceItems {
+			dropped++
+			return
+		}
+		perKind[it.Kind]++
+		it.Command = capCmdline(it.Command)
+		out = append(out, it)
+	}
+	note := func(what string, err error) {
+		if err != nil && !isNotExist(err) {
+			unread = append(unread, what+" ("+string(Classify(err))+")")
+		}
+	}
+	values := func(key string) map[string]RegValue {
+		v, err := ws.RegValues(key)
+		note(key, err)
+		return v
+	}
+
+	// Run keys, machine-wide and per loaded user hive.
+	hives := []string{`HKLM\SOFTWARE`, `HKLM\SOFTWARE\WOW6432Node`}
+	users, herr := userHives(ws)
+	note("HKU", herr)
+	for _, u := range users {
+		hives = append(hives, u+`\Software`)
+	}
+	for _, h := range hives {
+		for _, sub := range []string{`Microsoft\Windows\CurrentVersion\Run`, `Microsoft\Windows\CurrentVersion\RunOnce`,
+			`Microsoft\Windows\CurrentVersion\Policies\Explorer\Run`} {
+			key := h + `\` + sub
+			v := values(key)
+			for _, name := range sortedNames(v) {
+				add(PersistenceItem{Kind: "run_key", Location: key + `\` + name, Command: regText(v[name])})
+			}
+		}
+	}
+
+	// Winlogon shell and userinit, AppInit_DLLs, IFEO debuggers.
+	wl := values(KeyWinlogon)
+	for _, name := range []string{"Shell", "Userinit"} {
+		if r, ok := wl[name]; ok {
+			add(PersistenceItem{Kind: "run_key", Location: KeyWinlogon + `\` + name, Command: regText(r), Detail: "winlogon"})
+		}
+	}
+	if v := values(KeyWindowsNT); strings.TrimSpace(regString(v, "AppInit_DLLs")) != "" {
+		detail := "appinit_dlls"
+		if regInt(v, "LoadAppInit_DLLs", 0) == 0 {
+			detail += " (LoadAppInit_DLLs=0)"
+		}
+		add(PersistenceItem{Kind: "run_key", Location: KeyWindowsNT + `\AppInit_DLLs`, Command: regString(v, "AppInit_DLLs"), Detail: detail})
+	}
+	ifeo, err := ws.RegSubkeys(KeyIFEO)
+	note(KeyIFEO, err)
+	for _, exe := range ifeo {
+		if v := values(KeyIFEO + `\` + exe); regString(v, "Debugger") != "" {
+			add(PersistenceItem{Kind: "run_key", Location: KeyIFEO + `\` + exe + `\Debugger`, Command: regString(v, "Debugger"), Detail: "ifeo"})
+		}
+	}
+
+	// Services that start without anyone logging in.
+	if svcErr != nil {
+		note("services", svcErr)
+	}
+	for _, s := range svcs {
+		if s.StartType != "auto" && s.StartType != "boot" && s.StartType != "system" {
+			continue
+		}
+		detail := s.StartType
+		if s.Account != "" {
+			detail += " as " + s.Account
+		}
+		if UnquotedServicePath(s.BinaryPath) {
+			detail += "; unquoted path with spaces"
+		}
+		add(PersistenceItem{Kind: "service", Location: "service:" + s.Name, Command: s.BinaryPath, Detail: detail})
+	}
+
+	// Scheduled tasks.
+	tasks, terr := ws.Tasks()
+	note(`C:\Windows\System32\Tasks`, terr)
+	for _, t := range tasks {
+		if t.Err != "" {
+			note(`task `+t.Path, codeErr(t.Err, t.Path))
+			continue
+		}
+		detail := "disabled"
+		if t.Enabled {
+			detail = "enabled"
+		}
+		if t.RunAs != "" {
+			detail += " as " + t.RunAs
+		}
+		if len(t.Triggers) > 0 {
+			detail += "; triggers " + strings.Join(t.Triggers, ",")
+		}
+		add(PersistenceItem{Kind: "schtask", Location: "task:" + t.Path, Command: strings.Join(t.Actions, " ; "), Detail: detail})
+	}
+
+	// Startup folders: all users, then each profile.
+	startup := []string{winStartupAll}
+	profiles, perr := ws.RegSubkeys(KeyProfileList)
+	note(KeyProfileList, perr)
+	for _, sid := range profiles {
+		if !strings.HasPrefix(sid, "S-1-5-21-") {
+			continue
+		}
+		if home := regString(values(KeyProfileList+`\`+sid), "ProfileImagePath"); home != "" {
+			startup = append(startup, home+`\`+winStartupPerUser)
+		}
+	}
+	for _, dir := range startup {
+		names, err := ws.ReadDir(dir)
+		note(dir, err)
+		for _, n := range names {
+			if strings.EqualFold(n, "desktop.ini") {
+				continue
+			}
+			add(PersistenceItem{Kind: "startup_folder", Location: dir + `\` + n})
+		}
+	}
+
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Kind != out[j].Kind {
+			return out[i].Kind < out[j].Kind
+		}
+		return out[i].Location < out[j].Location
+	})
+	switch {
+	case dropped > 0:
+		return Partial(out, ReasonTruncated, fmt.Sprintf("%d items over the per-kind cap of %d", dropped, MaxPersistenceItems))
+	case len(unread) > 0:
+		return Partial(out, ReasonPermission, "unreadable: "+strings.Join(unread, "; "))
+	}
+	return Partial(out, ReasonNotCollected, "WMI event subscriptions are not read (no WMI client)")
+}
+
+func sortedNames(v map[string]RegValue) []string {
+	names := make([]string, 0, len(v))
+	for n := range v {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func regText(r RegValue) string {
+	if len(r.Strings) > 0 {
+		return strings.Join(r.Strings, " ")
+	}
+	if r.String != "" {
+		return r.String
+	}
+	if r.Type == "DWORD" || r.Type == "QWORD" {
+		return strconv.FormatUint(r.Int, 10)
+	}
+	return ""
+}
+
+func findService(svcs []WinService, name string) (WinService, bool) {
+	for _, s := range svcs {
+		if strings.EqualFold(s.Name, name) {
+			return s, true
+		}
+	}
+	return WinService{}, false
+}
+
+// winSSH reads the OpenSSH Server config with the shared parser, up to the
+// first Match (the stock file ends with "Match Group administrators").
+func winSSH(ws WinSource, svcs []WinService, svcErr error) Obs[SSHConfig] {
+	b, err := ws.ReadFile(winSSHDConfig)
+	if errors.Is(err, fs.ErrNotExist) {
+		if _, ok := findService(svcs, "sshd"); !ok && svcErr == nil {
+			return NotApplicable[SSHConfig]()
+		}
+		return Unknown[SSHConfig](ReasonNotInstalled, "sshd service present but "+winSSHDConfig+" missing")
+	}
+	cfg := SSHConfig{ConfigPath: winSSHDConfig, Settings: SSHDDefaults()}
+	if err != nil {
+		for k := range cfg.Settings {
+			cfg.Settings[k] = "unknown"
+		}
+		cfg.Unread = []string{winSSHDConfig}
+		return Partial(cfg, Classify(err), "sshd_config unreadable; settings are \"unknown\"")
+	}
+	sum := sha256.Sum256(b)
+	cfg.Hash = hex.EncodeToString(sum[:])[:16]
+	dirs, _ := ParseSSHDConfig(b)
+	got := map[string]bool{}
+	include := false
+	for _, d := range dirs {
+		if d.Key == "include" {
+			include = true
+			continue
+		}
+		if _, want := cfg.Settings[d.Key]; want && !got[d.Key] {
+			cfg.Settings[d.Key], got[d.Key] = d.Value, true
+		}
+	}
+	if include {
+		return Partial(cfg, ReasonNotCollected, "Include is not followed on Windows yet")
+	}
+	return OK(cfg)
 }
 
 // winRDP follows Windows defaults when a value is missing: RDP off
@@ -197,7 +826,7 @@ func winSMB(ws WinSource) Obs[SMBConfig] {
 
 // winWinRM: a Group Policy value wins over the service's own setting.
 // The listener comes from the socket table (5985 = HTTP).
-func winWinRM(ws WinSource) Obs[WinRMConfig] {
+func winWinRM(ws WinSource, socks []WinSocket, serr error) Obs[WinRMConfig] {
 	svc, err := ws.RegValues(KeyWinRMService)
 	if err != nil && !isNotExist(err) {
 		return unknownFrom[WinRMConfig](KeyWinRMService, err)
@@ -213,7 +842,6 @@ func winWinRM(ws WinSource) Obs[WinRMConfig] {
 		return regInt(svc, name, 0) == 1
 	}
 	cfg := WinRMConfig{AllowUnencrypted: pick("AllowUnencryptedTraffic"), BasicAuth: pick("AllowBasic")}
-	socks, serr := ws.Sockets()
 	if serr != nil {
 		return Partial(cfg, Classify(serr), "socket table unreadable: listener unknown")
 	}
@@ -228,24 +856,44 @@ func winWinRM(ws WinSource) Obs[WinRMConfig] {
 
 func isNotExist(err error) bool { return Classify(err) == ReasonNotInstalled }
 
-// winFirewall reads the local profile switches. A Group Policy setting can
-// override them; Phase 2 reads the effective state through INetFwPolicy2 and
-// keeps this as the fallback.
-func winFirewall(ws WinSource) Obs[Firewall] {
+// winFirewall reads each profile's switch; a Group Policy value wins over
+// the local one. A stopped firewall service (MpsSvc) filters nothing,
+// whatever the switches say.
+func winFirewall(ws WinSource, svcs []WinService, svcErr error) Obs[Firewall] {
 	fw := Firewall{Backend: "windows", Profiles: map[string]bool{}}
 	var firstErr error
-	for _, p := range []struct{ key, name string }{
-		{"DomainProfile", "Domain"}, {"StandardProfile", "Private"}, {"PublicProfile", "Public"},
+	for _, p := range []struct{ local, gpo, name string }{
+		{"DomainProfile", "DomainProfile", "Domain"}, {"StandardProfile", "PrivateProfile", "Private"}, {"PublicProfile", "PublicProfile", "Public"},
 	} {
-		v, err := ws.RegValues(KeyFirewallPolicy + `\` + p.key)
+		pol, perr := ws.RegValues(KeyFirewallGPO + `\` + p.gpo)
+		if perr != nil && !isNotExist(perr) {
+			if firstErr == nil {
+				firstErr = perr
+			}
+			continue
+		}
+		if _, ok := pol["EnableFirewall"]; ok {
+			fw.Profiles[p.name] = regInt(pol, "EnableFirewall", 1) == 1
+			continue
+		}
+		v, err := ws.RegValues(KeyFirewallPolicy + `\` + p.local)
 		if err != nil && !isNotExist(err) { // an absent key means the Windows default: on
 			if firstErr == nil {
 				firstErr = err
 			}
 			continue
 		}
-		on := regInt(v, "EnableFirewall", 1) == 1
-		fw.Profiles[p.name] = on
+		fw.Profiles[p.name] = regInt(v, "EnableFirewall", 1) == 1
+	}
+	if s, ok := findService(svcs, "MpsSvc"); ok {
+		fw.Extra = map[string]string{"service": s.State}
+		if s.State != "running" {
+			for k := range fw.Profiles {
+				fw.Profiles[k] = false
+			}
+		}
+	}
+	for _, on := range fw.Profiles {
 		fw.Enabled = fw.Enabled || on
 	}
 	switch {
@@ -253,80 +901,165 @@ func winFirewall(ws WinSource) Obs[Firewall] {
 		return unknownFrom[Firewall](KeyFirewallPolicy, firstErr)
 	case firstErr != nil:
 		return Partial(fw, Classify(firstErr), "some firewall profiles unreadable")
+	case svcErr != nil:
+		return Partial(fw, Classify(svcErr), "firewall service state unknown")
 	}
 	return OK(fw)
 }
 
-func winDefender(ws WinSource) Obs[Antimalware] {
-	rows, err := ws.WMI(NamespaceDefender, "SELECT RealTimeProtectionEnabled, AntivirusSignatureAge, AMRunningMode FROM MSFT_MpComputerStatus")
+// winDefender reads Defender's state from the registry and the WinDefend
+// service, never from WMI. Policy values win over local ones. Real-time
+// protection counts as on only when the service runs, nothing disables it
+// and Defender is not in passive mode.
+func winDefender(ws WinSource, svcs []WinService, svcErr error) Obs[Antimalware] {
+	base, err := ws.RegValues(KeyDefender)
 	if err != nil {
-		return unknownFrom[Antimalware]("MSFT_MpComputerStatus", err)
+		if isNotExist(err) {
+			return Unknown[Antimalware](ReasonNotInstalled, "Microsoft Defender is not installed (another antivirus may be active)")
+		}
+		return unknownFrom[Antimalware](KeyDefender, err)
 	}
-	if len(rows) == 0 {
-		return Unknown[Antimalware](ReasonNotInstalled, "Defender reports no status (another antivirus may be active)")
+	am := Antimalware{Product: "Microsoft Defender"}
+	var gaps []string
+	var why Reason
+	gap := func(r Reason, s string) {
+		gaps = append(gaps, s)
+		if why == "" {
+			why = r
+		}
 	}
-	r := rows[0]
-	am := Antimalware{Product: "Microsoft Defender", RealTime: asBool(r["RealTimeProtectionEnabled"]), SignatureAgeDays: asInt(r["AntivirusSignatureAge"])}
-	if mode, _ := r["AMRunningMode"].(string); mode != "" && mode != "Normal" {
-		am.Product += " (" + mode + ")" // Passive / EDR Block: another product is primary
+	read := func(key string) map[string]RegValue {
+		v, err := ws.RegValues(key)
+		if err != nil && !isNotExist(err) {
+			gap(Classify(err), key+" unreadable")
+		}
+		return v
 	}
-	prefs, err := ws.WMI(NamespaceDefender, "SELECT ExclusionPath, ExclusionExtension, ExclusionProcess FROM MSFT_MpPreference")
-	if err != nil {
-		return Partial(am, Classify(err), "exclusions unreadable")
+	pol := read(KeyDefenderPolicy)
+	polRT := read(KeyDefenderPolicy + `\Real-Time Protection`)
+	rt := read(KeyDefender + `\Real-Time Protection`)
+	disabled := func(local, policy map[string]RegValue, name string) bool {
+		if _, ok := policy[name]; ok {
+			return regInt(policy, name, 0) == 1
+		}
+		return regInt(local, name, 0) == 1
 	}
-	if len(prefs) == 0 {
-		return Partial(am, ReasonNotInstalled, "no Defender preferences returned")
+	off := disabled(base, pol, "DisableAntiSpyware") || disabled(base, pol, "DisableAntiVirus")
+	rtOff := disabled(rt, polRT, "DisableRealtimeMonitoring")
+	passive := regInt(base, "PassiveMode", 0) == 1
+	if passive {
+		am.Product += " (Passive)" // another product is primary
 	}
-	for _, field := range []string{"ExclusionPath", "ExclusionExtension", "ExclusionProcess"} {
-		am.Exclusions = append(am.Exclusions, asStrings(prefs[0][field])...)
+	running := false
+	if s, ok := findService(svcs, "WinDefend"); ok {
+		running = s.State == "running"
+		if !running {
+			am.Product += " (service " + s.State + ")"
+		}
+	} else if svcErr != nil {
+		gap(Classify(svcErr), "WinDefend service state unknown")
+		running = true // judged on the settings alone, and marked partial
+	} else {
+		am.Product += " (no WinDefend service)"
 	}
-	// Without elevation Defender answers "N/A: Must be an administrator to
-	// view exclusions" (or nothing): that is hidden, not empty.
-	for _, x := range am.Exclusions {
-		if strings.HasPrefix(x, "N/A") {
-			am.Exclusions = nil
-			return Partial(am, ReasonPermission, "exclusions hidden without elevation")
+	am.RealTime = running && !off && !rtOff && !passive
+
+	sig := read(KeyDefender + `\Signature Updates`)
+	if t, ok := regFiletime(sig, "SignaturesLastUpdated", "AVSignatureApplied"); ok {
+		am.SignatureAgeDays = int(ws.Info().RecordedAt.Sub(t).Hours() / 24)
+		if am.SignatureAgeDays < 0 {
+			am.SignatureAgeDays = 0
+		}
+	} else {
+		gap(ReasonNotInstalled, "signature date unknown")
+	}
+
+	for _, root := range []string{KeyDefender + `\Exclusions`, KeyDefenderPolicy + `\Exclusions`} {
+		for _, kind := range []string{"Paths", "Extensions", "Processes"} {
+			v, err := ws.RegValues(root + `\` + kind)
+			if err != nil {
+				if !isNotExist(err) {
+					gap(Classify(err), "exclusions hidden ("+root+`\`+kind+")")
+				}
+				continue
+			}
+			am.Exclusions = append(am.Exclusions, sortedNames(v)...)
 		}
 	}
 	if len(am.Exclusions) == 0 && !ws.Info().Elevated {
-		return Partial(am, ReasonPermission, "exclusions cannot be confirmed empty without elevation")
+		gap(ReasonPermission, "exclusions cannot be confirmed empty without elevation")
+	}
+	if len(gaps) > 0 {
+		return Partial(am, why, strings.Join(gaps, "; "))
 	}
 	return OK(am)
 }
 
-func asBool(v any) bool {
-	b, _ := v.(bool)
-	return b
-}
-
-func asInt(v any) int {
-	switch n := v.(type) {
-	case int:
-		return n
-	case int32:
-		return int(n)
-	case int64:
-		return int(n)
-	case uint32:
-		return int(n)
-	case float64:
-		return int(n)
-	}
-	return 0
-}
-
-func asStrings(v any) []string {
-	switch s := v.(type) {
-	case []string:
-		return s
-	case []any:
-		var out []string
-		for _, x := range s {
-			if str, ok := x.(string); ok {
-				out = append(out, str)
-			}
+// regFiletime reads the first of names that holds an 8-byte FILETIME.
+func regFiletime(v map[string]RegValue, names ...string) (time.Time, bool) {
+	for _, n := range names {
+		r, ok := v[n]
+		if !ok {
+			continue
 		}
-		return out
+		var ft uint64
+		switch {
+		case len(r.Bytes) == 8:
+			ft = binary.LittleEndian.Uint64(r.Bytes)
+		case r.Type == "QWORD":
+			ft = r.Int
+		default:
+			continue
+		}
+		if t, ok := filetime(ft); ok {
+			return t, true
+		}
 	}
-	return nil
+	return time.Time{}, false
+}
+
+// Event Log queries.
+var (
+	securityXPath = fmt.Sprintf("*[System[(EventID=4625 or EventID=1102 or EventID=4720 or EventID=4732) and TimeCreated[timediff(@SystemTime) <= %d]]]", AuthWindowHours*3600*1000)
+	systemXPath   = fmt.Sprintf("*[System[(EventID=104 or EventID=7045) and TimeCreated[timediff(@SystemTime) <= %d]]]", AuthWindowHours*3600*1000)
+)
+
+// winAuthEvents counts failed logons (4625) by source address and lists
+// what an intruder leaves behind: cleared logs (1102, 104), new accounts
+// (4720), local group additions (4732) and new services (7045). The
+// Security log needs elevation; without it the fact is unknown.
+func winAuthEvents(ws WinSource) Obs[AuthEvents] {
+	ae := AuthEvents{WindowHours: AuthWindowHours, FailedBySrc: map[string]int{}}
+	sec, err := ws.Events("Security", securityXPath, MaxEvents)
+	if err != nil {
+		return unknownFrom[AuthEvents]("Security event log", err)
+	}
+	sys, serr := ws.Events("System", systemXPath, MaxEvents)
+	for _, e := range append(sec, sys...) {
+		d := e.Data
+		switch {
+		case e.Channel == "Security" && e.ID == 4625:
+			src := d["IpAddress"]
+			if src == "" || src == "-" {
+				src = "local"
+			}
+			ae.FailedBySrc[src]++
+		case e.ID == 1102 || (e.Channel == "System" && e.ID == 104):
+			ae.Notable = append(ae.Notable, AuthEvent{Kind: "log_cleared", When: e.Time, Who: d["SubjectUserName"]})
+		case e.ID == 4720:
+			ae.Notable = append(ae.Notable, AuthEvent{Kind: "account_created", When: e.Time, Who: d["TargetUserName"]})
+		case e.ID == 4732:
+			ae.Notable = append(ae.Notable, AuthEvent{Kind: "group_member_added", When: e.Time, Who: d["TargetUserName"] + " <- " + d["MemberSid"]})
+		case e.ID == 7045:
+			ae.Notable = append(ae.Notable, AuthEvent{Kind: "service_installed", When: e.Time, Who: d["ServiceName"]})
+		}
+	}
+	sort.SliceStable(ae.Notable, func(i, j int) bool { return ae.Notable[i].When < ae.Notable[j].When })
+	switch {
+	case len(sec) >= MaxEvents:
+		return Partial(ae, ReasonTruncated, fmt.Sprintf("Security log: more than %d matching events", MaxEvents))
+	case serr != nil:
+		return Partial(ae, Classify(serr), "System event log unreadable")
+	}
+	return OK(ae)
 }

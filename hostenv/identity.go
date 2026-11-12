@@ -42,6 +42,9 @@ var (
 
 // skipIP lists contents where dotted numbers are versions, not addresses.
 func skipIP(e *entry) bool {
+	if winSkipIP(e) {
+		return true
+	}
 	if e.Op == "cmd" {
 		b := strings.ToLower(baseName(e.Argv[0]))
 		return b == "dpkg-query" || b == "rpm"
@@ -75,11 +78,12 @@ func (m *Masker) init() {
 }
 
 func (m *Masker) apply(entries []*entry) []*entry {
+	m.Users = append(m.Users, winHumanUsers(entries)...)
 	m.init()
 	// Deterministic placeholder order: walk entries sorted by key.
 	sort.Slice(entries, func(i, j int) bool { return entries[i].key() < entries[j].key() })
 	for _, e := range entries {
-		e.Path = m.text(e.Path, true, true)
+		e.Path = m.text(e.Path, !winSkipIP(e), true)
 		for i := range e.Argv {
 			e.Argv[i] = m.text(e.Argv[i], true, true)
 		}
@@ -114,6 +118,7 @@ func (m *Masker) text(s string, ips, users bool) string {
 		return s
 	}
 	s = MaskSecrets(s)
+	s = maskMachineSIDs(s)
 	s = sshKeyRe.ReplaceAllStringFunc(s, m.key)
 	for _, p := range m.repl {
 		if !users && strings.HasPrefix(p.to, "user") {

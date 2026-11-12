@@ -22,6 +22,8 @@ func ForOS(goos string) Collector {
 	switch goos {
 	case "linux":
 		return LinuxCollector{}
+	case "windows":
+		return WindowsCollector{}
 	}
 	return Unsupported{GOOS: goos}
 }

@@ -1,0 +1,71 @@
+# Windows Server build, tests and a live hostenv smoke run (Phase 2). Lives on the
+# hostenv-win branch only; main's ci.yml is untouched. Public repo: the runners are free.
+name: windows
+on:
+  push:
+    branches: [hostenv-win]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-2025]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version: stable
+          check-latest: true
+      - name: build hostenv, checks, hostfacts
+        run: go build ./hostenv/ ./checks/ ./cmd/hostfacts/
+      - name: build everything (informational until Phase 1c fixes tools/ on Windows)
+        continue-on-error: true
+        run: go build ./...
+      - name: vet
+        run: go vet ./hostenv/ ./checks/ ./cmd/hostfacts/
+      - name: test hostenv and checks
+        run: go test ./hostenv/ ./checks/
+      - name: hostfacts smoke (live facts, no panic)
+        run: |
+          go build -o hostfacts.exe ./cmd/hostfacts/
+          ./hostfacts.exe > facts.json
+          ./hostfacts.exe -checks > findings.json
+          ./hostfacts.exe -record fixture > /dev/null
+          ./hostfacts.exe -replay fixture > replayed.json
+          python - <<'EOF'
+          import json
+          f = json.load(open("facts.json"))
+          assert f["schema"] == "hostfacts/1", f["schema"]
+          assert f["collector"]["name"] == "windows", f["collector"]
+          p = f["platform"]
+          assert p["status"] == "ok" and p["value"]["family"] == "windows-server", p
+          assert f["privilege"]["value"]["elevated"], "runner should be elevated"
+          for k in ["packages", "patches", "services", "processes", "accounts", "listeners",
+                    "persistence", "firewall", "antimalware", "auth_events"]:
+              o = f[k]
+              print(f"{k:12} {o['status']:8} {o.get('reason', ''):20} {o.get('detail', '')[:100]}")
+              assert o["status"] in ("ok", "partial"), (k, o)
+          for k, o in f["remote_access"].items():
+              print(f"{k:12} {o['status']:8} {o.get('reason', '')}")
+              assert o["status"] in ("ok", "partial", "not_applicable"), (k, o)
+          r = json.load(open("replayed.json"))
+          for k in ["platform", "packages", "patches", "services", "accounts", "listeners", "persistence"]:
+              assert r[k]["status"] == f[k]["status"], ("replay differs", k, r[k]["status"], f[k]["status"])
+          print("findings:", len(json.load(open("findings.json"))))
+          EOF
+      - name: keep the masked fixture for review (not committed automatically)
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: hostfacts-${{ matrix.os }}
+          path: |
+            facts.json
+            findings.json
+            fixture/
+          retention-days: 3
