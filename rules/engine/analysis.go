@@ -583,6 +583,15 @@ func (a *analysis) assign(st state, t []Token) (val, bool) {
 			}
 			if a.js {
 				a.setRelative(st, key, rhs, t[k].Text == "=")
+				if rel, base, ok := urlRelative(rhs); ok && t[k].Text == "=" {
+					// u = new URL(a, base): the path and query are a's when a
+					// starts with "/" or a scheme, the base giving the origin only
+					// (a Host header there is not in u.pathname)
+					rv := a.urlPath(st, rel, base)
+					for _, m := range urlPathParts {
+						st[key+sepCh+"."+m] = entry{taint: rv.taint, san: rv.san, raw: rv.raw, emb: rv.emb, weak: rv.weak}
+					}
+				}
 			}
 		}
 		if cls != "" && len(tg) == 1 {
@@ -1046,6 +1055,15 @@ func (a *analysis) expr(st state, t []Token, whole bool) val {
 	}
 	a.depth++
 	defer func() { a.depth-- }()
+	if a.js {
+		if rel, base, rest, ok := urlPartOf(t); ok {
+			v := a.urlPath(st, rel, base) // new URL('/x', base).pathname: a's
+			if len(rest) > 0 {
+				v = or(v, a.expr(st, append(append([]Token{}, rel...), rest...), whole))
+			}
+			return v
+		}
+	}
 
 	// Conditional expressions: each branch under its condition.
 	if a.py {
@@ -2471,4 +2489,72 @@ func (a *analysis) textSink(st state, t []Token, k, off, textEnd int, cond *argC
 	if tainted {
 		a.report(tk.Line + strings.Count(tk.Text[:off], "\n"))
 	}
+}
+
+// urlPathParts are the members of a URL that come from its first argument
+// when that is a path (new URL(a, base)): the base gives only the origin.
+var urlPathParts = []string{"pathname", "search", "searchParams", "hash"}
+
+// urlRelative returns a and base of new URL(a, base) (both arguments given,
+// a not spread); false for anything else.
+func urlRelative(t []Token) ([]Token, []Token, bool) {
+	t = stripParens(t)
+	if len(t) < 5 || !t[0].word("new") || !t[1].word("URL") || !t[2].op("(") || closeOf(t, 2) != len(t)-1 {
+		return nil, nil, false
+	}
+	args := splitTop(inside(t, 2, len(t)-1), isComma)
+	if len(args) != 2 || len(args[0]) == 0 || args[0][0].op("...") {
+		return nil, nil, false
+	}
+	return args[0], args[1], true
+}
+
+// urlPath is the value of the path and query of new URL(a, base): a's when a
+// is written starting with "/" or with a scheme (its path replaces the
+// base's); otherwise a relative a ("x", "", a variable) keeps part of the
+// base's path, and the base's value counts too.
+func (a *analysis) urlPath(st state, rel, base []Token) val {
+	v := a.expr(st, rel, false)
+	if t := stripParens(rel); len(t) > 0 && t[0].Kind == Str {
+		lit := t[0].Text
+		if len(t[0].Parts) > 0 {
+			lit = lit[:min(t[0].Parts[0].Off, len(lit))]
+		}
+		if strings.HasPrefix(lit, "/") || hasScheme(lit) {
+			return v
+		}
+	}
+	return or(v, a.expr(st, base, false))
+}
+
+// hasScheme reports whether s starts with a URL scheme (http:, mailto:).
+func hasScheme(s string) bool {
+	for i, c := range s {
+		switch {
+		case c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z':
+		case i > 0 && (c >= '0' && c <= '9' || c == '+' || c == '.' || c == '-'):
+		case i > 0 && c == ':':
+			return true
+		default:
+			return false
+		}
+	}
+	return false
+}
+
+// urlPartOf reads new URL(a, base).pathname (or search, searchParams, hash)
+// at the start of t: a, and what follows the member.
+func urlPartOf(t []Token) ([]Token, []Token, []Token, bool) {
+	if len(t) < 7 || !t[0].word("new") || !t[1].word("URL") || !t[2].op("(") {
+		return nil, nil, nil, false
+	}
+	c := closeOf(t, 2)
+	if c+2 >= len(t) || !t[c+1].op(".") || !slices.Contains(urlPathParts, t[c+2].Text) {
+		return nil, nil, nil, false
+	}
+	rel, base, ok := urlRelative(t[:c+1])
+	if !ok {
+		return nil, nil, nil, false
+	}
+	return rel, base, t[c+3:], true
 }
