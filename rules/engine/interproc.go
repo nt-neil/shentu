@@ -34,7 +34,7 @@ const (
 	maxSumDepth  = 32   // summaries being computed inside one another
 	maxSumHeight = 128  // the longest chain of summaries under one: past it the summary counts as cut short
 	maxSumRuns   = 4000 // analyses of function bodies per rule and file
-	maxSumRounds = 4    // recomputations at the head of a recursive cycle
+	maxSumRounds = 16   // recomputations at the head of a recursive cycle: only against one that never settles, as each summary's work is capped anyway
 )
 
 // fnInfo is a named function of the file.
@@ -60,7 +60,7 @@ type summary struct {
 	capped     bool     // a cap of its own work cut it short: what it says may be too little
 	height     int      // the longest chain of summaries under it, itself included
 	cost       int      // its own work, not its callees': what an asker pays for using it
-	id         string   // file and key: the same summary worked out again (after a cache let it go) is paid for once
+	id         string   // file and key (a cycle's first function, for all its members): the same work done again (after a cache let it go) is paid for once
 }
 
 func (s *summary) equal(o *summary) bool {
@@ -741,9 +741,12 @@ func (a *analysis) summaryOf(key string) *summary {
 	})
 	fr := a.proj.pop()
 	got := map[string]*summary{}
+	// The members were worked out together, at one cost: an asker using several
+	// of them pays it once (one id for the cycle, by its first function).
+	id := a.file + "\x00" + sc.ff.comps[c][0]
 	for _, m := range members {
 		delete(sc.busy, m)
-		sc.done[m].capped, sc.done[m].height, sc.done[m].cost, sc.done[m].id = capped, height, cost, a.file+"\x00"+m
+		sc.done[m].capped, sc.done[m].height, sc.done[m].cost, sc.done[m].id = capped, height, cost, id
 		got[m] = sc.done[m]
 	}
 	s := sc.done[key]
