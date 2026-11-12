@@ -86,3 +86,20 @@ func TestUncheckedSection(t *testing.T) {
 		t.Error("a section with every configuration read")
 	}
 }
+
+// One warning per file lists at most 20 unparsed line numbers, then the count.
+func TestUnparsedKeysFinding(t *testing.T) {
+	k := tools.KeyFile{Path: "/root/.ssh/authorized_keys"}
+	for i := 1; i <= 25; i++ {
+		k.Unparsed = append(k.Unparsed, i)
+	}
+	f := unparsedKeysFinding(k)
+	if f.Key != "authorized_key_unparsed:/root/.ssh/authorized_keys" || !strings.Contains(f.Summary, "1, 2,") ||
+		!strings.Contains(f.Summary, " 20 and 5 more (25 in all)") || strings.Contains(f.Summary, "21") {
+		t.Errorf("%+v", f)
+	}
+	k.Unparsed = []int{3, 9}
+	if f := unparsedKeysFinding(k); !strings.Contains(f.Summary, "line(s) 3, 9 are") || strings.Contains(f.Summary, "more") {
+		t.Errorf("%+v", f)
+	}
+}

@@ -106,6 +106,25 @@ func uncheckedConfigs(unread []string) string {
 	return b.String()
 }
 
+// unparsedLinesMax is how many unparsed line numbers one warning lists.
+const unparsedLinesMax = 20
+
+// unparsedKeysFinding is one warning for an authorized_keys file's lines that
+// are neither a key nor a comment: the first unparsedLinesMax line numbers,
+// then how many in all.
+func unparsedKeysFinding(k tools.KeyFile) finding {
+	lines := make([]string, 0, unparsedLinesMax)
+	for _, l := range k.Unparsed[:min(len(k.Unparsed), unparsedLinesMax)] {
+		lines = append(lines, strconv.Itoa(l))
+	}
+	list := strings.Join(lines, ", ")
+	if n := len(k.Unparsed); n > unparsedLinesMax {
+		list += fmt.Sprintf(" and %d more (%d in all)", n-unparsedLinesMax, n)
+	}
+	return finding{"authorized_key_unparsed:" + k.Path, "warning",
+		fmt.Sprintf("%s line(s) %s are neither a key nor a comment; sshd ignores them, but check none is a key written in another form", k.Path, list), nil}
+}
+
 // patrolListMax is how many findings one patrol report lists.
 const patrolListMax = 50
 
@@ -254,12 +273,7 @@ func checks(ctx context.Context, cfg *Config, env *tools.Env, st *state, daily b
 		if len(k.Unparsed) == 0 {
 			continue
 		}
-		lines := make([]string, len(k.Unparsed))
-		for i, l := range k.Unparsed {
-			lines[i] = strconv.Itoa(l)
-		}
-		out = append(out, finding{"authorized_key_unparsed:" + k.Path, "warning",
-			fmt.Sprintf("%s line(s) %s are neither a key nor a comment; sshd ignores them, but check none is a key written in another form", k.Path, strings.Join(lines, ", ")), nil})
+		out = append(out, unparsedKeysFinding(k))
 	}
 	for _, k := range acc.SharedKeys {
 		out = append(out, finding{"sharedkey:" + k.Fingerprint, "warning",

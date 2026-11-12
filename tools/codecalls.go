@@ -175,6 +175,7 @@ func pruneCallStates(dir string, keep int) {
 	})
 	for _, a := range all[min(keep, len(all)):] {
 		os.Remove(a.name)
+os.Remove(strings.TrimSuffix(a.name, ".json") + ".walk") // its walk's place
 	}
 }
 
@@ -308,10 +309,10 @@ func (st *callState) keepOnly(hash map[string]string) {
 	}
 }
 
-// walkPos is where a walk the caller's time cut short stopped: the index of
-// the root and the path in it.
+// walkPos is where a walk the caller's time cut short stopped: the root and
+// the path in it.
 type walkPos struct {
-	Root int    `json:"r"`
+	Root string `json:"r"` // the root itself: the roots' order may change between audits
 	Path string `json:"p"`
 }
 
