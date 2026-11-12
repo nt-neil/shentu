@@ -37,9 +37,14 @@ func SSHSummary(ctx context.Context, env *Env, since time.Time, onlyIP string) (
 	if runtime.GOOS == "windows" {
 		return winLogonSummary(since, onlyIP)
 	}
-	agg := hostenv.NewSSHLogins(since, time.Now(), onlyIP)
-	source, _ := linux.ScanAuthLogs(ctx, hostSource(), env.LogPaths, since, agg.Add)
-	out := map[string]any{"source": source, "since": since, "sources": agg.Result()}
+	var agg *hostenv.SSHLogins
+	now := time.Now()
+	source, verified, _ := linux.ScanAuthLogs(ctx, hostSource(), env.LogPaths, since, func() func(string) {
+		agg = hostenv.NewSSHLogins(since, now, onlyIP)
+		return agg.Add
+	})
+	// verified is false for text logs: anyone on the host can write sshd lines there.
+	out := map[string]any{"source": source, "verified": verified, "since": since, "sources": agg.Result()}
 	if n := agg.Evicted(); n > 0 {
 		out["note"] = fmt.Sprintf("%d low-activity sources were not tracked (more than %d sources)", n, hostenv.MaxTrackedSources)
 	}

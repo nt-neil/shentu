@@ -21,6 +21,11 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
   SYSTEM 與 Administrators 能存取。
 - `ssh_logins`、`processes`、`accounts_audit` 與 `log_search` 工具可在 Windows 使用（登入
   事件、程序清單、本機帳號、事件記錄）。
+- SSH 登入沒成功的紀錄改為先讀 journald：ssh 與 sshd 單元的標記由 journald 自己填入，本機用戶不能偽造。
+  journald 不存在、讀取時間到了上限（60 s），或沒有 sshd 紀錄時，才改讀文字紀錄檔（`auth.log`、`secure`）。
+  本機任何人都能用 `logger` 寫入一行 sshd 紀錄，所以這時 `auth_events` 標為 partial，
+  原因是新的 `unverified_source`，多次試圖登入的告警也會附註來源未驗證。
+  不是 root 的用戶沒有權限看系統紀錄時，不再當成「沒有登入沒成功」。
 
 ### 已知問題
 

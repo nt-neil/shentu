@@ -92,9 +92,11 @@ func winLogonSummary(since time.Time, onlyIP string) (map[string]any, error) {
 		return list[i].IP < list[j].IP
 	})
 	out := map[string]any{
-		"source":  "Windows Security log: failed logons (4625) and network (3), cleartext/OpenSSH (8) and RDP (10) logons (4624)",
-		"since":   since,
-		"sources": list,
+		// Only the system (LSA) writes the Security log, unlike Linux text logs.
+		"verified": true,
+		"source":   "Windows Security log: failed logons (4625) and network (3), cleartext/OpenSSH (8) and RDP (10) logons (4624)",
+		"since":    since,
+		"sources":  list,
 	}
 	if len(evs) >= hostenv.MaxEvents {
 		out["note"] = fmt.Sprintf("more than %d matching events: counts are a lower bound", hostenv.MaxEvents)

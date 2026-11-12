@@ -24,6 +24,14 @@ Chinese for the zh-TW pages; keep the two in step.
   `%ProgramData%\Shentu`, open to SYSTEM and Administrators only.
 - The `ssh_logins`, `processes`, `accounts_audit` and `log_search` tools work on Windows
   (logon events, process list, local accounts, event logs).
+- Failed SSH logins are read from journald first: its ssh and sshd units are labelled by
+  journald itself, so a local user cannot forge them. The text logs (`auth.log`, `secure`)
+  are read when journald is missing, times out (60 s), or has no sshd entries; anyone on the
+  host can write an sshd line to them with `logger`, so `auth_events` is then partial with
+  the new reason `unverified_source`, and brute-force findings and patrol SSH alerts carry a
+  note saying so.
+  A journal that hides the system's entries from a non-root user is no longer reported as
+  "no failed logins".
 
 ### Known issues
 
