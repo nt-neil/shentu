@@ -108,9 +108,11 @@ func snapshotDiff(a, b map[string]string) []snapChange {
 	return out
 }
 
-// snapshotVolatile names subkeys whose values change on their own
-// (Defender stamps signature checks there), so they cannot show a write.
-var snapshotVolatile = map[string]bool{"Signature Updates": true}
+// snapshotVolatile names keys, by full path under HKLM, whose values
+// change on their own (Defender stamps signature checks there), so they
+// cannot show a write. Only that key: the policy key of the same name
+// under SOFTWARE\Policies is still compared.
+var snapshotVolatile = map[string]bool{`SOFTWARE\Microsoft\Windows Defender\Signature Updates`: true}
 
 // snapshotNoise names single values Defender is known to write by itself,
 // each with the CI run that showed it with no collection running.
@@ -161,7 +163,7 @@ func hostSnapshot(t *testing.T, l *Live) map[string]string {
 			return
 		}
 		for _, s := range subs {
-			if !snapshotVolatile[s] {
+			if !snapshotVolatile[path+`\`+s] {
 				walk(root, path+`\`+s, depth-1)
 			}
 		}
@@ -186,4 +188,15 @@ func hostSnapshot(t *testing.T, l *Live) map[string]string {
 		t.Fatalf("snapshot too small to show anything: %v", out)
 	}
 	return out
+}
+
+// Round 3 (S3): the volatile list matches whole key paths, so Defender's
+// policy key of the same name is still in the snapshot.
+func TestSnapshotVolatileFullPath(t *testing.T) {
+	if !snapshotVolatile[`SOFTWARE\Microsoft\Windows Defender\Signature Updates`] {
+		t.Error("Defender's own Signature Updates key must be skipped")
+	}
+	if snapshotVolatile[`SOFTWARE\Policies\Microsoft\Windows Defender\Signature Updates`] || snapshotVolatile["Signature Updates"] {
+		t.Error("only the full path may match")
+	}
 }
