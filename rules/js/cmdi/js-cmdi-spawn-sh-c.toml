@@ -1,0 +1,43 @@
+id = "js-cmdi-spawn-sh-c"
+lang = "js"
+class = "cmdi"
+cwe = "CWE-78"
+severity = "critical"
+tier = "info"
+title = "Request input in a command line handed to a shell as sh -c (or bash -c, cmd /c, powershell -Command)"
+frameworks = ["express", "koa", "fastify", "hapi"]
+sources = ["req.query", "req.body", "req.params", "req.headers", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload", "ctx.params", "request.params", "ctx.headers", "request.headers", "ctx.request.header", "ctx.request.headers", "ctx.get("]
+sinks = ["spawn('sh',", "spawn('bash',", "spawn('zsh',", "spawn('dash',", "spawn('ksh',", "spawn('/bin/sh',", "spawn('/bin/bash',", "spawn('/usr/bin/bash',", "spawn('/bin/zsh',", "spawn('cmd',", "spawn('cmd.exe',", "spawn('powershell',", "spawn('powershell.exe',", "spawn('pwsh',", "child_process.spawn('sh',", "child_process.spawn('bash',", "child_process.spawn('zsh',", "child_process.spawn('dash',", "child_process.spawn('ksh',", "child_process.spawn('/bin/sh',", "child_process.spawn('/bin/bash',", "child_process.spawn('/usr/bin/bash',", "child_process.spawn('/bin/zsh',", "child_process.spawn('cmd',", "child_process.spawn('cmd.exe',", "child_process.spawn('powershell',", "child_process.spawn('powershell.exe',", "child_process.spawn('pwsh',", "cp.spawn('sh',", "cp.spawn('bash',", "cp.spawn('zsh',", "cp.spawn('dash',", "cp.spawn('ksh',", "cp.spawn('/bin/sh',", "cp.spawn('/bin/bash',", "cp.spawn('/usr/bin/bash',", "cp.spawn('/bin/zsh',", "cp.spawn('cmd',", "cp.spawn('cmd.exe',", "cp.spawn('powershell',", "cp.spawn('powershell.exe',", "cp.spawn('pwsh',", "spawnSync('sh',", "spawnSync('bash',", "spawnSync('zsh',", "spawnSync('dash',", "spawnSync('ksh',", "spawnSync('/bin/sh',", "spawnSync('/bin/bash',", "spawnSync('/usr/bin/bash',", "spawnSync('/bin/zsh',", "spawnSync('cmd',", "spawnSync('cmd.exe',", "spawnSync('powershell',", "spawnSync('powershell.exe',", "spawnSync('pwsh',", "child_process.spawnSync('sh',", "child_process.spawnSync('bash',", "child_process.spawnSync('zsh',", "child_process.spawnSync('dash',", "child_process.spawnSync('ksh',", "child_process.spawnSync('/bin/sh',", "child_process.spawnSync('/bin/bash',", "child_process.spawnSync('/usr/bin/bash',", "child_process.spawnSync('/bin/zsh',", "child_process.spawnSync('cmd',", "child_process.spawnSync('cmd.exe',", "child_process.spawnSync('powershell',", "child_process.spawnSync('powershell.exe',", "child_process.spawnSync('pwsh',", "cp.spawnSync('sh',", "cp.spawnSync('bash',", "cp.spawnSync('zsh',", "cp.spawnSync('dash',", "cp.spawnSync('ksh',", "cp.spawnSync('/bin/sh',", "cp.spawnSync('/bin/bash',", "cp.spawnSync('/usr/bin/bash',", "cp.spawnSync('/bin/zsh',", "cp.spawnSync('cmd',", "cp.spawnSync('cmd.exe',", "cp.spawnSync('powershell',", "cp.spawnSync('powershell.exe',", "cp.spawnSync('pwsh',", "execFile('sh',", "execFile('bash',", "execFile('zsh',", "execFile('dash',", "execFile('ksh',", "execFile('/bin/sh',", "execFile('/bin/bash',", "execFile('/usr/bin/bash',", "execFile('/bin/zsh',", "execFile('cmd',", "execFile('cmd.exe',", "execFile('powershell',", "execFile('powershell.exe',", "execFile('pwsh',", "child_process.execFile('sh',", "child_process.execFile('bash',", "child_process.execFile('zsh',", "child_process.execFile('dash',", "child_process.execFile('ksh',", "child_process.execFile('/bin/sh',", "child_process.execFile('/bin/bash',", "child_process.execFile('/usr/bin/bash',", "child_process.execFile('/bin/zsh',", "child_process.execFile('cmd',", "child_process.execFile('cmd.exe',", "child_process.execFile('powershell',", "child_process.execFile('powershell.exe',", "child_process.execFile('pwsh',", "cp.execFile('sh',", "cp.execFile('bash',", "cp.execFile('zsh',", "cp.execFile('dash',", "cp.execFile('ksh',", "cp.execFile('/bin/sh',", "cp.execFile('/bin/bash',", "cp.execFile('/usr/bin/bash',", "cp.execFile('/bin/zsh',", "cp.execFile('cmd',", "cp.execFile('cmd.exe',", "cp.execFile('powershell',", "cp.execFile('powershell.exe',", "cp.execFile('pwsh',", "execFileSync('sh',", "execFileSync('bash',", "execFileSync('zsh',", "execFileSync('dash',", "execFileSync('ksh',", "execFileSync('/bin/sh',", "execFileSync('/bin/bash',", "execFileSync('/usr/bin/bash',", "execFileSync('/bin/zsh',", "execFileSync('cmd',", "execFileSync('cmd.exe',", "execFileSync('powershell',", "execFileSync('powershell.exe',", "execFileSync('pwsh',", "child_process.execFileSync('sh',", "child_process.execFileSync('bash',", "child_process.execFileSync('zsh',", "child_process.execFileSync('dash',", "child_process.execFileSync('ksh',", "child_process.execFileSync('/bin/sh',", "child_process.execFileSync('/bin/bash',", "child_process.execFileSync('/usr/bin/bash',", "child_process.execFileSync('/bin/zsh',", "child_process.execFileSync('cmd',", "child_process.execFileSync('cmd.exe',", "child_process.execFileSync('powershell',", "child_process.execFileSync('powershell.exe',", "child_process.execFileSync('pwsh',", "cp.execFileSync('sh',", "cp.execFileSync('bash',", "cp.execFileSync('zsh',", "cp.execFileSync('dash',", "cp.execFileSync('ksh',", "cp.execFileSync('/bin/sh',", "cp.execFileSync('/bin/bash',", "cp.execFileSync('/usr/bin/bash',", "cp.execFileSync('/bin/zsh',", "cp.execFileSync('cmd',", "cp.execFileSync('cmd.exe',", "cp.execFileSync('powershell',", "cp.execFileSync('powershell.exe',", "cp.execFileSync('pwsh',"]
+sanitizers = []
+fix = "Run the program itself with its arguments in an array (spawn('date', ['-s', value])), not a shell with -c; validate the value against a strict pattern first."
+refs = ["CVE-2026-23515"]   # sink shape: there the value came from a data stream, not an HTTP request; the rule reports the same call with request input
+
+[[args]]
+when = ["'-c'", "'-lc'", "'-ec'", "'-ce'", "'-xc'", "'-ic'", "'/c'", "'/C'", "'/s'", "'-Command'", "'-command'"]   # with a shell as the program (the sinks), these make it run the next string as a command line
+
+[[samples]]
+kind = "vulnerable"
+note = "no shell option, but the program is a shell and -c makes it parse the string"
+code = '''
+app.post("/time", (req, res) => {
+  const child = spawn('sh', ['-c', `date -s "${req.body.datetime}"`]);
+  child.on("close", (code) => res.json({ code }));
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+app.get("/ping", (req, res) => {
+  execFile('bash', ['-lc', "ping -c 1 " + req.query.host], (err, out) => res.send(out));
+});
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+app.post("/time", (req, res) => {
+  const child = spawn('date', ['-s', String(req.body.datetime)]);
+  child.on("close", (code) => res.json({ code }));
+});
+'''

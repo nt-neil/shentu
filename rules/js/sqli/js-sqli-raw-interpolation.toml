@@ -4,16 +4,27 @@ class = "sqli"
 cwe = "CWE-89"
 severity = "high"
 title = "Request input concatenated or interpolated into SQL for a driver or knex.raw"
-frameworks = ["express", "nestjs", "nextjs"]
-sources = ["req.query", "req.body", "req.params", "req.cookies", "@Query(", "@Body(", "@Param(", "@Req(", "req.originalUrl", "^request.nextUrl", "^req.nextUrl", "^request.url", "^req.url", "^searchParams", "^request.json(", "^req.json(", "^request.formData(", "^req.formData(", "^formData.get(", "^cookies().get("]
+frameworks = ["express", "nestjs", "nextjs", "koa", "fastify", "hapi"]
+sources = ["req.query", "req.body", "req.params", "req.cookies", "@Query(", "@Body(", "@Param(", "@Req(", "req.originalUrl", "^request.nextUrl", "^req.nextUrl", "^request.url", "^req.url", "^searchParams", "^request.json(", "^req.json(", "^request.text(", "^req.text(", "^request.formData(", "^req.formData(", "^formData.get(", "^cookies().get(", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload", "ctx.params", "request.params", "ctx.cookies.get("]
 sinks = [".query(", ".execute(", "knex.raw(", ".raw(", ".whereRaw(", ".orderByRaw("]
 sanitizers = ["parseInt(", "Number("]
 fix = "Use placeholders and pass values separately (query('... WHERE id = ?', [id]), knex.raw('?? = ?', [col, val])); never build SQL with + or template literals."
 refs = ["CVE-2026-47384"]
 
 [[args]]
+sinks = [".query(", "knex.raw(", ".raw(", ".whereRaw(", ".orderByRaw("]
 arg = 1   # the SQL text; values in the bindings array are safe
 whole = true   # query({ sql: "... ?", args: [input] }) binds the input; only SQL text built from input is the attack
+
+# execute() is also a VM's, a tool's or a job's: it counts on a receiver the
+# file says nothing about (a parameter, an import) or one tied to a database
+# client or connection, not on one the file builds from something else
+# (const vm = new IsolatedVM(); const tool = tools.find(...)).
+[[args]]
+sinks = [".execute("]
+arg = 1
+whole = true
+receiver = ["db", "conn", "connection", "pool", "client", "sql", "database", "trx", "tx", "transaction", "mysql", "mysql2", "pg", "knex", "sequelize", "libsql", "oracledb", "createConnection(", "createPool(", "getConnection(", "createClient(", "connect(", "Pool", "Client", "Connection", "Database"]
 
 [[samples]]
 kind = "vulnerable"
@@ -182,4 +193,57 @@ export async function addTodo(formData: FormData) {
   "use server";
   await db.execute({ sql: "INSERT INTO todos (description) VALUES (?)", args: [formData.get("description") as string] });
 }
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "Koa: ctx.query and ctx.params"
+code = '''
+router.get("/users/:org", async (ctx) => {
+  const [rows] = await pool.query(`SELECT * FROM users WHERE org = '${ctx.params.org}' AND name LIKE '%${ctx.query.q}%'`);
+  ctx.body = rows;
+});
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+router.get("/users/:org", async (ctx) => {
+  const [rows] = await pool.query("SELECT * FROM users WHERE org = ? AND name LIKE ?", [ctx.params.org, `%${ctx.query.q}%`]);
+  ctx.body = rows;
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "Koa: a cookie read with ctx.cookies.get"
+code = '''
+router.get("/prefs", async (ctx) => {
+  const theme = ctx.cookies.get("theme");
+  ctx.body = await pool.query("SELECT * FROM themes WHERE name = '" + theme + "'");
+});
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+router.get("/prefs", async (ctx) => {
+  const theme = ctx.cookies.get("theme");
+  ctx.body = await pool.query("SELECT * FROM themes WHERE name = ?", [theme]);
+});
+'''
+
+[[samples]]
+kind = "safe"
+note = "execute() of a script VM and of a looked-up tool: no SQL"
+code = '''
+router.post("/script", async (ctx) => {
+  const { script } = ctx.request.body;
+  const vm = new IsolatedVM();
+  ctx.body = vm.execute(wrap(script));
+});
+fastify.post("/tools/:name", async (request) => {
+  const tool = tools.find((t) => t.name === request.params.name);
+  return tool.execute(JSON.parse(request.body.input));
+});
 '''

@@ -4,8 +4,8 @@ class = "path-traversal"
 cwe = "CWE-22"
 severity = "high"
 title = "Request value joined into a path that is read, written or sent"
-frameworks = ["express", "nestjs", "nextjs"]
-sources = ["req.query", "req.params", "req.body", "@Query(", "@Body(", "@Param(", "@Req(", "req.originalUrl", "^request.nextUrl", "^req.nextUrl", "^request.url", "^req.url", "^searchParams", "^request.json(", "^req.json(", "^request.formData(", "^req.formData(", "^formData.get("]
+frameworks = ["express", "nestjs", "nextjs", "koa", "fastify", "hapi"]
+sources = ["req.query", "req.params", "req.body", "@Query(", "@Body(", "@Param(", "@Req(", "req.originalUrl", "^request.nextUrl", "^req.nextUrl", "^request.url", "^req.url", "^searchParams", "^request.json(", "^req.json(", "^request.text(", "^req.text(", "^request.formData(", "^req.formData(", "^formData.get(", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload", "ctx.params", "request.params"]
 sinks = ["res.sendFile(", "res.download(", "fs.readFile(", "fs.createReadStream(", "fs.writeFile(", "fs.unlink(", "readFileSync("]
 sanitizers = ["path.basename(", ".startsWith("]
 fix = "Use res.sendFile(name, { root }) or resolve the path and require it to start with the base directory plus path.sep before touching the file."
@@ -222,6 +222,23 @@ export async function GET(request: NextRequest) {
   const name = path.basename(request.nextUrl.searchParams.get("f") ?? "");
   return new Response(await fsp.readFile(`/srv/files/${name}`));
 }
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "Hapi: request.params"
+code = '''
+server.route({ method: "GET", path: "/docs/{name}", handler: (request, h) => {
+  return fs.createReadStream(path.join(DOCS, request.params.name));
+} });
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+server.route({ method: "GET", path: "/docs/{name}", handler: (request, h) => {
+  return fs.createReadStream(path.join(DOCS, path.basename(request.params.name)));
+} });
 '''
 
 [[samples]]

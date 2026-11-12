@@ -5,8 +5,8 @@ cwe = "CWE-601"
 severity = "medium"
 tier = "info"
 title = "Redirect to a URL taken from the request"
-frameworks = ["express"]
-sources = ["req.query", "req.body", "req.params"]
+frameworks = ["express", "nestjs", "nextjs", "koa", "fastify", "hapi"]
+sources = ["req.query", "req.body", "req.params", "@Query(", "@Body(", "@Param(", "^request.nextUrl", "^req.nextUrl", "^searchParams", "^request.json(", "^req.json(", "^request.text(", "^req.text(", "^request.formData(", "^req.formData(", "^formData.get(", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload", "ctx.params", "request.params"]
 sinks = ["res.redirect(", "res.location(", "res.writeHead(", "res.setHeader("]
 sanitizers = ["encodeURIComponent(", ".startsWith("]
 fix = "Redirect only to a host or path in an allowlist (parse it with new URL() and compare the origin); a prefix check (startsWith('/') without '//' or '/\\\\') can be bypassed with a tab or newline ('/\\t/evil.example'), so it does not make the target safe."
@@ -106,5 +106,41 @@ code = '''
 app.get('/go', (req, res) => {
   res.writeHead(302, { Location: '/fixed/' + encodeURIComponent(req.query.page), 'Cache-Control': req.query.cc });
   res.end();
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+dialect = "ts"
+note = "NestJS: a query value as the redirect target"
+code = '''
+@Controller("auth")
+export class AuthController {
+  @Get("done")
+  done(@Query("next") next: string, @Res() res: Response) {
+    res.redirect(next);
+  }
+}
+'''
+
+[[samples]]
+kind = "safe"
+dialect = "ts"
+code = '''
+@Controller("auth")
+export class AuthController {
+  @Get("done")
+  done(@Query("tab") tab: string, @Res() res: Response) {
+    res.redirect("/account/" + encodeURIComponent(tab));
+  }
+}
+'''
+
+[[samples]]
+kind = "safe"
+note = "as the fix says: a fixed path first, the value encoded after it"
+code = '''
+app.get("/orders/:id/view", (req, res) => {
+  res.redirect("/account/orders/" + encodeURIComponent(req.params.id));
 });
 '''

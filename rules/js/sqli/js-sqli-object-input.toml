@@ -4,11 +4,11 @@ class = "sqli"
 cwe = "CWE-89"
 severity = "medium"
 title = "Parsed request value (may be an object or array) passed straight into a query-builder condition"
-frameworks = ["express", "nestjs", "nextjs"]
+frameworks = ["express", "nestjs", "nextjs", "koa", "fastify", "hapi"]
+sources = ["req.query", "req.body", "@Query(", "@Body(", "@Req(", "^request.json(", "^req.json(", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload"]
 route_members = ["query", "body"]
-sources = ["req.query", "req.body", "@Query(", "@Body(", "@Req(", "^request.json(", "^req.json("]
 sinks = [".where(", ".whereIn(", ".findOne(", ".findAll(", ".andWhere("]
-sanitizers = ["String(", "Number(", "parseInt(", "typeof"]
+sanitizers = ["String(", "Number(", "parseInt(", "typeof", "Binary(", "mongodb.Binary(", "bson.Binary(", "BSON.Binary(", ".launder.string(", ".launder.strings(", ".launder.id(", ".launder.ids(", ".launder.integer(", ".launder.float(", ".launder.boolean("]   # ApostropheCMS launder returns scalars
 fix = "Coerce each value to the expected scalar type (String(), Number()) or validate with a schema before using it in a condition; qs and JSON bodies can turn ?id=1 into an object."
 refs = ["CVE-2016-20018"]
 
@@ -66,5 +66,38 @@ export async function POST(req: Request) {
   if (typeof body.email !== "string") return new Response(null, { status: 400 });
   const user = await knex("users").where({ email: body.email }).first();
   return Response.json({ found: Boolean(user) });
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "Koa: a JSON body object used as the condition"
+code = '''
+router.post("/login", async (ctx) => {
+  const user = await knex("users").where({ email: ctx.request.body.email }).first();
+  ctx.body = { found: Boolean(user) };
+});
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+router.post("/login", async (ctx) => {
+  if (typeof ctx.request.body.email !== "string") {
+    ctx.status = 400;
+    return;
+  }
+  const user = await knex("users").where({ email: ctx.request.body.email }).first();
+  ctx.body = { found: Boolean(user) };
+});
+'''
+
+[[samples]]
+kind = "safe"
+note = "ApostropheCMS: launder.id() returns a string id"
+code = '''
+async function loadDraft(req) {
+  const id = self.apos.launder.id(req.query.id);
+  return knex("drafts").where({ id }).first();
 }
 '''

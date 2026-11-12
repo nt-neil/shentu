@@ -4,18 +4,15 @@ class = "code-eval"
 cwe = "CWE-94"
 severity = "critical"
 title = "eval, Function constructor or node:vm on request input"
-frameworks = ["express", "nestjs", "nextjs"]
-sources = ["req.query", "req.body", "req.params", "@Query(", "@Body(", "@Param(", "@Req(", "req.originalUrl", "^request.nextUrl", "^req.nextUrl", "^request.url", "^req.url", "^searchParams", "^request.json(", "^req.json(", "^request.formData(", "^req.formData(", "^formData.get("]
+frameworks = ["express", "nestjs", "nextjs", "koa", "fastify", "hapi"]
+sources = ["req.query", "req.body", "req.params", "@Query(", "@Body(", "@Param(", "@Req(", "req.originalUrl", "^request.nextUrl", "^req.nextUrl", "^request.url", "^req.url", "^searchParams", "^request.json(", "^req.json(", "^request.text(", "^req.text(", "^request.formData(", "^req.formData(", "^formData.get(", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload", "ctx.params", "request.params"]
 sinks = ["eval(", "new Function(", "Function(", "vm.runInNewContext(", "vm.runInThisContext(", "vm.Script(", "setTimeout("]
 sanitizers = ["Number("]
 fix = "Do not evaluate input: parse it as data (JSON.parse, Number) or use a real expression parser; node:vm is not a security boundary."
-refs = ["CVE-2021-23344", "CVE-2026-69254"]
+refs = ["CVE-2021-23344", "CVE-2026-69254", "CVE-2019-10758"]
 
 # setTimeout evaluates only a string first argument; a function there, or input
 # in the delay or the arguments passed on, is not code.
-[[args]]
-sinks = ["setTimeout("]
-arg = 1
 
 [[samples]]
 kind = "vulnerable"
@@ -116,6 +113,41 @@ export function GET(req: NextRequest) {
   return Response.json({ value: vm.runInNewContext(expr, {}) as number });
 }
 '''
+
+[[samples]]
+kind = "vulnerable"
+note = "REF shape (CVE-2019-10758): an edit form's document text goes to a helper that evaluates it in node:vm to allow extended literals"
+code = '''
+const vm = require("vm");
+function parseRecord(text) {
+  const box = { ObjectId, Timestamp };
+  vm.runInNewContext("rec = (" + text + ");", box);
+  return box.rec;
+}
+app.post("/coll/:name/update", async (req, res) => {
+  const rec = parseRecord(req.body.record);
+  await db.collection(req.params.name).replaceOne({ _id: rec._id }, rec);
+  res.redirect("back");
+});
+'''
+
+[[samples]]
+kind = "safe"
+note = "as the fix says: the text is parsed as data, not evaluated"
+code = '''
+function parseRecord(text) {
+  return JSON.parse(text);
+}
+app.post("/coll/:name/update", async (req, res) => {
+  const rec = parseRecord(req.body.record);
+  await db.collection("records").replaceOne({ _id: rec._id }, rec);
+  res.redirect("back");
+});
+'''
+
+[[args]]
+sinks = ["setTimeout("]
+arg = 1
 
 [[samples]]
 kind = "vulnerable"
