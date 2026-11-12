@@ -112,7 +112,8 @@ const (
 func weakServer() *fakeWin {
 	w := newFakeWin()
 	w.reg[KeyCurrentVersion] = map[string]RegValue{"ProductName": sz("Windows Server 2022 Datacenter"), "DisplayVersion": sz("21H2"),
-		"CurrentBuild": sz("20348"), "UBR": dword(2762), "InstallationType": sz("Server")}
+		"CurrentBuild": sz("20348"), "UBR": dword(2762), "InstallationType": sz("Server"),
+		"RegisteredOwner": sz("Jane Q Operator")}
 	w.reg[KeyTerminalServer] = map[string]RegValue{"fDenyTSConnections": dword(0)}
 	w.reg[KeyRDPTcp] = map[string]RegValue{"UserAuthentication": dword(0), "PortNumber": dword(3390), "SecurityLayer": dword(0)}
 	w.reg[KeyLanmanServer] = map[string]RegValue{"SMB1": dword(1)}
@@ -135,7 +136,8 @@ func weakServer() *fakeWin {
 	// Software and patches.
 	w.subkeys[KeyUninstall] = []string{"{A}", "{B}", "KB-update"}
 	w.reg[KeyUninstall+`\{A}`] = map[string]RegValue{"DisplayName": sz("7-Zip 19.00 (x64)"), "DisplayVersion": sz("19.00")}
-	w.reg[KeyUninstall+`\{B}`] = map[string]RegValue{"DisplayName": sz("Contoso Agent"), "DisplayVersion": sz("1.2.3.4")}
+	w.reg[KeyUninstall+`\{B}`] = map[string]RegValue{"DisplayName": sz("Contoso Agent"), "DisplayVersion": sz("1.2.3.4"),
+		"UninstallString": sz(`\\198.51.100.23\pkgs\agent\uninstall.exe`)}
 	w.reg[KeyUninstall+`\KB-update`] = map[string]RegValue{"DisplayName": sz("Update for X"), "ParentKeyName": sz("X")}
 	w.subkeys[KeyCBSPackages] = []string{
 		"Package_for_KB5034439~31bf3856ad364e35~amd64~~20348.2227.1.3",
@@ -159,7 +161,7 @@ func weakServer() *fakeWin {
 		{PID: 900, PPID: 600, Name: "w3wp.exe", Exe: `C:\Windows\System32\inetsrv\w3wp.exe`, User: `IIS APPPOOL\DefaultAppPool`},
 		{PID: 901, PPID: 900, Name: "cmd.exe", Exe: `C:\Windows\System32\cmd.exe`, User: `IIS APPPOOL\DefaultAppPool`, Cmdline: `cmd /c whoami`},
 		{PID: 1200, PPID: 1, Name: "xmrig.exe", Exe: `C:\Users\backdoor\AppData\Local\Temp\xmrig.exe`, User: `HOST\backdoor`, SID: sidBase + "-1001",
-			Cmdline: "xmrig.exe -o stratum+tcp://pool:3333 --password=hunter22"},
+			Cmdline: `xmrig.exe -o stratum+tcp://pool:3333 --password=hunter22 --log \\host\logs\BACKDOOR.txt`},
 		{PID: 1300, PPID: 1, Name: "mysqld.exe", Exe: `C:\mysql\bin\mysqld.exe`},
 	}
 	w.sockets = []WinSocket{
@@ -602,7 +604,8 @@ func TestWindowsRecordReplay(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := fixtureText(t, masked)
-	for _, leak := range []string{"backdoor", "111-222-333", "hunter22", "AutoLogon#2026", "kiosk", "192.0.2.77", "s3cr3t-value-xyz"} {
+	for _, leak := range []string{"backdoor", "111-222-333", "hunter22", "AutoLogon#2026", "kiosk", "192.0.2.77", "s3cr3t-value-xyz",
+		"Jane Q Operator", "198.51.100.23", "BACKDOOR", `\\host\`} {
 		if strings.Contains(s, leak) {
 			t.Errorf("fixture leaks %q", leak)
 		}

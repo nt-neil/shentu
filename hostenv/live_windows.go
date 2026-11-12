@@ -13,6 +13,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"syscall"
@@ -141,6 +142,9 @@ func readValue(k registry.Key, name string) (RegValue, bool) {
 		b, _, err := k.GetBinaryValue(name)
 		if err != nil {
 			return RegValue{}, false
+		}
+		if !slices.Contains(regBinaryKept, name) {
+			return RegValue{Type: "BINARY"}, true // type only: binary data is opaque and may hold anything
 		}
 		if len(b) > MaxRegBinary {
 			b = b[:MaxRegBinary]

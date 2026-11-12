@@ -141,7 +141,10 @@ func (rp *Replay) Events(channel, xpath string, max int) ([]WinEvent, error) {
 // winSkipIP reports a Windows fixture entry whose dotted numbers are
 // versions, not addresses: the CurrentVersion key itself, and the
 // Uninstall and CBS package lists and their direct subkeys. Nothing else
-// under CurrentVersion (Winlogon, ProfileList, IFEO) is exempt.
+// under CurrentVersion (Winlogon, ProfileList, IFEO) is exempt. Since IPs
+// stay unmasked there, winMaskPrep trims those values to the fields the
+// collector reads (winIPExemptFields), so free text such as
+// UninstallString, InstallLocation or RegisteredOwner is not recorded.
 func winSkipIP(e *entry) bool {
 	if e.Op != "reg" && e.Op != "subkeys" {
 		return false
@@ -164,6 +167,18 @@ func winSkipIP(e *entry) bool {
 	return false
 }
 
+// winIPExemptFields lists the values kept from a reg entry that
+// winSkipIP exempts from IP masking: exactly what the collector reads.
+func winIPExemptFields(path string) []string {
+	switch {
+	case path == KeyCurrentVersion:
+		return []string{"ProductName", "DisplayVersion", "ReleaseId", "CurrentBuild", "UBR", "InstallationType"}
+	case strings.HasPrefix(path, KeyCBSPackages):
+		return []string{"CurrentState", "InstallTimeHigh", "InstallTimeLow"}
+	}
+	return []string{"DisplayName", "DisplayVersion", "ParentKeyName"} // Uninstall, x64, x86 and per user
+}
+
 // machineSIDRe matches the machine or domain part of an account SID. It
 // identifies the host, so fixtures keep only the RID.
 var machineSIDRe = regexp.MustCompile(`\bS-1-5-21-\d+-\d+-\d+\b`)
@@ -176,10 +191,18 @@ func maskMachineSIDs(s string) string {
 // the names of people found in a Windows recording, to be masked like
 // Linux uid 1000+ accounts: local accounts with RID 1000 and up, profile
 // folder names, the auto-logon user, and owners of processes and tasks
-// running under such a SID. It also blanks the user-name fields of
+// running under such a SID, and the domain part of those owners (for a
+// local account, the NetBIOS computer name). Each name is also returned
+// in upper and lower case: Windows names are case-insensitive, and the
+// masker matches exactly. It trims IP-exempt registry entries to the
+// fields the collector reads, and blanks the user-name fields of
 // recorded events, which hold names typed by whoever tried to log in.
-func winMaskPrep(entries []*entry) []string {
-	var out []string
+func winMaskPrep(entries []*entry) (out []string) {
+	defer func() {
+		for _, n := range out[:len(out):len(out)] {
+			out = append(out, strings.ToUpper(n), strings.ToLower(n))
+		}
+	}()
 	human := func(sid string) bool {
 		i := strings.LastIndexByte(sid, '-')
 		rid, err := strconv.Atoi(sid[i+1:])
@@ -206,7 +229,23 @@ func winMaskPrep(entries []*entry) []string {
 				for _, p := range procs {
 					if human(p.SID) && p.User != "" {
 						out = append(out, afterSlash(p.User))
+						if i := strings.LastIndexByte(p.User, '\\'); i > 0 {
+							out = append(out, p.User[:i])
+						}
 					}
+				}
+			}
+		case e.Op == "reg" && winSkipIP(e):
+			var v map[string]RegValue
+			if json.Unmarshal(e.data, &v) == nil {
+				kept := map[string]RegValue{}
+				for _, n := range winIPExemptFields(e.Path) {
+					if r, ok := v[n]; ok {
+						kept[n] = r
+					}
+				}
+				if b, err := json.Marshal(kept); err == nil {
+					e.data = b
 				}
 			}
 		case e.Op == "reg" && strings.HasPrefix(e.Path, KeyProfileList+`\S-1-5-21-`):

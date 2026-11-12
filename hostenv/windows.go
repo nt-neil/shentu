@@ -35,6 +35,11 @@ type RegValue struct {
 // MaxRegBinary caps a REG_BINARY value; the collector only needs FILETIMEs.
 const MaxRegBinary = 4096
 
+// regBinaryKept names the REG_BINARY values whose data a source returns
+// (the Defender signature FILETIMEs). Every other binary value comes back
+// as its type alone, so opaque blobs never reach a fixture.
+var regBinaryKept = []string{"SignaturesLastUpdated", "AVSignatureApplied"}
+
 // secretValueNames mark registry values whose data is a credential:
 // Winlogon DefaultPassword / AltDefaultPassword (auto-logon), service and
 // application secrets. Their data never leaves the source.
