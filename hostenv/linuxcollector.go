@@ -355,10 +355,15 @@ func (LinuxCollector) SSHD(src Source, config string) Obs[SSHConfig] {
 			}
 		}
 	}
+	files := 0 // read, at most maxSSHDFiles (as on Windows)
 	var read func(p string, depth int) bool // false: stopped at the main file's Match
 	read = func(p string, depth int) bool {
 		if depth > 4 {
 			unknown(p, errors.New("Include nested more than 4 deep"))
+			return true
+		}
+		if files++; files > maxSSHDFiles {
+			unknown(p, fmt.Errorf("more than %d sshd config files", maxSSHDFiles))
 			return true
 		}
 		b, err := src.ReadFile(p)
@@ -400,6 +405,9 @@ func (LinuxCollector) SSHD(src Source, config string) Obs[SSHConfig] {
 	}
 	return OK(cfg)
 }
+
+// maxSSHDFiles caps the sshd config files read through Include.
+const maxSSHDFiles = 256
 
 // whyUnread is the short reason a path could not be read: "permission
 // denied", the system's own words ("is a directory"), or the error.

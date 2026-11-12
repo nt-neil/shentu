@@ -1,6 +1,7 @@
 package hostenv
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -27,5 +28,18 @@ func TestSSHDIncludeMatch(t *testing.T) {
 	h.files[SSHDConfigPath] = "Include /etc/ssh/nx\n"
 	if o = (LinuxCollector{}).SSHD(h, SSHDConfigPath); o.Status != StatusPartial || !strings.Contains(strings.Join(o.Value.Unread, ","), "nested more than 4 deep") {
 		t.Errorf("deep Include: %s %v", o.Status, o.Value.Unread)
+	}
+}
+
+// More than maxSSHDFiles config files: the rest are listed unread.
+func TestSSHDIncludeFileCap(t *testing.T) {
+	h := newFake(true)
+	h.files[SSHDConfigPath] = "Include /etc/ssh/sshd_config.d/*.conf\n"
+	for i := 0; i < maxSSHDFiles+5; i++ {
+		h.files[fmt.Sprintf("/etc/ssh/sshd_config.d/%04d.conf", i)] = "# empty\n"
+	}
+	o := LinuxCollector{}.SSHD(h, SSHDConfigPath)
+	if o.Status != StatusPartial || !strings.Contains(strings.Join(o.Value.Unread, ","), "more than 256 sshd config files") {
+		t.Errorf("%s %d unread", o.Status, len(o.Value.Unread))
 	}
 }

@@ -184,7 +184,9 @@ func (emptyJournal) RunLinesUnmasked(_ context.Context, _ []string, fn func(stri
 // An empty journal with no text log to confirm it is not complete.
 func TestSSHSummaryEmptyJournalIncomplete(t *testing.T) {
 	prevHost := hostSource
-	hostSource = func() hostenv.Source { return emptyJournal{&hostenv.Live{Remap: map[string]string{"/var/log": t.TempDir()}}} }
+	hostSource = func() hostenv.Source {
+		return emptyJournal{&hostenv.Live{Remap: map[string]string{"/var/log": t.TempDir()}}}
+	}
 	t.Cleanup(func() { hostSource = prevHost })
 	r, err := SSHSummary(context.Background(), &Env{LogPaths: []string{"/var/log/auth.log"}}, time.Now().Add(-time.Hour), "")
 	if err != nil || r["complete"] != false || r["verified"] != false {
