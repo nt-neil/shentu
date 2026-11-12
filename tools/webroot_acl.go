@@ -32,12 +32,26 @@ func webrootFindings(webRoots []string) []CodeFinding {
 	for _, r := range webRoots {
 		sec, err := winFileSecurity(r)
 		if err != nil {
+			// Not silence: a report must say what it could not check.
+			out = append(out, finding("webroot_acl_unknown", "info", r, 0,
+				"cannot tell webroot ACL: "+err.Error(), "run Shentu elevated, as the service does"))
 			continue
 		}
 		if bad := sec.Untrusted(); len(bad) > 0 {
 			out = append(out, finding("webroot_writable", "warning", r, 0,
 				"webroot writable by non-admin: "+strings.Join(bad, ", "),
 				"take write access away from these accounts (IIS needs read only); keep uploads in a folder of their own with script execution off"))
+		}
+	}
+	return out
+}
+
+// notChecked lists the findings that say a check could not tell.
+func notChecked(fs []CodeFinding) []string {
+	var out []string
+	for _, f := range fs {
+		if f.Kind == "webroot_acl_unknown" {
+			out = append(out, f.Path+": "+f.Detail)
 		}
 	}
 	return out

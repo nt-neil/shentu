@@ -92,10 +92,13 @@ type CodeAudit struct {
 	WebRoots []string `json:"web_roots"`
 	// Web server configuration files that could not be read, with why: the
 	// web roots they name are missing from WebRoots.
-	WebConfigUnreadable []string      `json:"web_config_unreadable,omitempty"`
-	Files               int           `json:"files_read"`
-	Findings            []CodeFinding `json:"findings"`            // the summaries (kind "audit", and injection ones without a rule) first
-	Truncated           bool          `json:"truncated,omitempty"` // files or findings over the caps were left out
+	WebConfigUnreadable []string `json:"web_config_unreadable,omitempty"`
+	// NotChecked: what the audit could not tell (a web root's ACL on
+	// Windows); listed apart in reports, never pushed.
+	NotChecked []string      `json:"not_checked,omitempty"`
+	Files      int           `json:"files_read"`
+	Findings   []CodeFinding `json:"findings"`            // the summaries (kind "audit", and injection ones without a rule) first
+	Truncated  bool          `json:"truncated,omitempty"` // files or findings over the caps were left out
 	// The audit's time ran out before the end: what was found until then is
 	// listed, and a summary names what was not checked.
 	Unfinished bool `json:"unfinished,omitempty"`
@@ -530,7 +533,9 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 	}
 	defer unlock()
 	res := auditUnlocked(ctx, roots, webRoots)
-	res.Findings = append(webrootFindings(webRoots), res.Findings...)
+	acl := webrootFindings(webRoots)
+	res.Findings = append(acl, res.Findings...)
+	res.NotChecked = notChecked(acl)
 	return res
 }
 

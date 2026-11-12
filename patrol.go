@@ -96,6 +96,20 @@ func uncheckedSection(risks []tools.Risk) string {
 	return "\n\nNot checked (the permission to read what they need was missing; run Shentu " + as + "):\n" + b.String()
 }
 
+// notCheckedSection lists what the code audit could not tell (a web
+// root's ACL on Windows), so it is not read as checked. "" when nothing.
+func notCheckedSection(items []string) string {
+	if len(items) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("\n\nNot checked by the code audit:\n")
+	for _, it := range items {
+		fmt.Fprintf(&b, "- %q\n", mask(it))
+	}
+	return b.String()
+}
+
 // uncheckedConfigs lists the web server configuration files the code audit
 // could not read: the sites they serve were audited as plain folders.
 func uncheckedConfigs(unread []string) string {
@@ -141,7 +155,7 @@ func mostSevere(fs []finding, n int) []finding {
 func codeAuditFindings(audit tools.CodeAudit) []finding {
 	var out []finding
 	for _, f := range audit.Findings {
-		if f.Kind == "injection" && f.Tier != "alert" || f.Kind == "audit" { // "audit": the audit's own summaries, below
+		if f.Kind == "injection" && f.Tier != "alert" || f.Kind == "audit" || f.Kind == "webroot_acl_unknown" { // "audit": the audit's own summaries, below; ACL unknown: Not checked
 			continue
 		}
 		key := fmt.Sprintf("code:%s:%s:%d", f.Kind, f.Path, f.Line)
@@ -324,8 +338,9 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 		}
 		// The applications' own files: exposed secrets, debug mode, webshells, keys in code, injection.
 		web, unread := tools.WebRootsReport()
-		all = replaceOrAppend(all, codeAuditFindings(tools.AppCodeAudit(ctx, env.AppPaths, web)))
-		unchecked += uncheckedConfigs(unread)
+		audit := tools.AppCodeAudit(ctx, env.AppPaths, web)
+		all = replaceOrAppend(all, codeAuditFindings(audit))
+		unchecked += uncheckedConfigs(unread) + notCheckedSection(audit.NotChecked)
 	}
 	var fresh []finding
 	for _, f := range all {

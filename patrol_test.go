@@ -86,3 +86,19 @@ func TestUncheckedSection(t *testing.T) {
 		t.Error("a section with every configuration read")
 	}
 }
+
+// Round 2 (N2-1): a web root whose ACL could not be read is listed under
+// "Not checked" and never pushed as an alert.
+func TestWebrootACLUnknownNotPushed(t *testing.T) {
+	audit := tools.CodeAudit{Findings: []tools.CodeFinding{{Kind: "webroot_acl_unknown", Severity: "info", Path: `C:\inetpub\wwwroot`,
+		Detail: "cannot tell webroot ACL: access denied"}}, NotChecked: []string{`C:\inetpub\wwwroot: cannot tell webroot ACL: access denied`}}
+	if f := codeAuditFindings(audit); len(f) != 0 {
+		t.Errorf("pushed: %+v", f)
+	}
+	if s := notCheckedSection(audit.NotChecked); !strings.Contains(s, "Not checked by the code audit") || !strings.Contains(s, "cannot tell webroot ACL") {
+		t.Errorf("section: %q", s)
+	}
+	if notCheckedSection(nil) != "" {
+		t.Error("nothing to list, no section")
+	}
+}
