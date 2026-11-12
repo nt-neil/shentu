@@ -3,6 +3,7 @@ package tools
 import (
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/binary"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -64,39 +65,79 @@ func cloudInitRefusal(line string) bool {
 	return cloudInitCmd.MatchString(strings.TrimSpace(line))
 }
 
-// keyFingerprint parses an authorized_keys line the way sshd does: an optional options field
-// (where quoted text may hold spaces), then the key type and the base64 key. It returns the SHA256 fingerprint.
+// keyFingerprint returns the SHA256 fingerprint of an authorized_keys line's
+// key, "" when the line holds none.
 func keyFingerprint(line string) string {
+	_, fp, _ := parseKeyLine(line)
+	return fp
+}
+
+// parseKeyLine parses an authorized_keys line the way sshd does: an optional
+// options field (where quoted text may hold spaces), then the key type and
+// the base64 key. sshd takes a type's full name (ssh-ed25519) or its short
+// name (ED25519, rsa) in any case; the type that counts is the one written in
+// the key itself. keyType and fp (SHA256:..., as ssh-keygen -lf shows it) are
+// "" for a line without a key; unparsed is a line that is neither a key nor a
+// comment or blank (sshd ignores it; it is reported, not dropped).
+func parseKeyLine(line string) (keyType, fp string, unparsed bool) {
 	line = strings.TrimSpace(line)
 	if line == "" || strings.HasPrefix(line, "#") {
-		return ""
+		return "", "", false
 	}
-	if !isKeyType(strings.Fields(line)[0]) {
-		// The options field, scanned as OpenSSH's sshkey_advance_past_options does.
-		quoted := false
-		i := 0
-		for ; i < len(line) && (quoted || (line[i] != ' ' && line[i] != '\t')); i++ {
-			if line[i] == '\\' && i+1 < len(line) && line[i+1] == '"' {
-				i++
-			} else if line[i] == '"' {
-				quoted = !quoted
-			}
+	if t, fp := keyAt(line); fp != "" {
+		return t, fp, false
+	}
+	// The options field, scanned as OpenSSH's sshkey_advance_past_options does.
+	quoted := false
+	i := 0
+	for ; i < len(line) && (quoted || (line[i] != ' ' && line[i] != '\t')); i++ {
+		if line[i] == '\\' && i+1 < len(line) && line[i+1] == '"' {
+			i++
+		} else if line[i] == '"' {
+			quoted = !quoted
 		}
-		line = line[i:]
 	}
-	f := strings.Fields(line)
-	if len(f) < 2 || !isKeyType(f[0]) {
-		return ""
+	if t, fp := keyAt(strings.TrimSpace(line[i:])); fp != "" {
+		return t, fp, false
+	}
+	return "", "", true
+}
+
+// keyAt reads a key type name and a base64 key at the start of s.
+func keyAt(s string) (keyType, fp string) {
+	f := strings.Fields(s)
+	if len(f) < 2 || !keyTypeName(f[0]) {
+		return "", ""
 	}
 	blob, err := base64.StdEncoding.DecodeString(f[1])
 	if err != nil || len(blob) < 16 {
-		return ""
+		return "", ""
+	}
+	// The key starts with its type: a 4-byte big-endian length, then the name.
+	n := int(binary.BigEndian.Uint32(blob))
+	if n <= 0 || n > 64 || 4+n > len(blob) {
+		return "", ""
+	}
+	keyType = string(blob[4 : 4+n])
+	if !fullKeyType(keyType) {
+		return "", ""
 	}
 	sum := sha256.Sum256(blob)
-	return "SHA256:" + base64.RawStdEncoding.EncodeToString(sum[:])
+	return keyType, "SHA256:" + base64.RawStdEncoding.EncodeToString(sum[:])
 }
 
-func isKeyType(t string) bool {
+// shortKeyTypes are the short names sshd takes for key types (any case).
+var shortKeyTypes = map[string]bool{"rsa": true, "dsa": true, "ecdsa": true, "ed25519": true, "ecdsa-sk": true, "ed25519-sk": true,
+	"xmss": true, "rsa-cert": true, "dsa-cert": true, "ecdsa-cert": true, "ed25519-cert": true, "ecdsa-sk-cert": true,
+	"ed25519-sk-cert": true, "xmss-cert": true}
+
+// keyTypeName reports whether sshd may take t as a key type, by full or short
+// name, in any case (the key itself then says which).
+func keyTypeName(t string) bool {
+	return fullKeyType(strings.ToLower(t)) || shortKeyTypes[strings.ToLower(t)]
+}
+
+func fullKeyType(t string) bool {
 	return strings.HasPrefix(t, "ssh-") || strings.HasPrefix(t, "ecdsa-") || strings.HasPrefix(t, "sk-")
 }
 

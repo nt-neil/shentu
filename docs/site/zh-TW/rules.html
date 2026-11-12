@@ -760,8 +760,8 @@ def import_theme():
     <p class="fix"><strong>修法</strong> On Python 3.12&#43; call extractall(..., filter=&#39;data&#39;); otherwise check every member&#39;s resolved path stays inside the target directory and reject links.</p>
   </details>
   
-  <details class="rule" id="python-path-traversal-send-file" data-rule-id="python-path-traversal-send-file" data-lang="python" data-class="path-traversal" data-sev="high" data-text="python-path-traversal-send-file CWE-22 Request value joined into a file path that is opened or sent">
-    <summary><span class="sev high"><i aria-hidden="true">高</i><b>高</b></span><span class="head"><code class="rid">python-path-traversal-send-file</code> <span class="cwe">CWE-22</span><span class="title">Request value joined into a file path that is opened or sent</span></span></summary>
+  <details class="rule" id="python-path-traversal-send-file" data-rule-id="python-path-traversal-send-file" data-lang="python" data-class="path-traversal" data-sev="high" data-text="python-path-traversal-send-file CWE-22 Request value joined into a file path that is opened, sent, listed, copied or removed">
+    <summary><span class="sev high"><i aria-hidden="true">高</i><b>高</b></span><span class="head"><code class="rid">python-path-traversal-send-file</code> <span class="cwe">CWE-22</span><span class="title">Request value joined into a file path that is opened, sent, listed, copied or removed</span></span></summary>
     <p class="meta">框架: flask, django</p>
     <div class="samples">
       <div class="sample bad-s"><h3 class="bad">會報出</h3><p class="note">os.path.join discards the base when the second part is absolute</p><pre><code>@app.get(&#34;/download&#34;)
