@@ -49,7 +49,10 @@ var (
 	// digits are not taken: hashes and ids everywhere have that shape.
 	// One pattern per separator takes the whole run, so a mixed id
 	// (00:0c:29:59:f:3f) is never cut short; hwID then checks its shape.
-	hwIDRe = regexp.MustCompile(`(?i)\b[0-9a-f]{1,2}(?::[0-9a-f]{1,2}){3,}\b|\b[0-9a-f]{1,2}(?:-[0-9a-f]{1,2}){3,}\b|` +
+	// hwPaddedRe is four or more two-digit groups: inside a run that is not
+	// an id as a whole (1:2:3:4:5), such a part is still masked.
+	hwPaddedRe = regexp.MustCompile(`(?i)\b[0-9a-f]{2}(?::[0-9a-f]{2}){3,}\b|\b[0-9a-f]{2}(?:-[0-9a-f]{2}){3,}\b`)
+	hwIDRe     = regexp.MustCompile(`(?i)\b[0-9a-f]{1,2}(?::[0-9a-f]{1,2}){3,}\b|\b[0-9a-f]{1,2}(?:-[0-9a-f]{1,2}){3,}\b|` +
 		`\b[0-9a-f]{4}\.[0-9a-f]{4}\.[0-9a-f]{4}\b`)
 	procNetRe = regexp.MustCompile(`\b([0-9A-F]{8}|[0-9A-F]{32}):([0-9A-F]{4})\b`)
 )
@@ -197,8 +200,8 @@ func (m *Masker) hwID(id string) string {
 			unpadded = true
 		}
 	}
-	if unpadded && len(groups) < 6 { // 1:2:3:4 is not a hardware id
-		return id
+	if unpadded && len(groups) < 6 { // 1:2:3:4 is not a hardware id, but a padded part of it may be
+		return hwPaddedRe.ReplaceAllStringFunc(id, m.hwID)
 	}
 	k := strings.Join(groups, ":")
 	if v, ok := m.hw[k]; ok {

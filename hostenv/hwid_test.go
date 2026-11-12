@@ -54,8 +54,8 @@ func TestMaskHardwareIDForms(t *testing.T) {
 func TestMaskHardwareIDMixed(t *testing.T) {
 	m := &Masker{Users: []string{"f3"}}
 	m.init()
-	got := m.text("a 00:0c:29:59:f:3f b 00:0c:29:59:f3:3f user f3 ver 1:2:3:4", true, true)
-	for _, leak := range []string{"59:f", "0c:29", ":3f"} {
+	got := m.text("a 00:0c:29:59:f:3f b 00:0c:29:59:f3:3f user f3 ver 1:2:3:4 iaid 29:59:f3:3f:1", true, true)
+	for _, leak := range []string{"59:f", "0c:29", ":3f", "29:59"} {
 		if strings.Contains(got, leak) {
 			t.Errorf("%q left in: %s", leak, got)
 		}
