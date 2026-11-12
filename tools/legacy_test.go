@@ -397,3 +397,81 @@ func (memHost) Readlink(string) (string, error)  { return "", os.ErrNotExist }
 func (memHost) Run(context.Context, []string) (hostenv.CmdResult, error) {
 	return hostenv.CmdResult{}, os.ErrNotExist
 }
+
+// legacyPackages is installedPackages before 1c, run on the same package
+// data: the fixtures hold the new dpkg-query/rpm output, which carries
+// every field the old format printed, so it is cut back to the old
+// columns first and parsed the old way.
+func legacyPackages(src hostenv.Source) (string, []pkg) {
+	b, _ := src.ReadFile("/etc/os-release")
+	osr := legacyOSRelease(b)
+	id, ver := osr["ID"], osr["VERSION_ID"]
+	parseTSV := func(s string, keep func([]string) bool) []pkg {
+		var out []pkg
+		sc := bufio.NewScanner(strings.NewReader(s))
+		for sc.Scan() {
+			f := strings.Split(sc.Text(), "\t")
+			if len(f) < 2 || f[0] == "" || (keep != nil && !keep(f)) {
+				continue
+			}
+			out = append(out, pkg{f[0], f[1]})
+		}
+		return out
+	}
+	recorded := func(argv []string, cols ...int) string {
+		res, err := src.Run(context.Background(), argv)
+		if err != nil {
+			return ""
+		}
+		var lines []string
+		for _, l := range strings.Split(string(res.Stdout), "\n") {
+			f := strings.Split(l, "\t")
+			var keep []string
+			for _, c := range cols {
+				if c < len(f) {
+					keep = append(keep, f[c])
+				}
+			}
+			lines = append(lines, strings.Join(keep, "\t"))
+		}
+		return strings.Join(lines, "\n")
+	}
+	switch id {
+	case "ubuntu", "debian":
+		eco := "Debian:" + strings.Split(ver, ".")[0]
+		if id == "ubuntu" {
+			eco = "Ubuntu:" + ver
+			if strings.Contains(osr["VERSION"], "LTS") {
+				eco += ":LTS"
+			}
+		}
+		// old -f: ${source:Package}\t${Version}\t${db:Status-Abbrev}; dpkg prints
+		// the binary name for ${source:Package} when there is no source.
+		out := recorded([]string{"/usr/bin/dpkg-query", "-W", "-f", hostenv.DpkgQueryFormat}, 1, 2, 4)
+		var fixed []string
+		full := recorded([]string{"/usr/bin/dpkg-query", "-W", "-f", hostenv.DpkgQueryFormat}, 0)
+		names := strings.Split(full, "\n")
+		for i, l := range strings.Split(out, "\n") {
+			if strings.HasPrefix(l, "\t") && i < len(names) {
+				l = names[i] + l
+			}
+			fixed = append(fixed, l)
+		}
+		return eco, uniq(parseTSV(strings.Join(fixed, "\n"), func(f []string) bool { return len(f) > 2 && strings.HasPrefix(f[2], "ii") }))
+	case "rocky", "almalinux":
+		eco := map[string]string{"rocky": "Rocky Linux", "almalinux": "AlmaLinux"}[id] + ":" + strings.Split(ver, ".")[0]
+		return eco, uniq(parseTSV(recorded([]string{"/usr/bin/rpm", "-qa", "--qf", hostenv.RpmQueryFormat}, 0, 1), nil))
+	}
+	return "", nil
+}
+
+func TestLegacyPackages(t *testing.T) {
+	for name, rp := range fixtures(t) {
+		withHost(t, rp)
+		eco, pkgs, err := installedPackages(context.Background())
+		weco, want := legacyPackages(rp)
+		if err != nil || eco != weco || len(want) < 100 || !reflect.DeepEqual(pkgs, want) {
+			t.Errorf("%s: eco %q/%q, %d/%d packages, err %v", name, eco, weco, len(pkgs), len(want), err)
+		}
+	}
+}

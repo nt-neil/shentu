@@ -163,7 +163,7 @@ func ParseRpmQA(b []byte) []Package {
 	var out []Package
 	for _, l := range strings.Split(string(b), "\n") {
 		f := strings.Split(l, "\t")
-		if len(f) < 3 || f[0] == "" || f[0] == "gpg-pubkey" {
+		if len(f) < 3 || f[0] == "" { // gpg-pubkey entries stay: they are in the rpm database
 			continue
 		}
 		out = append(out, Package{Name: f[0], Version: f[1], Arch: f[2]})

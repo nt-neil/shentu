@@ -37,7 +37,7 @@ func (c LinuxCollector) Collect(ctx context.Context, src Source) *Facts {
 
 	var osr map[string]string
 	f.Platform, osr = c.Platform(src)
-	f.Packages = c.packages(ctx, src, osr)
+	f.Packages = c.Packages(ctx, src, osr)
 	pw, accounts := c.Accounts(src)
 	f.Accounts = accounts
 	procs, sockOwner := c.Processes(src, pw)
@@ -103,7 +103,9 @@ func inContainer(src Source) bool {
 	return strings.Contains(s, "docker") || strings.Contains(s, "kubepods") || strings.Contains(s, "containerd") || strings.Contains(s, "/lxc/")
 }
 
-func (LinuxCollector) packages(ctx context.Context, src Source, osr map[string]string) Obs[PackageSet] {
+// Packages lists installed packages with the distribution's own tool:
+// dpkg-query, rpm -qa, or the apk database. osr is the parsed os-release.
+func (LinuxCollector) Packages(ctx context.Context, src Source, osr map[string]string) Obs[PackageSet] {
 	if osr == nil {
 		return Unknown[PackageSet](ReasonNotCollected, "no os-release, distribution unknown")
 	}

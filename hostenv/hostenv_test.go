@@ -41,7 +41,7 @@ func TestParsers(t *testing.T) {
 		t.Errorf("dpkg %+v", pk)
 	}
 	rp := ParseRpmQA([]byte("openssl\t1:3.0.7-27.el9\taarch64\ngpg-pubkey\t0:abc-def\t(none)\n"))
-	if len(rp) != 1 || rp[0].Version != "1:3.0.7-27.el9" {
+	if len(rp) != 2 || rp[0].Version != "1:3.0.7-27.el9" {
 		t.Errorf("rpm %+v", rp)
 	}
 	ap := ParseApkInstalled([]byte("C:Q1x\nP:musl\nV:1.2.5-r0\nA:aarch64\no:musl\n\nP:libcrypto3\nV:3.3.2-r0\no:openssl\n"))
