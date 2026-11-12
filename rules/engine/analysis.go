@@ -1779,6 +1779,9 @@ func (a *analysis) guard(st state, atom []Token) (pos bool, keys []keyRef) {
 	} else if len(atom) > 0 && zeroIsValid[atom[0].Text] {
 		pos = !pos // if (validate_file($f)) { wp_die(); }: a non-zero result means invalid
 	}
+	if keys, ok := a.regexPrefix(st, atom); ok {
+		return pos, keys // re.match(re.escape(base) + r'/[a-z]', url): the value starts with base/ and a letter
+	}
 	if keys, onMatch, ok := a.regexCheck(atom); ok {
 		if !onMatch {
 			pos = !pos // preg_match('/[^a-z0-9_]/', $x): a match means invalid
