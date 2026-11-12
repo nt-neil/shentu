@@ -5,7 +5,7 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 
 ## v0.3.0 (unreleased)
 
-- 支援 Windows Server 2022 與 2025，已在實機（GitHub 的 Windows runner）上驗證（amd64，
+- 支援 Windows Server 2022 與 2025，已在 GitHub 的 windows-2022/2025 runner 上驗證（amd64，
   另建置 arm64）：Windows 收集器只透過 Windows API
   讀取主機（登錄檔、服務、程序、通訊埠、帳號、排程工作、事件記錄、WMI 與防火牆），不用
   PowerShell，也不執行外部指令。
