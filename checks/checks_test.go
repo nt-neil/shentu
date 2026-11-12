@@ -137,7 +137,7 @@ func TestPatrolChecks(t *testing.T) {
 	want := map[string]int{
 		"accounts.extra_uid0": 1, "listener.exposed_service": 1, "process.miner": 2, "process.shell_as_web_user": 2,
 		"ssh.shared_key": 1, "firewall.disabled": 1, "antimalware.realtime_off": 1, "antimalware.stale_signatures": 1,
-		"antimalware.broad_exclusion": 2, "smb.v1_enabled": 1, "smb.signing_not_required": 1, "smb.everyone_writable": 1,
+		"antimalware.broad_exclusion": 2, "antimalware.exclusion": 1, "smb.v1_enabled": 1, "smb.signing_not_required": 1, "smb.everyone_writable": 1,
 		"winrm.insecure": 1, "auth.bruteforce": 1, "auth.log_cleared": 1,
 	}
 	got := map[string]int{}
@@ -181,6 +181,7 @@ func TestBroadExclusion(t *testing.T) {
 		`%SystemDrive%\`: true, `%ProgramFiles%`: true, `C:\PROGRA~1`: true, `C:\Users\Public\`: true,
 		`\\server\share`: true, `\\?\GLOBALROOT\Device\HarddiskVolume1`: true, `\\localhost\admin$\Temp`: true,
 		`C:\Windows. \System32`: true, `C:\*\Temp`: true, `C:\*.*`: true, `C:\W*\x`: true, `C:\Windows\System32\drivers`: true,
+		`C:\Windows\...\System32`: true, `C:\Win*`: true, `C:\Windows\Sys*32`: true, `C:\?:\x`: true, `*.log`: false,
 		`D:\data`: false, `C:\inetpub\logs`: false, `C:\ProgramData\Vendor\cache`: false, `sqlservr.exe`: false,
 	} {
 		if got := broadExclusion(x); got != want {

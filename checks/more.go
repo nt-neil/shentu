@@ -253,10 +253,16 @@ func antimalware(f *hostenv.Facts) []Finding {
 		out = append(out, Finding{Check: "antimalware.stale_signatures", Status: StatusFail, Severity: SevMedium,
 			Title: "Antivirus signatures are out of date", Evidence: fmt.Sprintf("%s: %d days old", o.Value.Product, o.Value.SignatureAgeDays)})
 	}
+	// Every exclusion is listed: a denylist of dangerous paths can always be
+	// dodged by one more spelling, so nothing is left unreported. The ones
+	// judged broad are raised to high.
 	for _, x := range o.Value.Exclusions {
 		if broadExclusion(x) {
 			out = append(out, Finding{Check: "antimalware.broad_exclusion", Status: StatusFail, Severity: SevHigh,
-				Title: "Antivirus skips a whole drive or a temp folder", Evidence: x})
+				Title: "Antivirus skips a whole drive, a system folder or a temp folder", Evidence: x})
+		} else {
+			out = append(out, Finding{Check: "antimalware.exclusion", Status: StatusFail, Severity: SevLow,
+				Title: "Antivirus skips this path; confirm it is intended", Evidence: x})
 		}
 	}
 	return append(out, partialNote("antimalware", "Some antivirus settings could not be read", o)...)
@@ -267,20 +273,22 @@ func antimalware(f *hostenv.Facts) []Finding {
 // short name (which can hide one), or a bare wildcard for a whole file
 // type. The path is canonicalised first.
 func broadExclusion(x string) bool {
-	l := canonExclusion(x)
-	if l == "" || l == "/" || (len(l) == 2 && l[1] == ':') {
-		return true // "", "*", "C:", "\\?\C:\"
+	l, odd := canonExclusion(x)
+	if odd || l == "" || l == "/" || l == "*" || (len(l) == 2 && l[1] == ':') {
+		return true // "", "*", "C:", "\\?\C:\", components of only dots
+	}
+	// A wildcard anywhere can stand for a root, except a bare extension
+	// pattern such as "*.log" (judged by the extension switch below).
+	if strings.ContainsAny(l, "*?") && !bareExtension.MatchString(l) {
+		return true
 	}
 	if strings.HasPrefix(l, "%") || strings.HasPrefix(l, "//") || strings.Contains(l, "globalroot") || strings.HasPrefix(l, "volume{") {
 		return true // env vars, UNC, device and volume paths: fail closed, worth a look
 	}
 	segs := strings.Split(l, "/")
-	for i, seg := range segs {
+	for _, seg := range segs {
 		if seg == "temp" || seg == "tmp" || seg == "downloads" || shortName.MatchString(seg) {
 			return true
-		}
-		if i < len(segs)-1 && strings.ContainsAny(seg, "*?") {
-			return true // a wildcard directory can stand for any root
 		}
 	}
 	// System and shared roots, on whatever drive.
@@ -306,12 +314,15 @@ func broadExclusion(x string) bool {
 	return false
 }
 
-var shortName = regexp.MustCompile(`~[0-9]`)
+var (
+	shortName     = regexp.MustCompile(`~[0-9]`)
+	bareExtension = regexp.MustCompile(`^\*?\.?[a-z0-9]{1,8}$|^\*\.[a-z0-9]{1,8}$`)
+)
 
 // canonExclusion lower-cases, uses "/", strips \\?\ and \\.\ prefixes,
 // maps \\localhost\c$ and \\127.0.0.1\c$ to c:, resolves . and .., and
 // drops trailing "/" and "/*".
-func canonExclusion(x string) string {
+func canonExclusion(x string) (canon string, odd bool) {
 	l := strings.ToLower(strings.TrimSpace(strings.ReplaceAll(x, `\`, "/")))
 	for _, p := range []string{"//?/unc/", "//?/", "//./"} {
 		if strings.HasPrefix(l, p) {
@@ -332,17 +343,25 @@ func canonExclusion(x string) string {
 			}
 		}
 	}
-	// Win32 drops trailing dots and spaces from every component.
+	// Win32 drops trailing dots and spaces from every component. A
+	// component that trims to nothing is not a normal path: fail closed.
 	segs := strings.Split(l, "/")
 	for i, seg := range segs {
-		if seg != "." && seg != ".." {
-			segs[i] = strings.TrimRight(seg, ". ")
+		if seg == "." || seg == ".." || seg == "" {
+			continue
 		}
+		t := strings.TrimRight(seg, ". ")
+		if t == "" {
+			t = ".." // "... " and friends: resolve as a parent and flag below
+			odd = true
+		}
+		segs[i] = t
 	}
 	l = strings.Join(segs, "/")
+	// A trailing "*", "*.*" or "*." counts only as a whole last component.
 	for {
-		t := l
-		for _, suf := range []string{"*.*", "*.", "*", "/"} {
+		t := strings.TrimSuffix(l, "/")
+		for _, suf := range []string{"/*.*", "/*.", "/*"} {
 			t = strings.TrimSuffix(t, suf)
 		}
 		if t == l {
@@ -352,17 +371,17 @@ func canonExclusion(x string) string {
 	}
 	if len(l) >= 2 && l[1] == ':' {
 		if c := path.Clean("/" + l[2:]); c != "/" {
-			return l[:2] + c
+			return l[:2] + c, odd
 		}
-		return l[:2]
+		return l[:2], odd
 	}
 	if strings.HasPrefix(l, "//") {
-		return l // UNC stays UNC; broadExclusion fails closed on it
+		return l, odd // UNC stays UNC; broadExclusion fails closed on it
 	}
 	if strings.HasPrefix(l, "/") {
-		return path.Clean(l)
+		return path.Clean(l), odd
 	}
-	return l
+	return l, odd
 }
 
 func smb(f *hostenv.Facts) []Finding {
