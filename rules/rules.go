@@ -155,6 +155,8 @@ type Route struct {
 	Exclude   []string `toml:"exclude"`    // a parameter declared with one of these is no input (Depends)
 	Bound     bool     `toml:"bound"`      // a parameter declared with a class type is an object the framework looked up (Laravel route model binding), no input
 	Sources   []string `toml:"sources"`    // further sources (get_settings_for_display), for the rules the model is for
+	InClasses []string `toml:"in_classes"` // a source called on $this counts only in a class extending one of these; on another object ($widget->), everywhere
+	ThisOnly  bool     `toml:"this_only"`  // a source counts only on $this or $this->parent (an Elementor skin's widget), not on another object ($section->get_settings(): a settings page's)
 	Clears    []string `toml:"clears"`     // calls returning what the framework itself stored for an id (get_attached_file(): a path it wrote), not the request's input
 	ClearsFor []string `toml:"clears_for"` // the rule classes Clears is for (path-traversal): a stored value may still be one an attacker wrote, so not for every class
 	Applies   []string `toml:"applies"`    // the request's roots ($_POST, req.body): a rule all of whose sources are one field under them (a password) is not one the model is for
