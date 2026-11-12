@@ -161,7 +161,16 @@ func checkTrustedAs(path string, memberOK bool) error {
 		if err := windows.GetAce(dacl, i, &ace); err != nil {
 			return fmt.Errorf("%s: %w", path, err)
 		}
-		if ace.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE || ace.Header.AceFlags&windows.INHERIT_ONLY_ACE != 0 {
+		switch ace.Header.AceType {
+		case windows.ACCESS_ALLOWED_ACE_TYPE:
+		case windows.ACCESS_DENIED_ACE_TYPE:
+			continue // a deny entry only takes rights away
+		default:
+			// Object, callback and conditional entries can grant rights in
+			// ways this check does not read: not trusted.
+			return fmt.Errorf("%s has an access entry of type %d that Shentu does not evaluate", path, ace.Header.AceType)
+		}
+		if ace.Header.AceFlags&windows.INHERIT_ONLY_ACE != 0 {
 			continue
 		}
 		sid := (*windows.SID)(unsafe.Pointer(&ace.SidStart))

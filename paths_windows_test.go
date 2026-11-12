@@ -163,3 +163,33 @@ func TestStateReadyRefusesForeignState(t *testing.T) {
 		t.Errorf("want a refusal pointing to service install: %v", err)
 	}
 }
+
+// S3: an access entry of a type the check does not read is not trusted;
+// a deny entry is fine.
+func TestCheckTrustedACETypes(t *testing.T) {
+	set := func(dir, sddl string) {
+		t.Helper()
+		sd, err := windows.SecurityDescriptorFromString(sddl)
+		if err != nil {
+			t.Fatal(err)
+		}
+		dacl, _, _ := sd.DACL()
+		if err := windows.SetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT,
+			windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION, nil, nil, dacl, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	dir := filepath.Join(t.TempDir(), "Shentu")
+	if err := secureDir(dir); err != nil {
+		t.Fatal(err)
+	}
+	set(dir, "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(D;;FA;;;BG)")
+	if err := checkTrusted(dir); err != nil {
+		t.Errorf("a deny entry must not make it untrusted: %v", err)
+	}
+	// A callback (conditional) allow entry: type 9.
+	set(dir, `D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(XA;;FA;;;BU;(Member_of {SID(BA)}))`)
+	if err := checkTrusted(dir); err == nil || !strings.Contains(err.Error(), "type") {
+		t.Errorf("a callback entry must be untrusted: %v", err)
+	}
+}
