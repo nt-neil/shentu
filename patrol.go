@@ -235,6 +235,12 @@ func checks(ctx context.Context, cfg *Config, env *tools.Env, st *state, daily b
 				fmt.Sprintf("authorized_keys changed: %s (%d keys)", k.Path, k.Keys), k})
 		}
 	}
+	for _, k := range acc.KeyFiles {
+		for _, l := range k.Unparsed {
+			out = append(out, finding{fmt.Sprintf("authorized_key_unparsed:%s:%d", k.Path, l), "warning",
+				fmt.Sprintf("%s line %d is neither a key nor a comment; sshd ignores it, but check it is not a key written in another form", k.Path, l), nil})
+		}
+	}
 	for _, k := range acc.SharedKeys {
 		out = append(out, finding{"sharedkey:" + k.Fingerprint, "warning",
 			fmt.Sprintf("one SSH key (%s) is in the authorized_keys of %s; attackers plant one key in every account, check that it is yours", k.Fingerprint, strings.Join(k.Users, ", ")), k})

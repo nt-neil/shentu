@@ -386,6 +386,32 @@ type KeyFile struct {
 	Path     string    `json:"path"`
 	Keys     int       `json:"keys"`
 	Modified time.Time `json:"modified"`
+	// Each key by the type written in it and its fingerprint (never the key).
+	KeyList []KeyEntry `json:"key_list,omitempty"`
+	// Lines that are neither a key nor a comment: sshd ignores them, but a
+	// key written in a form not read here would hide among them.
+	Unparsed []int `json:"unparsed_lines,omitempty"`
+}
+
+// KeyEntry is one key of an authorized_keys file.
+type KeyEntry struct {
+	Line        int    `json:"line"`
+	Type        string `json:"type"`
+	Fingerprint string `json:"fingerprint"`
+}
+
+// readKeyFile reads an authorized_keys file's keys and unparsed lines.
+func readKeyFile(b []byte) (keys []KeyEntry, unparsed []int) {
+	for i, l := range strings.Split(string(b), "\n") {
+		t, fp, bad := parseKeyLine(l)
+		switch {
+		case fp != "":
+			keys = append(keys, KeyEntry{i + 1, t, fp})
+		case bad:
+			unparsed = append(unparsed, i+1)
+		}
+	}
+	return keys, unparsed
 }
 
 // Accounts is the result of AccountsAudit.
@@ -425,13 +451,8 @@ func AccountsAudit() Accounts {
 			seenKeys[p] = true
 			if st, err := os.Stat(p); err == nil {
 				kb, _ := os.ReadFile(p)
-				n := 0
-				for _, l := range strings.Split(string(kb), "\n") {
-					if l = strings.TrimSpace(l); l != "" && !strings.HasPrefix(l, "#") {
-						n++
-					}
-				}
-				a.KeyFiles = append(a.KeyFiles, KeyFile{user, p, n, st.ModTime()})
+				keys, bad := readKeyFile(kb)
+				a.KeyFiles = append(a.KeyFiles, KeyFile{User: user, Path: p, Keys: len(keys), Modified: st.ModTime(), KeyList: keys, Unparsed: bad})
 			}
 		}
 	}
