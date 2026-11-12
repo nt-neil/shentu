@@ -969,8 +969,9 @@ func (a *analysis) toksRelevant(t []Token) bool {
 			}
 		}
 	}
-	if r := t[1:]; len(t) > 1 && t[0].word("return") {
-		if len(r) > 0 && r[len(r)-1].op(";") {
+	if len(t) > 1 && t[0].word("return") {
+		r := t[1:]
+		if r[len(r)-1].op(";") {
 			r = r[:len(r)-1]
 		}
 		if r = stripParens(r); len(r) == 1 && r[0].Kind == Str && len(r[0].Parts) == 0 {

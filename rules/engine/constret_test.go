@@ -39,3 +39,19 @@ func TestConstantReturnHelpers(t *testing.T) {
 		}
 	}
 }
+
+// A statement with no tokens of its own (a bare block) is read without
+// looking past its end: the check above once took t[1:] of it and the scan
+// panicked.
+func TestRelevanceBareBlock(t *testing.T) {
+	e := engineForTest(t)
+	for _, c := range []struct{ file, src string }{
+		{"a.js", "const cp = require('child_process');\nfunction f(x) { { return x; } }\ncp.exec(f(req.query.x));\n"},
+		{"a.php", "<?php function f($x) { { return $x; } }\nsystem(f($_GET['x']));\n"},
+	} {
+		fs, err := e.ScanFile(c.file, []byte(c.src))
+		if err != nil || len(fs) == 0 {
+			t.Errorf("%s: %v (err %v), want the call reported", c.file, fs, err)
+		}
+	}
+}
