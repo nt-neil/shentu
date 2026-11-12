@@ -580,7 +580,8 @@ func TestAppCodeAuditWalkResumes(t *testing.T) {
 	if _, ok := loadWalkPos(walkPosFile(roots)); !ok {
 		t.Error("a cut walk kept no place")
 	}
-	if pathCmp("/r/a/b", "/r/a-c") >= 0 || pathCmp("/r/a", "/r/a/b") >= 0 || pathCmp("/r/b", "/r/a/z") <= 0 {
+	cmp := func(a, b string) int { return pathCmp(filepath.FromSlash(a), filepath.FromSlash(b)) }
+	if cmp("/r/a/b", "/r/a-c") >= 0 || cmp("/r/a", "/r/a/b") >= 0 || cmp("/r/b", "/r/a/z") <= 0 {
 		t.Error("pathCmp does not follow WalkDir's order")
 	}
 }
