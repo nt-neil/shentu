@@ -13,6 +13,7 @@ fix = "Pass the values as query parameters (query('... WHERE a = ?', [a])); a ta
 refs = ["CVE-2015-10035"]
 
 [[args]]
+sinks = [".query("]
 arg = 1   # the SQL text; values in the bindings array are safe
 
 # execute() only on a receiver that may be a database client (as in js-sqli-raw-interpolation)

@@ -12,6 +12,7 @@ fix = "Use placeholders and pass values separately (query('... WHERE id = ?', [i
 refs = ["CVE-2026-47384"]
 
 [[args]]
+sinks = [".query(", "knex.raw(", ".raw(", ".whereRaw(", ".orderByRaw("]
 arg = 1   # the SQL text; values in the bindings array are safe
 whole = true   # query({ sql: "... ?", args: [input] }) binds the input; only SQL text built from input is the attack
 
