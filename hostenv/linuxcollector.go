@@ -551,9 +551,9 @@ func (c LinuxCollector) persistence(ctx context.Context, src Source, keys Obs[[]
 	}
 
 	for _, kf := range keys.Value {
-		if kf.Unparsed > 0 { // sshd may still read these: never drop them silently
-			add(PersistenceItem{Kind: "authorized_key_unparsed", Location: kf.Path,
-				Detail: fmt.Sprintf("%d non-comment lines are no key Shentu can read", kf.Unparsed)})
+		for _, l := range kf.Unparsed { // sshd ignores these, but never drop them silently
+			add(PersistenceItem{Kind: "authorized_key_unparsed", Location: fmt.Sprintf("%s:%d", kf.Path, l),
+				Detail: "neither a key nor a comment; check it is not a key written in another form"})
 		}
 		for _, k := range kf.Keys {
 			d := k.Type + " " + k.Fingerprint

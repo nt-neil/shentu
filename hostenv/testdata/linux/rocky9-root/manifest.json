@@ -2407,7 +2407,7 @@
     {
       "op": "file",
       "path": "/home/user1/.ssh/authorized_keys",
-      "blob": "blobs/b9b15d745e8e79cc"
+      "blob": "blobs/86132ea6f2d3b85a"
     },
     {
       "op": "file",

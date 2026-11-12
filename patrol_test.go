@@ -79,4 +79,10 @@ func TestUncheckedSection(t *testing.T) {
 	if uncheckedSection(risks[1:]) != "" {
 		t.Error("a section with nothing unchecked")
 	}
+	if c := uncheckedConfigs([]string{"/etc/nginx/sites-enabled/a (symlink to /tmp/a, outside /etc)"}); !strings.Contains(c, "not read") || !strings.Contains(c, "outside /etc") {
+		t.Errorf("configs %q", c)
+	}
+	if uncheckedConfigs(nil) != "" {
+		t.Error("a section with every configuration read")
+	}
 }

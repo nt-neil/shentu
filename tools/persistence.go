@@ -28,7 +28,8 @@ func sharedKeys(files []KeyFile) []SharedKey {
 		if err != nil {
 			continue
 		}
-		for _, k := range hostenv.ParseAuthorizedKeys(b) {
+		keys, _ := hostenv.ParseAuthorizedKeys(b)
+		for _, k := range keys {
 			if k.CloudInitRefusal {
 				continue
 			}
@@ -60,6 +61,10 @@ func sortedKeys[V any](m map[string]V) []string {
 // keyFingerprint is hostenv.KeyFingerprint: the SHA256 fingerprint of the key sshd
 // would use from an authorized_keys line, "" for none.
 func keyFingerprint(line string) string { return hostenv.KeyFingerprint(line) }
+
+// parseKeyLine is hostenv.ParseKeyLine: the key type written in the key,
+// its fingerprint, and whether the line is neither a key nor a comment.
+func parseKeyLine(line string) (keyType, fp string, unparsed bool) { return hostenv.ParseKeyLine(line) }
 
 // preloadEntries returns the libraries listed in ld.so.preload, which every program then loads.
 func preloadEntries(path string) []string {

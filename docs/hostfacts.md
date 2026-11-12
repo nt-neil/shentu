@@ -73,7 +73,7 @@ A missing or unreadable fact never passes a check. A check that needs a fact the
 | `accounts` | `[]{name, uid, home, shell, can_login, is_admin, disabled}` | `/etc/passwd`, `/etc/group` (sudo, wheel, admin) | `NetUserEnum`, Administrators (S-1-5-32-544) members |
 | `listeners` | `[]{proto, addr, port, pid, process, uid}` (one row per owner: a second process on a port stays visible) | `/proc/net/{tcp,udp}{,6}` + `/proc/*/fd` | `GetExtendedTcpTable` / `GetExtendedUdpTable` |
 | `persistence` | `[]{kind, location, command, detail}` | cron and cron files, `ld.so.preload`, `rc.local`, `/etc/systemd/system`, `authorized_keys`, sudo rules, PAM modules no package installed |
-| `ssh_keys` | `[]{user, path, lines, modified, keys[], unparsed, unread}` | `~/.ssh/authorized_keys{,2}` of every account, read without following a final symlink | Phase 2 (`administrators_authorized_keys`) | Run keys, services, scheduled tasks, WMI subscriptions, startup folders, IFEO |
+| `ssh_keys` | `[]{user, path, modified, keys[{line, type, fingerprint, options, cloud_init_refusal}], unparsed_lines, unread}` | `~/.ssh/authorized_keys{,2}` of every account, read without following a final symlink | Phase 2 (`administrators_authorized_keys`) | Run keys, services, scheduled tasks, WMI subscriptions, startup folders, IFEO |
 | `firewall` | `backend`, `enabled`, `default_inbound`, `profiles`, `extra` | ufw config, firewalld running, `nft list ruleset`, nftables at boot, `iptables -S`; `extra.summary` is survey's line | `INetFwPolicy2` / registry `FirewallPolicy` |
 | `remote_access.ssh` | `config_path`, `settings`, `unread`, `hash` | `sshd_config` with `Include`, up to the first `Match` | `C:\ProgramData\ssh\sshd_config` (same parser) |
 | `remote_access.rdp` | `enabled`, `nla`, `port`, `security_layer` | not applicable | registry `Terminal Server`, `RDP-Tcp` |
@@ -81,7 +81,7 @@ A missing or unreadable fact never passes a check. A check that needs a fact the
 | `remote_access.smb` | `smb1_enabled`, `signing_required`, `writable_shares` | not collected yet (Samba) | registry `LanmanServer\Parameters`, `NetShareEnum` |
 | `antimalware` | `product`, `real_time`, `signature_age_days`, `exclusions` | not applicable | WMI `MSFT_MpComputerStatus`, `MSFT_MpPreference` |
 | `auth_events` | `window_hours`, `failed_by_source`, `notable[]` | auth/secure logs (rotated, gzipped) or journald, streamed | Event Log 4625, 4624 type 10, 1102, 4720, 4732, 7045 |
-| `web` | `server`, `webroots`, `upload_dirs` | nginx `root` and Apache `DocumentRoot` lines (upload folders: the code audit) | `applicationHost.config` |
+| `web` | `server`, `webroots`, `upload_dirs`, `config_unreadable` ("path (why)") | nginx `root` and Apache `DocumentRoot` lines (upload folders: the code audit) | `applicationHost.config` |
 
 `persistence.kind` values: `cron`, `cron_file`, `systemd`, `ld_preload`, `rc_local`,
 `authorized_key`, `authorized_key_unparsed`, `sudo_rule`, `pam_unpackaged`, and on Windows `run_key`

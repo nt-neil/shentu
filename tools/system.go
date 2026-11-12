@@ -300,6 +300,27 @@ type KeyFile struct {
 	Path     string    `json:"path"`
 	Keys     int       `json:"keys"`
 	Modified time.Time `json:"modified"`
+	// Each key by the type written in it and its fingerprint (never the key).
+	KeyList []KeyEntry `json:"key_list,omitempty"`
+	// Lines that are neither a key nor a comment: sshd ignores them, but a
+	// key written in a form not read here would hide among them.
+	Unparsed []int `json:"unparsed_lines,omitempty"`
+}
+
+// KeyEntry is one key of an authorized_keys file.
+type KeyEntry struct {
+	Line        int    `json:"line"`
+	Type        string `json:"type"`
+	Fingerprint string `json:"fingerprint"`
+}
+
+// readKeyFile reads an authorized_keys file's keys and unparsed lines (hostenv).
+func readKeyFile(b []byte) (keys []KeyEntry, unparsed []int) {
+	ks, unparsed := hostenv.ParseAuthorizedKeys(b)
+	for _, k := range ks {
+		keys = append(keys, KeyEntry{k.Line, k.Type, k.Fingerprint})
+	}
+	return keys, unparsed
 }
 
 // Accounts is the result of AccountsAudit.
@@ -328,7 +349,11 @@ func AccountsAudit() Accounts {
 	}
 	src := hostSource()
 	for _, kf := range linux.SSHKeyFiles(src, accts.Value).Value {
-		a.KeyFiles = append(a.KeyFiles, KeyFile{kf.User, kf.Path, kf.Lines, kf.Modified})
+		var keys []KeyEntry
+		for _, k := range kf.Keys {
+			keys = append(keys, KeyEntry{k.Line, k.Type, k.Fingerprint})
+		}
+		a.KeyFiles = append(a.KeyFiles, KeyFile{User: kf.User, Path: kf.Path, Keys: len(keys), Modified: kf.Modified, KeyList: keys, Unparsed: kf.Unparsed})
 	}
 	a.SudoRules, _ = linux.SudoRules(src)
 	a.SharedKeys = sharedKeys(a.KeyFiles)

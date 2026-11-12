@@ -5290,12 +5290,12 @@
       {
         "kind": "authorized_key",
         "location": "/home/user1/.ssh/authorized_keys",
-        "detail": "ssh-ed25519 SHA256:if5lagV3+cn24JciSw1Y2Yzki8slHfaLKN2EEnc0Keo"
+        "detail": "ssh-ed25519 SHA256:fop5ozGMC0vLaxkNpVJdj71a3g3seTHXAU9rPdR4Gnk"
       },
       {
         "kind": "authorized_key",
         "location": "/home/user1/.ssh/authorized_keys",
-        "detail": "ssh-ed25519 SHA256:oeYn44h9gOuFycyQhniJoWp40vf//Dbc+iuh2fzlgXU"
+        "detail": "ssh-ed25519 SHA256:NtA1gumuWCELcqP8w6f3twOxv7cmkMmh3wydX3MAuOQ"
       },
       {
         "kind": "cron_file",
@@ -5315,16 +5315,17 @@
       {
         "user": "user1",
         "path": "/home/user1/.ssh/authorized_keys",
-        "lines": 2,
         "modified": "2026-11-11T15:26:04.240000088Z",
         "keys": [
           {
+            "line": 1,
             "type": "ssh-ed25519",
-            "fingerprint": "SHA256:if5lagV3+cn24JciSw1Y2Yzki8slHfaLKN2EEnc0Keo"
+            "fingerprint": "SHA256:fop5ozGMC0vLaxkNpVJdj71a3g3seTHXAU9rPdR4Gnk"
           },
           {
+            "line": 2,
             "type": "ssh-ed25519",
-            "fingerprint": "SHA256:oeYn44h9gOuFycyQhniJoWp40vf//Dbc+iuh2fzlgXU"
+            "fingerprint": "SHA256:NtA1gumuWCELcqP8w6f3twOxv7cmkMmh3wydX3MAuOQ"
           }
         ]
       }

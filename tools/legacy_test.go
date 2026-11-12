@@ -9,6 +9,8 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -22,6 +24,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -479,6 +482,71 @@ func TestLegacyPackages(t *testing.T) {
 	}
 }
 
+// legacyParseKeyLine and legacyReadKeyFile are tools/persistence.go and
+// tools/system.go of v0.2.5 (d4a8ea9), verbatim.
+func legacyParseKeyLine(line string) (keyType, fp string, unparsed bool) {
+	short := map[string]bool{"rsa": true, "dsa": true, "ecdsa": true, "ed25519": true, "ecdsa-sk": true, "ed25519-sk": true,
+		"xmss": true, "rsa-cert": true, "dsa-cert": true, "ecdsa-cert": true, "ed25519-cert": true, "ecdsa-sk-cert": true,
+		"ed25519-sk-cert": true, "xmss-cert": true}
+	full := func(t string) bool {
+		return strings.HasPrefix(t, "ssh-") || strings.HasPrefix(t, "ecdsa-") || strings.HasPrefix(t, "sk-")
+	}
+	name := func(t string) bool { return full(strings.ToLower(t)) || short[strings.ToLower(t)] }
+	keyAt := func(s string) (string, string) {
+		f := strings.Fields(s)
+		if len(f) < 2 || !name(f[0]) {
+			return "", ""
+		}
+		blob, err := base64.StdEncoding.DecodeString(f[1])
+		if err != nil || len(blob) < 16 {
+			return "", ""
+		}
+		n := int(binary.BigEndian.Uint32(blob))
+		if n <= 0 || n > 64 || 4+n > len(blob) {
+			return "", ""
+		}
+		kt := string(blob[4 : 4+n])
+		if !full(kt) {
+			return "", ""
+		}
+		sum := sha256.Sum256(blob)
+		return kt, "SHA256:" + base64.RawStdEncoding.EncodeToString(sum[:])
+	}
+	line = strings.TrimSpace(line)
+	if line == "" || strings.HasPrefix(line, "#") {
+		return "", "", false
+	}
+	if t, fp := keyAt(line); fp != "" {
+		return t, fp, false
+	}
+	quoted := false
+	i := 0
+	for ; i < len(line) && (quoted || (line[i] != ' ' && line[i] != '\t')); i++ {
+		if line[i] == '\\' && i+1 < len(line) && line[i+1] == '"' {
+			i++
+		} else if line[i] == '"' {
+			quoted = !quoted
+		}
+	}
+	if t, fp := keyAt(strings.TrimSpace(line[i:])); fp != "" {
+		return t, fp, false
+	}
+	return "", "", true
+}
+
+func legacyReadKeyFile(b []byte) (keys []KeyEntry, unparsed []int) {
+	for i, l := range strings.Split(string(b), "\n") {
+		t, fp, bad := legacyParseKeyLine(l)
+		switch {
+		case fp != "":
+			keys = append(keys, KeyEntry{i + 1, t, fp})
+		case bad:
+			unparsed = append(unparsed, i+1)
+		}
+	}
+	return keys, unparsed
+}
+
 // legacyAuditAt is AccountsAudit's key-file and sudoers parts and survey's
 // cronFiles before 1c, with every absolute path read under root.
 func legacyAuditAt(root string) (keys []KeyFile, sudo, cron []string) {
@@ -499,13 +567,8 @@ func legacyAuditAt(root string) (keys []KeyFile, sudo, cron []string) {
 			seenKeys[p] = true
 			if st, err := os.Stat(at(p)); err == nil {
 				kb, _ := os.ReadFile(at(p))
-				n := 0
-				for _, l := range strings.Split(string(kb), "\n") {
-					if l = strings.TrimSpace(l); l != "" && !strings.HasPrefix(l, "#") {
-						n++
-					}
-				}
-				keys = append(keys, KeyFile{user, p, n, st.ModTime()})
+				ks, bad := legacyReadKeyFile(kb)
+				keys = append(keys, KeyFile{User: user, Path: p, Keys: len(ks), Modified: st.ModTime(), KeyList: ks, Unparsed: bad})
 			}
 		}
 	}
@@ -916,24 +979,64 @@ func TestLegacySSHLogins(t *testing.T) {
 	}
 }
 
-// legacyWebRootsAt is WebRoots before 1c (f9264fd), every path under root.
-func legacyWebRootsAt(root string) []string {
+// legacyWebRootsAt is webRootsFrom of v0.2.5 (d4a8ea9), with the
+// configuration root and owner as parameters (the package variables there).
+func legacyWebRootsAt(globs []string, confRoot string, owner uint32) (out, unreadable []string) {
 	nginxRoot := regexp.MustCompile(`(?m)^\s*root\s+["']?([^"';\s]+)`)
 	apacheRoot := regexp.MustCompile(`(?mi)^\s*DocumentRoot\s+["']?([^"'\s]+)`)
+	errWhy := func(err error) string {
+		if pe := (*fs.PathError)(nil); errors.As(err, &pe) {
+			return pe.Err.Error()
+		}
+		return err.Error()
+	}
+	read := func(p string) ([]byte, string) {
+		li, err := os.Lstat(p)
+		if err != nil {
+			return nil, errWhy(err)
+		}
+		target := p
+		if li.Mode()&os.ModeSymlink != 0 {
+			if target, err = filepath.EvalSymlinks(p); err != nil {
+				return nil, "symlink: " + errWhy(err)
+			}
+			if !insideAny(target, []string{confRoot}) {
+				return nil, "symlink to " + target + ", outside " + confRoot
+			}
+			st, err := os.Lstat(target)
+			if err != nil {
+				return nil, errWhy(err)
+			}
+			sys, ok := st.Sys().(*syscall.Stat_t)
+			switch {
+			case !st.Mode().IsRegular():
+				return nil, "symlink to " + target + ", not a regular file"
+			case !ok || sys.Uid != owner:
+				return nil, "symlink to " + target + ", not owned by root"
+			case st.Mode().Perm()&0o022 != 0:
+				return nil, "symlink to " + target + ", writable by others than its owner"
+			}
+			li = st
+		}
+		b, ok := readSmallRegular(target, 1<<20, li)
+		if !ok {
+			return nil, "not a regular file of at most 1 MiB, or changed while read"
+		}
+		return b, ""
+	}
 	seen := map[string]bool{}
-	var out []string
-	for _, g := range []string{"/etc/nginx/nginx.conf", "/etc/nginx/sites-enabled/*", "/etc/nginx/conf.d/*.conf",
-		"/etc/apache2/sites-enabled/*", "/etc/httpd/conf/httpd.conf", "/etc/httpd/conf.d/*.conf"} {
-		files, _ := filepath.Glob(filepath.Join(root, g))
+	for _, g := range globs {
+		files, _ := filepath.Glob(g)
 		for _, f := range files {
-			b, ok := readSmallRegular(f, 1<<20, nil)
-			if !ok {
+			b, why := read(f)
+			if why != "" {
+				unreadable = append(unreadable, f+" ("+why+")")
 				continue
 			}
 			for _, re := range []*regexp.Regexp{nginxRoot, apacheRoot} {
 				for _, m := range re.FindAllSubmatch(b, -1) {
 					p := filepath.Clean(string(m[1]))
-					if filepath.IsAbs(p) && !strings.Contains(p, "$") && !seen[p] {
+					if strings.HasPrefix(p, "/") && !strings.Contains(p, "$") && !seen[p] {
 						seen[p] = true
 						out = append(out, p)
 					}
@@ -942,30 +1045,47 @@ func legacyWebRootsAt(root string) []string {
 		}
 	}
 	sort.Strings(out)
-	return out
+	return out, unreadable
 }
 
 func TestLegacyWebRoots(t *testing.T) {
-	root := t.TempDir()
-	w := func(p, body string) {
-		os.MkdirAll(filepath.Dir(filepath.Join(root, p)), 0o755)
-		os.WriteFile(filepath.Join(root, p), []byte(body), 0o644)
+	root, _ := filepath.EvalSymlinks(t.TempDir())
+	etc := filepath.Join(root, "etc")
+	other, _ := filepath.EvalSymlinks(t.TempDir())
+	w := func(p, body string, mode os.FileMode) {
+		os.MkdirAll(filepath.Dir(p), 0o755)
+		os.WriteFile(p, []byte(body), mode)
+		os.Chmod(p, mode)
 	}
-	w("/etc/nginx/nginx.conf", "http {\n  root /usr/share/nginx/html;\n  include /etc/nginx/conf.d/*.conf;\n}\n")
-	w("/etc/nginx/sites-available/shop", "server {\n  root /var/www/shop/public;\n}\n")
-	os.MkdirAll(filepath.Join(root, "/etc/nginx/sites-enabled"), 0o755)
-	os.Symlink("../sites-available/shop", filepath.Join(root, "/etc/nginx/sites-enabled/shop")) // Debian: a link
-	w("/etc/nginx/sites-enabled/blog", "server {\n  root \"/var/www/blog\";\n  # root /old;\n  root $document_root;\n  root relative/path;\n}\n")
-	w("/etc/nginx/conf.d/big.conf", "root /var/www/big;\n"+strings.Repeat("#\n", 600000))
-	w("/etc/nginx/conf.d/api.conf", "server { root /srv/api; }\nroot /var/www/blog;\n")
-	w("/etc/apache2/sites-enabled/000-default.conf", "<VirtualHost *:80>\n\tDocumentRoot /var/www/html\n</VirtualHost>\n")
-	w("/etc/httpd/conf.d/ssl.conf", "documentroot '/var/www/ssl'\n")
-	want := legacyWebRootsAt(root)
-	live, _ := hostenv.NewLive(nil)
-	live.Remap = map[string]string{"/": root}
-	withHost(t, live)
-	got := WebRoots()
-	if len(want) < 4 || !reflect.DeepEqual(got, want) {
-		t.Errorf("web roots:\n got %q\nwant %q", got, want)
+	w(filepath.Join(etc, "nginx/nginx.conf"), "http {\n  root /usr/share/nginx/html;\n}\n", 0o644)
+	w(filepath.Join(etc, "nginx/sites-available/shop"), "server {\n  root /var/www/shop/public;\n}\n", 0o644)
+	os.MkdirAll(filepath.Join(etc, "nginx/sites-enabled"), 0o755)
+	os.Symlink("../sites-available/shop", filepath.Join(etc, "nginx/sites-enabled/shop")) // Debian: a link
+	w(filepath.Join(etc, "nginx/sites-enabled/blog"), "server {\n  root \"/var/www/blog\";\n  # root /old;\n  root $document_root;\n  root relative/path;\n}\n", 0o644)
+	w(filepath.Join(etc, "nginx/sites-available/open"), "server {\n root /var/www/open;\n}\n", 0o666)
+	os.Symlink("../sites-available/open", filepath.Join(etc, "nginx/sites-enabled/open"))
+	w(filepath.Join(other, "evil"), "server {\n root /var/www/evil;\n}\n", 0o644)
+	os.Symlink(filepath.Join(other, "evil"), filepath.Join(etc, "nginx/sites-enabled/evil"))
+	os.Symlink("loop2", filepath.Join(etc, "nginx/sites-enabled/loop1"))
+	os.Symlink("loop1", filepath.Join(etc, "nginx/sites-enabled/loop2"))
+	w(filepath.Join(etc, "nginx/conf.d/big.conf"), "root /var/www/big;\n"+strings.Repeat("#\n", 600000), 0o644)
+	w(filepath.Join(etc, "nginx/conf.d/api.conf"), "server { root /srv/api; }\nroot /var/www/blog;\n", 0o644)
+	w(filepath.Join(etc, "apache2/sites-enabled/000-default.conf"), "<VirtualHost *:80>\n\tDocumentRoot /var/www/html\n</VirtualHost>\n", 0o644)
+	w(filepath.Join(etc, "httpd/conf.d/ssl.conf"), "documentroot '/var/www/ssl'\n", 0o644)
+	var globs []string
+	for _, g := range hostenv.DefaultWebConf.Globs {
+		globs = append(globs, filepath.Join(root, g))
+	}
+	owner := uint32(os.Getuid()) // the test's user stands for root
+	wantRoots, wantUnread := legacyWebRootsAt(globs, etc, owner)
+	r, o := webConfRoot, webConfOwner
+	defer func() { webConfRoot, webConfOwner = r, o }()
+	webConfRoot, webConfOwner = etc, owner
+	gotRoots, gotUnread := webRootsFrom(globs)
+	if len(wantRoots) < 5 || !reflect.DeepEqual(gotRoots, wantRoots) {
+		t.Errorf("web roots:\n got %q\nwant %q", gotRoots, wantRoots)
+	}
+	if len(wantUnread) < 4 || !reflect.DeepEqual(gotUnread, wantUnread) {
+		t.Errorf("unreadable:\n got %q\nwant %q", gotUnread, wantUnread)
 	}
 }

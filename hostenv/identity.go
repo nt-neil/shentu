@@ -2,6 +2,7 @@ package hostenv
 
 import (
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"net"
@@ -146,10 +147,19 @@ func (m *Masker) key(k string) string {
 		return v
 	}
 	m.nKey++
-	// A valid blob (sshd and KeyFingerprint accept it, so replay still sees
-	// a key) that cannot be mistaken for a real one: it starts with 0xff,
-	// so its base64 starts with "/", never "AAAA", and masking is stable.
-	v := base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("\xffshentu-redacted-key-%08d", m.nKey)))
+	// A valid blob of the same key type (sshd and ParseKeyLine accept it,
+	// so replay still sees a key of that type) whose key part says what it
+	// is: it cannot be mistaken for a real key.
+	typ := "ssh-ed25519"
+	if raw, err := base64.StdEncoding.DecodeString(k); err == nil {
+		if n := len(raw); n >= 4 {
+			l := int(binary.BigEndian.Uint32(raw))
+			if l > 0 && l <= 64 && 4+l <= n && fullKeyType(string(raw[4:4+l])) {
+				typ = string(raw[4 : 4+l])
+			}
+		}
+	}
+	v := base64.StdEncoding.EncodeToString(sshBlob(typ, fmt.Sprintf("shentu-redacted-key-%08d", m.nKey)))
 	m.keys[k] = v
 	m.keys[v] = v
 	return v
@@ -239,4 +249,15 @@ func (m *Masker) authorizedKeys(s string) string {
 		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+// sshBlob is a public key blob: the type and the key as length-prefixed
+// strings.
+func sshBlob(keyType, key string) []byte {
+	var b []byte
+	for _, f := range []string{keyType, key} {
+		b = binary.BigEndian.AppendUint32(b, uint32(len(f)))
+		b = append(b, f...)
+	}
+	return b
 }
