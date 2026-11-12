@@ -92,11 +92,8 @@ var riskyIfPublic = map[string]bool{"mysqld": true, "mariadbd": true, "postgres"
 // Survey builds the profile. It only reads; nothing is changed.
 func Survey(ctx context.Context, env *Env) SiteProfile {
 	p := SiteProfile{Time: time.Now().UTC(), Firewall: firewall(ctx)}
-	osr := osRelease()
-	p.OS = osr["PRETTY_NAME"]
-	if b, err := os.ReadFile("/proc/sys/kernel/osrelease"); err == nil {
-		p.Kernel = strings.TrimSpace(string(b))
-	}
+	plat, _ := hostPlatform()
+	p.OS, p.Kernel = plat.PrettyName, plat.Kernel
 
 	by := map[string]*Service{}
 	if ports, err := ListeningPorts(); err == nil {

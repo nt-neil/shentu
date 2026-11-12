@@ -305,7 +305,7 @@ func upgradeHint(eco string) string {
 
 // installedPackages detects the distro and lists packages in OSV naming.
 func installedPackages(ctx context.Context) (string, []pkg, error) {
-	osr := osRelease()
+	_, osr := hostPlatform()
 	id, ver := osr["ID"], osr["VERSION_ID"]
 	switch id {
 	case "ubuntu", "debian":
@@ -384,17 +384,6 @@ func uniq(in []pkg) []pkg {
 		}
 	}
 	return out
-}
-
-func osRelease() map[string]string {
-	m := map[string]string{}
-	b, _ := os.ReadFile("/etc/os-release")
-	for _, l := range strings.Split(string(b), "\n") {
-		if k, v, ok := strings.Cut(l, "="); ok {
-			m[k] = strings.Trim(v, `"`)
-		}
-	}
-	return m
 }
 
 func firstLine(s string, n int) string {
