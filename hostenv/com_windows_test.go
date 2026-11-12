@@ -4,13 +4,16 @@ package hostenv
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 	"unicode/utf16"
@@ -117,7 +120,7 @@ func TestDecodeSafeArrayEdges(t *testing.T) {
 		t.Fatal(err)
 	}
 	g := got.([]any)
-	if len(g) != 4 || g[0] != `C:\` || g[1] != "" || g[2] != "a\x00b" || len(g[3].(string)) != maxVariantString {
+	if len(g) != 4 || g[0] != `C:\` || g[1] != "" || g[2] != "a\x00b" || g[3].(string) != strings.Repeat("x", maxVariantString)+TruncMark {
 		t.Errorf("negative lbound, empty, embedded NUL, capped: %#v", g[:3])
 	}
 
@@ -366,4 +369,52 @@ func TestCOMWaitTimesOut(t *testing.T) {
 		t.Errorf("firewall: %v", err)
 	}
 	time.Sleep(2 * time.Second) // let the abandoned calls finish before the next test
+}
+
+// S4: a list cut at its cap ends with TruncMark.
+func TestDecodeSafeArrayTruncated(t *testing.T) {
+	vals := make([]int32, maxVariantArray+5)
+	v, done := intArray(t, vtI4, vals)
+	defer done()
+	got, err := decodeVariant(&v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := got.([]any)
+	if len(g) != maxVariantArray+1 || g[len(g)-1] != TruncMark {
+		t.Errorf("cut list: %d items, last %#v", len(g), g[len(g)-1])
+	}
+}
+
+// S4: on a thread someone else set up in another apartment mode, comInit
+// leaves that setup alone (its done is a no-op).
+func TestComInitLeavesForeignApartment(t *testing.T) {
+	res := make(chan string, 1)
+	go func() {
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+		if err := windows.CoInitializeEx(0, windows.COINIT_APARTMENTTHREADED); err != nil {
+			res <- "setup: " + err.Error()
+			return
+		}
+		defer windows.CoUninitialize()
+		done, err := comInit()
+		if err != nil {
+			res <- "comInit: " + err.Error()
+			return
+		}
+		done()
+		// Still initialised (as STA): a second STA init answers S_FALSE.
+		err = windows.CoInitializeEx(0, windows.COINIT_APARTMENTTHREADED)
+		var errno syscall.Errno
+		if errors.As(err, &errno) && uint32(errno) == hrSFalse {
+			windows.CoUninitialize()
+			res <- ""
+			return
+		}
+		res <- fmt.Sprintf("the caller's apartment was torn down (re-init: %v)", err)
+	}()
+	if msg := <-res; msg != "" {
+		t.Error(msg)
+	}
 }

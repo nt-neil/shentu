@@ -1296,6 +1296,9 @@ func winAuthEvents(ws WinSource) Obs[AuthEvents] {
 // namespace, each with the filters bound to it. Built-in subscriptions
 // (the SCM event log consumer) use other consumer classes and are not
 // listed. A namespace that does not exist is not an error.
+// TruncMark ends a WMI string or list that was cut at its size cap.
+const TruncMark = "…[truncated]"
+
 // WMIRowLimit caps the rows one WMI query returns.
 const WMIRowLimit = 10000
 

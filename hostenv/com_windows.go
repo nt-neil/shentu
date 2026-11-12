@@ -221,10 +221,15 @@ func bstrString(b unsafe.Pointer) string {
 		return ""
 	}
 	n, _, _ := procSysStringLen.Call(uintptr(b))
-	if n > maxVariantString {
+	cut := n > maxVariantString
+	if cut {
 		n = maxVariantString
 	}
-	return string(utf16.Decode(unsafe.Slice((*uint16)(b), n))) // keeps embedded NULs
+	t := string(utf16.Decode(unsafe.Slice((*uint16)(b), n))) // keeps embedded NULs
+	if cut {
+		t += TruncMark
+	}
+	return t
 }
 
 // WMI runs one WQL query and returns props of each row. COM needs a
@@ -256,29 +261,36 @@ func (l *Live) WMI(namespace, query string, props []string) ([]map[string]any, e
 }
 
 // comInit loads the COM DLLs and joins the multithreaded apartment on
-// the calling (locked) OS thread. Call windows.CoUninitialize after a
-// nil error.
-func comInit() error {
+// the calling (locked) OS thread. It returns the function that undoes
+// what it did: CoUninitialize after S_OK or S_FALSE, nothing after
+// RPC_E_CHANGED_MODE (the thread was set up by someone else, in another
+// mode, and is not ours to tear down).
+func comInit() (done func(), err error) {
 	if err := modole32.Load(); err != nil {
-		return err
+		return nil, err
 	}
 	if err := modoleaut32.Load(); err != nil {
-		return err
+		return nil, err
 	}
 	if err := windows.CoInitializeEx(0, windows.COINIT_MULTITHREADED); err != nil {
 		var errno syscall.Errno
-		if !errors.As(err, &errno) || (uint32(errno) != hrSFalse && uint32(errno) != hrRPCEChangedMode) {
-			return err
+		switch {
+		case errors.As(err, &errno) && uint32(errno) == hrRPCEChangedMode:
+			return func() {}, nil
+		case errors.As(err, &errno) && uint32(errno) == hrSFalse:
+		default:
+			return nil, err
 		}
 	}
-	return nil
+	return windows.CoUninitialize, nil
 }
 
 func execWQL(namespace, query string, props []string) ([]map[string]any, error) {
-	if err := comInit(); err != nil {
+	uninit, err := comInit()
+	if err != nil {
 		return nil, err
 	}
-	defer windows.CoUninitialize()
+	defer uninit()
 	// Process-wide security; another caller may have set it already.
 	if r, _, _ := procCoInitializeSecurity.Call(0, math.MaxUint32, 0, 0, rpcCAuthnLevelDefault, rpcCImpLevelImpersonate, 0, eoacNone, 0); int32(r) < 0 && uint32(r) != hrRPCETooLate {
 		return nil, hr("CoInitializeSecurity", r)
@@ -444,7 +456,8 @@ func decodeSafeArray(sa uintptr, vt uint16) (any, error) {
 	if n <= 0 {
 		return []any{}, nil
 	}
-	if n > maxVariantArray {
+	cut := n > maxVariantArray
+	if cut {
 		n = maxVariantArray
 	}
 	var data unsafe.Pointer
@@ -459,6 +472,9 @@ func decodeSafeArray(sa uintptr, vt uint16) (any, error) {
 			return nil, err
 		}
 		out = append(out, v)
+	}
+	if cut {
+		out = append(out, TruncMark) // the reader sees the list is not whole
 	}
 	return out, nil
 }
@@ -553,10 +569,11 @@ func (l *Live) FirewallPolicy() (WinFirewallPolicy, error) {
 
 func firewallPolicy() (WinFirewallPolicy, error) {
 	pol := WinFirewallPolicy{Profiles: map[string]WinFirewallProfile{}}
-	if err := comInit(); err != nil {
+	uninit, err := comInit()
+	if err != nil {
 		return pol, err
 	}
-	defer windows.CoUninitialize()
+	defer uninit()
 	var p unsafe.Pointer
 	r, _, _ := procCoCreateInstance.Call(uintptr(unsafe.Pointer(&clsidNetFwPolicy2)), 0, clsctxInprocServer,
 		uintptr(unsafe.Pointer(&iidIDispatch)), uintptr(unsafe.Pointer(&p)))
