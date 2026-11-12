@@ -511,3 +511,57 @@ func TestWebRootsSymlinks(t *testing.T) {
 		t.Errorf("not root's: roots %v, unreadable %v", roots, unread)
 	}
 }
+
+// The walk's light checks do not stop at the rules' time limit (review of
+// d4a8ea9, F1): with no time for the rules, an upload script is still found.
+func TestAppCodeAuditWalkIgnoresRuleDeadline(t *testing.T) {
+	isolateAudit(t)
+	dir, _ := filepath.EvalSymlinks(t.TempDir())
+	os.MkdirAll(filepath.Join(dir, "public", "uploads"), 0o755)
+	os.WriteFile(filepath.Join(dir, "public", "uploads", "x.php"), []byte("<?php echo 1;\n"), 0o644)
+	max := injectionMaxTime
+	defer func() { injectionMaxTime = max }()
+	injectionMaxTime = 0
+	if f := findingFor(AppCodeAudit(context.Background(), []string{dir}, nil), "upload_script", "x.php"); f.Severity != "critical" {
+		t.Errorf("upload_script not reported: %+v", f)
+	}
+}
+
+// A walk cut short goes on from where it stopped in the next audit and round
+// from the start: every file is covered, and the place is cleared after.
+func TestAppCodeAuditWalkResumes(t *testing.T) {
+	isolateAudit(t)
+	dir, _ := filepath.EvalSymlinks(t.TempDir())
+	for _, d := range []string{"a", "m", "z"} {
+		os.MkdirAll(filepath.Join(dir, "public", "uploads", d), 0o755)
+		os.WriteFile(filepath.Join(dir, "public", "uploads", d, "s.php"), []byte("<?php echo 1;\n"), 0o644)
+	}
+	roots := []string{dir}
+	// The last audit stopped in m/.
+	saveWalkPos(walkPosFile(roots), &walkPos{0, filepath.Join(dir, "public", "uploads", "m")})
+	res := AppCodeAudit(context.Background(), roots, nil)
+	n := 0
+	for _, f := range res.Findings {
+		if f.Kind == "upload_script" {
+			n++
+		}
+	}
+	if n != 3 || res.Unfinished {
+		t.Errorf("resumed walk found %d of 3 upload scripts, unfinished %v", n, res.Unfinished)
+	}
+	if _, ok := loadWalkPos(walkPosFile(roots)); ok {
+		t.Error("the place was kept after a full round")
+	}
+	// Cut at once: the place is kept for the next audit.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if r := auditUnlocked(ctx, roots, nil); !r.Unfinished {
+		t.Error("a cut walk is not unfinished")
+	}
+	if _, ok := loadWalkPos(walkPosFile(roots)); !ok {
+		t.Error("a cut walk kept no place")
+	}
+	if pathCmp("/r/a/b", "/r/a-c") >= 0 || pathCmp("/r/a", "/r/a/b") >= 0 || pathCmp("/r/b", "/r/a/z") <= 0 {
+		t.Error("pathCmp does not follow WalkDir's order")
+	}
+}

@@ -685,83 +685,121 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 		defer debug.SetMemoryLimit(prev)
 	}
 	res.MemoryBudgetMB, res.MemoryLimitMB = int(budget.heap>>20), int(debug.SetMemoryLimit(-1)>>20)
-	// The walk stops at the rules' deadline too: an audit holds the turn of
-	// the others for a bounded time.
-	stop := func() bool { return ctx.Err() != nil || time.Now().After(deadline) }
-	for _, root := range roots {
-		if stop() {
-			walkCut = append(walkCut, UnfinishedFile{root, "walk"})
-			continue
-		}
-		base := strings.Count(filepath.Clean(root), "/")
-		filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
-			if stop() {
+	// The walk's checks are light: only the caller's time stops it (the
+	// rules' deadline is for the injection rules). Cut short, it goes on from
+	// where it stopped in the next audit, to the end and round from the start
+	// again, so a few audits cover every file.
+	var walkEntry func(root string, base int, p string, d fs.DirEntry, err error) error
+	posFile := walkPosFile(roots)
+	pos, resumed := loadWalkPos(posFile)
+	var cut *walkPos
+	at := func(ri int, p string) bool { // before where the last audit stopped (that entry it had not checked)
+		return ri < pos.Root || ri == pos.Root && pathCmp(p, pos.Path) < 0
+	}
+	walkPass := func(second bool) {
+		for ri, root := range roots {
+			if ctx.Err() != nil {
+				if cut == nil {
+					cut = &walkPos{ri, root}
+				}
 				walkCut = append(walkCut, UnfinishedFile{root, "walk"})
-				return filepath.SkipAll
+				continue
 			}
-			if err != nil {
-				return nil
-			}
-			name := d.Name()
-			if d.IsDir() {
-				if name == ".git" && served(p, webRoots) {
-					add(finding("exposed", "critical", p, 0, exposedNames[1].detail, exposedNames[1].fix))
+			base := strings.Count(filepath.Clean(root), "/")
+			filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+				if ctx.Err() != nil {
+					cut = &walkPos{ri, p}
+					walkCut = append(walkCut, UnfinishedFile{root, "walk"})
+					return filepath.SkipAll
 				}
-				if skipDirs[name] || strings.Count(p, "/")-base > auditMaxDepth {
-					return filepath.SkipDir
-				}
-				return nil
-			}
-			if !d.Type().IsRegular() {
-				return nil
-			}
-			web := served(p, webRoots)
-			if web {
-				for i, e := range exposedNames {
-					if i != 1 && e.match(name) {
-						add(finding("exposed", e.severity, p, 0, e.detail, e.fix))
-						break
+				if resumed {
+					before := at(ri, p)
+					if second && !before {
+						return filepath.SkipAll // round to where it started
+					}
+					if !second && before {
+						if d != nil && d.IsDir() && !(ri == pos.Root && strings.HasPrefix(pos.Path, p+"/")) {
+							return filepath.SkipDir
+						}
+						return nil
 					}
 				}
+				return walkEntry(root, base, p, d, err)
+			})
+		}
+	}
+	walkEntry = func(root string, base int, p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		name := d.Name()
+		if d.IsDir() {
+			if name == ".git" && served(p, webRoots) {
+				add(finding("exposed", "critical", p, 0, exposedNames[1].detail, exposedNames[1].fix))
 			}
-			ext := strings.ToLower(filepath.Ext(name))
-			isPHP := ext == ".php" || ext == ".phtml" || ext == ".php5"
-			if isPHP && uploadFolder(p, webRoots) {
-				add(finding("upload_script", "critical", p, 0, "PHP file in an upload folder; uploads should never be scripts",
-					"check the file, delete it if it is not yours, and stop PHP from running in the upload folder"))
-			}
-			lang := engine.LangOf(name)
-			if !auditExt[ext] && !auditExt[name] && !strings.HasPrefix(name, ".env") && name != "settings.py" && lang == "" {
-				return nil
-			}
-			if res.Files >= auditMaxFiles {
-				res.Truncated = true
-				return filepath.SkipAll
-			}
-			info, err := d.Info()
-			if err != nil {
-				return nil
-			}
-			b, ok := readSmallRegular(p, auditMaxSize, info)
-			// A rule-language file is read even with a NUL byte: PHP runs such a file.
-			if !ok || lang == "" && bytes.IndexByte(b, 0) >= 0 {
-				if lang != "" && eng != nil && info.Size() > auditMaxSize {
-					partial = append(partial, UnfinishedFile{p, "size"})
-				}
-				return nil
-			}
-			res.Files++
-			auditContent(p, name, b, web, isPHP, add)
-			if lang != "" && eng != nil || name == "composer.json" {
-				code = append(code, p)
-				seen[p] = info
-				if lang != "" {
-					sum := sha256.Sum256(b)
-					hash[p] = hex.EncodeToString(sum[:])
-				}
+			if skipDirs[name] || strings.Count(p, "/")-base > auditMaxDepth {
+				return filepath.SkipDir
 			}
 			return nil
-		})
+		}
+		if !d.Type().IsRegular() {
+			return nil
+		}
+		web := served(p, webRoots)
+		if web {
+			for i, e := range exposedNames {
+				if i != 1 && e.match(name) {
+					add(finding("exposed", e.severity, p, 0, e.detail, e.fix))
+					break
+				}
+			}
+		}
+		ext := strings.ToLower(filepath.Ext(name))
+		isPHP := ext == ".php" || ext == ".phtml" || ext == ".php5"
+		if isPHP && uploadFolder(p, webRoots) {
+			add(finding("upload_script", "critical", p, 0, "PHP file in an upload folder; uploads should never be scripts",
+				"check the file, delete it if it is not yours, and stop PHP from running in the upload folder"))
+		}
+		lang := engine.LangOf(name)
+		if !auditExt[ext] && !auditExt[name] && !strings.HasPrefix(name, ".env") && name != "settings.py" && lang == "" {
+			return nil
+		}
+		if res.Files >= auditMaxFiles {
+			res.Truncated = true
+			return filepath.SkipAll
+		}
+		info, err := d.Info()
+		if err != nil {
+			return nil
+		}
+		b, ok := readSmallRegular(p, auditMaxSize, info)
+		// A rule-language file is read even with a NUL byte: PHP runs such a file.
+		if !ok || lang == "" && bytes.IndexByte(b, 0) >= 0 {
+			if lang != "" && eng != nil && info.Size() > auditMaxSize {
+				partial = append(partial, UnfinishedFile{p, "size"})
+			}
+			return nil
+		}
+		res.Files++
+		auditContent(p, name, b, web, isPHP, add)
+		if lang != "" && eng != nil || name == "composer.json" {
+			code = append(code, p)
+			seen[p] = info
+			if lang != "" {
+				sum := sha256.Sum256(b)
+				hash[p] = hex.EncodeToString(sum[:])
+			}
+		}
+		return nil
+	}
+	walkPass(false)
+	if resumed && cut == nil {
+		walkPass(true)
+	}
+	if cut == nil {
+		saveWalkPos(posFile, nil) // a full round: the next one starts at the start
+	} else {
+		saveWalkPos(posFile, cut)
 	}
 	if eng != nil && len(code) > 0 {
 		// Read again the way the walk did (no symlinks, regular files under the
@@ -790,7 +828,7 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 		st := loadCallState(stateFile, auditBuild(eng))
 		// A walk the clock cut short says nothing of the files it did not reach:
 		// their kept results stay (the bot and the patrol share them).
-		walked := len(walkCut) == 0
+		walked := len(walkCut) == 0         // a resumed walk that went round saw every file too
 		stale := st.dropStale(hash, walked) // before this audit's results replace the old ones
 		// First every file on its own (calls inside the file are followed): all
 		// files get this before any time goes to calls across files.

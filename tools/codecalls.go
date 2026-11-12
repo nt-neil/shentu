@@ -295,3 +295,56 @@ func (st *callState) keepOnly(hash map[string]string) {
 		}
 	}
 }
+
+// walkPos is where a walk the caller's time cut short stopped: the index of
+// the root and the path in it.
+type walkPos struct {
+	Root int    `json:"r"`
+	Path string `json:"p"`
+}
+
+// walkPosFile is where the walk of these roots keeps its place ("" for none).
+func walkPosFile(roots []string) string {
+	if f := callStateFile(roots); f != "" {
+		return strings.TrimSuffix(f, ".json") + ".walk"
+	}
+	return ""
+}
+
+func loadWalkPos(name string) (walkPos, bool) {
+	var p walkPos
+	if name == "" {
+		return p, false
+	}
+	b, err := os.ReadFile(name)
+	if err != nil || json.Unmarshal(b, &p) != nil || p.Path == "" {
+		return walkPos{}, false
+	}
+	return p, true
+}
+
+// saveWalkPos keeps p, or removes the place when the walk went round (nil).
+func saveWalkPos(name string, p *walkPos) {
+	if name == "" {
+		return
+	}
+	if p == nil {
+		os.Remove(name)
+		return
+	}
+	if b, err := json.Marshal(p); err == nil && os.MkdirAll(filepath.Dir(name), 0o700) == nil {
+		os.WriteFile(name, b, 0o600)
+	}
+}
+
+// pathCmp orders paths the way filepath.WalkDir visits them: name by name,
+// a folder before what it holds.
+func pathCmp(a, b string) int {
+	as, bs := strings.Split(a, "/"), strings.Split(b, "/")
+	for i := 0; i < len(as) && i < len(bs); i++ {
+		if c := strings.Compare(as[i], bs[i]); c != 0 {
+			return c
+		}
+	}
+	return len(as) - len(bs)
+}
