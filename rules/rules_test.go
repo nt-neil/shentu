@@ -150,7 +150,8 @@ func checkText(t *testing.T, r Rule) {
 }
 
 // checkArgs: each [[args]] entry says something, names only the rule's own sinks,
-// and no sink gets two entries; arg 0 (the receiver) needs a method sink.
+// and a sink with several entries has an arg in each further one; arg 0 (the
+// receiver) needs a method sink.
 func checkArgs(t *testing.T, r Rule) {
 	covered := map[string]bool{}
 	for i, a := range r.Args {
@@ -185,8 +186,8 @@ func checkArgs(t *testing.T, r Rule) {
 			if !slices.Contains(r.Sinks, s) {
 				t.Errorf("%s: args %d: %q is not one of the sinks", r.File, i, s)
 			}
-			if covered[s] {
-				t.Errorf("%s: args %d: sink %q already has conditions", r.File, i, s)
+			if covered[s] && a.Arg == nil {
+				t.Errorf("%s: args %d: sink %q has another block; each further block must name its arg", r.File, i, s)
 			}
 			covered[s] = true
 			if len(a.Receiver) > 0 && !strings.HasPrefix(s, ".") && !strings.HasPrefix(s, "->") {
