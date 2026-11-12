@@ -218,11 +218,9 @@ func readKeyFile(src Source, p, home string, kf *AuthorizedKeyFile) ([]byte, err
 		return nil, err
 	}
 	kf.SymlinkTarget = target
-	realHome := home // a home that is itself a link (/home/a -> /data/a) is not "outside"
-	if _, err := src.Readlink(home); err == nil {
-		if h, err := EvalSymlinks(src, home); err == nil {
-			realHome = h
-		}
+	realHome := home // a home that is, or sits under, a link (/home/a -> /data/a, /home -> /data/home) is not "outside"
+	if h, err := EvalSymlinks(src, home); err == nil {
+		realHome = h
 	}
 	kf.OutsideHome = !strings.HasPrefix(target, realHome+"/") && !strings.HasPrefix(target, home+"/")
 	if fileErr != nil { // only the folder is a link: the file itself is still read without following

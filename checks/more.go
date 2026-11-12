@@ -457,11 +457,15 @@ func bruteforce(f *hostenv.Facts) []Finding {
 		return out
 	}
 	var out []Finding
+	unverified := o.Reason == hostenv.ReasonUnverified
 	for _, src := range sortedKeys(o.Value.FailedBySrc) {
 		if n := o.Value.FailedBySrc[src]; n >= BruteforceThreshold {
+			ev := fmt.Sprintf("%s: %d failures in %dh", src, n, o.Value.WindowHours)
+			if unverified {
+				ev += " (from a log any local user can write to: check before blocking)"
+			}
 			out = append(out, Finding{Check: "auth.bruteforce", Status: StatusFail, Severity: SevMedium,
-				Title:    "Repeated failed logins from one source",
-				Evidence: fmt.Sprintf("%s: %d failures in %dh", src, n, o.Value.WindowHours)})
+				Title: "Repeated failed logins from one source", Evidence: ev})
 		}
 	}
 	for _, e := range o.Value.Notable {
@@ -470,5 +474,9 @@ func bruteforce(f *hostenv.Facts) []Finding {
 				Title: "The security log was cleared", Evidence: e.When + " " + e.Who})
 		}
 	}
-	return append(out, partialNote("auth.bruteforce", "Some login events could not be read", o)...)
+	title := "Some login events could not be read"
+	if unverified {
+		title = "Login events come from a log any local user can write to"
+	}
+	return append(out, partialNote("auth.bruteforce", title, o)...)
 }

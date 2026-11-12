@@ -47,6 +47,9 @@ func TestSSHSummary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if r["complete"] != true {
+		t.Errorf("complete %v, error %v", r["complete"], r["error"])
+	}
 	if r["verified"] != false {
 		t.Errorf("a text log is not verified: %v", r["verified"])
 	}

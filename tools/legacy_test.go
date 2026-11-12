@@ -930,10 +930,11 @@ func TestLegacySSHLogins(t *testing.T) {
 				sort.Strings(*l)
 			}
 		}
-		var agg *hostenv.SSHLogins
+		var aggs []*hostenv.SSHLogins
 		src, verified, err := linux.ScanAuthLogs(context.Background(), live, []string{"/var/log/auth.log"}, since, func() func(string) {
-			agg = hostenv.NewSSHLogins(since, now, only)
-			return agg.Add
+			a := hostenv.NewSSHLogins(since, now, only)
+			aggs = append(aggs, a)
+			return a.Add
 		})
 		if err != nil {
 			t.Fatal(src, err)
@@ -943,7 +944,7 @@ func TestLegacySSHLogins(t *testing.T) {
 		if verified || !strings.HasPrefix(src, "/var/log/auth.log (unverified: journald unavailable") {
 			t.Errorf("source %q verified %v", src, verified)
 		}
-		got := agg.Result()
+		got, _ := hostenv.MaxLogins(aggs...)
 		if only == "192.0.2.40" {
 			if len(got) != 1 || got[0].Failed+got[0].InvalidUser != 2 || strings.Contains(fmt.Sprint(got), "abcdefgh") || strings.Contains(fmt.Sprint(got), "BEGIN OPENSSH") {
 				t.Errorf("masked names changed the count, or a name went out unmasked: %+v", got)
