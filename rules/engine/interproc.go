@@ -926,7 +926,7 @@ func (a *analysis) returnsUnknown(key string) bool {
 	for _, fi := range sc.funcs[key] {
 		x := &analysis{r: a.r, php: a.php, py: a.py, js: a.js, b: a.b, kw: a.kw, seen: map[loc]bool{}, sc: sc,
 			summ: &summRun{lines: map[loc]bool{}, emb: map[loc]bool{}}, noSrc: true, cls: fi.f.class, parent: fi.f.parent, fname: fi.f.name,
-			file: a.file, proj: a.proj, ftoks: a.ftoks, rdefs: a.rdefs, ifacts: a.ifacts}
+			file: a.file, proj: a.proj, ftoks: a.ftoks, rdefs: a.rdefs, rcls: a.rcls, ifacts: a.ifacts}
 		st := state{}
 		for _, p := range fi.params {
 			if p != "" {
@@ -1011,7 +1011,7 @@ func (a *analysis) summarize(fi *fnInfo, s *summary) {
 	run := func(mask uint64, sources bool) *summRun {
 		x := &analysis{r: a.r, php: a.php, py: a.py, js: a.js, b: a.b, kw: a.kw, seen: map[loc]bool{}, sc: a.sc, defs: a.defs,
 			summ: &summRun{lines: map[loc]bool{}, emb: map[loc]bool{}}, noSrc: !sources, cls: fi.f.class, parent: fi.f.parent, fname: fi.f.name,
-			file: a.file, proj: a.proj, ftoks: a.ftoks, rdefs: a.rdefs, ifacts: a.ifacts, nest: a.nest, heights: a.heights}
+			file: a.file, proj: a.proj, ftoks: a.ftoks, rdefs: a.rdefs, rcls: a.rcls, ifacts: a.ifacts, nest: a.nest, heights: a.heights}
 		st := state{}
 		x.paramTypes(fi.f)
 		for i := 0; i < n; i++ {

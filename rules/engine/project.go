@@ -10,10 +10,12 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"runtime/metrics"
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -89,7 +91,7 @@ type ProjectOptions struct {
 }
 
 // indexVersion changes whenever fileIndex changes, so an old cache is ignored.
-const indexVersion = "4"
+const indexVersion = "5"
 
 type fileIndex struct {
 	Hash      string            `json:"h"`
@@ -128,6 +130,7 @@ type fileCtx struct {
 	ff     *fileFuncs
 	tokens int
 	rdefs  map[string][][]Token // Python: what the file's names hold, for the receiver condition (receiver.go)
+	rcls   map[string][]string  // PHP: variables bound only to new objects, for not_receiver (receiver.go)
 	ifacts map[string]bool      // JavaScript: the imports and names unless_imports looks for (imports.go)
 	defs   map[string]string    // PHP: define('NAME', 'text') in the file (context.go)
 }
@@ -775,7 +778,7 @@ func (p *Project) analysisFor(a *analysis, f string) *analysis {
 		p.sums[key] = sc
 	}
 	return &analysis{r: a.r, php: ctx.lang == "php", py: ctx.lang == "python", js: ctx.lang == "js", b: a.b,
-		kw: keywords[ctx.lang], seen: map[loc]bool{}, sc: sc, proj: p, file: f, rdefs: ctx.rdefs, ifacts: ctx.ifacts, defs: ctx.defs, nest: a.nest, heights: a.heights}
+		kw: keywords[ctx.lang], seen: map[loc]bool{}, sc: sc, proj: p, file: f, rdefs: ctx.rdefs, rcls: ctx.rcls, ifacts: ctx.ifacts, defs: ctx.defs, nest: a.nest, heights: a.heights}
 }
 
 // context returns the parsed file, parsing it if it is not kept.
@@ -804,7 +807,7 @@ func (p *Project) context(f string) *fileCtx {
 		}
 		return nil
 	}
-	c := &fileCtx{lang: fi.Lang, tree: parse(fi.Lang, toks, b), tokens: len(toks), rdefs: fileRecvDefs(fi.Lang, toks), ifacts: p.e.importFacts(fi.Lang, toks), defs: phpDefines(fi.Lang, toks)}
+	c := &fileCtx{lang: fi.Lang, tree: parse(fi.Lang, toks, b), tokens: len(toks), rdefs: fileRecvDefs(fi.Lang, toks), rcls: fileRecvClasses(fi.Lang, toks), ifacts: p.e.importFacts(fi.Lang, toks), defs: phpDefines(fi.Lang, toks)}
 	if b.timeHit {
 		p.unread[f], p.unsteady = true, true
 	}
@@ -1391,11 +1394,13 @@ type indexCache struct {
 }
 
 // indexKey names what a file's index depends on besides its content: the
-// index format, the route models (Routes) and the limits (Limited). A cache
-// written under another key is not used.
+// index format, the engine's build (the code that reads files into an index),
+// the route models (Routes) and the limits (Limited). A cache written under
+// another key is not used.
 func (e *Engine) indexKey() string {
 	h := sha256.New()
 	enc := json.NewEncoder(h)
+	enc.Encode(engineBuild())
 	enc.Encode(e.Limits)
 	for _, lang := range slices.Sorted(maps.Keys(e.routes)) {
 		for _, c := range e.routes[lang] {
@@ -1404,6 +1409,41 @@ func (e *Engine) indexKey() string {
 	}
 	return indexVersion + "-" + hex.EncodeToString(h.Sum(nil))
 }
+
+// engineBuild names the engine's code: the version of its module in the
+// binary (a release), or for a build from a checkout its commit and whether
+// it had changes, and then also the binary's size and time, which change with
+// any rebuild of changed code.
+var engineBuild = sync.OnceValue(func() string {
+	const mod = "github.com/nt-neil/shentu"
+	var parts []string
+	if bi, ok := debug.ReadBuildInfo(); ok {
+		if bi.Main.Path == mod {
+			parts = append(parts, bi.Main.Version)
+		}
+		for _, d := range bi.Deps {
+			if d.Path == mod {
+				parts = append(parts, d.Version)
+				if d.Replace != nil {
+					parts = append(parts, d.Replace.Path, d.Replace.Version)
+				}
+			}
+		}
+		for _, s := range bi.Settings {
+			if s.Key == "vcs.revision" || s.Key == "vcs.modified" {
+				parts = append(parts, s.Value)
+			}
+		}
+	}
+	if len(parts) == 0 || slices.Contains(parts, "(devel)") || slices.Contains(parts, "true") || slices.Contains(parts, "") {
+		if exe, err := os.Executable(); err == nil {
+			if info, err := os.Stat(exe); err == nil {
+				parts = append(parts, fmt.Sprint(info.Size(), info.ModTime().UnixNano()))
+			}
+		}
+	}
+	return strings.Join(parts, " ")
+})
 
 func loadIndexCache(name, key string) map[string]*fileIndex {
 	if name == "" {
