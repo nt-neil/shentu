@@ -344,6 +344,14 @@ func (rp *Replay) WMI(namespace, query string, props []string) ([]map[string]any
 	return replayWin[[]map[string]any](rp, "wmi", wmiKey(namespace, query, props))
 }
 
+func (r *Recorder) FileSecurity(path string) (WinFileSecurity, error) {
+	return recordWin(r, "winsec", path, func(ws WinSource) (WinFileSecurity, error) { return ws.FileSecurity(path) })
+}
+
+func (rp *Replay) FileSecurity(path string) (WinFileSecurity, error) {
+	return replayWin[WinFileSecurity](rp, "winsec", path)
+}
+
 func (r *Recorder) FirewallPolicy() (WinFirewallPolicy, error) {
 	return recordWin(r, "winfw", "", func(ws WinSource) (WinFirewallPolicy, error) { return ws.FirewallPolicy() })
 }

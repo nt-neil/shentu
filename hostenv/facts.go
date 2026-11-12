@@ -32,6 +32,9 @@ const (
 	ReasonParse         Reason = "parse_error"
 	ReasonSymlink       Reason = "symlink_not_followed"
 	ReasonNotRegular    Reason = "not_regular_file"
+	// ReasonUntrusted: readable, but owned or writable by someone other
+	// than SYSTEM, Administrators or TrustedInstaller; its content is not used.
+	ReasonUntrusted Reason = "untrusted_owner"
 )
 
 // Obs wraps every fact so that "unknown" can never be mistaken for "empty".

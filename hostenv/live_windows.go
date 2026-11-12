@@ -630,3 +630,47 @@ func renderEvent(h uintptr) (string, error) {
 	}
 	return "", syscall.Errno(errInsufficientBuffer)
 }
+
+// fileWriteRights are the access bits that let a trustee change a file or
+// folder: its data, metadata or security (FILE_DELETE_CHILD is 0x40).
+const fileWriteRights = windows.FILE_WRITE_DATA | windows.FILE_APPEND_DATA | windows.FILE_WRITE_EA | 0x40 |
+	windows.FILE_WRITE_ATTRIBUTES | windows.DELETE | windows.WRITE_DAC | windows.WRITE_OWNER | windows.GENERIC_ALL | windows.GENERIC_WRITE
+
+func (l *Live) FileSecurity(path string) (WinFileSecurity, error) {
+	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
+		windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)
+	if err != nil {
+		return WinFileSecurity{}, winErr("GetNamedSecurityInfo", path, err)
+	}
+	var sec WinFileSecurity
+	if owner, _, err := sd.Owner(); err == nil && owner != nil {
+		sec.Owner = owner.String()
+	}
+	dacl, _, err := sd.DACL()
+	if err != nil || dacl == nil {
+		sec.Writers = []string{"S-1-1-0"} // no DACL: everyone may write
+		return sec, nil
+	}
+	seen := map[string]bool{}
+	for i := uint32(0); i < uint32(dacl.AceCount); i++ {
+		var ace *windows.ACCESS_ALLOWED_ACE
+		if err := windows.GetAce(dacl, i, &ace); err != nil {
+			return sec, winErr("GetAce", path, err)
+		}
+		w := ""
+		switch ace.Header.AceType {
+		case windows.ACCESS_ALLOWED_ACE_TYPE:
+			if ace.Header.AceFlags&windows.INHERIT_ONLY_ACE == 0 && ace.Mask&fileWriteRights != 0 {
+				w = (*windows.SID)(unsafe.Pointer(&ace.SidStart)).String()
+			}
+		case windows.ACCESS_DENIED_ACE_TYPE:
+		default:
+			w = fmt.Sprintf("unknown-ace-%d", ace.Header.AceType)
+		}
+		if w != "" && !seen[w] {
+			seen[w] = true
+			sec.Writers = append(sec.Writers, w)
+		}
+	}
+	return sec, nil
+}

@@ -35,6 +35,7 @@ type fakeWin struct {
 	wmiNS   map[string]bool             // namespaces that exist
 	wmiErr  map[string]error            // by namespace + "|" + query: returned with the rows
 	fw      *WinFirewallPolicy          // nil: INetFwPolicy2 unavailable
+	sec     map[string]WinFileSecurity  // by path; absent: SYSTEM-owned, admin-only
 }
 
 var (
@@ -90,6 +91,16 @@ func pick[T any](w *fakeWin, k string, v T) (T, error) {
 		return zero, denied(k, k)
 	}
 	return v, nil
+}
+
+func (w *fakeWin) FileSecurity(path string) (WinFileSecurity, error) {
+	if w.denied[path] {
+		return WinFileSecurity{}, denied("FileSecurity", path)
+	}
+	if sec, ok := w.sec[path]; ok {
+		return sec, nil
+	}
+	return WinFileSecurity{Owner: "S-1-5-18", Writers: []string{"S-1-5-18", "S-1-5-32-544"}}, nil
 }
 
 func (w *fakeWin) FirewallPolicy() (WinFirewallPolicy, error) {
@@ -881,5 +892,39 @@ func TestWMISubscriptionsMaskedAndFlooded(t *testing.T) {
 	}
 	if p.Status != StatusPartial || p.Reason != ReasonTruncated || !updater || !floodedItem {
 		t.Errorf("flooded namespace: status %s %s, kept rows %v, flood item %v", p.Status, p.Reason, updater, floodedItem)
+	}
+}
+
+// S2: an sshd_config or ssh folder that someone else owns or may write is
+// not used; the settings are unknown, with the reason untrusted_owner.
+func TestWindowsSSHUntrusted(t *testing.T) {
+	w := weakServer()
+	w.svcs = append(w.svcs, WinService{Name: "sshd", State: "running", StartType: "auto"})
+	w.files[winSSHDConfig] = "PasswordAuthentication no\n"
+	w.sec = map[string]WinFileSecurity{}
+	ssh := func() Obs[SSHConfig] { return WindowsCollector{}.Collect(context.Background(), w).RemoteAccess.SSH }
+	if s := ssh(); s.Status != StatusOK || s.Value.Settings["passwordauthentication"] != "no" {
+		t.Fatalf("trusted config: %+v", s)
+	}
+	w.sec[winSSHDConfig] = WinFileSecurity{Owner: "S-1-5-21-1-2-3-1001", Writers: []string{"S-1-5-18"}}
+	if s := ssh(); s.Status != StatusUnknown || s.Reason != ReasonUntrusted || s.Value.Settings["passwordauthentication"] != "unknown" ||
+		!strings.Contains(s.Detail, "owner S-1-5-21-1-2-3-1001") {
+		t.Errorf("a user-owned sshd_config must not be used: %+v", s)
+	}
+	w.sec[winSSHDConfig] = WinFileSecurity{Owner: "S-1-5-32-544"}
+	w.sec[winSSHDir] = WinFileSecurity{Owner: "S-1-5-18", Writers: []string{"S-1-5-18", "S-1-5-32-545"}}
+	if s := ssh(); s.Reason != ReasonUntrusted || !strings.Contains(s.Detail, "S-1-5-32-545") {
+		t.Errorf("an ssh folder Users may write must not be trusted: %+v", s)
+	}
+}
+
+func TestFileSecurityUntrusted(t *testing.T) {
+	ok := WinFileSecurity{Owner: "S-1-5-18", Writers: []string{"S-1-5-32-544", "S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464"}}
+	if u := ok.Untrusted(); len(u) != 0 {
+		t.Errorf("SYSTEM, Administrators, TrustedInstaller: %v", u)
+	}
+	bad := WinFileSecurity{Owner: "S-1-5-21-1-2-3-1001", Writers: []string{"S-1-5-18", "S-1-5-11", "unknown-ace-9"}}
+	if u := strings.Join(bad.Untrusted(), ","); u != "owner S-1-5-21-1-2-3-1001,S-1-5-11,unknown-ace-9" {
+		t.Errorf("untrusted: %s", u)
 	}
 }

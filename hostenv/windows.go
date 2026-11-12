@@ -60,6 +60,32 @@ func RedactRegValues(v map[string]RegValue) map[string]RegValue {
 	return v
 }
 
+// WinFileSecurity is a file's owner and the SIDs that may write it.
+type WinFileSecurity struct {
+	Owner   string   `json:"owner"`
+	Writers []string `json:"writers,omitempty"`
+}
+
+// trustedSIDs may own or write what Shentu trusts: SYSTEM, Administrators,
+// TrustedInstaller.
+var trustedSIDs = map[string]bool{"S-1-5-18": true, "S-1-5-32-544": true,
+	"S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464": true}
+
+// Untrusted lists who, besides SYSTEM, Administrators and TrustedInstaller,
+// owns or may write the file ("owner <sid>", then the writers).
+func (s WinFileSecurity) Untrusted() []string {
+	var out []string
+	if !trustedSIDs[s.Owner] {
+		out = append(out, "owner "+s.Owner)
+	}
+	for _, w := range s.Writers {
+		if !trustedSIDs[w] {
+			out = append(out, w)
+		}
+	}
+	return out
+}
+
 // WinFirewallPolicy is what INetFwPolicy2 reports. Profiles are keyed
 // Domain, Private and Public; Active lists the profiles in force now.
 type WinFirewallPolicy struct {
@@ -158,6 +184,10 @@ type WinSource interface {
 	// FirewallPolicy reads INetFwPolicy2: the firewall state in force, with
 	// group policy already merged in.
 	FirewallPolicy() (WinFirewallPolicy, error)
+	// FileSecurity reads a file's or folder's owner and who may write it
+	// (the SIDs of allow entries with write rights; an entry of a type that
+	// is not read counts as "unknown-ace-<type>").
+	FileSecurity(path string) (WinFileSecurity, error)
 }
 
 // WMI namespaces and queries the collector runs.
@@ -202,6 +232,7 @@ const (
 	KeyIFEO           = `HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options`
 	SIDAdministrators = "S-1-5-32-544"
 
+	winSSHDir         = `C:\ProgramData\ssh`
 	winSSHDConfig     = `C:\ProgramData\ssh\sshd_config`
 	winStartupAll     = `C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp`
 	winStartupPerUser = `AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup`
@@ -929,6 +960,23 @@ func findService(svcs []WinService, name string) (WinService, bool) {
 // winSSH reads the OpenSSH Server config with the shared parser, up to the
 // first Match (the stock file ends with "Match Group administrators").
 func winSSH(ws WinSource, svcs []WinService, svcErr error) Obs[SSHConfig] {
+	// OpenSSH itself refuses an sshd_config that someone other than SYSTEM
+	// or Administrators owns or may change; so does Shentu: such content
+	// is not used, the settings are unknown.
+	for _, p := range []string{winSSHDir, winSSHDConfig} {
+		sec, err := ws.FileSecurity(p)
+		if err != nil {
+			continue // missing (no OpenSSH) or unreadable: the read below says so
+		}
+		if bad := sec.Untrusted(); len(bad) > 0 {
+			cfg := SSHConfig{ConfigPath: winSSHDConfig, Settings: SSHDDefaults(), Unread: []string{p + " (" + strings.Join(bad, ", ") + ")"}}
+			for k := range cfg.Settings {
+				cfg.Settings[k] = "unknown"
+			}
+			return Obs[SSHConfig]{Status: StatusUnknown, Reason: ReasonUntrusted,
+				Detail: p + " is owned or writable by " + strings.Join(bad, ", ") + "; its content is not used", Value: cfg}
+		}
+	}
 	b, err := ws.ReadFile(winSSHDConfig)
 	if errors.Is(err, fs.ErrNotExist) {
 		if _, ok := findService(svcs, "sshd"); !ok && svcErr == nil {

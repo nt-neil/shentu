@@ -418,3 +418,25 @@ func TestComInitLeavesForeignApartment(t *testing.T) {
 		t.Error(msg)
 	}
 }
+
+// S2: the live reader of owners and writers, on folders whose answer is known.
+func TestFileSecurityLive(t *testing.T) {
+	l := &Live{}
+	win, err := l.FileSecurity(`C:\Windows`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u := win.Untrusted(); len(u) != 0 {
+		t.Errorf(`C:\Windows should be SYSTEM/Administrators/TrustedInstaller only: %+v -> %v`, win, u)
+	}
+	tmp, err := l.FileSecurity(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tmp.Untrusted()) == 0 {
+		t.Errorf("a user's temp folder must not look trusted: %+v", tmp)
+	}
+	if _, err := l.FileSecurity(`C:\no\such\path`); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("missing path: %v", err)
+	}
+}
