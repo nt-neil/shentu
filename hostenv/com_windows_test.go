@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -368,7 +369,16 @@ func TestCOMWaitTimesOut(t *testing.T) {
 	if _, err := l.FirewallPolicy(); !errors.Is(err, ErrTimeout) {
 		t.Errorf("firewall: %v", err)
 	}
-	time.Sleep(2 * time.Second) // let the abandoned calls finish before the next test
+	// The abandoned calls mark their providers stuck until they return:
+	// wait for that, so the next tests get a fresh call.
+	for deadline := time.Now().Add(60 * time.Second); time.Now().Before(deadline); time.Sleep(50 * time.Millisecond) {
+		n := 0
+		stuckCOM.Range(func(any, any) bool { n++; return true })
+		if n == 0 {
+			return
+		}
+	}
+	t.Error("an abandoned COM call never returned")
 }
 
 // S4: a list cut at its cap ends with TruncMark.
@@ -438,5 +448,32 @@ func TestFileSecurityLive(t *testing.T) {
 	}
 	if _, err := l.FileSecurity(`C:\no\such\path`); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("missing path: %v", err)
+	}
+}
+
+// Round 2: a provider that hangs is abandoned once; until that call
+// returns, the next one times out at once without another thread.
+func TestCOMCallStuckProvider(t *testing.T) {
+	old := comWait
+	comWait = 20 * time.Millisecond
+	t.Cleanup(func() { comWait = old })
+	release := make(chan struct{})
+	var calls atomic.Int32
+	f := func() (int, error) { calls.Add(1); <-release; return 1, nil }
+	if _, err := comCall("test-provider", f); !errors.Is(err, ErrTimeout) {
+		t.Fatalf("first call: %v", err)
+	}
+	if _, err := comCall("test-provider", f); !errors.Is(err, ErrTimeout) || calls.Load() != 1 {
+		t.Fatalf("second call while stuck: %v, %d calls", err, calls.Load())
+	}
+	close(release)
+	for i := 0; i < 100; i++ {
+		if _, busy := stuckCOM.Load("test-provider"); !busy {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if v, err := comCall("test-provider", func() (int, error) { calls.Add(1); return 7, nil }); err != nil || v != 7 || calls.Load() != 2 {
+		t.Errorf("after the stuck call returned: %v %v, %d calls", v, err, calls.Load())
 	}
 }

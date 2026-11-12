@@ -34,6 +34,7 @@ import (
 	"io/fs"
 	"math"
 	"runtime"
+	"sync"
 	"syscall"
 	"time"
 	"unicode/utf16"
@@ -235,29 +236,45 @@ func bstrString(b unsafe.Pointer) string {
 // WMI runs one WQL query and returns props of each row. COM needs a
 // thread of its own, initialised for the multithreaded apartment.
 func (l *Live) WMI(namespace, query string, props []string) ([]map[string]any, error) {
+	rows, err := comCall("WMI "+namespace, func() ([]map[string]any, error) { return execWQL(namespace, query, props) })
+	if err != nil {
+		return rows, &fs.PathError{Op: "WMI", Path: namespace + ": " + query, Err: err}
+	}
+	return rows, nil
+}
+
+// stuckCOM holds, per provider (a WMI namespace, the firewall), a call
+// abandoned after comWait that has not returned yet.
+var stuckCOM sync.Map
+
+// comCall runs f on a locked OS thread of its own and waits at most
+// comWait. A provider that hangs is abandoned once: while that call has
+// not returned, the next one for the same key answers ErrTimeout at once
+// instead of piling up another stuck thread.
+func comCall[T any](key string, f func() (T, error)) (T, error) {
+	var zero T
+	if _, busy := stuckCOM.Load(key); busy {
+		return zero, ErrTimeout
+	}
 	type result struct {
-		rows []map[string]any
-		err  error
+		v   T
+		err error
 	}
 	ch := make(chan result, 1)
 	go func() {
 		runtime.LockOSThread()
 		defer runtime.UnlockOSThread()
-		rows, err := execWQL(namespace, query, props)
-		ch <- result{rows, err}
+		v, err := f()
+		ch <- result{v, err}
 	}()
-	var r result
 	select {
-	case r = <-ch:
+	case r := <-ch:
+		return r.v, r.err
 	case <-time.After(comWait):
-		// A hung WMI provider must not stall the collection: the call is
-		// abandoned (its goroutine finishes or not) and the fact is partial.
-		r = result{nil, ErrTimeout}
+		stuckCOM.Store(key, true)
+		go func() { <-ch; stuckCOM.Delete(key) }()
+		return zero, ErrTimeout
 	}
-	if r.err != nil {
-		return r.rows, &fs.PathError{Op: "WMI", Path: namespace + ": " + query, Err: r.err}
-	}
-	return r.rows, nil
 }
 
 // comInit loads the COM DLLs and joins the multithreaded apartment on
@@ -345,7 +362,7 @@ func execWQL(namespace, query string, props []string) ([]map[string]any, error) 
 		}
 	}
 	var rows []map[string]any
-	for len(rows) < maxWMIRows {
+	for len(rows) <= maxWMIRows { // one more than the limit: exactly the limit is not cut
 		var obj unsafe.Pointer
 		var got uint32
 		r := call(enum, vtEnumNext, wmiNextTimeoutMS, 1, uintptr(unsafe.Pointer(&obj)), uintptr(unsafe.Pointer(&got)))
@@ -371,7 +388,7 @@ func execWQL(namespace, query string, props []string) ([]map[string]any, error) 
 		release(obj)
 		rows = append(rows, row)
 	}
-	if len(rows) >= maxWMIRows {
+	if rows, cut := capRows(rows, maxWMIRows); cut {
 		return rows, ErrTruncated
 	}
 	return rows, nil
@@ -544,27 +561,11 @@ var fwProfiles = []struct {
 }{{1, "Domain"}, {2, "Private"}, {4, "Public"}}
 
 func (l *Live) FirewallPolicy() (WinFirewallPolicy, error) {
-	type result struct {
-		pol WinFirewallPolicy
-		err error
+	pol, err := comCall("firewall", firewallPolicy)
+	if err != nil {
+		return pol, &fs.PathError{Op: "INetFwPolicy2", Path: "HNetCfg.FwPolicy2", Err: err}
 	}
-	ch := make(chan result, 1)
-	go func() {
-		runtime.LockOSThread()
-		defer runtime.UnlockOSThread()
-		pol, err := firewallPolicy()
-		ch <- result{pol, err}
-	}()
-	var r result
-	select {
-	case r = <-ch:
-	case <-time.After(comWait):
-		r = result{WinFirewallPolicy{}, ErrTimeout}
-	}
-	if r.err != nil {
-		return r.pol, &fs.PathError{Op: "INetFwPolicy2", Path: "HNetCfg.FwPolicy2", Err: r.err}
-	}
-	return r.pol, nil
+	return pol, nil
 }
 
 func firewallPolicy() (WinFirewallPolicy, error) {

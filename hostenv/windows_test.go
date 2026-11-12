@@ -949,3 +949,14 @@ func TestWindowsSSHIncludeNotFollowed(t *testing.T) {
 		t.Errorf("Include must not be followed: %+v", s)
 	}
 }
+
+// Round 2: exactly the row limit is not a truncation; one more is.
+func TestCapRows(t *testing.T) {
+	rows := make([]int, 10001)
+	if k, cut := capRows(rows[:10000], 10000); cut || len(k) != 10000 {
+		t.Errorf("exactly the limit: cut %v, %d kept", cut, len(k))
+	}
+	if k, cut := capRows(rows, 10000); !cut || len(k) != 10000 {
+		t.Errorf("one more: cut %v, %d kept", cut, len(k))
+	}
+}

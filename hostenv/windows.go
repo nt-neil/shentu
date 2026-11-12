@@ -1352,6 +1352,15 @@ func winAuthEvents(ws WinSource) Obs[AuthEvents] {
 // TruncMark ends a WMI string or list that was cut at its size cap.
 const TruncMark = "…[truncated]"
 
+// capRows keeps at most limit rows; cut is true only when there were
+// more (a query reads one past the limit to know).
+func capRows[T any](rows []T, limit int) (kept []T, cut bool) {
+	if len(rows) > limit {
+		return rows[:limit], true
+	}
+	return rows, false
+}
+
 // WMIRowLimit caps the rows one WMI query returns.
 const WMIRowLimit = 10000
 
