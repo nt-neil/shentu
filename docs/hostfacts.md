@@ -69,11 +69,11 @@ A missing or unreadable fact never passes a check. A check that needs a fact the
 | `resources` | `mem_total_bytes`, `mem_available_bytes`, `load1`, `cgroup_memory_limit`, `cgroup_cpus` | `/proc/meminfo`, `/proc/loadavg`, the collector's own cgroup limits | `GlobalMemoryStatusEx` (Phase 2) |
 | `packages` | `manager`, `ecosystem` (OSV), `feed` (see below), `items[]` (`name`, `source`, `version`, `arch`) | `dpkg-query`, `rpm -qa`, `/lib/apk/db/installed`; `feed` from `/etc/os-release` | registry `Uninstall` keys (HKLM, WOW6432Node, HKU) |
 | `patches` | `[]{id, installed_on}` | not applicable (patches are package versions) | WMI `Win32_QuickFixEngineering`; build+UBR is the main signal |
-| `services` | `[]{name, exe, start_mode, state, run_as}` | OpenRC: `/etc/init.d` scripts, `start_mode` `auto` when linked from an `/etc/runlevels` folder, else `manual`; systemd not collected yet | SCM (`svc/mgr`) |
+| `services` | `[]{name, exe, start_mode, state, run_as}` | OpenRC: `/etc/init.d` and `/usr/local/etc/init.d` scripts, `start_mode` `auto` when linked from any `/etc/runlevels` folder, else `manual`; systemd not collected yet | SCM (`svc/mgr`) |
 | `processes` | `[]{pid, ppid, name, exe, exe_known, exe_exists, in_temp, cmdline, user, uid, started, start_ticks}` | `/proc/<pid>/{comm,status,cmdline,exe,stat}`, mtime of `/proc/<pid>` | Toolhelp32 + `QueryFullProcessImageName`; WMI for command lines |
 | `accounts` | `[]{name, uid, home, shell, can_login, is_admin, disabled}` | `/etc/passwd`, `/etc/group` (sudo, wheel, admin) | `NetUserEnum`, Administrators (S-1-5-32-544) members |
 | `listeners` | `[]{proto, addr, port, pid, process, uid}` (one row per owner: a second process on a port stays visible) | `/proc/net/{tcp,udp}{,6}` + `/proc/*/fd` | `GetExtendedTcpTable` / `GetExtendedUdpTable` |
-| `persistence` | `[]{kind, location, command, detail}` | cron and cron files (`/etc/crontabs` and `/etc/periodic/*` for busybox crond), `ld.so.preload`, `rc.local`, `/etc/systemd/system`, enabled OpenRC scripts, `/etc/local.d`, `authorized_keys`, sudo rules, PAM modules no package installed | Run keys, services, scheduled tasks, WMI subscriptions, startup folders, IFEO |
+| `persistence` | `[]{kind, location, command, detail}` | cron and cron files (`/etc/crontabs` and `/etc/periodic/*` for busybox crond), `ld.so.preload`, `rc.local`, `/etc/systemd/system`, enabled OpenRC scripts, `/etc/local.d`, `/etc/inittab`, `authorized_keys`, sudo rules, PAM modules no package installed | Run keys, services, scheduled tasks, WMI subscriptions, startup folders, IFEO |
 | `ssh_keys` | `[]{user, path, modified, keys[{line, type, fingerprint, options, cloud_init_refusal}], unparsed_lines, unread}` | `~/.ssh/authorized_keys{,2}` of every account, read without following a final symlink; a home that is not a folder (`/dev/null`) has none | Phase 2 (`administrators_authorized_keys`) |
 | `firewall` | `backend`, `enabled`, `default_inbound`, `profiles`, `extra` | ufw config, firewalld running, `nft list ruleset`, nftables at boot, `iptables -S` (`/sbin/iptables` too); `extra.summary` is survey's line | `INetFwPolicy2` / registry `FirewallPolicy`; see below |
 | `remote_access.ssh` | `config_path`, `settings`, `unread`, `hash` | `sshd_config` with `Include`, up to the first `Match` | `C:\ProgramData\ssh\sshd_config` (same parser) |
@@ -85,7 +85,9 @@ A missing or unreadable fact never passes a check. A check that needs a fact the
 | `web` | `server`, `webroots`, `upload_dirs`, `config_unreadable` ("path (why)") | nginx `root` and Apache `DocumentRoot` lines (upload folders: the code audit) | `applicationHost.config` |
 
 `persistence.kind` values: `cron`, `cron_file`, `systemd`, `openrc` (`detail` names the runlevels,
-and says so when no package installed the script), `local_d`, `ld_preload`, `rc_local`,
+and says so when no package installed the script; a runlevel entry that stacks another runlevel,
+or names no script, is listed on its own), `local_d`, `inittab` (busybox init: `detail` is the
+action, `command` the process), `ld_preload`, `rc_local`,
 `authorized_key`, `authorized_key_unparsed`, `sudo_rule`, `pam_unpackaged`, and on Windows `run_key`
 (`detail` tells `winlogon`, `ifeo` and `appinit_dlls` apart), `service`, `schtask`,
 `wmi_subscription`, `startup_folder`. macOS uses `launchd`.
@@ -100,11 +102,12 @@ and says so when no package installed the script), `local_d`, `ld_preload`, `rc_
 | opensuse-leap | `osv` | `openSUSE:Leap 15.6` | `vr` | `zypper patch --category security` |
 | opensuse-tumbleweed, opensuse-slowroll | `osv` | `openSUSE:Tumbleweed` | `vr` | `zypper dup` |
 | sles, sled, sles_sap | `osv` | one per SLE 15 module, e.g. `SUSE:Linux Enterprise Module for Basesystem 15 SP5` | `vr` | `zypper patch --category security` |
-| amzn | `alas` | `release` `2` or `2023` | | `yum update --security` (2), `dnf upgrade --security` (2023) |
+| amzn | `alas` | `release` `2` or `2023`; on 2, `repos` lists the amazon-linux-extras topics enabled (`kernel-5.10`, `php8.2`), whose updateinfo is read too | | `yum update --security` (2), `dnf upgrade --security` (2023) |
 
 `version_fmt` `vr` means OSV spells rpm versions without a `0:` epoch. `alas` is matched against
 the release's public `updateinfo.xml` (cdn.amazonlinux.com), streamed. An unknown distribution has
-no `feed`.
+no `feed`; neither has Amazon Linux 1 (2018.03), past its end of life, so `package_vulns` answers
+cannot tell.
 
 On Windows, `firewall.profiles` maps `Domain`, `Private` and `Public` to whether that profile is
 on, and `extra.active_profiles` lists the profiles in force now, comma-separated.

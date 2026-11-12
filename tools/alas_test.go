@@ -43,7 +43,9 @@ func TestPackageVulnsAmazonLinux(t *testing.T) {
 	}))
 	defer srv.Close()
 	oldMirror, oldKEV, oldPrefixes, oldCache := alasMirrorList, kevURL, mirrorPrefixes, alasCacheDir
-	defer func() { alasMirrorList, kevURL, mirrorPrefixes, alasCacheDir = oldMirror, oldKEV, oldPrefixes, oldCache }()
+	defer func() {
+		alasMirrorList, kevURL, mirrorPrefixes, alasCacheDir = oldMirror, oldKEV, oldPrefixes, oldCache
+	}()
 	cache := t.TempDir()
 	alasCacheDir = func() string { return cache }
 	mirrorPrefixes = []string{srv.URL + "/"}
