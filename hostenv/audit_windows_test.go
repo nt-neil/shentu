@@ -114,7 +114,15 @@ var snapshotVolatile = map[string]bool{"Signature Updates": true}
 
 // snapshotNoise names single values Defender is known to write by itself,
 // each with the CI run that showed it with no collection running.
-var snapshotNoise = map[string]bool{}
+var snapshotNoise = map[string]bool{
+	// windows.yml run 43276183872, windows-2025: TestSnapshotNoise saw it
+	// appear at 18:11:07Z with no collection running; it had failed run
+	// 43274891487 (windows-2022) as "new".
+	`SOFTWARE\Microsoft\Windows Defender\UX Configuration\ToastOrSsoTrigger`: true,
+	// windows.yml run 43276183872, windows-2022: appeared at 18:07:07Z in
+	// the watch that runs before any collection in the job.
+	`SOFTWARE\Microsoft\Windows Defender\Scan\LastAggressiveCheck`: true,
+}
 
 func hostSnapshot(t *testing.T, l *Live) map[string]string {
 	t.Helper()
