@@ -64,6 +64,7 @@ type crule struct {
 	sanitizers             []*pat
 	args                   map[*pat]*argCond
 	leading                bool // some sink needs a fixed prefix, so values track raw input
+	ctypes                 bool // some args block has unless_content_type: record Content-Type statements (ctype.go)
 	output                 bool // every sink writes to a page (has a context condition): see context.go
 }
 
@@ -78,8 +79,9 @@ type argCond struct {
 	keys           bool   // an array, object or dict literal argument counts by its keys (keysVal)
 	minLen         int    // literal: the shortest string that counts
 	exclude        []*regexp.Regexp
-	receiver       []*pat // a method sink counts only on a receiver these name (receiver.go)
-	notReceiver    []*pat // nor on an object surely of one of these classes (receiver.go)
+	receiver       []*pat   // a method sink counts only on a receiver these name (receiver.go)
+	notReceiver    []*pat   // nor on an object surely of one of these classes (receiver.go)
+	unlessCT       []string // nor once the response's Content-Type is one of these on every path (ctype.go)
 }
 
 // New compiles rules. A pattern that does not lex as code of its language is an error.
@@ -153,6 +155,10 @@ func compileRule(r rules.Rule) (*crule, error) {
 	}
 	for _, a := range r.Args {
 		ac := &argCond{arg: a.Arg, name: a.Name, whole: a.Whole, leading: a.Leading, literal: a.Literal, key: a.Key, keys: a.Keys, minLen: a.MinLen}
+		for _, ct := range a.UnlessContentType {
+			ac.unlessCT = append(ac.unlessCT, strings.ToLower(ct))
+			c.ctypes = true
+		}
 		if (a.MinLen != 0 || len(a.Exclude) > 0) && !a.Literal {
 			return nil, fmt.Errorf("args: min_len and exclude need literal")
 		}
