@@ -933,3 +933,19 @@ func TestFileSecurityUntrusted(t *testing.T) {
 		t.Errorf("untrusted: %s", u)
 	}
 }
+
+// Round 2 (N2-2): Include is not followed on Windows, so an included file,
+// trusted or not, is never read: the fact is partial and its settings
+// come from sshd_config alone.
+func TestWindowsSSHIncludeNotFollowed(t *testing.T) {
+	w := weakServer()
+	w.svcs = append(w.svcs, WinService{Name: "sshd", State: "running", StartType: "auto"})
+	inc := `C:\ProgramData\ssh\sshd_config.d\evil.conf`
+	w.files[winSSHDConfig] = "Include " + inc + "\nPasswordAuthentication no\n"
+	w.files[inc] = "PasswordAuthentication yes\n"
+	w.sec = map[string]WinFileSecurity{inc: {Owner: "S-1-5-21-1-2-3-1001"}}
+	s := WindowsCollector{}.Collect(context.Background(), w).RemoteAccess.SSH
+	if s.Status != StatusPartial || s.Reason != ReasonNotCollected || s.Value.Settings["passwordauthentication"] != "no" {
+		t.Errorf("Include must not be followed: %+v", s)
+	}
+}
