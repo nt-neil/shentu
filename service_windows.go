@@ -150,7 +150,12 @@ func lockBinaryFolder(dir, exe string) error {
 		windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION, owner, nil, dacl, nil); err != nil {
 		return fmt.Errorf("securing %s: %w", dir, err)
 	}
-	empty, err := windows.ACLFromEntries(nil, nil)
+	// An empty DACL, unprotected: the binary keeps only what it inherits.
+	esd, err := windows.SecurityDescriptorFromString("D:")
+	if err != nil {
+		return err
+	}
+	empty, _, err := esd.DACL()
 	if err != nil {
 		return err
 	}
