@@ -11,6 +11,7 @@ import (
 	"net"
 	"os"
 	"regexp"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -48,8 +49,14 @@ type Risk struct {
 // push them as alerts.
 var uncheckedRisks = map[string]bool{"ssh:unreadable": true}
 
+// uncheckedPrefix marks a risk from a check that could not tell (Windows
+// survey, see surveyFromFacts).
+const uncheckedPrefix = "unchecked:"
+
 // Unchecked reports whether r says a check could not tell.
-func Unchecked(r Risk) bool { return uncheckedRisks[r.Key] }
+func Unchecked(r Risk) bool {
+	return uncheckedRisks[r.Key] || strings.HasPrefix(r.Key, uncheckedPrefix)
+}
 
 // SiteProfile is the survey result. It is stored by patrol as the baseline.
 type SiteProfile struct {
@@ -87,6 +94,9 @@ var riskyIfPublic = map[string]bool{"mysqld": true, "mariadbd": true, "postgres"
 
 // Survey builds the profile. It only reads; nothing is changed.
 func Survey(ctx context.Context, env *Env) SiteProfile {
+	if runtime.GOOS == "windows" {
+		return surveyFromFacts(windowsFacts(ctx), env)
+	}
 	p := SiteProfile{Time: time.Now().UTC(), Firewall: firewall(ctx)}
 	plat, _ := hostPlatform()
 	p.OS, p.Kernel = plat.PrettyName, plat.Kernel
@@ -305,7 +315,11 @@ func Drift(old, now SiteProfile) []Risk {
 		out = append(out, Risk{"drift:account:" + a, "warning", "new login account since the last survey: " + a})
 	}
 	for _, f := range diff(now.CronFiles, old.CronFiles) {
-		out = append(out, Risk{"drift:cron:" + f, "warning", "new cron file since the last survey: " + f})
+		what := "new cron file"
+		if runtime.GOOS == "windows" {
+			what = "new autostart entry (run key, service, scheduled task, startup folder or WMI subscription)"
+		}
+		out = append(out, Risk{"drift:cron:" + f, "warning", what + " since the last survey: " + f})
 	}
 	return out // new services already show up as new listening ports
 }

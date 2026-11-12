@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -88,7 +89,11 @@ func uncheckedSection(risks []tools.Risk) string {
 	if b.Len() == 0 {
 		return ""
 	}
-	return "\n\nNot checked (the permission to read what they need was missing; run Shentu as root):\n" + b.String()
+	as := "as root"
+	if runtime.GOOS == "windows" {
+		as = "elevated, as the Shentu service does (LocalSystem)"
+	}
+	return "\n\nNot checked (the permission to read what they need was missing; run Shentu " + as + "):\n" + b.String()
 }
 
 // uncheckedConfigs lists the web server configuration files the code audit

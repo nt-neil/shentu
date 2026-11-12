@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -41,6 +42,9 @@ type Port struct {
 // ListeningPorts lists TCP and UDP listening sockets from hostenv's
 // listeners fact, each with its owning process and executable.
 func ListeningPorts() ([]Port, error) {
+	if runtime.GOOS == "windows" {
+		return portsFromFacts(windowsFacts(context.Background()))
+	}
 	src := hostSource()
 	procs, owners := linux.Processes(src, nil)
 	byPID := map[int]hostenv.Process{}
