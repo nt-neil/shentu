@@ -143,7 +143,7 @@ type Route struct {
 	Title     string   `toml:"title"`
 	Register  []string `toml:"register"`  // calls registering a handler: add_shortcode, Route::get, *.get (any receiver)
 	Decorator []string `toml:"decorator"` // decorators marking the function under them: *.route
-	Extends   string   `toml:"extends"`   // with Method: a method of a class extending this one (WP_Widget::widget)
+	Extends   string   `toml:"extends"`   // with Method: a method of a class extending this one (WP_Widget::widget); without: Sources count only in such a class
 	Method    string   `toml:"method"`
 	Handler   int      `toml:"handler"`    // the argument (from 1) holding the handler; -1: the last
 	Key       string   `toml:"key"`        // the handler is this key of that argument (register_rest_route's 'callback')

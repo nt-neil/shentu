@@ -130,6 +130,10 @@ type analysis struct {
 	noSrc  bool   // the rule's sources are off (a summary run for parameters)
 	cls    string // class of the method being analysed, and its parent
 	parent string
+	// cparents: the classes the file declares and the parents they extend
+	// (routes.go, extending), built on first use
+	cparents map[string]string
+	cproj    *Project // the project, for those classes' parents in other files, also in the pass that follows no calls
 
 	lits   map[string][]Token // values written in the code, kept for argument conditions (context.go)
 	locals map[string]bool    // names of the file's own functions and methods (context.go)
@@ -1394,6 +1398,9 @@ func (a *analysis) postfix(st state, t []Token, start, baseEnd int, v val, whole
 func (a *analysis) srcMatch(s *pat, t []Token, i int) (int, bool) {
 	if s.text != nil {
 		return 0, false
+	}
+	if c := a.r.srcScope[s]; c != "" && !a.extending(c) {
+		return 0, false // a route model's source for one kind of class only
 	}
 	strict := len(s.toks) > 1 && s.toks[0].Kind == Ident && s.toks[1].op("(")
 	end, ok := s.match(t, i, strict)

@@ -137,8 +137,9 @@ lang = "php"
 applies = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "$_SERVER", "$_FILES", "$request"]
 framework = "wordpress"
 title = "An Elementor widget's settings are written by any user who can edit with Elementor"
-sources = ["->get_settings_for_display("]
-note = "Elementor widgets (render()) read their controls with get_settings_for_display(); contributors and up set them. Not get_settings(): WP_Widget and WooCommerce settings pages have one of that name too, and what it returns there is set by administrators."
+sources = ["->get_settings_for_display(", "->get_settings("]
+extends = "\\Elementor\\Widget_Base"
+note = "Elementor widgets (render()) read their controls with get_settings_for_display() or get_settings(); contributors and up set them. Only in a class extending Widget_Base: WP_Widget and WooCommerce settings pages have a get_settings() too, and what it returns there is set by administrators."
 refs = ["https://developers.elementor.com/docs/widgets/widget-rendering/"]
 
 [[route.samples]]
@@ -174,6 +175,33 @@ class Box_Widget extends WP_Widget {
 		global $wpdb;
 		$all = $this->get_settings();
 		echo $wpdb->get_var("SELECT name FROM {$wpdb->prefix}teams WHERE id = " . $all[$this->number]['team']);
+	}
+}
+'''
+
+[[route.samples]]
+kind = "vulnerable"
+note = "get_settings() in a widget whose own base class extends Widget_Base"
+code = '''<?php
+class Base_Widget extends \Elementor\Widget_Base {}
+class Box_Widget extends Base_Widget {
+	protected function render() {
+		global $wpdb;
+		$s = $this->get_settings();
+		echo $wpdb->get_var("SELECT name FROM {$wpdb->prefix}teams WHERE id = " . $s['team']);
+	}
+}
+'''
+
+[[route.samples]]
+kind = "safe"
+note = "a WooCommerce settings page's get_settings() returns what an administrator saved"
+code = '''<?php
+class Box_Settings extends WC_Settings_Page {
+	public function output() {
+		global $wpdb;
+		$s = $this->get_settings();
+		echo $wpdb->get_var("SELECT name FROM {$wpdb->prefix}teams WHERE id = " . $s['team']);
 	}
 }
 '''
