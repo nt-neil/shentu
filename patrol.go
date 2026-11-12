@@ -95,14 +95,36 @@ func uncheckedSection(risks []tools.Risk) string {
 // uncheckedVulns says, for the daily report, when the vulnerability check of
 // what failed (an advisory feed offline: ALAS, OSV) or covered only part
 // ("partial"): "no known vulnerabilities" must not stand for "not checked".
+// The same goes for the CISA KEV list (none on it must not read as "none
+// exploited"), lock files that could not be checked, and ecosystems OSV does
+// not carry.
 func uncheckedVulns(what string, r map[string]any, err error) string {
-	switch {
-	case err != nil:
+	if err != nil {
 		return fmt.Sprintf("\n\nNot checked for vulnerabilities: %s (%q).\n", what, mask(err.Error()))
-	case r["partial"] != nil:
-		return fmt.Sprintf("\n\nPartly checked for vulnerabilities: %s (%q).\n", what, mask(fmt.Sprint(r["partial"])))
 	}
-	return ""
+	var lines []string
+	if p, ok := r["partial"]; ok {
+		lines = append(lines, fmt.Sprintf("- partly checked: %q", mask(fmt.Sprint(p))))
+	}
+	if k, _ := r["kev"].(string); strings.Contains(k, "unavailable") {
+		lines = append(lines, fmt.Sprintf("- not checked against the CISA KEV list, so exploited ones are not marked: %q", mask(k)))
+	}
+	if files, ok := r["files"].([]tools.AppResult); ok {
+		for _, f := range files {
+			if f.Error != "" {
+				lines = append(lines, fmt.Sprintf("- not checked: %q (%q)", mask(f.Path), mask(f.Error)))
+			}
+		}
+	}
+	if nq, ok := r["ecosystems_not_queried"].([]string); ok {
+		for _, e := range nq {
+			lines = append(lines, fmt.Sprintf("- not queried (OSV has no such ecosystem): %q", mask(e)))
+		}
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+	return "\n\nVulnerability check of " + what + " incomplete:\n" + strings.Join(lines, "\n") + "\n"
 }
 
 // uncheckedConfigs lists the web server configuration files the code audit

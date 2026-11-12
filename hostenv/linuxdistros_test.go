@@ -78,8 +78,18 @@ func TestPatchFeedFor(t *testing.T) {
 		t.Errorf("sled %+v", sled)
 	}
 	sap := PatchFeedFor(map[string]string{"ID": "sles_sap", "VERSION_ID": "15.6"})
-	if !slices.Contains(sap.Ecosystems, "SUSE:Linux Enterprise Server for SAP Applications 15 SP6") || len(sap.NotQueried) != 1 || !strings.Contains(sap.NotQueried[0], "Module for SAP Applications") {
+	if !slices.Contains(sap.Ecosystems, "SUSE:Linux Enterprise Server for SAP Applications 15 SP6") || len(sap.NotQueried) != 2 || !strings.Contains(sap.NotQueried[0], "Module for SAP Applications") {
 		t.Errorf("sles_sap %+v", sap)
+	}
+	// S-R5: Live Patching and HA (checked in OSV); Real Time is not there.
+	sles6 := PatchFeedFor(map[string]string{"ID": "sles", "VERSION_ID": "15.6"})
+	if !slices.Contains(sles6.Ecosystems, "SUSE:Linux Enterprise Live Patching 15 SP6") || !slices.Contains(sles6.Ecosystems, "SUSE:Linux Enterprise High Availability Extension 15 SP6") ||
+		len(sles6.NotQueried) != 1 || !strings.Contains(sles6.NotQueried[0], "Real Time") {
+		t.Errorf("sles 15.6 %+v", sles6)
+	}
+	// S-R3: SLES for SAP 12 is listed as not queried.
+	if sap12 := PatchFeedFor(map[string]string{"ID": "sles_sap", "VERSION_ID": "12.5"}); len(sap12.NotQueried) != 1 || !strings.Contains(sap12.NotQueried[0], "SAP Applications 12 SP5") {
+		t.Errorf("sles_sap 12 %+v", sap12)
 	}
 	if got := PatchFeedFor(map[string]string{"ID": "sles", "VERSION_ID": "12.5"}).Ecosystems; !reflect.DeepEqual(got, []string{"SUSE:Linux Enterprise Server 12 SP5"}) {
 		t.Errorf("sles 12 %v", got)

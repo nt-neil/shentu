@@ -19,7 +19,7 @@ import (
 var packageVulns = Tool{
 	Name: "package_vulns",
 	Description: "Checks installed OS packages against the OSV vulnerability database (online, api.osv.dev) and marks vulnerabilities that CISA lists as actively exploited (KEV); fix those first. Without arguments returns affected packages, vulnerability IDs and the exploited ones; with package set, returns the summary, severity and fixed version of that package's vulnerabilities. " +
-		"partial says what could not be checked (an advisory feed or topic that failed): those packages may have fixes pending. ecosystems_not_queried lists ecosystems the host may have that OSV does not carry.",
+		"partial says what could not be checked (an advisory feed or topic that failed): those packages may have fixes pending. ecosystems_not_queried lists ecosystems the host may have that OSV does not carry; ecosystems lists every one queried when there are several (SUSE).",
 	Params: schema(`{"type":"object","properties":{
 		"package":{"type":"string","description":"show details for this package"}}}`),
 	Run: func(ctx context.Context, env *Env, args json.RawMessage) (any, error) {
@@ -39,7 +39,7 @@ const osvAPI = "https://api.osv.dev/v1"
 
 // PackageVulns queries OSV for every installed package.
 func PackageVulns(ctx context.Context, hc *http.Client, detailFor string) (map[string]any, error) {
-	eco, feed, items, err := installedSet(ctx)
+	eco, feed, items, setPartial, err := installedSet(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -118,11 +118,17 @@ func PackageVulns(ctx context.Context, hc *http.Client, detailFor string) (map[s
 		}
 	}
 	out := map[string]any{"ecosystem": eco, "packages_checked": len(pkgs), "affected_packages": len(found), "total_vulns": total}
+	if setPartial != "" { // the package list was read in part: those packages are not checked either
+		partial = strings.TrimPrefix(partial+"; package list: "+setPartial, "; ")
+	}
 	if partial != "" {
 		out["partial"] = partial
 	}
 	if len(feed.NotQueried) > 0 {
 		out["ecosystems_not_queried"] = feed.NotQueried
+	}
+	if len(feed.Ecosystems) > 1 { // SUSE: one per module; ecosystem shows the first only
+		out["ecosystems"] = feed.Ecosystems
 	}
 	hint := feed.Upgrade
 	if hint == "" {
@@ -366,7 +372,7 @@ func upgradeHint(eco string) string {
 // (Debian, Ubuntu, Alpine, Rocky, Alma, SUSE, openSUSE) or ALAS (Amazon
 // Linux). eco names the distribution in the result.
 func installedPackages(ctx context.Context) (string, hostenv.PatchFeed, []pkg, error) {
-	eco, feed, items, err := installedSet(ctx)
+	eco, feed, items, _, err := installedSet(ctx)
 	if err != nil {
 		return "", feed, nil, err
 	}
@@ -390,15 +396,15 @@ func pkgsOf(items []hostenv.Package) []pkg {
 // installedSet is the package fact as collected: every item (several
 // versions of one name, with their architecture) and the feed (with the
 // amazon-linux-extras topics on Amazon Linux 2).
-func installedSet(ctx context.Context) (string, hostenv.PatchFeed, []hostenv.Package, error) {
+func installedSet(ctx context.Context) (string, hostenv.PatchFeed, []hostenv.Package, string, error) {
 	_, osr := hostPlatform()
 	id, ver := osr["ID"], osr["VERSION_ID"]
 	feed := hostenv.PatchFeedFor(osr)
 	if feed.Kind == "" {
 		if id == "amzn" {
-			return "", feed, nil, errors.New("cannot tell: Amazon Linux " + ver + " is past its end of life and has no security feed here")
+			return "", feed, nil, "", errors.New("cannot tell: Amazon Linux " + ver + " is past its end of life and has no security feed here")
 		}
-		return "", feed, nil, errors.New("unsupported distribution for package_vulns: " + id + " " + ver)
+		return "", feed, nil, "", errors.New("unsupported distribution for package_vulns: " + id + " " + ver)
 	}
 	eco := ""
 	if len(feed.Ecosystems) > 0 {
@@ -413,12 +419,16 @@ func installedSet(ctx context.Context) (string, hostenv.PatchFeed, []hostenv.Pac
 		if cmd == "" {
 			cmd = "packages"
 		}
-		return "", feed, nil, fmt.Errorf("%s: %s", cmd, set.Detail)
+		return "", feed, nil, "", fmt.Errorf("%s: %s", cmd, set.Detail)
 	}
 	if set.Value.Feed != nil {
 		feed = *set.Value.Feed
 	}
-	return eco, feed, set.Value.Items, nil
+	partial := "" // what the package list itself could not read (e.g. amzn2-extras.repo)
+	if set.Status == hostenv.StatusPartial {
+		partial = set.Detail
+	}
+	return eco, feed, set.Value.Items, partial, nil
 }
 
 func uniq(in []pkg) []pkg {

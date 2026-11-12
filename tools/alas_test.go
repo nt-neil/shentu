@@ -338,3 +338,58 @@ func TestALASUnparsableCacheDropped(t *testing.T) {
 		t.Errorf("after: %+v %v %v, downloads %d->%d", hits, failed, err, before, *downloads)
 	}
 }
+
+// deniedFile is a Source where one file cannot be read (permission).
+type deniedFile struct {
+	scriptHost
+	path string
+}
+
+func (d deniedFile) ReadFile(p string) ([]byte, error) {
+	if p == d.path {
+		return nil, os.ErrPermission
+	}
+	return d.scriptHost.ReadFile(p)
+}
+
+// N-R1: an unreadable amzn2-extras.repo reaches package_vulns' partial, so
+// the extras topics are not taken as checked.
+func TestPackageVulnsExtrasUnreadable(t *testing.T) {
+	srv, _ := fakeALAS(t, map[string]string{"core": "<updates/>"}, false)
+	oldK := kevURL
+	kevURL = srv.URL + "/kev"
+	t.Cleanup(func() { kevURL = oldK })
+	withHost(t, deniedFile{scriptHost: scriptHost{memHost: memHost{
+		"/etc/os-release":     "NAME=\"Amazon Linux\"\nID=\"amzn\"\nVERSION_ID=\"2\"\n",
+		hostenv.AL2ExtrasRepo: "[amzn2extra-docker]\nenabled=1\n",
+	}, cmds: map[string]hostenv.CmdResult{strings.Join([]string{"/usr/bin/rpm", "-qa", "--qf", hostenv.RpmQueryFormat}, " "): {
+		Stdout: []byte("bash\t0:4.2.46-34.amzn2\taarch64\n")}}}, path: hostenv.AL2ExtrasRepo})
+	out, err := PackageVulns(context.Background(), srv.Client(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p, _ := out["partial"].(string); !strings.Contains(p, "amazon-linux-extras topics not checked") {
+		t.Errorf("partial %q", p)
+	}
+}
+
+// S-R2: a cached updateinfo that is not gzip at all is dropped, so the next
+// run fetches it again instead of failing the same way.
+func TestALASCacheNotGzipDropped(t *testing.T) {
+	srv, downloads := fakeALAS(t, map[string]string{"core": "<updates/>"}, true)
+	feed := hostenv.PatchFeed{Kind: "alas", Release: "2"}
+	if _, _, _, err := alasAffected(context.Background(), srv.Client(), feed, "aarch64", nil); err != nil {
+		t.Fatal(err)
+	}
+	cached, _ := filepath.Glob(filepath.Join(alasCacheDir(), "alas-*.gz"))
+	for _, f := range cached {
+		os.WriteFile(f, []byte("not gzip"), 0o600)
+	}
+	if _, _, _, err := alasAffected(context.Background(), srv.Client(), feed, "aarch64", nil); err == nil || !strings.Contains(err.Error(), "cached copy dropped") {
+		t.Errorf("err %v", err)
+	}
+	before := *downloads
+	if _, _, _, err := alasAffected(context.Background(), srv.Client(), feed, "aarch64", nil); err != nil || *downloads == before {
+		t.Errorf("next run: %v, downloads %d->%d", err, before, *downloads)
+	}
+}

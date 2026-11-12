@@ -225,6 +225,10 @@ func updateinfo(ctx context.Context, hc *http.Client, mirrorList string) (io.Rea
 	gz, err := gzip.NewReader(f)
 	if err != nil {
 		f.Close()
+		if cached != "" {
+			os.Remove(cached) // not gzip: damaged, fetched again next time
+			err = fmt.Errorf("%w (cached copy dropped, fetched again next time)", err)
+		}
 		return nil, "", err
 	}
 	return struct {

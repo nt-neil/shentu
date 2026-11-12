@@ -108,8 +108,20 @@ func TestUncheckedVulns(t *testing.T) {
 	if s := uncheckedVulns("installed packages", nil, fmt.Errorf("OSV query failed")); !strings.Contains(s, "Not checked for vulnerabilities: installed packages") || !strings.Contains(s, "OSV query failed") {
 		t.Errorf("failed: %q", s)
 	}
-	if s := uncheckedVulns("installed packages", map[string]any{"partial": "not checked: extras topic gone"}, nil); !strings.Contains(s, "Partly checked") || !strings.Contains(s, "extras topic gone") {
+	if s := uncheckedVulns("installed packages", map[string]any{"partial": "not checked: extras topic gone"}, nil); !strings.Contains(s, "partly checked") || !strings.Contains(s, "extras topic gone") {
 		t.Errorf("partial: %q", s)
+	}
+	// N-R2, S-R1: KEV unavailable, a lock file that failed, ecosystems not queried.
+	r := map[string]any{"kev": "CISA KEV list unavailable: timeout", "files": []tools.AppResult{{Path: "/srv/app/package-lock.json", Error: "OSV query failed"}},
+		"ecosystems_not_queried": []string{"SUSE:Linux Enterprise Desktop 15 SP6 (no such OSV ecosystem; its modules are queried)"}}
+	s := uncheckedVulns("application dependencies", r, nil)
+	for _, want := range []string{"CISA KEV list", "package-lock.json", "OSV query failed", "Linux Enterprise Desktop"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("missing %q in %q", want, s)
+		}
+	}
+	if s := uncheckedVulns("installed packages", map[string]any{"kev": "none of these vulnerabilities is on the CISA KEV list"}, nil); s != "" {
+		t.Errorf("KEV checked: %q", s)
 	}
 	if s := uncheckedVulns("installed packages", map[string]any{"total_vulns": 0}, nil); s != "" {
 		t.Errorf("checked: %q", s)

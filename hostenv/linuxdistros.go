@@ -36,8 +36,13 @@ var slesModules = []string{
 	"Linux Enterprise Module for Development Tools", "Linux Enterprise Module for Web and Scripting",
 	"Linux Enterprise Module for Public Cloud", "Linux Enterprise Module for Containers", "Linux Enterprise Module for Legacy",
 	"Linux Enterprise Module for Desktop Applications", "Linux Enterprise Module for Python 3",
-	"Linux Enterprise Module for HPC", "Package Hub",
+	"Linux Enterprise Module for HPC", "Package Hub", "Linux Enterprise Live Patching",
+	"Linux Enterprise High Availability Extension",
 }
+
+// slesNotInOSV are SLE 15 products a host may have that OSV does not carry
+// under any name tried (kernel-rt has no advisory under "Real Time").
+var slesNotInOSV = []string{"Linux Enterprise Real Time"}
 
 // sledModules are where SLED 15's packages are in OSV: "Linux Enterprise
 // Desktop" itself is no OSV ecosystem, and the server modules do not apply.
@@ -73,6 +78,9 @@ func PatchFeedFor(osr map[string]string) PatchFeed {
 			if id == "sled" {
 				mods = []string{"Linux Enterprise Desktop"}
 			}
+			if id == "sles_sap" { // not confirmed in OSV for SLE 12
+				f.NotQueried = []string{"SUSE:Linux Enterprise Server for SAP Applications " + sp + " (not confirmed in OSV)"}
+			}
 		case id == "sled":
 			mods = sledModules
 			f.NotQueried = []string{"SUSE:Linux Enterprise Desktop " + sp + " (no such OSV ecosystem; its modules are queried)"}
@@ -83,6 +91,11 @@ func PatchFeedFor(osr map[string]string) PatchFeed {
 		}
 		for _, m := range mods {
 			f.Ecosystems = append(f.Ecosystems, "SUSE:"+m+" "+sp)
+		}
+		if major == "15" && id != "sled" {
+			for _, m := range slesNotInOSV {
+				f.NotQueried = append(f.NotQueried, "SUSE:"+m+" "+sp+" (no such OSV ecosystem)")
+			}
 		}
 		return f
 	case "amzn":
