@@ -29,7 +29,7 @@ var (
 )
 
 func (LinuxCollector) Allowlist() [][]string {
-	return [][]string{dpkgArgv, rpmArgv, rpmQalArgv, nftListArgv, iptablesArgv, journalArgv, journalBinArgv}
+	return [][]string{dpkgArgv, rpmArgv, rpmQalArgv, nftListArgv, iptablesArgv, journalArgv, journalBinArgv, journalSockArgv, journalSockBinArgv}
 }
 
 func (c LinuxCollector) Collect(ctx context.Context, src Source) *Facts {

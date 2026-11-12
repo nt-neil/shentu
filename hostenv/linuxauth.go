@@ -28,6 +28,15 @@ var journalArgv = []string{"/usr/bin/journalctl", "-u", "ssh", "-u", "sshd", "--
 // the /usr merge.
 var journalBinArgv = append([]string{"/bin/journalctl"}, journalArgv[1:]...)
 
+// journalSockArgv reads the per-connection units of a socket-activated
+// sshd (ssh@*.service on Debian, sshd@*.service elsewhere). It is asked
+// only when the ssh and sshd units have no sshd entry. Units, not _COMM:
+// _SYSTEMD_UNIT comes from the cgroup, while any user can name a program
+// sshd. sshd-session (OpenSSH 9.8+) runs in sshd's unit.
+var journalSockArgv = []string{"/usr/bin/journalctl", "-u", "ssh@*", "-u", "sshd@*", "--since", SlotTime, "-o", "short-iso", "--no-pager"}
+
+var journalSockBinArgv = append([]string{"/bin/journalctl"}, journalSockArgv[1:]...)
+
 // JournalTimeout caps the journald read (streamed, no stdout cap). A
 // journal that takes longer falls back to the text logs, marked
 // unverified. The runner allows at most the value set here at start-up.
@@ -36,6 +45,8 @@ var JournalTimeout = 60 * time.Second
 func init() {
 	registerBig(journalArgv, 0, JournalTimeout)
 	registerBig(journalBinArgv, 0, JournalTimeout)
+	registerBig(journalSockArgv, 0, JournalTimeout)
+	registerBig(journalSockBinArgv, 0, JournalTimeout)
 }
 
 // reSSHDLine is a line sshd wrote: the only lines that can count.
@@ -76,7 +87,9 @@ var (
 // ScanAuthLogs streams the sshd lines of the last day to a consumer that
 // sink hands out, unmasked (fn masks whatever it outputs); memory does not
 // grow with the logs. Each source tried gets a fresh consumer from sink,
-// and the events are those of the last consumer handed out.
+// and the events are the per-source maximum over the consumers handed out
+// (MaxLogins): a journal cut short keeps what it gave, and a text log that
+// repeats it does not count twice.
 //
 // journald comes first: its ssh and sshd units are filtered on
 // _SYSTEMD_UNIT, which journald fills in itself, so verified is true. The
@@ -104,8 +117,8 @@ func (LinuxCollector) ScanAuthLogs(ctx context.Context, src Source, logPaths []s
 	files := authLogFiles(src, logPaths, since)
 	if len(files) == 0 {
 		switch {
-		case jerr == nil: // nothing else to read: journald's answer stands
-			return "journald", true, nil
+		case jerr == nil: // journald has no sshd entry and nothing can confirm it is so
+			return "journald (no sshd entries in the ssh, sshd, ssh@ or sshd@ units, and no text auth log: journald may not keep them, as with Storage=none)", false, nil
 		case timedOut: // keep what journald gave
 			return "journald (" + why + " to nothing: no text auth log)", true, jerr
 		}
@@ -114,7 +127,8 @@ func (LinuxCollector) ScanAuthLogs(ctx context.Context, src Source, logPaths []s
 	fn := sink()
 	var used, unread []string
 	var cut, uerr error
-	sshd := 0
+	sshd := 0 // sshd lines in the window: older ones say nothing about the last day
+	now := time.Now()
 	for _, f := range files {
 		// A file that fails half way (a line over MaxLineBytes) gave its
 		// earlier lines: it counts as read, cut short.
@@ -122,7 +136,9 @@ func (LinuxCollector) ScanAuthLogs(ctx context.Context, src Source, logPaths []s
 		err := ScanLinesUnmasked(src, f, func(l string) {
 			lines++
 			if reSSHDLine.MatchString(l) {
-				sshd++
+				if t, ok := ParseLogTime(l, now); ok && !t.Before(since) {
+					sshd++
+				}
 			}
 			fn(l)
 		})
@@ -143,7 +159,14 @@ func (LinuxCollector) ScanAuthLogs(ctx context.Context, src Source, logPaths []s
 	}
 	switch {
 	case sshd > 0 || (jerr != nil && len(used) > 0):
-		return strings.Join(used, ",") + " (unverified: " + why + "; " + unverifiedText + ")", false, cut
+		read := strings.Join(used, ",")
+		if len(unread) > 0 { // some of the text logs: the counts are a lower bound
+			read += "; unreadable: " + strings.Join(unread, ",")
+			if cut == nil {
+				cut = fmt.Errorf("%w: %s unreadable", ErrTruncated, strings.Join(unread, ","))
+			}
+		}
+		return read + " (unverified: " + why + "; " + unverifiedText + ")", false, cut
 	case len(used) > 0: // journald and the text logs agree: no sshd entries
 		return "journald", true, nil
 	}
@@ -158,25 +181,36 @@ func scanJournal(ctx context.Context, src Source, since time.Time, sink func() f
 	ctx, cancel := context.WithTimeout(ctx, JournalTimeout)
 	defer cancel()
 	fn := sink()
-	var res CmdResult
-	for _, base := range [][]string{journalArgv, journalBinArgv} {
+	count := func(l string) {
+		if reSSHDLine.MatchString(l) {
+			n++
+		}
+		fn(l)
+	}
+	run := func(base []string) (CmdResult, error) {
 		argv := append([]string(nil), base...)
 		argv[6] = since.UTC().Format("2006-01-02 15:04:05") + " UTC" // journalctl reads a bare time as local
-		res, err = RunLinesUnmasked(ctx, src, argv, func(l string) {
-			if reSSHDLine.MatchString(l) {
-				n++
+		res, err := RunLinesUnmasked(ctx, src, argv, count)
+		if err == nil && res.ExitCode != 0 {
+			err = &exitError{res.ExitCode}
+		}
+		return res, err
+	}
+	var res CmdResult
+	sock := journalSockArgv
+	for i, base := range [][]string{journalArgv, journalBinArgv} {
+		if res, err = run(base); !errors.Is(err, fs.ErrNotExist) {
+			if i == 1 {
+				sock = journalSockBinArgv
 			}
-			fn(l)
-		})
-		if !errors.Is(err, fs.ErrNotExist) {
 			break // found (a missing binary is the only reason to try the other path)
 		}
 	}
-	if err == nil && res.ExitCode != 0 {
-		err = &exitError{res.ExitCode}
-	}
 	if err == nil && n == 0 && strings.Contains(res.Stderr, "not seeing messages from other users and the system") {
 		err = fmt.Errorf("%w: journald hides the system's entries from this user", fs.ErrPermission)
+	}
+	if err == nil && n == 0 { // a socket-activated sshd logs under ssh@ / sshd@ units
+		_, err = run(sock)
 	}
 	return n, err
 }
@@ -388,6 +422,12 @@ func (c *SSHLogins) Result() []SSHSource {
 		out.FailedUsers, out.InvalidUsers, out.AcceptedUsers = names("failed"), names("invalid"), names("accepted")
 		list = append(list, out)
 	}
+	return busiest(list)
+}
+
+// busiest orders sources by failed + invalid (+ Uncertainty), ties by IP,
+// and keeps the first 50.
+func busiest(list []SSHSource) []SSHSource {
 	sort.SliceStable(list, func(i, j int) bool {
 		a, b := list[i].Failed+list[i].InvalidUser+list[i].Uncertainty, list[j].Failed+list[j].InvalidUser+list[j].Uncertainty
 		if a != b {
@@ -401,6 +441,59 @@ func (c *SSHLogins) Result() []SSHSource {
 	return list
 }
 
+// MaxLogins merges the consumers ScanAuthLogs handed out: per source the
+// larger of each count, not the sum (a journal and a text log may hold the
+// same events), the names of both (at most 20 of a kind), the earliest
+// First and the latest Last. Ordered and cut as Result.
+func MaxLogins(aggs ...*SSHLogins) (list []SSHSource, evicted int) {
+	by := map[string]*SSHSource{}
+	var order []string
+	for _, a := range aggs {
+		if a == nil {
+			continue
+		}
+		evicted = max(evicted, a.Evicted())
+		for _, s := range a.Result() {
+			m, ok := by[s.IP]
+			if !ok {
+				c := s
+				by[s.IP], order = &c, append(order, s.IP)
+				continue
+			}
+			m.Failed, m.InvalidUser, m.Accepted = max(m.Failed, s.Failed), max(m.InvalidUser, s.InvalidUser), max(m.Accepted, s.Accepted)
+			m.Uncertainty = max(m.Uncertainty, s.Uncertainty)
+			m.FailedUsers, m.InvalidUsers, m.AcceptedUsers = unionNames(m.FailedUsers, s.FailedUsers), unionNames(m.InvalidUsers, s.InvalidUsers), unionNames(m.AcceptedUsers, s.AcceptedUsers)
+			if s.First.Before(m.First) {
+				m.First = s.First
+			}
+			if s.Last.After(m.Last) {
+				m.Last = s.Last
+			}
+		}
+	}
+	for _, ip := range order {
+		list = append(list, *by[ip])
+	}
+	return busiest(list), evicted
+}
+
+// unionNames is a and b sorted without repeats, at most 20.
+func unionNames(a, b []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, n := range append(append([]string(nil), a...), b...) {
+		if !seen[n] {
+			seen[n] = true
+			out = append(out, n)
+		}
+	}
+	sort.Strings(out)
+	if len(out) > 20 {
+		out = out[:20]
+	}
+	return out
+}
+
 // AuthEvents is the auth_events fact: failed SSH logins per source over
 // the last day before the snapshot.
 func (c LinuxCollector) AuthEvents(ctx context.Context, src Source, at time.Time, logPaths []string) Obs[AuthEvents] {
@@ -408,13 +501,15 @@ func (c LinuxCollector) AuthEvents(ctx context.Context, src Source, at time.Time
 		logPaths = DefaultLogPaths
 	}
 	since := at.Add(-24 * time.Hour)
-	var agg *SSHLogins
+	var aggs []*SSHLogins
 	source, verified, err := c.ScanAuthLogs(ctx, src, logPaths, since, func() func(string) {
-		agg = NewSSHLogins(since, at, "")
-		return agg.Add
+		a := NewSSHLogins(since, at, "")
+		aggs = append(aggs, a)
+		return a.Add
 	})
+	sources, evicted := MaxLogins(aggs...)
 	ev := AuthEvents{WindowHours: 24, FailedBySrc: map[string]int{}}
-	for _, s := range agg.Result() {
+	for _, s := range sources {
 		if n := s.Failed + s.InvalidUser; n > 0 {
 			ev.FailedBySrc[s.IP] = n
 		}
@@ -437,7 +532,7 @@ func (c LinuxCollector) AuthEvents(ctx context.Context, src Source, at time.Time
 		return Obs[AuthEvents]{Status: StatusUnknown, Reason: r, Detail: source, Value: ev}
 	}
 	detail := "from " + source
-	if n := agg.Evicted(); n > 0 {
+	if n := evicted; n > 0 {
 		detail += "; " + strconv.Itoa(n) + " low-activity sources not tracked (more than " + strconv.Itoa(MaxTrackedSources) + " sources)"
 	}
 	if !verified {

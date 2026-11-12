@@ -43,6 +43,9 @@ func TestWinLogonSummary(t *testing.T) {
 	if !strings.Contains(out["source"].(string), "Windows Security log") {
 		t.Errorf("the source must say these are Windows logons, not SSH: %v", out["source"])
 	}
+	if out["verified"] != true || out["complete"] != true {
+		t.Errorf("the Security log is verified, and complete under MaxEvents: %v %v", out["verified"], out["complete"])
+	}
 
 	out, _ = winLogonSummary(time.Now().Add(-time.Hour), "203.0.113.9")
 	if len(out["sources"].([]SSHSource)) != 1 {

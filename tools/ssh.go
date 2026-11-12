@@ -11,8 +11,10 @@ import (
 )
 
 var sshLogins = Tool{
-	Name:        "ssh_logins",
-	Description: "SSH login attempts grouped by source IP: failed passwords, invalid users and successful logins. Use it to spot brute force and to check whether an attacking IP ever got in.",
+	Name: "ssh_logins",
+	Description: "SSH login attempts grouped by source IP: failed passwords, invalid users and successful logins. Use it to spot brute force and to check whether an attacking IP ever got in. " +
+		"verified is false when the events come from text logs, which anyone on the host can write to: then never block_ip on these counts alone, check them first (journalctl -u ssh, the IP's other traffic). " +
+		"complete is false when a log was cut short or unreadable (error says why): the counts are a lower bound.",
 	Params: schema(`{"type":"object","properties":{
 		"since_hours":{"type":"number","description":"look back this many hours (default 24)"},
 		"ip":{"type":"string","description":"only this source IP"}}}`),
@@ -37,15 +39,21 @@ func SSHSummary(ctx context.Context, env *Env, since time.Time, onlyIP string) (
 	if runtime.GOOS == "windows" {
 		return winLogonSummary(since, onlyIP)
 	}
-	var agg *hostenv.SSHLogins
+	var aggs []*hostenv.SSHLogins
 	now := time.Now()
-	source, verified, _ := linux.ScanAuthLogs(ctx, hostSource(), env.LogPaths, since, func() func(string) {
-		agg = hostenv.NewSSHLogins(since, now, onlyIP)
-		return agg.Add
+	source, verified, err := linux.ScanAuthLogs(ctx, hostSource(), env.LogPaths, since, func() func(string) {
+		a := hostenv.NewSSHLogins(since, now, onlyIP)
+		aggs = append(aggs, a)
+		return a.Add
 	})
+	sources, evicted := hostenv.MaxLogins(aggs...)
 	// verified is false for text logs: anyone on the host can write sshd lines there.
-	out := map[string]any{"source": source, "verified": verified, "since": since, "sources": agg.Result()}
-	if n := agg.Evicted(); n > 0 {
+	// complete is false when a log was cut short or could not be read: the counts are then a lower bound.
+	out := map[string]any{"source": source, "verified": verified, "complete": err == nil, "since": since, "sources": sources}
+	if err != nil {
+		out["error"] = err.Error()
+	}
+	if n := evicted; n > 0 {
 		out["note"] = fmt.Sprintf("%d low-activity sources were not tracked (more than %d sources)", n, hostenv.MaxTrackedSources)
 	}
 	return out, nil

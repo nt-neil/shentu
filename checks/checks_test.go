@@ -224,3 +224,20 @@ func TestKeysSymlinkCheck(t *testing.T) {
 		t.Errorf("%+v", got)
 	}
 }
+
+// Counts from an unverified source still fail, say so in the evidence, and
+// the note's title says why rather than "could not be read".
+func TestBruteforceUnverifiedSource(t *testing.T) {
+	o := hostenv.Partial(hostenv.AuthEvents{WindowHours: 24, FailedBySrc: map[string]int{"203.0.113.7": 30}},
+		hostenv.ReasonUnverified, "from /var/log/auth.log (unverified)")
+	out := bruteforce(&hostenv.Facts{AuthEvents: o})
+	if len(out) != 2 || out[0].Status != StatusFail || !strings.Contains(out[0].Evidence, "any local user can write") ||
+		out[1].Status != StatusCannotTell || out[1].Reason != "unverified_source" || strings.Contains(out[1].Title, "could not be read") {
+		t.Fatalf("got %+v", out)
+	}
+	o.Reason = hostenv.ReasonTruncated
+	out = bruteforce(&hostenv.Facts{AuthEvents: o})
+	if strings.Contains(out[0].Evidence, "any local user") || out[1].Title != "Some login events could not be read" {
+		t.Errorf("truncated: %+v", out)
+	}
+}
