@@ -49,8 +49,9 @@ func TestCollectLeavesHostUnchanged(t *testing.T) {
 }
 
 // snapshotVolatile names subkeys whose values change on their own
-// (Defender stamps signature checks there), so they cannot show a write.
-var snapshotVolatile = map[string]bool{"Signature Updates": true}
+// (Defender stamps signature checks there, and its notification UI adds
+// ToastOrSsoTrigger under UX Configuration), so they cannot show a write.
+var snapshotVolatile = map[string]bool{"Signature Updates": true, "UX Configuration": true}
 
 func hostSnapshot(t *testing.T, l *Live) map[string]string {
 	t.Helper()
