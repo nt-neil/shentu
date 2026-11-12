@@ -54,24 +54,36 @@ func replaceOutsideSudoTags(s string, re *regexp.Regexp, repl string) string {
 		return re.ReplaceAllString(s, repl)
 	}
 	var b strings.Builder
-	last := 0
-	for _, m := range re.FindAllStringSubmatchIndex(s, -1) {
-		b.WriteString(s[last:m[0]])
-		inTag := false
-		for _, t := range tags {
-			if m[0] >= t[0] && m[0] < t[1] {
-				inTag = true
-			}
+	pos := 0
+	for pos < len(s) {
+		rest := s[pos:]
+		m := re.FindStringSubmatchIndex(rest)
+		if m == nil || m[1] == m[0] {
+			break
 		}
-		if inTag {
-			b.WriteString(s[m[0]:m[1]])
-		} else {
-			b.Write(re.ExpandString(nil, repl, s, m))
+		start := pos + m[0]
+		if t := tagAt(tags, start); t != nil {
+			// Keep the tag itself, then look again right after it: what
+			// follows the tag is masked like any other text.
+			b.WriteString(s[pos:t[1]])
+			pos = t[1]
+			continue
 		}
-		last = m[1]
+		b.WriteString(rest[:m[0]])
+		b.Write(re.ExpandString(nil, repl, rest, m))
+		pos += m[1]
 	}
-	b.WriteString(s[last:])
+	b.WriteString(s[pos:])
 	return b.String()
+}
+
+func tagAt(tags [][]int, i int) []int {
+	for _, t := range tags {
+		if i >= t[0] && i < t[1] {
+			return t
+		}
+	}
+	return nil
 }
 
 // sudoTag is a sudoers NOPASSWD: or PASSWD: tag where sudoers puts one:
