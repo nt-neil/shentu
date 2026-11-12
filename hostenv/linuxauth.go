@@ -37,6 +37,10 @@ type SSHSource struct {
 	AcceptedUsers []string  `json:"accepted_users,omitempty"` // logged in successfully
 	First         time.Time `json:"first"`
 	Last          time.Time `json:"last"`
+	// Uncertainty is set only when more sources were seen than are tracked:
+	// the events this source may have had before it was tracked (its counts
+	// are a lower bound; counts plus Uncertainty an upper one).
+	Uncertainty int `json:"count_uncertainty,omitempty"`
 }
 
 var (
@@ -172,7 +176,10 @@ func NewSSHLogins(since, now time.Time, onlyIP string) *SSHLogins {
 	return &SSHLogins{since: since, now: now, onlyIP: onlyIP, by: map[string]*sshAgg{}}
 }
 
-func (a *sshAgg) total() int { return a.Failed + a.InvalidUser + a.Accepted }
+// total is the space-saving counter: what was seen, plus what the source
+// it replaced had (inherited, as Uncertainty), so a newcomer is not
+// always the next to go and a slow source among a flood keeps its rank.
+func (a *sshAgg) total() int { return a.Failed + a.InvalidUser + a.Accepted + a.Uncertainty }
 
 // Add counts one log line.
 func (c *SSHLogins) Add(l string) {
@@ -208,10 +215,11 @@ func (c *SSHLogins) Add(l string) {
 	}
 	s := c.by[ip]
 	if s == nil {
+		inherited := 0
 		if len(c.by) >= MaxTrackedSources {
-			c.evict()
+			inherited = c.evict()
 		}
-		s = &sshAgg{SSHSource: SSHSource{IP: ip, First: ts}, users: map[string]map[string]bool{"failed": {}, "invalid": {}, "accepted": {}}}
+		s = &sshAgg{SSHSource: SSHSource{IP: ip, First: ts, Uncertainty: inherited}, users: map[string]map[string]bool{"failed": {}, "invalid": {}, "accepted": {}}}
 		c.by[ip] = s
 		heap.Push(&c.low, s)
 	}
@@ -243,19 +251,22 @@ func (c *SSHLogins) Add(l string) {
 
 // evict drops the least active source that never logged in (a source that
 // got in is never dropped: it is the one that matters most).
-func (c *SSHLogins) evict() {
+// It returns the victim's counter, which the newcomer inherits.
+func (c *SSHLogins) evict() int {
 	if c.low.Len() == 0 {
-		return
+		return 0
 	}
 	victim := heap.Pop(&c.low).(*sshAgg)
 	delete(c.by, victim.IP)
 	c.evicted++
+	return victim.total()
 }
 
 // Evicted is how many sources were dropped to stay within the bound.
 func (c *SSHLogins) Evicted() int { return c.evicted }
 
-// Result is the 50 busiest sources (failed + invalid), ties by IP.
+// Result is the 50 busiest sources (failed + invalid, plus Uncertainty when
+// sources were evicted), ties by IP.
 func (c *SSHLogins) Result() []SSHSource {
 	list := make([]SSHSource, 0, len(c.by))
 	for _, s := range c.by {
@@ -272,7 +283,7 @@ func (c *SSHLogins) Result() []SSHSource {
 		list = append(list, out)
 	}
 	sort.SliceStable(list, func(i, j int) bool {
-		a, b := list[i].Failed+list[i].InvalidUser, list[j].Failed+list[j].InvalidUser
+		a, b := list[i].Failed+list[i].InvalidUser+list[i].Uncertainty, list[j].Failed+list[j].InvalidUser+list[j].Uncertainty
 		if a != b {
 			return a > b
 		}

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -150,5 +151,53 @@ func TestAuthLogStreamsInFlatMemory(t *testing.T) {
 			ops = ops || s.IP == "192.0.2.10"
 		}
 		_ = ops
+	}
+}
+
+func TestScanRedactsKeyBlocks(t *testing.T) {
+	body := strings.Repeat("Zm9vYmFy", 8)
+	// Markers assembled at run time: no key-shaped literal in the source.
+	pk := func(edge, kind string) string { return strings.Repeat("-", 5) + edge + " " + kind + " PRIVATE " + "KEY" + strings.Repeat("-", 5) }
+	log := "a\nconfig dump: " + pk("BEGIN", "OPENSSH") + "\n" + body + "\n" + body + "\n" + pk("END", "OPENSSH") + " tail\nb " + pk("BEGIN", "RSA") + body + pk("END", "RSA") + " c\nz\n"
+	var got []string
+	if err := scan(strings.NewReader(log), func(l string) { got = append(got, l) }); err != nil {
+		t.Fatal(err)
+	}
+	all := strings.Join(got, "\n")
+	if strings.Contains(all, body) || !strings.Contains(all, "config dump: [REDACTED PRIVATE KEY]") || !strings.Contains(all, " tail") || got[len(got)-1] != "z" {
+		t.Errorf("lines %q", got)
+	}
+	// Recorder masks the whole stream it keeps for a fixture.
+	h := newFake(true)
+	h.files["/var/log/x.log"] = log
+	rec := NewRecorder(h)
+	if err := ScanLines(rec, "/var/log/x.log", func(string) {}); err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range rec.got {
+		if strings.Contains(string(e.data), body) {
+			t.Error("recorder kept a private key")
+		}
+	}
+}
+
+// A slow attacker among a flood of one-shot sources keeps its place: a
+// newcomer inherits the evicted counter (space-saving).
+func TestSSHLoginsFloodKeepsSlowAttacker(t *testing.T) {
+	now := time.Now()
+	ts := now.Add(-time.Minute).UTC().Format(time.RFC3339)
+	c := NewSSHLogins(now.Add(-time.Hour), now, "")
+	for i := 0; i < 200000; i++ {
+		c.Add(fmt.Sprintf("%s vm sshd[1]: Invalid user x from 10.%d.%d.%d port 1", ts, i>>16&255, i>>8&255, i&255))
+		if i%100 == 0 {
+			c.Add(ts + " vm sshd[2]: Failed password for root from 203.0.113.9 port 1 ssh2")
+		}
+	}
+	res := c.Result()
+	if len(res) == 0 || res[0].IP != "203.0.113.9" || res[0].Failed < 1500 {
+		t.Errorf("slow attacker lost in the flood: top %+v", res[:min(2, len(res))])
+	}
+	if c.Evicted() == 0 {
+		t.Error("expected evictions")
 	}
 }

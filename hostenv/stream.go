@@ -13,6 +13,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"regexp"
 	"strings"
 )
 
@@ -60,11 +61,34 @@ func ScanLines(src Source, path string, fn func(line string)) error {
 	return scan(r, fn)
 }
 
+// pemBegin and pemEnd frame a private key block, which spans lines: line
+// by line masking alone would let its body through.
+var (
+	pemBegin = regexp.MustCompile("-----BEGIN [A-Z ]*PRIVATE KEY-----")
+	pemEnd   = regexp.MustCompile("-----END [A-Z ]*PRIVATE KEY-----")
+)
+
 func scan(r io.Reader, fn func(string)) error {
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 64*1024), MaxLineBytes)
+	inKey := false
 	for sc.Scan() {
-		fn(MaskSecrets(sc.Text()))
+		l := sc.Text()
+		if inKey {
+			if loc := pemEnd.FindStringIndex(l); loc != nil {
+				inKey = false
+				if rest := l[loc[1]:]; strings.TrimSpace(rest) != "" {
+					fn(MaskSecrets(rest))
+				}
+			}
+			continue // the key body never reaches fn
+		}
+		if loc := pemBegin.FindStringIndex(l); loc != nil && pemEnd.FindStringIndex(l[loc[1]:]) == nil {
+			inKey = true
+			fn(MaskSecrets(l[:loc[0]]) + "[REDACTED PRIVATE KEY]")
+			continue
+		}
+		fn(MaskSecrets(l))
 	}
 	return sc.Err()
 }
@@ -113,11 +137,15 @@ func (l *Live) RunLines(ctx context.Context, argv []string, fn func(line string)
 func (r *Recorder) Open(path string) (io.ReadCloser, error) {
 	var buf bytes.Buffer
 	err := ScanLinesRaw(r.Inner, path, &buf)
-	r.put(&entry{Op: "file", Path: path, Err: errCode(err), data: buf.Bytes()})
+	data := buf.Bytes()
+	if !strings.HasSuffix(path, ".gz") {
+		data = []byte(MaskSecrets(string(data))) // whole buffer: key blocks across lines too
+	}
+	r.put(&entry{Op: "file", Path: path, Err: errCode(err), data: data})
 	if err != nil {
 		return nil, err
 	}
-	return io.NopCloser(bytes.NewReader(buf.Bytes())), nil
+	return io.NopCloser(bytes.NewReader(data)), nil
 }
 
 // ScanLinesRaw copies at most MaxFileBytes of path (not gunzipped) to w.
