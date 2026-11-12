@@ -43,6 +43,9 @@ func PackageVulns(ctx context.Context, hc *http.Client, detailFor string) (map[s
 		return nil, err
 	}
 	pkgs := pkgsOf(items)
+	if len(pkgs) == 0 { // a package list that parsed to nothing is not "no vulnerabilities"
+		return nil, fmt.Errorf("cannot tell: no installed packages were read from the %s package list", eco)
+	}
 	type affected struct {
 		Package string   `json:"package"`
 		Version string   `json:"version"`

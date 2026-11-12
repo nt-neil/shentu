@@ -244,3 +244,12 @@ func TestALASTopicFails(t *testing.T) {
 		t.Errorf("hits %+v failed %v err %v", hits, failed, err)
 	}
 }
+
+// N-D2: a package list that parses to nothing is "cannot tell", not "no vulnerabilities".
+func TestPackageVulnsNoPackages(t *testing.T) {
+	withHost(t, memHost{"/etc/os-release": "NAME=\"Alpine Linux\"\nID=alpine\nVERSION_ID=3.22.2\n", "/lib/apk/db/installed": "\n"})
+	out, err := PackageVulns(context.Background(), http.DefaultClient, "")
+	if err == nil || !strings.Contains(err.Error(), "no installed packages") || out != nil {
+		t.Errorf("no packages: %v %v", out, err)
+	}
+}
