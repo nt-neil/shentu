@@ -76,10 +76,12 @@ func TestASPCodeAudit(t *testing.T) {
 		}
 		return got
 	}
+	withASP(t)
+	aspAudit, foldPaths = false, false // as on Unix
 	if got := kinds(); got["webshell cmd.aspx"] || got["upload_script Uploads/img.ashx"] {
 		t.Errorf("Unix scans must not change: %v", got)
 	}
-	withASP(t)
+	aspAudit, foldPaths = true, true
 	got := kinds()
 	for _, k := range []string{"webshell cmd.aspx", "upload_script Uploads/img.ashx"} {
 		if !got[k] {
