@@ -7,13 +7,14 @@ import (
 	"runtime"
 )
 
-// Tools that only work on Linux: block_ip and unblock_ip drive
-// iptables/nftables, and the Windows MVP makes no changes to the host
-// (they stay refused through v0.3.0). On Windows they must say so rather
-// than return nothing. ssh_logins, processes, accounts_audit and
-// log_search have Windows versions.
-var windowsUnsupported = map[string]bool{
-	"block_ip": true, "unblock_ip": true,
+// windowsSupported are the tools that work on Windows. Default deny: a
+// tool not listed (a new Linux-only one, or block_ip and unblock_ip, which
+// drive iptables/nftables while the Windows MVP changes nothing) refuses
+// on Windows rather than returning an empty, clean-looking result.
+var windowsSupported = map[string]bool{
+	"ssh_logins": true, "listening_ports": true, "processes": true, "accounts_audit": true,
+	"package_vulns": true, "app_vulns": true, "app_code_audit": true, "site_profile": true,
+	"file_changes": true, "cert_expiry": true, "log_search": true, "notify": true,
 }
 
 // unsupportedHere is true on Windows; tests flip it.
@@ -24,14 +25,14 @@ func errUnsupported(name string) error {
 	return fmt.Errorf("%s is not supported on Windows yet; see site_profile (Windows facts and checks: accounts, processes, logon failures, firewall, autostart entries)", name)
 }
 
-// guardWindows replaces the Run (and Preview) of the tools above with an
-// error on Windows.
+// guardWindows replaces the Run (and Preview) of every tool not in
+// windowsSupported with an error on Windows.
 func guardWindows(ts []Tool) []Tool {
 	if !unsupportedHere {
 		return ts
 	}
 	for i := range ts {
-		if !windowsUnsupported[ts[i].Name] {
+		if windowsSupported[ts[i].Name] {
 			continue
 		}
 		name := ts[i].Name
