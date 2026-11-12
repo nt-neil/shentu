@@ -161,7 +161,7 @@ func weakServer() *fakeWin {
 		{PID: 900, PPID: 600, Name: "w3wp.exe", Exe: `C:\Windows\System32\inetsrv\w3wp.exe`, User: `IIS APPPOOL\DefaultAppPool`},
 		{PID: 901, PPID: 900, Name: "cmd.exe", Exe: `C:\Windows\System32\cmd.exe`, User: `IIS APPPOOL\DefaultAppPool`, Cmdline: `cmd /c whoami`},
 		{PID: 1200, PPID: 1, Name: "xmrig.exe", Exe: `C:\Users\backdoor\AppData\Local\Temp\xmrig.exe`, User: `HOST\backdoor`, SID: sidBase + "-1001",
-			Cmdline: `xmrig.exe -o stratum+tcp://pool:3333 --password=hunter22 --log \\host\logs\BACKDOOR.txt`},
+			Cmdline: `xmrig.exe -o stratum+tcp://pool:3333 --password=hunter22 --log \\host\logs\BACKDOOR.txt --cfg C:\Users\OPERAT~1\x.json`},
 		{PID: 1300, PPID: 1, Name: "mysqld.exe", Exe: `C:\mysql\bin\mysqld.exe`},
 	}
 	w.sockets = []WinSocket{
@@ -185,7 +185,8 @@ func weakServer() *fakeWin {
 	w.subkeys[KeyIFEO] = []string{"sethc.exe", "notepad.exe"}
 	w.reg[KeyIFEO+`\sethc.exe`] = map[string]RegValue{"Debugger": sz(`C:\Windows\System32\cmd.exe`)}
 	w.tasks = []WinTask{{Path: `\Updater`, Enabled: true, RunAs: "S-1-5-18", Triggers: []string{"BootTrigger"}, Actions: []string{`C:\ProgramData\u.exe -q`}}}
-	w.subkeys[KeyProfileList] = []string{"S-1-5-18", sidBase + "-1001"}
+	w.subkeys[KeyProfileList] = []string{"S-1-5-18", sidBase + "-1001", sidBase + "-1002"}
+	w.reg[KeyProfileList+`\`+sidBase+"-1002"] = map[string]RegValue{"ProfileImagePath": sz(`C:\Users\operator.jane`)}
 	w.reg[KeyProfileList+`\`+sidBase+"-1001"] = map[string]RegValue{"ProfileImagePath": sz(`C:\Users\backdoor`)}
 	w.dirs(winStartupAll, "desktop.ini")
 	w.dirs(`C:\Users\backdoor\`+winStartupPerUser, "desktop.ini", "run.lnk")
@@ -605,7 +606,7 @@ func TestWindowsRecordReplay(t *testing.T) {
 	}
 	s := fixtureText(t, masked)
 	for _, leak := range []string{"backdoor", "111-222-333", "hunter22", "AutoLogon#2026", "kiosk", "192.0.2.77", "s3cr3t-value-xyz",
-		"Jane Q Operator", "198.51.100.23", "BACKDOOR", `\\host\`} {
+		"Jane Q Operator", "198.51.100.23", "BACKDOOR", `\\host\`, "OPERAT~1", "operator.jane"} {
 		if strings.Contains(s, leak) {
 			t.Errorf("fixture leaks %q", leak)
 		}

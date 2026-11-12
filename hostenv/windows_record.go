@@ -179,6 +179,32 @@ func winIPExemptFields(path string) []string {
 	return []string{"DisplayName", "DisplayVersion", "ParentKeyName"} // Uninstall, x64, x86 and per user
 }
 
+// shortNames returns the 8.3 aliases Windows may give a profile folder
+// named n (C:\Users\RUNNER~1 for runneradmin): the first six usable
+// characters in upper case plus ~1 to ~4. Names that already fit 8.3
+// have none.
+func shortNames(n string) []string {
+	var b strings.Builder
+	for _, r := range strings.ToUpper(n) {
+		if r > ' ' && r < 0x7f && !strings.ContainsRune(`."*/:<>?\|+,;=[]`, r) {
+			b.WriteRune(r)
+		}
+	}
+	base := b.String()
+	if len(n) <= 8 && base == strings.ToUpper(n) {
+		return nil
+	}
+	base = base[:min(len(base), 6)]
+	if base == "" {
+		return nil
+	}
+	out := make([]string, 0, 4)
+	for i := 1; i <= 4; i++ {
+		out = append(out, fmt.Sprintf("%s~%d", base, i))
+	}
+	return out
+}
+
 // machineSIDRe matches the machine or domain part of an account SID. It
 // identifies the host, so fixtures keep only the RID.
 var machineSIDRe = regexp.MustCompile(`\bS-1-5-21-\d+-\d+-\d+\b`)
@@ -201,6 +227,7 @@ func winMaskPrep(entries []*entry) (out []string) {
 	defer func() {
 		for _, n := range out[:len(out):len(out)] {
 			out = append(out, strings.ToUpper(n), strings.ToLower(n))
+			out = append(out, shortNames(n)...)
 		}
 	}()
 	human := func(sid string) bool {
