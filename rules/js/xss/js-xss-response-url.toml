@@ -5,8 +5,8 @@ cwe = "CWE-79"
 severity = "medium"
 tier = "info"
 title = "Request value sent back as a link URL or inside a script"
-frameworks = ["express"]
-sources = ["req.query", "req.params", "req.body", "req.cookies", "req.headers"]
+frameworks = ["express", "nestjs", "nextjs", "koa", "fastify", "hapi"]
+sources = ["req.query", "req.params", "req.body", "req.cookies", "req.headers", "@Query(", "@Body(", "@Param(", "@Headers(", "^request.nextUrl", "^req.nextUrl", "^searchParams", "^request.json(", "^req.json(", "^request.text(", "^req.text(", "^request.formData(", "^req.formData(", "^formData.get(", "req.get(", "req.header(", "^headers().get(", "^cookies().get(", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload", "ctx.params", "request.params", "ctx.headers", "ctx.cookies.get(", "request.headers", "ctx.request.header", "ctx.request.headers", "ctx.get("]
 sinks = ["res.send(", "res.write(", "res.end("]
 sanitizers = ["encodeURIComponent(", "serialize(", "jsesc("]
 fix = "In an href or src accept only http(s) URLs (new URL(value) and a protocol check) or encode the value with encodeURIComponent() after a fixed path; inside <script> serialize it with a script-safe encoder, not with HTML escaping."
@@ -46,4 +46,31 @@ code = '''
 app.get("/widget", (req, res) => {
   res.send(`<script>var theme = ${serialize(req.query.theme)};</script>`);
 });
+'''
+
+[[samples]]
+kind = "vulnerable"
+dialect = "ts"
+note = "NestJS: a query value as a link"
+code = '''
+@Controller("go")
+export class GoController {
+  @Get()
+  link(@Query("to") to: string, @Res() res: Response) {
+    res.send(`<a href="${to}">continue</a>`);
+  }
+}
+'''
+
+[[samples]]
+kind = "safe"
+dialect = "ts"
+code = '''
+@Controller("go")
+export class GoController {
+  @Get()
+  link(@Query("to") to: string, @Res() res: Response) {
+    res.send(`<a href="/out?to=${encodeURIComponent(to)}">continue</a>`);
+  }
+}
 '''

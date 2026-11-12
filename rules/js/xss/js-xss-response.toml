@@ -5,17 +5,14 @@ cwe = "CWE-79"
 severity = "medium"
 tier = "info"
 title = "Request value sent back in an HTML response without escaping"
-frameworks = ["express"]
+frameworks = ["express", "nestjs", "nextjs", "koa", "fastify", "hapi"]
 # Headers by name in brackets (user-agent) and the referrer: req.headers.host is
 # the host-header rules' input
-sources = ["req.query", "req.params", "req.body", "req.cookies", "req.headers[", "req.headers.referer", "req.headers.referrer", "req.headers.origin"]
+sources = ["req.query", "req.params", "req.body", "req.cookies", "req.headers[", "req.headers.referer", "req.headers.referrer", "req.headers.origin", "@Query(", "@Body(", "@Param(", "@Headers(", "^request.nextUrl", "^req.nextUrl", "^searchParams", "^request.json(", "^req.json(", "^request.text(", "^req.text(", "^request.formData(", "^req.formData(", "^formData.get(", "req.get(", "req.header(", "^headers().get(", "^cookies().get(", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload", "ctx.params", "request.params", "ctx.headers[", "ctx.cookies.get(", "request.headers[", "ctx.request.header[", "ctx.request.headers[", "ctx.get("]
 sinks = ["res.send(", "res.write(", "res.end("]
 sanitizers = ["escapeHtml(", "escape(", "he.encode(", "he.escape(", "validator.escape(", "_.escape(", "DOMPurify.sanitize(", "sanitizeHtml(", "xss(", "encodeURIComponent("]
 fix = "Render with a template engine that escapes by default (res.render), send JSON with res.json(), or escape each value (escape-html, he.encode) before putting it into HTML."
 refs = ["CVE-2013-7370"]
-
-[[args]]
-context = ["html", "attr"]
 
 [[samples]]
 kind = "vulnerable"
@@ -55,6 +52,33 @@ app.get("/item", (req, res) => {
 
 [[samples]]
 kind = "vulnerable"
+dialect = "ts"
+note = "NestJS: a query value written into HTML"
+code = '''
+@Controller("search")
+export class SearchController {
+  @Get()
+  page(@Query("q") q: string, @Res() res: Response) {
+    res.send("<h1>Results for " + q + "</h1>");
+  }
+}
+'''
+
+[[samples]]
+kind = "safe"
+dialect = "ts"
+code = '''
+@Controller("search")
+export class SearchController {
+  @Get()
+  page(@Query("q") q: string, @Res() res: Response) {
+    res.send("<h1>Results for " + escapeHtml(q) + "</h1>");
+  }
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
 note = "the words data: and event: inside an HTML page do not make it a stream"
 code = '''
 app.get("/status", (req, res) => {
@@ -70,6 +94,9 @@ app.get("/back", (req, res) => {
   res.send(`<a href="/">home</a> <p>You came from ${req.headers.referer}</p><p>${req.headers["user-agent"]}</p>`);
 });
 '''
+
+[[args]]
+context = ["html", "attr"]
 
 [[samples]]
 kind = "vulnerable"
