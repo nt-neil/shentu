@@ -34,13 +34,7 @@ var appVulns = Tool{
 		roots := env.AppPaths
 		if a.Path != "" {
 			clean := filepath.Clean(a.Path)
-			inside := false
-			for _, r := range env.AppPaths {
-				if clean == r || strings.HasPrefix(clean, strings.TrimSuffix(r, "/")+"/") {
-					inside = true
-				}
-			}
-			if !inside {
+			if !insideAny(clean, env.AppPaths) {
 				return nil, fmt.Errorf("path is not inside the app paths: %s", strings.Join(env.AppPaths, ", "))
 			}
 			roots = []string{clean}

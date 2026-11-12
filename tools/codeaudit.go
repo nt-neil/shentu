@@ -132,7 +132,7 @@ func WebRoots() []string {
 			for _, re := range []*regexp.Regexp{nginxRoot, apacheRoot} {
 				for _, m := range re.FindAllSubmatch(b, -1) {
 					p := filepath.Clean(string(m[1]))
-					if strings.HasPrefix(p, "/") && !strings.Contains(p, "$") && !seen[p] {
+					if filepath.IsAbs(p) && !strings.Contains(p, "$") && !seen[p] {
 						seen[p] = true
 						out = append(out, p)
 					}
@@ -143,6 +143,10 @@ func WebRoots() []string {
 	sort.Strings(out)
 	return out
 }
+
+// depth counts path separators in the OS's own spelling ("\\" on Windows),
+// so auditMaxDepth holds there too.
+func depth(p string) int { return strings.Count(p, string(filepath.Separator)) }
 
 // served reports whether p is inside a folder the web server serves. Without any
 // server configuration, folders named like public/, html/ or www/ count as served.
@@ -155,7 +159,7 @@ func served(p string, webRoots []string) bool {
 	if dir == "/var/www" || strings.HasPrefix(dir, "/var/www/") {
 		dir = dir[len("/var/www"):]
 	}
-	for _, part := range strings.Split(dir, "/") {
+	for _, part := range strings.Split(filepath.ToSlash(dir), "/") {
 		if webDirNames[part] {
 			return true
 		}
@@ -623,7 +627,7 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 			walkCut = append(walkCut, UnfinishedFile{root, "walk"})
 			continue
 		}
-		base := strings.Count(filepath.Clean(root), "/")
+		base := depth(filepath.Clean(root))
 		filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 			if stop() {
 				walkCut = append(walkCut, UnfinishedFile{root, "walk"})
@@ -637,7 +641,7 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 				if name == ".git" && served(p, webRoots) {
 					add(finding("exposed", "critical", p, 0, exposedNames[1].detail, exposedNames[1].fix))
 				}
-				if skipDirs[name] || strings.Count(p, "/")-base > auditMaxDepth {
+				if skipDirs[name] || depth(p)-base > auditMaxDepth {
 					return filepath.SkipDir
 				}
 				return nil
