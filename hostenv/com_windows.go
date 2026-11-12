@@ -165,6 +165,14 @@ func hr(op string, r uintptr) error {
 // call invokes vtable slot i of the COM object obj. A nil object (a call
 // that reported success without an out-pointer) is E_POINTER, never a
 // dereference.
+//
+// Callers pass out-pointers as uintptr(unsafe.Pointer(&x)). Without
+// uintptrescapes x could stay on the goroutine's stack, the stack could
+// grow and move inside call (the append below), and COM would write to
+// the old copy: an "S_OK with a nil enumerator" (seen once on CI). With
+// it, as for syscall.SyscallN, such x live on the heap for the call.
+//
+//go:uintptrescapes
 func call(obj unsafe.Pointer, i int, args ...uintptr) uintptr {
 	if obj == nil {
 		return ePointer

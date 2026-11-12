@@ -14,6 +14,8 @@ import (
 	"testing"
 	"unicode/utf16"
 	"unsafe"
+
+	"golang.org/x/sys/windows"
 )
 
 // These run on the Windows CI runners only. They build real VARIANTs and
@@ -307,5 +309,44 @@ func TestVtableSlotsMatchSDK(t *testing.T) {
 		} else {
 			t.Logf("%-22s %2d %-14s %s", c.iface, c.slot, c.method, c.header)
 		}
+	}
+}
+
+// call must deliver an out-pointer's write to the variable even when the
+// stack grows inside call. A fake COM object writes through its argument;
+// calling it at many stack depths makes the growth fall inside call at
+// some depth. Without //go:uintptrescapes on call this loses writes.
+func TestCallOutPointerSurvivesStackGrowth(t *testing.T) {
+	move := windows.NewLazySystemDLL("kernel32.dll").NewProc("RtlMoveMemory")
+	method := windows.NewCallback(func(this, out uintptr) uintptr {
+		v := uint64(0xC0FFEE)
+		move.Call(out, uintptr(unsafe.Pointer(&v)), 8)
+		return 0
+	})
+	vtbl := [1]uintptr{method}
+	obj := struct{ vtbl *[1]uintptr }{&vtbl}
+	var deep func(n int) uint64
+	deep = func(n int) uint64 {
+		var pad [64]byte
+		pad[n%64] = byte(n)
+		if n == 0 {
+			var out uint64
+			call(unsafe.Pointer(&obj), 0, uintptr(unsafe.Pointer(&out)))
+			return out + uint64(pad[0]&0)
+		}
+		return deep(n-1) + uint64(pad[n%64]&0)
+	}
+	done := make(chan []int)
+	go func() { // a fresh goroutine: a small stack that grows as it deepens
+		var bad []int
+		for n := 0; n < 3000; n += 7 {
+			if got := deep(n); got != 0xC0FFEE {
+				bad = append(bad, n)
+			}
+		}
+		done <- bad
+	}()
+	if bad := <-done; len(bad) > 0 {
+		t.Errorf("COM writes lost at %d stack depths (first %d)", len(bad), bad[0])
 	}
 }
