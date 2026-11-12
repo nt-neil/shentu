@@ -23,15 +23,29 @@ type PatchFeed struct {
 	Repos      []string `json:"repos,omitempty"`       // alas 2: the amazon-linux-extras topics enabled (kernel-5.10, php8.2)
 	Upgrade    string   `json:"upgrade,omitempty"`     // the command that installs the fixes
 	VersionFmt string   `json:"version_fmt,omitempty"` // how OSV spells versions: "evr" (epoch:version-release) or "vr" (no epoch when 0)
+	NotQueried []string `json:"not_queried,omitempty"` // ecosystems the host may have that OSV does not carry, so their packages are not checked
 }
 
 // slesModules are the SLE 15 modules whose packages OSV lists under their
 // own ecosystem ("SUSE:Linux Enterprise Module for Basesystem 15 SP5").
+// The Python 3, HPC and Package Hub names were checked against OSV
+// (2026-11-13: python311, slurm and chromium have advisories there); a
+// module the host does not have only matches no package.
 var slesModules = []string{
 	"Linux Enterprise Server", "Linux Enterprise Module for Basesystem", "Linux Enterprise Module for Server Applications",
 	"Linux Enterprise Module for Development Tools", "Linux Enterprise Module for Web and Scripting",
 	"Linux Enterprise Module for Public Cloud", "Linux Enterprise Module for Containers", "Linux Enterprise Module for Legacy",
-	"Linux Enterprise Module for Desktop Applications",
+	"Linux Enterprise Module for Desktop Applications", "Linux Enterprise Module for Python 3",
+	"Linux Enterprise Module for HPC", "Package Hub",
+}
+
+// sledModules are where SLED 15's packages are in OSV: "Linux Enterprise
+// Desktop" itself is no OSV ecosystem, and the server modules do not apply.
+// Workstation Extension was checked (libreoffice has advisories there).
+var sledModules = []string{
+	"Linux Enterprise Module for Basesystem", "Linux Enterprise Module for Desktop Applications",
+	"Linux Enterprise Module for Development Tools", "Linux Enterprise Module for Python 3",
+	"Linux Enterprise Workstation Extension", "Package Hub",
 }
 
 // PatchFeedFor names the feed for a parsed os-release.
@@ -51,15 +65,26 @@ func PatchFeedFor(osr map[string]string) PatchFeed {
 		return PatchFeed{Kind: "osv", Ecosystems: []string{"openSUSE:Tumbleweed"}, Upgrade: "zypper dup", VersionFmt: "vr"}
 	case "sles", "sled", "sles_sap":
 		sp := slesRelease(ver)
-		var ecos []string
-		if major == "15" {
-			for _, m := range slesModules {
-				ecos = append(ecos, "SUSE:"+m+" "+sp)
+		f := PatchFeed{Kind: "osv", Upgrade: "zypper patch --category security", VersionFmt: "vr"}
+		mods := slesModules
+		switch {
+		case major != "15":
+			mods = []string{"Linux Enterprise Server"}
+			if id == "sled" {
+				mods = []string{"Linux Enterprise Desktop"}
 			}
-		} else {
-			ecos = []string{"SUSE:Linux Enterprise Server " + sp}
+		case id == "sled":
+			mods = sledModules
+			f.NotQueried = []string{"SUSE:Linux Enterprise Desktop " + sp + " (no such OSV ecosystem; its modules are queried)"}
+		case id == "sles_sap":
+			// The product carries the SAP packages; OSV has no "Module for SAP Applications".
+			mods = append(append([]string(nil), slesModules...), "Linux Enterprise Server for SAP Applications")
+			f.NotQueried = []string{"SUSE:Linux Enterprise Module for SAP Applications " + sp + " (no such OSV ecosystem)"}
 		}
-		return PatchFeed{Kind: "osv", Ecosystems: ecos, Upgrade: "zypper patch --category security", VersionFmt: "vr"}
+		for _, m := range mods {
+			f.Ecosystems = append(f.Ecosystems, "SUSE:"+m+" "+sp)
+		}
+		return f
 	case "amzn":
 		switch ver {
 		case "2":

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -65,6 +66,20 @@ func TestPatchFeedFor(t *testing.T) {
 	sles := PatchFeedFor(map[string]string{"ID": "sles", "VERSION_ID": "15.5"})
 	if len(sles.Ecosystems) < 5 || sles.Ecosystems[1] != "SUSE:Linux Enterprise Module for Basesystem 15 SP5" {
 		t.Errorf("sles %+v", sles)
+	}
+	for _, want := range []string{"SUSE:Linux Enterprise Module for Python 3 15 SP5", "SUSE:Linux Enterprise Module for HPC 15 SP5", "SUSE:Package Hub 15 SP5"} {
+		if !slices.Contains(sles.Ecosystems, want) {
+			t.Errorf("sles lacks %s", want)
+		}
+	}
+	sled := PatchFeedFor(map[string]string{"ID": "sled", "VERSION_ID": "15.6"})
+	if !slices.Contains(sled.Ecosystems, "SUSE:Linux Enterprise Workstation Extension 15 SP6") || slices.Contains(sled.Ecosystems, "SUSE:Linux Enterprise Module for Server Applications 15 SP6") ||
+		slices.Contains(sled.Ecosystems, "SUSE:Linux Enterprise Server 15 SP6") || len(sled.NotQueried) != 1 {
+		t.Errorf("sled %+v", sled)
+	}
+	sap := PatchFeedFor(map[string]string{"ID": "sles_sap", "VERSION_ID": "15.6"})
+	if !slices.Contains(sap.Ecosystems, "SUSE:Linux Enterprise Server for SAP Applications 15 SP6") || len(sap.NotQueried) != 1 || !strings.Contains(sap.NotQueried[0], "Module for SAP Applications") {
+		t.Errorf("sles_sap %+v", sap)
 	}
 	if got := PatchFeedFor(map[string]string{"ID": "sles", "VERSION_ID": "12.5"}).Ecosystems; !reflect.DeepEqual(got, []string{"SUSE:Linux Enterprise Server 12 SP5"}) {
 		t.Errorf("sles 12 %v", got)

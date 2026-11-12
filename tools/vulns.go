@@ -120,6 +120,9 @@ func PackageVulns(ctx context.Context, hc *http.Client, detailFor string) (map[s
 	if partial != "" {
 		out["partial"] = partial
 	}
+	if len(feed.NotQueried) > 0 {
+		out["ecosystems_not_queried"] = feed.NotQueried
+	}
 	hint := feed.Upgrade
 	if hint == "" {
 		hint = upgradeHint(eco)
