@@ -4,6 +4,7 @@ package hostenv
 // a link in a runlevel folder; /etc/local.d/*.start runs at boot.
 
 import (
+	"path"
 	"sort"
 	"strings"
 )
@@ -14,6 +15,16 @@ var OpenRCRunlevels = []string{"sysinit", "boot", "default", "nonetwork", "shutd
 
 // openRCScriptDirs hold service scripts: the system's, then the local ones.
 var openRCScriptDirs = []string{"/etc/init.d", "/usr/local/etc/init.d"}
+
+// isOpenRCScript: the files whose package apk's database is asked about.
+func isOpenRCScript(p string) bool {
+	for _, d := range openRCScriptDirs {
+		if strings.HasPrefix(p, d+"/") {
+			return true
+		}
+	}
+	return false
+}
 
 // IsOpenRC reports an OpenRC host: runlevel folders and no systemd.
 func IsOpenRC(src Source) bool {
@@ -72,7 +83,7 @@ func (LinuxCollector) OpenRCServices(src Source, owned map[string]bool) (Obs[[]S
 		for _, n := range read("/etc/runlevels/" + rl) {
 			entry := "/etc/runlevels/" + rl + "/" + n
 			switch {
-			case contains(levels, n): // a stacked runlevel: its services run here too
+			case stackedRunlevel(src, entry, n): // its services run here too
 				items = append(items, PersistenceItem{Kind: "openrc", Location: entry, Detail: "runlevel " + rl + " stacks runlevel " + n})
 			case scripts[n] == "":
 				d := "enabled in " + rl + ", but no script " + n + " in " + strings.Join(openRCScriptDirs, " or ")
@@ -114,6 +125,26 @@ func (LinuxCollector) OpenRCServices(src Source, owned map[string]bool) (Obs[[]S
 		return Partial(svcs, reason, "not fully read: "+strings.Join(unread, ", ")), items
 	}
 	return OK(svcs), items
+}
+
+// stackedRunlevel: entry (/etc/runlevels/<rl>/<n>) stacks runlevel n when it
+// is, or links to, the folder /etc/runlevels/<n>. A script of the same name
+// as a runlevel is a script, so it cannot pass for a stack and escape the
+// "no package installed this script" mark.
+func stackedRunlevel(src Source, entry, n string) bool {
+	dir := "/etc/runlevels/" + n
+	t, err := src.Readlink(entry)
+	if err != nil {
+		return false // a stack is made with a link (rc-update -s)
+	}
+	if !strings.HasPrefix(t, "/") {
+		t = path.Join(path.Dir(entry), t)
+	}
+	if path.Clean(t) != dir {
+		return false
+	}
+	_, err = src.ReadDir(dir)
+	return err == nil
 }
 
 // InittabEntries are busybox init's lines "id:runlevels:action:process":

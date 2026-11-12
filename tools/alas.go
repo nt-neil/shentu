@@ -22,6 +22,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/nt-neil/shentu/hostenv"
 )
@@ -32,7 +33,13 @@ type alasHit struct {
 	IDs     []string `json:"ids"`
 }
 
-var updateinfoHref = regexp.MustCompile(`href="([^"]*updateinfo[^"]*)"`)
+var (
+	updateinfoHref = regexp.MustCompile(`href="([^"]*updateinfo[^"]*)"`)
+	// updateinfoData is repomd's entry for updateinfo; its checksum is the
+	// sha256 of the file as served (compressed).
+	updateinfoData   = regexp.MustCompile(`(?s)<data type="updateinfo">.*?</data>`)
+	updateinfoSHA256 = regexp.MustCompile(`<checksum type="sha256">([0-9a-fA-F]{64})</checksum>`)
+)
 
 // alasMirrorList is hostenv.ALASMirrorList (and alasExtrasMirrorList the
 // extras one), and mirrorPrefixes what a mirror they name may start with;
@@ -60,7 +67,12 @@ var alasCacheDir = func() string {
 // on Amazon Linux 2, each amazon-linux-extras topic enabled (kernel-5.10,
 // php8.2). Every installed version of a name counts (several kernels), and
 // a fix counts for the architecture it was built for.
-func alasAffected(ctx context.Context, hc *http.Client, feed hostenv.PatchFeed, arch string, items []hostenv.Package) ([]alasHit, map[string]hostenv.Advisory, error) {
+//
+// A topic that fails (a 404, a bad checksum) leaves the core and the other
+// topics checked: it is named in failed with why, and the answer is
+// partial. A core that fails is an error.
+func alasAffected(ctx context.Context, hc *http.Client, feed hostenv.PatchFeed, arch string, items []hostenv.Package) (hits []alasHit, advisories map[string]hostenv.Advisory, failed []string, err error) {
+	pruneALASTemp()
 	mirrors := []string{alasMirrorList(feed.Release, arch)}
 	if feed.Release == "2" {
 		for _, topic := range feed.Repos {
@@ -75,15 +87,16 @@ func alasAffected(ctx context.Context, hc *http.Client, feed hostenv.PatchFeed, 
 		installed[p.Name], names[p.Name] = append(installed[p.Name], p), true
 	}
 	advs := map[string]hostenv.Advisory{}
-	hits := map[string]*alasHit{} // name and version
+	byKey := map[string]*alasHit{} // name and version
 	used := map[string]bool{}
 	for i, ml := range mirrors {
 		r, cached, err := updateinfo(ctx, hc, ml)
 		if err != nil {
 			if i == 0 {
-				return nil, nil, err
+				return nil, nil, nil, err
 			}
-			return nil, nil, fmt.Errorf("extras %s: %w", feed.Repos[i-1], err)
+			failed = append(failed, extrasTopicOf(ml, feed.Repos)+": "+err.Error())
+			continue
 		}
 		used[cached] = true
 		err = hostenv.ScanUpdateInfo(r, names, func(a hostenv.Advisory) {
@@ -101,10 +114,10 @@ func alasAffected(ctx context.Context, hc *http.Client, feed hostenv.PatchFeed, 
 					}
 					advs[a.ID] = a
 					k := name + "\x00" + p.Version
-					h := hits[k]
+					h := byKey[k]
 					if h == nil {
 						h = &alasHit{Package: name, Version: p.Version}
-						hits[k] = h
+						byKey[k] = h
 					}
 					if !slices.Contains(h.IDs, a.ID) {
 						h.IDs = append(h.IDs, a.ID)
@@ -113,13 +126,16 @@ func alasAffected(ctx context.Context, hc *http.Client, feed hostenv.PatchFeed, 
 			}
 		})
 		r.Close()
+		if err != nil && i == 0 {
+			return nil, nil, nil, fmt.Errorf("updateinfo: %w", err)
+		}
 		if err != nil {
-			return nil, nil, fmt.Errorf("updateinfo: %w", err)
+			failed = append(failed, extrasTopicOf(ml, feed.Repos)+": updateinfo: "+err.Error())
 		}
 	}
 	pruneALASCache(used)
 	var out []alasHit
-	for _, h := range hits {
+	for _, h := range byKey {
 		out = append(out, *h)
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -128,7 +144,17 @@ func alasAffected(ctx context.Context, hc *http.Client, feed hostenv.PatchFeed, 
 		}
 		return hostenv.CompareEVR(out[i].Version, out[j].Version) < 0
 	})
-	return out, advs, nil
+	return out, advs, failed, nil
+}
+
+// extrasTopicOf names the topic whose mirror list ml is.
+func extrasTopicOf(ml string, topics []string) string {
+	for _, t := range topics {
+		if strings.Contains(ml, "/"+t+"/") {
+			return "extras topic " + t
+		}
+	}
+	return "extras " + ml
 }
 
 // updateinfo opens a repository's updateinfo (unpacked), from the cache
@@ -148,12 +174,21 @@ func updateinfo(ctx context.Context, hc *http.Client, mirrorList string) (io.Rea
 	if m == nil {
 		return nil, "", errors.New("the repository lists no updateinfo")
 	}
+	want := "" // the checksum repomd gives, when it gives one
+	if d := updateinfoData.Find(repomd); d != nil {
+		if c := updateinfoSHA256.FindSubmatch(d); c != nil {
+			want = strings.ToLower(string(c[1]))
+		}
+	}
 	url := base + string(m[1])
 	sum := sha256.Sum256([]byte(url))
 	cached := ""
 	var f io.ReadCloser
 	if dir := alasCacheDir(); dir != "" {
 		cached = filepath.Join(dir, "alas-"+hex.EncodeToString(sum[:8])+path.Ext(string(m[1])))
+		if want != "" && fileSHA256(cached) != want {
+			os.Remove(cached) // cut short or damaged: fetched again below
+		}
 		if c, err := os.Open(cached); err == nil {
 			f = c
 		}
@@ -165,11 +200,16 @@ func updateinfo(ctx context.Context, hc *http.Client, mirrorList string) (io.Rea
 		}
 		f = body
 		if cached != "" {
-			if saved, err := saveCache(cached, body); err == nil {
-				f = saved
-			} else {
+			saved, err := saveCache(cached, body)
+			if err != nil {
 				return nil, "", err
 			}
+			if want != "" && fileSHA256(cached) != want {
+				saved.Close()
+				os.Remove(cached)
+				return nil, "", errors.New("updateinfo does not match the checksum repomd gives")
+			}
+			f = saved
 		}
 	}
 	if !strings.HasSuffix(string(m[1]), ".gz") {
@@ -184,6 +224,20 @@ func updateinfo(ctx context.Context, hc *http.Client, mirrorList string) (io.Rea
 		io.Reader
 		io.Closer
 	}{io.LimitReader(gz, 2<<30), f}, cached, nil
+}
+
+// fileSHA256 is the hex sha256 of a file, "" when it cannot be read.
+func fileSHA256(p string) string {
+	f, err := os.Open(p)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return ""
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 // saveCache writes body (at most 512 MiB) to path through a temporary file
@@ -224,6 +278,21 @@ func pruneALASCache(used map[string]bool) {
 	old, _ := filepath.Glob(filepath.Join(dir, "alas-*"))
 	for _, f := range old {
 		if !used[f] {
+			os.Remove(f)
+		}
+	}
+}
+
+// pruneALASTemp removes downloads left half way by an earlier run (a
+// temporary file older than an hour: none of this run's).
+func pruneALASTemp() {
+	dir := alasCacheDir()
+	if dir == "" {
+		return
+	}
+	tmps, _ := filepath.Glob(filepath.Join(dir, ".alas-*"))
+	for _, f := range tmps {
+		if st, err := os.Stat(f); err == nil && time.Since(st.ModTime()) > time.Hour {
 			os.Remove(f)
 		}
 	}

@@ -221,6 +221,46 @@ const (
 	MaxApkDBBytes  = 128 << 20
 )
 
+// ScanApkDB streams apk's database once, line by line: the packages, and
+// for each file keep asks about (nil: none) whether a package installed it.
+// Only those files are kept, so memory does not grow with the database.
+func ScanApkDB(src Source, keep func(path string) bool) ([]Package, map[string]bool, error) {
+	var out []Package
+	owned := map[string]bool{}
+	var p Package
+	dir := ""
+	flush := func() {
+		if p.Name != "" {
+			out = append(out, p)
+		}
+		p, dir = Package{}, ""
+	}
+	err := scanFile(src, ApkInstalledDB, false, func(l string) { // names and versions: nothing to mask
+		switch {
+		case l == "":
+			flush()
+		case strings.HasPrefix(l, "P:"):
+			p.Name = l[2:]
+		case strings.HasPrefix(l, "V:"):
+			p.Version = l[2:]
+		case strings.HasPrefix(l, "A:"):
+			p.Arch = l[2:]
+		case strings.HasPrefix(l, "o:"):
+			if l[2:] != p.Name {
+				p.Source = l[2:]
+			}
+		case strings.HasPrefix(l, "F:"):
+			dir = l[2:]
+		case strings.HasPrefix(l, "R:") && keep != nil:
+			if f := "/" + path.Join(dir, l[2:]); keep(f) {
+				owned[f] = true
+			}
+		}
+	})
+	flush()
+	return out, owned, err
+}
+
 // ParseApkInstalled reads /lib/apk/db/installed.
 func ParseApkInstalled(b []byte) []Package {
 	var out []Package

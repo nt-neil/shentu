@@ -45,3 +45,31 @@ func TestOpenRCMore(t *testing.T) {
 		}
 	}
 }
+
+// N2-7: a script named like a runlevel, linked into one, is a script: it
+// gets the "no package installed" mark, not a pass as a stacked runlevel.
+func TestOpenRCScriptNamedLikeRunlevel(t *testing.T) {
+	h := newFake(true)
+	h.files["/etc/init.d/sshd"] = "#!/sbin/openrc-run\n"
+	h.links["/etc/runlevels/default/sshd"] = "/etc/init.d/sshd"
+	h.files["/etc/init.d/default"] = "#!/sbin/openrc-run\n"             // planted, named like a runlevel
+	h.links["/etc/runlevels/boot/default"] = "/etc/init.d/default"      // enabled at boot
+	h.links["/etc/runlevels/office/default"] = "/etc/runlevels/default" // a real stack
+	_, items := LinuxCollector{}.OpenRCServices(h, map[string]bool{"/etc/init.d/sshd": true})
+	var got []string
+	for _, it := range items {
+		got = append(got, it.Location+" "+it.Detail)
+	}
+	all := strings.Join(got, "\n")
+	for _, want := range []string{
+		"/etc/init.d/default enabled in boot; no package installed this script",
+		"/etc/runlevels/office/default runlevel office stacks runlevel default",
+	} {
+		if !strings.Contains(all, want) {
+			t.Errorf("missing %q in:\n%s", want, all)
+		}
+	}
+	if strings.Contains(all, "boot stacks") {
+		t.Errorf("the script passed as a stack:\n%s", all)
+	}
+}

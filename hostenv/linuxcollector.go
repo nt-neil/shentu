@@ -40,7 +40,8 @@ func (c LinuxCollector) Collect(ctx context.Context, src Source) *Facts {
 
 	var osr map[string]string
 	f.Platform, osr = c.Platform(src)
-	f.Packages = c.Packages(ctx, src, osr)
+	var apkOwned map[string]bool // which OpenRC scripts apk installed (Alpine)
+	f.Packages, apkOwned = c.packages(ctx, src, osr)
 	pw, accounts := c.Accounts(src)
 	f.Accounts = accounts
 	procs, sockOwner := c.Processes(src, pw)
@@ -65,11 +66,7 @@ func (c LinuxCollector) Collect(ctx context.Context, src Source) *Facts {
 	}
 	f.Persistence = c.persistence(ctx, src, f.SSHKeys)
 	if IsOpenRC(src) {
-		var owned map[string]bool
-		if b, err := ReadFileMax(src, ApkInstalledDB, MaxApkDBBytes); err == nil {
-			owned = ApkOwnedFiles(b)
-		}
-		svcs, items := c.OpenRCServices(src, owned)
+		svcs, items := c.OpenRCServices(src, apkOwned)
 		f.Services = svcs
 		if f.Persistence.Known() {
 			f.Persistence.Value = append(f.Persistence.Value, items...)
@@ -132,10 +129,18 @@ func inContainer(src Source) bool {
 
 // Packages lists installed packages with the distribution's own tool:
 // dpkg-query, rpm -qa, or the apk database. osr is the parsed os-release.
-func (LinuxCollector) Packages(ctx context.Context, src Source, osr map[string]string) Obs[PackageSet] {
+func (c LinuxCollector) Packages(ctx context.Context, src Source, osr map[string]string) Obs[PackageSet] {
+	set, _ := c.packages(ctx, src, osr)
+	return set
+}
+
+// packages is Packages, and on Alpine which OpenRC scripts apk installed
+// (nil: unknown), from the same single pass over apk's database.
+func (LinuxCollector) packages(ctx context.Context, src Source, osr map[string]string) (Obs[PackageSet], map[string]bool) {
 	if osr == nil {
-		return Unknown[PackageSet](ReasonNotCollected, "no os-release, distribution unknown")
+		return Unknown[PackageSet](ReasonNotCollected, "no os-release, distribution unknown"), nil
 	}
+	var apkOwned map[string]bool
 	feed := PatchFeedFor(osr)
 	if feed.Kind == "alas" && feed.Release == "2" {
 		if b, err := src.ReadFile(AL2ExtrasRepo); err == nil {
@@ -162,21 +167,21 @@ func (LinuxCollector) Packages(ctx context.Context, src Source, osr map[string]s
 		}
 	case "alpine":
 		set.Manager = "apk"
-		var b []byte
-		if b, err = ReadFileMax(src, ApkInstalledDB, MaxApkDBBytes); err == nil {
-			items = ParseApkInstalled(b)
+		var owned map[string]bool
+		if items, owned, err = ScanApkDB(src, isOpenRCScript); err == nil {
+			apkOwned = owned
 		}
 	default:
-		return Unknown[PackageSet](ReasonUnsupported, "package manager for "+osr["ID"]+" not supported yet")
+		return Unknown[PackageSet](ReasonUnsupported, "package manager for "+osr["ID"]+" not supported yet"), nil
 	}
 	switch {
 	case err != nil:
-		return unknownFrom[PackageSet](set.Manager, err)
+		return unknownFrom[PackageSet](set.Manager, err), nil
 	case res.ExitCode != 0:
-		return Unknown[PackageSet](ReasonCommandFailed, fmt.Sprintf("%s exit %d: %s", set.Manager, res.ExitCode, firstLine(res.Stderr)))
+		return Unknown[PackageSet](ReasonCommandFailed, fmt.Sprintf("%s exit %d: %s", set.Manager, res.ExitCode, firstLine(res.Stderr))), nil
 	}
 	set.Items = items
-	return OK(set)
+	return OK(set), apkOwned
 }
 
 func firstLine(s string) string {

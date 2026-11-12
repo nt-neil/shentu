@@ -4,9 +4,13 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -130,7 +134,7 @@ func TestALASExtrasVersionsArch(t *testing.T) {
 		{Name: "openssl", Version: "1:1.0.2k-19.amzn2.0.19", Arch: "aarch64"}, // the fix is for x86_64 only
 	}
 	for run := 0; run < 2; run++ {
-		hits, _, err := alasAffected(context.Background(), srv.Client(), feed, "aarch64", items)
+		hits, _, _, err := alasAffected(context.Background(), srv.Client(), feed, "aarch64", items)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -149,5 +153,94 @@ func TestPackageVulnsAmazonLinux1(t *testing.T) {
 	out, err := PackageVulns(context.Background(), http.DefaultClient, "")
 	if err == nil || !strings.Contains(err.Error(), "cannot tell") || out != nil {
 		t.Errorf("Amazon Linux 1: %v %v", out, err)
+	}
+}
+
+// fakeALAS serves core and topics; each topic's updateinfo is the gzipped
+// XML given, and repomd carries its sha256 unless noSum.
+func fakeALAS(t *testing.T, topics map[string]string, noSum bool) (*httptest.Server, *int) {
+	files := map[string][]byte{}
+	for topic, x := range topics {
+		var b bytes.Buffer
+		zw := gzip.NewWriter(&b)
+		zw.Write([]byte(x))
+		zw.Close()
+		files[topic] = b.Bytes()
+	}
+	downloads := 0
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		parts := strings.SplitN(strings.TrimPrefix(r.URL.Path, "/"), "/", 2)
+		body, ok := files[parts[0]]
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		switch parts[1] {
+		case "mirror.list":
+			w.Write([]byte(srv.URL + "/" + parts[0] + "/repo/\n"))
+		case "repo/repodata/repomd.xml":
+			sum := sha256.Sum256(body)
+			ck := `<checksum type="sha256">` + hex.EncodeToString(sum[:]) + `</checksum>`
+			if noSum {
+				ck = ""
+			}
+			w.Write([]byte(`<repomd><data type="updateinfo">` + ck + `<location href="repodata/updateinfo.xml.gz"/></data></repomd>`))
+		case "repo/repodata/updateinfo.xml.gz":
+			downloads++
+			w.Write(body)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	oldM, oldE, oldP, oldC := alasMirrorList, alasExtrasMirrorList, mirrorPrefixes, alasCacheDir
+	t.Cleanup(func() { alasMirrorList, alasExtrasMirrorList, mirrorPrefixes, alasCacheDir = oldM, oldE, oldP, oldC })
+	cache := t.TempDir()
+	alasCacheDir = func() string { return cache }
+	mirrorPrefixes = []string{srv.URL + "/"}
+	alasMirrorList = func(string, string) string { return srv.URL + "/core/mirror.list" }
+	alasExtrasMirrorList = func(topic, _ string) string { return srv.URL + "/" + topic + "/mirror.list" }
+	return srv, &downloads
+}
+
+const kernelFix = `<updates><update type="security"><id>ALAS2KERNEL-5.10-2025-9</id><pkglist><collection>
+<package name="kernel" version="5.10.200" release="1.amzn2" epoch="0" arch="aarch64"/></collection></pkglist></update></updates>`
+
+// N2-3: a cached updateinfo that does not match repomd's checksum (cut
+// short) is fetched again.
+func TestALASCacheChecksum(t *testing.T) {
+	srv, downloads := fakeALAS(t, map[string]string{"core": "<updates/>", "kernel-5.10": kernelFix}, false)
+	feed := hostenv.PatchFeed{Kind: "alas", Release: "2", Repos: []string{"kernel-5.10"}}
+	items := []hostenv.Package{{Name: "kernel", Version: "0:5.10.199-1.amzn2", Arch: "aarch64"}}
+	if hits, _, _, err := alasAffected(context.Background(), srv.Client(), feed, "aarch64", items); err != nil || len(hits) != 1 {
+		t.Fatalf("first run: %+v %v", hits, err)
+	}
+	cached, _ := filepath.Glob(filepath.Join(alasCacheDir(), "alas-*.gz"))
+	if len(cached) != 2 {
+		t.Fatalf("cache %v", cached)
+	}
+	for _, f := range cached {
+		b, _ := os.ReadFile(f)
+		os.WriteFile(f, b[:len(b)/2], 0o600) // cut short
+	}
+	before := *downloads
+	if hits, _, _, err := alasAffected(context.Background(), srv.Client(), feed, "aarch64", items); err != nil || len(hits) != 1 {
+		t.Errorf("after a damaged cache: %+v %v", hits, err)
+	}
+	if *downloads-before != 2 {
+		t.Errorf("damaged cache files fetched %d times, want 2", *downloads-before)
+	}
+}
+
+// N2-4: one topic failing (404) keeps the core's and the other topics'
+// results, and says which topic was not checked.
+func TestALASTopicFails(t *testing.T) {
+	srv, _ := fakeALAS(t, map[string]string{"core": "<updates/>", "kernel-5.10": kernelFix}, false)
+	feed := hostenv.PatchFeed{Kind: "alas", Release: "2", Repos: []string{"gone", "kernel-5.10"}}
+	items := []hostenv.Package{{Name: "kernel", Version: "0:5.10.199-1.amzn2", Arch: "aarch64"}}
+	hits, _, failed, err := alasAffected(context.Background(), srv.Client(), feed, "aarch64", items)
+	if err != nil || len(hits) != 1 || len(failed) != 1 || !strings.Contains(failed[0], "extras topic gone") {
+		t.Errorf("hits %+v failed %v err %v", hits, failed, err)
 	}
 }

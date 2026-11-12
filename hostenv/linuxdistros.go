@@ -125,8 +125,8 @@ func ParseAL2Extras(b []byte) []string {
 			if topic == name { // not an extras section
 				topic = ""
 			}
-		case strings.HasPrefix(l, "enabled"):
-			if _, v, ok := strings.Cut(l, "="); ok {
+		default: // "enabled=1" exactly: enabled_metadata and the like are other keys
+			if k, v, ok := strings.Cut(l, "="); ok && strings.TrimSpace(k) == "enabled" {
 				enabled = strings.TrimSpace(v) == "1"
 			}
 		}

@@ -50,11 +50,15 @@ func PackageVulns(ctx context.Context, hc *http.Client, detailFor string) (map[s
 	}
 	var found []affected
 	var advisories map[string]hostenv.Advisory // ALAS id -> advisory (Amazon Linux)
+	partial := ""                              // what could not be checked
 	total := 0
 	switch feed.Kind {
 	case "alas":
 		plat, _ := hostPlatform()
-		hits, advs, err := alasAffected(ctx, hc, feed, hostenv.RPMArch(plat.Arch), items)
+		hits, advs, failed, err := alasAffected(ctx, hc, feed, hostenv.RPMArch(plat.Arch), items)
+		if len(failed) > 0 {
+			partial = "not checked, so their packages may have fixes pending: " + strings.Join(failed, "; ")
+		}
 		if err != nil {
 			return nil, fmt.Errorf("Amazon Linux security advisories (ALAS) unavailable (is the server online?): %w", err)
 		}
@@ -110,6 +114,9 @@ func PackageVulns(ctx context.Context, hc *http.Client, detailFor string) (map[s
 		}
 	}
 	out := map[string]any{"ecosystem": eco, "packages_checked": len(pkgs), "affected_packages": len(found), "total_vulns": total}
+	if partial != "" {
+		out["partial"] = partial
+	}
 	hint := feed.Upgrade
 	if hint == "" {
 		hint = upgradeHint(eco)

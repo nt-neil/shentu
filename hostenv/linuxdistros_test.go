@@ -194,6 +194,7 @@ func TestRPMDistros(t *testing.T) {
 // N15: amazon-linux-extras topics, and Amazon Linux 1 without a feed.
 func TestAL2Extras(t *testing.T) {
 	repo := "[amzn2extra-docker]\nenabled = 1\nmirrorlist=x\n\n[amzn2extra-kernel-5.10]\nenabled=1\n[amzn2extra-php8.2]\nenabled = 0\n" +
+		"[amzn2extra-nginx1]\nenabled=0\nenabled_metadata=1\n" +
 		"[amzn2extra-bad/../x]\nenabled=1\n[amzn2-core]\nenabled=1\n"
 	if got := ParseAL2Extras([]byte(repo)); !reflect.DeepEqual(got, []string{"docker", "kernel-5.10"}) {
 		t.Errorf("topics %v", got)
