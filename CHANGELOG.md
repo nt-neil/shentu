@@ -12,7 +12,8 @@ Chinese for the zh-TW pages; keep the two in step.
   journald itself, so a local user cannot forge them. The text logs (`auth.log`, `secure`)
   are read when journald is missing, times out (60 s), or has no sshd entries; anyone on the
   host can write an sshd line to them with `logger`, so `auth_events` is then partial with
-  the new reason `unverified_source`, and a brute-force finding carries a note saying so.
+  the new reason `unverified_source`, and brute-force findings and patrol SSH alerts carry a
+  note saying so.
   A journal that hides the system's entries from a non-root user is no longer reported as
   "no failed logins".
 

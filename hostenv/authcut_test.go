@@ -33,7 +33,7 @@ func TestAuthLogCutShortCountsOnce(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "auth.log"), []byte(line+"\n"+strings.Repeat("x", MaxLineBytes+1)+"\n"+line+"\n"), 0o600)
 	src := &journalToo{Live: &Live{Remap: map[string]string{"/var/log": dir}}}
 	f := LinuxCollector{}.AuthEvents(context.Background(), src, now, []string{"/var/log/auth.log"})
-	if !src.called || f.Status != StatusPartial || f.Reason != ReasonTruncated || f.Value.FailedBySrc["203.0.113.7"] != 1 || !strings.Contains(f.Detail, "unverified") {
+	if !src.called || f.Status != StatusPartial || f.Reason != ReasonUnverified || f.Value.FailedBySrc["203.0.113.7"] != 1 || !strings.Contains(f.Detail, "cut short") {
 		t.Errorf("journald read %v, %s %s %q %v", src.called, f.Status, f.Reason, f.Detail, f.Value.FailedBySrc)
 	}
 	_, _, err := LinuxCollector{}.ScanAuthLogs(context.Background(), src, []string{"/var/log/auth.log"}, now.Add(-24*time.Hour), func() func(string) { return func(string) {} })

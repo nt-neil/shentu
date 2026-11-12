@@ -421,6 +421,8 @@ func (c LinuxCollector) AuthEvents(ctx context.Context, src Source, at time.Time
 	}
 	if source != "" && !strings.HasPrefix(source, "none") {
 		switch {
+		case errors.Is(err, ErrTruncated) && !verified: // a forgeable source says so first
+			return Partial(ev, ReasonUnverified, "from "+source+": "+err.Error())
 		case errors.Is(err, ErrTruncated):
 			return Partial(ev, ReasonTruncated, "from "+source+": "+err.Error())
 		case errors.Is(err, ErrTimeout), errors.Is(err, context.DeadlineExceeded):
