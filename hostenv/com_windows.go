@@ -35,6 +35,7 @@ import (
 	"math"
 	"runtime"
 	"syscall"
+	"time"
 	"unicode/utf16"
 	"unsafe"
 
@@ -88,9 +89,12 @@ const (
 	wbemEInvalidQuery       = 0x80041017
 	eAccessDenied           = 0x80070005
 	ePointer                = 0x80004003
-	maxWMIRows              = 10000
-	maxVariantArray         = 10000
-	maxVariantString        = 64 << 10
+	maxWMIRows              = WMIRowLimit
+	// WBEM_FLAG_CONNECT_USE_MAX_WAIT: ConnectServer gives up after two
+	// minutes instead of waiting indefinitely.
+	wbemFlagConnectUseMaxWait = 0x80
+	maxVariantArray           = 10000
+	maxVariantString          = 64 << 10
 )
 
 // Vtable slots (wbemcli.h). IUnknown is 0-2 everywhere.
@@ -161,6 +165,10 @@ func hr(op string, r uintptr) error {
 	}
 	return &hresultErr{op: op, hr: uint32(r)}
 }
+
+// comWait bounds one WMI query or firewall read as a whole (a variable for
+// tests).
+var comWait = 60 * time.Second
 
 // call invokes vtable slot i of the COM object obj. A nil object (a call
 // that reported success without an out-pointer) is E_POINTER, never a
@@ -233,7 +241,14 @@ func (l *Live) WMI(namespace, query string, props []string) ([]map[string]any, e
 		rows, err := execWQL(namespace, query, props)
 		ch <- result{rows, err}
 	}()
-	r := <-ch
+	var r result
+	select {
+	case r = <-ch:
+	case <-time.After(comWait):
+		// A hung WMI provider must not stall the collection: the call is
+		// abandoned (its goroutine finishes or not) and the fact is partial.
+		r = result{nil, ErrTimeout}
+	}
 	if r.err != nil {
 		return r.rows, &fs.PathError{Op: "WMI", Path: namespace + ": " + query, Err: r.err}
 	}
@@ -282,7 +297,7 @@ func execWQL(namespace, query string, props []string) ([]map[string]any, error) 
 	}
 	defer freeBSTR(ns)
 	var services unsafe.Pointer
-	if err := hr("ConnectServer", call(locator, vtLocatorConnectServer, ns, 0, 0, 0, 0, 0, 0, uintptr(unsafe.Pointer(&services)))); err != nil {
+	if err := hr("ConnectServer", call(locator, vtLocatorConnectServer, ns, 0, 0, 0, wbemFlagConnectUseMaxWait, 0, 0, uintptr(unsafe.Pointer(&services)))); err != nil {
 		return nil, err
 	}
 	defer release(services)
@@ -524,7 +539,12 @@ func (l *Live) FirewallPolicy() (WinFirewallPolicy, error) {
 		pol, err := firewallPolicy()
 		ch <- result{pol, err}
 	}()
-	r := <-ch
+	var r result
+	select {
+	case r = <-ch:
+	case <-time.After(comWait):
+		r = result{WinFirewallPolicy{}, ErrTimeout}
+	}
 	if r.err != nil {
 		return r.pol, &fs.PathError{Op: "INetFwPolicy2", Path: "HNetCfg.FwPolicy2", Err: r.err}
 	}

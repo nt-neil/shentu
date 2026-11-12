@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -32,6 +33,7 @@ type fakeWin struct {
 	dirList map[string][]string         // Windows directory listings
 	wmi     map[string][]map[string]any // by namespace + "|" + query
 	wmiNS   map[string]bool             // namespaces that exist
+	wmiErr  map[string]error            // by namespace + "|" + query: returned with the rows
 	fw      *WinFirewallPolicy          // nil: INetFwPolicy2 unavailable
 }
 
@@ -235,7 +237,7 @@ func (w *fakeWin) WMI(ns, q string, _ []string) ([]map[string]any, error) {
 	if !ok && !w.wmiNS[ns] {
 		return nil, &fs.PathError{Op: "WMI", Path: ns, Err: fs.ErrNotExist}
 	}
-	return rows, nil
+	return rows, w.wmiErr[ns+"|"+q]
 }
 
 // dirs registers a Windows directory listing.
@@ -850,5 +852,34 @@ func TestMaskMachineSIDsUnderscore(t *testing.T) {
 			!strings.Contains(got, "S-1-5-21-1000000000-1000000000-1000000000-") {
 			t.Errorf("%q -> %q", in, got)
 		}
+	}
+}
+
+// N11, N12: WMI text is masked as read; a query over the row limit keeps
+// its rows, marks the fact partial and adds a possibly-flooded item.
+func TestWMISubscriptionsMaskedAndFlooded(t *testing.T) {
+	w := weakServer()
+	w.wmiErr = map[string]error{}
+	ns := NamespaceSubscription + "|"
+	w.wmi[ns+qWMIFilters.query][0]["Query"] = "SELECT * FROM X WHERE password='hunter22'"
+	w.wmi[ns+qWMIScript.query] = []map[string]any{{"Name": "S", "ScriptingEngine": "VBScript", "ScriptText": "pass = \"token=s3cr3t-value-xyz\""}}
+	items, flooded, err := wmiSubscriptions(w, NamespaceSubscription)
+	if err != nil || flooded {
+		t.Fatal(err, flooded)
+	}
+	all := fmt.Sprint(items)
+	if strings.Contains(all, "hunter22") || strings.Contains(all, "s3cr3t-value-xyz") {
+		t.Errorf("WMI query, command and script text must be masked: %s", all)
+	}
+
+	w.wmiErr[ns+qWMICmdLine.query] = &fs.PathError{Op: "WMI", Path: NamespaceSubscription, Err: ErrTruncated}
+	p := WindowsCollector{}.Collect(context.Background(), w).Persistence
+	var updater, floodedItem bool
+	for _, it := range p.Value {
+		updater = updater || strings.HasSuffix(it.Location, "CommandLineEventConsumer.Updater")
+		floodedItem = floodedItem || strings.Contains(it.Location, "more than") && strings.Contains(it.Detail, "flooded")
+	}
+	if p.Status != StatusPartial || p.Reason != ReasonTruncated || !updater || !floodedItem {
+		t.Errorf("flooded namespace: status %s %s, kept rows %v, flood item %v", p.Status, p.Reason, updater, floodedItem)
 	}
 }

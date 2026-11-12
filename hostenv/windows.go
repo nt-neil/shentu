@@ -778,11 +778,17 @@ func winPersistence(ws WinSource, svcs []WinService, svcErr error) Obs[[]Persist
 	}
 
 	// WMI event subscriptions: consumers that run a command or a script.
+	var flooded []string
 	for _, ns := range []string{NamespaceSubscription, NamespaceDefaultWMI} {
-		items, err := wmiSubscriptions(ws, ns)
+		items, full, err := wmiSubscriptions(ws, ns)
 		note("WMI "+ns, err)
 		for _, it := range items {
 			add(it)
+		}
+		if full {
+			flooded = append(flooded, ns)
+			add(PersistenceItem{Kind: "wmi_subscription", Location: ns + ": more than " + strconv.Itoa(WMIRowLimit) + " objects",
+				Detail: "a WMI query hit its limit: the namespace may have been flooded to hide a subscription; the rows read are kept"})
 		}
 	}
 
@@ -793,6 +799,8 @@ func winPersistence(ws WinSource, svcs []WinService, svcErr error) Obs[[]Persist
 		return out[i].Location < out[j].Location
 	})
 	switch {
+	case len(flooded) > 0:
+		return Partial(out, ReasonTruncated, fmt.Sprintf("WMI %s: more than %d objects (possibly flooded)", strings.Join(flooded, ", "), WMIRowLimit))
 	case dropped > 0:
 		return Partial(out, ReasonTruncated, fmt.Sprintf("%d items over the per-kind cap of %d", dropped, MaxPersistenceItems))
 	case len(unread) > 0:
@@ -1288,25 +1296,36 @@ func winAuthEvents(ws WinSource) Obs[AuthEvents] {
 // namespace, each with the filters bound to it. Built-in subscriptions
 // (the SCM event log consumer) use other consumer classes and are not
 // listed. A namespace that does not exist is not an error.
-func wmiSubscriptions(ws WinSource, ns string) ([]PersistenceItem, error) {
+// WMIRowLimit caps the rows one WMI query returns.
+const WMIRowLimit = 10000
+
+// wmiSubscriptions lists the command and script consumers of one
+// namespace. A query that hits WMIRowLimit keeps the rows it read and sets
+// flooded: thousands of objects may be there to bury one subscription.
+// Filter queries, command lines and scripts are secret-masked as read.
+func wmiSubscriptions(ws WinSource, ns string) (items []PersistenceItem, flooded bool, err error) {
 	get := func(q wmiQuery) ([]map[string]any, error) {
 		rows, err := ws.WMI(ns, q.query, q.props)
-		if isNotExist(err) {
+		switch {
+		case isNotExist(err):
 			return nil, nil
+		case errors.Is(err, ErrTruncated):
+			flooded = true
+			return rows, nil
 		}
 		return rows, err
 	}
 	filters, err := get(qWMIFilters)
 	if err != nil {
-		return nil, err
+		return nil, flooded, err
 	}
 	bindings, err := get(qWMIBindings)
 	if err != nil {
-		return nil, err
+		return nil, flooded, err
 	}
 	filterQuery := map[string]string{}
 	for _, f := range filters {
-		filterQuery[asString(f["Name"])] = asString(f["Query"])
+		filterQuery[asString(f["Name"])] = MaskSecrets(asString(f["Query"]))
 	}
 	// Binding paths look like __EventFilter.Name="x" and
 	// CommandLineEventConsumer.Name="y"; key both by class and name.
@@ -1330,20 +1349,20 @@ func wmiSubscriptions(ws WinSource, ns string) ([]PersistenceItem, error) {
 	}{
 		{qWMICmdLine, "CommandLineEventConsumer", func(r map[string]any) string {
 			if t := asString(r["CommandLineTemplate"]); t != "" {
-				return t
+				return MaskSecrets(t)
 			}
-			return asString(r["ExecutablePath"])
+			return MaskSecrets(asString(r["ExecutablePath"]))
 		}},
 		{qWMIScript, "ActiveScriptEventConsumer", func(r map[string]any) string {
 			if f := asString(r["ScriptFileName"]); f != "" {
-				return asString(r["ScriptingEngine"]) + " " + f
+				return asString(r["ScriptingEngine"]) + " " + MaskSecrets(f)
 			}
-			return asString(r["ScriptingEngine"]) + ": " + asString(r["ScriptText"])
+			return asString(r["ScriptingEngine"]) + ": " + MaskSecrets(asString(r["ScriptText"]))
 		}},
 	} {
 		rows, err := get(c.q)
 		if err != nil {
-			return out, err
+			return out, flooded, err
 		}
 		for _, r := range rows {
 			name := asString(r["Name"])
@@ -1355,7 +1374,7 @@ func wmiSubscriptions(ws WinSource, ns string) ([]PersistenceItem, error) {
 			out = append(out, PersistenceItem{Kind: "wmi_subscription", Location: ns + ":" + c.class + "." + name, Command: c.cmd(r), Detail: detail})
 		}
 	}
-	return out, nil
+	return out, flooded, nil
 }
 
 // wmiRef splits a WMI object path such as

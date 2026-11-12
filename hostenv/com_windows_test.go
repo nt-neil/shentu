@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf16"
 	"unsafe"
 
@@ -349,4 +350,20 @@ func TestCallOutPointerSurvivesStackGrowth(t *testing.T) {
 	if bad := <-done; len(bad) > 0 {
 		t.Errorf("COM writes lost at %d stack depths (first %d)", len(bad), bad[0])
 	}
+}
+
+// N10: a WMI query or firewall read that does not finish in comWait is
+// abandoned with ErrTimeout, which Classify reports as a timeout.
+func TestCOMWaitTimesOut(t *testing.T) {
+	old := comWait
+	comWait = time.Nanosecond
+	t.Cleanup(func() { comWait = old })
+	l := &Live{}
+	if _, err := l.WMI(`root\cimv2`, "SELECT * FROM Win32_OperatingSystem", []string{"Caption"}); !errors.Is(err, ErrTimeout) || Classify(err) != ReasonTimeout {
+		t.Errorf("WMI: %v (%s)", err, Classify(err))
+	}
+	if _, err := l.FirewallPolicy(); !errors.Is(err, ErrTimeout) {
+		t.Errorf("firewall: %v", err)
+	}
+	time.Sleep(2 * time.Second) // let the abandoned calls finish before the next test
 }
