@@ -7,12 +7,9 @@ package tools
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"regexp"
 	"slices"
 	"sort"
@@ -189,28 +186,9 @@ func dedupe(s []string) []string {
 }
 
 func firewall(ctx context.Context) string {
-	if b, err := os.ReadFile("/etc/ufw/ufw.conf"); err == nil && strings.Contains(string(b), "ENABLED=yes") {
-		return "ufw (enabled)"
-	}
-	if comm := findProcess("firewalld"); comm {
-		return "firewalld (running)"
-	}
-	if out, err := exec.CommandContext(ctx, "nft", "list", "ruleset").Output(); err == nil {
-		chains := strings.Count(string(out), "chain ")
-		if chains > 0 {
-			return fmt.Sprintf("nftables (%d chains)", chains)
-		}
-	} else if !errors.Is(err, exec.ErrNotFound) {
-		// Patrol's sandbox has no CAP_NET_ADMIN, so it cannot list the ruleset; the boot config is readable.
-		if s := nftablesAtBoot(); s != "" {
-			return s
-		}
-		return "no firewall enabled at boot (nftables.service is off); rules added at runtime cannot be read here, ask in chat"
-	}
-	if out, err := exec.CommandContext(ctx, "iptables", "-S").Output(); err == nil && strings.Count(string(out), "\n") > 3 {
-		return "iptables rules present"
-	}
-	return "none detected"
+	src := hostSource()
+	procs, _ := linux.Processes(src, nil)
+	return linux.Firewall(ctx, src, procs.Value).Value.Extra["summary"]
 }
 
 // nftablesRoot is "/" except in tests.
@@ -218,30 +196,13 @@ var nftablesRoot = "/"
 
 // nftablesAtBoot describes the nftables rules loaded at boot, read from the config files, which needs no privilege.
 func nftablesAtBoot() string {
-	enabled := false
-	for _, d := range []string{"etc/systemd/system/multi-user.target.wants", "etc/systemd/system/sysinit.target.wants"} {
-		if _, err := os.Stat(filepath.Join(nftablesRoot, d, "nftables.service")); err == nil {
-			enabled = true
-		}
+	src := hostSource()
+	if nftablesRoot != "/" {
+		live, _ := hostenv.NewLive(nil)
+		live.Remap = map[string]string{"/": nftablesRoot}
+		src = live
 	}
-	if !enabled {
-		return ""
-	}
-	for _, c := range []string{"etc/nftables.conf", "etc/sysconfig/nftables.conf"} {
-		if b, err := os.ReadFile(filepath.Join(nftablesRoot, c)); err == nil {
-			return fmt.Sprintf("nftables (enabled at boot, %d chains in /%s; live rules: ask in chat)", strings.Count(string(b), "chain "), c)
-		}
-	}
-	return "nftables (enabled at boot; live rules: ask in chat)"
-}
-
-func findProcess(name string) bool {
-	for _, pid := range pids() {
-		if comm(pid) == name {
-			return true
-		}
-	}
-	return false
+	return linux.NftablesAtBoot(src)
 }
 
 // sshdConfig is the sshd configuration read; relative Include paths are under its folder.

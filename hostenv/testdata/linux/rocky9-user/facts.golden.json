@@ -4844,11 +4844,15 @@
     "value": null
   },
   "firewall": {
-    "status": "unknown",
-    "reason": "not_collected",
+    "status": "partial",
+    "reason": "permission_denied",
+    "detail": "live nftables rules unreadable",
     "value": {
-      "backend": "",
-      "enabled": false
+      "backend": "nftables",
+      "enabled": false,
+      "extra": {
+        "summary": "no firewall enabled at boot (nftables.service is off); rules added at runtime cannot be read here, ask in chat"
+      }
     }
   },
   "remote_access": {

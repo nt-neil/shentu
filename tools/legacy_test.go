@@ -668,3 +668,99 @@ func TestLegacySSHD(t *testing.T) {
 		}
 	}
 }
+
+// scriptHost is a Source with files, links and canned command results.
+type scriptHost struct {
+	memHost
+	cmds map[string]hostenv.CmdResult
+	stat map[string]bool
+}
+
+func (h scriptHost) Run(_ context.Context, argv []string) (hostenv.CmdResult, error) {
+	if r, ok := h.cmds[strings.Join(argv, " ")]; ok {
+		return r, nil
+	}
+	return hostenv.CmdResult{}, os.ErrNotExist
+}
+func (h scriptHost) Stat(p string) (hostenv.FileStat, error) {
+	if h.stat[p] {
+		return hostenv.FileStat{}, nil
+	}
+	if _, ok := h.memHost[p]; ok {
+		return hostenv.FileStat{}, nil
+	}
+	return hostenv.FileStat{}, os.ErrNotExist
+}
+
+// legacyFirewall is survey's firewall() before 1c; "err != nil" of exec is
+// a missing binary (ErrNotFound) or a non-zero exit, as here.
+func legacyFirewall(h scriptHost, running []string) string {
+	if b, err := h.ReadFile("/etc/ufw/ufw.conf"); err == nil && strings.Contains(string(b), "ENABLED=yes") {
+		return "ufw (enabled)"
+	}
+	for _, p := range running {
+		if p == "firewalld" {
+			return "firewalld (running)"
+		}
+	}
+	run := func(argv string) (string, bool, bool) { // out, ok, notFound
+		r, err := h.Run(context.Background(), strings.Fields(argv))
+		return string(r.Stdout), err == nil && r.ExitCode == 0, err != nil
+	}
+	if out, ok, notFound := run("/usr/sbin/nft list ruleset"); ok {
+		if chains := strings.Count(out, "chain "); chains > 0 {
+			return fmt.Sprintf("nftables (%d chains)", chains)
+		}
+	} else if !notFound {
+		enabled := false
+		for _, d := range []string{"/etc/systemd/system/multi-user.target.wants", "/etc/systemd/system/sysinit.target.wants"} {
+			if h.stat[d+"/nftables.service"] {
+				enabled = true
+			}
+		}
+		if enabled {
+			for _, c := range []string{"/etc/nftables.conf", "/etc/sysconfig/nftables.conf"} {
+				if b, err := h.ReadFile(c); err == nil {
+					return fmt.Sprintf("nftables (enabled at boot, %d chains in %s; live rules: ask in chat)", strings.Count(string(b), "chain "), c)
+				}
+			}
+			return "nftables (enabled at boot; live rules: ask in chat)"
+		}
+		return "no firewall enabled at boot (nftables.service is off); rules added at runtime cannot be read here, ask in chat"
+	}
+	if out, ok, _ := run("/usr/sbin/iptables -S"); ok && strings.Count(out, "\n") > 3 {
+		return "iptables rules present"
+	}
+	return "none detected"
+}
+
+func TestLegacyFirewall(t *testing.T) {
+	ok := func(out string) hostenv.CmdResult { return hostenv.CmdResult{Stdout: []byte(out)} }
+	denied := hostenv.CmdResult{ExitCode: 1, Stderr: "Operation not permitted"}
+	nft, ipt := "/usr/sbin/nft list ruleset", "/usr/sbin/iptables -S"
+	cases := map[string]struct {
+		h       scriptHost
+		running []string
+	}{
+		"ufw":           {scriptHost{memHost: memHost{"/etc/ufw/ufw.conf": "ENABLED=yes\n"}}, nil},
+		"ufw off":       {scriptHost{memHost: memHost{"/etc/ufw/ufw.conf": "ENABLED=no\n"}}, nil},
+		"firewalld":     {scriptHost{memHost: memHost{}}, []string{"sshd", "firewalld"}},
+		"nft live":      {scriptHost{memHost: memHost{}, cmds: map[string]hostenv.CmdResult{nft: ok("table inet f {\n chain input {\n }\n chain output {\n }\n}\n")}}, nil},
+		"nft empty":     {scriptHost{memHost: memHost{}, cmds: map[string]hostenv.CmdResult{nft: ok(""), ipt: ok("-P INPUT ACCEPT\n-P FORWARD ACCEPT\n-P OUTPUT ACCEPT\n-A INPUT -j DROP\n")}}, nil},
+		"nft boot":      {scriptHost{memHost: memHost{"/etc/nftables.conf": "chain a\nchain b\nchain c\n"}, cmds: map[string]hostenv.CmdResult{nft: denied}, stat: map[string]bool{"/etc/systemd/system/sysinit.target.wants/nftables.service": true}}, nil},
+		"nft boot conf": {scriptHost{memHost: memHost{}, cmds: map[string]hostenv.CmdResult{nft: denied}, stat: map[string]bool{"/etc/systemd/system/multi-user.target.wants/nftables.service": true}}, nil},
+		"nft boot off":  {scriptHost{memHost: memHost{}, cmds: map[string]hostenv.CmdResult{nft: denied}}, nil},
+		"iptables":      {scriptHost{memHost: memHost{}, cmds: map[string]hostenv.CmdResult{ipt: ok("-P INPUT DROP\n-P FORWARD DROP\n-P OUTPUT ACCEPT\n-A INPUT -i lo -j ACCEPT\n")}}, nil},
+		"none":          {scriptHost{memHost: memHost{}, cmds: map[string]hostenv.CmdResult{ipt: denied}}, nil},
+	}
+	for name, c := range cases {
+		var procs []hostenv.Process
+		for _, n := range c.running {
+			procs = append(procs, hostenv.Process{Name: n})
+		}
+		got := linux.Firewall(context.Background(), c.h, procs).Value.Extra["summary"]
+		if want := legacyFirewall(c.h, c.running); got != want {
+			t.Errorf("%s: %q, legacy %q", name, got, want)
+		}
+	}
+}

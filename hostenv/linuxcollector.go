@@ -28,7 +28,9 @@ var (
 	rpmArgv  = []string{"/usr/bin/rpm", "-qa", "--qf", RpmQueryFormat}
 )
 
-func (LinuxCollector) Allowlist() [][]string { return [][]string{dpkgArgv, rpmArgv, rpmQalArgv} }
+func (LinuxCollector) Allowlist() [][]string {
+	return [][]string{dpkgArgv, rpmArgv, rpmQalArgv, nftListArgv, iptablesArgv}
+}
 
 func (c LinuxCollector) Collect(ctx context.Context, src Source) *Facts {
 	info := src.Info()
@@ -54,6 +56,7 @@ func (c LinuxCollector) Collect(ctx context.Context, src Source) *Facts {
 		}
 	}
 	f.RemoteAccess.SSH = c.ssh(src)
+	f.Firewall = c.Firewall(ctx, src, procs.Value)
 	f.SSHKeys = Unknown[[]AuthorizedKeyFile](accounts.Reason, "accounts unknown")
 	if accounts.Known() {
 		f.SSHKeys = c.SSHKeyFiles(src, accounts.Value)

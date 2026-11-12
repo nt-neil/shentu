@@ -12,7 +12,6 @@ import (
 	"regexp"
 	"slices"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -92,22 +91,6 @@ func procNet(proto string) (rows []hostenv.ProcNetEntry, complete bool) {
 		return nil, true
 	}
 	return nil, false
-}
-
-func pids() []int {
-	ents, _ := os.ReadDir("/proc")
-	var out []int
-	for _, e := range ents {
-		if n, err := strconv.Atoi(e.Name()); err == nil {
-			out = append(out, n)
-		}
-	}
-	return out
-}
-
-func comm(pid int) string {
-	b, _ := os.ReadFile(fmt.Sprintf("/proc/%d/comm", pid))
-	return strings.TrimSpace(string(b))
 }
 
 // SSHPeers returns the remote IPs of established connections to local port 22.
