@@ -642,6 +642,45 @@ func (l *Live) FileSecurity(path string) (WinFileSecurity, error) {
 	if err != nil {
 		return WinFileSecurity{}, winErr("GetNamedSecurityInfo", path, err)
 	}
+	sec, err := fileSecurityOf(path, sd)
+	if err != nil {
+		return sec, err
+	}
+	// A reparse point: GetNamedSecurityInfo answered for the target; the
+	// link itself is read through a handle that does not follow it.
+	p16, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return sec, err
+	}
+	attrs, err := windows.GetFileAttributes(p16)
+	if err != nil {
+		return sec, winErr("GetFileAttributes", path, err)
+	}
+	if attrs&windows.FILE_ATTRIBUTE_REPARSE_POINT == 0 {
+		return sec, nil
+	}
+	h, err := windows.CreateFile(p16, windows.READ_CONTROL,
+		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE, nil, windows.OPEN_EXISTING,
+		windows.FILE_FLAG_BACKUP_SEMANTICS|windows.FILE_FLAG_OPEN_REPARSE_POINT, 0)
+	if err != nil {
+		return sec, winErr("CreateFile", path, err)
+	}
+	defer windows.CloseHandle(h)
+	lsd, err := windows.GetSecurityInfo(h, windows.SE_FILE_OBJECT,
+		windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)
+	if err != nil {
+		return sec, winErr("GetSecurityInfo", path, err)
+	}
+	link, err := fileSecurityOf(path, lsd)
+	if err != nil {
+		return sec, err
+	}
+	sec.Link = &link
+	return sec, nil
+}
+
+// fileSecurityOf is the owner and writers in a security descriptor.
+func fileSecurityOf(path string, sd *windows.SECURITY_DESCRIPTOR) (WinFileSecurity, error) {
 	var sec WinFileSecurity
 	if owner, _, err := sd.Owner(); err == nil && owner != nil {
 		sec.Owner = owner.String()

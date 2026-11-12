@@ -20,22 +20,24 @@ import (
 // fakeWin is an in-memory WinSource.
 type fakeWin struct {
 	*fakeHost
-	reg     map[string]map[string]RegValue
-	subkeys map[string][]string
-	denied  map[string]bool // registry keys, "svc", "proc", "sock", "users", group SIDs, "tasks", channels
-	svcs    []WinService
-	procs   []WinProcess
-	sockets []WinSocket
-	users   []WinUser
-	groups  map[string][]string
-	tasks   []WinTask
-	events  map[string][]WinEvent       // by channel
-	dirList map[string][]string         // Windows directory listings
-	wmi     map[string][]map[string]any // by namespace + "|" + query
-	wmiNS   map[string]bool             // namespaces that exist
-	wmiErr  map[string]error            // by namespace + "|" + query: returned with the rows
-	fw      *WinFirewallPolicy          // nil: INetFwPolicy2 unavailable
-	sec     map[string]WinFileSecurity  // by path; absent: SYSTEM-owned, admin-only
+	reg      map[string]map[string]RegValue
+	subkeys  map[string][]string
+	denied   map[string]bool // registry keys, "svc", "proc", "sock", "users", group SIDs, "tasks", channels
+	svcs     []WinService
+	procs    []WinProcess
+	sockets  []WinSocket
+	users    []WinUser
+	groups   map[string][]string
+	tasks    []WinTask
+	events   map[string][]WinEvent       // by channel
+	dirList  map[string][]string         // Windows directory listings
+	wmi      map[string][]map[string]any // by namespace + "|" + query
+	wmiNS    map[string]bool             // namespaces that exist
+	wmiErr   map[string]error            // by namespace + "|" + query: returned with the rows
+	fw       *WinFirewallPolicy          // nil: INetFwPolicy2 unavailable
+	sec      map[string]WinFileSecurity  // by path; absent: SYSTEM-owned, admin-only
+	gone     map[string]bool             // paths FileSecurity reports as not existing
+	secPaths []string                    // every path FileSecurity was asked about
 }
 
 var (
@@ -94,6 +96,10 @@ func pick[T any](w *fakeWin, k string, v T) (T, error) {
 }
 
 func (w *fakeWin) FileSecurity(path string) (WinFileSecurity, error) {
+	w.secPaths = append(w.secPaths, path)
+	if w.gone[path] {
+		return WinFileSecurity{}, &fs.PathError{Op: "FileSecurity", Path: path, Err: fs.ErrNotExist}
+	}
 	if w.denied[path] {
 		return WinFileSecurity{}, denied("FileSecurity", path)
 	}
@@ -1018,6 +1024,95 @@ func TestWindowsSSHInclude(t *testing.T) {
 	w.files[winSSHDConfig] = "Include \\\\server\\share\\x.conf\nPasswordAuthentication no\n"
 	if s := collect(w); s.Status != StatusPartial || s.Value.Settings["passwordauthentication"] != "unknown" {
 		t.Errorf("network include: %+v", s)
+	}
+}
+
+// Round 3 re-review: a Match in an included file ends that file only
+// (N-1); a pattern's wildcard folders are never asked about literally; a
+// missing target users could create, a link someone else may change, and
+// too many included files are all reported.
+func TestWindowsSSHIncludeReview(t *testing.T) {
+	collect := func(w *fakeWin) Obs[SSHConfig] {
+		return WindowsCollector{}.Collect(context.Background(), w).RemoteAccess.SSH
+	}
+	base := func() *fakeWin {
+		w := weakServer()
+		w.svcs = append(w.svcs, WinService{Name: "sshd", State: "running", StartType: "auto"})
+		w.gone = map[string]bool{}
+		return w
+	}
+	incDir := `C:\ProgramData\ssh\sshd_config.d`
+
+	// N-1: Match inside a.conf; PermitRootLogin yes after the Include counts.
+	w := base()
+	w.files[winSSHDConfig] = "Include sshd_config.d/*.conf\nPermitRootLogin yes\n"
+	w.dirs(incDir, "a.conf")
+	w.files[incDir+`\a.conf`] = "Match Group g\nPermitRootLogin no\n"
+	if s := collect(w); s.Status != StatusOK || s.Value.Settings["permitrootlogin"] != "yes" {
+		t.Errorf("Match in an include ends that file only; one in sshd_config ends the globals: %+v", s)
+	}
+
+	// A wildcard in a middle folder: FileSecurity is asked about real folders only.
+	w = base()
+	w.files[winSSHDConfig] = "Include C:/conf/*/x.conf\n"
+	w.dirs(`C:\conf`, "a")
+	w.files[`C:\conf\a\x.conf`] = "PasswordAuthentication no\n"
+	s := collect(w)
+	for _, p := range w.secPaths {
+		if strings.ContainsAny(p, "*?[") {
+			t.Errorf("FileSecurity asked about a pattern: %s", p)
+		}
+	}
+	if s.Status != StatusOK || s.Value.Settings["passwordauthentication"] != "no" {
+		t.Errorf("middle wildcard: %+v", s)
+	}
+
+	// A missing include users could create (nothing up to C:\ exists).
+	w = base()
+	w.files[winSSHDConfig] = "Include C:/plant/x.conf\nPasswordAuthentication no\n"
+	w.gone[`C:\plant\x.conf`], w.gone[`C:\plant`] = true, true
+	if s := collect(w); s.Status != StatusUnknown || s.Reason != ReasonUntrusted || !strings.Contains(s.Detail, "may create") {
+		t.Errorf("creatable missing include: %+v", s)
+	}
+	// Missing inside a trusted folder: nobody else can create it.
+	w = base()
+	w.files[winSSHDConfig] = "Include absent.conf\nPasswordAuthentication no\n"
+	w.gone[`C:\ProgramData\ssh\absent.conf`] = true
+	if s := collect(w); s.Status != StatusOK || s.Value.Settings["passwordauthentication"] != "no" {
+		t.Errorf("missing include in a trusted folder: %+v", s)
+	}
+
+	// A folder that is a link someone else may change.
+	w = base()
+	w.files[winSSHDConfig] = "Include C:/conf/x.conf\n"
+	w.files[`C:\conf\x.conf`] = "PasswordAuthentication no\n"
+	w.sec = map[string]WinFileSecurity{`C:\conf`: {Owner: "S-1-5-18", Writers: []string{"S-1-5-32-544"},
+		Link: &WinFileSecurity{Owner: "S-1-5-21-1-2-3-1001"}}}
+	if s := collect(w); s.Status != StatusUnknown || s.Reason != ReasonUntrusted || !strings.Contains(s.Detail, "link owner") {
+		t.Errorf("link owned by a user: %+v", s)
+	}
+
+	// More included files than maxSSHIncludes: partial.
+	w = base()
+	w.files[winSSHDConfig] = "Include sshd_config.d/*\n"
+	names := make([]string, maxSSHIncludes+1)
+	for i := range names {
+		names[i] = fmt.Sprintf("%04d.conf", i)
+		w.files[incDir+`\`+names[i]] = "\n"
+	}
+	w.dirs(incDir, names...)
+	if s := collect(w); s.Status != StatusPartial || !strings.Contains(strings.Join(s.Value.Unread, ","), "more than") {
+		t.Errorf("too many includes: %+v", s.Status)
+	}
+
+	// Nested more than 4 deep: unread, partial (as on Linux).
+	w = base()
+	w.files[winSSHDConfig] = "Include d1.conf\n"
+	for i := 1; i <= 5; i++ {
+		w.files[fmt.Sprintf(`C:\ProgramData\ssh\d%d.conf`, i)] = fmt.Sprintf("Include d%d.conf\n", i+1)
+	}
+	if s := collect(w); s.Status != StatusPartial || !strings.Contains(strings.Join(s.Value.Unread, ","), "more than 4 deep") {
+		t.Errorf("deep nesting: %+v", s)
 	}
 }
 

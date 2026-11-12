@@ -61,10 +61,14 @@ func RedactRegValues(v map[string]RegValue) map[string]RegValue {
 	return v
 }
 
-// WinFileSecurity is a file's owner and the SIDs that may write it.
+// WinFileSecurity is a file's owner and the SIDs that may write it. For a
+// reparse point (a symbolic link or junction), what is reported is the
+// target's, and Link is the link's own: whoever may change the link can
+// point it elsewhere.
 type WinFileSecurity struct {
-	Owner   string   `json:"owner"`
-	Writers []string `json:"writers,omitempty"`
+	Owner   string           `json:"owner"`
+	Writers []string         `json:"writers,omitempty"`
+	Link    *WinFileSecurity `json:"link,omitempty"`
 }
 
 // trustedSIDs may own or write what Shentu trusts: SYSTEM, Administrators,
@@ -82,6 +86,11 @@ func (s WinFileSecurity) Untrusted() []string {
 	for _, w := range s.Writers {
 		if !trustedSIDs[w] {
 			out = append(out, w)
+		}
+	}
+	if s.Link != nil {
+		for _, u := range s.Link.Untrusted() {
+			out = append(out, "link "+u)
 		}
 	}
 	return out
@@ -1028,24 +1037,44 @@ func winSSH(ws WinSource, svcs []WinService, svcErr error) Obs[SSHConfig] {
 	// %ProgramData%\ssh, %ProgramData% or the drive root, which are not
 	// judged here (ProgramData and the root let users create folders by
 	// design, not replace one that exists).
-	checked := map[string]bool{strings.ToLower(winSSHDir): true}
+	// A path that does not exist up to %ProgramData% or the drive root can
+	// be created there by any user, file and all: sshd would then read it.
+	exists := map[string]bool{strings.ToLower(winSSHDir): true} // checked already; true when present
 	stop := func(d string) bool {
 		return len(d) <= 3 || strings.EqualFold(d, winParent(winSSHDir))
 	}
 	chain := func(p string) (Obs[SSHConfig], bool) {
-		for d := p; !stop(d); d = winParent(d) {
-			if checked[strings.ToLower(d)] {
+		missing := true // nothing found yet from p upward
+		for d := p; ; d = winParent(d) {
+			if stop(d) {
+				if missing {
+					return unknown(p, p+" does not exist and users may create it under "+d, ReasonUntrusted), false
+				}
+				return Obs[SSHConfig]{}, true
+			}
+			if there, ok := exists[strings.ToLower(d)]; ok {
+				if there {
+					return Obs[SSHConfig]{}, true // this folder and those above were judged
+				}
 				continue
 			}
-			checked[strings.ToLower(d)] = true
-			if o, ok := trusted(d); !ok {
-				return o, false
+			sec, err := ws.FileSecurity(d)
+			switch {
+			case isNotExist(err):
+				exists[strings.ToLower(d)] = false
+				continue
+			case err != nil:
+				return unknown(d, "owner and permissions unreadable: "+string(Classify(err)), Classify(err)), false
+			}
+			exists[strings.ToLower(d)], missing = true, false
+			if bad := sec.Untrusted(); len(bad) > 0 {
+				return unknown(d, d+" is owned or writable by "+strings.Join(bad, ", "), ReasonUntrusted), false
 			}
 		}
-		return Obs[SSHConfig]{}, true
 	}
+	reads := 0 // included files read, at most maxSSHIncludes
 	var refused *Obs[SSHConfig]
-	var read func(b []byte, depth int) bool // false: stopped (Match, or an untrusted file)
+	var read func(b []byte, depth int) bool // false: stopped (Match in sshd_config, an untrusted file, too many files)
 	read = func(b []byte, depth int) bool {
 		h.Write(b)
 		dirs, sawMatch := ParseSSHDConfig(b)
@@ -1062,11 +1091,11 @@ func winSSH(ws WinSource, svcs []WinService, svcErr error) Obs[SSHConfig] {
 				continue
 			}
 			if depth >= 4 {
-				unread(pat, "Include nested too deep", ReasonNotCollected)
+				unread(pat, "Include nested more than 4 deep", ReasonNotCollected)
 				continue
 			}
 			files, listed, dir, err := winGlob(ws, pat)
-			for _, d := range append(listed, winParent(pat)) {
+			for _, d := range append(listed, winFixedDir(pat)) {
 				if o, ok := chain(d); !ok {
 					refused = &o
 					return false
@@ -1075,9 +1104,16 @@ func winSSH(ws WinSource, svcs []WinService, svcErr error) Obs[SSHConfig] {
 			if err != nil {
 				unread(dir, whyUnread(err), Classify(err))
 			}
+			if len(files) == 0 && !strings.ContainsAny(pat, "*?[") {
+				files = []string{pat} // judged even when missing: who could create it
+			}
 			for _, inc := range files {
 				if o, ok := chain(inc); !ok {
 					refused = &o
+					return false
+				}
+				if reads++; reads > maxSSHIncludes {
+					unread(inc, fmt.Sprintf("more than %d included files", maxSSHIncludes), ReasonNotCollected)
 					return false
 				}
 				ib, err := ws.ReadFile(inc)
@@ -1092,7 +1128,10 @@ func winSSH(ws WinSource, svcs []WinService, svcErr error) Obs[SSHConfig] {
 				}
 			}
 		}
-		return !sawMatch
+		// A Match in an included file ends that file only: sshd restores
+		// the Match state after each Include. One in sshd_config itself
+		// ends the global settings.
+		return depth > 0 || !sawMatch
 	}
 	read(b, 0)
 	if refused != nil {
@@ -1123,6 +1162,20 @@ func winSSHInclude(v string) (string, bool) {
 		v = winSSHDir + `\` + v
 	}
 	return v[:2] + strings.ReplaceAll(path.Clean(strings.ReplaceAll(v[2:], `\`, "/")), "/", `\`), true
+}
+
+// maxSSHIncludes caps the files Include may bring in, however wide the
+// globs: past it the rest is unread and the fact partial.
+const maxSSHIncludes = 256
+
+// winFixedDir is the folder of a pattern above its first wildcard: the
+// real folder every match lies under.
+func winFixedDir(pattern string) string {
+	d := winParent(pattern)
+	for strings.ContainsAny(d, "*?[") && len(d) > 3 {
+		d = winParent(d)
+	}
+	return d
 }
 
 // winParent is the folder holding a full Windows path.
