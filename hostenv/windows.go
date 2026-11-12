@@ -821,6 +821,16 @@ func regText(r RegValue) string {
 // winIISConfig is applicationHost.config under the system root.
 const winIISConfig = `\System32\inetsrv\config\applicationHost.config`
 
+// PatchLevel reports the platform and installed patches alone, for the
+// MSRC check, without a full collection.
+func (WindowsCollector) PatchLevel(src Source) (Obs[Platform], Obs[[]Patch]) {
+	ws, ok := src.(WinSource)
+	if !ok {
+		return Unknown[Platform](ReasonUnsupported, "not a Windows source"), Unknown[[]Patch](ReasonUnsupported, "not a Windows source")
+	}
+	return winPlatform(ws, src.Info()), winPatches(ws)
+}
+
 // Web reports IIS alone, for callers (the code audit) that need web roots
 // without a full collection. A source that is not a WinSource has none.
 func (WindowsCollector) Web(src Source) Obs[Web] {
