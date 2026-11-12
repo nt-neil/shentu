@@ -22,6 +22,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/nt-neil/shentu/hostenv"
 	"github.com/nt-neil/shentu/rules"
 	"github.com/nt-neil/shentu/rules/engine"
 )
@@ -50,7 +51,10 @@ var appCodeAudit = Tool{
 			}
 			roots = []string{clean}
 		}
-		return AppCodeAudit(ctx, roots, WebRoots()), nil
+		web, unread := WebRootsReport()
+		res := AppCodeAudit(ctx, roots, web)
+		res.WebConfigUnreadable = unread
+		return res, nil
 	},
 }
 
@@ -83,10 +87,13 @@ type UnfinishedFile struct {
 
 // CodeAudit is the result of AppCodeAudit.
 type CodeAudit struct {
-	WebRoots  []string      `json:"web_roots"`
-	Files     int           `json:"files_read"`
-	Findings  []CodeFinding `json:"findings"`            // the summaries (kind "audit", and injection ones without a rule) first
-	Truncated bool          `json:"truncated,omitempty"` // files or findings over the caps were left out
+	WebRoots []string `json:"web_roots"`
+	// Web server configuration files that could not be read, with why: the
+	// web roots they name are missing from WebRoots.
+	WebConfigUnreadable []string      `json:"web_config_unreadable,omitempty"`
+	Files               int           `json:"files_read"`
+	Findings            []CodeFinding `json:"findings"`            // the summaries (kind "audit", and injection ones without a rule) first
+	Truncated           bool          `json:"truncated,omitempty"` // files or findings over the caps were left out
 	// The audit's time ran out before the end: what was found until then is
 	// listed, and a summary names what was not checked.
 	Unfinished bool `json:"unfinished,omitempty"`
@@ -110,8 +117,29 @@ const (
 
 var webDirNames = map[string]bool{"public": true, "public_html": true, "html": true, "htdocs": true, "www": true, "webroot": true}
 
-// WebRoots returns the folders nginx or Apache serve, read from their configuration (hostenv).
-func WebRoots() []string { return linux.WebRoots(hostSource()) }
+// WebRoots returns the folders nginx or Apache serve, read from their configuration.
+func WebRoots() []string {
+	roots, _ := WebRootsReport()
+	return roots
+}
+
+// WebRootsReport returns the folders nginx or Apache serve, and the
+// configuration files it could not read, each with why ("path (why)").
+func WebRootsReport() (roots, unreadable []string) { return webRootsFrom(hostenv.DefaultWebConf.Globs) }
+
+// The configuration a symlink in it may point to: a regular file under
+// webConfRoot, owned by webConfOwner (root), that only its owner can write
+// (Debian and Ubuntu enable a site by a symlink in sites-enabled). Variables
+// for the tests.
+var (
+	webConfRoot  = hostenv.DefaultWebConf.Root
+	webConfOwner = uint32(hostenv.DefaultWebConf.Owner)
+)
+
+// webRootsFrom reads the configuration files the globs match (hostenv).
+func webRootsFrom(globs []string) (roots, unreadable []string) {
+	return linux.WebRootsReport(hostSource(), hostenv.WebConf{Globs: globs, Root: webConfRoot, Owner: int(webConfOwner)})
+}
 
 // depth counts path separators in the OS's own spelling ("\\" on Windows),
 // so auditMaxDepth holds there too.

@@ -134,5 +134,5 @@ func fakeSecret() string { return strings.Repeat("q7", 4) + "zx" + "91" }
 
 // fakeKeyBlob is a valid-looking public key blob made at run time.
 func fakeKeyBlob() string {
-	return base64.StdEncoding.EncodeToString([]byte(strings.Repeat("shentu-test-key-", 4)))
+	return base64.StdEncoding.EncodeToString(sshBlob("ssh-ed25519", strings.Repeat("shentu-test-key-", 2)))
 }

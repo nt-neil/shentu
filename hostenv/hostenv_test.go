@@ -74,9 +74,9 @@ func TestParsers(t *testing.T) {
 	if CanLoginShell("/usr/sbin/nologin") || !CanLoginShell("") || !CanLoginShell("/bin/bash") || CanLoginShell("/sbin/shutdown") {
 		t.Error("login shell")
 	}
-	ak := ParseAuthorizedKeys([]byte(`command="/bin/x" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA== c` + "\nssh-rsa notbase64!! d\n"))
-	if len(ak) != 1 || !ak[0].Options || !strings.HasPrefix(ak[0].Fingerprint, "SHA256:") { // the invalid ssh-rsa line is not a key sshd would use
-		t.Errorf("authorized_keys %+v", ak)
+	ak, bad := ParseAuthorizedKeys([]byte(`command="/bin/x" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA== c` + "\nssh-rsa notbase64!! d\n"))
+	if len(ak) != 1 || !ak[0].Options || ak[0].Line != 1 || !strings.HasPrefix(ak[0].Fingerprint, "SHA256:") || !reflect.DeepEqual(bad, []int{2}) {
+		t.Errorf("authorized_keys %+v, unparsed %v", ak, bad) // the invalid ssh-rsa line is reported, not used
 	}
 }
 
@@ -406,7 +406,10 @@ func TestKeyTypesAsSSHDReadsThem(t *testing.T) {
 		b = append(b, []byte(strings.Repeat("k", 32))...)
 		return base64.StdEncoding.EncodeToString(b)
 	}
-	keys := ParseAuthorizedKeys([]byte("ED25519 " + blob("ssh-ed25519") + " c\nrsa " + blob("ssh-rsa") + "\nfrom=\"x\" ssh-ed25519 " + blob("ssh-ed25519") + "\ngarbage line\n"))
+	keys, bad := ParseAuthorizedKeys([]byte("ED25519 " + blob("ssh-ed25519") + " c\nrsa " + blob("ssh-rsa") + "\nfrom=\"x\" ssh-ed25519 " + blob("ssh-ed25519") + "\ngarbage line\n"))
+	if !reflect.DeepEqual(bad, []int{4}) {
+		t.Errorf("unparsed %v", bad)
+	}
 	if len(keys) != 3 || keys[0].Type != "ssh-ed25519" || keys[1].Type != "ssh-rsa" || !keys[2].Options || keys[0].Options {
 		t.Errorf("keys %+v", keys)
 	}

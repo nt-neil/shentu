@@ -13544,7 +13544,7 @@
       {
         "kind": "authorized_key",
         "location": "/home/user1/.ssh/authorized_keys",
-        "detail": "ssh-ed25519 SHA256:if5lagV3+cn24JciSw1Y2Yzki8slHfaLKN2EEnc0Keo"
+        "detail": "ssh-ed25519 SHA256:fop5ozGMC0vLaxkNpVJdj71a3g3seTHXAU9rPdR4Gnk"
       },
       {
         "kind": "sudo_rule",
@@ -13594,18 +13594,17 @@
       {
         "user": "root",
         "path": "/root/.ssh/authorized_keys",
-        "lines": 0,
         "modified": "2026-11-04T23:42:48.235000017+08:00"
       },
       {
         "user": "user1",
         "path": "/home/user1/.ssh/authorized_keys",
-        "lines": 1,
         "modified": "2026-11-04T23:42:46.562007557+08:00",
         "keys": [
           {
+            "line": 1,
             "type": "ssh-ed25519",
-            "fingerprint": "SHA256:if5lagV3+cn24JciSw1Y2Yzki8slHfaLKN2EEnc0Keo"
+            "fingerprint": "SHA256:fop5ozGMC0vLaxkNpVJdj71a3g3seTHXAU9rPdR4Gnk"
           }
         ]
       }

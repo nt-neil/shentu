@@ -9,6 +9,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/binary"
 	"errors"
 	"io/fs"
 	"path"
@@ -22,51 +23,34 @@ import (
 type AuthorizedKeyFile struct {
 	User     string          `json:"user"` // first account with this home
 	Path     string          `json:"path"`
-	Lines    int             `json:"lines"` // non-empty, non-comment lines
 	Modified time.Time       `json:"modified"`
 	Keys     []AuthorizedKey `json:"keys,omitempty"`
-	Unparsed int             `json:"unparsed,omitempty"` // non-comment lines that are no key Shentu can read
-	Unread   string          `json:"unread,omitempty"`   // why the content could not be read
+	Unparsed []int           `json:"unparsed_lines,omitempty"` // lines that are neither a key nor a comment: sshd ignores them, but a key in a form not read here would hide among them
+	Unread   string          `json:"unread,omitempty"`         // why the content could not be read
 }
 
 // AuthorizedKey is one key line, without the key itself.
 type AuthorizedKey struct {
+	Line             int    `json:"line"`
 	Type             string `json:"type"`
 	Fingerprint      string `json:"fingerprint"` // SHA256:..., as ssh-keygen -l prints it
 	Options          bool   `json:"options,omitempty"`
 	CloudInitRefusal bool   `json:"cloud_init_refusal,omitempty"` // root's "Please login as …" line
 }
 
-// IsKeyType reports an SSH public key type as authorized_keys may spell
-// it: a full name (ssh-ed25519, ecdsa-sha2-nistp256, sk-..., certificates
-// included), or one of the short names sshd also accepts, in any case
-// (sshkey_type_from_name: "ED25519", "rsa").
+// shortKeyTypes are the short names sshd takes for key types (any case).
+var shortKeyTypes = map[string]bool{"rsa": true, "dsa": true, "ecdsa": true, "ed25519": true, "ecdsa-sk": true, "ed25519-sk": true,
+	"xmss": true, "rsa-cert": true, "dsa-cert": true, "ecdsa-cert": true, "ed25519-cert": true, "ecdsa-sk-cert": true,
+	"ed25519-sk-cert": true, "xmss-cert": true}
+
+// IsKeyType reports whether sshd may take t as a key type, by full or
+// short name, in any case (the key itself then says which).
 func IsKeyType(t string) bool {
-	if strings.HasPrefix(t, "ssh-") || strings.HasPrefix(t, "ecdsa-") || strings.HasPrefix(t, "sk-") {
-		return true
-	}
-	switch strings.ToLower(t) {
-	case "rsa", "dsa", "ecdsa", "ed25519", "ecdsa-sk", "ed25519-sk", "xmss":
-		return true
-	}
-	return false
+	return fullKeyType(strings.ToLower(t)) || shortKeyTypes[strings.ToLower(t)]
 }
 
-// blobType is the key type written inside a public key blob (its first
-// length-prefixed string), "" when the blob does not start with one.
-func blobType(blob []byte) string {
-	if len(blob) < 4 {
-		return ""
-	}
-	n := int(blob[0])<<24 | int(blob[1])<<16 | int(blob[2])<<8 | int(blob[3])
-	if n <= 0 || n > 64 || 4+n > len(blob) {
-		return ""
-	}
-	t := string(blob[4 : 4+n])
-	if !IsKeyType(t) {
-		return ""
-	}
-	return t
+func fullKeyType(t string) bool {
+	return strings.HasPrefix(t, "ssh-") || strings.HasPrefix(t, "ecdsa-") || strings.HasPrefix(t, "sk-")
 }
 
 // cloudInitCmd is the line cloud-init writes into root's authorized_keys:
@@ -77,70 +61,86 @@ var cloudInitCmd = regexp.MustCompile(`^(no-port-forwarding,no-agent-forwarding,
 // CloudInitRefusal reports cloud-init's refusal line.
 func CloudInitRefusal(line string) bool { return cloudInitCmd.MatchString(strings.TrimSpace(line)) }
 
-// KeyFingerprint parses an authorized_keys line the way sshd does: an
-// optional options field (where quoted text may hold spaces), then the key
-// type and the base64 key. It returns the SHA256 fingerprint, "" for a line
-// sshd would not use.
+// KeyFingerprint returns the SHA256 fingerprint of an authorized_keys
+// line's key, "" when the line holds none.
 func KeyFingerprint(line string) string {
-	t, fp, _ := keyLine(line)
-	_ = t
+	_, fp, _ := ParseKeyLine(line)
 	return fp
 }
 
-func keyLine(line string) (typ, fp string, options bool) {
+// ParseKeyLine parses an authorized_keys line the way sshd does: an
+// optional options field (where quoted text may hold spaces), then the key
+// type and the base64 key. sshd takes a type's full name (ssh-ed25519) or
+// its short name (ED25519, rsa) in any case; the type that counts is the
+// one written in the key itself. keyType and fp (SHA256:..., as ssh-keygen
+// -lf shows it) are "" for a line without a key; unparsed is a line that is
+// neither a key nor a comment or blank (sshd ignores it; it is reported,
+// not dropped). (tools/persistence.go parseKeyLine as of v0.2.5.)
+func ParseKeyLine(line string) (keyType, fp string, unparsed bool) {
+	keyType, fp, _, unparsed = parseKeyLine(line)
+	return keyType, fp, unparsed
+}
+
+func parseKeyLine(line string) (keyType, fp string, options, unparsed bool) {
 	line = strings.TrimSpace(line)
 	if line == "" || strings.HasPrefix(line, "#") {
-		return "", "", false
+		return "", "", false, false
 	}
-	if !IsKeyType(strings.Fields(line)[0]) {
-		options = true
-		// The options field, scanned as OpenSSH's sshkey_advance_past_options does.
-		quoted := false
-		i := 0
-		for ; i < len(line) && (quoted || (line[i] != ' ' && line[i] != '\t')); i++ {
-			if line[i] == '\\' && i+1 < len(line) && line[i+1] == '"' {
-				i++
-			} else if line[i] == '"' {
-				quoted = !quoted
-			}
+	if t, fp := keyAt(line); fp != "" {
+		return t, fp, false, false
+	}
+	// The options field, scanned as OpenSSH's sshkey_advance_past_options does.
+	quoted := false
+	i := 0
+	for ; i < len(line) && (quoted || (line[i] != ' ' && line[i] != '\t')); i++ {
+		if line[i] == '\\' && i+1 < len(line) && line[i+1] == '"' {
+			i++
+		} else if line[i] == '"' {
+			quoted = !quoted
 		}
-		line = line[i:]
 	}
-	f := strings.Fields(line)
+	if t, fp := keyAt(strings.TrimSpace(line[i:])); fp != "" {
+		return t, fp, true, false
+	}
+	return "", "", false, true
+}
+
+// keyAt reads a key type name and a base64 key at the start of s.
+func keyAt(s string) (keyType, fp string) {
+	f := strings.Fields(s)
 	if len(f) < 2 || !IsKeyType(f[0]) {
-		return "", "", false
+		return "", ""
 	}
 	blob, err := base64.StdEncoding.DecodeString(f[1])
 	if err != nil || len(blob) < 16 {
-		return "", "", false
+		return "", ""
+	}
+	// The key starts with its type: a 4-byte big-endian length, then the name.
+	n := int(binary.BigEndian.Uint32(blob))
+	if n <= 0 || n > 64 || 4+n > len(blob) {
+		return "", ""
+	}
+	keyType = string(blob[4 : 4+n])
+	if !fullKeyType(keyType) {
+		return "", ""
 	}
 	sum := sha256.Sum256(blob)
-	typ = f[0]
-	if bt := blobType(blob); bt != "" {
-		typ = bt // what sshd will check, whatever the text says
-	}
-	return typ, "SHA256:" + base64.RawStdEncoding.EncodeToString(sum[:]), options
+	return keyType, "SHA256:" + base64.RawStdEncoding.EncodeToString(sum[:])
 }
 
-// ParseAuthorizedKeys returns the keys sshd would use, in file order.
-func ParseAuthorizedKeys(b []byte) []AuthorizedKey {
-	var out []AuthorizedKey
-	for _, l := range strings.Split(string(b), "\n") {
-		if t, fp, opt := keyLine(l); fp != "" {
-			out = append(out, AuthorizedKey{Type: t, Fingerprint: fp, Options: opt, CloudInitRefusal: CloudInitRefusal(l)})
+// ParseAuthorizedKeys returns the keys sshd would use, with their line
+// numbers, and the lines that are neither a key nor a comment.
+func ParseAuthorizedKeys(b []byte) (keys []AuthorizedKey, unparsed []int) {
+	for i, l := range strings.Split(string(b), "\n") {
+		t, fp, opt, bad := parseKeyLine(l)
+		switch {
+		case fp != "":
+			keys = append(keys, AuthorizedKey{Line: i + 1, Type: t, Fingerprint: fp, Options: opt, CloudInitRefusal: CloudInitRefusal(l)})
+		case bad:
+			unparsed = append(unparsed, i+1)
 		}
 	}
-	return out
-}
-
-func countLines(b []byte) int {
-	n := 0
-	for _, l := range strings.Split(string(b), "\n") {
-		if l = strings.TrimSpace(l); l != "" && !strings.HasPrefix(l, "#") {
-			n++
-		}
-	}
-	return n
+	return keys, unparsed
 }
 
 // SSHKeyFiles reads ~/.ssh/authorized_keys{,2} of every account, login
@@ -186,9 +186,7 @@ func (LinuxCollector) SSHKeyFiles(src Source, accounts []Account) Obs[[]Authoriz
 				kf.Unread = string(Classify(err))
 				miss(p, err)
 			}
-			kf.Lines = countLines(b)
-			kf.Keys = ParseAuthorizedKeys(b)
-			kf.Unparsed = kf.Lines - len(kf.Keys)
+			kf.Keys, kf.Unparsed = ParseAuthorizedKeys(b)
 			out = append(out, kf)
 		}
 	}
@@ -375,8 +373,8 @@ func EvalSymlinks(src Source, p string) (string, error) {
 			resolved = next // not a link
 			continue
 		}
-		if hops++; hops > 40 {
-			return "", errors.New("hostenv: too many links in " + p)
+		if hops++; hops > 255 { // as filepath.EvalSymlinks
+			return "", errors.New("EvalSymlinks: too many links") // filepath.EvalSymlinks's words
 		}
 		if !strings.HasPrefix(t, "/") {
 			t = path.Join(resolved, t)

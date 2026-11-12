@@ -246,9 +246,10 @@ type AuthEvent struct {
 }
 
 type Web struct {
-	Server     string   `json:"server,omitempty"` // nginx, apache, iis
-	WebRoots   []string `json:"webroots,omitempty"`
-	UploadDirs []string `json:"upload_dirs,omitempty"`
+	Server           string   `json:"server,omitempty"` // nginx, apache, iis
+	WebRoots         []string `json:"webroots,omitempty"`
+	UploadDirs       []string `json:"upload_dirs,omitempty"`
+	ConfigUnreadable []string `json:"config_unreadable,omitempty"` // "path (why)": web roots they name are missing
 }
 
 // NewFacts returns a Facts with every observation marked not collected, so a
