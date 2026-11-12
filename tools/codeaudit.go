@@ -657,12 +657,19 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 	}
 	// Findings the cap per rule and file left out before they were listed:
 	// counted, never kept (one file can hold hundreds of thousands).
-	over := map[string]int{} // file → the most any pass left out
-	addOver := func(p string, n int) { over[p] = max(over[p], n) }
+	over := map[string]int{}     // file → the most any pass left out
+	overGen := map[string]bool{} // the file is minified or bundled JavaScript
+	addOver := func(p string, n int, gen bool) {
+		over[p] = max(over[p], n)
+		overGen[p] = overGen[p] || gen
+	}
 	countOver := func(p string, n int) {
-		if testPath(p) {
+		switch {
+		case testPath(p):
 			res.InjectionTestPaths += n
-		} else {
+		case overGen[p]:
+			res.InjectionGenerated += n
+		default:
 			res.Injection += n
 		}
 		left += n
@@ -918,7 +925,7 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 					}
 				}
 				addNew(k.Found, k.Gen)
-				addOver(p, k.Over)
+				addOver(p, k.Over, k.Gen)
 				if k.Reason != "" { // "calls": its own calls were cut short
 					partial = append(partial, UnfinishedFile{p, k.Reason})
 				}
@@ -973,7 +980,7 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 						res, err := injectionCalls(pr, p, b, skip)
 						found, n := capFound(append(slices.Clone(part.Found), res.Found...))
 						n += part.Over
-						addOver(p, n)
+						addOver(p, n, gen)
 						switch {
 						case errors.Is(err, errPanic):
 							addNew(found, gen)
@@ -1021,7 +1028,7 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 					continue
 				}
 				addNew(k.Found, k.Gen)
-				addOver(p, k.Over)
+				addOver(p, k.Over, k.Gen)
 				covered++
 				if k.Reason != "calls" {
 					done++ // limits of the file itself were reported by the first pass
