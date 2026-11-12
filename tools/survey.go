@@ -152,6 +152,7 @@ func Survey(ctx context.Context, env *Env) SiteProfile {
 	var unread []string
 	p.SSH, p.SSHHash, unread = sshdSettings()
 	p.Risks = append(p.Risks, sshRisks(p.SSH, unread)...)
+p.Risks = append(p.Risks, apacheH2Risk(ctx, apacheConfGlob)...)
 	if p.Firewall == "none detected" && hasPublic(p.Services) {
 		p.Risks = append(p.Risks, Risk{"firewall:none", "info", "no host firewall detected (nftables, ufw, firewalld); fine only if a cloud firewall covers this server"})
 	}
