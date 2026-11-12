@@ -137,8 +137,8 @@ lang = "php"
 applies = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "$_SERVER", "$_FILES", "$request"]
 framework = "wordpress"
 title = "An Elementor widget's settings are written by any user who can edit with Elementor"
-sources = ["->get_settings_for_display("]
-note = "Elementor widgets (render()) read their controls with get_settings_for_display(); contributors and up set them. Not get_settings(): WP_Widget and WooCommerce settings pages have one of that name too, and what it returns there is set by administrators."
+sources = ["->get_settings_for_display(", "->get_settings("]
+note = "Elementor widgets (render()) read their controls with get_settings_for_display(); contributors and up set them."
 refs = ["https://developers.elementor.com/docs/widgets/widget-rendering/"]
 
 [[route.samples]]
@@ -165,15 +165,28 @@ class Box_Widget extends \Elementor\Widget_Base {
 }
 '''
 
+# Known false positive (kept over a miss): ->get_settings( is a source in every
+# class, also where it returns what an administrator saved, as in WP_Widget and
+# WooCommerce's WC_Settings_Page. Sources cannot yet be limited to classes
+# extending \Elementor\Widget_Base (engine, v0.2.6). Until then this is reported:
+#
+#   class Box_Widget extends WP_Widget {
+#   	public function widget($args, $instance) {
+#   		global $wpdb;
+#   		$all = $this->get_settings();
+#   		echo $wpdb->get_var("SELECT name FROM {$wpdb->prefix}teams WHERE id = " . $all[$this->number]['team']);
+#   	}
+#   }
+
 [[route.samples]]
-kind = "safe"
-note = "WP_Widget::get_settings() returns what an administrator saved for the widget"
+kind = "vulnerable"
+note = "get_settings() without the _for_display: the same controls, as saved"
 code = '''<?php
-class Box_Widget extends WP_Widget {
-	public function widget($args, $instance) {
+class Team_Widget extends \Elementor\Widget_Base {
+	protected function render() {
 		global $wpdb;
-		$all = $this->get_settings();
-		echo $wpdb->get_var("SELECT name FROM {$wpdb->prefix}teams WHERE id = " . $all[$this->number]['team']);
+		$s = $this->get_settings();
+		echo $wpdb->get_var("SELECT name FROM {$wpdb->prefix}teams WHERE id = " . $s['team']);
 	}
 }
 '''
