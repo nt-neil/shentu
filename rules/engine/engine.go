@@ -63,9 +63,10 @@ type crule struct {
 	textSources, textSinks []*pat // text inside string literals
 	sanitizers             []*pat
 	args                   map[*pat]*argCond
-	leading                bool            // some sink needs a fixed prefix, so values track raw input
-	srcScope               map[*pat]string // sources of a route model that count only in a class extending this one (routes.go)
-	output                 bool            // every sink writes to a page (has a context condition): see context.go
+	leading                bool              // some sink needs a fixed prefix, so values track raw input
+	srcScope               map[*pat][]string // sources of a route model that count on $this only in a class extending one of these (routes.go)
+	srcThis                map[*pat]bool     // sources of a route model that count only on $this or $this->parent (this_only)
+	output                 bool              // every sink writes to a page (has a context condition): see context.go
 }
 
 type argCond struct {

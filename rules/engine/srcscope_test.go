@@ -2,13 +2,20 @@ package engine
 
 import "testing"
 
-// A route model's sources with extends (and no method) count only in a class
-// extending that one: Elementor's get_settings() in a widget, through its
-// parents in the file and in a project's other files; not in WP_Widget, a
-// WooCommerce settings page, or code outside a class.
+// A route model's sources with in_classes count on $this only in a class
+// extending one of them: Elementor's get_settings() in a widget or a dynamic
+// tag, through its parents in the file and in a project's other files; not in
+// WP_Widget or a WooCommerce settings page. get_settings_for_display() counts
+// on another object too; get_settings() (this_only) only on a skin's
+// $this->parent: another object's may be a settings page's.
 func TestRouteSourcesScoped(t *testing.T) {
 	e := engineForTest(t)
-	body := "\tpublic function render() {\n\t\tglobal $wpdb;\n\t\t$s = $this->get_settings();\n\t\techo $wpdb->get_var(\"SELECT n FROM t WHERE id = \" . $s['id']);\n\t}\n"
+	call := func(recv, m string) string {
+		return "\tpublic function render() {\n\t\tglobal $wpdb;\n\t\t$s = " + recv + "->" + m + "();\n\t\techo $wpdb->get_var(\"SELECT n FROM t WHERE id = \" . $s['id']);\n\t}\n"
+	}
+	other := func(recv string) string { return call(recv, "get_settings") }
+	display := func(recv string) string { return call(recv, "get_settings_for_display") }
+	body := other("$this")
 	for _, c := range []struct {
 		name, src string
 		want      bool
@@ -18,6 +25,18 @@ func TestRouteSourcesScoped(t *testing.T) {
 		{"WP_Widget", "<?php\nclass W extends WP_Widget {\n" + body + "}\n", false},
 		{"WooCommerce", "<?php\nclass W extends WC_Settings_Page {\n" + body + "}\n", false},
 		{"no parent", "<?php\nclass W {\n" + body + "}\n", false},
+		{"a dynamic tag", "<?php\nclass T extends \\Elementor\\Core\\DynamicTags\\Tag {\n" + body + "}\n", true},
+		{"a data tag", "<?php\nclass T extends Elementor\\Core\\DynamicTags\\Data_Tag {\n" + body + "}\n", true},
+		{"Class written in capitals", "<?php\nClass T extends \\Elementor\\Core\\DynamicTags\\Tag {\n" + body + "}\n", true},
+		{"a skin, through its widget", "<?php\nclass S extends \\Elementor\\Skin_Base {\n" + other("$this->parent") + "}\n", true},
+		{"a skin, for display", "<?php\nclass S extends \\Elementor\\Skin_Base {\n" + display("$this->parent") + "}\n", true},
+		{"another object, for display", "<?php\nclass M {\n" + display("$element") + "}\n", true},
+		{"another object, for display, in WP_Widget", "<?php\nclass W extends WP_Widget {\n" + display("$document") + "}\n", true},
+		{"$this, for display, in WP_Widget", "<?php\nclass W extends WP_Widget {\n" + display("$this") + "}\n", false},
+		{"another object's get_settings()", "<?php\nclass M {\n" + other("$section") + "}\n", false},
+		{"another object's get_settings() in WP_Widget", "<?php\nclass W extends WP_Widget {\n" + other("$widget") + "}\n", false},
+		{"$this's own property in a widget", "<?php\nclass W extends \\Elementor\\Widget_Base {\n" + other("$this->opts") + "}\n", false},
+		{"a property of the skin's widget", "<?php\nclass S extends \\Elementor\\Skin_Base {\n" + other("$this->parent->opts") + "}\n", false},
 	} {
 		fs, err := e.Scan("php", "a.php", []byte(c.src))
 		if err != nil || (len(fs) > 0) != c.want {

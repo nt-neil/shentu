@@ -1399,8 +1399,11 @@ func (a *analysis) srcMatch(s *pat, t []Token, i int) (int, bool) {
 	if s.text != nil {
 		return 0, false
 	}
-	if c := a.r.srcScope[s]; c != "" && !a.extending(c) {
-		return 0, false // a route model's source for one kind of class only
+	if cs := a.r.srcScope[s]; len(cs) > 0 && a.cls != "" && onThis(t, i) && !slices.ContainsFunc(cs, a.extending) {
+		return 0, false // a route model's source on $this, for some kinds of class only (a class not read, as "Class X", keeps it)
+	}
+	if a.r.srcThis[s] && !onThis(t, i) && !onParent(t, i) {
+		return 0, false // on another object: a method of the same name on some other class
 	}
 	strict := len(s.toks) > 1 && s.toks[0].Kind == Ident && s.toks[1].op("(")
 	end, ok := s.match(t, i, strict)

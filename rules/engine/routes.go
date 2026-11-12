@@ -92,11 +92,17 @@ func (e *Engine) compileRoutes(rs []rules.Route) error {
 			for _, cr := range e.byLang[r.Lang] {
 				if c.takes(cr) { // not a rule without sources (a weak cipher reports its sink alone), nor one for a password field
 					cr.sources = append(cr.sources, p)
-					if r.Extends != "" && r.Method == "" {
+					if len(r.InClasses) > 0 {
 						if cr.srcScope == nil {
-							cr.srcScope = map[*pat]string{}
+							cr.srcScope = map[*pat][]string{}
 						}
-						cr.srcScope[p] = r.Extends // Elementor's get_settings(): in a widget only
+						cr.srcScope[p] = r.InClasses // Elementor's $this->get_settings(): in a widget or a dynamic tag only
+					}
+					if r.ThisOnly {
+						if cr.srcThis == nil {
+							cr.srcThis = map[*pat]bool{}
+						}
+						cr.srcThis[p] = true
 					}
 				}
 			}
@@ -728,6 +734,18 @@ func (a *analysis) extending(class string) bool {
 		c = next
 	}
 	return false
+}
+
+// onThis reports whether the call at t[i] (->name) is made on $this itself,
+// not on another object ($this->parent->, $widget->).
+func onThis(t []Token, i int) bool {
+	return i > 0 && t[i].op("->") && t[i-1].Text == "$this" && (i < 2 || !t[i-2].op("->") && !t[i-2].op("::") && !t[i-2].op("?->"))
+}
+
+// onParent reports whether the call at t[i] is made on $this->parent (an
+// Elementor skin's widget).
+func onParent(t []Token, i int) bool {
+	return i > 2 && t[i].op("->") && t[i-1].Text == "parent" && t[i-2].op("->") && onThis(t, i-2)
 }
 
 // classParents maps each class a PHP file declares (short name, lower case)
