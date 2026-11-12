@@ -270,12 +270,26 @@ func winDefender(ws WinSource) Obs[Antimalware] {
 	if mode, _ := r["AMRunningMode"].(string); mode != "" && mode != "Normal" {
 		am.Product += " (" + mode + ")" // Passive / EDR Block: another product is primary
 	}
-	prefs, err := ws.WMI(NamespaceDefender, "SELECT ExclusionPath FROM MSFT_MpPreference")
+	prefs, err := ws.WMI(NamespaceDefender, "SELECT ExclusionPath, ExclusionExtension, ExclusionProcess FROM MSFT_MpPreference")
 	if err != nil {
 		return Partial(am, Classify(err), "exclusions unreadable")
 	}
-	if len(prefs) > 0 {
-		am.Exclusions = asStrings(prefs[0]["ExclusionPath"])
+	if len(prefs) == 0 {
+		return Partial(am, ReasonNotInstalled, "no Defender preferences returned")
+	}
+	for _, field := range []string{"ExclusionPath", "ExclusionExtension", "ExclusionProcess"} {
+		am.Exclusions = append(am.Exclusions, asStrings(prefs[0][field])...)
+	}
+	// Without elevation Defender answers "N/A: Must be an administrator to
+	// view exclusions" (or nothing): that is hidden, not empty.
+	for _, x := range am.Exclusions {
+		if strings.HasPrefix(x, "N/A") {
+			am.Exclusions = nil
+			return Partial(am, ReasonPermission, "exclusions hidden without elevation")
+		}
+	}
+	if len(am.Exclusions) == 0 && !ws.Info().Elevated {
+		return Partial(am, ReasonPermission, "exclusions cannot be confirmed empty without elevation")
 	}
 	return OK(am)
 }

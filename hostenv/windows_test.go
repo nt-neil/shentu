@@ -49,7 +49,7 @@ func (w *fakeWin) WMI(ns, q string) ([]map[string]any, error) {
 
 const (
 	qDefStatus = "SELECT RealTimeProtectionEnabled, AntivirusSignatureAge, AMRunningMode FROM MSFT_MpComputerStatus"
-	qDefPrefs  = "SELECT ExclusionPath FROM MSFT_MpPreference"
+	qDefPrefs  = "SELECT ExclusionPath, ExclusionExtension, ExclusionProcess FROM MSFT_MpPreference"
 )
 
 // A deliberately weak Windows Server 2022: RDP without NLA, SMB1, WinRM
@@ -69,7 +69,7 @@ func weakServer() *fakeWin {
 	}
 	w.reg[KeyFirewallPolicy+`\PublicProfile`] = map[string]RegValue{"EnableFirewall": dword(0)}
 	w.wmi[qDefStatus] = []map[string]any{{"RealTimeProtectionEnabled": false, "AntivirusSignatureAge": uint32(12), "AMRunningMode": "Normal"}}
-	w.wmi[qDefPrefs] = []map[string]any{{"ExclusionPath": []any{`C:\`, `D:\data`}}}
+	w.wmi[qDefPrefs] = []map[string]any{{"ExclusionPath": []any{`C:\`, `D:\data`}, "ExclusionExtension": []any{"ps1"}}}
 	return w
 }
 
@@ -91,7 +91,7 @@ func TestWindowsCollectorDraft(t *testing.T) {
 	if fw := f.Firewall; fw.Status != StatusOK || fw.Value.Profiles["Public"] || !fw.Value.Profiles["Domain"] || !fw.Value.Enabled {
 		t.Errorf("firewall %+v", fw)
 	}
-	if am := f.Antimalware; am.Status != StatusOK || am.Value.RealTime || am.Value.SignatureAgeDays != 12 || len(am.Value.Exclusions) != 2 {
+	if am := f.Antimalware; am.Status != StatusOK || am.Value.RealTime || am.Value.SignatureAgeDays != 12 || len(am.Value.Exclusions) != 3 {
 		t.Errorf("defender %+v", am)
 	}
 	// Not gathered yet: honest not_collected, not empty lists.
@@ -133,5 +133,18 @@ func TestWindowsCollectorNeedsWinSource(t *testing.T) {
 	}
 	if ForOS("windows").Name() != "unsupported-windows" {
 		t.Error("the Windows draft must not be wired into ForOS before Phase 2")
+	}
+}
+
+func TestDefenderExclusionsHidden(t *testing.T) {
+	w := weakServer()
+	w.info.Elevated = false
+	w.wmi[qDefPrefs] = []map[string]any{{"ExclusionPath": []any{"N/A: Must be an administrator to view exclusions"}}}
+	if am := (WindowsCollector{}).Collect(context.Background(), w).Antimalware; am.Status != StatusPartial || am.Reason != ReasonPermission || am.Value.Exclusions != nil {
+		t.Errorf("N/A placeholder: %+v", am)
+	}
+	w.wmi[qDefPrefs] = []map[string]any{{}}
+	if am := (WindowsCollector{}).Collect(context.Background(), w).Antimalware; am.Status != StatusPartial {
+		t.Errorf("empty list without elevation: %+v", am)
 	}
 }

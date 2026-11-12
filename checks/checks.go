@@ -73,6 +73,16 @@ func cannotTell[T any](id, title string, o hostenv.Obs[T]) []Finding {
 		Reason: string(o.Reason), Evidence: o.Detail}}
 }
 
+// partialNote is the cannot_tell finding for an observation that is usable
+// but incomplete: what was seen is judged, what was hidden is admitted.
+func partialNote[T any](id, title string, o hostenv.Obs[T]) []Finding {
+	if o.Status != hostenv.StatusPartial {
+		return nil
+	}
+	return []Finding{{Check: id, Status: StatusCannotTell, Severity: SevInfo, Title: title,
+		Reason: string(o.Reason), Evidence: o.Detail}}
+}
+
 // checkFunc adapts a function to Check.
 type checkFunc struct {
 	id  string

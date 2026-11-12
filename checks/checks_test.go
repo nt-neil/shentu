@@ -172,3 +172,30 @@ func TestNotApplicableIsSilent(t *testing.T) {
 		}
 	}
 }
+
+func TestBroadExclusion(t *testing.T) {
+	for x, want := range map[string]bool{
+		`C:\`: true, `c:`: true, `*`: true, `C:\Windows\Temp\*`: true, `C:\Users\bob\AppData\Local\Temp`: true,
+		`%TEMP%\x`: true, `C:/ProgramData/`: true, `C:\Users\Public\Downloads`: true, `ps1`: true, `*.exe`: true,
+		`D:\data`: false, `C:\inetpub\logs`: false, `C:\ProgramData\Vendor\cache`: false, `sqlservr.exe`: false,
+	} {
+		if got := broadExclusion(x); got != want {
+			t.Errorf("broadExclusion(%q) = %v, want %v", x, got, want)
+		}
+	}
+}
+
+// A partial fact is judged and its gap admitted.
+func TestPartialAdmitsGap(t *testing.T) {
+	f := facts()
+	f.Firewall = hostenv.Partial(hostenv.Firewall{Backend: "windows", Enabled: true, Profiles: map[string]bool{"Domain": true}},
+		hostenv.ReasonPermission, "some firewall profiles unreadable")
+	f.Antimalware = hostenv.Partial(hostenv.Antimalware{Product: "Microsoft Defender", RealTime: true}, hostenv.ReasonPermission, "exclusions hidden")
+	out := Run(f)
+	for _, id := range []string{"firewall.disabled", "antimalware"} {
+		got := byCheck(out, id)
+		if len(got) != 1 || got[0].Status != StatusCannotTell || got[0].Reason != string(hostenv.ReasonPermission) {
+			t.Errorf("%s: %+v", id, got)
+		}
+	}
+}

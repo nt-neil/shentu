@@ -40,7 +40,7 @@ func extraUID0(f *hostenv.Facts) []Finding {
 				Title: "An account other than root has UID 0", Evidence: a.Name})
 		}
 	}
-	return out
+	return append(out, partialNote("accounts.extra_uid0", "Some accounts could not be read", o)...)
 }
 
 // RiskyIfPublic are services that should never listen beyond loopback
@@ -70,7 +70,7 @@ func exposedService(f *hostenv.Facts) []Finding {
 			Title:    name + " listens on all interfaces; bind it to 127.0.0.1 or firewall it",
 			Evidence: strings.Join(ports[name], ", ")})
 	}
-	return out
+	return append(out, partialNote("listener.exposed_service", "Some sockets could not be tied to a process", o)...)
 }
 
 func sortedKeys[V any](m map[string]V) []string {
@@ -136,7 +136,7 @@ func miner(f *hostenv.Facts) []Finding {
 				Title: "A cryptominer is running", Evidence: fmt.Sprintf("pid %d %s %s", p.PID, p.Exe, p.Cmdline)})
 		}
 	}
-	return out
+	return append(out, partialNote("process.miner", "Some processes could not be inspected", o)...)
 }
 
 // WebUsers are accounts web servers run as; IIS app pools are matched by
@@ -169,7 +169,7 @@ func shellAsWebUser(f *hostenv.Facts) []Finding {
 				Evidence: fmt.Sprintf("pid %d user %s %s", p.PID, p.User, p.Cmdline)})
 		}
 	}
-	return out
+	return append(out, partialNote("process.shell_as_web_user", "Some processes could not be inspected", o)...)
 }
 
 // sharedKey flags one SSH key that unlocks several accounts. Keys with
@@ -203,7 +203,7 @@ func sharedKey(f *hostenv.Facts) []Finding {
 				Evidence: fp + ": " + strings.Join(sortedKeys(owners[fp]), ", ")})
 		}
 	}
-	return out
+	return append(out, partialNote("ssh.shared_key", "Some authorized_keys files could not be read", o)...)
 }
 
 func firewallDisabled(f *hostenv.Facts) []Finding {
@@ -220,15 +220,16 @@ func firewallDisabled(f *hostenv.Facts) []Finding {
 			off = append(off, name)
 		}
 	}
+	var out []Finding
 	switch {
 	case !o.Value.Enabled:
-		return []Finding{{Check: "firewall.disabled", Status: StatusFail, Severity: SevInfo,
-			Title: "No host firewall is active; fine only if a cloud firewall covers this server", Evidence: o.Value.Backend}}
+		out = append(out, Finding{Check: "firewall.disabled", Status: StatusFail, Severity: SevInfo,
+			Title: "No host firewall is active; fine only if a cloud firewall covers this server", Evidence: o.Value.Backend})
 	case len(off) > 0:
-		return []Finding{{Check: "firewall.disabled", Status: StatusFail, Severity: SevMedium,
-			Title: "Windows Firewall is off for some profiles", Evidence: strings.Join(off, ", ")}}
+		out = append(out, Finding{Check: "firewall.disabled", Status: StatusFail, Severity: SevMedium,
+			Title: "Windows Firewall is off for some profiles", Evidence: strings.Join(off, ", ")})
 	}
-	return nil
+	return append(out, partialNote("firewall.disabled", "Some firewall profiles could not be read", o)...)
 }
 
 // MaxSignatureAgeDays is how stale antivirus signatures may get.
@@ -257,21 +258,48 @@ func antimalware(f *hostenv.Facts) []Finding {
 				Title: "Antivirus skips a whole drive or a temp folder", Evidence: x})
 		}
 	}
-	return out
+	return append(out, partialNote("antimalware", "Some antivirus settings could not be read", o)...)
 }
 
-// broadExclusion: a drive root, or a folder malware is dropped into.
+// broadExclusion: a drive root, a temp folder anywhere, a system or shared
+// root, an environment variable that expands to one, or a bare wildcard
+// for a whole file type. Paths are normalised first: "/" and "\" alike,
+// trailing "\" and "\*" stripped, case folded.
 func broadExclusion(x string) bool {
-	l := strings.ToLower(strings.TrimRight(strings.ReplaceAll(x, "/", `\`), `\`))
-	if len(l) == 2 && l[1] == ':' {
-		return true
+	l := strings.ToLower(strings.TrimSpace(strings.ReplaceAll(x, "/", `\`)))
+	for {
+		t := strings.TrimSuffix(strings.TrimSuffix(l, `*`), `\`)
+		if t == l {
+			break
+		}
+		l = t
 	}
-	for _, d := range []string{`\temp`, `\tmp`, `\appdata\local\temp`, `c:\users\public`, `c:\programdata`, `c:\windows`} {
-		if strings.HasSuffix(l, d) || l == d {
+	if l == "" || (len(l) == 2 && l[1] == ':') {
+		return true // "", "*", "C:"
+	}
+	for _, v := range []string{"%temp%", "%tmp%", "%appdata%", "%localappdata%", "%programdata%", "%public%", "%userprofile%", "%systemroot%", "%windir%"} {
+		if strings.HasPrefix(l, v) {
 			return true
 		}
 	}
-	return l == "*" || l == "*.exe" || l == "*.dll" || l == "*.ps1"
+	for _, seg := range strings.Split(l, `\`) {
+		if seg == "temp" || seg == "tmp" || seg == "downloads" {
+			return true
+		}
+	}
+	switch l {
+	case `c:\windows`, `c:\windows\system32`, `c:\users`, `c:\users\public`, `c:\programdata`, `c:\program files`, `c:\program files (x86)`:
+		return true
+	}
+	if strings.HasPrefix(l, `c:\users\public\`) {
+		return true
+	}
+	// Extensions (ExclusionExtension holds "ps1" or ".ps1") and wildcards.
+	switch strings.TrimPrefix(strings.TrimPrefix(l, "*"), ".") {
+	case "exe", "dll", "ps1", "bat", "cmd", "vbs", "js", "hta", "scr":
+		return true
+	}
+	return false
 }
 
 func smb(f *hostenv.Facts) []Finding {
@@ -295,7 +323,7 @@ func smb(f *hostenv.Facts) []Finding {
 		out = append(out, Finding{Check: "smb.everyone_writable", Status: StatusFail, Severity: SevHigh,
 			Title: "A share is writable by everyone", Evidence: s})
 	}
-	return out
+	return append(out, partialNote("smb", "Some SMB settings could not be read", o)...)
 }
 
 func winrm(f *hostenv.Facts) []Finding {
@@ -303,8 +331,12 @@ func winrm(f *hostenv.Facts) []Finding {
 	if out := cannotTell("winrm.insecure", "WinRM settings could not be read", o); out != nil {
 		return out
 	}
-	if !o.Known() || !o.Value.Running {
+	if !o.Known() {
 		return nil
+	}
+	note := partialNote("winrm.insecure", "Some WinRM settings could not be read", o)
+	if !o.Value.Running {
+		return note
 	}
 	var why []string
 	if o.Value.HTTPListener && o.Value.AllowUnencrypted {
@@ -314,10 +346,10 @@ func winrm(f *hostenv.Facts) []Finding {
 		why = append(why, "Basic authentication enabled")
 	}
 	if len(why) == 0 {
-		return nil
+		return note
 	}
-	return []Finding{{Check: "winrm.insecure", Status: StatusFail, Severity: SevHigh,
-		Title: "WinRM accepts weak connections", Evidence: strings.Join(why, "; ")}}
+	return append([]Finding{{Check: "winrm.insecure", Status: StatusFail, Severity: SevHigh,
+		Title: "WinRM accepts weak connections", Evidence: strings.Join(why, "; ")}}, note...)
 }
 
 // BruteforceThreshold is failed logins from one source within the window.
@@ -342,5 +374,5 @@ func bruteforce(f *hostenv.Facts) []Finding {
 				Title: "The security log was cleared", Evidence: e.When + " " + e.Who})
 		}
 	}
-	return out
+	return append(out, partialNote("auth.bruteforce", "Some login events could not be read", o)...)
 }
