@@ -42,7 +42,10 @@ Chinese for the zh-TW pages; keep the two in step.
 - `->get_settings()` counts as Elementor widget input in every class, so `WP_Widget::get_settings()`
   and WooCommerce `WC_Settings_Page::get_settings()` values (saved by administrators) are reported
   too. Limiting the source to classes extending `\Elementor\Widget_Base` needs class-scoped sources
-  in the engine (planned for v0.2.6).
+  in the engine (planned for v0.2.6). Values read through ->get_settings() can also be followed
+  into WordPress admin field definitions and into a few SQL sinks that are already guarded (an
+  isset() check, or a value bound through $wpdb->prepare() inside ORDER BY FIELD()), which gives
+  extra false positives there. Narrowing the source to Elementor widgets is planned for v0.2.6.
 - In `$wpdb->prepare()`/`->prepare()` formats, a placeholder list built by a callback that returns
   a constant (`implode(',', array_map(fn($v) => '%d', $ids))`) is still treated as input and
   reported. `array_fill(0, count($ids), '%d')` and `sizeof()` are recognised. Reading a callback's

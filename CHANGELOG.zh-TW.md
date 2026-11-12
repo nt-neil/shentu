@@ -34,6 +34,9 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 - `->get_settings()` 在任何 class 裡都會被當成 Elementor widget 的輸入，所以 `WP_Widget::get_settings()`
   和 WooCommerce `WC_Settings_Page::get_settings()` 回傳的值（由管理員存入）也會被報出來。要把來源
   限定在繼承 `\Elementor\Widget_Base` 的 class，引擎得支援依 class 限定 source，預定 v0.2.6。
+  經由 ->get_settings() 讀到的值，也可能被追進 WordPress 後台的欄位定義，以及少數已經有防護的
+  SQL 位置（例如先用 isset() 檢查，或在 ORDER BY FIELD() 裡用 $wpdb->prepare() 綁定），因此在這些
+  地方會多出誤報。v0.2.6 會把這個來源限縮到 Elementor 元件。
 - 在 `$wpdb->prepare()`／`->prepare()` 的格式字串裡，如果佔位符清單是由只回傳常數的 callback 產生
   （例如 `implode(',', array_map(fn($v) => '%d', $ids))`），仍然會被當成輸入報出來。
   `array_fill(0, count($ids), '%d')` 和 `sizeof()` 的寫法已能辨識。要讀出 callback 的回傳值需要
