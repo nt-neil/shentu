@@ -13,6 +13,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // LinuxCollector gathers hostfacts on Linux from /proc, /etc and the package
@@ -209,6 +210,12 @@ func (LinuxCollector) Processes(src Source, users map[string]string) (Obs[[]Proc
 		if cb, err := src.ReadFile(dir + "/cmdline"); err == nil {
 			p.Cmdline = ParseCmdline(cb)
 		}
+		if st, err := Stat(src, dir); err == nil {
+			p.Started = st.ModTime.Format(time.RFC3339)
+		}
+		if sb, err := src.ReadFile(dir + "/stat"); err == nil {
+			p.StartTicks, _ = ParseProcStartTicks(sb)
+		}
 		exe, err := src.Readlink(dir + "/exe")
 		switch {
 		case err == nil:
@@ -258,16 +265,19 @@ func (LinuxCollector) Listeners(src Source, owners map[string]int) Obs[[]Listene
 				continue
 			}
 			l := Listener{Proto: proto, Addr: e.LocalIP.String(), Port: e.LocalPort, UID: e.UID}
-			key := fmt.Sprintf("%s/%s/%d", proto, l.Addr, l.Port)
-			if seen[key] { // SO_REUSEPORT: one row per socket, one listener per port
-				continue
-			}
-			seen[key] = true
 			if pid, ok := owners[e.Inode]; ok {
 				l.PID = pid
 			} else if e.Inode != "0" {
 				unowned++
 			}
+			// SO_REUSEPORT gives one row per socket: collapse rows of the
+			// same owner, but keep a second process (or user) on the same
+			// port visible, which is how a port gets hijacked.
+			key := fmt.Sprintf("%s/%s/%d/%d/%s", proto, l.Addr, l.Port, l.PID, l.UID)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
 			out = append(out, l)
 		}
 	}

@@ -349,3 +349,20 @@ func TestLiveRemap(t *testing.T) {
 		}
 	}
 }
+
+// A second process on the same port stays visible; one process's
+// SO_REUSEPORT sockets collapse.
+func TestListenersKeepSecondOwner(t *testing.T) {
+	h := debianHost(true)
+	h.files["/proc/net/tcp"] += "   3: 00000000:0016 00000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 9002 1 0 100 0 0 10 0\n" +
+		"   4: 00000000:0016 00000000:0000 0A 00000000:00000000 00:00000000 00000000    33        0 9001 1 0 100 0 0 10 0\n"
+	var n22 []int
+	for _, l := range Collect(context.Background(), h).Listeners.Value {
+		if l.Port == 22 && l.Proto == "tcp" && l.Addr == "0.0.0.0" {
+			n22 = append(n22, l.PID)
+		}
+	}
+	if !reflect.DeepEqual(n22, []int{4243, 4242}) {
+		t.Errorf("port 22 owners %v, want sshd and the intruder", n22)
+	}
+}

@@ -6,16 +6,20 @@ package tools
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nt-neil/shentu/hostenv"
 )
@@ -191,4 +195,140 @@ func TestLegacyListeners(t *testing.T) {
 			t.Errorf("%s:\n got %+v\nwant %+v", name, got, want)
 		}
 	}
+}
+
+// legacyProcesses is tools/system.go Processes before 1c, I/O through src.
+func legacyProcesses(src hostenv.Source, all bool) []Proc {
+	names := map[string]string{}
+	pw, _ := src.ReadFile("/etc/passwd")
+	for _, line := range strings.Split(string(pw), "\n") {
+		f := strings.Split(line, ":")
+		if len(f) < 3 {
+			continue
+		}
+		if _, dup := names[f[2]]; !dup {
+			names[f[2]] = f[0]
+		}
+	}
+	procStart := func(pid int) (int64, bool) {
+		b, err := src.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+		if err != nil {
+			return 0, false
+		}
+		i := bytes.LastIndexByte(b, ')')
+		if i < 0 {
+			return 0, false
+		}
+		f := strings.Fields(string(b[i+1:]))
+		if len(f) < 20 {
+			return 0, false
+		}
+		t, err := strconv.ParseInt(f[19], 10, 64)
+		return t, err == nil
+	}
+	self := os.Getpid()
+	var out, seen []Proc
+	start := map[int]int64{}
+	ents, _ := src.ReadDir("/proc")
+	for _, e := range ents {
+		pid, err := strconv.Atoi(e)
+		if err != nil || pid == self {
+			continue
+		}
+		status, err := src.ReadFile(fmt.Sprintf("/proc/%d/status", pid))
+		if err != nil {
+			continue
+		}
+		cb, _ := src.ReadFile(fmt.Sprintf("/proc/%d/comm", pid))
+		p := Proc{PID: pid, Comm: strings.TrimSpace(string(cb))}
+		for _, line := range strings.Split(string(status), "\n") {
+			if v, ok := strings.CutPrefix(line, "PPid:"); ok {
+				p.PPID, _ = strconv.Atoi(strings.TrimSpace(v))
+			}
+			if v, ok := strings.CutPrefix(line, "Uid:"); ok {
+				uid := strings.Fields(v)[0]
+				p.User = names[uid]
+				if p.User == "" {
+					p.User = uid
+				}
+			}
+		}
+		p.Exe, _ = src.Readlink(fmt.Sprintf("/proc/%d/exe", pid))
+		cmd, _ := src.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
+		p.Cmdline = strings.TrimSpace(strings.ReplaceAll(string(cmd), "\x00", " "))
+		if len(p.Cmdline) > 300 {
+			p.Cmdline = Cut(p.Cmdline, 300)
+		}
+		if st, err := hostenv.Stat(src, fmt.Sprintf("/proc/%d", pid)); err == nil {
+			p.Started = st.ModTime.Format(time.RFC3339)
+		}
+		if t, ok := procStart(pid); ok {
+			start[pid] = t
+		}
+		if strings.HasSuffix(p.Exe, " (deleted)") {
+			p.Flags = append(p.Flags, "deleted_executable")
+		}
+		for _, dir := range []string{"/tmp/", "/dev/shm/", "/var/tmp/"} {
+			if strings.HasPrefix(p.Exe, dir) {
+				p.Flags = append(p.Flags, "runs_from_"+strings.Trim(dir, "/"))
+			}
+		}
+		if minerSigns(p.Exe, p.Cmdline) {
+			p.Flags = append(p.Flags, "miner")
+		}
+		if webUsers[p.User] && shells[filepath.Base(strings.TrimSuffix(p.Exe, " (deleted)"))] {
+			p.Flags = append(p.Flags, "shell_as_web_user")
+		}
+		seen = append(seen, p)
+	}
+	for _, p := range unflagBootSurvivors(seen, start) {
+		if all || len(p.Flags) > 0 {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+func TestLegacyProcesses(t *testing.T) {
+	for name, rp := range fixtures(t) {
+		src := commOverlay{rp}
+		withHost(t, src)
+		for _, all := range []bool{true, false} {
+			got, want := Processes(all), legacyProcesses(src, all)
+			if all && len(want) < 50 {
+				t.Fatalf("%s: legacy saw only %d processes", name, len(want))
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Errorf("%s all=%v: %d vs legacy %d processes", name, all, len(got), len(want))
+				for i := range min(len(got), len(want)) {
+					if !reflect.DeepEqual(got[i], want[i]) {
+						t.Errorf(" first diff:\n got %+v\nwant %+v", got[i], want[i])
+						break
+					}
+				}
+			}
+		}
+	}
+}
+
+// block_ip must refuse when the connection table was cut short: the
+// operator's SSH session could be in the part not read.
+func TestSSHPeersFailClosed(t *testing.T) {
+	withHost(t, truncatedNet{})
+	if _, err := SSHPeers(); err == nil {
+		t.Fatal("SSHPeers reported a complete table")
+	}
+	if _, err := blockIP.Preview(json.RawMessage(`{"ip":"203.0.113.7","reason":"x"}`)); err == nil || !strings.Contains(err.Error(), "could not be read in full") {
+		t.Errorf("block_ip did not refuse: %v", err)
+	}
+}
+
+type truncatedNet struct{ hostenv.Source }
+
+func (truncatedNet) Info() hostenv.SourceInfo { return hostenv.SourceInfo{GOOS: "linux"} }
+func (truncatedNet) ReadFile(p string) ([]byte, error) {
+	if p == "/proc/net/tcp" {
+		return []byte("  sl  local_address rem_address   st\n"), hostenv.ErrTruncated
+	}
+	return nil, os.ErrNotExist
 }

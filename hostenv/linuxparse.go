@@ -12,6 +12,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // ParseOSRelease reads /etc/os-release KEY=value lines.
@@ -368,14 +369,38 @@ func ParseProcStatus(b []byte) ProcStatus {
 // MaxCmdline caps a recorded command line.
 const MaxCmdline = 512
 
-// ParseCmdline turns NUL-separated /proc/<pid>/cmdline into one masked line.
+// ParseCmdline turns NUL-separated /proc/<pid>/cmdline into one masked
+// line, cut at MaxCmdline bytes on a character boundary.
 func ParseCmdline(b []byte) string {
-	s := strings.TrimRight(strings.ReplaceAll(string(b), "\x00", " "), " ")
-	s = MaskSecrets(s)
-	if len(s) > MaxCmdline {
-		s = s[:MaxCmdline] + "…"
+	return CutString(MaskSecrets(strings.TrimSpace(strings.ReplaceAll(string(b), "\x00", " "))), MaxCmdline)
+}
+
+// CutString shortens s to at most n bytes without splitting a UTF-8
+// character, adding "…" when it cuts (tools.Cut, shared).
+func CutString(s string, n int) string {
+	if len(s) <= n {
+		return s
 	}
-	return s
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n] + "…"
+}
+
+// ParseProcStartTicks is field 22 of /proc/PID/stat: when the process
+// started, in clock ticks after boot. The name field may hold spaces and
+// parentheses, so fields count from the last ')'.
+func ParseProcStartTicks(b []byte) (int64, bool) {
+	i := strings.LastIndexByte(string(b), ')')
+	if i < 0 {
+		return 0, false
+	}
+	f := strings.Fields(string(b[i+1:]))
+	if len(f) < 20 {
+		return 0, false
+	}
+	t, err := strconv.ParseInt(f[19], 10, 64)
+	return t, err == nil
 }
 
 // TempDirs are world-writable places a binary has no business running from.

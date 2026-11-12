@@ -28,16 +28,17 @@ type fixture struct {
 }
 
 type entry struct {
-	Op        string   `json:"op"` // file, dir, link, cmd
-	Path      string   `json:"path,omitempty"`
-	Argv      []string `json:"argv,omitempty"`
-	Err       string   `json:"err,omitempty"` // not_exist, permission, truncated, timeout, not_allowed, other:<text>
-	Blob      string   `json:"blob,omitempty"`
-	Names     []string `json:"names,omitempty"`
-	Target    string   `json:"target,omitempty"`
-	ExitCode  int      `json:"exit_code,omitempty"`
-	Stderr    string   `json:"stderr,omitempty"`
-	Truncated bool     `json:"truncated,omitempty"`
+	Op        string    `json:"op"` // file, dir, link, stat, cmd
+	Path      string    `json:"path,omitempty"`
+	Argv      []string  `json:"argv,omitempty"`
+	Err       string    `json:"err,omitempty"` // not_exist, permission, truncated, timeout, not_allowed, other:<text>
+	Blob      string    `json:"blob,omitempty"`
+	Names     []string  `json:"names,omitempty"`
+	Target    string    `json:"target,omitempty"`
+	ExitCode  int       `json:"exit_code,omitempty"`
+	Stderr    string    `json:"stderr,omitempty"`
+	Truncated bool      `json:"truncated,omitempty"`
+	Stat      *FileStat `json:"stat,omitempty"`
 
 	data []byte // blob contents while in memory
 }
@@ -67,6 +68,8 @@ func errCode(err error) string {
 		return "symlink"
 	case errors.Is(err, ErrNotRegular):
 		return "not_regular"
+	case errors.Is(err, ErrNoStat):
+		return "no_stat"
 	}
 	return "other:" + MaskSecrets(err.Error())
 }
@@ -89,6 +92,8 @@ func codeErr(code, path string) error {
 		return ErrSymlink
 	case code == "not_regular":
 		return ErrNotRegular
+	case code == "no_stat":
+		return ErrNoStat
 	}
 	return errors.New(strings.TrimPrefix(code, "other:"))
 }
@@ -114,6 +119,16 @@ func (r *Recorder) ReadFile(path string) ([]byte, error) {
 	b, err := r.Inner.ReadFile(path)
 	r.put(&entry{Op: "file", Path: path, Err: errCode(err), data: b})
 	return b, err
+}
+
+func (r *Recorder) Stat(path string) (FileStat, error) {
+	st, err := Stat(r.Inner, path)
+	e := &entry{Op: "stat", Path: path, Err: errCode(err)}
+	if err == nil {
+		e.Stat = &st
+	}
+	r.put(e)
+	return st, err
 }
 
 // ReadFileNoFollow records under the same key as ReadFile, so a replay of
@@ -251,6 +266,17 @@ func (rp *Replay) ReadFile(path string) ([]byte, error) {
 		return nil, err
 	}
 	return e.data, codeErr(e.Err, path)
+}
+
+func (rp *Replay) Stat(path string) (FileStat, error) {
+	e, err := rp.find("stat", path, nil)
+	if err != nil {
+		return FileStat{}, err
+	}
+	if e.Stat == nil {
+		return FileStat{}, codeErr(e.Err, path)
+	}
+	return *e.Stat, codeErr(e.Err, path)
 }
 
 func (rp *Replay) ReadDir(path string) ([]string, error) {

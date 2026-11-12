@@ -52,6 +52,29 @@ type NoFollowReader interface {
 	ReadFileNoFollow(path string) ([]byte, error)
 }
 
+// FileStat is the part of a stat result the collectors use.
+type FileStat struct {
+	Mode    fs.FileMode `json:"mode"`
+	Size    int64       `json:"size"`
+	ModTime time.Time   `json:"mtime"`
+}
+
+// Stater is implemented by Sources that can stat a path (following links).
+type Stater interface {
+	Stat(path string) (FileStat, error)
+}
+
+// ErrNoStat is returned by Stat for a Source that cannot stat.
+var ErrNoStat = errors.New("hostenv: source cannot stat")
+
+// Stat stats path through src when it supports it.
+func Stat(src Source, path string) (FileStat, error) {
+	if s, ok := src.(Stater); ok {
+		return s.Stat(path)
+	}
+	return FileStat{}, ErrNoStat
+}
+
 // ReadFileNoFollow reads path without following a final symlink when src
 // supports it, and falls back to ReadFile for sources that only replay.
 func ReadFileNoFollow(src Source, path string) ([]byte, error) {
@@ -121,6 +144,14 @@ func (l *Live) read(path string, noFollow bool) ([]byte, error) {
 		return b[:MaxFileBytes], ErrTruncated
 	}
 	return b, nil
+}
+
+func (l *Live) Stat(path string) (FileStat, error) {
+	st, err := os.Stat(l.path(path))
+	if err != nil {
+		return FileStat{}, err
+	}
+	return FileStat{Mode: st.Mode(), Size: st.Size(), ModTime: st.ModTime()}, nil
 }
 
 func (l *Live) ReadDir(path string) ([]string, error) {

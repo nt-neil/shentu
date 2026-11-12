@@ -1,10 +1,11 @@
 package tools
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"net"
 	"os"
 	"path/filepath"
@@ -48,7 +49,13 @@ func ListeningPorts() ([]Port, error) {
 		byPID[p.PID] = p
 	}
 	var ports []Port
+	seen := map[string]bool{}
 	for _, l := range linux.Listeners(src, owners).Value {
+		key := fmt.Sprintf("%s/%s/%d", l.Proto, l.Addr, l.Port)
+		if seen[key] { // the tool shows one owner per port, as before 1c
+			continue
+		}
+		seen[key] = true
 		p := Port{Proto: l.Proto, Addr: l.Addr, Port: l.Port, UID: l.UID}
 		if l.PID != 0 {
 			pr := byPID[l.PID]
@@ -71,13 +78,20 @@ func rawExe(p hostenv.Process) string {
 	return p.Exe
 }
 
-// procNet is one /proc/net table through hostenv (nil when unreadable).
-func procNet(proto string) []hostenv.ProcNetEntry {
+// procNet is one /proc/net table through hostenv. complete is false when
+// the table could not be read in full (cut short, or unreadable); a table
+// that does not exist is complete. The rows read are still returned.
+func procNet(proto string) (rows []hostenv.ProcNetEntry, complete bool) {
 	b, err := hostSource().ReadFile("/proc/net/" + proto)
-	if err != nil {
-		return nil
+	switch {
+	case err == nil:
+		return hostenv.ParseProcNet(b), true
+	case errors.Is(err, hostenv.ErrTruncated):
+		return hostenv.ParseProcNet(b), false
+	case errors.Is(err, fs.ErrNotExist): // no such table: no IPv6, or not Linux
+		return nil, true
 	}
-	return hostenv.ParseProcNet(b)
+	return nil, false
 }
 
 func pids() []int {
@@ -97,11 +111,16 @@ func comm(pid int) string {
 }
 
 // SSHPeers returns the remote IPs of established connections to local port 22.
-// block_ip refuses these so the operator never locks themselves out.
-func SSHPeers() map[string]bool {
+// block_ip refuses these so the operator never locks themselves out; the
+// error says the connection table could not be read in full, and block_ip
+// then refuses outright rather than risk the operator's own address.
+func SSHPeers() (map[string]bool, error) {
 	peers := map[string]bool{}
+	complete := true
 	for _, proto := range []string{"tcp", "tcp6"} {
-		for _, e := range procNet(proto) {
+		rows, ok := procNet(proto)
+		complete = complete && ok
+		for _, e := range rows {
 			if e.State == "01" && e.LocalPort == 22 {
 				peers[normIP(e.RemoteIP)] = true
 			}
@@ -110,7 +129,10 @@ func SSHPeers() map[string]bool {
 	if c := os.Getenv("SSH_CLIENT"); c != "" {
 		peers[strings.Fields(c)[0]] = true
 	}
-	return peers
+	if !complete {
+		return peers, errors.New("the TCP connection table could not be read in full, so active SSH sessions are not known")
+	}
+	return peers, nil
 }
 
 func normIP(ip net.IP) string {
@@ -165,45 +187,28 @@ func SetWebUsers(names []string) {
 
 var shells = map[string]bool{"sh": true, "bash": true, "dash": true, "zsh": true, "nc": true, "ncat": true, "socat": true, "python": true, "python3": true, "perl": true}
 
-// Processes reads /proc. With all=false only flagged processes are returned.
+// Processes lists processes from hostenv's processes fact. With all=false
+// only flagged processes are returned.
 func Processes(all bool) []Proc {
 	names := userNames()
 	self := os.Getpid()
+	procs, _ := linux.Processes(hostSource(), nil)
 	var out []Proc
 	var seen []Proc
 	start := map[int]int64{} // clock ticks after boot
-	for _, pid := range pids() {
-		if pid == self {
+	for _, hp := range procs.Value {
+		if hp.PID == self {
 			continue
 		}
-		status, err := os.ReadFile(fmt.Sprintf("/proc/%d/status", pid))
-		if err != nil {
-			continue
-		}
-		p := Proc{PID: pid, Comm: comm(pid)}
-		for _, line := range strings.Split(string(status), "\n") {
-			if v, ok := strings.CutPrefix(line, "PPid:"); ok {
-				p.PPID, _ = strconv.Atoi(strings.TrimSpace(v))
-			}
-			if v, ok := strings.CutPrefix(line, "Uid:"); ok {
-				uid := strings.Fields(v)[0]
-				p.User = names[uid]
-				if p.User == "" {
-					p.User = uid
-				}
+		p := Proc{PID: hp.PID, PPID: hp.PPID, Comm: hp.Name, Exe: rawExe(hp), Cmdline: Cut(hp.Cmdline, 300), Started: hp.Started}
+		if hp.UID != "" {
+			p.User = names[hp.UID]
+			if p.User == "" {
+				p.User = hp.UID
 			}
 		}
-		p.Exe, _ = os.Readlink(fmt.Sprintf("/proc/%d/exe", pid))
-		cmd, _ := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
-		p.Cmdline = strings.TrimSpace(strings.ReplaceAll(string(cmd), "\x00", " "))
-		if len(p.Cmdline) > 300 {
-			p.Cmdline = Cut(p.Cmdline, 300)
-		}
-		if st, err := os.Stat(fmt.Sprintf("/proc/%d", pid)); err == nil {
-			p.Started = st.ModTime().Format(time.RFC3339)
-		}
-		if t, ok := procStart(pid); ok {
-			start[pid] = t
+		if hp.StartTicks > 0 {
+			start[hp.PID] = hp.StartTicks
 		}
 		if strings.HasSuffix(p.Exe, " (deleted)") {
 			p.Flags = append(p.Flags, "deleted_executable")
@@ -232,25 +237,6 @@ func Processes(all bool) []Proc {
 // bootWindow bounds how soon after boot an initramfs process started: two
 // minutes, in clock ticks (USER_HZ is 100 on Linux).
 const bootWindow = 120 * 100
-
-// procStart is when the process started, in clock ticks after boot (field 22
-// of /proc/PID/stat).
-func procStart(pid int) (int64, bool) {
-	b, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
-	if err != nil {
-		return 0, false
-	}
-	i := bytes.LastIndexByte(b, ')') // the name may hold spaces and parentheses
-	if i < 0 {
-		return 0, false
-	}
-	f := strings.Fields(string(b[i+1:]))
-	if len(f) < 20 {
-		return 0, false
-	}
-	t, err := strconv.ParseInt(f[19], 10, 64)
-	return t, err == nil
-}
 
 // A process started from the initramfs, before the boot switched to the real
 // root file system, shows its executable as deleted once the initramfs is
@@ -308,7 +294,7 @@ func minerSigns(exe, cmdline string) bool {
 
 func userNames() map[string]string {
 	m := map[string]string{}
-	b, _ := os.ReadFile("/etc/passwd")
+	b, _ := hostSource().ReadFile("/etc/passwd")
 	for _, line := range strings.Split(string(b), "\n") {
 		f := strings.Split(line, ":")
 		// The first name wins, so a backdoor account that reuses UID 0 is not shown as the owner of root's files.
@@ -419,7 +405,8 @@ func UIDOf(name string) (string, bool) {
 // connection, found by its exact 4-tuple in /proc/net/tcp{,6}.
 func PeerUID(local, remote *net.TCPAddr) (string, bool) {
 	for _, proto := range []string{"tcp", "tcp6"} {
-		for _, e := range procNet(proto) {
+		rows, _ := procNet(proto)
+		for _, e := range rows {
 			if e.LocalPort == remote.Port && e.RemotePort == local.Port &&
 				e.LocalIP.Equal(remote.IP) && e.RemoteIP.Equal(local.IP) {
 				return e.UID, true

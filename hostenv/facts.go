@@ -141,16 +141,18 @@ type Service struct {
 }
 
 type Process struct {
-	PID       int    `json:"pid"`
-	PPID      int    `json:"ppid"`
-	Name      string `json:"name"`
-	Exe       string `json:"exe,omitempty"`     // empty when it could not be read
-	ExeKnown  bool   `json:"exe_known"`         // false: permission or kernel thread
-	ExeExists bool   `json:"exe_exists"`        // false: deleted after start
-	InTemp    bool   `json:"in_temp"`           // exe under a world-writable temp dir
-	Cmdline   string `json:"cmdline,omitempty"` // secret-masked, capped
-	User      string `json:"user,omitempty"`
-	UID       string `json:"uid,omitempty"` // uid or SID
+	PID        int    `json:"pid"`
+	PPID       int    `json:"ppid"`
+	Name       string `json:"name"`
+	Exe        string `json:"exe,omitempty"`     // empty when it could not be read
+	ExeKnown   bool   `json:"exe_known"`         // false: permission or kernel thread
+	ExeExists  bool   `json:"exe_exists"`        // false: deleted after start
+	InTemp     bool   `json:"in_temp"`           // exe under a world-writable temp dir
+	Cmdline    string `json:"cmdline,omitempty"` // secret-masked, capped
+	User       string `json:"user,omitempty"`
+	UID        string `json:"uid,omitempty"`         // uid or SID
+	Started    string `json:"started,omitempty"`     // RFC3339; Linux: mtime of /proc/PID
+	StartTicks int64  `json:"start_ticks,omitempty"` // Linux: clock ticks after boot (stat field 22)
 }
 
 type Account struct {
