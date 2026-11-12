@@ -110,7 +110,7 @@ func installService(cfg *Config, sp svcSpec) error {
 			return fmt.Errorf("%w; the service binary must be writable by administrators only", err)
 		}
 	}
-	if err := ensureStateDir(cfg.StateDir); err != nil {
+	if err := installStateDir(cfg.StateDir); err != nil {
 		return err
 	}
 	m, err := mgr.Connect()

@@ -57,7 +57,7 @@ const stateSDDL = "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FR;;;OW)"
 // trusted (see checkTrusted): a folder a user created first, with whatever
 // they put inside, is refused rather than repaired. Its DACL is then set
 // again, in case an administrator loosened it.
-func secureDir(dir string) error {
+func secureDir(dir string, repair bool) error {
 	sd, err := windows.SecurityDescriptorFromString("O:BA" + stateSDDL)
 	if err != nil {
 		return err
@@ -68,6 +68,9 @@ func secureDir(dir string) error {
 		}
 		if err := checkTrusted(dir); err != nil {
 			return fmt.Errorf("refusing %s: %w; remove it as an administrator and run again", dir, err)
+		}
+		if !repair {
+			return nil // patrol, survey, chat, bot: check only
 		}
 		dacl, _, err := sd.DACL()
 		if err != nil {
@@ -193,7 +196,7 @@ func checkTrustedAs(path string, memberOK bool) error {
 func trustConfig(path string) (load bool, err error) {
 	dir := filepath.Dir(path)
 	if _, err := os.Lstat(dir); errors.Is(err, fs.ErrNotExist) {
-		if err := secureDir(dir); err != nil {
+		if err := secureDir(dir, false); err != nil {
 			if errors.Is(err, windows.ERROR_ACCESS_DENIED) || errors.Is(err, windows.ERROR_PRIVILEGE_NOT_HELD) ||
 				errors.Is(err, windows.ERROR_INVALID_OWNER) {
 				return false, nil
@@ -230,10 +233,20 @@ func trustSkills(dir string) bool { return trustedTree(filepath.Dir(dir)) == nil
 // tokens, state) and the state directory, wherever it is configured.
 // Setting the ACL needs an elevated process, as the service runs.
 func ensureStateDir(dir string) error {
-	if err := secureDir(filepath.Join(programData(), "Shentu")); err != nil {
+	if err := secureDir(filepath.Join(programData(), "Shentu"), false); err != nil {
 		return err
 	}
-	return secureDir(dir)
+	return secureDir(dir, false)
+}
+
+// installStateDir is ensureStateDir for service install, the one place
+// that also sets the owner and the DACL again on folders that exist (an
+// administrator may have loosened them). Every other run only checks.
+func installStateDir(dir string) error {
+	if err := secureDir(filepath.Join(programData(), "Shentu"), true); err != nil {
+		return err
+	}
+	return secureDir(dir, true)
 }
 
 // privileged reports an elevated process (the service runs as LocalSystem).

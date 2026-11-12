@@ -33,7 +33,7 @@ func aceSIDs(t *testing.T, path string) (sids []string, protected bool) {
 
 func TestSecureDir(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "Shentu", "state")
-	if err := secureDir(dir); err != nil {
+	if err := secureDir(dir, false); err != nil {
 		t.Fatal(err) // CI runs elevated, as the service does
 	}
 	sids, protected := aceSIDs(t, dir)
@@ -56,7 +56,7 @@ func TestTrustConfig(t *testing.T) {
 	}
 
 	dir := filepath.Join(t.TempDir(), "Shentu")
-	if err := secureDir(dir); err != nil {
+	if err := secureDir(dir, false); err != nil {
 		t.Fatal(err)
 	}
 	cfg := filepath.Join(dir, "shentu.toml")
@@ -93,14 +93,14 @@ func TestSecureDirRefusesSquatted(t *testing.T) {
 	if err := os.Mkdir(squat, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := secureDir(squat); err == nil {
+	if err := secureDir(squat, false); err == nil {
 		t.Error("a folder someone else created first must be refused, not taken over")
 	}
 	again := filepath.Join(t.TempDir(), "Shentu")
-	if err := secureDir(again); err != nil {
+	if err := secureDir(again, false); err != nil {
 		t.Fatal(err)
 	}
-	if err := secureDir(again); err != nil {
+	if err := secureDir(again, false); err != nil {
 		t.Errorf("a folder secureDir made is trusted the next time: %v", err)
 	}
 }
@@ -144,7 +144,7 @@ func TestSkillsNeedTrustedFolder(t *testing.T) {
 		t.Error("a skill in an untrusted folder must not load")
 	}
 	secured := filepath.Join(t.TempDir(), "Shentu")
-	if err := secureDir(secured); err != nil {
+	if err := secureDir(secured, false); err != nil {
 		t.Fatal(err)
 	}
 	write(secured)
@@ -181,7 +181,7 @@ func TestCheckTrustedACETypes(t *testing.T) {
 		}
 	}
 	dir := filepath.Join(t.TempDir(), "Shentu")
-	if err := secureDir(dir); err != nil {
+	if err := secureDir(dir, false); err != nil {
 		t.Fatal(err)
 	}
 	set(dir, "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(D;;FA;;;BG)")
@@ -202,5 +202,33 @@ func TestSetupNotOnWindows(t *testing.T) {
 	}
 	if err := wizard(context.Background(), nil, true); err != errSetupWindows {
 		t.Errorf("wizard: %v", err)
+	}
+}
+
+// S1: an ordinary run only checks an existing state folder; install
+// sets its owner and DACL again.
+func TestSecureDirRepairOnlyAtInstall(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "Shentu")
+	if err := secureDir(dir, false); err != nil {
+		t.Fatal(err)
+	}
+	// An administrator adds read access for Users: still trusted (no write).
+	sd, _ := windows.SecurityDescriptorFromString("D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FR;;;OW)(A;OICI;FR;;;BU)")
+	dacl, _, _ := sd.DACL()
+	if err := windows.SetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT,
+		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION, nil, nil, dacl, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := secureDir(dir, false); err != nil {
+		t.Fatal(err)
+	}
+	if sids, _ := aceSIDs(t, dir); strings.Join(sids, ",") != "BA,BU,OW,SY" {
+		t.Errorf("a check must not rewrite the DACL: %v", sids)
+	}
+	if err := secureDir(dir, true); err != nil {
+		t.Fatal(err)
+	}
+	if sids, _ := aceSIDs(t, dir); strings.Join(sids, ",") != "BA,OW,SY" {
+		t.Errorf("install sets the DACL again: %v", sids)
 	}
 }
