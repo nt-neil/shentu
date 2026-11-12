@@ -22,8 +22,31 @@ Chinese for the zh-TW pages; keep the two in step.
   50% of the service's cgroup), workers from the CPU count and the load.
 - Fewer false positives: `wp_send_json` output, `JSON_HEX_TAG` data blocks, MongoDB queries
   on objects that are not collections, and Django `_meta.get_field` checks.
-- Known issue: an audit spread over several runs can still report a few findings that
-  differ from one run without a time limit; a fix is in progress.
+
+### Known issues
+
+- An audit spread over several runs can still report a few findings that differ from one
+  run without a time limit; a fix is in progress.
+- `php-deserialization-phar-wrapper` reports `filesize()` on an upload's temporary path in
+  WordPress's REST attachments controller, a false positive: the path is PHP's own, but the
+  engine cannot yet tell an upload's `tmp_name` from its client-set `name`.
+- js-nosqli-mongo-query reports TypeORM repository calls on SQL databases (find/findOne whose
+  options hold a where built from request values, e.g. n8n's public API and credential
+  lookups) as MongoDB queries; TypeORM sends those values as SQL parameters, so these are
+  false positives, to be told apart by a TypeORM-aware receiver check in v0.2.6.
+- `js-cmdi-spawn-shell` still reports `spawn()` and `execFile()` calls whose command and
+  arguments are fixed when only the options (such as `cwd` or `env`) carry request values.
+- js-xss-response has no Server-Sent Events exception: res.write("data: " + value) in a
+  text/event-stream handler is reported as XSS (a false positive), and nothing is missed
+  because of SSE; telling streams apart by the handler's Content-Type is planned for v0.2.6.
+- `->get_settings()` counts as Elementor widget input in every class, so `WP_Widget::get_settings()`
+  and WooCommerce `WC_Settings_Page::get_settings()` values (saved by administrators) are reported
+  too. Limiting the source to classes extending `\Elementor\Widget_Base` needs class-scoped sources
+  in the engine (planned for v0.2.6).
+- In `$wpdb->prepare()`/`->prepare()` formats, a placeholder list built by a callback that returns
+  a constant (`implode(',', array_map(fn($v) => '%d', $ids))`) is still treated as input and
+  reported. `array_fill(0, count($ids), '%d')` and `sizeof()` are recognised. Reading a callback's
+  return value needs an engine change (planned for v0.2.6).
 
 ## v0.2.4 — 2026-11-09
 

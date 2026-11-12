@@ -204,44 +204,59 @@ var auditExt = map[string]bool{".php": true, ".phtml": true, ".php5": true, ".in
 	".cjs": true, ".ts": true, ".mts": true, ".cts": true, ".tsx": true, ".json": true, ".yml": true, ".yaml": true, ".ini": true, ".conf": true, ".cfg": true, ".toml": true,
 	".xml": true, ".properties": true, ".htaccess": true, ".user.ini": true, ".env": true}
 
-// Folders uploads land in: named so (in any case) right under a web root,
-// wp-content/uploads in WordPress and storage/app/public in Laravel. A folder
-// so named inside code (a library's src/Files/, vendor/) holds the code's own
-// files.
-var (
-	uploadNames   = map[string]bool{"uploads": true, "upload": true, "files": true, "media": true, "images": true, "attachments": true}
-	notUploadDirs = map[string]bool{"wp-includes": true, "wp-admin": true, "vendor": true, "src": true, "node_modules": true}
-)
+// Folders uploads land in: wp-content/uploads (WordPress), sites/*/files
+// (Drupal), pub/media (Magento), storage/app/public (Laravel), wherever the
+// site is; else a folder named so (in any case) right under the site's root.
+// Only the path below the site's root counts: /usr/src/app/wp-content/uploads
+// holds uploads, and a site whose root is itself named files is not one.
+var uploadNames = map[string]bool{"uploads": true, "upload": true, "files": true, "media": true, "images": true, "attachments": true}
 
-// uploadFolder reports whether p is in a folder uploads land in. webRoots are
-// the folders the web server serves; without them, the folder is right under
-// one named like public/ or www/, or under a site folder of /var/www.
+// uploadFolder reports whether p is in a folder uploads land in. Under one of
+// webRoots (the folders the web server serves) the folder is right under that
+// root; elsewhere (an app path the server's configuration does not name) right
+// under one named like public/ or www/, or under a site folder of /var/www.
 func uploadFolder(p string, webRoots []string) bool {
-	dir := filepath.ToSlash(filepath.Dir(p))
-	segs := strings.Split(dir, "/")
-	// Only the folders above the upload folder can make it code's own: what is
-	// under an upload folder is uploads, whatever the folders there are named.
-	code := false
+	segs := strings.Split(filepath.ToSlash(filepath.Dir(p)), "/")
+	low := make([]string, len(segs))
 	for i, s := range segs {
-		low := strings.ToLower(s)
-		if i > 0 && strings.EqualFold(segs[i-1], "wp-content") {
-			if low == "uploads" {
-				return !code
+		low[i] = strings.ToLower(s)
+	}
+	at := func(i int, names ...string) bool {
+		for j, n := range names {
+			if i+j >= len(low) || n != "*" && low[i+j] != n {
+				return false
 			}
-			code = true // wp-content/plugins, themes and the like hold code
 		}
-		if low == "public" && i > 1 && strings.EqualFold(segs[i-1], "app") && strings.EqualFold(segs[i-2], "storage") {
-			return !code
+		return true
+	}
+	code := len(low) // below wp-content/plugins, themes and the like: code, not uploads
+	for i := range low {
+		switch {
+		case at(i, "wp-content", "uploads"), at(i, "sites", "*", "files"), at(i, "pub", "media"), at(i, "storage", "app", "public"):
+			return true
+		case low[i] == "wp-content" && code == len(low):
+			code = i
 		}
-		if !code && i > 0 && uploadNames[low] {
-			parent := strings.Join(segs[:i], "/")
-			if len(webRoots) > 0 && slices.Contains(webRoots, parent) ||
-				len(webRoots) == 0 && (webDirNames[strings.ToLower(segs[i-1])] || parent == "/var/www" || filepath.Dir(parent) == "/var/www") {
+	}
+	root := ""
+	for _, r := range webRoots {
+		if insideAny(p, []string{r}) && len(r) > len(root) {
+			root = filepath.ToSlash(r)
+		}
+	}
+	for i := 1; i < len(segs); i++ {
+		if !uploadNames[low[i]] || i > code {
+			continue
+		}
+		parent := strings.Join(segs[:i], "/")
+		if root != "" {
+			if parent == root {
 				return true
 			}
+			continue
 		}
-		if notUploadDirs[low] {
-			code = true
+		if webDirNames[low[i-1]] && parent != "/var/www" || filepath.Dir(parent) == "/var/www" {
+			return true
 		}
 	}
 	return false
@@ -515,8 +530,8 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 	// At most auditMaxPerFile findings of one rule or check in one file and
 	// auditMaxFindings in all are listed; the injection counts take them all.
 	perFile, left := map[string]int{}, 0
-	var ranks [3]int // listed findings by severityRank
-	worst := 0       // the lowest severity listed
+	var ranks [6]int // listed findings by listRank
+	worst := 0       // the lowest rank listed
 	add := func(f CodeFinding) {
 		if f.Kind == "injection" {
 			switch {
@@ -534,15 +549,16 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 			return
 		}
 		if len(res.Findings) >= auditMaxFindings {
-			// Full: a finding of a higher severity takes the place of one of the
-			// lowest listed, so critical ones are never left out for warnings.
-			r := severityRank(f.Severity)
+			// Full: a finding of a higher rank takes the place of one of the
+			// lowest listed, so alerts are never left out for info-tier
+			// findings, nor critical ones for warnings.
+			r := listRank(f)
 			if r >= worst {
 				left++
 				return
 			}
 			for i := len(res.Findings) - 1; i >= 0; i-- {
-				if g := res.Findings[i]; severityRank(g.Severity) == worst {
+				if g := res.Findings[i]; listRank(g) == worst {
 					perFile[g.Kind+"\x00"+g.Rule+"\x00"+g.Path]--
 					res.Findings = slices.Delete(res.Findings, i, i+1)
 					ranks[worst]--
@@ -555,9 +571,21 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 			}
 		}
 		perFile[k]++
-		ranks[severityRank(f.Severity)]++
-		worst = max(worst, severityRank(f.Severity))
+		ranks[listRank(f)]++
+		worst = max(worst, listRank(f))
 		res.Findings = append(res.Findings, f)
+	}
+	// Findings the cap per rule and file left out before they were listed:
+	// counted, never kept (one file can hold hundreds of thousands).
+	over := map[string]int{} // file → the most any pass left out
+	addOver := func(p string, n int) { over[p] = max(over[p], n) }
+	countOver := func(p string, n int) {
+		if testPath(p) {
+			res.InjectionTestPaths += n
+		} else {
+			res.Injection += n
+		}
+		left += n
 	}
 	eng, err := injectionEngine()
 	if err != nil {
@@ -567,6 +595,7 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 	var partial []UnfinishedFile
 	var walkCut []UnfinishedFile // roots the walk did not finish: the audit's time ran out
 	notReached := 0              // rule-language files the injection rules had not reached when it did
+	late := 0                    // ... nor before their own time limit
 	var code []string            // rule-language files, scanned once all are known
 	seen := map[string]fs.FileInfo{}
 	hash := map[string]string{} // content of the rule-language files, for the results kept between audits
@@ -586,14 +615,17 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 		defer debug.SetMemoryLimit(prev)
 	}
 	res.MemoryBudgetMB, res.MemoryLimitMB = int(budget.heap>>20), int(debug.SetMemoryLimit(-1)>>20)
+	// The walk stops at the rules' deadline too: an audit holds the turn of
+	// the others for a bounded time.
+	stop := func() bool { return ctx.Err() != nil || time.Now().After(deadline) }
 	for _, root := range roots {
-		if ctx.Err() != nil {
+		if stop() {
 			walkCut = append(walkCut, UnfinishedFile{root, "walk"})
 			continue
 		}
 		base := strings.Count(filepath.Clean(root), "/")
 		filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
-			if ctx.Err() != nil {
+			if stop() {
 				walkCut = append(walkCut, UnfinishedFile{root, "walk"})
 				return filepath.SkipAll
 			}
@@ -686,7 +718,10 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 		}
 		stateFile := callStateFile(roots)
 		st := loadCallState(stateFile, auditBuild(eng))
-		stale := st.dropStale(hash) // before this audit's results replace the old ones
+		// A walk the clock cut short says nothing of the files it did not reach:
+		// their kept results stay (the bot and the patrol share them).
+		walked := len(walkCut) == 0
+		stale := st.dropStale(hash, walked) // before this audit's results replace the old ones
 		// First every file on its own (calls inside the file are followed): all
 		// files get this before any time goes to calls across files.
 		reported := map[string]bool{}
@@ -703,7 +738,8 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 		}
 		// Files are scanned on several cores; results are taken in file order.
 		type scanned struct {
-			found               []engine.Finding
+			found               []engine.Finding // at most auditMaxPerFile of a rule
+			over                int              // those left out
 			err                 error
 			late, unread, timed bool
 			ran                 bool // taken by a worker before the audit's time ran out
@@ -738,7 +774,9 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 						continue
 					}
 					lang := engine.LangOf(p)
-					out[i].found, out[i].timed, out[i].err = injectionScan(eng, lang, p, b)
+					var found []engine.Finding
+					found, out[i].timed, out[i].err = injectionScan(eng, lang, p, b)
+					out[i].found, out[i].over = capFound(found)
 					out[i].gen = generated(lang, b)
 				}
 			}()
@@ -751,16 +789,18 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 				notReached++
 				partial = append(partial, UnfinishedFile{p, "time"})
 			case r.late:
+				late++
 				partial = append(partial, UnfinishedFile{p, "time"})
 			default:
 				k := r.kept
 				if k == nil {
-					k = &passResult{Found: r.found, Reason: unfinishedReason(r.err), Gen: r.gen}
+					k = &passResult{Found: r.found, Over: r.over, Reason: unfinishedReason(r.err), Gen: r.gen}
 					if !r.timed && k.Reason != "panic" {
 						st.entry(p, hash[p]).Own = k
 					}
 				}
 				addNew(k.Found, k.Gen)
+				addOver(p, k.Over)
 				if k.Reason != "" { // "calls": its own calls were cut short
 					partial = append(partial, UnfinishedFile{p, k.Reason})
 				}
@@ -774,6 +814,7 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 		// time goes to the other files, in order, those never tried before those
 		// the clock cut short.
 		done, covered, now, reason, cut := 0, 0, 0, "", false
+		fresh := map[string]bool{}   // files whose calls were all followed in this audit
 		var waiting []UnfinishedFile // calls across files not covered yet
 		slowRules, slowFiles := 0, 0
 		if left := time.Until(deadline); left > 0 && ctx.Err() == nil {
@@ -812,7 +853,9 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 							skip[r] = true
 						}
 						res, err := injectionCalls(pr, p, b, skip)
-						found := append(slices.Clone(part.Found), res.Found...)
+						found, n := capFound(append(slices.Clone(part.Found), res.Found...))
+						n += part.Over
+						addOver(p, n)
 						switch {
 						case errors.Is(err, errPanic):
 							addNew(found, gen)
@@ -828,7 +871,7 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 							// next audit, and this one goes on with the rest.
 							addNew(found, gen)
 							fs := st.entry(p, hash[p])
-							next := &partResult{Rules: append(slices.Clone(part.Rules), res.Done...), Found: found,
+							next := &partResult{Rules: append(slices.Clone(part.Rules), res.Done...), Found: found, Over: n,
 								Cut: part.Cut || res.Cut, Tries: maps.Clone(part.Tries)}
 							if res.At != "" {
 								if next.Tries == nil {
@@ -843,12 +886,15 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 							cut = !res.FileTime
 							continue
 						}
-						k = &passResult{Found: found, Reason: unfinishedReason(err), Gen: gen}
+						k = &passResult{Found: found, Over: n, Reason: unfinishedReason(err), Gen: gen}
 						if k.Reason == "" && (part.Cut || res.Cut || len(slow) > 0) {
 							k.Reason = "calls"
 						}
 						fs := st.entry(p, hash[p])
 						fs.Calls, fs.Part = k, nil
+						if len(part.Rules) == 0 {
+							fresh[p] = true // every rule followed in this audit: its files replace the old ones
+						}
 						now++
 					}
 				}
@@ -857,6 +903,7 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 					continue
 				}
 				addNew(k.Found, k.Gen)
+				addOver(p, k.Over)
 				covered++
 				if k.Reason != "calls" {
 					done++ // limits of the file itself were reported by the first pass
@@ -867,7 +914,9 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 				}
 			}
 			for _, p := range files {
-				if deps := pr.Deps(p); len(deps) > 0 {
+				if fresh[p] {
+					st.entry(p, hash[p]).setDeps(pr.Deps(p))
+				} else if deps := pr.Deps(p); len(deps) > 0 {
 					st.entry(p, hash[p]).addDeps(deps)
 				}
 			}
@@ -878,10 +927,15 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 		} else {
 			reason = "no time was left for it"
 		}
-		st.keepOnly(hash)
+		if walked {
+			st.keepOnly(hash)
+		}
 		saveCallState(stateFile, st)
 		if done < len(files) {
-			notes = append(notes, crossFileFinding(done, covered, now, len(files), slowRules, slowFiles, reason, waiting, notReached == 0))
+			notes = append(notes, crossFileFinding(done, covered, now, len(files), slowRules, slowFiles, reason, waiting, notReached+late == 0))
+		}
+		for p, n := range over {
+			countOver(p, n)
 		}
 	}
 
@@ -915,6 +969,35 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 	// The summaries come first, so a reader who cuts the list short keeps them.
 	res.Findings = append(notes, res.Findings...)
 	return res
+}
+
+// capFound keeps at most auditMaxPerFile findings of one rule in one file, the
+// first ones; over is how many it left out.
+func capFound(found []engine.Finding) (kept []engine.Finding, over int) {
+	n := map[string]int{}
+	for _, f := range found {
+		k := f.RuleID + "\x00" + f.Path
+		if n[k] >= auditMaxPerFile {
+			over++
+			continue
+		}
+		n[k]++
+		kept = append(kept, f)
+	}
+	if over == 0 {
+		return found, 0
+	}
+	return kept, over
+}
+
+// listRank orders findings for the list's cap: alerts before info-tier
+// injection findings (and those in test or generated code), then by severity.
+func listRank(f CodeFinding) int {
+	r := severityRank(f.Severity)
+	if f.Kind == "injection" && (f.Tier != "alert" || f.TestPath || f.Generated) {
+		r += 3
+	}
+	return r
 }
 
 func severityRank(s string) int {
