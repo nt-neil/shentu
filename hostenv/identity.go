@@ -34,6 +34,7 @@ type Masker struct {
 type pair struct {
 	re *regexp.Regexp
 	to string
+	hw bool // the name itself holds a hardware-id shape (nas-00-11-22-33)
 }
 
 var (
@@ -46,8 +47,13 @@ var (
 	// ":" or "-", six or more unpadded ones (0:c:29:...), or Cisco's dotted
 	// form. Times (12:34:56) have three groups and stay. Twelve bare hex
 	// digits are not taken: hashes and ids everywhere have that shape.
-	hwIDRe = regexp.MustCompile(`(?i)\b[0-9a-f]{2}(?::[0-9a-f]{2}){3,}\b|\b[0-9a-f]{2}(?:-[0-9a-f]{2}){3,}\b|` +
-		`\b[0-9a-f]{1,2}(?::[0-9a-f]{1,2}){5,}\b|\b[0-9a-f]{4}\.[0-9a-f]{4}\.[0-9a-f]{4}\b`)
+	// One pattern per separator takes the whole run, so a mixed id
+	// (00:0c:29:59:f:3f) is never cut short; hwID then checks its shape.
+	// hwPaddedRe is four or more two-digit groups: inside a run that is not
+	// an id as a whole (1:2:3:4:5), such a part is still masked.
+	hwPaddedRe = regexp.MustCompile(`(?i)\b[0-9a-f]{2}(?::[0-9a-f]{2}){3,}\b|\b[0-9a-f]{2}(?:-[0-9a-f]{2}){3,}\b`)
+	hwIDRe     = regexp.MustCompile(`(?i)\b[0-9a-f]{1,2}(?::[0-9a-f]{1,2}){3,}\b|\b[0-9a-f]{1,2}(?:-[0-9a-f]{1,2}){3,}\b|` +
+		`\b[0-9a-f]{4}\.[0-9a-f]{4}\.[0-9a-f]{4}\b`)
 	procNetRe = regexp.MustCompile(`\b([0-9A-F]{8}|[0-9A-F]{32}):([0-9A-F]{4})\b`)
 )
 
@@ -78,7 +84,7 @@ func (m *Masker) init() {
 		}
 		sort.Slice(list, func(i, j int) bool { return len(list[i]) > len(list[j]) }) // longest first: FQDN before short
 		for i, n := range list {
-			m.repl = append(m.repl, pair{regexp.MustCompile(`\b` + regexp.QuoteMeta(n) + `\b`), fmt.Sprintf("%s%d", prefix, i+1)})
+			m.repl = append(m.repl, pair{regexp.MustCompile(`\b` + regexp.QuoteMeta(n) + `\b`), fmt.Sprintf("%s%d", prefix, i+1), hwIDRe.MatchString(n)})
 		}
 	}
 	add(m.Hosts, "host")
@@ -126,14 +132,18 @@ func (m *Masker) text(s string, ips, users bool) string {
 	}
 	s = MaskSecrets(s)
 	s = sshKeyRe.ReplaceAllStringFunc(s, m.key)
-	for _, p := range m.repl {
-		if !users && strings.HasPrefix(p.to, "user") {
-			continue
+	// Names that hold an id's shape go first, whole; then the ids, so a
+	// short name (f3) can no longer split one; then the other names.
+	names := func(hw bool) {
+		for _, p := range m.repl {
+			if p.hw == hw && (users || !strings.HasPrefix(p.to, "user")) {
+				s = p.re.ReplaceAllString(s, p.to)
+			}
 		}
-		s = p.re.ReplaceAllString(s, p.to)
 	}
-	// After the names: a host name that holds hex pairs is replaced whole first.
+	names(true)
 	s = hwIDRe.ReplaceAllStringFunc(s, m.hwID)
+	names(false)
 	if ips {
 		s = ipv4Re.ReplaceAllStringFunc(s, func(t string) string {
 			ip := net.ParseIP(t)
@@ -183,10 +193,15 @@ func (m *Masker) hwID(id string) string {
 	}
 	// One key for one id however it is written: lower case, each group padded.
 	groups := strings.Split(strings.ToLower(id), sep)
+	unpadded := false
 	for i, g := range groups {
 		if sep != "." && len(g) == 1 {
 			groups[i] = "0" + g
+			unpadded = true
 		}
+	}
+	if unpadded && len(groups) < 6 { // 1:2:3:4 is not a hardware id, but a padded part of it may be
+		return hwPaddedRe.ReplaceAllStringFunc(id, m.hwID)
 	}
 	k := strings.Join(groups, ":")
 	if v, ok := m.hw[k]; ok {
