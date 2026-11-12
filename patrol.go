@@ -198,7 +198,9 @@ func checks(ctx context.Context, cfg *Config, env *tools.Env, st *state, daily b
 		since = time.Now().Add(-1 * time.Hour)
 	}
 
-	if r, err := tools.SSHSummary(ctx, env, time.Now().Add(-1*time.Hour), ""); err == nil {
+	// On Windows logon failures come from the survey's checks (auth.bruteforce);
+	// a second alert for the same source would say "SSH" for RDP or SMB.
+	if r, err := tools.SSHSummary(ctx, env, time.Now().Add(-1*time.Hour), ""); err == nil && runtime.GOOS != "windows" {
 		for _, s := range r["sources"].([]tools.SSHSource) {
 			if n := s.Failed + s.InvalidUser; n >= cfg.Patrol.SSHThreshold {
 				sev := "warning"

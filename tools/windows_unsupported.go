@@ -7,13 +7,13 @@ import (
 	"runtime"
 )
 
-// Tools that still read Linux sources (auth logs, /proc, /etc/passwd, log
-// files, iptables/nftables). On Windows they must say so: an empty result
+// Tools that still read Linux sources (/proc, /etc/passwd, log files,
+// iptables/nftables); ssh_logins reads the Security log on Windows. On Windows they must say so: an empty result
 // would tell the model the host is clean. Each is replaced by a real
 // Windows implementation before v0.3.0. Block and unblock are control
 // tools: the Windows MVP makes no changes to the host.
 var windowsUnsupported = map[string]bool{
-	"ssh_logins": true, "processes": true, "accounts_audit": true, "log_search": true,
+	"processes": true, "accounts_audit": true, "log_search": true,
 	"block_ip": true, "unblock_ip": true,
 }
 
