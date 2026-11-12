@@ -5,7 +5,11 @@ package hostenv
 import (
 	"errors"
 	"io/fs"
+	"os"
+	"path/filepath"
 	"reflect"
+	"regexp"
+	"sort"
 	"strings"
 	"testing"
 	"unicode/utf16"
@@ -245,6 +249,63 @@ func TestFirewallPolicyLive(t *testing.T) {
 	for _, n := range pol.Active {
 		if _, ok := pol.Profiles[n]; !ok {
 			t.Errorf("active profile %q not among the profiles", n)
+		}
+	}
+}
+
+// TestVtableSlotsMatchSDK checks every hand-counted vtable slot in
+// com_windows.go against the C vtable structs in the Windows SDK headers
+// installed on the CI runners. HOSTENV_REQUIRE_SDK=1 (set in CI) turns a
+// missing SDK into a failure instead of a skip.
+func TestVtableSlotsMatchSDK(t *testing.T) {
+	incs, _ := filepath.Glob(`C:\Program Files (x86)\Windows Kits\10\Include\*\um`)
+	if len(incs) == 0 {
+		if os.Getenv("HOSTENV_REQUIRE_SDK") != "" {
+			t.Fatal("Windows SDK headers not found")
+		}
+		t.Skip("Windows SDK headers not installed")
+	}
+	sort.Strings(incs)
+	um := incs[len(incs)-1]
+	t.Logf("SDK headers: %s", um)
+	method := regexp.MustCompile(`\(\s*STDMETHODCALLTYPE\s*\*\s*(\w+)\s*\)`)
+	slots := func(header, iface string) []string {
+		b, err := os.ReadFile(filepath.Join(um, header))
+		if err != nil {
+			t.Fatal(err)
+		}
+		src := string(b)
+		start := strings.Index(src, "typedef struct "+iface+"Vtbl")
+		if start < 0 {
+			t.Fatalf("%s: no %sVtbl", header, iface)
+		}
+		end := strings.Index(src[start:], "} "+iface+"Vtbl;")
+		if end < 0 {
+			t.Fatalf("%s: %sVtbl not closed", header, iface)
+		}
+		var names []string
+		for _, m := range method.FindAllStringSubmatch(src[start:start+end], -1) {
+			names = append(names, m[1])
+		}
+		return names
+	}
+	for _, c := range []struct {
+		header, iface, method string
+		slot                  int
+	}{
+		{"unknwn.h", "IUnknown", "Release", vtRelease},
+		{"oaidl.h", "IDispatch", "GetIDsOfNames", vtDispGetIDsOfNames},
+		{"oaidl.h", "IDispatch", "Invoke", vtDispInvoke},
+		{"wbemcli.h", "IWbemLocator", "ConnectServer", vtLocatorConnectServer},
+		{"wbemcli.h", "IWbemServices", "ExecQuery", vtServicesExecQuery},
+		{"wbemcli.h", "IEnumWbemClassObject", "Next", vtEnumNext},
+		{"wbemcli.h", "IWbemClassObject", "Get", vtObjectGet},
+	} {
+		names := slots(c.header, c.iface)
+		if c.slot >= len(names) || names[c.slot] != c.method {
+			t.Errorf("%s slot %d is %v in %s, want %s", c.iface, c.slot, names, c.header, c.method)
+		} else {
+			t.Logf("%-22s %2d %-14s %s", c.iface, c.slot, c.method, c.header)
 		}
 	}
 }
