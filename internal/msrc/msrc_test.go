@@ -241,6 +241,24 @@ func TestCheckHotpatchOnlyCVE(t *testing.T) {
 	if len(r.Missing) != 2 {
 		t.Errorf("below the CU, both are missing: %+v", r.Missing)
 	}
+	// Round 3 (S1): the fix to install is the month's cumulative update,
+	// for the hotpatch-only CVE too; a host short of it cannot take the
+	// hotpatch.
+	for _, m := range r.Missing {
+		if m.KB != "5070001" || m.Hotpatch {
+			t.Errorf("%s: advises KB%s (hotpatch %v), want the CU KB5070001", m.CVE, m.KB, m.Hotpatch)
+		}
+	}
+	// A CVE listing both: the CU is reported even when the hotpatch's
+	// build number sorts higher.
+	both := Month{Products: map[string][]Fix{"Windows Server 2025": {
+		{CVE: "CVE-X", KB: "5070003", FixedBuild: "10.0.26100.4100", Hotpatch: true},
+		{CVE: "CVE-X", KB: "5070001", FixedBuild: "10.0.26100.4000"},
+	}}}
+	r, _ = Check("Windows Server 2025", "10.0.26100.3950", nil, []string{"m"}, 24, func(string) (Month, error) { return both, nil })
+	if len(r.Missing) != 1 || r.Missing[0].KB != "5070001" || r.Missing[0].CVE != "CVE-X" {
+		t.Errorf("CU and hotpatch: %+v", r.Missing)
+	}
 	only := Month{Products: map[string][]Fix{"Windows Server 2025": {{CVE: "CVE-HP", KB: "5070002", FixedBuild: "10.0.26100.3900", Hotpatch: true}}}}
 	r, _ = Check("Windows Server 2025", "10.0.26100.4000", nil, []string{"m"}, 24, func(string) (Month, error) { return only, nil })
 	if len(r.Missing) != 0 || len(r.CannotTell) != 1 || r.Current != "" {

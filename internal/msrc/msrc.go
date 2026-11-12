@@ -233,23 +233,31 @@ func Check(product, hostBuild string, installedKB map[string]bool, ids []string,
 		}
 		// The month's cumulative update for the product: the highest
 		// non-hotpatch fixed build. It carries every fix of the month.
-		monthCU := ""
+		monthCU, cuFix := "", Fix{}
 		for _, f := range fixes {
 			if !f.Hotpatch && (monthCU == "" || CompareBuild(f.FixedBuild, monthCU) > 0) {
-				monthCU = f.FixedBuild
+				monthCU, cuFix = f.FixedBuild, f
 			}
 		}
 		lacking, unknown := 0, 0
 		for _, cve := range order {
+			// The fix reported is a cumulative update, never a hotpatch: a
+			// host short of the month's cumulative update cannot take that
+			// month's hotpatch (it needs the baseline first), and the
+			// cumulative update carries the fix too.
 			covered, newest, hotOnly := false, byCVE[cve][0], true
 			for _, f := range byCVE[cve] {
 				if present(f, hostBuild, installedKB) {
 					covered = true
 				}
 				hotOnly = hotOnly && f.Hotpatch
-				if CompareBuild(f.FixedBuild, newest.FixedBuild) > 0 {
-					newest = f // report the cumulative update, the usual way to fix it
+				if newest.Hotpatch && !f.Hotpatch || newest.Hotpatch == f.Hotpatch && CompareBuild(f.FixedBuild, newest.FixedBuild) > 0 {
+					newest = f
 				}
+			}
+			if hotOnly && monthCU != "" {
+				newest = cuFix
+				newest.CVE = cve
 			}
 			if !covered && hotOnly {
 				// Listed with a hotpatch alone: a host on the cumulative chain
