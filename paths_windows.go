@@ -137,7 +137,8 @@ const writeRights = windows.FILE_WRITE_DATA | windows.FILE_APPEND_DATA | windows
 func checkTrusted(path string) error { return checkTrustedAs(path, false) }
 
 // checkTrustedAs is checkTrusted, accepting an administrator's own
-// account as owner when memberOK (see trustedOwner).
+// account as owner when memberOK (see trustedOwner). Write entries are
+// always held to SYSTEM, Administrators and TrustedInstaller.
 func checkTrustedAs(path string, memberOK bool) error {
 	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
 		windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)

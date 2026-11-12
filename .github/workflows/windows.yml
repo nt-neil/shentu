@@ -107,6 +107,34 @@ jobs:
           set +e
           ./shentu.exe patrol --dry-run > "$RUNNER_TEMP/patrol.txt" 2>&1
           echo "patrol --dry-run exit $?, $(wc -l < "$RUNNER_TEMP/patrol.txt") lines"
+      - name: Windows service install, start, stop, uninstall
+        if: ${{ !cancelled() }}
+        run: |
+          go build -o shentu.exe .
+          # The workspace is writable by the runner user: installing a
+          # LocalSystem service from there must be refused.
+          if ./shentu.exe service install > "$RUNNER_TEMP/svc-refused.txt" 2>&1; then
+            echo "FAIL: installed from a user-writable folder"; exit 1
+          fi
+          echo "install from the workspace refused"
+          dest="/c/Program Files/Shentu"
+          mkdir -p "$dest"
+          cp shentu.exe "$dest/"
+          "$dest/shentu.exe" service install
+          "$dest/shentu.exe" service start
+          sleep 5
+          st=$("$dest/shentu.exe" service status)
+          echo "after start: $st"
+          [ "$st" = running ]
+          "$dest/shentu.exe" service stop
+          st=$("$dest/shentu.exe" service status)
+          echo "after stop: $st"
+          [ "$st" = stopped ]
+          "$dest/shentu.exe" service uninstall
+          if "$dest/shentu.exe" service status > /dev/null 2>&1; then
+            echo "FAIL: still installed"; exit 1
+          fi
+          echo "uninstalled"
       - name: keep the masked fixture for review (not committed automatically)
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

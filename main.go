@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -57,6 +58,10 @@ func configPath() string {
 // returns 0; for a missing or unknown command, to stderr and returns 2.
 func printUsage(cmd string, stdout, stderr io.Writer) int {
 	u := strings.Replace(usage, "/etc/shentu/shentu.toml", defaultConfigPath(), 1) // the same text on Unix
+	if runtime.GOOS == "windows" {
+		u = strings.Replace(u, "  shentu version\n", "  shentu service install|uninstall|start|stop|status\n"+
+			"                              run patrol as a Windows service (LocalSystem): every 30 minutes, daily report at 09:00\n  shentu version\n", 1)
+	}
 	if cmd == "help" || cmd == "--help" || cmd == "-h" {
 		fmt.Fprint(stdout, u)
 		return 0
@@ -76,7 +81,7 @@ func main() {
 	switch cmd { // before the config: help and a mistyped command need none
 	case "help", "--help", "-h":
 		os.Exit(printUsage(cmd, os.Stdout, os.Stderr))
-	case "version", "--version", "setup", "chat", "survey", "bot", "budget", "usage", "patrol":
+	case "version", "--version", "setup", "chat", "survey", "bot", "budget", "usage", "patrol", "service":
 	default:
 		os.Exit(printUsage(cmd, os.Stdout, os.Stderr))
 	}
@@ -127,6 +132,8 @@ func main() {
 		dry := fs.Bool("dry-run", false, "print the report, do not notify")
 		fs.Parse(args)
 		err = patrol(ctx, cfg, env, *daily, *dry)
+	case "service":
+		err = serviceCommand(ctx, cfg, env, args)
 	default:
 		os.Exit(printUsage(cmd, os.Stdout, os.Stderr))
 	}
