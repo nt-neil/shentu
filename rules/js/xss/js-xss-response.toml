@@ -77,23 +77,6 @@ export class SearchController {
 }
 '''
 
-[[args]]
-context = ["html", "attr"]
-# a Server-Sent Events line ("data: ...", "event: ...") goes to an EventSource, not into a page
-unless = ["`data: ", "'data: ", "\"data: ", "`event: ", "'event: ", "\"event: "]
-
-[[samples]]
-kind = "safe"
-note = "Server-Sent Events: the client reads each line as text through EventSource"
-code = '''
-app.get("/events", (req, res) => {
-  res.setHeader("Content-Type", "text/event-stream");
-  res.write(`event: search\n`);
-  res.write(`data: ${JSON.stringify({ q: req.query.q })}\n\n`);
-  res.write("data: " + req.query.q + "\n\n");
-});
-'''
-
 [[samples]]
 kind = "vulnerable"
 note = "the words data: and event: inside an HTML page do not make it a stream"
@@ -109,5 +92,18 @@ kind = "vulnerable"
 code = '''
 app.get("/back", (req, res) => {
   res.send(`<a href="/">home</a> <p>You came from ${req.headers.referer}</p><p>${req.headers["user-agent"]}</p>`);
+});
+'''
+
+[[args]]
+context = ["html", "attr"]
+
+[[samples]]
+kind = "vulnerable"
+note = "an event-stream literal in one branch does not make the HTML in the other safe"
+code = '''
+app.get("/hello", (req, res) => {
+  const stream = req.accepts("text/event-stream");
+  res.send(stream ? "data: ready\n\n" : "<h1>Hello " + req.query.name + "</h1>");
 });
 '''
