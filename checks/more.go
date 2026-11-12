@@ -271,13 +271,16 @@ func broadExclusion(x string) bool {
 	if l == "" || l == "/" || (len(l) == 2 && l[1] == ':') {
 		return true // "", "*", "C:", "\\?\C:\"
 	}
-	if strings.HasPrefix(l, "%") {
-		return true // %TEMP%, %SystemDrive%, %ProgramFiles%…: too wide to judge, worth a look
+	if strings.HasPrefix(l, "%") || strings.HasPrefix(l, "//") || strings.Contains(l, "globalroot") || strings.HasPrefix(l, "volume{") {
+		return true // env vars, UNC, device and volume paths: fail closed, worth a look
 	}
 	segs := strings.Split(l, "/")
-	for _, seg := range segs {
+	for i, seg := range segs {
 		if seg == "temp" || seg == "tmp" || seg == "downloads" || shortName.MatchString(seg) {
 			return true
+		}
+		if i < len(segs)-1 && strings.ContainsAny(seg, "*?") {
+			return true // a wildcard directory can stand for any root
 		}
 	}
 	// System and shared roots, on whatever drive.
@@ -290,8 +293,10 @@ func broadExclusion(x string) bool {
 		"/program files", "/program files (x86)", "/perflogs":
 		return true
 	}
-	if strings.HasPrefix(rest, "/users/public/") {
-		return true
+	for _, root := range []string{"/users/public/", "/windows/system32/", "/windows/syswow64/"} {
+		if strings.HasPrefix(rest, root) {
+			return true
+		}
 	}
 	// Extensions (ExclusionExtension holds "ps1" or ".ps1") and wildcards.
 	switch strings.TrimPrefix(strings.TrimPrefix(l, "*"), ".") {
@@ -318,12 +323,28 @@ func canonExclusion(x string) string {
 		}
 	}
 	for _, h := range []string{"//localhost/", "//127.0.0.1/", "//./"} {
-		if rest, ok := strings.CutPrefix(l, h); ok && len(rest) >= 2 && rest[1] == '$' {
-			l = rest[:1] + ":" + rest[2:]
+		if rest, ok := strings.CutPrefix(l, h); ok {
+			switch {
+			case strings.HasPrefix(rest, "admin$"):
+				l = "c:/windows" + strings.TrimPrefix(rest, "admin$")
+			case len(rest) >= 2 && rest[1] == '$':
+				l = rest[:1] + ":" + rest[2:]
+			}
 		}
 	}
+	// Win32 drops trailing dots and spaces from every component.
+	segs := strings.Split(l, "/")
+	for i, seg := range segs {
+		if seg != "." && seg != ".." {
+			segs[i] = strings.TrimRight(seg, ". ")
+		}
+	}
+	l = strings.Join(segs, "/")
 	for {
-		t := strings.TrimSuffix(strings.TrimSuffix(l, "*"), "/")
+		t := l
+		for _, suf := range []string{"*.*", "*.", "*", "/"} {
+			t = strings.TrimSuffix(t, suf)
+		}
 		if t == l {
 			break
 		}
@@ -334,6 +355,9 @@ func canonExclusion(x string) string {
 			return l[:2] + c
 		}
 		return l[:2]
+	}
+	if strings.HasPrefix(l, "//") {
+		return l // UNC stays UNC; broadExclusion fails closed on it
 	}
 	if strings.HasPrefix(l, "/") {
 		return path.Clean(l)
