@@ -583,6 +583,14 @@ func (a *analysis) assign(st state, t []Token) (val, bool) {
 			}
 			if a.js {
 				a.setRelative(st, key, rhs, t[k].Text == "=")
+				if rel, ok := urlRelative(rhs); ok && t[k].Text == "=" {
+					// u = new URL(a, base): the path and query are a's, the base
+					// gives the origin (a Host header there is not in u.pathname)
+					rv := a.expr(st, rel, false)
+					for _, m := range urlPathParts {
+						st[key+sepCh+"."+m] = entry{taint: rv.taint, san: rv.san, raw: rv.raw, emb: rv.emb, weak: rv.weak}
+					}
+				}
 			}
 		}
 		if cls != "" && len(tg) == 1 {
@@ -1046,6 +1054,11 @@ func (a *analysis) expr(st state, t []Token, whole bool) val {
 	}
 	a.depth++
 	defer func() { a.depth-- }()
+	if a.js {
+		if rel, rest, ok := urlPartOf(t); ok {
+			return a.expr(st, append(append([]Token{}, rel...), rest...), whole) // new URL(a, base).pathname: a's
+		}
+	}
 
 	// Conditional expressions: each branch under its condition.
 	if a.py {
@@ -2471,4 +2484,39 @@ func (a *analysis) textSink(st state, t []Token, k, off, textEnd int, cond *argC
 	if tainted {
 		a.report(tk.Line + strings.Count(tk.Text[:off], "\n"))
 	}
+}
+
+// urlPathParts are the members of a URL that come from its first argument
+// when that is a path (new URL(a, base)): the base gives only the origin.
+var urlPathParts = []string{"pathname", "search", "searchParams", "hash"}
+
+// urlRelative returns a of new URL(a, base) (both arguments given, a not
+// spread); false for anything else.
+func urlRelative(t []Token) ([]Token, bool) {
+	t = stripParens(t)
+	if len(t) < 5 || !t[0].word("new") || !t[1].word("URL") || !t[2].op("(") || closeOf(t, 2) != len(t)-1 {
+		return nil, false
+	}
+	args := splitTop(inside(t, 2, len(t)-1), isComma)
+	if len(args) != 2 || len(args[0]) == 0 || args[0][0].op("...") {
+		return nil, false
+	}
+	return args[0], true
+}
+
+// urlPartOf reads new URL(a, base).pathname (or search, searchParams, hash)
+// at the start of t: a, and what follows the member.
+func urlPartOf(t []Token) ([]Token, []Token, bool) {
+	if len(t) < 7 || !t[0].word("new") || !t[1].word("URL") || !t[2].op("(") {
+		return nil, nil, false
+	}
+	c := closeOf(t, 2)
+	if c+2 >= len(t) || !t[c+1].op(".") || !slices.Contains(urlPathParts, t[c+2].Text) {
+		return nil, nil, false
+	}
+	rel, ok := urlRelative(t[:c+1])
+	if !ok {
+		return nil, nil, false
+	}
+	return rel, t[c+3:], true
 }
