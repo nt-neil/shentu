@@ -886,7 +886,9 @@
     "value": null
   },
   "services": {
-    "status": "ok",
+    "status": "partial",
+    "reason": "not_recorded",
+    "detail": "not fully read: /usr/local/etc/init.d (not_recorded), /etc/inittab (not_recorded)",
     "value": [
       {
         "name": "acpid",
@@ -3889,7 +3891,9 @@
     ]
   },
   "persistence": {
-    "status": "ok",
+    "status": "partial",
+    "reason": "not_recorded",
+    "detail": "OpenRC not fully read: /usr/local/etc/init.d (not_recorded), /etc/inittab (not_recorded)",
     "value": [
       {
         "kind": "cron",

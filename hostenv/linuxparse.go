@@ -206,6 +206,14 @@ func ApkOwnedFiles(b []byte) map[string]bool {
 	return owned
 }
 
+// ApkInstalledDB is apk's database of installed packages and their files;
+// with many packages it outgrows MaxFileBytes, so it is read up to
+// MaxApkDBBytes.
+const (
+	ApkInstalledDB = "/lib/apk/db/installed"
+	MaxApkDBBytes  = 128 << 20
+)
+
 // ParseApkInstalled reads /lib/apk/db/installed.
 func ParseApkInstalled(b []byte) []Package {
 	var out []Package

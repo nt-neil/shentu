@@ -8,8 +8,12 @@ import (
 	"strings"
 )
 
-// OpenRCRunlevels are the runlevels a service may be enabled in.
+// OpenRCRunlevels are the runlevels OpenRC ships; a host may add its own
+// folders under /etc/runlevels, and those count as well.
 var OpenRCRunlevels = []string{"sysinit", "boot", "default", "nonetwork", "shutdown"}
+
+// openRCScriptDirs hold service scripts: the system's, then the local ones.
+var openRCScriptDirs = []string{"/etc/init.d", "/usr/local/etc/init.d"}
 
 // IsOpenRC reports an OpenRC host: runlevel folders and no systemd.
 func IsOpenRC(src Source) bool {
@@ -18,28 +22,72 @@ func IsOpenRC(src Source) bool {
 	return rl == nil && sd != nil
 }
 
-// OpenRCServices lists /etc/init.d scripts; a service enabled in any
-// runlevel starts "auto", the others "manual". owned is apk's file list
-// (nil: unknown); a script no package installed is marked so.
+// OpenRCServices lists the service scripts of /etc/init.d and
+// /usr/local/etc/init.d; a service enabled in any runlevel (the shipped
+// ones and any other folder in /etc/runlevels) starts "auto", the others
+// "manual". A runlevel entry that is itself a runlevel stacks it; an entry
+// with no script of that name is listed on its own, with where it links.
+// /etc/inittab (busybox init) is listed too. owned is apk's file list
+// (nil: unknown); a script no package installed is marked so. Anything
+// that exists but cannot be read makes the services partial.
 func (LinuxCollector) OpenRCServices(src Source, owned map[string]bool) (Obs[[]Service], []PersistenceItem) {
-	names, err := src.ReadDir("/etc/init.d")
-	if err != nil {
-		return unknownFrom[[]Service]("/etc/init.d", err), nil
+	var unread []string
+	reason := Reason("")
+	note := func(p string, err error) {
+		if reason == "" {
+			reason = Classify(err)
+		}
+		unread = append(unread, p+" ("+string(Classify(err))+")")
+	}
+	read := func(dir string) []string {
+		names, err := src.ReadDir(dir)
+		if err != nil && !missing(err) {
+			note(dir, err)
+		}
+		return names
+	}
+	scripts := map[string]string{} // name -> path; /etc/init.d wins
+	var order []string
+	for _, d := range openRCScriptDirs {
+		for _, n := range read(d) {
+			if strings.HasPrefix(n, ".") || scripts[n] != "" {
+				continue
+			}
+			scripts[n] = d + "/" + n
+			order = append(order, n)
+		}
+	}
+	if len(scripts) == 0 && len(unread) > 0 {
+		return Unknown[[]Service](reason, "not read: "+strings.Join(unread, ", ")), nil
+	}
+	levels := append([]string(nil), OpenRCRunlevels...)
+	for _, rl := range read("/etc/runlevels") {
+		if !contains(levels, rl) && !strings.HasPrefix(rl, ".") {
+			levels = append(levels, rl)
+		}
 	}
 	enabled := map[string][]string{}
-	for _, rl := range OpenRCRunlevels {
-		links, _ := src.ReadDir("/etc/runlevels/" + rl)
-		for _, n := range links {
-			enabled[n] = append(enabled[n], rl)
+	var items []PersistenceItem
+	for _, rl := range levels {
+		for _, n := range read("/etc/runlevels/" + rl) {
+			entry := "/etc/runlevels/" + rl + "/" + n
+			switch {
+			case contains(levels, n): // a stacked runlevel: its services run here too
+				items = append(items, PersistenceItem{Kind: "openrc", Location: entry, Detail: "runlevel " + rl + " stacks runlevel " + n})
+			case scripts[n] == "":
+				d := "enabled in " + rl + ", but no script " + n + " in " + strings.Join(openRCScriptDirs, " or ")
+				if t, err := src.Readlink(entry); err == nil {
+					d += "; links to " + t
+				}
+				items = append(items, PersistenceItem{Kind: "openrc", Location: entry, Detail: d})
+			default:
+				enabled[n] = append(enabled[n], rl)
+			}
 		}
 	}
 	var svcs []Service
-	var items []PersistenceItem
-	for _, n := range names {
-		if strings.HasPrefix(n, ".") {
-			continue
-		}
-		p := "/etc/init.d/" + n
+	for _, n := range order {
+		p := scripts[n]
 		s := Service{Name: n, Exe: p, StartMode: "manual"}
 		if rls := enabled[n]; len(rls) > 0 {
 			s.StartMode = "auto"
@@ -51,14 +99,39 @@ func (LinuxCollector) OpenRCServices(src Source, owned map[string]bool) (Obs[[]S
 		}
 		svcs = append(svcs, s)
 	}
-	local, _ := src.ReadDir("/etc/local.d")
-	for _, n := range local {
+	for _, n := range read("/etc/local.d") {
 		if strings.HasSuffix(n, ".start") || strings.HasSuffix(n, ".stop") {
 			items = append(items, PersistenceItem{Kind: "local_d", Location: "/etc/local.d/" + n, Detail: "run by the local service at boot or shutdown"})
 		}
 	}
+	if b, err := src.ReadFile("/etc/inittab"); err == nil {
+		items = append(items, InittabEntries(b)...)
+	} else if !missing(err) {
+		note("/etc/inittab", err)
+	}
 	sort.Slice(svcs, func(i, j int) bool { return svcs[i].Name < svcs[j].Name })
+	if len(unread) > 0 {
+		return Partial(svcs, reason, "not fully read: "+strings.Join(unread, ", ")), items
+	}
 	return OK(svcs), items
+}
+
+// InittabEntries are busybox init's lines "id:runlevels:action:process":
+// each runs its process as root (at boot, or kept alive by respawn).
+func InittabEntries(b []byte) []PersistenceItem {
+	var out []PersistenceItem
+	for _, l := range strings.Split(string(b), "\n") {
+		l = strings.TrimSpace(l)
+		if l == "" || strings.HasPrefix(l, "#") {
+			continue
+		}
+		f := strings.SplitN(l, ":", 4)
+		if len(f) != 4 {
+			continue
+		}
+		out = append(out, PersistenceItem{Kind: "inittab", Location: "/etc/inittab", Command: MaskSecrets(f[3]), Detail: f[2]})
+	}
+	return out
 }
 
 // PeriodicScripts are busybox crond's /etc/periodic/<interval>/ scripts

@@ -886,7 +886,9 @@
     "value": null
   },
   "services": {
-    "status": "ok",
+    "status": "partial",
+    "reason": "not_recorded",
+    "detail": "not fully read: /usr/local/etc/init.d (not_recorded), /etc/inittab (not_recorded)",
     "value": [
       {
         "name": "acpid",
@@ -3857,7 +3859,7 @@
   "persistence": {
     "status": "partial",
     "reason": "permission_denied",
-    "detail": "not fully read: /var/spool/cron/crontabs/root (permission_denied), /etc/crontabs/root (permission_denied), authorized_keys: not fully read: /root/.ssh/authorized_keys (permission_denied), /root/.ssh/authorized_keys2 (permission_denied), /var/lib/dhcpcd/.ssh/authorized_keys (permission_denied), /var/lib/dhcpcd/.ssh/authorized_keys2 (permission_denied), unreadable: /etc/sudoers.d, /etc/sudoers",
+    "detail": "not fully read: /var/spool/cron/crontabs/root (permission_denied), /etc/crontabs/root (permission_denied), authorized_keys: not fully read: /root/.ssh/authorized_keys (permission_denied), /root/.ssh/authorized_keys2 (permission_denied), /var/lib/dhcpcd/.ssh/authorized_keys (permission_denied), /var/lib/dhcpcd/.ssh/authorized_keys2 (permission_denied), unreadable: /etc/sudoers.d, /etc/sudoers; OpenRC not fully read: /usr/local/etc/init.d (not_recorded), /etc/inittab (not_recorded)",
     "value": [
       {
         "kind": "authorized_key",

@@ -66,13 +66,19 @@ func (c LinuxCollector) Collect(ctx context.Context, src Source) *Facts {
 	f.Persistence = c.persistence(ctx, src, f.SSHKeys)
 	if IsOpenRC(src) {
 		var owned map[string]bool
-		if b, err := src.ReadFile("/lib/apk/db/installed"); err == nil {
+		if b, err := ReadFileMax(src, ApkInstalledDB, MaxApkDBBytes); err == nil {
 			owned = ApkOwnedFiles(b)
 		}
 		svcs, items := c.OpenRCServices(src, owned)
 		f.Services = svcs
 		if f.Persistence.Known() {
 			f.Persistence.Value = append(f.Persistence.Value, items...)
+			if svcs.Status != StatusOK { // what OpenRC could not read is missing from persistence too
+				if f.Persistence.Status == StatusOK {
+					f.Persistence.Status, f.Persistence.Reason = StatusPartial, svcs.Reason
+				}
+				f.Persistence.Detail = strings.TrimPrefix(f.Persistence.Detail+"; OpenRC "+svcs.Detail, "; ")
+			}
 		}
 	}
 
@@ -157,7 +163,7 @@ func (LinuxCollector) Packages(ctx context.Context, src Source, osr map[string]s
 	case "alpine":
 		set.Manager = "apk"
 		var b []byte
-		if b, err = src.ReadFile("/lib/apk/db/installed"); err == nil {
+		if b, err = ReadFileMax(src, ApkInstalledDB, MaxApkDBBytes); err == nil {
 			items = ParseApkInstalled(b)
 		}
 	default:
