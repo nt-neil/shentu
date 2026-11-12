@@ -81,18 +81,13 @@ func rawExe(p hostenv.Process) string {
 	return p.Exe
 }
 
-// procNet is one /proc/net table through hostenv. complete is false when
-// the table could not be read in full (cut short, or unreadable); a table
-// that does not exist is complete. The rows read are still returned.
-func procNet(proto string) (rows []hostenv.ProcNetEntry, complete bool) {
-	err := hostenv.ScanProcNet(hostSource(), proto, func(e hostenv.ProcNetEntry) { rows = append(rows, e) })
-	switch {
-	case err == nil:
-		return rows, true
-	case errors.Is(err, fs.ErrNotExist): // no such table: no IPv6, or not Linux
-		return nil, true
-	}
-	return rows, false
+// procNet streams one /proc/net table through hostenv to fn, which keeps
+// what it needs (nothing holds the whole table) and returns false to stop.
+// complete is false when the table could not be read in full (cut short,
+// or unreadable); a table that does not exist is complete.
+func procNet(proto string, fn func(hostenv.ProcNetEntry) bool) (complete bool) {
+	err := hostenv.ScanProcNetUntil(hostSource(), proto, fn)
+	return err == nil || errors.Is(err, fs.ErrNotExist) // no such table: no IPv6, or not Linux
 }
 
 // SSHPeers returns the remote IPs of established connections to local port 22.
@@ -103,13 +98,13 @@ func SSHPeers() (map[string]bool, error) {
 	peers := map[string]bool{}
 	complete := true
 	for _, proto := range []string{"tcp", "tcp6"} {
-		rows, ok := procNet(proto)
-		complete = complete && ok
-		for _, e := range rows {
+		ok := procNet(proto, func(e hostenv.ProcNetEntry) bool {
 			if e.State == "01" && e.LocalPort == 22 {
 				peers[normIP(e.RemoteIP)] = true
 			}
-		}
+			return true
+		})
+		complete = complete && ok
 	}
 	if c := os.Getenv("SSH_CLIENT"); c != "" {
 		peers[strings.Fields(c)[0]] = true
@@ -390,12 +385,17 @@ func UIDOf(name string) (string, bool) {
 // connection, found by its exact 4-tuple in /proc/net/tcp{,6}.
 func PeerUID(local, remote *net.TCPAddr) (string, bool) {
 	for _, proto := range []string{"tcp", "tcp6"} {
-		rows, _ := procNet(proto)
-		for _, e := range rows {
+		uid, found := "", false
+		procNet(proto, func(e hostenv.ProcNetEntry) bool {
 			if e.LocalPort == remote.Port && e.RemotePort == local.Port &&
 				e.LocalIP.Equal(remote.IP) && e.RemoteIP.Equal(local.IP) {
-				return e.UID, true
+				uid, found = e.UID, true
+				return false // found: the rest of the table is not read
 			}
+			return true
+		})
+		if found {
+			return uid, true
 		}
 	}
 	return "", false

@@ -119,10 +119,17 @@ func ParseProcNetLine(l string) (ProcNetEntry, bool) {
 // (tens of thousands of sockets, many MiB) is never held whole and never
 // cut at a size cap; only a single line is limited (MaxLineBytes).
 func ScanProcNet(src Source, proto string, fn func(ProcNetEntry)) error {
-	return scanFile(src, "/proc/net/"+proto, false, func(l string) { // hex numbers: nothing to mask
+	return ScanProcNetUntil(src, proto, func(e ProcNetEntry) bool { fn(e); return true })
+}
+
+// ScanProcNetUntil is ScanProcNet whose fn ends the scan by returning
+// false, once it has what it looks for.
+func ScanProcNetUntil(src Source, proto string, fn func(ProcNetEntry) bool) error {
+	return scanFileUntil(src, "/proc/net/"+proto, false, func(l string) bool { // hex numbers: nothing to mask
 		if e, ok := ParseProcNetLine(l); ok {
-			fn(e)
+			return fn(e)
 		}
+		return true
 	})
 }
 

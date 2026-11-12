@@ -34,7 +34,7 @@ Chinese for the zh-TW pages; keep the two in step.
 - The Windows binary is not code-signed and there is no MSI; SmartScreen or an antivirus may
   warn about it.
 
-## v0.2.5 (unreleased)
+## v0.2.5 — 2026-11-13
 
 - `app_code_audit` follows calls across files: input read in one file and used in a sink
   of another is reported at the sink, with the file it came from.
@@ -75,9 +75,13 @@ Chinese for the zh-TW pages; keep the two in step.
   isset() check, or a value bound through $wpdb->prepare() inside ORDER BY FIELD()), which gives
   extra false positives there. Narrowing the source to Elementor widgets is planned for v0.2.6.
 - In `$wpdb->prepare()`/`->prepare()` formats, a placeholder list built by a callback that returns
-  a constant (`implode(',', array_map(fn($v) => '%d', $ids))`) is still treated as input and
-  reported. `array_fill(0, count($ids), '%d')` and `sizeof()` are recognised. Reading a callback's
+  a constant (`implode(',', array_map(fn($v) => '%d', $ids))`, or the same with
+  `function ($v) { return '%d'; }`) is still treated as input and reported when `$ids` comes from
+  the request. `array_fill(0, count($ids), '%d')` and `sizeof()` are recognised. Reading a callback's
   return value needs an engine change (planned for v0.2.6).
+- `python-path-traversal-send-file` reports `zipfile.ZipFile(request.files[...])`, which opens the
+  uploaded stream rather than a path, a false positive. Telling a request's file stream from a
+  client-set file name inside one argument needs an engine change (planned for v0.2.6).
 
 ## v0.2.4 — 2026-11-09
 
