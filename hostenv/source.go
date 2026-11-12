@@ -9,6 +9,7 @@ import (
 	"os"
 	"runtime"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -63,7 +64,24 @@ func ReadFileNoFollow(src Source, path string) ([]byte, error) {
 // Live reads the machine it runs on.
 type Live struct {
 	Runner *Runner
-	now    func() time.Time
+	// Remap redirects path prefixes, e.g. {"/proc": "/host/proc"} for a
+	// host mounted into a container, or a temp tree in tests. The longest
+	// matching prefix wins; commands are not remapped.
+	Remap map[string]string
+	now   func() time.Time
+}
+
+func (l *Live) path(p string) string {
+	best := ""
+	for from := range l.Remap {
+		if (p == from || strings.HasPrefix(p, strings.TrimSuffix(from, "/")+"/")) && len(from) > len(best) {
+			best = from
+		}
+	}
+	if best == "" {
+		return p
+	}
+	return l.Remap[best] + strings.TrimPrefix(p, best)
 }
 
 // NewLive builds a live Source whose commands are limited to allow.
@@ -84,7 +102,7 @@ func (l *Live) ReadFile(path string) ([]byte, error) { return l.read(path, false
 func (l *Live) ReadFileNoFollow(path string) ([]byte, error) { return l.read(path, true) }
 
 func (l *Live) read(path string, noFollow bool) ([]byte, error) {
-	f, err := openRead(path, noFollow)
+	f, err := openRead(l.path(path), noFollow)
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +124,7 @@ func (l *Live) read(path string, noFollow bool) ([]byte, error) {
 }
 
 func (l *Live) ReadDir(path string) ([]string, error) {
-	f, err := os.Open(path)
+	f, err := os.Open(l.path(path))
 	if err != nil {
 		return nil, err
 	}
@@ -116,7 +134,7 @@ func (l *Live) ReadDir(path string) ([]string, error) {
 	return names, err
 }
 
-func (l *Live) Readlink(path string) (string, error) { return os.Readlink(path) }
+func (l *Live) Readlink(path string) (string, error) { return os.Readlink(l.path(path)) }
 
 func (l *Live) Run(ctx context.Context, argv []string) (CmdResult, error) {
 	return l.Runner.Run(ctx, argv)

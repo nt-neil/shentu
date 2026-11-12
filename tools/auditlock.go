@@ -2,10 +2,12 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
-	"syscall"
 	"time"
+
+	"github.com/nt-neil/shentu/internal/osutil"
 )
 
 // One code audit runs at a time, in this process and across processes (the
@@ -37,16 +39,16 @@ func lockAudit(ctx context.Context) (unlock func(), err error) {
 	if idx == "" || os.MkdirAll(filepath.Dir(idx), 0o700) != nil {
 		return release, nil
 	}
-	f, err := os.OpenFile(filepath.Join(filepath.Dir(idx), "audit.lock"), os.O_RDWR|os.O_CREATE|syscall.O_NOFOLLOW, 0o600)
+	f, err := osutil.OpenNoFollow(filepath.Join(filepath.Dir(idx), "audit.lock"), os.O_RDWR|os.O_CREATE, 0o600, false)
 	if err != nil {
 		return release, nil // the lock is for the shared files; without it the audit still runs
 	}
 	for {
-		err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+		err := osutil.TryLock(f)
 		if err == nil {
 			break
 		}
-		if err != syscall.EWOULDBLOCK {
+		if !errors.Is(err, osutil.ErrWouldBlock) {
 			f.Close() // a file system without locks: the slot alone
 			return release, nil
 		}
@@ -59,7 +61,7 @@ func lockAudit(ctx context.Context) (unlock func(), err error) {
 		}
 	}
 	return func() {
-		syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		osutil.Unlock(f)
 		f.Close()
 		release()
 	}, nil

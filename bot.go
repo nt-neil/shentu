@@ -33,9 +33,9 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
+	"github.com/nt-neil/shentu/internal/osutil"
 	"github.com/nt-neil/shentu/tools"
 )
 
@@ -105,10 +105,10 @@ func withBotState(dir string, fn func(*botState) error) error {
 		return err
 	}
 	defer lock.Close()
-	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
+	if err := osutil.Lock(lock); err != nil {
 		return err
 	}
-	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+	defer osutil.Unlock(lock)
 	st := &botState{}
 	p := filepath.Join(dir, "bot.json")
 	if b, err := os.ReadFile(p); err == nil {

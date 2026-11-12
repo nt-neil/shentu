@@ -9,10 +9,10 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"testing"
 	"time"
 
+	"github.com/nt-neil/shentu/internal/osutil"
 	"github.com/nt-neil/shentu/rules/engine"
 )
 
@@ -207,7 +207,7 @@ func TestAppCodeAuditOneAtATime(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer f.Close()
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+	if err := osutil.Lock(f); err != nil {
 		t.Fatal(err)
 	}
 	c = run(context.Background())
@@ -216,16 +216,16 @@ func TestAppCodeAuditOneAtATime(t *testing.T) {
 		t.Fatal("ran while another process held the lock")
 	case <-time.After(300 * time.Millisecond):
 	}
-	syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+	osutil.Unlock(f)
 	if res := <-c; res.Injection == 0 {
 		t.Errorf("after the other process: %+v", res)
 	}
 	// Waiting longer than the caller's time: unfinished, nothing checked.
-	syscall.Flock(int(f.Fd()), syscall.LOCK_EX)
+	osutil.Lock(f)
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
 	res := <-run(ctx)
-	syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+	osutil.Unlock(f)
 	if !res.Unfinished || len(res.Findings) != 1 || res.Findings[0].Files[0].Reason != "wait" {
 		t.Errorf("timed out waiting: %+v", res)
 	}

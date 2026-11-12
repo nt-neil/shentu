@@ -141,14 +141,23 @@ func itoa(u uint32) string {
 }
 
 func insideAny(p string, roots []string) bool {
-	p = filepath.Clean(p)
 	for _, r := range roots {
-		r = filepath.Clean(r)
-		if p == r || strings.HasPrefix(p, r+"/") {
+		if inside(p, r) {
 			return true
 		}
 	}
 	return false
+}
+
+// inside reports whether p is root or below it. filepath.Rel uses the OS's
+// own separator and, on Windows, compares without case, so C:\inetpub and
+// c:\INETPUB\wwwroot agree and "/var/www-old" is not inside "/var/www".
+func inside(p, root string) bool {
+	rel, err := filepath.Rel(filepath.Clean(root), filepath.Clean(p))
+	if err != nil || filepath.IsAbs(rel) {
+		return false
+	}
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
 }
 
 var certExpiry = Tool{

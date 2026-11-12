@@ -24,6 +24,16 @@
       "elevated": false
     }
   },
+  "resources": {
+    "status": "partial",
+    "reason": "not_recorded",
+    "detail": "/proc/meminfo: hostenv: not in fixture: file /proc/meminfo",
+    "value": {
+      "mem_total_bytes": 0,
+      "mem_available_bytes": 0,
+      "load1": 0
+    }
+  },
   "packages": {
     "status": "ok",
     "value": {

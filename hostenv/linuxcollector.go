@@ -32,8 +32,10 @@ func (c LinuxCollector) Collect(ctx context.Context, src Source) *Facts {
 	info := src.Info()
 	f := NewFacts(c.Name(), CollectorVersion, info.RecordedAt)
 	f.Privilege = OK(Privilege{Elevated: info.Elevated})
+	f.Resources = c.Resources(src)
 
-	osr := c.platform(src, info, f)
+	var osr map[string]string
+	f.Platform, osr = c.Platform(src)
 	f.Packages = c.packages(ctx, src, osr)
 	pw, accounts := c.accounts(src)
 	f.Accounts = accounts
@@ -62,8 +64,10 @@ func (c LinuxCollector) Collect(ctx context.Context, src Source) *Facts {
 	return f
 }
 
-func (LinuxCollector) platform(src Source, info SourceInfo, f *Facts) map[string]string {
-	p := Platform{OS: "linux", Arch: info.GOARCH}
+// Platform gathers the platform fact on its own, and returns the parsed
+// os-release (nil when unreadable) for callers that need other keys.
+func (LinuxCollector) Platform(src Source) (Obs[Platform], map[string]string) {
+	p := Platform{OS: "linux", Arch: src.Info().GOARCH}
 	b, err := src.ReadFile("/etc/os-release")
 	if errors.Is(err, fs.ErrNotExist) {
 		b, err = src.ReadFile("/usr/lib/os-release")
@@ -79,11 +83,9 @@ func (LinuxCollector) platform(src Source, info SourceInfo, f *Facts) map[string
 	}
 	p.InContainer = inContainer(src)
 	if err != nil {
-		f.Platform = Obs[Platform]{Status: StatusPartial, Reason: Classify(err), Detail: "os-release: " + err.Error(), Value: p}
-	} else {
-		f.Platform = OK(p)
+		return Obs[Platform]{Status: StatusPartial, Reason: Classify(err), Detail: "os-release: " + err.Error(), Value: p}, nil
 	}
-	return osr
+	return OK(p), osr
 }
 
 func inContainer(src Source) bool {

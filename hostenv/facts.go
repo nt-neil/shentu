@@ -66,6 +66,7 @@ type Facts struct {
 
 	Platform     Obs[Platform]          `json:"platform"`
 	Privilege    Obs[Privilege]         `json:"privilege"`
+	Resources    Obs[Resources]         `json:"resources"`
 	Packages     Obs[PackageSet]        `json:"packages"`
 	Patches      Obs[[]Patch]           `json:"patches"`
 	Services     Obs[[]Service]         `json:"services"`
@@ -96,6 +97,17 @@ type Platform struct {
 	Arch        string `json:"arch,omitempty"`
 	InContainer bool   `json:"in_container"`
 	ServerCore  bool   `json:"server_core,omitempty"`
+}
+
+// Resources is the machine's capacity as the collecting process sees it:
+// cgroup limits are those of the collector's own cgroup (the service that
+// runs Shentu). Zero means not known.
+type Resources struct {
+	MemTotalBytes     uint64  `json:"mem_total_bytes"`
+	MemAvailableBytes uint64  `json:"mem_available_bytes"`
+	Load1             float64 `json:"load1"`
+	CgroupMemoryLimit uint64  `json:"cgroup_memory_limit,omitempty"` // lowest limit on the way up
+	CgroupCPUs        int     `json:"cgroup_cpus,omitempty"`         // CPU quota, rounded up
 }
 
 type Privilege struct {
@@ -245,6 +257,7 @@ func NewFacts(name, version string, at time.Time) *Facts {
 		Collector:   CollectorInfo{Name: name, Version: version},
 		Platform:    Unknown[Platform](nc, ""),
 		Privilege:   Unknown[Privilege](nc, ""),
+		Resources:   Unknown[Resources](nc, ""),
 		Packages:    Unknown[PackageSet](nc, ""),
 		Patches:     Unknown[[]Patch](nc, ""),
 		Services:    Unknown[[]Service](nc, ""),

@@ -45,6 +45,7 @@ func (u Unsupported) Collect(_ context.Context, src Source) *Facts {
 	r, d := ReasonUnsupported, "no hostenv collector for "+u.GOOS+" yet"
 	f.Platform = Obs[Platform]{Status: StatusPartial, Reason: r, Detail: d, Value: Platform{OS: u.GOOS, Arch: src.Info().GOARCH}}
 	f.Privilege = OK(Privilege{Elevated: src.Info().Elevated})
+	f.Resources = Unknown[Resources](r, d)
 	f.Packages, f.Patches, f.Services = Unknown[PackageSet](r, d), Unknown[[]Patch](r, d), Unknown[[]Service](r, d)
 	f.Processes, f.Accounts, f.Listeners = Unknown[[]Process](r, d), Unknown[[]Account](r, d), Unknown[[]Listener](r, d)
 	f.Persistence, f.Firewall = Unknown[[]PersistenceItem](r, d), Unknown[Firewall](r, d)
