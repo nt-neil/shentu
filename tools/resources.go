@@ -16,7 +16,7 @@ import (
 // auditBudget is what one audit may use.
 type auditBudget struct {
 	heap    uint64 // heap in use past which calls stop crossing files
-	limit   uint64 // Go's soft memory limit while the audit runs (the GC works harder near it)
+	limit   uint64 // Go's soft memory limit while the audit runs: the budget itself (the GC works harder near it)
 	workers int    // files scanned at once
 }
 
@@ -45,8 +45,9 @@ func SetAuditLimits(memoryMB, workers int) {
 //   - workers: min(4, max(1, CPUs/2)), where CPUs counts a cgroup CPU quota;
 //     a configured value replaces it, up to the CPUs; 1 while the load
 //     average is above the CPUs;
-//   - the Go memory limit: twice the heap (what the GC may need on top of
-//     the objects in use), and at most 75% of the cgroup's limit.
+//   - the Go memory limit: the heap budget itself, so that the process stays
+//     within it (calls across files let caches go well before, see
+//     engine.ProjectOptions.MaxHeap), and at most 75% of the cgroup's limit.
 func currentBudget() auditBudget {
 	heap := uint64(1 << 30)
 	if avail := memAvailable(); avail > 0 {
@@ -55,12 +56,11 @@ func currentBudget() auditBudget {
 	if auditSet.memoryMB > 0 {
 		heap = uint64(auditSet.memoryMB) << 20
 	}
-	limit := 2 * heap
 	if cg := cgroupMemory(); cg > 0 {
 		heap = min(heap, cg/2)
-		limit = min(2*heap, cg/4*3)
 	}
 	heap = max(heap, 16<<20)
+	limit := heap
 
 	cpus := min(runtime.NumCPU(), runtime.GOMAXPROCS(0))
 	if q := cgroupCPUs(); q > 0 {

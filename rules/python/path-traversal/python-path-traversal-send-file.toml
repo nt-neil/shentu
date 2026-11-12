@@ -3,10 +3,10 @@ lang = "python"
 class = "path-traversal"
 cwe = "CWE-22"
 severity = "high"
-title = "Request value joined into a file path that is opened or sent"
+title = "Request value joined into a file path that is opened, sent, listed, copied or removed"
 frameworks = ["flask", "django"]
 sources = ["request.args", "request.form", "request.files", "request.GET", "request.POST", "request.view_args"]
-sinks = ["send_file(", "open(", "FileResponse(", "os.path.join(", "Path(", ".save("]
+sinks = ["send_file(", "open(", "FileResponse(", "Path(", ".save(", "os.remove(", "os.unlink(", "os.rmdir(", "shutil.rmtree(", "shutil.copy(", "shutil.copy2(", "shutil.copyfile(", "shutil.copytree(", "shutil.move(", "os.listdir(", "os.scandir(", "zipfile.ZipFile(", "tarfile.open("]
 sanitizers = ["send_from_directory(", "safe_join(", "secure_filename(", ".is_relative_to(", ".startswith("]
 fix = "Use flask.send_from_directory or werkzeug.utils.safe_join (django.utils._os.safe_join); otherwise resolve the path and check it stays under the base directory."
 refs = ["CVE-2022-31507", "CVE-2022-31506", "CVE-2025-54140"]
@@ -19,6 +19,18 @@ refs = ["CVE-2022-31507", "CVE-2022-31506", "CVE-2025-54140"]
 [[args]]
 sinks = [".save("]
 arg = 1
+
+# Archives: only the path argument; tarfile.open(fileobj=...) reads an open
+# stream (an upload), whose members are python-path-traversal-archive-extract's.
+[[args]]
+sinks = ["tarfile.open("]
+arg = 1
+name = "name"
+
+[[args]]
+sinks = ["zipfile.ZipFile("]
+arg = 1
+name = "file"
 
 [[samples]]
 kind = "vulnerable"
@@ -90,4 +102,58 @@ def upload():
     f = request.files["file"]
     f.save("/srv/app/uploads/%s.bin" % uuid.uuid4().hex)
     return "ok"
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+@app.get("/report")
+def report():
+    path = os.path.join("/srv/app/reports", request.args["name"])
+    return send_file(path)
+'''
+
+[[samples]]
+kind = "safe"
+note = "the resolved path is checked to stay under the base directory"
+code = '''
+REPORTS = os.path.realpath("/srv/app/reports")
+
+@app.get("/report")
+def report():
+    path = os.path.realpath(os.path.join(REPORTS, request.args["name"]))
+    if not path.startswith(REPORTS + os.sep):
+        abort(404)
+    return send_file(path)
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "a delete, not only a read, follows the joined path"
+code = '''
+@app.post("/remove")
+def remove():
+    os.remove(os.path.join("/srv/app/uploads", request.form["name"]))
+    return "ok"
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+UPLOADS = os.path.realpath("/srv/app/uploads")
+
+@app.post("/remove")
+def remove():
+    path = os.path.realpath(os.path.join(UPLOADS, request.form["name"]))
+    if not path.startswith(UPLOADS + os.sep):
+        abort(404)
+    os.remove(path)
+    return "ok"
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+def browse(request):
+    return JsonResponse({"files": os.listdir("/srv/media/" + request.GET["dir"])})
 '''

@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Install and use · Shentu</title>
+<meta name="description" content="A small, open-source security assistant for Linux servers, powered by an LLM.">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0b0806">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http%3A//www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%230b0806'/%3E%3Crect x='28' y='8' width='8' height='48' fill='%23f2b45c'/%3E%3C/svg%3E">
+<link rel="preload" href="fonts/serif-light.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="site.css">
+<link rel="alternate" type="application/atom+xml" title="Shentu releases" href="feed.xml">
+
+</head>
+<body class="p-install">
+<a class="skip" href="#main">Skip to content</a>
+<header class="top">
+  <a class="brand" href="index.html">Shentu <b lang="zh-Hant">神荼</b></a>
+  <nav aria-label="Site">
+    <a href="rules.html">Rules</a>
+    <a href="bench.html">Measured</a>
+    <a href="releases.html">Releases</a>
+    <a class="gh" href="https://github.com/nt-neil/shentu">GitHub</a>
+    <a class="cta" href="install.html" aria-current="page">Install</a>
+    <a class="lang" href="zh-TW/install.html" lang="zh-Hant" hreflang="zh-TW">繁體中文</a>
+  </nav>
+</header><div class="slit" aria-hidden="true"></div>
+<main id="main">
+
+<header class="hall">
+  <h1>Install and use</h1>
+</header>
+
+<p>One command installs Shentu and starts a guided setup with five questions:</p>
+<div class="slip"><pre><code>curl -fsSL https://github.com/nt-neil/shentu/releases/latest/download/install.sh | sudo sh</code></pre><button type="button" class="copy" data-done="Copied">Copy</button></div>
+<ol class="steps">
+  <li>language (English or 繁體中文);</li>
+  <li>the AI model (a local model, or an API key), tested once;</li>
+  <li>where alerts go (Telegram, Slack, Discord or ntfy), with a test message;</li>
+  <li>a survey of the server, with the risks it finds;</li>
+  <li>patrols on, plus an optional first report.</li>
+</ol>
+<p>Then ask questions with <code>sudo shentu chat</code>. Run <code>sudo shentu setup</code> again to change anything.</p>
+<h2>Commands</h2>
+<ul>
+  <li><code>shentu chat</code>: ask about your server's security in plain language; the model chooses which tools to run and explains what it found.</li>
+  <li><code>shentu patrol</code>: run by a systemd timer every 30 minutes, with fixed checks that include the audit of the web applications' code. New findings are explained by the LLM and sent to your notification channel; if the LLM is down, you still get the raw findings.</li>
+  <li><code>shentu survey</code>: learns the server first, as the baseline for patrols.</li>
+  <li><code>shentu bot</code> (optional): talk to Shentu from Telegram, with levels you choose; notifications only by default.</li>
+</ul>
+<h2>Supported systems</h2>
+<p>Ubuntu 22.04 and 24.04, Debian 12, Rocky and Alma 9, on amd64 and arm64 (systemd is required). Each release carries <code>.deb</code> and <code>.rpm</code> packages and a signed build provenance you can check with <code>gh attestation verify</code>.</p>
+<p>It never changes the system on its own: every action that changes something waits for a human to confirm it. Step by step: <a href="https://github.com/nt-neil/shentu/blob/main/docs/getting-started.md">Getting started</a>.</p>
+
+<script>
+document.querySelectorAll('.copy').forEach(function (b) {
+  b.addEventListener('click', function () {
+    var t = b.previousElementSibling.textContent, label = b.textContent;
+    (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(function () {
+      b.textContent = b.dataset.done; setTimeout(function () { b.textContent = label; }, 1600);
+    }, function () {});
+  });
+});
+</script>
+
+</main>
+<footer class="foot">
+  <p>Apache-2.0. Generated from the repository by cmd/sitegen.</p>
+  <ul>
+    <li><a href="https://github.com/nt-neil/shentu">GitHub</a></li>
+    <li><a href="https://github.com/nt-neil/shentu/blob/main/LICENSE">License Apache-2.0</a></li>
+    <li><a href="https://github.com/nt-neil/shentu/blob/main/SECURITY.md">Security policy</a></li>
+    <li><a href="feed.xml">Atom feed (RSS)</a></li>
+    <li><a href="img/CREDITS.md">Image credits</a></li>
+    <li><a href="fonts/OFL.txt">Noto Serif TC (OFL)</a></li>
+  </ul>
+</footer>
+</body>
+</html>
+
+
+

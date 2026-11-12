@@ -57,3 +57,13 @@ export class BuildController {
   }
 }
 '''
+
+[[samples]]
+kind = "safe"
+note = "a fixed command and arguments; the server's own environment is no input"
+code = '''
+app.post("/rebuild", (req, res) => {
+  const child = spawn("npm", ["run", "build"], { shell: true, env: process.env });
+  child.on("close", (code) => res.json({ code }));
+});
+'''

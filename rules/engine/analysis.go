@@ -120,10 +120,12 @@ type analysis struct {
 	nested int  // functions defined inside the one analysed: their returns are not its returns
 	raw    bool // evaluating whether a value came from input at all: sanitizers do not clean
 
-	sc     *summaries    // this rule's function summaries for the file (interproc.go)
-	summ   *summRun      // set while a function body is analysed for its summary
-	lib    bool          // library mode: public parameters are input, and only embedded input is reported
-	routes map[*fn]*seed // functions a framework calls with request data, and which parameters carry it (routes.go)
+	sc      *summaries    // this rule's function summaries for the file (interproc.go)
+	summ    *summRun      // set while a function body is analysed for its summary
+	lib     bool          // library mode: public parameters are input, and only embedded input is reported
+	nest    int           // summaries worked out inside one another to here (own)
+	heights *int          // the highest summary used by the summary being worked out (own)
+	routes  map[*fn]*seed // functions a framework calls with request data, and which parameters carry it (routes.go)
 
 	noSrc  bool   // the rule's sources are off (a summary run for parameters)
 	cls    string // class of the method being analysed, and its parent
@@ -140,6 +142,7 @@ type analysis struct {
 
 	ftoks []Token              // the file's tokens, for the receiver condition (receiver.go)
 	rdefs map[string][][]Token // what names of the file are assigned or annotated with, built on first use
+	rcls  map[string][]string  // PHP: variables the file binds only to new objects, and their classes (recvClasses), built on first use
 }
 
 // loc is a place a sink is reached: a line of a file.
@@ -578,6 +581,9 @@ func (a *analysis) assign(st state, t []Token) (val, bool) {
 			} else if _, had := st[canonKey+key]; had {
 				delete(st, canonKey+key)
 			}
+			if a.js {
+				a.setRelative(st, key, rhs, t[k].Text == "=")
+			}
 		}
 		if cls != "" && len(tg) == 1 {
 			a.setType(tg[0].Text, cls)
@@ -913,6 +919,9 @@ func (a *analysis) fixedStart(st state, t []Token) bool {
 				}
 			case "trailingslashit", "user_trailingslashit":
 				// the result starts with the first argument (untrailingslashit and rtrim may cut its end)
+				return len(args) >= 1 && a.fixedStart(st, args[0])
+			case "set_url_scheme":
+				// WordPress: the first argument with its scheme changed, its host kept
 				return len(args) >= 1 && a.fixedStart(st, args[0])
 			case "apply_filters":
 				// WordPress returns the filtered value, the second argument
@@ -1407,13 +1416,16 @@ func (a *analysis) srcMatch(s *pat, t []Token, i int) (int, bool) {
 }
 
 // argsTaint reports whether a call's arguments carry taint into its result. Most
-// calls pass on any argument's taint. In PHP, array_intersect and
-// array_intersect_key return the values and keys of their first argument;
+// calls pass on any argument's taint. In PHP, array_intersect, array_diff and
+// their kin return values and keys of their first argument only;
 // WordPress's apply_filters($tag, $value, ...) returns the filtered $value.
 func (a *analysis) argsTaint(st state, inner []Token, fn string) bool {
 	args := splitTop(inner, isComma)
 	switch fn {
-	case "array_intersect", "array_intersect_key":
+	case "array_intersect", "array_intersect_key", "array_intersect_assoc", "array_intersect_ukey", "array_intersect_uassoc",
+		"array_uintersect", "array_uintersect_assoc", "array_uintersect_uassoc",
+		"array_diff", "array_diff_key", "array_diff_assoc", "array_diff_ukey", "array_diff_uassoc",
+		"array_udiff", "array_udiff_assoc", "array_udiff_uassoc":
 		args = args[:min(len(args), 1)]
 	case "apply_filters":
 		args = args[min(len(args), 1):min(len(args), 2)]
@@ -1684,6 +1696,9 @@ func (a *analysis) guard(st state, atom []Token) (pos bool, keys []keyRef) {
 	}
 	if len(atom) == 0 {
 		return pos, nil
+	}
+	if keys := a.escapeCheck(st, atom); keys != nil {
+		return !pos, keys // the check passes where the path does not escape
 	}
 	// PHP empty($x) and isset($x): an empty or unset value carries no input.
 	if n := len(atom); a.php && n > 3 && (atom[0].word("empty") || atom[0].word("isset")) && atom[1].op("(") && closeOf(atom, 1) == n-1 {
@@ -2123,6 +2138,9 @@ func (a *analysis) sink(st state, t []Token, i int, s *pat) {
 		}
 		if cond != nil && len(cond.receiver) > 0 && !a.recvIs(cond.receiver, recv) {
 			return // finders.find(path) is not a MongoDB collection
+		}
+		if cond != nil && len(cond.notReceiver) > 0 && a.recvSurely(cond.notReceiver, recv) {
+			return // (new WP_Query)->query($args): a query built from an arguments array, not SQL
 		}
 	}
 	whole := cond != nil && cond.whole

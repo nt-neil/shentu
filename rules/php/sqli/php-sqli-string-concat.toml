@@ -4,11 +4,21 @@ class = "sqli"
 cwe = "CWE-89"
 severity = "high"
 title = "Request input concatenated or interpolated into a SQL string"
-sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE"]
-sinks = ["mysqli_query", "->query(", "->exec(", "pg_query"]
-sanitizers = ["intval", "(int)", "->prepare(", "pg_query_params"]
+sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "get_query_var(", "->get_param("]
+sinks = ["mysqli_query", "->query(", "->exec(", "pg_query", "->prepare("]
+sanitizers = ["intval", "(int)", "->prepare(", "pg_query_params", "count(", "sizeof(", "sanitize_sql_orderby("]
 fix = "Use a prepared statement with bound parameters (PDO::prepare + execute, mysqli bind_param); never build SQL with string concatenation or sprintf. Escaping (mysqli_real_escape_string) only protects a value inside quotes."
 refs = ["CVE-2026-56738"]
+
+# prepare() binds the values given later to execute() (PDO, mysqli) or after
+# the format ($wpdb->prepare); input written into the statement or format
+# itself is SQL. This rule alone reports it, also for $wpdb.
+# Known false positive (kept over a miss): a placeholder list made by a
+# callback that returns a constant, implode(',', array_map(fn($v) => '%d', $ids)),
+# is still taken for input (engine, v0.2.6); array_fill(0, count($ids), '%d') is not.
+[[args]]
+sinks = ["->prepare("]
+arg = 1
 
 [[samples]]
 kind = "vulnerable"
@@ -52,4 +62,95 @@ code = '''
 <?php
 $id = intval($_GET['id']);
 $rows = mysqli_query($db, "SELECT * FROM posts WHERE id = $id");
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "prepare does not help a value written into the statement it prepares"
+code = '''
+<?php
+$stmt = $pdo->prepare("SELECT id, email FROM users WHERE name = '" . $_GET['name'] . "'");
+$stmt->execute();
+'''
+
+[[samples]]
+kind = "safe"
+note = "WordPress's query classes take an array of arguments and build the SQL themselves, escaping it"
+code = '''
+<?php
+$q = new WP_Query;
+$posts = $q->query(array('s' => $_GET['s'], 'post_type' => 'post'));
+$users = (new WP_User_Query())->query(array('search' => $_GET['user']));
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "a receiver the file says nothing about may be a database connection"
+code = '''
+<?php
+function rows($db) {
+	return $db->query("SELECT * FROM t WHERE name = '" . $_GET['name'] . "'");
+}
+'''
+
+# WordPress's *_Query classes: query() takes an arguments array, not SQL.
+[[args]]
+sinks = ["->query("]
+not_receiver = ["WP_Query", "WP_Comment_Query", "WP_User_Query", "WP_Term_Query", "WP_Site_Query", "WP_Network_Query"]
+
+[[samples]]
+kind = "vulnerable"
+note = "prepare binds only the values after the format: input written into the format is SQL"
+code = '''
+<?php
+add_action('wp_ajax_drop_items', function () {
+    global $wpdb;
+    $wpdb->query($wpdb->prepare("DELETE FROM {$wpdb->prefix}items WHERE id IN ({$_POST['ids']}) AND owner = %d", get_current_user_id()));
+});
+'''
+
+[[samples]]
+kind = "safe"
+note = "sizeof() is a number: one placeholder per value"
+code = '''
+<?php
+add_action('wp_ajax_drop_items', function () {
+    global $wpdb;
+    $ids = array_map('absint', (array) $_POST['ids']);
+    $marks = implode(',', array_fill(0, sizeof($ids), '%d'));
+    $wpdb->query($wpdb->prepare("DELETE FROM {$wpdb->prefix}items WHERE id IN ($marks)", $ids));
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "a query var written into prepare()'s format"
+code = '''
+<?php
+add_action('template_redirect', function () {
+    global $wpdb;
+    $slug = get_query_var('book');
+    $row = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$wpdb->prefix}books WHERE slug = '$slug' AND status = %s", 'live'));
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+function shop_items($req) {
+    global $wpdb;
+    $col = $req->get_param('sort');
+    return $wpdb->get_results($wpdb->prepare("SELECT * FROM {$wpdb->prefix}items ORDER BY $col LIMIT %d", 10));
+}
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+function shop_items($req) {
+    global $wpdb;
+    return $wpdb->get_results($wpdb->prepare("SELECT * FROM {$wpdb->prefix}items WHERE cat = %s LIMIT %d", $req->get_param('cat'), 10));
+}
 '''

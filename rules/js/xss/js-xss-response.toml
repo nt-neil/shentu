@@ -6,7 +6,9 @@ severity = "medium"
 tier = "info"
 title = "Request value sent back in an HTML response without escaping"
 frameworks = ["express", "nestjs", "nextjs", "koa", "fastify", "hapi"]
-sources = ["req.query", "req.params", "req.body", "req.cookies", "req.headers", "@Query(", "@Body(", "@Param(", "@Headers(", "^request.nextUrl", "^req.nextUrl", "^searchParams", "^request.json(", "^req.json(", "^request.text(", "^req.text(", "^request.formData(", "^req.formData(", "^formData.get(", "req.get(", "req.header(", "^headers().get(", "^cookies().get(", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload", "ctx.params", "request.params", "ctx.headers", "ctx.cookies.get(", "request.headers", "ctx.request.header", "ctx.request.headers", "ctx.get("]
+# Headers by name in brackets (user-agent) and the referrer: req.headers.host is
+# the host-header rules' input
+sources = ["req.query", "req.params", "req.body", "req.cookies", "req.headers[", "req.headers.referer", "req.headers.referrer", "req.headers.origin", "@Query(", "@Body(", "@Param(", "@Headers(", "^request.nextUrl", "^req.nextUrl", "^searchParams", "^request.json(", "^req.json(", "^request.text(", "^req.text(", "^request.formData(", "^req.formData(", "^formData.get(", "req.get(", "req.header(", "^headers().get(", "^cookies().get(", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload", "ctx.params", "request.params", "ctx.headers[", "ctx.cookies.get(", "request.headers[", "ctx.request.header[", "ctx.request.headers[", "ctx.get("]
 sinks = ["res.send(", "res.write(", "res.end(", "ctx.body =", "ctx.response.body ="]   # Koa sends a string body starting with "<" as text/html
 sanitizers = ["escapeHtml(", "escape(", "he.encode(", "he.escape(", "validator.escape(", "_.escape(", "DOMPurify.sanitize(", "sanitizeHtml(", "xss(", "encodeURIComponent("]
 fix = "Render with a template engine that escapes by default (res.render), send JSON with res.json(), or escape each value (escape-html, he.encode) before putting it into HTML."
@@ -102,5 +104,33 @@ note = "Koa: an object body is sent as JSON"
 code = '''
 router.get("/hello", async (ctx) => {
   ctx.body = { greeting: "Hello " + ctx.query.who };
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "the words data: and event: inside an HTML page do not make it a stream"
+code = '''
+app.get("/status", (req, res) => {
+  res.write(`<p>data: ${req.query.q}</p>`);
+  res.end();
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+app.get("/back", (req, res) => {
+  res.send(`<a href="/">home</a> <p>You came from ${req.headers.referer}</p><p>${req.headers["user-agent"]}</p>`);
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "an event-stream literal in one branch does not make the HTML in the other safe"
+code = '''
+app.get("/hello", (req, res) => {
+  const stream = req.accepts("text/event-stream");
+  res.send(stream ? "data: ready\n\n" : "<h1>Hello " + req.query.name + "</h1>");
 });
 '''

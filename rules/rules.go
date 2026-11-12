@@ -29,6 +29,10 @@ type Rule struct {
 	Tier       string       `toml:"tier"` // "info" (the default): shown in app_code_audit and chat only; "alert": also in the patrol report
 	Title      string       `toml:"title"`
 	Frameworks []string     `toml:"frameworks"`
+	// RouteInput false: a route handler's parameters are not this rule's
+	// input, only its sources are (a rule for the Host header: the query a
+	// route model makes input is not the host).
+	RouteInput *bool `toml:"route_input"`
 	Sources    []string     `toml:"sources"`
 	Sinks      []string     `toml:"sinks"`
 	Sanitizers []string     `toml:"sanitizers"`
@@ -38,6 +42,11 @@ type Rule struct {
 	Fix        string       `toml:"fix"`
 	Refs       []string     `toml:"refs"`
 	Samples    []Sample     `toml:"samples"`
+
+	// RouteMembers: of the members a route model makes input (Express req.query,
+	// req.params), only these are this rule's (a rule for a query object: a
+	// path parameter is always a string). Unset: all of them.
+	RouteMembers []string `toml:"route_members"`
 
 	File string `toml:"-"` // path inside rules/, set by Load
 }
@@ -59,6 +68,11 @@ type Args struct {
 	MinLen   int      `toml:"min_len"`  // with literal: the string must be at least this long
 	Exclude  []string `toml:"exclude"`  // with literal: a string matching one of these regular expressions (any case) does not count
 	Receiver []string `toml:"receiver"` // a method sink counts only when its receiver, followed through the file's assignments and annotations, holds one of these
+	// NotReceiver: a method sink does not count on an object surely made by
+	// one of these classes: new Class(...), or a name every assignment of the
+	// file gives such an object ($q = new WP_Query; $q->query($args)). A
+	// receiver the file says nothing about still counts.
+	NotReceiver []string `toml:"not_receiver"`
 }
 
 // SourceArgs makes call sources input only when an argument is one of a few
@@ -141,6 +155,10 @@ type Route struct {
 	Params    []int    `toml:"params"`     // the handler's parameters (from 1) carrying input; empty: all
 	Template  bool     `toml:"template"`   // only the parameters the path template names
 	Members   []string `toml:"members"`    // only these members of the parameters (query, params, body)
+	// NamedMembers: for a parameter of that name, these members instead (Koa's
+	// ctx under an Express-like registration: ctx.body is the response, the
+	// request's body is ctx.request.body).
+	NamedMembers map[string][]string `toml:"named_members"`
 	Requires  []string `toml:"requires"`   // the model applies to a file naming one of these (an import: fastapi)
 	Exclude   []string `toml:"exclude"`    // a parameter declared with one of these is no input (Depends)
 	Bound     bool     `toml:"bound"`      // a parameter declared with a class type is an object the framework looked up (Laravel route model binding), no input

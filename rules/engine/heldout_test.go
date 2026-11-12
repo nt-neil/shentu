@@ -120,7 +120,7 @@ func TestHeldOut(t *testing.T) {
 		{"S3 php switch falls through to the sink", "php", "<?php\nswitch ($m) {\n  case 1: $a = $_GET['a'];\n  case 2: system($a); break;\n}\n", true, ""},
 		{"N1 py resolve only", "python", "@app.get('/d')\ndef d():\n    p = (Path(BASE) / request.args['f']).resolve()\n    return send_file(p)\n", true, ""},
 		{"N2 js zip slip with resolve only", "js", "app.post('/i', (req, res) => {\n  for (const entry of new AdmZip(req.file.path).getEntries()) {\n    fs.writeFileSync(path.resolve(dest, entry.entryName), entry.getData());\n  }\n});\n", true, ""},
-		{"N3 py resolve then startswith with separator", "python", "@app.get('/d')\ndef d():\n    p = os.path.realpath(os.path.join(BASE, request.args['f']))\n    if not p.startswith(BASE + os.sep):\n        abort(404)\n    return send_file(p)\n", false, "the rule lists os.path.join( as a sink, so a join that is checked afterwards is still reported (false positive, for E7)"},
+		{"N3 py resolve then startswith with separator", "python", "@app.get('/d')\ndef d():\n    p = os.path.realpath(os.path.join(BASE, request.args['f']))\n    if not p.startswith(BASE + os.sep):\n        abort(404)\n    return send_file(p)\n", false, ""},
 		{"O1 js shell: false", "js", "app.get('/x', (req, res) => { spawn('git', ['log', req.query.r], { shell: false }); });\n", false, ""},
 		{"O2 py shell=False", "python", "def v():\n    subprocess.run('ping ' + request.args['h'], shell=False)\n", false, ""},
 		{"O3 py -- after the input", "python", "def v():\n    subprocess.run(['git', 'log', request.args['r'], '--'])\n", true, ""},

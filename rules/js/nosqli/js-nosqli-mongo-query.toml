@@ -7,6 +7,7 @@ tier = "info"
 title = "Request data placed in a MongoDB query without forcing it to a string"
 frameworks = ["express", "nestjs", "nextjs", "koa", "fastify", "hapi"]
 sources = ["req.body", "req.query", "@Query(", "@Body(", "@Req(", "^request.json(", "^req.json(", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload"]
+route_members = ["query", "body"]
 sinks = [".findOne(", ".find(", ".findOneAndUpdate(", ".findOneAndDelete(", ".updateOne(", ".updateMany(", ".deleteOne(", ".deleteMany(", ".countDocuments(", ".exists(", "$where"]
 sanitizers = ["String(", ".toString(", "mongoSanitize(", "sanitize(", "parseInt(", "ObjectId(", "ObjectID(", "Binary(", "mongodb.Binary(", "bson.Binary(", "BSON.Binary(", "typeof", ".launder.string(", ".launder.strings(", ".launder.id(", ".launder.ids(", ".launder.integer(", ".launder.float(", ".launder.boolean("]   # BSON constructors make a value, not an operator object; ApostropheCMS launder returns scalars
 fix = "Convert each value to the type the field holds (String(), Number()) or reject non-strings (typeof x !== \"string\") before it goes into the filter; enable sanitizeFilter in Mongoose; never build $where from input."
@@ -90,5 +91,23 @@ code = '''
 app.get("/doc/:id", async (req, res) => {
   const key = new mongodb.Binary(Buffer.from(req.params.id, "base64"), Number(req.query.subtype) === 4 ? 4 : 3);
   res.json(await docs.findOne({ _id: key }));
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "MongoDB options (sort, limit) beside the filter do not make it safe"
+code = '''
+app.get("/posts", async (req, res) => {
+  res.json(await db.collection("posts").find({ author: req.query.author }, { sort: { at: -1 }, limit: 10 }).toArray());
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "a field named relations in the options (here a projection) is no TypeORM call"
+code = '''
+app.get("/people", async (req, res) => {
+  res.json(await db.collection("people").find({ name: req.query.name }, { projection: { relations: 1 } }).toArray());
 });
 '''

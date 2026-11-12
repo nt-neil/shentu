@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -25,7 +26,7 @@ import (
 // a part at a time and the summary tells how far that has got.
 
 // callStateVersion changes whenever callState or what it means changes.
-const callStateVersion = "1"
+const callStateVersion = "2" // 2: findings capped per rule and file
 
 type callState struct {
 	Version string                `json:"v"`
@@ -47,13 +48,15 @@ type fileState struct {
 // cut short: the rules followed to their end and what they found.
 type partResult struct {
 	Rules []string         `json:"r"`
-	Found []engine.Finding `json:"f,omitempty"`
+	Found []engine.Finding `json:"f,omitempty"` // at most auditMaxPerFile of one rule in one file
+	Over  int              `json:"n,omitempty"` // the findings the cap left out
 	Cut   bool             `json:"c,omitempty"` // a cap cut one of them short
 	Tries map[string]int   `json:"t,omitempty"` // rule → audits in a row the clock cut it short
 }
 
 type passResult struct {
-	Found  []engine.Finding `json:"f,omitempty"`
+	Found  []engine.Finding `json:"f,omitempty"` // at most auditMaxPerFile of one rule in one file
+	Over   int              `json:"n,omitempty"` // the findings the cap left out
 	Reason string           `json:"r,omitempty"` // unfinishedReason; "" when it ran to the end
 	Gen    bool             `json:"g,omitempty"` // the file is minified or bundled JavaScript
 }
@@ -141,6 +144,38 @@ func saveCallState(name string, st *callState) {
 		return
 	}
 	ok = os.Rename(tmp.Name(), name) == nil
+	if ok {
+		pruneCallStates(filepath.Dir(name), callStateMax)
+	}
+}
+
+// callStateMax is how many sets of roots keep their results: each narrower
+// audit path has its own file. The ones used longest ago go first.
+const callStateMax = 16
+
+// pruneCallStates removes the kept results beyond keep, the least recently
+// written first (every audit of those roots writes its file again).
+func pruneCallStates(dir string, keep int) {
+	names, _ := filepath.Glob(filepath.Join(dir, "codecalls-*.json"))
+	if len(names) <= keep {
+		return
+	}
+	type aged struct {
+		name string
+		mod  int64
+	}
+	var all []aged
+	for _, n := range names {
+		if info, err := os.Lstat(n); err == nil && info.Mode().IsRegular() {
+			all = append(all, aged{n, info.ModTime().UnixNano()})
+		}
+	}
+	sort.Slice(all, func(i, j int) bool {
+		return all[i].mod > all[j].mod || all[i].mod == all[j].mod && all[i].name < all[j].name
+	})
+	for _, a := range all[min(keep, len(all)):] {
+		os.Remove(a.name)
+	}
 }
 
 // own returns the kept result of the file on its own, if its content is the same.
@@ -172,7 +207,7 @@ func (st *callState) useDigests(pr *engine.Project, langs []string) {
 		}
 		st.Digest[lang] = d
 		for p, fs := range st.Files {
-			if engine.LangOf(p) == lang {
+			if engine.BaseLang(engine.LangOf(p)) == lang { // .ts, .tsx and .jsx index as js
 				fs.Calls, fs.Part, fs.Deps = nil, nil, nil
 			}
 		}
@@ -181,8 +216,9 @@ func (st *callState) useDigests(pr *engine.Project, langs []string) {
 
 // dropStale drops and lists the kept results across files that no longer
 // hold: the file changed, or one its calls reached (or theirs, in turn)
-// changed or is gone.
-func (st *callState) dropStale(hash map[string]string) map[string]bool {
+// changed or is gone. walked: the audit's walk reached every file; when it did
+// not, a file it did not reach (not in hash) is not taken as gone.
+func (st *callState) dropStale(hash map[string]string, walked bool) map[string]bool {
 	bad := map[string]bool{}
 	callers := map[string][]string{}
 	var queue []string
@@ -192,13 +228,26 @@ func (st *callState) dropStale(hash map[string]string) map[string]bool {
 			queue = append(queue, f)
 		}
 	}
+	// A file the walk did not reach is unknown while it is still there; one
+	// that is gone is stale, and its results go.
+	gone := map[string]bool{}
+	unknown := func(f string) bool {
+		if _, ok := hash[f]; ok || walked {
+			return false
+		}
+		if _, err := os.Lstat(f); err != nil {
+			gone[f] = true
+			return false
+		}
+		return true
+	}
 	for f, fs := range st.Files {
-		if fs.Hash != hash[f] {
+		if fs.Hash != hash[f] && !unknown(f) {
 			mark(f)
 		}
 		for _, d := range fs.Deps {
 			callers[d] = append(callers[d], f)
-			if g := st.Files[d]; g == nil || g.Hash != hash[d] {
+			if g := st.Files[d]; (g == nil || g.Hash != hash[d]) && !unknown(d) {
 				mark(d)
 			}
 		}
@@ -218,6 +267,9 @@ func (st *callState) dropStale(hash map[string]string) map[string]bool {
 		if fs := st.Files[f]; fs != nil {
 			fs.Calls, fs.Part = nil, nil
 		}
+	}
+	for f := range gone {
+		delete(st.Files, f)
 	}
 	return bad
 }
@@ -239,6 +291,14 @@ func (fs *fileState) addDeps(deps []string) {
 	sort.Strings(fs.Deps)
 }
 
+// setDeps records the files a file's calls were followed into when every one
+// of its rules was followed in this audit: they replace the old ones, so a
+// file no longer called does not keep it stale.
+func (fs *fileState) setDeps(deps []string) {
+	fs.Deps = slices.Clone(deps)
+	sort.Strings(fs.Deps)
+}
+
 // keepOnly drops the files no longer in the audit.
 func (st *callState) keepOnly(hash map[string]string) {
 	for p := range st.Files {
@@ -246,4 +306,57 @@ func (st *callState) keepOnly(hash map[string]string) {
 			delete(st.Files, p)
 		}
 	}
+}
+
+// walkPos is where a walk the caller's time cut short stopped: the index of
+// the root and the path in it.
+type walkPos struct {
+	Root int    `json:"r"`
+	Path string `json:"p"`
+}
+
+// walkPosFile is where the walk of these roots keeps its place ("" for none).
+func walkPosFile(roots []string) string {
+	if f := callStateFile(roots); f != "" {
+		return strings.TrimSuffix(f, ".json") + ".walk"
+	}
+	return ""
+}
+
+func loadWalkPos(name string) (walkPos, bool) {
+	var p walkPos
+	if name == "" {
+		return p, false
+	}
+	b, err := os.ReadFile(name)
+	if err != nil || json.Unmarshal(b, &p) != nil || p.Path == "" {
+		return walkPos{}, false
+	}
+	return p, true
+}
+
+// saveWalkPos keeps p, or removes the place when the walk went round (nil).
+func saveWalkPos(name string, p *walkPos) {
+	if name == "" {
+		return
+	}
+	if p == nil {
+		os.Remove(name)
+		return
+	}
+	if b, err := json.Marshal(p); err == nil && os.MkdirAll(filepath.Dir(name), 0o700) == nil {
+		os.WriteFile(name, b, 0o600)
+	}
+}
+
+// pathCmp orders paths the way filepath.WalkDir visits them: name by name,
+// a folder before what it holds.
+func pathCmp(a, b string) int {
+	as, bs := strings.Split(a, "/"), strings.Split(b, "/")
+	for i := 0; i < len(as) && i < len(bs); i++ {
+		if c := strings.Compare(as[i], bs[i]); c != 0 {
+			return c
+		}
+	}
+	return len(as) - len(bs)
 }

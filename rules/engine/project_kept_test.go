@@ -4,6 +4,7 @@ import (
 	"errors"
 	"reflect"
 	"testing"
+	"time"
 )
 
 // What a result kept between audits depends on: the files its calls were
@@ -98,5 +99,30 @@ func TestProjectScanCallsPartAfterTheClock(t *testing.T) {
 	part, _ := pr.ScanCallsPart("a.php", []byte(files["a.php"]), nil)
 	if !part.Timed || len(part.Done) != 0 || len(part.Found) != 0 {
 		t.Errorf("after the project stopped: %+v, want timed with no rule done", part)
+	}
+}
+
+// A scan over the file's own time limit says so (FileTime), apart from one
+// the project's clock cut short: the audit goes on with other files only in
+// the first case.
+func TestScanCallsPartFileTime(t *testing.T) {
+	files := map[string]string{"a.php": "<?php\nfunction f($x) { system($x); }\nf($_GET['a']);\n"}
+	read := func(p string) ([]byte, error) { return []byte(files[p]), nil }
+	for _, c := range []struct {
+		name          string
+		file, project time.Duration
+		fileTime      bool
+	}{
+		{"the file's limit", time.Nanosecond, time.Hour, true},
+		{"the project's clock", time.Hour, time.Nanosecond, false},
+	} {
+		e := engineForTest(t)
+		e.Limits.MaxTime = c.file
+		pr := e.NewProject([]string{"a.php"}, read, ProjectOptions{MaxTime: c.project})
+		time.Sleep(time.Millisecond)
+		res, _ := pr.ScanCallsPart("a.php", []byte(files["a.php"]), nil)
+		if !res.Timed || res.FileTime != c.fileTime {
+			t.Errorf("%s: timed %v, file time %v, want true and %v", c.name, res.Timed, res.FileTime, c.fileTime)
+		}
 	}
 }

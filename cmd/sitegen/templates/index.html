@@ -1,0 +1,94 @@
+{{define "main"}}
+<!-- The night-watch scroll: one stage, pinned while the page scrolls past it.
+     Scrolling down walks the guardian to the right, through six stations. -->
+<section class="walk" id="watch" aria-labelledby="title" data-hud='["{{t "hud.0"}}","{{t "hud.1"}}","{{t "hud.2"}}","{{t "hud.3"}}","{{t "hud.4"}}","{{t "hud.5"}}"]'>
+  <div class="stage">
+    <div class="sky" aria-hidden="true"></div>
+    <div class="world">
+      <div class="scene sc1" role="img" aria-label="{{t "night.img"}}"></div>
+      <div class="scene sc2" data-bg="{{.L.Root}}img/scroll/court.webp" aria-hidden="true"></div>
+      <div class="scene sc3" data-bg="{{.L.Root}}img/scroll/hall.webp" aria-hidden="true"></div>
+      <div class="scene sc4" data-bg="{{.L.Root}}img/scroll/rear.webp" aria-hidden="true"></div>
+      <div class="scene sc5" data-bg="{{.L.Root}}img/scroll/door.webp" aria-hidden="true"></div>
+      <div class="scene sc6" data-bg="{{.L.Root}}img/scroll/guardian-front.webp" aria-hidden="true"></div>
+    </div>
+    <div class="evil" aria-hidden="true"></div>
+    <div class="haze" aria-hidden="true"></div>
+    <canvas class="near" aria-hidden="true"></canvas>
+    <div class="walker" aria-hidden="true"><i class="f1"></i><i class="f2"></i></div>
+    <div class="boughs" aria-hidden="true"></div>
+    <div class="shade" aria-hidden="true"></div>
+
+    <div class="station st1">
+      <h1 id="title"><span>{{t "night.l1"}}</span> <span>{{t "night.l2"}}</span></h1>
+      <p class="lede">{{t "night.lede"}}</p>
+      <p class="actions"><a class="button" href="install.html">{{t "nav.install"}}</a><a class="link" href="{{.Repo}}">{{t "hero.source"}}</a></p>
+      <p class="cue" aria-hidden="true">{{t "scroll.cue"}}</p>
+    </div>
+    <div class="station st2"><time>03:00</time><h2>{{t "st2.t"}}</h2><p>{{t "st2.p"}}</p></div>
+    <div class="station st3"><time>03:04</time><h2>{{t "st3.t"}}</h2><p>{{t "st3.p"}}</p></div>
+    <div class="station st4"><time>03:09</time><h2>{{t "st4.t"}}</h2><p>{{t "st4.p"}}</p></div>
+    <div class="station st5"><time>03:12</time><h2>{{t "act2.t"}}</h2><p>{{t "act2.p"}}</p></div>
+
+    <div class="checks" aria-hidden="true">
+      <p class="example">{{t "story.example"}}</p>
+      <ul>
+        <li data-at="1.25"><span>{{t "log.ssh"}}</span><b>✓</b></li>
+        <li data-at="1.6"><span>{{t "log.ports"}}</span><b>✓</b></li>
+        <li data-at="2.2"><span>{{t "log.proc"}}</span><b>✓</b></li>
+        <li data-at="2.55"><span>{{t "log.pkg"}}</span><b>✓</b></li>
+        <li data-at="3.3"><span>{{t "log.code"}}{{t "lp"}}{{.Count}} {{t "rules.count"}}{{t "rp"}}</span><b>✓</b></li>
+        <li data-at="3.8" class="flag"><span>shop / wp-content / uploads</span><b>{{t "log.bad"}}</b></li>
+      </ul>
+    </div>
+
+    <div class="talk" role="group" aria-labelledby="talk-name">
+      <div class="face" aria-hidden="true"></div>
+      <div class="talk-body">
+        <p class="talk-name" id="talk-name">神荼 · 03:13 <span class="example">{{t "story.example"}}</span></p>
+        <p class="talk-text" data-full="{{t "story.msg"}}" aria-live="polite">{{t "story.msg"}}</p>
+        <p class="talk-opts">
+          <button type="button" data-say="{{t "talk.yes.r"}}">{{t "talk.yes"}}</button>
+          <button type="button" data-say="{{t "talk.no.r"}}">{{t "talk.no"}}</button>
+        </p>
+      </div>
+    </div>
+    <div class="hud" aria-hidden="true"><span class="hud-name">{{t "hud.0"}}</span><i><b></b></i></div>
+  </div>
+</section>
+
+<div class="after">
+{{with .Main}}{{$all := .All}}
+<section data-reveal class="tally" aria-labelledby="tally-title">
+  <h2 id="tally-title">{{t "tally.title"}}</h2>
+  <dl>
+    <div><dd>{{$.Count}}</dd><dt>{{t "nails.rules"}}</dt></div>
+    <div><dd>{{$all.Caught}}<small>/ {{$all.Cases}}</small></dd><dt>{{t "nails.bench"}}</dt></div>
+    <div><dd>{{$all.FixedFP}}</dd><dt>{{t "nails.fp"}}</dt></div>
+  </dl>
+  <p><a href="bench.html">{{t "nails.more"}}</a></p>
+</section>
+{{end}}
+
+<section data-reveal class="open" id="open-source" aria-labelledby="open-title">
+  <h2 id="open-title">{{t "os.title"}}</h2>
+  <p class="lede">{{t "os.lede"}}</p>
+  <dl class="os">
+    <div><dt><a href="{{.Repo}}">{{t "os.source"}}</a></dt><dd>{{t "os.source.d"}} <code>{{slice .Repo 8}}</code></dd></div>
+    <div><dt><a href="{{.Repo}}/blob/main/LICENSE">{{t "os.license"}}</a></dt><dd>{{t "os.license.d"}}</dd></div>
+    <div><dt><a href="{{.Repo}}/releases">{{t "os.download"}}</a></dt><dd>{{t "os.download.d"}}</dd></div>
+    <div><dt><a href="{{.Repo}}/issues">{{t "os.issues"}}</a></dt><dd>{{t "os.issues.d"}}</dd></div>
+    <div><dt><a href="{{.Repo}}/security/advisories/new">{{t "os.security"}}</a></dt><dd>{{t "os.security.d"}} <a href="{{.Repo}}/blob/main/SECURITY.md">{{t "os.security.policy"}}</a></dd></div>
+    <div><dt><a href="{{.Repo}}/blob/main/rules/README.md">{{t "os.contrib"}}</a></dt><dd>{{t "os.contrib.d"}} <a href="{{.Repo}}/blob/main/rules/README.md">{{t "os.contrib.rules"}}</a>, <a href="{{.Repo}}#readme">README</a></dd></div>
+  </dl>
+</section>
+
+<section data-reveal class="latest" aria-labelledby="latest-title">
+  <h2 id="latest-title">{{t "river.title"}}</h2>
+  {{template "river" .}}
+  <p class="more"><a href="releases.html">{{t "all.releases"}}</a> <a href="{{.L.Root}}feed.xml">{{t "feed"}}</a></p>
+</section>
+</div>
+
+<script src="{{.L.Root}}watch.js" defer></script>
+{{end}}

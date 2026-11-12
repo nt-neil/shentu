@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shentu · Concept C</title>
+<meta name="color-scheme" content="light dark">
+<link rel="preload" href="../assets/guardian-engraving.webp" as="image">
+<style>
+@font-face { font-family: "Shentu Serif"; src: url(../fonts/serif-black.woff2) format("woff2"); font-weight: 900; font-display: swap; }
+:root {
+  --paper: #efebe3; --ink: #141210; --red: #cf2a1c; --rule: rgba(20, 18, 16, .12); --muted: #5d554d;
+  --grot: "Helvetica Neue", Helvetica, Arial, "PingFang TC", sans-serif;
+  --serif: "Shentu Serif", "Noto Serif TC", serif;
+  --guardian: url(../assets/guardian-engraving.webp);
+}
+@media (prefers-color-scheme: dark) {
+  :root { --paper: #141210; --ink: #efe9df; --rule: rgba(239, 233, 223, .1); --muted: #a99f93; }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--paper); color: var(--ink); font: 16px/1.45 var(--grot); overflow-x: hidden; }
+/* printed paper: a fixed grain over everything */
+body::after {
+  content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 9; opacity: .5; mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http%3A//www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.1' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .22 0'/%3E%3C/filter%3E%3Crect width='220' height='220' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+@media (prefers-color-scheme: dark) { body::after { mix-blend-mode: screen; opacity: .25; filter: invert(1); } }
+a { color: inherit; }
+
+/* twelve columns, drawn */
+.page { position: relative; min-height: 100vh; min-height: 100svh; display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); grid-template-rows: auto 1fr auto; column-gap: 20px; padding: 0 clamp(16px, 3vw, 40px); }
+.page::before {
+  content: ""; position: absolute; inset: 0 clamp(16px, 3vw, 40px); pointer-events: none;
+  background: repeating-linear-gradient(90deg, var(--rule) 0 1px, transparent 1px calc((100% - 220px) / 12 + 20px));
+}
+header { grid-column: 1 / 6; grid-row: 1; display: flex; gap: 28px; padding: 20px 0; border-bottom: 2px solid var(--ink); font-size: 14px; align-items: baseline; position: relative; z-index: 2; }
+header .name { font-weight: 700; letter-spacing: -.01em; font-size: 17px; }
+header .what { display: none; }
+header nav { margin-left: auto; display: flex; gap: 22px; }
+header nav a { text-decoration: none; }
+header nav a:hover { color: var(--red); }
+
+/* the red block holds the engraving; the lines print onto it */
+.block { grid-column: 6 / 13; grid-row: 1 / 4; position: relative; background: var(--red); overflow: hidden; margin-right: calc(-1 * clamp(16px, 3vw, 40px)); min-height: 100vh; min-height: 100svh; z-index: 0; }
+.engr {
+  position: absolute; inset: 0; background: var(--guardian) 50% 8% / cover no-repeat; mix-blend-mode: multiply;
+  animation: print 1.8s .25s steps(18, end) both;
+}
+@keyframes print { from { clip-path: inset(0 0 100% 0); } to { clip-path: inset(0 0 0 0); } }
+/* misregistration: a second red pass, a little off, that settles */
+.block::after { content: ""; position: absolute; inset: 0; background: var(--red); mix-blend-mode: screen; opacity: .0; }
+.ghost { position: absolute; inset: 0; background: var(--guardian) 50% 8% / cover no-repeat; mix-blend-mode: multiply; opacity: .35; transform: translate(5px, -3px); animation: settle 2.4s 1.4s ease-out both; }
+@keyframes settle { to { transform: none; opacity: 0; } }
+/* last pass: the seal is stamped */
+.block .zh {
+  position: absolute; right: clamp(20px, 3vw, 44px); bottom: clamp(24px, 5vh, 56px); writing-mode: vertical-rl;
+  font: 900 clamp(22px, 2.2vw, 32px)/1.05 var(--serif); color: #fff6ea; letter-spacing: .04em;
+  padding: 10px 8px; border: 3px solid #fff6ea; transform: rotate(-4deg);
+  animation: stamp .5s 2.6s cubic-bezier(.3, 1.6, .5, 1) both;
+}
+@keyframes stamp { from { transform: scale(1.6) rotate(-14deg); opacity: 0; } }
+/* the paper grain keeps moving, a little, like ink settling */
+@keyframes grain { 0% { background-position: 0 0; } 25% { background-position: -40px 30px; } 50% { background-position: 30px -50px; } 75% { background-position: -20px -10px; } }
+body::after { animation: grain 1.2s steps(4) infinite; }
+
+
+/* the type: one giant word on the grid, small columns of plain facts */
+.copy { grid-column: 1 / 11; grid-row: 2; display: grid; grid-template-columns: subgrid; align-content: end; padding-bottom: 24px; position: relative; z-index: 2; }
+h1 { grid-column: 1 / -1; margin: 0; font: 700 clamp(72px, 11.6vw, 200px)/.84 var(--grot); letter-spacing: -.055em; }
+h1 span { display: block; overflow: hidden; }
+h1 span i { display: block; font-style: normal; animation: up 1s .1s cubic-bezier(.2, .8, .1, 1) both; }
+@keyframes up { from { transform: translateY(100%); } }
+.lede { grid-column: 1 / 6; margin: 28px 0 0; font-size: clamp(20px, 1.9vw, 27px); line-height: 1.2; letter-spacing: -.01em; font-weight: 500; max-width: 18em; }
+.facts { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; margin: 34px 0 0; padding: 14px 0 0; border-top: 1px solid var(--ink); list-style: none; font-size: 14px; }
+.facts li { grid-column: span 2; }
+.facts b { display: block; font-weight: 700; }
+.facts li span { color: var(--muted); }
+.cta { grid-column: 1 / 6; grid-row: 3; display: flex; gap: 0; align-items: stretch; margin: 0 0 24px; position: relative; z-index: 2; }
+.cta a { text-decoration: none; padding: 16px 22px; font-weight: 700; border: 2px solid var(--ink); }
+.cta a + a { border-left: 0; }
+.cta .go { background: var(--ink); color: var(--paper); }
+.cta .go:hover { background: var(--red); border-color: var(--red); }
+
+@media (max-width: 860px) {
+  .page { grid-template-columns: repeat(4, minmax(0, 1fr)); column-gap: 12px; }
+  .page::before { background: repeating-linear-gradient(90deg, var(--rule) 0 1px, transparent 1px calc((100% - 36px) / 4 + 12px)); }
+  header .name { grid-column: 1 / 3; }
+  header .what { display: none; }
+  header nav { grid-column: 3 / 5; justify-content: flex-end; gap: 14px; }
+  header nav a:not(.lang) { display: none; }
+  header { grid-column: 1 / -1; }
+  .block { grid-column: 1 / -1; grid-row: 2; min-height: 0; height: 50vh; margin: 0 calc(-1 * clamp(16px, 3vw, 40px)); }
+  .copy { grid-column: 1 / -1; grid-row: 3; padding-bottom: 0; margin-top: -0.42em; }
+  h1 { font-size: 19vw; }
+  .lede { grid-column: 1 / -1; margin-top: 16px; font-size: 19px; }
+  .facts { display: none; }
+  .cta { grid-column: 1 / -1; grid-row: 4; margin-top: 20px; }
+  .cta a { flex: 1; text-align: center; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; }
+  .ghost, .scan { display: none; }
+}
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <span class="name">Shentu</span>
+    <span class="what">Open-source security for Linux servers</span>
+    <nav aria-label="Site"><a href="#">Rules</a><a href="#">Measured</a><a href="#">Releases</a><a href="#">GitHub</a><a class="lang" href="#" lang="zh-Hant">中文</a></nav>
+  </header>
+  <div class="block" role="img" aria-label="Shentu, the door guardian, engraved in black on red">
+    <div class="engr"></div>
+    <div class="ghost" aria-hidden="true"></div>
+    <span class="zh" lang="zh-Hant" aria-hidden="true">神荼守門</span>
+  </div>
+  <div class="copy">
+    <h1><span><i>Guards</i></span><span><i>the door.</i></span></h1>
+    <p class="lede">Shentu watches your Linux server day and night, and tells you plainly what it finds.</p>
+  </div>
+  <p class="cta"><a class="go" href="#">Install</a><a href="#">Read the rules</a></p>
+</div>
+</body>
+</html>
