@@ -70,7 +70,7 @@ var heldOutJSLane = []struct {
 	{"review F-S2 numeric id", "js-path-traversal-fs-ops", "app.post('/mk/:id', (req, res) => {\n  const id = parseInt(req.params.id, 10);\n  fs.mkdirSync(path.join(DIR, String(id)), { recursive: true });\n  res.end();\n});\n", false, ""},
 	{"review F-S3 mkdir under basename", "js-path-traversal-fs-ops", "app.post('/up', (req, res) => {\n  fs.mkdirSync(path.join(UP, path.basename(req.body.name)), { recursive: true });\n  res.end();\n});\n", false, ""},
 	// basename stops traversal but the stored name (and its extension) is still the client's
-	{"review F-S3 rename to the client's basename", "js-file-upload-client-name", "app.post('/up', (req, res) => {\n  fs.renameSync(TMP_FILE, path.join(UP, path.basename(req.body.name)));\n  res.end();\n});\n", true, "reported once the engine keeps arrow-function parameters (f352c91); remove the mark then"},
+	{"review F-S3 rename to the client's basename", "js-file-upload-client-name", "app.post('/up', (req, res) => {\n  fs.renameSync(TMP_FILE, path.join(UP, path.basename(req.body.name)));\n  res.end();\n});\n", true, ""},
 	{"review E-V1 fs.promises.lstat", "js-path-traversal-exists-probe", "app.get('/has', async (req, res) => {\n  try { await fs.promises.lstat(path.join(ROOT, req.query.f)); res.sendStatus(200); } catch { res.sendStatus(404); }\n});\n", true, ""},
 	{"review E-V2 named import stat from fs/promises", "js-path-traversal-exists-probe", "import { stat } from 'fs/promises';\napp.get('/has', async (req, res) => {\n  try { await stat(path.join(ROOT, req.query.f)); res.sendStatus(200); } catch { res.sendStatus(404); }\n});\n", true, ""},
 	{"review E-V3 koa ctx.params existsSync", "js-path-traversal-exists-probe", "router.get('/has/:f', async (ctx) => {\n  ctx.body = fs.existsSync(path.join(ROOT, ctx.params.f));\n});\n", true, ""},
@@ -128,6 +128,8 @@ var heldOutJSLane = []struct {
 	{"review C-5 CVE-2021-23387 shape (u.parse alias)", "js-open-redirect-location-header", "var u = require('url');\nmodule.exports = function () {\n  return function (req, res, next) {\n    var url = u.parse(req.url);\n    url.pathname = url.pathname.slice(0, -1);\n    res.statusCode = 302;\n    res.setHeader('Location', u.format(url));\n    res.end();\n  };\n};\n", true, ""},
 	{"review C-6 CVE-2021-23384 shape (helper function)", "js-open-redirect-framework", "function getPath(original, qs) { return qs.length ? original.slice(0, -qs.length - 1) : original; }\nmodule.exports = () => async function (ctx, next) {\n  let p = getPath(ctx.originalUrl, ctx.querystring);\n  if (p !== '/' && p.slice(-1) === '/') {\n    p = p.slice(0, -1);\n    ctx.status = 301;\n    ctx.redirect(p + (ctx.querystring ? '?' + ctx.querystring : ''));\n  }\n};\n", true, ""},
 	{"review C-7 CVE-2018-3743 shape (koa v1 this)", "js-open-redirect-framework", "app.use(function* () {\n  if (exists(file + '.html')) {\n    this.status = 307;\n    this.redirect(this.request.url + '/' + query);\n  }\n});\n", true, ""},
+	// The Host header only as the base of new URL(req.url, ...): pathname and search come from req.url.
+	{"Host header as the URL base", "js-ssrf-host-header", "http.createServer(async (req, res) => {\n  const url = new URL(req.url, `http://${req.headers.host}`);\n  const r = await fetch('https://api.example.com/v1' + url.pathname);\n  res.end(JSON.stringify({ ok: r.ok }));\n}).listen(8080);\n", false, "new URL(a, base).pathname and .search carry the base's input too; only a's should count (engine, v0.2.6)"},
 }
 
 func TestHeldOutJSLane(t *testing.T) {

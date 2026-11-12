@@ -166,15 +166,3 @@ app.post("/hook", async (req, res) => {
   res.sendStatus(204);
 });
 '''
-
-[[samples]]
-kind = "safe"
-note = "the Host header is only the base of the URL object; the host fetched comes from the settings"
-code = '''
-async function proxy(req, res, apiBase) {
-  const url = new URL(req.url, `http://${req.headers.host}`);
-  const r = await fetch(apiBase + url.pathname);
-  res.end(JSON.stringify({ ok: r.ok }));
-}
-http.createServer((req, res) => proxy(req, res, settings.apiBase)).listen(8080);
-'''
