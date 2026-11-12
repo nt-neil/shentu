@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"regexp"
 	"strings"
 	"unicode/utf16"
 )
@@ -159,22 +160,44 @@ func ParseEventXML(s string) (WinEvent, error) {
 	return e, nil
 }
 
+// typedNameEvents are the events whose user and domain fields hold what
+// someone typed at a logon that failed, or the credentials they named:
+// sometimes a password. Kerberos pre-authentication (4771), ticket
+// requests (4768), NTLM validation (4776), explicit credentials (4648),
+// failed logons (4625).
+var typedNameEvents = map[int]bool{4625: true, 4648: true, 4768: true, 4771: true, 4776: true}
+
+// typedNameFields are dropped from those events.
+var typedNameFields = map[string]bool{"TargetUserName": true, "TargetDomainName": true, "TargetOutboundUserName": true,
+	"TargetOutboundDomainName": true, "Workstation": true}
+
+// sshTypedName is the name in an OpenSSH message about a failed or
+// invalid login ("for invalid user X from", "Invalid user X from").
+var sshTypedName = regexp.MustCompile(`(?i)\b((?:for |)invalid user |for )(\S+)( from )`)
+
 // ParseEventText renders one event (EvtRenderEventXml) as one searchable
 // line: time, channel, ID and every EventData/UserData field as
-// Name=value, secret-masked. A failed logon's typed name (4625
-// TargetUserName, sometimes a password) is left out, as in ParseEventXML.
+// Name=value, secret-masked (command lines included: they are worth
+// searching, and MaskSecrets takes the credentials out). What someone
+// typed at a failed logon never appears: the typed-name fields of
+// typedNameEvents are dropped, and OpenSSH's messages lose the name.
 func ParseEventText(s string) (string, error) {
 	var x eventXML
 	if err := xml.Unmarshal([]byte(s), &x); err != nil {
 		return "", err
 	}
+	ssh := strings.HasPrefix(x.System.Channel, "OpenSSH")
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s %s %d:", x.System.TimeCreated.SystemTime, x.System.Channel, x.System.EventID)
 	field := func(name, value string) {
-		if name == "" || x.System.EventID == 4625 && name == "TargetUserName" {
+		if name == "" || typedNameEvents[x.System.EventID] && typedNameFields[name] {
 			return
 		}
-		fmt.Fprintf(&b, " %s=%s", name, strings.Join(strings.Fields(value), " "))
+		value = strings.Join(strings.Fields(value), " ")
+		if ssh {
+			value = sshTypedName.ReplaceAllString(value, "${1}[name]${3}")
+		}
+		fmt.Fprintf(&b, " %s=%s", name, value)
 	}
 	for _, d := range x.EventData.Data {
 		field(d.Name, d.Value)

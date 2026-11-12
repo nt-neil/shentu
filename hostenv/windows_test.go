@@ -791,4 +791,19 @@ func TestParseEventText(t *testing.T) {
 	if strings.Contains(got, "Hunter2Password") || strings.Contains(got, "s3cr3t-value-xyz") {
 		t.Errorf("a failed logon's typed name and secrets must not appear: %q", got)
 	}
+	for _, id := range []string{"4771", "4776", "4768", "4648"} {
+		x := `<Event><System><EventID>` + id + `</EventID><Channel>Security</Channel></System><EventData>` +
+			`<Data Name="TargetUserName">TypedSecret1</Data><Data Name="TargetDomainName">TypedSecret2</Data>` +
+			`<Data Name="Workstation">TypedSecret3</Data><Data Name="Status">0x18</Data></EventData></Event>`
+		got, _ := ParseEventText(x)
+		if strings.Contains(got, "TypedSecret") || !strings.Contains(got, "Status=0x18") {
+			t.Errorf("%s: typed names must be dropped, the rest kept: %q", id, got)
+		}
+	}
+	x = `<Event><System><EventID>4</EventID><Channel>OpenSSH/Operational</Channel></System><EventData>` +
+		`<Data Name="payload">Failed password for invalid user Hunter2Password from 203.0.113.9 port 22 ssh2</Data>` +
+		`<Data Name="payload2">Failed password for admin from 203.0.113.9 port 22 ssh2</Data></EventData></Event>`
+	if got, _ := ParseEventText(x); strings.Contains(got, "Hunter2Password") || strings.Contains(got, " admin ") || !strings.Contains(got, "203.0.113.9") {
+		t.Errorf("OpenSSH names typed at a failed login must be dropped: %q", got)
+	}
 }
