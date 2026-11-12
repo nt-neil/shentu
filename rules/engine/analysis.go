@@ -140,9 +140,10 @@ type analysis struct {
 	proj  *Project          // the project the file belongs to, or nil (project.go)
 	types map[string]string // variable → class of the object assigned to it ($x = new Foo)
 
-	ftoks []Token              // the file's tokens, for the receiver condition (receiver.go)
-	rdefs map[string][][]Token // what names of the file are assigned or annotated with, built on first use
-	rcls  map[string][]string  // PHP: variables the file binds only to new objects, and their classes (recvClasses), built on first use
+	ftoks  []Token              // the file's tokens, for the receiver condition (receiver.go)
+	rdefs  map[string][][]Token // what names of the file are assigned or annotated with, built on first use
+	rcls   map[string][]string  // PHP: variables the file binds only to new objects, and their classes (recvClasses), built on first use
+	ifacts map[string]bool      // JavaScript: "m:" modules the file imports, "w:" names it uses (imports.go), built on first use or kept by the project
 }
 
 // loc is a place a sink is reached: a line of a file.
@@ -2141,6 +2142,9 @@ func (a *analysis) sink(st state, t []Token, i int, s *pat) {
 		}
 		if cond != nil && len(cond.notReceiver) > 0 && a.recvSurely(cond.notReceiver, recv) {
 			return // (new WP_Query)->query($args): a query built from an arguments array, not SQL
+		}
+		if cond != nil && len(cond.unlessImports) > 0 && a.importsLeaveOut(cond, recv) {
+			return // a TypeORM repository on an SQL database: where becomes bound parameters
 		}
 	}
 	whole := cond != nil && cond.whole

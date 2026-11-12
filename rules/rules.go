@@ -69,6 +69,13 @@ type Args struct {
 	// file gives such an object ($q = new WP_Query; $q->query($args)). A
 	// receiver the file says nothing about still counts.
 	NotReceiver []string `toml:"not_receiver"`
+	// UnlessImports: a method sink does not count in a file importing one of
+	// these modules (import ... from 'typeorm', require('typeorm')), unless the
+	// file also names one of UnlessImportsNot (an identifier or an imported
+	// module) or the receiver does: a TypeORM repository's find() on an SQL
+	// database binds its where as parameters, its MongoRepository does not.
+	UnlessImports    []string `toml:"unless_imports"`
+	UnlessImportsNot []string `toml:"unless_imports_not"`
 }
 
 // SourceArgs makes call sources input only when an argument is one of a few
