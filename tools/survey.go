@@ -272,6 +272,22 @@ func sshRisks(ssh map[string]string, unread []string) []Risk {
 	return out
 }
 
+// sshdFields splits one sshd_config line into its keyword and arguments: the
+// keyword ends at the first white space or "=", which may have white space
+// around it (PermitRootLogin=yes, PasswordAuthentication = yes), as in sshd.
+func sshdFields(line string) []string {
+	line = strings.TrimSpace(line)
+	i := strings.IndexAny(line, " \t=")
+	if i < 0 {
+		return []string{line}
+	}
+	rest := strings.TrimLeft(line[i:], " \t")
+	if strings.HasPrefix(rest, "=") {
+		rest = rest[1:]
+	}
+	return append([]string{line[:i]}, strings.Fields(rest)...)
+}
+
 // sshdSettings returns the effective global sshd settings that matter for security,
 // following Include in place; the first value wins, as in sshd. Match blocks are not
 // evaluated. The hash covers every line read, to notice any change. A file or
@@ -311,7 +327,7 @@ func sshdSettings() (map[string]string, string, []string) {
 		}
 		h.Write(b)
 		for _, line := range strings.Split(string(b), "\n") {
-			f := strings.Fields(line)
+			f := sshdFields(line)
 			if len(f) < 2 || strings.HasPrefix(f[0], "#") {
 				continue
 			}

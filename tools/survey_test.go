@@ -244,3 +244,32 @@ func TestSSHDropInUnreadable(t *testing.T) {
 		t.Errorf("main file only: %v", got)
 	}
 }
+
+// sshd takes "=" between a keyword and its value, with or without white
+// space, and keywords in any case: none of them hides a setting.
+func TestSSHDKeyEqualsValue(t *testing.T) {
+	dir := t.TempDir()
+	old := sshdConfig
+	defer func() { sshdConfig = old }()
+	sshdConfig = filepath.Join(dir, "sshd_config")
+	for _, c := range []string{"PermitRootLogin=yes\nPasswordAuthentication=yes\n", "PermitRootLogin = yes\nPasswordAuthentication =yes\n",
+		"permitrootlogin\tyes\n  PASSWORDAUTHENTICATION  yes\n", "\tPermitRootLogin= yes\nPasswordAuthentication\t=\tyes\n"} {
+		os.WriteFile(sshdConfig, []byte("# PermitRootLogin=no\n#PasswordAuthentication no\n"+c), 0o644)
+		ssh, _, unread := sshdSettings()
+		got := map[string]bool{}
+		for _, r := range sshRisks(ssh, unread) {
+			got[r.Key] = true
+		}
+		if ssh["permitrootlogin"] != "yes" || ssh["passwordauthentication"] != "yes" || !got["ssh:root"] || !got["ssh:password"] {
+			t.Errorf("%q: settings %v, risks %v", c, ssh, got)
+		}
+	}
+	// The first value wins, whichever way it is written.
+	os.WriteFile(sshdConfig, []byte("PermitRootLogin=no\nPermitRootLogin yes\nPasswordAuthentication = no\n"), 0o644)
+	if ssh, _, _ := sshdSettings(); ssh["permitrootlogin"] != "no" || ssh["passwordauthentication"] != "no" {
+		t.Errorf("first value: %v", ssh)
+	}
+	if f := sshdFields("Include = /etc/ssh/a.conf /etc/ssh/b.conf"); len(f) != 3 || f[0] != "Include" || f[2] != "/etc/ssh/b.conf" {
+		t.Errorf("include: %q", f)
+	}
+}
