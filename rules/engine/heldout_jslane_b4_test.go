@@ -10,9 +10,9 @@ var heldOutJSLaneB4 = []struct {
 	vulnerable            bool
 	gap                   string
 }{
-	{"koa html from route param", "js", "js-xss-response", "router.get('/u/:name', async (ctx) => {\n  ctx.body = `<section><h2>${ctx.params.name}</h2></section>`;\n});\n", true, ""},
-	{"koa response.body from form", "js", "js-xss-response", "router.post('/echo', async (ctx) => {\n  const { msg } = ctx.request.body;\n  ctx.response.body = '<pre>' + msg + '</pre>';\n});\n", true, ""},
-	{"koa attribute value", "js", "js-xss-response", "router.get('/img', async (ctx) => {\n  ctx.body = '<img alt=\"' + ctx.query.alt + '\" src=\"/a.png\">';\n});\n", true, ""},
+	{"koa html from route param", "js", "js-xss-response", "router.get('/u/:name', async (ctx) => {\n  ctx.body = `<section><h2>${ctx.params.name}</h2></section>`;\n});\n", true, "a Koa body is not a sink of this rule until the engine can count only an HTML context it knows (v0.2.6)"},
+	{"koa response.body from form", "js", "js-xss-response", "router.post('/echo', async (ctx) => {\n  const { msg } = ctx.request.body;\n  ctx.response.body = '<pre>' + msg + '</pre>';\n});\n", true, "a Koa body is not a sink of this rule until the engine can count only an HTML context it knows (v0.2.6)"},
+	{"koa attribute value", "js", "js-xss-response", "router.get('/img', async (ctx) => {\n  ctx.body = '<img alt=\"' + ctx.query.alt + '\" src=\"/a.png\">';\n});\n", true, "a Koa body is not a sink of this rule until the engine can count only an HTML context it knows (v0.2.6)"},
 	{"koa escaped html", "js", "js-xss-response", "router.get('/u/:name', async (ctx) => {\n  ctx.body = `<h2>${escapeHtml(ctx.params.name)}</h2>`;\n});\n", false, ""},
 	{"koa json body", "js", "js-xss-response", "router.get('/s', async (ctx) => {\n  ctx.body = { q: ctx.query.q, hits: [] };\n});\n", false, ""},
 	{"koa fixed body after a check", "js", "js-xss-response", "router.get('/s', async (ctx) => {\n  if (!ctx.query.q) { ctx.body = '<p>missing</p>'; return; }\n  ctx.body = '<p>ok</p>';\n});\n", false, ""},

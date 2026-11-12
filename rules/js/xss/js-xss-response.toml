@@ -9,7 +9,10 @@ frameworks = ["express", "nestjs", "nextjs", "koa", "fastify", "hapi"]
 # Headers by name in brackets (user-agent) and the referrer: req.headers.host is
 # the host-header rules' input
 sources = ["req.query", "req.params", "req.body", "req.cookies", "req.headers[", "req.headers.referer", "req.headers.referrer", "req.headers.origin", "@Query(", "@Body(", "@Param(", "@Headers(", "^request.nextUrl", "^req.nextUrl", "^searchParams", "^request.json(", "^req.json(", "^request.text(", "^req.text(", "^request.formData(", "^req.formData(", "^formData.get(", "req.get(", "req.header(", "^headers().get(", "^cookies().get(", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload", "ctx.params", "request.params", "ctx.headers[", "ctx.cookies.get(", "request.headers[", "ctx.request.header[", "ctx.request.headers[", "ctx.get("]
-sinks = ["res.send(", "res.write(", "res.end(", "ctx.body =", "ctx.response.body ="]   # Koa sends a string body starting with "<" as text/html
+# Not Koa's ctx.body =: a body whose HTML context is not known (a variable, a
+# call's result) is almost always a data object sent as JSON. Koa HTML waits for
+# a context option that counts only where the HTML before the value is known.
+sinks = ["res.send(", "res.write(", "res.end("]
 sanitizers = ["escapeHtml(", "escape(", "he.encode(", "he.escape(", "validator.escape(", "_.escape(", "DOMPurify.sanitize(", "sanitizeHtml(", "xss(", "encodeURIComponent("]
 fix = "Render with a template engine that escapes by default (res.render), send JSON with res.json(), or escape each value (escape-html, he.encode) before putting it into HTML."
 refs = ["CVE-2013-7370"]
@@ -78,15 +81,6 @@ export class SearchController {
     res.send("<h1>Results for " + escapeHtml(q) + "</h1>");
   }
 }
-'''
-
-[[samples]]
-kind = "vulnerable"
-note = "Koa: a string body that starts with '<' is sent as text/html"
-code = '''
-router.get("/hello", async (ctx) => {
-  ctx.body = "<h1>Hello " + ctx.query.who + "</h1>";
-});
 '''
 
 [[samples]]
