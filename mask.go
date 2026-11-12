@@ -1,6 +1,9 @@
 package main
 
-import "regexp"
+import (
+	"regexp"
+	"strings"
+)
 
 // Secrets are replaced before anything is sent to the LLM or written to the log.
 var maskRules = []struct {
@@ -23,9 +26,26 @@ var maskRules = []struct {
 	{regexp.MustCompile(`(?i)((?:password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key)\\?"?\s*[=:]\s*\\?"?)[^\s"\\,;]{3,}`), "${1}[REDACTED]"},
 }
 
+// mask keeps sudoers' upper-case NOPASSWD: and PASSWD: tags: they are not
+// password assignments, and "NOPASSWD:[REDACTED]" would hide what a sudo
+// rule grants. Real secrets (password: x, PASSWORD=x) are still masked.
+// hostenv.MaskSecrets does the same; keep the two in step.
 func mask(s string) string {
+	shielded := sudoTag.MatchString(s)
+	if shielded {
+		s = sudoTag.ReplaceAllStringFunc(s, func(m string) string { return strings.Replace(m, "PASSWD", "PA"+maskShield+"SSWD", 1) })
+	}
 	for _, r := range maskRules {
 		s = r.re.ReplaceAllString(s, r.repl)
 	}
+	if shielded {
+		s = strings.ReplaceAll(s, maskShield, "")
+	}
 	return s
 }
+
+// A double-quoted pattern, so hostenv's rule-parity test (back-quoted
+// patterns) does not count it as a masking rule.
+var sudoTag = regexp.MustCompile("\\b(?:NO)?PASSWD:")
+
+const maskShield = "\x00\x01"

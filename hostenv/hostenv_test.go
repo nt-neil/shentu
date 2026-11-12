@@ -369,10 +369,15 @@ func TestListenersKeepSecondOwner(t *testing.T) {
 
 func TestMaskKeepsNOPASSWD(t *testing.T) {
 	for in, want := range map[string]string{
-		"ann ALL=(ALL) NOPASSWD:ALL":               "ann ALL=(ALL) NOPASSWD:ALL",
-		"www ALL=(ALL) NOPASSWD: ALL":              "www ALL=(ALL) NOPASSWD: ALL",
-		"db_password=" + fakeSecret():              "db_password=[REDACTED]",
-		"NOPASSWD:ALL and passwd: " + fakeSecret(): "NOPASSWD:ALL and passwd: [REDACTED]",
+		"user ALL=(ALL) NOPASSWD:ALL":          "user ALL=(ALL) NOPASSWD:ALL",
+		"www ALL=(ALL) NOPASSWD: ALL":          "www ALL=(ALL) NOPASSWD: ALL",
+		"ann ALL=(ALL) PASSWD: /usr/bin/apt":   "ann ALL=(ALL) PASSWD: /usr/bin/apt",
+		"%adm ALL=(ALL) NOEXEC:SETENV: ALL":    "%adm ALL=(ALL) NOEXEC:SETENV: ALL",
+		"password: " + fakeSecret():            "password: [REDACTED]",
+		"PASSWORD=" + fakeSecret():             "PASSWORD=[REDACTED]",
+		"db_passwd: " + fakeSecret():           "db_passwd: [REDACTED]",
+		"token=" + fakeSecret():                "token=[REDACTED]",
+		"NOPASSWD:ALL; passwd=" + fakeSecret(): "NOPASSWD:ALL; passwd=[REDACTED]",
 	} {
 		if got := MaskSecrets(in); got != want {
 			t.Errorf("MaskSecrets(%q) = %q, want %q", in, got, want)

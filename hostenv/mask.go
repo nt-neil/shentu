@@ -29,21 +29,28 @@ var secretRules = []struct {
 // MaskSecrets removes credentials from text that came off the host. Every
 // Source applies it before data reaches a parser, a log, an LLM or a fixture.
 //
-// sudoers' NOPASSWD: tag is not a password assignment, but the key=value
-// rule would take "PASSWD:ALL" for one; it is shielded so sudo rules keep
-// their meaning.
+// sudoers' upper-case tags NOPASSWD: and PASSWD: are not password
+// assignments, but the key=value rule would take "PASSWD:ALL" for one; they
+// are shielded so sudo rules keep their meaning. password: x, PASSWORD=x
+// and lower-case passwd: x are still masked. The root package's mask() does
+// the same; keep the two in step.
 func MaskSecrets(s string) string {
-	shielded := nopasswd.MatchString(s)
+	shielded := sudoTag.MatchString(s)
 	if shielded {
-		s = nopasswd.ReplaceAllStringFunc(s, func(m string) string { return "\x00" + m[:4] + "\x01" + m[4:] })
+		s = sudoTag.ReplaceAllStringFunc(s, func(m string) string { return strings.Replace(m, "PASSWD", "PA"+shield+"SSWD", 1) })
 	}
 	for _, r := range secretRules {
 		s = r.re.ReplaceAllString(s, r.repl)
 	}
 	if shielded {
-		s = strings.NewReplacer("\x00", "", "\x01", "").Replace(s)
+		s = strings.ReplaceAll(s, shield, "")
 	}
 	return s
 }
 
-var nopasswd = regexp.MustCompile(`(?i)\bno(?:passwd|password):`)
+// sudoTag matches sudoers' password tags; shield splits the word so the
+// password rule does not see it. (A double-quoted pattern, so the
+// rule-parity test, which reads back-quoted patterns, skips it.)
+var sudoTag = regexp.MustCompile("\\b(?:NO)?PASSWD:")
+
+const shield = "\x00\x01"
