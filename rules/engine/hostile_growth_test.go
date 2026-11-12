@@ -11,10 +11,13 @@ import (
 // Small hostile files whose cost grew with the square of their size: a
 // method calling $this->q() 20,000 times (74s), [a, ...].join(a long
 // separator) (98 MB from 1.2 KB), nested const [ patterns, a long literal
-// before many operands of an echo, ${"{"} repeated in a template. Doubling the
-// input must about double the work, not quadruple it: the memory allocated
-// (which does not depend on the machine) and, once it is long enough to
-// measure, the time.
+// before many operands of an echo, ${"{"} repeated in a template. Four times
+// the input must cost about four times as much, not sixteen: the memory
+// allocated (which does not depend on the machine) and, once it is long
+// enough to measure, the time, the fastest of three runs. The bound is eight
+// times, so a busy machine (a load of 172 failed a twofold bound) does not
+// trip it while a square still does; some of the cases grew only in time
+// (B1, S4, S5), so the time is checked too.
 func TestHostileGrowth(t *testing.T) {
 	R := strings.Repeat
 	cases := []struct {
@@ -58,18 +61,29 @@ func TestHostileGrowth(t *testing.T) {
 			runtime.ReadMemStats(&m1)
 			return took, m1.TotalAlloc - m0.TotalAlloc, err
 		}
-		t1, a1, err1 := run(c.n)
-		t2, a2, err2 := run(2 * c.n)
-		t.Logf("%-28s n %v %v err %v; 2n %v %v err %v", c.name, t1.Round(time.Millisecond), mb(a1), err1,
-			t2.Round(time.Millisecond), mb(a2), err2)
-		if err1 != nil || err2 != nil {
-			t.Errorf("%s: err %v, %v; want the file read to its end", c.name, err1, err2)
+		fastest := func(n int) (time.Duration, uint64, error) {
+			t, a, err := run(n)
+			for range 2 {
+				t2, a2, err2 := run(n)
+				t, a = min(t, t2), min(a, a2)
+				if err == nil {
+					err = err2
+				}
+			}
+			return t, a, err
 		}
-		if float64(a2) > 3*float64(a1) {
-			t.Errorf("%s: twice the input allocated %v, from %v: more than linear", c.name, mb(a2), mb(a1))
+		t1, a1, err1 := fastest(c.n)
+		t4, a4, err4 := fastest(4 * c.n)
+		t.Logf("%-28s n %v %v err %v; 4n %v %v err %v", c.name, t1.Round(time.Millisecond), mb(a1), err1,
+			t4.Round(time.Millisecond), mb(a4), err4)
+		if err1 != nil || err4 != nil {
+			t.Errorf("%s: err %v, %v; want the file read to its end", c.name, err1, err4)
 		}
-		if t2 > 200*time.Millisecond && float64(t2) > 3*float64(t1) {
-			t.Errorf("%s: twice the input took %v, from %v: more than linear", c.name, t2, t1)
+		if float64(a4) > 8*float64(a1) {
+			t.Errorf("%s: four times the input allocated %v, from %v: more than linear", c.name, mb(a4), mb(a1))
+		}
+		if t4 > 200*time.Millisecond && float64(t4) > 8*float64(t1) {
+			t.Errorf("%s: four times the input took %v, from %v: more than linear", c.name, t4, t1)
 		}
 	}
 }
