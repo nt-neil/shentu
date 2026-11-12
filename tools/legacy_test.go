@@ -918,7 +918,8 @@ func TestLegacySSHLogins(t *testing.T) {
 	// The whole path: a log file, ScanAuthLogs, the aggregate, masked output.
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "auth.log"), []byte(strings.Join(lines, "\n")+"\n"), 0o600)
-	live := &hostenv.Live{Remap: map[string]string{"/var/log": dir}}
+	noCmds, _ := hostenv.NewRunner(nil) // no journalctl: the text log is read, as v0.2.5 did
+	live := &hostenv.Live{Runner: noCmds, Remap: map[string]string{"/var/log": dir}}
 	for _, only := range []string{"", "192.0.2.10", "192.0.2.40"} {
 		want := legacySSHAggregate(lines, since, only)
 		for i := range want { // v0.2.5 output names as read; now they are masked
@@ -929,9 +930,18 @@ func TestLegacySSHLogins(t *testing.T) {
 				sort.Strings(*l)
 			}
 		}
-		agg := hostenv.NewSSHLogins(since, now, only)
-		if src, err := linux.ScanAuthLogs(context.Background(), live, []string{"/var/log/auth.log"}, since, agg.Add); err != nil {
+		var agg *hostenv.SSHLogins
+		src, verified, err := linux.ScanAuthLogs(context.Background(), live, []string{"/var/log/auth.log"}, since, func() func(string) {
+			agg = hostenv.NewSSHLogins(since, now, only)
+			return agg.Add
+		})
+		if err != nil {
 			t.Fatal(src, err)
+		}
+		// Expected difference from v0.2.5: the same events, but a text log
+		// is now marked unverified (journald comes first since v0.3.0).
+		if verified || !strings.HasPrefix(src, "/var/log/auth.log (unverified: journald unavailable") {
+			t.Errorf("source %q verified %v", src, verified)
 		}
 		got := agg.Result()
 		if only == "192.0.2.40" {

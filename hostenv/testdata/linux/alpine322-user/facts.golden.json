@@ -4075,7 +4075,7 @@
   "auth_events": {
     "status": "partial",
     "reason": "unverified_source",
-    "detail": "from /var/log/messages (unverified: busybox syslog does not record the sender; local users can forge sshd lines)",
+    "detail": "from /var/log/messages (unverified: journald unavailable (open /bin/journalctl: file does not exist); text logs do not record the sender; local users can forge sshd lines)",
     "value": {
       "window_hours": 24
     }

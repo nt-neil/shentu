@@ -33,8 +33,12 @@ type SSHSource = hostenv.SSHSource
 // SSHSummary reads auth logs (or journald when there are none) and groups events by IP,
 // streaming through hostenv: memory does not grow with the logs.
 func SSHSummary(ctx context.Context, env *Env, since time.Time, onlyIP string) (map[string]any, error) {
-	agg := hostenv.NewSSHLogins(since, time.Now(), onlyIP)
-	source, _ := linux.ScanAuthLogs(ctx, hostSource(), env.LogPaths, since, agg.Add)
+	var agg *hostenv.SSHLogins
+	now := time.Now()
+	source, _, _ := linux.ScanAuthLogs(ctx, hostSource(), env.LogPaths, since, func() func(string) {
+		agg = hostenv.NewSSHLogins(since, now, onlyIP)
+		return agg.Add
+	})
 	out := map[string]any{"source": source, "since": since, "sources": agg.Result()}
 	if n := agg.Evicted(); n > 0 {
 		out["note"] = fmt.Sprintf("%d low-activity sources were not tracked (more than %d sources)", n, hostenv.MaxTrackedSources)

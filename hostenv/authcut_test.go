@@ -25,18 +25,18 @@ func (j *journalToo) RunLinesUnmasked(_ context.Context, _ []string, fn func(str
 	return CmdResult{}, nil
 }
 
-// An auth log cut short counts once: journald is not read on top of it.
+// An auth log cut short (journald empty) counts once and says so.
 func TestAuthLogCutShortCountsOnce(t *testing.T) {
 	now := time.Now()
 	line := now.Add(-time.Hour).UTC().Format(time.RFC3339) + " vm sshd[1]: Failed password for root from 203.0.113.7 port 22 ssh2"
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "auth.log"), []byte(line+"\n"+strings.Repeat("x", MaxLineBytes+1)+"\n"+line+"\n"), 0o600)
-	src := &journalToo{Live: &Live{Remap: map[string]string{"/var/log": dir}}, lines: []string{line}}
+	src := &journalToo{Live: &Live{Remap: map[string]string{"/var/log": dir}}}
 	f := LinuxCollector{}.AuthEvents(context.Background(), src, now, []string{"/var/log/auth.log"})
-	if src.called || f.Status != StatusPartial || f.Value.FailedBySrc["203.0.113.7"] != 1 {
-		t.Errorf("journald read %v, %s %q %v", src.called, f.Status, f.Detail, f.Value.FailedBySrc)
+	if !src.called || f.Status != StatusPartial || f.Reason != ReasonTruncated || f.Value.FailedBySrc["203.0.113.7"] != 1 || !strings.Contains(f.Detail, "unverified") {
+		t.Errorf("journald read %v, %s %s %q %v", src.called, f.Status, f.Reason, f.Detail, f.Value.FailedBySrc)
 	}
-	_, err := LinuxCollector{}.ScanAuthLogs(context.Background(), src, []string{"/var/log/auth.log"}, now.Add(-24*time.Hour), func(string) {})
+	_, _, err := LinuxCollector{}.ScanAuthLogs(context.Background(), src, []string{"/var/log/auth.log"}, now.Add(-24*time.Hour), func() func(string) { return func(string) {} })
 	if !errors.Is(err, ErrTruncated) {
 		t.Errorf("err %v", err)
 	}

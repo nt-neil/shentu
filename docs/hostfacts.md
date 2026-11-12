@@ -59,7 +59,7 @@ A missing or unreadable fact never passes a check. A check that needs a fact the
 | `symlink_not_followed`  | a user-controlled path was a link and was not followed      |
 | `not_regular_file`      | a FIFO, device or socket where a file was expected          |
 | `untrusted_owner`       | readable, but owned or writable by someone other than root (Windows: SYSTEM, Administrators, TrustedInstaller); the content is not used |
-| `unverified_source`     | read, but the source does not record who wrote it, so a local user could have forged it (busybox `/var/log/messages`) |
+| `unverified_source`     | read, but the source does not record who wrote it, so a local user could have forged it (text auth logs, busybox `/var/log/messages`) |
 
 ## Fields
 
@@ -82,7 +82,7 @@ A missing or unreadable fact never passes a check. A check that needs a fact the
 | `remote_access.winrm` | `running`, `http_listener`, `allow_unencrypted`, `basic_auth` | not applicable | registry `WSMAN\Service`, policy keys, ports 5985/5986 |
 | `remote_access.smb` | `smb1_enabled`, `signing_required`, `writable_shares` | not collected yet (Samba) | registry `LanmanServer\Parameters`, `NetShareEnum` |
 | `antimalware` | `product`, `real_time`, `signature_age_days`, `exclusions` | not applicable | WMI `MSFT_MpComputerStatus`, `MSFT_MpPreference` |
-| `auth_events` | `window_hours`, `failed_by_source`, `notable[]` | auth/secure logs (rotated, gzipped) or journald, streamed; busybox `/var/log/messages` (sshd lines of the auth and authpriv facilities only, the fact is partial with `unverified_source`) | Event Log 4625, 4624 type 10, 1102, 4720, 4732, 7045 |
+| `auth_events` | `window_hours`, `failed_by_source`, `notable[]` | journald's ssh and sshd units first (since the snapshot minus 24 h, at most `JournalTimeout`, 60 s): ok. Text auth/secure logs (rotated, gzipped, streamed) when journald is missing, fails, times out or has no sshd entries, and without journald busybox `/var/log/messages` (sshd lines of the auth and authpriv facilities only): partial with `unverified_source`. Neither readable: unknown (a journal that hides the system's entries from a non-root user is `permission_denied`, not "no failed logins") | Event Log 4625, 4624 type 10, 1102, 4720, 4732, 7045 |
 | `web` | `server`, `webroots`, `upload_dirs`, `config_unreadable` ("path (why)") | nginx `root` and Apache `DocumentRoot` lines (upload folders: the code audit) | `applicationHost.config` |
 
 `persistence.kind` values: `cron`, `cron_file`, `systemd`, `openrc` (`detail` names the runlevels,
