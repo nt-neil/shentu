@@ -529,7 +529,9 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 		return CodeAudit{WebRoots: webRoots, Findings: []CodeFinding{stoppedFinding(walk, 0)}, Unfinished: true}
 	}
 	defer unlock()
-	return auditUnlocked(ctx, roots, webRoots)
+	res := auditUnlocked(ctx, roots, webRoots)
+	res.Findings = append(webrootFindings(webRoots), res.Findings...)
+	return res
 }
 
 func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
