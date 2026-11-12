@@ -116,9 +116,10 @@ type Privilege struct {
 }
 
 type PackageSet struct {
-	Manager   string    `json:"manager"`             // dpkg, rpm, apk, msi-registry
-	Ecosystem string    `json:"ecosystem,omitempty"` // OSV ecosystem, e.g. "Debian:12"
-	Items     []Package `json:"items"`
+	Manager   string     `json:"manager"`             // dpkg, rpm, apk, msi-registry
+	Ecosystem string     `json:"ecosystem,omitempty"` // OSV ecosystem, e.g. "Debian:12"
+	Feed      *PatchFeed `json:"feed,omitempty"`      // where this distribution's security fixes are published
+	Items     []Package  `json:"items"`
 }
 
 type Package struct {

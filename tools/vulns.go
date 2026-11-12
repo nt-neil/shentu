@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -37,16 +38,9 @@ const osvAPI = "https://api.osv.dev/v1"
 
 // PackageVulns queries OSV for every installed package.
 func PackageVulns(ctx context.Context, hc *http.Client, detailFor string) (map[string]any, error) {
-	eco, pkgs, err := installedPackages(ctx)
+	eco, feed, pkgs, err := installedPackages(ctx)
 	if err != nil {
 		return nil, err
-	}
-	type query struct {
-		Package struct {
-			Name      string `json:"name"`
-			Ecosystem string `json:"ecosystem"`
-		} `json:"package"`
-		Version string `json:"version"`
 	}
 	type affected struct {
 		Package string   `json:"package"`
@@ -54,38 +48,77 @@ func PackageVulns(ctx context.Context, hc *http.Client, detailFor string) (map[s
 		IDs     []string `json:"ids"`
 	}
 	var found []affected
+	var advisories map[string]hostenv.Advisory // ALAS id -> advisory (Amazon Linux)
 	total := 0
-	for start := 0; start < len(pkgs); start += 500 {
-		chunk := pkgs[start:min(start+500, len(pkgs))]
-		qs := make([]query, len(chunk))
-		for i, p := range chunk {
-			qs[i].Package.Name, qs[i].Package.Ecosystem, qs[i].Version = p.Name, eco, p.Version
+	switch feed.Kind {
+	case "alas":
+		plat, _ := hostPlatform()
+		hits, advs, err := alasAffected(ctx, hc, feed.Release, hostenv.RPMArch(plat.Arch), pkgs)
+		if err != nil {
+			return nil, fmt.Errorf("Amazon Linux security advisories (ALAS) unavailable (is the server online?): %w", err)
 		}
-		var resp struct {
-			Results []struct {
-				Vulns []struct {
-					ID string `json:"id"`
-				} `json:"vulns"`
-			} `json:"results"`
+		advisories = advs
+		for _, h := range hits {
+			total += len(h.IDs)
+			found = append(found, affected(h))
 		}
-		if err := postJSON(ctx, hc, osvAPI+"/querybatch", map[string]any{"queries": qs}, &resp); err != nil {
-			return nil, fmt.Errorf("OSV query failed (is the server online?): %w", err)
+	default:
+		type query struct {
+			Package struct {
+				Name      string `json:"name"`
+				Ecosystem string `json:"ecosystem"`
+			} `json:"package"`
+			Version string `json:"version"`
 		}
-		for i, r := range resp.Results {
-			if len(r.Vulns) == 0 || i >= len(chunk) {
-				continue
+		at := map[string]int{} // package -> index in found (SLES asks one ecosystem per module)
+		for _, e := range feed.Ecosystems {
+			for start := 0; start < len(pkgs); start += 500 {
+				chunk := pkgs[start:min(start+500, len(pkgs))]
+				qs := make([]query, len(chunk))
+				for i, p := range chunk {
+					qs[i].Package.Name, qs[i].Package.Ecosystem, qs[i].Version = p.Name, e, feed.FeedVersion(p.Version)
+				}
+				var resp struct {
+					Results []struct {
+						Vulns []struct {
+							ID string `json:"id"`
+						} `json:"vulns"`
+					} `json:"results"`
+				}
+				if err := postJSON(ctx, hc, osvAPI+"/querybatch", map[string]any{"queries": qs}, &resp); err != nil {
+					return nil, fmt.Errorf("OSV query failed (is the server online?): %w", err)
+				}
+				for i, r := range resp.Results {
+					if len(r.Vulns) == 0 || i >= len(chunk) {
+						continue
+					}
+					k, ok := at[chunk[i].Name]
+					if !ok {
+						k = len(found)
+						at[chunk[i].Name] = k
+						found = append(found, affected{Package: chunk[i].Name, Version: chunk[i].Version})
+					}
+					for _, v := range r.Vulns {
+						if !slices.Contains(found[k].IDs, v.ID) {
+							found[k].IDs = append(found[k].IDs, v.ID)
+							total++
+						}
+					}
+				}
 			}
-			a := affected{Package: chunk[i].Name, Version: chunk[i].Version}
-			for _, v := range r.Vulns {
-				a.IDs = append(a.IDs, v.ID)
-			}
-			total += len(a.IDs)
-			found = append(found, a)
 		}
 	}
 	out := map[string]any{"ecosystem": eco, "packages_checked": len(pkgs), "affected_packages": len(found), "total_vulns": total}
-	if hint := upgradeHint(eco); hint != "" {
+	hint := feed.Upgrade
+	if hint == "" {
+		hint = upgradeHint(eco)
+	}
+	if hint != "" {
 		out["upgrade_command"] = hint
+	}
+	cvesOf := func(id string) []string { return osvCVEs(ctx, hc, id) }
+	if advisories != nil {
+		cvesOf = func(id string) []string { return advisories[id].CVEs }
 	}
 	exploited := map[string][]Exploit{} // package -> KEV matches
 	if kev, err := loadKEV(ctx, hc); err != nil {
@@ -93,7 +126,7 @@ func PackageVulns(ctx context.Context, hc *http.Client, detailFor string) (map[s
 	} else {
 		var all []Exploit
 		for _, a := range found {
-			for _, e := range matchKEV(kev, a.IDs, func(id string) []string { return osvCVEs(ctx, hc, id) }) {
+			for _, e := range matchKEV(kev, a.IDs, cvesOf) {
 				e.Package, e.Version = a.Package, a.Version
 				exploited[a.Package] = append(exploited[a.Package], e)
 				all = append(all, e)
@@ -155,6 +188,16 @@ func PackageVulns(ctx context.Context, hc *http.Client, detailFor string) (map[s
 		for i, id := range a.IDs {
 			if i >= 20 {
 				break
+			}
+			if adv, ok := advisories[id]; ok { // ALAS: not in OSV; the advisory itself says it
+				d := detail{ID: id, Summary: strings.Join(adv.CVEs, ", "), Severity: adv.Severity, Fixed: adv.Fixed[a.Package]}
+				for _, e := range exploited[a.Package] {
+					if e.ID == id {
+						d.Exploit = e.CVE + ": " + e.Name + " (CISA KEV since " + e.Added + ")"
+					}
+				}
+				details = append(details, d)
+				continue
 			}
 			var v struct {
 				Summary  string `json:"summary"`
@@ -302,15 +345,24 @@ func upgradeHint(eco string) string {
 	return ""
 }
 
-// installedPackages lists packages in OSV naming from hostenv's packages
-// fact: dpkg's source package names, apk origins, rpm names; duplicates
-// dropped, order kept. Only distributions OSV covers are supported.
-func installedPackages(ctx context.Context) (string, []pkg, error) {
+// installedPackages lists packages from hostenv's packages fact, named as
+// the distribution's security feed names them (dpkg's source packages, apk
+// origins, rpm names), duplicates dropped, order kept, and the feed: OSV
+// (Debian, Ubuntu, Alpine, Rocky, Alma, SUSE, openSUSE) or ALAS (Amazon
+// Linux). eco names the distribution in the result.
+func installedPackages(ctx context.Context) (string, hostenv.PatchFeed, []pkg, error) {
 	_, osr := hostPlatform()
 	id, ver := osr["ID"], osr["VERSION_ID"]
-	eco := hostenv.OSVEcosystem(osr)
-	if eco == "" {
-		return "", nil, errors.New("unsupported distribution for package_vulns: " + id + " " + ver)
+	feed := hostenv.PatchFeedFor(osr)
+	if feed.Kind == "" {
+		return "", feed, nil, errors.New("unsupported distribution for package_vulns: " + id + " " + ver)
+	}
+	eco := ""
+	if len(feed.Ecosystems) > 0 {
+		eco = feed.Ecosystems[0]
+	}
+	if feed.Kind == "alas" {
+		eco = "Amazon Linux " + feed.Release
 	}
 	set := linux.Packages(ctx, hostSource(), osr)
 	if !set.Known() {
@@ -318,7 +370,7 @@ func installedPackages(ctx context.Context) (string, []pkg, error) {
 		if cmd == "" {
 			cmd = "packages"
 		}
-		return "", nil, fmt.Errorf("%s: %s", cmd, set.Detail)
+		return "", feed, nil, fmt.Errorf("%s: %s", cmd, set.Detail)
 	}
 	var pkgs []pkg
 	for _, p := range set.Value.Items {
@@ -328,7 +380,7 @@ func installedPackages(ctx context.Context) (string, []pkg, error) {
 		}
 		pkgs = append(pkgs, pkg{name, p.Version})
 	}
-	return eco, uniq(pkgs), nil
+	return eco, feed, uniq(pkgs), nil
 }
 
 func uniq(in []pkg) []pkg {

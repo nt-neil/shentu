@@ -29,7 +29,7 @@ var (
 )
 
 func (LinuxCollector) Allowlist() [][]string {
-	return [][]string{dpkgArgv, rpmArgv, rpmQalArgv, nftListArgv, iptablesArgv, journalArgv}
+	return [][]string{dpkgArgv, rpmArgv, rpmQalArgv, nftListArgv, iptablesArgv, iptablesSbin, journalArgv}
 }
 
 func (c LinuxCollector) Collect(ctx context.Context, src Source) *Facts {
@@ -64,6 +64,17 @@ func (c LinuxCollector) Collect(ctx context.Context, src Source) *Facts {
 		f.SSHKeys = c.SSHKeyFiles(src, accounts.Value)
 	}
 	f.Persistence = c.persistence(ctx, src, f.SSHKeys)
+	if IsOpenRC(src) {
+		var owned map[string]bool
+		if b, err := src.ReadFile("/lib/apk/db/installed"); err == nil {
+			owned = ApkOwnedFiles(b)
+		}
+		svcs, items := c.OpenRCServices(src, owned)
+		f.Services = svcs
+		if f.Persistence.Known() {
+			f.Persistence.Value = append(f.Persistence.Value, items...)
+		}
+	}
 
 	f.Patches = NotApplicable[[]Patch]() // Linux patches are package versions
 	f.RemoteAccess.RDP = NotApplicable[RDPConfig]()
@@ -119,7 +130,11 @@ func (LinuxCollector) Packages(ctx context.Context, src Source, osr map[string]s
 	if osr == nil {
 		return Unknown[PackageSet](ReasonNotCollected, "no os-release, distribution unknown")
 	}
+	feed := PatchFeedFor(osr)
 	set := PackageSet{Ecosystem: OSVEcosystem(osr)}
+	if feed.Kind != "" {
+		set.Feed = &feed
+	}
 	var items []Package
 	var err error
 	var res CmdResult
@@ -512,6 +527,10 @@ func (c LinuxCollector) persistence(ctx context.Context, src Source, keys Obs[[]
 	cronDir("/etc/cron.d")
 	cronDir("/var/spool/cron", "crontabs", "atjobs", "atspool", "lastrun")
 	cronDir("/var/spool/cron/crontabs")
+	cronDir("/etc/crontabs") // busybox crond (Alpine)
+	for _, it := range PeriodicScripts(src) {
+		add(it)
+	}
 
 	if b, ok := read("/etc/ld.so.preload"); ok {
 		for _, l := range strings.Split(string(b), "\n") {

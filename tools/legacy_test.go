@@ -474,7 +474,7 @@ func legacyPackages(src hostenv.Source) (string, []pkg) {
 func TestLegacyPackages(t *testing.T) {
 	for name, rp := range fixtures(t) {
 		withHost(t, rp)
-		eco, pkgs, err := installedPackages(context.Background())
+		eco, _, pkgs, err := installedPackages(context.Background())
 		weco, want := legacyPackages(rp)
 		if err != nil || eco != weco || len(want) < 100 || !reflect.DeepEqual(pkgs, want) {
 			t.Errorf("%s: eco %q/%q, %d/%d packages, err %v", name, eco, weco, len(pkgs), len(want), err)

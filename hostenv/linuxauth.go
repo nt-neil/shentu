@@ -7,6 +7,8 @@ package hostenv
 import (
 	"container/heap"
 	"context"
+	"errors"
+	"io/fs"
 	"net"
 	"regexp"
 	"sort"
@@ -48,7 +50,9 @@ var (
 	// user group and the anchored sshd suffix make the IP the one sshd wrote last.
 	// The prefix is "<RFC3339 time> host sshd[pid]: " or "Mon dd hh:mm:ss host sshd[pid]: "
 	// (OpenSSH 9.8+ logs as sshd-session), so injected text cannot start a second message.
-	sshdPrefix = `^(?:\S+|\w{3} +\d+ \d\d:\d\d:\d\d) \S+ sshd(?:-session)?\[\d+\]: `
+	// Busybox syslogd (Alpine) writes the facility and level after the host
+	// ("auth.info"): one token of that exact shape is allowed there.
+	sshdPrefix = `^(?:\S+|\w{3} +\d+ \d\d:\d\d:\d\d) \S+ (?:[a-z0-9]+\.[a-z]+ )?sshd(?:-session)?\[\d+\]: `
 	reFailed   = regexp.MustCompile(sshdPrefix + `Failed (?:password|publickey|keyboard-interactive/pam|none) for (?:invalid user )?(.*) from (\S+) port \d+(?: ssh2)?(?: \[preauth\])?\s*$`)
 	reInvalid  = regexp.MustCompile(sshdPrefix + `Invalid user (.*) from (\S+) port \d+(?: \[preauth\])?\s*$`)
 	reAccepted = regexp.MustCompile(sshdPrefix + `Accepted (\S+) for (\S+) from (\S+) port \d+ ssh2(?:: .*)?$`)
@@ -83,6 +87,19 @@ func (LinuxCollector) ScanAuthLogs(ctx context.Context, src Source, logPaths []s
 	argv := append([]string(nil), journalArgv...)
 	argv[6] = since.UTC().Format("2006-01-02 15:04:05") + " UTC" // journalctl reads a bare time as local
 	res, err := RunLines(ctx, src, argv, fn)
+	if errors.Is(err, fs.ErrNotExist) {
+		// No journald (Alpine, busybox syslogd): sshd writes to the system log.
+		for _, f := range []string{"/var/log/messages.0", "/var/log/messages"} {
+			if st, serr := Stat(src, f); serr == nil && !st.ModTime.Before(since) {
+				if ScanLines(src, f, fn) == nil {
+					used = append(used, f)
+				}
+			}
+		}
+		if len(used) > 0 {
+			return strings.Join(used, ","), nil
+		}
+	}
 	if err == nil && res.ExitCode != 0 {
 		err = &exitError{res.ExitCode}
 	}

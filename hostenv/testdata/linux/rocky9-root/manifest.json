@@ -57,6 +57,11 @@
     },
     {
       "op": "dir",
+      "path": "/etc/crontabs",
+      "err": "not_exist"
+    },
+    {
+      "op": "dir",
       "path": "/etc/crypto-policies/back-ends",
       "names": [
         "bind.config",

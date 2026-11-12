@@ -53,6 +53,11 @@
     },
     {
       "op": "dir",
+      "path": "/etc/crontabs",
+      "err": "not_exist"
+    },
+    {
+      "op": "dir",
       "path": "/etc/httpd/conf.d",
       "err": "not_exist"
     },

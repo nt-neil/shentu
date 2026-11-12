@@ -8,6 +8,7 @@ import (
 	"bufio"
 	"encoding/hex"
 	"net"
+	"path"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -167,6 +168,24 @@ func ParseRpmQA(b []byte) []Package {
 		out = append(out, Package{Name: f[0], Version: f[1], Arch: f[2]})
 	}
 	return out
+}
+
+// ApkOwnedFiles lists the files apk's database says a package installed
+// ("F:" folder lines, "R:" file lines), as absolute paths.
+func ApkOwnedFiles(b []byte) map[string]bool {
+	owned := map[string]bool{}
+	dir := ""
+	for _, l := range strings.Split(string(b), "\n") {
+		switch {
+		case l == "":
+			dir = ""
+		case strings.HasPrefix(l, "F:"):
+			dir = l[2:]
+		case strings.HasPrefix(l, "R:"):
+			owned["/"+path.Join(dir, l[2:])] = true
+		}
+	}
+	return owned
 }
 
 // ParseApkInstalled reads /lib/apk/db/installed.
