@@ -4,7 +4,7 @@
     "goos": "windows",
     "goarch": "amd64",
     "elevated": true,
-    "recorded_at": "2026-11-12T16:52:18.0662101Z"
+    "recorded_at": "2026-11-12T17:05:06.146007Z"
   },
   "entries": [
     {
@@ -215,7 +215,7 @@
     {
       "op": "reg",
       "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList\\S-1-5-21-1000000000-1000000000-1000000000-500",
-      "blob": "blobs/00d16d0a7cb56726"
+      "blob": "blobs/ab1c4055df89a904"
     },
     {
       "op": "reg",
@@ -2675,7 +2675,7 @@
     {
       "op": "reg",
       "path": "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Terminal Server",
-      "blob": "blobs/0e41d2ba1e4883ff"
+      "blob": "blobs/6171752134052bb7"
     },
     {
       "op": "reg",
@@ -2744,7 +2744,7 @@
     {
       "op": "winevt",
       "path": "System|5000|*[System[(EventID=104 or EventID=7045) and TimeCreated[timediff(@SystemTime) \u003c= 86400000]]]",
-      "blob": "blobs/44f2b9fd61d5be56"
+      "blob": "blobs/3a440973ecfdaeb7"
     },
     {
       "op": "winfw",
@@ -2757,15 +2757,25 @@
     },
     {
       "op": "winproc",
-      "blob": "blobs/eb3796ff7939892e"
+      "blob": "blobs/ed5195d195340d3a"
+    },
+    {
+      "op": "winsec",
+      "path": "C:\\ProgramData\\ssh",
+      "blob": "blobs/ad44c74ba8957301"
+    },
+    {
+      "op": "winsec",
+      "path": "C:\\ProgramData\\ssh\\sshd_config",
+      "blob": "blobs/ad44c74ba8957301"
     },
     {
       "op": "winsock",
-      "blob": "blobs/5a244e7ba8a734cd"
+      "blob": "blobs/d135b817834117e5"
     },
     {
       "op": "winsvc",
-      "blob": "blobs/6620952b7b1bc894"
+      "blob": "blobs/8f3535256dabd407"
     },
     {
       "op": "wintask",
