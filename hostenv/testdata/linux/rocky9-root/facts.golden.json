@@ -4959,8 +4959,7 @@
     }
   },
   "web": {
-    "status": "unknown",
-    "reason": "not_collected",
+    "status": "ok",
     "value": {}
   }
 }

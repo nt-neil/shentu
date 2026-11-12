@@ -412,3 +412,13 @@ func TestKeyTypesAsSSHDReadsThem(t *testing.T) {
 		t.Errorf("kinds %v", n)
 	}
 }
+
+func TestWebFact(t *testing.T) {
+	h := debianHost(true)
+	h.files["/etc/nginx/nginx.conf"] = "http {\n  root /usr/share/nginx/html;\n}\n" // a root directive starts its line
+	h.files["/etc/nginx/conf.d/shop.conf"] = "server {\n\troot /var/www/shop;\n}\n"
+	w := Collect(context.Background(), h).Web
+	if w.Status != StatusOK || w.Value.Server != "nginx" || !reflect.DeepEqual(w.Value.WebRoots, []string{"/usr/share/nginx/html", "/var/www/shop"}) {
+		t.Errorf("web %+v", w)
+	}
+}

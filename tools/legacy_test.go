@@ -915,3 +915,57 @@ func TestLegacySSHLogins(t *testing.T) {
 		}
 	}
 }
+
+// legacyWebRootsAt is WebRoots before 1c (f9264fd), every path under root.
+func legacyWebRootsAt(root string) []string {
+	nginxRoot := regexp.MustCompile(`(?m)^\s*root\s+["']?([^"';\s]+)`)
+	apacheRoot := regexp.MustCompile(`(?mi)^\s*DocumentRoot\s+["']?([^"'\s]+)`)
+	seen := map[string]bool{}
+	var out []string
+	for _, g := range []string{"/etc/nginx/nginx.conf", "/etc/nginx/sites-enabled/*", "/etc/nginx/conf.d/*.conf",
+		"/etc/apache2/sites-enabled/*", "/etc/httpd/conf/httpd.conf", "/etc/httpd/conf.d/*.conf"} {
+		files, _ := filepath.Glob(filepath.Join(root, g))
+		for _, f := range files {
+			b, ok := readSmallRegular(f, 1<<20, nil)
+			if !ok {
+				continue
+			}
+			for _, re := range []*regexp.Regexp{nginxRoot, apacheRoot} {
+				for _, m := range re.FindAllSubmatch(b, -1) {
+					p := filepath.Clean(string(m[1]))
+					if filepath.IsAbs(p) && !strings.Contains(p, "$") && !seen[p] {
+						seen[p] = true
+						out = append(out, p)
+					}
+				}
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+func TestLegacyWebRoots(t *testing.T) {
+	root := t.TempDir()
+	w := func(p, body string) {
+		os.MkdirAll(filepath.Dir(filepath.Join(root, p)), 0o755)
+		os.WriteFile(filepath.Join(root, p), []byte(body), 0o644)
+	}
+	w("/etc/nginx/nginx.conf", "http {\n  root /usr/share/nginx/html;\n  include /etc/nginx/conf.d/*.conf;\n}\n")
+	w("/etc/nginx/sites-available/shop", "server {\n  root /var/www/shop/public;\n}\n")
+	os.MkdirAll(filepath.Join(root, "/etc/nginx/sites-enabled"), 0o755)
+	os.Symlink("../sites-available/shop", filepath.Join(root, "/etc/nginx/sites-enabled/shop")) // Debian: a link
+	w("/etc/nginx/sites-enabled/blog", "server {\n  root \"/var/www/blog\";\n  # root /old;\n  root $document_root;\n  root relative/path;\n}\n")
+	w("/etc/nginx/conf.d/big.conf", "root /var/www/big;\n"+strings.Repeat("#\n", 600000))
+	w("/etc/nginx/conf.d/api.conf", "server { root /srv/api; }\nroot /var/www/blog;\n")
+	w("/etc/apache2/sites-enabled/000-default.conf", "<VirtualHost *:80>\n\tDocumentRoot /var/www/html\n</VirtualHost>\n")
+	w("/etc/httpd/conf.d/ssl.conf", "documentroot '/var/www/ssl'\n")
+	want := legacyWebRootsAt(root)
+	live, _ := hostenv.NewLive(nil)
+	live.Remap = map[string]string{"/": root}
+	withHost(t, live)
+	got := WebRoots()
+	if len(want) < 4 || !reflect.DeepEqual(got, want) {
+		t.Errorf("web roots:\n got %q\nwant %q", got, want)
+	}
+}

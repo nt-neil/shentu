@@ -108,41 +108,10 @@ const (
 	auditMaxDepth    = 8
 )
 
-var (
-	nginxRoot   = regexp.MustCompile(`(?m)^\s*root\s+["']?([^"';\s]+)`)
-	apacheRoot  = regexp.MustCompile(`(?mi)^\s*DocumentRoot\s+["']?([^"'\s]+)`)
-	webConfGlob = []string{
-		"/etc/nginx/nginx.conf", "/etc/nginx/sites-enabled/*", "/etc/nginx/conf.d/*.conf",
-		"/etc/apache2/sites-enabled/*", "/etc/httpd/conf/httpd.conf", "/etc/httpd/conf.d/*.conf",
-	}
-	webDirNames = map[string]bool{"public": true, "public_html": true, "html": true, "htdocs": true, "www": true, "webroot": true}
-)
+var webDirNames = map[string]bool{"public": true, "public_html": true, "html": true, "htdocs": true, "www": true, "webroot": true}
 
-// WebRoots returns the folders nginx or Apache serve, read from their configuration.
-func WebRoots() []string {
-	seen := map[string]bool{}
-	var out []string
-	for _, g := range webConfGlob {
-		files, _ := filepath.Glob(g)
-		for _, f := range files {
-			b, ok := readSmallRegular(f, 1<<20, nil)
-			if !ok {
-				continue
-			}
-			for _, re := range []*regexp.Regexp{nginxRoot, apacheRoot} {
-				for _, m := range re.FindAllSubmatch(b, -1) {
-					p := filepath.Clean(string(m[1]))
-					if filepath.IsAbs(p) && !strings.Contains(p, "$") && !seen[p] {
-						seen[p] = true
-						out = append(out, p)
-					}
-				}
-			}
-		}
-	}
-	sort.Strings(out)
-	return out
-}
+// WebRoots returns the folders nginx or Apache serve, read from their configuration (hostenv).
+func WebRoots() []string { return linux.WebRoots(hostSource()) }
 
 // depth counts path separators in the OS's own spelling ("\\" on Windows),
 // so auditMaxDepth holds there too.
