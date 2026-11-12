@@ -476,6 +476,12 @@ func TestLegacyPackages(t *testing.T) {
 		withHost(t, rp)
 		eco, _, pkgs, err := installedPackages(context.Background())
 		weco, want := legacyPackages(rp)
+		if weco == "" { // a distribution v0.2.5 did not know: nothing to compare
+			if err != nil || eco == "" || len(pkgs) == 0 {
+				t.Errorf("%s: eco %q, %d packages, err %v", name, eco, len(pkgs), err)
+			}
+			continue
+		}
 		if err != nil || eco != weco || len(want) < 100 || !reflect.DeepEqual(pkgs, want) {
 			t.Errorf("%s: eco %q/%q, %d/%d packages, err %v", name, eco, weco, len(pkgs), len(want), err)
 		}
