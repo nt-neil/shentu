@@ -41,10 +41,13 @@ var (
 	ipv6Re   = regexp.MustCompile(`(?i)\b(?:[0-9a-f]{1,4}:){2,7}[0-9a-f]{1,4}\b|(?i)\b(?:[0-9a-f]{1,4}:)+:(?:[0-9a-f]{1,4}(?::[0-9a-f]{1,4})*)?\b`)
 	sshKeyRe = regexp.MustCompile(`\bAAAA[0-9A-Za-z+/]{16,}={0,3}`)
 	akLineRe = regexp.MustCompile(`^(.*?\b(?:ssh-[a-z0-9-]+|ecdsa-sha2-[a-z0-9-]+|sk-[a-z0-9@.-]+))\s+(\S+)(?:\s+.*)?$`)
-	// hwIDRe is four or more hex bytes joined by ":" (or "-"): a MAC
-	// address, a DHCPv6 DUID, an IAID (dhcpcd logs them), all derived from
-	// the network card. Times (12:34:56) have three groups and stay.
-	hwIDRe    = regexp.MustCompile(`(?i)\b[0-9a-f]{2}(?::[0-9a-f]{2}){3,}\b|\b[0-9a-f]{2}(?:-[0-9a-f]{2}){5}\b`)
+	// hwIDRe is a MAC address, a DHCPv6 DUID or an IAID (dhcpcd logs them),
+	// all derived from the network card: four or more hex bytes joined by
+	// ":" or "-", six or more unpadded ones (0:c:29:...), or Cisco's dotted
+	// form. Times (12:34:56) have three groups and stay. Twelve bare hex
+	// digits are not taken: hashes and ids everywhere have that shape.
+	hwIDRe = regexp.MustCompile(`(?i)\b[0-9a-f]{2}(?::[0-9a-f]{2}){3,}\b|\b[0-9a-f]{2}(?:-[0-9a-f]{2}){3,}\b|` +
+		`\b[0-9a-f]{1,2}(?::[0-9a-f]{1,2}){5,}\b|\b[0-9a-f]{4}\.[0-9a-f]{4}\.[0-9a-f]{4}\b`)
 	procNetRe = regexp.MustCompile(`\b([0-9A-F]{8}|[0-9A-F]{32}):([0-9A-F]{4})\b`)
 )
 
@@ -123,13 +126,14 @@ func (m *Masker) text(s string, ips, users bool) string {
 	}
 	s = MaskSecrets(s)
 	s = sshKeyRe.ReplaceAllStringFunc(s, m.key)
-	s = hwIDRe.ReplaceAllStringFunc(s, m.hwID)
 	for _, p := range m.repl {
 		if !users && strings.HasPrefix(p.to, "user") {
 			continue
 		}
 		s = p.re.ReplaceAllString(s, p.to)
 	}
+	// After the names: a host name that holds hex pairs is replaced whole first.
+	s = hwIDRe.ReplaceAllStringFunc(s, m.hwID)
 	if ips {
 		s = ipv4Re.ReplaceAllStringFunc(s, func(t string) string {
 			ip := net.ParseIP(t)
@@ -170,15 +174,35 @@ func (m *Masker) hwID(id string) string {
 	if m.hw == nil {
 		m.hw = map[string]string{}
 	}
-	k := strings.ToLower(id)
+	sep := ":"
+	switch {
+	case strings.Contains(id, "-"):
+		sep = "-"
+	case strings.Contains(id, "."):
+		sep = "."
+	}
+	// One key for one id however it is written: lower case, each group padded.
+	groups := strings.Split(strings.ToLower(id), sep)
+	for i, g := range groups {
+		if sep != "." && len(g) == 1 {
+			groups[i] = "0" + g
+		}
+	}
+	k := strings.Join(groups, ":")
 	if v, ok := m.hw[k]; ok {
+		if sep == "-" { // the placeholder keeps the id's own separator
+			return strings.ReplaceAll(v, ":", "-")
+		}
 		return v
 	}
-	sep := ":"
-	if strings.Contains(id, "-") {
-		sep = "-"
+	if v, ok := m.hw[id]; ok { // a placeholder
+		return v
 	}
-	n := len(strings.Split(id, sep))
+	n := len(groups)
+	if sep == "." { // Cisco: three groups of two bytes
+		n = 6
+		sep = ":"
+	}
 	parts := make([]string, n)
 	for i := range parts {
 		parts[i] = "00"
@@ -189,8 +213,13 @@ func (m *Masker) hwID(id string) string {
 	if n > 2 {
 		parts[n-2] = fmt.Sprintf("%02x", (c>>8)&0xff)
 	}
-	v := strings.Join(parts, sep)
+	v := strings.Join(parts, ":")
 	m.hw[k], m.hw[v] = v, v
+	if sep == "-" {
+		d := strings.ReplaceAll(v, ":", "-")
+		m.hw[d] = d
+		return d
+	}
 	return v
 }
 
