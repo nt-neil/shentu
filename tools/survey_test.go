@@ -218,6 +218,10 @@ func TestSSHDropInUnreadable(t *testing.T) {
 	if got := risks(); len(got) != 1 || got["ssh:unreadable"] != "info" {
 		t.Errorf("unreadable drop-in file: %v", got)
 	}
+	ssh, _, unread := sshdSettings()
+	if r := sshRisks(ssh, unread); len(r) != 1 || !strings.Contains(r[0].Summary, "run Shentu as root") || !Unchecked(r[0]) {
+		t.Errorf("permission: %+v", r)
+	}
 	os.Chmod(drop, 0o644)
 	os.Chmod(d, 0)
 	defer os.Chmod(d, 0o755)
@@ -225,9 +229,47 @@ func TestSSHDropInUnreadable(t *testing.T) {
 		t.Errorf("unreadable drop-in folder: %v", got)
 	}
 	os.Chmod(d, 0o755)
+	// Another error than permission is told as it is, not as "run as root".
+	os.Chmod(drop, 0o644)
+	os.Remove(drop)
+	os.Mkdir(drop, 0o755) // a folder where the file was: "is a directory"
+	ssh, _, unread = sshdSettings()
+	if r := sshRisks(ssh, unread); len(r) != 1 || strings.Contains(r[0].Summary, "root") || !strings.Contains(r[0].Summary, "is a directory") {
+		t.Errorf("other error: %+v", r)
+	}
+	os.Remove(drop)
 	// Without an Include, the main file's yes is a warning as before.
 	os.WriteFile(sshdConfig, []byte("PasswordAuthentication yes\nPermitRootLogin yes\n"), 0o644)
 	if got := risks(); got["ssh:password"] != "warning" || got["ssh:root"] != "warning" || len(got) != 2 {
 		t.Errorf("main file only: %v", got)
+	}
+}
+
+// sshd takes "=" between a keyword and its value, with or without white
+// space, and keywords in any case: none of them hides a setting.
+func TestSSHDKeyEqualsValue(t *testing.T) {
+	dir := t.TempDir()
+	old := sshdConfig
+	defer func() { sshdConfig = old }()
+	sshdConfig = filepath.Join(dir, "sshd_config")
+	for _, c := range []string{"PermitRootLogin=yes\nPasswordAuthentication=yes\n", "PermitRootLogin = yes\nPasswordAuthentication =yes\n",
+		"permitrootlogin\tyes\n  PASSWORDAUTHENTICATION  yes\n", "\tPermitRootLogin= yes\nPasswordAuthentication\t=\tyes\n"} {
+		os.WriteFile(sshdConfig, []byte("# PermitRootLogin=no\n#PasswordAuthentication no\n"+c), 0o644)
+		ssh, _, unread := sshdSettings()
+		got := map[string]bool{}
+		for _, r := range sshRisks(ssh, unread) {
+			got[r.Key] = true
+		}
+		if ssh["permitrootlogin"] != "yes" || ssh["passwordauthentication"] != "yes" || !got["ssh:root"] || !got["ssh:password"] {
+			t.Errorf("%q: settings %v, risks %v", c, ssh, got)
+		}
+	}
+	// The first value wins, whichever way it is written.
+	os.WriteFile(sshdConfig, []byte("PermitRootLogin=no\nPermitRootLogin yes\nPasswordAuthentication = no\n"), 0o644)
+	if ssh, _, _ := sshdSettings(); ssh["permitrootlogin"] != "no" || ssh["passwordauthentication"] != "no" {
+		t.Errorf("first value: %v", ssh)
+	}
+	if f := sshdFields("Include = /etc/ssh/a.conf /etc/ssh/b.conf"); len(f) != 3 || f[0] != "Include" || f[2] != "/etc/ssh/b.conf" {
+		t.Errorf("include: %q", f)
 	}
 }

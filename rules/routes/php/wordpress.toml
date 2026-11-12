@@ -181,6 +181,19 @@ class Box_Widget extends WP_Widget {
 
 [[route.samples]]
 kind = "vulnerable"
+note = "get_settings() without the _for_display: the same controls, as saved"
+code = '''<?php
+class Team_Widget extends \Elementor\Widget_Base {
+	protected function render() {
+		global $wpdb;
+		$s = $this->get_settings();
+		echo $wpdb->get_var("SELECT name FROM {$wpdb->prefix}teams WHERE id = " . $s['team']);
+	}
+}
+'''
+
+[[route.samples]]
+kind = "vulnerable"
 note = "get_settings() in a widget whose own base class extends Widget_Base"
 code = '''<?php
 class Base_Widget extends \Elementor\Widget_Base {}

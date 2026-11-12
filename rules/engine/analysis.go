@@ -146,7 +146,7 @@ type analysis struct {
 
 	ftoks []Token              // the file's tokens, for the receiver condition (receiver.go)
 	rdefs map[string][][]Token // what names of the file are assigned or annotated with, built on first use
-	byRef map[string]bool      // PHP: functions and methods the file declares with a parameter by reference (receiver.go), built on first use
+	rcls  map[string][]string  // PHP: variables the file binds only to new objects, and their classes (recvClasses), built on first use
 }
 
 // loc is a place a sink is reached: a line of a file.
