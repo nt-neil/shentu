@@ -511,7 +511,7 @@ func TestHeldOut(t *testing.T) {
 		{"QD12 path through helpers from a flask route placeholder", "python", "from flask import Flask, abort\napp = Flask(__name__)\n\ndef locate(name):\n    full = (DROP_DIR / name).absolute()\n    if not str(full).startswith(str(DROP_DIR)):\n        abort(404)\n    return full\n\ndef sidecar(full):\n    return Path(str(full) + \".info\")\n\n@app.route(\"/drop/<path:name>\")\ndef drop_info(name):\n    with sidecar(locate(name)).open() as fh:\n        return fh.read()\n", true, ""},
 		{"QD13 extra where django path placeholder", "python", "from django.urls import path\n\ndef by_label(request, label):\n    rows = Ticket.objects.extra(where=[\"label = '%s'\" % label])\n    return render(request, \"tickets.html\", {\"rows\": rows})\n\nurlpatterns = [path(\"label/<str:label>/\", by_label)]\n", true, ""},
 		{"QD14 aiohttp text= html via post form", "python", "async def h(request):\n    data = await request.post()\n    return web.Response(text='<td>%s</td>' % data['c'], content_type='text/html')\n", true, ""},
-		{"QD15 aiohttp html body in an attribute", "python", "async def h(request):\n    return web.Response(text='<img alt=\"' + request.query['a'] + '\">', content_type='text/html')\n", true, "only input between tags is counted for aiohttp text=; an attribute value needs an attr rule of its own"},
+		{"QD15 aiohttp html body in an attribute", "python", "async def h(request):\n    return web.Response(text='<img alt=\"' + request.query['a'] + '\">', content_type='text/html')\n", true, ""},
 	}
 	pass := 0
 	for _, c := range cases {
