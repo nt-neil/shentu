@@ -40,6 +40,15 @@ func (c LinuxCollector) Collect(ctx context.Context, src Source) *Facts {
 	procs, sockOwner := c.processes(src, pw)
 	f.Processes = procs
 	f.Listeners = c.listeners(src, info, sockOwner)
+	if procs.Known() { // name each listener's process, so checks need no join
+		names := map[int]string{}
+		for _, p := range procs.Value {
+			names[p.PID] = p.Name
+		}
+		for i := range f.Listeners.Value {
+			f.Listeners.Value[i].Process = names[f.Listeners.Value[i].PID]
+		}
+	}
 	f.RemoteAccess.SSH = c.ssh(src)
 	f.Persistence = c.persistence(src, accounts)
 
@@ -47,7 +56,7 @@ func (c LinuxCollector) Collect(ctx context.Context, src Source) *Facts {
 	f.RemoteAccess.RDP = NotApplicable[RDPConfig]()
 	f.RemoteAccess.WinRM = NotApplicable[WinRMConfig]()
 	f.RemoteAccess.SMB = Unknown[SMBConfig](ReasonNotCollected, "samba not collected yet")
-	f.Antimalware = Unknown[Antimalware](ReasonNotCollected, "")
+	f.Antimalware = NotApplicable[Antimalware]() // no built-in AV on Linux; ClamAV et al. come later as packages
 	// Services, Firewall, AuthEvents and Web stay not_collected until the
 	// tools/ logic moves here (Phase 1c, after v0.2.5 reaches main).
 	return f

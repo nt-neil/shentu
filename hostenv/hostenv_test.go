@@ -107,7 +107,7 @@ func TestLinuxCollectorRoot(t *testing.T) {
 	if strings.Contains(byPID[4242].Cmdline, fakeSecret()) {
 		t.Errorf("cmdline leaked a password: %q", byPID[4242].Cmdline)
 	}
-	want := []Listener{{"tcp", "0.0.0.0", 22, 4243, ""}, {"tcp", "127.0.0.1", 8080, 4242, ""}, {"udp", "0.0.0.0", 68, 0, ""}}
+	want := []Listener{{"tcp", "0.0.0.0", 22, 4243, "sshd"}, {"tcp", "127.0.0.1", 8080, 4242, "kworkerds"}, {"udp", "0.0.0.0", 68, 0, ""}}
 	if f.Listeners.Status != StatusOK || !reflect.DeepEqual(f.Listeners.Value, want) {
 		t.Errorf("listeners %+v", f.Listeners)
 	}

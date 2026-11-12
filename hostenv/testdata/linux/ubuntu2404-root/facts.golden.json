@@ -12654,73 +12654,85 @@
         "proto": "tcp",
         "addr": "127.0.0.54",
         "port": 53,
-        "pid": 747
+        "pid": 747,
+        "process": "systemd-resolve"
       },
       {
         "proto": "tcp",
         "addr": "0.0.0.0",
         "port": 22,
-        "pid": 1136
+        "pid": 1136,
+        "process": "sshd"
       },
       {
         "proto": "tcp",
         "addr": "127.0.0.1",
         "port": 631,
-        "pid": 1088
+        "pid": 1088,
+        "process": "cupsd"
       },
       {
         "proto": "tcp",
         "addr": "127.0.0.53",
         "port": 53,
-        "pid": 747
+        "pid": 747,
+        "process": "systemd-resolve"
       },
       {
         "proto": "tcp6",
         "addr": "::1",
         "port": 631,
-        "pid": 1088
+        "pid": 1088,
+        "process": "cupsd"
       },
       {
         "proto": "tcp6",
         "addr": "::",
         "port": 22,
-        "pid": 1136
+        "pid": 1136,
+        "process": "sshd"
       },
       {
         "proto": "udp",
         "addr": "127.0.0.54",
         "port": 53,
-        "pid": 747
+        "pid": 747,
+        "process": "systemd-resolve"
       },
       {
         "proto": "udp",
         "addr": "127.0.0.53",
         "port": 53,
-        "pid": 747
+        "pid": 747,
+        "process": "systemd-resolve"
       },
       {
         "proto": "udp",
         "addr": "0.0.0.0",
         "port": 5353,
-        "pid": 854
+        "pid": 854,
+        "process": "avahi-daemon"
       },
       {
         "proto": "udp",
         "addr": "0.0.0.0",
         "port": 57802,
-        "pid": 854
+        "pid": 854,
+        "process": "avahi-daemon"
       },
       {
         "proto": "udp6",
         "addr": "::",
         "port": 5353,
-        "pid": 854
+        "pid": 854,
+        "process": "avahi-daemon"
       },
       {
         "proto": "udp6",
         "addr": "::",
         "port": 34198,
-        "pid": 854
+        "pid": 854,
+        "process": "avahi-daemon"
       }
     ]
   },
@@ -12914,8 +12926,7 @@
     }
   },
   "antimalware": {
-    "status": "unknown",
-    "reason": "not_collected",
+    "status": "not_applicable",
     "value": {
       "product": "",
       "real_time": false,

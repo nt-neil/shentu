@@ -4266,67 +4266,78 @@
         "proto": "tcp",
         "addr": "0.0.0.0",
         "port": 22,
-        "pid": 521
+        "pid": 521,
+        "process": "sshd"
       },
       {
         "proto": "tcp",
         "addr": "0.0.0.0",
         "port": 5355,
-        "pid": 447
+        "pid": 447,
+        "process": "systemd-resolve"
       },
       {
         "proto": "tcp",
         "addr": "127.0.0.53",
         "port": 53,
-        "pid": 447
+        "pid": 447,
+        "process": "systemd-resolve"
       },
       {
         "proto": "tcp",
         "addr": "127.0.0.54",
         "port": 53,
-        "pid": 447
+        "pid": 447,
+        "process": "systemd-resolve"
       },
       {
         "proto": "tcp6",
         "addr": "::",
         "port": 22,
-        "pid": 521
+        "pid": 521,
+        "process": "sshd"
       },
       {
         "proto": "tcp6",
         "addr": "::",
         "port": 5355,
-        "pid": 447
+        "pid": 447,
+        "process": "systemd-resolve"
       },
       {
         "proto": "udp",
         "addr": "127.0.0.54",
         "port": 53,
-        "pid": 447
+        "pid": 447,
+        "process": "systemd-resolve"
       },
       {
         "proto": "udp",
         "addr": "127.0.0.53",
         "port": 53,
-        "pid": 447
+        "pid": 447,
+        "process": "systemd-resolve"
       },
       {
         "proto": "udp",
         "addr": "10.0.0.1",
         "port": 68,
-        "pid": 472
+        "pid": 472,
+        "process": "systemd-network"
       },
       {
         "proto": "udp",
         "addr": "0.0.0.0",
         "port": 5355,
-        "pid": 447
+        "pid": 447,
+        "process": "systemd-resolve"
       },
       {
         "proto": "udp6",
         "addr": "::",
         "port": 5355,
-        "pid": 447
+        "pid": 447,
+        "process": "systemd-resolve"
       }
     ]
   },
@@ -4450,8 +4461,7 @@
     }
   },
   "antimalware": {
-    "status": "unknown",
-    "reason": "not_collected",
+    "status": "not_applicable",
     "value": {
       "product": "",
       "real_time": false,

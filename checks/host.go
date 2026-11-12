@@ -2,6 +2,7 @@ package checks
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/nt-neil/shentu/hostenv"
 )
@@ -11,32 +12,40 @@ import (
 // copies once v0.2.5 is on main.
 
 func init() {
-	register(checkFunc{"ssh.root_password_login", sshRootPassword})
+	register(checkFunc{"ssh", sshSettings})
 	register(checkFunc{"persistence.ld_preload", ldPreload})
 	register(checkFunc{"process.exe_deleted_or_temp", exeDeletedOrTemp})
 	register(checkFunc{"rdp.no_nla", rdpNoNLA})
 }
 
-func sshRootPassword(f *hostenv.Facts) []Finding {
+// sshSettings mirrors tools/survey.go sshRisks: one finding per setting,
+// and one cannot_tell when the settings could not be read.
+func sshSettings(f *hostenv.Facts) []Finding {
 	o := f.RemoteAccess.SSH
-	if out := cannotTell("ssh.root_password_login", "SSH settings could not be read", o); out != nil {
+	if out := cannotTell("ssh.settings", "SSH settings could not be read", o); out != nil {
 		return out
 	}
 	if !o.Known() {
 		return nil
 	}
 	s := o.Value.Settings
-	if s["permitrootlogin"] == "unknown" || s["passwordauthentication"] == "unknown" {
-		return []Finding{{Check: "ssh.root_password_login", Status: StatusCannotTell, Severity: SevInfo,
-			Title: "SSH root login setting could not be read", Reason: string(hostenv.ReasonPermission),
-			Evidence: fmt.Sprint(o.Value.Unread)}}
+	var out []Finding
+	if s["passwordauthentication"] == "yes" {
+		out = append(out, Finding{Check: "ssh.password_auth", Status: StatusFail, Severity: SevMedium,
+			Title:    "SSH accepts passwords; key-only login stops brute force",
+			Evidence: o.Value.ConfigPath + ": PasswordAuthentication yes"})
 	}
-	if s["permitrootlogin"] == "yes" && s["passwordauthentication"] == "yes" {
-		return []Finding{{Check: "ssh.root_password_login", Status: StatusFail, Severity: SevHigh,
+	if s["permitrootlogin"] == "yes" {
+		out = append(out, Finding{Check: "ssh.root_login", Status: StatusFail, Severity: SevMedium,
 			Title:    "SSH allows root to log in with a password",
-			Evidence: o.Value.ConfigPath + ": PermitRootLogin yes, PasswordAuthentication yes"}}
+			Evidence: o.Value.ConfigPath + ": PermitRootLogin yes"})
 	}
-	return nil
+	if s["passwordauthentication"] == "unknown" || s["permitrootlogin"] == "unknown" {
+		out = append(out, Finding{Check: "ssh.settings", Status: StatusCannotTell, Severity: SevInfo,
+			Title: "SSH settings could not be read; run Shentu as root", Reason: string(hostenv.ReasonPermission),
+			Evidence: strings.Join(o.Value.Unread, ", ")})
+	}
+	return out
 }
 
 func ldPreload(f *hostenv.Facts) []Finding {

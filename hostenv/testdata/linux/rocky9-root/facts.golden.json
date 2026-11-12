@@ -4749,49 +4749,57 @@
         "proto": "tcp",
         "addr": "0.0.0.0",
         "port": 22,
-        "pid": 925
+        "pid": 925,
+        "process": "sshd"
       },
       {
         "proto": "tcp",
         "addr": "0.0.0.0",
         "port": 111,
-        "pid": 764
+        "pid": 764,
+        "process": "rpcbind"
       },
       {
         "proto": "tcp6",
         "addr": "::",
         "port": 22,
-        "pid": 925
+        "pid": 925,
+        "process": "sshd"
       },
       {
         "proto": "tcp6",
         "addr": "::",
         "port": 111,
-        "pid": 764
+        "pid": 764,
+        "process": "rpcbind"
       },
       {
         "proto": "udp",
         "addr": "127.0.0.1",
         "port": 323,
-        "pid": 805
+        "pid": 805,
+        "process": "chronyd"
       },
       {
         "proto": "udp",
         "addr": "0.0.0.0",
         "port": 111,
-        "pid": 764
+        "pid": 764,
+        "process": "rpcbind"
       },
       {
         "proto": "udp6",
         "addr": "::1",
         "port": 323,
-        "pid": 805
+        "pid": 805,
+        "process": "chronyd"
       },
       {
         "proto": "udp6",
         "addr": "::",
         "port": 111,
-        "pid": 764
+        "pid": 764,
+        "process": "rpcbind"
       }
     ]
   },
@@ -4910,8 +4918,7 @@
     }
   },
   "antimalware": {
-    "status": "unknown",
-    "reason": "not_collected",
+    "status": "not_applicable",
     "value": {
       "product": "",
       "real_time": false,

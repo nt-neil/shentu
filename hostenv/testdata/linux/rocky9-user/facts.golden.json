@@ -4881,8 +4881,7 @@
     }
   },
   "antimalware": {
-    "status": "unknown",
-    "reason": "not_collected",
+    "status": "not_applicable",
     "value": {
       "product": "",
       "real_time": false,
