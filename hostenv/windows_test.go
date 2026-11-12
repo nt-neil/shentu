@@ -435,6 +435,8 @@ func TestWMIRef(t *testing.T) {
 		`__EventFilter.Name="x"`: {"__EventFilter", "x"},
 		`\\H\root\subscription:CommandLineEventConsumer.Name="a \"b\""`: {"CommandLineEventConsumer", `a "b"`},
 		`garbage`: {"", ""},
+		`\\H\root\subscription:CommandLineEventConsumer.Name="a:b \\ c"`: {"CommandLineEventConsumer", `a:b \ c`},
+		`CommandLineEventConsumer.Name="unterminated`:                    {"", ""},
 	} {
 		if c, n := wmiRef(in); c != want[0] || n != want[1] {
 			t.Errorf("wmiRef(%q) = %q %q", in, c, n)

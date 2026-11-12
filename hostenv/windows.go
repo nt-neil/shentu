@@ -1211,7 +1211,13 @@ func wmiSubscriptions(ws WinSource, ns string) ([]PersistenceItem, error) {
 // `\\HOST\root\subscription:CommandLineEventConsumer.Name="evil"` into
 // its class and Name key.
 func wmiRef(path string) (class, name string) {
-	if i := strings.LastIndexByte(path, ':'); i >= 0 && strings.HasPrefix(path, `\\`) {
+	// The namespace part (\\HOST\root\subscription) cannot hold a colon,
+	// so the first one ends it; a colon inside the quoted name stays.
+	if strings.HasPrefix(path, `\\`) {
+		i := strings.IndexByte(path, ':')
+		if i < 0 {
+			return "", ""
+		}
 		path = path[i+1:]
 	}
 	class, key, ok := strings.Cut(path, ".")
@@ -1219,13 +1225,24 @@ func wmiRef(path string) (class, name string) {
 		return "", ""
 	}
 	_, val, ok := strings.Cut(key, "=")
-	if !ok {
+	if !ok || len(val) < 2 || val[0] != '"' {
 		return "", ""
 	}
-	if len(val) >= 2 && val[0] == '"' && val[len(val)-1] == '"' {
-		val = val[1 : len(val)-1]
+	// One left-to-right scan: \X is X (covers \\ and \"), and the first
+	// unescaped quote ends the value.
+	var b strings.Builder
+	for i := 1; i < len(val); i++ {
+		switch c := val[i]; {
+		case c == '\\' && i+1 < len(val):
+			i++
+			b.WriteByte(val[i])
+		case c == '"':
+			return class, b.String()
+		default:
+			b.WriteByte(c)
+		}
 	}
-	return class, strings.ReplaceAll(val, `\"`, `"`)
+	return "", "" // unterminated
 }
 
 func asString(v any) string {
