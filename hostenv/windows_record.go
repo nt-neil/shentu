@@ -12,6 +12,7 @@ package hostenv
 //	wingroup Path = SID      []string
 //	wintask  Path = ""       []WinTask
 //	winevt   Path = channel|max|xpath   []WinEvent
+//	wmi      Path = namespace|query|props []map[string]any
 //
 // The data is masked like everything else at Save time.
 
@@ -241,4 +242,18 @@ func winMaskPrep(entries []*entry) []string {
 		}
 	}
 	return out
+}
+
+func wmiKey(namespace, query string, props []string) string {
+	return namespace + "|" + query + "|" + strings.Join(props, ",")
+}
+
+func (r *Recorder) WMI(namespace, query string, props []string) ([]map[string]any, error) {
+	return recordWin(r, "wmi", wmiKey(namespace, query, props), func(ws WinSource) ([]map[string]any, error) {
+		return ws.WMI(namespace, query, props)
+	})
+}
+
+func (rp *Replay) WMI(namespace, query string, props []string) ([]map[string]any, error) {
+	return replayWin[[]map[string]any](rp, "wmi", wmiKey(namespace, query, props))
 }

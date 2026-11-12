@@ -4,8 +4,9 @@ package hostenv
 // the collector and its mappings are pure and are tested on every OS
 // against a fake WinSource and replayed fixtures. Only the live WinSource
 // (live_windows.go: x/sys/windows, registry, SCM, Toolhelp32, iphlpapi,
-// netapi32, wevtapi) carries a windows build tag. No PowerShell, no WMI,
-// no commands.
+// netapi32, wevtapi, and a minimal COM client for the two things only WMI
+// knows: event subscriptions and Defender's runtime status) carries a
+// windows build tag. No PowerShell, no commands.
 
 import (
 	"context"
@@ -133,7 +134,31 @@ type WinSource interface {
 	GroupMembers(sid string) ([]string, error) // member SIDs of a local group
 	Tasks() ([]WinTask, error)
 	Events(channel, xpath string, max int) ([]WinEvent, error)
+	// WMI runs one WQL query and returns the named properties of each row:
+	// string, bool, int64, uint64, float64, nil or []any of those.
+	WMI(namespace, query string, props []string) ([]map[string]any, error)
 }
+
+// WMI namespaces and queries the collector runs.
+const (
+	NamespaceSubscription = `root\subscription`
+	NamespaceDefaultWMI   = `root\default`
+	NamespaceDefender     = `root\Microsoft\Windows\Defender`
+)
+
+type wmiQuery struct {
+	query string
+	props []string
+}
+
+var (
+	qMpStatus = wmiQuery{"SELECT * FROM MSFT_MpComputerStatus",
+		[]string{"AMRunningMode", "AMServiceEnabled", "AntivirusEnabled", "RealTimeProtectionEnabled", "AntivirusSignatureAge"}}
+	qWMIFilters  = wmiQuery{"SELECT * FROM __EventFilter", []string{"Name", "Query", "EventNamespace"}}
+	qWMICmdLine  = wmiQuery{"SELECT * FROM CommandLineEventConsumer", []string{"Name", "CommandLineTemplate", "ExecutablePath"}}
+	qWMIScript   = wmiQuery{"SELECT * FROM ActiveScriptEventConsumer", []string{"Name", "ScriptingEngine", "ScriptFileName", "ScriptText"}}
+	qWMIBindings = wmiQuery{"SELECT * FROM __FilterToConsumerBinding", []string{"Filter", "Consumer"}}
+)
 
 // Registry keys the collector reads.
 const (
@@ -596,8 +621,8 @@ func filetime(ft uint64) (time.Time, bool) {
 	return time.Unix(0, 0).Add(time.Duration(ft-epochDiff) * 100).UTC(), true
 }
 
-// winPersistence gathers autostart locations. WMI event subscriptions need
-// WMI and are not read, so the result is at best partial.
+// winPersistence gathers autostart locations, WMI event subscriptions
+// included.
 func winPersistence(ws WinSource, svcs []WinService, svcErr error) Obs[[]PersistenceItem] {
 	var out []PersistenceItem
 	var unread []string
@@ -725,6 +750,15 @@ func winPersistence(ws WinSource, svcs []WinService, svcErr error) Obs[[]Persist
 		}
 	}
 
+	// WMI event subscriptions: consumers that run a command or a script.
+	for _, ns := range []string{NamespaceSubscription, NamespaceDefaultWMI} {
+		items, err := wmiSubscriptions(ws, ns)
+		note("WMI "+ns, err)
+		for _, it := range items {
+			add(it)
+		}
+	}
+
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].Kind != out[j].Kind {
 			return out[i].Kind < out[j].Kind
@@ -737,7 +771,7 @@ func winPersistence(ws WinSource, svcs []WinService, svcErr error) Obs[[]Persist
 	case len(unread) > 0:
 		return Partial(out, ReasonPermission, "unreadable: "+strings.Join(unread, "; "))
 	}
-	return Partial(out, ReasonNotCollected, "WMI event subscriptions are not read (no WMI client)")
+	return OK(out)
 }
 
 func sortedNames(v map[string]RegValue) []string {
@@ -983,15 +1017,30 @@ func winDefender(ws WinSource, svcs []WinService, svcErr error) Obs[Antimalware]
 		am.Product += " (no WinDefend service)"
 	}
 	am.RealTime = running && !off && !rtOff && !passive
-
-	sig := read(KeyDefender + `\Signature Updates`)
-	if t, ok := regFiletime(sig, "SignaturesLastUpdated", "AVSignatureApplied"); ok {
-		am.SignatureAgeDays = int(ws.Info().RecordedAt.Sub(t).Hours() / 24)
-		if am.SignatureAgeDays < 0 {
-			am.SignatureAgeDays = 0
+	sigKnown := false
+	// Defender's own view wins over what the settings imply: tamper
+	// protection or a third-party product can override both.
+	if st, err := ws.WMI(NamespaceDefender, qMpStatus.query, qMpStatus.props); err == nil && len(st) > 0 {
+		r := st[0]
+		am.Product = "Microsoft Defender"
+		if mode, _ := r["AMRunningMode"].(string); mode != "" && mode != "Normal" {
+			am.Product += " (" + mode + ")"
 		}
-	} else {
-		gap(ReasonNotInstalled, "signature date unknown")
+		am.RealTime = asBool(r["RealTimeProtectionEnabled"]) && asBool(r["AMServiceEnabled"]) && asBool(r["AntivirusEnabled"])
+		if age, ok := r["AntivirusSignatureAge"]; ok && age != nil {
+			am.SignatureAgeDays, sigKnown = asInt(age), true
+		}
+	} else if err != nil && !isNotExist(err) {
+		gap(Classify(err), "runtime status unreadable (MSFT_MpComputerStatus); judged on settings")
+	}
+
+	if !sigKnown {
+		sig := read(KeyDefender + `\Signature Updates`)
+		if t, ok := regFiletime(sig, "SignaturesLastUpdated", "AVSignatureApplied"); ok {
+			am.SignatureAgeDays = max(int(ws.Info().RecordedAt.Sub(t).Hours()/24), 0)
+		} else {
+			gap(ReasonNotInstalled, "signature date unknown")
+		}
 	}
 
 	for _, root := range []string{KeyDefender + `\Exclusions`, KeyDefenderPolicy + `\Exclusions`} {
@@ -1082,4 +1131,125 @@ func winAuthEvents(ws WinSource) Obs[AuthEvents] {
 		return Partial(ae, Classify(serr), "System event log unreadable")
 	}
 	return OK(ae)
+}
+
+// wmiSubscriptions lists the command-line and script consumers in one
+// namespace, each with the filters bound to it. Built-in subscriptions
+// (the SCM event log consumer) use other consumer classes and are not
+// listed. A namespace that does not exist is not an error.
+func wmiSubscriptions(ws WinSource, ns string) ([]PersistenceItem, error) {
+	get := func(q wmiQuery) ([]map[string]any, error) {
+		rows, err := ws.WMI(ns, q.query, q.props)
+		if isNotExist(err) {
+			return nil, nil
+		}
+		return rows, err
+	}
+	filters, err := get(qWMIFilters)
+	if err != nil {
+		return nil, err
+	}
+	bindings, err := get(qWMIBindings)
+	if err != nil {
+		return nil, err
+	}
+	filterQuery := map[string]string{}
+	for _, f := range filters {
+		filterQuery[asString(f["Name"])] = asString(f["Query"])
+	}
+	// Binding paths look like __EventFilter.Name="x" and
+	// CommandLineEventConsumer.Name="y"; key both by class and name.
+	boundTo := map[string][]string{}
+	for _, b := range bindings {
+		fc, fname := wmiRef(asString(b["Filter"]))
+		cc, cname := wmiRef(asString(b["Consumer"]))
+		if fc != "" && cc != "" {
+			desc := fname
+			if q := filterQuery[fname]; q != "" {
+				desc += " [" + q + "]"
+			}
+			boundTo[cc+"."+cname] = append(boundTo[cc+"."+cname], desc)
+		}
+	}
+	var out []PersistenceItem
+	for _, c := range []struct {
+		q     wmiQuery
+		class string
+		cmd   func(map[string]any) string
+	}{
+		{qWMICmdLine, "CommandLineEventConsumer", func(r map[string]any) string {
+			if t := asString(r["CommandLineTemplate"]); t != "" {
+				return t
+			}
+			return asString(r["ExecutablePath"])
+		}},
+		{qWMIScript, "ActiveScriptEventConsumer", func(r map[string]any) string {
+			if f := asString(r["ScriptFileName"]); f != "" {
+				return asString(r["ScriptingEngine"]) + " " + f
+			}
+			return asString(r["ScriptingEngine"]) + ": " + asString(r["ScriptText"])
+		}},
+	} {
+		rows, err := get(c.q)
+		if err != nil {
+			return out, err
+		}
+		for _, r := range rows {
+			name := asString(r["Name"])
+			detail := "unbound"
+			if f := boundTo[c.class+"."+name]; len(f) > 0 {
+				sort.Strings(f)
+				detail = "bound to " + strings.Join(f, ", ")
+			}
+			out = append(out, PersistenceItem{Kind: "wmi_subscription", Location: ns + ":" + c.class + "." + name, Command: c.cmd(r), Detail: detail})
+		}
+	}
+	return out, nil
+}
+
+// wmiRef splits a WMI object path such as
+// `\\HOST\root\subscription:CommandLineEventConsumer.Name="evil"` into
+// its class and Name key.
+func wmiRef(path string) (class, name string) {
+	if i := strings.LastIndexByte(path, ':'); i >= 0 && strings.HasPrefix(path, `\\`) {
+		path = path[i+1:]
+	}
+	class, key, ok := strings.Cut(path, ".")
+	if !ok {
+		return "", ""
+	}
+	_, val, ok := strings.Cut(key, "=")
+	if !ok {
+		return "", ""
+	}
+	return class, strings.ReplaceAll(strings.Trim(val, `"`), `\"`, `"`)
+}
+
+func asString(v any) string {
+	s, _ := v.(string)
+	return s
+}
+
+func asBool(v any) bool {
+	b, _ := v.(bool)
+	return b
+}
+
+// asInt accepts what a live query (int64, uint64) or a JSON replay
+// (float64) yields, and WMI's string-encoded 64-bit integers.
+func asInt(v any) int {
+	switch n := v.(type) {
+	case int:
+		return n
+	case int64:
+		return int(n)
+	case uint64:
+		return int(n)
+	case float64:
+		return int(n)
+	case string:
+		i, _ := strconv.Atoi(n)
+		return i
+	}
+	return 0
 }

@@ -1,0 +1,209 @@
+//go:build windows
+
+package hostenv
+
+import (
+	"errors"
+	"io/fs"
+	"reflect"
+	"strings"
+	"testing"
+	"unicode/utf16"
+	"unsafe"
+)
+
+// These run on the Windows CI runners only. They build real VARIANTs and
+// SAFEARRAYs through oleaut32 and check decodeVariant against them, at
+// the edges as well as on ordinary values.
+
+var (
+	procSafeArrayCreate       = modoleaut32.NewProc("SafeArrayCreate")
+	procSafeArrayCreateVector = modoleaut32.NewProc("SafeArrayCreateVector")
+	procSafeArrayPutElement   = modoleaut32.NewProc("SafeArrayPutElement")
+	procSafeArrayDestroy      = modoleaut32.NewProc("SafeArrayDestroy")
+)
+
+// safeArrayBound is SAFEARRAYBOUND.
+type safeArrayBound struct {
+	Elements uint32
+	LBound   int32
+}
+
+func newBSTR(t testing.TB, s string) uintptr {
+	u := append(utf16.Encode([]rune(s)), 0) // SysAllocStringLen keeps embedded NULs
+	alloc := modoleaut32.NewProc("SysAllocStringLen")
+	b, _, _ := alloc.Call(uintptr(unsafe.Pointer(&u[0])), uintptr(len(u)-1))
+	if b == 0 {
+		t.Fatal("SysAllocStringLen")
+	}
+	return b
+}
+
+// bstrArray builds a VT_ARRAY|VT_BSTR variant with the given lower bound.
+// SafeArrayPutElement copies each BSTR, so ours are freed here.
+func bstrArray(t testing.TB, lbound int32, items []string) (variant, func()) {
+	sa, _, _ := procSafeArrayCreateVector.Call(vtBSTR, uintptr(lbound), uintptr(len(items)))
+	if sa == 0 {
+		t.Fatal("SafeArrayCreateVector")
+	}
+	for i, s := range items {
+		b := newBSTR(t, s)
+		idx := lbound + int32(i)
+		if r, _, _ := procSafeArrayPutElement.Call(sa, uintptr(unsafe.Pointer(&idx)), b); r != 0 {
+			t.Fatalf("SafeArrayPutElement: 0x%x", r)
+		}
+		freeBSTR(b)
+	}
+	return variant{VT: vtArray | vtBSTR, Val: uint64(sa)}, func() { procSafeArrayDestroy.Call(sa) }
+}
+
+func intArray(t testing.TB, vt uint16, vals []int32) (variant, func()) {
+	sa, _, _ := procSafeArrayCreateVector.Call(uintptr(vt), 0, uintptr(len(vals)))
+	if sa == 0 {
+		t.Fatal("SafeArrayCreateVector")
+	}
+	for i := range vals {
+		idx := int32(i)
+		if r, _, _ := procSafeArrayPutElement.Call(sa, uintptr(unsafe.Pointer(&idx)), uintptr(unsafe.Pointer(&vals[i]))); r != 0 {
+			t.Fatalf("SafeArrayPutElement: 0x%x", r)
+		}
+	}
+	return variant{VT: vtArray | vt, Val: uint64(sa)}, func() { procSafeArrayDestroy.Call(sa) }
+}
+
+func TestDecodeVariantScalars(t *testing.T) {
+	b := newBSTR(t, "Normal")
+	defer freeBSTR(b)
+	for _, c := range []struct {
+		v    variant
+		want any
+	}{
+		{variant{VT: vtEmpty}, nil},
+		{variant{VT: vtNull}, nil},
+		{variant{VT: vtBool, Val: 0xFFFF}, true},
+		{variant{VT: vtBool, Val: 0}, false},
+		{variant{VT: vtI4, Val: uint64(uint32(0xFFFFFFFF))}, int64(-1)},
+		{variant{VT: vtUI4, Val: 0xFFFFFFFF}, int64(0xFFFFFFFF)},
+		{variant{VT: vtUI1, Val: 0x1FF}, int64(0xFF)}, // only the low byte belongs to the value
+		{variant{VT: vtI8, Val: 1 << 62}, int64(1 << 62)},
+		{variant{VT: vtUI8, Val: 1<<64 - 1}, uint64(1<<64 - 1)},
+		{variant{VT: vtBSTR, Val: uint64(b)}, "Normal"},
+		{variant{VT: vtBSTR, Val: 0}, ""}, // NULL BSTR is the empty string
+	} {
+		got, err := decodeVariant(&c.v)
+		if err != nil || !reflect.DeepEqual(got, c.want) {
+			t.Errorf("vt %d: got %#v, %v; want %#v", c.v.VT, got, err, c.want)
+		}
+	}
+	for _, vt := range []uint16{13 /* VT_UNKNOWN */, 9 /* VT_DISPATCH */, vtByRef | vtI4, 36 /* VT_RECORD */} {
+		if _, err := decodeVariant(&variant{VT: vt, Val: 0xdeadbeef}); err == nil {
+			t.Errorf("vt 0x%x must be refused, not dereferenced", vt)
+		}
+	}
+}
+
+func TestDecodeSafeArrayEdges(t *testing.T) {
+	v, done := bstrArray(t, -5, []string{`C:\`, "", "a\x00b", strings.Repeat("x", maxVariantString+10)})
+	defer done()
+	got, err := decodeVariant(&v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := got.([]any)
+	if len(g) != 4 || g[0] != `C:\` || g[1] != "" || g[2] != "a\x00b" || len(g[3].(string)) != maxVariantString {
+		t.Errorf("negative lbound, empty, embedded NUL, capped: %#v", g[:3])
+	}
+
+	v, done = bstrArray(t, 0, nil)
+	defer done()
+	if got, err := decodeVariant(&v); err != nil || len(got.([]any)) != 0 {
+		t.Errorf("empty array: %#v %v", got, err)
+	}
+	if got, err := decodeVariant(&variant{VT: vtArray | vtBSTR}); err != nil || len(got.([]any)) != 0 {
+		t.Errorf("NULL SAFEARRAY pointer: %#v %v", got, err)
+	}
+
+	v, done = intArray(t, vtI4, []int32{1, -2, 3})
+	defer done()
+	if got, err := decodeVariant(&v); err != nil || !reflect.DeepEqual(got, []any{int64(1), int64(-2), int64(3)}) {
+		t.Errorf("I4 array: %#v %v", got, err)
+	}
+	// The variant claims 8-byte elements over a 4-byte array: refused.
+	bad := variant{VT: vtArray | vtI8, Val: v.Val}
+	if _, err := decodeVariant(&bad); err == nil {
+		t.Error("element size mismatch must be refused")
+	}
+	// Two dimensions: refused.
+	bounds := [2]safeArrayBound{{2, 0}, {2, 0}}
+	sa2, _, _ := procSafeArrayCreate.Call(vtI4, 2, uintptr(unsafe.Pointer(&bounds[0])))
+	defer procSafeArrayDestroy.Call(sa2)
+	if _, err := decodeVariant(&variant{VT: vtArray | vtI4, Val: uint64(sa2)}); err == nil {
+		t.Error("2-D array must be refused")
+	}
+	// Array of VARIANTs (VT_ARRAY|VT_VARIANT) is not a scalar array: refused.
+	if _, err := decodeVariant(&variant{VT: vtArray | 12, Val: v.Val}); err == nil {
+		t.Error("VT_ARRAY|VT_VARIANT must be refused")
+	}
+}
+
+func FuzzDecodeBSTRArray(f *testing.F) {
+	f.Add("a|b|c", int32(0))
+	f.Add("", int32(-1))
+	f.Add("\x00|\xff\xfe|日本語", int32(1<<20))
+	f.Fuzz(func(t *testing.T, joined string, lbound int32) {
+		items := strings.Split(joined, "|")
+		if len(items) > 64 {
+			items = items[:64]
+		}
+		// SafeArrayCreateVector rejects bounds that overflow; keep them sane.
+		if lbound > 1<<30 || lbound < -(1<<30) {
+			lbound %= 1 << 30
+		}
+		v, done := bstrArray(t, lbound, items)
+		defer done()
+		got, err := decodeVariant(&v)
+		if err != nil {
+			t.Fatal(err)
+		}
+		g := got.([]any)
+		if len(g) != len(items) {
+			t.Fatalf("got %d items, want %d", len(g), len(items))
+		}
+		for i, s := range items {
+			want := string([]rune(s)) // invalid UTF-8 round-trips as U+FFFD
+			if g[i] != want {
+				t.Errorf("item %d: %q, want %q", i, g[i], want)
+			}
+		}
+	})
+}
+
+func FuzzDecodeScalarVariant(f *testing.F) {
+	f.Add(uint16(vtI4), uint64(7))
+	f.Add(uint16(vtBool), uint64(1))
+	f.Fuzz(func(t *testing.T, vt uint16, val uint64) {
+		if vt&^vtTypeMsk != 0 || vt == vtBSTR || vt == vtArray {
+			return // pointer-carrying types are covered with real allocations above
+		}
+		v := variant{VT: vt, Val: val}
+		got, err := decodeVariant(&v)
+		if _, known := scalarSize[vt]; !known && vt != vtEmpty && vt != vtNull && err == nil {
+			t.Errorf("vt %d decoded to %#v instead of being refused", vt, got)
+		}
+	})
+}
+
+// The live client against the runner's own WMI.
+func TestWMILive(t *testing.T) {
+	l := &Live{}
+	rows, err := l.WMI(`root\cimv2`, "SELECT * FROM Win32_OperatingSystem", []string{"Caption", "BuildNumber", "OSArchitecture"})
+	if err != nil || len(rows) != 1 || !strings.Contains(rows[0]["Caption"].(string), "Windows") || rows[0]["BuildNumber"] == "" {
+		t.Fatalf("Win32_OperatingSystem: %v %#v", err, rows)
+	}
+	if _, err := l.WMI(`root\subscription`, qWMIFilters.query, qWMIFilters.props); err != nil {
+		t.Errorf("__EventFilter: %v", err)
+	}
+	if _, err := l.WMI(`root\no_such_namespace`, "SELECT * FROM X", []string{"Name"}); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("missing namespace must be not-exist: %v", err)
+	}
+}

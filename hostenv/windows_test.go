@@ -25,15 +25,18 @@ type fakeWin struct {
 	users   []WinUser
 	groups  map[string][]string
 	tasks   []WinTask
-	events  map[string][]WinEvent // by channel
-	dirList map[string][]string   // Windows directory listings
+	events  map[string][]WinEvent       // by channel
+	dirList map[string][]string         // Windows directory listings
+	wmi     map[string][]map[string]any // by namespace + "|" + query
+	wmiNS   map[string]bool             // namespaces that exist
 }
 
 func newFakeWin() *fakeWin {
 	h := newFake(true)
 	h.info.GOOS, h.info.GOARCH = "windows", "amd64"
 	return &fakeWin{fakeHost: h, reg: map[string]map[string]RegValue{}, subkeys: map[string][]string{},
-		denied: map[string]bool{}, groups: map[string][]string{}, events: map[string][]WinEvent{}, dirList: map[string][]string{}}
+		denied: map[string]bool{}, groups: map[string][]string{}, events: map[string][]WinEvent{}, dirList: map[string][]string{},
+		wmi: map[string][]map[string]any{}, wmiNS: map[string]bool{}}
 }
 
 func dword(n uint64) RegValue { return RegValue{Type: "DWORD", Int: n} }
@@ -182,6 +185,16 @@ func weakServer() *fakeWin {
 	w.dirs(winStartupAll, "desktop.ini")
 	w.dirs(`C:\Users\backdoor\`+winStartupPerUser, "desktop.ini", "run.lnk")
 
+	// A WMI event subscription that runs a command when the system starts.
+	ns := NamespaceSubscription + "|"
+	w.wmiNS[NamespaceSubscription] = true
+	w.wmi[ns+qWMIFilters.query] = []map[string]any{{"Name": "Updater", "Query": "SELECT * FROM __InstanceModificationEvent WITHIN 60", "EventNamespace": `root\cimv2`},
+		{"Name": "SCM Event Log Filter", "Query": "select * from MSFT_SCMEventLogEvent"}}
+	w.wmi[ns+qWMICmdLine.query] = []map[string]any{{"Name": "Updater", "CommandLineTemplate": `C:\ProgramData\u.exe --token=s3cr3t-value-xyz`, "ExecutablePath": nil}}
+	w.wmi[ns+qWMIBindings.query] = []map[string]any{
+		{"Filter": `__EventFilter.Name="Updater"`, "Consumer": `\\HOST\root\subscription:CommandLineEventConsumer.Name="Updater"`},
+		{"Filter": `__EventFilter.Name="SCM Event Log Filter"`, "Consumer": `NTEventLogEventConsumer.Name="SCM Event Log Consumer"`}}
+
 	// Event Log.
 	for i := 0; i < 25; i++ {
 		w.events["Security"] = append(w.events["Security"], WinEvent{Channel: "Security", ID: 4625, Time: "2026-11-12T02:00:00Z", Data: map[string]string{"IpAddress": "203.0.113.9"}})
@@ -192,6 +205,17 @@ func weakServer() *fakeWin {
 		WinEvent{Channel: "Security", ID: 4720, Time: "2026-11-12T02:10:00Z", Data: map[string]string{"TargetUserName": "backdoor"}})
 	w.events["System"] = []WinEvent{{Channel: "System", ID: 7045, Time: "2026-11-12T02:20:00Z", Data: map[string]string{"ServiceName": "Updater"}}}
 	return w
+}
+
+func (w *fakeWin) WMI(ns, q string, _ []string) ([]map[string]any, error) {
+	if w.denied[ns] {
+		return nil, denied("WMI", ns)
+	}
+	rows, ok := w.wmi[ns+"|"+q]
+	if !ok && !w.wmiNS[ns] {
+		return nil, &fs.PathError{Op: "WMI", Path: ns, Err: fs.ErrNotExist}
+	}
+	return rows, nil
 }
 
 // dirs registers a Windows directory listing.
@@ -256,8 +280,11 @@ func TestWindowsCollectorWeakServer(t *testing.T) {
 	for _, it := range f.Persistence.Value {
 		kinds[it.Kind] = append(kinds[it.Kind], it.Location+" "+it.Detail)
 	}
-	if f.Persistence.Status != StatusPartial || f.Persistence.Reason != ReasonNotCollected {
-		t.Errorf("persistence must admit WMI subscriptions were not read: %+v", f.Persistence)
+	if f.Persistence.Status != StatusOK {
+		t.Errorf("persistence %+v", f.Persistence)
+	}
+	if w := kinds["wmi_subscription"]; len(w) != 1 || !strings.Contains(w[0], "CommandLineEventConsumer.Updater bound to Updater [SELECT") {
+		t.Errorf("WMI subscription: %v", w)
 	}
 	if len(kinds["run_key"]) != 5 || len(kinds["service"]) != 3 || len(kinds["schtask"]) != 1 || len(kinds["startup_folder"]) != 1 {
 		t.Errorf("persistence kinds %v", kinds)
@@ -371,6 +398,47 @@ func TestDefenderExclusionsHidden(t *testing.T) {
 	delete(w.reg, KeyDefender)
 	if am := (WindowsCollector{}).Collect(context.Background(), w).Antimalware; am.Status != StatusUnknown || am.Reason != ReasonNotInstalled {
 		t.Errorf("no Defender: %+v", am)
+	}
+}
+
+func TestWMISubscriptionsUnreadable(t *testing.T) {
+	w := weakServer()
+	w.denied[NamespaceSubscription] = true
+	p := WindowsCollector{}.Collect(context.Background(), w).Persistence
+	if p.Status != StatusPartial || p.Reason != ReasonPermission || !strings.Contains(p.Detail, "WMI root\\subscription") {
+		t.Errorf("an unreadable subscription namespace must be partial: %+v", p)
+	}
+	for _, it := range p.Value {
+		if strings.Contains(it.Command, "s3cr3t") {
+			t.Errorf("secret in %+v", it)
+		}
+	}
+}
+
+func TestDefenderRuntimeStatus(t *testing.T) {
+	w := weakServer()
+	w.wmiNS[NamespaceDefender] = true
+	w.wmi[NamespaceDefender+"|"+qMpStatus.query] = []map[string]any{{"AMRunningMode": "Passive Mode", "AMServiceEnabled": true,
+		"AntivirusEnabled": true, "RealTimeProtectionEnabled": true, "AntivirusSignatureAge": float64(3)}} // float64: as a JSON replay yields
+	am := WindowsCollector{}.Collect(context.Background(), w).Antimalware
+	if !am.Value.RealTime || am.Value.SignatureAgeDays != 3 || am.Value.Product != "Microsoft Defender (Passive Mode)" {
+		t.Errorf("MSFT_MpComputerStatus must win over the registry: %+v", am)
+	}
+	w.denied[NamespaceDefender] = true
+	if am := (WindowsCollector{}).Collect(context.Background(), w).Antimalware; am.Status != StatusPartial || am.Value.RealTime {
+		t.Errorf("unreadable runtime status: settings decide, marked partial: %+v", am)
+	}
+}
+
+func TestWMIRef(t *testing.T) {
+	for in, want := range map[string][2]string{
+		`__EventFilter.Name="x"`: {"__EventFilter", "x"},
+		`\\H\root\subscription:CommandLineEventConsumer.Name="a \"b\""`: {"CommandLineEventConsumer", `a "b"`},
+		`garbage`: {"", ""},
+	} {
+		if c, n := wmiRef(in); c != want[0] || n != want[1] {
+			t.Errorf("wmiRef(%q) = %q %q", in, c, n)
+		}
 	}
 }
 
@@ -537,7 +605,7 @@ func TestWindowsRecordReplay(t *testing.T) {
 		return nil
 	})
 	s := all.String()
-	for _, leak := range []string{"backdoor", "111-222-333", "hunter22", "AutoLogon#2026", "kiosk", "192.0.2.77"} {
+	for _, leak := range []string{"backdoor", "111-222-333", "hunter22", "AutoLogon#2026", "kiosk", "192.0.2.77", "s3cr3t-value-xyz"} {
 		if strings.Contains(s, leak) {
 			t.Errorf("fixture leaks %q", leak)
 		}

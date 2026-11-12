@@ -29,6 +29,10 @@ jobs:
         run: go vet ./hostenv/ ./checks/ ./cmd/hostfacts/
       - name: test hostenv and checks
         run: go test ./hostenv/ ./checks/
+      - name: fuzz VARIANT / SAFEARRAY decoding
+        run: |
+          go test -run '^$' -fuzz '^FuzzDecodeBSTRArray$' -fuzztime 30s ./hostenv/
+          go test -run '^$' -fuzz '^FuzzDecodeScalarVariant$' -fuzztime 30s ./hostenv/
       - name: hostfacts smoke (live facts, no panic)
         run: |
           go build -o hostfacts.exe ./cmd/hostfacts/
