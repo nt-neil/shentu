@@ -1,3 +1,5 @@
+//go:build unix
+
 package tools
 
 // Phase 1c zero-diff harness: the pre-migration implementations, kept here
