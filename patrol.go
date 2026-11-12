@@ -287,7 +287,7 @@ func checks(ctx context.Context, cfg *Config, env *tools.Env, st *state, daily b
 // patrol runs once (from a systemd timer): checks → LLM explanation → notify.
 // With daily set it always reports, using the daily-patrol skill.
 func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool) error {
-	if err := os.MkdirAll(cfg.StateDir, 0o700); err != nil {
+	if err := ensureStateDir(cfg.StateDir); err != nil {
 		return err
 	}
 	st := loadState(cfg.StateDir)

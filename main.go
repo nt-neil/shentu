@@ -205,7 +205,7 @@ func printable(s string) string {
 
 // survey runs the site survey and stores it as the baseline that patrol compares with.
 func survey(ctx context.Context, cfg *Config, env *tools.Env) (tools.SiteProfile, error) {
-	if err := os.MkdirAll(cfg.StateDir, 0o700); err != nil {
+	if err := ensureStateDir(cfg.StateDir); err != nil {
 		return tools.SiteProfile{}, err
 	}
 	st := loadState(cfg.StateDir)
