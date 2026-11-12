@@ -6,6 +6,16 @@ a release are not written here: they are worked out from the rule snapshots in
 `docs/site-src/rules-history/`. `CHANGELOG.zh-TW.md` holds the same releases in Traditional
 Chinese for the zh-TW pages; keep the two in step.
 
+## v0.3.0 (unreleased)
+
+- Failed SSH logins are read from journald first: its ssh and sshd units are labelled by
+  journald itself, so a local user cannot forge them. The text logs (`auth.log`, `secure`)
+  are read when journald is missing, times out (60 s), or has no sshd entries; anyone on the
+  host can write an sshd line to them with `logger`, so `auth_events` is then partial with
+  the new reason `unverified_source`, and a brute-force finding carries a note saying so.
+  A journal that hides the system's entries from a non-root user is no longer reported as
+  "no failed logins".
+
 ## v0.2.5 — 2026-11-13
 
 - `app_code_audit` follows calls across files: input read in one file and used in a sink

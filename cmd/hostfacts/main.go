@@ -33,6 +33,7 @@ func main() {
 	var users, hosts list
 	flag.Var(&users, "mask-user", "extra user `name` to mask (repeatable)")
 	flag.Var(&hosts, "mask-host", "extra host `name` to mask (repeatable)")
+	flag.DurationVar(&hostenv.JournalTimeout, "journal-timeout", hostenv.JournalTimeout, "stop reading journald after `d` (at most the default; lower it to record the fallback)")
 	flag.Parse()
 	if err := run(*record, *replay, *runChecks, users, hosts); err != nil {
 		fmt.Fprintln(os.Stderr, "hostfacts:", err)

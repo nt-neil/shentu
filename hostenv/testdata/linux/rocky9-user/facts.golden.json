@@ -5400,8 +5400,9 @@
     }
   },
   "auth_events": {
-    "status": "ok",
-    "detail": "from journald",
+    "status": "unknown",
+    "reason": "permission_denied",
+    "detail": "none (journald unavailable (permission denied: journald hides the system's entries from this user); /var/log/secure (permission_denied) unreadable)",
     "value": {
       "window_hours": 24
     }

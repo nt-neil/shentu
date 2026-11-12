@@ -13581,8 +13581,9 @@
     }
   },
   "auth_events": {
-    "status": "ok",
-    "detail": "from /var/log/auth.log",
+    "status": "partial",
+    "reason": "unverified_source",
+    "detail": "from /var/log/auth.log (unverified: journald unavailable (hostenv: not in fixture: cmd /usr/bin/journalctl -u ssh -u sshd --since 2026-11-11 05:51:32 UTC -o short-iso --no-pager); text logs do not record the sender; local users can forge sshd lines)",
     "value": {
       "window_hours": 24
     }

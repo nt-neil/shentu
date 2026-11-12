@@ -117,7 +117,7 @@ func TestAuthLogStreamsInFlatMemory(t *testing.T) {
 		run  func(add func(string)) error
 	}{
 		{"auth.log 200 MB", func(add func(string)) error {
-			_, err := LinuxCollector{}.ScanAuthLogs(context.Background(), live, []string{plain}, since, add)
+			_, _, err := LinuxCollector{}.ScanAuthLogs(context.Background(), live, []string{plain}, since, func() func(string) { return add })
 			return err
 		}},
 		{"secure.1.gz 100 MB unpacked", func(add func(string)) error { return ScanLines(live, gzPath, add) }},
