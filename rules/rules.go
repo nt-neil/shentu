@@ -69,6 +69,11 @@ type Args struct {
 	// file gives such an object ($q = new WP_Query; $q->query($args)). A
 	// receiver the file says nothing about still counts.
 	NotReceiver []string `toml:"not_receiver"`
+	// UnlessSubscript: the argument does not count when it is, as a whole, one
+	// item of one of these (request.files["f"]): an uploaded file's stream,
+	// which zipfile.ZipFile reads as a file object, not a path. Written in the
+	// call only, not through a variable.
+	UnlessSubscript []string `toml:"unless_subscript"`
 }
 
 // SourceArgs makes call sources input only when an argument is one of a few
