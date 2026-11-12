@@ -942,7 +942,8 @@ func (a *analysis) returnsUnknown(key string) bool {
 }
 
 // relevant reports whether a function can matter to the rule: its body holds
-// one of the rule's sources, sinks or sanitizers (or a number conversion), or
+// one of the rule's sources, sinks or sanitizers (or a number conversion, or a
+// return of a string constant: safe_next() returning '/'), or
 // it calls, directly or not, a function of the file that does. The others keep
 // the default (the result carries any argument's input), which spares
 // analysing every function of a large file for every rule. It is worked out for
@@ -966,6 +967,14 @@ func (a *analysis) toksRelevant(t []Token) bool {
 			if tk.Kind == Ident && checkWords[tk.Text] {
 				return true
 			}
+		}
+	}
+	if r := t[1:]; len(t) > 1 && t[0].word("return") {
+		if len(r) > 0 && r[len(r)-1].op(";") {
+			r = r[:len(r)-1]
+		}
+		if r = stripParens(r); len(r) == 1 && r[0].Kind == Str && len(r[0].Parts) == 0 {
+			return true // return '/': a helper that may give back a constant instead of its argument
 		}
 	}
 	for i := range t {
