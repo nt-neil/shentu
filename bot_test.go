@@ -63,7 +63,10 @@ func testBot(t *testing.T, model *hostileModel, allowControl bool) (*bot, *fakeT
 	t.Cleanup(srv.Close)
 	cfg := &Config{}
 	cfg.LLM.MaxSteps = 5
-	cfg.StateDir, _ = filepath.EvalSymlinks(t.TempDir())
+	tmp, _ := filepath.EvalSymlinks(t.TempDir())
+	// Not made here: Shentu makes its state directory (on Windows with its
+	// protected permissions, refusing one someone else made).
+	cfg.StateDir = filepath.Join(tmp, "state")
 	cfg.Bot.Interaction, cfg.Bot.Answers, cfg.Bot.Confirm, cfg.Bot.Protection = 2, 4, 3, 2
 	if allowControl {
 		cfg.Bot.Interaction = 3
