@@ -36,6 +36,9 @@ const (
 	// than the system's administrators (root; SYSTEM, Administrators,
 	// TrustedInstaller), so the content is not used.
 	ReasonUntrusted Reason = "untrusted_owner"
+	// ReasonUnverified: read, but the source does not record who wrote
+	// it, so any local user could have forged the content.
+	ReasonUnverified Reason = "unverified_source"
 )
 
 // Obs wraps every fact so that "unknown" can never be mistaken for "empty".

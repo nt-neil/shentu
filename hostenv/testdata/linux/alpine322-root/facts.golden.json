@@ -4160,7 +4160,8 @@
     }
   },
   "auth_events": {
-    "status": "ok",
+    "status": "partial",
+    "reason": "unverified_source",
     "detail": "from /var/log/messages (unverified: busybox syslog does not record the sender; local users can forge sshd lines)",
     "value": {
       "window_hours": 24

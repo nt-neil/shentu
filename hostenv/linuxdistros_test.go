@@ -160,7 +160,7 @@ func TestAlpineCollector(t *testing.T) {
 			t.Errorf("missing %s in %v", k, got)
 		}
 	}
-	if n := f.AuthEvents.Value.FailedBySrc["203.0.113.66"]; f.AuthEvents.Status != StatusOK || n != 30 || !strings.Contains(f.AuthEvents.Detail, "unverified") {
+	if n := f.AuthEvents.Value.FailedBySrc["203.0.113.66"]; f.AuthEvents.Status != StatusPartial || f.AuthEvents.Reason != ReasonUnverified || n != 30 || !strings.Contains(f.AuthEvents.Detail, "unverified") {
 		t.Errorf("busybox syslog sshd lines: %+v", f.AuthEvents)
 	}
 	// Another facility (logger -p user.info -t sshd) does not count.

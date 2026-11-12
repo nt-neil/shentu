@@ -368,5 +368,8 @@ func (c LinuxCollector) AuthEvents(ctx context.Context, src Source, at time.Time
 	if n := agg.Evicted(); n > 0 {
 		detail += "; " + strconv.Itoa(n) + " low-activity sources not tracked (more than " + strconv.Itoa(MaxTrackedSources) + " sources)"
 	}
+	if strings.Contains(source, "(unverified:") { // busybox syslog: local users can forge sshd lines
+		return Partial(ev, ReasonUnverified, detail)
+	}
 	return Obs[AuthEvents]{Status: StatusOK, Detail: detail, Value: ev}
 }

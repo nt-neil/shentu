@@ -214,3 +214,13 @@ func TestKeysSymlinkCheck(t *testing.T) {
 		t.Errorf("%+v", got)
 	}
 }
+
+// Login counts from a log that does not record the sender still fail, but carry a cannot-tell note saying why.
+func TestBruteforceUnverifiedSource(t *testing.T) {
+	o := hostenv.Partial(hostenv.AuthEvents{WindowHours: 24, FailedBySrc: map[string]int{"203.0.113.7": 30}},
+		hostenv.ReasonUnverified, "from /var/log/messages (unverified)")
+	out := bruteforce(&hostenv.Facts{AuthEvents: o})
+	if len(out) != 2 || out[0].Status != StatusFail || out[1].Status != StatusCannotTell || out[1].Reason != "unverified_source" {
+		t.Fatalf("got %+v", out)
+	}
+}
