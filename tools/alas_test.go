@@ -7,10 +7,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -251,5 +253,53 @@ func TestPackageVulnsNoPackages(t *testing.T) {
 	out, err := PackageVulns(context.Background(), http.DefaultClient, "")
 	if err == nil || !strings.Contains(err.Error(), "no installed packages") || out != nil {
 		t.Errorf("no packages: %v %v", out, err)
+	}
+}
+
+// N-D4: the updateinfo href and its checksum come from the one
+// <data type="updateinfo"> entry. testdata/al2023-repomd.xml is the AL2023
+// core repository's repomd.xml as served on 2026-11-13; another entry naming
+// an updateinfo file (here a zchunk one) is put before it.
+func TestALASRepomdOneEntry(t *testing.T) {
+	real, err := os.ReadFile("testdata/al2023-repomd.xml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var gz bytes.Buffer
+	zw := gzip.NewWriter(&gz)
+	zw.Write([]byte(kernelFix))
+	zw.Close()
+	sum := sha256.Sum256(gz.Bytes())
+	repomd := regexp.MustCompile(`(<data type="updateinfo">\s*<checksum type="sha256">)[0-9a-f]{64}`).
+		ReplaceAll(real, []byte("${1}"+hex.EncodeToString(sum[:])))
+	decoy := `<data type="updateinfo_zck"><checksum type="sha256">` + strings.Repeat("0", 64) +
+		`</checksum><location href="repodata/updateinfo.xml.zck"/></data>`
+	repomd = bytes.Replace(repomd, []byte(`<data type="updateinfo">`), []byte(decoy+`<data type="updateinfo">`), 1)
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/mirror.list":
+			w.Write([]byte(srv.URL + "/repo/\n"))
+		case "/repo/repodata/repomd.xml":
+			w.Write(repomd)
+		case "/repo/repodata/updateinfo.xml.gz":
+			w.Write(gz.Bytes())
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	oldP, oldC := mirrorPrefixes, alasCacheDir
+	t.Cleanup(func() { mirrorPrefixes, alasCacheDir = oldP, oldC })
+	cache := t.TempDir()
+	alasCacheDir = func() string { return cache }
+	mirrorPrefixes = []string{srv.URL + "/"}
+	rc, _, err := updateinfo(context.Background(), srv.Client(), srv.URL+"/mirror.list")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rc.Close()
+	if b, _ := io.ReadAll(rc); string(b) != kernelFix {
+		t.Errorf("read %q", b)
 	}
 }

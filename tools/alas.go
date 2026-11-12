@@ -34,10 +34,11 @@ type alasHit struct {
 }
 
 var (
-	updateinfoHref = regexp.MustCompile(`href="([^"]*updateinfo[^"]*)"`)
-	// updateinfoData is repomd's entry for updateinfo; its checksum is the
-	// sha256 of the file as served (compressed).
+	// updateinfoData is repomd's entry for updateinfo: the file's location
+	// and the sha256 of the file as served (compressed) are both taken from
+	// it, so they cannot come from two entries.
 	updateinfoData   = regexp.MustCompile(`(?s)<data type="updateinfo">.*?</data>`)
+	updateinfoHref   = regexp.MustCompile(`<location href="([^"]+)"`)
 	updateinfoSHA256 = regexp.MustCompile(`<checksum type="sha256">([0-9a-fA-F]{64})</checksum>`)
 )
 
@@ -170,15 +171,14 @@ func updateinfo(ctx context.Context, hc *http.Client, mirrorList string) (io.Rea
 	if err != nil {
 		return nil, "", fmt.Errorf("repomd: %w", err)
 	}
-	m := updateinfoHref.FindSubmatch(repomd)
+	d := updateinfoData.Find(repomd)
+	m := updateinfoHref.FindSubmatch(d)
 	if m == nil {
 		return nil, "", errors.New("the repository lists no updateinfo")
 	}
 	want := "" // the checksum repomd gives, when it gives one
-	if d := updateinfoData.Find(repomd); d != nil {
-		if c := updateinfoSHA256.FindSubmatch(d); c != nil {
-			want = strings.ToLower(string(c[1]))
-		}
+	if c := updateinfoSHA256.FindSubmatch(d); c != nil {
+		want = strings.ToLower(string(c[1]))
 	}
 	url := base + string(m[1])
 	sum := sha256.Sum256([]byte(url))
