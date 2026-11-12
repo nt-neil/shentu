@@ -13,9 +13,10 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"syscall"
 
 	"github.com/BurntSushi/toml"
+
+	"github.com/nt-neil/shentu/internal/osutil"
 )
 
 var appVulns = Tool{
@@ -113,7 +114,7 @@ func FindLockfiles(roots []string) []Lockfile {
 // When seen is set, the opened file must be the same file the walk saw, so a parent
 // folder swapped for a symlink in between cannot redirect the read.
 func readSmallRegular(p string, max int64, seen os.FileInfo) ([]byte, bool) {
-	f, err := os.OpenFile(p, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	f, err := osutil.OpenNoFollow(p, os.O_RDONLY, 0, true)
 	if err != nil {
 		return nil, false
 	}
