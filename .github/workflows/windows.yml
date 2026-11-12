@@ -41,8 +41,10 @@ jobs:
           HOSTENV_REQUIRE_SDK: "1" # vtable slots must be checked against the SDK headers, not skipped
         run: |
           # One command per line: under bash -e a failure inside an && list is not fatal.
+          SHENTU_SNAPSHOT_WATCH=3m go test -v -count=1 -run 'TestSnapshotNoise' -timeout 10m ./hostenv/
           go test -v -run 'TestVtableSlotsMatchSDK|TestCollectLeavesHostUnchanged|TestFirewallPolicyLive' ./hostenv/
           go test ./hostenv/ ./checks/ ./internal/msrc/
+          SHENTU_SNAPSHOT_WATCH=2m go test -v -count=1 -run 'TestSnapshotNoise' -timeout 10m ./hostenv/ # after collections: delayed writes
           go test -v -run 'TestSecureDir|TestSecureDirRefusesSquatted|TestTrustConfig|TestTrustConfigMissingAndLinks|TestSkillsNeedTrustedFolder|TestStateReadyRefusesForeignState|TestCheckTrustedACETypes|TestSetupNotOnWindows|TestSecureDirRepairOnlyAtInstall|TestStateDirParentsChecked|TestStateDirParentsForms' .
           # Telegram bot, offline: a fake Bot API and a fake model (httptest).
           go test -run 'Bot|TOTP|MarkdownToTelegram|Welcome|Schedule|NextDaily' .
