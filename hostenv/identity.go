@@ -27,6 +27,8 @@ type Masker struct {
 	nV6   int
 	nKey  int
 	keys  map[string]string
+	hw    map[string]string // MAC addresses, DUIDs, IAIDs
+
 }
 
 type pair struct {
@@ -39,6 +41,10 @@ var (
 	ipv6Re    = regexp.MustCompile(`(?i)\b(?:[0-9a-f]{1,4}:){2,7}[0-9a-f]{1,4}\b|(?i)\b(?:[0-9a-f]{1,4}:)+:(?:[0-9a-f]{1,4}(?::[0-9a-f]{1,4})*)?\b`)
 	sshKeyRe  = regexp.MustCompile(`\bAAAA[0-9A-Za-z+/]{16,}={0,3}`)
 	akLineRe  = regexp.MustCompile(`^(.*?\b(?:ssh-[a-z0-9-]+|ecdsa-sha2-[a-z0-9-]+|sk-[a-z0-9@.-]+))\s+(\S+)(?:\s+.*)?$`)
+	// hwIDRe is four or more hex bytes joined by ":" (or "-"): a MAC
+	// address, a DHCPv6 DUID, an IAID (dhcpcd logs them), all derived from
+	// the network card. Times (12:34:56) have three groups and stay.
+	hwIDRe    = regexp.MustCompile(`(?i)\b[0-9a-f]{2}(?::[0-9a-f]{2}){3,}\b|\b[0-9a-f]{2}(?:-[0-9a-f]{2}){5}\b`)
 	procNetRe = regexp.MustCompile(`\b([0-9A-F]{8}|[0-9A-F]{32}):([0-9A-F]{4})\b`)
 )
 
@@ -117,6 +123,7 @@ func (m *Masker) text(s string, ips, users bool) string {
 	}
 	s = MaskSecrets(s)
 	s = sshKeyRe.ReplaceAllStringFunc(s, m.key)
+	s = hwIDRe.ReplaceAllStringFunc(s, m.hwID)
 	for _, p := range m.repl {
 		if !users && strings.HasPrefix(p.to, "user") {
 			continue
@@ -133,13 +140,58 @@ func (m *Masker) text(s string, ips, users bool) string {
 		})
 		s = ipv6Re.ReplaceAllStringFunc(s, func(t string) string {
 			ip := net.ParseIP(t)
-			if ip == nil || ip.To4() != nil {
+			if ip == nil || ip.To4() != nil || hwShaped(t) {
 				return t
 			}
 			return m.ip(ip).String()
 		})
 	}
 	return s
+}
+
+// hwShaped: two-digit groups only, no "::" - part of a MAC or DUID, which
+// hwIDRe has handled, not an IPv6 address.
+func hwShaped(t string) bool {
+	if strings.Contains(t, "::") {
+		return false
+	}
+	for _, g := range strings.Split(t, ":") {
+		if len(g) != 2 {
+			return false
+		}
+	}
+	return true
+}
+
+// hwID replaces a hardware-derived id with one of the same shape: as many
+// bytes, the same separator, 02 first (locally administered) and a counter
+// last, the same id always the same placeholder.
+func (m *Masker) hwID(id string) string {
+	if m.hw == nil {
+		m.hw = map[string]string{}
+	}
+	k := strings.ToLower(id)
+	if v, ok := m.hw[k]; ok {
+		return v
+	}
+	sep := ":"
+	if strings.Contains(id, "-") {
+		sep = "-"
+	}
+	n := len(strings.Split(id, sep))
+	parts := make([]string, n)
+	for i := range parts {
+		parts[i] = "00"
+	}
+	parts[0] = "02"
+	c := len(m.hw)/2 + 1
+	parts[n-1] = fmt.Sprintf("%02x", c&0xff)
+	if n > 2 {
+		parts[n-2] = fmt.Sprintf("%02x", (c>>8)&0xff)
+	}
+	v := strings.Join(parts, sep)
+	m.hw[k], m.hw[v] = v, v
+	return v
 }
 
 func (m *Masker) key(k string) string {
