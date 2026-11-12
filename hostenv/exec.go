@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os/exec"
 	"path"
 	"path/filepath"
@@ -53,7 +54,31 @@ var bigCommands = map[string]struct {
 	timeout   time.Duration
 }{}
 
+type bigLimits = struct {
+	maxStdout int
+	timeout   time.Duration
+}
+
+// bigPatterns are registered commands with argument slots.
+var bigPatterns = map[string][]string{}
+
+// bigFor finds argv's limits, matching slot patterns as Allowed does.
+func bigFor(argv []string) (bigLimits, bool) {
+	if b, ok := bigCommands[argvKey(argv)]; ok {
+		return b, true
+	}
+	for k, p := range bigPatterns {
+		if matchSlots(p, argv) {
+			return bigCommands[k], true
+		}
+	}
+	return bigLimits{}, false
+}
+
 func registerBig(argv []string, maxStdout int, timeout time.Duration) {
+	if hasSlot(argv) {
+		bigPatterns[argvKey(argv)] = argv
+	}
 	bigCommands[argvKey(argv)] = struct {
 		maxStdout int
 		timeout   time.Duration
@@ -99,12 +124,12 @@ func hasSlot(argv []string) bool {
 // shape, not for any text: it lets "journalctl --since <time>" be allowed
 // without allowing every argument. Slots are only matched, never split.
 const (
-	// SlotTime is "2006-01-02 15:04:05".
+	// SlotTime is "2006-01-02 15:04:05", optionally followed by " UTC".
 	SlotTime = "\x00slot:time"
 )
 
 var slotShapes = map[string]*regexp.Regexp{
-	SlotTime: regexp.MustCompile(`^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$`),
+	SlotTime: regexp.MustCompile(`^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d(?: UTC)?$`),
 }
 
 // matchSlots reports whether argv equals pattern, slot arguments matched
@@ -183,7 +208,7 @@ func (r *Runner) Run(ctx context.Context, argv []string) (CmdResult, error) {
 	if timeout <= 0 {
 		timeout = DefaultTimeout
 	}
-	if big, ok := bigCommands[argvKey(argv)]; ok {
+	if big, ok := bigFor(argv); ok {
 		timeout, maxOut = max(timeout, big.timeout), max(maxOut, big.maxStdout)
 	}
 	timeout = min(timeout, MaxTimeout)
@@ -252,4 +277,53 @@ func (b *capBuffer) Write(p []byte) (int, error) {
 		b.over = true
 	}
 	return len(p), nil
+}
+
+// RunLines runs an allowlisted command and streams its stdout, with the
+// same rules as Run (no shell, fixed environment, timeout) and no stdout
+// cap: memory is the callback's business.
+func (r *Runner) RunLines(ctx context.Context, argv []string, fn func(line string)) (CmdResult, error) {
+	if !r.Allowed(argv) {
+		return CmdResult{}, fmt.Errorf("%w: %q", ErrNotAllowed, argv)
+	}
+	timeout := r.Timeout
+	if timeout <= 0 {
+		timeout = DefaultTimeout
+	}
+	timeout = min(timeout, MaxTimeout)
+	if big, ok := bigFor(argv); ok {
+		timeout = max(timeout, big.timeout) // a registered stream may outlast MaxTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	cmd.Env = fixedEnv()
+	cmd.WaitDelay = 2 * time.Second
+	stderr := &capBuffer{max: orDefault(r.MaxStderr, DefaultMaxStderr)}
+	cmd.Stderr = stderr
+	out, err := cmd.StdoutPipe()
+	if err != nil {
+		return CmdResult{}, err
+	}
+	if err := cmd.Start(); err != nil {
+		return CmdResult{}, err
+	}
+	serr := scan(out, fn)
+	if serr != nil {
+		io.Copy(io.Discard, out) // let the command finish
+	}
+	err = cmd.Wait()
+	res := CmdResult{Stderr: MaskSecrets(stderr.String())}
+	if ctx.Err() == context.DeadlineExceeded {
+		return res, ErrTimeout
+	}
+	var exit *exec.ExitError
+	switch {
+	case err == nil:
+	case errors.As(err, &exit):
+		res.ExitCode = exit.ExitCode()
+	default:
+		return res, err
+	}
+	return res, serr
 }

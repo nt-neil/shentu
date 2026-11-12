@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/nt-neil/shentu/hostenv"
@@ -30,11 +31,13 @@ var sshLogins = Tool{
 type SSHSource = hostenv.SSHSource
 
 // SSHSummary reads auth logs (or journald when there are none) and groups events by IP,
-// through hostenv.
+// streaming through hostenv: memory does not grow with the logs.
 func SSHSummary(ctx context.Context, env *Env, since time.Time, onlyIP string) (map[string]any, error) {
-	lines, source := linux.AuthLogLines(ctx, hostSource(), env.LogPaths, since)
-	list := hostenv.SSHLogins(lines, since, time.Now(), onlyIP)
-	return map[string]any{"source": source, "since": since, "sources": list}, nil
+	agg := hostenv.NewSSHLogins(since, time.Now(), onlyIP)
+	source, _ := linux.ScanAuthLogs(ctx, hostSource(), env.LogPaths, since, agg.Add)
+	out := map[string]any{"source": source, "since": since, "sources": agg.Result()}
+	if n := agg.Evicted(); n > 0 {
+		out["note"] = fmt.Sprintf("%d low-activity sources were not tracked (more than %d sources)", n, hostenv.MaxTrackedSources)
+	}
+	return out, nil
 }
-
-func readLines(path string) ([]string, error) { return hostenv.ReadLogLines(hostSource(), path) }

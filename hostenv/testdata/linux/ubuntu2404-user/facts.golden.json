@@ -12895,7 +12895,7 @@
   "auth_events": {
     "status": "unknown",
     "reason": "not_recorded",
-    "detail": "none (no auth log readable and journalctl failed: hostenv: not in fixture: cmd /usr/bin/journalctl -u ssh -u sshd --since 2026-11-11 02:39:49 -o short-iso --no-pager)",
+    "detail": "none (no auth log readable and journalctl failed: hostenv: not in fixture: cmd /usr/bin/journalctl -u ssh -u sshd --since 2026-11-11 02:39:49 UTC -o short-iso --no-pager)",
     "value": {
       "window_hours": 24
     }

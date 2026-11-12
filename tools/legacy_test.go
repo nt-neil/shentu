@@ -882,7 +882,11 @@ func TestLegacySSHLogins(t *testing.T) {
 	since := now.Add(-24 * time.Hour)
 	for _, only := range []string{"", "192.0.2.10"} {
 		want := legacySSHAggregate(lines, since, only)
-		got := hostenv.SSHLogins(lines, since, now, only)
+		agg := hostenv.NewSSHLogins(since, now, only)
+		for _, l := range lines {
+			agg.Add(l)
+		}
+		got := agg.Result()
 		// The legacy order of equal counts was map order; compare by IP, and
 		// check the new list is the legacy one cut at the same 50.
 		sortIP := func(l []SSHSource) { sort.Slice(l, func(i, j int) bool { return l[i].IP < l[j].IP }) }
