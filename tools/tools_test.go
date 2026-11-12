@@ -183,6 +183,9 @@ func (emptyJournal) RunLinesUnmasked(_ context.Context, _ []string, fn func(stri
 
 // An empty journal with no text log to confirm it is not complete.
 func TestSSHSummaryEmptyJournalIncomplete(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("ssh_logins reads the Security log on Windows, not journald")
+	}
 	prevHost := hostSource
 	hostSource = func() hostenv.Source {
 		return emptyJournal{&hostenv.Live{Remap: map[string]string{"/var/log": t.TempDir()}}}
