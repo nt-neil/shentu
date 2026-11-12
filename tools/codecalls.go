@@ -350,9 +350,10 @@ func saveWalkPos(name string, p *walkPos) {
 }
 
 // pathCmp orders paths the way filepath.WalkDir visits them: name by name,
-// a folder before what it holds.
+// a folder before what it holds (split at the OS separator, \ on Windows).
 func pathCmp(a, b string) int {
-	as, bs := strings.Split(a, "/"), strings.Split(b, "/")
+	sep := string(filepath.Separator)
+	as, bs := strings.Split(a, sep), strings.Split(b, sep)
 	for i := 0; i < len(as) && i < len(bs); i++ {
 		if c := strings.Compare(as[i], bs[i]); c != 0 {
 			return c
