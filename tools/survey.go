@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -45,6 +46,14 @@ type Risk struct {
 	Severity string `json:"severity"`
 	Summary  string `json:"summary"`
 }
+
+// uncheckedRisks are the risks that say a check could not tell (a file it
+// needs could not be read): reports list them apart, every time, and never
+// push them as alerts.
+var uncheckedRisks = map[string]bool{"ssh:unreadable": true}
+
+// Unchecked reports whether r says a check could not tell.
+func Unchecked(r Risk) bool { return uncheckedRisks[r.Key] }
 
 // SiteProfile is the survey result. It is stored by patrol as the baseline.
 type SiteProfile struct {
@@ -253,10 +262,30 @@ func sshRisks(ssh map[string]string, unread []string) []Risk {
 		out = append(out, Risk{"ssh:root", "warning", "SSH allows root to log in with a password (PermitRootLogin yes)"})
 	}
 	if ssh["passwordauthentication"] == "unknown" || ssh["permitrootlogin"] == "unknown" {
+		why := "; check that the files are there and readable"
+		if slices.ContainsFunc(unread, func(u string) bool { return strings.HasSuffix(u, "(permission denied)") }) {
+			why = "; run Shentu as root, as sshd reads them"
+		}
 		out = append(out, Risk{"ssh:unreadable", "info", "cannot tell the SSH settings (PasswordAuthentication, PermitRootLogin): " +
-			strings.Join(unread, ", ") + " cannot be read without the permission; run Shentu as root"})
+			strings.Join(unread, ", ") + " could not be read" + why})
 	}
 	return out
+}
+
+// sshdFields splits one sshd_config line into its keyword and arguments: the
+// keyword ends at the first white space or "=", which may have white space
+// around it (PermitRootLogin=yes, PasswordAuthentication = yes), as in sshd.
+func sshdFields(line string) []string {
+	line = strings.TrimSpace(line)
+	i := strings.IndexAny(line, " \t=")
+	if i < 0 {
+		return []string{line}
+	}
+	rest := strings.TrimLeft(line[i:], " \t")
+	if strings.HasPrefix(rest, "=") {
+		rest = rest[1:]
+	}
+	return append([]string{line[:i]}, strings.Fields(rest)...)
 }
 
 // sshdSettings returns the effective global sshd settings that matter for security,
@@ -270,8 +299,14 @@ func sshdSettings() (map[string]string, string, []string) {
 	got := map[string]bool{}
 	h := sha256.New()
 	var unread []string
-	unknown := func(path string) {
-		unread = append(unread, path)
+	unknown := func(path string, err error) {
+		why := err.Error()
+		if errors.Is(err, fs.ErrPermission) { // EACCES, EPERM
+			why = "permission denied"
+		} else if pe := (*fs.PathError)(nil); errors.As(err, &pe) {
+			why = pe.Err.Error()
+		}
+		unread = append(unread, path+" ("+why+")")
 		for k := range want {
 			if !got[k] {
 				want[k], got[k] = "unknown", true
@@ -286,13 +321,13 @@ func sshdSettings() (map[string]string, string, []string) {
 		b, err := os.ReadFile(path)
 		if err != nil {
 			if !errors.Is(err, fs.ErrNotExist) {
-				unknown(path)
+				unknown(path, err)
 			}
 			return true
 		}
 		h.Write(b)
 		for _, line := range strings.Split(string(b), "\n") {
-			f := strings.Fields(line)
+			f := sshdFields(line)
 			if len(f) < 2 || strings.HasPrefix(f[0], "#") {
 				continue
 			}
@@ -307,7 +342,7 @@ func sshdSettings() (map[string]string, string, []string) {
 					}
 					// Glob says nothing of a folder it cannot list.
 					if _, err := os.ReadDir(filepath.Dir(pat)); err != nil && !errors.Is(err, fs.ErrNotExist) {
-						unknown(filepath.Dir(pat))
+						unknown(filepath.Dir(pat), err)
 					}
 					files, _ := filepath.Glob(pat)
 					sort.Strings(files)

@@ -1,8 +1,10 @@
 package tools
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/binary"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,9 +13,9 @@ import (
 
 // fakeKey makes a public key line at run time, so no key sits in the repository.
 func fakeKey(t *testing.T) string {
-	b := make([]byte, 51)
+	b := make([]byte, 32)
 	rand.Read(b)
-	return "ssh-" + "ed25519 " + base64.StdEncoding.EncodeToString(b)
+	return "ssh-" + "ed25519 " + keyBlob("ssh-ed25519", b)
 }
 
 func TestSharedKeys(t *testing.T) {
@@ -141,5 +143,55 @@ func TestUnpackagedPAMRealRoot(t *testing.T) {
 	}
 	if got := unpackagedPAM(); len(got) > 0 {
 		t.Errorf("stock PAM modules reported as unpackaged: %v", got)
+	}
+}
+
+// keyBlob builds a public key blob of keyType at run time (no key sits in the
+// repository) and returns it in base64.
+func keyBlob(keyType string, key []byte) string {
+	var b []byte
+	put := func(s []byte) {
+		b = binary.BigEndian.AppendUint32(b, uint32(len(s)))
+		b = append(b, s...)
+	}
+	put([]byte(keyType))
+	put(key)
+	return base64.StdEncoding.EncodeToString(b)
+}
+
+// sshd takes a key type's short name in any case (ED25519, rsa) as well as the
+// full name, after options too; the type that counts is the one in the key. A
+// line that is neither a key nor a comment is reported, not dropped.
+func TestAuthorizedKeyLines(t *testing.T) {
+	ed, rsa := keyBlob("ssh-ed25519", bytes.Repeat([]byte{1}, 32)), keyBlob("ssh-rsa", bytes.Repeat([]byte{2}, 32))
+	for line, want := range map[string]string{
+		"ssh-ed25519 " + ed + " me@host": "ssh-ed25519",
+		"ED25519 " + ed:                  "ssh-ed25519",
+		"ed25519 " + ed + " backdoor":    "ssh-ed25519",
+		"rsa " + rsa:                     "ssh-rsa",
+		"RSA " + rsa:                     "ssh-rsa",
+		`no-pty,command="echo hi there" ED25519 ` + ed:   "ssh-ed25519",
+		`from="10.0.0.1",no-agent-forwarding rsa ` + rsa: "ssh-rsa",
+		"ed25519 " + rsa:    "ssh-rsa", // the key says what it is
+		"\t ssh-rsa " + rsa: "ssh-rsa",
+	} {
+		if got, fp, bad := parseKeyLine(line); got != want || fp == "" || bad {
+			t.Errorf("%.40q: type %q fp %q unparsed %v, want %s", line, got, fp, bad, want)
+		}
+	}
+	for _, line := range []string{"AAAAgarbage nonsense", "ED25519 not-base64!!", "ssh-ed25519", "hello world", `command="x" what`,
+		"foo " + ed} {
+		if got, fp, bad := parseKeyLine(line); got != "" || fp != "" || !bad {
+			t.Errorf("%q: type %q fp %q unparsed %v, want unparsed", line, got, fp, bad)
+		}
+	}
+	for _, line := range []string{"", "   ", "# ssh-ed25519 " + ed, "  #comment"} {
+		if got, fp, bad := parseKeyLine(line); got != "" || fp != "" || bad {
+			t.Errorf("%q: reported %q %q %v", line, got, fp, bad)
+		}
+	}
+	keys, bad := readKeyFile([]byte("# keys\nED25519 " + ed + "\n\nrandom junk here\nrsa " + rsa + "\n"))
+	if len(keys) != 2 || keys[0].Line != 2 || keys[1].Type != "ssh-rsa" || len(bad) != 1 || bad[0] != 4 {
+		t.Errorf("keys %+v, unparsed %v", keys, bad)
 	}
 }

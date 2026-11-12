@@ -6,16 +6,13 @@ severity = "high"
 title = "WordPress $wpdb query built from request input without $wpdb->prepare"
 frameworks = ["wordpress"]
 sources = ["$_GET", "$_POST", "$_REQUEST", "get_query_var(", "->get_param("]
-sinks = ["$wpdb->query", "$wpdb->get_results", "$wpdb->get_row", "$wpdb->get_var", "$wpdb->get_col", "$wpdb->prepare("]
-sanitizers = ["$wpdb->prepare", "absint", "intval", "count(", "sanitize_sql_orderby("]
+sinks = ["$wpdb->query", "$wpdb->get_results", "$wpdb->get_row", "$wpdb->get_var", "$wpdb->get_col"]
+sanitizers = ["$wpdb->prepare", "absint", "intval", "count(", "sizeof(", "sanitize_sql_orderby("]
 fix = "Pass every value through $wpdb->prepare() placeholders (%d, %s); sanitize_text_field() and esc_sql() alone do not make a value safe in SQL."
 refs = ["CVE-2025-7036"]
 
-# prepare() binds only the values after the format string: input written
-# into the format itself is SQL, and prepare cleans just what it binds.
-[[args]]
-sinks = ["$wpdb->prepare("]
-arg = 1
+# Input written into prepare()'s format (not bound by it) is reported by
+# php-sqli-string-concat, whose ->prepare( sink covers $wpdb->prepare too.
 
 [[samples]]
 kind = "vulnerable"
@@ -115,16 +112,6 @@ extract(shortcode_atts(array('id' => 0, 'title' => ''), $_REQUEST));
 $row = $wpdb->get_row("SELECT * FROM {$wpdb->prefix}items WHERE id = " . absint($id));
 '''
 
-[[samples]]
-kind = "vulnerable"
-note = "prepare binds only the values after the format: input written into the format is SQL"
-code = '''
-<?php
-add_action('wp_ajax_drop_items', function () {
-    global $wpdb;
-    $wpdb->query($wpdb->prepare("DELETE FROM {$wpdb->prefix}items WHERE id IN ({$_POST['ids']}) AND owner = %d", get_current_user_id()));
-});
-'''
 
 [[samples]]
 kind = "safe"

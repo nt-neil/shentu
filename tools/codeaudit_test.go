@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nt-neil/shentu/rules"
 	"github.com/nt-neil/shentu/rules/engine"
@@ -233,11 +234,17 @@ func TestAppCodeAuditInjectionLimits(t *testing.T) {
 	if f := summary(); len(f.Files) != 1 || !strings.HasSuffix(f.Files[0].Path, "a.php") || f.Files[0].Reason != "panic" {
 		t.Errorf("panic: summary %+v", f)
 	}
-	engineScan = scan
+	// The time runs out while the first file is scanned (one worker; the walk
+	// stops at the same deadline, so it must have ended before).
 	max := injectionMaxTime
-	defer func() { injectionMaxTime = max }()
-	injectionMaxTime = 0
-	if f := summary(); len(f.Files) != 2 || f.Files[0].Reason != "time" || f.Files[1].Reason != "time" {
+	defer func() { injectionMaxTime = max; SetAuditLimits(0, 0) }()
+	injectionMaxTime = 300 * time.Millisecond
+	SetAuditLimits(0, 1)
+	engineScan = func(e *engine.Engine, lang, p string, b []byte) ([]engine.Finding, bool, error) {
+		time.Sleep(400 * time.Millisecond)
+		return scan(e, lang, p, b)
+	}
+	if f := summary(); len(f.Files) != 1 || f.Files[0].Reason != "time" || !strings.HasSuffix(f.Files[0].Path, "b.py") {
 		t.Errorf("time limit: summary %+v", f)
 	}
 }
