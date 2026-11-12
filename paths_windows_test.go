@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -191,5 +192,15 @@ func TestCheckTrustedACETypes(t *testing.T) {
 	set(dir, `D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(XA;;FA;;;BU;(Member_of {SID(BA)}))`)
 	if err := checkTrusted(dir); err == nil || !strings.Contains(err.Error(), "type") {
 		t.Errorf("a callback entry must be untrusted: %v", err)
+	}
+}
+
+// S6: setup and its wizard say they do not run on Windows.
+func TestSetupNotOnWindows(t *testing.T) {
+	if err := setup(context.Background(), nil); err != errSetupWindows {
+		t.Errorf("setup: %v", err)
+	}
+	if err := wizard(context.Background(), nil, true); err != errSetupWindows {
+		t.Errorf("wizard: %v", err)
 	}
 }

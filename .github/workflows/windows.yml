@@ -37,7 +37,7 @@ jobs:
           # One command per line: under bash -e a failure inside an && list is not fatal.
           go test -v -run 'TestVtableSlotsMatchSDK|TestCollectLeavesHostUnchanged|TestFirewallPolicyLive' ./hostenv/
           go test ./hostenv/ ./checks/ ./internal/msrc/
-          go test -v -run 'TestSecureDir|TestSecureDirRefusesSquatted|TestTrustConfig|TestTrustConfigMissingAndLinks|TestSkillsNeedTrustedFolder|TestStateReadyRefusesForeignState|TestCheckTrustedACETypes' .
+          go test -v -run 'TestSecureDir|TestSecureDirRefusesSquatted|TestTrustConfig|TestTrustConfigMissingAndLinks|TestSkillsNeedTrustedFolder|TestStateReadyRefusesForeignState|TestCheckTrustedACETypes|TestSetupNotOnWindows' .
           # Telegram bot, offline: a fake Bot API and a fake model (httptest).
           go test -run 'Bot|TOTP|MarkdownToTelegram|Welcome|Schedule|NextDaily' .
           go test ./tools/
