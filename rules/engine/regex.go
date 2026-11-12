@@ -282,8 +282,11 @@ func (a *analysis) regexPrefix(st state, atom []Token) ([]keyRef, bool) {
 			return nil, false
 		}
 		args := splitTop(atom[4:n-1], isComma)
-		if len(args) < 2 {
-			return nil, false
+		if len(args) == 3 && len(args[2]) == 0 {
+			args = args[:2] // re.match(p, url,): a trailing comma
+		}
+		if len(args) != 2 {
+			return nil, false // flags (re.M makes ^ match after each newline): not read
 		}
 		pat, subject = args[0], args[1]
 	case a.php && n > 3 && atom[0].word("preg_match") && atom[1].op("(") && closeOf(atom, 1) == n-1:
@@ -312,42 +315,139 @@ func (a *analysis) regexPrefix(st state, atom []Token) ([]keyRef, bool) {
 		}
 		re = body
 	}
-	if strings.HasPrefix(re, "^") || strings.HasPrefix(re, `\A`) {
-		re, anchored = strings.TrimPrefix(strings.TrimPrefix(re, "^"), `\A`), true
+	switch {
+	case strings.HasPrefix(re, "^"):
+		re, anchored = re[1:], true
+	case !a.js && strings.HasPrefix(re, `\A`): // JavaScript has no \A
+		re, anchored = re[2:], true
 	}
-	if !anchored {
-		return nil, false
+	if !anchored || topAlternation(re) {
+		return nil, false // a|b: either side may match
 	}
-	// the fixed prefix: literal characters, escaped ones (\/ \.), escaped values (\x00)
-	i, last := 0, byte(0)
+	// the fixed prefix: literal characters, escaped ones (\/ \.), escaped values
+	// (\x00: a setting's text, taken not to end in "/", as taguette's base path)
+	i, last, prev := 0, byte(0), byte(0)
 	for i < len(re) {
 		c := re[i]
 		switch {
 		case c == 0:
-			last, i = 0, i+1
+			prev, last, i = last, 0, i+1
 		case c == '\\' && i+1 < len(re) && !isIdentChar(re[i+1]):
-			last, i = re[i+1], i+2
+			prev, last, i = last, re[i+1], i+2
 		case c == '\\' || strings.IndexByte(".[]()*+?{}|^$", c) >= 0:
 			goto prefixEnd
 		default:
-			last, i = c, i+1
+			prev, last, i = last, c, i+1
 		}
 		if i < len(re) && strings.IndexByte("*+?{", re[i]) >= 0 {
 			return nil, false // a quantifier on the prefix: not fixed
 		}
 	}
 prefixEnd:
-	if i == 0 || last != '/' || i >= len(re) || re[i] != '[' {
-		return nil, false
+	if i == 0 || last != '/' || prev == '/' || prev == '\\' || i >= len(re) || re[i] != '[' {
+		return nil, false // not ending in one "/" ("//" is another host)
 	}
 	end, negated, good := regexClass(re, i)
-	if !good || negated || strings.ContainsAny(re[i:end], "/\\") {
+	if !good || negated || classHolds(re[i+1:end-1], '/', '\\') {
 		return nil, false
 	}
-	if q := regexQuantifier(re, end); q > end && (re[end] == '*' || re[end] == '?' || strings.HasPrefix(re[end:], "{0")) {
+	if optionalAt(re, end) {
 		return nil, false // the class may be absent: "//" again
 	}
 	return a.keysOf(subject), true
+}
+
+// topAlternation reports whether re has a "|" outside every group and class.
+func topAlternation(re string) bool {
+	depth := 0
+	for i := 0; i < len(re); i++ {
+		switch c := re[i]; {
+		case c == '\\':
+			i++
+		case c == '[':
+			end := skipClass(re, i)
+			if end < 0 {
+				return true // not closed: take the worst
+			}
+			i = end - 1
+		case c == '(':
+			depth++
+		case c == ')':
+			depth--
+		case c == '|' && depth <= 0:
+			return true
+		}
+	}
+	return false
+}
+
+// skipClass returns the index after the class starting at re[i] ("["),
+// whatever it holds (a "]" first, or escaped, is part of it); -1 if open.
+func skipClass(re string, i int) int {
+	j := i + 1
+	if j < len(re) && re[j] == '^' {
+		j++
+	}
+	if j < len(re) && re[j] == ']' {
+		j++
+	}
+	for ; j < len(re); j++ {
+		switch re[j] {
+		case '\\':
+			j++
+		case ']':
+			return j + 1
+		}
+	}
+	return -1
+}
+
+// classHolds reports whether a character class body (between [ and ]) may
+// match one of cs: listed, inside a range (!-z holds "/"), or through an
+// escape (\W, \S, \/ are not read: taken to hold them).
+func classHolds(body string, cs ...byte) bool {
+	for i := 0; i < len(body); i++ {
+		c := body[i]
+		if c == '\\' {
+			return true
+		}
+		if i+2 < len(body) && body[i+1] == '-' {
+			lo, hi := c, body[i+2]
+			for _, x := range cs {
+				if lo <= x && x <= hi {
+					return true
+				}
+			}
+			i += 2
+			continue
+		}
+		for _, x := range cs {
+			if c == x {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// optionalAt reports whether the quantifier at i (after a class) allows no
+// occurrence: *, ?, {0...}, {,n}.
+func optionalAt(re string, i int) bool {
+	if i >= len(re) {
+		return false
+	}
+	switch re[i] {
+	case '*', '?':
+		return true
+	case '{':
+		j := i + 1
+		for j < len(re) && re[j] >= '0' && re[j] <= '9' {
+			j++
+		}
+		min := re[i+1 : j]
+		return min == "" || strings.Trim(min, "0") == ""
+	}
+	return false
 }
 
 // fixedPattern reads a pattern written as literal strings and escaped values
