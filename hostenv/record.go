@@ -63,6 +63,10 @@ func errCode(err error) string {
 		return "timeout"
 	case errors.Is(err, ErrNotAllowed):
 		return "not_allowed"
+	case errors.Is(err, ErrSymlink):
+		return "symlink"
+	case errors.Is(err, ErrNotRegular):
+		return "not_regular"
 	}
 	return "other:" + MaskSecrets(err.Error())
 }
@@ -81,6 +85,10 @@ func codeErr(code, path string) error {
 		return ErrTimeout
 	case code == "not_allowed":
 		return ErrNotAllowed
+	case code == "symlink":
+		return ErrSymlink
+	case code == "not_regular":
+		return ErrNotRegular
 	}
 	return errors.New(strings.TrimPrefix(code, "other:"))
 }
@@ -108,6 +116,14 @@ func (r *Recorder) ReadFile(path string) ([]byte, error) {
 	return b, err
 }
 
+// ReadFileNoFollow records under the same key as ReadFile, so a replay of
+// the fixture answers both.
+func (r *Recorder) ReadFileNoFollow(path string) ([]byte, error) {
+	b, err := ReadFileNoFollow(r.Inner, path)
+	r.put(&entry{Op: "file", Path: path, Err: errCode(err), data: b})
+	return b, err
+}
+
 func (r *Recorder) ReadDir(path string) ([]string, error) {
 	n, err := r.Inner.ReadDir(path)
 	r.put(&entry{Op: "dir", Path: path, Err: errCode(err), Names: n})
@@ -128,10 +144,12 @@ func (r *Recorder) Run(ctx context.Context, argv []string) (CmdResult, error) {
 }
 
 // Save writes the recording after passing it through m (nil: secrets only,
-// which every Source already did). Save refuses a non-empty directory.
+// which every Source already did). It creates dir itself (0700, files 0600)
+// and fails if dir already exists, so it never writes into a directory
+// someone else prepared.
 func (r *Recorder) Save(dir string, m *Masker) error {
-	if names, err := os.ReadDir(dir); err == nil && len(names) > 0 {
-		return fmt.Errorf("hostenv: %s is not empty", dir)
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		return fmt.Errorf("hostenv: fixture dir: %w", err)
 	}
 	r.mu.Lock()
 	entries := make([]*entry, 0, len(r.got))
@@ -144,16 +162,21 @@ func (r *Recorder) Save(dir string, m *Masker) error {
 		entries = m.apply(entries)
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].key() < entries[j].key() })
-	if err := os.MkdirAll(filepath.Join(dir, "blobs"), 0o755); err != nil {
+	if err := os.Mkdir(filepath.Join(dir, "blobs"), 0o700); err != nil {
 		return err
 	}
+	written := map[string]bool{}
 	for _, e := range entries {
 		if e.data == nil {
 			continue
 		}
 		sum := sha256.Sum256(e.data)
 		e.Blob = "blobs/" + hex.EncodeToString(sum[:8])
-		if err := os.WriteFile(filepath.Join(dir, filepath.FromSlash(e.Blob)), e.data, 0o644); err != nil {
+		if written[e.Blob] {
+			continue
+		}
+		written[e.Blob] = true
+		if err := writeNew(filepath.Join(dir, filepath.FromSlash(e.Blob)), e.data); err != nil {
 			return err
 		}
 	}
@@ -161,7 +184,20 @@ func (r *Recorder) Save(dir string, m *Masker) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, "manifest.json"), append(b, '\n'), 0o644)
+	return writeNew(filepath.Join(dir, "manifest.json"), append(b, '\n'))
+}
+
+// writeNew creates a file that must not exist yet, readable only by us.
+func writeNew(path string, data []byte) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
 }
 
 // Replay answers from a fixture written by Recorder.Save. Anything the

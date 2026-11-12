@@ -2,6 +2,7 @@ package hostenv
 
 import (
 	"context"
+	"fmt"
 	"io/fs"
 	"sort"
 	"strings"
@@ -39,6 +40,14 @@ func (h *fakeHost) ReadFile(p string) ([]byte, error) {
 		return []byte(MaskSecrets(s)), nil
 	}
 	return nil, h.err("open", p)
+}
+
+// ReadFileNoFollow refuses paths present in links, as O_NOFOLLOW would.
+func (h *fakeHost) ReadFileNoFollow(p string) ([]byte, error) {
+	if _, ok := h.links[p]; ok {
+		return nil, fmt.Errorf("%w: %s", ErrSymlink, p)
+	}
+	return h.ReadFile(p)
 }
 
 func (h *fakeHost) ReadDir(p string) ([]string, error) {

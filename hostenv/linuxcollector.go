@@ -37,7 +37,7 @@ func (c LinuxCollector) Collect(ctx context.Context, src Source) *Facts {
 	f.Packages = c.packages(ctx, src, osr)
 	pw, accounts := c.accounts(src)
 	f.Accounts = accounts
-	procs, sockOwner := c.processes(src, info, pw)
+	procs, sockOwner := c.processes(src, pw)
 	f.Processes = procs
 	f.Listeners = c.listeners(src, info, sockOwner)
 	f.RemoteAccess.SSH = c.ssh(src)
@@ -172,7 +172,7 @@ func numeric(s string) bool {
 
 // processes walks /proc once and also returns socket inode -> pid for
 // listeners, so the walk is not repeated.
-func (LinuxCollector) processes(src Source, info SourceInfo, users map[string]string) (Obs[[]Process], map[string]int) {
+func (LinuxCollector) processes(src Source, users map[string]string) (Obs[[]Process], map[string]int) {
 	owners := map[string]int{}
 	names, err := src.ReadDir("/proc")
 	if err != nil {
@@ -216,8 +216,8 @@ func (LinuxCollector) processes(src Source, info SourceInfo, users map[string]st
 		}
 		out = append(out, p)
 	}
-	if hidden > 0 && !info.Elevated {
-		return Partial(out, ReasonPermission, fmt.Sprintf("%d processes' executables unreadable without root", hidden)), owners
+	if hidden > 0 { // even as root: hidepid, an LSM or a rootkit can hide them
+		return Partial(out, ReasonPermission, fmt.Sprintf("%d processes' executables unreadable", hidden)), owners
 	}
 	return OK(out), owners
 }
@@ -255,6 +255,8 @@ func (LinuxCollector) listeners(src Source, info SourceInfo, owners map[string]i
 		return Unknown[[]Listener](ReasonNotInstalled, "/proc/net tables missing")
 	case unowned > 0 && !info.Elevated:
 		return Partial(out, ReasonPermission, fmt.Sprintf("owner of %d sockets not visible without root", unowned))
+		// As root an ownerless socket belongs to the kernel (NFS, WireGuard):
+		// PID stays 0, which checks read as "kernel", not as hidden.
 	}
 	return OK(out)
 }
@@ -342,20 +344,32 @@ const MaxPersistenceItems = 500
 func (LinuxCollector) persistence(src Source, accounts Obs[[]Account]) Obs[[]PersistenceItem] {
 	var out []PersistenceItem
 	var denied []string
+	// note records every failure except "does not exist": a truncated,
+	// unreadable or odd file is a place we could not fully look.
 	note := func(p string, err error) {
-		if errors.Is(err, fs.ErrPermission) {
-			denied = append(denied, p)
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			denied = append(denied, p+" ("+string(Classify(err))+")")
 		}
 	}
+	perKind := map[string]int{}
+	dropped := 0
 	add := func(it PersistenceItem) {
-		if len(out) < MaxPersistenceItems {
-			out = append(out, it)
+		if perKind[it.Kind] >= MaxPersistenceItems {
+			dropped++
+			return
 		}
+		perKind[it.Kind]++
+		out = append(out, it)
+	}
+	// read returns what could be read; a truncated file is still parsed.
+	read := func(p string) ([]byte, bool) {
+		b, err := src.ReadFile(p)
+		note(p, err)
+		return b, err == nil || errors.Is(err, ErrTruncated)
 	}
 	cronFile := func(p string) {
-		b, err := src.ReadFile(p)
-		if err != nil {
-			note(p, err)
+		b, ok := read(p)
+		if !ok {
 			return
 		}
 		for _, cmd := range ParseCron(b) {
@@ -379,48 +393,41 @@ func (LinuxCollector) persistence(src Source, accounts Obs[[]Account]) Obs[[]Per
 	cronDir("/var/spool/cron", "crontabs", "atjobs", "atspool", "lastrun")
 	cronDir("/var/spool/cron/crontabs")
 
-	if b, err := src.ReadFile("/etc/ld.so.preload"); err == nil {
+	if b, ok := read("/etc/ld.so.preload"); ok {
 		for _, l := range strings.Split(string(b), "\n") {
 			if l = strings.TrimSpace(l); l != "" && !strings.HasPrefix(l, "#") {
 				add(PersistenceItem{Kind: "ld_preload", Location: "/etc/ld.so.preload", Command: l})
 			}
 		}
-	} else {
-		note("/etc/ld.so.preload", err)
 	}
 
-	if b, err := src.ReadFile("/etc/rc.local"); err == nil {
+	if b, ok := read("/etc/rc.local"); ok {
 		for _, l := range ParseCron(b) { // same shape: non-comment lines
 			if !strings.HasPrefix(l, "exit") {
 				add(PersistenceItem{Kind: "rc_local", Location: "/etc/rc.local", Command: MaskSecrets(l)})
 			}
 		}
-	} else {
-		note("/etc/rc.local", err)
 	}
 
-	if names, err := src.ReadDir("/etc/systemd/system"); err == nil {
-		for _, n := range names {
-			if !strings.HasSuffix(n, ".service") && !strings.HasSuffix(n, ".timer") {
-				continue
-			}
-			p := "/etc/systemd/system/" + n
-			b, err := src.ReadFile(p)
-			if err != nil {
-				note(p, err)
-				continue
-			}
-			it := PersistenceItem{Kind: "systemd", Location: p}
-			for _, l := range strings.Split(string(b), "\n") {
-				if v, ok := strings.CutPrefix(strings.TrimSpace(l), "ExecStart="); ok {
-					it.Command = MaskSecrets(v)
-					break
-				}
-			}
-			add(it)
+	names, err := src.ReadDir("/etc/systemd/system")
+	note("/etc/systemd/system", err)
+	for _, n := range names {
+		if !strings.HasSuffix(n, ".service") && !strings.HasSuffix(n, ".timer") {
+			continue
 		}
-	} else {
-		note("/etc/systemd/system", err)
+		p := "/etc/systemd/system/" + n
+		b, ok := read(p)
+		if !ok {
+			continue
+		}
+		it := PersistenceItem{Kind: "systemd", Location: p}
+		for _, l := range strings.Split(string(b), "\n") {
+			if v, ok := strings.CutPrefix(strings.TrimSpace(l), "ExecStart="); ok {
+				it.Command = MaskSecrets(v)
+				break
+			}
+		}
+		add(it)
 	}
 
 	if accounts.Known() {
@@ -429,10 +436,12 @@ func (LinuxCollector) persistence(src Source, accounts Obs[[]Account]) Obs[[]Per
 				continue
 			}
 			for _, n := range []string{"authorized_keys", "authorized_keys2"} {
+				// The user owns this path: never follow a link planted
+				// there (it could point at /etc/shadow while we run as root).
 				p := strings.TrimSuffix(a.Home, "/") + "/.ssh/" + n
-				b, err := src.ReadFile(p)
-				if err != nil {
-					note(p, err)
+				b, err := ReadFileNoFollow(src, p)
+				note(p, err)
+				if err != nil && !errors.Is(err, ErrTruncated) {
 					continue
 				}
 				for _, k := range ParseAuthorizedKeys(b) {
@@ -445,8 +454,12 @@ func (LinuxCollector) persistence(src Source, accounts Obs[[]Account]) Obs[[]Per
 			}
 		}
 	}
-	if len(denied) > 0 {
-		return Partial(out, ReasonPermission, "unreadable: "+strings.Join(denied, ", "))
+	switch {
+	case dropped > 0:
+		return Partial(out, ReasonTruncated, fmt.Sprintf("%d entries over the %d-per-kind cap dropped; unread: %s",
+			dropped, MaxPersistenceItems, strings.Join(denied, ", ")))
+	case len(denied) > 0:
+		return Partial(out, ReasonPermission, "not fully read: "+strings.Join(denied, ", "))
 	}
 	return OK(out)
 }

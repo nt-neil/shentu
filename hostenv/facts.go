@@ -30,6 +30,8 @@ const (
 	ReasonNotRecorded   Reason = "not_recorded" // replay asked for something the fixture lacks
 	ReasonCommandFailed Reason = "command_failed"
 	ReasonParse         Reason = "parse_error"
+	ReasonSymlink       Reason = "symlink_not_followed"
+	ReasonNotRegular    Reason = "not_regular_file"
 )
 
 // Obs wraps every fact so that "unknown" can never be mistaken for "empty".

@@ -35,8 +35,30 @@ type SourceInfo struct {
 // MaxFileBytes caps a single file read.
 const MaxFileBytes = 8 << 20
 
-// ErrNotRecorded is returned by Replay for a request the fixture lacks.
-var ErrNotRecorded = errors.New("hostenv: not in fixture")
+var (
+	// ErrNotRecorded is returned by Replay for a request the fixture lacks.
+	ErrNotRecorded = errors.New("hostenv: not in fixture")
+	// ErrSymlink is returned by ReadFileNoFollow for a symbolic link.
+	ErrSymlink = errors.New("hostenv: symlink not followed")
+	// ErrNotRegular refuses FIFOs, devices and sockets, which could block
+	// or never end.
+	ErrNotRegular = errors.New("hostenv: not a regular file")
+)
+
+// NoFollowReader is implemented by Sources that can refuse a symlink in the
+// final path element. Use ReadFileNoFollow for paths a user controls.
+type NoFollowReader interface {
+	ReadFileNoFollow(path string) ([]byte, error)
+}
+
+// ReadFileNoFollow reads path without following a final symlink when src
+// supports it, and falls back to ReadFile for sources that only replay.
+func ReadFileNoFollow(src Source, path string) ([]byte, error) {
+	if nf, ok := src.(NoFollowReader); ok {
+		return nf.ReadFileNoFollow(path)
+	}
+	return src.ReadFile(path)
+}
 
 // Live reads the machine it runs on.
 type Live struct {
@@ -57,12 +79,21 @@ func (l *Live) Info() SourceInfo {
 	return SourceInfo{GOOS: runtime.GOOS, GOARCH: runtime.GOARCH, Elevated: elevated(), RecordedAt: l.now().UTC()}
 }
 
-func (l *Live) ReadFile(path string) ([]byte, error) {
-	f, err := os.Open(path)
+func (l *Live) ReadFile(path string) ([]byte, error) { return l.read(path, false) }
+
+func (l *Live) ReadFileNoFollow(path string) ([]byte, error) { return l.read(path, true) }
+
+func (l *Live) read(path string, noFollow bool) ([]byte, error) {
+	f, err := openRead(path, noFollow)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
+	if st, err := f.Stat(); err != nil {
+		return nil, err
+	} else if !st.Mode().IsRegular() {
+		return nil, fmt.Errorf("%w: %s", ErrNotRegular, path)
+	}
 	b, err := io.ReadAll(io.LimitReader(f, MaxFileBytes+1))
 	if err != nil {
 		return nil, err
@@ -106,6 +137,10 @@ func Classify(err error) Reason {
 		return ReasonTruncated
 	case errors.Is(err, ErrNotRecorded):
 		return ReasonNotRecorded
+	case errors.Is(err, ErrSymlink):
+		return ReasonSymlink
+	case errors.Is(err, ErrNotRegular):
+		return ReasonNotRegular
 	}
 	return ReasonCommandFailed
 }

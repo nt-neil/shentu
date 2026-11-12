@@ -253,23 +253,64 @@ type SSHDDirective struct{ Key, Value string }
 // returned as directives with Key "include"; the collector resolves them.
 func ParseSSHDConfig(b []byte) (dirs []SSHDDirective, sawMatch bool) {
 	for _, l := range strings.Split(string(b), "\n") {
-		f := strings.Fields(l)
-		if len(f) < 2 || strings.HasPrefix(f[0], "#") {
+		k, args := sshdLine(l)
+		if k == "" || len(args) == 0 {
 			continue
 		}
-		k := strings.ToLower(f[0])
 		if k == "match" {
 			return dirs, true
 		}
 		if k == "include" {
-			for _, p := range f[1:] {
+			for _, p := range args {
 				dirs = append(dirs, SSHDDirective{"include", p})
 			}
 			continue
 		}
-		dirs = append(dirs, SSHDDirective{k, strings.ToLower(f[1])})
+		dirs = append(dirs, SSHDDirective{k, strings.ToLower(args[0])})
 	}
 	return dirs, false
+}
+
+// sshdLine tokenises one line the way sshd does: the keyword ends at
+// whitespace or '=', one optional '=' may follow ("Key=Value",
+// "Key = Value"), and arguments may be double-quoted.
+func sshdLine(l string) (string, []string) {
+	l = strings.TrimSpace(l)
+	if l == "" || strings.HasPrefix(l, "#") {
+		return "", nil
+	}
+	i := strings.IndexAny(l, " \t=")
+	if i < 0 {
+		return strings.ToLower(l), nil
+	}
+	key, rest := strings.ToLower(l[:i]), strings.TrimLeft(l[i:], " \t")
+	if strings.HasPrefix(rest, "=") {
+		rest = strings.TrimLeft(rest[1:], " \t")
+	}
+	var args []string
+	for rest != "" {
+		if rest[0] == '"' {
+			end := strings.IndexByte(rest[1:], '"')
+			if end < 0 {
+				args = append(args, rest[1:])
+				break
+			}
+			args = append(args, rest[1:1+end])
+			rest = strings.TrimLeft(rest[2+end:], " \t")
+			continue
+		}
+		if rest[0] == '#' {
+			break
+		}
+		j := strings.IndexAny(rest, " \t")
+		if j < 0 {
+			args = append(args, rest)
+			break
+		}
+		args = append(args, rest[:j])
+		rest = strings.TrimLeft(rest[j:], " \t")
+	}
+	return key, args
 }
 
 // SSHDDefaults are OpenSSH's built-in values for the keys the checks read.

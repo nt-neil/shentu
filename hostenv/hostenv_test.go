@@ -49,6 +49,12 @@ func TestParsers(t *testing.T) {
 		t.Errorf("apk %+v", ap)
 	}
 
+	for _, l := range []string{"PermitRootLogin=yes", "PermitRootLogin = yes", "  permitrootlogin\t\"yes\"", "PermitRootLogin yes # c"} {
+		d, _ := ParseSSHDConfig([]byte(l))
+		if len(d) != 1 || d[0] != (SSHDDirective{"permitrootlogin", "yes"}) {
+			t.Errorf("sshd %q -> %+v", l, d)
+		}
+	}
 	dirs, match := ParseSSHDConfig([]byte("# c\nInclude a/*.conf b.conf\nPermitRootLogin YES\nMatch User x\nPasswordAuthentication no\n"))
 	if !match || len(dirs) != 3 || dirs[2] != (SSHDDirective{"permitrootlogin", "yes"}) {
 		t.Errorf("sshd %+v %v", dirs, match)
@@ -178,7 +184,7 @@ func TestRecordReplayMasked(t *testing.T) {
 	h.files["/etc/hosts"] = "127.0.0.1 localhost\n192.168.1.100 web01.corp.example web01\n203.0.113.9 api\n"
 	rec := NewRecorder(h)
 	live := Collect(context.Background(), rec)
-	dir := t.TempDir()
+	dir := filepath.Join(t.TempDir(), "fx")
 	m := &Masker{Hosts: []string{"web01.corp.example", "web01"}, Users: []string{"alice"}}
 	if err := rec.Save(dir, m); err != nil {
 		t.Fatal(err)
@@ -194,7 +200,10 @@ func TestRecordReplayMasked(t *testing.T) {
 		t.Error("masking changed paths inconsistently or touched loopback")
 	}
 	if err := rec.Save(dir, m); err == nil {
-		t.Error("Save overwrote a non-empty directory")
+		t.Error("Save wrote into an existing directory")
+	}
+	if st, _ := os.Stat(filepath.Join(dir, "manifest.json")); st == nil || st.Mode().Perm() != 0o600 {
+		t.Errorf("manifest mode %v, want 0600", st)
 	}
 
 	rp, err := LoadReplay(dir)
@@ -280,4 +289,35 @@ func mustJSON(t *testing.T, v any) string {
 		t.Fatal(err)
 	}
 	return string(b)
+}
+
+// Failures other than "missing" and anything over the cap must surface.
+func TestPersistenceFailClosed(t *testing.T) {
+	h := debianHost(true)
+	h.links["/home/alice/.ssh/authorized_keys2"] = "/etc/shadow" // planted link
+	var cron strings.Builder
+	for i := 0; i < MaxPersistenceItems+5; i++ {
+		cron.WriteString("* * * * * root /bin/true\n")
+	}
+	h.files["/etc/cron.d/flood"] = cron.String()
+	f := Collect(context.Background(), h)
+	if f.Persistence.Status != StatusPartial || f.Persistence.Reason != ReasonTruncated {
+		t.Errorf("cap: %s %s %q", f.Persistence.Status, f.Persistence.Reason, f.Persistence.Detail)
+	}
+	if !strings.Contains(f.Persistence.Detail, "authorized_keys2 (symlink_not_followed)") {
+		t.Errorf("symlink not reported: %q", f.Persistence.Detail)
+	}
+	n := map[string]int{}
+	for _, it := range f.Persistence.Value {
+		n[it.Kind]++
+	}
+	if n["cron"] != MaxPersistenceItems || n["ld_preload"] != 1 || n["authorized_key"] != 1 {
+		t.Errorf("per-kind cap starved other kinds: %v", n)
+	}
+
+	h = debianHost(true)
+	h.denied["/proc/4243/exe"] = true
+	if f := Collect(context.Background(), h); f.Processes.Status != StatusPartial {
+		t.Errorf("hidden process as root: %s", f.Processes.Status)
+	}
 }
