@@ -7898,18 +7898,22 @@
   },
   "remote_access": {
     "ssh": {
-      "status": "ok",
+      "status": "unknown",
+      "reason": "not_recorded",
+      "detail": "owner and permissions unreadable: not_recorded; its content is not used",
       "value": {
         "config_path": "C:\\ProgramData\\ssh\\sshd_config",
         "settings": {
-          "passwordauthentication": "yes",
-          "permitemptypasswords": "no",
-          "permitrootlogin": "prohibit-password",
-          "port": "22",
-          "pubkeyauthentication": "yes",
-          "x11forwarding": "no"
+          "passwordauthentication": "unknown",
+          "permitemptypasswords": "unknown",
+          "permitrootlogin": "unknown",
+          "port": "unknown",
+          "pubkeyauthentication": "unknown",
+          "x11forwarding": "unknown"
         },
-        "hash": "fb46b8f386771448"
+        "unread": [
+          "C:\\ProgramData\\ssh (owner and permissions unreadable: not_recorded)"
+        ]
       }
     },
     "rdp": {

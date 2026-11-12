@@ -963,18 +963,23 @@ func winSSH(ws WinSource, svcs []WinService, svcErr error) Obs[SSHConfig] {
 	// OpenSSH itself refuses an sshd_config that someone other than SYSTEM
 	// or Administrators owns or may change; so does Shentu: such content
 	// is not used, the settings are unknown.
+	unknown := func(p, why string, r Reason) Obs[SSHConfig] {
+		cfg := SSHConfig{ConfigPath: winSSHDConfig, Settings: SSHDDefaults(), Unread: []string{p + " (" + why + ")"}}
+		for k := range cfg.Settings {
+			cfg.Settings[k] = "unknown"
+		}
+		return Obs[SSHConfig]{Status: StatusUnknown, Reason: r, Detail: why + "; its content is not used", Value: cfg}
+	}
 	for _, p := range []string{winSSHDir, winSSHDConfig} {
 		sec, err := ws.FileSecurity(p)
-		if err != nil {
-			continue // missing (no OpenSSH) or unreadable: the read below says so
+		switch {
+		case isNotExist(err):
+			continue // no OpenSSH: the read below says so
+		case err != nil: // who may change it is unknown: not trusted either
+			return unknown(p, "owner and permissions unreadable: "+string(Classify(err)), Classify(err))
 		}
 		if bad := sec.Untrusted(); len(bad) > 0 {
-			cfg := SSHConfig{ConfigPath: winSSHDConfig, Settings: SSHDDefaults(), Unread: []string{p + " (" + strings.Join(bad, ", ") + ")"}}
-			for k := range cfg.Settings {
-				cfg.Settings[k] = "unknown"
-			}
-			return Obs[SSHConfig]{Status: StatusUnknown, Reason: ReasonUntrusted,
-				Detail: p + " is owned or writable by " + strings.Join(bad, ", ") + "; its content is not used", Value: cfg}
+			return unknown(p, p+" is owned or writable by "+strings.Join(bad, ", "), ReasonUntrusted)
 		}
 	}
 	b, err := ws.ReadFile(winSSHDConfig)

@@ -916,6 +916,11 @@ func TestWindowsSSHUntrusted(t *testing.T) {
 	if s := ssh(); s.Reason != ReasonUntrusted || !strings.Contains(s.Detail, "S-1-5-32-545") {
 		t.Errorf("an ssh folder Users may write must not be trusted: %+v", s)
 	}
+	delete(w.sec, winSSHDir)
+	w.denied[winSSHDir] = true // permissions unreadable: fail closed
+	if s := ssh(); s.Status != StatusUnknown || s.Reason != ReasonPermission || s.Value.Settings["passwordauthentication"] != "unknown" {
+		t.Errorf("unreadable permissions must not let the content in: %+v", s)
+	}
 }
 
 func TestFileSecurityUntrusted(t *testing.T) {

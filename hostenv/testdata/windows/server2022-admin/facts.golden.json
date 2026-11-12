@@ -8374,10 +8374,22 @@
   },
   "remote_access": {
     "ssh": {
-      "status": "not_applicable",
+      "status": "unknown",
+      "reason": "not_recorded",
+      "detail": "owner and permissions unreadable: not_recorded; its content is not used",
       "value": {
-        "config_path": "",
-        "settings": null
+        "config_path": "C:\\ProgramData\\ssh\\sshd_config",
+        "settings": {
+          "passwordauthentication": "unknown",
+          "permitemptypasswords": "unknown",
+          "permitrootlogin": "unknown",
+          "port": "unknown",
+          "pubkeyauthentication": "unknown",
+          "x11forwarding": "unknown"
+        },
+        "unread": [
+          "C:\\ProgramData\\ssh (owner and permissions unreadable: not_recorded)"
+        ]
       }
     },
     "rdp": {
