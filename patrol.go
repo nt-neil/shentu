@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -250,14 +251,19 @@ func checks(ctx context.Context, cfg *Config, env *tools.Env, st *state, daily b
 		}
 	}
 	for _, k := range acc.KeyFiles {
-		if k.SymlinkOutsideHome != "" {
+		if k.SymlinkOutsideHome != "" { // before the Unparsed check: a linked file with no odd lines still warns
 			out = append(out, finding{"authorized_keys_symlink:" + k.Path, "warning",
 				fmt.Sprintf("%s links to %s, outside the home; sshd reads the keys there (%d keys), check who can write that file", k.Path, k.SymlinkOutsideHome, k.Keys), k})
 		}
-		for _, l := range k.Unparsed {
-			out = append(out, finding{fmt.Sprintf("authorized_key_unparsed:%s:%d", k.Path, l), "warning",
-				fmt.Sprintf("%s line %d is neither a key nor a comment; sshd ignores it, but check it is not a key written in another form", k.Path, l), nil})
+		if len(k.Unparsed) == 0 {
+			continue
 		}
+		lines := make([]string, len(k.Unparsed))
+		for i, l := range k.Unparsed {
+			lines[i] = strconv.Itoa(l)
+		}
+		out = append(out, finding{"authorized_key_unparsed:" + k.Path, "warning",
+			fmt.Sprintf("%s line(s) %s are neither a key nor a comment; sshd ignores them, but check none is a key written in another form", k.Path, strings.Join(lines, ", ")), nil})
 	}
 	for _, k := range acc.SharedKeys {
 		out = append(out, finding{"sharedkey:" + k.Fingerprint, "warning",
