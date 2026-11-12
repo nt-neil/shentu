@@ -131,6 +131,13 @@ func (r *Recorder) Stat(path string) (FileStat, error) {
 	return st, err
 }
 
+// ReadFileMax records under the same key as ReadFile.
+func (r *Recorder) ReadFileMax(path string, max int64) ([]byte, error) {
+	b, err := ReadFileMax(r.Inner, path, max)
+	r.put(&entry{Op: "file", Path: path, Err: errCode(err), data: b})
+	return b, err
+}
+
 // ReadFileNoFollow records under the same key as ReadFile, so a replay of
 // the fixture answers both.
 func (r *Recorder) ReadFileNoFollow(path string) ([]byte, error) {

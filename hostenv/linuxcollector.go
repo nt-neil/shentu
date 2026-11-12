@@ -29,7 +29,7 @@ var (
 )
 
 func (LinuxCollector) Allowlist() [][]string {
-	return [][]string{dpkgArgv, rpmArgv, rpmQalArgv, nftListArgv, iptablesArgv}
+	return [][]string{dpkgArgv, rpmArgv, rpmQalArgv, nftListArgv, iptablesArgv, journalArgv}
 }
 
 func (c LinuxCollector) Collect(ctx context.Context, src Source) *Facts {
@@ -57,6 +57,7 @@ func (c LinuxCollector) Collect(ctx context.Context, src Source) *Facts {
 	}
 	f.RemoteAccess.SSH = c.ssh(src)
 	f.Firewall = c.Firewall(ctx, src, procs.Value)
+	f.AuthEvents = c.AuthEvents(ctx, src, info.RecordedAt, nil)
 	f.SSHKeys = Unknown[[]AuthorizedKeyFile](accounts.Reason, "accounts unknown")
 	if accounts.Known() {
 		f.SSHKeys = c.SSHKeyFiles(src, accounts.Value)

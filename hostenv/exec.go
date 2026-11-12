@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -31,6 +32,7 @@ type CmdResult struct {
 // everything; build one with NewRunner.
 type Runner struct {
 	allow     map[string]bool
+	patterns  [][]string    // allowlist entries with slots
 	Timeout   time.Duration // per command; default 10s, never above MaxTimeout
 	MaxStdout int           // bytes kept; default 4 MiB
 	MaxStderr int           // bytes kept; default 64 KiB
@@ -75,9 +77,52 @@ func NewRunner(allow [][]string) (*Runner, error) {
 		if err := checkArgv(argv); err != nil {
 			return nil, err
 		}
-		r.allow[argvKey(argv)] = true
+		if hasSlot(argv) {
+			r.patterns = append(r.patterns, argv)
+		} else {
+			r.allow[argvKey(argv)] = true
+		}
 	}
 	return r, nil
+}
+
+func hasSlot(argv []string) bool {
+	for _, a := range argv {
+		if _, ok := slotShapes[a]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+// A slot is an allowlist argument that stands for one value of a fixed
+// shape, not for any text: it lets "journalctl --since <time>" be allowed
+// without allowing every argument. Slots are only matched, never split.
+const (
+	// SlotTime is "2006-01-02 15:04:05".
+	SlotTime = "\x00slot:time"
+)
+
+var slotShapes = map[string]*regexp.Regexp{
+	SlotTime: regexp.MustCompile(`^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$`),
+}
+
+// matchSlots reports whether argv equals pattern, slot arguments matched
+// by shape.
+func matchSlots(pattern, argv []string) bool {
+	if len(pattern) != len(argv) {
+		return false
+	}
+	for i, p := range pattern {
+		if re, ok := slotShapes[p]; ok {
+			if !re.MatchString(argv[i]) {
+				return false
+			}
+		} else if p != argv[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func checkArgv(argv []string) error {
@@ -114,7 +159,18 @@ func argvKey(argv []string) string { return strings.Join(argv, "\x00") }
 
 // Allowed reports whether argv is on the list.
 func (r *Runner) Allowed(argv []string) bool {
-	return r != nil && checkArgv(argv) == nil && r.allow[argvKey(argv)]
+	if r == nil || checkArgv(argv) != nil {
+		return false
+	}
+	if r.allow[argvKey(argv)] {
+		return true
+	}
+	for _, p := range r.patterns {
+		if matchSlots(p, argv) {
+			return true
+		}
+	}
+	return false
 }
 
 // Run executes argv with no shell, no stdin, a fixed environment, a timeout

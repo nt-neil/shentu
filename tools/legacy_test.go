@@ -18,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -761,6 +762,152 @@ func TestLegacyFirewall(t *testing.T) {
 		got := linux.Firewall(context.Background(), c.h, procs).Value.Extra["summary"]
 		if want := legacyFirewall(c.h, c.running); got != want {
 			t.Errorf("%s: %q, legacy %q", name, got, want)
+		}
+	}
+}
+
+// legacySSHAggregate is SSHSummary's grouping before 1c (the regexes are
+// the same strings, so they are taken from the parsing it feeds).
+func legacySSHAggregate(lines []string, since time.Time, onlyIP string) []SSHSource {
+	prefix := `^(?:\S+|\w{3} +\d+ \d\d:\d\d:\d\d) \S+ sshd(?:-session)?\[\d+\]: `
+	reF := regexp.MustCompile(prefix + `Failed (?:password|publickey|keyboard-interactive/pam|none) for (?:invalid user )?(.*) from (\S+) port \d+(?: ssh2)?(?: \[preauth\])?\s*$`)
+	reI := regexp.MustCompile(prefix + `Invalid user (.*) from (\S+) port \d+(?: \[preauth\])?\s*$`)
+	reA := regexp.MustCompile(prefix + `Accepted (\S+) for (\S+) from (\S+) port \d+ ssh2(?:: .*)?$`)
+	parse := func(line string) (time.Time, bool) {
+		if i := strings.IndexByte(line, ' '); i > 0 {
+			for _, layout := range []string{time.RFC3339Nano, "2006-01-02T15:04:05-0700"} {
+				if t, err := time.Parse(layout, line[:i]); err == nil {
+					return t, true
+				}
+			}
+		}
+		if len(line) >= 15 {
+			t, err := time.ParseInLocation("Jan _2 15:04:05", line[:15], time.Local)
+			if err == nil {
+				now := time.Now()
+				t = t.AddDate(now.Year(), 0, 0)
+				if t.After(now.Add(24 * time.Hour)) {
+					t = t.AddDate(-1, 0, 0)
+				}
+				return t, true
+			}
+		}
+		return time.Time{}, false
+	}
+	by := map[string]*SSHSource{}
+	users := map[string]map[string]map[string]bool{}
+	for _, l := range lines {
+		ts, ok := parse(l)
+		if !ok || ts.Before(since) {
+			continue
+		}
+		var ip, user, kind string
+		if m := reF.FindStringSubmatch(l); m != nil {
+			user, ip, kind = m[1], m[2], "failed"
+		} else if m := reI.FindStringSubmatch(l); m != nil {
+			user, ip, kind = m[1], m[2], "invalid"
+		} else if m := reA.FindStringSubmatch(l); m != nil {
+			user, ip, kind = m[2], m[3], "accepted"
+		} else {
+			continue
+		}
+		if net.ParseIP(ip) == nil {
+			continue
+		}
+		if strings.Contains(user, " from ") || strings.Contains(user, ": ") {
+			user = "[crafted user name]"
+		}
+		if len(user) > 64 {
+			user = Cut(user, 64)
+		}
+		if onlyIP != "" && ip != onlyIP {
+			continue
+		}
+		s := by[ip]
+		if s == nil {
+			s = &SSHSource{IP: ip, First: ts}
+			by[ip] = s
+			users[ip] = map[string]map[string]bool{"failed": {}, "invalid": {}, "accepted": {}}
+		}
+		switch kind {
+		case "failed":
+			s.Failed++
+		case "invalid":
+			s.InvalidUser++
+		case "accepted":
+			s.Accepted++
+		}
+		if ts.Before(s.First) {
+			s.First = ts
+		}
+		if ts.After(s.Last) {
+			s.Last = ts
+		}
+		if len(users[ip][kind]) < 20 {
+			users[ip][kind][user] = true
+		}
+	}
+	list := []SSHSource{}
+	for ip, s := range by {
+		names := func(kind string) []string {
+			var l []string
+			for u := range users[ip][kind] {
+				l = append(l, u)
+			}
+			sort.Strings(l)
+			return l
+		}
+		s.FailedUsers, s.InvalidUsers, s.AcceptedUsers = names("failed"), names("invalid"), names("accepted")
+		list = append(list, *s)
+	}
+	return list
+}
+
+func TestLegacySSHLogins(t *testing.T) {
+	now := time.Now()
+	iso := func(d time.Duration) string { return now.Add(d).UTC().Format("2006-01-02T15:04:05.000000-07:00") }
+	var lines []string
+	for i := range 300 { // more than 50 sources and more than 20 names, ties included
+		lines = append(lines,
+			fmt.Sprintf("%s vm sshd[%d]: Failed password for invalid user u%d from 203.0.%d.%d port 4000 ssh2", iso(-time.Duration(i)*time.Minute), i, i, i%7, i%60),
+			fmt.Sprintf("%s vm sshd[%d]: Invalid user n%d from 198.51.100.%d port 22 [preauth]", now.Add(-time.Duration(i)*time.Second).Format("Jan _2 15:04:05"), i, i, i%3),
+		)
+	}
+	lines = append(lines,
+		iso(-time.Hour)+" vm sshd[1]: Accepted publickey for ops from 192.0.2.10 port 5000 ssh2: ED25519 SHA256:x",
+		iso(-time.Hour)+" vm sshd[2]: Invalid user x from 192.0.2.10 port 1 from 203.0.113.50 port 2222",
+		iso(-time.Hour)+" vm sshd-session[3]: Failed password for "+strings.Repeat("é", 40)+" from 192.0.2.30 port 1 ssh2",
+		iso(-30*time.Hour)+" vm sshd[4]: Failed password for root from 203.0.113.99 port 1 ssh2",
+	)
+	since := now.Add(-24 * time.Hour)
+	for _, only := range []string{"", "192.0.2.10"} {
+		want := legacySSHAggregate(lines, since, only)
+		got := hostenv.SSHLogins(lines, since, now, only)
+		// The legacy order of equal counts was map order; compare by IP, and
+		// check the new list is the legacy one cut at the same 50.
+		sortIP := func(l []SSHSource) { sort.Slice(l, func(i, j int) bool { return l[i].IP < l[j].IP }) }
+		total := func(s SSHSource) int { return s.Failed + s.InvalidUser }
+		sort.SliceStable(want, func(i, j int) bool { return total(want[i]) > total(want[j]) })
+		if len(want) > 50 {
+			cut := total(want[49])
+			var keep []SSHSource
+			for _, s := range want {
+				if total(s) > cut {
+					keep = append(keep, s)
+				}
+			}
+			for _, s := range got {
+				if total(s) == cut {
+					keep = append(keep, s) // which ties make the cut was undefined before
+				}
+			}
+			want = keep[:50]
+		}
+		sortIP(want)
+		g := append([]SSHSource(nil), got...)
+		sortIP(g)
+		if !reflect.DeepEqual(g, want) {
+			t.Errorf("only=%q: %d sources vs legacy %d", only, len(g), len(want))
 		}
 	}
 }

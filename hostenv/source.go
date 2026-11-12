@@ -58,6 +58,20 @@ type NoFollowReader interface {
 	ReadFileNoFollow(path string) ([]byte, error)
 }
 
+// LargeReader is implemented by Sources that can read past MaxFileBytes,
+// for logs a check must see whole (a brute force fills auth.log).
+type LargeReader interface {
+	ReadFileMax(path string, max int64) ([]byte, error)
+}
+
+// ReadFileMax reads up to max bytes through src when it supports it.
+func ReadFileMax(src Source, path string, max int64) ([]byte, error) {
+	if l, ok := src.(LargeReader); ok {
+		return l.ReadFileMax(path, max)
+	}
+	return src.ReadFile(path)
+}
+
 // FileStat is the part of a stat result the collectors use.
 type FileStat struct {
 	Mode    fs.FileMode `json:"mode"`
@@ -126,11 +140,13 @@ func (l *Live) Info() SourceInfo {
 	return SourceInfo{GOOS: runtime.GOOS, GOARCH: runtime.GOARCH, Elevated: elevated(), RecordedAt: l.now().UTC()}
 }
 
-func (l *Live) ReadFile(path string) ([]byte, error) { return l.read(path, false) }
+func (l *Live) ReadFile(path string) ([]byte, error) { return l.read(path, false, MaxFileBytes) }
 
-func (l *Live) ReadFileNoFollow(path string) ([]byte, error) { return l.read(path, true) }
+func (l *Live) ReadFileNoFollow(path string) ([]byte, error) { return l.read(path, true, MaxFileBytes) }
 
-func (l *Live) read(path string, noFollow bool) ([]byte, error) {
+func (l *Live) ReadFileMax(path string, max int64) ([]byte, error) { return l.read(path, false, max) }
+
+func (l *Live) read(path string, noFollow bool, max int64) ([]byte, error) {
 	f, err := openRead(l.path(path), noFollow)
 	if err != nil {
 		return nil, err
@@ -145,13 +161,17 @@ func (l *Live) read(path string, noFollow bool) ([]byte, error) {
 		}
 		return nil, &fs.PathError{Op: "read", Path: path, Err: notRegular(why)}
 	}
-	b, err := io.ReadAll(io.LimitReader(f, MaxFileBytes+1))
+	b, err := io.ReadAll(io.LimitReader(f, max+1))
 	if err != nil {
 		return nil, err
 	}
+	truncated := int64(len(b)) > max
+	if truncated {
+		b = b[:max]
+	}
 	b = []byte(MaskSecrets(string(b)))
-	if len(b) > MaxFileBytes {
-		return b[:MaxFileBytes], ErrTruncated
+	if truncated {
+		return b, ErrTruncated
 	}
 	return b, nil
 }
