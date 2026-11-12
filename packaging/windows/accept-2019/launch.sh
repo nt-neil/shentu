@@ -22,9 +22,11 @@ aws s3 cp --region "$REGION" "$WORK/hostfacts.exe" "s3://$BUCKET/$PREFIX/hostfac
 GET_SHENTU=$(aws s3 presign --region "$REGION" --expires-in 3600 "s3://$BUCKET/$PREFIX/shentu.exe")
 GET_FACTS=$(aws s3 presign --region "$REGION" --expires-in 3600 "s3://$BUCKET/$PREFIX/hostfacts.exe")
 # aws s3 presign signs GET only; the result upload needs a presigned PUT.
+# Valid 2 hours: a run takes about one; one still going after two is
+# stuck, and its results are not wanted.
 # Credentials go from the CLI to this process's environment, never to a file.
 PUT_RESULT=$(eval "$(aws configure export-credentials --format env)" && \
-  python3 "$HERE/presign_put.py" "$REGION" "$BUCKET" "$PREFIX/result.tgz" 14400)
+  python3 "$HERE/presign_put.py" "$REGION" "$BUCKET" "$PREFIX/result.tgz" 7200)
 
 python3 - "$HERE/userdata.bat.tmpl" "$WORK/userdata.bat" "$GET_SHENTU" "$GET_FACTS" "$PUT_RESULT" <<'EOF'
 import sys

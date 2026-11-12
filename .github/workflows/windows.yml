@@ -24,8 +24,19 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
-          go-version: stable
-          check-latest: true
+          go-version: "1.27.3" # go.mod's toolchain line (checked below)
+      - name: Go version and tree hygiene
+        run: |
+          # The Go used here is go.mod's toolchain, not whatever "stable" is today.
+          want=$(awk '/^toolchain/{print $2}' go.mod)
+          [ "$(go env GOVERSION)" = "$want" ] || { echo "FAIL: Go $(go env GOVERSION), go.mod wants $want"; exit 1; }
+          # No Python bytecode in the repository (it slipped in once).
+          [ -z "$(git ls-files '*.pyc' '*__pycache__*')" ] || { echo "FAIL: committed Python bytecode"; git ls-files '*.pyc' '*__pycache__*'; exit 1; }
+          # The 2019 acceptance's presigned URLs live at most 2 hours.
+          grep -oE -- '--expires-in [0-9]+|result\.tgz" [0-9]+' packaging/windows/accept-2019/launch.sh | grep -oE '[0-9]+$' |
+            while read -r n; do
+              [ "$n" -le 7200 ] || { echo "FAIL: a presigned URL lives $n s"; exit 1; }
+            done
       - name: build
         run: go build ./...
       - name: vet
@@ -205,8 +216,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
-          go-version: stable
-          check-latest: true
+          go-version: "1.27.3" # go.mod's toolchain line (checked below)
       - uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
       - name: snapshot of hostenv-p1 (the Linux baseline)
         uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6.4.0

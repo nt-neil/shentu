@@ -53,4 +53,6 @@ BUCKET=... PREFIX=... SG=... ID=... REGION=us-east-1 ./collect.sh
 ```
 
 The rendered user-data in launch.sh's work directory holds short-lived
-presigned URLs: move it to the trash when done.
+presigned URLs (downloads 1 hour, the result upload 2 hours): move it to
+the trash when done. A run still going after 2 hours cannot upload its
+result; it stops itself at 3 hours.
