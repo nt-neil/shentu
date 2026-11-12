@@ -2151,6 +2151,9 @@ func (a *analysis) sink(st state, t []Token, i int, s *pat) {
 		return ok
 	}
 	reaches := func(arg []Token) bool {
+		if cond != nil && len(cond.unlessSub) > 0 && subscriptOf(stripParens(arg), cond.unlessSub) {
+			return false // zipfile.ZipFile(request.files["f"]): the upload's stream, not a path
+		}
 		if cond != nil && cond.key != "" {
 			if arg = keyValue(arg, cond.key); arg == nil {
 				return false // { status: 302 } without the key: not this sink
@@ -2471,4 +2474,16 @@ func (a *analysis) textSink(st state, t []Token, k, off, textEnd int, cond *argC
 	if tainted {
 		a.report(tk.Line + strings.Count(tk.Text[:off], "\n"))
 	}
+}
+
+// subscriptOf reports whether t is, as a whole, one item of what one of the
+// patterns names: the pattern, then one [...] (request.files["archive"]).
+func subscriptOf(t []Token, ps []*pat) bool {
+	for _, p := range ps {
+		end, ok := p.match(t, 0, false)
+		if ok && end < len(t) && t[end].op("[") && closeOf(t, end) == len(t)-1 {
+			return true
+		}
+	}
+	return false
 }
