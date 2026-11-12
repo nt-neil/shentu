@@ -5,7 +5,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -420,5 +422,50 @@ func TestWebFact(t *testing.T) {
 	w := Collect(context.Background(), h).Web
 	if w.Status != StatusOK || w.Value.Server != "nginx" || !reflect.DeepEqual(w.Value.WebRoots, []string{"/usr/share/nginx/html", "/var/www/shop"}) {
 		t.Errorf("web %+v", w)
+	}
+}
+
+// statHost adds Stat to fakeHost: files and link targets with a mode and
+// an owner.
+type statHost struct {
+	*fakeHost
+	st map[string]FileStat
+}
+
+func (h statHost) Stat(p string) (FileStat, error) {
+	for i := 0; i < 8; i++ { // follow links on the whole path, as stat(2) does
+		t, ok := h.links[p]
+		if !ok {
+			break
+		}
+		if !strings.HasPrefix(t, "/") {
+			t = path.Join(path.Dir(p), t)
+		}
+		p = t
+	}
+	if s, ok := h.st[p]; ok {
+		return s, nil
+	}
+	if _, ok := h.files[p]; ok {
+		return FileStat{Mode: 0o644, UID: 0}, nil
+	}
+	return FileStat{}, fs.ErrNotExist
+}
+
+func TestWebRootsTrustedLinks(t *testing.T) {
+	h := statHost{fakeHost: debianHost(true), st: map[string]FileStat{}}
+	h.files["/etc/nginx/sites-available/shop"] = "server {\n root /var/www/shop;\n}\n"
+	h.links["/etc/nginx/sites-enabled/shop"] = "../sites-available/shop"
+	h.files["/etc/nginx/sites-available/w"] = "server {\n root /var/www/w;\n}\n"
+	h.links["/etc/nginx/sites-enabled/w"] = "/etc/nginx/sites-available/w"
+	h.st["/etc/nginx/sites-available/w"] = FileStat{Mode: 0o666, UID: 0} // world-writable target
+	h.files["/home/bob/site.conf"] = "server {\n root /var/www/bob;\n}\n"
+	h.links["/etc/nginx/sites-enabled/bob"] = "/home/bob/site.conf" // leaves /etc
+	h.files["/etc/nginx/sites-available/u"] = "server {\n root /var/www/u;\n}\n"
+	h.links["/etc/nginx/sites-enabled/u"] = "../sites-available/u"
+	h.st["/etc/nginx/sites-available/u"] = FileStat{Mode: 0o644, UID: 1000} // not root's
+	got := LinuxCollector{}.WebRoots(h)
+	if !reflect.DeepEqual(got, []string{"/var/www/shop"}) {
+		t.Errorf("web roots %q, want only the root-owned, root-only link", got)
 	}
 }

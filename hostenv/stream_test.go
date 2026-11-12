@@ -157,15 +157,37 @@ func TestAuthLogStreamsInFlatMemory(t *testing.T) {
 func TestScanRedactsKeyBlocks(t *testing.T) {
 	body := strings.Repeat("Zm9vYmFy", 8)
 	// Markers assembled at run time: no key-shaped literal in the source.
-	pk := func(edge, kind string) string { return strings.Repeat("-", 5) + edge + " " + kind + " PRIVATE " + "KEY" + strings.Repeat("-", 5) }
-	log := "a\nconfig dump: " + pk("BEGIN", "OPENSSH") + "\n" + body + "\n" + body + "\n" + pk("END", "OPENSSH") + " tail\nb " + pk("BEGIN", "RSA") + body + pk("END", "RSA") + " c\nz\n"
+	pk := func(edge, kind string) string {
+		return strings.Repeat("-", 5) + edge + " " + kind + " PRIVATE " + "KEY" + strings.Repeat("-", 5)
+	}
+	log := "a\n" + pk("BEGIN", "OPENSSH") + "\n" + body + "\n" + body + "\n" + pk("END", "OPENSSH") + "\nb " + pk("BEGIN", "RSA") + body + pk("END", "RSA") + " c\nz\n"
 	var got []string
 	if err := scan(strings.NewReader(log), func(l string) { got = append(got, l) }); err != nil {
 		t.Fatal(err)
 	}
 	all := strings.Join(got, "\n")
-	if strings.Contains(all, body) || !strings.Contains(all, "config dump: [REDACTED PRIVATE KEY]") || !strings.Contains(all, " tail") || got[len(got)-1] != "z" {
+	if strings.Contains(all, body) || !strings.Contains(all, "[REDACTED PRIVATE KEY]") || got[len(got)-1] != "z" || len(got) != 4 {
 		t.Errorf("lines %q", got)
+	}
+	// A marker an attacker puts into a log message opens no block: the
+	// brute force that follows is still seen.
+	ts := time.Now().UTC().Format(time.RFC3339)
+	inj := ts + " vm sshd[1]: Invalid user " + pk("BEGIN", "RSA") + " from 203.0.113.5 port 1\n"
+	for range 5 {
+		inj += ts + " vm sshd[2]: Failed password for root from 203.0.113.5 port 2 ssh2\n"
+	}
+	c := NewSSHLogins(time.Now().Add(-time.Hour), time.Now(), "")
+	if err := scan(strings.NewReader(inj), c.Add); err != nil {
+		t.Fatal(err)
+	}
+	if r := c.Result(); len(r) != 1 || r[0].Failed != 5 {
+		t.Errorf("injected marker hid events: %+v", r)
+	}
+	// A block that never ends stops at the first line that is not PEM.
+	var after []string
+	scan(strings.NewReader(pk("BEGIN", "EC")+"\n"+body+"\n"+ts+" vm sshd[3]: Accepted publickey for ops from 192.0.2.1 port 3 ssh2\n"), func(l string) { after = append(after, l) })
+	if len(after) != 2 || !strings.Contains(after[1], "Accepted") {
+		t.Errorf("unterminated block swallowed lines: %q", after)
 	}
 	// Recorder masks the whole stream it keeps for a fixture.
 	h := newFake(true)
@@ -199,5 +221,23 @@ func TestSSHLoginsFloodKeepsSlowAttacker(t *testing.T) {
 	}
 	if c.Evicted() == 0 {
 		t.Error("expected evictions")
+	}
+}
+
+// A BEGIN marker planted at the top of a file the attacker writes hides
+// only a PEM-shaped block, not the rest (Live.ReadFile, whole files).
+func TestPlantedMarkerHidesNoPersistence(t *testing.T) {
+	pk := strings.Repeat("-", 5) + "BEGIN RSA PRIVATE " + "KEY" + strings.Repeat("-", 5)
+	crontab := pk + "\n* * * * * root /tmp/.x/agent\n@reboot /tmp/.x/agent\n"
+	got := string(maskLines([]byte(crontab)))
+	if !strings.Contains(got, "/tmp/.x/agent") || strings.Count(got, "\n") != 3 {
+		t.Errorf("masked crontab %q", got)
+	}
+	if got := string(maskLines([]byte("a\nb"))); got != "a\nb" {
+		t.Errorf("line ends changed: %q", got)
+	}
+	long := strings.Repeat("x", 2<<20) + "\npassword=" + strings.Repeat("q7", 5) + "\n"
+	if got := string(maskLines([]byte(long))); !strings.Contains(got, "password=[REDACTED]") || len(got) < 2<<20 {
+		t.Error("a long line must not stop masking")
 	}
 }

@@ -61,36 +61,80 @@ func ScanLines(src Source, path string, fn func(line string)) error {
 	return scan(r, fn)
 }
 
-// pemBegin and pemEnd frame a private key block, which spans lines: line
-// by line masking alone would let its body through.
+// A private key block spans lines, so line-by-line masking alone would
+// let its body through. A block starts only at a line that is exactly a
+// BEGIN ... PRIVATE KEY marker (a log line always has a prefix, so text an
+// attacker puts into a log message cannot open one), holds only PEM-shaped
+// lines (base64, a "Name: value" header, blank), and is at most
+// maxKeyLines long; anything else ends it and is passed on, masked.
 var (
-	pemBegin = regexp.MustCompile("-----BEGIN [A-Z ]*PRIVATE KEY-----")
-	pemEnd   = regexp.MustCompile("-----END [A-Z ]*PRIVATE KEY-----")
+	pemBeginLine = regexp.MustCompile(`^-----BEGIN [A-Z ]*PRIVATE KEY-----$`)
+	pemEndLine   = regexp.MustCompile(`^-----END [A-Z ]*PRIVATE KEY-----`)
+	pemBody      = regexp.MustCompile(`^(?:[A-Za-z0-9+/=]*|[A-Za-z-]+: .*)$`)
 )
+
+const maxKeyLines = 120 // a 8192-bit RSA key in PEM is about 100 lines
+
+// keyMasker is the line state machine shared by scans and recordings.
+type keyMasker struct {
+	inKey bool
+	lines int
+}
+
+// line returns what to pass on for l, and false to pass nothing.
+func (k *keyMasker) line(l string) (string, bool) {
+	t := strings.TrimSpace(l)
+	if k.inKey {
+		if pemEndLine.MatchString(t) {
+			k.inKey = false
+			return "", false
+		}
+		if k.lines++; k.lines <= maxKeyLines && pemBody.MatchString(t) {
+			return "", false // the key body never leaves
+		}
+		k.inKey = false // not a key after all: back to normal lines
+	}
+	if pemBeginLine.MatchString(t) {
+		k.inKey, k.lines = true, 0
+		return "[REDACTED PRIVATE KEY]", true
+	}
+	return MaskSecrets(l), true
+}
 
 func scan(r io.Reader, fn func(string)) error {
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 64*1024), MaxLineBytes)
-	inKey := false
+	var km keyMasker
 	for sc.Scan() {
-		l := sc.Text()
-		if inKey {
-			if loc := pemEnd.FindStringIndex(l); loc != nil {
-				inKey = false
-				if rest := l[loc[1]:]; strings.TrimSpace(rest) != "" {
-					fn(MaskSecrets(rest))
-				}
-			}
-			continue // the key body never reaches fn
+		if out, ok := km.line(sc.Text()); ok {
+			fn(out)
 		}
-		if loc := pemBegin.FindStringIndex(l); loc != nil && pemEnd.FindStringIndex(l[loc[1]:]) == nil {
-			inKey = true
-			fn(MaskSecrets(l[:loc[0]]) + "[REDACTED PRIVATE KEY]")
-			continue
-		}
-		fn(MaskSecrets(l))
 	}
 	return sc.Err()
+}
+
+// maskLines masks a whole buffer with the same line rules as scan, with no
+// line length limit, keeping the buffer's own line ends. Every Source uses
+// it for whole files, so a BEGIN marker planted at the top of a file the
+// attacker can write (a crontab, authorized_keys) hides only a bounded,
+// PEM-shaped block, never the rest of the file.
+func maskLines(b []byte) []byte {
+	var km keyMasker
+	lines := strings.SplitAfter(string(b), "\n")
+	var out strings.Builder
+	out.Grow(len(b))
+	for _, l := range lines {
+		if l == "" {
+			continue
+		}
+		body := strings.TrimRight(l, "\n")
+		end := l[len(body):]
+		if masked, ok := km.line(body); ok {
+			out.WriteString(masked)
+			out.WriteString(end)
+		}
+	}
+	return []byte(out.String())
 }
 
 // RunLines streams argv's stdout to fn line by line through src; Sources
@@ -139,7 +183,7 @@ func (r *Recorder) Open(path string) (io.ReadCloser, error) {
 	err := ScanLinesRaw(r.Inner, path, &buf)
 	data := buf.Bytes()
 	if !strings.HasSuffix(path, ".gz") {
-		data = []byte(MaskSecrets(string(data))) // whole buffer: key blocks across lines too
+		data = maskLines(data) // the scan's own bounded rules, line by line
 	}
 	r.put(&entry{Op: "file", Path: path, Err: errCode(err), data: data})
 	if err != nil {

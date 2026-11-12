@@ -77,6 +77,7 @@ type FileStat struct {
 	Mode    fs.FileMode `json:"mode"`
 	Size    int64       `json:"size"`
 	ModTime time.Time   `json:"mtime"`
+	UID     int         `json:"uid"` // owner; -1 when the system has none to tell (Windows)
 }
 
 // Stater is implemented by Sources that can stat a path (following links).
@@ -169,7 +170,7 @@ func (l *Live) read(path string, noFollow bool, max int64) ([]byte, error) {
 	if truncated {
 		b = b[:max]
 	}
-	b = []byte(MaskSecrets(string(b)))
+	b = maskLines(b) // line by line: a planted BEGIN marker hides a bounded block at most
 	if truncated {
 		return b, ErrTruncated
 	}
@@ -181,7 +182,7 @@ func (l *Live) Stat(path string) (FileStat, error) {
 	if err != nil {
 		return FileStat{}, err
 	}
-	return FileStat{Mode: st.Mode(), Size: st.Size(), ModTime: st.ModTime()}, nil
+	return FileStat{Mode: st.Mode(), Size: st.Size(), ModTime: st.ModTime(), UID: fileUID(st)}, nil
 }
 
 func (l *Live) ReadDir(path string) ([]string, error) {
