@@ -38,9 +38,12 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
   SQL 位置（例如先用 isset() 檢查，或在 ORDER BY FIELD() 裡用 $wpdb->prepare() 綁定），因此在這些
   地方會多出誤報。v0.2.6 會把這個來源限縮到 Elementor 元件。
 - 在 `$wpdb->prepare()`／`->prepare()` 的格式字串裡，如果佔位符清單是由只回傳常數的 callback 產生
-  （例如 `implode(',', array_map(fn($v) => '%d', $ids))`），仍然會被當成輸入報出來。
+  （例如 `implode(',', array_map(fn($v) => '%d', $ids))`，或改用 `function ($v) { return '%d'; }` 的寫法），
+  只要 `$ids` 來自請求，仍然會被當成輸入報出來。
   `array_fill(0, count($ids), '%d')` 和 `sizeof()` 的寫法已能辨識。要讀出 callback 的回傳值需要
   改引擎，預定 v0.2.6。
+- `python-path-traversal-send-file` 會把 `zipfile.ZipFile(request.files[...])` 報出來，這是誤報：它開的是
+  上傳的檔案串流，不是路徑。要在同一個參數裡分出請求的檔案串流和客戶端填寫的 filename，需要改引擎，預定 v0.2.6。
 
 ## v0.2.4 — 2026-11-09
 
