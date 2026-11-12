@@ -4277,77 +4277,88 @@
         "addr": "0.0.0.0",
         "port": 22,
         "pid": 521,
-        "process": "sshd"
+        "process": "sshd",
+        "uid": "0"
       },
       {
         "proto": "tcp",
         "addr": "0.0.0.0",
         "port": 5355,
         "pid": 447,
-        "process": "systemd-resolve"
+        "process": "systemd-resolve",
+        "uid": "996"
       },
       {
         "proto": "tcp",
         "addr": "127.0.0.53",
         "port": 53,
         "pid": 447,
-        "process": "systemd-resolve"
+        "process": "systemd-resolve",
+        "uid": "996"
       },
       {
         "proto": "tcp",
         "addr": "127.0.0.54",
         "port": 53,
         "pid": 447,
-        "process": "systemd-resolve"
+        "process": "systemd-resolve",
+        "uid": "996"
       },
       {
         "proto": "tcp6",
         "addr": "::",
         "port": 22,
         "pid": 521,
-        "process": "sshd"
+        "process": "sshd",
+        "uid": "0"
       },
       {
         "proto": "tcp6",
         "addr": "::",
         "port": 5355,
         "pid": 447,
-        "process": "systemd-resolve"
+        "process": "systemd-resolve",
+        "uid": "996"
       },
       {
         "proto": "udp",
         "addr": "127.0.0.54",
         "port": 53,
         "pid": 447,
-        "process": "systemd-resolve"
+        "process": "systemd-resolve",
+        "uid": "996"
       },
       {
         "proto": "udp",
         "addr": "127.0.0.53",
         "port": 53,
         "pid": 447,
-        "process": "systemd-resolve"
+        "process": "systemd-resolve",
+        "uid": "996"
       },
       {
         "proto": "udp",
         "addr": "10.0.0.1",
         "port": 68,
         "pid": 472,
-        "process": "systemd-network"
+        "process": "systemd-network",
+        "uid": "998"
       },
       {
         "proto": "udp",
         "addr": "0.0.0.0",
         "port": 5355,
         "pid": 447,
-        "process": "systemd-resolve"
+        "process": "systemd-resolve",
+        "uid": "996"
       },
       {
         "proto": "udp6",
         "addr": "::",
         "port": 5355,
         "pid": 447,
-        "process": "systemd-resolve"
+        "process": "systemd-resolve",
+        "uid": "996"
       }
     ]
   },

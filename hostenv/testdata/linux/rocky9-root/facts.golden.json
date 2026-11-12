@@ -4760,56 +4760,64 @@
         "addr": "0.0.0.0",
         "port": 22,
         "pid": 925,
-        "process": "sshd"
+        "process": "sshd",
+        "uid": "0"
       },
       {
         "proto": "tcp",
         "addr": "0.0.0.0",
         "port": 111,
         "pid": 764,
-        "process": "rpcbind"
+        "process": "rpcbind",
+        "uid": "0"
       },
       {
         "proto": "tcp6",
         "addr": "::",
         "port": 22,
         "pid": 925,
-        "process": "sshd"
+        "process": "sshd",
+        "uid": "0"
       },
       {
         "proto": "tcp6",
         "addr": "::",
         "port": 111,
         "pid": 764,
-        "process": "rpcbind"
+        "process": "rpcbind",
+        "uid": "0"
       },
       {
         "proto": "udp",
         "addr": "127.0.0.1",
         "port": 323,
         "pid": 805,
-        "process": "chronyd"
+        "process": "chronyd",
+        "uid": "0"
       },
       {
         "proto": "udp",
         "addr": "0.0.0.0",
         "port": 111,
         "pid": 764,
-        "process": "rpcbind"
+        "process": "rpcbind",
+        "uid": "0"
       },
       {
         "proto": "udp6",
         "addr": "::1",
         "port": 323,
         "pid": 805,
-        "process": "chronyd"
+        "process": "chronyd",
+        "uid": "0"
       },
       {
         "proto": "udp6",
         "addr": "::",
         "port": 111,
         "pid": 764,
-        "process": "rpcbind"
+        "process": "rpcbind",
+        "uid": "0"
       }
     ]
   },

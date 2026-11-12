@@ -4252,57 +4252,68 @@
       {
         "proto": "tcp",
         "addr": "0.0.0.0",
-        "port": 22
+        "port": 22,
+        "uid": "0"
       },
       {
         "proto": "tcp",
         "addr": "0.0.0.0",
-        "port": 5355
+        "port": 5355,
+        "uid": "996"
       },
       {
         "proto": "tcp",
         "addr": "127.0.0.53",
-        "port": 53
+        "port": 53,
+        "uid": "996"
       },
       {
         "proto": "tcp",
         "addr": "127.0.0.54",
-        "port": 53
+        "port": 53,
+        "uid": "996"
       },
       {
         "proto": "tcp6",
         "addr": "::",
-        "port": 22
+        "port": 22,
+        "uid": "0"
       },
       {
         "proto": "tcp6",
         "addr": "::",
-        "port": 5355
+        "port": 5355,
+        "uid": "996"
       },
       {
         "proto": "udp",
         "addr": "127.0.0.54",
-        "port": 53
+        "port": 53,
+        "uid": "996"
       },
       {
         "proto": "udp",
         "addr": "127.0.0.53",
-        "port": 53
+        "port": 53,
+        "uid": "996"
       },
       {
         "proto": "udp",
         "addr": "10.0.0.1",
-        "port": 68
+        "port": 68,
+        "uid": "998"
       },
       {
         "proto": "udp",
         "addr": "0.0.0.0",
-        "port": 5355
+        "port": 5355,
+        "uid": "996"
       },
       {
         "proto": "udp6",
         "addr": "::",
-        "port": 5355
+        "port": 5355,
+        "uid": "996"
       }
     ]
   },

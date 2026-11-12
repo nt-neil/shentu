@@ -169,6 +169,7 @@ type Listener struct {
 	Port    int    `json:"port"`
 	PID     int    `json:"pid,omitempty"` // 0 when the owner could not be seen
 	Process string `json:"process,omitempty"`
+	UID     string `json:"uid,omitempty"` // socket owner (uid or SID)
 }
 
 // PersistenceItem is anything that makes code run again without a person

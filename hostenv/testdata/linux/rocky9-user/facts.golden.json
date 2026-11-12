@@ -4730,42 +4730,50 @@
       {
         "proto": "tcp",
         "addr": "0.0.0.0",
-        "port": 22
+        "port": 22,
+        "uid": "0"
       },
       {
         "proto": "tcp",
         "addr": "0.0.0.0",
-        "port": 111
+        "port": 111,
+        "uid": "0"
       },
       {
         "proto": "tcp6",
         "addr": "::",
-        "port": 22
+        "port": 22,
+        "uid": "0"
       },
       {
         "proto": "tcp6",
         "addr": "::",
-        "port": 111
+        "port": 111,
+        "uid": "0"
       },
       {
         "proto": "udp",
         "addr": "127.0.0.1",
-        "port": 323
+        "port": 323,
+        "uid": "0"
       },
       {
         "proto": "udp",
         "addr": "0.0.0.0",
-        "port": 111
+        "port": 111,
+        "uid": "0"
       },
       {
         "proto": "udp6",
         "addr": "::1",
-        "port": 323
+        "port": 323,
+        "uid": "0"
       },
       {
         "proto": "udp6",
         "addr": "::",
-        "port": 111
+        "port": 111,
+        "uid": "0"
       }
     ]
   },

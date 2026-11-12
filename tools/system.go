@@ -1,10 +1,8 @@
 package tools
 
 import (
-	"bufio"
 	"bytes"
 	"context"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -16,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/nt-neil/shentu/hostenv"
 )
 
 var listeningPorts = Tool{
@@ -38,95 +38,46 @@ type Port struct {
 	UID     string `json:"uid"`
 }
 
-// ListeningPorts parses /proc/net/{tcp,tcp6,udp,udp6}.
+// ListeningPorts lists TCP and UDP listening sockets from hostenv's
+// listeners fact, each with its owning process and executable.
 func ListeningPorts() ([]Port, error) {
-	owners := socketOwners()
+	src := hostSource()
+	procs, owners := linux.Processes(src, nil)
+	byPID := map[int]hostenv.Process{}
+	for _, p := range procs.Value {
+		byPID[p.PID] = p
+	}
 	var ports []Port
-	seen := map[string]bool{}
-	for _, proto := range []string{"tcp", "tcp6", "udp", "udp6"} {
-		for _, e := range readProcNet(proto) {
-			// 0A = TCP_LISTEN; 07 = an unconnected (bound) UDP socket.
-			if (strings.HasPrefix(proto, "tcp") && e.state != "0A") || (strings.HasPrefix(proto, "udp") && e.state != "07") {
-				continue
-			}
-			p := Port{Proto: proto, Addr: e.localIP.String(), Port: e.localPort, UID: e.uid}
-			if pid, ok := owners[e.inode]; ok {
-				p.PID = pid
-				p.Process = comm(pid)
-				p.Exe, _ = os.Readlink(fmt.Sprintf("/proc/%d/exe", pid))
-			}
-			key := fmt.Sprintf("%s/%s/%d", proto, p.Addr, p.Port)
-			if !seen[key] {
-				seen[key] = true
-				ports = append(ports, p)
-			}
+	for _, l := range linux.Listeners(src, owners).Value {
+		p := Port{Proto: l.Proto, Addr: l.Addr, Port: l.Port, UID: l.UID}
+		if l.PID != 0 {
+			pr := byPID[l.PID]
+			p.PID, p.Process, p.Exe = l.PID, pr.Name, rawExe(pr)
 		}
+		ports = append(ports, p)
 	}
 	sort.Slice(ports, func(i, j int) bool { return ports[i].Port < ports[j].Port })
 	return ports, nil
 }
 
-type netEntry struct {
-	localIP    net.IP
-	localPort  int
-	remoteIP   net.IP
-	remotePort int
-	state      string
-	uid        string
-	inode      string
+// rawExe is the executable as /proc/PID/exe reads, " (deleted)" included.
+func rawExe(p hostenv.Process) string {
+	if !p.ExeKnown {
+		return ""
+	}
+	if !p.ExeExists {
+		return p.Exe + " (deleted)"
+	}
+	return p.Exe
 }
 
-func readProcNet(proto string) []netEntry {
-	f, err := os.Open("/proc/net/" + proto)
+// procNet is one /proc/net table through hostenv (nil when unreadable).
+func procNet(proto string) []hostenv.ProcNetEntry {
+	b, err := hostSource().ReadFile("/proc/net/" + proto)
 	if err != nil {
 		return nil
 	}
-	defer f.Close()
-	var out []netEntry
-	sc := bufio.NewScanner(f)
-	sc.Scan() // header
-	for sc.Scan() {
-		fs := strings.Fields(sc.Text())
-		if len(fs) < 10 {
-			continue
-		}
-		lip, lport := parseHexAddr(fs[1])
-		rip, rport := parseHexAddr(fs[2])
-		out = append(out, netEntry{lip, lport, rip, rport, fs[3], fs[7], fs[9]})
-	}
-	return out
-}
-
-// parseHexAddr decodes "0100007F:0016" (little-endian 32-bit words) into an IP and port.
-func parseHexAddr(s string) (net.IP, int) {
-	host, port, ok := strings.Cut(s, ":")
-	if !ok {
-		return nil, 0
-	}
-	b, err := hex.DecodeString(host)
-	if err != nil {
-		return nil, 0
-	}
-	for i := 0; i+4 <= len(b); i += 4 {
-		b[i], b[i+1], b[i+2], b[i+3] = b[i+3], b[i+2], b[i+1], b[i]
-	}
-	p, _ := strconv.ParseInt(port, 16, 32)
-	return net.IP(b), int(p)
-}
-
-// socketOwners maps socket inode -> pid by scanning /proc/*/fd.
-func socketOwners() map[string]int {
-	owners := map[string]int{}
-	for _, pid := range pids() {
-		fds, _ := filepath.Glob(fmt.Sprintf("/proc/%d/fd/*", pid))
-		for _, fd := range fds {
-			link, err := os.Readlink(fd)
-			if err == nil && strings.HasPrefix(link, "socket:[") {
-				owners[strings.TrimSuffix(strings.TrimPrefix(link, "socket:["), "]")] = pid
-			}
-		}
-	}
-	return owners
+	return hostenv.ParseProcNet(b)
 }
 
 func pids() []int {
@@ -150,9 +101,9 @@ func comm(pid int) string {
 func SSHPeers() map[string]bool {
 	peers := map[string]bool{}
 	for _, proto := range []string{"tcp", "tcp6"} {
-		for _, e := range readProcNet(proto) {
-			if e.state == "01" && e.localPort == 22 {
-				peers[normIP(e.remoteIP)] = true
+		for _, e := range procNet(proto) {
+			if e.State == "01" && e.LocalPort == 22 {
+				peers[normIP(e.RemoteIP)] = true
 			}
 		}
 	}
@@ -468,10 +419,10 @@ func UIDOf(name string) (string, bool) {
 // connection, found by its exact 4-tuple in /proc/net/tcp{,6}.
 func PeerUID(local, remote *net.TCPAddr) (string, bool) {
 	for _, proto := range []string{"tcp", "tcp6"} {
-		for _, e := range readProcNet(proto) {
-			if e.localPort == remote.Port && e.remotePort == local.Port &&
-				e.localIP.Equal(remote.IP) && e.remoteIP.Equal(local.IP) {
-				return e.uid, true
+		for _, e := range procNet(proto) {
+			if e.LocalPort == remote.Port && e.RemotePort == local.Port &&
+				e.LocalIP.Equal(remote.IP) && e.RemoteIP.Equal(local.IP) {
+				return e.UID, true
 			}
 		}
 	}

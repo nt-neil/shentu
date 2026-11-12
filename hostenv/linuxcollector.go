@@ -39,9 +39,9 @@ func (c LinuxCollector) Collect(ctx context.Context, src Source) *Facts {
 	f.Packages = c.packages(ctx, src, osr)
 	pw, accounts := c.accounts(src)
 	f.Accounts = accounts
-	procs, sockOwner := c.processes(src, pw)
+	procs, sockOwner := c.Processes(src, pw)
 	f.Processes = procs
-	f.Listeners = c.listeners(src, info, sockOwner)
+	f.Listeners = c.Listeners(src, sockOwner)
 	if procs.Known() { // name each listener's process, so checks need no join
 		names := map[int]string{}
 		for _, p := range procs.Value {
@@ -181,9 +181,9 @@ func numeric(s string) bool {
 	return err == nil
 }
 
-// processes walks /proc once and also returns socket inode -> pid for
-// listeners, so the walk is not repeated.
-func (LinuxCollector) processes(src Source, users map[string]string) (Obs[[]Process], map[string]int) {
+// Processes walks /proc once and also returns socket inode -> pid for
+// Listeners, so the walk is not repeated. users maps uid to name (nil: none).
+func (LinuxCollector) Processes(src Source, users map[string]string) (Obs[[]Process], map[string]int) {
 	owners := map[string]int{}
 	names, err := src.ReadDir("/proc")
 	if err != nil {
@@ -203,6 +203,9 @@ func (LinuxCollector) processes(src Source, users map[string]string) (Obs[[]Proc
 		}
 		st := ParseProcStatus(sb)
 		p := Process{PID: pid, PPID: st.PPID, Name: st.Name, UID: st.UID, User: users[st.UID]}
+		if cb, err := src.ReadFile(dir + "/comm"); err == nil {
+			p.Name = strings.TrimSpace(string(cb)) // raw, as ps shows it; status escapes some bytes
+		}
 		if cb, err := src.ReadFile(dir + "/cmdline"); err == nil {
 			p.Cmdline = ParseCmdline(cb)
 		}
@@ -233,10 +236,14 @@ func (LinuxCollector) processes(src Source, users map[string]string) (Obs[[]Proc
 	return OK(out), owners
 }
 
-func (LinuxCollector) listeners(src Source, info SourceInfo, owners map[string]int) Obs[[]Listener] {
+// Listeners reads /proc/net/{tcp,tcp6,udp,udp6}: TCP sockets in LISTEN and
+// bound UDP sockets, one per proto/address/port, in table order. owners
+// maps socket inode to pid (from Processes).
+func (LinuxCollector) Listeners(src Source, owners map[string]int) Obs[[]Listener] {
 	var out []Listener
 	var firstErr error
 	read, unowned := 0, 0
+	seen := map[string]bool{}
 	for _, proto := range []string{"tcp", "tcp6", "udp", "udp6"} {
 		b, err := src.ReadFile("/proc/net/" + proto)
 		if err != nil {
@@ -250,7 +257,12 @@ func (LinuxCollector) listeners(src Source, info SourceInfo, owners map[string]i
 			if !e.IsListening(proto) {
 				continue
 			}
-			l := Listener{Proto: proto, Addr: e.LocalIP.String(), Port: e.LocalPort}
+			l := Listener{Proto: proto, Addr: e.LocalIP.String(), Port: e.LocalPort, UID: e.UID}
+			key := fmt.Sprintf("%s/%s/%d", proto, l.Addr, l.Port)
+			if seen[key] { // SO_REUSEPORT: one row per socket, one listener per port
+				continue
+			}
+			seen[key] = true
 			if pid, ok := owners[e.Inode]; ok {
 				l.PID = pid
 			} else if e.Inode != "0" {
@@ -264,7 +276,7 @@ func (LinuxCollector) listeners(src Source, info SourceInfo, owners map[string]i
 		return unknownFrom[[]Listener]("/proc/net", firstErr)
 	case read == 0:
 		return Unknown[[]Listener](ReasonNotInstalled, "/proc/net tables missing")
-	case unowned > 0 && !info.Elevated:
+	case unowned > 0 && !src.Info().Elevated:
 		return Partial(out, ReasonPermission, fmt.Sprintf("owner of %d sockets not visible without root", unowned))
 		// As root an ownerless socket belongs to the kernel (NFS, WireGuard):
 		// PID stays 0, which checks read as "kernel", not as hidden.

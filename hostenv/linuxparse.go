@@ -132,7 +132,7 @@ func (e ProcNetEntry) IsListening(proto string) bool {
 	if strings.HasPrefix(proto, "tcp") {
 		return e.State == "0A"
 	}
-	return e.State == "07" && e.RemotePort == 0
+	return e.State == "07" // TCP_CLOSE for UDP: bound, not connected
 }
 
 // DpkgQueryFormat is the -f argument the Linux collector passes to dpkg-query.

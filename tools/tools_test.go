@@ -71,17 +71,6 @@ func TestSSHSummary(t *testing.T) {
 	}
 }
 
-func TestParseHexAddr(t *testing.T) {
-	ip, port := parseHexAddr("0100007F:0016")
-	if ip.String() != "127.0.0.1" || port != 22 {
-		t.Errorf("got %v:%d", ip, port)
-	}
-	ip, port = parseHexAddr("00000000000000000000000001000000:01BB")
-	if ip.String() != "::1" || port != 443 {
-		t.Errorf("got %v:%d", ip, port)
-	}
-}
-
 func TestBlockGuards(t *testing.T) {
 	for _, bad := range []string{"127.0.0.1", "0.0.0.0", "::", "::1", "10.0.0.0/8", "not-an-ip", "224.0.0.1", "169.254.1.1"} {
 		if _, err := blockIP.Preview(json.RawMessage(`{"ip":"` + bad + `","reason":"x"}`)); err == nil {
