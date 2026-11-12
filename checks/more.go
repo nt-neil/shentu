@@ -22,6 +22,7 @@ func init() {
 	register(checkFunc{"process.miner", miner})
 	register(checkFunc{"process.shell_as_web_user", shellAsWebUser})
 	register(checkFunc{"ssh.shared_key", sharedKey})
+	register(checkFunc{"ssh.authorized_keys_symlink", keysSymlink})
 	register(checkFunc{"firewall.disabled", firewallDisabled})
 	register(checkFunc{"antimalware", antimalware})
 	register(checkFunc{"smb", smb})
@@ -171,6 +172,19 @@ func shellAsWebUser(f *hostenv.Facts) []Finding {
 		}
 	}
 	return append(out, partialNote("process.shell_as_web_user", "Some processes could not be inspected", o)...)
+}
+
+// keysSymlink flags an authorized_keys that links out of its home: sshd
+// follows the link, so whoever can write the target can log in.
+func keysSymlink(f *hostenv.Facts) []Finding {
+	var out []Finding
+	for _, it := range f.Persistence.Value {
+		if it.Kind == "authorized_keys_symlink" {
+			out = append(out, Finding{Check: "ssh.authorized_keys_symlink", Status: StatusFail, Severity: SevMedium,
+				Title: "authorized_keys links outside the home", Evidence: it.Location + ": " + it.Detail})
+		}
+	}
+	return out
 }
 
 // sharedKey flags one SSH key that unlocks several accounts. Keys with

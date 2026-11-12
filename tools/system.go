@@ -303,6 +303,8 @@ type KeyFile struct {
 	// Lines that are neither a key nor a comment: sshd ignores them, but a
 	// key written in a form not read here would hide among them.
 	Unparsed []int `json:"unparsed_lines,omitempty"`
+	// A link to a file outside the home: sshd reads the keys there.
+	SymlinkOutsideHome string `json:"symlink_outside_home,omitempty"`
 }
 
 // KeyEntry is one key of an authorized_keys file.
@@ -351,7 +353,11 @@ func AccountsAudit() Accounts {
 		for _, k := range kf.Keys {
 			keys = append(keys, KeyEntry{k.Line, k.Type, k.Fingerprint})
 		}
-		a.KeyFiles = append(a.KeyFiles, KeyFile{User: kf.User, Path: kf.Path, Keys: len(keys), Modified: kf.Modified, KeyList: keys, Unparsed: kf.Unparsed})
+		f := KeyFile{User: kf.User, Path: kf.Path, Keys: len(keys), Modified: kf.Modified, KeyList: keys, Unparsed: kf.Unparsed}
+		if kf.OutsideHome {
+			f.SymlinkOutsideHome = kf.SymlinkTarget
+		}
+		a.KeyFiles = append(a.KeyFiles, f)
 	}
 	a.SudoRules, _ = linux.SudoRules(src)
 	a.SharedKeys = sharedKeys(a.KeyFiles)

@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"sort"
 
 	"github.com/nt-neil/shentu/hostenv"
@@ -25,6 +26,11 @@ func sharedKeys(files []KeyFile) []SharedKey {
 	users := map[string]map[string]bool{}
 	for _, f := range files {
 		b, err := hostenv.ReadFileNoFollow(src, f.Path)
+		if errors.Is(err, hostenv.ErrSymlink) { // sshd follows it, so its keys count (N4)
+			if t, terr := hostenv.EvalSymlinks(src, f.Path); terr == nil {
+				b, err = hostenv.ReadFileMax(src, t, hostenv.MaxFileBytes)
+			}
+		}
 		if err != nil {
 			continue
 		}

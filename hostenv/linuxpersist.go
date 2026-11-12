@@ -27,6 +27,10 @@ type AuthorizedKeyFile struct {
 	Keys     []AuthorizedKey `json:"keys,omitempty"`
 	Unparsed []int           `json:"unparsed_lines,omitempty"` // lines that are neither a key nor a comment: sshd ignores them, but a key in a form not read here would hide among them
 	Unread   string          `json:"unread,omitempty"`         // why the content could not be read
+	// SymlinkTarget is where the file links to; sshd follows the link, so
+	// the keys there count. Outside the home it is a warning of its own.
+	SymlinkTarget string `json:"symlink_target,omitempty"`
+	OutsideHome   bool   `json:"symlink_outside_home,omitempty"`
 }
 
 // AuthorizedKey is one key line, without the key itself.
@@ -169,7 +173,7 @@ func (LinuxCollector) SSHKeyFiles(src Source, accounts []Account) Obs[[]Authoriz
 			}
 			seen[p] = true
 			st, err := Stat(src, p)
-			if err != nil {
+			if _, lerr := src.Readlink(p); err != nil && lerr != nil { // a link, even dangling, is looked at below
 				if !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, ErrNoStat) {
 					miss(p, err)
 				}
@@ -178,9 +182,9 @@ func (LinuxCollector) SSHKeyFiles(src Source, accounts []Account) Obs[[]Authoriz
 				}
 			}
 			kf := AuthorizedKeyFile{User: a.Name, Path: p, Modified: st.ModTime}
-			b, err := ReadFileNoFollow(src, p)
-			if errors.Is(err, ErrNoStat) || (errors.Is(err, fs.ErrNotExist) && st.ModTime.IsZero()) {
-				continue // no stat and no file: nothing there
+			b, err := readKeyFile(src, p, a.Home, &kf)
+			if kf.SymlinkTarget == "" && (errors.Is(err, ErrNoStat) || (errors.Is(err, fs.ErrNotExist) && st.ModTime.IsZero())) {
+				continue // no stat and no file: nothing there (a link, even dangling, is kept)
 			}
 			if err != nil && !errors.Is(err, ErrTruncated) {
 				kf.Unread = string(Classify(err))
@@ -194,6 +198,25 @@ func (LinuxCollector) SSHKeyFiles(src Source, accounts []Account) Obs[[]Authoriz
 		return Partial(out, reason, "not fully read: "+strings.Join(unread, ", "))
 	}
 	return OK(out)
+}
+
+// readKeyFile reads an authorized_keys file as sshd does: through a link
+// too, as long as the target is a regular file (and at most MaxFileBytes).
+// A link is noted in kf, and whether it leaves the home.
+func readKeyFile(src Source, p, home string, kf *AuthorizedKeyFile) ([]byte, error) {
+	if _, err := src.Readlink(p); err != nil {
+		return ReadFileNoFollow(src, p)
+	}
+	target, err := EvalSymlinks(src, p)
+	if err != nil {
+		return nil, err
+	}
+	kf.SymlinkTarget = target
+	kf.OutsideHome = !strings.HasPrefix(target, strings.TrimSuffix(home, "/")+"/")
+	if st, err := Stat(src, target); err == nil && !st.Mode.IsRegular() {
+		return nil, &fs.PathError{Op: "read", Path: target, Err: ErrNotRegular}
+	}
+	return ReadFileMax(src, target, MaxFileBytes)
 }
 
 // SudoRules are the lines of /etc/sudoers and /etc/sudoers.d/* that grant

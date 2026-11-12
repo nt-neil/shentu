@@ -573,6 +573,10 @@ func (c LinuxCollector) persistence(ctx context.Context, src Source, keys Obs[[]
 			}
 			add(PersistenceItem{Kind: "authorized_key", Location: kf.Path, Detail: d})
 		}
+		if kf.OutsideHome {
+			add(PersistenceItem{Kind: "authorized_keys_symlink", Location: kf.Path,
+				Detail: "links to " + kf.SymlinkTarget + ", outside the home; sshd reads the keys there"})
+		}
 	}
 	if keys.Status == StatusPartial || !keys.Known() {
 		denied = append(denied, "authorized_keys: "+keys.Detail)
