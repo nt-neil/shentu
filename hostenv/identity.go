@@ -148,7 +148,7 @@ func (m *Masker) text(s string, ips, users bool) string {
 		}
 	}
 	names(true)
-	s = m.hwIDs(s)
+	s = m.hwIDs(s, ips)
 	names(false)
 	if ips {
 		s = ipv4Re.ReplaceAllStringFunc(s, func(t string) string {
@@ -169,47 +169,85 @@ func (m *Masker) text(s string, ips, users bool) string {
 	return s
 }
 
-// hwIDs masks the hardware ids in s (hwIDRe), except runs that only look
-// like one (notHWID).
-func (m *Masker) hwIDs(s string) string {
+// hwIDs masks the hardware ids in s (hwIDRe). A match that is really an
+// IPv6 address or an MD5 fingerprint stays (notHWID); an IPv4 address
+// written with dashes (ip-10-20-30-40) is masked as an address when ips is
+// set, in the same dashed form.
+func (m *Masker) hwIDs(s string, ips bool) string {
 	var b strings.Builder
 	last := 0
 	for _, loc := range hwIDRe.FindAllStringIndex(s, -1) {
-		if notHWID(s, loc[0], loc[1]) {
+		i, j := loc[0], loc[1]
+		t := s[i:j]
+		repl := ""
+		switch {
+		case notHWID(s, i, j):
 			continue
+		case dashedIPv4(t) != nil:
+			if !ips {
+				continue
+			}
+			repl = strings.ReplaceAll(m.ip(dashedIPv4(t)).String(), ".", "-")
+		default:
+			repl = m.hwID(t)
 		}
-		b.WriteString(s[last:loc[0]])
-		b.WriteString(m.hwID(s[loc[0]:loc[1]]))
-		last = loc[1]
+		b.WriteString(s[last:i])
+		b.WriteString(repl)
+		last = j
 	}
 	b.WriteString(s[last:])
 	return b.String()
 }
 
-// notHWID tells a hwIDRe match s[i:j] that is something else: part of a
-// longer colon run (an IPv6 address with 3- and 4-digit groups, such as
-// 2001:db8:0:0:1:2:3:4, or one after "::"), an MD5 key fingerprint
-// ("MD5:" before it, or sixteen colon groups), or an IPv4 address written
-// with dashes (ip-10-20-30-40, as cloud host names are).
+// notHWID tells a hwIDRe match s[i:j] that is something else: part of an
+// IPv6 address, or an MD5 key fingerprint ("MD5:" right before it). For
+// IPv6 the whole colon run around the match is taken (hex digits and
+// colons): only a run with "::" or a group of three or four digits that
+// parses as an address counts, so "HWaddr:00:0c:29:59:f3:3f" is still a
+// MAC.
 func notHWID(s string, i, j int) bool {
 	t := s[i:j]
-	if strings.Contains(t, ":") {
-		if i > 0 && s[i-1] == ':' || j < len(s) && s[j] == ':' {
-			return true
-		}
-		if i >= 4 && strings.EqualFold(s[i-4:i], "MD5:") || strings.Count(t, ":") == 15 {
-			return true
-		}
+	if !strings.Contains(t, ":") {
+		return false
 	}
-	if g := strings.Split(t, "-"); len(g) == 4 {
-		for _, x := range g {
-			if n, err := strconv.Atoi(x); err != nil || n > 255 {
-				return false
-			}
-		}
+	if i >= 4 && strings.EqualFold(s[i-4:i], "MD5:") {
 		return true
 	}
-	return false
+	a, z := i, j
+	for a > 0 && (s[a-1] == ':' || isHex(s[a-1])) {
+		a--
+	}
+	for z < len(s) && (s[z] == ':' || isHex(s[z])) {
+		z++
+	}
+	run := s[a:z]
+	if run == t {
+		return false
+	}
+	long := strings.Contains(run, "::")
+	for _, g := range strings.Split(run, ":") {
+		long = long || len(g) >= 3
+	}
+	return long && net.ParseIP(strings.Trim(run, ":")) != nil || long && net.ParseIP(run) != nil
+}
+
+func isHex(c byte) bool {
+	return c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F'
+}
+
+// dashedIPv4 is the address of four dashed decimal numbers up to 255
+// (ip-10-20-30-40), or nil.
+func dashedIPv4(t string) net.IP {
+	g := strings.Split(t, "-")
+	if len(g) != 4 {
+		return nil
+	}
+	for _, x := range g {
+		if n, err := strconv.Atoi(x); err != nil || n > 255 || len(x) > 3 {
+			return nil
+		}
+	}
+	return net.ParseIP(strings.Join(g, ".")).To4()
 }
 
 // hwShaped: two-digit groups only, no "::" - part of a MAC or DUID, which

@@ -65,7 +65,8 @@ func TestMaskHardwareIDMixed(t *testing.T) {
 	}
 }
 
-// Round-2 review: what only looks like a hardware id stays as it is.
+// Round-2 review: what only looks like a hardware id is not masked as
+// one; a MAC next to a colon still is.
 func TestMaskHardwareIDLookalikes(t *testing.T) {
 	m := &Masker{}
 	m.init()
@@ -74,16 +75,21 @@ func TestMaskHardwareIDLookalikes(t *testing.T) {
 		"via fe80::a:b:c:d dev eth0",                              // after ::
 		"route 2001:db8::1:2:3:4",                                 // after ::
 		"MD5:12:34:56:78:9a:bc:de:f0:12:34:56:78:9a:bc:de:f0 key", // fingerprint
-		"12:34:56:78:9a:bc:de:f0:12:34:56:78:9a:bc:de:f0 (RSA)",   // bare MD5 fingerprint
-		"Name=ip-10-20-30-40.ec2.internal",                        // a cloud host name
+		"Name=ip-10-20-30-40.ec2.internal",                        // with ips off it stays
 	} {
 		if got := m.text(keep, false, true); got != keep {
 			t.Errorf("%q masked as a hardware id: %q", keep, got)
 		}
 	}
-	// Real ids are still masked.
-	got := m.text("link/ether 00:0c:29:59:f3:3f iaid 29:59:f3:3f win 00-0C-29-59-F3-3F", false, true)
-	for _, leak := range []string{"0c:29:59", "29:59:f3:3f", "0C-29-59"} {
+	// A dashed IPv4 is masked as an address (when ips are), in dashes.
+	got := m.text("Name=ip-10-20-30-40.ec2.internal", true, true)
+	if strings.Contains(got, "10-20-30-40") || !strings.HasPrefix(got, "Name=ip-") || strings.Count(got, "-") != 4 {
+		t.Errorf("dashed IPv4: %q", got)
+	}
+	// Real ids are still masked, a colon next to them or not.
+	got = m.text("HWaddr:00:0c:29:59:f3:3f link/ether 00:0c:29:59:f3:3f: iaid 29:59:f3:3f win 00-0C-29-59-F3-3F "+
+		"fp 12:34:56:78:9a:bc:de:f0:12:34:56:78:9a:bc:de:f0", false, true)
+	for _, leak := range []string{"0c:29:59", "29:59:f3:3f", "0C-29-59", "9a:bc:de:f0"} {
 		if strings.Contains(got, leak) {
 			t.Errorf("%q left in %q", leak, got)
 		}
