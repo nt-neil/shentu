@@ -250,21 +250,7 @@ func checks(ctx context.Context, cfg *Config, env *tools.Env, st *state, daily b
 				fmt.Sprintf("authorized_keys changed: %s (%d keys)", k.Path, k.Keys), k})
 		}
 	}
-	for _, k := range acc.KeyFiles {
-		if k.SymlinkOutsideHome != "" { // before the Unparsed check: a linked file with no odd lines still warns
-			out = append(out, finding{"authorized_keys_symlink:" + k.Path, "warning",
-				fmt.Sprintf("%s links to %s, outside the home; sshd reads the keys there (%d keys), check who can write that file", k.Path, k.SymlinkOutsideHome, k.Keys), k})
-		}
-		if len(k.Unparsed) == 0 {
-			continue
-		}
-		lines := make([]string, len(k.Unparsed))
-		for i, l := range k.Unparsed {
-			lines[i] = strconv.Itoa(l)
-		}
-		out = append(out, finding{"authorized_key_unparsed:" + k.Path, "warning",
-			fmt.Sprintf("%s line(s) %s are neither a key nor a comment; sshd ignores them, but check none is a key written in another form", k.Path, strings.Join(lines, ", ")), nil})
-	}
+	out = append(out, keyFileFindings(acc.KeyFiles)...)
 	for _, k := range acc.SharedKeys {
 		out = append(out, finding{"sharedkey:" + k.Fingerprint, "warning",
 			fmt.Sprintf("one SSH key (%s) is in the authorized_keys of %s; attackers plant one key in every account, check that it is yours", k.Fingerprint, strings.Join(k.Users, ", ")), k})
@@ -404,4 +390,25 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 		st.Alerted[f.Key] = time.Now()
 	}
 	return st.save(cfg.StateDir)
+}
+
+// keyFileFindings reports authorized_keys files linked outside the home and lines that are neither a key nor a comment.
+func keyFileFindings(keys []tools.KeyFile) []finding {
+	var out []finding
+	for _, k := range keys {
+		if k.SymlinkOutsideHome != "" { // before the Unparsed check: a linked file with no odd lines still warns
+			out = append(out, finding{"authorized_keys_symlink:" + k.Path, "warning",
+				fmt.Sprintf("%s links to %s, outside the home; sshd reads the keys there (%d keys), check who can write that file", k.Path, k.SymlinkOutsideHome, k.Keys), k})
+		}
+		if len(k.Unparsed) == 0 {
+			continue
+		}
+		lines := make([]string, len(k.Unparsed))
+		for i, l := range k.Unparsed {
+			lines[i] = strconv.Itoa(l)
+		}
+		out = append(out, finding{"authorized_key_unparsed:" + k.Path, "warning",
+			fmt.Sprintf("%s line(s) %s are neither a key nor a comment; sshd ignores them, but check none is a key written in another form", k.Path, strings.Join(lines, ", ")), nil})
+	}
+	return out
 }
