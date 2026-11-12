@@ -60,7 +60,8 @@ type Config struct {
 }
 
 func loadConfig(path string) (*Config, error) {
-	if err := trustConfig(path); err != nil {
+	load, err := trustConfig(path)
+	if err != nil {
 		return nil, err
 	}
 	c := &Config{}
@@ -80,22 +81,9 @@ func loadConfig(path string) (*Config, error) {
 	c.Language = "English"
 	osDefaults(c)
 
-	loadEnvFile(filepath.Join(filepath.Dir(path), "env"))
-	b, err := os.ReadFile(path)
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return nil, err
-	}
-	// ${VAR} in the file is taken from the environment, so tokens stay out of it.
-	if _, err := toml.Decode(expandEnv(string(b)), c); err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
-	}
-	// Files written by `shentu setup` override shentu.toml: llm.toml ([llm]) and
-	// setup.toml (language, [notify], [bot]) and budget.toml ([budget]).
-	for _, name := range []string{"llm.toml", "setup.toml", "budget.toml"} {
-		if lb, err := os.ReadFile(filepath.Join(filepath.Dir(path), name)); err == nil {
-			if _, err := toml.Decode(expandEnv(string(lb)), c); err != nil {
-				return nil, fmt.Errorf("%s: %w", name, err)
-			}
+	if load {
+		if err := readConfigFiles(path, c); err != nil {
+			return nil, err
 		}
 	}
 	for _, d := range []string{c.LLM.Timeout, c.Patrol.Cooldown} {
@@ -108,6 +96,30 @@ func loadConfig(path string) (*Config, error) {
 	}
 	c.LLM.BaseURL = strings.TrimSuffix(c.LLM.BaseURL, "/")
 	return c, nil
+}
+
+// readConfigFiles reads the env file, shentu.toml and the files `shentu
+// setup` writes into c.
+func readConfigFiles(path string, c *Config) error {
+	loadEnvFile(filepath.Join(filepath.Dir(path), "env"))
+	b, err := os.ReadFile(path)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	// ${VAR} in the file is taken from the environment, so tokens stay out of it.
+	if _, err := toml.Decode(expandEnv(string(b)), c); err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	// Files written by `shentu setup` override shentu.toml: llm.toml ([llm]) and
+	// setup.toml (language, [notify], [bot]) and budget.toml ([budget]).
+	for _, name := range []string{"llm.toml", "setup.toml", "budget.toml"} {
+		if lb, err := os.ReadFile(filepath.Join(filepath.Dir(path), name)); err == nil {
+			if _, err := toml.Decode(expandEnv(string(lb)), c); err != nil {
+				return fmt.Errorf("%s: %w", name, err)
+			}
+		}
+	}
+	return nil
 }
 
 func (c *Config) apiKey() string {

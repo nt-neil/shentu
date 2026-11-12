@@ -5,6 +5,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"unsafe"
@@ -56,7 +57,10 @@ func secureDir(dir string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := os.Lstat(dir); err == nil {
+	if fi, err := os.Lstat(dir); err == nil {
+		if fi.Mode()&(fs.ModeSymlink|fs.ModeIrregular) != 0 {
+			return fmt.Errorf("refusing %s: it is a link or junction", dir)
+		}
 		if err := checkTrusted(dir); err != nil {
 			return fmt.Errorf("refusing %s: %w; remove it as an administrator and run again", dir, err)
 		}
@@ -133,18 +137,35 @@ func checkTrusted(path string) error {
 	return nil
 }
 
-// trustConfig refuses a configuration that anyone but SYSTEM and
-// Administrators could have written: the folder, shentu.toml and the env
-// file. A user may create folders under %ProgramData%, so a Shentu folder
-// planted before installation must not be loaded by the service.
-func trustConfig(path string) error {
+// trustConfig decides whether the configuration folder may be read. On
+// Windows users may create folders under %ProgramData%, so a folder made
+// before installation, with a shentu.toml, env file or skills in it, must
+// not be loaded by the service running as SYSTEM. Every entry of the
+// folder is checked (see checkTrusted) and links or junctions anywhere in
+// it are refused. A missing folder is created right away with the
+// trusted ACL, so nobody can plant one between this check and a later
+// read; when that is not possible (not elevated) nothing is read and the
+// defaults apply.
+func trustConfig(path string) (load bool, err error) {
 	dir := filepath.Dir(path)
-	for _, p := range []string{dir, path, filepath.Join(dir, "env")} {
-		if err := checkTrusted(p); err != nil {
-			return fmt.Errorf("refusing the configuration: %w; remove the folder or reset its owner and permissions as an administrator", err)
+	if _, err := os.Lstat(dir); errors.Is(err, fs.ErrNotExist) {
+		if secureDir(dir) != nil {
+			return false, nil
 		}
 	}
-	return nil
+	err = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.Type()&(fs.ModeSymlink|fs.ModeIrregular) != 0 {
+			return fmt.Errorf("%s is a link or junction", p)
+		}
+		return checkTrusted(p)
+	})
+	if err != nil {
+		return false, fmt.Errorf("refusing the configuration: %w; remove the folder or reset its owner and permissions as an administrator", err)
+	}
+	return true, nil
 }
 
 // ensureStateDir secures %ProgramData%\Shentu (config, env file with

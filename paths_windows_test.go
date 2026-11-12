@@ -50,7 +50,7 @@ func TestSecureDir(t *testing.T) {
 
 func TestTrustConfig(t *testing.T) {
 	plain := t.TempDir() // the runner user's own ACL: not trusted
-	if err := trustConfig(filepath.Join(plain, "shentu.toml")); err == nil {
+	if _, err := trustConfig(filepath.Join(plain, "shentu.toml")); err == nil {
 		t.Error("a folder under a user profile must be refused")
 	}
 
@@ -62,7 +62,7 @@ func TestTrustConfig(t *testing.T) {
 	if err := os.WriteFile(cfg, []byte("language = \"English\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := trustConfig(cfg); err != nil {
+	if load, err := trustConfig(cfg); err != nil || !load {
 		t.Errorf("secured folder refused: %v", err)
 	}
 	if _, err := loadConfig(cfg); err != nil {
@@ -79,7 +79,7 @@ func TestTrustConfig(t *testing.T) {
 		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION, nil, nil, dacl, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := trustConfig(cfg); err == nil || !strings.Contains(err.Error(), "S-1-5-32-545") {
+	if _, err := trustConfig(cfg); err == nil || !strings.Contains(err.Error(), "S-1-5-32-545") {
 		t.Errorf("Users with write access must be refused: %v", err)
 	}
 	if _, err := loadConfig(cfg); err == nil {
@@ -101,5 +101,27 @@ func TestSecureDirRefusesSquatted(t *testing.T) {
 	}
 	if err := secureDir(again); err != nil {
 		t.Errorf("a folder secureDir made is trusted the next time: %v", err)
+	}
+}
+
+func TestTrustConfigMissingAndLinks(t *testing.T) {
+	// A missing folder is created on the spot with the trusted ACL.
+	cfg := filepath.Join(t.TempDir(), "Shentu", "shentu.toml")
+	if load, err := trustConfig(cfg); err != nil || !load {
+		t.Fatalf("missing folder: load %v, %v", load, err)
+	}
+	if sids, protected := aceSIDs(t, filepath.Dir(cfg)); !protected || strings.Join(sids, ",") != "BA,SY" {
+		t.Errorf("created folder: %v %v", protected, sids)
+	}
+	// A link inside (a skill pointing out of the folder) is refused.
+	skills := filepath.Join(filepath.Dir(cfg), "skills")
+	if err := os.Mkdir(skills, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(os.TempDir(), filepath.Join(skills, "elsewhere")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := trustConfig(cfg); err == nil || !strings.Contains(err.Error(), "link") {
+		t.Errorf("a link in the config folder must be refused: %v", err)
 	}
 }
