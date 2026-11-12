@@ -370,19 +370,20 @@ func TestListenersKeepSecondOwner(t *testing.T) {
 
 func TestMaskKeepsNOPASSWD(t *testing.T) {
 	for in, want := range map[string]string{
-		"user ALL=(ALL) NOPASSWD:ALL":                "user ALL=(ALL) NOPASSWD:ALL",
-		"www ALL=(ALL) NOPASSWD: ALL":                "www ALL=(ALL) NOPASSWD: ALL",
-		"ann ALL=(ALL) PASSWD: /usr/bin/apt":         "ann ALL=(ALL) PASSWD: /usr/bin/apt",
-		"%adm ALL=(ALL) NOEXEC:SETENV: ALL":          "%adm ALL=(ALL) NOEXEC:SETENV: ALL",
-		"password: " + fakeSecret():                  "password: [REDACTED]",
-		"PASSWORD=" + fakeSecret():                   "PASSWORD=[REDACTED]",
-		"db_passwd: " + fakeSecret():                 "db_passwd: [REDACTED]",
-		"token=" + fakeSecret():                      "token=[REDACTED]",
-		"(ALL) NOPASSWD:ALL; passwd=" + fakeSecret(): "(ALL) NOPASSWD:ALL; passwd=[REDACTED]",
-		"PASSWD: " + fakeSecret():                    "PASSWD: [REDACTED]",
-		"X-PASSWD: " + fakeSecret():                  "X-PASSWD: [REDACTED]",
-		"ann ALL=(root) NOEXEC: NOPASSWD: !/bin/sh":  "ann ALL=(root) NOEXEC: NOPASSWD: !/bin/sh",
-		"NOPASSWD: " + fakeSecret():                  "NOPASSWD: [REDACTED]",
+		"user ALL=(ALL) NOPASSWD:ALL":                          "user ALL=(ALL) NOPASSWD:ALL",
+		"www ALL=(ALL) NOPASSWD: ALL":                          "www ALL=(ALL) NOPASSWD: ALL",
+		"ann ALL=(ALL) PASSWD: /usr/bin/apt":                   "ann ALL=(ALL) PASSWD: /usr/bin/apt",
+		"%adm ALL=(ALL) NOEXEC:SETENV: ALL":                    "%adm ALL=(ALL) NOEXEC:SETENV: ALL",
+		"password: " + fakeSecret():                            "password: [REDACTED]",
+		"PASSWORD=" + fakeSecret():                             "PASSWORD=[REDACTED]",
+		"db_passwd: " + fakeSecret():                           "db_passwd: [REDACTED]",
+		"token=" + fakeSecret():                                "token=[REDACTED]",
+		"(ALL) NOPASSWD:ALL; passwd=" + fakeSecret():           "(ALL) NOPASSWD:ALL; passwd=[REDACTED]",
+		"PASSWD: " + fakeSecret():                              "PASSWD: [REDACTED]",
+		"X-PASSWD: " + fakeSecret():                            "X-PASSWD: [REDACTED]",
+		"ann ALL=(root) NOEXEC: NOPASSWD: !/bin/sh":            "ann ALL=(root) NOEXEC: NOPASSWD: !/bin/sh",
+		"NOPASSWD: " + fakeSecret():                            "NOPASSWD: [REDACTED]",
+		"https://u:" + fakeSecret() + "@h (ALL) NOPASSWD: ALL": "https://[REDACTED]@h (ALL) NOPASSWD: ALL",
 	} {
 		if got := MaskSecrets(in); got != want {
 			t.Errorf("MaskSecrets(%q) = %q, want %q", in, got, want)

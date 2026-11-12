@@ -31,20 +31,43 @@ var maskRules = []struct {
 // "NOPASSWD:[REDACTED]" would hide what a sudo rule grants.
 // hostenv.MaskSecrets does the same; keep the two in step.
 func mask(s string) string {
-	locs := sudoTag.FindAllStringSubmatchIndex(s, -1)
-	if len(locs) == 0 {
-		return applyMaskRules(s)
+	for _, r := range maskRules {
+		s = replaceOutsideSudoTags(s, r.re, r.repl)
 	}
-	// Mask the text between the tags, never the tags themselves: no
-	// sentinel bytes, so nothing in the input can be mistaken for one.
+	return s
+}
+
+// replaceOutsideSudoTags is re.ReplaceAllString(s, repl) over the whole
+// string, except that a match starting inside a sudoers NOPASSWD:/PASSWD:
+// tag is left as it is (the password rule would otherwise take the tag for
+// "passwd: <value>"). Every rule sees the full text, so nothing that spans
+// a tag escapes.
+func replaceOutsideSudoTags(s string, re *regexp.Regexp, repl string) string {
+	var tags [][]int
+	for _, m := range sudoTag.FindAllStringSubmatchIndex(s, -1) {
+		tags = append(tags, m[2:4])
+	}
+	if len(tags) == 0 {
+		return re.ReplaceAllString(s, repl)
+	}
 	var b strings.Builder
 	last := 0
-	for _, m := range locs {
-		b.WriteString(applyMaskRules(s[last:m[2]]))
-		b.WriteString(s[m[2]:m[3]])
-		last = m[3]
+	for _, m := range re.FindAllStringSubmatchIndex(s, -1) {
+		b.WriteString(s[last:m[0]])
+		inTag := false
+		for _, t := range tags {
+			if m[0] >= t[0] && m[0] < t[1] {
+				inTag = true
+			}
+		}
+		if inTag {
+			b.WriteString(s[m[0]:m[1]])
+		} else {
+			b.Write(re.ExpandString(nil, repl, s, m))
+		}
+		last = m[1]
 	}
-	b.WriteString(applyMaskRules(s[last:]))
+	b.WriteString(s[last:])
 	return b.String()
 }
 
@@ -55,10 +78,3 @@ func mask(s string) string {
 // (A double-quoted pattern, so the rule-parity test, which reads
 // back-quoted patterns, skips it.)
 var sudoTag = regexp.MustCompile("(?:\\)|[A-Z]+:)[ \\t]*((?:NO)?PASSWD:)[ \\t]*(?:ALL\\b|/|!|[A-Z]+:)")
-
-func applyMaskRules(s string) string {
-	for _, r := range maskRules {
-		s = r.re.ReplaceAllString(s, r.repl)
-	}
-	return s
-}
