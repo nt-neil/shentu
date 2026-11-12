@@ -292,20 +292,14 @@ func minerSigns(exe, cmdline string) bool {
 	return minerArgs.MatchString(cmdline)
 }
 
+// userNames maps uid to account name from hostenv's accounts fact; the
+// first account with a uid wins.
 func userNames() map[string]string {
-	m := map[string]string{}
-	b, _ := hostSource().ReadFile("/etc/passwd")
-	for _, line := range strings.Split(string(b), "\n") {
-		f := strings.Split(line, ":")
-		// The first name wins, so a backdoor account that reuses UID 0 is not shown as the owner of root's files.
-		if len(f) < 3 {
-			continue
-		}
-		if _, dup := m[f[2]]; !dup {
-			m[f[2]] = f[0]
-		}
+	names, _ := linux.Accounts(hostSource())
+	if names == nil {
+		return map[string]string{}
 	}
-	return m
+	return names
 }
 
 var accountsAudit = Tool{
@@ -340,18 +334,13 @@ type Accounts struct {
 func AccountsAudit() Accounts {
 	var a Accounts
 	seenKeys := map[string]bool{}
-	b, _ := os.ReadFile("/etc/passwd")
-	for _, line := range strings.Split(string(b), "\n") {
-		f := strings.Split(line, ":")
-		if len(f) < 7 {
-			continue
-		}
-		user, uid, home, shell := f[0], f[2], f[5], f[6]
-		if uid == "0" {
+	_, accts := linux.Accounts(hostSource())
+	for _, acct := range accts.Value {
+		user, home := acct.Name, acct.Home
+		if acct.UID == "0" {
 			a.UID0 = append(a.UID0, user)
 		}
-		// RHEL's shutdown and halt accounts have the commands of those names as their shell.
-		if base := filepath.Base(shell); !strings.HasSuffix(shell, "nologin") && base != "false" && base != "sync" && base != "shutdown" && base != "halt" {
+		if acct.CanLogin {
 			a.LoginAccounts = append(a.LoginAccounts, user)
 		}
 		for _, name := range []string{"authorized_keys", "authorized_keys2"} {

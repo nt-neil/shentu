@@ -237,13 +237,12 @@ func ParseGroup(b []byte) map[string][]string {
 // AdminGroups are the groups that grant root through the stock sudoers.
 var AdminGroups = []string{"sudo", "wheel", "admin"}
 
-// CanLoginShell is false for nologin/false shells.
+// CanLoginShell is false for nologin and false shells, and for RHEL's
+// sync, shutdown and halt accounts, whose shells are those commands. An
+// empty shell is a login: login(1) and sshd use /bin/sh.
 func CanLoginShell(shell string) bool {
-	if shell == "" {
-		return false
-	}
 	b := shell[strings.LastIndex(shell, "/")+1:]
-	return b != "nologin" && b != "false" && b != "sync" && b != "halt" && b != "shutdown"
+	return !strings.HasSuffix(shell, "nologin") && b != "false" && b != "sync" && b != "halt" && b != "shutdown"
 }
 
 // SSHDDirective is one keyword line of sshd_config.

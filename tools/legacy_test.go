@@ -7,6 +7,7 @@ package tools
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -331,4 +332,68 @@ func (truncatedNet) ReadFile(p string) ([]byte, error) {
 		return []byte("  sl  local_address rem_address   st\n"), hostenv.ErrTruncated
 	}
 	return nil, os.ErrNotExist
+}
+
+// legacyAccounts is the passwd part of AccountsAudit, and userNames, before 1c.
+func legacyAccounts(src hostenv.Source) (uid0, login []string, names map[string]string) {
+	b, _ := src.ReadFile("/etc/passwd")
+	names = map[string]string{}
+	for _, line := range strings.Split(string(b), "\n") {
+		f := strings.Split(line, ":")
+		if len(f) >= 3 {
+			if _, dup := names[f[2]]; !dup {
+				names[f[2]] = f[0]
+			}
+		}
+		if len(f) < 7 {
+			continue
+		}
+		user, uid, shell := f[0], f[2], f[6]
+		if uid == "0" {
+			uid0 = append(uid0, user)
+		}
+		if base := filepath.Base(shell); !strings.HasSuffix(shell, "nologin") && base != "false" && base != "sync" && base != "shutdown" && base != "halt" {
+			login = append(login, user)
+		}
+	}
+	return uid0, login, names
+}
+
+func TestLegacyAccounts(t *testing.T) {
+	for name, rp := range fixtures(t) {
+		withHost(t, rp)
+		uid0, login, names := legacyAccounts(rp)
+		a := AccountsAudit()
+		if !reflect.DeepEqual(a.UID0, uid0) || !reflect.DeepEqual(a.LoginAccounts, login) || len(login) == 0 {
+			t.Errorf("%s: uid0 %v / %v, login %v / %v", name, a.UID0, uid0, a.LoginAccounts, login)
+		}
+		if got := userNames(); !reflect.DeepEqual(got, names) {
+			t.Errorf("%s: userNames differ", name)
+		}
+	}
+	// Edge cases the fixtures lack: an empty shell logs in (/bin/sh), and
+	// a second UID 0 account does not take root's name.
+	h := memHost{"/etc/passwd": "root:x:0:0::/root:/bin/bash\ntoor:x:0:0::/root:\nsvc:x:5:5::/:/usr/sbin/nologin\n"}
+	withHost(t, h)
+	uid0, login, names := legacyAccounts(h)
+	a := AccountsAudit()
+	if !reflect.DeepEqual(a.UID0, uid0) || !reflect.DeepEqual(a.LoginAccounts, login) || userNames()["0"] != names["0"] {
+		t.Errorf("edge: %v %v / %v %v", a.UID0, a.LoginAccounts, uid0, login)
+	}
+}
+
+// memHost is a tiny file-only Source for edge cases.
+type memHost map[string]string
+
+func (memHost) Info() hostenv.SourceInfo { return hostenv.SourceInfo{GOOS: "linux"} }
+func (m memHost) ReadFile(p string) ([]byte, error) {
+	if s, ok := m[p]; ok {
+		return []byte(s), nil
+	}
+	return nil, os.ErrNotExist
+}
+func (memHost) ReadDir(string) ([]string, error) { return nil, os.ErrNotExist }
+func (memHost) Readlink(string) (string, error)  { return "", os.ErrNotExist }
+func (memHost) Run(context.Context, []string) (hostenv.CmdResult, error) {
+	return hostenv.CmdResult{}, os.ErrNotExist
 }

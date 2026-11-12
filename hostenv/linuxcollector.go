@@ -38,7 +38,7 @@ func (c LinuxCollector) Collect(ctx context.Context, src Source) *Facts {
 	var osr map[string]string
 	f.Platform, osr = c.Platform(src)
 	f.Packages = c.packages(ctx, src, osr)
-	pw, accounts := c.accounts(src)
+	pw, accounts := c.Accounts(src)
 	f.Accounts = accounts
 	procs, sockOwner := c.Processes(src, pw)
 	f.Processes = procs
@@ -149,7 +149,10 @@ func firstLine(s string) string {
 	return s
 }
 
-func (LinuxCollector) accounts(src Source) (map[string]string, Obs[[]Account]) {
+// Accounts reads /etc/passwd and /etc/group. names maps uid to the first
+// account with it, so a backdoor that reuses UID 0 is not shown as the
+// owner of root's processes and files.
+func (LinuxCollector) Accounts(src Source) (names map[string]string, accounts Obs[[]Account]) {
 	b, err := src.ReadFile("/etc/passwd")
 	if err != nil {
 		return nil, unknownFrom[[]Account]("/etc/passwd", err)
@@ -164,10 +167,12 @@ func (LinuxCollector) accounts(src Source) (map[string]string, Obs[[]Account]) {
 			}
 		}
 	}
-	names := map[string]string{}
+	names = map[string]string{}
 	var out []Account
 	for _, e := range ParsePasswd(b) {
-		names[e.UID] = e.Name
+		if _, dup := names[e.UID]; !dup {
+			names[e.UID] = e.Name
+		}
 		out = append(out, Account{Name: e.Name, UID: e.UID, Home: e.Home, Shell: e.Shell,
 			CanLogin: CanLoginShell(e.Shell), IsAdmin: e.UID == "0" || admins[e.Name]})
 	}

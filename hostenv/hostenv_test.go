@@ -68,7 +68,7 @@ func TestParsers(t *testing.T) {
 	if c := ParseCmdline([]byte("app\x00--password=" + fakeSecret() + "\x00")); strings.Contains(c, fakeSecret()) {
 		t.Errorf("cmdline not masked: %q", c)
 	}
-	if CanLoginShell("/usr/sbin/nologin") || CanLoginShell("") || !CanLoginShell("/bin/bash") {
+	if CanLoginShell("/usr/sbin/nologin") || !CanLoginShell("") || !CanLoginShell("/bin/bash") || CanLoginShell("/sbin/shutdown") {
 		t.Error("login shell")
 	}
 	ak := ParseAuthorizedKeys([]byte(`command="/bin/x" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA== c` + "\nssh-rsa notbase64!! d\n"))
