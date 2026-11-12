@@ -388,6 +388,13 @@ func TestLegacyAccounts(t *testing.T) {
 	if !reflect.DeepEqual(a.UID0, uid0) || !reflect.DeepEqual(a.LoginAccounts, login) || userNames()["0"] != names["0"] {
 		t.Errorf("edge: %v %v / %v %v", a.UID0, a.LoginAccounts, uid0, login)
 	}
+	// N5: odd lines (an eighth field, a comment, a blank, a short line).
+	h = memHost{"/etc/passwd": "root:x:0:0::/root:/bin/bash\nhide:x:0:0::/root:/bin/sh:extra\n# c\n\nshort:x:9\nops:x:1000:1000::/home/ops:/bin/zsh\n"}
+	withHost(t, h)
+	uid0, login, _ = legacyAccounts(h)
+	if a := AccountsAudit(); !reflect.DeepEqual(a.UID0, uid0) || !reflect.DeepEqual(a.LoginAccounts, login) || len(uid0) != 2 {
+		t.Errorf("odd lines: %v %v / %v %v", a.UID0, a.LoginAccounts, uid0, login)
+	}
 }
 
 // memHost is a tiny file-only Source for edge cases.
@@ -943,15 +950,35 @@ func TestLegacySSHLogins(t *testing.T) {
 		iso(-time.Hour)+" vm sshd[2]: Invalid user x from 192.0.2.10 port 1 from 203.0.113.50 port 2222",
 		iso(-time.Hour)+" vm sshd-session[3]: Failed password for "+strings.Repeat("é", 40)+" from 192.0.2.30 port 1 ssh2",
 		iso(-30*time.Hour)+" vm sshd[4]: Failed password for root from 203.0.113.99 port 1 ssh2",
+		// N6: masking must not change a count; only the names output are masked.
+		iso(-time.Hour)+" vm sshd[5]: Invalid user -----BEGIN OPENSSH "+"PRIVATE KEY----- from 192.0.2.40 port 22",
+		iso(-time.Hour)+" vm sshd[6]: Failed password for invalid user tok"+"en=abcdefgh from 192.0.2.40 port 22 ssh2",
 	)
 	since := now.Add(-24 * time.Hour)
-	for _, only := range []string{"", "192.0.2.10"} {
+	// The whole path: a log file, ScanAuthLogs, the aggregate, masked output.
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "auth.log"), []byte(strings.Join(lines, "\n")+"\n"), 0o600)
+	live := &hostenv.Live{Remap: map[string]string{"/var/log": dir}}
+	for _, only := range []string{"", "192.0.2.10", "192.0.2.40"} {
 		want := legacySSHAggregate(lines, since, only)
+		for i := range want { // v0.2.5 output names as read; now they are masked
+			for _, l := range []*[]string{&want[i].FailedUsers, &want[i].InvalidUsers, &want[i].AcceptedUsers} {
+				for j := range *l {
+					(*l)[j] = hostenv.MaskSecrets((*l)[j])
+				}
+				sort.Strings(*l)
+			}
+		}
 		agg := hostenv.NewSSHLogins(since, now, only)
-		for _, l := range lines {
-			agg.Add(l)
+		if src, err := linux.ScanAuthLogs(context.Background(), live, []string{"/var/log/auth.log"}, since, agg.Add); err != nil {
+			t.Fatal(src, err)
 		}
 		got := agg.Result()
+		if only == "192.0.2.40" {
+			if len(got) != 1 || got[0].Failed+got[0].InvalidUser != 2 || strings.Contains(fmt.Sprint(got), "abcdefgh") || strings.Contains(fmt.Sprint(got), "BEGIN OPENSSH") {
+				t.Errorf("masked names changed the count, or a name went out unmasked: %+v", got)
+			}
+		}
 		// The legacy order of equal counts was map order; compare by IP, and
 		// check the new list is the legacy one cut at the same 50.
 		sortIP := func(l []SSHSource) { sort.Slice(l, func(i, j int) bool { return l[i].IP < l[j].IP }) }
@@ -1070,6 +1097,7 @@ func TestLegacyWebRoots(t *testing.T) {
 	os.Symlink(filepath.Join(other, "evil"), filepath.Join(etc, "nginx/sites-enabled/evil"))
 	os.Symlink("loop2", filepath.Join(etc, "nginx/sites-enabled/loop1"))
 	os.Symlink("loop1", filepath.Join(etc, "nginx/sites-enabled/loop2"))
+	os.Symlink("../sites-available/gone", filepath.Join(etc, "nginx/sites-enabled/broken")) // dangling: listed, as v0.2.5 did
 	w(filepath.Join(etc, "nginx/conf.d/big.conf"), "root /var/www/big;\n"+strings.Repeat("#\n", 600000), 0o644)
 	w(filepath.Join(etc, "nginx/conf.d/api.conf"), "server { root /srv/api; }\nroot /var/www/blog;\n", 0o644)
 	w(filepath.Join(etc, "apache2/sites-enabled/000-default.conf"), "<VirtualHost *:80>\n\tDocumentRoot /var/www/html\n</VirtualHost>\n", 0o644)

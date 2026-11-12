@@ -33,7 +33,8 @@ const (
 	ReasonSymlink       Reason = "symlink_not_followed"
 	ReasonNotRegular    Reason = "not_regular_file"
 	// ReasonUntrusted: readable, but owned or writable by someone other
-	// than SYSTEM, Administrators or TrustedInstaller; its content is not used.
+	// than the system's administrators (root; SYSTEM, Administrators,
+	// TrustedInstaller), so the content is not used.
 	ReasonUntrusted Reason = "untrusted_owner"
 )
 

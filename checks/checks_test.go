@@ -204,3 +204,13 @@ func TestPartialAdmitsGap(t *testing.T) {
 		}
 	}
 }
+
+// N4: an authorized_keys linking out of its home is flagged.
+func TestKeysSymlinkCheck(t *testing.T) {
+	f := hostenv.NewFacts("linux", "0", time.Time{})
+	f.Persistence = hostenv.OK([]hostenv.PersistenceItem{{Kind: "authorized_keys_symlink", Location: "/home/a/.ssh/authorized_keys", Detail: "links to /srv/k, outside the home"}})
+	got := keysSymlink(f)
+	if len(got) != 1 || got[0].Status != StatusFail || !strings.Contains(got[0].Evidence, "/srv/k") {
+		t.Errorf("%+v", got)
+	}
+}
