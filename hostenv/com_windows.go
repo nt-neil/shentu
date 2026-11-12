@@ -266,40 +266,60 @@ func comStuck(key string) bool { return comGateFor(key).stuck.Load() }
 // comWait. Calls for one provider take turns (the slot), so however many
 // arrive together, at most one thread can hang in that provider: while
 // it does, the next call answers ErrTimeout at once, and one waiting for
-// its turn gives up after comWait without starting a thread.
+// its turn gives up after comWait without starting a thread. The caller
+// and the thread settle who was first under a lock of their own: a call
+// that finished just as its caller gave up is returned, never marked stuck,
+// and only a thread whose caller gave up clears the mark.
 func comCall[T any](key string, f func() (T, error)) (T, error) {
 	var zero T
 	g := comGateFor(key)
 	if g.stuck.Load() {
 		return zero, ErrTimeout
 	}
-	timer := time.NewTimer(comWait)
-	defer timer.Stop()
+	turn := time.NewTimer(comWait)
 	select {
 	case g.slot <- struct{}{}:
-	case <-timer.C:
+		turn.Stop()
+	case <-turn.C:
 		return zero, ErrTimeout
 	}
 	type result struct {
 		v   T
 		err error
 	}
-	ch := make(chan result, 1)
+	var (
+		mu                  sync.Mutex
+		finished, abandoned bool
+		r                   result
+	)
+	done := make(chan struct{})
 	go func() {
 		runtime.LockOSThread()
 		defer runtime.UnlockOSThread()
 		v, err := f()
-		ch <- result{v, err}
-		g.stuck.Store(false)
+		mu.Lock()
+		r, finished = result{v, err}, true
+		if abandoned {
+			g.stuck.Store(false)
+		}
+		mu.Unlock()
 		<-g.slot
+		close(done)
 	}()
+	wait := time.NewTimer(comWait) // a whole comWait for f, whatever the turn took
+	defer wait.Stop()
 	select {
-	case r := <-ch:
-		return r.v, r.err
-	case <-timer.C:
-		g.stuck.CompareAndSwap(false, true)
-		return zero, ErrTimeout
+	case <-done:
+	case <-wait.C:
 	}
+	mu.Lock()
+	defer mu.Unlock()
+	if finished {
+		return r.v, r.err
+	}
+	abandoned = true
+	g.stuck.CompareAndSwap(false, true)
+	return zero, ErrTimeout
 }
 
 // comInit loads the COM DLLs and joins the multithreaded apartment on
