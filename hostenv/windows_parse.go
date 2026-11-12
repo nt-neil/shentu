@@ -188,7 +188,10 @@ func sshSkeleton(v string) string {
 		return v
 	}
 	out := strings.TrimSpace(v[:loc[0]]) + " [name]"
-	if m := sshAddr.FindStringSubmatch(v[loc[0]:]); m != nil {
+	// The name comes first and may itself spell "<ip> port <n>": sshd's own
+	// source is the last address in the message.
+	if all := sshAddr.FindAllStringSubmatch(v[loc[0]:], -1); len(all) > 0 {
+		m := all[len(all)-1]
 		out += " from " + m[1] + " port " + m[2]
 	}
 	if strings.Contains(v, "[preauth]") {
