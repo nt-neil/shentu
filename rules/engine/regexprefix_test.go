@@ -50,6 +50,7 @@ func TestRegexPrefixGuard(t *testing.T) {
 		{"// as the prefix", "python", py("        if re.match(r'//[a-z]', n):\n            self.redirect(n)"), true},
 		{"flags", "python", py("        if re.search(r'^/[a-z]', n, re.M):\n            self.redirect(n)"), true},
 		{"JavaScript \\A", "js", "app.get('/l', (req, res) => {\n  const n = req.query.n;\n  if (/\\A\\/[a-z]/.test(n)) res.redirect(n);\n});\n", true},
+		{"JavaScript [^] hiding an alternation", "js", "app.get('/l', (req, res) => {\n  const n = req.query.n;\n  if (/^\\/[a-z][^]|https:/.test(n)) res.redirect(n);\n});\n", true},
 		{"JavaScript without ^", "js", "app.get('/l', (req, res) => {\n  const n = req.query.n;\n  if (/\\/[a-z]/.test(n)) res.redirect(n);\n});\n", true},
 	} {
 		fs, err := e.Scan(c.lang, map[string]string{"python": "a.py", "js": "a.js", "php": "a.php"}[c.lang], []byte(c.src))

@@ -382,14 +382,16 @@ func topAlternation(re string) bool {
 }
 
 // skipClass returns the index after the class starting at re[i] ("["),
-// whatever it holds (a "]" first, or escaped, is part of it); -1 if open.
+// whatever it holds (an escaped "]" is part of it); -1 if open, or if a "]"
+// comes first: Python and PHP read it as a character, JavaScript as the end
+// of an empty class ([] and [^]), so the reading is not taken.
 func skipClass(re string, i int) int {
 	j := i + 1
 	if j < len(re) && re[j] == '^' {
 		j++
 	}
 	if j < len(re) && re[j] == ']' {
-		j++
+		return -1
 	}
 	for ; j < len(re); j++ {
 		switch re[j] {
