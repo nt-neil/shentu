@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>更新紀錄 · Shentu</title>
+<meta name="description" content="給 Linux 伺服器用的小型開源資安助理，由 LLM 驅動。">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0b0806">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http%3A//www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%230b0806'/%3E%3Crect x='28' y='8' width='8' height='48' fill='%23f2b45c'/%3E%3C/svg%3E">
+<link rel="preload" href="../fonts/serif-light.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../site.css">
+<link rel="alternate" type="application/atom+xml" title="Shentu releases" href="../feed.xml">
+
+</head>
+<body class="p-releases">
+<a class="skip" href="#main">跳到內容</a>
+<header class="top">
+  <a class="brand" href="index.html">Shentu <b lang="zh-Hant">神荼</b></a>
+  <nav aria-label="Site">
+    <a href="rules.html">規則</a>
+    <a href="bench.html">實測</a>
+    <a href="releases.html" aria-current="page">更新紀錄</a>
+    <a class="gh" href="https://github.com/nt-neil/shentu">GitHub</a>
+    <a class="cta" href="install.html">安裝</a>
+    <a class="lang" href="../releases.html" lang="en" hreflang="en">English</a>
+  </nav>
+</header><div class="slit" aria-hidden="true"></div>
+<main id="main">
+
+<header class="hall">
+  <h1>更新紀錄</h1>
+  <p class="intro">從立廟到現在，由舊到新。每一版都刻下它帶來的改變。 <a href="../feed.xml">Atom 訂閱</a></p>
+</header>
+
+<div class="river">
+  <svg class="flow" viewBox="0 0 1200 160" preserveAspectRatio="none" aria-hidden="true">
+    <defs>
+      <linearGradient id="rv-fade" x1="0" x2="1"><stop offset="0" stop-color="#f2b45c" stop-opacity=".06"/><stop offset=".7" stop-color="#f2b45c" stop-opacity=".35"/><stop offset="1" stop-color="#f2b45c" stop-opacity=".75"/></linearGradient>
+      <linearGradient id="rv-shine" x1="0" x2="1"><stop offset="0" stop-color="#fff1cf" stop-opacity="0"/><stop offset=".5" stop-color="#fff1cf" stop-opacity=".55"/><stop offset="1" stop-color="#fff1cf" stop-opacity="0"/></linearGradient>
+      <clipPath id="rv-bed"><path d="M0 84C160 64 300 108 450 86S760 50 900 78S1100 112 1200 70V100C1100 140 1000 112 900 108S620 80 450 108S160 96 0 100Z"/></clipPath>
+    </defs>
+    <path d="M0 84C160 64 300 108 450 86S760 50 900 78S1100 112 1200 70V100C1100 140 1000 112 900 108S620 80 450 108S160 96 0 100Z" fill="url(#rv-fade)"/>
+    <g clip-path="url(#rv-bed)"><rect class="shine" x="0" y="0" width="420" height="160" fill="url(#rv-shine)"/><rect class="shine late" x="0" y="0" width="300" height="160" fill="url(#rv-shine)"/></g>
+  </svg>
+  <ol class="eras">
+  
+    <li class="era-node" style="--old: 1.00; --x: 7.0">
+      <a class="lamp" href="../zh-TW/releases.html#v0.1.0" aria-describedby="rv-0.1.0">
+        <i aria-hidden="true"></i><span class="ver">v0.1.0</span>
+        <time datetime="2026-11-07">11-07</time>
+      </a>
+      <p class="acc"></p>
+      <div class="peek" id="rv-0.1.0">
+        <p class="word">立廟</p>
+        <ul><li>首次發布：Linux 伺服器用的 <code>shentu chat</code> 與 <code>shentu patrol</code>，以及設定本機模型或 API 金鑰的 <code>shentu setup</code>。</li></ul>
+      </div>
+    </li>
+  
+    <li class="era-node" style="--old: 0.86; --x: 19.3">
+      <a class="lamp" href="../zh-TW/releases.html#v0.1.1" aria-describedby="rv-0.1.1">
+        <i aria-hidden="true"></i><span class="ver">v0.1.1</span>
+        <time datetime="2026-11-07">11-07</time>
+      </a>
+      <p class="acc"></p>
+      <div class="peek" id="rv-0.1.1">
+        <p class="word">3 項改變</p>
+        <ul><li><code>package_vulns</code> 會標出遭積極利用的漏洞（CISA KEV）。</li><li>Slack 與 Discord webhook。</li><li>每次發布前跑安全不變式測試、提示注入測試組與 govulncheck。</li></ul>
+      </div>
+    </li>
+  
+    <li class="era-node" style="--old: 0.71; --x: 31.6">
+      <a class="lamp" href="../zh-TW/releases.html#v0.2.0" aria-describedby="rv-0.2.0">
+        <i aria-hidden="true"></i><span class="ver">v0.2.0</span>
+        <time datetime="2026-11-07">11-07</time>
+      </a>
+      <p class="acc"></p>
+      <div class="peek" id="rv-0.2.0">
+        <p class="word">2 項改變</p>
+        <ul><li>一個指令從安裝到運作：引導式設定。</li><li>站點盤點與應用程式相依套件掃描。</li></ul>
+      </div>
+    </li>
+  
+    <li class="era-node" style="--old: 0.57; --x: 43.9">
+      <a class="lamp" href="../zh-TW/releases.html#v0.2.1" aria-describedby="rv-0.2.1">
+        <i aria-hidden="true"></i><span class="ver">v0.2.1</span>
+        <time datetime="2026-11-08">11-08</time>
+      </a>
+      <p class="acc"></p>
+      <div class="peek" id="rv-0.2.1">
+        <p class="word">3 項改變</p>
+        <ul><li><code>shentu bot</code>：從 Telegram 和 Shentu 對話，配對有防護，權限分四個等級範圍。</li><li>用量追蹤，以及可選的每月 AI 預算。</li><li>第二輪模型比較：14 個模型、11 個情境。</li></ul>
+      </div>
+    </li>
+  
+    <li class="era-node" style="--old: 0.43; --x: 56.1">
+      <a class="lamp" href="../zh-TW/releases.html#v0.2.2" aria-describedby="rv-0.2.2">
+        <i aria-hidden="true"></i><span class="ver">v0.2.2</span>
+        <time datetime="2026-11-08">11-08</time>
+      </a>
+      <p class="acc"></p>
+      <div class="peek" id="rv-0.2.2">
+        <p class="word">1 項改變</p>
+        <ul><li><code>package_vulns</code> 對每個遭積極利用的 CVE 只報一次。</li></ul>
+      </div>
+    </li>
+  
+    <li class="era-node" style="--old: 0.29; --x: 68.4">
+      <a class="lamp" href="../zh-TW/releases.html#v0.2.3" aria-describedby="rv-0.2.3">
+        <i aria-hidden="true"></i><span class="ver">v0.2.3</span>
+        <time datetime="2026-11-09">11-09</time>
+      </a>
+      <p class="acc"></p>
+      <div class="peek" id="rv-0.2.3">
+        <p class="word">1 項改變</p>
+        <ul><li><code>app_code_audit</code>：離線稽核網站應用程式自己的檔案。</li></ul>
+      </div>
+    </li>
+  
+    <li class="era-node" style="--old: 0.14; --x: 80.7">
+      <a class="lamp" href="../zh-TW/releases.html#v0.2.4" aria-describedby="rv-0.2.4">
+        <i aria-hidden="true"></i><span class="ver">v0.2.4</span>
+        <time datetime="2026-11-09">11-09</time>
+      </a>
+      <p class="acc"><span><b>33</b> 條規則</span></p>
+      <div class="peek" id="rv-0.2.4">
+        <p class="word">增祀</p>
+        <ul><li>規則改用專屬格式並在 CI 檢查，起始共 33 條規則。</li><li><code>accounts_audit</code> 會報出共用的 SSH 金鑰、<code>ld.so.preload</code>，以及不屬於任何套件的 PAM 模組。</li><li><code>processes</code> 會標出挖礦程式。</li></ul>
+      </div>
+    </li>
+  
+    <li class="era-node now" style="--old: 0.00; --x: 93.0">
+      <a class="lamp" href="../zh-TW/releases.html#v0.2.5" aria-describedby="rv-0.2.5">
+        <i aria-hidden="true"></i><span class="ver">v0.2.5</span>
+        <time datetime="2026-11-13">11-13</time>
+      </a>
+      <p class="acc"><span><b>70</b> 條規則</span><span><b>15</b>/97 樣本抓到</span></p>
+      
+    </li>
+  
+  </ol>
+</div>
+
+<div class="newest" id="rv-0.2.5">
+  <div class="newest-head"><p class="word">增祀</p><span class="ver">v0.2.5</span><time datetime="2026-11-13">2026-11-13</time></div>
+  <div class="grp grp-reach"><h4><i aria-hidden="true"></i>看得更遠</h4><ul><li><code>app_code_audit</code> 會跨檔追蹤呼叫：在一個檔案讀進來、在另一個檔案的危險呼叫用掉的輸入，會在危險呼叫處報出，並標明來源檔案。</li><li>框架路由模型：WordPress 的 hook、shortcode 與 REST 路由，Laravel 路由、Django URL、Flask 與 FastAPI 的 view，以及 Express handler 的參數都視為輸入，路由註冊在別的檔案也一樣。</li><li>新的規則類別：LDAP 注入、NoSQL 運算子注入、危險的檔案上傳、弱加密與寫死的憑證；TypeScript 檔案用 JavaScript 規則檢查。</li><li>稽核結果會在多次執行之間保留，大型應用程式分幾次巡邏就能掃完，不必一次跑完。</li><li>分成多次執行的稽核，仍可能有少數結果和不限時間的單次執行不同；修正進行中。</li><li><code>js-cmdi-spawn-shell</code> 在指令和參數都固定、只有 options（例如 <code>cwd</code> 或 <code>env</code>）帶到請求值時，<code>spawn()</code> 和 <code>execFile()</code> 仍然會被報出。</li><li>在 <code>$wpdb-&gt;prepare()</code>／<code>-&gt;prepare()</code> 的格式字串裡，如果佔位符清單是由只回傳常數的 callback 產生 （例如 <code>implode(&#39;,&#39;, array_map(fn($v) =&gt; &#39;%d&#39;, $ids))</code>，或改用 <code>function ($v) { return &#39;%d&#39;; }</code> 的寫法），只要 <code>$ids</code> 來自請求，仍然會被當成輸入報出來。<code>array_fill(0, count($ids), &#39;%d&#39;)</code> 和 <code>sizeof()</code> 的寫法已能辨識。要讀出 callback 的回傳值需要 改引擎，預定 v0.2.6。</li></ul></div><div class="grp grp-sharp"><h4><i aria-hidden="true"></i>看得更準</h4><ul><li>誤報更少：<code>wp_send_json</code> 的輸出、<code>JSON_HEX_TAG</code> 的資料區塊、不是 collection 的物件上的 MongoDB 查詢，以及 Django 的 <code>_meta.get_field</code> 檢查。</li><li><code>php-deserialization-phar-wrapper</code> 會把 WordPress REST attachments controller 裡對上傳暫存路徑做的 <code>filesize()</code> 報出來，這是誤報：那個路徑是 PHP 自己產生的，但引擎還分不出上傳檔的 <code>tmp_name</code> 和客戶端填的 <code>name</code>。</li><li>js-nosqli-mongo-query 會把 SQL 資料庫上的 TypeORM repository 呼叫當成 MongoDB 查詢，也就是 options 的 where 由請求值組成的 find/findOne（例如 n8n 的公開 API 和查 credential 的地方）。TypeORM 會把 這些值當成 SQL 參數，所以這些是誤報；v0.2.6 會改用能認出 TypeORM 的 receiver 檢查來區分。</li><li>js-xss-response 不再對 Server-Sent Events 例外：在 text/event-stream 的 handler 裡寫 res.write(&#34;data: &#34; + 值) 會被報成 XSS（誤報），但不會因為 SSE 而漏報；依 handler 的 Content-Type 分辨串流的功能排在 v0.2.6。</li><li><code>-&gt;get_settings()</code> 在任何 class 裡都會被當成 Elementor widget 的輸入，所以 <code>WP_Widget::get_settings()</code> 和 WooCommerce <code>WC_Settings_Page::get_settings()</code> 回傳的值（由管理員存入）也會被報出來。要把來源 限定在繼承 <code>\Elementor\Widget_Base</code> 的 class，引擎得支援依 class 限定 source，預定 v0.2.6。經由 -&gt;get_settings() 讀到的值，也可能被追進 WordPress 後台的欄位定義，以及少數已經有防護的 SQL 位置（例如先用 isset() 檢查，或在 ORDER BY FIELD() 裡用 $wpdb-&gt;prepare() 綁定），因此在這些 地方會多出誤報。v0.2.6 會把這個來源限縮到 Elementor 元件。</li><li><code>python-path-traversal-send-file</code> 會把 <code>zipfile.ZipFile(request.files[...])</code> 報出來，這是誤報：它開的是 上傳的檔案串流，不是路徑。要在同一個參數裡分出請求的檔案串流和客戶端填寫的 filename，需要改引擎，預定 v0.2.6。</li></ul></div><div class="grp grp-light"><h4><i aria-hidden="true"></i>不拖慢網站</h4><ul><li>稽核依伺服器調整自己：記憶體上限取 min(1 GiB、可用記憶體的 25%、服務 cgroup 的 50%)，並行數依 CPU 數與系統負載決定。</li></ul></div>
+</div>
+
+
+
+<ol class="chronicle">
+
+  <li class="era" id="v0.1.0" style="--old: 1.00">
+    <div class="mark">
+      <p class="when"><time datetime="2026-11-07">2026-11-07</time></p>
+      <h2><span class="word">立廟</span> <span class="ver">v0.1.0</span></h2>
+    </div>
+    <div class="body">
+      <ul class="items"><li>首次發布：Linux 伺服器用的 <code>shentu chat</code> 與 <code>shentu patrol</code>，以及設定本機模型或 API 金鑰的 <code>shentu setup</code>。</li></ul>
+      
+      
+    </div>
+  </li>
+
+  <li class="era" id="v0.1.1" style="--old: 0.86">
+    <div class="mark">
+      <p class="when"><time datetime="2026-11-07">2026-11-07</time></p>
+      <h2><span class="word">3 項改變</span> <span class="ver">v0.1.1</span></h2>
+    </div>
+    <div class="body">
+      <ul class="items"><li><code>package_vulns</code> 會標出遭積極利用的漏洞（CISA KEV）。</li><li>Slack 與 Discord webhook。</li><li>每次發布前跑安全不變式測試、提示注入測試組與 govulncheck。</li></ul>
+      
+      
+    </div>
+  </li>
+
+  <li class="era" id="v0.2.0" style="--old: 0.71">
+    <div class="mark">
+      <p class="when"><time datetime="2026-11-07">2026-11-07</time></p>
+      <h2><span class="word">2 項改變</span> <span class="ver">v0.2.0</span></h2>
+    </div>
+    <div class="body">
+      <ul class="items"><li>一個指令從安裝到運作：引導式設定。</li><li>站點盤點與應用程式相依套件掃描。</li></ul>
+      
+      
+    </div>
+  </li>
+
+  <li class="era" id="v0.2.1" style="--old: 0.57">
+    <div class="mark">
+      <p class="when"><time datetime="2026-11-08">2026-11-08</time></p>
+      <h2><span class="word">3 項改變</span> <span class="ver">v0.2.1</span></h2>
+    </div>
+    <div class="body">
+      <ul class="items"><li><code>shentu bot</code>：從 Telegram 和 Shentu 對話，配對有防護，權限分四個等級範圍。</li><li>用量追蹤，以及可選的每月 AI 預算。</li><li>第二輪模型比較：14 個模型、11 個情境。</li></ul>
+      
+      
+    </div>
+  </li>
+
+  <li class="era" id="v0.2.2" style="--old: 0.43">
+    <div class="mark">
+      <p class="when"><time datetime="2026-11-08">2026-11-08</time></p>
+      <h2><span class="word">1 項改變</span> <span class="ver">v0.2.2</span></h2>
+    </div>
+    <div class="body">
+      <ul class="items"><li><code>package_vulns</code> 對每個遭積極利用的 CVE 只報一次。</li></ul>
+      
+      
+    </div>
+  </li>
+
+  <li class="era" id="v0.2.3" style="--old: 0.29">
+    <div class="mark">
+      <p class="when"><time datetime="2026-11-09">2026-11-09</time></p>
+      <h2><span class="word">1 項改變</span> <span class="ver">v0.2.3</span></h2>
+    </div>
+    <div class="body">
+      <ul class="items"><li><code>app_code_audit</code>：離線稽核網站應用程式自己的檔案。</li></ul>
+      
+      
+    </div>
+  </li>
+
+  <li class="era" id="v0.2.4" style="--old: 0.14">
+    <div class="mark">
+      <p class="when"><time datetime="2026-11-09">2026-11-09</time></p>
+      <h2><span class="word">增祀</span> <span class="ver">v0.2.4</span></h2>
+    </div>
+    <div class="body">
+      <ul class="items"><li>規則改用專屬格式並在 CI 檢查，起始共 33 條規則。</li><li><code>accounts_audit</code> 會報出共用的 SSH 金鑰、<code>ld.so.preload</code>，以及不屬於任何套件的 PAM 模組。</li><li><code>processes</code> 會標出挖礦程式。</li><li>巡邏時每個 webshell 報一行。</li></ul>
+      
+      <div class="grow">
+        <p><span class="bar" style="--w: 47.1%"></span><b>33</b> 條規則<small>（+33）</small></p>
+        
+      </div>
+      
+      
+      <dl class="facts">
+        
+        <div class="wide"><dt>新增規則 (33)</dt><dd><details class="ids"><summary>PHP <span class="n">11</span></summary><p><code>php-cmdi-mail-params</code> <code>php-cmdi-shell-exec</code> <code>php-code-eval-eval</code> <code>php-deserialization-phar-wrapper</code> <code>php-deserialization-unserialize</code> <code>php-path-traversal-file-include</code> <code>php-path-traversal-file-read</code> <code>php-path-traversal-laravel-storage</code> <code>php-sqli-orderby-identifier</code> <code>php-sqli-string-concat</code> <code>php-sqli-wpdb-unprepared</code> </p></details><details class="ids"><summary>Python <span class="n">11</span></summary><p><code>python-cmdi-argument-injection</code> <code>python-cmdi-shell</code> <code>python-code-eval-eval</code> <code>python-code-eval-template-injection</code> <code>python-deserialization-pickle</code> <code>python-deserialization-yaml-load</code> <code>python-path-traversal-archive-extract</code> <code>python-path-traversal-send-file</code> <code>python-sqli-dbapi-format</code> <code>python-sqli-django-kwargs-alias</code> <code>python-sqli-sqlalchemy-text</code> </p></details><details class="ids"><summary>JavaScript / TypeScript <span class="n">11</span></summary><p><code>js-cmdi-exec</code> <code>js-cmdi-spawn-shell</code> <code>js-code-eval-eval</code> <code>js-code-eval-template-options</code> <code>js-deserialization-node-serialize</code> <code>js-deserialization-yaml-load</code> <code>js-path-traversal-archive-extract</code> <code>js-path-traversal-send-file</code> <code>js-sqli-object-input</code> <code>js-sqli-raw-interpolation</code> <code>js-sqli-sequelize-literal</code> </p></details></dd></div>
+        
+      </dl>
+      
+    </div>
+  </li>
+
+  <li class="era" id="v0.2.5" style="--old: 0.00">
+    <div class="mark">
+      <p class="when"><time datetime="2026-11-13">2026-11-13</time></p>
+      <h2><span class="word">增祀</span> <span class="ver">v0.2.5</span></h2>
+    </div>
+    <div class="body">
+      <ul class="items"><li><code>app_code_audit</code> 會跨檔追蹤呼叫：在一個檔案讀進來、在另一個檔案的危險呼叫用掉的輸入，會在危險呼叫處報出，並標明來源檔案。</li><li>框架路由模型：WordPress 的 hook、shortcode 與 REST 路由，Laravel 路由、Django URL、Flask 與 FastAPI 的 view，以及 Express handler 的參數都視為輸入，路由註冊在別的檔案也一樣。</li><li>新的規則類別：LDAP 注入、NoSQL 運算子注入、危險的檔案上傳、弱加密與寫死的憑證；TypeScript 檔案用 JavaScript 規則檢查。</li><li>稽核結果會在多次執行之間保留，大型應用程式分幾次巡邏就能掃完，不必一次跑完。</li><li>稽核依伺服器調整自己：記憶體上限取 min(1 GiB、可用記憶體的 25%、服務 cgroup 的 50%)，並行數依 CPU 數與系統負載決定。</li><li>誤報更少：<code>wp_send_json</code> 的輸出、<code>JSON_HEX_TAG</code> 的資料區塊、不是 collection 的物件上的 MongoDB 查詢，以及 Django 的 <code>_meta.get_field</code> 檢查。</li><li>分成多次執行的稽核，仍可能有少數結果和不限時間的單次執行不同；修正進行中。</li><li><code>php-deserialization-phar-wrapper</code> 會把 WordPress REST attachments controller 裡對上傳暫存路徑做的 <code>filesize()</code> 報出來，這是誤報：那個路徑是 PHP 自己產生的，但引擎還分不出上傳檔的 <code>tmp_name</code> 和客戶端填的 <code>name</code>。</li><li>js-nosqli-mongo-query 會把 SQL 資料庫上的 TypeORM repository 呼叫當成 MongoDB 查詢，也就是 options 的 where 由請求值組成的 find/findOne（例如 n8n 的公開 API 和查 credential 的地方）。TypeORM 會把 這些值當成 SQL 參數，所以這些是誤報；v0.2.6 會改用能認出 TypeORM 的 receiver 檢查來區分。</li><li><code>js-cmdi-spawn-shell</code> 在指令和參數都固定、只有 options（例如 <code>cwd</code> 或 <code>env</code>）帶到請求值時，<code>spawn()</code> 和 <code>execFile()</code> 仍然會被報出。</li><li>js-xss-response 不再對 Server-Sent Events 例外：在 text/event-stream 的 handler 裡寫 res.write(&#34;data: &#34; + 值) 會被報成 XSS（誤報），但不會因為 SSE 而漏報；依 handler 的 Content-Type 分辨串流的功能排在 v0.2.6。</li><li><code>-&gt;get_settings()</code> 在任何 class 裡都會被當成 Elementor widget 的輸入，所以 <code>WP_Widget::get_settings()</code> 和 WooCommerce <code>WC_Settings_Page::get_settings()</code> 回傳的值（由管理員存入）也會被報出來。要把來源 限定在繼承 <code>\Elementor\Widget_Base</code> 的 class，引擎得支援依 class 限定 source，預定 v0.2.6。經由 -&gt;get_settings() 讀到的值，也可能被追進 WordPress 後台的欄位定義，以及少數已經有防護的 SQL 位置（例如先用 isset() 檢查，或在 ORDER BY FIELD() 裡用 $wpdb-&gt;prepare() 綁定），因此在這些 地方會多出誤報。v0.2.6 會把這個來源限縮到 Elementor 元件。</li><li>在 <code>$wpdb-&gt;prepare()</code>／<code>-&gt;prepare()</code> 的格式字串裡，如果佔位符清單是由只回傳常數的 callback 產生 （例如 <code>implode(&#39;,&#39;, array_map(fn($v) =&gt; &#39;%d&#39;, $ids))</code>，或改用 <code>function ($v) { return &#39;%d&#39;; }</code> 的寫法），只要 <code>$ids</code> 來自請求，仍然會被當成輸入報出來。<code>array_fill(0, count($ids), &#39;%d&#39;)</code> 和 <code>sizeof()</code> 的寫法已能辨識。要讀出 callback 的回傳值需要 改引擎，預定 v0.2.6。</li><li><code>python-path-traversal-send-file</code> 會把 <code>zipfile.ZipFile(request.files[...])</code> 報出來，這是誤報：它開的是 上傳的檔案串流，不是路徑。要在同一個參數裡分出請求的檔案串流和客戶端填寫的 filename，需要改引擎，預定 v0.2.6。</li></ul>
+      
+      <div class="grow">
+        <p><span class="bar" style="--w: 100.0%"></span><b>70</b> 條規則<small>（+37）</small></p>
+        <p><span class="bar" style="--w: 15.5%"></span><b>15</b> / 97 個公開漏洞已抓到</p>
+      </div>
+      
+      
+      <dl class="facts">
+        <div class="wide"><dt>新支援的框架路由模型</dt><dd>django, express, fastapi, flask, laravel, wordpress</dd></div>
+        <div class="wide"><dt>新增規則 (37)</dt><dd><details class="ids"><summary>PHP <span class="n">14</span></summary><p><code>php-file-upload-client-name</code> <code>php-hardcoded-secret-credentials</code> <code>php-ldapi-filter</code> <code>php-nosqli-mongo-query</code> <code>php-open-redirect-redirect</code> <code>php-path-traversal-file-write</code> <code>php-ssrf-http-request</code> <code>php-weak-crypto-cipher</code> <code>php-weak-crypto-password-hash</code> <code>php-xss-echo-attribute</code> <code>php-xss-echo-html</code> <code>php-xss-echo-script</code> <code>php-xss-echo-url</code> <code>php-xxe-libxml-noent</code> </p></details><details class="ids"><summary>Python <span class="n">11</span></summary><p><code>python-file-upload-client-name</code> <code>python-hardcoded-secret-credentials</code> <code>python-ldapi-filter</code> <code>python-nosqli-mongo-query</code> <code>python-open-redirect-redirect</code> <code>python-ssrf-http-request</code> <code>python-weak-crypto-cipher</code> <code>python-weak-crypto-password-hash</code> <code>python-xss-mark-safe</code> <code>python-xss-response</code> <code>python-xxe-parser-entities</code> </p></details><details class="ids"><summary>JavaScript / TypeScript <span class="n">12</span></summary><p><code>js-file-upload-client-name</code> <code>js-hardcoded-secret-credentials</code> <code>js-ldapi-filter</code> <code>js-nosqli-mongo-query</code> <code>js-open-redirect-redirect</code> <code>js-ssrf-http-request</code> <code>js-weak-crypto-cipher</code> <code>js-weak-crypto-password-hash</code> <code>js-xss-dom</code> <code>js-xss-response</code> <code>js-xss-response-url</code> <code>js-xxe-libxmljs-noent</code> </p></details></dd></div>
+        
+      </dl>
+      
+    </div>
+  </li>
+
+</ol>
+<p class="more"><a class="button" href="install.html">安裝最新版</a> <a href="https://github.com/nt-neil/shentu/releases">到 GitHub 下載全部檔案</a></p>
+
+</main>
+<footer class="foot">
+  <p>Apache-2.0 授權。本站由 cmd/sitegen 從 repo 產生。</p>
+  <ul>
+    <li><a href="https://github.com/nt-neil/shentu">GitHub</a></li>
+    <li><a href="https://github.com/nt-neil/shentu/blob/main/LICENSE">授權 Apache-2.0</a></li>
+    <li><a href="https://github.com/nt-neil/shentu/blob/main/SECURITY.md">安全政策</a></li>
+    <li><a href="../feed.xml">Atom 訂閱 (RSS)</a></li>
+    <li><a href="../img/CREDITS.md">圖片來源</a></li>
+    <li><a href="../fonts/OFL.txt">Noto Serif TC (OFL)</a></li>
+  </ul>
+</footer>
+</body>
+</html>
+
+
+

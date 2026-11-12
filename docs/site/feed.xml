@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Shentu releases</title>
+  <id>https://nt-neil.github.io/shentu/feed.xml</id>
+  <updated>2026-11-13T00:00:00Z</updated>
+  <link href="https://nt-neil.github.io/shentu/feed.xml" rel="self"></link>
+  <link href="https://nt-neil.github.io/shentu/releases.html"></link>
+  <author>
+    <name>Shentu</name>
+  </author>
+  <entry>
+    <title>Shentu v0.2.5</title>
+    <id>https://nt-neil.github.io/shentu/releases.html#v0.2.5</id>
+    <updated>2026-11-13T00:00:00Z</updated>
+    <link href="https://nt-neil.github.io/shentu/releases.html#v0.2.5"></link>
+    <content type="html">&lt;ul&gt;&lt;li&gt;&lt;code&gt;app_code_audit&lt;/code&gt; follows calls across files: input read in one file and used in a sink of another is reported at the sink, with the file it came from.&lt;/li&gt;&lt;li&gt;Framework route models: the parameters of WordPress hooks, shortcodes and REST routes, Laravel routes, Django URLs, Flask and FastAPI views and Express handlers are input, also when the route is registered in another file.&lt;/li&gt;&lt;li&gt;New rule classes: LDAP injection, NoSQL operator injection, dangerous file uploads, weak cryptography and hard-coded credentials; TypeScript files are checked with the JavaScript rules.&lt;/li&gt;&lt;li&gt;Audits keep their results between runs, so a large application is covered over a few patrols instead of one.&lt;/li&gt;&lt;li&gt;The audit sizes itself to the server: heap at most min(1 GiB, 25% of available memory, 50% of the service&amp;#39;s cgroup), workers from the CPU count and the load.&lt;/li&gt;&lt;li&gt;Fewer false positives: &lt;code&gt;wp_send_json&lt;/code&gt; output, &lt;code&gt;JSON_HEX_TAG&lt;/code&gt; data blocks, MongoDB queries on objects that are not collections, and Django &lt;code&gt;_meta.get_field&lt;/code&gt; checks.&lt;/li&gt;&lt;li&gt;An audit spread over several runs can still report a few findings that differ from one run without a time limit; a fix is in progress.&lt;/li&gt;&lt;li&gt;&lt;code&gt;php-deserialization-phar-wrapper&lt;/code&gt; reports &lt;code&gt;filesize()&lt;/code&gt; on an upload&amp;#39;s temporary path in WordPress&amp;#39;s REST attachments controller, a false positive: the path is PHP&amp;#39;s own, but the engine cannot yet tell an upload&amp;#39;s &lt;code&gt;tmp_name&lt;/code&gt; from its client-set &lt;code&gt;name&lt;/code&gt;.&lt;/li&gt;&lt;li&gt;js-nosqli-mongo-query reports TypeORM repository calls on SQL databases (find/findOne whose options hold a where built from request values, e.g. n8n&amp;#39;s public API and credential lookups) as MongoDB queries; TypeORM sends those values as SQL parameters, so these are false positives, to be told apart by a TypeORM-aware receiver check in v0.2.6.&lt;/li&gt;&lt;li&gt;&lt;code&gt;js-cmdi-spawn-shell&lt;/code&gt; still reports &lt;code&gt;spawn()&lt;/code&gt; and &lt;code&gt;execFile()&lt;/code&gt; calls whose command and arguments are fixed when only the options (such as &lt;code&gt;cwd&lt;/code&gt; or &lt;code&gt;env&lt;/code&gt;) carry request values.&lt;/li&gt;&lt;li&gt;js-xss-response has no Server-Sent Events exception: res.write(&amp;#34;data: &amp;#34; + value) in a text/event-stream handler is reported as XSS (a false positive), and nothing is missed because of SSE; telling streams apart by the handler&amp;#39;s Content-Type is planned for v0.2.6.&lt;/li&gt;&lt;li&gt;&lt;code&gt;-&amp;gt;get_settings()&lt;/code&gt; counts as Elementor widget input in every class, so &lt;code&gt;WP_Widget::get_settings()&lt;/code&gt; and WooCommerce &lt;code&gt;WC_Settings_Page::get_settings()&lt;/code&gt; values (saved by administrators) are reported too. Limiting the source to classes extending &lt;code&gt;\Elementor\Widget_Base&lt;/code&gt; needs class-scoped sources in the engine (planned for v0.2.6). Values read through -&amp;gt;get_settings() can also be followed into WordPress admin field definitions and into a few SQL sinks that are already guarded (an isset() check, or a value bound through $wpdb-&amp;gt;prepare() inside ORDER BY FIELD()), which gives extra false positives there. Narrowing the source to Elementor widgets is planned for v0.2.6.&lt;/li&gt;&lt;li&gt;In &lt;code&gt;$wpdb-&amp;gt;prepare()&lt;/code&gt;/&lt;code&gt;-&amp;gt;prepare()&lt;/code&gt; formats, a placeholder list built by a callback that returns a constant (&lt;code&gt;implode(&amp;#39;,&amp;#39;, array_map(fn($v) =&amp;gt; &amp;#39;%d&amp;#39;, $ids))&lt;/code&gt;, or the same with &lt;code&gt;function ($v) { return &amp;#39;%d&amp;#39;; }&lt;/code&gt;) is still treated as input and reported when &lt;code&gt;$ids&lt;/code&gt; comes from the request. &lt;code&gt;array_fill(0, count($ids), &amp;#39;%d&amp;#39;)&lt;/code&gt; and &lt;code&gt;sizeof()&lt;/code&gt; are recognised. Reading a callback&amp;#39;s return value needs an engine change (planned for v0.2.6).&lt;/li&gt;&lt;li&gt;&lt;code&gt;python-path-traversal-send-file&lt;/code&gt; reports &lt;code&gt;zipfile.ZipFile(request.files[...])&lt;/code&gt;, which opens the uploaded stream rather than a path, a false positive. Telling a request&amp;#39;s file stream from a client-set file name inside one argument needs an engine change (planned for v0.2.6).&lt;/li&gt;&lt;/ul&gt;&lt;p&gt;Rules: 37 added, 0 removed.&lt;/p&gt;</content>
+  </entry>
+  <entry>
+    <title>Shentu v0.2.4</title>
+    <id>https://nt-neil.github.io/shentu/releases.html#v0.2.4</id>
+    <updated>2026-11-09T00:00:00Z</updated>
+    <link href="https://nt-neil.github.io/shentu/releases.html#v0.2.4"></link>
+    <content type="html">&lt;ul&gt;&lt;li&gt;Rules move to their own format, checked in CI, starting with 33 rules.&lt;/li&gt;&lt;li&gt;&lt;code&gt;accounts_audit&lt;/code&gt; reports shared SSH keys, &lt;code&gt;ld.so.preload&lt;/code&gt; and PAM modules that belong to no package.&lt;/li&gt;&lt;li&gt;&lt;code&gt;processes&lt;/code&gt; flags cryptominers.&lt;/li&gt;&lt;li&gt;Patrol reports one line per webshell.&lt;/li&gt;&lt;/ul&gt;&lt;p&gt;Rules: 33 added, 0 removed.&lt;/p&gt;</content>
+  </entry>
+  <entry>
+    <title>Shentu v0.2.3</title>
+    <id>https://nt-neil.github.io/shentu/releases.html#v0.2.3</id>
+    <updated>2026-11-09T00:00:00Z</updated>
+    <link href="https://nt-neil.github.io/shentu/releases.html#v0.2.3"></link>
+    <content type="html">&lt;ul&gt;&lt;li&gt;&lt;code&gt;app_code_audit&lt;/code&gt;: an offline audit of the applications&amp;#39; own files.&lt;/li&gt;&lt;/ul&gt;</content>
+  </entry>
+  <entry>
+    <title>Shentu v0.2.2</title>
+    <id>https://nt-neil.github.io/shentu/releases.html#v0.2.2</id>
+    <updated>2026-11-08T00:00:00Z</updated>
+    <link href="https://nt-neil.github.io/shentu/releases.html#v0.2.2"></link>
+    <content type="html">&lt;ul&gt;&lt;li&gt;&lt;code&gt;package_vulns&lt;/code&gt; reports each actively exploited CVE once.&lt;/li&gt;&lt;/ul&gt;</content>
+  </entry>
+  <entry>
+    <title>Shentu v0.2.1</title>
+    <id>https://nt-neil.github.io/shentu/releases.html#v0.2.1</id>
+    <updated>2026-11-08T00:00:00Z</updated>
+    <link href="https://nt-neil.github.io/shentu/releases.html#v0.2.1"></link>
+    <content type="html">&lt;ul&gt;&lt;li&gt;&lt;code&gt;shentu bot&lt;/code&gt;: talk to Shentu from Telegram, with guarded pairing and four ranges of levels.&lt;/li&gt;&lt;li&gt;Usage tracking and an optional monthly AI budget.&lt;/li&gt;&lt;li&gt;Round 2 of the model comparison: 14 models, 11 scenarios.&lt;/li&gt;&lt;/ul&gt;</content>
+  </entry>
+  <entry>
+    <title>Shentu v0.2.0</title>
+    <id>https://nt-neil.github.io/shentu/releases.html#v0.2.0</id>
+    <updated>2026-11-07T00:00:00Z</updated>
+    <link href="https://nt-neil.github.io/shentu/releases.html#v0.2.0"></link>
+    <content type="html">&lt;ul&gt;&lt;li&gt;One command from install to running: a guided setup.&lt;/li&gt;&lt;li&gt;Site survey and an application dependency scan.&lt;/li&gt;&lt;/ul&gt;</content>
+  </entry>
+  <entry>
+    <title>Shentu v0.1.1</title>
+    <id>https://nt-neil.github.io/shentu/releases.html#v0.1.1</id>
+    <updated>2026-11-07T00:00:00Z</updated>
+    <link href="https://nt-neil.github.io/shentu/releases.html#v0.1.1"></link>
+    <content type="html">&lt;ul&gt;&lt;li&gt;&lt;code&gt;package_vulns&lt;/code&gt; marks actively exploited vulnerabilities (CISA KEV).&lt;/li&gt;&lt;li&gt;Slack and Discord webhooks.&lt;/li&gt;&lt;li&gt;Security invariant tests, a prompt-injection suite and govulncheck before each release.&lt;/li&gt;&lt;/ul&gt;</content>
+  </entry>
+  <entry>
+    <title>Shentu v0.1.0</title>
+    <id>https://nt-neil.github.io/shentu/releases.html#v0.1.0</id>
+    <updated>2026-11-07T00:00:00Z</updated>
+    <link href="https://nt-neil.github.io/shentu/releases.html#v0.1.0"></link>
+    <content type="html">&lt;ul&gt;&lt;li&gt;First release: &lt;code&gt;shentu chat&lt;/code&gt; and &lt;code&gt;shentu patrol&lt;/code&gt; for Linux servers, with &lt;code&gt;shentu setup&lt;/code&gt; for a local model or an API key.&lt;/li&gt;&lt;/ul&gt;</content>
+  </entry>
+</feed>

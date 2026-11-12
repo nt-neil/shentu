@@ -6,6 +6,7 @@ severity = "high"
 tier = "info"
 title = "Request data placed in a MongoDB query without forcing it to a string"
 frameworks = ["express"]
+route_members = ["query", "body"]
 sources = ["req.body", "req.query"]
 sinks = [".findOne(", ".find(", ".findOneAndUpdate(", ".findOneAndDelete(", ".updateOne(", ".updateMany(", ".deleteOne(", ".deleteMany(", ".countDocuments(", ".exists(", "$where"]
 sanitizers = ["String(", ".toString(", "mongoSanitize(", "sanitize(", "parseInt(", "ObjectId(", "typeof"]
@@ -41,5 +42,23 @@ app.post("/login", async (req, res) => {
   const user = await User.findOne({ username: String(req.body.username) });
   const item = items.find((i) => i.id === req.body.id);
   res.json({ ok: !!user && !!item });
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "MongoDB options (sort, limit) beside the filter do not make it safe"
+code = '''
+app.get("/posts", async (req, res) => {
+  res.json(await db.collection("posts").find({ author: req.query.author }, { sort: { at: -1 }, limit: 10 }).toArray());
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "a field named relations in the options (here a projection) is no TypeORM call"
+code = '''
+app.get("/people", async (req, res) => {
+  res.json(await db.collection("people").find({ name: req.query.name }, { projection: { relations: 1 } }).toArray());
 });
 '''

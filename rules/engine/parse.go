@@ -1,6 +1,9 @@
 package engine
 
-import "strings"
+import (
+	"slices"
+	"strings"
+)
 
 // The parser turns tokens into a light statement tree: simple statements, if/else,
 // loops, blocks and function bodies. It is not a grammar; it only finds what the
@@ -563,29 +566,50 @@ const (
 )
 
 // collect gathers tokens up to the end given by mode, taking function literals out.
+// The tokens are copied once, at their exact size, when the statement ends (a
+// parsed file is kept while the file's tokens are not); with a function
+// literal taken out of them they are gathered one by one from there.
 func (p *braceParser) collect(mode int) ([]Token, []*fn) {
+	start, own := p.i, false
 	var out []Token
 	var funcs []*fn
+	done := func() ([]Token, []*fn) {
+		if own {
+			return out, funcs
+		}
+		return append(make([]Token, 0, len(out)), out...), funcs
+	}
 	depth := 0
 	for p.i < len(p.t) && p.b.step() {
+		if !own {
+			out = p.t[start:p.i:p.i]
+		}
 		t := p.t[p.i]
 		if depth == 0 {
 			switch {
 			case mode == endStmt && t.op(";"):
 				p.i++
-				return out, funcs
+				return done()
 			case mode == endStmt && t.op("}"):
-				return out, funcs
+				return done()
 			case mode == endGroup && t.op(")"):
 				p.i++
-				return out, funcs
+				return done()
 			case mode == endArrow && (t.op(",") || t.op(";") || isClose(t)):
-				return out, funcs
+				return done()
 			case mode != endGroup && !p.php && t.Flags&FlagNL != 0 && len(out) > 0 && endsExpr(out[len(out)-1]) && !continuesExpr(t):
-				return out, funcs
+				return done()
 			}
 		}
+		if !own && !p.php && t.op("=>") {
+			// An arrow function's parameters are taken from what was gathered:
+			// from a copy, or they would hold on to all of the file's tokens.
+			out, own = append([]Token(nil), out...), true
+		}
 		if f, ok := p.funcLiteral(&out); ok {
+			if !own { // from here on its own: the literal is taken out of it
+				out, own = append([]Token(nil), out...), true
+			}
 			funcs = append(funcs, f)
 			out = append(out, Token{Kind: Func, Fn: len(funcs) - 1, Line: t.Line})
 			continue
@@ -595,10 +619,15 @@ func (p *braceParser) collect(mode int) ([]Token, []*fn) {
 		} else if isClose(t) && depth > 0 {
 			depth--
 		}
-		out = append(out, t)
+		if own {
+			out = append(out, t)
+		}
 		p.i++
 	}
-	return out, funcs
+	if !own {
+		out = p.t[start:p.i:p.i]
+	}
+	return done()
 }
 
 var notExprEnd = map[string]bool{"typeof": true, "instanceof": true, "in": true, "of": true, "new": true, "delete": true,
@@ -671,13 +700,13 @@ func (p *braceParser) funcLiteral(out *[]Token) (*fn, bool) {
 		var params []Token
 		switch n := len(o); {
 		case n > 0 && o[n-1].Kind == Ident:
-			params, o = o[n-1:], o[:n-1]
+			params, o = slices.Clone(o[n-1:]), o[:n-1]
 		case n > 0 && o[n-1].op(")"):
 			open := openOf(o, n-1)
 			if !o[open].op("(") {
 				return nil, false
 			}
-			params, o = o[open+1:n-1], o[:open]
+			params, o = slices.Clone(o[open+1:n-1]), o[:open] // a copy: what is gathered next is written over o
 		default:
 			return nil, false
 		}

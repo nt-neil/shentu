@@ -241,16 +241,18 @@ func (e *Engine) registrations(php bool, s *stmt, rs []*croute, ff *fileFuncs, m
 			if k < 0 || k >= len(args) {
 				continue
 			}
-			h := args[k]
+			hs := [][]Token{args[k]}
 			if c.r.Key != "" {
-				h = routeKeyValue(h, c.r.Key)
+				hs = routeKeyValues(args[k], c.r.Key)
 			}
 			var template []Token
 			if len(args) > 0 {
 				template = args[0]
 			}
-			for _, f := range handlerFuncs(php, s, h, ff) {
-				mark(c, f, template)
+			for _, h := range hs {
+				for _, f := range handlerFuncs(php, s, h, ff) {
+					mark(c, f, template)
+				}
 			}
 		}
 	}
@@ -367,25 +369,45 @@ func handlerFuncs(php bool, s *stmt, h []Token, ff *fileFuncs) []*fn {
 	return nil
 }
 
-// routeKeyValue returns the value of key in an array or object literal
-// (array('callback' => f), ['callback' => f], {callback: f}).
-func routeKeyValue(t []Token, key string) []Token {
-	if len(t) == 0 {
+// routeKeyValues returns the values of key in an array or object literal
+// (array('callback' => f), ['callback' => f], {callback: f}), and in the
+// literals that are its elements, one level down: register_rest_route's
+// array(array('methods' => 'GET', 'callback' => f), array(..., 'callback' => g)),
+// one handler for each method.
+func routeKeyValues(t []Token, key string) [][]Token {
+	var out [][]Token
+	parts, ok := literalParts(t)
+	if !ok {
 		return nil
+	}
+	for _, part := range parts {
+		if len(part) > 2 && (part[0].Kind == Str || part[0].Kind == Ident) && part[0].Text == key && (part[1].op("=>") || part[1].op(":")) {
+			out = append(out, part[2:])
+		} else if inner, ok := literalParts(part); ok {
+			for _, p := range inner {
+				if len(p) > 2 && (p[0].Kind == Str || p[0].Kind == Ident) && p[0].Text == key && (p[1].op("=>") || p[1].op(":")) {
+					out = append(out, p[2:])
+				}
+			}
+		}
+	}
+	return out
+}
+
+// literalParts returns the elements of the array or object literal t starts
+// with ([...], {...}, array(...)); false for anything else.
+func literalParts(t []Token) ([][]Token, bool) {
+	if len(t) == 0 {
+		return nil, false
 	}
 	open := 0
 	if !t[0].op("[") && !t[0].op("{") {
 		if len(t) < 2 || !t[0].word("array") || !t[1].op("(") {
-			return nil
+			return nil, false
 		}
 		open = 1
 	}
-	for _, part := range splitTop(inside(t, open, closeOf(t, open)), isComma) {
-		if len(part) > 2 && (part[0].Kind == Str || part[0].Kind == Ident) && part[0].Text == key && (part[1].op("=>") || part[1].op(":")) {
-			return part[2:]
-		}
-	}
-	return nil
+	return splitTop(inside(t, open, closeOf(t, open)), isComma), true
 }
 
 // pathLiteral reports whether t is a string literal starting with "/".
@@ -467,7 +489,9 @@ func (a *analysis) routeParams(f *fn, x state) {
 			continue
 		}
 		for _, m := range sd.members {
-			x[p+sepCh+"."+m] = entry{taint: true}
+			if rm := a.r.rule.RouteMembers; rm == nil || slices.Contains(rm, m) {
+				x[p+sepCh+"."+m] = entry{taint: true}
+			}
 		}
 	}
 }
@@ -533,22 +557,24 @@ func (e *Engine) routeRefs(lang string, tree []*stmt) []routeRef {
 				if k < 0 || k >= len(args) {
 					continue
 				}
-				h := args[k]
+				hs := [][]Token{args[k]}
 				if c.r.Key != "" {
-					h = routeKeyValue(h, c.r.Key)
+					hs = routeKeyValues(args[k], c.r.Key)
 				}
-				ref, ok := namedHandler(php, h)
-				if !ok {
-					continue
-				}
-				ref.Route = c.r.ID
-				if c.r.Template && len(args) > 0 {
-					for n := range templateNames(args[0]) {
-						ref.Names = append(ref.Names, n)
+				for _, h := range hs {
+					ref, ok := namedHandler(php, h)
+					if !ok {
+						continue
 					}
-					slices.Sort(ref.Names)
+					ref.Route = c.r.ID
+					if c.r.Template && len(args) > 0 {
+						for n := range templateNames(args[0]) {
+							ref.Names = append(ref.Names, n)
+						}
+						slices.Sort(ref.Names)
+					}
+					out = append(out, ref)
 				}
-				out = append(out, ref)
 			}
 		}
 	})

@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shentu</title>
+<meta name="description" content="給 Linux 伺服器用的小型開源資安助理，由 LLM 驅動。">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0b0806">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http%3A//www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%230b0806'/%3E%3Crect x='28' y='8' width='8' height='48' fill='%23f2b45c'/%3E%3C/svg%3E">
+<link rel="preload" href="../fonts/serif-light.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../img/guardian-night.webp" as="image">
+<link rel="preload" href="../img/scroll/sky.webp" as="image">
+<link rel="stylesheet" href="../site.css">
+<link rel="alternate" type="application/atom+xml" title="Shentu releases" href="../feed.xml">
+
+</head>
+<body class="p-index">
+<a class="skip" href="#main">跳到內容</a>
+<header class="top">
+  <a class="brand" href="index.html">Shentu <b lang="zh-Hant">神荼</b></a>
+  <nav aria-label="Site">
+    <a href="rules.html">規則</a>
+    <a href="bench.html">實測</a>
+    <a href="releases.html">更新紀錄</a>
+    <a class="gh" href="https://github.com/nt-neil/shentu">GitHub</a>
+    <a class="cta" href="install.html">安裝</a>
+    <a class="lang" href="../index.html" lang="en" hreflang="en">English</a>
+  </nav>
+</header>
+<main id="main">
+
+
+<section class="walk" id="watch" aria-labelledby="title" data-hud='["廟門","廟埕","迴廊","後殿","發現","回報"]'>
+  <div class="stage">
+    <div class="sky" aria-hidden="true"></div>
+    <div class="world">
+      <div class="scene sc1" role="img" aria-label="夜裡，從廟門的門縫看見逆光的門神"></div>
+      <div class="scene sc2" data-bg="../img/scroll/court.webp" aria-hidden="true"></div>
+      <div class="scene sc3" data-bg="../img/scroll/hall.webp" aria-hidden="true"></div>
+      <div class="scene sc4" data-bg="../img/scroll/rear.webp" aria-hidden="true"></div>
+      <div class="scene sc5" data-bg="../img/scroll/door.webp" aria-hidden="true"></div>
+      <div class="scene sc6" data-bg="../img/scroll/guardian-front.webp" aria-hidden="true"></div>
+    </div>
+    <div class="evil" aria-hidden="true"></div>
+    <div class="haze" aria-hidden="true"></div>
+    <canvas class="near" aria-hidden="true"></canvas>
+    <div class="walker" aria-hidden="true"><i class="f1"></i><i class="f2"></i></div>
+    <div class="boughs" aria-hidden="true"></div>
+    <div class="shade" aria-hidden="true"></div>
+
+    <div class="station st1">
+      <h1 id="title"><span>夜裡，</span> <span>有人守門。</span></h1>
+      <p class="lede">你睡覺的時候，Shentu 在你的 Linux 伺服器上巡邏；有狀況，你只會收到一則白話訊息。</p>
+      <p class="actions"><a class="button" href="install.html">安裝</a><a class="link" href="https://github.com/nt-neil/shentu">原始碼在 GitHub</a></p>
+      <p class="cue" aria-hidden="true">往下捲，跟著神荼巡一次夜</p>
+    </div>
+    <div class="station st2"><time>03:00</time><h2>從廟埕開始巡。</h2><p>先看登入紀錄和對外連接埠：燈籠照到哪一項，哪一項就亮起來。</p></div>
+    <div class="station st3"><time>03:04</time><h2>一盞燈，照一項檢查。</h2><p>程序，再來是有已知漏洞的套件；光照到的，就打勾。</p></div>
+    <div class="station st4"><time>03:09</time><h2>到後殿，讀網站的原始碼。</h2><p>機器上每個網站，用自己的規則逐行比對，程式碼不會離開這台伺服器。</p></div>
+    <div class="station st5"><time>03:12</time><h2>它找到那個不對勁的地方。</h2><p>上傳資料夾多了一個檔案：陌生人送什麼過來，它就執行什麼。</p></div>
+
+    <div class="checks" aria-hidden="true">
+      <p class="example">示範</p>
+      <ul>
+        <li data-at="1.25"><span>SSH 登入</span><b>✓</b></li>
+        <li data-at="1.6"><span>對外連接埠</span><b>✓</b></li>
+        <li data-at="2.2"><span>程序</span><b>✓</b></li>
+        <li data-at="2.55"><span>有已知漏洞的套件</span><b>✓</b></li>
+        <li data-at="3.3"><span>shop / 網站程式碼（70 條規則）</span><b>✓</b></li>
+        <li data-at="3.8" class="flag"><span>shop / wp-content / uploads</span><b>網頁後門</b></li>
+      </ul>
+    </div>
+
+    <div class="talk" role="group" aria-labelledby="talk-name">
+      <div class="face" aria-hidden="true"></div>
+      <div class="talk-body">
+        <p class="talk-name" id="talk-name">神荼 · 03:13 <span class="example">示範</span></p>
+        <p class="talk-text" data-full="03:07 商店的上傳資料夾出現網頁後門。任何知道網址的人，都能在你的伺服器上執行程式。建議先隔離這個檔案，再查 03:07 前後的存取紀錄。" aria-live="polite">03:07 商店的上傳資料夾出現網頁後門。任何知道網址的人，都能在你的伺服器上執行程式。建議先隔離這個檔案，再查 03:07 前後的存取紀錄。</p>
+        <p class="talk-opts">
+          <button type="button" data-say="已隔離。原檔留在隔離區；接下來去查 03:07 前後的存取紀錄。">隔離這個檔案</button>
+          <button type="button" data-say="先不動。這則回報會留著，等你決定。">先不要</button>
+        </p>
+      </div>
+    </div>
+    <div class="hud" aria-hidden="true"><span class="hud-name">廟門</span><i><b></b></i></div>
+  </div>
+</section>
+
+<div class="after">
+
+<section data-reveal class="tally" aria-labelledby="tally-title">
+  <h2 id="tally-title">目前能查的</h2>
+  <dl>
+    <div><dd>70</dd><dt>條程式碼稽核規則</dt></div>
+    <div><dd>15<small>/ 97</small></dd><dt>個主組公開漏洞已抓到</dt></div>
+    <div><dd>0</dd><dt>次修補版誤報</dt></div>
+  </dl>
+  <p><a href="bench.html">看實測方法與完整結果</a></p>
+</section>
+
+
+<section data-reveal class="open" id="open-source" aria-labelledby="open-title">
+  <h2 id="open-title">開源</h2>
+  <p class="lede">Shentu 是 Apache-2.0 授權的自由軟體。程式、規則和這個網站，都在同一個公開的 repo 裡。</p>
+  <dl class="os">
+    <div><dt><a href="https://github.com/nt-neil/shentu">原始碼</a></dt><dd>全部都在 GitHub 上的同一個 repo。 <code>github.com/nt-neil/shentu</code></dd></div>
+    <div><dt><a href="https://github.com/nt-neil/shentu/blob/main/LICENSE">授權</a></dt><dd>Apache-2.0：可以使用、修改、散布。</dd></div>
+    <div><dt><a href="https://github.com/nt-neil/shentu/releases">下載</a></dt><dd>每一版都有 .deb、.rpm 與可驗證的簽章建置來源。</dd></div>
+    <div><dt><a href="https://github.com/nt-neil/shentu/issues">回報問題</a></dt><dd>在 GitHub 開 issue。</dd></div>
+    <div><dt><a href="https://github.com/nt-neil/shentu/security/advisories/new">回報安全漏洞</a></dt><dd>請透過 GitHub 的私下回報（Security advisories），不要開公開 issue。 <a href="https://github.com/nt-neil/shentu/blob/main/SECURITY.md">安全政策</a></dd></div>
+    <div><dt><a href="https://github.com/nt-neil/shentu/blob/main/rules/README.md">貢獻規則或程式</a></dt><dd>規則怎麼寫、怎麼測；程式請看 README。 <a href="https://github.com/nt-neil/shentu/blob/main/rules/README.md">撰寫規則</a>, <a href="https://github.com/nt-neil/shentu#readme">README</a></dd></div>
+  </dl>
+</section>
+
+<section data-reveal class="latest" aria-labelledby="latest-title">
+  <h2 id="latest-title">版本長河</h2>
+  
+<div class="river">
+  <svg class="flow" viewBox="0 0 1200 160" preserveAspectRatio="none" aria-hidden="true">
+    <defs>
+      <linearGradient id="rv-fade" x1="0" x2="1"><stop offset="0" stop-color="#f2b45c" stop-opacity=".06"/><stop offset=".7" stop-color="#f2b45c" stop-opacity=".35"/><stop offset="1" stop-color="#f2b45c" stop-opacity=".75"/></linearGradient>
+      <linearGradient id="rv-shine" x1="0" x2="1"><stop offset="0" stop-color="#fff1cf" stop-opacity="0"/><stop offset=".5" stop-color="#fff1cf" stop-opacity=".55"/><stop offset="1" stop-color="#fff1cf" stop-opacity="0"/></linearGradient>
+      <clipPath id="rv-bed"><path d="M0 84C160 64 300 108 450 86S760 50 900 78S1100 112 1200 70V100C1100 140 1000 112 900 108S620 80 450 108S160 96 0 100Z"/></clipPath>
+    </defs>
+    <path d="M0 84C160 64 300 108 450 86S760 50 900 78S1100 112 1200 70V100C1100 140 1000 112 900 108S620 80 450 108S160 96 0 100Z" fill="url(#rv-fade)"/>
+    <g clip-path="url(#rv-bed)"><rect class="shine" x="0" y="0" width="420" height="160" fill="url(#rv-shine)"/><rect class="shine late" x="0" y="0" width="300" height="160" fill="url(#rv-shine)"/></g>
+  </svg>
+  <ol class="eras">
+  
+    <li class="era-node" style="--old: 1.00; --x: 7.0">
+      <a class="lamp" href="../zh-TW/releases.html#v0.1.0" aria-describedby="rv-0.1.0">
+        <i aria-hidden="true"></i><span class="ver">v0.1.0</span>
+        <time datetime="2026-11-07">11-07</time>
+      </a>
+      <p class="acc"></p>
+      <div class="peek" id="rv-0.1.0">
+        <p class="word">立廟</p>
+        <ul><li>首次發布：Linux 伺服器用的 <code>shentu chat</code> 與 <code>shentu patrol</code>，以及設定本機模型或 API 金鑰的 <code>shentu setup</code>。</li></ul>
+      </div>
+    </li>
+  
+    <li class="era-node" style="--old: 0.86; --x: 19.3">
+      <a class="lamp" href="../zh-TW/releases.html#v0.1.1" aria-describedby="rv-0.1.1">
+        <i aria-hidden="true"></i><span class="ver">v0.1.1</span>
+        <time datetime="2026-11-07">11-07</time>
+      </a>
+      <p class="acc"></p>
+      <div class="peek" id="rv-0.1.1">
+        <p class="word">3 項改變</p>
+        <ul><li><code>package_vulns</code> 會標出遭積極利用的漏洞（CISA KEV）。</li><li>Slack 與 Discord webhook。</li><li>每次發布前跑安全不變式測試、提示注入測試組與 govulncheck。</li></ul>
+      </div>
+    </li>
+  
+    <li class="era-node" style="--old: 0.71; --x: 31.6">
+      <a class="lamp" href="../zh-TW/releases.html#v0.2.0" aria-describedby="rv-0.2.0">
+        <i aria-hidden="true"></i><span class="ver">v0.2.0</span>
+        <time datetime="2026-11-07">11-07</time>
+      </a>
+      <p class="acc"></p>
+      <div class="peek" id="rv-0.2.0">
+        <p class="word">2 項改變</p>
+        <ul><li>一個指令從安裝到運作：引導式設定。</li><li>站點盤點與應用程式相依套件掃描。</li></ul>
+      </div>
+    </li>
+  
+    <li class="era-node" style="--old: 0.57; --x: 43.9">
+      <a class="lamp" href="../zh-TW/releases.html#v0.2.1" aria-describedby="rv-0.2.1">
+        <i aria-hidden="true"></i><span class="ver">v0.2.1</span>
+        <time datetime="2026-11-08">11-08</time>
+      </a>
+      <p class="acc"></p>
+      <div class="peek" id="rv-0.2.1">
+        <p class="word">3 項改變</p>
+        <ul><li><code>shentu bot</code>：從 Telegram 和 Shentu 對話，配對有防護，權限分四個等級範圍。</li><li>用量追蹤，以及可選的每月 AI 預算。</li><li>第二輪模型比較：14 個模型、11 個情境。</li></ul>
+      </div>
+    </li>
+  
+    <li class="era-node" style="--old: 0.43; --x: 56.1">
+      <a class="lamp" href="../zh-TW/releases.html#v0.2.2" aria-describedby="rv-0.2.2">
+        <i aria-hidden="true"></i><span class="ver">v0.2.2</span>
+        <time datetime="2026-11-08">11-08</time>
+      </a>
+      <p class="acc"></p>
+      <div class="peek" id="rv-0.2.2">
+        <p class="word">1 項改變</p>
+        <ul><li><code>package_vulns</code> 對每個遭積極利用的 CVE 只報一次。</li></ul>
+      </div>
+    </li>
+  
+    <li class="era-node" style="--old: 0.29; --x: 68.4">
+      <a class="lamp" href="../zh-TW/releases.html#v0.2.3" aria-describedby="rv-0.2.3">
+        <i aria-hidden="true"></i><span class="ver">v0.2.3</span>
+        <time datetime="2026-11-09">11-09</time>
+      </a>
+      <p class="acc"></p>
+      <div class="peek" id="rv-0.2.3">
+        <p class="word">1 項改變</p>
+        <ul><li><code>app_code_audit</code>：離線稽核網站應用程式自己的檔案。</li></ul>
+      </div>
+    </li>
+  
+    <li class="era-node" style="--old: 0.14; --x: 80.7">
+      <a class="lamp" href="../zh-TW/releases.html#v0.2.4" aria-describedby="rv-0.2.4">
+        <i aria-hidden="true"></i><span class="ver">v0.2.4</span>
+        <time datetime="2026-11-09">11-09</time>
+      </a>
+      <p class="acc"><span><b>33</b> 條規則</span></p>
+      <div class="peek" id="rv-0.2.4">
+        <p class="word">增祀</p>
+        <ul><li>規則改用專屬格式並在 CI 檢查，起始共 33 條規則。</li><li><code>accounts_audit</code> 會報出共用的 SSH 金鑰、<code>ld.so.preload</code>，以及不屬於任何套件的 PAM 模組。</li><li><code>processes</code> 會標出挖礦程式。</li></ul>
+      </div>
+    </li>
+  
+    <li class="era-node now" style="--old: 0.00; --x: 93.0">
+      <a class="lamp" href="../zh-TW/releases.html#v0.2.5" aria-describedby="rv-0.2.5">
+        <i aria-hidden="true"></i><span class="ver">v0.2.5</span>
+        <time datetime="2026-11-13">11-13</time>
+      </a>
+      <p class="acc"><span><b>70</b> 條規則</span><span><b>15</b>/97 樣本抓到</span></p>
+      
+    </li>
+  
+  </ol>
+</div>
+
+<div class="newest" id="rv-0.2.5">
+  <div class="newest-head"><p class="word">增祀</p><span class="ver">v0.2.5</span><time datetime="2026-11-13">2026-11-13</time></div>
+  <div class="grp grp-reach"><h4><i aria-hidden="true"></i>看得更遠</h4><ul><li><code>app_code_audit</code> 會跨檔追蹤呼叫：在一個檔案讀進來、在另一個檔案的危險呼叫用掉的輸入，會在危險呼叫處報出，並標明來源檔案。</li><li>框架路由模型：WordPress 的 hook、shortcode 與 REST 路由，Laravel 路由、Django URL、Flask 與 FastAPI 的 view，以及 Express handler 的參數都視為輸入，路由註冊在別的檔案也一樣。</li><li>新的規則類別：LDAP 注入、NoSQL 運算子注入、危險的檔案上傳、弱加密與寫死的憑證；TypeScript 檔案用 JavaScript 規則檢查。</li><li>稽核結果會在多次執行之間保留，大型應用程式分幾次巡邏就能掃完，不必一次跑完。</li><li>分成多次執行的稽核，仍可能有少數結果和不限時間的單次執行不同；修正進行中。</li><li><code>js-cmdi-spawn-shell</code> 在指令和參數都固定、只有 options（例如 <code>cwd</code> 或 <code>env</code>）帶到請求值時，<code>spawn()</code> 和 <code>execFile()</code> 仍然會被報出。</li><li>在 <code>$wpdb-&gt;prepare()</code>／<code>-&gt;prepare()</code> 的格式字串裡，如果佔位符清單是由只回傳常數的 callback 產生 （例如 <code>implode(&#39;,&#39;, array_map(fn($v) =&gt; &#39;%d&#39;, $ids))</code>，或改用 <code>function ($v) { return &#39;%d&#39;; }</code> 的寫法），只要 <code>$ids</code> 來自請求，仍然會被當成輸入報出來。<code>array_fill(0, count($ids), &#39;%d&#39;)</code> 和 <code>sizeof()</code> 的寫法已能辨識。要讀出 callback 的回傳值需要 改引擎，預定 v0.2.6。</li></ul></div><div class="grp grp-sharp"><h4><i aria-hidden="true"></i>看得更準</h4><ul><li>誤報更少：<code>wp_send_json</code> 的輸出、<code>JSON_HEX_TAG</code> 的資料區塊、不是 collection 的物件上的 MongoDB 查詢，以及 Django 的 <code>_meta.get_field</code> 檢查。</li><li><code>php-deserialization-phar-wrapper</code> 會把 WordPress REST attachments controller 裡對上傳暫存路徑做的 <code>filesize()</code> 報出來，這是誤報：那個路徑是 PHP 自己產生的，但引擎還分不出上傳檔的 <code>tmp_name</code> 和客戶端填的 <code>name</code>。</li><li>js-nosqli-mongo-query 會把 SQL 資料庫上的 TypeORM repository 呼叫當成 MongoDB 查詢，也就是 options 的 where 由請求值組成的 find/findOne（例如 n8n 的公開 API 和查 credential 的地方）。TypeORM 會把 這些值當成 SQL 參數，所以這些是誤報；v0.2.6 會改用能認出 TypeORM 的 receiver 檢查來區分。</li><li>js-xss-response 不再對 Server-Sent Events 例外：在 text/event-stream 的 handler 裡寫 res.write(&#34;data: &#34; + 值) 會被報成 XSS（誤報），但不會因為 SSE 而漏報；依 handler 的 Content-Type 分辨串流的功能排在 v0.2.6。</li><li><code>-&gt;get_settings()</code> 在任何 class 裡都會被當成 Elementor widget 的輸入，所以 <code>WP_Widget::get_settings()</code> 和 WooCommerce <code>WC_Settings_Page::get_settings()</code> 回傳的值（由管理員存入）也會被報出來。要把來源 限定在繼承 <code>\Elementor\Widget_Base</code> 的 class，引擎得支援依 class 限定 source，預定 v0.2.6。經由 -&gt;get_settings() 讀到的值，也可能被追進 WordPress 後台的欄位定義，以及少數已經有防護的 SQL 位置（例如先用 isset() 檢查，或在 ORDER BY FIELD() 裡用 $wpdb-&gt;prepare() 綁定），因此在這些 地方會多出誤報。v0.2.6 會把這個來源限縮到 Elementor 元件。</li><li><code>python-path-traversal-send-file</code> 會把 <code>zipfile.ZipFile(request.files[...])</code> 報出來，這是誤報：它開的是 上傳的檔案串流，不是路徑。要在同一個參數裡分出請求的檔案串流和客戶端填寫的 filename，需要改引擎，預定 v0.2.6。</li></ul></div><div class="grp grp-light"><h4><i aria-hidden="true"></i>不拖慢網站</h4><ul><li>稽核依伺服器調整自己：記憶體上限取 min(1 GiB、可用記憶體的 25%、服務 cgroup 的 50%)，並行數依 CPU 數與系統負載決定。</li></ul></div>
+</div>
+
+
+  <p class="more"><a href="releases.html">全部更新紀錄</a> <a href="../feed.xml">Atom 訂閱</a></p>
+</section>
+</div>
+
+<script src="../watch.js" defer></script>
+
+</main>
+<footer class="foot">
+  <p>Apache-2.0 授權。本站由 cmd/sitegen 從 repo 產生。</p>
+  <ul>
+    <li><a href="https://github.com/nt-neil/shentu">GitHub</a></li>
+    <li><a href="https://github.com/nt-neil/shentu/blob/main/LICENSE">授權 Apache-2.0</a></li>
+    <li><a href="https://github.com/nt-neil/shentu/blob/main/SECURITY.md">安全政策</a></li>
+    <li><a href="../feed.xml">Atom 訂閱 (RSS)</a></li>
+    <li><a href="../img/CREDITS.md">圖片來源</a></li>
+    <li><a href="../fonts/OFL.txt">Noto Serif TC (OFL)</a></li>
+  </ul>
+</footer>
+</body>
+</html>
+
+
+

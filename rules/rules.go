@@ -39,6 +39,11 @@ type Rule struct {
 	Refs       []string     `toml:"refs"`
 	Samples    []Sample     `toml:"samples"`
 
+	// RouteMembers: of the members a route model makes input (Express req.query,
+	// req.params), only these are this rule's (a rule for a query object: a
+	// path parameter is always a string). Unset: all of them.
+	RouteMembers []string `toml:"route_members"`
+
 	File string `toml:"-"` // path inside rules/, set by Load
 }
 
@@ -59,6 +64,11 @@ type Args struct {
 	MinLen   int      `toml:"min_len"`  // with literal: the string must be at least this long
 	Exclude  []string `toml:"exclude"`  // with literal: a string matching one of these regular expressions (any case) does not count
 	Receiver []string `toml:"receiver"` // a method sink counts only when its receiver, followed through the file's assignments and annotations, holds one of these
+	// NotReceiver: a method sink does not count on an object surely made by
+	// one of these classes: new Class(...), or a name every assignment of the
+	// file gives such an object ($q = new WP_Query; $q->query($args)). A
+	// receiver the file says nothing about still counts.
+	NotReceiver []string `toml:"not_receiver"`
 }
 
 // SourceArgs makes call sources input only when an argument is one of a few

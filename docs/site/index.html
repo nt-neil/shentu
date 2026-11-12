@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shentu</title>
+<meta name="description" content="A small, open-source security assistant for Linux servers, powered by an LLM.">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0b0806">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http%3A//www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%230b0806'/%3E%3Crect x='28' y='8' width='8' height='48' fill='%23f2b45c'/%3E%3C/svg%3E">
+<link rel="preload" href="fonts/serif-light.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="img/guardian-night.webp" as="image">
+<link rel="preload" href="img/scroll/sky.webp" as="image">
+<link rel="stylesheet" href="site.css">
+<link rel="alternate" type="application/atom+xml" title="Shentu releases" href="feed.xml">
+
+</head>
+<body class="p-index">
+<a class="skip" href="#main">Skip to content</a>
+<header class="top">
+  <a class="brand" href="index.html">Shentu <b lang="zh-Hant">神荼</b></a>
+  <nav aria-label="Site">
+    <a href="rules.html">Rules</a>
+    <a href="bench.html">Measured</a>
+    <a href="releases.html">Releases</a>
+    <a class="gh" href="https://github.com/nt-neil/shentu">GitHub</a>
+    <a class="cta" href="install.html">Install</a>
+    <a class="lang" href="zh-TW/index.html" lang="zh-Hant" hreflang="zh-TW">繁體中文</a>
+  </nav>
+</header>
+<main id="main">
+
+
+<section class="walk" id="watch" aria-labelledby="title" data-hud='["The gate","Courtyard","Colonnade","Back hall","The find","The report"]'>
+  <div class="stage">
+    <div class="sky" aria-hidden="true"></div>
+    <div class="world">
+      <div class="scene sc1" role="img" aria-label="The door guardian, backlit, seen through the gap of a temple door at night"></div>
+      <div class="scene sc2" data-bg="img/scroll/court.webp" aria-hidden="true"></div>
+      <div class="scene sc3" data-bg="img/scroll/hall.webp" aria-hidden="true"></div>
+      <div class="scene sc4" data-bg="img/scroll/rear.webp" aria-hidden="true"></div>
+      <div class="scene sc5" data-bg="img/scroll/door.webp" aria-hidden="true"></div>
+      <div class="scene sc6" data-bg="img/scroll/guardian-front.webp" aria-hidden="true"></div>
+    </div>
+    <div class="evil" aria-hidden="true"></div>
+    <div class="haze" aria-hidden="true"></div>
+    <canvas class="near" aria-hidden="true"></canvas>
+    <div class="walker" aria-hidden="true"><i class="f1"></i><i class="f2"></i></div>
+    <div class="boughs" aria-hidden="true"></div>
+    <div class="shade" aria-hidden="true"></div>
+
+    <div class="station st1">
+      <h1 id="title"><span>The night</span> <span>watch.</span></h1>
+      <p class="lede">While you sleep, Shentu patrols your Linux server. If something is wrong, you get one message in plain words.</p>
+      <p class="actions"><a class="button" href="install.html">Install</a><a class="link" href="https://github.com/nt-neil/shentu">Source on GitHub</a></p>
+      <p class="cue" aria-hidden="true">Scroll to walk the night watch</p>
+    </div>
+    <div class="station st2"><time>03:00</time><h2>It starts in the courtyard.</h2><p>Logins and open ports first: each one lights up as the lantern passes.</p></div>
+    <div class="station st3"><time>03:04</time><h2>One lantern, one check.</h2><p>Processes, then packages with known exploits; what the light reaches is checked off.</p></div>
+    <div class="station st4"><time>03:09</time><h2>In the back hall it reads the code.</h2><p>Every site on the machine, line by line, with its own rules. The code never leaves the server.</p></div>
+    <div class="station st5"><time>03:12</time><h2>It finds the one thing wrong.</h2><p>A new file in the uploads folder runs whatever a stranger posts to it.</p></div>
+
+    <div class="checks" aria-hidden="true">
+      <p class="example">Example</p>
+      <ul>
+        <li data-at="1.25"><span>ssh logins</span><b>✓</b></li>
+        <li data-at="1.6"><span>listening ports</span><b>✓</b></li>
+        <li data-at="2.2"><span>processes</span><b>✓</b></li>
+        <li data-at="2.55"><span>packages with known exploits</span><b>✓</b></li>
+        <li data-at="3.3"><span>shop / app code (70 rules)</span><b>✓</b></li>
+        <li data-at="3.8" class="flag"><span>shop / wp-content / uploads</span><b>web shell</b></li>
+      </ul>
+    </div>
+
+    <div class="talk" role="group" aria-labelledby="talk-name">
+      <div class="face" aria-hidden="true"></div>
+      <div class="talk-body">
+        <p class="talk-name" id="talk-name">神荼 · 03:13 <span class="example">Example</span></p>
+        <p class="talk-text" data-full="A web shell appeared at 03:07 in the shop&#39;s uploads folder. Anyone who knows its address can run programs on your server. Quarantine it first, then check the access log around 03:07." aria-live="polite">A web shell appeared at 03:07 in the shop&#39;s uploads folder. Anyone who knows its address can run programs on your server. Quarantine it first, then check the access log around 03:07.</p>
+        <p class="talk-opts">
+          <button type="button" data-say="Quarantined. The original is kept aside; next, the access log around 03:07.">Quarantine the file</button>
+          <button type="button" data-say="Left as it is. This report stays until you decide.">Not now</button>
+        </p>
+      </div>
+    </div>
+    <div class="hud" aria-hidden="true"><span class="hud-name">The gate</span><i><b></b></i></div>
+  </div>
+</section>
+
+<div class="after">
+
+<section data-reveal class="tally" aria-labelledby="tally-title">
+  <h2 id="tally-title">What it checks today</h2>
+  <dl>
+    <div><dd>70</dd><dt>rules in the code audit</dt></div>
+    <div><dd>15<small>/ 97</small></dd><dt>published vulnerabilities caught in the main bench set</dt></div>
+    <div><dd>0</dd><dt>reports on the fixed versions</dt></div>
+  </dl>
+  <p><a href="bench.html">How they were measured</a></p>
+</section>
+
+
+<section data-reveal class="open" id="open-source" aria-labelledby="open-title">
+  <h2 id="open-title">Open source</h2>
+  <p class="lede">Shentu is free software under the Apache-2.0 license. The code, the rules and this site are in one public repository.</p>
+  <dl class="os">
+    <div><dt><a href="https://github.com/nt-neil/shentu">Source code</a></dt><dd>Everything, in one repository on GitHub. <code>github.com/nt-neil/shentu</code></dd></div>
+    <div><dt><a href="https://github.com/nt-neil/shentu/blob/main/LICENSE">License</a></dt><dd>Apache-2.0: use it, change it, ship it.</dd></div>
+    <div><dt><a href="https://github.com/nt-neil/shentu/releases">Download</a></dt><dd>.deb and .rpm packages with signed build provenance, for each release.</dd></div>
+    <div><dt><a href="https://github.com/nt-neil/shentu/issues">Report a problem</a></dt><dd>Open an issue on GitHub.</dd></div>
+    <div><dt><a href="https://github.com/nt-neil/shentu/security/advisories/new">Report a vulnerability</a></dt><dd>Privately, through GitHub&#39;s security advisories, not in a public issue. <a href="https://github.com/nt-neil/shentu/blob/main/SECURITY.md">Security policy</a></dd></div>
+    <div><dt><a href="https://github.com/nt-neil/shentu/blob/main/rules/README.md">Contribute rules or code</a></dt><dd>How a rule is written and tested; the README for the code. <a href="https://github.com/nt-neil/shentu/blob/main/rules/README.md">Writing rules</a>, <a href="https://github.com/nt-neil/shentu#readme">README</a></dd></div>
+  </dl>
+</section>
+
+<section data-reveal class="latest" aria-labelledby="latest-title">
+  <h2 id="latest-title">The river of releases</h2>
+  
+<div class="river">
+  <svg class="flow" viewBox="0 0 1200 160" preserveAspectRatio="none" aria-hidden="true">
+    <defs>
+      <linearGradient id="rv-fade" x1="0" x2="1"><stop offset="0" stop-color="#f2b45c" stop-opacity=".06"/><stop offset=".7" stop-color="#f2b45c" stop-opacity=".35"/><stop offset="1" stop-color="#f2b45c" stop-opacity=".75"/></linearGradient>
+      <linearGradient id="rv-shine" x1="0" x2="1"><stop offset="0" stop-color="#fff1cf" stop-opacity="0"/><stop offset=".5" stop-color="#fff1cf" stop-opacity=".55"/><stop offset="1" stop-color="#fff1cf" stop-opacity="0"/></linearGradient>
+      <clipPath id="rv-bed"><path d="M0 84C160 64 300 108 450 86S760 50 900 78S1100 112 1200 70V100C1100 140 1000 112 900 108S620 80 450 108S160 96 0 100Z"/></clipPath>
+    </defs>
+    <path d="M0 84C160 64 300 108 450 86S760 50 900 78S1100 112 1200 70V100C1100 140 1000 112 900 108S620 80 450 108S160 96 0 100Z" fill="url(#rv-fade)"/>
+    <g clip-path="url(#rv-bed)"><rect class="shine" x="0" y="0" width="420" height="160" fill="url(#rv-shine)"/><rect class="shine late" x="0" y="0" width="300" height="160" fill="url(#rv-shine)"/></g>
+  </svg>
+  <ol class="eras">
+  
+    <li class="era-node" style="--old: 1.00; --x: 7.0">
+      <a class="lamp" href="releases.html#v0.1.0" aria-describedby="rv-0.1.0">
+        <i aria-hidden="true"></i><span class="ver">v0.1.0</span>
+        <time datetime="2026-11-07">11-07</time>
+      </a>
+      <p class="acc"></p>
+      <div class="peek" id="rv-0.1.0">
+        <p class="word">Founded</p>
+        <ul><li>First release: <code>shentu chat</code> and <code>shentu patrol</code> for Linux servers, with <code>shentu setup</code> for a local model or an API key.</li></ul>
+      </div>
+    </li>
+  
+    <li class="era-node" style="--old: 0.86; --x: 19.3">
+      <a class="lamp" href="releases.html#v0.1.1" aria-describedby="rv-0.1.1">
+        <i aria-hidden="true"></i><span class="ver">v0.1.1</span>
+        <time datetime="2026-11-07">11-07</time>
+      </a>
+      <p class="acc"></p>
+      <div class="peek" id="rv-0.1.1">
+        <p class="word">3 changes</p>
+        <ul><li><code>package_vulns</code> marks actively exploited vulnerabilities (CISA KEV).</li><li>Slack and Discord webhooks.</li><li>Security invariant tests, a prompt-injection suite and govulncheck before each release.</li></ul>
+      </div>
+    </li>
+  
+    <li class="era-node" style="--old: 0.71; --x: 31.6">
+      <a class="lamp" href="releases.html#v0.2.0" aria-describedby="rv-0.2.0">
+        <i aria-hidden="true"></i><span class="ver">v0.2.0</span>
+        <time datetime="2026-11-07">11-07</time>
+      </a>
+      <p class="acc"></p>
+      <div class="peek" id="rv-0.2.0">
+        <p class="word">2 changes</p>
+        <ul><li>One command from install to running: a guided setup.</li><li>Site survey and an application dependency scan.</li></ul>
+      </div>
+    </li>
+  
+    <li class="era-node" style="--old: 0.57; --x: 43.9">
+      <a class="lamp" href="releases.html#v0.2.1" aria-describedby="rv-0.2.1">
+        <i aria-hidden="true"></i><span class="ver">v0.2.1</span>
+        <time datetime="2026-11-08">11-08</time>
+      </a>
+      <p class="acc"></p>
+      <div class="peek" id="rv-0.2.1">
+        <p class="word">3 changes</p>
+        <ul><li><code>shentu bot</code>: talk to Shentu from Telegram, with guarded pairing and four ranges of levels.</li><li>Usage tracking and an optional monthly AI budget.</li><li>Round 2 of the model comparison: 14 models, 11 scenarios.</li></ul>
+      </div>
+    </li>
+  
+    <li class="era-node" style="--old: 0.43; --x: 56.1">
+      <a class="lamp" href="releases.html#v0.2.2" aria-describedby="rv-0.2.2">
+        <i aria-hidden="true"></i><span class="ver">v0.2.2</span>
+        <time datetime="2026-11-08">11-08</time>
+      </a>
+      <p class="acc"></p>
+      <div class="peek" id="rv-0.2.2">
+        <p class="word">1 changes</p>
+        <ul><li><code>package_vulns</code> reports each actively exploited CVE once.</li></ul>
+      </div>
+    </li>
+  
+    <li class="era-node" style="--old: 0.29; --x: 68.4">
+      <a class="lamp" href="releases.html#v0.2.3" aria-describedby="rv-0.2.3">
+        <i aria-hidden="true"></i><span class="ver">v0.2.3</span>
+        <time datetime="2026-11-09">11-09</time>
+      </a>
+      <p class="acc"></p>
+      <div class="peek" id="rv-0.2.3">
+        <p class="word">1 changes</p>
+        <ul><li><code>app_code_audit</code>: an offline audit of the applications&#39; own files.</li></ul>
+      </div>
+    </li>
+  
+    <li class="era-node" style="--old: 0.14; --x: 80.7">
+      <a class="lamp" href="releases.html#v0.2.4" aria-describedby="rv-0.2.4">
+        <i aria-hidden="true"></i><span class="ver">v0.2.4</span>
+        <time datetime="2026-11-09">11-09</time>
+      </a>
+      <p class="acc"><span><b>33</b> rules</span></p>
+      <div class="peek" id="rv-0.2.4">
+        <p class="word">New rules enshrined</p>
+        <ul><li>Rules move to their own format, checked in CI, starting with 33 rules.</li><li><code>accounts_audit</code> reports shared SSH keys, <code>ld.so.preload</code> and PAM modules that belong to no package.</li><li><code>processes</code> flags cryptominers.</li></ul>
+      </div>
+    </li>
+  
+    <li class="era-node now" style="--old: 0.00; --x: 93.0">
+      <a class="lamp" href="releases.html#v0.2.5" aria-describedby="rv-0.2.5">
+        <i aria-hidden="true"></i><span class="ver">v0.2.5</span>
+        <time datetime="2026-11-13">11-13</time>
+      </a>
+      <p class="acc"><span><b>70</b> rules</span><span><b>15</b>/97 caught</span></p>
+      
+    </li>
+  
+  </ol>
+</div>
+
+<div class="newest" id="rv-0.2.5">
+  <div class="newest-head"><p class="word">New rules enshrined</p><span class="ver">v0.2.5</span><time datetime="2026-11-13">2026-11-13</time></div>
+  <div class="grp grp-reach"><h4><i aria-hidden="true"></i>Sees further</h4><ul><li><code>app_code_audit</code> follows calls across files: input read in one file and used in a sink of another is reported at the sink, with the file it came from.</li><li>Framework route models: the parameters of WordPress hooks, shortcodes and REST routes, Laravel routes, Django URLs, Flask and FastAPI views and Express handlers are input, also when the route is registered in another file.</li><li>New rule classes: LDAP injection, NoSQL operator injection, dangerous file uploads, weak cryptography and hard-coded credentials; TypeScript files are checked with the JavaScript rules.</li><li>Audits keep their results between runs, so a large application is covered over a few patrols instead of one.</li><li>An audit spread over several runs can still report a few findings that differ from one run without a time limit; a fix is in progress.</li><li><code>js-cmdi-spawn-shell</code> still reports <code>spawn()</code> and <code>execFile()</code> calls whose command and arguments are fixed when only the options (such as <code>cwd</code> or <code>env</code>) carry request values.</li><li>In <code>$wpdb-&gt;prepare()</code>/<code>-&gt;prepare()</code> formats, a placeholder list built by a callback that returns a constant (<code>implode(&#39;,&#39;, array_map(fn($v) =&gt; &#39;%d&#39;, $ids))</code>, or the same with <code>function ($v) { return &#39;%d&#39;; }</code>) is still treated as input and reported when <code>$ids</code> comes from the request. <code>array_fill(0, count($ids), &#39;%d&#39;)</code> and <code>sizeof()</code> are recognised. Reading a callback&#39;s return value needs an engine change (planned for v0.2.6).</li></ul></div><div class="grp grp-sharp"><h4><i aria-hidden="true"></i>Sees more precisely</h4><ul><li>Fewer false positives: <code>wp_send_json</code> output, <code>JSON_HEX_TAG</code> data blocks, MongoDB queries on objects that are not collections, and Django <code>_meta.get_field</code> checks.</li><li><code>php-deserialization-phar-wrapper</code> reports <code>filesize()</code> on an upload&#39;s temporary path in WordPress&#39;s REST attachments controller, a false positive: the path is PHP&#39;s own, but the engine cannot yet tell an upload&#39;s <code>tmp_name</code> from its client-set <code>name</code>.</li><li>js-nosqli-mongo-query reports TypeORM repository calls on SQL databases (find/findOne whose options hold a where built from request values, e.g. n8n&#39;s public API and credential lookups) as MongoDB queries; TypeORM sends those values as SQL parameters, so these are false positives, to be told apart by a TypeORM-aware receiver check in v0.2.6.</li><li>js-xss-response has no Server-Sent Events exception: res.write(&#34;data: &#34; + value) in a text/event-stream handler is reported as XSS (a false positive), and nothing is missed because of SSE; telling streams apart by the handler&#39;s Content-Type is planned for v0.2.6.</li><li><code>-&gt;get_settings()</code> counts as Elementor widget input in every class, so <code>WP_Widget::get_settings()</code> and WooCommerce <code>WC_Settings_Page::get_settings()</code> values (saved by administrators) are reported too. Limiting the source to classes extending <code>\Elementor\Widget_Base</code> needs class-scoped sources in the engine (planned for v0.2.6). Values read through -&gt;get_settings() can also be followed into WordPress admin field definitions and into a few SQL sinks that are already guarded (an isset() check, or a value bound through $wpdb-&gt;prepare() inside ORDER BY FIELD()), which gives extra false positives there. Narrowing the source to Elementor widgets is planned for v0.2.6.</li><li><code>python-path-traversal-send-file</code> reports <code>zipfile.ZipFile(request.files[...])</code>, which opens the uploaded stream rather than a path, a false positive. Telling a request&#39;s file stream from a client-set file name inside one argument needs an engine change (planned for v0.2.6).</li></ul></div><div class="grp grp-light"><h4><i aria-hidden="true"></i>Runs lightly</h4><ul><li>The audit sizes itself to the server: heap at most min(1 GiB, 25% of available memory, 50% of the service&#39;s cgroup), workers from the CPU count and the load.</li></ul></div>
+</div>
+
+
+  <p class="more"><a href="releases.html">All releases</a> <a href="feed.xml">Atom feed</a></p>
+</section>
+</div>
+
+<script src="watch.js" defer></script>
+
+</main>
+<footer class="foot">
+  <p>Apache-2.0. Generated from the repository by cmd/sitegen.</p>
+  <ul>
+    <li><a href="https://github.com/nt-neil/shentu">GitHub</a></li>
+    <li><a href="https://github.com/nt-neil/shentu/blob/main/LICENSE">License Apache-2.0</a></li>
+    <li><a href="https://github.com/nt-neil/shentu/blob/main/SECURITY.md">Security policy</a></li>
+    <li><a href="feed.xml">Atom feed (RSS)</a></li>
+    <li><a href="img/CREDITS.md">Image credits</a></li>
+    <li><a href="fonts/OFL.txt">Noto Serif TC (OFL)</a></li>
+  </ul>
+</footer>
+</body>
+</html>
+
+
+
