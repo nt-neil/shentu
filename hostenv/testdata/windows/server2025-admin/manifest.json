@@ -4,7 +4,7 @@
     "goos": "windows",
     "goarch": "amd64",
     "elevated": true,
-    "recorded_at": "2026-11-12T13:53:32.7202711Z"
+    "recorded_at": "2026-11-12T14:04:48.9946768Z"
   },
   "entries": [
     {
@@ -210,7 +210,7 @@
     {
       "op": "reg",
       "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList\\S-1-5-21-1000000000-1000000000-1000000000-500",
-      "blob": "blobs/9cf181afe19117e4"
+      "blob": "blobs/44c51e312ab143d1"
     },
     {
       "op": "reg",
@@ -1684,21 +1684,6 @@
     },
     {
       "op": "reg",
-      "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\WindowsFirewall\\DomainProfile",
-      "err": "not_exist"
-    },
-    {
-      "op": "reg",
-      "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\WindowsFirewall\\PrivateProfile",
-      "err": "not_exist"
-    },
-    {
-      "op": "reg",
-      "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\WindowsFirewall\\PublicProfile",
-      "err": "not_exist"
-    },
-    {
-      "op": "reg",
       "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\WinRM\\Service",
       "err": "not_exist"
     },
@@ -2685,7 +2670,7 @@
     {
       "op": "reg",
       "path": "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Terminal Server",
-      "blob": "blobs/988cc3fdff533395"
+      "blob": "blobs/fc1b3c5f4b7ff273"
     },
     {
       "op": "reg",
@@ -2696,21 +2681,6 @@
       "op": "reg",
       "path": "HKLM\\SYSTEM\\CurrentControlSet\\Services\\LanmanServer\\Parameters",
       "blob": "blobs/d3721d49c2548913"
-    },
-    {
-      "op": "reg",
-      "path": "HKLM\\SYSTEM\\CurrentControlSet\\Services\\SharedAccess\\Parameters\\FirewallPolicy\\DomainProfile",
-      "blob": "blobs/6b63ad5274895d3b"
-    },
-    {
-      "op": "reg",
-      "path": "HKLM\\SYSTEM\\CurrentControlSet\\Services\\SharedAccess\\Parameters\\FirewallPolicy\\PublicProfile",
-      "blob": "blobs/6b63ad5274895d3b"
-    },
-    {
-      "op": "reg",
-      "path": "HKLM\\SYSTEM\\CurrentControlSet\\Services\\SharedAccess\\Parameters\\FirewallPolicy\\StandardProfile",
-      "blob": "blobs/6b63ad5274895d3b"
     },
     {
       "op": "reg",
@@ -2769,7 +2739,11 @@
     {
       "op": "winevt",
       "path": "System|5000|*[System[(EventID=104 or EventID=7045) and TimeCreated[timediff(@SystemTime) \u003c= 86400000]]]",
-      "blob": "blobs/87204d52c64d52f7"
+      "blob": "blobs/08e9eb120ff12442"
+    },
+    {
+      "op": "winfw",
+      "blob": "blobs/6851f1f872dc6922"
     },
     {
       "op": "wingroup",
@@ -2778,15 +2752,15 @@
     },
     {
       "op": "winproc",
-      "blob": "blobs/6204913d4105e3d9"
+      "blob": "blobs/046c3408b393a4d0"
     },
     {
       "op": "winsock",
-      "blob": "blobs/d88f62c1aab419e5"
+      "blob": "blobs/83d3ec2736c1b77c"
     },
     {
       "op": "winsvc",
-      "blob": "blobs/d097c0e800584cc3"
+      "blob": "blobs/21ec064910658108"
     },
     {
       "op": "wintask",

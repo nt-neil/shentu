@@ -4,7 +4,7 @@
     "goos": "windows",
     "goarch": "amd64",
     "elevated": true,
-    "recorded_at": "2026-11-12T13:53:18.3697703Z"
+    "recorded_at": "2026-11-12T14:04:40.6557239Z"
   },
   "entries": [
     {
@@ -205,7 +205,7 @@
     {
       "op": "reg",
       "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList\\S-1-5-21-1000000000-1000000000-1000000000-500",
-      "blob": "blobs/8145b84470ba9c8b"
+      "blob": "blobs/07a5a556cbeb5e6b"
     },
     {
       "op": "reg",
@@ -1730,21 +1730,6 @@
     {
       "op": "reg",
       "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows Defender\\Real-Time Protection",
-      "err": "not_exist"
-    },
-    {
-      "op": "reg",
-      "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\WindowsFirewall\\DomainProfile",
-      "err": "not_exist"
-    },
-    {
-      "op": "reg",
-      "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\WindowsFirewall\\PrivateProfile",
-      "err": "not_exist"
-    },
-    {
-      "op": "reg",
-      "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\WindowsFirewall\\PublicProfile",
       "err": "not_exist"
     },
     {
@@ -3920,7 +3905,7 @@
     {
       "op": "reg",
       "path": "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Terminal Server",
-      "blob": "blobs/c015c6c21b62f022"
+      "blob": "blobs/64aeb3a90baf9e28"
     },
     {
       "op": "reg",
@@ -3931,21 +3916,6 @@
       "op": "reg",
       "path": "HKLM\\SYSTEM\\CurrentControlSet\\Services\\LanmanServer\\Parameters",
       "blob": "blobs/ea32a00fdcaf8d2a"
-    },
-    {
-      "op": "reg",
-      "path": "HKLM\\SYSTEM\\CurrentControlSet\\Services\\SharedAccess\\Parameters\\FirewallPolicy\\DomainProfile",
-      "blob": "blobs/6b63ad5274895d3b"
-    },
-    {
-      "op": "reg",
-      "path": "HKLM\\SYSTEM\\CurrentControlSet\\Services\\SharedAccess\\Parameters\\FirewallPolicy\\PublicProfile",
-      "blob": "blobs/6b63ad5274895d3b"
-    },
-    {
-      "op": "reg",
-      "path": "HKLM\\SYSTEM\\CurrentControlSet\\Services\\SharedAccess\\Parameters\\FirewallPolicy\\StandardProfile",
-      "blob": "blobs/6b63ad5274895d3b"
     },
     {
       "op": "reg",
@@ -4004,7 +3974,11 @@
     {
       "op": "winevt",
       "path": "System|5000|*[System[(EventID=104 or EventID=7045) and TimeCreated[timediff(@SystemTime) \u003c= 86400000]]]",
-      "blob": "blobs/1cd03951d3ebba81"
+      "blob": "blobs/fe789c879caced42"
+    },
+    {
+      "op": "winfw",
+      "blob": "blobs/6851f1f872dc6922"
     },
     {
       "op": "wingroup",
@@ -4013,15 +3987,15 @@
     },
     {
       "op": "winproc",
-      "blob": "blobs/40209b4964a5e2cd"
+      "blob": "blobs/9dd3a5da114b398a"
     },
     {
       "op": "winsock",
-      "blob": "blobs/b61245cca58495a6"
+      "blob": "blobs/921a03ac5709628d"
     },
     {
       "op": "winsvc",
-      "blob": "blobs/33842a8a28d206b7"
+      "blob": "blobs/20f9a0e600153ae1"
     },
     {
       "op": "wintask",
