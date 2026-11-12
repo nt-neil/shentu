@@ -95,13 +95,16 @@ type budget struct {
 	tokens   int
 	maxTok   int
 	deadline time.Time
-	work     int  // units of work done: tokens scanned by the parser and the analysis
-	next     int  // work at which the clock is read again
-	hit      bool // over tokens, work or time: stop
-	maxWork  int  // work cap (0: none)
-	timeHit  bool // hit because time ran out: the result depends on the machine
-	limited  bool // something was skipped (nesting too deep): keep going, report ErrLimit
-	partial  bool // an unterminated string or comment swallowed the rest of the file
+	work     int             // units of work done: tokens scanned by the parser and the analysis
+	next     int             // work at which the clock is read again
+	hit      bool            // over tokens, work or time: stop
+	maxWork  int             // work cap (0: none)
+	sumWork  int             // the work cap of each summary, worked out in a budget of its own (own)
+	charged  map[string]bool // summaries whose cost this budget paid, by file and key (used)
+	paid     int             // the work those costs came to
+	timeHit  bool            // hit because time ran out: the result depends on the machine
+	limited  bool            // something was skipped (nesting too deep): keep going, report ErrLimit
+	partial  bool            // an unterminated string or comment swallowed the rest of the file
 }
 
 func newBudget(l Limits) *budget {

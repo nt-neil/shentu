@@ -448,6 +448,19 @@ func (a *analysis) ctxHits(st state, op []Token, c uint8, depth int) bool {
 	return !a.fieldOfResult(st, op) && a.hits(a.expr(st, op, false)) // calls are judged where they are read (postfix)
 }
 
+// partEnd returns where interpolation k of a string literal ends in its text:
+// skipInterp, read no further than the next interpolation, which starts after
+// this one ends. A brace in a string inside it (${"{"}) leaves the braces of
+// the text unmatched: each would be read to the end of the text, and a
+// template of many of them in time growing with the square of its length.
+func partEnd(tk Token, k int) int {
+	end := len(tk.Text)
+	if k+1 < len(tk.Parts) {
+		end = min(tk.Parts[k+1].Off, end)
+	}
+	return skipInterp(tk.Text[:end], min(tk.Parts[k].Off, end))
+}
+
 // skipInterp returns where the interpolation at off in a string's text ends:
 // {...} and ${...} to the matching brace, a PHP $name with ->name and [...].
 func skipInterp(text string, off int) int {
@@ -522,7 +535,7 @@ func (a *analysis) contextTaint(st state, sinkTok Token, out []Token, want []uin
 			hs.feed(text)
 		default:
 			if len(prefix) < 64 {
-				prefix += text
+				prefix += text[:min(len(text), 64-len(prefix))]
 			}
 		}
 	}
@@ -562,12 +575,12 @@ func (a *analysis) contextTaint(st state, sinkTok Token, out []Token, want []uin
 		if len(op) == 1 && op[0].Kind == Str && op[0].Flags&(FlagShell|FlagRegex) == 0 {
 			tk := op[0]
 			prev := 0
-			for _, p := range tk.Parts {
+			for k, p := range tk.Parts {
 				feed(tk.Text[min(prev, p.Off):min(p.Off, len(tk.Text))])
 				if c := at(p.Toks); in(c) && a.ctxHits(st, p.Toks, c, 0) {
 					return true
 				}
-				prev = skipInterp(tk.Text, min(p.Off, len(tk.Text)))
+				prev = partEnd(tk, k)
 			}
 			feed(tk.Text[min(prev, len(tk.Text)):])
 			continue
@@ -682,9 +695,9 @@ func (s *scanner) echoText(t *Token) {
 		s.echoPar--
 	case t.Kind == Str && s.echoPar == 0 && s.depth == 0 && t.Flags&FlagShell == 0:
 		prev := 0
-		for _, p := range t.Parts {
+		for k, p := range t.Parts {
 			s.hs.feed(t.Text[min(prev, p.Off):min(p.Off, len(t.Text))])
-			prev = skipInterp(t.Text, min(p.Off, len(t.Text)))
+			prev = partEnd(*t, k)
 		}
 		s.hs.feed(t.Text[min(prev, len(t.Text)):])
 		s.htmlCtx = s.hs.ctx() + 1

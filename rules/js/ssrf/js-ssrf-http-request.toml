@@ -6,7 +6,9 @@ severity = "high"
 tier = "info"
 title = "Server fetches a URL taken from the request"
 frameworks = ["express"]
-sources = ["req.query", "req.body", "req.params", "req.headers"]
+# Headers by name in brackets (x-callback-url): req.headers.host, the base of
+# new URL(req.url, `http://${req.headers.host}`), is the host-header rules' input
+sources = ["req.query", "req.body", "req.params", "req.headers[", "req.headers.referer", "req.headers.origin"]
 sinks = ["fetch(", "axios(", "axios.get(", "axios.post(", "axios.put(", "axios.delete(", "axios.head(", "got(", "got.get(", "got.post(", "http.get(", "https.get(", "http.request(", "https.request(", "needle(", "superagent.get("]
 sanitizers = ["parseInt(", "encodeURIComponent("]
 fix = "Keep the scheme and host fixed and take only a path or an id from the request, or parse it with new URL() and require the hostname to be in an allowlist (and to resolve to a public address) before the request."
@@ -53,4 +55,25 @@ app.post("/import", async (req, res) => {
   const { data } = await axios.get(req.body.source);
   res.json({ size: data.length });
 });
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+app.post("/hook", async (req, res) => {
+  await fetch(req.headers["x-callback-url"], { method: "POST" });
+  res.sendStatus(204);
+});
+'''
+
+[[samples]]
+kind = "safe"
+note = "the Host header is only the base of the URL object; the host fetched comes from the settings"
+code = '''
+async function proxy(req, res, apiBase) {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  const r = await fetch(apiBase + url.pathname);
+  res.end(JSON.stringify({ ok: r.ok }));
+}
+http.createServer((req, res) => proxy(req, res, settings.apiBase)).listen(8080);
 '''

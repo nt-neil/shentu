@@ -1,6 +1,10 @@
 package engine
 
-import "strings"
+import (
+	"slices"
+	"sort"
+	"strings"
+)
 
 // maxLitDepth bounds how many names, constants and calls literalArg follows
 // to reach the string, so A = B; B = A cannot loop and a long chain costs little.
@@ -650,15 +654,18 @@ func (a *analysis) litOf(st state, name string) []Token {
 // textMatch finds a text pattern in a string literal's text, outside its
 // interpolations: in "SELECT * FROM t $where" the $where is a variable, not text.
 func textMatch(p *pat, tk Token) []int {
+	var ends []int // where each interpolation ends, worked out once
 	for _, loc := range p.text.FindAllStringIndex(tk.Text, -1) {
-		inside := false
-		for _, part := range tk.Parts {
-			if loc[0] >= part.Off && loc[0] < skipInterp(tk.Text, min(part.Off, len(tk.Text))) {
-				inside = true
-				break
+		if ends == nil {
+			ends = make([]int, len(tk.Parts))
+			for k := range tk.Parts {
+				ends[k] = partEnd(tk, k)
 			}
 		}
-		if !inside {
+		// The last interpolation starting at or before the match: the
+		// interpolations follow each other, so only it can hold the match.
+		k := sort.Search(len(tk.Parts), func(k int) bool { return tk.Parts[k].Off > loc[0] }) - 1
+		if k < 0 || loc[0] >= ends[k] {
 			return loc
 		}
 	}
@@ -897,7 +904,7 @@ var canonFuncs = func() map[string][]*pat {
 	for lang, list := range map[string][]string{
 		"php":    {"realpath("},
 		"python": {"os.path.realpath(", "os.path.abspath(", "os.path.normpath(", "realpath(", "abspath(", "normpath("},
-		"js":     {"path.resolve(", "path.normalize(", "fs.realpathSync(", "realpathSync(", "fs.promises.realpath("},
+		"js":     {"path.resolve(", "path.normalize(", "path.join(", "fs.realpathSync(", "realpathSync(", "fs.promises.realpath("}, // Node's join normalizes; Python's does not
 	} {
 		for _, f := range list {
 			p, err := compilePattern(lang, f, false)
@@ -934,6 +941,200 @@ func (a *analysis) canonical(st state, t []Token) bool {
 		}
 	}
 	return false
+}
+
+// relKey marks, in a state, that a variable holds path.relative(base, x) for a
+// base no input reached: relKey+rel+"\x00"+x, with relKey+rel itself set, so a
+// new value of rel can drop what it knew.
+const relKey = "\x00rel:"
+
+var relativePat = func() *pat {
+	p, err := compilePattern("js", "path.relative(", false)
+	if err != nil {
+		panic(err)
+	}
+	return p
+}()
+
+// relativeOf returns the keys of x when t is path.relative(base, x), or a
+// variable assigned one, the base is clean and x a canonical, absolute path. Walking the
+// state is charged to the budget, so the work limit and the clock bound it.
+func (a *analysis) relativeOf(st state, t []Token) []keyRef {
+	t = stripParens(t)
+	n := len(t)
+	if key, _, ok := a.pathKey(t); ok {
+		if e, found := st[relKey+key]; !found || !e.san {
+			return nil
+		}
+		if !a.b.charge(len(st)) {
+			return nil
+		}
+		var out []keyRef
+		pre := relKey + key + "\x00"
+		for k, e := range st {
+			if e.san && strings.HasPrefix(k, pre) {
+				out = append(out, keyRef{key: k[len(pre):], src: e.src})
+			}
+		}
+		slices.SortFunc(out, func(x, y keyRef) int { return strings.Compare(x.key, y.key) })
+		return out
+	}
+	m := len(relativePat.toks)
+	if m >= n || !relativePat.at(t, 0, true) || closeOf(t, m-1) != n-1 {
+		return nil
+	}
+	args := splitTop(t[m:n-1], isComma)
+	if len(args) != 2 || a.expr(st, args[0], false).taint {
+		return nil
+	}
+	// Only a plain path, and a canonical one: what the check says of a + b is
+	// not said of a or b, and Node resolves a relative x against the working
+	// directory, not the base (path.relative("/srv/f", "../srv/f/x") is "x" from
+	// /app, while path.join("/srv/f", "../srv/f/x") is /srv/srv/f/x).
+	key, _, ok := a.pathKey(stripParens(args[1]))
+	if !ok || !a.canonical(st, args[1]) {
+		return nil
+	}
+	if e, found := st[anchorKey+key]; !found || !e.san {
+		return nil // path.normalize(input) is canonical, not absolute
+	}
+	return a.keysOf(args[1])
+}
+
+// anchorKey marks, in a state, that a variable holds an absolute path: one
+// path.relative and every sink resolve alike.
+const anchorKey = "\x00anchor:"
+
+var absCalls, joinCalls = func() ([]*pat, []*pat) {
+	mk := func(list ...string) []*pat {
+		var out []*pat
+		for _, f := range list {
+			p, err := compilePattern("js", f, false)
+			if err != nil {
+				panic(err)
+			}
+			out = append(out, p)
+		}
+		return out
+	}
+	return mk("path.resolve(", "fs.realpathSync(", "realpathSync(", "fs.promises.realpath("), mk("path.join(", "path.normalize(")
+}()
+
+// anchored reports whether t is provably an absolute path: a literal starting
+// with "/", __dirname, path.resolve() or realpath() of anything, path.join() or
+// path.normalize() of such a first part, a concatenation starting with one, or a
+// name holding one. Anything else fails closed: a relative path, even with a
+// clean first part, normalizes to one that may start with ".." (from /app,
+// "../app/media/f" is inside media), which a join to another folder follows out.
+func (a *analysis) anchored(st state, t []Token, depth int) bool {
+	t = stripParens(t)
+	for len(t) > 0 && t[0].word("await") {
+		t = t[1:]
+	}
+	n := len(t)
+	if n == 0 || depth > maxLitDepth {
+		return false
+	}
+	if n == 1 && t[0].Kind == Str {
+		return strings.HasPrefix(t[0].Text, "/") && (len(t[0].Parts) == 0 || t[0].Parts[0].Off > 0)
+	}
+	if n == 1 && t[0].word("__dirname") {
+		return true
+	}
+	for _, p := range absCalls {
+		if m := len(p.toks); m < n && p.at(t, 0, true) && closeOf(t, m-1) == n-1 {
+			return true
+		}
+	}
+	for _, p := range joinCalls {
+		if m := len(p.toks); m < n && p.at(t, 0, true) && closeOf(t, m-1) == n-1 {
+			args := splitTop(t[m:n-1], isComma)
+			return len(args) > 0 && a.anchored(st, args[0], depth+1)
+		}
+	}
+	if parts := splitTop(t, isOp("+")); len(parts) > 1 {
+		return a.anchored(st, parts[0], depth+1)
+	}
+	if key, _, ok := a.pathKey(t); ok {
+		if e, found := st[anchorKey+key]; found && e.san {
+			return true
+		}
+		if n == 1 {
+			if lv := a.litOf(st, t[0].Text); lv != nil {
+				return a.anchored(st, lv, depth+1)
+			}
+		}
+	}
+	return false
+}
+
+// setRelative records, after rel = rhs, what rel is the relative path of. Any
+// assignment forgets the relative paths of the value it changes (x = ... after
+// rel = path.relative(base, x) leaves rel about the old x). relKey alone marks
+// a state that holds any, so a state without one costs no walk.
+func (a *analysis) setRelative(st state, key string, rhs []Token, plain bool) {
+	if _, any := st[relKey]; any && a.b.charge(len(st)) {
+		for k := range st {
+			if x, ok := strings.CutPrefix(k, relKey); ok {
+				if i := strings.Index(x, "\x00"); i >= 0 && (x[i+1:] == key || strings.HasPrefix(x[i+1:], key+sepCh)) {
+					delete(st, k)
+				}
+			}
+		}
+	}
+	if _, had := st[relKey+key]; had && a.b.charge(len(st)) {
+		pre := relKey + key + "\x00"
+		for k := range st {
+			if k == relKey+key || strings.HasPrefix(k, pre) {
+				delete(st, k)
+			}
+		}
+	}
+	if plain && a.anchored(st, rhs, 0) {
+		st[anchorKey+key] = entry{san: true}
+	} else {
+		delete(st, anchorKey+key)
+	}
+	if !plain {
+		return
+	}
+	xs := a.relativeOf(st, rhs)
+	if len(xs) == 0 || len(stripParens(rhs)) == 1 {
+		return // a copy of another relative path is not followed
+	}
+	st[relKey], st[relKey+key] = entry{san: true}, entry{san: true}
+	for _, x := range xs {
+		st[relKey+key+"\x00"+x.key] = entry{san: true, src: x.src}
+	}
+}
+
+// escapeCheck reads rel.startsWith("..") on a relative path from a clean base
+// (path.relative(base, x), or a variable holding one): it is true when x leaves
+// the base, so where it is false x stays inside. "../" and ".." + path.sep
+// leave out rel === ".." alone, the base's parent folder itself, which no file
+// sink can read or write as a file. Shentu runs on Linux, where the relative
+// path of one absolute path to another is never absolute (on Windows a path on
+// another drive is, which path.isAbsolute(rel) would have to catch).
+func (a *analysis) escapeCheck(st state, atom []Token) []keyRef {
+	n := len(atom)
+	if !a.js || a.r.rule.Class != "path-traversal" || n < 6 || !atom[n-1].op(")") {
+		return nil
+	}
+	open := openOf(atom, n-1)
+	if open < 2 || !atom[open-1].word("startsWith") || !atom[open-2].op(".") {
+		return nil
+	}
+	arg := atom[open+1 : n-1]
+	switch parts := splitTop(arg, isOp("+")); {
+	case len(arg) == 1 && arg[0].Kind == Str && len(arg[0].Parts) == 0 && (arg[0].Text == ".." || arg[0].Text == "../"):
+	case len(parts) == 2 && len(parts[0]) == 1 && parts[0][0].Kind == Str && len(parts[0][0].Parts) == 0 && parts[0][0].Text == "..":
+		if key, _, ok := a.pathKey(parts[1]); !ok || strings.ReplaceAll(key, sepCh, "") != "path.sep" {
+			return nil
+		}
+	default:
+		return nil
+	}
+	return a.relativeOf(st, atom[:open-2])
 }
 
 // canonPrefix: a prefix check on a path (str_starts_with($p, $base),

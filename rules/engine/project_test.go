@@ -255,7 +255,7 @@ func TestProjectCacheAndLimits(t *testing.T) {
 	if err != nil || info.Mode().Perm() != 0o600 {
 		t.Fatalf("cache: %v %v", info, err)
 	}
-	if c := loadIndexCache(cache); len(c) != 2 || c["model.php"] == nil || len(c["model.php"].Classes) != 1 {
+	if c := loadIndexCache(cache, e.indexKey()); len(c) != 2 || c["model.php"] == nil || len(c["model.php"].Classes) != 1 {
 		t.Fatalf("cache content: %+v", c)
 	}
 	// From the cache: the same result.
