@@ -185,7 +185,7 @@ func (l *Live) readFile(path string, noFollow bool, max int64, id string) ([]byt
 	defer f.Close()
 	if st, err := f.Stat(); err != nil {
 		return nil, err
-	} else if id != "" && fileID(st) != id {
+	} else if id != "" && openedFileID(f, st) != id {
 		return nil, &fs.PathError{Op: "read", Path: path, Err: ErrChanged}
 	} else if !st.Mode().IsRegular() {
 		why := "not a regular file"
@@ -218,7 +218,7 @@ func (l *Live) Stat(path string) (FileStat, error) {
 	if err != nil {
 		return FileStat{}, err
 	}
-	return FileStat{Mode: st.Mode(), Size: st.Size(), ModTime: st.ModTime(), UID: fileUID(st), ID: fileID(st)}, nil
+	return FileStat{Mode: st.Mode(), Size: st.Size(), ModTime: st.ModTime(), UID: fileUID(st), ID: pathFileID(l.path(path), st)}, nil
 }
 
 func (l *Live) ReadDir(path string) ([]string, error) {
