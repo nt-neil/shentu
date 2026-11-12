@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -205,7 +206,8 @@ func TestRecordReplayMasked(t *testing.T) {
 	if err := rec.Save(dir, m); err == nil {
 		t.Error("Save wrote into an existing directory")
 	}
-	if st, _ := os.Stat(filepath.Join(dir, "manifest.json")); st == nil || st.Mode().Perm() != 0o600 {
+	// Windows has no Unix permission bits (files read as 0666).
+	if st, _ := os.Stat(filepath.Join(dir, "manifest.json")); runtime.GOOS != "windows" && (st == nil || st.Mode().Perm() != 0o600) {
 		t.Errorf("manifest mode %v, want 0600", st)
 	}
 
