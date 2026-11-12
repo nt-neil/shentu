@@ -35,6 +35,7 @@ import (
 	"math"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 	"unicode/utf16"
@@ -243,17 +244,40 @@ func (l *Live) WMI(namespace, query string, props []string) ([]map[string]any, e
 	return rows, nil
 }
 
-// stuckCOM holds, per provider (a WMI namespace, the firewall), a call
-// abandoned after comWait that has not returned yet.
-var stuckCOM sync.Map
+// comGate is one provider's (a WMI namespace, the firewall) turn: one
+// call at a time, and whether a call was abandoned after comWait and has
+// not returned yet.
+type comGate struct {
+	slot  chan struct{} // capacity 1, held from the start of f until it returns
+	stuck atomic.Bool
+}
+
+var comGates sync.Map // key -> *comGate
+
+func comGateFor(key string) *comGate {
+	g, _ := comGates.LoadOrStore(key, &comGate{slot: make(chan struct{}, 1)})
+	return g.(*comGate)
+}
+
+// comStuck reports whether key's provider holds an abandoned call.
+func comStuck(key string) bool { return comGateFor(key).stuck.Load() }
 
 // comCall runs f on a locked OS thread of its own and waits at most
-// comWait. A provider that hangs is abandoned once: while that call has
-// not returned, the next one for the same key answers ErrTimeout at once
-// instead of piling up another stuck thread.
+// comWait. Calls for one provider take turns (the slot), so however many
+// arrive together, at most one thread can hang in that provider: while
+// it does, the next call answers ErrTimeout at once, and one waiting for
+// its turn gives up after comWait without starting a thread.
 func comCall[T any](key string, f func() (T, error)) (T, error) {
 	var zero T
-	if _, busy := stuckCOM.Load(key); busy {
+	g := comGateFor(key)
+	if g.stuck.Load() {
+		return zero, ErrTimeout
+	}
+	timer := time.NewTimer(comWait)
+	defer timer.Stop()
+	select {
+	case g.slot <- struct{}{}:
+	case <-timer.C:
 		return zero, ErrTimeout
 	}
 	type result struct {
@@ -266,13 +290,14 @@ func comCall[T any](key string, f func() (T, error)) (T, error) {
 		defer runtime.UnlockOSThread()
 		v, err := f()
 		ch <- result{v, err}
+		g.stuck.Store(false)
+		<-g.slot
 	}()
 	select {
 	case r := <-ch:
 		return r.v, r.err
-	case <-time.After(comWait):
-		stuckCOM.Store(key, true)
-		go func() { <-ch; stuckCOM.Delete(key) }()
+	case <-timer.C:
+		g.stuck.CompareAndSwap(false, true)
 		return zero, ErrTimeout
 	}
 }

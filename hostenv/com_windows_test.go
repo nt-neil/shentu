@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"testing"
@@ -373,7 +374,12 @@ func TestCOMWaitTimesOut(t *testing.T) {
 	// wait for that, so the next tests get a fresh call.
 	for deadline := time.Now().Add(60 * time.Second); time.Now().Before(deadline); time.Sleep(50 * time.Millisecond) {
 		n := 0
-		stuckCOM.Range(func(any, any) bool { n++; return true })
+		comGates.Range(func(_, g any) bool {
+			if g.(*comGate).stuck.Load() {
+				n++
+			}
+			return true
+		})
 		if n == 0 {
 			return
 		}
@@ -468,12 +474,45 @@ func TestCOMCallStuckProvider(t *testing.T) {
 	}
 	close(release)
 	for i := 0; i < 100; i++ {
-		if _, busy := stuckCOM.Load("test-provider"); !busy {
+		if !comStuck("test-provider") {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
 	if v, err := comCall("test-provider", func() (int, error) { calls.Add(1); return 7, nil }); err != nil || v != 7 || calls.Load() != 2 {
 		t.Errorf("after the stuck call returned: %v %v, %d calls", v, err, calls.Load())
+	}
+}
+
+// Round 3 (S2): calls that arrive together for a hanging provider start
+// one thread between them, not one each.
+func TestCOMCallConcurrentStuck(t *testing.T) {
+	old := comWait
+	comWait = 50 * time.Millisecond
+	t.Cleanup(func() { comWait = old })
+	release := make(chan struct{})
+	var calls atomic.Int32
+	f := func() (int, error) { calls.Add(1); <-release; return 1, nil }
+	var wg sync.WaitGroup
+	var timeouts atomic.Int32
+	for i := 0; i < 16; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := comCall("test-concurrent", f); errors.Is(err, ErrTimeout) {
+				timeouts.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+	if calls.Load() != 1 || timeouts.Load() != 16 {
+		t.Errorf("%d threads started, %d of 16 timed out", calls.Load(), timeouts.Load())
+	}
+	close(release)
+	for i := 0; i < 100 && comStuck("test-concurrent"); i++ {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if v, err := comCall("test-concurrent", func() (int, error) { return 7, nil }); err != nil || v != 7 {
+		t.Errorf("after the stuck call returned: %v %v", v, err)
 	}
 }
