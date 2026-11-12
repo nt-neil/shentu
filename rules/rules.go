@@ -69,6 +69,12 @@ type Args struct {
 	// file gives such an object ($q = new WP_Query; $q->query($args)). A
 	// receiver the file says nothing about still counts.
 	NotReceiver []string `toml:"not_receiver"`
+	// UnlessAt narrows where unless looks: "start", only at the start of the
+	// argument (arg, or the first): a Server-Sent Events line "data: " + x;
+	// "top", only as an element or key of the argument itself (arg, or any
+	// one), not inside what it holds: TypeORM's { relations: [...] }, not
+	// { projection: { relations: 1 } }. Empty: anywhere among the arguments.
+	UnlessAt string `toml:"unless_at"`
 }
 
 // SourceArgs makes call sources input only when an argument is one of a few
