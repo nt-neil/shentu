@@ -32,6 +32,7 @@ func (c LinuxCollector) Collect(ctx context.Context, src Source) *Facts {
 	info := src.Info()
 	f := NewFacts(c.Name(), CollectorVersion, info.RecordedAt)
 	f.Privilege = OK(Privilege{Elevated: info.Elevated})
+	f.Resources = c.Resources(src)
 
 	osr := c.platform(src, info, f)
 	f.Packages = c.packages(ctx, src, osr)

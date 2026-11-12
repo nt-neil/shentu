@@ -321,3 +321,31 @@ func TestPersistenceFailClosed(t *testing.T) {
 		t.Errorf("hidden process as root: %s", f.Processes.Status)
 	}
 }
+
+func TestResources(t *testing.T) {
+	h := debianHost(true)
+	h.files["/proc/meminfo"] = "MemTotal:        2014976 kB\nMemFree:  100 kB\nMemAvailable:    1024000 kB\n"
+	h.files["/proc/loadavg"] = "0.52 0.40 0.30 1/200 999\n"
+	h.files["/proc/self/cgroup"] = "0::/system.slice/shentu-patrol.service\n"
+	h.files["/sys/fs/cgroup/system.slice/shentu-patrol.service/memory.max"] = "536870912\n"
+	h.files["/sys/fs/cgroup/system.slice/memory.max"] = "max\n"
+	h.files["/sys/fs/cgroup/system.slice/shentu-patrol.service/cpu.max"] = "150000 100000\n"
+	r := Collect(context.Background(), h).Resources
+	want := Resources{MemTotalBytes: 2014976 << 10, MemAvailableBytes: 1024000 << 10, Load1: 0.52, CgroupMemoryLimit: 536870912, CgroupCPUs: 2}
+	if r.Status != StatusOK || r.Value != want {
+		t.Errorf("resources %+v", r)
+	}
+	h.denied["/proc/meminfo"] = true
+	if r := Collect(context.Background(), h).Resources; r.Status != StatusPartial || r.Reason != ReasonPermission {
+		t.Errorf("unreadable meminfo %+v", r)
+	}
+}
+
+func TestLiveRemap(t *testing.T) {
+	l := &Live{Remap: map[string]string{"/proc": "/tmp/p", "/proc/net": "/tmp/n"}}
+	for in, want := range map[string]string{"/proc/meminfo": "/tmp/p/meminfo", "/proc/net/tcp": "/tmp/n/tcp", "/procx": "/procx", "/etc/x": "/etc/x", "/proc": "/tmp/p"} {
+		if got := l.path(in); got != want {
+			t.Errorf("path(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
