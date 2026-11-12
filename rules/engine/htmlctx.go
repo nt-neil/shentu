@@ -512,7 +512,9 @@ func skipInterp(text string, off int) int {
 // sinkTok, writes user input into one of the contexts in want. The operands of
 // out are read in order (joined with "." or "+", or listed with ","), and the
 // literal text before each one, fed to an HTML scanner, decides its context.
-func (a *analysis) contextTaint(st state, sinkTok Token, out []Token, want []uint8) bool {
+// With markup, an operand counts only once literal markup (a "<") was written
+// before it in out: a body with none (Koa's ctx.body = x) may be JSON or text.
+func (a *analysis) contextTaint(st state, sinkTok Token, out []Token, want []uint8, markup bool) bool {
 	if a.py && len(out) > 1 && out[0].Kind == Ident && out[1].op("=") {
 		switch out[0].Text {
 		case "content", "text", "body": // Django content=, aiohttp web.Response(text=, body=)
@@ -525,7 +527,9 @@ func (a *analysis) contextTaint(st state, sinkTok Token, out []Token, want []uin
 	var hs htmlScan
 	fresh := base == ctxHTML // no inline HTML before: read the literal text as the start of a page
 	prefix := ""             // literal text written before, in the base context (first 64 bytes)
+	seen := !markup          // markup written before (or not asked for)
 	feed := func(text string) {
+		seen = seen || strings.Contains(text, "<")
 		switch {
 		case text == "":
 		case fresh:
@@ -557,6 +561,9 @@ func (a *analysis) contextTaint(st state, sinkTok Token, out []Token, want []uin
 		return c
 	}
 	in := func(c uint8) bool {
+		if !seen {
+			return false
+		}
 		for _, w := range want {
 			if w == c {
 				return true

@@ -73,6 +73,7 @@ type argCond struct {
 	when, unless   []*pat
 	whole, leading bool
 	context        []uint8 // output contexts that count (ctxHTML ...); empty: any
+	markup         bool    // context: only input after markup written in the same value (contextTaint)
 	literal        bool
 	key            string // the value under this key of an object argument (keyValue)
 	keys           bool   // an array, object or dict literal argument counts by its keys (keysVal)
@@ -152,7 +153,10 @@ func compileRule(r rules.Rule) (*crule, error) {
 		return nil, err
 	}
 	for _, a := range r.Args {
-		ac := &argCond{arg: a.Arg, name: a.Name, whole: a.Whole, leading: a.Leading, literal: a.Literal, key: a.Key, keys: a.Keys, minLen: a.MinLen}
+		ac := &argCond{arg: a.Arg, name: a.Name, whole: a.Whole, leading: a.Leading, literal: a.Literal, key: a.Key, keys: a.Keys, minLen: a.MinLen, markup: a.Markup}
+		if a.Markup && len(a.Context) == 0 {
+			return nil, fmt.Errorf("args: markup needs context")
+		}
 		if (a.MinLen != 0 || len(a.Exclude) > 0) && !a.Literal {
 			return nil, fmt.Errorf("args: min_len and exclude need literal")
 		}
