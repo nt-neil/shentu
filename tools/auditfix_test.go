@@ -288,6 +288,12 @@ func TestUploadFolder(t *testing.T) {
 		"/var/www/html/uploads/wp-content/x.php":           true, // a wp-content inside uploads hides nothing
 		"/var/www/html/uploads/wp-content/plugins/x.php":   true,
 		"/var/www/html/wp-content/plugins/p/uploads/x.php": false,
+		"/srv/app/vendor/acme/pkg/public/images/x.php":     false, // review of d4a8ea9, F4
+		"/srv/wp/wp-content/plugins/foo/pub/media/a.php":   false,
+		"/srv/wp/wp-content/themes/t/sites/x/files/a.php":  false,
+		"/srv/app/node_modules/m/public/uploads/a.php":     false,
+		"/srv/wp/wp-includes/x/public/uploads/a.php":       false,
+		"/srv/app/vendor/x/wp-content/uploads/a.php":       true, // wp-content/uploads always is
 	} {
 		if got := uploadFolder(p, nil); got != want {
 			t.Errorf("uploadFolder(%q) = %v, want %v", p, got, want)
@@ -424,19 +430,29 @@ func TestAppCodeAuditLateNotAllChecked(t *testing.T) {
 // A walk cut short does not take the files it did not reach as gone: their
 // kept results stay for the next audit (N9).
 func TestDropStaleWalkCut(t *testing.T) {
+	dir := t.TempDir()
+	a, b := filepath.Join(dir, "a.php"), filepath.Join(dir, "b.php")
+	os.WriteFile(a, []byte("<?php\n"), 0o644)
+	os.WriteFile(b, []byte("<?php\n"), 0o644)
 	newState := func() *callState {
 		return &callState{Files: map[string]*fileState{
-			"/a.php": {Hash: "1", Calls: &passResult{}, Deps: []string{"/b.php"}},
-			"/b.php": {Hash: "2", Calls: &passResult{}},
+			a: {Hash: "1", Calls: &passResult{}, Deps: []string{b}},
+			b: {Hash: "2", Calls: &passResult{}},
 		}}
 	}
 	st := newState()
-	if bad := st.dropStale(map[string]string{"/a.php": "1"}, false); len(bad) != 0 || st.Files["/a.php"].Calls == nil {
-		t.Errorf("walk cut: dropped %v", bad)
+	if bad := st.dropStale(map[string]string{a: "1"}, false); len(bad) != 0 || st.Files[a].Calls == nil {
+		t.Errorf("walk cut, b still there: dropped %v", bad)
 	}
 	st = newState()
-	if bad := st.dropStale(map[string]string{"/a.php": "1"}, true); !bad["/b.php"] || !bad["/a.php"] {
+	if bad := st.dropStale(map[string]string{a: "1"}, true); !bad[b] || !bad[a] {
 		t.Errorf("walk done: dropped %v, want b and its caller a", bad)
+	}
+	// Walk cut, b deleted (F2): its caller is stale and b's results go.
+	os.Remove(b)
+	st = newState()
+	if bad := st.dropStale(map[string]string{a: "1"}, false); !bad[a] || st.Files[b] != nil {
+		t.Errorf("walk cut, b gone: dropped %v, b kept %v", bad, st.Files[b] != nil)
 	}
 }
 
@@ -509,5 +525,59 @@ func TestWebRootsSymlinks(t *testing.T) {
 	webConfOwner = uint32(os.Getuid()) + 1
 	if roots, unread := webRootsFrom([]string{filepath.Join(enabled, "a")}); len(roots) != 0 || len(unread) != 1 || !strings.Contains(unread[0], "not owned by root") {
 		t.Errorf("not root's: roots %v, unreadable %v", roots, unread)
+	}
+}
+
+// The walk's light checks do not stop at the rules' time limit (review of
+// d4a8ea9, F1): with no time for the rules, an upload script is still found.
+func TestAppCodeAuditWalkIgnoresRuleDeadline(t *testing.T) {
+	isolateAudit(t)
+	dir, _ := filepath.EvalSymlinks(t.TempDir())
+	os.MkdirAll(filepath.Join(dir, "public", "uploads"), 0o755)
+	os.WriteFile(filepath.Join(dir, "public", "uploads", "x.php"), []byte("<?php echo 1;\n"), 0o644)
+	max := injectionMaxTime
+	defer func() { injectionMaxTime = max }()
+	injectionMaxTime = 0
+	if f := findingFor(AppCodeAudit(context.Background(), []string{dir}, nil), "upload_script", "x.php"); f.Severity != "critical" {
+		t.Errorf("upload_script not reported: %+v", f)
+	}
+}
+
+// A walk cut short goes on from where it stopped in the next audit and round
+// from the start: every file is covered, and the place is cleared after.
+func TestAppCodeAuditWalkResumes(t *testing.T) {
+	isolateAudit(t)
+	dir, _ := filepath.EvalSymlinks(t.TempDir())
+	for _, d := range []string{"a", "m", "z"} {
+		os.MkdirAll(filepath.Join(dir, "public", "uploads", d), 0o755)
+		os.WriteFile(filepath.Join(dir, "public", "uploads", d, "s.php"), []byte("<?php echo 1;\n"), 0o644)
+	}
+	roots := []string{dir}
+	// The last audit stopped in m/.
+	saveWalkPos(walkPosFile(roots), &walkPos{0, filepath.Join(dir, "public", "uploads", "m")})
+	res := AppCodeAudit(context.Background(), roots, nil)
+	n := 0
+	for _, f := range res.Findings {
+		if f.Kind == "upload_script" {
+			n++
+		}
+	}
+	if n != 3 || res.Unfinished {
+		t.Errorf("resumed walk found %d of 3 upload scripts, unfinished %v", n, res.Unfinished)
+	}
+	if _, ok := loadWalkPos(walkPosFile(roots)); ok {
+		t.Error("the place was kept after a full round")
+	}
+	// Cut at once: the place is kept for the next audit.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if r := auditUnlocked(ctx, roots, nil); !r.Unfinished {
+		t.Error("a cut walk is not unfinished")
+	}
+	if _, ok := loadWalkPos(walkPosFile(roots)); !ok {
+		t.Error("a cut walk kept no place")
+	}
+	if pathCmp("/r/a/b", "/r/a-c") >= 0 || pathCmp("/r/a", "/r/a/b") >= 0 || pathCmp("/r/b", "/r/a/z") <= 0 {
+		t.Error("pathCmp does not follow WalkDir's order")
 	}
 }

@@ -279,6 +279,8 @@ var auditExt = map[string]bool{".php": true, ".phtml": true, ".php5": true, ".in
 // site is; else a folder named so (in any case) right under the site's root.
 // Only the path below the site's root counts: /usr/src/app/wp-content/uploads
 // holds uploads, and a site whose root is itself named files is not one.
+var codeDirs = map[string]bool{"vendor": true, "node_modules": true, "wp-includes": true, "wp-admin": true}
+
 var uploadNames = map[string]bool{"uploads": true, "upload": true, "files": true, "media": true, "images": true, "attachments": true}
 
 // uploadFolder reports whether p is in a folder uploads land in. Under one of
@@ -299,13 +301,21 @@ func uploadFolder(p string, webRoots []string) bool {
 		}
 		return true
 	}
-	code := len(low) // below wp-content/plugins, themes and the like: code, not uploads
+	// Below vendor/, node_modules/, WordPress's own code or a plugin or theme
+	// is code, not uploads, whatever the folders there are named.
+	code := len(low)
+	for i := range low {
+		if codeDirs[low[i]] || i > 0 && low[i-1] == "wp-content" && low[i] != "uploads" {
+			code = i
+			break
+		}
+	}
 	for i := range low {
 		switch {
-		case at(i, "wp-content", "uploads"), at(i, "sites", "*", "files"), at(i, "pub", "media"), at(i, "storage", "app", "public"):
+		case at(i, "wp-content", "uploads"):
 			return true
-		case low[i] == "wp-content" && code == len(low):
-			code = i
+		case i < code && (at(i, "sites", "*", "files") || at(i, "pub", "media") || at(i, "storage", "app", "public")):
+			return true
 		}
 	}
 	root := ""
@@ -647,12 +657,19 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 	}
 	// Findings the cap per rule and file left out before they were listed:
 	// counted, never kept (one file can hold hundreds of thousands).
-	over := map[string]int{} // file → the most any pass left out
-	addOver := func(p string, n int) { over[p] = max(over[p], n) }
+	over := map[string]int{}     // file → the most any pass left out
+	overGen := map[string]bool{} // the file is minified or bundled JavaScript
+	addOver := func(p string, n int, gen bool) {
+		over[p] = max(over[p], n)
+		overGen[p] = overGen[p] || gen
+	}
 	countOver := func(p string, n int) {
-		if testPath(p) {
+		switch {
+		case testPath(p):
 			res.InjectionTestPaths += n
-		} else {
+		case overGen[p]:
+			res.InjectionGenerated += n
+		default:
 			res.Injection += n
 		}
 		left += n
@@ -685,83 +702,121 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 		defer debug.SetMemoryLimit(prev)
 	}
 	res.MemoryBudgetMB, res.MemoryLimitMB = int(budget.heap>>20), int(debug.SetMemoryLimit(-1)>>20)
-	// The walk stops at the rules' deadline too: an audit holds the turn of
-	// the others for a bounded time.
-	stop := func() bool { return ctx.Err() != nil || time.Now().After(deadline) }
-	for _, root := range roots {
-		if stop() {
-			walkCut = append(walkCut, UnfinishedFile{root, "walk"})
-			continue
-		}
-		base := strings.Count(filepath.Clean(root), "/")
-		filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
-			if stop() {
+	// The walk's checks are light: only the caller's time stops it (the
+	// rules' deadline is for the injection rules). Cut short, it goes on from
+	// where it stopped in the next audit, to the end and round from the start
+	// again, so a few audits cover every file.
+	var walkEntry func(root string, base int, p string, d fs.DirEntry, err error) error
+	posFile := walkPosFile(roots)
+	pos, resumed := loadWalkPos(posFile)
+	var cut *walkPos
+	at := func(ri int, p string) bool { // before where the last audit stopped (that entry it had not checked)
+		return ri < pos.Root || ri == pos.Root && pathCmp(p, pos.Path) < 0
+	}
+	walkPass := func(second bool) {
+		for ri, root := range roots {
+			if ctx.Err() != nil {
+				if cut == nil {
+					cut = &walkPos{ri, root}
+				}
 				walkCut = append(walkCut, UnfinishedFile{root, "walk"})
-				return filepath.SkipAll
+				continue
 			}
-			if err != nil {
-				return nil
-			}
-			name := d.Name()
-			if d.IsDir() {
-				if name == ".git" && served(p, webRoots) {
-					add(finding("exposed", "critical", p, 0, exposedNames[1].detail, exposedNames[1].fix))
+			base := strings.Count(filepath.Clean(root), "/")
+			filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+				if ctx.Err() != nil {
+					cut = &walkPos{ri, p}
+					walkCut = append(walkCut, UnfinishedFile{root, "walk"})
+					return filepath.SkipAll
 				}
-				if skipDirs[name] || strings.Count(p, "/")-base > auditMaxDepth {
-					return filepath.SkipDir
-				}
-				return nil
-			}
-			if !d.Type().IsRegular() {
-				return nil
-			}
-			web := served(p, webRoots)
-			if web {
-				for i, e := range exposedNames {
-					if i != 1 && e.match(name) {
-						add(finding("exposed", e.severity, p, 0, e.detail, e.fix))
-						break
+				if resumed {
+					before := at(ri, p)
+					if second && !before {
+						return filepath.SkipAll // round to where it started
+					}
+					if !second && before {
+						if d != nil && d.IsDir() && !(ri == pos.Root && strings.HasPrefix(pos.Path, p+"/")) {
+							return filepath.SkipDir
+						}
+						return nil
 					}
 				}
+				return walkEntry(root, base, p, d, err)
+			})
+		}
+	}
+	walkEntry = func(root string, base int, p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		name := d.Name()
+		if d.IsDir() {
+			if name == ".git" && served(p, webRoots) {
+				add(finding("exposed", "critical", p, 0, exposedNames[1].detail, exposedNames[1].fix))
 			}
-			ext := strings.ToLower(filepath.Ext(name))
-			isPHP := ext == ".php" || ext == ".phtml" || ext == ".php5"
-			if isPHP && uploadFolder(p, webRoots) {
-				add(finding("upload_script", "critical", p, 0, "PHP file in an upload folder; uploads should never be scripts",
-					"check the file, delete it if it is not yours, and stop PHP from running in the upload folder"))
-			}
-			lang := engine.LangOf(name)
-			if !auditExt[ext] && !auditExt[name] && !strings.HasPrefix(name, ".env") && name != "settings.py" && lang == "" {
-				return nil
-			}
-			if res.Files >= auditMaxFiles {
-				res.Truncated = true
-				return filepath.SkipAll
-			}
-			info, err := d.Info()
-			if err != nil {
-				return nil
-			}
-			b, ok := readSmallRegular(p, auditMaxSize, info)
-			// A rule-language file is read even with a NUL byte: PHP runs such a file.
-			if !ok || lang == "" && bytes.IndexByte(b, 0) >= 0 {
-				if lang != "" && eng != nil && info.Size() > auditMaxSize {
-					partial = append(partial, UnfinishedFile{p, "size"})
-				}
-				return nil
-			}
-			res.Files++
-			auditContent(p, name, b, web, isPHP, add)
-			if lang != "" && eng != nil || name == "composer.json" {
-				code = append(code, p)
-				seen[p] = info
-				if lang != "" {
-					sum := sha256.Sum256(b)
-					hash[p] = hex.EncodeToString(sum[:])
-				}
+			if skipDirs[name] || strings.Count(p, "/")-base > auditMaxDepth {
+				return filepath.SkipDir
 			}
 			return nil
-		})
+		}
+		if !d.Type().IsRegular() {
+			return nil
+		}
+		web := served(p, webRoots)
+		if web {
+			for i, e := range exposedNames {
+				if i != 1 && e.match(name) {
+					add(finding("exposed", e.severity, p, 0, e.detail, e.fix))
+					break
+				}
+			}
+		}
+		ext := strings.ToLower(filepath.Ext(name))
+		isPHP := ext == ".php" || ext == ".phtml" || ext == ".php5"
+		if isPHP && uploadFolder(p, webRoots) {
+			add(finding("upload_script", "critical", p, 0, "PHP file in an upload folder; uploads should never be scripts",
+				"check the file, delete it if it is not yours, and stop PHP from running in the upload folder"))
+		}
+		lang := engine.LangOf(name)
+		if !auditExt[ext] && !auditExt[name] && !strings.HasPrefix(name, ".env") && name != "settings.py" && lang == "" {
+			return nil
+		}
+		if res.Files >= auditMaxFiles {
+			res.Truncated = true
+			return filepath.SkipAll
+		}
+		info, err := d.Info()
+		if err != nil {
+			return nil
+		}
+		b, ok := readSmallRegular(p, auditMaxSize, info)
+		// A rule-language file is read even with a NUL byte: PHP runs such a file.
+		if !ok || lang == "" && bytes.IndexByte(b, 0) >= 0 {
+			if lang != "" && eng != nil && info.Size() > auditMaxSize {
+				partial = append(partial, UnfinishedFile{p, "size"})
+			}
+			return nil
+		}
+		res.Files++
+		auditContent(p, name, b, web, isPHP, add)
+		if lang != "" && eng != nil || name == "composer.json" {
+			code = append(code, p)
+			seen[p] = info
+			if lang != "" {
+				sum := sha256.Sum256(b)
+				hash[p] = hex.EncodeToString(sum[:])
+			}
+		}
+		return nil
+	}
+	walkPass(false)
+	if resumed && cut == nil {
+		walkPass(true)
+	}
+	if cut == nil {
+		saveWalkPos(posFile, nil) // a full round: the next one starts at the start
+	} else {
+		saveWalkPos(posFile, cut)
 	}
 	if eng != nil && len(code) > 0 {
 		// Read again the way the walk did (no symlinks, regular files under the
@@ -790,7 +845,7 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 		st := loadCallState(stateFile, auditBuild(eng))
 		// A walk the clock cut short says nothing of the files it did not reach:
 		// their kept results stay (the bot and the patrol share them).
-		walked := len(walkCut) == 0
+		walked := len(walkCut) == 0         // a resumed walk that went round saw every file too
 		stale := st.dropStale(hash, walked) // before this audit's results replace the old ones
 		// First every file on its own (calls inside the file are followed): all
 		// files get this before any time goes to calls across files.
@@ -870,7 +925,7 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 					}
 				}
 				addNew(k.Found, k.Gen)
-				addOver(p, k.Over)
+				addOver(p, k.Over, k.Gen)
 				if k.Reason != "" { // "calls": its own calls were cut short
 					partial = append(partial, UnfinishedFile{p, k.Reason})
 				}
@@ -925,7 +980,7 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 						res, err := injectionCalls(pr, p, b, skip)
 						found, n := capFound(append(slices.Clone(part.Found), res.Found...))
 						n += part.Over
-						addOver(p, n)
+						addOver(p, n, gen)
 						switch {
 						case errors.Is(err, errPanic):
 							addNew(found, gen)
@@ -973,7 +1028,7 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 					continue
 				}
 				addNew(k.Found, k.Gen)
-				addOver(p, k.Over)
+				addOver(p, k.Over, k.Gen)
 				covered++
 				if k.Reason != "calls" {
 					done++ // limits of the file itself were reported by the first pass
