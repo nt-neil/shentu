@@ -249,6 +249,18 @@ func TestCheckHotpatchOnlyCVE(t *testing.T) {
 			t.Errorf("%s: advises KB%s (hotpatch %v), want the CU KB5070001", m.CVE, m.KB, m.Hotpatch)
 		}
 	}
+	// Round 3 re-review (N-2): only the KB and build come from the CU; the
+	// CVE keeps its own title and severity.
+	sev := Month{Products: map[string][]Fix{"Windows Server 2025": {
+		{CVE: "CVE-CU", Title: "Low thing", Severity: "Low", KB: "5070001", FixedBuild: "10.0.26100.4000"},
+		{CVE: "CVE-HP", Title: "Critical thing", Severity: "Critical", KB: "5070002", FixedBuild: "10.0.26100.3900", Hotpatch: true},
+	}}}
+	r, _ = Check("Windows Server 2025", "10.0.26100.3950", nil, []string{"m"}, 24, func(string) (Month, error) { return sev, nil })
+	for _, m := range r.Missing {
+		if m.CVE == "CVE-HP" && (m.Severity != "Critical" || m.Title != "Critical thing" || m.KB != "5070001" || m.FixedBuild != "10.0.26100.4000" || m.Hotpatch) {
+			t.Errorf("hotpatch-only CVE reported as %+v", m)
+		}
+	}
 	// A CVE listing both: the CU is reported even when the hotpatch's
 	// build number sorts higher.
 	both := Month{Products: map[string][]Fix{"Windows Server 2025": {

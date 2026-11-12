@@ -256,8 +256,8 @@ func Check(product, hostBuild string, installedKB map[string]bool, ids []string,
 				}
 			}
 			if hotOnly && monthCU != "" {
-				newest = cuFix
-				newest.CVE = cve
+				// The CVE's own title and severity, the cumulative update's KB and build.
+				newest.KB, newest.FixedBuild, newest.Hotpatch = cuFix.KB, cuFix.FixedBuild, false
 			}
 			if !covered && hotOnly {
 				// Listed with a hotpatch alone: a host on the cumulative chain
