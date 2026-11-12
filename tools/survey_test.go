@@ -186,3 +186,48 @@ func TestNftablesAtBoot(t *testing.T) {
 		t.Errorf("got %q", s)
 	}
 }
+
+// A drop-in folder sshd reads as root but this user cannot (Rocky's
+// sshd_config.d is 0700) leaves the SSH settings unknown: no warning from the
+// main file's lines, one info instead. Readable, the drop-in's no holds.
+func TestSSHDropInUnreadable(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads every file")
+	}
+	dir := t.TempDir()
+	old := sshdConfig
+	defer func() { sshdConfig = old }()
+	sshdConfig = filepath.Join(dir, "sshd_config")
+	os.WriteFile(sshdConfig, []byte("Include sshd_config.d/*.conf\nPasswordAuthentication yes\nPermitRootLogin yes\n"), 0o644)
+	d := filepath.Join(dir, "sshd_config.d")
+	os.Mkdir(d, 0o755)
+	drop := filepath.Join(d, "50-cloud-init.conf")
+	os.WriteFile(drop, []byte("PasswordAuthentication no\nPermitRootLogin no\n"), 0o644)
+	risks := func() map[string]string {
+		ssh, _, unread := sshdSettings()
+		out := map[string]string{}
+		for _, r := range sshRisks(ssh, unread) {
+			out[r.Key] = r.Severity
+		}
+		return out
+	}
+	if got := risks(); len(got) != 0 {
+		t.Errorf("readable drop-in with no: %v", got)
+	}
+	os.Chmod(drop, 0)
+	if got := risks(); len(got) != 1 || got["ssh:unreadable"] != "info" {
+		t.Errorf("unreadable drop-in file: %v", got)
+	}
+	os.Chmod(drop, 0o644)
+	os.Chmod(d, 0)
+	defer os.Chmod(d, 0o755)
+	if got := risks(); len(got) != 1 || got["ssh:unreadable"] != "info" {
+		t.Errorf("unreadable drop-in folder: %v", got)
+	}
+	os.Chmod(d, 0o755)
+	// Without an Include, the main file's yes is a warning as before.
+	os.WriteFile(sshdConfig, []byte("PasswordAuthentication yes\nPermitRootLogin yes\n"), 0o644)
+	if got := risks(); got["ssh:password"] != "warning" || got["ssh:root"] != "warning" || len(got) != 2 {
+		t.Errorf("main file only: %v", got)
+	}
+}

@@ -1,0 +1,51 @@
+{{define "title"}}{{t "rules.title"}} · Shentu{{end}}
+{{define "main"}}
+<header class="hall">
+  <h1>{{t "rules.title"}}</h1>
+  <p class="intro">{{t "rules.intro"}}</p>
+</header>
+<form class="filters" onsubmit="return false" role="search">
+  <label>{{t "filter"}} <input id="q" type="search" placeholder="{{t "filter.ph"}}"></label>
+  <label>{{t "language"}} <select id="fl"><option value="">{{t "all"}}</option>{{range .Langs}}<option value="{{.}}">{{langName .}}</option>{{end}}</select></label>
+  <label>{{t "class"}} <select id="fc"><option value="">{{t "all"}}</option>{{range .Classes}}<option value="{{.}}">{{className .}}</option>{{end}}</select></label>
+  <label>{{t "severity"}} <select id="fs"><option value="">{{t "all"}}</option><option value="critical">{{t "sev.critical"}}</option><option value="high">{{t "sev.high"}}</option><option value="medium">{{t "sev.medium"}}</option><option value="low">{{t "sev.low"}}</option></select></label>
+  <p class="count" aria-live="polite"><strong id="shown">{{len .Rules}}</strong> / {{len .Rules}} {{t "rules.count"}}</p>
+</form>
+<section class="routes">
+  <h2>{{t "routes"}}</h2>
+  <p>{{t "routes.intro"}}{{range $l, $fw := .Routes}} <span class="pill">{{langName $l}}: {{join $fw ", "}}</span>{{end}}</p>
+</section>
+{{range .Groups}}
+<section class="group" data-lang="{{.Lang}}" data-class="{{.Class}}">
+  <h2><span class="g-lang">{{langName .Lang}}</span> {{className .Class}}</h2>
+  {{range .Rules}}
+  <details class="rule" id="{{.ID}}" data-rule-id="{{.ID}}" data-lang="{{.Lang}}" data-class="{{.Class}}" data-sev="{{.Severity}}" data-text="{{.ID}} {{.CWE}} {{.Title}}">
+    <summary><span class="sev {{.Severity}}"><i aria-hidden="true">{{seal .Severity}}</i><b>{{t (print "sev." .Severity)}}</b></span><span class="head"><code class="rid">{{.ID}}</code> <span class="cwe">{{.CWE}}</span><span class="title">{{.Title}}</span></span></summary>
+    {{if .Frameworks}}<p class="meta">{{t "frameworks"}}: {{join .Frameworks ", "}}</p>{{end}}
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">{{t "vulnerable"}}</h3>{{with .VulnNote}}<p class="note">{{.}}</p>{{end}}<pre><code>{{.Vulnerable}}</code></pre></div>
+      <div class="sample good-s"><h3 class="good">{{t "safe"}}</h3>{{with .SafeNote}}<p class="note">{{.}}</p>{{end}}<pre><code>{{.Safe}}</code></pre></div>
+    </div>
+    <p class="fix"><strong>{{t "fix"}}</strong> {{.Fix}}</p>
+  </details>
+  {{end}}
+</section>
+{{end}}
+<script>
+(function () {
+  var q = document.getElementById('q'), fl = document.getElementById('fl'), fc = document.getElementById('fc'), fs = document.getElementById('fs');
+  function apply() {
+    var words = q.value.toLowerCase().split(/\s+/).filter(Boolean), n = 0;
+    document.querySelectorAll('.rule').forEach(function (r) {
+      var t = r.dataset.text.toLowerCase();
+      var ok = (!fl.value || r.dataset.lang === fl.value) && (!fc.value || r.dataset.class === fc.value) &&
+        (!fs.value || r.dataset.sev === fs.value) && words.every(function (w) { return t.indexOf(w) >= 0; });
+      r.hidden = !ok; if (ok) n++;
+    });
+    document.querySelectorAll('.group').forEach(function (g) { g.hidden = !g.querySelector('.rule:not([hidden])'); });
+    document.getElementById('shown').textContent = n;
+  }
+  [q, fl, fc, fs].forEach(function (e) { e.addEventListener('input', apply); });
+})();
+</script>
+{{end}}

@@ -54,9 +54,24 @@ func TestRulesValid(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	routes, err := LoadRoutes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	members := map[string]bool{} // lang/member a route model makes input
+	for _, rt := range routes {
+		for _, m := range rt.Members {
+			members[rt.Lang+"/"+m] = true
+		}
+	}
 	seen := map[string]string{}
 	for _, r := range rs {
 		f := r.File
+		for _, m := range r.RouteMembers {
+			if !members[r.Lang+"/"+m] {
+				t.Errorf("%s: route_members %q is no member a %s route model makes input", f, m, r.Lang)
+			}
+		}
 		if prev, dup := seen[r.ID]; dup {
 			t.Errorf("%s: id %q already used by %s", f, r.ID, prev)
 		}
@@ -141,8 +156,8 @@ func checkText(t *testing.T, r Rule) {
 func checkArgs(t *testing.T, r Rule) {
 	covered := map[string]bool{}
 	for i, a := range r.Args {
-		if a.Arg == nil && len(a.When) == 0 && len(a.Unless) == 0 && !a.Whole && !a.Leading && len(a.Context) == 0 && !a.Literal && a.Key == "" && !a.Keys && len(a.Receiver) == 0 {
-			t.Errorf("%s: args %d sets none of arg, when, unless, whole, leading, context, literal, key, keys, receiver", r.File, i)
+		if a.Arg == nil && len(a.When) == 0 && len(a.Unless) == 0 && !a.Whole && !a.Leading && len(a.Context) == 0 && !a.Literal && a.Key == "" && !a.Keys && len(a.Receiver) == 0 && len(a.NotReceiver) == 0 {
+			t.Errorf("%s: args %d sets none of arg, when, unless, whole, leading, context, literal, key, keys, receiver, not_receiver", r.File, i)
 		}
 		if (a.MinLen != 0 || len(a.Exclude) > 0) && !a.Literal {
 			t.Errorf("%s: args %d: min_len and exclude need literal", r.File, i)

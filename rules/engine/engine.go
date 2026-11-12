@@ -79,6 +79,7 @@ type argCond struct {
 	minLen         int    // literal: the shortest string that counts
 	exclude        []*regexp.Regexp
 	receiver       []*pat // a method sink counts only on a receiver these name (receiver.go)
+	notReceiver    []*pat // nor on an object surely of one of these classes (receiver.go)
 }
 
 // New compiles rules. A pattern that does not lex as code of its language is an error.
@@ -173,7 +174,7 @@ func compileRule(r rules.Rule) (*crule, error) {
 		for _, list := range []struct {
 			raw []string
 			out *[]*pat
-		}{{a.When, &ac.when}, {a.Unless, &ac.unless}, {a.Receiver, &ac.receiver}} {
+		}{{a.When, &ac.when}, {a.Unless, &ac.unless}, {a.Receiver, &ac.receiver}, {a.NotReceiver, &ac.notReceiver}} {
 			for _, raw := range list.raw {
 				p, err := compilePattern(r.Lang, raw, false)
 				if err != nil {
@@ -286,6 +287,9 @@ type CallsPart struct {
 	At    string    // the rule the clock cut short ("" when it did not)
 	Cut   bool      // a cap cut one of Done short (as ErrCalls)
 	Timed bool      // the clock or the heap cut the scan short (as ScanCallsTimed)
+	// FileTime: only the file's own time limit (Limits.MaxTime) cut it short,
+	// not the project's clock or heap: other files can still be followed.
+	FileTime bool
 }
 
 // ScanCallsPart is ScanCallsTimed that leaves out the rules in skip, whose
@@ -297,7 +301,8 @@ func (p *Project) ScanCallsPart(path string, src []byte, skip map[string]bool) (
 	p.skip, p.part, p.partCut, p.partAt = skip, nil, false, ""
 	defer func() { p.skip, p.part = nil, nil }()
 	found, timed, err := p.e.scan(LangOf(path), path, src, p, true, false)
-	return CallsPart{Found: found, Done: p.part, At: p.partAt, Cut: p.partCut, Timed: timed}, err
+	fileTime := timed && p.stopped == "" && time.Now().Before(p.deadline)
+	return CallsPart{Found: found, Done: p.part, At: p.partAt, Cut: p.partCut, Timed: timed, FileTime: fileTime}, err
 }
 
 // scan is Scan in all its forms; dedup leaves out what the project returned
@@ -310,6 +315,8 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 	}
 	if proj != nil {
 		proj.unsteady = false
+		proj.scanning = path
+		defer func() { proj.scanning = "" }()
 	}
 	b := newBudget(e.Limits)
 	toks := lex(lang, string(src), b)
@@ -322,8 +329,9 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 	local := len(routeFns)
 	routeFns = e.projectHandlers(proj, path, ff, routeFns) // ... registered in another file (urls.py, routes/web.php)
 	viaProject := len(routeFns) > local
+	defs := phpDefines(base, toks)
 	if proj != nil {
-		proj.keep(path, &fileCtx{lang: base, tree: tree, ff: ff, tokens: len(toks), rdefs: fileRecvDefs(base, toks)})
+		proj.keep(path, &fileCtx{lang: base, tree: tree, ff: ff, tokens: len(toks), rdefs: fileRecvDefs(base, toks), rcls: fileRecvClasses(base, toks), defs: defs})
 	}
 	var out []Finding
 	add := func(r *crule, lines ...[]loc) {
@@ -351,7 +359,6 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 	// a file without a sink may still pass its input to another file's sink.
 	var ruleList []*crule
 	direct := map[*crule][]loc{}
-	defs := phpDefines(base, toks)
 	names := nameSet(toks, map[string]bool{})
 	si := newSrcIndex(toks, b)
 	for _, r := range rs {
@@ -418,12 +425,23 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 				}
 			}
 			b2.maxWork = b2.work + perRule // each rule's own work cap
+			b2.sumWork = perRule           // and each summary its own (interproc.go, own)
 			sc := newSummaries(ff)
 			if proj != nil {
 				if sc == nil {
 					sc = &summaries{ff: ff, funcs: ff.byKey, done: map[string]*summary{}, busy: map[string]bool{}, rel: map[string]uint8{}, retUnk: map[string]uint8{}}
 				}
-				proj.sums[r.rule.ID+"\x00"+path] = sc
+				// Summaries are worked out the same whoever asks (own): those the
+				// project has of this file already (as another file's callee, or a
+				// cycle settled through it) are the ones this scan would work out.
+				key := r.rule.ID + "\x00" + path
+				if old := proj.sums[key]; old != nil {
+					sc.done, sc.rel, sc.direct, sc.cross = old.done, old.rel, old.direct, old.cross
+				} else if kept := proj.kept[key]; kept != nil {
+					sc.done = kept
+					delete(proj.kept, key)
+				}
+				proj.sums[key] = sc
 			}
 			a := &analysis{r: r, php: base == "php", py: base == "python", js: base == "js", b: b2, kw: keywords[base], seen: map[loc]bool{}, sc: sc,
 				defs: defs, file: path, proj: proj, ftoks: toks, routes: routeFns}

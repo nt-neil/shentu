@@ -7,9 +7,15 @@ title = "eval, Function constructor or node:vm on request input"
 frameworks = ["express", "nestjs", "nextjs", "koa", "fastify", "hapi"]
 sources = ["req.query", "req.body", "req.params", "@Query(", "@Body(", "@Param(", "@Req(", "req.originalUrl", "^request.nextUrl", "^req.nextUrl", "^request.url", "^req.url", "^searchParams", "^request.json(", "^req.json(", "^request.text(", "^req.text(", "^request.formData(", "^req.formData(", "^formData.get(", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload", "ctx.params", "request.params"]
 sinks = ["eval(", "new Function(", "Function(", "vm.runInNewContext(", "vm.runInThisContext(", "vm.Script(", "setTimeout("]
-sanitizers = ["JSON.parse(", "Number("]
+sanitizers = ["Number("]
 fix = "Do not evaluate input: parse it as data (JSON.parse, Number) or use a real expression parser; node:vm is not a security boundary."
 refs = ["CVE-2021-23344", "CVE-2026-69254"]
+
+# setTimeout evaluates only a string first argument; a function there, or input
+# in the delay or the arguments passed on, is not code.
+[[args]]
+sinks = ["setTimeout("]
+arg = 1
 
 [[samples]]
 kind = "vulnerable"
@@ -109,4 +115,33 @@ export function GET(req: NextRequest) {
   const expr = req.nextUrl.searchParams.get("expr") ?? "0";
   return Response.json({ value: vm.runInNewContext(expr, {}) as number });
 }
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "a string first argument to setTimeout is evaluated"
+code = '''
+app.get("/later", (req, res) => {
+  setTimeout("notify('" + req.query.who + "')", 1000);
+  res.sendStatus(202);
+});
+'''
+
+[[samples]]
+kind = "safe"
+note = "a function first argument; the delay is not code"
+code = '''
+app.get("/later", (req, res) => {
+  setTimeout(() => res.sendStatus(204), Number(req.query.delay) || 0);
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "JSON.parse gives back the same strings: an expression in them is still evaluated"
+code = '''
+app.post("/calc", express.text(), (req, res) => {
+  const job = JSON.parse(req.body);
+  res.json({ result: eval(job.expr) });
+});
 '''

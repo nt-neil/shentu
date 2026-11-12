@@ -164,15 +164,47 @@ func TestRouteOnlyForGeneralRules(t *testing.T) {
 	}
 }
 
+// A rule with route_input = false (one for the Host header) takes its own
+// sources only, not what a route model makes input: req.query.next is not the
+// host, req.get('host') still is.
+func TestRouteInputOff(t *testing.T) {
+	off := false
+	rule := func(id string, routeInput *bool) rules.Rule {
+		return rules.Rule{ID: id, Lang: "js", Class: "open-redirect", CWE: "CWE-601", Severity: "medium", Title: "t",
+			Sources: []string{"req.get('host')", "req.hostname"}, Sinks: []string{"res.redirect("}, Sanitizers: []string{}, RouteInput: routeInput}
+	}
+	e, err := New([]rules.Rule{rule("default", nil), rule("host-only", &off)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		src  string
+		want []string
+	}{
+		{"app.get('/go', (req, res) => {\n  res.redirect(req.query.next);\n});\n", []string{"default"}},
+		{"app.get('/go', (req, res) => {\n  res.redirect('https://' + req.get('host') + '/x');\n});\n", []string{"default", "host-only"}},
+	} {
+		fs, _ := e.Scan("js", "a.js", []byte(c.src))
+		var got []string
+		for _, f := range fs {
+			got = append(got, f.RuleID)
+		}
+		slices.Sort(got)
+		if !slices.Equal(got, c.want) {
+			t.Errorf("%q: reported by %v, want %v", c.src, got, c.want)
+		}
+	}
+}
+
 // The rules a route model is not for are exactly those for one field of the
-// request (a password) and those without sources: every other rule with
-// sources gets the handlers' parameters.
+// request (a password), those without sources and those saying route_input =
+// false: every other rule with sources gets the handlers' parameters.
 func TestRouteRulesLeftOut(t *testing.T) {
 	e := engineForTest(t)
 	for lang, routes := range e.routes {
 		for _, c := range routes {
 			for _, r := range e.byLang[lang] {
-				if c.takes(r) || len(r.rule.Sources) == 0 {
+				if c.takes(r) || len(r.rule.Sources) == 0 || r.rule.RouteInput != nil && !*r.rule.RouteInput {
 					continue
 				}
 				for _, s := range r.rule.Sources {
@@ -181,6 +213,37 @@ func TestRouteRulesLeftOut(t *testing.T) {
 					}
 				}
 			}
+		}
+	}
+}
+
+// A rule with route_members takes only those members of a handler's request:
+// a query object rule gets req.query and req.body, not req.params (a path
+// parameter is always a string, it cannot carry {$gt: ...}). A rule without
+// it still takes req.params.
+func TestRouteMembers(t *testing.T) {
+	rule := func(id string, members []string) rules.Rule {
+		return rules.Rule{ID: id, Lang: "js", Class: "nosqli", CWE: "CWE-943", Severity: "high", Title: "t",
+			Sources: []string{"req.body", "req.query"}, Sinks: []string{".findOne("}, Sanitizers: []string{}, RouteMembers: members}
+	}
+	e, err := New([]rules.Rule{rule("all", nil), rule("objects", []string{"query", "body"})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for in, want := range map[string][]string{
+		"req.params.id": {"all"},
+		"req.body.id":   {"all", "objects"},
+		"req.query.id":  {"all", "objects"},
+	} {
+		src := "router.get('/item/:id', (req, res) => {\n  db.items.findOne({_id: " + in + "}, (err, item) => res.json(item));\n});\n"
+		fs, _ := e.Scan("js", "a.js", []byte(src))
+		var got []string
+		for _, f := range fs {
+			got = append(got, f.RuleID)
+		}
+		slices.Sort(got)
+		if !slices.Equal(got, want) {
+			t.Errorf("%s: reported by %v, want %v", in, got, want)
 		}
 	}
 }
@@ -228,4 +291,39 @@ func missingClasses(e *Engine, r rules.Route) bool {
 		}
 	}
 	return true
+}
+
+// register_rest_route's handlers in one array, or one array per method (as
+// WordPress core and most plugins write it): every callback and
+// permission_callback, in a function or a method of the class, gets the request.
+func TestRouteRestNestedArrays(t *testing.T) {
+	e := engineForTest(t)
+	sink := func(name string) string {
+		return "\tpublic function " + name + "($request) {\n\t\tglobal $wpdb;\n\t\treturn $wpdb->query(\"DELETE FROM t WHERE id = \" . $request['id']);\n\t}\n"
+	}
+	class := func(args string) string {
+		return "<?php\nclass Items {\n\tpublic function routes() {\n\t\tregister_rest_route('shop/v1', '/item', " + args + ");\n\t}\n" +
+			sink("get_item") + sink("drop_item") + sink("can") + "}\n"
+	}
+	for _, c := range []struct {
+		name, args string
+		want       []int // lines of the queries reported
+	}{
+		{"one array", "array('methods' => 'GET', 'callback' => array($this, 'get_item'), 'permission_callback' => '__return_true')", []int{8}},
+		{"one array per method", "array(array('methods' => 'GET', 'callback' => array($this, 'get_item'), 'permission_callback' => array($this, 'can')), " +
+			"array('methods' => 'DELETE', 'callback' => array($this, 'drop_item')), 'schema' => array($this, 'schema'))", []int{8, 12, 16}},
+		{"short arrays", "[['methods' => 'GET', 'callback' => [$this, 'get_item']], ['methods' => 'DELETE', 'callback' => [$this, 'drop_item']]]", []int{8, 12}},
+	} {
+		fs, err := e.Scan("php", "a.php", []byte(class(c.args)))
+		var got []int
+		for _, f := range fs {
+			if !slices.Contains(got, f.Line) {
+				got = append(got, f.Line)
+			}
+		}
+		slices.Sort(got)
+		if err != nil || !slices.Equal(got, c.want) {
+			t.Errorf("%s: reported at %v (err %v), want %v", c.name, got, err, c.want)
+		}
+	}
 }

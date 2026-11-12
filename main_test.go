@@ -1,9 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -96,5 +100,35 @@ func TestAnswerOnceRetriesEmpty(t *testing.T) {
 	}
 	if got, _, _ := a.answerOnce(context.Background(), "done", nil); got != "done" || calls != 1 {
 		t.Errorf("answerOnce asked again for a non-empty answer")
+	}
+}
+
+// help, --help and -h print the usage to stdout and exit 0, without a config;
+// an unknown command prints it to stderr and exits 2.
+func TestHelpExitCode(t *testing.T) {
+	if cmd := os.Getenv("SHENTU_TEST_MAIN"); cmd != "" {
+		os.Args = []string{"shentu", cmd}
+		main()
+		return
+	}
+	for cmd, want := range map[string]int{"help": 0, "--help": 0, "-h": 0, "frobnicate": 2} {
+		c := exec.Command(os.Args[0], "-test.run=^TestHelpExitCode$")
+		c.Env = append(os.Environ(), "SHENTU_TEST_MAIN="+cmd, "SHENTU_CONFIG="+filepath.Join(t.TempDir(), "none.toml"))
+		var stdout, stderr bytes.Buffer
+		c.Stdout, c.Stderr = &stdout, &stderr
+		err := c.Run()
+		code := 0
+		if ee, ok := err.(*exec.ExitError); ok {
+			code = ee.ExitCode()
+		} else if err != nil {
+			t.Fatal(err)
+		}
+		out, other := stdout.String(), stderr.String()
+		if want != 0 {
+			out, other = other, out
+		}
+		if code != want || !strings.Contains(out, "Usage:") || strings.Contains(other, "Usage:") {
+			t.Errorf("%s: exit %d (want %d), stdout %q, stderr %q", cmd, code, want, stdout.String(), stderr.String())
+		}
 	}
 }
