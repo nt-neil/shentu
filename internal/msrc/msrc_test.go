@@ -160,8 +160,8 @@ func TestClientCache(t *testing.T) {
 // 2025 have in MSRC's 2025-Mar release) is covered by either.
 func TestCheckAnyFixCovers(t *testing.T) {
 	m := Month{Products: map[string][]Fix{"Windows Server 2022": {
-		{CVE: "CVE-2024-9157", KB: "5053603", FixedBuild: "10.0.20348.3328"}, // Security Update
-		{CVE: "CVE-2024-9157", KB: "5053638", FixedBuild: "10.0.20348.3270"}, // SecurityHotpatchUpdate
+		{CVE: "CVE-2024-9157", KB: "5053603", FixedBuild: "10.0.20348.3328"},                 // Security Update
+		{CVE: "CVE-2024-9157", KB: "5053638", FixedBuild: "10.0.20348.3270", Hotpatch: true}, // SecurityHotpatchUpdate
 	}}}
 	get := func(string) (Month, error) { return m, nil }
 	r, err := Check("Windows Server 2022", "10.0.20348.3270", nil, []string{"2025-Mar"}, 24, get)
@@ -171,6 +171,29 @@ func TestCheckAnyFixCovers(t *testing.T) {
 	r, _ = Check("Windows Server 2022", "10.0.20348.3207", nil, []string{"2025-Mar"}, 24, get)
 	if len(r.Missing) != 1 || r.Missing[0].KB != "5053603" {
 		t.Errorf("one missing CVE, reported with its cumulative update: %+v", r.Missing)
+	}
+	// A cumulative-chain build past the hotpatch's number is not the hotpatch.
+	r, _ = Check("Windows Server 2022", "10.0.20348.3300", nil, []string{"2025-Mar"}, 24, get)
+	if len(r.Missing) != 1 {
+		t.Errorf("a hotpatch build counts only exactly or by its KB: %+v", r.Missing)
+	}
+	r, _ = Check("Windows Server 2022", "10.0.20348.3300", map[string]bool{"5053638": true}, []string{"2025-Mar"}, 24, get)
+	if len(r.Missing) != 0 {
+		t.Errorf("the installed hotpatch KB covers it: %+v", r.Missing)
+	}
+}
+
+func TestParseCVRFHotpatch(t *testing.T) {
+	doc := `{"ProductTree":{"FullProductName":[{"ProductID":"1","Value":"Windows Server 2025"}]},"Vulnerability":[{"CVE":"CVE-1",` +
+		`"Remediations":[{"Type":2,"SubType":"Security Update","Description":{"Value":"5053598"},"ProductID":["1"],"FixedBuild":"10.0.26100.3476"},` +
+		`{"Type":2,"SubType":"SecurityHotpatchUpdate","Description":{"Value":"5053636"},"ProductID":["1"],"FixedBuild":"10.0.26100.3403"}]}]}`
+	got, err := ParseCVRF(strings.NewReader(doc), Server)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := got["Windows Server 2025"]
+	if len(f) != 2 || f[0].Hotpatch || !f[1].Hotpatch {
+		t.Errorf("hotpatch marked from SubType: %+v", f)
 	}
 }
 

@@ -35,6 +35,9 @@ type Fix struct {
 	Severity   string `json:"severity,omitempty"` // Critical, Important, ...
 	KB         string `json:"kb,omitempty"`       // "5044281"
 	FixedBuild string `json:"fixed_build"`        // "10.0.20348.2762"
+	// Hotpatch marks a hotpatch update (SubType SecurityHotpatchUpdate):
+	// its build is on a branch of its own, not the cumulative chain.
+	Hotpatch bool `json:"hotpatch,omitempty"`
 }
 
 // Month is the cached index of one release: product name → fixes, for
@@ -61,6 +64,7 @@ type cvrfVuln struct {
 	}
 	Remediations []struct {
 		Type        int
+		SubType     string
 		Description struct{ Value string }
 		ProductID   []string
 		FixedBuild  string
@@ -146,7 +150,8 @@ func addFixes(out map[string][]Fix, names map[string]string, v *cvrfVuln) {
 				continue
 			}
 			out[name] = append(out[name], Fix{CVE: v.CVE, Title: v.Title.Value, Severity: sev[id],
-				KB: strings.TrimPrefix(r.Description.Value, "KB"), FixedBuild: r.FixedBuild})
+				KB: strings.TrimPrefix(r.Description.Value, "KB"), FixedBuild: r.FixedBuild,
+				Hotpatch: strings.Contains(strings.ToLower(r.SubType), "hotpatch")})
 		}
 	}
 }
@@ -193,8 +198,9 @@ type Result struct {
 // until it reaches a month whose every CVE the host has a fix for. One CVE
 // may list several fixes for a product (the cumulative update and a
 // hotpatch, or a monthly rollup and a security-only update): any one of
-// them covers it. A fix counts as present when the host build is at least
-// its fixed build or its KB is installed. When no checked month names the
+// them covers it. A fix counts as present when its KB is installed, or
+// when the host build is at least its fixed build; a hotpatch's build is
+// on a branch of its own, so for a hotpatch only that exact build counts. When no checked month names the
 // product at all, the answer is unknown: an error, not "nothing missing".
 func Check(product, hostBuild string, installedKB map[string]bool, ids []string, maxMonths int, get func(id string) (Month, error)) (Result, error) {
 	res := Result{Product: product, HostBuild: hostBuild}
@@ -225,7 +231,7 @@ func Check(product, hostBuild string, installedKB map[string]bool, ids []string,
 		for _, cve := range order {
 			covered, newest := false, byCVE[cve][0]
 			for _, f := range byCVE[cve] {
-				if CompareBuild(hostBuild, f.FixedBuild) >= 0 || installedKB[f.KB] {
+				if present(f, hostBuild, installedKB) {
 					covered = true
 				}
 				if CompareBuild(f.FixedBuild, newest.FixedBuild) > 0 {
@@ -246,6 +252,17 @@ func Check(product, hostBuild string, installedKB map[string]bool, ids []string,
 		return res, fmt.Errorf("msrc: none of the %d releases checked names %q", len(res.Months), product)
 	}
 	return res, nil
+}
+
+// present reports whether the host has fix f.
+func present(f Fix, hostBuild string, installedKB map[string]bool) bool {
+	if installedKB[f.KB] {
+		return true
+	}
+	if f.Hotpatch {
+		return CompareBuild(hostBuild, f.FixedBuild) == 0
+	}
+	return CompareBuild(hostBuild, f.FixedBuild) >= 0
 }
 
 // Client fetches the release list and monthly indexes, caching both under
@@ -329,7 +346,9 @@ func (c *Client) Month(ctx context.Context, id string, recent bool) (Month, erro
 		ttl = 7 * 24 * time.Hour
 	}
 	var m Month
-	if c.readCache(id+".json", ttl, &m) && m.ID == id {
+	// ".v2": the index gained Fix.Hotpatch; an older one would count a
+	// hotpatch build as cumulative.
+	if c.readCache(id+".v2.json", ttl, &m) && m.ID == id {
 		return m, nil
 	}
 	body, err := c.get(ctx, c.api()+"/cvrf/"+id)
@@ -342,7 +361,7 @@ func (c *Client) Month(ctx context.Context, id string, recent bool) (Month, erro
 		return Month{}, err
 	}
 	m = Month{ID: id, Fetched: c.now().UTC(), Products: prods}
-	c.writeCache(id+".json", m)
+	c.writeCache(id+".v2.json", m)
 	return m, nil
 }
 
