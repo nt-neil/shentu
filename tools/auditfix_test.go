@@ -585,3 +585,47 @@ func TestAppCodeAuditWalkResumes(t *testing.T) {
 		t.Error("pathCmp does not follow WalkDir's order")
 	}
 }
+
+// A root written with a trailing separator, or the filesystem root, is not
+// skipped as a whole when the walk resumes inside it.
+func TestAppCodeAuditWalkResumesRootSpelling(t *testing.T) {
+	isolateAudit(t)
+	dir, _ := filepath.EvalSymlinks(t.TempDir())
+	for _, d := range []string{"a", "m", "z"} {
+		os.MkdirAll(filepath.Join(dir, "public", "uploads", d), 0o755)
+		os.WriteFile(filepath.Join(dir, "public", "uploads", d, "s.php"), []byte("<?php echo 1;\n"), 0o644)
+	}
+	roots := []string{dir + string(filepath.Separator)}
+	for _, r := range [][]string{roots, cleanRoots(roots)} { // the last audit stopped in m/
+		saveWalkPos(walkPosFile(r), &walkPos{0, filepath.Join(dir, "public", "uploads", "m")})
+	}
+	res := AppCodeAudit(context.Background(), roots, nil)
+	n := 0
+	for _, f := range res.Findings {
+		if f.Kind == "upload_script" {
+			n++
+		}
+	}
+	if n != 3 {
+		t.Errorf("root %q: resumed walk found %d of 3 upload scripts", roots[0], n)
+	}
+	sep := string(filepath.Separator)
+	vol := filepath.VolumeName(dir) // "" on Unix, "C:" on Windows
+	for _, c := range []struct {
+		dir, path string
+		want      bool
+	}{
+		{vol + sep, filepath.Join(dir, "public"), true},
+		{dir + sep, filepath.Join(dir, "public"), true},
+		{dir, filepath.Join(dir, "public"), true},
+		{dir, dir + "-other" + sep + "x", false},
+		{filepath.Join(dir, "a"), filepath.Join(dir, "ab", "x"), false},
+	} {
+		if got := walkHolds(c.dir, c.path); got != c.want {
+			t.Errorf("walkHolds(%q, %q) = %v", c.dir, c.path, got)
+		}
+	}
+	if got := cleanRoots([]string{dir + sep, vol + sep}); got[0] != dir || got[1] != vol+sep {
+		t.Errorf("cleanRoots: %q", got)
+	}
+}
