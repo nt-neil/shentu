@@ -1,6 +1,7 @@
 package main
 
 import (
+	"runtime"
 	"bufio"
 	"context"
 	"encoding/json"
@@ -207,6 +208,9 @@ func TestBotPairNeedsServerApproval(t *testing.T) {
 // A control action from Telegram runs only after the paired user presses ✅ on that
 // exact request. Someone else's press does nothing.
 func TestBotControlNeedsPairedUsersPress(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no control tool runs on Windows (the MVP is read-only; block_ip refuses there), so this confirm flow cannot start")
+	}
 	for _, press := range []string{"n", "y"} {
 		model := &hostileModel{replies: []string{call("block_ip", `{"ip":"203.0.113.9","reason":"x"}`), done}}
 		b, tg := testBot(t, model, true)
