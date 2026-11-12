@@ -101,3 +101,17 @@ func TestKeyFileSymlinkNoUnparsed(t *testing.T) {
 		t.Fatalf("got %+v", got)
 	}
 }
+
+// N-D1: a vulnerability check that failed or covered part goes into the
+// daily report's unchecked section.
+func TestUncheckedVulns(t *testing.T) {
+	if s := uncheckedVulns("installed packages", nil, fmt.Errorf("OSV query failed")); !strings.Contains(s, "Not checked for vulnerabilities: installed packages") || !strings.Contains(s, "OSV query failed") {
+		t.Errorf("failed: %q", s)
+	}
+	if s := uncheckedVulns("installed packages", map[string]any{"partial": "not checked: extras topic gone"}, nil); !strings.Contains(s, "Partly checked") || !strings.Contains(s, "extras topic gone") {
+		t.Errorf("partial: %q", s)
+	}
+	if s := uncheckedVulns("installed packages", map[string]any{"total_vulns": 0}, nil); s != "" {
+		t.Errorf("checked: %q", s)
+	}
+}

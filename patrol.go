@@ -92,6 +92,19 @@ func uncheckedSection(risks []tools.Risk) string {
 	return "\n\nNot checked (the permission to read what they need was missing; run Shentu as root):\n" + b.String()
 }
 
+// uncheckedVulns says, for the daily report, when the vulnerability check of
+// what failed (an advisory feed offline: ALAS, OSV) or covered only part
+// ("partial"): "no known vulnerabilities" must not stand for "not checked".
+func uncheckedVulns(what string, r map[string]any, err error) string {
+	switch {
+	case err != nil:
+		return fmt.Sprintf("\n\nNot checked for vulnerabilities: %s (%q).\n", what, mask(err.Error()))
+	case r["partial"] != nil:
+		return fmt.Sprintf("\n\nPartly checked for vulnerabilities: %s (%q).\n", what, mask(fmt.Sprint(r["partial"])))
+	}
+	return ""
+}
+
 // uncheckedConfigs lists the web server configuration files the code audit
 // could not read: the sites they serve were audited as plain folders.
 func uncheckedConfigs(unread []string) string {
@@ -295,7 +308,9 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 	unchecked := uncheckedSection(st.Profile.Risks) // listed in every report, never pushed
 	if daily {
 		// Once a day: installed packages with vulnerabilities that are being exploited now.
-		if r, err := tools.PackageVulns(ctx, env.HTTP, ""); err == nil {
+		r, err := tools.PackageVulns(ctx, env.HTTP, "")
+		unchecked += uncheckedVulns("installed packages", r, err)
+		if err == nil {
 			list, _ := r["actively_exploited"].([]tools.Exploit)
 			for _, e := range list {
 				all = append(all, finding{"kev:" + e.Package + ":" + e.CVE, "critical",
@@ -303,7 +318,9 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 			}
 		}
 		// The same for application dependencies (npm, PyPI, Composer, Go, RubyGems).
-		if r, err := tools.AppVulns(ctx, env.HTTP, env.AppPaths); err == nil {
+		r, err = tools.AppVulns(ctx, env.HTTP, env.AppPaths)
+		unchecked += uncheckedVulns("application dependencies", r, err)
+		if err == nil {
 			for _, f := range r["files"].([]tools.AppResult) {
 				for _, e := range f.Exploited {
 					all = append(all, finding{"kev:" + f.Path + ":" + e.Package + ":" + e.CVE, "critical",
