@@ -388,6 +388,13 @@ func TestLegacyAccounts(t *testing.T) {
 	if !reflect.DeepEqual(a.UID0, uid0) || !reflect.DeepEqual(a.LoginAccounts, login) || userNames()["0"] != names["0"] {
 		t.Errorf("edge: %v %v / %v %v", a.UID0, a.LoginAccounts, uid0, login)
 	}
+	// N5: odd lines (an eighth field, a comment, a blank, a short line).
+	h = memHost{"/etc/passwd": "root:x:0:0::/root:/bin/bash\nhide:x:0:0::/root:/bin/sh:extra\n# c\n\nshort:x:9\nops:x:1000:1000::/home/ops:/bin/zsh\n"}
+	withHost(t, h)
+	uid0, login, _ = legacyAccounts(h)
+	if a := AccountsAudit(); !reflect.DeepEqual(a.UID0, uid0) || !reflect.DeepEqual(a.LoginAccounts, login) || len(uid0) != 2 {
+		t.Errorf("odd lines: %v %v / %v %v", a.UID0, a.LoginAccounts, uid0, login)
+	}
 }
 
 // memHost is a tiny file-only Source for edge cases.

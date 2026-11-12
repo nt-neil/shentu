@@ -299,19 +299,21 @@ func init() {
 }
 
 // RpmOwned asks rpm -qal through src, matching rpm's full file list exactly.
+// The list (a few hundred thousand paths) is streamed and only the files
+// asked about are kept, so memory does not grow with it (a 512 MB server).
 func RpmOwned(ctx context.Context, src Source) RpmOwnedFunc {
 	return func(files []string) (map[string]bool, bool) {
-		res, err := src.Run(ctx, rpmQalArgv)
+		owned := make(map[string]bool, len(files))
+		for _, f := range files {
+			owned[f] = false
+		}
+		res, err := RunLinesUnmasked(ctx, src, rpmQalArgv, func(l string) {
+			if _, ok := owned[l]; ok {
+				owned[l] = true
+			}
+		})
 		if err != nil || res.ExitCode != 0 {
 			return nil, false
-		}
-		all := map[string]bool{}
-		for _, l := range strings.Split(string(res.Stdout), "\n") {
-			all[l] = true
-		}
-		owned := map[string]bool{}
-		for _, f := range files {
-			owned[f] = all[f]
 		}
 		return owned, true
 	}
