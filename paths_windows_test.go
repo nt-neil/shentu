@@ -232,3 +232,25 @@ func TestSecureDirRepairOnlyAtInstall(t *testing.T) {
 		t.Errorf("install sets the DACL again: %v", sids)
 	}
 }
+
+// Round 2: a state directory outside %ProgramData%\Shentu needs folders
+// above it that no ordinary user may delete, move or re-permission.
+func TestStateDirParentsChecked(t *testing.T) {
+	ok := filepath.Join(t.TempDir(), "state") // the runner admin's own temp: admins only
+	if err := ensureStateDir(ok); err != nil {
+		t.Errorf("an admin-only parent: %v", err)
+	}
+	loose := filepath.Join(t.TempDir(), "shared")
+	if err := os.Mkdir(loose, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sd, _ := windows.SecurityDescriptorFromString("D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;BU)")
+	dacl, _, _ := sd.DACL()
+	if err := windows.SetNamedSecurityInfo(loose, windows.SE_FILE_OBJECT,
+		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION, nil, nil, dacl, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureStateDir(filepath.Join(loose, "state")); err == nil || !strings.Contains(err.Error(), "folder above") {
+		t.Errorf("Users may delete the parent's children: %v", err)
+	}
+}

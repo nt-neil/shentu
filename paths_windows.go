@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"unsafe"
 
@@ -143,6 +144,19 @@ func checkTrusted(path string) error { return checkTrustedAs(path, false) }
 // account as owner when memberOK (see trustedOwner). Write entries are
 // always held to SYSTEM, Administrators and TrustedInstaller.
 func checkTrustedAs(path string, memberOK bool) error {
+	return checkRights(path, memberOK, writeRights, false)
+}
+
+// parentRights let a trustee replace or move what a folder holds: delete
+// a child or the folder itself, or change its DACL or owner. Creating a
+// file or folder (which C:\ grants every user) is not among them.
+const parentRights = fileDeleteChild | windows.DELETE | windows.WRITE_DAC | windows.WRITE_OWNER | windows.GENERIC_ALL
+
+// checkRights refuses path when its owner, or any allow entry with one of
+// rights, is someone other than SYSTEM, Administrators or TrustedInstaller
+// (memberOK: the owner may be an administrator's own account;
+// writerMemberOK: so may the holders of rights).
+func checkRights(path string, memberOK bool, rights windows.ACCESS_MASK, writerMemberOK bool) error {
 	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
 		windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)
 	if errors.Is(err, windows.ERROR_FILE_NOT_FOUND) || errors.Is(err, windows.ERROR_PATH_NOT_FOUND) {
@@ -177,7 +191,7 @@ func checkTrustedAs(path string, memberOK bool) error {
 			continue
 		}
 		sid := (*windows.SID)(unsafe.Pointer(&ace.SidStart))
-		if ace.Mask&writeRights != 0 && !trustedSID(sid) {
+		if ace.Mask&rights != 0 && !trustedOwner(sid, writerMemberOK) {
 			return fmt.Errorf("%s may be changed by %s", path, sid)
 		}
 	}
@@ -236,7 +250,28 @@ func ensureStateDir(dir string) error {
 	if err := secureDir(filepath.Join(programData(), "Shentu"), false); err != nil {
 		return err
 	}
+	if err := trustedParents(dir); err != nil {
+		return err
+	}
 	return secureDir(dir, false)
+}
+
+// trustedParents checks the folders above a state directory configured
+// outside %ProgramData%\Shentu: whoever may delete, move or re-permission
+// one of them could swap the state directory for their own.
+func trustedParents(dir string) error {
+	root := filepath.Join(programData(), "Shentu")
+	if rel, err := filepath.Rel(root, dir); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return nil // under %ProgramData%\Shentu, secured above
+	}
+	for p := filepath.Dir(filepath.Clean(dir)); ; p = filepath.Dir(p) {
+		if err := checkRights(p, true, parentRights, true); err != nil {
+			return fmt.Errorf("refusing state directory %s: a folder above it is not safe: %w", dir, err)
+		}
+		if filepath.Dir(p) == p {
+			return nil
+		}
+	}
 }
 
 // installStateDir is ensureStateDir for service install, the one place
@@ -244,6 +279,9 @@ func ensureStateDir(dir string) error {
 // administrator may have loosened them). Every other run only checks.
 func installStateDir(dir string) error {
 	if err := secureDir(filepath.Join(programData(), "Shentu"), true); err != nil {
+		return err
+	}
+	if err := trustedParents(dir); err != nil {
 		return err
 	}
 	return secureDir(dir, true)
