@@ -297,6 +297,9 @@ var accountsAudit = Tool{
 	Description: "Accounts and persistence that matter for intrusion: extra UID 0 accounts, accounts with a login shell, sudo rules, authorized_keys files (key count and last change), one SSH key planted in several accounts (by fingerprint), libraries in /etc/ld.so.preload, and PAM modules that no package installed.",
 	Params:      schema(noParams),
 	Run: func(ctx context.Context, env *Env, args json.RawMessage) (any, error) {
+		if runtime.GOOS == "windows" {
+			return winAccountsAudit()
+		}
 		return AccountsAudit(), nil
 	},
 }

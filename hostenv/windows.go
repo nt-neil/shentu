@@ -821,6 +821,15 @@ func regText(r RegValue) string {
 // winIISConfig is applicationHost.config under the system root.
 const winIISConfig = `\System32\inetsrv\config\applicationHost.config`
 
+// Accounts reports the local accounts alone, for the accounts_audit tool.
+func (WindowsCollector) Accounts(src Source) Obs[[]Account] {
+	ws, ok := src.(WinSource)
+	if !ok {
+		return Unknown[[]Account](ReasonUnsupported, "not a Windows source")
+	}
+	return winAccounts(ws)
+}
+
 // Processes reports the process list alone, for the processes tool.
 func (WindowsCollector) Processes(src Source) Obs[[]Process] {
 	ws, ok := src.(WinSource)
