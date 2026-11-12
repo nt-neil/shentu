@@ -192,6 +192,10 @@ type Result struct {
 	// Current is the newest month the host already has; empty when the
 	// walk stopped at maxMonths first (the host may be missing more).
 	Current string `json:"current_with,omitempty"`
+	// CannotTell are CVEs fixed only by a hotpatch in a month with no
+	// cumulative update for the product: whether the host has the fix
+	// cannot be told from its build.
+	CannotTell []Missing `json:"cannot_tell,omitempty"`
 }
 
 // Check walks months (newest first, fetched lazily by get) for product
@@ -227,15 +231,36 @@ func Check(product, hostBuild string, installedKB map[string]bool, ids []string,
 			}
 			byCVE[f.CVE] = append(byCVE[f.CVE], f)
 		}
-		lacking := 0
+		// The month's cumulative update for the product: the highest
+		// non-hotpatch fixed build. It carries every fix of the month.
+		monthCU := ""
+		for _, f := range fixes {
+			if !f.Hotpatch && (monthCU == "" || CompareBuild(f.FixedBuild, monthCU) > 0) {
+				monthCU = f.FixedBuild
+			}
+		}
+		lacking, unknown := 0, 0
 		for _, cve := range order {
-			covered, newest := false, byCVE[cve][0]
+			covered, newest, hotOnly := false, byCVE[cve][0], true
 			for _, f := range byCVE[cve] {
 				if present(f, hostBuild, installedKB) {
 					covered = true
 				}
+				hotOnly = hotOnly && f.Hotpatch
 				if CompareBuild(f.FixedBuild, newest.FixedBuild) > 0 {
 					newest = f // report the cumulative update, the usual way to fix it
+				}
+			}
+			if !covered && hotOnly {
+				// Listed with a hotpatch alone: a host on the cumulative chain
+				// has it with the month's cumulative update.
+				switch {
+				case monthCU == "":
+					unknown++
+					res.CannotTell = append(res.CannotTell, Missing{newest, id})
+					continue
+				case CompareBuild(hostBuild, monthCU) >= 0:
+					covered = true
 				}
 			}
 			if !covered {
@@ -243,7 +268,7 @@ func Check(product, hostBuild string, installedKB map[string]bool, ids []string,
 				res.Missing = append(res.Missing, Missing{newest, id})
 			}
 		}
-		if lacking == 0 {
+		if lacking == 0 && unknown == 0 {
 			res.Current = id
 			break
 		}

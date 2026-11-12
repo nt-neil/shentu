@@ -63,6 +63,14 @@ func msrcVulns(ctx context.Context, hc *http.Client, cacheDir string, src hosten
 	}
 	out := map[string]any{"source": "MSRC security update guide (CVRF)", "product": product, "host_build": res.HostBuild,
 		"months_checked": res.Months, "missing_fixes": len(res.Missing)}
+	if len(res.CannotTell) > 0 {
+		var ids []string
+		for _, m := range res.CannotTell {
+			ids = append(ids, m.CVE)
+		}
+		out["cannot_tell"] = fmt.Sprintf("%d CVEs are fixed only by a hotpatch in a month without a cumulative update for %s: whether this server has them cannot be told from its build (%s)",
+			len(ids), product, strings.Join(ids, ", "))
+	}
 	switch {
 	case res.Current != "":
 		out["current_with"] = res.Current

@@ -224,3 +224,26 @@ func TestCacheNeedsStateDir(t *testing.T) {
 		t.Errorf("the cache created the state directory: %v", err)
 	}
 }
+
+// Round 2: a CVE listed with a hotpatch alone is judged, on a host off the
+// hotpatch, by the month's cumulative update; without one it cannot be told.
+func TestCheckHotpatchOnlyCVE(t *testing.T) {
+	month := Month{Products: map[string][]Fix{"Windows Server 2025": {
+		{CVE: "CVE-CU", KB: "5070001", FixedBuild: "10.0.26100.4000"},
+		{CVE: "CVE-HP", KB: "5070002", FixedBuild: "10.0.26100.3900", Hotpatch: true},
+	}}}
+	get := func(string) (Month, error) { return month, nil }
+	r, _ := Check("Windows Server 2025", "10.0.26100.4000", nil, []string{"m"}, 24, get)
+	if len(r.Missing) != 0 || len(r.CannotTell) != 0 || r.Current != "m" {
+		t.Errorf("the month's CU covers the hotpatch-only CVE: %+v", r)
+	}
+	r, _ = Check("Windows Server 2025", "10.0.26100.3950", nil, []string{"m"}, 24, get)
+	if len(r.Missing) != 2 {
+		t.Errorf("below the CU, both are missing: %+v", r.Missing)
+	}
+	only := Month{Products: map[string][]Fix{"Windows Server 2025": {{CVE: "CVE-HP", KB: "5070002", FixedBuild: "10.0.26100.3900", Hotpatch: true}}}}
+	r, _ = Check("Windows Server 2025", "10.0.26100.4000", nil, []string{"m"}, 24, func(string) (Month, error) { return only, nil })
+	if len(r.Missing) != 0 || len(r.CannotTell) != 1 || r.Current != "" {
+		t.Errorf("no CU in the month: cannot tell, not missing, not current: %+v", r)
+	}
+}
