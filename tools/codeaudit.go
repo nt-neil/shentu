@@ -667,7 +667,7 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 						return filepath.SkipAll // round to where it started
 					}
 					if !second && before {
-						if d != nil && d.IsDir() && !(ri == pos.Root && strings.HasPrefix(pos.Path, p+"/")) {
+						if d != nil && d.IsDir() && !(ri == pos.Root && strings.HasPrefix(pos.Path, p+string(filepath.Separator))) {
 							return filepath.SkipDir
 						}
 						return nil
