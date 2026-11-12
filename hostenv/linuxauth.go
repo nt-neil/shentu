@@ -76,7 +76,9 @@ var (
 // ScanAuthLogs streams the sshd lines of the last day to a consumer that
 // sink hands out, unmasked (fn masks whatever it outputs); memory does not
 // grow with the logs. Each source tried gets a fresh consumer from sink,
-// and the events are those of the last consumer handed out.
+// and the events are the per-source maximum over the consumers handed out
+// (MaxLogins): a journal cut short keeps what it gave, and a text log that
+// repeats it does not count twice.
 //
 // journald comes first: its ssh and sshd units are filtered on
 // _SYSTEMD_UNIT, which journald fills in itself, so verified is true. The
@@ -388,6 +390,12 @@ func (c *SSHLogins) Result() []SSHSource {
 		out.FailedUsers, out.InvalidUsers, out.AcceptedUsers = names("failed"), names("invalid"), names("accepted")
 		list = append(list, out)
 	}
+	return busiest(list)
+}
+
+// busiest orders sources by failed + invalid (+ Uncertainty), ties by IP,
+// and keeps the first 50.
+func busiest(list []SSHSource) []SSHSource {
 	sort.SliceStable(list, func(i, j int) bool {
 		a, b := list[i].Failed+list[i].InvalidUser+list[i].Uncertainty, list[j].Failed+list[j].InvalidUser+list[j].Uncertainty
 		if a != b {
@@ -401,6 +409,59 @@ func (c *SSHLogins) Result() []SSHSource {
 	return list
 }
 
+// MaxLogins merges the consumers ScanAuthLogs handed out: per source the
+// larger of each count, not the sum (a journal and a text log may hold the
+// same events), the names of both (at most 20 of a kind), the earliest
+// First and the latest Last. Ordered and cut as Result.
+func MaxLogins(aggs ...*SSHLogins) (list []SSHSource, evicted int) {
+	by := map[string]*SSHSource{}
+	var order []string
+	for _, a := range aggs {
+		if a == nil {
+			continue
+		}
+		evicted = max(evicted, a.Evicted())
+		for _, s := range a.Result() {
+			m, ok := by[s.IP]
+			if !ok {
+				c := s
+				by[s.IP], order = &c, append(order, s.IP)
+				continue
+			}
+			m.Failed, m.InvalidUser, m.Accepted = max(m.Failed, s.Failed), max(m.InvalidUser, s.InvalidUser), max(m.Accepted, s.Accepted)
+			m.Uncertainty = max(m.Uncertainty, s.Uncertainty)
+			m.FailedUsers, m.InvalidUsers, m.AcceptedUsers = unionNames(m.FailedUsers, s.FailedUsers), unionNames(m.InvalidUsers, s.InvalidUsers), unionNames(m.AcceptedUsers, s.AcceptedUsers)
+			if s.First.Before(m.First) {
+				m.First = s.First
+			}
+			if s.Last.After(m.Last) {
+				m.Last = s.Last
+			}
+		}
+	}
+	for _, ip := range order {
+		list = append(list, *by[ip])
+	}
+	return busiest(list), evicted
+}
+
+// unionNames is a and b sorted without repeats, at most 20.
+func unionNames(a, b []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, n := range append(append([]string(nil), a...), b...) {
+		if !seen[n] {
+			seen[n] = true
+			out = append(out, n)
+		}
+	}
+	sort.Strings(out)
+	if len(out) > 20 {
+		out = out[:20]
+	}
+	return out
+}
+
 // AuthEvents is the auth_events fact: failed SSH logins per source over
 // the last day before the snapshot.
 func (c LinuxCollector) AuthEvents(ctx context.Context, src Source, at time.Time, logPaths []string) Obs[AuthEvents] {
@@ -408,13 +469,15 @@ func (c LinuxCollector) AuthEvents(ctx context.Context, src Source, at time.Time
 		logPaths = DefaultLogPaths
 	}
 	since := at.Add(-24 * time.Hour)
-	var agg *SSHLogins
+	var aggs []*SSHLogins
 	source, verified, err := c.ScanAuthLogs(ctx, src, logPaths, since, func() func(string) {
-		agg = NewSSHLogins(since, at, "")
-		return agg.Add
+		a := NewSSHLogins(since, at, "")
+		aggs = append(aggs, a)
+		return a.Add
 	})
+	sources, evicted := MaxLogins(aggs...)
 	ev := AuthEvents{WindowHours: 24, FailedBySrc: map[string]int{}}
-	for _, s := range agg.Result() {
+	for _, s := range sources {
 		if n := s.Failed + s.InvalidUser; n > 0 {
 			ev.FailedBySrc[s.IP] = n
 		}
@@ -437,7 +500,7 @@ func (c LinuxCollector) AuthEvents(ctx context.Context, src Source, at time.Time
 		return Obs[AuthEvents]{Status: StatusUnknown, Reason: r, Detail: source, Value: ev}
 	}
 	detail := "from " + source
-	if n := agg.Evicted(); n > 0 {
+	if n := evicted; n > 0 {
 		detail += "; " + strconv.Itoa(n) + " low-activity sources not tracked (more than " + strconv.Itoa(MaxTrackedSources) + " sources)"
 	}
 	if !verified {

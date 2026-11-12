@@ -40,12 +40,12 @@ func TestAuthEventsSourceOrder(t *testing.T) {
 		text    string // "" no file, "-" unreadable
 		status  Status
 		reason  Reason
-		ip      string
+		ips     string // comma-separated, one failed login each
 		detail  string
 	}{
 		{"journald has entries", fakeJournal{lines: []string{jline}}, tline, StatusOK, "", "203.0.113.1", "from journald"},
-		{"journald timed out", fakeJournal{lines: []string{jline}, err: ErrTimeout}, tline, StatusPartial, ReasonUnverified, "203.0.113.2", "journald timed out after"},
-		{"journald cut short", fakeJournal{lines: []string{jline}, err: ErrTruncated}, tline, StatusPartial, ReasonUnverified, "203.0.113.2", "journald was cut short"},
+		{"journald timed out: what it gave is kept", fakeJournal{lines: []string{jline}, err: ErrTimeout}, tline, StatusPartial, ReasonUnverified, "203.0.113.1,203.0.113.2", "journald timed out after"},
+		{"journald cut short: what it gave is kept", fakeJournal{lines: []string{jline}, err: ErrTruncated}, tline, StatusPartial, ReasonUnverified, "203.0.113.1,203.0.113.2", "journald was cut short"},
 		{"journald timed out, no text log", fakeJournal{lines: []string{jline}, err: ErrTimeout}, "", StatusPartial, ReasonTimeout, "203.0.113.1", "no text auth log"},
 		{"journald empty, text has sshd lines", fakeJournal{lines: []string{"-- No entries --"}}, tline, StatusPartial, ReasonUnverified, "203.0.113.2", "journald has no sshd entries"},
 		{"journald empty, text without sshd lines", fakeJournal{lines: []string{"-- No entries --"}}, "x CRON[1]: ok", StatusOK, "", "", "from journald"},
@@ -73,12 +73,41 @@ func TestAuthEventsSourceOrder(t *testing.T) {
 		for _, v := range f.Value.FailedBySrc {
 			n += v
 		}
-		want := 0
-		if c.ip != "" {
-			want = 1
+		ok := true
+		var ips []string
+		if c.ips != "" {
+			ips = strings.Split(c.ips, ",")
 		}
-		if f.Status != c.status || f.Reason != c.reason || n != want || (c.ip != "" && f.Value.FailedBySrc[c.ip] != 1) || !strings.Contains(f.Detail, c.detail) {
+		for _, ip := range ips {
+			ok = ok && f.Value.FailedBySrc[ip] == 1
+		}
+		if f.Status != c.status || f.Reason != c.reason || n != len(ips) || !ok || !strings.Contains(f.Detail, c.detail) {
 			t.Errorf("%s: %s %s %q %v", c.name, f.Status, f.Reason, f.Detail, f.Value.FailedBySrc)
 		}
+	}
+}
+
+// journald cut short and a text log holding the same events: per source the
+// larger count, not the sum.
+func TestAuthEventsTimeoutTakesMax(t *testing.T) {
+	now := time.Now()
+	line := func(ip string, min int) string {
+		return now.Add(-time.Duration(min)*time.Minute).UTC().Format(time.RFC3339) + " vm sshd[1]: Failed password for root from " + ip + " port 22 ssh2"
+	}
+	j := []string{line("203.0.113.1", 3), line("203.0.113.1", 2), line("203.0.113.1", 1)} // 3 before the cut
+	text := []string{line("203.0.113.1", 3), line("203.0.113.1", 2), line("203.0.113.9", 1)}
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "auth.log"), []byte(strings.Join(text, "\n")+"\n"), 0o600)
+	src := &fakeJournal{Live: &Live{Remap: map[string]string{"/var/log": dir}}, lines: j, err: ErrTimeout}
+	f := LinuxCollector{}.AuthEvents(context.Background(), src, now, []string{"/var/log/auth.log"})
+	if f.Value.FailedBySrc["203.0.113.1"] != 3 || f.Value.FailedBySrc["203.0.113.9"] != 1 || f.Reason != ReasonUnverified {
+		t.Errorf("%s %s %v", f.Status, f.Reason, f.Value.FailedBySrc)
+	}
+	a, b := NewSSHLogins(now.Add(-time.Hour), now, ""), NewSSHLogins(now.Add(-time.Hour), now, "")
+	a.Add(line("203.0.113.1", 5))
+	b.Add(line("203.0.113.1", 2))
+	got, _ := MaxLogins(a, nil, b)
+	if len(got) != 1 || got[0].Failed != 1 || !got[0].First.Before(got[0].Last) {
+		t.Errorf("MaxLogins %+v", got)
 	}
 }
