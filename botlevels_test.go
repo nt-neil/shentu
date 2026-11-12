@@ -1,13 +1,13 @@
 package main
 
 import (
-	"runtime"
 	"bufio"
 	"context"
 	"encoding/base32"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 	"time"

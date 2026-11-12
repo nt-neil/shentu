@@ -1,7 +1,6 @@
 package main
 
 import (
-	"runtime"
 	"bufio"
 	"context"
 	"encoding/json"
@@ -12,6 +11,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
