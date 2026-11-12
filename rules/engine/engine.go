@@ -345,7 +345,7 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 	viaProject := len(routeFns) > local
 	defs := phpDefines(base, toks)
 	if proj != nil {
-		proj.keep(path, &fileCtx{lang: base, tree: tree, ff: ff, tokens: len(toks), rdefs: fileRecvDefs(base, toks), defs: defs})
+		proj.keep(path, &fileCtx{lang: base, tree: tree, ff: ff, tokens: len(toks), rdefs: fileRecvDefs(base, toks), rcls: fileRecvClasses(base, toks), defs: defs})
 	}
 	var out []Finding
 	add := func(r *crule, lines ...[]loc) {

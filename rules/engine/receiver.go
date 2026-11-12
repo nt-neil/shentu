@@ -159,33 +159,73 @@ func (a *analysis) recvIs(ps []*pat, recv []Token) bool {
 
 // recvSurely reports whether the receiver of a method sink is surely an object
 // of one of the classes the patterns name (PHP): new Class(...) itself, or a
-// variable that the file only ever assigns such an object ($q = new Class) and
-// otherwise only calls or reads through ($q->...) or passes to a call
-// (update_post_thumbnail_cache($q)), unless the file declares a function or
-// method of that name with a parameter by reference (function f(&$x)), which
-// could rebind it; a callee declared in another file is not seen, and is
-// taken not to (README). Any other use of
-// the name anywhere in the file (a parameter, global, foreach ... as,
-// list(), a reference, another value) leaves it unknown, and the sink counts:
-// the file is read as a whole, so a name of the same spelling in another
-// function counts too.
+// variable the file binds only to such objects (recvClasses). The file read
+// is the one the code is in, also when the function is analysed from a
+// caller in another file (fileCtx.rcls).
 func (a *analysis) recvSurely(ps []*pat, recv []Token) bool {
 	t := stripParens(recv)
-	if a.newOf(ps, t) {
-		return true
+	if cls, ok := newClassOf(t); ok {
+		return classIn(ps, cls)
 	}
 	if len(t) != 1 || t[0].Kind != Var {
 		return false
 	}
-	toks, defs := a.ftoks, 0
+	if a.rcls == nil {
+		a.rcls = recvClasses(a.ftoks)
+	}
+	cs := a.rcls[t[0].Text]
+	for _, c := range cs {
+		if !classIn(ps, c) {
+			return false
+		}
+	}
+	return len(cs) > 0
+}
+
+func classIn(ps []*pat, cls string) bool {
+	tk := []Token{{Kind: Ident, Text: cls}}
+	for _, p := range ps {
+		if p.at(tk, 0, false) {
+			return true
+		}
+	}
+	return false
+}
+
+// fileRecvClasses is recvClasses for a PHP file kept by a project.
+func fileRecvClasses(lang string, toks []Token) map[string][]string {
+	if lang != "php" {
+		return nil
+	}
+	return recvClasses(toks)
+}
+
+// recvClasses maps each PHP variable the file binds only to new objects to the
+// classes it is given: every occurrence of the name in the file is an
+// assignment of new Class or new Class(...) as a statement of its own
+// ($q = new WP_Query;), a call or read through it ($q->...), or the whole
+// argument of a call (update_post_thumbnail_cache($q)) not declared in the
+// file with a parameter by reference. Any other occurrence (a parameter, its
+// default value included, global, foreach ... as, list(), use, &, another
+// value) leaves the name out: what it holds is not known. The file is read as
+// a whole, so a name of the same spelling in another function counts too, and
+// assignments are not followed from one name to another. A callee declared in
+// another file that takes the object by reference is not seen (README).
+func recvClasses(toks []Token) map[string][]string {
+	out := map[string][]string{}
+	if len(toks) == 0 {
+		return out
+	}
+	byRef := declaredByRef(toks)
+	bad := map[string]bool{}
 	for i, tk := range toks {
-		if tk.Kind != Var || tk.Text != t[0].Text {
+		if tk.Kind != Var || bad[tk.Text] {
 			continue
 		}
 		switch {
 		case i+1 < len(toks) && toks[i+1].op("->"):
-		case a.passedToCall(toks, i):
-		case i+1 < len(toks) && toks[i+1].op("=") && (i == 0 || !toks[i-1].op("&") && !toks[i-1].op("->") && !toks[i-1].op("::")):
+		case passedToCall(toks, i, byRef):
+		case i+1 < len(toks) && toks[i+1].op("=") && statementStart(toks, i):
 			j := i + 2
 			for depth := 0; j < len(toks) && !(depth == 0 && toks[j].op(";")); j++ {
 				if isOpen(toks[j]) {
@@ -196,22 +236,33 @@ func (a *analysis) recvSurely(ps []*pat, recv []Token) bool {
 					}
 				}
 			}
-			if !a.newOf(ps, stripParens(toks[i+2:j])) {
-				return false
+			if cls, ok := newClassOf(stripParens(toks[i+2 : j])); ok {
+				out[tk.Text] = append(out[tk.Text], cls)
+			} else {
+				bad[tk.Text] = true
 			}
-			defs++
 		default:
-			return false
+			bad[tk.Text] = true
 		}
 	}
-	return defs > 0
+	for v := range bad {
+		delete(out, v)
+	}
+	return out
+}
+
+// statementStart reports whether the token at i starts a statement: first in
+// the file, or after ; { } (not a parameter's default value, f($q = ...),
+// &$q or $o->q).
+func statementStart(toks []Token, i int) bool {
+	return i == 0 || toks[i-1].op(";") || toks[i-1].op("{") || toks[i-1].op("}")
 }
 
 // passedToCall reports whether the variable at i is a whole argument of a
 // call: f($q), $o->m($a, $q), not a function's parameter, list($q), use ($q),
 // array($q) = ..., and not to a function or method the file declares with a
-// parameter by reference.
-func (a *analysis) passedToCall(toks []Token, i int) bool {
+// parameter by reference (byRef).
+func passedToCall(toks []Token, i int, byRef map[string]bool) bool {
 	if i == 0 || i+1 >= len(toks) || !(toks[i-1].op("(") || toks[i-1].op(",")) || !(toks[i+1].op(")") || toks[i+1].op(",")) {
 		return false
 	}
@@ -231,63 +282,55 @@ func (a *analysis) passedToCall(toks []Token, i int) bool {
 				j > 1 && (toks[j-2].word("function") || toks[j-2].word("fn") || toks[j-2].op("&")) {
 				return false // a declaration, a destructuring or a closure's use list
 			}
-			return !a.declaredByRef(name)
+			return !byRef[name]
 		}
 	}
 	return false
 }
 
-// declaredByRef reports whether the file declares a function or method of
-// this name (any case) with a parameter by reference.
-func (a *analysis) declaredByRef(name string) bool {
-	if a.byRef == nil {
-		a.byRef = map[string]bool{}
-		t := a.ftoks
-		for i := 0; i+2 < len(t); i++ {
-			if !t[i].word("function") {
-				continue
-			}
-			k := i + 1
-			if t[k].op("&") {
-				k++ // function &name(: returns by reference
-			}
-			if k+1 >= len(t) || t[k].Kind != Ident || !t[k+1].op("(") {
-				continue
-			}
-			c := closeOf(t, k+1)
-			for j := k + 2; j < c; j++ {
-				if t[j].op("&") {
-					a.byRef[strings.ToLower(t[k].Text)] = true
-					break
-				}
+// declaredByRef returns the functions and methods (lower case) the file
+// declares with a parameter by reference.
+func declaredByRef(t []Token) map[string]bool {
+	out := map[string]bool{}
+	for i := 0; i+2 < len(t); i++ {
+		if !t[i].word("function") {
+			continue
+		}
+		k := i + 1
+		if t[k].op("&") {
+			k++ // function &name(: returns by reference
+		}
+		if k+1 >= len(t) || t[k].Kind != Ident || !t[k+1].op("(") {
+			continue
+		}
+		c := closeOf(t, k+1)
+		for j := k + 2; j < c; j++ {
+			if t[j].op("&") {
+				out[strings.ToLower(t[k].Text)] = true
+				break
 			}
 		}
 	}
-	return a.byRef[name]
+	return out
 }
 
-// newOf reports whether t is new Class or new Class(...), and nothing more,
-// with Class one of the patterns (\Class too).
-func (a *analysis) newOf(ps []*pat, t []Token) bool {
+// newClassOf returns the class of new Class or new Class(...), and nothing
+// more (\Class too): not new Class\Sub, new Class()->member, new Class() . $x.
+func newClassOf(t []Token) (string, bool) {
 	if len(t) < 2 || t[0].Kind != Ident || !strings.EqualFold(t[0].Text, "new") {
-		return false
+		return "", false
 	}
 	k := 1
 	if t[k].op("\\") {
 		k++
 	}
 	if k >= len(t) || t[k].Kind != Ident {
-		return false
+		return "", false
 	}
 	if k+1 < len(t) && !(t[k+1].op("(") && closeOf(t, k+1) == len(t)-1) {
-		return false // new Class\Sub, new Class()->member, new Class() . $x
+		return "", false
 	}
-	for _, p := range ps {
-		if p.at(t, k, false) {
-			return true
-		}
-	}
-	return false
+	return t[k].Text, true
 }
 
 func lineStart(toks []Token, i int) bool {

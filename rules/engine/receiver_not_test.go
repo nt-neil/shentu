@@ -32,6 +32,8 @@ func TestNotReceiver(t *testing.T) {
 		{"passed to a method of the file taking it by reference", "<?php\nclass C { function pick($a, &$x) { $x = $a; } }\n$q = new WP_Query();\n$c->pick($db, $q);\n$q->query('SELECT ' . $_GET['x']);\n", true},
 		{"closure use of the same name", "<?php\n$q = new WP_Query;\n$f = function () use ($q) { return 1; };\nfunction g($db) { $q = $db; return $q->query('SELECT ' . $_GET['x']); }\n", true},
 		{"a parameter declared by reference", "<?php\n$q = new WP_Query;\nfunction g(&$q) {\n\treturn $q->query('SELECT ' . $_GET['x']);\n}\n", true},
+		{"a parameter's default value", "<?php\nfunction run($q = new WP_Query()) {\n\treturn $q->query('SELECT ' . $_GET['x']);\n}\n", true},
+		{"assigned from another name", "<?php\n$a = new WP_Query;\n$q = $a;\n$q->query('SELECT ' . $_GET['x']);\n", true},
 		{"by reference", "<?php\n$q = new WP_Query;\n$q = &$db;\n$q->query('SELECT ' . $_GET['x']);\n", true},
 	} {
 		fs, err := e.Scan("php", "a.php", []byte(c.src))
@@ -44,5 +46,51 @@ func TestNotReceiver(t *testing.T) {
 		if err != nil || got != c.want {
 			t.Errorf("%s: reported %v (err %v), want %v", c.name, got, err, c.want)
 		}
+	}
+}
+
+// A function using a query class, reached from a caller in another file: the
+// callee's file says what $q is, in either order of the files and on its own.
+func TestNotReceiverAcrossFiles(t *testing.T) {
+	files := map[string]string{
+		"a.php": "<?php\nrequire 'b.php';\nb_run($_GET['x']);\n",
+		"b.php": "<?php\nfunction b_run($v) {\n\t$q = new WP_Query;\n\treturn $q->query(\"s=\" . $v);\n}\n",
+	}
+	count := func(fs []Finding) int {
+		n := 0
+		for _, f := range fs {
+			if f.RuleID == "php-sqli-string-concat" {
+				n++
+			}
+		}
+		return n
+	}
+	e := engineForTest(t)
+	if fs, _ := e.Scan("php", "b.php", []byte(files["b.php"])); count(fs) != 0 {
+		t.Errorf("b.php on its own: %v", fs)
+	}
+	for _, order := range [][]string{{"a.php", "b.php"}, {"b.php", "a.php"}} {
+		e := engineForTest(t)
+		pr := e.NewProject(order, func(p string) ([]byte, error) { return []byte(files[p]), nil }, ProjectOptions{})
+		n := 0
+		for _, p := range order {
+			fs, _ := pr.ScanCalls(p, []byte(files[p]))
+			n += count(fs)
+		}
+		if n != 0 {
+			t.Errorf("order %v: %d reports, want none", order, n)
+		}
+	}
+	// The same flow into $wpdb is still followed across the files.
+	files["b.php"] = "<?php\nfunction b_run($v) {\n\tglobal $wpdb;\n\treturn $wpdb->query(\"s=\" . $v);\n}\n"
+	e = engineForTest(t)
+	pr := e.NewProject([]string{"a.php", "b.php"}, func(p string) ([]byte, error) { return []byte(files[p]), nil }, ProjectOptions{})
+	n := 0
+	for _, p := range []string{"a.php", "b.php"} {
+		fs, _ := pr.ScanCalls(p, []byte(files[p]))
+		n += count(fs)
+	}
+	if n == 0 {
+		t.Error("$wpdb->query across files: not reported")
 	}
 }
