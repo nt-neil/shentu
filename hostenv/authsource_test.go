@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -58,6 +59,9 @@ func TestAuthEventsSourceOrder(t *testing.T) {
 		switch c.text {
 		case "":
 		case "-":
+			if runtime.GOOS == "windows" {
+				continue // mode 0 does not stop reading there
+			}
 			os.WriteFile(filepath.Join(dir, "auth.log"), []byte(tline+"\n"), 0o000) // stat works, reading fails (not root)
 		default:
 			os.WriteFile(filepath.Join(dir, "auth.log"), []byte(c.text+"\n"), 0o600)
