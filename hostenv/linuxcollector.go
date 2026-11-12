@@ -11,8 +11,10 @@ import (
 	"fmt"
 	"io/fs"
 	"path"
+	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // LinuxCollector gathers hostfacts on Linux from /proc, /etc and the package
@@ -26,7 +28,9 @@ var (
 	rpmArgv  = []string{"/usr/bin/rpm", "-qa", "--qf", RpmQueryFormat}
 )
 
-func (LinuxCollector) Allowlist() [][]string { return [][]string{dpkgArgv, rpmArgv} }
+func (LinuxCollector) Allowlist() [][]string {
+	return [][]string{dpkgArgv, rpmArgv, rpmQalArgv, nftListArgv, iptablesArgv, journalArgv}
+}
 
 func (c LinuxCollector) Collect(ctx context.Context, src Source) *Facts {
 	info := src.Info()
@@ -36,12 +40,12 @@ func (c LinuxCollector) Collect(ctx context.Context, src Source) *Facts {
 
 	var osr map[string]string
 	f.Platform, osr = c.Platform(src)
-	f.Packages = c.packages(ctx, src, osr)
-	pw, accounts := c.accounts(src)
+	f.Packages = c.Packages(ctx, src, osr)
+	pw, accounts := c.Accounts(src)
 	f.Accounts = accounts
-	procs, sockOwner := c.processes(src, pw)
+	procs, sockOwner := c.Processes(src, pw)
 	f.Processes = procs
-	f.Listeners = c.listeners(src, info, sockOwner)
+	f.Listeners = c.Listeners(src, sockOwner)
 	if procs.Known() { // name each listener's process, so checks need no join
 		names := map[int]string{}
 		for _, p := range procs.Value {
@@ -52,7 +56,14 @@ func (c LinuxCollector) Collect(ctx context.Context, src Source) *Facts {
 		}
 	}
 	f.RemoteAccess.SSH = c.ssh(src)
-	f.Persistence = c.persistence(src, accounts)
+	f.Firewall = c.Firewall(ctx, src, procs.Value)
+	f.AuthEvents = c.AuthEvents(ctx, src, info.RecordedAt, nil)
+	f.Web = c.Web(src)
+	f.SSHKeys = Unknown[[]AuthorizedKeyFile](accounts.Reason, "accounts unknown")
+	if accounts.Known() {
+		f.SSHKeys = c.SSHKeyFiles(src, accounts.Value)
+	}
+	f.Persistence = c.persistence(ctx, src, f.SSHKeys)
 
 	f.Patches = NotApplicable[[]Patch]() // Linux patches are package versions
 	f.RemoteAccess.RDP = NotApplicable[RDPConfig]()
@@ -102,7 +113,9 @@ func inContainer(src Source) bool {
 	return strings.Contains(s, "docker") || strings.Contains(s, "kubepods") || strings.Contains(s, "containerd") || strings.Contains(s, "/lxc/")
 }
 
-func (LinuxCollector) packages(ctx context.Context, src Source, osr map[string]string) Obs[PackageSet] {
+// Packages lists installed packages with the distribution's own tool:
+// dpkg-query, rpm -qa, or the apk database. osr is the parsed os-release.
+func (LinuxCollector) Packages(ctx context.Context, src Source, osr map[string]string) Obs[PackageSet] {
 	if osr == nil {
 		return Unknown[PackageSet](ReasonNotCollected, "no os-release, distribution unknown")
 	}
@@ -148,7 +161,10 @@ func firstLine(s string) string {
 	return s
 }
 
-func (LinuxCollector) accounts(src Source) (map[string]string, Obs[[]Account]) {
+// Accounts reads /etc/passwd and /etc/group. names maps uid to the first
+// account with it, so a backdoor that reuses UID 0 is not shown as the
+// owner of root's processes and files.
+func (LinuxCollector) Accounts(src Source) (names map[string]string, accounts Obs[[]Account]) {
 	b, err := src.ReadFile("/etc/passwd")
 	if err != nil {
 		return nil, unknownFrom[[]Account]("/etc/passwd", err)
@@ -163,10 +179,12 @@ func (LinuxCollector) accounts(src Source) (map[string]string, Obs[[]Account]) {
 			}
 		}
 	}
-	names := map[string]string{}
+	names = map[string]string{}
 	var out []Account
 	for _, e := range ParsePasswd(b) {
-		names[e.UID] = e.Name
+		if _, dup := names[e.UID]; !dup {
+			names[e.UID] = e.Name
+		}
 		out = append(out, Account{Name: e.Name, UID: e.UID, Home: e.Home, Shell: e.Shell,
 			CanLogin: CanLoginShell(e.Shell), IsAdmin: e.UID == "0" || admins[e.Name]})
 	}
@@ -181,9 +199,9 @@ func numeric(s string) bool {
 	return err == nil
 }
 
-// processes walks /proc once and also returns socket inode -> pid for
-// listeners, so the walk is not repeated.
-func (LinuxCollector) processes(src Source, users map[string]string) (Obs[[]Process], map[string]int) {
+// Processes walks /proc once and also returns socket inode -> pid for
+// Listeners, so the walk is not repeated. users maps uid to name (nil: none).
+func (LinuxCollector) Processes(src Source, users map[string]string) (Obs[[]Process], map[string]int) {
 	owners := map[string]int{}
 	names, err := src.ReadDir("/proc")
 	if err != nil {
@@ -203,8 +221,17 @@ func (LinuxCollector) processes(src Source, users map[string]string) (Obs[[]Proc
 		}
 		st := ParseProcStatus(sb)
 		p := Process{PID: pid, PPID: st.PPID, Name: st.Name, UID: st.UID, User: users[st.UID]}
+		if cb, err := src.ReadFile(dir + "/comm"); err == nil {
+			p.Name = strings.TrimSpace(string(cb)) // raw, as ps shows it; status escapes some bytes
+		}
 		if cb, err := src.ReadFile(dir + "/cmdline"); err == nil {
 			p.Cmdline = ParseCmdline(cb)
+		}
+		if st, err := Stat(src, dir); err == nil {
+			p.Started = st.ModTime.Format(time.RFC3339)
+		}
+		if sb, err := src.ReadFile(dir + "/stat"); err == nil {
+			p.StartTicks, _ = ParseProcStartTicks(sb)
 		}
 		exe, err := src.Readlink(dir + "/exe")
 		switch {
@@ -233,10 +260,14 @@ func (LinuxCollector) processes(src Source, users map[string]string) (Obs[[]Proc
 	return OK(out), owners
 }
 
-func (LinuxCollector) listeners(src Source, info SourceInfo, owners map[string]int) Obs[[]Listener] {
+// Listeners reads /proc/net/{tcp,tcp6,udp,udp6}: TCP sockets in LISTEN and
+// bound UDP sockets, one per proto/address/port, in table order. owners
+// maps socket inode to pid (from Processes).
+func (LinuxCollector) Listeners(src Source, owners map[string]int) Obs[[]Listener] {
 	var out []Listener
 	var firstErr error
 	read, unowned := 0, 0
+	seen := map[string]bool{}
 	for _, proto := range []string{"tcp", "tcp6", "udp", "udp6"} {
 		b, err := src.ReadFile("/proc/net/" + proto)
 		if err != nil {
@@ -250,12 +281,20 @@ func (LinuxCollector) listeners(src Source, info SourceInfo, owners map[string]i
 			if !e.IsListening(proto) {
 				continue
 			}
-			l := Listener{Proto: proto, Addr: e.LocalIP.String(), Port: e.LocalPort}
+			l := Listener{Proto: proto, Addr: e.LocalIP.String(), Port: e.LocalPort, UID: e.UID}
 			if pid, ok := owners[e.Inode]; ok {
 				l.PID = pid
 			} else if e.Inode != "0" {
 				unowned++
 			}
+			// SO_REUSEPORT gives one row per socket: collapse rows of the
+			// same owner, but keep a second process (or user) on the same
+			// port visible, which is how a port gets hijacked.
+			key := fmt.Sprintf("%s/%s/%d/%d/%s", proto, l.Addr, l.Port, l.PID, l.UID)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
 			out = append(out, l)
 		}
 	}
@@ -264,7 +303,7 @@ func (LinuxCollector) listeners(src Source, info SourceInfo, owners map[string]i
 		return unknownFrom[[]Listener]("/proc/net", firstErr)
 	case read == 0:
 		return Unknown[[]Listener](ReasonNotInstalled, "/proc/net tables missing")
-	case unowned > 0 && !info.Elevated:
+	case unowned > 0 && !src.Info().Elevated:
 		return Partial(out, ReasonPermission, fmt.Sprintf("owner of %d sockets not visible without root", unowned))
 		// As root an ownerless socket belongs to the kernel (NFS, WireGuard):
 		// PID stays 0, which checks read as "kernel", not as hidden.
@@ -272,19 +311,34 @@ func (LinuxCollector) listeners(src Source, info SourceInfo, owners map[string]i
 	return OK(out)
 }
 
-const sshdConfig = "/etc/ssh/sshd_config"
+// SSHDConfigPath is where sshd reads its configuration.
+const SSHDConfigPath = "/etc/ssh/sshd_config"
 
-func (LinuxCollector) ssh(src Source) Obs[SSHConfig] {
-	if _, err := src.ReadFile(sshdConfig); errors.Is(err, fs.ErrNotExist) {
+func (c LinuxCollector) ssh(src Source) Obs[SSHConfig] {
+	if _, err := src.ReadFile(SSHDConfigPath); errors.Is(err, fs.ErrNotExist) {
 		if names, derr := src.ReadDir("/usr/sbin"); derr == nil && !contains(names, "sshd") {
 			return NotApplicable[SSHConfig]()
 		}
 	}
-	cfg := SSHConfig{ConfigPath: sshdConfig, Settings: SSHDDefaults()}
+	return c.SSHD(src, SSHDConfigPath)
+}
+
+// SSHD reads the effective global sshd settings that matter for security,
+// following Include in place (relative to the main file's folder, sorted
+// as sshd's glob is); the first value wins, as in sshd, and a Match block
+// ends the global part. A file or Include folder that cannot be read leaves
+// every setting not set before it "unknown", and is listed in Unread as
+// "path (why)". The hash covers every byte read, to notice any change.
+func (LinuxCollector) SSHD(src Source, config string) Obs[SSHConfig] {
+	cfg := SSHConfig{ConfigPath: config, Settings: SSHDDefaults()}
 	got := map[string]bool{}
 	h := sha256.New()
-	unknown := func(p string) {
-		cfg.Unread = append(cfg.Unread, p)
+	reason := Reason("")
+	unknown := func(p string, err error) {
+		if reason == "" || Classify(err) == ReasonPermission {
+			reason = Classify(err)
+		}
+		cfg.Unread = append(cfg.Unread, p+" ("+whyUnread(err)+")")
 		for k := range cfg.Settings {
 			if !got[k] {
 				cfg.Settings[k], got[k] = "unknown", true
@@ -299,7 +353,7 @@ func (LinuxCollector) ssh(src Source) Obs[SSHConfig] {
 		b, err := src.ReadFile(p)
 		if err != nil {
 			if !errors.Is(err, fs.ErrNotExist) {
-				unknown(p)
+				unknown(p, err)
 			}
 			return true
 		}
@@ -309,18 +363,14 @@ func (LinuxCollector) ssh(src Source) Obs[SSHConfig] {
 			if d.Key == "include" {
 				pat := d.Value
 				if !strings.HasPrefix(pat, "/") {
-					pat = path.Join(path.Dir(sshdConfig), pat)
+					pat = path.Join(path.Dir(config), pat)
 				}
-				dir, base := path.Split(pat)
-				names, err := src.ReadDir(path.Clean(dir))
-				if err != nil {
-					if !errors.Is(err, fs.ErrNotExist) {
-						unknown(path.Clean(dir))
-					}
-					continue
+				// A folder that cannot be listed hides what it holds.
+				if _, err := src.ReadDir(path.Dir(pat)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+					unknown(path.Dir(pat), err)
 				}
-				for _, n := range names { // already sorted, as sshd's glob is
-					if ok, _ := path.Match(base, n); ok && !read(path.Join(dir, n), depth+1) {
+				for _, inc := range Glob(src, pat) {
+					if !read(inc, depth+1) {
 						return false
 					}
 				}
@@ -332,12 +382,71 @@ func (LinuxCollector) ssh(src Source) Obs[SSHConfig] {
 		}
 		return !sawMatch
 	}
-	read(sshdConfig, 0)
+	read(config, 0)
 	cfg.Hash = hex.EncodeToString(h.Sum(nil))[:16]
 	if len(cfg.Unread) > 0 {
-		return Partial(cfg, ReasonPermission, "some sshd config files unreadable; their settings are \"unknown\"")
+		return Partial(cfg, reason, "some sshd config files unreadable; their settings are \"unknown\"")
 	}
 	return OK(cfg)
+}
+
+// whyUnread is the short reason a path could not be read: "permission
+// denied", the system's own words ("is a directory"), or the error.
+func whyUnread(err error) string {
+	if errors.Is(err, fs.ErrPermission) {
+		return "permission denied"
+	}
+	var pe *fs.PathError
+	if errors.As(err, &pe) {
+		return pe.Err.Error()
+	}
+	return err.Error()
+}
+
+// exists reports whether p is there (an unreadable file still is).
+func exists(src Source, p string) bool {
+	_, err := Stat(src, p)
+	if err == nil {
+		return true
+	}
+	if !errors.Is(err, ErrNoStat) && !errors.Is(err, ErrNotRecorded) {
+		return !errors.Is(err, fs.ErrNotExist)
+	}
+	if _, derr := src.ReadDir(p); derr == nil {
+		return true
+	}
+	_, rerr := src.ReadFile(p)
+	return !errors.Is(rerr, fs.ErrNotExist) && !errors.Is(rerr, ErrNotRecorded)
+}
+
+// Glob expands an absolute pattern through src, as filepath.Glob does
+// (every component may hold *, ? or [...]); the result is sorted.
+func Glob(src Source, pattern string) []string {
+	paths := []string{"/"}
+	for _, part := range strings.Split(strings.Trim(path.Clean(pattern), "/"), "/") {
+		var next []string
+		for _, d := range paths {
+			if !strings.ContainsAny(part, "*?[\\") {
+				next = append(next, path.Join(d, part))
+				continue
+			}
+			names, _ := src.ReadDir(d)
+			for _, n := range names {
+				if ok, _ := path.Match(part, n); ok {
+					next = append(next, path.Join(d, n))
+				}
+			}
+		}
+		paths = next
+	}
+	var out []string
+	for _, p := range paths {
+		if exists(src, p) {
+			out = append(out, p)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 func contains(list []string, s string) bool {
@@ -352,7 +461,7 @@ func contains(list []string, s string) bool {
 // MaxPersistenceItems caps one category so a huge crontab cannot flood facts.
 const MaxPersistenceItems = 500
 
-func (LinuxCollector) persistence(src Source, accounts Obs[[]Account]) Obs[[]PersistenceItem] {
+func (c LinuxCollector) persistence(ctx context.Context, src Source, keys Obs[[]AuthorizedKeyFile]) Obs[[]PersistenceItem] {
 	var out []PersistenceItem
 	var denied []string
 	// note records every failure except "does not exist": a truncated,
@@ -441,29 +550,38 @@ func (LinuxCollector) persistence(src Source, accounts Obs[[]Account]) Obs[[]Per
 		add(it)
 	}
 
-	if accounts.Known() {
-		for _, a := range accounts.Value {
-			if (!a.CanLogin && a.UID != "0") || a.Home == "" || a.Home == "/" {
-				continue
-			}
-			for _, n := range []string{"authorized_keys", "authorized_keys2"} {
-				// The user owns this path: never follow a link planted
-				// there (it could point at /etc/shadow while we run as root).
-				p := strings.TrimSuffix(a.Home, "/") + "/.ssh/" + n
-				b, err := ReadFileNoFollow(src, p)
-				note(p, err)
-				if err != nil && !errors.Is(err, ErrTruncated) {
-					continue
-				}
-				for _, k := range ParseAuthorizedKeys(b) {
-					d := k.Type + " " + k.Fingerprint
-					if k.Options {
-						d += " (with options)"
-					}
-					add(PersistenceItem{Kind: "authorized_key", Location: p, Detail: d})
-				}
-			}
+	for _, kf := range keys.Value {
+		if kf.Unparsed > 0 { // sshd may still read these: never drop them silently
+			add(PersistenceItem{Kind: "authorized_key_unparsed", Location: kf.Path,
+				Detail: fmt.Sprintf("%d non-comment lines are no key Shentu can read", kf.Unparsed)})
 		}
+		for _, k := range kf.Keys {
+			d := k.Type + " " + k.Fingerprint
+			if k.Options {
+				d += " (with options)"
+			}
+			if k.CloudInitRefusal {
+				d += " (cloud-init refusal)"
+			}
+			add(PersistenceItem{Kind: "authorized_key", Location: kf.Path, Detail: d})
+		}
+	}
+	if keys.Status == StatusPartial || !keys.Known() {
+		denied = append(denied, "authorized_keys: "+keys.Detail)
+	}
+	rules, rs := c.SudoRules(src)
+	for _, r := range rules {
+		loc, cmd, _ := strings.Cut(r, ": ")
+		add(PersistenceItem{Kind: "sudo_rule", Location: loc, Command: cmd})
+	}
+	if rs.Status == StatusPartial {
+		denied = append(denied, rs.Detail)
+	}
+	for _, f := range c.CronFiles(src) {
+		add(PersistenceItem{Kind: "cron_file", Location: f})
+	}
+	for _, m := range c.UnpackagedPAM(src, RpmOwned(ctx, src)) {
+		add(PersistenceItem{Kind: "pam_unpackaged", Location: m, Detail: "no package installed this PAM module"})
 	}
 	switch {
 	case dropped > 0:

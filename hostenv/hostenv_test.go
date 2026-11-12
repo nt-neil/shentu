@@ -2,9 +2,12 @@ package hostenv
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -41,7 +44,7 @@ func TestParsers(t *testing.T) {
 		t.Errorf("dpkg %+v", pk)
 	}
 	rp := ParseRpmQA([]byte("openssl\t1:3.0.7-27.el9\taarch64\ngpg-pubkey\t0:abc-def\t(none)\n"))
-	if len(rp) != 1 || rp[0].Version != "1:3.0.7-27.el9" {
+	if len(rp) != 2 || rp[0].Version != "1:3.0.7-27.el9" {
 		t.Errorf("rpm %+v", rp)
 	}
 	ap := ParseApkInstalled([]byte("C:Q1x\nP:musl\nV:1.2.5-r0\nA:aarch64\no:musl\n\nP:libcrypto3\nV:3.3.2-r0\no:openssl\n"))
@@ -68,11 +71,11 @@ func TestParsers(t *testing.T) {
 	if c := ParseCmdline([]byte("app\x00--password=" + fakeSecret() + "\x00")); strings.Contains(c, fakeSecret()) {
 		t.Errorf("cmdline not masked: %q", c)
 	}
-	if CanLoginShell("/usr/sbin/nologin") || CanLoginShell("") || !CanLoginShell("/bin/bash") {
+	if CanLoginShell("/usr/sbin/nologin") || !CanLoginShell("") || !CanLoginShell("/bin/bash") || CanLoginShell("/sbin/shutdown") {
 		t.Error("login shell")
 	}
 	ak := ParseAuthorizedKeys([]byte(`command="/bin/x" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA== c` + "\nssh-rsa notbase64!! d\n"))
-	if len(ak) != 2 || !ak[0].Options || ak[1].Options || !strings.HasPrefix(ak[0].Fingerprint, "SHA256:") {
+	if len(ak) != 1 || !ak[0].Options || !strings.HasPrefix(ak[0].Fingerprint, "SHA256:") { // the invalid ssh-rsa line is not a key sshd would use
 		t.Errorf("authorized_keys %+v", ak)
 	}
 }
@@ -107,7 +110,7 @@ func TestLinuxCollectorRoot(t *testing.T) {
 	if strings.Contains(byPID[4242].Cmdline, fakeSecret()) {
 		t.Errorf("cmdline leaked a password: %q", byPID[4242].Cmdline)
 	}
-	want := []Listener{{"tcp", "0.0.0.0", 22, 4243, "sshd"}, {"tcp", "127.0.0.1", 8080, 4242, "kworkerds"}, {"udp", "0.0.0.0", 68, 0, ""}}
+	want := []Listener{{"tcp", "0.0.0.0", 22, 4243, "sshd", "0"}, {"tcp", "127.0.0.1", 8080, 4242, "kworkerds", "33"}, {"udp", "0.0.0.0", 68, 0, "", "0"}}
 	if f.Listeners.Status != StatusOK || !reflect.DeepEqual(f.Listeners.Value, want) {
 		t.Errorf("listeners %+v", f.Listeners)
 	}
@@ -125,7 +128,7 @@ func TestLinuxCollectorRoot(t *testing.T) {
 	if !reflect.DeepEqual(kinds, map[string]int{"cron": 1, "ld_preload": 1, "systemd": 1, "authorized_key": 1}) {
 		t.Errorf("persistence kinds %v", kinds)
 	}
-	if f.RemoteAccess.RDP.Status != StatusNotApplicable || f.Firewall.Status != StatusUnknown || f.Firewall.Reason != ReasonNotCollected {
+	if f.RemoteAccess.RDP.Status != StatusNotApplicable || f.Firewall.Status != StatusOK || f.Firewall.Value.Extra["summary"] != "none detected" {
 		t.Errorf("rdp/firewall %+v %+v", f.RemoteAccess.RDP, f.Firewall)
 	}
 }
@@ -172,7 +175,7 @@ func TestPackagesCommandMissing(t *testing.T) {
 
 func TestUnsupportedPlatform(t *testing.T) {
 	h := newFake(true)
-	h.info.GOOS = "freebsd" // no collector yet (Windows has one since Phase 2)
+	h.info.GOOS = "freebsd"
 	f := Collect(context.Background(), h)
 	if f.Processes.Status != StatusUnknown || f.Processes.Reason != ReasonUnsupported || f.Platform.Value.OS != "freebsd" {
 		t.Errorf("unsupported %+v", f.Processes)
@@ -191,7 +194,7 @@ func TestRecordReplayMasked(t *testing.T) {
 	}
 	all := readTree(t, dir)
 	for _, leak := range []string{"alice", "Alice", "web01", "192.168.1.100", "203.0.113.9", "0F02000A", "6401A8C0",
-		"FakeKeyMaterial", "laptop.example.com", fakeSecret()} {
+		fakeKeyBlob(), "laptop.example.com", fakeSecret()} {
 		if strings.Contains(all, leak) {
 			t.Errorf("fixture still contains %q", leak)
 		}
@@ -273,6 +276,13 @@ func TestMaskSecretsMatchesRoot(t *testing.T) {
 
 func readTree(t *testing.T, dir string) string {
 	var sb strings.Builder
+	blobs, err := loadBlobs(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, b := range blobs { // what is inside blobs.tgz, not its compressed bytes
+		sb.Write(b)
+	}
 	filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
 		if err == nil && !d.IsDir() {
 			b, _ := os.ReadFile(p)
@@ -347,5 +357,122 @@ func TestLiveRemap(t *testing.T) {
 		if got := l.path(in); got != want {
 			t.Errorf("path(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// A second process on the same port stays visible; one process's
+// SO_REUSEPORT sockets collapse.
+func TestListenersKeepSecondOwner(t *testing.T) {
+	h := debianHost(true)
+	h.files["/proc/net/tcp"] += "   3: 00000000:0016 00000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 9002 1 0 100 0 0 10 0\n" +
+		"   4: 00000000:0016 00000000:0000 0A 00000000:00000000 00:00000000 00000000    33        0 9001 1 0 100 0 0 10 0\n"
+	var n22 []int
+	for _, l := range Collect(context.Background(), h).Listeners.Value {
+		if l.Port == 22 && l.Proto == "tcp" && l.Addr == "0.0.0.0" {
+			n22 = append(n22, l.PID)
+		}
+	}
+	if !reflect.DeepEqual(n22, []int{4243, 4242}) {
+		t.Errorf("port 22 owners %v, want sshd and the intruder", n22)
+	}
+}
+
+func TestMaskKeepsNOPASSWD(t *testing.T) {
+	for in, want := range map[string]string{
+		"user ALL=(ALL) NOPASSWD:ALL":                          "user ALL=(ALL) NOPASSWD:ALL",
+		"www ALL=(ALL) NOPASSWD: ALL":                          "www ALL=(ALL) NOPASSWD: ALL",
+		"ann ALL=(ALL) PASSWD: /usr/bin/apt":                   "ann ALL=(ALL) PASSWD: /usr/bin/apt",
+		"%adm ALL=(ALL) NOEXEC:SETENV: ALL":                    "%adm ALL=(ALL) NOEXEC:SETENV: ALL",
+		"password: " + fakeSecret():                            "password: [REDACTED]",
+		"PASSWORD=" + fakeSecret():                             "PASSWORD=[REDACTED]",
+		"db_passwd: " + fakeSecret():                           "db_passwd: [REDACTED]",
+		"token=" + fakeSecret():                                "token=[REDACTED]",
+		"(ALL) NOPASSWD:ALL; passwd=" + fakeSecret():           "(ALL) NOPASSWD:ALL; passwd=[REDACTED]",
+		"PASSWD: " + fakeSecret():                              "PASSWD: [REDACTED]",
+		"X-PASSWD: " + fakeSecret():                            "X-PASSWD: [REDACTED]",
+		"ann ALL=(root) NOEXEC: NOPASSWD: !/bin/sh":            "ann ALL=(root) NOEXEC: NOPASSWD: !/bin/sh",
+		"NOPASSWD: " + fakeSecret():                            "NOPASSWD: [REDACTED]",
+		"https://u:" + fakeSecret() + "@h (ALL) NOPASSWD: ALL": "https://[REDACTED]@h (ALL) NOPASSWD: ALL",
+	} {
+		if got := MaskSecrets(in); got != want {
+			t.Errorf("MaskSecrets(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestKeyTypesAsSSHDReadsThem(t *testing.T) {
+	blob := func(typ string) string {
+		b := append([]byte{0, 0, 0, byte(len(typ))}, typ...)
+		b = append(b, []byte(strings.Repeat("k", 32))...)
+		return base64.StdEncoding.EncodeToString(b)
+	}
+	keys := ParseAuthorizedKeys([]byte("ED25519 " + blob("ssh-ed25519") + " c\nrsa " + blob("ssh-rsa") + "\nfrom=\"x\" ssh-ed25519 " + blob("ssh-ed25519") + "\ngarbage line\n"))
+	if len(keys) != 3 || keys[0].Type != "ssh-ed25519" || keys[1].Type != "ssh-rsa" || !keys[2].Options || keys[0].Options {
+		t.Errorf("keys %+v", keys)
+	}
+	h := debianHost(true)
+	h.files["/home/alice/.ssh/authorized_keys"] = "ED25519 " + blob("ssh-ed25519") + "\nnot a key at all\n"
+	f := Collect(context.Background(), h)
+	n := map[string]int{}
+	for _, it := range f.Persistence.Value {
+		n[it.Kind]++
+	}
+	if n["authorized_key"] != 1 || n["authorized_key_unparsed"] != 1 {
+		t.Errorf("kinds %v", n)
+	}
+}
+
+func TestWebFact(t *testing.T) {
+	h := debianHost(true)
+	h.files["/etc/nginx/nginx.conf"] = "http {\n  root /usr/share/nginx/html;\n}\n" // a root directive starts its line
+	h.files["/etc/nginx/conf.d/shop.conf"] = "server {\n\troot /var/www/shop;\n}\n"
+	w := Collect(context.Background(), h).Web
+	if w.Status != StatusOK || w.Value.Server != "nginx" || !reflect.DeepEqual(w.Value.WebRoots, []string{"/usr/share/nginx/html", "/var/www/shop"}) {
+		t.Errorf("web %+v", w)
+	}
+}
+
+// statHost adds Stat to fakeHost: files and link targets with a mode and
+// an owner.
+type statHost struct {
+	*fakeHost
+	st map[string]FileStat
+}
+
+func (h statHost) Stat(p string) (FileStat, error) {
+	for i := 0; i < 8; i++ { // follow links on the whole path, as stat(2) does
+		t, ok := h.links[p]
+		if !ok {
+			break
+		}
+		if !strings.HasPrefix(t, "/") {
+			t = path.Join(path.Dir(p), t)
+		}
+		p = t
+	}
+	if s, ok := h.st[p]; ok {
+		return s, nil
+	}
+	if _, ok := h.files[p]; ok {
+		return FileStat{Mode: 0o644, UID: 0}, nil
+	}
+	return FileStat{}, fs.ErrNotExist
+}
+
+func TestWebRootsTrustedLinks(t *testing.T) {
+	h := statHost{fakeHost: debianHost(true), st: map[string]FileStat{}}
+	h.files["/etc/nginx/sites-available/shop"] = "server {\n root /var/www/shop;\n}\n"
+	h.links["/etc/nginx/sites-enabled/shop"] = "../sites-available/shop"
+	h.files["/etc/nginx/sites-available/w"] = "server {\n root /var/www/w;\n}\n"
+	h.links["/etc/nginx/sites-enabled/w"] = "/etc/nginx/sites-available/w"
+	h.st["/etc/nginx/sites-available/w"] = FileStat{Mode: 0o666, UID: 0} // world-writable target
+	h.files["/home/bob/site.conf"] = "server {\n root /var/www/bob;\n}\n"
+	h.links["/etc/nginx/sites-enabled/bob"] = "/home/bob/site.conf" // leaves /etc
+	h.files["/etc/nginx/sites-available/u"] = "server {\n root /var/www/u;\n}\n"
+	h.links["/etc/nginx/sites-enabled/u"] = "../sites-available/u"
+	h.st["/etc/nginx/sites-available/u"] = FileStat{Mode: 0o644, UID: 1000} // not root's
+	got := LinuxCollector{}.WebRoots(h)
+	if !reflect.DeepEqual(got, []string{"/var/www/shop"}) {
+		t.Errorf("web roots %q, want only the root-owned, root-only link", got)
 	}
 }

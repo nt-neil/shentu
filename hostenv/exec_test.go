@@ -114,3 +114,17 @@ func TestCollectorAllowlists(t *testing.T) {
 		}
 	}
 }
+
+func TestRunnerSlots(t *testing.T) {
+	r, err := NewRunner([][]string{journalArgv})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ok := append([]string(nil), journalArgv...)
+	ok[6] = "2026-11-12 03:00:00"
+	bad := append([]string(nil), journalArgv...)
+	bad[6] = "2026-11-12 03:00:00; rm -rf /"
+	if !r.Allowed(ok) || r.Allowed(bad) || r.Allowed(journalArgv[:6]) {
+		t.Error("a time slot must take exactly one time value")
+	}
+}

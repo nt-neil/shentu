@@ -15,6 +15,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/nt-neil/shentu/hostenv"
 )
 
 var fileChanges = Tool{
@@ -253,22 +255,28 @@ var logSearch = Tool{
 		if a.Limit <= 0 || a.Limit > 200 {
 			a.Limit = 50
 		}
-		lines, err := readLines(a.Path)
-		if err != nil {
-			return nil, err
-		}
-		var hits []string
-		for i := len(lines) - 1; i >= 0 && len(hits) < a.Limit; i-- {
-			if re.MatchString(lines[i]) {
-				l := lines[i]
+		// The last a.Limit matches, kept in a ring while the file streams by:
+		// memory is the ring, not the log.
+		ring := make([]string, a.Limit)
+		n := 0
+		err = hostenv.ScanLines(hostSource(), a.Path, func(l string) {
+			if re.MatchString(l) {
 				if len(l) > 500 {
 					l = Cut(l, 500)
 				}
-				hits = append(hits, l)
+				ring[n%a.Limit] = l
+				n++
 			}
+		})
+		if err != nil {
+			return nil, err
 		}
-		for i, j := 0, len(hits)-1; i < j; i, j = i+1, j-1 {
-			hits[i], hits[j] = hits[j], hits[i]
+		hits := []string{}
+		for i := max(0, n-a.Limit); i < n; i++ {
+			hits = append(hits, ring[i%a.Limit])
+		}
+		if len(hits) == 0 {
+			hits = nil
 		}
 		return map[string]any{"path": a.Path, "matches": hits}, nil
 	},

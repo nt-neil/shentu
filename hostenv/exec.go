@@ -5,9 +5,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os/exec"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -31,6 +33,7 @@ type CmdResult struct {
 // everything; build one with NewRunner.
 type Runner struct {
 	allow     map[string]bool
+	patterns  [][]string    // allowlist entries with slots
 	Timeout   time.Duration // per command; default 10s, never above MaxTimeout
 	MaxStdout int           // bytes kept; default 4 MiB
 	MaxStderr int           // bytes kept; default 64 KiB
@@ -42,6 +45,45 @@ const (
 	DefaultMaxStdout = 4 << 20
 	DefaultMaxStderr = 64 << 10
 )
+
+// bigCommands are allowlisted commands known to need more than the
+// defaults: a full rpm file list runs to tens of MiB on a large host.
+// Keyed by argvKey; registered by collectors next to their argv.
+var bigCommands = map[string]struct {
+	maxStdout int
+	timeout   time.Duration
+}{}
+
+type bigLimits = struct {
+	maxStdout int
+	timeout   time.Duration
+}
+
+// bigPatterns are registered commands with argument slots.
+var bigPatterns = map[string][]string{}
+
+// bigFor finds argv's limits, matching slot patterns as Allowed does.
+func bigFor(argv []string) (bigLimits, bool) {
+	if b, ok := bigCommands[argvKey(argv)]; ok {
+		return b, true
+	}
+	for k, p := range bigPatterns {
+		if matchSlots(p, argv) {
+			return bigCommands[k], true
+		}
+	}
+	return bigLimits{}, false
+}
+
+func registerBig(argv []string, maxStdout int, timeout time.Duration) {
+	if hasSlot(argv) {
+		bigPatterns[argvKey(argv)] = argv
+	}
+	bigCommands[argvKey(argv)] = struct {
+		maxStdout int
+		timeout   time.Duration
+	}{maxStdout, timeout}
+}
 
 // shells and script hosts are refused even if someone allowlists them: an
 // allowlisted shell would turn the exact-argv rule into "anything".
@@ -60,9 +102,52 @@ func NewRunner(allow [][]string) (*Runner, error) {
 		if err := checkArgv(argv); err != nil {
 			return nil, err
 		}
-		r.allow[argvKey(argv)] = true
+		if hasSlot(argv) {
+			r.patterns = append(r.patterns, argv)
+		} else {
+			r.allow[argvKey(argv)] = true
+		}
 	}
 	return r, nil
+}
+
+func hasSlot(argv []string) bool {
+	for _, a := range argv {
+		if _, ok := slotShapes[a]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+// A slot is an allowlist argument that stands for one value of a fixed
+// shape, not for any text: it lets "journalctl --since <time>" be allowed
+// without allowing every argument. Slots are only matched, never split.
+const (
+	// SlotTime is "2006-01-02 15:04:05", optionally followed by " UTC".
+	SlotTime = "\x00slot:time"
+)
+
+var slotShapes = map[string]*regexp.Regexp{
+	SlotTime: regexp.MustCompile(`^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d(?: UTC)?$`),
+}
+
+// matchSlots reports whether argv equals pattern, slot arguments matched
+// by shape.
+func matchSlots(pattern, argv []string) bool {
+	if len(pattern) != len(argv) {
+		return false
+	}
+	for i, p := range pattern {
+		if re, ok := slotShapes[p]; ok {
+			if !re.MatchString(argv[i]) {
+				return false
+			}
+		} else if p != argv[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func checkArgv(argv []string) error {
@@ -99,7 +184,18 @@ func argvKey(argv []string) string { return strings.Join(argv, "\x00") }
 
 // Allowed reports whether argv is on the list.
 func (r *Runner) Allowed(argv []string) bool {
-	return r != nil && checkArgv(argv) == nil && r.allow[argvKey(argv)]
+	if r == nil || checkArgv(argv) != nil {
+		return false
+	}
+	if r.allow[argvKey(argv)] {
+		return true
+	}
+	for _, p := range r.patterns {
+		if matchSlots(p, argv) {
+			return true
+		}
+	}
+	return false
 }
 
 // Run executes argv with no shell, no stdin, a fixed environment, a timeout
@@ -108,9 +204,12 @@ func (r *Runner) Run(ctx context.Context, argv []string) (CmdResult, error) {
 	if !r.Allowed(argv) {
 		return CmdResult{}, fmt.Errorf("%w: %q", ErrNotAllowed, argv)
 	}
-	timeout := r.Timeout
+	timeout, maxOut := r.Timeout, orDefault(r.MaxStdout, DefaultMaxStdout)
 	if timeout <= 0 {
 		timeout = DefaultTimeout
+	}
+	if big, ok := bigFor(argv); ok {
+		timeout, maxOut = max(timeout, big.timeout), max(maxOut, big.maxStdout)
 	}
 	timeout = min(timeout, MaxTimeout)
 	ctx, cancel := context.WithTimeout(ctx, timeout)
@@ -120,7 +219,7 @@ func (r *Runner) Run(ctx context.Context, argv []string) (CmdResult, error) {
 	cmd.Env = fixedEnv()
 	cmd.Stdin = nil
 	cmd.WaitDelay = 2 * time.Second // do not hang on a child that keeps our pipes open
-	stdout := &capBuffer{max: orDefault(r.MaxStdout, DefaultMaxStdout)}
+	stdout := &capBuffer{max: maxOut}
 	stderr := &capBuffer{max: orDefault(r.MaxStderr, DefaultMaxStderr)}
 	cmd.Stdout, cmd.Stderr = stdout, stderr
 
@@ -178,4 +277,53 @@ func (b *capBuffer) Write(p []byte) (int, error) {
 		b.over = true
 	}
 	return len(p), nil
+}
+
+// RunLines runs an allowlisted command and streams its stdout, with the
+// same rules as Run (no shell, fixed environment, timeout) and no stdout
+// cap: memory is the callback's business.
+func (r *Runner) RunLines(ctx context.Context, argv []string, fn func(line string)) (CmdResult, error) {
+	if !r.Allowed(argv) {
+		return CmdResult{}, fmt.Errorf("%w: %q", ErrNotAllowed, argv)
+	}
+	timeout := r.Timeout
+	if timeout <= 0 {
+		timeout = DefaultTimeout
+	}
+	timeout = min(timeout, MaxTimeout)
+	if big, ok := bigFor(argv); ok {
+		timeout = max(timeout, big.timeout) // a registered stream may outlast MaxTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	cmd.Env = fixedEnv()
+	cmd.WaitDelay = 2 * time.Second
+	stderr := &capBuffer{max: orDefault(r.MaxStderr, DefaultMaxStderr)}
+	cmd.Stderr = stderr
+	out, err := cmd.StdoutPipe()
+	if err != nil {
+		return CmdResult{}, err
+	}
+	if err := cmd.Start(); err != nil {
+		return CmdResult{}, err
+	}
+	serr := scan(out, fn)
+	if serr != nil {
+		io.Copy(io.Discard, out) // let the command finish
+	}
+	err = cmd.Wait()
+	res := CmdResult{Stderr: MaskSecrets(stderr.String())}
+	if ctx.Err() == context.DeadlineExceeded {
+		return res, ErrTimeout
+	}
+	var exit *exec.ExitError
+	switch {
+	case err == nil:
+	case errors.As(err, &exit):
+		res.ExitCode = exit.ExitCode()
+	default:
+		return res, err
+	}
+	return res, serr
 }

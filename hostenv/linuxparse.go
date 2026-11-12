@@ -6,12 +6,11 @@ package hostenv
 
 import (
 	"bufio"
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"net"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // ParseOSRelease reads /etc/os-release KEY=value lines.
@@ -132,7 +131,7 @@ func (e ProcNetEntry) IsListening(proto string) bool {
 	if strings.HasPrefix(proto, "tcp") {
 		return e.State == "0A"
 	}
-	return e.State == "07" && e.RemotePort == 0
+	return e.State == "07" // TCP_CLOSE for UDP: bound, not connected
 }
 
 // DpkgQueryFormat is the -f argument the Linux collector passes to dpkg-query.
@@ -162,7 +161,7 @@ func ParseRpmQA(b []byte) []Package {
 	var out []Package
 	for _, l := range strings.Split(string(b), "\n") {
 		f := strings.Split(l, "\t")
-		if len(f) < 3 || f[0] == "" || f[0] == "gpg-pubkey" {
+		if len(f) < 3 || f[0] == "" { // gpg-pubkey entries stay: they are in the rpm database
 			continue
 		}
 		out = append(out, Package{Name: f[0], Version: f[1], Arch: f[2]})
@@ -236,13 +235,12 @@ func ParseGroup(b []byte) map[string][]string {
 // AdminGroups are the groups that grant root through the stock sudoers.
 var AdminGroups = []string{"sudo", "wheel", "admin"}
 
-// CanLoginShell is false for nologin/false shells.
+// CanLoginShell is false for nologin and false shells, and for RHEL's
+// sync, shutdown and halt accounts, whose shells are those commands. An
+// empty shell is a login: login(1) and sshd use /bin/sh.
 func CanLoginShell(shell string) bool {
-	if shell == "" {
-		return false
-	}
 	b := shell[strings.LastIndex(shell, "/")+1:]
-	return b != "nologin" && b != "false" && b != "sync" && b != "halt" && b != "shutdown"
+	return !strings.HasSuffix(shell, "nologin") && b != "false" && b != "sync" && b != "halt" && b != "shutdown"
 }
 
 // SSHDDirective is one keyword line of sshd_config.
@@ -271,19 +269,26 @@ func ParseSSHDConfig(b []byte) (dirs []SSHDDirective, sawMatch bool) {
 	return dirs, false
 }
 
-// sshdLine tokenises one line the way sshd does: the keyword ends at
-// whitespace or '=', one optional '=' may follow ("Key=Value",
-// "Key = Value"), and arguments may be double-quoted.
+// sshdLine is SplitSSHDLine with the keyword lower-cased.
 func sshdLine(l string) (string, []string) {
+	k, args := SplitSSHDLine(l)
+	return strings.ToLower(k), args
+}
+
+// SplitSSHDLine tokenises one sshd_config line the way sshd does: the
+// keyword ends at white space or '=', one optional '=' may follow
+// ("Key=Value", "Key = Value"), and arguments may be double-quoted. A
+// comment line or an empty one gives "".
+func SplitSSHDLine(l string) (string, []string) {
 	l = strings.TrimSpace(l)
 	if l == "" || strings.HasPrefix(l, "#") {
 		return "", nil
 	}
 	i := strings.IndexAny(l, " \t=")
 	if i < 0 {
-		return strings.ToLower(l), nil
+		return l, nil
 	}
-	key, rest := strings.ToLower(l[:i]), strings.TrimLeft(l[i:], " \t")
+	key, rest := l[:i], strings.TrimLeft(l[i:], " \t")
 	if strings.HasPrefix(rest, "=") {
 		rest = strings.TrimLeft(rest[1:], " \t")
 	}
@@ -368,14 +373,38 @@ func ParseProcStatus(b []byte) ProcStatus {
 // MaxCmdline caps a recorded command line.
 const MaxCmdline = 512
 
-// ParseCmdline turns NUL-separated /proc/<pid>/cmdline into one masked line.
+// ParseCmdline turns NUL-separated /proc/<pid>/cmdline into one masked
+// line, cut at MaxCmdline bytes on a character boundary.
 func ParseCmdline(b []byte) string {
-	s := strings.TrimRight(strings.ReplaceAll(string(b), "\x00", " "), " ")
-	s = MaskSecrets(s)
-	if len(s) > MaxCmdline {
-		s = s[:MaxCmdline] + "…"
+	return CutString(MaskSecrets(strings.TrimSpace(strings.ReplaceAll(string(b), "\x00", " "))), MaxCmdline)
+}
+
+// CutString shortens s to at most n bytes without splitting a UTF-8
+// character, adding "…" when it cuts (tools.Cut, shared).
+func CutString(s string, n int) string {
+	if len(s) <= n {
+		return s
 	}
-	return s
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n] + "…"
+}
+
+// ParseProcStartTicks is field 22 of /proc/PID/stat: when the process
+// started, in clock ticks after boot. The name field may hold spaces and
+// parentheses, so fields count from the last ')'.
+func ParseProcStartTicks(b []byte) (int64, bool) {
+	i := strings.LastIndexByte(string(b), ')')
+	if i < 0 {
+		return 0, false
+	}
+	f := strings.Fields(string(b[i+1:]))
+	if len(f) < 20 {
+		return 0, false
+	}
+	t, err := strconv.ParseInt(f[19], 10, 64)
+	return t, err == nil
 }
 
 // TempDirs are world-writable places a binary has no business running from.
@@ -388,41 +417,4 @@ func InTempDir(exe string) bool {
 		}
 	}
 	return false
-}
-
-// AuthorizedKey summarises one authorized_keys line without the key itself.
-type AuthorizedKey struct {
-	Type        string
-	Fingerprint string // SHA256:... as ssh-keygen -l prints it
-	Options     bool   // has options such as command="..."
-}
-
-func ParseAuthorizedKeys(b []byte) []AuthorizedKey {
-	var out []AuthorizedKey
-	for _, l := range strings.Split(string(b), "\n") {
-		l = strings.TrimSpace(l)
-		if l == "" || strings.HasPrefix(l, "#") {
-			continue
-		}
-		f := strings.Fields(l)
-		for i := 0; i+1 < len(f); i++ {
-			if isKeyType(f[i]) {
-				k := AuthorizedKey{Type: f[i], Options: i > 0}
-				if raw, err := base64.StdEncoding.DecodeString(f[i+1]); err == nil {
-					sum := sha256.Sum256(raw)
-					k.Fingerprint = "SHA256:" + base64.RawStdEncoding.EncodeToString(sum[:])
-				} else {
-					sum := sha256.Sum256([]byte(f[i+1]))
-					k.Fingerprint = "SHA256:" + base64.RawStdEncoding.EncodeToString(sum[:])
-				}
-				out = append(out, k)
-				break
-			}
-		}
-	}
-	return out
-}
-
-func isKeyType(s string) bool {
-	return strings.HasPrefix(s, "ssh-") || strings.HasPrefix(s, "ecdsa-sha2-") || strings.HasPrefix(s, "sk-")
 }

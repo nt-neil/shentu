@@ -49,6 +49,7 @@ func (u Unsupported) Collect(_ context.Context, src Source) *Facts {
 	f.Packages, f.Patches, f.Services = Unknown[PackageSet](r, d), Unknown[[]Patch](r, d), Unknown[[]Service](r, d)
 	f.Processes, f.Accounts, f.Listeners = Unknown[[]Process](r, d), Unknown[[]Account](r, d), Unknown[[]Listener](r, d)
 	f.Persistence, f.Firewall = Unknown[[]PersistenceItem](r, d), Unknown[Firewall](r, d)
+	f.SSHKeys = Unknown[[]AuthorizedKeyFile](r, d)
 	f.RemoteAccess = RemoteAccess{SSH: Unknown[SSHConfig](r, d), RDP: Unknown[RDPConfig](r, d),
 		WinRM: Unknown[WinRMConfig](r, d), SMB: Unknown[SMBConfig](r, d)}
 	f.Antimalware, f.AuthEvents, f.Web = Unknown[Antimalware](r, d), Unknown[AuthEvents](r, d), Unknown[Web](r, d)

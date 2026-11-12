@@ -46,10 +46,54 @@ var (
 	ErrNotRegular = errors.New("hostenv: not a regular file")
 )
 
+// notRegular is ErrNotRegular with the reason in words.
+type notRegular string
+
+func (e notRegular) Error() string        { return string(e) }
+func (e notRegular) Is(target error) bool { return target == ErrNotRegular }
+
 // NoFollowReader is implemented by Sources that can refuse a symlink in the
 // final path element. Use ReadFileNoFollow for paths a user controls.
 type NoFollowReader interface {
 	ReadFileNoFollow(path string) ([]byte, error)
+}
+
+// LargeReader is implemented by Sources that can read past MaxFileBytes,
+// for logs a check must see whole (a brute force fills auth.log).
+type LargeReader interface {
+	ReadFileMax(path string, max int64) ([]byte, error)
+}
+
+// ReadFileMax reads up to max bytes through src when it supports it.
+func ReadFileMax(src Source, path string, max int64) ([]byte, error) {
+	if l, ok := src.(LargeReader); ok {
+		return l.ReadFileMax(path, max)
+	}
+	return src.ReadFile(path)
+}
+
+// FileStat is the part of a stat result the collectors use.
+type FileStat struct {
+	Mode    fs.FileMode `json:"mode"`
+	Size    int64       `json:"size"`
+	ModTime time.Time   `json:"mtime"`
+	UID     int         `json:"uid"` // owner; -1 when the system has none to tell (Windows)
+}
+
+// Stater is implemented by Sources that can stat a path (following links).
+type Stater interface {
+	Stat(path string) (FileStat, error)
+}
+
+// ErrNoStat is returned by Stat for a Source that cannot stat.
+var ErrNoStat = errors.New("hostenv: source cannot stat")
+
+// Stat stats path through src when it supports it.
+func Stat(src Source, path string) (FileStat, error) {
+	if s, ok := src.(Stater); ok {
+		return s.Stat(path)
+	}
+	return FileStat{}, ErrNoStat
 }
 
 // ReadFileNoFollow reads path without following a final symlink when src
@@ -81,7 +125,7 @@ func (l *Live) path(p string) string {
 	if best == "" {
 		return p
 	}
-	return l.Remap[best] + strings.TrimPrefix(p, best)
+	return l.Remap[best] + strings.TrimPrefix(p, strings.TrimSuffix(best, "/"))
 }
 
 // NewLive builds a live Source whose commands are limited to allow.
@@ -97,11 +141,13 @@ func (l *Live) Info() SourceInfo {
 	return SourceInfo{GOOS: runtime.GOOS, GOARCH: runtime.GOARCH, Elevated: elevated(), RecordedAt: l.now().UTC()}
 }
 
-func (l *Live) ReadFile(path string) ([]byte, error) { return l.read(path, false) }
+func (l *Live) ReadFile(path string) ([]byte, error) { return l.read(path, false, MaxFileBytes) }
 
-func (l *Live) ReadFileNoFollow(path string) ([]byte, error) { return l.read(path, true) }
+func (l *Live) ReadFileNoFollow(path string) ([]byte, error) { return l.read(path, true, MaxFileBytes) }
 
-func (l *Live) read(path string, noFollow bool) ([]byte, error) {
+func (l *Live) ReadFileMax(path string, max int64) ([]byte, error) { return l.read(path, false, max) }
+
+func (l *Live) read(path string, noFollow bool, max int64) ([]byte, error) {
 	f, err := openRead(l.path(path), noFollow)
 	if err != nil {
 		return nil, err
@@ -110,17 +156,37 @@ func (l *Live) read(path string, noFollow bool) ([]byte, error) {
 	if st, err := f.Stat(); err != nil {
 		return nil, err
 	} else if !st.Mode().IsRegular() {
-		return nil, fmt.Errorf("%w: %s", ErrNotRegular, path)
+		why := "not a regular file"
+		if st.IsDir() {
+			why = "is a directory" // as read(2) says
+		}
+		return nil, &fs.PathError{Op: "read", Path: path, Err: notRegular(why)}
 	}
-	b, err := io.ReadAll(io.LimitReader(f, MaxFileBytes+1))
+	b, err := io.ReadAll(io.LimitReader(f, max+1))
 	if err != nil {
 		return nil, err
 	}
-	b = []byte(MaskSecrets(string(b)))
-	if len(b) > MaxFileBytes {
-		return b[:MaxFileBytes], ErrTruncated
+	truncated := int64(len(b)) > max
+	if truncated {
+		b = b[:max]
+	}
+	// Contents go to parsers raw: masking here corrupted facts (sudo's
+	// NOPASSWD:ALL, sshd's sk-ssh-ed25519-cert-v01@openssh.com, and with it
+	// the config hash). What leaves as text is masked where it leaves:
+	// command lines and cron/systemd commands in facts, streamed log lines,
+	// fixtures (Masker). Whole files are never stored in facts.
+	if truncated {
+		return b, ErrTruncated
 	}
 	return b, nil
+}
+
+func (l *Live) Stat(path string) (FileStat, error) {
+	st, err := os.Stat(l.path(path))
+	if err != nil {
+		return FileStat{}, err
+	}
+	return FileStat{Mode: st.Mode(), Size: st.Size(), ModTime: st.ModTime(), UID: fileUID(st)}, nil
 }
 
 func (l *Live) ReadDir(path string) ([]string, error) {
