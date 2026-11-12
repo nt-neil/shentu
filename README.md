@@ -103,6 +103,23 @@ also carries a signed build provenance, which you can check with the GitHub CLI:
 on amd64 and arm64. Tested end to end on Ubuntu 24.04, Debian 12 and Rocky 9 (arm64). `block_ip` needs
 nftables, which many cloud images leave out: `apt install nftables` or `dnf install nftables`.
 
+### Windows Server
+
+Windows Server 2022 and 2025 are supported from v0.3.0 (amd64; arm64 is built too), tested on
+GitHub's Windows runners. Server 2019 is expected to work but has not been checked on a real host
+yet. Download `shentu_windows_amd64.zip`, then in an elevated prompt copy `shentu.exe` to
+`%ProgramFiles%\Shentu` and run `shentu service install` (patrol) and, for Telegram,
+`shentu service install --bot`. Both run as LocalSystem, which reading the Security log needs;
+configuration and state live in `%ProgramData%\Shentu`, open to SYSTEM and Administrators only.
+Step by step, with the configuration: [packaging/windows/INSTALL.md](packaging/windows/INSTALL.md).
+
+Limits in v0.3.0: Windows is read-only (`block_ip` and `unblock_ip` are not supported), `shentu
+setup` does not run there yet (the configuration is written by hand), there is no MSI, and the
+binary is not code-signed: SmartScreen may warn and Microsoft Defender or another antivirus may
+flag it, because it reads the event log, autostart keys and WMI subscriptions as malware
+scanners do. Check the zip against `checksums.txt` and with
+`gh attestation verify shentu_windows_amd64.zip --repo nt-neil/shentu`.
+
 **Which model should I use?** [Choosing a model](docs/models.md) compares 14 models on the same
 planted intrusion, on speed, correctness, completion, prompt-injection resistance and cost
 (round 2, 2026-11-08: glm-5.3-flash is the best value). Raw data is in

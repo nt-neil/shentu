@@ -6,6 +6,32 @@ a release are not written here: they are worked out from the rule snapshots in
 `docs/site-src/rules-history/`. `CHANGELOG.zh-TW.md` holds the same releases in Traditional
 Chinese for the zh-TW pages; keep the two in step.
 
+## v0.3.0 (unreleased)
+
+- Windows Server 2022 and 2025 (amd64, arm64 built too): a Windows collector reads the host
+  through the Windows APIs only (registry, services, processes, sockets, accounts, scheduled
+  tasks, the event log, WMI and the firewall), no PowerShell and no external commands.
+- Windows checks: autostart entries (Run keys, services, scheduled tasks, startup folders, WMI
+  event subscriptions), RDP without NLA, SMB signing and SMBv1, insecure WinRM, firewall
+  profiles, Defender state and exclusions, logon failures and cleared logs.
+- Missing Windows updates against Microsoft's monthly security releases (MSRC), with the
+  CISA KEV list marking the exploited ones first.
+- IIS: web roots from `applicationHost.config`; the code audit reads ASP and ASP.NET pages and
+  flags webshells and scripts in upload folders, UTF-16 pages included.
+- Two Windows services, `Shentu` (patrol) and `ShentuBot` (Telegram), installed with
+  `shentu service install [--bot]` from `%ProgramFiles%\Shentu`; configuration and state in
+  `%ProgramData%\Shentu`, open to SYSTEM and Administrators only.
+- The `ssh_logins`, `processes`, `accounts_audit` and `log_search` tools work on Windows
+  (logon events, process list, local accounts, event logs).
+
+### Known issues
+
+- Windows is read-only: `block_ip` and `unblock_ip` are not supported there.
+- Windows Server 2019 has not been checked on a real host yet.
+- `shentu setup` does not run on Windows yet; the configuration is written by hand.
+- The Windows binary is not code-signed and there is no MSI; SmartScreen or an antivirus may
+  warn about it.
+
 ## v0.2.5 (unreleased)
 
 - `app_code_audit` follows calls across files: input read in one file and used in a sink
