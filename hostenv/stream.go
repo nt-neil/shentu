@@ -41,6 +41,12 @@ func ScanLines(src Source, path string, fn func(line string)) error {
 // scanFile streams path's lines; masked says whether each is secret-masked.
 // Only tables that hold numbers (/proc/net) skip it, for speed.
 func scanFile(src Source, path string, masked bool, fn func(line string)) error {
+	return scanFileUntil(src, path, masked, func(l string) bool { fn(l); return true })
+}
+
+// scanFileUntil is scanFile whose fn can stop the scan by returning false
+// (the scan then ends without error).
+func scanFileUntil(src Source, path string, masked bool, fn func(line string) bool) error {
 	var r io.Reader
 	var cut error // a ReadFile fallback that was cut short: the lines read count, the scan is not complete
 	if o, ok := src.(Opener); ok {
@@ -68,15 +74,20 @@ func scanFile(src Source, path string, masked bool, fn func(line string)) error 
 	}
 	var err error
 	if masked {
-		err = scan(r, fn)
+		err = scanUntil(r, fn)
 	} else {
-		err = scanPlain(r, fn)
+		err = scanPlainUntil(r, fn)
+	}
+	if err == errStopScan {
+		return nil // stopped by fn: what it wanted was found
 	}
 	if err == nil {
 		err = cut
 	}
 	return err
 }
+
+var errStopScan = errors.New("scan stopped")
 
 // A private key block spans lines, so line-by-line masking alone would
 // let its body through. A BEGIN ... PRIVATE KEY marker anywhere in a line
@@ -125,21 +136,31 @@ func ScanLinesUnmasked(src Source, path string, fn func(line string)) error {
 }
 
 func scanPlain(r io.Reader, fn func(string)) error {
+	return scanPlainUntil(r, func(l string) bool { fn(l); return true })
+}
+
+func scanPlainUntil(r io.Reader, fn func(string) bool) error {
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 64*1024), MaxLineBytes)
 	for sc.Scan() {
-		fn(sc.Text())
+		if !fn(sc.Text()) {
+			return errStopScan
+		}
 	}
 	return sc.Err()
 }
 
 func scan(r io.Reader, fn func(string)) error {
+	return scanUntil(r, func(l string) bool { fn(l); return true })
+}
+
+func scanUntil(r io.Reader, fn func(string) bool) error {
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 64*1024), MaxLineBytes)
 	var km keyMasker
 	for sc.Scan() {
-		if out, ok := km.line(sc.Text()); ok {
-			fn(out)
+		if out, ok := km.line(sc.Text()); ok && !fn(out) {
+			return errStopScan
 		}
 	}
 	return sc.Err()
@@ -263,8 +284,13 @@ func ScanLinesRaw(src Source, path string, w io.Writer) error {
 			return err
 		}
 		defer f.Close()
-		_, err = io.Copy(w, io.LimitReader(f, MaxFileBytes))
-		return err
+		if _, err = io.Copy(w, io.LimitReader(f, MaxFileBytes)); err != nil {
+			return err
+		}
+		if n, _ := f.Read(make([]byte, 1)); n > 0 { // more than a fixture keeps: say so, never cut silently
+			return ErrTruncated
+		}
+		return nil
 	}
 	b, err := src.ReadFile(path)
 	w.Write(b)
@@ -276,29 +302,37 @@ func ScanLinesRaw(src Source, path string, w io.Writer) error {
 func (r *Recorder) RunLinesUnmasked(ctx context.Context, argv []string, fn func(line string)) (CmdResult, error) {
 	var buf bytes.Buffer
 	var km keyMasker
+	cut := false
 	res, err := RunLinesUnmasked(ctx, r.Inner, argv, func(l string) {
-		if m, ok := km.line(l); ok && buf.Len() < MaxFileBytes {
-			buf.WriteString(m)
-			buf.WriteByte('\n')
+		if m, ok := km.line(l); ok {
+			if buf.Len() < MaxFileBytes {
+				buf.WriteString(m)
+				buf.WriteByte('\n')
+			} else {
+				cut = true
+			}
 		}
 		fn(l)
 	})
 	r.put(&entry{Op: "cmd", Argv: append([]string(nil), argv...), Err: errCode(err), data: buf.Bytes(),
-		ExitCode: res.ExitCode, Stderr: res.Stderr})
+		ExitCode: res.ExitCode, Stderr: res.Stderr, Truncated: res.Truncated || cut})
 	return res, err
 }
 
 func (r *Recorder) RunLines(ctx context.Context, argv []string, fn func(line string)) (CmdResult, error) {
 	var buf bytes.Buffer
+	cut := false
 	res, err := RunLines(ctx, r.Inner, argv, func(l string) {
 		if buf.Len() < MaxFileBytes {
 			buf.WriteString(l)
 			buf.WriteByte('\n')
+		} else {
+			cut = true
 		}
 		fn(l)
 	})
 	r.put(&entry{Op: "cmd", Argv: append([]string(nil), argv...), Err: errCode(err), data: buf.Bytes(),
-		ExitCode: res.ExitCode, Stderr: res.Stderr})
+		ExitCode: res.ExitCode, Stderr: res.Stderr, Truncated: res.Truncated || cut})
 	return res, err
 }
 

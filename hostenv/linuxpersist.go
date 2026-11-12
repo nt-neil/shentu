@@ -173,7 +173,9 @@ func (LinuxCollector) SSHKeyFiles(src Source, accounts []Account) Obs[[]Authoriz
 			}
 			seen[p] = true
 			st, err := Stat(src, p)
-			if _, lerr := src.Readlink(p); err != nil && lerr != nil { // a link, even dangling, is looked at below
+			_, lerr := src.Readlink(p)
+			_, derr := src.Readlink(path.Dir(p))
+			if err != nil && lerr != nil && derr != nil { // a link (the file or ~/.ssh), even dangling, is looked at below
 				if !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, ErrNoStat) {
 					miss(p, err)
 				}
@@ -204,7 +206,10 @@ func (LinuxCollector) SSHKeyFiles(src Source, accounts []Account) Obs[[]Authoriz
 // too, as long as the target is a regular file (and at most MaxFileBytes).
 // A link is noted in kf, and whether it leaves the home.
 func readKeyFile(src Source, p, home string, kf *AuthorizedKeyFile) ([]byte, error) {
-	if _, err := src.Readlink(p); err != nil {
+	home = strings.TrimSuffix(home, "/")
+	_, fileErr := src.Readlink(p)
+	_, dirErr := src.Readlink(path.Dir(p)) // ~/.ssh itself may be the link
+	if fileErr != nil && dirErr != nil {
 		return ReadFileNoFollow(src, p)
 	}
 	target, err := EvalSymlinks(src, p)
@@ -212,7 +217,16 @@ func readKeyFile(src Source, p, home string, kf *AuthorizedKeyFile) ([]byte, err
 		return nil, err
 	}
 	kf.SymlinkTarget = target
-	kf.OutsideHome = !strings.HasPrefix(target, strings.TrimSuffix(home, "/")+"/")
+	realHome := home // a home that is itself a link (/home/a -> /data/a) is not "outside"
+	if _, err := src.Readlink(home); err == nil {
+		if h, err := EvalSymlinks(src, home); err == nil {
+			realHome = h
+		}
+	}
+	kf.OutsideHome = !strings.HasPrefix(target, realHome+"/") && !strings.HasPrefix(target, home+"/")
+	if fileErr != nil { // only the folder is a link: the file itself is still read without following
+		return ReadFileNoFollow(src, p)
+	}
 	if st, err := Stat(src, target); err == nil && !st.Mode.IsRegular() {
 		return nil, &fs.PathError{Op: "read", Path: target, Err: ErrNotRegular}
 	}
