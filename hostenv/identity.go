@@ -169,20 +169,33 @@ func (m *Masker) text(s string, ips, users bool) string {
 	return s
 }
 
-// hwIDs masks the hardware ids in s (hwIDRe). A match that is really an
-// IPv6 address or an MD5 fingerprint stays (notHWID); an IPv4 address
-// written with dashes (ip-10-20-30-40) is masked as an address when ips is
-// set, in the same dashed form.
+// hwIDs masks the hardware ids in s (hwIDRe). A match inside an IPv6
+// address is handled here, not left to a later step: with ips the whole
+// address is masked as one right away, without it stays as it is. An MD5
+// fingerprint stays; an IPv4 address written with dashes (ip-10-20-30-40)
+// is masked as an address when ips is set, in the same dashed form.
 func (m *Masker) hwIDs(s string, ips bool) string {
 	var b strings.Builder
 	last := 0
 	for _, loc := range hwIDRe.FindAllStringIndex(s, -1) {
 		i, j := loc[0], loc[1]
+		if i < last {
+			continue // inside an address already written out
+		}
 		t := s[i:j]
-		repl := ""
-		switch {
-		case notHWID(s, i, j):
+		var repl string
+		if a, z, ip := ipv6Around(s, i, j); ip != nil {
+			if !ips {
+				continue
+			}
+			b.WriteString(s[last:a])
+			b.WriteString(m.ip(ip).String())
+			last = z
 			continue
+		}
+		switch {
+		case strings.Contains(t, ":") && i >= 4 && strings.EqualFold(s[i-4:i], "MD5:"):
+			continue // a key fingerprint
 		case dashedIPv4(t) != nil:
 			if !ips {
 				continue
@@ -199,36 +212,39 @@ func (m *Masker) hwIDs(s string, ips bool) string {
 	return b.String()
 }
 
-// notHWID tells a hwIDRe match s[i:j] that is something else: part of an
-// IPv6 address, or an MD5 key fingerprint ("MD5:" right before it). For
-// IPv6 the whole colon run around the match is taken (hex digits and
-// colons): only a run with "::" or a group of three or four digits that
-// parses as an address counts, so "HWaddr:00:0c:29:59:f3:3f" is still a
-// MAC.
-func notHWID(s string, i, j int) bool {
-	t := s[i:j]
-	if !strings.Contains(t, ":") {
-		return false
+// ipv6Around returns the IPv6 address a hwIDRe match s[i:j] is part of:
+// the run of hex digits and colons around it, when that run is longer than
+// the match, has "::" or a group of three or four digits, and parses. So
+// "HWaddr:00:0c:29:59:f3:3f" is still a MAC.
+func ipv6Around(s string, i, j int) (a, z int, ip net.IP) {
+	if !strings.Contains(s[i:j], ":") {
+		return 0, 0, nil
 	}
-	if i >= 4 && strings.EqualFold(s[i-4:i], "MD5:") {
-		return true
-	}
-	a, z := i, j
+	a, z = i, j
 	for a > 0 && (s[a-1] == ':' || isHex(s[a-1])) {
 		a--
 	}
 	for z < len(s) && (s[z] == ':' || isHex(s[z])) {
 		z++
 	}
+	for a < i && s[a] == ':' && (a+1 >= len(s) || s[a+1] != ':') {
+		a++ // a lone colon before the address belongs to the text around it
+	}
+	for z > j && s[z-1] == ':' && (z < 2 || s[z-2] != ':') {
+		z--
+	}
 	run := s[a:z]
-	if run == t {
-		return false
+	if run == s[i:j] {
+		return 0, 0, nil
 	}
 	long := strings.Contains(run, "::")
 	for _, g := range strings.Split(run, ":") {
 		long = long || len(g) >= 3
 	}
-	return long && net.ParseIP(strings.Trim(run, ":")) != nil || long && net.ParseIP(run) != nil
+	if ip = net.ParseIP(run); !long || ip == nil || ip.To4() != nil {
+		return 0, 0, nil
+	}
+	return a, z, ip
 }
 
 func isHex(c byte) bool {

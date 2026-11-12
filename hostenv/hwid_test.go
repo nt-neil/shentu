@@ -1,6 +1,7 @@
 package hostenv
 
 import (
+	"net"
 	"strings"
 	"testing"
 )
@@ -80,6 +81,11 @@ func TestMaskHardwareIDLookalikes(t *testing.T) {
 		if got := m.text(keep, false, true); got != keep {
 			t.Errorf("%q masked as a hardware id: %q", keep, got)
 		}
+	}
+	// With addresses masked, an IPv6 address is masked whole, here.
+	if got := m.text("inet6 2001:db8:0:0:1:2:3:4/64", true, true); strings.Contains(got, "0:0:1:2:3:4") ||
+		net.ParseIP(strings.TrimSuffix(strings.TrimPrefix(got, "inet6 "), "/64")) == nil {
+		t.Errorf("IPv6 with ips must be masked whole, as an address: %q", got)
 	}
 	// A dashed IPv4 is masked as an address (when ips are), in dashes.
 	got := m.text("Name=ip-10-20-30-40.ec2.internal", true, true)
