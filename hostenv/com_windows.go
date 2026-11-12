@@ -87,6 +87,7 @@ const (
 	wbemENotFound           = 0x80041002
 	wbemEInvalidQuery       = 0x80041017
 	eAccessDenied           = 0x80070005
+	ePointer                = 0x80004003
 	maxWMIRows              = 10000
 	maxVariantArray         = 10000
 	maxVariantString        = 64 << 10
@@ -161,8 +162,13 @@ func hr(op string, r uintptr) error {
 	return &hresultErr{op: op, hr: uint32(r)}
 }
 
-// call invokes vtable slot i of the COM object obj.
+// call invokes vtable slot i of the COM object obj. A nil object (a call
+// that reported success without an out-pointer) is E_POINTER, never a
+// dereference.
 func call(obj unsafe.Pointer, i int, args ...uintptr) uintptr {
+	if obj == nil {
+		return ePointer
+	}
 	vtbl := *(*unsafe.Pointer)(obj)
 	fn := *(*uintptr)(unsafe.Add(vtbl, uintptr(i)*unsafe.Sizeof(uintptr(0))))
 	r, _, _ := syscall.SyscallN(fn, append([]uintptr{uintptr(obj)}, args...)...)
@@ -288,8 +294,12 @@ func execWQL(namespace, query string, props []string) ([]map[string]any, error) 
 	}
 	defer freeBSTR(q)
 	var enum unsafe.Pointer
-	if err := hr("ExecQuery", call(services, vtServicesExecQuery, lang, q, wbemFlagForwardOnly|wbemFlagReturnImmediate, 0, uintptr(unsafe.Pointer(&enum)))); err != nil {
+	r = call(services, vtServicesExecQuery, lang, q, wbemFlagForwardOnly|wbemFlagReturnImmediate, 0, uintptr(unsafe.Pointer(&enum)))
+	if err := hr("ExecQuery", r); err != nil {
 		return nil, err
+	}
+	if enum == nil { // seen once on windows-2025 CI: success, no enumerator
+		return nil, &hresultErr{op: "ExecQuery returned no enumerator", hr: uint32(r)}
 	}
 	defer release(enum)
 
