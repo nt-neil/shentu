@@ -20,6 +20,18 @@ refs = ["CVE-2022-31507", "CVE-2022-31506", "CVE-2025-54140"]
 sinks = [".save("]
 arg = 1
 
+# Archives: only the path argument; tarfile.open(fileobj=...) reads an open
+# stream (an upload), whose members are python-path-traversal-archive-extract's.
+[[args]]
+sinks = ["tarfile.open("]
+arg = 1
+name = "name"
+
+[[args]]
+sinks = ["zipfile.ZipFile("]
+arg = 1
+name = "file"
+
 [[samples]]
 kind = "vulnerable"
 note = "os.path.join discards the base when the second part is absolute"
