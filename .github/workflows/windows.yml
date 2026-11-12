@@ -40,9 +40,7 @@ jobs:
           go test -v -run 'TestSecureDir|TestSecureDirRefusesSquatted|TestTrustConfig|TestTrustConfigMissingAndLinks|TestSkillsNeedTrustedFolder' .
           # Telegram bot, offline: a fake Bot API and a fake model (httptest).
           go test -run 'Bot|TOTP|MarkdownToTelegram|Welcome|Schedule|NextDaily' .
-          # tools: these tests spell Unix paths (/var/www, "dir/site/", PAM, sshd
-          # drop-ins, /proc); they are reported to the tools owners, not fixed here.
-          go test ./tools/ -skip '^(TestUploadFolder|TestWebRootsSymlinks|TestAppCodeAudit|TestAppCodeAuditKeepsResults|TestServedFallback|TestUnpackagedPAM|TestSSHDropInUnreadable|TestSSHSummary|TestLogPathAllowlist|TestMinerSigns)$'
+          go test ./tools/
       - name: fuzz VARIANT / SAFEARRAY decoding
         if: ${{ !cancelled() }}
         run: |
