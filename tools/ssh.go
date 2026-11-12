@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/nt-neil/shentu/hostenv"
@@ -48,8 +49,11 @@ func SSHSummary(ctx context.Context, env *Env, since time.Time, onlyIP string) (
 	})
 	sources, evicted := hostenv.MaxLogins(aggs...)
 	// verified is false for text logs: anyone on the host can write sshd lines there.
-	// complete is false when a log was cut short or could not be read: the counts are then a lower bound.
-	out := map[string]any{"source": source, "verified": verified, "complete": err == nil, "since": since, "sources": sources}
+	// complete is false when a log was cut short or could not be read, or
+	// when an empty journal had no text log to confirm it: the counts are
+	// then a lower bound.
+	complete := err == nil && (verified || !strings.HasPrefix(source, "journald"))
+	out := map[string]any{"source": source, "verified": verified, "complete": complete, "since": since, "sources": sources}
 	if err != nil {
 		out["error"] = err.Error()
 	}

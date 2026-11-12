@@ -333,8 +333,10 @@ func (c LinuxCollector) ssh(src Source) Obs[SSHConfig] {
 
 // SSHD reads the effective global sshd settings that matter for security,
 // following Include in place (relative to the main file's folder, sorted
-// as sshd's glob is); the first value wins, as in sshd, and a Match block
-// ends the global part. A file or Include folder that cannot be read leaves
+// as sshd's glob is); the first value wins, as in sshd. A Match block in
+// the main file ends the global part; one in an included file ends only
+// that file, as sshd restores the Match state after each Include. An
+// Include nested more than 4 deep is listed in Unread. A file or Include folder that cannot be read leaves
 // every setting not set before it "unknown", and is listed in Unread as
 // "path (why)". The hash covers every byte read, to notice any change.
 func (LinuxCollector) SSHD(src Source, config string) Obs[SSHConfig] {
@@ -353,9 +355,15 @@ func (LinuxCollector) SSHD(src Source, config string) Obs[SSHConfig] {
 			}
 		}
 	}
-	var read func(p string, depth int) bool // false: stopped at Match
+	files := 0 // read, at most maxSSHDFiles (as on Windows)
+	var read func(p string, depth int) bool // false: stopped at the main file's Match
 	read = func(p string, depth int) bool {
 		if depth > 4 {
+			unknown(p, errors.New("Include nested more than 4 deep"))
+			return true
+		}
+		if files++; files > maxSSHDFiles {
+			unknown(p, fmt.Errorf("more than %d sshd config files", maxSSHDFiles))
 			return true
 		}
 		b, err := src.ReadFile(p)
@@ -388,7 +396,7 @@ func (LinuxCollector) SSHD(src Source, config string) Obs[SSHConfig] {
 				cfg.Settings[d.Key], got[d.Key] = d.Value, true
 			}
 		}
-		return !sawMatch
+		return !sawMatch || depth > 0 // an included file's Match ends that file only
 	}
 	read(config, 0)
 	cfg.Hash = hex.EncodeToString(h.Sum(nil))[:16]
@@ -397,6 +405,9 @@ func (LinuxCollector) SSHD(src Source, config string) Obs[SSHConfig] {
 	}
 	return OK(cfg)
 }
+
+// maxSSHDFiles caps the sshd config files read through Include.
+const maxSSHDFiles = 256
 
 // whyUnread is the short reason a path could not be read: "permission
 // denied", the system's own words ("is a directory"), or the error.

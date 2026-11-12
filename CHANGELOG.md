@@ -32,6 +32,9 @@ Chinese for the zh-TW pages; keep the two in step.
   note saying so.
   A journal that hides the system's entries from a non-root user is no longer reported as
   "no failed logins".
+- A code audit root written with a trailing slash (`/var/www/html/`) or as `/` is no longer
+  skipped when an audit resumes inside it. Roots are now cleaned, so the first audit after
+  the upgrade does not find the place the last one stopped and walks from the start once.
 
 ### Known issues
 

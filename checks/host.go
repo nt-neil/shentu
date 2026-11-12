@@ -41,9 +41,17 @@ func sshSettings(f *hostenv.Facts) []Finding {
 			Evidence: o.Value.ConfigPath + ": PermitRootLogin yes"})
 	}
 	if s["passwordauthentication"] == "unknown" || s["permitrootlogin"] == "unknown" {
+		// Say the reason it has: only a permission problem is solved by root.
+		reason := o.Reason
+		if reason == "" {
+			reason = hostenv.ReasonPermission
+		}
+		title := "SSH settings could not be read (" + string(reason) + ")"
+		if reason == hostenv.ReasonPermission {
+			title = "SSH settings could not be read; run Shentu as root"
+		}
 		out = append(out, Finding{Check: "ssh.settings", Status: StatusCannotTell, Severity: SevInfo,
-			Title: "SSH settings could not be read; run Shentu as root", Reason: string(hostenv.ReasonPermission),
-			Evidence: strings.Join(o.Value.Unread, ", ")})
+			Title: title, Reason: string(reason), Evidence: strings.Join(o.Value.Unread, ", ")})
 		return out
 	}
 	// Partial with both settings known: a file read later could not be, so
