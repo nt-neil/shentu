@@ -53,7 +53,7 @@ func TestAppCodeAudit(t *testing.T) {
 	res := AppCodeAudit(context.Background(), []string{filepath.Join(dir, "site")}, []string{pub})
 	got := map[string]CodeFinding{}
 	for _, f := range res.Findings {
-		got[f.Kind+" "+strings.TrimPrefix(f.Path, dir+"/site/")] = f
+		got[f.Kind+" "+strings.TrimPrefix(filepath.ToSlash(f.Path), filepath.ToSlash(dir)+"/site/")] = f
 	}
 	want := map[string]string{ // kind + path → severity
 		"exposed public/.env": "critical", "exposed public/.git": "critical", "exposed public/dump.sql": "critical",
