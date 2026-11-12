@@ -86,6 +86,27 @@ jobs:
           print("findings:", len(json.load(open(sys.argv[2]))))
           sys.exit(0 if ok else 1)
           EOF
+      - name: shentu survey and patrol smoke (counts only)
+        if: ${{ !cancelled() }}
+        run: |
+          go build -o shentu.exe .
+          # Creates %ProgramData%\Shentu with its protected ACL, reads the
+          # (empty) config, surveys this runner. The profile names processes
+          # and accounts: it stays in RUNNER_TEMP, only counts are printed.
+          ./shentu.exe survey > "$RUNNER_TEMP/survey.json"
+          python - "$RUNNER_TEMP/survey.json" <<'EOF'
+          import json, sys, collections
+          p = json.load(open(sys.argv[1]))
+          ok = p["os"].startswith("Windows Server") and p["firewall"].startswith("Windows Firewall") and p["cron_files"] and p["services"]
+          print("services", len(p["services"]), "autostart", len(p["cron_files"]), "accounts", len(p["login_accounts"] or []))
+          print("risks", dict(collections.Counter(r["severity"] for r in p.get("risks") or [])))
+          sys.exit(0 if ok else 1)
+          EOF
+          # No model runs here, so patrol may stop at the LLM step; its exit
+          # code is reported, not judged. The report itself is not printed.
+          set +e
+          ./shentu.exe patrol --dry-run > "$RUNNER_TEMP/patrol.txt" 2>&1
+          echo "patrol --dry-run exit $?, $(wc -l < "$RUNNER_TEMP/patrol.txt") lines"
       - name: keep the masked fixture for review (not committed automatically)
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
