@@ -821,6 +821,17 @@ func regText(r RegValue) string {
 // winIISConfig is applicationHost.config under the system root.
 const winIISConfig = `\System32\inetsrv\config\applicationHost.config`
 
+// Web reports IIS alone, for callers (the code audit) that need web roots
+// without a full collection. A source that is not a WinSource has none.
+func (WindowsCollector) Web(src Source) Obs[Web] {
+	ws, ok := src.(WinSource)
+	if !ok {
+		return Unknown[Web](ReasonUnsupported, "not a Windows source")
+	}
+	svcs, err := ws.Services()
+	return winWeb(ws, svcs, err)
+}
+
 // winWeb reports IIS: its web roots are the physical paths of every
 // virtual directory in applicationHost.config. No config and no W3SVC
 // service means no IIS, which is an empty, known web fact (as on Linux

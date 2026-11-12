@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"runtime/debug"
 	"slices"
 	"sort"
@@ -125,7 +126,12 @@ func WebRoots() []string {
 
 // WebRootsReport returns the folders nginx or Apache serve, and the
 // configuration files it could not read, each with why ("path (why)").
-func WebRootsReport() (roots, unreadable []string) { return webRootsFrom(hostenv.DefaultWebConf.Globs) }
+func WebRootsReport() (roots, unreadable []string) {
+	if runtime.GOOS == "windows" {
+		return iisWebRoots(winSource())
+	}
+	return webRootsFrom(hostenv.DefaultWebConf.Globs)
+}
 
 // The configuration a symlink in it may point to: a regular file under
 // webConfRoot, owned by webConfOwner (root), that only its owner can write
@@ -251,7 +257,7 @@ func uploadFolder(p string, webRoots []string) bool {
 		}
 		parent := strings.Join(segs[:i], "/")
 		if root != "" {
-			if parent == root {
+			if samePath(parent, root) {
 				return true
 			}
 			continue
@@ -661,8 +667,12 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 				add(finding("upload_script", "critical", p, 0, "PHP file in an upload folder; uploads should never be scripts",
 					"check the file, delete it if it is not yours, and stop PHP from running in the upload folder"))
 			}
+			if aspAudit && aspExt[ext] && uploadFolder(p, webRoots) {
+				add(finding("upload_script", "critical", p, 0, "ASP or ASP.NET page in an upload folder; uploads should never be scripts",
+					"check the file, delete it if it is not yours, and remove script and execute permission from the upload folder in IIS"))
+			}
 			lang := engine.LangOf(name)
-			if !auditExt[ext] && !auditExt[name] && !strings.HasPrefix(name, ".env") && name != "settings.py" && lang == "" {
+			if !auditExt[ext] && !auditExt[name] && !strings.HasPrefix(name, ".env") && name != "settings.py" && lang == "" && !(aspAudit && aspExt[ext]) {
 				return nil
 			}
 			if res.Files >= auditMaxFiles {
@@ -1014,15 +1024,22 @@ func severityRank(s string) int {
 // auditContent checks one file's lines. Secrets are matched but never copied out.
 func auditContent(p, name string, b []byte, web, isPHP bool, add func(CodeFinding)) {
 	envFile := name == ".env" || strings.HasPrefix(name, ".env.")
+	at := -1
 	if webExt[strings.ToLower(filepath.Ext(name))] {
 		for _, re := range webshellPatterns {
 			if loc := re.FindIndex(b); loc != nil {
-				add(finding("webshell", "critical", p, lineAt(b, loc[0]),
-					"code that runs commands or code taken straight from the request (webshell pattern)",
-					"check the file now; if you did not write it, take the site offline, delete it and look for how it got there"))
+				at = loc[0]
 				break
 			}
 		}
+	}
+	if at < 0 {
+		at = aspWebshellAt(name, b)
+	}
+	if at >= 0 {
+		add(finding("webshell", "critical", p, lineAt(b, at),
+			"code that runs commands or code taken straight from the request (webshell pattern)",
+			"check the file now; if you did not write it, take the site offline, delete it and look for how it got there"))
 	}
 	sc := bufio.NewScanner(bytes.NewReader(b))
 	sc.Buffer(make([]byte, 64*1024), auditMaxSize)

@@ -115,6 +115,7 @@ func FileChanges(ctx context.Context, roots []string, since time.Time) (map[stri
 							c.Webshell = append(c.Webshell, string(m))
 						}
 					}
+					c.Webshell = append(c.Webshell, aspWebshellMatches(p, b)...)
 				}
 			}
 			out = append(out, c)
