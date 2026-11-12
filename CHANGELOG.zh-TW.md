@@ -10,6 +10,19 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
   本機任何人都能用 `logger` 寫入一行 sshd 紀錄，所以這時 `auth_events` 標為 partial，
   原因是新的 `unverified_source`，多次試圖登入的告警也會附註來源未驗證。
   不是 root 的用戶沒有權限看系統紀錄時，不再當成「沒有登入沒成功」。
+- Amazon Linux 2 與 2023：套件漏洞改用 Amazon 的 ALAS 公告比對（讀每個套件庫的 `updateinfo`，
+  先用 `repomd.xml` 裡的 sha256 驗證再暫存起來），Amazon Linux 2 的 extras 也算在內。
+  已經不再有更新的 Amazon Linux 1 回報「說不出有沒有漏洞」。真的在 Amazon Linux 2023 的 VM 上錄製過；
+  Amazon Linux 2 只有測試測到。
+- Alpine Linux：從 apk 資料庫讀套件（OSV 比對），讀 OpenRC 服務與 runlevel，
+  並把 `/etc/local.d`、busybox crond（`/etc/crontabs`、`/etc/periodic`）與 `/etc/inittab` 列為開機或定時自動執行的位置；
+  busybox syslog 只讀 auth 類的 sshd 紀錄，並標為未驗證。真的在 Alpine 3.22 的 VM 上
+  以 root 與用戶分別錄製過一次。
+- SUSE：openSUSE Leap、Tumbleweed，以及 SLES、SLED、SLES for SAP
+  （SLE 15 每個模組查一個 OSV ecosystem；OSV 沒有收錄的會列為沒有查）。
+  Leap 用自製的測試資料驗證，SLES 還沒有在真的主機上試過。
+- 每日報告會列出沒查成或只查了一部分的漏洞檢查；套件清單讀出 0 個時回報「說不出有沒有漏洞」，
+  不再當成「沒有漏洞」。
 
 ## v0.2.5 — 2026-11-13
 

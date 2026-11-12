@@ -16,6 +16,19 @@ Chinese for the zh-TW pages; keep the two in step.
   note saying so.
   A journal that hides the system's entries from a non-root user is no longer reported as
   "no failed logins".
+- Amazon Linux 2 and 2023: package vulnerabilities come from Amazon's ALAS advisories
+  (the repositories' `updateinfo`, checked against the sha256 in `repomd.xml` and cached),
+  Amazon Linux 2's extras topics included. Amazon Linux 1, past its end of life, answers
+  "cannot tell". Recorded on an Amazon Linux 2023 VM; Amazon Linux 2 is covered by tests only.
+- Alpine Linux: packages from the apk database (OSV), OpenRC services and runlevels,
+  `/etc/local.d`, busybox crond (`/etc/crontabs`, `/etc/periodic`) and `/etc/inittab` as
+  persistence, and sshd lines of busybox syslog's auth facilities, marked unverified.
+  Recorded on an Alpine 3.22 VM, as root and as a user.
+- SUSE: openSUSE Leap and Tumbleweed, and SLES, SLED and SLES for SAP (one OSV ecosystem per
+  SLE 15 module; the ones OSV does not carry are listed as not queried). Leap is tested with
+  a synthetic fixture and SLES on no real host yet.
+- The daily report says when a vulnerability check failed or covered only part, and a
+  package list that parsed to nothing is "cannot tell" instead of "no vulnerabilities".
 
 ## v0.2.5 — 2026-11-13
 
