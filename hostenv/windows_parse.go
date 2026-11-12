@@ -124,6 +124,10 @@ type eventXML struct {
 	} `xml:"UserData"`
 }
 
+// eventFields are the EventData/UserData fields winAuthEvents uses.
+var eventFields = map[string]bool{"IpAddress": true, "LogonType": true, "SubjectUserName": true,
+	"TargetUserName": true, "MemberSid": true, "ServiceName": true}
+
 // ParseEventXML decodes one event rendered with EvtRenderEventXml. EventData
 // fields are keyed by their Name attribute, UserData fields (1102, 104) by
 // their element name. Values are secret-masked.
@@ -140,6 +144,13 @@ func ParseEventXML(s string) (WinEvent, error) {
 	}
 	for _, d := range x.UserData.Inner.Fields {
 		e.Data[d.XMLName.Local] = MaskSecrets(strings.TrimSpace(d.Value))
+	}
+	for k := range e.Data {
+		// Only fields the collector reads leave the source. A failed logon's
+		// TargetUserName is whatever was typed, sometimes a password.
+		if !eventFields[k] || (e.ID == 4625 && k == "TargetUserName") {
+			delete(e.Data, k)
+		}
 	}
 	if len(e.Data) == 0 {
 		e.Data = nil

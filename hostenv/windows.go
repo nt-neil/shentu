@@ -34,6 +34,26 @@ type RegValue struct {
 // MaxRegBinary caps a REG_BINARY value; the collector only needs FILETIMEs.
 const MaxRegBinary = 4096
 
+// secretValueNames mark registry values whose data is a credential:
+// Winlogon DefaultPassword / AltDefaultPassword (auto-logon), service and
+// application secrets. Their data never leaves the source.
+var secretValueNames = []string{"password", "passwd", "pwd", "secret", "token", "apikey", "api_key", "credential", "privatekey"}
+
+// RedactRegValues blanks the data of every value whose name marks it as a
+// credential, keeping the type so a check can still see the value is set.
+func RedactRegValues(v map[string]RegValue) map[string]RegValue {
+	for name, r := range v {
+		n := strings.ToLower(name)
+		for _, s := range secretValueNames {
+			if strings.Contains(n, s) {
+				v[name] = RegValue{Type: r.Type, String: "[REDACTED]"}
+				break
+			}
+		}
+	}
+	return v
+}
+
 // WinService is one SCM entry (EnumServicesStatusEx + QueryServiceConfig).
 type WinService struct {
 	Name        string `json:"name"`

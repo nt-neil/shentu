@@ -99,7 +99,7 @@ func (l *Live) RegValues(key string) (map[string]RegValue, error) {
 			out[n] = v
 		}
 	}
-	return out, nil
+	return RedactRegValues(out), nil
 }
 
 func readValue(k registry.Key, name string) (RegValue, bool) {

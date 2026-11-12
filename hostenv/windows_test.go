@@ -172,7 +172,8 @@ func weakServer() *fakeWin {
 	w.subkeys[`HKU`] = []string{".DEFAULT", sidBase + "-1001", sidBase + "-1001_Classes", "S-1-5-18"}
 	w.reg[`HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run`] = map[string]RegValue{"SecurityHealth": {Type: "EXPAND_SZ", String: `%windir%\system32\SecurityHealthSystray.exe`}}
 	w.reg[userHKU+`\Software\Microsoft\Windows\CurrentVersion\Run`] = map[string]RegValue{"upd": sz(`C:\Users\Public\upd.exe`)}
-	w.reg[KeyWinlogon] = map[string]RegValue{"Shell": sz("explorer.exe"), "Userinit": sz(`C:\Windows\system32\userinit.exe,`)}
+	w.reg[KeyWinlogon] = map[string]RegValue{"Shell": sz("explorer.exe"), "Userinit": sz(`C:\Windows\system32\userinit.exe,`),
+		"DefaultUserName": sz("kiosk"), "DefaultPassword": sz("AutoLogon#2026"), "LastLogonIP": sz("192.0.2.77")}
 	w.subkeys[KeyIFEO] = []string{"sethc.exe", "notepad.exe"}
 	w.reg[KeyIFEO+`\sethc.exe`] = map[string]RegValue{"Debugger": sz(`C:\Windows\System32\cmd.exe`)}
 	w.tasks = []WinTask{{Path: `\Updater`, Enabled: true, RunAs: "S-1-5-18", Triggers: []string{"BootTrigger"}, Actions: []string{`C:\ProgramData\u.exe -q`}}}
@@ -423,6 +424,9 @@ func TestParseEventXML(t *testing.T) {
 		`<EventID>4625</EventID><TimeCreated SystemTime="2026-11-12T02:00:00.1234567Z"/><Channel>Security</Channel></System>` +
 		`<EventData><Data Name="TargetUserName">administrator</Data><Data Name="IpAddress">203.0.113.9</Data><Data Name="LogonType">3</Data></EventData></Event>`
 	e, err := ParseEventXML(failed)
+	if _, ok := e.Data["TargetUserName"]; ok {
+		t.Error("a failed logon's typed user name must not be kept")
+	}
 	if err != nil || e.ID != 4625 || e.Channel != "Security" || e.Data["IpAddress"] != "203.0.113.9" || e.Time != "2026-11-12T02:00:00.1234567Z" {
 		t.Errorf("4625: %v %+v", err, e)
 	}
@@ -533,7 +537,7 @@ func TestWindowsRecordReplay(t *testing.T) {
 		return nil
 	})
 	s := all.String()
-	for _, leak := range []string{"backdoor", "111-222-333", "hunter22"} {
+	for _, leak := range []string{"backdoor", "111-222-333", "hunter22", "AutoLogon#2026", "kiosk", "192.0.2.77"} {
 		if strings.Contains(s, leak) {
 			t.Errorf("fixture leaks %q", leak)
 		}

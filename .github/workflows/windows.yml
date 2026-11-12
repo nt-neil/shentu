@@ -23,10 +23,7 @@ jobs:
         with:
           go-version: stable
           check-latest: true
-      - name: build hostenv, checks, hostfacts
-        run: go build ./hostenv/ ./checks/ ./cmd/hostfacts/
-      - name: build everything (informational until Phase 1c fixes tools/ on Windows)
-        continue-on-error: true
+      - name: build
         run: go build ./...
       - name: vet
         run: go vet ./hostenv/ ./checks/ ./cmd/hostfacts/

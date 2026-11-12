@@ -78,7 +78,7 @@ func (m *Masker) init() {
 }
 
 func (m *Masker) apply(entries []*entry) []*entry {
-	m.Users = append(m.Users, winHumanUsers(entries)...)
+	m.Users = append(m.Users, winMaskPrep(entries)...)
 	m.init()
 	// Deterministic placeholder order: walk entries sorted by key.
 	sort.Slice(entries, func(i, j int) bool { return entries[i].key() < entries[j].key() })
