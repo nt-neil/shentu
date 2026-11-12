@@ -288,6 +288,12 @@ func TestUploadFolder(t *testing.T) {
 		"/var/www/html/uploads/wp-content/x.php":           true, // a wp-content inside uploads hides nothing
 		"/var/www/html/uploads/wp-content/plugins/x.php":   true,
 		"/var/www/html/wp-content/plugins/p/uploads/x.php": false,
+		"/srv/app/vendor/acme/pkg/public/images/x.php":     false, // review of d4a8ea9, F4
+		"/srv/wp/wp-content/plugins/foo/pub/media/a.php":   false,
+		"/srv/wp/wp-content/themes/t/sites/x/files/a.php":  false,
+		"/srv/app/node_modules/m/public/uploads/a.php":     false,
+		"/srv/wp/wp-includes/x/public/uploads/a.php":       false,
+		"/srv/app/vendor/x/wp-content/uploads/a.php":       true, // wp-content/uploads always is
 	} {
 		if got := uploadFolder(p, nil); got != want {
 			t.Errorf("uploadFolder(%q) = %v, want %v", p, got, want)

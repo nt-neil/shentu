@@ -279,6 +279,8 @@ var auditExt = map[string]bool{".php": true, ".phtml": true, ".php5": true, ".in
 // site is; else a folder named so (in any case) right under the site's root.
 // Only the path below the site's root counts: /usr/src/app/wp-content/uploads
 // holds uploads, and a site whose root is itself named files is not one.
+var codeDirs = map[string]bool{"vendor": true, "node_modules": true, "wp-includes": true, "wp-admin": true}
+
 var uploadNames = map[string]bool{"uploads": true, "upload": true, "files": true, "media": true, "images": true, "attachments": true}
 
 // uploadFolder reports whether p is in a folder uploads land in. Under one of
@@ -299,13 +301,21 @@ func uploadFolder(p string, webRoots []string) bool {
 		}
 		return true
 	}
-	code := len(low) // below wp-content/plugins, themes and the like: code, not uploads
+	// Below vendor/, node_modules/, WordPress's own code or a plugin or theme
+	// is code, not uploads, whatever the folders there are named.
+	code := len(low)
+	for i := range low {
+		if codeDirs[low[i]] || i > 0 && low[i-1] == "wp-content" && low[i] != "uploads" {
+			code = i
+			break
+		}
+	}
 	for i := range low {
 		switch {
-		case at(i, "wp-content", "uploads"), at(i, "sites", "*", "files"), at(i, "pub", "media"), at(i, "storage", "app", "public"):
+		case at(i, "wp-content", "uploads"):
 			return true
-		case low[i] == "wp-content" && code == len(low):
-			code = i
+		case i < code && (at(i, "sites", "*", "files") || at(i, "pub", "media") || at(i, "storage", "app", "public")):
+			return true
 		}
 	}
 	root := ""
