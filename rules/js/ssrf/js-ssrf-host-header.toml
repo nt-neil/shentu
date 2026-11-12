@@ -6,6 +6,7 @@ severity = "high"
 tier = "info"
 title = "Server builds a URL from the request's Host header and fetches it"
 frameworks = ["express", "koa", "fastify", "hapi"]
+route_input = false   # a route's req.query or ctx.params is not the Host header: only the sources below count
 sources = ["req.get('host')", "req.get('x-forwarded-host')", "req.header('host')", "req.header('x-forwarded-host')", "req.hostname", "req.host", "req.headers.host", "req.headers['host']", "req.headers['x-forwarded-host']", "ctx.host", "ctx.hostname", "ctx.request.host", "ctx.request.hostname", "ctx.get('host')", "request.hostname", "request.headers.host", "request.headers['x-forwarded-host']", "request.info.host"]
 sinks = ["fetch(", "axios(", "axios.get(", "axios.post(", "got(", "got.get(", "http.get(", "https.get(", "http.request(", "https.request(", "needle(", "superagent.get("]
 sanitizers = ["encodeURIComponent("]   # an encoded value in the path or query of a fixed URL does not choose the host
