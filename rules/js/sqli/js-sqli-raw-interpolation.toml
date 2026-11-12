@@ -15,6 +15,16 @@ refs = ["CVE-2026-47384"]
 arg = 1   # the SQL text; values in the bindings array are safe
 whole = true   # query({ sql: "... ?", args: [input] }) binds the input; only SQL text built from input is the attack
 
+# execute() is also a VM's, a tool's or a job's: it counts on a receiver the
+# file says nothing about (a parameter, an import) or one tied to a database
+# client or connection, not on one the file builds from something else
+# (const vm = new IsolatedVM(); const tool = tools.find(...)).
+[[args]]
+sinks = [".execute("]
+arg = 1
+whole = true
+receiver = ["db", "conn", "connection", "pool", "client", "sql", "database", "trx", "tx", "transaction", "mysql", "mysql2", "pg", "knex", "sequelize", "libsql", "oracledb", "createConnection(", "createPool(", "getConnection(", "createClient(", "connect(", "Pool", "Client", "Connection", "Database"]
+
 [[samples]]
 kind = "vulnerable"
 code = '''
@@ -219,5 +229,20 @@ code = '''
 router.get("/prefs", async (ctx) => {
   const theme = ctx.cookies.get("theme");
   ctx.body = await pool.query("SELECT * FROM themes WHERE name = ?", [theme]);
+});
+'''
+
+[[samples]]
+kind = "safe"
+note = "execute() of a script VM and of a looked-up tool: no SQL"
+code = '''
+router.post("/script", async (ctx) => {
+  const { script } = ctx.request.body;
+  const vm = new IsolatedVM();
+  ctx.body = vm.execute(wrap(script));
+});
+fastify.post("/tools/:name", async (request) => {
+  const tool = tools.find((t) => t.name === request.params.name);
+  return tool.execute(JSON.parse(request.body.input));
 });
 '''

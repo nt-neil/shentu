@@ -15,6 +15,12 @@ refs = ["CVE-2015-10035"]
 [[args]]
 arg = 1   # the SQL text; values in the bindings array are safe
 
+# execute() only on a receiver that may be a database client (as in js-sqli-raw-interpolation)
+[[args]]
+sinks = [".execute("]
+arg = 1
+receiver = ["db", "conn", "connection", "pool", "client", "sql", "database", "trx", "tx", "transaction", "mysql", "mysql2", "pg", "knex", "sequelize", "libsql", "oracledb", "createConnection(", "createPool(", "getConnection(", "createClient(", "connect(", "Pool", "Client", "Connection", "Database"]
+
 [[samples]]
 kind = "vulnerable"
 note = "escaping the values does not protect the table name taken from the query string"
