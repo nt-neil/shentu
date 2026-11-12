@@ -66,7 +66,7 @@ jobs:
           need(f["privilege"]["value"]["elevated"], "runner elevated")
           # Status and reason only: detail and values can hold paths and names.
           for k in ["packages", "patches", "services", "processes", "accounts", "listeners",
-                    "persistence", "firewall", "antimalware", "auth_events"]:
+                    "persistence", "firewall", "antimalware", "auth_events", "web"]:
               o = f[k]
               print(f"{k:12} {o['status']:8} {o.get('reason', '')}")
               need(o["status"] in ("ok", "partial"), k)
@@ -74,7 +74,7 @@ jobs:
               print(f"{k:12} {o['status']:8} {o.get('reason', '')}")
               need(o["status"] in ("ok", "partial", "not_applicable"), k)
           r = json.load(open("replayed.json"))
-          for k in ["platform", "packages", "patches", "services", "accounts", "listeners", "persistence"]:
+          for k in ["platform", "packages", "patches", "services", "accounts", "listeners", "persistence", "firewall", "web"]:
               need(r[k]["status"] == f[k]["status"], "replay status of " + k)
           print("findings:", len(json.load(open(sys.argv[2]))))
           sys.exit(0 if ok else 1)

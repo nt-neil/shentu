@@ -246,6 +246,7 @@ func (c WindowsCollector) Collect(ctx context.Context, src Source) *Facts {
 	f.Firewall = winFirewall(ws, svcs, svcErr)
 	f.Antimalware = winDefender(ws, svcs, svcErr)
 	f.AuthEvents = winAuthEvents(ws)
+	f.Web = winWeb(ws, svcs, svcErr)
 	return f
 }
 
@@ -815,6 +816,53 @@ func regText(r RegValue) string {
 		return strconv.FormatUint(r.Int, 10)
 	}
 	return ""
+}
+
+// winIISConfig is applicationHost.config under the system root.
+const winIISConfig = `\System32\inetsrv\config\applicationHost.config`
+
+// winWeb reports IIS: its web roots are the physical paths of every
+// virtual directory in applicationHost.config. No config and no W3SVC
+// service means no IIS, which is an empty, known web fact (as on Linux
+// without nginx or Apache).
+func winWeb(ws WinSource, svcs []WinService, svcErr error) Obs[Web] {
+	root := `C:\Windows`
+	if v, err := ws.RegValues(KeyCurrentVersion); err == nil {
+		if r := strings.TrimRight(regString(v, "SystemRoot"), `\`); r != "" {
+			root = r
+		}
+	}
+	path := root + winIISConfig
+	b, err := ws.ReadFile(path)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		if _, ok := findService(svcs, "W3SVC"); ok {
+			return Partial(Web{Server: "iis", ConfigUnreadable: []string{path + " (missing)"}}, ReasonNotInstalled,
+				"W3SVC is installed but applicationHost.config is missing")
+		}
+		if svcErr != nil {
+			return Partial(Web{}, Classify(svcErr), "IIS presence unknown: services unreadable")
+		}
+		return OK(Web{})
+	case err != nil:
+		return Partial(Web{Server: "iis", ConfigUnreadable: []string{path + " (" + string(Classify(err)) + ")"}}, Classify(err),
+			"applicationHost.config unreadable; its web roots are missing")
+	}
+	roots, perr := ParseIISConfig(b, root)
+	w := Web{Server: "iis"}
+	if perr != nil {
+		w.ConfigUnreadable = []string{path + " (malformed)"}
+		return Partial(w, ReasonParse, "applicationHost.config could not be parsed")
+	}
+	seen := map[string]bool{}
+	for _, r := range roots {
+		if k := strings.ToLower(r); !seen[k] {
+			seen[k] = true
+			w.WebRoots = append(w.WebRoots, r)
+		}
+	}
+	sort.Strings(w.WebRoots)
+	return OK(w)
 }
 
 func findService(svcs []WinService, name string) (WinService, bool) {

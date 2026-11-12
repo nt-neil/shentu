@@ -227,3 +227,55 @@ func ParseTaskXML(path string, b []byte) (WinTask, error) {
 	}
 	return t, nil
 }
+
+// ParseIISConfig returns the physical paths of every virtual directory in
+// an applicationHost.config, in file order, with %SystemDrive%, %windir%
+// and %SystemRoot% expanded from systemRoot (e.g. C:\Windows). Other
+// environment variables are left as written. The site defaults
+// (<virtualDirectoryDefaults>) are not virtual directories and are skipped.
+func ParseIISConfig(b []byte, systemRoot string) ([]string, error) {
+	var cfg struct {
+		Sites []struct {
+			Apps []struct {
+				Dirs []struct {
+					PhysicalPath string `xml:"physicalPath,attr"`
+				} `xml:"virtualDirectory"`
+			} `xml:"application"`
+		} `xml:"system.applicationHost>sites>site"`
+	}
+	if err := xml.Unmarshal(bytes.TrimPrefix(b, []byte("\xef\xbb\xbf")), &cfg); err != nil {
+		return nil, err
+	}
+	drive := "C:"
+	if len(systemRoot) >= 2 && systemRoot[1] == ':' {
+		drive = systemRoot[:2]
+	}
+	var out []string
+	for _, s := range cfg.Sites {
+		for _, a := range s.Apps {
+			for _, d := range a.Dirs {
+				p := strings.TrimSpace(d.PhysicalPath)
+				if p == "" {
+					continue
+				}
+				p = expandWinVar(p, "SystemDrive", drive)
+				p = expandWinVar(p, "windir", systemRoot)
+				p = expandWinVar(p, "SystemRoot", systemRoot)
+				out = append(out, strings.TrimRight(p, `\`))
+			}
+		}
+	}
+	return out, nil
+}
+
+// expandWinVar replaces %name% (any case) with val.
+func expandWinVar(s, name, val string) string {
+	tok := "%" + strings.ToLower(name) + "%"
+	for {
+		i := strings.Index(strings.ToLower(s), tok)
+		if i < 0 {
+			return s
+		}
+		s = s[:i] + val + s[i+len(tok):]
+	}
+}

@@ -8054,8 +8054,14 @@
     }
   },
   "web": {
-    "status": "unknown",
-    "reason": "not_collected",
-    "value": {}
+    "status": "partial",
+    "reason": "not_recorded",
+    "detail": "applicationHost.config unreadable; its web roots are missing",
+    "value": {
+      "server": "iis",
+      "config_unreadable": [
+        "C:\\Windows\\System32\\inetsrv\\config\\applicationHost.config (not_recorded)"
+      ]
+    }
   }
 }

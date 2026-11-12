@@ -503,6 +503,62 @@ func TestWMIRef(t *testing.T) {
 	}
 }
 
+const iisConfig = "\xef\xbb\xbf" + `<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+  <system.applicationHost>
+    <applicationPools>
+      <add name="Shop"><processModel identityType="SpecificUser" userName="CORP\shopsvc" password="[enc:IISCngProvider:QUJDREVGRw==:enc]" /></add>
+    </applicationPools>
+    <sites>
+      <site name="Default Web Site" id="1">
+        <application path="/"><virtualDirectory path="/" physicalPath="%SystemDrive%\inetpub\wwwroot" /></application>
+      </site>
+      <site name="Shop" id="2">
+        <application path="/" applicationPool="Shop">
+          <virtualDirectory path="/" physicalPath="D:\sites\shop\" />
+          <virtualDirectory path="/media" physicalPath="\\fs01\media" userName="CORP\shopsvc" password="[enc:IISCngProvider:SElKS0xN:enc]" />
+        </application>
+        <application path="/legacy"><virtualDirectory path="/" physicalPath="%WINDIR%\..\inetpub\WWWROOT" /></application>
+      </site>
+      <siteDefaults><virtualDirectoryDefaults physicalPath="C:\should\not\appear" /></siteDefaults>
+    </sites>
+  </system.applicationHost>
+</configuration>`
+
+func TestParseIISConfig(t *testing.T) {
+	got, err := ParseIISConfig([]byte(iisConfig), `E:\WINNT`)
+	want := []string{`E:\inetpub\wwwroot`, `D:\sites\shop`, `\\fs01\media`, `E:\WINNT\..\inetpub\WWWROOT`}
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Errorf("got %q, %v; want %q", got, err, want)
+	}
+	if _, err := ParseIISConfig([]byte("<configuration><sites>"), `C:\Windows`); err == nil {
+		t.Error("truncated XML must be an error")
+	}
+}
+
+func TestWindowsWeb(t *testing.T) {
+	w := weakServer()
+	collect := func() Obs[Web] { return WindowsCollector{}.Collect(context.Background(), w).Web }
+	if web := collect(); web.Status != StatusOK || web.Value.Server != "" || len(web.Value.WebRoots) != 0 {
+		t.Errorf("no IIS: %+v", web)
+	}
+	cfg := `C:\Windows` + winIISConfig
+	w.svcs = append(w.svcs, WinService{Name: "W3SVC", State: "running", StartType: "auto"})
+	if web := collect(); web.Status != StatusPartial || web.Value.Server != "iis" {
+		t.Errorf("W3SVC without its config: %+v", web)
+	}
+	w.files[cfg] = iisConfig
+	web := collect()
+	want := []string{`C:\Windows\..\inetpub\WWWROOT`, `C:\inetpub\wwwroot`, `D:\sites\shop`, `\\fs01\media`}
+	if web.Status != StatusOK || web.Value.Server != "iis" || !reflect.DeepEqual(web.Value.WebRoots, want) {
+		t.Errorf("IIS roots: %+v", web)
+	}
+	w.fakeHost.denied[cfg] = true
+	if web := collect(); web.Status != StatusPartial || web.Reason != ReasonPermission || len(web.Value.ConfigUnreadable) != 1 {
+		t.Errorf("unreadable applicationHost.config: %+v", web)
+	}
+}
+
 func TestWindowsSSH(t *testing.T) {
 	w := weakServer()
 	w.svcs = append(w.svcs, WinService{Name: "sshd", State: "running", StartType: "auto"})
@@ -636,6 +692,8 @@ func TestWindowsHelpers(t *testing.T) {
 // version numbers that look like IPs survive.
 func TestWindowsRecordReplay(t *testing.T) {
 	w := weakServer()
+	w.svcs = append(w.svcs, WinService{Name: "W3SVC", State: "running", StartType: "auto"})
+	w.files[`C:\Windows`+winIISConfig] = iisConfig
 	rec := NewRecorder(w)
 	want := WindowsCollector{}.Collect(context.Background(), rec)
 	dir := filepath.Join(t.TempDir(), "fx")
@@ -659,7 +717,7 @@ func TestWindowsRecordReplay(t *testing.T) {
 	}
 	s := fixtureText(t, masked)
 	for _, leak := range []string{"backdoor", "111-222-333", "hunter22", "AutoLogon#2026", "kiosk", "192.0.2.77", "s3cr3t-value-xyz",
-		"Jane Q Operator", "198.51.100.23", "BACKDOOR", `\\host\`, "OPERAT~1", "operator.jane"} {
+		"Jane Q Operator", "198.51.100.23", "BACKDOOR", `\\host\`, "OPERAT~1", "operator.jane", "shopsvc", "CORP", "QUJDREVGRw"} {
 		if strings.Contains(s, leak) {
 			t.Errorf("fixture leaks %q", leak)
 		}

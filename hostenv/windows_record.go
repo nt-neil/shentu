@@ -172,7 +172,7 @@ func winSkipIP(e *entry) bool {
 func winIPExemptFields(path string) []string {
 	switch {
 	case path == KeyCurrentVersion:
-		return []string{"ProductName", "DisplayVersion", "ReleaseId", "CurrentBuild", "UBR", "InstallationType"}
+		return []string{"ProductName", "DisplayVersion", "ReleaseId", "CurrentBuild", "UBR", "InstallationType", "SystemRoot"}
 	case strings.HasPrefix(path, KeyCBSPackages):
 		return []string{"CurrentState", "InstallTimeHigh", "InstallTimeLow"}
 	}
@@ -204,6 +204,9 @@ func shortNames(n string) []string {
 	}
 	return out
 }
+
+// iisUserRe finds the userName attributes of an applicationHost.config.
+var iisUserRe = regexp.MustCompile(`\buserName="([^"]+)"`)
 
 // machineSIDRe matches the machine or domain part of an account SID. It
 // identifies the host, so fixtures keep only the RID.
@@ -289,6 +292,15 @@ func winMaskPrep(entries []*entry) (out []string) {
 					if u := v[n].String; u != "" {
 						out = append(out, afterSlash(u))
 					}
+				}
+			}
+		case e.Op == "file" && strings.HasSuffix(strings.ToLower(e.Path), `\applicationhost.config`):
+			// Accounts IIS logs on as (app pool identities, UNC content).
+			for _, m := range iisUserRe.FindAllStringSubmatch(string(e.data), -1) {
+				u := m[1]
+				out = append(out, afterSlash(u))
+				if i := strings.LastIndexByte(u, '\\'); i > 0 {
+					out = append(out, u[:i])
 				}
 			}
 		case e.Op == "winevt":
