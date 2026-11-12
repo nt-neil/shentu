@@ -64,21 +64,22 @@ type Facts struct {
 	CollectedAt time.Time     `json:"collected_at"`
 	Collector   CollectorInfo `json:"collector"`
 
-	Platform     Obs[Platform]          `json:"platform"`
-	Privilege    Obs[Privilege]         `json:"privilege"`
-	Resources    Obs[Resources]         `json:"resources"`
-	Packages     Obs[PackageSet]        `json:"packages"`
-	Patches      Obs[[]Patch]           `json:"patches"`
-	Services     Obs[[]Service]         `json:"services"`
-	Processes    Obs[[]Process]         `json:"processes"`
-	Accounts     Obs[[]Account]         `json:"accounts"`
-	Listeners    Obs[[]Listener]        `json:"listeners"`
-	Persistence  Obs[[]PersistenceItem] `json:"persistence"`
-	Firewall     Obs[Firewall]          `json:"firewall"`
-	RemoteAccess RemoteAccess           `json:"remote_access"`
-	Antimalware  Obs[Antimalware]       `json:"antimalware"`
-	AuthEvents   Obs[AuthEvents]        `json:"auth_events"`
-	Web          Obs[Web]               `json:"web"`
+	Platform     Obs[Platform]            `json:"platform"`
+	Privilege    Obs[Privilege]           `json:"privilege"`
+	Resources    Obs[Resources]           `json:"resources"`
+	Packages     Obs[PackageSet]          `json:"packages"`
+	Patches      Obs[[]Patch]             `json:"patches"`
+	Services     Obs[[]Service]           `json:"services"`
+	Processes    Obs[[]Process]           `json:"processes"`
+	Accounts     Obs[[]Account]           `json:"accounts"`
+	Listeners    Obs[[]Listener]          `json:"listeners"`
+	Persistence  Obs[[]PersistenceItem]   `json:"persistence"`
+	SSHKeys      Obs[[]AuthorizedKeyFile] `json:"ssh_keys"`
+	Firewall     Obs[Firewall]            `json:"firewall"`
+	RemoteAccess RemoteAccess             `json:"remote_access"`
+	Antimalware  Obs[Antimalware]         `json:"antimalware"`
+	AuthEvents   Obs[AuthEvents]          `json:"auth_events"`
+	Web          Obs[Web]                 `json:"web"`
 }
 
 type CollectorInfo struct {
@@ -177,7 +178,7 @@ type Listener struct {
 // PersistenceItem is anything that makes code run again without a person
 // starting it.
 type PersistenceItem struct {
-	Kind     string `json:"kind"` // cron, systemd, ld_preload, authorized_key, run_key, schtask, service, wmi_subscription, startup_folder, launchd
+	Kind     string `json:"kind"` // cron, cron_file, systemd, ld_preload, rc_local, authorized_key, sudo_rule, pam_unpackaged, run_key, schtask, service, wmi_subscription, startup_folder, launchd
 	Location string `json:"location"`
 	Command  string `json:"command,omitempty"` // secret-masked
 	Detail   string `json:"detail,omitempty"`
@@ -268,6 +269,7 @@ func NewFacts(name, version string, at time.Time) *Facts {
 		Accounts:    Unknown[[]Account](nc, ""),
 		Listeners:   Unknown[[]Listener](nc, ""),
 		Persistence: Unknown[[]PersistenceItem](nc, ""),
+		SSHKeys:     Unknown[[]AuthorizedKeyFile](nc, ""),
 		Firewall:    Unknown[Firewall](nc, ""),
 		RemoteAccess: RemoteAccess{
 			SSH:   Unknown[SSHConfig](nc, ""),

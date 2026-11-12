@@ -43,6 +43,21 @@ const (
 	DefaultMaxStderr = 64 << 10
 )
 
+// bigCommands are allowlisted commands known to need more than the
+// defaults: a full rpm file list runs to tens of MiB on a large host.
+// Keyed by argvKey; registered by collectors next to their argv.
+var bigCommands = map[string]struct {
+	maxStdout int
+	timeout   time.Duration
+}{}
+
+func registerBig(argv []string, maxStdout int, timeout time.Duration) {
+	bigCommands[argvKey(argv)] = struct {
+		maxStdout int
+		timeout   time.Duration
+	}{maxStdout, timeout}
+}
+
 // shells and script hosts are refused even if someone allowlists them: an
 // allowlisted shell would turn the exact-argv rule into "anything".
 var interpreters = map[string]bool{
@@ -108,9 +123,12 @@ func (r *Runner) Run(ctx context.Context, argv []string) (CmdResult, error) {
 	if !r.Allowed(argv) {
 		return CmdResult{}, fmt.Errorf("%w: %q", ErrNotAllowed, argv)
 	}
-	timeout := r.Timeout
+	timeout, maxOut := r.Timeout, orDefault(r.MaxStdout, DefaultMaxStdout)
 	if timeout <= 0 {
 		timeout = DefaultTimeout
+	}
+	if big, ok := bigCommands[argvKey(argv)]; ok {
+		timeout, maxOut = max(timeout, big.timeout), max(maxOut, big.maxStdout)
 	}
 	timeout = min(timeout, MaxTimeout)
 	ctx, cancel := context.WithTimeout(ctx, timeout)
@@ -120,7 +138,7 @@ func (r *Runner) Run(ctx context.Context, argv []string) (CmdResult, error) {
 	cmd.Env = fixedEnv()
 	cmd.Stdin = nil
 	cmd.WaitDelay = 2 * time.Second // do not hang on a child that keeps our pipes open
-	stdout := &capBuffer{max: orDefault(r.MaxStdout, DefaultMaxStdout)}
+	stdout := &capBuffer{max: maxOut}
 	stderr := &capBuffer{max: orDefault(r.MaxStderr, DefaultMaxStderr)}
 	cmd.Stdout, cmd.Stderr = stdout, stderr
 

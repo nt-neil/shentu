@@ -27,7 +27,7 @@ var (
 	rpmArgv  = []string{"/usr/bin/rpm", "-qa", "--qf", RpmQueryFormat}
 )
 
-func (LinuxCollector) Allowlist() [][]string { return [][]string{dpkgArgv, rpmArgv} }
+func (LinuxCollector) Allowlist() [][]string { return [][]string{dpkgArgv, rpmArgv, rpmQalArgv} }
 
 func (c LinuxCollector) Collect(ctx context.Context, src Source) *Facts {
 	info := src.Info()
@@ -53,7 +53,11 @@ func (c LinuxCollector) Collect(ctx context.Context, src Source) *Facts {
 		}
 	}
 	f.RemoteAccess.SSH = c.ssh(src)
-	f.Persistence = c.persistence(src, accounts)
+	f.SSHKeys = Unknown[[]AuthorizedKeyFile](accounts.Reason, "accounts unknown")
+	if accounts.Known() {
+		f.SSHKeys = c.SSHKeyFiles(src, accounts.Value)
+	}
+	f.Persistence = c.persistence(ctx, src, f.SSHKeys)
 
 	f.Patches = NotApplicable[[]Patch]() // Linux patches are package versions
 	f.RemoteAccess.RDP = NotApplicable[RDPConfig]()
@@ -381,7 +385,7 @@ func contains(list []string, s string) bool {
 // MaxPersistenceItems caps one category so a huge crontab cannot flood facts.
 const MaxPersistenceItems = 500
 
-func (LinuxCollector) persistence(src Source, accounts Obs[[]Account]) Obs[[]PersistenceItem] {
+func (c LinuxCollector) persistence(ctx context.Context, src Source, keys Obs[[]AuthorizedKeyFile]) Obs[[]PersistenceItem] {
 	var out []PersistenceItem
 	var denied []string
 	// note records every failure except "does not exist": a truncated,
@@ -470,29 +474,34 @@ func (LinuxCollector) persistence(src Source, accounts Obs[[]Account]) Obs[[]Per
 		add(it)
 	}
 
-	if accounts.Known() {
-		for _, a := range accounts.Value {
-			if (!a.CanLogin && a.UID != "0") || a.Home == "" || a.Home == "/" {
-				continue
+	for _, kf := range keys.Value {
+		for _, k := range kf.Keys {
+			d := k.Type + " " + k.Fingerprint
+			if k.Options {
+				d += " (with options)"
 			}
-			for _, n := range []string{"authorized_keys", "authorized_keys2"} {
-				// The user owns this path: never follow a link planted
-				// there (it could point at /etc/shadow while we run as root).
-				p := strings.TrimSuffix(a.Home, "/") + "/.ssh/" + n
-				b, err := ReadFileNoFollow(src, p)
-				note(p, err)
-				if err != nil && !errors.Is(err, ErrTruncated) {
-					continue
-				}
-				for _, k := range ParseAuthorizedKeys(b) {
-					d := k.Type + " " + k.Fingerprint
-					if k.Options {
-						d += " (with options)"
-					}
-					add(PersistenceItem{Kind: "authorized_key", Location: p, Detail: d})
-				}
+			if k.CloudInitRefusal {
+				d += " (cloud-init refusal)"
 			}
+			add(PersistenceItem{Kind: "authorized_key", Location: kf.Path, Detail: d})
 		}
+	}
+	if keys.Status == StatusPartial || !keys.Known() {
+		denied = append(denied, "authorized_keys: "+keys.Detail)
+	}
+	rules, rs := c.SudoRules(src)
+	for _, r := range rules {
+		loc, cmd, _ := strings.Cut(r, ": ")
+		add(PersistenceItem{Kind: "sudo_rule", Location: loc, Command: cmd})
+	}
+	if rs.Status == StatusPartial {
+		denied = append(denied, rs.Detail)
+	}
+	for _, f := range c.CronFiles(src) {
+		add(PersistenceItem{Kind: "cron_file", Location: f})
+	}
+	for _, m := range c.UnpackagedPAM(src, RpmOwned(ctx, src)) {
+		add(PersistenceItem{Kind: "pam_unpackaged", Location: m, Detail: "no package installed this PAM module"})
 	}
 	switch {
 	case dropped > 0:

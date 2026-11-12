@@ -361,19 +361,7 @@ func sshdSettings() (map[string]string, string, []string) {
 	return want, hex.EncodeToString(h.Sum(nil))[:16], unread
 }
 
-func cronFiles() []string {
-	var out []string
-	for _, pat := range []string{"/etc/crontab", "/etc/cron.d/*", "/var/spool/cron/crontabs/*", "/var/spool/cron/*"} {
-		files, _ := filepath.Glob(pat)
-		for _, f := range files {
-			if st, err := os.Stat(f); err == nil && st.Mode().IsRegular() {
-				out = append(out, f)
-			}
-		}
-	}
-	sort.Strings(out)
-	return out
-}
+func cronFiles() []string { return linux.CronFiles(hostSource()) }
 
 var safeName = regexp.MustCompile(`^[a-z_][a-z0-9_.-]{0,31}$`)
 

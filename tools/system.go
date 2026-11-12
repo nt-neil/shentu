@@ -333,47 +333,21 @@ type Accounts struct {
 // AccountsAudit reads /etc/passwd, sudoers and authorized_keys.
 func AccountsAudit() Accounts {
 	var a Accounts
-	seenKeys := map[string]bool{}
 	_, accts := linux.Accounts(hostSource())
 	for _, acct := range accts.Value {
-		user, home := acct.Name, acct.Home
+		user := acct.Name
 		if acct.UID == "0" {
 			a.UID0 = append(a.UID0, user)
 		}
 		if acct.CanLogin {
 			a.LoginAccounts = append(a.LoginAccounts, user)
 		}
-		for _, name := range []string{"authorized_keys", "authorized_keys2"} {
-			p := filepath.Join(home, ".ssh", name)
-			if seenKeys[p] { // accounts can share a home (RHEL: operator uses /root)
-				continue
-			}
-			seenKeys[p] = true
-			if st, err := os.Stat(p); err == nil {
-				kb, _ := os.ReadFile(p)
-				n := 0
-				for _, l := range strings.Split(string(kb), "\n") {
-					if l = strings.TrimSpace(l); l != "" && !strings.HasPrefix(l, "#") {
-						n++
-					}
-				}
-				a.KeyFiles = append(a.KeyFiles, KeyFile{user, p, n, st.ModTime()})
-			}
-		}
 	}
-	files, _ := filepath.Glob("/etc/sudoers.d/*")
-	for _, f := range append([]string{"/etc/sudoers"}, files...) {
-		sb, err := os.ReadFile(f)
-		if err != nil {
-			continue
-		}
-		for _, l := range strings.Split(string(sb), "\n") {
-			l = strings.TrimSpace(l)
-			if l != "" && !strings.HasPrefix(l, "#") && !strings.HasPrefix(l, "Defaults") && strings.Contains(l, "ALL") {
-				a.SudoRules = append(a.SudoRules, f+": "+l)
-			}
-		}
+	src := hostSource()
+	for _, kf := range linux.SSHKeyFiles(src, accts.Value).Value {
+		a.KeyFiles = append(a.KeyFiles, KeyFile{kf.User, kf.Path, kf.Lines, kf.Modified})
 	}
+	a.SudoRules, _ = linux.SudoRules(src)
 	a.SharedKeys = sharedKeys(a.KeyFiles)
 	a.Preload = preloadEntries("/etc/ld.so.preload")
 	a.UnpackagedPAM = unpackagedPAM()

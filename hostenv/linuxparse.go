@@ -6,8 +6,6 @@ package hostenv
 
 import (
 	"bufio"
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"net"
 	"strconv"
@@ -412,41 +410,4 @@ func InTempDir(exe string) bool {
 		}
 	}
 	return false
-}
-
-// AuthorizedKey summarises one authorized_keys line without the key itself.
-type AuthorizedKey struct {
-	Type        string
-	Fingerprint string // SHA256:... as ssh-keygen -l prints it
-	Options     bool   // has options such as command="..."
-}
-
-func ParseAuthorizedKeys(b []byte) []AuthorizedKey {
-	var out []AuthorizedKey
-	for _, l := range strings.Split(string(b), "\n") {
-		l = strings.TrimSpace(l)
-		if l == "" || strings.HasPrefix(l, "#") {
-			continue
-		}
-		f := strings.Fields(l)
-		for i := 0; i+1 < len(f); i++ {
-			if isKeyType(f[i]) {
-				k := AuthorizedKey{Type: f[i], Options: i > 0}
-				if raw, err := base64.StdEncoding.DecodeString(f[i+1]); err == nil {
-					sum := sha256.Sum256(raw)
-					k.Fingerprint = "SHA256:" + base64.RawStdEncoding.EncodeToString(sum[:])
-				} else {
-					sum := sha256.Sum256([]byte(f[i+1]))
-					k.Fingerprint = "SHA256:" + base64.RawStdEncoding.EncodeToString(sum[:])
-				}
-				out = append(out, k)
-				break
-			}
-		}
-	}
-	return out
-}
-
-func isKeyType(s string) bool {
-	return strings.HasPrefix(s, "ssh-") || strings.HasPrefix(s, "ecdsa-sha2-") || strings.HasPrefix(s, "sk-")
 }

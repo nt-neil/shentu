@@ -72,7 +72,7 @@ func TestParsers(t *testing.T) {
 		t.Error("login shell")
 	}
 	ak := ParseAuthorizedKeys([]byte(`command="/bin/x" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA== c` + "\nssh-rsa notbase64!! d\n"))
-	if len(ak) != 2 || !ak[0].Options || ak[1].Options || !strings.HasPrefix(ak[0].Fingerprint, "SHA256:") {
+	if len(ak) != 1 || !ak[0].Options || !strings.HasPrefix(ak[0].Fingerprint, "SHA256:") { // the invalid ssh-rsa line is not a key sshd would use
 		t.Errorf("authorized_keys %+v", ak)
 	}
 }
@@ -172,9 +172,9 @@ func TestPackagesCommandMissing(t *testing.T) {
 
 func TestUnsupportedPlatform(t *testing.T) {
 	h := newFake(true)
-	h.info.GOOS = "windows"
+	h.info.GOOS = "freebsd"
 	f := Collect(context.Background(), h)
-	if f.Processes.Status != StatusUnknown || f.Processes.Reason != ReasonUnsupported || f.Platform.Value.OS != "windows" {
+	if f.Processes.Status != StatusUnknown || f.Processes.Reason != ReasonUnsupported || f.Platform.Value.OS != "freebsd" {
 		t.Errorf("unsupported %+v", f.Processes)
 	}
 }
@@ -191,7 +191,7 @@ func TestRecordReplayMasked(t *testing.T) {
 	}
 	all := readTree(t, dir)
 	for _, leak := range []string{"alice", "Alice", "web01", "192.168.1.100", "203.0.113.9", "0F02000A", "6401A8C0",
-		"FakeKeyMaterial", "laptop.example.com", fakeSecret()} {
+		fakeKeyBlob(), "laptop.example.com", fakeSecret()} {
 		if strings.Contains(all, leak) {
 			t.Errorf("fixture still contains %q", leak)
 		}
@@ -364,5 +364,18 @@ func TestListenersKeepSecondOwner(t *testing.T) {
 	}
 	if !reflect.DeepEqual(n22, []int{4243, 4242}) {
 		t.Errorf("port 22 owners %v, want sshd and the intruder", n22)
+	}
+}
+
+func TestMaskKeepsNOPASSWD(t *testing.T) {
+	for in, want := range map[string]string{
+		"ann ALL=(ALL) NOPASSWD:ALL":               "ann ALL=(ALL) NOPASSWD:ALL",
+		"www ALL=(ALL) NOPASSWD: ALL":              "www ALL=(ALL) NOPASSWD: ALL",
+		"db_password=" + fakeSecret():              "db_password=[REDACTED]",
+		"NOPASSWD:ALL and passwd: " + fakeSecret(): "NOPASSWD:ALL and passwd: [REDACTED]",
+	} {
+		if got := MaskSecrets(in); got != want {
+			t.Errorf("MaskSecrets(%q) = %q, want %q", in, got, want)
+		}
 	}
 }

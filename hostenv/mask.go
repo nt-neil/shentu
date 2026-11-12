@@ -1,6 +1,9 @@
 package hostenv
 
-import "regexp"
+import (
+	"regexp"
+	"strings"
+)
 
 // secretRules mirror the root package's mask.go (package main cannot be
 // imported). Keep the two lists in step; TestMaskSecretsMatchesRoot guards it.
@@ -25,9 +28,22 @@ var secretRules = []struct {
 
 // MaskSecrets removes credentials from text that came off the host. Every
 // Source applies it before data reaches a parser, a log, an LLM or a fixture.
+//
+// sudoers' NOPASSWD: tag is not a password assignment, but the key=value
+// rule would take "PASSWD:ALL" for one; it is shielded so sudo rules keep
+// their meaning.
 func MaskSecrets(s string) string {
+	shielded := nopasswd.MatchString(s)
+	if shielded {
+		s = nopasswd.ReplaceAllStringFunc(s, func(m string) string { return "\x00" + m[:4] + "\x01" + m[4:] })
+	}
 	for _, r := range secretRules {
 		s = r.re.ReplaceAllString(s, r.repl)
 	}
+	if shielded {
+		s = strings.NewReplacer("\x00", "", "\x01", "").Replace(s)
+	}
 	return s
 }
+
+var nopasswd = regexp.MustCompile(`(?i)\bno(?:passwd|password):`)

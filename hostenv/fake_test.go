@@ -2,6 +2,7 @@ package hostenv
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io/fs"
 	"sort"
@@ -105,7 +106,7 @@ func debianHost(elevated bool) *fakeHost {
 	h.files["/etc/crontab"] = "SHELL=/bin/sh\n# m h dom mon dow user command\n17 * * * * root cd / && run-parts --report /etc/cron.hourly\n"
 	h.files["/etc/ld.so.preload"] = "/usr/lib/libprocesshider.so\n"
 	h.files["/etc/systemd/system/backdoor.service"] = "[Service]\nExecStart=/tmp/.x/agent --token=" + fakeSecret() + "\n"
-	h.files["/home/alice/.ssh/authorized_keys"] = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakeKeyMaterialForTestsOnly0000000000000 alice@laptop.example.com\n"
+	h.files["/home/alice/.ssh/authorized_keys"] = "ssh-ed25519 " + fakeKeyBlob() + " alice@laptop.example.com\n"
 	// processes: 1 systemd, 4242 from /tmp, 4243 deleted binary, 7 kernel thread
 	h.files["/proc/1/status"] = "Name:\tsystemd\nPPid:\t0\nUid:\t0\t0\t0\t0\n"
 	h.files["/proc/1/cmdline"] = "/sbin/init\x00"
@@ -130,3 +131,8 @@ func debianHost(elevated bool) *fakeHost {
 // fakeSecret is assembled at run time so no secret-shaped literal sits in
 // the source for scanners to trip on.
 func fakeSecret() string { return strings.Repeat("q7", 4) + "zx" + "91" }
+
+// fakeKeyBlob is a valid-looking public key blob made at run time.
+func fakeKeyBlob() string {
+	return base64.StdEncoding.EncodeToString([]byte(strings.Repeat("shentu-test-key-", 4)))
+}

@@ -475,3 +475,98 @@ func TestLegacyPackages(t *testing.T) {
 		}
 	}
 }
+
+// legacyAuditAt is AccountsAudit's key-file and sudoers parts and survey's
+// cronFiles before 1c, with every absolute path read under root.
+func legacyAuditAt(root string) (keys []KeyFile, sudo, cron []string) {
+	at := func(p string) string { return filepath.Join(root, p) }
+	seenKeys := map[string]bool{}
+	b, _ := os.ReadFile(at("/etc/passwd"))
+	for _, line := range strings.Split(string(b), "\n") {
+		f := strings.Split(line, ":")
+		if len(f) < 7 {
+			continue
+		}
+		user, home := f[0], f[5]
+		for _, name := range []string{"authorized_keys", "authorized_keys2"} {
+			p := filepath.Join(home, ".ssh", name)
+			if seenKeys[p] {
+				continue
+			}
+			seenKeys[p] = true
+			if st, err := os.Stat(at(p)); err == nil {
+				kb, _ := os.ReadFile(at(p))
+				n := 0
+				for _, l := range strings.Split(string(kb), "\n") {
+					if l = strings.TrimSpace(l); l != "" && !strings.HasPrefix(l, "#") {
+						n++
+					}
+				}
+				keys = append(keys, KeyFile{user, p, n, st.ModTime()})
+			}
+		}
+	}
+	files, _ := filepath.Glob(at("/etc/sudoers.d/*"))
+	for _, f := range append([]string{at("/etc/sudoers")}, files...) {
+		sb, err := os.ReadFile(f)
+		if err != nil {
+			continue
+		}
+		for _, l := range strings.Split(string(sb), "\n") {
+			l = strings.TrimSpace(l)
+			if l != "" && !strings.HasPrefix(l, "#") && !strings.HasPrefix(l, "Defaults") && strings.Contains(l, "ALL") {
+				sudo = append(sudo, strings.TrimPrefix(f, root)+": "+l)
+			}
+		}
+	}
+	for _, pat := range []string{"/etc/crontab", "/etc/cron.d/*", "/var/spool/cron/crontabs/*", "/var/spool/cron/*"} {
+		fs, _ := filepath.Glob(at(pat))
+		for _, f := range fs {
+			if st, err := os.Stat(f); err == nil && st.Mode().IsRegular() {
+				cron = append(cron, strings.TrimPrefix(f, root))
+			}
+		}
+	}
+	sort.Strings(cron)
+	return keys, sudo, cron
+}
+
+func TestLegacyPersistenceTree(t *testing.T) {
+	root := t.TempDir()
+	w := func(p, body string) {
+		os.MkdirAll(filepath.Dir(filepath.Join(root, p)), 0o755)
+		if err := os.WriteFile(filepath.Join(root, p), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	k1, k2 := fakeKey(t), fakeKey(t)
+	w("/etc/passwd", "root:x:0:0::/root:/bin/bash\noperator:x:11:0::/root:/sbin/nologin\nwww-data:x:33:33::/var/www:/usr/sbin/nologin\nann:x:1000:1000::/home/ann:/bin/bash\n")
+	w("/root/.ssh/authorized_keys", k1+" a\n# c\n"+k2+"\n")
+	w("/var/www/.ssh/authorized_keys", k2+" planted\n") // a nologin account: still counted
+	w("/home/ann/.ssh/authorized_keys2", "\n"+k1+"\n")
+	w("/etc/sudoers", "Defaults env_reset\nroot ALL=(ALL:ALL) ALL\n%sudo ALL=(ALL) ALL\n# x ALL\n")
+	w("/etc/sudoers.d/90-cloud", "ann ALL=(ALL) NOPASSWD:ALL\n")
+	w("/etc/sudoers.d/.hidden", "www-data ALL=(ALL) NOPASSWD: ALL\n")
+	w("/etc/crontab", "* * * * * root x\n")
+	w("/etc/cron.d/backup", "")
+	w("/var/spool/cron/crontabs/ann", "* * * * * y\n")
+	w("/var/spool/cron/.x", "z\n")
+
+	live, _ := hostenv.NewLive(nil)
+	live.Remap = map[string]string{"/": root}
+	withHost(t, live)
+	keys, sudo, cron := legacyAuditAt(root)
+	a := AccountsAudit()
+	if len(keys) != 3 || !reflect.DeepEqual(a.KeyFiles, keys) {
+		t.Errorf("key files:\n got %+v\nwant %+v", a.KeyFiles, keys)
+	}
+	if len(sudo) != 4 || !reflect.DeepEqual(a.SudoRules, sudo) {
+		t.Errorf("sudo:\n got %q\nwant %q", a.SudoRules, sudo)
+	}
+	if got := cronFiles(); len(cron) != 4 || !reflect.DeepEqual(got, cron) {
+		t.Errorf("cron:\n got %q\nwant %q", got, cron)
+	}
+	if len(a.SharedKeys) != 2 {
+		t.Errorf("shared keys %+v", a.SharedKeys)
+	}
+}

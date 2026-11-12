@@ -1,6 +1,7 @@
 package hostenv
 
 import (
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"net"
@@ -145,8 +146,12 @@ func (m *Masker) key(k string) string {
 		return v
 	}
 	m.nKey++
-	v := fmt.Sprintf("AAAAredacted%04d", m.nKey)
+	// A valid blob (sshd and KeyFingerprint accept it, so replay still sees
+	// a key) that cannot be mistaken for a real one: it starts with 0xff,
+	// so its base64 starts with "/", never "AAAA", and masking is stable.
+	v := base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("\xffshentu-redacted-key-%08d", m.nKey)))
 	m.keys[k] = v
+	m.keys[v] = v
 	return v
 }
 

@@ -4320,7 +4320,7 @@
   "persistence": {
     "status": "partial",
     "reason": "permission_denied",
-    "detail": "not fully read: /root/.ssh/authorized_keys (permission_denied), /root/.ssh/authorized_keys2 (permission_denied)",
+    "detail": "not fully read: authorized_keys: not fully read: /root/.ssh/authorized_keys (not_recorded), /root/.ssh/authorized_keys2 (not_recorded), /usr/sbin/.ssh/authorized_keys (not_recorded), /usr/sbin/.ssh/authorized_keys2 (not_recorded), /bin/.ssh/authorized_keys (not_recorded), /bin/.ssh/authorized_keys2 (not_recorded), /dev/.ssh/authorized_keys (not_recorded), /dev/.ssh/authorized_keys2 (not_recorded), /usr/games/.ssh/authorized_keys (not_recorded), /usr/games/.ssh/authorized_keys2 (not_recorded), /var/cache/man/.ssh/authorized_keys (not_recorded), /var/cache/man/.ssh/authorized_keys2 (not_recorded), /var/spool/lpd/.ssh/authorized_keys (not_recorded), /var/spool/lpd/.ssh/authorized_keys2 (not_recorded), /var/mail/.ssh/authorized_keys (not_recorded), /var/mail/.ssh/authorized_keys2 (not_recorded), /var/spool/news/.ssh/authorized_keys (not_recorded), /var/spool/news/.ssh/authorized_keys2 (not_recorded), /var/spool/uucp/.ssh/authorized_keys (not_recorded), /var/spool/uucp/.ssh/authorized_keys2 (not_recorded), /var/www/.ssh/authorized_keys (not_recorded), /var/www/.ssh/authorized_keys2 (not_recorded), /var/backups/.ssh/authorized_keys (not_recorded), /var/backups/.ssh/authorized_keys2 (not_recorded), /var/list/.ssh/authorized_keys (not_recorded), /var/list/.ssh/authorized_keys2 (not_recorded), /run/ircd/.ssh/authorized_keys (not_recorded), /run/ircd/.ssh/authorized_keys2 (not_recorded), /nonexistent/.ssh/authorized_keys (not_recorded), /nonexistent/.ssh/authorized_keys2 (not_recorded), /.ssh/authorized_keys (not_recorded), /.ssh/authorized_keys2 (not_recorded), /run/uuidd/.ssh/authorized_keys (not_recorded), /run/uuidd/.ssh/authorized_keys2 (not_recorded), /run/sshd/.ssh/authorized_keys (not_recorded), /run/sshd/.ssh/authorized_keys2 (not_recorded), /home/user1/.ssh/authorized_keys (not_recorded), /home/user1/.ssh/authorized_keys2 (not_recorded), /var/lib/redis/.ssh/authorized_keys (not_recorded), /var/lib/redis/.ssh/authorized_keys2 (not_recorded), unreadable: /etc/sudoers.d, /etc/sudoers",
     "value": [
       {
         "kind": "cron",
@@ -4374,18 +4374,14 @@
         "kind": "systemd",
         "location": "/etc/systemd/system/sshd.service",
         "command": "/usr/sbin/sshd -D $SSHD_OPTS"
-      },
-      {
-        "kind": "authorized_key",
-        "location": "/home/user1/.ssh/authorized_keys",
-        "detail": "ssh-ed25519 SHA256:4Xycv2zWXgTTWQZLqmzJCVFiNwe7NTsrZzLc1r3A01A"
-      },
-      {
-        "kind": "authorized_key",
-        "location": "/home/user1/.ssh/authorized_keys",
-        "detail": "ssh-ed25519 SHA256:g3ZN/H6yAtRPOK2EFjvGjnwLq3dvxDzFiF7/2OEz+/I"
       }
     ]
+  },
+  "ssh_keys": {
+    "status": "partial",
+    "reason": "not_recorded",
+    "detail": "not fully read: /root/.ssh/authorized_keys (not_recorded), /root/.ssh/authorized_keys2 (not_recorded), /usr/sbin/.ssh/authorized_keys (not_recorded), /usr/sbin/.ssh/authorized_keys2 (not_recorded), /bin/.ssh/authorized_keys (not_recorded), /bin/.ssh/authorized_keys2 (not_recorded), /dev/.ssh/authorized_keys (not_recorded), /dev/.ssh/authorized_keys2 (not_recorded), /usr/games/.ssh/authorized_keys (not_recorded), /usr/games/.ssh/authorized_keys2 (not_recorded), /var/cache/man/.ssh/authorized_keys (not_recorded), /var/cache/man/.ssh/authorized_keys2 (not_recorded), /var/spool/lpd/.ssh/authorized_keys (not_recorded), /var/spool/lpd/.ssh/authorized_keys2 (not_recorded), /var/mail/.ssh/authorized_keys (not_recorded), /var/mail/.ssh/authorized_keys2 (not_recorded), /var/spool/news/.ssh/authorized_keys (not_recorded), /var/spool/news/.ssh/authorized_keys2 (not_recorded), /var/spool/uucp/.ssh/authorized_keys (not_recorded), /var/spool/uucp/.ssh/authorized_keys2 (not_recorded), /var/www/.ssh/authorized_keys (not_recorded), /var/www/.ssh/authorized_keys2 (not_recorded), /var/backups/.ssh/authorized_keys (not_recorded), /var/backups/.ssh/authorized_keys2 (not_recorded), /var/list/.ssh/authorized_keys (not_recorded), /var/list/.ssh/authorized_keys2 (not_recorded), /run/ircd/.ssh/authorized_keys (not_recorded), /run/ircd/.ssh/authorized_keys2 (not_recorded), /nonexistent/.ssh/authorized_keys (not_recorded), /nonexistent/.ssh/authorized_keys2 (not_recorded), /.ssh/authorized_keys (not_recorded), /.ssh/authorized_keys2 (not_recorded), /run/uuidd/.ssh/authorized_keys (not_recorded), /run/uuidd/.ssh/authorized_keys2 (not_recorded), /run/sshd/.ssh/authorized_keys (not_recorded), /run/sshd/.ssh/authorized_keys2 (not_recorded), /home/user1/.ssh/authorized_keys (not_recorded), /home/user1/.ssh/authorized_keys2 (not_recorded), /var/lib/redis/.ssh/authorized_keys (not_recorded), /var/lib/redis/.ssh/authorized_keys2 (not_recorded)",
+    "value": null
   },
   "firewall": {
     "status": "unknown",

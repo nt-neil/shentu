@@ -104,7 +104,7 @@ func (l *Live) path(p string) string {
 	if best == "" {
 		return p
 	}
-	return l.Remap[best] + strings.TrimPrefix(p, best)
+	return l.Remap[best] + strings.TrimPrefix(p, strings.TrimSuffix(best, "/"))
 }
 
 // NewLive builds a live Source whose commands are limited to allow.
