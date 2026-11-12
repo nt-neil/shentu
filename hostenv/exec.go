@@ -283,6 +283,15 @@ func (b *capBuffer) Write(p []byte) (int, error) {
 // same rules as Run (no shell, fixed environment, timeout) and no stdout
 // cap: memory is the callback's business.
 func (r *Runner) RunLines(ctx context.Context, argv []string, fn func(line string)) (CmdResult, error) {
+	return r.runLines(ctx, argv, true, fn)
+}
+
+// RunLinesUnmasked is RunLines with each line as written (ScanLinesUnmasked).
+func (r *Runner) RunLinesUnmasked(ctx context.Context, argv []string, fn func(line string)) (CmdResult, error) {
+	return r.runLines(ctx, argv, false, fn)
+}
+
+func (r *Runner) runLines(ctx context.Context, argv []string, masked bool, fn func(line string)) (CmdResult, error) {
 	if !r.Allowed(argv) {
 		return CmdResult{}, fmt.Errorf("%w: %q", ErrNotAllowed, argv)
 	}
@@ -308,7 +317,12 @@ func (r *Runner) RunLines(ctx context.Context, argv []string, fn func(line strin
 	if err := cmd.Start(); err != nil {
 		return CmdResult{}, err
 	}
-	serr := scan(out, fn)
+	var serr error
+	if masked {
+		serr = scan(out, fn)
+	} else {
+		serr = scanPlain(out, fn)
+	}
 	if serr != nil {
 		io.Copy(io.Discard, out) // let the command finish
 	}
