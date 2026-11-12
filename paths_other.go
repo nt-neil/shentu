@@ -2,7 +2,10 @@
 
 package main
 
-import "os"
+import (
+	"errors"
+	"os"
+)
 
 // defaultConfigPath is where the configuration lives unless SHENTU_CONFIG says otherwise.
 func defaultConfigPath() string { return "/etc/shentu/shentu.toml" }
@@ -19,3 +22,20 @@ func trustConfig(string) (load bool, err error) { return true, nil }
 
 // trustSkills is true on Unix: the config folder's mode decides.
 func trustSkills(string) bool { return true }
+
+// privileged reports a process that may read everything Shentu checks.
+func privileged() bool { return os.Geteuid() == 0 }
+
+// privilegeError is what a command that changes the state says without it.
+func privilegeError(what string) error {
+	return errors.New(what + " changes /var/lib/shentu; run it with sudo")
+}
+
+// unprivilegedNote is chat's warning without it.
+const unprivilegedNote = "note: not running as root; some logs and process details will be unreadable and block_ip will fail."
+
+// How the bot is (re)started: the shentu-bot systemd service.
+const (
+	botRestartHint = "Start the service: sudo systemctl restart shentu-bot"
+	botRunningHint = "The bot service must be running (systemctl start shentu-bot)"
+)

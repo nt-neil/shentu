@@ -163,8 +163,8 @@ func botCommand(ctx context.Context, cfg *Config, env *tools.Env, args []string)
 	if len(args) > 0 {
 		sub = args[0]
 	}
-	if sub != "" && os.Geteuid() != 0 {
-		return errors.New("bot " + sub + " changes /var/lib/shentu; run it with sudo")
+	if sub != "" && !privileged() {
+		return privilegeError("bot " + sub)
 	}
 	audit := newAuditLog(cfg.StateDir)
 	switch sub {
@@ -215,7 +215,7 @@ func botCommand(ctx context.Context, cfg *Config, env *tools.Env, args []string)
 		err := withBotState(cfg.StateDir, func(s *botState) error { s.Paused, s.CodeFails = "", 0; return nil })
 		if err == nil {
 			audit.write(logEntry{Actor: "bot", Tool: "bot_resume", OK: true})
-			fmt.Println("Resumed. Start the service: sudo systemctl restart shentu-bot")
+			fmt.Println("Resumed. " + botRestartHint)
 		}
 		return err
 	}
@@ -233,7 +233,7 @@ func botPair(ctx context.Context, cfg *Config, env *tools.Env, audit *auditLog, 
 		return err
 	}
 	audit.write(logEntry{Actor: "bot", Tool: "bot_pair_code", OK: true})
-	fmt.Fprintf(out, "In a private chat with your bot, send within 10 minutes:\n\n    /pair %s\n\nThe bot service must be running (systemctl start shentu-bot). Waiting…\n", code)
+	fmt.Fprintf(out, "In a private chat with your bot, send within 10 minutes:\n\n    /pair %s\n\n%s. Waiting…\n", code, botRunningHint)
 	deadline := time.Now().Add(pairCodeTTL)
 	for time.Now().Before(deadline) {
 		var p *pendingPair

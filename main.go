@@ -161,8 +161,8 @@ func chat(ctx context.Context, cfg *Config, env *tools.Env, question string) err
 			return strings.EqualFold(strings.TrimSpace(line), "y")
 		},
 	}
-	if os.Geteuid() != 0 {
-		fmt.Fprintln(os.Stderr, "note: not running as root; some logs and process details will be unreadable and block_ip will fail.")
+	if !privileged() {
+		fmt.Fprintln(os.Stderr, unprivilegedNote)
 	}
 	msgs := []message{{Role: "system", Content: systemPrompt(cfg, skills)}}
 	ask := func(q string) error {

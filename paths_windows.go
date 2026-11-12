@@ -226,3 +226,20 @@ func ensureStateDir(dir string) error {
 	}
 	return secureDir(dir)
 }
+
+// privileged reports an elevated process (the service runs as LocalSystem).
+func privileged() bool { return windows.GetCurrentProcessToken().IsElevated() }
+
+// privilegeError is what a command that changes the state says without it.
+func privilegeError(what string) error {
+	return errors.New(what + ` changes %ProgramData%\Shentu; run it from an elevated prompt (Run as administrator)`)
+}
+
+// unprivilegedNote is chat's warning without it.
+const unprivilegedNote = "note: not elevated; the Security log, scheduled tasks and some process details will be unreadable."
+
+// How the bot is (re)started on Windows: shentu bot in an elevated prompt.
+const (
+	botRestartHint = "Start the bot again: shentu bot (in an elevated prompt)"
+	botRunningHint = "The bot must be running (shentu bot in another elevated prompt)"
+)

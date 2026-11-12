@@ -38,6 +38,8 @@ jobs:
           go test -v -run 'TestVtableSlotsMatchSDK|TestCollectLeavesHostUnchanged|TestFirewallPolicyLive' ./hostenv/
           go test ./hostenv/ ./checks/ ./internal/msrc/
           go test -v -run 'TestSecureDir|TestSecureDirRefusesSquatted|TestTrustConfig|TestTrustConfigMissingAndLinks|TestSkillsNeedTrustedFolder' .
+          # Telegram bot, offline: a fake Bot API and a fake model (httptest).
+          go test -run 'Bot|TOTP|MarkdownToTelegram|Welcome|Schedule|NextDaily' .
           # tools: these tests spell Unix paths (/var/www, "dir/site/", PAM, sshd
           # drop-ins, /proc); they are reported to the tools owners, not fixed here.
           go test ./tools/ -skip '^(TestUploadFolder|TestWebRootsSymlinks|TestAppCodeAudit|TestAppCodeAuditKeepsResults|TestServedFallback|TestUnpackagedPAM|TestSSHDropInUnreadable|TestSSHSummary|TestLogPathAllowlist|TestMinerSigns)$'
@@ -107,6 +109,13 @@ jobs:
           set +e
           ./shentu.exe patrol --dry-run > "$RUNNER_TEMP/patrol.txt" 2>&1
           echo "patrol --dry-run exit $?, $(wc -l < "$RUNNER_TEMP/patrol.txt") lines"
+          # The bot starts on Windows: with no token it stops at the token,
+          # after the config trust check; status works elevated.
+          ./shentu.exe bot > "$RUNNER_TEMP/bot.txt" 2>&1
+          echo "bot without a token: exit $?"
+          grep -q "no Telegram bot token" "$RUNNER_TEMP/bot.txt" || { echo "FAIL: bot did not reach the token check"; exit 1; }
+          ./shentu.exe bot status > "$RUNNER_TEMP/botstatus.txt" 2>&1 || { echo "FAIL: bot status"; exit 1; }
+          echo "bot status: ok"
       - name: Windows service install, start, stop, uninstall
         if: ${{ !cancelled() }}
         run: |
