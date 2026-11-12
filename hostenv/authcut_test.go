@@ -72,3 +72,15 @@ func TestJournalctlBothPaths(t *testing.T) {
 	}
 	t.Error("/bin/journalctl not allowlisted")
 }
+
+// A secret in a long user name is masked before the name is cut.
+func TestSSHUserMaskedBeforeCut(t *testing.T) {
+	now := time.Now()
+	agg := NewSSHLogins(now.Add(-time.Hour), now, "")
+	tok := "gh" + "p_" + strings.Repeat("a1B2", 10)
+	agg.Add(now.Add(-time.Minute).UTC().Format(time.RFC3339) + " vm sshd[1]: Invalid user " + strings.Repeat("x", 40) + "-" + tok + " from 203.0.113.9 port 22")
+	got := agg.Result()
+	if len(got) != 1 || len(got[0].InvalidUsers) != 1 || strings.Contains(got[0].InvalidUsers[0], "a1B2a1B2") {
+		t.Errorf("%+v", got)
+	}
+}

@@ -233,6 +233,7 @@ func (c *SSHLogins) Add(l string) {
 	if strings.Contains(user, " from ") || strings.Contains(user, ": ") {
 		user = "[crafted user name]" // still an attempt from ip, but do not echo the bait
 	}
+	user = MaskSecrets(user) // masked whole, then cut: a cut secret would no longer match its rule
 	if len(user) > 64 {
 		user = CutString(user, 64)
 	}
@@ -299,7 +300,7 @@ func (c *SSHLogins) Result() []SSHSource {
 		names := func(kind string) []string {
 			var l []string
 			for u := range s.users[kind] {
-				l = append(l, MaskSecrets(u)) // user names come from the log as written
+				l = append(l, u) // masked in Add
 			}
 			sort.Strings(l)
 			return l

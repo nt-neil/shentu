@@ -449,7 +449,9 @@ func Glob(src Source, pattern string) []string {
 	}
 	var out []string
 	for _, p := range paths {
-		if exists(src, p) {
+		// A dangling link matches too, as with filepath.Glob: its reader
+		// says why it could not be read, rather than nothing at all.
+		if _, lerr := src.Readlink(p); lerr == nil || exists(src, p) {
 			out = append(out, p)
 		}
 	}

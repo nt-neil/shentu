@@ -1090,6 +1090,7 @@ func TestLegacyWebRoots(t *testing.T) {
 	os.Symlink(filepath.Join(other, "evil"), filepath.Join(etc, "nginx/sites-enabled/evil"))
 	os.Symlink("loop2", filepath.Join(etc, "nginx/sites-enabled/loop1"))
 	os.Symlink("loop1", filepath.Join(etc, "nginx/sites-enabled/loop2"))
+	os.Symlink("../sites-available/gone", filepath.Join(etc, "nginx/sites-enabled/broken")) // dangling: listed, as v0.2.5 did
 	w(filepath.Join(etc, "nginx/conf.d/big.conf"), "root /var/www/big;\n"+strings.Repeat("#\n", 600000), 0o644)
 	w(filepath.Join(etc, "nginx/conf.d/api.conf"), "server { root /srv/api; }\nroot /var/www/blog;\n", 0o644)
 	w(filepath.Join(etc, "apache2/sites-enabled/000-default.conf"), "<VirtualHost *:80>\n\tDocumentRoot /var/www/html\n</VirtualHost>\n", 0o644)

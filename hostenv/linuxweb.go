@@ -86,6 +86,7 @@ func (LinuxCollector) WebRootsReport(src Source, conf WebConf) (roots, unreadabl
 // trusted target (see WebConf); why says what kept it from being read.
 func readWebConf(src Source, p string, conf WebConf) (b []byte, why string) {
 	target := p
+	var checked FileStat // the file the checks looked at; the read must find the same one
 	if _, err := src.Readlink(p); err == nil {
 		real, err := EvalSymlinks(src, p)
 		if err != nil { // a loop ends here too
@@ -107,10 +108,13 @@ func readWebConf(src Source, p string, conf WebConf) (b []byte, why string) {
 		case st.Mode.Perm()&0o022 != 0:
 			return nil, "symlink to " + target + ", writable by others than its owner"
 		}
-	} else if _, err := Stat(src, p); err != nil && !errors.Is(err, ErrNoStat) && !errors.Is(err, ErrNotRecorded) {
+		checked = st
+	} else if st, err := Stat(src, p); err != nil && !errors.Is(err, ErrNoStat) && !errors.Is(err, ErrNotRecorded) {
 		return nil, whyUnread(err)
+	} else {
+		checked = st
 	}
-	b, err := ReadFileNoFollow(src, target) // no symlink left
+	b, err := ReadFileIfSame(src, target, checked) // no symlink left, and not swapped since the checks
 	if err != nil || len(b) > MaxWebConfBytes {
 		return nil, "not a regular file of at most 1 MiB, or changed while read"
 	}

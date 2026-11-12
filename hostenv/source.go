@@ -77,7 +77,28 @@ type FileStat struct {
 	Mode    fs.FileMode `json:"mode"`
 	Size    int64       `json:"size"`
 	ModTime time.Time   `json:"mtime"`
-	UID     int         `json:"uid"` // owner; -1 when the system has none to tell (Windows)
+	UID     int         `json:"uid"`          // owner; -1 when the system has none to tell (Windows)
+	ID      string      `json:"id,omitempty"` // device:inode, to tell the same file from a swapped one ("" unknown)
+}
+
+// ErrChanged is returned when a file is not the one stat looked at: it was
+// swapped between the check and the read.
+var ErrChanged = errors.New("hostenv: file changed between check and read")
+
+// SameReader is implemented by Sources that can read a file only if it is
+// still the one a Stat returned.
+type SameReader interface {
+	ReadFileIfSame(path string, want FileStat) ([]byte, error)
+}
+
+// ReadFileIfSame reads path without following a final link, and only if it
+// is still the file want describes (as v0.2.5's readSmallRegular did with
+// os.SameFile); Sources without the check (fixtures) read it as is.
+func ReadFileIfSame(src Source, path string, want FileStat) ([]byte, error) {
+	if s, ok := src.(SameReader); ok {
+		return s.ReadFileIfSame(path, want)
+	}
+	return ReadFileNoFollow(src, path)
 }
 
 // Stater is implemented by Sources that can stat a path (following links).
@@ -147,7 +168,16 @@ func (l *Live) ReadFileNoFollow(path string) ([]byte, error) { return l.read(pat
 
 func (l *Live) ReadFileMax(path string, max int64) ([]byte, error) { return l.read(path, false, max) }
 
+func (l *Live) ReadFileIfSame(path string, want FileStat) ([]byte, error) {
+	return l.readFile(path, true, MaxFileBytes, want.ID)
+}
+
 func (l *Live) read(path string, noFollow bool, max int64) ([]byte, error) {
+	return l.readFile(path, noFollow, max, "")
+}
+
+// readFile reads path; with id set, only if the opened file has that id.
+func (l *Live) readFile(path string, noFollow bool, max int64, id string) ([]byte, error) {
 	f, err := openRead(l.path(path), noFollow)
 	if err != nil {
 		return nil, err
@@ -155,6 +185,8 @@ func (l *Live) read(path string, noFollow bool, max int64) ([]byte, error) {
 	defer f.Close()
 	if st, err := f.Stat(); err != nil {
 		return nil, err
+	} else if id != "" && fileID(st) != id {
+		return nil, &fs.PathError{Op: "read", Path: path, Err: ErrChanged}
 	} else if !st.Mode().IsRegular() {
 		why := "not a regular file"
 		if st.IsDir() {
@@ -186,7 +218,7 @@ func (l *Live) Stat(path string) (FileStat, error) {
 	if err != nil {
 		return FileStat{}, err
 	}
-	return FileStat{Mode: st.Mode(), Size: st.Size(), ModTime: st.ModTime(), UID: fileUID(st)}, nil
+	return FileStat{Mode: st.Mode(), Size: st.Size(), ModTime: st.ModTime(), UID: fileUID(st), ID: fileID(st)}, nil
 }
 
 func (l *Live) ReadDir(path string) ([]string, error) {
