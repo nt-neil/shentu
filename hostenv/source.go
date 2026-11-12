@@ -46,6 +46,12 @@ var (
 	ErrNotRegular = errors.New("hostenv: not a regular file")
 )
 
+// notRegular is ErrNotRegular with the reason in words.
+type notRegular string
+
+func (e notRegular) Error() string        { return string(e) }
+func (e notRegular) Is(target error) bool { return target == ErrNotRegular }
+
 // NoFollowReader is implemented by Sources that can refuse a symlink in the
 // final path element. Use ReadFileNoFollow for paths a user controls.
 type NoFollowReader interface {
@@ -133,7 +139,11 @@ func (l *Live) read(path string, noFollow bool) ([]byte, error) {
 	if st, err := f.Stat(); err != nil {
 		return nil, err
 	} else if !st.Mode().IsRegular() {
-		return nil, fmt.Errorf("%w: %s", ErrNotRegular, path)
+		why := "not a regular file"
+		if st.IsDir() {
+			why = "is a directory" // as read(2) says
+		}
+		return nil, &fs.PathError{Op: "read", Path: path, Err: notRegular(why)}
 	}
 	b, err := io.ReadAll(io.LimitReader(f, MaxFileBytes+1))
 	if err != nil {

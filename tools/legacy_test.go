@@ -8,10 +8,12 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net"
 	"os"
 	"path/filepath"
@@ -568,5 +570,101 @@ func TestLegacyPersistenceTree(t *testing.T) {
 	}
 	if len(a.SharedKeys) != 2 {
 		t.Errorf("shared keys %+v", a.SharedKeys)
+	}
+}
+
+// legacySSHD is sshdSettings before 1c (as of f9264fd), I/O through src.
+func legacySSHD(src hostenv.Source, config string) (map[string]string, string, []string) {
+	legacyFields := func(line string) []string {
+		line = strings.TrimSpace(line)
+		i := strings.IndexAny(line, " \t=")
+		if i < 0 {
+			return []string{line}
+		}
+		rest := strings.TrimLeft(line[i:], " \t")
+		if strings.HasPrefix(rest, "=") {
+			rest = rest[1:]
+		}
+		return append([]string{line[:i]}, strings.Fields(rest)...)
+	}
+	want := map[string]string{"port": "22", "permitrootlogin": "prohibit-password", "passwordauthentication": "yes",
+		"pubkeyauthentication": "yes", "permitemptypasswords": "no", "x11forwarding": "no"}
+	got := map[string]bool{}
+	h := sha256.New()
+	var unread []string
+	unknown := func(path string, err error) {
+		why := err.Error()
+		if errors.Is(err, fs.ErrPermission) {
+			why = "permission denied"
+		} else if pe := (*fs.PathError)(nil); errors.As(err, &pe) {
+			why = pe.Err.Error()
+		}
+		unread = append(unread, path+" ("+why+")")
+		for k := range want {
+			if !got[k] {
+				want[k], got[k] = "unknown", true
+			}
+		}
+	}
+	var read func(path string, depth int) bool
+	read = func(path string, depth int) bool {
+		if depth > 4 {
+			return true
+		}
+		b, err := src.ReadFile(path)
+		if err != nil {
+			if !errors.Is(err, fs.ErrNotExist) {
+				unknown(path, err)
+			}
+			return true
+		}
+		h.Write(b)
+		for _, line := range strings.Split(string(b), "\n") {
+			f := legacyFields(line)
+			if len(f) < 2 || strings.HasPrefix(f[0], "#") {
+				continue
+			}
+			key := strings.ToLower(f[0])
+			if key == "match" {
+				return false
+			}
+			if key == "include" {
+				for _, pat := range f[1:] {
+					if !strings.HasPrefix(pat, "/") {
+						pat = filepath.Join(filepath.Dir(config), pat)
+					}
+					if _, err := src.ReadDir(filepath.Dir(pat)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+						unknown(filepath.Dir(pat), err)
+					}
+					files := hostenv.Glob(src, pat) // filepath.Glob through src
+					for _, inc := range files {
+						if !read(inc, depth+1) {
+							return false
+						}
+					}
+				}
+				continue
+			}
+			if _, ok := want[key]; ok && !got[key] {
+				want[key], got[key] = strings.ToLower(f[1]), true
+			}
+		}
+		return true
+	}
+	read(config, 0)
+	return want, hex.EncodeToString(h.Sum(nil))[:16], unread
+}
+
+func TestLegacySSHD(t *testing.T) {
+	for name, rp := range fixtures(t) {
+		withHost(t, rp)
+		ws, wh, wu := legacySSHD(rp, "/etc/ssh/sshd_config")
+		gs, gh, gu := sshdSettings()
+		if !reflect.DeepEqual(gs, ws) || gh != wh || !reflect.DeepEqual(gu, wu) {
+			t.Errorf("%s:\n got %v %s %q\nwant %v %s %q", name, gs, gh, gu, ws, wh, wu)
+		}
+		if strings.HasSuffix(name, "-user") != (len(wu) > 0) {
+			t.Logf("%s: unread %q", name, wu)
+		}
 	}
 }

@@ -2,6 +2,7 @@ package hostenv
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"os"
@@ -386,5 +387,27 @@ func TestMaskKeepsNOPASSWD(t *testing.T) {
 		if got := MaskSecrets(in); got != want {
 			t.Errorf("MaskSecrets(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestKeyTypesAsSSHDReadsThem(t *testing.T) {
+	blob := func(typ string) string {
+		b := append([]byte{0, 0, 0, byte(len(typ))}, typ...)
+		b = append(b, []byte(strings.Repeat("k", 32))...)
+		return base64.StdEncoding.EncodeToString(b)
+	}
+	keys := ParseAuthorizedKeys([]byte("ED25519 " + blob("ssh-ed25519") + " c\nrsa " + blob("ssh-rsa") + "\nfrom=\"x\" ssh-ed25519 " + blob("ssh-ed25519") + "\ngarbage line\n"))
+	if len(keys) != 3 || keys[0].Type != "ssh-ed25519" || keys[1].Type != "ssh-rsa" || !keys[2].Options || keys[0].Options {
+		t.Errorf("keys %+v", keys)
+	}
+	h := debianHost(true)
+	h.files["/home/alice/.ssh/authorized_keys"] = "ED25519 " + blob("ssh-ed25519") + "\nnot a key at all\n"
+	f := Collect(context.Background(), h)
+	n := map[string]int{}
+	for _, it := range f.Persistence.Value {
+		n[it.Kind]++
+	}
+	if n["authorized_key"] != 1 || n["authorized_key_unparsed"] != 1 {
+		t.Errorf("kinds %v", n)
 	}
 }

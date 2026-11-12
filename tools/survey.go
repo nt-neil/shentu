@@ -6,12 +6,9 @@ package tools
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
 	"net"
 	"os"
 	"os/exec"
@@ -21,6 +18,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/nt-neil/shentu/hostenv"
 )
 
 var siteProfile = Tool{
@@ -269,20 +268,14 @@ func sshRisks(ssh map[string]string, unread []string) []Risk {
 	return out
 }
 
-// sshdFields splits one sshd_config line into its keyword and arguments: the
-// keyword ends at the first white space or "=", which may have white space
-// around it (PermitRootLogin=yes, PasswordAuthentication = yes), as in sshd.
+// sshdFields splits one sshd_config line into its keyword and arguments, as sshd does
+// (hostenv.SplitSSHDLine: "Key=Value", "Key = Value", quoted arguments).
 func sshdFields(line string) []string {
-	line = strings.TrimSpace(line)
-	i := strings.IndexAny(line, " \t=")
-	if i < 0 {
-		return []string{line}
+	k, args := hostenv.SplitSSHDLine(line)
+	if k == "" {
+		return nil
 	}
-	rest := strings.TrimLeft(line[i:], " \t")
-	if strings.HasPrefix(rest, "=") {
-		rest = rest[1:]
-	}
-	return append([]string{line[:i]}, strings.Fields(rest)...)
+	return append([]string{k}, args...)
 }
 
 // sshdSettings returns the effective global sshd settings that matter for security,
@@ -291,74 +284,8 @@ func sshdFields(line string) []string {
 // Include folder that cannot be read (sshd reads it as root) leaves every setting
 // not set before it "unknown"; unread lists them.
 func sshdSettings() (map[string]string, string, []string) {
-	want := map[string]string{"port": "22", "permitrootlogin": "prohibit-password", "passwordauthentication": "yes",
-		"pubkeyauthentication": "yes", "permitemptypasswords": "no", "x11forwarding": "no"}
-	got := map[string]bool{}
-	h := sha256.New()
-	var unread []string
-	unknown := func(path string, err error) {
-		why := err.Error()
-		if errors.Is(err, fs.ErrPermission) { // EACCES, EPERM
-			why = "permission denied"
-		} else if pe := (*fs.PathError)(nil); errors.As(err, &pe) {
-			why = pe.Err.Error()
-		}
-		unread = append(unread, path+" ("+why+")")
-		for k := range want {
-			if !got[k] {
-				want[k], got[k] = "unknown", true
-			}
-		}
-	}
-	var read func(path string, depth int) bool // false stops at a Match block
-	read = func(path string, depth int) bool {
-		if depth > 4 {
-			return true
-		}
-		b, err := os.ReadFile(path)
-		if err != nil {
-			if !errors.Is(err, fs.ErrNotExist) {
-				unknown(path, err)
-			}
-			return true
-		}
-		h.Write(b)
-		for _, line := range strings.Split(string(b), "\n") {
-			f := sshdFields(line)
-			if len(f) < 2 || strings.HasPrefix(f[0], "#") {
-				continue
-			}
-			key := strings.ToLower(f[0])
-			if key == "match" {
-				return false
-			}
-			if key == "include" {
-				for _, pat := range f[1:] {
-					if !filepath.IsAbs(pat) {
-						pat = filepath.Join(filepath.Dir(sshdConfig), pat)
-					}
-					// Glob says nothing of a folder it cannot list.
-					if _, err := os.ReadDir(filepath.Dir(pat)); err != nil && !errors.Is(err, fs.ErrNotExist) {
-						unknown(filepath.Dir(pat), err)
-					}
-					files, _ := filepath.Glob(pat)
-					sort.Strings(files)
-					for _, inc := range files {
-						if !read(inc, depth+1) {
-							return false
-						}
-					}
-				}
-				continue
-			}
-			if _, ok := want[key]; ok && !got[key] {
-				want[key], got[key] = strings.ToLower(f[1]), true
-			}
-		}
-		return true
-	}
-	read(sshdConfig, 0)
-	return want, hex.EncodeToString(h.Sum(nil))[:16], unread
+	o := linux.SSHD(hostSource(), sshdConfig)
+	return o.Value.Settings, o.Value.Hash, o.Value.Unread
 }
 
 func cronFiles() []string { return linux.CronFiles(hostSource()) }

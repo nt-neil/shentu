@@ -4407,7 +4407,7 @@
           "x11forwarding": "unknown"
         },
         "unread": [
-          "/etc/ssh/sshd_config.d/50-cloud-init.conf"
+          "/etc/ssh/sshd_config.d/50-cloud-init.conf (permission denied)"
         ],
         "hash": "121bac24ff921329"
       }

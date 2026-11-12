@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io/fs"
 	"path"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -305,19 +306,34 @@ func (LinuxCollector) Listeners(src Source, owners map[string]int) Obs[[]Listene
 	return OK(out)
 }
 
-const sshdConfig = "/etc/ssh/sshd_config"
+// SSHDConfigPath is where sshd reads its configuration.
+const SSHDConfigPath = "/etc/ssh/sshd_config"
 
-func (LinuxCollector) ssh(src Source) Obs[SSHConfig] {
-	if _, err := src.ReadFile(sshdConfig); errors.Is(err, fs.ErrNotExist) {
+func (c LinuxCollector) ssh(src Source) Obs[SSHConfig] {
+	if _, err := src.ReadFile(SSHDConfigPath); errors.Is(err, fs.ErrNotExist) {
 		if names, derr := src.ReadDir("/usr/sbin"); derr == nil && !contains(names, "sshd") {
 			return NotApplicable[SSHConfig]()
 		}
 	}
-	cfg := SSHConfig{ConfigPath: sshdConfig, Settings: SSHDDefaults()}
+	return c.SSHD(src, SSHDConfigPath)
+}
+
+// SSHD reads the effective global sshd settings that matter for security,
+// following Include in place (relative to the main file's folder, sorted
+// as sshd's glob is); the first value wins, as in sshd, and a Match block
+// ends the global part. A file or Include folder that cannot be read leaves
+// every setting not set before it "unknown", and is listed in Unread as
+// "path (why)". The hash covers every byte read, to notice any change.
+func (LinuxCollector) SSHD(src Source, config string) Obs[SSHConfig] {
+	cfg := SSHConfig{ConfigPath: config, Settings: SSHDDefaults()}
 	got := map[string]bool{}
 	h := sha256.New()
-	unknown := func(p string) {
-		cfg.Unread = append(cfg.Unread, p)
+	reason := Reason("")
+	unknown := func(p string, err error) {
+		if reason == "" || Classify(err) == ReasonPermission {
+			reason = Classify(err)
+		}
+		cfg.Unread = append(cfg.Unread, p+" ("+whyUnread(err)+")")
 		for k := range cfg.Settings {
 			if !got[k] {
 				cfg.Settings[k], got[k] = "unknown", true
@@ -332,7 +348,7 @@ func (LinuxCollector) ssh(src Source) Obs[SSHConfig] {
 		b, err := src.ReadFile(p)
 		if err != nil {
 			if !errors.Is(err, fs.ErrNotExist) {
-				unknown(p)
+				unknown(p, err)
 			}
 			return true
 		}
@@ -342,18 +358,14 @@ func (LinuxCollector) ssh(src Source) Obs[SSHConfig] {
 			if d.Key == "include" {
 				pat := d.Value
 				if !strings.HasPrefix(pat, "/") {
-					pat = path.Join(path.Dir(sshdConfig), pat)
+					pat = path.Join(path.Dir(config), pat)
 				}
-				dir, base := path.Split(pat)
-				names, err := src.ReadDir(path.Clean(dir))
-				if err != nil {
-					if !errors.Is(err, fs.ErrNotExist) {
-						unknown(path.Clean(dir))
-					}
-					continue
+				// A folder that cannot be listed hides what it holds.
+				if _, err := src.ReadDir(path.Dir(pat)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+					unknown(path.Dir(pat), err)
 				}
-				for _, n := range names { // already sorted, as sshd's glob is
-					if ok, _ := path.Match(base, n); ok && !read(path.Join(dir, n), depth+1) {
+				for _, inc := range Glob(src, pat) {
+					if !read(inc, depth+1) {
 						return false
 					}
 				}
@@ -365,12 +377,71 @@ func (LinuxCollector) ssh(src Source) Obs[SSHConfig] {
 		}
 		return !sawMatch
 	}
-	read(sshdConfig, 0)
+	read(config, 0)
 	cfg.Hash = hex.EncodeToString(h.Sum(nil))[:16]
 	if len(cfg.Unread) > 0 {
-		return Partial(cfg, ReasonPermission, "some sshd config files unreadable; their settings are \"unknown\"")
+		return Partial(cfg, reason, "some sshd config files unreadable; their settings are \"unknown\"")
 	}
 	return OK(cfg)
+}
+
+// whyUnread is the short reason a path could not be read: "permission
+// denied", the system's own words ("is a directory"), or the error.
+func whyUnread(err error) string {
+	if errors.Is(err, fs.ErrPermission) {
+		return "permission denied"
+	}
+	var pe *fs.PathError
+	if errors.As(err, &pe) {
+		return pe.Err.Error()
+	}
+	return err.Error()
+}
+
+// exists reports whether p is there (an unreadable file still is).
+func exists(src Source, p string) bool {
+	_, err := Stat(src, p)
+	if err == nil {
+		return true
+	}
+	if !errors.Is(err, ErrNoStat) && !errors.Is(err, ErrNotRecorded) {
+		return !errors.Is(err, fs.ErrNotExist)
+	}
+	if _, derr := src.ReadDir(p); derr == nil {
+		return true
+	}
+	_, rerr := src.ReadFile(p)
+	return !errors.Is(rerr, fs.ErrNotExist) && !errors.Is(rerr, ErrNotRecorded)
+}
+
+// Glob expands an absolute pattern through src, as filepath.Glob does
+// (every component may hold *, ? or [...]); the result is sorted.
+func Glob(src Source, pattern string) []string {
+	paths := []string{"/"}
+	for _, part := range strings.Split(strings.Trim(path.Clean(pattern), "/"), "/") {
+		var next []string
+		for _, d := range paths {
+			if !strings.ContainsAny(part, "*?[\\") {
+				next = append(next, path.Join(d, part))
+				continue
+			}
+			names, _ := src.ReadDir(d)
+			for _, n := range names {
+				if ok, _ := path.Match(part, n); ok {
+					next = append(next, path.Join(d, n))
+				}
+			}
+		}
+		paths = next
+	}
+	var out []string
+	for _, p := range paths {
+		if exists(src, p) {
+			out = append(out, p)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 func contains(list []string, s string) bool {
@@ -475,6 +546,10 @@ func (c LinuxCollector) persistence(ctx context.Context, src Source, keys Obs[[]
 	}
 
 	for _, kf := range keys.Value {
+		if kf.Unparsed > 0 { // sshd may still read these: never drop them silently
+			add(PersistenceItem{Kind: "authorized_key_unparsed", Location: kf.Path,
+				Detail: fmt.Sprintf("%d non-comment lines are no key Shentu can read", kf.Unparsed)})
+		}
 		for _, k := range kf.Keys {
 			d := k.Type + " " + k.Fingerprint
 			if k.Options {

@@ -25,7 +25,8 @@ type AuthorizedKeyFile struct {
 	Lines    int             `json:"lines"` // non-empty, non-comment lines
 	Modified time.Time       `json:"modified"`
 	Keys     []AuthorizedKey `json:"keys,omitempty"`
-	Unread   string          `json:"unread,omitempty"` // why the content could not be read
+	Unparsed int             `json:"unparsed,omitempty"` // non-comment lines that are no key Shentu can read
+	Unread   string          `json:"unread,omitempty"`   // why the content could not be read
 }
 
 // AuthorizedKey is one key line, without the key itself.
@@ -36,9 +37,36 @@ type AuthorizedKey struct {
 	CloudInitRefusal bool   `json:"cloud_init_refusal,omitempty"` // root's "Please login as …" line
 }
 
-// IsKeyType reports an SSH public key type.
+// IsKeyType reports an SSH public key type as authorized_keys may spell
+// it: a full name (ssh-ed25519, ecdsa-sha2-nistp256, sk-..., certificates
+// included), or one of the short names sshd also accepts, in any case
+// (sshkey_type_from_name: "ED25519", "rsa").
 func IsKeyType(t string) bool {
-	return strings.HasPrefix(t, "ssh-") || strings.HasPrefix(t, "ecdsa-") || strings.HasPrefix(t, "sk-")
+	if strings.HasPrefix(t, "ssh-") || strings.HasPrefix(t, "ecdsa-") || strings.HasPrefix(t, "sk-") {
+		return true
+	}
+	switch strings.ToLower(t) {
+	case "rsa", "dsa", "ecdsa", "ed25519", "ecdsa-sk", "ed25519-sk", "xmss":
+		return true
+	}
+	return false
+}
+
+// blobType is the key type written inside a public key blob (its first
+// length-prefixed string), "" when the blob does not start with one.
+func blobType(blob []byte) string {
+	if len(blob) < 4 {
+		return ""
+	}
+	n := int(blob[0])<<24 | int(blob[1])<<16 | int(blob[2])<<8 | int(blob[3])
+	if n <= 0 || n > 64 || 4+n > len(blob) {
+		return ""
+	}
+	t := string(blob[4 : 4+n])
+	if !IsKeyType(t) {
+		return ""
+	}
+	return t
 }
 
 // cloudInitCmd is the line cloud-init writes into root's authorized_keys:
@@ -87,7 +115,11 @@ func keyLine(line string) (typ, fp string, options bool) {
 		return "", "", false
 	}
 	sum := sha256.Sum256(blob)
-	return f[0], "SHA256:" + base64.RawStdEncoding.EncodeToString(sum[:]), options
+	typ = f[0]
+	if bt := blobType(blob); bt != "" {
+		typ = bt // what sshd will check, whatever the text says
+	}
+	return typ, "SHA256:" + base64.RawStdEncoding.EncodeToString(sum[:]), options
 }
 
 // ParseAuthorizedKeys returns the keys sshd would use, in file order.
@@ -156,6 +188,7 @@ func (LinuxCollector) SSHKeyFiles(src Source, accounts []Account) Obs[[]Authoriz
 			}
 			kf.Lines = countLines(b)
 			kf.Keys = ParseAuthorizedKeys(b)
+			kf.Unparsed = kf.Lines - len(kf.Keys)
 			out = append(out, kf)
 		}
 	}

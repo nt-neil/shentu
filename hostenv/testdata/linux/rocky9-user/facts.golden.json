@@ -4867,7 +4867,7 @@
           "x11forwarding": "unknown"
         },
         "unread": [
-          "/etc/ssh/sshd_config"
+          "/etc/ssh/sshd_config (permission denied)"
         ],
         "hash": "e3b0c44298fc1c14"
       }

@@ -269,19 +269,26 @@ func ParseSSHDConfig(b []byte) (dirs []SSHDDirective, sawMatch bool) {
 	return dirs, false
 }
 
-// sshdLine tokenises one line the way sshd does: the keyword ends at
-// whitespace or '=', one optional '=' may follow ("Key=Value",
-// "Key = Value"), and arguments may be double-quoted.
+// sshdLine is SplitSSHDLine with the keyword lower-cased.
 func sshdLine(l string) (string, []string) {
+	k, args := SplitSSHDLine(l)
+	return strings.ToLower(k), args
+}
+
+// SplitSSHDLine tokenises one sshd_config line the way sshd does: the
+// keyword ends at white space or '=', one optional '=' may follow
+// ("Key=Value", "Key = Value"), and arguments may be double-quoted. A
+// comment line or an empty one gives "".
+func SplitSSHDLine(l string) (string, []string) {
 	l = strings.TrimSpace(l)
 	if l == "" || strings.HasPrefix(l, "#") {
 		return "", nil
 	}
 	i := strings.IndexAny(l, " \t=")
 	if i < 0 {
-		return strings.ToLower(l), nil
+		return l, nil
 	}
-	key, rest := strings.ToLower(l[:i]), strings.TrimLeft(l[i:], " \t")
+	key, rest := l[:i], strings.TrimLeft(l[i:], " \t")
 	if strings.HasPrefix(rest, "=") {
 		rest = strings.TrimLeft(rest[1:], " \t")
 	}
