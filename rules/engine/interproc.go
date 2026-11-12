@@ -34,7 +34,7 @@ const (
 	maxSumDepth  = 32   // summaries being computed inside one another
 	maxSumHeight = 128  // the longest chain of summaries under one: past it the summary counts as cut short
 	maxSumRuns   = 4000 // analyses of function bodies per rule and file
-	maxSumRounds = 4    // recomputations at the head of a recursive cycle
+	maxSumRounds = 16   // recomputations at the head of a recursive cycle: only against one that never settles, as each summary's work is capped anyway
 )
 
 // fnInfo is a named function of the file.
