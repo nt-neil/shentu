@@ -195,6 +195,10 @@ func checks(ctx context.Context, cfg *Config, env *tools.Env, st *state, daily b
 	}
 
 	if r, err := tools.SSHSummary(ctx, env, time.Now().Add(-1*time.Hour), ""); err == nil {
+		note := ""
+		if v, _ := r["verified"].(bool); !v {
+			note = "; read from text logs, which anyone on this host can write to: check them before acting"
+		}
 		for _, s := range r["sources"].([]tools.SSHSource) {
 			if n := s.Failed + s.InvalidUser; n >= cfg.Patrol.SSHThreshold {
 				sev := "warning"
@@ -202,7 +206,7 @@ func checks(ctx context.Context, cfg *Config, env *tools.Env, st *state, daily b
 					sev = "critical"
 				}
 				out = append(out, finding{"ssh:" + s.IP, sev,
-					fmt.Sprintf("%d failed SSH logins from %s in the last hour (successful logins: %d)", n, s.IP, s.Accepted), s})
+					fmt.Sprintf("%d failed SSH logins from %s in the last hour (successful logins: %d)%s", n, s.IP, s.Accepted, note), s})
 			}
 		}
 	}
