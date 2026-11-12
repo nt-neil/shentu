@@ -6,7 +6,7 @@ a release are not written here: they are worked out from the rule snapshots in
 `docs/site-src/rules-history/`. `CHANGELOG.zh-TW.md` holds the same releases in Traditional
 Chinese for the zh-TW pages; keep the two in step.
 
-## v0.2.5 (unreleased)
+## v0.2.5 — 2026-11-13
 
 - `app_code_audit` follows calls across files: input read in one file and used in a sink
   of another is reported at the sink, with the file it came from.
