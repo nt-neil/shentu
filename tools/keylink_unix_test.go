@@ -47,3 +47,35 @@ func TestKeysThroughSymlink(t *testing.T) {
 		t.Errorf("shared keys: %+v", a.SharedKeys)
 	}
 }
+
+// ~/.ssh as a link out of the home is caught too; a home that is a link
+// itself is not "outside".
+func TestKeysThroughLinkedFolder(t *testing.T) {
+	root := t.TempDir()
+	w := func(p, body string) {
+		os.MkdirAll(filepath.Dir(filepath.Join(root, p)), 0o755)
+		os.WriteFile(filepath.Join(root, p), []byte(body), 0o600)
+	}
+	w("etc/passwd", "carol:x:1000:1000::/home/carol:/bin/bash\ndave:x:1001:1001::/home/dave:/bin/bash\n")
+	w("etc/group", "")
+	w("srv/planted/authorized_keys", fakeKey(t)+"\n")
+	w("data/dave/.ssh/authorized_keys", fakeKey(t)+"\n")
+	os.MkdirAll(filepath.Join(root, "home/carol"), 0o755)
+	os.Symlink("../../srv/planted", filepath.Join(root, "home/carol/.ssh")) // the folder is the link
+	os.Symlink("../data/dave", filepath.Join(root, "home/dave"))            // the home is a link
+	remap := map[string]string{}
+	for _, d := range []string{"/etc", "/home", "/srv", "/data"} {
+		remap[d] = filepath.Join(root, d)
+	}
+	withHost(t, &hostenv.Live{Remap: remap})
+	got := map[string]KeyFile{}
+	for _, kf := range AccountsAudit().KeyFiles {
+		got[kf.Path] = kf
+	}
+	if k := got["/home/carol/.ssh/authorized_keys"]; k.Keys != 1 || k.SymlinkOutsideHome != "/srv/planted/authorized_keys" {
+		t.Errorf("linked .ssh: %+v", k)
+	}
+	if k := got["/home/dave/.ssh/authorized_keys"]; k.Keys != 1 || k.SymlinkOutsideHome != "" {
+		t.Errorf("linked home: %+v", k)
+	}
+}
