@@ -1038,8 +1038,9 @@ func launchExe(m map[string]any) string {
 // periodicLines are the lines of a file periodic(8) sources or runs as root
 // (periodic.conf, daily.local): every line but blanks and plain comments, as
 // written. Shell is not simulated: a comment counts as plain only when it
-// starts with "#", holds no quote, and the line before does not end in a
-// backslash; everything else, plain assignments included, is listed.
+// starts with "#", holds no quote, $ or backtick, and the line before does
+// not end in a backslash; everything else, plain assignments included, is
+// listed.
 func periodicLines(b []byte) []string {
 	var out []string
 	prevGoesOn := false
@@ -1048,7 +1049,9 @@ func periodicLines(b []byte) []string {
 		// non-ASCII space before "#" make it no comment, so such a line,
 		// and a blank-looking one holding them, is listed as written.
 		l := strings.TrimLeft(raw, " \t")
-		plainComment := strings.HasPrefix(l, "#") && !strings.ContainsAny(l, `"'`) && plainASCII(l) && !prevGoesOn
+		// In an unquoted heredoc a "#" line is data, and $( ) and backticks
+		// in it run: a comment holding a quote, $ or backtick is listed.
+		plainComment := strings.HasPrefix(l, "#") && !strings.ContainsAny(l, "\"'$`") && plainASCII(l) && !prevGoesOn
 		prevGoesOn = strings.HasSuffix(raw, "\\")
 		if l == "" && !prevGoesOn || plainComment {
 			continue
@@ -1090,8 +1093,12 @@ func stockDefaults(b []byte) bool {
 }
 
 // localPeriodicDirs are the folders a local_periodic= line names.
-func localPeriodicDirs(l string) []string {
-	v, ok := strings.CutPrefix(l, "local_periodic=")
+func localPeriodicDirs(l string) []string { return assignedPaths(l, "local_periodic") }
+
+// assignedPaths are the paths a "name=…" or "export name=…" line sets.
+func assignedPaths(l, name string) []string {
+	l = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(l), "export "))
+	v, ok := strings.CutPrefix(l, name+"=")
 	if !ok {
 		return nil
 	}
@@ -1166,7 +1173,11 @@ func (c DarwinCollector) persistence(src Source, jobs []launchJob, svcs Obs[[]Se
 	// (periodicLines). The stock defaults file, whole, is not: it is the same
 	// on every Mac of a release; changed in any way, it is listed whole.
 	var localPeriodic []string // folders local_periodic adds; their daily/weekly/monthly scripts run
-	for _, f := range []string{"/etc/defaults/periodic.conf", "/etc/periodic.conf", "/etc/periodic.conf.local"} {
+	// periodic_conf_files names the files sourced after the defaults: the
+	// usual two, and any other it is pointed at, read the same way.
+	confFiles := []string{"/etc/defaults/periodic.conf", "/etc/periodic.conf", "/etc/periodic.conf.local"}
+	for i := 0; i < len(confFiles) && i < 16; i++ {
+		f := confFiles[i]
 		b, err := src.ReadFile(f)
 		if err != nil {
 			if !missing(err) {
@@ -1183,6 +1194,11 @@ func (c DarwinCollector) persistence(src Source, jobs []launchJob, svcs Obs[[]Se
 				out = append(out, PersistenceItem{Kind: "periodic_conf", Location: f, Command: MaskSecrets(v)})
 			}
 			localPeriodic = append(localPeriodic, localPeriodicDirs(v)...)
+			for _, extra := range assignedPaths(v, "periodic_conf_files") {
+				if strings.HasPrefix(extra, "/") && !slices.Contains(confFiles, path.Clean(extra)) {
+					confFiles = append(confFiles, path.Clean(extra))
+				}
+			}
 		}
 	}
 	for _, base := range localPeriodic {

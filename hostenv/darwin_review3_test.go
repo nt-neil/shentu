@@ -456,3 +456,48 @@ func TestPeriodicLinesBlanksAndCRLF(t *testing.T) {
 		t.Error("stock: exact bytes only")
 	}
 }
+
+// The review's strings, file by file. H: in an unquoted heredoc a "#" line is
+// data whose $( ) and backticks run, so it is listed. A, B, C, D, G: a quote
+// state a shell reads differently does not hide the PWNED line.
+var periodicReviewCases = map[string]string{
+	"H": "cat >/dev/null <<EOF\n# $(echo PWNED-H >&2)\n# `echo PWNED-H2 >&2`\nEOF\n",
+	"A": "a=${b- #\"}\n# \"}; echo PWNED\n",
+	"B": "a=$'\\''\nb='\n# '; echo PWNED\n",
+	"C": "cat >/dev/null <<EOF\n'\nEOF\nb='\n# '; echo PWNED\n",
+	"D": "a=1;#'\nb='\n# '; echo PWNED\n",
+	"G": "a=`:;#'`\nb='\n# '; echo PWNED\n",
+}
+
+func TestPeriodicReviewCases(t *testing.T) {
+	for name, conf := range periodicReviewCases {
+		got := strings.Join(ParsePeriodicConf([]byte(conf)), "\n")
+		want := []string{"PWNED"}
+		if name == "H" {
+			want = []string{"PWNED-H", "PWNED-H2"}
+		}
+		for _, w := range want {
+			if !strings.Contains(got, w) {
+				t.Errorf("%s: %q not listed in %q", name, w, got)
+			}
+		}
+	}
+}
+
+// S: a file periodic_conf_files points at is read and listed; an exported
+// local_periodic is followed.
+func TestPeriodicConfFilesFollowed(t *testing.T) {
+	src := fakeMacDirs{fakeMac: fakeMac{files: map[string]string{
+		"/etc/periodic.conf": "periodic_conf_files=\"/etc/periodic.conf /tmp/evil.conf\"\nexport local_periodic=\"/opt/y/periodic\"\n",
+		"/tmp/evil.conf":     "daily_local=\"/tmp/run.sh\"\n",
+	}}, dirs: map[string][]string{"/opt/y/periodic/weekly": {"1.x"}}}
+	o := DarwinCollector{}.persistence(src, nil, OK([]Service(nil)), OK([]AuthorizedKeyFile(nil)))
+	gotEvil, gotDir := false, false
+	for _, it := range o.Value {
+		gotEvil = gotEvil || it.Location == "/tmp/evil.conf" && strings.Contains(it.Command, "/tmp/run.sh")
+		gotDir = gotDir || it.Location == "/opt/y/periodic/weekly/1.x"
+	}
+	if !gotEvil || !gotDir {
+		t.Errorf("extra conf file %v, exported local_periodic folder %v: %+v", gotEvil, gotDir, o.Value)
+	}
+}

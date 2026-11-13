@@ -29,7 +29,8 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
   系統版本與 Apple 的軟體更新清單（gdmf.apple.com）比對；套件回報「說不出有沒有漏洞」，
   因為 OSV 沒有 Homebrew 的資料。只用自製的測試資料驗證過，還沒有在真的 Mac 上試過。
   登入項目（Background Task Management）不會讀取，所以 macOS 的開機自動執行位置都會標為 partial。
-  periodic.conf 與 daily、weekly、monthly.local 逐行列出（不列沒有內容的行與說明行，這些檔案通常不長）；
+  periodic.conf 與 daily、weekly、monthly.local 逐行列出（不列沒有內容的行與說明行；說明行是以 # 開始、
+  沒有 " ' $ ` 這幾個字元的行，這些檔案通常不長），periodic_conf_files 指到的檔案也會讀；
   與 Apple 公開版本相同的 /etc/defaults/periodic.conf 不列。
 - 程式碼稽核的資料夾寫成 `/var/www/html/`（最後多一個 `/`）或 `/` 時，接續上次的位置稽核
   不會再把整個資料夾跳過。資料夾改為先整理成標準寫法，所以更新版本後的第一次稽核找不到上次的位置，
