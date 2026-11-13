@@ -581,3 +581,44 @@ func TestAppCodeAuditWalkResumes(t *testing.T) {
 		t.Error("pathCmp does not follow WalkDir's order")
 	}
 }
+
+// A root written with a trailing slash, or "/", is not skipped as a whole
+// when the walk resumes inside it.
+func TestAppCodeAuditWalkResumesRootSpelling(t *testing.T) {
+	isolateAudit(t)
+	dir, _ := filepath.EvalSymlinks(t.TempDir())
+	for _, d := range []string{"a", "m", "z"} {
+		os.MkdirAll(filepath.Join(dir, "public", "uploads", d), 0o755)
+		os.WriteFile(filepath.Join(dir, "public", "uploads", d, "s.php"), []byte("<?php echo 1;\n"), 0o644)
+	}
+	roots := []string{dir + "/"}
+	for _, r := range [][]string{roots, cleanRoots(roots)} { // the last audit stopped in m/
+		saveWalkPos(walkPosFile(r), &walkPos{0, filepath.Join(dir, "public", "uploads", "m")})
+	}
+	res := AppCodeAudit(context.Background(), roots, nil)
+	n := 0
+	for _, f := range res.Findings {
+		if f.Kind == "upload_script" {
+			n++
+		}
+	}
+	if n != 3 {
+		t.Errorf("root %q: resumed walk found %d of 3 upload scripts", roots[0], n)
+	}
+	for _, c := range []struct {
+		dir, path string
+		want      bool
+	}{
+		{"/", "/var/www/x", true},
+		{"/var/www/", "/var/www/x", true},
+		{"/var/www", "/var/www/x", true},
+		{"/var/www", "/var/www-old/x", false},
+	} {
+		if got := walkHolds(c.dir, c.path); got != c.want {
+			t.Errorf("walkHolds(%q, %q) = %v", c.dir, c.path, got)
+		}
+	}
+	if got := cleanRoots([]string{"/var/www/html/", "/"}); got[0] != "/var/www/html" || got[1] != "/" {
+		t.Errorf("cleanRoots: %q", got)
+	}
+}
