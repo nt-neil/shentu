@@ -78,6 +78,24 @@ func TestFindings(t *testing.T) {
 	if got := byCheck(Run(f), "ssh.settings"); len(got) != 1 || got[0].Status != StatusCannotTell {
 		t.Errorf("ssh partial %+v", got)
 	}
+	// Final review: on Windows the hint is Administrator, not root.
+	win := facts()
+	win.Platform = hostenv.OK(hostenv.Platform{OS: "windows"})
+	win.RemoteAccess.SSH = hostenv.Partial(hostenv.SSHConfig{Settings: map[string]string{"permitrootlogin": "unknown", "passwordauthentication": "unknown"}},
+		hostenv.ReasonPermission, "")
+	if got := byCheck(Run(win), "ssh.settings"); len(got) != 1 || !strings.Contains(got[0].Title, "Administrator") || strings.Contains(got[0].Title, "root") {
+		t.Errorf("Windows hint %+v", got)
+	}
+	// Round 3 (N-W1): partial with both settings known (a file after them
+	// could not be read) still says the config is incomplete, once.
+	f.RemoteAccess.SSH = hostenv.Partial(hostenv.SSHConfig{Settings: map[string]string{"permitrootlogin": "no", "passwordauthentication": "yes"}},
+		hostenv.ReasonNotCollected, "Include could not be read")
+	if got := byCheck(Run(f), "ssh.settings"); len(got) != 1 || got[0].Status != StatusCannotTell || got[0].Reason != string(hostenv.ReasonNotCollected) {
+		t.Errorf("ssh partial, settings known %+v", got)
+	}
+	if got := byCheck(Run(f), "ssh.password_auth"); len(got) != 1 {
+		t.Errorf("what was read is still judged: %+v", got)
+	}
 	f.RemoteAccess.RDP = hostenv.OK(hostenv.RDPConfig{Enabled: true, NLA: false, Port: 3389})
 	if got := byCheck(Run(f), "rdp.no_nla"); len(got) != 1 || got[0].Status != StatusFail {
 		t.Errorf("rdp %+v", got)

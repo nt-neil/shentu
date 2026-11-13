@@ -2,7 +2,9 @@
 
 package hostenv
 
-// elevated is false until the Phase 2 Windows source checks the process
-// token (TokenElevation). Reporting "not elevated" makes every
-// permission-dependent fact come out unknown rather than falsely clean.
-func elevated() bool { return false }
+import "golang.org/x/sys/windows"
+
+// elevated reports whether this process runs with an elevated token
+// (TokenElevation). A filtered Administrator token counts as not elevated,
+// so permission-dependent facts come out partial or unknown, never clean.
+func elevated() bool { return windows.GetCurrentProcessToken().IsElevated() }

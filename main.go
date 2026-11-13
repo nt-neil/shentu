@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -50,17 +51,23 @@ func configPath() string {
 	if p := os.Getenv("SHENTU_CONFIG"); p != "" {
 		return p
 	}
-	return "/etc/shentu/shentu.toml"
+	return defaultConfigPath()
 }
 
 // printUsage prints the usage for help (help, --help, -h) to stdout and
 // returns 0; for a missing or unknown command, to stderr and returns 2.
 func printUsage(cmd string, stdout, stderr io.Writer) int {
+	u := strings.Replace(usage, "/etc/shentu/shentu.toml", defaultConfigPath(), 1) // the same text on Unix
+	if runtime.GOOS == "windows" {
+		u = strings.Replace(u, "  shentu version\n", "  shentu service install|uninstall|start|stop|status [--bot]\n"+
+			"                              run patrol as a Windows service (LocalSystem): every 30 minutes, daily report at 09:00;\n"+
+			"                              --bot: the Telegram bot as its own service (ShentuBot)\n  shentu version\n", 1)
+	}
 	if cmd == "help" || cmd == "--help" || cmd == "-h" {
-		fmt.Fprint(stdout, usage)
+		fmt.Fprint(stdout, u)
 		return 0
 	}
-	fmt.Fprint(stderr, usage)
+	fmt.Fprint(stderr, u)
 	return 2
 }
 
@@ -75,7 +82,7 @@ func main() {
 	switch cmd { // before the config: help and a mistyped command need none
 	case "help", "--help", "-h":
 		os.Exit(printUsage(cmd, os.Stdout, os.Stderr))
-	case "version", "--version", "setup", "chat", "survey", "bot", "budget", "usage", "patrol":
+	case "version", "--version", "setup", "chat", "survey", "bot", "budget", "usage", "patrol", "service":
 	default:
 		os.Exit(printUsage(cmd, os.Stdout, os.Stderr))
 	}
@@ -95,6 +102,7 @@ func main() {
 	}
 	tools.SetWebUsers(cfg.Tools.WebUsers)
 	tools.SetAuditLimits(cfg.Tools.AuditMaxMemoryMB, cfg.Tools.AuditWorkers)
+	tools.SetCacheDir(filepath.Join(cfg.StateDir, "cache"))
 	env := &tools.Env{
 		LogPaths:    cfg.Tools.LogPaths,
 		WatchPaths:  cfg.Tools.WatchPaths,
@@ -105,7 +113,9 @@ func main() {
 	}
 	switch cmd {
 	case "chat":
-		err = chat(ctx, cfg, env, strings.Join(args, " "))
+		if err = stateReady(cfg.StateDir); err == nil {
+			err = chat(ctx, cfg, env, strings.Join(args, " "))
+		}
 	case "survey":
 		var p tools.SiteProfile
 		p, err = survey(ctx, cfg, env)
@@ -114,7 +124,9 @@ func main() {
 			fmt.Println(string(b))
 		}
 	case "bot":
-		err = botCommand(ctx, cfg, env, args)
+		if err = stateReady(cfg.StateDir); err == nil {
+			err = botCommand(ctx, cfg, env, args)
+		}
 	case "budget":
 		err = budgetCommand(cfg, args)
 	case "usage":
@@ -125,6 +137,8 @@ func main() {
 		dry := fs.Bool("dry-run", false, "print the report, do not notify")
 		fs.Parse(args)
 		err = patrol(ctx, cfg, env, *daily, *dry)
+	case "service":
+		err = serviceCommand(ctx, cfg, env, args)
 	default:
 		os.Exit(printUsage(cmd, os.Stdout, os.Stderr))
 	}
@@ -152,8 +166,8 @@ func chat(ctx context.Context, cfg *Config, env *tools.Env, question string) err
 			return strings.EqualFold(strings.TrimSpace(line), "y")
 		},
 	}
-	if os.Geteuid() != 0 {
-		fmt.Fprintln(os.Stderr, "note: not running as root; some logs and process details will be unreadable and block_ip will fail.")
+	if !privileged() {
+		fmt.Fprintln(os.Stderr, unprivilegedNote)
 	}
 	msgs := []message{{Role: "system", Content: systemPrompt(cfg, skills)}}
 	ask := func(q string) error {
@@ -203,7 +217,7 @@ func printable(s string) string {
 
 // survey runs the site survey and stores it as the baseline that patrol compares with.
 func survey(ctx context.Context, cfg *Config, env *tools.Env) (tools.SiteProfile, error) {
-	if err := os.MkdirAll(cfg.StateDir, 0o700); err != nil {
+	if err := ensureStateDir(cfg.StateDir); err != nil {
 		return tools.SiteProfile{}, err
 	}
 	st := loadState(cfg.StateDir)

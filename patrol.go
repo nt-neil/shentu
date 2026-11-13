@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"sort"
 	"strconv"
@@ -89,7 +90,25 @@ func uncheckedSection(risks []tools.Risk) string {
 	if b.Len() == 0 {
 		return ""
 	}
-	return "\n\nNot checked (the permission to read what they need was missing; run Shentu as root):\n" + b.String()
+	as := "as root"
+	if runtime.GOOS == "windows" {
+		as = "elevated, as the Shentu service does (LocalSystem)"
+	}
+	return "\n\nNot checked (the permission to read what they need was missing; run Shentu " + as + "):\n" + b.String()
+}
+
+// notCheckedSection lists what the code audit could not tell (a web
+// root's ACL on Windows), so it is not read as checked. "" when nothing.
+func notCheckedSection(items []string) string {
+	if len(items) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("\n\nNot checked by the code audit:\n")
+	for _, it := range items {
+		fmt.Fprintf(&b, "- %q\n", mask(it))
+	}
+	return b.String()
 }
 
 // uncheckedConfigs lists the web server configuration files the code audit
@@ -137,7 +156,7 @@ func mostSevere(fs []finding, n int) []finding {
 func codeAuditFindings(audit tools.CodeAudit) []finding {
 	var out []finding
 	for _, f := range audit.Findings {
-		if f.Kind == "injection" && f.Tier != "alert" || f.Kind == "audit" { // "audit": the audit's own summaries, below
+		if f.Kind == "injection" && f.Tier != "alert" || f.Kind == "audit" || f.Kind == "webroot_acl_unknown" { // "audit": the audit's own summaries, below; ACL unknown: Not checked
 			continue
 		}
 		key := fmt.Sprintf("code:%s:%s:%d", f.Kind, f.Path, f.Line)
@@ -194,7 +213,9 @@ func checks(ctx context.Context, cfg *Config, env *tools.Env, st *state, daily b
 		since = time.Now().Add(-1 * time.Hour)
 	}
 
-	if r, err := tools.SSHSummary(ctx, env, time.Now().Add(-1*time.Hour), ""); err == nil {
+	// On Windows logon failures come from the survey's checks (auth.bruteforce);
+	// a second alert for the same source would say "SSH" for RDP or SMB.
+	if r, err := tools.SSHSummary(ctx, env, time.Now().Add(-1*time.Hour), ""); err == nil && runtime.GOOS != "windows" {
 		note := ""
 		if v, _ := r["verified"].(bool); !v {
 			note = "; read from text logs, which anyone on this host can write to: check them before acting"
@@ -287,7 +308,7 @@ func checks(ctx context.Context, cfg *Config, env *tools.Env, st *state, daily b
 // patrol runs once (from a systemd timer): checks → LLM explanation → notify.
 // With daily set it always reports, using the daily-patrol skill.
 func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool) error {
-	if err := os.MkdirAll(cfg.StateDir, 0o700); err != nil {
+	if err := ensureStateDir(cfg.StateDir); err != nil {
 		return err
 	}
 	st := loadState(cfg.StateDir)
@@ -313,8 +334,9 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 		}
 		// The applications' own files: exposed secrets, debug mode, webshells, keys in code, injection.
 		web, unread := tools.WebRootsReport()
-		all = replaceOrAppend(all, codeAuditFindings(tools.AppCodeAudit(ctx, env.AppPaths, web)))
-		unchecked += uncheckedConfigs(unread)
+		audit := tools.AppCodeAudit(ctx, env.AppPaths, web)
+		all = replaceOrAppend(all, codeAuditFindings(audit))
+		unchecked += uncheckedConfigs(unread) + notCheckedSection(audit.NotChecked)
 	}
 	var fresh []finding
 	for _, f := range all {
