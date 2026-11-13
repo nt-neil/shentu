@@ -41,10 +41,29 @@ func TestBlockIPUnverifiedLoginGate(t *testing.T) {
 	if err := loginGate(context.Background(), &Env{}, ip, false); err != nil {
 		t.Errorf("no login events: %v", err)
 	}
+	// The same source written as an IPv4-mapped address in a forged line.
+	summary(false, SSHSource{IP: "::ffff:203.0.113.77", Failed: 15})
+	if err := loginGate(context.Background(), &Env{}, ip, false); err == nil {
+		t.Error("IPv4-mapped source not matched")
+	}
+	// Logins that cannot be read at all: it cannot tell, so it refuses
+	// unless overridden.
 	loginSummary = func(context.Context, *Env, time.Time, string) (map[string]any, error) { return nil, errors.New("x") }
-	if err := loginGate(context.Background(), &Env{}, ip, false); err != nil {
+	if err := loginGate(context.Background(), &Env{}, ip, false); err == nil || !strings.Contains(err.Error(), "could not be read") {
 		t.Errorf("summary failed: %v", err)
 	}
+	if err := loginGate(context.Background(), &Env{}, ip, true); err != nil {
+		t.Errorf("summary failed, override: %v", err)
+	}
+	// The window covers any span ssh_logins may have reported on, up to the
+	// longest block.
+	loginSummary = func(_ context.Context, _ *Env, since time.Time, _ string) (map[string]any, error) {
+		if time.Since(since) < 719*time.Hour {
+			t.Errorf("window %v", time.Since(since))
+		}
+		return map[string]any{"verified": true}, nil
+	}
+	loginGate(context.Background(), &Env{}, ip, false)
 }
 
 // The override is visible in the preview the operator confirms.

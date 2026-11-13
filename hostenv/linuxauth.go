@@ -321,8 +321,24 @@ func (h *aggHeap) Pop() any {
 	return a
 }
 
+// CanonicalIP is s as net.IP writes it, an IPv4-mapped address as IPv4; s
+// itself when it is not an address.
+func CanonicalIP(s string) string {
+	ip := net.ParseIP(s)
+	if ip == nil {
+		return s
+	}
+	if v4 := ip.To4(); v4 != nil {
+		return v4.String()
+	}
+	return ip.String()
+}
+
 // NewSSHLogins starts a count of events since since (only onlyIP when set).
 func NewSSHLogins(since, now time.Time, onlyIP string) *SSHLogins {
+	if onlyIP != "" {
+		onlyIP = CanonicalIP(onlyIP)
+	}
 	return &SSHLogins{since: since, now: now, onlyIP: onlyIP, by: map[string]*sshAgg{}}
 }
 
@@ -354,6 +370,7 @@ func (c *SSHLogins) Add(l string) {
 	if net.ParseIP(ip) == nil {
 		return
 	}
+	ip = CanonicalIP(ip) // one source however it is written (::ffff:a.b.c.d, upper case)
 	if strings.Contains(user, " from ") || strings.Contains(user, ": ") {
 		user = "[crafted user name]" // still an attempt from ip, but do not echo the bait
 	}

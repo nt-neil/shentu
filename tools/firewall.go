@@ -10,6 +10,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/nt-neil/shentu/hostenv"
 )
 
 // All blocks live in their own nftables table, so shentu never touches the
@@ -40,28 +42,35 @@ type ipArgs struct {
 // loginSummary is SSHSummary (tests replace it).
 var loginSummary = SSHSummary
 
-// loginGateWindow is how far back block_ip looks for the IP's SSH logins.
-const loginGateWindow = 24 * time.Hour
+// loginGateWindow is how far back block_ip looks for the IP's SSH logins: as
+// long as the longest block, since ssh_logins may have been asked about any
+// span before it.
+const loginGateWindow = 720 * time.Hour
 
 // loginGate refuses to block ip when its SSH login events in the last day
 // come from text logs (verified=false): anyone on the host can write sshd
 // lines there, so a forged "failed login" must not make Shentu block an IP
 // (the operator's own, say). override lets the operator, having checked the
 // logs, go ahead. An IP with no login events is not blocked for its logins,
-// so the gate does not apply.
+// so the gate does not apply. When the logins cannot be read at all, it
+// cannot tell, and refuses too unless overridden.
 func loginGate(ctx context.Context, env *Env, ip net.IP, override bool) error {
-	r, err := loginSummary(ctx, env, time.Now().Add(-loginGateWindow), ip.String())
+	if override {
+		return nil
+	}
+	want := hostenv.CanonicalIP(ip.String())
+	r, err := loginSummary(ctx, env, time.Now().Add(-loginGateWindow), want)
 	if err != nil {
-		return nil // no login evidence read: the block rests on something else
+		return fmt.Errorf("refusing to block %s: its SSH logins could not be read to check whether they are real (%v); if the block rests on other evidence, ask again with override_unverified", ip, err)
 	}
 	sources, _ := r["sources"].([]SSHSource)
 	seen := false
 	for _, s := range sources {
-		if s.IP == ip.String() && s.Failed+s.InvalidUser+s.Accepted > 0 {
+		if hostenv.CanonicalIP(s.IP) == want && s.Failed+s.InvalidUser+s.Accepted > 0 {
 			seen = true
 		}
 	}
-	if v, _ := r["verified"].(bool); !seen || v || override {
+	if v, _ := r["verified"].(bool); !seen || v {
 		return nil
 	}
 	return fmt.Errorf("refusing to block %s: its SSH login events come from text logs (%v), which anyone on this host can write to, so they may be forged; check them (journalctl -u ssh, the IP's other traffic) and, if they are real, ask again with override_unverified", ip, r["source"])
