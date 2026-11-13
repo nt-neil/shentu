@@ -127,7 +127,9 @@ func TestClientCache(t *testing.T) {
 		}
 	}))
 	defer srv.Close()
-	now := time.Date(2026, 11, 12, 0, 0, 0, 0, time.UTC)
+	// The cache's age comes from the files' times, which are real: "now"
+	// must start at the real time, not a fixed date that goes stale.
+	now := time.Now().UTC()
 	c := &Client{HTTP: srv.Client(), API: srv.URL, CacheDir: t.TempDir(), Now: func() time.Time { return now }}
 	ctx := context.Background()
 	ids, err := c.Releases(ctx)
