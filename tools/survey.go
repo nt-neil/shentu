@@ -288,6 +288,9 @@ func sshdFields(line string) []string {
 	return append([]string{line[:i]}, strings.Fields(rest)...)
 }
 
+// maxSSHDFiles caps the sshd config files read through Include.
+const maxSSHDFiles = 256
+
 // sshdSettings returns the effective global sshd settings that matter for security,
 // following Include in place; the first value wins, as in sshd. Match blocks are not
 // evaluated: the main file's Match ends the global part, one in an included file ends
@@ -315,10 +318,15 @@ func sshdSettings() (map[string]string, string, []string) {
 			}
 		}
 	}
+	files := 0 // read, at most maxSSHDFiles
 	var read func(path string, depth int) bool // false stops at the main file's Match block
 	read = func(path string, depth int) bool {
 		if depth > 4 {
 			unknown(path, errors.New("Include nested more than 4 deep"))
+			return true
+		}
+		if files++; files > maxSSHDFiles {
+			unknown(path, fmt.Errorf("more than %d sshd config files", maxSSHDFiles))
 			return true
 		}
 		b, err := os.ReadFile(path)
