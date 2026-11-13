@@ -318,7 +318,7 @@ func sshdSettings() (map[string]string, string, []string) {
 			}
 		}
 	}
-	files := 0 // read, at most maxSSHDFiles
+	files := 0                                 // read, at most maxSSHDFiles
 	var read func(path string, depth int) bool // false stops at the main file's Match block
 	read = func(path string, depth int) bool {
 		if depth > 4 {
