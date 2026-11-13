@@ -288,9 +288,14 @@ func sshdFields(line string) []string {
 	return append([]string{line[:i]}, strings.Fields(rest)...)
 }
 
+// maxSSHDFiles caps the sshd config files read through Include.
+const maxSSHDFiles = 256
+
 // sshdSettings returns the effective global sshd settings that matter for security,
 // following Include in place; the first value wins, as in sshd. Match blocks are not
-// evaluated. The hash covers every line read, to notice any change. A file or
+// evaluated: the main file's Match ends the global part, one in an included file ends
+// only that file (sshd restores the Match state after each Include). An Include nested
+// more than 4 deep is listed in unread. The hash covers every line read, to notice any change. A file or
 // Include folder that cannot be read (sshd reads it as root) leaves every setting
 // not set before it "unknown"; unread lists them.
 func sshdSettings() (map[string]string, string, []string) {
@@ -313,9 +318,15 @@ func sshdSettings() (map[string]string, string, []string) {
 			}
 		}
 	}
-	var read func(path string, depth int) bool // false stops at a Match block
+	files := 0                                 // read, at most maxSSHDFiles
+	var read func(path string, depth int) bool // false stops at the main file's Match block
 	read = func(path string, depth int) bool {
 		if depth > 4 {
+			unknown(path, errors.New("Include nested more than 4 deep"))
+			return true
+		}
+		if files++; files > maxSSHDFiles {
+			unknown(path, fmt.Errorf("more than %d sshd config files", maxSSHDFiles))
 			return true
 		}
 		b, err := os.ReadFile(path)
@@ -333,7 +344,7 @@ func sshdSettings() (map[string]string, string, []string) {
 			}
 			key := strings.ToLower(f[0])
 			if key == "match" {
-				return false
+				return depth > 0 // an included file's Match ends that file only
 			}
 			if key == "include" {
 				for _, pat := range f[1:] {

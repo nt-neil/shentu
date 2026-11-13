@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -271,5 +272,44 @@ func TestSSHDKeyEqualsValue(t *testing.T) {
 	}
 	if f := sshdFields("Include = /etc/ssh/a.conf /etc/ssh/b.conf"); len(f) != 3 || f[0] != "Include" || f[2] != "/etc/ssh/b.conf" {
 		t.Errorf("include: %q", f)
+	}
+}
+
+// A Match in an included file ends that file only; the main file's
+// settings after the Include still count. Include deeper than 4 is unread.
+func TestSSHDIncludeMatch(t *testing.T) {
+	dir := t.TempDir()
+	old := sshdConfig
+	defer func() { sshdConfig = old }()
+	sshdConfig = filepath.Join(dir, "sshd_config")
+	os.MkdirAll(filepath.Join(dir, "sshd_config.d"), 0o755)
+	os.WriteFile(sshdConfig, []byte("Include sshd_config.d/*.conf\nPermitRootLogin yes\nMatch User x\nPasswordAuthentication no\n"), 0o600)
+	os.WriteFile(filepath.Join(dir, "sshd_config.d", "a.conf"), []byte("X11Forwarding yes\nMatch Address 10.0.0.0/8\nPermitEmptyPasswords yes\n"), 0o600)
+	ssh, _, _ := sshdSettings()
+	if ssh["permitrootlogin"] != "yes" || ssh["x11forwarding"] != "yes" || ssh["permitemptypasswords"] != "no" || ssh["passwordauthentication"] != "yes" {
+		t.Errorf("settings %v", ssh)
+	}
+	for i := 1; i <= 6; i++ {
+		os.WriteFile(filepath.Join(dir, "n"+strings.Repeat("x", i)), []byte("Include "+filepath.Join(dir, "n"+strings.Repeat("x", i+1))+"\n"), 0o600)
+	}
+	os.WriteFile(sshdConfig, []byte("Include "+filepath.Join(dir, "nx")+"\n"), 0o600)
+	if _, _, unread := sshdSettings(); !strings.Contains(strings.Join(unread, ","), "nested more than 4 deep") {
+		t.Errorf("deep Include: unread %v", unread)
+	}
+}
+
+// More than maxSSHDFiles config files: the rest are listed unread.
+func TestSSHDIncludeFileCap(t *testing.T) {
+	dir := t.TempDir()
+	old := sshdConfig
+	defer func() { sshdConfig = old }()
+	sshdConfig = filepath.Join(dir, "sshd_config")
+	os.MkdirAll(filepath.Join(dir, "sshd_config.d"), 0o755)
+	os.WriteFile(sshdConfig, []byte("Include sshd_config.d/*.conf\n"), 0o600)
+	for i := 0; i < maxSSHDFiles+5; i++ {
+		os.WriteFile(filepath.Join(dir, "sshd_config.d", fmt.Sprintf("%04d.conf", i)), []byte("# empty\n"), 0o600)
+	}
+	if _, _, unread := sshdSettings(); !strings.Contains(strings.Join(unread, ","), "more than 256 sshd config files") {
+		t.Errorf("unread %d", len(unread))
 	}
 }
