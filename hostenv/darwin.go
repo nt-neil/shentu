@@ -340,6 +340,7 @@ func (DarwinCollector) Processes(ctx context.Context, src Source, now time.Time)
 	}
 	args := map[int]string{}
 	argsWhy := "" // why some command lines are missing
+	ambiguousOnly := false
 	a, aerr := src.Run(ctx, macPsArgsArgv)
 	switch {
 	case aerr == nil && a.ExitCode == 0:
@@ -372,6 +373,7 @@ func (DarwinCollector) Processes(ctx context.Context, src Source, now time.Time)
 			}
 			sort.Ints(pids)
 			why := fmt.Sprintf("command lines of pid %v not known (more than one line names them)", pids)
+			ambiguousOnly = argsWhy == ""
 			argsWhy = strings.TrimPrefix(argsWhy+"; "+why, "; ")
 		}
 	}
@@ -386,12 +388,13 @@ func (DarwinCollector) Processes(ctx context.Context, src Source, now time.Time)
 		if e1 != nil || e2 != nil {
 			continue
 		}
-		// comm is the rest of the line after five fields; it may hold spaces.
+		// comm is the rest of the line after five fields, as it is: it may
+		// hold spaces, also at its end (ps does not pad the last column).
 		at := fieldStart(l, 5)
 		if at < 0 {
 			continue
 		}
-		comm := strings.TrimSpace(l[at:])
+		comm := l[at:]
 		p := Process{PID: pid, PPID: ppid, UID: f[2], User: f[3], Cmdline: args[pid], Name: path.Base(comm)}
 		if strings.HasPrefix(comm, "/") {
 			p.Exe, p.ExeKnown = comm, true
@@ -407,13 +410,20 @@ func (DarwinCollector) Processes(ctx context.Context, src Source, now time.Time)
 	sort.Slice(out, func(i, j int) bool { return out[i].PID < out[j].PID })
 	if argsWhy != "" {
 		r := Classify(aerr)
-		if r == "" {
+		switch {
+		case ambiguousOnly: // ps ran fine; its output names a pid twice
+			r = ReasonParse
+		case r == "":
 			r = ReasonCommandFailed
 		}
 		return Partial(out, r, argsWhy)
 	}
 	return OK(out)
 }
+
+// maxPeriodicConf caps the periodic.conf files read (the defaults, the usual
+// two, and those periodic_conf_files names); the rest are said, not read.
+const maxPeriodicConf = 16
 
 // fieldStart is the byte offset of field n (from 0) of l, fields split as
 // strings.Fields splits them; -1 when l has fewer.
@@ -1214,7 +1224,7 @@ func (c DarwinCollector) persistence(src Source, jobs []launchJob, svcs Obs[[]Se
 	// periodic_conf_files names the files sourced after the defaults: the
 	// usual two, and any other it is pointed at, read the same way.
 	confFiles := []string{"/etc/defaults/periodic.conf", "/etc/periodic.conf", "/etc/periodic.conf.local"}
-	for i := 0; i < len(confFiles) && i < 16; i++ {
+	for i := 0; i < len(confFiles) && i < maxPeriodicConf; i++ {
 		f := confFiles[i]
 		b, err := src.ReadFile(f)
 		if err != nil {
@@ -1238,6 +1248,14 @@ func (c DarwinCollector) persistence(src Source, jobs []launchJob, svcs Obs[[]Se
 				}
 			}
 		}
+	}
+	if extra := len(confFiles) - maxPeriodicConf; extra > 0 { // sourced by periodic(8), not read here
+		skipped := confFiles[maxPeriodicConf:]
+		names := strings.Join(skipped[:min(len(skipped), 3)], ", ")
+		if len(skipped) > 3 {
+			names += ", …"
+		}
+		denied = append(denied, fmt.Sprintf("periodic_conf_files past %d files (%d not read: %s)", maxPeriodicConf, extra, names))
 	}
 	for _, base := range localPeriodic {
 		if !strings.HasPrefix(base, "/") || slices.Contains([]string{"/usr/local/etc/periodic", "/etc/periodic"}, path.Clean(base)) {

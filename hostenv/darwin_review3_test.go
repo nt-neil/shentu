@@ -2,6 +2,7 @@ package hostenv
 
 import (
 	"context"
+	"fmt"
 	"io/fs"
 	"os"
 	"runtime"
@@ -511,8 +512,8 @@ func TestDarwinProcessesOddWhitespace(t *testing.T) {
 	src := fakeMac{cmds: map[string]string{key(macPsArgv): ps, key(macPsArgsArgv): args}}
 	o := DarwinCollector{}.Processes(context.Background(), src, time.Now())
 	if len(o.Value) != 2 || o.Value[0].Exe != "/Applications/Ex.app/Contents/MacOS/Ex" || o.Value[1].Cmdline != "" ||
-		o.Status != StatusPartial || !strings.Contains(o.Detail, "pid [11]") {
-		t.Errorf("a pid on two args lines: %s %q %+v", o.Status, o.Detail, o.Value)
+		o.Status != StatusPartial || o.Reason != ReasonParse || !strings.Contains(o.Detail, "pid [11]") {
+		t.Errorf("a pid on two args lines: %s %s %q %+v", o.Status, o.Reason, o.Detail, o.Value)
 	}
 	if fieldStart("a b", 5) != -1 || fieldStart("a\v b  c", 2) != 6 {
 		t.Error("fieldStart")
@@ -645,5 +646,39 @@ func TestBplistUTF16SpendsNine(t *testing.T) {
 	short := bplistOf([][]byte{append(bplistLen(0x6, 2), 0x4e, 0x2d, 0x65, 0x87)})
 	if v, err := ParsePlist(short); err != nil || v != "中文" {
 		t.Errorf("short UTF-16: %q %v", v, err)
+	}
+}
+
+// A program path that ends in a space is kept as it is, so the file is found
+// (trimmed, "/private/tmp/x" does not exist and the process looked deleted).
+func TestDarwinProcessesCommTrailingSpace(t *testing.T) {
+	ps := "  20 1 501 alice 01:00 /private/tmp/x \n"
+	src := fakeMac{files: map[string]string{"/private/tmp/x ": "bin"}, cmds: map[string]string{key(macPsArgv): ps, key(macPsArgsArgv): "  20 /private/tmp/x \n"}}
+	o := DarwinCollector{}.Processes(context.Background(), src, time.Now())
+	if len(o.Value) != 1 || o.Value[0].Exe != "/private/tmp/x " || !o.Value[0].ExeExists || o.Status != StatusOK {
+		t.Errorf("%s %+v", o.Status, o.Value)
+	}
+}
+
+// periodic_conf_files naming more than maxPeriodicConf files in all: the
+// rest are not read, and the detail says how many and which.
+func TestDarwinPeriodicConfFilesCap(t *testing.T) {
+	var names []string
+	for i := 0; i < 20; i++ {
+		names = append(names, fmt.Sprintf("/etc/p%02d.conf", i))
+	}
+	files := map[string]string{"/etc/periodic.conf": "periodic_conf_files=\"" + strings.Join(names, " ") + "\"\n"}
+	for _, n := range names {
+		files[n] = "x=1\n"
+	}
+	o := DarwinCollector{}.persistence(fakeMacDirs{fakeMac: fakeMac{files: files}}, nil, OK([]Service(nil)), OK([]AuthorizedKeyFile(nil)))
+	// read: the defaults, periodic.conf, periodic.conf.local and the first 13 named
+	if !strings.Contains(o.Detail, "periodic_conf_files past 16 files (7 not read: /etc/p13.conf, /etc/p14.conf, /etc/p15.conf, …)") {
+		t.Errorf("%q", o.Detail)
+	}
+	for _, it := range o.Value {
+		if it.Location == "/etc/p13.conf" {
+			t.Errorf("read past the cap: %+v", it)
+		}
 	}
 }
