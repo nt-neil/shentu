@@ -17,6 +17,10 @@ package hostenv
 // The data is masked like everything else at Save time.
 
 import (
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -219,7 +223,77 @@ var iisSessionKeyRe = regexp.MustCompile(`(?i)\bsessionKey="[^"]*"`)
 var machineSIDRe = regexp.MustCompile(`S-1-5-21-\d+-\d+-\d+`)
 
 func maskMachineSIDs(s string) string {
-	return machineSIDRe.ReplaceAllString(s, "S-1-5-21-1000000000-1000000000-1000000000")
+	s = machineSIDRe.ReplaceAllString(s, "S-1-5-21-1000000000-1000000000-1000000000")
+	return maskWinHome(s) // Windows profile paths, as homePath does for /Users and /home
+}
+
+// winHomeRe is a path below a Windows profile, C:\Users\<name>\..., in a
+// plain path or in JSON (\\ for \). As for /Users and /home (f116214), the
+// rest runs to the end of its field: a folder name may hold spaces, commas,
+// parentheses, "-", "=" or ":", so only a line end, tab, quote, <, >, | or
+// ; ends it. The profile name itself is masked as a user name later.
+var winHomeRe = regexp.MustCompile(`(?i)([A-Z]:(?:\\\\|\\)Users(?:\\\\|\\)[^\\\n\t"'<>|;]+)((?:\\\\|\\)[^\n\t"'<>|;]+)`)
+
+// winHomeKept are the places below a profile the collector reads, kept so
+// a replay finds them: the Startup folder whole (what is in it is a
+// persistence entry), the temp folder by name only (a process running
+// from there is the finding, its file name is not).
+var winHomeKept = []struct {
+	path  []string
+	whole bool
+}{
+	{[]string{"AppData", "Roaming", "Microsoft", "Windows", "Start Menu", "Programs", "Startup"}, true},
+	{[]string{"AppData", "Local", "Temp"}, false},
+}
+
+// winHomeKey makes the masked names: one recording, one key, so the same
+// path is the same placeholder everywhere in it, and no placeholder can
+// be looked up from a guessed name.
+var winHomeKey = func() []byte {
+	k := make([]byte, 32)
+	if _, err := rand.Read(k); err != nil {
+		panic(err)
+	}
+	return k
+}()
+
+func winRedacted(s string) string {
+	h := hmac.New(sha256.New, winHomeKey)
+	h.Write([]byte(strings.ToLower(s)))
+	return "redacted-" + hex.EncodeToString(h.Sum(nil))[:12]
+}
+
+func maskWinHome(s string) string {
+	return winHomeRe.ReplaceAllStringFunc(s, func(t string) string {
+		sm := winHomeRe.FindStringSubmatch(t)
+		home, rest := sm[1], sm[2]
+		sep := `\`
+		if strings.HasPrefix(rest, `\\`) {
+			sep = `\\`
+		}
+		parts := strings.Split(rest[len(sep):], sep)
+		for _, k := range winHomeKept {
+			if len(parts) < len(k.path) {
+				continue
+			}
+			match := true
+			for i, c := range k.path {
+				if !strings.EqualFold(parts[i], c) {
+					match = false
+					break
+				}
+			}
+			if !match {
+				continue
+			}
+			if k.whole || len(parts) == len(k.path) {
+				return t
+			}
+			kept := strings.Join(parts[:len(k.path)], sep)
+			return home + sep + kept + sep + winRedacted(strings.Join(parts[len(k.path):], `\`))
+		}
+		return home + sep + winRedacted(strings.Join(parts, `\`))
+	})
 }
 
 // winMaskPrep runs before the masker builds its replacements. It returns
