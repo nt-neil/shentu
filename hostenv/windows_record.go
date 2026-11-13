@@ -228,19 +228,22 @@ func maskMachineSIDs(s string) string {
 }
 
 // winHomeRe is a path below a Windows profile, C:\Users\<name>\..., in a
-// plain path or in JSON (\\ for \). As for /Users and /home (f116214), the
-// rest runs to the end of its field: a folder name may hold spaces, commas,
-// parentheses, "-", "=" or ":", so only a line end, tab, quote, <, >, | or
-// ; ends it. The profile name itself is masked as a user name later.
-var winHomeRe = regexp.MustCompile(`(?i)([A-Z]:(?:\\\\|\\)Users(?:\\\\|\\)[^\\\n\t"'<>|;]+)((?:\\\\|\\)[^\n\t"'<>|;]+)`)
+// plain path or in JSON (\\ for \), with \ or / between names. As for
+// /Users and /home (f116214), the rest runs to the end of its field, but
+// only characters Windows forbids in a name end it here: a line end, a
+// tab or other control character, ", <, > or |. ' and ; are allowed in
+// Windows names, so unlike on Unix they do not stop the mask. The profile
+// name itself is masked as a user name later.
+var winHomeRe = regexp.MustCompile(`(?i)([A-Z]:(?:\\\\|\\|/)Users(?:\\\\|\\|/)[^\\/\x00-\x1f"<>|]+)((?:\\\\|\\|/)[^\x00-\x1f"<>|]+)`)
 
-// winHomeKept are the places below a profile the collector reads, kept so
-// a replay finds them: the Startup folder whole (what is in it is a
-// persistence entry), the temp folder by name only (a process running
-// from there is the finding, its file name is not).
+// winHomeKept are the folders below a profile the collector reads, kept
+// so a replay finds them: the Startup folder, and AppData\Local\Temp
+// (what runs from there is the finding). A single name right after the
+// Startup folder (a startup entry) stays too; anything longer after a
+// kept folder is masked as one.
 var winHomeKept = []struct {
-	path  []string
-	whole bool
+	path      []string
+	keepEntry bool
 }{
 	{[]string{"AppData", "Roaming", "Microsoft", "Windows", "Start Menu", "Programs", "Startup"}, true},
 	{[]string{"AppData", "Local", "Temp"}, false},
@@ -267,33 +270,41 @@ func maskWinHome(s string) string {
 	return winHomeRe.ReplaceAllStringFunc(s, func(t string) string {
 		sm := winHomeRe.FindStringSubmatch(t)
 		home, rest := sm[1], sm[2]
-		sep := `\`
+		sep := rest[:1]
 		if strings.HasPrefix(rest, `\\`) {
 			sep = `\\`
 		}
-		parts := strings.Split(rest[len(sep):], sep)
+		parts := winSplit(rest[len(sep):])
 		for _, k := range winHomeKept {
-			if len(parts) < len(k.path) {
+			if len(parts) < len(k.path) || !winHasPrefix(parts, k.path) {
 				continue
 			}
-			match := true
-			for i, c := range k.path {
-				if !strings.EqualFold(parts[i], c) {
-					match = false
-					break
-				}
+			kept := home + sep + strings.Join(parts[:len(k.path)], sep)
+			switch after := parts[len(k.path):]; {
+			case len(after) == 0:
+				return kept
+			case len(after) == 1 && k.keepEntry:
+				return kept + sep + after[0]
+			default:
+				return kept + sep + winRedacted(strings.Join(after, `\`))
 			}
-			if !match {
-				continue
-			}
-			if k.whole || len(parts) == len(k.path) {
-				return t
-			}
-			kept := strings.Join(parts[:len(k.path)], sep)
-			return home + sep + kept + sep + winRedacted(strings.Join(parts[len(k.path):], `\`))
 		}
 		return home + sep + winRedacted(strings.Join(parts, `\`))
 	})
+}
+
+// winSplit splits a path at \, \\ (JSON) or /.
+func winSplit(p string) []string {
+	return strings.FieldsFunc(strings.ReplaceAll(p, `\\`, `\`), func(r rune) bool { return r == '\\' || r == '/' })
+}
+
+func winHasPrefix(parts, prefix []string) bool {
+	for i, c := range prefix {
+		if !strings.EqualFold(parts[i], c) {
+			return false
+		}
+	}
+	return true
 }
 
 // winMaskPrep runs before the masker builds its replacements. It returns

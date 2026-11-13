@@ -25,6 +25,17 @@ func TestMaskWinHome(t *testing.T) {
 			t.Errorf("%s -> %s", in, out)
 		}
 	}
+	// ' and ; are allowed in Windows names: they do not end the mask
+	// (security review of 9a99292); / works as a separator too.
+	for _, in := range []string{`C:\Users\bob\Bob's files\plan.txt`, `C:\Users\bob\a;b\plan.txt`, `C:/Users/bob/Clients/plan.txt`} {
+		if out := maskWinHome(in); strings.Contains(out, "plan.txt") || strings.Contains(out, "files") || strings.Contains(out, "Clients") {
+			t.Errorf("%s -> %s", in, out)
+		}
+	}
+	// After the Startup folder only one name stays; a longer tail is masked.
+	if out := maskWinHome(`C:\Users\bob\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\a.lnk -arg C:\Users\eve\secret`); strings.Contains(out, "secret") || strings.Contains(out, "a.lnk") {
+		t.Errorf("Startup with a tail: %s", out)
+	}
 	// The field ends at a quote: what follows is another field.
 	if out := maskWinHome(`"C:\\Users\\bob\\a b","next"`); !strings.HasSuffix(out, `","next"`) || strings.Contains(out, "a b") {
 		t.Errorf("field end: %s", out)
