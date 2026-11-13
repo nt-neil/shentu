@@ -2,6 +2,7 @@ package hostenv
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"reflect"
@@ -297,5 +298,19 @@ func TestDropAbsentSLEProducts(t *testing.T) {
 	DropAbsentSLEProducts(&f, h, nil)
 	if len(f.NotQueried) != 1 {
 		t.Errorf("SLE_RT.prod unreadable: %v", f.NotQueried)
+	}
+}
+
+// errStat is a source whose Stat fails with an error other than "missing".
+type errStat struct{ *fakeHost }
+
+func (e errStat) Stat(string) (FileStat, error) { return FileStat{}, errors.New("input/output error") }
+
+// Any Stat error but "not there" keeps Real Time listed as not queried.
+func TestDropAbsentSLEProductsOtherError(t *testing.T) {
+	f := PatchFeedFor(map[string]string{"ID": "sles", "VERSION_ID": "15.6"})
+	DropAbsentSLEProducts(&f, errStat{newFake(true)}, nil)
+	if len(f.NotQueried) != 1 {
+		t.Errorf("EIO on SLE_RT.prod: %v", f.NotQueried)
 	}
 }
