@@ -569,3 +569,81 @@ func TestBplistSharedOffsetAndBudget(t *testing.T) {
 		t.Error("budget not enforced")
 	}
 }
+
+// bplistOf builds a binary plist of objs (object 0 is the top), 2-byte
+// references and 4-byte offsets.
+func bplistOf(objs [][]byte) []byte {
+	b := []byte("bplist00")
+	var offs []int
+	for _, o := range objs {
+		offs = append(offs, len(b))
+		b = append(b, o...)
+	}
+	table := len(b)
+	for _, o := range offs {
+		b = append(b, byte(o>>24), byte(o>>16), byte(o>>8), byte(o))
+	}
+	tr := make([]byte, 32)
+	tr[6], tr[7] = 4, 2
+	put := func(at, v int) {
+		for k := 0; k < 8; k++ {
+			tr[at+7-k] = byte(v >> (8 * k))
+		}
+	}
+	put(8, len(objs))
+	put(24, table)
+	return append(b, tr...)
+}
+
+// bplistLen is the marker byte for type t and length n (with an int after it
+// when n is 15 or more).
+func bplistLen(t byte, n int) []byte {
+	if n < 15 {
+		return []byte{t<<4 | byte(n)}
+	}
+	return []byte{t<<4 | 0xf, 0x12, byte(n >> 24), byte(n >> 16), byte(n >> 8), byte(n)}
+}
+
+// Dictionary and array entries spend from the byte budget (twice the file
+// and 256 KiB), not only the element count: 8000 entries naming the same two
+// objects (a 32 KB file) would build about 384 KB of map.
+func TestBplistEntriesSpendBudget(t *testing.T) {
+	n := 8000
+	dict := bplistLen(0xd, n)
+	for i := 0; i < n; i++ {
+		dict = append(dict, 0, 1)
+	}
+	for i := 0; i < n; i++ {
+		dict = append(dict, 0, 2)
+	}
+	b := bplistOf([][]byte{dict, append(bplistLen(0x5, 1), 'k'), {0x10, 7}})
+	if _, err := ParsePlist(b); err == nil || !strings.Contains(err.Error(), "too large") {
+		t.Errorf("dictionary of %d entries in %d bytes: %v", n, len(b), err)
+	}
+	// A plain launchd-sized dictionary still parses.
+	small := bplistLen(0xd, 3)
+	small = append(small, 0, 1, 0, 2, 0, 3, 0, 4, 0, 4, 0, 4)
+	ok := bplistOf([][]byte{small, append(bplistLen(0x5, 5), "Label"...), append(bplistLen(0x5, 7), "Program"...),
+		append(bplistLen(0x5, 9), "RunAtLoad"...), {0x09}})
+	if v, err := ParsePlist(ok); err != nil || len(v.(map[string]any)) != 3 {
+		t.Errorf("small dictionary: %v %v", v, err)
+	}
+}
+
+// A UTF-16 string spends 9 bytes per code unit (the uint16s, the runes and
+// the string built), which a file of mostly one long string exceeds.
+func TestBplistUTF16SpendsNine(t *testing.T) {
+	n := 60000
+	s := bplistLen(0x6, n)
+	for i := 0; i < n; i++ {
+		s = append(s, 0x4e, 0x2d) // 中
+	}
+	b := bplistOf([][]byte{s})
+	if _, err := ParsePlist(b); err == nil {
+		t.Errorf("UTF-16 string of %d units in %d bytes parsed within the budget", n, len(b))
+	}
+	short := bplistOf([][]byte{append(bplistLen(0x6, 2), 0x4e, 0x2d, 0x65, 0x87)})
+	if v, err := ParsePlist(short); err != nil || v != "中文" {
+		t.Errorf("short UTF-16: %q %v", v, err)
+	}
+}
