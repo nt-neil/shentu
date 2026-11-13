@@ -2,6 +2,7 @@ package hostenv
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -125,5 +126,18 @@ func TestMaskWinProfilePathsText(t *testing.T) {
 	}
 	if !strings.HasPrefix(v["q"], `"`) || !strings.Contains(v["q"], `" -a`) {
 		t.Errorf("quoted command: %q", v["q"])
+	}
+}
+
+// Final review: when the masked JSON cannot be encoded again, nothing of
+// the recorded data is kept (fail closed).
+func TestMaskWinProfilePathsFailClosed(t *testing.T) {
+	old := winMarshal
+	t.Cleanup(func() { winMarshal = old })
+	winMarshal = func(any) ([]byte, error) { return nil, errors.New("boom") }
+	e := &entry{Op: "winproc", data: []byte(`[{"exe":"C:\\Users\\alice\\x.exe"}]`)}
+	maskWinProfilePaths([]*entry{e})
+	if e.data != nil {
+		t.Errorf("data kept after a failed encode: %s", e.data)
 	}
 }

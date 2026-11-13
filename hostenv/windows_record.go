@@ -403,11 +403,16 @@ func maskWinProfilePaths(entries []*entry) {
 			e.data = []byte(wt.mask(string(e.data))) // not JSON after all: as text
 			continue
 		}
-		if b, err := json.Marshal(w.maskJSON(v)); err == nil {
-			e.data = b
+		b, err := winMarshal(w.maskJSON(v))
+		if err != nil {
+			b = nil // fail closed: never the data as recorded, unmasked
 		}
+		e.data = b
 	}
 }
+
+// winMarshal encodes masked JSON (a variable for the fail-closed test).
+var winMarshal = json.Marshal
 
 func (w winProfiles) maskJSON(v any) any {
 	switch t := v.(type) {
