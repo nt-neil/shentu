@@ -9,7 +9,6 @@ import (
 	"encoding/xml"
 	"errors"
 	"io"
-	"io/fs"
 	"regexp"
 	"sort"
 	"strconv"
@@ -63,12 +62,12 @@ func DropAbsentSLEProducts(f *PatchFeed, src Source, items []Package) {
 				continue
 			}
 			// Present unless shown absent: a products.d file that cannot be
-			// looked at (EACCES) leaves the product possible.
+			// looked at (EACCES, or any other error) leaves the product possible.
 			_, err := Stat(src, sign.prod)
 			if errors.Is(err, ErrNoStat) { // a source that cannot stat: try reading it
 				_, err = src.ReadFile(sign.prod)
 			}
-			present = err == nil || errors.Is(err, fs.ErrPermission)
+			present = err == nil || !missing(err)
 			for _, p := range items {
 				present = present || p.Name == sign.pkg
 			}
