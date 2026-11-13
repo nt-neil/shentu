@@ -256,7 +256,17 @@
       {
         "kind": "periodic_conf",
         "location": "/etc/defaults/periodic.conf",
-        "command": "local_periodic=/usr/local/etc/periodic"
+        "command": "local_periodic=\"/usr/local/etc/periodic\""
+      },
+      {
+        "kind": "periodic_conf",
+        "location": "/etc/defaults/periodic.conf",
+        "command": "daily_clean_tmps_enable=\"YES\""
+      },
+      {
+        "kind": "periodic_conf",
+        "location": "/etc/defaults/periodic.conf",
+        "command": "weekly_clean_logs_enable=\"YES\""
       },
       {
         "kind": "security_agent_plugin",

@@ -37,6 +37,8 @@ Chinese for the zh-TW pages; keep the two in step.
   Tested only with a synthetic fixture (an invented host); not yet verified on a real Mac.
   Login items are not parsed (the Background Task Management store), so macOS persistence is
   always partial.
+  periodic.conf and daily/weekly/monthly.local are listed line by line, every line but blanks
+  and plain comments (they are short); a stock /etc/defaults/periodic.conf is left out.
 - A code audit root written with a trailing slash (`/var/www/html/`) or as `/` is no longer
   skipped when an audit resumes inside it. Roots are now cleaned, so the first audit after
   the upgrade does not find the place the last one stopped and walks from the start once.

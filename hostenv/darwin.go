@@ -6,6 +6,8 @@ package hostenv
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -1033,136 +1035,58 @@ func launchExe(m map[string]any) string {
 	return ""
 }
 
-// plainAssign is a periodic.conf line that only sets a variable: a name,
-// "=", and a quoted or plain value with nothing a shell would run.
-// An unquoted value holding a quote or a backslash is not plain.
-var plainAssign = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*=("[^"$` + "`" + `\\\n]*"|'[^'\n]*'|[^\s;&|$` + "`" + `()<>"'\\]*)$`)
-
-// stockDefaultLines are the lines of the stock /etc/defaults/periodic.conf
-// (macOS, from FreeBSD) that are not plain assignments: the
-// source_periodic_confs function that reads periodic.conf and its .local.
-var stockDefaultLines = map[string]bool{}
-
-func init() {
-	for _, l := range []string{
-		`if [ -z "${source_periodic_confs_defined}" ]; then`, `source_periodic_confs () {`,
-		`local i sourced_files`, `for i in ${periodic_conf_files}; do`, `case ${sourced_files} in`,
-		`*:$i:*)`, `;;`, `*)`, `sourced_files="${sourced_files}:$i:"`, `[ -r $i ] && . $i`,
-		`esac`, `done`, `}`, `fi`,
-	} {
-		stockDefaultLines[l] = true
-	}
-}
-
-// stripComment cuts a trailing " # comment" outside quotes from one line.
-func stripComment(l string) string {
-	open := byte(0)
-	for i := 0; i < len(l); i++ {
-		c := l[i]
-		switch {
-		case c == '\\' && open != '\'' && i+1 < len(l):
-			i++
-		case open == 0 && (c == '"' || c == '\''):
-			open = c
-		case c == open:
-			open = 0
-		case open == 0 && c == '#' && i > 0 && (l[i-1] == ' ' || l[i-1] == '\t'):
-			return l[:i]
-		}
-	}
-	return l
-}
-
-// shellLines splits a file sourced by a shell into its logical lines: a
-// line ending in a backslash goes on with the next, and so does one with a
-// quote left open, up to the line that closes it. A comment line is one
-// whose logical line starts with "#".
-func shellLines(b []byte) []string {
+// periodicLines are the lines of a file periodic(8) sources or runs as root
+// (periodic.conf, daily.local): every line but blanks and plain comments, as
+// written. Shell is not simulated: a comment counts as plain only when it
+// starts with "#", holds no quote, and the line before does not end in a
+// backslash; everything else, plain assignments included, is listed.
+func periodicLines(b []byte) []string {
 	var out []string
-	cur := ""
-	open := byte(0) // the quote left open, 0 none
-	for _, l := range strings.Split(string(b), "\n") {
-		if cur != "" {
-			cur += "\n"
+	prevGoesOn := false
+	for _, raw := range strings.Split(strings.ReplaceAll(string(b), "\r\n", "\n"), "\n") {
+		l := strings.TrimSpace(raw)
+		plainComment := strings.HasPrefix(l, "#") && !strings.ContainsAny(l, `"'`) && !prevGoesOn
+		prevGoesOn = strings.HasSuffix(raw, "\\")
+		if l == "" && !prevGoesOn || plainComment {
+			continue
 		}
-		cur += l
-		escapedEnd := false // a backslash outside single quotes and comments ends the line
-		for i := 0; i < len(l); i++ {
-			c := l[i]
-			switch {
-			case open == 0 && c == '#' && (i == 0 || l[i-1] == ' ' || l[i-1] == '\t'):
-				i = len(l) // the rest of the line is a comment
-			case c == '\\' && open != '\'':
-				if i+1 == len(l) {
-					escapedEnd = true
-				}
-				i++ // the escaped character
-			case open == 0 && (c == '"' || c == '\''):
-				open = c
-			case c == open:
-				open = 0
-			}
-		}
-		continued := open != 0 || escapedEnd
-		if !continued {
-			out = append(out, cur)
-			cur = ""
-		}
-	}
-	if strings.TrimSpace(cur) != "" {
-		out = append(out, cur) // a quote never closed: what is there
+		out = append(out, l)
 	}
 	return out
 }
 
-// ParsePeriodicConf lists what in a periodic.conf (sourced by periodic(8)
-// as root) makes code run: NAME="value" lines whose name ends in _local or
-// is local_periodic (scripts and folders run), *_enable="YES" (a script
-// turned on), and every line that is not a plain assignment (a command,
-// "a=1; x", ". /path"), whole.
-func ParsePeriodicConf(b []byte) []string { return parsePeriodicConf(b, false) }
+// ParsePeriodicConf is periodicLines for a periodic.conf.
+func ParsePeriodicConf(b []byte) []string { return periodicLines(b) }
 
-// parsePeriodicConf is ParsePeriodicConf; for /etc/defaults/periodic.conf
-// (defaults true) only local_periodic and *_local are listed, as its stock
-// lines would otherwise show on every Mac every day.
-func parsePeriodicConf(b []byte, defaults bool) []string {
-	var out []string
-	for _, l := range shellLines(b) {
-		l = strings.TrimSpace(l)
-		if l == "" || strings.HasPrefix(l, "#") && !strings.Contains(l, "\n") {
-			continue
-		}
-		orig := l
-		// `name="x"   # why` is still plain; a line with an escape,
-		// substitution or backtick is judged whole, as a comment cannot
-		// be told apart there without a shell.
-		if !strings.Contains(l, "\n") && !strings.ContainsAny(l, "\\$`") {
-			l = strings.TrimSpace(stripComment(l))
-		}
-		if !plainAssign.MatchString(l) {
-			// In the defaults, only the stock function lines are left out:
-			// anything else there runs as root too. Listed as written.
-			if !defaults || !stockDefaultLines[orig] {
-				out = append(out, orig)
-			}
-			continue
-		}
-		name, val, ok := strings.Cut(l, "=")
-		if !ok {
-			continue
-		}
-		name = strings.TrimSpace(name)
-		val = strings.Trim(strings.TrimSpace(val), `"'`)
-		switch {
-		case strings.HasSuffix(name, "_local"), name == "local_periodic":
-			if val != "" {
-				out = append(out, name+"="+val)
-			}
-		case !defaults && strings.HasSuffix(name, "_enable") && strings.EqualFold(val, "YES"):
-			out = append(out, name+"=YES")
-		}
+// stockPeriodicDefaults are the sha256 of the stock /etc/defaults/periodic.conf
+// (line ends normalized to \n), from Apple's open source crontabs project
+// (github.com/apple-oss-distributions/crontabs, files/periodic.conf):
+// tags crontabs-63 to 64.60.1, 59.140.1, 52.80.1 to 59, 46.1 to 52. macOS 27
+// has no such file.
+var stockPeriodicDefaults = map[string]bool{
+	"bab867ca902516f84c2b982be91209df3e559d78fcedafc7fe0aa9135f86ce68": true,
+	"0ed01ee9b592cbe236f7cf697e0699fba2ebf16b771ded229a84546a798ab5f1": true,
+	"ee479a7a0dd839c4a08e73d5a6fcffbe750bd47b82cf7c633ed20c5e63b8ed03": true,
+	"16abe95b825a404a87e4b9ee31a45c59ec0143fa30483aa06854cfd70796727b": true,
+}
+
+// stockDefaults says b is a stock /etc/defaults/periodic.conf, whole.
+func stockDefaults(b []byte) bool {
+	n := strings.ReplaceAll(string(b), "\r\n", "\n")
+	if !strings.HasSuffix(n, "\n") {
+		n += "\n"
 	}
-	return out
+	sum := sha256.Sum256([]byte(n))
+	return stockPeriodicDefaults[hex.EncodeToString(sum[:])]
+}
+
+// localPeriodicDirs are the folders a local_periodic= line names.
+func localPeriodicDirs(l string) []string {
+	v, ok := strings.CutPrefix(l, "local_periodic=")
+	if !ok {
+		return nil
+	}
+	return strings.Fields(strings.Trim(v, `"'`))
 }
 
 // periodicDirs hold scripts periodic(8) runs daily, weekly and monthly.
@@ -1177,6 +1101,7 @@ var periodicDirs = []string{"/etc/periodic/daily", "/etc/periodic/weekly", "/etc
 func (c DarwinCollector) persistence(src Source, jobs []launchJob, svcs Obs[[]Service], keys Obs[[]AuthorizedKeyFile]) Obs[[]PersistenceItem] {
 	var out []PersistenceItem
 	denied := []string{"login items (the Background Task Management store is not parsed)"}
+	var notes []string // what was read and left out on purpose
 	if svcs.Status == StatusPartial || !svcs.Known() {
 		denied = append(denied, "launchd: "+svcs.Detail)
 	}
@@ -1228,9 +1153,9 @@ func (c DarwinCollector) persistence(src Source, jobs []launchJob, svcs Obs[[]Se
 			out = append(out, PersistenceItem{Kind: "cron", Location: dir + "/" + n, Detail: "periodic script, run " + path.Base(dir)})
 		}
 	}
-	// periodic.conf is shell variables: *_local name scripts run after the
-	// built-in ones (/etc/daily.local by default), local_periodic adds script
-	// folders, and *_enable="YES" turns a script on.
+	// periodic.conf is sourced by periodic(8) as root: every line is listed
+	// (periodicLines). The stock defaults file, whole, is not: it is the same
+	// on every Mac of a release; changed in any way, it is listed whole.
 	var localPeriodic []string // folders local_periodic adds; their daily/weekly/monthly scripts run
 	for _, f := range []string{"/etc/defaults/periodic.conf", "/etc/periodic.conf", "/etc/periodic.conf.local"} {
 		b, err := src.ReadFile(f)
@@ -1240,11 +1165,15 @@ func (c DarwinCollector) persistence(src Source, jobs []launchJob, svcs Obs[[]Se
 			}
 			continue
 		}
-		for _, v := range parsePeriodicConf(b, f == "/etc/defaults/periodic.conf") {
-			out = append(out, PersistenceItem{Kind: "periodic_conf", Location: f, Command: MaskSecrets(v)})
-			if dirs, ok := strings.CutPrefix(v, "local_periodic="); ok {
-				localPeriodic = append(localPeriodic, strings.Fields(dirs)...)
+		stock := f == "/etc/defaults/periodic.conf" && stockDefaults(b)
+		if stock {
+			notes = append(notes, f+": stock defaults")
+		}
+		for _, v := range periodicLines(b) {
+			if !stock {
+				out = append(out, PersistenceItem{Kind: "periodic_conf", Location: f, Command: MaskSecrets(v)})
 			}
+			localPeriodic = append(localPeriodic, localPeriodicDirs(v)...)
 		}
 	}
 	for _, base := range localPeriodic {
@@ -1268,10 +1197,7 @@ func (c DarwinCollector) persistence(src Source, jobs []launchJob, svcs Obs[[]Se
 	}
 	for _, f := range []string{"/etc/daily.local", "/etc/weekly.local", "/etc/monthly.local"} { // run by periodic(8) as root
 		if b, err := src.ReadFile(f); err == nil {
-			for _, l := range shellLines(b) { // a shell script: every line but blanks and comments
-				if l = strings.TrimSpace(l); l == "" || strings.HasPrefix(l, "#") && !strings.Contains(l, "\n") {
-					continue
-				}
+			for _, l := range periodicLines(b) { // a shell script, run as root
 				out = append(out, PersistenceItem{Kind: "periodic_conf", Location: f, Command: MaskSecrets(l), Detail: "local periodic script, run " + strings.TrimSuffix(path.Base(f), ".local")})
 			}
 		} else if !missing(err) {
@@ -1329,5 +1255,9 @@ func (c DarwinCollector) persistence(src Source, jobs []launchJob, svcs Obs[[]Se
 	if keys.Status == StatusPartial || !keys.Known() {
 		denied = append(denied, "authorized_keys: "+keys.Detail)
 	}
-	return Partial(out, ReasonPermission, "not fully read: "+strings.Join(denied, ", "))
+	detail := "not fully read: " + strings.Join(denied, ", ")
+	if len(notes) > 0 {
+		detail += "; " + strings.Join(notes, "; ")
+	}
+	return Partial(out, ReasonPermission, detail)
 }

