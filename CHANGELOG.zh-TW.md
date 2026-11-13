@@ -10,6 +10,9 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 - Linux 版本查 DNS 時不再帶 EDNS(0) 記錄，和 glibc 一樣：有些 DNS 伺服器（例如 VMware NAT 的
   DNS）回應這樣的查詢時會少了位址，所以每次查詢（OSV、GitHub）都失敗，回報「no such host」。
   如果查詢還是失敗，每日報告的 Not checked 會提示檢查這台主機的 DNS。
+- `block_ip` 不再執行在這兩個情況：IP 在 30 日內的 SSH 登入紀錄只來自主機上任何人都能寫入的文字紀錄（`verified` 為 false），
+  或是登入紀錄讀不到。管理員自己確認過紀錄後，可以在 `shentu chat` 用 `override_unverified` 照樣執行；
+  從 Telegram bot 不能用，每個確認等級都一樣。
 - macOS：binary plist 的 array 和 dictionary 項目也計入讀取上限，UTF-16 字串每個字元算 9 bytes；最後有
   space 的程式路徑照原樣保留；同一個 PID 出現在兩行 `ps` 輸出時標為 `parse_error`；`periodic_conf_files`
   多於 16 個時，沒有讀到的會列出來。

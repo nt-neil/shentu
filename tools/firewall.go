@@ -39,6 +39,21 @@ type ipArgs struct {
 	OverrideUnverified bool `json:"override_unverified"`
 }
 
+// RemoteRefused says why a control tool call from a chat channel (env.Remote)
+// is refused before it is shown for confirmation; nil when it is not. A
+// remote request cannot override the login gate, at any interaction level:
+// the operator checks the logs on the server and blocks with shentu chat.
+func RemoteRefused(env *Env, name string, args json.RawMessage) error {
+	if env == nil || !env.Remote || name != "block_ip" {
+		return nil
+	}
+	var a ipArgs
+	if decode(args, &a) == nil && !a.OverrideUnverified {
+		return nil
+	}
+	return errors.New("override_unverified is not accepted from a chat channel: check the logs on the server and block it there with shentu chat")
+}
+
 // loginSummary is SSHSummary (tests replace it).
 var loginSummary = SSHSummary
 
@@ -97,6 +112,9 @@ var blockIP = Tool{
 		return s, nil
 	},
 	Run: func(ctx context.Context, env *Env, args json.RawMessage) (any, error) {
+		if err := RemoteRefused(env, "block_ip", args); err != nil {
+			return nil, err
+		}
 		a, ip, ttl, err := checkBlock(args)
 		if err != nil {
 			return nil, err

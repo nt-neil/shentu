@@ -15,6 +15,10 @@ Chinese for the zh-TW pages; keep the two in step.
   DNS servers, VMware's NAT DNS among them, answered such queries without the address, so
   every lookup (OSV, GitHub) failed with "no such host". When a lookup still fails, the daily
   report's Not checked line says to check the host's DNS.
+- `block_ip` refuses an IP whose SSH login events of the last 30 days come only from text
+  logs anyone on the host can write to (`verified` false), or whose logins cannot be read;
+  `override_unverified` goes ahead after the operator has checked them, from `shentu chat`
+  only. From the Telegram bot it is always refused, at every confirm level.
 - macOS: binary plists count array and dictionary entries, and UTF-16 strings at 9 bytes a
   character, against the decoding limit; a program path ending in a space is kept as it is;
   a process named on two `ps` lines is marked `parse_error`; `periodic_conf_files` past 16
