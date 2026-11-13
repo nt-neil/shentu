@@ -33,11 +33,11 @@ type Tool struct {
 
 // All returns every tool.
 func All() []Tool {
-	return []Tool{
+	return guardWindows([]Tool{
 		sshLogins, listeningPorts, processesTool, accountsAudit,
 		packageVulns, appVulns, appCodeAudit, siteProfile, fileChanges, certExpiry, logSearch,
 		blockIP, unblockIP, notifyTool,
-	}
+	})
 }
 
 // Find returns the tool with the given name.

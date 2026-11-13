@@ -4,7 +4,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -235,11 +237,11 @@ func (st *callState) dropStale(hash map[string]string, walked bool) map[string]b
 		if _, ok := hash[f]; ok || walked {
 			return false
 		}
-		if _, err := os.Lstat(f); err != nil {
+		if _, err := os.Lstat(f); errors.Is(err, fs.ErrNotExist) {
 			gone[f] = true
 			return false
 		}
-		return true
+		return true // there, or not readable now (EACCES): kept, not taken as deleted
 	}
 	for f, fs := range st.Files {
 		if fs.Hash != hash[f] && !unknown(f) {
@@ -349,10 +351,26 @@ func saveWalkPos(name string, p *walkPos) {
 	}
 }
 
+// walkHolds says folder dir holds path ("/" holds every absolute path).
+func walkHolds(dir, path string) bool {
+	sep := string(filepath.Separator)
+	return strings.HasPrefix(path, strings.TrimSuffix(dir, sep)+sep)
+}
+
+// cleanRoots is roots with filepath.Clean applied, in a new slice.
+func cleanRoots(roots []string) []string {
+	out := make([]string, len(roots))
+	for i, r := range roots {
+		out[i] = filepath.Clean(r)
+	}
+	return out
+}
+
 // pathCmp orders paths the way filepath.WalkDir visits them: name by name,
-// a folder before what it holds.
+// a folder before what it holds (split at the OS separator, \ on Windows).
 func pathCmp(a, b string) int {
-	as, bs := strings.Split(a, "/"), strings.Split(b, "/")
+	sep := string(filepath.Separator)
+	as, bs := strings.Split(a, sep), strings.Split(b, sep)
 	for i := 0; i < len(as) && i < len(bs); i++ {
 		if c := strings.Compare(as[i], bs[i]); c != 0 {
 			return c

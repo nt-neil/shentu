@@ -13,9 +13,10 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"syscall"
 
 	"github.com/BurntSushi/toml"
+
+	"github.com/nt-neil/shentu/internal/osutil"
 )
 
 var appVulns = Tool{
@@ -33,13 +34,7 @@ var appVulns = Tool{
 		roots := env.AppPaths
 		if a.Path != "" {
 			clean := filepath.Clean(a.Path)
-			inside := false
-			for _, r := range env.AppPaths {
-				if clean == r || strings.HasPrefix(clean, strings.TrimSuffix(r, "/")+"/") {
-					inside = true
-				}
-			}
-			if !inside {
+			if !insideAny(clean, env.AppPaths) {
 				return nil, fmt.Errorf("path is not inside the app paths: %s", strings.Join(env.AppPaths, ", "))
 			}
 			roots = []string{clean}
@@ -113,7 +108,7 @@ func FindLockfiles(roots []string) []Lockfile {
 // When seen is set, the opened file must be the same file the walk saw, so a parent
 // folder swapped for a symlink in between cannot redirect the read.
 func readSmallRegular(p string, max int64, seen os.FileInfo) ([]byte, bool) {
-	f, err := os.OpenFile(p, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	f, err := osutil.OpenNoFollow(p, os.O_RDONLY, 0, true)
 	if err != nil {
 		return nil, false
 	}
@@ -161,7 +156,7 @@ func AppVulns(ctx context.Context, hc *http.Client, roots []string) (map[string]
 	files := FindLockfiles(roots)
 	kev, kevErr := loadKEV(ctx, hc)
 	var results []AppResult
-	total := 0
+	total, kevUnchecked := 0, 0
 	for _, f := range files {
 		r := AppResult{Path: f.Path, Ecosystem: f.Ecosystem, Packages: len(f.pkgs)}
 		ids, err := osvBatch(ctx, hc, f.Ecosystem, f.pkgs)
@@ -178,7 +173,9 @@ func AppVulns(ctx context.Context, hc *http.Client, roots []string) (map[string]
 			r.Affected = append(r.Affected, AppHit{p.Name, p.Version, list[:min(5, len(list))]})
 			total += len(list)
 			if kevErr == nil {
-				for _, e := range matchKEV(kev, list, func(id string) []string { return osvCVEs(ctx, hc, id) }) {
+				matched, n := matchKEV(kev, list, func(id string) ([]string, bool) { return osvCVEs(ctx, hc, id) })
+				kevUnchecked += n
+				for _, e := range matched {
 					e.Package, e.Version = p.Name, p.Version
 					r.Exploited = append(r.Exploited, e)
 				}
@@ -196,6 +193,9 @@ func AppVulns(ctx context.Context, hc *http.Client, roots []string) (map[string]
 	}
 	if kevErr != nil {
 		out["kev"] = "CISA KEV list unavailable: " + kevErr.Error()
+	} else if kevUnchecked > 0 {
+		out["kev_unchecked"] = kevUnchecked
+		out["kev"] = fmt.Sprintf("%d vulnerabilities could not be checked against the CISA KEV list: exploited ones among them are not marked", kevUnchecked)
 	}
 	return out, nil
 }
