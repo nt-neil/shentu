@@ -637,13 +637,18 @@ const fileWriteRights = windows.FILE_WRITE_DATA | windows.FILE_APPEND_DATA | win
 	windows.FILE_WRITE_ATTRIBUTES | windows.DELETE | windows.WRITE_DAC | windows.WRITE_OWNER | windows.GENERIC_ALL | windows.GENERIC_WRITE
 
 func (l *Live) FileSecurity(path string) (WinFileSecurity, error) {
+	var sec WinFileSecurity
 	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
 		windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)
 	if err != nil {
-		return WinFileSecurity{}, winErr("GetNamedSecurityInfo", path, err)
-	}
-	sec, err := fileSecurityOf(path, sd)
-	if err != nil {
+		nerr := winErr("GetNamedSecurityInfo", path, err)
+		if !errors.Is(nerr, fs.ErrNotExist) {
+			return WinFileSecurity{}, nerr
+		}
+		// The target is missing; the path may still be a link (a dangling
+		// one), which GetFileAttributes, not following it, sees below.
+		sec.Dangling = true
+	} else if sec, err = fileSecurityOf(path, sd); err != nil {
 		return sec, err
 	}
 	// A reparse point: GetNamedSecurityInfo answered for the target; the
@@ -654,9 +659,15 @@ func (l *Live) FileSecurity(path string) (WinFileSecurity, error) {
 	}
 	attrs, err := windows.GetFileAttributes(p16)
 	if err != nil {
+		if sec.Dangling { // no link either: the path does not exist
+			return WinFileSecurity{}, winErr("GetNamedSecurityInfo", path, windows.ERROR_FILE_NOT_FOUND)
+		}
 		return sec, winErr("GetFileAttributes", path, err)
 	}
 	if attrs&windows.FILE_ATTRIBUTE_REPARSE_POINT == 0 {
+		if sec.Dangling { // gone between the two calls
+			return WinFileSecurity{}, winErr("GetNamedSecurityInfo", path, windows.ERROR_FILE_NOT_FOUND)
+		}
 		return sec, nil
 	}
 	h, err := windows.CreateFile(p16, windows.READ_CONTROL,

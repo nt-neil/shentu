@@ -69,6 +69,10 @@ type WinFileSecurity struct {
 	Owner   string           `json:"owner"`
 	Writers []string         `json:"writers,omitempty"`
 	Link    *WinFileSecurity `json:"link,omitempty"`
+	// Dangling: a link whose target is missing. Owner and Writers are then
+	// empty; Link is the link's own. Never trusted: whoever can create the
+	// target decides what is read.
+	Dangling bool `json:"dangling,omitempty"`
 }
 
 // trustedSIDs may own or write what Shentu trusts: SYSTEM, Administrators,
@@ -80,7 +84,9 @@ var trustedSIDs = map[string]bool{"S-1-5-18": true, "S-1-5-32-544": true,
 // owns or may write the file ("owner <sid>", then the writers).
 func (s WinFileSecurity) Untrusted() []string {
 	var out []string
-	if !trustedSIDs[s.Owner] {
+	if s.Dangling {
+		out = append(out, "a link to a missing target")
+	} else if !trustedSIDs[s.Owner] {
 		out = append(out, "owner "+s.Owner)
 	}
 	for _, w := range s.Writers {
@@ -1048,7 +1054,7 @@ func winSSH(ws WinSource, svcs []WinService, svcErr error) Obs[SSHConfig] {
 		for d := p; ; d = winParent(d) {
 			if stop(d) {
 				if missing {
-					return unknown(p, p+" does not exist and users may create it under "+d, ReasonUntrusted), false
+					return unknown(p, "neither "+p+" nor a folder above it exists below "+d+", where any user can create folders: anyone could create it", ReasonUntrusted), false
 				}
 				return Obs[SSHConfig]{}, true
 			}
@@ -1103,9 +1109,6 @@ func winSSH(ws WinSource, svcs []WinService, svcErr error) Obs[SSHConfig] {
 			}
 			if err != nil {
 				unread(dir, whyUnread(err), Classify(err))
-			}
-			if len(files) == 0 && !strings.ContainsAny(pat, "*?[") {
-				files = []string{pat} // judged even when missing: who could create it
 			}
 			for _, inc := range files {
 				if o, ok := chain(inc); !ok {

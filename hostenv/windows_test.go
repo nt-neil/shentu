@@ -1071,7 +1071,7 @@ func TestWindowsSSHIncludeReview(t *testing.T) {
 	w = base()
 	w.files[winSSHDConfig] = "Include C:/plant/x.conf\nPasswordAuthentication no\n"
 	w.gone[`C:\plant\x.conf`], w.gone[`C:\plant`] = true, true
-	if s := collect(w); s.Status != StatusUnknown || s.Reason != ReasonUntrusted || !strings.Contains(s.Detail, "may create") {
+	if s := collect(w); s.Status != StatusUnknown || s.Reason != ReasonUntrusted || !strings.Contains(s.Detail, "any user can create") {
 		t.Errorf("creatable missing include: %+v", s)
 	}
 	// Missing inside a trusted folder: nobody else can create it.
@@ -1090,6 +1090,14 @@ func TestWindowsSSHIncludeReview(t *testing.T) {
 		Link: &WinFileSecurity{Owner: "S-1-5-21-1-2-3-1001"}}}
 	if s := collect(w); s.Status != StatusUnknown || s.Reason != ReasonUntrusted || !strings.Contains(s.Detail, "link owner") {
 		t.Errorf("link owned by a user: %+v", s)
+	}
+
+	// An include that is a link to a missing target (final review).
+	w = base()
+	w.files[winSSHDConfig] = "Include x.conf\n"
+	w.sec = map[string]WinFileSecurity{`C:\ProgramData\ssh\x.conf`: {Dangling: true, Link: &WinFileSecurity{Owner: "S-1-5-18"}}}
+	if s := collect(w); s.Status != StatusUnknown || s.Reason != ReasonUntrusted || !strings.Contains(s.Detail, "missing target") {
+		t.Errorf("dangling link include: %+v", s)
 	}
 
 	// More included files than maxSSHIncludes: partial.
