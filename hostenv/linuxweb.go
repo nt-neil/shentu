@@ -82,6 +82,12 @@ func (LinuxCollector) WebRootsReport(src Source, conf WebConf) (roots, unreadabl
 	return roots, unreadable
 }
 
+// ReadWebConf is readWebConf for the other packages that read the web server's
+// configuration (tools/apache.go).
+func ReadWebConf(src Source, p string, conf WebConf) ([]byte, string) {
+	return readWebConf(src, p, conf)
+}
+
 // readWebConf reads one configuration file, following a symlink only to a
 // trusted target (see WebConf); why says what kept it from being read.
 func readWebConf(src Source, p string, conf WebConf) (b []byte, why string) {

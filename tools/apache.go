@@ -3,10 +3,11 @@ package tools
 import (
 	"context"
 	"os/exec"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/nt-neil/shentu/hostenv"
 )
 
 // CVE-2026-119618 (CVE.org, NVD; not in OSV when this was written, so the
@@ -81,10 +82,10 @@ func apacheH2Risk(ctx context.Context, confGlob []string) []Risk {
 		return nil
 	}
 	var confs [][]byte
+	src, conf := hostSource(), hostenv.WebConf{Root: webConfRoot, Owner: int(webConfOwner)}
 	for _, g := range confGlob {
-		files, _ := filepath.Glob(g)
-		for _, f := range files {
-			if b, why := readWebConf(f); why == "" {
+		for _, f := range hostenv.Glob(src, g) {
+			if b, why := hostenv.ReadWebConf(src, f, conf); why == "" {
 				confs = append(confs, b)
 			}
 		}
