@@ -305,7 +305,7 @@ func TestSSHDIncludeMatch(t *testing.T) {
 	}
 }
 
-// More than 256 /* hostenv.256 */ config files: the rest are listed unread.
+// More than 256 config files (hostenv.maxSSHDFiles): the rest are listed unread.
 func TestSSHDIncludeFileCap(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Linux host test: the sshd parser for Linux and macOS (Windows has its own in hostenv)")
