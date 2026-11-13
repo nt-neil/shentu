@@ -637,57 +637,60 @@ const fileWriteRights = windows.FILE_WRITE_DATA | windows.FILE_APPEND_DATA | win
 	windows.FILE_WRITE_ATTRIBUTES | windows.DELETE | windows.WRITE_DAC | windows.WRITE_OWNER | windows.GENERIC_ALL | windows.GENERIC_WRITE
 
 func (l *Live) FileSecurity(path string) (WinFileSecurity, error) {
-	var sec WinFileSecurity
-	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
-		windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)
-	if err != nil {
-		nerr := winErr("GetNamedSecurityInfo", path, err)
-		if !errors.Is(nerr, fs.ErrNotExist) {
-			return WinFileSecurity{}, nerr
-		}
-		// The target is missing; the path may still be a link (a dangling
-		// one), which GetFileAttributes, not following it, sees below.
-		sec.Dangling = true
-	} else if sec, err = fileSecurityOf(path, sd); err != nil {
-		return sec, err
-	}
-	// A reparse point: GetNamedSecurityInfo answered for the target; the
-	// link itself is read through a handle that does not follow it.
 	p16, err := windows.UTF16PtrFromString(path)
 	if err != nil {
-		return sec, err
+		return WinFileSecurity{}, err
 	}
-	attrs, err := windows.GetFileAttributes(p16)
+	attrs, err := windows.GetFileAttributes(p16) // does not follow a link
 	if err != nil {
-		if sec.Dangling { // no link either: the path does not exist
-			return WinFileSecurity{}, winErr("GetNamedSecurityInfo", path, windows.ERROR_FILE_NOT_FOUND)
-		}
-		return sec, winErr("GetFileAttributes", path, err)
+		return WinFileSecurity{}, winErr("GetFileAttributes", path, err)
 	}
 	if attrs&windows.FILE_ATTRIBUTE_REPARSE_POINT == 0 {
-		if sec.Dangling { // gone between the two calls
-			return WinFileSecurity{}, winErr("GetNamedSecurityInfo", path, windows.ERROR_FILE_NOT_FOUND)
+		sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
+			windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)
+		if err != nil {
+			return WinFileSecurity{}, winErr("GetNamedSecurityInfo", path, err)
 		}
-		return sec, nil
+		return fileSecurityOf(path, sd)
 	}
-	h, err := windows.CreateFile(p16, windows.READ_CONTROL,
-		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE, nil, windows.OPEN_EXISTING,
-		windows.FILE_FLAG_BACKUP_SEMANTICS|windows.FILE_FLAG_OPEN_REPARSE_POINT, 0)
+	// A reparse point (symbolic link, junction): GetNamedSecurityInfo
+	// answers for the link itself, so each side is read through a handle
+	// of its own: the link's (not followed), then the target's (followed).
+	// A target that cannot be opened because it is missing: dangling.
+	link, err := handleSecurity(path, p16, windows.FILE_FLAG_OPEN_REPARSE_POINT)
 	if err != nil {
-		return sec, winErr("CreateFile", path, err)
+		return WinFileSecurity{}, err
 	}
-	defer windows.CloseHandle(h)
-	lsd, err := windows.GetSecurityInfo(h, windows.SE_FILE_OBJECT,
-		windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)
-	if err != nil {
-		return sec, winErr("GetSecurityInfo", path, err)
+	sec, err := handleSecurity(path, p16, 0)
+	if errors.Is(err, fs.ErrNotExist) {
+		return WinFileSecurity{Dangling: true, Link: &link}, nil
 	}
-	link, err := fileSecurityOf(path, lsd)
 	if err != nil {
-		return sec, err
+		return WinFileSecurity{}, err
 	}
 	sec.Link = &link
 	return sec, nil
+}
+
+// handleSecurity reads the owner and writers through a handle opened for
+// READ_CONTROL only, shared with every other opener.
+func handleSecurity(path string, p16 *uint16, flags uint32) (WinFileSecurity, error) {
+	h, err := windows.CreateFile(p16, windows.READ_CONTROL,
+		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE, nil, windows.OPEN_EXISTING,
+		windows.FILE_FLAG_BACKUP_SEMANTICS|flags, 0)
+	if err != nil {
+		if errors.Is(err, windows.ERROR_FILE_NOT_FOUND) || errors.Is(err, windows.ERROR_PATH_NOT_FOUND) {
+			err = fmt.Errorf("%w (%v)", fs.ErrNotExist, err)
+		}
+		return WinFileSecurity{}, winErr("CreateFile", path, err)
+	}
+	defer windows.CloseHandle(h)
+	sd, err := windows.GetSecurityInfo(h, windows.SE_FILE_OBJECT,
+		windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)
+	if err != nil {
+		return WinFileSecurity{}, winErr("GetSecurityInfo", path, err)
+	}
+	return fileSecurityOf(path, sd)
 }
 
 // fileSecurityOf is the owner and writers in a security descriptor.
