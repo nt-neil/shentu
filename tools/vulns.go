@@ -1,19 +1,18 @@
 package tools
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
-	"os/exec"
 	"regexp"
 	"sort"
 	"strings"
 	"sync"
+
+	"github.com/nt-neil/shentu/hostenv"
 )
 
 var packageVulns = Tool{
@@ -303,75 +302,33 @@ func upgradeHint(eco string) string {
 	return ""
 }
 
-// installedPackages detects the distro and lists packages in OSV naming.
+// installedPackages lists packages in OSV naming from hostenv's packages
+// fact: dpkg's source package names, apk origins, rpm names; duplicates
+// dropped, order kept. Only distributions OSV covers are supported.
 func installedPackages(ctx context.Context) (string, []pkg, error) {
-	osr := osRelease()
+	_, osr := hostPlatform()
 	id, ver := osr["ID"], osr["VERSION_ID"]
-	switch id {
-	case "ubuntu", "debian":
-		eco := "Debian:" + strings.Split(ver, ".")[0]
-		if id == "ubuntu" {
-			eco = "Ubuntu:" + ver
-			if strings.Contains(osr["VERSION"], "LTS") {
-				eco += ":LTS"
-			}
-		}
-		// OSV Debian/Ubuntu advisories use source package names.
-		out, err := exec.CommandContext(ctx, "dpkg-query", "-W", "-f", "${source:Package}\t${Version}\t${db:Status-Abbrev}\n").Output()
-		if err != nil {
-			return "", nil, fmt.Errorf("dpkg-query: %w", err)
-		}
-		return eco, uniq(parseTSV(string(out), func(f []string) bool { return len(f) > 2 && strings.HasPrefix(f[2], "ii") })), nil
-	case "alpine":
-		parts := strings.Split(ver, ".")
-		eco := "Alpine:v" + strings.Join(parts[:min(2, len(parts))], ".")
-		b, err := os.ReadFile("/lib/apk/db/installed")
-		if err != nil {
-			return "", nil, err
-		}
-		var pkgs []pkg
-		var name, version, origin string
-		for _, l := range strings.Split(string(b)+"\n", "\n") {
-			switch {
-			case strings.HasPrefix(l, "P:"):
-				name = l[2:]
-			case strings.HasPrefix(l, "V:"):
-				version = l[2:]
-			case strings.HasPrefix(l, "o:"):
-				origin = l[2:]
-			case l == "":
-				if origin == "" {
-					origin = name
-				}
-				if origin != "" {
-					pkgs = append(pkgs, pkg{origin, version})
-				}
-				name, version, origin = "", "", ""
-			}
-		}
-		return eco, uniq(pkgs), nil
-	case "rocky", "almalinux":
-		eco := map[string]string{"rocky": "Rocky Linux", "almalinux": "AlmaLinux"}[id] + ":" + strings.Split(ver, ".")[0]
-		out, err := exec.CommandContext(ctx, "rpm", "-qa", "--qf", "%{NAME}\t%{EPOCHNUM}:%{VERSION}-%{RELEASE}\n").Output()
-		if err != nil {
-			return "", nil, fmt.Errorf("rpm: %w", err)
-		}
-		return eco, uniq(parseTSV(string(out), nil)), nil
+	eco := hostenv.OSVEcosystem(osr)
+	if eco == "" {
+		return "", nil, errors.New("unsupported distribution for package_vulns: " + id + " " + ver)
 	}
-	return "", nil, errors.New("unsupported distribution for package_vulns: " + id + " " + ver)
-}
-
-func parseTSV(s string, keep func([]string) bool) []pkg {
-	var out []pkg
-	sc := bufio.NewScanner(strings.NewReader(s))
-	for sc.Scan() {
-		f := strings.Split(sc.Text(), "\t")
-		if len(f) < 2 || f[0] == "" || (keep != nil && !keep(f)) {
-			continue
+	set := linux.Packages(ctx, hostSource(), osr)
+	if !set.Known() {
+		cmd := map[string]string{"dpkg": "dpkg-query", "rpm": "rpm", "apk": "/lib/apk/db/installed"}[set.Value.Manager]
+		if cmd == "" {
+			cmd = "packages"
 		}
-		out = append(out, pkg{f[0], f[1]})
+		return "", nil, fmt.Errorf("%s: %s", cmd, set.Detail)
 	}
-	return out
+	var pkgs []pkg
+	for _, p := range set.Value.Items {
+		name := p.Name
+		if p.Source != "" {
+			name = p.Source
+		}
+		pkgs = append(pkgs, pkg{name, p.Version})
+	}
+	return eco, uniq(pkgs), nil
 }
 
 func uniq(in []pkg) []pkg {
@@ -384,17 +341,6 @@ func uniq(in []pkg) []pkg {
 		}
 	}
 	return out
-}
-
-func osRelease() map[string]string {
-	m := map[string]string{}
-	b, _ := os.ReadFile("/etc/os-release")
-	for _, l := range strings.Split(string(b), "\n") {
-		if k, v, ok := strings.Cut(l, "="); ok {
-			m[k] = strings.Trim(v, `"`)
-		}
-	}
-	return m
 }
 
 func firstLine(s string, n int) string {

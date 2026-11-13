@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -192,6 +193,9 @@ func TestNftablesAtBoot(t *testing.T) {
 // sshd_config.d is 0700) leaves the SSH settings unknown: no warning from the
 // main file's lines, one info instead. Readable, the drop-in's no holds.
 func TestSSHDropInUnreadable(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Linux host test: Unix file permissions")
+	}
 	if os.Geteuid() == 0 {
 		t.Skip("root reads every file")
 	}
@@ -298,7 +302,7 @@ func TestSSHDIncludeMatch(t *testing.T) {
 	}
 }
 
-// More than maxSSHDFiles config files: the rest are listed unread.
+// More than 256 /* hostenv.256 */ config files: the rest are listed unread.
 func TestSSHDIncludeFileCap(t *testing.T) {
 	dir := t.TempDir()
 	old := sshdConfig
@@ -306,7 +310,7 @@ func TestSSHDIncludeFileCap(t *testing.T) {
 	sshdConfig = filepath.Join(dir, "sshd_config")
 	os.MkdirAll(filepath.Join(dir, "sshd_config.d"), 0o755)
 	os.WriteFile(sshdConfig, []byte("Include sshd_config.d/*.conf\n"), 0o600)
-	for i := 0; i < maxSSHDFiles+5; i++ {
+	for i := 0; i < 256+5; i++ {
 		os.WriteFile(filepath.Join(dir, "sshd_config.d", fmt.Sprintf("%04d.conf", i)), []byte("# empty\n"), 0o600)
 	}
 	if _, _, unread := sshdSettings(); !strings.Contains(strings.Join(unread, ","), "more than 256 sshd config files") {

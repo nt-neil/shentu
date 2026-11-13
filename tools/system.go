@@ -1,21 +1,21 @@
 package tools
 
 import (
-	"bufio"
-	"bytes"
 	"context"
-	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"net"
 	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
+
+	"github.com/nt-neil/shentu/hostenv"
 )
 
 var listeningPorts = Tool{
@@ -38,128 +38,77 @@ type Port struct {
 	UID     string `json:"uid"`
 }
 
-// ListeningPorts parses /proc/net/{tcp,tcp6,udp,udp6}.
+// ListeningPorts lists TCP and UDP listening sockets from hostenv's
+// listeners fact, each with its owning process and executable.
 func ListeningPorts() ([]Port, error) {
-	owners := socketOwners()
+	src := hostSource()
+	procs, owners := linux.Processes(src, nil)
+	byPID := map[int]hostenv.Process{}
+	for _, p := range procs.Value {
+		byPID[p.PID] = p
+	}
 	var ports []Port
 	seen := map[string]bool{}
-	for _, proto := range []string{"tcp", "tcp6", "udp", "udp6"} {
-		for _, e := range readProcNet(proto) {
-			// 0A = TCP_LISTEN; 07 = an unconnected (bound) UDP socket.
-			if (strings.HasPrefix(proto, "tcp") && e.state != "0A") || (strings.HasPrefix(proto, "udp") && e.state != "07") {
-				continue
-			}
-			p := Port{Proto: proto, Addr: e.localIP.String(), Port: e.localPort, UID: e.uid}
-			if pid, ok := owners[e.inode]; ok {
-				p.PID = pid
-				p.Process = comm(pid)
-				p.Exe, _ = os.Readlink(fmt.Sprintf("/proc/%d/exe", pid))
-			}
-			key := fmt.Sprintf("%s/%s/%d", proto, p.Addr, p.Port)
-			if !seen[key] {
-				seen[key] = true
-				ports = append(ports, p)
-			}
+	for _, l := range linux.Listeners(src, owners).Value {
+		key := fmt.Sprintf("%s/%s/%d", l.Proto, l.Addr, l.Port)
+		if seen[key] { // the tool shows one owner per port, as before 1c
+			continue
 		}
+		seen[key] = true
+		p := Port{Proto: l.Proto, Addr: l.Addr, Port: l.Port, UID: l.UID}
+		if l.PID != 0 {
+			pr := byPID[l.PID]
+			p.PID, p.Process, p.Exe = l.PID, pr.Name, rawExe(pr)
+		}
+		ports = append(ports, p)
 	}
 	sort.Slice(ports, func(i, j int) bool { return ports[i].Port < ports[j].Port })
 	return ports, nil
 }
 
-type netEntry struct {
-	localIP    net.IP
-	localPort  int
-	remoteIP   net.IP
-	remotePort int
-	state      string
-	uid        string
-	inode      string
+// rawExe is the executable as /proc/PID/exe reads, " (deleted)" included.
+func rawExe(p hostenv.Process) string {
+	if !p.ExeKnown {
+		return ""
+	}
+	if !p.ExeExists {
+		return p.Exe + " (deleted)"
+	}
+	return p.Exe
 }
 
-func readProcNet(proto string) []netEntry {
-	f, err := os.Open("/proc/net/" + proto)
-	if err != nil {
-		return nil
-	}
-	defer f.Close()
-	var out []netEntry
-	sc := bufio.NewScanner(f)
-	sc.Scan() // header
-	for sc.Scan() {
-		fs := strings.Fields(sc.Text())
-		if len(fs) < 10 {
-			continue
-		}
-		lip, lport := parseHexAddr(fs[1])
-		rip, rport := parseHexAddr(fs[2])
-		out = append(out, netEntry{lip, lport, rip, rport, fs[3], fs[7], fs[9]})
-	}
-	return out
-}
-
-// parseHexAddr decodes "0100007F:0016" (little-endian 32-bit words) into an IP and port.
-func parseHexAddr(s string) (net.IP, int) {
-	host, port, ok := strings.Cut(s, ":")
-	if !ok {
-		return nil, 0
-	}
-	b, err := hex.DecodeString(host)
-	if err != nil {
-		return nil, 0
-	}
-	for i := 0; i+4 <= len(b); i += 4 {
-		b[i], b[i+1], b[i+2], b[i+3] = b[i+3], b[i+2], b[i+1], b[i]
-	}
-	p, _ := strconv.ParseInt(port, 16, 32)
-	return net.IP(b), int(p)
-}
-
-// socketOwners maps socket inode -> pid by scanning /proc/*/fd.
-func socketOwners() map[string]int {
-	owners := map[string]int{}
-	for _, pid := range pids() {
-		fds, _ := filepath.Glob(fmt.Sprintf("/proc/%d/fd/*", pid))
-		for _, fd := range fds {
-			link, err := os.Readlink(fd)
-			if err == nil && strings.HasPrefix(link, "socket:[") {
-				owners[strings.TrimSuffix(strings.TrimPrefix(link, "socket:["), "]")] = pid
-			}
-		}
-	}
-	return owners
-}
-
-func pids() []int {
-	ents, _ := os.ReadDir("/proc")
-	var out []int
-	for _, e := range ents {
-		if n, err := strconv.Atoi(e.Name()); err == nil {
-			out = append(out, n)
-		}
-	}
-	return out
-}
-
-func comm(pid int) string {
-	b, _ := os.ReadFile(fmt.Sprintf("/proc/%d/comm", pid))
-	return strings.TrimSpace(string(b))
+// procNet streams one /proc/net table through hostenv to fn, which keeps
+// what it needs (nothing holds the whole table) and returns false to stop.
+// complete is false when the table could not be read in full (cut short,
+// or unreadable); a table that does not exist is complete.
+func procNet(proto string, fn func(hostenv.ProcNetEntry) bool) (complete bool) {
+	err := hostenv.ScanProcNetUntil(hostSource(), proto, fn)
+	return err == nil || errors.Is(err, fs.ErrNotExist) // no such table: no IPv6, or not Linux
 }
 
 // SSHPeers returns the remote IPs of established connections to local port 22.
-// block_ip refuses these so the operator never locks themselves out.
-func SSHPeers() map[string]bool {
+// block_ip refuses these so the operator never locks themselves out; the
+// error says the connection table could not be read in full, and block_ip
+// then refuses outright rather than risk the operator's own address.
+func SSHPeers() (map[string]bool, error) {
 	peers := map[string]bool{}
+	complete := true
 	for _, proto := range []string{"tcp", "tcp6"} {
-		for _, e := range readProcNet(proto) {
-			if e.state == "01" && e.localPort == 22 {
-				peers[normIP(e.remoteIP)] = true
+		ok := procNet(proto, func(e hostenv.ProcNetEntry) bool {
+			if e.State == "01" && e.LocalPort == 22 {
+				peers[normIP(e.RemoteIP)] = true
 			}
-		}
+			return true
+		})
+		complete = complete && ok
 	}
 	if c := os.Getenv("SSH_CLIENT"); c != "" {
 		peers[strings.Fields(c)[0]] = true
 	}
-	return peers
+	if !complete {
+		return peers, errors.New("the TCP connection table could not be read in full, so active SSH sessions are not known")
+	}
+	return peers, nil
 }
 
 func normIP(ip net.IP) string {
@@ -214,45 +163,28 @@ func SetWebUsers(names []string) {
 
 var shells = map[string]bool{"sh": true, "bash": true, "dash": true, "zsh": true, "nc": true, "ncat": true, "socat": true, "python": true, "python3": true, "perl": true}
 
-// Processes reads /proc. With all=false only flagged processes are returned.
+// Processes lists processes from hostenv's processes fact. With all=false
+// only flagged processes are returned.
 func Processes(all bool) []Proc {
 	names := userNames()
 	self := os.Getpid()
+	procs, _ := linux.Processes(hostSource(), nil)
 	var out []Proc
 	var seen []Proc
 	start := map[int]int64{} // clock ticks after boot
-	for _, pid := range pids() {
-		if pid == self {
+	for _, hp := range procs.Value {
+		if hp.PID == self {
 			continue
 		}
-		status, err := os.ReadFile(fmt.Sprintf("/proc/%d/status", pid))
-		if err != nil {
-			continue
-		}
-		p := Proc{PID: pid, Comm: comm(pid)}
-		for _, line := range strings.Split(string(status), "\n") {
-			if v, ok := strings.CutPrefix(line, "PPid:"); ok {
-				p.PPID, _ = strconv.Atoi(strings.TrimSpace(v))
-			}
-			if v, ok := strings.CutPrefix(line, "Uid:"); ok {
-				uid := strings.Fields(v)[0]
-				p.User = names[uid]
-				if p.User == "" {
-					p.User = uid
-				}
+		p := Proc{PID: hp.PID, PPID: hp.PPID, Comm: hp.Name, Exe: rawExe(hp), Cmdline: Cut(hp.Cmdline, 300), Started: hp.Started}
+		if hp.UID != "" {
+			p.User = names[hp.UID]
+			if p.User == "" {
+				p.User = hp.UID
 			}
 		}
-		p.Exe, _ = os.Readlink(fmt.Sprintf("/proc/%d/exe", pid))
-		cmd, _ := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
-		p.Cmdline = strings.TrimSpace(strings.ReplaceAll(string(cmd), "\x00", " "))
-		if len(p.Cmdline) > 300 {
-			p.Cmdline = Cut(p.Cmdline, 300)
-		}
-		if st, err := os.Stat(fmt.Sprintf("/proc/%d", pid)); err == nil {
-			p.Started = st.ModTime().Format(time.RFC3339)
-		}
-		if t, ok := procStart(pid); ok {
-			start[pid] = t
+		if hp.StartTicks > 0 {
+			start[hp.PID] = hp.StartTicks
 		}
 		if strings.HasSuffix(p.Exe, " (deleted)") {
 			p.Flags = append(p.Flags, "deleted_executable")
@@ -281,25 +213,6 @@ func Processes(all bool) []Proc {
 // bootWindow bounds how soon after boot an initramfs process started: two
 // minutes, in clock ticks (USER_HZ is 100 on Linux).
 const bootWindow = 120 * 100
-
-// procStart is when the process started, in clock ticks after boot (field 22
-// of /proc/PID/stat).
-func procStart(pid int) (int64, bool) {
-	b, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
-	if err != nil {
-		return 0, false
-	}
-	i := bytes.LastIndexByte(b, ')') // the name may hold spaces and parentheses
-	if i < 0 {
-		return 0, false
-	}
-	f := strings.Fields(string(b[i+1:]))
-	if len(f) < 20 {
-		return 0, false
-	}
-	t, err := strconv.ParseInt(f[19], 10, 64)
-	return t, err == nil
-}
 
 // A process started from the initramfs, before the boot switched to the real
 // root file system, shows its executable as deleted once the initramfs is
@@ -355,20 +268,14 @@ func minerSigns(exe, cmdline string) bool {
 	return minerArgs.MatchString(cmdline)
 }
 
+// userNames maps uid to account name from hostenv's accounts fact; the
+// first account with a uid wins.
 func userNames() map[string]string {
-	m := map[string]string{}
-	b, _ := os.ReadFile("/etc/passwd")
-	for _, line := range strings.Split(string(b), "\n") {
-		f := strings.Split(line, ":")
-		// The first name wins, so a backdoor account that reuses UID 0 is not shown as the owner of root's files.
-		if len(f) < 3 {
-			continue
-		}
-		if _, dup := m[f[2]]; !dup {
-			m[f[2]] = f[0]
-		}
+	names, _ := linux.Accounts(hostSource())
+	if names == nil {
+		return map[string]string{}
 	}
-	return m
+	return names
 }
 
 var accountsAudit = Tool{
@@ -391,6 +298,8 @@ type KeyFile struct {
 	// Lines that are neither a key nor a comment: sshd ignores them, but a
 	// key written in a form not read here would hide among them.
 	Unparsed []int `json:"unparsed_lines,omitempty"`
+	// A link to a file outside the home: sshd reads the keys there.
+	SymlinkOutsideHome string `json:"symlink_outside_home,omitempty"`
 }
 
 // KeyEntry is one key of an authorized_keys file.
@@ -400,16 +309,11 @@ type KeyEntry struct {
 	Fingerprint string `json:"fingerprint"`
 }
 
-// readKeyFile reads an authorized_keys file's keys and unparsed lines.
+// readKeyFile reads an authorized_keys file's keys and unparsed lines (hostenv).
 func readKeyFile(b []byte) (keys []KeyEntry, unparsed []int) {
-	for i, l := range strings.Split(string(b), "\n") {
-		t, fp, bad := parseKeyLine(l)
-		switch {
-		case fp != "":
-			keys = append(keys, KeyEntry{i + 1, t, fp})
-		case bad:
-			unparsed = append(unparsed, i+1)
-		}
+	ks, unparsed := hostenv.ParseAuthorizedKeys(b)
+	for _, k := range ks {
+		keys = append(keys, KeyEntry{k.Line, k.Type, k.Fingerprint})
 	}
 	return keys, unparsed
 }
@@ -428,47 +332,29 @@ type Accounts struct {
 // AccountsAudit reads /etc/passwd, sudoers and authorized_keys.
 func AccountsAudit() Accounts {
 	var a Accounts
-	seenKeys := map[string]bool{}
-	b, _ := os.ReadFile("/etc/passwd")
-	for _, line := range strings.Split(string(b), "\n") {
-		f := strings.Split(line, ":")
-		if len(f) < 7 {
-			continue
-		}
-		user, uid, home, shell := f[0], f[2], f[5], f[6]
-		if uid == "0" {
+	_, accts := linux.Accounts(hostSource())
+	for _, acct := range accts.Value {
+		user := acct.Name
+		if acct.UID == "0" {
 			a.UID0 = append(a.UID0, user)
 		}
-		// RHEL's shutdown and halt accounts have the commands of those names as their shell.
-		if base := filepath.Base(shell); !strings.HasSuffix(shell, "nologin") && base != "false" && base != "sync" && base != "shutdown" && base != "halt" {
+		if acct.CanLogin {
 			a.LoginAccounts = append(a.LoginAccounts, user)
 		}
-		for _, name := range []string{"authorized_keys", "authorized_keys2"} {
-			p := filepath.Join(home, ".ssh", name)
-			if seenKeys[p] { // accounts can share a home (RHEL: operator uses /root)
-				continue
-			}
-			seenKeys[p] = true
-			if st, err := os.Stat(p); err == nil {
-				kb, _ := os.ReadFile(p)
-				keys, bad := readKeyFile(kb)
-				a.KeyFiles = append(a.KeyFiles, KeyFile{User: user, Path: p, Keys: len(keys), Modified: st.ModTime(), KeyList: keys, Unparsed: bad})
-			}
-		}
 	}
-	files, _ := filepath.Glob("/etc/sudoers.d/*")
-	for _, f := range append([]string{"/etc/sudoers"}, files...) {
-		sb, err := os.ReadFile(f)
-		if err != nil {
-			continue
+	src := hostSource()
+	for _, kf := range linux.SSHKeyFiles(src, accts.Value).Value {
+		var keys []KeyEntry
+		for _, k := range kf.Keys {
+			keys = append(keys, KeyEntry{k.Line, k.Type, k.Fingerprint})
 		}
-		for _, l := range strings.Split(string(sb), "\n") {
-			l = strings.TrimSpace(l)
-			if l != "" && !strings.HasPrefix(l, "#") && !strings.HasPrefix(l, "Defaults") && strings.Contains(l, "ALL") {
-				a.SudoRules = append(a.SudoRules, f+": "+l)
-			}
+		f := KeyFile{User: kf.User, Path: kf.Path, Keys: len(keys), Modified: kf.Modified, KeyList: keys, Unparsed: kf.Unparsed}
+		if kf.OutsideHome {
+			f.SymlinkOutsideHome = kf.SymlinkTarget
 		}
+		a.KeyFiles = append(a.KeyFiles, f)
 	}
+	a.SudoRules, _ = linux.SudoRules(src)
 	a.SharedKeys = sharedKeys(a.KeyFiles)
 	a.Preload = preloadEntries("/etc/ld.so.preload")
 	a.UnpackagedPAM = unpackagedPAM()
@@ -489,11 +375,17 @@ func UIDOf(name string) (string, bool) {
 // connection, found by its exact 4-tuple in /proc/net/tcp{,6}.
 func PeerUID(local, remote *net.TCPAddr) (string, bool) {
 	for _, proto := range []string{"tcp", "tcp6"} {
-		for _, e := range readProcNet(proto) {
-			if e.localPort == remote.Port && e.remotePort == local.Port &&
-				e.localIP.Equal(remote.IP) && e.remoteIP.Equal(local.IP) {
-				return e.uid, true
+		uid, found := "", false
+		procNet(proto, func(e hostenv.ProcNetEntry) bool {
+			if e.LocalPort == remote.Port && e.RemotePort == local.Port &&
+				e.LocalIP.Equal(remote.IP) && e.RemoteIP.Equal(local.IP) {
+				uid, found = e.UID, true
+				return false // found: the rest of the table is not read
 			}
+			return true
+		})
+		if found {
+			return uid, true
 		}
 	}
 	return "", false

@@ -12,9 +12,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
+
+	"github.com/nt-neil/shentu/hostenv"
 )
 
 // setup chooses the LLM for this server: a local model that Shentu downloads
@@ -166,14 +167,11 @@ func modelForMemory(gb float64) string {
 }
 
 func memTotalGB() float64 {
-	b, _ := os.ReadFile("/proc/meminfo")
-	for _, l := range strings.Split(string(b), "\n") {
-		if v, ok := strings.CutPrefix(l, "MemTotal:"); ok {
-			kb, _ := strconv.ParseFloat(strings.Fields(v)[0], 64)
-			return kb / 1024 / 1024
-		}
+	src, err := hostenv.NewLive(nil)
+	if err != nil {
+		return 0
 	}
-	return 0
+	return float64(hostenv.LinuxCollector{}.Resources(src).Value.MemTotalBytes) / (1 << 30)
 }
 
 func ollamaUp(ctx context.Context) bool {

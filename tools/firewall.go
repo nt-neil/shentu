@@ -119,7 +119,11 @@ func checkBlock(args json.RawMessage) (ipArgs, net.IP, time.Duration, error) {
 	if infraAddrs()[ip.String()] {
 		return a, nil, 0, errors.New("refusing to block this server's default gateway or DNS server")
 	}
-	if SSHPeers()[ip.String()] {
+	peers, err := SSHPeers()
+	if err != nil {
+		return a, nil, 0, errors.New("refusing to block: " + err.Error() + "; the IP may be the operator's")
+	}
+	if peers[ip.String()] {
 		return a, nil, 0, errors.New("refusing to block an IP with an active SSH session to this server (it may be the operator)")
 	}
 	ttl := 24 * time.Hour

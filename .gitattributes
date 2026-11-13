@@ -1,0 +1,3 @@
+# Recorded host fixtures and their goldens are compared byte for byte:
+# never convert their line ends (Windows checkouts default to CRLF).
+hostenv/testdata/** -text

@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"maps"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"runtime/debug"
@@ -20,9 +21,9 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 
+	"github.com/nt-neil/shentu/hostenv"
 	"github.com/nt-neil/shentu/rules"
 	"github.com/nt-neil/shentu/rules/engine"
 )
@@ -115,15 +116,7 @@ const (
 	auditMaxDepth    = 8
 )
 
-var (
-	nginxRoot   = regexp.MustCompile(`(?m)^\s*root\s+["']?([^"';\s]+)`)
-	apacheRoot  = regexp.MustCompile(`(?mi)^\s*DocumentRoot\s+["']?([^"'\s]+)`)
-	webConfGlob = []string{
-		"/etc/nginx/nginx.conf", "/etc/nginx/sites-enabled/*", "/etc/nginx/conf.d/*.conf",
-		"/etc/apache2/sites-enabled/*", "/etc/httpd/conf/httpd.conf", "/etc/httpd/conf.d/*.conf",
-	}
-	webDirNames = map[string]bool{"public": true, "public_html": true, "html": true, "htdocs": true, "www": true, "webroot": true}
-)
+var webDirNames = map[string]bool{"public": true, "public_html": true, "html": true, "htdocs": true, "www": true, "webroot": true}
 
 // WebRoots returns the folders nginx or Apache serve, read from their configuration.
 func WebRoots() []string {
@@ -133,86 +126,25 @@ func WebRoots() []string {
 
 // WebRootsReport returns the folders nginx or Apache serve, and the
 // configuration files it could not read, each with why ("path (why)").
-func WebRootsReport() (roots, unreadable []string) { return webRootsFrom(webConfGlob) }
+func WebRootsReport() (roots, unreadable []string) { return webRootsFrom(hostenv.DefaultWebConf.Globs) }
 
 // The configuration a symlink in it may point to: a regular file under
 // webConfRoot, owned by webConfOwner (root), that only its owner can write
 // (Debian and Ubuntu enable a site by a symlink in sites-enabled). Variables
 // for the tests.
 var (
-	webConfRoot  = "/etc"
-	webConfOwner = uint32(0)
+	webConfRoot  = hostenv.DefaultWebConf.Root
+	webConfOwner = uint32(hostenv.DefaultWebConf.Owner)
 )
 
-// readWebConf reads one web server configuration file. Unlike readSmallRegular
-// elsewhere, it follows a symlink, to a file webConfRoot holds and only root
-// can write; why says what kept it from being read.
-func readWebConf(p string) (b []byte, why string) {
-	li, err := os.Lstat(p)
-	if err != nil {
-		return nil, errWhy(err)
-	}
-	target := p
-	if li.Mode()&os.ModeSymlink != 0 {
-		if target, err = filepath.EvalSymlinks(p); err != nil { // a loop ends here too
-			return nil, "symlink: " + errWhy(err)
-		}
-		if !insideAny(target, []string{webConfRoot}) {
-			return nil, "symlink to " + target + ", outside " + webConfRoot
-		}
-		st, err := os.Lstat(target)
-		if err != nil {
-			return nil, errWhy(err)
-		}
-		sys, ok := st.Sys().(*syscall.Stat_t)
-		switch {
-		case !st.Mode().IsRegular():
-			return nil, "symlink to " + target + ", not a regular file"
-		case !ok || sys.Uid != webConfOwner:
-			return nil, "symlink to " + target + ", not owned by root"
-		case st.Mode().Perm()&0o022 != 0:
-			return nil, "symlink to " + target + ", writable by others than its owner"
-		}
-		li = st
-	}
-	b, ok := readSmallRegular(target, 1<<20, li) // no symlink left; the file the checks saw
-	if !ok {
-		return nil, "not a regular file of at most 1 MiB, or changed while read"
-	}
-	return b, ""
+// webRootsFrom reads the configuration files the globs match (hostenv).
+func webRootsFrom(globs []string) (roots, unreadable []string) {
+	return linux.WebRootsReport(hostSource(), hostenv.WebConf{Globs: globs, Root: webConfRoot, Owner: int(webConfOwner)})
 }
 
-func errWhy(err error) string {
-	if pe := (*fs.PathError)(nil); errors.As(err, &pe) {
-		return pe.Err.Error()
-	}
-	return err.Error()
-}
-
-func webRootsFrom(globs []string) (out, unreadable []string) {
-	seen := map[string]bool{}
-	for _, g := range globs {
-		files, _ := filepath.Glob(g)
-		for _, f := range files {
-			b, why := readWebConf(f)
-			if why != "" {
-				unreadable = append(unreadable, f+" ("+why+")")
-				continue
-			}
-			for _, re := range []*regexp.Regexp{nginxRoot, apacheRoot} {
-				for _, m := range re.FindAllSubmatch(b, -1) {
-					p := filepath.Clean(string(m[1]))
-					if strings.HasPrefix(p, "/") && !strings.Contains(p, "$") && !seen[p] {
-						seen[p] = true
-						out = append(out, p)
-					}
-				}
-			}
-		}
-	}
-	sort.Strings(out)
-	return out, unreadable
-}
+// depth counts path separators in the OS's own spelling ("\\" on Windows),
+// so auditMaxDepth holds there too.
+func depth(p string) int { return strings.Count(p, string(filepath.Separator)) }
 
 // served reports whether p is inside a folder the web server serves. Without any
 // server configuration, folders named like public/, html/ or www/ count as served.
@@ -220,7 +152,7 @@ func served(p string, webRoots []string) bool {
 	if len(webRoots) > 0 {
 		return insideAny(p, webRoots)
 	}
-	dir := filepath.Dir(p)
+	dir := filepath.ToSlash(filepath.Dir(p))
 	// /var/www holds one folder per site, so its own "www" does not make a path served.
 	if dir == "/var/www" || strings.HasPrefix(dir, "/var/www/") {
 		dir = dir[len("/var/www"):]
@@ -335,7 +267,7 @@ func uploadFolder(p string, webRoots []string) bool {
 			}
 			continue
 		}
-		if webDirNames[low[i-1]] && parent != "/var/www" || filepath.Dir(parent) == "/var/www" {
+		if webDirNames[low[i-1]] && parent != "/var/www" || path.Dir(parent) == "/var/www" {
 			return true
 		}
 	}
@@ -723,7 +655,7 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 				walkCut = append(walkCut, UnfinishedFile{root, "walk"})
 				continue
 			}
-			base := strings.Count(filepath.Clean(root), "/")
+			base := depth(filepath.Clean(root))
 			filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 				if ctx.Err() != nil {
 					cut = &walkPos{ri, p}
@@ -755,7 +687,7 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 			if name == ".git" && served(p, webRoots) {
 				add(finding("exposed", "critical", p, 0, exposedNames[1].detail, exposedNames[1].fix))
 			}
-			if skipDirs[name] || strings.Count(p, "/")-base > auditMaxDepth {
+			if skipDirs[name] || depth(p)-base > auditMaxDepth {
 				return filepath.SkipDir
 			}
 			return nil
