@@ -6,7 +6,7 @@ a release are not written here: they are worked out from the rule snapshots in
 `docs/site-src/rules-history/`. `CHANGELOG.zh-TW.md` holds the same releases in Traditional
 Chinese for the zh-TW pages; keep the two in step.
 
-## v0.3.0 (unreleased)
+## v0.3.0 — 2026-11-13
 
 - Windows Server 2022 and 2025, verified on GitHub-hosted windows-2022/2025 runners (amd64;
   arm64 built too): a Windows collector reads the host
