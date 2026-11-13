@@ -7,12 +7,14 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/nt-neil/shentu/hostenv"
 	"github.com/nt-neil/shentu/tools"
 )
 
@@ -89,8 +91,108 @@ func uncheckedSection(risks []tools.Risk) string {
 	if b.Len() == 0 {
 		return ""
 	}
-	return "\n\nNot checked (the permission to read what they need was missing; run Shentu as root):\n" + b.String()
+	as := "as root"
+	if runtime.GOOS == "windows" {
+		as = "elevated, as the Shentu service does (LocalSystem)"
+	}
+	return "\n\nNot checked (the permission to read what they need was missing; run Shentu " + as + "):\n" + b.String()
 }
+
+// notCheckedSection lists what the code audit could not tell (a web
+// root's ACL on Windows), so it is not read as checked. "" when nothing.
+func notCheckedSection(items []string) string {
+	if len(items) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("\n\nNot checked by the code audit:\n")
+	for _, it := range items {
+		fmt.Fprintf(&b, "- %q\n", mask(it))
+	}
+	return b.String()
+}
+
+// uncheckedVulns says, for the daily report, when the vulnerability check of
+// what failed (an advisory feed offline: ALAS, OSV) or covered only part
+// ("partial"): "no known vulnerabilities" must not stand for "not checked".
+// The same goes for the CISA KEV list (none on it must not read as "none
+// exploited"), lock files that could not be checked, and ecosystems OSV does
+// not carry.
+func uncheckedVulns(what string, r map[string]any, err error) string {
+	if err != nil {
+		return fmt.Sprintf("\n\nNot checked for vulnerabilities: %s (%q).\n", what, cutLine(mask(err.Error())))
+	}
+	var lines []string
+	if p, ok := r["partial"]; ok {
+		lines = append(lines, fmt.Sprintf("- partly checked: %q", cutLine(mask(fmt.Sprint(p)))))
+	}
+	// With no vulnerability found there is nothing to look up in KEV.
+	if n, _ := r["total_vulns"].(int); n > 0 {
+		if k, _ := r["kev"].(string); strings.Contains(k, "unavailable") {
+			lines = append(lines, fmt.Sprintf("- not checked against the CISA KEV list, so exploited ones are not marked: %q", cutLine(mask(k))))
+		} else if u, _ := r["kev_unchecked"].(int); u > 0 {
+			lines = append(lines, fmt.Sprintf("- %d vulnerabilities not checked against the CISA KEV list (lookups failed or over the cap)", u))
+		}
+	}
+	if files, ok := r["files"].([]tools.AppResult); ok {
+		// One line per distinct error as shown (cut), at most uncheckedFiles
+		// paths in all and uncheckedErrors lines; the rest are counted.
+		byErr := map[string][]string{}
+		var order []string
+		for _, f := range files {
+			if f.Error == "" {
+				continue
+			}
+			e := hostenv.CutString(mask(f.Error), 80)
+			if _, seen := byErr[e]; !seen {
+				order = append(order, e)
+			}
+			byErr[e] = append(byErr[e], f.Path)
+		}
+		listed, skipped := 0, 0
+		for i, e := range order {
+			if i >= uncheckedErrors {
+				skipped += len(byErr[e])
+				continue
+			}
+			paths := byErr[e]
+			show := paths[:min(len(paths), max(uncheckedFiles-listed, 0))]
+			listed += len(show)
+			names := make([]string, len(show))
+			for i, p := range show {
+				names[i] = mask(p)
+			}
+			line := fmt.Sprintf("- not checked (%q): %s", e, strings.Join(names, ", "))
+			if more := len(paths) - len(show); more > 0 {
+				line += fmt.Sprintf(" and %d more", more)
+			}
+			lines = append(lines, cutLine(line))
+		}
+		if skipped > 0 {
+			lines = append(lines, fmt.Sprintf("- and %d more lock files not checked, with other errors", skipped))
+		}
+	}
+	if nq, ok := r["ecosystems_not_queried"].([]string); ok {
+		for _, e := range nq {
+			lines = append(lines, fmt.Sprintf("- not queried (OSV has no such ecosystem): %q", cutLine(mask(e))))
+		}
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+	return "\n\nVulnerability check of " + what + " incomplete:\n" + strings.Join(lines, "\n") + "\n"
+}
+
+// uncheckedFiles caps the lock file paths the unchecked section lists;
+// maxUncheckedLine the length of one line of it.
+const (
+	uncheckedFiles   = 10
+	uncheckedErrors  = 10 // distinct error lines
+	maxUncheckedLine = 200
+)
+
+// cutLine keeps a report line to maxUncheckedLine bytes.
+func cutLine(s string) string { return hostenv.CutString(s, maxUncheckedLine) }
 
 // uncheckedConfigs lists the web server configuration files the code audit
 // could not read: the sites they serve were audited as plain folders.
@@ -156,7 +258,7 @@ func mostSevere(fs []finding, n int) []finding {
 func codeAuditFindings(audit tools.CodeAudit) []finding {
 	var out []finding
 	for _, f := range audit.Findings {
-		if f.Kind == "injection" && f.Tier != "alert" || f.Kind == "audit" { // "audit": the audit's own summaries, below
+		if f.Kind == "injection" && f.Tier != "alert" || f.Kind == "audit" || f.Kind == "webroot_acl_unknown" { // "audit": the audit's own summaries, below; ACL unknown: Not checked
 			continue
 		}
 		key := fmt.Sprintf("code:%s:%s:%d", f.Kind, f.Path, f.Line)
@@ -213,7 +315,13 @@ func checks(ctx context.Context, cfg *Config, env *tools.Env, st *state, daily b
 		since = time.Now().Add(-1 * time.Hour)
 	}
 
-	if r, err := tools.SSHSummary(ctx, env, time.Now().Add(-1*time.Hour), ""); err == nil {
+	// On Windows logon failures come from the survey's checks (auth.bruteforce);
+	// a second alert for the same source would say "SSH" for RDP or SMB.
+	if r, err := tools.SSHSummary(ctx, env, time.Now().Add(-1*time.Hour), ""); err == nil && runtime.GOOS != "windows" {
+		note := ""
+		if v, _ := r["verified"].(bool); !v {
+			note = "; read from text logs, which anyone on this host can write to: check them before acting"
+		}
 		for _, s := range r["sources"].([]tools.SSHSource) {
 			if n := s.Failed + s.InvalidUser; n >= cfg.Patrol.SSHThreshold {
 				sev := "warning"
@@ -221,7 +329,7 @@ func checks(ctx context.Context, cfg *Config, env *tools.Env, st *state, daily b
 					sev = "critical"
 				}
 				out = append(out, finding{"ssh:" + s.IP, sev,
-					fmt.Sprintf("%d failed SSH logins from %s in the last hour (successful logins: %d)", n, s.IP, s.Accepted), s})
+					fmt.Sprintf("%d failed SSH logins from %s in the last hour (successful logins: %d)%s", n, s.IP, s.Accepted, note), s})
 			}
 		}
 	}
@@ -269,12 +377,7 @@ func checks(ctx context.Context, cfg *Config, env *tools.Env, st *state, daily b
 				fmt.Sprintf("authorized_keys changed: %s (%d keys)", k.Path, k.Keys), k})
 		}
 	}
-	for _, k := range acc.KeyFiles {
-		if len(k.Unparsed) == 0 {
-			continue
-		}
-		out = append(out, unparsedKeysFinding(k))
-	}
+	out = append(out, keyFileFindings(acc.KeyFiles)...)
 	for _, k := range acc.SharedKeys {
 		out = append(out, finding{"sharedkey:" + k.Fingerprint, "warning",
 			fmt.Sprintf("one SSH key (%s) is in the authorized_keys of %s; attackers plant one key in every account, check that it is yours", k.Fingerprint, strings.Join(k.Users, ", ")), k})
@@ -307,7 +410,7 @@ func checks(ctx context.Context, cfg *Config, env *tools.Env, st *state, daily b
 // patrol runs once (from a systemd timer): checks → LLM explanation → notify.
 // With daily set it always reports, using the daily-patrol skill.
 func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool) error {
-	if err := os.MkdirAll(cfg.StateDir, 0o700); err != nil {
+	if err := ensureStateDir(cfg.StateDir); err != nil {
 		return err
 	}
 	st := loadState(cfg.StateDir)
@@ -315,7 +418,9 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 	unchecked := uncheckedSection(st.Profile.Risks) // listed in every report, never pushed
 	if daily {
 		// Once a day: installed packages with vulnerabilities that are being exploited now.
-		if r, err := tools.PackageVulns(ctx, env.HTTP, ""); err == nil {
+		r, err := tools.PackageVulns(ctx, env.HTTP, "")
+		unchecked += uncheckedVulns("installed packages", r, err)
+		if err == nil {
 			list, _ := r["actively_exploited"].([]tools.Exploit)
 			for _, e := range list {
 				all = append(all, finding{"kev:" + e.Package + ":" + e.CVE, "critical",
@@ -323,7 +428,9 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 			}
 		}
 		// The same for application dependencies (npm, PyPI, Composer, Go, RubyGems).
-		if r, err := tools.AppVulns(ctx, env.HTTP, env.AppPaths); err == nil {
+		r, err = tools.AppVulns(ctx, env.HTTP, env.AppPaths)
+		unchecked += uncheckedVulns("application dependencies", r, err)
+		if err == nil {
 			for _, f := range r["files"].([]tools.AppResult) {
 				for _, e := range f.Exploited {
 					all = append(all, finding{"kev:" + f.Path + ":" + e.Package + ":" + e.CVE, "critical",
@@ -333,8 +440,9 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 		}
 		// The applications' own files: exposed secrets, debug mode, webshells, keys in code, injection.
 		web, unread := tools.WebRootsReport()
-		all = replaceOrAppend(all, codeAuditFindings(tools.AppCodeAudit(ctx, env.AppPaths, web)))
-		unchecked += uncheckedConfigs(unread)
+		audit := tools.AppCodeAudit(ctx, env.AppPaths, web)
+		all = replaceOrAppend(all, codeAuditFindings(audit))
+		unchecked += uncheckedConfigs(unread) + notCheckedSection(audit.NotChecked)
 	}
 	var fresh []finding
 	for _, f := range all {
@@ -414,4 +522,20 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 		st.Alerted[f.Key] = time.Now()
 	}
 	return st.save(cfg.StateDir)
+}
+
+// keyFileFindings reports authorized_keys files linked outside the home and lines that are neither a key nor a comment.
+func keyFileFindings(keys []tools.KeyFile) []finding {
+	var out []finding
+	for _, k := range keys {
+		if k.SymlinkOutsideHome != "" { // before the Unparsed check: a linked file with no odd lines still warns
+			out = append(out, finding{"authorized_keys_symlink:" + k.Path, "warning",
+				fmt.Sprintf("%s links to %s, outside the home; sshd reads the keys there (%d keys), check who can write that file", k.Path, k.SymlinkOutsideHome, k.Keys), k})
+		}
+		if len(k.Unparsed) == 0 {
+			continue
+		}
+		out = append(out, unparsedKeysFinding(k))
+	}
+	return out
 }

@@ -103,3 +103,109 @@ func TestUnparsedKeysFinding(t *testing.T) {
 		t.Errorf("%+v", f)
 	}
 }
+
+// Round 2 (N2-1): a web root whose ACL could not be read is listed under
+// "Not checked" and never pushed as an alert.
+func TestWebrootACLUnknownNotPushed(t *testing.T) {
+	audit := tools.CodeAudit{Findings: []tools.CodeFinding{{Kind: "webroot_acl_unknown", Severity: "info", Path: `C:\inetpub\wwwroot`,
+		Detail: "cannot tell webroot ACL: access denied"}}, NotChecked: []string{`C:\inetpub\wwwroot: cannot tell webroot ACL: access denied`}}
+	if f := codeAuditFindings(audit); len(f) != 0 {
+		t.Errorf("pushed: %+v", f)
+	}
+	if s := notCheckedSection(audit.NotChecked); !strings.Contains(s, "Not checked by the code audit") || !strings.Contains(s, "cannot tell webroot ACL") {
+		t.Errorf("section: %q", s)
+	}
+	if notCheckedSection(nil) != "" {
+		t.Error("nothing to list, no section")
+	}
+}
+
+// A linked authorized_keys file warns even when every line parses.
+func TestKeyFileSymlinkNoUnparsed(t *testing.T) {
+	got := keyFileFindings([]tools.KeyFile{
+		{Path: "/home/a/.ssh/authorized_keys", Keys: 1, SymlinkOutsideHome: "/srv/shared/keys"},
+		{Path: "/home/b/.ssh/authorized_keys", Keys: 2},
+	})
+	if len(got) != 1 || got[0].Key != "authorized_keys_symlink:/home/a/.ssh/authorized_keys" || got[0].Severity != "warning" {
+		t.Fatalf("got %+v", got)
+	}
+	got = keyFileFindings([]tools.KeyFile{{Path: "/home/c/.ssh/authorized_keys", Keys: 1, SymlinkOutsideHome: "/srv/k", Unparsed: []int{3}}})
+	if len(got) != 2 || got[1].Key != "authorized_key_unparsed:/home/c/.ssh/authorized_keys" {
+		t.Fatalf("got %+v", got)
+	}
+}
+
+// N-D1: a vulnerability check that failed or covered part goes into the
+// daily report's unchecked section.
+func TestUncheckedVulns(t *testing.T) {
+	if s := uncheckedVulns("installed packages", nil, fmt.Errorf("OSV query failed")); !strings.Contains(s, "Not checked for vulnerabilities: installed packages") || !strings.Contains(s, "OSV query failed") {
+		t.Errorf("failed: %q", s)
+	}
+	if s := uncheckedVulns("installed packages", map[string]any{"partial": "not checked: extras topic gone"}, nil); !strings.Contains(s, "partly checked") || !strings.Contains(s, "extras topic gone") {
+		t.Errorf("partial: %q", s)
+	}
+	// N-R2, S-R1: KEV unavailable, a lock file that failed, ecosystems not queried.
+	r := map[string]any{"total_vulns": 3, "kev": "CISA KEV list unavailable: timeout", "files": []tools.AppResult{{Path: "/srv/app/package-lock.json", Error: "OSV query failed"}},
+		"ecosystems_not_queried": []string{"SUSE:Linux Enterprise Desktop 15 SP6 (no such OSV ecosystem; its modules are queried)"}}
+	s := uncheckedVulns("application dependencies", r, nil)
+	for _, want := range []string{"CISA KEV list", "package-lock.json", "OSV query failed", "Linux Enterprise Desktop"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("missing %q in %q", want, s)
+		}
+	}
+	if s := uncheckedVulns("installed packages", map[string]any{"kev": "none of these vulnerabilities is on the CISA KEV list"}, nil); s != "" {
+		t.Errorf("KEV checked: %q", s)
+	}
+	if s := uncheckedVulns("installed packages", map[string]any{"total_vulns": 0}, nil); s != "" {
+		t.Errorf("checked: %q", s)
+	}
+}
+
+// N-A: the unchecked section stays short: lines cut at 200 bytes, at most 10
+// lock files named, the same error once. S-A: no KEV line with nothing found.
+// N-C: KEV lookups that could not be made are said.
+func TestUncheckedVulnsBounded(t *testing.T) {
+	var files []tools.AppResult
+	for i := 0; i < 25; i++ {
+		files = append(files, tools.AppResult{Path: fmt.Sprintf("/srv/app%02d/package-lock.json", i), Error: "OSV query failed: " + strings.Repeat("x", 500)})
+	}
+	files = append(files, tools.AppResult{Path: "/srv/other/go.sum", Error: "parse error"})
+	s := uncheckedVulns("application dependencies", map[string]any{"files": files}, nil)
+	for _, l := range strings.Split(strings.TrimSpace(s), "\n") {
+		if len(l) > maxUncheckedLine+8 {
+			t.Errorf("line of %d bytes", len(l))
+		}
+	}
+	if strings.Count(s, "OSV query failed") != 1 || strings.Count(s, "package-lock.json") > uncheckedFiles {
+		t.Errorf("not merged or not capped:\n%s", s)
+	}
+	if strings.Contains(s, "app15") {
+		t.Errorf("more than 10 files named")
+	}
+	if s := uncheckedVulns("installed packages", map[string]any{"total_vulns": 0, "kev": "CISA KEV list unavailable: timeout"}, nil); s != "" {
+		t.Errorf("KEV line with no vulnerability: %q", s)
+	}
+	if s := uncheckedVulns("installed packages", map[string]any{"total_vulns": 9, "kev_unchecked": 4}, nil); !strings.Contains(s, "4 vulnerabilities not checked against the CISA KEV list") {
+		t.Errorf("KEV unchecked: %q", s)
+	}
+}
+
+// Distinct errors are merged as shown (cut), and at most 10 error lines
+// are listed; the rest are counted.
+func TestUncheckedVulnsErrorLines(t *testing.T) {
+	var files []tools.AppResult
+	for i := 0; i < 12; i++ {
+		files = append(files, tools.AppResult{Path: fmt.Sprintf("/srv/a%02d/go.sum", i), Error: fmt.Sprintf("error %02d", i)})
+	}
+	// Two errors that differ only past the cut are one line.
+	long := strings.Repeat("y", 100)
+	files = append(files, tools.AppResult{Path: "/srv/x/go.sum", Error: long + "1"}, tools.AppResult{Path: "/srv/z/go.sum", Error: long + "2"})
+	s := uncheckedVulns("application dependencies", map[string]any{"files": files}, nil)
+	if n := strings.Count(s, "- not checked ("); n != 10 || !strings.Contains(s, "and 4 more lock files not checked") {
+		t.Errorf("%d error lines:\n%s", n, s)
+	}
+	s = uncheckedVulns("application dependencies", map[string]any{"files": files[12:]}, nil)
+	if strings.Count(s, "- not checked (") != 1 {
+		t.Errorf("errors equal once cut not merged:\n%s", s)
+	}
+}

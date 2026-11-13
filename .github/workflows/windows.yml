@@ -1,0 +1,263 @@
+# Windows Server build, tests and a live hostenv smoke run (Phase 2). Lives on the
+# hostenv-win branch only; main's ci.yml is untouched. Public repo: the runners are free.
+name: windows
+on:
+  push:
+    branches: [hostenv-win]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-2025]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      # Git for Windows defaults to autocrlf=true; golden files are compared byte for byte.
+      - name: keep LF line endings
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version: "1.27.3" # go.mod's toolchain line (checked below)
+      - name: Go version and tree hygiene
+        run: |
+          # The Go used here is go.mod's toolchain, not whatever "stable" is today.
+          want=$(awk '/^toolchain/{print $2}' go.mod)
+          [ "$(go env GOVERSION)" = "$want" ] || { echo "FAIL: Go $(go env GOVERSION), go.mod wants $want"; exit 1; }
+          # No Python bytecode in the repository (it slipped in once).
+          [ -z "$(git ls-files '*.pyc' '*__pycache__*')" ] || { echo "FAIL: committed Python bytecode"; git ls-files '*.pyc' '*__pycache__*'; exit 1; }
+      - name: OpenSSH on the runner (sshd_config Include needs OpenSSH 8.2 or later)
+        run: |
+          for f in /c/Windows/System32/OpenSSH/sshd.exe /c/Windows/System32/OpenSSH/ssh.exe "/c/Program Files/OpenSSH/sshd.exe"; do
+            if [ -e "$f" ]; then echo "$f: $("$f" -V 2>&1 | grep -m1 -o 'OpenSSH[^ ,]*' || echo 'no version line')"; else echo "$f: not installed"; fi
+          done
+      - name: build
+        run: go build ./...
+      - name: vet
+        run: go vet ./...
+      - name: test hostenv, checks, tools and msrc
+        env:
+          HOSTENV_REQUIRE_SDK: "1" # vtable slots must be checked against the SDK headers, not skipped
+        run: |
+          # One command per line: under bash -e a failure inside an && list is not fatal.
+          SHENTU_SNAPSHOT_WATCH=3m go test -v -count=1 -run 'TestSnapshotNoise' -timeout 10m ./hostenv/
+          go test -v -run 'TestVtableSlotsMatchSDK|TestCollectLeavesHostUnchanged|TestFirewallPolicyLive' ./hostenv/
+          go test ./hostenv/ ./checks/ ./internal/msrc/
+          SHENTU_SNAPSHOT_WATCH=2m go test -v -count=1 -run 'TestSnapshotNoise' -timeout 10m ./hostenv/ # after collections: delayed writes
+          go test -v -run 'TestSecureDir|TestSecureDirRefusesSquatted|TestTrustConfig|TestTrustConfigMissingAndLinks|TestSkillsNeedTrustedFolder|TestStateReadyRefusesForeignState|TestCheckTrustedACETypes|TestSetupNotOnWindows|TestSecureDirRepairOnlyAtInstall|TestStateDirParentsChecked|TestStateDirParentsForms' .
+          # Telegram bot, offline: a fake Bot API and a fake model (httptest).
+          go test -run 'Bot|TOTP|MarkdownToTelegram|Welcome|Schedule|NextDaily' .
+          go test ./tools/
+      - name: fuzz VARIANT / SAFEARRAY decoding
+        if: ${{ !cancelled() }}
+        run: |
+          go test -run '^$' -fuzz '^FuzzDecodeBSTRArray$' -fuzztime 30s ./hostenv/
+          go test -run '^$' -fuzz '^FuzzDecodeScalarVariant$' -fuzztime 30s ./hostenv/
+      - name: hostfacts smoke (live facts, no panic; prints statuses only)
+        if: ${{ !cancelled() }}
+        run: |
+          go build -o hostfacts.exe ./cmd/hostfacts/
+          # Live output stays on the runner: it is unmasked. Only the masked
+          # fixture (written by -record, which runs the Masker) and facts
+          # replayed from it are uploaded.
+          ./hostfacts.exe > "$RUNNER_TEMP/facts.json"
+          ./hostfacts.exe -checks > "$RUNNER_TEMP/findings.json"
+          ./hostfacts.exe -record fixture > /dev/null
+          ./hostfacts.exe -replay fixture > replayed.json
+          python - "$RUNNER_TEMP/facts.json" "$RUNNER_TEMP/findings.json" <<'EOF'
+          import json, sys
+          f = json.load(open(sys.argv[1]))
+          ok = True
+          def need(cond, what):
+              global ok
+              if not cond:
+                  ok = False
+                  print("FAIL:", what)
+          need(f["schema"] == "hostfacts/1", "schema")
+          need(f["collector"]["name"] == "windows", "collector name")
+          need(f["platform"]["status"] == "ok", "platform status")
+          need(f["platform"]["value"].get("family") == "windows-server", "platform family")
+          need(f["privilege"]["value"]["elevated"], "runner elevated")
+          # Status and reason only: detail and values can hold paths and names.
+          for k in ["packages", "patches", "services", "processes", "accounts", "listeners",
+                    "persistence", "firewall", "antimalware", "auth_events", "web"]:
+              o = f[k]
+              print(f"{k:12} {o['status']:8} {o.get('reason', '')}")
+              need(o["status"] in ("ok", "partial"), k)
+          for k, o in f["remote_access"].items():
+              print(f"{k:12} {o['status']:8} {o.get('reason', '')}")
+              need(o["status"] in ("ok", "partial", "not_applicable"), k)
+          r = json.load(open("replayed.json"))
+          for k in ["platform", "packages", "patches", "services", "accounts", "listeners", "persistence", "firewall", "web"]:
+              need(r[k]["status"] == f[k]["status"], "replay status of " + k)
+          print("findings:", len(json.load(open(sys.argv[2]))))
+          sys.exit(0 if ok else 1)
+          EOF
+      - name: shentu survey and patrol smoke (counts only)
+        if: ${{ !cancelled() }}
+        run: |
+          go build -o shentu.exe .
+          # Creates %ProgramData%\Shentu with its protected ACL, reads the
+          # (empty) config, surveys this runner. The profile names processes
+          # and accounts: it stays in RUNNER_TEMP, only counts are printed.
+          ./shentu.exe survey > "$RUNNER_TEMP/survey.json"
+          python - "$RUNNER_TEMP/survey.json" <<'EOF'
+          import json, sys, collections
+          p = json.load(open(sys.argv[1]))
+          ok = p["os"].startswith("Windows Server") and p["firewall"].startswith("Windows Firewall") and p["cron_files"] and p["services"]
+          print("services", len(p["services"]), "autostart", len(p["cron_files"]), "accounts", len(p["login_accounts"] or []))
+          print("risks", dict(collections.Counter(r["severity"] for r in p.get("risks") or [])))
+          sys.exit(0 if ok else 1)
+          EOF
+          # No model runs here, so patrol may stop at the LLM step; its exit
+          # code is reported, not judged. The report itself is not printed.
+          set +e
+          ./shentu.exe patrol --dry-run > "$RUNNER_TEMP/patrol.txt" 2>&1
+          echo "patrol --dry-run exit $?, $(wc -l < "$RUNNER_TEMP/patrol.txt") lines"
+          # The bot starts on Windows: with no token it stops at the token,
+          # after the config trust check; status works elevated.
+          ./shentu.exe bot > "$RUNNER_TEMP/bot.txt" 2>&1
+          echo "bot without a token: exit $?"
+          grep -q "no Telegram bot token" "$RUNNER_TEMP/bot.txt" || { echo "FAIL: bot did not reach the token check"; exit 1; }
+          ./shentu.exe bot status > "$RUNNER_TEMP/botstatus.txt" 2>&1 || { echo "FAIL: bot status"; exit 1; }
+          echo "bot status: ok"
+      - name: Windows service install, start, stop, uninstall
+        if: ${{ !cancelled() }}
+        run: |
+          go build -o shentu.exe .
+          # The workspace is writable by the runner user: installing a
+          # LocalSystem service from there must be refused.
+          if ./shentu.exe service install > "$RUNNER_TEMP/svc-refused.txt" 2>&1; then
+            echo "FAIL: installed from a user-writable folder"; exit 1
+          fi
+          echo "install from the workspace refused"
+          dest="/c/Program Files/Shentu"
+          mkdir -p "$dest"
+          cp shentu.exe "$dest/"
+          "$dest/shentu.exe" service install
+          "$dest/shentu.exe" service start
+          sleep 5
+          st=$("$dest/shentu.exe" service status)
+          echo "after start: $st"
+          [ "$st" = running ]
+          "$dest/shentu.exe" service stop
+          st=$("$dest/shentu.exe" service status)
+          echo "after stop: $st"
+          [ "$st" = stopped ]
+          # ShentuBot beside it, with a fake token made here (never stored in
+          # the repository). Telegram refuses it, so the bot stops with an
+          # error: the event log must hold that error without the token, and
+          # the service command line must not hold the token either.
+          tok="$RANDOM$RANDOM:ci-fake-$(date +%s%N)"
+          printf '[bot]\ninteraction = 2\ntelegram_token = "%s"\n' "$tok" > "/c/ProgramData/Shentu/setup.toml"
+          "$dest/shentu.exe" service start
+          "$dest/shentu.exe" service install --bot
+          "$dest/shentu.exe" service start --bot
+          sleep 10
+          echo "patrol service with the bot beside it: $("$dest/shentu.exe" service status)"
+          [ "$("$dest/shentu.exe" service status)" = running ]
+          sc.exe qc ShentuBot > "$RUNNER_TEMP/botsvc.txt"
+          grep -q -- "service run --bot" "$RUNNER_TEMP/botsvc.txt" || { echo "FAIL: unexpected bot command line"; exit 1; }
+          if grep -qF "$tok" "$RUNNER_TEMP/botsvc.txt"; then echo "FAIL: token in the service command line"; exit 1; fi
+          # Telegram may be slow to refuse (the bot's client waits up to 70 s):
+          # wait for the error entry rather than a fixed time.
+          for _ in $(seq 1 18); do
+            # Git Bash would rewrite /q: and /f: as paths.
+            MSYS_NO_PATHCONV=1 wevtutil.exe qe Application "/q:*[System[Provider[@Name='ShentuBot']]]" /f:text > "$RUNNER_TEMP/botlog.txt"
+            grep -q "ShentuBot stopped" "$RUNNER_TEMP/botlog.txt" && break
+            sleep 5
+          done
+          if grep -qF "$tok" "$RUNNER_TEMP/botlog.txt"; then echo "FAIL: token in the event log"; exit 1; fi
+          grep -q "ShentuBot stopped" "$RUNNER_TEMP/botlog.txt" || { echo "FAIL: the bot's error was not logged within 90 s"; exit 1; }
+          echo "bot error logged, token absent from the log and the command line"
+          "$dest/shentu.exe" service stop --bot > /dev/null 2>&1 || true
+          echo "bot: $("$dest/shentu.exe" service status --bot); patrol still: $("$dest/shentu.exe" service status)"
+          [ "$("$dest/shentu.exe" service status)" = running ]
+          "$dest/shentu.exe" service uninstall --bot
+          "$dest/shentu.exe" service uninstall
+          rm -f "/c/ProgramData/Shentu/setup.toml"
+          for f in "" --bot; do
+            if "$dest/shentu.exe" service status $f > /dev/null 2>&1; then
+              echo "FAIL: still installed ($f)"; exit 1
+            fi
+          done
+          echo "both uninstalled"
+      - name: keep the masked fixture for review (not committed automatically)
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: hostfacts-fixture-${{ matrix.os }}
+          path: |
+            fixture/
+            replayed.json
+          retention-days: 1
+
+  # GoReleaser snapshot of the release (nothing is published): the Linux
+  # archives and packages must hold exactly what hostenv-p1's configuration
+  # builds, and the Windows zips shentu.exe, README, LICENSE, INSTALL.md
+  # and the sample configuration.
+  release-dry-run:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: hostenv-p1
+          path: base
+          fetch-depth: 0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version: "1.27.3" # go.mod's toolchain line (checked below)
+      - uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+      - name: snapshot of hostenv-p1 (the Linux baseline)
+        uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6.4.0
+        with:
+          version: "~> v2"
+          args: release --snapshot --clean
+          workdir: base
+      - name: snapshot of this branch
+        uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6.4.0
+        with:
+          version: "~> v2"
+          args: release --snapshot --clean
+      - name: compare the artifacts
+        run: |
+          list() { # the file list of a release artifact
+            case "$1" in
+              *.tar.gz) tar -tzf "$1" ;;
+              *.zip) unzip -Z1 "$1" ;;
+              *.deb) dpkg-deb -c "$1" | awk '{print $NF}' ;;
+              *.rpm) rpm -qlp "$1" 2>/dev/null ;;
+            esac | sort
+          }
+          fail=0
+          for f in base/dist/*.tar.gz base/dist/*.deb base/dist/*.rpm; do
+            n=$(basename "$f")
+            # Package names carry the snapshot version: match by kind and arch.
+            ext=${n##*.}
+            tok=$(echo "$n" | grep -oE 'amd64|arm64|x86_64|aarch64' | head -1)
+            new=$(find dist -maxdepth 1 -name "*${tok}*.${ext}" | head -1)
+            [ -n "$new" ] || { echo "MISSING: $n"; fail=1; continue; }
+            if diff <(list "$f") <(list "$new") > /dev/null; then
+              echo "same: $n"
+            else
+              echo "DIFFERENT: $n"; diff <(list "$f") <(list "$new"); fail=1
+            fi
+          done
+          for a in amd64 arm64; do
+            got=$(list "dist/shentu_windows_$a.zip" | tr '\n' ' ')
+            echo "shentu_windows_$a.zip: $got"
+            [ "$got" = "INSTALL.md LICENSE README.md shentu.exe shentu.toml " ] || fail=1
+          done
+          exit $fail

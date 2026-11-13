@@ -210,6 +210,29 @@ then asks you to approve that Telegram user with `y`. Until you approve, the bot
 - To change the model, run `sudo shentu setup` again or edit `/etc/shentu/llm.toml`.
 - To add your own playbook, put it in `/etc/shentu/skills/<name>/SKILL.md`.
 
+## Windows Server (from v0.3.0)
+
+Windows Server 2022 and 2025 are supported (amd64; arm64 is built too), verified on GitHub-hosted windows-2022/2025 runners. Windows Server 2019 is best effort: expected to work (the same
+Windows APIs, build 17763) but not verified on GitHub-hosted runners (they offer no 2019 image).
+
+1. Download `shentu_windows_amd64.zip` and check it against `checksums.txt` or with
+   `gh attestation verify shentu_windows_amd64.zip --repo nt-neil/shentu`.
+2. In an elevated prompt copy `shentu.exe` to `%ProgramFiles%\Shentu` and run
+   `shentu service install` (patrol) and, for Telegram, `shentu service install --bot`.
+   `service install` accepts the binary only in `%ProgramFiles%\Shentu` and locks that folder to
+   administrators.
+3. Configuration and state live in `%ProgramData%\Shentu`, open to SYSTEM and Administrators
+   only. Copy the zip's `shentu.toml` there and edit it; secrets go in `env` in the same folder
+   (`NAME=value`, referenced as `${NAME}`).
+4. Start them with `shentu service start` and `shentu service start --bot`. Both run as
+   LocalSystem (reading the Security log needs it), each stopped and restarted on its own.
+
+Limits: Windows is read-only (`block_ip` and `unblock_ip` are not supported); `shentu setup`
+does not run on Windows yet, so the configuration is written by hand; no MSI; the binary is not
+code-signed, so SmartScreen may warn and Microsoft Defender or another antivirus may flag it
+(Shentu reads the event log, autostart keys and WMI subscriptions, as malware scanners do).
+Full steps: `packaging/windows/INSTALL.md`.
+
 ## Troubleshooting
 
 | Symptom | Fix |

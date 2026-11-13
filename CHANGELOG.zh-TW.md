@@ -3,6 +3,66 @@
 CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本與日期必須一致，
 每個版本都要有內容（`go test ./cmd/sitegen` 會檢查）。
 
+## v0.3.0 — 2026-11-13
+
+- 支援 Windows Server 2022 與 2025，已在 GitHub 提供的 Windows Server 2022/2025 測試機上驗證（amd64，
+  另建置 arm64）：Windows 收集器只透過 Windows API
+  讀取主機（登錄檔、服務、程序、通訊埠、帳號、排程工作、事件記錄、WMI 與防火牆），不用
+  PowerShell，也不執行外部指令。
+- Windows 檢查：自動啟動項目（Run 機碼、服務、排程工作、啟動資料夾、WMI 事件訂閱）、未啟用
+  NLA 的 RDP、SMB 簽章與 SMBv1、不安全的 WinRM、防火牆設定檔、Defender 狀態與排除清單、
+  登入失敗與記錄被清除。
+- 依 Microsoft 每月安全性更新（MSRC）比對缺少的 Windows 更新，並以 CISA KEV 清單標出已被
+  利用的漏洞、優先列出。
+- IIS：從 `applicationHost.config` 取得網站根目錄；程式碼稽核會讀取 ASP 與 ASP.NET 頁面，
+  找出 webshell 與上傳目錄裡的腳本，UTF-16 頁面也包含在內。
+- 兩個 Windows 服務：`Shentu`（巡邏）與 `ShentuBot`（Telegram），從 `%ProgramFiles%\Shentu`
+  以 `shentu service install [--bot]` 安裝；設定與狀態放在 `%ProgramData%\Shentu`，只有
+  SYSTEM 與 Administrators 能存取。
+- `ssh_logins`、`processes`、`accounts_audit` 與 `log_search` 工具可在 Windows 使用（登入
+  事件、程序清單、本機帳號、事件記錄）。
+- SSH 登入沒成功的紀錄改為先讀 journald：ssh 與 sshd 單元的標記由 journald 自己填入，本機用戶不能偽造。
+  journald 不存在、讀取時間到了上限（60 s），或沒有 sshd 紀錄時，才改讀文字紀錄檔（`auth.log`、`secure`）。
+  本機任何人都能用 `logger` 寫入一行 sshd 紀錄，所以這時 `auth_events` 標為 partial，
+  原因是新的 `unverified_source`，多次試圖登入的告警也會附註來源未驗證。
+  不是 root 的用戶沒有權限看系統紀錄時，不再當成「沒有登入沒成功」。
+- Amazon Linux 2 與 2023：套件漏洞改用 Amazon 的 ALAS 公告比對（讀每個套件庫的 `updateinfo`，
+  先用 `repomd.xml` 裡的 sha256 驗證再暫存起來），Amazon Linux 2 的 extras 也算在內。
+  已經不再有更新的 Amazon Linux 1 回報「說不出有沒有漏洞」。真的在 Amazon Linux 2023 的 VM 上錄製過；
+  Amazon Linux 2 只有測試測到。
+- Alpine Linux：從 apk 資料庫讀套件（OSV 比對），讀 OpenRC 服務與 runlevel，
+  並把 `/etc/local.d`、busybox crond（`/etc/crontabs`、`/etc/periodic`）與 `/etc/inittab` 列為開機或定時自動執行的位置；
+  busybox syslog 只讀 auth 類的 sshd 紀錄，並標為未驗證。真的在 Alpine 3.22 的 VM 上
+  以 root 與用戶分別錄製過一次。
+- SUSE：openSUSE Leap、Tumbleweed，以及 SLES、SLED、SLES for SAP
+  （SLE 15 每個模組查一個 OSV ecosystem；OSV 沒有收錄的會列為沒有查）。
+  Leap 用自製的測試資料驗證，SLES 還沒有在真的主機上試過。
+- 每日報告會列出沒查成或只查了一部分的漏洞檢查；套件清單讀出 0 個時回報「說不出有沒有漏洞」，
+  不再當成「沒有漏洞」。
+- macOS（新增，只讀取，不用 sudo）：系統版本、用戶（dscl）、程序、開放的連接埠
+  （netstat；macOS 不列出時改用 lsof）、應用程式的網路防護、SIP、Gatekeeper、FileVault、XProtect、
+  launchd 與別的開機或定時自動執行的位置、sshd 設定，以及安裝的 app 與 Homebrew 套件。
+  系統版本與 Apple 的軟體更新清單（gdmf.apple.com）比對；套件回報「說不出有沒有漏洞」，
+  因為 OSV 沒有 Homebrew 的資料。只用自製的測試資料驗證過，還沒有在真的 Mac 上試過。
+  登入項目（Background Task Management）不會讀取，所以 macOS 的開機自動執行位置都會標為 partial。
+  periodic.conf 與 daily、weekly、monthly.local 逐行列出（不列沒有內容的行與說明行；說明行是以 # 開始、
+  沒有 " ' $ ` 這幾個字元的行，這些檔案通常不長），periodic_conf_files 指到的檔案也會讀；
+  與 Apple 公開版本相同的 /etc/defaults/periodic.conf 不列。
+- 程式碼稽核的資料夾寫成 `/var/www/html/`（最後多一個 `/`）或 `/` 時，接續上次的位置稽核
+  不會再把整個資料夾跳過。資料夾改為先整理成標準寫法，所以更新版本後的第一次稽核找不到上次的位置，
+  會從開始完整檢查一次。
+- sshd 設定：被 Include 的檔案（`Include sshd_config.d/*.conf`）裡有 `Match` 時，
+  主檔案裡 Include 之後的設定也會照樣讀到（sshd 每讀完一個 Include 都會回到原本的狀態），
+  例如之後的 `PermitRootLogin yes` 會報出來。Include 多於 4 次或設定檔多於 256 個時，列為沒有讀到。
+
+### 已知問題
+
+- 從原始碼建置現在需要 Go 1.26 以上（原本是 1.23）：Windows 的收集程式用到 golang.org/x/sys，這是第二個外部套件。
+- Windows 版只讀不寫：不支援 `block_ip` 與 `unblock_ip`。
+- Windows Server 2019 為 best effort：預期可用（相同的 Windows API，build 17763），但沒有在 GitHub 提供的測試機上驗證。
+- `shentu setup` 還不能在 Windows 上執行，設定需要手動撰寫。
+- Windows 執行檔沒有程式碼簽章，也沒有 MSI；SmartScreen 或防毒軟體可能發出警告。
+
 ## v0.2.5 — 2026-11-13
 
 - `app_code_audit` 會跨檔追蹤呼叫：在一個檔案讀進來、在另一個檔案的危險呼叫用掉的輸入，
