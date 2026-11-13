@@ -625,25 +625,8 @@ func (c LinuxCollector) persistence(ctx context.Context, src Source, keys Obs[[]
 		add(it)
 	}
 
-	for _, kf := range keys.Value {
-		for _, l := range kf.Unparsed { // sshd ignores these, but never drop them silently
-			add(PersistenceItem{Kind: "authorized_key_unparsed", Location: fmt.Sprintf("%s:%d", kf.Path, l),
-				Detail: "neither a key nor a comment; check it is not a key written in another form"})
-		}
-		for _, k := range kf.Keys {
-			d := k.Type + " " + k.Fingerprint
-			if k.Options {
-				d += " (with options)"
-			}
-			if k.CloudInitRefusal {
-				d += " (cloud-init refusal)"
-			}
-			add(PersistenceItem{Kind: "authorized_key", Location: kf.Path, Detail: d})
-		}
-		if kf.OutsideHome {
-			add(PersistenceItem{Kind: "authorized_keys_symlink", Location: kf.Path,
-				Detail: "links to " + kf.SymlinkTarget + ", outside the home; sshd reads the keys there"})
-		}
+	for _, it := range authorizedKeyItems(keys.Value) {
+		add(it)
 	}
 	if keys.Status == StatusPartial || !keys.Known() {
 		denied = append(denied, "authorized_keys: "+keys.Detail)
@@ -670,4 +653,31 @@ func (c LinuxCollector) persistence(ctx context.Context, src Source, keys Obs[[]
 		return Partial(out, ReasonPermission, "not fully read: "+strings.Join(denied, ", "))
 	}
 	return OK(out)
+}
+
+// authorizedKeyItems turns authorized_keys files into persistence items:
+// one per key, and one per line sshd would ignore.
+func authorizedKeyItems(files []AuthorizedKeyFile) []PersistenceItem {
+	var out []PersistenceItem
+	for _, kf := range files {
+		for _, l := range kf.Unparsed { // sshd ignores these, but never drop them silently
+			out = append(out, PersistenceItem{Kind: "authorized_key_unparsed", Location: fmt.Sprintf("%s:%d", kf.Path, l),
+				Detail: "neither a key nor a comment; check it is not a key written in another form"})
+		}
+		for _, k := range kf.Keys {
+			d := k.Type + " " + k.Fingerprint
+			if k.Options {
+				d += " (with options)"
+			}
+			if k.CloudInitRefusal {
+				d += " (cloud-init refusal)"
+			}
+			out = append(out, PersistenceItem{Kind: "authorized_key", Location: kf.Path, Detail: d})
+		}
+		if kf.OutsideHome {
+			out = append(out, PersistenceItem{Kind: "authorized_keys_symlink", Location: kf.Path,
+				Detail: "links to " + kf.SymlinkTarget + ", outside the home; sshd reads the keys there"})
+		}
+	}
+	return out
 }

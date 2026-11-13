@@ -18,6 +18,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"runtime"
 	"strconv"
 	"strings"
@@ -30,12 +31,13 @@ func main() {
 	record := flag.String("record", "", "save a masked fixture of this host to `dir`")
 	replay := flag.String("replay", "", "read facts from the fixture in `dir`")
 	runChecks := flag.Bool("checks", false, "print findings instead of facts")
+	dropArgs := flag.Bool("drop-args", false, "record process command lines as the executable only (a personal machine)")
 	var users, hosts list
 	flag.Var(&users, "mask-user", "extra user `name` to mask (repeatable)")
 	flag.Var(&hosts, "mask-host", "extra host `name` to mask (repeatable)")
 	flag.DurationVar(&hostenv.JournalTimeout, "journal-timeout", hostenv.JournalTimeout, "stop reading journald after `d` (at most the default; lower it to record the fallback)")
 	flag.Parse()
-	if err := run(*record, *replay, *runChecks, users, hosts); err != nil {
+	if err := run(*record, *replay, *runChecks, *dropArgs, users, hosts); err != nil {
 		fmt.Fprintln(os.Stderr, "hostfacts:", err)
 		os.Exit(1)
 	}
@@ -46,7 +48,7 @@ type list []string
 func (l *list) String() string     { return strings.Join(*l, ",") }
 func (l *list) Set(s string) error { *l = append(*l, s); return nil }
 
-func run(record, replay string, runChecks bool, users, hosts []string) error {
+func run(record, replay string, runChecks, dropArgs bool, users, hosts []string) error {
 	ctx := context.Background()
 	var src hostenv.Source
 	var rec *hostenv.Recorder
@@ -69,7 +71,7 @@ func run(record, replay string, runChecks bool, users, hosts []string) error {
 	}
 	facts := hostenv.Collect(ctx, src)
 	if rec != nil {
-		m := &hostenv.Masker{Users: append(humanUsers(facts), users...), Hosts: append(hostNames(), hosts...)}
+		m := &hostenv.Masker{Users: append(humanUsers(facts), users...), Hosts: append(hostNames(), hosts...), DropArgs: dropArgs}
 		if err := rec.Save(record, m); err != nil {
 			return err
 		}
@@ -84,10 +86,16 @@ func run(record, replay string, runChecks bool, users, hosts []string) error {
 	return enc.Encode(out)
 }
 
+// humanUsers are the accounts people made: uid 1000 and up on Linux, 501
+// and up on macOS (below that are the system's own).
 func humanUsers(f *hostenv.Facts) []string {
+	first := 1000
+	if f.Platform.Value.OS == "darwin" {
+		first = 501
+	}
 	var out []string
 	for _, a := range f.Accounts.Value {
-		if uid, err := strconv.Atoi(a.UID); err == nil && uid >= 1000 && uid < 60000 {
+		if uid, err := strconv.Atoi(a.UID); err == nil && uid >= first && uid < 60000 {
 			out = append(out, a.Name)
 		}
 	}
@@ -104,6 +112,13 @@ func hostNames() []string {
 	}
 	if b, err := os.ReadFile("/etc/hostname"); err == nil {
 		out = append(out, strings.TrimSpace(string(b)))
+	}
+	if runtime.GOOS == "darwin" { // the Bonjour and sharing names differ from the host name
+		for _, k := range []string{"ComputerName", "LocalHostName", "HostName"} {
+			if b, err := exec.Command("/usr/sbin/scutil", "--get", k).Output(); err == nil {
+				out = append(out, strings.TrimSpace(string(b)))
+			}
+		}
 	}
 	return out
 }

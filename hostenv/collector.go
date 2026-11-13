@@ -22,6 +22,8 @@ func ForOS(goos string) Collector {
 	switch goos {
 	case "linux":
 		return LinuxCollector{}
+	case "darwin":
+		return DarwinCollector{}
 	}
 	return Unsupported{GOOS: goos}
 }
@@ -51,5 +53,6 @@ func (u Unsupported) Collect(_ context.Context, src Source) *Facts {
 	f.RemoteAccess = RemoteAccess{SSH: Unknown[SSHConfig](r, d), RDP: Unknown[RDPConfig](r, d),
 		WinRM: Unknown[WinRMConfig](r, d), SMB: Unknown[SMBConfig](r, d)}
 	f.Antimalware, f.AuthEvents, f.Web = Unknown[Antimalware](r, d), Unknown[AuthEvents](r, d), Unknown[Web](r, d)
+	f.Protections = Unknown[Protections](r, d)
 	return f
 }

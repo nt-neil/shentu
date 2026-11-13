@@ -29,6 +29,18 @@ Chinese for the zh-TW pages; keep the two in step.
   a synthetic fixture and SLES on no real host yet.
 - The daily report says when a vulnerability check failed or covered only part, and a
   package list that parsed to nothing is "cannot tell" instead of "no vulnerabilities".
+- macOS (new, read-only, never with sudo): platform, accounts (dscl), processes, listeners
+  (netstat, or lsof when macOS hides sockets), the application firewall, SIP, Gatekeeper,
+  FileVault, XProtect, launchd jobs and other persistence, sshd settings, and installed apps
+  and Homebrew packages. The OS version is checked against Apple's software update catalog
+  (gdmf.apple.com); packages answer "cannot tell", since OSV has no Homebrew ecosystem.
+  Tested only with a synthetic fixture (an invented host); not yet verified on a real Mac.
+  Login items are not parsed (the Background Task Management store), so macOS persistence is
+  always partial.
+  periodic.conf and daily/weekly/monthly.local are listed line by line, every line but blanks
+  and plain comments (a # line with no quote, $ or backtick: in a heredoc such a line is data
+  and runs its commands); they are short. A stock /etc/defaults/periodic.conf is left out, and
+  the files periodic_conf_files names are read too.
 - A code audit root written with a trailing slash (`/var/www/html/`) or as `/` is no longer
   skipped when an audit resumes inside it. Roots are now cleaned, so the first audit after
   the upgrade does not find the place the last one stopped and walks from the start once.

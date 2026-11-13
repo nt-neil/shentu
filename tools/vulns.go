@@ -39,6 +39,9 @@ const osvAPI = "https://api.osv.dev/v1"
 
 // PackageVulns queries OSV for every installed package.
 func PackageVulns(ctx context.Context, hc *http.Client, detailFor string) (map[string]any, error) {
+	if hostSource().Info().GOOS == "darwin" {
+		return macOSVulns(ctx, hc)
+	}
 	eco, feed, items, setPartial, err := installedSet(ctx)
 	if err != nil {
 		return nil, err
