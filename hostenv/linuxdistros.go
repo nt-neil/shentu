@@ -7,7 +7,9 @@ package hostenv
 
 import (
 	"encoding/xml"
+	"errors"
 	"io"
+	"io/fs"
 	"regexp"
 	"sort"
 	"strconv"
@@ -60,10 +62,13 @@ func DropAbsentSLEProducts(f *PatchFeed, src Source, items []Package) {
 			if !strings.Contains(nq, name) {
 				continue
 			}
-			present = false
-			if _, err := Stat(src, sign.prod); err == nil {
-				present = true
+			// Present unless shown absent: a products.d file that cannot be
+			// looked at (EACCES) leaves the product possible.
+			_, err := Stat(src, sign.prod)
+			if errors.Is(err, ErrNoStat) { // a source that cannot stat: try reading it
+				_, err = src.ReadFile(sign.prod)
 			}
+			present = err == nil || errors.Is(err, fs.ErrPermission)
 			for _, p := range items {
 				present = present || p.Name == sign.pkg
 			}
@@ -129,8 +134,8 @@ func PatchFeedFor(osr map[string]string) PatchFeed {
 				f.NotQueried = append(f.NotQueried, "SUSE:"+m+" "+sp+" (no such OSV ecosystem)")
 			}
 		}
-		// slesNotInOSV entries stay only when the host has that product:
-		// LinuxCollector.packages drops them otherwise (SLEProductPresent).
+		// slesNotInOSV entries stay unless the host is shown not to have the
+		// product: LinuxCollector.packages drops them (DropAbsentSLEProducts).
 		return f
 	case "amzn":
 		switch ver {

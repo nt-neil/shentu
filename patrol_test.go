@@ -156,3 +156,23 @@ func TestUncheckedVulnsBounded(t *testing.T) {
 		t.Errorf("KEV unchecked: %q", s)
 	}
 }
+
+// Distinct errors are merged as shown (cut), and at most 10 error lines
+// are listed; the rest are counted.
+func TestUncheckedVulnsErrorLines(t *testing.T) {
+	var files []tools.AppResult
+	for i := 0; i < 12; i++ {
+		files = append(files, tools.AppResult{Path: fmt.Sprintf("/srv/a%02d/go.sum", i), Error: fmt.Sprintf("error %02d", i)})
+	}
+	// Two errors that differ only past the cut are one line.
+	long := strings.Repeat("y", 100)
+	files = append(files, tools.AppResult{Path: "/srv/x/go.sum", Error: long + "1"}, tools.AppResult{Path: "/srv/z/go.sum", Error: long + "2"})
+	s := uncheckedVulns("application dependencies", map[string]any{"files": files}, nil)
+	if n := strings.Count(s, "- not checked ("); n != 10 || !strings.Contains(s, "and 4 more lock files not checked") {
+		t.Errorf("%d error lines:\n%s", n, s)
+	}
+	s = uncheckedVulns("application dependencies", map[string]any{"files": files[12:]}, nil)
+	if strings.Count(s, "- not checked (") != 1 {
+		t.Errorf("errors equal once cut not merged:\n%s", s)
+	}
+}

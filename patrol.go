@@ -116,20 +116,26 @@ func uncheckedVulns(what string, r map[string]any, err error) string {
 		}
 	}
 	if files, ok := r["files"].([]tools.AppResult); ok {
-		// One line per distinct error, at most uncheckedFiles paths in all.
+		// One line per distinct error as shown (cut), at most uncheckedFiles
+		// paths in all and uncheckedErrors lines; the rest are counted.
 		byErr := map[string][]string{}
 		var order []string
 		for _, f := range files {
 			if f.Error == "" {
 				continue
 			}
-			if _, seen := byErr[f.Error]; !seen {
-				order = append(order, f.Error)
+			e := hostenv.CutString(mask(f.Error), 80)
+			if _, seen := byErr[e]; !seen {
+				order = append(order, e)
 			}
-			byErr[f.Error] = append(byErr[f.Error], f.Path)
+			byErr[e] = append(byErr[e], f.Path)
 		}
-		listed := 0
-		for _, e := range order {
+		listed, skipped := 0, 0
+		for i, e := range order {
+			if i >= uncheckedErrors {
+				skipped += len(byErr[e])
+				continue
+			}
 			paths := byErr[e]
 			show := paths[:min(len(paths), max(uncheckedFiles-listed, 0))]
 			listed += len(show)
@@ -137,11 +143,14 @@ func uncheckedVulns(what string, r map[string]any, err error) string {
 			for i, p := range show {
 				names[i] = mask(p)
 			}
-			line := fmt.Sprintf("- not checked (%q): %s", hostenv.CutString(mask(e), 80), strings.Join(names, ", "))
+			line := fmt.Sprintf("- not checked (%q): %s", e, strings.Join(names, ", "))
 			if more := len(paths) - len(show); more > 0 {
 				line += fmt.Sprintf(" and %d more", more)
 			}
 			lines = append(lines, cutLine(line))
+		}
+		if skipped > 0 {
+			lines = append(lines, fmt.Sprintf("- and %d more lock files not checked, with other errors", skipped))
 		}
 	}
 	if nq, ok := r["ecosystems_not_queried"].([]string); ok {
@@ -159,6 +168,7 @@ func uncheckedVulns(what string, r map[string]any, err error) string {
 // maxUncheckedLine the length of one line of it.
 const (
 	uncheckedFiles   = 10
+	uncheckedErrors  = 10 // distinct error lines
 	maxUncheckedLine = 200
 )
 

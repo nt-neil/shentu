@@ -291,4 +291,11 @@ func TestDropAbsentSLEProducts(t *testing.T) {
 	if len(f.NotQueried) != 1 {
 		t.Errorf("SLE_RT.prod present: %v", f.NotQueried)
 	}
+	// Unreadable products.d (EACCES): the product may be there, so it stays.
+	h.denied["/etc/products.d/SLE_RT.prod"] = true
+	f = feed()
+	DropAbsentSLEProducts(&f, h, nil)
+	if len(f.NotQueried) != 1 {
+		t.Errorf("SLE_RT.prod unreadable: %v", f.NotQueried)
+	}
 }
