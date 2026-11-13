@@ -31,6 +31,40 @@ type ipArgs struct {
 	IP     string `json:"ip"`
 	TTL    string `json:"ttl"`
 	Reason string `json:"reason"`
+	// OverrideUnverified blocks an IP whose SSH login events come only from
+	// text logs (verified=false), which anyone on the host can write to. Set
+	// only after the operator has checked those logs; the preview shows it.
+	OverrideUnverified bool `json:"override_unverified"`
+}
+
+// loginSummary is SSHSummary (tests replace it).
+var loginSummary = SSHSummary
+
+// loginGateWindow is how far back block_ip looks for the IP's SSH logins.
+const loginGateWindow = 24 * time.Hour
+
+// loginGate refuses to block ip when its SSH login events in the last day
+// come from text logs (verified=false): anyone on the host can write sshd
+// lines there, so a forged "failed login" must not make Shentu block an IP
+// (the operator's own, say). override lets the operator, having checked the
+// logs, go ahead. An IP with no login events is not blocked for its logins,
+// so the gate does not apply.
+func loginGate(ctx context.Context, env *Env, ip net.IP, override bool) error {
+	r, err := loginSummary(ctx, env, time.Now().Add(-loginGateWindow), ip.String())
+	if err != nil {
+		return nil // no login evidence read: the block rests on something else
+	}
+	sources, _ := r["sources"].([]SSHSource)
+	seen := false
+	for _, s := range sources {
+		if s.IP == ip.String() && s.Failed+s.InvalidUser+s.Accepted > 0 {
+			seen = true
+		}
+	}
+	if v, _ := r["verified"].(bool); !seen || v || override {
+		return nil
+	}
+	return fmt.Errorf("refusing to block %s: its SSH login events come from text logs (%v), which anyone on this host can write to, so they may be forged; check them (journalctl -u ssh, the IP's other traffic) and, if they are real, ask again with override_unverified", ip, r["source"])
 }
 
 var blockIP = Tool{
@@ -40,17 +74,25 @@ var blockIP = Tool{
 	Params: schema(`{"type":"object","required":["ip","reason"],"properties":{
 		"ip":{"type":"string","description":"single IPv4 or IPv6 address"},
 		"ttl":{"type":"string","description":"how long, e.g. 1h, 24h, 168h (default 24h, max 720h)"},
-		"reason":{"type":"string","description":"why, shown to the operator"}}}`),
+		"reason":{"type":"string","description":"why, shown to the operator"},
+		"override_unverified":{"type":"boolean","description":"block even though the IP's SSH login events come only from text logs (verified=false); only after the operator has checked those logs"}}}`),
 	Preview: func(args json.RawMessage) (string, error) {
 		a, ip, ttl, err := checkBlock(args)
 		if err != nil {
 			return "", err
 		}
-		return fmt.Sprintf("nft add element inet %s %s { %s timeout %ds }   # %s", nftTable, setFor(ip), ip, int(ttl.Seconds()), a.Reason), nil
+		s := fmt.Sprintf("nft add element inet %s %s { %s timeout %ds }   # %s", nftTable, setFor(ip), ip, int(ttl.Seconds()), a.Reason)
+		if a.OverrideUnverified {
+			s += "\n# override_unverified: blocks even if this IP's SSH logins come only from text logs anyone here can write to; confirm only if you checked them"
+		}
+		return s, nil
 	},
 	Run: func(ctx context.Context, env *Env, args json.RawMessage) (any, error) {
-		_, ip, ttl, err := checkBlock(args)
+		a, ip, ttl, err := checkBlock(args)
 		if err != nil {
+			return nil, err
+		}
+		if err := loginGate(ctx, env, ip, a.OverrideUnverified); err != nil {
 			return nil, err
 		}
 		if err := ensureTable(ctx); err != nil {
