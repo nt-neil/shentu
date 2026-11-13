@@ -12,9 +12,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
+	"runtime"
 	"strings"
 	"time"
+
+	"github.com/nt-neil/shentu/hostenv"
 )
 
 // setup chooses the LLM for this server: a local model that Shentu downloads
@@ -35,7 +37,14 @@ var providers = []provider{
 
 const ollamaURL = "http://127.0.0.1:11434"
 
+// errSetupWindows: setup installs Ollama with curl | sh and manages systemd
+// units, neither of which exists on Windows.
+var errSetupWindows = errors.New("shentu setup is not supported on Windows yet; write %ProgramData%\\Shentu\\shentu.toml by hand (see INSTALL.md in the zip)")
+
 func setup(ctx context.Context, args []string) error {
+	if runtime.GOOS == "windows" {
+		return errSetupWindows
+	}
 	fs := flag.NewFlagSet("setup", flag.ExitOnError)
 	local := fs.Bool("local", false, "use a local model (installs Ollama if needed, downloads a model sized for this server)")
 	model := fs.String("model", "", "model name (default: chosen from available memory, or the provider default)")
@@ -166,14 +175,11 @@ func modelForMemory(gb float64) string {
 }
 
 func memTotalGB() float64 {
-	b, _ := os.ReadFile("/proc/meminfo")
-	for _, l := range strings.Split(string(b), "\n") {
-		if v, ok := strings.CutPrefix(l, "MemTotal:"); ok {
-			kb, _ := strconv.ParseFloat(strings.Fields(v)[0], 64)
-			return kb / 1024 / 1024
-		}
+	src, err := hostenv.NewLive(nil)
+	if err != nil {
+		return 0
 	}
-	return 0
+	return float64(hostenv.LinuxCollector{}.Resources(src).Value.MemTotalBytes) / (1 << 30)
 }
 
 func ollamaUp(ctx context.Context) bool {

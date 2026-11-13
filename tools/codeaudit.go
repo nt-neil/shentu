@@ -12,17 +12,19 @@ import (
 	"io/fs"
 	"maps"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"runtime/debug"
 	"slices"
 	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 
+	"github.com/nt-neil/shentu/hostenv"
 	"github.com/nt-neil/shentu/rules"
 	"github.com/nt-neil/shentu/rules/engine"
 )
@@ -90,10 +92,13 @@ type CodeAudit struct {
 	WebRoots []string `json:"web_roots"`
 	// Web server configuration files that could not be read, with why: the
 	// web roots they name are missing from WebRoots.
-	WebConfigUnreadable []string      `json:"web_config_unreadable,omitempty"`
-	Files               int           `json:"files_read"`
-	Findings            []CodeFinding `json:"findings"`            // the summaries (kind "audit", and injection ones without a rule) first
-	Truncated           bool          `json:"truncated,omitempty"` // files or findings over the caps were left out
+	WebConfigUnreadable []string `json:"web_config_unreadable,omitempty"`
+	// NotChecked: what the audit could not tell (a web root's ACL on
+	// Windows); listed apart in reports, never pushed.
+	NotChecked []string      `json:"not_checked,omitempty"`
+	Files      int           `json:"files_read"`
+	Findings   []CodeFinding `json:"findings"`            // the summaries (kind "audit", and injection ones without a rule) first
+	Truncated  bool          `json:"truncated,omitempty"` // files or findings over the caps were left out
 	// The audit's time ran out before the end: what was found until then is
 	// listed, and a summary names what was not checked.
 	Unfinished bool `json:"unfinished,omitempty"`
@@ -115,15 +120,7 @@ const (
 	auditMaxDepth    = 8
 )
 
-var (
-	nginxRoot   = regexp.MustCompile(`(?m)^\s*root\s+["']?([^"';\s]+)`)
-	apacheRoot  = regexp.MustCompile(`(?mi)^\s*DocumentRoot\s+["']?([^"'\s]+)`)
-	webConfGlob = []string{
-		"/etc/nginx/nginx.conf", "/etc/nginx/sites-enabled/*", "/etc/nginx/conf.d/*.conf",
-		"/etc/apache2/sites-enabled/*", "/etc/httpd/conf/httpd.conf", "/etc/httpd/conf.d/*.conf",
-	}
-	webDirNames = map[string]bool{"public": true, "public_html": true, "html": true, "htdocs": true, "www": true, "webroot": true}
-)
+var webDirNames = map[string]bool{"public": true, "public_html": true, "html": true, "htdocs": true, "www": true, "webroot": true}
 
 // WebRoots returns the folders nginx or Apache serve, read from their configuration.
 func WebRoots() []string {
@@ -133,86 +130,30 @@ func WebRoots() []string {
 
 // WebRootsReport returns the folders nginx or Apache serve, and the
 // configuration files it could not read, each with why ("path (why)").
-func WebRootsReport() (roots, unreadable []string) { return webRootsFrom(webConfGlob) }
+func WebRootsReport() (roots, unreadable []string) {
+	if runtime.GOOS == "windows" {
+		return iisWebRoots(winSource())
+	}
+	return webRootsFrom(hostenv.DefaultWebConf.Globs)
+}
 
 // The configuration a symlink in it may point to: a regular file under
 // webConfRoot, owned by webConfOwner (root), that only its owner can write
 // (Debian and Ubuntu enable a site by a symlink in sites-enabled). Variables
 // for the tests.
 var (
-	webConfRoot  = "/etc"
-	webConfOwner = uint32(0)
+	webConfRoot  = hostenv.DefaultWebConf.Root
+	webConfOwner = uint32(hostenv.DefaultWebConf.Owner)
 )
 
-// readWebConf reads one web server configuration file. Unlike readSmallRegular
-// elsewhere, it follows a symlink, to a file webConfRoot holds and only root
-// can write; why says what kept it from being read.
-func readWebConf(p string) (b []byte, why string) {
-	li, err := os.Lstat(p)
-	if err != nil {
-		return nil, errWhy(err)
-	}
-	target := p
-	if li.Mode()&os.ModeSymlink != 0 {
-		if target, err = filepath.EvalSymlinks(p); err != nil { // a loop ends here too
-			return nil, "symlink: " + errWhy(err)
-		}
-		if !insideAny(target, []string{webConfRoot}) {
-			return nil, "symlink to " + target + ", outside " + webConfRoot
-		}
-		st, err := os.Lstat(target)
-		if err != nil {
-			return nil, errWhy(err)
-		}
-		sys, ok := st.Sys().(*syscall.Stat_t)
-		switch {
-		case !st.Mode().IsRegular():
-			return nil, "symlink to " + target + ", not a regular file"
-		case !ok || sys.Uid != webConfOwner:
-			return nil, "symlink to " + target + ", not owned by root"
-		case st.Mode().Perm()&0o022 != 0:
-			return nil, "symlink to " + target + ", writable by others than its owner"
-		}
-		li = st
-	}
-	b, ok := readSmallRegular(target, 1<<20, li) // no symlink left; the file the checks saw
-	if !ok {
-		return nil, "not a regular file of at most 1 MiB, or changed while read"
-	}
-	return b, ""
+// webRootsFrom reads the configuration files the globs match (hostenv).
+func webRootsFrom(globs []string) (roots, unreadable []string) {
+	return linux.WebRootsReport(hostSource(), hostenv.WebConf{Globs: globs, Root: webConfRoot, Owner: int(webConfOwner)})
 }
 
-func errWhy(err error) string {
-	if pe := (*fs.PathError)(nil); errors.As(err, &pe) {
-		return pe.Err.Error()
-	}
-	return err.Error()
-}
-
-func webRootsFrom(globs []string) (out, unreadable []string) {
-	seen := map[string]bool{}
-	for _, g := range globs {
-		files, _ := filepath.Glob(g)
-		for _, f := range files {
-			b, why := readWebConf(f)
-			if why != "" {
-				unreadable = append(unreadable, f+" ("+why+")")
-				continue
-			}
-			for _, re := range []*regexp.Regexp{nginxRoot, apacheRoot} {
-				for _, m := range re.FindAllSubmatch(b, -1) {
-					p := filepath.Clean(string(m[1]))
-					if strings.HasPrefix(p, "/") && !strings.Contains(p, "$") && !seen[p] {
-						seen[p] = true
-						out = append(out, p)
-					}
-				}
-			}
-		}
-	}
-	sort.Strings(out)
-	return out, unreadable
-}
+// depth counts path separators in the OS's own spelling ("\\" on Windows),
+// so auditMaxDepth holds there too.
+func depth(p string) int { return strings.Count(p, string(filepath.Separator)) }
 
 // served reports whether p is inside a folder the web server serves. Without any
 // server configuration, folders named like public/, html/ or www/ count as served.
@@ -220,7 +161,7 @@ func served(p string, webRoots []string) bool {
 	if len(webRoots) > 0 {
 		return insideAny(p, webRoots)
 	}
-	dir := filepath.Dir(p)
+	dir := filepath.ToSlash(filepath.Dir(p))
 	// /var/www holds one folder per site, so its own "www" does not make a path served.
 	if dir == "/var/www" || strings.HasPrefix(dir, "/var/www/") {
 		dir = dir[len("/var/www"):]
@@ -330,12 +271,12 @@ func uploadFolder(p string, webRoots []string) bool {
 		}
 		parent := strings.Join(segs[:i], "/")
 		if root != "" {
-			if parent == root {
+			if samePath(parent, root) {
 				return true
 			}
 			continue
 		}
-		if webDirNames[low[i-1]] && parent != "/var/www" || filepath.Dir(parent) == "/var/www" {
+		if webDirNames[low[i-1]] && parent != "/var/www" || path.Dir(parent) == "/var/www" {
 			return true
 		}
 	}
@@ -601,10 +542,15 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 		return CodeAudit{WebRoots: webRoots, Findings: []CodeFinding{stoppedFinding(walk, 0)}, Unfinished: true}
 	}
 	defer unlock()
-	return auditUnlocked(ctx, roots, webRoots)
+	res := auditUnlocked(ctx, roots, webRoots)
+	acl := webrootFindings(webRoots)
+	res.Findings = append(acl, res.Findings...)
+	res.NotChecked = notChecked(acl)
+	return res
 }
 
 func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
+	roots = cleanRoots(roots) // "/var/www/html/" would sort before its own files and be skipped
 	res := CodeAudit{WebRoots: webRoots, Findings: []CodeFinding{}}
 	var notes []CodeFinding // summaries: listed first, never left out
 	// At most auditMaxPerFile findings of one rule or check in one file and
@@ -722,20 +668,20 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 				walkCut = append(walkCut, UnfinishedFile{root, "walk"})
 				continue
 			}
-			base := strings.Count(filepath.Clean(root), "/")
+			base := depth(filepath.Clean(root))
 			filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 				if ctx.Err() != nil {
 					cut = &walkPos{ri, p}
 					walkCut = append(walkCut, UnfinishedFile{root, "walk"})
 					return filepath.SkipAll
 				}
-				if resumed {
+				if resumed && p != root { // the root holds every place: always walked into
 					before := at(ri, p)
 					if second && !before {
 						return filepath.SkipAll // round to where it started
 					}
 					if !second && before {
-						if d != nil && d.IsDir() && !(ri == pos.Root && strings.HasPrefix(pos.Path, p+"/")) {
+						if d != nil && d.IsDir() && !(ri == pos.Root && walkHolds(p, pos.Path)) {
 							return filepath.SkipDir
 						}
 						return nil
@@ -754,7 +700,7 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 			if name == ".git" && served(p, webRoots) {
 				add(finding("exposed", "critical", p, 0, exposedNames[1].detail, exposedNames[1].fix))
 			}
-			if skipDirs[name] || strings.Count(p, "/")-base > auditMaxDepth {
+			if skipDirs[name] || depth(p)-base > auditMaxDepth {
 				return filepath.SkipDir
 			}
 			return nil
@@ -777,8 +723,12 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 			add(finding("upload_script", "critical", p, 0, "PHP file in an upload folder; uploads should never be scripts",
 				"check the file, delete it if it is not yours, and stop PHP from running in the upload folder"))
 		}
+		if aspPage(name) && uploadFolder(p, webRoots) {
+			add(finding("upload_script", "critical", p, 0, "ASP or ASP.NET page in an upload folder; uploads should never be scripts",
+				"check the file, delete it if it is not yours, and remove script and execute permission from the upload folder in IIS"))
+		}
 		lang := engine.LangOf(name)
-		if !auditExt[ext] && !auditExt[name] && !strings.HasPrefix(name, ".env") && name != "settings.py" && lang == "" {
+		if !auditExt[ext] && !auditExt[name] && !strings.HasPrefix(name, ".env") && name != "settings.py" && lang == "" && !aspPage(name) {
 			return nil
 		}
 		if res.Files >= auditMaxFiles {
@@ -791,7 +741,8 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 		}
 		b, ok := readSmallRegular(p, auditMaxSize, info)
 		// A rule-language file is read even with a NUL byte: PHP runs such a file.
-		if !ok || lang == "" && bytes.IndexByte(b, 0) >= 0 {
+		// An ASP page may be UTF-16, full of NULs; IIS still runs it.
+		if !ok || lang == "" && !aspPage(name) && bytes.IndexByte(b, 0) >= 0 {
 			if lang != "" && eng != nil && info.Size() > auditMaxSize {
 				partial = append(partial, UnfinishedFile{p, "size"})
 			}
@@ -1138,15 +1089,22 @@ func severityRank(s string) int {
 // auditContent checks one file's lines. Secrets are matched but never copied out.
 func auditContent(p, name string, b []byte, web, isPHP bool, add func(CodeFinding)) {
 	envFile := name == ".env" || strings.HasPrefix(name, ".env.")
+	line := 0
 	if webExt[strings.ToLower(filepath.Ext(name))] {
 		for _, re := range webshellPatterns {
 			if loc := re.FindIndex(b); loc != nil {
-				add(finding("webshell", "critical", p, lineAt(b, loc[0]),
-					"code that runs commands or code taken straight from the request (webshell pattern)",
-					"check the file now; if you did not write it, take the site offline, delete it and look for how it got there"))
+				line = lineAt(b, loc[0])
 				break
 			}
 		}
+	}
+	if line == 0 {
+		line = aspWebshellLine(name, b)
+	}
+	if line > 0 {
+		add(finding("webshell", "critical", p, line,
+			"code that runs commands or code taken straight from the request (webshell pattern)",
+			"check the file now; if you did not write it, take the site offline, delete it and look for how it got there"))
 	}
 	sc := bufio.NewScanner(bytes.NewReader(b))
 	sc.Buffer(make([]byte, 64*1024), auditMaxSize)

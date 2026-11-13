@@ -1,6 +1,9 @@
 package main
 
-import "regexp"
+import (
+	"regexp"
+	"strings"
+)
 
 // Secrets are replaced before anything is sent to the LLM or written to the log.
 var maskRules = []struct {
@@ -23,9 +26,67 @@ var maskRules = []struct {
 	{regexp.MustCompile(`(?i)((?:password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key)\\?"?\s*[=:]\s*\\?"?)[^\s"\\,;]{3,}`), "${1}[REDACTED]"},
 }
 
+// mask removes secrets. sudoers' NOPASSWD: and PASSWD: tags in sudoers
+// syntax are kept: they are not password assignments, and
+// "NOPASSWD:[REDACTED]" would hide what a sudo rule grants.
+// hostenv.MaskSecrets does the same; keep the two in step.
 func mask(s string) string {
 	for _, r := range maskRules {
-		s = r.re.ReplaceAllString(s, r.repl)
+		s = replaceOutsideSudoTags(s, r.re, r.repl)
 	}
 	return s
 }
+
+// replaceOutsideSudoTags is re.ReplaceAllString(s, repl) over the whole
+// string, except that a match starting inside a sudoers NOPASSWD:/PASSWD:
+// tag is left as it is (the password rule would otherwise take the tag for
+// "passwd: <value>"). Every rule sees the full text, so nothing that spans
+// a tag escapes.
+func replaceOutsideSudoTags(s string, re *regexp.Regexp, repl string) string {
+	var tags [][]int
+	for _, m := range sudoTag.FindAllStringSubmatchIndex(s, -1) {
+		tags = append(tags, m[2:4])
+	}
+	if len(tags) == 0 {
+		return re.ReplaceAllString(s, repl)
+	}
+	var b strings.Builder
+	pos := 0
+	for pos < len(s) {
+		rest := s[pos:]
+		m := re.FindStringSubmatchIndex(rest)
+		if m == nil || m[1] == m[0] {
+			break
+		}
+		start := pos + m[0]
+		if t := tagAt(tags, start); t != nil {
+			// Keep the tag itself, then look again right after it: what
+			// follows the tag is masked like any other text.
+			b.WriteString(s[pos:t[1]])
+			pos = t[1]
+			continue
+		}
+		b.WriteString(rest[:m[0]])
+		b.Write(re.ExpandString(nil, repl, rest, m))
+		pos += m[1]
+	}
+	b.WriteString(s[pos:])
+	return b.String()
+}
+
+func tagAt(tags [][]int, i int) []int {
+	for _, t := range tags {
+		if i >= t[0] && i < t[1] {
+			return t
+		}
+	}
+	return nil
+}
+
+// sudoTag is a sudoers NOPASSWD: or PASSWD: tag where sudoers puts one:
+// after a runas spec ")" or another tag, and before a command (ALL, an
+// absolute path, "!" or another tag). Group 1 is the tag. "PASSWD: x" or
+// "X-PASSWD: x" elsewhere is not a tag and is masked as a secret would be.
+// (A double-quoted pattern, so the rule-parity test, which reads
+// back-quoted patterns, skips it.)
+var sudoTag = regexp.MustCompile("(?:\\)|[A-Z]+:)[ \\t]*((?:NO)?PASSWD:)[ \\t]*(?:ALL\\b|/|!|[A-Z]+:)")
