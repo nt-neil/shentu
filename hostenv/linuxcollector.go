@@ -355,7 +355,7 @@ func (LinuxCollector) SSHD(src Source, config string) Obs[SSHConfig] {
 			}
 		}
 	}
-	files := 0 // read, at most maxSSHDFiles (as on Windows)
+	files := 0                              // read, at most maxSSHDFiles (as on Windows)
 	var read func(p string, depth int) bool // false: stopped at the main file's Match
 	read = func(p string, depth int) bool {
 		if depth > 4 {
