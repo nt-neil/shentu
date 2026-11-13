@@ -78,7 +78,9 @@ var (
 	// user group and the anchored sshd suffix make the IP the one sshd wrote last.
 	// The prefix is "<RFC3339 time> host sshd[pid]: " or "Mon dd hh:mm:ss host sshd[pid]: "
 	// (OpenSSH 9.8+ logs as sshd-session), so injected text cannot start a second message.
-	sshdPrefix = `^(?:\S+|\w{3} +\d+ \d\d:\d\d:\d\d) \S+ sshd(?:-session)?\[\d+\]: `
+	// Busybox syslogd (Alpine) writes the facility and level after the host
+	// ("auth.info"): only the auth facilities are allowed there.
+	sshdPrefix = `^(?:\S+|\w{3} +\d+ \d\d:\d\d:\d\d) \S+ (?:auth(?:priv)?\.[a-z]+ )?sshd(?:-session)?\[\d+\]: `
 	reFailed   = regexp.MustCompile(sshdPrefix + `Failed (?:password|publickey|keyboard-interactive/pam|none) for (?:invalid user )?(.*) from (\S+) port \d+(?: ssh2)?(?: \[preauth\])?\s*$`)
 	reInvalid  = regexp.MustCompile(sshdPrefix + `Invalid user (.*) from (\S+) port \d+(?: \[preauth\])?\s*$`)
 	reAccepted = regexp.MustCompile(sshdPrefix + `Accepted (\S+) for (\S+) from (\S+) port \d+ ssh2(?:: .*)?$`)
@@ -115,6 +117,15 @@ func (LinuxCollector) ScanAuthLogs(ctx context.Context, src Source, logPaths []s
 		why = "journald unavailable (" + jerr.Error() + ")"
 	}
 	files := authLogFiles(src, logPaths, since)
+	if len(files) == 0 && errors.Is(jerr, fs.ErrNotExist) {
+		// No journald (Alpine, busybox syslogd): sshd writes to the system
+		// log, whose auth facility lines are the only ones reSSHDLine takes.
+		for _, f := range []string{"/var/log/messages.0", "/var/log/messages"} {
+			if st, err := Stat(src, f); err == nil && !st.ModTime.Before(since) {
+				files = append(files, f)
+			}
+		}
+	}
 	if len(files) == 0 {
 		switch {
 		case jerr == nil: // journald has no sshd entry and nothing can confirm it is so

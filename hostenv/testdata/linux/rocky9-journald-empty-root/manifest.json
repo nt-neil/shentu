@@ -89,6 +89,11 @@
     },
     {
       "op": "dir",
+      "path": "/etc/crontabs",
+      "err": "not_exist"
+    },
+    {
+      "op": "dir",
       "path": "/etc/crypto-policies/back-ends",
       "names": [
         "bind.config",
@@ -122,6 +127,31 @@
     {
       "op": "dir",
       "path": "/etc/nginx/sites-enabled"
+    },
+    {
+      "op": "dir",
+      "path": "/etc/periodic/15min",
+      "err": "not_exist"
+    },
+    {
+      "op": "dir",
+      "path": "/etc/periodic/daily",
+      "err": "not_exist"
+    },
+    {
+      "op": "dir",
+      "path": "/etc/periodic/hourly",
+      "err": "not_exist"
+    },
+    {
+      "op": "dir",
+      "path": "/etc/periodic/monthly",
+      "err": "not_exist"
+    },
+    {
+      "op": "dir",
+      "path": "/etc/periodic/weekly",
+      "err": "not_exist"
     },
     {
       "op": "dir",

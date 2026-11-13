@@ -16,6 +16,7 @@ import (
 var (
 	nftListArgv  = []string{"/usr/sbin/nft", "list", "ruleset"}
 	iptablesArgv = []string{"/usr/sbin/iptables", "-S"}
+	iptablesSbin = []string{"/sbin/iptables", "-S"} // Alpine
 )
 
 func init() {
@@ -51,7 +52,11 @@ func (c LinuxCollector) Firewall(ctx context.Context, src Source, processes []Pr
 		return Partial(fw("nftables", false, "no firewall enabled at boot (nftables.service is off); rules added at runtime cannot be read here, ask in chat"),
 			ReasonPermission, "live nftables rules unreadable")
 	}
-	if out, err := src.Run(ctx, iptablesArgv); err == nil && out.ExitCode == 0 && strings.Count(string(out.Stdout), "\n") > 3 {
+	out, err := src.Run(ctx, iptablesArgv)
+	if errors.Is(err, fs.ErrNotExist) {
+		out, err = src.Run(ctx, iptablesSbin)
+	}
+	if err == nil && out.ExitCode == 0 && strings.Count(string(out.Stdout), "\n") > 3 {
 		return OK(fw("iptables", true, "iptables rules present"))
 	}
 	return OK(fw("", false, "none detected"))

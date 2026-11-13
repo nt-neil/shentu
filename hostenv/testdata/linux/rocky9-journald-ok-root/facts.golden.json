@@ -37,6 +37,14 @@
     "value": {
       "manager": "rpm",
       "ecosystem": "Rocky Linux:9",
+      "feed": {
+        "kind": "osv",
+        "ecosystems": [
+          "Rocky Linux:9"
+        ],
+        "upgrade": "dnf upgrade --security",
+        "version_fmt": "evr"
+      },
       "items": [
         {
           "name": "tzdata",
