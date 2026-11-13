@@ -101,16 +101,16 @@ func uncheckedSection(risks []tools.Risk) string {
 // not carry.
 func uncheckedVulns(what string, r map[string]any, err error) string {
 	if err != nil {
-		return fmt.Sprintf("\n\nNot checked for vulnerabilities: %s (%q).\n", what, mask(cutLine(err.Error())))
+		return fmt.Sprintf("\n\nNot checked for vulnerabilities: %s (%q).\n", what, cutLine(mask(err.Error())))
 	}
 	var lines []string
 	if p, ok := r["partial"]; ok {
-		lines = append(lines, fmt.Sprintf("- partly checked: %q", mask(cutLine(fmt.Sprint(p)))))
+		lines = append(lines, fmt.Sprintf("- partly checked: %q", cutLine(mask(fmt.Sprint(p)))))
 	}
 	// With no vulnerability found there is nothing to look up in KEV.
 	if n, _ := r["total_vulns"].(int); n > 0 {
 		if k, _ := r["kev"].(string); strings.Contains(k, "unavailable") {
-			lines = append(lines, fmt.Sprintf("- not checked against the CISA KEV list, so exploited ones are not marked: %q", mask(cutLine(k))))
+			lines = append(lines, fmt.Sprintf("- not checked against the CISA KEV list, so exploited ones are not marked: %q", cutLine(mask(k))))
 		} else if u, _ := r["kev_unchecked"].(int); u > 0 {
 			lines = append(lines, fmt.Sprintf("- %d vulnerabilities not checked against the CISA KEV list (lookups failed or over the cap)", u))
 		}
@@ -137,7 +137,7 @@ func uncheckedVulns(what string, r map[string]any, err error) string {
 			for i, p := range show {
 				names[i] = mask(p)
 			}
-			line := fmt.Sprintf("- not checked (%q): %s", mask(hostenv.CutString(e, 80)), strings.Join(names, ", "))
+			line := fmt.Sprintf("- not checked (%q): %s", hostenv.CutString(mask(e), 80), strings.Join(names, ", "))
 			if more := len(paths) - len(show); more > 0 {
 				line += fmt.Sprintf(" and %d more", more)
 			}
@@ -146,7 +146,7 @@ func uncheckedVulns(what string, r map[string]any, err error) string {
 	}
 	if nq, ok := r["ecosystems_not_queried"].([]string); ok {
 		for _, e := range nq {
-			lines = append(lines, fmt.Sprintf("- not queried (OSV has no such ecosystem): %q", mask(cutLine(e))))
+			lines = append(lines, fmt.Sprintf("- not queried (OSV has no such ecosystem): %q", cutLine(mask(e))))
 		}
 	}
 	if len(lines) == 0 {
