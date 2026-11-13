@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -62,7 +63,10 @@ func testBot(t *testing.T, model *hostileModel, allowControl bool) (*bot, *fakeT
 	t.Cleanup(srv.Close)
 	cfg := &Config{}
 	cfg.LLM.MaxSteps = 5
-	cfg.StateDir, _ = filepath.EvalSymlinks(t.TempDir())
+	tmp, _ := filepath.EvalSymlinks(t.TempDir())
+	// Not made here: Shentu makes its state directory (on Windows with its
+	// protected permissions, refusing one someone else made).
+	cfg.StateDir = filepath.Join(tmp, "state")
 	cfg.Bot.Interaction, cfg.Bot.Answers, cfg.Bot.Confirm, cfg.Bot.Protection = 2, 4, 3, 2
 	if allowControl {
 		cfg.Bot.Interaction = 3
@@ -207,6 +211,9 @@ func TestBotPairNeedsServerApproval(t *testing.T) {
 // A control action from Telegram runs only after the paired user presses ✅ on that
 // exact request. Someone else's press does nothing.
 func TestBotControlNeedsPairedUsersPress(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no control tool runs on Windows (the MVP is read-only; block_ip refuses there), so this confirm flow cannot start")
+	}
 	for _, press := range []string{"n", "y"} {
 		model := &hostileModel{replies: []string{call("block_ip", `{"ip":"203.0.113.9","reason":"x"}`), done}}
 		b, tg := testBot(t, model, true)

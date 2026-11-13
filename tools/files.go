@@ -12,9 +12,12 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/nt-neil/shentu/hostenv"
 )
 
 var fileChanges = Tool{
@@ -106,13 +109,14 @@ func FileChanges(ctx context.Context, roots []string, since time.Time) (map[stri
 				return filepath.SkipAll
 			}
 			c := Changed{Path: p, Size: info.Size(), Mode: info.Mode().String(), Owner: owner, Modified: mt}
-			if webExt[strings.ToLower(filepath.Ext(p))] && info.Size() < 512*1024 {
+			if (webExt[strings.ToLower(filepath.Ext(p))] || aspPage(p)) && info.Size() < 512*1024 {
 				if b, err := os.ReadFile(p); err == nil {
 					for _, re := range webshellPatterns {
 						if m := re.Find(b); m != nil {
 							c.Webshell = append(c.Webshell, string(m))
 						}
 					}
+					c.Webshell = append(c.Webshell, aspWebshellMatches(p, b)...)
 				}
 			}
 			out = append(out, c)
@@ -141,14 +145,28 @@ func itoa(u uint32) string {
 }
 
 func insideAny(p string, roots []string) bool {
-	p = filepath.Clean(p)
 	for _, r := range roots {
-		r = filepath.Clean(r)
-		if p == r || strings.HasPrefix(p, r+"/") {
+		if inside(p, r) {
 			return true
 		}
 	}
 	return false
+}
+
+// inside reports whether p is root or below it. filepath.Rel uses the OS's
+// own separator and, on Windows, compares without case, so C:\inetpub and
+// c:\INETPUB\wwwroot agree and "/var/www-old" is not inside "/var/www".
+func inside(p, root string) bool {
+	// A filesystem root (/, C:\) contains only itself, as in v0.2.5: a
+	// path list of "/" must not open the whole machine.
+	if r := filepath.Clean(root); filepath.Dir(r) == r {
+		return filepath.Clean(p) == r
+	}
+	rel, err := filepath.Rel(filepath.Clean(root), filepath.Clean(p))
+	if err != nil || filepath.IsAbs(rel) {
+		return false
+	}
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
 }
 
 var certExpiry = Tool{
@@ -225,6 +243,9 @@ var logSearch = Tool{
 		if err := decode(args, &a); err != nil {
 			return nil, err
 		}
+		if runtime.GOOS == "windows" {
+			return winLogSearch(a.Path, a.Pattern, a.Limit)
+		}
 		if !allowedLog(a.Path, env.LogPaths) {
 			return nil, errors.New("path is not in the allowed log paths: " + strings.Join(env.LogPaths, ", "))
 		}
@@ -244,22 +265,28 @@ var logSearch = Tool{
 		if a.Limit <= 0 || a.Limit > 200 {
 			a.Limit = 50
 		}
-		lines, err := readLines(a.Path)
-		if err != nil {
-			return nil, err
-		}
-		var hits []string
-		for i := len(lines) - 1; i >= 0 && len(hits) < a.Limit; i-- {
-			if re.MatchString(lines[i]) {
-				l := lines[i]
+		// The last a.Limit matches, kept in a ring while the file streams by:
+		// memory is the ring, not the log.
+		ring := make([]string, a.Limit)
+		n := 0
+		err = hostenv.ScanLines(hostSource(), a.Path, func(l string) {
+			if re.MatchString(l) {
 				if len(l) > 500 {
 					l = Cut(l, 500)
 				}
-				hits = append(hits, l)
+				ring[n%a.Limit] = l
+				n++
 			}
+		})
+		if err != nil {
+			return nil, err
 		}
-		for i, j := 0, len(hits)-1; i < j; i, j = i+1, j-1 {
-			hits[i], hits[j] = hits[j], hits[i]
+		hits := []string{}
+		for i := max(0, n-a.Limit); i < n; i++ {
+			hits = append(hits, ring[i%a.Limit])
+		}
+		if len(hits) == 0 {
+			hits = nil
 		}
 		return map[string]any{"path": a.Path, "matches": hits}, nil
 	},
