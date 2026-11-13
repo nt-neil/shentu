@@ -1055,7 +1055,11 @@ func winSSH(ws WinSource, svcs []WinService, svcErr error) Obs[SSHConfig] {
 			if stop(d) {
 				switch {
 				case d == p: // the pattern's own folder (Include C:/ProgramData/*.conf)
-					return unknown(p, "Include reads from "+p+", where any user can create files and folders: anyone could add what it reads", ReasonUntrusted), false
+					who := "any user can create files and folders"
+					if len(p) <= 3 { // a drive root lets users create folders, not files
+						who = "any user can create folders"
+					}
+					return unknown(p, "Include reads from "+p+", where "+who+": anyone could add what it reads", ReasonUntrusted), false
 				case missing:
 					return unknown(p, "neither "+p+" nor a folder above it exists below "+d+", where any user can create folders: anyone could create it", ReasonUntrusted), false
 				}

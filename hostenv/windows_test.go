@@ -1101,6 +1101,14 @@ func TestWindowsSSHIncludeReview(t *testing.T) {
 		t.Errorf("glob in ProgramData: %+v", s)
 	}
 
+	// Straight in a drive root: users can create folders there, not files.
+	w = base()
+	w.files[winSSHDConfig] = "Include C:/*.conf\n"
+	w.dirs(`C:`, "ProgramData")
+	if s := collect(w); s.Status != StatusUnknown || !strings.Contains(s.Detail, "any user can create folders:") || strings.Contains(s.Detail, "files and folders") {
+		t.Errorf("glob in a drive root: %+v", s)
+	}
+
 	// An include that is a link to a missing target (final review).
 	w = base()
 	w.files[winSSHDConfig] = "Include x.conf\n"
