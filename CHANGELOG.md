@@ -60,6 +60,10 @@ Chinese for the zh-TW pages; keep the two in step.
 - A code audit root written with a trailing slash (`/var/www/html/`) or as `/` is no longer
   skipped when an audit resumes inside it. Roots are now cleaned, so the first audit after
   the upgrade does not find the place the last one stopped and walks from the start once.
+- sshd settings: a `Match` block inside an included file (`Include sshd_config.d/*.conf`) no
+  longer hides the settings that follow the Include in the main file (sshd restores the Match
+  state after each Include), so e.g. a later `PermitRootLogin yes` is reported. An Include
+  nested more than 4 deep, or past 256 config files, is listed as unread.
 
 ### Known issues
 
