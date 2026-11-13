@@ -1092,6 +1092,15 @@ func TestWindowsSSHIncludeReview(t *testing.T) {
 		t.Errorf("link owned by a user: %+v", s)
 	}
 
+	// A glob straight in %ProgramData% (or a drive root): any user can add
+	// a matching file there; the message says so (final review).
+	w = base()
+	w.files[winSSHDConfig] = "Include C:/ProgramData/*.conf\n"
+	w.dirs(`C:\ProgramData`, "ssh")
+	if s := collect(w); s.Status != StatusUnknown || s.Reason != ReasonUntrusted || !strings.Contains(s.Detail, "anyone could add what it reads") {
+		t.Errorf("glob in ProgramData: %+v", s)
+	}
+
 	// An include that is a link to a missing target (final review).
 	w = base()
 	w.files[winSSHDConfig] = "Include x.conf\n"

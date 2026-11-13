@@ -1053,7 +1053,10 @@ func winSSH(ws WinSource, svcs []WinService, svcErr error) Obs[SSHConfig] {
 		missing := true // nothing found yet from p upward
 		for d := p; ; d = winParent(d) {
 			if stop(d) {
-				if missing {
+				switch {
+				case d == p: // the pattern's own folder (Include C:/ProgramData/*.conf)
+					return unknown(p, "Include reads from "+p+", where any user can create files and folders: anyone could add what it reads", ReasonUntrusted), false
+				case missing:
 					return unknown(p, "neither "+p+" nor a folder above it exists below "+d+", where any user can create folders: anyone could create it", ReasonUntrusted), false
 				}
 				return Obs[SSHConfig]{}, true
