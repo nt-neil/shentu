@@ -1043,23 +1043,36 @@ func launchExe(m map[string]any) string {
 func periodicLines(b []byte) []string {
 	var out []string
 	prevGoesOn := false
-	for _, raw := range strings.Split(strings.ReplaceAll(string(b), "\r\n", "\n"), "\n") {
-		l := strings.TrimSpace(raw)
-		plainComment := strings.HasPrefix(l, "#") && !strings.ContainsAny(l, `"'`) && !prevGoesOn
+	for _, raw := range strings.Split(string(b), "\n") {
+		// Only space and tab are blanks to the shell: \r, \v, \f or a
+		// non-ASCII space before "#" make it no comment, so such a line,
+		// and a blank-looking one holding them, is listed as written.
+		l := strings.TrimLeft(raw, " \t")
+		plainComment := strings.HasPrefix(l, "#") && !strings.ContainsAny(l, `"'`) && plainASCII(l) && !prevGoesOn
 		prevGoesOn = strings.HasSuffix(raw, "\\")
 		if l == "" && !prevGoesOn || plainComment {
 			continue
 		}
-		out = append(out, l)
+		out = append(out, strings.TrimRight(l, " \t"))
 	}
 	return out
+}
+
+// plainASCII says s holds only printable ASCII and tabs.
+func plainASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if c := s[i]; (c < 0x20 && c != '\t') || c > 0x7e {
+			return false
+		}
+	}
+	return true
 }
 
 // ParsePeriodicConf is periodicLines for a periodic.conf.
 func ParsePeriodicConf(b []byte) []string { return periodicLines(b) }
 
-// stockPeriodicDefaults are the sha256 of the stock /etc/defaults/periodic.conf
-// (line ends normalized to \n), from Apple's open source crontabs project
+// stockPeriodicDefaults are the sha256 of the stock /etc/defaults/periodic.conf,
+// its bytes exactly as published (LF line ends), from Apple's open source crontabs project
 // (github.com/apple-oss-distributions/crontabs, files/periodic.conf):
 // tags crontabs-63 to 64.60.1, 59.140.1, 52.80.1 to 59, 46.1 to 52. macOS 27
 // has no such file.
@@ -1072,11 +1085,7 @@ var stockPeriodicDefaults = map[string]bool{
 
 // stockDefaults says b is a stock /etc/defaults/periodic.conf, whole.
 func stockDefaults(b []byte) bool {
-	n := strings.ReplaceAll(string(b), "\r\n", "\n")
-	if !strings.HasSuffix(n, "\n") {
-		n += "\n"
-	}
-	sum := sha256.Sum256([]byte(n))
+	sum := sha256.Sum256(b) // the bytes as read: a \r or any other change is not stock
 	return stockPeriodicDefaults[hex.EncodeToString(sum[:])]
 }
 
