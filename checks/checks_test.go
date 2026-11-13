@@ -232,6 +232,47 @@ func TestBruteforceUnverifiedSource(t *testing.T) {
 	}
 }
 
+// N-M2: on macOS, SIP, Gatekeeper or FileVault off fails and unread is
+// cannot tell; elsewhere the fact is not collected and nothing is said.
+func TestProtectionsCheck(t *testing.T) {
+	f := &hostenv.Facts{Platform: hostenv.OK(hostenv.Platform{OS: "darwin"}),
+		Protections: hostenv.OK(hostenv.Protections{Integrity: "off", AppVerification: "on", DiskEncryption: ""})}
+	got := map[string]Status{}
+	for _, x := range protections(f) {
+		got[x.Check] = x.Status
+	}
+	if got["protections.integrity"] != StatusFail || got["protections.disk_encryption"] != StatusCannotTell || got["protections.app_verification"] != "" {
+		t.Errorf("darwin: %v", got)
+	}
+	f.Protections = hostenv.Unknown[hostenv.Protections](hostenv.ReasonCommandFailed, "csrutil failed")
+	if out := protections(f); len(out) != 1 || out[0].Status != StatusCannotTell {
+		t.Errorf("unread: %+v", out)
+	}
+	f.Platform = hostenv.OK(hostenv.Platform{OS: "linux"})
+	f.Protections = hostenv.Unknown[hostenv.Protections](hostenv.ReasonNotCollected, "")
+	if out := protections(f); len(out) != 0 {
+		t.Errorf("linux: %+v", out)
+	}
+}
+
+// N-M6: XProtect may be 30 days old before it is stale; others 7.
+func TestSignatureAgeByProduct(t *testing.T) {
+	for _, c := range []struct {
+		product string
+		days    int
+		stale   bool
+	}{{"XProtect 5321", 20, false}, {"XProtect 5321", 31, true}, {"Microsoft Defender", 8, true}} {
+		f := &hostenv.Facts{Antimalware: hostenv.OK(hostenv.Antimalware{Product: c.product, RealTime: true, SignatureAgeDays: c.days})}
+		stale := false
+		for _, x := range antimalware(f) {
+			stale = stale || x.Check == "antimalware.stale_signatures"
+		}
+		if stale != c.stale {
+			t.Errorf("%s %d days: stale %v", c.product, c.days, stale)
+		}
+	}
+}
+
 // The ssh.settings note says the reason the settings are unknown; only a
 // permission problem asks for root.
 func TestSSHSettingsUnknownReason(t *testing.T) {

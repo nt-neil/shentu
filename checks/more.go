@@ -28,6 +28,7 @@ func init() {
 	register(checkFunc{"smb", smb})
 	register(checkFunc{"winrm.insecure", winrm})
 	register(checkFunc{"auth.bruteforce", bruteforce})
+	register(checkFunc{"protections", protections})
 }
 
 func extraUID0(f *hostenv.Facts) []Finding {
@@ -247,8 +248,13 @@ func firewallDisabled(f *hostenv.Facts) []Finding {
 	return append(out, partialNote("firewall.disabled", "Some firewall profiles could not be read", o)...)
 }
 
-// MaxSignatureAgeDays is how stale antivirus signatures may get.
-const MaxSignatureAgeDays = 7
+// MaxSignatureAgeDays is how stale antivirus signatures may get;
+// MaxXProtectAgeDays for XProtect, whose bundles Apple updates every few
+// weeks, not daily.
+const (
+	MaxSignatureAgeDays = 7
+	MaxXProtectAgeDays  = 30
+)
 
 func antimalware(f *hostenv.Facts) []Finding {
 	o := f.Antimalware
@@ -263,7 +269,11 @@ func antimalware(f *hostenv.Facts) []Finding {
 		out = append(out, Finding{Check: "antimalware.realtime_off", Status: StatusFail, Severity: SevHigh,
 			Title: "Real-time antivirus protection is off", Evidence: o.Value.Product})
 	}
-	if o.Value.SignatureAgeDays > MaxSignatureAgeDays {
+	maxAge := MaxSignatureAgeDays
+	if strings.HasPrefix(o.Value.Product, "XProtect") {
+		maxAge = MaxXProtectAgeDays
+	}
+	if o.Value.SignatureAgeDays > maxAge {
 		out = append(out, Finding{Check: "antimalware.stale_signatures", Status: StatusFail, Severity: SevMedium,
 			Title: "Antivirus signatures are out of date", Evidence: fmt.Sprintf("%s: %d days old", o.Value.Product, o.Value.SignatureAgeDays)})
 	}
@@ -479,4 +489,31 @@ func bruteforce(f *hostenv.Facts) []Finding {
 		title = "Login events come from a log any local user can write to"
 	}
 	return append(out, partialNote("auth.bruteforce", title, o)...)
+}
+
+// protections: macOS's System Integrity Protection, Gatekeeper and
+// FileVault. Off fails; not read is cannot tell. Other systems do not
+// collect the fact yet, so nothing is said there.
+func protections(f *hostenv.Facts) []Finding {
+	if f.Platform.Value.OS != "darwin" {
+		return nil
+	}
+	o := f.Protections
+	if out := cannotTell("protections", "System protections could not be read", o); out != nil {
+		return out
+	}
+	var out []Finding
+	for _, p := range []struct{ id, name, val string }{
+		{"protections.integrity", "System Integrity Protection", o.Value.Integrity},
+		{"protections.app_verification", "Gatekeeper", o.Value.AppVerification},
+		{"protections.disk_encryption", "FileVault", o.Value.DiskEncryption},
+	} {
+		switch p.val {
+		case "off":
+			out = append(out, Finding{Check: p.id, Status: StatusFail, Severity: SevHigh, Title: p.name + " is off", Evidence: p.name + ": off"})
+		case "":
+			out = append(out, Finding{Check: p.id, Status: StatusCannotTell, Severity: SevInfo, Title: p.name + " could not be read", Reason: string(o.Reason), Evidence: o.Detail})
+		}
+	}
+	return out
 }

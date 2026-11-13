@@ -85,6 +85,7 @@ type Facts struct {
 	Firewall     Obs[Firewall]            `json:"firewall"`
 	RemoteAccess RemoteAccess             `json:"remote_access"`
 	Antimalware  Obs[Antimalware]         `json:"antimalware"`
+	Protections  Obs[Protections]         `json:"protections"`
 	AuthEvents   Obs[AuthEvents]          `json:"auth_events"`
 	Web          Obs[Web]                 `json:"web"`
 }
@@ -186,7 +187,7 @@ type Listener struct {
 // PersistenceItem is anything that makes code run again without a person
 // starting it.
 type PersistenceItem struct {
-	Kind     string `json:"kind"` // cron, cron_file, systemd, openrc, local_d, inittab, ld_preload, rc_local, authorized_key, authorized_key_unparsed, authorized_keys_symlink, sudo_rule, pam_unpackaged, run_key, schtask, service, wmi_subscription, startup_folder, launchd
+	Kind     string `json:"kind"` // cron, cron_file, systemd, openrc, local_d, inittab, ld_preload, rc_local, authorized_key, authorized_key_unparsed, authorized_keys_symlink, sudo_rule, pam_unpackaged, run_key, schtask, service, wmi_subscription, startup_folder, launchd, periodic_conf, at_job, security_agent_plugin, startup_item, login_hook
 	Location string `json:"location"`
 	Command  string `json:"command,omitempty"` // secret-masked
 	Detail   string `json:"detail,omitempty"`
@@ -232,6 +233,15 @@ type SMBConfig struct {
 	SMB1Enabled     bool     `json:"smb1_enabled"`
 	SigningRequired bool     `json:"signing_required"`
 	WritableShares  []string `json:"writable_shares,omitempty"`
+}
+
+// Protections are the operating system's own safeguards, each "on", "off"
+// or "" (not known). Extra holds platform detail.
+type Protections struct {
+	Integrity       string            `json:"integrity"`        // macOS SIP
+	AppVerification string            `json:"app_verification"` // macOS Gatekeeper
+	DiskEncryption  string            `json:"disk_encryption"`  // macOS FileVault
+	Extra           map[string]string `json:"extra,omitempty"`
 }
 
 type Antimalware struct {
@@ -287,6 +297,7 @@ func NewFacts(name, version string, at time.Time) *Facts {
 			SMB:   Unknown[SMBConfig](nc, ""),
 		},
 		Antimalware: Unknown[Antimalware](nc, ""),
+		Protections: Unknown[Protections](nc, ""),
 		AuthEvents:  Unknown[AuthEvents](nc, ""),
 		Web:         Unknown[Web](nc, ""),
 	}
