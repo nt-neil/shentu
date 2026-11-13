@@ -105,9 +105,8 @@ nftables, which many cloud images leave out: `apt install nftables` or `dnf inst
 
 ### Windows Server
 
-Windows Server 2022 and 2025 are supported from v0.3.0 (amd64; arm64 is built too), checked on
-real hosts (GitHub's Windows runners). Windows Server 2019 is best effort: expected to work (the
-same Windows APIs, build 17763) but not checked on a real host. Download `shentu_windows_amd64.zip`, then in an elevated prompt copy `shentu.exe` to
+Windows Server 2022 and 2025 are supported from v0.3.0 (amd64; arm64 is built too), verified on GitHub-hosted windows-2022/2025 runners. Windows Server 2019 is best effort: expected to work (the
+same Windows APIs, build 17763) but not verified on GitHub-hosted runners (they offer no 2019 image). Download `shentu_windows_amd64.zip`, then in an elevated prompt copy `shentu.exe` to
 `%ProgramFiles%\Shentu` and run `shentu service install` (patrol) and, for Telegram,
 `shentu service install --bot`. Both run as LocalSystem, which reading the Security log needs;
 configuration and state live in `%ProgramData%\Shentu`, open to SYSTEM and Administrators only.

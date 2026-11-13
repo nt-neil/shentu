@@ -4,8 +4,7 @@
 
 ## English
 
-Supported: Windows Server 2022 and 2025, checked on real hosts (GitHub's
-Windows runners). Windows Server 2019 is best effort: expected to work (the same Windows APIs, build 17763) but not checked on a real host.
+Supported: Windows Server 2022 and 2025, verified on GitHub-hosted windows-2022/2025 runners. Windows Server 2019 is best effort: expected to work (the same Windows APIs, build 17763) but not verified on GitHub-hosted runners (they offer no 2019 image).
 amd64 is the release target; arm64 is built too.
 
 ### Install
@@ -59,7 +58,7 @@ from an elevated prompt; unelevated, some checks report "unknown".
 - Read-only: `block_ip` and `unblock_ip` are not supported on Windows;
   Shentu reports, it does not change the host.
 - Windows Server 2019 is best effort: expected to work (build 17763, the
-  same APIs) but not checked on a real host.
+  same APIs) but not verified on GitHub-hosted runners (they offer no 2019 image).
 - The binary is not code-signed. SmartScreen may warn when it is started,
   and Microsoft Defender or another antivirus may flag it (it reads the
   event log, the registry's autostart keys and WMI subscriptions, as
@@ -71,8 +70,8 @@ from an elevated prompt; unelevated, some checks report "unknown".
 
 ## 繁體中文
 
-支援 Windows Server 2022 與 2025，已在實機（GitHub 的 Windows runner）上驗證。
-Windows Server 2019 為 best effort：預期可用（相同的 Windows API，build 17763），但沒有實機驗證。
+支援 Windows Server 2022 與 2025，已在 GitHub 提供的 Windows Server 2022/2025 測試機上驗證。
+Windows Server 2019 為 best effort：預期可用（相同的 Windows API，build 17763），但沒有在 GitHub 提供的測試機上驗證。
 正式發布以 amd64 為主，arm64 也一併建置。
 
 ### 安裝
@@ -122,7 +121,7 @@ shentu.exe service start --bot
 ### 目前的限制（v0.3.0）
 
 - 只讀不寫：Windows 上不支援 `block_ip`、`unblock_ip`，Shentu 只回報，不改動主機。
-- Windows Server 2019 為 best effort：預期可用（build 17763，相同的 API），但沒有實機驗證。
+- Windows Server 2019 為 best effort：預期可用（build 17763，相同的 API），但沒有在 GitHub 提供的測試機上驗證。
 - 執行檔沒有程式碼簽章。啟動時 SmartScreen 可能出現警告，Microsoft Defender
   或其他防毒也可能誤判（Shentu 會讀取事件記錄、登錄檔的自動啟動機碼與 WMI
   訂閱，行為與惡意程式掃描工具相似）。請用 `checksums.txt` 與發布證明核對下載檔：
