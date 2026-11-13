@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 )
 
 type DarwinCollector struct{}
@@ -353,6 +354,9 @@ func (DarwinCollector) Processes(ctx context.Context, src Source, now time.Time)
 			l = strings.TrimSpace(l)
 			pid, rest, _ := strings.Cut(l, " ")
 			if n, err := strconv.Atoi(pid); err == nil {
+				if _, dup := args[n]; dup { // a later line for the same pid (an injected newline) does not replace the first
+					continue
+				}
 				args[n] = CutString(MaskSecrets(strings.TrimSpace(rest)), MaxCmdline)
 			}
 		}
@@ -369,10 +373,11 @@ func (DarwinCollector) Processes(ctx context.Context, src Source, now time.Time)
 			continue
 		}
 		// comm is the rest of the line after five fields; it may hold spaces.
-		comm := strings.TrimSpace(l)
-		for i := 0; i < 5; i++ {
-			comm = strings.TrimSpace(comm[strings.IndexAny(comm, " \t"):])
+		at := fieldStart(l, 5)
+		if at < 0 {
+			continue
 		}
+		comm := strings.TrimSpace(l[at:])
 		p := Process{PID: pid, PPID: ppid, UID: f[2], User: f[3], Cmdline: args[pid], Name: path.Base(comm)}
 		if strings.HasPrefix(comm, "/") {
 			p.Exe, p.ExeKnown = comm, true
@@ -394,6 +399,25 @@ func (DarwinCollector) Processes(ctx context.Context, src Source, now time.Time)
 		return Partial(out, r, argsWhy)
 	}
 	return OK(out)
+}
+
+// fieldStart is the byte offset of field n (from 0) of l, fields split as
+// strings.Fields splits them; -1 when l has fewer.
+func fieldStart(l string, n int) int {
+	field, inField := -1, false
+	for i, r := range l {
+		if unicode.IsSpace(r) {
+			inField = false
+			continue
+		}
+		if !inField {
+			inField = true
+			if field++; field == n {
+				return i
+			}
+		}
+	}
+	return -1
 }
 
 // MacInTempDir: world-writable temp folders, also under /private.

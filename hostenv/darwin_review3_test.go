@@ -4,6 +4,7 @@ import (
 	"context"
 	"io/fs"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -499,5 +500,71 @@ func TestPeriodicConfFilesFollowed(t *testing.T) {
 	}
 	if !gotEvil || !gotDir {
 		t.Errorf("extra conf file %v, exported local_periodic folder %v: %+v", gotEvil, gotDir, o.Value)
+	}
+}
+
+// ps lines whose fields are split by other whitespace do not panic, and a
+// later args line for the same pid does not replace the first.
+func TestDarwinProcessesOddWhitespace(t *testing.T) {
+	ps := "  10\v1\v501\valice\v01:00\v/Applications/Ex.app/Contents/MacOS/Ex\n  11 1 501 alice 01:00 /bin/zsh\n"
+	args := "  11 /bin/zsh -l\n  11 /bin/zsh --forged\n"
+	src := fakeMac{cmds: map[string]string{key(macPsArgv): ps, key(macPsArgsArgv): args}}
+	o := DarwinCollector{}.Processes(context.Background(), src, time.Now())
+	if len(o.Value) != 2 || o.Value[0].Exe != "/Applications/Ex.app/Contents/MacOS/Ex" || o.Value[1].Cmdline != "/bin/zsh -l" {
+		t.Errorf("%+v", o.Value)
+	}
+	if fieldStart("a b", 5) != -1 || fieldStart("a\v b  c", 2) != 6 {
+		t.Error("fieldStart")
+	}
+}
+
+// A binary plist whose many object numbers point at one long string builds
+// it once; objects that overlap cannot decode past the byte budget.
+func TestBplistSharedOffsetAndBudget(t *testing.T) {
+	// 0 array of n refs to objects 1..n, all at the offset of one 8000-byte string.
+	n, size := 400, 8000
+	b := []byte("bplist00")
+	arr := []byte{0xaf, 0x11, byte(n >> 8), byte(n)}
+	for i := 1; i <= n; i++ {
+		arr = append(arr, byte(i>>8), byte(i))
+	}
+	arrAt := len(b)
+	b = append(b, arr...)
+	strAt := len(b)
+	b = append(b, 0x5f, 0x11, byte(size>>8), byte(size))
+	b = append(b, []byte(strings.Repeat("A", size))...)
+	table := len(b)
+	offs := []int{arrAt}
+	for i := 0; i < n; i++ {
+		offs = append(offs, strAt)
+	}
+	for _, o := range offs {
+		b = append(b, byte(o>>8), byte(o))
+	}
+	tr := make([]byte, 32)
+	tr[6], tr[7] = 2, 2
+	put := func(at, v int) {
+		for k := 0; k < 8; k++ {
+			tr[at+7-k] = byte(v >> (8 * k))
+		}
+	}
+	put(8, len(offs))
+	put(16, 0)
+	put(24, table)
+	b = append(b, tr...)
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	v, err := ParsePlist(b)
+	runtime.ReadMemStats(&after)
+	if err != nil || len(v.([]any)) != n {
+		t.Fatalf("shared string: %v", err)
+	}
+	if grew := after.TotalAlloc - before.TotalAlloc; grew > 1<<20 {
+		t.Errorf("built the shared string %d bytes' worth", grew)
+	}
+	p := &bplist{b: b, budget: 100}
+	if err := p.spend(101); err == nil {
+		t.Error("budget not enforced")
 	}
 }
