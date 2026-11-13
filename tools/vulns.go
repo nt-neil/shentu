@@ -19,7 +19,7 @@ import (
 var packageVulns = Tool{
 	Name: "package_vulns",
 	Description: "Checks installed OS packages against the OSV vulnerability database (online, api.osv.dev) and marks vulnerabilities that CISA lists as actively exploited (KEV); fix those first. Without arguments returns affected packages, vulnerability IDs and the exploited ones; with package set, returns the summary, severity and fixed version of that package's vulnerabilities. " +
-		"partial says what could not be checked (an advisory feed or topic that failed): those packages may have fixes pending. ecosystems_not_queried lists ecosystems the host may have that OSV does not carry; ecosystems lists every one queried when there are several (SUSE).",
+		"partial says what could not be checked (an advisory feed or topic that failed): those packages may have fixes pending. ecosystems_not_queried lists ecosystems the host may have that OSV does not carry; ecosystems lists every one queried when there are several (SUSE). kev_unchecked counts vulnerabilities not checked against KEV (lookups failed, or over 300 for one package): exploited ones among them are not marked.",
 	Params: schema(`{"type":"object","properties":{
 		"package":{"type":"string","description":"show details for this package"}}}`),
 	Run: func(ctx context.Context, env *Env, args json.RawMessage) (any, error) {
@@ -64,6 +64,9 @@ func PackageVulns(ctx context.Context, hc *http.Client, detailFor string) (map[s
 			partial = "not checked, so their packages may have fixes pending: " + strings.Join(failed, "; ")
 		}
 		if err != nil {
+			if errors.Is(err, errCacheDropped) {
+				return nil, fmt.Errorf("Amazon Linux security advisories (ALAS): a damaged cached copy was dropped; the next run fetches it again: %w", err)
+			}
 			return nil, fmt.Errorf("Amazon Linux security advisories (ALAS) unavailable (is the server online?): %w", err)
 		}
 		advisories = advs
@@ -127,6 +130,9 @@ func PackageVulns(ctx context.Context, hc *http.Client, detailFor string) (map[s
 	if len(feed.NotQueried) > 0 {
 		out["ecosystems_not_queried"] = feed.NotQueried
 	}
+	if feed.Note != "" {
+		out["ecosystems_note"] = feed.Note
+	}
 	if len(feed.Ecosystems) > 1 { // SUSE: one per module; ecosystem shows the first only
 		out["ecosystems"] = feed.Ecosystems
 	}
@@ -137,24 +143,31 @@ func PackageVulns(ctx context.Context, hc *http.Client, detailFor string) (map[s
 	if hint != "" {
 		out["upgrade_command"] = hint
 	}
-	cvesOf := func(id string) []string { return osvCVEs(ctx, hc, id) }
+	cvesOf := func(id string) ([]string, bool) { return osvCVEs(ctx, hc, id) }
 	if advisories != nil {
-		cvesOf = func(id string) []string { return advisories[id].CVEs }
+		cvesOf = func(id string) ([]string, bool) { return advisories[id].CVEs, true }
 	}
 	exploited := map[string][]Exploit{} // package -> KEV matches
 	if kev, err := loadKEV(ctx, hc); err != nil {
 		out["kev"] = "CISA KEV list unavailable: " + err.Error()
 	} else {
 		var all []Exploit
+		unchecked := 0
 		for _, a := range found {
-			for _, e := range matchKEV(kev, a.IDs, cvesOf) {
+			list, n := matchKEV(kev, a.IDs, cvesOf)
+			unchecked += n
+			for _, e := range list {
 				e.Package, e.Version = a.Package, a.Version
 				exploited[a.Package] = append(exploited[a.Package], e)
 				all = append(all, e)
 			}
 		}
 		out["actively_exploited"] = all
-		if len(all) == 0 {
+		switch {
+		case unchecked > 0:
+			out["kev_unchecked"] = unchecked
+			out["kev"] = fmt.Sprintf("%d vulnerabilities could not be checked against the CISA KEV list (their CVEs could not be looked up, or over 300 for one package): exploited ones among them are not marked", unchecked)
+		case len(all) == 0:
 			out["kev"] = "none of these vulnerabilities is on the CISA KEV list of actively exploited vulnerabilities"
 		}
 	}
@@ -301,23 +314,30 @@ var cveRe = regexp.MustCompile(`CVE-\d{4}-\d{4,}`)
 
 // matchKEV returns the KEV entries for ids. Debian and Ubuntu IDs contain the CVE;
 // others (RLSA, ALSA) are resolved with cves, concurrently and at most 300 of them.
-func matchKEV(kev map[string]kevEntry, ids []string, cves func(id string) []string) []Exploit {
+func matchKEV(kev map[string]kevEntry, ids []string, cves func(id string) ([]string, bool)) (found []Exploit, unchecked int) {
 	var mu sync.Mutex
 	var out []Exploit
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, 8)
-	for i, id := range ids {
-		if i >= 300 {
-			break
-		}
+	if len(ids) > 300 { // past the cap, not looked up: said, never taken as "not exploited"
+		unchecked = len(ids) - 300
+		ids = ids[:300]
+	}
+	for _, id := range ids {
 		wg.Add(1)
 		go func(id string) {
 			defer wg.Done()
 			list := cveRe.FindAllString(id, -1)
 			if len(list) == 0 {
 				sem <- struct{}{}
-				list = cves(id)
+				var ok bool
+				list, ok = cves(id)
 				<-sem
+				if !ok {
+					mu.Lock()
+					unchecked++
+					mu.Unlock()
+				}
 			}
 			for _, c := range list {
 				if e, ok := kev[c]; ok {
@@ -339,19 +359,21 @@ func matchKEV(kev map[string]kevEntry, ids []string, cves func(id string) []stri
 			uniq = append(uniq, e)
 		}
 	}
-	return uniq
+	return uniq, unchecked
 }
 
 // osvCVEs returns the CVEs an OSV advisory covers (aliases and upstream).
-func osvCVEs(ctx context.Context, hc *http.Client, id string) []string {
+// osvCVEs is the CVEs an OSV id stands for; ok is false when OSV could not
+// be asked (offline, rate limited), which is not "no CVE".
+func osvCVEs(ctx context.Context, hc *http.Client, id string) ([]string, bool) {
 	var v struct {
 		Aliases  []string `json:"aliases"`
 		Upstream []string `json:"upstream"`
 	}
 	if getJSON(ctx, hc, osvAPI+"/vulns/"+id, &v) != nil {
-		return nil
+		return nil, false
 	}
-	return cveRe.FindAllString(strings.Join(append(v.Aliases, v.Upstream...), " "), -1)
+	return cveRe.FindAllString(strings.Join(append(v.Aliases, v.Upstream...), " "), -1), true
 }
 
 func upgradeHint(eco string) string {

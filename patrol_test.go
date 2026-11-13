@@ -112,7 +112,7 @@ func TestUncheckedVulns(t *testing.T) {
 		t.Errorf("partial: %q", s)
 	}
 	// N-R2, S-R1: KEV unavailable, a lock file that failed, ecosystems not queried.
-	r := map[string]any{"kev": "CISA KEV list unavailable: timeout", "files": []tools.AppResult{{Path: "/srv/app/package-lock.json", Error: "OSV query failed"}},
+	r := map[string]any{"total_vulns": 3, "kev": "CISA KEV list unavailable: timeout", "files": []tools.AppResult{{Path: "/srv/app/package-lock.json", Error: "OSV query failed"}},
 		"ecosystems_not_queried": []string{"SUSE:Linux Enterprise Desktop 15 SP6 (no such OSV ecosystem; its modules are queried)"}}
 	s := uncheckedVulns("application dependencies", r, nil)
 	for _, want := range []string{"CISA KEV list", "package-lock.json", "OSV query failed", "Linux Enterprise Desktop"} {
@@ -125,5 +125,34 @@ func TestUncheckedVulns(t *testing.T) {
 	}
 	if s := uncheckedVulns("installed packages", map[string]any{"total_vulns": 0}, nil); s != "" {
 		t.Errorf("checked: %q", s)
+	}
+}
+
+// N-A: the unchecked section stays short: lines cut at 200 bytes, at most 10
+// lock files named, the same error once. S-A: no KEV line with nothing found.
+// N-C: KEV lookups that could not be made are said.
+func TestUncheckedVulnsBounded(t *testing.T) {
+	var files []tools.AppResult
+	for i := 0; i < 25; i++ {
+		files = append(files, tools.AppResult{Path: fmt.Sprintf("/srv/app%02d/package-lock.json", i), Error: "OSV query failed: " + strings.Repeat("x", 500)})
+	}
+	files = append(files, tools.AppResult{Path: "/srv/other/go.sum", Error: "parse error"})
+	s := uncheckedVulns("application dependencies", map[string]any{"files": files}, nil)
+	for _, l := range strings.Split(strings.TrimSpace(s), "\n") {
+		if len(l) > maxUncheckedLine+8 {
+			t.Errorf("line of %d bytes", len(l))
+		}
+	}
+	if strings.Count(s, "OSV query failed") != 1 || strings.Count(s, "package-lock.json") > uncheckedFiles {
+		t.Errorf("not merged or not capped:\n%s", s)
+	}
+	if strings.Contains(s, "app15") {
+		t.Errorf("more than 10 files named")
+	}
+	if s := uncheckedVulns("installed packages", map[string]any{"total_vulns": 0, "kev": "CISA KEV list unavailable: timeout"}, nil); s != "" {
+		t.Errorf("KEV line with no vulnerability: %q", s)
+	}
+	if s := uncheckedVulns("installed packages", map[string]any{"total_vulns": 9, "kev_unchecked": 4}, nil); !strings.Contains(s, "4 vulnerabilities not checked against the CISA KEV list") {
+		t.Errorf("KEV unchecked: %q", s)
 	}
 }

@@ -33,6 +33,11 @@ type alasHit struct {
 	IDs     []string `json:"ids"`
 }
 
+// errCacheDropped marks an updateinfo failure that came from a damaged
+// cached copy, now dropped: the next run fetches it again; the server was
+// not at fault.
+var errCacheDropped = errors.New("cached copy dropped, fetched again next time")
+
 var (
 	// updateinfoData is repomd's entry for updateinfo: the file's location
 	// and the sha256 of the file as served (compressed) are both taken from
@@ -132,7 +137,7 @@ func alasAffected(ctx context.Context, hc *http.Client, feed hostenv.PatchFeed, 
 			// damaged after the check) it would fail the same way every run.
 			os.Remove(cached)
 			delete(used, cached)
-			err = fmt.Errorf("%w (cached copy dropped, fetched again next time)", err)
+			err = fmt.Errorf("%w (%w)", err, errCacheDropped)
 		}
 		if err != nil && i == 0 {
 			return nil, nil, nil, fmt.Errorf("updateinfo: %w", err)
@@ -227,7 +232,7 @@ func updateinfo(ctx context.Context, hc *http.Client, mirrorList string) (io.Rea
 		f.Close()
 		if cached != "" {
 			os.Remove(cached) // not gzip: damaged, fetched again next time
-			err = fmt.Errorf("%w (cached copy dropped, fetched again next time)", err)
+			err = fmt.Errorf("%w (%w)", err, errCacheDropped)
 		}
 		return nil, "", err
 	}

@@ -194,6 +194,9 @@ func (LinuxCollector) packages(ctx context.Context, src Source, osr map[string]s
 		return Unknown[PackageSet](ReasonCommandFailed, fmt.Sprintf("%s exit %d: %s", set.Manager, res.ExitCode, firstLine(res.Stderr))), nil
 	}
 	set.Items = items
+	if set.Feed != nil {
+		DropAbsentSLEProducts(set.Feed, src, items)
+	}
 	if extrasErr != "" {
 		return Partial(set, extrasReason, "not fully read: "+extrasErr), apkOwned
 	}

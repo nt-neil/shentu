@@ -74,7 +74,7 @@ func TestPatchFeedFor(t *testing.T) {
 	}
 	sled := PatchFeedFor(map[string]string{"ID": "sled", "VERSION_ID": "15.6"})
 	if !slices.Contains(sled.Ecosystems, "SUSE:Linux Enterprise Workstation Extension 15 SP6") || slices.Contains(sled.Ecosystems, "SUSE:Linux Enterprise Module for Server Applications 15 SP6") ||
-		slices.Contains(sled.Ecosystems, "SUSE:Linux Enterprise Server 15 SP6") || len(sled.NotQueried) != 1 {
+		slices.Contains(sled.Ecosystems, "SUSE:Linux Enterprise Server 15 SP6") || len(sled.NotQueried) != 0 || !strings.Contains(sled.Note, "Linux Enterprise Desktop") {
 		t.Errorf("sled %+v", sled)
 	}
 	sap := PatchFeedFor(map[string]string{"ID": "sles_sap", "VERSION_ID": "15.6"})
@@ -267,5 +267,28 @@ func TestDistroReadErrorsSaid(t *testing.T) {
 		if strings.Contains(it.Detail, "no package installed") {
 			t.Errorf("flag kept without the database: %+v", it)
 		}
+	}
+}
+
+// N-B: Real Time is listed as not queried only on a host that has it: its
+// products.d file or kernel-rt.
+func TestDropAbsentSLEProducts(t *testing.T) {
+	feed := func() PatchFeed { return PatchFeedFor(map[string]string{"ID": "sles", "VERSION_ID": "15.6"}) }
+	h := newFake(true)
+	f := feed()
+	DropAbsentSLEProducts(&f, h, []Package{{Name: "bash"}})
+	if len(f.NotQueried) != 0 {
+		t.Errorf("no RT on the host: %v", f.NotQueried)
+	}
+	f = feed()
+	DropAbsentSLEProducts(&f, h, []Package{{Name: "kernel-rt"}})
+	if len(f.NotQueried) != 1 {
+		t.Errorf("kernel-rt installed: %v", f.NotQueried)
+	}
+	h.files["/etc/products.d/SLE_RT.prod"] = "<product/>"
+	f = feed()
+	DropAbsentSLEProducts(&f, statFake{h}, nil)
+	if len(f.NotQueried) != 1 {
+		t.Errorf("SLE_RT.prod present: %v", f.NotQueried)
 	}
 }

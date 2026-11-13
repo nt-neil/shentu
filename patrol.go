@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nt-neil/shentu/hostenv"
 	"github.com/nt-neil/shentu/tools"
 )
 
@@ -100,25 +101,52 @@ func uncheckedSection(risks []tools.Risk) string {
 // not carry.
 func uncheckedVulns(what string, r map[string]any, err error) string {
 	if err != nil {
-		return fmt.Sprintf("\n\nNot checked for vulnerabilities: %s (%q).\n", what, mask(err.Error()))
+		return fmt.Sprintf("\n\nNot checked for vulnerabilities: %s (%q).\n", what, mask(cutLine(err.Error())))
 	}
 	var lines []string
 	if p, ok := r["partial"]; ok {
-		lines = append(lines, fmt.Sprintf("- partly checked: %q", mask(fmt.Sprint(p))))
+		lines = append(lines, fmt.Sprintf("- partly checked: %q", mask(cutLine(fmt.Sprint(p)))))
 	}
-	if k, _ := r["kev"].(string); strings.Contains(k, "unavailable") {
-		lines = append(lines, fmt.Sprintf("- not checked against the CISA KEV list, so exploited ones are not marked: %q", mask(k)))
+	// With no vulnerability found there is nothing to look up in KEV.
+	if n, _ := r["total_vulns"].(int); n > 0 {
+		if k, _ := r["kev"].(string); strings.Contains(k, "unavailable") {
+			lines = append(lines, fmt.Sprintf("- not checked against the CISA KEV list, so exploited ones are not marked: %q", mask(cutLine(k))))
+		} else if u, _ := r["kev_unchecked"].(int); u > 0 {
+			lines = append(lines, fmt.Sprintf("- %d vulnerabilities not checked against the CISA KEV list (lookups failed or over the cap)", u))
+		}
 	}
 	if files, ok := r["files"].([]tools.AppResult); ok {
+		// One line per distinct error, at most uncheckedFiles paths in all.
+		byErr := map[string][]string{}
+		var order []string
 		for _, f := range files {
-			if f.Error != "" {
-				lines = append(lines, fmt.Sprintf("- not checked: %q (%q)", mask(f.Path), mask(f.Error)))
+			if f.Error == "" {
+				continue
 			}
+			if _, seen := byErr[f.Error]; !seen {
+				order = append(order, f.Error)
+			}
+			byErr[f.Error] = append(byErr[f.Error], f.Path)
+		}
+		listed := 0
+		for _, e := range order {
+			paths := byErr[e]
+			show := paths[:min(len(paths), max(uncheckedFiles-listed, 0))]
+			listed += len(show)
+			names := make([]string, len(show))
+			for i, p := range show {
+				names[i] = mask(p)
+			}
+			line := fmt.Sprintf("- not checked (%q): %s", mask(hostenv.CutString(e, 80)), strings.Join(names, ", "))
+			if more := len(paths) - len(show); more > 0 {
+				line += fmt.Sprintf(" and %d more", more)
+			}
+			lines = append(lines, cutLine(line))
 		}
 	}
 	if nq, ok := r["ecosystems_not_queried"].([]string); ok {
 		for _, e := range nq {
-			lines = append(lines, fmt.Sprintf("- not queried (OSV has no such ecosystem): %q", mask(e)))
+			lines = append(lines, fmt.Sprintf("- not queried (OSV has no such ecosystem): %q", mask(cutLine(e))))
 		}
 	}
 	if len(lines) == 0 {
@@ -126,6 +154,16 @@ func uncheckedVulns(what string, r map[string]any, err error) string {
 	}
 	return "\n\nVulnerability check of " + what + " incomplete:\n" + strings.Join(lines, "\n") + "\n"
 }
+
+// uncheckedFiles caps the lock file paths the unchecked section lists;
+// maxUncheckedLine the length of one line of it.
+const (
+	uncheckedFiles   = 10
+	maxUncheckedLine = 200
+)
+
+// cutLine keeps a report line to maxUncheckedLine bytes.
+func cutLine(s string) string { return hostenv.CutString(s, maxUncheckedLine) }
 
 // uncheckedConfigs lists the web server configuration files the code audit
 // could not read: the sites they serve were audited as plain folders.

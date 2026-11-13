@@ -23,7 +23,8 @@ type PatchFeed struct {
 	Repos      []string `json:"repos,omitempty"`       // alas 2: the amazon-linux-extras topics enabled (kernel-5.10, php8.2)
 	Upgrade    string   `json:"upgrade,omitempty"`     // the command that installs the fixes
 	VersionFmt string   `json:"version_fmt,omitempty"` // how OSV spells versions: "evr" (epoch:version-release) or "vr" (no epoch when 0)
-	NotQueried []string `json:"not_queried,omitempty"` // ecosystems the host may have that OSV does not carry, so their packages are not checked
+	NotQueried []string `json:"not_queried,omitempty"` // ecosystems the host has that OSV does not carry, so their packages are not checked
+	Note       string   `json:"note,omitempty"`        // how the ecosystems were chosen, when that needs saying
 }
 
 // slesModules are the SLE 15 modules whose packages OSV lists under their
@@ -41,8 +42,38 @@ var slesModules = []string{
 }
 
 // slesNotInOSV are SLE 15 products a host may have that OSV does not carry
-// under any name tried (kernel-rt has no advisory under "Real Time").
+// under any name tried (kernel-rt has no advisory under "Real Time"); each
+// with the product file or package that shows the host has it.
 var slesNotInOSV = []string{"Linux Enterprise Real Time"}
+
+var sleProductSigns = map[string]struct{ prod, pkg string }{
+	"Linux Enterprise Real Time": {"/etc/products.d/SLE_RT.prod", "kernel-rt"},
+}
+
+// DropAbsentSLEProducts keeps the not-queried SLE products the host has:
+// its products.d file, or the package that comes with it, installed.
+func DropAbsentSLEProducts(f *PatchFeed, src Source, items []Package) {
+	var keep []string
+	for _, nq := range f.NotQueried {
+		present := true
+		for name, sign := range sleProductSigns {
+			if !strings.Contains(nq, name) {
+				continue
+			}
+			present = false
+			if _, err := Stat(src, sign.prod); err == nil {
+				present = true
+			}
+			for _, p := range items {
+				present = present || p.Name == sign.pkg
+			}
+		}
+		if present {
+			keep = append(keep, nq)
+		}
+	}
+	f.NotQueried = keep
+}
 
 // sledModules are where SLED 15's packages are in OSV: "Linux Enterprise
 // Desktop" itself is no OSV ecosystem, and the server modules do not apply.
@@ -83,7 +114,8 @@ func PatchFeedFor(osr map[string]string) PatchFeed {
 			}
 		case id == "sled":
 			mods = sledModules
-			f.NotQueried = []string{"SUSE:Linux Enterprise Desktop " + sp + " (no such OSV ecosystem; its modules are queried)"}
+			// Not a gap: SLED's packages are all in its modules' ecosystems.
+			f.Note = "SUSE:Linux Enterprise Desktop " + sp + " is no OSV ecosystem; its modules are queried"
 		case id == "sles_sap":
 			// The product carries the SAP packages; OSV has no "Module for SAP Applications".
 			mods = append(append([]string(nil), slesModules...), "Linux Enterprise Server for SAP Applications")
@@ -97,6 +129,8 @@ func PatchFeedFor(osr map[string]string) PatchFeed {
 				f.NotQueried = append(f.NotQueried, "SUSE:"+m+" "+sp+" (no such OSV ecosystem)")
 			}
 		}
+		// slesNotInOSV entries stay only when the host has that product:
+		// LinuxCollector.packages drops them otherwise (SLEProductPresent).
 		return f
 	case "amzn":
 		switch ver {

@@ -102,8 +102,8 @@ action, `command` the process), `ld_preload`, `rc_local`,
 | alpine | `osv` | `Alpine:v3.22` | `evr` | `apk upgrade` |
 | opensuse-leap | `osv` | `openSUSE:Leap 15.6` | `vr` | `zypper patch --category security` |
 | opensuse-tumbleweed, opensuse-slowroll | `osv` | `openSUSE:Tumbleweed` | `vr` | `zypper dup` |
-| sles | `osv` | one per SLE 15 module, e.g. `SUSE:Linux Enterprise Module for Basesystem 15 SP5`, with Python 3, HPC, Live Patching, High Availability Extension and `SUSE:Package Hub 15 SP5`; Real Time is no OSV ecosystem and is listed in `not_queried` | `vr` | `zypper patch --category security` |
-| sled | `osv` | the modules a desktop has (Basesystem, Desktop Applications, Development Tools, Python 3, Workstation Extension, Package Hub); `SUSE:Linux Enterprise Desktop` is no OSV ecosystem and is listed in `not_queried` | `vr` | `zypper patch --category security` |
+| sles | `osv` | one per SLE 15 module, e.g. `SUSE:Linux Enterprise Module for Basesystem 15 SP5`, with Python 3, HPC, Live Patching, High Availability Extension and `SUSE:Package Hub 15 SP5`; Real Time is no OSV ecosystem and is listed in `not_queried` when the host has it (`/etc/products.d/SLE_RT.prod` or `kernel-rt`) | `vr` | `zypper patch --category security` |
+| sled | `osv` | the modules a desktop has (Basesystem, Desktop Applications, Development Tools, Python 3, Workstation Extension, Package Hub); `SUSE:Linux Enterprise Desktop` is no OSV ecosystem, which `note` says (its packages are in the modules, so nothing goes unchecked) | `vr` | `zypper patch --category security` |
 | sles_sap | `osv` | the sles modules and `SUSE:Linux Enterprise Server for SAP Applications 15 SP5`; `Module for SAP Applications` is no OSV ecosystem and is listed in `not_queried`, as is SLES for SAP 12 | `vr` | `zypper patch --category security` |
 | amzn | `alas` | `release` `2` or `2023`; on 2, `repos` lists the amazon-linux-extras topics enabled (`kernel-5.10`, `php8.2`), whose updateinfo is read too | | `yum update --security` (2), `dnf upgrade --security` (2023) |
 

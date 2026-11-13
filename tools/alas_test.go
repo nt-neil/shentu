@@ -393,3 +393,23 @@ func TestALASCacheNotGzipDropped(t *testing.T) {
 		t.Errorf("next run: %v, downloads %d->%d", err, before, *downloads)
 	}
 }
+
+// S-B: the run that drops a damaged cache does not ask whether the server
+// is online.
+func TestPackageVulnsCacheDroppedWording(t *testing.T) {
+	srv, _ := fakeALAS(t, map[string]string{"core": "<updates/>"}, true)
+	withHost(t, scriptHost{memHost: memHost{"/etc/os-release": "NAME=\"Amazon Linux\"\nID=\"amzn\"\nVERSION_ID=\"2\"\n"},
+		cmds: map[string]hostenv.CmdResult{strings.Join([]string{"/usr/bin/rpm", "-qa", "--qf", hostenv.RpmQueryFormat}, " "): {
+			Stdout: []byte("bash\t0:4.2.46-34.amzn2\taarch64\n")}}})
+	if _, err := PackageVulns(context.Background(), srv.Client(), ""); err != nil {
+		t.Fatal(err)
+	}
+	cached, _ := filepath.Glob(filepath.Join(alasCacheDir(), "alas-*.gz"))
+	for _, f := range cached {
+		os.WriteFile(f, []byte("not gzip"), 0o600)
+	}
+	_, err := PackageVulns(context.Background(), srv.Client(), "")
+	if err == nil || strings.Contains(err.Error(), "is the server online") || !strings.Contains(err.Error(), "damaged cached copy was dropped") {
+		t.Errorf("err %v", err)
+	}
+}
