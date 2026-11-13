@@ -282,8 +282,6 @@ func TestUploadFolder(t *testing.T) {
 		"/home/u/src/site/wp-content/uploads/2024/x.php":   true,
 		"/var/www/drupal/sites/default/files/x.php":        true,
 		"/var/www/magento/pub/media/x.php":                 true,
-		"/var/www/files/index.php":                         false, // a site named files
-		"/var/www/files/lib/a.php":                         false,
 		"/var/www/files/uploads/a.php":                     true,
 		"/var/www/html/uploads/wp-content/x.php":           true, // a wp-content inside uploads hides nothing
 		"/var/www/html/uploads/wp-content/plugins/x.php":   true,
@@ -557,7 +555,7 @@ func TestAppCodeAuditWalkResumes(t *testing.T) {
 	}
 	roots := []string{dir}
 	// The last audit stopped in m/.
-	saveWalkPos(walkPosFile(roots), &walkPos{0, filepath.Join(dir, "public", "uploads", "m")})
+	saveWalkPos(walkPosFile(roots), &walkPos{dir, filepath.Join(dir, "public", "uploads", "m")})
 	res := AppCodeAudit(context.Background(), roots, nil)
 	n := 0
 	for _, f := range res.Findings {
@@ -586,6 +584,78 @@ func TestAppCodeAuditWalkResumes(t *testing.T) {
 	}
 }
 
+// Review of 6f5231d: a vendor folder above the site's root does not hide its
+// uploads; blogs.dir is the old multisite's; /var/www/<uploads|files> is an
+// upload folder unless it holds a site's front page.
+func TestUploadFolderSiteRoot(t *testing.T) {
+	www := t.TempDir()
+	old := varWWW
+	defer func() { varWWW = old }()
+	varWWW = filepath.ToSlash(www) // uploadFolder compares slash-separated paths
+	os.MkdirAll(filepath.Join(www, "files"), 0o755)
+	os.WriteFile(filepath.Join(www, "files", "index.php"), []byte("<?php\n"), 0o644)
+	os.MkdirAll(filepath.Join(www, "uploads"), 0o755)
+	for p, want := range map[string]bool{
+		"/home/vendor/public_html/sites/default/files/x.php":   true,
+		"/srv/vendor/public/uploads/x.php":                     true,
+		"/srv/app/vendor/acme/pkg/public/images/x.php":         false,
+		"/srv/wp/wp-content/blogs.dir/3/files/2010/x.php":      true,
+		"/srv/wp/wp-content/plugins/p/blogs.dir/3/files/x.php": false,
+		www + "/uploads/x.php":                                 true,  // no front page: an upload folder
+		www + "/files/index.php":                               false, // a site named files
+		www + "/files/lib/a.php":                               false,
+	} {
+		if got := uploadFolder(p, nil); got != want {
+			t.Errorf("uploadFolder(%q) = %v, want %v", p, got, want)
+		}
+	}
+	// Under a web root, a vendor folder above it does not count either.
+	if !uploadFolder("/srv/vendor/site/uploads/x.php", []string{"/srv/vendor/site"}) {
+		t.Error("web root below a folder named vendor")
+	}
+}
+
+// The walk's place names its root, and a walk cut before it got back to the
+// kept place keeps that place (it does not go back); a pruned results file
+// takes its place with it.
+func TestWalkPosKept(t *testing.T) {
+	isolateAudit(t)
+	dir, _ := filepath.EvalSymlinks(t.TempDir())
+	other, _ := filepath.EvalSymlinks(t.TempDir())
+	os.MkdirAll(filepath.Join(dir, "m"), 0o755)
+	roots := []string{dir}
+	kept := &walkPos{dir, filepath.Join(dir, "m")}
+	saveWalkPos(walkPosFile(roots), kept)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cut at once, before the kept place
+	auditUnlocked(ctx, roots, nil)
+	if got, ok := loadWalkPos(walkPosFile(roots)); !ok || got != *kept {
+		t.Errorf("place %+v, want %+v kept", got, *kept)
+	}
+	// The roots listed in another order find the same place.
+	roots2 := []string{other, dir}
+	saveWalkPos(walkPosFile(roots2), kept)
+	if got, ok := loadWalkPos(walkPosFile(roots2)); !ok || got.Root != dir {
+		t.Errorf("place by root: %+v", got)
+	}
+	// Pruning a results file removes its walk's place.
+	d := t.TempDir()
+	for i := range 3 {
+		n := filepath.Join(d, fmt.Sprintf("codecalls-%02d.json", i))
+		os.WriteFile(n, []byte("{}"), 0o600)
+		os.WriteFile(strings.TrimSuffix(n, ".json")+".walk", []byte("{}"), 0o600)
+		at := time.Now().Add(time.Duration(i) * time.Minute)
+		os.Chtimes(n, at, at)
+	}
+	pruneCallStates(d, 2)
+	if _, err := os.Stat(filepath.Join(d, "codecalls-00.walk")); err == nil {
+		t.Error("the pruned results' walk place is left")
+	}
+	if _, err := os.Stat(filepath.Join(d, "codecalls-02.walk")); err != nil {
+		t.Error("a kept results' walk place was removed")
+	}
+}
+
 // A root written with a trailing separator, or the filesystem root, is not
 // skipped as a whole when the walk resumes inside it.
 func TestAppCodeAuditWalkResumesRootSpelling(t *testing.T) {
@@ -597,7 +667,7 @@ func TestAppCodeAuditWalkResumesRootSpelling(t *testing.T) {
 	}
 	roots := []string{dir + string(filepath.Separator)}
 	for _, r := range [][]string{roots, cleanRoots(roots)} { // the last audit stopped in m/
-		saveWalkPos(walkPosFile(r), &walkPos{0, filepath.Join(dir, "public", "uploads", "m")})
+		saveWalkPos(walkPosFile(r), &walkPos{dir, filepath.Join(dir, "public", "uploads", "m")})
 	}
 	res := AppCodeAudit(context.Background(), roots, nil)
 	n := 0
