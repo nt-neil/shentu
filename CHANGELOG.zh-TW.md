@@ -57,6 +57,7 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 
 ### 已知問題
 
+- 從原始碼建置現在需要 Go 1.26 以上（原本是 1.23）：Windows 的收集程式用到 golang.org/x/sys，這是第二個外部套件。
 - Windows 版只讀不寫：不支援 `block_ip` 與 `unblock_ip`。
 - Windows Server 2019 為 best effort：預期可用（相同的 Windows API，build 17763），但沒有在 GitHub 提供的測試機上驗證。
 - `shentu setup` 還不能在 Windows 上執行，設定需要手動撰寫。

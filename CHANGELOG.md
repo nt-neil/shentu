@@ -67,6 +67,8 @@ Chinese for the zh-TW pages; keep the two in step.
 
 ### Known issues
 
+- Building from source now needs Go 1.26 or later (was 1.23): the Windows collector uses
+  golang.org/x/sys, the second dependency.
 - Windows is read-only: `block_ip` and `unblock_ip` are not supported there.
 - Windows Server 2019 is best effort: expected to work (the same Windows APIs, build 17763)
   but not verified on GitHub-hosted runners (they offer no 2019 image).

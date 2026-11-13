@@ -168,7 +168,7 @@ CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" .
 go test ./...
 ```
 
-Go 1.23 or later. Issues and pull requests are welcome; please keep the dependency count at one.
+Go 1.26 or later. Issues and pull requests are welcome; please keep the dependencies to the two there are (BurntSushi/toml, and golang.org/x/sys for Windows).
 
 ## License
 
