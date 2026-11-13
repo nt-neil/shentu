@@ -105,3 +105,25 @@ func TestMaskWinProfilePathsJSON(t *testing.T) {
 		t.Errorf("Startup key %s, replay asks %s", entries[3].Path, want)
 	}
 }
+
+// File contents are masked as text: an escaped path (a JSON or .reg file,
+// C:\\Users\\bob\\...) is masked too, and the escape of the quote that
+// ends it stays (security review of 9c256b2).
+func TestMaskWinProfilePathsText(t *testing.T) {
+	data := `{"path": "C:\\Users\\bob\\Clients\\plan.txt", "q": "\"C:\\Users\\bob\\x.exe\" -a"}` + "\n" + `C:\Users\bob\notes.txt`
+	e := &entry{Op: "file", Path: `C:\conf\app.json`, data: []byte(data)}
+	maskWinProfilePaths([]*entry{e})
+	out := string(e.data)
+	for _, l := range []string{"bob", "Clients", "plan.txt", "x.exe", "notes.txt"} {
+		if strings.Contains(out, l) {
+			t.Errorf("leaks %q: %s", l, out)
+		}
+	}
+	var v map[string]string
+	if err := json.Unmarshal([]byte(strings.SplitN(out, "\n", 2)[0]), &v); err != nil {
+		t.Errorf("the JSON in the file must still parse: %v\n%s", err, out)
+	}
+	if !strings.HasPrefix(v["q"], `"`) || !strings.Contains(v["q"], `" -a`) {
+		t.Errorf("quoted command: %q", v["q"])
+	}
+}

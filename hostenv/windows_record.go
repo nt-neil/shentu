@@ -237,60 +237,78 @@ func maskMachineSIDs(s string) string {
 // in Windows names, so unlike on Unix they do not stop the mask. It works
 // on decoded strings: JSON is unmarshalled first, so an escaped quote or
 // \n is a character here, never part of a path.
-type winProfiles struct{ re *regexp.Regexp }
+type winProfiles struct {
+	re   *regexp.Regexp
+	text bool // file contents: \\ (an escaped \, as in a JSON or .reg file) separates names too
+}
 
 var winProfileShared = map[string]bool{"public": true, "default": true, "default user": true, "all users": true}
 
-func newWinProfiles(extraRoots []string) winProfiles {
-	alt := []string{`(?:[A-Za-z]:|%SystemDrive%)[\\/]Users`}
+func newWinProfiles(extraRoots []string, text bool) winProfiles {
+	sep := `[\\/]`
+	if text {
+		sep = `(?:\\\\|[\\/])`
+	}
+	alt := []string{`(?:[A-Za-z]:|%SystemDrive%)` + sep + `Users`}
 	for _, r := range extraRoots {
 		var parts []string
 		for _, c := range winSplit(r) {
 			parts = append(parts, regexp.QuoteMeta(c))
 		}
 		if len(parts) > 0 {
-			alt = append(alt, strings.Join(parts, `[\\/]`))
+			alt = append(alt, strings.Join(parts, sep))
 		}
 	}
-	return winProfiles{regexp.MustCompile(`(?i)(` + strings.Join(alt, "|") + `)([\\/])([^\\/\x00-\x1f"<>|]+)((?:[\\/][^\x00-\x1f"<>|]*)?)`)}
+	return winProfiles{regexp.MustCompile(`(?i)(` + strings.Join(alt, "|") + `)(` + sep + `)([^\\/\x00-\x1f"<>|]+)((?:` + sep + `[^\x00-\x1f"<>|]*)?)`), text}
 }
 
 // maskWinHome masks with the default roots (X:\Users, %SystemDrive%\Users).
 func maskWinHome(s string) string { return defaultWinProfiles.mask(s) }
 
-var defaultWinProfiles = newWinProfiles(nil)
+var defaultWinProfiles = newWinProfiles(nil, false)
 
 func (w winProfiles) mask(s string) string {
 	return w.re.ReplaceAllStringFunc(s, func(t string) string {
 		sm := w.re.FindStringSubmatch(t)
 		root, sep, name, rest := sm[1], sm[2], sm[3], sm[4]
+		// A \ right before the quote that ends the field is that quote's
+		// escape (file contents): it stays, after the mask.
+		tail := ""
+		if w.text {
+			trimmed := strings.TrimRight(rest, `\`)
+			tail, rest = rest[len(trimmed):], trimmed
+		}
 		if !winProfileShared[strings.ToLower(name)] && !strings.HasPrefix(name, "redacted-") {
 			name = winRedacted(name)
 		}
-		home := root + sep + name
-		if rest == "" {
-			return home
-		}
-		parts := winSplit(rest)
-		if len(parts) == 0 || strings.HasPrefix(parts[0], "redacted-") {
-			return home + rest // masked already
-		}
-		for _, k := range winHomeKept {
-			if len(parts) < len(k.path) || !winHasPrefix(parts, k.path) {
-				continue
-			}
-			kept := home + sep + strings.Join(parts[:len(k.path)], sep)
-			switch after := parts[len(k.path):]; {
-			case len(after) == 0:
-				return kept
-			case strings.HasPrefix(after[0], "redacted-"), len(after) == 1 && k.keepEntry:
-				return kept + sep + strings.Join(after, sep)
-			default:
-				return kept + sep + winRedacted(strings.Join(after, `\`))
-			}
-		}
-		return home + sep + winRedacted(strings.Join(parts, `\`))
+		return w.rest(root+sep+name, sep, rest) + tail
 	})
+}
+
+// rest masks what follows a profile folder (home).
+func (w winProfiles) rest(home, sep, rest string) string {
+	if rest == "" {
+		return home
+	}
+	parts := winSplit(rest)
+	if len(parts) == 0 || strings.HasPrefix(parts[0], "redacted-") {
+		return home + rest // masked already
+	}
+	for _, k := range winHomeKept {
+		if len(parts) < len(k.path) || !winHasPrefix(parts, k.path) {
+			continue
+		}
+		kept := home + sep + strings.Join(parts[:len(k.path)], sep)
+		switch after := parts[len(k.path):]; {
+		case len(after) == 0:
+			return kept
+		case strings.HasPrefix(after[0], "redacted-"), len(after) == 1 && k.keepEntry:
+			return kept + sep + strings.Join(after, sep)
+		default:
+			return kept + sep + winRedacted(strings.Join(after, `\`))
+		}
+	}
+	return home + sep + winRedacted(strings.Join(parts, `\`))
 }
 
 // winHomeKept are the folders below a profile the collector reads, kept
@@ -323,9 +341,9 @@ func winRedacted(s string) string {
 	return "redacted-" + hex.EncodeToString(h.Sum(nil))[:12]
 }
 
-// winSplit splits a path at \ or /.
+// winSplit splits a path at \, \\ or /.
 func winSplit(p string) []string {
-	return strings.FieldsFunc(p, func(r rune) bool { return r == '\\' || r == '/' })
+	return strings.FieldsFunc(strings.ReplaceAll(p, `\\`, `\`), func(r rune) bool { return r == '\\' || r == '/' })
 }
 
 func winHasPrefix(parts, prefix []string) bool {
@@ -359,7 +377,7 @@ func maskWinProfilePaths(entries []*entry) {
 			}
 		}
 	}
-	w := newWinProfiles(roots)
+	w, wt := newWinProfiles(roots, false), newWinProfiles(roots, true)
 	for _, e := range entries {
 		e.Path, e.Target, e.Stderr = w.mask(e.Path), w.mask(e.Target), w.mask(e.Stderr)
 		for i := range e.Argv {
@@ -375,14 +393,14 @@ func maskWinProfilePaths(entries []*entry) {
 			continue
 		}
 		if !winJSONOps[e.Op] {
-			e.data = []byte(w.mask(string(e.data)))
+			e.data = []byte(wt.mask(string(e.data)))
 			continue
 		}
 		d := json.NewDecoder(bytes.NewReader(e.data))
 		d.UseNumber()
 		var v any
 		if d.Decode(&v) != nil {
-			e.data = []byte(w.mask(string(e.data))) // not JSON after all: as text
+			e.data = []byte(wt.mask(string(e.data))) // not JSON after all: as text
 			continue
 		}
 		if b, err := json.Marshal(w.maskJSON(v)); err == nil {
