@@ -49,6 +49,9 @@ func sshSettings(f *hostenv.Facts) []Finding {
 		title := "SSH settings could not be read (" + string(reason) + ")"
 		if reason == hostenv.ReasonPermission {
 			title = "SSH settings could not be read; run Shentu as root"
+			if f.Platform.Value.OS == "windows" {
+				title = "SSH settings could not be read; run Shentu as Administrator"
+			}
 		}
 		out = append(out, Finding{Check: "ssh.settings", Status: StatusCannotTell, Severity: SevInfo,
 			Title: title, Reason: string(reason), Evidence: strings.Join(o.Value.Unread, ", ")})
