@@ -3,7 +3,7 @@
 CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本與日期必須一致，
 每個版本都要有內容（`go test ./cmd/sitegen` 會檢查）。
 
-## v0.3.0 (unreleased)
+## v0.3.0 — 2026-11-13
 
 - 支援 Windows Server 2022 與 2025，已在 GitHub 提供的 Windows Server 2022/2025 測試機上驗證（amd64，
   另建置 arm64）：Windows 收集器只透過 Windows API
