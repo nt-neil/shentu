@@ -1,0 +1,38 @@
+id = "php-xss-shortcode-script"
+lang = "php"
+class = "xss"
+cwe = "CWE-79"
+severity = "medium"
+tier = "info"
+title = "Shortcode attribute written into a script or a javascript: URL"
+frameworks = ["wordpress"]
+sources = ["shortcode_atts(", "$atts["]
+sinks = ["return", "echo", "print"]
+sanitizers = ["check_admin_referer", "check_ajax_referer", "wp_verify_nonce", "current_user_can", "esc_js", "wp_json_encode", "json_encode", "absint", "number_format"]
+fix = "Inside a script or a javascript: URL, encode the attribute with wp_json_encode() or reduce it to a fixed set of characters; esc_attr() and esc_html() do not stop script injection there."
+refs = ["CVE-2024-11786"]
+
+[[args]]
+context = ["js"]
+
+[[samples]]
+kind = "vulnerable"
+note = "any author who can write a post sets shortcode attributes"
+code = '''
+<?php
+add_shortcode('pay_button', function ($atts) {
+    $a = shortcode_atts(['app' => 'shop'], $atts);
+    return '<a href="javascript:startCheckout(\'' . $a['app'] . '\')">Pay</a>';
+});
+'''
+
+[[samples]]
+kind = "safe"
+note = "the fix"
+code = '''
+<?php
+add_shortcode('pay_button', function ($atts) {
+    $a = shortcode_atts(['app' => 'shop'], $atts);
+    return '<script>startCheckout(' . wp_json_encode($a['app']) . ');</script>';
+});
+'''

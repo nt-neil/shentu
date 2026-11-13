@@ -1,0 +1,106 @@
+id = "php-sqli-prepare-query-text"
+lang = "php"
+class = "sqli"
+cwe = "CWE-89"
+severity = "high"
+tier = "info"
+title = "Request input written into the query text of a prepared statement"
+frameworks = ["wordpress", "doctrine"]
+sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "get_query_var", "->get_param(", "$request['", "shortcode_atts(", "$atts[", "$request->query->get(", "$request->request->get(", "$request->get(", "->get_json_params(", "->get_body_params(", "->get_query_params(", "$request->input("]
+sinks = ["$wpdb->prepare(", "$pdo->prepare(", "$db->prepare(", "$dbh->prepare(", "$conn->prepare(", "$connection->prepare(", "$mysqli->prepare(",
+         "$this->db->prepare(", "$this->pdo->prepare(", "$this->conn->prepare(", "$this->connection->prepare(", "mysqli_prepare("]
+sanitizers = ["absint", "intval", "sanitize_sql_orderby", "in_array", "$wpdb->prepare("]
+fix = "Only placeholders (%s, %d, ? or :name) may stand for values in the query text; pass the values as the following arguments, or to execute(), and map identifiers such as column names to a fixed allowlist."
+refs = ["CVE-2026-109977", "CVE-2026-120558"]
+
+[[args]]
+sinks = ["$wpdb->prepare(", "$pdo->prepare(", "$db->prepare(", "$dbh->prepare(", "$conn->prepare(", "$connection->prepare(", "$mysqli->prepare(",
+         "$this->db->prepare(", "$this->pdo->prepare(", "$this->conn->prepare(", "$this->connection->prepare("]
+arg = 1
+
+[[args]]
+sinks = ["mysqli_prepare("]
+arg = 2
+
+[[samples]]
+kind = "vulnerable"
+note = "prepare() only escapes the arguments after the query; the search term is already part of the query"
+code = '''
+<?php
+add_action('wp_ajax_lookup_member', function () {
+    global $wpdb;
+    $term = sanitize_text_field(wp_unslash($_POST['term']));
+    $sql = $wpdb->prepare("SELECT id FROM {$wpdb->prefix}members WHERE name LIKE '%$term%' AND status = %s", 'active');
+    wp_send_json($wpdb->get_col($sql));
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+$stmt = $pdo->prepare('SELECT * FROM orders WHERE customer = ' . $_GET['customer']);
+$stmt->execute();
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+add_action('wp_ajax_lookup_member', function () {
+    global $wpdb;
+    $like = '%' . $wpdb->esc_like(wp_unslash($_POST['term'])) . '%';
+    $sql = $wpdb->prepare("SELECT id FROM {$wpdb->prefix}members WHERE name LIKE %s AND status = %s", $like, 'active');
+    wp_send_json($wpdb->get_col($sql));
+});
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+$stmt = $pdo->prepare('SELECT * FROM orders WHERE customer = ?');
+$stmt->execute([$_GET['customer']]);
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "REST parameters read with array access are request input too"
+code = '''
+<?php
+register_rest_route('shop/v1', '/carriers', ['methods' => 'GET', 'callback' => function ($request) {
+    global $wpdb;
+    $name = $request['carrier'];
+    return $wpdb->get_results($wpdb->prepare("SELECT * FROM {$wpdb->prefix}carriers WHERE slug = '" . $name . "' AND active = %d", 1));
+}]);
+'''
+
+[[samples]]
+kind = "safe"
+note = "a fragment that prepare() already filled in is parameterized SQL, not input"
+code = '''
+<?php
+function my_plugin_count_events() {
+    global $wpdb;
+    $extra = '';
+    if (isset($_GET['venue'])) {
+        $extra .= $wpdb->prepare(' AND venue = %s', wp_unslash($_GET['venue']));
+    }
+    return (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}events WHERE status = %s $extra", 'open'));
+}
+'''
+
+[[samples]]
+kind = "safe"
+note = "the fix for a column name: an allowlist, since a placeholder cannot stand for an identifier"
+code = '''
+<?php
+add_action('wp_ajax_sort_members', function () {
+    global $wpdb;
+    $col = sanitize_key(wp_unslash($_POST['col']));
+    if (!in_array($col, ['name', 'joined', 'city'], true)) {
+        $col = 'name';
+    }
+    wp_send_json($wpdb->get_results($wpdb->prepare("SELECT id, $col FROM {$wpdb->prefix}members WHERE status = %s", 'active')));
+});
+'''

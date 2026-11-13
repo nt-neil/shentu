@@ -1,0 +1,57 @@
+id = "php-code-eval-dynamic-callback"
+lang = "php"
+class = "code-eval"
+cwe = "CWE-94"
+severity = "critical"
+tier = "info"
+title = "Function to call chosen by the request"
+frameworks = ["wordpress", "laravel"]
+sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "->get_param(", "$request['", "$request->input(", "$request->get("]
+sinks = ["call_user_func(", "call_user_func_array(", "forward_static_call(", "forward_static_call_array(", "array_map(", "usort(", "uasort(", "uksort(", "array_filter(", "array_walk(", "iterator_apply("]
+sanitizers = ["in_array", "array_key_exists", "absint", "intval", "get_taxonomy(", "get_post_type_object("]
+fix = "Never let the request name a function or method: map the requested action to a fixed list of callbacks (in_array($action, $allowed, true) or a lookup table) before calling it."
+refs = ["CVE-2026-1929"]
+
+[[args]]
+sinks = ["call_user_func(", "call_user_func_array(", "forward_static_call(", "forward_static_call_array(", "array_map("]
+arg = 1
+
+[[args]]
+sinks = ["usort(", "uasort(", "uksort(", "array_filter(", "array_walk(", "iterator_apply("]
+arg = 2
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+add_action('wp_ajax_nopriv_widget_action', function () {
+    $method = sanitize_text_field($_POST['method']);
+    $result = call_user_func($method, $_POST['args'] ?? []);
+    wp_send_json($result);
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+class Api {
+    public function dispatch() {
+        $handler = [$this, $_GET['op']];
+        return call_user_func_array($_GET['fn'], [$_GET['x']]);
+    }
+}
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+add_action('wp_ajax_nopriv_widget_action', function () {
+    $method = sanitize_key($_POST['method']);
+    if (!in_array($method, ['refresh', 'count'], true)) {
+        wp_die('', '', 400);
+    }
+    wp_send_json(call_user_func('my_widget_' . $method, $_POST['args'] ?? []));
+});
+'''

@@ -1,0 +1,93 @@
+id = "php-sqli-yii-query"
+lang = "php"
+class = "sqli"
+cwe = "CWE-89"
+severity = "high"
+tier = "info"
+title = "Yii request input written into SQL text, a string condition or a sort expression"
+sources = ["->request->get(", "->request->post(", "->request->getQueryParam(", "->request->getBodyParam(", "->request->getParam(", "->request->getQuery(", "->request->getPost(", "->getRequest()->get(", "->getRequest()->post(", "->getRequest()->getParam(", "$request->get(", "$request->post(", "$request->getQueryParam(", "$request->getBodyParam(", "$_GET", "$_POST", "$_REQUEST"]
+sinks = ["->createCommand(", "->orderBy(", "->addOrderBy(", "->where(", "->andWhere(", "->orWhere(", "->having(", "->addCondition(", "->groupBy("]
+sanitizers = ["intval", "(int)", "in_array", "array_key_exists", "->quoteValue(", "->quoteColumnName("]
+fix = "Use the hash or operator format (where(['status' => $status]), ['like', 'name', $q]) or bound parameters (createCommand('... WHERE id = :id', [':id' => $id])); map sort fields and directions to a fixed allowlist."
+refs = ["CVE-2026-29174", "CVE-2026-29172", "CVE-2026-50636"]
+
+[[args]]
+sinks = ["->createCommand("]
+arg = 1
+
+[[args]]
+sinks = ["->where(", "->andWhere(", "->orWhere(", "->having(", "->addCondition("]
+arg = 1
+whole = true
+
+[[args]]
+sinks = ["->orderBy(", "->addOrderBy(", "->groupBy("]
+arg = 1
+keys = true   # orderBy([$column => SORT_ASC]): the key is the column, the value only a direction
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+class StockController extends Controller
+{
+    public function actionTable()
+    {
+        [$field, $dir] = explode('|', (string) $this->request->getParam('sort', 'name|asc'));
+        $rows = Item::find()->orderBy($field . ' ' . $dir)->limit(50)->all();
+        return $this->asJson($rows);
+    }
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+class SearchController extends Controller
+{
+    public function actionIndex()
+    {
+        $q = Yii::$app->request->get('q');
+        $rows = Yii::$app->db->createCommand("SELECT id, title FROM post WHERE title LIKE '%$q%'")->queryAll();
+        return $this->render('index', ['rows' => $rows]);
+    }
+}
+'''
+
+[[samples]]
+kind = "safe"
+note = "the fix: allowlists for the field and the direction"
+code = '''
+<?php
+class StockController extends Controller
+{
+    public function actionTable()
+    {
+        [$field, $dir] = explode('|', (string) $this->request->getParam('sort', 'name|asc'));
+        if (!in_array($field, ['name', 'sku', 'stock'], true)) {
+            $field = 'name';
+        }
+        if (!in_array($dir, ['asc', 'desc'], true)) {
+            $dir = 'asc';
+        }
+        $rows = Item::find()->orderBy($field . ' ' . $dir)->limit(50)->all();
+        return $this->asJson($rows);
+    }
+}
+'''
+
+[[samples]]
+kind = "safe"
+note = "a hash condition binds its values"
+code = '''
+<?php
+class SearchController extends Controller
+{
+    public function actionIndex()
+    {
+        $rows = Post::find()->where(['status' => Yii::$app->request->get('status')])->andWhere(['like', 'title', Yii::$app->request->get('q')])->all();
+        return $this->render('index', ['rows' => $rows]);
+    }
+}
+'''

@@ -1,0 +1,61 @@
+id = "php-code-eval-smarty-string"
+lang = "php"
+class = "code-eval"
+cwe = "CWE-1336"
+severity = "critical"
+tier = "info"
+title = "Request input rendered as a Smarty template through the string: or eval: resource"
+sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "$request->input(", "$request->get(", "$request->query->get(", "$request->request->get(", "->get_param("]
+sinks = ["->fetch(", "->display(", "->isCached("]
+sanitizers = []
+fix = "Never render text from a request as a Smarty template: render a template file and pass the input with assign(), where it is data ({$body|escape}). A security policy (enableSecurity()) narrows what a template can call but does not make request text safe to compile."
+refs = ["CVE-2026-44377"]
+
+[[args]]
+arg = 1
+when = ["'string:", "'eval:", "\"string:", "\"eval:"]
+
+[[samples]]
+kind = "vulnerable"
+note = "a preview of an e-mail body typed into a form"
+code = '''
+<?php
+function preview_mail(Smarty $smarty) {
+    $body = $_POST['mail']['body'];
+    return $smarty->fetch('string:' . $body);
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+class NewsletterController
+{
+    public function show(Request $request)
+    {
+        $this->smarty->display("eval:" . $request->input('intro'));
+    }
+}
+'''
+
+[[samples]]
+kind = "safe"
+note = "the fix: a template file, the input assigned as a variable"
+code = '''
+<?php
+function preview_mail(Smarty $smarty) {
+    $smarty->assign('body', $_POST['mail']['body']);
+    return $smarty->fetch('mail/preview.tpl');
+}
+'''
+
+[[samples]]
+kind = "safe"
+note = "a fixed string template; PDO's fetch() is not Smarty"
+code = '''
+<?php
+$smarty->assign('name', $_GET['name']);
+echo $smarty->fetch('string:Hello {$name|escape}!');
+$row = $stmt->fetch(PDO::FETCH_ASSOC);
+'''
