@@ -59,7 +59,7 @@ A missing or unreadable fact never passes a check. A check that needs a fact the
 | `symlink_not_followed`  | a user-controlled path was a link and was not followed      |
 | `not_regular_file`      | a FIFO, device or socket where a file was expected          |
 | `untrusted_owner`       | readable, but owned or writable by someone other than root (Windows: SYSTEM, Administrators, TrustedInstaller); the content is not used |
-| `unverified_source`     | read, but the source does not record who wrote it, so a local user could have forged it (text auth logs) |
+| `unverified_source`     | read, but the source does not record who wrote it, so a local user could have forged it (text auth logs, busybox `/var/log/messages`) |
 
 ## Fields
 
@@ -68,27 +68,58 @@ A missing or unreadable fact never passes a check. A check that needs a fact the
 | `platform` | `os`, `family`, `distro`, `version`, `pretty_name`, `build`, `kernel`, `arch`, `in_container`, `server_core` | `/etc/os-release`, `/proc/sys/kernel/osrelease`, container markers | registry `CurrentVersion` (`CurrentBuild`, `UBR`, `InstallationType`) |
 | `privilege` | `elevated` | effective uid 0 | token elevation |
 | `resources` | `mem_total_bytes`, `mem_available_bytes`, `load1`, `cgroup_memory_limit`, `cgroup_cpus` | `/proc/meminfo`, `/proc/loadavg`, the collector's own cgroup limits | not collected yet |
-| `packages` | `manager`, `ecosystem` (OSV), `items[]` (`name`, `source`, `version`, `arch`) | `dpkg-query`, `rpm -qa`, `/lib/apk/db/installed` | registry `Uninstall` keys (HKLM, WOW6432Node, HKU) |
+| `packages` | `manager`, `ecosystem` (OSV), `feed` (see below), `items[]` (`name`, `source`, `version`, `arch`) | `dpkg-query`, `rpm -qa`, `/lib/apk/db/installed`; `feed` from `/etc/os-release` | registry `Uninstall` keys (HKLM, WOW6432Node, HKU) |
 | `patches` | `[]{id, installed_on}` | not applicable (patches are package versions) | registry Component Based Servicing packages, one per KB in the Installed state; build+UBR in `platform` is the main signal |
-| `services` | `[]{name, exe, start_mode, state, run_as}` | not collected yet | SCM (`svc/mgr`) |
+| `services` | `[]{name, exe, start_mode, state, run_as}` | OpenRC: `/etc/init.d` and `/usr/local/etc/init.d` scripts, `start_mode` `auto` when linked from any `/etc/runlevels` folder, else `manual`; systemd not collected yet | SCM (`svc/mgr`) |
 | `processes` | `[]{pid, ppid, name, exe, exe_known, exe_exists, in_temp, cmdline, user, uid, started, start_ticks}` | `/proc/<pid>/{comm,status,cmdline,exe,stat}`, mtime of `/proc/<pid>` | Toolhelp32 + `QueryFullProcessImageName`; `NtQueryInformationProcess` (ProcessCommandLineInformation) for command lines |
 | `accounts` | `[]{name, uid, home, shell, can_login, is_admin, disabled}` | `/etc/passwd`, `/etc/group` (sudo, wheel, admin) | `NetUserEnum`, Administrators (S-1-5-32-544) members |
 | `listeners` | `[]{proto, addr, port, pid, process, uid}` (one row per owner: a second process on a port stays visible) | `/proc/net/{tcp,udp}{,6}` + `/proc/*/fd` | `GetExtendedTcpTable` / `GetExtendedUdpTable` |
-| `persistence` | `[]{kind, location, command, detail}` | cron and cron files, `ld.so.preload`, `rc.local`, `/etc/systemd/system`, `authorized_keys`, sudo rules, PAM modules no package installed | Run keys, services, scheduled tasks, WMI subscriptions, startup folders, IFEO |
-| `ssh_keys` | `[]{user, path, modified, keys[{line, type, fingerprint, options, cloud_init_refusal}], unparsed_lines, unread}` | `~/.ssh/authorized_keys{,2}` of every account, read without following a final symlink | not collected yet |
-| `firewall` | `backend`, `enabled`, `default_inbound`, `profiles`, `extra` | ufw config, firewalld running, `nft list ruleset`, nftables at boot, `iptables -S`; `extra.summary` is survey's line | `INetFwPolicy2` / registry `FirewallPolicy` |
+| `persistence` | `[]{kind, location, command, detail}` | cron and cron files (`/etc/crontabs` and `/etc/periodic/*` for busybox crond), `ld.so.preload`, `rc.local`, `/etc/systemd/system`, enabled OpenRC scripts, `/etc/local.d`, `/etc/inittab`, `authorized_keys`, sudo rules, PAM modules no package installed | Run keys, services, scheduled tasks, WMI subscriptions, startup folders, IFEO |
+| `ssh_keys` | `[]{user, path, modified, keys[{line, type, fingerprint, options, cloud_init_refusal}], unparsed_lines, unread}` | `~/.ssh/authorized_keys{,2}` of every account, read without following a final symlink; a home that is not a folder (`/dev/null`) has none | not collected yet |
+| `firewall` | `backend`, `enabled`, `default_inbound`, `profiles`, `extra` | ufw config, firewalld running, `nft list ruleset`, nftables at boot, `iptables -S` (`/sbin/iptables` too); `extra.summary` is survey's line | `INetFwPolicy2` / registry `FirewallPolicy`; see below |
 | `remote_access.ssh` | `config_path`, `settings`, `unread`, `hash` | `sshd_config` with `Include` (relative to the main file's folder, sorted): the main file's first `Match` ends the global part, one in an included file ends only that file; at most 4 levels of Include and 256 files, more listed in `unread` | `C:\ProgramData\ssh\sshd_config` (same parser) |
 | `remote_access.rdp` | `enabled`, `nla`, `port`, `security_layer` | not applicable | registry `Terminal Server`, `RDP-Tcp` |
 | `remote_access.winrm` | `running`, `http_listener`, `allow_unencrypted`, `basic_auth` | not applicable | registry `WSMAN\Service`, policy keys, ports 5985/5986 |
 | `remote_access.smb` | `smb1_enabled`, `signing_required`, `writable_shares` | not collected yet (Samba) | registry `LanmanServer\Parameters`, `NetShareEnum` |
 | `antimalware` | `product`, `real_time`, `signature_age_days`, `exclusions` | not applicable | WMI `MSFT_MpComputerStatus`; exclusions from the registry (Defender `Exclusions` and its policy key) |
-| `auth_events` | `window_hours`, `failed_by_source`, `notable[]` | journald's ssh and sshd units first, then the ssh@ and sshd@ units of a socket-activated sshd (since the snapshot minus 24 h, at most `JournalTimeout`, 60 s): ok. No sshd entry and no text auth log to compare: partial with `unverified_source` (journald may not keep them). Text auth/secure logs (rotated, gzipped, streamed) when journald is missing, fails, times out or has no sshd entries: partial with `unverified_source`. Neither readable: unknown (a journal that hides the system's entries from a non-root user is `permission_denied`, not "no failed logins") | Event Log 4625, 4624 type 10, 1102, 4720, 4732, 7045 |
+| `auth_events` | `window_hours`, `failed_by_source`, `notable[]` | journald's ssh and sshd units first, then the ssh@ and sshd@ units of a socket-activated sshd (since the snapshot minus 24 h, at most `JournalTimeout`, 60 s): ok. No sshd entry and no text auth log to compare: partial with `unverified_source` (journald may not keep them). Text auth/secure logs (rotated, gzipped, streamed) when journald is missing, fails, times out or has no sshd entries, and without journald busybox `/var/log/messages` (sshd lines of the auth and authpriv facilities only): partial with `unverified_source`. Neither readable: unknown (a journal that hides the system's entries from a non-root user is `permission_denied`, not "no failed logins") | Event Log 4625, 4624 type 10, 1102, 4720, 4732, 7045 |
 | `web` | `server`, `webroots`, `upload_dirs`, `config_unreadable` ("path (why)") | nginx `root` and Apache `DocumentRoot` lines (upload folders: the code audit) | `applicationHost.config` |
 
-`persistence.kind` values: `cron`, `cron_file`, `systemd`, `ld_preload`, `rc_local`,
+`persistence.kind` values: `cron`, `cron_file`, `systemd`, `openrc` (`detail` names the runlevels,
+and says so when no package installed the script; a runlevel entry that stacks another runlevel,
+or names no script, is listed on its own), `local_d`, `inittab` (busybox init: `detail` is the
+action, `command` the process), `ld_preload`, `rc_local`,
 `authorized_key`, `authorized_key_unparsed`, `sudo_rule`, `pam_unpackaged`, and on Windows `run_key`
 (`detail` tells `winlogon`, `ifeo` and `appinit_dlls` apart), `service`, `schtask`,
 `wmi_subscription`, `startup_folder`. macOS uses `launchd`.
+
+`packages.feed` says where the host's security fixes are published:
+
+| distribution (`ID`) | `kind` | `ecosystems` / `release` | `version_fmt` | `upgrade` |
+|---|---|---|---|---|
+| debian, ubuntu | `osv` | `Debian:12`, `Ubuntu:24.04:LTS` | `evr` | `apt-get update && apt-get upgrade` |
+| rocky, almalinux | `osv` | `Rocky Linux:9`, `AlmaLinux:9` | `evr` | `dnf upgrade --security` |
+| alpine | `osv` | `Alpine:v3.22` | `evr` | `apk upgrade` |
+| opensuse-leap | `osv` | `openSUSE:Leap 15.6` | `vr` | `zypper patch --category security` |
+| opensuse-tumbleweed, opensuse-slowroll | `osv` | `openSUSE:Tumbleweed` | `vr` | `zypper dup` |
+| sles | `osv` | one per SLE 15 module, e.g. `SUSE:Linux Enterprise Module for Basesystem 15 SP5`, with Python 3, HPC, Live Patching, High Availability Extension and `SUSE:Package Hub 15 SP5`; Real Time is no OSV ecosystem and is listed in `not_queried` when the host has it (`/etc/products.d/SLE_RT.prod` or `kernel-rt`) | `vr` | `zypper patch --category security` |
+| sled | `osv` | the modules a desktop has (Basesystem, Desktop Applications, Development Tools, Python 3, Workstation Extension, Package Hub); `SUSE:Linux Enterprise Desktop` is no OSV ecosystem, which `note` says (its packages are in the modules, so nothing goes unchecked) | `vr` | `zypper patch --category security` |
+| sles_sap | `osv` | the sles modules and `SUSE:Linux Enterprise Server for SAP Applications 15 SP5`; `Module for SAP Applications` is no OSV ecosystem and is listed in `not_queried`, as is SLES for SAP 12 | `vr` | `zypper patch --category security` |
+| amzn | `alas` | `release` `2` or `2023`; on 2, `repos` lists the amazon-linux-extras topics enabled (`kernel-5.10`, `php8.2`), whose updateinfo is read too | | `yum update --security` (2), `dnf upgrade --security` (2023) |
+
+`version_fmt` `vr` means OSV spells rpm versions without a `0:` epoch. `alas` is matched against
+the release's public `updateinfo.xml` (cdn.amazonlinux.com), streamed. An unknown distribution has
+no `feed`; neither has Amazon Linux 1 (2018.03), past its end of life, so `package_vulns` answers
+cannot tell.
+
+On Windows, `firewall.profiles` maps `Domain`, `Private` and `Public` to whether that profile is
+on, and `extra.active_profiles` lists the profiles in force now, comma-separated.
+`default_inbound` is `block` only when every active profile is on and either blocks all inbound
+traffic or does not allow unmatched inbound connections; otherwise `allow`. It is empty, and
+`active_profiles` absent, when no profile is known to be active, which is always the case when
+`INetFwPolicy2` is unavailable and the registry is read instead. `extra.service` is the state
+of the firewall service (MpsSvc); when it is not `running`, every profile counts as off and a
+known `default_inbound` becomes `allow`.
 
 `auth_events.notable[].kind` values: `log_cleared`, `account_created`, `group_member_added`,
 `service_installed`.

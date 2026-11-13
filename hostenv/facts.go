@@ -123,9 +123,10 @@ type Privilege struct {
 }
 
 type PackageSet struct {
-	Manager   string    `json:"manager"`             // dpkg, rpm, apk, msi-registry
-	Ecosystem string    `json:"ecosystem,omitempty"` // OSV ecosystem, e.g. "Debian:12"
-	Items     []Package `json:"items"`
+	Manager   string     `json:"manager"`             // dpkg, rpm, apk, msi-registry
+	Ecosystem string     `json:"ecosystem,omitempty"` // OSV ecosystem, e.g. "Debian:12"
+	Feed      *PatchFeed `json:"feed,omitempty"`      // where this distribution's security fixes are published
+	Items     []Package  `json:"items"`
 }
 
 type Package struct {
@@ -185,7 +186,7 @@ type Listener struct {
 // PersistenceItem is anything that makes code run again without a person
 // starting it.
 type PersistenceItem struct {
-	Kind     string `json:"kind"` // cron, cron_file, systemd, ld_preload, rc_local, authorized_key, sudo_rule, pam_unpackaged, run_key, schtask, service, wmi_subscription, startup_folder, launchd
+	Kind     string `json:"kind"` // cron, cron_file, systemd, openrc, local_d, inittab, ld_preload, rc_local, authorized_key, authorized_key_unparsed, authorized_keys_symlink, sudo_rule, pam_unpackaged, run_key, schtask, service, wmi_subscription, startup_folder, launchd
 	Location string `json:"location"`
 	Command  string `json:"command,omitempty"` // secret-masked
 	Detail   string `json:"detail,omitempty"`

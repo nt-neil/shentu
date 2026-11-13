@@ -16,6 +16,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -176,7 +177,7 @@ func (LinuxCollector) SSHKeyFiles(src Source, accounts []Account) Obs[[]Authoriz
 			_, lerr := src.Readlink(p)
 			_, derr := src.Readlink(path.Dir(p))
 			if err != nil && lerr != nil && derr != nil { // a link (the file or ~/.ssh), even dangling, is looked at below
-				if !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, ErrNoStat) {
+				if !missing(err) && !errors.Is(err, ErrNoStat) {
 					miss(p, err)
 				}
 				if !errors.Is(err, ErrNoStat) {
@@ -461,4 +462,10 @@ func notPackaged(src Source, files []string, rpmOwned RpmOwnedFunc) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// missing reports a path that is not there, including one under a home
+// that is not a folder (sshd's home is /dev/null on Alpine: ENOTDIR).
+func missing(err error) bool {
+	return errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) || strings.HasSuffix(err.Error(), "not a directory")
 }

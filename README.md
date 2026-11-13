@@ -52,12 +52,12 @@ Blocked 203.0.113.7 until tomorrow 09:14. To undo: "unblock 203.0.113.7".
 
 | Tool | What it looks at |
 |---|---|
-| `ssh_logins` | failed and successful SSH logins by source IP (auth.log, secure or journald) |
+| `ssh_logins` | failed and successful SSH logins by source IP: journald first, else auth.log or secure. `source` names what was read, `verified` is false for text logs (anyone on the host can write to them), `complete` false with `error` when a log was cut short or unreadable, `note` when low-activity sources were not tracked |
 | `listening_ports` | listening TCP and UDP ports and the process behind each one |
 | `processes` | deleted executables, programs running from /tmp or /dev/shm, shells run by web users (`web_users`) |
 | `accounts_audit` | extra UID 0 accounts, sudo rules, authorized_keys |
 | `site_profile` | survey of the server: services and whether the network can reach them, web and app stacks, databases, firewall, effective SSH settings, containers, cron, login accounts, and the risks that follow (e.g. a database listening on all interfaces) |
-| `package_vulns` | installed packages checked against [OSV](https://osv.dev) (Ubuntu, Debian, Alpine, Rocky, Alma); vulnerabilities on CISA's actively exploited list come first, with the upgrade command |
+| `package_vulns` | installed packages checked against [OSV](https://osv.dev) (Ubuntu, Debian, Alpine, Rocky, Alma, SUSE) or Amazon's ALAS advisories (Amazon Linux 2 and 2023); vulnerabilities on CISA's actively exploited list come first, with the upgrade command. `partial` says what could not be checked, `ecosystems_not_queried` the ecosystems OSV does not carry, `ecosystems` every one queried (SUSE: one per module), `ecosystems_note` how they were chosen; `kev_unchecked` counts vulnerabilities whose CVEs could not be looked up in the CISA KEV list |
 | `app_vulns` | application lock files (npm, Composer, pip/Pipenv/Poetry, Go, Bundler) checked against OSV and CISA KEV |
 | `app_code_audit` | the applications' own files, offline: `.env`, `.git`, dumps and backups the web server would serve, debug mode left on (Django, Laravel, Flask, PHP), webshells and PHP in upload folders, keys and passwords written in code (file and line only, never the value), injection flaws in PHP, Python and JavaScript found by the rules in `rules/` (rule, CWE, file and line, never the code; `info`-tier rules are not pushed by the daily report) |
 | `file_changes` | recently changed files in watched directories, plus webshell patterns (PHP, JSP, Node.js, Python) |

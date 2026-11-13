@@ -14,7 +14,8 @@ var sshLogins = Tool{
 	Name: "ssh_logins",
 	Description: "SSH login attempts grouped by source IP: failed passwords, invalid users and successful logins. Use it to spot brute force and to check whether an attacking IP ever got in. " +
 		"verified is false when the events come from text logs, which anyone on the host can write to: then never block_ip on these counts alone, check them first (journalctl -u ssh, the IP's other traffic). " +
-		"complete is false when a log was cut short or unreadable (error says why): the counts are a lower bound.",
+		"complete is false when a log was cut short or unreadable (error says why): the counts are a lower bound. " +
+		"source names what was read (journald, or the log files and why journald was not used); note says when low-activity sources were not tracked.",
 	Params: schema(`{"type":"object","properties":{
 		"since_hours":{"type":"number","description":"look back this many hours (default 24)"},
 		"ip":{"type":"string","description":"only this source IP"}}}`),

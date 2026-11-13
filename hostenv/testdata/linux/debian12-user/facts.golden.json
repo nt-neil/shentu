@@ -37,6 +37,14 @@
     "value": {
       "manager": "dpkg",
       "ecosystem": "Debian:12",
+      "feed": {
+        "kind": "osv",
+        "ecosystems": [
+          "Debian:12"
+        ],
+        "upgrade": "apt-get update \u0026\u0026 apt-get upgrade",
+        "version_fmt": "evr"
+      },
       "items": [
         {
           "name": "adduser",

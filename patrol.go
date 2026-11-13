@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nt-neil/shentu/hostenv"
 	"github.com/nt-neil/shentu/tools"
 )
 
@@ -91,6 +92,88 @@ func uncheckedSection(risks []tools.Risk) string {
 	}
 	return "\n\nNot checked (the permission to read what they need was missing; run Shentu as root):\n" + b.String()
 }
+
+// uncheckedVulns says, for the daily report, when the vulnerability check of
+// what failed (an advisory feed offline: ALAS, OSV) or covered only part
+// ("partial"): "no known vulnerabilities" must not stand for "not checked".
+// The same goes for the CISA KEV list (none on it must not read as "none
+// exploited"), lock files that could not be checked, and ecosystems OSV does
+// not carry.
+func uncheckedVulns(what string, r map[string]any, err error) string {
+	if err != nil {
+		return fmt.Sprintf("\n\nNot checked for vulnerabilities: %s (%q).\n", what, cutLine(mask(err.Error())))
+	}
+	var lines []string
+	if p, ok := r["partial"]; ok {
+		lines = append(lines, fmt.Sprintf("- partly checked: %q", cutLine(mask(fmt.Sprint(p)))))
+	}
+	// With no vulnerability found there is nothing to look up in KEV.
+	if n, _ := r["total_vulns"].(int); n > 0 {
+		if k, _ := r["kev"].(string); strings.Contains(k, "unavailable") {
+			lines = append(lines, fmt.Sprintf("- not checked against the CISA KEV list, so exploited ones are not marked: %q", cutLine(mask(k))))
+		} else if u, _ := r["kev_unchecked"].(int); u > 0 {
+			lines = append(lines, fmt.Sprintf("- %d vulnerabilities not checked against the CISA KEV list (lookups failed or over the cap)", u))
+		}
+	}
+	if files, ok := r["files"].([]tools.AppResult); ok {
+		// One line per distinct error as shown (cut), at most uncheckedFiles
+		// paths in all and uncheckedErrors lines; the rest are counted.
+		byErr := map[string][]string{}
+		var order []string
+		for _, f := range files {
+			if f.Error == "" {
+				continue
+			}
+			e := hostenv.CutString(mask(f.Error), 80)
+			if _, seen := byErr[e]; !seen {
+				order = append(order, e)
+			}
+			byErr[e] = append(byErr[e], f.Path)
+		}
+		listed, skipped := 0, 0
+		for i, e := range order {
+			if i >= uncheckedErrors {
+				skipped += len(byErr[e])
+				continue
+			}
+			paths := byErr[e]
+			show := paths[:min(len(paths), max(uncheckedFiles-listed, 0))]
+			listed += len(show)
+			names := make([]string, len(show))
+			for i, p := range show {
+				names[i] = mask(p)
+			}
+			line := fmt.Sprintf("- not checked (%q): %s", e, strings.Join(names, ", "))
+			if more := len(paths) - len(show); more > 0 {
+				line += fmt.Sprintf(" and %d more", more)
+			}
+			lines = append(lines, cutLine(line))
+		}
+		if skipped > 0 {
+			lines = append(lines, fmt.Sprintf("- and %d more lock files not checked, with other errors", skipped))
+		}
+	}
+	if nq, ok := r["ecosystems_not_queried"].([]string); ok {
+		for _, e := range nq {
+			lines = append(lines, fmt.Sprintf("- not queried (OSV has no such ecosystem): %q", cutLine(mask(e))))
+		}
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+	return "\n\nVulnerability check of " + what + " incomplete:\n" + strings.Join(lines, "\n") + "\n"
+}
+
+// uncheckedFiles caps the lock file paths the unchecked section lists;
+// maxUncheckedLine the length of one line of it.
+const (
+	uncheckedFiles   = 10
+	uncheckedErrors  = 10 // distinct error lines
+	maxUncheckedLine = 200
+)
+
+// cutLine keeps a report line to maxUncheckedLine bytes.
+func cutLine(s string) string { return hostenv.CutString(s, maxUncheckedLine) }
 
 // uncheckedConfigs lists the web server configuration files the code audit
 // could not read: the sites they serve were audited as plain folders.
@@ -295,7 +378,9 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 	unchecked := uncheckedSection(st.Profile.Risks) // listed in every report, never pushed
 	if daily {
 		// Once a day: installed packages with vulnerabilities that are being exploited now.
-		if r, err := tools.PackageVulns(ctx, env.HTTP, ""); err == nil {
+		r, err := tools.PackageVulns(ctx, env.HTTP, "")
+		unchecked += uncheckedVulns("installed packages", r, err)
+		if err == nil {
 			list, _ := r["actively_exploited"].([]tools.Exploit)
 			for _, e := range list {
 				all = append(all, finding{"kev:" + e.Package + ":" + e.CVE, "critical",
@@ -303,7 +388,9 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 			}
 		}
 		// The same for application dependencies (npm, PyPI, Composer, Go, RubyGems).
-		if r, err := tools.AppVulns(ctx, env.HTTP, env.AppPaths); err == nil {
+		r, err = tools.AppVulns(ctx, env.HTTP, env.AppPaths)
+		unchecked += uncheckedVulns("application dependencies", r, err)
+		if err == nil {
 			for _, f := range r["files"].([]tools.AppResult) {
 				for _, e := range f.Exploited {
 					all = append(all, finding{"kev:" + f.Path + ":" + e.Package + ":" + e.CVE, "critical",

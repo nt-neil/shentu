@@ -29,7 +29,7 @@ var (
 )
 
 func (LinuxCollector) Allowlist() [][]string {
-	return [][]string{dpkgArgv, rpmArgv, rpmQalArgv, nftListArgv, iptablesArgv, journalArgv, journalBinArgv, journalSockArgv, journalSockBinArgv}
+	return [][]string{dpkgArgv, rpmArgv, rpmQalArgv, nftListArgv, iptablesArgv, iptablesSbin, journalArgv, journalBinArgv, journalSockArgv, journalSockBinArgv}
 }
 
 func (c LinuxCollector) Collect(ctx context.Context, src Source) *Facts {
@@ -40,7 +40,8 @@ func (c LinuxCollector) Collect(ctx context.Context, src Source) *Facts {
 
 	var osr map[string]string
 	f.Platform, osr = c.Platform(src)
-	f.Packages = c.Packages(ctx, src, osr)
+	var apkOwned map[string]bool // which OpenRC scripts apk installed (Alpine)
+	f.Packages, apkOwned = c.packages(ctx, src, osr)
 	pw, accounts := c.Accounts(src)
 	f.Accounts = accounts
 	procs, sockOwner := c.Processes(src, pw)
@@ -64,6 +65,26 @@ func (c LinuxCollector) Collect(ctx context.Context, src Source) *Facts {
 		f.SSHKeys = c.SSHKeyFiles(src, accounts.Value)
 	}
 	f.Persistence = c.persistence(ctx, src, f.SSHKeys)
+	if IsOpenRC(src) {
+		svcs, items := c.OpenRCServices(src, apkOwned)
+		f.Services = svcs
+		if f.Persistence.Known() {
+			f.Persistence.Value = append(f.Persistence.Value, items...)
+			if apkOwned == nil && osr != nil && LinuxFamily(osr["ID"], osr["ID_LIKE"]) == "alpine" {
+				// Without apk's database a script no package installed looks like any other: say so.
+				if f.Persistence.Status == StatusOK {
+					f.Persistence.Status, f.Persistence.Reason = StatusPartial, f.Packages.Reason
+				}
+				f.Persistence.Detail = strings.TrimPrefix(f.Persistence.Detail+"; which OpenRC scripts a package installed is unknown (apk database: "+f.Packages.Detail+")", "; ")
+			}
+			if svcs.Status != StatusOK { // what OpenRC could not read is missing from persistence too
+				if f.Persistence.Status == StatusOK {
+					f.Persistence.Status, f.Persistence.Reason = StatusPartial, svcs.Reason
+				}
+				f.Persistence.Detail = strings.TrimPrefix(f.Persistence.Detail+"; OpenRC "+svcs.Detail, "; ")
+			}
+		}
+	}
 
 	f.Patches = NotApplicable[[]Patch]() // Linux patches are package versions
 	f.RemoteAccess.RDP = NotApplicable[RDPConfig]()
@@ -115,11 +136,34 @@ func inContainer(src Source) bool {
 
 // Packages lists installed packages with the distribution's own tool:
 // dpkg-query, rpm -qa, or the apk database. osr is the parsed os-release.
-func (LinuxCollector) Packages(ctx context.Context, src Source, osr map[string]string) Obs[PackageSet] {
+func (c LinuxCollector) Packages(ctx context.Context, src Source, osr map[string]string) Obs[PackageSet] {
+	set, _ := c.packages(ctx, src, osr)
+	return set
+}
+
+// packages is Packages, and on Alpine which OpenRC scripts apk installed
+// (nil: unknown), from the same single pass over apk's database.
+func (LinuxCollector) packages(ctx context.Context, src Source, osr map[string]string) (Obs[PackageSet], map[string]bool) {
 	if osr == nil {
-		return Unknown[PackageSet](ReasonNotCollected, "no os-release, distribution unknown")
+		return Unknown[PackageSet](ReasonNotCollected, "no os-release, distribution unknown"), nil
+	}
+	var apkOwned map[string]bool
+	feed := PatchFeedFor(osr)
+	extrasErr, extrasReason := "", Reason("")
+	if feed.Kind == "alas" && feed.Release == "2" {
+		b, err := src.ReadFile(AL2ExtrasRepo)
+		switch {
+		case err == nil:
+			feed.Repos = ParseAL2Extras(b)
+		case !missing(err): // the topics' packages would go unchecked without a word
+			extrasReason = Classify(err)
+			extrasErr = AL2ExtrasRepo + " (" + string(extrasReason) + "): amazon-linux-extras topics not checked"
+		}
 	}
 	set := PackageSet{Ecosystem: OSVEcosystem(osr)}
+	if feed.Kind != "" {
+		set.Feed = &feed
+	}
 	var items []Package
 	var err error
 	var res CmdResult
@@ -136,21 +180,27 @@ func (LinuxCollector) Packages(ctx context.Context, src Source, osr map[string]s
 		}
 	case "alpine":
 		set.Manager = "apk"
-		var b []byte
-		if b, err = src.ReadFile("/lib/apk/db/installed"); err == nil {
-			items = ParseApkInstalled(b)
+		var owned map[string]bool
+		if items, owned, err = ScanApkDB(src, isOpenRCScript); err == nil {
+			apkOwned = owned
 		}
 	default:
-		return Unknown[PackageSet](ReasonUnsupported, "package manager for "+osr["ID"]+" not supported yet")
+		return Unknown[PackageSet](ReasonUnsupported, "package manager for "+osr["ID"]+" not supported yet"), nil
 	}
 	switch {
 	case err != nil:
-		return unknownFrom[PackageSet](set.Manager, err)
+		return unknownFrom[PackageSet](set.Manager, err), nil
 	case res.ExitCode != 0:
-		return Unknown[PackageSet](ReasonCommandFailed, fmt.Sprintf("%s exit %d: %s", set.Manager, res.ExitCode, firstLine(res.Stderr)))
+		return Unknown[PackageSet](ReasonCommandFailed, fmt.Sprintf("%s exit %d: %s", set.Manager, res.ExitCode, firstLine(res.Stderr))), nil
 	}
 	set.Items = items
-	return OK(set)
+	if set.Feed != nil {
+		DropAbsentSLEProducts(set.Feed, src, items)
+	}
+	if extrasErr != "" {
+		return Partial(set, extrasReason, "not fully read: "+extrasErr), apkOwned
+	}
+	return OK(set), apkOwned
 }
 
 func firstLine(s string) string {
@@ -533,6 +583,10 @@ func (c LinuxCollector) persistence(ctx context.Context, src Source, keys Obs[[]
 	cronDir("/etc/cron.d")
 	cronDir("/var/spool/cron", "crontabs", "atjobs", "atspool", "lastrun")
 	cronDir("/var/spool/cron/crontabs")
+	cronDir("/etc/crontabs") // busybox crond (Alpine)
+	for _, it := range PeriodicScripts(src, note) {
+		add(it)
+	}
 
 	if b, ok := read("/etc/ld.so.preload"); ok {
 		for _, l := range strings.Split(string(b), "\n") {

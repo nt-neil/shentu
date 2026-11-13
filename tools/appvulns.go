@@ -156,7 +156,7 @@ func AppVulns(ctx context.Context, hc *http.Client, roots []string) (map[string]
 	files := FindLockfiles(roots)
 	kev, kevErr := loadKEV(ctx, hc)
 	var results []AppResult
-	total := 0
+	total, kevUnchecked := 0, 0
 	for _, f := range files {
 		r := AppResult{Path: f.Path, Ecosystem: f.Ecosystem, Packages: len(f.pkgs)}
 		ids, err := osvBatch(ctx, hc, f.Ecosystem, f.pkgs)
@@ -173,7 +173,9 @@ func AppVulns(ctx context.Context, hc *http.Client, roots []string) (map[string]
 			r.Affected = append(r.Affected, AppHit{p.Name, p.Version, list[:min(5, len(list))]})
 			total += len(list)
 			if kevErr == nil {
-				for _, e := range matchKEV(kev, list, func(id string) []string { return osvCVEs(ctx, hc, id) }) {
+				matched, n := matchKEV(kev, list, func(id string) ([]string, bool) { return osvCVEs(ctx, hc, id) })
+				kevUnchecked += n
+				for _, e := range matched {
 					e.Package, e.Version = p.Name, p.Version
 					r.Exploited = append(r.Exploited, e)
 				}
@@ -191,6 +193,9 @@ func AppVulns(ctx context.Context, hc *http.Client, roots []string) (map[string]
 	}
 	if kevErr != nil {
 		out["kev"] = "CISA KEV list unavailable: " + kevErr.Error()
+	} else if kevUnchecked > 0 {
+		out["kev_unchecked"] = kevUnchecked
+		out["kev"] = fmt.Sprintf("%d vulnerabilities could not be checked against the CISA KEV list: exploited ones among them are not marked", kevUnchecked)
 	}
 	return out, nil
 }
