@@ -19,16 +19,21 @@ import (
 type Masker struct {
 	Hosts []string // host names to replace (short and FQDN)
 	Users []string // user names to replace
+	// DropArgs records process command lines as the executable only: on a
+	// person's machine the arguments hold anything (paths, URLs, a shell's
+	// whole script).
+	DropArgs bool
 
-	repl  []pair
-	ips   map[string]string
-	nPriv int
-	nPub  int
-	nV6   int
-	nKey  int
-	keys  map[string]string
-	hw    map[string]string // MAC addresses, DUIDs, IAIDs
-
+	repl   []pair
+	ips    map[string]string
+	nPriv  int
+	nPub   int
+	nV6    int
+	nKey   int
+	keys   map[string]string
+	other  map[string]string // .local names, UUIDs, email addresses
+	nOther map[string]int    // placeholders made, per format
+	hw     map[string]string // MAC addresses, DUIDs, IAIDs
 }
 
 type pair struct {
@@ -55,6 +60,23 @@ var (
 	hwIDRe     = regexp.MustCompile(`(?i)\b[0-9a-f]{1,2}(?::[0-9a-f]{1,2}){3,}\b|\b[0-9a-f]{1,2}(?:-[0-9a-f]{1,2}){3,}\b|` +
 		`\b[0-9a-f]{4}\.[0-9a-f]{4}\.[0-9a-f]{4}\b`)
 	procNetRe = regexp.MustCompile(`\b([0-9A-F]{8}|[0-9A-F]{32}):([0-9A-F]{4})\b`)
+
+	// Bonjour names (macOS hosts are "<name>.local"), UUIDs (hardware and
+	// volume ids) and email addresses (Apple ID, iCloud) identify a machine
+	// or a person whatever the user and host lists say.
+	dotLocalRe = regexp.MustCompile(`\b[A-Za-z0-9][A-Za-z0-9.-]*\.local\b`)
+	uuidRe     = regexp.MustCompile(`(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b`)
+	// A path in a person's home names their projects and clients; only the
+	// parts the collectors read keep their names.
+	// The rest of a home path runs to the end of the field: a name may hold
+	// spaces, commas, parentheses, "-", "=" or ":", and where it ends cannot
+	// be told, so everything up to a line end, tab, quote, <, >, | or ; is
+	// masked (masking too much beats leaking). homeToken is the narrower
+	// path a kept location (homeKept) is cut to.
+	homePathRe = regexp.MustCompile(`(/(?:Users|home)/(?:user\d+|Shared))/([^\n\t"'<>|;]+)`)
+	maskedRe   = regexp.MustCompile(`^redacted\d+(/|$)`) // a path this mask already wrote
+	homeToken  = regexp.MustCompile(`^[^\s"'<>|:;,=)]+`)
+	emailRe    = regexp.MustCompile(`\b[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}\b`)
 )
 
 // skipIP lists contents where dotted numbers are versions, not addresses.
@@ -71,7 +93,7 @@ func skipIP(e *entry) bool {
 func skipUser(e *entry) bool { return e.Op == "file" && strings.HasSuffix(e.Path, "os-release") }
 
 func (m *Masker) init() {
-	m.ips, m.keys = map[string]string{}, map[string]string{}
+	m.ips, m.keys, m.other, m.nOther = map[string]string{}, map[string]string{}, map[string]string{}, map[string]int{}
 	add := func(names []string, prefix string) {
 		seen := map[string]bool{}
 		var list []string
@@ -93,6 +115,9 @@ func (m *Masker) init() {
 
 func (m *Masker) apply(entries []*entry) []*entry {
 	m.init()
+	if m.DropArgs {
+		dropArgs(entries)
+	}
 	// Deterministic placeholder order: walk entries sorted by key.
 	sort.Slice(entries, func(i, j int) bool { return entries[i].key() < entries[j].key() })
 	for _, e := range entries {
@@ -119,6 +144,8 @@ func (m *Masker) apply(entries []*entry) []*entry {
 			s = clearGECOS(s)
 		case strings.HasSuffix(e.Path, "authorized_keys") || strings.HasSuffix(e.Path, "authorized_keys2"):
 			s = m.authorizedKeys(s)
+		case e.Op == "cmd" && baseName(e.Argv[0]) == "lsof" && strings.Contains(strings.Join(e.Argv, " "), "-F"):
+			s = m.lsofFields(s) // "n192.0.2.1:22": the field letter hides the address from \b
 		}
 		s = m.text(s, !skipIP(e), !skipUser(e))
 		e.data = []byte(s)
@@ -132,6 +159,13 @@ func (m *Masker) text(s string, ips, users bool) string {
 	}
 	s = MaskSecrets(s)
 	s = sshKeyRe.ReplaceAllStringFunc(s, m.key)
+	s = emailRe.ReplaceAllStringFunc(s, func(t string) string {
+		if notEmail(t) {
+			return t
+		}
+		return m.same(t, "user%d@example.com")
+	})
+	s = uuidRe.ReplaceAllStringFunc(s, func(t string) string { return m.same(strings.ToUpper(t), "00000000-0000-0000-0000-%012d") })
 	// Names that hold an id's shape go first, whole; then the ids, so a
 	// short name (f3) can no longer split one; then the other names.
 	names := func(hw bool) {
@@ -144,6 +178,10 @@ func (m *Masker) text(s string, ips, users bool) string {
 	names(true)
 	s = hwIDRe.ReplaceAllStringFunc(s, m.hwID)
 	names(false)
+	s = m.dotLocal(s)
+	if users {
+		s = homePathRe.ReplaceAllStringFunc(s, m.homePath)
+	}
 	if ips {
 		s = ipv4Re.ReplaceAllStringFunc(s, func(t string) string {
 			ip := net.ParseIP(t)
@@ -161,6 +199,144 @@ func (m *Masker) text(s string, ips, users bool) string {
 		})
 	}
 	return s
+}
+
+// notEmail: names shaped like addresses that are not, such as OpenSSH's
+// algorithm names (aes256-gcm@openssh.com) and versioned file names
+// (com.example.db@2.plist).
+func notEmail(t string) bool {
+	_, domain, _ := strings.Cut(t, "@")
+	domain = strings.ToLower(domain)
+	switch domain {
+	case "openssh.com", "libssh.org", "ssh.com", "example.com":
+		return true
+	}
+	return versionedFile.MatchString(domain)
+}
+
+// versionedFile is "17.plist", "9.7.log": a version, then a file extension.
+var versionedFile = regexp.MustCompile(`^\d+(?:\.\d+)*\.(?:plist|service|conf|json|log|pid|err|sock|txt)$`)
+
+// homeKept are the paths below a home that collectors read by name.
+var homeKept = []string{".ssh", "Library/LaunchAgents"}
+
+// homePath keeps /Users/user1/.ssh/... and /Users/user1/Library/LaunchAgents/...,
+// and turns any other path below a masked home into /Users/user1/redactedN.
+func (m *Masker) homePath(t string) string {
+	sm := homePathRe.FindStringSubmatch(t)
+	home, rest := sm[1], sm[2]
+	keep := func(tok string) string { // a kept path, then the rest masked again
+		after := rest[len(tok):]
+		// A file name may go on past a space ("authorized keys"): that part
+		// is masked up to an option or another path.
+		tail := ""
+		if len(after) > 1 && after[0] == ' ' && !strings.ContainsRune("/-( ", rune(after[1])) {
+			end := len(after)
+			for i := 1; i+1 < len(after); i++ {
+				if after[i] == ' ' && (after[i+1] == '/' || after[i+1] == '-') {
+					end = i
+					break
+				}
+			}
+			tail = " " + m.same(strings.TrimRight(after[1:end], " "), "redacted%d")
+			after = after[end:]
+		}
+		return home + "/" + tok + tail + homePathRe.ReplaceAllStringFunc(after, m.homePath)
+	}
+	tok := homeToken.FindString(rest)
+	for _, k := range homeKept {
+		if tok == k || strings.HasPrefix(tok, k+"/") {
+			return keep(tok)
+		}
+	}
+	if maskedRe.MatchString(tok) {
+		return keep(tok)
+	}
+	trail := rest[len(strings.TrimRight(rest, " ")):] // spaces before a delimiter stay
+	return home + "/" + m.same(strings.TrimRight(rest, " "), "redacted%d") + trail
+}
+
+// dropArgs cuts command lines down to the executable: /proc/<pid>/cmdline
+// to its first field, and "ps -o pid=,args=" to the path "ps -o comm=" gave
+// for that pid (an executable path may hold spaces, so args cannot be split).
+func dropArgs(entries []*entry) {
+	comm := map[string]string{}
+	for _, e := range entries {
+		if e.Op == "cmd" && baseName(e.Argv[0]) == "ps" && strings.Contains(strings.Join(e.Argv, " "), "comm=") {
+			for _, l := range strings.Split(string(e.data), "\n") {
+				f := strings.Fields(l)
+				if len(f) >= 6 {
+					c := strings.TrimSpace(l)
+					for i := 0; i < 5; i++ {
+						c = strings.TrimSpace(c[strings.IndexAny(c, " \t"):])
+					}
+					comm[f[0]] = c
+				}
+			}
+		}
+	}
+	for _, e := range entries {
+		switch {
+		case e.Op == "file" && strings.HasPrefix(e.Path, "/proc/") && strings.HasSuffix(e.Path, "/cmdline") && e.data != nil:
+			first, _, _ := strings.Cut(string(e.data), "\x00")
+			e.data = []byte(first)
+		case e.Op == "cmd" && baseName(e.Argv[0]) == "ps" && strings.Contains(strings.Join(e.Argv, " "), "args="):
+			var out []string
+			for _, l := range strings.Split(string(e.data), "\n") {
+				pid, _, _ := strings.Cut(strings.TrimSpace(l), " ")
+				if pid != "" {
+					out = append(out, fmt.Sprintf("%5s %s", pid, comm[pid]))
+				}
+			}
+			e.data = []byte(strings.Join(out, "\n") + "\n")
+		}
+	}
+}
+
+// lsofFields masks lsof -F output one field at a time, after its letter.
+func (m *Masker) lsofFields(s string) string {
+	lines := strings.Split(s, "\n")
+	for i, l := range lines {
+		if len(l) > 1 {
+			lines[i] = l[:1] + m.text(l[1:], true, true)
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// dotLocal masks Bonjour host names, but not file names such as
+// /etc/rc.local: a name inside a path (after "/" or ".", or before "/")
+// stays, unless it follows "//", where a URL names its host.
+func (m *Masker) dotLocal(s string) string {
+	var b strings.Builder
+	last := 0
+	for _, ix := range dotLocalRe.FindAllStringIndex(s, -1) {
+		i, j := ix[0], ix[1]
+		url := i > 1 && s[i-2:i] == "//"
+		if !url && (i > 0 && (s[i-1] == '/' || s[i-1] == '.') || j < len(s) && s[j] == '/') {
+			continue
+		}
+		b.WriteString(s[last:i])
+		b.WriteString(m.same(strings.ToLower(s[i:j]), "localhost%d.local"))
+		last = j
+	}
+	if last == 0 {
+		return s
+	}
+	b.WriteString(s[last:])
+	return b.String()
+}
+
+// same gives every distinct value one numbered placeholder, the same
+// wherever it appears; a placeholder maps to itself.
+func (m *Masker) same(v, format string) string {
+	if r, ok := m.other[v]; ok {
+		return r
+	}
+	m.nOther[format]++
+	r := fmt.Sprintf(format, m.nOther[format])
+	m.other[v], m.other[r] = r, r
+	return r
 }
 
 // hwShaped: two-digit groups only, no "::" - part of a MAC or DUID, which
@@ -295,6 +471,7 @@ func (m *Masker) ip(ip net.IP) net.IP {
 		out = net.ParseIP(fmt.Sprintf("%s%x", prefix, m.nV6))
 	}
 	m.ips[k] = out.String()
+	m.ips[out.String()] = out.String() // masking twice changes nothing
 	return out
 }
 

@@ -4908,6 +4908,15 @@
       "signature_age_days": 0
     }
   },
+  "protections": {
+    "status": "unknown",
+    "reason": "not_collected",
+    "value": {
+      "integrity": "",
+      "app_verification": "",
+      "disk_encryption": ""
+    }
+  },
   "auth_events": {
     "status": "ok",
     "detail": "from journald",

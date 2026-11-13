@@ -23,6 +23,12 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
   Leap 用自製的測試資料驗證，SLES 還沒有在真的主機上試過。
 - 每日報告會列出沒查成或只查了一部分的漏洞檢查；套件清單讀出 0 個時回報「說不出有沒有漏洞」，
   不再當成「沒有漏洞」。
+- macOS（新增，只讀取，不用 sudo）：系統版本、用戶（dscl）、程序、開放的連接埠
+  （netstat；macOS 不列出時改用 lsof）、應用程式的網路防護、SIP、Gatekeeper、FileVault、XProtect、
+  launchd 與別的開機或定時自動執行的位置、sshd 設定，以及安裝的 app 與 Homebrew 套件。
+  系統版本與 Apple 的軟體更新清單（gdmf.apple.com）比對；套件回報「說不出有沒有漏洞」，
+  因為 OSV 沒有 Homebrew 的資料。只用自製的測試資料驗證過，還沒有在真的 Mac 上試過。
+  登入項目（Background Task Management）不會讀取，所以 macOS 的開機自動執行位置都會標為 partial。
 - 程式碼稽核的資料夾寫成 `/var/www/html/`（最後多一個 `/`）或 `/` 時，接續上次的位置稽核
   不會再把整個資料夾跳過。資料夾改為先整理成標準寫法，所以更新版本後的第一次稽核找不到上次的位置，
   會從開始完整檢查一次。

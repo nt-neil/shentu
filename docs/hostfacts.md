@@ -82,6 +82,7 @@ A missing or unreadable fact never passes a check. A check that needs a fact the
 | `remote_access.winrm` | `running`, `http_listener`, `allow_unencrypted`, `basic_auth` | not applicable | registry `WSMAN\Service`, policy keys, ports 5985/5986 |
 | `remote_access.smb` | `smb1_enabled`, `signing_required`, `writable_shares` | not collected yet (Samba) | registry `LanmanServer\Parameters`, `NetShareEnum` |
 | `antimalware` | `product`, `real_time`, `signature_age_days`, `exclusions` | not applicable | WMI `MSFT_MpComputerStatus`; exclusions from the registry (Defender `Exclusions` and its policy key) |
+| `protections` | `integrity`, `app_verification`, `disk_encryption` (each `on`, `off` or `""`), `extra` | not collected yet | not collected yet (BitLocker) |
 | `auth_events` | `window_hours`, `failed_by_source`, `notable[]` | journald's ssh and sshd units first, then the ssh@ and sshd@ units of a socket-activated sshd (since the snapshot minus 24 h, at most `JournalTimeout`, 60 s): ok. No sshd entry and no text auth log to compare: partial with `unverified_source` (journald may not keep them). Text auth/secure logs (rotated, gzipped, streamed) when journald is missing, fails, times out or has no sshd entries, and without journald busybox `/var/log/messages` (sshd lines of the auth and authpriv facilities only): partial with `unverified_source`. Neither readable: unknown (a journal that hides the system's entries from a non-root user is `permission_denied`, not "no failed logins") | Event Log 4625, 4624 type 10, 1102, 4720, 4732, 7045 |
 | `web` | `server`, `webroots`, `upload_dirs`, `config_unreadable` ("path (why)") | nginx `root` and Apache `DocumentRoot` lines (upload folders: the code audit) | `applicationHost.config` |
 
@@ -91,7 +92,10 @@ or names no script, is listed on its own), `local_d`, `inittab` (busybox init: `
 action, `command` the process), `ld_preload`, `rc_local`,
 `authorized_key`, `authorized_key_unparsed`, `sudo_rule`, `pam_unpackaged`, and on Windows `run_key`
 (`detail` tells `winlogon`, `ifeo` and `appinit_dlls` apart), `service`, `schtask`,
-`wmi_subscription`, `startup_folder`. macOS uses `launchd`.
+`wmi_subscription`, `startup_folder`. macOS uses `launchd` (`detail` says daemon, agent or user
+agent, the folder, and whether it runs at load or is kept alive), `cron` (also periodic scripts),
+`periodic_conf`, `at_job`, `security_agent_plugin`, `startup_item`, `login_hook`, `sudo_rule` and
+`authorized_key`.
 
 `packages.feed` says where the host's security fixes are published:
 
@@ -105,6 +109,7 @@ action, `command` the process), `ld_preload`, `rc_local`,
 | sles | `osv` | one per SLE 15 module, e.g. `SUSE:Linux Enterprise Module for Basesystem 15 SP5`, with Python 3, HPC, Live Patching, High Availability Extension and `SUSE:Package Hub 15 SP5`; Real Time is no OSV ecosystem and is listed in `not_queried` when the host has it (`/etc/products.d/SLE_RT.prod` or `kernel-rt`) | `vr` | `zypper patch --category security` |
 | sled | `osv` | the modules a desktop has (Basesystem, Desktop Applications, Development Tools, Python 3, Workstation Extension, Package Hub); `SUSE:Linux Enterprise Desktop` is no OSV ecosystem, which `note` says (its packages are in the modules, so nothing goes unchecked) | `vr` | `zypper patch --category security` |
 | sles_sap | `osv` | the sles modules and `SUSE:Linux Enterprise Server for SAP Applications 15 SP5`; `Module for SAP Applications` is no OSV ecosystem and is listed in `not_queried`, as is SLES for SAP 12 | `vr` | `zypper patch --category security` |
+| macos (darwin) | `apple` | `release` is the major version; Apple's software update catalog (gdmf.apple.com) gives the newest release of each major version; a version newer than every listed one (a beta) is cannot tell | | `softwareupdate --install --all` |
 | amzn | `alas` | `release` `2` or `2023`; on 2, `repos` lists the amazon-linux-extras topics enabled (`kernel-5.10`, `php8.2`), whose updateinfo is read too | | `yum update --security` (2), `dnf upgrade --security` (2023) |
 
 `version_fmt` `vr` means OSV spells rpm versions without a `0:` epoch. `alas` is matched against
@@ -123,6 +128,28 @@ known `default_inbound` becomes `allow`.
 
 `auth_events.notable[].kind` values: `log_cleared`, `account_created`, `group_member_added`,
 `service_installed`.
+
+## macOS
+
+The darwin collector reads, as whoever runs it and never with sudo:
+
+| fact | source |
+|---|---|
+| `platform` | `SystemVersion.plist` (`sw_vers` if missing), `sysctl kern.osrelease`; `family` and `distro` are `macos` |
+| `resources` | `sysctl hw.memsize vm.loadavg` (available memory not known) |
+| `packages` | Homebrew `Cellar` and `Caskroom` folders (`source` `homebrew`, `homebrew-cask`), `/Applications` `Info.plist` (`source` `app`, name is the bundle id); always `partial`: installer receipts are not listed. `feed.kind` `apple`: only the OS version can be checked (OSV has no Homebrew ecosystem) |
+| `services` | launchd jobs in `/Library/LaunchDaemons`, `/Library/LaunchAgents` and each login account's `~/Library/LaunchAgents` (wherever the home is; a link anywhere below the home is not followed); `/System` is Apple's sealed volume and is not reported. `exe` is `Program` or the first of `ProgramArguments`, whole; a daemon runs as its `UserName` (root when none); launchctl's overrides decide `disabled`: `/var/db/com.apple.xpc.launchd/disabled.plist` a daemon's, `disabled.<uid>.plist` that user's agents' (both readable by every user); one that cannot be read is said in the detail. With accounts unknown (dscl failed), user LaunchAgents are listed as not read. At most 64 arguments and 512 bytes of a command are kept (partial when cut) |
+| `processes` | `ps` (`comm` is the executable, `args` the masked command line, `etime` gives the start time); `partial` when the command lines were cut short or could not be read |
+| `accounts` | `dscl . -list /Users` (UniqueID, UserShell, NFSHomeDirectory) and the `admin` group; `partial`, saying which, when one of these queries fails |
+| `listeners` | `netstat -anv`; macOS may hide every Internet socket from a program's `netstat`, and then `lsof` lists this user's processes and the fact is `partial`; output past the cap is kept as far as read, `partial` |
+| `persistence` | launchd jobs, `/etc/crontab`, `/usr/lib/cron/tabs` (root), periodic scripts, `/etc/periodic.conf(.local)` read as `NAME=value` (`*_local`, `local_periodic` and `*_enable="YES"` are listed as `periodic_conf`) and `/etc/daily.local`, `weekly.local`, `monthly.local`, at jobs in `/usr/lib/cron/jobs` (`at_job`, root), `/Library/Security/SecurityAgentPlugins` (`security_agent_plugin`), `/Library/StartupItems` (`startup_item`), LoginHook and LogoutHook in `com.apple.loginwindow` (`login_hook`), sudoers (root), authorized_keys. Login items are not read at all (the Background Task Management store is not parsed, as root either), so the fact is always `partial` and says so; every location that could not be read is listed in the detail |
+| `firewall` | `socketfilterfw` (`backend`, `enabled`; `extra.block_all`, `extra.stealth`, `extra.mode`), `pfctl -s info` (`extra.pf` only: pf enabled with rules unread does not make the firewall enabled; `unknown` without root) |
+| `protections` | `csrutil status` (SIP), `spctl --status` (Gatekeeper), `fdesetup status` (FileVault) |
+| `antimalware` | XProtect: the newer of its two bundles gives version and signature age; `real_time` is assumed (macOS has no switch to turn XProtect off) and the detail says so. The `antimalware.stale_signatures` check allows XProtect 30 days |
+| `remote_access.ssh` | `/etc/ssh/sshd_config`, the Linux parser |
+
+`system_profiler` and `ioreg` are never on the allowlist: they print the serial number and the
+hardware UUID.
 
 ## Large inputs
 
@@ -165,7 +192,15 @@ Before anything is written, the recording is masked. The masker replaces:
 - IP addresses, keeping their class: private addresses become 10/8, public ones become
   198.51.100/24, and loopback stays as it is;
 - GECOS fields;
-- SSH keys and their comments.
+- SSH keys and their comments;
+- `.local` host names, UUIDs and email addresses (not OpenSSH algorithm names such as
+  `aes256-gcm@openssh.com`, nor file names such as `com.example.db@2.plist`);
+- paths below a human user's home, except `.ssh` and `Library/LaunchAgents`, which become
+  `redactedN`.
+
+On a person's own machine, add `-drop-args`: process command lines are then recorded as the
+executable only, since arguments can hold anything. `-mask-host NAME` masks further names, such as
+an old host name or a company name.
 
 Review the fixture and run gitleaks before you commit it. `TestReplayGolden` then replays each
 fixture under `hostenv/testdata/<os>/<case>` and compares the result with `facts.golden.json`; run
