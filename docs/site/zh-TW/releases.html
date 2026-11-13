@@ -57,7 +57,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.86; --x: 19.3">
+    <li class="era-node" style="--old: 0.88; --x: 17.8">
       <a class="lamp" href="../zh-TW/releases.html#v0.1.1" aria-describedby="rv-0.1.1">
         <i aria-hidden="true"></i><span class="ver">v0.1.1</span>
         <time datetime="2026-11-07">11-07</time>
@@ -69,7 +69,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.71; --x: 31.6">
+    <li class="era-node" style="--old: 0.75; --x: 28.5">
       <a class="lamp" href="../zh-TW/releases.html#v0.2.0" aria-describedby="rv-0.2.0">
         <i aria-hidden="true"></i><span class="ver">v0.2.0</span>
         <time datetime="2026-11-07">11-07</time>
@@ -81,7 +81,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.57; --x: 43.9">
+    <li class="era-node" style="--old: 0.62; --x: 39.2">
       <a class="lamp" href="../zh-TW/releases.html#v0.2.1" aria-describedby="rv-0.2.1">
         <i aria-hidden="true"></i><span class="ver">v0.2.1</span>
         <time datetime="2026-11-08">11-08</time>
@@ -93,7 +93,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.43; --x: 56.1">
+    <li class="era-node" style="--old: 0.50; --x: 50.0">
       <a class="lamp" href="../zh-TW/releases.html#v0.2.2" aria-describedby="rv-0.2.2">
         <i aria-hidden="true"></i><span class="ver">v0.2.2</span>
         <time datetime="2026-11-08">11-08</time>
@@ -105,7 +105,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.29; --x: 68.4">
+    <li class="era-node" style="--old: 0.38; --x: 60.8">
       <a class="lamp" href="../zh-TW/releases.html#v0.2.3" aria-describedby="rv-0.2.3">
         <i aria-hidden="true"></i><span class="ver">v0.2.3</span>
         <time datetime="2026-11-09">11-09</time>
@@ -117,7 +117,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.14; --x: 80.7">
+    <li class="era-node" style="--old: 0.25; --x: 71.5">
       <a class="lamp" href="../zh-TW/releases.html#v0.2.4" aria-describedby="rv-0.2.4">
         <i aria-hidden="true"></i><span class="ver">v0.2.4</span>
         <time datetime="2026-11-09">11-09</time>
@@ -129,21 +129,33 @@
       </div>
     </li>
   
-    <li class="era-node now" style="--old: 0.00; --x: 93.0">
+    <li class="era-node" style="--old: 0.12; --x: 82.2">
       <a class="lamp" href="../zh-TW/releases.html#v0.2.5" aria-describedby="rv-0.2.5">
         <i aria-hidden="true"></i><span class="ver">v0.2.5</span>
         <time datetime="2026-11-13">11-13</time>
       </a>
       <p class="acc"><span><b>70</b> 條規則</span><span><b>15</b>/97 樣本抓到</span></p>
+      <div class="peek" id="rv-0.2.5">
+        <p class="word">增祀</p>
+        <ul><li><code>app_code_audit</code> 會跨檔追蹤呼叫：在一個檔案讀進來、在另一個檔案的危險呼叫用掉的輸入，會在危險呼叫處報出，並標明來源檔案。</li><li>框架路由模型：WordPress 的 hook、shortcode 與 REST 路由，Laravel 路由、Django URL、Flask 與 FastAPI 的 view，以及 Express handler 的參數都視為輸入，路由註冊在別的檔案也一樣。</li><li>新的規則類別：LDAP 注入、NoSQL 運算子注入、危險的檔案上傳、弱加密與寫死的憑證；TypeScript 檔案用 JavaScript 規則檢查。</li></ul>
+      </div>
+    </li>
+  
+    <li class="era-node now" style="--old: 0.00; --x: 93.0">
+      <a class="lamp" href="../zh-TW/releases.html#v0.3.0" aria-describedby="rv-0.3.0">
+        <i aria-hidden="true"></i><span class="ver">v0.3.0</span>
+        <b class="badge">即將發布</b>
+      </a>
+      <p class="acc"><span><b>70</b> 條規則</span></p>
       
     </li>
   
   </ol>
 </div>
 
-<div class="newest" id="rv-0.2.5">
-  <div class="newest-head"><p class="word">增祀</p><span class="ver">v0.2.5</span><time datetime="2026-11-13">2026-11-13</time></div>
-  <div class="grp grp-reach"><h4><i aria-hidden="true"></i>看得更遠</h4><ul><li><code>app_code_audit</code> 會跨檔追蹤呼叫：在一個檔案讀進來、在另一個檔案的危險呼叫用掉的輸入，會在危險呼叫處報出，並標明來源檔案。</li><li>框架路由模型：WordPress 的 hook、shortcode 與 REST 路由，Laravel 路由、Django URL、Flask 與 FastAPI 的 view，以及 Express handler 的參數都視為輸入，路由註冊在別的檔案也一樣。</li><li>新的規則類別：LDAP 注入、NoSQL 運算子注入、危險的檔案上傳、弱加密與寫死的憑證；TypeScript 檔案用 JavaScript 規則檢查。</li><li>稽核結果會在多次執行之間保留，大型應用程式分幾次巡邏就能掃完，不必一次跑完。</li><li>分成多次執行的稽核，仍可能有少數結果和不限時間的單次執行不同；修正進行中。</li><li><code>js-cmdi-spawn-shell</code> 在指令和參數都固定、只有 options（例如 <code>cwd</code> 或 <code>env</code>）帶到請求值時，<code>spawn()</code> 和 <code>execFile()</code> 仍然會被報出。</li><li>在 <code>$wpdb-&gt;prepare()</code>／<code>-&gt;prepare()</code> 的格式字串裡，如果佔位符清單是由只回傳常數的 callback 產生 （例如 <code>implode(&#39;,&#39;, array_map(fn($v) =&gt; &#39;%d&#39;, $ids))</code>，或改用 <code>function ($v) { return &#39;%d&#39;; }</code> 的寫法），只要 <code>$ids</code> 來自請求，仍然會被當成輸入報出來。<code>array_fill(0, count($ids), &#39;%d&#39;)</code> 和 <code>sizeof()</code> 的寫法已能辨識。要讀出 callback 的回傳值需要 改引擎，預定 v0.2.6。</li></ul></div><div class="grp grp-sharp"><h4><i aria-hidden="true"></i>看得更準</h4><ul><li>誤報更少：<code>wp_send_json</code> 的輸出、<code>JSON_HEX_TAG</code> 的資料區塊、不是 collection 的物件上的 MongoDB 查詢，以及 Django 的 <code>_meta.get_field</code> 檢查。</li><li><code>php-deserialization-phar-wrapper</code> 會把 WordPress REST attachments controller 裡對上傳暫存路徑做的 <code>filesize()</code> 報出來，這是誤報：那個路徑是 PHP 自己產生的，但引擎還分不出上傳檔的 <code>tmp_name</code> 和客戶端填的 <code>name</code>。</li><li>js-nosqli-mongo-query 會把 SQL 資料庫上的 TypeORM repository 呼叫當成 MongoDB 查詢，也就是 options 的 where 由請求值組成的 find/findOne（例如 n8n 的公開 API 和查 credential 的地方）。TypeORM 會把 這些值當成 SQL 參數，所以這些是誤報；v0.2.6 會改用能認出 TypeORM 的 receiver 檢查來區分。</li><li>js-xss-response 不再對 Server-Sent Events 例外：在 text/event-stream 的 handler 裡寫 res.write(&#34;data: &#34; + 值) 會被報成 XSS（誤報），但不會因為 SSE 而漏報；依 handler 的 Content-Type 分辨串流的功能排在 v0.2.6。</li><li><code>-&gt;get_settings()</code> 在任何 class 裡都會被當成 Elementor widget 的輸入，所以 <code>WP_Widget::get_settings()</code> 和 WooCommerce <code>WC_Settings_Page::get_settings()</code> 回傳的值（由管理員存入）也會被報出來。要把來源 限定在繼承 <code>\Elementor\Widget_Base</code> 的 class，引擎得支援依 class 限定 source，預定 v0.2.6。經由 -&gt;get_settings() 讀到的值，也可能被追進 WordPress 後台的欄位定義，以及少數已經有防護的 SQL 位置（例如先用 isset() 檢查，或在 ORDER BY FIELD() 裡用 $wpdb-&gt;prepare() 綁定），因此在這些 地方會多出誤報。v0.2.6 會把這個來源限縮到 Elementor 元件。</li><li><code>python-path-traversal-send-file</code> 會把 <code>zipfile.ZipFile(request.files[...])</code> 報出來，這是誤報：它開的是 上傳的檔案串流，不是路徑。要在同一個參數裡分出請求的檔案串流和客戶端填寫的 filename，需要改引擎，預定 v0.2.6。</li></ul></div><div class="grp grp-light"><h4><i aria-hidden="true"></i>不拖慢網站</h4><ul><li>稽核依伺服器調整自己：記憶體上限取 min(1 GiB、可用記憶體的 25%、服務 cgroup 的 50%)，並行數依 CPU 數與系統負載決定。</li></ul></div>
+<div class="newest" id="rv-0.3.0">
+  <div class="newest-head"><p class="word">籌備中</p><span class="ver">v0.3.0</span><b class="badge">即將發布</b></div>
+  <div class="grp grp-reach"><h4><i aria-hidden="true"></i>看得更遠</h4><ul><li>支援 Windows Server 2022 與 2025，已在 GitHub 提供的 Windows Server 2022/2025 測試機上驗證（amd64，另建置 arm64）：Windows 收集器只透過 Windows API 讀取主機（登錄檔、服務、程序、通訊埠、帳號、排程工作、事件記錄、WMI 與防火牆），不用 PowerShell，也不執行外部指令。</li><li>Windows 檢查：自動啟動項目（Run 機碼、服務、排程工作、啟動資料夾、WMI 事件訂閱）、未啟用 NLA 的 RDP、SMB 簽章與 SMBv1、不安全的 WinRM、防火牆設定檔、Defender 狀態與排除清單、登入失敗與記錄被清除。</li><li>依 Microsoft 每月安全性更新（MSRC）比對缺少的 Windows 更新，並以 CISA KEV 清單標出已被 利用的漏洞、優先列出。</li><li>IIS：從 <code>applicationHost.config</code> 取得網站根目錄；程式碼稽核會讀取 ASP 與 ASP.NET 頁面，找出 webshell 與上傳目錄裡的腳本，UTF-16 頁面也包含在內。</li><li>兩個 Windows 服務：<code>Shentu</code>（巡邏）與 <code>ShentuBot</code>（Telegram），從 <code>%ProgramFiles%\Shentu</code> 以 <code>shentu service install [--bot]</code> 安裝；設定與狀態放在 <code>%ProgramData%\Shentu</code>，只有 SYSTEM 與 Administrators 能存取。</li><li><code>ssh_logins</code>、<code>processes</code>、<code>accounts_audit</code> 與 <code>log_search</code> 工具可在 Windows 使用（登入 事件、程序清單、本機帳號、事件記錄）。</li><li>SSH 登入沒成功的紀錄改為先讀 journald：ssh 與 sshd 單元的標記由 journald 自己填入，本機用戶不能偽造。journald 不存在、讀取時間到了上限（60 s），或沒有 sshd 紀錄時，才改讀文字紀錄檔（<code>auth.log</code>、<code>secure</code>）。本機任何人都能用 <code>logger</code> 寫入一行 sshd 紀錄，所以這時 <code>auth_events</code> 標為 partial，原因是新的 <code>unverified_source</code>，多次試圖登入的告警也會附註來源未驗證。不是 root 的用戶沒有權限看系統紀錄時，不再當成「沒有登入沒成功」。</li><li>程式碼稽核的資料夾寫成 <code>/var/www/html/</code>（最後多一個 <code>/</code>）或 <code>/</code> 時，接續上次的位置稽核 不會再把整個資料夾跳過。資料夾改為先整理成標準寫法，所以更新版本後的第一次稽核找不到上次的位置，會從開始完整檢查一次。</li><li>Windows 版只讀不寫：不支援 <code>block_ip</code> 與 <code>unblock_ip</code>。</li><li>Windows Server 2019 為 best effort：預期可用（相同的 Windows API，build 17763），但沒有在 GitHub 提供的測試機上驗證。</li><li><code>shentu setup</code> 還不能在 Windows 上執行，設定需要手動撰寫。</li><li>Windows 執行檔沒有程式碼簽章，也沒有 MSI；SmartScreen 或防毒軟體可能發出警告。</li></ul></div>
 </div>
 
 
@@ -162,7 +174,7 @@
     </div>
   </li>
 
-  <li class="era" id="v0.1.1" style="--old: 0.86">
+  <li class="era" id="v0.1.1" style="--old: 0.88">
     <div class="mark">
       <p class="when"><time datetime="2026-11-07">2026-11-07</time></p>
       <h2><span class="word">3 項改變</span> <span class="ver">v0.1.1</span></h2>
@@ -174,7 +186,7 @@
     </div>
   </li>
 
-  <li class="era" id="v0.2.0" style="--old: 0.71">
+  <li class="era" id="v0.2.0" style="--old: 0.75">
     <div class="mark">
       <p class="when"><time datetime="2026-11-07">2026-11-07</time></p>
       <h2><span class="word">2 項改變</span> <span class="ver">v0.2.0</span></h2>
@@ -186,7 +198,7 @@
     </div>
   </li>
 
-  <li class="era" id="v0.2.1" style="--old: 0.57">
+  <li class="era" id="v0.2.1" style="--old: 0.62">
     <div class="mark">
       <p class="when"><time datetime="2026-11-08">2026-11-08</time></p>
       <h2><span class="word">3 項改變</span> <span class="ver">v0.2.1</span></h2>
@@ -198,7 +210,7 @@
     </div>
   </li>
 
-  <li class="era" id="v0.2.2" style="--old: 0.43">
+  <li class="era" id="v0.2.2" style="--old: 0.50">
     <div class="mark">
       <p class="when"><time datetime="2026-11-08">2026-11-08</time></p>
       <h2><span class="word">1 項改變</span> <span class="ver">v0.2.2</span></h2>
@@ -210,7 +222,7 @@
     </div>
   </li>
 
-  <li class="era" id="v0.2.3" style="--old: 0.29">
+  <li class="era" id="v0.2.3" style="--old: 0.38">
     <div class="mark">
       <p class="when"><time datetime="2026-11-09">2026-11-09</time></p>
       <h2><span class="word">1 項改變</span> <span class="ver">v0.2.3</span></h2>
@@ -222,7 +234,7 @@
     </div>
   </li>
 
-  <li class="era" id="v0.2.4" style="--old: 0.14">
+  <li class="era" id="v0.2.4" style="--old: 0.25">
     <div class="mark">
       <p class="when"><time datetime="2026-11-09">2026-11-09</time></p>
       <h2><span class="word">增祀</span> <span class="ver">v0.2.4</span></h2>
@@ -245,7 +257,7 @@
     </div>
   </li>
 
-  <li class="era" id="v0.2.5" style="--old: 0.00">
+  <li class="era" id="v0.2.5" style="--old: 0.12">
     <div class="mark">
       <p class="when"><time datetime="2026-11-13">2026-11-13</time></p>
       <h2><span class="word">增祀</span> <span class="ver">v0.2.5</span></h2>
@@ -264,6 +276,23 @@
         <div class="wide"><dt>新增規則 (37)</dt><dd><details class="ids"><summary>PHP <span class="n">14</span></summary><p><code>php-file-upload-client-name</code> <code>php-hardcoded-secret-credentials</code> <code>php-ldapi-filter</code> <code>php-nosqli-mongo-query</code> <code>php-open-redirect-redirect</code> <code>php-path-traversal-file-write</code> <code>php-ssrf-http-request</code> <code>php-weak-crypto-cipher</code> <code>php-weak-crypto-password-hash</code> <code>php-xss-echo-attribute</code> <code>php-xss-echo-html</code> <code>php-xss-echo-script</code> <code>php-xss-echo-url</code> <code>php-xxe-libxml-noent</code> </p></details><details class="ids"><summary>Python <span class="n">11</span></summary><p><code>python-file-upload-client-name</code> <code>python-hardcoded-secret-credentials</code> <code>python-ldapi-filter</code> <code>python-nosqli-mongo-query</code> <code>python-open-redirect-redirect</code> <code>python-ssrf-http-request</code> <code>python-weak-crypto-cipher</code> <code>python-weak-crypto-password-hash</code> <code>python-xss-mark-safe</code> <code>python-xss-response</code> <code>python-xxe-parser-entities</code> </p></details><details class="ids"><summary>JavaScript / TypeScript <span class="n">12</span></summary><p><code>js-file-upload-client-name</code> <code>js-hardcoded-secret-credentials</code> <code>js-ldapi-filter</code> <code>js-nosqli-mongo-query</code> <code>js-open-redirect-redirect</code> <code>js-ssrf-http-request</code> <code>js-weak-crypto-cipher</code> <code>js-weak-crypto-password-hash</code> <code>js-xss-dom</code> <code>js-xss-response</code> <code>js-xss-response-url</code> <code>js-xxe-libxmljs-noent</code> </p></details></dd></div>
         
       </dl>
+      
+    </div>
+  </li>
+
+  <li class="era pending" id="v0.3.0" style="--old: 0.00">
+    <div class="mark">
+      <p class="when">尚未發布</p>
+      <h2><span class="word">籌備中</span> <span class="ver">v0.3.0</span></h2>
+    </div>
+    <div class="body">
+      <ul class="items"><li>支援 Windows Server 2022 與 2025，已在 GitHub 提供的 Windows Server 2022/2025 測試機上驗證（amd64，另建置 arm64）：Windows 收集器只透過 Windows API 讀取主機（登錄檔、服務、程序、通訊埠、帳號、排程工作、事件記錄、WMI 與防火牆），不用 PowerShell，也不執行外部指令。</li><li>Windows 檢查：自動啟動項目（Run 機碼、服務、排程工作、啟動資料夾、WMI 事件訂閱）、未啟用 NLA 的 RDP、SMB 簽章與 SMBv1、不安全的 WinRM、防火牆設定檔、Defender 狀態與排除清單、登入失敗與記錄被清除。</li><li>依 Microsoft 每月安全性更新（MSRC）比對缺少的 Windows 更新，並以 CISA KEV 清單標出已被 利用的漏洞、優先列出。</li><li>IIS：從 <code>applicationHost.config</code> 取得網站根目錄；程式碼稽核會讀取 ASP 與 ASP.NET 頁面，找出 webshell 與上傳目錄裡的腳本，UTF-16 頁面也包含在內。</li><li>兩個 Windows 服務：<code>Shentu</code>（巡邏）與 <code>ShentuBot</code>（Telegram），從 <code>%ProgramFiles%\Shentu</code> 以 <code>shentu service install [--bot]</code> 安裝；設定與狀態放在 <code>%ProgramData%\Shentu</code>，只有 SYSTEM 與 Administrators 能存取。</li><li><code>ssh_logins</code>、<code>processes</code>、<code>accounts_audit</code> 與 <code>log_search</code> 工具可在 Windows 使用（登入 事件、程序清單、本機帳號、事件記錄）。</li><li>SSH 登入沒成功的紀錄改為先讀 journald：ssh 與 sshd 單元的標記由 journald 自己填入，本機用戶不能偽造。journald 不存在、讀取時間到了上限（60 s），或沒有 sshd 紀錄時，才改讀文字紀錄檔（<code>auth.log</code>、<code>secure</code>）。本機任何人都能用 <code>logger</code> 寫入一行 sshd 紀錄，所以這時 <code>auth_events</code> 標為 partial，原因是新的 <code>unverified_source</code>，多次試圖登入的告警也會附註來源未驗證。不是 root 的用戶沒有權限看系統紀錄時，不再當成「沒有登入沒成功」。</li><li>程式碼稽核的資料夾寫成 <code>/var/www/html/</code>（最後多一個 <code>/</code>）或 <code>/</code> 時，接續上次的位置稽核 不會再把整個資料夾跳過。資料夾改為先整理成標準寫法，所以更新版本後的第一次稽核找不到上次的位置，會從開始完整檢查一次。</li><li>Windows 版只讀不寫：不支援 <code>block_ip</code> 與 <code>unblock_ip</code>。</li><li>Windows Server 2019 為 best effort：預期可用（相同的 Windows API，build 17763），但沒有在 GitHub 提供的測試機上驗證。</li><li><code>shentu setup</code> 還不能在 Windows 上執行，設定需要手動撰寫。</li><li>Windows 執行檔沒有程式碼簽章，也沒有 MSI；SmartScreen 或防毒軟體可能發出警告。</li></ul>
+      
+      <div class="grow">
+        <p><span class="bar" style="--w: 100.0%"></span><b>70</b> 條規則</p>
+        
+      </div>
+      
       
     </div>
   </li>

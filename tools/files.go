@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -108,13 +109,14 @@ func FileChanges(ctx context.Context, roots []string, since time.Time) (map[stri
 				return filepath.SkipAll
 			}
 			c := Changed{Path: p, Size: info.Size(), Mode: info.Mode().String(), Owner: owner, Modified: mt}
-			if webExt[strings.ToLower(filepath.Ext(p))] && info.Size() < 512*1024 {
+			if (webExt[strings.ToLower(filepath.Ext(p))] || aspPage(p)) && info.Size() < 512*1024 {
 				if b, err := os.ReadFile(p); err == nil {
 					for _, re := range webshellPatterns {
 						if m := re.Find(b); m != nil {
 							c.Webshell = append(c.Webshell, string(m))
 						}
 					}
+					c.Webshell = append(c.Webshell, aspWebshellMatches(p, b)...)
 				}
 			}
 			out = append(out, c)
@@ -240,6 +242,9 @@ var logSearch = Tool{
 		}
 		if err := decode(args, &a); err != nil {
 			return nil, err
+		}
+		if runtime.GOOS == "windows" {
+			return winLogSearch(a.Path, a.Pattern, a.Limit)
 		}
 		if !allowedLog(a.Path, env.LogPaths) {
 			return nil, errors.New("path is not in the allowed log paths: " + strings.Join(env.LogPaths, ", "))

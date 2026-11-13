@@ -49,11 +49,17 @@ func sshSettings(f *hostenv.Facts) []Finding {
 		title := "SSH settings could not be read (" + string(reason) + ")"
 		if reason == hostenv.ReasonPermission {
 			title = "SSH settings could not be read; run Shentu as root"
+			if f.Platform.Value.OS == "windows" {
+				title = "SSH settings could not be read; run Shentu as Administrator"
+			}
 		}
 		out = append(out, Finding{Check: "ssh.settings", Status: StatusCannotTell, Severity: SevInfo,
 			Title: title, Reason: string(reason), Evidence: strings.Join(o.Value.Unread, ", ")})
+		return out
 	}
-	return out
+	// Partial with both settings known: a file read later could not be, so
+	// say so rather than counting the config as complete.
+	return append(out, partialNote("ssh.settings", "Some SSH config files could not be read", o)...)
 }
 
 func ldPreload(f *hostenv.Facts) []Finding {

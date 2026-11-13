@@ -51,7 +51,9 @@ func TestReplayOpenTruncatedGivesLines(t *testing.T) {
 		t.Fatal(err)
 	}
 	lines := 0
-	if err := ScanLinesUnmasked(rp, p, func(string) { lines++ }); !errors.Is(err, ErrTruncated) || lines < MaxFileBytes/20-1 {
+	// The fixture holds the path as masked: on Windows t.TempDir is below
+	// the profile (C:\Users\...\AppData\Local\Temp), whose tail is masked.
+	if err := ScanLinesUnmasked(rp, maskWinHome(p), func(string) { lines++ }); !errors.Is(err, ErrTruncated) || lines < MaxFileBytes/20-1 {
 		t.Errorf("replayed scan: %d lines, %v", lines, err)
 	}
 }

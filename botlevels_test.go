@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -53,6 +54,9 @@ func blockDecision(t *testing.T, b *bot) *logEntry {
 
 // confirm = 1: Telegram only proposes; the action waits for `shentu bot approve`.
 func TestBotConfirmOnServer(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no control tool runs on Windows (the MVP is read-only; block_ip refuses there), so this confirm flow cannot start")
+	}
 	for _, approve := range []string{"n\n", "y\n"} {
 		model := &hostileModel{replies: []string{call("block_ip", `{"ip":"203.0.113.9","reason":"x"}`), done}}
 		b, tg := levelBot(t, model, [4]int{3, 4, 1, 2})
@@ -118,6 +122,9 @@ func TestBotConfirmNeedsCode(t *testing.T) {
 
 // confirm = 4 runs at once, but it is still logged and the model is still told.
 func TestBotConfirmNone(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no control tool runs on Windows (the MVP is read-only; block_ip refuses there), so this confirm flow cannot start")
+	}
 	model := &hostileModel{replies: []string{call("block_ip", `{"ip":"203.0.113.9","reason":"x"}`), done}}
 	b, tg := levelBot(t, model, [4]int{3, 4, 4, 2})
 	b.handle(context.Background(), msg(pairedUser, pairedChat, "private", "block it"))

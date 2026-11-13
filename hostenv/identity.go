@@ -8,6 +8,7 @@ import (
 	"net"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -81,6 +82,9 @@ var (
 
 // skipIP lists contents where dotted numbers are versions, not addresses.
 func skipIP(e *entry) bool {
+	if winSkipIP(e) {
+		return true
+	}
 	if e.Op == "cmd" {
 		b := strings.ToLower(baseName(e.Argv[0]))
 		return b == "dpkg-query" || b == "rpm"
@@ -114,6 +118,7 @@ func (m *Masker) init() {
 }
 
 func (m *Masker) apply(entries []*entry) []*entry {
+	m.Users = append(m.Users, winMaskPrep(entries)...)
 	m.init()
 	if m.DropArgs {
 		dropArgs(entries)
@@ -121,7 +126,7 @@ func (m *Masker) apply(entries []*entry) []*entry {
 	// Deterministic placeholder order: walk entries sorted by key.
 	sort.Slice(entries, func(i, j int) bool { return entries[i].key() < entries[j].key() })
 	for _, e := range entries {
-		e.Path = m.text(e.Path, true, true)
+		e.Path = m.text(e.Path, !winSkipIP(e), true)
 		for i := range e.Argv {
 			e.Argv[i] = m.text(e.Argv[i], true, true)
 		}
@@ -158,6 +163,7 @@ func (m *Masker) text(s string, ips, users bool) string {
 		return s
 	}
 	s = MaskSecrets(s)
+	s = maskMachineSIDs(s)
 	s = sshKeyRe.ReplaceAllStringFunc(s, m.key)
 	s = emailRe.ReplaceAllStringFunc(s, func(t string) string {
 		if notEmail(t) {
@@ -176,7 +182,7 @@ func (m *Masker) text(s string, ips, users bool) string {
 		}
 	}
 	names(true)
-	s = hwIDRe.ReplaceAllStringFunc(s, m.hwID)
+	s = m.hwIDs(s, ips)
 	names(false)
 	s = m.dotLocal(s)
 	if users {
@@ -337,6 +343,103 @@ func (m *Masker) same(v, format string) string {
 	r := fmt.Sprintf(format, m.nOther[format])
 	m.other[v], m.other[r] = r, r
 	return r
+}
+
+// hwIDs masks the hardware ids in s (hwIDRe). A match inside an IPv6
+// address is handled here, not left to a later step: with ips the whole
+// address is masked as one right away, without it stays as it is. An MD5
+// fingerprint stays; an IPv4 address written with dashes (ip-10-20-30-40)
+// is masked as an address when ips is set, in the same dashed form.
+func (m *Masker) hwIDs(s string, ips bool) string {
+	var b strings.Builder
+	last := 0
+	for _, loc := range hwIDRe.FindAllStringIndex(s, -1) {
+		i, j := loc[0], loc[1]
+		if i < last {
+			continue // inside an address already written out
+		}
+		t := s[i:j]
+		var repl string
+		if a, z, ip := ipv6Around(s, i, j); ip != nil {
+			if !ips {
+				continue
+			}
+			b.WriteString(s[last:a])
+			b.WriteString(m.ip(ip).String())
+			last = z
+			continue
+		}
+		switch {
+		case strings.Contains(t, ":") && i >= 4 && strings.EqualFold(s[i-4:i], "MD5:"):
+			continue // a key fingerprint
+		case dashedIPv4(t) != nil:
+			if !ips {
+				continue
+			}
+			repl = strings.ReplaceAll(m.ip(dashedIPv4(t)).String(), ".", "-")
+		default:
+			repl = m.hwID(t)
+		}
+		b.WriteString(s[last:i])
+		b.WriteString(repl)
+		last = j
+	}
+	b.WriteString(s[last:])
+	return b.String()
+}
+
+// ipv6Around returns the IPv6 address a hwIDRe match s[i:j] is part of:
+// the run of hex digits and colons around it, when that run is longer than
+// the match, has "::" or a group of three or four digits, and parses. So
+// "HWaddr:00:0c:29:59:f3:3f" is still a MAC.
+func ipv6Around(s string, i, j int) (a, z int, ip net.IP) {
+	if !strings.Contains(s[i:j], ":") {
+		return 0, 0, nil
+	}
+	a, z = i, j
+	for a > 0 && (s[a-1] == ':' || isHex(s[a-1])) {
+		a--
+	}
+	for z < len(s) && (s[z] == ':' || isHex(s[z])) {
+		z++
+	}
+	for a < i && s[a] == ':' && (a+1 >= len(s) || s[a+1] != ':') {
+		a++ // a lone colon before the address belongs to the text around it
+	}
+	for z > j && s[z-1] == ':' && (z < 2 || s[z-2] != ':') {
+		z--
+	}
+	run := s[a:z]
+	if run == s[i:j] {
+		return 0, 0, nil
+	}
+	long := strings.Contains(run, "::")
+	for _, g := range strings.Split(run, ":") {
+		long = long || len(g) >= 3
+	}
+	if ip = net.ParseIP(run); !long || ip == nil || ip.To4() != nil {
+		return 0, 0, nil
+	}
+	return a, z, ip
+}
+
+func isHex(c byte) bool {
+	return c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F'
+}
+
+// dashedIPv4 is the address of four dashed decimal numbers up to 255
+// (ip-10-20-30-40), or nil.
+func dashedIPv4(t string) net.IP {
+	g := strings.Split(t, "-")
+	if len(g) != 4 {
+		return nil
+	}
+	for _, x := range g {
+		if n, err := strconv.Atoi(x); err != nil || n > 255 || len(x) > 3 {
+			return nil
+		}
+	}
+	return net.ParseIP(strings.Join(g, ".")).To4()
 }
 
 // hwShaped: two-digit groups only, no "::" - part of a MAC or DUID, which

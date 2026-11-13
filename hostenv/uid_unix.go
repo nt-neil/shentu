@@ -16,6 +16,11 @@ func fileID(st os.FileInfo) string {
 	return ""
 }
 
+// openedFileID and pathFileID are fileID here; Windows needs the file.
+func openedFileID(_ *os.File, st os.FileInfo) string { return fileID(st) }
+
+func pathFileID(_ string, st os.FileInfo) string { return fileID(st) }
+
 func fileUID(st os.FileInfo) int {
 	if s, ok := st.Sys().(*syscall.Stat_t); ok {
 		return int(s.Uid)

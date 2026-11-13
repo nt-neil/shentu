@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -36,7 +37,14 @@ var providers = []provider{
 
 const ollamaURL = "http://127.0.0.1:11434"
 
+// errSetupWindows: setup installs Ollama with curl | sh and manages systemd
+// units, neither of which exists on Windows.
+var errSetupWindows = errors.New("shentu setup is not supported on Windows yet; write %ProgramData%\\Shentu\\shentu.toml by hand (see INSTALL.md in the zip)")
+
 func setup(ctx context.Context, args []string) error {
+	if runtime.GOOS == "windows" {
+		return errSetupWindows
+	}
 	fs := flag.NewFlagSet("setup", flag.ExitOnError)
 	local := fs.Bool("local", false, "use a local model (installs Ollama if needed, downloads a model sized for this server)")
 	model := fs.String("model", "", "model name (default: chosen from available memory, or the provider default)")

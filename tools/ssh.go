@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"runtime"
 	"strings"
 	"time"
 
@@ -37,6 +38,9 @@ type SSHSource = hostenv.SSHSource
 // SSHSummary reads auth logs (or journald when there are none) and groups events by IP,
 // streaming through hostenv: memory does not grow with the logs.
 func SSHSummary(ctx context.Context, env *Env, since time.Time, onlyIP string) (map[string]any, error) {
+	if runtime.GOOS == "windows" {
+		return winLogonSummary(since, onlyIP)
+	}
 	var aggs []*hostenv.SSHLogins
 	now := time.Now()
 	source, verified, err := linux.ScanAuthLogs(ctx, hostSource(), env.LogPaths, since, func() func(string) {

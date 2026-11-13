@@ -8,6 +8,22 @@ Chinese for the zh-TW pages; keep the two in step.
 
 ## v0.3.0 (unreleased)
 
+- Windows Server 2022 and 2025, verified on GitHub-hosted windows-2022/2025 runners (amd64;
+  arm64 built too): a Windows collector reads the host
+  through the Windows APIs only (registry, services, processes, sockets, accounts, scheduled
+  tasks, the event log, WMI and the firewall), no PowerShell and no external commands.
+- Windows checks: autostart entries (Run keys, services, scheduled tasks, startup folders, WMI
+  event subscriptions), RDP without NLA, SMB signing and SMBv1, insecure WinRM, firewall
+  profiles, Defender state and exclusions, logon failures and cleared logs.
+- Missing Windows updates against Microsoft's monthly security releases (MSRC), with the
+  CISA KEV list marking the exploited ones first.
+- IIS: web roots from `applicationHost.config`; the code audit reads ASP and ASP.NET pages and
+  flags webshells and scripts in upload folders, UTF-16 pages included.
+- Two Windows services, `Shentu` (patrol) and `ShentuBot` (Telegram), installed with
+  `shentu service install [--bot]` from `%ProgramFiles%\Shentu`; configuration and state in
+  `%ProgramData%\Shentu`, open to SYSTEM and Administrators only.
+- The `ssh_logins`, `processes`, `accounts_audit` and `log_search` tools work on Windows
+  (logon events, process list, local accounts, event logs).
 - Failed SSH logins are read from journald first: its ssh and sshd units are labelled by
   journald itself, so a local user cannot forge them. The text logs (`auth.log`, `secure`)
   are read when journald is missing, times out (60 s), or has no sshd entries; anyone on the
@@ -44,6 +60,15 @@ Chinese for the zh-TW pages; keep the two in step.
 - A code audit root written with a trailing slash (`/var/www/html/`) or as `/` is no longer
   skipped when an audit resumes inside it. Roots are now cleaned, so the first audit after
   the upgrade does not find the place the last one stopped and walks from the start once.
+
+### Known issues
+
+- Windows is read-only: `block_ip` and `unblock_ip` are not supported there.
+- Windows Server 2019 is best effort: expected to work (the same Windows APIs, build 17763)
+  but not verified on GitHub-hosted runners (they offer no 2019 image).
+- `shentu setup` does not run on Windows yet; the configuration is written by hand.
+- The Windows binary is not code-signed and there is no MSI; SmartScreen or an antivirus may
+  warn about it.
 
 ## v0.2.5 — 2026-11-13
 

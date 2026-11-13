@@ -24,6 +24,8 @@ func ForOS(goos string) Collector {
 		return LinuxCollector{}
 	case "darwin":
 		return DarwinCollector{}
+	case "windows":
+		return WindowsCollector{}
 	}
 	return Unsupported{GOOS: goos}
 }

@@ -136,7 +136,9 @@ func (r *Recorder) Stat(path string) (FileStat, error) {
 	st, err := Stat(r.Inner, path)
 	e := &entry{Op: "stat", Path: path, Err: errCode(err)}
 	if err == nil {
-		e.Stat = &st
+		kept := st
+		kept.ID = "" // device and inode, or volume serial and file index: not for a fixture
+		e.Stat = &kept
 	}
 	r.put(e)
 	return st, err

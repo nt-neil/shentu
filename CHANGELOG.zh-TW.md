@@ -5,6 +5,22 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 
 ## v0.3.0 (unreleased)
 
+- 支援 Windows Server 2022 與 2025，已在 GitHub 提供的 Windows Server 2022/2025 測試機上驗證（amd64，
+  另建置 arm64）：Windows 收集器只透過 Windows API
+  讀取主機（登錄檔、服務、程序、通訊埠、帳號、排程工作、事件記錄、WMI 與防火牆），不用
+  PowerShell，也不執行外部指令。
+- Windows 檢查：自動啟動項目（Run 機碼、服務、排程工作、啟動資料夾、WMI 事件訂閱）、未啟用
+  NLA 的 RDP、SMB 簽章與 SMBv1、不安全的 WinRM、防火牆設定檔、Defender 狀態與排除清單、
+  登入失敗與記錄被清除。
+- 依 Microsoft 每月安全性更新（MSRC）比對缺少的 Windows 更新，並以 CISA KEV 清單標出已被
+  利用的漏洞、優先列出。
+- IIS：從 `applicationHost.config` 取得網站根目錄；程式碼稽核會讀取 ASP 與 ASP.NET 頁面，
+  找出 webshell 與上傳目錄裡的腳本，UTF-16 頁面也包含在內。
+- 兩個 Windows 服務：`Shentu`（巡邏）與 `ShentuBot`（Telegram），從 `%ProgramFiles%\Shentu`
+  以 `shentu service install [--bot]` 安裝；設定與狀態放在 `%ProgramData%\Shentu`，只有
+  SYSTEM 與 Administrators 能存取。
+- `ssh_logins`、`processes`、`accounts_audit` 與 `log_search` 工具可在 Windows 使用（登入
+  事件、程序清單、本機帳號、事件記錄）。
 - SSH 登入沒成功的紀錄改為先讀 journald：ssh 與 sshd 單元的標記由 journald 自己填入，本機用戶不能偽造。
   journald 不存在、讀取時間到了上限（60 s），或沒有 sshd 紀錄時，才改讀文字紀錄檔（`auth.log`、`secure`）。
   本機任何人都能用 `logger` 寫入一行 sshd 紀錄，所以這時 `auth_events` 標為 partial，
@@ -35,6 +51,13 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 - 程式碼稽核的資料夾寫成 `/var/www/html/`（最後多一個 `/`）或 `/` 時，接續上次的位置稽核
   不會再把整個資料夾跳過。資料夾改為先整理成標準寫法，所以更新版本後的第一次稽核找不到上次的位置，
   會從開始完整檢查一次。
+
+### 已知問題
+
+- Windows 版只讀不寫：不支援 `block_ip` 與 `unblock_ip`。
+- Windows Server 2019 為 best effort：預期可用（相同的 Windows API，build 17763），但沒有在 GitHub 提供的測試機上驗證。
+- `shentu setup` 還不能在 Windows 上執行，設定需要手動撰寫。
+- Windows 執行檔沒有程式碼簽章，也沒有 MSI；SmartScreen 或防毒軟體可能發出警告。
 
 ## v0.2.5 — 2026-11-13
 
