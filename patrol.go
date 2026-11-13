@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -111,6 +112,16 @@ func sshFindings(r map[string]any, err error, threshold int) (out []finding, why
 	return out, why
 }
 
+// dnsHint says, after an error, that a failed name lookup is a DNS problem on
+// this host (the resolver in /etc/resolv.conf), not the service's; "" otherwise.
+func dnsHint(err error) string {
+	var d *net.DNSError
+	if !errors.As(err, &d) {
+		return ""
+	}
+	return "; the name lookup failed: check this host's DNS (the resolver in /etc/resolv.conf) against `getent hosts " + mask(d.Name) + "`"
+}
+
 // uncheckedSection lists, at the end of a report, the checks that could not
 // tell (a file they need could not be read, e.g. when not run as root), so a
 // silent part is not read as a clean one. "" when there are none.
@@ -153,7 +164,7 @@ func notCheckedSection(items []string) string {
 // not carry.
 func uncheckedVulns(what string, r map[string]any, err error) string {
 	if err != nil {
-		return fmt.Sprintf("\n\nNot checked for vulnerabilities: %s (%q).\n", what, cutLine(mask(err.Error())))
+		return fmt.Sprintf("\n\nNot checked for vulnerabilities: %s (%q)%s.\n", what, cutLine(mask(err.Error())), dnsHint(err))
 	}
 	var lines []string
 	if p, ok := r["partial"]; ok {
