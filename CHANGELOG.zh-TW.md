@@ -3,6 +3,17 @@
 CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本與日期必須一致，
 每個版本都要有內容（`go test ./cmd/sitegen` 會檢查）。
 
+## v0.3.1 (unreleased)
+
+- 登入紀錄沒有完整讀到時（root 以外的帳號看不到 journald 的系統紀錄、讀不到 `auth.log` 或 `secure`、
+  紀錄只讀到一部分），hourly 和每日報告都會把 SSH 登入列為沒有檢查。之前這個情況只會寫「nothing new」。
+- Linux 版本查 DNS 時不再帶 EDNS(0) 記錄，和 glibc 一樣：有些 DNS 伺服器（例如 VMware NAT 的
+  DNS）回應這樣的查詢時會少了位址，所以每次查詢（OSV、GitHub）都失敗，回報「no such host」。
+  如果查詢還是失敗，每日報告的 Not checked 會提示檢查這台主機的 DNS。
+- macOS：binary plist 的 array 和 dictionary 項目也計入讀取上限，UTF-16 字串每個字元算 9 bytes；最後有
+  space 的程式路徑照原樣保留；同一個 PID 出現在兩行 `ps` 輸出時標為 `parse_error`；`periodic_conf_files`
+  多於 16 個時，沒有讀到的會列出來。
+
 ## v0.3.0 — 2026-11-13
 
 - 支援 Windows Server 2022 與 2025，已在 GitHub 提供的 Windows Server 2022/2025 測試機上驗證（amd64，
