@@ -282,6 +282,9 @@ func TestSSHDKeyEqualsValue(t *testing.T) {
 // A Match in an included file ends that file only; the main file's
 // settings after the Include still count. Include deeper than 4 is unread.
 func TestSSHDIncludeMatch(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Linux host test: the sshd parser for Linux and macOS (Windows has its own in hostenv)")
+	}
 	dir := t.TempDir()
 	old := sshdConfig
 	defer func() { sshdConfig = old }()
@@ -304,6 +307,9 @@ func TestSSHDIncludeMatch(t *testing.T) {
 
 // More than 256 /* hostenv.256 */ config files: the rest are listed unread.
 func TestSSHDIncludeFileCap(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Linux host test: the sshd parser for Linux and macOS (Windows has its own in hostenv)")
+	}
 	dir := t.TempDir()
 	old := sshdConfig
 	defer func() { sshdConfig = old }()
