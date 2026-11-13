@@ -503,15 +503,16 @@ func TestPeriodicConfFilesFollowed(t *testing.T) {
 	}
 }
 
-// ps lines whose fields are split by other whitespace do not panic, and a
-// later args line for the same pid does not replace the first.
+// ps lines whose fields are split by other whitespace do not panic; a pid on
+// more than one args line (a forged line) gets no command line, said.
 func TestDarwinProcessesOddWhitespace(t *testing.T) {
 	ps := "  10\v1\v501\valice\v01:00\v/Applications/Ex.app/Contents/MacOS/Ex\n  11 1 501 alice 01:00 /bin/zsh\n"
 	args := "  11 /bin/zsh -l\n  11 /bin/zsh --forged\n"
 	src := fakeMac{cmds: map[string]string{key(macPsArgv): ps, key(macPsArgsArgv): args}}
 	o := DarwinCollector{}.Processes(context.Background(), src, time.Now())
-	if len(o.Value) != 2 || o.Value[0].Exe != "/Applications/Ex.app/Contents/MacOS/Ex" || o.Value[1].Cmdline != "/bin/zsh -l" {
-		t.Errorf("%+v", o.Value)
+	if len(o.Value) != 2 || o.Value[0].Exe != "/Applications/Ex.app/Contents/MacOS/Ex" || o.Value[1].Cmdline != "" ||
+		o.Status != StatusPartial || !strings.Contains(o.Detail, "pid [11]") {
+		t.Errorf("a pid on two args lines: %s %q %+v", o.Status, o.Detail, o.Value)
 	}
 	if fieldStart("a b", 5) != -1 || fieldStart("a\v b  c", 2) != 6 {
 		t.Error("fieldStart")

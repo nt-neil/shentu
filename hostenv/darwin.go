@@ -350,15 +350,29 @@ func (DarwinCollector) Processes(ctx context.Context, src Source, now time.Time)
 		a.Stdout = nil
 	}
 	if len(a.Stdout) > 0 {
+		// A command line may hold a newline and so forge a line for another
+		// pid: a pid on more than one line has no command line that can be
+		// trusted, so it gets none, and that is said.
+		ambiguous := map[int]bool{}
 		for _, l := range strings.Split(string(a.Stdout), "\n") {
 			l = strings.TrimSpace(l)
 			pid, rest, _ := strings.Cut(l, " ")
 			if n, err := strconv.Atoi(pid); err == nil {
-				if _, dup := args[n]; dup { // a later line for the same pid (an injected newline) does not replace the first
-					continue
+				if _, dup := args[n]; dup {
+					ambiguous[n] = true
 				}
 				args[n] = CutString(MaskSecrets(strings.TrimSpace(rest)), MaxCmdline)
 			}
+		}
+		if len(ambiguous) > 0 {
+			var pids []int
+			for n := range ambiguous {
+				delete(args, n)
+				pids = append(pids, n)
+			}
+			sort.Ints(pids)
+			why := fmt.Sprintf("command lines of pid %v not known (more than one line names them)", pids)
+			argsWhy = strings.TrimPrefix(argsWhy+"; "+why, "; ")
 		}
 	}
 	var out []Process
