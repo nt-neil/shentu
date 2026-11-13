@@ -174,7 +174,7 @@ func TestInvariantSecretsMaskedAndOutputUntrusted(t *testing.T) {
 	h := &hostileModel{}
 	a, state := hostileAgent(t, h, "chat", true, nil)
 	logFile := filepath.Join(state, "app.log")
-	os.WriteFile(logFile, []byte("login ok password=hunter2 key AKIAABCDEFGHIJKLMNOP\n"), 0o600)
+	os.WriteFile(logFile, []byte("login ok password=hunter2 key "+fakeAWSKey+"\n"), 0o600)
 	h.replies = []string{call("log_search", `{"path":"`+logFile+`","pattern":"login"}`), done}
 	if _, _, err := a.run(context.Background(), []message{{Role: "user", Content: "go"}}); err != nil {
 		t.Fatal(err)
@@ -183,7 +183,7 @@ func TestInvariantSecretsMaskedAndOutputUntrusted(t *testing.T) {
 		t.Fatalf("model got %d requests", len(h.requests))
 	}
 	second := h.requests[1]
-	if strings.Contains(second, "hunter2") || strings.Contains(second, "AKIAABCDEFGHIJKLMNOP") {
+	if strings.Contains(second, "hunter2") || strings.Contains(second, fakeAWSKey) {
 		t.Errorf("a secret reached the model")
 	}
 	if !strings.Contains(second, `\"untrusted\":true`) {
