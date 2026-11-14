@@ -182,3 +182,25 @@ func TestBlockIPGateUnreadableTextLog(t *testing.T) {
 		t.Errorf("unreadable text log: %v", err)
 	}
 }
+
+// journald confirming the IP's logins is enough: an auth.log this user
+// cannot read (in systemd-journal, not adm) does not refuse the block. With
+// no journald events for the IP it still does.
+func TestBlockIPGateJournaldFirst(t *testing.T) {
+	oldS, oldT := loginSummary, textLogins
+	t.Cleanup(func() { loginSummary, textLogins = oldS, oldT })
+	ip := net.ParseIP("203.0.113.77")
+	read := false
+	textLogins = func(*Env, string) (int, []string) { read = true; return 0, []string{"/var/log/auth.log (permission_denied)"} }
+	srcs := []SSHSource{{IP: ip.String(), Failed: 9}}
+	loginSummary = func(context.Context, *Env, time.Time, string) (map[string]any, error) {
+		return map[string]any{"verified": true, "complete": true, "sources": srcs}, nil
+	}
+	if err := loginGate(context.Background(), &Env{}, ip, false); err != nil || read {
+		t.Errorf("journald has the IP, auth.log unreadable: %v (text logs read: %v)", err, read)
+	}
+	srcs = nil
+	if err := loginGate(context.Background(), &Env{}, ip, false); err == nil || !strings.Contains(err.Error(), "could not all be read") {
+		t.Errorf("journald without the IP, auth.log unreadable: %v", err)
+	}
+}

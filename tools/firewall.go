@@ -125,11 +125,14 @@ func loginGate(ctx context.Context, env *Env, ip net.IP, override bool) error {
 		}
 		return fmt.Errorf("refusing to block %s: its SSH logins could not be read in full (%s), so forged ones cannot be ruled out; check the logs as root and, if they are real, ask again with override_unverified", ip, why)
 	}
+	if seen && verified {
+		return nil // journald itself has the IP's logins: the text logs need not be read
+	}
 	text, unread := textLogins(env, want)
 	switch {
 	case len(unread) > 0:
 		return fmt.Errorf("refusing to block %s: the text auth logs could not all be read (%s), so forged SSH logins in them cannot be ruled out; check them as root and, if the block is right, ask again with override_unverified", ip, strings.Join(unread, ", "))
-	case seen && !verified, text > 0 && !(seen && verified):
+	case seen, text > 0: // seen here means unverified
 		return fmt.Errorf("refusing to block %s: its SSH login events come from text logs (%v), which anyone on this host can write to, so they may be forged; check them (journalctl -u ssh, the IP's other traffic) and, if they are real, ask again with override_unverified", ip, r["source"])
 	}
 	return nil
