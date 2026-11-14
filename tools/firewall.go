@@ -58,15 +58,16 @@ func RemoteRefused(env *Env, name string, args json.RawMessage) error {
 // the text auth logs alone (tests replace both).
 var (
 	loginSummary = SSHSummary
-	textLogins   = func(env *Env, since time.Time, ip string) int {
-		c := hostenv.NewSSHLogins(since, time.Now(), ip)
-		linux.ScanTextAuthLogs(hostSource(), env.LogPaths, since, c.Add)
-		n := 0
+	textLogins   = func(env *Env, ip string) (n int, unread []string) {
+		// Whatever a line's time says: a forged line may be dated before any
+		// window, and ssh_logins could have been asked about it.
+		c := hostenv.NewSSHLogins(time.Time{}, time.Now(), ip)
+		_, unread = linux.ScanTextAuthLogs(hostSource(), env.LogPaths, time.Time{}, c.Add)
 		list, _ := hostenv.MaxLogins(c)
 		for _, s := range list {
 			n += s.Failed + s.InvalidUser + s.Accepted
 		}
-		return n
+		return n, unread
 	}
 )
 
@@ -93,7 +94,6 @@ func loginGate(ctx context.Context, env *Env, ip net.IP, override bool) error {
 		return nil
 	}
 	want := hostenv.CanonicalIP(ip.String())
-	since := time.Now().Add(-loginGateWindow)
 	var r map[string]any
 	seen, complete := false, false
 	for _, back := range []time.Duration{loginGateFirst, loginGateWindow} {
@@ -118,14 +118,18 @@ func loginGate(ctx context.Context, env *Env, ip net.IP, override bool) error {
 		}
 	}
 	verified, _ := r["verified"].(bool)
-	switch {
-	case !complete:
+	if !complete {
 		why := fmt.Sprint(r["source"])
 		if e, _ := r["error"].(string); e != "" {
 			why += ": " + e
 		}
 		return fmt.Errorf("refusing to block %s: its SSH logins could not be read in full (%s), so forged ones cannot be ruled out; check the logs as root and, if they are real, ask again with override_unverified", ip, why)
-	case seen && !verified, textLogins(env, since, want) > 0 && !(seen && verified):
+	}
+	text, unread := textLogins(env, want)
+	switch {
+	case len(unread) > 0:
+		return fmt.Errorf("refusing to block %s: the text auth logs could not all be read (%s), so forged SSH logins in them cannot be ruled out; check them as root and, if the block is right, ask again with override_unverified", ip, strings.Join(unread, ", "))
+	case seen && !verified, text > 0 && !(seen && verified):
 		return fmt.Errorf("refusing to block %s: its SSH login events come from text logs (%v), which anyone on this host can write to, so they may be forged; check them (journalctl -u ssh, the IP's other traffic) and, if they are real, ask again with override_unverified", ip, r["source"])
 	}
 	return nil

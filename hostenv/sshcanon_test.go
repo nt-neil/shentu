@@ -52,7 +52,7 @@ func TestScanTextAuthLogsBesideJournald(t *testing.T) {
 		t.Fatalf("journald not taken: %q %v", source, verified)
 	}
 	c := NewSSHLogins(since, now, "203.0.113.77")
-	read := LinuxCollector{}.ScanTextAuthLogs(src, logs, since, c.Add)
+	read, _ := LinuxCollector{}.ScanTextAuthLogs(src, logs, since, c.Add)
 	if s, _ := MaxLogins(c); len(read) != 1 || len(s) != 1 || s[0].Failed != 1 {
 		t.Errorf("read %v, %+v", read, s)
 	}

@@ -227,15 +227,18 @@ func scanJournal(ctx context.Context, src Source, since time.Time, sink func() f
 }
 
 // ScanTextAuthLogs feeds line every line of the text auth logs (auth.log,
-// secure, and their .1) changed since since, whatever journald holds: lines
-// anyone on the host can write. read lists the files read.
-func (LinuxCollector) ScanTextAuthLogs(src Source, logPaths []string, since time.Time, line func(string)) (read []string) {
+// secure, and their .1) changed since since (the zero time: all of them),
+// whatever journald holds: lines anyone on the host can write. read lists
+// the files read in full; unread those that could not be, with why.
+func (LinuxCollector) ScanTextAuthLogs(src Source, logPaths []string, since time.Time, line func(string)) (read, unread []string) {
 	for _, f := range authLogFiles(src, logPaths, since) {
-		if ScanLinesUnmasked(src, f, line) == nil {
+		if err := ScanLinesUnmasked(src, f, line); err != nil {
+			unread = append(unread, f+" ("+string(Classify(err))+")")
+		} else {
 			read = append(read, f)
 		}
 	}
-	return read
+	return read, unread
 }
 
 // authLogFiles are the text auth logs among logPaths changed since since.

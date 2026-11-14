@@ -22,11 +22,11 @@ func TestBlockIPUnverifiedLoginGate(t *testing.T) {
 	t.Cleanup(func() { loginSummary, textLogins = oldS, oldT })
 	ip := net.ParseIP("203.0.113.77")
 	text := 0 // events for ip in the text logs
-	textLogins = func(_ *Env, since time.Time, only string) int {
-		if only != ip.String() || time.Since(since) < 719*time.Hour {
-			t.Errorf("text logs asked for %q since %v", only, since)
+	textLogins = func(_ *Env, only string) (int, []string) {
+		if only != ip.String() {
+			t.Errorf("text logs asked for %q", only)
 		}
-		return text
+		return text, nil
 	}
 	summary := func(verified, complete bool, srcs ...SSHSource) {
 		loginSummary = func(_ context.Context, _ *Env, since time.Time, only string) (map[string]any, error) {
@@ -94,7 +94,7 @@ func TestBlockIPOverrideInPreview(t *testing.T) {
 func TestBlockIPGateDayFirst(t *testing.T) {
 	oldS, oldT := loginSummary, textLogins
 	t.Cleanup(func() { loginSummary, textLogins = oldS, oldT })
-	textLogins = func(*Env, time.Time, string) int { return 0 }
+	textLogins = func(*Env, string) (int, []string) { return 0, nil }
 	ip := net.ParseIP("203.0.113.77")
 	var asked []time.Duration
 	srcs := []SSHSource{{IP: ip.String(), Failed: 3}}
@@ -138,5 +138,47 @@ func TestBlockIPGateUnreadableLogsRealSummary(t *testing.T) {
 	}
 	if err := loginGate(context.Background(), env, net.ParseIP("203.0.113.77"), true); err != nil {
 		t.Errorf("override: %v", err)
+	}
+}
+
+// #80 review N-2, through the real SSHSummary: no journald, and a forged
+// auth.log line dated 40 days back, which ssh_logins could show with a long
+// since_hours. The gate reads the text logs whatever the lines' dates say,
+// and refuses.
+func TestBlockIPGateOldForgedLine(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the Linux login path")
+	}
+	dir := t.TempDir()
+	old := time.Now().Add(-40 * 24 * time.Hour).UTC().Format(time.RFC3339)
+	os.WriteFile(filepath.Join(dir, "auth.log"), []byte(old+" vm sshd[1]: Failed password for root from 203.0.113.77 port 22 ssh2\n"), 0o600)
+	noCmds, _ := hostenv.NewRunner(nil)
+	prev := hostSource
+	hostSource = func() hostenv.Source { return &hostenv.Live{Runner: noCmds, Remap: map[string]string{"/var/log": dir}} }
+	t.Cleanup(func() { hostSource = prev })
+	env := &Env{LogPaths: []string{"/var/log/auth.log"}}
+	err := loginGate(context.Background(), env, net.ParseIP("203.0.113.77"), false)
+	if err == nil || !strings.Contains(err.Error(), "may be forged") {
+		t.Errorf("40-day-old forged line: %v", err)
+	}
+	// ssh_logins looks no further back than the gate.
+	out, err := sshLogins.Run(context.Background(), env, json.RawMessage(`{"since_hours":2000,"ip":"203.0.113.77"}`))
+	r, _ := out.(map[string]any)
+	if since, _ := r["since"].(time.Time); err != nil || time.Since(since) > 721*time.Hour {
+		t.Errorf("ssh_logins since_hours 2000: since %v, err %v", r["since"], err)
+	}
+}
+
+// A text auth log that cannot be read is not passed over: the gate refuses.
+func TestBlockIPGateUnreadableTextLog(t *testing.T) {
+	oldS, oldT := loginSummary, textLogins
+	t.Cleanup(func() { loginSummary, textLogins = oldS, oldT })
+	loginSummary = func(context.Context, *Env, time.Time, string) (map[string]any, error) {
+		return map[string]any{"verified": true, "complete": true}, nil
+	}
+	textLogins = func(*Env, string) (int, []string) { return 0, []string{"/var/log/auth.log.1 (permission_denied)"} }
+	err := loginGate(context.Background(), &Env{}, net.ParseIP("203.0.113.77"), false)
+	if err == nil || !strings.Contains(err.Error(), "could not all be read") {
+		t.Errorf("unreadable text log: %v", err)
 	}
 }

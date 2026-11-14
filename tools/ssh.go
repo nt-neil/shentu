@@ -18,7 +18,7 @@ var sshLogins = Tool{
 		"complete is false when a log was cut short or unreadable (error says why): the counts are a lower bound. " +
 		"source names what was read (journald, or the log files and why journald was not used); note says when low-activity sources were not tracked.",
 	Params: schema(`{"type":"object","properties":{
-		"since_hours":{"type":"number","description":"look back this many hours (default 24)"},
+		"since_hours":{"type":"number","description":"look back this many hours (default 24, at most 720: as far as block_ip's login check looks)"},
 		"ip":{"type":"string","description":"only this source IP"}}}`),
 	Run: func(ctx context.Context, env *Env, args json.RawMessage) (any, error) {
 		var a struct {
@@ -28,7 +28,10 @@ var sshLogins = Tool{
 		if err := decode(args, &a); err != nil {
 			return nil, err
 		}
-		return SSHSummary(ctx, env, hoursAgo(a.SinceHours, 24), a.IP)
+		// No further back than block_ip's login check: what it cannot see must
+		// not be shown as evidence for a block.
+		h := min(a.SinceHours, loginGateWindow.Hours())
+		return SSHSummary(ctx, env, hoursAgo(h, 24), a.IP)
 	},
 }
 
