@@ -5,9 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"net"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/nt-neil/shentu/hostenv"
 )
 
 // block_ip refuses an IP whose SSH login events may be forged, unless the
@@ -25,7 +30,7 @@ func TestBlockIPUnverifiedLoginGate(t *testing.T) {
 	}
 	summary := func(verified, complete bool, srcs ...SSHSource) {
 		loginSummary = func(_ context.Context, _ *Env, since time.Time, only string) (map[string]any, error) {
-			if only != ip.String() || time.Since(since) < 719*time.Hour {
+			if back := time.Since(since); only != ip.String() || back < 23*time.Hour || back > 721*time.Hour {
 				t.Errorf("asked for %q since %v", only, since)
 			}
 			return map[string]any{"verified": verified, "complete": complete, "source": "/var/log/secure", "sources": srcs}, nil
@@ -74,5 +79,64 @@ func TestBlockIPOverrideInPreview(t *testing.T) {
 	}
 	if !strings.Contains(blockIP.Description+string(blockIP.Params), "override_unverified") {
 		t.Error("override_unverified not in the tool's parameters")
+	}
+	// The gate's reach is said: SSH login evidence only.
+	skill, err := os.ReadFile("../skills/ssh-bruteforce/SKILL.md")
+	for what, text := range map[string]string{"tool description": blockIP.Description, "ssh-bruteforce skill": string(skill)} {
+		if err != nil || !strings.Contains(text, "SSH login evidence only") {
+			t.Errorf("%s does not say the check covers SSH login evidence only (%v)", what, err)
+		}
+	}
+}
+
+// The last day is asked first; the month only when the day has no events
+// for the IP and was read in full.
+func TestBlockIPGateDayFirst(t *testing.T) {
+	oldS, oldT := loginSummary, textLogins
+	t.Cleanup(func() { loginSummary, textLogins = oldS, oldT })
+	textLogins = func(*Env, time.Time, string) int { return 0 }
+	ip := net.ParseIP("203.0.113.77")
+	var asked []time.Duration
+	srcs := []SSHSource{{IP: ip.String(), Failed: 3}}
+	loginSummary = func(_ context.Context, _ *Env, since time.Time, _ string) (map[string]any, error) {
+		asked = append(asked, time.Since(since).Round(time.Hour))
+		return map[string]any{"verified": true, "complete": true, "sources": srcs}, nil
+	}
+	if err := loginGate(context.Background(), &Env{}, ip, false); err != nil || len(asked) != 1 || asked[0] != 24*time.Hour {
+		t.Errorf("events in the day: %v %v", err, asked)
+	}
+	asked, srcs = nil, nil
+	if err := loginGate(context.Background(), &Env{}, ip, false); err != nil || len(asked) != 2 || asked[1] != 720*time.Hour {
+		t.Errorf("none in the day: %v %v", err, asked)
+	}
+}
+
+// Through the real SSHSummary: no journald (no commands may run) and an
+// auth log this user cannot read. SSHSummary returns no error then, only
+// complete=false; the gate refuses.
+func TestBlockIPGateUnreadableLogsRealSummary(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("needs a file this user cannot read, and the Linux login path")
+	}
+	dir := t.TempDir()
+	auth := filepath.Join(dir, "auth.log")
+	os.WriteFile(auth, []byte("Nov 14 10:00:00 vm sshd[1]: Failed password for root from 203.0.113.77 port 22 ssh2\n"), 0o600)
+	os.Chmod(auth, 0)
+	t.Cleanup(func() { os.Chmod(auth, 0o600) })
+	noCmds, _ := hostenv.NewRunner(nil)
+	prev := hostSource
+	hostSource = func() hostenv.Source { return &hostenv.Live{Runner: noCmds, Remap: map[string]string{"/var/log": dir}} }
+	t.Cleanup(func() { hostSource = prev })
+	env := &Env{LogPaths: []string{"/var/log/auth.log"}}
+	r, err := SSHSummary(context.Background(), env, time.Now().Add(-24*time.Hour), "203.0.113.77")
+	if c, _ := r["complete"].(bool); err != nil || c {
+		t.Fatalf("SSHSummary: complete %v, err %v", r["complete"], err)
+	}
+	gerr := loginGate(context.Background(), env, net.ParseIP("203.0.113.77"), false)
+	if gerr == nil || !strings.Contains(gerr.Error(), "could not be read in full") {
+		t.Errorf("unreadable logs: %v", gerr)
+	}
+	if err := loginGate(context.Background(), env, net.ParseIP("203.0.113.77"), true); err != nil {
+		t.Errorf("override: %v", err)
 	}
 }

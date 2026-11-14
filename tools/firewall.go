@@ -70,10 +70,15 @@ var (
 	}
 )
 
-// loginGateWindow is how far back block_ip looks for the IP's SSH logins: as
-// long as the longest block, since ssh_logins may have been asked about any
-// span before it.
-const loginGateWindow = 720 * time.Hour
+// block_ip looks for the IP's SSH logins over the last day first, and over
+// loginGateWindow (as long as the longest block, since ssh_logins may have
+// been asked about any span before it) only when the day has none: a month
+// of journald may take past its timeout, which would leave the logins
+// unverified and the operator overriding for nothing.
+const (
+	loginGateFirst  = 24 * time.Hour
+	loginGateWindow = 720 * time.Hour
+)
 
 // loginGate refuses to block ip when its SSH login events may be forged:
 // events for it in the text logs (which anyone on the host can write sshd
@@ -89,22 +94,37 @@ func loginGate(ctx context.Context, env *Env, ip net.IP, override bool) error {
 	}
 	want := hostenv.CanonicalIP(ip.String())
 	since := time.Now().Add(-loginGateWindow)
-	r, err := loginSummary(ctx, env, since, want)
-	if err != nil {
-		return fmt.Errorf("refusing to block %s: its SSH logins could not be read to check whether they are real (%v); if the block rests on other evidence, ask again with override_unverified", ip, err)
-	}
-	sources, _ := r["sources"].([]SSHSource)
-	seen := false
-	for _, s := range sources {
-		if hostenv.CanonicalIP(s.IP) == want && s.Failed+s.InvalidUser+s.Accepted > 0 {
-			seen = true
+	var r map[string]any
+	seen, complete := false, false
+	for _, back := range []time.Duration{loginGateFirst, loginGateWindow} {
+		var err error
+		if r, err = loginSummary(ctx, env, time.Now().Add(-back), want); err != nil {
+			return fmt.Errorf("refusing to block %s: its SSH logins could not be read to check whether they are real (%v); if the block rests on other evidence, ask again with override_unverified", ip, err)
+		}
+		sources, _ := r["sources"].([]SSHSource)
+		seen = false
+		for _, s := range sources {
+			if hostenv.CanonicalIP(s.IP) == want && s.Failed+s.InvalidUser+s.Accepted > 0 {
+				seen = true
+			}
+		}
+		// SSHSummary reports a log it could not read in r, not as an error.
+		complete, _ = r["complete"].(bool)
+		if e, _ := r["error"].(string); e != "" {
+			complete = false
+		}
+		if seen || !complete {
+			break // the day already tells, or cannot tell
 		}
 	}
 	verified, _ := r["verified"].(bool)
-	complete, _ := r["complete"].(bool)
 	switch {
 	case !complete:
-		return fmt.Errorf("refusing to block %s: its SSH logins could not be read in full (%v), so forged ones cannot be ruled out; check the logs and, if they are real, ask again with override_unverified", ip, r["source"])
+		why := fmt.Sprint(r["source"])
+		if e, _ := r["error"].(string); e != "" {
+			why += ": " + e
+		}
+		return fmt.Errorf("refusing to block %s: its SSH logins could not be read in full (%s), so forged ones cannot be ruled out; check the logs as root and, if they are real, ask again with override_unverified", ip, why)
 	case seen && !verified, textLogins(env, since, want) > 0 && !(seen && verified):
 		return fmt.Errorf("refusing to block %s: its SSH login events come from text logs (%v), which anyone on this host can write to, so they may be forged; check them (journalctl -u ssh, the IP's other traffic) and, if they are real, ask again with override_unverified", ip, r["source"])
 	}
@@ -113,7 +133,7 @@ func loginGate(ctx context.Context, env *Env, ip net.IP, override bool) error {
 
 var blockIP = Tool{
 	Name:        "block_ip",
-	Description: "Block all inbound traffic from one IP address with nftables, for a limited time. Requires the operator to confirm. Refuses loopback, this server's own addresses and the IPs of current SSH sessions.",
+	Description: "Block all inbound traffic from one IP address with nftables, for a limited time. Requires the operator to confirm. Refuses loopback, this server's own addresses and the IPs of current SSH sessions, and an IP whose SSH login events are only in text logs anyone here can write to, or could not be read in full (override_unverified, from the server's terminal only, after the operator checked them). That check covers SSH login evidence only: a block based on other logs (log_search over syslog, nginx) is not checked, so say where the evidence came from.",
 	Control:     true,
 	Params: schema(`{"type":"object","required":["ip","reason"],"properties":{
 		"ip":{"type":"string","description":"single IPv4 or IPv6 address"},
