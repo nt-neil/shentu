@@ -19,6 +19,8 @@ Chinese for the zh-TW pages; keep the two in step.
   logs anyone on the host can write to (`verified` false), or whose logins cannot be read;
   `override_unverified` goes ahead after the operator has checked them, from `shentu chat`
   only. From the Telegram bot it is always refused, at every confirm level.
+  The check covers SSH login evidence only: a block based on other logs (syslog, nginx, an
+  application log through `log_search`) is not checked and is the operator's to judge.
 - macOS: binary plists count array and dictionary entries, and UTF-16 strings at 9 bytes a
   character, against the decoding limit; a program path ending in a space is kept as it is;
   a process named on two `ps` lines is marked `parse_error`; `periodic_conf_files` past 16

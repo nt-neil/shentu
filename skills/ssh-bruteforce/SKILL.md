@@ -13,3 +13,7 @@ description: Investigate SSH brute-force attempts and decide whether to block th
 4. If an IP made many failed attempts and never logged in, propose block_ip with ttl 24h and the
    reason "SSH brute force: N failed attempts". The operator will confirm. Never propose blocking
    an IP that has successful logins without saying it might be a legitimate user.
+   block_ip itself refuses an IP whose SSH logins are only in text logs or could not be read in
+   full; that check covers SSH login evidence only. A block based on any other log (log_search
+   over syslog, nginx or an application log) is not checked by it: say where the evidence came
+   from and that anyone on the host may have written it, so the operator judges it.
