@@ -17,3 +17,6 @@ description: Investigate SSH brute-force attempts and decide whether to block th
    full; that check covers SSH login evidence only. A block based on any other log (log_search
    over syslog, nginx or an application log) is not checked by it: say where the evidence came
    from and that anyone on the host may have written it, so the operator judges it.
+   On a host whose journald has no sshd entries (text logs only), block_ip refuses every IP
+   with SSH login events: such a block cannot be made from Telegram, only on the server with
+   shentu chat and override_unverified, after the operator has checked the logs.
