@@ -54,27 +54,42 @@ func RemoteRefused(env *Env, name string, args json.RawMessage) error {
 	return errors.New("override_unverified is not accepted from a chat channel: check the logs on the server and block it there with shentu chat")
 }
 
-// loginSummary is SSHSummary (tests replace it).
-var loginSummary = SSHSummary
+// loginSummary is SSHSummary, and textLogins counts ip's SSH login events in
+// the text auth logs alone (tests replace both).
+var (
+	loginSummary = SSHSummary
+	textLogins   = func(env *Env, since time.Time, ip string) int {
+		c := hostenv.NewSSHLogins(since, time.Now(), ip)
+		linux.ScanTextAuthLogs(hostSource(), env.LogPaths, since, c.Add)
+		n := 0
+		list, _ := hostenv.MaxLogins(c)
+		for _, s := range list {
+			n += s.Failed + s.InvalidUser + s.Accepted
+		}
+		return n
+	}
+)
 
 // loginGateWindow is how far back block_ip looks for the IP's SSH logins: as
 // long as the longest block, since ssh_logins may have been asked about any
 // span before it.
 const loginGateWindow = 720 * time.Hour
 
-// loginGate refuses to block ip when its SSH login events in the last day
-// come from text logs (verified=false): anyone on the host can write sshd
-// lines there, so a forged "failed login" must not make Shentu block an IP
-// (the operator's own, say). override lets the operator, having checked the
-// logs, go ahead. An IP with no login events is not blocked for its logins,
-// so the gate does not apply. When the logins cannot be read at all, it
-// cannot tell, and refuses too unless overridden.
+// loginGate refuses to block ip when its SSH login events may be forged:
+// events for it in the text logs (which anyone on the host can write sshd
+// lines to) that journald does not confirm with events of its own, a summary
+// that is unverified and has some, or a summary that could not be read in
+// full. The text logs are read whatever journald holds, since ssh_logins may
+// have read them for a shorter span in which journald was empty. override
+// lets the operator, having checked the logs, go ahead. An IP with no login
+// events anywhere is not blocked for its logins: the gate does not apply.
 func loginGate(ctx context.Context, env *Env, ip net.IP, override bool) error {
 	if override {
 		return nil
 	}
 	want := hostenv.CanonicalIP(ip.String())
-	r, err := loginSummary(ctx, env, time.Now().Add(-loginGateWindow), want)
+	since := time.Now().Add(-loginGateWindow)
+	r, err := loginSummary(ctx, env, since, want)
 	if err != nil {
 		return fmt.Errorf("refusing to block %s: its SSH logins could not be read to check whether they are real (%v); if the block rests on other evidence, ask again with override_unverified", ip, err)
 	}
@@ -85,10 +100,15 @@ func loginGate(ctx context.Context, env *Env, ip net.IP, override bool) error {
 			seen = true
 		}
 	}
-	if v, _ := r["verified"].(bool); !seen || v {
-		return nil
+	verified, _ := r["verified"].(bool)
+	complete, _ := r["complete"].(bool)
+	switch {
+	case !complete:
+		return fmt.Errorf("refusing to block %s: its SSH logins could not be read in full (%v), so forged ones cannot be ruled out; check the logs and, if they are real, ask again with override_unverified", ip, r["source"])
+	case seen && !verified, textLogins(env, since, want) > 0 && !(seen && verified):
+		return fmt.Errorf("refusing to block %s: its SSH login events come from text logs (%v), which anyone on this host can write to, so they may be forged; check them (journalctl -u ssh, the IP's other traffic) and, if they are real, ask again with override_unverified", ip, r["source"])
 	}
-	return fmt.Errorf("refusing to block %s: its SSH login events come from text logs (%v), which anyone on this host can write to, so they may be forged; check them (journalctl -u ssh, the IP's other traffic) and, if they are real, ask again with override_unverified", ip, r["source"])
+	return nil
 }
 
 var blockIP = Tool{

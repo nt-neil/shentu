@@ -10,60 +10,60 @@ import (
 	"time"
 )
 
-// block_ip refuses an IP whose SSH logins come only from text logs anyone on
-// the host can write to (verified=false), unless the operator overrides.
+// block_ip refuses an IP whose SSH login events may be forged, unless the
+// operator overrides: see loginGate.
 func TestBlockIPUnverifiedLoginGate(t *testing.T) {
-	old := loginSummary
-	t.Cleanup(func() { loginSummary = old })
+	oldS, oldT := loginSummary, textLogins
+	t.Cleanup(func() { loginSummary, textLogins = oldS, oldT })
 	ip := net.ParseIP("203.0.113.77")
-	summary := func(verified bool, srcs ...SSHSource) {
+	text := 0 // events for ip in the text logs
+	textLogins = func(_ *Env, since time.Time, only string) int {
+		if only != ip.String() || time.Since(since) < 719*time.Hour {
+			t.Errorf("text logs asked for %q since %v", only, since)
+		}
+		return text
+	}
+	summary := func(verified, complete bool, srcs ...SSHSource) {
 		loginSummary = func(_ context.Context, _ *Env, since time.Time, only string) (map[string]any, error) {
-			if only != ip.String() || time.Since(since) < 23*time.Hour {
+			if only != ip.String() || time.Since(since) < 719*time.Hour {
 				t.Errorf("asked for %q since %v", only, since)
 			}
-			return map[string]any{"verified": verified, "source": "/var/log/secure", "sources": srcs}, nil
+			return map[string]any{"verified": verified, "complete": complete, "source": "/var/log/secure", "sources": srcs}, nil
 		}
 	}
+	gate := func(override bool) error { return loginGate(context.Background(), &Env{}, ip, override) }
 	forged := SSHSource{IP: ip.String(), Failed: 15}
-	summary(false, forged)
-	err := loginGate(context.Background(), &Env{}, ip, false)
-	if err == nil || !strings.Contains(err.Error(), "refusing to block 203.0.113.77") || !strings.Contains(err.Error(), "override_unverified") {
-		t.Errorf("unverified, no override: %v", err)
+	for _, c := range []struct {
+		name               string
+		verified, complete bool
+		srcs               []SSHSource
+		text               int
+		refuse             bool
+	}{
+		{"text logs only (unverified summary)", false, true, []SSHSource{forged}, 15, true},
+		{"IPv4-mapped in a forged line", false, true, []SSHSource{{IP: "::ffff:203.0.113.77", Failed: 15}}, 15, true},
+		// journald has sshd entries of other IPs in the long window, none for
+		// this one; the forged ones are in the text logs, which ssh_logins
+		// read for a span when journald was empty.
+		{"journald silent on the IP, text logs not", true, true, nil, 15, true},
+		{"journald confirms the IP", true, true, []SSHSource{{IP: ip.String(), Failed: 3}}, 15, false},
+		{"no login events anywhere", true, true, nil, 0, false},
+		{"logs not read in full", true, false, nil, 0, true},
+	} {
+		summary(c.verified, c.complete, c.srcs...)
+		text = c.text
+		err := gate(false)
+		if (err != nil) != c.refuse || err != nil && !strings.Contains(err.Error(), "override_unverified") {
+			t.Errorf("%s: %v", c.name, err)
+		}
+		if err := gate(true); err != nil {
+			t.Errorf("%s, override: %v", c.name, err)
+		}
 	}
-	if err := loginGate(context.Background(), &Env{}, ip, true); err != nil {
-		t.Errorf("unverified, override: %v", err)
-	}
-	summary(true, forged)
-	if err := loginGate(context.Background(), &Env{}, ip, false); err != nil {
-		t.Errorf("journald: %v", err)
-	}
-	summary(false) // the IP has no login events: blocked for something else
-	if err := loginGate(context.Background(), &Env{}, ip, false); err != nil {
-		t.Errorf("no login events: %v", err)
-	}
-	// The same source written as an IPv4-mapped address in a forged line.
-	summary(false, SSHSource{IP: "::ffff:203.0.113.77", Failed: 15})
-	if err := loginGate(context.Background(), &Env{}, ip, false); err == nil {
-		t.Error("IPv4-mapped source not matched")
-	}
-	// Logins that cannot be read at all: it cannot tell, so it refuses
-	// unless overridden.
 	loginSummary = func(context.Context, *Env, time.Time, string) (map[string]any, error) { return nil, errors.New("x") }
-	if err := loginGate(context.Background(), &Env{}, ip, false); err == nil || !strings.Contains(err.Error(), "could not be read") {
+	if err := gate(false); err == nil || !strings.Contains(err.Error(), "could not be read") {
 		t.Errorf("summary failed: %v", err)
 	}
-	if err := loginGate(context.Background(), &Env{}, ip, true); err != nil {
-		t.Errorf("summary failed, override: %v", err)
-	}
-	// The window covers any span ssh_logins may have reported on, up to the
-	// longest block.
-	loginSummary = func(_ context.Context, _ *Env, since time.Time, _ string) (map[string]any, error) {
-		if time.Since(since) < 719*time.Hour {
-			t.Errorf("window %v", time.Since(since))
-		}
-		return map[string]any{"verified": true}, nil
-	}
-	loginGate(context.Background(), &Env{}, ip, false)
 }
 
 // The override is visible in the preview the operator confirms.
