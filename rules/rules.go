@@ -73,6 +73,18 @@ type Args struct {
 	// file gives such an object ($q = new WP_Query; $q->query($args)). A
 	// receiver the file says nothing about still counts.
 	NotReceiver []string `toml:"not_receiver"`
+	// UnlessAt narrows where unless looks: "start", only at the start of the
+	// argument (arg, or the first): a Server-Sent Events line "data: " + x;
+	// "top", only as an element or key of the argument itself (arg, or any
+	// one), not inside what it holds: TypeORM's { relations: [...] }, not
+	// { projection: { relations: 1 } }. Empty: anywhere among the arguments.
+	UnlessAt string `toml:"unless_at"`
+	// UnlessContentType: the call is not a sink once the response's
+	// Content-Type was set to one of these on every path before it, in the
+	// same function (res.setHeader("Content-Type", "text/event-stream"),
+	// res.type(...), res.writeHead(200, {...})): a
+	// Server-Sent Events stream is read by EventSource, not rendered.
+	UnlessContentType []string `toml:"unless_content_type"`
 }
 
 // SourceArgs makes call sources input only when an argument is one of a few
