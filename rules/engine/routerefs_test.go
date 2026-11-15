@@ -2,6 +2,7 @@ package engine
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -121,6 +122,26 @@ func TestRouteRefsInnermost(t *testing.T) {
 	for _, f := range fs {
 		if len(f.Routes) != 1 || f.Routes[0].Pattern != "/admin/run" {
 			t.Errorf("%s line %d: routes %+v, want only /admin/run", f.RuleID, f.Line, f.Routes)
+		}
+	}
+}
+
+// A file registering one handler thousands of times: each finding keeps at
+// most maxRoutesPerFinding routes.
+func TestRouteRefsBounded(t *testing.T) {
+	e := routeEngine(t)
+	var b strings.Builder
+	b.WriteString("const { exec } = require('child_process');\nfunction ping(req, res) {\n  exec('ping ' + req.query.host);\n}\n")
+	for i := 0; i < 6000; i++ {
+		b.WriteString("app.get('/p" + strconv.Itoa(i) + "', ping);\n")
+	}
+	fs, err := e.Scan("js", "a.js", []byte(b.String()))
+	if err != nil && len(fs) == 0 {
+		t.Skipf("scan cut short: %v", err)
+	}
+	for _, f := range fs {
+		if len(f.Routes) == 0 || len(f.Routes) > maxRoutesPerFinding {
+			t.Errorf("%s: %d routes, want 1..%d", f.RuleID, len(f.Routes), maxRoutesPerFinding)
 		}
 	}
 }

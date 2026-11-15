@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"slices"
 	"sort"
 	"strings"
 )
@@ -32,9 +33,17 @@ type routeSite struct {
 	ref RouteRef
 }
 
+// Bounds on the route annotation, outside the scan's budget: a file written
+// to register thousands of handlers costs no more than this.
+const (
+	maxRouteSites       = 4096 // registrations kept per file
+	maxRoutesPerFinding = 16
+)
+
 // annotateRoutes fills Routes on the findings of path whose line is inside a
 // handler that this file registers. Only the innermost handler holding the
-// line counts; a handler registered several times gets one entry for each.
+// line counts; a handler registered several times gets one entry for each,
+// up to maxRoutesPerFinding.
 func (e *Engine) annotateRoutes(out []Finding, lang, path string, toks []Token, tree []*stmt, ff *fileFuncs) {
 	mine := false
 	for i := range out {
@@ -50,44 +59,50 @@ func (e *Engine) annotateRoutes(out []Finding, lang, path string, toks []Token, 
 	if len(sites) == 0 {
 		return
 	}
-	spans := map[*fn][2]int{}
-	for _, s := range sites {
-		if _, ok := spans[s.f]; !ok {
-			if lo, hi, ok := fnSpan(s.f); ok {
-				spans[s.f] = [2]int{lo, hi}
-			}
-		}
+	type handler struct {
+		lo, hi int
+		refs   []RouteRef
 	}
-	for i := range out {
-		if out[i].Path != path {
-			continue
-		}
-		var best *fn
-		for f, sp := range spans {
-			if out[i].Line < sp[0] || out[i].Line > sp[1] {
+	var hs []*handler // in the order first registered, so that ties go the same way every time
+	byFn := map[*fn]*handler{}
+	for _, s := range sites {
+		h, ok := byFn[s.f]
+		if !ok {
+			lo, hi, ok := fnSpan(s.f)
+			if !ok {
+				byFn[s.f] = nil
 				continue
 			}
-			if b, ok := spans[best]; best == nil || ok && sp[1]-sp[0] < b[1]-b[0] {
-				best = f
-			}
+			h = &handler{lo: lo, hi: hi}
+			byFn[s.f], hs = h, append(hs, h)
 		}
-		if best == nil {
+		if h == nil || len(h.refs) >= maxRoutesPerFinding || slices.Contains(h.refs, s.ref) {
 			continue
 		}
-		seen := map[RouteRef]bool{}
-		for _, s := range sites {
-			if s.f == best && !seen[s.ref] {
-				seen[s.ref] = true
-				out[i].Routes = append(out[i].Routes, s.ref)
-			}
-		}
-		sort.Slice(out[i].Routes, func(a, b int) bool {
-			ra, rb := out[i].Routes[a], out[i].Routes[b]
+		h.refs = append(h.refs, s.ref)
+	}
+	for _, h := range hs {
+		sort.Slice(h.refs, func(a, b int) bool {
+			ra, rb := h.refs[a], h.refs[b]
 			if ra.Line != rb.Line {
 				return ra.Line < rb.Line
 			}
 			return ra.Model+ra.Method+ra.Pattern < rb.Model+rb.Method+rb.Pattern
 		})
+	}
+	for i := range out {
+		if out[i].Path != path {
+			continue
+		}
+		var best *handler
+		for _, h := range hs {
+			if out[i].Line >= h.lo && out[i].Line <= h.hi && (best == nil || h.hi-h.lo < best.hi-best.lo) {
+				best = h
+			}
+		}
+		if best != nil {
+			out[i].Routes = slices.Clone(best.refs)
+		}
 	}
 }
 
@@ -108,6 +123,9 @@ func (e *Engine) routeSites(lang, path string, toks []Token, tree []*stmt, ff *f
 	var out []routeSite
 	add := func(c *croute, f *fn, ref RouteRef) {
 		if f == nil {
+			return
+		}
+		if len(out) >= maxRouteSites {
 			return
 		}
 		ref.Model, ref.Framework, ref.File, ref.Handler = c.r.ID, c.r.Framework, path, f.name
