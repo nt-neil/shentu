@@ -191,7 +191,10 @@ func TestBlockIPGateJournaldFirst(t *testing.T) {
 	t.Cleanup(func() { loginSummary, textLogins = oldS, oldT })
 	ip := net.ParseIP("203.0.113.77")
 	read := false
-	textLogins = func(*Env, string) (int, []string) { read = true; return 0, []string{"/var/log/auth.log (permission_denied)"} }
+	textLogins = func(*Env, string) (int, []string) {
+		read = true
+		return 0, []string{"/var/log/auth.log (permission_denied)"}
+	}
 	srcs := []SSHSource{{IP: ip.String(), Failed: 9}}
 	loginSummary = func(context.Context, *Env, time.Time, string) (map[string]any, error) {
 		return map[string]any{"verified": true, "complete": true, "sources": srcs}, nil
