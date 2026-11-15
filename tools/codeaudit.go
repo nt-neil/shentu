@@ -242,27 +242,30 @@ func uploadFolder(p string, webRoots []string) bool {
 		}
 		return true
 	}
+	root := ""
+	for _, r := range webRoots {
+		if insideAny(p, []string{r}) && len(r) > len(root) {
+			root = filepath.ToSlash(r)
+		}
+	}
 	// Below vendor/, node_modules/, WordPress's own code or a plugin or theme
-	// is code, not uploads, whatever the folders there are named.
+	// is code, not uploads, whatever the folders there are named; only below
+	// the site's root: a home or site folder named vendor (/home/vendor/...)
+	// is not one.
+	from := siteStart(segs, root)
 	code := len(low)
-	for i := range low {
-		if codeDirs[low[i]] || i > 0 && low[i-1] == "wp-content" && low[i] != "uploads" {
+	for i := from; i < len(low); i++ {
+		if codeDirs[low[i]] || i > 0 && low[i-1] == "wp-content" && low[i] != "uploads" && low[i] != "blogs.dir" {
 			code = i
 			break
 		}
 	}
 	for i := range low {
 		switch {
-		case at(i, "wp-content", "uploads"):
+		case at(i, "wp-content", "uploads"), at(i, "wp-content", "blogs.dir", "*", "files"): // blogs.dir: the old multisite
 			return true
 		case i < code && (at(i, "sites", "*", "files") || at(i, "pub", "media") || at(i, "storage", "app", "public")):
 			return true
-		}
-	}
-	root := ""
-	for _, r := range webRoots {
-		if insideAny(p, []string{r}) && len(r) > len(root) {
-			root = filepath.ToSlash(r)
 		}
 	}
 	for i := 1; i < len(segs); i++ {
@@ -276,11 +279,45 @@ func uploadFolder(p string, webRoots []string) bool {
 			}
 			continue
 		}
-		if webDirNames[low[i-1]] && parent != "/var/www" || path.Dir(parent) == "/var/www" {
+		if webDirNames[low[i-1]] && parent != varWWW || path.Dir(parent) == varWWW {
+			return true
+		}
+		// /var/www/uploads is an upload folder, /var/www/files a site named
+		// so when it holds a site's front page.
+		if parent == varWWW && !siteFolder(strings.Join(segs[:i+1], "/")) {
 			return true
 		}
 	}
 	return false
+}
+
+// varWWW is where sites live in folders of their own (a variable for tests).
+var varWWW = "/var/www"
+
+// siteFolder reports whether dir holds a site's front page.
+func siteFolder(dir string) bool {
+	for _, f := range []string{"index.php", "index.html", "index.htm", "wp-config.php"} {
+		if _, err := os.Lstat(filepath.Join(dir, f)); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// siteStart is the index in segs of the first folder below the site's root
+// as far as the path tells: below the web root it is in, else below
+// /home/<user>, /var/www/<site> or /srv/<site>.
+func siteStart(segs []string, root string) int {
+	if root != "" {
+		return len(strings.Split(root, "/"))
+	}
+	switch {
+	case len(segs) > 3 && segs[1] == "var" && segs[2] == "www":
+		return 4
+	case len(segs) > 2 && (segs[1] == "home" || segs[1] == "srv"):
+		return 3
+	}
+	return 0
 }
 
 var (
@@ -655,15 +692,32 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 	var walkEntry func(root string, base int, p string, d fs.DirEntry, err error) error
 	posFile := walkPosFile(roots)
 	pos, resumed := loadWalkPos(posFile)
+	posRoot := slices.Index(roots, pos.Root)
+	if posRoot < 0 {
+		resumed = false // a root no longer audited: start at the start
+	}
 	var cut *walkPos
 	at := func(ri int, p string) bool { // before where the last audit stopped (that entry it had not checked)
-		return ri < pos.Root || ri == pos.Root && pathCmp(p, pos.Path) < 0
+		return ri < posRoot || ri == posRoot && pathCmp(p, pos.Path) < 0
+	}
+	// stopAt keeps where the walk stopped. In the first pass, a stop at or
+	// before the kept place (the time ran out before the walk got there)
+	// keeps that place: the walk does not go back. Round from the start, the
+	// stop is the walk's progress.
+	stopAt := func(second bool, ri int, p string) {
+		if resumed && !second && (ri < posRoot || ri == posRoot && pathCmp(p, pos.Path) <= 0) {
+			if cut == nil {
+				cut = &walkPos{pos.Root, pos.Path}
+			}
+			return
+		}
+		cut = &walkPos{roots[ri], p}
 	}
 	walkPass := func(second bool) {
 		for ri, root := range roots {
 			if ctx.Err() != nil {
 				if cut == nil {
-					cut = &walkPos{ri, root}
+					stopAt(second, ri, root)
 				}
 				walkCut = append(walkCut, UnfinishedFile{root, "walk"})
 				continue
@@ -671,7 +725,7 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 			base := depth(filepath.Clean(root))
 			filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 				if ctx.Err() != nil {
-					cut = &walkPos{ri, p}
+					stopAt(second, ri, p)
 					walkCut = append(walkCut, UnfinishedFile{root, "walk"})
 					return filepath.SkipAll
 				}
@@ -681,7 +735,7 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 						return filepath.SkipAll // round to where it started
 					}
 					if !second && before {
-						if d != nil && d.IsDir() && !(ri == pos.Root && walkHolds(p, pos.Path)) {
+						if d != nil && d.IsDir() && !(ri == posRoot && walkHolds(p, pos.Path)) {
 							return filepath.SkipDir
 						}
 						return nil
