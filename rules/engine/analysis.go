@@ -130,6 +130,11 @@ type analysis struct {
 	noSrc  bool   // the rule's sources are off (a summary run for parameters)
 	cls    string // class of the method being analysed, and its parent
 	parent string
+	sfuncs []*fn // the function literals of the statement being analysed
+	// cparents: the classes the file declares and the parents they extend
+	// (routes.go, extending), built on first use
+	cparents map[string]string
+	cproj    *Project // the project, for those classes' parents in other files, also in the pass that follows no calls
 
 	lits   map[string][]Token // values written in the code, kept for argument conditions (context.go)
 	locals map[string]bool    // names of the file's own functions and methods (context.go)
@@ -140,9 +145,10 @@ type analysis struct {
 	proj  *Project          // the project the file belongs to, or nil (project.go)
 	types map[string]string // variable → class of the object assigned to it ($x = new Foo)
 
-	ftoks []Token              // the file's tokens, for the receiver condition (receiver.go)
-	rdefs map[string][][]Token // what names of the file are assigned or annotated with, built on first use
-	rcls  map[string][]string  // PHP: variables the file binds only to new objects, and their classes (recvClasses), built on first use
+	ftoks  []Token              // the file's tokens, for the receiver condition (receiver.go)
+	rdefs  map[string][][]Token // what names of the file are assigned or annotated with, built on first use
+	rcls   map[string][]string  // PHP: variables the file binds only to new objects, and their classes (recvClasses), built on first use
+	ifacts map[string]bool      // JavaScript: "m:" modules the file imports, "w:" names it uses (imports.go), built on first use or kept by the project
 }
 
 // loc is a place a sink is reached: a line of a file.
@@ -186,6 +192,8 @@ func (a *analysis) block(ss []*stmt, st state) (state, uint8) {
 }
 
 func (a *analysis) stmt(s *stmt, st state) (state, uint8) {
+	defer func(old []*fn) { a.sfuncs = old }(a.sfuncs)
+	a.sfuncs = s.funcs // the function literals its Func tokens name (mapSanAt)
 	for _, f := range s.funcs {
 		a.function(f, st)
 	}
@@ -213,6 +221,7 @@ func (a *analysis) stmt(s *stmt, st state) (state, uint8) {
 		a.assertStmt(st, s.toks)
 		a.raisingCheckStmt(st, s.toks)
 		a.nonceStmt(st, s.toks)
+		a.contentTypeStmt(st, s.toks)
 		a.stripKeys(st, s.toks)
 		a.markAssign(st, s.toks)
 		a.extractStmt(st, s.toks)
@@ -1413,6 +1422,12 @@ func (a *analysis) srcMatch(s *pat, t []Token, i int) (int, bool) {
 	if s.text != nil {
 		return 0, false
 	}
+	if cs := a.r.srcScope[s]; len(cs) > 0 && a.cls != "" && onThis(t, i) && !slices.ContainsFunc(cs, a.extending) {
+		return 0, false // a route model's source on $this, for some kinds of class only (a class not read, as "Class X", keeps it)
+	}
+	if a.r.srcThis[s] && !onThis(t, i) && !onParent(t, i) {
+		return 0, false // on another object: a method of the same name on some other class
+	}
 	strict := len(s.toks) > 1 && s.toks[0].Kind == Ident && s.toks[1].op("(")
 	end, ok := s.match(t, i, strict)
 	if !ok || s.srcArg == 0 {
@@ -2121,7 +2136,21 @@ func (a *analysis) sinks(st state, t []Token) {
 }
 
 func (a *analysis) sink(st state, t []Token, i int, s *pat) {
-	cond := a.r.args[s]
+	if more := a.r.argsMore[s]; len(more) > 0 {
+		// several [[args]] blocks for one sink: a finding when any one holds
+		for _, cond := range append([]*argCond{a.r.args[s]}, more...) {
+			if a.sinkWith(st, t, i, s, cond) {
+				return
+			}
+		}
+		return
+	}
+	a.sinkWith(st, t, i, s, a.r.args[s])
+}
+
+// sinkWith is sink under one [[args]] block (cond, nil for none), reporting
+// whether it reported the call.
+func (a *analysis) sinkWith(st state, t []Token, i int, s *pat, cond *argCond) bool {
 	end, open := a.patEnd(t, i, s)
 	var region []Token
 	switch {
@@ -2132,33 +2161,39 @@ func (a *analysis) sink(st state, t []Token, i int, s *pat) {
 	default:
 		region = t[end:]
 	}
-	if lr := a.expandLits(st, region); cond != nil && (len(cond.when) > 0 && !a.when(cond.when, lr) || a.unless(st, cond.unless, lr)) {
-		return
+	if lr := a.expandLits(st, region); cond != nil && (len(cond.when) > 0 && !a.when(cond.when, lr) || a.unlessIn(st, cond, lr)) {
+		return false
+	}
+	if cond != nil && len(cond.unlessCT) > 0 && contentTypeSet(st, cond.unlessCT) {
+		return false // a Server-Sent Events stream: EventSource reads it as text
 	}
 	if cond != nil && cond.literal && !a.literalArg(st, cond, region, open) {
-		return
+		return false
 	}
 	if a.noSources() {
 		a.report(t[i].Line)
-		return
+		return true
 	}
 	if a.nonced(st) {
-		return // the request carried a valid CSRF nonce, so a third party cannot have made it (context.go)
+		return false // the request carried a valid CSRF nonce, so a third party cannot have made it (context.go)
 	}
 	var recv []Token
 	if s.member {
 		if a.ownMethod(t, i+1) {
-			return // $term_query->query($args): a method of the code's own, followed by its summary
+			return false // $term_query->query($args): a method of the code's own, followed by its summary
 		}
 		recv = t[a.chainStart(t, i):i]
 		if a.expr(st, recv, false).san {
-			return // a method of an object a sanitizer made (SandboxedEnvironment().from_string)
+			return false // a method of an object a sanitizer made (SandboxedEnvironment().from_string)
 		}
 		if cond != nil && len(cond.receiver) > 0 && !a.recvIs(cond.receiver, recv) {
-			return // finders.find(path) is not a MongoDB collection
+			return false // finders.find(path) is not a MongoDB collection
 		}
 		if cond != nil && len(cond.notReceiver) > 0 && a.recvSurely(cond.notReceiver, recv) {
-			return // (new WP_Query)->query($args): a query built from an arguments array, not SQL
+			return false // (new WP_Query)->query($args): a query built from an arguments array, not SQL
+		}
+		if cond != nil && len(cond.unlessImports) > 0 && a.importsLeaveOut(cond, recv) {
+			return false // a TypeORM repository on an SQL database: where becomes bound parameters
 		}
 	}
 	whole := cond != nil && cond.whole
@@ -2169,6 +2204,9 @@ func (a *analysis) sink(st state, t []Token, i int, s *pat) {
 		return ok
 	}
 	reaches := func(arg []Token) bool {
+		if cond != nil && len(cond.unlessSub) > 0 && subscriptOf(stripParens(arg), cond.unlessSub) {
+			return false // zipfile.ZipFile(request.files["f"]): the upload's stream, not a path
+		}
 		if cond != nil && cond.key != "" {
 			if arg = keyValue(arg, cond.key); arg == nil {
 				return false // { status: 302 } without the key: not this sink
@@ -2217,6 +2255,7 @@ func (a *analysis) sink(st state, t []Token, i int, s *pat) {
 	if tainted {
 		a.reportSink(loc{a.file, t[i].Line}, emb)
 	}
+	return tainted
 }
 
 // ownMethod reports whether the method called at t[j] resolves to a function of
@@ -2338,6 +2377,53 @@ func negated(t []Token, i int) bool {
 // fragment (root:) counts only when its value is not user input. A fragment that
 // is a single string ("--") ends the options of a command, so it counts only
 // when no user input comes before it in its list.
+// unlessIn is unless, looking only where cond.unlessAt says: at the start of
+// the argument ("start": the line a Server-Sent Events stream writes begins
+// with "data: ", not a ternary one branch of which does), or among the
+// argument's own elements and keys ("top": TypeORM's relations option, not a
+// field of that name in a projection nested inside it).
+func (a *analysis) unlessIn(st state, cond *argCond, region []Token) bool {
+	if cond.unlessAt == "" {
+		return a.unless(st, cond.unless, region)
+	}
+	args := splitTop(region, isComma)
+	k := 0
+	if cond.arg != nil && *cond.arg > 0 {
+		k = *cond.arg - 1
+	}
+	if k >= len(args) {
+		return false
+	}
+	if cond.unlessAt == "start" {
+		arg := stripParens(args[k])
+		for _, p := range cond.unless {
+			if p.at(arg, 0, false) {
+				return true
+			}
+		}
+		return false
+	}
+	pick := args
+	if cond.arg != nil && *cond.arg > 0 {
+		pick = args[k : k+1]
+	}
+	for _, arg := range pick {
+		arg = stripParens(arg)
+		if len(arg) < 2 || !isOpen(arg[0]) || closeOf(arg, 0) != len(arg)-1 {
+			continue // not a literal object or list: nothing at its top
+		}
+		inner := arg[1 : len(arg)-1]
+		for _, el := range splitTop(inner, isComma) {
+			for _, p := range cond.unless {
+				if p.at(el, 0, false) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 func (a *analysis) unless(st state, ps []*pat, region []Token) bool {
 	for _, p := range ps {
 		for i := range region {
@@ -2557,4 +2643,16 @@ func urlPartOf(t []Token) ([]Token, []Token, []Token, bool) {
 		return nil, nil, nil, false
 	}
 	return rel, base, t[c+3:], true
+}
+
+// subscriptOf reports whether t is, as a whole, one item of what one of the
+// patterns names: the pattern, then one [...] (request.files["archive"]).
+func subscriptOf(t []Token, ps []*pat) bool {
+	for _, p := range ps {
+		end, ok := p.match(t, 0, false)
+		if ok && end < len(t) && t[end].op("[") && closeOf(t, end) == len(t)-1 {
+			return true
+		}
+	}
+	return false
 }

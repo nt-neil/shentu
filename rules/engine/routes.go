@@ -92,6 +92,18 @@ func (e *Engine) compileRoutes(rs []rules.Route) error {
 			for _, cr := range e.byLang[r.Lang] {
 				if c.takes(cr) { // not a rule without sources (a weak cipher reports its sink alone), nor one for a password field
 					cr.sources = append(cr.sources, p)
+					if len(r.InClasses) > 0 {
+						if cr.srcScope == nil {
+							cr.srcScope = map[*pat][]string{}
+						}
+						cr.srcScope[p] = r.InClasses // Elementor's $this->get_settings(): in a widget or a dynamic tag only
+					}
+					if r.ThisOnly {
+						if cr.srcThis == nil {
+							cr.srcThis = map[*pat]bool{}
+						}
+						cr.srcThis[p] = true
+					}
 				}
 			}
 		}
@@ -108,6 +120,9 @@ func (e *Engine) compileRoutes(rs []rules.Route) error {
 // $_POST['password']). A rule for one field of the request does not take every
 // handler parameter; any other rule with sources does.
 func (c *croute) takes(r *crule) bool {
+	if r.rule.RouteInput != nil && !*r.rule.RouteInput {
+		return false // the rule says so: only its own sources (route_input = false)
+	}
 	for _, s := range r.rule.Sources {
 		if !c.field(s) {
 			return true
@@ -484,13 +499,18 @@ func (a *analysis) routeParams(f *fn, x state) {
 		if sd.bound && i < len(parts) && classTyped(parts[i]) {
 			continue // Laravel's Invoice $invoice: the model the framework looked up
 		}
-		if len(sd.members) == 0 {
+		members := sd.members
+		if m, ok := sd.route.r.NamedMembers[p]; ok {
+			members = m
+		}
+		if len(members) == 0 {
 			x[p] = entry{taint: true}
 			continue
 		}
-		for _, m := range sd.members {
-			if rm := a.r.rule.RouteMembers; rm == nil || slices.Contains(rm, m) {
-				x[p+sepCh+"."+m] = entry{taint: true}
+		for _, m := range members {
+			// route_members names the last member: Koa's ctx.request.body is the body
+			if rm := a.r.rule.RouteMembers; rm == nil || slices.Contains(rm, m[strings.LastIndex(m, ".")+1:]) {
+				x[p+sepCh+"."+strings.ReplaceAll(m, ".", sepCh+".")] = entry{taint: true}
 			}
 		}
 	}
@@ -688,6 +708,61 @@ func (e *Engine) projectHandlers(proj *Project, path string, ff *fileFuncs, out 
 				}
 			}
 			out[fi.f] = sd
+		}
+	}
+	return out
+}
+
+// extending reports whether the class of the method being analysed extends
+// class (its short name, any case), through its parents in the file and,
+// in a project, in the files declaring them (up to 8 steps).
+func (a *analysis) extending(class string) bool {
+	want := shortClass(class)
+	c, file := a.parent, a.file
+	for depth := 0; c != "" && depth < 8; depth++ {
+		if strings.EqualFold(shortClass(c), want) {
+			return true
+		}
+		next := ""
+		if file == a.file {
+			if a.cparents == nil {
+				a.cparents = classParents(a.ftoks)
+			}
+			next = a.cparents[strings.ToLower(shortClass(c))]
+		}
+		p := a.proj
+		if p == nil {
+			p = a.cproj
+		}
+		if next == "" && p != nil && p.files[file] != nil {
+			if f, ci := p.class(file, p.files[file], c); f != "" {
+				next, file = ci.Parent, f
+			}
+		}
+		c = next
+	}
+	return false
+}
+
+// onThis reports whether the call at t[i] (->name) is made on $this itself,
+// not on another object ($this->parent->, $widget->).
+func onThis(t []Token, i int) bool {
+	return i > 0 && t[i].op("->") && t[i-1].Text == "$this" && (i < 2 || !t[i-2].op("->") && !t[i-2].op("::") && !t[i-2].op("?->"))
+}
+
+// onParent reports whether the call at t[i] is made on $this->parent (an
+// Elementor skin's widget).
+func onParent(t []Token, i int) bool {
+	return i > 2 && t[i].op("->") && t[i-1].Text == "parent" && t[i-2].op("->") && onThis(t, i-2)
+}
+
+// classParents maps each class a PHP file declares (short name, lower case)
+// to the parent it extends, as written.
+func classParents(t []Token) map[string]string {
+	out := map[string]string{}
+	for i := 0; i+3 < len(t); i++ {
+		if t[i].word("class") && t[i+1].Kind == Ident && t[i+2].word("extends") {
+			out[strings.ToLower(t[i+1].Text)] = qualifiedName(t, i+3)
 		}
 	}
 	return out

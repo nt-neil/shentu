@@ -25,7 +25,8 @@
       talk.classList.add('answered');
     });
   });
-  if (still) return;
+  /* still: every scene shows at once, as a card above its words */
+  if (still) { qa('.scene[data-bg]').forEach(function (e) { e.style.backgroundImage = 'url(' + e.dataset.bg + ')'; delete e.dataset.bg; }); return; }
 
   root.classList.add('walking');
   var stage = q('.stage'), sky = q('.sky'), world = q('.world'), haze = q('.haze'), boughs = q('.boughs'), scenes = qa('.scene'), walker = q('.walker'), evil = q('.evil'),
