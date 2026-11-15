@@ -29,6 +29,10 @@ type Rule struct {
 	Tier       string       `toml:"tier"` // "info" (the default): shown in app_code_audit and chat only; "alert": also in the patrol report
 	Title      string       `toml:"title"`
 	Frameworks []string     `toml:"frameworks"`
+	// RouteInput false: a route handler's parameters are not this rule's
+	// input, only its sources are (a rule for the Host header: the query a
+	// route model makes input is not the host).
+	RouteInput *bool `toml:"route_input"`
 	Sources    []string     `toml:"sources"`
 	Sinks      []string     `toml:"sinks"`
 	Sanitizers []string     `toml:"sanitizers"`
@@ -69,6 +73,18 @@ type Args struct {
 	// file gives such an object ($q = new WP_Query; $q->query($args)). A
 	// receiver the file says nothing about still counts.
 	NotReceiver []string `toml:"not_receiver"`
+	// UnlessAt narrows where unless looks: "start", only at the start of the
+	// argument (arg, or the first): a Server-Sent Events line "data: " + x;
+	// "top", only as an element or key of the argument itself (arg, or any
+	// one), not inside what it holds: TypeORM's { relations: [...] }, not
+	// { projection: { relations: 1 } }. Empty: anywhere among the arguments.
+	UnlessAt string `toml:"unless_at"`
+	// UnlessContentType: the call is not a sink once the response's
+	// Content-Type was set to one of these on every path before it, in the
+	// same function (res.setHeader("Content-Type", "text/event-stream"),
+	// res.type(...), res.writeHead(200, {...})): a
+	// Server-Sent Events stream is read by EventSource, not rendered.
+	UnlessContentType []string `toml:"unless_content_type"`
 	// UnlessImports: a method sink does not count in a file importing one of
 	// these modules (import ... from 'typeorm', require('typeorm')), unless the
 	// file also names one of UnlessImportsNot (an identifier or an imported
@@ -158,6 +174,10 @@ type Route struct {
 	Params    []int    `toml:"params"`     // the handler's parameters (from 1) carrying input; empty: all
 	Template  bool     `toml:"template"`   // only the parameters the path template names
 	Members   []string `toml:"members"`    // only these members of the parameters (query, params, body)
+	// NamedMembers: for a parameter of that name, these members instead (Koa's
+	// ctx under an Express-like registration: ctx.body is the response, the
+	// request's body is ctx.request.body).
+	NamedMembers map[string][]string `toml:"named_members"`
 	Requires  []string `toml:"requires"`   // the model applies to a file naming one of these (an import: fastapi)
 	Exclude   []string `toml:"exclude"`    // a parameter declared with one of these is no input (Depends)
 	Bound     bool     `toml:"bound"`      // a parameter declared with a class type is an object the framework looked up (Laravel route model binding), no input

@@ -65,6 +65,7 @@ type crule struct {
 	sanitizers             []*pat
 	args                   map[*pat]*argCond
 	leading                bool // some sink needs a fixed prefix, so values track raw input
+	ctypes                 bool // some args block has unless_content_type: record Content-Type statements (ctype.go)
 	output                 bool // every sink writes to a page (has a context condition): see context.go
 }
 
@@ -79,8 +80,10 @@ type argCond struct {
 	keys           bool   // an array, object or dict literal argument counts by its keys (keysVal)
 	minLen         int    // literal: the shortest string that counts
 	exclude        []*regexp.Regexp
+	unlessAt       string   // where unless looks: "" anywhere, "start", "top" (rules.Args.UnlessAt)
 	receiver       []*pat   // a method sink counts only on a receiver these name (receiver.go)
 	notReceiver    []*pat   // nor on an object surely of one of these classes (receiver.go)
+	unlessCT       []string // nor once the response's Content-Type is one of these on every path (ctype.go)
 	unlessImports  []string // nor in a file importing one of these modules (imports.go)
 	importsNot     []string // ... unless the file or the receiver names one of these
 }
@@ -164,10 +167,19 @@ func compileRule(r rules.Rule) (*crule, error) {
 		return nil, err
 	}
 	for _, a := range r.Args {
-		ac := &argCond{arg: a.Arg, name: a.Name, whole: a.Whole, leading: a.Leading, literal: a.Literal, key: a.Key, keys: a.Keys, minLen: a.MinLen,
+		ac := &argCond{arg: a.Arg, name: a.Name, whole: a.Whole, leading: a.Leading, literal: a.Literal, key: a.Key, keys: a.Keys, minLen: a.MinLen, unlessAt: a.UnlessAt,
 			unlessImports: a.UnlessImports, importsNot: a.UnlessImportsNot}
-		if len(a.UnlessImportsNot) > 0 && len(a.UnlessImports) == 0 {
+		switch {
+		case a.UnlessAt != "" && a.UnlessAt != "start" && a.UnlessAt != "top":
+			return nil, fmt.Errorf("args: unless_at %q is not start or top", a.UnlessAt)
+		case a.UnlessAt != "" && len(a.Unless) == 0:
+			return nil, fmt.Errorf("args: unless_at needs unless")
+		case len(a.UnlessImportsNot) > 0 && len(a.UnlessImports) == 0:
 			return nil, fmt.Errorf("args: unless_imports_not needs unless_imports")
+		}
+		for _, ct := range a.UnlessContentType {
+			ac.unlessCT = append(ac.unlessCT, strings.ToLower(ct))
+			c.ctypes = true
 		}
 		if (a.MinLen != 0 || len(a.Exclude) > 0) && !a.Literal {
 			return nil, fmt.Errorf("args: min_len and exclude need literal")

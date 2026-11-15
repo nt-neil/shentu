@@ -214,6 +214,7 @@ func (a *analysis) stmt(s *stmt, st state) (state, uint8) {
 		a.assertStmt(st, s.toks)
 		a.raisingCheckStmt(st, s.toks)
 		a.nonceStmt(st, s.toks)
+		a.contentTypeStmt(st, s.toks)
 		a.stripKeys(st, s.toks)
 		a.markAssign(st, s.toks)
 		a.extractStmt(st, s.toks)
@@ -2115,8 +2116,11 @@ func (a *analysis) sink(st state, t []Token, i int, s *pat) {
 	default:
 		region = t[end:]
 	}
-	if lr := a.expandLits(st, region); cond != nil && (len(cond.when) > 0 && !a.when(cond.when, lr) || a.unless(st, cond.unless, lr)) {
+	if lr := a.expandLits(st, region); cond != nil && (len(cond.when) > 0 && !a.when(cond.when, lr) || a.unlessIn(st, cond, lr)) {
 		return
+	}
+	if cond != nil && len(cond.unlessCT) > 0 && contentTypeSet(st, cond.unlessCT) {
+		return // a Server-Sent Events stream: EventSource reads it as text
 	}
 	if cond != nil && cond.literal && !a.literalArg(st, cond, region, open) {
 		return
@@ -2324,6 +2328,53 @@ func negated(t []Token, i int) bool {
 // fragment (root:) counts only when its value is not user input. A fragment that
 // is a single string ("--") ends the options of a command, so it counts only
 // when no user input comes before it in its list.
+// unlessIn is unless, looking only where cond.unlessAt says: at the start of
+// the argument ("start": the line a Server-Sent Events stream writes begins
+// with "data: ", not a ternary one branch of which does), or among the
+// argument's own elements and keys ("top": TypeORM's relations option, not a
+// field of that name in a projection nested inside it).
+func (a *analysis) unlessIn(st state, cond *argCond, region []Token) bool {
+	if cond.unlessAt == "" {
+		return a.unless(st, cond.unless, region)
+	}
+	args := splitTop(region, isComma)
+	k := 0
+	if cond.arg != nil && *cond.arg > 0 {
+		k = *cond.arg - 1
+	}
+	if k >= len(args) {
+		return false
+	}
+	if cond.unlessAt == "start" {
+		arg := stripParens(args[k])
+		for _, p := range cond.unless {
+			if p.at(arg, 0, false) {
+				return true
+			}
+		}
+		return false
+	}
+	pick := args
+	if cond.arg != nil && *cond.arg > 0 {
+		pick = args[k : k+1]
+	}
+	for _, arg := range pick {
+		arg = stripParens(arg)
+		if len(arg) < 2 || !isOpen(arg[0]) || closeOf(arg, 0) != len(arg)-1 {
+			continue // not a literal object or list: nothing at its top
+		}
+		inner := arg[1 : len(arg)-1]
+		for _, el := range splitTop(inner, isComma) {
+			for _, p := range cond.unless {
+				if p.at(el, 0, false) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 func (a *analysis) unless(st state, ps []*pat, region []Token) bool {
 	for _, p := range ps {
 		for i := range region {

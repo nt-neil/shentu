@@ -238,7 +238,7 @@ type logEntry struct {
 }
 
 func newAuditLog(stateDir string) *auditLog {
-	if err := os.MkdirAll(stateDir, 0o700); err != nil {
+	if err := ensureStateDir(stateDir); err != nil {
 		return &auditLog{}
 	}
 	return &auditLog{path: filepath.Join(stateDir, "log.jsonl")}

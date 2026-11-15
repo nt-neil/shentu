@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -86,6 +87,9 @@ func TestPreloadEntries(t *testing.T) {
 }
 
 func TestUnpackagedPAM(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Linux host test: Linux PAM module paths")
+	}
 	root := t.TempDir()
 	sysRoot = root
 	t.Cleanup(func() { sysRoot = "/" })
