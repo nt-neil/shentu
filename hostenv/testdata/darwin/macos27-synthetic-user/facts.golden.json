@@ -1,0 +1,401 @@
+{
+  "schema": "hostfacts/1",
+  "collected_at": "2026-11-13T00:00:00Z",
+  "collector": {
+    "name": "darwin",
+    "version": "0.1.0"
+  },
+  "platform": {
+    "status": "ok",
+    "value": {
+      "os": "darwin",
+      "family": "macos",
+      "distro": "macos",
+      "version": "27.2",
+      "pretty_name": "macOS 27.2 (27C42)",
+      "build": "27C42",
+      "kernel": "27.2.0",
+      "arch": "arm64",
+      "in_container": false
+    }
+  },
+  "privilege": {
+    "status": "ok",
+    "value": {
+      "elevated": false
+    }
+  },
+  "resources": {
+    "status": "ok",
+    "value": {
+      "mem_total_bytes": 17179869184,
+      "mem_available_bytes": 0,
+      "load1": 1.2
+    }
+  },
+  "packages": {
+    "status": "partial",
+    "reason": "not_collected",
+    "detail": "installer receipts (pkgutil) not listed",
+    "value": {
+      "manager": "macos",
+      "feed": {
+        "kind": "apple",
+        "release": "27",
+        "upgrade": "softwareupdate --install --all"
+      },
+      "items": [
+        {
+          "name": "com.apple.Safari",
+          "source": "app",
+          "version": "27.2"
+        },
+        {
+          "name": "com.apple.Terminal",
+          "source": "app",
+          "version": "2.15"
+        },
+        {
+          "name": "com.example.editor",
+          "source": "app",
+          "version": "4.2.1"
+        },
+        {
+          "name": "exampledb@2",
+          "source": "homebrew",
+          "version": "2.1"
+        },
+        {
+          "name": "openssl@3",
+          "source": "homebrew",
+          "version": "3.4.0"
+        }
+      ]
+    }
+  },
+  "patches": {
+    "status": "not_applicable",
+    "value": null
+  },
+  "services": {
+    "status": "partial",
+    "reason": "permission_denied",
+    "detail": "not fully read: /var/root/Library/LaunchAgents (permission_denied)",
+    "value": [
+      {
+        "name": "com.example.backup",
+        "exe": "/Library/Application Support/Example/example-backup",
+        "start_mode": "auto",
+        "run_as": "_example"
+      },
+      {
+        "name": "com.example.sync",
+        "exe": "/Applications/ExampleEditor.app/Contents/MacOS/sync-helper",
+        "start_mode": "disabled"
+      }
+    ]
+  },
+  "processes": {
+    "status": "ok",
+    "value": [
+      {
+        "pid": 1,
+        "ppid": 0,
+        "name": "launchd",
+        "exe": "/sbin/launchd",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "/sbin/launchd",
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-10T20:55:55Z"
+      },
+      {
+        "pid": 310,
+        "ppid": 1,
+        "name": "mDNSResponder",
+        "exe": "/usr/sbin/mDNSResponder",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "/usr/sbin/mDNSResponder",
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-10T20:56:00Z"
+      },
+      {
+        "pid": 812,
+        "ppid": 1,
+        "name": "exampledb",
+        "exe": "/opt/example/bin/exampledb",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "/opt/example/bin/exampledb --data /opt/example/data",
+        "user": "user1",
+        "uid": "501",
+        "started": "2026-11-12T18:53:53Z"
+      },
+      {
+        "pid": 930,
+        "ppid": 1,
+        "name": "ExampleEditor",
+        "exe": "/Applications/ExampleEditor.app/Contents/MacOS/ExampleEditor",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "/Applications/ExampleEditor.app/Contents/MacOS/ExampleEditor",
+        "user": "user1",
+        "uid": "501",
+        "started": "2026-11-12T22:57:57Z"
+      }
+    ]
+  },
+  "accounts": {
+    "status": "ok",
+    "value": [
+      {
+        "name": "_sshd",
+        "uid": "75",
+        "home": "/var/empty",
+        "shell": "/usr/bin/false",
+        "can_login": false,
+        "is_admin": false
+      },
+      {
+        "name": "_www",
+        "uid": "70",
+        "home": "/Library/WebServer",
+        "shell": "/usr/bin/false",
+        "can_login": false,
+        "is_admin": false
+      },
+      {
+        "name": "daemon",
+        "uid": "1",
+        "home": "/var/root",
+        "shell": "/usr/bin/false",
+        "can_login": false,
+        "is_admin": false
+      },
+      {
+        "name": "nobody",
+        "uid": "-2",
+        "home": "/var/empty",
+        "shell": "/usr/bin/false",
+        "can_login": false,
+        "is_admin": false
+      },
+      {
+        "name": "root",
+        "uid": "0",
+        "home": "/var/root",
+        "shell": "/bin/sh",
+        "can_login": true,
+        "is_admin": true
+      },
+      {
+        "name": "user1",
+        "uid": "501",
+        "home": "/Users/user1",
+        "shell": "/bin/zsh",
+        "can_login": true,
+        "is_admin": true
+      }
+    ]
+  },
+  "listeners": {
+    "status": "ok",
+    "value": [
+      {
+        "proto": "tcp",
+        "addr": "0.0.0.0",
+        "port": 22,
+        "pid": 1,
+        "process": "launchd"
+      },
+      {
+        "proto": "udp",
+        "addr": "0.0.0.0",
+        "port": 5353,
+        "pid": 310,
+        "process": "mDNSResponder"
+      },
+      {
+        "proto": "tcp",
+        "addr": "127.0.0.1",
+        "port": 7777,
+        "pid": 812,
+        "process": "exampledb"
+      }
+    ]
+  },
+  "persistence": {
+    "status": "partial",
+    "reason": "permission_denied",
+    "detail": "not fully read: login items (the Background Task Management store is not parsed), launchd: not fully read: /var/root/Library/LaunchAgents (permission_denied), /usr/lib/cron/tabs (user crontabs), /usr/lib/cron/jobs (permission_denied), /var/root/Library/Preferences/com.apple.loginwindow.plist (permission_denied), authorized_keys: not fully read: /var/root/.ssh/authorized_keys (permission_denied), /var/root/.ssh/authorized_keys2 (permission_denied)",
+    "value": [
+      {
+        "kind": "launchd",
+        "location": "/Library/LaunchDaemons/com.example.backup.plist",
+        "command": "/Library/Application Support/Example/example-backup --daily",
+        "detail": "daemon in /Library/LaunchDaemons; runs at load"
+      },
+      {
+        "kind": "launchd",
+        "location": "/Users/user1/Library/LaunchAgents/com.example.sync.plist",
+        "command": "/Applications/ExampleEditor.app/Contents/MacOS/sync-helper",
+        "detail": "user agent in /Users/user1/Library/LaunchAgents; disabled"
+      },
+      {
+        "kind": "cron",
+        "location": "/etc/periodic/daily/110.clean-tmps",
+        "detail": "periodic script, run daily"
+      },
+      {
+        "kind": "periodic_conf",
+        "location": "/etc/defaults/periodic.conf",
+        "command": "local_periodic=\"/usr/local/etc/periodic\""
+      },
+      {
+        "kind": "periodic_conf",
+        "location": "/etc/defaults/periodic.conf",
+        "command": "daily_clean_tmps_enable=\"YES\""
+      },
+      {
+        "kind": "periodic_conf",
+        "location": "/etc/defaults/periodic.conf",
+        "command": "weekly_clean_logs_enable=\"YES\""
+      },
+      {
+        "kind": "security_agent_plugin",
+        "location": "/Library/Security/SecurityAgentPlugins/com.example.auth.bundle",
+        "detail": "loaded by the login window's authorization"
+      },
+      {
+        "kind": "login_hook",
+        "location": "/Library/Preferences/com.apple.loginwindow.plist",
+        "command": "/usr/local/bin/example-login-hook",
+        "detail": "LoginHook, run as root"
+      },
+      {
+        "kind": "sudo_rule",
+        "location": "/etc/sudoers",
+        "command": "root ALL = (ALL) ALL"
+      },
+      {
+        "kind": "sudo_rule",
+        "location": "/etc/sudoers",
+        "command": "%admin ALL = (ALL) ALL"
+      }
+    ]
+  },
+  "ssh_keys": {
+    "status": "partial",
+    "reason": "permission_denied",
+    "detail": "not fully read: /var/root/.ssh/authorized_keys (permission_denied), /var/root/.ssh/authorized_keys2 (permission_denied)",
+    "value": [
+      {
+        "user": "root",
+        "path": "/var/root/.ssh/authorized_keys",
+        "modified": "0001-01-01T00:00:00Z",
+        "unread": "permission_denied"
+      },
+      {
+        "user": "root",
+        "path": "/var/root/.ssh/authorized_keys2",
+        "modified": "0001-01-01T00:00:00Z",
+        "unread": "permission_denied"
+      }
+    ]
+  },
+  "firewall": {
+    "status": "ok",
+    "value": {
+      "backend": "socketfilterfw",
+      "enabled": true,
+      "extra": {
+        "block_all": "off",
+        "mode": "per application: signed software allowed, others asked",
+        "pf": "unknown (needs root)",
+        "stealth": "off"
+      }
+    }
+  },
+  "remote_access": {
+    "ssh": {
+      "status": "ok",
+      "value": {
+        "config_path": "/etc/ssh/sshd_config",
+        "settings": {
+          "passwordauthentication": "yes",
+          "permitemptypasswords": "no",
+          "permitrootlogin": "prohibit-password",
+          "port": "22",
+          "pubkeyauthentication": "yes",
+          "x11forwarding": "no"
+        },
+        "hash": "cfbad366740b6b5b"
+      }
+    },
+    "rdp": {
+      "status": "not_applicable",
+      "value": {
+        "enabled": false,
+        "nla": false,
+        "port": 0
+      }
+    },
+    "winrm": {
+      "status": "not_applicable",
+      "value": {
+        "running": false,
+        "http_listener": false,
+        "allow_unencrypted": false,
+        "basic_auth": false
+      }
+    },
+    "smb": {
+      "status": "unknown",
+      "reason": "not_collected",
+      "detail": "macOS file sharing not collected yet",
+      "value": {
+        "smb1_enabled": false,
+        "signing_required": false
+      }
+    }
+  },
+  "antimalware": {
+    "status": "unknown",
+    "reason": "command_failed",
+    "detail": "XProtect: hostenv: source cannot stat",
+    "value": {
+      "product": "",
+      "real_time": false,
+      "signature_age_days": 0
+    }
+  },
+  "protections": {
+    "status": "ok",
+    "value": {
+      "integrity": "on",
+      "app_verification": "on",
+      "disk_encryption": "on"
+    }
+  },
+  "auth_events": {
+    "status": "unknown",
+    "reason": "not_collected",
+    "detail": "the unified log (log show) is not read yet",
+    "value": {
+      "window_hours": 0
+    }
+  },
+  "web": {
+    "status": "unknown",
+    "reason": "not_collected",
+    "detail": "web servers on macOS not collected yet",
+    "value": {}
+  }
+}

@@ -29,6 +29,10 @@ type Rule struct {
 	Tier       string       `toml:"tier"` // "info" (the default): shown in app_code_audit and chat only; "alert": also in the patrol report
 	Title      string       `toml:"title"`
 	Frameworks []string     `toml:"frameworks"`
+	// RouteInput false: a route handler's parameters are not this rule's
+	// input, only its sources are (a rule for the Host header: the query a
+	// route model makes input is not the host).
+	RouteInput *bool `toml:"route_input"`
 	Sources    []string     `toml:"sources"`
 	Sinks      []string     `toml:"sinks"`
 	Sanitizers []string     `toml:"sanitizers"`
@@ -58,6 +62,7 @@ type Args struct {
 	Whole    bool     `toml:"whole"`    // the argument must be the input itself, not a literal holding a part of it
 	Leading  bool     `toml:"leading"`  // the input must be at the start of the argument; a fixed prefix makes the call safe
 	Context  []string `toml:"context"`  // output sinks: only input written in one of these HTML contexts counts (html, attr, url, js)
+	Markup   bool     `toml:"markup"`   // with context: only input written after markup in the same value ('<p>' + x); a body with none may be JSON or text
 	Literal  bool     `toml:"literal"`  // the argument (arg, or the value of a when option) must be a non-empty string literal
 	Key      string   `toml:"key"`      // the argument is an object, dict or array: only the value under this key counts (any case)
 	Keys     bool     `toml:"keys"`     // an argument that is an array, object or dict literal counts by its keys only, not its values
@@ -69,6 +74,30 @@ type Args struct {
 	// file gives such an object ($q = new WP_Query; $q->query($args)). A
 	// receiver the file says nothing about still counts.
 	NotReceiver []string `toml:"not_receiver"`
+	// UnlessAt narrows where unless looks: "start", only at the start of the
+	// argument (arg, or the first): a Server-Sent Events line "data: " + x;
+	// "top", only as an element or key of the argument itself (arg, or any
+	// one), not inside what it holds: TypeORM's { relations: [...] }, not
+	// { projection: { relations: 1 } }. Empty: anywhere among the arguments.
+	UnlessAt string `toml:"unless_at"`
+	// UnlessContentType: the call is not a sink once the response's
+	// Content-Type was set to one of these on every path before it, in the
+	// same function (res.setHeader("Content-Type", "text/event-stream"),
+	// res.type(...), res.writeHead(200, {...})): a
+	// Server-Sent Events stream is read by EventSource, not rendered.
+	UnlessContentType []string `toml:"unless_content_type"`
+	// UnlessImports: a method sink does not count in a file importing one of
+	// these modules (import ... from 'typeorm', require('typeorm')), unless the
+	// file also names one of UnlessImportsNot (an identifier or an imported
+	// module) or the receiver does: a TypeORM repository's find() on an SQL
+	// database binds its where as parameters, its MongoRepository does not.
+	UnlessImports    []string `toml:"unless_imports"`
+	UnlessImportsNot []string `toml:"unless_imports_not"`
+	// UnlessSubscript: the argument does not count when it is, as a whole, one
+	// item of one of these (request.files["f"]): an uploaded file's stream,
+	// which zipfile.ZipFile reads as a file object, not a path. Written in the
+	// call only, not through a variable.
+	UnlessSubscript []string `toml:"unless_subscript"`
 }
 
 // SourceArgs makes call sources input only when an argument is one of a few
@@ -151,10 +180,16 @@ type Route struct {
 	Params    []int    `toml:"params"`     // the handler's parameters (from 1) carrying input; empty: all
 	Template  bool     `toml:"template"`   // only the parameters the path template names
 	Members   []string `toml:"members"`    // only these members of the parameters (query, params, body)
+	// NamedMembers: for a parameter of that name, these members instead (Koa's
+	// ctx under an Express-like registration: ctx.body is the response, the
+	// request's body is ctx.request.body).
+	NamedMembers map[string][]string `toml:"named_members"`
 	Requires  []string `toml:"requires"`   // the model applies to a file naming one of these (an import: fastapi)
 	Exclude   []string `toml:"exclude"`    // a parameter declared with one of these is no input (Depends)
 	Bound     bool     `toml:"bound"`      // a parameter declared with a class type is an object the framework looked up (Laravel route model binding), no input
 	Sources   []string `toml:"sources"`    // further sources (get_settings_for_display), for the rules the model is for
+	InClasses []string `toml:"in_classes"` // a source called on $this counts only in a class extending one of these; on another object ($widget->), everywhere
+	ThisOnly  bool     `toml:"this_only"`  // a source counts only on $this or $this->parent (an Elementor skin's widget), not on another object ($section->get_settings(): a settings page's)
 	Clears    []string `toml:"clears"`     // calls returning what the framework itself stored for an id (get_attached_file(): a path it wrote), not the request's input
 	ClearsFor []string `toml:"clears_for"` // the rule classes Clears is for (path-traversal): a stored value may still be one an attacker wrote, so not for every class
 	Applies   []string `toml:"applies"`    // the request's roots ($_POST, req.body): a rule all of whose sources are one field under them (a password) is not one the model is for

@@ -214,17 +214,18 @@ func TestInvariantPatrolSandbox(t *testing.T) {
 	}
 }
 
-// One third-party dependency keeps the supply chain small.
-func TestInvariantOneDependency(t *testing.T) {
+// Only allowlisted third-party modules may appear in go.mod, which keeps
+// the supply chain small: toml for config, and x/sys (maintained by the Go
+// team) for the Windows APIs hostenv reads.
+func TestInvariantDependencyAllowlist(t *testing.T) {
+	allowed := map[string]bool{"github.com/BurntSushi/toml": true, "golang.org/x/sys": true}
 	b, _ := os.ReadFile("go.mod")
-	n := 0
 	for _, l := range strings.Split(string(b), "\n") {
 		l = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(l), "require"))
 		if strings.Contains(l, "/") && strings.Contains(l, " v") && !strings.HasPrefix(l, "module") {
-			n++
+			if mod := strings.Fields(strings.Trim(l, "( "))[0]; !allowed[mod] {
+				t.Errorf("go.mod requires %s, which is not on the dependency allowlist", mod)
+			}
 		}
-	}
-	if n != 1 {
-		t.Errorf("go.mod has %d dependencies, want 1", n)
 	}
 }

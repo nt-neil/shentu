@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nt-neil/shentu/hostenv"
 	"github.com/nt-neil/shentu/rules"
 	"github.com/nt-neil/shentu/rules/engine"
 )
@@ -52,7 +53,7 @@ func TestAppCodeAudit(t *testing.T) {
 	res := AppCodeAudit(context.Background(), []string{filepath.Join(dir, "site")}, []string{pub})
 	got := map[string]CodeFinding{}
 	for _, f := range res.Findings {
-		got[f.Kind+" "+strings.TrimPrefix(f.Path, dir+"/site/")] = f
+		got[f.Kind+" "+strings.TrimPrefix(filepath.ToSlash(f.Path), filepath.ToSlash(dir)+"/site/")] = f
 	}
 	want := map[string]string{ // kind + path → severity
 		"exposed public/.env": "critical", "exposed public/.git": "critical", "exposed public/dump.sql": "critical",
@@ -106,11 +107,11 @@ func TestServedFallback(t *testing.T) {
 
 func TestWebRootPatterns(t *testing.T) {
 	nginx := "server {\n    root /var/www/shop/public;\n    # root /old;\n    location / { try_files $uri =404; }\n}\n"
-	if m := nginxRoot.FindAllStringSubmatch(nginx, -1); len(m) != 1 || m[0][1] != "/var/www/shop/public" {
+	if m := hostenv.ParseWebRoots([]byte(nginx)); len(m) != 1 || m[0] != "/var/www/shop/public" {
 		t.Errorf("nginx root: %v", m)
 	}
 	apache := "<VirtualHost *:80>\n\tDocumentRoot \"/var/www/html\"\n</VirtualHost>\n"
-	if m := apacheRoot.FindStringSubmatch(apache); m == nil || m[1] != "/var/www/html" {
+	if m := hostenv.ParseWebRoots([]byte(apache)); len(m) != 1 || m[0] != "/var/www/html" {
 		t.Errorf("apache root: %v", m)
 	}
 }
