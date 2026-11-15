@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -55,6 +56,9 @@ func (w *wiz) yesNo(in *bufio.Reader, question string, def bool) bool {
 }
 
 func wizard(ctx context.Context, in *bufio.Reader, yes bool) error {
+	if runtime.GOOS == "windows" {
+		return errSetupWindows
+	}
 	w := &wiz{yes: yes}
 	fmt.Println("Shentu setup · 神荼設定")
 	fmt.Println("[1/5] Language / 語言:  1) English   2) 繁體中文")
