@@ -91,6 +91,7 @@ type argCond struct {
 	unlessCT       []string // nor once the response's Content-Type is one of these on every path (ctype.go)
 	unlessImports  []string // nor in a file importing one of these modules (imports.go)
 	importsNot     []string // ... unless the file or the receiver names one of these
+	unlessSub      []*pat   // the argument does not count when it is one item of one of these (request.files["f"])
 }
 
 // New compiles rules. A pattern that does not lex as code of its language is an error.
@@ -207,7 +208,7 @@ func compileRule(r rules.Rule) (*crule, error) {
 		for _, list := range []struct {
 			raw []string
 			out *[]*pat
-		}{{a.When, &ac.when}, {a.Unless, &ac.unless}, {a.Receiver, &ac.receiver}, {a.NotReceiver, &ac.notReceiver}} {
+		}{{a.When, &ac.when}, {a.Unless, &ac.unless}, {a.Receiver, &ac.receiver}, {a.NotReceiver, &ac.notReceiver}, {a.UnlessSubscript, &ac.unlessSub}} {
 			for _, raw := range list.raw {
 				p, err := compilePattern(r.Lang, raw, false)
 				if err != nil {

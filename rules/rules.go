@@ -92,6 +92,11 @@ type Args struct {
 	// database binds its where as parameters, its MongoRepository does not.
 	UnlessImports    []string `toml:"unless_imports"`
 	UnlessImportsNot []string `toml:"unless_imports_not"`
+	// UnlessSubscript: the argument does not count when it is, as a whole, one
+	// item of one of these (request.files["f"]): an uploaded file's stream,
+	// which zipfile.ZipFile reads as a file object, not a path. Written in the
+	// call only, not through a variable.
+	UnlessSubscript []string `toml:"unless_subscript"`
 }
 
 // SourceArgs makes call sources input only when an argument is one of a few
