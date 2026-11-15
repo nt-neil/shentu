@@ -79,6 +79,12 @@ type Args struct {
 	// one), not inside what it holds: TypeORM's { relations: [...] }, not
 	// { projection: { relations: 1 } }. Empty: anywhere among the arguments.
 	UnlessAt string `toml:"unless_at"`
+	// UnlessContentType: the call is not a sink once the response's
+	// Content-Type was set to one of these on every path before it, in the
+	// same function (res.setHeader("Content-Type", "text/event-stream"),
+	// res.type(...), res.writeHead(200, {...})): a
+	// Server-Sent Events stream is read by EventSource, not rendered.
+	UnlessContentType []string `toml:"unless_content_type"`
 }
 
 // SourceArgs makes call sources input only when an argument is one of a few
