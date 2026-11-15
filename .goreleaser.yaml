@@ -7,16 +7,41 @@ builds:
     flags: [-trimpath]
     ldflags: ["-s -w -X main.version={{.Version}}"]
     mod_timestamp: "{{ .CommitTimestamp }}"
+  # Windows Server: a zip with shentu.exe, unsigned for now (see
+  # packaging/windows/INSTALL.md). The Linux build above keeps its default
+  # id "shentu", so its archive, packages and names are as before.
+  - id: windows
+    env: [CGO_ENABLED=0]
+    goos: [windows]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags: ["-s -w -X main.version={{.Version}}"]
+    mod_timestamp: "{{ .CommitTimestamp }}"
 archives:
-  - formats: [tar.gz]
+  - ids: [shentu]
+    formats: [tar.gz]
     name_template: "shentu_linux_{{ .Arch }}"
-    files: [LICENSE, README.md, install.sh, packaging/*]
+    # packaging/shentu* is what packaging/* was before packaging/windows/
+    # existed: the systemd units and shentu.toml.
+    files: [LICENSE, README.md, install.sh, packaging/shentu*]
+  - id: windows
+    ids: [windows]
+    formats: [zip]
+    name_template: "shentu_windows_{{ .Arch }}"
+    files:
+      - LICENSE
+      - README.md
+      - src: packaging/windows/INSTALL.md
+        dst: INSTALL.md
+      - src: packaging/shentu.toml
+        dst: shentu.toml
 checksum:
   name_template: checksums.txt
 sboms:
   - artifacts: archive
 nfpms:
-  - package_name: shentu
+  - ids: [shentu]
+    package_name: shentu
     homepage: https://github.com/nt-neil/shentu
     description: Security assistant for Linux servers, powered by an LLM.
     license: Apache-2.0

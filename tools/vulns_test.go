@@ -9,10 +9,13 @@ func TestMatchKEV(t *testing.T) {
 	}
 	resolved := map[string][]string{"RLSA-2024:3339": {"CVE-2024-2961", "CVE-2024-33599"}}
 	asked := 0
-	got := matchKEV(kev, []string{"DEBIAN-CVE-2026-1111", "UBUNTU-CVE-2020-0001", "RLSA-2024:3339"}, func(id string) []string {
+	got, unchecked := matchKEV(kev, []string{"DEBIAN-CVE-2026-1111", "UBUNTU-CVE-2020-0001", "RLSA-2024:3339"}, func(id string) ([]string, bool) {
 		asked++
-		return resolved[id]
+		return resolved[id], true
 	})
+	if unchecked != 0 {
+		t.Errorf("unchecked %d", unchecked)
+	}
 	if asked != 1 {
 		t.Errorf("resolved %d IDs online, want 1 (IDs that contain a CVE need no lookup)", asked)
 	}
@@ -20,9 +23,18 @@ func TestMatchKEV(t *testing.T) {
 		t.Errorf("matchKEV = %+v", got)
 	}
 	// The same CVE under several advisory IDs is one finding.
-	got = matchKEV(kev, []string{"CVE-2026-1111", "DEBIAN-CVE-2026-1111", "DLA-4000-1"}, func(string) []string { return []string{"CVE-2026-1111"} })
+	got, _ = matchKEV(kev, []string{"CVE-2026-1111", "DEBIAN-CVE-2026-1111", "DLA-4000-1"}, func(string) ([]string, bool) { return []string{"CVE-2026-1111"}, true })
 	if len(got) != 1 {
 		t.Errorf("one CVE under three IDs gave %d findings: %+v", len(got), got)
+	}
+	// N-C: a lookup that failed, and IDs past the 300 cap, are counted as unchecked.
+	ids := []string{"RLSA-2024:9999"}
+	for i := 0; i < 305; i++ {
+		ids = append(ids, "CVE-2026-1111")
+	}
+	_, unchecked = matchKEV(kev, ids, func(string) ([]string, bool) { return nil, false })
+	if unchecked != 7 {
+		t.Errorf("unchecked %d, want 7 (1 lookup failed, 6 of 306 past the cap)", unchecked)
 	}
 }
 
