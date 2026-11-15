@@ -12,10 +12,25 @@ import (
 	"testing"
 )
 
+// Credential-shaped test values are put together at run time, so none is kept
+// in the source.
+var (
+	fakeAWSKey       = strings.Join([]string{"AKIA", "ABCDEFGHIJKLMNOP"}, "")
+	fakeAnthropicKey = strings.Join([]string{"sk-ant", "api03", strings.Repeat("a", 24)}, "-")
+	fakeBotToken     = strings.Join([]string{"123456789", strings.Repeat("A", 35)}, ":")
+	fakeGitHubPAT    = strings.Join([]string{"github", "pat", "11" + strings.Repeat("A", 22)}, "_")
+	fakeGoogleKey    = "AI" + "zaSy" + strings.Repeat("A", 33)
+)
+
+// pem is a PEM boundary line of a private key: pem("BEGIN", "RSA").
+func pem(edge, kind string) string {
+	return "-----" + edge + " " + kind + " PRIVATE" + " KEY-----"
+}
+
 func TestMask(t *testing.T) {
-	in := `{"line":"password=hunter2 token: abcdef123 AKIAABCDEFGHIJKLMNOP sk-ant-api03-aaaaaaaaaaaaaaaaaaaaaaaa 123456789:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}`
+	in := `{"line":"password=hunter2 token: abcdef123 ` + fakeAWSKey + " " + fakeAnthropicKey + " " + fakeBotToken + `"}`
 	out := mask(in)
-	for _, secret := range []string{"hunter2", "abcdef123", "AKIAABCDEFGHIJKLMNOP", "sk-ant-api03", "123456789:AAAA"} {
+	for _, secret := range []string{"hunter2", "abcdef123", fakeAWSKey, fakeAnthropicKey[:12], fakeBotToken[:14]} {
 		if strings.Contains(out, secret) {
 			t.Errorf("not masked: %s in %s", secret, out)
 		}
@@ -23,13 +38,13 @@ func TestMask(t *testing.T) {
 	if !strings.HasSuffix(out, `"}`) {
 		t.Errorf("JSON structure damaged: %s", out)
 	}
-	key := "-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n-----END OPENSSH PRIVATE KEY-----"
+	key := pem("BEGIN", "OPENSSH") + "\nabc\n" + pem("END", "OPENSSH")
 	if mask(key) != "[REDACTED PRIVATE KEY]" {
 		t.Errorf("private key not masked")
 	}
-	more := "Authorization: Bearer abcdefgh12345678 github_pat_11AAAAAAAAAAAAAAAAAAAAAA " +
-		"AIzaSyAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA https://user:s3cretpw@example.com/x " +
-		"-----BEGIN RSA PRIVATE KEY-----\nMIIEtruncated"
+	more := "Authorization: Bearer abcdefgh12345678 " + fakeGitHubPAT + " " +
+		fakeGoogleKey + " https://user:s3cretpw@example.com/x " +
+		pem("BEGIN", "RSA") + "\nMIIEtruncated"
 	out = mask(more)
 	for _, secret := range []string{"abcdefgh12345678", "github_pat_11", "AIzaSy", "s3cretpw", "MIIEtruncated"} {
 		if strings.Contains(out, secret) {
