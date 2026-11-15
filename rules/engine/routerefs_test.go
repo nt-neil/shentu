@@ -194,3 +194,21 @@ func TestRouteRefsSameLine(t *testing.T) {
 		}
 	}
 }
+
+// S-A, a known limit: a one-line handler and a sink outside it on the same
+// line cannot be told apart by line, and the handler's routes are given.
+// If this starts failing because columns are now known, the limit is gone:
+// drop it from the comments and RoutesMeaning.
+func TestRouteRefsSameLineOutsideKnownLimit(t *testing.T) {
+	e := routeEngine(t)
+	src := "<?php\nadd_shortcode('a', function ($atts) { return 1; }); system('ls ' . $_GET['d']);\n"
+	fs, err := e.Scan("php", "a.php", []byte(src))
+	if err != nil || len(fs) == 0 {
+		t.Fatalf("not reported: %v", err)
+	}
+	for _, f := range fs {
+		if len(f.Routes) != 1 || f.Routes[0].Model != "wp-shortcode" {
+			t.Errorf("%s: routes %+v, want the shortcode's (the known limit)", f.RuleID, f.Routes)
+		}
+	}
+}

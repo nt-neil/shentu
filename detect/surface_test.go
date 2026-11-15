@@ -142,3 +142,13 @@ func TestBuildSurfacePackageIdentity(t *testing.T) {
 		t.Errorf("other version %+v", s.Entries[1])
 	}
 }
+
+// S-C: an unrated non-KEV package goes after a rated code sink, a KEV one
+// before everything.
+func TestBuildSurfaceUnratedLast(t *testing.T) {
+	s := Build([]CodeSink{{Rule: "r", Severity: "warning", Path: "a.php", Line: 1}},
+		[]PackageVuln{{Package: "p", Version: "1", ID: "GHSA-1"}, {Package: "q", Version: "1", ID: "GHSA-2", KEV: true}})
+	if len(s.Entries) != 3 || s.Entries[0].Package != "q" || s.Entries[1].Kind != "code" || s.Entries[2].Package != "p" {
+		t.Errorf("order %+v: want KEV package, code sink, unrated package", s.Entries)
+	}
+}

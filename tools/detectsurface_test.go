@@ -19,7 +19,7 @@ func TestSurfaceInputs(t *testing.T) {
 	}
 	apps := SurfaceApps([]AppResult{{Path: "/srv/composer.lock", Ecosystem: "Packagist",
 		Affected:  []AppHit{{Package: "a/b", Version: "1.0", IDs: []string{"GHSA-1", "GHSA-2"}}},
-		Exploited: []Exploit{{Package: "a/b", ID: "GHSA-2", CVE: "CVE-2024-9", Added: "2024-01-02"}}}})
+		Exploited: []Exploit{{Package: "a/b", Version: "1.0", ID: "GHSA-2", CVE: "CVE-2024-9", Added: "2024-01-02"}}}})
 	if len(apps) != 2 || apps[0].KEV || !apps[1].KEV || apps[1].CVE != "CVE-2024-9" || apps[1].Source != "/srv/composer.lock" {
 		t.Errorf("app vulns %+v", apps)
 	}
@@ -65,5 +65,35 @@ func TestSurfaceAppsExploitedPastCut(t *testing.T) {
 	}
 	if kev != 3 {
 		t.Errorf("%d KEV entries, want 3 (GHSA-2 once)", kev)
+	}
+}
+
+// N-R1: two versions of one package in one lock file, both exploited: both
+// are KEV.
+func TestSurfaceAppsTwoVersionsKEV(t *testing.T) {
+	apps := SurfaceApps([]AppResult{{Path: "/srv/package-lock.json", Ecosystem: "npm",
+		Affected: []AppHit{
+			{Package: "lodash", Version: "4.17.10", IDs: []string{"GHSA-p6mc-m468-83gw"}},
+			{Package: "lodash", Version: "4.17.4", IDs: []string{"GHSA-p6mc-m468-83gw"}},
+		},
+		Exploited: []Exploit{
+			{Package: "lodash", Version: "4.17.10", ID: "GHSA-p6mc-m468-83gw", CVE: "CVE-2020-8203", Added: "2024-01-01"},
+			{Package: "lodash", Version: "4.17.4", ID: "GHSA-p6mc-m468-83gw", CVE: "CVE-2020-8203", Added: "2024-01-01"},
+		}}})
+	if len(apps) != 2 {
+		t.Fatalf("%d entries, want 2: %+v", len(apps), apps)
+	}
+	for _, a := range apps {
+		if !a.KEV || a.CVE != "CVE-2020-8203" {
+			t.Errorf("%s %s: %+v, want kev", a.Package, a.Version, a)
+		}
+	}
+}
+
+// S-C: lock files' dependencies carry no severity.
+func TestSurfaceAppsNoSeverity(t *testing.T) {
+	apps := SurfaceApps([]AppResult{{Path: "/srv/composer.lock", Affected: []AppHit{{Package: "a/b", Version: "1", IDs: []string{"GHSA-1"}}}}})
+	if len(apps) != 1 || apps[0].Severity != "" {
+		t.Errorf("%+v: want one entry, no severity", apps)
 	}
 }

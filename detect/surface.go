@@ -55,8 +55,8 @@ const (
 // The caveats every report and alert built on the surface must carry, in
 // English and in Chinese.
 const (
-	RoutesMeaning     = "routes only say that the sink sits in this handler, not that request data was traced to it along this route"
-	RoutesMeaningZh   = "routes 只代表 sink 位在這個 handler 裡，不代表請求資料一定是從這條路由流進來的"
+	RoutesMeaning     = "routes only say that the sink sits in this handler, not that request data was traced to it along this route; a sink written on the same line as a one-line handler but outside it is given that handler's routes too"
+	RoutesMeaningZh   = "routes 只代表 sink 位在這個 handler 裡，不代表請求資料一定是從這條路由流進來的；sink 若和單行 handler 寫在同一行但在它外面，也會被掛上這個 handler 的 routes"
 	NoRoutesMeaning   = "no routes does not mean no attack surface: the handler may be registered in another file (Django urls.py, Laravel routes) or be an entry point without a route model yet (WordPress admin-ajax)"
 	NoRoutesMeaningZh = "沒有 routes 不代表沒有攻擊面：handler 可能註冊在別的檔案（Django urls.py、Laravel routes），或是還沒有路由模型的入口（WordPress admin-ajax）"
 	// PatternMeaning: how the matcher compares a route's path with a URL.
@@ -136,7 +136,10 @@ func PayloadClass(cwe string) string {
 // one entry per sink (rule, file, line) and per advisory of a package
 // version (an advisory and the CVE it is known as being one), the routes of a
 // sink merged, sorted so that the same host gives the same surface. KEV
-// entries come first, then the more severe, so a cut keeps them.
+// entries come first, then the more severe, so a cut keeps them. Entries
+// without a severity go last: lock files' dependencies have none
+// (tools.SurfaceApps), so past MaxEntries the non-KEV ones are cut before
+// any rated code sink.
 func Build(code []CodeSink, pkgs []PackageVuln) Surface {
 	byID := map[string]int{}
 	var out []Entry

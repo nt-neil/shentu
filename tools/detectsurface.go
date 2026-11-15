@@ -23,26 +23,29 @@ func SurfaceCode(fs []CodeFinding) []detect.CodeSink {
 // SurfaceApps is the vulnerable dependencies of lock files, one entry per
 // advisory, marked KEV where the lock file's scan found it exploited. An
 // exploited one is kept even when Affected, cut for the model (20 packages,
-// 5 advisories each), left it out.
+// 5 advisories each), left it out. Severity stays empty: OSV's batch
+// query gives only ids, and asking for each advisory is a request per id;
+// detect.Build therefore cuts these before rated entries (KEV ones excepted).
 func SurfaceApps(rs []AppResult) []detect.PackageVuln {
 	var out []detect.PackageVuln
 	for _, r := range rs {
-		kev := map[string]Exploit{} // package\x00advisory
+		kev := map[string]Exploit{} // package\x00version\x00advisory: two versions in one lock file are two
+		key := func(p, v, id string) string { return p + "\x00" + v + "\x00" + id }
 		for _, x := range r.Exploited {
-			kev[x.Package+"\x00"+x.ID] = x
+			kev[key(x.Package, x.Version, x.ID)] = x
 		}
 		for _, h := range r.Affected {
 			for _, id := range h.IDs {
 				v := detect.PackageVuln{Source: r.Path, Ecosystem: r.Ecosystem, Package: h.Package, Version: h.Version, ID: id}
-				if x, ok := kev[h.Package+"\x00"+id]; ok {
+				if x, ok := kev[key(h.Package, h.Version, id)]; ok {
 					v.KEV, v.KEVSince, v.CVE = true, x.Added, x.CVE
-					delete(kev, h.Package+"\x00"+id)
+					delete(kev, key(h.Package, h.Version, id))
 				}
 				out = append(out, v)
 			}
 		}
 		for _, x := range r.Exploited { // in the order found: those Affected no longer lists
-			k := x.Package + "\x00" + x.ID
+			k := key(x.Package, x.Version, x.ID)
 			if _, ok := kev[k]; !ok {
 				continue
 			}

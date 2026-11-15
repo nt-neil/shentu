@@ -16,7 +16,10 @@ import (
 // Route::post, a decorator, or a method a framework calls by its class), and
 // the innermost such function is the one meant. A handler registered in
 // another file (urls.py, routes/web.php) or a sink reached through a call to
-// another file gets none. Filling it changes no finding.
+// another file gets none. Filling it changes no finding. Findings carry a
+// line, not a column: a sink on the line of a one-line handler but outside
+// it (app.get('/a', function () {}); exec(x)) is still given that handler's
+// routes.
 //
 // Pattern is the path as the registering call writes it, without the prefix
 // a router or group may be mounted under (app.use('/api', router), a Flask
@@ -51,7 +54,9 @@ const (
 // line counts; a handler registered several times gets one entry for each,
 // up to maxRoutesPerFinding. Lines are all a finding has: when two handlers
 // hold the line and neither holds the other (two on one line), which one the
-// sink is in is not known, and none is named.
+// sink is in is not known, and none is named. One handler on the line and
+// the sink outside it cannot be told apart from the sink inside it: that
+// handler's routes are given.
 func (e *Engine) annotateRoutes(out []Finding, lang, path string, toks []Token, tree []*stmt, ff *fileFuncs) {
 	mine := false
 	for i := range out {
