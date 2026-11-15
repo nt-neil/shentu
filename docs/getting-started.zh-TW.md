@@ -195,6 +195,27 @@ sudo shentu bot pair
 - 要換模型，就再跑一次 `sudo shentu setup`，或直接改 `/etc/shentu/llm.toml`。
 - 要加自己的處理流程（skill），放在 `/etc/shentu/skills/<名稱>/SKILL.md`。
 
+## Windows Server（v0.3.0 起）
+
+支援 Windows Server 2022 與 2025（amd64；arm64 也有建置），已在 GitHub 提供的 Windows Server 2022/2025 測試機上驗證。Windows Server 2019 為 best effort：預期可用（相同的 Windows API，build 17763），但沒有在 GitHub 提供的測試機上驗證。
+
+1. 下載 `shentu_windows_amd64.zip`，用 `checksums.txt` 或
+   `gh attestation verify shentu_windows_amd64.zip --repo nt-neil/shentu` 核對。
+2. 以系統管理員身分開啟命令列，把 `shentu.exe` 複製到 `%ProgramFiles%\Shentu`，執行
+   `shentu service install`（巡邏服務）；要用 Telegram 再執行 `shentu service install --bot`。
+   `service install` 只接受放在 `%ProgramFiles%\Shentu` 的執行檔，並把該資料夾鎖成只有系統
+   管理員能寫入。
+3. 設定與狀態放在 `%ProgramData%\Shentu`，只有 SYSTEM 與 Administrators 能存取。把 zip 裡的
+   `shentu.toml` 複製過去後編輯，金鑰寫在同一資料夾的 `env`（`NAME=value`，設定檔中以
+   `${NAME}` 引用）。
+4. `shentu service start` 與 `shentu service start --bot` 啟動；兩個服務都以 LocalSystem 執行
+   （讀取 Security 事件記錄需要），各自啟停、失敗自動重啟。
+
+目前的限制：Windows 版只讀不寫（不支援 `block_ip`、`unblock_ip`）；`shentu setup` 還不能在
+Windows 上執行，設定需要手動撰寫；沒有 MSI；執行檔沒有程式碼簽章，SmartScreen 可能警告，
+Microsoft Defender 或其他防毒也可能誤判（Shentu 會讀取事件記錄、自動啟動機碼與 WMI 訂閱，
+行為和惡意程式掃描工具相似）。完整步驟見 `packaging/windows/INSTALL.md`。
+
 ## 常見問題
 
 | 狀況 | 處理方式 |
