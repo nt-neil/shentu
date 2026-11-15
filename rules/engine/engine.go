@@ -80,6 +80,7 @@ type argCond struct {
 	when, unless   []*pat
 	whole, leading bool
 	context        []uint8 // output contexts that count (ctxHTML ...); empty: any
+	markup         bool    // context: only input after markup written in the same value (contextTaint)
 	literal        bool
 	key            string // the value under this key of an object argument (keyValue)
 	keys           bool   // an array, object or dict literal argument counts by its keys (keysVal)
@@ -174,7 +175,7 @@ func compileRule(r rules.Rule) (*crule, error) {
 	}
 	for _, a := range r.Args {
 		ac := &argCond{arg: a.Arg, name: a.Name, whole: a.Whole, leading: a.Leading, literal: a.Literal, key: a.Key, keys: a.Keys, minLen: a.MinLen, unlessAt: a.UnlessAt,
-			unlessImports: a.UnlessImports, importsNot: a.UnlessImportsNot}
+			unlessImports: a.UnlessImports, importsNot: a.UnlessImportsNot, markup: a.Markup}
 		switch {
 		case a.UnlessAt != "" && a.UnlessAt != "start" && a.UnlessAt != "top":
 			return nil, fmt.Errorf("args: unless_at %q is not start or top", a.UnlessAt)
@@ -182,6 +183,8 @@ func compileRule(r rules.Rule) (*crule, error) {
 			return nil, fmt.Errorf("args: unless_at needs unless")
 		case len(a.UnlessImportsNot) > 0 && len(a.UnlessImports) == 0:
 			return nil, fmt.Errorf("args: unless_imports_not needs unless_imports")
+		case a.Markup && len(a.Context) == 0:
+			return nil, fmt.Errorf("args: markup needs context")
 		}
 		for _, ct := range a.UnlessContentType {
 			ac.unlessCT = append(ac.unlessCT, strings.ToLower(ct))

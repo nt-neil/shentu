@@ -2226,7 +2226,7 @@ func (a *analysis) sinkWith(st state, t []Token, i int, s *pat, cond *argCond) b
 			}
 		}
 		if cond != nil && len(cond.context) > 0 {
-			return a.contextTaint(st, t[i], arg, cond.context)
+			return a.contextTaint(st, t[i], arg, cond.context, cond.markup)
 		}
 		return hit(a.argVal(st, arg, whole)) && !(cond != nil && cond.leading && a.fixedStart(st, arg))
 	}
@@ -2251,7 +2251,7 @@ func (a *analysis) sinkWith(st state, t []Token, i int, s *pat, cond *argCond) b
 			}
 		}
 	case cond != nil && len(cond.context) > 0:
-		tainted = a.contextTaint(st, t[i], region, cond.context)
+		tainted = a.contextTaint(st, t[i], region, cond.context, cond.markup)
 	default:
 		tainted = hit(a.expr(st, region, whole))
 	}
