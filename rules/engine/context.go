@@ -521,6 +521,9 @@ func (a *analysis) mapSanAt(t []Token, i int) int {
 	}
 	c := closeOf(t, i+1)
 	args := splitTop(inside(t, i+1, c), isComma)
+	if len(args) == 2 && len(args[0]) == 1 && args[0][0].Kind == Func && args[0][0].Fn < len(a.sfuncs) && constReturn(a.sfuncs[args[0][0].Fn]) {
+		return c + 1 // array_map(fn($v) => '%d', $ids): each value the same constant
+	}
 	if len(args) != 2 || len(args[0]) != 1 || args[0][0].Kind != Str || len(args[0][0].Parts) > 0 {
 		return -1
 	}
@@ -529,6 +532,23 @@ func (a *analysis) mapSanAt(t []Token, i int) int {
 		return -1
 	}
 	return c + 1
+}
+
+// constReturn reports whether a function literal returns one string constant
+// and does nothing else: fn($v) => '%d', function ($v) { return '%d'; }.
+func constReturn(f *fn) bool {
+	if f == nil || len(f.body) != 1 {
+		return false
+	}
+	t := f.body[0].toks
+	if len(t) > 0 && t[len(t)-1].op(";") {
+		t = t[:len(t)-1]
+	}
+	if len(t) > 0 && t[0].word("return") {
+		t = t[1:]
+	}
+	t = stripParens(t)
+	return len(t) == 1 && t[0].Kind == Str && len(t[0].Parts) == 0
 }
 
 // extractStmt follows extract(shortcode_atts(array('id' => 0, ...), $atts)) and
