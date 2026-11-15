@@ -1,0 +1,4884 @@
+{
+  "schema": "hostfacts/1",
+  "collected_at": "2026-11-12T05:46:52.335862315Z",
+  "collector": {
+    "name": "linux",
+    "version": "0.1.0"
+  },
+  "platform": {
+    "status": "ok",
+    "value": {
+      "os": "linux",
+      "family": "debian",
+      "distro": "debian",
+      "version": "12",
+      "pretty_name": "Debian GNU/Linux 12 (bookworm)",
+      "kernel": "6.1.0-54-arm64",
+      "arch": "arm64",
+      "in_container": false
+    }
+  },
+  "privilege": {
+    "status": "ok",
+    "value": {
+      "elevated": false
+    }
+  },
+  "resources": {
+    "status": "ok",
+    "value": {
+      "mem_total_bytes": 2074152960,
+      "mem_available_bytes": 1862389760,
+      "load1": 0.04
+    }
+  },
+  "packages": {
+    "status": "ok",
+    "value": {
+      "manager": "dpkg",
+      "ecosystem": "Debian:12",
+      "feed": {
+        "kind": "osv",
+        "ecosystems": [
+          "Debian:12"
+        ],
+        "upgrade": "apt-get update \u0026\u0026 apt-get upgrade",
+        "version_fmt": "evr"
+      },
+      "items": [
+        {
+          "name": "adduser",
+          "version": "3.134",
+          "arch": "all"
+        },
+        {
+          "name": "apparmor",
+          "version": "3.0.8-3",
+          "arch": "arm64"
+        },
+        {
+          "name": "apt",
+          "version": "2.6.2",
+          "arch": "arm64"
+        },
+        {
+          "name": "apt-listchanges",
+          "version": "3.24",
+          "arch": "all"
+        },
+        {
+          "name": "apt-utils",
+          "source": "apt",
+          "version": "2.6.2",
+          "arch": "arm64"
+        },
+        {
+          "name": "base-files",
+          "version": "12.4+deb12u15",
+          "arch": "arm64"
+        },
+        {
+          "name": "base-passwd",
+          "version": "3.6.1",
+          "arch": "arm64"
+        },
+        {
+          "name": "bash",
+          "version": "5.2.15-2+b13",
+          "arch": "arm64"
+        },
+        {
+          "name": "bash-completion",
+          "version": "1:2.11-6",
+          "arch": "all"
+        },
+        {
+          "name": "bind9-host",
+          "source": "bind9",
+          "version": "1:9.18.49-1~deb12u3",
+          "arch": "arm64"
+        },
+        {
+          "name": "bind9-libs",
+          "source": "bind9",
+          "version": "1:9.18.49-1~deb12u3",
+          "arch": "arm64"
+        },
+        {
+          "name": "bsdextrautils",
+          "source": "util-linux",
+          "version": "2.38.1-5+deb12u3",
+          "arch": "arm64"
+        },
+        {
+          "name": "bsdutils",
+          "source": "util-linux",
+          "version": "1:2.38.1-5+deb12u3",
+          "arch": "arm64"
+        },
+        {
+          "name": "ca-certificates",
+          "version": "20250419~deb12u2",
+          "arch": "all"
+        },
+        {
+          "name": "cloud-guest-utils",
+          "source": "cloud-utils",
+          "version": "0.33-1",
+          "arch": "all"
+        },
+        {
+          "name": "cloud-image-utils",
+          "source": "cloud-utils",
+          "version": "0.33-1",
+          "arch": "all"
+        },
+        {
+          "name": "cloud-init",
+          "version": "22.4.2-1+deb12u4",
+          "arch": "all"
+        },
+        {
+          "name": "cloud-initramfs-growroot",
+          "source": "cloud-initramfs-tools",
+          "version": "0.18.debian13+deb12u1",
+          "arch": "all"
+        },
+        {
+          "name": "cloud-utils",
+          "version": "0.33-1",
+          "arch": "all"
+        },
+        {
+          "name": "coreutils",
+          "version": "9.1-1",
+          "arch": "arm64"
+        },
+        {
+          "name": "cpio",
+          "version": "2.13+dfsg-7.1",
+          "arch": "arm64"
+        },
+        {
+          "name": "curl",
+          "version": "7.88.1-10+deb12u15",
+          "arch": "arm64"
+        },
+        {
+          "name": "dash",
+          "version": "0.5.12-2",
+          "arch": "arm64"
+        },
+        {
+          "name": "dbus",
+          "version": "1.14.10-1~deb12u1",
+          "arch": "arm64"
+        },
+        {
+          "name": "dbus-bin",
+          "source": "dbus",
+          "version": "1.14.10-1~deb12u1",
+          "arch": "arm64"
+        },
+        {
+          "name": "dbus-daemon",
+          "source": "dbus",
+          "version": "1.14.10-1~deb12u1",
+          "arch": "arm64"
+        },
+        {
+          "name": "dbus-session-bus-common",
+          "source": "dbus",
+          "version": "1.14.10-1~deb12u1",
+          "arch": "all"
+        },
+        {
+          "name": "dbus-system-bus-common",
+          "source": "dbus",
+          "version": "1.14.10-1~deb12u1",
+          "arch": "all"
+        },
+        {
+          "name": "debconf",
+          "version": "1.5.82",
+          "arch": "all"
+        },
+        {
+          "name": "debian-archive-keyring",
+          "version": "2023.3+deb12u2",
+          "arch": "all"
+        },
+        {
+          "name": "debianutils",
+          "version": "5.7-0.5~deb12u1",
+          "arch": "arm64"
+        },
+        {
+          "name": "diffutils",
+          "version": "1:3.8-4",
+          "arch": "arm64"
+        },
+        {
+          "name": "distro-info-data",
+          "version": "0.58+deb12u7",
+          "arch": "all"
+        },
+        {
+          "name": "dmsetup",
+          "source": "lvm2",
+          "version": "2:1.02.185-2",
+          "arch": "arm64"
+        },
+        {
+          "name": "dpkg",
+          "version": "1.21.23",
+          "arch": "arm64"
+        },
+        {
+          "name": "e2fsprogs",
+          "version": "1.47.0-2+b2",
+          "arch": "arm64"
+        },
+        {
+          "name": "eject",
+          "source": "util-linux",
+          "version": "2.38.1-5+deb12u3",
+          "arch": "arm64"
+        },
+        {
+          "name": "ethtool",
+          "version": "1:6.1-1",
+          "arch": "arm64"
+        },
+        {
+          "name": "fdisk",
+          "source": "util-linux",
+          "version": "2.38.1-5+deb12u3",
+          "arch": "arm64"
+        },
+        {
+          "name": "file",
+          "version": "1:5.44-3",
+          "arch": "arm64"
+        },
+        {
+          "name": "findutils",
+          "version": "4.9.0-4",
+          "arch": "arm64"
+        },
+        {
+          "name": "gcc-12-base",
+          "source": "gcc-12",
+          "version": "12.2.0-14+deb12u1",
+          "arch": "arm64"
+        },
+        {
+          "name": "gdisk",
+          "version": "1.0.9-2.1",
+          "arch": "arm64"
+        },
+        {
+          "name": "genisoimage",
+          "source": "cdrkit",
+          "version": "9:1.1.11-3.4",
+          "arch": "arm64"
+        },
+        {
+          "name": "gettext-base",
+          "source": "gettext",
+          "version": "0.21-12",
+          "arch": "arm64"
+        },
+        {
+          "name": "gpgv",
+          "source": "gnupg2",
+          "version": "2.2.40-1.1+deb12u2",
+          "arch": "arm64"
+        },
+        {
+          "name": "grep",
+          "version": "3.8-5",
+          "arch": "arm64"
+        },
+        {
+          "name": "groff-base",
+          "source": "groff",
+          "version": "1.22.4-10",
+          "arch": "arm64"
+        },
+        {
+          "name": "grub-common",
+          "source": "grub2",
+          "version": "2.06-13+deb12u2",
+          "arch": "arm64"
+        },
+        {
+          "name": "grub-efi-arm64",
+          "source": "grub2",
+          "version": "2.06-13+deb12u2",
+          "arch": "arm64"
+        },
+        {
+          "name": "grub-efi-arm64-bin",
+          "source": "grub2",
+          "version": "2.06-13+deb12u2",
+          "arch": "arm64"
+        },
+        {
+          "name": "grub-efi-arm64-signed",
+          "version": "1+2.06+13+deb12u2",
+          "arch": "arm64"
+        },
+        {
+          "name": "grub2-common",
+          "source": "grub2",
+          "version": "2.06-13+deb12u2",
+          "arch": "arm64"
+        },
+        {
+          "name": "gzip",
+          "version": "1.12-1",
+          "arch": "arm64"
+        },
+        {
+          "name": "hostname",
+          "version": "3.23+nmu1",
+          "arch": "arm64"
+        },
+        {
+          "name": "init",
+          "source": "init-system-helpers",
+          "version": "1.65.2+deb12u1",
+          "arch": "arm64"
+        },
+        {
+          "name": "init-system-helpers",
+          "version": "1.65.2+deb12u1",
+          "arch": "all"
+        },
+        {
+          "name": "initramfs-tools",
+          "version": "0.142+deb12u3",
+          "arch": "all"
+        },
+        {
+          "name": "initramfs-tools-core",
+          "source": "initramfs-tools",
+          "version": "0.142+deb12u3",
+          "arch": "all"
+        },
+        {
+          "name": "iproute2",
+          "version": "6.1.0-3",
+          "arch": "arm64"
+        },
+        {
+          "name": "iptables",
+          "version": "1.8.9-2",
+          "arch": "arm64"
+        },
+        {
+          "name": "iputils-ping",
+          "source": "iputils",
+          "version": "3:20221126-1+deb12u1",
+          "arch": "arm64"
+        },
+        {
+          "name": "isc-dhcp-client",
+          "source": "isc-dhcp",
+          "version": "4.4.3-P1-2",
+          "arch": "arm64"
+        },
+        {
+          "name": "klibc-utils",
+          "source": "klibc",
+          "version": "2.0.12-1",
+          "arch": "arm64"
+        },
+        {
+          "name": "kmod",
+          "version": "30+20221128-1",
+          "arch": "arm64"
+        },
+        {
+          "name": "less",
+          "version": "590-2.1~deb12u2",
+          "arch": "arm64"
+        },
+        {
+          "name": "libacl1",
+          "source": "acl",
+          "version": "2.3.1-3",
+          "arch": "arm64"
+        },
+        {
+          "name": "libaio1",
+          "source": "libaio",
+          "version": "0.3.113-4",
+          "arch": "arm64"
+        },
+        {
+          "name": "libapparmor1",
+          "source": "apparmor",
+          "version": "3.0.8-3",
+          "arch": "arm64"
+        },
+        {
+          "name": "libapt-pkg6.0",
+          "source": "apt",
+          "version": "2.6.2",
+          "arch": "arm64"
+        },
+        {
+          "name": "libargon2-1",
+          "source": "argon2",
+          "version": "0~20171227-0.3+deb12u1",
+          "arch": "arm64"
+        },
+        {
+          "name": "libatomic1",
+          "source": "gcc-12",
+          "version": "12.2.0-14+deb12u1",
+          "arch": "arm64"
+        },
+        {
+          "name": "libattr1",
+          "source": "attr",
+          "version": "1:2.5.1-4",
+          "arch": "arm64"
+        },
+        {
+          "name": "libaudit-common",
+          "source": "audit",
+          "version": "1:3.0.9-1",
+          "arch": "all"
+        },
+        {
+          "name": "libaudit1",
+          "source": "audit",
+          "version": "1:3.0.9-1",
+          "arch": "arm64"
+        },
+        {
+          "name": "libblkid1",
+          "source": "util-linux",
+          "version": "2.38.1-5+deb12u3",
+          "arch": "arm64"
+        },
+        {
+          "name": "libbpf1",
+          "source": "libbpf",
+          "version": "1:1.1.2-0+deb12u1",
+          "arch": "arm64"
+        },
+        {
+          "name": "libbrotli1",
+          "source": "brotli",
+          "version": "1.0.9-2+deb12u1",
+          "arch": "arm64"
+        },
+        {
+          "name": "libbsd0",
+          "source": "libbsd",
+          "version": "0.11.7-2",
+          "arch": "arm64"
+        },
+        {
+          "name": "libbz2-1.0",
+          "source": "bzip2",
+          "version": "1.0.8-5+b1",
+          "arch": "arm64"
+        },
+        {
+          "name": "libc-bin",
+          "source": "glibc",
+          "version": "2.36-9+deb12u14",
+          "arch": "arm64"
+        },
+        {
+          "name": "libc-l10n",
+          "source": "glibc",
+          "version": "2.36-9+deb12u14",
+          "arch": "all"
+        },
+        {
+          "name": "libc6",
+          "source": "glibc",
+          "version": "2.36-9+deb12u14",
+          "arch": "arm64"
+        },
+        {
+          "name": "libcap-ng0",
+          "source": "libcap-ng",
+          "version": "0.8.3-1+b3",
+          "arch": "arm64"
+        },
+        {
+          "name": "libcap2",
+          "version": "1:2.66-4+deb12u3+b1",
+          "arch": "arm64"
+        },
+        {
+          "name": "libcap2-bin",
+          "source": "libcap2",
+          "version": "1:2.66-4+deb12u3+b1",
+          "arch": "arm64"
+        },
+        {
+          "name": "libcbor0.8",
+          "source": "libcbor",
+          "version": "0.8.0-2+b1",
+          "arch": "arm64"
+        },
+        {
+          "name": "libcom-err2",
+          "source": "e2fsprogs",
+          "version": "1.47.0-2+b2",
+          "arch": "arm64"
+        },
+        {
+          "name": "libcrypt1",
+          "source": "libxcrypt",
+          "version": "1:4.4.33-2",
+          "arch": "arm64"
+        },
+        {
+          "name": "libcryptsetup12",
+          "source": "cryptsetup",
+          "version": "2:2.6.1-4~deb12u2",
+          "arch": "arm64"
+        },
+        {
+          "name": "libcurl3-gnutls",
+          "source": "curl",
+          "version": "7.88.1-10+deb12u15",
+          "arch": "arm64"
+        },
+        {
+          "name": "libcurl4",
+          "source": "curl",
+          "version": "7.88.1-10+deb12u15",
+          "arch": "arm64"
+        },
+        {
+          "name": "libdb5.3",
+          "source": "db5.3",
+          "version": "5.3.28+dfsg2-1",
+          "arch": "arm64"
+        },
+        {
+          "name": "libdbus-1-3",
+          "source": "dbus",
+          "version": "1.14.10-1~deb12u1",
+          "arch": "arm64"
+        },
+        {
+          "name": "libdebconfclient0",
+          "source": "cdebconf",
+          "version": "0.270",
+          "arch": "arm64"
+        },
+        {
+          "name": "libdevmapper1.02.1",
+          "source": "lvm2",
+          "version": "2:1.02.185-2",
+          "arch": "arm64"
+        },
+        {
+          "name": "libduktape207",
+          "source": "duktape",
+          "version": "2.7.0-2",
+          "arch": "arm64"
+        },
+        {
+          "name": "libedit2",
+          "source": "libedit",
+          "version": "3.1-20221030-2",
+          "arch": "arm64"
+        },
+        {
+          "name": "libefiboot1",
+          "source": "efivar",
+          "version": "37-6",
+          "arch": "arm64"
+        },
+        {
+          "name": "libefivar1",
+          "source": "efivar",
+          "version": "37-6",
+          "arch": "arm64"
+        },
+        {
+          "name": "libelf1",
+          "source": "elfutils",
+          "version": "0.188-2.1",
+          "arch": "arm64"
+        },
+        {
+          "name": "libexpat1",
+          "source": "expat",
+          "version": "2.5.0-1+deb12u5",
+          "arch": "arm64"
+        },
+        {
+          "name": "libext2fs2",
+          "source": "e2fsprogs",
+          "version": "1.47.0-2+b2",
+          "arch": "arm64"
+        },
+        {
+          "name": "libfdisk1",
+          "source": "util-linux",
+          "version": "2.38.1-5+deb12u3",
+          "arch": "arm64"
+        },
+        {
+          "name": "libffi8",
+          "source": "libffi",
+          "version": "3.4.4-1",
+          "arch": "arm64"
+        },
+        {
+          "name": "libfido2-1",
+          "source": "libfido2",
+          "version": "1.12.0-2+b1",
+          "arch": "arm64"
+        },
+        {
+          "name": "libfreetype6",
+          "source": "freetype",
+          "version": "2.12.1+dfsg-5+deb12u4",
+          "arch": "arm64"
+        },
+        {
+          "name": "libfstrm0",
+          "source": "fstrm",
+          "version": "0.6.1-1",
+          "arch": "arm64"
+        },
+        {
+          "name": "libfuse2",
+          "source": "fuse",
+          "version": "2.9.9-6+b1",
+          "arch": "arm64"
+        },
+        {
+          "name": "libfuse3-3",
+          "source": "fuse3",
+          "version": "3.14.0-4",
+          "arch": "arm64"
+        },
+        {
+          "name": "libgcc-s1",
+          "source": "gcc-12",
+          "version": "12.2.0-14+deb12u1",
+          "arch": "arm64"
+        },
+        {
+          "name": "libgcrypt20",
+          "version": "1.10.1-3+deb12u1",
+          "arch": "arm64"
+        },
+        {
+          "name": "libgdbm6",
+          "source": "gdbm",
+          "version": "1.23-3",
+          "arch": "arm64"
+        },
+        {
+          "name": "libglib2.0-0",
+          "source": "glib2.0",
+          "version": "2.74.6-2+deb12u9",
+          "arch": "arm64"
+        },
+        {
+          "name": "libgmp10",
+          "source": "gmp",
+          "version": "2:6.2.1+dfsg1-1.1",
+          "arch": "arm64"
+        },
+        {
+          "name": "libgnutls30",
+          "source": "gnutls28",
+          "version": "3.7.9-2+deb12u7",
+          "arch": "arm64"
+        },
+        {
+          "name": "libgpg-error0",
+          "source": "libgpg-error",
+          "version": "1.46-1",
+          "arch": "arm64"
+        },
+        {
+          "name": "libgpm2",
+          "source": "gpm",
+          "version": "1.20.7-10+b1",
+          "arch": "arm64"
+        },
+        {
+          "name": "libgssapi-krb5-2",
+          "source": "krb5",
+          "version": "1.20.1-2+deb12u5",
+          "arch": "arm64"
+        },
+        {
+          "name": "libhogweed6",
+          "source": "nettle",
+          "version": "3.8.1-2",
+          "arch": "arm64"
+        },
+        {
+          "name": "libicu72",
+          "source": "icu",
+          "version": "72.1-3+deb12u1",
+          "arch": "arm64"
+        },
+        {
+          "name": "libidn2-0",
+          "source": "libidn2",
+          "version": "2.3.3-1+b1",
+          "arch": "arm64"
+        },
+        {
+          "name": "libip4tc2",
+          "source": "iptables",
+          "version": "1.8.9-2",
+          "arch": "arm64"
+        },
+        {
+          "name": "libip6tc2",
+          "source": "iptables",
+          "version": "1.8.9-2",
+          "arch": "arm64"
+        },
+        {
+          "name": "libjansson4",
+          "source": "jansson",
+          "version": "2.14-2",
+          "arch": "arm64"
+        },
+        {
+          "name": "libjemalloc2",
+          "source": "jemalloc",
+          "version": "5.3.0-1",
+          "arch": "arm64"
+        },
+        {
+          "name": "libjson-c5",
+          "source": "json-c",
+          "version": "0.16-2",
+          "arch": "arm64"
+        },
+        {
+          "name": "libk5crypto3",
+          "source": "krb5",
+          "version": "1.20.1-2+deb12u5",
+          "arch": "arm64"
+        },
+        {
+          "name": "libkeyutils1",
+          "source": "keyutils",
+          "version": "1.6.3-2",
+          "arch": "arm64"
+        },
+        {
+          "name": "libklibc",
+          "source": "klibc",
+          "version": "2.0.12-1",
+          "arch": "arm64"
+        },
+        {
+          "name": "libkmod2",
+          "source": "kmod",
+          "version": "30+20221128-1",
+          "arch": "arm64"
+        },
+        {
+          "name": "libkrb5-3",
+          "source": "krb5",
+          "version": "1.20.1-2+deb12u5",
+          "arch": "arm64"
+        },
+        {
+          "name": "libkrb5support0",
+          "source": "krb5",
+          "version": "1.20.1-2+deb12u5",
+          "arch": "arm64"
+        },
+        {
+          "name": "libldap-2.5-0",
+          "source": "openldap",
+          "version": "2.5.13+dfsg-5",
+          "arch": "arm64"
+        },
+        {
+          "name": "liblmdb0",
+          "source": "lmdb",
+          "version": "0.9.24-1",
+          "arch": "arm64"
+        },
+        {
+          "name": "liblz4-1",
+          "source": "lz4",
+          "version": "1.9.4-1",
+          "arch": "arm64"
+        },
+        {
+          "name": "liblzf1",
+          "source": "liblzf",
+          "version": "3.6-3",
+          "arch": "arm64"
+        },
+        {
+          "name": "liblzma5",
+          "source": "xz-utils",
+          "version": "5.4.1-1+deb12u2",
+          "arch": "arm64"
+        },
+        {
+          "name": "libmagic-mgc",
+          "source": "file",
+          "version": "1:5.44-3",
+          "arch": "arm64"
+        },
+        {
+          "name": "libmagic1",
+          "source": "file",
+          "version": "1:5.44-3",
+          "arch": "arm64"
+        },
+        {
+          "name": "libmaxminddb0",
+          "source": "libmaxminddb",
+          "version": "1.7.1-1",
+          "arch": "arm64"
+        },
+        {
+          "name": "libmd0",
+          "source": "libmd",
+          "version": "1.0.4-2",
+          "arch": "arm64"
+        },
+        {
+          "name": "libmnl0",
+          "source": "libmnl",
+          "version": "1.0.4-3",
+          "arch": "arm64"
+        },
+        {
+          "name": "libmount1",
+          "source": "util-linux",
+          "version": "2.38.1-5+deb12u3",
+          "arch": "arm64"
+        },
+        {
+          "name": "libncursesw6",
+          "source": "ncurses",
+          "version": "6.4-4",
+          "arch": "arm64"
+        },
+        {
+          "name": "libnetfilter-conntrack3",
+          "source": "libnetfilter-conntrack",
+          "version": "1.0.9-3",
+          "arch": "arm64"
+        },
+        {
+          "name": "libnetplan0",
+          "source": "netplan.io",
+          "version": "0.106-2+deb12u1",
+          "arch": "arm64"
+        },
+        {
+          "name": "libnettle8",
+          "source": "nettle",
+          "version": "3.8.1-2",
+          "arch": "arm64"
+        },
+        {
+          "name": "libnewt0.52",
+          "source": "newt",
+          "version": "0.52.23-1+b1",
+          "arch": "arm64"
+        },
+        {
+          "name": "libnfnetlink0",
+          "source": "libnfnetlink",
+          "version": "1.0.2-2",
+          "arch": "arm64"
+        },
+        {
+          "name": "libnftables1",
+          "source": "nftables",
+          "version": "1.0.6-2+deb12u2",
+          "arch": "arm64"
+        },
+        {
+          "name": "libnftnl11",
+          "source": "libnftnl",
+          "version": "1.2.4-2",
+          "arch": "arm64"
+        },
+        {
+          "name": "libnghttp2-14",
+          "source": "nghttp2",
+          "version": "1.52.0-1+deb12u3",
+          "arch": "arm64"
+        },
+        {
+          "name": "libnsl2",
+          "source": "libnsl",
+          "version": "1.3.0-2",
+          "arch": "arm64"
+        },
+        {
+          "name": "libnss-myhostname",
+          "source": "systemd",
+          "version": "252.39-1~deb12u2",
+          "arch": "arm64"
+        },
+        {
+          "name": "libnuma1",
+          "source": "numactl",
+          "version": "2.0.16-1",
+          "arch": "arm64"
+        },
+        {
+          "name": "libp11-kit0",
+          "source": "p11-kit",
+          "version": "0.24.1-2",
+          "arch": "arm64"
+        },
+        {
+          "name": "libpam-modules",
+          "source": "pam",
+          "version": "1.5.2-6+deb12u2",
+          "arch": "arm64"
+        },
+        {
+          "name": "libpam-modules-bin",
+          "source": "pam",
+          "version": "1.5.2-6+deb12u2",
+          "arch": "arm64"
+        },
+        {
+          "name": "libpam-runtime",
+          "source": "pam",
+          "version": "1.5.2-6+deb12u2",
+          "arch": "all"
+        },
+        {
+          "name": "libpam-systemd",
+          "source": "systemd",
+          "version": "252.39-1~deb12u2",
+          "arch": "arm64"
+        },
+        {
+          "name": "libpam0g",
+          "source": "pam",
+          "version": "1.5.2-6+deb12u2",
+          "arch": "arm64"
+        },
+        {
+          "name": "libpcap0.8",
+          "source": "libpcap",
+          "version": "1.10.3-1",
+          "arch": "arm64"
+        },
+        {
+          "name": "libpci3",
+          "source": "pciutils",
+          "version": "1:3.9.0-4",
+          "arch": "arm64"
+        },
+        {
+          "name": "libpcre2-8-0",
+          "source": "pcre2",
+          "version": "10.42-1+deb12u2",
+          "arch": "arm64"
+        },
+        {
+          "name": "libpipeline1",
+          "source": "libpipeline",
+          "version": "1.5.7-1",
+          "arch": "arm64"
+        },
+        {
+          "name": "libpng16-16",
+          "source": "libpng1.6",
+          "version": "1.6.39-2+deb12u6",
+          "arch": "arm64"
+        },
+        {
+          "name": "libpolkit-agent-1-0",
+          "source": "policykit-1",
+          "version": "122-3",
+          "arch": "arm64"
+        },
+        {
+          "name": "libpolkit-gobject-1-0",
+          "source": "policykit-1",
+          "version": "122-3",
+          "arch": "arm64"
+        },
+        {
+          "name": "libpopt0",
+          "source": "popt",
+          "version": "1.19+dfsg-1",
+          "arch": "arm64"
+        },
+        {
+          "name": "libproc2-0",
+          "source": "procps",
+          "version": "2:4.0.2-3",
+          "arch": "arm64"
+        },
+        {
+          "name": "libprotobuf-c1",
+          "source": "protobuf-c",
+          "version": "1.4.1-1+b1",
+          "arch": "arm64"
+        },
+        {
+          "name": "libpsl5",
+          "source": "libpsl",
+          "version": "0.21.2-1",
+          "arch": "arm64"
+        },
+        {
+          "name": "libpython3-stdlib",
+          "source": "python3-defaults",
+          "version": "3.11.2-1+b1",
+          "arch": "arm64"
+        },
+        {
+          "name": "libpython3.11-minimal",
+          "source": "python3.11",
+          "version": "3.11.2-6+deb12u9",
+          "arch": "arm64"
+        },
+        {
+          "name": "libpython3.11-stdlib",
+          "source": "python3.11",
+          "version": "3.11.2-6+deb12u9",
+          "arch": "arm64"
+        },
+        {
+          "name": "libreadline8",
+          "source": "readline",
+          "version": "8.2-1.3",
+          "arch": "arm64"
+        },
+        {
+          "name": "librtmp1",
+          "source": "rtmpdump",
+          "version": "2.4+20151223.gitfa8646d.1-2+b2",
+          "arch": "arm64"
+        },
+        {
+          "name": "libsasl2-2",
+          "source": "cyrus-sasl2",
+          "version": "2.1.28+dfsg-10+deb12u1",
+          "arch": "arm64"
+        },
+        {
+          "name": "libsasl2-modules-db",
+          "source": "cyrus-sasl2",
+          "version": "2.1.28+dfsg-10+deb12u1",
+          "arch": "arm64"
+        },
+        {
+          "name": "libseccomp2",
+          "source": "libseccomp",
+          "version": "2.5.4-1+deb12u1",
+          "arch": "arm64"
+        },
+        {
+          "name": "libselinux1",
+          "source": "libselinux",
+          "version": "3.4-1+b6",
+          "arch": "arm64"
+        },
+        {
+          "name": "libsemanage-common",
+          "source": "libsemanage",
+          "version": "3.4-1",
+          "arch": "all"
+        },
+        {
+          "name": "libsemanage2",
+          "source": "libsemanage",
+          "version": "3.4-1+b5",
+          "arch": "arm64"
+        },
+        {
+          "name": "libsepol2",
+          "source": "libsepol",
+          "version": "3.4-2.1",
+          "arch": "arm64"
+        },
+        {
+          "name": "libslang2",
+          "source": "slang2",
+          "version": "2.3.3-3",
+          "arch": "arm64"
+        },
+        {
+          "name": "libsmartcols1",
+          "source": "util-linux",
+          "version": "2.38.1-5+deb12u3",
+          "arch": "arm64"
+        },
+        {
+          "name": "libsodium23",
+          "source": "libsodium",
+          "version": "1.0.18-1+deb12u1",
+          "arch": "arm64"
+        },
+        {
+          "name": "libsqlite3-0",
+          "source": "sqlite3",
+          "version": "3.40.1-2+deb12u2",
+          "arch": "arm64"
+        },
+        {
+          "name": "libss2",
+          "source": "e2fsprogs",
+          "version": "1.47.0-2+b2",
+          "arch": "arm64"
+        },
+        {
+          "name": "libssh2-1",
+          "source": "libssh2",
+          "version": "1.10.0-3+deb12u1",
+          "arch": "arm64"
+        },
+        {
+          "name": "libssl3",
+          "source": "openssl",
+          "version": "3.0.22-1~deb12u2",
+          "arch": "arm64"
+        },
+        {
+          "name": "libstdc++6",
+          "source": "gcc-12",
+          "version": "12.2.0-14+deb12u1",
+          "arch": "arm64"
+        },
+        {
+          "name": "libsystemd-shared",
+          "source": "systemd",
+          "version": "252.39-1~deb12u2",
+          "arch": "arm64"
+        },
+        {
+          "name": "libsystemd0",
+          "source": "systemd",
+          "version": "252.39-1~deb12u2",
+          "arch": "arm64"
+        },
+        {
+          "name": "libtasn1-6",
+          "version": "4.19.0-2+deb12u1",
+          "arch": "arm64"
+        },
+        {
+          "name": "libtinfo6",
+          "source": "ncurses",
+          "version": "6.4-4",
+          "arch": "arm64"
+        },
+        {
+          "name": "libtirpc-common",
+          "source": "libtirpc",
+          "version": "1.3.3+ds-1",
+          "arch": "all"
+        },
+        {
+          "name": "libtirpc3",
+          "source": "libtirpc",
+          "version": "1.3.3+ds-1",
+          "arch": "arm64"
+        },
+        {
+          "name": "libuchardet0",
+          "source": "uchardet",
+          "version": "0.0.7-1",
+          "arch": "arm64"
+        },
+        {
+          "name": "libudev1",
+          "source": "systemd",
+          "version": "252.39-1~deb12u2",
+          "arch": "arm64"
+        },
+        {
+          "name": "libunistring2",
+          "source": "libunistring",
+          "version": "1.0-2",
+          "arch": "arm64"
+        },
+        {
+          "name": "liburing2",
+          "source": "liburing",
+          "version": "2.3-3",
+          "arch": "arm64"
+        },
+        {
+          "name": "libutempter0",
+          "source": "libutempter",
+          "version": "1.2.1-3",
+          "arch": "arm64"
+        },
+        {
+          "name": "libuuid1",
+          "source": "util-linux",
+          "version": "2.38.1-5+deb12u3",
+          "arch": "arm64"
+        },
+        {
+          "name": "libuv1",
+          "version": "1.44.2-1+deb12u1",
+          "arch": "arm64"
+        },
+        {
+          "name": "libwrap0",
+          "source": "tcp-wrappers",
+          "version": "7.6.q-32",
+          "arch": "arm64"
+        },
+        {
+          "name": "libxml2",
+          "version": "2.9.14+dfsg-1.3~deb12u6",
+          "arch": "arm64"
+        },
+        {
+          "name": "libxtables12",
+          "source": "iptables",
+          "version": "1.8.9-2",
+          "arch": "arm64"
+        },
+        {
+          "name": "libxxhash0",
+          "source": "xxhash",
+          "version": "0.8.1-1",
+          "arch": "arm64"
+        },
+        {
+          "name": "libyaml-0-2",
+          "source": "libyaml",
+          "version": "0.2.5-1",
+          "arch": "arm64"
+        },
+        {
+          "name": "libzstd1",
+          "source": "libzstd",
+          "version": "1.5.4+dfsg2-5",
+          "arch": "arm64"
+        },
+        {
+          "name": "linux-base",
+          "version": "4.12.1~deb12u1",
+          "arch": "all"
+        },
+        {
+          "name": "linux-image-6.1.0-54-arm64",
+          "source": "linux-signed-arm64",
+          "version": "6.1.190-1",
+          "arch": "arm64"
+        },
+        {
+          "name": "linux-image-arm64",
+          "source": "linux-signed-arm64",
+          "version": "6.1.190-1",
+          "arch": "arm64"
+        },
+        {
+          "name": "locales",
+          "source": "glibc",
+          "version": "2.36-9+deb12u14",
+          "arch": "all"
+        },
+        {
+          "name": "login",
+          "source": "shadow",
+          "version": "1:4.13+dfsg1-1+deb12u2",
+          "arch": "arm64"
+        },
+        {
+          "name": "logsave",
+          "source": "e2fsprogs",
+          "version": "1.47.0-2+b2",
+          "arch": "arm64"
+        },
+        {
+          "name": "lsb-release",
+          "source": "lsb-release-minimal",
+          "version": "12.0-1",
+          "arch": "all"
+        },
+        {
+          "name": "man-db",
+          "version": "2.11.2-2",
+          "arch": "arm64"
+        },
+        {
+          "name": "manpages",
+          "version": "6.03-2",
+          "arch": "all"
+        },
+        {
+          "name": "mawk",
+          "version": "1.3.4.20200120-3.1",
+          "arch": "arm64"
+        },
+        {
+          "name": "media-types",
+          "version": "10.0.0",
+          "arch": "all"
+        },
+        {
+          "name": "mokutil",
+          "version": "0.6.0-2",
+          "arch": "arm64"
+        },
+        {
+          "name": "mount",
+          "source": "util-linux",
+          "version": "2.38.1-5+deb12u3",
+          "arch": "arm64"
+        },
+        {
+          "name": "nano",
+          "version": "7.2-1+deb12u1",
+          "arch": "arm64"
+        },
+        {
+          "name": "ncurses-base",
+          "source": "ncurses",
+          "version": "6.4-4",
+          "arch": "all"
+        },
+        {
+          "name": "ncurses-bin",
+          "source": "ncurses",
+          "version": "6.4-4",
+          "arch": "arm64"
+        },
+        {
+          "name": "netbase",
+          "version": "6.4",
+          "arch": "all"
+        },
+        {
+          "name": "netplan.io",
+          "version": "0.106-2+deb12u1",
+          "arch": "arm64"
+        },
+        {
+          "name": "nftables",
+          "version": "1.0.6-2+deb12u2",
+          "arch": "arm64"
+        },
+        {
+          "name": "openssh-client",
+          "source": "openssh",
+          "version": "1:9.2p1-2+deb12u10",
+          "arch": "arm64"
+        },
+        {
+          "name": "openssh-server",
+          "source": "openssh",
+          "version": "1:9.2p1-2+deb12u10",
+          "arch": "arm64"
+        },
+        {
+          "name": "openssh-sftp-server",
+          "source": "openssh",
+          "version": "1:9.2p1-2+deb12u10",
+          "arch": "arm64"
+        },
+        {
+          "name": "openssl",
+          "version": "3.0.22-1~deb12u2",
+          "arch": "arm64"
+        },
+        {
+          "name": "passwd",
+          "source": "shadow",
+          "version": "1:4.13+dfsg1-1+deb12u2",
+          "arch": "arm64"
+        },
+        {
+          "name": "pci.ids",
+          "version": "0.0~2023.04.11-1",
+          "arch": "all"
+        },
+        {
+          "name": "pciutils",
+          "version": "1:3.9.0-4",
+          "arch": "arm64"
+        },
+        {
+          "name": "perl-base",
+          "source": "perl",
+          "version": "5.36.0-7+deb12u4",
+          "arch": "arm64"
+        },
+        {
+          "name": "polkitd",
+          "source": "policykit-1",
+          "version": "122-3",
+          "arch": "arm64"
+        },
+        {
+          "name": "procps",
+          "version": "2:4.0.2-3",
+          "arch": "arm64"
+        },
+        {
+          "name": "psmisc",
+          "version": "23.6-1",
+          "arch": "arm64"
+        },
+        {
+          "name": "python-apt-common",
+          "source": "python-apt",
+          "version": "2.6.0",
+          "arch": "all"
+        },
+        {
+          "name": "python3",
+          "source": "python3-defaults",
+          "version": "3.11.2-1+b1",
+          "arch": "arm64"
+        },
+        {
+          "name": "python3-apt",
+          "source": "python-apt",
+          "version": "2.6.0",
+          "arch": "arm64"
+        },
+        {
+          "name": "python3-attr",
+          "source": "python-attrs",
+          "version": "22.2.0-1",
+          "arch": "all"
+        },
+        {
+          "name": "python3-blinker",
+          "source": "blinker",
+          "version": "1.5-1",
+          "arch": "all"
+        },
+        {
+          "name": "python3-certifi",
+          "source": "python-certifi",
+          "version": "2022.9.24-1",
+          "arch": "all"
+        },
+        {
+          "name": "python3-cffi-backend",
+          "source": "python-cffi",
+          "version": "1.15.1-5+b1",
+          "arch": "arm64"
+        },
+        {
+          "name": "python3-chardet",
+          "source": "chardet",
+          "version": "5.1.0+dfsg-2",
+          "arch": "all"
+        },
+        {
+          "name": "python3-charset-normalizer",
+          "source": "python-charset-normalizer",
+          "version": "3.0.1-2",
+          "arch": "all"
+        },
+        {
+          "name": "python3-configobj",
+          "source": "configobj",
+          "version": "5.0.8-1",
+          "arch": "all"
+        },
+        {
+          "name": "python3-cryptography",
+          "source": "python-cryptography",
+          "version": "38.0.4-3+deb12u1",
+          "arch": "arm64"
+        },
+        {
+          "name": "python3-dbus",
+          "source": "dbus-python",
+          "version": "1.3.2-4+b1",
+          "arch": "arm64"
+        },
+        {
+          "name": "python3-debconf",
+          "source": "debconf",
+          "version": "1.5.82",
+          "arch": "all"
+        },
+        {
+          "name": "python3-debian",
+          "source": "python-debian",
+          "version": "0.1.49",
+          "arch": "all"
+        },
+        {
+          "name": "python3-debianbts",
+          "source": "python-debianbts",
+          "version": "4.0.1",
+          "arch": "all"
+        },
+        {
+          "name": "python3-distro",
+          "source": "python-distro",
+          "version": "1.8.0-1",
+          "arch": "all"
+        },
+        {
+          "name": "python3-distro-info",
+          "source": "distro-info",
+          "version": "1.5+deb12u1",
+          "arch": "all"
+        },
+        {
+          "name": "python3-httplib2",
+          "source": "python-httplib2",
+          "version": "0.20.4-3+deb12u1",
+          "arch": "all"
+        },
+        {
+          "name": "python3-idna",
+          "source": "python-idna",
+          "version": "3.3-1+deb12u1",
+          "arch": "all"
+        },
+        {
+          "name": "python3-jinja2",
+          "source": "jinja2",
+          "version": "3.1.2-1+deb12u3",
+          "arch": "all"
+        },
+        {
+          "name": "python3-json-pointer",
+          "source": "python-json-pointer",
+          "version": "2.3-2",
+          "arch": "all"
+        },
+        {
+          "name": "python3-jsonpatch",
+          "source": "python-json-patch",
+          "version": "1.32-2",
+          "arch": "all"
+        },
+        {
+          "name": "python3-jsonschema",
+          "source": "python-jsonschema",
+          "version": "4.10.3-1",
+          "arch": "all"
+        },
+        {
+          "name": "python3-jwt",
+          "source": "pyjwt",
+          "version": "2.6.0-1+deb12u1",
+          "arch": "all"
+        },
+        {
+          "name": "python3-markdown-it",
+          "source": "markdown-it-py",
+          "version": "2.1.0-5",
+          "arch": "all"
+        },
+        {
+          "name": "python3-markupsafe",
+          "source": "markupsafe",
+          "version": "2.1.2-1+b1",
+          "arch": "arm64"
+        },
+        {
+          "name": "python3-mdurl",
+          "source": "mdurl",
+          "version": "0.1.2-1",
+          "arch": "all"
+        },
+        {
+          "name": "python3-minimal",
+          "source": "python3-defaults",
+          "version": "3.11.2-1+b1",
+          "arch": "arm64"
+        },
+        {
+          "name": "python3-netifaces",
+          "source": "netifaces",
+          "version": "0.11.0-2+b1",
+          "arch": "arm64"
+        },
+        {
+          "name": "python3-oauthlib",
+          "source": "python-oauthlib",
+          "version": "3.2.2-1",
+          "arch": "all"
+        },
+        {
+          "name": "python3-pkg-resources",
+          "source": "setuptools",
+          "version": "66.1.1-1+deb12u2",
+          "arch": "all"
+        },
+        {
+          "name": "python3-pycurl",
+          "source": "pycurl",
+          "version": "7.45.2-3",
+          "arch": "arm64"
+        },
+        {
+          "name": "python3-pygments",
+          "source": "pygments",
+          "version": "2.14.0+dfsg-1",
+          "arch": "all"
+        },
+        {
+          "name": "python3-pyparsing",
+          "source": "pyparsing",
+          "version": "3.0.9-1",
+          "arch": "all"
+        },
+        {
+          "name": "python3-pyrsistent",
+          "source": "pyrsistent",
+          "version": "0.18.1-1+b3",
+          "arch": "arm64"
+        },
+        {
+          "name": "python3-pysimplesoap",
+          "source": "pysimplesoap",
+          "version": "1.16.2-5",
+          "arch": "all"
+        },
+        {
+          "name": "python3-reportbug",
+          "source": "reportbug",
+          "version": "12.0.0",
+          "arch": "all"
+        },
+        {
+          "name": "python3-requests",
+          "source": "requests",
+          "version": "2.28.1+dfsg-1",
+          "arch": "all"
+        },
+        {
+          "name": "python3-rich",
+          "source": "rich",
+          "version": "13.3.1-1",
+          "arch": "all"
+        },
+        {
+          "name": "python3-serial",
+          "source": "pyserial",
+          "version": "3.5-1.1",
+          "arch": "all"
+        },
+        {
+          "name": "python3-six",
+          "source": "six",
+          "version": "1.16.0-4",
+          "arch": "all"
+        },
+        {
+          "name": "python3-urllib3",
+          "source": "python-urllib3",
+          "version": "1.26.12-1+deb12u4",
+          "arch": "all"
+        },
+        {
+          "name": "python3-yaml",
+          "source": "pyyaml",
+          "version": "6.0-3+b2",
+          "arch": "arm64"
+        },
+        {
+          "name": "python3.11",
+          "version": "3.11.2-6+deb12u9",
+          "arch": "arm64"
+        },
+        {
+          "name": "python3.11-minimal",
+          "source": "python3.11",
+          "version": "3.11.2-6+deb12u9",
+          "arch": "arm64"
+        },
+        {
+          "name": "qemu-utils",
+          "source": "qemu",
+          "version": "1:7.2+dfsg-7+deb12u18+b3",
+          "arch": "arm64"
+        },
+        {
+          "name": "readline-common",
+          "source": "readline",
+          "version": "8.2-1.3",
+          "arch": "all"
+        },
+        {
+          "name": "redis-server",
+          "source": "redis",
+          "version": "5:7.0.15-1~deb12u10",
+          "arch": "arm64"
+        },
+        {
+          "name": "redis-tools",
+          "source": "redis",
+          "version": "5:7.0.15-1~deb12u10",
+          "arch": "arm64"
+        },
+        {
+          "name": "reportbug",
+          "version": "12.0.0",
+          "arch": "all"
+        },
+        {
+          "name": "runit-helper",
+          "source": "dh-runit",
+          "version": "2.15.2",
+          "arch": "all"
+        },
+        {
+          "name": "screen",
+          "version": "4.9.0-4",
+          "arch": "arm64"
+        },
+        {
+          "name": "sed",
+          "version": "4.9-1+deb12u1",
+          "arch": "arm64"
+        },
+        {
+          "name": "sensible-utils",
+          "version": "0.0.17+nmu1",
+          "arch": "all"
+        },
+        {
+          "name": "sgml-base",
+          "version": "1.31",
+          "arch": "all"
+        },
+        {
+          "name": "shim-helpers-arm64-signed",
+          "version": "1+16.1+2~deb12u1",
+          "arch": "arm64"
+        },
+        {
+          "name": "shim-signed",
+          "version": "1.51~1+deb12u1+16.1-2~deb12u1",
+          "arch": "arm64"
+        },
+        {
+          "name": "shim-signed-common",
+          "source": "shim-signed",
+          "version": "1.51~1+deb12u1+16.1-2~deb12u1",
+          "arch": "all"
+        },
+        {
+          "name": "shim-unsigned",
+          "source": "shim",
+          "version": "16.1-2~deb12u1",
+          "arch": "arm64"
+        },
+        {
+          "name": "socat",
+          "version": "1.7.4.4-2",
+          "arch": "arm64"
+        },
+        {
+          "name": "ssh-import-id",
+          "version": "5.10-1",
+          "arch": "all"
+        },
+        {
+          "name": "sudo",
+          "version": "1.9.13p3-1+deb12u4",
+          "arch": "arm64"
+        },
+        {
+          "name": "systemd",
+          "version": "252.39-1~deb12u2",
+          "arch": "arm64"
+        },
+        {
+          "name": "systemd-resolved",
+          "source": "systemd",
+          "version": "252.39-1~deb12u2",
+          "arch": "arm64"
+        },
+        {
+          "name": "systemd-sysv",
+          "source": "systemd",
+          "version": "252.39-1~deb12u2",
+          "arch": "arm64"
+        },
+        {
+          "name": "systemd-timesyncd",
+          "source": "systemd",
+          "version": "252.39-1~deb12u2",
+          "arch": "arm64"
+        },
+        {
+          "name": "sysvinit-utils",
+          "source": "sysvinit",
+          "version": "3.06-4",
+          "arch": "arm64"
+        },
+        {
+          "name": "tar",
+          "version": "1.34+dfsg-1.2+deb12u1",
+          "arch": "arm64"
+        },
+        {
+          "name": "tcpdump",
+          "version": "4.99.3-1",
+          "arch": "arm64"
+        },
+        {
+          "name": "time",
+          "version": "1.9-0.2",
+          "arch": "arm64"
+        },
+        {
+          "name": "traceroute",
+          "version": "1:2.1.2-1",
+          "arch": "arm64"
+        },
+        {
+          "name": "tzdata",
+          "version": "2026f-0+deb12u1",
+          "arch": "all"
+        },
+        {
+          "name": "ucf",
+          "version": "3.0043+nmu1+deb12u1",
+          "arch": "all"
+        },
+        {
+          "name": "udev",
+          "source": "systemd",
+          "version": "252.39-1~deb12u2",
+          "arch": "arm64"
+        },
+        {
+          "name": "unattended-upgrades",
+          "version": "2.9.1+nmu3",
+          "arch": "all"
+        },
+        {
+          "name": "usr-is-merged",
+          "source": "usrmerge",
+          "version": "37~deb12u1",
+          "arch": "all"
+        },
+        {
+          "name": "util-linux",
+          "version": "2.38.1-5+deb12u3",
+          "arch": "arm64"
+        },
+        {
+          "name": "util-linux-extra",
+          "source": "util-linux",
+          "version": "2.38.1-5+deb12u3",
+          "arch": "arm64"
+        },
+        {
+          "name": "uuid-runtime",
+          "source": "util-linux",
+          "version": "2.38.1-5+deb12u3",
+          "arch": "arm64"
+        },
+        {
+          "name": "vim",
+          "version": "2:9.0.1378-2+deb12u2",
+          "arch": "arm64"
+        },
+        {
+          "name": "vim-common",
+          "source": "vim",
+          "version": "2:9.0.1378-2+deb12u2",
+          "arch": "all"
+        },
+        {
+          "name": "vim-runtime",
+          "source": "vim",
+          "version": "2:9.0.1378-2+deb12u2",
+          "arch": "all"
+        },
+        {
+          "name": "vim-tiny",
+          "source": "vim",
+          "version": "2:9.0.1378-2+deb12u2",
+          "arch": "arm64"
+        },
+        {
+          "name": "wget",
+          "version": "1.21.3-1+deb12u1",
+          "arch": "arm64"
+        },
+        {
+          "name": "whiptail",
+          "source": "newt",
+          "version": "0.52.23-1+b1",
+          "arch": "arm64"
+        },
+        {
+          "name": "xml-core",
+          "version": "0.18+nmu1",
+          "arch": "all"
+        },
+        {
+          "name": "xz-utils",
+          "version": "5.4.1-1+deb12u2",
+          "arch": "arm64"
+        },
+        {
+          "name": "zlib1g",
+          "source": "zlib",
+          "version": "1:1.2.13.dfsg-1",
+          "arch": "arm64"
+        },
+        {
+          "name": "zstd",
+          "source": "libzstd",
+          "version": "1.5.4+dfsg2-5",
+          "arch": "arm64"
+        }
+      ]
+    }
+  },
+  "patches": {
+    "status": "not_applicable",
+    "value": null
+  },
+  "services": {
+    "status": "unknown",
+    "reason": "not_collected",
+    "value": null
+  },
+  "processes": {
+    "status": "partial",
+    "reason": "permission_denied",
+    "detail": "200 processes' executables unreadable",
+    "value": [
+      {
+        "pid": 1,
+        "ppid": 0,
+        "name": "systemd",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "cmdline": "/sbin/init",
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:19Z"
+      },
+      {
+        "pid": 10,
+        "ppid": 2,
+        "name": "mm_percpu_wq",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z"
+      },
+      {
+        "pid": 11,
+        "ppid": 2,
+        "name": "rcu_tasks_rude_kthread",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z"
+      },
+      {
+        "pid": 12,
+        "ppid": 2,
+        "name": "rcu_tasks_trace_kthread",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z"
+      },
+      {
+        "pid": 126,
+        "ppid": 2,
+        "name": "kworker/0:1H-kblockd",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 20
+      },
+      {
+        "pid": 127,
+        "ppid": 2,
+        "name": "kworker/1:2-pm",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 21
+      },
+      {
+        "pid": 13,
+        "ppid": 2,
+        "name": "ksoftirqd/0",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z"
+      },
+      {
+        "pid": 135,
+        "ppid": 2,
+        "name": "nvme-wq",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 22
+      },
+      {
+        "pid": 136,
+        "ppid": 2,
+        "name": "nvme-reset-wq",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 22
+      },
+      {
+        "pid": 137,
+        "ppid": 2,
+        "name": "nvme-delete-wq",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 23
+      },
+      {
+        "pid": 138,
+        "ppid": 2,
+        "name": "ata_sff",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 23
+      },
+      {
+        "pid": 139,
+        "ppid": 2,
+        "name": "kworker/u4:3-events_unbound",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 23
+      },
+      {
+        "pid": 14,
+        "ppid": 2,
+        "name": "rcu_sched",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z"
+      },
+      {
+        "pid": 140,
+        "ppid": 2,
+        "name": "scsi_eh_0",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 23
+      },
+      {
+        "pid": 141,
+        "ppid": 2,
+        "name": "scsi_tmf_0",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 23
+      },
+      {
+        "pid": 142,
+        "ppid": 2,
+        "name": "scsi_eh_1",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 23
+      },
+      {
+        "pid": 143,
+        "ppid": 2,
+        "name": "scsi_tmf_1",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 23
+      },
+      {
+        "pid": 144,
+        "ppid": 2,
+        "name": "scsi_eh_2",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 23
+      },
+      {
+        "pid": 145,
+        "ppid": 2,
+        "name": "scsi_tmf_2",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 23
+      },
+      {
+        "pid": 146,
+        "ppid": 2,
+        "name": "scsi_eh_3",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 23
+      },
+      {
+        "pid": 147,
+        "ppid": 2,
+        "name": "scsi_tmf_3",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 23
+      },
+      {
+        "pid": 148,
+        "ppid": 2,
+        "name": "scsi_eh_4",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 23
+      },
+      {
+        "pid": 149,
+        "ppid": 2,
+        "name": "scsi_tmf_4",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 23
+      },
+      {
+        "pid": 15,
+        "ppid": 2,
+        "name": "migration/0",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z"
+      },
+      {
+        "pid": 150,
+        "ppid": 2,
+        "name": "scsi_eh_5",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 23
+      },
+      {
+        "pid": 151,
+        "ppid": 2,
+        "name": "scsi_tmf_5",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 23
+      },
+      {
+        "pid": 152,
+        "ppid": 2,
+        "name": "scsi_eh_6",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 23
+      },
+      {
+        "pid": 153,
+        "ppid": 2,
+        "name": "scsi_tmf_6",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 23
+      },
+      {
+        "pid": 154,
+        "ppid": 2,
+        "name": "scsi_eh_7",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 23
+      },
+      {
+        "pid": 155,
+        "ppid": 2,
+        "name": "scsi_tmf_7",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 23
+      },
+      {
+        "pid": 156,
+        "ppid": 2,
+        "name": "scsi_eh_8",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 157,
+        "ppid": 2,
+        "name": "scsi_tmf_8",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 158,
+        "ppid": 2,
+        "name": "scsi_eh_9",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 159,
+        "ppid": 2,
+        "name": "scsi_tmf_9",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 16,
+        "ppid": 2,
+        "name": "kworker/0:1-events",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z"
+      },
+      {
+        "pid": 160,
+        "ppid": 2,
+        "name": "scsi_eh_10",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 161,
+        "ppid": 2,
+        "name": "scsi_tmf_10",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 162,
+        "ppid": 2,
+        "name": "scsi_eh_11",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 163,
+        "ppid": 2,
+        "name": "scsi_tmf_11",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 164,
+        "ppid": 2,
+        "name": "scsi_eh_12",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 165,
+        "ppid": 2,
+        "name": "scsi_tmf_12",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 166,
+        "ppid": 2,
+        "name": "scsi_eh_13",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 167,
+        "ppid": 2,
+        "name": "scsi_tmf_13",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 168,
+        "ppid": 2,
+        "name": "scsi_eh_14",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 169,
+        "ppid": 2,
+        "name": "scsi_tmf_14",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 17,
+        "ppid": 2,
+        "name": "cpuhp/0",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z"
+      },
+      {
+        "pid": 170,
+        "ppid": 2,
+        "name": "scsi_eh_15",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 171,
+        "ppid": 2,
+        "name": "scsi_tmf_15",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 172,
+        "ppid": 2,
+        "name": "scsi_eh_16",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 173,
+        "ppid": 2,
+        "name": "scsi_tmf_16",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 174,
+        "ppid": 2,
+        "name": "scsi_eh_17",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 175,
+        "ppid": 2,
+        "name": "scsi_tmf_17",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 176,
+        "ppid": 2,
+        "name": "scsi_eh_18",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 177,
+        "ppid": 2,
+        "name": "scsi_tmf_18",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 178,
+        "ppid": 2,
+        "name": "scsi_eh_19",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 179,
+        "ppid": 2,
+        "name": "scsi_tmf_19",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 18,
+        "ppid": 2,
+        "name": "cpuhp/1",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z"
+      },
+      {
+        "pid": 180,
+        "ppid": 2,
+        "name": "scsi_eh_20",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 181,
+        "ppid": 2,
+        "name": "scsi_tmf_20",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 182,
+        "ppid": 2,
+        "name": "scsi_eh_21",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 183,
+        "ppid": 2,
+        "name": "scsi_tmf_21",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 184,
+        "ppid": 2,
+        "name": "scsi_eh_22",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 185,
+        "ppid": 2,
+        "name": "scsi_tmf_22",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 186,
+        "ppid": 2,
+        "name": "scsi_eh_23",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 187,
+        "ppid": 2,
+        "name": "scsi_tmf_23",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 188,
+        "ppid": 2,
+        "name": "scsi_eh_24",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 189,
+        "ppid": 2,
+        "name": "scsi_tmf_24",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 19,
+        "ppid": 2,
+        "name": "migration/1",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z"
+      },
+      {
+        "pid": 190,
+        "ppid": 2,
+        "name": "scsi_eh_25",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 191,
+        "ppid": 2,
+        "name": "scsi_tmf_25",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 192,
+        "ppid": 2,
+        "name": "scsi_eh_26",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 193,
+        "ppid": 2,
+        "name": "scsi_tmf_26",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 194,
+        "ppid": 2,
+        "name": "scsi_eh_27",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 195,
+        "ppid": 2,
+        "name": "scsi_tmf_27",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 196,
+        "ppid": 2,
+        "name": "scsi_eh_28",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 197,
+        "ppid": 2,
+        "name": "scsi_tmf_28",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 198,
+        "ppid": 2,
+        "name": "scsi_eh_29",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 199,
+        "ppid": 2,
+        "name": "scsi_tmf_29",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 2,
+        "ppid": 0,
+        "name": "kthreadd",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z"
+      },
+      {
+        "pid": 20,
+        "ppid": 2,
+        "name": "ksoftirqd/1",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z"
+      },
+      {
+        "pid": 200,
+        "ppid": 2,
+        "name": "kworker/1:3-pm",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 201,
+        "ppid": 2,
+        "name": "kworker/u4:4-events_unbound",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 202,
+        "ppid": 2,
+        "name": "kworker/1:4-pm",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 203,
+        "ppid": 2,
+        "name": "kworker/1:5-pm",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 204,
+        "ppid": 2,
+        "name": "kworker/u4:5-events_unbound",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 205,
+        "ppid": 2,
+        "name": "kworker/u4:6-events_unbound",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 206,
+        "ppid": 2,
+        "name": "kworker/1:6-pm",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 207,
+        "ppid": 2,
+        "name": "kworker/u4:7-events_unbound",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 208,
+        "ppid": 2,
+        "name": "kworker/u4:8-events_unbound",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 209,
+        "ppid": 2,
+        "name": "kworker/1:7-pm",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 21,
+        "ppid": 2,
+        "name": "kworker/1:0-events_power_efficient",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z"
+      },
+      {
+        "pid": 210,
+        "ppid": 2,
+        "name": "kworker/u4:9-events_unbound",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 211,
+        "ppid": 2,
+        "name": "kworker/u4:10-events_unbound",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 212,
+        "ppid": 2,
+        "name": "kworker/u4:11-events_unbound",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 213,
+        "ppid": 2,
+        "name": "kworker/u4:12-events_unbound",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 214,
+        "ppid": 2,
+        "name": "kworker/u4:13-events_unbound",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 215,
+        "ppid": 2,
+        "name": "kworker/u4:14-events_unbound",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 216,
+        "ppid": 2,
+        "name": "kworker/u4:15-events_unbound",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 217,
+        "ppid": 2,
+        "name": "kworker/u4:16-events_unbound",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 218,
+        "ppid": 2,
+        "name": "kworker/u4:17-events_unbound",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 219,
+        "ppid": 2,
+        "name": "kworker/u4:18-events_unbound",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 22,
+        "ppid": 2,
+        "name": "kworker/1:0H-events_highpri",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z"
+      },
+      {
+        "pid": 220,
+        "ppid": 2,
+        "name": "kworker/u4:19-events_unbound",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 221,
+        "ppid": 2,
+        "name": "kworker/u4:20-events_unbound",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 222,
+        "ppid": 2,
+        "name": "kworker/u4:21-events_unbound",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 223,
+        "ppid": 2,
+        "name": "kworker/u4:22-events_unbound",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 224,
+        "ppid": 2,
+        "name": "kworker/u4:23-events_unbound",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 225,
+        "ppid": 2,
+        "name": "kworker/u4:24-events_unbound",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 226,
+        "ppid": 2,
+        "name": "kworker/u4:25-events_unbound",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 227,
+        "ppid": 2,
+        "name": "kworker/u4:26-events_unbound",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 228,
+        "ppid": 2,
+        "name": "kworker/1:8-pm",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 229,
+        "ppid": 2,
+        "name": "kworker/u4:27-flush-259:0",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 230,
+        "ppid": 2,
+        "name": "kworker/1:9-pm",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 231,
+        "ppid": 2,
+        "name": "kworker/u4:28-flush-259:0",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 232,
+        "ppid": 2,
+        "name": "kworker/1:10-pm",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 233,
+        "ppid": 2,
+        "name": "kworker/u4:29-writeback",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 234,
+        "ppid": 2,
+        "name": "kworker/u4:30-events_unbound",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 235,
+        "ppid": 2,
+        "name": "kworker/u4:31",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 236,
+        "ppid": 2,
+        "name": "kworker/1:11-pm",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 237,
+        "ppid": 2,
+        "name": "kworker/1:12-pm",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 238,
+        "ppid": 2,
+        "name": "kworker/1:13-pm",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 239,
+        "ppid": 2,
+        "name": "kworker/1:14-pm",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 24,
+        "ppid": 2,
+        "name": "kdevtmpfs",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z"
+      },
+      {
+        "pid": 240,
+        "ppid": 2,
+        "name": "kworker/1:15-pm",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 241,
+        "ppid": 2,
+        "name": "kworker/1:16-pm",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 242,
+        "ppid": 2,
+        "name": "kworker/1:17-pm",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 243,
+        "ppid": 2,
+        "name": "kworker/1:18-pm",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 244,
+        "ppid": 2,
+        "name": "kworker/1:19-pm",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 245,
+        "ppid": 2,
+        "name": "kworker/1:20-pm",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 246,
+        "ppid": 2,
+        "name": "kworker/1:21-pm",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 247,
+        "ppid": 2,
+        "name": "kworker/1:22-pm",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 248,
+        "ppid": 2,
+        "name": "kworker/1:23-pm",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 249,
+        "ppid": 2,
+        "name": "kworker/1:24-pm",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 25,
+        "ppid": 2,
+        "name": "inet_frag_wq",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z"
+      },
+      {
+        "pid": 250,
+        "ppid": 2,
+        "name": "kworker/1:25-pm",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 251,
+        "ppid": 2,
+        "name": "kworker/1:26-events_power_efficient",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 252,
+        "ppid": 2,
+        "name": "kworker/1:27-cgroup_free",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 253,
+        "ppid": 2,
+        "name": "kworker/1:28-cgroup_free",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 254,
+        "ppid": 2,
+        "name": "kworker/1:29-events",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 255,
+        "ppid": 2,
+        "name": "kworker/1:30",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 24
+      },
+      {
+        "pid": 256,
+        "ppid": 2,
+        "name": "kworker/0:2-cgroup_free",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 66
+      },
+      {
+        "pid": 26,
+        "ppid": 2,
+        "name": "kauditd",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z"
+      },
+      {
+        "pid": 27,
+        "ppid": 2,
+        "name": "khungtaskd",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z"
+      },
+      {
+        "pid": 274,
+        "ppid": 2,
+        "name": "jbd2/nvme0n1p1-8",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 78
+      },
+      {
+        "pid": 275,
+        "ppid": 2,
+        "name": "ext4-rsv-conver",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 78
+      },
+      {
+        "pid": 28,
+        "ppid": 2,
+        "name": "kworker/u4:1-events_unbound",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z"
+      },
+      {
+        "pid": 29,
+        "ppid": 2,
+        "name": "oom_reaper",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z"
+      },
+      {
+        "pid": 3,
+        "ppid": 2,
+        "name": "rcu_gp",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z"
+      },
+      {
+        "pid": 30,
+        "ppid": 2,
+        "name": "writeback",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z"
+      },
+      {
+        "pid": 31,
+        "ppid": 2,
+        "name": "kcompactd0",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z"
+      },
+      {
+        "pid": 32,
+        "ppid": 2,
+        "name": "ksmd",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z"
+      },
+      {
+        "pid": 33,
+        "ppid": 2,
+        "name": "kworker/1:1-events",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z"
+      },
+      {
+        "pid": 34,
+        "ppid": 2,
+        "name": "khugepaged",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z"
+      },
+      {
+        "pid": 346,
+        "ppid": 1,
+        "name": "systemd-journal",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "cmdline": "/lib/systemd/systemd-journald",
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 98
+      },
+      {
+        "pid": 35,
+        "ppid": 2,
+        "name": "kintegrityd",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z"
+      },
+      {
+        "pid": 36,
+        "ppid": 2,
+        "name": "kblockd",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z"
+      },
+      {
+        "pid": 367,
+        "ppid": 1,
+        "name": "systemd-udevd",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "cmdline": "/lib/systemd/systemd-udevd",
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 107
+      },
+      {
+        "pid": 37,
+        "ppid": 2,
+        "name": "blkcg_punt_bio",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z"
+      },
+      {
+        "pid": 38,
+        "ppid": 2,
+        "name": "tpm_dev_wq",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 1
+      },
+      {
+        "pid": 387,
+        "ppid": 2,
+        "name": "irq/58-vmwgfx",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:46:51Z",
+        "start_ticks": 117
+      },
+      {
+        "pid": 39,
+        "ppid": 2,
+        "name": "edac-poller",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 1
+      },
+      {
+        "pid": 390,
+        "ppid": 2,
+        "name": "irq/59-vmwgfx",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:46:51Z",
+        "start_ticks": 118
+      },
+      {
+        "pid": 392,
+        "ppid": 2,
+        "name": "irq/60-vmwgfx",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:46:51Z",
+        "start_ticks": 118
+      },
+      {
+        "pid": 393,
+        "ppid": 2,
+        "name": "irq/61-vmwgfx",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:46:51Z",
+        "start_ticks": 118
+      },
+      {
+        "pid": 394,
+        "ppid": 2,
+        "name": "irq/62-vmwgfx",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:46:51Z",
+        "start_ticks": 118
+      },
+      {
+        "pid": 395,
+        "ppid": 2,
+        "name": "irq/63-vmwgfx",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:46:51Z",
+        "start_ticks": 118
+      },
+      {
+        "pid": 4,
+        "ppid": 2,
+        "name": "rcu_par_gp",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z"
+      },
+      {
+        "pid": 40,
+        "ppid": 2,
+        "name": "devfreq_wq",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 1
+      },
+      {
+        "pid": 41,
+        "ppid": 2,
+        "name": "watchdogd",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 1
+      },
+      {
+        "pid": 42,
+        "ppid": 2,
+        "name": "quota_events_un",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 1
+      },
+      {
+        "pid": 43,
+        "ppid": 2,
+        "name": "kworker/1:1H-kblockd",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 1
+      },
+      {
+        "pid": 44,
+        "ppid": 2,
+        "name": "kswapd0",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 2
+      },
+      {
+        "pid": 445,
+        "ppid": 1,
+        "name": "systemd-resolve",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "cmdline": "/lib/systemd/systemd-resolved",
+        "user": "systemd-resolve",
+        "uid": "996",
+        "started": "2026-11-12T05:45:21Z",
+        "start_ticks": 205
+      },
+      {
+        "pid": 446,
+        "ppid": 1,
+        "name": "systemd-timesyn",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "cmdline": "/lib/systemd/systemd-timesyncd",
+        "user": "systemd-timesync",
+        "uid": "997",
+        "started": "2026-11-12T05:45:21Z",
+        "start_ticks": 205
+      },
+      {
+        "pid": 45,
+        "ppid": 2,
+        "name": "kworker/u4:2-events_unbound",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 3
+      },
+      {
+        "pid": 471,
+        "ppid": 1,
+        "name": "systemd-network",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "cmdline": "/lib/systemd/systemd-networkd",
+        "user": "systemd-network",
+        "uid": "998",
+        "started": "2026-11-12T05:45:22Z",
+        "start_ticks": 301
+      },
+      {
+        "pid": 473,
+        "ppid": 2,
+        "name": "cfg80211",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:46:51Z",
+        "start_ticks": 304
+      },
+      {
+        "pid": 474,
+        "ppid": 2,
+        "name": "kworker/0:3-cgroup_free",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:46:51Z",
+        "start_ticks": 304
+      },
+      {
+        "pid": 5,
+        "ppid": 2,
+        "name": "slub_flushwq",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z"
+      },
+      {
+        "pid": 51,
+        "ppid": 2,
+        "name": "kthrotld",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 11
+      },
+      {
+        "pid": 510,
+        "ppid": 1,
+        "name": "dbus-daemon",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "cmdline": "/usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only",
+        "user": "messagebus",
+        "uid": "101",
+        "started": "2026-11-12T05:45:24Z",
+        "start_ticks": 477
+      },
+      {
+        "pid": 512,
+        "ppid": 1,
+        "name": "shentu",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "cmdline": "/usr/local/bin/shentu bot",
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:24Z",
+        "start_ticks": 477
+      },
+      {
+        "pid": 514,
+        "ppid": 1,
+        "name": "systemd-logind",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "cmdline": "/lib/systemd/systemd-logind",
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:24Z",
+        "start_ticks": 477
+      },
+      {
+        "pid": 516,
+        "ppid": 1,
+        "name": "agetty",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "cmdline": "/sbin/agetty -o -p -- \\u --noclear - linux",
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:24Z",
+        "start_ticks": 478
+      },
+      {
+        "pid": 517,
+        "ppid": 1,
+        "name": "sshd",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "cmdline": "sshd: /usr/sbin/sshd -D [listener] 0 of 10-100 startups",
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:24Z",
+        "start_ticks": 480
+      },
+      {
+        "pid": 522,
+        "ppid": 1,
+        "name": "unattended-upgr",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "cmdline": "/usr/bin/python3 /usr/share/unattended-upgrades/unattended-upgrade-shutdown --wait-for-signal",
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:24Z",
+        "start_ticks": 480
+      },
+      {
+        "pid": 53,
+        "ppid": 2,
+        "name": "acpi_thermal_pm",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 12
+      },
+      {
+        "pid": 54,
+        "ppid": 2,
+        "name": "mld",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 12
+      },
+      {
+        "pid": 55,
+        "ppid": 2,
+        "name": "ipv6_addrconf",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 12
+      },
+      {
+        "pid": 588,
+        "ppid": 1,
+        "name": "systemd",
+        "exe": "/usr/lib/systemd/systemd",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "/lib/systemd/systemd --user",
+        "user": "user1",
+        "uid": "1000",
+        "started": "2026-11-12T05:46:49Z",
+        "start_ticks": 9127
+      },
+      {
+        "pid": 589,
+        "ppid": 588,
+        "name": "(sd-pam)",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "cmdline": "(sd-pam)",
+        "user": "user1",
+        "uid": "1000",
+        "started": "2026-11-12T05:46:49Z",
+        "start_ticks": 9127
+      },
+      {
+        "pid": 6,
+        "ppid": 2,
+        "name": "netns",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z"
+      },
+      {
+        "pid": 60,
+        "ppid": 2,
+        "name": "kstrp",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 12
+      },
+      {
+        "pid": 611,
+        "ppid": 517,
+        "name": "sshd",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "cmdline": "sshd: user1 [priv]",
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:46:50Z",
+        "start_ticks": 9221
+      },
+      {
+        "pid": 618,
+        "ppid": 611,
+        "name": "sshd",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "cmdline": "sshd: user1@notty",
+        "user": "user1",
+        "uid": "1000",
+        "started": "2026-11-12T05:46:51Z",
+        "start_ticks": 9229
+      },
+      {
+        "pid": 619,
+        "ppid": 618,
+        "name": "bash",
+        "exe": "/usr/bin/bash",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "bash -c cd /tmp/hf \u0026\u0026 sudo -n install -m 0755 hostfacts /usr/local/bin/hostfacts \u0026\u0026 chmod 0755 shentu-old shentu-new \u0026\u0026  sudo -n /usr/local/bin/hostfacts -record /tmp/hf/root -mask-host host1 -mask-host host3 -mask-user user3 -mask-user user2 \u003e /dev/null 2\u003e root.err; echo rec_root=$?;  /usr/local/bin/hostfacts -record /tmp/hf/user -mask-host host1 -mask-host host3 -mask-user user3 -mask-user user2 \u003e /dev/null 2\u003e user.err; echo rec_user=$?;  for b in old new; do for w in root user; do sed \"s#^state_dir = .*#…",
+        "user": "user1",
+        "uid": "1000",
+        "started": "2026-11-12T05:46:51Z",
+        "start_ticks": 9230
+      },
+      {
+        "pid": 632,
+        "ppid": 367,
+        "name": "(udev-worker)",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "cmdline": "(udev-worker)",
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:46:51Z",
+        "start_ticks": 9243
+      },
+      {
+        "pid": 637,
+        "ppid": 619,
+        "name": "hostfacts",
+        "exe": "/usr/local/bin/hostfacts",
+        "exe_known": true,
+        "exe_exists": true,
+        "in_temp": false,
+        "cmdline": "/usr/local/bin/hostfacts -record /tmp/hf/user -mask-host host1 -mask-host host3 -mask-user user3 -mask-user user2",
+        "user": "user1",
+        "uid": "1000",
+        "started": "2026-11-12T05:46:52Z",
+        "start_ticks": 9405
+      },
+      {
+        "pid": 65,
+        "ppid": 2,
+        "name": "zswap-shrink",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 13
+      },
+      {
+        "pid": 66,
+        "ppid": 2,
+        "name": "kworker/u5:0",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z",
+        "start_ticks": 13
+      },
+      {
+        "pid": 7,
+        "ppid": 2,
+        "name": "kworker/0:0-cgroup_free",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z"
+      },
+      {
+        "pid": 8,
+        "ppid": 2,
+        "name": "kworker/0:0H-events_highpri",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z"
+      },
+      {
+        "pid": 9,
+        "ppid": 2,
+        "name": "kworker/u4:0-events_unbound",
+        "exe_known": false,
+        "exe_exists": false,
+        "in_temp": false,
+        "user": "root",
+        "uid": "0",
+        "started": "2026-11-12T05:45:20Z"
+      }
+    ]
+  },
+  "accounts": {
+    "status": "ok",
+    "value": [
+      {
+        "name": "root",
+        "uid": "0",
+        "home": "/root",
+        "shell": "/bin/bash",
+        "can_login": true,
+        "is_admin": true
+      },
+      {
+        "name": "daemon",
+        "uid": "1",
+        "home": "/usr/sbin",
+        "shell": "/usr/sbin/nologin",
+        "can_login": false,
+        "is_admin": false
+      },
+      {
+        "name": "bin",
+        "uid": "2",
+        "home": "/bin",
+        "shell": "/usr/sbin/nologin",
+        "can_login": false,
+        "is_admin": false
+      },
+      {
+        "name": "sys",
+        "uid": "3",
+        "home": "/dev",
+        "shell": "/usr/sbin/nologin",
+        "can_login": false,
+        "is_admin": false
+      },
+      {
+        "name": "sync",
+        "uid": "4",
+        "home": "/bin",
+        "shell": "/bin/sync",
+        "can_login": false,
+        "is_admin": false
+      },
+      {
+        "name": "games",
+        "uid": "5",
+        "home": "/usr/games",
+        "shell": "/usr/sbin/nologin",
+        "can_login": false,
+        "is_admin": false
+      },
+      {
+        "name": "man",
+        "uid": "6",
+        "home": "/var/cache/man",
+        "shell": "/usr/sbin/nologin",
+        "can_login": false,
+        "is_admin": false
+      },
+      {
+        "name": "lp",
+        "uid": "7",
+        "home": "/var/spool/lpd",
+        "shell": "/usr/sbin/nologin",
+        "can_login": false,
+        "is_admin": false
+      },
+      {
+        "name": "mail",
+        "uid": "8",
+        "home": "/var/mail",
+        "shell": "/usr/sbin/nologin",
+        "can_login": false,
+        "is_admin": false
+      },
+      {
+        "name": "news",
+        "uid": "9",
+        "home": "/var/spool/news",
+        "shell": "/usr/sbin/nologin",
+        "can_login": false,
+        "is_admin": false
+      },
+      {
+        "name": "uucp",
+        "uid": "10",
+        "home": "/var/spool/uucp",
+        "shell": "/usr/sbin/nologin",
+        "can_login": false,
+        "is_admin": false
+      },
+      {
+        "name": "proxy",
+        "uid": "13",
+        "home": "/bin",
+        "shell": "/usr/sbin/nologin",
+        "can_login": false,
+        "is_admin": false
+      },
+      {
+        "name": "www-data",
+        "uid": "33",
+        "home": "/var/www",
+        "shell": "/usr/sbin/nologin",
+        "can_login": false,
+        "is_admin": false
+      },
+      {
+        "name": "backup",
+        "uid": "34",
+        "home": "/var/backups",
+        "shell": "/usr/sbin/nologin",
+        "can_login": false,
+        "is_admin": false
+      },
+      {
+        "name": "list",
+        "uid": "38",
+        "home": "/var/list",
+        "shell": "/usr/sbin/nologin",
+        "can_login": false,
+        "is_admin": false
+      },
+      {
+        "name": "irc",
+        "uid": "39",
+        "home": "/run/ircd",
+        "shell": "/usr/sbin/nologin",
+        "can_login": false,
+        "is_admin": false
+      },
+      {
+        "name": "_apt",
+        "uid": "42",
+        "home": "/nonexistent",
+        "shell": "/usr/sbin/nologin",
+        "can_login": false,
+        "is_admin": false
+      },
+      {
+        "name": "nobody",
+        "uid": "65534",
+        "home": "/nonexistent",
+        "shell": "/usr/sbin/nologin",
+        "can_login": false,
+        "is_admin": false
+      },
+      {
+        "name": "systemd-network",
+        "uid": "998",
+        "home": "/",
+        "shell": "/usr/sbin/nologin",
+        "can_login": false,
+        "is_admin": false
+      },
+      {
+        "name": "systemd-timesync",
+        "uid": "997",
+        "home": "/",
+        "shell": "/usr/sbin/nologin",
+        "can_login": false,
+        "is_admin": false
+      },
+      {
+        "name": "uuidd",
+        "uid": "100",
+        "home": "/run/uuidd",
+        "shell": "/usr/sbin/nologin",
+        "can_login": false,
+        "is_admin": false
+      },
+      {
+        "name": "messagebus",
+        "uid": "101",
+        "home": "/nonexistent",
+        "shell": "/usr/sbin/nologin",
+        "can_login": false,
+        "is_admin": false
+      },
+      {
+        "name": "systemd-resolve",
+        "uid": "996",
+        "home": "/",
+        "shell": "/usr/sbin/nologin",
+        "can_login": false,
+        "is_admin": false
+      },
+      {
+        "name": "tcpdump",
+        "uid": "102",
+        "home": "/nonexistent",
+        "shell": "/usr/sbin/nologin",
+        "can_login": false,
+        "is_admin": false
+      },
+      {
+        "name": "sshd",
+        "uid": "103",
+        "home": "/run/sshd",
+        "shell": "/usr/sbin/nologin",
+        "can_login": false,
+        "is_admin": false
+      },
+      {
+        "name": "polkitd",
+        "uid": "995",
+        "home": "/nonexistent",
+        "shell": "/usr/sbin/nologin",
+        "can_login": false,
+        "is_admin": false
+      },
+      {
+        "name": "user1",
+        "uid": "1000",
+        "home": "/home/user1",
+        "shell": "/bin/bash",
+        "can_login": true,
+        "is_admin": false
+      },
+      {
+        "name": "redis",
+        "uid": "104",
+        "home": "/var/lib/redis",
+        "shell": "/usr/sbin/nologin",
+        "can_login": false,
+        "is_admin": false
+      }
+    ]
+  },
+  "listeners": {
+    "status": "partial",
+    "reason": "permission_denied",
+    "detail": "owner of 11 sockets not visible without root",
+    "value": [
+      {
+        "proto": "tcp",
+        "addr": "127.0.0.54",
+        "port": 53,
+        "uid": "996"
+      },
+      {
+        "proto": "tcp",
+        "addr": "127.0.0.53",
+        "port": 53,
+        "uid": "996"
+      },
+      {
+        "proto": "tcp",
+        "addr": "0.0.0.0",
+        "port": 22,
+        "uid": "0"
+      },
+      {
+        "proto": "tcp",
+        "addr": "0.0.0.0",
+        "port": 5355,
+        "uid": "996"
+      },
+      {
+        "proto": "tcp6",
+        "addr": "::",
+        "port": 22,
+        "uid": "0"
+      },
+      {
+        "proto": "tcp6",
+        "addr": "::",
+        "port": 5355,
+        "uid": "996"
+      },
+      {
+        "proto": "udp",
+        "addr": "127.0.0.54",
+        "port": 53,
+        "uid": "996"
+      },
+      {
+        "proto": "udp",
+        "addr": "127.0.0.53",
+        "port": 53,
+        "uid": "996"
+      },
+      {
+        "proto": "udp",
+        "addr": "10.0.0.1",
+        "port": 68,
+        "uid": "998"
+      },
+      {
+        "proto": "udp",
+        "addr": "0.0.0.0",
+        "port": 5355,
+        "uid": "996"
+      },
+      {
+        "proto": "udp6",
+        "addr": "::",
+        "port": 5355,
+        "uid": "996"
+      }
+    ]
+  },
+  "persistence": {
+    "status": "partial",
+    "reason": "permission_denied",
+    "detail": "not fully read: authorized_keys: not fully read: /root/.ssh/authorized_keys (permission_denied), /root/.ssh/authorized_keys2 (permission_denied), /var/lib/redis/.ssh/authorized_keys (permission_denied), /var/lib/redis/.ssh/authorized_keys2 (permission_denied), unreadable: /etc/sudoers.d, /etc/sudoers",
+    "value": [
+      {
+        "kind": "cron",
+        "location": "/etc/cron.d/e2scrub_all",
+        "command": "30 3 * * 0 root test -e /run/systemd/system || SERVICE_MODE=1 /usr/lib/aarch64-linux-gnu/e2fsprogs/e2scrub_all_cron"
+      },
+      {
+        "kind": "cron",
+        "location": "/etc/cron.d/e2scrub_all",
+        "command": "10 3 * * * root test -e /run/systemd/system || SERVICE_MODE=1 /sbin/e2scrub_all -A -r"
+      },
+      {
+        "kind": "systemd",
+        "location": "/etc/systemd/system/dbus-org.freedesktop.network1.service",
+        "command": "!!/lib/systemd/systemd-networkd"
+      },
+      {
+        "kind": "systemd",
+        "location": "/etc/systemd/system/dbus-org.freedesktop.resolve1.service",
+        "command": "!!/lib/systemd/systemd-resolved"
+      },
+      {
+        "kind": "systemd",
+        "location": "/etc/systemd/system/dbus-org.freedesktop.timesync1.service",
+        "command": "!!/lib/systemd/systemd-timesyncd"
+      },
+      {
+        "kind": "systemd",
+        "location": "/etc/systemd/system/shentu-bot.service",
+        "command": "/usr/local/bin/shentu bot"
+      },
+      {
+        "kind": "systemd",
+        "location": "/etc/systemd/system/shentu-daily.service",
+        "command": "/usr/local/bin/shentu patrol --daily"
+      },
+      {
+        "kind": "systemd",
+        "location": "/etc/systemd/system/shentu-daily.timer"
+      },
+      {
+        "kind": "systemd",
+        "location": "/etc/systemd/system/shentu-patrol.service",
+        "command": "/usr/local/bin/shentu patrol"
+      },
+      {
+        "kind": "systemd",
+        "location": "/etc/systemd/system/shentu-patrol.timer"
+      },
+      {
+        "kind": "systemd",
+        "location": "/etc/systemd/system/sshd.service",
+        "command": "/usr/sbin/sshd -D $SSHD_OPTS"
+      },
+      {
+        "kind": "authorized_key",
+        "location": "/home/user1/.ssh/authorized_keys",
+        "detail": "ssh-ed25519 SHA256:fop5ozGMC0vLaxkNpVJdj71a3g3seTHXAU9rPdR4Gnk"
+      },
+      {
+        "kind": "authorized_key",
+        "location": "/home/user1/.ssh/authorized_keys",
+        "detail": "ssh-ed25519 SHA256:NtA1gumuWCELcqP8w6f3twOxv7cmkMmh3wydX3MAuOQ"
+      },
+      {
+        "kind": "cron_file",
+        "location": "/etc/cron.d/e2scrub_all"
+      }
+    ]
+  },
+  "ssh_keys": {
+    "status": "partial",
+    "reason": "permission_denied",
+    "detail": "not fully read: /root/.ssh/authorized_keys (permission_denied), /root/.ssh/authorized_keys2 (permission_denied), /var/lib/redis/.ssh/authorized_keys (permission_denied), /var/lib/redis/.ssh/authorized_keys2 (permission_denied)",
+    "value": [
+      {
+        "user": "user1",
+        "path": "/home/user1/.ssh/authorized_keys",
+        "modified": "2026-11-11T15:03:41.740000002Z",
+        "keys": [
+          {
+            "line": 1,
+            "type": "ssh-ed25519",
+            "fingerprint": "SHA256:fop5ozGMC0vLaxkNpVJdj71a3g3seTHXAU9rPdR4Gnk"
+          },
+          {
+            "line": 2,
+            "type": "ssh-ed25519",
+            "fingerprint": "SHA256:NtA1gumuWCELcqP8w6f3twOxv7cmkMmh3wydX3MAuOQ"
+          }
+        ]
+      }
+    ]
+  },
+  "firewall": {
+    "status": "partial",
+    "reason": "permission_denied",
+    "detail": "live nftables rules unreadable",
+    "value": {
+      "backend": "nftables",
+      "enabled": false,
+      "extra": {
+        "summary": "no firewall enabled at boot (nftables.service is off); rules added at runtime cannot be read here, ask in chat"
+      }
+    }
+  },
+  "remote_access": {
+    "ssh": {
+      "status": "partial",
+      "reason": "permission_denied",
+      "detail": "some sshd config files unreadable; their settings are \"unknown\"",
+      "value": {
+        "config_path": "/etc/ssh/sshd_config",
+        "settings": {
+          "passwordauthentication": "unknown",
+          "permitemptypasswords": "unknown",
+          "permitrootlogin": "unknown",
+          "port": "unknown",
+          "pubkeyauthentication": "unknown",
+          "x11forwarding": "unknown"
+        },
+        "unread": [
+          "/etc/ssh/sshd_config.d/50-cloud-init.conf (permission denied)"
+        ],
+        "hash": "121bac24ff921329"
+      }
+    },
+    "rdp": {
+      "status": "not_applicable",
+      "value": {
+        "enabled": false,
+        "nla": false,
+        "port": 0
+      }
+    },
+    "winrm": {
+      "status": "not_applicable",
+      "value": {
+        "running": false,
+        "http_listener": false,
+        "allow_unencrypted": false,
+        "basic_auth": false
+      }
+    },
+    "smb": {
+      "status": "unknown",
+      "reason": "not_collected",
+      "detail": "samba not collected yet",
+      "value": {
+        "smb1_enabled": false,
+        "signing_required": false
+      }
+    }
+  },
+  "antimalware": {
+    "status": "not_applicable",
+    "value": {
+      "product": "",
+      "real_time": false,
+      "signature_age_days": 0
+    }
+  },
+  "protections": {
+    "status": "unknown",
+    "reason": "not_collected",
+    "value": {
+      "integrity": "",
+      "app_verification": "",
+      "disk_encryption": ""
+    }
+  },
+  "auth_events": {
+    "status": "unknown",
+    "reason": "permission_denied",
+    "detail": "none (no auth log readable and journald unavailable (permission denied: journald hides the system's entries from this user))",
+    "value": {
+      "window_hours": 24
+    }
+  },
+  "web": {
+    "status": "ok",
+    "value": {}
+  }
+}
