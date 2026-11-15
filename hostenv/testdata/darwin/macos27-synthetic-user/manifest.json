@@ -1,0 +1,536 @@
+{
+  "format": "hostenv-fixture/1",
+  "info": {
+    "goos": "darwin",
+    "goarch": "arm64",
+    "elevated": false,
+    "recorded_at": "2026-11-13T00:00:00Z"
+  },
+  "synthetic": "NOT a recording of a real host: an invented macOS 27.2 host (user alice) written by hand in a generator, so no real machine's data is in it. See README.md.",
+  "entries": [
+    {
+      "op": "cmd",
+      "argv": [
+        "/bin/ps",
+        "-axww",
+        "-o",
+        "pid=,args="
+      ],
+      "blob": "blobs/e227c0f049e60e3c"
+    },
+    {
+      "op": "cmd",
+      "argv": [
+        "/bin/ps",
+        "-axww",
+        "-o",
+        "pid=,ppid=,uid=,user=,etime=,comm="
+      ],
+      "blob": "blobs/b78d79b20319ba61"
+    },
+    {
+      "op": "cmd",
+      "argv": [
+        "/sbin/pfctl",
+        "-s",
+        "info"
+      ],
+      "exit_code": 1,
+      "stderr": "pfctl: /dev/pf: Permission denied\n"
+    },
+    {
+      "op": "cmd",
+      "argv": [
+        "/usr/bin/csrutil",
+        "status"
+      ],
+      "blob": "blobs/83fb612043aa785d"
+    },
+    {
+      "op": "cmd",
+      "argv": [
+        "/usr/bin/dscl",
+        ".",
+        "-list",
+        "/Users",
+        "NFSHomeDirectory"
+      ],
+      "blob": "blobs/fb32e821ac172ed8"
+    },
+    {
+      "op": "cmd",
+      "argv": [
+        "/usr/bin/dscl",
+        ".",
+        "-list",
+        "/Users",
+        "UniqueID"
+      ],
+      "blob": "blobs/4149ff6fc531bd91"
+    },
+    {
+      "op": "cmd",
+      "argv": [
+        "/usr/bin/dscl",
+        ".",
+        "-list",
+        "/Users",
+        "UserShell"
+      ],
+      "blob": "blobs/bebac41b87a4ee2a"
+    },
+    {
+      "op": "cmd",
+      "argv": [
+        "/usr/bin/dscl",
+        ".",
+        "-read",
+        "/Groups/admin",
+        "GroupMembership"
+      ],
+      "blob": "blobs/a581326811ca3bb1"
+    },
+    {
+      "op": "cmd",
+      "argv": [
+        "/usr/bin/fdesetup",
+        "status"
+      ],
+      "blob": "blobs/1e2f018956f2bdcb"
+    },
+    {
+      "op": "cmd",
+      "argv": [
+        "/usr/libexec/ApplicationFirewall/socketfilterfw",
+        "--getblockall"
+      ],
+      "blob": "blobs/66226ea1c71c1ad7"
+    },
+    {
+      "op": "cmd",
+      "argv": [
+        "/usr/libexec/ApplicationFirewall/socketfilterfw",
+        "--getglobalstate"
+      ],
+      "blob": "blobs/9bd6de659c4e91c6"
+    },
+    {
+      "op": "cmd",
+      "argv": [
+        "/usr/libexec/ApplicationFirewall/socketfilterfw",
+        "--getstealthmode"
+      ],
+      "blob": "blobs/b46ad16390cc53e7"
+    },
+    {
+      "op": "cmd",
+      "argv": [
+        "/usr/sbin/netstat",
+        "-anv",
+        "-p",
+        "tcp"
+      ],
+      "blob": "blobs/0e15cf587ebba62a"
+    },
+    {
+      "op": "cmd",
+      "argv": [
+        "/usr/sbin/netstat",
+        "-anv",
+        "-p",
+        "udp"
+      ],
+      "blob": "blobs/f77935584109d051"
+    },
+    {
+      "op": "cmd",
+      "argv": [
+        "/usr/sbin/spctl",
+        "--status"
+      ],
+      "blob": "blobs/c54369fdf5bb3086"
+    },
+    {
+      "op": "cmd",
+      "argv": [
+        "/usr/sbin/sysctl",
+        "-n",
+        "kern.osrelease",
+        "hw.memsize",
+        "vm.loadavg"
+      ],
+      "blob": "blobs/021426ce93da3309"
+    },
+    {
+      "op": "dir",
+      "path": "/Applications",
+      "names": [
+        "ExampleEditor.app",
+        "Safari.app"
+      ]
+    },
+    {
+      "op": "dir",
+      "path": "/Applications/Utilities",
+      "names": [
+        "Terminal.app"
+      ]
+    },
+    {
+      "op": "dir",
+      "path": "/Library/LaunchAgents"
+    },
+    {
+      "op": "dir",
+      "path": "/Library/LaunchDaemons",
+      "names": [
+        "com.example.backup.plist"
+      ]
+    },
+    {
+      "op": "dir",
+      "path": "/Library/Security/SecurityAgentPlugins",
+      "names": [
+        "com.example.auth.bundle"
+      ]
+    },
+    {
+      "op": "dir",
+      "path": "/Library/StartupItems"
+    },
+    {
+      "op": "dir",
+      "path": "/Users/user1/Library/LaunchAgents",
+      "names": [
+        "com.example.sync.plist"
+      ]
+    },
+    {
+      "op": "dir",
+      "path": "/etc/periodic/daily",
+      "names": [
+        "110.clean-tmps"
+      ]
+    },
+    {
+      "op": "dir",
+      "path": "/etc/periodic/monthly"
+    },
+    {
+      "op": "dir",
+      "path": "/etc/periodic/weekly"
+    },
+    {
+      "op": "dir",
+      "path": "/etc/ssh/sshd_config.d",
+      "names": [
+        "100-macos.conf"
+      ]
+    },
+    {
+      "op": "dir",
+      "path": "/etc/ssh/sshd_config.d/100-macos.conf",
+      "err": "not_exist"
+    },
+    {
+      "op": "dir",
+      "path": "/etc/sudoers.d"
+    },
+    {
+      "op": "dir",
+      "path": "/opt/homebrew/Caskroom"
+    },
+    {
+      "op": "dir",
+      "path": "/opt/homebrew/Cellar",
+      "names": [
+        "exampledb@2",
+        "openssl@3"
+      ]
+    },
+    {
+      "op": "dir",
+      "path": "/opt/homebrew/Cellar/exampledb@2",
+      "names": [
+        "2.1"
+      ]
+    },
+    {
+      "op": "dir",
+      "path": "/opt/homebrew/Cellar/openssl@3",
+      "names": [
+        "3.4.0"
+      ]
+    },
+    {
+      "op": "dir",
+      "path": "/usr/lib/cron/jobs",
+      "err": "permission"
+    },
+    {
+      "op": "dir",
+      "path": "/usr/lib/cron/tabs",
+      "err": "permission"
+    },
+    {
+      "op": "dir",
+      "path": "/usr/local/Caskroom",
+      "err": "not_exist"
+    },
+    {
+      "op": "dir",
+      "path": "/usr/local/Cellar",
+      "err": "not_exist"
+    },
+    {
+      "op": "dir",
+      "path": "/usr/local/etc/periodic/daily",
+      "err": "not_exist"
+    },
+    {
+      "op": "dir",
+      "path": "/usr/local/etc/periodic/monthly",
+      "err": "not_exist"
+    },
+    {
+      "op": "dir",
+      "path": "/usr/local/etc/periodic/weekly",
+      "err": "not_exist"
+    },
+    {
+      "op": "dir",
+      "path": "/var/root/Library/LaunchAgents",
+      "err": "permission"
+    },
+    {
+      "op": "file",
+      "path": "/Applications/ExampleEditor.app/Contents/Info.plist",
+      "blob": "blobs/87e82adab5fce9bd"
+    },
+    {
+      "op": "file",
+      "path": "/Applications/Safari.app/Contents/Info.plist",
+      "blob": "blobs/b3b7175ebabc0f68"
+    },
+    {
+      "op": "file",
+      "path": "/Applications/Utilities/Terminal.app/Contents/Info.plist",
+      "blob": "blobs/ff9a0217036f7849"
+    },
+    {
+      "op": "file",
+      "path": "/Library/LaunchDaemons/com.example.backup.plist",
+      "blob": "blobs/c5201ea65d31a64d"
+    },
+    {
+      "op": "file",
+      "path": "/Library/Preferences/com.apple.loginwindow.plist",
+      "blob": "blobs/c50c3b08e623219b"
+    },
+    {
+      "op": "file",
+      "path": "/System/Library/CoreServices/SystemVersion.plist",
+      "blob": "blobs/1416b4d42e2acf24"
+    },
+    {
+      "op": "file",
+      "path": "/Users/user1/.ssh/authorized_keys",
+      "err": "not_exist"
+    },
+    {
+      "op": "file",
+      "path": "/Users/user1/.ssh/authorized_keys2",
+      "err": "not_exist"
+    },
+    {
+      "op": "file",
+      "path": "/Users/user1/Library/LaunchAgents/com.example.sync.plist",
+      "blob": "blobs/579587b438ea8fbf"
+    },
+    {
+      "op": "file",
+      "path": "/etc/crontab",
+      "blob": "blobs/e3b0c44298fc1c14"
+    },
+    {
+      "op": "file",
+      "path": "/etc/daily.local",
+      "err": "not_exist"
+    },
+    {
+      "op": "file",
+      "path": "/etc/defaults/periodic.conf",
+      "blob": "blobs/b2ea8731e067d086"
+    },
+    {
+      "op": "file",
+      "path": "/etc/monthly.local",
+      "err": "not_exist"
+    },
+    {
+      "op": "file",
+      "path": "/etc/periodic.conf",
+      "err": "not_exist"
+    },
+    {
+      "op": "file",
+      "path": "/etc/periodic.conf.local",
+      "err": "not_exist"
+    },
+    {
+      "op": "file",
+      "path": "/etc/ssh/sshd_config",
+      "blob": "blobs/579de4c21b525355"
+    },
+    {
+      "op": "file",
+      "path": "/etc/ssh/sshd_config.d/100-macos.conf",
+      "blob": "blobs/8318f69d2ab4b1fe"
+    },
+    {
+      "op": "file",
+      "path": "/etc/sudoers",
+      "blob": "blobs/17a749e14ac6e73d"
+    },
+    {
+      "op": "file",
+      "path": "/etc/weekly.local",
+      "err": "not_exist"
+    },
+    {
+      "op": "file",
+      "path": "/var/db/com.apple.xpc.launchd/disabled.501.plist",
+      "blob": "blobs/dfd7610e5cc87bd2"
+    },
+    {
+      "op": "file",
+      "path": "/var/db/com.apple.xpc.launchd/disabled.plist",
+      "blob": "blobs/d9b06c202956033b"
+    },
+    {
+      "op": "file",
+      "path": "/var/root/.ssh/authorized_keys",
+      "err": "permission"
+    },
+    {
+      "op": "file",
+      "path": "/var/root/.ssh/authorized_keys2",
+      "err": "permission"
+    },
+    {
+      "op": "file",
+      "path": "/var/root/Library/Preferences/com.apple.loginwindow.plist",
+      "err": "permission"
+    },
+    {
+      "op": "link",
+      "path": "/Users/user1/.ssh",
+      "err": "other:readlink /Users/user1/.ssh: invalid argument"
+    },
+    {
+      "op": "link",
+      "path": "/Users/user1/.ssh/authorized_keys",
+      "err": "other:readlink /Users/user1/.ssh/authorized_keys: invalid argument"
+    },
+    {
+      "op": "link",
+      "path": "/Users/user1/.ssh/authorized_keys2",
+      "err": "other:readlink /Users/user1/.ssh/authorized_keys2: invalid argument"
+    },
+    {
+      "op": "link",
+      "path": "/Users/user1/Library/LaunchAgents",
+      "err": "other:readlink /Users/user1/Library/LaunchAgents: invalid argument"
+    },
+    {
+      "op": "link",
+      "path": "/Users/user1/redacted1",
+      "err": "other:readlink /Users/user1/redacted2"
+    },
+    {
+      "op": "link",
+      "path": "/etc/ssh/sshd_config.d/100-macos.conf",
+      "err": "other:readlink /etc/ssh/sshd_config.d/100-macos.conf: invalid argument"
+    },
+    {
+      "op": "link",
+      "path": "/var/root/.ssh",
+      "err": "other:readlink /var/root/.ssh: invalid argument"
+    },
+    {
+      "op": "link",
+      "path": "/var/root/.ssh/authorized_keys",
+      "err": "other:readlink /var/root/.ssh/authorized_keys: invalid argument"
+    },
+    {
+      "op": "link",
+      "path": "/var/root/.ssh/authorized_keys2",
+      "err": "other:readlink /var/root/.ssh/authorized_keys2: invalid argument"
+    },
+    {
+      "op": "link",
+      "path": "/var/root/Library",
+      "err": "other:readlink /var/root/Library: invalid argument"
+    },
+    {
+      "op": "link",
+      "path": "/var/root/Library/LaunchAgents",
+      "err": "other:readlink /var/root/Library/LaunchAgents: invalid argument"
+    },
+    {
+      "op": "stat",
+      "path": "/Applications/ExampleEditor.app/Contents/MacOS/ExampleEditor",
+      "err": "no_stat"
+    },
+    {
+      "op": "stat",
+      "path": "/Library/Apple/System/Library/CoreServices/XProtect.bundle/Contents/Info.plist",
+      "err": "no_stat"
+    },
+    {
+      "op": "stat",
+      "path": "/Users/user1/.ssh/authorized_keys",
+      "err": "no_stat"
+    },
+    {
+      "op": "stat",
+      "path": "/Users/user1/.ssh/authorized_keys2",
+      "err": "no_stat"
+    },
+    {
+      "op": "stat",
+      "path": "/etc/ssh/sshd_config.d/100-macos.conf",
+      "err": "no_stat"
+    },
+    {
+      "op": "stat",
+      "path": "/opt/example/bin/exampledb",
+      "err": "no_stat"
+    },
+    {
+      "op": "stat",
+      "path": "/private/var/protected/xprotect/XProtect.bundle/Contents/Info.plist",
+      "err": "no_stat"
+    },
+    {
+      "op": "stat",
+      "path": "/sbin/launchd",
+      "err": "no_stat"
+    },
+    {
+      "op": "stat",
+      "path": "/usr/sbin/mDNSResponder",
+      "err": "no_stat"
+    },
+    {
+      "op": "stat",
+      "path": "/var/root/.ssh/authorized_keys",
+      "err": "no_stat"
+    },
+    {
+      "op": "stat",
+      "path": "/var/root/.ssh/authorized_keys2",
+      "err": "no_stat"
+    }
+  ]
+}
