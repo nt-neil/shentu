@@ -21,18 +21,18 @@ var files embed.FS
 // with no sources is about how a call is made (a weak cipher, a password written
 // in the code): every sink call whose argument conditions hold is a finding.
 type Rule struct {
-	ID         string       `toml:"id"`
-	Lang       string       `toml:"lang"`
-	Class      string       `toml:"class"`
-	CWE        string       `toml:"cwe"`
-	Severity   string       `toml:"severity"`
-	Tier       string       `toml:"tier"` // "info" (the default): shown in app_code_audit and chat only; "alert": also in the patrol report
-	Title      string       `toml:"title"`
-	Frameworks []string     `toml:"frameworks"`
+	ID         string   `toml:"id"`
+	Lang       string   `toml:"lang"`
+	Class      string   `toml:"class"`
+	CWE        string   `toml:"cwe"`
+	Severity   string   `toml:"severity"`
+	Tier       string   `toml:"tier"` // "info" (the default): shown in app_code_audit and chat only; "alert": also in the patrol report
+	Title      string   `toml:"title"`
+	Frameworks []string `toml:"frameworks"`
 	// RouteInput false: a route handler's parameters are not this rule's
 	// input, only its sources are (a rule for the Host header: the query a
 	// route model makes input is not the host).
-	RouteInput *bool `toml:"route_input"`
+	RouteInput *bool        `toml:"route_input"`
 	Sources    []string     `toml:"sources"`
 	Sinks      []string     `toml:"sinks"`
 	Sanitizers []string     `toml:"sanitizers"`
@@ -174,28 +174,28 @@ type Route struct {
 	Decorator []string `toml:"decorator"` // decorators marking the function under them: *.route
 	Extends   string   `toml:"extends"`   // with Method: a method of a class extending this one (WP_Widget::widget)
 	Method    string   `toml:"method"`
-	Handler   int      `toml:"handler"`    // the argument (from 1) holding the handler; -1: the last
-	Key       string   `toml:"key"`        // the handler is this key of that argument (register_rest_route's 'callback')
-	Path      bool     `toml:"path"`       // the call counts only when its first argument is a path ('/...')
-	Params    []int    `toml:"params"`     // the handler's parameters (from 1) carrying input; empty: all
-	Template  bool     `toml:"template"`   // only the parameters the path template names
-	Members   []string `toml:"members"`    // only these members of the parameters (query, params, body)
+	Handler   int      `toml:"handler"`  // the argument (from 1) holding the handler; -1: the last
+	Key       string   `toml:"key"`      // the handler is this key of that argument (register_rest_route's 'callback')
+	Path      bool     `toml:"path"`     // the call counts only when its first argument is a path ('/...')
+	Params    []int    `toml:"params"`   // the handler's parameters (from 1) carrying input; empty: all
+	Template  bool     `toml:"template"` // only the parameters the path template names
+	Members   []string `toml:"members"`  // only these members of the parameters (query, params, body)
 	// NamedMembers: for a parameter of that name, these members instead (Koa's
 	// ctx under an Express-like registration: ctx.body is the response, the
 	// request's body is ctx.request.body).
 	NamedMembers map[string][]string `toml:"named_members"`
-	Requires  []string `toml:"requires"`   // the model applies to a file naming one of these (an import: fastapi)
-	Exclude   []string `toml:"exclude"`    // a parameter declared with one of these is no input (Depends)
-	Bound     bool     `toml:"bound"`      // a parameter declared with a class type is an object the framework looked up (Laravel route model binding), no input
-	Sources   []string `toml:"sources"`    // further sources (get_settings_for_display), for the rules the model is for
-	InClasses []string `toml:"in_classes"` // a source called on $this counts only in a class extending one of these; on another object ($widget->), everywhere
-	ThisOnly  bool     `toml:"this_only"`  // a source counts only on $this or $this->parent (an Elementor skin's widget), not on another object ($section->get_settings(): a settings page's)
-	Clears    []string `toml:"clears"`     // calls returning what the framework itself stored for an id (get_attached_file(): a path it wrote), not the request's input
-	ClearsFor []string `toml:"clears_for"` // the rule classes Clears is for (path-traversal): a stored value may still be one an attacker wrote, so not for every class
-	Applies   []string `toml:"applies"`    // the request's roots ($_POST, req.body): a rule all of whose sources are one field under them (a password) is not one the model is for
-	Note      string   `toml:"note"`
-	Refs      []string `toml:"refs"`
-	Samples   []Sample `toml:"samples"`
+	Requires     []string            `toml:"requires"`   // the model applies to a file naming one of these (an import: fastapi)
+	Exclude      []string            `toml:"exclude"`    // a parameter declared with one of these is no input (Depends)
+	Bound        bool                `toml:"bound"`      // a parameter declared with a class type is an object the framework looked up (Laravel route model binding), no input
+	Sources      []string            `toml:"sources"`    // further sources (get_settings_for_display), for the rules the model is for
+	InClasses    []string            `toml:"in_classes"` // a source called on $this counts only in a class extending one of these; on another object ($widget->), everywhere
+	ThisOnly     bool                `toml:"this_only"`  // a source counts only on $this or $this->parent (an Elementor skin's widget), not on another object ($section->get_settings(): a settings page's)
+	Clears       []string            `toml:"clears"`     // calls returning what the framework itself stored for an id (get_attached_file(): a path it wrote), not the request's input
+	ClearsFor    []string            `toml:"clears_for"` // the rule classes Clears is for (path-traversal): a stored value may still be one an attacker wrote, so not for every class
+	Applies      []string            `toml:"applies"`    // the request's roots ($_POST, req.body): a rule all of whose sources are one field under them (a password) is not one the model is for
+	Note         string              `toml:"note"`
+	Refs         []string            `toml:"refs"`
+	Samples      []Sample            `toml:"samples"`
 
 	File string `toml:"-"`
 }
