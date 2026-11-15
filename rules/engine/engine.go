@@ -12,8 +12,10 @@ package engine
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -64,11 +66,12 @@ type crule struct {
 	textSources, textSinks []*pat // text inside string literals
 	sanitizers             []*pat
 	args                   map[*pat]*argCond
-	leading                bool              // some sink needs a fixed prefix, so values track raw input
-	ctypes                 bool              // some args block has unless_content_type: record Content-Type statements (ctype.go)
-	srcScope               map[*pat][]string // sources of a route model that count on $this only in a class extending one of these (routes.go)
-	srcThis                map[*pat]bool     // sources of a route model that count only on $this or $this->parent (this_only)
-	output                 bool              // every sink writes to a page (has a context condition): see context.go
+	argsMore               map[*pat][]*argCond // a sink's further [[args]] blocks: a finding when any one holds
+	leading                bool                // some sink needs a fixed prefix, so values track raw input
+	ctypes                 bool                // some args block has unless_content_type: record Content-Type statements (ctype.go)
+	srcScope               map[*pat][]string   // sources of a route model that count on $this only in a class extending one of these (routes.go)
+	srcThis                map[*pat]bool       // sources of a route model that count only on $this or $this->parent (this_only)
+	output                 bool                // every sink writes to a page (has a context condition): see context.go
 }
 
 type argCond struct {
@@ -222,10 +225,21 @@ func compileRule(r rules.Rule) (*crule, error) {
 			if !ok {
 				return nil, fmt.Errorf("args: %q is not one of the sinks", s)
 			}
+			if c.args[p] != nil {
+				if c.argsMore == nil {
+					c.argsMore = map[*pat][]*argCond{}
+				}
+				c.argsMore[p] = append(c.argsMore[p], ac)
+				continue
+			}
 			c.args[p] = ac
 		}
 	}
-	for _, ac := range c.args {
+	all := slices.Collect(maps.Values(c.args))
+	for _, more := range c.argsMore {
+		all = append(all, more...)
+	}
+	for _, ac := range all {
 		for _, x := range ac.context {
 			if x == ctxURL {
 				c.leading = true // track fixed prefixes: a value that starts with one cannot pick a scheme
