@@ -140,8 +140,57 @@ func TestRouteRefsBounded(t *testing.T) {
 		t.Skipf("scan cut short: %v", err)
 	}
 	for _, f := range fs {
-		if len(f.Routes) == 0 || len(f.Routes) > maxRoutesPerFinding {
-			t.Errorf("%s: %d routes, want 1..%d", f.RuleID, len(f.Routes), maxRoutesPerFinding)
+		if len(f.Routes) == 0 || len(f.Routes) > maxRoutesPerFinding || !f.RoutesTruncated {
+			t.Errorf("%s: %d routes, truncated %v; want 1..%d and truncated", f.RuleID, len(f.Routes), f.RoutesTruncated, maxRoutesPerFinding)
+		}
+	}
+}
+
+// Within the bounds nothing is flagged.
+func TestRouteRefsNotTruncated(t *testing.T) {
+	e := routeEngine(t)
+	src := "const { exec } = require('child_process');\nfunction ping(req, res) {\n  exec('ping ' + req.query.host);\n}\napp.get('/p', ping);\n"
+	fs, err := e.Scan("js", "a.js", []byte(src))
+	if err != nil || len(fs) == 0 {
+		t.Fatalf("not reported: %v", err)
+	}
+	for _, f := range fs {
+		if f.RoutesTruncated {
+			t.Errorf("%s: flagged truncated with one route", f.RuleID)
+		}
+	}
+}
+
+// N-1: a shortcode is a hook, not a URL: the route is named, with no path.
+func TestRouteRefsShortcodeNoPattern(t *testing.T) {
+	e := routeEngine(t)
+	src := "<?php\nadd_shortcode('box', 'box_render');\nfunction box_render($atts, $content = '') {\n" +
+		"\tglobal $wpdb;\n\treturn $wpdb->get_var(\"SELECT title FROM t WHERE slug = '\" . $atts['slug'] . \"'\");\n}\n"
+	fs, err := e.Scan("php", "a.php", []byte(src))
+	if err != nil || len(fs) == 0 {
+		t.Fatalf("not reported: %v", err)
+	}
+	want := RouteRef{Model: "wp-shortcode", Framework: "wordpress", Handler: "box_render", File: "a.php", Line: 2}
+	for _, f := range fs {
+		if len(f.Routes) != 1 || f.Routes[0] != want {
+			t.Errorf("%s: routes %+v, want [%+v]", f.RuleID, f.Routes, want)
+		}
+	}
+}
+
+// N-2: two handlers on one line: lines cannot tell which holds the sink, so
+// neither is named (not the first registered).
+func TestRouteRefsSameLine(t *testing.T) {
+	e := routeEngine(t)
+	src := "const { exec } = require('child_process');\n" +
+		"app.get('/a', function (q, s) { s.send('ok'); }); app.get('/b', function (rq, rs) { exec('ls ' + rq.query.d); });\n"
+	fs, err := e.Scan("js", "a.js", []byte(src))
+	if err != nil || len(fs) == 0 {
+		t.Fatalf("not reported: %v", err)
+	}
+	for _, f := range fs {
+		if f.Routes != nil {
+			t.Errorf("%s: routes %+v, want none", f.RuleID, f.Routes)
 		}
 	}
 }

@@ -9,6 +9,7 @@
 package detect
 
 import (
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -24,6 +25,9 @@ type CodeSink struct {
 	Path     string            // the file holding the sink
 	Line     int               // the sink's line
 	Routes   []engine.RouteRef // the routes registering the handler the sink is in; often none
+	// RoutesTruncated: the engine kept only some of the file's registrations:
+	// Routes may lack some, or be empty though one reaches the sink.
+	RoutesTruncated bool
 }
 
 // PackageVuln is one known vulnerability of an installed package or a
@@ -43,23 +47,26 @@ type PackageVuln struct {
 
 // Coverage says what detect can match for an entry.
 const (
-	CoverRoutes    = "routes"          // a code sink whose URLs are known: requests to them are matched
-	CoverNoRoute   = "no_route"        // a code sink whose URLs are not known; see NoRoutesMeaning
+	CoverRoutes    = "routes"          // a code sink with at least one route whose path is known: requests to it are matched
+	CoverNoRoute   = "no_route"        // a code sink with no known path (none, or only hooks such as a WordPress shortcode); see NoRoutesMeaning
 	CoverSignature = "needs_signature" // a package vulnerability: matched only once a signature for it exists
 )
 
-// The two caveats every report and alert built on the surface must carry,
-// in English and in Chinese.
+// The caveats every report and alert built on the surface must carry, in
+// English and in Chinese.
 const (
 	RoutesMeaning     = "routes only say that the sink sits in this handler, not that request data was traced to it along this route"
 	RoutesMeaningZh   = "routes 只代表 sink 位在這個 handler 裡，不代表請求資料一定是從這條路由流進來的"
 	NoRoutesMeaning   = "no routes does not mean no attack surface: the handler may be registered in another file (Django urls.py, Laravel routes) or be an entry point without a route model yet (WordPress admin-ajax)"
 	NoRoutesMeaningZh = "沒有 routes 不代表沒有攻擊面：handler 可能註冊在別的檔案（Django urls.py、Laravel routes），或是還沒有路由模型的入口（WordPress admin-ajax）"
+	// PatternMeaning: how the matcher compares a route's path with a URL.
+	PatternMeaning   = "a route's pattern is the path as written, without the prefix its router may be mounted under (app.use('/api', router), a blueprint's url_prefix, APIRouter(prefix=), Route::prefix): a request matches when its path ends with the pattern"
+	PatternMeaningZh = "route 的 pattern 是原始碼裡的寫法，不含 router 掛載時的前綴（app.use('/api', router)、blueprint 的 url_prefix、APIRouter 的 prefix、Route::prefix）：請求路徑以 pattern 結尾就算比對到"
 )
 
 // Entry is one vulnerability of this host that an attacker could try.
 type Entry struct {
-	ID       string            `json:"id"`   // code:<rule>:<path>:<line> or pkg:<advisory>:<package>
+	ID       string            `json:"id"`   // code:<rule>:<path>:<line> or pkg:<advisory>:<package>@<version>[#<lock file>], the advisory being the CVE when known
 	Kind     string            `json:"kind"` // code or package
 	Severity string            `json:"severity,omitempty"`
 	CWE      string            `json:"cwe,omitempty"`
@@ -67,26 +74,32 @@ type Entry struct {
 	Path     string            `json:"path,omitempty"`
 	Line     int               `json:"line,omitempty"`
 	Routes   []engine.RouteRef `json:"routes,omitempty"`
-	Rule     string            `json:"rule,omitempty"`
+	// RoutesTruncated: Routes may lack some (CodeSink.RoutesTruncated).
+	RoutesTruncated bool   `json:"routes_truncated,omitempty"`
+	Rule            string `json:"rule,omitempty"`
 
-	Source    string `json:"source,omitempty"`
-	Ecosystem string `json:"ecosystem,omitempty"`
-	Package   string `json:"package,omitempty"`
-	Version   string `json:"version,omitempty"`
-	Advisory  string `json:"advisory,omitempty"`
-	CVE       string `json:"cve,omitempty"`
-	Fixed     string `json:"fixed_version,omitempty"`
-	KEV       bool   `json:"kev,omitempty"`
-	KEVSince  string `json:"kev_since,omitempty"`
+	Source    string   `json:"source,omitempty"`
+	Ecosystem string   `json:"ecosystem,omitempty"`
+	Package   string   `json:"package,omitempty"`
+	Version   string   `json:"version,omitempty"`
+	Advisory  string   `json:"advisory,omitempty"`
+	Aliases   []string `json:"aliases,omitempty"` // the other advisory ids found for it (a GHSA id and its CVE)
+	CVE       string   `json:"cve,omitempty"`
+	Fixed     string   `json:"fixed_version,omitempty"`
+	KEV       bool     `json:"kev,omitempty"`
+	KEVSince  string   `json:"kev_since,omitempty"`
 
 	Coverage string `json:"coverage"`
 }
 
 // Surface is the host's vulnerability surface.
 type Surface struct {
-	Entries   []Entry `json:"entries"`
-	Truncated int     `json:"truncated,omitempty"` // entries left out past MaxEntries
-	// Caveats: RoutesMeaning and NoRoutesMeaning, for whoever reads the JSON.
+	Entries []Entry `json:"entries"`
+	// Entries left out past MaxEntries, code sinks and package ones apart.
+	TruncatedCode     int `json:"truncated_code,omitempty"`
+	TruncatedPackages int `json:"truncated_packages,omitempty"`
+	// Caveats: RoutesMeaning, NoRoutesMeaning and PatternMeaning, for whoever
+	// reads the JSON.
 	Caveats []string `json:"caveats"`
 }
 
@@ -121,8 +134,9 @@ func PayloadClass(cwe string) string {
 
 // Build puts the code sinks and package vulnerabilities into one surface:
 // one entry per sink (rule, file, line) and per advisory of a package
-// version, the routes of a sink merged, sorted so that the same host gives
-// the same surface. KEV entries come first, so a cut keeps them.
+// version (an advisory and the CVE it is known as being one), the routes of a
+// sink merged, sorted so that the same host gives the same surface. KEV
+// entries come first, then the more severe, so a cut keeps them.
 func Build(code []CodeSink, pkgs []PackageVuln) Surface {
 	byID := map[string]int{}
 	var out []Entry
@@ -133,11 +147,12 @@ func Build(code []CodeSink, pkgs []PackageVuln) Surface {
 		id := "code:" + c.Rule + ":" + c.Path + ":" + strconv.Itoa(c.Line)
 		if i, ok := byID[id]; ok {
 			out[i].Routes = mergeRoutes(out[i].Routes, c.Routes)
+			out[i].RoutesTruncated = out[i].RoutesTruncated || c.RoutesTruncated
 			continue
 		}
 		byID[id] = len(out)
 		out = append(out, Entry{ID: id, Kind: "code", Severity: c.Severity, CWE: c.CWE, Payload: PayloadClass(c.CWE),
-			Path: c.Path, Line: c.Line, Routes: mergeRoutes(nil, c.Routes), Rule: c.Rule})
+			Path: c.Path, Line: c.Line, Routes: mergeRoutes(nil, c.Routes), RoutesTruncated: c.RoutesTruncated, Rule: c.Rule})
 	}
 	for _, p := range pkgs {
 		adv := p.ID
@@ -147,24 +162,37 @@ func Build(code []CodeSink, pkgs []PackageVuln) Surface {
 		if adv == "" || p.Package == "" {
 			continue
 		}
-		id := "pkg:" + adv + ":" + p.Package
+		cve := p.CVE
+		if cve == "" && strings.HasPrefix(strings.ToUpper(adv), "CVE-") {
+			cve = adv
+		}
+		key := adv
+		if cve != "" {
+			key = cve // a GHSA id and the CVE id of one vulnerability are one entry
+		}
+		id := "pkg:" + key + ":" + p.Package + "@" + p.Version // two versions in one lock file are two
 		if p.Source != "" && p.Source != "os" {
-			id += "@" + p.Source // the same dependency in two lock files is two places to fix
+			id += "#" + p.Source // the same dependency in two lock files is two places to fix
 		}
 		if i, ok := byID[id]; ok {
 			e := &out[i]
+			if adv != e.Advisory && !slices.Contains(e.Aliases, adv) {
+				e.Aliases = append(e.Aliases, adv)
+			}
+			if e.Severity == "" {
+				e.Severity = p.Severity
+			}
+			if e.Fixed == "" {
+				e.Fixed = p.Fixed
+			}
 			e.KEV = e.KEV || p.KEV
 			if e.KEVSince == "" {
 				e.KEVSince = p.KEVSince
 			}
 			if e.CVE == "" {
-				e.CVE = p.CVE
+				e.CVE = cve
 			}
 			continue
-		}
-		cve := p.CVE
-		if cve == "" && strings.HasPrefix(strings.ToUpper(adv), "CVE-") {
-			cve = adv
 		}
 		byID[id] = len(out)
 		out = append(out, Entry{ID: id, Kind: "package", Severity: p.Severity, Source: p.Source, Ecosystem: p.Ecosystem,
@@ -174,7 +202,7 @@ func Build(code []CodeSink, pkgs []PackageVuln) Surface {
 		switch {
 		case out[i].Kind == "package":
 			out[i].Coverage = CoverSignature
-		case len(out[i].Routes) > 0:
+		case slices.ContainsFunc(out[i].Routes, func(r engine.RouteRef) bool { return r.Pattern != "" }):
 			out[i].Coverage = CoverRoutes
 		default:
 			out[i].Coverage = CoverNoRoute
@@ -184,11 +212,20 @@ func Build(code []CodeSink, pkgs []PackageVuln) Surface {
 		if out[i].KEV != out[j].KEV {
 			return out[i].KEV
 		}
+		if a, b := severityRank(out[i].Severity), severityRank(out[j].Severity); a != b {
+			return a > b
+		}
 		return out[i].ID < out[j].ID
 	})
-	s := Surface{Caveats: []string{RoutesMeaning, NoRoutesMeaning}}
+	s := Surface{Caveats: []string{RoutesMeaning, NoRoutesMeaning, PatternMeaning}}
 	if len(out) > MaxEntries {
-		s.Truncated = len(out) - MaxEntries
+		for _, e := range out[MaxEntries:] {
+			if e.Kind == "code" {
+				s.TruncatedCode++
+			} else {
+				s.TruncatedPackages++
+			}
+		}
 		out = out[:MaxEntries]
 	}
 	s.Entries = out
@@ -196,6 +233,22 @@ func Build(code []CodeSink, pkgs []PackageVuln) Surface {
 		s.Entries = []Entry{}
 	}
 	return s
+}
+
+// severityRank orders the code audit's severities and the advisories' (CVSS
+// words, GitHub's moderate) together; unknown is last.
+func severityRank(s string) int {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "critical":
+		return 4
+	case "high":
+		return 3
+	case "warning", "medium", "moderate":
+		return 2
+	case "low":
+		return 1
+	}
+	return 0
 }
 
 // mergeRoutes adds the routes of b not in a, in order.

@@ -35,6 +35,10 @@ type Finding struct {
 	// Routes: the routes registering the handler the sink sits in, when the
 	// file says so for certain (routerefs.go); absent otherwise.
 	Routes []RouteRef `json:"routes,omitempty"`
+	// RoutesTruncated: the file registers more handlers, or this one more
+	// times, than are kept: Routes may lack some, or be absent though one
+	// reaches the sink.
+	RoutesTruncated bool `json:"routes_truncated,omitempty"`
 }
 
 // Engine holds compiled rules. It is safe for concurrent use.

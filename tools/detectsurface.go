@@ -14,13 +14,16 @@ func SurfaceCode(fs []CodeFinding) []detect.CodeSink {
 		if f.Kind != "injection" || f.Rule == "" {
 			continue
 		}
-		out = append(out, detect.CodeSink{Rule: f.Rule, CWE: f.CWE, Severity: f.Severity, Path: f.Path, Line: f.Line, Routes: f.Routes})
+		out = append(out, detect.CodeSink{Rule: f.Rule, CWE: f.CWE, Severity: f.Severity, Path: f.Path, Line: f.Line,
+			Routes: f.Routes, RoutesTruncated: f.RoutesTruncated})
 	}
 	return out
 }
 
 // SurfaceApps is the vulnerable dependencies of lock files, one entry per
-// advisory, marked KEV where the lock file's scan found it exploited.
+// advisory, marked KEV where the lock file's scan found it exploited. An
+// exploited one is kept even when Affected, cut for the model (20 packages,
+// 5 advisories each), left it out.
 func SurfaceApps(rs []AppResult) []detect.PackageVuln {
 	var out []detect.PackageVuln
 	for _, r := range rs {
@@ -33,9 +36,19 @@ func SurfaceApps(rs []AppResult) []detect.PackageVuln {
 				v := detect.PackageVuln{Source: r.Path, Ecosystem: r.Ecosystem, Package: h.Package, Version: h.Version, ID: id}
 				if x, ok := kev[h.Package+"\x00"+id]; ok {
 					v.KEV, v.KEVSince, v.CVE = true, x.Added, x.CVE
+					delete(kev, h.Package+"\x00"+id)
 				}
 				out = append(out, v)
 			}
+		}
+		for _, x := range r.Exploited { // in the order found: those Affected no longer lists
+			k := x.Package + "\x00" + x.ID
+			if _, ok := kev[k]; !ok {
+				continue
+			}
+			delete(kev, k)
+			out = append(out, detect.PackageVuln{Source: r.Path, Ecosystem: r.Ecosystem, Package: x.Package, Version: x.Version,
+				ID: x.ID, CVE: x.CVE, KEV: true, KEVSince: x.Added})
 		}
 	}
 	return out

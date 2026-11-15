@@ -17,11 +17,17 @@ import (
 // the innermost such function is the one meant. A handler registered in
 // another file (urls.py, routes/web.php) or a sink reached through a call to
 // another file gets none. Filling it changes no finding.
+//
+// Pattern is the path as the registering call writes it, without the prefix
+// a router or group may be mounted under (app.use('/api', router), a Flask
+// blueprint's url_prefix, FastAPI's APIRouter(prefix=), Laravel's
+// Route::prefix): a URL in a log is to end with it, not equal it. A hook
+// (WordPress add_shortcode) has no URL, and no Pattern.
 type RouteRef struct {
 	Model     string `json:"model"`             // the route model's id (rules/routes): express-handler
 	Framework string `json:"framework"`         // express, laravel, wordpress, django, fastapi, flask
 	Method    string `json:"method,omitempty"`  // the registering call's name in lower case (get, post, any); empty for a decorator or a class method
-	Pattern   string `json:"pattern,omitempty"` // the path as written (/users/{id}); for register_rest_route /wp-json/<namespace>/<route>; empty when not a literal
+	Pattern   string `json:"pattern,omitempty"` // the path as written (/users/{id}), maybe lacking a mount prefix; for register_rest_route /wp-json/<namespace>/<route>; empty when not a literal or for a hook
 	Handler   string `json:"handler,omitempty"` // the handler function's name; empty for a function literal
 	File      string `json:"file"`              // where the route is registered
 	Line      int    `json:"line"`              // the registering call's or decorator's line
@@ -43,7 +49,9 @@ const (
 // annotateRoutes fills Routes on the findings of path whose line is inside a
 // handler that this file registers. Only the innermost handler holding the
 // line counts; a handler registered several times gets one entry for each,
-// up to maxRoutesPerFinding.
+// up to maxRoutesPerFinding. Lines are all a finding has: when two handlers
+// hold the line and neither holds the other (two on one line), which one the
+// sink is in is not known, and none is named.
 func (e *Engine) annotateRoutes(out []Finding, lang, path string, toks []Token, tree []*stmt, ff *fileFuncs) {
 	mine := false
 	for i := range out {
@@ -55,13 +63,21 @@ func (e *Engine) annotateRoutes(out []Finding, lang, path string, toks []Token, 
 	if !mine {
 		return
 	}
-	sites := e.routeSites(lang, path, toks, tree, ff)
+	sites, cut := e.routeSites(lang, path, toks, tree, ff)
+	if cut {
+		for i := range out {
+			if out[i].Path == path {
+				out[i].RoutesTruncated = true
+			}
+		}
+	}
 	if len(sites) == 0 {
 		return
 	}
 	type handler struct {
 		lo, hi int
 		refs   []RouteRef
+		cut    bool // registered more than maxRoutesPerFinding times
 	}
 	var hs []*handler // in the order first registered, so that ties go the same way every time
 	byFn := map[*fn]*handler{}
@@ -76,7 +92,11 @@ func (e *Engine) annotateRoutes(out []Finding, lang, path string, toks []Token, 
 			h = &handler{lo: lo, hi: hi}
 			byFn[s.f], hs = h, append(hs, h)
 		}
-		if h == nil || len(h.refs) >= maxRoutesPerFinding || slices.Contains(h.refs, s.ref) {
+		if h == nil || slices.Contains(h.refs, s.ref) {
+			continue
+		}
+		if len(h.refs) >= maxRoutesPerFinding {
+			h.cut = true
 			continue
 		}
 		h.refs = append(h.refs, s.ref)
@@ -94,22 +114,38 @@ func (e *Engine) annotateRoutes(out []Finding, lang, path string, toks []Token, 
 		if out[i].Path != path {
 			continue
 		}
+		var in []*handler
 		var best *handler
 		for _, h := range hs {
-			if out[i].Line >= h.lo && out[i].Line <= h.hi && (best == nil || h.hi-h.lo < best.hi-best.lo) {
-				best = h
+			if out[i].Line >= h.lo && out[i].Line <= h.hi {
+				in = append(in, h)
+				if best == nil || h.hi-h.lo < best.hi-best.lo {
+					best = h
+				}
 			}
 		}
-		if best != nil {
+		if best == nil {
+			continue
+		}
+		known := true
+		for _, h := range in { // every other handler holding the line must hold best, and more than it
+			if h != best && !(h.lo <= best.lo && h.hi >= best.hi && h.hi-h.lo > best.hi-best.lo) {
+				known = false
+				break
+			}
+		}
+		if known {
 			out[i].Routes = slices.Clone(best.refs)
+			out[i].RoutesTruncated = out[i].RoutesTruncated || best.cut
 		}
 	}
 }
 
 // routeSites lists every registration of a handler in the file, the way
 // handlers finds them, but keeping each one: handlers keeps only the first,
-// which is all the taint analysis needs.
-func (e *Engine) routeSites(lang, path string, toks []Token, tree []*stmt, ff *fileFuncs) []routeSite {
+// which is all the taint analysis needs. cut: past maxRouteSites, some were
+// left out.
+func (e *Engine) routeSites(lang, path string, toks []Token, tree []*stmt, ff *fileFuncs) (_ []routeSite, cut bool) {
 	var rs []*croute
 	for _, c := range e.routes[lang] {
 		if len(c.requires) == 0 || namesAny(toks, c.requires) {
@@ -117,7 +153,7 @@ func (e *Engine) routeSites(lang, path string, toks []Token, tree []*stmt, ff *f
 		}
 	}
 	if len(rs) == 0 {
-		return nil
+		return nil, false
 	}
 	php := lang == "php"
 	var out []routeSite
@@ -126,6 +162,7 @@ func (e *Engine) routeSites(lang, path string, toks []Token, tree []*stmt, ff *f
 			return
 		}
 		if len(out) >= maxRouteSites {
+			cut = true
 			return
 		}
 		ref.Model, ref.Framework, ref.File, ref.Handler = c.r.ID, c.r.Framework, path, f.name
@@ -179,7 +216,7 @@ func (e *Engine) routeSites(lang, path string, toks []Token, tree []*stmt, ff *f
 		}
 	}
 	walk(tree, 0)
-	return out
+	return out, cut
 }
 
 // routeCalls is registrations keeping the call: its name, path and line.
@@ -219,8 +256,8 @@ func routeCalls(php bool, s *stmt, rs []*croute, ff *fileFuncs, add func(*croute
 			} else if len(args) > 0 {
 				ref.Pattern = literal(args[0])
 			}
-			if c.r.Framework == "wordpress" && ref.Method != "" { // add_shortcode and the like: a hook, no HTTP verb
-				ref.Method = ""
+			if c.r.Framework == "wordpress" && ref.Method != "" { // add_shortcode and the like: a hook, no HTTP verb and no URL
+				ref.Method, ref.Pattern = "", ""
 			}
 			for _, h := range hs {
 				for _, f := range handlerFuncs(php, s, h, ff) {

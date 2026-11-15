@@ -75,8 +75,11 @@ type CodeFinding struct {
 	TestPath  bool             `json:"test_path,omitempty"` // injection: the file is under tests/, test/, examples/ or __tests__/
 	Generated bool             `json:"generated,omitempty"` // injection: the file is minified or bundled JavaScript
 	// Routes: injection: the routes registering the handler the sink is in, when
-	// its file says so for certain (engine.RouteRef); for shentu detect.
-	Routes []engine.RouteRef `json:"routes,omitempty"`
+	// its file says so for certain (engine.RouteRef); for shentu detect only
+	// (SurfaceCode), never in the JSON the model reads: up to 16 routes a
+	// finding would crowd findings out of the tool's output.
+	Routes          []engine.RouteRef `json:"-"`
+	RoutesTruncated bool              `json:"-"`
 }
 
 // UnfinishedFile is a file the injection rules did not check to the end, and why:
@@ -444,7 +447,7 @@ func injectionFindings(found []engine.Finding, add func(CodeFinding)) {
 			sev = "critical"
 		}
 		add(CodeFinding{Kind: "injection", Severity: sev, Path: f.Path, Line: f.Line, Detail: f.Title,
-			Fix: f.Fix, Rule: f.RuleID, CWE: f.CWE, Tier: f.Tier, TestPath: testPath(f.Path), Routes: f.Routes})
+			Fix: f.Fix, Rule: f.RuleID, CWE: f.CWE, Tier: f.Tier, TestPath: testPath(f.Path), Routes: f.Routes, RoutesTruncated: f.RoutesTruncated})
 	}
 }
 
