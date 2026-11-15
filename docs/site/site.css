@@ -464,8 +464,11 @@ html:not(.walking) .st1 { opacity: 1; transform: none; }
   .walk { height: auto; }
   .walk .stage { position: static; height: auto; overflow: visible; display: grid; gap: 0; }
   .walk .sky, .walk .evil, canvas.near, .walker, .walk .shade, .hud, .cue, .walk .haze, .walk .boughs { display: none; }
-  .walk .world { position: static; display: grid; width: auto; transform: none !important; }
+  .walk .world { position: static; display: contents; width: auto; transform: none !important; }
   .scene { height: 46vh; -webkit-mask-image: none; mask-image: none; transform: none !important; }
+  /* each scene stands above its own words, not all scenes before all words */
+  .scene[data-bg] { display: none; }
+  .sc1 { order: 1; } .st1 { order: 2; } .sc2 { order: 3; } .st2 { order: 4; } .sc3 { order: 5; } .st3 { order: 6; } .sc4 { order: 7; } .st4 { order: 8; } .sc5 { order: 9; } .st5 { order: 10; } .checks { order: 11; } .sc6 { order: 12; } .talk { order: 13; }
   .station, .checks, .talk { position: static; opacity: 1 !important; transform: none !important; width: auto; margin: 22px var(--gutter); }
   .checks ul { height: auto; }
   .checks li { transform: none; }
