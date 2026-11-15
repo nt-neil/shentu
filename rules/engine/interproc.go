@@ -34,7 +34,7 @@ const (
 	maxSumDepth  = 32   // summaries being computed inside one another
 	maxSumHeight = 128  // the longest chain of summaries under one: past it the summary counts as cut short
 	maxSumRuns   = 4000 // analyses of function bodies per rule and file
-	maxSumRounds = 4    // recomputations at the head of a recursive cycle
+	maxSumRounds = 16   // recomputations at the head of a recursive cycle: only against one that never settles, as each summary's work is capped anyway
 )
 
 // fnInfo is a named function of the file.
@@ -60,7 +60,7 @@ type summary struct {
 	capped     bool     // a cap of its own work cut it short: what it says may be too little
 	height     int      // the longest chain of summaries under it, itself included
 	cost       int      // its own work, not its callees': what an asker pays for using it
-	id         string   // file and key: the same summary worked out again (after a cache let it go) is paid for once
+	id         string   // file and key (a cycle's first function, for all its members): the same work done again (after a cache let it go) is paid for once
 }
 
 func (s *summary) equal(o *summary) bool {
@@ -133,6 +133,7 @@ type fileFuncs struct {
 	methods  map[string]string   // memo of method(): class + "\x00" + name → key
 	desc     map[string][]string // class → the classes of the file under it, worked out once
 	callsUp  map[string]bool     // memo of callsParent(): key + "\x00" + name
+	vcls     map[string]string   // names given one class's new object (varClasses)
 }
 
 func newFileFuncs(funcs map[string][]*fnInfo, lang string) *fileFuncs {
@@ -300,7 +301,67 @@ func (a *analysis) calleeKey(t []Token, i int) string {
 	if a.sc == nil {
 		return ""
 	}
-	return a.sc.ff.key(t, i, a.cls, a.parent, a.fname)
+	if k := a.sc.ff.key(t, i, a.cls, a.parent, a.fname); k != "" {
+		return k
+	}
+	if cls := a.instanceClass(t, i); cls != "" && a.sc.ff.hasClass(a.sc.ff.norm(cls)) {
+		name := t[i].Text
+		if a.php {
+			name = strings.ToLower(name)
+		}
+		return a.sc.ff.method(a.sc.ff.norm(cls), name, 0) // repo.by_label() after repo = Repo(), Repo().by_label()
+	}
+	return ""
+}
+
+// instanceClass returns the class of the object a method call at t[i] is made
+// on, when the code says it: a name assigned an object of it (repo = Repo(),
+// $r = new Repo()), or the object made in place (Repo().m(), (new Repo())->m(),
+// new Repo().m()). "" otherwise.
+func (a *analysis) instanceClass(t []Token, i int) string {
+	if i < 2 || !memberOp(a.php, t[i-1]) || t[i].Kind != Ident {
+		return ""
+	}
+	r := t[i-2]
+	if (r.Kind == Ident || r.Kind == Var) && (i < 3 || !memberOp(a.php, t[i-3])) {
+		return a.types[r.Text]
+	}
+	if !r.op(")") {
+		return ""
+	}
+	open := -1
+	for j, depth := i-2, 0; j >= 0; j-- {
+		if isClose(t[j]) {
+			depth++
+		} else if isOpen(t[j]) {
+			if depth--; depth == 0 {
+				open = j
+				break
+			}
+		}
+	}
+	if open < 0 {
+		return ""
+	}
+	if cls := a.newClass(stripParens(t[open : i-1])); cls != "" {
+		return cls // (new Repo())->m()
+	}
+	if open < 1 {
+		return ""
+	}
+	if t[open-1].Kind != Ident || open >= 2 && memberOp(a.php, t[open-2]) {
+		return ""
+	}
+	if open >= 2 && t[open-2].word("new") {
+		if open >= 3 && memberOp(a.php, t[open-3]) {
+			return ""
+		}
+		return t[open-1].Text // new Repo().m(), JavaScript
+	}
+	if a.py {
+		return a.newClass(t[open-1 : i-1]) // Repo().m(): a class is named with a capital
+	}
+	return ""
 }
 
 // key resolves the call named at t[i] from method caller of class cls (with parent).
@@ -333,6 +394,9 @@ func (ff *fileFuncs) key(t []Token, i int, cls, parent, caller string) string {
 		case t[i-2].Kind == Ident && ff.hasClass(ff.norm(r)):
 			return ff.method(ff.norm(r), name, 0) // ClassName::m() of a class of this file
 		}
+		if cls := ff.instanceOf(t, i); cls != "" && ff.hasClass(ff.norm(cls)) {
+			return ff.method(ff.norm(cls), name, 0) // Repo().m(), repo.m() after repo = Repo()
+		}
 		return ""
 	}
 	if i > 0 && (t[i-1].word("function") || t[i-1].word("def") || t[i-1].word("new") || t[i-1].word("fn") || ff.php && t[i-1].op(`\`)) {
@@ -342,6 +406,87 @@ func (ff *fileFuncs) key(t []Token, i int, cls, parent, caller string) string {
 		return ""
 	}
 	return name
+}
+
+// instanceOf is the class of the object a method call at t[i] is made on, as
+// far as the file says without following values: made in place (Repo().m(),
+// new Repo().m(), (new Repo())->m()), or a name the file assigns an object of
+// one class (repo = Repo(), $r = new Repo). For the call graph; the analysis
+// resolves the call with the types it tracks (instanceClass).
+func (ff *fileFuncs) instanceOf(t []Token, i int) string {
+	r := t[i-2]
+	if r.Kind == Ident || r.Kind == Var {
+		if i >= 3 && memberOp(ff.php, t[i-3]) {
+			return ""
+		}
+		return ff.varClasses()[r.Text]
+	}
+	if !r.op(")") {
+		return ""
+	}
+	open := -1
+	for j, depth := i-2, 0; j >= 0; j-- {
+		if isClose(t[j]) {
+			depth++
+		} else if isOpen(t[j]) {
+			if depth--; depth == 0 {
+				open = j
+				break
+			}
+		}
+	}
+	switch {
+	case open < 0:
+	case t[open+1].word("new") && open+2 < len(t) && t[open+2].Kind == Ident:
+		return t[open+2].Text // (new Repo())->m()
+	case open < 1:
+	case t[open-1].Kind != Ident || open >= 2 && memberOp(ff.php, t[open-2]):
+	case open >= 2 && t[open-2].word("new"):
+		return t[open-1].Text // new Repo().m()
+	case !ff.php && t[open-1].Text[0] >= 'A' && t[open-1].Text[0] <= 'Z':
+		return t[open-1].Text // Repo().m(): a class is named with a capital
+	}
+	return ""
+}
+
+// varClasses maps the names the file's functions assign one class's new
+// object to (repo = Repo(), $r = new Repo(), const r = new Repo()), worked
+// out once; a name given objects of two classes is left out.
+func (ff *fileFuncs) varClasses() map[string]string {
+	if ff.vcls != nil {
+		return ff.vcls
+	}
+	ff.vcls = map[string]string{}
+	two := map[string]bool{}
+	for _, infos := range ff.byKey {
+		for _, fi := range infos {
+			walkToks(fi.f.body, 0, func(t []Token) {
+				for k := 0; k+3 < len(t); k++ {
+					if (t[k].Kind != Ident && t[k].Kind != Var) || !t[k+1].op("=") || k > 0 && memberOp(ff.php, t[k-1]) {
+						continue
+					}
+					cls := ""
+					switch {
+					case t[k+2].word("new") && t[k+3].Kind == Ident:
+						cls = t[k+3].Text
+					case !ff.php && t[k+2].Kind == Ident && t[k+3].op("(") && t[k+2].Text[0] >= 'A' && t[k+2].Text[0] <= 'Z':
+						cls = t[k+2].Text
+					}
+					if cls == "" {
+						continue
+					}
+					if old, ok := ff.vcls[t[k].Text]; ok && old != cls {
+						two[t[k].Text] = true
+					}
+					ff.vcls[t[k].Text] = cls
+				}
+			})
+		}
+	}
+	for n := range two {
+		delete(ff.vcls, n)
+	}
+	return ff.vcls
 }
 
 // callee is the function a call names, for resolving it in another file: name,
@@ -377,6 +522,11 @@ func (a *analysis) callee(t []Token, i int) (callee, bool) {
 				q.WriteString(tk.Text)
 			}
 			return callee{t[i].Text, q.String()}, true
+		}
+		if t[i-2].op(")") {
+			if cls := a.instanceClass(t, i); cls != "" {
+				return callee{t[i].Text, cls}, true // Repo().m(): a method of Repo, in the file that declares it
+			}
 		}
 		if i > 2 && (memberOp(a.php, t[i-3]) || t[i-3].op("\\")) || t[i-2].Kind != Ident && t[i-2].Kind != Var {
 			return callee{}, false
@@ -741,9 +891,12 @@ func (a *analysis) summaryOf(key string) *summary {
 	})
 	fr := a.proj.pop()
 	got := map[string]*summary{}
+	// The members were worked out together, at one cost: an asker using several
+	// of them pays it once (one id for the cycle, by its first function).
+	id := a.file + "\x00" + sc.ff.comps[c][0]
 	for _, m := range members {
 		delete(sc.busy, m)
-		sc.done[m].capped, sc.done[m].height, sc.done[m].cost, sc.done[m].id = capped, height, cost, a.file+"\x00"+m
+		sc.done[m].capped, sc.done[m].height, sc.done[m].cost, sc.done[m].id = capped, height, cost, id
 		got[m] = sc.done[m]
 	}
 	s := sc.done[key]
@@ -926,7 +1079,7 @@ func (a *analysis) returnsUnknown(key string) bool {
 	for _, fi := range sc.funcs[key] {
 		x := &analysis{r: a.r, php: a.php, py: a.py, js: a.js, b: a.b, kw: a.kw, seen: map[loc]bool{}, sc: sc,
 			summ: &summRun{lines: map[loc]bool{}, emb: map[loc]bool{}}, noSrc: true, cls: fi.f.class, parent: fi.f.parent, fname: fi.f.name,
-			file: a.file, proj: a.proj, ftoks: a.ftoks, rdefs: a.rdefs, rcls: a.rcls}
+			file: a.file, proj: a.proj, ftoks: a.ftoks, rdefs: a.rdefs, rcls: a.rcls, ifacts: a.ifacts}
 		st := state{}
 		for _, p := range fi.params {
 			if p != "" {
@@ -942,7 +1095,8 @@ func (a *analysis) returnsUnknown(key string) bool {
 }
 
 // relevant reports whether a function can matter to the rule: its body holds
-// one of the rule's sources, sinks or sanitizers (or a number conversion), or
+// one of the rule's sources, sinks or sanitizers (or a number conversion, or a
+// return of a string constant: safe_next() returning '/'), or
 // it calls, directly or not, a function of the file that does. The others keep
 // the default (the result carries any argument's input), which spares
 // analysing every function of a large file for every rule. It is worked out for
@@ -966,6 +1120,15 @@ func (a *analysis) toksRelevant(t []Token) bool {
 			if tk.Kind == Ident && checkWords[tk.Text] {
 				return true
 			}
+		}
+	}
+	if len(t) > 1 && t[0].word("return") {
+		r := t[1:]
+		if r[len(r)-1].op(";") {
+			r = r[:len(r)-1]
+		}
+		if r = stripParens(r); len(r) == 1 && r[0].Kind == Str && len(r[0].Parts) == 0 {
+			return true // return '/': a helper that may give back a constant instead of its argument
 		}
 	}
 	for i := range t {
@@ -1011,7 +1174,7 @@ func (a *analysis) summarize(fi *fnInfo, s *summary) {
 	run := func(mask uint64, sources bool) *summRun {
 		x := &analysis{r: a.r, php: a.php, py: a.py, js: a.js, b: a.b, kw: a.kw, seen: map[loc]bool{}, sc: a.sc, defs: a.defs,
 			summ: &summRun{lines: map[loc]bool{}, emb: map[loc]bool{}}, noSrc: !sources, cls: fi.f.class, parent: fi.f.parent, fname: fi.f.name,
-			file: a.file, proj: a.proj, ftoks: a.ftoks, rdefs: a.rdefs, rcls: a.rcls, nest: a.nest, heights: a.heights}
+			file: a.file, proj: a.proj, ftoks: a.ftoks, rdefs: a.rdefs, rcls: a.rcls, ifacts: a.ifacts, nest: a.nest, heights: a.heights}
 		st := state{}
 		x.paramTypes(fi.f)
 		for i := 0; i < n; i++ {
