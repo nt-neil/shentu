@@ -130,6 +130,11 @@ type analysis struct {
 	noSrc  bool   // the rule's sources are off (a summary run for parameters)
 	cls    string // class of the method being analysed, and its parent
 	parent string
+	sfuncs []*fn // the function literals of the statement being analysed
+	// cparents: the classes the file declares and the parents they extend
+	// (routes.go, extending), built on first use
+	cparents map[string]string
+	cproj    *Project // the project, for those classes' parents in other files, also in the pass that follows no calls
 
 	lits   map[string][]Token // values written in the code, kept for argument conditions (context.go)
 	locals map[string]bool    // names of the file's own functions and methods (context.go)
@@ -140,9 +145,10 @@ type analysis struct {
 	proj  *Project          // the project the file belongs to, or nil (project.go)
 	types map[string]string // variable → class of the object assigned to it ($x = new Foo)
 
-	ftoks []Token              // the file's tokens, for the receiver condition (receiver.go)
-	rdefs map[string][][]Token // what names of the file are assigned or annotated with, built on first use
-	rcls  map[string][]string  // PHP: variables the file binds only to new objects, and their classes (recvClasses), built on first use
+	ftoks  []Token              // the file's tokens, for the receiver condition (receiver.go)
+	rdefs  map[string][][]Token // what names of the file are assigned or annotated with, built on first use
+	rcls   map[string][]string  // PHP: variables the file binds only to new objects, and their classes (recvClasses), built on first use
+	ifacts map[string]bool      // JavaScript: "m:" modules the file imports, "w:" names it uses (imports.go), built on first use or kept by the project
 }
 
 // loc is a place a sink is reached: a line of a file.
@@ -186,6 +192,8 @@ func (a *analysis) block(ss []*stmt, st state) (state, uint8) {
 }
 
 func (a *analysis) stmt(s *stmt, st state) (state, uint8) {
+	defer func(old []*fn) { a.sfuncs = old }(a.sfuncs)
+	a.sfuncs = s.funcs // the function literals its Func tokens name (mapSanAt)
 	for _, f := range s.funcs {
 		a.function(f, st)
 	}
@@ -213,6 +221,7 @@ func (a *analysis) stmt(s *stmt, st state) (state, uint8) {
 		a.assertStmt(st, s.toks)
 		a.raisingCheckStmt(st, s.toks)
 		a.nonceStmt(st, s.toks)
+		a.contentTypeStmt(st, s.toks)
 		a.stripKeys(st, s.toks)
 		a.markAssign(st, s.toks)
 		a.extractStmt(st, s.toks)
@@ -1395,6 +1404,12 @@ func (a *analysis) srcMatch(s *pat, t []Token, i int) (int, bool) {
 	if s.text != nil {
 		return 0, false
 	}
+	if cs := a.r.srcScope[s]; len(cs) > 0 && a.cls != "" && onThis(t, i) && !slices.ContainsFunc(cs, a.extending) {
+		return 0, false // a route model's source on $this, for some kinds of class only (a class not read, as "Class X", keeps it)
+	}
+	if a.r.srcThis[s] && !onThis(t, i) && !onParent(t, i) {
+		return 0, false // on another object: a method of the same name on some other class
+	}
 	strict := len(s.toks) > 1 && s.toks[0].Kind == Ident && s.toks[1].op("(")
 	end, ok := s.match(t, i, strict)
 	if !ok || s.srcArg == 0 {
@@ -2128,8 +2143,11 @@ func (a *analysis) sinkWith(st state, t []Token, i int, s *pat, cond *argCond) b
 	default:
 		region = t[end:]
 	}
-	if lr := a.expandLits(st, region); cond != nil && (len(cond.when) > 0 && !a.when(cond.when, lr) || a.unless(st, cond.unless, lr)) {
+	if lr := a.expandLits(st, region); cond != nil && (len(cond.when) > 0 && !a.when(cond.when, lr) || a.unlessIn(st, cond, lr)) {
 		return false
+	}
+	if cond != nil && len(cond.unlessCT) > 0 && contentTypeSet(st, cond.unlessCT) {
+		return false // a Server-Sent Events stream: EventSource reads it as text
 	}
 	if cond != nil && cond.literal && !a.literalArg(st, cond, region, open) {
 		return false
@@ -2155,6 +2173,9 @@ func (a *analysis) sinkWith(st state, t []Token, i int, s *pat, cond *argCond) b
 		}
 		if cond != nil && len(cond.notReceiver) > 0 && a.recvSurely(cond.notReceiver, recv) {
 			return false // (new WP_Query)->query($args): a query built from an arguments array, not SQL
+		}
+		if cond != nil && len(cond.unlessImports) > 0 && a.importsLeaveOut(cond, recv) {
+			return false // a TypeORM repository on an SQL database: where becomes bound parameters
 		}
 	}
 	whole := cond != nil && cond.whole
@@ -2335,6 +2356,53 @@ func negated(t []Token, i int) bool {
 // fragment (root:) counts only when its value is not user input. A fragment that
 // is a single string ("--") ends the options of a command, so it counts only
 // when no user input comes before it in its list.
+// unlessIn is unless, looking only where cond.unlessAt says: at the start of
+// the argument ("start": the line a Server-Sent Events stream writes begins
+// with "data: ", not a ternary one branch of which does), or among the
+// argument's own elements and keys ("top": TypeORM's relations option, not a
+// field of that name in a projection nested inside it).
+func (a *analysis) unlessIn(st state, cond *argCond, region []Token) bool {
+	if cond.unlessAt == "" {
+		return a.unless(st, cond.unless, region)
+	}
+	args := splitTop(region, isComma)
+	k := 0
+	if cond.arg != nil && *cond.arg > 0 {
+		k = *cond.arg - 1
+	}
+	if k >= len(args) {
+		return false
+	}
+	if cond.unlessAt == "start" {
+		arg := stripParens(args[k])
+		for _, p := range cond.unless {
+			if p.at(arg, 0, false) {
+				return true
+			}
+		}
+		return false
+	}
+	pick := args
+	if cond.arg != nil && *cond.arg > 0 {
+		pick = args[k : k+1]
+	}
+	for _, arg := range pick {
+		arg = stripParens(arg)
+		if len(arg) < 2 || !isOpen(arg[0]) || closeOf(arg, 0) != len(arg)-1 {
+			continue // not a literal object or list: nothing at its top
+		}
+		inner := arg[1 : len(arg)-1]
+		for _, el := range splitTop(inner, isComma) {
+			for _, p := range cond.unless {
+				if p.at(el, 0, false) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 func (a *analysis) unless(st state, ps []*pat, region []Token) bool {
 	for _, p := range ps {
 		for i := range region {

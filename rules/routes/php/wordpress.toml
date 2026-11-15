@@ -137,15 +137,16 @@ lang = "php"
 applies = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "$_SERVER", "$_FILES", "$request"]
 framework = "wordpress"
 title = "An Elementor widget's settings are written by any user who can edit with Elementor"
-sources = ["->get_settings_for_display(", "->get_settings("]
-note = "Elementor widgets (render()) read their controls with get_settings_for_display(); contributors and up set them."
+sources = ["->get_settings_for_display("]
+in_classes = ["\\Elementor\\Widget_Base", "\\Elementor\\Core\\DynamicTags\\Tag", "\\Elementor\\Core\\DynamicTags\\Data_Tag"]
+note = "Elementor widgets (render()), their skins ($this->parent->...), dynamic tags and hooks given an element ($element->...) read the controls with get_settings_for_display(); contributors and up set them. Elementor's own method, so on any object; on $this, only in a class extending Widget_Base or a dynamic tag's base."
 refs = ["https://developers.elementor.com/docs/widgets/widget-rendering/"]
 
 [[route.samples]]
 kind = "vulnerable"
 code = '''<?php
 class Box_Widget extends \Elementor\Widget_Base {
-	protected function render() {
+	public function render() {
 		global $wpdb;
 		$s = $this->get_settings_for_display();
 		echo $wpdb->get_var("SELECT name FROM {$wpdb->prefix}teams WHERE id = " . $s['team']);
@@ -157,7 +158,7 @@ class Box_Widget extends \Elementor\Widget_Base {
 kind = "safe"
 code = '''<?php
 class Box_Widget extends \Elementor\Widget_Base {
-	protected function render() {
+	public function render() {
 		global $wpdb;
 		$s = $this->get_settings_for_display();
 		echo $wpdb->get_var("SELECT name FROM {$wpdb->prefix}teams WHERE id = " . absint($s['team']));
@@ -165,27 +166,129 @@ class Box_Widget extends \Elementor\Widget_Base {
 }
 '''
 
-# Known false positive (kept over a miss): ->get_settings( is a source in every
-# class, also where it returns what an administrator saved, as in WP_Widget and
-# WooCommerce's WC_Settings_Page. Sources cannot yet be limited to classes
-# extending \Elementor\Widget_Base (engine, v0.2.6). Until then this is reported:
-#
-#   class Box_Widget extends WP_Widget {
-#   	public function widget($args, $instance) {
-#   		global $wpdb;
-#   		$all = $this->get_settings();
-#   		echo $wpdb->get_var("SELECT name FROM {$wpdb->prefix}teams WHERE id = " . $all[$this->number]['team']);
-#   	}
-#   }
+[[route.samples]]
+kind = "vulnerable"
+note = "a skin reads its widget's settings through $this->parent"
+code = '''<?php
+class Skin_Box extends \Elementor\Skin_Base {
+	public function render() {
+		global $wpdb;
+		$s = $this->parent->get_settings_for_display();
+		echo $wpdb->get_var("SELECT name FROM {$wpdb->prefix}teams WHERE id = " . $s['team']);
+	}
+}
+'''
 
 [[route.samples]]
 kind = "vulnerable"
-note = "get_settings() without the _for_display: the same controls, as saved"
+note = "a hook given the element being rendered"
+code = '''<?php
+class Box_Hooks {
+	public function before_render($element) {
+		global $wpdb;
+		$s = $element->get_settings_for_display();
+		echo $wpdb->get_var("SELECT name FROM {$wpdb->prefix}teams WHERE id = " . $s['team']);
+	}
+}
+'''
+
+[[route]]
+id = "elementor-widget-settings-raw"
+lang = "php"
+applies = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "$_SERVER", "$_FILES", "$request"]
+framework = "wordpress"
+title = "An Elementor widget's settings, read with get_settings(), are written by any user who can edit with Elementor"
+sources = ["->get_settings("]
+in_classes = ["\\Elementor\\Widget_Base", "\\Elementor\\Core\\DynamicTags\\Tag", "\\Elementor\\Core\\DynamicTags\\Data_Tag"]
+this_only = true
+note = "get_settings() without the _for_display: the same controls, as saved. WP_Widget, WooCommerce settings pages and other plugins' settings pages have a get_settings() too, and what it returns there is set by administrators (or is the page's own field list): so on $this only in a class extending Widget_Base or a dynamic tag's base, on a skin's $this->parent, and not on another object ($section->get_settings())."
+refs = ["https://developers.elementor.com/docs/widgets/widget-rendering/"]
+
+[[route.samples]]
+kind = "vulnerable"
 code = '''<?php
 class Team_Widget extends \Elementor\Widget_Base {
-	protected function render() {
+	public function render() {
 		global $wpdb;
 		$s = $this->get_settings();
+		echo $wpdb->get_var("SELECT name FROM {$wpdb->prefix}teams WHERE id = " . $s['team']);
+	}
+}
+'''
+
+[[route.samples]]
+kind = "vulnerable"
+note = "get_settings() in a widget whose own base class extends Widget_Base"
+code = '''<?php
+class Base_Widget extends \Elementor\Widget_Base {}
+class Box_Widget extends Base_Widget {
+	public function render() {
+		global $wpdb;
+		$s = $this->get_settings();
+		echo $wpdb->get_var("SELECT name FROM {$wpdb->prefix}teams WHERE id = " . $s['team']);
+	}
+}
+'''
+
+[[route.samples]]
+kind = "vulnerable"
+note = "a dynamic tag's own settings"
+code = '''<?php
+class Team_Tag extends \Elementor\Core\DynamicTags\Tag {
+	public function render() {
+		global $wpdb;
+		echo $wpdb->get_var("SELECT name FROM {$wpdb->prefix}teams WHERE id = " . $this->get_settings('team'));
+	}
+}
+'''
+
+[[route.samples]]
+kind = "vulnerable"
+note = "a skin's widget"
+code = '''<?php
+class Skin_Team extends \Elementor\Skin_Base {
+	public function render() {
+		global $wpdb;
+		$s = $this->parent->get_settings();
+		echo $wpdb->get_var("SELECT name FROM {$wpdb->prefix}teams WHERE id = " . $s['team']);
+	}
+}
+'''
+
+[[route.samples]]
+kind = "safe"
+note = "WP_Widget::get_settings() returns what an administrator saved for the widget"
+code = '''<?php
+class Box_Widget extends WP_Widget {
+	public function widget($args, $instance) {
+		global $wpdb;
+		$all = $this->get_settings();
+		echo $wpdb->get_var("SELECT name FROM {$wpdb->prefix}teams WHERE id = " . $all[$this->number]['team']);
+	}
+}
+'''
+
+[[route.samples]]
+kind = "safe"
+note = "a WooCommerce settings page's get_settings() returns what an administrator saved"
+code = '''<?php
+class Box_Settings extends WC_Settings_Page {
+	public function output() {
+		global $wpdb;
+		$s = $this->get_settings();
+		echo $wpdb->get_var("SELECT name FROM {$wpdb->prefix}teams WHERE id = " . $s['team']);
+	}
+}
+'''
+
+[[route.samples]]
+kind = "safe"
+note = "another object's get_settings(): a settings page's fields"
+code = '''<?php
+class Box_Admin {
+	public function output($section) {
+		global $wpdb;
+		$s = $section->get_settings();
 		echo $wpdb->get_var("SELECT name FROM {$wpdb->prefix}teams WHERE id = " . $s['team']);
 	}
 }

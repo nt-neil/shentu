@@ -33,9 +33,9 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
+	"github.com/nt-neil/shentu/internal/osutil"
 	"github.com/nt-neil/shentu/tools"
 )
 
@@ -97,7 +97,7 @@ type sentMsg struct {
 // withBotState loads bot.json under an exclusive lock, lets fn change it and saves it.
 // The bot service and `shentu bot pair` both write the file.
 func withBotState(dir string, fn func(*botState) error) error {
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err := ensureStateDir(dir); err != nil {
 		return err
 	}
 	lock, err := os.OpenFile(filepath.Join(dir, "bot.lock"), os.O_CREATE|os.O_RDWR, 0o600)
@@ -105,10 +105,10 @@ func withBotState(dir string, fn func(*botState) error) error {
 		return err
 	}
 	defer lock.Close()
-	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
+	if err := osutil.Lock(lock); err != nil {
 		return err
 	}
-	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+	defer osutil.Unlock(lock)
 	st := &botState{}
 	p := filepath.Join(dir, "bot.json")
 	if b, err := os.ReadFile(p); err == nil {
@@ -163,8 +163,8 @@ func botCommand(ctx context.Context, cfg *Config, env *tools.Env, args []string)
 	if len(args) > 0 {
 		sub = args[0]
 	}
-	if sub != "" && os.Geteuid() != 0 {
-		return errors.New("bot " + sub + " changes /var/lib/shentu; run it with sudo")
+	if sub != "" && !privileged() {
+		return privilegeError("bot " + sub)
 	}
 	audit := newAuditLog(cfg.StateDir)
 	switch sub {
@@ -215,7 +215,7 @@ func botCommand(ctx context.Context, cfg *Config, env *tools.Env, args []string)
 		err := withBotState(cfg.StateDir, func(s *botState) error { s.Paused, s.CodeFails = "", 0; return nil })
 		if err == nil {
 			audit.write(logEntry{Actor: "bot", Tool: "bot_resume", OK: true})
-			fmt.Println("Resumed. Start the service: sudo systemctl restart shentu-bot")
+			fmt.Println("Resumed. " + botRestartHint)
 		}
 		return err
 	}
@@ -233,7 +233,7 @@ func botPair(ctx context.Context, cfg *Config, env *tools.Env, audit *auditLog, 
 		return err
 	}
 	audit.write(logEntry{Actor: "bot", Tool: "bot_pair_code", OK: true})
-	fmt.Fprintf(out, "In a private chat with your bot, send within 10 minutes:\n\n    /pair %s\n\nThe bot service must be running (systemctl start shentu-bot). Waiting…\n", code)
+	fmt.Fprintf(out, "In a private chat with your bot, send within 10 minutes:\n\n    /pair %s\n\n%s. Waiting…\n", code, botRunningHint)
 	deadline := time.Now().Add(pairCodeTTL)
 	for time.Now().Before(deadline) {
 		var p *pendingPair
