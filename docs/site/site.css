@@ -458,6 +458,8 @@ html:not(.walking) .st1 { opacity: 1; transform: none; }
   .copy { top: auto; bottom: 12px; transform: none; }
 }
 @media (max-width: 400px) { .rid { white-space: normal; } }
+/* still cards on a phone: the menu sits above the guardian, not on him */
+@media (prefers-reduced-motion: reduce) and (max-width: 640px) { body.p-index .top { position: relative; background: #0b0806; } }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
   /* the walk becomes still cards */
