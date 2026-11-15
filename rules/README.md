@@ -33,6 +33,7 @@ severity = "high"                  # critical | high | medium | low
 tier = "info"                      # optional: info (default) | alert, see "Tiers"
 title = "Request input concatenated into a SQL string"
 frameworks = ["laravel"]           # optional: laravel, wordpress, django, flask, express, nestjs, nextjs
+route_input = false                # optional: route handlers' parameters are not this rule's input, only its sources (a rule for the Host header)
 route_members = ["query", "body"]  # optional: of the request members a route model makes input, only these (a rule for a query object: req.params is always a string)
 sources = ["$_GET", "$request->input("]   # where user input comes from; [] for a rule without sources
 sinks = ["mysqli_query", "->query("]      # the dangerous calls
@@ -252,6 +253,7 @@ it are unchanged: a sink is reported when any argument is tainted.
 | `arg` | only this argument counts, from 1; `0` is the receiver of a method sink (`tf.extractall()`: the archive is the input) |
 | `when` | the call is a sink only if one of these appears among its arguments |
 | `unless` | the call is not a sink if one of these appears among its arguments |
+| `unless_at` | where `unless` looks: `start`, only at the start of the argument (`arg`, or the first): a Server-Sent Events line `"data: " + x`, not a ternary one branch of which is a line; `top`, only as an element or key of the argument itself (`arg`, or any one), not inside what it holds: TypeORM's `{ relations: [...] }`, not `{ projection: { relations: 1 } }`. Empty: anywhere among the arguments |
 | `unless_content_type` | the call is not a sink once the response's Content-Type was set to one of these on every path before it in the same function: `res.setHeader("Content-Type", ...)`, `res.set`, `res.header`, `res.type`, `res.contentType`, `res.writeHead(200, {...})`, each as a statement of its own. Set in one branch only, asked about (`req.accepts(...)`) or set elsewhere (middleware) does not count. For Server-Sent Events: `text/event-stream` is read by EventSource, not rendered |
 | `whole` | the argument must be the input itself (or spread from it), not an object or array literal holding a value from it |
 | `context` | output sinks only (`echo`, `res.send(`): the input counts only when it is written into one of these places of an HTML page: `html` (between tags), `attr` (an attribute value, or inside a tag), `url` (the start of an `href`, `src`, `action`... value), `js` (inside `<script>`, an `on*` handler, or after `javascript:`); see [Output contexts](#output-contexts) |
