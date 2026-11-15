@@ -18,6 +18,9 @@ type Env struct {
 	AppPaths    []string
 	NotifyURL   string
 	HTTP        *http.Client
+	// Remote is set for requests from a chat channel (the Telegram bot), not
+	// the server's own terminal: overrides of safety checks are refused there.
+	Remote bool
 }
 
 // Tool is one function the LLM can call.

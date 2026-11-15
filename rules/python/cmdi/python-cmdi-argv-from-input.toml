@@ -1,0 +1,72 @@
+id = "python-cmdi-argv-from-input"
+lang = "python"
+class = "cmdi"
+cwe = "CWE-78"
+severity = "critical"
+tier = "info"
+title = "Command line from the request split into argv and run, so the client picks the program"
+frameworks = ["flask", "django"]
+sources = ["shlex.split(request.args", "shlex.split(request.form", "shlex.split(request.values", "shlex.split(request.json", "shlex.split(request.get_json(", "shlex.split(request.GET", "shlex.split(request.POST", "shlex.split(request.data", "shlex.split(request.query_params", "shlex.split(request.query", "shlex.split(self.get_argument(", "shlex.split(self.get_body_argument(", "shlex.split(self.get_json_body("]
+sinks = ["subprocess.run(", "subprocess.Popen(", "subprocess.call(", "subprocess.check_call(", "subprocess.check_output(", "run(", "Popen(", "check_output(", "check_call(", "asyncio.create_subprocess_exec(", "os.execvp(", "os.execv(", "StdioServerParameters("]
+sanitizers = []
+fix = "Choose the program on the server (a fixed path or a lookup in a fixed table) and pass only checked values as its arguments; splitting a request string with shlex.split() still lets the client pick the program."
+refs = ["CVE-2026-45018"]
+
+# Only argv made by splitting a request string counts: a list whose program is
+# fixed (["git", "clone", "--", url]) or a lookup in a fixed table is never a
+# source here; a request value as the first element of a list literal is
+# python-cmdi-argument-injection, and shell=True is python-cmdi-shell.
+[[args]]
+sinks = ["subprocess.run(", "subprocess.Popen(", "subprocess.call(", "subprocess.check_call(", "subprocess.check_output(", "run(", "Popen(", "check_output(", "check_call(", "asyncio.create_subprocess_exec(", "os.execvp(", "os.execv("]
+arg = 1
+name = "args"
+whole = true
+unless = ["shell=True"]
+
+[[args]]
+sinks = ["StdioServerParameters("]
+arg = 1
+name = "command"
+whole = true
+
+[[samples]]
+kind = "vulnerable"
+note = "a helper process started from a command line the client sent"
+code = '''
+@app.post("/helpers/start")
+def start_helper():
+    argv = shlex.split(request.json["launch"])
+    params = StdioServerParameters(command=argv[0], args=argv[1:])
+    return attach(params)
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+@app.post("/ops/exec")
+def ops_exec():
+    output = subprocess.check_output(shlex.split(request.form["line"]), timeout=20)
+    return output.decode()
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+COMMANDS = {"disk": ["df", "-h"], "uptime": ["uptime"]}
+
+@app.post("/ops/exec")
+def ops_exec():
+    output = subprocess.check_output(COMMANDS.get(request.form["name"], ["true"]), timeout=20)
+    return output.decode()
+'''
+
+[[samples]]
+kind = "safe"
+note = "a fixed program in a list kept in a variable"
+code = '''
+@app.post("/mirror")
+def mirror():
+    argv = ["rsync", "-a", "--", request.form["src"], "/srv/mirror/"]
+    subprocess.run(argv, check=True)
+    return "ok"
+'''

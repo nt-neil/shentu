@@ -1,5 +1,12 @@
 // Shentu is a small security assistant for Linux servers: an LLM with a set of
 // security tools and playbooks (skills). See README.md.
+
+// Go's own DNS resolver (static builds) sends no EDNS(0) record, as glibc does
+// not: some DNS forwarders (VMware's NAT DNS among them) answer an EDNS query
+// with the OPT record in place of the last answer, so every lookup said "no
+// such host". Shentu's answers are small; a cut one is asked again over TCP.
+//
+//go:debug netedns0=0
 package main
 
 import (

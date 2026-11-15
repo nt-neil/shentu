@@ -5,7 +5,7 @@ cwe = "CWE-502"
 severity = "critical"
 title = "PyYAML load with a loader that can build Python objects"
 frameworks = ["flask", "django"]
-sources = ["request.data", "request.files", "request.FILES", "request.body", "request.get_data("]
+sources = ["request.data", "request.files", "request.FILES", "request.body", "request.get_data(", "request.body(", "request.read(", "request.text(", "self.request.body"]
 sinks = ["yaml.load(", "yaml.load_all(", "yaml.unsafe_load(", "yaml.full_load("]
 sanitizers = ["yaml.safe_load("]
 fix = "Use yaml.safe_load() (or Loader=yaml.SafeLoader); never FullLoader, Loader or UnsafeLoader on untrusted text."
@@ -32,4 +32,22 @@ code = '''
 def upload_config():
     cfg = yaml.safe_load(request.get_data(as_text=True))
     return {"keys": list(cfg)}
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+@app.post("/config")
+async def upload_config(request: Request):
+    cfg = yaml.load(await request.body(), Loader=yaml.Loader)
+    return {"name": cfg["name"]}
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+@app.post("/config")
+async def upload_config(request: Request):
+    cfg = yaml.safe_load(await request.body())
+    return {"name": cfg["name"]}
 '''

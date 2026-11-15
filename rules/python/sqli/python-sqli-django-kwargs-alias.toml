@@ -11,6 +11,13 @@ sanitizers = ["._meta.get_field("]
 fix = "Never let the client choose ORM keyword names: build the kwargs from a fixed mapping on the server, and keep Django on a patched release."
 refs = ["CVE-2022-28346", "CVE-2025-59681"]
 
+# extra(select={alias: sql}, ...): the select dict's keys and values both reach
+# the SQL; where= is python-sqli-orm-raw-query and params= holds bound values.
+[[args]]
+sinks = [".extra("]
+arg = 1
+name = "select"
+
 [[samples]]
 kind = "vulnerable"
 note = "keys become SQL column aliases"

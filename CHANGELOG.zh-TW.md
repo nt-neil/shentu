@@ -3,6 +3,25 @@
 CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本與日期必須一致，
 每個版本都要有內容（`go test ./cmd/sitegen` 會檢查）。
 
+## v0.3.1 (unreleased)
+
+- 登入紀錄沒有完整讀到時（root 以外的帳號看不到 journald 的系統紀錄、讀不到 `auth.log` 或 `secure`、
+  紀錄只讀到一部分），hourly 和每日報告都會把 SSH 登入列為沒有檢查。之前這個情況只會寫「nothing new」。
+- Linux 版本查 DNS 時不再帶 EDNS(0) 記錄，和 glibc 一樣：有些 DNS 伺服器（例如 VMware NAT 的
+  DNS）回應這樣的查詢時會少了位址，所以每次查詢（OSV、GitHub）都失敗，回報「no such host」。
+  如果查詢還是失敗，每日報告的 Not checked 會提示檢查這台主機的 DNS。
+- `block_ip` 不再執行在這兩個情況：IP 的 SSH 登入紀錄只來自主機上任何人都能寫入的文字紀錄（`verified` 為 false），
+  或是登入紀錄讀不到。管理員自己確認過紀錄後，可以在 `shentu chat` 用 `override_unverified` 照樣執行；
+  從 Telegram bot 不能用，每個確認等級都一樣。
+  這個檢查只看 SSH 登入紀錄：用 `log_search` 讀 syslog、nginx 或應用程式的紀錄而提出的 `block_ip`，
+  不在檢查範圍內，要由管理員自己確認。
+  journald 裡完全沒有 sshd 紀錄的主機（只有文字紀錄），只要 IP 有 SSH 登入紀錄，`block_ip` 都不會執行，
+  不管紀錄上寫的是什麼時間；這時不能從 Telegram 執行，只能在伺服器上用 `shentu chat` 加 `override_unverified`。
+  `ssh_logins` 最多回查 720 時，和這個檢查一樣。
+- macOS：binary plist 的 array 和 dictionary 項目也計入讀取上限，UTF-16 字串每個字元算 9 bytes；最後有
+  space 的程式路徑照原樣保留；同一個 PID 出現在兩行 `ps` 輸出時標為 `parse_error`；`periodic_conf_files`
+  多於 16 個時，沒有讀到的會列出來。
+
 ## v0.3.0 — 2026-11-13
 
 - 支援 Windows Server 2022 與 2025，已在 GitHub 提供的 Windows Server 2022/2025 測試機上驗證（amd64，
