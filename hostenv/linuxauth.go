@@ -226,6 +226,21 @@ func scanJournal(ctx context.Context, src Source, since time.Time, sink func() f
 	return n, err
 }
 
+// ScanTextAuthLogs feeds line every line of the text auth logs (auth.log,
+// secure, and their .1) changed since since (the zero time: all of them),
+// whatever journald holds: lines anyone on the host can write. read lists
+// the files read in full; unread those that could not be, with why.
+func (LinuxCollector) ScanTextAuthLogs(src Source, logPaths []string, since time.Time, line func(string)) (read, unread []string) {
+	for _, f := range authLogFiles(src, logPaths, since) {
+		if err := ScanLinesUnmasked(src, f, line); err != nil {
+			unread = append(unread, f+" ("+string(Classify(err))+")")
+		} else {
+			read = append(read, f)
+		}
+	}
+	return read, unread
+}
+
 // authLogFiles are the text auth logs among logPaths changed since since.
 func authLogFiles(src Source, logPaths []string, since time.Time) []string {
 	var out []string
@@ -321,8 +336,24 @@ func (h *aggHeap) Pop() any {
 	return a
 }
 
+// CanonicalIP is s as net.IP writes it, an IPv4-mapped address as IPv4; s
+// itself when it is not an address.
+func CanonicalIP(s string) string {
+	ip := net.ParseIP(s)
+	if ip == nil {
+		return s
+	}
+	if v4 := ip.To4(); v4 != nil {
+		return v4.String()
+	}
+	return ip.String()
+}
+
 // NewSSHLogins starts a count of events since since (only onlyIP when set).
 func NewSSHLogins(since, now time.Time, onlyIP string) *SSHLogins {
+	if onlyIP != "" {
+		onlyIP = CanonicalIP(onlyIP)
+	}
 	return &SSHLogins{since: since, now: now, onlyIP: onlyIP, by: map[string]*sshAgg{}}
 }
 
@@ -354,6 +385,7 @@ func (c *SSHLogins) Add(l string) {
 	if net.ParseIP(ip) == nil {
 		return
 	}
+	ip = CanonicalIP(ip) // one source however it is written (::ffff:a.b.c.d, upper case)
 	if strings.Contains(user, " from ") || strings.Contains(user, ": ") {
 		user = "[crafted user name]" // still an attempt from ip, but do not echo the bait
 	}
