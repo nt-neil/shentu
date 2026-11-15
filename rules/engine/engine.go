@@ -37,6 +37,7 @@ type Finding struct {
 // Engine holds compiled rules. It is safe for concurrent use.
 type Engine struct {
 	byLang map[string][]*crule
+	watch  map[string]bool // "m:" modules and "w:" names some rule's unless_imports looks for (imports.go)
 	Limits Limits
 	// SourcePrefilter (on in New) skips the rules none of whose sources occur in
 	// a file: a file scanned on its own gets input only from them, in the first
@@ -83,6 +84,8 @@ type argCond struct {
 	receiver       []*pat   // a method sink counts only on a receiver these name (receiver.go)
 	notReceiver    []*pat   // nor on an object surely of one of these classes (receiver.go)
 	unlessCT       []string // nor once the response's Content-Type is one of these on every path (ctype.go)
+	unlessImports  []string // nor in a file importing one of these modules (imports.go)
+	importsNot     []string // ... unless the file or the receiver names one of these
 }
 
 // New compiles rules. A pattern that does not lex as code of its language is an error.
@@ -94,6 +97,15 @@ func New(rs []rules.Rule) (*Engine, error) {
 			return nil, fmt.Errorf("%s: %w", r.ID, err)
 		}
 		e.byLang[r.Lang] = append(e.byLang[r.Lang], c)
+		for _, ac := range c.args {
+			for _, m := range ac.unlessImports {
+				e.watchFor("m:" + m)
+			}
+			for _, w := range ac.importsNot {
+				e.watchFor("m:" + w)
+				e.watchFor("w:" + w)
+			}
+		}
 	}
 	routes, err := rules.LoadRoutes()
 	if err == nil {
@@ -155,12 +167,15 @@ func compileRule(r rules.Rule) (*crule, error) {
 		return nil, err
 	}
 	for _, a := range r.Args {
-		ac := &argCond{arg: a.Arg, name: a.Name, whole: a.Whole, leading: a.Leading, literal: a.Literal, key: a.Key, keys: a.Keys, minLen: a.MinLen, unlessAt: a.UnlessAt}
+		ac := &argCond{arg: a.Arg, name: a.Name, whole: a.Whole, leading: a.Leading, literal: a.Literal, key: a.Key, keys: a.Keys, minLen: a.MinLen, unlessAt: a.UnlessAt,
+			unlessImports: a.UnlessImports, importsNot: a.UnlessImportsNot}
 		switch {
 		case a.UnlessAt != "" && a.UnlessAt != "start" && a.UnlessAt != "top":
 			return nil, fmt.Errorf("args: unless_at %q is not start or top", a.UnlessAt)
 		case a.UnlessAt != "" && len(a.Unless) == 0:
 			return nil, fmt.Errorf("args: unless_at needs unless")
+		case len(a.UnlessImportsNot) > 0 && len(a.UnlessImports) == 0:
+			return nil, fmt.Errorf("args: unless_imports_not needs unless_imports")
 		}
 		for _, ct := range a.UnlessContentType {
 			ac.unlessCT = append(ac.unlessCT, strings.ToLower(ct))
@@ -344,7 +359,7 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 	viaProject := len(routeFns) > local
 	defs := phpDefines(base, toks)
 	if proj != nil {
-		proj.keep(path, &fileCtx{lang: base, tree: tree, ff: ff, tokens: len(toks), rdefs: fileRecvDefs(base, toks), rcls: fileRecvClasses(base, toks), defs: defs})
+		proj.keep(path, &fileCtx{lang: base, tree: tree, ff: ff, tokens: len(toks), rdefs: fileRecvDefs(base, toks), rcls: fileRecvClasses(base, toks), ifacts: e.importFacts(base, toks), defs: defs})
 	}
 	var out []Finding
 	add := func(r *crule, lines ...[]loc) {
