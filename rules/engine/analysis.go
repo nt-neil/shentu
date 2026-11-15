@@ -130,6 +130,7 @@ type analysis struct {
 	noSrc  bool   // the rule's sources are off (a summary run for parameters)
 	cls    string // class of the method being analysed, and its parent
 	parent string
+	sfuncs []*fn // the function literals of the statement being analysed
 	// cparents: the classes the file declares and the parents they extend
 	// (routes.go, extending), built on first use
 	cparents map[string]string
@@ -191,6 +192,8 @@ func (a *analysis) block(ss []*stmt, st state) (state, uint8) {
 }
 
 func (a *analysis) stmt(s *stmt, st state) (state, uint8) {
+	defer func(old []*fn) { a.sfuncs = old }(a.sfuncs)
+	a.sfuncs = s.funcs // the function literals its Func tokens name (mapSanAt)
 	for _, f := range s.funcs {
 		a.function(f, st)
 	}
