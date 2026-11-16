@@ -166,3 +166,14 @@ func TestInRangeSuffixUnknown(t *testing.T) {
 		}
 	}
 }
+
+// Structural close-out of #87 (S1): a range bound with a pre-release
+// cannot be compared, so the signature is refused at Load.
+func TestLoadRefusesPreReleaseBound(t *testing.T) {
+	for _, c := range [][2]string{{"npm", "<1.0.0-rc1"}, {"npm", ">=1.0.0-beta.1, <2"}, {"Packagist", "<2.4.3-p1-beta"}} {
+		src := good + "[[signature.applies_to]]\necosystem = \"" + c[0] + "\"\npackage = \"x\"\nversions = \"" + c[1] + "\"\n"
+		if _, err := LoadFS(fstest.MapFS{"s/a.toml": {Data: []byte(src)}}, "s"); err == nil || !strings.Contains(err.Error(), "not a version this can compare") {
+			t.Errorf("%s %s: %v, want refused", c[0], c[1], err)
+		}
+	}
+}
