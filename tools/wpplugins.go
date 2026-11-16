@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/nt-neil/shentu/detect"
+	"github.com/nt-neil/shentu/hostenv"
 )
 
 // WordPress plugins (plan 0743f0, P5): the version of each plugin of each
@@ -123,9 +124,12 @@ func pluginsIn(root, dir string) ([]WPPlugin, []string) {
 }
 
 // pluginHeader reads a plugin's main file header: ok when it has a
-// "Plugin Name:" line in its first wpHeaderBytes.
+// "Plugin Name:" line in its first wpHeaderBytes. The directory is the
+// web account's to write: the file is opened without following a link,
+// without blocking (a FIFO left there cannot hold the patrol), and read
+// only when what was opened is a regular file.
 func pluginHeader(p string) (WPPlugin, bool) {
-	f, err := os.Open(p)
+	f, err := (&hostenv.Live{}).OpenLogNoFollow(p)
 	if err != nil {
 		return WPPlugin{}, false
 	}

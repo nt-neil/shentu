@@ -496,8 +496,15 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 		// The vulnerability surface attack detection judges by, until tomorrow.
 		if !dryRun {
 			plugins, unreadPlugins := tools.WordPressPlugins(web)
-			if len(unreadPlugins) > 0 {
-				unchecked += "\nAttack detection: WordPress plugin directories not read: " + strings.Join(unreadPlugins, ", ") + "\n"
+			if len(unreadPlugins) > 0 { // paths the web account may name: quoted, masked, a few
+				unchecked += "\nAttack detection: WordPress plugin directories not read:\n"
+				for i, u := range unreadPlugins {
+					if i == 10 {
+						unchecked += fmt.Sprintf("- (%d more)\n", len(unreadPlugins)-10)
+						break
+					}
+					unchecked += fmt.Sprintf("- %q\n", mask(u))
+				}
 			}
 			if err := saveSurface(cfg.StateDir, buildSurface(audit, apps, plugins), env.AppPaths, time.Now()); err != nil {
 				unchecked += "\nAttack detection: the vulnerability surface could not be saved: " + err.Error() + "\n"
