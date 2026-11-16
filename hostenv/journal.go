@@ -199,13 +199,35 @@ var appExe = regexp.MustCompile(`^(?:php[0-9.]*-fpm[0-9.]*|php-fpm|gunicorn|uwsg
 
 const maxUnits = 256
 
+// AppUnit is a systemd unit running PHP-FPM or an application server.
+type AppUnit struct {
+	Name string `json:"name"`
+	// User is the unit's User= ("" when it has none: the application runs
+	// as root unless it drops privileges itself).
+	User string `json:"user,omitempty"`
+	// FPM: PHP-FPM, whose root master writes its own messages and whose
+	// workers run PHP as the pools' users, never root (php-fpm refuses
+	// without -R).
+	FPM bool `json:"fpm,omitempty"`
+}
+
+// RunsAppAsRoot: the application's own code may run as root in this unit,
+// so a root message from it may be the application's.
+func (u AppUnit) RunsAppAsRoot() bool {
+	if u.FPM {
+		return false
+	}
+	return u.User == "" || u.User == "root" || u.User == "0"
+}
+
 // AppUnits is the enabled systemd units running PHP-FPM or an application
 // server (ExecStart's program, or python -m <it>), sorted. Partial when some
 // unit file could not be read.
-func (LinuxCollector) AppUnits(src Source) Obs[[]string] {
+func (LinuxCollector) AppUnits(src Source) Obs[[]AppUnit] {
 	conf := WebConf{Root: "/", Owner: 0} // unit files live under /etc, /lib and /usr/lib: root's, not writable by others
 	seen := map[string]bool{}
-	var out, unread []string
+	var out []AppUnit
+	var unread []string
 	for _, wants := range Glob(src, "/etc/systemd/system/*.wants") {
 		names, _ := src.ReadDir(wants)
 		for _, n := range names {
@@ -218,20 +240,34 @@ func (LinuxCollector) AppUnits(src Source) Obs[[]string] {
 				unread = append(unread, n+" ("+why+")")
 				continue
 			}
-			if unitRunsApp(b) {
-				out = append(out, n)
+			if ok, fpm := unitRunsApp(b); ok {
+				out = append(out, AppUnit{Name: n, User: unitUser(b), FPM: fpm})
 			}
 		}
 	}
-	sort.Strings(out)
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	if len(unread) > 0 {
 		return Partial(out, ReasonPermission, "unit files unread, their units may be missing: "+strings.Join(unread, "; "))
 	}
 	return OK(out)
 }
 
-// unitRunsApp: an ExecStart of the unit file starts one of appExe.
-func unitRunsApp(b []byte) bool {
+// unitUser is the unit file's last User= ("" for none).
+func unitUser(b []byte) string {
+	u := ""
+	for _, ln := range strings.Split(string(b), "\n") {
+		if k, v, ok := strings.Cut(strings.TrimSpace(ln), "="); ok && strings.TrimSpace(k) == "User" {
+			u = strings.TrimSpace(v)
+		}
+	}
+	return u
+}
+
+var fpmExe = regexp.MustCompile(`^(?:php[0-9.]*-fpm[0-9.]*|php-fpm)$`)
+
+// unitRunsApp: an ExecStart of the unit file starts one of appExe; fpm, it
+// is PHP-FPM.
+func unitRunsApp(b []byte) (ok, fpm bool) {
 	for _, ln := range strings.Split(string(b), "\n") {
 		k, v, ok := strings.Cut(strings.TrimSpace(ln), "=")
 		if !ok || strings.TrimSpace(k) != "ExecStart" {
@@ -243,15 +279,15 @@ func unitRunsApp(b []byte) bool {
 		}
 		exe := path.Base(f[0])
 		if appExe.MatchString(exe) {
-			return true
+			return true, fpmExe.MatchString(exe)
 		}
 		if strings.HasPrefix(exe, "python") || exe == "env" {
 			for i, a := range f[1:] {
 				if appExe.MatchString(path.Base(a)) || (a == "-m" && i+2 < len(f) && appExe.MatchString(f[i+2])) {
-					return true
+					return true, false
 				}
 			}
 		}
 	}
-	return false
+	return false, false
 }

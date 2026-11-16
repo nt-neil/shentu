@@ -54,32 +54,37 @@ func entry(cursor, unit, uid, msg string) string {
 
 func TestEntryTrust(t *testing.T) {
 	web := hostenv.WebAccounts{UIDs: map[int]string{33: "www-data"}}
-	const u = "php8.2-fpm.service"
+	u := hostenv.AppUnit{Name: "php8.2-fpm.service", FPM: true}
+	asRoot := hostenv.AppUnit{Name: "app.service"} // no User=: the application may run as root
 	for _, c := range []struct {
 		e    hostenv.JournalEntry
 		want JournalTrust
 	}{
-		{hostenv.JournalEntry{Unit: u, UID: 0, Transport: "journal"}, JournalTrust{Verified: true}},
-		{hostenv.JournalEntry{Unit: u, UID: 0, Transport: "syslog"}, JournalTrust{Verified: true}},
-		{hostenv.JournalEntry{Unit: u, UID: 33, Transport: "journal"}, JournalTrust{Reason: hostenv.ReasonWebUserWritable}},
-		{hostenv.JournalEntry{Unit: u, UID: 1000, Transport: "syslog"}, JournalTrust{Reason: hostenv.ReasonUntrusted}},
+		{hostenv.JournalEntry{Unit: u.Name, UID: 0, Transport: "journal"}, JournalTrust{Verified: true}},
+		{hostenv.JournalEntry{Unit: u.Name, UID: 0, Transport: "syslog"}, JournalTrust{Verified: true}},
+		{hostenv.JournalEntry{Unit: u.Name, UID: 33, Transport: "journal"}, JournalTrust{Reason: hostenv.ReasonWebUserWritable}},
+		{hostenv.JournalEntry{Unit: u.Name, UID: 1000, Transport: "syslog"}, JournalTrust{Reason: hostenv.ReasonUntrusted}},
 		// A worker writing to the stderr the root master opened is logged as uid 0.
-		{hostenv.JournalEntry{Unit: u, UID: 0, Transport: "stdout"}, JournalTrust{Reason: hostenv.ReasonWebUserWritable}},
-		{hostenv.JournalEntry{Unit: u, UID: 33, Transport: "stdout"}, JournalTrust{Reason: hostenv.ReasonWebUserWritable}},
-		{hostenv.JournalEntry{Unit: u, UID: 0, Transport: "kernel"}, JournalTrust{Reason: hostenv.ReasonUnverified}},
+		{hostenv.JournalEntry{Unit: u.Name, UID: 0, Transport: "stdout"}, JournalTrust{Reason: hostenv.ReasonWebUserWritable}},
+		{hostenv.JournalEntry{Unit: u.Name, UID: 33, Transport: "stdout"}, JournalTrust{Reason: hostenv.ReasonWebUserWritable}},
+		{hostenv.JournalEntry{Unit: u.Name, UID: 0, Transport: "kernel"}, JournalTrust{Reason: hostenv.ReasonUnverified}},
 		{hostenv.JournalEntry{Unit: "init.scope", UID: 0, Transport: "journal"}, JournalTrust{Reason: hostenv.ReasonUnverified}}, // systemd's message about the unit
-		{hostenv.JournalEntry{Unit: u, UID: -1, Transport: "journal"}, JournalTrust{Reason: hostenv.ReasonUnverified}},
+		{hostenv.JournalEntry{Unit: u.Name, UID: -1, Transport: "journal"}, JournalTrust{Reason: hostenv.ReasonUnverified}},
 	} {
 		if got := EntryTrust(c.e, u, web); got != c.want {
 			t.Errorf("%+v: %+v, want %+v", c.e, got, c.want)
 		}
 	}
+	// The application itself may be root: its root message is not verified.
+	if got := EntryTrust(hostenv.JournalEntry{Unit: "app.service", UID: 0, Transport: "journal"}, asRoot, web); got.Verified || got.Reason != hostenv.ReasonWebUserWritable {
+		t.Errorf("root message of a unit without User=: %+v, want web_user_writable", got)
+	}
 }
 
 func TestReadJournalUnit(t *testing.T) {
-	const u = "php8.2-fpm.service"
+	u := hostenv.AppUnit{Name: "php8.2-fpm.service", FPM: true}
 	src := &journalSrc{
-		entries: []string{entry(jc1, u, "33", "PHP Warning: one"), entry(jc2, u, "0", "two")},
+		entries: []string{entry(jc1, u.Name, "33", "PHP Warning: one"), entry(jc2, u.Name, "0", "two")},
 		cursors: []string{jc1, jc2},
 	}
 	web := hostenv.WebAccounts{UIDs: map[int]string{33: "www-data"}}
@@ -113,8 +118,8 @@ func TestReadJournalUnit(t *testing.T) {
 // A cursor the journal no longer has (rotated past it): read the window
 // again, and say what may be lost.
 func TestReadJournalUnitStaleCursor(t *testing.T) {
-	const u = "gunicorn.service"
-	src := &journalSrc{entries: []string{entry(jc2, u, "0", "after rotation")}, cursors: []string{jc2}}
+	u := hostenv.AppUnit{Name: "gunicorn.service", User: "www-data"}
+	src := &journalSrc{entries: []string{entry(jc2, u.Name, "0", "after rotation")}, cursors: []string{jc2}}
 	stale := Cursor{Journal: jc1}
 	var got []string
 	c, r, err := ReadJournalUnit(context.Background(), src, u, &stale, NewBudget(DefaultBudgetBytes, time.Minute), hostenv.WebAccounts{},

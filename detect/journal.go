@@ -22,8 +22,11 @@ type JournalTrust struct {
 // EntryTrust judges an entry of unit. _SYSTEMD_UNIT and _UID are set by
 // journald, but what they say depends on the transport:
 //   - journal (sd_journal_send) and syslog: each message carries its
-//     sender's credentials. A root process of the unit is verified; the
-//     unit's web account web_user_writable; anything else untrusted.
+//     sender's credentials. A root process of the unit is verified only
+//     when the application itself cannot be running as root (a User= that
+//     is not root, or PHP-FPM's master); otherwise a root message may be
+//     the application's, web_user_writable. The unit's web account is
+//     web_user_writable; anything else untrusted.
 //   - stdout (a unit's stdout and stderr): the credentials are those of the
 //     process that opened the stream when the unit started, and every child
 //     writing to the inherited descriptor (PHP-FPM's workers with
@@ -32,8 +35,8 @@ type JournalTrust struct {
 //     web_user_writable, whatever _UID says.
 //   - kernel, audit, driver, or another unit's message about this one (the
 //     cgroup is not the unit's): unverified.
-func EntryTrust(e hostenv.JournalEntry, unit string, web hostenv.WebAccounts) JournalTrust {
-	if e.Unit != unit || e.UID < 0 {
+func EntryTrust(e hostenv.JournalEntry, unit hostenv.AppUnit, web hostenv.WebAccounts) JournalTrust {
+	if e.Unit != unit.Name || e.UID < 0 {
 		return JournalTrust{Reason: hostenv.ReasonUnverified}
 	}
 	_, webUID := web.UIDs[e.UID]
@@ -45,9 +48,9 @@ func EntryTrust(e hostenv.JournalEntry, unit string, web hostenv.WebAccounts) Jo
 		return JournalTrust{Reason: hostenv.ReasonUntrusted}
 	case "journal", "syslog":
 		switch {
-		case e.UID == 0:
+		case e.UID == 0 && !unit.RunsAppAsRoot():
 			return JournalTrust{Verified: true}
-		case webUID:
+		case e.UID == 0, webUID:
 			return JournalTrust{Reason: hostenv.ReasonWebUserWritable}
 		}
 		return JournalTrust{Reason: hostenv.ReasonUntrusted}
@@ -61,7 +64,7 @@ func EntryTrust(e hostenv.JournalEntry, unit string, web hostenv.WebAccounts) Jo
 // after a whole entry and says truncated; the next run goes on from there.
 // A stale cursor (the journal rotated past it) reads nothing from journald
 // and is said as rotated_gap.
-func ReadJournalUnit(ctx context.Context, src hostenv.Source, unit string, cur *Cursor, b *Budget, web hostenv.WebAccounts, fn func(hostenv.JournalEntry, JournalTrust)) (Cursor, ReadResult, error) {
+func ReadJournalUnit(ctx context.Context, src hostenv.Source, unit hostenv.AppUnit, cur *Cursor, b *Budget, web hostenv.WebAccounts, fn func(hostenv.JournalEntry, JournalTrust)) (Cursor, ReadResult, error) {
 	var res ReadResult
 	after := ""
 	since := b.now().Add(-FirstJournalWindow)
@@ -72,7 +75,7 @@ func ReadJournalUnit(ctx context.Context, src hostenv.Source, unit string, cur *
 	}
 	deadline, cancel := context.WithDeadline(ctx, b.deadline)
 	defer cancel()
-	last, err := hostenv.ReadJournal(deadline, src, unit, after, since, func(e hostenv.JournalEntry) error {
+	last, err := hostenv.ReadJournal(deadline, src, unit.Name, after, since, func(e hostenv.JournalEntry) error {
 		if b.spent() {
 			res.partial(ReadTruncated)
 			return hostenv.ErrStopJournal

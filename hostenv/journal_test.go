@@ -110,12 +110,16 @@ func TestAppUnits(t *testing.T) {
 	h := newFake(true)
 	h.links["/etc/systemd/system/multi-user.target.wants/php8.2-fpm.service"] = "/lib/systemd/system/php8.2-fpm.service"
 	h.files["/lib/systemd/system/php8.2-fpm.service"] = "[Service]\nExecStart=/usr/sbin/php-fpm8.2 --nodaemonize --fpm-config /etc/php/8.2/fpm/php-fpm.conf\n"
-	h.files["/etc/systemd/system/multi-user.target.wants/shop.service"] = "[Service]\nExecStart=/srv/shop/venv/bin/python -m gunicorn shop.wsgi\n"
+	h.files["/etc/systemd/system/multi-user.target.wants/shop.service"] = "[Service]\nUser=www-data\nExecStart=/srv/shop/venv/bin/python -m gunicorn shop.wsgi\n"
 	h.files["/etc/systemd/system/multi-user.target.wants/api.service"] = "[Service]\nExecStart=-/usr/bin/node /srv/api/index.js\n"
 	h.files["/etc/systemd/system/multi-user.target.wants/cron.service"] = "[Service]\nExecStart=/usr/sbin/cron -f\n"
 	sh := statHost{fakeHost: h, st: map[string]FileStat{"/etc/systemd/system/multi-user.target.wants": {Mode: fs.ModeDir | 0o755}}}
 	o := LinuxCollector{}.AppUnits(sh)
-	if o.Status != StatusOK || strings.Join(o.Value, ",") != "api.service,php8.2-fpm.service,shop.service" {
-		t.Errorf("%s %s: %v", o.Status, o.Detail, o.Value)
+	want := []AppUnit{{Name: "api.service"}, {Name: "php8.2-fpm.service", FPM: true}, {Name: "shop.service", User: "www-data"}}
+	if o.Status != StatusOK || len(o.Value) != 3 || o.Value[0] != want[0] || o.Value[1] != want[1] || o.Value[2] != want[2] {
+		t.Errorf("%s %s: %+v", o.Status, o.Detail, o.Value)
+	}
+	if !o.Value[0].RunsAppAsRoot() || o.Value[1].RunsAppAsRoot() || o.Value[2].RunsAppAsRoot() {
+		t.Error("RunsAppAsRoot: want only node without User=")
 	}
 }

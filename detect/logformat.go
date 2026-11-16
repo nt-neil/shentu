@@ -85,7 +85,11 @@ func NginxParser(spec, escape string) (*Parser, error) {
 	if escape == "" {
 		escape = "default"
 	}
-	if escape != "default" && escape != "json" && escape != "none" {
+	switch escape {
+	case "default", "json":
+	case "none": // a request or a User-Agent may hold the delimiters, and write fields of its own
+		return nil, fmt.Errorf("%w: escape=none, the fields can be forged from the request", ErrFormatUnrecognized)
+	default:
 		return nil, fmt.Errorf("%w: escape=%s", ErrFormatUnrecognized, escape)
 	}
 	p := &Parser{escape: escape}

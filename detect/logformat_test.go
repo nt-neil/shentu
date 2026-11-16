@@ -83,6 +83,7 @@ func TestFormatUnrecognized(t *testing.T) {
 		"no client":               func() (*Parser, error) { return ApacheParser(`%t "%r" %>s`) },
 		"strftime time":           func() (*Parser, error) { return ApacheParser(`%h %{%Y-%m-%d}t "%r" %>s`) },
 		"unknown escape":          func() (*Parser, error) { return NginxParser(ngxCombinedSpec, "base64") },
+		"escape=none":             func() (*Parser, error) { return NginxParser(ngxCombinedSpec, "none") },
 		"name defined nowhere": func() (*Parser, error) {
 			return ParserFor(hostenv.LogSource{Server: "nginx", Kind: "access", Format: "custom"})
 		},
