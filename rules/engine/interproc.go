@@ -141,11 +141,13 @@ type fileFuncs struct {
 	desc     map[string][]string // class → the classes of the file under it, worked out once
 	callsUp  map[string]bool     // memo of callsParent(): key + "\x00" + name
 	vcls     map[string]string   // names given one class's new object (varClasses)
+	tails    map[string]bool     // every part of a key after a "::" (hasTail)
 }
 
 func newFileFuncs(funcs map[string][]*fnInfo, lang string) *fileFuncs {
-	ff := &fileFuncs{php: lang == "php", byKey: funcs, parents: map[string]string{}, traits: map[string][]string{}}
-	for _, infos := range funcs {
+	ff := &fileFuncs{php: lang == "php", byKey: funcs, parents: map[string]string{}, traits: map[string][]string{}, tails: map[string]bool{}}
+	for k, infos := range funcs {
+		ff.addTails(k)
 		for _, fi := range infos {
 			if c := fi.f.class; c != "" {
 				c = ff.norm(c)
@@ -162,6 +164,18 @@ func newFileFuncs(funcs map[string][]*fnInfo, lang string) *fileFuncs {
 	}
 	return ff
 }
+
+// addTails records the parts of key k after each "::" it has.
+func (ff *fileFuncs) addTails(k string) {
+	for i := 0; i+2 <= len(k); i++ {
+		if k[i:i+2] == "::" {
+			ff.tails[k[i+2:]] = true
+		}
+	}
+}
+
+// hasTail reports whether a key ends in "::" + n.
+func (ff *fileFuncs) hasTail(n string) bool { return ff.tails[n] }
 
 // norm is a class name as keys use it: without namespace, PHP in lower case.
 func (ff *fileFuncs) norm(c string) string {
@@ -640,6 +654,7 @@ func (ff *fileFuncs) this(class, name, caller string) string {
 			infos = append(infos, ff.byKey[k]...)
 		}
 		ff.byKey[vk] = infos
+		ff.addTails(vk)
 		if ff.unions == nil {
 			ff.unions = map[string][]string{}
 		}

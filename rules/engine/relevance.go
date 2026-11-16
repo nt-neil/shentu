@@ -218,12 +218,8 @@ func (a *analysis) mayBringInput(t []Token) bool {
 		if a.proj != nil && len(a.proj.declared[lang][n]) > 0 {
 			return true
 		}
-		for k := range a.sc.funcs {
-			if k == n || strings.HasSuffix(k, "::"+n) {
-				return true
-			}
-		}
-		return false
+		_, ok := a.sc.funcs[n]
+		return ok || a.sc.ff.hasTail(n)
 	}
 	class := func(n string) bool {
 		return a.proj != nil && len(a.proj.classes[lang][n]) > 0 || a.sc.ff.hasClass(n) || a.sc.ff.hasClass(norm(n))
