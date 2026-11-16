@@ -43,6 +43,7 @@ type Project struct {
 	e                    *Engine
 	opt                  ProjectOptions
 	files                map[string]*fileIndex
+	sinkRules            map[string]bool     // rules a sink of which some indexed file may hold (fileIndex.Sinks)
 	bySuffix             map[string][]string // "pkg/mod.py", "mod.py" → paths
 	byClean              map[string]string   // cleaned slash path → path
 	read                 func(string) ([]byte, error)
@@ -91,7 +92,7 @@ type ProjectOptions struct {
 }
 
 // indexVersion changes whenever fileIndex changes, so an old cache is ignored.
-const indexVersion = "5"
+const indexVersion = "6"
 
 type fileIndex struct {
 	Hash      string            `json:"h"`
@@ -107,6 +108,7 @@ type fileIndex struct {
 	Empty     []string          `json:"e,omitempty"`  // top-level functions with an empty body (stubs: noop.php)
 	Guarded   []string          `json:"g,omitempty"`  // PHP: "f:name" / "c:name" (lower case) declared under if (!function_exists / !class_exists)
 	Routes    []routeRef        `json:"rt,omitempty"` // registrations naming a handler, maybe in another file (routes.go)
+	Sinks     []string          `json:"s,omitempty"`  // rules some sink of which the file may hold (sinkNames): one no file holds finds nothing across files
 }
 
 type classIndex struct {
@@ -131,6 +133,7 @@ type fileCtx struct {
 	tokens int
 	rdefs  map[string][][]Token // Python: what the file's names hold, for the receiver condition (receiver.go)
 	rcls   map[string][]string  // PHP: variables bound only to new objects, for not_receiver (receiver.go)
+	ifacts map[string]bool      // JavaScript: the imports and names unless_imports looks for (imports.go)
 	defs   map[string]string    // PHP: define('NAME', 'text') in the file (context.go)
 }
 
@@ -152,7 +155,7 @@ func (e *Engine) NewProject(paths []string, read func(string) ([]byte, error), o
 	p := &Project{e: e, opt: opt, read: read, files: map[string]*fileIndex{}, bySuffix: map[string][]string{}, byClean: map[string]string{},
 		funcs: map[string]map[string][]string{}, classes: map[string]map[string][]string{}, declared: map[string]map[string][]string{},
 		ctx: map[string]*fileCtx{}, sums: map[string]*summaries{}, kept: map[string]map[string]*summary{}, seen: map[string]bool{},
-		incl: map[string][]string{}, fnMemo: map[string]string{}, deps: map[string]map[string]bool{}, unread: map[string]bool{},
+		incl: map[string][]string{}, fnMemo: map[string]string{}, deps: map[string]map[string]bool{}, unread: map[string]bool{}, sinkRules: map[string]bool{},
 		deadline: time.Now().Add(opt.MaxTime)}
 	key := e.indexKey()
 	cache := loadIndexCache(opt.CacheFile, key)
@@ -318,6 +321,9 @@ func (p *Project) add(f string, fi *fileIndex) {
 	if fi.Limited {
 		return
 	}
+	for _, id := range fi.Sinks {
+		p.sinkRules[id] = true
+	}
 	if p.funcs[fi.Lang] == nil {
 		p.funcs[fi.Lang] = map[string][]string{}
 		p.classes[fi.Lang] = map[string][]string{}
@@ -407,6 +413,12 @@ func indexFile(e *Engine, lang string, src []byte) *fileIndex {
 	if b.hit {
 		fi.Limited = true
 		return fi
+	}
+	names := nameSet(toks, map[string]bool{})
+	for _, r := range e.byLang[lang] {
+		if sinkNames(r, names, src) {
+			fi.Sinks = append(fi.Sinks, r.rule.ID)
+		}
 	}
 	tree := parse(lang, toks, b)
 	classes := map[string]*classIndex{}
@@ -777,7 +789,7 @@ func (p *Project) analysisFor(a *analysis, f string) *analysis {
 		p.sums[key] = sc
 	}
 	return &analysis{r: a.r, php: ctx.lang == "php", py: ctx.lang == "python", js: ctx.lang == "js", b: a.b,
-		kw: keywords[ctx.lang], seen: map[loc]bool{}, sc: sc, proj: p, file: f, rdefs: ctx.rdefs, rcls: ctx.rcls, defs: ctx.defs, nest: a.nest, heights: a.heights}
+		kw: keywords[ctx.lang], seen: map[loc]bool{}, sc: sc, proj: p, file: f, rdefs: ctx.rdefs, rcls: ctx.rcls, ifacts: ctx.ifacts, defs: ctx.defs, nest: a.nest, heights: a.heights}
 }
 
 // context returns the parsed file, parsing it if it is not kept.
@@ -806,7 +818,7 @@ func (p *Project) context(f string) *fileCtx {
 		}
 		return nil
 	}
-	c := &fileCtx{lang: fi.Lang, tree: parse(fi.Lang, toks, b), tokens: len(toks), rdefs: fileRecvDefs(fi.Lang, toks), rcls: fileRecvClasses(fi.Lang, toks), defs: phpDefines(fi.Lang, toks)}
+	c := &fileCtx{lang: fi.Lang, tree: parse(fi.Lang, toks, b), tokens: len(toks), rdefs: fileRecvDefs(fi.Lang, toks), rcls: fileRecvClasses(fi.Lang, toks), ifacts: p.e.importFacts(fi.Lang, toks), defs: phpDefines(fi.Lang, toks)}
 	if b.timeHit {
 		p.unread[f], p.unsteady = true, true
 	}
@@ -1401,6 +1413,11 @@ func (e *Engine) indexKey() string {
 	enc := json.NewEncoder(h)
 	enc.Encode(engineBuild())
 	enc.Encode(e.Limits)
+	for _, lang := range slices.Sorted(maps.Keys(e.byLang)) {
+		for _, r := range e.byLang[lang] {
+			enc.Encode([]any{r.rule.ID, r.rule.Sinks, r.rule.Text}) // fileIndex.Sinks
+		}
+	}
 	for _, lang := range slices.Sorted(maps.Keys(e.routes)) {
 		for _, c := range e.routes[lang] {
 			enc.Encode(c.r)

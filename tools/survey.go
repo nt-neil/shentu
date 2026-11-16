@@ -155,6 +155,7 @@ func Survey(ctx context.Context, env *Env) SiteProfile {
 	var unread []string
 	p.SSH, p.SSHHash, unread = sshdSettings()
 	p.Risks = append(p.Risks, sshRisks(p.SSH, unread)...)
+	p.Risks = append(p.Risks, apacheH2Risk(ctx, apacheConfGlob)...)
 	if p.Firewall == "none detected" && hasPublic(p.Services) {
 		p.Risks = append(p.Risks, Risk{"firewall:none", "info", "no host firewall detected (nftables, ufw, firewalld); fine only if a cloud firewall covers this server"})
 	}
@@ -250,10 +251,11 @@ func sshdFields(line string) []string {
 }
 
 // sshdSettings returns the effective global sshd settings that matter for security,
-// following Include in place; the first value wins, as in sshd. Match blocks are not
-// evaluated. The hash covers every line read, to notice any change. A file or
-// Include folder that cannot be read (sshd reads it as root) leaves every setting
-// not set before it "unknown"; unread lists them.
+// read by hostenv's LinuxCollector.SSHD: Include is followed in place and the first
+// value wins, as in sshd; a Match block in the main file ends the global part, one in
+// an included file ends only that file. A file or Include folder that cannot be read
+// (sshd reads it as root) leaves every setting not set before it "unknown"; unread
+// lists them, with Includes nested more than 4 deep and files past 256.
 func sshdSettings() (map[string]string, string, []string) {
 	o := linux.SSHD(hostSource(), sshdConfig)
 	return o.Value.Settings, o.Value.Hash, o.Value.Unread

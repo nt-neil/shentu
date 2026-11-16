@@ -1,0 +1,78 @@
+id = "js-open-redirect-location-header"
+lang = "js"
+class = "open-redirect"
+cwe = "CWE-601"
+severity = "medium"
+tier = "info"
+title = "Location header set from the request URL or a request value"
+# res.writeHead(code, { Location: ... }) is not a sink yet: a fixed prefix inside an object literal is not judged.
+frameworks = ["express", "koa", "fastify"]
+sources = ["req.url", "req.originalUrl", "req.query", "req.body", "req.params", "url.parse(req.url", "url.parse(request.url", "ctx.url", "ctx.originalUrl", "ctx.path", "ctx.query", "ctx.request.query", "ctx.request.body", "ctx.params", "request.url", "request.query", "request.body", "request.params"]
+sinks = ["res.setHeader(", "res.set(", "res.header(", "ctx.set(", "ctx.response.set(", "reply.header("]   # res.setHeader with a request value is also in js-open-redirect-redirect (same line, two rules); the request path (req.url) is only here
+sanitizers = ["encodeURIComponent("]
+fix = "Build the Location value from a fixed path on this site with the value only after it ('/docs/' + encodeURIComponent(name)), or from an allowlist; never start it with the request path, which can be //evil.example."
+refs = ["CVE-2021-23387"]
+
+[[args]]
+when = ["'Location'", "'location'"]
+arg = 2
+leading = true
+
+
+[[samples]]
+kind = "vulnerable"
+note = "a request for //evil.example/ is redirected off the site"
+code = '''
+app.use((req, res, next) => {
+  if (req.url.length > 1 && req.url.endsWith("/")) {
+    res.status(301);
+    res.set('Location', req.url.slice(0, -1));
+    return res.end();
+  }
+  next();
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+app.get("/continue", (req, res) => {
+  res.status(302);
+  res.set('Location', req.query.next);
+  res.end();
+});
+'''
+
+[[samples]]
+kind = "safe"
+note = "as the fix says: a fixed path first, the value encoded after it"
+code = '''
+app.get("/docs", (req, res) => {
+  res.status(302);
+  res.set('Location', "/docs/" + encodeURIComponent(req.query.name));
+  res.end();
+});
+'''
+
+[[samples]]
+kind = "safe"
+note = "the header is not Location"
+code = '''
+app.get("/x", (req, res) => {
+  res.setHeader('X-Request-Path', req.url);
+  res.end();
+});
+'''
+
+[[samples]]
+kind = "safe"
+note = "a fixed path leads the Location value"
+code = '''
+export default async function handler(req, res) {
+  const post = await findPost(req.query.slug);
+  if (!post) return res.status(404).end();
+  res.status(307);
+  res.set('Location', `/posts/${post.slug}`);
+  res.end();
+}
+'''

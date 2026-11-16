@@ -1,0 +1,42 @@
+id = "php-xss-shortcode-attribute"
+lang = "php"
+class = "xss"
+cwe = "CWE-79"
+severity = "medium"
+tier = "info"
+title = "Shortcode attribute written into an HTML attribute without escaping"
+frameworks = ["wordpress"]
+sources = ["shortcode_atts(", "$atts["]
+sinks = ["return", "echo", "print"]
+sanitizers = ["check_admin_referer", "check_ajax_referer", "wp_verify_nonce", "current_user_can", "esc_attr", "esc_html", "esc_textarea", "esc_url", "esc_attr__", "esc_html__", "htmlspecialchars", "htmlentities", "sanitize_key", "sanitize_title", "sanitize_html_class", "urlencode", "rawurlencode", "number_format", "e(", "count("]
+fix = "Escape the attribute with esc_attr() before it goes into an HTML attribute."
+refs = ["CVE-2024-11761"]
+
+[[args]]
+context = ["attr"]
+
+[[samples]]
+kind = "vulnerable"
+note = "any author who can write a post sets shortcode attributes"
+code = '''
+<?php
+add_shortcode('badge', function ($atts) {
+    $a = shortcode_atts(['color' => 'blue'], $atts);
+    ob_start();
+    echo '<span class="badge badge-' . $a['color'] . '">new</span>';
+    return ob_get_clean();
+});
+'''
+
+[[samples]]
+kind = "safe"
+note = "the fix"
+code = '''
+<?php
+add_shortcode('badge', function ($atts) {
+    $a = shortcode_atts(['color' => 'blue'], $atts);
+    ob_start();
+    echo '<span class="badge badge-' . esc_attr($a['color']) . '">new</span>';
+    return ob_get_clean();
+});
+'''

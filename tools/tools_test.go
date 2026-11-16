@@ -196,3 +196,44 @@ func TestSSHSummaryEmptyJournalIncomplete(t *testing.T) {
 		t.Errorf("%v %v", r, err)
 	}
 }
+
+// With no journalctl to run and no text auth log, macOS says it has no sshd
+// log source (not the runner's allowlist error); elsewhere the error stays.
+// A text log that cannot be read for want of rights sets permission, so the
+// report advises root only then (review N-3).
+func TestSSHSummaryNoLogSource(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("ssh_logins reads the Security log on Windows, not journald")
+	}
+	noCmds, _ := hostenv.NewRunner(nil)
+	dir := t.TempDir()
+	prevHost := hostSource
+	hostSource = func() hostenv.Source { return &hostenv.Live{Runner: noCmds, Remap: map[string]string{"/var/log": dir}} }
+	t.Cleanup(func() { hostSource = prevHost })
+	env := &Env{LogPaths: []string{"/var/log/auth.log"}}
+	r, err := SSHSummary(context.Background(), env, time.Now().Add(-time.Hour), "")
+	if err != nil || r["complete"] != false {
+		t.Fatalf("%v %v", r, err)
+	}
+	src, _ := r["source"].(string)
+	e, _ := r["error"].(string)
+	if runtime.GOOS == "darwin" {
+		if r["unsupported"] != true || e != "" || !strings.Contains(src, "macOS") {
+			t.Errorf("macOS: %v", r)
+		}
+	} else if r["unsupported"] == true || !strings.Contains(e, "allowlist") {
+		t.Errorf("no journalctl: %v", r)
+	}
+	if r["permission"] == true {
+		t.Errorf("no log is no permission problem: %v", r)
+	}
+	if os.Getuid() == 0 {
+		return // root reads a mode 0 file
+	}
+	auth := filepath.Join(dir, "auth.log")
+	os.WriteFile(auth, []byte("Nov 14 10:00:00 vm sshd[1]: Failed password for root from 203.0.113.77 port 22 ssh2\n"), 0)
+	t.Cleanup(func() { os.Chmod(auth, 0o600) })
+	if r, _ = SSHSummary(context.Background(), env, time.Now().Add(-time.Hour), ""); r["permission"] != true || r["unsupported"] == true {
+		t.Errorf("unreadable auth.log: %v", r)
+	}
+}

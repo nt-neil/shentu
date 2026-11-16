@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -78,6 +79,62 @@ func replaceOrAppend(all, add []finding) []finding {
 	return all
 }
 
+// sshFindings turns an SSH login summary into findings, one per source at
+// or over threshold. why is a Not checked line when the logs could not be read
+// in full (an error, or a log cut short or unreadable): then no finding is no
+// proof that there were no failed logins.
+func sshFindings(r map[string]any, err error, threshold int) (out []finding, why string) {
+	if err != nil {
+		return nil, fmt.Sprintf("\n\nNot checked: SSH logins (%q).\n", cutLine(mask(err.Error())))
+	}
+	note := ""
+	if v, _ := r["verified"].(bool); !v {
+		note = "; read from text logs, which anyone on this host can write to: check them before acting"
+	}
+	sources, _ := r["sources"].([]tools.SSHSource)
+	for _, s := range sources {
+		if n := s.Failed + s.InvalidUser; n >= threshold {
+			sev := "warning"
+			if s.Accepted > 0 {
+				sev = "critical"
+			}
+			out = append(out, finding{"ssh:" + s.IP, sev,
+				fmt.Sprintf("%d failed SSH logins from %s in the last hour (successful logins: %d)%s", n, s.IP, s.Accepted, note), s})
+		}
+	}
+	if c, _ := r["complete"].(bool); !c {
+		// The reason is the error, else what was read (source says why it is
+		// not enough: an empty journal with no text log to confirm it, ...).
+		detail, _ := r["error"].(string)
+		if detail == "" {
+			detail, _ = r["source"].(string)
+		}
+		if detail == "" {
+			detail = "a login log was cut short or could not be read"
+		}
+		detail = cutLine(mask(detail))
+		if u, _ := r["unsupported"].(bool); u {
+			return out, fmt.Sprintf("\n\nNot checked: SSH logins (%q).\n", detail)
+		}
+		advice := ""
+		if p, _ := r["permission"].(bool); p { // root helps only when rights were missing
+			advice = " (run Shentu as root to read every log)"
+		}
+		why = fmt.Sprintf("\n\nNot checked in full: SSH logins (%q); the failed logins counted are a lower bound%s.\n", detail, advice)
+	}
+	return out, why
+}
+
+// dnsHint says, after an error, that a failed name lookup is a DNS problem on
+// this host (the resolver in /etc/resolv.conf), not the service's; "" otherwise.
+func dnsHint(err error) string {
+	var d *net.DNSError
+	if !errors.As(err, &d) {
+		return ""
+	}
+	return "; the name lookup failed: check this host's DNS (the resolver in /etc/resolv.conf) against `getent hosts " + mask(d.Name) + "`"
+}
+
 // uncheckedSection lists, at the end of a report, the checks that could not
 // tell (a file they need could not be read, e.g. when not run as root), so a
 // silent part is not read as a clean one. "" when there are none.
@@ -120,7 +177,7 @@ func notCheckedSection(items []string) string {
 // not carry.
 func uncheckedVulns(what string, r map[string]any, err error) string {
 	if err != nil {
-		return fmt.Sprintf("\n\nNot checked for vulnerabilities: %s (%q).\n", what, cutLine(mask(err.Error())))
+		return fmt.Sprintf("\n\nNot checked for vulnerabilities: %s (%q)%s.\n", what, cutLine(mask(err.Error())), dnsHint(err))
 	}
 	var lines []string
 	if p, ok := r["partial"]; ok {
@@ -208,6 +265,25 @@ func uncheckedConfigs(unread []string) string {
 	return b.String()
 }
 
+// unparsedLinesMax is how many unparsed line numbers one warning lists.
+const unparsedLinesMax = 20
+
+// unparsedKeysFinding is one warning for an authorized_keys file's lines that
+// are neither a key nor a comment: the first unparsedLinesMax line numbers,
+// then how many in all.
+func unparsedKeysFinding(k tools.KeyFile) finding {
+	lines := make([]string, 0, unparsedLinesMax)
+	for _, l := range k.Unparsed[:min(len(k.Unparsed), unparsedLinesMax)] {
+		lines = append(lines, strconv.Itoa(l))
+	}
+	list := strings.Join(lines, ", ")
+	if n := len(k.Unparsed); n > unparsedLinesMax {
+		list += fmt.Sprintf(" and %d more (%d in all)", n-unparsedLinesMax, n)
+	}
+	return finding{"authorized_key_unparsed:" + k.Path, "warning",
+		fmt.Sprintf("%s line(s) %s are neither a key nor a comment; sshd ignores them, but check none is a key written in another form", k.Path, list), nil}
+}
+
 // patrolListMax is how many findings one patrol report lists.
 const patrolListMax = 50
 
@@ -274,8 +350,9 @@ func codeAuditFindings(audit tools.CodeAudit) []finding {
 	return out
 }
 
-func checks(ctx context.Context, cfg *Config, env *tools.Env, st *state, daily bool) []finding {
-	var out []finding
+// checks returns the findings, and a Not checked line for the SSH logins
+// when their logs could not be read in full ("" otherwise).
+func checks(ctx context.Context, cfg *Config, env *tools.Env, st *state, daily bool) (out []finding, sshUnchecked string) {
 	// Survey first: risks that follow from the configuration, and changes since the baseline.
 	surveyEnv := *env
 	if !daily {
@@ -298,21 +375,11 @@ func checks(ctx context.Context, cfg *Config, env *tools.Env, st *state, daily b
 
 	// On Windows logon failures come from the survey's checks (auth.bruteforce);
 	// a second alert for the same source would say "SSH" for RDP or SMB.
-	if r, err := tools.SSHSummary(ctx, env, time.Now().Add(-1*time.Hour), ""); err == nil && runtime.GOOS != "windows" {
-		note := ""
-		if v, _ := r["verified"].(bool); !v {
-			note = "; read from text logs, which anyone on this host can write to: check them before acting"
-		}
-		for _, s := range r["sources"].([]tools.SSHSource) {
-			if n := s.Failed + s.InvalidUser; n >= cfg.Patrol.SSHThreshold {
-				sev := "warning"
-				if s.Accepted > 0 {
-					sev = "critical"
-				}
-				out = append(out, finding{"ssh:" + s.IP, sev,
-					fmt.Sprintf("%d failed SSH logins from %s in the last hour (successful logins: %d)%s", n, s.IP, s.Accepted, note), s})
-			}
-		}
+	if runtime.GOOS != "windows" {
+		r, err := tools.SSHSummary(ctx, env, time.Now().Add(-1*time.Hour), "")
+		f, why := sshFindings(r, err, cfg.Patrol.SSHThreshold)
+		out = append(out, f...)
+		sshUnchecked = why
 	}
 
 	if ports, err := tools.ListeningPorts(); err == nil {
@@ -385,7 +452,7 @@ func checks(ctx context.Context, cfg *Config, env *tools.Env, st *state, daily b
 			out = append(out, finding{"cert:" + c.Target, "warning", fmt.Sprintf("certificate for %s expires in %d days", c.Target, c.DaysLeft), c})
 		}
 	}
-	return out
+	return out, sshUnchecked
 }
 
 // patrol runs once (from a systemd timer): checks → LLM explanation → notify.
@@ -395,8 +462,8 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 		return err
 	}
 	st := loadState(cfg.StateDir)
-	all := checks(ctx, cfg, env, st, daily)
-	unchecked := uncheckedSection(st.Profile.Risks) // listed in every report, never pushed
+	all, sshUnchecked := checks(ctx, cfg, env, st, daily)
+	unchecked := uncheckedSection(st.Profile.Risks) + sshUnchecked // listed in every report, never pushed
 	if daily {
 		// Once a day: installed packages with vulnerabilities that are being exploited now.
 		r, err := tools.PackageVulns(ctx, env.HTTP, "")
@@ -516,12 +583,7 @@ func keyFileFindings(keys []tools.KeyFile) []finding {
 		if len(k.Unparsed) == 0 {
 			continue
 		}
-		lines := make([]string, len(k.Unparsed))
-		for i, l := range k.Unparsed {
-			lines[i] = strconv.Itoa(l)
-		}
-		out = append(out, finding{"authorized_key_unparsed:" + k.Path, "warning",
-			fmt.Sprintf("%s line(s) %s are neither a key nor a comment; sshd ignores them, but check none is a key written in another form", k.Path, strings.Join(lines, ", ")), nil})
+		out = append(out, unparsedKeysFinding(k))
 	}
 	return out
 }

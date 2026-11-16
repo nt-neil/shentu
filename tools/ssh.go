@@ -3,7 +3,9 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"runtime"
 	"strings"
 	"time"
@@ -18,7 +20,7 @@ var sshLogins = Tool{
 		"complete is false when a log was cut short or unreadable (error says why): the counts are a lower bound. " +
 		"source names what was read (journald, or the log files and why journald was not used); note says when low-activity sources were not tracked.",
 	Params: schema(`{"type":"object","properties":{
-		"since_hours":{"type":"number","description":"look back this many hours (default 24)"},
+		"since_hours":{"type":"number","description":"look back this many hours (default 24, at most 720: as far as block_ip's login check looks)"},
 		"ip":{"type":"string","description":"only this source IP"}}}`),
 	Run: func(ctx context.Context, env *Env, args json.RawMessage) (any, error) {
 		var a struct {
@@ -28,7 +30,10 @@ var sshLogins = Tool{
 		if err := decode(args, &a); err != nil {
 			return nil, err
 		}
-		return SSHSummary(ctx, env, hoursAgo(a.SinceHours, 24), a.IP)
+		// No further back than block_ip's login check: what it cannot see must
+		// not be shown as evidence for a block.
+		h := min(a.SinceHours, loginGateWindow.Hours())
+		return SSHSummary(ctx, env, hoursAgo(h, 24), a.IP)
 	},
 }
 
@@ -55,8 +60,20 @@ func SSHSummary(ctx context.Context, env *Env, since time.Time, onlyIP string) (
 	// then a lower bound.
 	complete := err == nil && (verified || !strings.HasPrefix(source, "journald"))
 	out := map[string]any{"source": source, "verified": verified, "complete": complete, "since": since, "sources": sources}
+	if runtime.GOOS == "darwin" && errors.Is(err, hostenv.ErrNotAllowed) {
+		// No journalctl and no text auth log: macOS keeps sshd's events in
+		// its unified log, which Shentu does not read. Root would not help.
+		out["source"] = "none: Shentu has no sshd log source on macOS (it reads journald and the text auth logs, which macOS does not keep)"
+		out["unsupported"] = true
+		err = nil
+	}
 	if err != nil {
 		out["error"] = err.Error()
+	}
+	// permission: a log was not read for want of rights (a text log root
+	// can read, a journal hiding the system's entries): root would read it.
+	if errors.Is(err, fs.ErrPermission) || strings.Contains(source, string(hostenv.ReasonPermission)) {
+		out["permission"] = true
 	}
 	if n := evicted; n > 0 {
 		out["note"] = fmt.Sprintf("%d low-activity sources were not tracked (more than %d sources)", n, hostenv.MaxTrackedSources)

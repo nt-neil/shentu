@@ -23,3 +23,16 @@ jobs:
       - run: go vet ./...
       - run: go test ./...
       - run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+  # macOS: the whole suite on a GitHub-hosted Mac (arm64), without sudo. Most darwin
+  # collector tests replay fixtures; this also builds and runs them on macOS itself.
+  # No macOS release binary is built yet.
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version: stable
+          check-latest: true
+      - run: go vet ./...
+      - run: go test ./...
