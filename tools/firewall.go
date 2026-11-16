@@ -155,7 +155,7 @@ func loginGate(ctx context.Context, env *Env, ip net.IP, override bool) error {
 
 var blockIP = Tool{
 	Name:        "block_ip",
-	Description: "Block all inbound traffic from one IP address with nftables, for a limited time. Requires the operator to confirm. Refuses loopback, this server's own addresses and the IPs of current SSH sessions, and an IP whose SSH login events are only in text logs anyone here can write to, or could not be read in full (override_unverified, from the server's terminal only, after the operator checked them). That check covers SSH login evidence only: a block based on other logs (log_search over syslog, nginx) is not checked, so say where the evidence came from.",
+	Description: "Block all inbound traffic from one IP address with nftables, for a limited time. Requires the operator to confirm. Refuses loopback, this server's own addresses and the IPs of current SSH sessions. An IP attack detection saw is blocked only for a verified L2 or L3 group of its own (not an overflow summary); one seen only from unverified sources needs override_unverified, from the server's terminal only. Any other IP is refused when its SSH login events are only in text logs anyone here can write to, or could not be read in full (override_unverified likewise). That check covers SSH login evidence only: a block based on other logs (log_search over syslog, nginx) is not checked, so say where the evidence came from.",
 	Control:     true,
 	Params: schema(`{"type":"object","required":["ip","reason"],"properties":{
 		"ip":{"type":"string","description":"single IPv4 or IPv6 address"},
@@ -181,8 +181,17 @@ var blockIP = Tool{
 		if err != nil {
 			return nil, err
 		}
-		if err := loginGate(ctx, env, ip, a.OverrideUnverified); err != nil {
+		// An address attack detection saw is judged by its attempts (the
+		// verified gate on top of the bot's levels); any other by its SSH
+		// logins, as before.
+		applies, err := attackGate(ip, a.OverrideUnverified)
+		if err != nil {
 			return nil, err
+		}
+		if !applies {
+			if err := loginGate(ctx, env, ip, a.OverrideUnverified); err != nil {
+				return nil, err
+			}
 		}
 		if err := ensureTable(ctx); err != nil {
 			return nil, err

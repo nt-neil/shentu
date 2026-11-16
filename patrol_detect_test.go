@@ -158,3 +158,29 @@ func TestDetectRoundFailures(t *testing.T) {
 		t.Errorf("not linux: %+v", sum)
 	}
 }
+
+// /attacks: the last day's groups, one line each, cut to the answer level.
+func TestAttacksBrief(t *testing.T) {
+	cfg := &Config{StateDir: t.TempDir()}
+	now := time.Now()
+	if s := attacksBrief(cfg, now, true); !strings.Contains(s, "沒有攻擊嘗試") {
+		t.Errorf("empty: %q", s)
+	}
+	a, err := detect.LoadAttacks(cfg.StateDir, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.Add(detect.Attempt{IP: "198.51.100.7", Entry: "code:marker:a.php:1", Level: detect.LevelPayload, Verified: true, Time: now, Severity: "high"}, now)
+	if err := a.Save(cfg.StateDir, now); err != nil {
+		t.Fatal(err)
+	}
+	a.Close()
+	s := attacksBrief(cfg, now, true)
+	if !strings.Contains(s, "1 組") || !strings.Contains(s, "198.51.100.7") || !strings.Contains(s, "verified") {
+		t.Errorf("brief %q", s)
+	}
+	cfg.Bot.Answers = 1
+	if s := attacksBrief(cfg, now, false); len([]rune(s)) > maxAnswer(1)+1 {
+		t.Errorf("not cut to the answer level: %d", len([]rune(s)))
+	}
+}

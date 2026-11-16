@@ -351,3 +351,38 @@ func detectCommand(ctx context.Context, cfg *Config, since time.Duration, asJSON
 	}
 	return nil
 }
+
+// attacksBrief is the bot's /attacks: the groups of the last day, one line
+// each, cut to the bot's answer length (Answers). Addresses in full, as the
+// alerts give them.
+func attacksBrief(cfg *Config, now time.Time, zh bool) string {
+	st, err := detect.PeekAttacks(cfg.StateDir)
+	if err != nil {
+		return "⚠️ " + err.Error()
+	}
+	list, _ := tools.AttackList(st, now, 24*time.Hour)["groups"].([]map[string]any)
+	if len(list) == 0 {
+		if zh {
+			return "🛡 過去 24 小時沒有攻擊嘗試的紀錄。"
+		}
+		return "🛡 No attack attempts in the last 24 hours."
+	}
+	var b strings.Builder
+	if zh {
+		fmt.Fprintf(&b, "🛡 過去 24 小時的攻擊嘗試（%d 組）：\n", len(list))
+	} else {
+		fmt.Fprintf(&b, "🛡 Attack attempts, last 24 hours (%d groups):\n", len(list))
+	}
+	for _, g := range list {
+		v := "verified"
+		if g["verified"] == false {
+			v = "unverified"
+		}
+		fmt.Fprintf(&b, "- [%s %s] %s ×%d %v (%s)\n", g["severity"], g["level"], g["entry"], g["count"], g["ips"], v)
+	}
+	s := b.String()
+	if n := maxAnswer(cfg.Bot.Answers); n > 0 {
+		s = tools.Cut(s, n)
+	}
+	return s
+}
