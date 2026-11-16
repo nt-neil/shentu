@@ -18,6 +18,9 @@ func TestRouteFormsP5(t *testing.T) {
 		"/users/{id?}":         {[]string{"/users", "/users/5"}, []string{"/users/5/6"}},
 		"/v1/items:batch":      {[]string{"/v1/items:batch", "/api/v1/items:batch"}, []string{"/v1/items:other", "/v1/items"}},
 		"/v1/:name/items:sync": {[]string{"/v1/x/items:sync"}, []string{"/v1/x/items:other"}},
+		// Security review: after a delimiter a colon is still a parameter.
+		"/flights/:from-:to": {[]string{"/flights/a-b"}, []string{"/flights/a"}},
+		"/file.:ext":         {[]string{"/file.txt"}, []string{"/file."}},
 	} {
 		re, _ := routeRegexp(pattern)
 		if re == nil {

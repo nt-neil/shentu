@@ -181,8 +181,16 @@ func routeRegexp(pattern string) (re *regexp.Regexp, loose bool) {
 	var b strings.Builder
 	idx := placeholder.FindAllStringIndex(pattern, -1)
 	last := 0
-	// A :name not at a segment's start is a literal (Google's /v1/items:batch).
-	idx = slices.DeleteFunc(idx, func(m []int) bool { return pattern[m[0]] == ':' && m[0] > 0 && pattern[m[0]-1] != '/' })
+	// A :name right after a word character is a literal (Google's
+	// /v1/items:batch); after / or a delimiter it is a parameter
+	// (Express's /flights/:from-:to, /file.:ext).
+	idx = slices.DeleteFunc(idx, func(m []int) bool {
+		if pattern[m[0]] != ':' || m[0] == 0 {
+			return false
+		}
+		c := pattern[m[0]-1]
+		return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_'
+	})
 	for _, m := range idx {
 		lit, ph := pattern[last:m[0]], pattern[m[0]:m[1]]
 		optional := strings.HasSuffix(ph, "?") || strings.HasSuffix(ph, "?}") // Express's /:id?, Laravel's /{id?}
