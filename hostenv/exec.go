@@ -292,6 +292,16 @@ func (r *Runner) RunLinesUnmasked(ctx context.Context, argv []string, fn func(li
 }
 
 func (r *Runner) runLines(ctx context.Context, argv []string, masked bool, fn func(line string)) (CmdResult, error) {
+	return r.runStream(ctx, argv, func(out io.Reader) error {
+		if masked {
+			return scan(out, fn)
+		}
+		return scanPlain(out, fn)
+	})
+}
+
+// runStream runs an allowed argv, handing its stdout to read as it comes.
+func (r *Runner) runStream(ctx context.Context, argv []string, read func(io.Reader) error) (CmdResult, error) {
 	if !r.Allowed(argv) {
 		return CmdResult{}, fmt.Errorf("%w: %q", ErrNotAllowed, argv)
 	}
@@ -317,12 +327,7 @@ func (r *Runner) runLines(ctx context.Context, argv []string, masked bool, fn fu
 	if err := cmd.Start(); err != nil {
 		return CmdResult{}, err
 	}
-	var serr error
-	if masked {
-		serr = scan(out, fn)
-	} else {
-		serr = scanPlain(out, fn)
-	}
+	serr := read(out)
 	if serr != nil {
 		io.Copy(io.Discard, out) // let the command finish
 	}

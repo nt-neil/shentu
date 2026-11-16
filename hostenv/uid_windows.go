@@ -12,6 +12,9 @@ import (
 // fileUID has no meaning on Windows: owners are SIDs (Phase 2).
 func fileUID(os.FileInfo) int { return -1 }
 
+// fileGID: no POSIX group on Windows either.
+func fileGID(os.FileInfo) *int { return nil }
+
 // fileID cannot be had from a FileInfo on Windows: see openedFileID and
 // pathFileID, which ask the file system ("" means unknown).
 func fileID(os.FileInfo) string { return "" }

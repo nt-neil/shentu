@@ -21,6 +21,15 @@ func openedFileID(_ *os.File, st os.FileInfo) string { return fileID(st) }
 
 func pathFileID(_ string, st os.FileInfo) string { return fileID(st) }
 
+// fileGID is the file's group, nil when the system does not say.
+func fileGID(st os.FileInfo) *int {
+	if s, ok := st.Sys().(*syscall.Stat_t); ok {
+		g := int(s.Gid)
+		return &g
+	}
+	return nil
+}
+
 func fileUID(st os.FileInfo) int {
 	if s, ok := st.Sys().(*syscall.Stat_t); ok {
 		return int(s.Uid)
