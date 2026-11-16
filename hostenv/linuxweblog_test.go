@@ -1,6 +1,7 @@
 package hostenv
 
 import (
+	"fmt"
 	"io/fs"
 	"strings"
 	"syscall"
@@ -26,8 +27,9 @@ func logHost() statHost {
 	h.files["/etc/nginx/nginx.conf"] = `user www-data;
 error_log /var/log/nginx/error.log;
 http {
-	log_format main escape=json '{"ip":"$remote_addr",'
-		'"req":"$request"}';
+	log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+		'$status $body_bytes_sent "$http_referer" '
+		'"$http_user_agent" "$http_x_forwarded_for"';
 	access_log /var/log/nginx/access.log;
 	include /etc/nginx/sites-enabled/*;
 }
@@ -90,7 +92,7 @@ func TestWebLogsNginx(t *testing.T) {
 	}
 	m := webLogsByKey(t, o)
 	shop := m["nginx access /var/log/nginx/shop.access.log"]
-	if !shop.Verified || shop.Format != "main" || shop.Escape != "json" || shop.Spec != `{"ip":"$remote_addr","req":"$request"}` ||
+	if !shop.Verified || shop.Format != "main" || shop.Escape != "" || shop.Spec != `$remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent" "$http_x_forwarded_for"` ||
 		strings.Join(shop.Vhosts, ",") != "shop.test,www.shop.test" || shop.Config != "/etc/nginx/sites-enabled/shop:3" {
 		t.Errorf("shop's own access log %+v", shop)
 	}
@@ -525,5 +527,89 @@ func TestWebLogsNginxTooDeep(t *testing.T) {
 	s := webLogsByKey(t, LinuxCollector{}.WebLogs(h))["nginx access /var/log/nginx/shop.access.log"]
 	if s.Verified || !strings.Contains(s.Detail, "nested deeper") {
 		t.Errorf("%+v", s)
+	}
+}
+
+// Review 3: only the standard formats can be verified; a custom one (here
+// escape=json) is parsed and matched but custom_format.
+func TestWebLogsCustomFormat(t *testing.T) {
+	h := logHost()
+	h.files["/etc/nginx/nginx.conf"] = strings.Replace(h.files["/etc/nginx/nginx.conf"], "http {", "http {\n\tlog_format js escape=json '{\"ip\":\"$remote_addr\",\"r\":\"$request\",\"s\":$status}';", 1)
+	h.files["/etc/nginx/sites-enabled/shop"] = strings.Replace(h.files["/etc/nginx/sites-enabled/shop"], "shop.access.log main", "shop.access.log js", 1)
+	s := webLogsByKey(t, LinuxCollector{}.WebLogs(h))["nginx access /var/log/nginx/shop.access.log"]
+	if s.Verified || s.Reason != ReasonCustomFormat || s.Escape != "json" {
+		t.Errorf("%+v", s)
+	}
+	h = logHost()
+	h.files["/etc/apache2/apache2.conf"] += "HostnameLookups On\n"
+	a := webLogsByKey(t, LinuxCollector{}.WebLogs(h))["apache access /var/log/apache2/access.log"]
+	if a.Verified || a.Reason != ReasonCustomFormat {
+		t.Errorf("combined with HostnameLookups On: %+v", a)
+	}
+}
+
+// Review 3, B-1: configuration not read in full verifies nothing.
+func TestWebLogsUnreadNothingVerified(t *testing.T) {
+	cases := map[string]func(h statHost){
+		"site linked outside /etc": func(h statHost) {
+			h.files["/srv/app/nginx.conf"] = "server { content_by_lua_block { ngx.say(1) } }\n"
+			h.links["/etc/nginx/sites-enabled/app"] = "/srv/app/nginx.conf"
+		},
+		"include unreadable": func(h statHost) {
+			h.files["/etc/nginx/conf.d/x.conf"] = "real_ip_header X-Forwarded-For;\n"
+			h.files["/etc/nginx/nginx.conf"] = strings.Replace(h.files["/etc/nginx/nginx.conf"], "http {", "http {\n\tinclude /etc/nginx/conf.d/x.conf;", 1)
+			h.denied["/etc/nginx/conf.d/x.conf"] = true
+		},
+		"includes nested past 8": func(h statHost) {
+			for i := 0; i < 10; i++ {
+				h.files[fmt.Sprintf("/etc/nginx/n%d.conf", i)] = fmt.Sprintf("include /etc/nginx/n%d.conf;\n", i+1)
+			}
+			h.files["/etc/nginx/n10.conf"] = "lua_package_path x;\n"
+			h.files["/etc/nginx/nginx.conf"] = strings.Replace(h.files["/etc/nginx/nginx.conf"], "http {", "http {\n\tinclude /etc/nginx/n0.conf;", 1)
+		},
+		"over the file cap": func(h statHost) {
+			for i := 0; i < maxLogConfFiles+5; i++ {
+				h.files[fmt.Sprintf("/etc/nginx/many/%03d.conf", i)] = "# nothing\n"
+			}
+			h.files["/etc/nginx/nginx.conf"] = strings.Replace(h.files["/etc/nginx/nginx.conf"], "http {", "http {\n\tinclude /etc/nginx/many/*.conf;", 1)
+		},
+	}
+	for name, mod := range cases {
+		h := logHost()
+		mod(h)
+		o := LinuxCollector{}.WebLogs(h)
+		if o.Status != StatusPartial {
+			t.Errorf("%s: status %s", name, o.Status)
+		}
+		for _, s := range o.Value {
+			if s.Verified || s.FileID != "" {
+				t.Errorf("%s: %s %s %s verified", name, s.Server, s.Kind, s.Path)
+			}
+		}
+	}
+	// Debian's modules-enabled links into /usr/share/nginx, root's: read,
+	// and a safe module keeps the log verified.
+	h := logHost()
+	h.files["/usr/share/nginx/modules-available/mod-http-geoip2.conf"] = "load_module modules/ngx_http_geoip2_module.so;\n"
+	h.links["/etc/nginx/modules-enabled/50-mod-http-geoip2.conf"] = "/usr/share/nginx/modules-available/mod-http-geoip2.conf"
+	h.files["/etc/nginx/nginx.conf"] = "include /etc/nginx/modules-enabled/*.conf;\n" + h.files["/etc/nginx/nginx.conf"]
+	o := LinuxCollector{}.WebLogs(h)
+	if s := webLogsByKey(t, o)["nginx access /var/log/nginx/shop.access.log"]; o.Status != StatusOK || !s.Verified {
+		t.Errorf("modules-enabled: %s %s, %+v", o.Status, o.Detail, s)
+	}
+}
+
+// Review 3, S (N-7): an account made with useradd -r (uid < 1000) in the
+// log group is no log daemon.
+func TestLogGroupSystemAccountNotEnough(t *testing.T) {
+	h := logHost()
+	h.acl = map[string]bool{}
+	g := 104
+	h.st["/var/log/g"] = FileStat{Mode: fs.ModeDir | 0o775, UID: 0, GID: &g}
+	h.files["/var/log/g/a.log"], h.st["/var/log/g/a.log"] = "", FileStat{Mode: 0o640, UID: 0}
+	h.files["/etc/passwd"] += "myapp:x:998:998::/srv:/usr/sbin/nologin\n"
+	h.files["/etc/group"] = "root:x:0:\nwww-data:x:33:\nsyslog:x:104:myapp\n"
+	if _, why, _ := LogTrust(h, "/var/log/g/a.log", LinuxCollector{}.WebAccounts(h)); why != ReasonUnverified {
+		t.Errorf("%q, want unverified", why)
 	}
 }

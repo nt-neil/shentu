@@ -47,6 +47,11 @@ type WebConf struct {
 	Globs []string
 	Root  string
 	Owner int
+	// Extra are further directories a link may point into, and the logs'
+	// reader may include from (nginx's module snippets under
+	// /usr/share/nginx): files there must be the owner's and not writable
+	// by others either.
+	Extra []string
 }
 
 // DefaultWebConf is the real machine's.
@@ -93,7 +98,7 @@ func readWebConf(src Source, p string, conf WebConf) (b []byte, why string) {
 			return nil, "symlink: " + whyUnread(err)
 		}
 		target = real
-		if !underDir(target, conf.Root) {
+		if !underDir(target, conf.Root) && !underAny(target, conf.Extra) {
 			return nil, "symlink to " + target + ", outside " + conf.Root
 		}
 		st, err := Stat(src, target)
@@ -119,6 +124,16 @@ func readWebConf(src Source, p string, conf WebConf) (b []byte, why string) {
 		return nil, "not a regular file of at most 1 MiB, or changed while read"
 	}
 	return b, ""
+}
+
+// underAny reports whether p is under one of dirs.
+func underAny(p string, dirs []string) bool {
+	for _, d := range dirs {
+		if underDir(p, d) {
+			return true
+		}
+	}
+	return false
 }
 
 // underDir reports whether p is dir or below it.

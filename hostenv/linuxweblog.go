@@ -66,6 +66,11 @@ const (
 	// request header (nginx's realip, Apache's mod_remoteip): the logged
 	// address is what a proxy, or the client, wrote.
 	ReasonClientFromHeader Reason = "client_from_header"
+	// ReasonCustomFormat: the access log is not in one of the standard
+	// formats (nginx combined and RHEL's main, Apache combined and common,
+	// with %h, %a or %{c}a). Its lines are parsed and matched, but how a
+	// field the client writes may shift the others is not ruled out.
+	ReasonCustomFormat Reason = "custom_format"
 )
 
 // WebUserWritableMeaning is what an alert on a web_user_writable source must
@@ -87,6 +92,7 @@ var ReasonMeaningZh = map[Reason]string{
 	ReasonLoggingDisabled:  "這個 log 在設定裡被關閉了，這部分的攻擊不會留下紀錄",
 	ReasonNotAFile:         "這個 log 寫到 syslog 或程式（pipe），不是 shentu 能直接讀的檔案",
 	ReasonVariablePath:     "log 路徑裡有變數或是相對路徑，shentu 無法確定是哪個檔案",
+	ReasonCustomFormat:     "這個 access log 用的是自訂格式，不是 nginx 或 Apache 的標準格式：shentu 照樣解析並比對，但無法排除用戶端寫的欄位讓其他欄位錯位，所以不能從 Telegram 放行封鎖",
 	ReasonClientFromHeader: "web 伺服器從請求的 header（例如 X-Forwarded-For）取用戶端位址，log 裡的 IP 可能是代理或攻擊者自己寫的，所以不能從 Telegram 放行封鎖",
 }
 
@@ -108,17 +114,24 @@ var defaultWebUsers = []string{"www-data", "nginx", "apache", "httpd", "nobody",
 // their members is a web account.
 var logGroupNames = map[string]bool{"syslog": true, "adm": true, "log": true}
 
-// logMemberNames are accounts a log group may hold whatever their uid.
-var logMemberNames = map[string]bool{"root": true, "syslog": true}
+// logMemberNames are the only accounts a log group may hold: root and the
+// log daemons (an account made with useradd -r is no proof of anything).
+var logMemberNames = map[string]bool{"root": true, "syslog": true, "rsyslog": true, "systemd-journal": true}
 
 // defaultWebGroups are their groups that are not also an account's name.
 var defaultWebGroups = []string{"nogroup", "www"}
 
 // WebLogs is the logs nginx, Apache and PHP-FPM are configured to write,
 // sorted by path, each with its trust. Partial when some configuration
-// could not be read: the logs it names are missing.
+// could not be read: the logs it names are missing, and none is verified.
+//
+// Known limits: it reads the configuration on disk, not the one running
+// (nginx -c, /etc/sysconfig/httpd OPTIONS, several instances, a change not
+// yet reloaded); and group membership comes from /etc/group, so a userdb
+// membership record (nss-systemd, /etc/userdb/*.membership) adding an
+// account to a log group is not seen.
 func (c LinuxCollector) WebLogs(src Source) Obs[[]LogSource] {
-	l := &logLoader{src: src, conf: DefaultWebConf, out: map[string]*LogSource{}}
+	l := &logLoader{src: src, conf: logConf, out: map[string]*LogSource{}}
 	l.nginx()
 	l.apache()
 	l.phpFPM()
@@ -144,6 +157,8 @@ func (c LinuxCollector) WebLogs(src Source) Obs[[]LogSource] {
 			switch {
 			case s.Kind != "access" || (s.Server != "nginx" && s.Server != "apache"):
 				no(ReasonWebUserWritable, "an error or slow log, or PHP-FPM's: it takes what workers, FastCGI and PHP write (their stderr, a script's name): "+WebUserWritableMeaning)
+			case !standardFormat(s):
+				no(ReasonCustomFormat, "the access log's format is not a standard one (nginx combined or main, Apache combined or common): parsed and matched, not verified")
 			case s.Server == "nginx" && l.ngxRealIP:
 				no(ReasonClientFromHeader, "nginx takes the client address from a request header (set_real_ip_from / real_ip_header): the logged address is what a proxy, or the client, wrote")
 			case s.Server == "apache" && l.apacheRemoteIP:
@@ -160,14 +175,20 @@ func (c LinuxCollector) WebLogs(src Source) Obs[[]LogSource] {
 	}
 	// One file named twice (an FPM access.log pointed at Apache's): the
 	// worst judgment holds for every entry of it.
+	key := func(s *LogSource) string { // the file, however its path is written
+		if real, err := EvalSymlinks(src, s.Path); err == nil {
+			return real
+		}
+		return path.Clean(s.Path)
+	}
 	worst := map[string]*LogSource{}
 	for i := range out {
-		if w, ok := worst[out[i].Path]; !ok || (w.Verified && !out[i].Verified) {
-			worst[out[i].Path] = &out[i]
+		if w, ok := worst[key(&out[i])]; !ok || (w.Verified && !out[i].Verified) {
+			worst[key(&out[i])] = &out[i]
 		}
 	}
 	for i := range out {
-		if w := worst[out[i].Path]; out[i].Verified && !w.Verified {
+		if w := worst[key(&out[i])]; out[i].Verified && !w.Verified {
 			out[i].Verified, out[i].Reason, out[i].FileID = false, w.Reason, ""
 			out[i].Detail = "the same file is also PHP-FPM's or another server's " + w.Kind + " log: " + w.Detail
 		}
@@ -178,6 +199,19 @@ func (c LinuxCollector) WebLogs(src Source) Obs[[]LogSource] {
 		}
 		return out[i].Kind < out[j].Kind
 	})
+	if len(l.unread) > 0 || l.cut {
+		// What was not read may load a module, take the client from a
+		// header, or name another user: no log is verified.
+		why := "the configuration was not read in full (" + strings.Join(l.unread, "; ") + ")"
+		if l.cut {
+			why = fmt.Sprintf("more than %d log sources", maxLogSources)
+		}
+		for i := range out {
+			if out[i].Verified {
+				out[i].Verified, out[i].Reason, out[i].FileID, out[i].Detail = false, ReasonUnverified, "", why
+			}
+		}
+	}
 	if len(l.unread) > 0 {
 		return Partial(out, ReasonPermission, "web server or PHP-FPM configuration unread, the logs it names are missing: "+strings.Join(l.unread, "; "))
 	}
@@ -399,6 +433,12 @@ type logLoader struct {
 func (l *logLoader) read(p string) ([]byte, bool) {
 	p = path.Clean(p)
 	switch {
+	case underAny(p, l.conf.Extra):
+		st, err := Stat(l.src, p)
+		if err == nil && (st.UID != l.conf.Owner || st.Mode.Perm()&0o022 != 0) {
+			l.unread = append(l.unread, p+" (not root's, or writable by others)")
+			return nil, false
+		}
 	case !underDir(p, l.conf.Root):
 		l.unread = append(l.unread, p+" (outside "+l.conf.Root+")")
 		return nil, false
@@ -472,7 +512,7 @@ func (l *logLoader) add(s LogSource) {
 // WebAccounts is the web servers' and PHP's accounts and groups, as their
 // configuration and the defaults give them: what LogTrust is given.
 func (c LinuxCollector) WebAccounts(src Source) WebAccounts {
-	l := &logLoader{src: src, conf: DefaultWebConf, out: map[string]*LogSource{}}
+	l := &logLoader{src: src, conf: logConf, out: map[string]*LogSource{}}
 	l.nginx()
 	l.apache()
 	l.phpFPM()
@@ -636,8 +676,8 @@ func (l *logLoader) webAccounts() WebAccounts {
 				clean := true
 				for _, a := range append(members, byPrimary[gid]...) {
 					a = strings.TrimSpace(a)
-					uid, known := nameUID[a]
-					if users[a] || !known || (uid >= 1000 && !logMemberNames[a]) {
+					_, known := nameUID[a]
+					if users[a] || !known || !logMemberNames[a] {
 						clean = false
 					}
 				}
@@ -702,6 +742,37 @@ func nisLines(b []byte) bool {
 	}
 	return false
 }
+
+// standardSpecs are the access log formats verified lines may come in:
+// nginx's combined and RHEL's main; Apache's combined and common as
+// Debian (%O) and RHEL (%b) write them, with %h, %a or %{c}a.
+var standardSpecs = map[string]map[string]bool{"nginx": {}, "apache": {}}
+
+func init() {
+	standardSpecs["nginx"][ngxCombined] = true
+	standardSpecs["nginx"][`$remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent" "$http_x_forwarded_for"`] = true
+	for _, h := range []string{"%h", "%a", "%{c}a"} {
+		for _, b := range []string{"%O", "%b"} {
+			common := h + ` %l %u %t "%r" %>s ` + b
+			standardSpecs["apache"][common] = true
+			standardSpecs["apache"][common+` "%{Referer}i" "%{User-Agent}i"`] = true
+		}
+	}
+}
+
+// standardFormat: an access log in a standard format, and for Apache, %h
+// an address (HostnameLookups off).
+func standardFormat(s *LogSource) bool {
+	if !standardSpecs[s.Server][s.Spec] || s.Escape != "" {
+		return false
+	}
+	return !(s.Server == "apache" && s.HostnameLookups && strings.HasPrefix(s.Spec, "%h "))
+}
+
+// logConf is where the log configuration is read from: /etc, and the
+// directories nginx's packages keep module snippets in (Debian links
+// modules-enabled there; Rocky includes /usr/share/nginx/modules/*.conf).
+var logConf = WebConf{Root: "/etc", Owner: 0, Extra: []string{"/usr/share/nginx/modules", "/usr/share/nginx/modules-available"}}
 
 // numericID is a user or group given by number: #33 (Apache) or 33.
 func numericID(s string) (int, bool) {
@@ -906,7 +977,11 @@ var ngxSafeModules = map[string]bool{
 	"ngx_http_echo_module.so": true, "ngx_http_upstream_fair_module.so": true, "ngx_http_subs_filter_module.so": true,
 }
 
-var ngxAppDirective = regexp.MustCompile(`^(?:perl|perl_\w+|js_\w+|lua_\w+|\w+_by_lua(?:_block|_file)?|\w+_by_njs)$`)
+var ngxAppDirective = regexp.MustCompile(`^(?:perl|perl_\w+|js_\w+|lua_\w+|\w+_by_lua(?:_block|_file)?|\w+_by_njs|mruby_\w+|wasm_\w+|proxy_wasm\w*)$`)
+
+// apacheAppDirective: directives of modules running application code,
+// built in (httpd -l) or loaded some way LoadModule does not show.
+var apacheAppDirective = regexp.MustCompile(`^(?:lua|perl|wsgi|passenger|php_|mod_ruby|ruby)`)
 
 // ngxTooDeep stands for directives nested past maxNgxNest, not read.
 const ngxTooDeep = "\x00nested too deep"
@@ -1288,6 +1363,9 @@ func (l *logLoader) apacheFile(st *apacheState, p string, depth int) {
 			continue
 		}
 		name, args := strings.ToLower(args[0]), args[1:]
+		if apacheAppDirective.MatchString(name) && !contains(l.apacheApp, name) {
+			l.apacheApp = append(l.apacheApp, name)
+		}
 		switch name {
 		case "include", "includeoptional":
 			if len(args) == 0 {
@@ -1338,6 +1416,10 @@ func (l *logLoader) apacheFile(st *apacheState, p string, depth int) {
 				} else if !apacheSafeModules[m] && !contains(l.apacheApp, m) {
 					l.apacheApp = append(l.apacheApp, m)
 				}
+			}
+		case "loadfile": // a library loaded into the server's own processes (libpython for mod_wsgi)
+			if len(args) > 0 && !contains(l.apacheApp, "LoadFile "+args[0]) {
+				l.apacheApp = append(l.apacheApp, "LoadFile "+args[0])
 			}
 		case "remoteipheader", "remoteipproxyprotocol":
 			if st.remoteIP {
