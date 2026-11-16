@@ -101,6 +101,12 @@ var (
 	parts     = map[string]bool{"path": true, "query": true, "param": true, "any_param": true, "user_agent": true, "referer": true}
 )
 
+// Compared are the ecosystems whose version order compareVersions follows
+// (semver, and Composer's patch releases); a range of any other is refused
+// at Load (rpm, apk, Debian, PyPI's PEP 440, Maven): a wrong order is a
+// wrong verdict on every host.
+var Compared = map[string]bool{"packagist": true, "npm": true}
+
 // Limits on what a signature may hold, so the matcher's cost per request is
 // bounded however many there are.
 const (
@@ -215,8 +221,11 @@ func (s *Signature) check() error {
 		if r.Ecosystem == "" || r.Package == "" {
 			return fmt.Errorf("applies_to: ecosystem and package are required")
 		}
-		if dpkg(r.Ecosystem) {
-			return fmt.Errorf("applies_to %s: ecosystem %s: Debian's version order (epochs, ~, revisions) is not compared yet", r.Package, r.Ecosystem)
+		if !Compared[strings.ToLower(r.Ecosystem)] {
+			return fmt.Errorf("applies_to %s: version comparison for ecosystem %q is not supported yet (only Packagist and npm)", r.Package, r.Ecosystem)
+		}
+		if strings.TrimSpace(r.Versions) == "" {
+			return fmt.Errorf("applies_to %s: versions is required (a range for every version is a signature without applies_to)", r.Package)
 		}
 		cs, err := ParseVersions(r.Versions)
 		if err != nil {
@@ -240,14 +249,13 @@ func (s *Signature) check() error {
 			if len(r.PathRegex) > MaxRegex {
 				return fmt.Errorf("route %d: path_regex longer than %d", i, MaxRegex)
 			}
-			lower, err := lowerRegex(r.PathRegex) // compared with the normalized, lower-cased path
-			if err != nil {
+			if _, err := regexp.Compile(r.PathRegex); err != nil {
 				return fmt.Errorf("route %d: %w", i, err)
 			}
-			if err := checkRegex(lower); err != nil {
+			r.PathRegex = "(?i)" + r.PathRegex // compared with the normalized, lower-cased path
+			if err := checkRegex(r.PathRegex); err != nil {
 				return fmt.Errorf("route %d: path_regex: %w", i, err)
 			}
-			r.PathRegex = lower
 		}
 		for j, m := range r.Methods {
 			r.Methods[j] = strings.ToUpper(m)
@@ -349,6 +357,9 @@ func upperIn(re *syntax.Regexp) rune {
 			}
 		}
 	case syntax.OpCharClass:
+		if n := len(re.Rune); n > 0 && re.Rune[n-1] == unicode.MaxRune {
+			break // a negated class ([^a-z], \W): the letters it holds are not its point
+		}
 		in := func(c rune) bool {
 			for i := 0; i+1 < len(re.Rune); i += 2 {
 				if re.Rune[i] <= c && c <= re.Rune[i+1] {
@@ -369,45 +380,6 @@ func upperIn(re *syntax.Regexp) rune {
 		}
 	}
 	return 0
-}
-
-// lowerRegex is expr with its literals and its classes' letters in lower
-// case: the path it is compared with is lower-cased.
-func lowerRegex(expr string) (string, error) {
-	re, err := syntax.Parse(expr, syntax.Perl)
-	if err != nil {
-		return "", err
-	}
-	var walk func(*syntax.Regexp)
-	walk = func(re *syntax.Regexp) {
-		switch re.Op {
-		case syntax.OpLiteral:
-			for i, r := range re.Rune {
-				re.Rune[i] = unicode.ToLower(r)
-			}
-		case syntax.OpCharClass:
-			var add []rune
-			for i := 0; i+1 < len(re.Rune); i += 2 {
-				lo, hi := max(re.Rune[i], 'A'), min(re.Rune[i+1], 'Z')
-				if lo <= hi {
-					add = append(add, unicode.ToLower(lo), unicode.ToLower(hi))
-				}
-			}
-			re.Rune = append(re.Rune, add...)
-		}
-		for _, s := range re.Sub {
-			walk(s)
-		}
-	}
-	walk(re)
-	return re.String(), nil
-}
-
-// dpkg: an ecosystem whose versions are Debian's (Debian, Debian:12,
-// Ubuntu).
-func dpkg(ecosystem string) bool {
-	e := strings.ToLower(ecosystem)
-	return e == "debian" || strings.HasPrefix(e, "debian:") || e == "ubuntu" || strings.HasPrefix(e, "ubuntu:")
 }
 
 // Comparison is one of a Range's comparisons.

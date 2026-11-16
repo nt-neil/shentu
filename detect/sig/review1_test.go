@@ -1,6 +1,7 @@
 package sig
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -68,8 +69,8 @@ func TestLoadReview1(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if re := ss[0].Routes[0].PathRegex; !strings.Contains(re, "/marker/") || !strings.Contains(re, "a-f") {
-		t.Errorf("path_regex %q not lowered", re)
+	if re := regexp.MustCompile(ss[0].Routes[0].PathRegex); !re.MatchString("/marker/ab12") {
+		t.Errorf("path_regex %s does not match the lower-cased path", re)
 	}
 }
 
@@ -81,5 +82,37 @@ func TestLoadErrorSaid(t *testing.T) {
 	_, err := LoadFS(fstest.MapFS{"s/a.toml": {Data: []byte(good + "[[signature.match]]\npart = \"query\"\nregex = \"x*\"\n")}}, "s")
 	if err == nil || !strings.Contains(err.Error(), "s/a.toml") || !strings.Contains(err.Error(), "x-one") {
 		t.Errorf("error %v: should name the file and the signature", err)
+	}
+}
+
+// Review 2 of #87: only ecosystems whose order is compared are taken
+// (N-1, N-2); versions is required (S); a negated class is not an upper
+// case letter (N-3).
+func TestLoadReview2(t *testing.T) {
+	load := func(extra string) error {
+		_, err := LoadFS(fstest.MapFS{"s/a.toml": {Data: []byte(good + extra + "\n")}}, "s")
+		return err
+	}
+	rng := func(eco, versions string) string {
+		return "[[signature.applies_to]]\necosystem = \"" + eco + "\"\npackage = \"x\"\nversions = \"" + versions + "\""
+	}
+	for _, eco := range []string{"PyPI", "Maven", "RubyGems", "rpm", "Red Hat", "Alpine", "apk", "Debian", "Ubuntu", "Go"} {
+		err := load(rng(eco, "<1.0"))
+		if err == nil || !strings.Contains(err.Error(), "not supported yet") {
+			t.Errorf("%s: %v, want refused as not supported yet", eco, err)
+		}
+	}
+	for _, eco := range []string{"npm", "Packagist", "packagist"} {
+		if err := load(rng(eco, "<1.0")); err != nil {
+			t.Errorf("%s: %v", eco, err)
+		}
+	}
+	if err := load(rng("npm", "")); err == nil || !strings.Contains(err.Error(), "versions is required") {
+		t.Errorf("empty versions: %v", err)
+	}
+	for _, re := range []string{`marker[^a-z]`, `(?:^|[^a-z0-9_])marker`, `marker\W`, `marker[^A-Z]x`} {
+		if err := load("[[signature.match]]\npart = \"query\"\nregex = '" + re + "'"); err != nil {
+			t.Errorf("negated class %s: %v", re, err)
+		}
 	}
 }
