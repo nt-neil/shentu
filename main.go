@@ -152,6 +152,9 @@ func main() {
 		asJSON := fs.Bool("json", false, "print JSON")
 		fs.Parse(args)
 		if err = stateReady(cfg.StateDir); err == nil {
+			err = detectStateDir(cfg.StateDir, privileged())
+		}
+		if err == nil {
 			err = detectCommand(ctx, cfg, *since, *asJSON, os.Stdout)
 		}
 	case "service":

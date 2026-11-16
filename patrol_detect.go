@@ -118,7 +118,7 @@ func keepPrevious(dir string, s detect.Surface, failedApps map[string]bool, osFa
 func loadSurface(dir string, now time.Time) (detect.Surface, []string, []string) {
 	c, err := readSurface(dir)
 	if errors.Is(err, fs.ErrNotExist) {
-		return detect.Surface{}, nil, []string{"漏洞面資料尚未建立（每日巡檢會建立），這輪只能比對不分漏洞的類別簽章，無法判定 L1～L3"}
+		return detect.Surface{}, nil, []string{"漏洞面資料尚未建立：請執行 shentu patrol --daily 建立（加上 --dry-run 時不會建立），這輪只能比對不分漏洞的類別簽章，無法判定 L1～L3"}
 	}
 	if err != nil {
 		return detect.Surface{}, nil, []string{"漏洞面資料無法讀取（" + detect.Printable(err.Error()) + "），這輪無法判定 L1～L3，請檢查每日巡檢"}
@@ -668,4 +668,33 @@ func attacksBrief(cfg *Config, now time.Time, zh bool) string {
 		s = tools.Cut(s, n)
 	}
 	return s
+}
+
+// saveDailySurface builds and saves the vulnerability surface from the
+// daily patrol's checks (plugins read here), before its report is sent;
+// what it could not do is returned for the report.
+func saveDailySurface(cfg *Config, env *tools.Env, audit tools.CodeAudit, web []string, apps []tools.AppResult, osSurface []detect.PackageVuln,
+	failedApps map[string]bool, osFailed bool, partial []string, now time.Time) (unchecked string) {
+	plugins, unreadPlugins := tools.WordPressPlugins(web)
+	if len(unreadPlugins) > 0 { // paths the web account may name: quoted, masked, a few
+		unchecked += "\nAttack detection: WordPress plugin directories not read:\n"
+		for i, u := range unreadPlugins {
+			if i == 10 {
+				unchecked += fmt.Sprintf("- (%d more)\n", len(unreadPlugins)-10)
+				break
+			}
+			unchecked += fmt.Sprintf("- %q\n", mask(u))
+		}
+	}
+	if audit.Unfinished || len(audit.NotChecked) > 0 {
+		partial = append(partial, "程式碼稽核沒有全部完成（見日報的 not checked）")
+	}
+	if len(unreadPlugins) > 0 {
+		partial = append(partial, fmt.Sprintf("WordPress 外掛有 %d 處讀不到（見日報）", len(unreadPlugins)))
+	}
+	surface := keepPrevious(cfg.StateDir, buildSurface(audit, apps, osSurface, plugins), failedApps, osFailed)
+	if err := saveSurface(cfg.StateDir, surface, env.AppPaths, partial, now); err != nil {
+		unchecked += "\nAttack detection: the vulnerability surface could not be saved: " + err.Error() + "\n"
+	}
+	return unchecked
 }

@@ -361,3 +361,27 @@ func TestFinishDetectCarriesOver(t *testing.T) {
 		t.Errorf("notice sent %q, %v; forgotten %v", sent, err, detectCarryOver(cfg.StateDir) == "")
 	}
 }
+
+// P6 measurement (plan 0743f0 n30): the daily patrol saves the surface
+// before its report goes, so one without a notify url (rc=1) still leaves
+// surface.json; without one, detect says to run `shentu patrol --daily`
+// (a dry run builds none).
+func TestDailySurfaceSavedFirst(t *testing.T) {
+	dir := t.TempDir()
+	if _, _, notes := loadSurface(dir, time.Now()); len(notes) != 1 || !strings.Contains(notes[0], "請執行 shentu patrol --daily") || !strings.Contains(notes[0], "--dry-run") {
+		t.Errorf("no surface: %v", notes)
+	}
+	cfg := &Config{StateDir: dir}
+	env := &tools.Env{} // no notify url
+	osv := []detect.PackageVuln{{Source: "os", Ecosystem: "Debian:12", Package: "marker-httpd", Version: "1.0", ID: "DSA-0000-9", CVEs: []string{"CVE-2099-0300"}}}
+	if u := saveDailySurface(cfg, env, tools.CodeAudit{}, nil, nil, osv, map[string]bool{}, false, nil, time.Now()); u != "" {
+		t.Errorf("unchecked %q", u)
+	}
+	if err := tools.Notify(context.Background(), env, "t", "marker", "info"); err == nil {
+		t.Fatal("notify without a url succeeded")
+	}
+	s, _, notes := loadSurface(dir, time.Now())
+	if len(notes) != 0 || len(s.Entries) != 1 {
+		t.Errorf("surface %d entries, notes %v", len(s.Entries), notes)
+	}
+}

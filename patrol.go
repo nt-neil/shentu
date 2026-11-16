@@ -518,29 +518,13 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 		audit := tools.AppCodeAudit(ctx, env.AppPaths, web)
 		all = replaceOrAppend(all, codeAuditFindings(audit))
 		unchecked += uncheckedConfigs(unread) + notCheckedSection(audit.NotChecked)
-		// The vulnerability surface attack detection judges by, until tomorrow.
-		if !dryRun {
-			plugins, unreadPlugins := tools.WordPressPlugins(web)
-			if len(unreadPlugins) > 0 { // paths the web account may name: quoted, masked, a few
-				unchecked += "\nAttack detection: WordPress plugin directories not read:\n"
-				for i, u := range unreadPlugins {
-					if i == 10 {
-						unchecked += fmt.Sprintf("- (%d more)\n", len(unreadPlugins)-10)
-						break
-					}
-					unchecked += fmt.Sprintf("- %q\n", mask(u))
-				}
-			}
-			if audit.Unfinished || len(audit.NotChecked) > 0 {
-				partial = append(partial, "程式碼稽核沒有全部完成（見日報的 not checked）")
-			}
-			if len(unreadPlugins) > 0 {
-				partial = append(partial, fmt.Sprintf("WordPress 外掛有 %d 處讀不到（見日報）", len(unreadPlugins)))
-			}
-			surface := keepPrevious(cfg.StateDir, buildSurface(audit, apps, osSurface, plugins), failedApps, osFailed)
-			if err := saveSurface(cfg.StateDir, surface, env.AppPaths, partial, time.Now()); err != nil {
-				unchecked += "\nAttack detection: the vulnerability surface could not be saved: " + err.Error() + "\n"
-			}
+		// The vulnerability surface attack detection judges by, until
+		// tomorrow: saved before the report goes (a notify that fails, or
+		// none configured, does not lose it); a dry run makes none.
+		if dryRun {
+			unchecked += "\nAttack detection: --dry-run does not build the vulnerability surface (surface.json); `shentu patrol --daily` does.\n"
+		} else {
+			unchecked += saveDailySurface(cfg, env, audit, web, apps, osSurface, failedApps, osFailed, partial, time.Now())
 		}
 	}
 	// Attack detection: read and judged now (the daily report gets its
