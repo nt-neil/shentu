@@ -102,13 +102,21 @@ func loginGate(ctx context.Context, env *Env, ip net.IP, override bool) error {
 	if override {
 		return nil
 	}
+	_, err := loginCheck(ctx, env, ip)
+	return err
+}
+
+// loginCheck is loginGate's check: an error refuses; verified says the IP
+// has SSH login events journald itself confirms (nil and not verified: it
+// has none anywhere).
+func loginCheck(ctx context.Context, env *Env, ip net.IP) (verified bool, err error) {
 	want := hostenv.CanonicalIP(ip.String())
 	var r map[string]any
 	seen, complete := false, false
 	for _, back := range []time.Duration{loginGateFirst, loginGateWindow} {
 		var err error
 		if r, err = loginSummary(ctx, env, time.Now().Add(-back), want); err != nil {
-			return fmt.Errorf("refusing to block %s: its SSH logins could not be read to check whether they are real (%v); if the block rests on other evidence, ask again with override_unverified", ip, err)
+			return false, fmt.Errorf("refusing to block %s: its SSH logins could not be read to check whether they are real (%v); if the block rests on other evidence, ask again with override_unverified", ip, err)
 		}
 		sources, _ := r["sources"].([]SSHSource)
 		seen = false
@@ -126,21 +134,21 @@ func loginGate(ctx context.Context, env *Env, ip net.IP, override bool) error {
 			break // the day already tells, or cannot tell
 		}
 	}
-	verified, _ := r["verified"].(bool)
+	verified, _ = r["verified"].(bool)
 	if !complete {
 		why := fmt.Sprint(r["source"])
 		if e, _ := r["error"].(string); e != "" {
 			why += ": " + e
 		}
-		return fmt.Errorf("refusing to block %s: its SSH logins could not be read in full (%s), so forged ones cannot be ruled out; check the logs as root and, if they are real, ask again with override_unverified", ip, why)
+		return false, fmt.Errorf("refusing to block %s: its SSH logins could not be read in full (%s), so forged ones cannot be ruled out; check the logs as root and, if they are real, ask again with override_unverified", ip, why)
 	}
 	if seen && verified {
-		return nil // journald itself has the IP's logins: the text logs need not be read
+		return true, nil // journald itself has the IP's logins: the text logs need not be read
 	}
 	text, files, unread := textLogins(env, want)
 	switch {
 	case len(unread) > 0:
-		return fmt.Errorf("refusing to block %s: the text auth logs could not all be read (%s), so forged SSH logins in them cannot be ruled out; check them as root and, if the block is right, ask again with override_unverified", ip, strings.Join(unread, ", "))
+		return false, fmt.Errorf("refusing to block %s: the text auth logs could not all be read (%s), so forged SSH logins in them cannot be ruled out; check them as root and, if the block is right, ask again with override_unverified", ip, strings.Join(unread, ", "))
 	case seen, text > 0: // seen here means unverified
 		// Name the text logs the events are in, not the summary's source
 		// (that is "journald" when journald had other sshd entries).
@@ -148,9 +156,9 @@ func loginGate(ctx context.Context, env *Env, ip net.IP, override bool) error {
 		if where == "" {
 			where = fmt.Sprint(r["source"])
 		}
-		return fmt.Errorf("refusing to block %s: its SSH login events come from text logs (%s), which anyone on this host can write to, so they may be forged; check them (journalctl -u ssh, the IP's other traffic) and, if they are real, ask again with override_unverified", ip, where)
+		return false, fmt.Errorf("refusing to block %s: its SSH login events come from text logs (%s), which anyone on this host can write to, so they may be forged; check them (journalctl -u ssh, the IP's other traffic) and, if they are real, ask again with override_unverified", ip, where)
 	}
-	return nil
+	return false, nil
 }
 
 var blockIP = Tool{
@@ -181,17 +189,8 @@ var blockIP = Tool{
 		if err != nil {
 			return nil, err
 		}
-		// An address attack detection saw is judged by its attempts (the
-		// verified gate on top of the bot's levels); any other by its SSH
-		// logins, as before.
-		applies, err := attackGate(ip, a.OverrideUnverified)
-		if err != nil {
+		if err := blockGate(ctx, env, ip, a.OverrideUnverified); err != nil {
 			return nil, err
-		}
-		if !applies {
-			if err := loginGate(ctx, env, ip, a.OverrideUnverified); err != nil {
-				return nil, err
-			}
 		}
 		if err := ensureTable(ctx); err != nil {
 			return nil, err

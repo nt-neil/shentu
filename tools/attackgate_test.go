@@ -45,7 +45,7 @@ func TestBlockIPAttackGate(t *testing.T) {
 		override        bool
 		applies, refuse bool
 		say             string
-	}{
+	}{ // applies: the attempts speak for the address (gateAllow or gateRefuse)
 		{"no attempts: not this gate's", nil, false, false, false, ""},
 		{"another address only", []*detect.Group{grp("a", "198.51.100.0/24", "L2", true, "198.51.100.8")}, false, false, false, ""},
 		{"verified L2 of its own", []*detect.Group{grp("a", "198.51.100.0/24", "L2", true, "198.51.100.7")}, false, true, false, ""},
@@ -59,7 +59,8 @@ func TestBlockIPAttackGate(t *testing.T) {
 		{"overflow and a verified L2", []*detect.Group{grp("o", detect.PrefixOverflow, "L3", true, "198.51.100.7"), grp("a", "198.51.100.0/24", "L2", true, "198.51.100.7")}, false, true, false, ""},
 	} {
 		gateState(t, c.groups...)
-		applies, err := attackGate(ip, c.override)
+		v, err := attackGate(ip, c.override)
+		applies := v != gateNone
 		if applies != c.applies || (err != nil) != c.refuse || err != nil && !strings.Contains(err.Error(), c.say) {
 			t.Errorf("%s: applies %v, err %v", c.name, applies, err)
 		}
@@ -69,8 +70,49 @@ func TestBlockIPAttackGate(t *testing.T) {
 	old := attackState
 	t.Cleanup(func() { attackState = old })
 	attackState = func() (*detect.Attacks, error) { return nil, errors.New("marker") }
-	if applies, err := attackGate(ip, false); !applies || err == nil {
-		t.Errorf("unreadable state: %v %v", applies, err)
+	if v, err := attackGate(ip, false); v != gateRefuse || err == nil {
+		t.Errorf("unreadable state: %v %v", v, err)
+	}
+}
+
+// Security review of part 3: attempts that do not justify a block do not
+// shield an address its verified SSH logins condemn; unverified or no SSH
+// evidence still refuses.
+func TestBlockGateFallsBackToVerifiedLogins(t *testing.T) {
+	ip := net.ParseIP("198.51.100.7")
+	oldS, oldT := loginSummary, textLogins
+	t.Cleanup(func() { loginSummary, textLogins = oldS, oldT })
+	summary := func(verified bool) func(context.Context, *Env, time.Time, string) (map[string]any, error) {
+		return func(context.Context, *Env, time.Time, string) (map[string]any, error) {
+			return map[string]any{"complete": true, "verified": verified, "source": "journald",
+				"sources": []SSHSource{{IP: "198.51.100.7", Failed: 40}}}, nil
+		}
+	}
+	textLogins = func(*Env, string) (int, []string, []string) { return 0, nil, nil }
+	for _, c := range []struct {
+		name     string
+		group    *detect.Group
+		verified bool
+		ok       bool
+	}{
+		{"one L1 request, verified SSH logins", grp("a", "198.51.100.0/24", "L1", true, "198.51.100.7"), true, true},
+		{"overflow only, verified SSH logins", grp("o", detect.PrefixOverflow, "L3", true, "198.51.100.7"), true, true},
+		{"unverified L2, verified SSH logins", grp("a", "198.51.100.0/24", "L2", false, "198.51.100.7"), true, true},
+		{"one L1 request, unverified SSH logins", grp("a", "198.51.100.0/24", "L1", true, "198.51.100.7"), false, false},
+	} {
+		gateState(t, c.group)
+		loginSummary = summary(c.verified)
+		if err := blockGate(context.Background(), &Env{}, ip, false); (err == nil) != c.ok {
+			t.Errorf("%s: %v", c.name, err)
+		}
+	}
+	// No SSH events at all: the weak attempts' refusal stands.
+	gateState(t, grp("a", "198.51.100.0/24", "L1", true, "198.51.100.7"))
+	loginSummary = func(context.Context, *Env, time.Time, string) (map[string]any, error) {
+		return map[string]any{"complete": true, "verified": true, "source": "journald"}, nil
+	}
+	if err := blockGate(context.Background(), &Env{}, ip, false); err == nil || !strings.Contains(err.Error(), "not enough") {
+		t.Errorf("no logins, L1 only: %v", err)
 	}
 }
 
@@ -104,5 +146,13 @@ func TestAttackAttempts(t *testing.T) {
 	}
 	if attackAttempts.Control {
 		t.Error("attack_attempts is read only")
+	}
+	if out.(map[string]any)["untrusted"] == nil {
+		t.Error("no untrusted label")
+	}
+	// Security review of part 3: no samples to a chat channel's model.
+	out, _ = attackAttempts.Run(context.Background(), &Env{Remote: true}, json.RawMessage(`{}`))
+	if _, ok := out.(map[string]any)["groups"].([]map[string]any)[0]["samples"]; ok {
+		t.Error("samples given to a chat channel's model")
 	}
 }
