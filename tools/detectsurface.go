@@ -43,7 +43,7 @@ func SurfaceApps(rs []AppResult) []detect.PackageVuln {
 			for _, id := range h.IDs {
 				v := detect.PackageVuln{Source: r.Path, Ecosystem: r.Ecosystem, Package: h.Package, Version: h.Version, ID: id, CVE: firstCVE(r.cves[id])}
 				if x, ok := kev[key(h.Package, h.Version, id)]; ok {
-					v.KEV, v.KEVSince = true, x.Added
+					v.KEV, v.KEVSince, v.KEVCVE = true, x.Added, x.CVE
 					if v.CVE == "" { // OSV's answer, the same rule as for the others; else the CVE KEV matched
 						v.CVE = x.CVE
 					}
@@ -63,7 +63,7 @@ func SurfaceApps(rs []AppResult) []detect.PackageVuln {
 				cve = x.CVE
 			}
 			out = append(out, detect.PackageVuln{Source: r.Path, Ecosystem: r.Ecosystem, Package: x.Package, Version: x.Version,
-				ID: x.ID, CVE: cve, KEV: true, KEVSince: x.Added})
+				ID: x.ID, CVE: cve, KEV: true, KEVSince: x.Added, KEVCVE: x.CVE})
 		}
 	}
 	return out

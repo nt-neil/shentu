@@ -137,7 +137,7 @@ func TestSurfaceAppsKEVSameCVERule(t *testing.T) {
 		Exploited: []Exploit{{Package: "django", Version: "3.2.0", ID: "GHSA-kev", CVE: "CVE-2021-0002", Added: "2024-01-01"}},
 		cves:      map[string][]string{"GHSA-kev": {"CVE-2021-0001", "CVE-2021-0002"}, "PYSEC-1": {"CVE-2021-0001"}}}
 	s := detect.Build(nil, SurfaceApps([]AppResult{r}))
-	if len(s.Entries) != 1 || !s.Entries[0].KEV || s.Entries[0].CVE != "CVE-2021-0001" {
+	if len(s.Entries) != 1 || !s.Entries[0].KEV || s.Entries[0].CVE != "CVE-2021-0001" || s.Entries[0].KEVCVE != "CVE-2021-0002" {
 		t.Errorf("%+v: want one KEV entry", s.Entries)
 	}
 }
