@@ -1332,11 +1332,12 @@ func partialArg(st state, arg []Token) map[string]entry {
 		return nil
 	}
 	sub, tainted := map[string]entry{}, false
+	under := v + sepCh
 	for k, e := range st {
-		if !strings.HasPrefix(k, v+sepCh) {
+		if !strings.HasPrefix(k, under) {
 			continue
 		}
-		first, _, _ := strings.Cut(k[len(v)+len(sepCh):], sepCh)
+		first, _, _ := strings.Cut(k[len(under):], sepCh)
 		if !strings.HasPrefix(first, "[") || first == "[*]" {
 			if e.taint {
 				return nil // input under a member or an unknown index: the whole parameter
