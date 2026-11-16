@@ -342,10 +342,10 @@ func JudgeLog(src Source, p string, web WebAccounts) TrustResult {
 }
 
 // confTrusted says why a configuration file read through a link or from a
-// package directory may not be root's alone ("" if it is): every link on
-// the way root's own, the file it resolves to under /etc or a package
-// directory, and every directory above the path, the file and each link
-// root's alone (dirsTrusted).
+// package directory may not be root's alone ("" if it is): it resolves
+// under /etc or a package directory, and JudgeLog verifies it (the file
+// root's and writable by root alone, every link root's own, every
+// directory above them root's alone).
 func confTrusted(src Source, p string, conf WebConf, web WebAccounts) string {
 	real, err := EvalSymlinks(src, p)
 	if err != nil {
@@ -354,23 +354,10 @@ func confTrusted(src Source, p string, conf WebConf, web WebAccounts) string {
 	if !underDir(real, conf.Root) && !underAny(real, conf.Extra) {
 		return "resolves to " + real + ", outside " + conf.Root + " and the package directories"
 	}
-	links, err := linkChain(src, p)
-	if err != nil {
-		return "links: " + whyUnread(err)
-	}
-	for _, ln := range links {
-		ls, err := Lstat(src, ln)
-		if err != nil {
-			return "link " + ln + ": " + whyUnread(err)
-		}
-		if ls.UID != 0 {
-			return fmt.Sprintf("link %s is owned by uid %d", ln, ls.UID)
-		}
-	}
-	for _, f := range append([]string{p, real}, links...) {
-		if why := dirsTrusted(src, f, web); why != "" {
-			return why
-		}
+	// The file itself (regular, root's, not writable by group or others),
+	// every link on the way, and every directory above them: as a log.
+	if t := JudgeLog(src, p, web); !t.Verified {
+		return t.Detail
 	}
 	return ""
 }
