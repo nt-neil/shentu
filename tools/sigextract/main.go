@@ -198,15 +198,23 @@ func tomlList(xs []string) string {
 	return "[" + strings.Join(q, ", ") + "]"
 }
 
-// clean drops control characters: a template's id, name or path is put in
-// comments and strings of the draft, where a newline would end the line.
+// clean drops control and format characters: a template's id, name or
+// path is put in comments and strings of the draft, where a newline would
+// end the line, and U+2028/2029 or a bidi override (Cf) would make the
+// draft read otherwise than it parses.
 func clean(s string) string {
 	return strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) {
+		if invisible(r) {
 			return -1
 		}
 		return r
 	}, s)
+}
+
+// invisible: a control character, a format one (Cf: bidi overrides, zero
+// widths), or a line or paragraph separator.
+func invisible(r rune) bool {
+	return unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || r == '\u2028' || r == '\u2029'
 }
 
 // tomlString is s as a TOML basic string (Go's %q is not TOML: \x00, \a,
@@ -227,7 +235,7 @@ func tomlString(s string) string {
 			b.WriteString(`\r`)
 		case r == utf8.RuneError:
 			b.WriteString(`\uFFFD`)
-		case unicode.IsControl(r):
+		case invisible(r):
 			fmt.Fprintf(&b, `\u%04X`, r)
 		default:
 			b.WriteRune(r)

@@ -93,3 +93,24 @@ func TestExtractControlCharacters(t *testing.T) {
 		t.Errorf("tomlString: %s", got)
 	}
 }
+
+// Review 2 of #87: format characters (bidi overrides, zero widths) and the
+// line and paragraph separators are dropped or escaped too.
+func TestExtractFormatCharacters(t *testing.T) {
+	src := "id: \"marker\\u202Eabc\\u2028def\\u200Bg\"\ninfo:\n  name: \"n\\u2029x\"\nhttp:\n  - path: [\"{{BaseURL}}/a\\u2066b?k=v\\u202Ew\"]\n"
+	d, err := Extract([]byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var b bytes.Buffer
+	d.TOML(&b, "v1")
+	out := b.String()
+	for _, r := range []rune{'‮', ' ', ' ', '​', '⁦'} {
+		if strings.ContainsRune(out, r) {
+			t.Errorf("U+%04X in the draft:\n%s", r, out)
+		}
+	}
+	if !strings.Contains(out, `nuclei_template = "markerabcdefg"`) || !strings.Contains(out, `path = "/ab"`) || !strings.Contains(out, `contains = ["vw"]`) {
+		t.Errorf("draft:\n%s", out)
+	}
+}
