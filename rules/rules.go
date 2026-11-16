@@ -106,7 +106,7 @@ type Args struct {
 type SourceArgs struct {
 	Sources []string `toml:"sources"` // the rule's call sources this applies to
 	Arg     int      `toml:"arg"`     // the argument (from 1) that must be a string literal
-	Values  []string `toml:"values"`  // the values (any case) that make the call a source; any other value, or none, does not; "*": any string literal
+	Values  []string `toml:"values"`  // the values (any case) that make the call a source; any other value, or none, does not; "*": any string literal; "!x": never x
 }
 
 // Sample is a minimal, self-written snippet: "vulnerable" must be reported, "safe" must not.

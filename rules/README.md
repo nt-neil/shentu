@@ -32,7 +32,7 @@ cwe = "CWE-89"                     # must belong to the class (see below)
 severity = "high"                  # critical | high | medium | low
 tier = "info"                      # optional: info (default) | alert, see "Tiers"
 title = "Request input concatenated into a SQL string"
-frameworks = ["laravel"]           # optional: laravel, wordpress, symfony, doctrine, django, flask, express, nestjs, nextjs
+frameworks = ["laravel"]           # optional: laravel, wordpress, symfony, doctrine, django, flask, express, nestjs, nextjs, koa, fastify, hapi
 route_input = false                # optional: route handlers' parameters are not this rule's input, only its sources (a rule for the Host header)
 route_members = ["query", "body"]  # optional: of the request members a route model makes input, only these (a rule for a query object: req.params is always a string)
 sources = ["$_GET", "$request->input("]   # where user input comes from; [] for a rule without sources
@@ -418,7 +418,8 @@ values = ["raw", "string", "path", "html", "array", "trim"]   # any case
 The call is input only when that argument is written as one of the values; with
 another value, a variable, or no such argument it is not. `values = ["*"]` takes
 any string literal: Express's `req.get('Referer')` reads a header, `req.get()`
-reads none.
+reads none. A value written `!name` is never the source, also with `*`:
+`values = ["*", "!host"]` takes every header but Host.
 
 ### Rules without sources
 
