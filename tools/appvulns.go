@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/BurntSushi/toml"
 
@@ -149,6 +150,10 @@ type AppResult struct {
 	Affected  []AppHit  `json:"affected,omitempty"`
 	Exploited []Exploit `json:"actively_exploited,omitempty"`
 	Error     string    `json:"error,omitempty"`
+	// cves: the CVEs each advisory id stands for, as OSV answered the KEV
+	// check (a GHSA and a PYSEC id of one vulnerability name the same CVE);
+	// for detect (SurfaceApps), not the model.
+	cves map[string][]string
 }
 
 // AppVulns checks every lock file under roots against OSV and CISA KEV.
@@ -158,7 +163,17 @@ func AppVulns(ctx context.Context, hc *http.Client, roots []string) (map[string]
 	var results []AppResult
 	total, kevUnchecked := 0, 0
 	for _, f := range files {
-		r := AppResult{Path: f.Path, Ecosystem: f.Ecosystem, Packages: len(f.pkgs)}
+		r := AppResult{Path: f.Path, Ecosystem: f.Ecosystem, Packages: len(f.pkgs), cves: map[string][]string{}}
+		var cmu sync.Mutex
+		lookup := func(id string) ([]string, bool) { // matchKEV asks concurrently
+			list, ok := osvCVEs(ctx, hc, id)
+			if ok {
+				cmu.Lock()
+				r.cves[id] = list
+				cmu.Unlock()
+			}
+			return list, ok
+		}
 		ids, err := osvBatch(ctx, hc, f.Ecosystem, f.pkgs)
 		if err != nil {
 			r.Error = err.Error()
@@ -173,7 +188,7 @@ func AppVulns(ctx context.Context, hc *http.Client, roots []string) (map[string]
 			r.Affected = append(r.Affected, AppHit{p.Name, p.Version, list[:min(5, len(list))]})
 			total += len(list)
 			if kevErr == nil {
-				matched, n := matchKEV(kev, list, func(id string) ([]string, bool) { return osvCVEs(ctx, hc, id) })
+				matched, n := matchKEV(kev, list, lookup)
 				kevUnchecked += n
 				for _, e := range matched {
 					e.Package, e.Version = p.Name, p.Version

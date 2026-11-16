@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nt-neil/shentu/detect"
 	"github.com/nt-neil/shentu/rules/engine"
 )
 
@@ -95,5 +96,35 @@ func TestSurfaceAppsNoSeverity(t *testing.T) {
 	apps := SurfaceApps([]AppResult{{Path: "/srv/composer.lock", Affected: []AppHit{{Package: "a/b", Version: "1", IDs: []string{"GHSA-1"}}}}})
 	if len(apps) != 1 || apps[0].Severity != "" {
 		t.Errorf("%+v: want one entry, no severity", apps)
+	}
+}
+
+// S-B: a GHSA id and a PYSEC id OSV said are the same CVE are one entry of
+// the surface; an id with no CVE stays apart. The CVEs never reach the
+// JSON the model reads.
+func TestSurfaceAppsAliases(t *testing.T) {
+	r := AppResult{Path: "/srv/app/requirements.txt", Ecosystem: "PyPI",
+		Affected: []AppHit{{Package: "django", Version: "3.2.0", IDs: []string{"GHSA-aaaa", "PYSEC-2021-1", "PYSEC-2021-9"}}},
+		cves:     map[string][]string{"GHSA-aaaa": {"CVE-2021-33203"}, "PYSEC-2021-1": {"CVE-2021-33571", "CVE-2021-33203"}}}
+	apps := SurfaceApps([]AppResult{r})
+	if len(apps) != 3 || apps[0].CVE != "CVE-2021-33203" || apps[1].CVE != "CVE-2021-33203" || apps[2].CVE != "" {
+		t.Fatalf("%+v", apps)
+	}
+	s := detect.Build(nil, apps)
+	if len(s.Entries) != 2 {
+		t.Fatalf("%d entries, want 2: %+v", len(s.Entries), s.Entries)
+	}
+	var merged detect.Entry
+	for _, e := range s.Entries {
+		if e.CVE == "CVE-2021-33203" {
+			merged = e
+		}
+	}
+	if merged.Advisory != "GHSA-aaaa" || len(merged.Aliases) != 1 || merged.Aliases[0] != "PYSEC-2021-1" {
+		t.Errorf("merged entry %+v", merged)
+	}
+	b, _ := json.Marshal(r)
+	if strings.Contains(string(b), "CVE-2021-33571") {
+		t.Errorf("aliases in the model's JSON: %s", b)
 	}
 }
