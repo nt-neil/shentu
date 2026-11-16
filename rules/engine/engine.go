@@ -485,7 +485,7 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 				// Summaries are worked out the same whoever asks (own): those the
 				// project has of this file already (as another file's callee, or a
 				// cycle settled through it) are the ones this scan would work out.
-				key := r.rule.ID + "\x00" + path
+				key := ruleFile{r.rule.ID, path}
 				if old := proj.sums[key]; old != nil {
 					sc.done, sc.rel, sc.direct, sc.cross, sc.keyed, sc.srcMay, sc.srcRel = old.done, old.rel, old.direct, old.cross, old.keyed, old.srcMay, old.srcRel
 				} else if kept := proj.kept[key]; kept != nil {
