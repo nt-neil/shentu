@@ -20,12 +20,12 @@ func TestInRangeComposer(t *testing.T) {
 		{"Packagist", "<=2.4.3-p1", "2.4.3-p2", false, true},
 		{"Packagist", "<1.0.1", "1.0-patch2", true, true},
 		{"Packagist", ">1.0", "1.0-patch2", true, true},
-		{"Packagist", "<2.4.3", "2.4.3-beta1", true, true},
+		{"Packagist", "<2.4.3", "2.4.3-beta1", false, false}, // a pre-release: not ordered (review 4)
 		{"Packagist", "<1.3", "1.2.x-dev", false, false},
 		{"Packagist", "<1.3", "dev-main", false, false},
 		{"npm", "=1.2.0", "1.2.0+build.5", true, true},
 		{"npm", "<1.2.0", "1.2.0+build.5", false, true},
-		{"npm", "<1.2.0", "1.2.0-p1", true, true}, // npm's -p1 is a pre-release
+		{"npm", "<1.2.0", "1.2.0-p1", false, false}, // npm's -p1 is a pre-release: not ordered
 	}
 	for _, c := range cases {
 		in, ok := InRange(Range{Ecosystem: c.eco, Package: "x", Versions: c.versions}, c.v)
@@ -58,7 +58,7 @@ func TestLoadReview1(t *testing.T) {
 	for name, extra := range map[string]string{
 		"(?i) literal":    "[[signature.match]]\npart = \"query\"\nregex = \"(?i)marker-X\"",
 		"both cases":      "[[signature.match]]\npart = \"query\"\nregex = \"marker[A-Za-z]\\\\S+\\\\W\"",
-		"a range of npm":  "[[signature.applies_to]]\necosystem = \"npm\"\npackage = \"x\"\nversions = \">=1.0.0-beta.1, <2\"",
+		"a range of npm":  "[[signature.applies_to]]\necosystem = \"npm\"\npackage = \"x\"\nversions = \">=1.0.0, <2\"",
 		"a patch release": "[[signature.applies_to]]\necosystem = \"Packagist\"\npackage = \"x/y\"\nversions = \"<2.4.3-p2\"",
 	} {
 		if _, err := load(extra); err != nil {
@@ -134,5 +134,35 @@ func TestLoadReview3(t *testing.T) {
 	}
 	if in, ok := InRange(Range{Ecosystem: "PACKAGIST", Package: "x", Versions: "<2.4.3"}, "2.4.3-p1"); in || !ok {
 		t.Errorf("PACKAGIST 2.4.3-p1 < 2.4.3: in %v ok %v", in, ok)
+	}
+}
+
+// Review 4 of #87: any suffix but Packagist's -pN (as Packagist writes
+// it) is not ordered: version unknown, never guessed.
+func TestInRangeSuffixUnknown(t *testing.T) {
+	for _, c := range []struct{ eco, versions, v string }{
+		{"npm", "<1.0.0-rc.10", "1.0.0-rc.9"},
+		{"npm", "<1.0.0", "1.0.0-RC1"},
+		{"Packagist", "<1.1", "1.0-stable"},
+		{"Packagist", "<2.4.4", "2.4.3-p1-beta"},
+		{"Packagist", "<2.4.4", "2.4.3-P1"},
+		{"Packagist", "<1.3", "1.2.X-DEV"},
+		{"Packagist", "<2.4.4", "2.4.3-alpha"},
+	} {
+		if _, ok := InRange(Range{Ecosystem: c.eco, Package: "x", Versions: c.versions}, c.v); ok {
+			t.Errorf("%s %s in %q: compared, want unknown", c.eco, c.v, c.versions)
+		}
+	}
+	for _, c := range []struct {
+		eco, versions, v string
+		in               bool
+	}{
+		{"Packagist", "<2.4.3-p2", "2.4.3-p1", true},
+		{"Packagist", "<2.4.3", "2.4.3-p1", false},
+		{"npm", ">=1.0, <2", "1.5.0", true},
+	} {
+		if in, ok := InRange(Range{Ecosystem: c.eco, Package: "x", Versions: c.versions}, c.v); !ok || in != c.in {
+			t.Errorf("%s %s in %q: in %v ok %v, want %v", c.eco, c.v, c.versions, in, ok, c.in)
+		}
 	}
 }

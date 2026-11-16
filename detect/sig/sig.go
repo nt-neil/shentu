@@ -431,20 +431,21 @@ var (
 	patchRe    = regexp.MustCompile(`^[-.]?(?:p|patch|pl)(\d*)$`) // Composer's 2.4.3-p1, 1.0-patch2: after 2.4.3
 )
 
-// version is a version taken apart: its dotted numbers, and the rest.
+// version is a version taken apart: its dotted numbers, and, when patch,
+// a Composer patch release (-p1), ordered after none, patchN its number.
 type version struct {
-	nums []string
-	// suffix: a pre-release (1.2.0-beta), ordered before none; or, when
-	// patch, a Composer patch release (-p1), ordered after none, patchN its
-	// number.
-	suffix string
+	nums   []string
 	patch  bool
 	patchN int
 }
 
 // parseVersion takes v apart as ecosystem orders it; ok is false for a
-// shape not compared: a branch (Composer's 1.2.x-dev, dev-main), a hash,
-// an epoch. Build metadata (+...) is left out, as semver says.
+// shape not compared: a pre-release or any other suffix (1.2.0-beta,
+// rc.9, 1.0-stable, 2.4.3-p1-beta, -RC1: their order differs between
+// ecosystems and tools, so it is not guessed), a branch (Composer's
+// 1.2.x-dev, dev-main), a hash, an epoch. Only Composer's -pN, as
+// Packagist writes it, is a suffix taken. Build metadata (+...) is left
+// out, as semver says.
 func parseVersion(ecosystem, v string) (version, bool) {
 	v, _, _ = strings.Cut(v, "+")
 	if strings.HasPrefix(v, "dev-") || strings.HasSuffix(v, "-dev") || wildcardRe.MatchString(v) {
@@ -454,21 +455,23 @@ func parseVersion(ecosystem, v string) (version, bool) {
 	if m == nil {
 		return version{}, false
 	}
-	out := version{nums: strings.Split(m[1], "."), suffix: m[2]}
-	if strings.EqualFold(ecosystem, "packagist") {
-		if p := patchRe.FindStringSubmatch(strings.ToLower(m[2])); p != nil {
-			out.patch, out.patchN = true, 0
-			if p[1] != "" {
-				out.patchN, _ = strconv.Atoi(p[1])
-			}
-		}
+	out := version{nums: strings.Split(m[1], ".")}
+	if m[2] == "" {
+		return out, true
+	}
+	p := patchRe.FindStringSubmatch(m[2])
+	if p == nil || !strings.EqualFold(ecosystem, "packagist") {
+		return version{}, false
+	}
+	out.patch = true
+	if p[1] != "" {
+		out.patchN, _ = strconv.Atoi(p[1])
 	}
 	return out, true
 }
 
 // compareVersions compares a and b: numeric parts as numbers, then a
-// pre-release suffix (1.2.0-beta) before none, a Composer patch release
-// (Packagist's 2.4.3-p1) after none.
+// Composer patch release (Packagist's 2.4.3-p1) after none.
 func compareVersions(ecosystem, a, b string) (int, bool) {
 	va, oka := parseVersion(ecosystem, a)
 	vb, okb := parseVersion(ecosystem, b)
@@ -495,20 +498,11 @@ func compareVersions(ecosystem, a, b string) (int, bool) {
 	case va.patch && vb.patch:
 		return cmpInt(va.patchN, vb.patchN), true
 	case va.patch:
-		return 1, true // 2.4.3-p1 after 2.4.3 and its pre-releases
+		return 1, true // 2.4.3-p1 after 2.4.3
 	case vb.patch:
 		return -1, true
 	}
-	sa, sb := va.suffix, vb.suffix
-	switch {
-	case sa == sb:
-		return 0, true
-	case sa == "":
-		return 1, true // 1.2.0 after 1.2.0-beta
-	case sb == "":
-		return -1, true
-	}
-	return strings.Compare(sa, sb), true
+	return 0, true
 }
 
 func cmpInt(a, b int) int {

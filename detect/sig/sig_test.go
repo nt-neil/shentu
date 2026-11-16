@@ -99,10 +99,13 @@ func TestLoadValidation(t *testing.T) {
 
 func TestInRange(t *testing.T) {
 	r := Range{Ecosystem: "npm", Package: "x", Versions: ">=1.2, <1.4.3"}
-	for v, want := range map[string]bool{"1.2": true, "1.2.0": true, "1.4.2": true, "1.4.3": false, "1.1.9": false, "v1.3.0": true, "1.4.3-beta": true} {
+	for v, want := range map[string]bool{"1.2": true, "1.2.0": true, "1.4.2": true, "1.4.3": false, "1.1.9": false, "v1.3.0": true} {
 		if in, ok := InRange(r, v); !ok || in != want {
 			t.Errorf("%s: in %v ok %v, want %v", v, in, ok, want)
 		}
+	}
+	if _, ok := InRange(r, "1.4.3-beta"); ok {
+		t.Error("a pre-release compared (review 4 of #87: not ordered)")
 	}
 	if _, ok := InRange(r, "1:2.3-4ubuntu1"); ok {
 		t.Error("a Debian epoch compared")
