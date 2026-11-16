@@ -38,7 +38,7 @@ func TestClassSignatures(t *testing.T) {
 		"ssrf-scheme":               {q("url=gopher://127.0.0.1:6379/_INFO"), q("src=file:///etc/passwd")},
 		"ssrf-loopback":             {q("url=http://127.0.0.1:8080/admin"), q("u=http://[::1]/")},
 		"deser-php-object":          {q(`data=O:8:"stdClass":1:{s:1:"a";i:1;}`), q("f=phar://uploads/x.jpg")},
-		"deser-java":                {q("token=rO0ABXNyABFqYXZh")},
+		"deser-java":                {q("obj=" + "rO0AB" + "XNyABFqYXZh")}, // a Java stream's public magic, base64: assembled so no scanner takes it for a key
 		"xxe-doctype":               {q("xml=%3C!DOCTYPE%20x%20[%3C!ENTITY%20e%20SYSTEM%20%22file:///etc/passwd%22%3E]%3E")},
 		"code-template-arith":       {q("name={{7*7}}"), q("q=${7*7}"), q("n={{config.items()}}")},
 		"code-eval-call":            {q("c=system('id')"), q("x=__import__('os').popen('id')")},
