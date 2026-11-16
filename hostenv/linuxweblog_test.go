@@ -15,7 +15,9 @@ func logHost() statHost {
 	for _, d := range []string{"/", "/var", "/var/log", "/var/log/nginx", "/var/log/apache2", "/var/log/php-fpm"} {
 		h.st[d] = dir
 	}
-	h.st["/var/log"] = FileStat{Mode: fs.ModeDir | 0o775, UID: 0} // Ubuntu: group syslog may write
+	syslog := 104
+	h.st["/var/log"] = FileStat{Mode: fs.ModeDir | 0o775, UID: 0, GID: &syslog} // Ubuntu: group syslog may write
+	h.files["/etc/group"] = "root:x:0:\nadm:x:4:syslog\nwww-data:x:33:\nsyslog:x:104:\n"
 	root := FileStat{Mode: 0o640, UID: 0}
 	www := FileStat{Mode: 0o640, UID: 33}
 
@@ -145,7 +147,18 @@ func TestWebLogsPHPFPM(t *testing.T) {
 // What only root may write, and what else: owner, mode, directories, links.
 func TestLogTrust(t *testing.T) {
 	h := logHost()
-	web := map[int]string{33: "www-data"}
+	web := WebAccounts{UIDs: map[int]string{33: "www-data"}, GIDs: map[int]string{33: "www-data"}}
+	gid := func(n int) *int { return &n }
+	h.st["/var/log/wwwgrp"] = FileStat{Mode: fs.ModeDir | 0o775, UID: 0, GID: gid(33)}
+	h.files["/var/log/wwwgrp/a.log"], h.st["/var/log/wwwgrp/a.log"] = "", FileStat{Mode: 0o640, UID: 0}
+	h.st["/var/log/sysgrp"] = FileStat{Mode: fs.ModeDir | 0o775, UID: 0, GID: gid(104)}
+	h.files["/var/log/sysgrp/a.log"], h.st["/var/log/sysgrp/a.log"] = "", FileStat{Mode: 0o640, UID: 0}
+	h.st["/var/log/nogid"] = FileStat{Mode: fs.ModeDir | 0o775, UID: 0}
+	h.files["/var/log/nogid/a.log"], h.st["/var/log/nogid/a.log"] = "", FileStat{Mode: 0o640, UID: 0}
+	// A chain: the link in bob's directory points on to a trusted file;
+	// bob may repoint it.
+	h.links["/var/log/nginx/chain.log"] = "/home/bob/hop.log"
+	h.links["/home/bob/hop.log"] = "/var/log/nginx/shop.access.log"
 	h.files["/var/log/x.log"], h.st["/var/log/x.log"] = "", FileStat{Mode: 0o660, UID: 0}
 	h.files["/var/log/bob.log"], h.st["/var/log/bob.log"] = "", FileStat{Mode: 0o640, UID: 1000}
 	h.st["/var/log/open"] = FileStat{Mode: fs.ModeDir | 0o777, UID: 0}
@@ -164,6 +177,10 @@ func TestLogTrust(t *testing.T) {
 		"/var/log/tmp/a.log":             "",
 		"/var/log/nginx/link.log":        ReasonUntrusted, // a root file, in bob's directory
 		"/var/log/nginx/gone.log":        ReasonNotFound,
+		"/var/log/wwwgrp/a.log":          ReasonWebUserWritable, // 775 root:www-data: the web user may swap the file
+		"/var/log/sysgrp/a.log":          "",                    // 775 root:syslog, as Ubuntu's /var/log
+		"/var/log/nogid/a.log":           ReasonUnverified,      // group-writable, group unknown
+		"/var/log/nginx/chain.log":       ReasonUntrusted,
 	} {
 		ok, why, detail := LogTrust(h, p, web)
 		if why != want || ok != (want == "") {

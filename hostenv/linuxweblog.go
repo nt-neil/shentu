@@ -75,6 +75,9 @@ const (
 // distributions shentu supports, beside those the configuration names.
 var defaultWebUsers = []string{"www-data", "nginx", "apache", "httpd", "nobody", "wwwrun", "http", "lighttpd", "php-fpm"}
 
+// defaultWebGroups are their groups that are not also an account's name.
+var defaultWebGroups = []string{"nogroup", "www"}
+
 // WebLogs is the logs nginx, Apache and PHP-FPM are configured to write,
 // sorted by path, each with its trust. Partial when some configuration
 // could not be read: the logs it names are missing.
@@ -83,7 +86,7 @@ func (c LinuxCollector) WebLogs(src Source) Obs[[]LogSource] {
 	l.nginx()
 	l.apache()
 	l.phpFPM()
-	web := l.webUIDs()
+	web := l.webAccounts()
 	var out []LogSource
 	for _, s := range l.out {
 		if s.Reason == "" {
@@ -106,14 +109,23 @@ func (c LinuxCollector) WebLogs(src Source) Obs[[]LogSource] {
 	return OK(out)
 }
 
+// WebAccounts are the accounts and groups web servers and PHP run as, by
+// uid and gid: a file or directory of theirs is web_user_writable.
+type WebAccounts struct {
+	UIDs map[int]string
+	GIDs map[int]string
+}
+
 // LogTrust says whether only root can have written p: it, after its links,
 // is a regular file owned by root that neither group nor others can write,
-// and every directory above it and above the link is root's and not
-// writable by others (FileStat has no group, so a group-writable directory,
-// as Ubuntu's /var/log for syslog, is let pass). webUIDs are the web
-// server's and PHP's accounts: a file of theirs is web_user_writable, not
-// merely untrusted.
-func LogTrust(src Source, p string, webUIDs map[int]string) (verified bool, why Reason, detail string) {
+// and every directory above it and above the link is root's, not writable
+// by others, and writable by its group only when that group is none of
+// the web server's or PHP's (Ubuntu's /var/log, 775 root:syslog, passes; a
+// 775 root:www-data one does not: the web user could swap the file). A
+// sticky directory lets no one but a file's owner replace it. A directory
+// whose group is not known (Windows, an old fixture) and that its group
+// may write is not trusted.
+func LogTrust(src Source, p string, web WebAccounts) (verified bool, why Reason, detail string) {
 	real, err := EvalSymlinks(src, p)
 	if err != nil {
 		return false, statReason(err), whyUnread(err)
@@ -126,15 +138,19 @@ func LogTrust(src Source, p string, webUIDs map[int]string) (verified bool, why 
 	case !st.Mode.IsRegular():
 		return false, ReasonNotRegular, real + " is not a regular file"
 	case st.UID != 0:
-		if name, ok := webUIDs[st.UID]; ok {
+		if name, ok := web.UIDs[st.UID]; ok {
 			return false, ReasonWebUserWritable, fmt.Sprintf("%s is owned by %s (uid %d): %s", real, name, st.UID, WebUserWritableMeaning)
 		}
 		return false, ReasonUntrusted, fmt.Sprintf("%s is owned by uid %d, not root", real, st.UID)
 	case st.Mode.Perm()&0o022 != 0:
 		return false, ReasonUntrusted, fmt.Sprintf("%s is writable by group or others (%v)", real, st.Mode.Perm())
 	}
+	links, err := linkChain(src, p)
+	if err != nil {
+		return false, ReasonUnverified, whyUnread(err)
+	}
 	dirs := map[string]bool{}
-	for _, f := range []string{p, real} {
+	for _, f := range append([]string{p, real}, links...) { // whoever may write a directory holding a link may repoint it
 		for d := path.Dir(f); ; d = path.Dir(d) {
 			dirs[d] = true
 			if d == "/" {
@@ -152,17 +168,55 @@ func LogTrust(src Source, p string, webUIDs map[int]string) (verified bool, why 
 		if err != nil {
 			return false, ReasonUnverified, "directory " + d + ": " + whyUnread(err)
 		}
+		sticky := ds.Mode&fs.ModeSticky != 0
 		switch {
 		case ds.UID != 0:
-			if name, ok := webUIDs[ds.UID]; ok {
+			if name, ok := web.UIDs[ds.UID]; ok {
 				return false, ReasonWebUserWritable, fmt.Sprintf("directory %s is owned by %s (uid %d): %s", d, name, ds.UID, WebUserWritableMeaning)
 			}
 			return false, ReasonUntrusted, fmt.Sprintf("directory %s is owned by uid %d, not root", d, ds.UID)
-		case ds.Mode.Perm()&0o002 != 0 && ds.Mode&fs.ModeSticky == 0:
+		case ds.Mode.Perm()&0o002 != 0 && !sticky:
 			return false, ReasonUntrusted, "directory " + d + " is writable by others"
+		case ds.Mode.Perm()&0o020 != 0 && !sticky:
+			if ds.GID == nil {
+				return false, ReasonUnverified, "directory " + d + " is writable by its group, and which group is not known"
+			}
+			if name, ok := web.GIDs[*ds.GID]; ok {
+				return false, ReasonWebUserWritable, fmt.Sprintf("directory %s is writable by group %s (gid %d): %s", d, name, *ds.GID, WebUserWritableMeaning)
+			}
 		}
 	}
 	return true, "", ""
+}
+
+// linkChain is every symbolic link resolving p goes through, in order,
+// links in its directories included: each one's directory must be trusted
+// as much as the file's.
+func linkChain(src Source, p string) ([]string, error) {
+	var links []string
+	cur := path.Clean(p)
+	for hops := 0; hops <= 40; hops++ {
+		parts := strings.Split(strings.Trim(cur, "/"), "/")
+		dir, moved := "/", false
+		for i, part := range parts {
+			next := path.Join(dir, part)
+			t, err := src.Readlink(next)
+			if err != nil {
+				dir = next
+				continue
+			}
+			links = append(links, next)
+			if !strings.HasPrefix(t, "/") {
+				t = path.Join(dir, t)
+			}
+			cur, moved = path.Join(append([]string{t}, parts[i+1:]...)...), true
+			break
+		}
+		if !moved {
+			return links, nil
+		}
+	}
+	return nil, errors.New("too many links")
 }
 
 // statReason is the Reason for a log file that could not be looked at.
@@ -186,6 +240,7 @@ type logLoader struct {
 	out    map[string]*LogSource // server\x00kind\x00path
 	cut    bool
 	users  []string // accounts the configuration runs the servers as
+	groups []string // and groups
 }
 
 // read reads one configuration file, counting it against the bound.
@@ -262,23 +317,52 @@ func (l *logLoader) add(s LogSource) {
 	l.out[k] = &s
 }
 
-// webUIDs maps the uids of the web servers' and PHP's accounts to names.
-func (l *logLoader) webUIDs() map[int]string {
-	b, err := l.src.ReadFile("/etc/passwd")
-	if err != nil {
-		return nil
-	}
-	want := map[string]bool{}
+// webAccounts is the uids and gids of the web servers' and PHP's accounts
+// and groups: the defaults and those the configuration names, and each
+// such account's primary group.
+func (l *logLoader) webAccounts() WebAccounts {
+	w := WebAccounts{UIDs: map[int]string{}, GIDs: map[int]string{}}
+	users, groups := map[string]bool{}, map[string]bool{}
 	for _, u := range append(append([]string{}, defaultWebUsers...), l.users...) {
-		want[u] = true
+		users[u] = true
 	}
-	out := map[int]string{}
-	for _, e := range ParsePasswd(b) {
-		if uid, err := strconv.Atoi(e.UID); err == nil && uid != 0 && want[e.Name] {
-			out[uid] = e.Name
+	for _, g := range append(append(append([]string{}, defaultWebUsers...), defaultWebGroups...), l.groups...) {
+		groups[g] = true
+	}
+	primary := map[int]bool{}
+	if b, err := l.src.ReadFile("/etc/passwd"); err == nil {
+		for _, e := range ParsePasswd(b) {
+			uid, err := strconv.Atoi(e.UID)
+			if err != nil || uid == 0 || !users[e.Name] {
+				continue
+			}
+			w.UIDs[uid] = e.Name
+			if gid, err := strconv.Atoi(e.GID); err == nil && gid != 0 {
+				primary[gid] = true
+			}
 		}
 	}
-	return out
+	if b, err := l.src.ReadFile("/etc/group"); err == nil {
+		for _, ln := range strings.Split(string(b), "\n") {
+			f := strings.Split(ln, ":")
+			if len(f) < 3 || strings.HasPrefix(f[0], "#") {
+				continue
+			}
+			gid, err := strconv.Atoi(f[2])
+			if err != nil || gid == 0 {
+				continue
+			}
+			if groups[f[0]] || primary[gid] {
+				w.GIDs[gid] = f[0]
+			}
+		}
+	}
+	for gid := range primary { // a primary group /etc/group does not list
+		if _, ok := w.GIDs[gid]; !ok {
+			w.GIDs[gid] = "gid " + strconv.Itoa(gid)
+		}
+	}
+	return w
 }
 
 func at(file string, line int) string { return file + ":" + strconv.Itoa(line) }
@@ -465,9 +549,12 @@ func (l *logLoader) nginx() {
 	var https []*ngxDir
 	for _, d := range main {
 		switch d.name {
-		case "user":
+		case "user": // user www-data [group]
 			if len(d.args) > 0 {
 				l.users = append(l.users, d.args[0])
+			}
+			if len(d.args) > 1 {
+				l.groups = append(l.groups, d.args[1])
 			}
 		case "error_log":
 			mainErr = append(mainErr, d)
@@ -809,6 +896,10 @@ func (l *logLoader) apacheFile(st *apacheState, p string, depth int) {
 			if len(args) > 0 {
 				l.users = append(l.users, st.expand(args[0]))
 			}
+		case "group":
+			if len(args) > 0 {
+				l.groups = append(l.groups, st.expand(args[0]))
+			}
 		case "servername", "serveralias":
 			for _, a := range args {
 				if !contains(st.cur.names, a) {
@@ -922,6 +1013,10 @@ func (l *logLoader) fpmFile(p, section string, depth int) string {
 		case "user":
 			if section != "global" {
 				l.users = append(l.users, v)
+			}
+		case "group", "listen.group":
+			if section != "global" {
+				l.groups = append(l.groups, v)
 			}
 		case "error_log":
 			if section == "global" {
