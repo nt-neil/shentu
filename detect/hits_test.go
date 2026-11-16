@@ -131,7 +131,7 @@ func TestRouteRegexp(t *testing.T) {
 		"/api/:id/edit":                 {{"/v1/api/7/edit"}, {"/api/7"}},
 		"/wp-json/shop/v1/(?P<id>\\d+)": {{"/wp-json/shop/v1/12"}, {"/wp-json/shop/v1/x"}},
 	} {
-		re := routeRegexp(pattern)
+		re, _ := routeRegexp(pattern)
 		if re == nil {
 			t.Errorf("%s: no expression", pattern)
 			continue
@@ -147,7 +147,7 @@ func TestRouteRegexp(t *testing.T) {
 			}
 		}
 	}
-	if routeRegexp("") != nil {
+	if re, _ := routeRegexp(""); re != nil {
 		t.Error("a hook's empty pattern made a route")
 	}
 }

@@ -1,7 +1,10 @@
 package detect
 
 import (
+	"maps"
 	"regexp"
+	"regexp/syntax"
+	"slices"
 	"sort"
 	"strings"
 
@@ -42,13 +45,23 @@ type Judgment struct {
 	// Cut: some of the request was not matched (Request.Cut): no hit is
 	// not "nothing there". TimedOut: matching took longer than
 	// MaxMatchTime (MatchResult.TimedOut). Both said with the judgment.
-	Cut      bool `json:"cut,omitempty"`
-	TimedOut bool `json:"timed_out,omitempty"`
-	// Unknown: the request was cut and no candidate was found in what was
-	// matched: not known to be harmless (padding may hide what was cut),
-	// a result of its own, never an empty judgment.
-	Unknown bool `json:"unknown,omitempty"`
+	Cut      bool      `json:"cut,omitempty"`
+	CutParts []CutPart `json:"cut_parts,omitempty"` // what was cut, and how much (Request.CutParts)
+	TimedOut bool      `json:"timed_out,omitempty"`
+	// Unknown: the request was cut and no candidate reached L2 in what was
+	// matched: not known to be harmless (padding may hide a payload in
+	// what was cut), a result of its own, never an empty judgment. Then
+	// HiddenSinks are the sinks it reached (L1) and HiddenClasses the
+	// payload classes the cut part may hold for this host: those reached
+	// sinks' and those of sinks with no known route. P4 shows it as "the
+	// request was cut and may hide <classes>; sinks: <sinks>".
+	Unknown       bool     `json:"unknown,omitempty"`
+	HiddenSinks   []string `json:"hidden_sinks,omitempty"`
+	HiddenClasses []string `json:"hidden_classes,omitempty"`
 }
+
+// MaxHidden bounds Judgment.HiddenSinks.
+const MaxHidden = 16
 
 // Judge says which of the surface's vulnerabilities a matched request may
 // be trying.
@@ -85,14 +98,14 @@ func NewJudge(s Surface, ss []sig.Signature) *Judge {
 			continue
 		}
 		for _, r := range e.Routes {
-			re := routeRegexp(r.Pattern)
+			re, loose := routeRegexp(r.Pattern)
 			if re != nil {
 				j.routes = append(j.routes, routeEntry{i, r, re})
 			}
-			// Reached some way not matched (no expression), or the root,
-			// whose mount prefix is not known (/api's / is /api): the
-			// class's hits elsewhere are unanchored, never noise.
-			if re == nil || rootRoute(r.Pattern) {
+			// Reached some way not matched (no expression), an expression
+			// not checked, or a route whose mount prefix matters (the root,
+			// /:id): the class's hits elsewhere are unanchored, never noise.
+			if re == nil || loose {
 				j.classes[e.Payload] = true
 			}
 		}
@@ -100,7 +113,7 @@ func NewJudge(s Surface, ss []sig.Signature) *Judge {
 	return j
 }
 
-var placeholder = regexp.MustCompile(`\{[^/{}]+\}|<[^/<>]+>|:[A-Za-z_][A-Za-z0-9_]*(?:\([^()]*\))?[*+?]?|\*[A-Za-z0-9_]*`)
+var placeholder = regexp.MustCompile(`\{[^/{}]+\}|<[^/<>]+>|:[A-Za-z_][A-Za-z0-9_]*(?:\((?:[^()]|\([^()]*\))*\))?[*+?]?|\*[A-Za-z0-9_]*`)
 
 // manySegments: a placeholder that takes a path of several segments:
 // Flask's and Django's <path:f>, FastAPI's {p:path}, Express's * and :p*.
@@ -109,71 +122,117 @@ func manySegments(ph string) bool {
 		strings.HasSuffix(ph, "*") || strings.HasSuffix(ph, "+")
 }
 
-// rootRoute: pattern is the root (/, empty under re_path's ^$).
-func rootRoute(pattern string) bool {
-	p := strings.TrimSpace(pattern)
-	return p != "" && strings.Trim(strings.TrimSuffix(strings.TrimPrefix(p, "^"), "$"), "/") == ""
-}
-
 // routeRegexp makes a route pattern (as written: /users/{id}, /run/<cmd>,
 // /api/:id, Express's /users/:id? and /user/:id(\d+), Django's
 // report/<str:name>/ and re_path's ^article/\d+/$, WordPress's
 // /wp-json/ns/(?P<id>\d+)) an expression the routed path must end with,
 // from a segment's start (PatternMeaning: no mount prefix is known). A
-// pattern without a leading / gets one (Django, Laravel write none); the
-// root / is the root only. nil for none: a hook's empty pattern, an
-// expression that does not compile, or one that does not match the path
-// its own pattern describes (it would never match a request).
-func routeRegexp(pattern string) *regexp.Regexp {
+// pattern without a leading / gets one (Django, Laravel write none). nil
+// for none: a hook's empty pattern, an expression that does not compile.
+//
+// loose: the expression may miss requests the route takes, so its sink's
+// class hits elsewhere must stay unanchored, not noise: a pattern taken
+// as a regular expression (what it matches is not checked), the root, or
+// one starting with a placeholder. The last two are anchored at the
+// path's start (L1 only without a mount prefix): as suffixes they would
+// match nearly every request.
+func routeRegexp(pattern string) (re *regexp.Regexp, loose bool) {
 	pattern = strings.TrimSpace(pattern)
 	if pattern == "" {
-		return nil
+		return nil, true
 	}
-	rePath := strings.HasPrefix(pattern, "^") || strings.HasSuffix(pattern, "$")
-	if rePath { // re_path: anchored at the mount point
-		pattern = strings.TrimSuffix(strings.TrimPrefix(pattern, "^"), "$")
-	}
-	if !strings.HasPrefix(pattern, "/") {
+	if !strings.HasPrefix(pattern, "/") && !strings.HasPrefix(pattern, "^") {
 		pattern = "/" + pattern
 	}
-	if strings.Trim(pattern, "/") == "" {
-		return regexp.MustCompile(`^/?$`)
-	}
-	var expr, sample string
-	if rePath && regexp.QuoteMeta(pattern) != pattern || strings.Contains(pattern, "(?") {
-		expr = pattern // re_path's and WordPress's routes are expressions already
-	} else {
-		var b, x strings.Builder
-		idx := placeholder.FindAllStringIndex(pattern, -1)
-		last := 0
-		for _, m := range idx {
-			lit, ph := pattern[last:m[0]], pattern[m[0]:m[1]]
-			switch {
-			case strings.HasSuffix(ph, "?") && strings.HasSuffix(lit, "/"): // Express's optional /:id?
-				b.WriteString(regexp.QuoteMeta(lit[:len(lit)-1]) + `(?:/[^/]+)?`)
-			case manySegments(ph):
-				b.WriteString(regexp.QuoteMeta(lit) + `.+`)
-			default:
-				b.WriteString(regexp.QuoteMeta(lit) + `[^/]+`)
-			}
-			x.WriteString(lit + "x")
-			last = m[1]
+	bare := placeholder.ReplaceAllString(pattern, "")
+	if strings.ContainsAny(bare, `\[|+()^$`) || strings.Contains(bare, ".*") { // re_path, WordPress: an expression
+		expr, err := stripAnchors(pattern)
+		if err != nil {
+			return nil, true
 		}
-		b.WriteString(regexp.QuoteMeta(pattern[last:]))
-		x.WriteString(pattern[last:])
-		expr, sample = b.String(), x.String()
+		expr = strings.TrimSuffix(strings.TrimPrefix(expr, "/"), "/") // the trailing / is optional below
+		re, err = regexp.Compile(`(?i)/(?:` + expr + `)/?$`)
+		if err != nil {
+			return nil, true
+		}
+		return re, true
 	}
-	re, err := regexp.Compile(`(?i)` + strings.TrimSuffix(expr, "/") + `/?$`)
-	if err != nil || sample != "" && !re.MatchString(sample) {
-		return nil
+	if strings.Trim(pattern, "/") == "" {
+		return regexp.MustCompile(`^/?$`), true
 	}
-	return re
+	var b strings.Builder
+	idx := placeholder.FindAllStringIndex(pattern, -1)
+	last := 0
+	for _, m := range idx {
+		lit, ph := pattern[last:m[0]], pattern[m[0]:m[1]]
+		switch {
+		case strings.HasSuffix(ph, "?") && strings.HasSuffix(lit, "/"): // Express's optional /:id?
+			b.WriteString(regexp.QuoteMeta(lit[:len(lit)-1]) + `(?:/[^/]+)?`)
+		case manySegments(ph):
+			b.WriteString(regexp.QuoteMeta(lit) + `.+`)
+		default:
+			b.WriteString(regexp.QuoteMeta(lit) + `[^/]+`)
+		}
+		last = m[1]
+	}
+	b.WriteString(regexp.QuoteMeta(pattern[last:]))
+	expr := strings.TrimSuffix(b.String(), "/")
+	anchor := ""
+	if len(idx) > 0 && idx[0][0] == 1 { // /:id, /{slug}, /:id?: anchored, as the root is
+		anchor, loose = "^", true
+	}
+	re, err := regexp.Compile(`(?i)` + anchor + expr + `/?$`)
+	if err != nil {
+		return nil, true
+	}
+	return re, loose
+}
+
+// stripAnchors is expr without the ^ and $ that start and end its
+// branches (re_path's ^foo/$|^bar/$ is anchored at the mount point, which
+// is not known).
+func stripAnchors(expr string) (string, error) {
+	re, err := syntax.Parse(expr, syntax.Perl)
+	if err != nil {
+		return "", err
+	}
+	anchor := func(r *syntax.Regexp) bool {
+		switch r.Op {
+		case syntax.OpBeginText, syntax.OpBeginLine, syntax.OpEndText, syntax.OpEndLine:
+			return true
+		}
+		return false
+	}
+	var strip func(*syntax.Regexp) *syntax.Regexp
+	strip = func(r *syntax.Regexp) *syntax.Regexp {
+		switch {
+		case anchor(r):
+			return &syntax.Regexp{Op: syntax.OpEmptyMatch}
+		case r.Op == syntax.OpAlternate || r.Op == syntax.OpCapture:
+			for i, s := range r.Sub {
+				r.Sub[i] = strip(s)
+			}
+		case r.Op == syntax.OpConcat:
+			for len(r.Sub) > 0 && anchor(r.Sub[0]) {
+				r.Sub = r.Sub[1:]
+			}
+			for len(r.Sub) > 0 && anchor(r.Sub[len(r.Sub)-1]) {
+				r.Sub = r.Sub[:len(r.Sub)-1]
+			}
+			if len(r.Sub) > 0 {
+				r.Sub[0] = strip(r.Sub[0])
+				r.Sub[len(r.Sub)-1] = strip(r.Sub[len(r.Sub)-1])
+			}
+		}
+		return r
+	}
+	return strip(re).String(), nil
 }
 
 // Judge judges one matched request (MatchResult of the record or of one
 // of its other splits).
 func (j *Judge) Judge(m MatchResult) Judgment {
-	out := Judgment{Cut: m.Request.Cut, TimedOut: m.TimedOut}
+	out := Judgment{Cut: m.Request.Cut, CutParts: m.Request.CutParts, TimedOut: m.TimedOut}
 	byEntry := map[int]int{} // entry -> index in out.Candidates
 	// add gives the candidate for entry i, made at level if new, raised to
 	// level if it was lower.
@@ -255,13 +314,26 @@ func (j *Judge) Judge(m MatchResult) Judgment {
 			out.Noise = append(out.Noise, h)
 		}
 	}
-	out.Unknown = out.Cut && len(out.Candidates) == 0
+	out.Unknown = out.Cut && !slices.ContainsFunc(out.Candidates, func(c Candidate) bool { return c.Level == LevelPayload })
 	sort.SliceStable(out.Candidates, func(a, b int) bool {
 		if out.Candidates[a].Level != out.Candidates[b].Level {
 			return out.Candidates[a].Level > out.Candidates[b].Level
 		}
 		return out.Candidates[a].Entry < out.Candidates[b].Entry
 	})
+	if out.Unknown {
+		classes := maps.Clone(j.classes)
+		for i := range byEntry { // the candidates, all L1
+			e := j.surface.Entries[i]
+			if e.Payload != "" {
+				classes[e.Payload] = true
+			}
+			out.HiddenSinks = append(out.HiddenSinks, e.ID)
+		}
+		slices.Sort(out.HiddenSinks)
+		out.HiddenSinks = out.HiddenSinks[:min(len(out.HiddenSinks), MaxHidden)]
+		out.HiddenClasses = slices.Sorted(maps.Keys(classes))
+	}
 	return out
 }
 

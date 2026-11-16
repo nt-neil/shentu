@@ -122,7 +122,7 @@ func TestRouteRegexpForms(t *testing.T) {
 		"/users/{id}":                   {{"/api/users/5"}, {"/xusers/5"}},
 		"/wp-json/shop/v1/(?P<id>\\d+)": {{"/wp-json/shop/v1/12"}, {"/wp-json/shop/v1/x"}},
 	} {
-		re := routeRegexp(pattern)
+		re, _ := routeRegexp(pattern)
 		if re == nil {
 			t.Errorf("%s: no expression", pattern)
 			continue
@@ -266,7 +266,7 @@ func TestRouteRegexpForms2(t *testing.T) {
 		"report/<str:name>": {{"/report/x"}, {"/report/a/b"}},
 		"/api/:id/edit":     {{"/api/7/edit"}, {"/api/7/8/edit"}},
 	} {
-		re := routeRegexp(pattern)
+		re, _ := routeRegexp(pattern)
 		if re == nil {
 			t.Errorf("%s: no expression", pattern)
 			continue
@@ -315,5 +315,106 @@ path = "/marker/route"
 	}
 	if r := m.Match(Normalize(AccessRecord{Method: "POST", Path: "/marker/route"})); len(r.Hits) != 0 {
 		t.Errorf("POST to a GET route: %+v", r.Hits)
+	}
+}
+
+// Review 3 of #87, N-D: a cut text's start and end are matched apart: an
+// expression never joins them across the cut; a cut mark the request
+// sent itself is a space.
+func TestCutSeamNotMatched(t *testing.T) {
+	m := NewMatcher(loadSigs(t, `
+[[signature]]
+id = "two-markers"
+title = "t"
+class = "sqli"
+source = "shentu"
+license = "Apache-2.0"
+[[signature.match]]
+part = "any_param"
+regex = 'marker-a.*marker-b|marker-a[^q]+marker-b'
+`))
+	pad := strings.Repeat("z", 2*MaxNormalized)
+	for name, query := range map[string]string{
+		"one value":      "k=marker-a" + pad + "marker-b",
+		"the parameters": "k=marker-a" + pad + "&p2=" + pad + "&p3=" + pad + "&j=marker-b",
+	} {
+		q := Normalize(AccessRecord{Method: "GET", Path: "/", Query: query})
+		if r := m.Match(q); !q.Cut || len(r.Hits) != 0 {
+			t.Errorf("%s: cut %v, hits %+v: matched across the cut", name, q.Cut, r.Hits)
+		}
+	}
+	if r := m.Match(Normalize(AccessRecord{Method: "GET", Path: "/", Query: "k=marker-a" + strings.Repeat("z", 100) + "marker-b"})); len(r.Hits) != 1 {
+		t.Errorf("not cut: %+v", r.Hits)
+	}
+	if q := Normalize(AccessRecord{Method: "GET", Path: "/", Query: "k=a%1fb"}); q.Params["k"][0] != "a b" {
+		t.Errorf("a sent cut mark: %q", q.Params["k"][0])
+	}
+	if ex := excerptAt("ab"+cutMark+"cd", 0, 2); strings.Contains(ex, cutMark) || !strings.Contains(ex, "…") {
+		t.Errorf("excerpt %q", ex)
+	}
+}
+
+// Review 3, N-E: expressions are taken whole and loose; a route starting
+// with a placeholder is anchored and loose, as the root.
+func TestRouteRegexpForms3(t *testing.T) {
+	for pattern, c := range map[string]struct {
+		yes, no []string
+		loose   bool
+	}{
+		"article/\\d+/":         {[]string{"/article/12/", "/article/12", "/blog/article/12"}, []string{"/article/x/"}, true},
+		"^foo/$|^bar/$":         {[]string{"/foo/", "/bar/", "/app/foo/"}, []string{"/baz/", "/foo/x/"}, true},
+		"/user/:id(\\d+(?:x)?)": {[]string{"/user/5"}, []string{"/user/5/6"}, false},
+		"/:id?":                 {[]string{"/", "/x"}, []string{"/a/x"}, true},
+		"/{slug}":               {[]string{"/x"}, []string{"/a/x"}, true},
+		"/":                     {[]string{"/"}, []string{"/a"}, true},
+		"/users/{id}":           {[]string{"/api/users/5"}, []string{"/users/5/6"}, false},
+	} {
+		re, loose := routeRegexp(pattern)
+		if re == nil || loose != c.loose {
+			t.Errorf("%s: %v loose %v, want loose %v", pattern, re, loose, c.loose)
+			continue
+		}
+		for _, p := range c.yes {
+			if !re.MatchString(p) {
+				t.Errorf("%s should match %q (%s)", pattern, p, re)
+			}
+		}
+		for _, p := range c.no {
+			if re.MatchString(p) {
+				t.Errorf("%s should not match %q (%s)", pattern, p, re)
+			}
+		}
+	}
+}
+
+// Review 3: Unknown is "cut, and no L2"; it says what was cut and what
+// the cut may hide.
+func TestUnknownSaysWhat(t *testing.T) {
+	ss := loadSigs(t, markerSigs)
+	sinks := []CodeSink{
+		{Rule: "js-sqli", CWE: "CWE-89", Severity: "critical", Path: "a.js", Line: 1,
+			Routes: []engine.RouteRef{{Model: "m", Framework: "express", Method: "get", Pattern: "/marker/ping", File: "a.js", Line: 1}}},
+		{Rule: "php-path", CWE: "CWE-22", Severity: "warning", Path: "b.php", Line: 2},
+	}
+	j := NewJudge(Build(sinks, nil), ss)
+	pad := strings.Repeat("z", MaxNormalized+100)
+	g := j.Judge(NewMatcher(ss).Match(Normalize(AccessRecord{Method: "GET", Path: "/marker/ping", Query: "k=" + pad})))
+	if !g.Unknown || len(g.Candidates) != 1 || strings.Join(g.HiddenSinks, ",") != "code:js-sqli:a.js:1" ||
+		strings.Join(g.HiddenClasses, ",") != "path,sqli" || len(g.CutParts) != 1 || g.CutParts[0].Part != "param" || g.CutParts[0].Param != "k" {
+		t.Errorf("cut, L1 only: %+v", g)
+	}
+	g = j.Judge(NewMatcher(ss).Match(Normalize(AccessRecord{Method: "GET", Path: "/marker/ping", Query: "k=" + pad + "&j=marker-one"})))
+	if !g.Cut || g.Unknown || len(g.HiddenSinks) != 0 {
+		t.Errorf("cut, with a candidate at L2: %+v", g)
+	}
+}
+
+// Review 3, S: an ecosystem's case does not matter.
+func TestEcosystemCase(t *testing.T) {
+	ss := loadSigs(t, markerSigs)
+	g := NewJudge(Build(nil, []PackageVuln{{Source: "/srv/composer.lock", Ecosystem: "PACKAGIST", Package: "MARKER/PKG-CORE", Version: "1.0", ID: "CVE-2099-0007"}}), ss).
+		Judge(NewMatcher(ss).Match(Normalize(AccessRecord{Method: "GET", Path: "/", Query: "q=marker-one"})))
+	if len(g.Candidates) != 1 || g.Candidates[0].VersionUnknown {
+		t.Errorf("PACKAGIST, MARKER/PKG-CORE: %+v", g)
 	}
 }

@@ -61,7 +61,22 @@ type Request struct {
 	// encoding), or a %u or overlong form was used: evasion, a signal.
 	Encoded bool
 	Cut     bool // some text was cut at MaxNormalized, the parameters' values at MaxParamsText or their number at MaxParams
+	// CutParts says what was cut, at most MaxCutParts of them.
+	CutParts []CutPart
 }
+
+// CutPart is one text Normalize cut: its part (path, query, param,
+// user_agent, referer; params for their number), the parameter, and how
+// much was sent and kept (bytes; parameters for params).
+type CutPart struct {
+	Part  string `json:"part"`
+	Param string `json:"param,omitempty"`
+	Sent  int    `json:"sent"`
+	Kept  int    `json:"kept"`
+}
+
+// MaxCutParts bounds Request.CutParts.
+const MaxCutParts = 16
 
 // Normalize makes a Request of a record. Parameters are split here, not
 // with url.ParseQuery, which refuses a malformed escape an attacker would
@@ -70,11 +85,21 @@ func Normalize(r AccessRecord) Request {
 	q := Request{Method: strings.ToUpper(r.Method), Params: map[string][]string{}, Sent: map[string]bool{}, RawParams: map[string][]string{}, Raw: r}
 	q.Raw.Alts = nil
 	var enc, cut bool
+	said := func(cut bool, part, param string, sent, kept int) {
+		if cut {
+			q.Cut = true
+			if len(q.CutParts) < MaxCutParts {
+				q.CutParts = append(q.CutParts, CutPart{part, param[:min(len(param), 64)], sent, kept})
+			}
+		}
+	}
 	q.RawPath, enc, cut = normalizeText(r.Path, false)
-	q.Encoded, q.Cut = q.Encoded || enc, q.Cut || cut
+	q.Encoded = q.Encoded || enc
+	said(cut, "path", "", len(r.Path), len(q.RawPath))
 	q.Path = cleanPath(q.RawPath)
 	q.Query, enc, cut = normalizeTextN(r.Query, true, MaxParamsText) // the whole query: the parameters' bound
-	q.Encoded, q.Cut = q.Encoded || enc, q.Cut || cut
+	q.Encoded = q.Encoded || enc
+	said(cut, "query", "", len(r.Query), len(q.Query))
 	var kvs []string
 	for _, kv := range strings.Split(r.Query, "&") {
 		if kv != "" {
@@ -82,17 +107,19 @@ func Normalize(r AccessRecord) Request {
 		}
 	}
 	if len(kvs) > MaxParams { // the first ones and the last: many before a parameter do not push it out
-		kvs, q.Cut = append(kvs[:MaxParams-MaxParamsLast:MaxParams-MaxParamsLast], kvs[len(kvs)-MaxParamsLast:]...), true
+		said(true, "params", "", len(kvs), MaxParams)
+		kvs = append(kvs[:MaxParams-MaxParamsLast:MaxParams-MaxParamsLast], kvs[len(kvs)-MaxParamsLast:]...)
 	}
 	left := MaxParamsText
 	for _, kv := range kvs {
 		k, v, _ := strings.Cut(kv, "=")
 		nk, e1, c1 := normalizeText(k, true)
 		nv, e2, c2 := normalizeText(v, true)
-		q.Encoded, q.Cut = q.Encoded || e1 || e2, q.Cut || c1 || c2
+		q.Encoded = q.Encoded || e1 || e2
 		if len(nv) > left { // every value together: the request's cost is bounded, not each value's
-			nv, q.Cut = headTail(nv, max(left, MinValueKept)), true // a value past the bound keeps its end too
+			nv, c2 = headTail(nv, max(left, MinValueKept)), true // a value past the bound keeps its end too
 		}
+		said(c1 || c2, "param", nk, len(kv), len(nk)+len(nv))
 		left = max(0, left-len(nv))
 		q.Sent[nk] = true
 		for _, key := range paramNames(nk) { // as sent, and as PHP and others read it
@@ -101,9 +128,9 @@ func Normalize(r AccessRecord) Request {
 		}
 	}
 	q.UserAgent, _, cut = normalizeText(r.UserAgent, false)
-	q.Cut = q.Cut || cut
+	said(cut, "user_agent", "", len(r.UserAgent), len(q.UserAgent))
 	q.Referer, _, cut = normalizeText(r.Referer, false)
-	q.Cut = q.Cut || cut
+	said(cut, "referer", "", len(r.Referer), len(q.Referer))
 	return q
 }
 
@@ -124,13 +151,15 @@ func paramNames(k string) []string {
 
 // normalizeText decodes s at most MaxDecodeRounds times, folds overlong
 // UTF-8, and lower-cases it; enc says an evasive encoding was seen, cut
-// that s was longer than MaxNormalized and only its start was taken.
+// that s was longer than MaxNormalized and only its start and its end were
+// taken.
 func normalizeText(s string, query bool) (string, bool, bool) {
 	return normalizeTextN(s, query, MaxNormalized)
 }
 
 // headTail is s cut to n bytes, keeping its start and its end (a quarter
 // of n) joined by cutMark: padding before a payload does not push it out.
+// The two are matched apart (pieces), never as one text.
 func headTail(s string, n int) string {
 	if len(s) <= n {
 		return s
@@ -143,17 +172,45 @@ func headTail(s string, n int) string {
 	return s[:head] + cutMark + s[len(s)-tail:]
 }
 
-// cutMark joins what headTail keeps: a control character no signature
-// looks for, so the two halves never make a match together.
+// cutMark is where headTail joined what it kept. Normalized text holds no
+// other (normalizePiece turns a sent one into a space), so pieces splits
+// on it: a match never spans it.
 const cutMark = "\x1f"
 
-// normalizeTextN is normalizeText cutting at limit, its start and its end
-// kept (headTail).
-func normalizeTextN(s string, query bool, limit int) (string, bool, bool) {
-	cut := len(s) > limit
-	if cut {
-		s = headTail(s, limit)
+// pieces is a normalized text's parts, matched one by one.
+func pieces(s string) []string {
+	if !strings.Contains(s, cutMark) {
+		return []string{s}
 	}
+	return strings.Split(s, cutMark)
+}
+
+// normalizeTextN is normalizeText cutting at limit: past it, the start and
+// the end (headTail's shares) are normalized apart and joined by cutMark.
+func normalizeTextN(s string, query bool, limit int) (string, bool, bool) {
+	if len(s) <= limit {
+		t, enc := normalizePiece(s, query)
+		if len(t) > limit { // lower-casing can lengthen some characters
+			return headTail(t, limit), enc, true
+		}
+		return t, enc, false
+	}
+	tail := limit / 4
+	head := limit - tail - len(cutMark)
+	h, e1 := normalizePiece(s[:head], query)
+	t, e2 := normalizePiece(s[len(s)-tail:], query)
+	if len(h) > head {
+		h = h[:head]
+	}
+	if len(t) > tail {
+		t = t[len(t)-tail:]
+	}
+	return h + cutMark + t, e1 || e2, true
+}
+
+// normalizePiece decodes, folds and lower-cases s; enc says an evasive
+// encoding was seen. A cutMark it holds becomes a space.
+func normalizePiece(s string, query bool) (string, bool) {
 	enc := false
 	for round := 0; round < MaxDecodeRounds; round++ {
 		d, u := percentDecode(s, query && round == 0)
@@ -172,11 +229,7 @@ func normalizeTextN(s string, query bool, limit int) (string, bool, bool) {
 	if over {
 		enc = true
 	}
-	l := strings.ToLower(f)
-	if len(l) > limit { // lower-casing can lengthen some characters
-		l, cut = headTail(l, limit), true
-	}
-	return l, enc, cut
+	return strings.ReplaceAll(strings.ToLower(f), cutMark, " "), enc
 }
 
 // percentDecode decodes %XX and %uXXXX (u: one was), and + as a space when
@@ -381,15 +434,17 @@ func (m *Matcher) routeHolds(i int, q Request) bool {
 
 // matchOne tries one match: where it held, and an excerpt of what held.
 func matchOne(mt sig.Match, q Request) (part, param, excerpt string, ok bool) {
-	try := func(text string) (string, bool) {
-		for _, c := range mt.Contains {
-			if i := strings.Index(text, c); i >= 0 {
-				return excerptAt(text, i, len(c)), true
+	try := func(whole string) (string, bool) {
+		for _, text := range pieces(whole) { // a cut text's start and end apart
+			for _, c := range mt.Contains {
+				if i := strings.Index(text, c); i >= 0 {
+					return excerptAt(text, i, len(c)), true
+				}
 			}
-		}
-		if re := mt.Re(); re != nil {
-			if loc := re.FindStringIndex(text); loc != nil {
-				return excerptAt(text, loc[0], loc[1]-loc[0]), true
+			if re := mt.Re(); re != nil {
+				if loc := re.FindStringIndex(text); loc != nil {
+					return excerptAt(text, loc[0], loc[1]-loc[0]), true
+				}
 			}
 		}
 		return "", false
@@ -459,7 +514,7 @@ func excerptAt(s string, i, n int) string {
 	if to-from > 64 {
 		to = from + 64
 	}
-	return s[from:to]
+	return strings.ReplaceAll(s[from:to], cutMark, "…") // a person reads where a text was cut
 }
 
 func containsStr(list []string, s string) bool {
