@@ -5,10 +5,24 @@ cwe = "CWE-89"
 severity = "high"
 title = "Request input concatenated or interpolated into a SQL string"
 sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "get_query_var(", "->get_param("]
-sinks = ["mysqli_query", "->query(", "->exec(", "pg_query", "->prepare("]
+sinks = ["mysqli_query", "mysqli_multi_query(", "mysqli_real_query(", "->query(", "->exec(", "->multi_query(", "->real_query(", "pg_query", "->prepare("]
 sanitizers = ["intval", "(int)", "->prepare(", "pg_query_params", "count(", "sizeof(", "sanitize_sql_orderby("]
 fix = "Use a prepared statement with bound parameters (PDO::prepare + execute, mysqli bind_param); never build SQL with string concatenation or sprintf. Escaping (mysqli_real_escape_string) only protects a value inside quotes."
 refs = ["CVE-2026-56738"]
+
+[[args]]
+sinks = ["->exec(", "->multi_query(", "->real_query("]
+arg = 1
+
+# WordPress's *_Query classes: query() takes an arguments array, not SQL.
+[[args]]
+sinks = ["->query("]
+arg = 1
+not_receiver = ["WP_Query", "WP_Comment_Query", "WP_User_Query", "WP_Term_Query", "WP_Site_Query", "WP_Network_Query"]
+
+[[args]]
+sinks = ["mysqli_query", "mysqli_multi_query(", "mysqli_real_query("]
+arg = 2
 
 # prepare() binds the values given later to execute() (PDO, mysqli) or after
 # the format ($wpdb->prepare); input written into the statement or format
@@ -92,11 +106,6 @@ function rows($db) {
 	return $db->query("SELECT * FROM t WHERE name = '" . $_GET['name'] . "'");
 }
 '''
-
-# WordPress's *_Query classes: query() takes an arguments array, not SQL.
-[[args]]
-sinks = ["->query("]
-not_receiver = ["WP_Query", "WP_Comment_Query", "WP_User_Query", "WP_Term_Query", "WP_Site_Query", "WP_Network_Query"]
 
 [[samples]]
 kind = "vulnerable"

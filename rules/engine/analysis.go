@@ -33,6 +33,7 @@ type entry struct {
 	raw   bool // the value came from input, even through a sanitizer ($n = basename($_GET['n']))
 	emb   bool // the input is embedded in a larger string ("WHERE id = " . $id), not passed as is
 	weak  bool // all the input came through the result of a call the analysis does not know (get_post($id))
+	keys  bool // an array tainted only by what was written under literal keys ($q['a'] = $in): another literal key it does not hold reads clean (get)
 }
 
 type state map[string]entry
@@ -45,17 +46,24 @@ func (s state) clone() state {
 	return c
 }
 
-// get returns the entry of key or of its longest stored prefix.
+// get returns the entry of key or of its longest stored prefix. A literal key
+// an array tainted only through other literal keys does not hold reads clean:
+// after $q['category'] = $in, $q['callback'] carries no input, while $q and
+// $q[$k] do.
 func (s state) get(key string) (entry, bool) {
+	below := "" // the part of key right under k
 	for k := key; k != ""; {
 		if e, ok := s[k]; ok {
+			if e.keys && e.taint && strings.HasPrefix(below, "[") && below != "[*]" {
+				e.taint, e.raw, e.emb, e.weak = false, false, false, false
+			}
 			return e, true
 		}
 		i := strings.LastIndex(k, sepCh)
 		if i < 0 {
 			break
 		}
-		k = k[:i]
+		below, k = k[i+len(sepCh):], k[:i]
 	}
 	return entry{}, false
 }
@@ -80,7 +88,8 @@ func merge(x, y state) state {
 	}
 	both := func(a, b entry) entry {
 		return entry{taint: a.taint || b.taint, src: a.src || b.src, sep: a.sep && b.sep, san: a.san && b.san, pre: a.pre && b.pre,
-			raw: a.raw || b.raw, emb: a.emb || b.emb, weak: weakOf(a.taint, a.weak, b.taint, b.weak)}
+			raw: a.raw || b.raw, emb: a.emb || b.emb, weak: weakOf(a.taint, a.weak, b.taint, b.weak),
+			keys: (a.taint || b.taint) && (!a.taint || a.keys) && (!b.taint || b.keys)} // tainted only under literal keys on every path that taints it
 	}
 	for k, e := range x {
 		out[k] = both(e, look(y, k, e.src))
@@ -713,7 +722,11 @@ func (a *analysis) setTarget(st state, tg []Token, v val, op string, sep bool) {
 	}
 	if container != "" {
 		e, _ := st.get(container)
-		st[container] = entry{taint: e.taint || v.taint, raw: e.raw || v.raw, emb: e.emb || v.emb, weak: weakOf(e.taint, e.weak, v.taint, v.weak)}
+		keys := e.keys // tainted only under literal keys: so far, and still after this write
+		if v.taint {
+			keys = (!e.taint || e.keys) && !strings.HasSuffix(key, "[*]")
+		}
+		st[container] = entry{taint: e.taint || v.taint, raw: e.raw || v.raw, emb: e.emb || v.emb, weak: weakOf(e.taint, e.weak, v.taint, v.weak), keys: keys}
 		if strings.HasSuffix(key, "[*]") && v.taint {
 			st.del(container) // $a[$i] = input may overwrite any key: forget what was known per key
 			st[container] = entry{taint: true, raw: true, emb: v.emb, weak: v.weak}
@@ -1306,6 +1319,7 @@ func (a *analysis) postfix(st state, t []Token, start, baseEnd int, v val, whole
 		key = t[start].Text
 	}
 	srcEnd := -1
+	byKeys, litIdx := false, false // the value so far is an array tainted only under literal keys; the last access is a literal index
 	source := func(pos int) {
 		if a.noSrc {
 			return
@@ -1323,6 +1337,9 @@ func (a *analysis) postfix(st state, t []Token, start, baseEnd int, v val, whole
 		if key != "" {
 			if e, ok := st[key]; ok {
 				v = val{taint: e.taint || a.raw && e.raw, san: e.san, emb: e.emb, weak: e.weak}
+				byKeys = e.keys && e.taint
+			} else if byKeys && litIdx {
+				v, byKeys = val{}, false // a literal key an array tainted only under other literal keys does not hold
 			}
 		}
 	}
@@ -1339,6 +1356,9 @@ func (a *analysis) postfix(st state, t []Token, start, baseEnd int, v val, whole
 		}
 		source(j)
 		tk := t[j]
+		if litIdx = false; !tk.op("[") {
+			byKeys = false // only a literal index right under such an array reads clean
+		}
 		switch {
 		case memberOp(a.php, tk) && j+1 < len(t) && (t[j+1].Kind == Ident || t[j+1].Kind == Var):
 			// flask.request.form, self.request.GET: a source can start at a member.
@@ -1353,7 +1373,9 @@ func (a *analysis) postfix(st state, t []Token, start, baseEnd int, v val, whole
 		case tk.op("["):
 			c := closeOf(t, j)
 			if key != "" {
-				key += sepCh + "[" + idxKey(inside(t, j, c)) + "]"
+				ik := idxKey(inside(t, j, c))
+				key += sepCh + "[" + ik + "]"
+				litIdx = ik != "*"
 			}
 			j = c + 1
 		case tk.op("("):
@@ -1738,6 +1760,21 @@ func (a *analysis) guard(st state, atom []Token) (pos bool, keys []keyRef) {
 		arg := atom[2 : n-1]
 		if _, _, ok := a.pathKey(arg); !ok {
 			return pos, nil
+		}
+		// isset($map[$x]) and !empty($map[$x]) on a map made with no input: where
+		// the entry exists, $x is one of the map's keys, as for
+		// array_key_exists($x, $map) (!empty($translations[$stylesheet])).
+		if m := len(arg); m > 3 && arg[m-1].op("]") {
+			if open := openOf(arg, m-1); open > 0 && a.allowlist(st, arg[:open]) {
+				if idx := arg[open+1 : m-1]; len(idx) > 0 && !(len(idx) == 1 && (idx[0].Kind == Str || idx[0].Kind == Num)) {
+					if _, _, ok := a.pathKey(idx); ok {
+						if atom[0].word("isset") {
+							return pos, a.keysOf(idx) // the entry exists where isset() is true
+						}
+						return !pos, a.keysOf(idx) // ... where empty() is false
+					}
+				}
+			}
 		}
 		if atom[0].word("isset") {
 			pos = !pos // the check (the value is unset) holds when isset is false
