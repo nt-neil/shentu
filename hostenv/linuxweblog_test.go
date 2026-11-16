@@ -211,3 +211,24 @@ func TestWebLogsUnreadable(t *testing.T) {
 		t.Errorf("status %s, detail %q", o.Status, o.Detail)
 	}
 }
+
+// A group a web user is a member of (not only its primary group), and a
+// user or group given by number, are the web server's too.
+func TestWebAccountsMembersAndNumbers(t *testing.T) {
+	h := logHost()
+	h.files["/etc/group"] = "root:x:0:\nadm:x:4:syslog,www-data\nwww-data:x:33:\nsyslog:x:104:\n"
+	h.files["/etc/apache2/apache2.conf"] += "User #48\nGroup 49\n"
+	l := &logLoader{src: h, conf: DefaultWebConf, out: map[string]*LogSource{}}
+	l.nginx()
+	l.apache()
+	w := l.webAccounts()
+	if w.GIDs[4] != "adm" || w.UIDs[48] == "" || w.GIDs[49] == "" || w.GIDs[104] != "" {
+		t.Errorf("accounts %+v: want adm (a member is www-data), uid 48, gid 49, and not syslog", w)
+	}
+	four := 4
+	h.st["/var/log/admgrp"] = FileStat{Mode: fs.ModeDir | 0o775, UID: 0, GID: &four}
+	h.files["/var/log/admgrp/a.log"], h.st["/var/log/admgrp/a.log"] = "", FileStat{Mode: 0o640, UID: 0}
+	if _, why, _ := LogTrust(h, "/var/log/admgrp/a.log", w); why != ReasonWebUserWritable {
+		t.Errorf("775 root:adm with www-data in adm: %q, want web_user_writable", why)
+	}
+}

@@ -324,9 +324,21 @@ func (l *logLoader) webAccounts() WebAccounts {
 	w := WebAccounts{UIDs: map[int]string{}, GIDs: map[int]string{}}
 	users, groups := map[string]bool{}, map[string]bool{}
 	for _, u := range append(append([]string{}, defaultWebUsers...), l.users...) {
+		if id, ok := numericID(u); ok { // User #33, user = 33: no name to look up
+			if id != 0 {
+				w.UIDs[id] = "uid " + strconv.Itoa(id)
+			}
+			continue
+		}
 		users[u] = true
 	}
 	for _, g := range append(append(append([]string{}, defaultWebUsers...), defaultWebGroups...), l.groups...) {
+		if id, ok := numericID(g); ok {
+			if id != 0 {
+				w.GIDs[id] = "gid " + strconv.Itoa(id)
+			}
+			continue
+		}
 		groups[g] = true
 	}
 	primary := map[int]bool{}
@@ -352,7 +364,15 @@ func (l *logLoader) webAccounts() WebAccounts {
 			if err != nil || gid == 0 {
 				continue
 			}
-			if groups[f[0]] || primary[gid] {
+			member := false // a web user in the group's list: it may write what the group may
+			if len(f) > 3 {
+				for _, m := range strings.Split(f[3], ",") {
+					if users[strings.TrimSpace(m)] {
+						member = true
+					}
+				}
+			}
+			if groups[f[0]] || primary[gid] || member {
 				w.GIDs[gid] = f[0]
 			}
 		}
@@ -363,6 +383,12 @@ func (l *logLoader) webAccounts() WebAccounts {
 		}
 	}
 	return w
+}
+
+// numericID is a user or group given by number: #33 (Apache) or 33.
+func numericID(s string) (int, bool) {
+	n, err := strconv.Atoi(strings.TrimPrefix(s, "#"))
+	return n, err == nil && n >= 0
 }
 
 func at(file string, line int) string { return file + ":" + strconv.Itoa(line) }
