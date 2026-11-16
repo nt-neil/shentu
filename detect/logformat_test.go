@@ -67,11 +67,11 @@ func TestApacheFormats(t *testing.T) {
 		r.Status != 200 || r.Bytes != 1043 || r.Referer != "https://shop.test/" || r.UserAgent != `Mozilla/5.0 "x"` || r.Time.IsZero() {
 		t.Errorf("vhost_combined %+v %v", r, ok)
 	}
-	p, err = ApacheParser(`%a %t %m %U%q %400,501{X-Forwarded-For}i %s %b`)
+	p, err = ApacheParser(`%a %t %m "%U%q" "%400,501{X-Forwarded-For}i" %s %b`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	r, ok = p.Parse([]byte(`10.0.0.2 [15/Nov/2026:10:11:12 +0800] GET /a?b=1 - 404 -`))
+	r, ok = p.Parse([]byte(`10.0.0.2 [15/Nov/2026:10:11:12 +0800] GET "/a?b=1" "-" 404 -`))
 	if !ok || r.Method != "GET" || r.Path != "/a" || r.Query != "b=1" || r.Status != 404 || r.Bytes != 0 {
 		t.Errorf("method, path and query apart %+v %v", r, ok)
 	}
@@ -210,33 +210,31 @@ func TestParseCutInsideEscape(t *testing.T) {
 	}
 }
 
-// Review 2, N-3: a field the client writes before the request holding a
-// forged line end splits two ways: both requests are kept.
-func TestParseAmbiguous(t *testing.T) {
-	p, err := NginxParser(`$remote_addr $remote_user $request_uri $status $request_time`, "")
-	if err != nil {
-		t.Fatal(err)
+// Review 3, N-3: two fields the client writes, neither between quotes, can
+// trade text (a forged line end in the first lands its own request): such a
+// format is format_unrecognized rather than split one of the ways.
+func TestParseTwoFreeFields(t *testing.T) {
+	for _, spec := range []string{
+		`$remote_addr $remote_user $request_uri $status $request_time`,
+		`$remote_addr $remote_user $request_uri $status $http_user_agent`,
+	} {
+		if _, err := NginxParser(spec, ""); !errors.Is(err, ErrFormatUnrecognized) {
+			t.Errorf("%s: %v", spec, err)
+		}
 	}
-	r, ok := p.Parse([]byte(`203.0.113.7 a /fake 200 /real 404 0.003`))
-	if !ok || !r.Ambiguous || len(r.Alts) == 0 || p.Ambiguous != 1 {
-		t.Fatalf("%+v %v", r, ok)
+	if _, err := ApacheParser(`%h %l %u %t %U%q %>s %b %D`); !errors.Is(err, ErrFormatUnrecognized) {
+		t.Errorf("Apache %%u and %%U%%q unquoted: %v", err)
 	}
-	paths := map[string]bool{r.Path: true}
-	for _, a := range r.Alts {
-		paths[a.Path] = true
-	}
-	if !paths["/fake"] || !paths["/real"] {
-		t.Errorf("the requests: %v", paths)
-	}
-	// The split from the start failing, every split is still kept.
-	q, _ := NginxParser(`$remote_addr $remote_user $request_uri $status $request_time`, "")
-	r2, ok := q.Parse([]byte(`203.0.113.7 a /one 200 /two 200 /three 404 0.003`))
-	got := map[string]bool{r2.Path: true}
-	for _, a := range r2.Alts {
-		got[a.Path] = true
-	}
-	if !ok || !got["/one"] || !got["/three"] {
-		t.Errorf("three ways: %+v %v", got, ok)
+	for _, spec := range []string{ngxCombinedSpec, `%h %l %u %t "%r" %>s %O "%{Referer}i" "%{User-Agent}i"`} {
+		var err error
+		if spec[0] == '$' {
+			_, err = NginxParser(spec, "")
+		} else {
+			_, err = ApacheParser(spec)
+		}
+		if err != nil {
+			t.Errorf("standard %s: %v", spec, err)
+		}
 	}
 }
 
@@ -244,5 +242,18 @@ func TestParseAmbiguous(t *testing.T) {
 func TestClientFollowedByColon(t *testing.T) {
 	if _, err := NginxParser(`$remote_addr:$remote_port [$time_local] "$request" $status`, ""); !errors.Is(err, ErrFormatUnrecognized) {
 		t.Errorf("%v, want format_unrecognized", err)
+	}
+}
+
+// Review 3, N-2: a cut inside the fields after the request (the status,
+// the size) keeps the line: what came before the cut is enough.
+func TestParseCutAfterRequest(t *testing.T) {
+	p, _ := NginxParser(ngxCombinedSpec, "")
+	base := `203.0.113.7 - - [15/Nov/2026:10:11:12 +0800] "GET /x.php?c=id HTTP/1.1"`
+	for _, tail := range []string{`"`, `" `, `" 2`, `" 20`, `" 200 5`, `" 200 512 `, `" 200 512 "-`} {
+		line := base + tail[1:]
+		if r, ok := p.ParseCut([]byte(line)); !ok || !r.Cut || r.Path != "/x.php" || r.Client != "203.0.113.7" {
+			t.Errorf("cut after %q: %+v %v", tail, r, ok)
+		}
 	}
 }

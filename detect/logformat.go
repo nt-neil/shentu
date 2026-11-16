@@ -175,6 +175,8 @@ func apacheParser(spec string, lookups bool) (*Parser, error) {
 			}
 		case "p":
 			f = "port"
+		case "l": // identd's answer: "-" unless IdentityCheck is On (then the client's identd writes it)
+			f = "ident"
 		case "u":
 			f = "user"
 		case "t":
@@ -222,9 +224,14 @@ func apacheParser(spec string, lookups bool) (*Parser, error) {
 	return p, p.check()
 }
 
+// clientWritten are the fields whose text the request chooses; "" is one
+// detect does not read (a header, an argument, a cookie), taken as such.
+var clientWritten = map[string]bool{"": true, "user": true, "request": true, "uri": true, "path": true, "query": true,
+	"query_apache": true, "referer": true, "ua": true, "xff": true, "host": true, "method": true, "proto": true}
+
 // safeBeforeClient are the fields the client may follow: none of them is
 // written by the request, so none can hold a forged address.
-var safeBeforeClient = map[string]bool{"time_local": true, "time_iso": true, "time_apache": true, "msec": true, "status": true, "bytes": true, "vhost": true, "port": true}
+var safeBeforeClient = map[string]bool{"ident": true, "time_local": true, "time_iso": true, "time_apache": true, "msec": true, "status": true, "bytes": true, "vhost": true, "port": true}
 
 // check: every field is delimited by literal text (two side by side cannot
 // be split without guessing), nothing the request writes comes before the
@@ -242,7 +249,7 @@ func (p *Parser) check() error {
 		}
 		if s.field == "client" && client < 0 {
 			client = i
-			if n := i + 1; n < len(p.segs) && !p.segs[n].var_ && p.segs[n].lit != "" && strings.ContainsAny(p.segs[n].lit[:1], ":.0123456789abcdefABCDEF") {
+			if n := i + 1; n < len(p.segs) && !p.segs[n].var_ && p.segs[n].lit != "" && strings.ContainsAny(p.segs[n].lit[:1], ":.%]0123456789abcdefABCDEF") {
 				return fmt.Errorf("%w: the client address is followed by %q, which an IPv6 address may hold", ErrFormatUnrecognized, p.segs[i+1].lit[:1])
 			}
 		}
@@ -255,6 +262,17 @@ func (p *Parser) check() error {
 		}
 		p.segs[i].quoted = i > 0 && i+1 < len(p.segs) && strings.HasSuffix(p.segs[i-1].lit, `"`) && strings.HasPrefix(p.segs[i+1].lit, `"`)
 		have[s.field] = true
+	}
+	// Two fields the client writes, neither between quotes, can trade text:
+	// a forged line end in the first lands its own request (N-3).
+	free := 0
+	for _, sg := range p.segs {
+		if sg.var_ && !sg.quoted && clientWritten[sg.field] {
+			free++
+		}
+	}
+	if free > 1 {
+		return fmt.Errorf("%w: %d fields the client writes are not between quotes: a line could be split two ways", ErrFormatUnrecognized, free)
 	}
 	p.hasTime = have["time_local"] || have["time_iso"] || have["time_apache"] || have["msec"]
 	switch {
@@ -291,7 +309,7 @@ func (p *Parser) parse(line []byte, cut bool) (AccessRecord, bool) {
 	steps := 0
 	left := p.match(s, 0, 0, &r, cut, &steps)
 	var alts []AccessRecord
-	if !cut { // a cut line has no end to split from
+	if !left && !cut { // the other splits, only when the split from the start failed; a cut line has no end
 		alts = p.splits(s)
 	}
 	fix := func(x *AccessRecord) {
@@ -424,16 +442,30 @@ func (p *Parser) lastIndex(s, lit string) int {
 	if p.escape == "none" {
 		return strings.LastIndex(s, lit)
 	}
-	last := -1
-	for i := 0; i < len(s); i++ {
-		if strings.HasPrefix(s[i:], lit) {
-			last = i
+	for end := len(s); ; {
+		i := strings.LastIndex(s[:end], lit)
+		if i < 0 {
+			return -1
 		}
-		if s[i] == '\\' {
-			i++
+		if !escapedAt(s, i) {
+			return i
+		}
+		end = i + len(lit) - 1
+		if end < 0 {
+			return -1
 		}
 	}
-	return last
+}
+
+// escapedAt: s[i] follows an odd run of backslashes, so it is part of an
+// escape. Only the escapes the servers write matter here: a quote after \
+// (Apache, JSON); nginx's default escape has no backslash before a quote.
+func escapedAt(s string, i int) bool {
+	n := 0
+	for j := i - 1; j >= 0 && s[j] == '\\'; j-- {
+		n++
+	}
+	return n%2 == 1
 }
 
 // trimEscape drops an escape the cut left unfinished at the end of v
@@ -483,6 +515,11 @@ func (p *Parser) match(s string, i, k int, r *AccessRecord, cut bool, steps *int
 			v = p.trimEscape(v)
 		}
 		if !p.fill(&r2, sg, v) {
+			if next < 0 && p.enough(&r2) { // a cut value (" 2 for a status) is no reason to lose the line
+				r2.Cut = true
+				*r = r2
+				return true
+			}
 			return false
 		}
 		if next < 0 { // the cut: nothing after this value
