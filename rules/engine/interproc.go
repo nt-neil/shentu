@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -104,6 +105,8 @@ type summaries struct {
 	busy   map[string]bool
 	rel    map[string]uint8     // relevance to the rule, once known: 1 yes, 2 no (relevance.go)
 	direct map[string]bool      // what in the function itself matters to the rule, calls aside; nil until worked out
+	srcMay map[string]bool      // ... what may bring input in by itself (mayBringInput)
+	srcRel map[string]uint8     // whether that is reached from the function, once known: 1 yes, 2 no (reachSource)
 	cross  map[string][]relNode // the functions of other files the function calls
 	retUnk map[string]uint8     // 1: the function returns the result of a call the analysis does not know; 2: it does not
 	keyed  map[string]*summary  // sinks a parameter reaches when only some keys of its argument carry input (keyedSinks)
@@ -117,7 +120,7 @@ func newSummaries(ff *fileFuncs) *summaries {
 		return nil
 	}
 	return &summaries{ff: ff, funcs: ff.byKey, done: map[string]*summary{}, busy: map[string]bool{},
-		rel: map[string]uint8{}, retUnk: map[string]uint8{}, keyed: map[string]*summary{}}
+		rel: map[string]uint8{}, srcRel: map[string]uint8{}, retUnk: map[string]uint8{}, keyed: map[string]*summary{}}
 }
 
 // fileFuncs are the named functions of a file and how they call one another,
@@ -1014,7 +1017,7 @@ func (a *analysis) graph() bool {
 func (a *analysis) summarizeKey(key string) *summary {
 	s := &summary{}
 	for _, fi := range a.sc.funcs[key] {
-		a.summarize(fi, s)
+		a.summarize(key, fi, s)
 	}
 	return s
 }
@@ -1164,7 +1167,7 @@ var checkWords = words("in_array array_key_exists preg_match ctype_digit ctype_a
 	"fullmatch match includes has test startsWith")
 
 // summarize adds what fi does to s.
-func (a *analysis) summarize(fi *fnInfo, s *summary) {
+func (a *analysis) summarize(key string, fi *fnInfo, s *summary) {
 	if s.params == nil {
 		s.params = fi.params
 	}
@@ -1186,9 +1189,18 @@ func (a *analysis) summarize(fi *fnInfo, s *summary) {
 	// With the rule's sources and no parameter: input of its own. Only input
 	// returned as is counts (sanitize_locale_name($_GET['l']) is left out, as it
 	// was before calls were followed).
-	base := run(0, true)
-	if base.ret.taint && !base.ret.weak {
-		s.retSrc = true
+	// Worked out only where it may be true: the function returns a value, and
+	// a source of the rule, or a call the graph does not resolve, is reached
+	// from it. With checkSkips the skipped run is made anyway and must agree.
+	if a.mayReturnInput(key, fi) {
+		base := run(0, true)
+		if base.ret.taint && !base.ret.weak {
+			s.retSrc = true
+		}
+	} else if checkSkips {
+		if base := run(0, true); base.ret.taint && !base.ret.weak {
+			panic(fmt.Sprintf("engine: skipped the sources run of %s (%s, rule %s), which returns input", key, a.file, a.r.rule.ID))
+		}
 	}
 	if n == 0 || a.b.hit {
 		return
@@ -1376,6 +1388,60 @@ func (a *analysis) keyedSinks(t []Token, i int, key string, p int, sub map[strin
 		lines = append(lines, l[0])
 	}
 	return lines, true
+}
+
+// checkSkips (SHENTU_CHECK_SKIPS=1) makes every summary run the analysis
+// skips as unneeded anyway and panics where it would have found something:
+// for tests and CI, never for a scan.
+var checkSkips = os.Getenv("SHENTU_CHECK_SKIPS") != ""
+
+// mayReturnInput reports whether the function key may return input of its
+// own: it returns a value (return with one, yield, an arrow's expression) and
+// what may bring input in is reached from it (reachSource).
+func (a *analysis) mayReturnInput(key string, fi *fnInfo) bool {
+	if !returnsValue(fi.f.body, 0) {
+		return false
+	}
+	return a.reachSource(relNode{a.file, key})
+}
+
+// returnsValue reports whether a body returns or yields a value, its function
+// literals included (counted, as they may be called inline).
+func returnsValue(ss []*stmt, depth int) bool {
+	if depth > maxNest {
+		return len(ss) > 0
+	}
+	for _, s := range ss {
+		for i, tk := range s.toks {
+			if tk.Kind == Ident && (tk.Text == "yield" || tk.Text == "return" && i+1 < len(s.toks) && !s.toks[i+1].op(";")) {
+				return true
+			}
+		}
+		for _, fn := range s.funcs {
+			if returnsValue(fn.body, depth+1) {
+				return true
+			}
+		}
+		if s.fn != nil && s.fn.name == "" && returnsValue(s.fn.body, depth+1) {
+			return true
+		}
+		for _, b := range [][]*stmt{s.body, s.els, s.orelse} {
+			if returnsValue(b, depth+1) {
+				return true
+			}
+		}
+		for _, h := range s.handlers {
+			if returnsValue(h, depth+1) {
+				return true
+			}
+		}
+		for _, c := range s.cases {
+			if returnsValue(c, depth+1) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // callArgs returns the arguments of the call whose "(" is at open.
