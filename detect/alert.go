@@ -183,6 +183,9 @@ func alertText(g *Group, s *Surface, mask bool) string {
 	switch {
 	case g.Prefix == PrefixOverflow: // its addresses and severity are many groups' merged: never a block (P5 must not block on it)
 		b.WriteString("封鎖：溢出彙總組不提供封鎖，請上伺服器查看各來源的完整紀錄\n")
+		if g.Unverified {
+			b.WriteString("封鎖：" + NoTelegramUnblock + "\n")
+		}
 	case g.Unverified:
 		b.WriteString("封鎖：" + NoTelegramUnblock + "\n")
 	case g.Level != LevelUnknown && g.Level != LevelRoute:

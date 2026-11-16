@@ -270,7 +270,7 @@ func TestL3BothEvidence(t *testing.T) {
 	if !Upgrade(&a, "GET", ev) || !a.SizeEvidence || !a.ErrorEvidence || a.Severity != "high" {
 		t.Errorf("both kinds, critical entry, not KEV: %+v", a)
 	}
-	if a.KEV = true; a.SeverityWith(false) != "critical" || (Attempt{Level: LevelSuccess, Verified: true, SizeEvidence: true, ErrorEvidence: true}).SeverityWith(true) != "critical" {
+	if a.KEV, a.ReqLogged = true, true; a.SeverityWith(false) != "critical" || (Attempt{Level: LevelSuccess, Verified: true, SizeEvidence: true, ReqLogged: true, ErrorEvidence: true}).SeverityWith(true) != "critical" {
 		t.Errorf("both kinds and KEV, or a campaign: %s", a.SeverityWith(false))
 	}
 	a = l2("app/x.php", 12, t0)
@@ -287,7 +287,7 @@ func TestL3BothEvidence(t *testing.T) {
 		t.Errorf("POST, length not logged: %+v", a)
 	}
 	a = l2("app/x.php", 12, t0)
-	a.Bytes, a.KEV, a.ReqLen = 9000, true, 100 // logged: known
+	a.Bytes, a.KEV, a.ReqLen, a.ReqLogged = 9000, true, 100, true // logged: known
 	if !Upgrade(&a, "POST", evPost) || !a.SizeEvidence || a.Severity != "critical" {
 		t.Errorf("POST, length logged, both kinds, KEV: %+v", a)
 	}
@@ -431,6 +431,45 @@ func TestReview2Small(t *testing.T) {
 	long := Sample(AccessRecord{Method: "GET", Path: "/" + strings.Repeat("m", MaxSample-12) + "/198.51.100.77/x"})
 	if strings.Contains(long, "198.51") || len(long) > MaxSample {
 		t.Errorf("a cut sample ends in part of an address: %q", long[len(long)-20:])
+	}
+}
+
+// P4 close-out: size evidence helps to critical only against a request
+// length the log wrote; more secret names; escapes are no word
+// boundary; an unverified overflow group cannot be unblocked from
+// Telegram either.
+func TestP4CloseOut(t *testing.T) {
+	ss := loadSigs(t, markerSigs)
+	j := NewJudge(Build([]CodeSink{{Rule: "js-sqli", CWE: "CWE-89", Severity: "warning", Path: "app/x.php", Line: 12,
+		Routes: []engine.RouteRef{{Model: "m", Framework: "express", Method: "get", Pattern: "/marker/:id", File: "app/x.php", Line: 12}}}}, nil), ss)
+	m := NewMatcher(ss)
+	q := "q=marker-one&pad=" + strings.Repeat("z", 8000)
+	rec := AccessRecord{Client: "192.0.2.1", Time: t0, Method: "GET", Path: "/marker/5", Query: q, Status: 200, Bytes: int64(3*len(q) + 1000)}
+	as := attemptsOf(j, m, rec, Origin{Verified: true})
+	if len(as) == 0 {
+		t.Fatal("no attempt")
+	}
+	a := as[0]
+	a.KEV = true
+	ev := Evidence{Baselines: steadyBaseline("GET /marker/:id", 30),
+		Errors: []ErrorEvent{{Time: t0.Add(10 * time.Second), Frames: []Frame{{"/srv/www/app/x.php", 12}}, Verified: true}}}
+	if !Upgrade(&a, "GET", ev) || !a.SizeEvidence || !a.ErrorEvidence || a.ReqLogged || a.Severity != "high" {
+		t.Errorf("an 8000B query echoed three times, the error log, KEV, no request_length: %+v", a)
+	}
+	for _, n := range []string{"ticket", "SAMLResponse", "user_creds", "x-hmac", "x_sess", "userSess"} {
+		if s := Sample(AccessRecord{Method: "GET", Path: "/m", Query: n + "=marker-v"}); strings.Contains(s, "marker-v") {
+			t.Errorf("%s shown: %s", n, s)
+		}
+	}
+	if got := camelSplit("a%2Fb"); got != "a%2Fb" {
+		t.Errorf("camelSplit(a%%2Fb) = %q", got)
+	}
+	if s := Sample(AccessRecord{Method: "GET", Path: "/m", Query: "x%2Dkey=marker-v&a%2Fb=marker-w"}); strings.Contains(s, "marker-v") || !strings.Contains(s, "marker-w") {
+		t.Errorf("escaped names: %s", s)
+	}
+	g := &Group{Key: "o", Prefix: PrefixOverflow, Level: LevelPayload, Severity: "medium", Unverified: true, IPs: []string{"192.0.2.1"}, IPsSeen: 1}
+	if txt := AlertText(g, nil); !strings.Contains(txt, NoTelegramUnblock) || !strings.Contains(txt, "溢出彙總組不提供封鎖") {
+		t.Errorf("unverified overflow alert:\n%s", txt)
 	}
 }
 

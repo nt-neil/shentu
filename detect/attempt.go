@@ -61,6 +61,10 @@ type Attempt struct {
 	// size is no evidence.
 	ReqLen   int  `json:"req_len,omitempty"`
 	ReqKnown bool `json:"req_known,omitempty"`
+	// ReqLogged: the length is the log's ($request_length, %I), not taken
+	// from the path and query: only then may size evidence help to
+	// critical (headers and a body the log does not show may be echoed).
+	ReqLogged bool `json:"req_logged,omitempty"`
 	// LogVerified: the access log itself is trusted (Origin.Verified),
 	// whatever the IP: its status and size may back L3.
 	LogVerified bool `json:"log_verified,omitempty"`
@@ -106,7 +110,7 @@ func (j *Judge) Attempts(rec AccessRecord, o Origin, m MatchResult, g Judgment) 
 	base.ForwardedFor = forwardedFor(rec, o)
 	switch m := strings.ToUpper(rec.Method); {
 	case rec.ReqLength > 0:
-		base.ReqLen, base.ReqKnown = int(rec.ReqLength), true
+		base.ReqLen, base.ReqKnown, base.ReqLogged = int(rec.ReqLength), true, true
 	case m == "GET" || m == "HEAD":
 		base.ReqLen, base.ReqKnown = len(rec.Path)+len(rec.Query), true
 	}
@@ -223,12 +227,13 @@ func cutUTF8(s string, n int) string {
 }
 
 // SeverityWith is a's severity, a campaign or not: SeverityOf, and an L3
-// at most high unless both kinds of evidence back it and its entry is KEV
-// or it is a campaign (the error log counts half: a request can write a
-// line of its own into it).
+// at most high unless both kinds of evidence back it, the size against a
+// request length the log wrote (ReqLogged), and its entry is KEV or it is
+// a campaign (the error log counts half: a request can write a line of
+// its own into it).
 func (a Attempt) SeverityWith(campaign bool) string {
 	s := SeverityOf(a.Level, a.Severe, campaign, a.Verified)
-	full := a.SizeEvidence && a.ErrorEvidence && (a.KEV || campaign)
+	full := a.SizeEvidence && a.ReqLogged && a.ErrorEvidence && (a.KEV || campaign)
 	if a.Level == LevelSuccess && !full && severityIndex(s) > severityIndex("high") {
 		s = "high"
 	}
@@ -263,8 +268,9 @@ func SeverityOf(level string, severe, campaign, verified bool) string {
 var (
 	sensitive = []string{"token", "password", "passwd", "passphrase", "secret", "email", "session", "sessid", "cookie",
 		"authorization", "apikey", "api_key", "credential", "signature", "private_key", "privatekey", "authkey", "accesskey",
-		"secretkey", "passcode", "authcode", "creditcard", "cardnum", "ccnum", "pincode", "otp", "jwt", "cvv", "ssn"}
-	sensitiveWords = []string{"pwd", "pass", "pw", "auth", "key", "sid", "code", "sig", "otp", "pin", "card", "cc", "cvv", "ssn", "jwt"}
+		"secretkey", "passcode", "authcode", "creditcard", "cardnum", "ccnum", "pincode", "otp", "jwt", "cvv", "ssn",
+		"ticket", "saml", "creds", "hmac"}
+	sensitiveWords = []string{"pwd", "pass", "pw", "auth", "key", "sid", "sess", "code", "sig", "otp", "pin", "card", "cc", "cvv", "ssn", "jwt"}
 )
 
 // sensitiveName: a parameter name, decoded as a server reads it (%XX
@@ -294,18 +300,29 @@ func sensitiveName(k string) bool {
 
 // camelSplit puts _ where a lower-case letter or digit is followed by an
 // upper-case one (accessKey -> access_Key), before the name is
-// lower-cased: a word boundary the name's case shows.
+// lower-cased: a word boundary the name's case shows. A %XX escape is
+// copied whole (a%2Fb stays one), and its end is no boundary.
 func camelSplit(k string) string {
 	var b strings.Builder
 	prev := rune(0)
-	for _, r := range k {
+	for i := 0; i < len(k); {
+		if k[i] == '%' && i+2 < len(k) && isHex(k[i+1]) && isHex(k[i+2]) {
+			b.WriteString(k[i : i+3])
+			i, prev = i+3, 0
+			continue
+		}
+		r, n := utf8.DecodeRuneInString(k[i:])
 		if unicode.IsUpper(r) && (unicode.IsLower(prev) || unicode.IsDigit(prev)) {
 			b.WriteByte('_')
 		}
 		b.WriteRune(r)
-		prev = r
+		i, prev = i+n, r
 	}
 	return b.String()
+}
+
+func isHex(c byte) bool {
+	return '0' <= c && c <= '9' || 'a' <= c && c <= 'f' || 'A' <= c && c <= 'F'
 }
 
 // Sample is the record's request line for a person to read: parameters
