@@ -1,7 +1,9 @@
 package engine
 
 import (
+	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -104,6 +106,7 @@ type summaries struct {
 	direct map[string]bool      // what in the function itself matters to the rule, calls aside; nil until worked out
 	cross  map[string][]relNode // the functions of other files the function calls
 	retUnk map[string]uint8     // 1: the function returns the result of a call the analysis does not know; 2: it does not
+	keyed  map[string]*summary  // sinks a parameter reaches when only some keys of its argument carry input (keyedSinks)
 	capped bool                 // a summary hit a cap (depth, runs, rounds, parameters) and may say too little
 	runs   int
 	depth  int
@@ -114,7 +117,7 @@ func newSummaries(ff *fileFuncs) *summaries {
 		return nil
 	}
 	return &summaries{ff: ff, funcs: ff.byKey, done: map[string]*summary{}, busy: map[string]bool{},
-		rel: map[string]uint8{}, retUnk: map[string]uint8{}}
+		rel: map[string]uint8{}, retUnk: map[string]uint8{}, keyed: map[string]*summary{}}
 }
 
 // fileFuncs are the named functions of a file and how they call one another,
@@ -1172,19 +1175,13 @@ func (a *analysis) summarize(fi *fnInfo, s *summary) {
 		a.sc.capped = true
 	}
 	run := func(mask uint64, sources bool) *summRun {
-		x := &analysis{r: a.r, php: a.php, py: a.py, js: a.js, b: a.b, kw: a.kw, seen: map[loc]bool{}, sc: a.sc, defs: a.defs,
-			summ: &summRun{lines: map[loc]bool{}, emb: map[loc]bool{}}, noSrc: !sources, cls: fi.f.class, parent: fi.f.parent, fname: fi.f.name,
-			file: a.file, proj: a.proj, ftoks: a.ftoks, rdefs: a.rdefs, rcls: a.rcls, ifacts: a.ifacts, nest: a.nest, heights: a.heights}
 		st := state{}
-		x.paramTypes(fi.f)
 		for i := 0; i < n; i++ {
 			if p := fi.params[i]; p != "" && mask&(1<<i) != 0 {
 				st[p] = entry{taint: true}
 			}
 		}
-		a.sc.runs++
-		x.block(fi.f.body, st)
-		return x.summ
+		return a.runBody(fi, st, sources)
 	}
 	// With the rule's sources and no parameter: input of its own. Only input
 	// returned as is counts (sanitize_locale_name($_GET['l']) is left out, as it
@@ -1254,6 +1251,131 @@ func (a *analysis) summarize(fi *fnInfo, s *summary) {
 			}
 		}
 	}
+}
+
+// runBody analyses the body of fi from st, with the rule's sources on or off.
+func (a *analysis) runBody(fi *fnInfo, st state, sources bool) *summRun {
+	x := &analysis{r: a.r, php: a.php, py: a.py, js: a.js, b: a.b, kw: a.kw, seen: map[loc]bool{}, sc: a.sc, defs: a.defs,
+		summ: &summRun{lines: map[loc]bool{}, emb: map[loc]bool{}}, noSrc: !sources, cls: fi.f.class, parent: fi.f.parent, fname: fi.f.name,
+		file: a.file, proj: a.proj, ftoks: a.ftoks, rdefs: a.rdefs, rcls: a.rcls, ifacts: a.ifacts, nest: a.nest, heights: a.heights}
+	x.paramTypes(fi.f)
+	a.sc.runs++
+	x.block(fi.f.body, st)
+	return x.summ
+}
+
+// partialArg reads an argument that is a plain variable of which only some
+// literal keys carry input ($q['category'] = $request['category']; f($q)): the
+// entries under the variable, keyed by their path below it ("" for the
+// variable itself). nil for anything else, the summary then standing for the
+// whole parameter.
+func partialArg(st state, arg []Token) map[string]entry {
+	if len(arg) != 1 || arg[0].Kind != Var && arg[0].Kind != Ident {
+		return nil
+	}
+	v := arg[0].Text
+	if e, ok := st[v]; ok && e.taint && !e.keys {
+		return nil
+	}
+	sub, tainted := map[string]entry{}, false
+	for k, e := range st {
+		if !strings.HasPrefix(k, v+sepCh) {
+			continue
+		}
+		first, _, _ := strings.Cut(k[len(v)+len(sepCh):], sepCh)
+		if !strings.HasPrefix(first, "[") || first == "[*]" {
+			if e.taint {
+				return nil // input under a member or an unknown index: the whole parameter
+			}
+			continue
+		}
+		sub[k[len(v):]] = e
+		tainted = tainted || e.taint
+	}
+	if !tainted {
+		return nil
+	}
+	if e, ok := st[v]; ok {
+		sub[""] = e
+	}
+	return sub
+}
+
+// keyedSinks returns the sinks parameter p of the function called at t[i]
+// reaches when its argument carries input only under the keys of sub: so
+// wp_get_abilities($args) given $args['category'] from the request does not
+// reach call_user_func($args['item_include_callback']). ok is false when it
+// was not worked out (another file's function in a cycle being settled, the
+// clock): the whole-parameter summary then stands.
+func (a *analysis) keyedSinks(t []Token, i int, key string, p int, sub map[string]entry) (lines []loc, ok bool) {
+	x, name := a, key
+	if key == "" {
+		if a.proj == nil {
+			return nil, false
+		}
+		c, ok := a.callee(t, i)
+		if !ok {
+			return nil, false
+		}
+		f, n := a.proj.resolve(a, c)
+		if f == "" {
+			return nil, false
+		}
+		if x, name = a.proj.analysisFor(a, f), n; x == nil {
+			return nil, false
+		}
+	}
+	sc := x.sc
+	if sc == nil || len(sc.funcs[name]) == 0 || sc.busy[name] {
+		return nil, false
+	}
+	parts := make([]string, 0, len(sub))
+	for k, e := range sub {
+		parts = append(parts, fmt.Sprintf("%s=%v", k, e))
+	}
+	slices.Sort(parts)
+	ck := name + "\x00" + strconv.Itoa(p) + "\x00" + strings.Join(parts, "\x00")
+	s, done := sc.keyed[ck]
+	if !done {
+		for _, fi := range sc.funcs[name] {
+			if p >= len(fi.params) || p >= maxSumParams || fi.params[p] == "" {
+				return nil, false
+			}
+		}
+		sc.busy[name] = true
+		got := map[loc]bool{}
+		capped, keep, height, cost := x.own(func(y *analysis) {
+			for _, fi := range sc.funcs[name] {
+				st := state{}
+				for k, e := range sub {
+					st[fi.params[p]+k] = e
+				}
+				for l := range y.runBody(fi, st, false).lines {
+					got[l] = true
+				}
+			}
+		})
+		delete(sc.busy, name)
+		if !keep {
+			return nil, false
+		}
+		s = &summary{capped: capped, height: height, cost: cost, id: x.file + "\x00keyed\x00" + ck}
+		for l := range got {
+			s.sink = append(s.sink, []loc{l})
+		}
+		slices.SortFunc(s.sink, func(u, w []loc) int {
+			if u[0].path != w[0].path {
+				return strings.Compare(u[0].path, w[0].path)
+			}
+			return u[0].line - w[0].line
+		})
+		sc.keyed[ck] = s
+	}
+	a.used(s)
+	for _, l := range s.sink {
+		lines = append(lines, l[0])
+	}
+	return lines, true
 }
 
 // callArgs returns the arguments of the call whose "(" is at open.
@@ -1356,6 +1478,7 @@ func (a *analysis) callSinks(st state, t []Token) {
 				continue
 			}
 		}
+		key := a.calleeKey(t, i)
 		args := callArgs(t, i+1)
 		for k, p := range a.argIndex(s, args) {
 			if p == noParam {
@@ -1372,8 +1495,14 @@ func (a *analysis) callSinks(st state, t []Token) {
 				if p >= 0 && q != p || len(s.sink[q]) == 0 {
 					continue
 				}
+				lines := s.sink[q]
+				if sub := partialArg(st, args[k]); p >= 0 && sub != nil {
+					if kl, ok := a.keyedSinks(t, i, key, p, sub); ok {
+						lines = kl
+					}
+				}
 				if emb := v.emb || s.sinkEmb&(1<<q) != 0; !a.lib || emb {
-					for _, l := range s.sink[q] {
+					for _, l := range lines {
 						a.reportSink(l, emb)
 					}
 				}

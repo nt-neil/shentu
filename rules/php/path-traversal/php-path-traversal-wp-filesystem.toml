@@ -99,3 +99,37 @@ function gallery_add($request) {
     return array('url' => $up['url']);
 }
 '''
+
+[[samples]]
+kind = "safe"
+note = "the name must be a key of a list the server made (!empty($installed[$name])) before it reaches a path"
+code = '''
+<?php
+function my_plugin_remove_lang() {
+    global $wp_filesystem;
+    WP_Filesystem();
+    $theme = $_GET['theme'];
+    $installed = wp_get_installed_translations('themes');
+    if (!empty($installed[$theme])) {
+        foreach ($installed[$theme] as $lang => $data) {
+            $wp_filesystem->delete(WP_LANG_DIR . '/themes/' . $theme . '-' . $lang . '.po');
+        }
+    }
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "a key check on a list made from the request validates nothing"
+code = '''
+<?php
+function my_plugin_remove_lang() {
+    global $wp_filesystem;
+    WP_Filesystem();
+    $theme = $_GET['theme'];
+    $installed = $_POST['installed'];
+    if (!empty($installed[$theme])) {
+        $wp_filesystem->delete(WP_LANG_DIR . '/themes/' . $theme . '.po');
+    }
+}
+'''

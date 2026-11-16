@@ -415,6 +415,9 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 			break
 		}
 		hs := si.names(r.sinks, r.textSinks, names, src) && si.hasSink(r)
+		if !hs && proj != nil && !proj.sinkRules[r.rule.ID] {
+			continue // no file of the project holds a sink of it: nothing to reach across files either
+		}
 		// In a project a file without a sink may pass input, its own or a route
 		// handler's parameters, to another file's sink; on its own it has nothing
 		// to find.
@@ -477,14 +480,14 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 			sc := newSummaries(ff)
 			if proj != nil {
 				if sc == nil {
-					sc = &summaries{ff: ff, funcs: ff.byKey, done: map[string]*summary{}, busy: map[string]bool{}, rel: map[string]uint8{}, retUnk: map[string]uint8{}}
+					sc = &summaries{ff: ff, funcs: ff.byKey, done: map[string]*summary{}, busy: map[string]bool{}, rel: map[string]uint8{}, retUnk: map[string]uint8{}, keyed: map[string]*summary{}}
 				}
 				// Summaries are worked out the same whoever asks (own): those the
 				// project has of this file already (as another file's callee, or a
 				// cycle settled through it) are the ones this scan would work out.
 				key := r.rule.ID + "\x00" + path
 				if old := proj.sums[key]; old != nil {
-					sc.done, sc.rel, sc.direct, sc.cross = old.done, old.rel, old.direct, old.cross
+					sc.done, sc.rel, sc.direct, sc.cross, sc.keyed = old.done, old.rel, old.direct, old.cross, old.keyed
 				} else if kept := proj.kept[key]; kept != nil {
 					sc.done = kept
 					delete(proj.kept, key)
