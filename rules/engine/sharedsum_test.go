@@ -128,3 +128,26 @@ func TestParamsRead(t *testing.T) {
 		}
 	}
 }
+
+// An unread parameter's run is the run with no parameter given input, which
+// need not be empty: g() returns input of its own and carries it with the
+// sources off too. With checkSkips the parameter's own run is made and must
+// agree.
+func TestUnreadParamRun(t *testing.T) {
+	e := engineForTest(t)
+	old := checkSkips
+	checkSkips = true
+	defer func() { checkSkips = old }()
+	src := "<?php\nfunction g() { return $_GET['x']; }\nfunction f($a, $b) { return g() . $a; }\nmysqli_query($db, \"SELECT \" . f('1', '2'));\n"
+	fs, err := e.ScanFile("a.php", []byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, f := range fs {
+		found = found || f.Line == 4
+	}
+	if !found {
+		t.Errorf("no finding on line 4: %v", fs)
+	}
+}

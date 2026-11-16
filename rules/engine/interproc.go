@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"slices"
 	"strconv"
@@ -1229,21 +1230,29 @@ func (a *analysis) summarize(key string, fi *fnInfo, s *summary) {
 		return
 	}
 	read := paramsRead(fi)
+	var none *summRun // the run with no parameter given input
 	for i := 0; i < n && !a.b.hit; i++ {
 		if fi.params[i] == "" {
 			continue
 		}
+		var r *summRun
 		if read != nil && !read[fi.params[i]] {
-			// A parameter the body never reads reaches nothing and is not
-			// returned or checked: its run would find nothing.
+			// A parameter the body never reads changes nothing: its run is the
+			// run with no parameter given input, made once for all of them. That
+			// run need not be empty: a call that returns input of its own
+			// (callVal) carries it with the sources off too.
+			if none == nil {
+				none = run(0, false)
+			}
+			r = none
 			if checkSkips {
-				if r := run(1<<i, false); len(r.lines) > 0 || r.ret.taint || validates(r, i) {
-					panic(fmt.Sprintf("engine: skipped the run of unread parameter %s of %s (%s, rule %s), which finds something", fi.params[i], key, a.file, a.r.rule.ID))
+				if o := run(1<<i, false); !sameRun(o, none) || validates(o, i) != validates(none, i) {
+					panic(fmt.Sprintf("engine: the run of unread parameter %s of %s (%s, rule %s) differs from the run with no parameter", fi.params[i], key, a.file, a.r.rule.ID))
 				}
 			}
-			continue
+		} else {
+			r = run(1<<i, false)
 		}
-		r := run(1<<i, false)
 		if s.checks&(1<<i) == 0 && validates(r, i) {
 			s.condChecks |= 1 << i
 		}
@@ -1274,6 +1283,13 @@ func (a *analysis) summarize(key string, fi *fnInfo, s *summary) {
 			}
 		}
 	}
+}
+
+// sameRun reports whether two summary runs found the same.
+func sameRun(x, y *summRun) bool {
+	return maps.Equal(x.lines, y.lines) && maps.Equal(x.emb, y.emb) && x.ret.taint == y.ret.taint &&
+		x.ret.weak == y.ret.weak && x.ret.emb == y.ret.emb &&
+		slices.EqualFunc(x.checks, y.checks, func(p, q map[string]bool) bool { return maps.Equal(p, q) })
 }
 
 // runBody analyses the body of fi from st, with the rule's sources on or off.
