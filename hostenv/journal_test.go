@@ -167,3 +167,80 @@ func TestAppUnitsFPMPoolRoot(t *testing.T) {
 		t.Errorf("%+v: want FPM, running as root", us)
 	}
 }
+
+// N-14 and the findings logged while frozen: User= as systemd resolves it.
+func TestAppUnitsUserResolution(t *testing.T) {
+	type c struct {
+		files  map[string]string
+		denied []string
+		root   bool
+	}
+	unit := "[Service]\nUser=www-data\nExecStart=/usr/bin/gunicorn app\n"
+	wants := "/etc/systemd/system/multi-user.target.wants/"
+	cases := map[string]c{
+		"plain":                   {files: map[string]string{}, root: false},
+		"empty User= resets":      {files: map[string]string{"/etc/systemd/system/app.service.d/10-reset.conf": "[Service]\nUser=\n"}, root: true},
+		"file name order":         {files: map[string]string{"/etc/systemd/system/app.service.d/10-user.conf": "[Service]\nUser=www-data\n", "/run/systemd/system/app.service.d/50-root.conf": "[Service]\nUser=root\n"}, root: true},
+		"same name, /etc wins":    {files: map[string]string{"/etc/systemd/system/app.service.d/50-x.conf": "[Service]\nUser=www-data\n", "/run/systemd/system/app.service.d/50-x.conf": "[Service]\nUser=root\n"}, root: false},
+		"top-level service.d":     {files: map[string]string{"/etc/systemd/system/service.d/90-all.conf": "[Service]\nUser=root\n"}, root: true},
+		"dynamic user":            {files: map[string]string{"/etc/systemd/system/app.service.d/d.conf": "[Service]\nDynamicUser=yes\n"}, root: true},
+		"/etc overrides the unit": {files: map[string]string{"/etc/systemd/system/app.service": "[Service]\nExecStart=/usr/bin/gunicorn app\n"}, root: true},
+		"drop-in dir unlistable":  {files: map[string]string{"/etc/systemd/system/app.service.d/x.conf": "[Service]\nUser=www-data\n"}, denied: []string{"/etc/systemd/system/app.service.d"}, root: true},
+	}
+	for name, cs := range cases {
+		h := newFake(true)
+		h.files[wants+"app.service"] = unit
+		for k, v := range cs.files {
+			h.files[k] = v
+		}
+		for _, d := range cs.denied {
+			h.denied[d] = true
+		}
+		sh := statHost{fakeHost: h, st: map[string]FileStat{"/etc/systemd/system/multi-user.target.wants": {Mode: fs.ModeDir | 0o755}}}
+		us := LinuxCollector{}.AppUnits(sh).Value
+		if len(us) != 1 || us[0].RunsAppAsRoot() != cs.root {
+			t.Errorf("%s: %+v, RunsAppAsRoot want %v", name, us, cs.root)
+		}
+	}
+	// A template's instance as the user.
+	h := newFake(true)
+	h.files[wants+"app@root.service"] = "[Service]\nUser=%i\nExecStart=/usr/bin/gunicorn app\n"
+	sh := statHost{fakeHost: h, st: map[string]FileStat{"/etc/systemd/system/multi-user.target.wants": {Mode: fs.ModeDir | 0o755}}}
+	if us := (LinuxCollector{}).AppUnits(sh).Value; len(us) != 1 || !us[0].RunsAppAsRoot() {
+		t.Errorf("User=%%i: %+v", us)
+	}
+	if got := dropInNames("php8.2-fpm.service"); strings.Join(got, ",") != "service,php8.2-.service,php8.2-fpm.service" {
+		t.Errorf("drop-in names %v", got)
+	}
+}
+
+// N-12: PHP-FPM forwarding its workers' output makes the root master's
+// messages the workers'.
+func TestAppUnitsFPMCatchWorkers(t *testing.T) {
+	h := newFake(true)
+	h.files["/etc/systemd/system/multi-user.target.wants/php8.2-fpm.service"] = "[Service]\nExecStart=/usr/sbin/php-fpm8.2 --nodaemonize\n"
+	h.files["/etc/php/8.2/fpm/php-fpm.conf"] = "[global]\nerror_log = syslog\ninclude=/etc/php/8.2/fpm/pool.d/*.conf\n"
+	h.files["/etc/php/8.2/fpm/pool.d/www.conf"] = "[www]\nuser = www-data\ncatch_workers_output = yes\ndecorate_workers_output = no\n"
+	sh := statHost{fakeHost: h, st: map[string]FileStat{"/etc/systemd/system/multi-user.target.wants": {Mode: fs.ModeDir | 0o755}}}
+	us := LinuxCollector{}.AppUnits(sh).Value
+	if len(us) != 1 || !us[0].RunsAppAsRoot() {
+		t.Errorf("catch_workers_output: %+v, want the master's messages not trusted", us)
+	}
+}
+
+// N-13: --all on every read, a null MESSAGE said, a long one cut.
+func TestJournalAllAndMissing(t *testing.T) {
+	for _, a := range journalUnitArgvs() {
+		if !contains(a, "--all") {
+			t.Errorf("no --all: %q", a)
+		}
+	}
+	e, err := parseJournalJSON(`{"__CURSOR":"` + cur1 + `","MESSAGE":null,"_UID":"0"}`)
+	if err != nil || !e.MessageMissing {
+		t.Errorf("null MESSAGE: %+v %v", e, err)
+	}
+	e, _ = parseJournalJSON(`{"__CURSOR":"` + cur1 + `","MESSAGE":"` + strings.Repeat("a", MaxJournalMessage+10) + `"}`)
+	if !e.Cut || len(e.Message) != MaxJournalMessage {
+		t.Errorf("long MESSAGE: cut %v, %d bytes", e.Cut, len(e.Message))
+	}
+}

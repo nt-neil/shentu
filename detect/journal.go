@@ -13,6 +13,18 @@ func JournalKey(unit string) string { return "journald:" + unit }
 // FirstJournalWindow is how far back a unit is read the first time.
 const FirstJournalWindow = 24 * time.Hour
 
+// Why a journal read is partial, beside the reader's.
+const (
+	// ReadCursorRejected: journalctl refused the cursor (the journal
+	// rotated past it, or it is not this journal's): the window was read
+	// again, so entries already seen may come again (alerts are deduplicated
+	// by the matcher, P4), and those between may be lost.
+	ReadCursorRejected = "cursor_rejected"
+	// ReadMessageMissing: entries whose MESSAGE journald did not give; how
+	// the entries themselves say (JournalEntry.MessageMissing).
+	ReadMessageMissing = "message_missing"
+)
+
 // JournalTrust is how far one entry can be believed.
 type JournalTrust struct {
 	Verified bool           `json:"verified"`
@@ -81,6 +93,12 @@ func ReadJournalUnit(ctx context.Context, src hostenv.Source, unit hostenv.AppUn
 			return hostenv.ErrStopJournal
 		}
 		n := int64(len(e.Message))
+		if e.MessageMissing {
+			res.partial(ReadMessageMissing)
+		}
+		if e.Cut {
+			res.LongLines++
+		}
 		res.Lines++
 		res.Bytes += n
 		b.left -= n
@@ -99,8 +117,8 @@ func ReadJournalUnit(ctx context.Context, src hostenv.Source, unit hostenv.AppUn
 		}
 		if after != "" && last == "" && res.Lines == 0 {
 			// journalctl refuses a cursor it no longer has: read again from
-			// the window, and say what may be lost.
-			res.partial(ReadRotatedGap)
+			// the window, and say what may be lost or repeated.
+			res.partial(ReadCursorRejected)
 			c, r2, err2 := ReadJournalUnit(ctx, src, unit, nil, b, web, fn)
 			r2.Partial = append(r2.Partial, res.Partial...)
 			return c, r2, err2

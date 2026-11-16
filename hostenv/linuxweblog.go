@@ -358,6 +358,9 @@ type logLoader struct {
 	users  []string // accounts the configuration runs the servers as
 	groups []string // and groups
 	modPHP bool     // Apache loads PHP as a module
+	// catchWorkers: a PHP-FPM pool sets catch_workers_output, so the root
+	// master logs what its workers write.
+	catchWorkers bool
 }
 
 // read reads one configuration file, counting it against the bound.
@@ -1329,6 +1332,10 @@ func (l *logLoader) fpmFile(p, section string, depth int) string {
 					src.Reason, src.Detail = ReasonNotAFile, "written to syslog"
 				}
 				l.add(src)
+			}
+		case "catch_workers_output":
+			if b := strings.ToLower(v); b == "yes" || b == "on" || b == "true" || b == "1" {
+				l.catchWorkers = true
 			}
 		case "slowlog":
 			src.Kind = "slow"

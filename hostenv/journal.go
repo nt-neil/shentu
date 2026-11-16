@@ -53,7 +53,7 @@ func journalUnitArgv(bin string, after, fields bool) []string {
 	} else {
 		a = append(a, "--since", SlotTime)
 	}
-	a = append(a, "-o", "json")
+	a = append(a, "-o", "json", "--all") // --all: a field past 4096 bytes comes as itself, not null
 	if fields {
 		a = append(a, journalFields)
 	}
@@ -81,8 +81,15 @@ type JournalEntry struct {
 	PID       int       `json:"pid,omitempty"`
 	Comm      string    `json:"comm,omitempty"`
 	Transport string    `json:"transport,omitempty"` // stdout, journal, syslog, kernel, driver, audit
-	Message   string    `json:"message"`             // what the sender wrote: never trusted
+	Message   string    `json:"message"`             // what the sender wrote: never trusted; cut at MaxJournalMessage
+	// MessageMissing: journald gave no MESSAGE as text or bytes (null, or
+	// none): the entry is counted, not taken as an empty message.
+	MessageMissing bool `json:"message_missing,omitempty"`
+	Cut            bool `json:"cut,omitempty"` // Message was longer than MaxJournalMessage
 }
+
+// MaxJournalMessage is the longest message kept from one entry.
+const MaxJournalMessage = 64 << 10
 
 // ErrStopJournal, returned by a ReadJournal consumer, ends the read there:
 // the cursor returned is the last entry consumed.
@@ -180,6 +187,12 @@ func parseJournalJSON(l string) (JournalEntry, error) {
 		return ""
 	}
 	e := JournalEntry{Cursor: str("__CURSOR"), Unit: str("_SYSTEMD_UNIT"), Comm: str("_COMM"), Transport: str("_TRANSPORT"), Message: str("MESSAGE"), UID: -1}
+	if raw, ok := m["MESSAGE"]; !ok || string(raw) == "null" {
+		e.MessageMissing = true
+	}
+	if len(e.Message) > MaxJournalMessage {
+		e.Message, e.Cut = e.Message[:MaxJournalMessage], true
+	}
 	if e.Cursor == "" {
 		return e, errors.New("no __CURSOR")
 	}
@@ -260,37 +273,120 @@ func (LinuxCollector) AppUnits(src Source) Obs[[]AppUnit] {
 	return OK(out)
 }
 
-// unitDropIns are where systemd looks for a unit's drop-ins, in its order
-// of precedence: within each, files apply in name order, a later User=
-// overriding.
-var unitDropIns = []string{"/lib/systemd/system", "/usr/lib/systemd/system", "/run/systemd/system", "/etc/systemd/system"}
+// unitPaths are systemd's unit search paths, the highest priority first
+// (systemd.unit(5)): a unit file or a drop-in of the same name in an
+// earlier one wins.
+var unitPaths = []string{
+	"/etc/systemd/system.control", "/run/systemd/system.control", "/run/systemd/transient", "/run/systemd/generator.early",
+	"/etc/systemd/system", "/etc/systemd/system.attached", "/run/systemd/system", "/run/systemd/system.attached",
+	"/run/systemd/generator", "/usr/local/lib/systemd/system", "/usr/lib/systemd/system", "/lib/systemd/system",
+	"/run/systemd/generator.late",
+}
 
-// appUnit reads what matters of a unit: whether it runs an application,
-// its effective User= (the unit file's, then its drop-ins'), and whether
-// anything may run it as root. Anything unread fails closed: Elevated.
-func appUnit(src Source, name string, unit []byte, conf WebConf) (AppUnit, bool) {
-	all := [][]byte{unit}
-	elevated := false
-	for _, dir := range unitDropIns {
-		for _, f := range Glob(src, path.Join(dir, name+".d", "*.conf")) {
-			b, why := readWebConf(src, f, conf)
-			if why != "" {
-				elevated = true // a User= or an ExecStart we cannot see
-				continue
-			}
-			all = append(all, b)
+// dropInNames are the names whose <name>.d directories apply to unit:
+// the type's (service.d), each dash prefix's (php8.2-.service.d for
+// php8.2-fpm.service), a template's (app@.service.d), and its own.
+func dropInNames(unit string) []string {
+	base := strings.TrimSuffix(unit, ".service")
+	names := []string{"service"}
+	for i := 0; i < len(base); i++ {
+		if base[i] == '-' {
+			names = append(names, base[:i+1]+".service")
 		}
 	}
-	u := AppUnit{Name: name, Elevated: elevated}
+	if at := strings.IndexByte(base, '@'); at >= 0 && at < len(base)-1 {
+		names = append(names, base[:at+1]+".service")
+	}
+	return append(names, unit)
+}
+
+// appUnit reads what matters of a unit: whether it runs an application,
+// its effective User=, and whether anything may run it as root. The unit
+// file is the one of the highest-priority path (an /etc override beats
+// /lib's), then its drop-ins apply as systemd applies them: from every
+// path and every applicable name, a file name in a higher-priority path
+// hiding the same name in a lower one, in file name order. Anything that
+// cannot be read or told fails closed: Elevated.
+func appUnit(src Source, name string, unit []byte, conf WebConf) (AppUnit, bool) {
+	u := AppUnit{Name: name}
+	tmpl := name
+	if at := strings.IndexByte(name, '@'); at >= 0 {
+		tmpl = name[:at+1] + ".service"
+	}
+	for _, dir := range unitPaths { // a full override of the unit file
+		found := false
+		for _, n := range []string{name, tmpl} {
+			f := path.Join(dir, n)
+			if _, err := Stat(src, f); err != nil {
+				continue
+			}
+			b, why := readWebConf(src, f, conf)
+			if why != "" {
+				u.Elevated = true
+			} else {
+				unit = b
+			}
+			found = true
+			break
+		}
+		if found {
+			break
+		}
+	}
+	type dropIn struct {
+		file string
+		prio int
+	}
+	chosen := map[string]dropIn{} // file name -> the highest-priority one
+	for prio, dir := range unitPaths {
+		for _, n := range dropInNames(name) {
+			d := path.Join(dir, n+".d")
+			entries, err := src.ReadDir(d)
+			if err != nil {
+				if !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, ErrNotRecorded) {
+					u.Elevated = true // there, but not listed: a User= we cannot see
+				}
+				continue
+			}
+			for _, e := range entries {
+				if !strings.HasSuffix(e, ".conf") {
+					continue
+				}
+				if c, ok := chosen[e]; !ok || prio < c.prio {
+					chosen[e] = dropIn{path.Join(d, e), prio}
+				}
+			}
+		}
+	}
+	files := make([]string, 0, len(chosen))
+	for f := range chosen {
+		files = append(files, f)
+	}
+	sort.Strings(files)
+	all := [][]byte{unit}
+	for _, f := range files {
+		b, why := readWebConf(src, chosen[f].file, conf)
+		if why != "" {
+			u.Elevated = true
+			continue
+		}
+		all = append(all, b)
+	}
 	found := false
 	for _, b := range all {
 		ok, fpm, priv := unitRunsApp(b)
 		found = found || ok
 		u.FPM = u.FPM || fpm
 		u.Elevated = u.Elevated || priv
-		if usr := unitUser(b); usr != "" {
-			u.User = usr
+		if usr, set := unitUser(b); set {
+			u.User = usr // the last assignment wins; an empty one resets to root
 		}
+		if dynamicUser(b) {
+			u.Elevated = true
+		}
+	}
+	if strings.Contains(u.User, "%") { // a specifier (%i): the instance names the user
+		u.Elevated = true
 	}
 	if u.FPM && fpmPoolAsRoot(src) {
 		u.Elevated = true
@@ -298,12 +394,14 @@ func appUnit(src Source, name string, unit []byte, conf WebConf) (AppUnit, bool)
 	return u, found
 }
 
-// fpmPoolAsRoot: a PHP-FPM pool runs as root, or a pool's configuration
-// could not be read (so it may).
+// fpmPoolAsRoot: a PHP-FPM pool runs as root, or forwards its workers'
+// output to the master's log (catch_workers_output: the master, root, then
+// logs what PHP wrote), or a pool's configuration could not be read (so
+// either may be).
 func fpmPoolAsRoot(src Source) bool {
 	l := &logLoader{src: src, conf: DefaultWebConf, out: map[string]*LogSource{}}
 	l.phpFPM()
-	if len(l.unread) > 0 {
+	if len(l.unread) > 0 || l.catchWorkers {
 		return true
 	}
 	for _, u := range l.users {
@@ -314,15 +412,27 @@ func fpmPoolAsRoot(src Source) bool {
 	return false
 }
 
-// unitUser is the unit file's last User= ("" for none).
-func unitUser(b []byte) string {
-	u := ""
+// unitUser is the unit file's last User=, and whether it has one: an
+// empty User= resets it (root).
+func unitUser(b []byte) (string, bool) {
+	u, set := "", false
 	for _, ln := range strings.Split(string(b), "\n") {
 		if k, v, ok := strings.Cut(strings.TrimSpace(ln), "="); ok && strings.TrimSpace(k) == "User" {
-			u = strings.TrimSpace(v)
+			u, set = strings.TrimSpace(v), true
 		}
 	}
-	return u
+	return u, set
+}
+
+// dynamicUser: the unit sets DynamicUser= at all (its account is made at
+// start; not one to compare): taken as not known.
+func dynamicUser(b []byte) bool {
+	for _, ln := range strings.Split(string(b), "\n") {
+		if k, _, ok := strings.Cut(strings.TrimSpace(ln), "="); ok && strings.TrimSpace(k) == "DynamicUser" {
+			return true
+		}
+	}
+	return false
 }
 
 var fpmExe = regexp.MustCompile(`^(?:php[0-9.]*-fpm[0-9.]*|php-fpm)$`)

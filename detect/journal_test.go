@@ -128,7 +128,30 @@ func TestReadJournalUnitStaleCursor(t *testing.T) {
 		t.Fatalf("%v, cursor %q, entries %q", err, c.Journal, got)
 	}
 	p := strings.Join(r.Partial, ",")
-	if !strings.Contains(p, ReadRotatedGap) || !strings.Contains(p, ReadFirstRun) {
-		t.Errorf("partial %v, want rotated_gap and first_run", r.Partial)
+	if !strings.Contains(p, ReadCursorRejected) || !strings.Contains(p, ReadFirstRun) {
+		t.Errorf("partial %v, want cursor_rejected and first_run", r.Partial)
+	}
+}
+
+// N-12: with the unit able to make root log the workers' words, a root
+// message is not verified.
+func TestEntryTrustElevatedFPM(t *testing.T) {
+	u := hostenv.AppUnit{Name: "php8.2-fpm.service", FPM: true, Elevated: true}
+	got := EntryTrust(hostenv.JournalEntry{Unit: u.Name, UID: 0, Transport: "syslog"}, u, hostenv.WebAccounts{})
+	if got.Verified || got.Reason != hostenv.ReasonWebUserWritable {
+		t.Errorf("%+v, want web_user_writable", got)
+	}
+}
+
+// N-13: an entry journald gave no message for is said, not taken as empty.
+func TestReadJournalUnitMissingMessage(t *testing.T) {
+	u := hostenv.AppUnit{Name: "app.service", User: "www-data"}
+	src := &journalSrc{entries: []string{`{"__CURSOR":"` + jc1 + `","MESSAGE":null,"_SYSTEMD_UNIT":"app.service","_UID":"33","_TRANSPORT":"journal"}`}, cursors: []string{jc1}}
+	_, r, err := ReadJournalUnit(context.Background(), src, u, nil, NewBudget(DefaultBudgetBytes, time.Minute), hostenv.WebAccounts{}, func(hostenv.JournalEntry, JournalTrust) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(r.Partial, ","), ReadMessageMissing) {
+		t.Errorf("partial %v, want message_missing", r.Partial)
 	}
 }
