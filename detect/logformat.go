@@ -39,6 +39,15 @@ type AccessRecord struct {
 	User      string
 	Vhost     string // the server's own name for itself (Apache %v, nginx $server_name), not the Host header
 	Cut       bool   // parsed from a line cut at MaxLine (ParseCut): fields after the cut are missing
+	// Suspicious: the line splits only from its end (an unquoted field
+	// held so many of the next literal that the split from the start gave
+	// up): taken, matched, and to be flagged.
+	Suspicious bool
+	// Ambiguous: the line splits two ways, from its start and from its
+	// end, into different requests (a field the client writes before the
+	// request held a forged line end). Alt is the other; both are matched.
+	Ambiguous bool
+	Alt       *AccessRecord
 }
 
 // Parser splits the lines of one access log format.
@@ -46,9 +55,10 @@ type Parser struct {
 	segs    []seg
 	escape  string // nginx: "default", "json"; apache: "apache"
 	hasTime bool
-	// Parsed and Unparsed count the lines given (not safe for concurrent
-	// use: one parser per log read).
-	Parsed, Unparsed int
+	// Parsed, Unparsed, Suspicious and Ambiguous count the lines given (not
+	// safe for concurrent use: one parser per log read). Unparsed,
+	// Suspicious and Ambiguous lines are signals of their own.
+	Parsed, Unparsed, Suspicious, Ambiguous int
 }
 
 type seg struct {
@@ -232,6 +242,9 @@ func (p *Parser) check() error {
 		}
 		if s.field == "client" && client < 0 {
 			client = i
+			if n := i + 1; n < len(p.segs) && !p.segs[n].var_ && p.segs[n].lit != "" && strings.ContainsAny(p.segs[n].lit[:1], ":.0123456789abcdefABCDEF") {
+				return fmt.Errorf("%w: the client address is followed by %q, which an IPv6 address may hold", ErrFormatUnrecognized, p.segs[i+1].lit[:1])
+			}
 		}
 		if client < 0 && !safeBeforeClient[s.field] {
 			name := s.field
@@ -276,15 +289,175 @@ func (p *Parser) parse(line []byte, cut bool) (AccessRecord, bool) {
 	}
 	var r AccessRecord
 	steps := 0
-	if !p.match(s, 0, 0, &r, cut, &steps) {
-		p.Unparsed++
-		return AccessRecord{}, false
+	left := p.match(s, 0, 0, &r, cut, &steps)
+	var alts []AccessRecord
+	if !cut { // a cut line has no end to split from
+		alts = p.splits(s)
 	}
-	if r.Request != "" && r.Method == "" {
-		r.splitRequest()
+	fix := func(x *AccessRecord) {
+		if x.Request != "" && x.Method == "" {
+			x.splitRequest()
+		}
+	}
+	fix(&r)
+	if !left {
+		if len(alts) == 0 {
+			p.Unparsed++
+			return AccessRecord{}, false
+		}
+		r, r.Suspicious = alts[0], true
+		p.Suspicious++
+		alts = alts[1:]
+	}
+	for i := range alts {
+		if !sameRequest(r, alts[i]) {
+			r.Ambiguous, r.Alt = true, &alts[i]
+			p.Ambiguous++
+			break
+		}
 	}
 	p.Parsed++
 	return r, true
+}
+
+// sameRequest: two splits of a line agree on who asked for what.
+func sameRequest(a, b AccessRecord) bool {
+	return a.Client == b.Client && a.Request == b.Request && a.Method == b.Method && a.Path == b.Path &&
+		a.Query == b.Query && a.Status == b.Status && a.Time.Equal(b.Time)
+}
+
+// splits are the other ways s splits, one pass each, no backtracking: for
+// each field m, the fields before it split from the start (each at the
+// first occurrence of the literal after it), the fields after it from the
+// end (each at the last occurrence of the literal before it), and m takes
+// what lies between. Whatever a field the client writes holds, the split
+// with it in the middle is the line as the server wrote it.
+func (p *Parser) splits(s string) []AccessRecord {
+	var out []AccessRecord
+	for m, sg := range p.segs {
+		if !sg.var_ {
+			continue
+		}
+		var r AccessRecord
+		i, ok := p.fromStart(s, m, &r)
+		if !ok {
+			continue
+		}
+		j, ok := p.fromEnd(s, m, &r)
+		if !ok || i > j || !p.fill(&r, sg, s[i:j]) {
+			continue
+		}
+		if r.Request != "" && r.Method == "" {
+			r.splitRequest()
+		}
+		dup := false
+		for _, o := range out {
+			if sameRequest(o, r) {
+				dup = true
+			}
+		}
+		if !dup {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// fromStart fills segments 0..m-1 from the start of s; it returns where m begins.
+func (p *Parser) fromStart(s string, m int, r *AccessRecord) (int, bool) {
+	i := 0
+	for k := 0; k < m; k++ {
+		sg := p.segs[k]
+		if !sg.var_ {
+			if !strings.HasPrefix(s[i:], sg.lit) {
+				return 0, false
+			}
+			i += len(sg.lit)
+			continue
+		}
+		end := -1
+		if e := strings.IndexByte(s[i:], ']'); sg.field == "time_apache" && strings.HasPrefix(s[i:], "[") && e > 0 {
+			end = i + e + 1
+		} else if j := p.index(s[i:], p.segs[k+1].lit); j >= 0 {
+			end = i + j
+		}
+		if end < 0 || !p.fill(r, sg, s[i:end]) {
+			return 0, false
+		}
+		i = end
+	}
+	return i, true
+}
+
+// fromEnd fills segments m+1.. from the end of s; it returns where m ends.
+func (p *Parser) fromEnd(s string, m int, r *AccessRecord) (int, bool) {
+	j := len(s)
+	for k := len(p.segs) - 1; k > m; k-- {
+		sg := p.segs[k]
+		if !sg.var_ {
+			if !strings.HasSuffix(s[:j], sg.lit) {
+				return 0, false
+			}
+			j -= len(sg.lit)
+			continue
+		}
+		var start int
+		if sg.field == "time_apache" && strings.HasSuffix(s[:j], "]") {
+			start = strings.LastIndexByte(s[:j], '[')
+		} else if x := p.lastIndex(s[:j], p.segs[k-1].lit); x >= 0 {
+			start = x + len(p.segs[k-1].lit)
+		} else {
+			return 0, false
+		}
+		if start < 0 || !p.fill(r, sg, s[start:j]) {
+			return 0, false
+		}
+		j = start
+	}
+	return j, true
+}
+
+// lastIndex is the last place lit starts in s outside an escape.
+func (p *Parser) lastIndex(s, lit string) int {
+	if p.escape == "none" {
+		return strings.LastIndex(s, lit)
+	}
+	last := -1
+	for i := 0; i < len(s); i++ {
+		if strings.HasPrefix(s[i:], lit) {
+			last = i
+		}
+		if s[i] == '\\' {
+			i++
+		}
+	}
+	return last
+}
+
+// trimEscape drops an escape the cut left unfinished at the end of v
+// (\xF, \u00, a lone backslash), which would make the whole value fail.
+func (p *Parser) trimEscape(v string) string {
+	for i := 0; i < len(v); i++ {
+		if v[i] != '\\' {
+			continue
+		}
+		need := 2 // \" \\ \n
+		if i+1 < len(v) {
+			switch v[i+1] {
+			case 'x':
+				need = 4
+			case 'u':
+				if p.escape == "json" {
+					need = 6
+				}
+			}
+		}
+		if i+need > len(v) {
+			return v[:i]
+		}
+		i += need - 1
+	}
+	return v
 }
 
 // match matches segments k.. against s from i, filling r.
@@ -304,6 +477,9 @@ func (p *Parser) match(s string, i, k int, r *AccessRecord, cut bool, steps *int
 	}
 	try := func(v string, next int) bool {
 		r2 := *r
+		if next < 0 {
+			v = p.trimEscape(v)
+		}
 		if !p.fill(&r2, sg, v) {
 			return false
 		}

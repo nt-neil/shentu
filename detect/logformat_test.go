@@ -176,3 +176,59 @@ func TestApacheHostnameLookups(t *testing.T) {
 		t.Errorf("%%a with HostnameLookups On: %v", err)
 	}
 }
+
+// Review 2, N-1: more of the next literal than the split from the start
+// will try (a Basic auth user "x" and 200 " [", an Apache %u with 200
+// spaces): split from the end, matched, flagged Suspicious.
+func TestParseManyLiterals(t *testing.T) {
+	p, _ := NginxParser(ngxCombinedSpec, "")
+	line := `203.0.113.7 - x` + strings.Repeat(" [", 200) + ` [15/Nov/2026:10:11:12 +0800] "GET /?id=1%27 HTTP/1.1" 200 1 "-" "-"`
+	r, ok := p.Parse([]byte(line))
+	if !ok || !r.Suspicious || r.Client != "203.0.113.7" || r.Path != "/" || r.Query != "id=1%27" || r.Time.IsZero() || p.Suspicious != 1 {
+		t.Errorf("nginx: %+v %v (suspicious %d)", r, ok, p.Suspicious)
+	}
+	a, _ := ApacheParser(`%h %l %u %t "%r" %>s %b`)
+	r, ok = a.Parse([]byte(`203.0.113.7 - a` + strings.Repeat(" ", 200) + `b [15/Nov/2026:10:11:12 +0800] "GET /x HTTP/1.1" 200 5`))
+	if !ok || r.Path != "/x" || r.Client != "203.0.113.7" {
+		t.Errorf("apache: %+v %v", r, ok)
+	}
+}
+
+// Review 2, N-2: a cut falling inside an escape does not lose the line.
+func TestParseCutInsideEscape(t *testing.T) {
+	p, _ := NginxParser(ngxCombinedSpec, "")
+	for _, tail := range []string{`\xF`, `\x`, `\`} {
+		line := `203.0.113.7 - - [15/Nov/2026:10:11:12 +0800] "GET /a?q=` + strings.Repeat(`\xFF`, 10) + tail
+		if r, ok := p.ParseCut([]byte(line)); !ok || !r.Cut || r.Path != "/a" {
+			t.Errorf("cut at %q: %+v %v", tail, r, ok)
+		}
+	}
+	j, _ := NginxParser(`{"ip":"$remote_addr","t":"$time_iso8601","r":"$request","s":$status}`, "json")
+	if r, ok := j.ParseCut([]byte(`{"ip":"203.0.113.7","t":"2026-11-15T10:11:12+08:00","r":"GET /b?x=\u00`)); !ok || r.Path != "/b" {
+		t.Errorf("json cut inside \\u: %+v %v", r, ok)
+	}
+}
+
+// Review 2, N-3: a field the client writes before the request holding a
+// forged line end splits two ways: both requests are kept.
+func TestParseAmbiguous(t *testing.T) {
+	p, err := NginxParser(`$remote_addr $remote_user $request_uri $status $request_time`, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, ok := p.Parse([]byte(`203.0.113.7 a /fake 200 /real 404 0.003`))
+	if !ok || !r.Ambiguous || r.Alt == nil || p.Ambiguous != 1 {
+		t.Fatalf("%+v %v", r, ok)
+	}
+	paths := map[string]bool{r.Path: true, r.Alt.Path: true}
+	if !paths["/fake"] || !paths["/real"] {
+		t.Errorf("the two requests: %q and %q", r.Path, r.Alt.Path)
+	}
+}
+
+// Review 2, N-4: $remote_addr:$remote_port cannot be split for IPv6.
+func TestClientFollowedByColon(t *testing.T) {
+	if _, err := NginxParser(`$remote_addr:$remote_port [$time_local] "$request" $status`, ""); !errors.Is(err, ErrFormatUnrecognized) {
+		t.Errorf("%v, want format_unrecognized", err)
+	}
+}
