@@ -44,6 +44,10 @@ type Judgment struct {
 	// MaxMatchTime (MatchResult.TimedOut). Both said with the judgment.
 	Cut      bool `json:"cut,omitempty"`
 	TimedOut bool `json:"timed_out,omitempty"`
+	// Unknown: the request was cut and no candidate was found in what was
+	// matched: not known to be harmless (padding may hide what was cut),
+	// a result of its own, never an empty judgment.
+	Unknown bool `json:"unknown,omitempty"`
 }
 
 // Judge says which of the surface's vulnerabilities a matched request may
@@ -81,17 +85,22 @@ func NewJudge(s Surface, ss []sig.Signature) *Judge {
 			continue
 		}
 		for _, r := range e.Routes {
-			if re := routeRegexp(r.Pattern); re != nil {
+			re := routeRegexp(r.Pattern)
+			if re != nil {
 				j.routes = append(j.routes, routeEntry{i, r, re})
-			} else {
-				j.classes[e.Payload] = true // reached some way not matched: unanchored, never noise
+			}
+			// Reached some way not matched (no expression), or the root,
+			// whose mount prefix is not known (/api's / is /api): the
+			// class's hits elsewhere are unanchored, never noise.
+			if re == nil || rootRoute(r.Pattern) {
+				j.classes[e.Payload] = true
 			}
 		}
 	}
 	return j
 }
 
-var placeholder = regexp.MustCompile(`\{[^/{}]+\}|<[^/<>]+>|:[A-Za-z_][A-Za-z0-9_]*[*+]?|\*[A-Za-z0-9_]*`)
+var placeholder = regexp.MustCompile(`\{[^/{}]+\}|<[^/<>]+>|:[A-Za-z_][A-Za-z0-9_]*(?:\([^()]*\))?[*+?]?|\*[A-Za-z0-9_]*`)
 
 // manySegments: a placeholder that takes a path of several segments:
 // Flask's and Django's <path:f>, FastAPI's {p:path}, Express's * and :p*.
@@ -100,19 +109,28 @@ func manySegments(ph string) bool {
 		strings.HasSuffix(ph, "*") || strings.HasSuffix(ph, "+")
 }
 
+// rootRoute: pattern is the root (/, empty under re_path's ^$).
+func rootRoute(pattern string) bool {
+	p := strings.TrimSpace(pattern)
+	return p != "" && strings.Trim(strings.TrimSuffix(strings.TrimPrefix(p, "^"), "$"), "/") == ""
+}
+
 // routeRegexp makes a route pattern (as written: /users/{id}, /run/<cmd>,
-// /api/:id, Django's report/<str:name>/ and re_path's ^report/(?P<n>.+)$,
-// WordPress's /wp-json/ns/(?P<id>\d+)) an expression the routed path must
-// end with, from a segment's start (PatternMeaning: no mount prefix is
-// known). A pattern without a leading / gets one (Django, Laravel write
-// none); the root / is the root only. nil for none (a hook's empty
-// pattern, an expression that does not compile).
+// /api/:id, Express's /users/:id? and /user/:id(\d+), Django's
+// report/<str:name>/ and re_path's ^article/\d+/$, WordPress's
+// /wp-json/ns/(?P<id>\d+)) an expression the routed path must end with,
+// from a segment's start (PatternMeaning: no mount prefix is known). A
+// pattern without a leading / gets one (Django, Laravel write none); the
+// root / is the root only. nil for none: a hook's empty pattern, an
+// expression that does not compile, or one that does not match the path
+// its own pattern describes (it would never match a request).
 func routeRegexp(pattern string) *regexp.Regexp {
 	pattern = strings.TrimSpace(pattern)
 	if pattern == "" {
 		return nil
 	}
-	if strings.HasPrefix(pattern, "^") || strings.HasSuffix(pattern, "$") { // re_path: anchored at the mount point
+	rePath := strings.HasPrefix(pattern, "^") || strings.HasSuffix(pattern, "$")
+	if rePath { // re_path: anchored at the mount point
 		pattern = strings.TrimSuffix(strings.TrimPrefix(pattern, "^"), "$")
 	}
 	if !strings.HasPrefix(pattern, "/") {
@@ -121,27 +139,32 @@ func routeRegexp(pattern string) *regexp.Regexp {
 	if strings.Trim(pattern, "/") == "" {
 		return regexp.MustCompile(`^/?$`)
 	}
-	var expr string
-	if strings.Contains(pattern, "(") { // WordPress's and re_path's routes are expressions already
-		expr = pattern
+	var expr, sample string
+	if rePath && regexp.QuoteMeta(pattern) != pattern || strings.Contains(pattern, "(?") {
+		expr = pattern // re_path's and WordPress's routes are expressions already
 	} else {
+		var b, x strings.Builder
 		idx := placeholder.FindAllStringIndex(pattern, -1)
-		var b strings.Builder
 		last := 0
 		for _, m := range idx {
-			b.WriteString(regexp.QuoteMeta(pattern[last:m[0]]))
-			if manySegments(pattern[m[0]:m[1]]) {
-				b.WriteString(`.+`)
-			} else {
-				b.WriteString(`[^/]+`)
+			lit, ph := pattern[last:m[0]], pattern[m[0]:m[1]]
+			switch {
+			case strings.HasSuffix(ph, "?") && strings.HasSuffix(lit, "/"): // Express's optional /:id?
+				b.WriteString(regexp.QuoteMeta(lit[:len(lit)-1]) + `(?:/[^/]+)?`)
+			case manySegments(ph):
+				b.WriteString(regexp.QuoteMeta(lit) + `.+`)
+			default:
+				b.WriteString(regexp.QuoteMeta(lit) + `[^/]+`)
 			}
+			x.WriteString(lit + "x")
 			last = m[1]
 		}
 		b.WriteString(regexp.QuoteMeta(pattern[last:]))
-		expr = b.String()
+		x.WriteString(pattern[last:])
+		expr, sample = b.String(), x.String()
 	}
 	re, err := regexp.Compile(`(?i)` + strings.TrimSuffix(expr, "/") + `/?$`)
-	if err != nil {
+	if err != nil || sample != "" && !re.MatchString(sample) {
 		return nil
 	}
 	return re
@@ -232,6 +255,7 @@ func (j *Judge) Judge(m MatchResult) Judgment {
 			out.Noise = append(out.Noise, h)
 		}
 	}
+	out.Unknown = out.Cut && len(out.Candidates) == 0
 	sort.SliceStable(out.Candidates, func(a, b int) bool {
 		if out.Candidates[a].Level != out.Candidates[b].Level {
 			return out.Candidates[a].Level > out.Candidates[b].Level

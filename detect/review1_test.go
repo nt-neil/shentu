@@ -44,8 +44,8 @@ cves = ["CVE-2099-0007"]
 source = "shentu"
 license = "Apache-2.0"
 [[signature.applies_to]]
-ecosystem = "PyPI"
-package = "Marker_Pkg.Core"
+ecosystem = "Packagist"
+package = "Marker/Pkg-Core"
 versions = "<2.0"
 [[signature.match]]
 part = "any_param"
@@ -83,7 +83,7 @@ func TestNormalizeRequestBound(t *testing.T) {
 			}
 		}
 	}
-	if !q.Cut || total > MaxParamsText {
+	if !q.Cut || total > MaxParamsText+2*MinValueKept {
 		t.Errorf("4 values of %d bytes: cut %v, %d bytes kept (bound %d)", len(v), q.Cut, total, MaxParamsText)
 	}
 	two := Normalize(AccessRecord{Method: "GET", Path: "/", Query: "a[]=" + v + "&b[]=" + v})
@@ -176,7 +176,7 @@ func TestJudgeUnmatchedRoutes(t *testing.T) {
 		return []engine.RouteRef{{Model: "m", Framework: "express", Method: "get", Pattern: p, File: "a.js", Line: 1}}
 	}
 	for name, sink := range map[string]CodeSink{
-		"pattern not an expression": {Rule: "js-sqli", CWE: "CWE-89", Severity: "critical", Path: "a.js", Line: 2, Routes: ref("/x/(")},
+		"pattern not an expression": {Rule: "js-sqli", CWE: "CWE-89", Severity: "critical", Path: "a.js", Line: 2, Routes: ref("/x/(?P<")},
 		"routes truncated":          {Rule: "js-sqli", CWE: "CWE-89", Severity: "critical", Path: "a.js", Line: 2, Routes: ref("/known"), RoutesTruncated: true},
 	} {
 		g := NewJudge(Build([]CodeSink{sink}, nil), ss).Judge(NewMatcher(ss).Match(Normalize(AccessRecord{Method: "GET", Path: "/other", Query: "q=marker-one"})))
@@ -193,22 +193,127 @@ func TestJudgePackages(t *testing.T) {
 	judge := func(p PackageVuln) Judgment {
 		return NewJudge(Build(nil, []PackageVuln{p}), ss).Judge(NewMatcher(ss).Match(Normalize(AccessRecord{Method: "GET", Path: "/", Query: "q=marker-one"})))
 	}
-	g := judge(PackageVuln{Source: "/srv/requirements.txt", Ecosystem: "PyPI", Package: "marker-pkg-core", Version: "1.0", ID: "CVE-2099-0007"})
+	g := judge(PackageVuln{Source: "/srv/composer.lock", Ecosystem: "Packagist", Package: "marker/pkg-core", Version: "1.0", ID: "CVE-2099-0007"})
 	if len(g.Candidates) != 1 || g.Candidates[0].Level != LevelPayload || g.Candidates[0].VersionUnknown {
-		t.Errorf("PEP 503 name: %+v", g)
+		t.Errorf("Packagist name, case: %+v", g)
 	}
-	g = judge(PackageVuln{Source: "/srv/requirements.txt", Ecosystem: "PyPI", Package: "marker-fork", Version: "1.0", ID: "CVE-2099-0007"})
+	for _, c := range [][3]string{{"PyPI", "Marker_Pkg.Core", "marker-pkg-core"}, {"pypi", "a--b", "A._b"}, {"Packagist", "Marker/X", "marker/x"}} {
+		if !samePackage(c[0], c[1], c[2]) {
+			t.Errorf("%s: %s and %s are one package", c[0], c[1], c[2])
+		}
+	}
+	if samePackage("npm", "Marker", "marker") || samePackage("PyPI", "marker-a", "marker-b") {
+		t.Error("different packages taken as one")
+	}
+	g = judge(PackageVuln{Source: "/srv/composer.lock", Ecosystem: "Packagist", Package: "marker/fork", Version: "1.0", ID: "CVE-2099-0007"})
 	if len(g.Candidates) != 1 || !g.Candidates[0].VersionUnknown {
 		t.Errorf("CVE matched, package not in applies_to: %+v", g)
 	}
-	g = judge(PackageVuln{Source: "/srv/requirements.txt", Ecosystem: "PyPI", Package: "marker-pkg-core", Version: "2.1", ID: "CVE-2099-0007"})
+	g = judge(PackageVuln{Source: "/srv/composer.lock", Ecosystem: "Packagist", Package: "marker/pkg-core", Version: "2.1", ID: "CVE-2099-0007"})
 	if len(g.Candidates) != 0 {
 		t.Errorf("fixed version: %+v", g)
 	}
 	// An advisory of several CVEs: one entry, and a signature for any of them finds it.
-	s := Build(nil, []PackageVuln{{Source: "/srv/requirements.txt", Ecosystem: "PyPI", Package: "marker-pkg-core", Version: "1.0", ID: "GHSA-mark-0000-0000", CVE: "CVE-2099-0001", CVEs: []string{"CVE-2099-0001", "CVE-2099-0007"}}})
+	s := Build(nil, []PackageVuln{{Source: "/srv/composer.lock", Ecosystem: "Packagist", Package: "marker/pkg-core", Version: "1.0", ID: "GHSA-mark-0000-0000", CVE: "CVE-2099-0001", CVEs: []string{"CVE-2099-0001", "CVE-2099-0007"}}})
 	g = NewJudge(s, ss).Judge(NewMatcher(ss).Match(Normalize(AccessRecord{Method: "GET", Path: "/", Query: "q=marker-one"})))
 	if len(s.Entries) != 1 || len(g.Candidates) != 1 {
 		t.Errorf("multi-CVE advisory: %+v %+v", s.Entries, g)
+	}
+}
+
+// Review 2 of #87, N-A: padding before a value does not push it out: a
+// text cut keeps its end, a value past the parameters' bound keeps
+// MinValueKept; a cut request with no candidate is Unknown.
+func TestPaddingKeepsTail(t *testing.T) {
+	m := NewMatcher(loadSigs(t, markerSigs))
+	pad := strings.Repeat("a", MaxNormalized+2000)
+	for name, query := range map[string]string{
+		"one long value":          "k=" + pad + "marker-one",
+		"values before it":        "p1=" + pad + "&p2=" + pad + "&p3=" + pad + "&k=marker-one",
+		"the whole query is long": strings.Repeat("p=a&", MaxParamsText/4) + "k=marker-one",
+	} {
+		q := Normalize(AccessRecord{Method: "GET", Path: "/", Query: query})
+		if r := m.Match(q); !q.Cut || len(r.Hits) == 0 {
+			t.Errorf("%s: cut %v, hits %+v: the value after the padding was lost", name, q.Cut, r.Hits)
+		}
+	}
+	if got := headTail("abcdefghij", 8); len(got) != 8 || !strings.HasPrefix(got, "abcde") || !strings.HasSuffix(got, "ij") {
+		t.Errorf("headTail %q", got)
+	}
+	// Lower-casing can lengthen a text (U+023A is 2 bytes, its lower case 3): cut again.
+	q := Normalize(AccessRecord{Method: "GET", Path: "/", Query: "k=" + strings.Repeat("Ⱥ", MaxNormalized/2-10)})
+	if v := q.Params["k"][0]; len(v) > MaxNormalized || !q.Cut {
+		t.Errorf("lower-cased value of %d bytes (bound %d), cut %v", len(v), MaxNormalized, q.Cut)
+	}
+	j := NewJudge(Build(nil, nil), nil)
+	if g := j.Judge(MatchResult{Request: Request{Cut: true}}); !g.Unknown {
+		t.Errorf("cut, no candidate: %+v, want unknown", g)
+	}
+	if g := j.Judge(MatchResult{Request: Request{}}); g.Unknown {
+		t.Errorf("not cut: %+v", g)
+	}
+}
+
+// Review 2, N-B: patterns that compiled but never matched; a one-segment
+// placeholder does not take two.
+func TestRouteRegexpForms2(t *testing.T) {
+	for pattern, paths := range map[string][2][]string{
+		"/users/:id?":       {{"/users", "/users/5", "/api/users/5/"}, {"/users/5/x"}},
+		"/user/:id(\\d+)":   {{"/user/5"}, {"/user", "/user/5/x"}},
+		"^article/\\d+/$":   {{"/article/12/", "/blog/article/12"}, {"/article/x/"}},
+		"^files/.*$":        {{"/files/a/b"}, {"/other/a"}},
+		"/users/{id}":       {{"/users/5"}, {"/users/a/b"}},
+		"report/<str:name>": {{"/report/x"}, {"/report/a/b"}},
+		"/api/:id/edit":     {{"/api/7/edit"}, {"/api/7/8/edit"}},
+	} {
+		re := routeRegexp(pattern)
+		if re == nil {
+			t.Errorf("%s: no expression", pattern)
+			continue
+		}
+		for _, p := range paths[0] {
+			if !re.MatchString(p) {
+				t.Errorf("%s should match %q (%s)", pattern, p, re)
+			}
+		}
+		for _, p := range paths[1] {
+			if re.MatchString(p) {
+				t.Errorf("%s should not match %q (%s)", pattern, p, re)
+			}
+		}
+	}
+}
+
+// Review 2, N-C: the root route's mount prefix is not known: L1 only on
+// the root, its class's hits elsewhere unanchored. S: a signature's GET
+// route takes HEAD.
+func TestRootRouteAndHead(t *testing.T) {
+	ss := loadSigs(t, markerSigs)
+	root := []CodeSink{{Rule: "js-sqli", CWE: "CWE-89", Severity: "critical", Path: "a.js", Line: 1,
+		Routes: []engine.RouteRef{{Model: "m", Framework: "express", Method: "get", Pattern: "/", File: "a.js", Line: 1}}}}
+	j := NewJudge(Build(root, nil), ss)
+	g := j.Judge(NewMatcher(ss).Match(Normalize(AccessRecord{Method: "GET", Path: "/api/", Query: "id=marker-one"})))
+	if len(g.Candidates) != 0 || len(g.Unanchored) != 1 || g.Unanchored[0].Signature != "class-marker" {
+		t.Errorf("root route, request under a mount prefix: %+v", g)
+	}
+	if g = j.Judge(NewMatcher(ss).Match(Normalize(AccessRecord{Method: "GET", Path: "/"}))); len(g.Candidates) != 1 {
+		t.Errorf("the root itself: %+v", g)
+	}
+	m := NewMatcher(loadSigs(t, `
+[[signature]]
+id = "get-route"
+title = "t"
+class = "path"
+source = "shentu"
+license = "Apache-2.0"
+[[signature.route]]
+methods = ["GET"]
+path = "/marker/route"
+`))
+	if r := m.Match(Normalize(AccessRecord{Method: "HEAD", Path: "/marker/route"})); len(r.Hits) != 1 {
+		t.Errorf("HEAD to a signature's GET route: %+v", r.Hits)
+	}
+	if r := m.Match(Normalize(AccessRecord{Method: "POST", Path: "/marker/route"})); len(r.Hits) != 0 {
+		t.Errorf("POST to a GET route: %+v", r.Hits)
 	}
 }

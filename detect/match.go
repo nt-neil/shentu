@@ -17,8 +17,9 @@ import (
 // what is matched, not by a clock: decoding stops after MaxDecodeRounds,
 // each text (the path, a user agent, a referer, one parameter's name or
 // value) is cut at MaxNormalized, the whole query and all the parameters'
-// values together at MaxParamsText, their number at MaxParams; a cut is said
-// (Request.Cut), never taken as no hit. Every signature is tried on what
+// values together at MaxParamsText, their number at MaxParams; a cut keeps
+// the text's start and end (headTail) and is said (Request.Cut), never
+// taken as no hit. Every signature is tried on what
 // is left. MaxMatchTime is only watched: a request that took longer is
 // said (MatchResult.TimedOut), its signatures all tried all the same.
 const (
@@ -26,7 +27,11 @@ const (
 	MaxNormalized   = 8 << 10
 	MaxParamsText   = 16 << 10
 	MaxParams       = 256
-	MaxMatchTime    = 10 * time.Millisecond
+	MaxParamsLast   = 32 // of MaxParams, the last ones of a request that has more
+	// MinValueKept: a value past MaxParamsText keeps this much of its start
+	// and end all the same, so a long value first cannot hide the next.
+	MinValueKept = 64
+	MaxMatchTime = 10 * time.Millisecond
 )
 
 // Request is a request as signatures see it: every text decoded at most
@@ -70,24 +75,25 @@ func Normalize(r AccessRecord) Request {
 	q.Path = cleanPath(q.RawPath)
 	q.Query, enc, cut = normalizeTextN(r.Query, true, MaxParamsText) // the whole query: the parameters' bound
 	q.Encoded, q.Cut = q.Encoded || enc, q.Cut || cut
-	n, left := 0, MaxParamsText
+	var kvs []string
 	for _, kv := range strings.Split(r.Query, "&") {
-		if kv == "" {
-			continue
+		if kv != "" {
+			kvs = append(kvs, kv)
 		}
-		if n >= MaxParams {
-			q.Cut = true
-			break
-		}
-		n++
+	}
+	if len(kvs) > MaxParams { // the first ones and the last: many before a parameter do not push it out
+		kvs, q.Cut = append(kvs[:MaxParams-MaxParamsLast:MaxParams-MaxParamsLast], kvs[len(kvs)-MaxParamsLast:]...), true
+	}
+	left := MaxParamsText
+	for _, kv := range kvs {
 		k, v, _ := strings.Cut(kv, "=")
 		nk, e1, c1 := normalizeText(k, true)
 		nv, e2, c2 := normalizeText(v, true)
 		q.Encoded, q.Cut = q.Encoded || e1 || e2, q.Cut || c1 || c2
 		if len(nv) > left { // every value together: the request's cost is bounded, not each value's
-			nv, q.Cut = nv[:left], true
+			nv, q.Cut = headTail(nv, max(left, MinValueKept)), true // a value past the bound keeps its end too
 		}
-		left -= len(nv)
+		left = max(0, left-len(nv))
 		q.Sent[nk] = true
 		for _, key := range paramNames(nk) { // as sent, and as PHP and others read it
 			q.Params[key] = append(q.Params[key], nv)
@@ -123,11 +129,30 @@ func normalizeText(s string, query bool) (string, bool, bool) {
 	return normalizeTextN(s, query, MaxNormalized)
 }
 
-// normalizeTextN is normalizeText cutting at limit.
+// headTail is s cut to n bytes, keeping its start and its end (a quarter
+// of n) joined by cutMark: padding before a payload does not push it out.
+func headTail(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	tail := n / 4
+	head := n - tail - len(cutMark)
+	if head < 0 {
+		return s[len(s)-n:]
+	}
+	return s[:head] + cutMark + s[len(s)-tail:]
+}
+
+// cutMark joins what headTail keeps: a control character no signature
+// looks for, so the two halves never make a match together.
+const cutMark = "\x1f"
+
+// normalizeTextN is normalizeText cutting at limit, its start and its end
+// kept (headTail).
 func normalizeTextN(s string, query bool, limit int) (string, bool, bool) {
 	cut := len(s) > limit
 	if cut {
-		s = s[:limit]
+		s = headTail(s, limit)
 	}
 	enc := false
 	for round := 0; round < MaxDecodeRounds; round++ {
@@ -147,7 +172,11 @@ func normalizeTextN(s string, query bool, limit int) (string, bool, bool) {
 	if over {
 		enc = true
 	}
-	return strings.ToLower(f), enc, cut
+	l := strings.ToLower(f)
+	if len(l) > limit { // lower-casing can lengthen some characters
+		l, cut = headTail(l, limit), true
+	}
+	return l, enc, cut
 }
 
 // percentDecode decodes %XX and %uXXXX (u: one was), and + as a space when
@@ -336,8 +365,8 @@ func (m *Matcher) Match(q Request) (res MatchResult) {
 
 func (m *Matcher) routeHolds(i int, q Request) bool {
 	for j, r := range m.sigs[i].Routes {
-		if len(r.Methods) > 0 && !containsStr(r.Methods, q.Method) {
-			continue
+		if len(r.Methods) > 0 && !containsStr(r.Methods, q.Method) && !(q.Method == "HEAD" && containsStr(r.Methods, "GET")) {
+			continue // a GET route takes HEAD too, as methodOK says
 		}
 		if rp := strings.ToLower(r.Path); r.Path != "" && !strings.HasSuffix(q.Path, rp) && !strings.Contains(q.Path+"/", rp+"/") {
 			continue // the route, at the end or followed by PATH_INFO (/x.php/anything)
