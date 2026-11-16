@@ -198,13 +198,21 @@ var (
 	apacheTime = regexp.MustCompile(`^\[[A-Za-z]{3} ([A-Za-z]{3} \d{1,2} \d{2}:\d{2}:\d{2})(?:\.\d+)? (\d{4})\]`)
 	isoTime    = regexp.MustCompile(`^\[?(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2})(?:[.,]\d+)?(Z|[+-]\d{2}:?\d{2})?`)
 	// The runtime's own location on an entry's line: PHP's "in FILE on
-	// line N" ending a PHP message (the line's end, or the quote nginx
-	// closes FastCGI's stderr with), on a line holding one (phpMessage).
-	// What comes before may echo request data, and a server's own error
-	// (nginx's open() "..." failed) quotes the request's path: neither
-	// ends a PHP message.
-	phpWhere   = regexp.MustCompile(` in (/\S+?) on line (\d+)(?:"? while |"$|$)`)
-	phpMessage = regexp.MustCompile(`\bPHP (?:Fatal error|Warning|Notice|Parse error|Deprecated|Error|Catchable fatal error|Recoverable fatal error|Strict Standards|Core error|Compile error|User (?:error|warning|notice|deprecated)):`)
+	// line N", in the whole line's shape of each log that carries PHP's
+	// messages, the message's prefix at its fixed place: PHP's own log
+	// ([time] PHP Warning:  ...), Apache's ([time] [module:level] [pid]
+	// ... PHP Warning: ...), nginx's FastCGI stderr (time [level] pid#tid:
+	// *cid FastCGI sent in stderr: "PHP message: PHP Warning: ..." while
+	// reading). The location is the last one before the line's end (or
+	// nginx's closing quote and " while reading"): what the message echoes
+	// comes before it. A server's own error (nginx's open() "..." failed,
+	// quoting the request's path) is none of these.
+	phpLevel  = `PHP (?:Fatal error|Warning|Notice|Parse error|Deprecated|Catchable fatal error|Recoverable fatal error|Strict Standards|Core error|Compile error|User (?:error|warning|notice|deprecated)):`
+	phpWheres = []*regexp.Regexp{
+		regexp.MustCompile(`^\[[^\]]+\] ` + phpLevel + ` .* in (/\S+?) on line (\d+)$`),
+		regexp.MustCompile(`^\[[^\]]+\](?: \[[^\]]*\])+ ` + phpLevel + ` .* in (/\S+?) on line (\d+)$`),
+		regexp.MustCompile(`^\d{4}/\d\d/\d\d \d\d:\d\d:\d\d \[\w+\] \d+#\d+: \*\d+ FastCGI sent in stderr: "PHP message: ` + phpLevel + ` .* in (/\S+?) on line (\d+)" while reading `),
+	}
 	// Frame lines after an entry, each in the runtime's own shape: PHP's
 	// "#0 /srv/x.php(12)", Python's '  File "/srv/x.py", line 40', Node's
 	// "    at fn (/srv/x.js:7:13)". Any other line without a time is not
@@ -241,9 +249,10 @@ func ErrorEvents(lines []string, verified bool, from string, loc *time.Location)
 			if i := requestFields.FindStringIndex(l); i != nil {
 				l = l[:i[0]]
 			}
-			if phpMessage.MatchString(l) {
-				if ms := phpWhere.FindAllStringSubmatch(l, -1); len(ms) > 0 {
-					add(ms[len(ms)-1])
+			for _, re := range phpWheres {
+				if m := re.FindStringSubmatch(l); m != nil {
+					add(m)
+					break
 				}
 			}
 			continue

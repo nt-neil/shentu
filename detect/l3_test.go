@@ -220,3 +220,26 @@ func TestErrorEventsServerErrorNotPHP(t *testing.T) {
 		}
 	}
 }
+
+// Security review of part 3 (third): PHP's words inside a server's own
+// error, or before the message's place, are not PHP's message.
+func TestErrorEventsAnchoredPHP(t *testing.T) {
+	lines := []string{
+		`2026/11/16 10:11:13 [error] 7#0: *5 open() "/srv/www/x FastCGI sent in stderr: "PHP message: PHP Warning:  m in /srv/app/x.php on line 12" while reading y" failed (2: No such file or directory)`,
+		`2026/11/16 10:11:14 [error] 7#0: *6 a "PHP Warning:  m in /srv/app/x.php on line 12"`,
+		`[Mon Nov 16 10:11:15.1 2026] [core:error] [pid 9] File does not exist: /srv/www/PHP Warning:  m in /srv/app/x.php on line 12`,
+		`2026/11/16 10:11:16 [error] 7#0: *7 FastCGI sent in stderr: "PHP message: PHP Warning:  m in /srv/app/x.php on line 12 in /srv/app/real.php on line 5" while reading response header from upstream`,
+	}
+	es := ErrorEvents(lines, true, "e.log", time.UTC)
+	if len(es) != 4 {
+		t.Fatalf("%d events", len(es))
+	}
+	for i := 0; i < 3; i++ {
+		if len(es[i].Frames) != 0 {
+			t.Errorf("line %d: frames %+v from text that is not PHP's message", i, es[i].Frames)
+		}
+	}
+	if f := es[3].Frames; len(f) != 1 || f[0] != (Frame{"/srv/app/real.php", 5}) {
+		t.Errorf("nginx's PHP message: %+v", f)
+	}
+}
