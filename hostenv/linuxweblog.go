@@ -34,11 +34,16 @@ type LogSource struct {
 	// the main server.
 	Vhosts []string `json:"vhosts,omitempty"`
 	Config string   `json:"config"` // file:line naming it, or "default" for the server's built-in path
-	// Verified: only root can have written the file (LogTrust). Reason says
-	// why not, or why the file is not there to read.
+	// Verified: only root can change the file (LogTrust), and no process of
+	// a web account holds it open for writing where it could be made to
+	// write (mod_php, ptrace). Reason says why not, or why the file is not
+	// there to read.
 	Verified bool   `json:"verified"`
 	Reason   Reason `json:"reason,omitempty"`
 	Detail   string `json:"detail,omitempty"`
+	// FileID is the device:inode judged: a reader opening the path must find
+	// the same file (and still root's) for its lines to be verified.
+	FileID string `json:"file_id,omitempty"`
 }
 
 // Reasons a log source is not verified or not readable, beside the
@@ -62,6 +67,20 @@ const (
 	WebUserWritableMeaningZh = "這個 log 由 web 伺服器的使用者擁有：只有 web 應用已經被入侵時，才可能偽造其中的內容"
 )
 
+// ReasonMeaningZh says, for an administrator reading a Telegram alert, why a
+// log is not verified, and so why blocking cannot be approved from Telegram.
+var ReasonMeaningZh = map[Reason]string{
+	ReasonWebUserWritable: "這個 log（或它所在的目錄、或寫它的程序）可以被 web 伺服器的帳號改動：只有 web 應用已經被入侵時才可能偽造，但 shentu 無法證明沒有，所以不能從 Telegram 放行封鎖",
+	ReasonUntrusted:       "這個 log 或它所在的目錄可以被 root 以外的帳號改動，內容可能是偽造的，所以不能從 Telegram 放行封鎖",
+	ReasonUnverified:      "shentu 無法確認只有 root 能改動這個 log（例如群組成員、ACL 或帳號來源讀不到），依規則一律不信任，所以不能從 Telegram 放行封鎖",
+	ReasonNotRegular:      "這個 log 不是一般檔案，無法確認它的內容來源",
+	ReasonNotFound:        "設定裡寫的 log 不存在（還沒寫入或被刪除），這段期間沒有可讀的紀錄",
+	ReasonPermission:      "shentu 沒有權限讀這個 log 或它的上層目錄",
+	ReasonLoggingDisabled: "這個 log 在設定裡被關閉了，這部分的攻擊不會留下紀錄",
+	ReasonNotAFile:        "這個 log 寫到 syslog 或程式（pipe），不是 shentu 能直接讀的檔案",
+	ReasonVariablePath:    "log 路徑裡有變數或是相對路徑，shentu 無法確定是哪個檔案",
+}
+
 // Bounds on reading the configuration: includes may not loop or fan out
 // without end.
 const (
@@ -73,7 +92,12 @@ const (
 
 // defaultWebUsers are the accounts web servers and PHP run as on the
 // distributions shentu supports, beside those the configuration names.
-var defaultWebUsers = []string{"www-data", "nginx", "apache", "httpd", "nobody", "wwwrun", "http", "lighttpd", "php-fpm"}
+var defaultWebUsers = []string{"www-data", "nginx", "apache", "httpd", "nobody", "wwwrun", "http", "lighttpd", "php-fpm", "caddy", "uwsgi"}
+
+// logGroupNames are the groups a log directory may be writable by and still
+// be trusted (Ubuntu's /var/log is 775 root:syslog), provided none of
+// their members is a web account.
+var logGroupNames = map[string]bool{"syslog": true, "adm": true, "log": true}
 
 // defaultWebGroups are their groups that are not also an account's name.
 var defaultWebGroups = []string{"nogroup", "www"}
@@ -86,11 +110,31 @@ func (c LinuxCollector) WebLogs(src Source) Obs[[]LogSource] {
 	l.nginx()
 	l.apache()
 	l.phpFPM()
+	l.lighttpd()
+	l.unitUsers(c, src)
 	web := l.webAccounts()
+	scoped, scopeWhy := ptraceScoped(src)
 	var out []LogSource
 	for _, s := range l.out {
 		if s.Reason == "" {
-			s.Verified, s.Reason, s.Detail = LogTrust(src, s.Path, web)
+			t := JudgeLog(src, s.Path, web)
+			s.Verified, s.Reason, s.Detail = t.Verified, t.Reason, t.Detail
+			if t.Verified {
+				s.FileID = t.File.ID
+			}
+		}
+		if s.Verified && (s.Server == "nginx" || s.Server == "apache") {
+			// The file is root's, but the server's workers run as the web
+			// account and hold it open: whoever can make them write can.
+			switch {
+			case s.Server == "apache" && l.modPHP:
+				s.Verified, s.Reason, s.Detail = false, ReasonWebUserWritable, "Apache runs PHP in its own children (mod_php), which hold the log open: "+WebUserWritableMeaning
+			case !scoped:
+				s.Verified, s.Reason, s.Detail = false, ReasonWebUserWritable, scopeWhy+": the web account can ptrace the server's workers, which hold the log open; "+WebUserWritableMeaning
+			}
+			if !s.Verified {
+				s.FileID = ""
+			}
 		}
 		out = append(out, *s)
 	}
@@ -114,40 +158,75 @@ func (c LinuxCollector) WebLogs(src Source) Obs[[]LogSource] {
 type WebAccounts struct {
 	UIDs map[int]string
 	GIDs map[int]string
+	// LogGIDs are the log groups (logGroupNames) /etc/group lists whose
+	// members, listed or by primary group, are none of the web accounts: a
+	// directory only they may write is still trusted.
+	LogGIDs map[int]string
+	// Complete: /etc/passwd and /etc/group were read and are where every
+	// account and group comes from (nsswitch: files, compat, systemd).
+	// Otherwise (sssd, LDAP, unread) no group-writable directory is trusted.
+	Complete bool
 }
 
-// LogTrust says whether only root can have written p: it, after its links,
-// is a regular file owned by root that neither group nor others can write,
-// and every directory above it and above the link is root's, not writable
-// by others, and writable by its group only when that group is none of
-// the web server's or PHP's (Ubuntu's /var/log, 775 root:syslog, passes; a
-// 775 root:www-data one does not: the web user could swap the file). A
-// sticky directory lets no one but a file's owner replace it. A directory
-// whose group is not known (Windows, an old fixture) and that its group
-// may write is not trusted.
+// TrustResult is what JudgeLog found: the file it judged, by its stat.
+type TrustResult struct {
+	Verified bool
+	Reason   Reason
+	Detail   string
+	File     FileStat // the file after its links, as stat saw it
+}
+
+// LogTrust is JudgeLog without the stat.
 func LogTrust(src Source, p string, web WebAccounts) (verified bool, why Reason, detail string) {
+	t := JudgeLog(src, p, web)
+	return t.Verified, t.Reason, t.Detail
+}
+
+// JudgeLog says whether only root can change p. It, after its links, is a
+// regular file owned by root that neither group nor others can write;
+// every link on the way is root's own; every directory above it and above
+// each link is root's, not writable by others, and writable by its group
+// only when that group is a log group (WebAccounts.LogGIDs, the account
+// databases complete) with no ACL widening it. A sticky directory lets no
+// one but a file's owner replace it. Anything that cannot be told (a
+// group, an ACL, a link's owner) is unverified: judging fails closed. The
+// web accounts only make the reason precise.
+func JudgeLog(src Source, p string, web WebAccounts) TrustResult {
+	no := func(r Reason, d string) TrustResult { return TrustResult{Reason: r, Detail: d} }
 	real, err := EvalSymlinks(src, p)
 	if err != nil {
-		return false, statReason(err), whyUnread(err)
+		return no(statReason(err), whyUnread(err))
 	}
 	st, err := Stat(src, real)
 	if err != nil {
-		return false, statReason(err), whyUnread(err)
+		return no(statReason(err), whyUnread(err))
 	}
 	switch {
 	case !st.Mode.IsRegular():
-		return false, ReasonNotRegular, real + " is not a regular file"
+		return no(ReasonNotRegular, real+" is not a regular file")
 	case st.UID != 0:
 		if name, ok := web.UIDs[st.UID]; ok {
-			return false, ReasonWebUserWritable, fmt.Sprintf("%s is owned by %s (uid %d): %s", real, name, st.UID, WebUserWritableMeaning)
+			return no(ReasonWebUserWritable, fmt.Sprintf("%s is owned by %s (uid %d): %s", real, name, st.UID, WebUserWritableMeaning))
 		}
-		return false, ReasonUntrusted, fmt.Sprintf("%s is owned by uid %d, not root", real, st.UID)
+		return no(ReasonUntrusted, fmt.Sprintf("%s is owned by uid %d, not root", real, st.UID))
 	case st.Mode.Perm()&0o022 != 0:
-		return false, ReasonUntrusted, fmt.Sprintf("%s is writable by group or others (%v)", real, st.Mode.Perm())
+		return no(ReasonUntrusted, fmt.Sprintf("%s is writable by group or others (%v)", real, st.Mode.Perm()))
 	}
 	links, err := linkChain(src, p)
 	if err != nil {
-		return false, ReasonUnverified, whyUnread(err)
+		return no(ReasonUnverified, whyUnread(err))
+	}
+	for _, ln := range links { // a link is repointed by its owner, wherever it sits
+		ls, err := Lstat(src, ln)
+		if err != nil {
+			return no(ReasonUnverified, "link "+ln+": "+whyUnread(err))
+		}
+		if ls.UID != 0 {
+			if name, ok := web.UIDs[ls.UID]; ok {
+				return no(ReasonWebUserWritable, fmt.Sprintf("link %s is owned by %s (uid %d): %s", ln, name, ls.UID, WebUserWritableMeaning))
+			}
+			return no(ReasonUntrusted, fmt.Sprintf("link %s is owned by uid %d, not root", ln, ls.UID))
+		}
 	}
 	dirs := map[string]bool{}
 	for _, f := range append([]string{p, real}, links...) { // whoever may write a directory holding a link may repoint it
@@ -166,27 +245,54 @@ func LogTrust(src Source, p string, web WebAccounts) (verified bool, why Reason,
 	for _, d := range names {
 		ds, err := Stat(src, d)
 		if err != nil {
-			return false, ReasonUnverified, "directory " + d + ": " + whyUnread(err)
+			return no(ReasonUnverified, "directory "+d+": "+whyUnread(err))
 		}
 		sticky := ds.Mode&fs.ModeSticky != 0
 		switch {
 		case ds.UID != 0:
 			if name, ok := web.UIDs[ds.UID]; ok {
-				return false, ReasonWebUserWritable, fmt.Sprintf("directory %s is owned by %s (uid %d): %s", d, name, ds.UID, WebUserWritableMeaning)
+				return no(ReasonWebUserWritable, fmt.Sprintf("directory %s is owned by %s (uid %d): %s", d, name, ds.UID, WebUserWritableMeaning))
 			}
-			return false, ReasonUntrusted, fmt.Sprintf("directory %s is owned by uid %d, not root", d, ds.UID)
+			return no(ReasonUntrusted, fmt.Sprintf("directory %s is owned by uid %d, not root", d, ds.UID))
 		case ds.Mode.Perm()&0o002 != 0 && !sticky:
-			return false, ReasonUntrusted, "directory " + d + " is writable by others"
+			return no(ReasonUntrusted, "directory "+d+" is writable by others")
 		case ds.Mode.Perm()&0o020 != 0 && !sticky:
-			if ds.GID == nil {
-				return false, ReasonUnverified, "directory " + d + " is writable by its group, and which group is not known"
-			}
-			if name, ok := web.GIDs[*ds.GID]; ok {
-				return false, ReasonWebUserWritable, fmt.Sprintf("directory %s is writable by group %s (gid %d): %s", d, name, *ds.GID, WebUserWritableMeaning)
+			if r, d := groupWritable(src, d, ds, web); r != "" {
+				return no(r, d)
 			}
 		}
 	}
-	return true, "", ""
+	return TrustResult{Verified: true, File: st}
+}
+
+// groupWritable judges a directory its group may write: "" when the group
+// is a log group of complete account databases and no ACL lets anyone
+// else in; otherwise why not.
+func groupWritable(src Source, d string, ds FileStat, web WebAccounts) (Reason, string) {
+	if ds.GID == nil {
+		return ReasonUnverified, "directory " + d + " is writable by its group, and which group is not known"
+	}
+	gid := *ds.GID
+	if name, ok := web.GIDs[gid]; ok {
+		return ReasonWebUserWritable, fmt.Sprintf("directory %s is writable by group %s (gid %d): %s", d, name, gid, WebUserWritableMeaning)
+	}
+	switch name, ok := web.LogGIDs[gid]; {
+	case gid == 0:
+		return ReasonUnverified, "directory " + d + " is writable by group root, whose members are not known to be root"
+	case !web.Complete:
+		return ReasonUnverified, fmt.Sprintf("directory %s is writable by gid %d, and the account databases could not all be read (or are not only files)", d, gid)
+	case !ok:
+		return ReasonUnverified, fmt.Sprintf("directory %s is writable by gid %d, not a log group known to hold no web account", d, gid)
+	default:
+		has, err := HasACL(src, d)
+		if err != nil {
+			return ReasonUnverified, "directory " + d + " is writable by group " + name + ", and its ACL could not be read: " + whyUnread(err)
+		}
+		if has {
+			return ReasonUnverified, "directory " + d + " has an ACL: its group bits are only the mask, a named user may write it"
+		}
+	}
+	return "", ""
 }
 
 // linkChain is every symbolic link resolving p goes through, in order,
@@ -202,6 +308,9 @@ func linkChain(src Source, p string) ([]string, error) {
 			next := path.Join(dir, part)
 			t, err := src.Readlink(next)
 			if err != nil {
+				if errors.Is(err, fs.ErrPermission) { // not known whether it is a link
+					return nil, err
+				}
 				dir = next
 				continue
 			}
@@ -241,6 +350,7 @@ type logLoader struct {
 	cut    bool
 	users  []string // accounts the configuration runs the servers as
 	groups []string // and groups
+	modPHP bool     // Apache loads PHP as a module
 }
 
 // read reads one configuration file, counting it against the bound.
@@ -319,12 +429,75 @@ func (l *logLoader) add(s LogSource) {
 
 // WebAccounts is the web servers' and PHP's accounts and groups, as their
 // configuration and the defaults give them: what LogTrust is given.
-func (LinuxCollector) WebAccounts(src Source) WebAccounts {
+func (c LinuxCollector) WebAccounts(src Source) WebAccounts {
 	l := &logLoader{src: src, conf: DefaultWebConf, out: map[string]*LogSource{}}
 	l.nginx()
 	l.apache()
 	l.phpFPM()
+	l.lighttpd()
+	l.unitUsers(c, src)
 	return l.webAccounts()
+}
+
+var lighttpdAccount = regexp.MustCompile(`(?m)^\s*server\.(username|groupname)\s*=\s*"([^"]+)"`)
+
+// lighttpd adds the account lighttpd.conf runs it as.
+func (l *logLoader) lighttpd() {
+	const conf = "/etc/lighttpd/lighttpd.conf"
+	if !exists(l.src, conf) {
+		return
+	}
+	b, ok := l.read(conf)
+	if !ok {
+		return
+	}
+	for _, m := range lighttpdAccount.FindAllStringSubmatch(string(b), -1) {
+		if m[1] == "username" {
+			l.users = append(l.users, m[2])
+		} else {
+			l.groups = append(l.groups, m[2])
+		}
+	}
+}
+
+// unitUsers adds the User= of the application units (gunicorn, uwsgi,
+// node...): their processes are the web application too.
+func (l *logLoader) unitUsers(c LinuxCollector, src Source) {
+	for _, u := range c.AppUnits(src).Value {
+		if u.User != "" {
+			l.users = append(l.users, u.User)
+		}
+	}
+}
+
+// iniValue is a php-fpm.conf value: quotes taken off, or an inline
+// comment (" ; ...") cut from an unquoted one.
+func iniValue(v string) string {
+	v = strings.TrimSpace(v)
+	if len(v) >= 2 && (v[0] == '"' || v[0] == '\'') {
+		if end := strings.IndexByte(v[1:], v[0]); end >= 0 {
+			return v[1 : end+1]
+		}
+	}
+	if i := strings.IndexAny(v, ";#"); i >= 0 {
+		v = v[:i]
+	}
+	return strings.TrimSpace(v)
+}
+
+// ptraceScoped: kernel.yama.ptrace_scope is 1 or more, so a web account
+// cannot ptrace the server's workers (running as it, holding the logs
+// open). Otherwise (0, no Yama, unread) why not.
+func ptraceScoped(src Source) (bool, string) {
+	b, err := src.ReadFile("/proc/sys/kernel/yama/ptrace_scope")
+	if err != nil {
+		return false, "kernel.yama.ptrace_scope unread (" + whyUnread(err) + ")"
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(string(b)))
+	if err != nil || n < 1 {
+		return false, "kernel.yama.ptrace_scope is " + strings.TrimSpace(string(b))
+	}
+	return true, ""
 }
 
 // webAccounts is the uids and gids of the web servers' and PHP's accounts
@@ -354,8 +527,16 @@ func (l *logLoader) webAccounts() WebAccounts {
 		groups[g] = true
 	}
 	primary := map[int]bool{}
+	byPrimary := map[int][]string{} // gid -> accounts with it as primary group
+	passwdOK, groupOK := false, false
 	if b, err := l.src.ReadFile("/etc/passwd"); err == nil {
+		passwdOK = true
 		entries := ParsePasswd(b)
+		for _, e := range entries {
+			if gid, err := strconv.Atoi(e.GID); err == nil {
+				byPrimary[gid] = append(byPrimary[gid], e.Name)
+			}
+		}
 		for _, e := range entries { // a numeric user's name, for its group memberships
 			if uid, err := strconv.Atoi(e.UID); err == nil && numUIDs[uid] {
 				users[e.Name] = true
@@ -372,7 +553,9 @@ func (l *logLoader) webAccounts() WebAccounts {
 			}
 		}
 	}
+	w.LogGIDs = map[int]string{}
 	if b, err := l.src.ReadFile("/etc/group"); err == nil {
+		groupOK = true
 		for _, ln := range strings.Split(string(b), "\n") {
 			f := strings.Split(ln, ":")
 			if len(f) < 3 || strings.HasPrefix(f[0], "#") {
@@ -393,14 +576,58 @@ func (l *logLoader) webAccounts() WebAccounts {
 			if groups[f[0]] || primary[gid] || member {
 				w.GIDs[gid] = f[0]
 			}
+			if logGroupNames[f[0]] && !member && !primary[gid] && !groups[f[0]] {
+				clean := true
+				for _, a := range byPrimary[gid] {
+					if users[a] {
+						clean = false
+					}
+				}
+				if clean {
+					w.LogGIDs[gid] = f[0]
+				}
+			}
 		}
 	}
+	w.Complete = passwdOK && groupOK && filesOnlyNSS(l.src)
 	for gid := range primary { // a primary group /etc/group does not list
 		if _, ok := w.GIDs[gid]; !ok {
 			w.GIDs[gid] = "gid " + strconv.Itoa(gid)
 		}
 	}
 	return w
+}
+
+// filesOnlyNSS: nsswitch.conf takes accounts and groups only from the
+// files (or compat), or from systemd, whose module adds only dynamic and
+// userdb accounts, none a member of a log group. Without nsswitch.conf,
+// glibc reads the files.
+func filesOnlyNSS(src Source) bool {
+	b, err := src.ReadFile("/etc/nsswitch.conf")
+	if errors.Is(err, fs.ErrNotExist) {
+		return true
+	}
+	if err != nil {
+		return false
+	}
+	for _, ln := range strings.Split(string(b), "\n") {
+		k, v, ok := strings.Cut(strings.TrimSpace(ln), ":")
+		if !ok || (k != "passwd" && k != "group") {
+			continue
+		}
+		if i := strings.IndexByte(v, '#'); i >= 0 {
+			v = v[:i]
+		}
+		for _, src := range strings.Fields(v) {
+			if strings.HasPrefix(src, "[") {
+				continue // an action, [NOTFOUND=return]
+			}
+			if src != "files" && src != "compat" && src != "systemd" {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // numericID is a user or group given by number: #33 (Apache) or 33.
@@ -944,6 +1171,17 @@ func (l *logLoader) apacheFile(st *apacheState, p string, depth int) {
 			if len(args) > 0 {
 				l.groups = append(l.groups, st.expand(args[0]))
 			}
+		case "assignuserid", "suexecusergroup", "ruidgid": // mpm-itk, suEXEC, mod_ruid2: a vhost's own account
+			if len(args) > 0 {
+				l.users = append(l.users, st.expand(args[0]))
+			}
+			if len(args) > 1 {
+				l.groups = append(l.groups, st.expand(args[1]))
+			}
+		case "loadmodule":
+			if len(args) > 1 && (strings.Contains(strings.ToLower(args[0]), "php") || strings.Contains(strings.ToLower(args[1]), "libphp")) {
+				l.modPHP = true
+			}
 		case "servername", "serveralias":
 			for _, a := range args {
 				if !contains(st.cur.names, a) {
@@ -1009,7 +1247,10 @@ func apacheWords(s string) []string {
 
 // --- PHP-FPM ---
 
-var phpFPMConfs = []string{"/etc/php/*/fpm/php-fpm.conf", "/etc/php-fpm.conf"}
+// phpFPMConfs: Debian and Ubuntu, RHEL and Fedora, Remi's and Software
+// Collections' parallel PHPs, Arch, Alpine.
+var phpFPMConfs = []string{"/etc/php/*/fpm/php-fpm.conf", "/etc/php-fpm.conf", "/etc/opt/remi/*/php-fpm.conf",
+	"/etc/opt/rh/*/php-fpm.conf", "/etc/php/php-fpm.conf", "/etc/php*/php-fpm.conf"}
 
 // phpFPM gathers PHP-FPM's own error log, each pool's access and slow logs,
 // and the error_log a pool sets for PHP (written by the pool's user).
@@ -1039,7 +1280,7 @@ func (l *logLoader) fpmFile(p, section string, depth int) string {
 		if !ok {
 			continue
 		}
-		k, v = strings.TrimSpace(k), strings.Trim(strings.TrimSpace(v), `"'`)
+		k, v = strings.TrimSpace(k), iniValue(v)
 		v = strings.ReplaceAll(v, "$pool", section)
 		src := LogSource{Path: v, Server: "php-fpm", Config: at(p, n+1)}
 		if section != "global" {

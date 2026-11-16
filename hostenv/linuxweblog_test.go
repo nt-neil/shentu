@@ -18,6 +18,7 @@ func logHost() statHost {
 	syslog := 104
 	h.st["/var/log"] = FileStat{Mode: fs.ModeDir | 0o775, UID: 0, GID: &syslog} // Ubuntu: group syslog may write
 	h.files["/etc/group"] = "root:x:0:\nadm:x:4:syslog\nwww-data:x:33:\nsyslog:x:104:\n"
+	h.files["/proc/sys/kernel/yama/ptrace_scope"] = "1\n"
 	root := FileStat{Mode: 0o640, UID: 0}
 	www := FileStat{Mode: 0o640, UID: 33}
 
@@ -147,7 +148,7 @@ func TestWebLogsPHPFPM(t *testing.T) {
 // What only root may write, and what else: owner, mode, directories, links.
 func TestLogTrust(t *testing.T) {
 	h := logHost()
-	web := WebAccounts{UIDs: map[int]string{33: "www-data"}, GIDs: map[int]string{33: "www-data"}}
+	web := WebAccounts{UIDs: map[int]string{33: "www-data"}, GIDs: map[int]string{33: "www-data"}, LogGIDs: map[int]string{104: "syslog"}, Complete: true}
 	gid := func(n int) *int { return &n }
 	h.st["/var/log/wwwgrp"] = FileStat{Mode: fs.ModeDir | 0o775, UID: 0, GID: gid(33)}
 	h.files["/var/log/wwwgrp/a.log"], h.st["/var/log/wwwgrp/a.log"] = "", FileStat{Mode: 0o640, UID: 0}
@@ -243,5 +244,129 @@ func TestWebAccountsNumericUserGroups(t *testing.T) {
 	w := LinuxCollector{}.WebAccounts(h)
 	if w.UIDs[2000] == "" || w.GIDs[2001] != "web2grp" || w.GIDs[2002] != "shared" {
 		t.Errorf("accounts %+v: want uid 2000 with its primary group web2grp and its group shared", w)
+	}
+}
+
+// B-1: a directory its group may write is trusted only for a log group of
+// complete account databases, with no ACL; anything that cannot be told
+// fails closed.
+func TestLogTrustGroupFailClosed(t *testing.T) {
+	gid := func(n int) *int { return &n }
+	base := func() statHost {
+		h := logHost()
+		h.st["/var/log/g"] = FileStat{Mode: fs.ModeDir | 0o775, UID: 0, GID: gid(104)} // syslog
+		h.files["/var/log/g/a.log"], h.st["/var/log/g/a.log"] = "", FileStat{Mode: 0o640, UID: 0}
+		return h
+	}
+	cases := map[string]struct {
+		mod  func(h statHost)
+		want Reason
+	}{
+		"syslog, files only": {func(statHost) {}, ""},
+		"/etc/group unread":  {func(h statHost) { h.denied["/etc/group"] = true }, ReasonUnverified},
+		"/etc/passwd unread": {func(h statHost) { h.denied["/etc/passwd"] = true }, ReasonUnverified},
+		"sssd accounts":      {func(h statHost) { h.files["/etc/nsswitch.conf"] = "passwd: files sss\ngroup: files sss\n" }, ReasonUnverified},
+		"systemd nss": {func(h statHost) {
+			h.files["/etc/nsswitch.conf"] = "passwd: files systemd\ngroup: files [SUCCESS=merge] systemd\n"
+		}, ""},
+		"gid with no name":   {func(h statHost) { h.st["/var/log/g"] = FileStat{Mode: fs.ModeDir | 0o775, UID: 0, GID: gid(4242)} }, ReasonUnverified},
+		"gid 0":              {func(h statHost) { h.st["/var/log/g"] = FileStat{Mode: fs.ModeDir | 0o775, UID: 0, GID: gid(0)} }, ReasonUnverified},
+		"www-data in syslog": {func(h statHost) { h.files["/etc/group"] = "root:x:0:\nwww-data:x:33:\nsyslog:x:104:www-data\n" }, ReasonWebUserWritable},
+		"web user's primary": {func(h statHost) {
+			h.files["/etc/passwd"] += "app:x:2000:104::/srv:/usr/sbin/nologin\n"
+			h.files["/etc/apache2/apache2.conf"] += "User app\n"
+		}, ReasonWebUserWritable},
+		"ACL on the directory": {func(h statHost) { h.acl["/var/log/g"] = true }, ReasonUnverified},
+	}
+	for name, c := range cases {
+		h := base()
+		h.acl = map[string]bool{}
+		c.mod(h)
+		web := LinuxCollector{}.WebAccounts(h)
+		_, why, detail := LogTrust(h, "/var/log/g/a.log", web)
+		if why != c.want {
+			t.Errorf("%s: %q (%s), want %q", name, why, detail, c.want)
+		}
+	}
+}
+
+// N-2: a link owned by the web user, even in a sticky directory, can be
+// repointed by it; a link that cannot be lstat'ed is not trusted.
+func TestLogTrustLinkOwner(t *testing.T) {
+	h := logHost()
+	h.lst = map[string]FileStat{}
+	web := LinuxCollector{}.WebAccounts(h)
+	h.st["/var/log/tmp"] = FileStat{Mode: fs.ModeDir | fs.ModeSticky | 0o777, UID: 0}
+	h.links["/var/log/tmp/a.log"] = "/var/log/nginx/shop.access.log"
+	h.lst["/var/log/tmp/a.log"] = FileStat{Mode: fs.ModeSymlink | 0o777, UID: 33}
+	if _, why, _ := LogTrust(h, "/var/log/tmp/a.log", web); why != ReasonWebUserWritable {
+		t.Errorf("www-data's link: %q, want web_user_writable", why)
+	}
+	if _, why, _ := LogTrust(h.fakeHost, "/var/log/tmp/a.log", web); why != ReasonUnverified {
+		t.Errorf("no lstat: %q, want unverified", why)
+	}
+}
+
+// Readlink refused (EACCES): not known whether it is a link, so not trusted.
+func TestLogTrustReadlinkDenied(t *testing.T) {
+	h := logHost()
+	h.denied["/var/log/nginx"] = true
+	if _, why, _ := LogTrust(h, "/var/log/nginx/shop.access.log", LinuxCollector{}.WebAccounts(h)); why == "" {
+		t.Error("verified behind a directory that refused readlink")
+	}
+}
+
+// N-3: accounts the review found missing.
+func TestWebAccountsSources(t *testing.T) {
+	h := logHost()
+	h.files["/etc/passwd"] += "itk:x:3001:3001::/:/sbin/nologin\nsuexec:x:3002:3002::/:/sbin/nologin\nlight:x:3003:3003::/:/sbin/nologin\nremi:x:3004:3004::/:/sbin/nologin\npool:x:3005:3005::/:/sbin/nologin\n"
+	h.files["/etc/apache2/sites-enabled/a.conf"] += "<VirtualHost *:81>\n\tAssignUserID itk itk\n\tSuexecUserGroup suexec suexec\n</VirtualHost>\n"
+	h.files["/etc/lighttpd/lighttpd.conf"] = "server.username = \"light\"\n"
+	h.files["/etc/opt/remi/php83/php-fpm.conf"] = "[www]\nuser = remi\n"
+	h.files["/etc/php/8.2/fpm/pool.d/www.conf"] += "[other]\nuser = pool ; the pool's account\n"
+	w := LinuxCollector{}.WebAccounts(h)
+	for _, uid := range []int{3001, 3002, 3003, 3004, 3005} {
+		if w.UIDs[uid] == "" {
+			t.Errorf("uid %d missing: %v", uid, w.UIDs)
+		}
+	}
+	if w.UIDs[1000] != "" {
+		t.Errorf("bob is not a web account: %v", w.UIDs)
+	}
+}
+
+// N-4: a root file the server's workers hold open is the web account's to
+// write when they can be ptraced or run PHP.
+func TestWebLogsWorkersHoldTheLog(t *testing.T) {
+	h := logHost()
+	h.files["/proc/sys/kernel/yama/ptrace_scope"] = "0\n"
+	m := webLogsByKey(t, LinuxCollector{}.WebLogs(h))
+	if a := m["apache access /var/log/apache2/access.log"]; a.Verified || a.Reason != ReasonWebUserWritable || !strings.Contains(a.Detail, "ptrace") {
+		t.Errorf("ptrace_scope 0: %+v", a)
+	}
+	if e := m["php-fpm error /var/log/php8.2-fpm.log"]; !e.Verified {
+		t.Errorf("FPM's master log, held by root only: %+v", e)
+	}
+	h = logHost()
+	h.files["/etc/apache2/apache2.conf"] += "LoadModule php_module /usr/lib/apache2/modules/libphp8.2.so\n"
+	m = webLogsByKey(t, LinuxCollector{}.WebLogs(h))
+	if a := m["apache access /var/log/apache2/access.log"]; a.Verified || !strings.Contains(a.Detail, "mod_php") {
+		t.Errorf("mod_php: %+v", a)
+	}
+	h = logHost()
+	delete(h.files, "/proc/sys/kernel/yama/ptrace_scope")
+	m = webLogsByKey(t, LinuxCollector{}.WebLogs(h))
+	if a := m["apache access /var/log/apache2/access.log"]; a.Verified {
+		t.Errorf("ptrace_scope unread: %+v", a)
+	}
+}
+
+// Every reason a log is not verified has an administrator's explanation for
+// the Telegram alert.
+func TestReasonMeaningZh(t *testing.T) {
+	for _, r := range []Reason{ReasonWebUserWritable, ReasonUntrusted, ReasonUnverified, ReasonNotRegular, ReasonNotFound, ReasonPermission, ReasonLoggingDisabled, ReasonNotAFile, ReasonVariablePath} {
+		if ReasonMeaningZh[r] == "" {
+			t.Errorf("%s: no explanation", r)
+		}
 	}
 }
