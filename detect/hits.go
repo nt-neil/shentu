@@ -76,7 +76,8 @@ type Judge struct {
 	// route, a route list the engine cut (RoutesTruncated), or a route whose
 	// pattern makes no expression (a hook, a pattern that does not compile).
 	classes map[string]bool
-	loose   []string // the IDs of those sinks, in the surface's order
+	loose   []string       // the IDs of those sinks, in the surface's order
+	byID    map[string]int // entry ID -> index in surface.Entries
 }
 
 type routeEntry struct {
@@ -87,7 +88,10 @@ type routeEntry struct {
 
 // NewJudge indexes the surface's routes and the signatures by id.
 func NewJudge(s Surface, ss []sig.Signature) *Judge {
-	j := &Judge{surface: s, sigs: map[string]sig.Signature{}, classes: map[string]bool{}}
+	j := &Judge{surface: s, sigs: map[string]sig.Signature{}, classes: map[string]bool{}, byID: map[string]int{}}
+	for i, e := range s.Entries {
+		j.byID[e.ID] = i
+	}
 	seen := map[int]bool{}
 	loose := func(i int) { // its class's hits elsewhere are unanchored; a cut may hide one for it
 		j.classes[s.Entries[i].Payload] = true
