@@ -39,11 +39,10 @@ type entry struct {
 type state map[string]entry
 
 func (s state) clone() state {
-	c := make(state, len(s))
-	for k, v := range s {
-		c[k] = v
+	if s == nil {
+		return state{}
 	}
-	return c
+	return maps.Clone(s)
 }
 
 // get returns the entry of key or of its longest stored prefix. A literal key
@@ -79,8 +78,15 @@ func (s state) del(key string) {
 }
 
 // merge joins the states of two paths: tainted on either path is tainted.
-func merge(x, y state) state {
-	out := make(state, len(x)+len(y))
+func merge(x, y state) state { return mergeInto(x.clone(), y) }
+
+// mergeInto is merge written into x, for a caller that owns x and does not
+// use it after: the keys only y holds are worked out from x as it was, before
+// any key of x changes.
+func mergeInto(x, y state) state {
+	if x == nil {
+		x = state{}
+	}
 	look := func(s state, k string, src bool) entry {
 		if e, ok := s.get(k); ok {
 			return e
@@ -92,15 +98,23 @@ func merge(x, y state) state {
 			raw: a.raw || b.raw, emb: a.emb || b.emb, weak: weakOf(a.taint, a.weak, b.taint, b.weak),
 			keys: (a.taint || b.taint) && (!a.taint || a.keys) && (!b.taint || b.keys)} // tainted only under literal keys on every path that taints it
 	}
-	for k, e := range x {
-		out[k] = both(e, look(y, k, e.src))
+	type add struct {
+		k string
+		e entry
 	}
+	var adds []add
 	for k, e := range y {
 		if _, ok := x[k]; !ok {
-			out[k] = both(look(x, k, e.src), e)
+			adds = append(adds, add{k, both(look(x, k, e.src), e)})
 		}
 	}
-	return out
+	for k, e := range x {
+		x[k] = both(e, look(y, k, e.src))
+	}
+	for _, d := range adds {
+		x[d.k] = d.e
+	}
+	return x
 }
 
 type val struct{ taint, san, pre, raw, emb, weak bool } // pre, raw: see entry; set by assign only
@@ -262,7 +276,7 @@ func (a *analysis) stmt(s *stmt, st state) (state, uint8) {
 		case e2 != noExit:
 			return t1, noExit
 		}
-		return merge(t1, t2), noExit
+		return mergeInto(t1, t2), noExit // t1 is the true branch's own copy
 	case sLoop:
 		return a.loop(s, st), noExit
 	case sWith:
@@ -485,10 +499,10 @@ func (a *analysis) loop(s *stmt, st state) state {
 	bind(st)
 	a.guards = append(a.guards, map[string]bool{})
 	s1, _ := a.block(body, enter(st))
-	m := merge(st, s1)
+	m := mergeInto(st, s1) // st and m are not used after their merge
 	bind(m)
 	s2, _ := a.block(body, enter(m))
-	out := merge(m, s2)
+	out := mergeInto(m, s2)
 	checked := a.guards[len(a.guards)-1]
 	a.guards = a.guards[:len(a.guards)-1]
 	// Every member was checked and a bad one rejects the whole input (raise,
