@@ -640,8 +640,10 @@ func (b *bot) ignored(chat int64, why string) {
 func (b *bot) answer(ctx context.Context, chat int64, text string) {
 	defer func() { b.mu.Lock(); b.busy = false; b.mu.Unlock() }()
 	skills := loadSkills(filepath.Join(filepath.Dir(configPath()), "skills"))
+	env := *b.env
+	env.Remote = true // a Telegram request: no override of safety checks
 	a := &agent{
-		cfg: b.cfg, llm: newLLM(b.cfg), env: b.env, skills: skills,
+		cfg: b.cfg, llm: newLLM(b.cfg), env: &env, skills: skills,
 		allowControl: b.canAct, actor: "bot", log: b.log,
 		confirm: func(tool, preview string) bool { return b.confirm(ctx, chat, tool, preview) },
 	}

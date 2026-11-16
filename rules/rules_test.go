@@ -28,10 +28,12 @@ var (
 		"file-upload":      {"CWE-434"},
 		"weak-crypto":      {"CWE-327", "CWE-328", "CWE-916"},
 		"hardcoded-secret": {"CWE-798", "CWE-259", "CWE-321"},
+
+		"prototype-pollution": {"CWE-1321"},
 	}
 	contexts   = map[string]bool{"html": true, "attr": true, "url": true, "js": true}
 	severities = map[string]bool{"critical": true, "high": true, "medium": true, "low": true}
-	frameworks = map[string]bool{"laravel": true, "wordpress": true, "django": true, "flask": true, "express": true, "nestjs": true, "nextjs": true}
+	frameworks = map[string]bool{"laravel": true, "wordpress": true, "django": true, "flask": true, "express": true, "nestjs": true, "nextjs": true, "symfony": true, "doctrine": true, "koa": true, "fastify": true, "hapi": true}
 
 	refRe = regexp.MustCompile(`^(CVE-\d{4}-\d{4,}|GHSA(-[23456789cfghjmpqrvwx]{4}){3})$`)
 	idRe  = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)+$`)
@@ -150,12 +152,16 @@ func checkText(t *testing.T, r Rule) {
 }
 
 // checkArgs: each [[args]] entry says something, names only the rule's own sinks,
-// and no sink gets two entries; arg 0 (the receiver) needs a method sink.
+// and a sink with several entries has an arg in each further one; arg 0 (the
+// receiver) needs a method sink.
 func checkArgs(t *testing.T, r Rule) {
 	covered := map[string]bool{}
 	for i, a := range r.Args {
 		if a.Arg == nil && len(a.When) == 0 && len(a.Unless) == 0 && !a.Whole && !a.Leading && len(a.Context) == 0 && !a.Literal && a.Key == "" && !a.Keys && len(a.Receiver) == 0 && len(a.NotReceiver) == 0 {
 			t.Errorf("%s: args %d sets none of arg, when, unless, whole, leading, context, literal, key, keys, receiver, not_receiver", r.File, i)
+		}
+		if a.UnlessAt != "" && (a.UnlessAt != "start" && a.UnlessAt != "top" || len(a.Unless) == 0) {
+			t.Errorf("%s: args %d: unless_at must be start or top, with unless", r.File, i)
 		}
 		if (a.MinLen != 0 || len(a.Exclude) > 0) && !a.Literal {
 			t.Errorf("%s: args %d: min_len and exclude need literal", r.File, i)
@@ -185,8 +191,8 @@ func checkArgs(t *testing.T, r Rule) {
 			if !slices.Contains(r.Sinks, s) {
 				t.Errorf("%s: args %d: %q is not one of the sinks", r.File, i, s)
 			}
-			if covered[s] {
-				t.Errorf("%s: args %d: sink %q already has conditions", r.File, i, s)
+			if covered[s] && a.Arg == nil {
+				t.Errorf("%s: args %d: sink %q has another block; each further block must name its arg", r.File, i, s)
 			}
 			covered[s] = true
 			if len(a.Receiver) > 0 && !strings.HasPrefix(s, ".") && !strings.HasPrefix(s, "->") {

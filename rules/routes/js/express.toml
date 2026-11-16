@@ -1,7 +1,7 @@
 [[route]]
 id = "express-handler"
 lang = "js"
-applies = ["req.query", "req.body", "req.params", "req.headers", "req.cookies", "req.file", "req.files"]
+applies = ["req.query", "req.body", "req.params", "req.headers", "req.cookies", "req.file", "req.files", "ctx.query", "ctx.params", "ctx.headers", "ctx.request.body", "ctx.request.query", "ctx.request.headers", "ctx.request.files"]
 framework = "express"
 title = "A route handler's request carries query, params, body, headers and cookies, whatever the parameter is called"
 register = ["*.get", "*.post", "*.put", "*.patch", "*.delete", "*.all", "*.use"]
@@ -9,14 +9,17 @@ handler = -1
 path = true
 params = [1]
 members = ["query", "params", "body", "headers", "cookies"]
+# Koa's router registers the same way, its handler taking ctx: ctx.body is the
+# response, the request's body is ctx.request.body.
+named_members = { ctx = ["query", "params", "headers", "cookies", "request.body", "request.query", "request.headers", "request.files"] }
 refs = ["https://expressjs.com/en/4x/api.html#req"]
 
 [[route.samples]]
 kind = "vulnerable"
 code = '''
 const { exec } = require('child_process');
-app.get('/ping', function (request, response) {
-  exec('ping -c 1 ' + request.query.host, (e, out) => response.send(out));
+app.get('/ping', function (rq, rs) {
+  exec('ping -c 1 ' + rq.query.host, (e, out) => rs.send(out));
 });
 '''
 
@@ -26,5 +29,27 @@ code = '''
 const { execFile } = require('child_process');
 app.get('/ping', function (request, response) {
   execFile('ping', ['-c', '1', request.query.host], (e, out) => response.send(out));
+});
+'''
+
+[[route.samples]]
+kind = "vulnerable"
+note = "Koa: the request's body is ctx.request.body"
+code = '''
+const { exec } = require('child_process');
+router.post('/unpack', async (ctx) => {
+  exec('tar xf ' + ctx.request.files.archive.path);
+  ctx.status = 204;
+});
+'''
+
+[[route.samples]]
+kind = "safe"
+note = "Koa: ctx.body is the response, here what the next middleware wrote"
+code = '''
+const { exec } = require('child_process');
+router.get('/report', async (ctx, next) => {
+  await next();
+  exec('logger ' + ctx.body);
 });
 '''

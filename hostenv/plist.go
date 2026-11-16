@@ -148,7 +148,7 @@ type bplist struct {
 	done    map[uint64]any  // objects decoded: a shared object is built once, so
 	// a file of references to references cannot grow exponentially
 	elems  int    // array and dictionary entries decoded, at most maxPlistElems
-	budget uint64 // decoded string and data bytes left (spend)
+	budget uint64 // decoded bytes left (spend)
 }
 
 // maxPlistElems caps the array and dictionary entries of one binary plist:
@@ -156,12 +156,21 @@ type bplist struct {
 const maxPlistElems = 1 << 16
 
 // grow counts n more entries.
-func (p *bplist) grow(n uint64) error {
+// Bytes an array entry (an interface value and its share of the slice) and
+// a dictionary entry (key, value and map overhead) cost, spent from the budget.
+const (
+	plistArrayEntry = 24
+	plistDictEntry  = 48
+)
+
+// grow counts n more entries of per bytes each: at most maxPlistElems in
+// all, and spent from the budget, so references cannot multiply a small file.
+func (p *bplist) grow(n, per uint64) error {
 	if n > maxPlistElems || p.elems+int(n) > maxPlistElems {
 		return errors.New("plist: too many elements")
 	}
 	p.elems += int(n)
-	return nil
+	return p.spend(n * per)
 }
 
 func parseBplist(b []byte) (any, error) {
@@ -175,7 +184,7 @@ func parseBplist(b []byte) (any, error) {
 		tableAt > uint64(len(b)) || n*uint64(offSize) > uint64(len(b))-tableAt {
 		return nil, errors.New("plist: bad binary trailer")
 	}
-	p := &bplist{b: b, refSize: refSize, seen: map[uint64]bool{}, done: map[uint64]any{}, budget: 2*uint64(len(b)) + 64<<10}
+	p := &bplist{b: b, refSize: refSize, seen: map[uint64]bool{}, done: map[uint64]any{}, budget: 2*uint64(len(b)) + 256<<10}
 	for i := uint64(0); i < n; i++ {
 		at := tableAt + i*uint64(offSize)
 		p.offsets = append(p.offsets, beUint(b[at:at+uint64(offSize)]))
@@ -254,9 +263,10 @@ func (p *bplist) object(ref uint64, depth int) (any, error) {
 	return v, err
 }
 
-// spend charges n decoded bytes (strings and data) against a budget of
-// twice the file and 64 KiB: objects that overlap in the file cannot make
-// the decoded copies grow past it.
+// spend charges n decoded bytes (strings, data, and array and dictionary
+// entries) against a budget of twice the file and 256 KiB: objects that
+// overlap in the file, or references repeated, cannot make the decoded
+// copies grow past it.
 func (p *bplist) spend(n uint64) error {
 	if n > p.budget {
 		return errors.New("plist: decoded data too large")
@@ -340,7 +350,7 @@ func (p *bplist) decode(ref uint64, depth int) (any, error) {
 		if err := p.need(next, 2*n); err != nil {
 			return nil, err
 		}
-		if err := p.spend(4 * n); err != nil { // the uint16s and the string built from them
+		if err := p.spend(9 * n); err != nil { // the uint16s, the runes utf16.Decode makes and the string
 			return nil, err
 		}
 		u := make([]uint16, n)
@@ -349,7 +359,7 @@ func (p *bplist) decode(ref uint64, depth int) (any, error) {
 		}
 		return string(utf16.Decode(u)), nil
 	case 0xa, 0xc:
-		if err := p.grow(n); err != nil {
+		if err := p.grow(n, plistArrayEntry); err != nil {
 			return nil, err
 		}
 		rs, err := p.refs(next, n)
@@ -366,7 +376,7 @@ func (p *bplist) decode(ref uint64, depth int) (any, error) {
 		}
 		return a, nil
 	case 0xd:
-		if err := p.grow(n); err != nil {
+		if err := p.grow(n, plistDictEntry); err != nil {
 			return nil, err
 		}
 		ks, err := p.refs(next, n)

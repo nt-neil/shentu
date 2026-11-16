@@ -67,7 +67,7 @@
         <li data-at="1.6"><span>listening ports</span><b>✓</b></li>
         <li data-at="2.2"><span>processes</span><b>✓</b></li>
         <li data-at="2.55"><span>packages with known exploits</span><b>✓</b></li>
-        <li data-at="3.3"><span>shop / app code (70 rules)</span><b>✓</b></li>
+        <li data-at="3.3"><span>shop / app code (127 rules)</span><b>✓</b></li>
         <li data-at="3.8" class="flag"><span>shop / wp-content / uploads</span><b>web shell</b></li>
       </ul>
     </div>
@@ -92,9 +92,9 @@
 <section data-reveal class="tally" aria-labelledby="tally-title">
   <h2 id="tally-title">What it checks today</h2>
   <dl>
-    <div><dd>70</dd><dt>rules in the code audit</dt></div>
-    <div><dd>15<small>/ 97</small></dd><dt>published vulnerabilities caught in the main bench set</dt></div>
-    <div><dd>0</dd><dt>reports on the fixed versions</dt></div>
+    <div><dd>127</dd><dt>rules in the code audit</dt></div>
+    <div><dd>16<small>/ 97</small></dd><dt>published vulnerabilities caught in the main bench set</dt></div>
+    <div><dd>1</dd><dt>reports on the fixed versions</dt></div>
   </dl>
   <p><a href="bench.html">How they were measured</a></p>
 </section>
@@ -140,7 +140,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.88; --x: 17.8">
+    <li class="era-node" style="--old: 0.89; --x: 16.6">
       <a class="lamp" href="releases.html#v0.1.1" aria-describedby="rv-0.1.1">
         <i aria-hidden="true"></i><span class="ver">v0.1.1</span>
         <time datetime="2026-11-07">11-07</time>
@@ -152,7 +152,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.75; --x: 28.5">
+    <li class="era-node" style="--old: 0.78; --x: 26.1">
       <a class="lamp" href="releases.html#v0.2.0" aria-describedby="rv-0.2.0">
         <i aria-hidden="true"></i><span class="ver">v0.2.0</span>
         <time datetime="2026-11-07">11-07</time>
@@ -164,7 +164,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.62; --x: 39.2">
+    <li class="era-node" style="--old: 0.67; --x: 35.7">
       <a class="lamp" href="releases.html#v0.2.1" aria-describedby="rv-0.2.1">
         <i aria-hidden="true"></i><span class="ver">v0.2.1</span>
         <time datetime="2026-11-08">11-08</time>
@@ -176,7 +176,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.50; --x: 50.0">
+    <li class="era-node" style="--old: 0.56; --x: 45.2">
       <a class="lamp" href="releases.html#v0.2.2" aria-describedby="rv-0.2.2">
         <i aria-hidden="true"></i><span class="ver">v0.2.2</span>
         <time datetime="2026-11-08">11-08</time>
@@ -188,7 +188,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.38; --x: 60.8">
+    <li class="era-node" style="--old: 0.44; --x: 54.8">
       <a class="lamp" href="releases.html#v0.2.3" aria-describedby="rv-0.2.3">
         <i aria-hidden="true"></i><span class="ver">v0.2.3</span>
         <time datetime="2026-11-09">11-09</time>
@@ -200,7 +200,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.25; --x: 71.5">
+    <li class="era-node" style="--old: 0.33; --x: 64.3">
       <a class="lamp" href="releases.html#v0.2.4" aria-describedby="rv-0.2.4">
         <i aria-hidden="true"></i><span class="ver">v0.2.4</span>
         <time datetime="2026-11-09">11-09</time>
@@ -212,7 +212,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.12; --x: 82.2">
+    <li class="era-node" style="--old: 0.22; --x: 73.9">
       <a class="lamp" href="releases.html#v0.2.5" aria-describedby="rv-0.2.5">
         <i aria-hidden="true"></i><span class="ver">v0.2.5</span>
         <time datetime="2026-11-13">11-13</time>
@@ -224,21 +224,33 @@
       </div>
     </li>
   
-    <li class="era-node now" style="--old: 0.00; --x: 93.0">
+    <li class="era-node" style="--old: 0.11; --x: 83.4">
       <a class="lamp" href="releases.html#v0.3.0" aria-describedby="rv-0.3.0">
         <i aria-hidden="true"></i><span class="ver">v0.3.0</span>
         <time datetime="2026-11-13">11-13</time>
       </a>
       <p class="acc"><span><b>70</b> rules</span></p>
+      <div class="peek" id="rv-0.3.0">
+        <p class="word">19 changes</p>
+        <ul><li>Windows Server 2022 and 2025, verified on GitHub-hosted windows-2022/2025 runners (amd64; arm64 built too): a Windows collector reads the host through the Windows APIs only (registry, services, processes, sockets, accounts, scheduled tasks, the event log, WMI and the firewall), no PowerShell and no external commands.</li><li>Windows checks: autostart entries (Run keys, services, scheduled tasks, startup folders, WMI event subscriptions), RDP without NLA, SMB signing and SMBv1, insecure WinRM, firewall profiles, Defender state and exclusions, logon failures and cleared logs.</li><li>Missing Windows updates against Microsoft&#39;s monthly security releases (MSRC), with the CISA KEV list marking the exploited ones first.</li></ul>
+      </div>
+    </li>
+  
+    <li class="era-node now" style="--old: 0.00; --x: 93.0">
+      <a class="lamp" href="releases.html#v0.3.1" aria-describedby="rv-0.3.1">
+        <i aria-hidden="true"></i><span class="ver">v0.3.1</span>
+        <time datetime="2026-11-16">11-16</time>
+      </a>
+      <p class="acc"><span><b>127</b> rules</span><span><b>16</b>/97 caught</span></p>
       
     </li>
   
   </ol>
 </div>
 
-<div class="newest" id="rv-0.3.0">
-  <div class="newest-head"><p class="word">Restored</p><span class="ver">v0.3.0</span><time datetime="2026-11-13">2026-11-13</time></div>
-  <div class="grp grp-reach"><h4><i aria-hidden="true"></i>Sees further</h4><ul><li>Windows Server 2022 and 2025, verified on GitHub-hosted windows-2022/2025 runners (amd64; arm64 built too): a Windows collector reads the host through the Windows APIs only (registry, services, processes, sockets, accounts, scheduled tasks, the event log, WMI and the firewall), no PowerShell and no external commands.</li><li>Windows checks: autostart entries (Run keys, services, scheduled tasks, startup folders, WMI event subscriptions), RDP without NLA, SMB signing and SMBv1, insecure WinRM, firewall profiles, Defender state and exclusions, logon failures and cleared logs.</li><li>Missing Windows updates against Microsoft&#39;s monthly security releases (MSRC), with the CISA KEV list marking the exploited ones first.</li><li>IIS: web roots from <code>applicationHost.config</code>; the code audit reads ASP and ASP.NET pages and flags webshells and scripts in upload folders, UTF-16 pages included.</li><li>Two Windows services, <code>Shentu</code> (patrol) and <code>ShentuBot</code> (Telegram), installed with <code>shentu service install [--bot]</code> from <code>%ProgramFiles%\Shentu</code>; configuration and state in <code>%ProgramData%\Shentu</code>, open to SYSTEM and Administrators only.</li><li>The <code>ssh_logins</code>, <code>processes</code>, <code>accounts_audit</code> and <code>log_search</code> tools work on Windows (logon events, process list, local accounts, event logs).</li><li>Failed SSH logins are read from journald first: its ssh and sshd units are labelled by journald itself, so a local user cannot forge them. The text logs (<code>auth.log</code>, <code>secure</code>) are read when journald is missing, times out (60 s), or has no sshd entries; anyone on the host can write an sshd line to them with <code>logger</code>, so <code>auth_events</code> is then partial with the new reason <code>unverified_source</code>, and brute-force findings and patrol SSH alerts carry a note saying so. A journal that hides the system&#39;s entries from a non-root user is no longer reported as &#34;no failed logins&#34;.</li><li>Amazon Linux 2 and 2023: package vulnerabilities come from Amazon&#39;s ALAS advisories (the repositories&#39; <code>updateinfo</code>, checked against the sha256 in <code>repomd.xml</code> and cached), Amazon Linux 2&#39;s extras topics included. Amazon Linux 1, past its end of life, answers &#34;cannot tell&#34;. Recorded on an Amazon Linux 2023 VM; Amazon Linux 2 is covered by tests only.</li><li>Alpine Linux: packages from the apk database (OSV), OpenRC services and runlevels, <code>/etc/local.d</code>, busybox crond (<code>/etc/crontabs</code>, <code>/etc/periodic</code>) and <code>/etc/inittab</code> as persistence, and sshd lines of busybox syslog&#39;s auth facilities, marked unverified. Recorded on an Alpine 3.22 VM, as root and as a user.</li><li>SUSE: openSUSE Leap and Tumbleweed, and SLES, SLED and SLES for SAP (one OSV ecosystem per SLE 15 module; the ones OSV does not carry are listed as not queried). Leap is tested with a synthetic fixture and SLES on no real host yet.</li><li>The daily report says when a vulnerability check failed or covered only part, and a package list that parsed to nothing is &#34;cannot tell&#34; instead of &#34;no vulnerabilities&#34;.</li><li>macOS (new, read-only, never with sudo): platform, accounts (dscl), processes, listeners (netstat, or lsof when macOS hides sockets), the application firewall, SIP, Gatekeeper, FileVault, XProtect, launchd jobs and other persistence, sshd settings, and installed apps and Homebrew packages. The OS version is checked against Apple&#39;s software update catalog (gdmf.apple.com); packages answer &#34;cannot tell&#34;, since OSV has no Homebrew ecosystem. Tested only with a synthetic fixture (an invented host); not yet verified on a real Mac. Login items are not parsed (the Background Task Management store), so macOS persistence is always partial. periodic.conf and daily/weekly/monthly.local are listed line by line, every line but blanks and plain comments (a # line with no quote, $ or backtick: in a heredoc such a line is data and runs its commands); they are short. A stock /etc/defaults/periodic.conf is left out, and the files periodic_conf_files names are read too.</li><li>A code audit root written with a trailing slash (<code>/var/www/html/</code>) or as <code>/</code> is no longer skipped when an audit resumes inside it. Roots are now cleaned, so the first audit after the upgrade does not find the place the last one stopped and walks from the start once.</li><li>sshd settings: a <code>Match</code> block inside an included file (<code>Include sshd_config.d/*.conf</code>) no longer hides the settings that follow the Include in the main file (sshd restores the Match state after each Include), so e.g. a later <code>PermitRootLogin yes</code> is reported. An Include nested more than 4 deep, or past 256 config files, is listed as unread.</li><li>Building from source now needs Go 1.26 or later (was 1.23): the Windows collector uses golang.org/x/sys, the second dependency.</li><li>Windows is read-only: <code>block_ip</code> and <code>unblock_ip</code> are not supported there.</li><li>Windows Server 2019 is best effort: expected to work (the same Windows APIs, build 17763) but not verified on GitHub-hosted runners (they offer no 2019 image).</li><li><code>shentu setup</code> does not run on Windows yet; the configuration is written by hand.</li><li>The Windows binary is not code-signed and there is no MSI; SmartScreen or an antivirus may warn about it.</li></ul></div>
+<div class="newest" id="rv-0.3.1">
+  <div class="newest-head"><p class="word">New rules enshrined</p><span class="ver">v0.3.1</span><time datetime="2026-11-16">2026-11-16</time></div>
+  <div class="grp grp-reach"><h4><i aria-hidden="true"></i>Sees further</h4><ul><li>Code audit rules: 70 → 127 (PHP 25 → 51, Python 22 → 43, JavaScript and TypeScript 23 → 33). PHP: WordPress, Laravel, Symfony, Joomla, Drupal, CodeIgniter, Yii and Smarty sinks, sockets and HTTP clients, XML DTDs, template strings, crypto keys and shortcodes (#76). Python: keyword arguments (<code>args=</code>, <code>search_filter=</code>, <code>where=</code>), ldap3 filters and helper flows (#36). JavaScript and TypeScript: Koa and chained Express responses, BSON and launder sanitizers, Host-header redirects and SSRF; <code>.execute(</code> counts only on a receiver that may be a database client (#70).</li><li><code>js-ssrf-http-request</code> now reads the referrer and origin in Koa, hapi and Fetch API spelling (<code>ctx.request.header.referer</code>, <code>request.headers.referer</code>, <code>request.headers.get(&#39;x-callback-url&#39;)</code>; not Host), which were missed. Input written into a prepared statement&#39;s text is reported once, by <code>php-sqli-prepare-query-text</code>, instead of also by <code>php-sqli-string-concat</code>. The benchmark numbers are unchanged.</li><li>Engine: <code>new URL(a, base)</code> takes its path and query from <code>a</code> when <code>a</code> starts with <code>/</code> or a scheme (#63); method calls on an object of a class in the same file are followed (#64); an anchored regex test fixing a value&#39;s start (<code>re.match(re.escape(base) + r&#39;/[a-z]&#39;, url)</code>) is a check for redirect and URL rules (#65); a helper returning a string constant is followed (#66); <code>markup</code> makes an output sink count input only after literal markup (#71); recursive cycles are followed until they settle and paid for once, so WordPress files whose calls were cut went from 48 to 4 (#72); <code>route_input = false</code> for the Host-header rules, and Koa&#39;s <code>ctx</code> in the Express model (#50).</li><li>Survey warns about Apache 2.4.55–2.4.70 with <code>mod_http2</code> loaded and <code>h2</code> or <code>h2c</code> in <code>Protocols</code> (CVE-2026-119618; upgrade to 2.4.71, or set <code>Protocols http/1.1</code> until then) (#54). When a file that could load <code>mod_http2</code> or turn on h2 cannot be read (no rights, a link not trusted), the check is listed as not checked instead of passed over; the warning says it can be ignored when the distribution has backported the fix.</li><li>Code audit: a resumed walk cut before its stored position keeps that position, and the position is stored by the root&#39;s path; vendor, node_modules and WordPress code folders count only below the site root; <code>wp-content/blogs.dir/*/files</code> and <code>/var/www/&lt;uploads|files&gt;</code> without a site&#39;s index are upload folders; <code>authorized_key_unparsed</code> lists the first 20 line numbers (#73).</li><li>The hourly and daily reports list SSH logins as not checked when the login logs could not be read in full (journald hiding the system&#39;s entries from a non-root user, <code>auth.log</code> or <code>secure</code> unreadable, a log cut short). Before, such a run said &#34;nothing new&#34; (#80). The reason given is what kept the logs from counting (on a quiet host: a journal with no sshd entry and no text auth log), and running as root is advised only when rights were missing; on macOS, which keeps sshd&#39;s events where Shentu does not read, the report says it has no sshd log source there.</li><li>Linux builds no longer send an EDNS(0) record with DNS queries, as glibc does not: some DNS servers, VMware&#39;s NAT DNS among them, answered such queries without the address, so every lookup (OSV, GitHub) failed with &#34;no such host&#34;. When a lookup still fails, the daily report&#39;s Not checked line says to check the host&#39;s DNS (#80).</li><li><code>block_ip</code> refuses an IP whose SSH login events come only from text logs anyone on the host can write to (<code>verified</code> false), or whose logins cannot be read; <code>override_unverified</code> goes ahead after the operator has checked them, from <code>shentu chat</code> only. From the Telegram bot it is always refused, at every confirm level. The check covers SSH login evidence only: a block based on other logs (syslog, nginx, an application log through <code>log_search</code>) is not checked and is the operator&#39;s to judge. On a host whose journald has no sshd entries (text logs only), <code>block_ip</code> refuses every IP with SSH login events, whatever the date of the lines; such a block cannot be made from Telegram, only on the server with <code>shentu chat</code> and <code>override_unverified</code>. <code>ssh_logins</code> looks back at most 720 hours, as far as the check (#80). A refusal for login events that may be forged names the text logs they are in.</li><li>macOS: binary plists count array and dictionary entries, and UTF-16 strings at 9 bytes a character, against the decoding limit; a program path ending in a space is kept as it is; a process named on two <code>ps</code> lines is marked <code>parse_error</code>; <code>periodic_conf_files</code> past 16 files are listed as not read (#80). CI runs <code>go vet</code> and <code>go test</code> on macOS 15 (#81); no macOS binary is published yet.</li><li>Tests build credential-shaped fake values at run time, so the tree has no secret-shaped literals (#77).</li><li>CVE-2021-23664 (<code>@isomorphic-git/cors-proxy</code>): <code>js-ssrf-http-request</code> still reports the fixed release. The proxy forwards <code>req.url</code> after an allow check the engine does not yet read as a sanitizer; reading such checks before a request is planned.</li><li>Scans take longer with the added rules, as each file is run through more rules: WordPress about 40–60% depending on the machine (on an Ubuntu VM the code audit went from 73.8 s to 120.0 s and the daily patrol from 100 s to 144 s, with the same findings and peak RSS), TypeScript projects about 43%. The fix at the root is planned after v0.3.1.</li><li><code>block_ip</code>&#39;s check covers SSH login evidence only (see above): a block based on other logs is the operator&#39;s to judge.</li><li><code>php-deserialization-phar-wrapper</code> still reports <code>filesize()</code> on an upload&#39;s temporary path in WordPress&#39;s REST attachments controller: the engine cannot yet tell an upload&#39;s <code>tmp_name</code> from its client-set <code>name</code>.</li><li><code>markup</code> does not follow markup put together in a variable first (<code>const h = &#39;&lt;p&gt;&#39; + x; ctx.body = h</code>).</li></ul></div><div class="grp grp-sharp"><h4><i aria-hidden="true"></i>Sees more precisely</h4><ul><li>The v0.2.5 known false positives are fixed in the engine: TypeORM repository calls in a file importing <code>typeorm</code> are no MongoDB queries, unless the file uses a MongoDB repository, driver or Mongoose (<code>unless_imports</code>, #59); <code>spawn()</code> and <code>execFile()</code> with <code>shell: true</code> are reported only when the command or its arguments carry input, not the options (several <code>[[args]]</code> blocks per sink, #62); a Server-Sent Events handler (<code>Content-Type: text/event-stream</code> set on every path) is no XSS (<code>unless_content_type</code>, #58; <code>unless_at</code>, #57); <code>-&gt;get_settings()</code> is Elementor widget input only in classes extending <code>\Elementor\Widget_Base</code> (#60); a placeholder list built by <code>array_map</code> with a callback returning a constant is no input (#61); <code>zipfile.ZipFile(request.files[...])</code> opens the upload&#39;s stream, not a path (<code>unless_subscript</code>, #67).</li><li>Benchmark against v0.3.0: published vulnerabilities 16 of 97 caught (was 15), 1 fixed-release false positive (was 0, see below); held-out cases 3 of 30 (was 2), no fixed-release false positive; TypeScript cases 1 of 18 with 1 fixed-release false positive (n8n), both unchanged.</li></ul></div>
 </div>
 
 

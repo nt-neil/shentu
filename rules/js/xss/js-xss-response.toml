@@ -5,17 +5,25 @@ cwe = "CWE-79"
 severity = "medium"
 tier = "info"
 title = "Request value sent back in an HTML response without escaping"
-frameworks = ["express"]
+frameworks = ["express", "nestjs", "nextjs", "koa", "fastify", "hapi"]
 # Headers by name in brackets (user-agent) and the referrer: req.headers.host is
 # the host-header rules' input
-sources = ["req.query", "req.params", "req.body", "req.cookies", "req.headers[", "req.headers.referer", "req.headers.referrer", "req.headers.origin"]
+sources = ["req.query", "req.params", "req.body", "req.cookies", "req.headers[", "req.headers.referer", "req.headers.referrer", "req.headers.origin", "@Query(", "@Body(", "@Param(", "@Headers(", "^request.nextUrl", "^req.nextUrl", "^searchParams", "^request.json(", "^req.json(", "^request.text(", "^req.text(", "^request.formData(", "^req.formData(", "^formData.get(", "req.get(", "req.header(", "^headers().get(", "^cookies().get(", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload", "ctx.params", "request.params", "ctx.headers[", "ctx.cookies.get(", "request.headers[", "ctx.request.header[", "ctx.request.headers[", "ctx.get("]
+# Not Koa's ctx.body =: a body whose HTML context is not known (a variable, a
+# call's result) is almost always a data object sent as JSON. Koa HTML waits for
+# a context option that counts only where the HTML before the value is known.
 sinks = ["res.send(", "res.write(", "res.end("]
+# a header read by its name: req.get() and req.get(42) read no header
+source_args = [{ sources = ["req.get(", "req.header(", "ctx.get("], arg = 1, values = ["*"] }]
 sanitizers = ["escapeHtml(", "escape(", "he.encode(", "he.escape(", "validator.escape(", "_.escape(", "DOMPurify.sanitize(", "sanitizeHtml(", "xss(", "encodeURIComponent("]
 fix = "Render with a template engine that escapes by default (res.render), send JSON with res.json(), or escape each value (escape-html, he.encode) before putting it into HTML."
 refs = ["CVE-2013-7370"]
 
 [[args]]
 context = ["html", "attr"]
+# a Server-Sent Events stream (Content-Type text/event-stream set on every path before the write)
+# is read by EventSource as text, not rendered as a page
+unless_content_type = ["text/event-stream"]
 
 [[samples]]
 kind = "vulnerable"
@@ -54,6 +62,84 @@ app.get("/item", (req, res) => {
 '''
 
 [[samples]]
+kind = "safe"
+note = "Server-Sent Events: the handler sets text/event-stream, and EventSource reads each line as text"
+code = '''
+app.get("/events", (req, res) => {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.write(`event: search\n`);
+  res.write(`data: ${JSON.stringify({ q: req.query.q })}\n\n`);
+  res.write("data: " + req.query.q + "\n\n");
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "a data: line without a text/event-stream Content-Type is sent as HTML"
+code = '''
+app.get("/events", (req, res) => {
+  res.send("data: " + req.query.q + "\n\n");
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "the stream's Content-Type is set in one branch only; the other sends HTML"
+code = '''
+app.get("/feed", (req, res) => {
+  if (req.query.stream) {
+    res.writeHead(200, { "Content-Type": "text/event-stream" });
+  }
+  res.write("<p>" + req.query.q + "</p>");
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+dialect = "ts"
+note = "NestJS: a query value written into HTML"
+code = '''
+@Controller("search")
+export class SearchController {
+  @Get()
+  page(@Query("q") q: string, @Res() res: Response) {
+    res.send("<h1>Results for " + q + "</h1>");
+  }
+}
+'''
+
+[[samples]]
+kind = "safe"
+dialect = "ts"
+code = '''
+@Controller("search")
+export class SearchController {
+  @Get()
+  page(@Query("q") q: string, @Res() res: Response) {
+    res.send("<h1>Results for " + escapeHtml(q) + "</h1>");
+  }
+}
+'''
+
+[[samples]]
+kind = "safe"
+note = "as the fix says: the value is escaped before it goes into the HTML"
+code = '''
+router.get("/hello", async (ctx) => {
+  ctx.response.body = "<h1>Hello " + escapeHtml(String(ctx.query.who)) + "</h1>";
+});
+'''
+
+[[samples]]
+kind = "safe"
+note = "Koa: an object body is sent as JSON"
+code = '''
+router.get("/hello", async (ctx) => {
+  ctx.body = { greeting: "Hello " + ctx.query.who };
+});
+'''
+
+[[samples]]
 kind = "vulnerable"
 note = "the words data: and event: inside an HTML page do not make it a stream"
 code = '''
@@ -78,5 +164,23 @@ code = '''
 app.get("/hello", (req, res) => {
   const stream = req.accepts("text/event-stream");
   res.send(stream ? "data: ready\n\n" : "<h1>Hello " + req.query.name + "</h1>");
+});
+'''
+
+[[samples]]
+kind = "safe"
+note = "no header name: req.get() reads no header"
+code = '''
+app.use((req, res) => {
+  res.end(req.get());
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "a header read by its name"
+code = '''
+app.use((req, res) => {
+  res.end('<p>From ' + req.get('Referer') + '</p>');
 });
 '''

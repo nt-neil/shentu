@@ -249,3 +249,237 @@ func (a *analysis) raisingCheckStmt(st state, t []Token) {
 		}
 	}
 }
+
+// regexPrefix recognises, for a rule whose sinks need a fixed start (leading:
+// a redirect, a request's URL), a regular-expression test that fixes how the
+// value starts:
+//
+//	re.match(re.escape(BASE) + r'/[a-z][\w/-]*', url)   re.fullmatch(r'/[a-z]...', url)
+//	/^\/[a-z]/.test(url)   preg_match('/^' . preg_quote($base, '/') . '\/[a-z]/', $url)
+//
+// The pattern is anchored at the start (^, \A, or re.match), then a fixed
+// prefix of literal text and escaped values that carry no input
+// (re.escape(x), preg_quote(x)), ending in "/", then a character class that
+// holds neither "/" nor "\" and is not optional: the value begins with the
+// prefix, a "/" and a character that cannot make it "//" or "/\". What
+// follows does not matter. Without the anchor, with input in the prefix, with
+// .* first or an optional class, it is no check. It counts, as every guard,
+// only where the test is a condition or what a function returns.
+func (a *analysis) regexPrefix(st state, atom []Token) ([]keyRef, bool) {
+	if !a.r.leading {
+		return nil, false
+	}
+	n := len(atom)
+	var pat, subject []Token
+	anchored, php := false, false
+	switch {
+	case a.py && n > 5 && atom[0].word("re") && atom[1].op(".") && atom[3].op("(") && closeOf(atom, 3) == n-1:
+		switch atom[2].Text {
+		case "match", "fullmatch":
+			anchored = true
+		case "search":
+		default:
+			return nil, false
+		}
+		args := splitTop(atom[4:n-1], isComma)
+		if len(args) == 3 && len(args[2]) == 0 {
+			args = args[:2] // re.match(p, url,): a trailing comma
+		}
+		if len(args) != 2 {
+			return nil, false // flags (re.M makes ^ match after each newline): not read
+		}
+		pat, subject = args[0], args[1]
+	case a.php && n > 3 && atom[0].word("preg_match") && atom[1].op("(") && closeOf(atom, 1) == n-1:
+		args := splitTop(atom[2:n-1], isComma)
+		if len(args) < 2 {
+			return nil, false
+		}
+		pat, subject, php = args[0], args[1], true
+	case a.js && n > 4 && atom[0].Kind == Str && atom[0].Flags&FlagRegex != 0 && atom[0].Flags&(FlagMultiline|FlagOpen) == 0 &&
+		atom[1].op(".") && atom[2].word("test") && atom[3].op("(") && closeOf(atom, 3) == n-1:
+		pat, subject = atom[:1], atom[4:n-1]
+	default:
+		return nil, false
+	}
+	if _, _, isPath := a.pathKey(subject); !isPath {
+		return nil, false
+	}
+	re, ok := a.fixedPattern(st, pat)
+	if !ok {
+		return nil, false
+	}
+	if php {
+		body, flags, good := phpDelimited(re)
+		if !good || strings.ContainsAny(flags, "mx") {
+			return nil, false
+		}
+		re = body
+	}
+	switch {
+	case strings.HasPrefix(re, "^"):
+		re, anchored = re[1:], true
+	case !a.js && strings.HasPrefix(re, `\A`): // JavaScript has no \A
+		re, anchored = re[2:], true
+	}
+	if !anchored || topAlternation(re) {
+		return nil, false // a|b: either side may match
+	}
+	// the fixed prefix: literal characters, escaped ones (\/ \.), escaped values
+	// (\x00: a setting's text, taken not to end in "/", as taguette's base path)
+	i, last, prev := 0, byte(0), byte(0)
+	for i < len(re) {
+		c := re[i]
+		switch {
+		case c == 0:
+			prev, last, i = last, 0, i+1
+		case c == '\\' && i+1 < len(re) && !isIdentChar(re[i+1]):
+			prev, last, i = last, re[i+1], i+2
+		case c == '\\' || strings.IndexByte(".[]()*+?{}|^$", c) >= 0:
+			goto prefixEnd
+		default:
+			prev, last, i = last, c, i+1
+		}
+		if i < len(re) && strings.IndexByte("*+?{", re[i]) >= 0 {
+			return nil, false // a quantifier on the prefix: not fixed
+		}
+	}
+prefixEnd:
+	if i == 0 || last != '/' || prev == '/' || prev == '\\' || i >= len(re) || re[i] != '[' {
+		return nil, false // not ending in one "/" ("//" is another host)
+	}
+	end, negated, good := regexClass(re, i)
+	if !good || negated || classHolds(re[i+1:end-1], '/', '\\') {
+		return nil, false
+	}
+	if optionalAt(re, end) {
+		return nil, false // the class may be absent: "//" again
+	}
+	return a.keysOf(subject), true
+}
+
+// topAlternation reports whether re has a "|" outside every group and class.
+func topAlternation(re string) bool {
+	depth := 0
+	for i := 0; i < len(re); i++ {
+		switch c := re[i]; {
+		case c == '\\':
+			i++
+		case c == '[':
+			end := skipClass(re, i)
+			if end < 0 {
+				return true // not closed: take the worst
+			}
+			i = end - 1
+		case c == '(':
+			depth++
+		case c == ')':
+			depth--
+		case c == '|' && depth <= 0:
+			return true
+		}
+	}
+	return false
+}
+
+// skipClass returns the index after the class starting at re[i] ("["),
+// whatever it holds (an escaped "]" is part of it); -1 if open, or if a "]"
+// comes first: Python and PHP read it as a character, JavaScript as the end
+// of an empty class ([] and [^]), so the reading is not taken.
+func skipClass(re string, i int) int {
+	j := i + 1
+	if j < len(re) && re[j] == '^' {
+		j++
+	}
+	if j < len(re) && re[j] == ']' {
+		return -1
+	}
+	for ; j < len(re); j++ {
+		switch re[j] {
+		case '\\':
+			j++
+		case ']':
+			return j + 1
+		}
+	}
+	return -1
+}
+
+// classHolds reports whether a character class body (between [ and ]) may
+// match one of cs: listed, inside a range (!-z holds "/"), or through an
+// escape (\W, \S, \/ are not read: taken to hold them).
+func classHolds(body string, cs ...byte) bool {
+	for i := 0; i < len(body); i++ {
+		c := body[i]
+		if c == '\\' {
+			return true
+		}
+		if i+2 < len(body) && body[i+1] == '-' {
+			lo, hi := c, body[i+2]
+			for _, x := range cs {
+				if lo <= x && x <= hi {
+					return true
+				}
+			}
+			i += 2
+			continue
+		}
+		for _, x := range cs {
+			if c == x {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// optionalAt reports whether the quantifier at i (after a class) allows no
+// occurrence: *, ?, {0...}, {,n}.
+func optionalAt(re string, i int) bool {
+	if i >= len(re) {
+		return false
+	}
+	switch re[i] {
+	case '*', '?':
+		return true
+	case '{':
+		j := i + 1
+		for j < len(re) && re[j] >= '0' && re[j] <= '9' {
+			j++
+		}
+		min := re[i+1 : j]
+		return min == "" || strings.Trim(min, "0") == ""
+	}
+	return false
+}
+
+// fixedPattern reads a pattern written as literal strings and escaped values
+// joined (+, or . in PHP): the text, with \x00 for each escaped value; false
+// when a part is anything else or an escaped value carries input.
+func (a *analysis) fixedPattern(st state, t []Token) (string, bool) {
+	join := "+"
+	if a.php {
+		join = "."
+	}
+	var b strings.Builder
+	for _, part := range splitTop(stripParens(t), isOp(join)) {
+		part = stripParens(part)
+		switch {
+		case len(part) == 1 && part[0].Kind == Str && len(part[0].Parts) == 0:
+			b.WriteString(part[0].Text)
+		case a.py && len(part) > 5 && part[0].word("re") && part[1].op(".") && part[2].word("escape") && part[3].op("(") && closeOf(part, 3) == len(part)-1,
+			a.php && len(part) > 3 && part[0].word("preg_quote") && part[1].op("(") && closeOf(part, 1) == len(part)-1:
+			open := 3
+			if a.php {
+				open = 1
+			}
+			args := splitTop(inside(part, open, len(part)-1), isComma)
+			if len(args) == 0 || a.expr(st, args[0], false).taint {
+				return "", false // the request's own text as the prefix
+			}
+			b.WriteByte(0)
+		default:
+			return "", false
+		}
+	}
+	return b.String(), b.Len() > 0
+}

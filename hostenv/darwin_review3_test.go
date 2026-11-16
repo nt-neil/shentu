@@ -2,6 +2,7 @@ package hostenv
 
 import (
 	"context"
+	"fmt"
 	"io/fs"
 	"os"
 	"runtime"
@@ -511,8 +512,8 @@ func TestDarwinProcessesOddWhitespace(t *testing.T) {
 	src := fakeMac{cmds: map[string]string{key(macPsArgv): ps, key(macPsArgsArgv): args}}
 	o := DarwinCollector{}.Processes(context.Background(), src, time.Now())
 	if len(o.Value) != 2 || o.Value[0].Exe != "/Applications/Ex.app/Contents/MacOS/Ex" || o.Value[1].Cmdline != "" ||
-		o.Status != StatusPartial || !strings.Contains(o.Detail, "pid [11]") {
-		t.Errorf("a pid on two args lines: %s %q %+v", o.Status, o.Detail, o.Value)
+		o.Status != StatusPartial || o.Reason != ReasonParse || !strings.Contains(o.Detail, "pid [11]") {
+		t.Errorf("a pid on two args lines: %s %s %q %+v", o.Status, o.Reason, o.Detail, o.Value)
 	}
 	if fieldStart("a b", 5) != -1 || fieldStart("a\v b  c", 2) != 6 {
 		t.Error("fieldStart")
@@ -567,5 +568,139 @@ func TestBplistSharedOffsetAndBudget(t *testing.T) {
 	p := &bplist{b: b, budget: 100}
 	if err := p.spend(101); err == nil {
 		t.Error("budget not enforced")
+	}
+}
+
+// bplistOf builds a binary plist of objs (object 0 is the top), 2-byte
+// references and 4-byte offsets.
+func bplistOf(objs [][]byte) []byte {
+	b := []byte("bplist00")
+	var offs []int
+	for _, o := range objs {
+		offs = append(offs, len(b))
+		b = append(b, o...)
+	}
+	table := len(b)
+	for _, o := range offs {
+		b = append(b, byte(o>>24), byte(o>>16), byte(o>>8), byte(o))
+	}
+	tr := make([]byte, 32)
+	tr[6], tr[7] = 4, 2
+	put := func(at, v int) {
+		for k := 0; k < 8; k++ {
+			tr[at+7-k] = byte(v >> (8 * k))
+		}
+	}
+	put(8, len(objs))
+	put(24, table)
+	return append(b, tr...)
+}
+
+// bplistLen is the marker byte for type t and length n (with an int after it
+// when n is 15 or more).
+func bplistLen(t byte, n int) []byte {
+	if n < 15 {
+		return []byte{t<<4 | byte(n)}
+	}
+	return []byte{t<<4 | 0xf, 0x12, byte(n >> 24), byte(n >> 16), byte(n >> 8), byte(n)}
+}
+
+// Dictionary and array entries spend from the byte budget (twice the file
+// and 256 KiB), not only the element count: 8000 entries naming the same two
+// objects (a 32 KB file) would build about 384 KB of map.
+func TestBplistEntriesSpendBudget(t *testing.T) {
+	n := 8000
+	dict := bplistLen(0xd, n)
+	for i := 0; i < n; i++ {
+		dict = append(dict, 0, 1)
+	}
+	for i := 0; i < n; i++ {
+		dict = append(dict, 0, 2)
+	}
+	b := bplistOf([][]byte{dict, append(bplistLen(0x5, 1), 'k'), {0x10, 7}})
+	if _, err := ParsePlist(b); err == nil || !strings.Contains(err.Error(), "too large") {
+		t.Errorf("dictionary of %d entries in %d bytes: %v", n, len(b), err)
+	}
+	// A plain launchd-sized dictionary still parses.
+	small := bplistLen(0xd, 3)
+	small = append(small, 0, 1, 0, 2, 0, 3, 0, 4, 0, 4, 0, 4)
+	ok := bplistOf([][]byte{small, append(bplistLen(0x5, 5), "Label"...), append(bplistLen(0x5, 7), "Program"...),
+		append(bplistLen(0x5, 9), "RunAtLoad"...), {0x09}})
+	if v, err := ParsePlist(ok); err != nil || len(v.(map[string]any)) != 3 {
+		t.Errorf("small dictionary: %v %v", v, err)
+	}
+}
+
+// The budget's floor is 256 KiB over twice the file (review S): a 24 KB
+// dictionary of 6000 entries (288 KB of entries) parses, which a lower floor
+// would refuse, and one of 7000 (336 KB from 28 KB) does not.
+func TestBplistBudgetFloor(t *testing.T) {
+	dictOf := func(n int) []byte {
+		d := bplistLen(0xd, n)
+		for i := 0; i < n; i++ {
+			d = append(d, 0, 1)
+		}
+		for i := 0; i < n; i++ {
+			d = append(d, 0, 2)
+		}
+		return bplistOf([][]byte{d, append(bplistLen(0x5, 1), 'k'), {0x10, 7}})
+	}
+	if b := dictOf(6000); func() error { _, err := ParsePlist(b); return err }() != nil {
+		t.Errorf("6000 entries in %d bytes: refused under the 256 KiB floor", len(b))
+	}
+	if _, err := ParsePlist(dictOf(7000)); err == nil || !strings.Contains(err.Error(), "too large") {
+		t.Errorf("7000 entries: %v", err)
+	}
+}
+
+// A UTF-16 string spends 9 bytes per code unit (the uint16s, the runes and
+// the string built), which a file of mostly one long string exceeds.
+func TestBplistUTF16SpendsNine(t *testing.T) {
+	n := 60000
+	s := bplistLen(0x6, n)
+	for i := 0; i < n; i++ {
+		s = append(s, 0x4e, 0x2d) // 中
+	}
+	b := bplistOf([][]byte{s})
+	if _, err := ParsePlist(b); err == nil {
+		t.Errorf("UTF-16 string of %d units in %d bytes parsed within the budget", n, len(b))
+	}
+	short := bplistOf([][]byte{append(bplistLen(0x6, 2), 0x4e, 0x2d, 0x65, 0x87)})
+	if v, err := ParsePlist(short); err != nil || v != "中文" {
+		t.Errorf("short UTF-16: %q %v", v, err)
+	}
+}
+
+// A program path that ends in a space is kept as it is, so the file is found
+// (trimmed, "/private/tmp/x" does not exist and the process looked deleted).
+func TestDarwinProcessesCommTrailingSpace(t *testing.T) {
+	ps := "  20 1 501 alice 01:00 /private/tmp/x \n"
+	src := fakeMac{files: map[string]string{"/private/tmp/x ": "bin"}, cmds: map[string]string{key(macPsArgv): ps, key(macPsArgsArgv): "  20 /private/tmp/x \n"}}
+	o := DarwinCollector{}.Processes(context.Background(), src, time.Now())
+	if len(o.Value) != 1 || o.Value[0].Exe != "/private/tmp/x " || !o.Value[0].ExeExists || o.Status != StatusOK {
+		t.Errorf("%s %+v", o.Status, o.Value)
+	}
+}
+
+// periodic_conf_files naming more than maxPeriodicConf files in all: the
+// rest are not read, and the detail says how many and which.
+func TestDarwinPeriodicConfFilesCap(t *testing.T) {
+	var names []string
+	for i := 0; i < 20; i++ {
+		names = append(names, fmt.Sprintf("/etc/p%02d.conf", i))
+	}
+	files := map[string]string{"/etc/periodic.conf": "periodic_conf_files=\"" + strings.Join(names, " ") + "\"\n"}
+	for _, n := range names {
+		files[n] = "x=1\n"
+	}
+	o := DarwinCollector{}.persistence(fakeMacDirs{fakeMac: fakeMac{files: files}}, nil, OK([]Service(nil)), OK([]AuthorizedKeyFile(nil)))
+	// read: the defaults, periodic.conf, periodic.conf.local and the first 13 named
+	if !strings.Contains(o.Detail, "periodic_conf_files past 16 files (7 not read: /etc/p13.conf, /etc/p14.conf, /etc/p15.conf, …)") {
+		t.Errorf("%q", o.Detail)
+	}
+	for _, it := range o.Value {
+		if it.Location == "/etc/p13.conf" {
+			t.Errorf("read past the cap: %+v", it)
+		}
 	}
 }
