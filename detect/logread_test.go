@@ -37,8 +37,12 @@ func read(t *testing.T, src hostenv.Source, cur *Cursor, b *Budget) (Cursor, Rea
 		b = NewBudget(DefaultBudgetBytes, time.Minute)
 	}
 	var lines []string
-	trust := func(p string) (bool, hostenv.Reason) { return strings.HasSuffix(p, ".1"), "" }
-	c, r, err := ReadLog(src, "/logs/a.log", cur, b, trust, func(_ string, l []byte) { lines = append(lines, string(l)) })
+	rootUID = os.Getuid()
+	trust := func(p string) hostenv.TrustResult { // .1 files are trusted here, judged by their stat now
+		st, _ := hostenv.Stat(src, p)
+		return hostenv.TrustResult{Verified: strings.HasSuffix(p, ".1"), File: st}
+	}
+	c, r, err := ReadLog(src, "/logs/a.log", cur, b, ReadOpts{Trust: trust}, func(l Line) { lines = append(lines, string(l.Text)) })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -257,14 +261,14 @@ func TestReadLogRotatedNotFollowed(t *testing.T) {
 	write(t, filepath.Join(d, "b.log"), "", os.O_CREATE)
 	var got []string
 	bsrc := src
-	cb, _, err := ReadLog(bsrc, "/logs/b.log", nil, NewBudget(DefaultBudgetBytes, time.Minute), nil, func(_ string, l []byte) { got = append(got, string(l)) })
+	cb, _, err := ReadLog(bsrc, "/logs/b.log", nil, NewBudget(DefaultBudgetBytes, time.Minute), ReadOpts{}, func(l Line) { got = append(got, string(l.Text)) })
 	if err != nil || cb.HeadLen != 0 {
 		t.Fatalf("empty log: %v, %+v", err, cb)
 	}
 	os.Remove(filepath.Join(d, "b.log"))
 	write(t, filepath.Join(d, "b.log.old"), "planted\n", os.O_CREATE)
 	write(t, filepath.Join(d, "b.log"), "real\n", os.O_CREATE)
-	_, _, err = ReadLog(bsrc, "/logs/b.log", &cb, NewBudget(DefaultBudgetBytes, time.Minute), nil, func(_ string, l []byte) { got = append(got, string(l)) })
+	_, _, err = ReadLog(bsrc, "/logs/b.log", &cb, NewBudget(DefaultBudgetBytes, time.Minute), ReadOpts{}, func(l Line) { got = append(got, string(l.Text)) })
 	if err != nil || strings.Join(got, "|") != "real" {
 		t.Errorf("after an empty head: %v, lines %q; want only real", err, got)
 	}
@@ -302,4 +306,185 @@ func TestReadLogLongLineBudget(t *testing.T) {
 	}
 	_, _, lines := read(t, src, &c, nil)
 	eq(t, "next run", lines, []string{"after"})
+}
+
+// N-1: a log judged verified is read as verified only while the file
+// opened is the one judged, still root's alone.
+func TestReadLogVerifiedFileChecked(t *testing.T) {
+	rootUID = os.Getuid()
+	src, d := logDir(t)
+	a := filepath.Join(d, "a.log")
+	write(t, a, "one\n", os.O_CREATE)
+	st, _ := hostenv.Stat(src, "/logs/a.log")
+	want := hostenv.LogSource{Path: "/logs/a.log", Verified: true, FileID: st.ID}
+	read := func(w hostenv.LogSource) (ReadResult, []bool) {
+		var v []bool
+		_, r, err := ReadLog(src, "/logs/a.log", nil, NewBudget(DefaultBudgetBytes, time.Minute), ReadOpts{Want: &w}, func(l Line) { v = append(v, l.Verified) })
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r, v
+	}
+	if r, v := read(want); !r.Verified || len(v) != 1 || !v[0] {
+		t.Errorf("the file judged: %+v %v", r, v)
+	}
+	os.Rename(a, a+".old") // swapped after the judgment
+	write(t, a, "forged\n", os.O_CREATE)
+	if r, v := read(want); r.Verified || len(v) != 1 || v[0] {
+		t.Errorf("a swapped file: %+v %v", r, v)
+	}
+	os.Chmod(a, 0o666)
+	st, _ = hostenv.Stat(src, "/logs/a.log")
+	want.FileID = st.ID
+	if r, _ := read(want); r.Verified || r.Reason != hostenv.ReasonUntrusted {
+		t.Errorf("writable by others since: %+v", r)
+	}
+}
+
+// N-6: a first run whose budget is gone stops at the end of a whole line,
+// and the next run reads the first new line.
+func TestReadLogFirstRunNoBudget(t *testing.T) {
+	src, d := logDir(t)
+	a := filepath.Join(d, "a.log")
+	write(t, a, "old\n", os.O_CREATE)
+	c, _, lines := read(t, src, nil, NewBudget(0, time.Minute))
+	eq(t, "no budget", lines, nil)
+	if c.MidLine || c.Offset != 4 {
+		t.Fatalf("cursor %+v: want at the end, not mid-line", c)
+	}
+	write(t, a, "new\n", os.O_APPEND)
+	_, _, lines = read(t, src, &c, nil)
+	eq(t, "next run", lines, []string{"new"})
+}
+
+// N-7: a rotated file not read to its end (out of budget) is said lost.
+func TestReadLogRotatedBudget(t *testing.T) {
+	src, d := logDir(t)
+	a := filepath.Join(d, "a.log")
+	write(t, a, "one\n", os.O_CREATE)
+	c, _, _ := read(t, src, nil, nil)
+	write(t, a, "two\nthree\nfour\n", os.O_APPEND)
+	os.Rename(a, a+".1")
+	write(t, a, "new\n", os.O_CREATE)
+	_, r, lines := read(t, src, &c, NewBudget(4, time.Minute))
+	eq(t, "rotated, out of budget", lines, []string{"two"})
+	if !strings.Contains(strings.Join(r.Partial, ","), ReadRotatedGap) {
+		t.Errorf("partial %v, want rotated_gap", r.Partial)
+	}
+}
+
+// N-8: a corrupt .gz is an error, not an end.
+func TestReadLogCorruptGzip(t *testing.T) {
+	src, d := logDir(t)
+	a := filepath.Join(d, "a.log")
+	write(t, a, "one\n", os.O_CREATE)
+	c, _, _ := read(t, src, nil, nil)
+	var buf strings.Builder
+	z := gzip.NewWriter(&buf)
+	z.Write([]byte("one\n" + strings.Repeat("line\n", 5000)))
+	z.Close()
+	gz := []byte(buf.String())
+	os.WriteFile(a+".1.gz", gz[:len(gz)/2], 0o640) // cut in half
+	os.Remove(a)
+	write(t, a, "new\n", os.O_CREATE)
+	_, r, lines := read(t, src, &c, nil)
+	p := strings.Join(r.Partial, ",")
+	if !strings.Contains(p, ReadIOError) || !strings.Contains(p, ReadRotatedGap) || len(lines) == 0 || lines[len(lines)-1] != "new" {
+		t.Errorf("partial %v, %d lines (last %q)", r.Partial, len(lines), lines[len(lines)-1])
+	}
+}
+
+// N-11: with dozens of dated rotations the newest is looked at, whatever
+// its name sorts as.
+func TestReadLogManyRotations(t *testing.T) {
+	src, d := logDir(t)
+	a := filepath.Join(d, "a.log")
+	write(t, a, "one\n", os.O_CREATE)
+	c, _, _ := read(t, src, nil, nil)
+	old := time.Now().Add(-48 * time.Hour)
+	for i := 0; i < 40; i++ {
+		n := filepath.Join(d, "a.log-2025"+strings.Repeat("0", 1)+string(rune('a'+i%26))+string(rune('a'+i/26)))
+		write(t, n, "old\n", os.O_CREATE)
+		os.Chtimes(n, old, old)
+	}
+	write(t, a, "two\n", os.O_APPEND)
+	os.Rename(a, a+"-20991231") // dateext: the newest sorts last by name, past the 32nd of the 40 above
+	write(t, a, "new\n", os.O_CREATE)
+	_, r, lines := read(t, src, &c, nil)
+	eq(t, "many rotations", lines, []string{"two", "new"})
+	if len(r.Partial) != 0 {
+		t.Errorf("partial %v", r.Partial)
+	}
+}
+
+// A non-gzip rotated file shorter than the cursor is not the one read: gap.
+func TestReadLogRotatedShorter(t *testing.T) {
+	src, d := logDir(t)
+	a := filepath.Join(d, "a.log")
+	write(t, a, strings.Repeat("x", 300)+"\n", os.O_CREATE)
+	c, _, _ := read(t, src, nil, nil)
+	write(t, a+".1", strings.Repeat("x", 300)[:280], os.O_CREATE) // same head, shorter than the cursor
+	os.Remove(a)
+	write(t, a, "new\n", os.O_CREATE)
+	_, r, lines := read(t, src, &c, nil)
+	eq(t, "shorter rotated", lines, []string{"new"})
+	if strings.Join(r.Partial, ",") != ReadRotatedGap {
+		t.Errorf("partial %v, want rotated_gap", r.Partial)
+	}
+}
+
+// Empty when last read, copied and truncated since: the lost lines cannot
+// be told apart, and the read says so.
+func TestReadLogEmptyThenCopyTruncate(t *testing.T) {
+	src, d := logDir(t)
+	a := filepath.Join(d, "a.log")
+	write(t, a, "", os.O_CREATE)
+	c, _, _ := read(t, src, nil, nil)
+	time.Sleep(10 * time.Millisecond)
+	write(t, a+".1", "lost\n", os.O_CREATE) // what the copy took
+	write(t, a, "", os.O_TRUNC)
+	write(t, a, "new\n", os.O_APPEND)
+	_, r, lines := read(t, src, &c, nil)
+	eq(t, "after copytruncate", lines, []string{"new"})
+	if strings.Join(r.Partial, ",") != ReadRotatedGap {
+		t.Errorf("partial %v, want rotated_gap", r.Partial)
+	}
+}
+
+// N-9 and the cursor file: invalid entries are dropped and said, a file
+// writable by others or a link is not believed, and saving does not follow
+// a link left at a temporary name.
+func TestCursorsInvalidAndUnsafe(t *testing.T) {
+	d := t.TempDir()
+	p := filepath.Join(d, CursorFileName)
+	os.WriteFile(p, []byte(`{"version":1,"sources":{"/a":{"offset":5,"head_len":-1},"/b":{"offset":-3},"/c":{"offset":1,"head_len":2,"head":"zz"},"/ok":{"offset":7}}}`), 0o600)
+	c, err := LoadCursors(d)
+	if err != nil || len(c.Sources) != 1 || c.Sources["/ok"].Offset != 7 || len(c.Dropped) != 3 {
+		t.Fatalf("%v, %+v", err, c)
+	}
+	if _, _, rerr := ReadLog(&hostenv.Live{}, "/nonexistent", nil, NewBudget(1, time.Minute), ReadOpts{}, func(Line) {}); rerr == nil {
+		t.Error("reading a missing log did not fail")
+	}
+	os.Chmod(p, 0o666)
+	if _, err := LoadCursors(d); err == nil {
+		t.Error("a cursor file others may write was believed")
+	}
+	os.Remove(p)
+	other := filepath.Join(t.TempDir(), "elsewhere")
+	os.WriteFile(other, []byte(`{"version":1,"sources":{}}`), 0o600)
+	os.Symlink(other, p)
+	if _, err := LoadCursors(d); err == nil {
+		t.Error("a linked cursor file was believed")
+	}
+	os.Remove(p)
+	os.Symlink(other, filepath.Join(d, CursorFileName+".tmp")) // the old fixed temporary name
+	if err := (&Cursors{Sources: map[string]Cursor{"/x": {Offset: 1}}}).Save(d); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(other); string(b) != `{"version":1,"sources":{}}` {
+		t.Errorf("Save wrote through a link: %s", b)
+	}
+	if c, err := LoadCursors(d); err != nil || c.Sources["/x"].Offset != 1 {
+		t.Errorf("saved: %v %+v", err, c)
+	}
 }

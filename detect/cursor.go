@@ -1,6 +1,7 @@
 package detect
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -44,17 +45,52 @@ type Cursor struct {
 type Cursors struct {
 	Version int               `json:"version"`
 	Sources map[string]Cursor `json:"sources"`
+	// Dropped: the entries the file held that were not valid cursors (a
+	// negative offset, a head that is no hash), each "key (why)": read as
+	// a first run, and to be reported.
+	Dropped []string `json:"-"`
+}
+
+// valid says why a cursor read from the file cannot be used, "" if it can.
+func (c Cursor) valid() string {
+	switch {
+	case c.Offset < 0 || c.Size < 0:
+		return "negative offset or size"
+	case c.HeadLen < 0 || c.HeadLen > headLen:
+		return "head_len out of 0..256"
+	case c.HeadLen > 0 && !isSHA256Hex(c.Head):
+		return "head is not a SHA-256"
+	}
+	return ""
+}
+
+func isSHA256Hex(s string) bool {
+	if len(s) != 64 {
+		return false
+	}
+	_, err := hex.DecodeString(s)
+	return err == nil
 }
 
 // LoadCursors reads dir's cursor file. None yet: empty, no error. One that
-// cannot be read or parsed: empty, and the error, so that the caller says
-// every log is read as on a first run rather than as if nothing changed.
+// cannot be read or parsed, is a link, or that someone other than this
+// process's user owns or may write: empty, and the error, so that the
+// caller says every log is read as on a first run rather than as if
+// nothing changed. Entries that are not valid are dropped (Dropped).
 func LoadCursors(dir string) (*Cursors, error) {
 	c := &Cursors{Version: 1, Sources: map[string]Cursor{}}
-	b, err := os.ReadFile(filepath.Join(dir, CursorFileName))
+	p := filepath.Join(dir, CursorFileName)
+	st, err := os.Lstat(p)
 	if errors.Is(err, fs.ErrNotExist) {
 		return c, nil
 	}
+	if err != nil {
+		return c, err
+	}
+	if why := ownedByUs(st); why != "" {
+		return c, fmt.Errorf("%s: %s", CursorFileName, why)
+	}
+	b, err := os.ReadFile(p)
 	if err != nil {
 		return c, err
 	}
@@ -66,12 +102,19 @@ func LoadCursors(dir string) (*Cursors, error) {
 		return c, fmt.Errorf("%s: version %d, want 1", CursorFileName, in.Version)
 	}
 	for k, v := range in.Sources {
+		if why := v.valid(); why != "" {
+			c.Dropped = append(c.Dropped, k+" ("+why+")")
+			continue
+		}
 		c.Sources[k] = v
 	}
+	sort.Strings(c.Dropped)
 	return c, nil
 }
 
-// Save writes the cursors to dir, keeping the MaxCursors most recently read.
+// Save writes the cursors to dir, keeping the MaxCursors most recently
+// read: to a new temporary file (created exclusively, never through a link
+// someone left there), synced, then renamed over the old one.
 func (c *Cursors) Save(dir string) error {
 	if len(c.Sources) > MaxCursors {
 		keys := make([]string, 0, len(c.Sources))
@@ -94,9 +137,21 @@ func (c *Cursors) Save(dir string) error {
 	if err != nil {
 		return err
 	}
-	tmp := filepath.Join(dir, CursorFileName+".tmp")
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+	f, err := os.CreateTemp(dir, CursorFileName+".*.tmp") // O_EXCL, 0600
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, filepath.Join(dir, CursorFileName))
+	tmp := f.Name()
+	_, werr := f.Write(b)
+	serr := f.Sync()
+	cerr := f.Close()
+	if err := errors.Join(werr, serr, cerr); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, filepath.Join(dir, CursorFileName)); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return nil
 }

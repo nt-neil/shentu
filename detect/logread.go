@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
+	"sort"
 	"strings"
 	"time"
 
@@ -20,16 +21,18 @@ const (
 	DefaultBudgetBytes = 256 << 20
 	DefaultBudgetTime  = 90 * time.Second
 	headLen            = 256
-	maxRotated         = 32 // rotated files looked at for the one the cursor was in
+	maxRotated         = 32   // rotated files looked at for the one the cursor was in, the newest first
+	maxRotatedNames    = 4096 // names gathered before choosing them
 )
 
 // Why a read is partial. The lines read are still good; what was not read
 // is said, never taken for a quiet log.
 const (
 	ReadFirstRun   = "first_run"   // no cursor: only the last budget's worth was read
-	ReadRotatedGap = "rotated_gap" // the file read last time is gone: what it got after the cursor is lost
+	ReadRotatedGap = "rotated_gap" // what the file read last time got after the cursor is lost: gone, unreadable, or not read to its end
 	ReadRewritten  = "rewritten"   // the same file with other content at its start: read again from the start (tampering?)
 	ReadTruncated  = "truncated"   // the run's budget ran out: the next run goes on from here
+	ReadIOError    = "io_error"    // a read failed before the end (a corrupt .gz, a disk error): what follows is not read
 )
 
 // Budget is what one run may read, across all its logs.
@@ -52,7 +55,11 @@ type ReadResult struct {
 	Bytes     int64         `json:"bytes"`
 	LongLines int           `json:"long_lines,omitempty"` // cut at MaxLine
 	Rotated   []RotatedFile `json:"rotated,omitempty"`    // rotated files the rest of the last read was found in
-	Partial   []string      `json:"partial,omitempty"`    // ReadFirstRun, ReadRotatedGap, ReadRewritten, ReadTruncated
+	Partial   []string      `json:"partial,omitempty"`    // ReadFirstRun, ReadRotatedGap, ReadRewritten, ReadTruncated, ReadIOError
+	// Verified: the log's own lines are trusted: ReadOpts.Want was verified
+	// and the file opened is still it, root's, writable by root alone.
+	Verified bool           `json:"verified"`
+	Reason   hostenv.Reason `json:"reason,omitempty"`
 }
 
 // RotatedFile is a rotated log lines were read from. It was found by a
@@ -73,23 +80,56 @@ func (r *ReadResult) partial(why string) {
 	r.Partial = append(r.Partial, why)
 }
 
-// LineFunc gets each line without its newline, valid only during the call,
-// and the file it came from: the log, or a rotated file (ReadResult.Rotated
-// says how far that one is to be trusted).
-type LineFunc func(from string, line []byte)
+// Line is one line read.
+type Line struct {
+	From     string // the log, or the rotated file it came from
+	Text     []byte // without its newline, valid only during the call
+	Cut      bool   // longer than MaxLine: Text is its start (parse it with ParseCut)
+	Verified bool   // the file it came from is trusted (ReadResult.Verified, RotatedFile.Verified)
+}
 
-// TrustFunc judges a rotated file found beside a log (hostenv.LogTrust with
-// the host's web accounts). Nil: every rotated file is unverified.
-type TrustFunc func(path string) (bool, hostenv.Reason)
+// LineFunc gets each line.
+type LineFunc func(Line)
+
+// TrustFunc judges a rotated file found beside a log: hostenv.JudgeLog with
+// the host's web accounts. Nil: every rotated file is unverified.
+type TrustFunc func(path string) hostenv.TrustResult
+
+// ReadOpts is what ReadLog is to check the files it opens against.
+type ReadOpts struct {
+	// Want is the log as WebLogs judged it; nil, or not verified: the log's
+	// lines are unverified.
+	Want  *hostenv.LogSource
+	Trust TrustFunc
+}
+
+// rootUID is who alone may write a verified log: root. (Tests, run as a
+// user, set their own.)
+var rootUID = 0
+
+// opened says whether the file opened is the one judged, and still only
+// root's to change: the judgment was on the path, and the path may have
+// been swapped since.
+func opened(st hostenv.FileStat, judgedID string) (bool, hostenv.Reason) {
+	switch {
+	case judgedID == "" || st.ID == "" || st.ID != judgedID:
+		return false, hostenv.ReasonUnverified // not the file judged, or not known to be
+	case !st.Mode.IsRegular():
+		return false, hostenv.ReasonNotRegular
+	case st.UID != rootUID || st.Mode.Perm()&0o022 != 0:
+		return false, hostenv.ReasonUntrusted
+	}
+	return true, ""
+}
 
 // ReadLog reads p's lines added since cur (nil: none, a first run), giving
 // each to fn, and returns the cursor to keep. When p is no longer the file
 // cur was in (renamed by logrotate, copied and truncated, compressed), the
 // rest of that file is read first from the rotated file holding it: .1,
-// -YYYYMMDD, .gz, opened without following a link and judged by trust. A
-// last line without its newline is left for the next run. On an error
-// opening p the old cursor is returned unchanged.
-func ReadLog(src hostenv.Source, p string, cur *Cursor, b *Budget, trust TrustFunc, fn LineFunc) (Cursor, ReadResult, error) {
+// -YYYYMMDD, .gz, the newest 32, opened without following a link and judged
+// on their own. A last line without its newline is left for the next run.
+// On an error opening p the old cursor is returned unchanged.
+func ReadLog(src hostenv.Source, p string, cur *Cursor, b *Budget, opts ReadOpts, fn LineFunc) (Cursor, ReadResult, error) {
 	var res ReadResult
 	f, err := hostenv.OpenLog(src, p)
 	if err != nil {
@@ -97,27 +137,45 @@ func ReadLog(src hostenv.Source, p string, cur *Cursor, b *Budget, trust TrustFu
 	}
 	defer f.Close()
 	st := f.Stat()
+	res.Reason = hostenv.ReasonUnverified
+	if opts.Want != nil && opts.Want.Verified {
+		res.Verified, res.Reason = opened(st, opts.Want.FileID)
+	} else if opts.Want != nil && opts.Want.Reason != "" {
+		res.Reason = opts.Want.Reason
+	}
 	head, err := readHead(f)
 	if err != nil {
 		return keep(cur), res, err
 	}
 	var start int64
-	skip := false // start is inside a line: skip to its end
 	switch {
 	case cur == nil:
 		res.partial(ReadFirstRun)
-		start = max(0, st.Size-b.left)
-		skip = start > 0
+		start = max(0, st.Size-max(b.left, 0))
 	case sameFile(cur, st, head):
-		start, skip = cur.Offset, cur.MidLine
+		start = cur.Offset
+		if cur.HeadLen == 0 && rotatedSince(src, p, cur.ReadAt) {
+			// Empty when last read, and a rotated file written since: what
+			// it got before the rotation (copytruncate) cannot be told apart.
+			res.partial(ReadRotatedGap)
+		}
 	default: // rotated, copied and truncated, or rewritten
-		if rf, ok := readRotated(src, p, cur, b, trust, &res, fn); ok {
+		if rf, ok := readRotated(src, p, cur, b, opts.Trust, &res, fn); ok {
 			res.Rotated = append(res.Rotated, rf)
 		} else if cur.ID != "" && cur.ID == st.ID && st.Size >= cur.Offset {
 			res.partial(ReadRewritten)
 		} else {
 			res.partial(ReadRotatedGap)
 		}
+	}
+	// Inside a line? Only when the byte before start is not a newline: a
+	// cursor at a line's end, or a first run with nothing left to read,
+	// skips nothing.
+	skip := false
+	if cur != nil && sameFile(cur, st, head) {
+		skip = cur.MidLine
+	} else if cur == nil && start > 0 {
+		skip = !newlineBefore(f, start)
 	}
 	if _, err := f.Seek(start, io.SeekStart); err != nil {
 		return keep(cur), res, err
@@ -126,14 +184,21 @@ func ReadLog(src hostenv.Source, p string, cur *Cursor, b *Budget, trust TrustFu
 	mid := false
 	end := start
 	if skip {
-		n, ok := skipLine(br, b)
+		n, ok, serr := skipLine(br, b)
 		end += n
 		mid = !ok
+		if serr != nil {
+			res.partial(ReadIOError)
+		} else if mid && b.spent() {
+			res.partial(ReadTruncated)
+		}
 	}
 	if !mid {
-		end, mid = readLines(br, p, end, b, false, &res, fn)
-	} else if b.spent() {
-		res.partial(ReadTruncated)
+		var stop error
+		end, mid, stop = readLines(br, Line{From: p, Verified: res.Verified}, end, b, false, &res, fn)
+		if stop != nil {
+			res.partial(ReadIOError)
+		}
 	}
 	return Cursor{ID: st.ID, Offset: end, MidLine: mid, Size: st.Size, ModTime: st.ModTime, Head: hashHead(head), HeadLen: len(head), ReadAt: time.Now().UTC()}, res, nil
 }
@@ -143,6 +208,16 @@ func keep(cur *Cursor) Cursor {
 		return *cur
 	}
 	return Cursor{}
+}
+
+// newlineBefore: the byte before off is a newline.
+func newlineBefore(f io.ReadSeeker, off int64) bool {
+	if _, err := f.Seek(off-1, io.SeekStart); err != nil {
+		return false
+	}
+	var b [1]byte
+	n, _ := f.Read(b[:])
+	return n == 1 && b[0] == '\n'
 }
 
 // sameFile: p is still the file cur was in, grown or not: the same ID
@@ -174,20 +249,25 @@ func readHead(f io.ReadSeeker) ([]byte, error) {
 }
 
 // skipLine discards through the next newline, charging the budget: n bytes,
-// ok if the newline was reached (not: the file or the budget ended first).
-func skipLine(br *bufio.Reader, b *Budget) (n int64, ok bool) {
+// ok if the newline was reached (not: the file or the budget ended first),
+// err a read that failed other than at the end.
+func skipLine(br *bufio.Reader, b *Budget) (n int64, ok bool, err error) {
 	for !b.spent() {
-		s, err := br.ReadSlice('\n')
+		s, e := br.ReadSlice('\n')
 		n += int64(len(s))
 		b.left -= int64(len(s))
-		if err == nil {
-			return n, true
-		}
-		if !errors.Is(err, bufio.ErrBufferFull) {
-			return n, false
+		switch {
+		case e == nil:
+			return n, true, nil
+		case errors.Is(e, bufio.ErrBufferFull):
+			continue
+		case errors.Is(e, io.EOF):
+			return n, false, nil
+		default:
+			return n, false, e
 		}
 	}
-	return n, false
+	return n, false, nil
 }
 
 func hashHead(b []byte) string {
@@ -208,33 +288,63 @@ func globEscape(p string) string {
 	return sb.String()
 }
 
+// rotatedFiles are the files beside p its rotation may have made, the most
+// recently changed first, at most maxRotated: with dateext a log may have
+// dozens, and the one wanted is the newest.
+func rotatedFiles(src hostenv.Source, p string) []string {
+	type cand struct {
+		path string
+		mod  time.Time
+	}
+	var cs []cand
+	for _, g := range []string{globEscape(p) + ".*", globEscape(p) + "-*"} {
+		for _, c := range hostenv.Glob(src, g) {
+			if c == p || len(cs) >= maxRotatedNames {
+				continue
+			}
+			st, _ := hostenv.Stat(src, c)
+			cs = append(cs, cand{c, st.ModTime})
+		}
+	}
+	sort.SliceStable(cs, func(i, j int) bool {
+		if !cs[i].mod.Equal(cs[j].mod) {
+			return cs[i].mod.After(cs[j].mod)
+		}
+		return cs[i].path < cs[j].path
+	})
+	var out []string
+	for _, c := range cs {
+		if len(out) == maxRotated {
+			break
+		}
+		out = append(out, c.path)
+	}
+	return out
+}
+
+// rotatedSince: a rotated file of p changed after t.
+func rotatedSince(src hostenv.Source, p string, t time.Time) bool {
+	for _, c := range rotatedFiles(src, p) {
+		if st, err := hostenv.Stat(src, c); err == nil && st.ModTime.After(t) && st.Size > 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // readRotated finds the rotated file holding the rest of what cur was
 // reading, by its ID (renamed) or by its head (copied, compressed; never by
 // an empty head, which any file has), reads it from cur.Offset to its end,
 // and says which it was and how far it is trusted.
 func readRotated(src hostenv.Source, p string, cur *Cursor, b *Budget, trust TrustFunc, res *ReadResult, fn LineFunc) (RotatedFile, bool) {
-	var cands []string
-	for _, g := range []string{globEscape(p) + ".*", globEscape(p) + "-*"} {
-		for _, c := range hostenv.Glob(src, g) {
-			if c != p && len(cands) < maxRotated {
-				cands = append(cands, c)
-			}
-		}
-	}
-	try := func(c string, byID bool) (RotatedFile, bool) {
-		rf := RotatedFile{Path: c, Reason: hostenv.ReasonUnverified}
-		if trust != nil {
-			rf.Verified, rf.Reason = trust(c)
-		}
-		return rf, readRest(src, c, strings.HasSuffix(c, ".gz"), byID, cur, b, res, fn)
-	}
+	cands := rotatedFiles(src, p)
 	if cur.ID != "" { // by ID first: a stat, no read
 		for _, c := range cands {
 			if strings.HasSuffix(c, ".gz") {
 				continue
 			}
 			if st, err := hostenv.Stat(src, c); err == nil && st.ID == cur.ID {
-				if rf, ok := try(c, true); ok {
+				if rf, ok := readRest(src, c, false, true, cur, b, trust, res, fn); ok {
 					return rf, true
 				}
 			}
@@ -244,7 +354,7 @@ func readRotated(src hostenv.Source, p string, cur *Cursor, b *Budget, trust Tru
 		return RotatedFile{}, false
 	}
 	for _, c := range cands {
-		if rf, ok := try(c, false); ok {
+		if rf, ok := readRest(src, c, strings.HasSuffix(c, ".gz"), false, cur, b, trust, res, fn); ok {
 			return rf, true
 		}
 	}
@@ -252,21 +362,36 @@ func readRotated(src hostenv.Source, p string, cur *Cursor, b *Budget, trust Tru
 }
 
 // readRest reads c from cur.Offset to its end if it is the file cur was in:
-// its head is cur's (and, byID, its ID was already found to be).
-func readRest(src hostenv.Source, c string, gz, byID bool, cur *Cursor, b *Budget, res *ReadResult, fn LineFunc) bool {
+// its head is cur's (and, byID, its ID was already found to be). A rotated
+// file shorter than the cursor (non-gzip) is not it.
+func readRest(src hostenv.Source, c string, gz, byID bool, cur *Cursor, b *Budget, trust TrustFunc, res *ReadResult, fn LineFunc) (RotatedFile, bool) {
+	rf := RotatedFile{Path: c, Reason: hostenv.ReasonUnverified}
+	var judged hostenv.TrustResult
+	if trust != nil {
+		judged = trust(c)
+	}
 	f, err := hostenv.OpenLogNoFollow(src, c)
 	if err != nil {
-		return false
+		return rf, false
 	}
 	defer f.Close()
-	if byID && f.Stat().ID != cur.ID { // swapped since the stat
-		return false
+	st := f.Stat()
+	if byID && st.ID != cur.ID { // swapped since the stat
+		return rf, false
+	}
+	if !gz && st.Size < cur.Offset {
+		return rf, false
+	}
+	if judged.Verified {
+		rf.Verified, rf.Reason = opened(st, judged.File.ID)
+	} else if judged.Reason != "" {
+		rf.Reason = judged.Reason
 	}
 	var r io.Reader = f
 	if gz {
 		z, err := gzip.NewReader(f)
 		if err != nil {
-			return false
+			return rf, false
 		}
 		defer z.Close()
 		r = z
@@ -274,47 +399,70 @@ func readRest(src hostenv.Source, c string, gz, byID bool, cur *Cursor, b *Budge
 	br := bufio.NewReaderSize(r, MaxLine)
 	h, _ := br.Peek(cur.HeadLen)
 	if len(h) < cur.HeadLen || hashHead(h) != cur.Head {
-		return false
+		return rf, false
 	}
 	if gz { // no seeking in a stream: what is skipped is read, and charged
 		if cur.Offset > b.left {
 			res.partial(ReadTruncated)
 			res.partial(ReadRotatedGap)
-			return true
+			return rf, true
 		}
 		b.left -= cur.Offset
 		if _, err := io.CopyN(io.Discard, br, cur.Offset); err != nil {
-			return false
+			res.partial(ReadIOError)
+			res.partial(ReadRotatedGap)
+			return rf, true
 		}
 	} else {
 		if _, err := f.Seek(cur.Offset, io.SeekStart); err != nil {
-			return false
+			return rf, false
 		}
 		br.Reset(f)
 	}
+	// What is not read of a rotated file now is never read: the cursor
+	// moves to the new file. Say so.
+	lost := func() { res.partial(ReadRotatedGap) }
 	if cur.MidLine {
-		if _, ok := skipLine(br, b); !ok {
-			return true
+		_, ok, err := skipLine(br, b)
+		if err != nil {
+			res.partial(ReadIOError)
+			lost()
+			return rf, true
+		}
+		if !ok {
+			if b.spent() {
+				res.partial(ReadTruncated)
+				lost()
+			}
+			return rf, true
 		}
 	}
-	readLines(br, c, cur.Offset, b, true, res, fn)
-	return true
+	_, _, stop := readLines(br, Line{From: c, Verified: rf.Verified}, cur.Offset, b, true, res, fn)
+	if stop != nil {
+		res.partial(ReadIOError)
+		lost()
+	} else if b.spent() {
+		if _, err := br.Peek(1); err == nil {
+			lost()
+		}
+	}
+	return rf, true
 }
 
 // readLines gives fn each line of br from offset off, within the budget,
-// and returns the offset after what was read, and mid: it stops inside a
-// line longer than MaxLine (its start given, cut), which the next read
-// skips to its end. final: the file is rotated and complete, so a last line
-// without a newline is given too; otherwise one shorter than MaxLine is
-// left for the next run.
-func readLines(br *bufio.Reader, from string, off int64, b *Budget, final bool, res *ReadResult, fn LineFunc) (int64, bool) {
+// and returns the offset after what was read; mid: it stops inside a line
+// longer than MaxLine (its start given, cut), which the next read skips to
+// its end; err: a read failed other than at the end. final: the file is
+// rotated and complete, so a last line without a newline is given too;
+// otherwise one shorter than MaxLine is left for the next run.
+func readLines(br *bufio.Reader, l Line, off int64, b *Budget, final bool, res *ReadResult, fn LineFunc) (int64, bool, error) {
 	var long []byte
 	for {
 		if b.spent() {
 			if _, err := br.Peek(1); err == nil { // more there: not read for the budget
 				res.partial(ReadTruncated)
 			}
-			return off, false
+			return off, false, nil
 		}
 		line, err := br.ReadSlice('\n')
 		if errors.Is(err, bufio.ErrBufferFull) { // longer than MaxLine: give its start, skip the rest
@@ -323,34 +471,43 @@ func readLines(br *bufio.Reader, from string, off int64, b *Budget, final bool, 
 			b.left -= n
 			res.LongLines++
 			res.Lines++
-			fn(from, long)
-			rest, ended := skipLine(br, b)
+			l.Text, l.Cut = long, true
+			fn(l)
+			rest, ended, serr := skipLine(br, b)
 			n += rest
 			res.Bytes += n
 			off += n
+			if serr != nil {
+				return off, false, serr
+			}
 			if !ended {
 				if b.spent() {
 					res.partial(ReadTruncated)
 				}
-				return off, !final
+				return off, !final, nil
 			}
 			continue
 		}
 		if err != nil {
+			if !errors.Is(err, io.EOF) {
+				return off, false, err
+			}
 			if final && len(line) > 0 {
 				res.Lines++
 				res.Bytes += int64(len(line))
 				b.left -= int64(len(line))
 				off += int64(len(line))
-				fn(from, line)
+				l.Text, l.Cut = line, false
+				fn(l)
 			}
-			return off, false
+			return off, false, nil
 		}
 		n := int64(len(line))
 		res.Lines++
 		res.Bytes += n
 		b.left -= n
 		off += n
-		fn(from, bytes.TrimSuffix(line[:len(line)-1], []byte("\r")))
+		l.Text, l.Cut = bytes.TrimSuffix(line[:len(line)-1], []byte("\r")), false
+		fn(l)
 	}
 }
