@@ -416,7 +416,9 @@ values = ["raw", "string", "path", "html", "array", "trim"]   # any case
 ```
 
 The call is input only when that argument is written as one of the values; with
-another value, a variable, or no such argument it is not.
+another value, a variable, or no such argument it is not. `values = ["*"]` takes
+any string literal: Express's `req.get('Referer')` reads a header, `req.get()`
+reads none.
 
 ### Rules without sources
 

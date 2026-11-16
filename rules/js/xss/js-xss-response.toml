@@ -13,6 +13,8 @@ sources = ["req.query", "req.params", "req.body", "req.cookies", "req.headers[",
 # call's result) is almost always a data object sent as JSON. Koa HTML waits for
 # a context option that counts only where the HTML before the value is known.
 sinks = ["res.send(", "res.write(", "res.end("]
+# a header read by its name: req.get() and req.get(42) read no header
+source_args = [{ sources = ["req.get(", "req.header(", "ctx.get("], arg = 1, values = ["*"] }]
 sanitizers = ["escapeHtml(", "escape(", "he.encode(", "he.escape(", "validator.escape(", "_.escape(", "DOMPurify.sanitize(", "sanitizeHtml(", "xss(", "encodeURIComponent("]
 fix = "Render with a template engine that escapes by default (res.render), send JSON with res.json(), or escape each value (escape-html, he.encode) before putting it into HTML."
 refs = ["CVE-2013-7370"]
@@ -162,5 +164,23 @@ code = '''
 app.get("/hello", (req, res) => {
   const stream = req.accepts("text/event-stream");
   res.send(stream ? "data: ready\n\n" : "<h1>Hello " + req.query.name + "</h1>");
+});
+'''
+
+[[samples]]
+kind = "safe"
+note = "no header name: req.get() reads no header"
+code = '''
+app.use((req, res) => {
+  res.end(req.get());
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "a header read by its name"
+code = '''
+app.use((req, res) => {
+  res.end('<p>From ' + req.get('Referer') + '</p>');
 });
 '''
