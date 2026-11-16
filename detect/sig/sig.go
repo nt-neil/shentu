@@ -101,12 +101,11 @@ var (
 	parts     = map[string]bool{"path": true, "query": true, "param": true, "any_param": true, "user_agent": true, "referer": true}
 )
 
-// compared are the ecosystems whose version order compareVersions follows
-// (semver, Composer's patch releases, WordPress plugins' dotted numbers: a
-// suffix of any is not ordered, VersionUnknown); a range of any other is refused
-// at Load (rpm, apk, Debian, PyPI's PEP 440, Maven): a wrong order is a
-// wrong verdict on every host.
-var compared = map[string]bool{"packagist": true, "npm": true, "wordpress": true}
+// The ecosystems whose version order is followed are ecosystemKind's
+// (semver with Composer's patch releases, WordPress plugins' dotted
+// numbers, dpkg, rpm); a range of any other is refused at Load (apk,
+// PyPI's PEP 440, Maven, Go): a wrong order is a wrong verdict on every
+// host.
 
 // Limits on what a signature may hold, so the matcher's cost per request is
 // bounded however many there are.
@@ -222,8 +221,8 @@ func (s *Signature) check() error {
 		if r.Ecosystem == "" || r.Package == "" {
 			return fmt.Errorf("applies_to: ecosystem and package are required")
 		}
-		if !compared[strings.ToLower(r.Ecosystem)] {
-			return fmt.Errorf("applies_to %s: version comparison for ecosystem %q is not supported yet (only Packagist, npm and WordPress)", r.Package, r.Ecosystem)
+		if ecosystemKind(r.Ecosystem) == "" {
+			return fmt.Errorf("applies_to %s: version comparison for ecosystem %q is not supported yet (only Packagist, npm, WordPress, Debian and Ubuntu (dpkg), and rpm distributions)", r.Package, r.Ecosystem)
 		}
 		if strings.TrimSpace(r.Versions) == "" {
 			return fmt.Errorf("applies_to %s: versions is required (a range for every version is a signature without applies_to)", r.Package)
@@ -448,6 +447,9 @@ type version struct {
 // Packagist writes it, is a suffix taken. Build metadata (+...) is left
 // out, as semver says.
 func parseVersion(ecosystem, v string) (version, bool) {
+	if k := ecosystemKind(ecosystem); k == "dpkg" || k == "rpm" {
+		return version{}, validOS(k, v)
+	}
 	v, _, _ = strings.Cut(v, "+")
 	if strings.HasPrefix(v, "dev-") || strings.HasSuffix(v, "-dev") || wildcardRe.MatchString(v) {
 		return version{}, false
@@ -474,6 +476,9 @@ func parseVersion(ecosystem, v string) (version, bool) {
 // compareVersions compares a and b: numeric parts as numbers, then a
 // Composer patch release (Packagist's 2.4.3-p1) after none.
 func compareVersions(ecosystem, a, b string) (int, bool) {
+	if k := ecosystemKind(ecosystem); k == "dpkg" || k == "rpm" {
+		return compareOS(k, a, b)
+	}
 	va, oka := parseVersion(ecosystem, a)
 	vb, okb := parseVersion(ecosystem, b)
 	if !oka || !okb {

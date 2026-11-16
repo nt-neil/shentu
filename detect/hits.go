@@ -384,7 +384,7 @@ func forEntry(s sig.Signature, e Entry) bool {
 	}
 	if len(s.CVEs) == 0 && len(s.Advisories) == 0 || e.Installed { // an installed package has no ids: its package and range decide
 		for _, r := range s.AppliesTo {
-			if strings.EqualFold(r.Ecosystem, e.Ecosystem) && samePackage(e.Ecosystem, r.Package, e.Package) {
+			if sameEcosystem(r.Ecosystem, e.Ecosystem) && samePackage(e.Ecosystem, r.Package, e.Package) {
 				return true
 			}
 		}
@@ -400,7 +400,7 @@ func appliesTo(s sig.Signature, e Entry) (in, known bool) {
 	known = true
 	listed := false
 	for _, r := range s.AppliesTo {
-		if !strings.EqualFold(r.Ecosystem, e.Ecosystem) || !samePackage(e.Ecosystem, r.Package, e.Package) {
+		if !sameEcosystem(r.Ecosystem, e.Ecosystem) || !samePackage(e.Ecosystem, r.Package, e.Package) {
 			continue
 		}
 		listed = true
@@ -414,6 +414,14 @@ func appliesTo(s sig.Signature, e Entry) (in, known bool) {
 		}
 	}
 	return false, known && listed
+}
+
+// sameEcosystem: a and b are one ecosystem, a release after ":" aside
+// (a signature for Debian is for Debian:12's packages too).
+func sameEcosystem(a, b string) bool {
+	a, _, _ = strings.Cut(a, ":")
+	b, _, _ = strings.Cut(b, ":")
+	return strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(b))
 }
 
 var pep503 = regexp.MustCompile(`[-_.]+`)

@@ -466,7 +466,7 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 	unchecked := uncheckedSection(st.Profile.Risks) + sshUnchecked // listed in every report, never pushed
 	if daily {
 		// Once a day: installed packages with vulnerabilities that are being exploited now.
-		r, err := tools.PackageVulns(ctx, env.HTTP, "")
+		r, osSurface, err := tools.PackageVulnsSurface(ctx, env.HTTP)
 		unchecked += uncheckedVulns("installed packages", r, err)
 		if err == nil {
 			list, _ := r["actively_exploited"].([]tools.Exploit)
@@ -506,7 +506,7 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 					unchecked += fmt.Sprintf("- %q\n", mask(u))
 				}
 			}
-			if err := saveSurface(cfg.StateDir, buildSurface(audit, apps, plugins), env.AppPaths, time.Now()); err != nil {
+			if err := saveSurface(cfg.StateDir, buildSurface(audit, apps, osSurface, plugins), env.AppPaths, time.Now()); err != nil {
 				unchecked += "\nAttack detection: the vulnerability surface could not be saved: " + err.Error() + "\n"
 			}
 		}

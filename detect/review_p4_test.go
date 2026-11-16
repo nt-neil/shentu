@@ -515,3 +515,37 @@ contains = ["marker-one"]
 		t.Errorf("another plugin: %+v", g)
 	}
 }
+
+// P5 part 5: an OS package's advisory (Debian:12) is found by a signature
+// written for Debian, its range compared in dpkg's order.
+func TestOSPackageEntries(t *testing.T) {
+	ss := loadSigs(t, `
+[[signature]]
+id = "deb-marker"
+title = "an OS package's"
+class = "path"
+cves = ["CVE-2099-0200"]
+source = "shentu"
+license = "Apache-2.0"
+[[signature.applies_to]]
+ecosystem = "Debian"
+package = "marker-httpd"
+versions = "<2.4.62-1~deb12u1"
+[[signature.match]]
+part = "any_param"
+contains = ["marker-one"]
+`)
+	judge := func(v string) Judgment {
+		s := Build(nil, []PackageVuln{{Source: "os", Ecosystem: "Debian:12", Package: "marker-httpd", Version: v, ID: "DSA-0000-1", CVE: "CVE-2099-0200"}})
+		return NewJudge(s, ss).Judge(NewMatcher(ss).Match(Normalize(AccessRecord{Method: "GET", Path: "/", Query: "q=marker-one"})))
+	}
+	if g := judge("2.4.61-1~deb12u1"); len(g.Candidates) != 1 || g.Candidates[0].Level != LevelPayload || g.Candidates[0].VersionUnknown {
+		t.Errorf("in range: %+v", g)
+	}
+	if g := judge("2.4.62-1~deb12u1"); len(g.Candidates) != 0 {
+		t.Errorf("fixed: %+v", g)
+	}
+	if g := judge("2.4.62-1~deb12u0"); len(g.Candidates) != 1 {
+		t.Errorf("~deb12u0 before ~deb12u1: %+v", g)
+	}
+}
