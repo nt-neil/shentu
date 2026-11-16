@@ -1,0 +1,36 @@
+id = "python-xss-starlette-js"
+lang = "python"
+class = "xss"
+cwe = "CWE-79"
+severity = "medium"
+tier = "info"
+title = "FastAPI or Starlette HTML response with a request value inside a script without the escaping that context needs"
+sources = ["request.query_params", "request.path_params", "request.form(", "request.json(", "request.body(", "request.headers", "request.cookies", "request.url.path"]
+sinks = ["HTMLResponse(", "responses.HTMLResponse(", "fastapi.responses.HTMLResponse(", "starlette.responses.HTMLResponse("]
+sanitizers = ["json_script(", "int("]
+fix = "Pass data to scripts as JSON that also escapes '<' (a JSON script element), never inside a hand-written string literal; json.dumps alone does not escape '</script>'."
+refs = ["CVE-2026-54386"]
+
+[[args]]
+sinks = ["HTMLResponse(", "responses.HTMLResponse(", "fastapi.responses.HTMLResponse(", "starlette.responses.HTMLResponse("]
+context = ["js"]
+
+# Response(..., media_type="text/html") is python-xss-response's sink.
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+@app.get("/viewer")
+async def viewer(request: Request):
+    doc = request.query_params.get("doc", "")
+    return HTMLResponse(f"<html><body><script>const docRef = '{doc}';</script></body></html>")
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+@app.get("/viewer")
+async def viewer(request: Request):
+    doc = request.query_params.get("doc", "")
+    return templates.TemplateResponse(request, "viewer.html", {"doc": doc})
+'''

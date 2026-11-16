@@ -178,6 +178,11 @@ func (a *agent) callTool(ctx context.Context, name, rawArgs string) string {
 	}
 	entry := logEntry{Actor: a.actor, Tool: name, Args: mask(string(args))}
 	if t.Control {
+		if err := tools.RemoteRefused(a.env, name, args); err != nil {
+			entry.Error = mask(err.Error())
+			a.log.write(entry)
+			return errText(err.Error())
+		}
 		preview, err := t.Preview(args)
 		if err != nil {
 			entry.Error = mask(err.Error())

@@ -5,11 +5,11 @@ cwe = "CWE-88"
 severity = "high"
 title = "Untrusted value used as a command-line argument that can start with '-'"
 frameworks = ["flask", "django"]
-sources = ["request.args", "request.form", "request.GET", "request.POST", ".filename"]
+sources = ["request.args", "request.form", "request.GET", "request.POST", ".filename", "request.json", "request.get_json(", "request.query_params", "request.form(", "request.json(", "self.get_argument(", "self.get_body_argument(", "self.get_json_body("]
 sinks = ["subprocess.run([", "subprocess.Popen([", "subprocess.check_output([", "subprocess.call(["]
 sanitizers = ["os.path.abspath("]
 fix = "Put '--' before positional arguments, or reject values starting with '-'; for file names pass os.path.abspath() of the path so it cannot start with '-'."
-refs = ["CVE-2026-112900"]
+refs = ["CVE-2026-112900", "CVE-2026-102904"]
 
 [[args]]
 unless = ['"--"', '"--end-of-options"']   # everything after it is read as an operand
@@ -35,4 +35,25 @@ def log():
         abort(400)
     out = subprocess.run(["git", "-C", "/srv/repo", "log", "-n", "5", "--end-of-options", rev], capture_output=True)
     return out.stdout
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "a package name from a Tornado handler's JSON body can be read as an option"
+code = '''
+class PluginRemove(tornado.web.RequestHandler):
+    async def post(self):
+        pkg = self.get_json_body()["package"]
+        done = subprocess.run(["pipx", "uninstall", pkg], capture_output=True)
+        self.finish({"status": done.returncode})
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+class PluginRemove(tornado.web.RequestHandler):
+    async def post(self):
+        pkg = self.get_json_body()["package"]
+        done = subprocess.run(["pipx", "uninstall", "--", pkg], capture_output=True)
+        self.finish({"status": done.returncode})
 '''

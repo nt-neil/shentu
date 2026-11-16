@@ -1,0 +1,72 @@
+id = "js-open-redirect-next"
+lang = "js"
+class = "open-redirect"
+cwe = "CWE-601"
+severity = "medium"
+tier = "info"
+title = "Next.js redirect to a URL taken from the request or the Host header"
+frameworks = ["nextjs"]
+sources = [".searchParams.get(", "^searchParams.get(", "^searchParams", "^formData.get(", "^request.json(", "^req.json(", "request.headers.get('host')", "request.headers.get('x-forwarded-host')", "req.headers.get('host')", "req.headers.get('x-forwarded-host')", "headers().get('host')", "headers().get('x-forwarded-host')"]
+sinks = ["NextResponse.redirect(", "Response.redirect(", "redirect(", "permanentRedirect("]   # pages-router res.redirect is js-open-redirect-redirect
+sanitizers = ["encodeURIComponent("]
+fix = "Redirect only to a path from an allowlist, or resolve the value with new URL(value, request.url) and use it only when its origin equals the site's own; build absolute URLs from request.url, never from the Host header. A check that the value starts with a single \"/\" is not enough: browsers drop tabs and newlines, so /\t/evil.example becomes //evil.example."
+refs = ["CVE-2026-12811", "CVE-2025-63784"]
+
+[[args]]
+leading = true   # new URL(value, request.url) resolves an absolute value to another host
+
+[[samples]]
+kind = "vulnerable"
+dialect = "ts"
+note = "an absolute returnTo wins over the base of new URL"
+code = '''
+export async function GET(request: NextRequest) {
+  const back = request.nextUrl.searchParams.get("back") ?? "/";
+  return NextResponse.redirect(new URL(back, request.url));
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+dialect = "ts"
+note = "Server Action: the form decides where the user lands"
+code = '''
+export async function finishSignup(formData: FormData) {
+  "use server";
+  await saveProfile(formData);
+  redirect(String(formData.get("continue")));
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+dialect = "ts"
+note = "the client chooses the host of the redirect"
+code = '''
+export function GET(request: NextRequest) {
+  const host = request.headers.get('x-forwarded-host') ?? "localhost";
+  return NextResponse.redirect(`https://${host}/dashboard`);
+}
+'''
+
+[[samples]]
+kind = "safe"
+dialect = "ts"
+note = "as the fix says: a path from an allowlist, otherwise a fixed page"
+code = '''
+const BACK = new Set(["/", "/orders", "/settings"]);
+export async function GET(request: NextRequest) {
+  const back = request.nextUrl.searchParams.get("back") ?? "/";
+  return NextResponse.redirect(new URL(BACK.has(back) ? back : "/", request.url));
+}
+'''
+
+[[samples]]
+kind = "safe"
+dialect = "ts"
+note = "a fixed path resolved against the request URL"
+code = '''
+export function GET(request: NextRequest) {
+  return NextResponse.redirect(new URL("/login", request.url));
+}
+'''
