@@ -209,8 +209,9 @@ func normalizeTextN(s string, query bool, limit int) (string, bool, bool) {
 }
 
 // normalizePiece decodes, folds and lower-cases s; enc says an evasive
-// encoding was seen. A cutMark it holds becomes U+FFFD: visible, and
-// neither \s nor a word character, so it joins nothing.
+// encoding was seen. A cutMark it holds becomes U+FFFD (visible, and
+// neither \s nor a word character, so it joins nothing) and is said as
+// an evasive encoding.
 func normalizePiece(s string, query bool) (string, bool) {
 	enc := false
 	for round := 0; round < MaxDecodeRounds; round++ {
@@ -230,7 +231,11 @@ func normalizePiece(s string, query bool) (string, bool) {
 	if over {
 		enc = true
 	}
-	return strings.ReplaceAll(strings.ToLower(f), cutMark, "\uFFFD"), enc
+	l := strings.ToLower(f)
+	if strings.Contains(l, cutMark) { // sent to split a payload as a cut would: evasion, said
+		l, enc = strings.ReplaceAll(l, cutMark, "\uFFFD"), true
+	}
+	return l, enc
 }
 
 // percentDecode decodes %XX and %uXXXX (u: one was), and + as a space when

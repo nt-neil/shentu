@@ -346,8 +346,8 @@ regex = 'marker-a.*marker-b|marker-a[^q]+marker-b'
 	if r := m.Match(Normalize(AccessRecord{Method: "GET", Path: "/", Query: "k=marker-a" + strings.Repeat("z", 100) + "marker-b"})); len(r.Hits) != 1 {
 		t.Errorf("not cut: %+v", r.Hits)
 	}
-	if q := Normalize(AccessRecord{Method: "GET", Path: "/", Query: "k=a%1fb"}); q.Params["k"][0] != "a\uFFFDb" {
-		t.Errorf("a sent cut mark: %q", q.Params["k"][0])
+	if q := Normalize(AccessRecord{Method: "GET", Path: "/", Query: "k=a%1fb"}); q.Params["k"][0] != "a\uFFFDb" || !q.Encoded {
+		t.Errorf("a sent cut mark: %q, encoded %v (want said as evasion)", q.Params["k"][0], q.Encoded)
 	}
 	if ex := excerptAt("ab"+cutMark+"cd", 0, 2); strings.Contains(ex, cutMark) || !strings.Contains(ex, "…") {
 		t.Errorf("excerpt %q", ex)
