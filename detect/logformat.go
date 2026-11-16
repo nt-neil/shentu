@@ -4,11 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/netip"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/nt-neil/shentu/hostenv"
 )
@@ -37,18 +37,25 @@ type AccessRecord struct {
 	Host      string
 	XFF       string // X-Forwarded-For, believed only from trusted proxies (P4)
 	User      string
+	Vhost     string // the server's own name for itself (Apache %v, nginx $server_name), not the Host header
+	Cut       bool   // parsed from a line cut at MaxLine (ParseCut): fields after the cut are missing
 }
 
 // Parser splits the lines of one access log format.
 type Parser struct {
-	segs   []seg
-	escape string // nginx: "default", "json", "none"; apache: "apache"
+	segs    []seg
+	escape  string // nginx: "default", "json"; apache: "apache"
+	hasTime bool
+	// Parsed and Unparsed count the lines given (not safe for concurrent
+	// use: one parser per log read).
+	Parsed, Unparsed int
 }
 
 type seg struct {
-	lit   string // literal text, or
-	field string // the field it fills (client, time_local, request...); "" for one detect does not use
-	var_  bool
+	lit    string // literal text, or
+	field  string // the field it fills (client, time_local, request...); "" for one detect does not use
+	var_   bool
+	quoted bool // between two quotes: the server escapes a quote inside it
 }
 
 // ParserFor is the parser of a log source's format.
@@ -63,7 +70,7 @@ func ParserFor(s hostenv.LogSource) (*Parser, error) {
 	case "nginx":
 		return NginxParser(s.Spec, s.Escape)
 	case "apache":
-		return ApacheParser(s.Spec)
+		return apacheParser(s.Spec, s.HostnameLookups)
 	}
 	return nil, fmt.Errorf("%w: %s access logs are not read yet", ErrFormatUnrecognized, s.Server)
 }
@@ -77,6 +84,7 @@ var ngxFields = map[string]string{
 	"request": "request", "request_method": "method", "request_uri": "uri", "uri": "path", "args": "query", "query_string": "query",
 	"server_protocol": "proto", "status": "status", "body_bytes_sent": "bytes", "bytes_sent": "bytes",
 	"http_referer": "referer", "http_user_agent": "ua", "http_x_forwarded_for": "xff", "host": "host", "http_host": "host",
+	"server_name": "vhost", "server_port": "port",
 }
 
 // NginxParser compiles a log_format's strings (as hostenv gives them,
@@ -115,8 +123,14 @@ func NginxParser(spec, escape string) (*Parser, error) {
 
 var apacheDirective = regexp.MustCompile(`%(?:!?[0-9]{3}(?:,[0-9]{3})*)?[<>]?(?:\{([^}]*)\})?([a-zA-Z%])`)
 
-// ApacheParser compiles a LogFormat string.
-func ApacheParser(spec string) (*Parser, error) {
+// ApacheParser compiles a LogFormat string, HostnameLookups off (Apache's
+// default).
+func ApacheParser(spec string) (*Parser, error) { return apacheParser(spec, false) }
+
+// apacheParser: with HostnameLookups On or Double, %h is the client's PTR
+// name, which whoever controls the address's reverse zone writes (even as
+// "203.0.113.5"): it is not the client, only %a is.
+func apacheParser(spec string, lookups bool) (*Parser, error) {
 	p := &Parser{escape: "apache"}
 	last := 0
 	lit := func(s string) {
@@ -141,10 +155,16 @@ func ApacheParser(spec string) (*Parser, error) {
 		case "%":
 			lit("%")
 			continue
-		case "h", "a":
+		case "a":
 			if arg == "" || arg == "c" {
 				f = "client"
 			}
+		case "h":
+			if !lookups {
+				f = "client"
+			}
+		case "p":
+			f = "port"
 		case "u":
 			f = "user"
 		case "t":
@@ -166,8 +186,10 @@ func ApacheParser(spec string) (*Parser, error) {
 			f = "query_apache" // "?a=b", or empty
 		case "H":
 			f = "proto"
-		case "v", "V":
-			f = "host"
+		case "v":
+			f = "vhost" // the configured ServerName
+		case "V":
+			f = "host" // UseCanonicalName Off: the Host header
 		case "i":
 			switch arg {
 			case "referer":
@@ -190,18 +212,38 @@ func ApacheParser(spec string) (*Parser, error) {
 	return p, p.check()
 }
 
+// safeBeforeClient are the fields the client may follow: none of them is
+// written by the request, so none can hold a forged address.
+var safeBeforeClient = map[string]bool{"time_local": true, "time_iso": true, "time_apache": true, "msec": true, "status": true, "bytes": true, "vhost": true, "port": true}
+
 // check: every field is delimited by literal text (two side by side cannot
-// be split without guessing), and the fields matching needs are there.
+// be split without guessing), nothing the request writes comes before the
+// client address (a header holding "x 203.0.113.5 -" would make the
+// address what it likes), and the fields matching needs are there.
 func (p *Parser) check() error {
 	have := map[string]bool{}
+	client := -1
 	for i, s := range p.segs {
-		if s.var_ && i > 0 && p.segs[i-1].var_ {
+		if !s.var_ {
+			continue
+		}
+		if i > 0 && p.segs[i-1].var_ {
 			return fmt.Errorf("%w: two fields with nothing between them", ErrFormatUnrecognized)
 		}
-		if s.var_ {
-			have[s.field] = true
+		if s.field == "client" && client < 0 {
+			client = i
 		}
+		if client < 0 && !safeBeforeClient[s.field] {
+			name := s.field
+			if name == "" {
+				name = "a field detect does not read"
+			}
+			return fmt.Errorf("%w: %s comes before the client address and could forge it", ErrFormatUnrecognized, name)
+		}
+		p.segs[i].quoted = i > 0 && i+1 < len(p.segs) && strings.HasSuffix(p.segs[i-1].lit, `"`) && strings.HasPrefix(p.segs[i+1].lit, `"`)
+		have[s.field] = true
 	}
+	p.hasTime = have["time_local"] || have["time_iso"] || have["time_apache"] || have["msec"]
 	switch {
 	case !have["client"]:
 		return fmt.Errorf("%w: no client address", ErrFormatUnrecognized)
@@ -213,55 +255,112 @@ func (p *Parser) check() error {
 	return nil
 }
 
+// maxSplits bounds the backtracking of one line: a field may end at any of
+// the next literal's occurrences, tried leftmost first.
+const maxSplits = 64
+
 // Parse splits one line. false: the line is not in the format (another
-// format, a cut line, an injected one); the caller counts it.
-func (p *Parser) Parse(line []byte) (AccessRecord, bool) {
-	if !utf8.Valid(line) && p.escape == "json" {
-		return AccessRecord{}, false
+// format, an injected line); counted in Unparsed, which the caller is to
+// report: an attacker making his own lines unparseable is itself a sign.
+func (p *Parser) Parse(line []byte) (AccessRecord, bool) { return p.parse(line, false) }
+
+// ParseCut splits a line cut at MaxLine (its end lost): enough when the
+// client, the request and the time (if the format has one) came before
+// the cut. The record says Cut.
+func (p *Parser) ParseCut(line []byte) (AccessRecord, bool) { return p.parse(line, true) }
+
+func (p *Parser) parse(line []byte, cut bool) (AccessRecord, bool) {
+	s := string(line)
+	if !cut {
+		s = strings.TrimRight(s, " \r")
 	}
-	s := strings.TrimRight(string(line), " \r")
 	var r AccessRecord
-	i := 0
-	for k, sg := range p.segs {
-		if !sg.var_ {
-			if !strings.HasPrefix(s[i:], sg.lit) {
-				return r, false
-			}
-			i += len(sg.lit)
-			continue
-		}
-		var v string
-		if end := strings.IndexByte(s[i:], ']'); sg.field == "time_apache" && strings.HasPrefix(s[i:], "[") && end > 0 {
-			v, i = s[i:i+end+1], i+end+1 // %t is "[02/Jan/2006:15:04:05 -0700]": a space inside
-			if u, ok := p.unescape(v); !ok || !r.set(sg.field, u) {
-				return r, false
-			}
-			continue
-		}
-		if k+1 == len(p.segs) {
-			v, i = s[i:], len(s)
-		} else {
-			j := p.index(s[i:], p.segs[k+1].lit)
-			if j < 0 {
-				return r, false
-			}
-			v, i = s[i:i+j], i+j
-		}
-		if sg.field == "" {
-			continue
-		}
-		u, ok := p.unescape(v)
-		if !ok || !r.set(sg.field, u) {
-			return r, false
-		}
-	}
-	if i != len(s) {
-		return r, false
+	steps := 0
+	if !p.match(s, 0, 0, &r, cut, &steps) {
+		p.Unparsed++
+		return AccessRecord{}, false
 	}
 	if r.Request != "" && r.Method == "" {
 		r.splitRequest()
 	}
+	p.Parsed++
 	return r, true
+}
+
+// match matches segments k.. against s from i, filling r.
+func (p *Parser) match(s string, i, k int, r *AccessRecord, cut bool, steps *int) bool {
+	if k == len(p.segs) {
+		return i == len(s)
+	}
+	sg := p.segs[k]
+	if !sg.var_ {
+		switch {
+		case strings.HasPrefix(s[i:], sg.lit):
+			return p.match(s, i+len(sg.lit), k+1, r, cut, steps)
+		case cut && strings.HasPrefix(sg.lit, s[i:]): // the cut fell inside this literal
+			return p.enough(r)
+		}
+		return false
+	}
+	try := func(v string, next int) bool {
+		r2 := *r
+		if !p.fill(&r2, sg, v) {
+			return false
+		}
+		if next < 0 { // the cut: nothing after this value
+			r2.Cut = true
+			if !p.enough(&r2) {
+				return false
+			}
+		} else if !p.match(s, next, k+1, &r2, cut, steps) {
+			return false
+		}
+		*r = r2
+		return true
+	}
+	if end := strings.IndexByte(s[i:], ']'); sg.field == "time_apache" && strings.HasPrefix(s[i:], "[") && end > 0 {
+		return try(s[i:i+end+1], i+end+1) // %t is "[02/Jan/2006:15:04:05 -0700]": a space inside
+	}
+	if k+1 == len(p.segs) {
+		if cut {
+			return try(s[i:], -1)
+		}
+		return try(s[i:], len(s))
+	}
+	next := p.segs[k+1].lit
+	for from := i; ; {
+		if *steps++; *steps > maxSplits {
+			return false
+		}
+		j := p.index(s[from:], next)
+		if j < 0 {
+			if cut {
+				return try(s[i:], -1)
+			}
+			return false
+		}
+		if try(s[i:from+j], from+j) {
+			return true
+		}
+		if sg.quoted { // a quoted value ends at the first unescaped quote: no other split
+			return false
+		}
+		from += j + 1
+	}
+}
+
+// fill unescapes v into sg's field of r.
+func (p *Parser) fill(r *AccessRecord, sg seg, v string) bool {
+	if sg.field == "" {
+		return true
+	}
+	u, ok := p.unescape(v)
+	return ok && r.set(sg.field, u)
+}
+
+// enough: a cut record still names who asked for what, and when.
+func (p *Parser) enough(r *AccessRecord) bool {
+	return r.Client != "" && (r.Request != "" || r.Path != "") && (!p.hasTime || !r.Time.IsZero())
 }
 
 // index is where lit next starts in s, outside an escape: Apache writes a
@@ -288,7 +387,14 @@ func (r *AccessRecord) set(f, v string) bool {
 	dash := v == "-"
 	switch f {
 	case "client":
-		r.Client = v
+		if v == "unix:" { // nginx behind a unix socket: no address
+			return true
+		}
+		a, err := netip.ParseAddr(v)
+		if err != nil {
+			return false
+		}
+		r.Client = a.String()
 	case "user":
 		if !dash {
 			r.User = v
@@ -359,6 +465,8 @@ func (r *AccessRecord) set(f, v string) bool {
 		}
 	case "host":
 		r.Host = v
+	case "vhost":
+		r.Vhost = v
 	}
 	return true
 }

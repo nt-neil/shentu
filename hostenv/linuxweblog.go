@@ -30,6 +30,9 @@ type LogSource struct {
 	Format string `json:"format,omitempty"`
 	Spec   string `json:"format_spec,omitempty"`
 	Escape string `json:"escape,omitempty"` // nginx log_format escape= (json, none); empty is nginx's default
+	// HostnameLookups: Apache looks up names (HostnameLookups On or Double
+	// anywhere in its configuration): %h is then a PTR name, not an address.
+	HostnameLookups bool `json:"hostname_lookups,omitempty"`
 	// Vhosts: server_name / ServerName of the blocks writing to it; none for
 	// the main server.
 	Vhosts []string `json:"vhosts,omitempty"`
@@ -123,10 +126,14 @@ func (c LinuxCollector) WebLogs(src Source) Obs[[]LogSource] {
 				s.FileID = t.File.ID
 			}
 		}
-		if s.Verified && (s.Server == "nginx" || s.Server == "apache") {
-			// The file is root's, but the server's workers run as the web
-			// account and hold it open: whoever can make them write can.
+		if s.Verified && !masterOnly(s) {
+			// The file is root's, but processes running as a web account
+			// hold it open: whoever can make them write can. Only logs a
+			// root process alone writes are exempt; any other server kind
+			// is taken to be like these.
 			switch {
+			case s.Server == "php-fpm": // a pool's access log and PHP's error_log: written by the workers running PHP
+				s.Verified, s.Reason, s.Detail = false, ReasonWebUserWritable, "PHP-FPM's workers, running the pool's PHP, write this log: "+WebUserWritableMeaning
 			case s.Server == "apache" && l.modPHP:
 				s.Verified, s.Reason, s.Detail = false, ReasonWebUserWritable, "Apache runs PHP in its own children (mod_php), which hold the log open: "+WebUserWritableMeaning
 			case !scoped:
@@ -468,6 +475,13 @@ func (l *logLoader) unitUsers(c LinuxCollector, src Source) {
 			l.users = append(l.users, u.User)
 		}
 	}
+}
+
+// masterOnly: only a root process writes the log, no worker holds it:
+// PHP-FPM's own error log and its slow log (the master traces the slow
+// worker and writes).
+func masterOnly(s *LogSource) bool {
+	return s.Server == "php-fpm" && (s.Kind == "error" || s.Kind == "slow")
 }
 
 // iniValue is a php-fpm.conf value: quotes taken off, or an inline
@@ -986,6 +1000,7 @@ type apacheScope struct {
 }
 
 type apacheState struct {
+	lookups       bool // HostnameLookups On or Double somewhere
 	root          string
 	env           map[string]string
 	formats       map[string]string
@@ -1032,7 +1047,7 @@ func (l *logLoader) apache() {
 			}
 		}
 		for _, d := range custom {
-			s := LogSource{Path: st.path(d.dest), Server: "apache", Kind: "access", Vhosts: sc.names, Config: at(d.file, d.line)}
+			s := LogSource{Path: st.path(d.dest), Server: "apache", Kind: "access", Vhosts: sc.names, Config: at(d.file, d.line), HostnameLookups: st.lookups}
 			switch {
 			case d.transfer:
 				s.Spec = st.defaultFormat
@@ -1170,6 +1185,10 @@ func (l *logLoader) apacheFile(st *apacheState, p string, depth int) {
 		case "group":
 			if len(args) > 0 {
 				l.groups = append(l.groups, st.expand(args[0]))
+			}
+		case "hostnamelookups":
+			if len(args) > 0 && !strings.EqualFold(args[0], "off") {
+				st.lookups = true
 			}
 		case "assignuserid", "suexecusergroup", "ruidgid": // mpm-itk, suEXEC, mod_ruid2: a vhost's own account
 			if len(args) > 0 {

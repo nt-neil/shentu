@@ -2,6 +2,7 @@ package detect
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -61,7 +62,7 @@ func TestApacheFormats(t *testing.T) {
 		t.Fatal(err)
 	}
 	r, ok := p.Parse([]byte(`shop.test:443 203.0.113.7 - bob [15/Nov/2026:10:11:12 +0800] "GET /index.php?page=../../etc/passwd HTTP/1.1" 200 1043 "https://shop.test/" "Mozilla/5.0 \"x\""`))
-	if !ok || r.Host != "shop.test" || r.Client != "203.0.113.7" || r.User != "bob" || r.Path != "/index.php" || r.Query != "page=../../etc/passwd" ||
+	if !ok || r.Vhost != "shop.test" || r.Client != "203.0.113.7" || r.User != "bob" || r.Path != "/index.php" || r.Query != "page=../../etc/passwd" ||
 		r.Status != 200 || r.Bytes != 1043 || r.Referer != "https://shop.test/" || r.UserAgent != `Mozilla/5.0 "x"` || r.Time.IsZero() {
 		t.Errorf("vhost_combined %+v %v", r, ok)
 	}
@@ -98,5 +99,80 @@ func TestFormatUnrecognized(t *testing.T) {
 	}
 	if _, err := ParserFor(hostenv.LogSource{Server: "nginx", Kind: "access", Format: "combined", Spec: ngxCombinedSpec}); err != nil {
 		t.Errorf("combined from hostenv: %v", err)
+	}
+}
+
+// B-2: a header the request writes, before the client address, could make
+// the address anything: such a format is refused, and a client that is not
+// an address makes the line unparsed.
+func TestClientNotForgeable(t *testing.T) {
+	for _, spec := range []string{
+		`$http_x_forwarded_for $remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent`,
+		`$http_host $remote_addr [$time_local] "$request" $status`,
+		`$http_x_custom $remote_addr [$time_local] "$request" $status`, // a variable detect does not read: not trusted either
+	} {
+		if _, err := NginxParser(spec, ""); !errors.Is(err, ErrFormatUnrecognized) {
+			t.Errorf("%s: %v, want format_unrecognized", spec, err)
+		}
+	}
+	if _, err := ApacheParser(`%v:%p %h %l %u %t "%r" %>s %O`); err != nil {
+		t.Errorf("vhost_combined: %v (ServerName and port are not the request's)", err)
+	}
+	p, _ := NginxParser(ngxCombinedSpec, "")
+	if _, ok := p.Parse([]byte(`example.com - - [15/Nov/2026:10:11:12 +0800] "GET / HTTP/1.1" 200 1 "-" "-"`)); ok || p.Unparsed != 1 {
+		t.Errorf("a client that is not an address was parsed (unparsed %d)", p.Unparsed)
+	}
+	if r, ok := p.Parse([]byte(`unix: - - [15/Nov/2026:10:11:12 +0800] "GET / HTTP/1.1" 200 1 "-" "-"`)); !ok || r.Client != "" {
+		t.Errorf("unix socket client: %+v %v", r, ok)
+	}
+}
+
+// N-5: what an attacker sends cannot make his own line unparseable.
+func TestParseNotEvadable(t *testing.T) {
+	p, _ := NginxParser(ngxCombinedSpec, "")
+	// A Basic auth user "x [" (spaces are not escaped): the user field
+	// backtracks to the real " [".
+	r, ok := p.Parse([]byte(`203.0.113.7 - x [ [15/Nov/2026:10:11:12 +0800] "GET /?id=1%27 HTTP/1.1" 200 1 "-" "-"`))
+	if !ok || r.User != "x [" || r.Path != "/" || r.Status != 200 {
+		t.Errorf("user with ' [': %+v %v", r, ok)
+	}
+	a, _ := ApacheParser(`%h %l %u %t "%r" %>s %b`)
+	if r, ok := a.Parse([]byte(`203.0.113.7 - a b [15/Nov/2026:10:11:12 +0800] "GET / HTTP/1.1" 200 5`)); !ok || r.User != "a b" {
+		t.Errorf("Apache %%u with a space: %+v %v", r, ok)
+	}
+	j, _ := NginxParser(`{"ip":"$remote_addr","t":"$time_iso8601","r":"$request","s":$status,"ua":"$http_user_agent"}`, "json")
+	if r, ok := j.Parse([]byte("{\"ip\":\"203.0.113.7\",\"t\":\"2026-11-15T10:11:12+08:00\",\"r\":\"GET / HTTP/1.1\",\"s\":200,\"ua\":\"\xff\xfe\"}")); !ok || r.Client != "203.0.113.7" {
+		t.Errorf("json with raw 0xff: %+v %v", r, ok)
+	}
+	// A 5KB 0xff User-Agent is 20KB escaped: cut at MaxLine, the line still
+	// names who asked for what.
+	line := `203.0.113.7 - - [15/Nov/2026:10:11:12 +0800] "GET /x.php?c=;id HTTP/1.1" 200 1 "-" "` + strings.Repeat(`\xFF`, 5000)
+	line = line[:MaxLine]
+	if _, ok := p.Parse([]byte(line)); ok {
+		t.Error("a cut line parsed as whole")
+	}
+	r, ok = p.ParseCut([]byte(line))
+	if !ok || !r.Cut || r.Client != "203.0.113.7" || r.Path != "/x.php" || r.Time.IsZero() {
+		t.Errorf("cut line: %+v %v", r, ok)
+	}
+	// Cut inside the request (a padded URL): its start is still the request.
+	if r, ok := p.ParseCut([]byte(`203.0.113.7 - - [15/Nov/2026:10:11:12 +0800] "GET /` + strings.Repeat("a", 100))); !ok || !r.Cut || r.Method != "GET" {
+		t.Errorf("cut inside the request: %+v %v", r, ok)
+	}
+	// Cut before the request: not enough to match.
+	if _, ok := p.ParseCut([]byte(`203.0.113.7 - - [15/Nov/20`)); ok {
+		t.Error("a line cut before the request was taken")
+	}
+}
+
+// N-10: with HostnameLookups on, %h is a PTR name its zone's owner writes.
+func TestApacheHostnameLookups(t *testing.T) {
+	src := hostenv.LogSource{Server: "apache", Kind: "access", Spec: `%h %l %u %t "%r" %>s %b`, HostnameLookups: true}
+	if _, err := ParserFor(src); !errors.Is(err, ErrFormatUnrecognized) {
+		t.Errorf("%%h with HostnameLookups On: %v", err)
+	}
+	src.Spec = `%a %l %u %t "%r" %>s %b`
+	if _, err := ParserFor(src); err != nil {
+		t.Errorf("%%a with HostnameLookups On: %v", err)
 	}
 }

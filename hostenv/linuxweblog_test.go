@@ -370,3 +370,19 @@ func TestReasonMeaningZh(t *testing.T) {
 		}
 	}
 }
+
+// A PHP-FPM pool's access log, root's or not, is written by the workers
+// running PHP: never verified. The master's own logs can be.
+func TestWebLogsFPMPoolLogs(t *testing.T) {
+	h := logHost()
+	h.files["/etc/php/8.2/fpm/pool.d/www.conf"] += "access.log = /var/log/php-fpm/www.access.log\n"
+	h.files["/var/log/php-fpm/www.access.log"], h.st["/var/log/php-fpm/www.access.log"] = "", FileStat{Mode: 0o640, UID: 0}
+	h.files["/var/log/php-fpm/www.slow.log"], h.st["/var/log/php-fpm/www.slow.log"] = "", FileStat{Mode: 0o640, UID: 0}
+	m := webLogsByKey(t, LinuxCollector{}.WebLogs(h))
+	if a := m["php-fpm access /var/log/php-fpm/www.access.log"]; a.Verified || a.Reason != ReasonWebUserWritable {
+		t.Errorf("pool access log %+v", a)
+	}
+	if e := m["php-fpm slow /var/log/php-fpm/www.slow.log"]; !e.Verified {
+		t.Errorf("slow log, the master's: %+v", e)
+	}
+}
