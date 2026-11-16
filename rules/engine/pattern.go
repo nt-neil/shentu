@@ -21,7 +21,7 @@ type pat struct {
 	chain    string         // PHP: "->m(" made from the sink "Class::m(": the chain must start at Class:: (chain.go)
 	wild     bool           // holds "[*]", which matches any one index: $_FILES[*]['name']
 	// sources only (source_args): the call is input only when its srcArg-th
-	// argument is a string literal among srcVals (lower case; "*": any)
+	// argument is a string literal among srcVals (lower case; "*": any; "!x": not x)
 	srcArg  int
 	srcVals map[string]bool
 }
