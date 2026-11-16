@@ -13,6 +13,7 @@ import (
 	"slices"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/nt-neil/shentu/internal/osutil"
@@ -264,7 +265,26 @@ func readState(dir, name string, v any, now time.Time) (note string, err error) 
 	if rerr := os.Rename(p, bad); rerr != nil {
 		return "", errors.Join(perr, rerr)
 	}
+	keepBad(p, MaxBadFiles)
 	return name + " did not parse (or was of another version, or too large) and was set aside as " + filepath.Base(bad) + "; it starts again", nil
+}
+
+// MaxBadFiles is how many set-aside copies of a state file are kept, the
+// latest: what a file that did not parse held stays to be looked at,
+// without filling the disk.
+const MaxBadFiles = 5
+
+// keepBad removes all but the latest n of p's set-aside copies.
+func keepBad(p string, n int) {
+	old, _ := filepath.Glob(globEscape(p) + ".bad-*")
+	sort.Slice(old, func(i, j int) bool { // by the time in the name: newest first
+		a, _ := strconv.ParseInt(old[i][strings.LastIndex(old[i], "-")+1:], 10, 64)
+		b, _ := strconv.ParseInt(old[j][strings.LastIndex(old[j], "-")+1:], 10, 64)
+		return a > b
+	})
+	for _, f := range old[min(n, len(old)):] {
+		os.Remove(f)
+	}
 }
 
 // Save writes the state to dir, pruned (prune): to a new temporary file
@@ -609,8 +629,9 @@ func b2i(b bool) int {
 	return 0
 }
 
-// Due are the groups (and overflow groups) to notify at now: one not
-// notified in NotifyEvery that has attempts since; an Unknown group only
+// Due are the groups (and overflow groups) to notify at now: one at L2,
+// L3 or Unknown (L1, the route alone, is counted and reported, never
+// pushed) not notified in NotifyEvery that has attempts since; an Unknown group only
 // once its latest UnknownNotifyAt fall within NotifyEvery. A group last
 // notified past now (the clock was set back) is due, its ClockSkew set.
 // Noise, unanchored hits and signals are never groups (Round counts them).
@@ -620,6 +641,9 @@ func (a *Attacks) Due(now time.Time) []*Group {
 		for _, g := range gs {
 			if g.Notified.After(now) {
 				g.ClockSkew, g.Notified = true, time.Time{}
+			}
+			if g.Level == LevelRoute { // L1 is counted and reported, never pushed (plan: alert fatigue)
+				continue
 			}
 			if g.Since == 0 || !g.Notified.IsZero() && now.Sub(g.Notified) < NotifyEvery {
 				continue
@@ -653,18 +677,37 @@ func (a *Attacks) NoticesSent() {
 	a.DroppedPending, a.Note = 0, ""
 }
 
-// prune drops groups not seen in AttackTTL, then evicts past MaxGroups,
+// prune drops groups not seen in AttackTTL (one not yet notified is merged
+// into its overflow group and counted in DroppedPending), then evicts past
+// MaxGroups,
 // and drops the campaign index's entries past CampaignWindow. A time past
 // now (the clock was set back) is taken as now, and said (ClockSkew).
 func (a *Attacks) prune(now time.Time) {
+	if a.Overflow == nil {
+		a.Overflow = map[string]*Group{}
+	}
 	for _, gs := range []map[string]*Group{a.Groups, a.Overflow} {
 		for k, g := range gs {
 			if g.Last.After(now) {
 				g.Last, g.ClockSkew = now, true
 			}
-			if now.Sub(g.Last) > AttackTTL {
-				delete(gs, k)
+			if now.Sub(g.Last) <= AttackTTL {
+				continue
 			}
+			if g.Since > 0 { // not yet notified: never dropped quietly
+				a.DroppedPending++
+				if g.Prefix != PrefixOverflow {
+					ok := groupKey(PrefixOverflow, g.Entry, g.Level, !g.Unverified)
+					o := a.Overflow[ok]
+					if o == nil {
+						o = &Group{Key: ok, Prefix: PrefixOverflow, Entry: g.Entry, Level: g.Level, CVE: g.CVE, KEV: g.KEV, File: g.File, Line: g.Line}
+						a.Overflow[ok] = o
+					}
+					o.merge(g)
+					o.Last = now // kept until it is notified
+				}
+			}
+			delete(gs, k)
 		}
 	}
 	a.evict(MaxGroups)
@@ -685,3 +728,61 @@ func (a *Attacks) prune(now time.Time) {
 }
 
 func severityIndex(s string) int { return slices.Index(severities, s) }
+
+// PeekAttacks reads dir's attacks.json for a reader that changes nothing
+// (block_ip's gate, attack_attempts, /attacks): without the lock (a patrol
+// holding it for its round must not stall them), not following a link,
+// ours, bounded. A file that does not parse is an error, left in place.
+// None yet: an empty state.
+func PeekAttacks(dir string) (*Attacks, error) {
+	a := emptyAttacks()
+	f, err := openNoFollow(filepath.Join(dir, AttacksFile))
+	if errors.Is(err, fs.ErrNotExist) {
+		return a, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", AttacksFile, err)
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if why := ownedByUs(st); why != "" {
+		return nil, fmt.Errorf("%s: %s", AttacksFile, why)
+	}
+	b, err := io.ReadAll(io.LimitReader(f, MaxStateFile+1))
+	if err != nil {
+		return nil, err
+	}
+	var got Attacks
+	if len(b) > MaxStateFile || json.Unmarshal(b, &got) != nil || got.Version != 1 {
+		return nil, fmt.Errorf("%s does not parse", AttacksFile)
+	}
+	for k, g := range got.Groups {
+		if g != nil && g.Key == k {
+			a.Groups[k] = g
+		}
+	}
+	for k, g := range got.Overflow {
+		if g != nil && g.Key == k {
+			a.Overflow[k] = g
+		}
+	}
+	return a, nil
+}
+
+// GroupsOf are the groups (and overflow groups) listing ip among their
+// addresses.
+func (a *Attacks) GroupsOf(ip string) []*Group {
+	var out []*Group
+	for _, gs := range []map[string]*Group{a.Groups, a.Overflow} {
+		for _, g := range gs {
+			if slices.Contains(g.IPs, ip) {
+				out = append(out, g)
+			}
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
+	return out
+}

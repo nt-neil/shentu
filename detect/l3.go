@@ -32,7 +32,8 @@ const (
 	SizeFloor = 512
 )
 
-// Baselines are each route's response sizes, kept across passes in
+// Baselines are each route's response sizes, written only under
+// attacks.lock (RunPass holds it from load to Close), kept across passes in
 // state_dir/baselines.json (a small site's route rarely sees MinBaseline
 // requests in one pass). Only requests with no hit, a 2xx status and a
 // verified log are observed: an attacker shifts the median only with
