@@ -139,3 +139,14 @@ func TestL1NeverPending(t *testing.T) {
 		t.Errorf("the notified L2 group pushed out by L1 ones (dropped %d)", b.DroppedPending)
 	}
 }
+
+// Review 2 of #91 (S-C): an Unknown group below its threshold is not
+// pending: past the TTL it is not counted as dropped.
+func TestUnknownBelowThresholdNotPending(t *testing.T) {
+	a := newAttacks()
+	a.Add(att("192.0.2.1", "sink", LevelUnknown, t0), t0)
+	a.prune(t0.Add(AttackTTL + time.Hour))
+	if a.DroppedPending != 0 {
+		t.Errorf("dropped pending %d", a.DroppedPending)
+	}
+}

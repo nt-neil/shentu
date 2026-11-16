@@ -471,6 +471,8 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 		osFailed := err != nil
 		if osFailed {
 			partial = append(partial, "作業系統套件（"+err.Error()+"）")
+		} else if p, _ := r["partial"].(string); p != "" {
+			partial = append(partial, "作業系統套件只查了一部分（"+p+"）")
 		}
 		unchecked += uncheckedVulns("installed packages", r, err)
 		if err == nil {
@@ -484,12 +486,19 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 		r, err = tools.AppVulns(ctx, env.HTTP, env.AppPaths)
 		unchecked += uncheckedVulns("application dependencies", r, err)
 		var apps []tools.AppResult
-		appsFailed := err != nil
-		if appsFailed {
+		failedApps := map[string]bool{} // lock files whose check failed: their entries are yesterday's
+		if err != nil {
+			failedApps["*"] = true
 			partial = append(partial, "應用程式相依套件（"+err.Error()+"）")
 		}
 		if err == nil {
 			apps, _ = r["files"].([]tools.AppResult)
+			for _, f := range apps {
+				if f.Error != "" { // OSV unreachable for this file: AppVulns says so per file, not as its error
+					failedApps[f.Path] = true
+					partial = append(partial, "應用程式相依套件 "+f.Path+"（"+f.Error+"）")
+				}
+			}
 			for _, f := range apps {
 				for _, e := range f.Exploited {
 					all = append(all, finding{"kev:" + f.Path + ":" + e.Package + ":" + e.CVE, "critical",
@@ -521,7 +530,7 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 			if len(unreadPlugins) > 0 {
 				partial = append(partial, fmt.Sprintf("WordPress 外掛有 %d 處讀不到（見日報）", len(unreadPlugins)))
 			}
-			surface := keepPrevious(cfg.StateDir, buildSurface(audit, apps, osSurface, plugins), appsFailed, osFailed)
+			surface := keepPrevious(cfg.StateDir, buildSurface(audit, apps, osSurface, plugins), failedApps, osFailed)
 			if err := saveSurface(cfg.StateDir, surface, env.AppPaths, partial, time.Now()); err != nil {
 				unchecked += "\nAttack detection: the vulnerability surface could not be saved: " + err.Error() + "\n"
 			}
@@ -530,8 +539,9 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 	// Attack detection: read and judged now (the daily report gets its
 	// summary); its alerts go out on their own, as the detector's words,
 	// after this patrol's report (deferred: whatever path it ends on).
+	unchecked = detectCarryOver(cfg.StateDir) + unchecked // what the last patrol's sends could not do
 	dr := detectJudge(ctx, cfg, time.Now(), daily, dryRun)
-	defer dr.send(ctx, env)
+	defer finishDetect(ctx, env, dr)
 	if daily {
 		unchecked += detectSection(dr.sum)
 	} else if dr.sum.Err != "" {

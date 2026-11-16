@@ -120,11 +120,14 @@ func loginCheck(ctx context.Context, env *Env, ip net.IP) (verified bool, err er
 	var summarySince, summaryUntil time.Time // the window the summary last read
 	for _, back := range []time.Duration{loginGateFirst, loginGateWindow} {
 		var err error
-		summaryUntil = time.Now()
-		summarySince = summaryUntil.Add(-back)
+		summarySince = time.Now().Add(-back)
 		if r, err = loginSummary(ctx, env, summarySince, want); err != nil {
 			return false, fmt.Errorf("refusing to block %s: its SSH logins could not be read to check whether they are real (%v); if the block rests on other evidence, ask again with override_unverified", ip, err)
 		}
+		// The summary read up to now (journald without --until): the
+		// confirming read must cover all it may have counted, an attack
+		// still going on included.
+		summaryUntil = time.Now()
 		sources, _ := r["sources"].([]SSHSource)
 		seen = false
 		for _, s := range sources {

@@ -201,7 +201,7 @@ func TestSurfacePartial(t *testing.T) {
 		t.Fatal(err)
 	}
 	fresh := detect.Build(nil, []detect.PackageVuln{{Source: "os", Ecosystem: "Debian:12", Package: "marker-os", Version: "1.0-1", ID: "CVE-2099-0301"}})
-	merged := keepPrevious(dir, fresh, true, false) // the application dependencies' query failed
+	merged := keepPrevious(dir, fresh, map[string]bool{"/srv/composer.lock": true}, false) // that lock file's check failed (AppResult.Error)
 	if len(merged.Entries) != 2 {
 		t.Fatalf("entries %+v", merged.Entries)
 	}
@@ -325,5 +325,24 @@ func TestDetectLockBounded(t *testing.T) {
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("the patrol waited on the lock")
+	}
+}
+
+// Review 2 of #91 (N-A2): what fails after the patrol's report (the
+// path patrol defers) is kept and said at the start of the next report.
+func TestFinishDetectCarriesOver(t *testing.T) {
+	cfg, logs, _ := detectSetup(t)
+	now := time.Now()
+	os.WriteFile(filepath.Join(logs, "access.log"), nil, 0o640)
+	seedDue(t, cfg.StateDir, 1, now)
+	detectNotify = func(context.Context, *tools.Env, string, string, string) error { return errors.New("marker 429") }
+	dr := detectJudge(context.Background(), cfg, now, false, false)
+	finishDetect(context.Background(), nil, dr)
+	got := detectCarryOver(cfg.StateDir)
+	if !strings.Contains(got, "marker 429") || !strings.Contains(got, "last patrol") {
+		t.Errorf("carry-over %q", got)
+	}
+	if detectCarryOver(cfg.StateDir) != "" {
+		t.Error("said twice")
 	}
 }

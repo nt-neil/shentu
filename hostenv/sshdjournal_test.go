@@ -22,12 +22,16 @@ func TestSSHDJournalLines(t *testing.T) {
 		// sshd's own line naming the address only as a user name: not its event.
 		"2026-11-16T10:00:03+0000 host sshd[103]: Invalid user 198.51.100.7 from 203.0.113.9 port 4003",
 	}, "\n") + "\n")}
+	sock := append([]string(nil), journalSSHDSockArgv...)
+	sock[6] = argv[6]
+	// Review 2 of #91 (S-B): a socket-activated sshd's units count too.
+	h.cmds[argvKey(sock)] = CmdResult{Stdout: []byte("2026-11-16T10:00:04+0000 host sshd[104]: Failed password for root from 198.51.100.7 port 4004 ssh2\n")}
 	if !strings.Contains(strings.Join(argv, " "), "_COMM=sshd _COMM=sshd-session _UID=0") {
 		t.Fatalf("argv %v", argv)
 	}
 	own, err := SSHDJournalLines(context.Background(), h, since, time.Date(2026, 11, 16, 23, 0, 0, 0, time.UTC), "198.51.100.7")
-	if err != nil || own.Failed != 1 || own.InvalidUser != 1 {
-		t.Errorf("%+v, %v (want one failed, one invalid: not .70's, not the user name)", own, err)
+	if err != nil || own.Failed != 2 || own.InvalidUser != 1 {
+		t.Errorf("%+v, %v (want two failed, one of them a socket unit's, one invalid: not .70's, not the user name)", own, err)
 	}
 	// An event after the summary's read is not counted.
 	own, _ = SSHDJournalLines(context.Background(), h, since, time.Date(2026, 11, 16, 10, 0, 1, 0, time.UTC), "198.51.100.7")

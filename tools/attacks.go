@@ -76,6 +76,8 @@ func attackGate(ip net.IP, override bool) (gateVerdict, error) {
 	switch {
 	case verified:
 		return gateAllow, nil
+	case override && len(overflow) > 0:
+		return gateRefuse, fmt.Errorf("refusing to block %s: it is listed in an overflow summary of many sources (%s), whose addresses and severity are merged; override does not apply to a summary: check the full record on the server and block from what it shows", ip, detect.Printable(strings.Join(overflow, ", ")))
 	case override && len(overflow) == 0:
 		// The operator, on the server, overrides: unverified, L1 and
 		// Unknown groups (lines anyone could forge) cannot keep an address
@@ -89,14 +91,34 @@ func attackGate(ip net.IP, override bool) (gateVerdict, error) {
 	return gateRefuse, fmt.Errorf("refusing to block %s: its attempts only reached a route or could not be judged (%s): not enough to block", ip, detect.Printable(strings.Join(weak, ", ")))
 }
 
-// internalAddr says why ip is an internal address (private, CGNAT, unique
-// local, link-local, loopback), "" when it is not.
+// internalAddr says why ip is an internal address (private, CGNAT,
+// unique local, site-local, link-local, loopback, reserved or broadcast,
+// an IPv4 one embedded in an IPv6 form included), "" when it is not.
 func internalAddr(ip net.IP) string {
 	a, ok := netip.AddrFromSlice(ip)
 	if !ok {
 		return ""
 	}
 	a = a.Unmap()
+	if a.Is6() {
+		b := a.As16()
+		switch {
+		case netip.MustParsePrefix("64:ff9b:1::/48").Contains(a):
+			return "a local-use IPv4/IPv6 translation address (64:ff9b:1::/48)"
+		case netip.MustParsePrefix("fec0::/10").Contains(a):
+			return "a site-local address (fec0::/10)"
+		case netip.MustParsePrefix("64:ff9b::/96").Contains(a), b == [16]byte{12: b[12], 13: b[13], 14: b[14], 15: b[15]} && (b[12]|b[13]) != 0:
+			// NAT64's well-known prefix, and IPv4-compatible ::a.b.c.d:
+			// the IPv4 address in the last 32 bits.
+			if why := internalAddr(net.IP(b[12:16])); why != "" {
+				return why + " (embedded in " + a.String() + ")"
+			}
+		case netip.MustParsePrefix("2002::/16").Contains(a): // 6to4: the IPv4 address in bits 16-47
+			if why := internalAddr(net.IP(b[2:6])); why != "" {
+				return why + " (embedded in " + a.String() + ")"
+			}
+		}
+	}
 	switch {
 	case a.IsLoopback():
 		return "a loopback address"
@@ -106,6 +128,10 @@ func internalAddr(ip net.IP) string {
 		return "a private address (RFC 1918 or unique local)"
 	case netip.MustParsePrefix("100.64.0.0/10").Contains(a):
 		return "a carrier-grade NAT address (100.64.0.0/10)"
+	case a.Is4() && (a == netip.MustParseAddr("255.255.255.255") || netip.MustParsePrefix("240.0.0.0/4").Contains(a) ||
+		netip.MustParsePrefix("198.18.0.0/15").Contains(a) || netip.MustParsePrefix("192.0.0.0/24").Contains(a) ||
+		netip.MustParsePrefix("0.0.0.0/8").Contains(a)):
+		return "a reserved, benchmarking or broadcast address"
 	}
 	return ""
 }

@@ -81,12 +81,12 @@ func readSurface(dir string) (surfaceCache, error) {
 	return c, nil
 }
 
-// keepPrevious adds to s, built with some parts missing (appsFailed:
-// application dependencies, osFailed: OS packages), the previous
-// surface's entries of those parts: one failed query must not leave a
-// day of attacks on them judged noise.
-func keepPrevious(dir string, s detect.Surface, appsFailed, osFailed bool) detect.Surface {
-	if !appsFailed && !osFailed {
+// keepPrevious adds to s, built with some parts missing (failedApps:
+// the lock files whose check failed, "*" all of them; osFailed: the OS
+// packages), the previous surface's entries of those parts: one failed
+// query must not leave a day of attacks on them judged noise.
+func keepPrevious(dir string, s detect.Surface, failedApps map[string]bool, osFailed bool) detect.Surface {
+	if len(failedApps) == 0 && !osFailed {
 		return s
 	}
 	prev, err := readSurface(dir)
@@ -101,7 +101,7 @@ func keepPrevious(dir string, s detect.Surface, appsFailed, osFailed bool) detec
 		if e.Kind != "package" || e.Installed || have[e.ID] {
 			continue
 		}
-		if e.Source == "os" && osFailed || e.Source != "os" && appsFailed {
+		if e.Source == "os" && osFailed || e.Source != "os" && (failedApps["*"] || failedApps[e.Source]) {
 			if len(s.Entries) >= detect.MaxEntries {
 				s.TruncatedPackages++
 				continue
@@ -248,9 +248,47 @@ func detectJudge(ctx context.Context, cfg *Config, now time.Time, daily, dryRun 
 				}
 			}
 		}
-		r.sum.ReportPath = filepath.Join(cfg.StateDir, reportsDir, "attacks-"+now.Local().Format(time.DateOnly)+".txt")
+		// The report is written now (it is about what was seen, not what
+		// was sent): ReportPath only once it is.
+		path, err := writeAttackReport(cfg.StateDir, p.Attacks(), &surface, p.Round, notes, now)
+		if err != nil {
+			r.sum.Err = strings.TrimPrefix(r.sum.Err+"; report: "+err.Error(), "; ")
+		} else {
+			r.sum.ReportPath = path
+		}
 	}
 	return r
+}
+
+// detectLastFile keeps what the last patrol's attack detection could not
+// do after its report went (sends, save): the next report says it.
+const detectLastFile = "detect-last.json"
+
+// finishDetect is what the patrol defers after its report: send, and
+// keep what failed for the next report, and say it on stderr.
+func finishDetect(ctx context.Context, env *tools.Env, dr *detectRun) {
+	sum := dr.send(ctx, env)
+	if sum.Err == "" || dr.dryRun {
+		return
+	}
+	fmt.Fprintln(os.Stderr, "shentu: attack detection:", sum.Err)
+	b, _ := json.Marshal(map[string]string{"error": sum.Err, "at": dr.now.UTC().Format(time.RFC3339)})
+	writeAtomic(filepath.Join(dr.cfg.StateDir, detectLastFile), b)
+}
+
+// detectCarryOver is what the last patrol's attack detection could not do
+// (finishDetect), for this report's start, and forgets it. "" for none.
+func detectCarryOver(dir string) string {
+	b, err := detect.ReadStateFile(dir, detectLastFile, 64<<10)
+	if err != nil {
+		return ""
+	}
+	os.Remove(filepath.Join(dir, detectLastFile))
+	var v struct{ Error, At string }
+	if json.Unmarshal(b, &v) != nil || v.Error == "" {
+		return ""
+	}
+	return fmt.Sprintf("\nAttack detection, last patrol (%s): %s\n", v.At, v.Error)
 }
 
 // send pushes the round's alerts (MaxAlertsPerRound one by one, the rest
@@ -314,12 +352,6 @@ func (r *detectRun) send(ctx context.Context, env *tools.Env) detectSummary {
 			if surfaceNotes {
 				writeAtomic(filepath.Join(r.cfg.StateDir, surfaceNoticeFile), []byte(`{"sent":"`+r.now.UTC().Format(time.RFC3339)+`"}`))
 			}
-		}
-	}
-	if r.daily {
-		if _, err := writeAttackReport(r.cfg.StateDir, p.Attacks(), &r.surface, p.Round, r.notes, r.now); err != nil {
-			fail("report", err)
-			r.sum.ReportPath = ""
 		}
 	}
 	if r.dryRun {
@@ -427,8 +459,8 @@ func writeAttackReport(dir string, a *detect.Attacks, s *detect.Surface, r detec
 	if err != nil {
 		return "", err
 	}
-	if st.Mode()&os.ModeSymlink != 0 || !st.IsDir() {
-		return "", fmt.Errorf("%s is not a directory of its own (a link?): the report is not written", rd)
+	if st.Mode()&os.ModeSymlink != 0 || !st.IsDir() || !ownDir(st) {
+		return "", fmt.Errorf("%s is not a directory of its own (a link, or another user's): the report is not written", rd)
 	}
 	if st.Mode().Perm()&0o077 != 0 {
 		if err := os.Chmod(rd, 0o700); err != nil {

@@ -509,7 +509,18 @@ func (g *Group) add(t Attempt, at time.Time) {
 // pending: g has attempts not yet notified that will be (L1 never is: it
 // is counted and reported, so it is never "pending", never pushed out
 // first, never counted as dropped).
-func (g *Group) pending() bool { return g.Since > 0 && g.Level != LevelRoute }
+func (g *Group) pending() bool {
+	if g.Since == 0 || g.Level == LevelRoute {
+		return false
+	}
+	return g.Level != LevelUnknown || g.unknownDue() // an Unknown group below its threshold is not to be notified
+}
+
+// unknownDue: an Unknown group's latest UnknownNotifyAt fall within
+// NotifyEvery (Due's threshold).
+func (g *Group) unknownDue() bool {
+	return len(g.Recent) >= UnknownNotifyAt && g.Recent[len(g.Recent)-1].Sub(g.Recent[0]) <= NotifyEvery
+}
 
 // addIP lists ip (at most MaxGroupIPs) and counts it if new.
 func (g *Group) addIP(ip string) {
@@ -752,7 +763,7 @@ func (a *Attacks) Due(now time.Time) []*Group {
 			if g.Since == 0 || !g.Notified.IsZero() && now.Sub(g.Notified) < NotifyEvery {
 				continue
 			}
-			if g.Level == LevelUnknown && (len(g.Recent) < UnknownNotifyAt || g.Recent[len(g.Recent)-1].Sub(g.Recent[0]) > NotifyEvery) {
+			if g.Level == LevelUnknown && !g.unknownDue() {
 				continue
 			}
 			out = append(out, g)

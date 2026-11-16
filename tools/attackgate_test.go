@@ -230,3 +230,49 @@ func TestBlockGateReview1(t *testing.T) {
 		}
 	}
 }
+
+// Review 2 of #91 (S-A): the confirming read covers everything the summary
+// may have counted: its window ends after the summary was read, so an
+// attack still going on is not taken for forged lines.
+func TestLoginGateConfirmWindow(t *testing.T) {
+	ip := net.ParseIP("198.51.100.7")
+	oldS, oldT, oldJ := loginSummary, textLogins, sshdJournal
+	t.Cleanup(func() { loginSummary, textLogins, sshdJournal = oldS, oldT, oldJ })
+	var read time.Time
+	loginSummary = func(context.Context, *Env, time.Time, string) (map[string]any, error) {
+		time.Sleep(20 * time.Millisecond) // events logged while journald is read
+		read = time.Now()
+		return map[string]any{"complete": true, "verified": true, "source": "journald", "sources": []SSHSource{{IP: "198.51.100.7", Failed: 40}}}, nil
+	}
+	textLogins = func(*Env, string) (int, []string, []string) { return 0, nil, nil }
+	sshdJournal = func(_ context.Context, since, until time.Time, _ string) (SSHSource, error) {
+		if until.Before(read) {
+			t.Errorf("the confirming read ends at %v, before the summary was read (%v)", until, read)
+		}
+		return SSHSource{Failed: 40}, nil
+	}
+	if err := loginGate(context.Background(), &Env{}, ip, false); err != nil {
+		t.Error(err)
+	}
+}
+
+// Review 2 of #91 (S-E, S-F): an overflow summary with override is not
+// told to use override; internal IPv4 addresses inside IPv6 forms and the
+// reserved ranges need an override.
+func TestBlockGateReview2(t *testing.T) {
+	gateState(t, grp("o", detect.PrefixOverflow, "L3", true, "198.51.100.7"))
+	if _, err := attackGate(net.ParseIP("198.51.100.7"), true); err == nil || strings.Contains(err.Error(), "ask again with") || !strings.Contains(err.Error(), "override does not apply") {
+		t.Errorf("overflow with override: %v", err)
+	}
+	gateState(t)
+	for _, q := range []string{"::10.1.2.3", "64:ff9b::a01:203", "64:ff9b:1::1", "2002:a01:203::1", "255.255.255.255", "240.0.0.1", "198.18.0.5", "192.0.0.8", "fec0::1"} {
+		if why := internalAddr(net.ParseIP(q)); why == "" {
+			t.Errorf("%s not internal", q)
+		}
+	}
+	for _, q := range []string{"198.51.100.7", "2001:db8::1", "64:ff9b::c633:6407", "2002:c633:6407::1"} { // documentation and public-embedding forms
+		if why := internalAddr(net.ParseIP(q)); why != "" {
+			t.Errorf("%s internal: %s", q, why)
+		}
+	}
+}

@@ -55,11 +55,13 @@ func WordPressPlugins(roots []string) ([]WPPlugin, []string) {
 	for _, r := range roots {
 		cands := []string{r}
 		level := []string{r}
-		for depth := 0; depth < 2; depth++ {
+		for depth := 0; depth < wpDepth; depth++ {
 			var next []string
 			for _, d := range level {
 				ents, err := readDirMax(d, wpMaxDirEntries)
-				if err != nil && !errors.Is(err, errTooMany) {
+				if errors.Is(err, errTooMany) {
+					unread = append(unread, d+" (more than "+strconv.Itoa(wpMaxDirEntries)+" entries: the rest not looked at)")
+				} else if err != nil {
 					if depth == 0 {
 						unread = append(unread, d+" ("+err.Error()+")")
 					}
@@ -73,9 +75,15 @@ func WordPressPlugins(roots []string) ([]WPPlugin, []string) {
 							unread = append(unread, p+" (a link to a WordPress, not followed)")
 						}
 					case e.IsDir():
+						if len(cands)+len(next) >= wpMaxCandidates {
+							continue
+						}
 						next = append(next, p)
 					}
 				}
+			}
+			if len(cands)+len(next) >= wpMaxCandidates {
+				unread = append(unread, r+" (more than "+strconv.Itoa(wpMaxCandidates)+" directories under it: the rest not looked at for WordPress)")
 			}
 			cands, level = append(cands, next...), next
 		}
@@ -109,13 +117,19 @@ func WordPressPlugins(roots []string) ([]WPPlugin, []string) {
 	return out, unread
 }
 
-// wpMaxDirEntries bounds the entries read of any one directory.
-const wpMaxDirEntries = 4096
+// Bounds on the search: the entries read of any one directory, the
+// levels under a web root looked at (site/public_html/blog), and the
+// directories looked at for a wp-content under one root in all.
+const (
+	wpMaxDirEntries = 4096
+	wpDepth         = 3
+	wpMaxCandidates = 8192
+)
 
 var errTooMany = errors.New("more entries than are read")
 
-// readDirMax reads at most n entries of dir (errTooMany when there are
-// more: those read are given).
+// readDirMax reads at most n entries of dir, sorted by name (errTooMany
+// when there are more: those read are given).
 func readDirMax(dir string, n int) ([]os.DirEntry, error) {
 	f, err := os.Open(dir)
 	if err != nil {
@@ -126,15 +140,18 @@ func readDirMax(dir string, n int) ([]os.DirEntry, error) {
 	if err != nil && !errors.Is(err, io.EOF) {
 		return nil, err
 	}
+	var more error
 	if len(ents) > n {
-		return ents[:n], errTooMany
+		ents, more = ents[:n], errTooMany
 	}
-	return ents, nil
+	sort.Slice(ents, func(i, j int) bool { return ents[i].Name() < ents[j].Name() })
+	return ents, more
 }
 
 func pluginsIn(root, dir string) ([]WPPlugin, []string) {
 	ents, err := readDirMax(dir, wpMaxDirEntries)
-	if errors.Is(err, errTooMany) {
+	tooMany := errors.Is(err, errTooMany)
+	if tooMany {
 		err = nil // the entries read are looked at, the rest said below
 	}
 	if err != nil {
@@ -160,10 +177,18 @@ func pluginsIn(root, dir string) ([]WPPlugin, []string) {
 			n, found := 0, false
 			var failed []string
 			for _, f := range files {
-				if !f.Type().IsRegular() || !strings.HasSuffix(strings.ToLower(f.Name()), ".php") {
+				if !strings.HasSuffix(strings.ToLower(f.Name()), ".php") {
+					continue
+				}
+				if f.Type()&os.ModeSymlink != 0 {
+					failed = append(failed, f.Name()+": a link, not followed")
+					continue
+				}
+				if !f.Type().IsRegular() {
 					continue
 				}
 				if n++; n > wpMaxFilesEach {
+					failed = append(failed, "more than "+strconv.Itoa(wpMaxFilesEach)+" .php files: the rest not read")
 					break
 				}
 				pl, ok, err := pluginHeader(filepath.Join(p, f.Name()))
@@ -177,8 +202,11 @@ func pluginsIn(root, dir string) ([]WPPlugin, []string) {
 					break
 				}
 			}
-			if !found && len(failed) > 0 {
+			switch {
+			case !found && len(failed) > 0:
 				unread = append(unread, p+" (no header read; "+strings.Join(failed, "; ")+")")
+			case !found && n > 0:
+				unread = append(unread, p+" (.php files but no plugin header found)")
 			}
 		case e.Type().IsRegular() && strings.HasSuffix(strings.ToLower(e.Name()), ".php"):
 			pl, ok, err := pluginHeader(p)
@@ -191,7 +219,7 @@ func pluginsIn(root, dir string) ([]WPPlugin, []string) {
 			}
 		}
 	}
-	if len(ents) == wpMaxDirEntries {
+	if tooMany {
 		unread = append(unread, dir+" (more than "+strconv.Itoa(wpMaxDirEntries)+" entries: the rest not read)")
 	}
 	return out, unread
