@@ -5,11 +5,38 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 
 ## v0.3.1 (unreleased)
 
+- 程式碼稽核規則從 70 條增加到 127 條（PHP 25 → 51、Python 22 → 43、JavaScript 與 TypeScript
+  23 → 33）。PHP：WordPress、Laravel、Symfony、Joomla、Drupal、CodeIgniter、Yii 與 Smarty 的危險呼叫，
+  socket 與 HTTP client、XML DTD、template 字串、加密金鑰與 shortcode（#76）。Python：keyword 參數
+  （`args=`、`search_filter=`、`where=`）、ldap3 filter 與經過 helper 的流向（#36）。JavaScript 與
+  TypeScript：Koa 和 Express 串接式回應、BSON 與 launder 的 sanitizer、Host header 的 open redirect 與 SSRF；
+  `.execute(` 只在可能是資料庫 client 的物件上才算（#70）。
+- v0.2.5 列出的已知誤報，已經在引擎修正：
+  - 有 import `typeorm` 的檔案，TypeORM repository 的呼叫不算 MongoDB 查詢；檔案也用了 MongoDB
+    repository、driver 或 Mongoose 時照樣算（`unless_imports`，#59）。
+  - `shell: true` 的 `spawn()` 和 `execFile()`，只有指令或參數帶有輸入才報，只有選項帶輸入不報
+    （一個危險呼叫可以有多個 `[[args]]`，#62）。
+  - 每條路徑都設了 `Content-Type: text/event-stream` 的 Server-Sent Events handler 不算 XSS
+    （`unless_content_type`，#58；`unless_at`，#57）。
+  - `->get_settings()` 只在繼承 `\Elementor\Widget_Base` 的類別裡才算 Elementor widget 的輸入（#60）。
+  - 用 `array_map` 加上回傳常數的 callback 組出的 placeholder 清單不算輸入（#61）。
+  - `zipfile.ZipFile(request.files[...])` 開的是上傳檔的串流，不是路徑（`unless_subscript`，#67）。
+- 引擎：`new URL(a, base)` 的 `a` 以 `/` 或 scheme 起始時，路徑和 query 只取自 `a`（#63）；同一個檔案裡
+  已知類別的物件，呼叫它的方法會追進方法裡（#64）；用 `^` 固定前面字串的 regex 檢查
+  （`re.match(re.escape(base) + r'/[a-z]', url)`）對 redirect 和 URL 規則算是檢查（#65）；回傳字串常數的 helper
+  會追進（#66）；`markup` 使輸出類危險呼叫只在前面寫了 HTML 標記後才算輸入（#71）；recursive 的呼叫 cycle
+  會跟到結果不再改變，並只計一次成本，WordPress 呼叫沒有跟完的檔案從 48 個少到 4 個（#72）；Host header 規則用
+  `route_input = false`，Express 模型也認得 Koa 的 `ctx`（#50）。
+- 主機盤點會對 Apache 2.4.55～2.4.70、載入 `mod_http2` 並在 `Protocols` 開了 `h2` 或 `h2c` 的情況提出警告
+  （CVE-2026-119618；請更新到 2.4.71，更新前先把 `Protocols` 設成只有 `http/1.1`）（#54）。
+- 程式碼稽核：接續的掃描在跑到上次位置前就沒有時間時，保留原本的位置，位置也改用根目錄的路徑記錄；vendor、
+  node_modules 和 WordPress 的程式碼資料夾只在網站根目錄之下才算；`wp-content/blogs.dir/*/files`，以及沒有
+  網站首頁檔的 `/var/www/<uploads|files>`，都算上傳資料夾；`authorized_key_unparsed` 只列出前 20 個行號（#73）。
 - 登入紀錄沒有完整讀到時（root 以外的帳號看不到 journald 的系統紀錄、讀不到 `auth.log` 或 `secure`、
-  紀錄只讀到一部分），hourly 和每日報告都會把 SSH 登入列為沒有檢查。之前這個情況只會寫「nothing new」。
+  紀錄只讀到一部分），hourly 和每日報告都會把 SSH 登入列為沒有檢查。之前這個情況只會寫「nothing new」（#80）。
 - Linux 版本查 DNS 時不再帶 EDNS(0) 記錄，和 glibc 一樣：有些 DNS 伺服器（例如 VMware NAT 的
   DNS）回應這樣的查詢時會少了位址，所以每次查詢（OSV、GitHub）都失敗，回報「no such host」。
-  如果查詢還是失敗，每日報告的 Not checked 會提示檢查這台主機的 DNS。
+  如果查詢還是失敗，每日報告的 Not checked 會提示檢查這台主機的 DNS（#80）。
 - `block_ip` 不再執行在這兩個情況：IP 的 SSH 登入紀錄只來自主機上任何人都能寫入的文字紀錄（`verified` 為 false），
   或是登入紀錄讀不到。管理員自己確認過紀錄後，可以在 `shentu chat` 用 `override_unverified` 照樣執行；
   從 Telegram bot 不能用，每個確認等級都一樣。
@@ -17,10 +44,25 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
   不在檢查範圍內，要由管理員自己確認。
   journald 裡完全沒有 sshd 紀錄的主機（只有文字紀錄），只要 IP 有 SSH 登入紀錄，`block_ip` 都不會執行，
   不管紀錄上寫的是什麼時間；這時不能從 Telegram 執行，只能在伺服器上用 `shentu chat` 加 `override_unverified`。
-  `ssh_logins` 最多回查 720 時，和這個檢查一樣。
+  `ssh_logins` 最多回查 720 時，和這個檢查一樣（#80）。
 - macOS：binary plist 的 array 和 dictionary 項目也計入讀取上限，UTF-16 字串每個字元算 9 bytes；最後有
   space 的程式路徑照原樣保留；同一個 PID 出現在兩行 `ps` 輸出時標為 `parse_error`；`periodic_conf_files`
-  多於 16 個時，沒有讀到的會列出來。
+  多於 16 個時，沒有讀到的會列出來（#80）。CI 在 macOS 15 上跑 `go vet` 和 `go test`（#81）；還沒有提供 macOS
+  執行檔。
+- 測試裡格式和憑證相同的測試值，改成執行時才組出來，repo 裡不再有金鑰格式的字串（#77）。
+- 和 v0.3.0 比較的 benchmark：已公開漏洞 97 個抓到 16 個（原本 15 個），修補版誤報 1 個（原本 0 個，見下方）；
+  保留測試案例 30 個抓到 3 個（原本 2 個），沒有修補版誤報；TypeScript 案例 18 個抓到 1 個、
+  修補版誤報 1 個（n8n），都沒有變。
+
+### 已知問題
+
+- CVE-2021-23664（`@isomorphic-git/cors-proxy`）：`js-ssrf-http-request` 在修補版仍會報出。這個 proxy 在通過
+  allowlist 檢查後才送出 `req.url`，引擎還不會把這個檢查當成 sanitizer；之後會使引擎讀出送出請求前的這類檢查。
+- 規則變多，掃描時間變長：WordPress 多了 39～49%，TypeScript 專案多了 43%，因為每個檔案要跑的規則更多。
+- `block_ip` 的檢查只包含 SSH 登入紀錄（見上方）：根據別的紀錄提出的 block，要由管理員自己決定。
+- `php-deserialization-phar-wrapper` 仍會把 WordPress REST attachments controller 裡對上傳暫存路徑做的
+  `filesize()` 報出來：引擎還分不出上傳檔的 `tmp_name` 和客戶端填的 `name`。
+- `markup` 不會追蹤先在變數裡組成的 HTML 標記（`const h = '<p>' + x; ctx.body = h`）。
 
 ## v0.3.0 — 2026-11-13
 
