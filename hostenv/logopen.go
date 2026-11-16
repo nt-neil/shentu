@@ -89,7 +89,7 @@ func (l *Live) openLog(p string, noFollow bool) (LogFile, error) {
 		f.Close()
 		return nil, &fs.PathError{Op: "open", Path: p, Err: notRegular("not a regular file")}
 	}
-	return &liveLog{File: f, st: FileStat{Mode: st.Mode(), Size: st.Size(), ModTime: st.ModTime(), UID: fileUID(st), GID: fileGID(st), ID: openedFileID(f, st)}}, nil
+	return &liveLog{File: f, st: FileStat{Mode: st.Mode(), Size: st.Size(), ModTime: st.ModTime(), UID: fileUID(st), GID: fileGID(st), ID: openedFileID(f, st), Born: fileBorn(f, st)}}, nil
 }
 
 type liveLog struct {

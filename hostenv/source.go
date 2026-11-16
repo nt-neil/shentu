@@ -80,8 +80,12 @@ type FileStat struct {
 	UID     int         `json:"uid"` // owner; -1 when the system has none to tell (Windows)
 	// GID is the group; nil when not known (Windows, a fixture recorded
 	// before it was kept): a check needing it must not assume root's.
-	GID *int   `json:"gid,omitempty"`
-	ID  string `json:"id,omitempty"` // device:inode, to tell the same file from a swapped one ("" unknown)
+	GID *int `json:"gid,omitempty"`
+	// Born is the file's birth time (statx btime, BSD birthtime); zero
+	// when not known. With ID it tells a file from a later one given the
+	// same inode (ext4 and tmpfs reuse them).
+	Born time.Time `json:"born,omitempty"`
+	ID   string    `json:"id,omitempty"` // device:inode, to tell the same file from a swapped one ("" unknown)
 }
 
 // ErrChanged is returned when a file is not the one stat looked at: it was
@@ -224,7 +228,7 @@ func (l *Live) Stat(path string) (FileStat, error) {
 	if err != nil {
 		return FileStat{}, err
 	}
-	return FileStat{Mode: st.Mode(), Size: st.Size(), ModTime: st.ModTime(), UID: fileUID(st), GID: fileGID(st), ID: pathFileID(l.path(path), st)}, nil
+	return FileStat{Mode: st.Mode(), Size: st.Size(), ModTime: st.ModTime(), UID: fileUID(st), GID: fileGID(st), ID: pathFileID(l.path(path), st), Born: pathBorn(l.path(path))}, nil
 }
 
 func (l *Live) ReadDir(path string) ([]string, error) {

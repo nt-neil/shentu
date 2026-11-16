@@ -46,6 +46,9 @@ func NewBudget(bytes int64, d time.Duration) *Budget {
 	return &Budget{left: bytes, deadline: time.Now().Add(d), now: time.Now}
 }
 
+// spent is checked before every line, after the previous line's LineFunc
+// returned: the time spent parsing and matching lines counts against the
+// deadline as much as reading them.
 func (b *Budget) spent() bool { return b.left <= 0 || b.now().After(b.deadline) }
 
 // ReadResult is what reading one log came to.
@@ -153,13 +156,18 @@ func ReadLog(src hostenv.Source, p string, cur *Cursor, b *Budget, opts ReadOpts
 		start = max(0, st.Size-max(b.left, 0))
 	case sameFile(cur, st, head):
 		start = cur.Offset
-		if cur.HeadLen == 0 && rotatedSince(src, p, cur.ReadAt) {
+		switch {
+		case cur.HeadLen == 0 && rotatedSince(src, p, cur.ReadAt):
 			// Empty when last read, and a rotated file written since: what
 			// it got before the rotation (copytruncate) cannot be told apart.
 			res.partial(ReadRotatedGap)
+		case cur.HeadLen < headLen && (cur.Born.IsZero() || st.Born.IsZero()):
+			// A short head and no birth time: a new file given the old
+			// inode and starting the same way cannot be told from it.
+			res.partial(ReadRotatedGap)
 		}
 	default: // rotated, copied and truncated, rewritten, or a new file that got the old one's inode
-		if rf, ok := readRotated(src, p, cur, b, opts.Trust, &res, fn); ok {
+		if rf, ok := readRotated(src, p, cur, b, opts.Want, opts.Trust, &res, fn); ok {
 			res.Rotated = append(res.Rotated, rf)
 		} else {
 			res.partial(ReadRotatedGap)
@@ -197,7 +205,7 @@ func ReadLog(src hostenv.Source, p string, cur *Cursor, b *Budget, opts ReadOpts
 			res.partial(ReadIOError)
 		}
 	}
-	return Cursor{ID: st.ID, Offset: end, MidLine: mid, Size: st.Size, ModTime: st.ModTime, Head: hashHead(head), HeadLen: len(head), ReadAt: time.Now().UTC()}, res, nil
+	return Cursor{ID: st.ID, Born: st.Born, Offset: end, MidLine: mid, Size: st.Size, ModTime: st.ModTime, Head: hashHead(head), HeadLen: len(head), ReadAt: time.Now().UTC()}, res, nil
 }
 
 func keep(cur *Cursor) Cursor {
@@ -227,6 +235,10 @@ func sameFile(cur *Cursor, st hostenv.FileStat, head []byte) bool {
 	switch {
 	case cur.ID != "" && st.ID != "" && cur.ID != st.ID:
 		return false
+	case !cur.Born.IsZero() && !st.Born.IsZero() && !cur.Born.Equal(st.Born): // the inode, reused
+		return false
+	case cur.HeadLen == 0 && (st.ModTime.Before(cur.ModTime) || st.Size < cur.Size):
+		return false // nothing to compare: the same file only grows
 	case st.Size < cur.Offset:
 		return false // truncated (copytruncate) or replaced
 	case cur.HeadLen > len(head):
@@ -338,26 +350,41 @@ func rotatedSince(src hostenv.Source, p string, t time.Time) bool {
 // trusted. Its head must be cur's either way: an ID may be a reused inode.
 // With an empty head (the log was empty when last read) nothing tells the
 // file read from another, so none is taken.
-func readRotated(src hostenv.Source, p string, cur *Cursor, b *Budget, trust TrustFunc, res *ReadResult, fn LineFunc) (RotatedFile, bool) {
+func readRotated(src hostenv.Source, p string, cur *Cursor, b *Budget, want *hostenv.LogSource, trust TrustFunc, res *ReadResult, fn LineFunc) (RotatedFile, bool) {
 	if cur.HeadLen == 0 {
 		return RotatedFile{}, false
 	}
 	cands := rotatedFiles(src, p)
+	found := func(rf RotatedFile) (RotatedFile, bool) {
+		// Rotations the runs between missed: a rotated file newer than the
+		// one the cursor was in is a whole generation not read.
+		st, _ := hostenv.Stat(src, rf.Path)
+		for _, c := range cands {
+			if c == rf.Path {
+				continue
+			}
+			if cs, err := hostenv.Stat(src, c); err == nil && cs.Size > 0 && cs.ModTime.After(st.ModTime) {
+				res.partial(ReadRotatedGap)
+				break
+			}
+		}
+		return rf, true
+	}
 	if cur.ID != "" { // by ID first: a stat, no read
 		for _, c := range cands {
 			if strings.HasSuffix(c, ".gz") {
 				continue
 			}
 			if st, err := hostenv.Stat(src, c); err == nil && st.ID == cur.ID {
-				if rf, ok := readRest(src, c, false, true, cur, b, trust, res, fn); ok {
-					return rf, true
+				if rf, ok := readRest(src, c, false, true, cur, b, want, trust, res, fn); ok {
+					return found(rf)
 				}
 			}
 		}
 	}
 	for _, c := range cands {
-		if rf, ok := readRest(src, c, strings.HasSuffix(c, ".gz"), false, cur, b, trust, res, fn); ok {
-			return rf, true
+		if rf, ok := readRest(src, c, strings.HasSuffix(c, ".gz"), false, cur, b, want, trust, res, fn); ok {
+			return found(rf)
 		}
 	}
 	return RotatedFile{}, false
@@ -366,7 +393,7 @@ func readRotated(src hostenv.Source, p string, cur *Cursor, b *Budget, trust Tru
 // readRest reads c from cur.Offset to its end if it is the file cur was in:
 // its head is cur's (and, byID, its ID was already found to be). A rotated
 // file shorter than the cursor (non-gzip) is not it.
-func readRest(src hostenv.Source, c string, gz, byID bool, cur *Cursor, b *Budget, trust TrustFunc, res *ReadResult, fn LineFunc) (RotatedFile, bool) {
+func readRest(src hostenv.Source, c string, gz, byID bool, cur *Cursor, b *Budget, want *hostenv.LogSource, trust TrustFunc, res *ReadResult, fn LineFunc) (RotatedFile, bool) {
 	rf := RotatedFile{Path: c, Reason: hostenv.ReasonUnverified}
 	var judged hostenv.TrustResult
 	if trust != nil {
@@ -384,9 +411,20 @@ func readRest(src hostenv.Source, c string, gz, byID bool, cur *Cursor, b *Budge
 	if !gz && st.Size < cur.Offset {
 		return rf, false
 	}
-	if judged.Verified {
+	if byID && !cur.Born.IsZero() && !st.Born.IsZero() && !cur.Born.Equal(st.Born) { // the inode, reused
+		return rf, false
+	}
+	// Never more trusted than the log it was: its lines were written by the
+	// same workers, under the same ptrace_scope, modules and owner.
+	switch {
+	case want == nil:
+	case !want.Verified:
+		if want.Reason != "" {
+			rf.Reason = want.Reason
+		}
+	case judged.Verified:
 		rf.Verified, rf.Reason = opened(st, judged.File.ID)
-	} else if judged.Reason != "" {
+	case judged.Reason != "":
 		rf.Reason = judged.Reason
 	}
 	var r io.Reader = f

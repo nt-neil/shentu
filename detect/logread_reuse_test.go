@@ -22,6 +22,7 @@ type memFile struct {
 	data []byte
 	id   string
 	mod  time.Time
+	born time.Time
 }
 
 func (m *memSrc) Info() hostenv.SourceInfo { return hostenv.SourceInfo{GOOS: "linux"} }
@@ -56,7 +57,7 @@ func (m *memSrc) Stat(p string) (hostenv.FileStat, error) {
 		}
 		return hostenv.FileStat{}, fs.ErrNotExist
 	}
-	return hostenv.FileStat{Mode: 0o640, Size: int64(len(f.data)), ModTime: f.mod, ID: f.id}, nil
+	return hostenv.FileStat{Mode: 0o640, Size: int64(len(f.data)), ModTime: f.mod, ID: f.id, Born: f.born}, nil
 }
 func (m *memSrc) OpenLog(p string) (hostenv.LogFile, error) {
 	f, ok := m.files[p]
@@ -121,5 +122,38 @@ func TestReadLogInodeReusedPlanted(t *testing.T) {
 	eq(t, "the old inode, another head", lines, []string{"new"})
 	if strings.Join(r.Partial, ",") != ReadRotatedGap {
 		t.Errorf("partial %v, want rotated_gap", r.Partial)
+	}
+}
+
+// Review 2, N-9: the same inode with another birth time is a new file even
+// when it starts the same way; with no birth time, a short head is not
+// enough and the read says so; with an empty head the same file only grows.
+func TestReadLogBirthTime(t *testing.T) {
+	now := time.Now()
+	head := strings.Repeat("h", 300) + "\n"
+	src := &memSrc{files: map[string]*memFile{"/l/a.log": {data: []byte(head), id: "8:7", mod: now, born: now}}}
+	c, _, _ := memRead(t, src, "/l/a.log", nil)
+	src.files["/l/a.log"] = &memFile{data: []byte(head + "x\n"), id: "8:7", mod: now.Add(time.Second), born: now.Add(time.Second)}
+	_, r, lines := memRead(t, src, "/l/a.log", &c)
+	eq(t, "reborn inode, same head", lines, []string{strings.Repeat("h", 300), "x"})
+	if strings.Join(r.Partial, ",") != ReadRotatedGap {
+		t.Errorf("partial %v, want rotated_gap", r.Partial)
+	}
+
+	src = &memSrc{files: map[string]*memFile{"/l/b.log": {data: []byte("short\n"), id: "8:8", mod: now}}}
+	c, _, _ = memRead(t, src, "/l/b.log", nil)
+	src.files["/l/b.log"].data = []byte("short\nmore\n")
+	_, r, lines = memRead(t, src, "/l/b.log", &c)
+	eq(t, "no birth time, short head", lines, []string{"more"})
+	if strings.Join(r.Partial, ",") != ReadRotatedGap {
+		t.Errorf("partial %v, want rotated_gap (a reused inode cannot be ruled out)", r.Partial)
+	}
+
+	src = &memSrc{files: map[string]*memFile{"/l/e.log": {id: "8:9", mod: now, born: now}}}
+	c, _, _ = memRead(t, src, "/l/e.log", nil)
+	src.files["/l/e.log"] = &memFile{data: []byte("x\n"), id: "8:9", mod: now.Add(-time.Hour), born: now}
+	_, r, _ = memRead(t, src, "/l/e.log", &c)
+	if !strings.Contains(strings.Join(r.Partial, ","), ReadRotatedGap) {
+		t.Errorf("empty head, older file under the same id: partial %v", r.Partial)
 	}
 }

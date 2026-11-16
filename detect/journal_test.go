@@ -181,3 +181,24 @@ func (f *failingJournal) Run(_ context.Context, argv []string) (hostenv.CmdResul
 	}
 	return hostenv.CmdResult{ExitCode: 1, Stderr: "Failed to open journal: Input/output error"}, nil
 }
+
+// N-R1: a unit failing run after run without moving on is cursor_stuck;
+// a cut entry is entries_cut.
+func TestReadJournalUnitStuckAndCut(t *testing.T) {
+	u := hostenv.AppUnit{Name: "app.service", User: "www-data"}
+	src := &failingJournal{}
+	cur := Cursor{Journal: jc1}
+	var r ReadResult
+	for i := 0; i < StuckAfter; i++ {
+		cur, r, _ = ReadJournalUnit(context.Background(), src, u, &cur, NewBudget(DefaultBudgetBytes, time.Minute), hostenv.WebAccounts{}, func(hostenv.JournalEntry, JournalTrust) {})
+	}
+	if cur.Failures != StuckAfter || !strings.Contains(strings.Join(r.Partial, ","), ReadCursorStuck) {
+		t.Errorf("failures %d, partial %v", cur.Failures, r.Partial)
+	}
+	huge := `{"__CURSOR":"` + jc2 + `","MESSAGE":"` + strings.Repeat("x", hostenv.MaxJournalLine+10) + `"}`
+	ok := &journalSrc{entries: []string{huge}, cursors: []string{jc2}}
+	c, r, err := ReadJournalUnit(context.Background(), ok, u, nil, NewBudget(DefaultBudgetBytes, time.Minute), hostenv.WebAccounts{}, func(hostenv.JournalEntry, JournalTrust) {})
+	if err != nil || c.Journal != jc2 || c.Failures != 0 || !strings.Contains(strings.Join(r.Partial, ","), ReadEntriesCut) {
+		t.Errorf("cut entry: %v, cursor %+v, partial %v", err, c, r.Partial)
+	}
+}

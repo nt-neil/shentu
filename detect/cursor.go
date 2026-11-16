@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -27,9 +28,15 @@ type Cursor struct {
 	Offset int64  `json:"offset"`       // bytes read, up to the end of the last whole line
 	// MidLine: Offset is inside a line longer than MaxLine, whose start was
 	// given: the next read skips to its end rather than read the rest again.
-	MidLine bool      `json:"mid_line,omitempty"`
-	Size    int64     `json:"size"`
-	ModTime time.Time `json:"mtime"`
+	MidLine bool `json:"mid_line,omitempty"`
+	// Born is the file's birth time when the source knows it: an inode
+	// reused for a new file (ext4, tmpfs) has the same ID and another Born.
+	Born time.Time `json:"born,omitempty"`
+	// Failures counts the runs in a row that failed on this source without
+	// moving it on: three or more is cursor_stuck, an alert of its own.
+	Failures int       `json:"failures,omitempty"`
+	Size     int64     `json:"size"`
+	ModTime  time.Time `json:"mtime"`
 	// Head is the SHA-256 of the file's first HeadLen bytes (at most 256):
 	// the same name with other content at its start is not the file read,
 	// and a rotated copy (copytruncate, gzip) is found by it.
@@ -54,7 +61,7 @@ type Cursors struct {
 // valid says why a cursor read from the file cannot be used, "" if it can.
 func (c Cursor) valid() string {
 	switch {
-	case c.Offset < 0 || c.Size < 0:
+	case c.Offset < 0 || c.Size < 0 || c.Failures < 0:
 		return "negative offset or size"
 	case c.HeadLen < 0 || c.HeadLen > headLen:
 		return "head_len out of 0..256"
@@ -80,17 +87,22 @@ func isSHA256Hex(s string) bool {
 func LoadCursors(dir string) (*Cursors, error) {
 	c := &Cursors{Version: 1, Sources: map[string]Cursor{}}
 	p := filepath.Join(dir, CursorFileName)
-	st, err := os.Lstat(p)
+	f, err := openNoFollow(p) // a link is refused by the open itself, not by a check before it
 	if errors.Is(err, fs.ErrNotExist) {
 		return c, nil
 	}
+	if err != nil {
+		return c, fmt.Errorf("%s: %w", CursorFileName, err)
+	}
+	defer f.Close()
+	st, err := f.Stat() // of the file opened
 	if err != nil {
 		return c, err
 	}
 	if why := ownedByUs(st); why != "" {
 		return c, fmt.Errorf("%s: %s", CursorFileName, why)
 	}
-	b, err := os.ReadFile(p)
+	b, err := io.ReadAll(io.LimitReader(f, 64<<20))
 	if err != nil {
 		return c, err
 	}
@@ -153,5 +165,5 @@ func (c *Cursors) Save(dir string) error {
 		os.Remove(tmp)
 		return err
 	}
-	return nil
+	return syncDir(dir) // the rename itself, past a crash
 }

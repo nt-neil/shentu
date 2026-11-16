@@ -42,7 +42,9 @@ func read(t *testing.T, src hostenv.Source, cur *Cursor, b *Budget) (Cursor, Rea
 		st, _ := hostenv.Stat(src, p)
 		return hostenv.TrustResult{Verified: strings.HasSuffix(p, ".1"), File: st}
 	}
-	c, r, err := ReadLog(src, "/logs/a.log", cur, b, ReadOpts{Trust: trust}, func(l Line) { lines = append(lines, string(l.Text)) })
+	cs, _ := hostenv.Stat(src, "/logs/a.log") // the log itself, judged verified now
+	want := &hostenv.LogSource{Path: "/logs/a.log", Verified: true, FileID: cs.ID}
+	c, r, err := ReadLog(src, "/logs/a.log", cur, b, ReadOpts{Want: want, Trust: trust}, func(l Line) { lines = append(lines, string(l.Text)) })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -486,5 +488,88 @@ func TestCursorsInvalidAndUnsafe(t *testing.T) {
 	}
 	if c, err := LoadCursors(d); err != nil || c.Sources["/x"].Offset != 1 {
 		t.Errorf("saved: %v %+v", err, c)
+	}
+}
+
+// Review 2, B-N1: a rotated file is never more trusted than its log: with
+// the log web_user_writable (ptrace_scope 0, mod_php, FPM), root's .1 is not
+// verified either.
+func TestReadLogRotatedCeiling(t *testing.T) {
+	rootUID = os.Getuid()
+	src, d := logDir(t)
+	a := filepath.Join(d, "a.log")
+	write(t, a, "one\n", os.O_CREATE)
+	trust := func(p string) hostenv.TrustResult {
+		st, _ := hostenv.Stat(src, p)
+		return hostenv.TrustResult{Verified: true, File: st}
+	}
+	want := &hostenv.LogSource{Path: "/logs/a.log", Reason: hostenv.ReasonWebUserWritable}
+	var verified []bool
+	read := func(cur *Cursor) (Cursor, ReadResult) {
+		c, r, err := ReadLog(src, "/logs/a.log", cur, NewBudget(DefaultBudgetBytes, time.Minute), ReadOpts{Want: want, Trust: trust}, func(l Line) { verified = append(verified, l.Verified) })
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c, r
+	}
+	c, _ := read(nil)
+	write(t, a, "two\n", os.O_APPEND)
+	os.Rename(a, a+".1")
+	write(t, a, "new\n", os.O_CREATE)
+	verified = nil
+	_, r := read(&c)
+	if len(r.Rotated) != 1 || r.Rotated[0].Verified || r.Rotated[0].Reason != hostenv.ReasonWebUserWritable {
+		t.Errorf("rotated %+v, want unverified as its log", r.Rotated)
+	}
+	for _, v := range verified {
+		if v {
+			t.Error("a line read as verified")
+		}
+	}
+}
+
+// Review 2, N-5: two rotations between runs: the generation between is
+// not read, and the read says so.
+func TestReadLogMissedRotation(t *testing.T) {
+	src, d := logDir(t)
+	a := filepath.Join(d, "a.log")
+	write(t, a, "one\n", os.O_CREATE)
+	c, _, _ := read(t, src, nil, nil)
+	write(t, a, "two\n", os.O_APPEND)
+	os.Rename(a, a+".2")
+	old := time.Now().Add(-time.Hour)
+	os.Chtimes(a+".2", old, old)
+	write(t, a+".1", "a whole generation\n", os.O_CREATE)
+	write(t, a, "new\n", os.O_CREATE)
+	_, r, lines := read(t, src, &c, nil)
+	eq(t, "missed rotation", lines, []string{"two", "new"})
+	if strings.Join(r.Partial, ",") != ReadRotatedGap {
+		t.Errorf("partial %v, want rotated_gap", r.Partial)
+	}
+}
+
+// The deadline counts the time the line function takes.
+func TestReadLogParseTimeCounts(t *testing.T) {
+	src, d := logDir(t)
+	write(t, filepath.Join(d, "a.log"), strings.Repeat("x\n", 100), os.O_CREATE)
+	n := 0
+	_, r, err := ReadLog(src, "/logs/a.log", nil, NewBudget(DefaultBudgetBytes, 30*time.Millisecond), ReadOpts{}, func(Line) {
+		n++
+		time.Sleep(5 * time.Millisecond)
+	})
+	if err != nil || n >= 100 || !strings.Contains(strings.Join(r.Partial, ","), ReadTruncated) {
+		t.Errorf("%d lines, partial %v, err %v: want stopped by the deadline", n, r.Partial, err)
+	}
+}
+
+// The cursor file is opened refusing a link, its owner and mode checked on
+// what was opened.
+func TestCursorsOpenNoFollow(t *testing.T) {
+	d := t.TempDir()
+	other := filepath.Join(t.TempDir(), "x")
+	os.WriteFile(other, []byte(`{"version":1,"sources":{"/a":{"offset":1}}}`), 0o600)
+	os.Symlink(other, filepath.Join(d, CursorFileName))
+	if c, err := LoadCursors(d); err == nil || len(c.Sources) != 0 {
+		t.Errorf("%v, %+v: a link was read", err, c)
 	}
 }

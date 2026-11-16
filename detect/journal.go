@@ -24,7 +24,17 @@ const (
 	// ReadMessageMissing: entries whose MESSAGE journald did not give; how
 	// the entries themselves say (JournalEntry.MessageMissing).
 	ReadMessageMissing = "message_missing"
+	// ReadEntriesCut: entries past MaxJournalMessage or MaxJournalLine were
+	// cut: what an attacker padded his entry to push past the cut is not
+	// matched, and the cut is a signal of its own.
+	ReadEntriesCut = "entries_cut"
+	// ReadCursorStuck: the read failed on this unit StuckAfter runs in a row
+	// without moving on.
+	ReadCursorStuck = "cursor_stuck"
 )
+
+// StuckAfter is how many failed runs in a row make a cursor stuck.
+const StuckAfter = 3
 
 // JournalTrust is how far one entry can be believed.
 type JournalTrust struct {
@@ -99,6 +109,7 @@ func ReadJournalUnit(ctx context.Context, src hostenv.Source, unit hostenv.AppUn
 		}
 		if e.Cut {
 			res.LongLines++
+			res.partial(ReadEntriesCut)
 		}
 		res.Lines++
 		res.Bytes += n
@@ -125,7 +136,16 @@ func ReadJournalUnit(ctx context.Context, src hostenv.Source, unit hostenv.AppUn
 			return c, r2, err2
 		}
 		res.partial(ReadIOError) // the cursor stays where the last whole entry left it
+		if last == "" {
+			next.Failures++
+			if next.Failures >= StuckAfter {
+				res.partial(ReadCursorStuck)
+			}
+		} else {
+			next.Failures = 0
+		}
 		return next, res, err
 	}
+	next.Failures = 0
 	return next, res, nil
 }
