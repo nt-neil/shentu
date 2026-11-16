@@ -71,6 +71,10 @@ func EntryTrust(e hostenv.JournalEntry, unit hostenv.AppUnit, web hostenv.WebAcc
 		return JournalTrust{Reason: hostenv.ReasonUntrusted}
 	case "journal", "syslog":
 		switch {
+		case e.UID == 0 && unit.FPM:
+			// PHP-FPM's master logs what its workers forward and the slow
+			// log's script names: never its own words alone (review 3).
+			return JournalTrust{Reason: hostenv.ReasonWebUserWritable}
 		case e.UID == 0 && !unit.RunsAppAsRoot():
 			return JournalTrust{Verified: true}
 		case e.UID == 0, webUID:

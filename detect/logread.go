@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -85,6 +86,7 @@ func (r *ReadResult) partial(why string) {
 // Line is one line read.
 type Line struct {
 	From     string // the log, or the rotated file it came from
+	Offset   int64  // where the line starts in From (uncompressed, for a .gz)
 	Text     []byte // without its newline, valid only during the call
 	Cut      bool   // longer than MaxLine: Text is its start (parse it with ParseCut)
 	Verified bool   // the file it came from is trusted (ReadResult.Verified, RotatedFile.Verified)
@@ -161,9 +163,11 @@ func ReadLog(src hostenv.Source, p string, cur *Cursor, b *Budget, opts ReadOpts
 			// Empty when last read, and a rotated file written since: what
 			// it got before the rotation (copytruncate) cannot be told apart.
 			res.partial(ReadRotatedGap)
-		case cur.HeadLen < headLen && (cur.Born.IsZero() || st.Born.IsZero()):
-			// A short head and no birth time: a new file given the old
-			// inode and starting the same way cannot be told from it.
+		case cur.HeadLen < headLen && (cur.Born.IsZero() || st.Born.IsZero()) &&
+			!(st.Size == cur.Size && st.ModTime.Equal(cur.ModTime)) && rotatedSince(src, p, cur.ReadAt):
+			// A short head, no birth time, the file changed and a rotation
+			// happened since: a new file given the old inode and starting
+			// the same way cannot be told from it.
 			res.partial(ReadRotatedGap)
 		}
 	default: // rotated, copied and truncated, rewritten, or a new file that got the old one's inode
@@ -300,6 +304,10 @@ func globEscape(p string) string {
 	return sb.String()
 }
 
+// rotationSuffix is what logrotate and rotatelogs add to a log's name: a
+// number, a date (dateext), maybe .gz.
+var rotationSuffix = regexp.MustCompile(`^[.-](?:\d{1,10}|\d{4}-?\d{2}-?\d{2}(?:[-_]?\d{2,6})?)(?:\.gz)?$`)
+
 // rotatedFiles are the files beside p its rotation may have made, the most
 // recently changed first, at most maxRotated: with dateext a log may have
 // dozens, and the one wanted is the newest.
@@ -311,8 +319,8 @@ func rotatedFiles(src hostenv.Source, p string) []string {
 	var cs []cand
 	for _, g := range []string{globEscape(p) + ".*", globEscape(p) + "-*"} {
 		for _, c := range hostenv.Glob(src, g) {
-			if c == p || len(cs) >= maxRotatedNames {
-				continue
+			if c == p || len(cs) >= maxRotatedNames || !rotationSuffix.MatchString(c[len(p):]) {
+				continue // another log beside it (site.log.json), not a rotation
 			}
 			st, _ := hostenv.Stat(src, c)
 			cs = append(cs, cand{c, st.ModTime})
@@ -511,7 +519,7 @@ func readLines(br *bufio.Reader, l Line, off int64, b *Budget, final bool, res *
 			b.left -= n
 			res.LongLines++
 			res.Lines++
-			l.Text, l.Cut = long, true
+			l.Text, l.Cut, l.Offset = long, true, off
 			fn(l)
 			rest, ended, serr := skipLine(br, b)
 			n += rest
@@ -537,7 +545,7 @@ func readLines(br *bufio.Reader, l Line, off int64, b *Budget, final bool, res *
 				res.Bytes += int64(len(line))
 				b.left -= int64(len(line))
 				off += int64(len(line))
-				l.Text, l.Cut = line, false
+				l.Text, l.Cut, l.Offset = line, false, off
 				fn(l)
 			}
 			return off, false, nil
@@ -546,8 +554,8 @@ func readLines(br *bufio.Reader, l Line, off int64, b *Budget, final bool, res *
 		res.Lines++
 		res.Bytes += n
 		b.left -= n
+		l.Text, l.Cut, l.Offset = bytes.TrimSuffix(line[:len(line)-1], []byte("\r")), false, off
 		off += n
-		l.Text, l.Cut = bytes.TrimSuffix(line[:len(line)-1], []byte("\r")), false
 		fn(l)
 	}
 }

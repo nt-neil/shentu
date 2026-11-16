@@ -2,6 +2,7 @@ package detect
 
 import (
 	"compress/gzip"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -405,7 +406,7 @@ func TestReadLogManyRotations(t *testing.T) {
 	c, _, _ := read(t, src, nil, nil)
 	old := time.Now().Add(-48 * time.Hour)
 	for i := 0; i < 40; i++ {
-		n := filepath.Join(d, "a.log-2025"+strings.Repeat("0", 1)+string(rune('a'+i%26))+string(rune('a'+i/26)))
+		n := filepath.Join(d, fmt.Sprintf("a.log-2025%02d%02d", 1+i/28, 1+i%28)) // dateext names, older
 		write(t, n, "old\n", os.O_CREATE)
 		os.Chtimes(n, old, old)
 	}
@@ -571,5 +572,26 @@ func TestCursorsOpenNoFollow(t *testing.T) {
 	os.Symlink(other, filepath.Join(d, CursorFileName))
 	if c, err := LoadCursors(d); err == nil || len(c.Sources) != 0 {
 		t.Errorf("%v, %+v: a link was read", err, c)
+	}
+}
+
+// Review 3, S: only what logrotate adds (a number, a date, .gz) makes a
+// rotated file; another log beside it (site.log.json) is not one.
+func TestRotatedFilesSuffix(t *testing.T) {
+	src, d := logDir(t)
+	for _, n := range []string{"a.log", "a.log.json", "a.log.old", "a.log.1", "a.log.2.gz", "a.log-20261116", "a.log-20261115.gz", "a.log-2026-11-14"} {
+		write(t, filepath.Join(d, n), "x\n", os.O_CREATE)
+	}
+	got := map[string]bool{}
+	for _, c := range rotatedFiles(src, "/logs/a.log") {
+		got[filepath.Base(c)] = true
+	}
+	for _, want := range []string{"a.log.1", "a.log.2.gz", "a.log-20261116", "a.log-20261115.gz", "a.log-2026-11-14"} {
+		if !got[want] {
+			t.Errorf("%s not a candidate: %v", want, got)
+		}
+	}
+	if got["a.log.json"] || got["a.log.old"] {
+		t.Errorf("another log taken for a rotation: %v", got)
 	}
 }

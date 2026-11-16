@@ -142,11 +142,21 @@ func TestReadLogBirthTime(t *testing.T) {
 
 	src = &memSrc{files: map[string]*memFile{"/l/b.log": {data: []byte("short\n"), id: "8:8", mod: now}}}
 	c, _, _ = memRead(t, src, "/l/b.log", nil)
-	src.files["/l/b.log"].data = []byte("short\nmore\n")
-	_, r, lines = memRead(t, src, "/l/b.log", &c)
-	eq(t, "no birth time, short head", lines, []string{"more"})
+	src.files["/l/b.log"] = &memFile{data: []byte("short\nmore\n"), id: "8:8", mod: now.Add(time.Second)}
+	c2, r, lines := memRead(t, src, "/l/b.log", &c)
+	eq(t, "no birth time, short head, no rotation", lines, []string{"more"})
+	if len(r.Partial) != 0 { // growing, nothing rotated: no flood of gaps (review 3, N-4)
+		t.Errorf("partial %v, want none", r.Partial)
+	}
+	_, r, _ = memRead(t, src, "/l/b.log", &c2)
+	if len(r.Partial) != 0 {
+		t.Errorf("unchanged: partial %v, want none", r.Partial)
+	}
+	src.files["/l/b.log.1"] = &memFile{data: []byte("old\n"), id: "8:20", mod: time.Now().Add(time.Hour)}
+	src.files["/l/b.log"] = &memFile{data: []byte("short\nmore\nnew\n"), id: "8:8", mod: now.Add(2 * time.Second)}
+	_, r, _ = memRead(t, src, "/l/b.log", &c2)
 	if strings.Join(r.Partial, ",") != ReadRotatedGap {
-		t.Errorf("partial %v, want rotated_gap (a reused inode cannot be ruled out)", r.Partial)
+		t.Errorf("partial %v, want rotated_gap (rotated since, a reused inode cannot be ruled out)", r.Partial)
 	}
 
 	src = &memSrc{files: map[string]*memFile{"/l/e.log": {id: "8:9", mod: now, born: now}}}

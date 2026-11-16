@@ -60,8 +60,8 @@ func TestEntryTrust(t *testing.T) {
 		e    hostenv.JournalEntry
 		want JournalTrust
 	}{
-		{hostenv.JournalEntry{Unit: u.Name, UID: 0, Transport: "journal"}, JournalTrust{Verified: true}},
-		{hostenv.JournalEntry{Unit: u.Name, UID: 0, Transport: "syslog"}, JournalTrust{Verified: true}},
+		{hostenv.JournalEntry{Unit: u.Name, UID: 0, Transport: "journal"}, JournalTrust{Reason: hostenv.ReasonWebUserWritable}}, // FPM's master: its workers' words too
+		{hostenv.JournalEntry{Unit: u.Name, UID: 0, Transport: "syslog"}, JournalTrust{Reason: hostenv.ReasonWebUserWritable}},
 		{hostenv.JournalEntry{Unit: u.Name, UID: 33, Transport: "journal"}, JournalTrust{Reason: hostenv.ReasonWebUserWritable}},
 		{hostenv.JournalEntry{Unit: u.Name, UID: 1000, Transport: "syslog"}, JournalTrust{Reason: hostenv.ReasonUntrusted}},
 		// A worker writing to the stderr the root master opened is logged as uid 0.
@@ -102,7 +102,7 @@ func TestReadJournalUnit(t *testing.T) {
 	// The next run goes on after it.
 	got = nil
 	c, r, err = ReadJournalUnit(context.Background(), src, u, &c, NewBudget(DefaultBudgetBytes, time.Minute), web, fn)
-	if err != nil || c.Journal != jc2 || len(r.Partial) != 0 || strings.Join(got, "|") != "two/" {
+	if err != nil || c.Journal != jc2 || len(r.Partial) != 0 || strings.Join(got, "|") != "two/web_user_writable" { // FPM's master
 		t.Errorf("next run: %v, cursor %q, partial %v, entries %q", err, c.Journal, r.Partial, got)
 	}
 	if !strings.HasPrefix(src.asked[1], "--after-cursor "+jc1) {
@@ -200,5 +200,14 @@ func TestReadJournalUnitStuckAndCut(t *testing.T) {
 	c, r, err := ReadJournalUnit(context.Background(), ok, u, nil, NewBudget(DefaultBudgetBytes, time.Minute), hostenv.WebAccounts{}, func(hostenv.JournalEntry, JournalTrust) {})
 	if err != nil || c.Journal != jc2 || c.Failures != 0 || !strings.Contains(strings.Join(r.Partial, ","), ReadEntriesCut) {
 		t.Errorf("cut entry: %v, cursor %+v, partial %v", err, c, r.Partial)
+	}
+}
+
+// A unit running its application as a non-root user: its root messages
+// (the master, ExecStartPre) are verified.
+func TestEntryTrustNonFPMRoot(t *testing.T) {
+	u := hostenv.AppUnit{Name: "app.service", User: "www-data"}
+	if got := EntryTrust(hostenv.JournalEntry{Unit: u.Name, UID: 0, Transport: "journal"}, u, hostenv.WebAccounts{}); !got.Verified {
+		t.Errorf("%+v", got)
 	}
 }
