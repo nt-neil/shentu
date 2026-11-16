@@ -103,3 +103,11 @@ func TestInRange(t *testing.T) {
 		t.Error("no versions: every version")
 	}
 }
+
+func TestKEVIndex(t *testing.T) {
+	ss := []Signature{{ID: "b", CVEs: []string{"CVE-2024-1"}}, {ID: "a", CVEs: []string{"CVE-2024-1", "CVE-2024-2"}}, {ID: "c"}}
+	idx := KEVIndex(ss)
+	if len(idx) != 2 || strings.Join(idx["CVE-2024-1"], ",") != "a,b" || strings.Join(idx["CVE-2024-2"], ",") != "a" {
+		t.Errorf("%v", idx)
+	}
+}

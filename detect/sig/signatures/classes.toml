@@ -1,0 +1,261 @@
+# Signatures of payload classes, written for shentu (Apache-2.0) from the
+# classes' shapes, not copied from any rule set. Text is matched decoded and
+# lower-cased (detect.Normalize): write expressions in lower case.
+
+# --- SQL injection (CWE-89) ---
+
+[[signature]]
+id = "sqli-tautology"
+title = "SQL injection: a quote closed and a tautology (' or 1=1)"
+class = "sqli"
+cwe = ["CWE-89"]
+source = "shentu"
+license = "Apache-2.0"
+[[signature.match]]
+part = "any_param"
+regex = '''['"`)]\s*(?:or|and|\|\||&&)\s+['"]?(\w+)['"]?\s*(?:=|like)\s*['"]?\w+'''
+
+[[signature]]
+id = "sqli-time-delay"
+title = "SQL injection: a time delay (sleep, pg_sleep, benchmark, waitfor delay)"
+class = "sqli"
+cwe = ["CWE-89"]
+source = "shentu"
+license = "Apache-2.0"
+[[signature.match]]
+part = "any_param"
+regex = '''\b(?:sleep|pg_sleep|benchmark|dbms_lock\.sleep)\s*\(\s*\d|\bwaitfor\s+delay\s+['"]'''
+
+[[signature]]
+id = "sqli-catalog"
+title = "SQL injection: reading the database's catalog"
+class = "sqli"
+cwe = ["CWE-89"]
+source = "shentu"
+license = "Apache-2.0"
+[[signature.match]]
+part = "any_param"
+regex = '\b(?:information_schema\.(?:tables|columns|schemata)|pg_catalog\.pg_\w+|sys\.objects|sqlite_master|mysql\.user)\b'
+
+[[signature]]
+id = "sqli-quote-comment"
+title = "SQL injection: a quote closed and the rest commented out"
+class = "sqli"
+cwe = ["CWE-89"]
+source = "shentu"
+license = "Apache-2.0"
+[[signature.match]]
+part = "any_param"
+regex = '''['"]\s*\)*\s*(?:--[\s-]|#|/\*)'''
+
+# --- Path traversal and local file inclusion (CWE-22, CWE-98) ---
+
+[[signature]]
+id = "path-sensitive-file"
+title = "Path traversal: a well-known system file"
+class = "path"
+cwe = ["CWE-22"]
+source = "shentu"
+license = "Apache-2.0"
+[[signature.match]]
+part = "any_param"
+regex = '(?:^|[/\\])(?:etc/(?:passwd|shadow|hosts|group)|proc/self/(?:environ|cmdline|fd/\d+)|windows/(?:win\.ini|system32/drivers/etc/hosts)|boot\.ini)\b'
+
+[[signature]]
+id = "path-php-wrapper"
+title = "File inclusion: a PHP stream wrapper (php://filter, php://input, data:, expect:)"
+class = "path"
+cwe = ["CWE-98"]
+source = "shentu"
+license = "Apache-2.0"
+[[signature.match]]
+part = "any_param"
+regex = '^\s*(?:php://(?:filter|input)|data:(?:text/plain|application/x-httpd-php)?;base64,|expect://|zip://)'
+
+[[signature]]
+id = "path-traversal-in-path"
+title = "Path traversal in the URL's own path"
+class = "path"
+cwe = ["CWE-22"]
+source = "shentu"
+license = "Apache-2.0"
+[[signature.match]]
+part = "path"
+regex = '(?:/\.\.){2,}(?:/|$)'
+
+# --- OS command injection (CWE-78) ---
+
+[[signature]]
+id = "cmdi-chained-command"
+title = "Command injection: a shell separator and a command"
+class = "cmdi"
+cwe = ["CWE-78"]
+source = "shentu"
+license = "Apache-2.0"
+[[signature.match]]
+part = "any_param"
+regex = '(?:[;&|`\n]|\$\()\s*(?:id|whoami|uname(?:\s+-a)?|hostname|cat\s+/etc/\w+|wget\s+\S|curl\s+\S|nc\s+-\w|ncat\s|bash\s+-[ci]|sh\s+-c|ping\s+-c\s*\d|nslookup\s+\S|powershell\b|cmd(?:\.exe)?\s+/c)\b'
+
+[[signature]]
+id = "cmdi-ifs"
+title = "Command injection: $IFS or ${IFS} standing for a space"
+class = "cmdi"
+cwe = ["CWE-78"]
+source = "shentu"
+license = "Apache-2.0"
+[[signature.match]]
+part = "any_param"
+contains = ["${ifs}", "$ifs$", "$ifs"]
+
+# --- Server-side request forgery (CWE-918) ---
+
+[[signature]]
+id = "ssrf-metadata"
+title = "SSRF: a cloud metadata address"
+class = "ssrf"
+cwe = ["CWE-918"]
+source = "shentu"
+license = "Apache-2.0"
+[[signature.match]]
+part = "any_param"
+regex = '169\.254\.169\.254|metadata\.google\.internal|100\.100\.100\.200|\[?fd00:ec2::254\]?|169\.254\.170\.2'
+
+[[signature]]
+id = "ssrf-scheme"
+title = "SSRF: a URL of a scheme a fetcher should not follow (gopher, dict, file, ldap)"
+class = "ssrf"
+cwe = ["CWE-918"]
+source = "shentu"
+license = "Apache-2.0"
+[[signature.match]]
+part = "any_param"
+regex = '^\s*(?:gopher|dict|file|ldap|tftp|jar|netdoc)://'
+
+[[signature]]
+id = "ssrf-loopback"
+title = "SSRF: a URL to this host's own loopback"
+class = "ssrf"
+cwe = ["CWE-918"]
+source = "shentu"
+license = "Apache-2.0"
+[[signature.match]]
+part = "any_param"
+regex = '^\s*https?://(?:127\.\d+\.\d+\.\d+|localhost|0\.0\.0\.0|0x7f\w*|2130706433|\[::1?\]|\[::ffff:127\.0\.0\.1\])(?:[:/]|$)'
+
+# --- Deserialization (CWE-502) ---
+
+[[signature]]
+id = "deser-php-object"
+title = "Deserialization: a serialized PHP object, or a phar:// path"
+class = "deser"
+cwe = ["CWE-502"]
+source = "shentu"
+license = "Apache-2.0"
+[[signature.match]]
+part = "any_param"
+regex = '\bo:\d+:"[a-z_\\][a-z0-9_\\]*":\d+:\{|^\s*phar://'
+
+[[signature]]
+id = "deser-java"
+title = "Deserialization: a serialized Java object (raw or base64)"
+class = "deser"
+cwe = ["CWE-502"]
+source = "shentu"
+license = "Apache-2.0"
+[[signature.match]]
+part = "any_param"
+regex = '\bro0ab|\xac\xed\x00\x05|aced0005'
+
+# --- XML external entities (CWE-611) ---
+
+[[signature]]
+id = "xxe-doctype"
+title = "XXE: a DOCTYPE with an internal subset, or an ENTITY"
+class = "xxe"
+cwe = ["CWE-611"]
+source = "shentu"
+license = "Apache-2.0"
+[[signature.match]]
+part = "any_param"
+regex = '<!doctype\s+\w+\s*(?:\[|system|public)|<!entity\s'
+
+# --- Code injection and template injection (CWE-94, CWE-1336) ---
+
+[[signature]]
+id = "code-template-arith"
+title = "Template injection: an expression a template engine evaluates ({{7*7}}, ${7*7})"
+class = "code"
+cwe = ["CWE-1336"]
+source = "shentu"
+license = "Apache-2.0"
+[[signature.match]]
+part = "any_param"
+regex = '\{\{\s*\d+\s*[*+]\s*\d+\s*\}\}|\$\{\s*\d+\s*[*+]\s*\d+\s*\}|#\{\s*\d+\s*[*+]\s*\d+\s*\}|<%=\s*\d+\s*[*+]\s*\d+\s*%>|\{\{\s*(?:config|self|request|cycler|joiner|lipsum)\b'
+
+[[signature]]
+id = "code-eval-call"
+title = "Code injection: a call to eval, system or a decoder of code"
+class = "code"
+cwe = ["CWE-94"]
+source = "shentu"
+license = "Apache-2.0"
+[[signature.match]]
+part = "any_param"
+regex = '\b(?:eval|assert|system|passthru|shell_exec|proc_open|popen|create_function|call_user_func(?:_array)?|base64_decode|gzinflate|str_rot13)\s*\(|__import__\s*\(|\bruntime\.getruntime\(\)\.exec|\bprocessbuilder\b'
+
+[[signature]]
+id = "code-jndi-lookup"
+title = "Code injection: a JNDI lookup (Log4Shell's ${jndi:...})"
+class = "code"
+cwe = ["CWE-917"]
+source = "shentu"
+license = "Apache-2.0"
+[[signature.match]]
+part = "any_param"
+regex = '\$\{.{0,96}?j.{0,24}?n.{0,24}?d.{0,24}?i.{0,24}?:.{0,64}?(?:ldaps?|rmi|dns|iiop|https?|nis|nds|corba)\b'
+
+[[signature]]
+id = "code-jndi-lookup-header"
+title = "Code injection: a JNDI lookup in the User-Agent"
+class = "code"
+cwe = ["CWE-917"]
+source = "shentu"
+license = "Apache-2.0"
+[[signature.match]]
+part = "user_agent"
+regex = '\$\{.{0,96}?j.{0,24}?n.{0,24}?d.{0,24}?i.{0,24}?:.{0,64}?(?:ldaps?|rmi|dns|iiop|https?|nis|nds|corba)\b'
+
+# --- Cross-site scripting (CWE-79) ---
+
+[[signature]]
+id = "xss-script"
+title = "XSS: a script tag, an event handler or a javascript: URL"
+class = "xss"
+cwe = ["CWE-79"]
+source = "shentu"
+license = "Apache-2.0"
+[[signature.match]]
+part = "any_param"
+regex = '<script\b|<\w+[^>]*\bon(?:error|load|mouseover|focus|toggle|animationstart|pointerover)\s*=|^\s*javascript:|<iframe\b[^>]*\bsrc\s*='
+
+# --- Scanners (no vulnerability: counted, tells a campaign) ---
+
+[[signature]]
+id = "scanner-user-agent"
+title = "A vulnerability scanner's own User-Agent"
+class = "scanner"
+source = "shentu"
+license = "Apache-2.0"
+[[signature.match]]
+part = "user_agent"
+regex = '\b(?:sqlmap|nikto|nuclei|acunetix|nessus|openvas|wpscan|zgrab|masscan|dirbuster|gobuster|ffuf|wfuzz|nmap scripting engine|jaeles|arachni)\b'
+
+[[signature]]
+id = "scanner-oob-host"
+title = "An out-of-band callback host (interactsh, Burp Collaborator)"
+class = "scanner"
+source = "shentu"
+license = "Apache-2.0"
+[[signature.match]]
+part = "query"
+regex = '\.(?:oast\.(?:pro|live|site|online|fun|me)|interact\.sh|burpcollaborator\.net|oastify\.com|dnslog\.cn|ceye\.io)\b'

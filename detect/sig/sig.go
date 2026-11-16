@@ -339,3 +339,19 @@ func compareVersions(a, b string) (int, bool) {
 	}
 	return strings.Compare(sa, sb), true
 }
+
+// KEVIndex maps each CVE the signatures are written for to their ids: the
+// table P4 weighs a KEV entry's hits by, and the order KEV CVEs still
+// lacking a signature are listed in.
+func KEVIndex(ss []Signature) map[string][]string {
+	out := map[string][]string{}
+	for _, s := range ss {
+		for _, c := range s.CVEs {
+			out[c] = append(out[c], s.ID)
+		}
+	}
+	for c := range out {
+		sort.Strings(out[c])
+	}
+	return out
+}
