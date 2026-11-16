@@ -147,7 +147,7 @@ func TestRouteRegexp(t *testing.T) {
 			}
 		}
 	}
-	if routeRegexp("") != nil || routeRegexp("box") != nil {
-		t.Error("a hook or a non-path pattern made a route")
+	if routeRegexp("") != nil {
+		t.Error("a hook's empty pattern made a route")
 	}
 }

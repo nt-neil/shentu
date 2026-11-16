@@ -3,6 +3,7 @@ package detect
 import (
 	"path"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -12,13 +13,18 @@ import (
 	"github.com/nt-neil/shentu/detect/sig"
 )
 
-// Bounds on matching one request: decoding stops after MaxDecodeRounds,
-// a normalized value is cut at MaxNormalized, and matching one request
-// stops at MaxMatchTime (said, never taken as no hit). Matching runs inside
-// the read's LineFunc, so its time counts against the run's budget too.
+// Bounds on matching one request. Its cost is bounded by the length of
+// what is matched, not by a clock: decoding stops after MaxDecodeRounds,
+// each text (the path, a user agent, a referer, one parameter's name or
+// value) is cut at MaxNormalized, the whole query and all the parameters'
+// values together at MaxParamsText, their number at MaxParams; a cut is said
+// (Request.Cut), never taken as no hit. Every signature is tried on what
+// is left. MaxMatchTime is only watched: a request that took longer is
+// said (MatchResult.TimedOut), its signatures all tried all the same.
 const (
 	MaxDecodeRounds = 2
-	MaxNormalized   = 16 << 10
+	MaxNormalized   = 8 << 10
+	MaxParamsText   = 16 << 10
 	MaxParams       = 256
 	MaxMatchTime    = 10 * time.Millisecond
 )
@@ -35,8 +41,12 @@ type Request struct {
 	RawPath, Path string
 	Query         string              // the whole query, decoded
 	Params        map[string][]string // every value of every parameter, in order (a repeated one keeps all)
-	UserAgent     string
-	Referer       string
+	// Sent: the names in Params as the request sent them; the others are
+	// how a framework reads one (PHP's id for id[]) and hold its values
+	// again: any_param tries only these, so a value is not matched twice.
+	Sent      map[string]bool
+	UserAgent string
+	Referer   string
 	// Raw holds what the request sent, as logged (not decoded, its case),
 	// for the evidence an alert shows: the record's path, query, user
 	// agent and referer, and each parameter's values under its key.
@@ -45,22 +55,22 @@ type Request struct {
 	// Encoded: decoding changed something past the first round (a double
 	// encoding), or a %u or overlong form was used: evasion, a signal.
 	Encoded bool
-	Cut     bool // some text was cut at MaxNormalized or the parameters at MaxParams
+	Cut     bool // some text was cut at MaxNormalized, the parameters' values at MaxParamsText or their number at MaxParams
 }
 
 // Normalize makes a Request of a record. Parameters are split here, not
 // with url.ParseQuery, which refuses a malformed escape an attacker would
 // send on purpose.
 func Normalize(r AccessRecord) Request {
-	q := Request{Method: strings.ToUpper(r.Method), Params: map[string][]string{}, RawParams: map[string][]string{}, Raw: r}
+	q := Request{Method: strings.ToUpper(r.Method), Params: map[string][]string{}, Sent: map[string]bool{}, RawParams: map[string][]string{}, Raw: r}
 	q.Raw.Alts = nil
 	var enc, cut bool
 	q.RawPath, enc, cut = normalizeText(r.Path, false)
 	q.Encoded, q.Cut = q.Encoded || enc, q.Cut || cut
 	q.Path = cleanPath(q.RawPath)
-	q.Query, enc, cut = normalizeText(r.Query, true)
+	q.Query, enc, cut = normalizeTextN(r.Query, true, MaxParamsText) // the whole query: the parameters' bound
 	q.Encoded, q.Cut = q.Encoded || enc, q.Cut || cut
-	n := 0
+	n, left := 0, MaxParamsText
 	for _, kv := range strings.Split(r.Query, "&") {
 		if kv == "" {
 			continue
@@ -74,6 +84,11 @@ func Normalize(r AccessRecord) Request {
 		nk, e1, c1 := normalizeText(k, true)
 		nv, e2, c2 := normalizeText(v, true)
 		q.Encoded, q.Cut = q.Encoded || e1 || e2, q.Cut || c1 || c2
+		if len(nv) > left { // every value together: the request's cost is bounded, not each value's
+			nv, q.Cut = nv[:left], true
+		}
+		left -= len(nv)
+		q.Sent[nk] = true
 		for _, key := range paramNames(nk) { // as sent, and as PHP and others read it
 			q.Params[key] = append(q.Params[key], nv)
 			q.RawParams[key] = append(q.RawParams[key], v)
@@ -105,9 +120,14 @@ func paramNames(k string) []string {
 // UTF-8, and lower-cases it; enc says an evasive encoding was seen, cut
 // that s was longer than MaxNormalized and only its start was taken.
 func normalizeText(s string, query bool) (string, bool, bool) {
-	cut := len(s) > MaxNormalized
+	return normalizeTextN(s, query, MaxNormalized)
+}
+
+// normalizeTextN is normalizeText cutting at limit.
+func normalizeTextN(s string, query bool, limit int) (string, bool, bool) {
+	cut := len(s) > limit
 	if cut {
-		s = s[:MaxNormalized]
+		s = s[:limit]
 	}
 	enc := false
 	for round := 0; round < MaxDecodeRounds; round++ {
@@ -231,9 +251,11 @@ type Hit struct {
 
 // MatchResult is what a request matched.
 type MatchResult struct {
-	Request  Request
-	Hits     []Hit
-	TimedOut bool // stopped at MaxMatchTime: other signatures were not tried
+	Request Request
+	Hits    []Hit
+	// TimedOut: matching took longer than MaxMatchTime. Every signature was
+	// tried all the same; it says the host was slow or the request costly.
+	TimedOut bool
 }
 
 // Matcher matches requests against signatures.
@@ -243,8 +265,12 @@ type Matcher struct {
 	now    func() time.Time
 }
 
-// NewMatcher compiles the routes of ss.
+// NewMatcher compiles the routes of ss. Signatures with a route or written
+// for a vulnerability are tried first, then the classes', each group in
+// the order given: the hits that name a vulnerability lead.
 func NewMatcher(ss []sig.Signature) *Matcher {
+	ss = slices.Clone(ss)
+	sort.SliceStable(ss, func(a, b int) bool { return specific(ss[a]) && !specific(ss[b]) })
 	m := &Matcher{sigs: ss, now: time.Now}
 	for _, s := range ss {
 		var res []*regexp.Regexp
@@ -260,6 +286,11 @@ func NewMatcher(ss []sig.Signature) *Matcher {
 	return m
 }
 
+// specific: s has a route or is written for a vulnerability.
+func specific(s sig.Signature) bool {
+	return len(s.Routes) > 0 || len(s.CVEs) > 0 || len(s.Advisories) > 0 || len(s.AppliesTo) > 0
+}
+
 // MatchRecord matches a record and its other splits (AccessRecord.Alts):
 // a hit in any counts.
 func (m *Matcher) MatchRecord(r AccessRecord) []MatchResult {
@@ -270,15 +301,12 @@ func (m *Matcher) MatchRecord(r AccessRecord) []MatchResult {
 	return out
 }
 
-// Match tries every signature on q, at most MaxMatchTime.
-func (m *Matcher) Match(q Request) MatchResult {
-	res := MatchResult{Request: q}
+// Match tries every signature on q; Normalize's bounds bound its cost.
+func (m *Matcher) Match(q Request) (res MatchResult) {
+	res = MatchResult{Request: q}
 	start := m.now()
+	defer func() { res.TimedOut = m.now().Sub(start) > MaxMatchTime }()
 	for i, s := range m.sigs {
-		if m.now().Sub(start) > MaxMatchTime {
-			res.TimedOut = true
-			break
-		}
 		if len(s.Routes) > 0 && !m.routeHolds(i, q) {
 			continue
 		}
@@ -359,7 +387,9 @@ func matchOne(mt sig.Match, q Request) (part, param, excerpt string, ok bool) {
 	case "any_param":
 		keys := make([]string, 0, len(q.Params))
 		for k := range q.Params {
-			keys = append(keys, k)
+			if q.Sent[k] || q.Sent == nil { // a Request not made by Normalize: every name
+				keys = append(keys, k)
+			}
 		}
 		sort.Strings(keys) // the same request names the same parameter every time
 		for _, k := range keys {

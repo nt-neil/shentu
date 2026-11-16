@@ -141,14 +141,16 @@ func TestMatch(t *testing.T) {
 	}
 }
 
-// Matching one request stops at MaxMatchTime, and says so.
+// A request matched longer than MaxMatchTime is said so, and every
+// signature is tried all the same (review B-1: the clock no longer stops
+// matching; the input's length bounds it).
 func TestMatchTimeBound(t *testing.T) {
 	m := NewMatcher(loadSigs(t, matchSigs))
 	clock := time.Unix(0, 0)
-	m.now = func() time.Time { clock = clock.Add(MaxMatchTime); return clock }
+	m.now = func() time.Time { clock = clock.Add(2 * MaxMatchTime); return clock }
 	r := m.Match(Normalize(AccessRecord{Method: "GET", Path: "/.env", Query: "q=union select 1"}))
-	if !r.TimedOut {
-		t.Errorf("%+v: want timed out", r)
+	if !r.TimedOut || len(r.Hits) != 2 {
+		t.Errorf("%+v: want timed out, both signatures tried", r)
 	}
 }
 

@@ -39,6 +39,11 @@ type Judgment struct {
 	// Unanchored: class hits that a sink of that class may take, though no
 	// route of it is known (coverage no_route): kept for P4, not candidates.
 	Unanchored []Hit `json:"unanchored,omitempty"`
+	// Cut: some of the request was not matched (Request.Cut): no hit is
+	// not "nothing there". TimedOut: matching took longer than
+	// MaxMatchTime (MatchResult.TimedOut). Both said with the judgment.
+	Cut      bool `json:"cut,omitempty"`
+	TimedOut bool `json:"timed_out,omitempty"`
 }
 
 // Judge says which of the surface's vulnerabilities a matched request may
@@ -47,7 +52,10 @@ type Judge struct {
 	surface Surface
 	sigs    map[string]sig.Signature
 	routes  []routeEntry
-	classes map[string]bool // payload classes of sinks with no known route
+	// classes: payload classes of sinks reachable by a route not known: no
+	// route, a route list the engine cut (RoutesTruncated), or a route whose
+	// pattern makes no expression (a hook, a pattern that does not compile).
+	classes map[string]bool
 }
 
 type routeEntry struct {
@@ -66,31 +74,55 @@ func NewJudge(s Surface, ss []sig.Signature) *Judge {
 		if e.Kind != "code" {
 			continue
 		}
-		if e.Coverage != CoverRoutes {
+		if e.Coverage != CoverRoutes || e.RoutesTruncated {
 			j.classes[e.Payload] = true
+		}
+		if e.Coverage != CoverRoutes {
 			continue
 		}
 		for _, r := range e.Routes {
 			if re := routeRegexp(r.Pattern); re != nil {
 				j.routes = append(j.routes, routeEntry{i, r, re})
+			} else {
+				j.classes[e.Payload] = true // reached some way not matched: unanchored, never noise
 			}
 		}
 	}
 	return j
 }
 
-var placeholder = regexp.MustCompile(`\{[^/{}]+\}|<[^/<>]+>|:[A-Za-z_][A-Za-z0-9_]*`)
+var placeholder = regexp.MustCompile(`\{[^/{}]+\}|<[^/<>]+>|:[A-Za-z_][A-Za-z0-9_]*[*+]?|\*[A-Za-z0-9_]*`)
+
+// manySegments: a placeholder that takes a path of several segments:
+// Flask's and Django's <path:f>, FastAPI's {p:path}, Express's * and :p*.
+func manySegments(ph string) bool {
+	return strings.HasPrefix(ph, "<path:") || strings.HasSuffix(ph, ":path}") || strings.HasPrefix(ph, "*") ||
+		strings.HasSuffix(ph, "*") || strings.HasSuffix(ph, "+")
+}
 
 // routeRegexp makes a route pattern (as written: /users/{id}, /run/<cmd>,
-// /api/:id, WordPress's /wp-json/ns/(?P<id>\d+)) an expression the routed
-// path must end with (PatternMeaning: no mount prefix is known). nil for
-// none (a hook, an empty pattern, an expression that does not compile).
+// /api/:id, Django's report/<str:name>/ and re_path's ^report/(?P<n>.+)$,
+// WordPress's /wp-json/ns/(?P<id>\d+)) an expression the routed path must
+// end with, from a segment's start (PatternMeaning: no mount prefix is
+// known). A pattern without a leading / gets one (Django, Laravel write
+// none); the root / is the root only. nil for none (a hook's empty
+// pattern, an expression that does not compile).
 func routeRegexp(pattern string) *regexp.Regexp {
-	if pattern == "" || !strings.HasPrefix(pattern, "/") {
+	pattern = strings.TrimSpace(pattern)
+	if pattern == "" {
 		return nil
 	}
+	if strings.HasPrefix(pattern, "^") || strings.HasSuffix(pattern, "$") { // re_path: anchored at the mount point
+		pattern = strings.TrimSuffix(strings.TrimPrefix(pattern, "^"), "$")
+	}
+	if !strings.HasPrefix(pattern, "/") {
+		pattern = "/" + pattern
+	}
+	if strings.Trim(pattern, "/") == "" {
+		return regexp.MustCompile(`^/?$`)
+	}
 	var expr string
-	if strings.Contains(pattern, "(") { // WordPress's route is an expression already
+	if strings.Contains(pattern, "(") { // WordPress's and re_path's routes are expressions already
 		expr = pattern
 	} else {
 		idx := placeholder.FindAllStringIndex(pattern, -1)
@@ -98,7 +130,11 @@ func routeRegexp(pattern string) *regexp.Regexp {
 		last := 0
 		for _, m := range idx {
 			b.WriteString(regexp.QuoteMeta(pattern[last:m[0]]))
-			b.WriteString(`[^/]+`)
+			if manySegments(pattern[m[0]:m[1]]) {
+				b.WriteString(`.+`)
+			} else {
+				b.WriteString(`[^/]+`)
+			}
 			last = m[1]
 		}
 		b.WriteString(regexp.QuoteMeta(pattern[last:]))
@@ -114,7 +150,7 @@ func routeRegexp(pattern string) *regexp.Regexp {
 // Judge judges one matched request (MatchResult of the record or of one
 // of its other splits).
 func (j *Judge) Judge(m MatchResult) Judgment {
-	var out Judgment
+	out := Judgment{Cut: m.Request.Cut, TimedOut: m.TimedOut}
 	byEntry := map[int]int{} // entry -> index in out.Candidates
 	// add gives the candidate for entry i, made at level if new, raised to
 	// level if it was lower.
@@ -137,7 +173,11 @@ func (j *Judge) Judge(m MatchResult) Judgment {
 	// the sink's payload class.
 	reached := map[int]bool{}
 	for _, r := range j.routes {
-		if !methodOK(r.ref.Method, m.Request.Method) || !r.re.MatchString(m.Request.Path) {
+		// The routed path, and the path with its dot segments as sent: a
+		// router that does not resolve them (or a traversal it lets
+		// through) routes that one.
+		q := m.Request
+		if !methodOK(r.ref.Method, q.Method) || !(r.re.MatchString(q.Path) || q.RawPath != "" && r.re.MatchString(q.RawPath)) {
 			continue
 		}
 		ref := r.ref
@@ -216,7 +256,7 @@ func forEntry(s sig.Signature, e Entry) bool {
 	}
 	if len(s.CVEs) == 0 && len(s.Advisories) == 0 {
 		for _, r := range s.AppliesTo {
-			if strings.EqualFold(r.Ecosystem, e.Ecosystem) && r.Package == e.Package {
+			if strings.EqualFold(r.Ecosystem, e.Ecosystem) && samePackage(e.Ecosystem, r.Package, e.Package) {
 				return true
 			}
 		}
@@ -225,13 +265,17 @@ func forEntry(s sig.Signature, e Entry) bool {
 }
 
 // appliesTo: e's installed version is in one of s's ranges for its package;
-// known is false when a range could not be compared.
+// known is false when a range could not be compared, or when s lists no
+// range for e's package (written for e's CVE, it names other packages: a
+// fork, a renamed one): a candidate, its version not known.
 func appliesTo(s sig.Signature, e Entry) (in, known bool) {
 	known = true
+	listed := false
 	for _, r := range s.AppliesTo {
-		if !strings.EqualFold(r.Ecosystem, e.Ecosystem) || r.Package != e.Package {
+		if !strings.EqualFold(r.Ecosystem, e.Ecosystem) || !samePackage(e.Ecosystem, r.Package, e.Package) {
 			continue
 		}
+		listed = true
 		i, ok := sig.InRange(r, e.Version)
 		if !ok {
 			known = false
@@ -241,14 +285,33 @@ func appliesTo(s sig.Signature, e Entry) (in, known bool) {
 			return true, true
 		}
 	}
-	return false, known
+	return false, known && listed
+}
+
+var pep503 = regexp.MustCompile(`[-_.]+`)
+
+// samePackage: a and b name one package of ecosystem: PyPI's names
+// normalized as PEP 503 says, Packagist's case-insensitive (Composer
+// lower-cases them), the others as written.
+func samePackage(ecosystem, a, b string) bool {
+	switch strings.ToLower(ecosystem) {
+	case "pypi":
+		return pep503.ReplaceAllString(strings.ToLower(a), "-") == pep503.ReplaceAllString(strings.ToLower(b), "-")
+	case "packagist":
+		return strings.EqualFold(a, b)
+	}
+	return a == b
 }
 
 // methodOK: a route registered for method (any, all, match or none: every
-// method) takes the request's.
+// method) takes the request's. A GET route takes HEAD too: frameworks
+// answer it with the GET handler.
 func methodOK(route, req string) bool {
 	switch strings.ToLower(route) {
 	case "", "any", "all", "match", "route", "use", "api_route", "add_url_rule":
+		return true
+	}
+	if strings.EqualFold(req, "HEAD") && strings.EqualFold(route, "get") {
 		return true
 	}
 	return strings.EqualFold(route, req)

@@ -27,7 +27,7 @@ func SurfaceCode(fs []CodeFinding) []detect.CodeSink {
 // query gives only ids, and asking for each advisory is a request per id;
 // detect.Build therefore cuts these before rated entries (KEV ones excepted).
 // Each id's CVE is the one OSV gave for it during the KEV check (the
-// lowest, when several), KEV or not, so that Build makes one entry of a
+// lowest, when several; all of them go in CVEs), KEV or not, so that Build makes one entry of a
 // GHSA id and a PYSEC id of the same vulnerability; the CVE KEV matched is
 // used only when OSV gave none. Ids OSV was not asked about (the KEV
 // list unavailable, past matchKEV's 300) or that name no CVE stay apart.
@@ -41,7 +41,7 @@ func SurfaceApps(rs []AppResult) []detect.PackageVuln {
 		}
 		for _, h := range r.Affected {
 			for _, id := range h.IDs {
-				v := detect.PackageVuln{Source: r.Path, Ecosystem: r.Ecosystem, Package: h.Package, Version: h.Version, ID: id, CVE: firstCVE(r.cves[id])}
+				v := detect.PackageVuln{Source: r.Path, Ecosystem: r.Ecosystem, Package: h.Package, Version: h.Version, ID: id, CVE: firstCVE(r.cves[id]), CVEs: r.cves[id]}
 				if x, ok := kev[key(h.Package, h.Version, id)]; ok {
 					v.KEV, v.KEVSince, v.KEVCVE = true, x.Added, x.CVE
 					if v.CVE == "" { // OSV's answer, the same rule as for the others; else the CVE KEV matched
@@ -63,7 +63,7 @@ func SurfaceApps(rs []AppResult) []detect.PackageVuln {
 				cve = x.CVE
 			}
 			out = append(out, detect.PackageVuln{Source: r.Path, Ecosystem: r.Ecosystem, Package: x.Package, Version: x.Version,
-				ID: x.ID, CVE: cve, KEV: true, KEVSince: x.Added, KEVCVE: x.CVE})
+				ID: x.ID, CVE: cve, CVEs: r.cves[x.ID], KEV: true, KEVSince: x.Added, KEVCVE: x.CVE})
 		}
 	}
 	return out
