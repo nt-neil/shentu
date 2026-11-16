@@ -177,3 +177,88 @@ func TestJournalEmptyEntriesCost(t *testing.T) {
 		t.Errorf("%d empty entries read on a budget of 10, partial %v, %v", n, res.Partial, err)
 	}
 }
+
+// stuckSrc stalls opening one log, as a dead mount does, until let go.
+type stuckSrc struct {
+	*hostenv.Live
+	path string
+	gate chan struct{}
+}
+
+func (s stuckSrc) OpenLog(p string) (hostenv.LogFile, error) {
+	if p == s.path {
+		<-s.gate
+	}
+	return s.Live.OpenLog(p)
+}
+
+// A round given up keeps what its finished sources gave and their
+// cursors; the source being read is read again next round; it is said,
+// louder after PassTimeoutsWarn rounds in a row (commander, P5 part 2).
+func TestPassAbandon(t *testing.T) {
+	live, d, in := passSetup(t)
+	write(t, filepath.Join(d, "stuck.log"), accessLine("192.0.2.200", t0, "/marker/7", 200, 10), os.O_CREATE)
+	st, _ := hostenv.Stat(live, "/logs/stuck.log")
+	srcs := in.Sources.(fakeSources)
+	srcs.logs = append(srcs.logs, hostenv.LogSource{Path: "/logs/stuck.log", Server: "nginx", Kind: "access", Format: "combined", Spec: combined, Verified: true, FileID: st.ID})
+	in.Sources = srcs
+	for round := 1; round <= PassTimeoutsWarn; round++ {
+		gate := make(chan struct{})
+		in.Src = stuckSrc{live, "/logs/stuck.log", gate}
+		in.Now = t0.Add(time.Duration(round) * time.Hour)
+		p, err := NewPass(in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		done := make(chan struct{})
+		go func() { p.Run(context.Background()); close(done) }()
+		for i := 0; i < 500; i++ { // until the round reaches the stuck log
+			p.mu.Lock()
+			cur := p.current
+			p.mu.Unlock()
+			if cur == "/logs/stuck.log" {
+				break
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		p.Abandon(time.Second)
+		due := p.Due()
+		if round == 1 && (len(due) != 1 || due[0].Level != LevelSuccess) {
+			t.Fatalf("round 1: the finished log's attempt not kept: %+v", due)
+		}
+		txt := p.NoticeText()
+		want := "沒有讀完（停在 /logs/stuck.log）"
+		if round == PassTimeoutsWarn {
+			want = fmt.Sprintf("已連續 %d 輪沒有讀完", PassTimeoutsWarn)
+		}
+		if !strings.Contains(txt, want) {
+			t.Errorf("round %d notice lacks %q:\n%s", round, want, txt)
+		}
+		for _, g := range due {
+			p.Notified(g)
+		}
+		if err := p.Save(); err != nil {
+			t.Fatal(err)
+		}
+		p.Close()
+		close(gate) // the stuck read goes on, after the round was given up
+		<-done
+		cs, _ := LoadCursors(in.StateDir)
+		if _, ok := cs.Sources["/logs/stuck.log"]; ok {
+			t.Fatalf("round %d: the stuck log's cursor saved", round)
+		}
+		if c, ok := cs.Sources["/logs/access.log"]; !ok || c.Offset == 0 {
+			t.Fatalf("round %d: the finished log's cursor not saved: %+v", round, c)
+		}
+	}
+	// A round read to its end clears the count.
+	in.Src, in.Now = live, t0.Add(10*time.Hour)
+	p, err := RunPass(context.Background(), in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	if p.Attacks().PassTimeouts != 0 || strings.Contains(p.NoticeText(), "沒有讀完") {
+		t.Errorf("after a whole round: timeouts %d", p.Attacks().PassTimeouts)
+	}
+}

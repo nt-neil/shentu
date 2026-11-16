@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/nt-neil/shentu/detect/sig"
@@ -63,10 +64,23 @@ type PassRound struct {
 
 	dir       string
 	now       time.Time
+	in        PassInput
 	attacks   *Attacks
 	baselines *Baselines
 	cursors   *Cursors
+	dropped   map[string]string
+
+	// mu guards the state while Run may still be going: a round given up
+	// (Abandon) keeps what its finished sources gave; a read still stuck
+	// changes nothing after it.
+	mu        sync.Mutex
+	abandoned bool
+	current   string // the source being read
 }
+
+// PassTimeoutsWarn: this many rounds in a row given up is said as more
+// than a slow round (a log on a stuck mount, a log too large to read).
+const PassTimeoutsWarn = 3
 
 // Signals worth a notice: an attacker making lines unparseable, splitting
 // them two ways, or padding them past the cut.
@@ -79,15 +93,25 @@ const (
 // address as the server wrote it.
 var knownFormats = map[string]bool{"combined": true, "common": true, "main": true, "vhost_combined": true, "combinedio": true}
 
-// RunPass reads and judges one round. It takes attacks.lock (held until
-// Close: another round waits); a state file that cannot be read starts
-// again, said in the notices, never as "nothing seen".
+// RunPass reads and judges one round (NewPass, then Run).
 func RunPass(ctx context.Context, in PassInput) (*PassRound, error) {
+	p, err := NewPass(in)
+	if err != nil {
+		return nil, err
+	}
+	p.Run(ctx)
+	return p, nil
+}
+
+// NewPass loads a round's state. It takes attacks.lock (held until Close:
+// another round waits); a state file that cannot be read starts again,
+// said in the notices, never as "nothing seen".
+func NewPass(in PassInput) (*PassRound, error) {
 	a, err := LoadAttacks(in.StateDir, in.Now)
 	if err != nil {
 		return nil, err
 	}
-	p := &PassRound{dir: in.StateDir, now: in.Now, attacks: a}
+	p := &PassRound{dir: in.StateDir, now: in.Now, in: in, attacks: a}
 	if p.baselines, err = LoadBaselines(in.StateDir, in.Now); err != nil {
 		p.baselines = &Baselines{Version: 1, Routes: map[string]*baseline{}}
 		p.notice("回應大小基準檔無法讀取，這輪從空的基準開始：" + Printable(err.Error()))
@@ -105,6 +129,16 @@ func RunPass(ctx context.Context, in PassInput) (*PassRound, error) {
 	if len(cs.Dropped) > 0 {
 		p.notice(fmt.Sprintf("有 %d 個記錄檔的讀取進度無效，已從頭讀（first_run），期間的紀錄可能重複或缺漏：%s", len(cs.Dropped), Printable(strings.Join(cs.Dropped, "、"))))
 	}
+	p.dropped = dropped
+	return p, nil
+}
+
+// Run reads and judges the round's sources, one after the other. Each
+// source's cursor is kept only when its read is done; a round given up
+// (Abandon) keeps the sources done and what they gave, and the source
+// being read is read again from where it was by the next round.
+func (p *PassRound) Run(ctx context.Context) {
+	in, cs, dropped := p.in, p.cursors, p.dropped
 
 	web := in.Sources.WebAccounts(in.Src)
 	logs := in.Sources.WebLogs(in.Src)
@@ -118,6 +152,13 @@ func RunPass(ctx context.Context, in PassInput) (*PassRound, error) {
 		p.notice("應用程式 unit 只列出一部分（" + string(units.Reason) + "）：" + Printable(units.Detail))
 	}
 	trust := func(path string) hostenv.TrustResult { return hostenv.JudgeLog(in.Src, path, web) }
+	// start says a source is being read, false when the round was given up.
+	start := func(key string) bool {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		p.current = key
+		return !p.abandoned
+	}
 
 	// Error logs and application units first: their entries back this
 	// round's attempts (L3, error log evidence).
@@ -127,6 +168,9 @@ func RunPass(ctx context.Context, in PassInput) (*PassRound, error) {
 			continue
 		}
 		ls := ls
+		if !start(ls.Path) {
+			return
+		}
 		var good, bad []string
 		cur := cs.get(ls.Path)
 		c, res, err := ReadLog(in.Src, ls.Path, cur, in.Budget, ReadOpts{Want: &ls, Trust: trust}, func(l Line) {
@@ -143,6 +187,9 @@ func RunPass(ctx context.Context, in PassInput) (*PassRound, error) {
 	if units.Known() {
 		for _, u := range units.Value {
 			key := JournalKey(u.Name)
+			if !start(key) {
+				return
+			}
 			c, res, err := ReadJournalUnit(ctx, in.Src, u, cs.get(key), in.Budget, web, func(e hostenv.JournalEntry, t JournalTrust) {
 				if ev, ok := entryEvent(e, t.Verified); ok {
 					events = append(events, ev)
@@ -160,6 +207,9 @@ func RunPass(ctx context.Context, in PassInput) (*PassRound, error) {
 			continue
 		}
 		ls := ls
+		if !start(ls.Path) {
+			return
+		}
 		custom := !knownFormats[strings.ToLower(ls.Format)]
 		reason := ""
 		if !ls.Verified {
@@ -173,7 +223,13 @@ func RunPass(ctx context.Context, in PassInput) (*PassRound, error) {
 					o.Reason = "這段紀錄來自未通過信任檢查的輪替檔"
 				}
 			}
-			for _, mr := range m.MatchRecord(rec) {
+			results := m.MatchRecord(rec)
+			p.mu.Lock()
+			defer p.mu.Unlock()
+			if p.abandoned {
+				return
+			}
+			for _, mr := range results {
 				g := j.Judge(mr)
 				p.Round.Judged(g)
 				for _, at := range j.Attempts(rec, o, mr, g) {
@@ -188,9 +244,37 @@ func RunPass(ctx context.Context, in PassInput) (*PassRound, error) {
 			}
 		})
 		p.read(ls.Path, ls.Kind, ls.Verified, c, res, &sigs, err)
-		p.signalNotices(ls.Path, sigs)
+		p.mu.Lock()
+		if !p.abandoned {
+			p.signalNotices(ls.Path, sigs)
+		}
+		p.mu.Unlock()
 	}
-	return p, nil
+	p.mu.Lock()
+	if !p.abandoned {
+		p.attacks.PassTimeouts, p.current = 0, ""
+	}
+	p.mu.Unlock()
+}
+
+// Abandon gives the round up (its time ran out): the sources read so far
+// and what they gave are kept, the one being read is read again from its
+// cursor next round; said in the notices, louder after PassTimeoutsWarn
+// in a row.
+func (p *PassRound) Abandon(limit time.Duration) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.abandoned {
+		return
+	}
+	p.abandoned = true
+	p.attacks.PassTimeouts++
+	n := p.attacks.PassTimeouts
+	msg := fmt.Sprintf("這輪攻擊偵測在 %s 內沒有讀完（停在 %s），已讀完的記錄檔照常判斷與累計，沒讀完的下一輪從原位置接著讀", limit, Printable(p.current))
+	if n >= PassTimeoutsWarn {
+		msg = fmt.Sprintf("攻擊偵測已連續 %d 輪沒有讀完（這輪停在 %s）：可能有記錄檔所在的掛載點卡住，或記錄檔大到讀不完，期間的攻擊可能沒被檢查，請到伺服器上確認", n, Printable(p.current))
+	}
+	p.Notices = append(p.Notices, msg)
 }
 
 // entryEvent is an application unit's journal entry as an error event:
@@ -212,6 +296,11 @@ func entryEvent(e hostenv.JournalEntry, verified bool) (ErrorEvent, bool) {
 
 // read records one source's read and keeps its cursor.
 func (p *PassRound) read(key, kind string, verified bool, c Cursor, res ReadResult, sigs *Signals, err error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.abandoned { // given up while this source was read: its cursor stays where it was
+		return
+	}
 	if p.cursors.Sources == nil {
 		p.cursors.Sources = map[string]Cursor{}
 	}
@@ -248,11 +337,20 @@ func (p *PassRound) signalNotices(key string, s Signals) {
 
 func (p *PassRound) notice(s string) { p.Notices = append(p.Notices, s) }
 
+func (p *PassRound) locked(f func()) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	f()
+}
+
 // Due are the groups to notify now (Attacks.Due).
-func (p *PassRound) Due() []*Group { return p.attacks.Due(p.now) }
+func (p *PassRound) Due() (out []*Group) {
+	p.locked(func() { out = p.attacks.Due(p.now) })
+	return out
+}
 
 // Notified says g was sent.
-func (p *PassRound) Notified(g *Group) { p.attacks.Notified(g, p.now) }
+func (p *PassRound) Notified(g *Group) { p.locked(func() { p.attacks.Notified(g, p.now) }) }
 
 // Attacks is the round's state, for the report.
 func (p *PassRound) Attacks() *Attacks { return p.attacks }
@@ -261,6 +359,8 @@ func (p *PassRound) Attacks() *Attacks { return p.attacks }
 // (NoticeText), the baselines' note, and the round's notices. "" when
 // there is nothing.
 func (p *PassRound) NoticeText() string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	var b strings.Builder
 	b.WriteString(NoticeText(p.attacks))
 	if p.baselines.Note != "" {
@@ -274,12 +374,16 @@ func (p *PassRound) NoticeText() string {
 
 // NoticesSent says NoticeText was sent.
 func (p *PassRound) NoticesSent() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.attacks.NoticesSent()
 	p.baselines.Note, p.Notices = "", nil
 }
 
 // Save writes the cursors, the baselines and attacks.json.
 func (p *PassRound) Save() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	cerr := p.cursors.Save(p.dir)
 	berr := p.baselines.Save(p.dir, p.now)
 	aerr := p.attacks.Save(p.dir, p.now)

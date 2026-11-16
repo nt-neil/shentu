@@ -124,6 +124,9 @@ type Attacks struct {
 	// own bound, lost) since the last notice (NoticesSent): said apart
 	// (NoticeText), never quietly.
 	DroppedPending int `json:"dropped_pending,omitempty"`
+	// PassTimeouts: rounds in a row given up before their end (PassRound.
+	// Abandon); a round read to its end sets it back to 0.
+	PassTimeouts int `json:"pass_timeouts,omitempty"`
 	// Note says, when not empty, what loading found wrong: a file that did
 	// not parse, set aside, or entries dropped. Said by NoticeText. Not saved.
 	Note string `json:"-"`
@@ -203,6 +206,7 @@ func LoadAttacks(dir string, now time.Time) (*Attacks, error) {
 		a.IPs[ip] = r
 	}
 	a.DroppedPending = max(0, got.DroppedPending)
+	a.PassTimeouts = max(0, got.PassTimeouts)
 	if dropped > 0 {
 		a.Note = join(a.Note, fmt.Sprintf("attacks.json held %d entries that did not hold together; they were dropped", dropped))
 	}

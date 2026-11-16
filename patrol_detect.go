@@ -115,7 +115,10 @@ var (
 
 // detectSummary is what a round gives the daily report.
 type detectSummary struct {
-	Sent, Due  int
+	Sent, Due int
+	// Levels: the groups seen in the last day by level (L1 included: never
+	// pushed, but in the daily report and the report file).
+	Levels     map[string]int
 	Round      detect.Round
 	ReportPath string
 	Err        string
@@ -177,6 +180,14 @@ func detectRound(ctx context.Context, cfg *Config, env *tools.Env, now time.Time
 		}
 	}
 	if daily {
+		sum.Levels = map[string]int{}
+		for _, gs := range []map[string]*detect.Group{p.Attacks().Groups, p.Attacks().Overflow} {
+			for _, g := range gs {
+				if now.Sub(g.Last) <= 24*time.Hour {
+					sum.Levels[g.Level]++
+				}
+			}
+		}
 		path, err := writeAttackReport(cfg.StateDir, p.Attacks(), &surface, p.Round, stale, now)
 		if err != nil {
 			sum.Err = strings.TrimSpace(sum.Err + "; report: " + err.Error())
@@ -192,27 +203,28 @@ func detectRound(ctx context.Context, cfg *Config, env *tools.Env, now time.Time
 	return sum
 }
 
-// runPassBounded runs detect.RunPass, giving up after detectTimeout: a
-// read stuck on a dead mount cannot be interrupted, so the round is
-// abandoned (the process ends with the patrol, releasing the lock).
+// runPassBounded runs a round, giving it up after detectTimeout: a read
+// stuck on a dead mount cannot be interrupted. A round given up keeps the
+// sources it finished, their cursors and what they gave (PassRound.
+// Abandon), and says so; the one being read is read again next round.
 func runPassBounded(ctx context.Context, in detect.PassInput) (*detect.PassRound, error) {
+	p, err := detect.NewPass(in)
+	if err != nil {
+		return nil, err
+	}
 	ctx, cancel := context.WithTimeout(ctx, detectTimeout)
 	defer cancel()
-	type result struct {
-		p   *detect.PassRound
-		err error
-	}
-	done := make(chan result, 1)
+	done := make(chan struct{})
 	go func() {
-		p, err := detect.RunPass(ctx, in)
-		done <- result{p, err}
+		p.Run(ctx)
+		close(done)
 	}()
 	select {
-	case r := <-done:
-		return r.p, r.err
+	case <-done:
 	case <-ctx.Done():
-		return nil, fmt.Errorf("attack detection did not finish in %s (a log on a stuck mount?): this round was skipped", detectTimeout)
+		p.Abandon(detectTimeout)
 	}
+	return p, nil
 }
 
 func notifySeverity(s string) string {
@@ -276,11 +288,15 @@ func severityRankOf(s string) int {
 
 // detectSection is the daily report's lines about attack detection.
 func detectSection(s detectSummary) string {
-	if s.Err == "" && s.Due == 0 && s.ReportPath == "" && s.Round == (detect.Round{}) {
+	if s.Err == "" && s.Due == 0 && s.ReportPath == "" && s.Round == (detect.Round{}) && len(s.Levels) == 0 {
 		return ""
 	}
 	var b strings.Builder
 	b.WriteString("\nAttack detection:\n")
+	if len(s.Levels) > 0 {
+		fmt.Fprintf(&b, "- groups seen in the last day: L3 %d, L2 %d, L1 %d (reached a vulnerable route only: counted, not pushed), undetermined %d\n",
+			s.Levels[detect.LevelSuccess], s.Levels[detect.LevelPayload], s.Levels[detect.LevelRoute], s.Levels[detect.LevelUnknown])
+	}
 	fmt.Fprintf(&b, "- alerts sent this round: %d of %d due; noise %d, unanchored %d, undetermined (cut) %d\n", s.Sent, s.Due, s.Round.Noise, s.Round.Unanchored, s.Round.Unknown)
 	if s.ReportPath != "" {
 		fmt.Fprintf(&b, "- report (addresses masked): %s\n", s.ReportPath)
