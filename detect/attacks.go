@@ -311,10 +311,12 @@ func (a *Attacks) campaign(t Attempt, at time.Time) bool {
 }
 
 // evict keeps n groups. The ones dropped first are those with nothing
-// left to notify, then unverified ones, then the least severe, then the
-// least recently seen: a flood of new sources (L1 from many networks)
-// cannot push out an attempt not yet notified while others can go. One
-// dropped with attempts not notified is counted in DroppedPending.
+// left to notify, then unverified ones, then the least severe; among
+// pending ones the newest first (a flood of new groups, even pending and
+// severe ones from many networks, pushes out its own before an older
+// one), among the others the least recently seen. One dropped with
+// attempts not notified is counted in DroppedPending, which the report
+// and the alert say (alert.go).
 func (a *Attacks) evict(n int) {
 	if len(a.Groups) <= n {
 		return
@@ -335,7 +337,11 @@ func (a *Attacks) evict(n int) {
 				}
 			}
 		}
-		if !x.Last.Equal(y.Last) {
+		if x.Since > 0 { // both pending: the older is kept (a flood is newer than what it would push out)
+			if !x.First.Equal(y.First) {
+				return x.First.Before(y.First)
+			}
+		} else if !x.Last.Equal(y.Last) {
 			return x.Last.After(y.Last)
 		}
 		return keys[i] < keys[j]

@@ -235,3 +235,21 @@ func TestAttacksEvictionKeepsPending(t *testing.T) {
 		t.Error("pending groups dropped without being counted")
 	}
 }
+
+// Security review of part 2 (second): a flood of new pending, severe,
+// verified groups does not push out an older pending one either.
+func TestAttacksEvictionKeepsOldestPending(t *testing.T) {
+	a := newAttacks()
+	target := att("203.0.113.1", "target", LevelPayload, t0)
+	target.Severe = true
+	a.Add(target, t0)
+	for i := 0; i < MaxGroups+10; i++ {
+		x := att(fmt.Sprintf("2001:db8:%x::1", i+1), fmt.Sprintf("e%d", i), LevelPayload, t0.Add(time.Duration(i+1)*time.Second))
+		x.Severe = true
+		a.Add(x, t0)
+	}
+	a.prune(t0.Add(time.Hour))
+	if a.Groups["203.0.113.0/24|target|L2"] == nil || a.DroppedPending == 0 {
+		t.Errorf("the oldest pending group pushed out by a newer flood (dropped pending %d)", a.DroppedPending)
+	}
+}
