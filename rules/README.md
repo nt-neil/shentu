@@ -20,7 +20,7 @@ rules/<lang>/<class>/<id>.toml
 | field | values |
 |---|---|
 | `lang` | `php`, `python`, `js` (JavaScript rules also apply to TypeScript, see [TypeScript](#typescript)) |
-| `class` | `sqli`, `cmdi`, `path-traversal` (includes file inclusion), `deserialization`, `code-eval`, `xss`, `ssrf`, `open-redirect`, `xxe`, `ldapi`, `nosqli`, `file-upload`, `weak-crypto`, `hardcoded-secret` |
+| `class` | `sqli`, `cmdi`, `path-traversal` (includes file inclusion), `deserialization`, `code-eval`, `xss`, `ssrf`, `open-redirect`, `xxe`, `ldapi`, `nosqli`, `file-upload`, `weak-crypto`, `hardcoded-secret`, `prototype-pollution` |
 
 ## Format
 
@@ -32,7 +32,7 @@ cwe = "CWE-89"                     # must belong to the class (see below)
 severity = "high"                  # critical | high | medium | low
 tier = "info"                      # optional: info (default) | alert, see "Tiers"
 title = "Request input concatenated into a SQL string"
-frameworks = ["laravel"]           # optional: laravel, wordpress, django, flask, express, nestjs, nextjs
+frameworks = ["laravel"]           # optional: laravel, wordpress, symfony, doctrine, django, flask, express, nestjs, nextjs, koa, fastify, hapi
 route_input = false                # optional: route handlers' parameters are not this rule's input, only its sources (a rule for the Host header)
 route_members = ["query", "body"]  # optional: of the request members a route model makes input, only these (a rule for a query object: req.params is always a string)
 sources = ["$_GET", "$request->input("]   # where user input comes from; [] for a rule without sources
@@ -245,7 +245,10 @@ same string's interpolations or in the values joined after it, is user input:
 
 `[[args]]` (optional, any number) says which argument of a sink call carries the
 attack, and when other arguments make the call dangerous or safe. Rules without
-it are unchanged: a sink is reported when any argument is tainted.
+it are unchanged: a sink is reported when any argument is tainted. A sink may
+have several blocks, each naming its `arg`: the call is reported when any one of
+them holds (`spawn(cmd, args, { shell: true, cwd })`: the command or its
+arguments, not the options).
 
 | field | meaning |
 |---|---|
@@ -257,12 +260,15 @@ it are unchanged: a sink is reported when any argument is tainted.
 | `unless_content_type` | the call is not a sink once the response's Content-Type was set to one of these on every path before it in the same function: `res.setHeader("Content-Type", ...)`, `res.set`, `res.header`, `res.type`, `res.contentType`, `res.writeHead(200, {...})`, each as a statement of its own. Set in one branch only, asked about (`req.accepts(...)`) or set elsewhere (middleware) does not count. For Server-Sent Events: `text/event-stream` is read by EventSource, not rendered |
 | `whole` | the argument must be the input itself (or spread from it), not an object or array literal holding a value from it |
 | `context` | output sinks only (`echo`, `res.send(`): the input counts only when it is written into one of these places of an HTML page: `html` (between tags), `attr` (an attribute value, or inside a tag), `url` (the start of an `href`, `src`, `action`... value), `js` (inside `<script>`, an `on*` handler, or after `javascript:`); see [Output contexts](#output-contexts) |
+| `markup` | with `context`: the input counts only after markup (a `<`) written before it in the same value (`'<p>' + x`, `` `<p>${x}</p>` ``); a body with none may be JSON or text (Koa's `ctx.body = x`). Markup put together in a variable first is not read |
 | `key` | the argument is an object, dict or array literal (`{ Location: v }`, `['Location' => v]`): only the value under this key, in any case, counts; without the key the call is not this sink |
 | `keys` | an argument that is an array, object or dict literal counts by its keys only: Yii's `orderBy([$column => SORT_ASC])` puts the key in the query, while the value only picks a direction. An item without a key (`[$column]`) counts as a key; an argument that is not a literal counts whole |
 | `literal` | the argument named by `arg`, or the value of a `when` option (`password=`, `password:`), must be a non-empty string written in the code; used by rules without sources. The string may be reached through a variable, a constant, a PHP class constant (`self::KEY`), a property declared with it (`$this->key`, `self::$key`; not when the file assigns the property elsewhere), a concatenation, or a call that only reshapes it (`hash('sha256', '...')`, `base64_decode`, `substr`...), at most four steps deep; a name given two different values in the file is not known |
 | `min_len` | with `literal`: one of the strings the value is made from must be at least this long |
 | `exclude` | with `literal`: regular expressions (any case); a string matching one does not count, so `exclude = ["^[a-z0-9_]+-(sha\|md5)[0-9]*$"]` leaves out a purpose label such as `'wp-sha384'` |
 | `receiver` | method sinks only: the call does not count when the file shows its receiver is another kind of object than these. The receiver qualifies when one of the fragments appears in it, or in what its root name (`db`, `self._files`) is assigned, annotated or imported with in the file (`db = MongoClient(url).shop`, `def __init__(self, db: Database)`, `from pymongo.collection import Collection`), followed up to four steps; an import says what a name holds only when it comes from the standard library or a well-known package that is not MongoDB (`os`, `re`, `django`, `flask`...). A root the file says nothing about (no assignment, an import from a module of the project such as `from app.db import mongo` or `from .db import mongo`, a parameter without a type) still counts. So `finders.find(path)` after `from django.contrib.staticfiles import finders`, `'abc'.find(x)` and `data['text'].find(x)` after `data = request.get_json()` are not MongoDB queries, while `mongo.find(x)` after `from app.db import mongo` is; a `.find(` on an object of the project that is not a collection is then still reported (a false positive, kept over a miss) |
+| `unless_imports`, `unless_imports_not` | method sinks only (JavaScript): the call does not count in a file that imports one of `unless_imports` (`import ... from 'typeorm'`, `require('typeorm')`), unless the file or the call's receiver also names one of `unless_imports_not` (an identifier, or an imported module: `MongoRepository`, `mongoose`, `collection`). For a TypeORM repository on an SQL database, whose `find({ where })` binds the values as parameters. A function analysed from a caller in another file leaves nothing out |
+| `unless_subscript` | the argument does not count when it is, as a whole and written in the call, one item of one of these: `zipfile.ZipFile(request.files["archive"])` reads the upload's stream as a file object, not a path. `request.files["a"].filename`, or the item through a variable, still counts |
 | `not_receiver` | method sinks only, the other way round: the call does not count when its receiver is surely an object of one of these classes, made in place (`(new WP_Query($args))->query($a)`, `new \WP_Query`) or a variable the file binds only to such objects (`$q = new WP_Query; $q->query($a)`): every occurrence of the name in the file is a statement assigning `new Class` or `new Class(...)`, a call or read through it, or the whole argument of a call. Assignments are not followed from one name to another (`$r = $q`), and a parameter is never taken to be of a class, its default value included (`function run($q = new WP_Query())`). The file is the one the code is in, also when it is reached from a caller in another file. A receiver the file says nothing about, or a name also assigned anything else or bound any other way (a parameter, `global`, `foreach ... as`, `list()`, `use`, `&`), still counts, so `$db->query($sql)` on a parameter is reported as before. Passing the name to a call (`update_post_thumbnail_cache($q)`) keeps it, unless the file declares a function or method of that name with a parameter by reference (`function f(&$x)`). A limit: a callee declared in another file that takes the object by reference and assigns it something else is not seen, and the sink is then left out; only the application's own code can do that, not its input |
 | `leading` | the input must be at the start of the argument: a fixed prefix makes the call safe, as `WP_PLUGIN_DIR . "/$name"` cannot choose a `phar://` stream. A fixed prefix is a literal (or a run of literals) holding a character no URL scheme has (`/`, `_`, a space) before any `:`, so `'phar' . $x` and `'ph' . 'ar' . $x` are none; a constant; a ternary whose branches both are; a variable assigned one; a property or array key the input never reached (`$this->dir`, `$u['basedir']`), but never a superglobal or request object (`$_COOKIE[...]`, `$_SERVER['HTTP_...']`; `$_SERVER['DOCUMENT_ROOT']` is allowed); a call whose arguments hold no input, even through a sanitizer (`dirname(__FILE__)`, `get_template_directory()`, `strval(intval($x))`, but not `trim(basename($_GET['d']))`); `sprintf` whose format starts with such a literal; a Laravel path helper (`storage_path(...)`); a WordPress URL helper that ends in a path (`admin_url(...)`, `get_permalink(...)`, `rest_url(...)`; `home_url('/...')` and `site_url('/...')` only with a path); `add_query_arg` / `remove_query_arg` whose URL argument is fixed (or absent: the request's own path); `apply_filters` whose filtered value is fixed; `trailingslashit` or `user_trailingslashit` whose first argument is fixed; In the `ssrf`, `open-redirect` and `xss` rules the prefix must also keep the request on a known host: a literal scheme and host followed by `/`, `?` or `#` (`https://api.example.com/...`), a root path whose second character is neither `/` nor `\` (`/account`, not `/` that the input turns into `//evil.com`), or a relative path (`users.php?id=`); `home_url()` without a path, `untrailingslashit` and `rtrim` are not fixed there, and a PHP constant is fixed only when this file defines it (`define('API', 'https://api.example.com/')`) with such a text, or when it names a folder (`__DIR__`, `ABSPATH`, `*_DIR`, `*_PATH`). A call on input (`basename($_GET['d'])`) is not; a clean call that returns `""` (`trim(' ')`, an unset `getenv()`) is a known miss |
 
@@ -328,6 +334,7 @@ Allowed CWEs per class:
 | `file-upload` | CWE-434 |
 | `weak-crypto` | CWE-327, CWE-328, CWE-916 |
 | `hardcoded-secret` | CWE-798, CWE-259, CWE-321 |
+| `prototype-pollution` | CWE-1321 |
 
 ### Output contexts
 
@@ -409,7 +416,10 @@ values = ["raw", "string", "path", "html", "array", "trim"]   # any case
 ```
 
 The call is input only when that argument is written as one of the values; with
-another value, a variable, or no such argument it is not.
+another value, a variable, or no such argument it is not. `values = ["*"]` takes
+any string literal: Express's `req.get('Referer')` reads a header, `req.get()`
+reads none. A value written `!name` is never the source, also with `*`:
+`values = ["*", "!host"]` takes every header but Host.
 
 ### Rules without sources
 

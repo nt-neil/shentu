@@ -1,0 +1,44 @@
+id = "js-sqli-node-http-query"
+lang = "js"
+class = "sqli"
+cwe = "CWE-89"
+severity = "high"
+tier = "info"
+title = "Query string of a plain Node http request concatenated into SQL"
+frameworks = []
+sources = ["url.parse(request.url", "url.parse(req.url", "URL(req.url", "URL(request.url", "querystring.parse(req.url", "querystring.parse(request.url"]
+sinks = [".query(", ".execute("]
+sanitizers = ["parseInt(", "Number(", ".escape(", "mysql.escape(", "SqlString.escape("]
+fix = "Pass the values as query parameters (query('... WHERE a = ?', [a])); a table or column name from the query string must come from a fixed list."
+refs = ["CVE-2015-10035"]
+
+[[args]]
+sinks = [".query("]
+arg = 1   # the SQL text; values in the bindings array are safe
+
+# execute() only on a receiver that may be a database client (as in js-sqli-raw-interpolation)
+[[args]]
+sinks = [".execute("]
+arg = 1
+receiver = ["db", "conn", "connection", "pool", "client", "sql", "database", "trx", "tx", "transaction", "mysql", "mysql2", "pg", "knex", "sequelize", "libsql", "oracledb", "createConnection(", "createPool(", "getConnection(", "createClient(", "connect(", "Pool", "Client", "Connection", "Database"]
+
+[[samples]]
+kind = "vulnerable"
+note = "escaping the values does not protect the table name taken from the query string"
+code = '''
+http.createServer((request, response) => {
+  const parts = url.parse(request.url, true);
+  connection.query("INSERT INTO notes_" + parts.query.table + " (note) VALUES (" + connection.escape(parts.query.note) + ")", () => response.end());
+}).listen(8080);
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+const TABLES = new Set(["daily", "weekly"]);
+http.createServer((request, response) => {
+  const q = url.parse(request.url, true).query;
+  if (!TABLES.has(q.table)) { response.statusCode = 400; return response.end(); }
+  connection.query("INSERT INTO notes_" + q.table + " (note) VALUES (?)", [q.note], () => response.end());
+}).listen(8080);
+'''

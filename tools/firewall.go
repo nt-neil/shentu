@@ -10,6 +10,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/nt-neil/shentu/hostenv"
 )
 
 // All blocks live in their own nftables table, so shentu never touches the
@@ -31,26 +33,155 @@ type ipArgs struct {
 	IP     string `json:"ip"`
 	TTL    string `json:"ttl"`
 	Reason string `json:"reason"`
+	// OverrideUnverified blocks an IP whose SSH login events come only from
+	// text logs (verified=false), which anyone on the host can write to. Set
+	// only after the operator has checked those logs; the preview shows it.
+	OverrideUnverified bool `json:"override_unverified"`
+}
+
+// RemoteRefused says why a control tool call from a chat channel (env.Remote)
+// is refused before it is shown for confirmation; nil when it is not. A
+// remote request cannot override the login gate, at any interaction level:
+// the operator checks the logs on the server and blocks with shentu chat.
+func RemoteRefused(env *Env, name string, args json.RawMessage) error {
+	if env == nil || !env.Remote || name != "block_ip" {
+		return nil
+	}
+	var a ipArgs
+	if decode(args, &a) == nil && !a.OverrideUnverified {
+		return nil
+	}
+	return errors.New("override_unverified is not accepted from a chat channel: check the logs on the server and block it there with shentu chat")
+}
+
+// loginSummary is SSHSummary, and textLogins counts ip's SSH login events in
+// the text auth logs alone (tests replace both).
+var (
+	loginSummary = SSHSummary
+	textLogins   = func(env *Env, ip string) (n int, files, unread []string) {
+		// Whatever a line's time says: a forged line may be dated before any
+		// window, and ssh_logins could have been asked about it. Each log
+		// path is read on its own, to name the files the events are in.
+		for _, p := range env.LogPaths {
+			c := hostenv.NewSSHLogins(time.Time{}, time.Now(), ip)
+			read, un := linux.ScanTextAuthLogs(hostSource(), []string{p}, time.Time{}, c.Add)
+			unread = append(unread, un...)
+			list, _ := hostenv.MaxLogins(c)
+			k := 0
+			for _, s := range list {
+				k += s.Failed + s.InvalidUser + s.Accepted
+			}
+			if k > 0 {
+				n += k
+				files = append(files, read...)
+			}
+		}
+		return n, files, unread
+	}
+)
+
+// block_ip looks for the IP's SSH logins over the last day first, and over
+// loginGateWindow (as long as the longest block, since ssh_logins may have
+// been asked about any span before it) only when the day has none: a month
+// of journald may take past its timeout, which would leave the logins
+// unverified and the operator overriding for nothing.
+const (
+	loginGateFirst  = 24 * time.Hour
+	loginGateWindow = 720 * time.Hour
+)
+
+// loginGate refuses to block ip when its SSH login events may be forged:
+// events for it in the text logs (which anyone on the host can write sshd
+// lines to) that journald does not confirm with events of its own, a summary
+// that is unverified and has some, or a summary that could not be read in
+// full. The text logs are read whatever journald holds, since ssh_logins may
+// have read them for a shorter span in which journald was empty. override
+// lets the operator, having checked the logs, go ahead. An IP with no login
+// events anywhere is not blocked for its logins: the gate does not apply.
+func loginGate(ctx context.Context, env *Env, ip net.IP, override bool) error {
+	if override {
+		return nil
+	}
+	want := hostenv.CanonicalIP(ip.String())
+	var r map[string]any
+	seen, complete := false, false
+	for _, back := range []time.Duration{loginGateFirst, loginGateWindow} {
+		var err error
+		if r, err = loginSummary(ctx, env, time.Now().Add(-back), want); err != nil {
+			return fmt.Errorf("refusing to block %s: its SSH logins could not be read to check whether they are real (%v); if the block rests on other evidence, ask again with override_unverified", ip, err)
+		}
+		sources, _ := r["sources"].([]SSHSource)
+		seen = false
+		for _, s := range sources {
+			if hostenv.CanonicalIP(s.IP) == want && s.Failed+s.InvalidUser+s.Accepted > 0 {
+				seen = true
+			}
+		}
+		// SSHSummary reports a log it could not read in r, not as an error.
+		complete, _ = r["complete"].(bool)
+		if e, _ := r["error"].(string); e != "" {
+			complete = false
+		}
+		if seen || !complete {
+			break // the day already tells, or cannot tell
+		}
+	}
+	verified, _ := r["verified"].(bool)
+	if !complete {
+		why := fmt.Sprint(r["source"])
+		if e, _ := r["error"].(string); e != "" {
+			why += ": " + e
+		}
+		return fmt.Errorf("refusing to block %s: its SSH logins could not be read in full (%s), so forged ones cannot be ruled out; check the logs as root and, if they are real, ask again with override_unverified", ip, why)
+	}
+	if seen && verified {
+		return nil // journald itself has the IP's logins: the text logs need not be read
+	}
+	text, files, unread := textLogins(env, want)
+	switch {
+	case len(unread) > 0:
+		return fmt.Errorf("refusing to block %s: the text auth logs could not all be read (%s), so forged SSH logins in them cannot be ruled out; check them as root and, if the block is right, ask again with override_unverified", ip, strings.Join(unread, ", "))
+	case seen, text > 0: // seen here means unverified
+		// Name the text logs the events are in, not the summary's source
+		// (that is "journald" when journald had other sshd entries).
+		where := strings.Join(files, ", ")
+		if where == "" {
+			where = fmt.Sprint(r["source"])
+		}
+		return fmt.Errorf("refusing to block %s: its SSH login events come from text logs (%s), which anyone on this host can write to, so they may be forged; check them (journalctl -u ssh, the IP's other traffic) and, if they are real, ask again with override_unverified", ip, where)
+	}
+	return nil
 }
 
 var blockIP = Tool{
 	Name:        "block_ip",
-	Description: "Block all inbound traffic from one IP address with nftables, for a limited time. Requires the operator to confirm. Refuses loopback, this server's own addresses and the IPs of current SSH sessions.",
+	Description: "Block all inbound traffic from one IP address with nftables, for a limited time. Requires the operator to confirm. Refuses loopback, this server's own addresses and the IPs of current SSH sessions, and an IP whose SSH login events are only in text logs anyone here can write to, or could not be read in full (override_unverified, from the server's terminal only, after the operator checked them). That check covers SSH login evidence only: a block based on other logs (log_search over syslog, nginx) is not checked, so say where the evidence came from.",
 	Control:     true,
 	Params: schema(`{"type":"object","required":["ip","reason"],"properties":{
 		"ip":{"type":"string","description":"single IPv4 or IPv6 address"},
 		"ttl":{"type":"string","description":"how long, e.g. 1h, 24h, 168h (default 24h, max 720h)"},
-		"reason":{"type":"string","description":"why, shown to the operator"}}}`),
+		"reason":{"type":"string","description":"why, shown to the operator"},
+		"override_unverified":{"type":"boolean","description":"block even though the IP's SSH login events come only from text logs (verified=false); only after the operator has checked those logs"}}}`),
 	Preview: func(args json.RawMessage) (string, error) {
 		a, ip, ttl, err := checkBlock(args)
 		if err != nil {
 			return "", err
 		}
-		return fmt.Sprintf("nft add element inet %s %s { %s timeout %ds }   # %s", nftTable, setFor(ip), ip, int(ttl.Seconds()), a.Reason), nil
+		s := fmt.Sprintf("nft add element inet %s %s { %s timeout %ds }   # %s", nftTable, setFor(ip), ip, int(ttl.Seconds()), a.Reason)
+		if a.OverrideUnverified {
+			s += "\n# override_unverified: blocks even if this IP's SSH logins come only from text logs anyone here can write to; confirm only if you checked them"
+		}
+		return s, nil
 	},
 	Run: func(ctx context.Context, env *Env, args json.RawMessage) (any, error) {
-		_, ip, ttl, err := checkBlock(args)
+		if err := RemoteRefused(env, "block_ip", args); err != nil {
+			return nil, err
+		}
+		a, ip, ttl, err := checkBlock(args)
 		if err != nil {
+			return nil, err
+		}
+		if err := loginGate(ctx, env, ip, a.OverrideUnverified); err != nil {
 			return nil, err
 		}
 		if err := ensureTable(ctx); err != nil {

@@ -12,8 +12,10 @@ package engine
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -44,6 +46,7 @@ type Finding struct {
 // Engine holds compiled rules. It is safe for concurrent use.
 type Engine struct {
 	byLang map[string][]*crule
+	watch  map[string]bool // "m:" modules and "w:" names some rule's unless_imports looks for (imports.go)
 	Limits Limits
 	// SourcePrefilter (on in New) skips the rules none of whose sources occur in
 	// a file: a file scanned on its own gets input only from them, in the first
@@ -70,9 +73,12 @@ type crule struct {
 	textSources, textSinks []*pat // text inside string literals
 	sanitizers             []*pat
 	args                   map[*pat]*argCond
-	leading                bool // some sink needs a fixed prefix, so values track raw input
-	ctypes                 bool // some args block has unless_content_type: record Content-Type statements (ctype.go)
-	output                 bool // every sink writes to a page (has a context condition): see context.go
+	argsMore               map[*pat][]*argCond // a sink's further [[args]] blocks: a finding when any one holds
+	leading                bool                // some sink needs a fixed prefix, so values track raw input
+	ctypes                 bool                // some args block has unless_content_type: record Content-Type statements (ctype.go)
+	srcScope               map[*pat][]string   // sources of a route model that count on $this only in a class extending one of these (routes.go)
+	srcThis                map[*pat]bool       // sources of a route model that count only on $this or $this->parent (this_only)
+	output                 bool                // every sink writes to a page (has a context condition): see context.go
 }
 
 type argCond struct {
@@ -81,6 +87,7 @@ type argCond struct {
 	when, unless   []*pat
 	whole, leading bool
 	context        []uint8 // output contexts that count (ctxHTML ...); empty: any
+	markup         bool    // context: only input after markup written in the same value (contextTaint)
 	literal        bool
 	key            string // the value under this key of an object argument (keyValue)
 	keys           bool   // an array, object or dict literal argument counts by its keys (keysVal)
@@ -90,6 +97,9 @@ type argCond struct {
 	receiver       []*pat   // a method sink counts only on a receiver these name (receiver.go)
 	notReceiver    []*pat   // nor on an object surely of one of these classes (receiver.go)
 	unlessCT       []string // nor once the response's Content-Type is one of these on every path (ctype.go)
+	unlessImports  []string // nor in a file importing one of these modules (imports.go)
+	importsNot     []string // ... unless the file or the receiver names one of these
+	unlessSub      []*pat   // the argument does not count when it is one item of one of these (request.files["f"])
 }
 
 // New compiles rules. A pattern that does not lex as code of its language is an error.
@@ -101,6 +111,15 @@ func New(rs []rules.Rule) (*Engine, error) {
 			return nil, fmt.Errorf("%s: %w", r.ID, err)
 		}
 		e.byLang[r.Lang] = append(e.byLang[r.Lang], c)
+		for _, ac := range c.args {
+			for _, m := range ac.unlessImports {
+				e.watchFor("m:" + m)
+			}
+			for _, w := range ac.importsNot {
+				e.watchFor("m:" + w)
+				e.watchFor("w:" + w)
+			}
+		}
 	}
 	routes, err := rules.LoadRoutes()
 	if err == nil {
@@ -162,12 +181,17 @@ func compileRule(r rules.Rule) (*crule, error) {
 		return nil, err
 	}
 	for _, a := range r.Args {
-		ac := &argCond{arg: a.Arg, name: a.Name, whole: a.Whole, leading: a.Leading, literal: a.Literal, key: a.Key, keys: a.Keys, minLen: a.MinLen, unlessAt: a.UnlessAt}
+		ac := &argCond{arg: a.Arg, name: a.Name, whole: a.Whole, leading: a.Leading, literal: a.Literal, key: a.Key, keys: a.Keys, minLen: a.MinLen, unlessAt: a.UnlessAt,
+			unlessImports: a.UnlessImports, importsNot: a.UnlessImportsNot, markup: a.Markup}
 		switch {
 		case a.UnlessAt != "" && a.UnlessAt != "start" && a.UnlessAt != "top":
 			return nil, fmt.Errorf("args: unless_at %q is not start or top", a.UnlessAt)
 		case a.UnlessAt != "" && len(a.Unless) == 0:
 			return nil, fmt.Errorf("args: unless_at needs unless")
+		case len(a.UnlessImportsNot) > 0 && len(a.UnlessImports) == 0:
+			return nil, fmt.Errorf("args: unless_imports_not needs unless_imports")
+		case a.Markup && len(a.Context) == 0:
+			return nil, fmt.Errorf("args: markup needs context")
 		}
 		for _, ct := range a.UnlessContentType {
 			ac.unlessCT = append(ac.unlessCT, strings.ToLower(ct))
@@ -194,7 +218,7 @@ func compileRule(r rules.Rule) (*crule, error) {
 		for _, list := range []struct {
 			raw []string
 			out *[]*pat
-		}{{a.When, &ac.when}, {a.Unless, &ac.unless}, {a.Receiver, &ac.receiver}, {a.NotReceiver, &ac.notReceiver}} {
+		}{{a.When, &ac.when}, {a.Unless, &ac.unless}, {a.Receiver, &ac.receiver}, {a.NotReceiver, &ac.notReceiver}, {a.UnlessSubscript, &ac.unlessSub}} {
 			for _, raw := range list.raw {
 				p, err := compilePattern(r.Lang, raw, false)
 				if err != nil {
@@ -212,10 +236,21 @@ func compileRule(r rules.Rule) (*crule, error) {
 			if !ok {
 				return nil, fmt.Errorf("args: %q is not one of the sinks", s)
 			}
+			if c.args[p] != nil {
+				if c.argsMore == nil {
+					c.argsMore = map[*pat][]*argCond{}
+				}
+				c.argsMore[p] = append(c.argsMore[p], ac)
+				continue
+			}
 			c.args[p] = ac
 		}
 	}
-	for _, ac := range c.args {
+	all := slices.Collect(maps.Values(c.args))
+	for _, more := range c.argsMore {
+		all = append(all, more...)
+	}
+	for _, ac := range all {
 		for _, x := range ac.context {
 			if x == ctxURL {
 				c.leading = true // track fixed prefixes: a value that starts with one cannot pick a scheme
@@ -351,7 +386,7 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 	viaProject := len(routeFns) > local
 	defs := phpDefines(base, toks)
 	if proj != nil {
-		proj.keep(path, &fileCtx{lang: base, tree: tree, ff: ff, tokens: len(toks), rdefs: fileRecvDefs(base, toks), rcls: fileRecvClasses(base, toks), defs: defs})
+		proj.keep(path, &fileCtx{lang: base, tree: tree, ff: ff, tokens: len(toks), rdefs: fileRecvDefs(base, toks), rcls: fileRecvClasses(base, toks), ifacts: e.importFacts(base, toks), defs: defs})
 	}
 	var out []Finding
 	add := func(r *crule, lines ...[]loc) {
@@ -387,6 +422,9 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 			break
 		}
 		hs := si.names(r.sinks, r.textSinks, names, src) && si.hasSink(r)
+		if !hs && proj != nil && !proj.sinkRules[r.rule.ID] {
+			continue // no file of the project holds a sink of it: nothing to reach across files either
+		}
 		// In a project a file without a sink may pass input, its own or a route
 		// handler's parameters, to another file's sink; on its own it has nothing
 		// to find.
@@ -402,7 +440,7 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 		}
 		ruleList = append(ruleList, r)
 		if hs && !callsOnly {
-			a := &analysis{r: r, php: base == "php", py: base == "python", js: base == "js", b: b, kw: keywords[base], seen: map[loc]bool{}, defs: defs, file: path, ftoks: toks, routes: routeFns}
+			a := &analysis{r: r, php: base == "php", py: base == "python", js: base == "js", b: b, kw: keywords[base], seen: map[loc]bool{}, defs: defs, file: path, ftoks: toks, routes: routeFns, cproj: proj}
 			a.block(tree, state{})
 			direct[r] = a.lines
 		}
@@ -449,14 +487,14 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 			sc := newSummaries(ff)
 			if proj != nil {
 				if sc == nil {
-					sc = &summaries{ff: ff, funcs: ff.byKey, done: map[string]*summary{}, busy: map[string]bool{}, rel: map[string]uint8{}, retUnk: map[string]uint8{}}
+					sc = &summaries{ff: ff, funcs: ff.byKey, done: map[string]*summary{}, busy: map[string]bool{}, rel: map[string]uint8{}, retUnk: map[string]uint8{}, keyed: map[string]*summary{}}
 				}
 				// Summaries are worked out the same whoever asks (own): those the
 				// project has of this file already (as another file's callee, or a
 				// cycle settled through it) are the ones this scan would work out.
 				key := r.rule.ID + "\x00" + path
 				if old := proj.sums[key]; old != nil {
-					sc.done, sc.rel, sc.direct, sc.cross = old.done, old.rel, old.direct, old.cross
+					sc.done, sc.rel, sc.direct, sc.cross, sc.keyed = old.done, old.rel, old.direct, old.cross, old.keyed
 				} else if kept := proj.kept[key]; kept != nil {
 					sc.done = kept
 					delete(proj.kept, key)

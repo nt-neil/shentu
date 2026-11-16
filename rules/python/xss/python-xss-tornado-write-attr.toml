@@ -1,0 +1,35 @@
+id = "python-xss-tornado-write-attr"
+lang = "python"
+class = "xss"
+cwe = "CWE-79"
+severity = "medium"
+tier = "info"
+title = "Tornado handler writes a request value in an attribute value without the escaping that context needs"
+sources = ["self.get_argument(", "self.get_arguments(", "self.get_query_argument(", "self.get_query_arguments(", "self.get_body_argument(", "self.get_body_arguments(", "self.get_cookie(", "self.request.arguments", "self.request.query_arguments", "self.request.body_arguments", "self.request.body", "self.request.uri", "self.request.path", "self.request.headers", "self.path_kwargs"]
+sinks = ["self.write(", "self.finish("]
+sanitizers = ["xhtml_escape(", "escape.xhtml_escape(", "tornado.escape.xhtml_escape(", "html.escape(", "markupsafe.escape(", "url_escape(", "escape.url_escape(", "tornado.escape.url_escape("]
+fix = "Escape the value with tornado.escape.xhtml_escape() (it escapes quotes too), or render a template."
+refs = ["CVE-2024-35225"]
+
+# RequestHandler.write sends text/html unless the handler sets another type;
+# a dict is sent as JSON, which the context condition leaves out.
+[[args]]
+context = ["attr"]
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+class SearchBox(tornado.web.RequestHandler):
+    def get(self):
+        term = self.get_query_argument("term", "")
+        self.finish(f'<input name="term" value="{term}">')
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+class SearchBox(tornado.web.RequestHandler):
+    def get(self):
+        term = self.get_query_argument("term", "")
+        self.finish(f'<input name="term" value="{tornado.escape.xhtml_escape(term)}">')
+'''

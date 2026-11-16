@@ -6,6 +6,99 @@ a release are not written here: they are worked out from the rule snapshots in
 `docs/site-src/rules-history/`. `CHANGELOG.zh-TW.md` holds the same releases in Traditional
 Chinese for the zh-TW pages; keep the two in step.
 
+## v0.3.1 — 2026-11-16
+
+- Code audit rules: 70 → 127 (PHP 25 → 51, Python 22 → 43, JavaScript and TypeScript
+  23 → 33). PHP: WordPress, Laravel, Symfony, Joomla, Drupal, CodeIgniter, Yii and Smarty
+  sinks, sockets and HTTP clients, XML DTDs, template strings, crypto keys and shortcodes
+  (#76). Python: keyword arguments (`args=`, `search_filter=`, `where=`), ldap3 filters and
+  helper flows (#36). JavaScript and TypeScript: Koa and chained Express responses, BSON and
+  launder sanitizers, Host-header redirects and SSRF; `.execute(` counts only on a receiver
+  that may be a database client (#70).
+- The v0.2.5 known false positives are fixed in the engine: TypeORM repository calls in a file
+  importing `typeorm` are no MongoDB queries, unless the file uses a MongoDB repository, driver
+  or Mongoose (`unless_imports`, #59); `spawn()` and `execFile()` with `shell: true` are reported
+  only when the command or its arguments carry input, not the options (several `[[args]]` blocks
+  per sink, #62); a Server-Sent Events handler (`Content-Type: text/event-stream` set on every
+  path) is no XSS (`unless_content_type`, #58; `unless_at`, #57); `->get_settings()` is Elementor
+  widget input only in classes extending `\Elementor\Widget_Base` (#60); a placeholder list built
+  by `array_map` with a callback returning a constant is no input (#61);
+  `zipfile.ZipFile(request.files[...])` opens the upload's stream, not a path
+  (`unless_subscript`, #67).
+- `js-ssrf-http-request` now reads the referrer and origin in Koa, hapi and Fetch API spelling
+  (`ctx.request.header.referer`, `request.headers.referer`, `request.headers.get('x-callback-url')`;
+  not Host), which were missed. Input written into a prepared statement's text is reported once,
+  by `php-sqli-prepare-query-text`, instead of also by `php-sqli-string-concat`. The benchmark
+  numbers are unchanged.
+- Engine: `new URL(a, base)` takes its path and query from `a` when `a` starts with `/` or a
+  scheme (#63); method calls on an object of a class in the same file are followed (#64); an
+  anchored regex test fixing a value's start (`re.match(re.escape(base) + r'/[a-z]', url)`) is
+  a check for redirect and URL rules (#65); a helper returning a string constant is followed
+  (#66); `markup` makes an output sink count input only after literal markup (#71); recursive
+  cycles are followed until they settle and paid for once, so WordPress files whose calls were
+  cut went from 48 to 4 (#72); `route_input = false` for the Host-header rules, and Koa's `ctx`
+  in the Express model (#50).
+- Survey warns about Apache 2.4.55–2.4.70 with `mod_http2` loaded and `h2` or `h2c` in
+  `Protocols` (CVE-2026-119618; upgrade to 2.4.71, or set `Protocols http/1.1` until then)
+  (#54). When a file that could load `mod_http2` or turn on h2 cannot be read (no rights, a link
+  not trusted), the check is listed as not checked instead of passed over; the warning says it
+  can be ignored when the distribution has backported the fix.
+- Code audit: a resumed walk cut before its stored position keeps that position, and the
+  position is stored by the root's path; vendor, node_modules and WordPress code folders count
+  only below the site root; `wp-content/blogs.dir/*/files` and `/var/www/<uploads|files>`
+  without a site's index are upload folders; `authorized_key_unparsed` lists the first 20 line
+  numbers (#73).
+- The hourly and daily reports list SSH logins as not checked when the login logs could not
+  be read in full (journald hiding the system's entries from a non-root user, `auth.log` or
+  `secure` unreadable, a log cut short). Before, such a run said "nothing new" (#80).
+  The reason given is what kept the logs from counting (on a quiet host: a journal with no sshd
+  entry and no text auth log), and running as root is advised only when rights were missing; on
+  macOS, which keeps sshd's events where Shentu does not read, the report says it has no sshd log
+  source there.
+- Linux builds no longer send an EDNS(0) record with DNS queries, as glibc does not: some
+  DNS servers, VMware's NAT DNS among them, answered such queries without the address, so
+  every lookup (OSV, GitHub) failed with "no such host". When a lookup still fails, the daily
+  report's Not checked line says to check the host's DNS (#80).
+- `block_ip` refuses an IP whose SSH login events come only from text
+  logs anyone on the host can write to (`verified` false), or whose logins cannot be read;
+  `override_unverified` goes ahead after the operator has checked them, from `shentu chat`
+  only. From the Telegram bot it is always refused, at every confirm level.
+  The check covers SSH login evidence only: a block based on other logs (syslog, nginx, an
+  application log through `log_search`) is not checked and is the operator's to judge.
+  On a host whose journald has no sshd entries (text logs only), `block_ip` refuses every IP
+  with SSH login events, whatever the date of the lines; such a block cannot be made from
+  Telegram, only on the server with `shentu chat` and `override_unverified`. `ssh_logins`
+  looks back at most 720 hours, as far as the check (#80). A refusal for login events that may
+  be forged names the text logs they are in.
+- macOS: binary plists count array and dictionary entries, and UTF-16 strings at 9 bytes a
+  character, against the decoding limit; a program path ending in a space is kept as it is;
+  a process named on two `ps` lines is marked `parse_error`; `periodic_conf_files` past 16
+  files are listed as not read (#80). CI runs `go vet` and `go test` on macOS 15 (#81); no
+  macOS binary is published yet.
+- Tests build credential-shaped fake values at run time, so the tree has no secret-shaped
+  literals (#77).
+- Benchmark against v0.3.0: published vulnerabilities 16 of 97 caught (was 15), 1 fixed-release
+  false positive (was 0, see below); held-out cases 3 of 30 (was 2), no fixed-release false
+  positive; TypeScript cases 1 of 18 with 1 fixed-release false positive
+  (n8n), both unchanged.
+
+### Known issues
+
+- CVE-2021-23664 (`@isomorphic-git/cors-proxy`): `js-ssrf-http-request` still reports the
+  fixed release. The proxy forwards `req.url` after an allow check the engine does not yet read
+  as a sanitizer; reading such checks before a request is planned.
+- Scans take longer with the added rules, as each file is run through more rules: WordPress
+  about 40–60% depending on the machine (on an Ubuntu VM the code audit went from 73.8 s to
+  120.0 s and the daily patrol from 100 s to 144 s, with the same findings and peak RSS),
+  TypeScript projects about 43%. The fix at the root is planned after v0.3.1.
+- `block_ip`'s check covers SSH login evidence only (see above): a block based on other logs
+  is the operator's to judge.
+- `php-deserialization-phar-wrapper` still reports `filesize()` on an upload's temporary path
+  in WordPress's REST attachments controller: the engine cannot yet tell an upload's
+  `tmp_name` from its client-set `name`.
+- `markup` does not follow markup put together in a variable first
+  (`const h = '<p>' + x; ctx.body = h`).
+
 ## v0.3.0 — 2026-11-13
 
 - Windows Server 2022 and 2025, verified on GitHub-hosted windows-2022/2025 runners (amd64;

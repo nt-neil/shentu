@@ -51,7 +51,7 @@
 
     <div class="station st1">
       <h1 id="title"><span>夜裡，</span> <span>有人守門。</span></h1>
-      <p class="lede">你睡覺的時候，Shentu 在你的 Linux 伺服器上巡邏；有狀況，你只會收到一則白話訊息。</p>
+      <p class="lede">你睡覺的時候，Shentu 在你的伺服器上巡邏；有狀況，你只會收到一則白話訊息。</p>
       <p class="actions"><a class="button" href="install.html">安裝</a><a class="link" href="https://github.com/nt-neil/shentu">原始碼在 GitHub</a></p>
       <p class="cue" aria-hidden="true">往下捲，跟著神荼巡一次夜</p>
     </div>
@@ -67,7 +67,7 @@
         <li data-at="1.6"><span>對外連接埠</span><b>✓</b></li>
         <li data-at="2.2"><span>程序</span><b>✓</b></li>
         <li data-at="2.55"><span>有已知漏洞的套件</span><b>✓</b></li>
-        <li data-at="3.3"><span>shop / 網站程式碼（70 條規則）</span><b>✓</b></li>
+        <li data-at="3.3"><span>shop / 網站程式碼（127 條規則）</span><b>✓</b></li>
         <li data-at="3.8" class="flag"><span>shop / wp-content / uploads</span><b>網頁後門</b></li>
       </ul>
     </div>
@@ -92,9 +92,9 @@
 <section data-reveal class="tally" aria-labelledby="tally-title">
   <h2 id="tally-title">目前能查的</h2>
   <dl>
-    <div><dd>70</dd><dt>條程式碼稽核規則</dt></div>
-    <div><dd>15<small>/ 97</small></dd><dt>個主組公開漏洞已抓到</dt></div>
-    <div><dd>0</dd><dt>次修補版誤報</dt></div>
+    <div><dd>127</dd><dt>條程式碼稽核規則</dt></div>
+    <div><dd>16<small>/ 97</small></dd><dt>個主組公開漏洞已抓到</dt></div>
+    <div><dd>1</dd><dt>次修補版誤報</dt></div>
   </dl>
   <p><a href="bench.html">看實測方法與完整結果</a></p>
 </section>
@@ -140,7 +140,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.88; --x: 17.8">
+    <li class="era-node" style="--old: 0.89; --x: 16.6">
       <a class="lamp" href="../zh-TW/releases.html#v0.1.1" aria-describedby="rv-0.1.1">
         <i aria-hidden="true"></i><span class="ver">v0.1.1</span>
         <time datetime="2026-11-07">11-07</time>
@@ -152,7 +152,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.75; --x: 28.5">
+    <li class="era-node" style="--old: 0.78; --x: 26.1">
       <a class="lamp" href="../zh-TW/releases.html#v0.2.0" aria-describedby="rv-0.2.0">
         <i aria-hidden="true"></i><span class="ver">v0.2.0</span>
         <time datetime="2026-11-07">11-07</time>
@@ -164,7 +164,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.62; --x: 39.2">
+    <li class="era-node" style="--old: 0.67; --x: 35.7">
       <a class="lamp" href="../zh-TW/releases.html#v0.2.1" aria-describedby="rv-0.2.1">
         <i aria-hidden="true"></i><span class="ver">v0.2.1</span>
         <time datetime="2026-11-08">11-08</time>
@@ -176,7 +176,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.50; --x: 50.0">
+    <li class="era-node" style="--old: 0.56; --x: 45.2">
       <a class="lamp" href="../zh-TW/releases.html#v0.2.2" aria-describedby="rv-0.2.2">
         <i aria-hidden="true"></i><span class="ver">v0.2.2</span>
         <time datetime="2026-11-08">11-08</time>
@@ -188,7 +188,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.38; --x: 60.8">
+    <li class="era-node" style="--old: 0.44; --x: 54.8">
       <a class="lamp" href="../zh-TW/releases.html#v0.2.3" aria-describedby="rv-0.2.3">
         <i aria-hidden="true"></i><span class="ver">v0.2.3</span>
         <time datetime="2026-11-09">11-09</time>
@@ -200,7 +200,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.25; --x: 71.5">
+    <li class="era-node" style="--old: 0.33; --x: 64.3">
       <a class="lamp" href="../zh-TW/releases.html#v0.2.4" aria-describedby="rv-0.2.4">
         <i aria-hidden="true"></i><span class="ver">v0.2.4</span>
         <time datetime="2026-11-09">11-09</time>
@@ -212,7 +212,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.12; --x: 82.2">
+    <li class="era-node" style="--old: 0.22; --x: 73.9">
       <a class="lamp" href="../zh-TW/releases.html#v0.2.5" aria-describedby="rv-0.2.5">
         <i aria-hidden="true"></i><span class="ver">v0.2.5</span>
         <time datetime="2026-11-13">11-13</time>
@@ -224,21 +224,33 @@
       </div>
     </li>
   
-    <li class="era-node now" style="--old: 0.00; --x: 93.0">
+    <li class="era-node" style="--old: 0.11; --x: 83.4">
       <a class="lamp" href="../zh-TW/releases.html#v0.3.0" aria-describedby="rv-0.3.0">
         <i aria-hidden="true"></i><span class="ver">v0.3.0</span>
         <time datetime="2026-11-13">11-13</time>
       </a>
       <p class="acc"><span><b>70</b> 條規則</span></p>
+      <div class="peek" id="rv-0.3.0">
+        <p class="word">19 項改變</p>
+        <ul><li>支援 Windows Server 2022 與 2025，已在 GitHub 提供的 Windows Server 2022/2025 測試機上驗證（amd64，另建置 arm64）：Windows 收集器只透過 Windows API 讀取主機（登錄檔、服務、程序、通訊埠、帳號、排程工作、事件記錄、WMI 與防火牆），不用 PowerShell，也不執行外部指令。</li><li>Windows 檢查：自動啟動項目（Run 機碼、服務、排程工作、啟動資料夾、WMI 事件訂閱）、未啟用 NLA 的 RDP、SMB 簽章與 SMBv1、不安全的 WinRM、防火牆設定檔、Defender 狀態與排除清單、登入失敗與記錄被清除。</li><li>依 Microsoft 每月安全性更新（MSRC）比對缺少的 Windows 更新，並以 CISA KEV 清單標出已被 利用的漏洞、優先列出。</li></ul>
+      </div>
+    </li>
+  
+    <li class="era-node now" style="--old: 0.00; --x: 93.0">
+      <a class="lamp" href="../zh-TW/releases.html#v0.3.1" aria-describedby="rv-0.3.1">
+        <i aria-hidden="true"></i><span class="ver">v0.3.1</span>
+        <time datetime="2026-11-16">11-16</time>
+      </a>
+      <p class="acc"><span><b>127</b> 條規則</span><span><b>16</b>/97 樣本抓到</span></p>
       
     </li>
   
   </ol>
 </div>
 
-<div class="newest" id="rv-0.3.0">
-  <div class="newest-head"><p class="word">重修</p><span class="ver">v0.3.0</span><time datetime="2026-11-13">2026-11-13</time></div>
-  <div class="grp grp-reach"><h4><i aria-hidden="true"></i>看得更遠</h4><ul><li>支援 Windows Server 2022 與 2025，已在 GitHub 提供的 Windows Server 2022/2025 測試機上驗證（amd64，另建置 arm64）：Windows 收集器只透過 Windows API 讀取主機（登錄檔、服務、程序、通訊埠、帳號、排程工作、事件記錄、WMI 與防火牆），不用 PowerShell，也不執行外部指令。</li><li>Windows 檢查：自動啟動項目（Run 機碼、服務、排程工作、啟動資料夾、WMI 事件訂閱）、未啟用 NLA 的 RDP、SMB 簽章與 SMBv1、不安全的 WinRM、防火牆設定檔、Defender 狀態與排除清單、登入失敗與記錄被清除。</li><li>依 Microsoft 每月安全性更新（MSRC）比對缺少的 Windows 更新，並以 CISA KEV 清單標出已被 利用的漏洞、優先列出。</li><li>IIS：從 <code>applicationHost.config</code> 取得網站根目錄；程式碼稽核會讀取 ASP 與 ASP.NET 頁面，找出 webshell 與上傳目錄裡的腳本，UTF-16 頁面也包含在內。</li><li>兩個 Windows 服務：<code>Shentu</code>（巡邏）與 <code>ShentuBot</code>（Telegram），從 <code>%ProgramFiles%\Shentu</code> 以 <code>shentu service install [--bot]</code> 安裝；設定與狀態放在 <code>%ProgramData%\Shentu</code>，只有 SYSTEM 與 Administrators 能存取。</li><li><code>ssh_logins</code>、<code>processes</code>、<code>accounts_audit</code> 與 <code>log_search</code> 工具可在 Windows 使用（登入 事件、程序清單、本機帳號、事件記錄）。</li><li>SSH 登入沒成功的紀錄改為先讀 journald：ssh 與 sshd 單元的標記由 journald 自己填入，本機用戶不能偽造。journald 不存在、讀取時間到了上限（60 s），或沒有 sshd 紀錄時，才改讀文字紀錄檔（<code>auth.log</code>、<code>secure</code>）。本機任何人都能用 <code>logger</code> 寫入一行 sshd 紀錄，所以這時 <code>auth_events</code> 標為 partial，原因是新的 <code>unverified_source</code>，多次試圖登入的告警也會附註來源未驗證。不是 root 的用戶沒有權限看系統紀錄時，不再當成「沒有登入沒成功」。</li><li>Amazon Linux 2 與 2023：套件漏洞改用 Amazon 的 ALAS 公告比對（讀每個套件庫的 <code>updateinfo</code>，先用 <code>repomd.xml</code> 裡的 sha256 驗證再暫存起來），Amazon Linux 2 的 extras 也算在內。已經不再有更新的 Amazon Linux 1 回報「說不出有沒有漏洞」。真的在 Amazon Linux 2023 的 VM 上錄製過；Amazon Linux 2 只有測試測到。</li><li>Alpine Linux：從 apk 資料庫讀套件（OSV 比對），讀 OpenRC 服務與 runlevel，並把 <code>/etc/local.d</code>、busybox crond（<code>/etc/crontabs</code>、<code>/etc/periodic</code>）與 <code>/etc/inittab</code> 列為開機或定時自動執行的位置；busybox syslog 只讀 auth 類的 sshd 紀錄，並標為未驗證。真的在 Alpine 3.22 的 VM 上 以 root 與用戶分別錄製過一次。</li><li>SUSE：openSUSE Leap、Tumbleweed，以及 SLES、SLED、SLES for SAP （SLE 15 每個模組查一個 OSV ecosystem；OSV 沒有收錄的會列為沒有查）。Leap 用自製的測試資料驗證，SLES 還沒有在真的主機上試過。</li><li>每日報告會列出沒查成或只查了一部分的漏洞檢查；套件清單讀出 0 個時回報「說不出有沒有漏洞」，不再當成「沒有漏洞」。</li><li>macOS（新增，只讀取，不用 sudo）：系統版本、用戶（dscl）、程序、開放的連接埠 （netstat；macOS 不列出時改用 lsof）、應用程式的網路防護、SIP、Gatekeeper、FileVault、XProtect、launchd 與別的開機或定時自動執行的位置、sshd 設定，以及安裝的 app 與 Homebrew 套件。系統版本與 Apple 的軟體更新清單（gdmf.apple.com）比對；套件回報「說不出有沒有漏洞」，因為 OSV 沒有 Homebrew 的資料。只用自製的測試資料驗證過，還沒有在真的 Mac 上試過。登入項目（Background Task Management）不會讀取，所以 macOS 的開機自動執行位置都會標為 partial。periodic.conf 與 daily、weekly、monthly.local 逐行列出（不列沒有內容的行與說明行；說明行是以 # 開始、沒有 &#34; &#39; $ ` 這幾個字元的行，這些檔案通常不長），periodic_conf_files 指到的檔案也會讀；與 Apple 公開版本相同的 /etc/defaults/periodic.conf 不列。</li><li>程式碼稽核的資料夾寫成 <code>/var/www/html/</code>（最後多一個 <code>/</code>）或 <code>/</code> 時，接續上次的位置稽核 不會再把整個資料夾跳過。資料夾改為先整理成標準寫法，所以更新版本後的第一次稽核找不到上次的位置，會從開始完整檢查一次。</li><li>sshd 設定：被 Include 的檔案（<code>Include sshd_config.d/*.conf</code>）裡有 <code>Match</code> 時，主檔案裡 Include 之後的設定也會照樣讀到（sshd 每讀完一個 Include 都會回到原本的狀態），例如之後的 <code>PermitRootLogin yes</code> 會報出來。Include 多於 4 次或設定檔多於 256 個時，列為沒有讀到。</li><li>從原始碼建置現在需要 Go 1.26 以上（原本是 1.23）：Windows 的收集程式用到 golang.org/x/sys，這是第二個外部套件。</li><li>Windows 版只讀不寫：不支援 <code>block_ip</code> 與 <code>unblock_ip</code>。</li><li>Windows Server 2019 為 best effort：預期可用（相同的 Windows API，build 17763），但沒有在 GitHub 提供的測試機上驗證。</li><li><code>shentu setup</code> 還不能在 Windows 上執行，設定需要手動撰寫。</li><li>Windows 執行檔沒有程式碼簽章，也沒有 MSI；SmartScreen 或防毒軟體可能發出警告。</li></ul></div>
+<div class="newest" id="rv-0.3.1">
+  <div class="newest-head"><p class="word">增祀</p><span class="ver">v0.3.1</span><time datetime="2026-11-16">2026-11-16</time></div>
+  <div class="grp grp-reach"><h4><i aria-hidden="true"></i>看得更遠</h4><ul><li>程式碼稽核規則從 70 條增加到 127 條（PHP 25 → 51、Python 22 → 43、JavaScript 與 TypeScript 23 → 33）。PHP：WordPress、Laravel、Symfony、Joomla、Drupal、CodeIgniter、Yii 與 Smarty 的危險呼叫，socket 與 HTTP client、XML DTD、template 字串、加密金鑰與 shortcode（#76）。Python：keyword 參數（<code>args=</code>、<code>search_filter=</code>、<code>where=</code>）、ldap3 filter 與經過 helper 的流向（#36）。JavaScript 與 TypeScript：Koa 和 Express 串接式回應、BSON 與 launder 的 sanitizer、Host header 的 open redirect 與 SSRF；<code>.execute(</code> 只在可能是資料庫 client 的物件上才算（#70）。</li><li><code>js-ssrf-http-request</code>（漏報）：Koa、hapi 與 Fetch API 寫法的 Referer／Origin 之前沒被當成輸入，<code>fetch(ctx.request.header.referer)</code>、<code>fetch(request.headers.referer)</code>、<code>fetch(request.headers.get(&#39;x-callback-url&#39;))</code> 會漏報；現在都算輸入（Host 除外，那是 Host header 規則的輸入），規則格式的 <code>source_args</code> 也新增 <code>&#34;!name&#34;</code> 排除值。<code>php-sqli-string-concat</code> 與 <code>php-sqli-prepare-query-text</code>（重複回報）：輸入寫進 <code>prepare()</code> 的查詢文字時，兩條規則之前在同一行都會報一次，現在只由 <code>php-sqli-prepare-query-text</code> 回報。benchmark 的數字不變。</li><li>引擎：<code>new URL(a, base)</code> 的 <code>a</code> 以 <code>/</code> 或 scheme 起始時，路徑和 query 只取自 <code>a</code>（#63）；同一個檔案裡已知類別的物件，呼叫它的方法會追進方法裡（#64）；用 regex 從起始處比對、固定值起始的檢查（<code>re.match(re.escape(base) + r&#39;/[a-z]&#39;, url)</code>）對 redirect 和 URL 規則算是檢查（#65）；會追進回傳字串常數的 helper（#66）；<code>markup</code>：輸出類的危險呼叫，只有在輸入前面接著 HTML 標記時才報（#71）；recursive 的呼叫 cycle 會一直追到結果不再改變，成本只算一次，WordPress 呼叫沒有跟完的檔案從 48 個少到 4 個（#72）；Host header 規則用 <code>route_input = false</code>，Express 模型也認得 Koa 的 <code>ctx</code>（#50）。</li><li>主機盤點會對 Apache 2.4.55～2.4.70、載入 <code>mod_http2</code> 並在 <code>Protocols</code> 開了 <code>h2</code> 或 <code>h2c</code> 的情況提出警告（CVE-2026-119618；請更新到 2.4.71，更新前先把 <code>Protocols</code> 設成只有 <code>http/1.1</code>）（#54）。可能載入 <code>mod_http2</code> 或開啟 h2 的檔案讀不到時（沒有權限、不能用的連結），這項會列為沒有檢查，不再當成沒事；警告也註明發行版已經 backport 修補時可以不理會。</li><li>程式碼稽核：接續的掃描在跑到上次位置前就沒有時間時，保留原本的位置，位置也改用根目錄的路徑記錄；vendor、node_modules 和 WordPress 的程式碼資料夾只在網站根目錄之下才算；<code>wp-content/blogs.dir/*/files</code>，以及沒有網站首頁檔的 <code>/var/www/&lt;uploads|files&gt;</code>，都算上傳資料夾；<code>authorized_key_unparsed</code> 只列出前 20 個行號（#73）。</li><li>登入紀錄沒有完整讀到時（root 以外的帳號看不到 journald 的系統紀錄、讀不到 <code>auth.log</code> 或 <code>secure</code>、紀錄只讀到一部分），hourly 和每日報告都會把 SSH 登入列為沒有檢查。之前這個情況只會寫「nothing new」（#80）。寫出的原因是紀錄不能用的真正理由（例如沒有任何登入的主機：journald 沒有 sshd 紀錄，也沒有文字紀錄），只有缺少權限時才建議用 root 執行；macOS 的 sshd 紀錄不在 Shentu 讀的地方，報告會明說 macOS 上沒有 sshd 紀錄來源。</li><li>Linux 版本查 DNS 時不再帶 EDNS(0) 記錄，和 glibc 一樣：有些 DNS 伺服器（例如 VMware NAT 的 DNS）回應這樣的查詢時會少了位址，所以每次查詢（OSV、GitHub）都失敗，回報「no such host」。如果查詢還是失敗，每日報告的 Not checked 會提示檢查這台主機的 DNS（#80）。</li><li><code>block_ip</code> 不再執行在這兩個情況：IP 的 SSH 登入紀錄只來自主機上任何人都能寫入的文字紀錄（<code>verified</code> 為 false），或是登入紀錄讀不到。管理員自己確認過紀錄後，可以在 <code>shentu chat</code> 用 <code>override_unverified</code> 照樣執行；從 Telegram bot 不能用，每個確認等級都一樣。這個檢查只看 SSH 登入紀錄：用 <code>log_search</code> 讀 syslog、nginx 或應用程式的紀錄而提出的 <code>block_ip</code>，不在檢查範圍內，要由管理員自己確認。journald 裡完全沒有 sshd 紀錄的主機（只有文字紀錄），只要 IP 有 SSH 登入紀錄，<code>block_ip</code> 都不會執行，不管紀錄上寫的是什麼時間；這時不能從 Telegram 執行，只能在伺服器上用 <code>shentu chat</code> 加 <code>override_unverified</code>。<code>ssh_logins</code> 最多回查 720 hours，和這個檢查一樣（#80）。因為登入紀錄可能是偽造而不執行時，訊息會列出這些紀錄所在的文字紀錄檔。</li><li>macOS：binary plist 的 array 和 dictionary 項目也計入讀取上限，UTF-16 字串每個字元算 9 bytes；最後一個字元是 space 的程式路徑照原樣保留；同一個 PID 出現在兩行 <code>ps</code> 輸出時標為 <code>parse_error</code>；<code>periodic_conf_files</code> 多於 16 個時，沒有讀到的會列出來（#80）。CI 在 macOS 15 上跑 <code>go vet</code> 和 <code>go test</code>（#81）；還沒有提供 macOS 執行檔。</li><li>測試裡看起來和憑證一樣的測試值，改成執行時才組出來，repo 裡不再有金鑰格式的字串（#77）。</li><li>CVE-2021-23664（<code>@isomorphic-git/cors-proxy</code>）：<code>js-ssrf-http-request</code> 在修補版仍會報出。這個 proxy 在通過 allowlist 檢查後才送出 <code>req.url</code>，引擎還不會把這個檢查當成 sanitizer；之後會使引擎辨別送出請求前的這類檢查。</li><li>規則變多，掃描時間變長，因為每個檔案要跑的規則更多：WordPress 多了 40～60%，依機器而定（在 Ubuntu VM 上，程式碼稽核從 73.8 s 變成 120.0 s，每日巡檢從 100 s 變成 144 s，結果數與 RSS 最高值都沒有變），TypeScript 專案多了 43%。根本的修正排在 v0.3.1 之後。</li><li><code>block_ip</code> 的檢查只包含 SSH 登入紀錄（見上方）：根據別的紀錄要求的 <code>block_ip</code>，要由管理員自己決定。</li><li><code>php-deserialization-phar-wrapper</code> 仍會把 WordPress REST attachments controller 裡對上傳暫存路徑做的 <code>filesize()</code> 報出來：引擎還分不出上傳檔的 <code>tmp_name</code> 和客戶端填的 <code>name</code>。</li><li><code>markup</code> 不會追蹤先在變數裡組成的 HTML 標記（<code>const h = &#39;&lt;p&gt;&#39; + x; ctx.body = h</code>）。</li></ul></div><div class="grp grp-sharp"><h4><i aria-hidden="true"></i>看得更準</h4><ul><li>v0.2.5 列出的已知誤報，已經在引擎修正：有 import <code>typeorm</code> 的檔案，TypeORM repository 的呼叫不算 MongoDB 查詢；檔案也用了 MongoDB repository、driver 或 Mongoose 時照樣算（<code>unless_imports</code>，#59）；<code>shell: true</code> 的 <code>spawn()</code> 和 <code>execFile()</code>，只有指令或參數帶有輸入才報，只有選項帶輸入不報（一個危險呼叫可以有多個 <code>[[args]]</code>，#62）；每條路徑都設了 <code>Content-Type: text/event-stream</code> 的 Server-Sent Events handler 不算 XSS （<code>unless_content_type</code>，#58；<code>unless_at</code>，#57）；<code>-&gt;get_settings()</code> 只在繼承 <code>\Elementor\Widget_Base</code> 的類別裡才算 Elementor widget 的輸入（#60）；用 <code>array_map</code> 加上回傳常數的 callback 組出的 placeholder 清單不算輸入（#61）；<code>zipfile.ZipFile(request.files[...])</code> 開的是上傳檔的串流，不是路徑（<code>unless_subscript</code>，#67）。</li><li>和 v0.3.0 比較的 benchmark：已公開漏洞 97 個抓到 16 個（原本 15 個），修補版誤報 1 個（原本 0 個，見下方）；保留測試案例（held-out）30 個抓到 3 個（原本 2 個），沒有修補版誤報；TypeScript 案例 18 個抓到 1 個、修補版誤報 1 個（n8n），都沒有變。</li></ul></div>
 </div>
 
 

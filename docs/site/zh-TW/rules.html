@@ -37,7 +37,7 @@
   <label>語言 <select id="fl"><option value="">全部</option><option value="php">PHP</option><option value="python">Python</option><option value="js">JavaScript / TypeScript</option></select></label>
   <label>類別 <select id="fc"><option value="">全部</option><option value="cmdi">命令注入</option><option value="code-eval">程式碼執行</option><option value="deserialization">不安全的反序列化</option><option value="file-upload">危險的檔案上傳</option><option value="hardcoded-secret">寫死的憑證</option><option value="ldapi">LDAP 注入</option><option value="nosqli">NoSQL 注入</option><option value="open-redirect">開放重新導向</option><option value="path-traversal">路徑穿越</option><option value="sqli">SQL 注入</option><option value="ssrf">伺服器端請求偽造（SSRF）</option><option value="weak-crypto">弱加密</option><option value="xss">跨站腳本（XSS）</option><option value="xxe">XML 外部實體（XXE）</option></select></label>
   <label>嚴重度 <select id="fs"><option value="">全部</option><option value="critical">極危</option><option value="high">高</option><option value="medium">中</option><option value="low">低</option></select></label>
-  <p class="count" aria-live="polite"><strong id="shown">70</strong> / 70 條規則</p>
+  <p class="count" aria-live="polite"><strong id="shown">127</strong> / 127 條規則</p>
 </form>
 <section class="routes">
   <h2>路由模型</h2>
@@ -61,6 +61,34 @@ mail(&#39;sales@example.com&#39;, &#39;Contact form&#39;, $_POST[&#39;message&#3
     <p class="fix"><strong>修法</strong> Leave mail()&#39;s fifth argument out (set sendmail_from in php.ini or with ini_set) or pass only a fixed value; escapeshellarg does not help here because mail() escapes the argument again.</p>
   </details>
   
+  <details class="rule" id="php-cmdi-process-shell-commandline" data-rule-id="php-cmdi-process-shell-commandline" data-lang="php" data-class="cmdi" data-sev="critical" data-text="php-cmdi-process-shell-commandline CWE-78 Request input in a command line that Symfony Process passes to a shell">
+    <summary><span class="sev critical"><i aria-hidden="true">極</i><b>極危</b></span><span class="head"><code class="rid">php-cmdi-process-shell-commandline</code> <span class="cwe">CWE-78</span><span class="title">Request input in a command line that Symfony Process passes to a shell</span></span></summary>
+    <p class="meta">框架: symfony, laravel</p>
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><pre><code>&lt;?php
+class ThumbController extends AbstractController
+{
+    public function make(Request $request): Response
+    {
+        $size = $request-&gt;query-&gt;get(&#39;size&#39;, &#39;200x200&#39;);
+        $p = Process::fromShellCommandline(&#39;convert in.png -resize &#39; . $size . &#39; out.png&#39;);
+        $p-&gt;mustRun();
+        return new Response(&#39;ok&#39;);
+    }
+}</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><pre><code>&lt;?php
+class PingController extends Controller
+{
+    public function ping(Request $request)
+    {
+        $result = Process::run([&#39;ping&#39;, &#39;-c&#39;, &#39;1&#39;, $request-&gt;input(&#39;host&#39;)]);
+        return $result-&gt;output();
+    }
+}</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Pass the command as an array of arguments (Symfony new Process([&#39;convert&#39;, $in, $out]), Laravel Process::run([...])), which no shell parses; never build a command string from input.</p>
+  </details>
+  
   <details class="rule" id="php-cmdi-shell-exec" data-rule-id="php-cmdi-shell-exec" data-lang="php" data-class="cmdi" data-sev="critical" data-text="php-cmdi-shell-exec CWE-78 Request data (including headers) placed into a shell command">
     <summary><span class="sev critical"><i aria-hidden="true">極</i><b>極危</b></span><span class="head"><code class="rid">php-cmdi-shell-exec</code> <span class="cwe">CWE-78</span><span class="title">Request data (including headers) placed into a shell command</span></span></summary>
     <p class="meta">框架: laravel</p>
@@ -82,6 +110,28 @@ if ($ip !== false) {
 <section class="group" data-lang="php" data-class="code-eval">
   <h2><span class="g-lang">PHP</span> 程式碼執行</h2>
   
+  <details class="rule" id="php-code-eval-dynamic-callback" data-rule-id="php-code-eval-dynamic-callback" data-lang="php" data-class="code-eval" data-sev="critical" data-text="php-code-eval-dynamic-callback CWE-94 Function to call chosen by the request">
+    <summary><span class="sev critical"><i aria-hidden="true">極</i><b>極危</b></span><span class="head"><code class="rid">php-code-eval-dynamic-callback</code> <span class="cwe">CWE-94</span><span class="title">Function to call chosen by the request</span></span></summary>
+    <p class="meta">框架: wordpress, laravel</p>
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><pre><code>&lt;?php
+add_action(&#39;wp_ajax_nopriv_widget_action&#39;, function () {
+    $method = sanitize_text_field($_POST[&#39;method&#39;]);
+    $result = call_user_func($method, $_POST[&#39;args&#39;] ?? []);
+    wp_send_json($result);
+});</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><pre><code>&lt;?php
+add_action(&#39;wp_ajax_nopriv_widget_action&#39;, function () {
+    $method = sanitize_key($_POST[&#39;method&#39;]);
+    if (!in_array($method, [&#39;refresh&#39;, &#39;count&#39;], true)) {
+        wp_die(&#39;&#39;, &#39;&#39;, 400);
+    }
+    wp_send_json(call_user_func(&#39;my_widget_&#39; . $method, $_POST[&#39;args&#39;] ?? []));
+});</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Never let the request name a function or method: map the requested action to a fixed list of callbacks (in_array($action, $allowed, true) or a lookup table) before calling it.</p>
+  </details>
+  
   <details class="rule" id="php-code-eval-eval" data-rule-id="php-code-eval-eval" data-lang="php" data-class="code-eval" data-sev="critical" data-text="php-code-eval-eval CWE-94 eval, assert or create_function on request data">
     <summary><span class="sev critical"><i aria-hidden="true">極</i><b>極危</b></span><span class="head"><code class="rid">php-code-eval-eval</code> <span class="cwe">CWE-94</span><span class="title">eval, assert or create_function on request data</span></span></summary>
     
@@ -95,6 +145,49 @@ foreach ((array) ($_REQUEST[&#39;sections&#39;] ?? []) as $name =&gt; $ids) {
 }</code></pre></div>
     </div>
     <p class="fix"><strong>修法</strong> Remove eval and do the same thing in ordinary code: decode input with json_decode or intval, check names against an allowlist, then assign directly (for example $object-&gt;{$name . &#39;Order&#39;} = (int) $key). There is no safe way to escape code for eval.</p>
+  </details>
+  
+  <details class="rule" id="php-code-eval-smarty-string" data-rule-id="php-code-eval-smarty-string" data-lang="php" data-class="code-eval" data-sev="critical" data-text="php-code-eval-smarty-string CWE-1336 Request input rendered as a Smarty template through the string: or eval: resource">
+    <summary><span class="sev critical"><i aria-hidden="true">極</i><b>極危</b></span><span class="head"><code class="rid">php-code-eval-smarty-string</code> <span class="cwe">CWE-1336</span><span class="title">Request input rendered as a Smarty template through the string: or eval: resource</span></span></summary>
+    
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><p class="note">a preview of an e-mail body typed into a form</p><pre><code>&lt;?php
+function preview_mail(Smarty $smarty) {
+    $body = $_POST[&#39;mail&#39;][&#39;body&#39;];
+    return $smarty-&gt;fetch(&#39;string:&#39; . $body);
+}</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><p class="note">the fix: a template file, the input assigned as a variable</p><pre><code>&lt;?php
+function preview_mail(Smarty $smarty) {
+    $smarty-&gt;assign(&#39;body&#39;, $_POST[&#39;mail&#39;][&#39;body&#39;]);
+    return $smarty-&gt;fetch(&#39;mail/preview.tpl&#39;);
+}</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Never render text from a request as a Smarty template: render a template file and pass the input with assign(), where it is data ({$body|escape}). A security policy (enableSecurity()) narrows what a template can call but does not make request text safe to compile.</p>
+  </details>
+  
+  <details class="rule" id="php-code-eval-template-string" data-rule-id="php-code-eval-template-string" data-lang="php" data-class="code-eval" data-sev="critical" data-text="php-code-eval-template-string CWE-1336 Request input compiled as a Twig or Blade template">
+    <summary><span class="sev critical"><i aria-hidden="true">極</i><b>極危</b></span><span class="head"><code class="rid">php-code-eval-template-string</code> <span class="cwe">CWE-1336</span><span class="title">Request input compiled as a Twig or Blade template</span></span></summary>
+    <p class="meta">框架: symfony, laravel</p>
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><pre><code>&lt;?php
+class GreetingController extends AbstractController
+{
+    public function show(Request $request, Environment $twig): Response
+    {
+        $tpl = $twig-&gt;createTemplate(&#39;Hello &#39; . $request-&gt;query-&gt;get(&#39;name&#39;) . &#39;!&#39;);
+        return new Response($tpl-&gt;render([]));
+    }
+}</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><p class="note">the fix: a fixed template, the input passed as a variable</p><pre><code>&lt;?php
+class GreetingController extends AbstractController
+{
+    public function show(Request $request, Environment $twig): Response
+    {
+        return new Response($twig-&gt;render(&#39;greeting.html.twig&#39;, [&#39;name&#39; =&gt; $request-&gt;query-&gt;get(&#39;name&#39;)]));
+    }
+}</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Never compile text from a request as a template: render a fixed template file and pass the input as a variable ($twig-&gt;render(&#39;page.html.twig&#39;, [&#39;name&#39; =&gt; $name]), view(&#39;page&#39;, [&#39;name&#39; =&gt; $name])), where it is escaped as data.</p>
   </details>
   
 </section>
@@ -137,6 +230,24 @@ $cart = json_decode($_COOKIE[&#39;cart&#39;] ?? &#39;[]&#39;, true, 8, JSON_THRO
     <p class="fix"><strong>修法</strong> Store and exchange plain data with json_encode/json_decode; if unserialize is unavoidable pass [&#39;allowed_classes&#39; =&gt; false] and verify an HMAC first.</p>
   </details>
   
+  <details class="rule" id="php-deserialization-wp-maybe-unserialize" data-rule-id="php-deserialization-wp-maybe-unserialize" data-lang="php" data-class="deserialization" data-sev="critical" data-text="php-deserialization-wp-maybe-unserialize CWE-502 maybe_unserialize() on data the client sends">
+    <summary><span class="sev critical"><i aria-hidden="true">極</i><b>極危</b></span><span class="head"><code class="rid">php-deserialization-wp-maybe-unserialize</code> <span class="cwe">CWE-502</span><span class="title">maybe_unserialize() on data the client sends</span></span></summary>
+    <p class="meta">框架: wordpress</p>
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><pre><code>&lt;?php
+add_action(&#39;wp_ajax_nopriv_save_cart&#39;, function () {
+    $cart = maybe_unserialize(wp_unslash($_POST[&#39;cart&#39;]));
+    update_option(&#39;pending_cart&#39;, $cart);
+});</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><pre><code>&lt;?php
+add_action(&#39;wp_ajax_nopriv_save_cart&#39;, function () {
+    $cart = json_decode(wp_unslash($_POST[&#39;cart&#39;]), true);
+    update_option(&#39;pending_cart&#39;, is_array($cart) ? $cart : []);
+});</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> maybe_unserialize() calls unserialize() on any string that looks serialized, so a client can send objects: exchange data with json_encode()/json_decode() instead.</p>
+  </details>
+  
 </section>
 
 <section class="group" data-lang="php" data-class="file-upload">
@@ -159,6 +270,26 @@ move_uploaded_file($_FILES[&#39;avatar&#39;][&#39;tmp_name&#39;], $dir . sanitiz
     <p class="fix"><strong>修法</strong> Check the extension and type against an allowlist (wp_check_filetype_and_ext(), in_array(strtolower(pathinfo($name, PATHINFO_EXTENSION)), $allowed, true)) or let wp_handle_upload() do it, and store the file under a name the server makes.</p>
   </details>
   
+  <details class="rule" id="php-file-upload-wp-upload-bits" data-rule-id="php-file-upload-wp-upload-bits" data-lang="php" data-class="file-upload" data-sev="low" data-text="php-file-upload-wp-upload-bits CWE-434 wp_upload_bits() stores a file under the name the client sent">
+    <summary><span class="sev low"><i aria-hidden="true">低</i><b>低</b></span><span class="head"><code class="rid">php-file-upload-wp-upload-bits</code> <span class="cwe">CWE-434</span><span class="title">wp_upload_bits() stores a file under the name the client sent</span></span></summary>
+    <p class="meta">框架: wordpress</p>
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><pre><code>&lt;?php
+add_action(&#39;wp_ajax_nopriv_send_resume&#39;, function () {
+    $file = $_FILES[&#39;resume&#39;];
+    $saved = wp_upload_bits($file[&#39;name&#39;], null, file_get_contents($file[&#39;tmp_name&#39;]));
+    wp_send_json([&#39;url&#39; =&gt; $saved[&#39;url&#39;]]);
+});</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><pre><code>&lt;?php
+add_action(&#39;wp_ajax_nopriv_send_resume&#39;, function () {
+    $file = $_FILES[&#39;resume&#39;];
+    $saved = wp_upload_bits(&#39;resume-&#39; . wp_generate_uuid4() . &#39;.pdf&#39;, null, file_get_contents($file[&#39;tmp_name&#39;]));
+    wp_send_json([&#39;url&#39; =&gt; $saved[&#39;url&#39;]]);
+});</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> wp_upload_bits() refuses an extension outside the site&#39;s allowed types unless the user has unfiltered_upload, but it never looks at the content and an admin, a multisite super admin or an upload_mimes filter widens what passes: choose the stored name on the server (wp_generate_uuid4() plus a fixed extension) or upload through wp_handle_upload() with a mimes allowlist.</p>
+  </details>
+  
 </section>
 
 <section class="group" data-lang="php" data-class="hardcoded-secret">
@@ -175,6 +306,24 @@ $db = new mysqli(DB_HOST, DB_USER, getenv(&#39;DB_PASSWORD&#39;), DB_NAME);
 $jwt = JWT::encode($claims, $_ENV[&#39;JWT_SECRET&#39;], &#39;HS256&#39;);</code></pre></div>
     </div>
     <p class="fix"><strong>修法</strong> Read credentials and keys from the environment or a configuration file outside the repository (getenv(), a constant set in wp-config.php, config() in Laravel), and rotate any value that was committed.</p>
+  </details>
+  
+  <details class="rule" id="php-hardcoded-secret-crypto-key" data-rule-id="php-hardcoded-secret-crypto-key" data-lang="php" data-class="hardcoded-secret" data-sev="high" data-text="php-hardcoded-secret-crypto-key CWE-321 Encryption key written in the code">
+    <summary><span class="sev high"><i aria-hidden="true">高</i><b>高</b></span><span class="head"><code class="rid">php-hardcoded-secret-crypto-key</code> <span class="cwe">CWE-321</span><span class="title">Encryption key written in the code</span></span></summary>
+    
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><pre><code>&lt;?php
+function my_plugin_seal($plain) {
+    $iv = random_bytes(16);
+    return base64_encode($iv . openssl_encrypt($plain, &#39;aes-256-cbc&#39;, &#39;EXAMPLE-NOT-A-SECRET&#39;, OPENSSL_RAW_DATA, $iv));
+}</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><p class="note">the fix: a key from the environment</p><pre><code>&lt;?php
+function my_plugin_seal($plain) {
+    $iv = random_bytes(16);
+    return base64_encode($iv . openssl_encrypt($plain, &#39;aes-256-cbc&#39;, getenv(&#39;MY_PLUGIN_KEY&#39;), OPENSSL_RAW_DATA, $iv));
+}</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Every installation of the code shares a key written in it: load the key from configuration or the environment (getenv(), a config file outside the web root, wp_salt() in WordPress), generate it per installation, and rotate it.</p>
   </details>
   
 </section>
@@ -238,6 +387,35 @@ if (isset($_GET[&#39;redirect_to&#39;])) {
     <p class="fix"><strong>修法</strong> Redirect with wp_safe_redirect(), or check the target with wp_validate_redirect() (Joomla: Uri::isInternal()) before redirecting; a prefix check (starts with &#34;/&#34; but not &#34;//&#34; or &#34;/\\&#34;) can be bypassed with a tab or newline (&#34;/\t/evil.example&#34;), so it does not make the target safe.</p>
   </details>
   
+  <details class="rule" id="php-open-redirect-redirect-response" data-rule-id="php-open-redirect-redirect-response" data-lang="php" data-class="open-redirect" data-sev="medium" data-text="php-open-redirect-redirect-response CWE-601 Symfony or Laravel redirect response built from a URL taken from the request">
+    <summary><span class="sev medium"><i aria-hidden="true">中</i><b>中</b></span><span class="head"><code class="rid">php-open-redirect-redirect-response</code> <span class="cwe">CWE-601</span><span class="title">Symfony or Laravel redirect response built from a URL taken from the request</span></span></summary>
+    <p class="meta">框架: symfony, laravel</p>
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><pre><code>&lt;?php
+class LoginController extends AbstractController
+{
+    public function done(Request $request): Response
+    {
+        $target = $request-&gt;query-&gt;get(&#39;next&#39;, &#39;/&#39;);
+        return new RedirectResponse($target);
+    }
+}</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><pre><code>&lt;?php
+class LoginController extends AbstractController
+{
+    public function done(Request $request): Response
+    {
+        $page = $request-&gt;query-&gt;get(&#39;next&#39;, &#39;home&#39;);
+        if (!in_array($page, [&#39;home&#39;, &#39;profile&#39;], true)) {
+            $page = &#39;home&#39;;
+        }
+        return new RedirectResponse($this-&gt;generateUrl($page));
+    }
+}</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Redirect to a route the server names ($this-&gt;redirectToRoute(), redirect()-&gt;route()), or accept the requested target only when it is one of a fixed list (in_array($target, $allowed, true)) and fall back to a default otherwise.</p>
+  </details>
+  
 </section>
 
 <section class="group" data-lang="php" data-class="path-traversal">
@@ -296,6 +474,37 @@ move_uploaded_file($f[&#39;tmp_name&#39;], WP_CONTENT_DIR . &#39;/certs/&#39; . 
     <p class="fix"><strong>修法</strong> Build the target from a fixed directory and a name you generate or reduce with basename() or sanitize_file_name(); for a path you must accept, resolve it with realpath() and refuse it unless it starts with the base directory plus a separator.</p>
   </details>
   
+  <details class="rule" id="php-path-traversal-joomla-file" data-rule-id="php-path-traversal-joomla-file" data-lang="php" data-class="path-traversal" data-sev="high" data-text="php-path-traversal-joomla-file CWE-22 Joomla file API deletes, reads or writes a path taken from the request">
+    <summary><span class="sev high"><i aria-hidden="true">高</i><b>高</b></span><span class="head"><code class="rid">php-path-traversal-joomla-file</code> <span class="cwe">CWE-22</span><span class="title">Joomla file API deletes, reads or writes a path taken from the request</span></span></summary>
+    
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><pre><code>&lt;?php
+class MediaController extends BaseController
+{
+    public function remove()
+    {
+        $path = $this-&gt;input-&gt;post-&gt;getString(&#39;path&#39;);
+        File::delete(JPATH_ROOT . &#39;/images/&#39; . $path);
+        $this-&gt;setRedirect(&#39;index.php?option=com_gallery&#39;);
+    }
+}</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><p class="note">the fix: the resolved path must stay inside the images directory</p><pre><code>&lt;?php
+class MediaController extends BaseController
+{
+    public function remove()
+    {
+        $base = realpath(JPATH_ROOT . &#39;/images&#39;) . DIRECTORY_SEPARATOR;
+        $path = realpath($base . $this-&gt;input-&gt;post-&gt;getString(&#39;path&#39;));
+        if ($path === false || !str_starts_with($path, $base)) {
+            throw new \RuntimeException(&#39;Not allowed&#39;, 403);
+        }
+        File::delete($path);
+    }
+}</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Joomla input filters do not stop ../ in a path: keep only a file name (File::makeSafe(), basename()), or resolve the path with realpath() and check that it starts with the allowed directory followed by a separator.</p>
+  </details>
+  
   <details class="rule" id="php-path-traversal-laravel-storage" data-rule-id="php-path-traversal-laravel-storage" data-lang="php" data-class="path-traversal" data-sev="high" data-text="php-path-traversal-laravel-storage CWE-22 Laravel Storage or download call on a path taken from the request">
     <summary><span class="sev high"><i aria-hidden="true">高</i><b>高</b></span><span class="head"><code class="rid">php-path-traversal-laravel-storage</code> <span class="cwe">CWE-22</span><span class="title">Laravel Storage or download call on a path taken from the request</span></span></summary>
     <p class="meta">框架: laravel</p>
@@ -317,10 +526,209 @@ public function update(Request $request, Post $post)
     <p class="fix"><strong>修法</strong> Do not accept storage paths from the client: look the file up from the model record the user is allowed to change, or accept a basename and build the path on the server.</p>
   </details>
   
+  <details class="rule" id="php-path-traversal-symfony-file-response" data-rule-id="php-path-traversal-symfony-file-response" data-lang="php" data-class="path-traversal" data-sev="high" data-text="php-path-traversal-symfony-file-response CWE-22 Symfony file response sends a path taken from the request">
+    <summary><span class="sev high"><i aria-hidden="true">高</i><b>高</b></span><span class="head"><code class="rid">php-path-traversal-symfony-file-response</code> <span class="cwe">CWE-22</span><span class="title">Symfony file response sends a path taken from the request</span></span></summary>
+    <p class="meta">框架: symfony</p>
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><pre><code>&lt;?php
+class DownloadController extends AbstractController
+{
+    public function invoice(Request $request): Response
+    {
+        $name = $request-&gt;query-&gt;get(&#39;file&#39;);
+        return new BinaryFileResponse($this-&gt;getParameter(&#39;invoice_dir&#39;) . &#39;/&#39; . $name);
+    }
+}</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><pre><code>&lt;?php
+class DownloadController extends AbstractController
+{
+    public function invoice(Request $request): Response
+    {
+        $name = basename($request-&gt;query-&gt;get(&#39;file&#39;));
+        return new BinaryFileResponse($this-&gt;getParameter(&#39;invoice_dir&#39;) . &#39;/&#39; . $name);
+    }
+}</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Take only a file name from the request (basename()), join it to a fixed directory and check that realpath() of the result stays inside that directory, or look the file up by an id.</p>
+  </details>
+  
+  <details class="rule" id="php-path-traversal-wp-filesystem" data-rule-id="php-path-traversal-wp-filesystem" data-lang="php" data-class="path-traversal" data-sev="high" data-text="php-path-traversal-wp-filesystem CWE-22 WordPress file API deletes, reads or writes a path taken from the request">
+    <summary><span class="sev high"><i aria-hidden="true">高</i><b>高</b></span><span class="head"><code class="rid">php-path-traversal-wp-filesystem</code> <span class="cwe">CWE-22</span><span class="title">WordPress file API deletes, reads or writes a path taken from the request</span></span></summary>
+    <p class="meta">框架: wordpress</p>
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><pre><code>&lt;?php
+add_action(&#39;wp_ajax_remove_export&#39;, function () {
+    $upload = wp_upload_dir();
+    $file = $upload[&#39;basedir&#39;] . &#39;/exports/&#39; . wp_unslash($_POST[&#39;file&#39;]);
+    wp_delete_file($file);
+    wp_send_json_success();
+});</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><pre><code>&lt;?php
+add_action(&#39;wp_ajax_remove_export&#39;, function () {
+    $upload = wp_upload_dir();
+    $file = $upload[&#39;basedir&#39;] . &#39;/exports/&#39; . sanitize_file_name(wp_unslash($_POST[&#39;file&#39;]));
+    wp_delete_file($file);
+    wp_send_json_success();
+});</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Take only a file name from the request (sanitize_file_name(), basename()), join it to a fixed directory, and check that realpath() of the result stays inside that directory, or look the file up by an id the server stored.</p>
+  </details>
+  
+  <details class="rule" id="php-path-traversal-wp-template-loader" data-rule-id="php-path-traversal-wp-template-loader" data-lang="php" data-class="path-traversal" data-sev="high" data-text="php-path-traversal-wp-template-loader CWE-98 Theme or WooCommerce template loaded from a name taken from the request">
+    <summary><span class="sev high"><i aria-hidden="true">高</i><b>高</b></span><span class="head"><code class="rid">php-path-traversal-wp-template-loader</code> <span class="cwe">CWE-98</span><span class="title">Theme or WooCommerce template loaded from a name taken from the request</span></span></summary>
+    <p class="meta">框架: wordpress</p>
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><pre><code>&lt;?php
+add_shortcode(&#39;team_grid&#39;, function ($atts) {
+    $a = shortcode_atts([&#39;layout&#39; =&gt; &#39;grid&#39;], $atts);
+    ob_start();
+    get_template_part(&#39;partials/team&#39;, $a[&#39;layout&#39;]);
+    return ob_get_clean();
+});</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><pre><code>&lt;?php
+add_shortcode(&#39;team_grid&#39;, function ($atts) {
+    $a = shortcode_atts([&#39;layout&#39; =&gt; &#39;grid&#39;], $atts);
+    $layout = in_array($a[&#39;layout&#39;], [&#39;grid&#39;, &#39;list&#39;], true) ? $a[&#39;layout&#39;] : &#39;grid&#39;;
+    ob_start();
+    get_template_part(&#39;partials/team&#39;, $layout);
+    return ob_get_clean();
+});</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Template names may hold ../ and reach any PHP file: accept only names from a fixed list (in_array($name, $allowed, true)) or reduce the value with sanitize_key() before passing it to the template loader.</p>
+  </details>
+  
 </section>
 
 <section class="group" data-lang="php" data-class="sqli">
   <h2><span class="g-lang">PHP</span> SQL 注入</h2>
+  
+  <details class="rule" id="php-sqli-codeigniter-query" data-rule-id="php-sqli-codeigniter-query" data-lang="php" data-class="sqli" data-sev="high" data-text="php-sqli-codeigniter-query CWE-89 CodeIgniter request input written into SQL text, a raw where() or order_by()">
+    <summary><span class="sev high"><i aria-hidden="true">高</i><b>高</b></span><span class="head"><code class="rid">php-sqli-codeigniter-query</code> <span class="cwe">CWE-89</span><span class="title">CodeIgniter request input written into SQL text, a raw where() or order_by()</span></span></summary>
+    
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><pre><code>&lt;?php
+class Orders_model extends CI_Model
+{
+    public function search($keyword)
+    {
+        $sort = $this-&gt;input-&gt;get(&#39;sort&#39;);
+        return $this-&gt;db-&gt;from(&#39;orders&#39;)-&gt;like(&#39;reference&#39;, $keyword)-&gt;order_by($sort)-&gt;get()-&gt;result_array();
+    }
+}</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><p class="note">the fix: bindings for the value, an allowlist for the sort column</p><pre><code>&lt;?php
+class Reports extends CI_Controller
+{
+    public function by_city()
+    {
+        $sort = $this-&gt;input-&gt;get(&#39;sort&#39;);
+        if (!in_array($sort, [&#39;city&#39;, &#39;total&#39;, &#39;created_at&#39;], true)) {
+            $sort = &#39;created_at&#39;;
+        }
+        $rows = $this-&gt;db-&gt;query(&#39;SELECT * FROM sales WHERE city = ? ORDER BY &#39; . $sort, [$this-&gt;input-&gt;post(&#39;city&#39;)])-&gt;result();
+        $this-&gt;output-&gt;set_output(json_encode($rows));
+    }
+}</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Pass values as query bindings ($this-&gt;db-&gt;query(&#39;... WHERE id = ?&#39;, [$id])), let where() quote them (where(&#39;name&#39;, $name)), and map sort columns and directions to a fixed allowlist; escape_str() is safe only inside quotes.</p>
+  </details>
+  
+  <details class="rule" id="php-sqli-doctrine-query-text" data-rule-id="php-sqli-doctrine-query-text" data-lang="php" data-class="sqli" data-sev="high" data-text="php-sqli-doctrine-query-text CWE-89 Request input written into a Doctrine DQL or SQL string">
+    <summary><span class="sev high"><i aria-hidden="true">高</i><b>高</b></span><span class="head"><code class="rid">php-sqli-doctrine-query-text</code> <span class="cwe">CWE-89</span><span class="title">Request input written into a Doctrine DQL or SQL string</span></span></summary>
+    <p class="meta">框架: symfony, doctrine</p>
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><pre><code>&lt;?php
+class BookRepository extends ServiceEntityRepository
+{
+    public function search(Request $request): array
+    {
+        $title = $request-&gt;query-&gt;get(&#39;title&#39;);
+        return $this-&gt;getEntityManager()
+            -&gt;createQuery(&#34;SELECT b FROM App\Entity\Book b WHERE b.title LIKE &#39;%&#34; . $title . &#34;%&#39;&#34;)
+            -&gt;getResult();
+    }
+}</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><pre><code>&lt;?php
+class BookRepository extends ServiceEntityRepository
+{
+    public function search(Request $request): array
+    {
+        return $this-&gt;getEntityManager()
+            -&gt;createQuery(&#39;SELECT b FROM App\Entity\Book b WHERE b.title LIKE :t&#39;)
+            -&gt;setParameter(&#39;t&#39;, &#39;%&#39; . $request-&gt;query-&gt;get(&#39;title&#39;) . &#39;%&#39;)
+            -&gt;getResult();
+    }
+}</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Keep the DQL or SQL text fixed and bind values with setParameter() or the parameters array (executeQuery($sql, [&#39;id&#39; =&gt; $id])); map column names and sort directions to an allowlist.</p>
+  </details>
+  
+  <details class="rule" id="php-sqli-drupal-db-query" data-rule-id="php-sqli-drupal-db-query" data-lang="php" data-class="sqli" data-sev="high" data-text="php-sqli-drupal-db-query CWE-89 Request input written into the SQL text of a Drupal database query">
+    <summary><span class="sev high"><i aria-hidden="true">高</i><b>高</b></span><span class="head"><code class="rid">php-sqli-drupal-db-query</code> <span class="cwe">CWE-89</span><span class="title">Request input written into the SQL text of a Drupal database query</span></span></summary>
+    
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><pre><code>&lt;?php
+function mymodule_save_layout() {
+    $region = $_POST[&#39;region&#39;];
+    db_query(&#34;UPDATE {mymodule_blocks} SET region = &#39;&#34; . $region . &#34;&#39; WHERE uid = :uid&#34;, array(&#39;:uid&#39; =&gt; $GLOBALS[&#39;user&#39;]-&gt;uid));
+}</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><p class="note">the fix: placeholders, the value in the arguments array</p><pre><code>&lt;?php
+function mymodule_save_layout() {
+    db_query(&#34;UPDATE {mymodule_blocks} SET region = :region WHERE uid = :uid&#34;, array(&#39;:region&#39; =&gt; $_POST[&#39;region&#39;], &#39;:uid&#39; =&gt; $GLOBALS[&#39;user&#39;]-&gt;uid));
+}</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Keep the SQL text fixed and pass values as named placeholders in the arguments array (db_query(&#39;... WHERE nid = :nid&#39;, [&#39;:nid&#39; =&gt; $nid])), or use the condition() builder, which binds values.</p>
+  </details>
+  
+  <details class="rule" id="php-sqli-joomla-query" data-rule-id="php-sqli-joomla-query" data-lang="php" data-class="sqli" data-sev="high" data-text="php-sqli-joomla-query CWE-89 Joomla request input written into a database query without quote() or a cast">
+    <summary><span class="sev high"><i aria-hidden="true">高</i><b>高</b></span><span class="head"><code class="rid">php-sqli-joomla-query</code> <span class="cwe">CWE-89</span><span class="title">Joomla request input written into a database query without quote() or a cast</span></span></summary>
+    
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><pre><code>&lt;?php
+class ReservationsModelList extends ListModel
+{
+    protected function getListQuery()
+    {
+        $db = $this-&gt;getDbo();
+        $guest = Factory::getApplication()-&gt;input-&gt;getString(&#39;guest&#39;);
+        $query = $db-&gt;getQuery(true)-&gt;select(&#39;*&#39;)-&gt;from(&#39;#__reservations&#39;);
+        $query-&gt;where(&#39;guest_name = &#39; . &#34;&#39;&#34; . $guest . &#34;&#39;&#34;);
+        return $query;
+    }
+}</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><p class="note">the fix: quote the value</p><pre><code>&lt;?php
+$input = Factory::getApplication()-&gt;input;
+$season = $input-&gt;getString(&#39;season&#39;);
+$db = Factory::getDbo();
+$db-&gt;setQuery(&#39;SELECT COUNT(*) FROM #__matches WHERE season LIKE &#39; . $db-&gt;quote($season . &#39;%&#39;));
+$total = $db-&gt;loadResult();</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Quote every value with $db-&gt;quote() (or bind it with $query-&gt;bind()), cast ids with (int), and read numbers with $input-&gt;getInt(); escape() alone is safe only inside quotes.</p>
+  </details>
+  
+  <details class="rule" id="php-sqli-laravel-raw" data-rule-id="php-sqli-laravel-raw" data-lang="php" data-class="sqli" data-sev="high" data-text="php-sqli-laravel-raw CWE-89 Request input written into raw SQL of the Laravel query builder">
+    <summary><span class="sev high"><i aria-hidden="true">高</i><b>高</b></span><span class="head"><code class="rid">php-sqli-laravel-raw</code> <span class="cwe">CWE-89</span><span class="title">Request input written into raw SQL of the Laravel query builder</span></span></summary>
+    <p class="meta">框架: laravel</p>
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><pre><code>&lt;?php
+class ReportController extends Controller
+{
+    public function byRegion(Request $request)
+    {
+        $region = $request-&gt;input(&#39;region&#39;);
+        return DB::select(&#34;SELECT city, SUM(total) AS total FROM sales WHERE region = &#39;$region&#39; GROUP BY city&#34;);
+    }
+}</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><pre><code>&lt;?php
+class ReportController extends Controller
+{
+    public function byRegion(Request $request)
+    {
+        return DB::select(&#39;SELECT city, SUM(total) AS total FROM sales WHERE region = ? GROUP BY city&#39;, [$request-&gt;input(&#39;region&#39;)]);
+    }
+}</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Keep the SQL text fixed and pass values as bindings, the second argument (DB::select(&#39;... where id = ?&#39;, [$id]), whereRaw(&#39;name like ?&#39;, [&#34;%$q%&#34;])), or use where() and the other builder methods, which bind for you.</p>
+  </details>
   
   <details class="rule" id="php-sqli-orderby-identifier" data-rule-id="php-sqli-orderby-identifier" data-lang="php" data-class="sqli" data-sev="high" data-text="php-sqli-orderby-identifier CWE-89 Sort column or direction taken from the request and placed into ORDER BY">
     <summary><span class="sev high"><i aria-hidden="true">高</i><b>高</b></span><span class="head"><code class="rid">php-sqli-orderby-identifier</code> <span class="cwe">CWE-89</span><span class="title">Sort column or direction taken from the request and placed into ORDER BY</span></span></summary>
@@ -344,6 +752,28 @@ return Payment::query()-&gt;orderBy($sort, $dir)-&gt;paginate();</code></pre></d
     <p class="fix"><strong>修法</strong> Identifiers cannot be bound as parameters: map the requested sort key to a fixed allowlist of column names and force the direction to ASC or DESC.</p>
   </details>
   
+  <details class="rule" id="php-sqli-prepare-query-text" data-rule-id="php-sqli-prepare-query-text" data-lang="php" data-class="sqli" data-sev="high" data-text="php-sqli-prepare-query-text CWE-89 Request input written into the query text of a prepared statement">
+    <summary><span class="sev high"><i aria-hidden="true">高</i><b>高</b></span><span class="head"><code class="rid">php-sqli-prepare-query-text</code> <span class="cwe">CWE-89</span><span class="title">Request input written into the query text of a prepared statement</span></span></summary>
+    <p class="meta">框架: wordpress, doctrine</p>
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><p class="note">prepare() only escapes the arguments after the query; the search term is already part of the query</p><pre><code>&lt;?php
+add_action(&#39;wp_ajax_lookup_member&#39;, function () {
+    global $wpdb;
+    $term = sanitize_text_field(wp_unslash($_POST[&#39;term&#39;]));
+    $sql = $wpdb-&gt;prepare(&#34;SELECT id FROM {$wpdb-&gt;prefix}members WHERE name LIKE &#39;%$term%&#39; AND status = %s&#34;, &#39;active&#39;);
+    wp_send_json($wpdb-&gt;get_col($sql));
+});</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><pre><code>&lt;?php
+add_action(&#39;wp_ajax_lookup_member&#39;, function () {
+    global $wpdb;
+    $like = &#39;%&#39; . $wpdb-&gt;esc_like(wp_unslash($_POST[&#39;term&#39;])) . &#39;%&#39;;
+    $sql = $wpdb-&gt;prepare(&#34;SELECT id FROM {$wpdb-&gt;prefix}members WHERE name LIKE %s AND status = %s&#34;, $like, &#39;active&#39;);
+    wp_send_json($wpdb-&gt;get_col($sql));
+});</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Only placeholders (%s, %d, ? or :name) may stand for values in the query text; pass the values as the following arguments, or to execute(), and map identifiers such as column names to a fixed allowlist.</p>
+  </details>
+  
   <details class="rule" id="php-sqli-string-concat" data-rule-id="php-sqli-string-concat" data-lang="php" data-class="sqli" data-sev="high" data-text="php-sqli-string-concat CWE-89 Request input concatenated or interpolated into a SQL string">
     <summary><span class="sev high"><i aria-hidden="true">高</i><b>高</b></span><span class="head"><code class="rid">php-sqli-string-concat</code> <span class="cwe">CWE-89</span><span class="title">Request input concatenated or interpolated into a SQL string</span></span></summary>
     
@@ -352,9 +782,9 @@ return Payment::query()-&gt;orderBy($sort, $dir)-&gt;paginate();</code></pre></d
 $name = $_GET[&#39;name&#39;];
 $sql = &#34;SELECT id, email FROM users WHERE name = &#39;&#34; . $name . &#34;&#39;&#34;;
 $rows = mysqli_query($db, $sql);</code></pre></div>
-      <div class="sample good-s"><h3 class="good">修正後</h3><pre><code>&lt;?php
-$stmt = $pdo-&gt;prepare(&#39;SELECT id, email FROM users WHERE name = ?&#39;);
-$stmt-&gt;execute([$_GET[&#39;name&#39;]]);</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><p class="note">integer cast leaves nothing to inject</p><pre><code>&lt;?php
+$id = intval($_GET[&#39;id&#39;]);
+$rows = mysqli_query($db, &#34;SELECT * FROM posts WHERE id = $id&#34;);</code></pre></div>
     </div>
     <p class="fix"><strong>修法</strong> Use a prepared statement with bound parameters (PDO::prepare &#43; execute, mysqli bind_param); never build SQL with string concatenation or sprintf. Escaping (mysqli_real_escape_string) only protects a value inside quotes.</p>
   </details>
@@ -375,10 +805,74 @@ $row = $wpdb-&gt;get_row($wpdb-&gt;prepare(
     <p class="fix"><strong>修法</strong> Pass every value through $wpdb-&gt;prepare() placeholders (%d, %s); sanitize_text_field() and esc_sql() alone do not make a value safe in SQL.</p>
   </details>
   
+  <details class="rule" id="php-sqli-yii-query" data-rule-id="php-sqli-yii-query" data-lang="php" data-class="sqli" data-sev="high" data-text="php-sqli-yii-query CWE-89 Yii request input written into SQL text, a string condition or a sort expression">
+    <summary><span class="sev high"><i aria-hidden="true">高</i><b>高</b></span><span class="head"><code class="rid">php-sqli-yii-query</code> <span class="cwe">CWE-89</span><span class="title">Yii request input written into SQL text, a string condition or a sort expression</span></span></summary>
+    
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><pre><code>&lt;?php
+class StockController extends Controller
+{
+    public function actionTable()
+    {
+        [$field, $dir] = explode(&#39;|&#39;, (string) $this-&gt;request-&gt;getParam(&#39;sort&#39;, &#39;name|asc&#39;));
+        $rows = Item::find()-&gt;orderBy($field . &#39; &#39; . $dir)-&gt;limit(50)-&gt;all();
+        return $this-&gt;asJson($rows);
+    }
+}</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><p class="note">the fix: allowlists for the field and the direction</p><pre><code>&lt;?php
+class StockController extends Controller
+{
+    public function actionTable()
+    {
+        [$field, $dir] = explode(&#39;|&#39;, (string) $this-&gt;request-&gt;getParam(&#39;sort&#39;, &#39;name|asc&#39;));
+        if (!in_array($field, [&#39;name&#39;, &#39;sku&#39;, &#39;stock&#39;], true)) {
+            $field = &#39;name&#39;;
+        }
+        if (!in_array($dir, [&#39;asc&#39;, &#39;desc&#39;], true)) {
+            $dir = &#39;asc&#39;;
+        }
+        $rows = Item::find()-&gt;orderBy($field . &#39; &#39; . $dir)-&gt;limit(50)-&gt;all();
+        return $this-&gt;asJson($rows);
+    }
+}</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Use the hash or operator format (where([&#39;status&#39; =&gt; $status]), [&#39;like&#39;, &#39;name&#39;, $q]) or bound parameters (createCommand(&#39;... WHERE id = :id&#39;, [&#39;:id&#39; =&gt; $id])); map sort fields and directions to a fixed allowlist.</p>
+  </details>
+  
 </section>
 
 <section class="group" data-lang="php" data-class="ssrf">
   <h2><span class="g-lang">PHP</span> 伺服器端請求偽造（SSRF）</h2>
+  
+  <details class="rule" id="php-ssrf-http-client" data-rule-id="php-ssrf-http-client" data-lang="php" data-class="ssrf" data-sev="high" data-text="php-ssrf-http-client CWE-918 Symfony HttpClient or Guzzle requests a URL taken from the request">
+    <summary><span class="sev high"><i aria-hidden="true">高</i><b>高</b></span><span class="head"><code class="rid">php-ssrf-http-client</code> <span class="cwe">CWE-918</span><span class="title">Symfony HttpClient or Guzzle requests a URL taken from the request</span></span></summary>
+    <p class="meta">框架: symfony, laravel</p>
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><pre><code>&lt;?php
+class CoverController extends AbstractController
+{
+    public function __construct(private HttpClientInterface $client) {}
+
+    public function fetch(Request $request): Response
+    {
+        $res = $this-&gt;client-&gt;request(&#39;GET&#39;, $request-&gt;request-&gt;get(&#39;cover_url&#39;));
+        return new Response($res-&gt;getContent(), 200, [&#39;Content-Type&#39; =&gt; &#39;image/jpeg&#39;]);
+    }
+}</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><p class="note">the fix: a fixed host, only an id from the request</p><pre><code>&lt;?php
+class CoverController extends AbstractController
+{
+    public function __construct(private HttpClientInterface $client) {}
+
+    public function fetch(Request $request): Response
+    {
+        $res = $this-&gt;client-&gt;request(&#39;GET&#39;, &#39;https://covers.example.com/&#39; . (int) $request-&gt;request-&gt;get(&#39;id&#39;) . &#39;.jpg&#39;);
+        return new Response($res-&gt;getContent(), 200, [&#39;Content-Type&#39; =&gt; &#39;image/jpeg&#39;]);
+    }
+}</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Keep the scheme and host fixed and take only a path or an id from the request, check the host against an allowlist, or wrap the Symfony client in NoPrivateNetworkHttpClient, which refuses local and private addresses.</p>
+  </details>
   
   <details class="rule" id="php-ssrf-http-request" data-rule-id="php-ssrf-http-request" data-lang="php" data-class="ssrf" data-sev="high" data-text="php-ssrf-http-request CWE-918 Server fetches a URL taken from the request">
     <summary><span class="sev high"><i aria-hidden="true">高</i><b>高</b></span><span class="head"><code class="rid">php-ssrf-http-request</code> <span class="cwe">CWE-918</span><span class="title">Server fetches a URL taken from the request</span></span></summary>
@@ -393,6 +887,46 @@ add_action(&#39;wp_ajax_fetch_preview&#39;, function () {
 $resp = wp_remote_get(&#39;https://api.example.com/v2/lookup?code=&#39; . rawurlencode($_GET[&#39;code&#39;]));</code></pre></div>
     </div>
     <p class="fix"><strong>修法</strong> Do not let the client choose the host: keep the scheme and host fixed and take only a path or an id from the request, check the host against an allowlist, or use wp_safe_remote_get(), which refuses local and private addresses.</p>
+  </details>
+  
+  <details class="rule" id="php-ssrf-socket-connect" data-rule-id="php-ssrf-socket-connect" data-lang="php" data-class="ssrf" data-sev="high" data-text="php-ssrf-socket-connect CWE-918 Server opens a socket to a host taken from the request">
+    <summary><span class="sev high"><i aria-hidden="true">高</i><b>高</b></span><span class="head"><code class="rid">php-ssrf-socket-connect</code> <span class="cwe">CWE-918</span><span class="title">Server opens a socket to a host taken from the request</span></span></summary>
+    
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><pre><code>&lt;?php
+$host = $_GET[&#39;host&#39;];
+$fp = fsockopen($host, 80, $errno, $errstr, 5);
+fwrite($fp, &#34;HEAD / HTTP/1.0\r\nHost: $host\r\n\r\n&#34;);
+echo htmlspecialchars(fgets($fp));</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><p class="note">the fix: the host must be one of a fixed list</p><pre><code>&lt;?php
+$host = $_GET[&#39;host&#39;];
+if (!in_array($host, [&#39;status.example.com&#39;, &#39;api.example.com&#39;], true)) {
+    exit(&#39;unknown host&#39;);
+}
+$fp = fsockopen($host, 443, $errno, $errstr, 5);</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Connect only to hosts from a fixed list (in_array($host, $allowed, true)); a check on the name before connecting is not enough, as the name may resolve to another address when the socket opens.</p>
+  </details>
+  
+  <details class="rule" id="php-ssrf-url-readers" data-rule-id="php-ssrf-url-readers" data-lang="php" data-class="ssrf" data-sev="medium" data-text="php-ssrf-url-readers CWE-918 Function that opens URLs called with a URL taken from the request">
+    <summary><span class="sev medium"><i aria-hidden="true">中</i><b>中</b></span><span class="head"><code class="rid">php-ssrf-url-readers</code> <span class="cwe">CWE-918</span><span class="title">Function that opens URLs called with a URL taken from the request</span></span></summary>
+    
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><pre><code>&lt;?php
+$headers = get_headers($_GET[&#39;stream&#39;], true);
+header(&#39;Content-Type: application/json&#39;);
+echo json_encode([&#39;type&#39; =&gt; $headers[&#39;Content-Type&#39;] ?? null]);</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><p class="note">the fix: only a file name, joined to a fixed directory</p><pre><code>&lt;?php
+class ProductImageController extends Controller
+{
+    public function check(Request $request)
+    {
+        [$w, $h] = getimagesize(storage_path(&#39;app/images/&#39;) . basename($request-&gt;input(&#39;image&#39;)));
+        return response()-&gt;json([&#39;width&#39; =&gt; $w, &#39;height&#39; =&gt; $h]);
+    }
+}</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> These functions follow http:// and ftp:// URLs (get_headers() also follows redirects): accept only URLs from a fixed list (in_array($url, $allowed, true)), build the URL from a fixed host and an id, or take only a local file name joined to a fixed directory.</p>
   </details>
   
 </section>
@@ -431,6 +965,28 @@ $etag = md5($_POST[&#39;content&#39;]);</code></pre></div>
 
 <section class="group" data-lang="php" data-class="xss">
   <h2><span class="g-lang">PHP</span> 跨站腳本（XSS）</h2>
+  
+  <details class="rule" id="php-xss-drupal-markup-create" data-rule-id="php-xss-drupal-markup-create" data-lang="php" data-class="xss" data-sev="medium" data-text="php-xss-drupal-markup-create CWE-79 Request input marked as safe HTML with Drupal Markup::create()">
+    <summary><span class="sev medium"><i aria-hidden="true">中</i><b>中</b></span><span class="head"><code class="rid">php-xss-drupal-markup-create</code> <span class="cwe">CWE-79</span><span class="title">Request input marked as safe HTML with Drupal Markup::create()</span></span></summary>
+    
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><pre><code>&lt;?php
+class GreetingController extends ControllerBase {
+  public function page() {
+    $name = \Drupal::request()-&gt;query-&gt;get(&#39;name&#39;);
+    return [&#39;#markup&#39; =&gt; Markup::create(&#39;&lt;p&gt;Welcome back, &#39; . $name . &#39;&lt;/p&gt;&#39;)];
+  }
+}</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><p class="note">the fix: a placeholder, which escapes the value</p><pre><code>&lt;?php
+class GreetingController extends ControllerBase {
+  public function page() {
+    $name = \Drupal::request()-&gt;query-&gt;get(&#39;name&#39;);
+    return [&#39;#markup&#39; =&gt; $this-&gt;t(&#39;&lt;p&gt;Welcome back, @name&lt;/p&gt;&#39;, [&#39;@name&#39; =&gt; $name])];
+  }
+}</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Markup::create() tells the renderer that the string is already safe, so nothing escapes it: pass user text as &#39;#plain_text&#39; or a @placeholder of FormattableMarkup/t(), or filter it with Xss::filter() first.</p>
+  </details>
   
   <details class="rule" id="php-xss-echo-attribute" data-rule-id="php-xss-echo-attribute" data-lang="php" data-class="xss" data-sev="medium" data-text="php-xss-echo-attribute CWE-79 Request input written into an HTML attribute without attribute escaping">
     <summary><span class="sev medium"><i aria-hidden="true">中</i><b>中</b></span><span class="head"><code class="rid">php-xss-echo-attribute</code> <span class="cwe">CWE-79</span><span class="title">Request input written into an HTML attribute without attribute escaping</span></span></summary>
@@ -481,10 +1037,68 @@ var tab = &lt;?php echo wp_json_encode($_GET[&#39;tab&#39;]); ?&gt;;
     <p class="fix"><strong>修法</strong> Pass URLs through esc_url() (it drops javascript: and other unsafe schemes) or allow only http(s) URLs; esc_attr() and esc_html() leave javascript: links working.</p>
   </details>
   
+  <details class="rule" id="php-xss-shortcode-attribute" data-rule-id="php-xss-shortcode-attribute" data-lang="php" data-class="xss" data-sev="medium" data-text="php-xss-shortcode-attribute CWE-79 Shortcode attribute written into an HTML attribute without escaping">
+    <summary><span class="sev medium"><i aria-hidden="true">中</i><b>中</b></span><span class="head"><code class="rid">php-xss-shortcode-attribute</code> <span class="cwe">CWE-79</span><span class="title">Shortcode attribute written into an HTML attribute without escaping</span></span></summary>
+    <p class="meta">框架: wordpress</p>
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><p class="note">any author who can write a post sets shortcode attributes</p><pre><code>&lt;?php
+add_shortcode(&#39;badge&#39;, function ($atts) {
+    $a = shortcode_atts([&#39;color&#39; =&gt; &#39;blue&#39;], $atts);
+    ob_start();
+    echo &#39;&lt;span class=&#34;badge badge-&#39; . $a[&#39;color&#39;] . &#39;&#34;&gt;new&lt;/span&gt;&#39;;
+    return ob_get_clean();
+});</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><p class="note">the fix</p><pre><code>&lt;?php
+add_shortcode(&#39;badge&#39;, function ($atts) {
+    $a = shortcode_atts([&#39;color&#39; =&gt; &#39;blue&#39;], $atts);
+    ob_start();
+    echo &#39;&lt;span class=&#34;badge badge-&#39; . esc_attr($a[&#39;color&#39;]) . &#39;&#34;&gt;new&lt;/span&gt;&#39;;
+    return ob_get_clean();
+});</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Escape the attribute with esc_attr() before it goes into an HTML attribute.</p>
+  </details>
+  
+  <details class="rule" id="php-xss-shortcode-script" data-rule-id="php-xss-shortcode-script" data-lang="php" data-class="xss" data-sev="medium" data-text="php-xss-shortcode-script CWE-79 Shortcode attribute written into a script or a javascript: URL">
+    <summary><span class="sev medium"><i aria-hidden="true">中</i><b>中</b></span><span class="head"><code class="rid">php-xss-shortcode-script</code> <span class="cwe">CWE-79</span><span class="title">Shortcode attribute written into a script or a javascript: URL</span></span></summary>
+    <p class="meta">框架: wordpress</p>
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><p class="note">any author who can write a post sets shortcode attributes</p><pre><code>&lt;?php
+add_shortcode(&#39;pay_button&#39;, function ($atts) {
+    $a = shortcode_atts([&#39;app&#39; =&gt; &#39;shop&#39;], $atts);
+    return &#39;&lt;a href=&#34;javascript:startCheckout(\&#39;&#39; . $a[&#39;app&#39;] . &#39;\&#39;)&#34;&gt;Pay&lt;/a&gt;&#39;;
+});</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><p class="note">the fix</p><pre><code>&lt;?php
+add_shortcode(&#39;pay_button&#39;, function ($atts) {
+    $a = shortcode_atts([&#39;app&#39; =&gt; &#39;shop&#39;], $atts);
+    return &#39;&lt;script&gt;startCheckout(&#39; . wp_json_encode($a[&#39;app&#39;]) . &#39;);&lt;/script&gt;&#39;;
+});</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Inside a script or a javascript: URL, encode the attribute with wp_json_encode() or reduce it to a fixed set of characters; esc_attr() and esc_html() do not stop script injection there.</p>
+  </details>
+  
 </section>
 
 <section class="group" data-lang="php" data-class="xxe">
   <h2><span class="g-lang">PHP</span> XML 外部實體（XXE）</h2>
+  
+  <details class="rule" id="php-xxe-libxml-dtdload" data-rule-id="php-xxe-libxml-dtdload" data-lang="php" data-class="xxe" data-sev="high" data-text="php-xxe-libxml-dtdload CWE-611 XML parsed with options that load external DTDs (LIBXML_DTDLOAD, LIBXML_DTDATTR, LIBXML_DTDVALID, XMLReader::LOADDTD)">
+    <summary><span class="sev high"><i aria-hidden="true">高</i><b>高</b></span><span class="head"><code class="rid">php-xxe-libxml-dtdload</code> <span class="cwe">CWE-611</span><span class="title">XML parsed with options that load external DTDs (LIBXML_DTDLOAD, LIBXML_DTDATTR, LIBXML_DTDVALID, XMLReader::LOADDTD)</span></span></summary>
+    
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><pre><code>&lt;?php
+$doc = new DOMDocument();
+$doc-&gt;loadXML($_POST[&#39;SAMLResponse&#39;] ?? &#39;&#39;, LIBXML_DTDLOAD | LIBXML_NONET);</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><p class="note">the fix: no DTD options, and documents with a DOCTYPE are refused</p><pre><code>&lt;?php
+$raw = $_POST[&#39;SAMLResponse&#39;] ?? &#39;&#39;;
+if (stripos($raw, &#39;&lt;!DOCTYPE&#39;) !== false) {
+    exit(&#39;invalid&#39;);
+}
+$doc = new DOMDocument();
+$doc-&gt;loadXML($raw, LIBXML_NONET | LIBXML_NSCLEAN);</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Do not pass LIBXML_DTDLOAD or LIBXML_DTDATTR for documents from outside: they make libxml fetch the DTD a document names, and its parameter entities, even though PHP 8 no longer substitutes external entities by default; reject documents with a &lt;!DOCTYPE before parsing.</p>
+  </details>
   
   <details class="rule" id="php-xxe-libxml-noent" data-rule-id="php-xxe-libxml-noent" data-lang="php" data-class="xxe" data-sev="high" data-text="php-xxe-libxml-noent CWE-611 XML parsed with external entities or DTD loading turned on">
     <summary><span class="sev high"><i aria-hidden="true">高</i><b>高</b></span><span class="head"><code class="rid">php-xxe-libxml-noent</code> <span class="cwe">CWE-611</span><span class="title">XML parsed with external entities or DTD loading turned on</span></span></summary>
@@ -525,6 +1139,25 @@ def log():
     <p class="fix"><strong>修法</strong> Put &#39;--&#39; before positional arguments, or reject values starting with &#39;-&#39;; for file names pass os.path.abspath() of the path so it cannot start with &#39;-&#39;.</p>
   </details>
   
+  <details class="rule" id="python-cmdi-argv-from-input" data-rule-id="python-cmdi-argv-from-input" data-lang="python" data-class="cmdi" data-sev="critical" data-text="python-cmdi-argv-from-input CWE-78 Command line from the request split into argv and run, so the client picks the program">
+    <summary><span class="sev critical"><i aria-hidden="true">極</i><b>極危</b></span><span class="head"><code class="rid">python-cmdi-argv-from-input</code> <span class="cwe">CWE-78</span><span class="title">Command line from the request split into argv and run, so the client picks the program</span></span></summary>
+    <p class="meta">框架: flask, django</p>
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><p class="note">a helper process started from a command line the client sent</p><pre><code>@app.post(&#34;/helpers/start&#34;)
+def start_helper():
+    argv = shlex.split(request.json[&#34;launch&#34;])
+    params = StdioServerParameters(command=argv[0], args=argv[1:])
+    return attach(params)</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><pre><code>COMMANDS = {&#34;disk&#34;: [&#34;df&#34;, &#34;-h&#34;], &#34;uptime&#34;: [&#34;uptime&#34;]}
+
+@app.post(&#34;/ops/exec&#34;)
+def ops_exec():
+    output = subprocess.check_output(COMMANDS.get(request.form[&#34;name&#34;], [&#34;true&#34;]), timeout=20)
+    return output.decode()</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Choose the program on the server (a fixed path or a lookup in a fixed table) and pass only checked values as its arguments; splitting a request string with shlex.split() still lets the client pick the program.</p>
+  </details>
+  
   <details class="rule" id="python-cmdi-shell" data-rule-id="python-cmdi-shell" data-lang="python" data-class="cmdi" data-sev="critical" data-text="python-cmdi-shell CWE-78 Untrusted value placed into a command run through a shell">
     <summary><span class="sev critical"><i aria-hidden="true">極</i><b>極危</b></span><span class="head"><code class="rid">python-cmdi-shell</code> <span class="cwe">CWE-78</span><span class="title">Untrusted value placed into a command run through a shell</span></span></summary>
     <p class="meta">框架: flask, django</p>
@@ -548,6 +1181,28 @@ def checkout():
 <section class="group" data-lang="python" data-class="code-eval">
   <h2><span class="g-lang">Python</span> 程式碼執行</h2>
   
+  <details class="rule" id="python-code-eval-dynamic-import" data-rule-id="python-code-eval-dynamic-import" data-lang="python" data-class="code-eval" data-sev="high" data-text="python-code-eval-dynamic-import CWE-94 Module or object path taken from input and imported (import runs the module&#39;s code)">
+    <summary><span class="sev high"><i aria-hidden="true">高</i><b>高</b></span><span class="head"><code class="rid">python-code-eval-dynamic-import</code> <span class="cwe">CWE-94</span><span class="title">Module or object path taken from input and imported (import runs the module&#39;s code)</span></span></summary>
+    <p class="meta">框架: django, flask</p>
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><p class="note">a component path sent over the socket is imported before any check</p><pre><code>def mount_component(message):
+    payload = json.loads(message)
+    dotted = payload[&#34;component&#34;]
+    module_name, _, attr = dotted.rpartition(&#34;.&#34;)
+    component_cls = getattr(__import__(module_name, fromlist=[attr]), attr)
+    return component_cls()</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><pre><code>COMPONENTS = {&#34;counter&#34;: CounterComponent, &#34;clock&#34;: ClockComponent}
+
+def mount_component(message):
+    payload = json.loads(message)
+    component_cls = COMPONENTS.get(payload[&#34;component&#34;])
+    if component_cls is None:
+        raise ValueError(&#34;unknown component&#34;)
+    return component_cls()</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Map the value to a class or module through a fixed table on the server (ALLOWED = {&#39;name&#39;: MyView}) or check it against an allowlist of full dotted paths before importing; importing an arbitrary module runs its top-level code.</p>
+  </details>
+  
   <details class="rule" id="python-code-eval-eval" data-rule-id="python-code-eval-eval" data-lang="python" data-class="code-eval" data-sev="critical" data-text="python-code-eval-eval CWE-95 eval, exec or an eval-based parser on request input">
     <summary><span class="sev critical"><i aria-hidden="true">極</i><b>極危</b></span><span class="head"><code class="rid">python-code-eval-eval</code> <span class="cwe">CWE-95</span><span class="title">eval, exec or an eval-based parser on request input</span></span></summary>
     <p class="meta">框架: flask, django</p>
@@ -566,9 +1221,25 @@ def filter_items():
     <p class="fix"><strong>修法</strong> Parse data instead of evaluating it: json.loads or ast.literal_eval for literals, a small expression parser for formulas; SymPy parse_expr and sympify call eval internally.</p>
   </details>
   
+  <details class="rule" id="python-code-eval-numexpr" data-rule-id="python-code-eval-numexpr" data-lang="python" data-class="code-eval" data-sev="critical" data-text="python-code-eval-numexpr CWE-95 Request text evaluated by numexpr.evaluate, pandas.eval or DataFrame.query/eval">
+    <summary><span class="sev critical"><i aria-hidden="true">極</i><b>極危</b></span><span class="head"><code class="rid">python-code-eval-numexpr</code> <span class="cwe">CWE-95</span><span class="title">Request text evaluated by numexpr.evaluate, pandas.eval or DataFrame.query/eval</span></span></summary>
+    <p class="meta">框架: flask, django</p>
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><pre><code>@app.get(&#34;/calc&#34;)
+def calc():
+    expr = request.args.get(&#34;expr&#34;, &#34;0&#34;)
+    return {&#34;result&#34;: float(numexpr.evaluate(expr))}</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><p class="note">the expression is fixed; the request only supplies a number</p><pre><code>@app.get(&#34;/calc&#34;)
+def calc():
+    a = float(request.args.get(&#34;a&#34;, &#34;0&#34;))
+    return {&#34;result&#34;: float(numexpr.evaluate(&#34;2*a &#43; 1&#34;, local_dict={&#34;a&#34;: a}))}</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Do not hand request text to numexpr or pandas.eval: parse the formula with a small grammar of your own (numbers, operators, known column names) and evaluate the parsed tree; older numexpr versions pass the text to eval.</p>
+  </details>
+  
   <details class="rule" id="python-code-eval-template-injection" data-rule-id="python-code-eval-template-injection" data-lang="python" data-class="code-eval" data-sev="critical" data-text="python-code-eval-template-injection CWE-1336 User-controlled text compiled as a Jinja2 template (server-side template injection)">
     <summary><span class="sev critical"><i aria-hidden="true">極</i><b>極危</b></span><span class="head"><code class="rid">python-code-eval-template-injection</code> <span class="cwe">CWE-1336</span><span class="title">User-controlled text compiled as a Jinja2 template (server-side template injection)</span></span></summary>
-    <p class="meta">框架: flask</p>
+    <p class="meta">框架: flask, django</p>
     <div class="samples">
       <div class="sample bad-s"><h3 class="bad">會報出</h3><pre><code>@app.get(&#34;/greet&#34;)
 def greet():
@@ -586,6 +1257,22 @@ def greet():
 <section class="group" data-lang="python" data-class="deserialization">
   <h2><span class="g-lang">Python</span> 不安全的反序列化</h2>
   
+  <details class="rule" id="python-deserialization-downloaded-pickle" data-rule-id="python-deserialization-downloaded-pickle" data-lang="python" data-class="deserialization" data-sev="critical" data-text="python-deserialization-downloaded-pickle CWE-502 Downloaded model or data file deserialized with pickle, jsonpickle, joblib or dill">
+    <summary><span class="sev critical"><i aria-hidden="true">極</i><b>極危</b></span><span class="head"><code class="rid">python-deserialization-downloaded-pickle</code> <span class="cwe">CWE-502</span><span class="title">Downloaded model or data file deserialized with pickle, jsonpickle, joblib or dill</span></span></summary>
+    
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><pre><code>def fetch_model(url):
+    resp = requests.get(url, timeout=30)
+    resp.raise_for_status()
+    return pickle.loads(resp.content)</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><pre><code>def fetch_model(url):
+    resp = requests.get(url, timeout=30)
+    resp.raise_for_status()
+    return json.loads(resp.content)</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Exchange models and data in formats that cannot run code (safetensors, ONNX, JSON, skops with trusted types) and verify a signature or hash of what was downloaded; pickle, jsonpickle, joblib and dill run code while loading.</p>
+  </details>
+  
   <details class="rule" id="python-deserialization-pickle" data-rule-id="python-deserialization-pickle" data-lang="python" data-class="deserialization" data-sev="critical" data-text="python-deserialization-pickle CWE-502 pickle (or a pickle-based loader) on data from a request, cookie or upload">
     <summary><span class="sev critical"><i aria-hidden="true">極</i><b>極危</b></span><span class="head"><code class="rid">python-deserialization-pickle</code> <span class="cwe">CWE-502</span><span class="title">pickle (or a pickle-based loader) on data from a request, cookie or upload</span></span></summary>
     <p class="meta">框架: django, flask</p>
@@ -599,6 +1286,26 @@ def greet():
     return render(request, &#34;report.html&#34;, build_report(report_id, **allowed))</code></pre></div>
     </div>
     <p class="fix"><strong>修法</strong> Exchange plain data as JSON (json.loads) and rebuild objects explicitly; pickle can never be made safe for untrusted input.</p>
+  </details>
+  
+  <details class="rule" id="python-deserialization-torch-load" data-rule-id="python-deserialization-torch-load" data-lang="python" data-class="deserialization" data-sev="critical" data-text="python-deserialization-torch-load CWE-502 Uploaded or downloaded file loaded with torch.load(weights_only=False) or np.load(allow_pickle=True)">
+    <summary><span class="sev critical"><i aria-hidden="true">極</i><b>極危</b></span><span class="head"><code class="rid">python-deserialization-torch-load</code> <span class="cwe">CWE-502</span><span class="title">Uploaded or downloaded file loaded with torch.load(weights_only=False) or np.load(allow_pickle=True)</span></span></summary>
+    
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><pre><code>@app.post(&#34;/models/restore&#34;)
+def restore_model():
+    blob = request.files[&#34;weights&#34;]
+    params = torch.load(blob, map_location=&#34;cpu&#34;, weights_only=False)
+    net.load_state_dict(params)
+    return &#34;restored&#34;</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><p class="note">weights_only=True is the default since PyTorch 2.6</p><pre><code>@app.post(&#34;/models/restore&#34;)
+def restore_model():
+    blob = request.files[&#34;weights&#34;]
+    params = torch.load(blob, map_location=&#34;cpu&#34;)
+    net.load_state_dict(params)
+    return &#34;restored&#34;</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Keep torch.load on its safe default (weights_only=True, the default since PyTorch 2.6) or store tensors as safetensors, and keep np.load on allow_pickle=False; never unpickle a checkpoint or array that came from a user or the network.</p>
   </details>
   
   <details class="rule" id="python-deserialization-yaml-load" data-rule-id="python-deserialization-yaml-load" data-lang="python" data-class="deserialization" data-sev="critical" data-text="python-deserialization-yaml-load CWE-502 PyYAML load with a loader that can build Python objects">
@@ -757,7 +1464,28 @@ def import_theme():
         tf.extractall(&#34;/srv/app/themes&#34;, filter=&#34;data&#34;)
     return &#34;imported&#34;</code></pre></div>
     </div>
-    <p class="fix"><strong>修法</strong> On Python 3.12&#43; call extractall(..., filter=&#39;data&#39;); otherwise check every member&#39;s resolved path stays inside the target directory and reject links.</p>
+    <p class="fix"><strong>修法</strong> Pass filter=&#34;data&#34; to tarfile extractall (the default from Python 3.14; 3.12 and 3.13 warn and still extract unsafely), or check that every member&#39;s resolved path stays inside the target directory and reject links. zipfile.extractall already drops &#34;..&#34; and leading &#34;/&#34; from names, but the engine cannot tell a zip from a tar.</p>
+  </details>
+  
+  <details class="rule" id="python-path-traversal-image-open" data-rule-id="python-path-traversal-image-open" data-lang="python" data-class="path-traversal" data-sev="high" data-text="python-path-traversal-image-open CWE-73 Image opened from a path or file: URL taken from the request">
+    <summary><span class="sev high"><i aria-hidden="true">高</i><b>高</b></span><span class="head"><code class="rid">python-path-traversal-image-open</code> <span class="cwe">CWE-73</span><span class="title">Image opened from a path or file: URL taken from the request</span></span></summary>
+    <p class="meta">框架: django, flask</p>
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><p class="note">an image reference in the request may be a local path</p><pre><code>@api.post(&#34;/v1/describe&#34;)
+async def describe(request: Request):
+    body = await request.json()
+    ref = body[&#34;image&#34;]
+    if ref.startswith(&#34;file://&#34;):
+        ref = ref[len(&#34;file://&#34;):]
+    picture = Image.open(ref)
+    return {&#34;size&#34;: picture.size}</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><pre><code>@api.post(&#34;/v1/describe&#34;)
+async def describe(request: Request):
+    body = await request.json()
+    picture = Image.open(io.BytesIO(base64.b64decode(body[&#34;image_b64&#34;])))
+    return {&#34;size&#34;: picture.size}</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Accept image bytes (an upload or base64 data decoded into io.BytesIO) or an http(s) URL fetched through an SSRF guard, never a path or file: URL; Image.open reads any file the server can read.</p>
   </details>
   
   <details class="rule" id="python-path-traversal-send-file" data-rule-id="python-path-traversal-send-file" data-lang="python" data-class="path-traversal" data-sev="high" data-text="python-path-traversal-send-file CWE-22 Request value joined into a file path that is opened, sent, listed, copied or removed">
@@ -773,6 +1501,27 @@ def download():
     return send_from_directory(&#34;/srv/app/exports&#34;, request.args[&#34;name&#34;])</code></pre></div>
     </div>
     <p class="fix"><strong>修法</strong> Use flask.send_from_directory or werkzeug.utils.safe_join (django.utils._os.safe_join); otherwise resolve the path and check it stays under the base directory.</p>
+  </details>
+  
+  <details class="rule" id="python-path-traversal-upload-filename" data-rule-id="python-path-traversal-upload-filename" data-lang="python" data-class="path-traversal" data-sev="high" data-text="python-path-traversal-upload-filename CWE-22 Upload&#39;s client-sent file name used to build a path on the server">
+    <summary><span class="sev high"><i aria-hidden="true">高</i><b>高</b></span><span class="head"><code class="rid">python-path-traversal-upload-filename</code> <span class="cwe">CWE-22</span><span class="title">Upload&#39;s client-sent file name used to build a path on the server</span></span></summary>
+    
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><p class="note">the extension is cut from the client name, so it can still hold &#39;/&#39;</p><pre><code>@api.post(&#34;/voice-notes&#34;)
+async def save_voice_note(file: UploadFile):
+    suffix = file.filename.rsplit(&#34;.&#34;, 1)[-1]
+    target = f&#34;{NOTES_DIR}/{uuid.uuid4().hex}.{suffix}&#34;
+    with open(target, &#34;wb&#34;) as sink:
+        sink.write(await file.read())
+    return {&#34;stored&#34;: target}</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><pre><code>@api.post(&#34;/voice-notes&#34;)
+async def save_voice_note(file: UploadFile):
+    plain = os.path.basename(file.filename)
+    target = os.path.join(NOTES_DIR, f&#34;{uuid.uuid4().hex}-{plain}&#34;)
+    with open(target, &#34;wb&#34;) as sink:
+        sink.write(await file.read())</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Never build a path from the uploaded file&#39;s name: store it under a name the server makes (uuid4().hex plus an allowlisted extension), or reduce it with os.path.basename()/secure_filename() and check the resolved path stays in the upload directory.</p>
   </details>
   
 </section>
@@ -815,6 +1564,43 @@ def report(request):
     <p class="fix"><strong>修法</strong> Never let the client choose ORM keyword names: build the kwargs from a fixed mapping on the server, and keep Django on a patched release.</p>
   </details>
   
+  <details class="rule" id="python-sqli-orm-raw-query" data-rule-id="python-sqli-orm-raw-query" data-lang="python" data-class="sqli" data-sev="high" data-text="python-sqli-orm-raw-query CWE-89 Request input built into the SQL text of an ORM or async driver raw query">
+    <summary><span class="sev high"><i aria-hidden="true">高</i><b>高</b></span><span class="head"><code class="rid">python-sqli-orm-raw-query</code> <span class="cwe">CWE-89</span><span class="title">Request input built into the SQL text of an ORM or async driver raw query</span></span></summary>
+    
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><pre><code>@api.get(&#34;/usage&#34;)
+async def usage(request: Request):
+    team = request.query_params.get(&#34;team&#34;)
+    stmt = &#39;SELECT month, cost FROM &#34;TeamUsage&#34; WHERE &#34;team&#34; = \&#39;&#39; &#43; team &#43; &#34;&#39;&#34;
+    return await db.query_raw(stmt)</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><pre><code>@api.get(&#34;/usage&#34;)
+async def usage(request: Request):
+    team = request.query_params.get(&#34;team&#34;)
+    return await db.query_raw(&#39;SELECT month, cost FROM &#34;TeamUsage&#34; WHERE &#34;team&#34; = $1&#39;, team)</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Keep the SQL text constant and pass values separately: Manager.raw(sql, [value]) and RawSQL(sql, [value]) with %s, prisma query_raw(sql, value) with $1, asyncpg fetchrow(sql, value), Tortoise execute_query(sql, [value]), databases fetch_all(query, values={...}), QuerySet.extra(where=[&#34;a = %s&#34;], params=[value]).</p>
+  </details>
+  
+  <details class="rule" id="python-sqli-pandas-read-sql" data-rule-id="python-sqli-pandas-read-sql" data-lang="python" data-class="sqli" data-sev="high" data-text="python-sqli-pandas-read-sql CWE-89 Request input formatted into SQL read with pandas read_sql">
+    <summary><span class="sev high"><i aria-hidden="true">高</i><b>高</b></span><span class="head"><code class="rid">python-sqli-pandas-read-sql</code> <span class="cwe">CWE-89</span><span class="title">Request input formatted into SQL read with pandas read_sql</span></span></summary>
+    
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><pre><code>@app.route(&#34;/reports/sales&#34;)
+def sales_report():
+    region = request.args.get(&#34;region&#34;, &#34;&#34;)
+    sql = &#34;SELECT day, total FROM sales WHERE region = &#39;%s&#39; ORDER BY day&#34; % region
+    frame = pd.read_sql_query(sql, engine)
+    return frame.to_json(orient=&#34;records&#34;)</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><pre><code>@app.route(&#34;/reports/sales&#34;)
+def sales_report():
+    region = request.args.get(&#34;region&#34;, &#34;&#34;)
+    sql = sqlalchemy.text(&#34;SELECT day, total FROM sales WHERE region = :region ORDER BY day&#34;)
+    frame = pd.read_sql_query(sql, engine, params={&#34;region&#34;: region})
+    return frame.to_json(orient=&#34;records&#34;)</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Keep the query text constant and pass values with params= (read_sql_query(text(&#39;... WHERE id = :id&#39;), engine, params={&#39;id&#39;: value})).</p>
+  </details>
+  
   <details class="rule" id="python-sqli-sqlalchemy-text" data-rule-id="python-sqli-sqlalchemy-text" data-lang="python" data-class="sqli" data-sev="high" data-text="python-sqli-sqlalchemy-text CWE-89 Request input formatted into sqlalchemy text() or a raw SQL string">
     <summary><span class="sev high"><i aria-hidden="true">高</i><b>高</b></span><span class="head"><code class="rid">python-sqli-sqlalchemy-text</code> <span class="cwe">CWE-89</span><span class="title">Request input formatted into sqlalchemy text() or a raw SQL string</span></span></summary>
     <p class="meta">框架: flask</p>
@@ -838,6 +1624,27 @@ def stats():
 
 <section class="group" data-lang="python" data-class="ssrf">
   <h2><span class="g-lang">Python</span> 伺服器端請求偽造（SSRF）</h2>
+  
+  <details class="rule" id="python-ssrf-async-client" data-rule-id="python-ssrf-async-client" data-lang="python" data-class="ssrf" data-sev="high" data-text="python-ssrf-async-client CWE-918 httpx, aiohttp or Tornado client fetches a URL taken from the request">
+    <summary><span class="sev high"><i aria-hidden="true">高</i><b>高</b></span><span class="head"><code class="rid">python-ssrf-async-client</code> <span class="cwe">CWE-918</span><span class="title">httpx, aiohttp or Tornado client fetches a URL taken from the request</span></span></summary>
+    
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><p class="note">a notification URL from the job request</p><pre><code>@api.post(&#34;/jobs&#34;)
+async def submit_job(request: Request):
+    payload = await request.json()
+    outcome = await process(payload[&#34;spec&#34;])
+    async with httpx.AsyncClient(timeout=5) as http_client:
+        await http_client.post(payload[&#34;notify_url&#34;], json={&#34;outcome&#34;: outcome})
+    return {&#34;accepted&#34;: True}</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><p class="note">scheme and host are fixed; the request picks only the record</p><pre><code>@api.get(&#34;/records&#34;)
+async def record(request: Request):
+    rid = request.query_params[&#34;rid&#34;]
+    async with httpx.AsyncClient() as http_client:
+        reply = await http_client.get(f&#34;https://records.example.org/v1/{rid}&#34;)
+    return reply.json()</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Keep the scheme and host fixed and take only a path or an id from the request, or parse the URL, require its host to be in an allowlist and resolve it to a public address before the client connects (and check every redirect).</p>
+  </details>
   
   <details class="rule" id="python-ssrf-http-request" data-rule-id="python-ssrf-http-request" data-lang="python" data-class="ssrf" data-sev="high" data-text="python-ssrf-http-request CWE-918 Server fetches a URL taken from the request">
     <summary><span class="sev high"><i aria-hidden="true">高</i><b>高</b></span><span class="head"><code class="rid">python-ssrf-http-request</code> <span class="cwe">CWE-918</span><span class="title">Server fetches a URL taken from the request</span></span></summary>
@@ -896,6 +1703,51 @@ def register():
 <section class="group" data-lang="python" data-class="xss">
   <h2><span class="g-lang">Python</span> 跨站腳本（XSS）</h2>
   
+  <details class="rule" id="python-xss-aiohttp-text-attr" data-rule-id="python-xss-aiohttp-text-attr" data-lang="python" data-class="xss" data-sev="medium" data-text="python-xss-aiohttp-text-attr CWE-79 aiohttp text/html response with a request value in an attribute value without the escaping that context needs">
+    <summary><span class="sev medium"><i aria-hidden="true">中</i><b>中</b></span><span class="head"><code class="rid">python-xss-aiohttp-text-attr</code> <span class="cwe">CWE-79</span><span class="title">aiohttp text/html response with a request value in an attribute value without the escaping that context needs</span></span></summary>
+    
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><pre><code>async def avatar(request):
+    who = request.query.get(&#34;user&#34;, &#34;guest&#34;)
+    return web.Response(text=&#39;&lt;img class=&#34;avatar&#34; title=&#34;&#39; &#43; who &#43; &#39;&#34; src=&#34;/static/a.png&#34;&gt;&#39;, content_type=&#34;text/html&#34;)</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><pre><code>async def avatar(request):
+    who = html.escape(request.query.get(&#34;user&#34;, &#34;guest&#34;))
+    return web.Response(text=&#39;&lt;img class=&#34;avatar&#34; title=&#34;&#39; &#43; who &#43; &#39;&#34; src=&#34;/static/a.png&#34;&gt;&#39;, content_type=&#34;text/html&#34;)</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Escape the value with html.escape() (it escapes quotes by default) before writing it into an attribute, or render with aiohttp_jinja2 and autoescape.</p>
+  </details>
+  
+  <details class="rule" id="python-xss-aiohttp-text-html" data-rule-id="python-xss-aiohttp-text-html" data-lang="python" data-class="xss" data-sev="medium" data-text="python-xss-aiohttp-text-html CWE-79 aiohttp text/html response built from a request value without escaping">
+    <summary><span class="sev medium"><i aria-hidden="true">中</i><b>中</b></span><span class="head"><code class="rid">python-xss-aiohttp-text-html</code> <span class="cwe">CWE-79</span><span class="title">aiohttp text/html response built from a request value without escaping</span></span></summary>
+    
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><pre><code>async def greet(request):
+    who = request.query.get(&#34;name&#34;, &#34;guest&#34;)
+    page = &#34;&lt;p&gt;Welcome back, &#34; &#43; who &#43; &#34;&lt;/p&gt;&#34;
+    return web.Response(text=page, content_type=&#34;text/html&#34;)</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><pre><code>async def greet(request):
+    who = html.escape(request.query.get(&#34;name&#34;, &#34;guest&#34;))
+    page = &#34;&lt;p&gt;Welcome back, &#34; &#43; who &#43; &#34;&lt;/p&gt;&#34;
+    return web.Response(text=page, content_type=&#34;text/html&#34;)</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Render pages with a template engine that escapes by default (aiohttp_jinja2 with autoescape), or wrap each value in html.escape(..., quote=True) before building HTML.</p>
+  </details>
+  
+  <details class="rule" id="python-xss-format-html-preformatted" data-rule-id="python-xss-format-html-preformatted" data-lang="python" data-class="xss" data-sev="medium" data-text="python-xss-format-html-preformatted CWE-79 Django format_html given a string that already holds the request value">
+    <summary><span class="sev medium"><i aria-hidden="true">中</i><b>中</b></span><span class="head"><code class="rid">python-xss-format-html-preformatted</code> <span class="cwe">CWE-79</span><span class="title">Django format_html given a string that already holds the request value</span></span></summary>
+    <p class="meta">框架: django</p>
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><pre><code>def greeting(request):
+    name = request.GET.get(&#34;name&#34;, &#34;&#34;)
+    html = &#34;&lt;p&gt;Hello {}&lt;/p&gt;&#34;.format(name)
+    return HttpResponse(format_html(html))</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><pre><code>def greeting(request):
+    name = request.GET.get(&#34;name&#34;, &#34;&#34;)
+    return HttpResponse(format_html(&#34;&lt;p&gt;Hello {}&lt;/p&gt;&#34;, name))</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Pass values to format_html as arguments (&#39;&lt;b&gt;{}&lt;/b&gt;&#39;, value) so it escapes them; format_html only escapes its arguments, never the format string itself.</p>
+  </details>
+  
   <details class="rule" id="python-xss-mark-safe" data-rule-id="python-xss-mark-safe" data-lang="python" data-class="xss" data-sev="medium" data-text="python-xss-mark-safe CWE-79 Request value marked as safe HTML, so the template does not escape it">
     <summary><span class="sev medium"><i aria-hidden="true">中</i><b>中</b></span><span class="head"><code class="rid">python-xss-mark-safe</code> <span class="cwe">CWE-79</span><span class="title">Request value marked as safe HTML, so the template does not escape it</span></span></summary>
     <p class="meta">框架: django, flask</p>
@@ -924,6 +1776,134 @@ def register():
     <p class="fix"><strong>修法</strong> Render the page with a template (Django and Jinja templates escape by default), or escape each value with django.utils.html.escape() / markupsafe.escape() before building HTML by hand.</p>
   </details>
   
+  <details class="rule" id="python-xss-starlette-attr" data-rule-id="python-xss-starlette-attr" data-lang="python" data-class="xss" data-sev="medium" data-text="python-xss-starlette-attr CWE-79 FastAPI or Starlette HTML response with a request value in an attribute value without the escaping that context needs">
+    <summary><span class="sev medium"><i aria-hidden="true">中</i><b>中</b></span><span class="head"><code class="rid">python-xss-starlette-attr</code> <span class="cwe">CWE-79</span><span class="title">FastAPI or Starlette HTML response with a request value in an attribute value without the escaping that context needs</span></span></summary>
+    
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><pre><code>@app.get(&#34;/filter&#34;)
+async def filter_page(request: Request):
+    tag = request.query_params.get(&#34;tag&#34;, &#34;&#34;)
+    return HTMLResponse(f&#39;&lt;form&gt;&lt;input type=&#34;text&#34; name=&#34;tag&#34; value=&#34;{tag}&#34;&gt;&lt;/form&gt;&#39;)</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><pre><code>@app.get(&#34;/filter&#34;)
+async def filter_page(request: Request):
+    tag = request.query_params.get(&#34;tag&#34;, &#34;&#34;)
+    return HTMLResponse(f&#39;&lt;form&gt;&lt;input type=&#34;text&#34; name=&#34;tag&#34; value=&#34;{html.escape(tag)}&#34;&gt;&lt;/form&gt;&#39;)</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Escape the value with html.escape() (it escapes quotes by default), or render with Jinja2Templates.</p>
+  </details>
+  
+  <details class="rule" id="python-xss-starlette-html" data-rule-id="python-xss-starlette-html" data-lang="python" data-class="xss" data-sev="medium" data-text="python-xss-starlette-html CWE-79 FastAPI or Starlette HTML response with a request value between tags without the escaping that context needs">
+    <summary><span class="sev medium"><i aria-hidden="true">中</i><b>中</b></span><span class="head"><code class="rid">python-xss-starlette-html</code> <span class="cwe">CWE-79</span><span class="title">FastAPI or Starlette HTML response with a request value between tags without the escaping that context needs</span></span></summary>
+    
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><pre><code>@app.get(&#34;/greet&#34;)
+async def greet(request: Request):
+    who = request.query_params.get(&#34;who&#34;, &#34;&#34;)
+    return HTMLResponse(&#34;&lt;main&gt;&lt;h2&gt;Welcome, &#34; &#43; who &#43; &#34;&lt;/h2&gt;&lt;/main&gt;&#34;)</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><pre><code>@app.get(&#34;/greet&#34;)
+async def greet(request: Request):
+    who = request.query_params.get(&#34;who&#34;, &#34;&#34;)
+    return HTMLResponse(&#34;&lt;main&gt;&lt;h2&gt;Welcome, &#34; &#43; html.escape(who) &#43; &#34;&lt;/h2&gt;&lt;/main&gt;&#34;)</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Escape the value with html.escape(), or render with Jinja2Templates (it escapes by default).</p>
+  </details>
+  
+  <details class="rule" id="python-xss-starlette-js" data-rule-id="python-xss-starlette-js" data-lang="python" data-class="xss" data-sev="medium" data-text="python-xss-starlette-js CWE-79 FastAPI or Starlette HTML response with a request value inside a script without the escaping that context needs">
+    <summary><span class="sev medium"><i aria-hidden="true">中</i><b>中</b></span><span class="head"><code class="rid">python-xss-starlette-js</code> <span class="cwe">CWE-79</span><span class="title">FastAPI or Starlette HTML response with a request value inside a script without the escaping that context needs</span></span></summary>
+    
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><pre><code>@app.get(&#34;/viewer&#34;)
+async def viewer(request: Request):
+    doc = request.query_params.get(&#34;doc&#34;, &#34;&#34;)
+    return HTMLResponse(f&#34;&lt;html&gt;&lt;body&gt;&lt;script&gt;const docRef = &#39;{doc}&#39;;&lt;/script&gt;&lt;/body&gt;&lt;/html&gt;&#34;)</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><pre><code>@app.get(&#34;/viewer&#34;)
+async def viewer(request: Request):
+    doc = request.query_params.get(&#34;doc&#34;, &#34;&#34;)
+    return templates.TemplateResponse(request, &#34;viewer.html&#34;, {&#34;doc&#34;: doc})</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Pass data to scripts as JSON that also escapes &#39;&lt;&#39; (a JSON script element), never inside a hand-written string literal; json.dumps alone does not escape &#39;&lt;/script&gt;&#39;.</p>
+  </details>
+  
+  <details class="rule" id="python-xss-starlette-url" data-rule-id="python-xss-starlette-url" data-lang="python" data-class="xss" data-sev="medium" data-text="python-xss-starlette-url CWE-79 FastAPI or Starlette HTML response with a request value at the start of a URL attribute (href, src, action) without the escaping that context needs">
+    <summary><span class="sev medium"><i aria-hidden="true">中</i><b>中</b></span><span class="head"><code class="rid">python-xss-starlette-url</code> <span class="cwe">CWE-79</span><span class="title">FastAPI or Starlette HTML response with a request value at the start of a URL attribute (href, src, action) without the escaping that context needs</span></span></summary>
+    
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><pre><code>@app.get(&#34;/continue&#34;)
+async def continue_page(request: Request):
+    dest = request.query_params.get(&#34;dest&#34;, &#34;/&#34;)
+    return HTMLResponse(f&#39;&lt;p&gt;&lt;a href=&#34;{html.escape(dest)}&#34;&gt;Continue&lt;/a&gt;&lt;/p&gt;&#39;)</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><pre><code>@app.get(&#34;/continue&#34;)
+async def continue_page(request: Request):
+    dest = request.query_params.get(&#34;dest&#34;, &#34;&#34;)
+    return HTMLResponse(f&#39;&lt;p&gt;&lt;a href=&#34;/start?dest={urllib.parse.quote(dest, safe=&#34;&#34;)}&#34;&gt;Continue&lt;/a&gt;&lt;/p&gt;&#39;)</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> HTML escaping does not stop a javascript: URL: build the link on the server, require http(s) and an allowed host, or put the value in the query string with urllib.parse.quote().</p>
+  </details>
+  
+  <details class="rule" id="python-xss-tornado-write-attr" data-rule-id="python-xss-tornado-write-attr" data-lang="python" data-class="xss" data-sev="medium" data-text="python-xss-tornado-write-attr CWE-79 Tornado handler writes a request value in an attribute value without the escaping that context needs">
+    <summary><span class="sev medium"><i aria-hidden="true">中</i><b>中</b></span><span class="head"><code class="rid">python-xss-tornado-write-attr</code> <span class="cwe">CWE-79</span><span class="title">Tornado handler writes a request value in an attribute value without the escaping that context needs</span></span></summary>
+    
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><pre><code>class SearchBox(tornado.web.RequestHandler):
+    def get(self):
+        term = self.get_query_argument(&#34;term&#34;, &#34;&#34;)
+        self.finish(f&#39;&lt;input name=&#34;term&#34; value=&#34;{term}&#34;&gt;&#39;)</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><pre><code>class SearchBox(tornado.web.RequestHandler):
+    def get(self):
+        term = self.get_query_argument(&#34;term&#34;, &#34;&#34;)
+        self.finish(f&#39;&lt;input name=&#34;term&#34; value=&#34;{tornado.escape.xhtml_escape(term)}&#34;&gt;&#39;)</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Escape the value with tornado.escape.xhtml_escape() (it escapes quotes too), or render a template.</p>
+  </details>
+  
+  <details class="rule" id="python-xss-tornado-write-html" data-rule-id="python-xss-tornado-write-html" data-lang="python" data-class="xss" data-sev="medium" data-text="python-xss-tornado-write-html CWE-79 Tornado handler writes a request value between tags without the escaping that context needs">
+    <summary><span class="sev medium"><i aria-hidden="true">中</i><b>中</b></span><span class="head"><code class="rid">python-xss-tornado-write-html</code> <span class="cwe">CWE-79</span><span class="title">Tornado handler writes a request value between tags without the escaping that context needs</span></span></summary>
+    
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><pre><code>class EchoNote(tornado.web.RequestHandler):
+    def get(self):
+        note = self.get_argument(&#34;note&#34;, &#34;&#34;)
+        self.write(&#34;&lt;div class=&#39;note&#39;&gt;&#34; &#43; note &#43; &#34;&lt;/div&gt;&#34;)</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><pre><code>class EchoNote(tornado.web.RequestHandler):
+    def get(self):
+        note = self.get_argument(&#34;note&#34;, &#34;&#34;)
+        self.write(&#34;&lt;div class=&#39;note&#39;&gt;&#34; &#43; tornado.escape.xhtml_escape(note) &#43; &#34;&lt;/div&gt;&#34;)</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Escape the value with tornado.escape.xhtml_escape(), or render a template (Tornado templates escape by default).</p>
+  </details>
+  
+  <details class="rule" id="python-xss-tornado-write-js" data-rule-id="python-xss-tornado-write-js" data-lang="python" data-class="xss" data-sev="medium" data-text="python-xss-tornado-write-js CWE-79 Tornado handler writes a request value inside a script without the escaping that context needs">
+    <summary><span class="sev medium"><i aria-hidden="true">中</i><b>中</b></span><span class="head"><code class="rid">python-xss-tornado-write-js</code> <span class="cwe">CWE-79</span><span class="title">Tornado handler writes a request value inside a script without the escaping that context needs</span></span></summary>
+    
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><pre><code>class Widget(tornado.web.RequestHandler):
+    def get(self):
+        theme = self.get_argument(&#34;theme&#34;, &#34;light&#34;)
+        self.write(&#34;&lt;script&gt;window.widgetTheme = &#39;&#34; &#43; theme &#43; &#34;&#39;;&lt;/script&gt;&#34;)</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><pre><code>class Widget(tornado.web.RequestHandler):
+    def get(self):
+        theme = self.get_argument(&#34;theme&#34;, &#34;light&#34;)
+        self.write(&#34;&lt;script&gt;window.widgetTheme = &#34; &#43; tornado.escape.json_encode(theme) &#43; &#34;;&lt;/script&gt;&#34;)</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Pass data to scripts as JSON with tornado.escape.json_encode() (it escapes &#39;&lt;/&#39;), never inside a hand-written string literal.</p>
+  </details>
+  
+  <details class="rule" id="python-xss-tornado-write-url" data-rule-id="python-xss-tornado-write-url" data-lang="python" data-class="xss" data-sev="medium" data-text="python-xss-tornado-write-url CWE-79 Tornado handler writes a request value at the start of a URL attribute (href, src, action) without the escaping that context needs">
+    <summary><span class="sev medium"><i aria-hidden="true">中</i><b>中</b></span><span class="head"><code class="rid">python-xss-tornado-write-url</code> <span class="cwe">CWE-79</span><span class="title">Tornado handler writes a request value at the start of a URL attribute (href, src, action) without the escaping that context needs</span></span></summary>
+    
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><pre><code>class BackLink(tornado.web.RequestHandler):
+    def get(self):
+        target = self.get_argument(&#34;back&#34;, &#34;/&#34;)
+        self.write(&#39;&lt;a href=&#34;&#39; &#43; target &#43; &#39;&#34;&gt;back&lt;/a&gt;&#39;)</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><pre><code>class BackLink(tornado.web.RequestHandler):
+    def get(self):
+        target = self.get_argument(&#34;back&#34;, &#34;&#34;)
+        self.write(&#39;&lt;a href=&#34;/list?from=&#39; &#43; tornado.escape.url_escape(target) &#43; &#39;&#34;&gt;back&lt;/a&gt;&#39;)</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> HTML escaping does not stop a javascript: URL: build the link on the server, require http(s) and an allowed host, or put the value in the query string with tornado.escape.url_escape().</p>
+  </details>
+  
 </section>
 
 <section class="group" data-lang="python" data-class="xxe">
@@ -948,7 +1928,7 @@ doc = etree.fromstring(request.data, parser)</code></pre></div>
   
   <details class="rule" id="js-cmdi-exec" data-rule-id="js-cmdi-exec" data-lang="js" data-class="cmdi" data-sev="critical" data-text="js-cmdi-exec CWE-78 Untrusted value placed into a command string run by exec/execSync">
     <summary><span class="sev critical"><i aria-hidden="true">極</i><b>極危</b></span><span class="head"><code class="rid">js-cmdi-exec</code> <span class="cwe">CWE-78</span><span class="title">Untrusted value placed into a command string run by exec/execSync</span></span></summary>
-    <p class="meta">框架: express, nestjs, nextjs</p>
+    <p class="meta">框架: express, nestjs, nextjs, koa, fastify, hapi</p>
     <div class="samples">
       <div class="sample bad-s"><h3 class="bad">會報出</h3><pre><code>app.post(&#34;/convert&#34;, upload.single(&#34;audio&#34;), (req, res) =&gt; {
   exec(`ffmpeg -i &#34;${req.file.path}&#34; -ar 16000 &#34;/tmp/out/${req.file.originalname}.wav&#34;`, (err) =&gt; {
@@ -964,9 +1944,44 @@ doc = etree.fromstring(request.data, parser)</code></pre></div>
     <p class="fix"><strong>修法</strong> Use execFile or spawn with an argument array (no shell) so the value is one argument; never build a command string from input.</p>
   </details>
   
+  <details class="rule" id="js-cmdi-promisified-exec" data-rule-id="js-cmdi-promisified-exec" data-lang="js" data-class="cmdi" data-sev="critical" data-text="js-cmdi-promisified-exec CWE-78 Request input in a shell command run through a promisified exec">
+    <summary><span class="sev critical"><i aria-hidden="true">極</i><b>極危</b></span><span class="head"><code class="rid">js-cmdi-promisified-exec</code> <span class="cwe">CWE-78</span><span class="title">Request input in a shell command run through a promisified exec</span></span></summary>
+    <p class="meta">框架: express, koa, fastify, hapi</p>
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><p class="note">escaping double quotes still leaves $(...) and backticks to the shell</p><pre><code>const execAsync = promisify(exec);
+app.post(&#34;/profile/signature&#34;, async (req, res) =&gt; {
+  const quoted = String(req.body.signature).split(&#39;&#34;&#39;).join(&#39;\\&#34;&#39;);
+  const { stdout } = await execAsync(`printf &#34;%s&#34; &#34;${quoted}&#34; | fold -w 72`);
+  res.type(&#34;text&#34;).send(stdout);
+});</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><p class="note">as the fix says: execFile with the value as its own argument</p><pre><code>const execFileAsync = promisify(execFile);
+app.post(&#34;/profile/signature&#34;, async (req, res) =&gt; {
+  const { stdout } = await execFileAsync(&#34;fold&#34;, [&#34;-w&#34;, &#34;72&#34;], { input: String(req.body.signature) });
+  res.type(&#34;text&#34;).send(stdout);
+});</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Run the program with execFile or spawn and pass the input as a separate argument (no shell); escaping quotes in a shell string does not stop $(...) or backticks.</p>
+  </details>
+  
+  <details class="rule" id="js-cmdi-spawn-sh-c" data-rule-id="js-cmdi-spawn-sh-c" data-lang="js" data-class="cmdi" data-sev="critical" data-text="js-cmdi-spawn-sh-c CWE-78 Request input in a command line handed to a shell as sh -c (or bash -c, cmd /c, powershell -Command)">
+    <summary><span class="sev critical"><i aria-hidden="true">極</i><b>極危</b></span><span class="head"><code class="rid">js-cmdi-spawn-sh-c</code> <span class="cwe">CWE-78</span><span class="title">Request input in a command line handed to a shell as sh -c (or bash -c, cmd /c, powershell -Command)</span></span></summary>
+    <p class="meta">框架: express, koa, fastify, hapi</p>
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><p class="note">no shell option, but the program is a shell and -c makes it parse the string</p><pre><code>app.post(&#34;/time&#34;, (req, res) =&gt; {
+  const child = spawn(&#39;sh&#39;, [&#39;-c&#39;, `date -s &#34;${req.body.datetime}&#34;`]);
+  child.on(&#34;close&#34;, (code) =&gt; res.json({ code }));
+});</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><pre><code>app.post(&#34;/time&#34;, (req, res) =&gt; {
+  const child = spawn(&#39;date&#39;, [&#39;-s&#39;, String(req.body.datetime)]);
+  child.on(&#34;close&#34;, (code) =&gt; res.json({ code }));
+});</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Run the program itself with its arguments in an array (spawn(&#39;date&#39;, [&#39;-s&#39;, value])), not a shell with -c; validate the value against a strict pattern first.</p>
+  </details>
+  
   <details class="rule" id="js-cmdi-spawn-shell" data-rule-id="js-cmdi-spawn-shell" data-lang="js" data-class="cmdi" data-sev="critical" data-text="js-cmdi-spawn-shell CWE-78 spawn/execFile with shell: true on a command line that includes untrusted values">
     <summary><span class="sev critical"><i aria-hidden="true">極</i><b>極危</b></span><span class="head"><code class="rid">js-cmdi-spawn-shell</code> <span class="cwe">CWE-78</span><span class="title">spawn/execFile with shell: true on a command line that includes untrusted values</span></span></summary>
-    <p class="meta">框架: express, nestjs, nextjs</p>
+    <p class="meta">框架: express, nestjs, nextjs, koa, fastify, hapi</p>
     <div class="samples">
       <div class="sample bad-s"><h3 class="bad">會報出</h3><pre><code>app.post(&#34;/build&#34;, (req, res) =&gt; {
   const child = spawn(&#34;gradle&#34;, [&#34;build&#34;, `-Pflavor=${req.body.flavor}`], { shell: true });
@@ -987,7 +2002,7 @@ doc = etree.fromstring(request.data, parser)</code></pre></div>
   
   <details class="rule" id="js-code-eval-eval" data-rule-id="js-code-eval-eval" data-lang="js" data-class="code-eval" data-sev="critical" data-text="js-code-eval-eval CWE-94 eval, Function constructor or node:vm on request input">
     <summary><span class="sev critical"><i aria-hidden="true">極</i><b>極危</b></span><span class="head"><code class="rid">js-code-eval-eval</code> <span class="cwe">CWE-94</span><span class="title">eval, Function constructor or node:vm on request input</span></span></summary>
-    <p class="meta">框架: express, nestjs, nextjs</p>
+    <p class="meta">框架: express, nestjs, nextjs, koa, fastify, hapi</p>
     <div class="samples">
       <div class="sample bad-s"><h3 class="bad">會報出</h3><pre><code>app.post(&#34;/calc&#34;, (req, res) =&gt; {
   res.json({ result: eval(req.body.expr) });
@@ -1003,7 +2018,7 @@ doc = etree.fromstring(request.data, parser)</code></pre></div>
   
   <details class="rule" id="js-code-eval-template-options" data-rule-id="js-code-eval-template-options" data-lang="js" data-class="code-eval" data-sev="critical" data-text="js-code-eval-template-options CWE-94 Whole request object passed as template render data or options, or compiled as a template">
     <summary><span class="sev critical"><i aria-hidden="true">極</i><b>極危</b></span><span class="head"><code class="rid">js-code-eval-template-options</code> <span class="cwe">CWE-94</span><span class="title">Whole request object passed as template render data or options, or compiled as a template</span></span></summary>
-    <p class="meta">框架: express, nestjs, nextjs</p>
+    <p class="meta">框架: express, nestjs, nextjs, koa, fastify, hapi</p>
     <div class="samples">
       <div class="sample bad-s"><h3 class="bad">會報出</h3><p class="note">engines may read settings / view options from the data object</p><pre><code>app.get(&#34;/page&#34;, (req, res) =&gt; {
   res.render(&#34;page&#34;, req.query);
@@ -1022,7 +2037,7 @@ doc = etree.fromstring(request.data, parser)</code></pre></div>
   
   <details class="rule" id="js-deserialization-node-serialize" data-rule-id="js-deserialization-node-serialize" data-lang="js" data-class="deserialization" data-sev="critical" data-text="js-deserialization-node-serialize CWE-502 Function-reviving deserializer (node-serialize, serialize-to-js, funcster) on client data">
     <summary><span class="sev critical"><i aria-hidden="true">極</i><b>極危</b></span><span class="head"><code class="rid">js-deserialization-node-serialize</code> <span class="cwe">CWE-502</span><span class="title">Function-reviving deserializer (node-serialize, serialize-to-js, funcster) on client data</span></span></summary>
-    <p class="meta">框架: express, nestjs, nextjs</p>
+    <p class="meta">框架: express, nestjs, nextjs, koa, fastify, hapi</p>
     <div class="samples">
       <div class="sample bad-s"><h3 class="bad">會報出</h3><pre><code>app.get(&#34;/&#34;, (req, res) =&gt; {
   const prefs = serialize.unserialize(Buffer.from(req.cookies.prefs || &#34;e30=&#34;, &#34;base64&#34;).toString());
@@ -1041,7 +2056,7 @@ doc = etree.fromstring(request.data, parser)</code></pre></div>
   
   <details class="rule" id="js-deserialization-yaml-load" data-rule-id="js-deserialization-yaml-load" data-lang="js" data-class="deserialization" data-sev="high" data-text="js-deserialization-yaml-load CWE-502 js-yaml 3.x load() (or a full schema) on untrusted YAML">
     <summary><span class="sev high"><i aria-hidden="true">高</i><b>高</b></span><span class="head"><code class="rid">js-deserialization-yaml-load</code> <span class="cwe">CWE-502</span><span class="title">js-yaml 3.x load() (or a full schema) on untrusted YAML</span></span></summary>
-    <p class="meta">框架: express, nestjs, nextjs</p>
+    <p class="meta">框架: express, nestjs, nextjs, koa, fastify, hapi</p>
     <div class="samples">
       <div class="sample bad-s"><h3 class="bad">會報出</h3><p class="note">js-yaml 3.x: !!js/function tags become callable code</p><pre><code>app.post(&#34;/pipeline&#34;, express.text(), (req, res) =&gt; {
   const spec = yaml.load(req.body, { schema: yaml.DEFAULT_FULL_SCHEMA });
@@ -1102,7 +2117,7 @@ const pool = mysql.createPool({ host: &#34;db&#34;, user: &#34;app&#34;, passwor
   
   <details class="rule" id="js-ldapi-filter" data-rule-id="js-ldapi-filter" data-lang="js" data-class="ldapi" data-sev="high" data-text="js-ldapi-filter CWE-90 Request value placed in an LDAP search filter without escaping">
     <summary><span class="sev high"><i aria-hidden="true">高</i><b>高</b></span><span class="head"><code class="rid">js-ldapi-filter</code> <span class="cwe">CWE-90</span><span class="title">Request value placed in an LDAP search filter without escaping</span></span></summary>
-    <p class="meta">框架: express</p>
+    <p class="meta">框架: express, nestjs, nextjs, koa, fastify, hapi</p>
     <div class="samples">
       <div class="sample bad-s"><h3 class="bad">會報出</h3><pre><code>app.post(&#34;/login&#34;, (req, res) =&gt; {
   const opts = { filter: `(&amp;(uid=${req.body.user})(objectClass=person))`, scope: &#34;sub&#34; };
@@ -1124,7 +2139,7 @@ const pool = mysql.createPool({ host: &#34;db&#34;, user: &#34;app&#34;, passwor
   
   <details class="rule" id="js-nosqli-mongo-query" data-rule-id="js-nosqli-mongo-query" data-lang="js" data-class="nosqli" data-sev="high" data-text="js-nosqli-mongo-query CWE-943 Request data placed in a MongoDB query without forcing it to a string">
     <summary><span class="sev high"><i aria-hidden="true">高</i><b>高</b></span><span class="head"><code class="rid">js-nosqli-mongo-query</code> <span class="cwe">CWE-943</span><span class="title">Request data placed in a MongoDB query without forcing it to a string</span></span></summary>
-    <p class="meta">框架: express</p>
+    <p class="meta">框架: express, nestjs, nextjs, koa, fastify, hapi</p>
     <div class="samples">
       <div class="sample bad-s"><h3 class="bad">會報出</h3><p class="note">a JSON body {&#34;password&#34;: {&#34;$ne&#34;: &#34;&#34;}} matches any password</p><pre><code>app.post(&#34;/login&#34;, async (req, res) =&gt; {
   const user = await User.findOne({ username: req.body.username, password: req.body.password });
@@ -1144,9 +2159,81 @@ const pool = mysql.createPool({ host: &#34;db&#34;, user: &#34;app&#34;, passwor
 <section class="group" data-lang="js" data-class="open-redirect">
   <h2><span class="g-lang">JavaScript / TypeScript</span> 開放重新導向</h2>
   
+  <details class="rule" id="js-open-redirect-framework" data-rule-id="js-open-redirect-framework" data-lang="js" data-class="open-redirect" data-sev="medium" data-text="js-open-redirect-framework CWE-601 Koa, Fastify or Hapi redirect to a URL taken from the request">
+    <summary><span class="sev medium"><i aria-hidden="true">中</i><b>中</b></span><span class="head"><code class="rid">js-open-redirect-framework</code> <span class="cwe">CWE-601</span><span class="title">Koa, Fastify or Hapi redirect to a URL taken from the request</span></span></summary>
+    <p class="meta">框架: koa, fastify, hapi</p>
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><p class="note">a path like //evil.example/ turns into a protocol-relative redirect</p><pre><code>app.use(async (ctx, next) =&gt; {
+  if (ctx.path.length &gt; 1 &amp;&amp; ctx.path.endsWith(&#34;/&#34;)) {
+    return ctx.redirect(ctx.path.slice(0, -1) &#43; ctx.search);
+  }
+  await next();
+});</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><p class="note">as the fix says: a fixed path first, the value encoded after it</p><pre><code>router.get(&#34;/go/:id&#34;, async (ctx) =&gt; {
+  ctx.redirect(&#34;/account/&#34; &#43; encodeURIComponent(ctx.params.id));
+});</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Redirect to a fixed path on this site with the value only after it (&#39;/account/&#39; &#43; encodeURIComponent(id)), or to a URL from an allowlist; a value that starts the URL can be //evil.example.</p>
+  </details>
+  
+  <details class="rule" id="js-open-redirect-host-header" data-rule-id="js-open-redirect-host-header" data-lang="js" data-class="open-redirect" data-sev="medium" data-text="js-open-redirect-host-header CWE-601 Redirect to a URL built from the request&#39;s Host header">
+    <summary><span class="sev medium"><i aria-hidden="true">中</i><b>中</b></span><span class="head"><code class="rid">js-open-redirect-host-header</code> <span class="cwe">CWE-601</span><span class="title">Redirect to a URL built from the request&#39;s Host header</span></span></summary>
+    <p class="meta">框架: express, koa, fastify, hapi</p>
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><p class="note">an HTTP request with Host: evil.example is redirected to https://evil.example</p><pre><code>app.use((req, res, next) =&gt; {
+  if (!req.secure) return res.redirect(301, &#34;https://&#34; &#43; req.headers[&#39;host&#39;] &#43; req.url);
+  next();
+});</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><p class="note">as the fix says: a configured origin</p><pre><code>const ORIGIN = process.env.PUBLIC_ORIGIN || &#34;https://www.example.com&#34;;
+app.use((req, res, next) =&gt; {
+  if (!req.secure) return res.redirect(301, ORIGIN &#43; req.originalUrl);
+  next();
+});</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Build the redirect URL from a configured origin (process.env.PUBLIC_ORIGIN or a constant), never from the Host or X-Forwarded-Host header, which the client chooses.</p>
+  </details>
+  
+  <details class="rule" id="js-open-redirect-location-header" data-rule-id="js-open-redirect-location-header" data-lang="js" data-class="open-redirect" data-sev="medium" data-text="js-open-redirect-location-header CWE-601 Location header set from the request URL or a request value">
+    <summary><span class="sev medium"><i aria-hidden="true">中</i><b>中</b></span><span class="head"><code class="rid">js-open-redirect-location-header</code> <span class="cwe">CWE-601</span><span class="title">Location header set from the request URL or a request value</span></span></summary>
+    <p class="meta">框架: express, koa, fastify</p>
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><p class="note">a request for //evil.example/ is redirected off the site</p><pre><code>app.use((req, res, next) =&gt; {
+  if (req.url.length &gt; 1 &amp;&amp; req.url.endsWith(&#34;/&#34;)) {
+    res.status(301);
+    res.set(&#39;Location&#39;, req.url.slice(0, -1));
+    return res.end();
+  }
+  next();
+});</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><p class="note">as the fix says: a fixed path first, the value encoded after it</p><pre><code>app.get(&#34;/docs&#34;, (req, res) =&gt; {
+  res.status(302);
+  res.set(&#39;Location&#39;, &#34;/docs/&#34; &#43; encodeURIComponent(req.query.name));
+  res.end();
+});</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Build the Location value from a fixed path on this site with the value only after it (&#39;/docs/&#39; &#43; encodeURIComponent(name)), or from an allowlist; never start it with the request path, which can be //evil.example.</p>
+  </details>
+  
+  <details class="rule" id="js-open-redirect-next" data-rule-id="js-open-redirect-next" data-lang="js" data-class="open-redirect" data-sev="medium" data-text="js-open-redirect-next CWE-601 Next.js redirect to a URL taken from the request or the Host header">
+    <summary><span class="sev medium"><i aria-hidden="true">中</i><b>中</b></span><span class="head"><code class="rid">js-open-redirect-next</code> <span class="cwe">CWE-601</span><span class="title">Next.js redirect to a URL taken from the request or the Host header</span></span></summary>
+    <p class="meta">框架: nextjs</p>
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><p class="note">an absolute returnTo wins over the base of new URL</p><pre><code>export async function GET(request: NextRequest) {
+  const back = request.nextUrl.searchParams.get(&#34;back&#34;) ?? &#34;/&#34;;
+  return NextResponse.redirect(new URL(back, request.url));
+}</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><p class="note">as the fix says: a path from an allowlist, otherwise a fixed page</p><pre><code>const BACK = new Set([&#34;/&#34;, &#34;/orders&#34;, &#34;/settings&#34;]);
+export async function GET(request: NextRequest) {
+  const back = request.nextUrl.searchParams.get(&#34;back&#34;) ?? &#34;/&#34;;
+  return NextResponse.redirect(new URL(BACK.has(back) ? back : &#34;/&#34;, request.url));
+}</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Redirect only to a path from an allowlist, or resolve the value with new URL(value, request.url) and use it only when its origin equals the site&#39;s own; build absolute URLs from request.url, never from the Host header. A check that the value starts with a single &#34;/&#34; is not enough: browsers drop tabs and newlines, so /	/evil.example becomes //evil.example.</p>
+  </details>
+  
   <details class="rule" id="js-open-redirect-redirect" data-rule-id="js-open-redirect-redirect" data-lang="js" data-class="open-redirect" data-sev="medium" data-text="js-open-redirect-redirect CWE-601 Redirect to a URL taken from the request">
     <summary><span class="sev medium"><i aria-hidden="true">中</i><b>中</b></span><span class="head"><code class="rid">js-open-redirect-redirect</code> <span class="cwe">CWE-601</span><span class="title">Redirect to a URL taken from the request</span></span></summary>
-    <p class="meta">框架: express</p>
+    <p class="meta">框架: express, nestjs, nextjs, koa, fastify, hapi</p>
     <div class="samples">
       <div class="sample bad-s"><h3 class="bad">會報出</h3><pre><code>app.post(&#34;/login&#34;, (req, res) =&gt; {
   login(req);
@@ -1191,9 +2278,45 @@ app.post(&#34;/import&#34;, upload.single(&#34;bundle&#34;), (req, res) =&gt; {
     <p class="fix"><strong>修法</strong> Resolve each entry against the destination and skip it unless the result starts with the destination plus path.sep; reject absolute names and links.</p>
   </details>
   
+  <details class="rule" id="js-path-traversal-exists-probe" data-rule-id="js-path-traversal-exists-probe" data-lang="js" data-class="path-traversal" data-sev="medium" data-text="js-path-traversal-exists-probe CWE-22 Request input names a path whose existence or metadata is checked">
+    <summary><span class="sev medium"><i aria-hidden="true">中</i><b>中</b></span><span class="head"><code class="rid">js-path-traversal-exists-probe</code> <span class="cwe">CWE-22</span><span class="title">Request input names a path whose existence or metadata is checked</span></span></summary>
+    <p class="meta">框架: express, koa, fastify, hapi</p>
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><p class="note">a 200 or 404 tells the client whether any file on the server exists</p><pre><code>app.get(&#34;/assets/*&#34;, (req, res) =&gt; {
+  const file = path.join(ASSETS, decodeURIComponent(req.params[0]));
+  if (!fs.existsSync(file)) return res.sendStatus(404);
+  res.sendStatus(200);
+});</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><pre><code>const ROOT = path.resolve(ASSETS) &#43; path.sep;
+app.get(&#34;/assets/*&#34;, (req, res) =&gt; {
+  const file = path.resolve(ROOT, decodeURIComponent(req.params[0]));
+  if (!file.startsWith(ROOT)) return res.sendStatus(403);
+  if (!fs.existsSync(file)) return res.sendStatus(404);
+  res.sendStatus(200);
+});</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Resolve the path and require it to start with the base folder plus path.sep (or take only a base name) before checking it, so the answer cannot reveal which files exist elsewhere on the server.</p>
+  </details>
+  
+  <details class="rule" id="js-path-traversal-fs-ops" data-rule-id="js-path-traversal-fs-ops" data-lang="js" data-class="path-traversal" data-sev="high" data-text="js-path-traversal-fs-ops CWE-22 Request input names a path that is deleted, created, renamed, listed or written">
+    <summary><span class="sev high"><i aria-hidden="true">高</i><b>高</b></span><span class="head"><code class="rid">js-path-traversal-fs-ops</code> <span class="cwe">CWE-22</span><span class="title">Request input names a path that is deleted, created, renamed, listed or written</span></span></summary>
+    <p class="meta">框架: express, koa, fastify, hapi</p>
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><p class="note">dir_name=../../ removes a folder outside the uploads</p><pre><code>app.post(&#34;/files/rmdir&#34;, async (req, res) =&gt; {
+  await fs.promises.rm(path.join(UPLOADS, req.body.dir_name), { recursive: true, force: true });
+  res.json({ ok: true });
+});</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><pre><code>app.post(&#34;/files/rmdir&#34;, async (req, res) =&gt; {
+  await fs.promises.rm(path.join(UPLOADS, path.basename(req.body.dir_name)), { recursive: true, force: true });
+  res.json({ ok: true });
+});</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Take only a file name from the request (path.basename), or resolve the path and require it to start with the base folder plus path.sep before touching the file system.</p>
+  </details>
+  
   <details class="rule" id="js-path-traversal-send-file" data-rule-id="js-path-traversal-send-file" data-lang="js" data-class="path-traversal" data-sev="high" data-text="js-path-traversal-send-file CWE-22 Request value joined into a path that is read, written or sent">
     <summary><span class="sev high"><i aria-hidden="true">高</i><b>高</b></span><span class="head"><code class="rid">js-path-traversal-send-file</code> <span class="cwe">CWE-22</span><span class="title">Request value joined into a path that is read, written or sent</span></span></summary>
-    <p class="meta">框架: express, nestjs, nextjs</p>
+    <p class="meta">框架: express, nestjs, nextjs, koa, fastify, hapi</p>
     <div class="samples">
       <div class="sample bad-s"><h3 class="bad">會報出</h3><p class="note">path.join normalizes ../ instead of rejecting it</p><pre><code>app.get(&#34;/files/:name&#34;, (req, res) =&gt; {
   res.sendFile(path.join(__dirname, &#34;uploads&#34;, req.params.name));
@@ -1210,9 +2333,27 @@ app.post(&#34;/import&#34;, upload.single(&#34;bundle&#34;), (req, res) =&gt; {
 <section class="group" data-lang="js" data-class="sqli">
   <h2><span class="g-lang">JavaScript / TypeScript</span> SQL 注入</h2>
   
+  <details class="rule" id="js-sqli-node-http-query" data-rule-id="js-sqli-node-http-query" data-lang="js" data-class="sqli" data-sev="high" data-text="js-sqli-node-http-query CWE-89 Query string of a plain Node http request concatenated into SQL">
+    <summary><span class="sev high"><i aria-hidden="true">高</i><b>高</b></span><span class="head"><code class="rid">js-sqli-node-http-query</code> <span class="cwe">CWE-89</span><span class="title">Query string of a plain Node http request concatenated into SQL</span></span></summary>
+    
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><p class="note">escaping the values does not protect the table name taken from the query string</p><pre><code>http.createServer((request, response) =&gt; {
+  const parts = url.parse(request.url, true);
+  connection.query(&#34;INSERT INTO notes_&#34; &#43; parts.query.table &#43; &#34; (note) VALUES (&#34; &#43; connection.escape(parts.query.note) &#43; &#34;)&#34;, () =&gt; response.end());
+}).listen(8080);</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><pre><code>const TABLES = new Set([&#34;daily&#34;, &#34;weekly&#34;]);
+http.createServer((request, response) =&gt; {
+  const q = url.parse(request.url, true).query;
+  if (!TABLES.has(q.table)) { response.statusCode = 400; return response.end(); }
+  connection.query(&#34;INSERT INTO notes_&#34; &#43; q.table &#43; &#34; (note) VALUES (?)&#34;, [q.note], () =&gt; response.end());
+}).listen(8080);</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Pass the values as query parameters (query(&#39;... WHERE a = ?&#39;, [a])); a table or column name from the query string must come from a fixed list.</p>
+  </details>
+  
   <details class="rule" id="js-sqli-object-input" data-rule-id="js-sqli-object-input" data-lang="js" data-class="sqli" data-sev="medium" data-text="js-sqli-object-input CWE-89 Parsed request value (may be an object or array) passed straight into a query-builder condition">
     <summary><span class="sev medium"><i aria-hidden="true">中</i><b>中</b></span><span class="head"><code class="rid">js-sqli-object-input</code> <span class="cwe">CWE-89</span><span class="title">Parsed request value (may be an object or array) passed straight into a query-builder condition</span></span></summary>
-    <p class="meta">框架: express, nestjs, nextjs</p>
+    <p class="meta">框架: express, nestjs, nextjs, koa, fastify, hapi</p>
     <div class="samples">
       <div class="sample bad-s"><h3 class="bad">會報出</h3><p class="note">?email[foo]=bar or a JSON object body changes the shape of the condition</p><pre><code>app.post(&#34;/login&#34;, async (req, res) =&gt; {
   const user = await knex(&#34;users&#34;).where({ email: req.body.email }).first();
@@ -1229,7 +2370,7 @@ app.post(&#34;/import&#34;, upload.single(&#34;bundle&#34;), (req, res) =&gt; {
   
   <details class="rule" id="js-sqli-raw-interpolation" data-rule-id="js-sqli-raw-interpolation" data-lang="js" data-class="sqli" data-sev="high" data-text="js-sqli-raw-interpolation CWE-89 Request input concatenated or interpolated into SQL for a driver or knex.raw">
     <summary><span class="sev high"><i aria-hidden="true">高</i><b>高</b></span><span class="head"><code class="rid">js-sqli-raw-interpolation</code> <span class="cwe">CWE-89</span><span class="title">Request input concatenated or interpolated into SQL for a driver or knex.raw</span></span></summary>
-    <p class="meta">框架: express, nestjs, nextjs</p>
+    <p class="meta">框架: express, nestjs, nextjs, koa, fastify, hapi</p>
     <div class="samples">
       <div class="sample bad-s"><h3 class="bad">會報出</h3><pre><code>app.get(&#34;/users&#34;, async (req, res) =&gt; {
   const [rows] = await pool.query(&#34;SELECT id, email FROM users WHERE name = &#39;&#34; &#43; req.query.name &#43; &#34;&#39;&#34;);
@@ -1245,7 +2386,7 @@ app.post(&#34;/import&#34;, upload.single(&#34;bundle&#34;), (req, res) =&gt; {
   
   <details class="rule" id="js-sqli-sequelize-literal" data-rule-id="js-sqli-sequelize-literal" data-lang="js" data-class="sqli" data-sev="high" data-text="js-sqli-sequelize-literal CWE-89 Request input placed into Sequelize.literal or a raw sequelize.query string">
     <summary><span class="sev high"><i aria-hidden="true">高</i><b>高</b></span><span class="head"><code class="rid">js-sqli-sequelize-literal</code> <span class="cwe">CWE-89</span><span class="title">Request input placed into Sequelize.literal or a raw sequelize.query string</span></span></summary>
-    <p class="meta">框架: express, nestjs, nextjs</p>
+    <p class="meta">框架: express, nestjs, nextjs, koa, fastify, hapi</p>
     <div class="samples">
       <div class="sample bad-s"><h3 class="bad">會報出</h3><pre><code>router.get(&#34;/messages&#34;, async (req, res) =&gt; {
   const before = req.query.before;
@@ -1269,9 +2410,27 @@ app.post(&#34;/import&#34;, upload.single(&#34;bundle&#34;), (req, res) =&gt; {
 <section class="group" data-lang="js" data-class="ssrf">
   <h2><span class="g-lang">JavaScript / TypeScript</span> 伺服器端請求偽造（SSRF）</h2>
   
+  <details class="rule" id="js-ssrf-host-header" data-rule-id="js-ssrf-host-header" data-lang="js" data-class="ssrf" data-sev="high" data-text="js-ssrf-host-header CWE-918 Server builds a URL from the request&#39;s Host header and fetches it">
+    <summary><span class="sev high"><i aria-hidden="true">高</i><b>高</b></span><span class="head"><code class="rid">js-ssrf-host-header</code> <span class="cwe">CWE-918</span><span class="title">Server builds a URL from the request&#39;s Host header and fetches it</span></span></summary>
+    <p class="meta">框架: express, koa, fastify, hapi</p>
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">會報出</h3><p class="note">the client picks the host the server then calls, with the server&#39;s network position</p><pre><code>app.get(&#34;/thumb/:id&#34;, async (req, res) =&gt; {
+  const base = req.protocol &#43; &#34;://&#34; &#43; req.get(&#39;host&#39;);
+  const r = await fetch(`${base}/internal/images/${encodeURIComponent(req.params.id)}`);
+  res.type(&#34;png&#34;).send(Buffer.from(await r.arrayBuffer()));
+});</code></pre></div>
+      <div class="sample good-s"><h3 class="good">修正後</h3><pre><code>const BASE_URL = process.env.BASE_URL || &#34;http://127.0.0.1:3000&#34;;
+app.get(&#34;/thumb/:id&#34;, async (req, res) =&gt; {
+  const r = await fetch(`${BASE_URL}/internal/images/${encodeURIComponent(req.params.id)}`);
+  res.type(&#34;png&#34;).send(Buffer.from(await r.arrayBuffer()));
+});</code></pre></div>
+    </div>
+    <p class="fix"><strong>修法</strong> Build server-side URLs from a configured base URL (or a fixed internal address), never from the Host or X-Forwarded-Host header, which the client chooses.</p>
+  </details>
+  
   <details class="rule" id="js-ssrf-http-request" data-rule-id="js-ssrf-http-request" data-lang="js" data-class="ssrf" data-sev="high" data-text="js-ssrf-http-request CWE-918 Server fetches a URL taken from the request">
     <summary><span class="sev high"><i aria-hidden="true">高</i><b>高</b></span><span class="head"><code class="rid">js-ssrf-http-request</code> <span class="cwe">CWE-918</span><span class="title">Server fetches a URL taken from the request</span></span></summary>
-    <p class="meta">框架: express</p>
+    <p class="meta">框架: express, nestjs, nextjs, koa, fastify, hapi</p>
     <div class="samples">
       <div class="sample bad-s"><h3 class="bad">會報出</h3><pre><code>app.get(&#34;/proxy&#34;, async (req, res) =&gt; {
   const r = await fetch(req.query.url);
@@ -1282,7 +2441,7 @@ app.post(&#34;/import&#34;, upload.single(&#34;bundle&#34;), (req, res) =&gt; {
   res.json(await r.json());
 });</code></pre></div>
     </div>
-    <p class="fix"><strong>修法</strong> Keep the scheme and host fixed and take only a path or an id from the request, or parse it with new URL() and require the hostname to be in an allowlist (and to resolve to a public address) before the request.</p>
+    <p class="fix"><strong>修法</strong> Keep the scheme and host fixed and take only an encoded path or id from the request, or accept only URLs from an allowlist. If you parse the URL to check its host, build the request from the checked host (new URL(input) -&gt; allowed host -&gt; &#39;https://&#39; &#43; host &#43; path), not from the parsed input object: a check on url.hostname is not recognised as cleaning url itself. Make sure the host resolves to a public address.</p>
   </details>
   
 </section>
@@ -1339,7 +2498,7 @@ document.getElementById(&#34;greeting&#34;).textContent = &#34;Hello &#34; &#43;
   
   <details class="rule" id="js-xss-response" data-rule-id="js-xss-response" data-lang="js" data-class="xss" data-sev="medium" data-text="js-xss-response CWE-79 Request value sent back in an HTML response without escaping">
     <summary><span class="sev medium"><i aria-hidden="true">中</i><b>中</b></span><span class="head"><code class="rid">js-xss-response</code> <span class="cwe">CWE-79</span><span class="title">Request value sent back in an HTML response without escaping</span></span></summary>
-    <p class="meta">框架: express</p>
+    <p class="meta">框架: express, nestjs, nextjs, koa, fastify, hapi</p>
     <div class="samples">
       <div class="sample bad-s"><h3 class="bad">會報出</h3><pre><code>app.get(&#34;/search&#34;, (req, res) =&gt; {
   res.send(`&lt;h1&gt;No results for ${req.query.q}&lt;/h1&gt;`);
@@ -1353,7 +2512,7 @@ document.getElementById(&#34;greeting&#34;).textContent = &#34;Hello &#34; &#43;
   
   <details class="rule" id="js-xss-response-url" data-rule-id="js-xss-response-url" data-lang="js" data-class="xss" data-sev="medium" data-text="js-xss-response-url CWE-79 Request value sent back as a link URL or inside a script">
     <summary><span class="sev medium"><i aria-hidden="true">中</i><b>中</b></span><span class="head"><code class="rid">js-xss-response-url</code> <span class="cwe">CWE-79</span><span class="title">Request value sent back as a link URL or inside a script</span></span></summary>
-    <p class="meta">框架: express</p>
+    <p class="meta">框架: express, nestjs, nextjs, koa, fastify, hapi</p>
     <div class="samples">
       <div class="sample bad-s"><h3 class="bad">會報出</h3><p class="note">escapeHtml keeps a javascript: URL</p><pre><code>app.get(&#34;/continue&#34;, (req, res) =&gt; {
   res.send(&#39;&lt;a href=&#34;&#39; &#43; escapeHtml(req.query.next) &#43; &#39;&#34;&gt;Continue&lt;/a&gt;&#39;);

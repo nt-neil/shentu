@@ -4,12 +4,12 @@ class = "code-eval"
 cwe = "CWE-1336"
 severity = "critical"
 title = "User-controlled text compiled as a Jinja2 template (server-side template injection)"
-frameworks = ["flask"]
-sources = ["request.args", "request.form", "request.json", "request.values"]
-sinks = ["render_template_string(", "Template(", ".from_string("]
-sanitizers = ["SandboxedEnvironment"]
+frameworks = ["flask", "django"]
+sources = ["request.args", "request.form", "request.json", "request.values", "request.GET", "request.POST", "request.body", "request.query_params", "request.path_params", "request.form(", "request.json(", "request.body(", "request.query", "request.match_info", "request.post(", "request.text(", "request.read(", "self.get_argument(", "self.get_arguments(", "self.get_query_argument(", "self.get_body_argument(", "self.request.body", "self.request.arguments"]
+sinks = ["render_template_string(", "Template(", ".from_string(", "jinja2.Template(", "tornado.template.Template(", "mako.template.Template("]
+sanitizers = ["SandboxedEnvironment", "ImmutableSandboxedEnvironment"]
 fix = "Pass user text as a variable to a fixed template (render_template('page.html', msg=text)); if users must write templates, render them in jinja2.sandbox.SandboxedEnvironment."
-refs = ["CVE-2026-104851", "CVE-2024-34359"]
+refs = ["CVE-2026-104851", "CVE-2024-34359", "CVE-2026-37004", "CVE-2024-45053"]
 
 [[args]]
 arg = 1   # the template source; values passed to render are data
@@ -47,4 +47,46 @@ env = SandboxedEnvironment()
 @app.post("/preview")
 def preview():
     return env.from_string(request.form["body"]).render(user_name=current_user.name)
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "a message template sent for preview is compiled by a plain Environment"
+code = '''
+renderer = Environment(autoescape=False)
+
+@api.post("/messages/preview")
+async def preview_message(request: Request):
+    data = await request.json()
+    compiled = renderer.from_string(data["text"])
+    return {"preview": compiled.render(name=data.get("name", ""))}
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+def render_banner(request):
+    banner = Environment().from_string(request.POST["banner"])
+    return HttpResponse(banner.render(site=SITE_NAME))
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+renderer = ImmutableSandboxedEnvironment(autoescape=True)
+
+@api.post("/messages/preview")
+async def preview_message(request: Request):
+    data = await request.json()
+    compiled = renderer.from_string(data["text"])
+    return {"preview": compiled.render(name=data.get("name", ""))}
+'''
+
+[[samples]]
+kind = "safe"
+note = "user text fills a placeholder; it is never compiled"
+code = '''
+def render_banner(request):
+    text = BANNER_TEXT.replace("[[site]]", request.POST["site"])
+    return HttpResponse(text, content_type="text/plain")
 '''

@@ -5,7 +5,7 @@ cwe = "CWE-502"
 severity = "critical"
 title = "pickle (or a pickle-based loader) on data from a request, cookie or upload"
 frameworks = ["django", "flask"]
-sources = ["request.GET", "request.POST", "request.body", "request.data", "request.files", "request.FILES", "request.cookies", "request.COOKIES", "request.args", "request.form", "request.values", "request.json", "request.get_json(", "request.headers", "request.META", "request.stream", "request.get_data("]
+sources = ["request.GET", "request.POST", "request.body", "request.data", "request.files", "request.FILES", "request.cookies", "request.COOKIES", "request.args", "request.form", "request.values", "request.json", "request.get_json(", "request.headers", "request.META", "request.stream", "request.get_data(", "request.query_params", "request.path_params", "request.form(", "request.json(", "request.body(", "request.query", "request.match_info", "request.post(", "request.text(", "request.read(", "self.get_argument(", "self.get_arguments(", "self.get_query_argument(", "self.get_body_argument(", "self.request.body", "self.request.arguments"]
 sinks = ["pickle.loads(", "pickle.load(", "cPickle.loads(", "dill.loads(", "joblib.load(", "pandas.read_pickle(", "jsonpickle.decode("]
 sanitizers = []
 fix = "Exchange plain data as JSON (json.loads) and rebuild objects explicitly; pickle can never be made safe for untrusted input."
@@ -26,4 +26,31 @@ def run_report(request, report_id):
     params = json.loads(request.GET["params"])
     allowed = {k: params[k] for k in ("start", "end", "queue") if k in params}
     return render(request, "report.html", build_report(report_id, **allowed))
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+@app.post("/state")
+async def restore_state(request: Request):
+    raw = await request.body()
+    state = pickle.loads(base64.b64decode(raw))
+    return {"keys": list(state)}
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+async def restore(request):
+    data = await request.read()
+    return web.json_response(pickle.loads(data))
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+@app.post("/state")
+async def restore_state(request: Request):
+    state = json.loads(await request.body())
+    return {"keys": list(state)}
 '''

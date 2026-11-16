@@ -1,0 +1,78 @@
+id = "php-sqli-codeigniter-query"
+lang = "php"
+class = "sqli"
+cwe = "CWE-89"
+severity = "high"
+tier = "info"
+title = "CodeIgniter request input written into SQL text, a raw where() or order_by()"
+sources = ["$this->input->get(", "$this->input->post(", "$this->input->get_post(", "$this->input->cookie(", "$this->request->getGet(", "$this->request->getPost(",
+           "$this->request->getVar(", "$this->request->getJSON(", "request(", "$_GET", "$_POST", "$_REQUEST"]
+sinks = ["$this->db->query(", "$db->query(", "$this->db->simple_query(", "->order_by(", "->where(", "->or_where(", "->orWhere(", "->having(", "->orderBy("]
+sanitizers = ["$this->db->escape(", "$db->escape(", "intval", "(int)", "in_array"]
+fix = "Pass values as query bindings ($this->db->query('... WHERE id = ?', [$id])), let where() quote them (where('name', $name)), and map sort columns and directions to a fixed allowlist; escape_str() is safe only inside quotes."
+refs = ["CVE-2025-50383"]
+
+[[args]]
+arg = 1
+whole = true
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+class Orders_model extends CI_Model
+{
+    public function search($keyword)
+    {
+        $sort = $this->input->get('sort');
+        return $this->db->from('orders')->like('reference', $keyword)->order_by($sort)->get()->result_array();
+    }
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+class Reports extends CI_Controller
+{
+    public function by_city()
+    {
+        $city = $this->input->post('city');
+        $rows = $this->db->query("SELECT * FROM sales WHERE city = '$city'")->result();
+        $this->output->set_output(json_encode($rows));
+    }
+}
+'''
+
+[[samples]]
+kind = "safe"
+note = "the fix: bindings for the value, an allowlist for the sort column"
+code = '''
+<?php
+class Reports extends CI_Controller
+{
+    public function by_city()
+    {
+        $sort = $this->input->get('sort');
+        if (!in_array($sort, ['city', 'total', 'created_at'], true)) {
+            $sort = 'created_at';
+        }
+        $rows = $this->db->query('SELECT * FROM sales WHERE city = ? ORDER BY ' . $sort, [$this->input->post('city')])->result();
+        $this->output->set_output(json_encode($rows));
+    }
+}
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+class Orders_model extends CI_Model
+{
+    public function by_customer()
+    {
+        return $this->db->where('customer_id', $this->input->get('customer'))->get('orders')->result_array();
+    }
+}
+'''
