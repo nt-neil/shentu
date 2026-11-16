@@ -46,35 +46,97 @@ type surfaceCache struct {
 	BuiltAt   time.Time      `json:"built_at"`
 	Surface   detect.Surface `json:"surface"`
 	CodeRoots []string       `json:"code_roots,omitempty"`
+	// Partial: the parts that could not be built this time (their entries
+	// are the previous surface's, when there was one), said every day.
+	Partial []string `json:"partial,omitempty"`
 }
 
-// saveSurface writes the surface the daily round built.
-func saveSurface(dir string, s detect.Surface, roots []string, now time.Time) error {
-	b, err := json.Marshal(surfaceCache{Version: 1, BuiltAt: now.UTC(), Surface: s, CodeRoots: roots})
+// maxSurfaceFile bounds what is read of surface.json.
+const maxSurfaceFile = 64 << 20
+
+// saveSurface writes the surface the daily round built, and what of it is
+// partial.
+func saveSurface(dir string, s detect.Surface, roots, partial []string, now time.Time) error {
+	b, err := json.Marshal(surfaceCache{Version: 1, BuiltAt: now.UTC(), Surface: s, CodeRoots: roots, Partial: partial})
 	if err != nil {
 		return err
 	}
 	return writeAtomic(filepath.Join(dir, surfaceFile), b)
 }
 
-// loadSurface is the cached surface and, when it is missing, unreadable
-// or older than surfaceStale, what to say about it (Chinese).
-func loadSurface(dir string, now time.Time) (detect.Surface, []string, string) {
-	b, err := os.ReadFile(filepath.Join(dir, surfaceFile))
-	if errors.Is(err, fs.ErrNotExist) {
-		return detect.Surface{}, nil, "漏洞面資料尚未建立（每日巡檢會建立），這輪只能比對不分漏洞的類別簽章，無法判定 L1～L3"
-	}
+// readSurface reads surface.json as the state files are read (no link
+// followed, ours, bounded).
+func readSurface(dir string) (surfaceCache, error) {
 	var c surfaceCache
-	if err == nil {
-		err = json.Unmarshal(b, &c)
+	b, err := detect.ReadStateFile(dir, surfaceFile, maxSurfaceFile)
+	if err != nil {
+		return c, err
 	}
-	if err != nil || c.Version != 1 {
-		return detect.Surface{}, nil, fmt.Sprintf("漏洞面資料無法讀取（%v），這輪無法判定 L1～L3，請檢查每日巡檢", err)
+	if err := json.Unmarshal(b, &c); err != nil {
+		return c, err
 	}
-	if age := now.Sub(c.BuiltAt); age > surfaceStale {
-		return c.Surface, c.CodeRoots, fmt.Sprintf("漏洞面資料過期：上次更新是 %s（%.0f 小時前），這輪用的是舊資料，新裝的套件或新改的程式碼不在其中", c.BuiltAt.Local().Format(time.DateTime), age.Hours())
+	if c.Version != 1 {
+		return c, fmt.Errorf("version %d, not 1", c.Version)
 	}
-	return c.Surface, c.CodeRoots, ""
+	return c, nil
+}
+
+// keepPrevious adds to s, built with some parts missing (appsFailed:
+// application dependencies, osFailed: OS packages), the previous
+// surface's entries of those parts: one failed query must not leave a
+// day of attacks on them judged noise.
+func keepPrevious(dir string, s detect.Surface, appsFailed, osFailed bool) detect.Surface {
+	if !appsFailed && !osFailed {
+		return s
+	}
+	prev, err := readSurface(dir)
+	if err != nil {
+		return s
+	}
+	have := map[string]bool{}
+	for _, e := range s.Entries {
+		have[e.ID] = true
+	}
+	for _, e := range prev.Surface.Entries {
+		if e.Kind != "package" || e.Installed || have[e.ID] {
+			continue
+		}
+		if e.Source == "os" && osFailed || e.Source != "os" && appsFailed {
+			if len(s.Entries) >= detect.MaxEntries {
+				s.TruncatedPackages++
+				continue
+			}
+			s.Entries = append(s.Entries, e)
+		}
+	}
+	return s
+}
+
+// loadSurface is the cached surface and what to say about it (Chinese):
+// missing, unreadable, older than surfaceStale (or dated in the future),
+// partial, or cut at MaxEntries.
+func loadSurface(dir string, now time.Time) (detect.Surface, []string, []string) {
+	c, err := readSurface(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return detect.Surface{}, nil, []string{"漏洞面資料尚未建立（每日巡檢會建立），這輪只能比對不分漏洞的類別簽章，無法判定 L1～L3"}
+	}
+	if err != nil {
+		return detect.Surface{}, nil, []string{"漏洞面資料無法讀取（" + detect.Printable(err.Error()) + "），這輪無法判定 L1～L3，請檢查每日巡檢"}
+	}
+	var notes []string
+	switch age := now.Sub(c.BuiltAt); {
+	case age < -5*time.Minute:
+		notes = append(notes, fmt.Sprintf("漏洞面資料的建立時間在未來（%s），主機時間可能被調動過，視為過期", c.BuiltAt.Local().Format(time.DateTime)))
+	case age > surfaceStale:
+		notes = append(notes, fmt.Sprintf("漏洞面資料過期：上次更新是 %s（%.0f 小時前），這輪用的是舊資料，新裝的套件或新改的程式碼不在其中", c.BuiltAt.Local().Format(time.DateTime), age.Hours()))
+	}
+	if len(c.Partial) > 0 {
+		notes = append(notes, "漏洞面資料不完整："+detect.Printable(strings.Join(c.Partial, "；"))+"（缺的部分沿用前一份，沒有前一份就缺）")
+	}
+	if c.Surface.TruncatedCode+c.Surface.TruncatedPackages > 0 {
+		notes = append(notes, fmt.Sprintf("漏洞面超過上限 %d 條，略過程式碼 %d 條、套件 %d 條（嚴重度較低的先略過），打到它們的攻擊會被當成雜訊", detect.MaxEntries, c.Surface.TruncatedCode, c.Surface.TruncatedPackages))
+	}
+	return c.Surface, c.CodeRoots, notes
 }
 
 // writeAtomic writes p through a temporary file renamed over it (0600).
@@ -126,105 +188,218 @@ type detectSummary struct {
 	Err        string
 }
 
-// detectRound runs one round of attack detection: read and judge (bounded
-// by detectTimeout), push what is due and the notices, save. dryRun
-// prints instead of sending and saves nothing. daily also writes the
-// report file.
-func detectRound(ctx context.Context, cfg *Config, env *tools.Env, now time.Time, daily, dryRun bool) detectSummary {
-	var sum detectSummary
+// MaxAlertsPerRound bounds the alerts a round pushes one by one; the rest
+// go in one summary (commander, review 1 of #91: a flood of groups must
+// not delay the patrol's own report or run into Telegram's limits).
+const MaxAlertsPerRound = 20
+
+// surfaceNoticeFile keeps when the surface's notes were last sent: once a
+// day is enough (they hold until the next daily round).
+const surfaceNoticeFile = "surface-notice.json"
+
+// detectRun is a round read and judged, waiting to send: the patrol sends
+// its own report first, then this (send).
+type detectRun struct {
+	cfg     *Config
+	p       *detect.PassRound
+	surface detect.Surface
+	notes   []string
+	now     time.Time
+	daily   bool
+	dryRun  bool
+	sum     detectSummary
+}
+
+// detectJudge reads and judges a round (bounded by detectTimeout; the
+// state's lock by detect.LockTries). Its sum says what failed.
+func detectJudge(ctx context.Context, cfg *Config, now time.Time, daily, dryRun bool) *detectRun {
+	r := &detectRun{cfg: cfg, now: now, daily: daily, dryRun: dryRun}
 	if detectOS != "linux" {
-		return sum
+		return r
 	}
-	surface, roots, stale := loadSurface(cfg.StateDir, now)
+	surface, roots, notes := loadSurface(cfg.StateDir, now)
+	r.surface, r.notes = surface, notes
 	sigs, err := detectSigs()
 	if err != nil {
-		sum.Err = err.Error()
-		return sum
+		r.sum.Err = err.Error()
+		return r
 	}
 	src, err := detectSource()
 	if err != nil {
-		sum.Err = err.Error()
-		return sum
+		r.sum.Err = err.Error()
+		return r
 	}
 	in := detect.PassInput{Src: src, Sources: detectSources, StateDir: cfg.StateDir, Surface: surface, Sigs: sigs, Now: now,
 		Budget: detect.NewBudget(detect.DefaultBudgetBytes, detectRead), Loc: time.Local, CodeRoots: roots}
 	p, err := runPassBounded(ctx, in)
 	if err != nil {
-		sum.Err = err.Error()
-		return sum
+		r.sum.Err = err.Error()
+		return r
 	}
+	r.p = p
+	r.sum.Round = p.Round
+	r.sum.Due = len(p.Due())
+	if daily {
+		r.sum.Levels = map[string]int{}
+		for _, gs := range []map[string]*detect.Group{p.Attacks().Groups, p.Attacks().Overflow} {
+			for _, g := range gs {
+				if now.Sub(g.Last) <= 24*time.Hour {
+					r.sum.Levels[g.Level]++
+				}
+			}
+		}
+		r.sum.ReportPath = filepath.Join(cfg.StateDir, reportsDir, "attacks-"+now.Local().Format(time.DateOnly)+".txt")
+	}
+	return r
+}
+
+// send pushes the round's alerts (MaxAlertsPerRound one by one, the rest
+// in one summary), its notices, writes the daily report, saves and
+// releases the state. dryRun prints and saves nothing. Safe to call once
+// whatever detectJudge gave.
+func (r *detectRun) send(ctx context.Context, env *tools.Env) detectSummary {
+	if r.p == nil {
+		return r.sum
+	}
+	p := r.p
 	defer p.Close()
-	sum.Round = p.Round
+	fail := func(what string, err error) {
+		r.sum.Err = strings.TrimPrefix(r.sum.Err+"; "+what+": "+err.Error(), "; ")
+	}
 	due := p.Due()
-	sum.Due = len(due)
-	for _, g := range due {
-		text := detect.AlertText(g, &surface)
-		if dryRun {
+	for i, g := range due {
+		if i == MaxAlertsPerRound {
+			rest := due[i:]
+			text := alertsSummary(rest)
+			if r.dryRun {
+				fmt.Printf("Attack attempts (summary)\n\n%s\n", text)
+				break
+			}
+			if err := detectNotify(ctx, env, fmt.Sprintf("%d more attack attempts", len(rest)), text, notifySeverity(rest[0].Severity)); err != nil {
+				fail("notify (summary; the groups stay due)", err)
+				break
+			}
+			for _, g := range rest {
+				p.Notified(g)
+				r.sum.Sent++
+			}
+			break
+		}
+		text := detect.AlertText(g, &r.surface)
+		if r.dryRun {
 			fmt.Printf("Attack attempt\n\n%s\n", text)
 			continue
 		}
 		if err := detectNotify(ctx, env, "Attack attempt", text, notifySeverity(g.Severity)); err != nil {
-			sum.Err = "notify failed (the group stays due): " + err.Error()
+			fail("notify (the group stays due)", err)
 			break
 		}
 		p.Notified(g)
-		sum.Sent++
+		r.sum.Sent++
 	}
 	notices := p.NoticeText()
-	if stale != "" {
-		notices = "【Shentu 攻擊偵測】" + stale + "\n" + notices
+	surfaceNotes := len(r.notes) > 0 && r.surfaceNoticeDue()
+	if surfaceNotes {
+		for _, n := range r.notes {
+			notices = "【Shentu 攻擊偵測】" + n + "\n" + notices
+		}
 	}
 	if notices != "" {
-		if dryRun {
+		if r.dryRun {
 			fmt.Printf("Attack detection notice\n\n%s\n", notices)
-		} else if err := detectNotify(ctx, env, "Attack detection notice", notices, "warning"); err == nil {
+		} else if err := detectNotify(ctx, env, "Attack detection notice", notices, "warning"); err != nil {
+			fail("notify (notices; sent again next round)", err)
+		} else {
 			p.NoticesSent()
-		}
-	}
-	if daily {
-		sum.Levels = map[string]int{}
-		for _, gs := range []map[string]*detect.Group{p.Attacks().Groups, p.Attacks().Overflow} {
-			for _, g := range gs {
-				if now.Sub(g.Last) <= 24*time.Hour {
-					sum.Levels[g.Level]++
-				}
+			if surfaceNotes {
+				writeAtomic(filepath.Join(r.cfg.StateDir, surfaceNoticeFile), []byte(`{"sent":"`+r.now.UTC().Format(time.RFC3339)+`"}`))
 			}
 		}
-		path, err := writeAttackReport(cfg.StateDir, p.Attacks(), &surface, p.Round, stale, now)
-		if err != nil {
-			sum.Err = strings.TrimSpace(sum.Err + "; report: " + err.Error())
-		}
-		sum.ReportPath = path
 	}
-	if dryRun {
-		return sum
+	if r.daily {
+		if _, err := writeAttackReport(r.cfg.StateDir, p.Attacks(), &r.surface, p.Round, r.notes, r.now); err != nil {
+			fail("report", err)
+			r.sum.ReportPath = ""
+		}
+	}
+	if r.dryRun {
+		return r.sum
 	}
 	if err := p.Save(); err != nil {
-		sum.Err = strings.TrimSpace(sum.Err + "; save: " + err.Error())
+		fail("save", err)
 	}
-	return sum
+	return r.sum
+}
+
+// surfaceNoticeDue: the surface's notes were not sent in the last day.
+func (r *detectRun) surfaceNoticeDue() bool {
+	b, err := detect.ReadStateFile(r.cfg.StateDir, surfaceNoticeFile, 4096)
+	if err != nil {
+		return true
+	}
+	var v struct {
+		Sent time.Time `json:"sent"`
+	}
+	if json.Unmarshal(b, &v) != nil || v.Sent.After(r.now) {
+		return true
+	}
+	return r.now.Sub(v.Sent) >= 24*time.Hour
+}
+
+// alertsSummary lists groups past MaxAlertsPerRound, one line each.
+func alertsSummary(gs []*detect.Group) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "【Shentu 攻擊偵測】這輪另有 %d 組攻擊紀錄（超過單輪推播上限 %d 組，合併在這則）：\n", len(gs), MaxAlertsPerRound)
+	for i, g := range gs {
+		if i == 50 {
+			fmt.Fprintf(&b, "…另有 %d 組，請在伺服器上用 shentu detect 查看\n", len(gs)-50)
+			break
+		}
+		var ips []string
+		for j, ip := range g.IPs {
+			if j == 3 {
+				break
+			}
+			ips = append(ips, detect.Printable(ip))
+		}
+		fmt.Fprintf(&b, "- [%s %s] %s ×%d %s\n", g.Severity, g.Level, detect.Printable(g.Entry), g.Count, strings.Join(ips, "、"))
+	}
+	b.WriteString("封鎖請個別確認：彙總不提供封鎖。\n")
+	return b.String()
+}
+
+// detectRound judges and sends at once (shentu detect's tests, and a
+// caller with no report of its own to send first).
+func detectRound(ctx context.Context, cfg *Config, env *tools.Env, now time.Time, daily, dryRun bool) detectSummary {
+	return detectJudge(ctx, cfg, now, daily, dryRun).send(ctx, env)
 }
 
 // runPassBounded runs a round, giving it up after detectTimeout: a read
 // stuck on a dead mount cannot be interrupted. A round given up keeps the
 // sources it finished, their cursors and what they gave (PassRound.
-// Abandon), and says so; the one being read is read again next round.
+// Abandon), and says so; the one being read is read again next round. A
+// round stopped because the patrol was (SIGTERM) is interrupted, not
+// timed out.
 func runPassBounded(ctx context.Context, in detect.PassInput) (*detect.PassRound, error) {
 	p, err := detect.NewPass(in)
 	if err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithTimeout(ctx, detectTimeout)
+	run, cancel := context.WithTimeout(ctx, detectTimeout)
 	defer cancel()
 	done := make(chan struct{})
 	go func() {
-		p.Run(ctx)
+		p.Run(run)
 		close(done)
 	}()
 	select {
 	case <-done:
-	case <-ctx.Done():
-		p.Abandon(detectTimeout)
+	case <-run.Done():
+		if ctx.Err() != nil {
+			p.Interrupt()
+		} else {
+			p.Abandon(detectTimeout)
+		}
 	}
 	return p, nil
 }
@@ -242,10 +417,23 @@ func notifySeverity(s string) string {
 // writeAttackReport writes the day's report file under state_dir/reports
 // (0600): every group seen in the last day, addresses masked (ReportText),
 // and the round's counts; reports older than reportKeep are removed.
-func writeAttackReport(dir string, a *detect.Attacks, s *detect.Surface, r detect.Round, stale string, now time.Time) (string, error) {
+func writeAttackReport(dir string, a *detect.Attacks, s *detect.Surface, r detect.Round, notes []string, now time.Time) (string, error) {
 	rd := filepath.Join(dir, reportsDir)
 	if err := os.MkdirAll(rd, 0o700); err != nil {
 		return "", err
+	}
+	// Ours alone: not a link someone left there, not readable by others.
+	st, err := os.Lstat(rd)
+	if err != nil {
+		return "", err
+	}
+	if st.Mode()&os.ModeSymlink != 0 || !st.IsDir() {
+		return "", fmt.Errorf("%s is not a directory of its own (a link?): the report is not written", rd)
+	}
+	if st.Mode().Perm()&0o077 != 0 {
+		if err := os.Chmod(rd, 0o700); err != nil {
+			return "", err
+		}
 	}
 	var groups []*detect.Group
 	for _, gs := range []map[string]*detect.Group{a.Groups, a.Overflow} {
@@ -262,9 +450,12 @@ func writeAttackReport(dir string, a *detect.Attacks, s *detect.Surface, r detec
 		return groups[i].Key < groups[j].Key
 	})
 	var b strings.Builder
-	fmt.Fprintf(&b, "Shentu 攻擊偵測報告 %s（過去 24 小時；IP 已部分遮罩，可對外分享）\n\n", now.Local().Format(time.DateOnly))
-	if stale != "" {
-		b.WriteString("注意：" + stale + "\n\n")
+	fmt.Fprintf(&b, "Shentu 攻擊偵測報告 %s（過去 24 小時；IP 已部分遮罩，但內含本機漏洞的位置，對外分享前請自行確認）\n\n", now.Local().Format(time.DateOnly))
+	for _, n := range notes {
+		b.WriteString("注意：" + n + "\n")
+	}
+	if len(notes) > 0 {
+		b.WriteString("\n")
 	}
 	fmt.Fprintf(&b, "這輪統計：雜訊 %d、無對應路由的類別命中 %d、無法判定（請求被截斷）%d\n共 %d 組\n\n", r.Noise, r.Unanchored, r.Unknown, len(groups))
 	for _, g := range groups {
@@ -299,7 +490,7 @@ func detectSection(s detectSummary) string {
 		fmt.Fprintf(&b, "- groups seen in the last day: L3 %d, L2 %d, L1 %d (reached a vulnerable route only: counted, not pushed), undetermined %d\n",
 			s.Levels[detect.LevelSuccess], s.Levels[detect.LevelPayload], s.Levels[detect.LevelRoute], s.Levels[detect.LevelUnknown])
 	}
-	fmt.Fprintf(&b, "- alerts sent this round: %d of %d due; noise %d, unanchored %d, undetermined (cut) %d\n", s.Sent, s.Due, s.Round.Noise, s.Round.Unanchored, s.Round.Unknown)
+	fmt.Fprintf(&b, "- alerts due this round: %d (pushed on their own after this report, at most %d one by one, the rest in one summary); noise %d, unanchored %d, undetermined (cut) %d\n", s.Due, MaxAlertsPerRound, s.Round.Noise, s.Round.Unanchored, s.Round.Unknown)
 	if s.ReportPath != "" {
 		fmt.Fprintf(&b, "- report (addresses masked): %s\n", s.ReportPath)
 	}
@@ -319,7 +510,7 @@ func detectCommand(ctx context.Context, cfg *Config, since time.Duration, asJSON
 		return errors.New("attack detection reads Linux web logs; this host is " + detectOS)
 	}
 	now := time.Now()
-	surface, roots, stale := loadSurface(cfg.StateDir, now)
+	surface, roots, notes := loadSurface(cfg.StateDir, now)
 	sigs, err := detectSigs()
 	if err != nil {
 		return err
@@ -349,8 +540,8 @@ func detectCommand(ctx context.Context, cfg *Config, since time.Duration, asJSON
 		return groups[i].Key < groups[j].Key
 	})
 	notices := p.NoticeText()
-	if stale != "" {
-		notices = stale + "\n" + notices
+	for _, n := range notes {
+		notices = n + "\n" + notices
 	}
 	if asJSON {
 		b, err := json.MarshalIndent(map[string]any{"groups": groups, "round": p.Round, "sources": p.Sources, "notices": notices}, "", "  ")
@@ -374,6 +565,12 @@ func detectCommand(ctx context.Context, cfg *Config, since time.Duration, asJSON
 // each, cut to the bot's answer length (Answers). Addresses in full, as the
 // alerts give them.
 func attacksBrief(cfg *Config, now time.Time, zh bool) string {
+	if !detect.AttacksExist(cfg.StateDir) { // not run yet: not "no attacks"
+		if zh {
+			return "🛡 尚未建立攻擊偵測狀態：巡檢還沒跑過攻擊偵測，不代表沒有攻擊。"
+		}
+		return "🛡 Attack detection has no state yet: the patrol has not run it, which does not mean no attacks."
+	}
 	st, err := detect.PeekAttacks(cfg.StateDir)
 	if err != nil {
 		return "⚠️ " + err.Error()

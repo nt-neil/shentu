@@ -467,6 +467,11 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 	if daily {
 		// Once a day: installed packages with vulnerabilities that are being exploited now.
 		r, osSurface, err := tools.PackageVulnsSurface(ctx, env.HTTP)
+		var partial []string // what the vulnerability surface lacks today
+		osFailed := err != nil
+		if osFailed {
+			partial = append(partial, "作業系統套件（"+err.Error()+"）")
+		}
 		unchecked += uncheckedVulns("installed packages", r, err)
 		if err == nil {
 			list, _ := r["actively_exploited"].([]tools.Exploit)
@@ -479,6 +484,10 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 		r, err = tools.AppVulns(ctx, env.HTTP, env.AppPaths)
 		unchecked += uncheckedVulns("application dependencies", r, err)
 		var apps []tools.AppResult
+		appsFailed := err != nil
+		if appsFailed {
+			partial = append(partial, "應用程式相依套件（"+err.Error()+"）")
+		}
 		if err == nil {
 			apps, _ = r["files"].([]tools.AppResult)
 			for _, f := range apps {
@@ -506,18 +515,27 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 					unchecked += fmt.Sprintf("- %q\n", mask(u))
 				}
 			}
-			if err := saveSurface(cfg.StateDir, buildSurface(audit, apps, osSurface, plugins), env.AppPaths, time.Now()); err != nil {
+			if audit.Unfinished || len(audit.NotChecked) > 0 {
+				partial = append(partial, "程式碼稽核沒有全部完成（見日報的 not checked）")
+			}
+			if len(unreadPlugins) > 0 {
+				partial = append(partial, fmt.Sprintf("WordPress 外掛有 %d 處讀不到（見日報）", len(unreadPlugins)))
+			}
+			surface := keepPrevious(cfg.StateDir, buildSurface(audit, apps, osSurface, plugins), appsFailed, osFailed)
+			if err := saveSurface(cfg.StateDir, surface, env.AppPaths, partial, time.Now()); err != nil {
 				unchecked += "\nAttack detection: the vulnerability surface could not be saved: " + err.Error() + "\n"
 			}
 		}
 	}
-	// Attack detection: its alerts go out on their own, as the detector's
-	// words; the daily report gets a summary and the report file.
-	ds := detectRound(ctx, cfg, env, time.Now(), daily, dryRun)
+	// Attack detection: read and judged now (the daily report gets its
+	// summary); its alerts go out on their own, as the detector's words,
+	// after this patrol's report (deferred: whatever path it ends on).
+	dr := detectJudge(ctx, cfg, time.Now(), daily, dryRun)
+	defer dr.send(ctx, env)
 	if daily {
-		unchecked += detectSection(ds)
-	} else if ds.Err != "" {
-		unchecked += "\nAttack detection: " + ds.Err + "\n"
+		unchecked += detectSection(dr.sum)
+	} else if dr.sum.Err != "" {
+		unchecked += "\nAttack detection: " + dr.sum.Err + "\n"
 	}
 	var fresh []finding
 	for _, f := range all {

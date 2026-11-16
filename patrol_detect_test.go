@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -78,23 +79,27 @@ func logLine(ip string, at time.Time, target string) string {
 func TestLoadSurface(t *testing.T) {
 	dir := t.TempDir()
 	now := time.Date(2026, 11, 16, 9, 0, 0, 0, time.UTC)
-	if _, _, note := loadSurface(dir, now); !strings.Contains(note, "尚未建立") {
-		t.Errorf("missing: %q", note)
+	if _, _, notes := loadSurface(dir, now); !strings.Contains(strings.Join(notes, ""), "尚未建立") {
+		t.Errorf("missing: %q", notes)
 	}
 	s := detect.Build([]detect.CodeSink{{Rule: "r", CWE: "CWE-89", Path: "a.php", Line: 1}}, nil)
-	if err := saveSurface(dir, s, []string{"/srv/www"}, now); err != nil {
+	if err := saveSurface(dir, s, []string{"/srv/www"}, nil, now); err != nil {
 		t.Fatal(err)
 	}
-	got, roots, note := loadSurface(dir, now.Add(time.Hour))
-	if note != "" || len(got.Entries) != 1 || roots[0] != "/srv/www" {
-		t.Errorf("fresh: %q %+v %v", note, got, roots)
+	got, roots, notes := loadSurface(dir, now.Add(time.Hour))
+	if len(notes) != 0 || len(got.Entries) != 1 || roots[0] != "/srv/www" {
+		t.Errorf("fresh: %q %+v %v", notes, got, roots)
 	}
-	if _, _, note = loadSurface(dir, now.Add(surfaceStale+time.Hour)); !strings.Contains(note, "漏洞面資料過期") {
-		t.Errorf("stale: %q", note)
+	if _, _, notes = loadSurface(dir, now.Add(surfaceStale+time.Hour)); !strings.Contains(strings.Join(notes, ""), "漏洞面資料過期") {
+		t.Errorf("stale: %q", notes)
+	}
+	// Review 1 of #91 (S-12): dated in the future is stale too.
+	if _, _, notes = loadSurface(dir, now.Add(-time.Hour)); !strings.Contains(strings.Join(notes, ""), "在未來") {
+		t.Errorf("future: %q", notes)
 	}
 	os.WriteFile(filepath.Join(dir, surfaceFile), []byte("{"), 0o600)
-	if _, _, note = loadSurface(dir, now); !strings.Contains(note, "無法讀取") {
-		t.Errorf("unreadable: %q", note)
+	if _, _, notes = loadSurface(dir, now); !strings.Contains(strings.Join(notes, ""), "無法讀取") {
+		t.Errorf("unreadable: %q", notes)
 	}
 }
 
@@ -103,7 +108,7 @@ func TestDetectRound(t *testing.T) {
 	now := time.Now()
 	s := detect.Build([]detect.CodeSink{{Rule: "php-sqli", CWE: "CWE-89", Severity: "warning", Path: "app/x.php", Line: 12,
 		Routes: []engine.RouteRef{{Model: "m", Framework: "laravel", Method: "get", Pattern: "/marker/{id}", File: "r.php", Line: 3}}}}, nil)
-	if err := saveSurface(cfg.StateDir, s, nil, now); err != nil {
+	if err := saveSurface(cfg.StateDir, s, nil, nil, now); err != nil {
 		t.Fatal(err)
 	}
 	os.WriteFile(filepath.Join(logs, "access.log"), []byte(logLine("198.51.100.7", now, "/marker/5?q=marker-one")+logLine("192.0.2.1", now, "/marker/6")), 0o640)
@@ -121,7 +126,7 @@ func TestDetectRound(t *testing.T) {
 	if st, _ := os.Stat(sum.ReportPath); st.Mode().Perm() != 0o600 {
 		t.Errorf("report mode %v", st.Mode())
 	}
-	if sec := detectSection(sum); !strings.Contains(sec, "alerts sent this round: 1 of 1") || !strings.Contains(sec, "L2 1, L1 1") {
+	if sec := detectSection(sum); !strings.Contains(sec, "alerts due this round: 1") || !strings.Contains(sec, "L2 1, L1 1") {
 		t.Errorf("daily section %q", sec)
 	}
 	// The next round: nothing new, nothing sent again.
@@ -163,7 +168,7 @@ func TestDetectRoundFailures(t *testing.T) {
 func TestAttacksBrief(t *testing.T) {
 	cfg := &Config{StateDir: t.TempDir()}
 	now := time.Now()
-	if s := attacksBrief(cfg, now, true); !strings.Contains(s, "沒有攻擊嘗試") {
+	if s := attacksBrief(cfg, now, true); !strings.Contains(s, "尚未建立攻擊偵測狀態") { // review 1 of #91 (S-13): not "no attacks"
 		t.Errorf("empty: %q", s)
 	}
 	a, err := detect.LoadAttacks(cfg.StateDir, now)
@@ -182,5 +187,143 @@ func TestAttacksBrief(t *testing.T) {
 	cfg.Bot.Answers = 1
 	if s := attacksBrief(cfg, now, false); len([]rune(s)) > maxAnswer(1)+1 {
 		t.Errorf("not cut to the answer level: %d", len([]rune(s)))
+	}
+}
+
+// Review 1 of #91 (N-3): a part that failed keeps the previous surface's
+// entries, and the partial surface is said.
+func TestSurfacePartial(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+	full := detect.Build(nil, []detect.PackageVuln{{Source: "/srv/composer.lock", Ecosystem: "Packagist", Package: "marker/app", Version: "1.0", ID: "CVE-2099-0300"},
+		{Source: "os", Ecosystem: "Debian:12", Package: "marker-os", Version: "1.0-1", ID: "CVE-2099-0301"}})
+	if err := saveSurface(dir, full, nil, nil, now); err != nil {
+		t.Fatal(err)
+	}
+	fresh := detect.Build(nil, []detect.PackageVuln{{Source: "os", Ecosystem: "Debian:12", Package: "marker-os", Version: "1.0-1", ID: "CVE-2099-0301"}})
+	merged := keepPrevious(dir, fresh, true, false) // the application dependencies' query failed
+	if len(merged.Entries) != 2 {
+		t.Fatalf("entries %+v", merged.Entries)
+	}
+	if err := saveSurface(dir, merged, nil, []string{"應用程式相依套件（marker）"}, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, notes := loadSurface(dir, now); !strings.Contains(strings.Join(notes, ""), "漏洞面資料不完整") {
+		t.Errorf("partial not said: %q", notes)
+	}
+}
+
+func seedDue(t *testing.T, dir string, n int, now time.Time) {
+	t.Helper()
+	a, err := detect.LoadAttacks(dir, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < n; i++ {
+		a.Add(detect.Attempt{IP: fmt.Sprintf("198.51.100.%d", i+1), Entry: fmt.Sprintf("code:marker:a.php:%d", i+1), Level: detect.LevelPayload,
+			Verified: true, Time: now, Severity: "high"}, now)
+	}
+	if err := a.Save(dir, now); err != nil {
+		t.Fatal(err)
+	}
+	a.Close()
+}
+
+// Review 1 of #91 (N-4): at most MaxAlertsPerRound alerts one by one, the
+// rest in one summary, all marked sent.
+func TestDetectAlertCap(t *testing.T) {
+	cfg, logs, out := detectSetup(t)
+	now := time.Now()
+	os.WriteFile(filepath.Join(logs, "access.log"), nil, 0o640)
+	seedDue(t, cfg.StateDir, MaxAlertsPerRound+5, now)
+	sum := detectRound(context.Background(), cfg, nil, now, false, false)
+	alerts, summaries := 0, 0
+	for _, m := range *out {
+		switch {
+		case m.title == "Attack attempt":
+			alerts++
+		case strings.HasSuffix(m.title, "more attack attempts"):
+			summaries++
+			if !strings.Contains(m.text, "另有 5 組") || strings.Contains(m.text, "只會針對單一 IP") {
+				t.Errorf("summary:\n%s", m.text)
+			}
+		}
+	}
+	if alerts != MaxAlertsPerRound || summaries != 1 || sum.Sent != MaxAlertsPerRound+5 {
+		t.Errorf("%d alerts, %d summaries, sent %d", alerts, summaries, sum.Sent)
+	}
+	*out = nil
+	if sum = detectRound(context.Background(), cfg, nil, now.Add(time.Hour), false, false); sum.Due != 0 {
+		t.Errorf("due again: %+v", sum)
+	}
+}
+
+// Review 1 of #91 (S-7, S-15): a send that fails is said, and leaves the
+// groups and the notices to the next round.
+func TestDetectNotifyFails(t *testing.T) {
+	cfg, logs, out := detectSetup(t)
+	now := time.Now()
+	os.WriteFile(filepath.Join(logs, "access.log"), nil, 0o640)
+	seedDue(t, cfg.StateDir, 2, now)
+	detectNotify = func(context.Context, *tools.Env, string, string, string) error { return errors.New("marker down") }
+	sum := detectRound(context.Background(), cfg, nil, now, false, false)
+	if sum.Sent != 0 || !strings.Contains(sum.Err, "notify (the group stays due): marker down") || !strings.Contains(sum.Err, "notices") {
+		t.Errorf("%+v", sum)
+	}
+	detectNotify = func(_ context.Context, _ *tools.Env, title, text, sev string) error {
+		*out = append(*out, sent{title, text, sev})
+		return nil
+	}
+	if sum = detectRound(context.Background(), cfg, nil, now.Add(time.Minute), false, false); sum.Sent != 2 {
+		t.Errorf("next round: %+v", sum)
+	}
+}
+
+// Review 1 of #91 (S-14): the surface's notes go out once a day.
+func TestSurfaceNoticeOnceADay(t *testing.T) {
+	cfg, logs, out := detectSetup(t)
+	now := time.Now()
+	os.WriteFile(filepath.Join(logs, "access.log"), nil, 0o640)
+	count := func() int {
+		n := 0
+		for _, m := range *out {
+			if strings.Contains(m.text, "漏洞面資料尚未建立") {
+				n++
+			}
+		}
+		return n
+	}
+	detectRound(context.Background(), cfg, nil, now, false, false)
+	detectRound(context.Background(), cfg, nil, now.Add(time.Hour), false, false)
+	if count() != 1 {
+		t.Errorf("said %d times in two hours", count())
+	}
+	detectRound(context.Background(), cfg, nil, now.Add(25*time.Hour), false, false)
+	if count() != 2 {
+		t.Errorf("not said again the next day: %d", count())
+	}
+}
+
+// Review 1 of #91 (N-4): a state held by another shentu does not stall
+// the patrol: the round is skipped and said.
+func TestDetectLockBounded(t *testing.T) {
+	cfg, _, _ := detectSetup(t)
+	oldT, oldW := detect.LockTries, detect.LockWait
+	t.Cleanup(func() { detect.LockTries, detect.LockWait = oldT, oldW })
+	detect.LockTries, detect.LockWait = 2, 10*time.Millisecond
+	held, err := detect.LoadAttacks(cfg.StateDir, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.Close()
+	done := make(chan detectSummary, 1)
+	go func() { done <- detectRound(context.Background(), cfg, nil, time.Now(), false, false) }()
+	select {
+	case sum := <-done:
+		if !strings.Contains(sum.Err, "held by another") {
+			t.Errorf("%+v", sum)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the patrol waited on the lock")
 	}
 }

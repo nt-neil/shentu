@@ -149,6 +149,15 @@ largest of `qwen2.5:3b`/`7b`/`14b` that fits in memory. `--model` picks another 
   notified.
 - **Self-lockout guards**: `block_ip` refuses loopback, the server's own addresses, its default
   gateway and DNS servers, and the IPs of active SSH sessions. Every block has a time limit.
+- **Attack-detection gate on `block_ip`** (v0.4.0): an address the patrol's attack detection saw
+  is blocked only for a verified L2 or L3 group of its own (a trusted log, the connection's
+  address, not an overflow summary). One seen only from unverified sources, or only at L1 or
+  Unknown, is refused unless you override on the server with `shentu chat`; Telegram never
+  accepts the override. Private, CGNAT, link-local and loopback addresses need the same
+  override (often a load balancer). When the attack state cannot be read, the gate refuses on
+  it, but SSH logins that journald confirms sshd itself wrote can still justify a block: the
+  SSH evidence stands on its own. Only the first ten addresses of a group are listed, so a
+  block of an address past them is judged by its SSH logins alone.
 - **No listening ports, no daemon, no database.** Every tool call and model call is
   recorded in `/var/lib/shentu/log.jsonl`.
 - **Small attack surface**: one third-party dependency (a TOML parser), and everything else is the
