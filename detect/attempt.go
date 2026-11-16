@@ -49,6 +49,11 @@ type Attempt struct {
 	// says why not, in Chinese.
 	Verified bool   `json:"verified"`
 	Reason   string `json:"reason,omitempty"`
+	// LogVerified: the access log itself is trusted (Origin.Verified),
+	// whatever the IP: its status and size may back L3.
+	LogVerified bool `json:"log_verified,omitempty"`
+	// Success: why the attempt is L3, in Chinese (l3.go's Upgrade).
+	Success string `json:"success,omitempty"`
 	// Severe: the entry is KEV or rated critical (CVSS 9 or more): one step
 	// up, kept for the campaign step.
 	Severe     bool     `json:"severe,omitempty"`
@@ -79,6 +84,7 @@ func (j *Judge) Attempts(rec AccessRecord, o Origin, m MatchResult, g Judgment) 
 	base := Attempt{Time: rec.Time, Sample: Sample(rec), Status: rec.Status, Bytes: rec.Bytes, Path: m.Request.Path,
 		Cut: g.Cut || rec.Cut, Suspicious: rec.Suspicious, Ambiguous: rec.Ambiguous, Encoded: m.Request.Encoded, TimedOut: g.TimedOut}
 	base.IP, base.Verified, base.Reason = clientOf(rec, o)
+	base.LogVerified = o.Verified
 	var out []Attempt
 	for _, c := range g.Candidates {
 		a := base
