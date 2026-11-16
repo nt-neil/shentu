@@ -1,7 +1,9 @@
 package tools
 
 import (
+	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -42,24 +44,54 @@ var (
 )
 
 // WordPressPlugins lists the plugins of the WordPress installations at or
-// under roots (each root and its direct subdirectories are looked at),
-// and the paths that could not be read. Links are not followed.
+// under roots (each root, and the directories one and two levels under
+// it: site/public_html), and what could not be read, each with why: a
+// plugin missing from the surface is said, never quietly left out. Links
+// are not followed (said when one leads to a WordPress).
 func WordPressPlugins(roots []string) ([]WPPlugin, []string) {
 	var out []WPPlugin
 	var unread []string
 	seen := map[string]bool{}
 	for _, r := range roots {
 		cands := []string{r}
-		if ents, err := os.ReadDir(r); err == nil {
-			for _, e := range ents {
-				if e.IsDir() {
-					cands = append(cands, filepath.Join(r, e.Name()))
+		level := []string{r}
+		for depth := 0; depth < 2; depth++ {
+			var next []string
+			for _, d := range level {
+				ents, err := readDirMax(d, wpMaxDirEntries)
+				if err != nil && !errors.Is(err, errTooMany) {
+					if depth == 0 {
+						unread = append(unread, d+" ("+err.Error()+")")
+					}
+					continue
+				}
+				for _, e := range ents {
+					p := filepath.Join(d, e.Name())
+					switch {
+					case e.Type()&os.ModeSymlink != 0:
+						if st, err := os.Stat(filepath.Join(p, "wp-content")); err == nil && st.IsDir() {
+							unread = append(unread, p+" (a link to a WordPress, not followed)")
+						}
+					case e.IsDir():
+						next = append(next, p)
+					}
 				}
 			}
+			cands, level = append(cands, next...), next
 		}
 		for _, root := range cands {
 			dir := filepath.Join(root, "wp-content", "plugins")
-			if st, err := os.Lstat(dir); err != nil || !st.IsDir() || seen[dir] {
+			st, err := os.Lstat(dir)
+			switch {
+			case errors.Is(err, fs.ErrNotExist):
+				continue
+			case err != nil:
+				unread = append(unread, dir+" ("+err.Error()+")")
+				continue
+			case st.Mode()&os.ModeSymlink != 0:
+				unread = append(unread, dir+" (a link, not followed)")
+				continue
+			case !st.IsDir() || seen[dir]:
 				continue
 			}
 			seen[dir] = true
@@ -77,10 +109,36 @@ func WordPressPlugins(roots []string) ([]WPPlugin, []string) {
 	return out, unread
 }
 
-func pluginsIn(root, dir string) ([]WPPlugin, []string) {
-	ents, err := os.ReadDir(dir)
+// wpMaxDirEntries bounds the entries read of any one directory.
+const wpMaxDirEntries = 4096
+
+var errTooMany = errors.New("more entries than are read")
+
+// readDirMax reads at most n entries of dir (errTooMany when there are
+// more: those read are given).
+func readDirMax(dir string, n int) ([]os.DirEntry, error) {
+	f, err := os.Open(dir)
 	if err != nil {
-		return nil, []string{dir}
+		return nil, err
+	}
+	defer f.Close()
+	ents, err := f.ReadDir(n + 1)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return nil, err
+	}
+	if len(ents) > n {
+		return ents[:n], errTooMany
+	}
+	return ents, nil
+}
+
+func pluginsIn(root, dir string) ([]WPPlugin, []string) {
+	ents, err := readDirMax(dir, wpMaxDirEntries)
+	if errors.Is(err, errTooMany) {
+		err = nil // the entries read are looked at, the rest said below
+	}
+	if err != nil {
+		return nil, []string{dir + " (" + err.Error() + ")"}
 	}
 	var out []WPPlugin
 	var unread []string
@@ -92,14 +150,15 @@ func pluginsIn(root, dir string) ([]WPPlugin, []string) {
 		p := filepath.Join(dir, e.Name())
 		switch {
 		case e.Type()&os.ModeSymlink != 0:
-			continue
+			unread = append(unread, p+" (a link, not followed)")
 		case e.IsDir():
-			files, err := os.ReadDir(p)
-			if err != nil {
-				unread = append(unread, p)
+			files, err := readDirMax(p, wpMaxDirEntries)
+			if err != nil && !errors.Is(err, errTooMany) {
+				unread = append(unread, p+" ("+err.Error()+")")
 				continue
 			}
-			n := 0
+			n, found := 0, false
+			var failed []string
 			for _, f := range files {
 				if !f.Type().IsRegular() || !strings.HasSuffix(strings.ToLower(f.Name()), ".php") {
 					continue
@@ -107,44 +166,63 @@ func pluginsIn(root, dir string) ([]WPPlugin, []string) {
 				if n++; n > wpMaxFilesEach {
 					break
 				}
-				if pl, ok := pluginHeader(filepath.Join(p, f.Name())); ok {
+				pl, ok, err := pluginHeader(filepath.Join(p, f.Name()))
+				if err != nil {
+					failed = append(failed, f.Name()+": "+err.Error())
+				}
+				if ok {
 					pl.Root, pl.Slug = root, e.Name()
 					out = append(out, pl)
+					found = true
 					break
 				}
 			}
+			if !found && len(failed) > 0 {
+				unread = append(unread, p+" (no header read; "+strings.Join(failed, "; ")+")")
+			}
 		case e.Type().IsRegular() && strings.HasSuffix(strings.ToLower(e.Name()), ".php"):
-			if pl, ok := pluginHeader(p); ok {
+			pl, ok, err := pluginHeader(p)
+			if err != nil {
+				unread = append(unread, p+" ("+err.Error()+")")
+			}
+			if ok {
 				pl.Root, pl.Slug = root, strings.TrimSuffix(e.Name(), filepath.Ext(e.Name()))
 				out = append(out, pl)
 			}
 		}
 	}
+	if len(ents) == wpMaxDirEntries {
+		unread = append(unread, dir+" (more than "+strconv.Itoa(wpMaxDirEntries)+" entries: the rest not read)")
+	}
 	return out, unread
 }
 
 // pluginHeader reads a plugin's main file header: ok when it has a
-// "Plugin Name:" line in its first wpHeaderBytes. The directory is the
-// web account's to write: the file is opened without following a link,
-// without blocking (a FIFO left there cannot hold the patrol), and read
-// only when what was opened is a regular file.
-func pluginHeader(p string) (WPPlugin, bool) {
+// "Plugin Name:" line in its first wpHeaderBytes; err when the file could
+// not be read. The directory is the web account's to write: the file is
+// opened without following a link, without blocking (a FIFO left there
+// cannot hold the patrol), and read only when what was opened is a
+// regular file.
+func pluginHeader(p string) (WPPlugin, bool, error) {
 	f, err := (&hostenv.Live{}).OpenLogNoFollow(p)
 	if err != nil {
-		return WPPlugin{}, false
+		return WPPlugin{}, false, err
 	}
 	defer f.Close()
-	b, _ := io.ReadAll(io.LimitReader(f, wpHeaderBytes))
+	b, err := io.ReadAll(io.LimitReader(f, wpHeaderBytes))
+	if err != nil {
+		return WPPlugin{}, false, err
+	}
 	s := strings.ReplaceAll(string(b), "\r", "\n")
 	m := wpName.FindStringSubmatch(s)
 	if m == nil {
-		return WPPlugin{}, false
+		return WPPlugin{}, false, nil
 	}
 	pl := WPPlugin{Name: cleanHeader(m[1], 200)}
 	if v := wpVersion.FindStringSubmatch(s); v != nil {
 		pl.Version = cleanHeader(v[1], wpMaxVersionLen)
 	}
-	return pl, true
+	return pl, true, nil
 }
 
 // cleanHeader is a header value: the comment's end taken off, trimmed,

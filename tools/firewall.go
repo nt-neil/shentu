@@ -54,9 +54,13 @@ func RemoteRefused(env *Env, name string, args json.RawMessage) error {
 	return errors.New("override_unverified is not accepted from a chat channel: check the logs on the server and block it there with shentu chat")
 }
 
-// loginSummary is SSHSummary, and textLogins counts ip's SSH login events in
-// the text auth logs alone (tests replace both).
+// loginSummary is SSHSummary, textLogins counts ip's SSH login events in
+// the text auth logs alone, and sshdJournal the journal lines sshd itself
+// wrote about ip (tests replace all three).
 var (
+	sshdJournal = func(ctx context.Context, since time.Time, ip string) (int, error) {
+		return hostenv.SSHDJournalLines(ctx, hostSource(), since, ip)
+	}
 	loginSummary = SSHSummary
 	textLogins   = func(env *Env, ip string) (n int, files, unread []string) {
 		// Whatever a line's time says: a forged line may be dated before any
@@ -143,7 +147,17 @@ func loginCheck(ctx context.Context, env *Env, ip net.IP) (verified bool, err er
 		return false, fmt.Errorf("refusing to block %s: its SSH logins could not be read in full (%s), so forged ones cannot be ruled out; check the logs as root and, if they are real, ask again with override_unverified", ip, why)
 	}
 	if seen && verified {
-		return true, nil // journald itself has the IP's logins: the text logs need not be read
+		// journald has the IP's logins in sshd's units; a user's shell left
+		// in that cgroup (no pam_systemd) can write sshd lines with logger,
+		// so they count only when sshd itself wrote them (_COMM, _UID).
+		n, err := sshdJournal(ctx, time.Now().Add(-loginGateWindow), want)
+		if err != nil {
+			return false, fmt.Errorf("refusing to block %s: whether its SSH login events in journald were written by sshd itself could not be checked (%v); check them as root and, if they are real, ask again with override_unverified", ip, err)
+		}
+		if n == 0 {
+			return false, fmt.Errorf("refusing to block %s: its SSH login events in journald were not written by sshd itself (another program in sshd's unit, e.g. logger), so they may be forged; check them as root and, if they are real, ask again with override_unverified", ip)
+		}
+		return true, nil // sshd itself logged the IP: the text logs need not be read
 	}
 	text, files, unread := textLogins(env, want)
 	switch {

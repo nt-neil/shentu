@@ -34,7 +34,8 @@ func TestWordPressPlugins(t *testing.T) {
 	for _, p := range ps {
 		got = append(got, p.Slug+"@"+p.Version)
 	}
-	if strings.Join(got, ",") != "hello-marker@2.0-beta,marker-plugin@1.2.3,odd@1.0,sub-marker@0.9" || len(unread) != 0 {
+	// Review 1 of #91 (N-2): the linked plugin is said, not left out quietly.
+	if strings.Join(got, ",") != "hello-marker@2.0-beta,marker-plugin@1.2.3,odd@1.0,sub-marker@0.9" || len(unread) != 1 || !strings.Contains(unread[0], "linked (a link, not followed)") {
 		t.Errorf("plugins %v, unread %v", got, unread)
 	}
 	if ps[1].Name != "Marker Plugin" || ps[1].Root != web {

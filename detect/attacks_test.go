@@ -234,8 +234,8 @@ func TestAttacksEvictionKeepsPending(t *testing.T) {
 	if len(a.Groups) != MaxGroups || a.Groups["203.0.113.0/24|target|L2|v"] == nil {
 		t.Fatalf("%d groups; the pending L2 kept: %v", len(a.Groups), a.Groups["203.0.113.0/24|target|L2|v"] != nil)
 	}
-	if a.DroppedPending == 0 {
-		t.Error("pending groups dropped without being counted")
+	if a.DroppedPending != 0 { // review 1 of #91 (N-1): L1 groups are never pending, so dropping them drops nothing pending
+		t.Errorf("L1 groups counted as dropped pending: %d", a.DroppedPending)
 	}
 }
 

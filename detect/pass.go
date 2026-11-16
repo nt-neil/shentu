@@ -257,6 +257,19 @@ func (p *PassRound) Run(ctx context.Context) {
 	p.mu.Unlock()
 }
 
+// Interrupt gives the round up because the patrol was told to stop
+// (SIGTERM): as Abandon keeps what was finished, but it is no timeout and
+// not counted as one.
+func (p *PassRound) Interrupt() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.abandoned {
+		return
+	}
+	p.abandoned = true
+	p.Notices = append(p.Notices, fmt.Sprintf("這輪攻擊偵測被中止（巡檢收到停止要求，停在 %s），已讀完的記錄檔照常保存，沒讀完的下一輪接著讀", Printable(p.current)))
+}
+
 // Abandon gives the round up (its time ran out): the sources read so far
 // and what they gave are kept, the one being read is read again from its
 // cursor next round; said in the notices, louder after PassTimeoutsWarn

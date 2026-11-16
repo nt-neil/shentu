@@ -37,6 +37,17 @@ var journalSockArgv = []string{"/usr/bin/journalctl", "-u", "ssh@*", "-u", "sshd
 
 var journalSockBinArgv = append([]string{"/bin/journalctl"}, journalSockArgv[1:]...)
 
+// journalSSHDArgv reads the ssh and sshd units' entries that sshd itself
+// wrote: _COMM sshd or sshd-session (OpenSSH 9.8+) and _UID 0. Without
+// pam_systemd a user's shell stays in ssh.service's cgroup, so the unit
+// alone does not tell sshd's lines from `logger -t sshd`'s; journald
+// fills _COMM and _UID from the sender's credentials. Different fields
+// are ANDed, values of one field ORed, and all ANDed with -u's matches.
+var journalSSHDArgv = []string{"/usr/bin/journalctl", "-u", "ssh", "-u", "sshd", "--since", SlotTime, "-o", "short-iso", "--no-pager",
+	"_COMM=sshd", "_COMM=sshd-session", "_UID=0"}
+
+var journalSSHDBinArgv = append([]string{"/bin/journalctl"}, journalSSHDArgv[1:]...)
+
 // JournalTimeout caps the journald read (streamed, no stdout cap). A
 // journal that takes longer falls back to the text logs, marked
 // unverified. The runner allows at most the value set here at start-up.
@@ -47,6 +58,38 @@ func init() {
 	registerBig(journalBinArgv, 0, JournalTimeout)
 	registerBig(journalSockArgv, 0, JournalTimeout)
 	registerBig(journalSockBinArgv, 0, JournalTimeout)
+	registerBig(journalSSHDArgv, 0, JournalTimeout)
+	registerBig(journalSSHDBinArgv, 0, JournalTimeout)
+}
+
+// SSHDJournalLines counts the lines sshd itself wrote to the journal since
+// since about ip (journalSSHDArgv): a block resting on SSH logins
+// believes journald only when they are sshd's own (a user's logger lines
+// in sshd's cgroup are not). An error: journald could not tell.
+func SSHDJournalLines(ctx context.Context, src Source, since time.Time, ip string) (int, error) {
+	ctx, cancel := context.WithTimeout(ctx, JournalTimeout)
+	defer cancel()
+	n := 0
+	var err error
+	addr := regexp.MustCompile(`(?:^|[^0-9A-Fa-f.:])` + regexp.QuoteMeta(ip) + `(?:$|[^0-9A-Fa-f.:])`) // 1.2.3.4, not 1.2.3.45
+	for _, base := range [][]string{journalSSHDArgv, journalSSHDBinArgv} {
+		argv := append([]string(nil), base...)
+		argv[6] = since.UTC().Format("2006-01-02 15:04:05") + " UTC"
+		n = 0
+		var res CmdResult
+		res, err = RunLinesUnmasked(ctx, src, argv, func(l string) {
+			if reSSHDLine.MatchString(l) && addr.MatchString(l) {
+				n++
+			}
+		})
+		if err == nil && res.ExitCode != 0 {
+			err = &exitError{res.ExitCode}
+		}
+		if !errors.Is(err, fs.ErrNotExist) {
+			break
+		}
+	}
+	return n, err
 }
 
 // reSSHDLine is a line sshd wrote: the only lines that can count.

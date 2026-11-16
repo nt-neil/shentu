@@ -168,7 +168,7 @@ func LoadAttacks(dir string, now time.Time) (*Attacks, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := osutil.Lock(lock); err != nil {
+	if err := lockBounded(lock); err != nil {
 		lock.Close()
 		return nil, err
 	}
@@ -211,6 +211,62 @@ func LoadAttacks(dir string, now time.Time) (*Attacks, error) {
 		a.Note = join(a.Note, fmt.Sprintf("attacks.json held %d entries that did not hold together; they were dropped", dropped))
 	}
 	return a, nil
+}
+
+// LockTries and LockWait bound the wait for attacks.lock: a stopped
+// `shentu detect` (Ctrl-Z) holding it must not stall every patrol after it.
+var (
+	LockTries = 30
+	LockWait  = time.Second
+)
+
+// ErrStateLocked: attacks.lock stayed held through LockTries.
+var ErrStateLocked = errors.New("attack detection's state is held by another shentu (a stopped `shentu detect`?): this round was skipped")
+
+func lockBounded(f *os.File) error {
+	for i := 0; ; i++ {
+		err := osutil.TryLock(f)
+		if !errors.Is(err, osutil.ErrWouldBlock) {
+			return err
+		}
+		if i+1 >= LockTries {
+			return ErrStateLocked
+		}
+		time.Sleep(LockWait)
+	}
+}
+
+// AttacksExist says whether dir has attacks.json: none means detection has
+// not run yet, not "no attacks".
+func AttacksExist(dir string) bool {
+	_, err := os.Lstat(filepath.Join(dir, AttacksFile))
+	return err == nil
+}
+
+// ReadStateFile reads dir/name as the state files are read: not following
+// a link, ours and not writable by others, at most max bytes (more is an
+// error). A file not there is fs.ErrNotExist.
+func ReadStateFile(dir, name string, max int64) ([]byte, error) {
+	f, err := openNoFollow(filepath.Join(dir, name))
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if why := ownedByUs(st); why != "" {
+		return nil, fmt.Errorf("%s: %s", name, why)
+	}
+	b, err := io.ReadAll(io.LimitReader(f, max+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(b)) > max {
+		return nil, fmt.Errorf("%s: larger than %d bytes", name, max)
+	}
+	return b, nil
 }
 
 // Close releases attacks.lock; it may be called more than once.
@@ -450,6 +506,11 @@ func (g *Group) add(t Attempt, at time.Time) {
 	}
 }
 
+// pending: g has attempts not yet notified that will be (L1 never is: it
+// is counted and reported, so it is never "pending", never pushed out
+// first, never counted as dropped).
+func (g *Group) pending() bool { return g.Since > 0 && g.Level != LevelRoute }
+
 // addIP lists ip (at most MaxGroupIPs) and counts it if new.
 func (g *Group) addIP(ip string) {
 	h := fnv.New32a()
@@ -552,6 +613,15 @@ func (a *Attacks) campaign(t Attempt, at time.Time) bool {
 	return len(r.Entries) >= CampaignEntries
 }
 
+// canonAddr is ip in one form: unmapped, as netip prints it; the text as
+// given when it is not an address.
+func canonAddr(ip string) string {
+	if a, err := netip.ParseAddr(ip); err == nil && a.Zone() == "" {
+		return a.Unmap().String()
+	}
+	return ip
+}
+
 // campaignSource is the campaign index's key for an address: an IPv4
 // address itself, an IPv6 address's /64 (one host has many in it).
 func campaignSource(ip string) string {
@@ -605,7 +675,7 @@ func (a *Attacks) evict(n int) {
 	keys := rank(a.Groups)
 	for _, k := range keys[n:] {
 		g := a.Groups[k]
-		if g.Since > 0 {
+		if g.pending() {
 			a.DroppedPending++
 			ok := groupKey(PrefixOverflow, g.Entry, g.Level, !g.Unverified)
 			o := a.Overflow[ok]
@@ -633,7 +703,7 @@ func rank(gs map[string]*Group) []string {
 		keys = append(keys, k)
 	}
 	keep := func(g *Group) [3]int { // larger is kept longer
-		return [3]int{b2i(g.Since > 0), b2i(!g.Unverified), severityIndex(g.Severity)}
+		return [3]int{b2i(g.pending()), b2i(!g.Unverified), severityIndex(g.Severity)}
 	}
 	sort.Slice(keys, func(i, j int) bool {
 		x, y := gs[keys[i]], gs[keys[j]]
@@ -644,7 +714,7 @@ func rank(gs map[string]*Group) []string {
 				}
 			}
 		}
-		if x.Since > 0 { // both pending: the older is kept (a flood is newer than what it would push out)
+		if x.pending() { // both pending: the older is kept (a flood is newer than what it would push out)
 			if !x.First.Equal(y.First) {
 				return x.First.Before(y.First)
 			}
@@ -728,7 +798,7 @@ func (a *Attacks) prune(now time.Time) {
 			if now.Sub(g.Last) <= AttackTTL {
 				continue
 			}
-			if g.Since > 0 { // not yet notified: never dropped quietly
+			if g.pending() { // not yet notified: never dropped quietly
 				a.DroppedPending++
 				if g.Prefix != PrefixOverflow {
 					ok := groupKey(PrefixOverflow, g.Entry, g.Level, !g.Unverified)
@@ -807,12 +877,13 @@ func PeekAttacks(dir string) (*Attacks, error) {
 }
 
 // GroupsOf are the groups (and overflow groups) listing ip among their
-// addresses.
+// addresses, an IPv4-mapped address and its IPv4 one being the same.
 func (a *Attacks) GroupsOf(ip string) []*Group {
+	want := canonAddr(ip)
 	var out []*Group
 	for _, gs := range []map[string]*Group{a.Groups, a.Overflow} {
 		for _, g := range gs {
-			if slices.Contains(g.IPs, ip) {
+			if slices.ContainsFunc(g.IPs, func(x string) bool { return canonAddr(x) == want }) {
 				out = append(out, g)
 			}
 		}

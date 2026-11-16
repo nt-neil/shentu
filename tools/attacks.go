@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"net/netip"
 	"sort"
 	"strings"
 	"time"
@@ -58,6 +59,7 @@ func attackGate(ip net.IP, override bool) (gateVerdict, error) {
 		return gateNone, nil
 	}
 	var unverified, overflow, weak []string
+	verified := false
 	for _, g := range gs {
 		strong := g.Level == detect.LevelPayload || g.Level == detect.LevelSuccess
 		switch {
@@ -68,12 +70,17 @@ func attackGate(ip net.IP, override bool) (gateVerdict, error) {
 		case g.Unverified:
 			unverified = append(unverified, g.Entry+" ("+strings.Join(g.Reasons, "; ")+")")
 		default:
-			return gateAllow, nil // a verified L2 or L3 group of its own
+			verified = true // a verified L2 or L3 group of its own
 		}
 	}
 	switch {
-	case len(unverified) > 0 && override:
+	case verified:
 		return gateAllow, nil
+	case override && len(overflow) == 0:
+		// The operator, on the server, overrides: unverified, L1 and
+		// Unknown groups (lines anyone could forge) cannot keep an address
+		// from being blocked; its SSH logins decide, override applied.
+		return gateNone, nil
 	case len(unverified) > 0:
 		return gateRefuse, fmt.Errorf("refusing to block %s: its attack attempts come from sources that cannot be believed: %s. This cannot be overridden from Telegram: check them on the server and, if they are real, block it there with shentu chat and override_unverified", ip, detect.Printable(strings.Join(unverified, "; ")))
 	case len(overflow) > 0:
@@ -82,13 +89,38 @@ func attackGate(ip net.IP, override bool) (gateVerdict, error) {
 	return gateRefuse, fmt.Errorf("refusing to block %s: its attempts only reached a route or could not be judged (%s): not enough to block", ip, detect.Printable(strings.Join(weak, ", ")))
 }
 
-// blockGate is block_ip's check on top of the bot's levels: the attack
+// internalAddr says why ip is an internal address (private, CGNAT, unique
+// local, link-local, loopback), "" when it is not.
+func internalAddr(ip net.IP) string {
+	a, ok := netip.AddrFromSlice(ip)
+	if !ok {
+		return ""
+	}
+	a = a.Unmap()
+	switch {
+	case a.IsLoopback():
+		return "a loopback address"
+	case a.IsLinkLocalUnicast():
+		return "a link-local address"
+	case a.IsPrivate():
+		return "a private address (RFC 1918 or unique local)"
+	case netip.MustParsePrefix("100.64.0.0/10").Contains(a):
+		return "a carrier-grade NAT address (100.64.0.0/10)"
+	}
+	return ""
+}
+
+// blockGate is block_ip's check on top of the bot's levels: an internal
+// address is refused unless overridden on the server; then the attack
 // attempts first; an address they do not speak for goes to the SSH login
 // gate as before; one whose attempts do not justify a block may still be
 // blocked on SSH logins journald itself confirms (an attacker sending one
 // weak request does not shield an address its logins condemn), never on
 // unverified ones or none.
 func blockGate(ctx context.Context, env *Env, ip net.IP, override bool) error {
+	if why := internalAddr(ip); why != "" && !override {
+		return fmt.Errorf("refusing to block %s: it is %s, often a load balancer, proxy or this network's own host (a log without its real client address names it for every request): blocking it may cut off the whole site; check on the server and, if it is right, block it there with shentu chat and override_unverified", ip, why)
+	}
 	v, refusal := attackGate(ip, override)
 	switch v {
 	case gateAllow:
@@ -122,8 +154,8 @@ var attackAttempts = Tool{
 		if err != nil {
 			return nil, err
 		}
-		if st == nil {
-			return map[string]any{"groups": []any{}, "note": "attack detection has no state yet"}, nil
+		if st == nil || attackStateDir != "" && !detect.AttacksExist(attackStateDir) {
+			return map[string]any{"groups": []any{}, "note": "attack detection has no state yet (the patrol has not run it): this does not mean no attacks"}, nil
 		}
 		out := AttackList(st, time.Now(), time.Duration(a.Hours)*time.Hour)
 		// Samples and entries are text attackers wrote: data for the model,

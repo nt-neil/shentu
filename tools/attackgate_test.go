@@ -12,6 +12,39 @@ import (
 	"github.com/nt-neil/shentu/detect"
 )
 
+// The login gate's tests replace the summary; sshd's own journal lines
+// confirm by default (TestLoginGateSSHDItself says otherwise).
+func init() {
+	sshdJournal = func(context.Context, time.Time, string) (int, error) { return 1, nil }
+}
+
+// Review 1 of #91 (S-4): journald's SSH events count only when sshd itself
+// wrote them; a logger line in sshd's unit does not.
+func TestLoginGateSSHDItself(t *testing.T) {
+	ip := net.ParseIP("198.51.100.7")
+	oldS, oldT, oldJ := loginSummary, textLogins, sshdJournal
+	t.Cleanup(func() { loginSummary, textLogins, sshdJournal = oldS, oldT, oldJ })
+	loginSummary = func(context.Context, *Env, time.Time, string) (map[string]any, error) {
+		return map[string]any{"complete": true, "verified": true, "source": "journald", "sources": []SSHSource{{IP: "198.51.100.7", Failed: 40}}}, nil
+	}
+	textLogins = func(*Env, string) (int, []string, []string) { return 0, nil, nil }
+	for _, c := range []struct {
+		name string
+		n    int
+		err  error
+		ok   bool
+	}{
+		{"sshd wrote them", 3, nil, true},
+		{"another program in sshd's unit wrote them", 0, nil, false},
+		{"journald could not tell", 0, errors.New("marker"), false},
+	} {
+		sshdJournal = func(context.Context, time.Time, string) (int, error) { return c.n, c.err }
+		if err := loginGate(context.Background(), &Env{}, ip, false); (err == nil) != c.ok {
+			t.Errorf("%s: %v", c.name, err)
+		}
+	}
+}
+
 // P5 part 3: block_ip's attack gate. A block of an address attack
 // detection saw needs a verified L2 or L3 group of its own; unverified,
 // overflow, L1 and Unknown groups never give one (override only for
@@ -51,10 +84,11 @@ func TestBlockIPAttackGate(t *testing.T) {
 		{"verified L2 of its own", []*detect.Group{grp("a", "198.51.100.0/24", "L2", true, "198.51.100.7")}, false, true, false, ""},
 		{"verified L3 of its own", []*detect.Group{grp("a", "198.51.100.0/24", "L3", true, "198.51.100.7")}, false, true, false, ""},
 		{"unverified L2", []*detect.Group{grp("a", "198.51.100.0/24", "L2", false, "198.51.100.7")}, false, true, true, "shentu chat"},
-		{"unverified L2, override (server)", []*detect.Group{grp("a", "198.51.100.0/24", "L2", false, "198.51.100.7")}, true, true, false, ""},
+		{"unverified L2, override (server): its logins decide", []*detect.Group{grp("a", "198.51.100.0/24", "L2", false, "198.51.100.7")}, true, false, false, ""},
 		{"overflow only", []*detect.Group{grp("o", detect.PrefixOverflow, "L3", true, "198.51.100.7")}, false, true, true, "overflow"},
 		{"overflow only, override", []*detect.Group{grp("o", detect.PrefixOverflow, "L3", true, "198.51.100.7")}, true, true, true, "overflow"},
-		{"L1 only", []*detect.Group{grp("a", "198.51.100.0/24", "L1", true, "198.51.100.7")}, true, true, true, "not enough"},
+		{"L1 only", []*detect.Group{grp("a", "198.51.100.0/24", "L1", true, "198.51.100.7")}, false, true, true, "not enough"},
+		{"L1 only, override (server): its logins decide", []*detect.Group{grp("a", "198.51.100.0/24", "L1", true, "198.51.100.7")}, true, false, false, ""},
 		{"unknown only", []*detect.Group{grp("a", "*", "unknown", true, "198.51.100.7")}, false, true, true, "not enough"},
 		{"overflow and a verified L2", []*detect.Group{grp("o", detect.PrefixOverflow, "L3", true, "198.51.100.7"), grp("a", "198.51.100.0/24", "L2", true, "198.51.100.7")}, false, true, false, ""},
 	} {
@@ -154,5 +188,36 @@ func TestAttackAttempts(t *testing.T) {
 	out, _ = attackAttempts.Run(context.Background(), &Env{Remote: true}, json.RawMessage(`{}`))
 	if _, ok := out.(map[string]any)["groups"].([]map[string]any)[0]["samples"]; ok {
 		t.Error("samples given to a chat channel's model")
+	}
+}
+
+// Review 1 of #91: an IPv4-mapped address is the address (B-1); an
+// operator overriding on the server is not stopped by forgeable weak or
+// unverified groups (S-1); an internal address needs an override (S-5).
+func TestBlockGateReview1(t *testing.T) {
+	gateState(t, grp("a", "198.51.100.0/24", "L2", false, "::ffff:198.51.100.7"))
+	for _, q := range []string{"198.51.100.7", "::ffff:198.51.100.7"} {
+		if v, err := attackGate(net.ParseIP(q), false); v != gateRefuse || err == nil {
+			t.Errorf("mapped unverified group asked as %s: %v %v", q, v, err)
+		}
+	}
+	oldS, oldT := loginSummary, textLogins
+	t.Cleanup(func() { loginSummary, textLogins = oldS, oldT })
+	loginSummary = func(context.Context, *Env, time.Time, string) (map[string]any, error) {
+		return map[string]any{"complete": true, "verified": true, "source": "journald"}, nil
+	}
+	textLogins = func(*Env, string) (int, []string, []string) { return 0, nil, nil }
+	gateState(t, grp("a", "198.51.100.0/24", "unknown", false, "198.51.100.7"))
+	if err := blockGate(context.Background(), &Env{}, net.ParseIP("198.51.100.7"), true); err != nil {
+		t.Errorf("override on the server, forged unknown group: %v", err)
+	}
+	gateState(t)
+	for _, q := range []string{"10.1.2.3", "192.168.1.5", "172.16.0.9", "100.64.3.4", "169.254.1.1", "fd00::1", "::ffff:10.0.0.1"} {
+		if err := blockGate(context.Background(), &Env{}, net.ParseIP(q), false); err == nil || !strings.Contains(err.Error(), "load balancer") {
+			t.Errorf("%s: %v", q, err)
+		}
+		if err := blockGate(context.Background(), &Env{}, net.ParseIP(q), true); err != nil {
+			t.Errorf("%s with override: %v", q, err)
+		}
 	}
 }

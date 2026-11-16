@@ -621,7 +621,7 @@ func (r *AccessRecord) set(f, v string) bool {
 		if err != nil || a.Zone() != "" { // a zone is any text after %
 			return false
 		}
-		r.Client = a.String()
+		r.Client = a.Unmap().String() // a dual-stack listener logs ::ffff:<IPv4>: one address, one form
 	case "user":
 		if !dash {
 			r.User = v

@@ -262,3 +262,19 @@ func TestPassAbandon(t *testing.T) {
 		t.Errorf("after a whole round: timeouts %d", p.Attacks().PassTimeouts)
 	}
 }
+
+// Review 1 of #91 (S-14): a round stopped by SIGTERM keeps what it
+// finished as Abandon does, and is not counted as a timeout.
+func TestPassInterrupt(t *testing.T) {
+	_, _, in := passSetup(t)
+	p, err := NewPass(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	p.Interrupt()
+	p.Run(context.Background()) // given up before it began: reads nothing
+	if p.Attacks().PassTimeouts != 0 || !strings.Contains(p.NoticeText(), "被中止") || len(p.Sources) != 0 {
+		t.Errorf("timeouts %d, sources %d, notices %q", p.Attacks().PassTimeouts, len(p.Sources), p.NoticeText())
+	}
+}
