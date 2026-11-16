@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 )
 
 // LogSource is one log file (or destination) a web server or PHP-FPM
@@ -61,27 +62,32 @@ const (
 	ReasonNotAFile        Reason = "not_a_file"       // syslog:, a pipe, stderr: nothing to read here
 	ReasonVariablePath    Reason = "variable_path"    // the path holds a variable or is relative: not known which file
 	ReasonNotFound        Reason = "not_found"        // named, but not there (not written yet, or removed)
+	// ReasonClientFromHeader: the server takes the client address from a
+	// request header (nginx's realip, Apache's mod_remoteip): the logged
+	// address is what a proxy, or the client, wrote.
+	ReasonClientFromHeader Reason = "client_from_header"
 )
 
 // WebUserWritableMeaning is what an alert on a web_user_writable source must
 // say, in English and in Chinese.
 const (
-	WebUserWritableMeaning   = "this log is owned by the web server's user: forging its lines is only possible if the web application is already compromised"
-	WebUserWritableMeaningZh = "這個 log 由 web 伺服器的使用者擁有：只有 web 應用已經被入侵時，才可能偽造其中的內容"
+	WebUserWritableMeaning   = "the web server's own account can write what this log holds: forging its lines is only possible if the web application is already compromised"
+	WebUserWritableMeaningZh = "web 伺服器自己的帳號可以寫入這個 log 的內容：只有 web 應用已經被入侵時，才可能偽造其中的紀錄"
 )
 
 // ReasonMeaningZh says, for an administrator reading a Telegram alert, why a
 // log is not verified, and so why blocking cannot be approved from Telegram.
 var ReasonMeaningZh = map[Reason]string{
-	ReasonWebUserWritable: "這個 log（或它所在的目錄、或寫它的程序）可以被 web 伺服器的帳號改動：只有 web 應用已經被入侵時才可能偽造，但 shentu 無法證明沒有，所以不能從 Telegram 放行封鎖",
-	ReasonUntrusted:       "這個 log 或它所在的目錄可以被 root 以外的帳號改動，內容可能是偽造的，所以不能從 Telegram 放行封鎖",
-	ReasonUnverified:      "shentu 無法確認只有 root 能改動這個 log（例如群組成員、ACL 或帳號來源讀不到），依規則一律不信任，所以不能從 Telegram 放行封鎖",
-	ReasonNotRegular:      "這個 log 不是一般檔案，無法確認它的內容來源",
-	ReasonNotFound:        "設定裡寫的 log 不存在（還沒寫入或被刪除），這段期間沒有可讀的紀錄",
-	ReasonPermission:      "shentu 沒有權限讀這個 log 或它的上層目錄",
-	ReasonLoggingDisabled: "這個 log 在設定裡被關閉了，這部分的攻擊不會留下紀錄",
-	ReasonNotAFile:        "這個 log 寫到 syslog 或程式（pipe），不是 shentu 能直接讀的檔案",
-	ReasonVariablePath:    "log 路徑裡有變數或是相對路徑，shentu 無法確定是哪個檔案",
+	ReasonWebUserWritable:  "這個 log（或它所在的目錄、或寫它的程序）可以被 web 伺服器的帳號改動：只有 web 應用已經被入侵時才可能偽造，但 shentu 無法證明沒有，所以不能從 Telegram 放行封鎖",
+	ReasonUntrusted:        "這個 log 或它所在的目錄可以被 root 以外的帳號改動，內容可能是偽造的，所以不能從 Telegram 放行封鎖",
+	ReasonUnverified:       "shentu 無法確認只有 root 能改動這個 log（例如群組成員、ACL 或帳號來源讀不到），依規則一律不信任，所以不能從 Telegram 放行封鎖",
+	ReasonNotRegular:       "這個 log 不是一般檔案，無法確認它的內容來源",
+	ReasonNotFound:         "設定裡寫的 log 不存在（還沒寫入或被刪除），這段期間沒有可讀的紀錄",
+	ReasonPermission:       "shentu 沒有權限讀這個 log 或它的上層目錄",
+	ReasonLoggingDisabled:  "這個 log 在設定裡被關閉了，這部分的攻擊不會留下紀錄",
+	ReasonNotAFile:         "這個 log 寫到 syslog 或程式（pipe），不是 shentu 能直接讀的檔案",
+	ReasonVariablePath:     "log 路徑裡有變數或是相對路徑，shentu 無法確定是哪個檔案",
+	ReasonClientFromHeader: "web 伺服器從請求的 header（例如 X-Forwarded-For）取用戶端位址，log 裡的 IP 可能是代理或攻擊者自己寫的，所以不能從 Telegram 放行封鎖",
 }
 
 // Bounds on reading the configuration: includes may not loop or fan out
@@ -101,6 +107,9 @@ var defaultWebUsers = []string{"www-data", "nginx", "apache", "httpd", "nobody",
 // be trusted (Ubuntu's /var/log is 775 root:syslog), provided none of
 // their members is a web account.
 var logGroupNames = map[string]bool{"syslog": true, "adm": true, "log": true}
+
+// logMemberNames are accounts a log group may hold whatever their uid.
+var logMemberNames = map[string]bool{"root": true, "syslog": true}
 
 // defaultWebGroups are their groups that are not also an account's name.
 var defaultWebGroups = []string{"nogroup", "www"}
@@ -126,24 +135,42 @@ func (c LinuxCollector) WebLogs(src Source) Obs[[]LogSource] {
 				s.FileID = t.File.ID
 			}
 		}
-		if s.Verified && !l.masterOnly(s) {
+		if s.Verified {
 			// The file is root's, but processes running as a web account
-			// hold it open: whoever can make them write can. Only logs a
-			// root process alone writes are exempt; any other server kind
-			// is taken to be like these.
+			// hold it open or feed it: whoever can make them write can.
+			// v0.4.0 trusts only nginx's and Apache's access logs, and
+			// those only while no application code runs in their workers.
+			no := func(r Reason, d string) { s.Verified, s.Reason, s.Detail, s.FileID = false, r, d, "" }
 			switch {
-			case s.Server == "php-fpm": // a pool's access log and PHP's error_log: written by the workers running PHP
-				s.Verified, s.Reason, s.Detail = false, ReasonWebUserWritable, "PHP-FPM's workers, running the pool's PHP, write this log: "+WebUserWritableMeaning
-			case s.Server == "apache" && l.modPHP:
-				s.Verified, s.Reason, s.Detail = false, ReasonWebUserWritable, "Apache runs PHP in its own children (mod_php), which hold the log open: "+WebUserWritableMeaning
+			case s.Kind != "access" || (s.Server != "nginx" && s.Server != "apache"):
+				no(ReasonWebUserWritable, "an error or slow log, or PHP-FPM's: it takes what workers, FastCGI and PHP write (their stderr, a script's name): "+WebUserWritableMeaning)
+			case s.Server == "nginx" && l.ngxRealIP:
+				no(ReasonClientFromHeader, "nginx takes the client address from a request header (set_real_ip_from / real_ip_header): the logged address is what a proxy, or the client, wrote")
+			case s.Server == "apache" && l.apacheRemoteIP:
+				no(ReasonClientFromHeader, "Apache takes the client address from a request header (mod_remoteip, RemoteIPHeader): the logged address is what a proxy, or the client, wrote")
+			case s.Server == "apache" && len(l.apacheApp) > 0:
+				no(ReasonWebUserWritable, "Apache runs application code in its own children ("+strings.Join(l.apacheApp, ", ")+"), which hold the log open: "+WebUserWritableMeaning)
+			case s.Server == "nginx" && len(l.ngxApp) > 0:
+				no(ReasonWebUserWritable, "nginx runs application code in its workers ("+strings.Join(l.ngxApp, ", ")+"), which hold the log open: "+WebUserWritableMeaning)
 			case !scoped:
-				s.Verified, s.Reason, s.Detail = false, ReasonWebUserWritable, scopeWhy+": the web account can ptrace the server's workers, which hold the log open; "+WebUserWritableMeaning
-			}
-			if !s.Verified {
-				s.FileID = ""
+				no(ReasonWebUserWritable, scopeWhy+": the web account can ptrace the server's workers, which hold the log open; "+WebUserWritableMeaning)
 			}
 		}
 		out = append(out, *s)
+	}
+	// One file named twice (an FPM access.log pointed at Apache's): the
+	// worst judgment holds for every entry of it.
+	worst := map[string]*LogSource{}
+	for i := range out {
+		if w, ok := worst[out[i].Path]; !ok || (w.Verified && !out[i].Verified) {
+			worst[out[i].Path] = &out[i]
+		}
+	}
+	for i := range out {
+		if w := worst[out[i].Path]; out[i].Verified && !w.Verified {
+			out[i].Verified, out[i].Reason, out[i].FileID = false, w.Reason, ""
+			out[i].Detail = "the same file is also PHP-FPM's or another server's " + w.Kind + " log: " + w.Detail
+		}
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Path != out[j].Path {
@@ -315,8 +342,8 @@ func linkChain(src Source, p string) ([]string, error) {
 			next := path.Join(dir, part)
 			t, err := src.Readlink(next)
 			if err != nil {
-				if errors.Is(err, fs.ErrPermission) { // not known whether it is a link
-					return nil, err
+				if !errors.Is(err, syscall.EINVAL) && !errors.Is(err, fs.ErrNotExist) {
+					return nil, err // ELOOP, EIO, EACCES...: not known whether it is a link
 				}
 				dir = next
 				continue
@@ -358,6 +385,11 @@ type logLoader struct {
 	users  []string // accounts the configuration runs the servers as
 	groups []string // and groups
 	modPHP bool     // Apache loads PHP as a module
+	// apacheApp, ngxApp: the modules or directives that run application
+	// code in the server's own workers (not on the list known not to).
+	apacheApp, ngxApp []string
+	// ngxRealIP, apacheRemoteIP: the client address may come from a header.
+	ngxRealIP, apacheRemoteIP bool
 	// catchWorkers: a PHP-FPM pool sets catch_workers_output, so the root
 	// master logs what its workers write.
 	catchWorkers bool
@@ -480,24 +512,6 @@ func (l *logLoader) unitUsers(c LinuxCollector, src Source) {
 	}
 }
 
-// masterOnly: only a root process writes the log, no worker holds it:
-// PHP-FPM's slow log (the master traces the slow worker and writes), and
-// its own error log unless a pool forwards its workers' output there
-// (catch_workers_output) or some configuration could not be read (so a
-// pool may). Every pool is read before the logs are judged.
-func (l *logLoader) masterOnly(s *LogSource) bool {
-	if s.Server != "php-fpm" {
-		return false
-	}
-	switch s.Kind {
-	case "slow":
-		return true
-	case "error":
-		return !l.catchWorkers && len(l.unread) == 0
-	}
-	return false
-}
-
 // iniValue is a php-fpm.conf value: quotes taken off, or an inline
 // comment (" ; ...") cut from an unquoted one.
 func iniValue(v string) string {
@@ -556,13 +570,18 @@ func (l *logLoader) webAccounts() WebAccounts {
 	}
 	primary := map[int]bool{}
 	byPrimary := map[int][]string{} // gid -> accounts with it as primary group
-	passwdOK, groupOK := false, false
+	nameUID := map[string]int{}
+	passwdOK, groupOK, nis := false, false, false
 	if b, err := l.src.ReadFile("/etc/passwd"); err == nil {
 		passwdOK = true
+		nis = nis || nisLines(b)
 		entries := ParsePasswd(b)
 		for _, e := range entries {
 			if gid, err := strconv.Atoi(e.GID); err == nil {
 				byPrimary[gid] = append(byPrimary[gid], e.Name)
+			}
+			if uid, err := strconv.Atoi(e.UID); err == nil {
+				nameUID[e.Name] = uid
 			}
 		}
 		for _, e := range entries { // a numeric user's name, for its group memberships
@@ -584,6 +603,7 @@ func (l *logLoader) webAccounts() WebAccounts {
 	w.LogGIDs = map[int]string{}
 	if b, err := l.src.ReadFile("/etc/group"); err == nil {
 		groupOK = true
+		nis = nis || nisLines(b)
 		for _, ln := range strings.Split(string(b), "\n") {
 			f := strings.Split(ln, ":")
 			if len(f) < 3 || strings.HasPrefix(f[0], "#") {
@@ -605,9 +625,19 @@ func (l *logLoader) webAccounts() WebAccounts {
 				w.GIDs[gid] = f[0]
 			}
 			if logGroupNames[f[0]] && !member && !primary[gid] && !groups[f[0]] {
+				// Every member, listed or by primary group, must be a system
+				// account (uid < 1000) or root's own: a deploy account in
+				// syslog running gunicorn under supervisor is not known to be
+				// a web account, and is not let pass.
+				var members []string
+				if len(f) > 3 && f[3] != "" {
+					members = strings.Split(f[3], ",")
+				}
 				clean := true
-				for _, a := range byPrimary[gid] {
-					if users[a] {
+				for _, a := range append(members, byPrimary[gid]...) {
+					a = strings.TrimSpace(a)
+					uid, known := nameUID[a]
+					if users[a] || !known || (uid >= 1000 && !logMemberNames[a]) {
 						clean = false
 					}
 				}
@@ -617,7 +647,7 @@ func (l *logLoader) webAccounts() WebAccounts {
 			}
 		}
 	}
-	w.Complete = passwdOK && groupOK && filesOnlyNSS(l.src)
+	w.Complete = passwdOK && groupOK && !nis && filesOnlyNSS(l.src)
 	for gid := range primary { // a primary group /etc/group does not list
 		if _, ok := w.GIDs[gid]; !ok {
 			w.GIDs[gid] = "gid " + strconv.Itoa(gid)
@@ -640,7 +670,12 @@ func filesOnlyNSS(src Source) bool {
 	}
 	for _, ln := range strings.Split(string(b), "\n") {
 		k, v, ok := strings.Cut(strings.TrimSpace(ln), ":")
-		if !ok || (k != "passwd" && k != "group") {
+		switch strings.TrimSpace(k) {
+		case "passwd", "group", "initgroups", "passwd_compat", "group_compat":
+		default:
+			continue
+		}
+		if !ok {
 			continue
 		}
 		if i := strings.IndexByte(v, '#'); i >= 0 {
@@ -656,6 +691,16 @@ func filesOnlyNSS(src Source) bool {
 		}
 	}
 	return true
+}
+
+// nisLines: the file has +/- lines, which compat mode answers from NIS.
+func nisLines(b []byte) bool {
+	for _, ln := range strings.Split(string(b), "\n") {
+		if strings.HasPrefix(ln, "+") || strings.HasPrefix(ln, "-") {
+			return true
+		}
+	}
+	return false
 }
 
 // numericID is a user or group given by number: #33 (Apache) or 33.
@@ -829,6 +874,52 @@ func (l *logLoader) ngxIncludes(ds []*ngxDir, depth int) []*ngxDir {
 	return out
 }
 
+// apacheSafeModules are the Apache modules known to run no application
+// code in the children that hold the logs open. Any other (php, wsgi,
+// perl, lua, passenger, cgi...) makes Apache's logs web_user_writable.
+var apacheSafeModules = map[string]bool{}
+
+func init() {
+	for _, m := range strings.Fields(`access_compat_module alias_module allowmethods_module auth_basic_module auth_digest_module
+		authn_core_module authn_file_module authz_core_module authz_groupfile_module authz_host_module authz_user_module
+		autoindex_module brotli_module cache_module cache_disk_module cache_socache_module deflate_module dir_module env_module
+		expires_module filter_module headers_module http2_module info_module lbmethod_byrequests_module log_config_module
+		logio_module mime_module mime_magic_module mpm_event_module mpm_prefork_module mpm_worker_module negotiation_module
+		proxy_module proxy_ajp_module proxy_balancer_module proxy_fcgi_module proxy_http_module proxy_http2_module
+		proxy_wstunnel_module reqtimeout_module request_module rewrite_module setenvif_module slotmem_shm_module
+		socache_shmcb_module ssl_module status_module substitute_module systemd_module unique_id_module unixd_module
+		version_module watchdog_module`) {
+		apacheSafeModules[m] = true
+	}
+}
+
+// ngxSafeModules are the dynamic nginx modules known to run no application
+// code; any other load_module, or a perl, lua or njs directive, makes
+// nginx's logs web_user_writable.
+var ngxSafeModules = map[string]bool{
+	"ngx_http_geoip_module.so": true, "ngx_http_geoip2_module.so": true, "ngx_stream_geoip_module.so": true,
+	"ngx_stream_geoip2_module.so": true, "ngx_http_image_filter_module.so": true, "ngx_http_xslt_filter_module.so": true,
+	"ngx_mail_module.so": true, "ngx_stream_module.so": true, "ngx_http_brotli_filter_module.so": true,
+	"ngx_http_brotli_static_module.so": true, "ngx_http_headers_more_filter_module.so": true,
+	"ngx_http_cache_purge_module.so": true, "ngx_http_auth_pam_module.so": true, "ngx_http_dav_ext_module.so": true,
+	"ngx_http_echo_module.so": true, "ngx_http_upstream_fair_module.so": true, "ngx_http_subs_filter_module.so": true,
+}
+
+var ngxAppDirective = regexp.MustCompile(`^(?:perl|perl_\w+|js_\w+|lua_\w+|\w+_by_lua(?:_block|_file)?|\w+_by_njs)$`)
+
+// ngxWalk calls fn for every directive, nested ones included.
+func ngxWalk(ds []*ngxDir, depth int, fn func(*ngxDir)) {
+	if depth > maxNgxNest {
+		return
+	}
+	for _, d := range ds {
+		fn(d)
+		if d.hasBlock {
+			ngxWalk(d.block, depth+1, fn)
+		}
+	}
+}
+
 // ngxCombined is nginx's predefined format.
 const ngxCombined = `$remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent"`
 
@@ -843,6 +934,14 @@ func (l *logLoader) nginx() {
 		return
 	}
 	main := l.ngxFile(conf, 0)
+	ngxWalk(main, 0, func(d *ngxDir) {
+		switch {
+		case d.name == "set_real_ip_from" || d.name == "real_ip_header":
+			l.ngxRealIP = true
+		case ngxAppDirective.MatchString(d.name) && !contains(l.ngxApp, d.name):
+			l.ngxApp = append(l.ngxApp, d.name)
+		}
+	})
 	formats := map[string]ngxFormat{"combined": {spec: ngxCombined}}
 	var mainErr []*ngxDir
 	var https []*ngxDir
@@ -854,6 +953,12 @@ func (l *logLoader) nginx() {
 			}
 			if len(d.args) > 1 {
 				l.groups = append(l.groups, d.args[1])
+			} else if len(d.args) == 1 { // no group: nginx takes the user's name
+				l.groups = append(l.groups, d.args[0])
+			}
+		case "load_module":
+			if len(d.args) > 0 && !ngxSafeModules[path.Base(d.args[0])] && !contains(l.ngxApp, path.Base(d.args[0])) {
+				l.ngxApp = append(l.ngxApp, path.Base(d.args[0]))
 			}
 		case "error_log":
 			mainErr = append(mainErr, d)
@@ -1014,6 +1119,7 @@ type apacheScope struct {
 }
 
 type apacheState struct {
+	remoteIP      bool // mod_remoteip loaded
 	lookups       bool // HostnameLookups On or Double somewhere
 	root          string
 	env           map[string]string
@@ -1212,8 +1318,20 @@ func (l *logLoader) apacheFile(st *apacheState, p string, depth int) {
 				l.groups = append(l.groups, st.expand(args[1]))
 			}
 		case "loadmodule":
-			if len(args) > 1 && (strings.Contains(strings.ToLower(args[0]), "php") || strings.Contains(strings.ToLower(args[1]), "libphp")) {
-				l.modPHP = true
+			if len(args) > 1 {
+				m := strings.ToLower(args[0])
+				if strings.Contains(m, "php") || strings.Contains(strings.ToLower(args[1]), "libphp") {
+					l.modPHP = true
+				}
+				if m == "remoteip_module" {
+					st.remoteIP = true
+				} else if !apacheSafeModules[m] && !contains(l.apacheApp, m) {
+					l.apacheApp = append(l.apacheApp, m)
+				}
+			}
+		case "remoteipheader", "remoteipproxyprotocol":
+			if st.remoteIP {
+				l.apacheRemoteIP = true
 			}
 		case "servername", "serveralias":
 			for _, a := range args {

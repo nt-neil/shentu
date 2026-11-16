@@ -3,6 +3,7 @@ package hostenv
 import (
 	"io/fs"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -118,7 +119,8 @@ func TestWebLogsApache(t *testing.T) {
 		t.Errorf("variable path %+v", e)
 	}
 	// The main server's error log, written by a.test too (no ErrorLog of its own).
-	if e := m["apache error /var/log/apache2/error.log"]; !e.Verified || strings.Join(e.Vhosts, ",") != "a.test" || e.Config != "/etc/apache2/apache2.conf:1" {
+	// An error log takes FastCGI's and the application's stderr: never verified in v0.4.0.
+	if e := m["apache error /var/log/apache2/error.log"]; e.Verified || e.Reason != ReasonWebUserWritable || strings.Join(e.Vhosts, ",") != "a.test" || e.Config != "/etc/apache2/apache2.conf:1" {
 		t.Errorf("main error log %+v", e)
 	}
 	var pipe LogSource
@@ -134,8 +136,8 @@ func TestWebLogsApache(t *testing.T) {
 
 func TestWebLogsPHPFPM(t *testing.T) {
 	m := webLogsByKey(t, LinuxCollector{}.WebLogs(logHost()))
-	if e := m["php-fpm error /var/log/php8.2-fpm.log"]; !e.Verified {
-		t.Errorf("master log %+v", e)
+	if e := m["php-fpm error /var/log/php8.2-fpm.log"]; e.Verified || e.Reason != ReasonWebUserWritable {
+		t.Errorf("master log %+v: an error log, never verified in v0.4.0", e)
 	}
 	if e := m["php-fpm php_error /var/log/php-fpm/www-error.log"]; e.Reason != ReasonWebUserWritable || strings.Join(e.Vhosts, ",") != "pool www" {
 		t.Errorf("pool's PHP error log %+v", e)
@@ -344,13 +346,11 @@ func TestWebLogsWorkersHoldTheLog(t *testing.T) {
 	if a := m["apache access /var/log/apache2/access.log"]; a.Verified || a.Reason != ReasonWebUserWritable || !strings.Contains(a.Detail, "ptrace") {
 		t.Errorf("ptrace_scope 0: %+v", a)
 	}
-	if e := m["php-fpm error /var/log/php8.2-fpm.log"]; !e.Verified {
-		t.Errorf("FPM's master log, held by root only: %+v", e)
-	}
+
 	h = logHost()
 	h.files["/etc/apache2/apache2.conf"] += "LoadModule php_module /usr/lib/apache2/modules/libphp8.2.so\n"
 	m = webLogsByKey(t, LinuxCollector{}.WebLogs(h))
-	if a := m["apache access /var/log/apache2/access.log"]; a.Verified || !strings.Contains(a.Detail, "mod_php") {
+	if a := m["apache access /var/log/apache2/access.log"]; a.Verified || !strings.Contains(a.Detail, "php_module") {
 		t.Errorf("mod_php: %+v", a)
 	}
 	h = logHost()
@@ -382,22 +382,136 @@ func TestWebLogsFPMPoolLogs(t *testing.T) {
 	if a := m["php-fpm access /var/log/php-fpm/www.access.log"]; a.Verified || a.Reason != ReasonWebUserWritable {
 		t.Errorf("pool access log %+v", a)
 	}
-	if e := m["php-fpm slow /var/log/php-fpm/www.slow.log"]; !e.Verified {
-		t.Errorf("slow log, the master's: %+v", e)
+	// A slow log prints the script's name, which may hold a newline: never verified.
+	if e := m["php-fpm slow /var/log/php-fpm/www.slow.log"]; e.Verified {
+		t.Errorf("slow log: %+v", e)
 	}
 }
 
-// A pool forwarding its workers' output writes it into the master's own
-// error log: no longer the master's alone.
-func TestWebLogsFPMCatchWorkersErrorLog(t *testing.T) {
+// N-R2: in v0.4.0 only nginx's and Apache's access logs can be verified:
+// error logs take FastCGI's and PHP's stderr, slow logs a script's name.
+func TestWebLogsOnlyAccessVerified(t *testing.T) {
+	m := webLogsByKey(t, LinuxCollector{}.WebLogs(logHost()))
+	for k, s := range m {
+		if s.Verified && !(strings.HasPrefix(k, "nginx access ") || strings.HasPrefix(k, "apache access ")) {
+			t.Errorf("%s verified", k)
+		}
+	}
+	if !m["apache access /var/log/apache2/access.log"].Verified {
+		t.Error("Apache's root access log is no longer verified")
+	}
+}
+
+// Review 2, N-6 and N-7: account databases and log groups, failing closed.
+func TestLogGroupStrict(t *testing.T) {
+	gid := func(n int) *int { return &n }
+	judge := func(mod func(h statHost)) Reason {
+		h := logHost()
+		h.acl = map[string]bool{}
+		h.st["/var/log/g"] = FileStat{Mode: fs.ModeDir | 0o775, UID: 0, GID: gid(104)}
+		h.files["/var/log/g/a.log"], h.st["/var/log/g/a.log"] = "", FileStat{Mode: 0o640, UID: 0}
+		mod(h)
+		_, why, _ := LogTrust(h, "/var/log/g/a.log", LinuxCollector{}.WebAccounts(h))
+		return why
+	}
+	for name, c := range map[string]struct {
+		mod  func(h statHost)
+		want Reason
+	}{
+		"clean syslog": {func(statHost) {}, ""},
+		"initgroups from sssd": {func(h statHost) {
+			h.files["/etc/nsswitch.conf"] = "passwd: files\ngroup: files\ninitgroups: files sss\n"
+		}, ReasonUnverified},
+		"compat with NIS lines": {func(h statHost) {
+			h.files["/etc/nsswitch.conf"] = "passwd: compat\ngroup: compat\n"
+			h.files["/etc/group"] += "+:::\n"
+		}, ReasonUnverified},
+		"deploy account in syslog (supervisor, gunicorn)": {func(h statHost) {
+			h.files["/etc/passwd"] += "deploy:x:1001:1001::/home/deploy:/bin/bash\n"
+			h.files["/etc/group"] = "root:x:0:\nwww-data:x:33:\nsyslog:x:104:deploy\n"
+		}, ReasonUnverified},
+		"member not in passwd": {func(h statHost) {
+			h.files["/etc/group"] = "root:x:0:\nwww-data:x:33:\nsyslog:x:104:ghost\n"
+		}, ReasonUnverified},
+		"system account member": {func(h statHost) {
+			h.files["/etc/passwd"] += "rsyslog:x:998:998::/:/usr/sbin/nologin\n"
+			h.files["/etc/group"] = "root:x:0:\nwww-data:x:33:\nsyslog:x:104:rsyslog\n"
+		}, ""},
+	} {
+		if got := judge(c.mod); got != c.want {
+			t.Errorf("%s: %q, want %q", name, got, c.want)
+		}
+	}
+}
+
+// Review 2, N-8 and real_ip: application code in the workers, or a client
+// address from a header, and the access log is not verified.
+func TestWebLogsAppModulesAndRealIP(t *testing.T) {
+	for name, c := range map[string]struct {
+		mod  func(h statHost)
+		key  string
+		want Reason
+	}{
+		"apache mod_wsgi": {func(h statHost) {
+			h.files["/etc/apache2/apache2.conf"] += "LoadModule wsgi_module /usr/lib/apache2/modules/mod_wsgi.so\n"
+		}, "apache access /var/log/apache2/access.log", ReasonWebUserWritable},
+		"apache safe modules": {func(h statHost) {
+			h.files["/etc/apache2/apache2.conf"] += "LoadModule rewrite_module x.so\nLoadModule ssl_module y.so\n"
+		}, "apache access /var/log/apache2/access.log", ""},
+		"apache mod_remoteip": {func(h statHost) {
+			h.files["/etc/apache2/apache2.conf"] += "LoadModule remoteip_module x.so\nRemoteIPHeader X-Forwarded-For\n"
+		}, "apache access /var/log/apache2/access.log", ReasonClientFromHeader},
+		"nginx perl module": {func(h statHost) {
+			h.files["/etc/nginx/nginx.conf"] = "load_module modules/ngx_http_perl_module.so;\n" + h.files["/etc/nginx/nginx.conf"]
+		}, "nginx access /var/log/nginx/shop.access.log", ReasonWebUserWritable},
+		"nginx lua directive": {func(h statHost) {
+			h.files["/etc/nginx/sites-enabled/shop"] = strings.Replace(h.files["/etc/nginx/sites-enabled/shop"], "access_log off;", "access_log off; content_by_lua_block { ngx.say(1) }", 1)
+		}, "nginx access /var/log/nginx/shop.access.log", ReasonWebUserWritable},
+		"nginx realip": {func(h statHost) {
+			h.files["/etc/nginx/sites-enabled/shop"] = strings.Replace(h.files["/etc/nginx/sites-enabled/shop"], "server_name shop.test", "set_real_ip_from 0.0.0.0/0;\n\treal_ip_header X-Forwarded-For;\n\tserver_name shop.test", 1)
+		}, "nginx access /var/log/nginx/shop.access.log", ReasonClientFromHeader},
+	} {
+		h := logHost()
+		c.mod(h)
+		s := webLogsByKey(t, LinuxCollector{}.WebLogs(h))[c.key]
+		if s.Reason != c.want || s.Verified != (c.want == "") {
+			t.Errorf("%s: %+v, want %q", name, s, c.want)
+		}
+	}
+}
+
+// One file named twice takes the worst judgment; nginx's user without a
+// group brings its own group; a readlink failing other than "not a link"
+// is not taken for "not a link".
+func TestWebLogsWorstAndDefaults(t *testing.T) {
 	h := logHost()
+	h.files["/etc/php/8.2/fpm/pool.d/www.conf"] += "access.log = /var/log/apache2/access.log\n"
 	m := webLogsByKey(t, LinuxCollector{}.WebLogs(h))
-	if e := m["php-fpm error /var/log/php8.2-fpm.log"]; !e.Verified {
-		t.Fatalf("without catch_workers_output: %+v", e)
+	if a := m["apache access /var/log/apache2/access.log"]; a.Verified {
+		t.Errorf("Apache's log, also FPM's: %+v", a)
 	}
-	h.files["/etc/php/8.2/fpm/pool.d/www.conf"] += "catch_workers_output = yes\n"
-	m = webLogsByKey(t, LinuxCollector{}.WebLogs(h))
-	if e := m["php-fpm error /var/log/php8.2-fpm.log"]; e.Verified || e.Reason != ReasonWebUserWritable {
-		t.Errorf("catch_workers_output: %+v, want web_user_writable", e)
+
+	h = logHost()
+	h.files["/etc/nginx/nginx.conf"] = strings.Replace(h.files["/etc/nginx/nginx.conf"], "user www-data;", "user app;", 1)
+	h.files["/etc/passwd"] += "app:x:2100:2100::/srv:/usr/sbin/nologin\n"
+	h.files["/etc/group"] += "app:x:2100:\n"
+	if w := (LinuxCollector{}).WebAccounts(h); w.GIDs[2100] != "app" {
+		t.Errorf("nginx user app; without a group: gid 2100 not a web group: %v", w.GIDs)
 	}
+
+	h = logHost()
+	lh := loopLink{h}
+	if _, why, _ := LogTrust(lh, "/var/log/nginx/shop.access.log", LinuxCollector{}.WebAccounts(h)); why == "" {
+		t.Error("verified though readlink failed with ELOOP")
+	}
+}
+
+// loopLink fails readlink on /var/log/nginx with ELOOP.
+type loopLink struct{ statHost }
+
+func (l loopLink) Readlink(p string) (string, error) {
+	if p == "/var/log/nginx" {
+		return "", &fs.PathError{Op: "readlink", Path: p, Err: syscall.ELOOP}
+	}
+	return l.statHost.Readlink(p)
 }
