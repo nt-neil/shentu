@@ -478,8 +478,10 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 		// The same for application dependencies (npm, PyPI, Composer, Go, RubyGems).
 		r, err = tools.AppVulns(ctx, env.HTTP, env.AppPaths)
 		unchecked += uncheckedVulns("application dependencies", r, err)
+		var apps []tools.AppResult
 		if err == nil {
-			for _, f := range r["files"].([]tools.AppResult) {
+			apps, _ = r["files"].([]tools.AppResult)
+			for _, f := range apps {
 				for _, e := range f.Exploited {
 					all = append(all, finding{"kev:" + f.Path + ":" + e.Package + ":" + e.CVE, "critical",
 						fmt.Sprintf("%s pins %s %s, which has %s, exploited in the wild (%s); upgrade it", f.Path, e.Package, e.Version, e.CVE, e.Name), e})
@@ -491,6 +493,20 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 		audit := tools.AppCodeAudit(ctx, env.AppPaths, web)
 		all = replaceOrAppend(all, codeAuditFindings(audit))
 		unchecked += uncheckedConfigs(unread) + notCheckedSection(audit.NotChecked)
+		// The vulnerability surface attack detection judges by, until tomorrow.
+		if !dryRun {
+			if err := saveSurface(cfg.StateDir, buildSurface(audit, apps), env.AppPaths, time.Now()); err != nil {
+				unchecked += "\nAttack detection: the vulnerability surface could not be saved: " + err.Error() + "\n"
+			}
+		}
+	}
+	// Attack detection: its alerts go out on their own, as the detector's
+	// words; the daily report gets a summary and the report file.
+	ds := detectRound(ctx, cfg, env, time.Now(), daily, dryRun)
+	if daily {
+		unchecked += detectSection(ds)
+	} else if ds.Err != "" {
+		unchecked += "\nAttack detection: " + ds.Err + "\n"
 	}
 	var fresh []finding
 	for _, f := range all {
