@@ -103,11 +103,24 @@ func sshFindings(r map[string]any, err error, threshold int) (out []finding, why
 		}
 	}
 	if c, _ := r["complete"].(bool); !c {
-		detail := "a login log was cut short or could not be read"
-		if e, _ := r["error"].(string); e != "" {
-			detail = cutLine(mask(e))
+		// The reason is the error, else what was read (source says why it is
+		// not enough: an empty journal with no text log to confirm it, ...).
+		detail, _ := r["error"].(string)
+		if detail == "" {
+			detail, _ = r["source"].(string)
 		}
-		why = fmt.Sprintf("\n\nNot checked in full: SSH logins (%q); the failed logins counted are a lower bound (run Shentu as root to read every log).\n", detail)
+		if detail == "" {
+			detail = "a login log was cut short or could not be read"
+		}
+		detail = cutLine(mask(detail))
+		if u, _ := r["unsupported"].(bool); u {
+			return out, fmt.Sprintf("\n\nNot checked: SSH logins (%q).\n", detail)
+		}
+		advice := ""
+		if p, _ := r["permission"].(bool); p { // root helps only when rights were missing
+			advice = " (run Shentu as root to read every log)"
+		}
+		why = fmt.Sprintf("\n\nNot checked in full: SSH logins (%q); the failed logins counted are a lower bound%s.\n", detail, advice)
 	}
 	return out, why
 }

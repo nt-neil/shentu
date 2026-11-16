@@ -21,19 +21,27 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
   - `->get_settings()` 只在繼承 `\Elementor\Widget_Base` 的類別裡才算 Elementor widget 的輸入（#60）。
   - 用 `array_map` 加上回傳常數的 callback 組出的 placeholder 清單不算輸入（#61）。
   - `zipfile.ZipFile(request.files[...])` 開的是上傳檔的串流，不是路徑（`unless_subscript`，#67）。
+- `js-ssrf-http-request`（漏報）：Koa、hapi 與 Fetch API 寫法的 Referer／Origin 之前沒被當成輸入，
+  `fetch(ctx.request.header.referer)`、`fetch(request.headers.referer)`、`fetch(request.headers.get('x-callback-url'))`
+  會漏報；現在都算輸入（Host 除外，那是 Host header 規則的輸入），規則格式的 `source_args` 也新增 `"!name"` 排除值。
+  `php-sqli-string-concat` 與 `php-sqli-prepare-query-text`（重複回報）：輸入寫進 `prepare()` 的查詢文字時，兩條規則
+  之前在同一行都會報一次，現在只由 `php-sqli-prepare-query-text` 回報。benchmark 的數字不變。
 - 引擎：`new URL(a, base)` 的 `a` 以 `/` 或 scheme 起始時，路徑和 query 只取自 `a`（#63）；同一個檔案裡
-  已知類別的物件，呼叫它的方法會追進方法裡（#64）；用 `^` 固定前面字串的 regex 檢查
-  （`re.match(re.escape(base) + r'/[a-z]', url)`）對 redirect 和 URL 規則算是檢查（#65）；回傳字串常數的 helper
-  會追進（#66）；`markup` 使輸出類危險呼叫只在前面寫了 HTML 標記後才算輸入（#71）；recursive 的呼叫 cycle
-  會跟到結果不再改變，並只計一次成本，WordPress 呼叫沒有跟完的檔案從 48 個少到 4 個（#72）；Host header 規則用
+  已知類別的物件，呼叫它的方法會追進方法裡（#64）；用 regex 從起始處比對、固定值起始的檢查
+  （`re.match(re.escape(base) + r'/[a-z]', url)`）對 redirect 和 URL 規則算是檢查（#65）；會追進回傳字串常數的
+  helper（#66）；`markup`：輸出類的危險呼叫，只有在輸入前面接著 HTML 標記時才報（#71）；recursive 的呼叫 cycle
+  會一直追到結果不再改變，成本只算一次，WordPress 呼叫沒有跟完的檔案從 48 個少到 4 個（#72）；Host header 規則用
   `route_input = false`，Express 模型也認得 Koa 的 `ctx`（#50）。
 - 主機盤點會對 Apache 2.4.55～2.4.70、載入 `mod_http2` 並在 `Protocols` 開了 `h2` 或 `h2c` 的情況提出警告
-  （CVE-2026-119618；請更新到 2.4.71，更新前先把 `Protocols` 設成只有 `http/1.1`）（#54）。
+  （CVE-2026-119618；請更新到 2.4.71，更新前先把 `Protocols` 設成只有 `http/1.1`）（#54）。可能載入 `mod_http2` 或開啟 h2 的檔案讀不到時（沒有權限、不能用的連結），
+  這項會列為沒有檢查，不再當成沒事；警告也註明發行版已經 backport 修補時可以不理會。
 - 程式碼稽核：接續的掃描在跑到上次位置前就沒有時間時，保留原本的位置，位置也改用根目錄的路徑記錄；vendor、
   node_modules 和 WordPress 的程式碼資料夾只在網站根目錄之下才算；`wp-content/blogs.dir/*/files`，以及沒有
   網站首頁檔的 `/var/www/<uploads|files>`，都算上傳資料夾；`authorized_key_unparsed` 只列出前 20 個行號（#73）。
 - 登入紀錄沒有完整讀到時（root 以外的帳號看不到 journald 的系統紀錄、讀不到 `auth.log` 或 `secure`、
   紀錄只讀到一部分），hourly 和每日報告都會把 SSH 登入列為沒有檢查。之前這個情況只會寫「nothing new」（#80）。
+  寫出的原因是紀錄不能用的真正理由（例如沒有任何登入的主機：journald 沒有 sshd 紀錄，也沒有文字紀錄），只有缺少
+  權限時才建議用 root 執行；macOS 的 sshd 紀錄不在 Shentu 讀的地方，報告會明說 macOS 上沒有 sshd 紀錄來源。
 - Linux 版本查 DNS 時不再帶 EDNS(0) 記錄，和 glibc 一樣：有些 DNS 伺服器（例如 VMware NAT 的
   DNS）回應這樣的查詢時會少了位址，所以每次查詢（OSV、GitHub）都失敗，回報「no such host」。
   如果查詢還是失敗，每日報告的 Not checked 會提示檢查這台主機的 DNS（#80）。
@@ -44,22 +52,24 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
   不在檢查範圍內，要由管理員自己確認。
   journald 裡完全沒有 sshd 紀錄的主機（只有文字紀錄），只要 IP 有 SSH 登入紀錄，`block_ip` 都不會執行，
   不管紀錄上寫的是什麼時間；這時不能從 Telegram 執行，只能在伺服器上用 `shentu chat` 加 `override_unverified`。
-  `ssh_logins` 最多回查 720 時，和這個檢查一樣（#80）。
-- macOS：binary plist 的 array 和 dictionary 項目也計入讀取上限，UTF-16 字串每個字元算 9 bytes；最後有
-  space 的程式路徑照原樣保留；同一個 PID 出現在兩行 `ps` 輸出時標為 `parse_error`；`periodic_conf_files`
+  `ssh_logins` 最多回查 720 hours，和這個檢查一樣（#80）。因為登入紀錄可能是偽造而不執行時，訊息會列出這些紀錄所在的文字紀錄檔。
+- macOS：binary plist 的 array 和 dictionary 項目也計入讀取上限，UTF-16 字串每個字元算 9 bytes；最後一個
+  字元是 space 的程式路徑照原樣保留；同一個 PID 出現在兩行 `ps` 輸出時標為 `parse_error`；`periodic_conf_files`
   多於 16 個時，沒有讀到的會列出來（#80）。CI 在 macOS 15 上跑 `go vet` 和 `go test`（#81）；還沒有提供 macOS
   執行檔。
-- 測試裡格式和憑證相同的測試值，改成執行時才組出來，repo 裡不再有金鑰格式的字串（#77）。
+- 測試裡看起來和憑證一樣的測試值，改成執行時才組出來，repo 裡不再有金鑰格式的字串（#77）。
 - 和 v0.3.0 比較的 benchmark：已公開漏洞 97 個抓到 16 個（原本 15 個），修補版誤報 1 個（原本 0 個，見下方）；
-  保留測試案例 30 個抓到 3 個（原本 2 個），沒有修補版誤報；TypeScript 案例 18 個抓到 1 個、
+  保留測試案例（held-out）30 個抓到 3 個（原本 2 個），沒有修補版誤報；TypeScript 案例 18 個抓到 1 個、
   修補版誤報 1 個（n8n），都沒有變。
 
 ### 已知問題
 
 - CVE-2021-23664（`@isomorphic-git/cors-proxy`）：`js-ssrf-http-request` 在修補版仍會報出。這個 proxy 在通過
-  allowlist 檢查後才送出 `req.url`，引擎還不會把這個檢查當成 sanitizer；之後會使引擎讀出送出請求前的這類檢查。
-- 規則變多，掃描時間變長：WordPress 多了 39～49%，TypeScript 專案多了 43%，因為每個檔案要跑的規則更多。
-- `block_ip` 的檢查只包含 SSH 登入紀錄（見上方）：根據別的紀錄提出的 block，要由管理員自己決定。
+  allowlist 檢查後才送出 `req.url`，引擎還不會把這個檢查當成 sanitizer；之後會使引擎辨別送出請求前的這類檢查。
+- 規則變多，掃描時間變長，因為每個檔案要跑的規則更多：WordPress 多了 40～60%，依機器而定（在 Ubuntu VM 上，
+  程式碼稽核從 73.8 s 變成 120.0 s，每日巡檢從 100 s 變成 144 s，結果數與 RSS 最高值都沒有變），TypeScript
+  專案多了 43%。根本的修正排在 v0.3.1 之後。
+- `block_ip` 的檢查只包含 SSH 登入紀錄（見上方）：根據別的紀錄要求的 `block_ip`，要由管理員自己決定。
 - `php-deserialization-phar-wrapper` 仍會把 WordPress REST attachments controller 裡對上傳暫存路徑做的
   `filesize()` 報出來：引擎還分不出上傳檔的 `tmp_name` 和客戶端填的 `name`。
 - `markup` 不會追蹤先在變數裡組成的 HTML 標記（`const h = '<p>' + x; ctx.body = h`）。

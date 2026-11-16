@@ -82,17 +82,27 @@ func apacheH2Risk(ctx context.Context, confGlob []string) []Risk {
 		return nil
 	}
 	var confs [][]byte
+	var unread []string
 	src, conf := hostSource(), hostenv.WebConf{Root: webConfRoot, Owner: int(webConfOwner)}
 	for _, g := range confGlob {
 		for _, f := range hostenv.Glob(src, g) {
 			if b, why := hostenv.ReadWebConf(src, f, conf); why == "" {
 				confs = append(confs, b)
+			} else {
+				unread = append(unread, f+" ("+why+")")
 			}
 		}
 	}
 	if !apacheH2Enabled(confs) {
+		// A file not read (no rights, a link not trusted) may be the one
+		// loading mod_http2 or turning h2 on: that is not "not exposed".
+		if len(unread) > 0 {
+			return []Risk{{uncheckedPrefix + "apache:CVE-2026-119618", "info", "Apache " + v + " is in CVE-2026-119618's range, but whether it serves HTTP/2 " +
+				"with mod_http2 is unknown: " + strings.Join(unread, ", ") + " could not be read"}}
+		}
 		return nil
 	}
 	return []Risk{{"apache:CVE-2026-119618", "warning", "Apache " + v + " serves HTTP/2 with mod_http2, which CVE-2026-119618 affects " +
-		"(heap corruption in assign_headers(), remote code execution); upgrade to 2.4.71; until then, set Protocols to http/1.1 only"}}
+		"(heap corruption in assign_headers(), remote code execution); upgrade to 2.4.71; until then, set Protocols to http/1.1 only. " +
+		"If your distribution has backported the fix to this package version, this can be ignored"}}
 }

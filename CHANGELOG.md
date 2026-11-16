@@ -28,6 +28,11 @@ Chinese for the zh-TW pages; keep the two in step.
     (#61).
   - `zipfile.ZipFile(request.files[...])` opens the upload's stream, not a path
     (`unless_subscript`, #67).
+- `js-ssrf-http-request` now reads the referrer and origin in Koa, hapi and Fetch API spelling
+  (`ctx.request.header.referer`, `request.headers.referer`, `request.headers.get('x-callback-url')`;
+  not Host), which were missed. Input written into a prepared statement's text is reported once,
+  by `php-sqli-prepare-query-text`, instead of also by `php-sqli-string-concat`. The benchmark
+  numbers are unchanged.
 - Engine: `new URL(a, base)` takes its path and query from `a` when `a` starts with `/` or a
   scheme (#63); method calls on an object of a class in the same file are followed (#64); an
   anchored regex test fixing a value's start (`re.match(re.escape(base) + r'/[a-z]', url)`) is
@@ -38,7 +43,9 @@ Chinese for the zh-TW pages; keep the two in step.
   in the Express model (#50).
 - Survey warns about Apache 2.4.55–2.4.70 with `mod_http2` loaded and `h2` or `h2c` in
   `Protocols` (CVE-2026-119618; upgrade to 2.4.71, or set `Protocols http/1.1` until then)
-  (#54).
+  (#54). When a file that could load `mod_http2` or turn on h2 cannot be read (no rights, a link
+  not trusted), the check is listed as not checked instead of passed over; the warning says it
+  can be ignored when the distribution has backported the fix.
 - Code audit: a resumed walk cut before its stored position keeps that position, and the
   position is stored by the root's path; vendor, node_modules and WordPress code folders count
   only below the site root; `wp-content/blogs.dir/*/files` and `/var/www/<uploads|files>`
@@ -47,6 +54,10 @@ Chinese for the zh-TW pages; keep the two in step.
 - The hourly and daily reports list SSH logins as not checked when the login logs could not
   be read in full (journald hiding the system's entries from a non-root user, `auth.log` or
   `secure` unreadable, a log cut short). Before, such a run said "nothing new" (#80).
+  The reason given is what kept the logs from counting (on a quiet host: a journal with no sshd
+  entry and no text auth log), and running as root is advised only when rights were missing; on
+  macOS, which keeps sshd's events where Shentu does not read, the report says it has no sshd log
+  source there.
 - Linux builds no longer send an EDNS(0) record with DNS queries, as glibc does not: some
   DNS servers, VMware's NAT DNS among them, answered such queries without the address, so
   every lookup (OSV, GitHub) failed with "no such host". When a lookup still fails, the daily
@@ -60,7 +71,8 @@ Chinese for the zh-TW pages; keep the two in step.
   On a host whose journald has no sshd entries (text logs only), `block_ip` refuses every IP
   with SSH login events, whatever the date of the lines; such a block cannot be made from
   Telegram, only on the server with `shentu chat` and `override_unverified`. `ssh_logins`
-  looks back at most 720 hours, as far as the check (#80).
+  looks back at most 720 hours, as far as the check (#80). A refusal for login events that may
+  be forged names the text logs they are in.
 - macOS: binary plists count array and dictionary entries, and UTF-16 strings at 9 bytes a
   character, against the decoding limit; a program path ending in a space is kept as it is;
   a process named on two `ps` lines is marked `parse_error`; `periodic_conf_files` past 16
@@ -78,8 +90,10 @@ Chinese for the zh-TW pages; keep the two in step.
 - CVE-2021-23664 (`@isomorphic-git/cors-proxy`): `js-ssrf-http-request` still reports the
   fixed release. The proxy forwards `req.url` after an allow check the engine does not yet read
   as a sanitizer; reading such checks before a request is planned.
-- Scans take longer with the added rules: about 39–49% on WordPress and 43% on TypeScript
-  projects, as each file is run through more rules.
+- Scans take longer with the added rules, as each file is run through more rules: WordPress
+  about 40–60% depending on the machine (on an Ubuntu VM the code audit went from 73.8 s to
+  120.0 s and the daily patrol from 100 s to 144 s, with the same findings and peak RSS),
+  TypeScript projects about 43%. The fix at the root is planned after v0.3.1.
 - `block_ip`'s check covers SSH login evidence only (see above): a block based on other logs
   is the operator's to judge.
 - `php-deserialization-phar-wrapper` still reports `filesize()` on an upload's temporary path

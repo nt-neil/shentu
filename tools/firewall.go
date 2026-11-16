@@ -58,16 +58,25 @@ func RemoteRefused(env *Env, name string, args json.RawMessage) error {
 // the text auth logs alone (tests replace both).
 var (
 	loginSummary = SSHSummary
-	textLogins   = func(env *Env, ip string) (n int, unread []string) {
+	textLogins   = func(env *Env, ip string) (n int, files, unread []string) {
 		// Whatever a line's time says: a forged line may be dated before any
-		// window, and ssh_logins could have been asked about it.
-		c := hostenv.NewSSHLogins(time.Time{}, time.Now(), ip)
-		_, unread = linux.ScanTextAuthLogs(hostSource(), env.LogPaths, time.Time{}, c.Add)
-		list, _ := hostenv.MaxLogins(c)
-		for _, s := range list {
-			n += s.Failed + s.InvalidUser + s.Accepted
+		// window, and ssh_logins could have been asked about it. Each log
+		// path is read on its own, to name the files the events are in.
+		for _, p := range env.LogPaths {
+			c := hostenv.NewSSHLogins(time.Time{}, time.Now(), ip)
+			read, un := linux.ScanTextAuthLogs(hostSource(), []string{p}, time.Time{}, c.Add)
+			unread = append(unread, un...)
+			list, _ := hostenv.MaxLogins(c)
+			k := 0
+			for _, s := range list {
+				k += s.Failed + s.InvalidUser + s.Accepted
+			}
+			if k > 0 {
+				n += k
+				files = append(files, read...)
+			}
 		}
-		return n, unread
+		return n, files, unread
 	}
 )
 
@@ -128,12 +137,18 @@ func loginGate(ctx context.Context, env *Env, ip net.IP, override bool) error {
 	if seen && verified {
 		return nil // journald itself has the IP's logins: the text logs need not be read
 	}
-	text, unread := textLogins(env, want)
+	text, files, unread := textLogins(env, want)
 	switch {
 	case len(unread) > 0:
 		return fmt.Errorf("refusing to block %s: the text auth logs could not all be read (%s), so forged SSH logins in them cannot be ruled out; check them as root and, if the block is right, ask again with override_unverified", ip, strings.Join(unread, ", "))
 	case seen, text > 0: // seen here means unverified
-		return fmt.Errorf("refusing to block %s: its SSH login events come from text logs (%v), which anyone on this host can write to, so they may be forged; check them (journalctl -u ssh, the IP's other traffic) and, if they are real, ask again with override_unverified", ip, r["source"])
+		// Name the text logs the events are in, not the summary's source
+		// (that is "journald" when journald had other sshd entries).
+		where := strings.Join(files, ", ")
+		if where == "" {
+			where = fmt.Sprint(r["source"])
+		}
+		return fmt.Errorf("refusing to block %s: its SSH login events come from text logs (%s), which anyone on this host can write to, so they may be forged; check them (journalctl -u ssh, the IP's other traffic) and, if they are real, ask again with override_unverified", ip, where)
 	}
 	return nil
 }
