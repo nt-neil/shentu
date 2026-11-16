@@ -3,7 +3,9 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"runtime"
 	"strings"
 	"time"
@@ -58,8 +60,20 @@ func SSHSummary(ctx context.Context, env *Env, since time.Time, onlyIP string) (
 	// then a lower bound.
 	complete := err == nil && (verified || !strings.HasPrefix(source, "journald"))
 	out := map[string]any{"source": source, "verified": verified, "complete": complete, "since": since, "sources": sources}
+	if runtime.GOOS == "darwin" && errors.Is(err, hostenv.ErrNotAllowed) {
+		// No journalctl and no text auth log: macOS keeps sshd's events in
+		// its unified log, which Shentu does not read. Root would not help.
+		out["source"] = "none: Shentu has no sshd log source on macOS (it reads journald and the text auth logs, which macOS does not keep)"
+		out["unsupported"] = true
+		err = nil
+	}
 	if err != nil {
 		out["error"] = err.Error()
+	}
+	// permission: a log was not read for want of rights (a text log root
+	// can read, a journal hiding the system's entries): root would read it.
+	if errors.Is(err, fs.ErrPermission) || strings.Contains(source, string(hostenv.ReasonPermission)) {
+		out["permission"] = true
 	}
 	if n := evicted; n > 0 {
 		out["note"] = fmt.Sprintf("%d low-activity sources were not tracked (more than %d sources)", n, hostenv.MaxTrackedSources)
