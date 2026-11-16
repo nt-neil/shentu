@@ -91,6 +91,13 @@ func TestComposerCVESignatures(t *testing.T) {
 		{"facade/ignition", "2.5.1", "2.5.2", "CVE-2021-3129", AccessRecord{Method: "POST", Path: "/_ignition/execute-solution"}, LevelRoute},
 		{"flarum/core", "1.8.4", "1.8.5", "CVE-2024-21641", AccessRecord{Method: "GET", Path: "/logout", Query: "return=https%3A%2F%2Fevil.example%2F"}, LevelPayload},
 	}
+	for _, ret := range []string{"%2F%5Cevil.example", "%5C%5Cevil.example", "%2F%09%2Fevil.example", "https%3A%0A%2F%2Fevil.example"} {
+		cases = append(cases, struct {
+			pkg, vuln, fixed, cve string
+			req                   AccessRecord
+			level                 string
+		}{"flarum/core", "1.8.4", "1.8.5", "CVE-2024-21641", AccessRecord{Method: "GET", Path: "/logout", Query: "return=" + ret}, LevelPayload})
+	}
 	m := NewMatcher(ss)
 	for _, c := range cases {
 		for _, v := range []string{c.vuln, c.fixed} {

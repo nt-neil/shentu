@@ -75,4 +75,6 @@ path = "/logout"
 [[signature.match]]
 part = "param"
 param = "return"
-regex = '^\s*(?:[a-z][a-z0-9+.-]*:)?//'
+# A browser takes \ for / and drops tab and newline in a URL: /\evil, \\evil
+# and /%09/evil leave the forum as //evil does.
+regex = '^[\s\x00-\x1f]*(?:[a-z][a-z0-9+.\t\n\r-]*:)?[\t\n\r]*[/\\][\t\n\r]*[/\\]'
