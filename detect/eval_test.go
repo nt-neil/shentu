@@ -141,8 +141,8 @@ func TestHoldoutEvaluation(t *testing.T) {
 		t.Skip("set SHENTU_HOLDOUT=1 to evaluate on detect/testdata/holdout")
 	}
 	rs := readEvalSet(t, filepath.Join("testdata", "holdout"))
-	if len(rs) == 0 {
-		t.Skip("no held-out set")
+	if len(rs) == 0 { // asked for and not there: a failure, not a pass that evaluated nothing
+		t.Fatal("SHENTU_HOLDOUT=1 but no held-out set under detect/testdata/holdout")
 	}
 	ss, err := sig.Load()
 	if err != nil {

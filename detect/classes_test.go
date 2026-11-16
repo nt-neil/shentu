@@ -1,6 +1,7 @@
 package detect
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/nt-neil/shentu/detect/sig"
@@ -70,8 +71,18 @@ func TestClassSignatures(t *testing.T) {
 			t.Errorf("ordinary request %s?%s hit %v", r.Path, r.Query, h)
 		}
 	}
-	if idx := sig.KEVIndex(ss); idx == nil {
-		t.Error("no KEV index")
+	idx := sig.KEVIndex(ss) // every CVE a signature is written for is listed, under that signature
+	n := 0
+	for _, s := range ss {
+		for _, c := range s.CVEs {
+			n++
+			if !slices.Contains(idx[c], s.ID) {
+				t.Errorf("KEV index: %s lacks %s", c, s.ID)
+			}
+		}
+	}
+	if n == 0 || len(idx) == 0 {
+		t.Errorf("no signature written for a CVE (%d), or an empty KEV index (%d)", n, len(idx))
 	}
 }
 
