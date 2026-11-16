@@ -62,10 +62,13 @@ type Group struct {
 	Entry  string `json:"entry"`
 	Level  string `json:"level"`
 
-	CVE  string `json:"cve,omitempty"`
-	KEV  bool   `json:"kev,omitempty"`
-	File string `json:"file,omitempty"`
-	Line int    `json:"line,omitempty"`
+	CVE string `json:"cve,omitempty"`
+	KEV bool   `json:"kev,omitempty"`
+	// VersionUnknown: some attempt's installed version could not be placed
+	// in the signature's range (said in the alert; the gate is the same).
+	VersionUnknown bool   `json:"version_unknown,omitempty"`
+	File           string `json:"file,omitempty"`
+	Line           int    `json:"line,omitempty"`
 
 	First    time.Time `json:"first"`
 	Last     time.Time `json:"last"`
@@ -492,6 +495,7 @@ func (g *Group) add(t Attempt, at time.Time) {
 	}
 	g.Cut, g.Suspicious, g.Ambiguous = g.Cut || t.Cut, g.Suspicious || t.Suspicious, g.Ambiguous || t.Ambiguous
 	g.Encoded, g.TimedOut = g.Encoded || t.Encoded, g.TimedOut || t.TimedOut
+	g.VersionUnknown = g.VersionUnknown || t.VersionUnknown
 	for _, c := range t.HiddenClasses {
 		if !slices.Contains(g.HiddenClasses, c) {
 			g.HiddenClasses = append(g.HiddenClasses, c)

@@ -331,12 +331,13 @@ func (j *Judge) Judge(m MatchResult) Judgment {
 				in, known = appliesTo(s, e)
 			}
 			if !in && known {
-				if e.Source != "os" {
+				if e.Source != "os" || !baseRangeFor(s, e) {
 					continue
 				}
 				// OSV found this installed OS package affected; a range
 				// written for the whole base (fixed versions differ by
 				// release) does not overrule it: a candidate, not known.
+				// One written for this release does.
 				known = false
 			}
 			level := LevelPayload
@@ -431,6 +432,21 @@ func appliesTo(s sig.Signature, e Entry) (in, known bool) {
 		}
 	}
 	return false, known && listed
+}
+
+// baseRangeFor: s has a range for e's package written for e's whole
+// ecosystem (Debian), no release named, while e names its release
+// (Debian:12): that range's fixed versions may be another release's.
+func baseRangeFor(s sig.Signature, e Entry) bool {
+	if !strings.Contains(e.Ecosystem, ":") {
+		return false
+	}
+	for _, r := range s.AppliesTo {
+		if !strings.Contains(r.Ecosystem, ":") && sameEcosystem(r.Ecosystem, e.Ecosystem) && samePackage(e.Ecosystem, r.Package, e.Package) {
+			return true
+		}
+	}
+	return false
 }
 
 // sameEcosystem: a and b are one ecosystem: the same base, and, when both

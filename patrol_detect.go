@@ -272,23 +272,59 @@ func finishDetect(ctx context.Context, env *tools.Env, dr *detectRun) {
 		return
 	}
 	fmt.Fprintln(os.Stderr, "shentu: attack detection:", sum.Err)
-	b, _ := json.Marshal(map[string]string{"error": sum.Err, "at": dr.now.UTC().Format(time.RFC3339)})
+	line := dr.now.UTC().Format(time.RFC3339) + ": " + sum.Err
+	if old := carryOverLines(dr.cfg.StateDir); old != "" { // not said yet (its report did not go): kept
+		line = old + "\n" + line
+	}
+	if len(line) > 8<<10 {
+		line = "…" + line[len(line)-8<<10:]
+	}
+	b, _ := json.Marshal(map[string]string{"error": line})
 	writeAtomic(filepath.Join(dr.cfg.StateDir, detectLastFile), b)
 }
 
-// detectCarryOver is what the last patrol's attack detection could not do
-// (finishDetect), for this report's start, and forgets it. "" for none.
-func detectCarryOver(dir string) string {
+// carryOverLines is what the last patrols' attack detection could not do
+// (finishDetect), one line each, "" for none.
+func carryOverLines(dir string) string {
 	b, err := detect.ReadStateFile(dir, detectLastFile, 64<<10)
 	if err != nil {
 		return ""
 	}
-	os.Remove(filepath.Join(dir, detectLastFile))
-	var v struct{ Error, At string }
-	if json.Unmarshal(b, &v) != nil || v.Error == "" {
+	var v struct{ Error string }
+	if json.Unmarshal(b, &v) != nil {
 		return ""
 	}
-	return fmt.Sprintf("\nAttack detection, last patrol (%s): %s\n", v.At, v.Error)
+	return v.Error
+}
+
+// detectCarryOver is carryOverLines for this report's start. It stays
+// until clearCarryOver, once a report saying it went out.
+func detectCarryOver(dir string) string {
+	if l := carryOverLines(dir); l != "" {
+		return "\nAttack detection, last patrol(s) — not done after the report:\n" + l + "\n"
+	}
+	return ""
+}
+
+// clearCarryOver forgets what detectCarryOver said, its report sent.
+func clearCarryOver(dir string) { os.Remove(filepath.Join(dir, detectLastFile)) }
+
+// sayCarryOver sends carry, what the last patrol could not do, on its own
+// when this patrol has no report to send it in; forgotten once sent.
+// dryRun prints it and keeps it.
+func sayCarryOver(ctx context.Context, env *tools.Env, dir, carry string, dryRun bool) error {
+	if carry == "" {
+		return nil
+	}
+	if dryRun {
+		fmt.Print(carry)
+		return nil
+	}
+	if err := detectNotify(ctx, env, "Attack detection: last patrol's sends failed", mask(strings.TrimSpace(carry)), "warning"); err != nil {
+		return err
+	}
+	clearCarryOver(dir)
+	return nil
 }
 
 // send pushes the round's alerts (MaxAlertsPerRound one by one, the rest

@@ -49,10 +49,22 @@ func PackageVulns(ctx context.Context, hc *http.Client, detailFor string) (map[s
 // (attack detection, plan 0743f0 P5): the list the overview cuts for the
 // model, whole.
 func PackageVulnsSurface(ctx context.Context, hc *http.Client) (map[string]any, []detect.PackageVuln, error) {
-	return packageVulnsAll(ctx, hc, "")
+	return packageVulnsAll(ctx, hc, surfaceDetail)
 }
 
+// surfaceDetail is packageVulnsAll's detailFor for the surface: no package's
+// detail, and every entry's CVEs looked up (surfaceCVEs).
+const surfaceDetail = "\x00surface"
+
+// surfaceCVELookups bounds the advisories looked up for their CVEs past the
+// KEV check (KEV unavailable, or past its 300 per package).
+const surfaceCVELookups = 3000
+
 func packageVulnsAll(ctx context.Context, hc *http.Client, detailFor string) (map[string]any, []detect.PackageVuln, error) {
+	forSurface := detailFor == surfaceDetail
+	if forSurface {
+		detailFor = ""
+	}
 	switch hostSource().Info().GOOS { // the host read, so a fixture of another OS is checked as that OS
 	case "windows":
 		out, err := msrcVulns(ctx, hc, cacheDir, winSource())
@@ -232,9 +244,6 @@ func packageVulnsAll(ctx context.Context, hc *http.Client, detailFor string) (ma
 					v.CVEs = advisories[id].CVEs
 				}
 			}
-			if len(v.CVEs) > 0 {
-				v.CVE = v.CVEs[0]
-			}
 			for _, e := range exploited[a.Package] {
 				if e.ID == id {
 					v.KEV, v.KEVSince, v.KEVCVE = true, e.Added, e.CVE
@@ -244,6 +253,19 @@ func packageVulnsAll(ctx context.Context, hc *http.Client, detailFor string) (ma
 				}
 			}
 			surface = append(surface, v)
+		}
+	}
+	if forSurface {
+		// The KEV check did not look up every advisory's CVEs (the list
+		// unavailable, or past 300 for one package): those it did not,
+		// looked up now; those still unknown are said.
+		if missing := surfaceCVEs(surface, cveMemo, &cveMu, lookup); missing > 0 {
+			out["surface_cves_missing"] = missing
+		}
+	}
+	for i := range surface {
+		if v := &surface[i]; v.CVE == "" && len(v.CVEs) > 0 {
+			v.CVE = v.CVEs[0]
 		}
 	}
 	sort.SliceStable(found, func(i, j int) bool {
@@ -366,6 +388,50 @@ type Exploit struct {
 	Name       string `json:"name"`
 	Added      string `json:"kev_since"`
 	Ransomware bool   `json:"used_by_ransomware,omitempty"`
+}
+
+// surfaceCVEs fills the CVEs of surface's entries neither their id nor
+// the KEV check (memo) gave, by lookup, at most surfaceCVELookups, 8 at a
+// time; it gives how many are left without (lookup failed, or past it).
+// An advisory OSV knows no CVE for is not missing.
+func surfaceCVEs(surface []detect.PackageVuln, memo map[string][]string, mu *sync.Mutex, lookup func(string) ([]string, bool)) (missing int) {
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 8)
+	var cnt sync.Mutex
+	asked := 0
+	for i := range surface {
+		v := &surface[i]
+		if len(v.CVEs) > 0 || v.KEVCVE != "" {
+			continue
+		}
+		mu.Lock()
+		_, done := memo[v.ID]
+		mu.Unlock()
+		if done {
+			continue
+		}
+		if asked++; asked > surfaceCVELookups {
+			cnt.Lock()
+			missing++
+			cnt.Unlock()
+			continue
+		}
+		wg.Add(1)
+		sem <- struct{}{}
+		go func() {
+			defer func() { <-sem; wg.Done() }()
+			c, ok := lookup(v.ID)
+			if !ok {
+				cnt.Lock()
+				missing++
+				cnt.Unlock()
+				return
+			}
+			v.CVEs = c
+		}()
+	}
+	wg.Wait()
+	return missing
 }
 
 func loadKEV(ctx context.Context, hc *http.Client) (map[string]kevEntry, error) {

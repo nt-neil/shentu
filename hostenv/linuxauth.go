@@ -86,7 +86,7 @@ func SSHDJournalLines(ctx context.Context, src Source, since, until time.Time, i
 	c := NewSSHLogins(since, until, ip)
 	// The units the summary reads: ssh and sshd, and a socket-activated
 	// sshd's per-connection ones.
-	for _, pair := range [][2][]string{{journalSSHDArgv, journalSSHDBinArgv}, {journalSSHDSockArgv, journalSSHDSockBinArgv}} {
+	for k, pair := range [][2][]string{{journalSSHDArgv, journalSSHDBinArgv}, {journalSSHDSockArgv, journalSSHDSockBinArgv}} {
 		var err error
 		for _, base := range pair {
 			argv := append([]string(nil), base...)
@@ -105,9 +105,12 @@ func SSHDJournalLines(ctx context.Context, src Source, since, until time.Time, i
 				break
 			}
 		}
-		if err != nil {
+		if err != nil && k == 0 {
 			return out, err
 		}
+		// The socket units' read failing (journalctl exits non-zero, "No
+		// data available", on a host whose journal never had them) is no
+		// lines from them: fewer events counted can only refuse more.
 	}
 	list, _ := MaxLogins(c)
 	for _, s := range list {

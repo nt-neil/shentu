@@ -342,7 +342,22 @@ func TestFinishDetectCarriesOver(t *testing.T) {
 	if !strings.Contains(got, "marker 429") || !strings.Contains(got, "last patrol") {
 		t.Errorf("carry-over %q", got)
 	}
-	if detectCarryOver(cfg.StateDir) != "" {
-		t.Error("said twice")
+	// Final check of #91 (N-A2): kept until a report saying it went out.
+	if detectCarryOver(cfg.StateDir) != got {
+		t.Error("forgotten before it was sent")
+	}
+	// Nothing new this patrol: a short notice; failing, it is kept; a dry
+	// run prints it and keeps it; sent, it is forgotten.
+	if err := sayCarryOver(context.Background(), nil, cfg.StateDir, got, false); err == nil || detectCarryOver(cfg.StateDir) == "" {
+		t.Errorf("notice failing: %v, kept %v", err, detectCarryOver(cfg.StateDir) != "")
+	}
+	sayCarryOver(context.Background(), nil, cfg.StateDir, got, true)
+	if detectCarryOver(cfg.StateDir) == "" {
+		t.Error("dry run forgot it")
+	}
+	var sent string
+	detectNotify = func(_ context.Context, _ *tools.Env, _, text, _ string) error { sent = text; return nil }
+	if err := sayCarryOver(context.Background(), nil, cfg.StateDir, got, false); err != nil || !strings.Contains(sent, "marker 429") || detectCarryOver(cfg.StateDir) != "" {
+		t.Errorf("notice sent %q, %v; forgotten %v", sent, err, detectCarryOver(cfg.StateDir) == "")
 	}
 }

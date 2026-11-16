@@ -2,6 +2,7 @@ package detect
 
 import (
 	"fmt"
+	"github.com/nt-neil/shentu/detect/sig"
 	"os"
 	"path/filepath"
 	"strings"
@@ -579,5 +580,50 @@ contains = ["marker-two"]
 	}
 	if sameEcosystem("Debian:11", "Debian:12") || !sameEcosystem("Debian", "Debian:12") || !sameEcosystem("debian:12", "Debian:12") {
 		t.Error("sameEcosystem")
+	}
+}
+
+// Final check of #91 (S-2): a range written for the entry's own release
+// excludes a patched host (no L2); one for the base alone does not, and
+// the alert says the version is unknown.
+func TestOSEntriesSameRelease(t *testing.T) {
+	sigs := func(eco string) []sig.Signature {
+		return loadSigs(t, `
+[[signature]]
+id = "rel-marker"
+title = "t"
+class = "path"
+cves = ["CVE-2099-0202"]
+source = "shentu"
+license = "Apache-2.0"
+[[signature.applies_to]]
+ecosystem = "`+eco+`"
+package = "marker-httpd"
+versions = "<2.4.62-1~deb12u1"
+[[signature.match]]
+part = "any_param"
+contains = ["marker-three"]
+`)
+	}
+	s := Build(nil, []PackageVuln{{Source: "os", Ecosystem: "Debian:12", Package: "marker-httpd", Version: "2.4.62-1~deb12u1", ID: "DSA-0000-2", CVEs: []string{"CVE-2099-0202"}, CVE: "CVE-2099-0202"}})
+	rec := AccessRecord{Method: "GET", Path: "/", Query: "q=marker-three", Client: "198.51.100.7", Status: 200, Time: t0}
+	judge := func(ss []sig.Signature) Judgment {
+		return NewJudge(s, ss).Judge(NewMatcher(ss).Match(Normalize(rec)))
+	}
+	if g := judge(sigs("Debian:12")); len(g.Candidates) != 0 {
+		t.Errorf("patched, same release: %+v", g)
+	}
+	ss := sigs("Debian")
+	g := judge(ss)
+	if len(g.Candidates) != 1 || !g.Candidates[0].VersionUnknown {
+		t.Fatalf("base only: %+v", g)
+	}
+	a := newAttacks()
+	var grp *Group
+	for _, at := range NewJudge(s, ss).Attempts(rec, Origin{Verified: true}, NewMatcher(ss).Match(Normalize(rec)), g) {
+		grp = a.Add(at, t0)
+	}
+	if grp == nil || !grp.VersionUnknown || !strings.Contains(alertText(grp, &s, true), "版本未知（依 OSV 判定受影響）") {
+		t.Errorf("alert: %v", grp)
 	}
 }

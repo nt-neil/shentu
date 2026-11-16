@@ -475,6 +475,9 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 		} else if p, _ := r["partial"].(string); p != "" {
 			partial = append(partial, "作業系統套件只查了一部分（"+p+"）")
 		}
+		if n, _ := r["surface_cves_missing"].(int); n > 0 {
+			partial = append(partial, fmt.Sprintf("作業系統套件有 %d 筆 advisory 查不到對應的 CVE：以 CVE 寫的簽章對不到它們", n))
+		}
 		if len(osSurface) > 0 && !sig.ComparesVersions(osSurface[0].Ecosystem) {
 			partial = append(partial, osSurface[0].Ecosystem+" 的套件版本沒有比較器：簽章對到的 CVE 一律列為版本未知（VersionUnknown），不會依版本排除")
 		}
@@ -543,7 +546,8 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 	// Attack detection: read and judged now (the daily report gets its
 	// summary); its alerts go out on their own, as the detector's words,
 	// after this patrol's report (deferred: whatever path it ends on).
-	unchecked = detectCarryOver(cfg.StateDir) + unchecked // what the last patrol's sends could not do
+	carry := detectCarryOver(cfg.StateDir) // what the last patrol's sends could not do
+	unchecked = carry + unchecked
 	dr := detectJudge(ctx, cfg, time.Now(), daily, dryRun)
 	defer finishDetect(ctx, env, dr)
 	if daily {
@@ -561,6 +565,9 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 	st.LastRun = time.Now()
 	if len(fresh) == 0 && !daily {
 		fmt.Println("patrol: nothing new")
+		if err := sayCarryOver(ctx, env, cfg.StateDir, carry, dryRun); err != nil {
+			fmt.Fprintln(os.Stderr, "shentu: attack detection: the last patrol's failures could not be sent:", err)
+		}
 		return st.save(cfg.StateDir)
 	}
 
@@ -624,6 +631,9 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 	}
 	if err := tools.Notify(ctx, env, title, answer, sev); err != nil {
 		return fmt.Errorf("notify failed (findings are not marked as sent): %w", err)
+	}
+	if carry != "" {
+		clearCarryOver(cfg.StateDir) // said in this report
 	}
 	for _, f := range fresh {
 		st.Alerted[f.Key] = time.Now()

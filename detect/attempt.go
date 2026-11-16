@@ -41,13 +41,16 @@ type Origin struct {
 // Attempt is one request trying one of this host's vulnerabilities (or,
 // LevelUnknown, cut where it may hide one).
 type Attempt struct {
-	Entry    string    `json:"entry"` // the surface entry's ID; for LevelUnknown a sink the cut may hide a payload for, "" when none is known
-	Level    string    `json:"level"` // L1, L2, L3, unknown
-	CVE      string    `json:"cve,omitempty"`
-	KEV      bool      `json:"kev,omitempty"`
-	Severity string    `json:"severity"` // without the campaign step (attacks.go adds it)
-	IP       string    `json:"ip"`
-	Time     time.Time `json:"time"`
+	Entry string `json:"entry"` // the surface entry's ID; for LevelUnknown a sink the cut may hide a payload for, "" when none is known
+	Level string `json:"level"` // L1, L2, L3, unknown
+	CVE   string `json:"cve,omitempty"`
+	KEV   bool   `json:"kev,omitempty"`
+	// VersionUnknown: the installed version could not be placed in the
+	// signature's range; the entry is there as OSV judged it affected.
+	VersionUnknown bool      `json:"version_unknown,omitempty"`
+	Severity       string    `json:"severity"` // without the campaign step (attacks.go adds it)
+	IP             string    `json:"ip"`
+	Time           time.Time `json:"time"`
 	// Verified: the IP can be believed (a trusted log, remote_addr); Reason
 	// says why not, in Chinese.
 	Verified bool   `json:"verified"`
@@ -117,7 +120,7 @@ func (j *Judge) Attempts(rec AccessRecord, o Origin, m MatchResult, g Judgment) 
 	var out []Attempt
 	for _, c := range g.Candidates {
 		a := base
-		a.Entry, a.Level, a.Route = c.Entry, c.Level, c.Route
+		a.Entry, a.Level, a.Route, a.VersionUnknown = c.Entry, c.Level, c.Route, c.VersionUnknown
 		for _, h := range c.Hits {
 			a.Signatures = append(a.Signatures, h.Signature)
 		}

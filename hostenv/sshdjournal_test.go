@@ -46,3 +46,20 @@ func TestSSHDJournalLines(t *testing.T) {
 		t.Error("the confirming read is not in the allowlist")
 	}
 }
+
+// Final check of #91 (S-1): the socket units' read failing (no such unit:
+// journalctl exits 1) leaves the main units' events confirmed.
+func TestSSHDJournalSocketUnitsMissing(t *testing.T) {
+	h := newFake(true)
+	since := time.Date(2026, 11, 16, 10, 0, 0, 0, time.UTC)
+	argv := append([]string(nil), journalSSHDArgv...)
+	argv[6] = since.UTC().Format("2006-01-02 15:04:05") + " UTC"
+	h.cmds[argvKey(argv)] = CmdResult{Stdout: []byte("2026-11-16T10:00:01+0000 host sshd[101]: Failed password for root from 198.51.100.7 port 4001 ssh2\n")}
+	sock := append([]string(nil), journalSSHDSockArgv...)
+	sock[6] = argv[6]
+	h.cmds[argvKey(sock)] = CmdResult{ExitCode: 1, Stderr: "Failed to add filter for units: No data available"}
+	own, err := SSHDJournalLines(context.Background(), h, since, since.Add(time.Hour), "198.51.100.7")
+	if err != nil || own.Failed != 1 {
+		t.Errorf("%+v, %v (want the main units' one failed login)", own, err)
+	}
+}
