@@ -116,3 +116,23 @@ func TestLoadReview2(t *testing.T) {
 		}
 	}
 }
+
+// Review 3 of #87: a class holding U+10FFFF but not starting at 0 is not a
+// negated one (N-3); an ecosystem's case does not matter (S).
+func TestLoadReview3(t *testing.T) {
+	load := func(extra string) error {
+		_, err := LoadFS(fstest.MapFS{"s/a.toml": {Data: []byte(good + extra + "\n")}}, "s")
+		return err
+	}
+	if err := load("[[signature.match]]\npart = \"query\"\nregex = 'marker[\\x{10FFFF}A]'"); err == nil {
+		t.Error(`[\x{10FFFF}A] taken for a negated class`)
+	}
+	for _, eco := range []string{"NPM", "PACKAGIST", "Npm"} {
+		if err := load("[[signature.applies_to]]\necosystem = \"" + eco + "\"\npackage = \"x\"\nversions = \"<1.0\""); err != nil {
+			t.Errorf("%s: %v", eco, err)
+		}
+	}
+	if in, ok := InRange(Range{Ecosystem: "PACKAGIST", Package: "x", Versions: "<2.4.3"}, "2.4.3-p1"); in || !ok {
+		t.Errorf("PACKAGIST 2.4.3-p1 < 2.4.3: in %v ok %v", in, ok)
+	}
+}

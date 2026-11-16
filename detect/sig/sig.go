@@ -101,11 +101,11 @@ var (
 	parts     = map[string]bool{"path": true, "query": true, "param": true, "any_param": true, "user_agent": true, "referer": true}
 )
 
-// Compared are the ecosystems whose version order compareVersions follows
+// compared are the ecosystems whose version order compareVersions follows
 // (semver, and Composer's patch releases); a range of any other is refused
 // at Load (rpm, apk, Debian, PyPI's PEP 440, Maven): a wrong order is a
 // wrong verdict on every host.
-var Compared = map[string]bool{"packagist": true, "npm": true}
+var compared = map[string]bool{"packagist": true, "npm": true}
 
 // Limits on what a signature may hold, so the matcher's cost per request is
 // bounded however many there are.
@@ -221,7 +221,7 @@ func (s *Signature) check() error {
 		if r.Ecosystem == "" || r.Package == "" {
 			return fmt.Errorf("applies_to: ecosystem and package are required")
 		}
-		if !Compared[strings.ToLower(r.Ecosystem)] {
+		if !compared[strings.ToLower(r.Ecosystem)] {
 			return fmt.Errorf("applies_to %s: version comparison for ecosystem %q is not supported yet (only Packagist and npm)", r.Package, r.Ecosystem)
 		}
 		if strings.TrimSpace(r.Versions) == "" {
@@ -357,7 +357,7 @@ func upperIn(re *syntax.Regexp) rune {
 			}
 		}
 	case syntax.OpCharClass:
-		if n := len(re.Rune); n > 0 && re.Rune[n-1] == unicode.MaxRune {
+		if n := len(re.Rune); n > 0 && re.Rune[0] == 0 && re.Rune[n-1] == unicode.MaxRune {
 			break // a negated class ([^a-z], \W): the letters it holds are not its point
 		}
 		in := func(c rune) bool {
