@@ -362,32 +362,6 @@ func confTrusted(src Source, p string, conf WebConf, web WebAccounts) string {
 	return ""
 }
 
-// dirsTrusted says why a directory above p is not root's alone ("" if all
-// are): owned by another, writable by others, or by a group that is not a
-// log group (groupWritable).
-func dirsTrusted(src Source, p string, web WebAccounts) string {
-	for d := path.Dir(p); ; d = path.Dir(d) {
-		ds, err := Stat(src, d)
-		if err != nil {
-			return "directory " + d + ": " + whyUnread(err)
-		}
-		sticky := ds.Mode&fs.ModeSticky != 0
-		switch {
-		case ds.UID != 0:
-			return fmt.Sprintf("directory %s is owned by uid %d", d, ds.UID)
-		case ds.Mode.Perm()&0o002 != 0 && !sticky:
-			return "directory " + d + " is writable by others"
-		case ds.Mode.Perm()&0o020 != 0 && !sticky:
-			if r, why := groupWritable(src, d, ds, web); r != "" {
-				return why
-			}
-		}
-		if d == "/" {
-			return ""
-		}
-	}
-}
-
 // groupWritable judges a directory its group may write: "" when the group
 // is a log group of complete account databases and no ACL lets anyone
 // else in; otherwise why not.
