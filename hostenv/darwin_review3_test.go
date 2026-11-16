@@ -631,6 +631,28 @@ func TestBplistEntriesSpendBudget(t *testing.T) {
 	}
 }
 
+// The budget's floor is 256 KiB over twice the file (review S): a 24 KB
+// dictionary of 6000 entries (288 KB of entries) parses, which a lower floor
+// would refuse, and one of 7000 (336 KB from 28 KB) does not.
+func TestBplistBudgetFloor(t *testing.T) {
+	dictOf := func(n int) []byte {
+		d := bplistLen(0xd, n)
+		for i := 0; i < n; i++ {
+			d = append(d, 0, 1)
+		}
+		for i := 0; i < n; i++ {
+			d = append(d, 0, 2)
+		}
+		return bplistOf([][]byte{d, append(bplistLen(0x5, 1), 'k'), {0x10, 7}})
+	}
+	if b := dictOf(6000); func() error { _, err := ParsePlist(b); return err }() != nil {
+		t.Errorf("6000 entries in %d bytes: refused under the 256 KiB floor", len(b))
+	}
+	if _, err := ParsePlist(dictOf(7000)); err == nil || !strings.Contains(err.Error(), "too large") {
+		t.Errorf("7000 entries: %v", err)
+	}
+}
+
 // A UTF-16 string spends 9 bytes per code unit (the uint16s, the runes and
 // the string built), which a file of mostly one long string exceeds.
 func TestBplistUTF16SpendsNine(t *testing.T) {

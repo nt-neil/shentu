@@ -55,6 +55,37 @@ func TestApacheH2Risk(t *testing.T) {
 			t.Errorf("%s: %+v", c.why, r)
 		}
 	}
+	if r := risk("2.4.62-1", "Protocols h2\n"); len(r) != 1 || !strings.Contains(r[0].Summary, "backported") {
+		t.Errorf("backport note: %+v", r)
+	}
+	// A file that cannot be read is listed as not checked (review N-4): an
+	// untrusted link, then one not readable for want of rights.
+	other := filepath.Join(t.TempDir(), "h2.conf")
+	os.WriteFile(other, []byte("Protocols h2\n"), 0o644)
+	link := filepath.Join(etc, "linked.conf")
+	os.Symlink(other, link) // outside the configuration root: not followed
+	glob = append(glob, link)
+	if r := risk("2.4.62-1", "Protocols http/1.1\n"); len(r) != 1 || r[0].Severity != "info" || !Unchecked(r[0]) ||
+		!strings.HasPrefix(r[0].Key, uncheckedPrefix) || !strings.Contains(r[0].Summary, "linked.conf") {
+		t.Errorf("untrusted link: %+v", r)
+	}
+	// Enabled in what could be read: the warning, not the unknown.
+	if r := risk("2.4.62-1", "Protocols h2\n"); len(r) != 1 || r[0].Severity != "warning" {
+		t.Errorf("enabled with a file unread: %+v", r)
+	}
+	// Fixed version: nothing, read or not.
+	if r := risk("2.4.71-1", "Protocols http/1.1\n"); len(r) != 0 {
+		t.Errorf("fixed version with a file unread: %+v", r)
+	}
+	os.Remove(link)
+	glob = glob[:len(glob)-1]
+	if os.Getuid() != 0 { // root reads a mode 0 file
+		os.Chmod(site, 0)
+		if r := risk("2.4.62-1", "Protocols http/1.1\n"); len(r) != 1 || !Unchecked(r[0]) || !strings.Contains(r[0].Summary, "site.conf") {
+			t.Errorf("unreadable site.conf: %+v", r)
+		}
+		os.Chmod(site, 0o644)
+	}
 	// mod_http2 not loaded: not exposed.
 	os.Remove(filepath.Join(enabled, "http2.load"))
 	if r := risk("2.4.62-1", "Protocols h2\n"); len(r) != 0 {

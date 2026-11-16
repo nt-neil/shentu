@@ -22,11 +22,11 @@ func TestBlockIPUnverifiedLoginGate(t *testing.T) {
 	t.Cleanup(func() { loginSummary, textLogins = oldS, oldT })
 	ip := net.ParseIP("203.0.113.77")
 	text := 0 // events for ip in the text logs
-	textLogins = func(_ *Env, only string) (int, []string) {
+	textLogins = func(_ *Env, only string) (int, []string, []string) {
 		if only != ip.String() {
 			t.Errorf("text logs asked for %q", only)
 		}
-		return text, nil
+		return text, nil, nil
 	}
 	summary := func(verified, complete bool, srcs ...SSHSource) {
 		loginSummary = func(_ context.Context, _ *Env, since time.Time, only string) (map[string]any, error) {
@@ -94,7 +94,7 @@ func TestBlockIPOverrideInPreview(t *testing.T) {
 func TestBlockIPGateDayFirst(t *testing.T) {
 	oldS, oldT := loginSummary, textLogins
 	t.Cleanup(func() { loginSummary, textLogins = oldS, oldT })
-	textLogins = func(*Env, string) (int, []string) { return 0, nil }
+	textLogins = func(*Env, string) (int, []string, []string) { return 0, nil, nil }
 	ip := net.ParseIP("203.0.113.77")
 	var asked []time.Duration
 	srcs := []SSHSource{{IP: ip.String(), Failed: 3}}
@@ -176,7 +176,7 @@ func TestBlockIPGateUnreadableTextLog(t *testing.T) {
 	loginSummary = func(context.Context, *Env, time.Time, string) (map[string]any, error) {
 		return map[string]any{"verified": true, "complete": true}, nil
 	}
-	textLogins = func(*Env, string) (int, []string) { return 0, []string{"/var/log/auth.log.1 (permission_denied)"} }
+	textLogins = func(*Env, string) (int, []string, []string) { return 0, nil, []string{"/var/log/auth.log.1 (permission_denied)"} }
 	err := loginGate(context.Background(), &Env{}, net.ParseIP("203.0.113.77"), false)
 	if err == nil || !strings.Contains(err.Error(), "could not all be read") {
 		t.Errorf("unreadable text log: %v", err)
@@ -191,9 +191,9 @@ func TestBlockIPGateJournaldFirst(t *testing.T) {
 	t.Cleanup(func() { loginSummary, textLogins = oldS, oldT })
 	ip := net.ParseIP("203.0.113.77")
 	read := false
-	textLogins = func(*Env, string) (int, []string) {
+	textLogins = func(*Env, string) (int, []string, []string) {
 		read = true
-		return 0, []string{"/var/log/auth.log (permission_denied)"}
+		return 0, nil, []string{"/var/log/auth.log (permission_denied)"}
 	}
 	srcs := []SSHSource{{IP: ip.String(), Failed: 9}}
 	loginSummary = func(context.Context, *Env, time.Time, string) (map[string]any, error) {
@@ -205,5 +205,31 @@ func TestBlockIPGateJournaldFirst(t *testing.T) {
 	srcs = nil
 	if err := loginGate(context.Background(), &Env{}, ip, false); err == nil || !strings.Contains(err.Error(), "could not all be read") {
 		t.Errorf("journald without the IP, auth.log unreadable: %v", err)
+	}
+}
+
+// VM acceptance N2: journald has sshd entries, none for the IP, and auth.log
+// has a forged line for it. The refusal names the text log the events are
+// in, not the summary's source ("journald").
+func TestBlockIPGateNamesTextLog(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the Linux login path")
+	}
+	dir := t.TempDir()
+	now := time.Now().UTC().Format(time.RFC3339)
+	os.WriteFile(filepath.Join(dir, "auth.log"), []byte(now+" vm sshd[1]: Failed password for root from 203.0.113.77 port 22 ssh2\n"), 0o600)
+	os.WriteFile(filepath.Join(dir, "secure"), []byte(now+" vm sshd[2]: Failed password for root from 198.51.100.4 port 22 ssh2\n"), 0o600)
+	noCmds, _ := hostenv.NewRunner(nil)
+	prevH, prevS := hostSource, loginSummary
+	hostSource = func() hostenv.Source { return &hostenv.Live{Runner: noCmds, Remap: map[string]string{"/var/log": dir}} }
+	loginSummary = func(context.Context, *Env, time.Time, string) (map[string]any, error) {
+		return map[string]any{"verified": true, "complete": true, "source": "journald", "sources": []SSHSource(nil)}, nil
+	}
+	t.Cleanup(func() { hostSource, loginSummary = prevH, prevS })
+	env := &Env{LogPaths: []string{"/var/log/auth.log", "/var/log/secure"}}
+	err := loginGate(context.Background(), env, net.ParseIP("203.0.113.77"), false)
+	if err == nil || !strings.Contains(err.Error(), "may be forged") || !strings.Contains(err.Error(), "(/var/log/auth.log)") ||
+		strings.Contains(err.Error(), "journald)") || strings.Contains(err.Error(), "secure") {
+		t.Errorf("forged auth.log line, journald without the IP: %v", err)
 	}
 }
