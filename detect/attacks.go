@@ -73,6 +73,7 @@ type Group struct {
 	Encoded       bool     `json:"encoded,omitempty"`
 	TimedOut      bool     `json:"timed_out,omitempty"`
 	HiddenClasses []string `json:"hidden_classes,omitempty"`
+	Success       string   `json:"success,omitempty"` // why L3, the first attempt's (Attempt.Success)
 
 	// Notified: when it was last notified; Since: attempts since then (or
 	// since First); Window and WindowCount: the attempts of the current
@@ -248,6 +249,9 @@ func (a *Attacks) Add(t Attempt, at time.Time) *Group {
 		}
 	}
 	sort.Strings(g.HiddenClasses)
+	if g.Success == "" {
+		g.Success = t.Success
+	}
 	campaign := a.campaign(t, at)
 	g.Campaign = g.Campaign || campaign
 	if s := SeverityOf(t.Level, t.Severe, campaign, t.Verified); severityIndex(s) > severityIndex(g.Severity) {
