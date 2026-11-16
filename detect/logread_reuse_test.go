@@ -167,3 +167,19 @@ func TestReadLogBirthTime(t *testing.T) {
 		t.Errorf("empty head, older file under the same id: partial %v", r.Partial)
 	}
 }
+
+// A rotation compressed with something else than gzip, or named with
+// logrotate's extension, still tells that a rotation happened.
+func TestRotatedSinceAnyCompression(t *testing.T) {
+	later := time.Now().Add(time.Hour)
+	for _, n := range []string{"/l/a.log.1.xz", "/l/a.log-20261116.zst", "/l/a.1.log", "/l/a.log.2.bz2"} {
+		src := &memSrc{files: map[string]*memFile{"/l/a.log": {data: []byte("x\n")}, n: {data: []byte("old\n"), mod: later}}}
+		if !rotatedSince(src, "/l/a.log", time.Now()) {
+			t.Errorf("%s: no rotation seen", n)
+		}
+	}
+	src := &memSrc{files: map[string]*memFile{"/l/a.log": {data: []byte("x\n")}, "/l/a.log.json": {data: []byte("{}\n"), mod: later}}}
+	if rotatedSince(src, "/l/a.log", time.Now()) {
+		t.Error("another log beside it taken for a rotation")
+	}
+}

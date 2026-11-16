@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
+	"path"
 	"regexp"
 	"sort"
 	"strings"
@@ -305,8 +306,13 @@ func globEscape(p string) string {
 }
 
 // rotationSuffix is what logrotate and rotatelogs add to a log's name: a
-// number, a date (dateext), maybe .gz.
+// number, a date (dateext), maybe .gz: the rotated files read.
 var rotationSuffix = regexp.MustCompile(`^[.-](?:\d{1,10}|\d{4}-?\d{2}-?\d{2}(?:[-_]?\d{2,6})?)(?:\.gz)?$`)
+
+// rotatedAnySuffix is wider, for telling that a rotation happened, not
+// for reading: any compression (xz, bz2, zst, lz4, Z), and logrotate's
+// extension option keeping a suffix after the number (a.1.log for a.log).
+var rotatedAnySuffix = regexp.MustCompile(`^[.-](?:\d{1,10}|\d{4}-?\d{2}-?\d{2}(?:[-_]?\d{2,6})?)(?:\.[A-Za-z0-9]{1,6}){0,2}$`)
 
 // rotatedFiles are the files beside p its rotation may have made, the most
 // recently changed first, at most maxRotated: with dateext a log may have
@@ -342,9 +348,26 @@ func rotatedFiles(src hostenv.Source, p string) []string {
 	return out
 }
 
-// rotatedSince: a rotated file of p changed after t.
+// rotatedSince: something rotation leaves beside p (whatever it was
+// compressed with, or named by logrotate's extension) changed after t.
 func rotatedSince(src hostenv.Source, p string, t time.Time) bool {
-	for _, c := range rotatedFiles(src, p) {
+	dir, base := path.Split(p)
+	stem := strings.TrimSuffix(base, path.Ext(base))
+	var names []string
+	for _, g := range []string{globEscape(p) + ".*", globEscape(p) + "-*", globEscape(path.Join(dir, stem)) + ".*"} {
+		names = append(names, hostenv.Glob(src, g)...)
+	}
+	for i, c := range names {
+		if i >= maxRotatedNames || c == p {
+			continue
+		}
+		rest := strings.TrimPrefix(c, p)
+		if !strings.HasPrefix(c, p) { // a.1.log for a.log (logrotate's extension)
+			rest = strings.TrimPrefix(c, path.Join(dir, stem))
+		}
+		if !rotatedAnySuffix.MatchString(rest) {
+			continue
+		}
 		if st, err := hostenv.Stat(src, c); err == nil && st.ModTime.After(t) && st.Size > 0 {
 			return true
 		}
