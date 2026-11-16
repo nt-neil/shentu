@@ -13,6 +13,9 @@ refs = ["CVE-2021-23344", "CVE-2026-69254", "CVE-2019-10758"]
 
 # setTimeout evaluates only a string first argument; a function there, or input
 # in the delay or the arguments passed on, is not code.
+[[args]]
+sinks = ["setTimeout("]
+arg = 1
 
 [[samples]]
 kind = "vulnerable"
@@ -145,9 +148,6 @@ app.post("/coll/:name/update", async (req, res) => {
 });
 '''
 
-[[args]]
-sinks = ["setTimeout("]
-arg = 1
 
 [[samples]]
 kind = "vulnerable"
