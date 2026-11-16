@@ -128,3 +128,16 @@ func TestSurfaceAppsAliases(t *testing.T) {
 		t.Errorf("aliases in the model's JSON: %s", b)
 	}
 }
+
+// #84 S: an advisory with several CVEs, KEV through the higher one, and
+// another id of the same vulnerability: one entry, KEV.
+func TestSurfaceAppsKEVSameCVERule(t *testing.T) {
+	r := AppResult{Path: "/srv/requirements.txt", Ecosystem: "PyPI",
+		Affected:  []AppHit{{Package: "django", Version: "3.2.0", IDs: []string{"GHSA-kev", "PYSEC-1"}}},
+		Exploited: []Exploit{{Package: "django", Version: "3.2.0", ID: "GHSA-kev", CVE: "CVE-2021-0002", Added: "2024-01-01"}},
+		cves:      map[string][]string{"GHSA-kev": {"CVE-2021-0001", "CVE-2021-0002"}, "PYSEC-1": {"CVE-2021-0001"}}}
+	s := detect.Build(nil, SurfaceApps([]AppResult{r}))
+	if len(s.Entries) != 1 || !s.Entries[0].KEV || s.Entries[0].CVE != "CVE-2021-0001" {
+		t.Errorf("%+v: want one KEV entry", s.Entries)
+	}
+}
