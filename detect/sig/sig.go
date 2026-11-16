@@ -13,9 +13,11 @@ import (
 	"io/fs"
 	"path"
 	"regexp"
+	"regexp/syntax"
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/BurntSushi/toml"
 )
@@ -110,8 +112,16 @@ const (
 )
 
 // Load reads the embedded signatures. Any that is not valid fails the
-// whole load: a signature set is checked whole, not taken in part.
-func Load() ([]Signature, error) { return LoadFS(embedded, "signatures") }
+// whole load: a signature set is checked whole, not taken in part. The
+// set ships inside the binary, so a failure is a defect of the build, said
+// as one for whoever calls it to report, never to run without signatures.
+func Load() ([]Signature, error) {
+	ss, err := LoadFS(embedded, "signatures")
+	if err != nil {
+		return nil, fmt.Errorf("shentu detect: the built-in attack signatures do not load (a defect of this build, report it): %w", err)
+	}
+	return ss, nil
+}
 
 // LoadFS reads every .toml under dir of fsys.
 func LoadFS(fsys fs.FS, dir string) ([]Signature, error) {
@@ -205,8 +215,17 @@ func (s *Signature) check() error {
 		if r.Ecosystem == "" || r.Package == "" {
 			return fmt.Errorf("applies_to: ecosystem and package are required")
 		}
-		if _, err := ParseVersions(r.Versions); err != nil {
+		if dpkg(r.Ecosystem) {
+			return fmt.Errorf("applies_to %s: ecosystem %s: Debian's version order (epochs, ~, revisions) is not compared yet", r.Package, r.Ecosystem)
+		}
+		cs, err := ParseVersions(r.Versions)
+		if err != nil {
 			return fmt.Errorf("applies_to %s: %w", r.Package, err)
+		}
+		for _, c := range cs {
+			if _, ok := parseVersion(r.Ecosystem, c.Version); !ok {
+				return fmt.Errorf("applies_to %s: bound %q is not a version this can compare: every host would be version unknown", r.Package, c.Version)
+			}
 		}
 	}
 	for i := range s.Routes {
@@ -221,9 +240,14 @@ func (s *Signature) check() error {
 			if len(r.PathRegex) > MaxRegex {
 				return fmt.Errorf("route %d: path_regex longer than %d", i, MaxRegex)
 			}
-			if _, err := regexp.Compile(r.PathRegex); err != nil {
+			lower, err := lowerRegex(r.PathRegex) // compared with the normalized, lower-cased path
+			if err != nil {
 				return fmt.Errorf("route %d: %w", i, err)
 			}
+			if err := checkRegex(lower); err != nil {
+				return fmt.Errorf("route %d: path_regex: %w", i, err)
+			}
+			r.PathRegex = lower
 		}
 		for j, m := range r.Methods {
 			r.Methods[j] = strings.ToUpper(m)
@@ -254,10 +278,136 @@ func (s *Signature) check() error {
 			if err != nil {
 				return fmt.Errorf("match %d: %w", i, err)
 			}
+			if err := checkRegex(m.Regex); err != nil {
+				return fmt.Errorf("match %d: regex: %w", i, err)
+			}
 			m.re = re
 		}
 	}
 	return nil
+}
+
+// checkRegex refuses an expression that would never match what it is
+// compared with, or match everything: a literal or a class with an upper
+// case letter (the text is lower-cased; (?i) is fine), or one that can
+// match the empty string (it holds in every text).
+func checkRegex(expr string) error {
+	re, err := syntax.Parse(expr, syntax.Perl)
+	if err != nil {
+		return err
+	}
+	if nullable(re) {
+		return fmt.Errorf("%q can match the empty string: it would hold for every request", expr)
+	}
+	if u := upperIn(re); u != 0 {
+		return fmt.Errorf("%q has the upper case %q, never in the lower-cased text: write it in lower case or use (?i)", expr, u)
+	}
+	return nil
+}
+
+// nullable: re can match the empty string (assertions are empty).
+func nullable(re *syntax.Regexp) bool {
+	switch re.Op {
+	case syntax.OpLiteral:
+		return len(re.Rune) == 0
+	case syntax.OpCharClass, syntax.OpAnyChar, syntax.OpAnyCharNotNL, syntax.OpNoMatch:
+		return false
+	case syntax.OpStar, syntax.OpQuest:
+		return true
+	case syntax.OpPlus, syntax.OpCapture:
+		return nullable(re.Sub[0])
+	case syntax.OpRepeat:
+		return re.Min == 0 || nullable(re.Sub[0])
+	case syntax.OpConcat:
+		for _, s := range re.Sub {
+			if !nullable(s) {
+				return false
+			}
+		}
+		return true
+	case syntax.OpAlternate:
+		for _, s := range re.Sub {
+			if nullable(s) {
+				return true
+			}
+		}
+		return false
+	}
+	return true // empty match, ^, $, \b and the other assertions
+}
+
+// upperIn is an upper case letter re matches only as such (a literal not
+// case-folded, a class holding it but not its lower case), or 0.
+func upperIn(re *syntax.Regexp) rune {
+	switch re.Op {
+	case syntax.OpLiteral:
+		if re.Flags&syntax.FoldCase == 0 {
+			for _, r := range re.Rune {
+				if unicode.IsUpper(r) {
+					return r
+				}
+			}
+		}
+	case syntax.OpCharClass:
+		in := func(c rune) bool {
+			for i := 0; i+1 < len(re.Rune); i += 2 {
+				if re.Rune[i] <= c && c <= re.Rune[i+1] {
+					return true
+				}
+			}
+			return false
+		}
+		for c := 'A'; c <= 'Z'; c++ {
+			if in(c) && !in(unicode.ToLower(c)) {
+				return c
+			}
+		}
+	}
+	for _, s := range re.Sub {
+		if u := upperIn(s); u != 0 {
+			return u
+		}
+	}
+	return 0
+}
+
+// lowerRegex is expr with its literals and its classes' letters in lower
+// case: the path it is compared with is lower-cased.
+func lowerRegex(expr string) (string, error) {
+	re, err := syntax.Parse(expr, syntax.Perl)
+	if err != nil {
+		return "", err
+	}
+	var walk func(*syntax.Regexp)
+	walk = func(re *syntax.Regexp) {
+		switch re.Op {
+		case syntax.OpLiteral:
+			for i, r := range re.Rune {
+				re.Rune[i] = unicode.ToLower(r)
+			}
+		case syntax.OpCharClass:
+			var add []rune
+			for i := 0; i+1 < len(re.Rune); i += 2 {
+				lo, hi := max(re.Rune[i], 'A'), min(re.Rune[i+1], 'Z')
+				if lo <= hi {
+					add = append(add, unicode.ToLower(lo), unicode.ToLower(hi))
+				}
+			}
+			re.Rune = append(re.Rune, add...)
+		}
+		for _, s := range re.Sub {
+			walk(s)
+		}
+	}
+	walk(re)
+	return re.String(), nil
+}
+
+// dpkg: an ecosystem whose versions are Debian's (Debian, Debian:12,
+// Ubuntu).
+func dpkg(ecosystem string) bool {
+	e := strings.ToLower(ecosystem)
+	return e == "debian" || strings.HasPrefix(e, "debian:") || e == "ubuntu" || strings.HasPrefix(e, "ubuntu:")
 }
 
 // Comparison is one of a Range's comparisons.
@@ -291,7 +441,7 @@ func InRange(r Range, version string) (in, ok bool) {
 		return false, false
 	}
 	for _, c := range cs {
-		d, ok := compareVersions(version, c.Version)
+		d, ok := compareVersions(r.Ecosystem, version, c.Version)
 		if !ok {
 			return false, false
 		}
@@ -303,16 +453,57 @@ func InRange(r Range, version string) (in, ok bool) {
 	return true, true
 }
 
-var versionRe = regexp.MustCompile(`^v?(\d+(?:\.\d+)*)([-.+~]?[0-9A-Za-z.+~-]*)$`)
+var (
+	versionRe  = regexp.MustCompile(`^v?(\d+(?:\.\d+)*)([-.~]?[0-9A-Za-z.~-]*)$`)
+	wildcardRe = regexp.MustCompile(`(?:^|\.)[xX*](?:\.|$)`)      // 1.2.x, 1.*: a range, not a version
+	patchRe    = regexp.MustCompile(`^[-.]?(?:p|patch|pl)(\d*)$`) // Composer's 2.4.3-p1, 1.0-patch2: after 2.4.3
+)
+
+// version is a version taken apart: its dotted numbers, and the rest.
+type version struct {
+	nums []string
+	// suffix: a pre-release (1.2.0-beta), ordered before none; or, when
+	// patch, a Composer patch release (-p1), ordered after none, patchN its
+	// number.
+	suffix string
+	patch  bool
+	patchN int
+}
+
+// parseVersion takes v apart as ecosystem orders it; ok is false for a
+// shape not compared: a branch (Composer's 1.2.x-dev, dev-main), a hash,
+// an epoch. Build metadata (+...) is left out, as semver says.
+func parseVersion(ecosystem, v string) (version, bool) {
+	v, _, _ = strings.Cut(v, "+")
+	if strings.HasPrefix(v, "dev-") || strings.HasSuffix(v, "-dev") || wildcardRe.MatchString(v) {
+		return version{}, false
+	}
+	m := versionRe.FindStringSubmatch(v)
+	if m == nil {
+		return version{}, false
+	}
+	out := version{nums: strings.Split(m[1], "."), suffix: m[2]}
+	if strings.EqualFold(ecosystem, "packagist") {
+		if p := patchRe.FindStringSubmatch(strings.ToLower(m[2])); p != nil {
+			out.patch, out.patchN = true, 0
+			if p[1] != "" {
+				out.patchN, _ = strconv.Atoi(p[1])
+			}
+		}
+	}
+	return out, true
+}
 
 // compareVersions compares a and b: numeric parts as numbers, then a
-// pre-release suffix (1.2.0-beta) before none.
-func compareVersions(a, b string) (int, bool) {
-	ma, mb := versionRe.FindStringSubmatch(a), versionRe.FindStringSubmatch(b)
-	if ma == nil || mb == nil {
+// pre-release suffix (1.2.0-beta) before none, a Composer patch release
+// (Packagist's 2.4.3-p1) after none.
+func compareVersions(ecosystem, a, b string) (int, bool) {
+	va, oka := parseVersion(ecosystem, a)
+	vb, okb := parseVersion(ecosystem, b)
+	if !oka || !okb {
 		return 0, false
 	}
-	na, nb := strings.Split(ma[1], "."), strings.Split(mb[1], ".")
+	na, nb := va.nums, vb.nums
 	for i := 0; i < len(na) || i < len(nb); i++ {
 		var x, y int
 		if i < len(na) {
@@ -328,7 +519,15 @@ func compareVersions(a, b string) (int, bool) {
 			return 1, true
 		}
 	}
-	sa, sb := ma[2], mb[2]
+	switch {
+	case va.patch && vb.patch:
+		return cmpInt(va.patchN, vb.patchN), true
+	case va.patch:
+		return 1, true // 2.4.3-p1 after 2.4.3 and its pre-releases
+	case vb.patch:
+		return -1, true
+	}
+	sa, sb := va.suffix, vb.suffix
 	switch {
 	case sa == sb:
 		return 0, true
@@ -338,6 +537,16 @@ func compareVersions(a, b string) (int, bool) {
 		return -1, true
 	}
 	return strings.Compare(sa, sb), true
+}
+
+func cmpInt(a, b int) int {
+	switch {
+	case a < b:
+		return -1
+	case a > b:
+		return 1
+	}
+	return 0
 }
 
 // KEVIndex maps each CVE the signatures are written for to their ids: the
