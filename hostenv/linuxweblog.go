@@ -34,6 +34,9 @@ type LogSource struct {
 	// HostnameLookups: Apache looks up names (HostnameLookups On or Double
 	// anywhere in its configuration): %h is then a PTR name, not an address.
 	HostnameLookups bool `json:"hostname_lookups,omitempty"`
+	// IdentityCheck: Apache asks the client's identd (IdentityCheck On):
+	// %l is then what the client's host answers.
+	IdentityCheck bool `json:"identity_check,omitempty"`
 	// Vhosts: server_name / ServerName of the blocks writing to it; none for
 	// the main server.
 	Vhosts []string `json:"vhosts,omitempty"`
@@ -766,6 +769,9 @@ func standardFormat(s *LogSource) bool {
 	if !standardSpecs[s.Server][s.Spec] || s.Escape != "" {
 		return false
 	}
+	if s.Server == "apache" && s.IdentityCheck { // %l is the client's identd's answer
+		return false
+	}
 	return !(s.Server == "apache" && s.HostnameLookups && strings.HasPrefix(s.Spec, "%h "))
 }
 
@@ -1204,6 +1210,7 @@ type apacheScope struct {
 }
 
 type apacheState struct {
+	identity      bool // IdentityCheck On somewhere
 	remoteIP      bool // mod_remoteip loaded
 	lookups       bool // HostnameLookups On or Double somewhere
 	root          string
@@ -1252,7 +1259,7 @@ func (l *logLoader) apache() {
 			}
 		}
 		for _, d := range custom {
-			s := LogSource{Path: st.path(d.dest), Server: "apache", Kind: "access", Vhosts: sc.names, Config: at(d.file, d.line), HostnameLookups: st.lookups}
+			s := LogSource{Path: st.path(d.dest), Server: "apache", Kind: "access", Vhosts: sc.names, Config: at(d.file, d.line), HostnameLookups: st.lookups, IdentityCheck: st.identity}
 			switch {
 			case d.transfer:
 				s.Spec = st.defaultFormat
@@ -1393,6 +1400,10 @@ func (l *logLoader) apacheFile(st *apacheState, p string, depth int) {
 		case "group":
 			if len(args) > 0 {
 				l.groups = append(l.groups, st.expand(args[0]))
+			}
+		case "identitycheck":
+			if len(args) > 0 && !strings.EqualFold(args[0], "off") {
+				st.identity = true
 			}
 		case "hostnamelookups":
 			if len(args) > 0 && !strings.EqualFold(args[0], "off") {

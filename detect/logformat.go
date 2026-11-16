@@ -80,7 +80,7 @@ func ParserFor(s hostenv.LogSource) (*Parser, error) {
 	case "nginx":
 		return NginxParser(s.Spec, s.Escape)
 	case "apache":
-		return apacheParser(s.Spec, s.HostnameLookups)
+		return apacheParser(s.Spec, s.HostnameLookups, s.IdentityCheck)
 	}
 	return nil, fmt.Errorf("%w: %s access logs are not read yet", ErrFormatUnrecognized, s.Server)
 }
@@ -135,12 +135,15 @@ var apacheDirective = regexp.MustCompile(`%(?:!?[0-9]{3}(?:,[0-9]{3})*)?[<>]?(?:
 
 // ApacheParser compiles a LogFormat string, HostnameLookups off (Apache's
 // default).
-func ApacheParser(spec string) (*Parser, error) { return apacheParser(spec, false) }
+func ApacheParser(spec string) (*Parser, error) { return apacheParser(spec, false, false) }
 
 // apacheParser: with HostnameLookups On or Double, %h is the client's PTR
 // name, which whoever controls the address's reverse zone writes (even as
 // "203.0.113.5"): it is not the client, only %a is.
-func apacheParser(spec string, lookups bool) (*Parser, error) {
+//
+// With IdentityCheck On, %l is what the client's identd answers: a field the
+// client writes, like %u.
+func apacheParser(spec string, lookups, identity bool) (*Parser, error) {
 	p := &Parser{escape: "apache"}
 	last := 0
 	lit := func(s string) {
@@ -176,7 +179,9 @@ func apacheParser(spec string, lookups bool) (*Parser, error) {
 		case "p":
 			f = "port"
 		case "l": // identd's answer: "-" unless IdentityCheck is On (then the client's identd writes it)
-			f = "ident"
+			if !identity {
+				f = "ident"
+			}
 		case "u":
 			f = "user"
 		case "t":

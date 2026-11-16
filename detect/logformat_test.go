@@ -257,3 +257,16 @@ func TestParseCutAfterRequest(t *testing.T) {
 		}
 	}
 }
+
+// With IdentityCheck On, %l is the client's identd's: combined then has two
+// unquoted fields the client writes.
+func TestApacheIdentityCheck(t *testing.T) {
+	src := hostenv.LogSource{Server: "apache", Kind: "access", Spec: `%h %l %u %t "%r" %>s %b`, IdentityCheck: true}
+	if _, err := ParserFor(src); !errors.Is(err, ErrFormatUnrecognized) {
+		t.Errorf("IdentityCheck On: %v", err)
+	}
+	src.IdentityCheck = false
+	if _, err := ParserFor(src); err != nil {
+		t.Errorf("IdentityCheck Off: %v", err)
+	}
+}

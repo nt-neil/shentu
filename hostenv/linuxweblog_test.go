@@ -613,3 +613,13 @@ func TestLogGroupSystemAccountNotEnough(t *testing.T) {
 		t.Errorf("%q, want unverified", why)
 	}
 }
+
+// IdentityCheck On: Apache's standard formats are custom_format.
+func TestWebLogsApacheIdentityCheck(t *testing.T) {
+	h := logHost()
+	h.files["/etc/apache2/apache2.conf"] += "IdentityCheck On\n"
+	a := webLogsByKey(t, LinuxCollector{}.WebLogs(h))["apache access /var/log/apache2/access.log"]
+	if a.Verified || a.Reason != ReasonCustomFormat || !a.IdentityCheck {
+		t.Errorf("%+v", a)
+	}
+}
