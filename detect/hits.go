@@ -369,7 +369,8 @@ func (j *Judge) Judge(m MatchResult) Judgment {
 }
 
 // forEntry: s is written for e's vulnerability: a CVE or an advisory id in
-// common, or (with no ids) its package.
+// common, or (with no ids, or e an installed package with none) its
+// package.
 func forEntry(s sig.Signature, e Entry) bool {
 	ids := map[string]bool{strings.ToUpper(e.Advisory): true, strings.ToUpper(e.CVE): true, strings.ToUpper(e.KEVCVE): true}
 	for _, a := range e.Aliases {
@@ -381,7 +382,7 @@ func forEntry(s sig.Signature, e Entry) bool {
 			return true
 		}
 	}
-	if len(s.CVEs) == 0 && len(s.Advisories) == 0 {
+	if len(s.CVEs) == 0 && len(s.Advisories) == 0 || e.Installed { // an installed package has no ids: its package and range decide
 		for _, r := range s.AppliesTo {
 			if strings.EqualFold(r.Ecosystem, e.Ecosystem) && samePackage(e.Ecosystem, r.Package, e.Package) {
 				return true

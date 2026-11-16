@@ -495,7 +495,11 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 		unchecked += uncheckedConfigs(unread) + notCheckedSection(audit.NotChecked)
 		// The vulnerability surface attack detection judges by, until tomorrow.
 		if !dryRun {
-			if err := saveSurface(cfg.StateDir, buildSurface(audit, apps), env.AppPaths, time.Now()); err != nil {
+			plugins, unreadPlugins := tools.WordPressPlugins(web)
+			if len(unreadPlugins) > 0 {
+				unchecked += "\nAttack detection: WordPress plugin directories not read: " + strings.Join(unreadPlugins, ", ") + "\n"
+			}
+			if err := saveSurface(cfg.StateDir, buildSurface(audit, apps, plugins), env.AppPaths, time.Now()); err != nil {
 				unchecked += "\nAttack detection: the vulnerability surface could not be saved: " + err.Error() + "\n"
 			}
 		}

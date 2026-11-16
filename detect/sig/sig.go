@@ -102,10 +102,11 @@ var (
 )
 
 // compared are the ecosystems whose version order compareVersions follows
-// (semver, and Composer's patch releases); a range of any other is refused
+// (semver, Composer's patch releases, WordPress plugins' dotted numbers: a
+// suffix of any is not ordered, VersionUnknown); a range of any other is refused
 // at Load (rpm, apk, Debian, PyPI's PEP 440, Maven): a wrong order is a
 // wrong verdict on every host.
-var compared = map[string]bool{"packagist": true, "npm": true}
+var compared = map[string]bool{"packagist": true, "npm": true, "wordpress": true}
 
 // Limits on what a signature may hold, so the matcher's cost per request is
 // bounded however many there are.
@@ -222,7 +223,7 @@ func (s *Signature) check() error {
 			return fmt.Errorf("applies_to: ecosystem and package are required")
 		}
 		if !compared[strings.ToLower(r.Ecosystem)] {
-			return fmt.Errorf("applies_to %s: version comparison for ecosystem %q is not supported yet (only Packagist and npm)", r.Package, r.Ecosystem)
+			return fmt.Errorf("applies_to %s: version comparison for ecosystem %q is not supported yet (only Packagist, npm and WordPress)", r.Package, r.Ecosystem)
 		}
 		if strings.TrimSpace(r.Versions) == "" {
 			return fmt.Errorf("applies_to %s: versions is required (a range for every version is a signature without applies_to)", r.Package)

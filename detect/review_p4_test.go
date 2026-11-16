@@ -474,3 +474,44 @@ func TestP4CloseOut(t *testing.T) {
 }
 
 var _ = engine.RouteRef{}
+
+// P5 part 4: an installed WordPress plugin is matched by a signature
+// written for its slug and version range, CVE or not.
+func TestInstalledPlugins(t *testing.T) {
+	ss := loadSigs(t, `
+[[signature]]
+id = "wp-marker"
+title = "a plugin's"
+class = "sqli"
+cves = ["CVE-2099-0101"]
+source = "shentu"
+license = "Apache-2.0"
+[[signature.applies_to]]
+ecosystem = "WordPress"
+package = "marker-plugin"
+versions = "<1.3"
+[[signature.match]]
+part = "any_param"
+contains = ["marker-one"]
+`)
+	judge := func(v string) Judgment {
+		s := Build(nil, nil, InstalledPackage{Source: "/srv/www", Ecosystem: "WordPress", Package: "marker-plugin", Version: v})
+		return NewJudge(s, ss).Judge(NewMatcher(ss).Match(Normalize(AccessRecord{Method: "GET", Path: "/", Query: "q=marker-one"})))
+	}
+	if g := judge("1.2.3"); len(g.Candidates) != 1 || g.Candidates[0].Level != LevelPayload || g.Candidates[0].VersionUnknown {
+		t.Errorf("1.2.3 in <1.3: %+v", g)
+	}
+	if g := judge("1.3.0"); len(g.Candidates) != 0 || len(g.Noise) != 1 {
+		t.Errorf("1.3.0: %+v", g)
+	}
+	if g := judge("1.2-beta"); len(g.Candidates) != 1 || !g.Candidates[0].VersionUnknown {
+		t.Errorf("a suffix, unknown: %+v", g)
+	}
+	if g := judge(""); len(g.Candidates) != 1 || !g.Candidates[0].VersionUnknown {
+		t.Errorf("no version header: %+v", g)
+	}
+	s := Build(nil, nil, InstalledPackage{Source: "/srv/www", Ecosystem: "WordPress", Package: "other", Version: "1.0"})
+	if g := NewJudge(s, ss).Judge(NewMatcher(ss).Match(Normalize(AccessRecord{Method: "GET", Path: "/", Query: "q=marker-one"}))); len(g.Candidates) != 0 {
+		t.Errorf("another plugin: %+v", g)
+	}
+}

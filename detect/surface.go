@@ -95,7 +95,21 @@ type Entry struct {
 	KEVSince  string   `json:"kev_since,omitempty"`
 	KEVCVE    string   `json:"kev_cve,omitempty"` // the CVE on CISA's list, when KEV
 
+	// Installed: a package known installed, with no advisory list for its
+	// ecosystem (WordPress plugins): a signature written for it is matched
+	// by its package and version range alone.
+	Installed bool `json:"installed,omitempty"`
+
 	Coverage string `json:"coverage"`
+}
+
+// InstalledPackage is a package known installed, with no advisory list for
+// its ecosystem (WordPress plugins, by their main file's Version header).
+type InstalledPackage struct {
+	Source    string // the installation it is in (a WordPress root)
+	Ecosystem string // WordPress
+	Package   string // the plugin's directory name (its slug)
+	Version   string
 }
 
 // Surface is the host's vulnerability surface.
@@ -146,7 +160,7 @@ func PayloadClass(cwe string) string {
 // without a severity go last: lock files' dependencies have none
 // (tools.SurfaceApps), so past MaxEntries the non-KEV ones are cut before
 // any rated code sink.
-func Build(code []CodeSink, pkgs []PackageVuln) Surface {
+func Build(code []CodeSink, pkgs []PackageVuln, installed ...InstalledPackage) Surface {
 	byID := map[string]int{}
 	var out []Entry
 	for _, c := range code {
@@ -216,6 +230,20 @@ func Build(code []CodeSink, pkgs []PackageVuln) Surface {
 		out = append(out, Entry{ID: id, Kind: "package", Severity: p.Severity, Source: p.Source, Ecosystem: p.Ecosystem,
 			Package: p.Package, Version: p.Version, Advisory: adv, CVE: cve, Fixed: p.Fixed, KEV: p.KEV, KEVSince: p.KEVSince, KEVCVE: p.KEVCVE})
 		alias(&out[len(out)-1], p.CVEs...)
+	}
+	for _, p := range installed {
+		if p.Ecosystem == "" || p.Package == "" {
+			continue
+		}
+		id := "pkg:installed:" + p.Ecosystem + ":" + p.Package + "@" + p.Version
+		if p.Source != "" {
+			id += "#" + p.Source
+		}
+		if _, ok := byID[id]; ok {
+			continue
+		}
+		byID[id] = len(out)
+		out = append(out, Entry{ID: id, Kind: "package", Installed: true, Source: p.Source, Ecosystem: p.Ecosystem, Package: p.Package, Version: p.Version})
 	}
 	for i := range out {
 		switch {

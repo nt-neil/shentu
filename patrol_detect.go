@@ -99,9 +99,10 @@ func writeAtomic(p string, b []byte) error {
 }
 
 // buildSurface is the daily round's surface: the code audit's injection
-// sinks and the application dependencies' vulnerabilities.
-func buildSurface(audit tools.CodeAudit, apps []tools.AppResult) detect.Surface {
-	return detect.Build(tools.SurfaceCode(audit.Findings), tools.SurfaceApps(apps))
+// sinks, the application dependencies' vulnerabilities, and the WordPress
+// plugins installed (matched by signatures written for their versions).
+func buildSurface(audit tools.CodeAudit, apps []tools.AppResult, plugins []tools.WPPlugin) detect.Surface {
+	return detect.Build(tools.SurfaceCode(audit.Findings), tools.SurfaceApps(apps), tools.SurfacePlugins(plugins)...)
 }
 
 // Seams for tests.
