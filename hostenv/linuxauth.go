@@ -62,26 +62,24 @@ func init() {
 	registerBig(journalSSHDBinArgv, 0, JournalTimeout)
 }
 
-// SSHDJournalLines counts the lines sshd itself wrote to the journal since
-// since about ip (journalSSHDArgv): a block resting on SSH logins
-// believes journald only when they are sshd's own (a user's logger lines
-// in sshd's cgroup are not). An error: journald could not tell.
+// SSHDJournalLines counts ip's SSH login events (failed, invalid user,
+// accepted, as the summary parses them, the client address being ip)
+// among the lines sshd itself wrote to the journal since since
+// (journalSSHDArgv): a block resting on SSH logins believes journald only
+// as far as sshd's own lines go (a user's logger lines in sshd's cgroup
+// are not, nor a line of sshd's that only names ip, as a user name). An
+// error: journald could not tell.
 func SSHDJournalLines(ctx context.Context, src Source, since time.Time, ip string) (int, error) {
 	ctx, cancel := context.WithTimeout(ctx, JournalTimeout)
 	defer cancel()
-	n := 0
 	var err error
-	addr := regexp.MustCompile(`(?:^|[^0-9A-Fa-f.:])` + regexp.QuoteMeta(ip) + `(?:$|[^0-9A-Fa-f.:])`) // 1.2.3.4, not 1.2.3.45
+	var c *SSHLogins
 	for _, base := range [][]string{journalSSHDArgv, journalSSHDBinArgv} {
 		argv := append([]string(nil), base...)
 		argv[6] = since.UTC().Format("2006-01-02 15:04:05") + " UTC"
-		n = 0
+		c = NewSSHLogins(since, time.Now(), ip)
 		var res CmdResult
-		res, err = RunLinesUnmasked(ctx, src, argv, func(l string) {
-			if reSSHDLine.MatchString(l) && addr.MatchString(l) {
-				n++
-			}
-		})
+		res, err = RunLinesUnmasked(ctx, src, argv, c.Add)
 		if err == nil && res.ExitCode != 0 {
 			err = &exitError{res.ExitCode}
 		}
@@ -89,7 +87,17 @@ func SSHDJournalLines(ctx context.Context, src Source, since time.Time, ip strin
 			break
 		}
 	}
-	return n, err
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	list, _ := MaxLogins(c)
+	for _, s := range list {
+		if CanonicalIP(s.IP) == CanonicalIP(ip) {
+			n += s.Failed + s.InvalidUser + s.Accepted
+		}
+	}
+	return n, nil
 }
 
 // reSSHDLine is a line sshd wrote: the only lines that can count.

@@ -117,9 +117,11 @@ func loginCheck(ctx context.Context, env *Env, ip net.IP) (verified bool, err er
 	want := hostenv.CanonicalIP(ip.String())
 	var r map[string]any
 	seen, complete := false, false
+	var summarySince time.Time // the window the summary last read
 	for _, back := range []time.Duration{loginGateFirst, loginGateWindow} {
 		var err error
-		if r, err = loginSummary(ctx, env, time.Now().Add(-back), want); err != nil {
+		summarySince = time.Now().Add(-back)
+		if r, err = loginSummary(ctx, env, summarySince, want); err != nil {
 			return false, fmt.Errorf("refusing to block %s: its SSH logins could not be read to check whether they are real (%v); if the block rests on other evidence, ask again with override_unverified", ip, err)
 		}
 		sources, _ := r["sources"].([]SSHSource)
@@ -150,12 +152,21 @@ func loginCheck(ctx context.Context, env *Env, ip net.IP) (verified bool, err er
 		// journald has the IP's logins in sshd's units; a user's shell left
 		// in that cgroup (no pam_systemd) can write sshd lines with logger,
 		// so they count only when sshd itself wrote them (_COMM, _UID).
-		n, err := sshdJournal(ctx, time.Now().Add(-loginGateWindow), want)
+		// Every event the summary counted must be sshd's own, over the
+		// window the summary read.
+		claimed := 0
+		sources, _ := r["sources"].([]SSHSource)
+		for _, s := range sources {
+			if hostenv.CanonicalIP(s.IP) == want {
+				claimed += s.Failed + s.InvalidUser + s.Accepted
+			}
+		}
+		n, err := sshdJournal(ctx, summarySince, want)
 		if err != nil {
 			return false, fmt.Errorf("refusing to block %s: whether its SSH login events in journald were written by sshd itself could not be checked (%v); check them as root and, if they are real, ask again with override_unverified", ip, err)
 		}
-		if n == 0 {
-			return false, fmt.Errorf("refusing to block %s: its SSH login events in journald were not written by sshd itself (another program in sshd's unit, e.g. logger), so they may be forged; check them as root and, if they are real, ask again with override_unverified", ip)
+		if n < claimed {
+			return false, fmt.Errorf("refusing to block %s: of its %d SSH login events in journald, sshd itself wrote %d (the others came from another program in sshd's unit, e.g. logger), so they may be forged; check them as root and, if they are real, ask again with override_unverified", ip, claimed, n)
 		}
 		return true, nil // sshd itself logged the IP: the text logs need not be read
 	}

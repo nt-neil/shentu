@@ -15,7 +15,7 @@ import (
 // The login gate's tests replace the summary; sshd's own journal lines
 // confirm by default (TestLoginGateSSHDItself says otherwise).
 func init() {
-	sshdJournal = func(context.Context, time.Time, string) (int, error) { return 1, nil }
+	sshdJournal = func(context.Context, time.Time, string) (int, error) { return 1 << 20, nil }
 }
 
 // Review 1 of #91 (S-4): journald's SSH events count only when sshd itself
@@ -34,8 +34,9 @@ func TestLoginGateSSHDItself(t *testing.T) {
 		err  error
 		ok   bool
 	}{
-		{"sshd wrote them", 3, nil, true},
+		{"sshd wrote them all", 40, nil, true},
 		{"another program in sshd's unit wrote them", 0, nil, false},
+		{"sshd wrote some, the rest are another program's", 39, nil, false},
 		{"journald could not tell", 0, errors.New("marker"), false},
 	} {
 		sshdJournal = func(context.Context, time.Time, string) (int, error) { return c.n, c.err }
