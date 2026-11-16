@@ -1,0 +1,68 @@
+id = "php-path-traversal-joomla-file"
+lang = "php"
+class = "path-traversal"
+cwe = "CWE-22"
+severity = "high"
+tier = "info"
+title = "Joomla file API deletes, reads or writes a path taken from the request"
+sources = ["->getString(", "->getRaw(", "->getPath(", "->getArray(", "JRequest::getVar(", "$_GET", "$_POST", "$_REQUEST"]
+sinks = ["File::delete(", "JFile::delete(", "Folder::delete(", "JFolder::delete(", "File::write(", "JFile::write(", "File::read(", "Folder::create(", "JFolder::create(", "Folder::files(", "Folder::folders(", "File::copy(", "JFile::copy(", "File::move(", "JFile::move(", "File::upload(", "JFile::upload("]
+sanitizers = ["basename(", "File::makeSafe(", "JFile::makeSafe(", "Path::check(", "str_starts_with(", "strpos(", "in_array", "absint", "intval"]
+fix = "Joomla input filters do not stop ../ in a path: keep only a file name (File::makeSafe(), basename()), or resolve the path with realpath() and check that it starts with the allowed directory followed by a separator."
+refs = ["CVE-2019-10945"]
+
+[[args]]
+sinks = ["File::delete(", "JFile::delete(", "Folder::delete(", "JFolder::delete(", "File::write(", "JFile::write(", "File::read(", "Folder::create(", "JFolder::create(", "Folder::files(", "Folder::folders("]
+arg = 1
+
+[[args]]
+sinks = ["File::copy(", "JFile::copy(", "File::move(", "JFile::move(", "File::upload(", "JFile::upload("]
+arg = 2
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+class MediaController extends BaseController
+{
+    public function remove()
+    {
+        $path = $this->input->post->getString('path');
+        File::delete(JPATH_ROOT . '/images/' . $path);
+        $this->setRedirect('index.php?option=com_gallery');
+    }
+}
+'''
+
+[[samples]]
+kind = "safe"
+note = "the fix: the resolved path must stay inside the images directory"
+code = '''
+<?php
+class MediaController extends BaseController
+{
+    public function remove()
+    {
+        $base = realpath(JPATH_ROOT . '/images') . DIRECTORY_SEPARATOR;
+        $path = realpath($base . $this->input->post->getString('path'));
+        if ($path === false || !str_starts_with($path, $base)) {
+            throw new \RuntimeException('Not allowed', 403);
+        }
+        File::delete($path);
+    }
+}
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+class MediaController extends BaseController
+{
+    public function remove()
+    {
+        $name = File::makeSafe($this->input->post->getString('file'));
+        File::delete(JPATH_ROOT . '/images/thumbs/' . $name);
+    }
+}
+'''

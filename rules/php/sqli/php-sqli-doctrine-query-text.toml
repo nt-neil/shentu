@@ -1,0 +1,96 @@
+id = "php-sqli-doctrine-query-text"
+lang = "php"
+class = "sqli"
+cwe = "CWE-89"
+severity = "high"
+tier = "info"
+title = "Request input written into a Doctrine DQL or SQL string"
+frameworks = ["symfony", "doctrine"]
+sources = ["$request->query->get(", "$request->request->get(", "$request->get(", "$request->query->all(", "$request->attributes->get(", "$_GET", "$_POST", "$_REQUEST"]
+sinks = ["->createQuery(", "->createNativeQuery(", "->executeQuery(", "->executeStatement(", "->fetchAllAssociative(", "->fetchAssociative(", "->fetchOne(", "->fetchFirstColumn(", "->fetchAllKeyValue(", "->where(", "->andWhere(", "->orWhere(", "->having(", "->andHaving(", "->addOrderBy(", "->groupBy(", "->addGroupBy("]
+sanitizers = ["intval", "(int)", "in_array", "ctype_digit"]
+fix = "Keep the DQL or SQL text fixed and bind values with setParameter() or the parameters array (executeQuery($sql, ['id' => $id])); map column names and sort directions to an allowlist."
+refs = ["CVE-2026-22242", "CVE-2026-27461"]
+
+[[args]]
+arg = 1
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+class BookRepository extends ServiceEntityRepository
+{
+    public function search(Request $request): array
+    {
+        $title = $request->query->get('title');
+        return $this->getEntityManager()
+            ->createQuery("SELECT b FROM App\Entity\Book b WHERE b.title LIKE '%" . $title . "%'")
+            ->getResult();
+    }
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+class StatsController extends AbstractController
+{
+    public function byDay(Request $request, Connection $conn): Response
+    {
+        $day = $request->get('day');
+        return $this->json($conn->fetchAllAssociative("SELECT * FROM visits WHERE day = '$day'"));
+    }
+}
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+class BookRepository extends ServiceEntityRepository
+{
+    public function search(Request $request): array
+    {
+        return $this->getEntityManager()
+            ->createQuery('SELECT b FROM App\Entity\Book b WHERE b.title LIKE :t')
+            ->setParameter('t', '%' . $request->query->get('title') . '%')
+            ->getResult();
+    }
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "QueryBuilder where() takes DQL text; only setParameter() binds a value"
+code = '''
+<?php
+class CustomerRepository extends ServiceEntityRepository
+{
+    public function byCity(Request $request): array
+    {
+        return $this->createQueryBuilder('c')
+            ->andWhere("c.city = '" . $request->query->get('city') . "'")
+            ->getQuery()
+            ->getResult();
+    }
+}
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+<?php
+class CustomerRepository extends ServiceEntityRepository
+{
+    public function byCity(Request $request): array
+    {
+        return $this->createQueryBuilder('c')
+            ->andWhere('c.city = :city')
+            ->setParameter('city', $request->query->get('city'))
+            ->getQuery()
+            ->getResult();
+    }
+}
+'''

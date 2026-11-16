@@ -11,8 +11,15 @@ sanitizers = []
 fix = "Drop shell: true and pass the program and each value as separate arguments; shell: true turns the joined arguments back into a shell command line."
 refs = ["CVE-2026-119282"]
 
+# an argument array is passed as is; shell: with any value but a literal false joins it into a shell
+# command line: the command (1) and its arguments (2), not the options (cwd, env) beside shell:
 [[args]]
-when = ["shell:"]   # an argument array is passed as is; shell: with any value but a literal false joins it into a shell command line
+when = ["shell:"]
+arg = 1
+
+[[args]]
+when = ["shell:"]
+arg = 2
 
 [[samples]]
 kind = "vulnerable"

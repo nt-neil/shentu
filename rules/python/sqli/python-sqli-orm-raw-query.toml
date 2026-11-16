@@ -1,0 +1,79 @@
+id = "python-sqli-orm-raw-query"
+lang = "python"
+class = "sqli"
+cwe = "CWE-89"
+severity = "high"
+tier = "info"
+title = "Request input built into the SQL text of an ORM or async driver raw query"
+sources = ["request.args", "request.form", "request.values", "request.json", "request.get_json(", "request.GET", "request.POST", "request.data", "request.query_params", "request.path_params", "request.form(", "request.json(", "request.query", "request.match_info", "request.post(", "self.get_argument(", "self.get_query_argument(", "self.get_body_argument("]
+sinks = [".raw(", "RawSQL(", ".query_raw(", ".execute_raw(", ".query_first(", ".execute_query(", ".execute_query_dict(", ".fetchrow(", ".fetchval(", ".fetch_all(", ".fetch_one(", ".fetch_val(", ".extra("]
+sanitizers = ["int("]
+fix = "Keep the SQL text constant and pass values separately: Manager.raw(sql, [value]) and RawSQL(sql, [value]) with %s, prisma query_raw(sql, value) with $1, asyncpg fetchrow(sql, value), Tortoise execute_query(sql, [value]), databases fetch_all(query, values={...}), QuerySet.extra(where=[\"a = %s\"], params=[value])."
+refs = ["CVE-2024-5225"]
+
+[[args]]
+sinks = [".raw(", "RawSQL(", ".query_raw(", ".execute_raw(", ".query_first(", ".execute_query(", ".execute_query_dict(", ".fetchrow(", ".fetchval(", ".fetch_all(", ".fetch_one(", ".fetch_val("]
+arg = 1   # the SQL text; the parameters that follow are safe
+
+# QuerySet.extra(select, where, params, ...): where= is SQL text, params= holds
+# values Django passes to the driver.
+[[args]]
+sinks = [".extra("]
+arg = 2
+name = "where"
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+@api.get("/usage")
+async def usage(request: Request):
+    team = request.query_params.get("team")
+    stmt = 'SELECT month, cost FROM "TeamUsage" WHERE "team" = \'' + team + "'"
+    return await db.query_raw(stmt)
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+def find_users(request):
+    name = request.GET.get("name", "")
+    users = User.objects.raw(f"SELECT * FROM auth_user WHERE username LIKE '%{name}%'")
+    return render(request, "users.html", {"users": users})
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+async def order(request):
+    conn = request.app["db"]
+    row = await conn.fetchrow("SELECT * FROM orders WHERE ref = '%s'" % request.match_info["ref"])
+    return web.json_response(dict(row))
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+@api.get("/usage")
+async def usage(request: Request):
+    team = request.query_params.get("team")
+    return await db.query_raw('SELECT month, cost FROM "TeamUsage" WHERE "team" = $1', team)
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+def find_users(request):
+    name = request.GET.get("name", "")
+    users = User.objects.raw("SELECT * FROM auth_user WHERE username LIKE %s", ["%" + name + "%"])
+    return render(request, "users.html", {"users": users})
+'''
+
+
+[[samples]]
+kind = "safe"
+note = "the value goes in params=, the where= text is fixed"
+code = '''
+def by_label(request):
+    rows = Ticket.objects.extra(where=["label = %s"], params=[request.GET["label"]])
+    return render(request, "tickets.html", {"rows": rows})
+'''

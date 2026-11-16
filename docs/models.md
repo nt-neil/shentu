@@ -268,7 +268,7 @@ sooner or later propose something an operator approves without reading.
 
 Only on a disposable VM: the scripts plant a real backdoor account and webshell, and they refuse
 to run unless `SHENTU_EVAL_DISPOSABLE_VM=1` is set. The VM needs systemd, openssh-server, rsyslog
-(writing `/var/log/auth.log`), nftables, iproute2, python3, `bc` and Go 1.23.
+(writing `/var/log/auth.log`), nftables, iproute2, python3, `bc` and Go 1.26 (go.mod).
 
 ```sh
 git clone https://github.com/nt-neil/shentu && cd shentu && git checkout 29d68f2

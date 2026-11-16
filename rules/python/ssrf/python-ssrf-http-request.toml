@@ -6,7 +6,7 @@ severity = "high"
 tier = "info"
 title = "Server fetches a URL taken from the request"
 frameworks = ["django", "flask"]
-sources = ["request.args", "request.form", "request.values", "request.json", "request.get_json(", "request.GET", "request.POST", "request.data", "request.query_params"]
+sources = ["request.args", "request.form", "request.values", "request.json", "request.get_json(", "request.GET", "request.POST", "request.data", "request.query_params", "request.path_params", "request.form(", "request.json(", "request.query", "request.match_info", "request.post(", "self.get_argument(", "self.get_query_argument(", "self.get_body_argument("]
 sinks = ["requests.get(", "requests.post(", "requests.put(", "requests.patch(", "requests.delete(", "requests.head(", "requests.request(", "urlopen(", "urllib.request.urlopen(", "httpx.get(", "httpx.post(", "httpx.request(", "aiohttp.request("]
 sanitizers = ["url_has_allowed_host_and_scheme(", "int("]
 fix = "Keep the scheme and host fixed and take only a path or an id from the request, or parse the URL and require its host to be in an allowlist (and resolve it to a public address) before fetching."
@@ -60,4 +60,22 @@ def webhook_test(request):
         return HttpResponseBadRequest()
     with urllib.request.urlopen(target) as f:
         return HttpResponse(status=f.status)
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+class ProxyHandler(tornado.web.RequestHandler):
+    def get(self):
+        resp = requests.get(self.get_argument("url"), timeout=5)
+        self.write({"status": resp.status_code})
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+async def fetch(request):
+    data = await request.post()
+    body = urlopen(data["url"]).read()
+    return web.json_response({"size": len(body)})
 '''

@@ -6,8 +6,8 @@ severity = "high"
 tier = "info"
 title = "Server fetches a URL taken from the request"
 frameworks = ["wordpress", "laravel"]
-sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "get_query_var(", "->get_param(", "$request->input(", "$request->query("]
-sinks = ["wp_remote_get(", "wp_remote_post(", "wp_remote_request(", "wp_remote_head(", "download_url(", "curl_init(", "curl_setopt(", "file_get_contents(", "fopen(", "Http::get(", "Http::post(", "Http::head("]
+sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "get_query_var(", "->get_param(", "shortcode_atts(", "$atts[", "$request->input(", "$request->query("]
+sinks = ["wp_remote_get(", "wp_remote_post(", "wp_remote_request(", "wp_remote_head(", "curl_init(", "curl_setopt(", "file_get_contents(", "fopen(", "Http::get(", "Http::post(", "Http::head("]
 sanitizers = ["wp_http_validate_url", "realpath", "absint", "intval"]
 fix = "Do not let the client choose the host: keep the scheme and host fixed and take only a path or an id from the request, check the host against an allowlist, or use wp_safe_remote_get(), which refuses local and private addresses."
 refs = ["GHSA-wxjx-r2j2-96fx"]
@@ -19,7 +19,7 @@ when = ["CURLOPT_URL"]
 leading = true
 
 [[args]]
-sinks = ["wp_remote_get(", "wp_remote_post(", "wp_remote_request(", "wp_remote_head(", "download_url(", "curl_init(", "file_get_contents(", "fopen(", "Http::get(", "Http::post(", "Http::head("]
+sinks = ["wp_remote_get(", "wp_remote_post(", "wp_remote_request(", "wp_remote_head(", "curl_init(", "file_get_contents(", "fopen(", "Http::get(", "Http::post(", "Http::head("]
 arg = 1
 leading = true
 

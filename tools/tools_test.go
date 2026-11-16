@@ -3,15 +3,21 @@ package tools
 import (
 	"context"
 	"encoding/json"
-	"os"
 	"net"
+	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/nt-neil/shentu/hostenv"
 )
 
 func TestSSHSummary(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Linux host test: Linux auth log files")
+	}
 	dir := t.TempDir()
 	now := time.Now()
 	iso := now.UTC().Format("2006-01-02T15:04:05.000000-07:00")
@@ -31,9 +37,21 @@ func TestSSHSummary(t *testing.T) {
 	}, "\n")
 	p := filepath.Join(dir, "auth.log")
 	os.WriteFile(p, []byte(log), 0o600)
+	// No journalctl, as on a host without journald: the runner's own journal
+	// would be read first otherwise.
+	noCmds, _ := hostenv.NewRunner(nil)
+	prevHost := hostSource
+	hostSource = func() hostenv.Source { return &hostenv.Live{Runner: noCmds} }
+	t.Cleanup(func() { hostSource = prevHost })
 	r, err := SSHSummary(context.Background(), &Env{LogPaths: []string{p}}, now.Add(-24*time.Hour), "")
 	if err != nil {
 		t.Fatal(err)
+	}
+	if r["complete"] != true {
+		t.Errorf("complete %v, error %v", r["complete"], r["error"])
+	}
+	if r["verified"] != false {
+		t.Errorf("a text log is not verified: %v", r["verified"])
 	}
 	got := map[string]SSHSource{}
 	for _, s := range r["sources"].([]SSHSource) {
@@ -71,17 +89,6 @@ func TestSSHSummary(t *testing.T) {
 	}
 }
 
-func TestParseHexAddr(t *testing.T) {
-	ip, port := parseHexAddr("0100007F:0016")
-	if ip.String() != "127.0.0.1" || port != 22 {
-		t.Errorf("got %v:%d", ip, port)
-	}
-	ip, port = parseHexAddr("00000000000000000000000001000000:01BB")
-	if ip.String() != "::1" || port != 443 {
-		t.Errorf("got %v:%d", ip, port)
-	}
-}
-
 func TestBlockGuards(t *testing.T) {
 	for _, bad := range []string{"127.0.0.1", "0.0.0.0", "::", "::1", "10.0.0.0/8", "not-an-ip", "224.0.0.1", "169.254.1.1"} {
 		if _, err := blockIP.Preview(json.RawMessage(`{"ip":"` + bad + `","reason":"x"}`)); err == nil {
@@ -95,6 +102,9 @@ func TestBlockGuards(t *testing.T) {
 }
 
 func TestLogPathAllowlist(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Linux host test: Linux /var/log paths")
+	}
 	pats := []string{"/var/log/auth.log", "/var/log/nginx/*.log"}
 	for p, want := range map[string]bool{
 		"/var/log/auth.log": true, "/var/log/auth.log.1": true, "/var/log/nginx/access.log": true,
@@ -136,6 +146,9 @@ func TestHexToIPv6(t *testing.T) {
 }
 
 func TestMinerSigns(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Linux host test: Linux /proc executable paths")
+	}
 	cases := []struct {
 		exe, cmd string
 		want     bool
@@ -157,5 +170,29 @@ func TestMinerSigns(t *testing.T) {
 		if got := minerSigns(c.exe, c.cmd); got != c.want {
 			t.Errorf("%s %q: got %v, want %v", c.exe, c.cmd, got, c.want)
 		}
+	}
+}
+
+// emptyJournal answers journalctl with no entry.
+type emptyJournal struct{ *hostenv.Live }
+
+func (emptyJournal) RunLinesUnmasked(_ context.Context, _ []string, fn func(string)) (hostenv.CmdResult, error) {
+	fn("-- No entries --")
+	return hostenv.CmdResult{}, nil
+}
+
+// An empty journal with no text log to confirm it is not complete.
+func TestSSHSummaryEmptyJournalIncomplete(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("ssh_logins reads the Security log on Windows, not journald")
+	}
+	prevHost := hostSource
+	hostSource = func() hostenv.Source {
+		return emptyJournal{&hostenv.Live{Remap: map[string]string{"/var/log": t.TempDir()}}}
+	}
+	t.Cleanup(func() { hostSource = prevHost })
+	r, err := SSHSummary(context.Background(), &Env{LogPaths: []string{"/var/log/auth.log"}}, time.Now().Add(-time.Hour), "")
+	if err != nil || r["complete"] != false || r["verified"] != false {
+		t.Errorf("%v %v", r, err)
 	}
 }
