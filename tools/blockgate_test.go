@@ -176,7 +176,9 @@ func TestBlockIPGateUnreadableTextLog(t *testing.T) {
 	loginSummary = func(context.Context, *Env, time.Time, string) (map[string]any, error) {
 		return map[string]any{"verified": true, "complete": true}, nil
 	}
-	textLogins = func(*Env, string) (int, []string, []string) { return 0, nil, []string{"/var/log/auth.log.1 (permission_denied)"} }
+	textLogins = func(*Env, string) (int, []string, []string) {
+		return 0, nil, []string{"/var/log/auth.log.1 (permission_denied)"}
+	}
 	err := loginGate(context.Background(), &Env{}, net.ParseIP("203.0.113.77"), false)
 	if err == nil || !strings.Contains(err.Error(), "could not all be read") {
 		t.Errorf("unreadable text log: %v", err)

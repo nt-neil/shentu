@@ -92,7 +92,7 @@ Chinese for the zh-TW pages; keep the two in step.
   as a sanitizer; reading such checks before a request is planned.
 - Scans take longer with the added rules, as each file is run through more rules: WordPress
   about 40–60% depending on the machine (on an Ubuntu VM the code audit went from 73.8 s to
-  120.0 s and the daily patrol from 100 s to 144 s, with the same findings and peak memory),
+  120.0 s and the daily patrol from 100 s to 144 s, with the same findings and peak RSS),
   TypeScript projects about 43%. The fix at the root is planned after v0.3.1.
 - `block_ip`'s check covers SSH login evidence only (see above): a block based on other logs
   is the operator's to judge.
