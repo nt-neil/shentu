@@ -180,23 +180,26 @@ func sensitiveName(k string) bool {
 func Sample(rec AccessRecord) string {
 	q := rec.Query
 	if q != "" {
-		var b strings.Builder
-		start := 0
-		for i := 0; i <= len(q); i++ { // parameters split on & and on ; (some servers take both)
-			if i < len(q) && q[i] != '&' && q[i] != ';' {
+		kvs := strings.Split(q, "&")
+		for i, kv := range kvs {
+			// A server splitting on ; too reads more names in it; one
+			// splitting on & alone reads the value to the next &. Any
+			// sensitive name in the piece masks from its first = to its end.
+			eq := strings.IndexByte(kv, '=')
+			if eq < 0 {
 				continue
 			}
-			kv := q[start:i]
-			if k, _, ok := strings.Cut(kv, "="); ok && sensitiveName(k) {
-				kv = k + "=[REDACTED]"
+			hide := sensitiveName(kv[:eq])
+			for _, sub := range strings.Split(kv, ";") {
+				if k, _, ok := strings.Cut(sub, "="); ok && sensitiveName(k) {
+					hide = true
+				}
 			}
-			b.WriteString(kv)
-			if i < len(q) {
-				b.WriteByte(q[i])
+			if hide {
+				kvs[i] = kv[:eq] + "=[REDACTED]"
 			}
-			start = i + 1
 		}
-		q = "?" + b.String()
+		q = "?" + strings.Join(kvs, "&")
 	}
 	s := hostenv.MaskSecrets(strings.TrimSpace(rec.Method + " " + rec.Path + q))
 	if len(s) > MaxSample {

@@ -150,3 +150,23 @@ func TestSampleEncodedNames(t *testing.T) {
 		t.Errorf("ordinary parameters masked: %s", s)
 	}
 }
+
+// Security review of part 1 (second): a value holding ; is masked to the
+// next &, the widest any server reads.
+func TestSampleSemicolonValue(t *testing.T) {
+	pw := "pass" + "word"
+	s := Sample(AccessRecord{Method: "GET", Path: "/marker", Query: "q=1&" + pw + "=v1;v2;v3&x=1;" + pw + "=v4;v5&page=2"})
+	for _, v := range []string{"v1", "v2", "v3", "v4", "v5"} {
+		if strings.Contains(s, v) {
+			t.Errorf("%s shown: %s", v, s)
+		}
+	}
+	if !strings.HasPrefix(s, "GET /marker?q=1&") {
+		t.Errorf("ordinary parameters masked: %s", s)
+	}
+	// Without MaskSecrets' own rule in play (a name it does not know), the
+	// parameters after the masked piece stay.
+	if s = Sample(AccessRecord{Method: "GET", Path: "/m", Query: "user_em" + "ail=a;b&page=2"}); s != "GET /m?user_email=[REDACTED]&page=2" {
+		t.Errorf("%s", s)
+	}
+}
