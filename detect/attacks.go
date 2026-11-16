@@ -95,6 +95,9 @@ type Attacks struct {
 	Version int                  `json:"version"`
 	Groups  map[string]*Group    `json:"groups"`
 	IPs     map[string]*ipRecord `json:"ips"`
+	// DroppedPending: groups dropped past MaxGroups while they still had
+	// attempts not notified, in all: said, never dropped quietly.
+	DroppedPending int `json:"dropped_pending,omitempty"`
 	// Note says, when not empty, why the state started empty: the file
 	// did not parse and was set aside (its new name in it). Not saved.
 	Note string `json:"-"`
@@ -209,6 +212,9 @@ func (a *Attacks) Add(t Attempt, at time.Time) *Group {
 	key := prefix + "|" + t.Entry + "|" + t.Level
 	g := a.Groups[key]
 	if g == nil {
+		if len(a.Groups) >= MaxGroups+MaxGroups/4 { // bounded between saves too
+			a.evict(MaxGroups - 1)
+		}
 		g = &Group{Key: key, Prefix: prefix, Entry: t.Entry, Level: t.Level, CVE: t.CVE, KEV: t.KEV, File: t.File, Line: t.Line, First: at, Last: at}
 		a.Groups[key] = g
 	}
@@ -304,6 +310,51 @@ func (a *Attacks) campaign(t Attempt, at time.Time) bool {
 	return len(r.Entries) >= CampaignEntries
 }
 
+// evict keeps n groups. The ones dropped first are those with nothing
+// left to notify, then unverified ones, then the least severe, then the
+// least recently seen: a flood of new sources (L1 from many networks)
+// cannot push out an attempt not yet notified while others can go. One
+// dropped with attempts not notified is counted in DroppedPending.
+func (a *Attacks) evict(n int) {
+	if len(a.Groups) <= n {
+		return
+	}
+	keys := make([]string, 0, len(a.Groups))
+	for k := range a.Groups {
+		keys = append(keys, k)
+	}
+	keep := func(g *Group) [3]int { // larger is kept longer
+		return [3]int{b2i(g.Since > 0), b2i(!g.Unverified), severityIndex(g.Severity)}
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		x, y := a.Groups[keys[i]], a.Groups[keys[j]]
+		if kx, ky := keep(x), keep(y); kx != ky {
+			for c := range kx {
+				if kx[c] != ky[c] {
+					return kx[c] > ky[c]
+				}
+			}
+		}
+		if !x.Last.Equal(y.Last) {
+			return x.Last.After(y.Last)
+		}
+		return keys[i] < keys[j]
+	})
+	for _, k := range keys[n:] {
+		if a.Groups[k].Since > 0 {
+			a.DroppedPending++
+		}
+		delete(a.Groups, k)
+	}
+}
+
+func b2i(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
 // evictIP drops the address of the index seen least recently.
 func (a *Attacks) evictIP() {
 	oldest := ""
@@ -352,22 +403,7 @@ func (a *Attacks) prune(now time.Time) {
 			delete(a.Groups, k)
 		}
 	}
-	if len(a.Groups) > MaxGroups {
-		keys := make([]string, 0, len(a.Groups))
-		for k := range a.Groups {
-			keys = append(keys, k)
-		}
-		sort.Slice(keys, func(i, j int) bool {
-			x, y := a.Groups[keys[i]].Last, a.Groups[keys[j]].Last
-			if !x.Equal(y) {
-				return x.After(y)
-			}
-			return keys[i] < keys[j]
-		})
-		for _, k := range keys[MaxGroups:] {
-			delete(a.Groups, k)
-		}
-	}
+	a.evict(MaxGroups)
 	for ip, r := range a.IPs {
 		for e, last := range r.Entries {
 			if now.Sub(last) > CampaignWindow {

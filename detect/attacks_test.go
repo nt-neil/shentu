@@ -212,3 +212,26 @@ func TestRoundJudged(t *testing.T) {
 		t.Errorf("%+v", r)
 	}
 }
+
+// Security review of part 2: a flood of new groups (L1 from many
+// networks, unverified) does not push out an attempt not yet notified;
+// what is dropped while pending is counted.
+func TestAttacksEvictionKeepsPending(t *testing.T) {
+	a := newAttacks()
+	a.Add(att("203.0.113.1", "target", LevelPayload, t0), t0) // pending, verified, high, the oldest
+	for i := 0; i < MaxGroups+MaxGroups/2; i++ {
+		x := att(fmt.Sprintf("10.%d.%d.1", i/256, i%256), "e", LevelRoute, t0.Add(time.Duration(i+1)*time.Second))
+		x.Verified = false
+		a.Add(x, t0)
+		if len(a.Groups) > MaxGroups+MaxGroups/4 {
+			t.Fatalf("%d groups between saves", len(a.Groups))
+		}
+	}
+	a.prune(t0.Add(time.Hour))
+	if len(a.Groups) != MaxGroups || a.Groups["203.0.113.0/24|target|L2"] == nil {
+		t.Fatalf("%d groups; the pending L2 kept: %v", len(a.Groups), a.Groups["203.0.113.0/24|target|L2"] != nil)
+	}
+	if a.DroppedPending == 0 {
+		t.Error("pending groups dropped without being counted")
+	}
+}
