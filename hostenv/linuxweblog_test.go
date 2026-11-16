@@ -593,6 +593,9 @@ func TestWebLogsUnreadNothingVerified(t *testing.T) {
 	h.files["/usr/share/nginx/modules-available/mod-http-geoip2.conf"] = "load_module modules/ngx_http_geoip2_module.so;\n"
 	h.links["/etc/nginx/modules-enabled/50-mod-http-geoip2.conf"] = "/usr/share/nginx/modules-available/mod-http-geoip2.conf"
 	h.files["/etc/nginx/nginx.conf"] = "include /etc/nginx/modules-enabled/*.conf;\n" + h.files["/etc/nginx/nginx.conf"]
+	for _, d := range []string{"/usr", "/usr/share", "/usr/share/nginx", "/usr/share/nginx/modules-available"} {
+		h.st[d] = FileStat{Mode: fs.ModeDir | 0o755, UID: 0}
+	}
 	o := LinuxCollector{}.WebLogs(h)
 	if s := webLogsByKey(t, o)["nginx access /var/log/nginx/shop.access.log"]; o.Status != StatusOK || !s.Verified {
 		t.Errorf("modules-enabled: %s %s, %+v", o.Status, o.Detail, s)
@@ -621,5 +624,46 @@ func TestWebLogsApacheIdentityCheck(t *testing.T) {
 	a := webLogsByKey(t, LinuxCollector{}.WebLogs(h))["apache access /var/log/apache2/access.log"]
 	if a.Verified || a.Reason != ReasonCustomFormat || !a.IdentityCheck {
 		t.Errorf("%+v", a)
+	}
+}
+
+// Review 4, S: a module snippet under /usr/share/nginx is read only while
+// every directory above it is root's alone.
+func TestWebLogsExtraDirsTrusted(t *testing.T) {
+	setup := func(mod func(h statHost)) Obs[[]LogSource] {
+		h := logHost()
+		h.files["/usr/share/nginx/modules-available/mod-http-geoip2.conf"] = "load_module modules/ngx_http_geoip2_module.so;\n"
+		h.links["/etc/nginx/modules-enabled/50-mod-http-geoip2.conf"] = "/usr/share/nginx/modules-available/mod-http-geoip2.conf"
+		h.files["/etc/nginx/nginx.conf"] = "include /etc/nginx/modules-enabled/*.conf;\n" + h.files["/etc/nginx/nginx.conf"]
+		for _, d := range []string{"/usr", "/usr/share", "/usr/share/nginx", "/usr/share/nginx/modules-available"} {
+			h.st[d] = FileStat{Mode: fs.ModeDir | 0o755, UID: 0}
+		}
+		mod(h)
+		return LinuxCollector{}.WebLogs(h)
+	}
+	if o := setup(func(statHost) {}); o.Status != StatusOK || !webLogsByKey(t, o)["nginx access /var/log/nginx/shop.access.log"].Verified {
+		t.Errorf("root's directories: %s %s", o.Status, o.Detail)
+	}
+	g := 33
+	for name, mod := range map[string]func(h statHost){
+		"directory www-data's": func(h statHost) {
+			h.st["/usr/share/nginx/modules-available"] = FileStat{Mode: fs.ModeDir | 0o755, UID: 33}
+		},
+		"directory writable by others": func(h statHost) {
+			h.st["/usr/share/nginx"] = FileStat{Mode: fs.ModeDir | 0o777, UID: 0}
+		},
+		"directory writable by the web group": func(h statHost) {
+			h.st["/usr/share/nginx/modules-available"] = FileStat{Mode: fs.ModeDir | 0o775, UID: 0, GID: &g}
+		},
+	} {
+		o := setup(mod)
+		if o.Status != StatusPartial {
+			t.Errorf("%s: status %s", name, o.Status)
+		}
+		for _, s := range o.Value {
+			if s.Verified {
+				t.Errorf("%s: %s verified", name, s.Path)
+			}
+		}
 	}
 }

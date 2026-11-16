@@ -567,8 +567,8 @@ func readLines(br *bufio.Reader, l Line, off int64, b *Budget, final bool, res *
 				res.Lines++
 				res.Bytes += int64(len(line))
 				b.left -= int64(len(line))
+				l.Text, l.Cut, l.Offset = line, false, off // where the line starts
 				off += int64(len(line))
-				l.Text, l.Cut, l.Offset = line, false, off
 				fn(l)
 			}
 			return off, false, nil

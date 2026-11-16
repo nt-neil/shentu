@@ -1,6 +1,8 @@
 package detect
 
 import (
+	"bufio"
+	"bytes"
 	"compress/gzip"
 	"fmt"
 	"os"
@@ -594,4 +596,11 @@ func TestRotatedFilesSuffix(t *testing.T) {
 	if got["a.log.json"] || got["a.log.old"] {
 		t.Errorf("another log taken for a rotation: %v", got)
 	}
+}
+
+// readLinesFinal runs readLines over b as a rotated (final) file.
+func readLinesFinal(b []byte, fn LineFunc) (int64, error) {
+	var res ReadResult
+	off, _, err := readLines(bufio.NewReaderSize(bytes.NewReader(b), MaxLine), Line{From: "f"}, 0, NewBudget(DefaultBudgetBytes, time.Minute), true, &res, fn)
+	return off, err
 }

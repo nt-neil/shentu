@@ -42,3 +42,13 @@ func TestScanAccessSignals(t *testing.T) {
 		t.Errorf("unparseable format: %v", err)
 	}
 }
+
+// Review 4, S: the last line of a rotated file, without a newline, is
+// sampled at its start.
+func TestScanAccessFinalLineOffset(t *testing.T) {
+	var got []int64
+	_, err := readLinesFinal([]byte("ok\nlast"), func(l Line) { got = append(got, l.Offset) })
+	if err != nil || len(got) != 2 || got[0] != 0 || got[1] != 3 {
+		t.Errorf("offsets %v, err %v; want [0 3]", got, err)
+	}
+}
