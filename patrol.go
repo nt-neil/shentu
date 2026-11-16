@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nt-neil/shentu/detect/sig"
 	"github.com/nt-neil/shentu/hostenv"
 	"github.com/nt-neil/shentu/tools"
 )
@@ -473,6 +474,9 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 			partial = append(partial, "作業系統套件（"+err.Error()+"）")
 		} else if p, _ := r["partial"].(string); p != "" {
 			partial = append(partial, "作業系統套件只查了一部分（"+p+"）")
+		}
+		if len(osSurface) > 0 && !sig.ComparesVersions(osSurface[0].Ecosystem) {
+			partial = append(partial, osSurface[0].Ecosystem+" 的套件版本沒有比較器：簽章對到的 CVE 一律列為版本未知（VersionUnknown），不會依版本排除")
 		}
 		unchecked += uncheckedVulns("installed packages", r, err)
 		if err == nil {

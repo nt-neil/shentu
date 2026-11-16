@@ -542,10 +542,42 @@ contains = ["marker-one"]
 	if g := judge("2.4.61-1~deb12u1"); len(g.Candidates) != 1 || g.Candidates[0].Level != LevelPayload || g.Candidates[0].VersionUnknown {
 		t.Errorf("in range: %+v", g)
 	}
-	if g := judge("2.4.62-1~deb12u1"); len(g.Candidates) != 0 {
-		t.Errorf("fixed: %+v", g)
+	// Review 2 of #91 (N-B2): OSV found it affected; the base's range does
+	// not overrule that: a candidate, version unknown.
+	if g := judge("2.4.62-1~deb12u1"); len(g.Candidates) != 1 || !g.Candidates[0].VersionUnknown {
+		t.Errorf("out of a base range: %+v", g)
 	}
 	if g := judge("2.4.62-1~deb12u0"); len(g.Candidates) != 1 {
 		t.Errorf("~deb12u0 before ~deb12u1: %+v", g)
+	}
+}
+
+// Review 2 of #91 (N-B1, N-B2): an OS advisory named DSA- or DEBIAN-CVE-
+// is found by a CVE signature through its CVEs; a release-specific range
+// for another release does not apply.
+func TestOSEntriesReview2(t *testing.T) {
+	ss := loadSigs(t, `
+[[signature]]
+id = "deb11-marker"
+title = "for Debian 11"
+class = "path"
+cves = ["CVE-2099-0201"]
+source = "shentu"
+license = "Apache-2.0"
+[[signature.applies_to]]
+ecosystem = "Debian:11"
+package = "marker-httpd"
+versions = "<2.4.62-1~deb11u1"
+[[signature.match]]
+part = "any_param"
+contains = ["marker-two"]
+`)
+	s := Build(nil, []PackageVuln{{Source: "os", Ecosystem: "Debian:12", Package: "marker-httpd", Version: "2.4.62-1~deb12u1", ID: "DSA-9999-1", CVEs: []string{"CVE-2099-0201"}, CVE: "CVE-2099-0201"}})
+	g := NewJudge(s, ss).Judge(NewMatcher(ss).Match(Normalize(AccessRecord{Method: "GET", Path: "/", Query: "q=marker-two"})))
+	if len(g.Candidates) != 1 || !g.Candidates[0].VersionUnknown {
+		t.Errorf("Debian:11's range on a Debian:12 entry: %+v", g)
+	}
+	if sameEcosystem("Debian:11", "Debian:12") || !sameEcosystem("Debian", "Debian:12") || !sameEcosystem("debian:12", "Debian:12") {
+		t.Error("sameEcosystem")
 	}
 }

@@ -13,6 +13,11 @@ import (
 // hostenv.CompareEVR). An ecosystem's release after ":" (OSV's Debian:12)
 // is the same order.
 
+// ComparesVersions says whether ranges of ecosystem are compared: a
+// signature's range for one that is not is refused, and its packages'
+// versions are never ordered (a candidate is VersionUnknown).
+func ComparesVersions(ecosystem string) bool { return ecosystemKind(ecosystem) != "" }
+
 // ecosystemKind is the version order of ecosystem: "semver" (npm,
 // Packagist, WordPress), "dpkg", "rpm", or "" for one not compared.
 func ecosystemKind(ecosystem string) string {

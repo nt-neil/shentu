@@ -331,7 +331,13 @@ func (j *Judge) Judge(m MatchResult) Judgment {
 				in, known = appliesTo(s, e)
 			}
 			if !in && known {
-				continue
+				if e.Source != "os" {
+					continue
+				}
+				// OSV found this installed OS package affected; a range
+				// written for the whole base (fixed versions differ by
+				// release) does not overrule it: a candidate, not known.
+				known = false
 			}
 			level := LevelPayload
 			if h.RouteOnly || pathCut && len(s.Routes) > 0 {
@@ -427,12 +433,16 @@ func appliesTo(s sig.Signature, e Entry) (in, known bool) {
 	return false, known && listed
 }
 
-// sameEcosystem: a and b are one ecosystem, a release after ":" aside
-// (a signature for Debian is for Debian:12's packages too).
+// sameEcosystem: a and b are one ecosystem: the same base, and, when both
+// name a release after ":", the same release (Debian:11's fixed versions
+// are not Debian:12's); one naming none is for every release.
 func sameEcosystem(a, b string) bool {
-	a, _, _ = strings.Cut(a, ":")
-	b, _, _ = strings.Cut(b, ":")
-	return strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(b))
+	ab, ar, _ := strings.Cut(a, ":")
+	bb, br, _ := strings.Cut(b, ":")
+	if !strings.EqualFold(strings.TrimSpace(ab), strings.TrimSpace(bb)) {
+		return false
+	}
+	return ar == "" || br == "" || strings.EqualFold(strings.TrimSpace(ar), strings.TrimSpace(br))
 }
 
 var pep503 = regexp.MustCompile(`[-_.]+`)

@@ -169,6 +169,20 @@ func packageVulnsAll(ctx context.Context, hc *http.Client, detailFor string) (ma
 	if advisories != nil {
 		cvesOf = func(id string) ([]string, bool) { return advisories[id].CVEs, true }
 	}
+	// What the KEV check looks up is kept for the surface's entries: their
+	// advisories (DSA-, USN-, RLSA-, ALAS) name their CVEs only there.
+	var cveMu sync.Mutex
+	cveMemo := map[string][]string{}
+	lookup := cvesOf
+	cvesOf = func(id string) ([]string, bool) {
+		c, ok := lookup(id)
+		if ok {
+			cveMu.Lock()
+			cveMemo[id] = c
+			cveMu.Unlock()
+		}
+		return c, ok
+	}
 	exploited := map[string][]Exploit{} // package -> KEV matches
 	if kev, err := loadKEV(ctx, hc); err != nil {
 		out["kev"] = "CISA KEV list unavailable: " + err.Error()
@@ -206,8 +220,20 @@ func packageVulnsAll(ctx context.Context, hc *http.Client, detailFor string) (ma
 	for _, a := range found {
 		for _, id := range a.IDs {
 			v := detect.PackageVuln{Source: "os", Ecosystem: osEco, Package: a.Package, Version: a.Version, ID: id}
-			if strings.HasPrefix(strings.ToUpper(id), "CVE-") {
-				v.CVE = id
+			// Its CVEs: in the id (CVE-, DEBIAN-CVE-, UBUNTU-CVE-), else as
+			// the KEV check looked them up (an ALAS advisory's, OSV's
+			// aliases); a signature written for a CVE finds the entry.
+			v.CVEs = cveRe.FindAllString(strings.ToUpper(id), -1)
+			if len(v.CVEs) == 0 {
+				cveMu.Lock()
+				v.CVEs = cveMemo[id]
+				cveMu.Unlock()
+				if v.CVEs == nil && advisories != nil {
+					v.CVEs = advisories[id].CVEs
+				}
+			}
+			if len(v.CVEs) > 0 {
+				v.CVE = v.CVEs[0]
 			}
 			for _, e := range exploited[a.Package] {
 				if e.ID == id {

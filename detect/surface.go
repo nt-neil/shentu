@@ -259,7 +259,7 @@ func Build(code []CodeSink, pkgs []PackageVuln, installed ...InstalledPackage) S
 		if out[i].KEV != out[j].KEV {
 			return out[i].KEV
 		}
-		if a, b := severityRank(out[i].Severity), severityRank(out[j].Severity); a != b {
+		if a, b := cutRank(out[i]), cutRank(out[j]); a != b {
 			return a > b
 		}
 		return out[i].ID < out[j].ID
@@ -284,6 +284,17 @@ func Build(code []CodeSink, pkgs []PackageVuln, installed ...InstalledPackage) S
 
 // severityRank orders the code audit's severities and the advisories' (CVSS
 // words, GitHub's moderate) together; unknown is last.
+// cutRank is an entry's rank for the cut past MaxEntries: its severity; an
+// OS package's advisory, which OSV gives none, as a medium one (a Debian
+// host has thousands: they must not all go first).
+func cutRank(e Entry) int {
+	r := severityRank(e.Severity)
+	if r == 0 && e.Kind == "package" && e.Source == "os" {
+		return 2
+	}
+	return r
+}
+
 func severityRank(s string) int {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "critical":
