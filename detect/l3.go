@@ -198,8 +198,13 @@ var (
 	apacheTime = regexp.MustCompile(`^\[[A-Za-z]{3} ([A-Za-z]{3} \d{1,2} \d{2}:\d{2}:\d{2})(?:\.\d+)? (\d{4})\]`)
 	isoTime    = regexp.MustCompile(`^\[?(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2})(?:[.,]\d+)?(Z|[+-]\d{2}:?\d{2})?`)
 	// The runtime's own location on an entry's line: PHP's "in FILE on
-	// line N", the last one (what comes before may echo request data).
-	phpWhere = regexp.MustCompile(` in (/\S+?) on line (\d+)`)
+	// line N" ending a PHP message (the line's end, or the quote nginx
+	// closes FastCGI's stderr with), on a line holding one (phpMessage).
+	// What comes before may echo request data, and a server's own error
+	// (nginx's open() "..." failed) quotes the request's path: neither
+	// ends a PHP message.
+	phpWhere   = regexp.MustCompile(` in (/\S+?) on line (\d+)(?:"? while |"$|$)`)
+	phpMessage = regexp.MustCompile(`\bPHP (?:Fatal error|Warning|Notice|Parse error|Deprecated|Error|Catchable fatal error|Recoverable fatal error|Strict Standards|Core error|Compile error|User (?:error|warning|notice|deprecated)):`)
 	// Frame lines after an entry, each in the runtime's own shape: PHP's
 	// "#0 /srv/x.php(12)", Python's '  File "/srv/x.py", line 40', Node's
 	// "    at fn (/srv/x.js:7:13)". Any other line without a time is not
@@ -236,8 +241,10 @@ func ErrorEvents(lines []string, verified bool, from string, loc *time.Location)
 			if i := requestFields.FindStringIndex(l); i != nil {
 				l = l[:i[0]]
 			}
-			if ms := phpWhere.FindAllStringSubmatch(l, -1); len(ms) > 0 {
-				add(ms[len(ms)-1])
+			if phpMessage.MatchString(l) {
+				if ms := phpWhere.FindAllStringSubmatch(l, -1); len(ms) > 0 {
+					add(ms[len(ms)-1])
+				}
 			}
 			continue
 		}

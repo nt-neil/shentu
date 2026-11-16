@@ -198,3 +198,25 @@ func TestErrorEventsRequestDataNotFrames(t *testing.T) {
 		t.Errorf("raised on request data: %+v", a)
 	}
 }
+
+// Security review of part 3 (second): a server's own error quoting the
+// request's path, holding PHP's location words, is not a frame; PHP's
+// own message through nginx's FastCGI line still is.
+func TestErrorEventsServerErrorNotPHP(t *testing.T) {
+	lines := []string{
+		`2026/11/16 10:11:13 [error] 7#0: *5 open() "/srv/www/ in /srv/app/x.php on line 12" failed (2: No such file or directory)`,
+		`2026/11/16 10:11:14 [error] 7#0: *6 FastCGI sent in stderr: "PHP message: PHP Warning:  marker in /srv/app/y.php on line 3" while reading response header from upstream, client: 192.0.2.1, request: "GET / HTTP/1.1"`,
+		`[Mon Nov 16 10:11:15.1 2026] [php:error] [pid 9] [client 192.0.2.1:5] PHP Fatal error:  marker in /srv/app/z.php on line 4, referer: /srv/app/x.php:12`,
+		`[16-Nov-2026 10:11:16 UTC] marker in /srv/app/x.php on line 12`,
+	}
+	es := ErrorEvents(lines, true, "e.log", time.UTC)
+	if len(es) != 4 {
+		t.Fatalf("%d events", len(es))
+	}
+	want := [][]Frame{nil, {{"/srv/app/y.php", 3}}, {{"/srv/app/z.php", 4}}, nil}
+	for i, e := range es {
+		if len(e.Frames) != len(want[i]) || len(want[i]) > 0 && e.Frames[0] != want[i][0] {
+			t.Errorf("line %d: frames %+v, want %+v", i, e.Frames, want[i])
+		}
+	}
+}
