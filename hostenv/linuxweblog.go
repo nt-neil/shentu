@@ -813,7 +813,8 @@ func ngxParse(toks []ngxTok, i *int, file string, depth int) []*ngxDir {
 			cur.hasBlock = true
 			if depth < maxNgxNest {
 				cur.block = ngxParse(toks, i, file, depth+1)
-			} else { // too deep: skip the block whole
+			} else { // too deep: skip the block whole, and leave a mark: what it holds is not known
+				cur.block = []*ngxDir{{name: ngxTooDeep, file: file, line: t.line}}
 				for n := 1; *i < len(toks) && n > 0; *i++ {
 					switch toks[*i].punct {
 					case '{':
@@ -907,9 +908,14 @@ var ngxSafeModules = map[string]bool{
 
 var ngxAppDirective = regexp.MustCompile(`^(?:perl|perl_\w+|js_\w+|lua_\w+|\w+_by_lua(?:_block|_file)?|\w+_by_njs)$`)
 
-// ngxWalk calls fn for every directive, nested ones included.
+// ngxTooDeep stands for directives nested past maxNgxNest, not read.
+const ngxTooDeep = "\x00nested too deep"
+
+// ngxWalk calls fn for every directive, nested ones included; past
+// maxNgxNest, once with ngxTooDeep.
 func ngxWalk(ds []*ngxDir, depth int, fn func(*ngxDir)) {
 	if depth > maxNgxNest {
+		fn(&ngxDir{name: ngxTooDeep})
 		return
 	}
 	for _, d := range ds {
@@ -938,6 +944,10 @@ func (l *logLoader) nginx() {
 		switch {
 		case d.name == "set_real_ip_from" || d.name == "real_ip_header":
 			l.ngxRealIP = true
+		case d.name == ngxTooDeep: // what is nested deeper may run code or take the client from a header
+			if !contains(l.ngxApp, "configuration nested deeper than 64 levels, not read") {
+				l.ngxApp = append(l.ngxApp, "configuration nested deeper than 64 levels, not read")
+			}
 		case ngxAppDirective.MatchString(d.name) && !contains(l.ngxApp, d.name):
 			l.ngxApp = append(l.ngxApp, d.name)
 		}

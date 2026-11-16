@@ -515,3 +515,15 @@ func (l loopLink) Readlink(p string) (string, error) {
 	}
 	return l.statHost.Readlink(p)
 }
+
+// Directives nested past the parser's depth are not known, so nginx's
+// access logs are not verified.
+func TestWebLogsNginxTooDeep(t *testing.T) {
+	h := logHost()
+	deep := strings.Repeat("location /a {\n", 70) + "perl_set $x 'sub { }';\n" + strings.Repeat("}\n", 70)
+	h.files["/etc/nginx/sites-enabled/shop"] = strings.Replace(h.files["/etc/nginx/sites-enabled/shop"], "location /health { access_log off; }", deep, 1)
+	s := webLogsByKey(t, LinuxCollector{}.WebLogs(h))["nginx access /var/log/nginx/shop.access.log"]
+	if s.Verified || !strings.Contains(s.Detail, "nested deeper") {
+		t.Errorf("%+v", s)
+	}
+}
