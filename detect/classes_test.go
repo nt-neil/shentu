@@ -74,3 +74,35 @@ func TestClassSignatures(t *testing.T) {
 		t.Error("no KEV index")
 	}
 }
+
+// The Composer CVE signatures: each found on a host with the vulnerable
+// version, none on one with the fixed.
+func TestComposerCVESignatures(t *testing.T) {
+	ss, err := sig.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		pkg, vuln, fixed, cve string
+		req                   AccessRecord
+		level                 string
+	}{
+		{"phpunit/phpunit", "5.6.2", "5.6.3", "CVE-2017-9841", AccessRecord{Method: "POST", Path: "/vendor/phpunit/phpunit/src/Util/PHP/eval-stdin.php"}, LevelRoute},
+		{"facade/ignition", "2.5.1", "2.5.2", "CVE-2021-3129", AccessRecord{Method: "POST", Path: "/_ignition/execute-solution"}, LevelRoute},
+		{"flarum/core", "1.8.4", "1.8.5", "CVE-2024-21641", AccessRecord{Method: "GET", Path: "/logout", Query: "return=https%3A%2F%2Fevil.example%2F"}, LevelPayload},
+	}
+	m := NewMatcher(ss)
+	for _, c := range cases {
+		for _, v := range []string{c.vuln, c.fixed} {
+			s := Build(nil, []PackageVuln{{Source: "/srv/composer.lock", Ecosystem: "Packagist", Package: c.pkg, Version: v, ID: c.cve}})
+			g := NewJudge(s, ss).Judge(m.Match(Normalize(c.req)))
+			want := 0
+			if v == c.vuln {
+				want = 1
+			}
+			if len(g.Candidates) != want || (want == 1 && g.Candidates[0].Level != c.level) {
+				t.Errorf("%s %s: %+v, want %d candidate(s) at %s", c.cve, v, g, want, c.level)
+			}
+		}
+	}
+}
