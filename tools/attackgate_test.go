@@ -15,7 +15,9 @@ import (
 // The login gate's tests replace the summary; sshd's own journal lines
 // confirm by default (TestLoginGateSSHDItself says otherwise).
 func init() {
-	sshdJournal = func(context.Context, time.Time, string) (int, error) { return 1 << 20, nil }
+	sshdJournal = func(context.Context, time.Time, time.Time, string) (SSHSource, error) {
+		return SSHSource{Failed: 1 << 20, InvalidUser: 1 << 20, Accepted: 1 << 20}, nil
+	}
 }
 
 // Review 1 of #91 (S-4): journald's SSH events count only when sshd itself
@@ -30,16 +32,22 @@ func TestLoginGateSSHDItself(t *testing.T) {
 	textLogins = func(*Env, string) (int, []string, []string) { return 0, nil, nil }
 	for _, c := range []struct {
 		name string
-		n    int
+		own  SSHSource
 		err  error
 		ok   bool
 	}{
-		{"sshd wrote them all", 40, nil, true},
-		{"another program in sshd's unit wrote them", 0, nil, false},
-		{"sshd wrote some, the rest are another program's", 39, nil, false},
-		{"journald could not tell", 0, errors.New("marker"), false},
+		{"sshd wrote them all", SSHSource{Failed: 40}, nil, true},
+		{"another program in sshd's unit wrote them", SSHSource{}, nil, false},
+		{"sshd wrote some, the rest are another program's", SSHSource{Failed: 39}, nil, false},
+		{"as many of another kind: not the same events", SSHSource{Failed: 0, Accepted: 40}, nil, false},
+		{"journald could not tell", SSHSource{}, errors.New("marker"), false},
 	} {
-		sshdJournal = func(context.Context, time.Time, string) (int, error) { return c.n, c.err }
+		sshdJournal = func(_ context.Context, since, until time.Time, _ string) (SSHSource, error) {
+			if until.Before(since) || time.Since(until) > time.Minute {
+				t.Errorf("window %v..%v", since, until)
+			}
+			return c.own, c.err
+		}
 		if err := loginGate(context.Background(), &Env{}, ip, false); (err == nil) != c.ok {
 			t.Errorf("%s: %v", c.name, err)
 		}

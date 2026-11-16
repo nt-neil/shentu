@@ -58,8 +58,8 @@ func RemoteRefused(env *Env, name string, args json.RawMessage) error {
 // the text auth logs alone, and sshdJournal the journal lines sshd itself
 // wrote about ip (tests replace all three).
 var (
-	sshdJournal = func(ctx context.Context, since time.Time, ip string) (int, error) {
-		return hostenv.SSHDJournalLines(ctx, hostSource(), since, ip)
+	sshdJournal = func(ctx context.Context, since, until time.Time, ip string) (SSHSource, error) {
+		return hostenv.SSHDJournalLines(ctx, hostSource(), since, until, ip)
 	}
 	loginSummary = SSHSummary
 	textLogins   = func(env *Env, ip string) (n int, files, unread []string) {
@@ -117,10 +117,11 @@ func loginCheck(ctx context.Context, env *Env, ip net.IP) (verified bool, err er
 	want := hostenv.CanonicalIP(ip.String())
 	var r map[string]any
 	seen, complete := false, false
-	var summarySince time.Time // the window the summary last read
+	var summarySince, summaryUntil time.Time // the window the summary last read
 	for _, back := range []time.Duration{loginGateFirst, loginGateWindow} {
 		var err error
-		summarySince = time.Now().Add(-back)
+		summaryUntil = time.Now()
+		summarySince = summaryUntil.Add(-back)
 		if r, err = loginSummary(ctx, env, summarySince, want); err != nil {
 			return false, fmt.Errorf("refusing to block %s: its SSH logins could not be read to check whether they are real (%v); if the block rests on other evidence, ask again with override_unverified", ip, err)
 		}
@@ -152,21 +153,23 @@ func loginCheck(ctx context.Context, env *Env, ip net.IP) (verified bool, err er
 		// journald has the IP's logins in sshd's units; a user's shell left
 		// in that cgroup (no pam_systemd) can write sshd lines with logger,
 		// so they count only when sshd itself wrote them (_COMM, _UID).
-		// Every event the summary counted must be sshd's own, over the
-		// window the summary read.
-		claimed := 0
+		// Every event the summary counted must be sshd's own, kind by
+		// kind, over the very window the summary read (later events
+		// cannot make up for forged ones).
+		var claimed SSHSource
 		sources, _ := r["sources"].([]SSHSource)
 		for _, s := range sources {
 			if hostenv.CanonicalIP(s.IP) == want {
-				claimed += s.Failed + s.InvalidUser + s.Accepted
+				claimed.Failed, claimed.InvalidUser, claimed.Accepted = claimed.Failed+s.Failed, claimed.InvalidUser+s.InvalidUser, claimed.Accepted+s.Accepted
 			}
 		}
-		n, err := sshdJournal(ctx, summarySince, want)
+		own, err := sshdJournal(ctx, summarySince, summaryUntil, want)
 		if err != nil {
 			return false, fmt.Errorf("refusing to block %s: whether its SSH login events in journald were written by sshd itself could not be checked (%v); check them as root and, if they are real, ask again with override_unverified", ip, err)
 		}
-		if n < claimed {
-			return false, fmt.Errorf("refusing to block %s: of its %d SSH login events in journald, sshd itself wrote %d (the others came from another program in sshd's unit, e.g. logger), so they may be forged; check them as root and, if they are real, ask again with override_unverified", ip, claimed, n)
+		if own.Failed < claimed.Failed || own.InvalidUser < claimed.InvalidUser || own.Accepted < claimed.Accepted {
+			return false, fmt.Errorf("refusing to block %s: of its SSH login events in journald (failed %d, invalid user %d, accepted %d), sshd itself wrote failed %d, invalid user %d, accepted %d (the others came from another program in sshd's unit, e.g. logger), so they may be forged; check them as root and, if they are real, ask again with override_unverified",
+				ip, claimed.Failed, claimed.InvalidUser, claimed.Accepted, own.Failed, own.InvalidUser, own.Accepted)
 		}
 		return true, nil // sshd itself logged the IP: the text logs need not be read
 	}

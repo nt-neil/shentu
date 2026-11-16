@@ -62,14 +62,15 @@ func init() {
 	registerBig(journalSSHDBinArgv, 0, JournalTimeout)
 }
 
-// SSHDJournalLines counts ip's SSH login events (failed, invalid user,
+// SSHDJournalLines is ip's SSH login events (failed, invalid user,
 // accepted, as the summary parses them, the client address being ip)
-// among the lines sshd itself wrote to the journal since since
+// among the lines sshd itself wrote to the journal from since to until
+// (the window the summary read)
 // (journalSSHDArgv): a block resting on SSH logins believes journald only
 // as far as sshd's own lines go (a user's logger lines in sshd's cgroup
 // are not, nor a line of sshd's that only names ip, as a user name). An
 // error: journald could not tell.
-func SSHDJournalLines(ctx context.Context, src Source, since time.Time, ip string) (int, error) {
+func SSHDJournalLines(ctx context.Context, src Source, since, until time.Time, ip string) (SSHSource, error) {
 	ctx, cancel := context.WithTimeout(ctx, JournalTimeout)
 	defer cancel()
 	var err error
@@ -77,9 +78,14 @@ func SSHDJournalLines(ctx context.Context, src Source, since time.Time, ip strin
 	for _, base := range [][]string{journalSSHDArgv, journalSSHDBinArgv} {
 		argv := append([]string(nil), base...)
 		argv[6] = since.UTC().Format("2006-01-02 15:04:05") + " UTC"
-		c = NewSSHLogins(since, time.Now(), ip)
+		c = NewSSHLogins(since, until, ip)
 		var res CmdResult
-		res, err = RunLinesUnmasked(ctx, src, argv, c.Add)
+		res, err = RunLinesUnmasked(ctx, src, argv, func(l string) {
+			if ts, ok := ParseLogTime(l, until); ok && ts.After(until) {
+				return // after the summary's read: not what it counted
+			}
+			c.Add(l)
+		})
 		if err == nil && res.ExitCode != 0 {
 			err = &exitError{res.ExitCode}
 		}
@@ -87,17 +93,17 @@ func SSHDJournalLines(ctx context.Context, src Source, since time.Time, ip strin
 			break
 		}
 	}
+	var out SSHSource
 	if err != nil {
-		return 0, err
+		return out, err
 	}
-	n := 0
 	list, _ := MaxLogins(c)
 	for _, s := range list {
 		if CanonicalIP(s.IP) == CanonicalIP(ip) {
-			n += s.Failed + s.InvalidUser + s.Accepted
+			out = s
 		}
 	}
-	return n, nil
+	return out, nil
 }
 
 // reSSHDLine is a line sshd wrote: the only lines that can count.

@@ -25,9 +25,14 @@ func TestSSHDJournalLines(t *testing.T) {
 	if !strings.Contains(strings.Join(argv, " "), "_COMM=sshd _COMM=sshd-session _UID=0") {
 		t.Fatalf("argv %v", argv)
 	}
-	n, err := SSHDJournalLines(context.Background(), h, since, "198.51.100.7")
-	if err != nil || n != 2 {
-		t.Errorf("%d lines, %v (want 2: not .70's)", n, err)
+	own, err := SSHDJournalLines(context.Background(), h, since, time.Date(2026, 11, 16, 23, 0, 0, 0, time.UTC), "198.51.100.7")
+	if err != nil || own.Failed != 1 || own.InvalidUser != 1 {
+		t.Errorf("%+v, %v (want one failed, one invalid: not .70's, not the user name)", own, err)
+	}
+	// An event after the summary's read is not counted.
+	own, _ = SSHDJournalLines(context.Background(), h, since, time.Date(2026, 11, 16, 10, 0, 1, 0, time.UTC), "198.51.100.7")
+	if own.Failed != 1 || own.InvalidUser != 0 {
+		t.Errorf("until 10:00:01: %+v", own)
 	}
 	found := false
 	for _, a := range (LinuxCollector{}).Allowlist() {
