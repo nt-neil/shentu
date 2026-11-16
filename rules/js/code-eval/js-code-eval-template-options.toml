@@ -4,12 +4,12 @@ class = "code-eval"
 cwe = "CWE-94"
 severity = "critical"
 title = "Whole request object passed as template render data or options, or compiled as a template"
-frameworks = ["express", "nestjs", "nextjs"]
-sources = ["req.query", "req.body", "@Query(", "@Body(", "@Req(", "req.originalUrl", "^request.nextUrl", "^req.nextUrl", "^request.url", "^req.url", "^searchParams", "^request.json(", "^req.json(", "^request.formData(", "^req.formData(", "^formData.get("]
+frameworks = ["express", "nestjs", "nextjs", "koa", "fastify", "hapi"]
+sources = ["req.query", "req.body", "@Query(", "@Body(", "@Req(", "req.originalUrl", "^request.nextUrl", "^req.nextUrl", "^request.url", "^req.url", "^searchParams", "^request.json(", "^req.json(", "^request.text(", "^req.text(", "^request.formData(", "^req.formData(", "^formData.get(", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload"]
 sinks = ["res.render(", "ejs.render(", "ejs.compile(", "_.template(", "Handlebars.compile(", "pug.render("]
 sanitizers = []
 fix = "Pass only the named fields the template needs (res.render('page', { q: String(req.query.q) })); never spread req.query or req.body into render data, which some engines read as options, and never compile user text as a template."
-refs = ["CVE-2022-29078"]
+refs = ["CVE-2022-29078", "CVE-2022-0944"]
 
 [[args]]
 sinks = ["res.render("]
@@ -66,4 +66,49 @@ export class PageController {
     res.render("page", { q: String(q ?? "") });
   }
 }
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "REF shape (CVE-2022-0944): a posted settings object goes to a helper that compiles every string field with lodash _.template, which runs code inside <%= %>"
+code = '''
+const _ = require("lodash");
+function fillSettings(fields, user) {
+  const out = {};
+  Object.keys(fields).forEach((name) => {
+    const v = fields[name];
+    if (typeof v === "string") {
+      out[name] = _.template(v)({ user });
+    } else {
+      out[name] = v;
+    }
+  });
+  return out;
+}
+async function probeDb(req, res) {
+  const settings = fillSettings({ ...req.body, limit: 1 }, req.user);
+  res.json(await tryConnect(settings));
+}
+router.post("/api/db/probe", requireAdmin, probeDb);
+'''
+
+[[samples]]
+kind = "safe"
+note = "as the fix says: the placeholders are replaced from the user object; the text is never compiled"
+code = '''
+function fillSettings(fields, user) {
+  const out = {};
+  for (const name of Object.keys(fields)) {
+    const v = fields[name];
+    out[name] = typeof v === "string"
+      ? v.replace(/{{\s*user\.(\w+)\s*}}/g, (m, key) => String(user[key] ?? ""))
+      : v;
+  }
+  return out;
+}
+async function probeDb(req, res) {
+  const settings = fillSettings({ ...req.body, limit: 1 }, req.user);
+  res.json(await tryConnect(settings));
+}
+router.post("/api/db/probe", requireAdmin, probeDb);
 '''

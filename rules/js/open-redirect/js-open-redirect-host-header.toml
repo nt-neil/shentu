@@ -1,0 +1,36 @@
+id = "js-open-redirect-host-header"
+lang = "js"
+class = "open-redirect"
+cwe = "CWE-601"
+severity = "medium"
+tier = "info"
+title = "Redirect to a URL built from the request's Host header"
+# res.location() alone does not redirect (a 201 Location is not followed), so it is not a sink here.
+frameworks = ["express", "koa", "fastify", "hapi"]
+route_input = false   # a route's req.query or ctx.params is not the Host header: only the sources below count
+sources = ["req.get('host')", "req.get('x-forwarded-host')", "req.header('host')", "req.header('x-forwarded-host')", "req.hostname", "req.host", "req.headers.host", "req.headers['host']", "req.headers['x-forwarded-host']", "ctx.host", "ctx.hostname", "ctx.request.host", "ctx.request.hostname", "ctx.get('host')", "request.hostname", "request.headers.host", "request.headers['x-forwarded-host']", "request.info.host"]
+sinks = ["res.redirect(", "ctx.redirect(", "ctx.response.redirect(", "this.redirect(", "reply.redirect(", "h.redirect("]
+sanitizers = []
+fix = "Build the redirect URL from a configured origin (process.env.PUBLIC_ORIGIN or a constant), never from the Host or X-Forwarded-Host header, which the client chooses."
+refs = ["CVE-2026-25651"]
+
+[[samples]]
+kind = "vulnerable"
+note = "an HTTP request with Host: evil.example is redirected to https://evil.example"
+code = '''
+app.use((req, res, next) => {
+  if (!req.secure) return res.redirect(301, "https://" + req.headers['host'] + req.url);
+  next();
+});
+'''
+
+[[samples]]
+kind = "safe"
+note = "as the fix says: a configured origin"
+code = '''
+const ORIGIN = process.env.PUBLIC_ORIGIN || "https://www.example.com";
+app.use((req, res, next) => {
+  if (!req.secure) return res.redirect(301, ORIGIN + req.originalUrl);
+  next();
+});
+'''
