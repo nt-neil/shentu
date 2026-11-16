@@ -134,3 +134,19 @@ func TestSeverityOf(t *testing.T) {
 		}
 	}
 }
+
+// Security review of part 1: a sensitive name encoded, or after a ;, is
+// masked all the same; one that does not decode is masked (fail closed).
+func TestSampleEncodedNames(t *testing.T) {
+	pw := "pass%77ord"    // decodes to the sensitive word
+	pw2 := "pass%2577ord" // twice
+	s := Sample(AccessRecord{Method: "GET", Path: "/marker", Query: "q=1&" + pw + "=v1;" + "em" + "ail=v2&" + pw2 + "=v3&x%zz=v4&Sess+ion%5bid%5d=v5&page=2"})
+	for _, v := range []string{"v1", "v2", "v3", "v4"} {
+		if strings.Contains(s, "="+v) {
+			t.Errorf("%s shown: %s", v, s)
+		}
+	}
+	if !strings.Contains(s, "q=1&") || !strings.Contains(s, "page=2") {
+		t.Errorf("ordinary parameters masked: %s", s)
+	}
+}

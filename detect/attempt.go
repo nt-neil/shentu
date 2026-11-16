@@ -156,24 +156,47 @@ func SeverityOf(level string, severe, campaign, verified bool) string {
 // sensitive are parameter names whose value a sample never shows.
 var sensitive = []string{"token", "password", "passwd", "secret", "email", "session", "cookie", "authorization"}
 
+// sensitiveName: a parameter name, decoded as a server reads it (%XX
+// twice, + as a space, PHP's a[b] and a.b), holds a sensitive word; one
+// still holding a % after decoding is taken as sensitive (fail closed).
+func sensitiveName(k string) bool {
+	n, _, _ := normalizeText(k, true)
+	if strings.Contains(n, "%") {
+		return true
+	}
+	for _, name := range paramNames(n) {
+		for _, s := range sensitive {
+			if strings.Contains(name, s) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // Sample is the record's request line for a person to read: parameters
 // with a sensitive name masked, then hostenv.MaskSecrets, then cut to
 // MaxSample bytes on a character's boundary.
 func Sample(rec AccessRecord) string {
 	q := rec.Query
 	if q != "" {
-		kvs := strings.Split(q, "&")
-		for i, kv := range kvs {
-			k, _, ok := strings.Cut(kv, "=")
-			lk := strings.ToLower(k)
-			for _, s := range sensitive {
-				if ok && strings.Contains(lk, s) {
-					kvs[i] = k + "=[REDACTED]"
-					break
-				}
+		var b strings.Builder
+		start := 0
+		for i := 0; i <= len(q); i++ { // parameters split on & and on ; (some servers take both)
+			if i < len(q) && q[i] != '&' && q[i] != ';' {
+				continue
 			}
+			kv := q[start:i]
+			if k, _, ok := strings.Cut(kv, "="); ok && sensitiveName(k) {
+				kv = k + "=[REDACTED]"
+			}
+			b.WriteString(kv)
+			if i < len(q) {
+				b.WriteByte(q[i])
+			}
+			start = i + 1
 		}
-		q = "?" + strings.Join(kvs, "&")
+		q = "?" + b.String()
 	}
 	s := hostenv.MaskSecrets(strings.TrimSpace(rec.Method + " " + rec.Path + q))
 	if len(s) > MaxSample {
