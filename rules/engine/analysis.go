@@ -606,6 +606,9 @@ func (a *analysis) assign(st state, t []Token) (val, bool) {
 					// starts with "/" or a scheme, the base giving the origin only
 					// (a Host header there is not in u.pathname)
 					rv := a.urlPath(st, rel, base)
+					if a.urlSourced(stripParens(rhs)) {
+						rv = or(rv, val{taint: !a.nonced(st)})
+					}
 					for _, m := range urlPathParts {
 						st[key+sepCh+"."+m] = entry{taint: rv.taint, san: rv.san, raw: rv.raw, emb: rv.emb, weak: rv.weak}
 					}
@@ -1080,6 +1083,9 @@ func (a *analysis) expr(st state, t []Token, whole bool) val {
 	if a.js {
 		if rel, base, rest, ok := urlPartOf(t); ok {
 			v := a.urlPath(st, rel, base) // new URL('/x', base).pathname: a's
+			if a.urlSourced(t) {
+				v = or(v, val{taint: !a.nonced(st)})
+			}
 			if len(rest) > 0 {
 				v = or(v, a.expr(st, append(append([]Token{}, rel...), rest...), whole))
 			}
@@ -2651,6 +2657,23 @@ func (a *analysis) urlPath(st state, rel, base []Token) val {
 		}
 	}
 	return or(v, a.expr(st, base, false))
+}
+
+// urlSourced reports whether new URL(...) at the start of t is a source of the
+// rule as written (URL(req.url): a plain Node request's own URL), every part
+// of it then being input whatever the base.
+func (a *analysis) urlSourced(t []Token) bool {
+	if a.noSrc {
+		return false
+	}
+	for _, s := range a.r.sources {
+		for pos := 0; pos < 2 && pos < len(t); pos++ {
+			if _, ok := a.srcMatch(s, t, pos); ok {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // hasScheme reports whether s starts with a URL scheme (http:, mailto:).
