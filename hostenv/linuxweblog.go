@@ -141,8 +141,8 @@ func (c LinuxCollector) WebLogs(src Source) Obs[[]LogSource] {
 	l.lighttpd()
 	l.unitUsers(c, src)
 	web := l.webAccounts()
-	for _, p := range l.extraRead { // outside /etc: every directory above it must be root's alone too
-		if why := dirsTrusted(src, p, web); why != "" {
+	for _, p := range l.extraRead { // in a package directory, or read through a link: judged as a log is
+		if why := confTrusted(src, p, l.conf, web); why != "" {
 			l.unread = append(l.unread, p+" ("+why+")")
 		}
 	}
@@ -341,6 +341,40 @@ func JudgeLog(src Source, p string, web WebAccounts) TrustResult {
 	return TrustResult{Verified: true, File: st}
 }
 
+// confTrusted says why a configuration file read through a link or from a
+// package directory may not be root's alone ("" if it is): every link on
+// the way root's own, the file it resolves to under /etc or a package
+// directory, and every directory above the path, the file and each link
+// root's alone (dirsTrusted).
+func confTrusted(src Source, p string, conf WebConf, web WebAccounts) string {
+	real, err := EvalSymlinks(src, p)
+	if err != nil {
+		return "links: " + whyUnread(err)
+	}
+	if !underDir(real, conf.Root) && !underAny(real, conf.Extra) {
+		return "resolves to " + real + ", outside " + conf.Root + " and the package directories"
+	}
+	links, err := linkChain(src, p)
+	if err != nil {
+		return "links: " + whyUnread(err)
+	}
+	for _, ln := range links {
+		ls, err := Lstat(src, ln)
+		if err != nil {
+			return "link " + ln + ": " + whyUnread(err)
+		}
+		if ls.UID != 0 {
+			return fmt.Sprintf("link %s is owned by uid %d", ln, ls.UID)
+		}
+	}
+	for _, f := range append([]string{p, real}, links...) {
+		if why := dirsTrusted(src, f, web); why != "" {
+			return why
+		}
+	}
+	return ""
+}
+
 // dirsTrusted says why a directory above p is not root's alone ("" if all
 // are): owned by another, writable by others, or by a group that is not a
 // log group (groupWritable).
@@ -490,8 +524,8 @@ func (l *logLoader) read(p string) ([]byte, bool) {
 		l.unread = append(l.unread, p+" ("+why+")")
 		return nil, false
 	}
-	if real, err := EvalSymlinks(l.src, p); err == nil && real != p && underAny(real, l.conf.Extra) {
-		l.extraRead = append(l.extraRead, real) // a link from /etc into a package directory
+	if real, err := EvalSymlinks(l.src, p); err != nil || real != p {
+		l.extraRead = append(l.extraRead, p) // read through a link: judged as a log is, below
 	}
 	return b, true
 }
