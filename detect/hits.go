@@ -51,13 +51,16 @@ type Judgment struct {
 	// Unknown: the request was cut and no candidate reached L2 in what was
 	// matched: not known to be harmless (padding may hide a payload in
 	// what was cut), a result of its own, never an empty judgment. Then
-	// HiddenSinks are the sinks it reached (L1) and HiddenClasses the
-	// payload classes the cut part may hold for this host: those reached
-	// sinks' and those of sinks with no known route. P4 shows it as "the
-	// request was cut and may hide <classes>; sinks: <sinks>".
-	Unknown       bool     `json:"unknown,omitempty"`
-	HiddenSinks   []string `json:"hidden_sinks,omitempty"`
-	HiddenClasses []string `json:"hidden_classes,omitempty"`
+	// HiddenSinks are the sinks it reached (L1), then those reached some
+	// way not matched (no route known, cut routes, loose ones), at most
+	// MaxHidden; HiddenClasses the payload classes the cut part may hold
+	// for this host: all those sinks'. P4 shows it as "the request was cut
+	// and may hide <classes>; sinks: <sinks> (and N more)".
+	Unknown     bool     `json:"unknown,omitempty"`
+	HiddenSinks []string `json:"hidden_sinks,omitempty"`
+	// HiddenSinksMore: how many more there are than HiddenSinks lists.
+	HiddenSinksMore int      `json:"hidden_sinks_more,omitempty"`
+	HiddenClasses   []string `json:"hidden_classes,omitempty"`
 }
 
 // MaxHidden bounds Judgment.HiddenSinks.
@@ -73,6 +76,7 @@ type Judge struct {
 	// route, a route list the engine cut (RoutesTruncated), or a route whose
 	// pattern makes no expression (a hook, a pattern that does not compile).
 	classes map[string]bool
+	loose   []string // the IDs of those sinks, in the surface's order
 }
 
 type routeEntry struct {
@@ -84,6 +88,14 @@ type routeEntry struct {
 // NewJudge indexes the surface's routes and the signatures by id.
 func NewJudge(s Surface, ss []sig.Signature) *Judge {
 	j := &Judge{surface: s, sigs: map[string]sig.Signature{}, classes: map[string]bool{}}
+	seen := map[int]bool{}
+	loose := func(i int) { // its class's hits elsewhere are unanchored; a cut may hide one for it
+		j.classes[s.Entries[i].Payload] = true
+		if !seen[i] {
+			seen[i] = true
+			j.loose = append(j.loose, s.Entries[i].ID)
+		}
+	}
 	for _, x := range ss {
 		j.sigs[x.ID] = x
 	}
@@ -92,21 +104,21 @@ func NewJudge(s Surface, ss []sig.Signature) *Judge {
 			continue
 		}
 		if e.Coverage != CoverRoutes || e.RoutesTruncated {
-			j.classes[e.Payload] = true
+			loose(i)
 		}
 		if e.Coverage != CoverRoutes {
 			continue
 		}
 		for _, r := range e.Routes {
-			re, loose := routeRegexp(r.Pattern)
+			re, lax := routeRegexp(r.Pattern)
 			if re != nil {
 				j.routes = append(j.routes, routeEntry{i, r, re})
 			}
 			// Reached some way not matched (no expression), an expression
 			// not checked, or a route whose mount prefix matters (the root,
 			// /:id): the class's hits elsewhere are unanchored, never noise.
-			if re == nil || loose {
-				j.classes[e.Payload] = true
+			if re == nil || lax {
+				loose(i)
 			}
 		}
 	}
@@ -145,12 +157,14 @@ func routeRegexp(pattern string) (re *regexp.Regexp, loose bool) {
 		pattern = "/" + pattern
 	}
 	bare := placeholder.ReplaceAllString(pattern, "")
-	if strings.ContainsAny(bare, `\[|+()^$`) || strings.Contains(bare, ".*") { // re_path, WordPress: an expression
-		expr, err := stripAnchors(pattern)
+	if strings.ContainsAny(bare, `\[|+?()^$`) || strings.Contains(bare, ".*") { // re_path, WordPress, Express's /ab?c: an expression
+		// The leading / goes before parsing: the syntax tree may print
+		// flags first ((?-s:/files/...)), and the / is put back below.
+		expr, err := stripAnchors(strings.TrimPrefix(strings.TrimPrefix(pattern, "^"), "/"))
 		if err != nil {
 			return nil, true
 		}
-		expr = strings.TrimSuffix(strings.TrimPrefix(expr, "/"), "/") // the trailing / is optional below
+		expr = strings.TrimSuffix(expr, "/") // the trailing / is optional below
 		re, err = regexp.Compile(`(?i)/(?:` + expr + `)/?$`)
 		if err != nil {
 			return nil, true
@@ -269,6 +283,9 @@ func (j *Judge) Judge(m MatchResult) Judgment {
 		}
 		reached[r.entry] = true
 	}
+	// A path cut may join two far parts into a route (the cut is between
+	// them): a route reached then is L1 at most, its hits unanchored.
+	pathCut := slices.ContainsFunc(m.Request.CutParts, func(c CutPart) bool { return c.Part == "path" })
 	used := map[int]bool{} // hits that found a vulnerability of this host
 	for hi, h := range m.Hits {
 		s, ok := j.sigs[h.Signature]
@@ -277,9 +294,12 @@ func (j *Judge) Judge(m MatchResult) Judgment {
 		}
 		if len(s.CVEs) == 0 && len(s.Advisories) == 0 && len(s.AppliesTo) == 0 { // a class signature
 			for i := range reached {
-				if j.surface.Entries[i].Payload == h.Class {
+				if j.surface.Entries[i].Payload == h.Class && !pathCut {
 					add(i, LevelPayload, &h)
 					used[hi] = true
+				}
+				if j.surface.Entries[i].Payload == h.Class && pathCut && !used[hi] {
+					out.Unanchored, used[hi] = append(out.Unanchored, h), true
 				}
 			}
 			if !used[hi] && j.classes[h.Class] {
@@ -299,7 +319,7 @@ func (j *Judge) Judge(m MatchResult) Judgment {
 				continue
 			}
 			level := LevelPayload
-			if h.RouteOnly {
+			if h.RouteOnly || pathCut && len(s.Routes) > 0 {
 				level = LevelRoute
 			}
 			add(i, level, &h)
@@ -323,15 +343,22 @@ func (j *Judge) Judge(m MatchResult) Judgment {
 	})
 	if out.Unknown {
 		classes := maps.Clone(j.classes)
+		var ids []string
 		for i := range byEntry { // the candidates, all L1
 			e := j.surface.Entries[i]
 			if e.Payload != "" {
 				classes[e.Payload] = true
 			}
-			out.HiddenSinks = append(out.HiddenSinks, e.ID)
+			ids = append(ids, e.ID)
 		}
-		slices.Sort(out.HiddenSinks)
-		out.HiddenSinks = out.HiddenSinks[:min(len(out.HiddenSinks), MaxHidden)]
+		slices.Sort(ids)
+		for _, id := range j.loose { // and the sinks reached some way not matched
+			if !slices.Contains(ids, id) {
+				ids = append(ids, id)
+			}
+		}
+		out.HiddenSinks = ids[:min(len(ids), MaxHidden)]
+		out.HiddenSinksMore = len(ids) - len(out.HiddenSinks)
 		out.HiddenClasses = slices.Sorted(maps.Keys(classes))
 	}
 	return out

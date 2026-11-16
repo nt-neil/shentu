@@ -346,7 +346,7 @@ regex = 'marker-a.*marker-b|marker-a[^q]+marker-b'
 	if r := m.Match(Normalize(AccessRecord{Method: "GET", Path: "/", Query: "k=marker-a" + strings.Repeat("z", 100) + "marker-b"})); len(r.Hits) != 1 {
 		t.Errorf("not cut: %+v", r.Hits)
 	}
-	if q := Normalize(AccessRecord{Method: "GET", Path: "/", Query: "k=a%1fb"}); q.Params["k"][0] != "a b" {
+	if q := Normalize(AccessRecord{Method: "GET", Path: "/", Query: "k=a%1fb"}); q.Params["k"][0] != "a\uFFFDb" {
 		t.Errorf("a sent cut mark: %q", q.Params["k"][0])
 	}
 	if ex := excerptAt("ab"+cutMark+"cd", 0, 2); strings.Contains(ex, cutMark) || !strings.Contains(ex, "…") {
@@ -399,7 +399,7 @@ func TestUnknownSaysWhat(t *testing.T) {
 	j := NewJudge(Build(sinks, nil), ss)
 	pad := strings.Repeat("z", MaxNormalized+100)
 	g := j.Judge(NewMatcher(ss).Match(Normalize(AccessRecord{Method: "GET", Path: "/marker/ping", Query: "k=" + pad})))
-	if !g.Unknown || len(g.Candidates) != 1 || strings.Join(g.HiddenSinks, ",") != "code:js-sqli:a.js:1" ||
+	if !g.Unknown || len(g.Candidates) != 1 || strings.Join(g.HiddenSinks, ",") != "code:js-sqli:a.js:1,code:php-path:b.php:2" ||
 		strings.Join(g.HiddenClasses, ",") != "path,sqli" || len(g.CutParts) != 1 || g.CutParts[0].Part != "param" || g.CutParts[0].Param != "k" {
 		t.Errorf("cut, L1 only: %+v", g)
 	}
@@ -416,5 +416,63 @@ func TestEcosystemCase(t *testing.T) {
 		Judge(NewMatcher(ss).Match(Normalize(AccessRecord{Method: "GET", Path: "/", Query: "q=marker-one"})))
 	if len(g.Candidates) != 1 || g.Candidates[0].VersionUnknown {
 		t.Errorf("PACKAGIST, MARKER/PKG-CORE: %+v", g)
+	}
+}
+
+// Review 4 of #87, N-F: a path cut may join far parts into a route: L1 at
+// most, the hit unanchored, the judgment Unknown.
+func TestPathCutRouteL1(t *testing.T) {
+	ss := loadSigs(t, markerSigs)
+	sinks := []CodeSink{{Rule: "js-sqli", CWE: "CWE-89", Severity: "critical", Path: "a.js", Line: 1,
+		Routes: []engine.RouteRef{{Model: "m", Framework: "express", Method: "get", Pattern: "/marker/end", File: "a.js", Line: 1}}}}
+	j := NewJudge(Build(sinks, nil), ss)
+	path := "/" + strings.Repeat("z", 2*MaxNormalized) + "/marker/end"
+	g := j.Judge(NewMatcher(ss).Match(Normalize(AccessRecord{Method: "GET", Path: path, Query: "id=marker-one"})))
+	if len(g.Candidates) != 1 || g.Candidates[0].Level != LevelRoute || !g.Unknown || len(g.Unanchored) != 1 {
+		t.Errorf("path cut, route reached: %+v", g)
+	}
+	g = j.Judge(NewMatcher(ss).Match(Normalize(AccessRecord{Method: "GET", Path: "/marker/end", Query: "id=marker-one"})))
+	if len(g.Candidates) != 1 || g.Candidates[0].Level != LevelPayload || g.Unknown {
+		t.Errorf("not cut: %+v", g)
+	}
+}
+
+// Review 4, N-G: an expression starting with / and holding . (Express's
+// /files/(.*), WordPress's (?P<p>.+)); Express's ? is an expression.
+func TestRouteRegexpForms4(t *testing.T) {
+	for pattern, c := range map[string]struct{ yes, no []string }{
+		"/files/(.*)":              {[]string{"/files/a/b", "/app/files/a"}, []string{"/other/a"}},
+		"/wp-json/ns/v1/(?P<p>.+)": {[]string{"/wp-json/ns/v1/x", "/blog/wp-json/ns/v1/x/y"}, []string{"/wp-json/ns/v2/x"}},
+		"/ab?cd":                   {[]string{"/acd", "/abcd"}, []string{"/abbcd"}},
+	} {
+		re, loose := routeRegexp(pattern)
+		if re == nil || !loose {
+			t.Errorf("%s: %v loose %v", pattern, re, loose)
+			continue
+		}
+		for _, p := range c.yes {
+			if !re.MatchString(p) {
+				t.Errorf("%s should match %q (%s)", pattern, p, re)
+			}
+		}
+		for _, p := range c.no {
+			if re.MatchString(p) {
+				t.Errorf("%s should not match %q (%s)", pattern, p, re)
+			}
+		}
+	}
+}
+
+// Review 4: HiddenSinks lists the sinks of no known route too, at most
+// MaxHidden, and says how many more.
+func TestHiddenSinksMore(t *testing.T) {
+	var sinks []CodeSink
+	for i := 0; i < MaxHidden+4; i++ {
+		sinks = append(sinks, CodeSink{Rule: "php-path", CWE: "CWE-22", Severity: "warning", Path: "b.php", Line: i + 1})
+	}
+	j := NewJudge(Build(sinks, nil), nil)
+	g := j.Judge(MatchResult{Request: Request{Cut: true}})
+	if !g.Unknown || len(g.HiddenSinks) != MaxHidden || g.HiddenSinksMore != 4 || strings.Join(g.HiddenClasses, ",") != "path" {
+		t.Errorf("%d sinks of no route: %d listed, %d more, classes %v", len(sinks), len(g.HiddenSinks), g.HiddenSinksMore, g.HiddenClasses)
 	}
 }

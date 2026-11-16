@@ -173,7 +173,7 @@ func headTail(s string, n int) string {
 }
 
 // cutMark is where headTail joined what it kept. Normalized text holds no
-// other (normalizePiece turns a sent one into a space), so pieces splits
+// other (normalizePiece turns a sent one into U+FFFD), so pieces splits
 // on it: a match never spans it.
 const cutMark = "\x1f"
 
@@ -209,7 +209,8 @@ func normalizeTextN(s string, query bool, limit int) (string, bool, bool) {
 }
 
 // normalizePiece decodes, folds and lower-cases s; enc says an evasive
-// encoding was seen. A cutMark it holds becomes a space.
+// encoding was seen. A cutMark it holds becomes U+FFFD: visible, and
+// neither \s nor a word character, so it joins nothing.
 func normalizePiece(s string, query bool) (string, bool) {
 	enc := false
 	for round := 0; round < MaxDecodeRounds; round++ {
@@ -229,7 +230,7 @@ func normalizePiece(s string, query bool) (string, bool) {
 	if over {
 		enc = true
 	}
-	return strings.ReplaceAll(strings.ToLower(f), cutMark, " "), enc
+	return strings.ReplaceAll(strings.ToLower(f), cutMark, "\uFFFD"), enc
 }
 
 // percentDecode decodes %XX and %uXXXX (u: one was), and + as a space when
