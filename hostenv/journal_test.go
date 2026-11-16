@@ -123,3 +123,47 @@ func TestAppUnits(t *testing.T) {
 		t.Error("RunsAppAsRoot: want only node without User=")
 	}
 }
+
+// What may run the application as root, whatever User= says, fails closed.
+func TestAppUnitsElevated(t *testing.T) {
+	h := newFake(true)
+	wants := "/etc/systemd/system/multi-user.target.wants/"
+	h.files[wants+"plus.service"] = "[Service]\nUser=www-data\nExecStart=+/usr/bin/node /srv/a.js\n"
+	h.files[wants+"fpmr.service"] = "[Service]\nExecStart=/usr/sbin/php-fpm8.2 -R --nodaemonize\n"
+	h.files[wants+"drop.service"] = "[Service]\nUser=www-data\nExecStart=/usr/bin/gunicorn app\n"
+	h.files["/etc/systemd/system/drop.service.d/override.conf"] = "[Service]\nUser=root\n"
+	h.files[wants+"hidden.service"] = "[Service]\nUser=www-data\nExecStart=/usr/bin/uwsgi app.ini\n"
+	h.files["/etc/systemd/system/hidden.service.d/x.conf"] = "[Service]\nUser=root\n"
+	h.denied["/etc/systemd/system/hidden.service.d/x.conf"] = true
+	h.files[wants+"ok.service"] = "[Service]\nUser=www-data\nExecStart=/usr/bin/gunicorn app\n"
+	sh := statHost{fakeHost: h, st: map[string]FileStat{
+		"/etc/systemd/system/multi-user.target.wants": {Mode: fs.ModeDir | 0o755},
+		"/etc/systemd/system/drop.service.d":          {Mode: fs.ModeDir | 0o755},
+		"/etc/systemd/system/hidden.service.d":        {Mode: fs.ModeDir | 0o755},
+	}}
+	got := map[string]AppUnit{}
+	for _, u := range (LinuxCollector{}).AppUnits(sh).Value {
+		got[u.Name] = u
+	}
+	for name, root := range map[string]bool{"plus.service": true, "fpmr.service": true, "drop.service": true, "hidden.service": true, "ok.service": false} {
+		if u, ok := got[name]; !ok || u.RunsAppAsRoot() != root {
+			t.Errorf("%s: %+v (listed %v), RunsAppAsRoot want %v", name, u, ok, root)
+		}
+	}
+	if got["drop.service"].User != "root" {
+		t.Errorf("drop-in User= not applied: %+v", got["drop.service"])
+	}
+}
+
+// A PHP-FPM pool running as root makes the master's messages no proof.
+func TestAppUnitsFPMPoolRoot(t *testing.T) {
+	h := newFake(true)
+	h.files["/etc/systemd/system/multi-user.target.wants/php8.2-fpm.service"] = "[Service]\nExecStart=/usr/sbin/php-fpm8.2 --nodaemonize\n"
+	h.files["/etc/php/8.2/fpm/php-fpm.conf"] = "[global]\ninclude=/etc/php/8.2/fpm/pool.d/*.conf\n"
+	h.files["/etc/php/8.2/fpm/pool.d/www.conf"] = "[www]\nuser = root\n"
+	sh := statHost{fakeHost: h, st: map[string]FileStat{"/etc/systemd/system/multi-user.target.wants": {Mode: fs.ModeDir | 0o755}}}
+	us := LinuxCollector{}.AppUnits(sh).Value
+	if len(us) != 1 || !us[0].FPM || !us[0].RunsAppAsRoot() {
+		t.Errorf("%+v: want FPM, running as root", us)
+	}
+}

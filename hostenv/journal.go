@@ -209,11 +209,18 @@ type AppUnit struct {
 	// workers run PHP as the pools' users, never root (php-fpm refuses
 	// without -R).
 	FPM bool `json:"fpm,omitempty"`
+	// Elevated: an ExecStart runs with full privileges whatever User= says
+	// ('+' or '!'), PHP-FPM may run pools as root (-R, a pool's user root),
+	// or the effective User= could not be told (a drop-in unread).
+	Elevated bool `json:"elevated,omitempty"`
 }
 
 // RunsAppAsRoot: the application's own code may run as root in this unit,
 // so a root message from it may be the application's.
 func (u AppUnit) RunsAppAsRoot() bool {
+	if u.Elevated {
+		return true
+	}
 	if u.FPM {
 		return false
 	}
@@ -240,8 +247,9 @@ func (LinuxCollector) AppUnits(src Source) Obs[[]AppUnit] {
 				unread = append(unread, n+" ("+why+")")
 				continue
 			}
-			if ok, fpm := unitRunsApp(b); ok {
-				out = append(out, AppUnit{Name: n, User: unitUser(b), FPM: fpm})
+			u, ok := appUnit(src, n, b, conf)
+			if ok {
+				out = append(out, u)
 			}
 		}
 	}
@@ -250,6 +258,60 @@ func (LinuxCollector) AppUnits(src Source) Obs[[]AppUnit] {
 		return Partial(out, ReasonPermission, "unit files unread, their units may be missing: "+strings.Join(unread, "; "))
 	}
 	return OK(out)
+}
+
+// unitDropIns are where systemd looks for a unit's drop-ins, in its order
+// of precedence: within each, files apply in name order, a later User=
+// overriding.
+var unitDropIns = []string{"/lib/systemd/system", "/usr/lib/systemd/system", "/run/systemd/system", "/etc/systemd/system"}
+
+// appUnit reads what matters of a unit: whether it runs an application,
+// its effective User= (the unit file's, then its drop-ins'), and whether
+// anything may run it as root. Anything unread fails closed: Elevated.
+func appUnit(src Source, name string, unit []byte, conf WebConf) (AppUnit, bool) {
+	all := [][]byte{unit}
+	elevated := false
+	for _, dir := range unitDropIns {
+		for _, f := range Glob(src, path.Join(dir, name+".d", "*.conf")) {
+			b, why := readWebConf(src, f, conf)
+			if why != "" {
+				elevated = true // a User= or an ExecStart we cannot see
+				continue
+			}
+			all = append(all, b)
+		}
+	}
+	u := AppUnit{Name: name, Elevated: elevated}
+	found := false
+	for _, b := range all {
+		ok, fpm, priv := unitRunsApp(b)
+		found = found || ok
+		u.FPM = u.FPM || fpm
+		u.Elevated = u.Elevated || priv
+		if usr := unitUser(b); usr != "" {
+			u.User = usr
+		}
+	}
+	if u.FPM && fpmPoolAsRoot(src) {
+		u.Elevated = true
+	}
+	return u, found
+}
+
+// fpmPoolAsRoot: a PHP-FPM pool runs as root, or a pool's configuration
+// could not be read (so it may).
+func fpmPoolAsRoot(src Source) bool {
+	l := &logLoader{src: src, conf: DefaultWebConf, out: map[string]*LogSource{}}
+	l.phpFPM()
+	if len(l.unread) > 0 {
+		return true
+	}
+	for _, u := range l.users {
+		if u == "root" || u == "0" || u == "#0" {
+			return true
+		}
+	}
+	return false
 }
 
 // unitUser is the unit file's last User= ("" for none).
@@ -266,28 +328,43 @@ func unitUser(b []byte) string {
 var fpmExe = regexp.MustCompile(`^(?:php[0-9.]*-fpm[0-9.]*|php-fpm)$`)
 
 // unitRunsApp: an ExecStart of the unit file starts one of appExe; fpm, it
-// is PHP-FPM.
-func unitRunsApp(b []byte) (ok, fpm bool) {
+// is PHP-FPM (not told it may run as root); priv, an ExecStart of the file
+// runs with full privileges ('+', '!') or is PHP-FPM allowed root (-R).
+func unitRunsApp(b []byte) (ok, fpm, priv bool) {
 	for _, ln := range strings.Split(string(b), "\n") {
-		k, v, ok := strings.Cut(strings.TrimSpace(ln), "=")
-		if !ok || strings.TrimSpace(k) != "ExecStart" {
+		k, v, kv := strings.Cut(strings.TrimSpace(ln), "=")
+		if !kv || strings.TrimSpace(k) != "ExecStart" {
 			continue
 		}
-		f := strings.Fields(strings.TrimLeft(strings.TrimSpace(v), "@-:+!"))
+		v = strings.TrimSpace(v)
+		prefix := v[:len(v)-len(strings.TrimLeft(v, "@-:+!|"))]
+		if strings.ContainsAny(prefix, "+!") {
+			priv = true
+		}
+		f := strings.Fields(v[len(prefix):])
 		if len(f) == 0 {
 			continue
 		}
 		exe := path.Base(f[0])
 		if appExe.MatchString(exe) {
-			return true, fpmExe.MatchString(exe)
+			ok = true
+			if fpmExe.MatchString(exe) {
+				fpm = true
+				for _, a := range f[1:] {
+					if a == "-R" || a == "--allow-to-run-as-root" {
+						priv = true
+					}
+				}
+			}
+			continue
 		}
 		if strings.HasPrefix(exe, "python") || exe == "env" {
 			for i, a := range f[1:] {
 				if appExe.MatchString(path.Base(a)) || (a == "-m" && i+2 < len(f) && appExe.MatchString(f[i+2])) {
-					return true, false
+					ok = true
 				}
 			}
 		}
 	}
-	return false, false
+	return ok, fpm, priv
 }
