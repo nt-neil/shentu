@@ -79,6 +79,15 @@ func TestLoadErrorSaid(t *testing.T) {
 	if _, err := Load(); err != nil {
 		t.Fatal(err)
 	}
+	// Load() itself says the build is at fault (P5, n18-6): a broken
+	// built-in set, not a quiet empty one.
+	old := builtin
+	t.Cleanup(func() { builtin = old })
+	builtin = fstest.MapFS{"signatures/a.toml": {Data: []byte(good + "[[signature.match]]\npart = \"query\"\nregex = \"x*\"\n")}}
+	if ss, err := Load(); err == nil || ss != nil || !strings.Contains(err.Error(), "built-in attack signatures do not load") || !strings.Contains(err.Error(), "x-one") {
+		t.Errorf("a broken built-in set: %v %v", ss, err)
+	}
+	builtin = old
 	_, err := LoadFS(fstest.MapFS{"s/a.toml": {Data: []byte(good + "[[signature.match]]\npart = \"query\"\nregex = \"x*\"\n")}}, "s")
 	if err == nil || !strings.Contains(err.Error(), "s/a.toml") || !strings.Contains(err.Error(), "x-one") {
 		t.Errorf("error %v: should name the file and the signature", err)

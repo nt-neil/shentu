@@ -135,7 +135,7 @@ var placeholder = regexp.MustCompile(`\{[^/{}]+\}|<[^/<>]+>|:[A-Za-z_][A-Za-z0-9
 // Flask's and Django's <path:f>, FastAPI's {p:path}, Express's * and :p*.
 func manySegments(ph string) bool {
 	return strings.HasPrefix(ph, "<path:") || strings.HasSuffix(ph, ":path}") || strings.HasPrefix(ph, "*") ||
-		strings.HasSuffix(ph, "*") || strings.HasSuffix(ph, "+")
+		strings.HasSuffix(ph, "*") || strings.HasSuffix(ph, "+") || strings.HasPrefix(ph, "{*") // Spring's {*path}
 }
 
 // routeRegexp makes a route pattern (as written: /users/{id}, /run/<cmd>,
@@ -181,10 +181,13 @@ func routeRegexp(pattern string) (re *regexp.Regexp, loose bool) {
 	var b strings.Builder
 	idx := placeholder.FindAllStringIndex(pattern, -1)
 	last := 0
+	// A :name not at a segment's start is a literal (Google's /v1/items:batch).
+	idx = slices.DeleteFunc(idx, func(m []int) bool { return pattern[m[0]] == ':' && m[0] > 0 && pattern[m[0]-1] != '/' })
 	for _, m := range idx {
 		lit, ph := pattern[last:m[0]], pattern[m[0]:m[1]]
+		optional := strings.HasSuffix(ph, "?") || strings.HasSuffix(ph, "?}") // Express's /:id?, Laravel's /{id?}
 		switch {
-		case strings.HasSuffix(ph, "?") && strings.HasSuffix(lit, "/"): // Express's optional /:id?
+		case optional && strings.HasSuffix(lit, "/"):
 			b.WriteString(regexp.QuoteMeta(lit[:len(lit)-1]) + `(?:/[^/]+)?`)
 		case manySegments(ph):
 			b.WriteString(regexp.QuoteMeta(lit) + `.+`)

@@ -1,7 +1,6 @@
 package detect
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/netip"
@@ -9,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf16"
+	"unicode/utf8"
 
 	"github.com/nt-neil/shentu/hostenv"
 )
@@ -719,6 +720,60 @@ func (r *AccessRecord) splitRequest() {
 	}
 }
 
+// unescapeJSON undoes JSON's escapes (\" \\ \/ \b \f \n \r \t \uXXXX,
+// a surrogate pair as one character) and keeps every other byte as it is:
+// a byte nginx left raw (0xff, invalid UTF-8) stays that byte whether or
+// not the value holds an escape (json.Unmarshal turned it to U+FFFD only
+// when it did). false: an escape JSON does not have.
+func unescapeJSON(v string) (string, bool) {
+	var sb strings.Builder
+	for i := 0; i < len(v); i++ {
+		if v[i] != '\\' {
+			sb.WriteByte(v[i])
+			continue
+		}
+		if i+1 >= len(v) {
+			return "", false
+		}
+		i++
+		switch v[i] {
+		case '"', '\\', '/':
+			sb.WriteByte(v[i])
+		case 'b':
+			sb.WriteByte('\b')
+		case 'f':
+			sb.WriteByte('\f')
+		case 'n':
+			sb.WriteByte('\n')
+		case 'r':
+			sb.WriteByte('\r')
+		case 't':
+			sb.WriteByte('\t')
+		case 'u':
+			if i+4 >= len(v) {
+				return "", false
+			}
+			n, err := strconv.ParseUint(v[i+1:i+5], 16, 16)
+			if err != nil {
+				return "", false
+			}
+			i += 4
+			r := rune(n)
+			if utf16.IsSurrogate(r) && i+6 < len(v) && v[i+1] == '\\' && v[i+2] == 'u' {
+				if lo, err := strconv.ParseUint(v[i+3:i+7], 16, 16); err == nil {
+					if p := utf16.DecodeRune(r, rune(lo)); p != utf8.RuneError {
+						r, i = p, i+6
+					}
+				}
+			}
+			sb.WriteRune(r)
+		default:
+			return "", false
+		}
+	}
+	return sb.String(), true
+}
+
 // unescape undoes the server's escaping of a value: nginx's \xHH (default),
 // JSON's (escape=json), Apache's \xhh, \" and \\. false: an escape the
 // server does not write, so not a line it wrote.
@@ -730,11 +785,7 @@ func (p *Parser) unescape(v string) (string, bool) {
 	case "none":
 		return v, true
 	case "json":
-		var s string
-		if err := json.Unmarshal([]byte(`"`+v+`"`), &s); err != nil {
-			return "", false
-		}
-		return s, true
+		return unescapeJSON(v)
 	}
 	var sb strings.Builder
 	for i := 0; i < len(v); i++ {

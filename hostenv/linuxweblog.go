@@ -514,6 +514,11 @@ func (l *logLoader) include(dir, arg string, optional bool) []string {
 
 // add records a log source, merging the vhosts of one already seen.
 func (l *logLoader) add(s LogSource) {
+	if strings.HasPrefix(s.Path, "/") && !strings.Contains(s.Path, "$") {
+		// "..", "." and "//" taken off as written (the server opens the
+		// path as given; one log named two ways is one log).
+		s.Path = path.Clean(s.Path)
+	}
 	k := s.Server + "\x00" + s.Kind + "\x00" + s.Path
 	if o, ok := l.out[k]; ok {
 		for _, v := range s.Vhosts {

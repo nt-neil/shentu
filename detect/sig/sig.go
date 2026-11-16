@@ -25,6 +25,9 @@ import (
 //go:embed signatures/*.toml
 var embedded embed.FS
 
+// builtin is what Load reads: the embedded set (tests replace it).
+var builtin fs.FS = embedded
+
 // Signature is one attack signature.
 type Signature struct {
 	ID    string   `toml:"id"` // kebab-case, unique
@@ -122,7 +125,7 @@ const (
 // set ships inside the binary, so a failure is a defect of the build, said
 // as one for whoever calls it to report, never to run without signatures.
 func Load() ([]Signature, error) {
-	ss, err := LoadFS(embedded, "signatures")
+	ss, err := LoadFS(builtin, "signatures")
 	if err != nil {
 		return nil, fmt.Errorf("shentu detect: the built-in attack signatures do not load (a defect of this build, report it): %w", err)
 	}

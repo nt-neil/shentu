@@ -322,7 +322,7 @@ func saveJSON(dir, name string, v any) error {
 		os.Remove(tmp)
 		return err
 	}
-	return syncDir(dir)
+	return dirSynced(dir)
 }
 
 // NetworkOf is the source network an address is grouped by: its /24
@@ -342,6 +342,31 @@ func NetworkOf(ip string) string {
 	return p.String()
 }
 
+// MaxNonIPPrefixes bounds the sources that are not addresses (a client
+// field holding text): past it they share one, PrefixNonIP.
+const (
+	MaxNonIPPrefixes = 64
+	PrefixNonIP      = "non-ip"
+)
+
+// nonIP is prefix, a source that is not an address, or PrefixNonIP once
+// MaxNonIPPrefixes others have groups.
+func (a *Attacks) nonIP(prefix string) string {
+	seen := map[string]bool{}
+	for _, g := range a.Groups {
+		if g.Prefix == prefix {
+			return prefix
+		}
+		if _, err := netip.ParsePrefix(g.Prefix); err != nil && g.Prefix != "*" && g.Prefix != PrefixNonIP {
+			seen[g.Prefix] = true
+		}
+	}
+	if len(seen) >= MaxNonIPPrefixes {
+		return PrefixNonIP
+	}
+	return prefix
+}
+
 func groupKey(prefix, entry, level string, verified bool) string {
 	v := "v"
 	if !verified {
@@ -358,6 +383,8 @@ func (a *Attacks) Add(t Attempt, at time.Time) *Group {
 	prefix := NetworkOf(t.IP)
 	if t.Level == LevelUnknown {
 		prefix = "*"
+	} else if _, err := netip.ParsePrefix(prefix); err != nil {
+		prefix = a.nonIP(prefix)
 	}
 	key := groupKey(prefix, t.Entry, t.Level, t.Verified)
 	g := a.Groups[key]
@@ -395,8 +422,11 @@ func (g *Group) add(t Attempt, at time.Time) {
 		}
 	}
 	g.addIP(t.IP)
-	if len(g.Samples) < MaxGroupSamples && t.Sample != "" && !slices.Contains(g.Samples, t.Sample) {
+	if t.Sample != "" && !slices.Contains(g.Samples, t.Sample) { // the latest kept: early neutral requests cannot fill them for good
 		g.Samples = append(g.Samples, t.Sample)
+		if len(g.Samples) > MaxGroupSamples {
+			g.Samples = g.Samples[len(g.Samples)-MaxGroupSamples:]
+		}
 	}
 	if !t.Verified {
 		g.Unverified = true
