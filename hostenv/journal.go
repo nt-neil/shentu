@@ -91,6 +91,18 @@ type JournalEntry struct {
 // MaxJournalMessage is the longest message kept from one entry.
 const MaxJournalMessage = 64 << 10
 
+// MaxJournalLine is the longest line of journalctl's JSON read whole; a
+// longer entry (--all gives fields past 4096 bytes whole) is cut, its
+// cursor taken from its start (journalctl writes __CURSOR first), and the
+// read goes on: one huge entry never stalls the cursor.
+const MaxJournalLine = 256 << 10
+
+// ErrCursorRejected: journalctl refused the cursor itself (could not parse
+// or seek to it). Other failures keep the cursor.
+var ErrCursorRejected = errors.New("hostenv: journal cursor rejected")
+
+var cutCursor = regexp.MustCompile(`^\{"__CURSOR"\s*:\s*"([^"\\]+)"`)
+
 // ErrStopJournal, returned by a ReadJournal consumer, ends the read there:
 // the cursor returned is the last entry consumed.
 var ErrStopJournal = errors.New("hostenv: journal read stopped")
@@ -105,14 +117,24 @@ func ReadJournal(ctx context.Context, src Source, unit, after string, since time
 	defer cancel()
 	var stop, bad error
 	n := 0
-	line := func(l string) {
+	line := func(l string, cut bool) {
 		if stop != nil || strings.TrimSpace(l) == "" {
 			return
 		}
-		e, perr := parseJournalJSON(l)
-		if perr != nil {
-			bad = perr
-			return
+		var e JournalEntry
+		if cut { // the JSON is not whole: its cursor, and that it was cut
+			m := cutCursor.FindStringSubmatch(l)
+			if m == nil {
+				bad = errors.New("an entry past MaxJournalLine without its cursor at the start")
+				return
+			}
+			e = JournalEntry{Cursor: m[1], UID: -1, MessageMissing: true, Cut: true}
+		} else {
+			var perr error
+			if e, perr = parseJournalJSON(l); perr != nil {
+				bad = perr
+				return
+			}
 		}
 		if err := fn(e); err != nil {
 			stop = err
@@ -129,9 +151,12 @@ func ReadJournal(ctx context.Context, src Source, unit, after string, since time
 		} else {
 			argv[4] = since.UTC().Format("2006-01-02 15:04:05") + " UTC" // journalctl reads a bare time as local
 		}
-		res, err := RunLinesUnmasked(ctx, src, argv, line)
+		res, err := RunLinesCut(ctx, src, argv, MaxJournalLine, line)
 		if err == nil && res.ExitCode != 0 {
 			err = &exitError{res.ExitCode}
+			if after != "" && n == 0 && strings.Contains(strings.ToLower(res.Stderr), "cursor") {
+				err = fmt.Errorf("%w: %s", ErrCursorRejected, strings.TrimSpace(res.Stderr))
+			}
 		}
 		return res, err
 	}

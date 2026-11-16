@@ -126,7 +126,7 @@ func (c LinuxCollector) WebLogs(src Source) Obs[[]LogSource] {
 				s.FileID = t.File.ID
 			}
 		}
-		if s.Verified && !masterOnly(s) {
+		if s.Verified && !l.masterOnly(s) {
 			// The file is root's, but processes running as a web account
 			// hold it open: whoever can make them write can. Only logs a
 			// root process alone writes are exempt; any other server kind
@@ -481,10 +481,21 @@ func (l *logLoader) unitUsers(c LinuxCollector, src Source) {
 }
 
 // masterOnly: only a root process writes the log, no worker holds it:
-// PHP-FPM's own error log and its slow log (the master traces the slow
-// worker and writes).
-func masterOnly(s *LogSource) bool {
-	return s.Server == "php-fpm" && (s.Kind == "error" || s.Kind == "slow")
+// PHP-FPM's slow log (the master traces the slow worker and writes), and
+// its own error log unless a pool forwards its workers' output there
+// (catch_workers_output) or some configuration could not be read (so a
+// pool may). Every pool is read before the logs are judged.
+func (l *logLoader) masterOnly(s *LogSource) bool {
+	if s.Server != "php-fpm" {
+		return false
+	}
+	switch s.Kind {
+	case "slow":
+		return true
+	case "error":
+		return !l.catchWorkers && len(l.unread) == 0
+	}
+	return false
 }
 
 // iniValue is a php-fpm.conf value: quotes taken off, or an inline

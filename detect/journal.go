@@ -2,6 +2,7 @@ package detect
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/nt-neil/shentu/hostenv"
@@ -115,14 +116,15 @@ func ReadJournalUnit(ctx context.Context, src hostenv.Source, unit hostenv.AppUn
 			res.partial(ReadTruncated)
 			return next, res, nil
 		}
-		if after != "" && last == "" && res.Lines == 0 {
-			// journalctl refuses a cursor it no longer has: read again from
-			// the window, and say what may be lost or repeated.
+		if errors.Is(err, hostenv.ErrCursorRejected) {
+			// journalctl refused the cursor itself: read again from the
+			// window, and say what may be lost or repeated.
 			res.partial(ReadCursorRejected)
 			c, r2, err2 := ReadJournalUnit(ctx, src, unit, nil, b, web, fn)
 			r2.Partial = append(r2.Partial, res.Partial...)
 			return c, r2, err2
 		}
+		res.partial(ReadIOError) // the cursor stays where the last whole entry left it
 		return next, res, err
 	}
 	return next, res, nil

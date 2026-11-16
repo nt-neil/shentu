@@ -3,6 +3,7 @@ package hostenv
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"strings"
 	"testing"
@@ -242,5 +243,40 @@ func TestJournalAllAndMissing(t *testing.T) {
 	e, _ = parseJournalJSON(`{"__CURSOR":"` + cur1 + `","MESSAGE":"` + strings.Repeat("a", MaxJournalMessage+10) + `"}`)
 	if !e.Cut || len(e.Message) != MaxJournalMessage {
 		t.Errorf("long MESSAGE: cut %v, %d bytes", e.Cut, len(e.Message))
+	}
+}
+
+// An entry past MaxJournalLine is cut, its cursor kept, and the read goes
+// on; journalctl refusing the cursor is ErrCursorRejected, other failures
+// are not.
+func TestReadJournalLongEntryAndRejection(t *testing.T) {
+	h := newFake(true)
+	huge := `{"__CURSOR":"` + cur1 + `","MESSAGE":"` + strings.Repeat("x", MaxJournalLine+100) + `"}`
+	h.cmds[argvKey(journalArgvFor("", true))] = CmdResult{Stdout: []byte(huge + "\n" + journalLine(cur2, "php8.2-fpm.service", "0", "after") + "\n")}
+	var got []JournalEntry
+	last, err := ReadJournal(context.Background(), h, "php8.2-fpm.service", "", time.Date(2026, 11, 15, 0, 0, 0, 0, time.UTC), func(e JournalEntry) error {
+		got = append(got, e)
+		return nil
+	})
+	if err != nil || last != cur2 || len(got) != 2 || !got[0].Cut || got[0].Cursor != cur1 || got[0].UID != -1 || got[1].Message != "after" {
+		t.Fatalf("last %q, err %v, entries %+v", last, err, got)
+	}
+	h.cmds[argvKey(journalArgvFor(cur1, true))] = CmdResult{ExitCode: 1, Stderr: "Failed to seek to cursor: Invalid argument"}
+	if _, err := ReadJournal(context.Background(), h, "php8.2-fpm.service", cur1, time.Time{}, func(JournalEntry) error { return nil }); !errors.Is(err, ErrCursorRejected) {
+		t.Errorf("refused cursor: %v", err)
+	}
+	h.cmds[argvKey(journalArgvFor(cur1, true))] = CmdResult{ExitCode: 1, Stderr: "Failed to open journal: Input/output error"}
+	if _, err := ReadJournal(context.Background(), h, "php8.2-fpm.service", cur1, time.Time{}, func(JournalEntry) error { return nil }); err == nil || errors.Is(err, ErrCursorRejected) {
+		t.Errorf("I/O error: %v, want an error that is not a rejected cursor", err)
+	}
+}
+
+func TestScanCut(t *testing.T) {
+	var got []string
+	err := scanCut(strings.NewReader("ab\n"+strings.Repeat("y", 70000)+"\nz"), 10, func(l string, cut bool) {
+		got = append(got, fmt.Sprintf("%s/%v", l, cut))
+	})
+	if err != nil || strings.Join(got, ",") != "ab/false,yyyyyyyyyy/true,z/false" {
+		t.Errorf("%v %q", err, got)
 	}
 }

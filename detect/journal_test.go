@@ -155,3 +155,29 @@ func TestReadJournalUnitMissingMessage(t *testing.T) {
 		t.Errorf("partial %v, want message_missing", r.Partial)
 	}
 }
+
+// A failure other than a refused cursor keeps the cursor and says
+// io_error: it does not read the window again.
+func TestReadJournalUnitIOErrorKeepsCursor(t *testing.T) {
+	u := hostenv.AppUnit{Name: "app.service", User: "www-data"}
+	src := &failingJournal{}
+	c, r, err := ReadJournalUnit(context.Background(), src, u, &Cursor{Journal: jc1}, NewBudget(DefaultBudgetBytes, time.Minute), hostenv.WebAccounts{}, func(hostenv.JournalEntry, JournalTrust) {})
+	if err == nil || c.Journal != jc1 || strings.Join(r.Partial, ",") != ReadIOError || src.windowReads != 0 {
+		t.Errorf("err %v, cursor %q, partial %v, window reads %d", err, c.Journal, r.Partial, src.windowReads)
+	}
+}
+
+type failingJournal struct {
+	journalSrc
+	windowReads int
+}
+
+func (f *failingJournal) Run(_ context.Context, argv []string) (hostenv.CmdResult, error) {
+	if argv[0] != "/usr/bin/journalctl" {
+		return hostenv.CmdResult{}, &fs.PathError{Op: "exec", Path: argv[0], Err: fs.ErrNotExist}
+	}
+	if argv[3] == "--since" {
+		f.windowReads++
+	}
+	return hostenv.CmdResult{ExitCode: 1, Stderr: "Failed to open journal: Input/output error"}, nil
+}

@@ -386,3 +386,18 @@ func TestWebLogsFPMPoolLogs(t *testing.T) {
 		t.Errorf("slow log, the master's: %+v", e)
 	}
 }
+
+// A pool forwarding its workers' output writes it into the master's own
+// error log: no longer the master's alone.
+func TestWebLogsFPMCatchWorkersErrorLog(t *testing.T) {
+	h := logHost()
+	m := webLogsByKey(t, LinuxCollector{}.WebLogs(h))
+	if e := m["php-fpm error /var/log/php8.2-fpm.log"]; !e.Verified {
+		t.Fatalf("without catch_workers_output: %+v", e)
+	}
+	h.files["/etc/php/8.2/fpm/pool.d/www.conf"] += "catch_workers_output = yes\n"
+	m = webLogsByKey(t, LinuxCollector{}.WebLogs(h))
+	if e := m["php-fpm error /var/log/php8.2-fpm.log"]; e.Verified || e.Reason != ReasonWebUserWritable {
+		t.Errorf("catch_workers_output: %+v, want web_user_writable", e)
+	}
+}
