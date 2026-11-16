@@ -26,6 +26,11 @@ func SurfaceCode(fs []CodeFinding) []detect.CodeSink {
 // 5 advisories each), left it out. Severity stays empty: OSV's batch
 // query gives only ids, and asking for each advisory is a request per id;
 // detect.Build therefore cuts these before rated entries (KEV ones excepted).
+// Each id's CVE is the one OSV gave for it during the KEV check (the
+// lowest, when several), KEV or not, so that Build makes one entry of a
+// GHSA id and a PYSEC id of the same vulnerability; the CVE KEV matched is
+// used only when OSV gave none. Ids OSV was not asked about (the KEV
+// list unavailable, past matchKEV's 300) or that name no CVE stay apart.
 func SurfaceApps(rs []AppResult) []detect.PackageVuln {
 	var out []detect.PackageVuln
 	for _, r := range rs {
@@ -36,9 +41,12 @@ func SurfaceApps(rs []AppResult) []detect.PackageVuln {
 		}
 		for _, h := range r.Affected {
 			for _, id := range h.IDs {
-				v := detect.PackageVuln{Source: r.Path, Ecosystem: r.Ecosystem, Package: h.Package, Version: h.Version, ID: id}
+				v := detect.PackageVuln{Source: r.Path, Ecosystem: r.Ecosystem, Package: h.Package, Version: h.Version, ID: id, CVE: firstCVE(r.cves[id])}
 				if x, ok := kev[key(h.Package, h.Version, id)]; ok {
-					v.KEV, v.KEVSince, v.CVE = true, x.Added, x.CVE
+					v.KEV, v.KEVSince, v.KEVCVE = true, x.Added, x.CVE
+					if v.CVE == "" { // OSV's answer, the same rule as for the others; else the CVE KEV matched
+						v.CVE = x.CVE
+					}
 					delete(kev, key(h.Package, h.Version, id))
 				}
 				out = append(out, v)
@@ -50,9 +58,24 @@ func SurfaceApps(rs []AppResult) []detect.PackageVuln {
 				continue
 			}
 			delete(kev, k)
+			cve := firstCVE(r.cves[x.ID])
+			if cve == "" {
+				cve = x.CVE
+			}
 			out = append(out, detect.PackageVuln{Source: r.Path, Ecosystem: r.Ecosystem, Package: x.Package, Version: x.Version,
-				ID: x.ID, CVE: x.CVE, KEV: true, KEVSince: x.Added})
+				ID: x.ID, CVE: cve, KEV: true, KEVSince: x.Added, KEVCVE: x.CVE})
 		}
 	}
 	return out
+}
+
+// firstCVE is the lowest of an advisory's CVEs, "" for none.
+func firstCVE(list []string) string {
+	best := ""
+	for _, c := range list {
+		if best == "" || c < best {
+			best = c
+		}
+	}
+	return best
 }

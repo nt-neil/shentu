@@ -43,6 +43,7 @@ type PackageVuln struct {
 	Fixed     string // the first fixed version; may be empty
 	KEV       bool   // CISA lists it as exploited in the wild
 	KEVSince  string // the date CISA added it
+	KEVCVE    string // the CVE CISA lists, which CVE (keyed on another of the advisory's) may not be
 }
 
 // Coverage says what detect can match for an entry.
@@ -88,6 +89,7 @@ type Entry struct {
 	Fixed     string   `json:"fixed_version,omitempty"`
 	KEV       bool     `json:"kev,omitempty"`
 	KEVSince  string   `json:"kev_since,omitempty"`
+	KEVCVE    string   `json:"kev_cve,omitempty"` // the CVE on CISA's list, when KEV
 
 	Coverage string `json:"coverage"`
 }
@@ -189,6 +191,9 @@ func Build(code []CodeSink, pkgs []PackageVuln) Surface {
 				e.Fixed = p.Fixed
 			}
 			e.KEV = e.KEV || p.KEV
+			if e.KEVCVE == "" {
+				e.KEVCVE = p.KEVCVE
+			}
 			if e.KEVSince == "" {
 				e.KEVSince = p.KEVSince
 			}
@@ -199,7 +204,7 @@ func Build(code []CodeSink, pkgs []PackageVuln) Surface {
 		}
 		byID[id] = len(out)
 		out = append(out, Entry{ID: id, Kind: "package", Severity: p.Severity, Source: p.Source, Ecosystem: p.Ecosystem,
-			Package: p.Package, Version: p.Version, Advisory: adv, CVE: cve, Fixed: p.Fixed, KEV: p.KEV, KEVSince: p.KEVSince})
+			Package: p.Package, Version: p.Version, Advisory: adv, CVE: cve, Fixed: p.Fixed, KEV: p.KEV, KEVSince: p.KEVSince, KEVCVE: p.KEVCVE})
 	}
 	for i := range out {
 		switch {
