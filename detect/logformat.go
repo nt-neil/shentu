@@ -43,11 +43,11 @@ type AccessRecord struct {
 	// held so many of the next literal that the split from the start gave
 	// up): taken, matched, and to be flagged.
 	Suspicious bool
-	// Ambiguous: the line splits two ways, from its start and from its
-	// end, into different requests (a field the client writes before the
-	// request held a forged line end). Alt is the other; both are matched.
+	// Ambiguous: the line splits more than one way into different requests
+	// (a field the client writes before the request held a forged line
+	// end). Alts are every other distinct split; all are to be matched.
 	Ambiguous bool
-	Alt       *AccessRecord
+	Alts      []AccessRecord
 }
 
 // Parser splits the lines of one access log format.
@@ -309,12 +309,14 @@ func (p *Parser) parse(line []byte, cut bool) (AccessRecord, bool) {
 		p.Suspicious++
 		alts = alts[1:]
 	}
-	for i := range alts {
-		if !sameRequest(r, alts[i]) {
-			r.Ambiguous, r.Alt = true, &alts[i]
-			p.Ambiguous++
-			break
+	for _, a := range alts {
+		if !sameRequest(r, a) {
+			r.Alts = append(r.Alts, a)
 		}
+	}
+	if len(r.Alts) > 0 {
+		r.Ambiguous = true
+		p.Ambiguous++
 	}
 	p.Parsed++
 	return r, true

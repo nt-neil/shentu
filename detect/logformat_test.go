@@ -2,6 +2,7 @@ package detect
 
 import (
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -23,7 +24,7 @@ func TestNginxCombined(t *testing.T) {
 	want := AccessRecord{Client: "203.0.113.7", Time: time.Date(2026, 11, 15, 2, 11, 12, 0, time.UTC),
 		Request: "GET /wp-admin/admin-ajax.php?action=x&id=1%27 HTTP/1.1", Method: "GET", Path: "/wp-admin/admin-ajax.php",
 		Query: "action=x&id=1%27", Proto: "HTTP/1.1", Status: 200, Bytes: 512, UserAgent: `sqlmap/1.8 "q"`}
-	if r != want {
+	if !reflect.DeepEqual(r, want) {
 		t.Errorf("got  %+v\nwant %+v", r, want)
 	}
 	// Junk a scanner sends instead of a request line: kept, not split.
@@ -217,12 +218,25 @@ func TestParseAmbiguous(t *testing.T) {
 		t.Fatal(err)
 	}
 	r, ok := p.Parse([]byte(`203.0.113.7 a /fake 200 /real 404 0.003`))
-	if !ok || !r.Ambiguous || r.Alt == nil || p.Ambiguous != 1 {
+	if !ok || !r.Ambiguous || len(r.Alts) == 0 || p.Ambiguous != 1 {
 		t.Fatalf("%+v %v", r, ok)
 	}
-	paths := map[string]bool{r.Path: true, r.Alt.Path: true}
+	paths := map[string]bool{r.Path: true}
+	for _, a := range r.Alts {
+		paths[a.Path] = true
+	}
 	if !paths["/fake"] || !paths["/real"] {
-		t.Errorf("the two requests: %q and %q", r.Path, r.Alt.Path)
+		t.Errorf("the requests: %v", paths)
+	}
+	// The split from the start failing, every split is still kept.
+	q, _ := NginxParser(`$remote_addr $remote_user $request_uri $status $request_time`, "")
+	r2, ok := q.Parse([]byte(`203.0.113.7 a /one 200 /two 200 /three 404 0.003`))
+	got := map[string]bool{r2.Path: true}
+	for _, a := range r2.Alts {
+		got[a.Path] = true
+	}
+	if !ok || !got["/one"] || !got["/three"] {
+		t.Errorf("three ways: %+v %v", got, ok)
 	}
 }
 
