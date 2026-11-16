@@ -22,6 +22,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"gopkg.in/yaml.v3"
 )
@@ -81,7 +83,8 @@ func Extract(b []byte) (Draft, error) {
 	if t.ID == "" {
 		return Draft{}, fmt.Errorf("no id")
 	}
-	d := Draft{ID: "nuclei-" + strings.Trim(idClean.ReplaceAllString(strings.ToLower(t.ID), "-"), "-"), Title: t.Info.Name, Template: t.ID, Params: map[string]string{}}
+	t.ID = clean(t.ID) // a newline in it would start a TOML line after the draft's comment
+	d := Draft{ID: "nuclei-" + strings.Trim(idClean.ReplaceAllString(strings.ToLower(t.ID), "-"), "-"), Title: clean(t.Info.Name), Template: t.ID, Params: map[string]string{}}
 	d.CVEs = list(t.Info.Classification.CVE)
 	for _, c := range list(t.Info.Classification.CWE) {
 		d.CWEs = append(d.CWEs, strings.ToUpper(c))
@@ -97,7 +100,7 @@ func Extract(b []byte) (Draft, error) {
 			method = "GET"
 		}
 		for _, p := range r.Path {
-			d.take(method, strings.TrimPrefix(p, "{{BaseURL}}"))
+			d.take(clean(method), clean(strings.TrimPrefix(p, "{{BaseURL}}")))
 		}
 		for _, raw := range r.Raw {
 			line, _, _ := strings.Cut(strings.TrimLeft(raw, "\n "), "\n")
@@ -106,7 +109,7 @@ func Extract(b []byte) (Draft, error) {
 				d.Skipped = append(d.Skipped, "a raw request without a request line")
 				continue
 			}
-			d.take(strings.ToUpper(f[0]), f[1])
+			d.take(clean(strings.ToUpper(f[0])), clean(f[1]))
 		}
 	}
 	if len(d.Routes) == 0 {
@@ -157,24 +160,24 @@ func (d *Draft) take(method, target string) {
 
 // TOML writes the draft as a [[signature]] table, marked for review.
 func (d Draft) TOML(w io.Writer, release string) {
-	fmt.Fprintf(w, "# DRAFT from Nuclei template %s (nuclei-templates %s, MIT): review before adding.\n", d.Template, release)
+	fmt.Fprintf(w, "# DRAFT from Nuclei template %s (nuclei-templates %s, MIT): review before adding.\n", clean(d.Template), clean(release))
 	for _, s := range d.Skipped {
-		fmt.Fprintf(w, "# skipped: %s\n", s)
+		fmt.Fprintf(w, "# skipped: %s\n", clean(s))
 	}
 	class := d.Class
 	if class == "" {
 		fmt.Fprintln(w, "# class: none of the template's tags names one; set it by hand.")
 	}
-	fmt.Fprintf(w, "[[signature]]\nid = %q\ntitle = %q\nclass = %q\n", d.ID, d.Title, class)
+	fmt.Fprintf(w, "[[signature]]\nid = %s\ntitle = %s\nclass = %s\n", tomlString(d.ID), tomlString(d.Title), tomlString(class))
 	if len(d.CWEs) > 0 {
 		fmt.Fprintf(w, "cwe = %s\n", tomlList(d.CWEs))
 	}
 	if len(d.CVEs) > 0 {
 		fmt.Fprintf(w, "cves = %s\n", tomlList(upper(d.CVEs)))
 	}
-	fmt.Fprintf(w, "source = \"nuclei\"\nlicense = \"MIT\"\nnuclei_template = %q\nnuclei_version = %q\n", d.Template, release)
+	fmt.Fprintf(w, "source = \"nuclei\"\nlicense = \"MIT\"\nnuclei_template = %s\nnuclei_version = %s\n", tomlString(d.Template), tomlString(release))
 	for _, r := range d.Routes {
-		fmt.Fprintf(w, "[[signature.route]]\nmethods = [%q]\npath = %q\n", r.Method, r.Path)
+		fmt.Fprintf(w, "[[signature.route]]\nmethods = [%s]\npath = %s\n", tomlString(r.Method), tomlString(r.Path))
 	}
 	keys := make([]string, 0, len(d.Params))
 	for k := range d.Params {
@@ -182,7 +185,7 @@ func (d Draft) TOML(w io.Writer, release string) {
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
-		fmt.Fprintf(w, "[[signature.match]]\npart = \"param\"\nparam = %q\ncontains = [%q]\n", k, strings.ToLower(d.Params[k]))
+		fmt.Fprintf(w, "[[signature.match]]\npart = \"param\"\nparam = %s\ncontains = [%s]\n", tomlString(k), tomlString(strings.ToLower(d.Params[k])))
 	}
 	fmt.Fprintln(w)
 }
@@ -190,9 +193,48 @@ func (d Draft) TOML(w io.Writer, release string) {
 func tomlList(xs []string) string {
 	q := make([]string, len(xs))
 	for i, x := range xs {
-		q[i] = fmt.Sprintf("%q", x)
+		q[i] = tomlString(x)
 	}
 	return "[" + strings.Join(q, ", ") + "]"
+}
+
+// clean drops control characters: a template's id, name or path is put in
+// comments and strings of the draft, where a newline would end the line.
+func clean(s string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, s)
+}
+
+// tomlString is s as a TOML basic string (Go's %q is not TOML: \x00, \a,
+// \v and \U escapes are Go's).
+func tomlString(s string) string {
+	var b strings.Builder
+	b.WriteByte('"')
+	for _, r := range s {
+		switch {
+		case r == '"' || r == '\\':
+			b.WriteByte('\\')
+			b.WriteRune(r)
+		case r == '\n':
+			b.WriteString(`\n`)
+		case r == '\t':
+			b.WriteString(`\t`)
+		case r == '\r':
+			b.WriteString(`\r`)
+		case r == utf8.RuneError:
+			b.WriteString(`\uFFFD`)
+		case unicode.IsControl(r):
+			fmt.Fprintf(&b, `\u%04X`, r)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	b.WriteByte('"')
+	return b.String()
 }
 
 func upper(xs []string) []string {

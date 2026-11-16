@@ -27,6 +27,9 @@ jobs:
       # dependency stays out of shentu): tested apart.
       - run: go vet ./... && go test ./...
         working-directory: tools/sigextract
+      # Its YAML dependency is scanned too: the module is not in ./... above.
+      - run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+        working-directory: tools/sigextract
   # macOS: the whole suite on a GitHub-hosted Mac (arm64), without sudo. Most darwin
   # collector tests replay fixtures; this also builds and runs them on macOS itself.
   # No macOS release binary is built yet.

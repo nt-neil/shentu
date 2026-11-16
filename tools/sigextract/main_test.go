@@ -64,3 +64,32 @@ func TestExtractRefuses(t *testing.T) {
 		t.Error("no class, and not said")
 	}
 }
+
+// Review 1 of #87: a template's id, name or path with a control character
+// (a newline) cannot add a line to the draft, and strings are TOML's.
+func TestExtractControlCharacters(t *testing.T) {
+	src := "id: \"marker\\ninjected = 1\"\ninfo:\n  name: \"name\\nalso = 2\"\nhttp:\n  - path: [\"{{BaseURL}}/a\\nmore = 3\\u0007?k=v\\\"w\"]\n"
+	d, err := Extract([]byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var b bytes.Buffer
+	d.TOML(&b, "v1\nrelease = 4")
+	out := b.String()
+	for _, l := range strings.Split(out, "\n") {
+		for _, bad := range []string{"injected", "also", "more", "release"} {
+			if strings.HasPrefix(strings.TrimSpace(l), bad) {
+				t.Errorf("a line was added: %q\n%s", l, out)
+			}
+		}
+		if strings.ContainsFunc(l, func(r rune) bool { return r < 0x20 && r != '\t' }) {
+			t.Errorf("a control character in %q", l)
+		}
+	}
+	if !strings.Contains(out, `contains = ["v\"w"]`) || !strings.Contains(out, `nuclei_template = "markerinjected = 1"`) {
+		t.Errorf("strings not escaped as TOML's:\n%s", out)
+	}
+	if got := tomlString("a\x00b\x7f"); got != `"a\u0000b\u007F"` {
+		t.Errorf("tomlString: %s", got)
+	}
+}
