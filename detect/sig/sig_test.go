@@ -1,6 +1,7 @@
 package sig
 
 import (
+	"os"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -13,6 +14,13 @@ func TestLoadEmbedded(t *testing.T) {
 	}
 	if len(ss) == 0 {
 		t.Fatal("no signatures")
+	}
+	for _, s := range ss { // a Nuclei signature ships with the templates' license
+		if s.Source == "nuclei" {
+			if b, err := os.ReadFile("NOTICE"); err != nil || !strings.Contains(string(b), "ProjectDiscovery") {
+				t.Fatalf("%s is from Nuclei and NOTICE does not carry its license: %v", s.ID, err)
+			}
+		}
 	}
 	for _, s := range ss {
 		for _, m := range s.Matches {
