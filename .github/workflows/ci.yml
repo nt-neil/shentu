@@ -24,7 +24,7 @@ jobs:
       - run: go test ./...
       # Summary runs the engine skips as unneeded are made anyway and must agree
       # (rules/engine/interproc.go, checkSkips): samples, held-out cases, projects.
-      - run: go test -count=1 ./rules/... -run 'TestSamples|TestRouteSamples|TestHeldOut|TestProject|TestMayReturnInput'
+      - run: go test -count=1 ./rules/... -run 'TestSamples|TestRouteSamples|TestHeldOut|TestProject|TestMayReturnInput|TestParamsRead'
         env:
           SHENTU_CHECK_SKIPS: "1"
       - run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...

@@ -78,3 +78,53 @@ func TestMayReturnInput(t *testing.T) {
 		}
 	}
 }
+
+// A parameter's own summary run is skipped only where the body never reads
+// it; a body that may read parameters without naming them reads them all.
+func TestParamsRead(t *testing.T) {
+	cases := []struct {
+		lang, src string
+		read      []string // nil: every parameter counts as read
+		unread    []string
+	}{
+		{"php", "<?php\nfunction f($a, $b) { return $a; }\n", []string{"$a"}, []string{"$b"}},
+		{"php", "<?php\nfunction f($a, $b) { return \"x {$b}\"; }\n", []string{"$b"}, []string{"$a"}},
+		{"php", "<?php\nfunction f($a, $b) { $g = function () use ($b) { return $b; }; return $g(); }\n", []string{"$b"}, []string{"$a"}},
+		{"php", "<?php\nfunction f($a, $b) { return func_get_args(); }\n", nil, nil},
+		{"php", "<?php\nfunction f($a, $b) { return compact('a', 'b'); }\n", nil, nil},
+		{"php", "<?php\nfunction f($a, $b) { $n = 'b'; return $$n; }\n", nil, nil},
+		{"js", "function f(a, b) { return `x ${b}`; }\n", []string{"b"}, []string{"a"}},
+		{"js", "function f(a, b) { return arguments[1]; }\n", nil, nil},
+		{"python", "def f(a, b):\n    return locals()['b']\n", nil, nil},
+		{"python", "def f(a, b):\n    return f'{a}'\n", []string{"a"}, []string{"b"}},
+	}
+	for _, c := range cases {
+		b := newBudget(DefaultLimits)
+		toks := lex(c.lang, c.src, b)
+		fis := collectFuncs(parse(c.lang, toks, b), c.lang)["f"]
+		if len(fis) == 0 {
+			t.Fatalf("no f in %q", c.src)
+		}
+		got := paramsRead(fis[0])
+		if c.read == nil {
+			if got != nil {
+				t.Errorf("%q: paramsRead = %v, want every parameter read", c.src, got)
+			}
+			continue
+		}
+		if got == nil {
+			t.Errorf("%q: paramsRead = nil, want %v read and %v not", c.src, c.read, c.unread)
+			continue
+		}
+		for _, p := range c.read {
+			if !got[p] {
+				t.Errorf("%q: %s not read", c.src, p)
+			}
+		}
+		for _, p := range c.unread {
+			if got[p] {
+				t.Errorf("%q: %s read", c.src, p)
+			}
+		}
+	}
+}

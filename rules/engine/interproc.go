@@ -1228,8 +1228,19 @@ func (a *analysis) summarize(key string, fi *fnInfo, s *summary) {
 	if len(all.lines) == 0 && !all.ret.taint && len(all.checks) == 0 {
 		return
 	}
+	read := paramsRead(fi)
 	for i := 0; i < n && !a.b.hit; i++ {
 		if fi.params[i] == "" {
+			continue
+		}
+		if read != nil && !read[fi.params[i]] {
+			// A parameter the body never reads reaches nothing and is not
+			// returned or checked: its run would find nothing.
+			if checkSkips {
+				if r := run(1<<i, false); len(r.lines) > 0 || r.ret.taint || validates(r, i) {
+					panic(fmt.Sprintf("engine: skipped the run of unread parameter %s of %s (%s, rule %s), which finds something", fi.params[i], key, a.file, a.r.rule.ID))
+				}
+			}
 			continue
 		}
 		r := run(1<<i, false)
@@ -1403,6 +1414,31 @@ func (a *analysis) mayReturnInput(key string, fi *fnInfo) bool {
 		return false
 	}
 	return a.reachSource(relNode{a.file, key})
+}
+
+// paramsRead returns the names the body of fi reads, its function literals
+// and string interpolations included, or nil where every parameter must count
+// as read: code nested too deep to read, or a way of reading parameters
+// without naming them (func_get_args, compact, get_defined_vars, extract,
+// $$name, arguments, locals, vars, eval).
+func paramsRead(fi *fnInfo) map[string]bool {
+	set := map[string]bool{}
+	if !walkAll(fi.f.body, 0, func(t []Token) {
+		nameSet(t, set)
+		for i, tk := range t {
+			if tk.Kind == Var && (tk.Text == "$" || strings.HasPrefix(tk.Text, "$$")) || tk.op("$") && i+1 < len(t) {
+				set["$$"] = true
+			}
+		}
+	}) {
+		return nil
+	}
+	for _, w := range []string{"$$", "func_get_args", "func_get_arg", "compact", "get_defined_vars", "extract", "arguments", "locals", "vars", "eval"} {
+		if set[w] {
+			return nil
+		}
+	}
+	return set
 }
 
 // returnsValue reports whether a body returns or yields a value, its function
