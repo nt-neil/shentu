@@ -707,3 +707,33 @@ func TestWebLogsConfigLinkChain(t *testing.T) {
 		}
 	}
 }
+
+// Security review on 19d226c: a configuration file reached through a
+// linked directory (so its last element is no link, and readWebConf's
+// link check does not apply) is itself judged: the web user's is refused.
+func TestConfTrustedThroughLinkedDir(t *testing.T) {
+	h := logHost()
+	h.lst = map[string]FileStat{}
+	h.files["/usr/share/nginx/modules-available/x.conf"] = "load_module modules/ngx_http_geoip2_module.so;\n"
+	h.links["/etc/nginx/modules-enabled"] = "/usr/share/nginx/modules-available"
+	for _, d := range []string{"/etc", "/etc/nginx", "/usr", "/usr/share", "/usr/share/nginx", "/usr/share/nginx/modules-available"} {
+		h.st[d] = FileStat{Mode: fs.ModeDir | 0o755, UID: 0}
+	}
+	web := LinuxCollector{}.WebAccounts(h)
+	if why := confTrusted(h, "/etc/nginx/modules-enabled/x.conf", logConf, web); why != "" {
+		t.Fatalf("root's file: %s", why)
+	}
+	h.st["/usr/share/nginx/modules-available/x.conf"] = FileStat{Mode: 0o644, UID: 33}
+	if why := confTrusted(h, "/etc/nginx/modules-enabled/x.conf", logConf, web); why == "" {
+		t.Error("www-data's file through a linked directory was trusted")
+	}
+	h.st["/usr/share/nginx/modules-available/x.conf"] = FileStat{Mode: 0o666, UID: 0}
+	if why := confTrusted(h, "/etc/nginx/modules-enabled/x.conf", logConf, web); why == "" {
+		t.Error("a file others may write was trusted")
+	}
+	h.links["/etc/nginx/modules-enabled"] = "/srv/mods"
+	h.files["/srv/mods/x.conf"] = ""
+	if why := confTrusted(h, "/etc/nginx/modules-enabled/x.conf", logConf, web); !strings.Contains(why, "outside") {
+		t.Errorf("resolving outside /etc and the package directories: %q", why)
+	}
+}
