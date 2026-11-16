@@ -6,7 +6,7 @@ a release are not written here: they are worked out from the rule snapshots in
 `docs/site-src/rules-history/`. `CHANGELOG.zh-TW.md` holds the same releases in Traditional
 Chinese for the zh-TW pages; keep the two in step.
 
-## v0.3.1 (unreleased)
+## v0.3.1 — 2026-11-16
 
 - Code audit rules: 70 → 127 (PHP 25 → 51, Python 22 → 43, JavaScript and TypeScript
   23 → 33). PHP: WordPress, Laravel, Symfony, Joomla, Drupal, CodeIgniter, Yii and Smarty
@@ -15,19 +15,16 @@ Chinese for the zh-TW pages; keep the two in step.
   helper flows (#36). JavaScript and TypeScript: Koa and chained Express responses, BSON and
   launder sanitizers, Host-header redirects and SSRF; `.execute(` counts only on a receiver
   that may be a database client (#70).
-- The v0.2.5 known false positives are fixed in the engine:
-  - TypeORM repository calls in a file importing `typeorm` are no MongoDB queries, unless the
-    file uses a MongoDB repository, driver or Mongoose (`unless_imports`, #59).
-  - `spawn()` and `execFile()` with `shell: true` are reported only when the command or its
-    arguments carry input, not the options (several `[[args]]` blocks per sink, #62).
-  - A Server-Sent Events handler (`Content-Type: text/event-stream` set on every path) is no
-    XSS (`unless_content_type`, #58; `unless_at`, #57).
-  - `->get_settings()` is Elementor widget input only in classes extending
-    `\Elementor\Widget_Base` (#60).
-  - A placeholder list built by `array_map` with a callback returning a constant is no input
-    (#61).
-  - `zipfile.ZipFile(request.files[...])` opens the upload's stream, not a path
-    (`unless_subscript`, #67).
+- The v0.2.5 known false positives are fixed in the engine: TypeORM repository calls in a file
+  importing `typeorm` are no MongoDB queries, unless the file uses a MongoDB repository, driver
+  or Mongoose (`unless_imports`, #59); `spawn()` and `execFile()` with `shell: true` are reported
+  only when the command or its arguments carry input, not the options (several `[[args]]` blocks
+  per sink, #62); a Server-Sent Events handler (`Content-Type: text/event-stream` set on every
+  path) is no XSS (`unless_content_type`, #58; `unless_at`, #57); `->get_settings()` is Elementor
+  widget input only in classes extending `\Elementor\Widget_Base` (#60); a placeholder list built
+  by `array_map` with a callback returning a constant is no input (#61);
+  `zipfile.ZipFile(request.files[...])` opens the upload's stream, not a path
+  (`unless_subscript`, #67).
 - `js-ssrf-http-request` now reads the referrer and origin in Koa, hapi and Fetch API spelling
   (`ctx.request.header.referer`, `request.headers.referer`, `request.headers.get('x-callback-url')`;
   not Host), which were missed. Input written into a prepared statement's text is reported once,
