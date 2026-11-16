@@ -197,33 +197,57 @@ var (
 	nginxTime  = regexp.MustCompile(`^(\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}) \[`)
 	apacheTime = regexp.MustCompile(`^\[[A-Za-z]{3} ([A-Za-z]{3} \d{1,2} \d{2}:\d{2}:\d{2})(?:\.\d+)? (\d{4})\]`)
 	isoTime    = regexp.MustCompile(`^\[?(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2})(?:[.,]\d+)?(Z|[+-]\d{2}:?\d{2})?`)
-	frameRes   = []*regexp.Regexp{
-		regexp.MustCompile(` in (\S+?) on line (\d+)`),      // PHP: in /srv/x.php on line 12
-		regexp.MustCompile(`File "([^"]+)", line (\d+)`),    // Python traceback
-		regexp.MustCompile(`(/[^\s()"':]+)\((\d+)\)`),       // PHP stack: #0 /srv/x.php(12)
-		regexp.MustCompile(`(/[^\s()"':]+):(\d+)(?::\d+)?`), // Node, Go and others: /srv/x.js:12:5
+	// The runtime's own location on an entry's line: PHP's "in FILE on
+	// line N", the last one (what comes before may echo request data).
+	phpWhere = regexp.MustCompile(` in (/\S+?) on line (\d+)`)
+	// Frame lines after an entry, each in the runtime's own shape: PHP's
+	// "#0 /srv/x.php(12)", Python's '  File "/srv/x.py", line 40', Node's
+	// "    at fn (/srv/x.js:7:13)". Any other line without a time is not
+	// the entry's.
+	frameLines = []*regexp.Regexp{
+		regexp.MustCompile(`^#\d+ (/[^\s()"']+)\((\d+)\)`),
+		regexp.MustCompile(`^\s+File "(/[^"]+)", line (\d+)`),
+		regexp.MustCompile(`^\s+at (?:\S+ \()?(/[^\s()"':]+):(\d+)(?::\d+)?\)?$`),
 	}
+	// What servers append to an error line from the request itself
+	// (nginx's ", client: ... request: ...", Apache's ", referer: ..."):
+	// cut before frames are looked for, as the client writes it.
+	requestFields = regexp.MustCompile(`, (?:client|server|request|upstream|host|referrer|referer): `)
 )
 
-// ErrorEvents reads an error log's lines: an entry is a line with a time
-// and the lines after it without one (a traceback's frames).
+// ErrorEvents reads an error log's lines: an entry is a line with a time,
+// its frame the runtime's own location on it, and the frame lines after
+// it (a traceback's). Only what the runtime writes is taken: the request
+// fields a server appends are cut, a frame is an absolute path, and a
+// line without a time joins the entry only in a frame line's shape. An
+// attacker's request echoed in the log cannot name a sink's line.
 func ErrorEvents(lines []string, verified bool, from string, loc *time.Location) []ErrorEvent {
 	var out []ErrorEvent
+	add := func(m []string) {
+		e := &out[len(out)-1]
+		if n, err := strconv.Atoi(m[2]); err == nil && len(e.Frames) < 32 {
+			e.Frames = append(e.Frames, Frame{File: m[1], Line: n})
+		}
+	}
 	for _, l := range lines {
 		l = hostenv.MaskSecrets(l)
 		if t, ok := errorTime(l, loc); ok {
 			out = append(out, ErrorEvent{Time: t, Verified: verified, From: from})
+			if i := requestFields.FindStringIndex(l); i != nil {
+				l = l[:i[0]]
+			}
+			if ms := phpWhere.FindAllStringSubmatch(l, -1); len(ms) > 0 {
+				add(ms[len(ms)-1])
+			}
+			continue
 		}
 		if len(out) == 0 {
 			continue // frames before any time: no time to compare
 		}
-		e := &out[len(out)-1]
-		for _, re := range frameRes {
-			for _, m := range re.FindAllStringSubmatch(l, 8) {
-				n, err := strconv.Atoi(m[2])
-				if err == nil && len(e.Frames) < 32 {
-					e.Frames = append(e.Frames, Frame{File: m[1], Line: n})
-				}
+		for _, re := range frameLines {
+			if m := re.FindStringSubmatch(l); m != nil {
+				add(m)
+				break
 			}
 		}
 	}

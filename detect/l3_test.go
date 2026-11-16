@@ -174,3 +174,27 @@ func TestUpgrade(t *testing.T) {
 		t.Errorf("unverified IP: %+v", a)
 	}
 }
+
+// Security review of part 3: what the request writes into an error line
+// (nginx's request: and referrer: fields, an echoed value, a line of its
+// own) never becomes a frame.
+func TestErrorEventsRequestDataNotFrames(t *testing.T) {
+	loc := time.UTC
+	lines := []string{
+		`2026/11/16 10:11:13 [error] 7#0: *5 open() "/srv/www/marker" failed (2: No such file or directory), client: 192.0.2.1, server: example, request: "GET /?a=+in+/srv/app/x.php+on+line+12 HTTP/1.1", referrer: "/srv/app/x.php:12"`,
+		"an echoed line /srv/app/x.php:12 with no time",
+		"  File \"relative/x.py\", line 12, in f",
+		"[16-Nov-2026 10:11:14 UTC] PHP Warning:  value marker in /srv/app/x.php on line 12 in /srv/app/real.php on line 5",
+	}
+	es := ErrorEvents(lines, true, "e.log", loc)
+	if len(es) != 2 || len(es[0].Frames) != 0 {
+		t.Fatalf("request data taken as frames: %+v", es)
+	}
+	if f := es[1].Frames; len(f) != 1 || f[0] != (Frame{"/srv/app/real.php", 5}) {
+		t.Errorf("PHP's own location: %+v", f)
+	}
+	a := l2("app/x.php", 12, time.Date(2026, 11, 16, 10, 11, 13, 0, time.UTC))
+	if Upgrade(&a, "GET", Evidence{Errors: es}) {
+		t.Errorf("raised on request data: %+v", a)
+	}
+}
