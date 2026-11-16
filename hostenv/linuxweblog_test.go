@@ -593,7 +593,7 @@ func TestWebLogsUnreadNothingVerified(t *testing.T) {
 	h.files["/usr/share/nginx/modules-available/mod-http-geoip2.conf"] = "load_module modules/ngx_http_geoip2_module.so;\n"
 	h.links["/etc/nginx/modules-enabled/50-mod-http-geoip2.conf"] = "/usr/share/nginx/modules-available/mod-http-geoip2.conf"
 	h.files["/etc/nginx/nginx.conf"] = "include /etc/nginx/modules-enabled/*.conf;\n" + h.files["/etc/nginx/nginx.conf"]
-	for _, d := range []string{"/usr", "/usr/share", "/usr/share/nginx", "/usr/share/nginx/modules-available"} {
+	for _, d := range []string{"/etc", "/etc/nginx", "/etc/nginx/modules-enabled", "/usr", "/usr/share", "/usr/share/nginx", "/usr/share/nginx/modules-available"} {
 		h.st[d] = FileStat{Mode: fs.ModeDir | 0o755, UID: 0}
 	}
 	o := LinuxCollector{}.WebLogs(h)
@@ -635,7 +635,7 @@ func TestWebLogsExtraDirsTrusted(t *testing.T) {
 		h.files["/usr/share/nginx/modules-available/mod-http-geoip2.conf"] = "load_module modules/ngx_http_geoip2_module.so;\n"
 		h.links["/etc/nginx/modules-enabled/50-mod-http-geoip2.conf"] = "/usr/share/nginx/modules-available/mod-http-geoip2.conf"
 		h.files["/etc/nginx/nginx.conf"] = "include /etc/nginx/modules-enabled/*.conf;\n" + h.files["/etc/nginx/nginx.conf"]
-		for _, d := range []string{"/usr", "/usr/share", "/usr/share/nginx", "/usr/share/nginx/modules-available"} {
+		for _, d := range []string{"/etc", "/etc/nginx", "/etc/nginx/modules-enabled", "/usr", "/usr/share", "/usr/share/nginx", "/usr/share/nginx/modules-available"} {
 			h.st[d] = FileStat{Mode: fs.ModeDir | 0o755, UID: 0}
 		}
 		mod(h)
@@ -657,6 +657,46 @@ func TestWebLogsExtraDirsTrusted(t *testing.T) {
 		},
 	} {
 		o := setup(mod)
+		if o.Status != StatusPartial {
+			t.Errorf("%s: status %s", name, o.Status)
+		}
+		for _, s := range o.Value {
+			if s.Verified {
+				t.Errorf("%s: %s verified", name, s.Path)
+			}
+		}
+	}
+}
+
+// Security review on 52d19b5: a module snippet reached through a chain of
+// links is judged as a log is: each link root's own, every directory above
+// each root's alone.
+func TestWebLogsConfigLinkChain(t *testing.T) {
+	build := func(mod func(h statHost)) Obs[[]LogSource] {
+		h := logHost()
+		h.lst = map[string]FileStat{}
+		h.files["/usr/share/nginx/modules-available/real.conf"] = "load_module modules/ngx_http_geoip2_module.so;\n"
+		h.links["/usr/share/nginx/modules-available/hop.conf"] = "/usr/share/nginx/modules-available/real.conf"
+		h.links["/etc/nginx/modules-enabled/50-geoip2.conf"] = "/usr/share/nginx/modules-available/hop.conf"
+		h.files["/etc/nginx/nginx.conf"] = "include /etc/nginx/modules-enabled/*.conf;\n" + h.files["/etc/nginx/nginx.conf"]
+		for _, d := range []string{"/etc", "/etc/nginx", "/etc/nginx/modules-enabled", "/usr", "/usr/share", "/usr/share/nginx", "/usr/share/nginx/modules-available"} {
+			h.st[d] = FileStat{Mode: fs.ModeDir | 0o755, UID: 0}
+		}
+		mod(h)
+		return LinuxCollector{}.WebLogs(h)
+	}
+	if o := build(func(statHost) {}); o.Status != StatusOK || !webLogsByKey(t, o)["nginx access /var/log/nginx/shop.access.log"].Verified {
+		t.Fatalf("a root chain: %s %s", o.Status, o.Detail)
+	}
+	for name, mod := range map[string]func(h statHost){
+		"the middle link www-data's": func(h statHost) {
+			h.lst["/usr/share/nginx/modules-available/hop.conf"] = FileStat{Mode: fs.ModeSymlink | 0o777, UID: 33}
+		},
+		"the first link's directory writable by others": func(h statHost) {
+			h.st["/etc/nginx/modules-enabled"] = FileStat{Mode: fs.ModeDir | 0o777, UID: 0}
+		},
+	} {
+		o := build(mod)
 		if o.Status != StatusPartial {
 			t.Errorf("%s: status %s", name, o.Status)
 		}
