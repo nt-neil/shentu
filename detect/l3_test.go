@@ -1,6 +1,7 @@
 package detect
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -14,7 +15,7 @@ import (
 func steadyBaseline(key string, n int) *Baselines {
 	b := &Baselines{Version: 1, Routes: map[string]*baseline{}}
 	for i := 0; i < n; i++ {
-		b.Observe(key, int64(1000+i%5*10), t0.Add(time.Duration(i)*time.Minute))
+		b.Observe(key, fmt.Sprintf("192.0.2.%d", i%250), int64(1000+i%5*10), t0.Add(time.Duration(i)*time.Minute))
 	}
 	return b
 }
@@ -22,14 +23,14 @@ func steadyBaseline(key string, n int) *Baselines {
 func TestBaselines(t *testing.T) {
 	route := &engine.RouteRef{Pattern: "/marker/:id"}
 	key := RouteKey("get", route, "/marker/5")
-	if key != "GET /marker/:id" || RouteKey("GET", nil, "/x") != "GET path:/x" {
+	if key != "GET /marker/:id" || RouteKey("GET", nil, "/x") != "" || RouteKey("head", route, "") != key || RouteKey("MARKER", route, "") != "OTHER /marker/:id" {
 		t.Errorf("keys %q", key)
 	}
 	if _, known := steadyBaseline(key, MinBaseline-1).Deviates(key, 99999); known {
 		t.Error("judged with fewer than MinBaseline sizes")
 	}
 	b := steadyBaseline(key, 30)
-	for size, want := range map[int64]bool{1000: false, 1300: false, 1600: true, 200: true, 9000: true} {
+	for size, want := range map[int64]bool{1000: false, 1300: false, 1600: true, 200: false, 9000: true} { // smaller: not taken
 		if dev, known := b.Deviates(key, size); !known || dev != want {
 			t.Errorf("%d: deviates %v known %v, want %v", size, dev, known, want)
 		}
@@ -39,7 +40,7 @@ func TestBaselines(t *testing.T) {
 		t.Errorf("%d sizes kept", n)
 	}
 	dir := t.TempDir()
-	b.Observe("GET /old", 1, t0.Add(-BaselineTTL-time.Hour))
+	b.Observe("GET /old", "192.0.2.1", 1, t0.Add(-BaselineTTL-time.Hour))
 	if err := b.Save(dir, t0.Add(2*time.Hour)); err != nil {
 		t.Fatal(err)
 	}
@@ -99,9 +100,11 @@ func TestErrorEvents(t *testing.T) {
 		}
 		return false
 	}
+	// Review 1 of #90 (N-10): the lines after an entry are never frames:
+	// a message keeps the request's newlines.
 	for _, f := range []Frame{{"/srv/app/views.py", 40}, {"/srv/app/lib.php", 88}, {"/srv/app/a.js", 7}} {
-		if !has(f) {
-			t.Errorf("traceback lacks %+v: %+v", f, last)
+		if has(f) {
+			t.Errorf("a line after the entry taken as a frame %+v: %+v", f, last)
 		}
 	}
 }
@@ -120,7 +123,7 @@ func TestUpgrade(t *testing.T) {
 	}
 	a = l2("app/x.php", 12, t0)
 	a.Bytes = 9000
-	if !Upgrade(&a, "GET", ev) || a.Level != LevelSuccess || a.Severity != "critical" || a.Success == "" {
+	if !Upgrade(&a, "GET", ev) || a.Level != LevelSuccess || a.Severity != "high" || a.Success == "" || a.Evidence != 1 { // one kind of evidence: at most high
 		t.Errorf("an odd size: %+v", a)
 	}
 	for name, f := range map[string]func(*Attempt){
@@ -137,8 +140,8 @@ func TestUpgrade(t *testing.T) {
 	}
 	a = l2("app/x.php", 12, t0)
 	a.Status, a.Bytes = 500, 9000
-	if !Upgrade(&a, "GET", ev) {
-		t.Error("500 with an odd size not raised")
+	if Upgrade(&a, "GET", ev) {
+		t.Error("a 500 taken as size evidence")
 	}
 	// A route with too few sizes: size says nothing.
 	a = l2("app/x.php", 12, t0)
@@ -155,7 +158,8 @@ func TestUpgrade(t *testing.T) {
 		want bool
 	}{
 		"same file and line, 100s after": {errAt(100*time.Second, "/srv/www/app/x.php", 12, true), true},
-		"119s before":                    {errAt(-119*time.Second, "/srv/www/app/x.php", 12, true), true},
+		"4s before":                      {errAt(-4*time.Second, "/srv/www/app/x.php", 12, true), true},
+		"119s before":                    {errAt(-119*time.Second, "/srv/www/app/x.php", 12, true), false},
 		"121s after":                     {errAt(121*time.Second, "/srv/www/app/x.php", 12, true), false},
 		"another line":                   {errAt(10*time.Second, "/srv/www/app/x.php", 13, true), false},
 		"another file":                   {errAt(10*time.Second, "/srv/www/otherapp/x.php", 12, true), false},
@@ -241,5 +245,14 @@ func TestErrorEventsAnchoredPHP(t *testing.T) {
 	}
 	if f := es[3].Frames; len(f) != 1 || f[0] != (Frame{"/srv/app/real.php", 5}) {
 		t.Errorf("nginx's PHP message: %+v", f)
+	}
+}
+
+// N-10: a "frame line" the request's newline put after PHP's entry does
+// not back L3.
+func TestErrorEventsNoFollowingFrames(t *testing.T) {
+	es := ErrorEvents([]string{"[16-Nov-2026 10:11:14 UTC] PHP Warning:  marker in /srv/app/real.php on line 5", "#0 /srv/app/x.php(12): marker()", "  File \"/srv/app/x.py\", line 12"}, true, "e", time.UTC)
+	if len(es) != 1 || len(es[0].Frames) != 1 || es[0].Frames[0] != (Frame{"/srv/app/real.php", 5}) {
+		t.Errorf("%+v", es)
 	}
 }

@@ -680,7 +680,7 @@ func (r *AccessRecord) set(f, v string) bool {
 			r.UserAgent = v
 		}
 	case "xff":
-		if !dash {
+		if !dash && validXFF(v) { // addresses only: anything else is a client's text, not a proxy's
 			r.XFF = v
 		}
 	case "host":

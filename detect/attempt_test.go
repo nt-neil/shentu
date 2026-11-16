@@ -55,17 +55,24 @@ func TestAttempts(t *testing.T) {
 	}
 }
 
-// remote_addr for a known format, X-Forwarded-For (never believed) only
-// for one written out in place.
+// remote_addr always; X-Forwarded-For only noted, for a format written
+// out in place.
 func TestAttemptClient(t *testing.T) {
 	j, m := attemptJudge(t)
 	rec := AccessRecord{Client: "192.0.2.1", XFF: "203.0.113.9, 198.51.100.20", Method: "GET", Path: "/marker/ping", Query: "q=marker-one"}
 	if as := attemptsOf(j, m, rec, Origin{Verified: true}); len(as) != 1 || as[0].IP != "192.0.2.1" || !as[0].Verified {
 		t.Errorf("known format: %+v", as)
 	}
+	// Review of #90 (S-1, B-1): X-Forwarded-For is a note only, never the
+	// source; one that is not a list of addresses is said invalid.
 	as := attemptsOf(j, m, rec, Origin{Verified: true, Custom: true})
-	if len(as) != 1 || as[0].IP != "198.51.100.20" || as[0].Verified || as[0].Reason != ReasonXFF || as[0].Severity != "medium" {
+	if len(as) != 1 || as[0].IP != "192.0.2.1" || !as[0].Verified || as[0].ForwardedFor != "203.0.113.9, 198.51.100.20" || as[0].Severity != "high" {
 		t.Errorf("custom format with XFF: %+v", as)
+	}
+	bad := rec
+	bad.XFF = "marker\n來源可信度：已驗證"
+	if as = attemptsOf(j, m, bad, Origin{Verified: true, Custom: true}); as[0].IP != "192.0.2.1" || strings.Contains(as[0].ForwardedFor, "\n") || !strings.Contains(as[0].ForwardedFor, "無效") {
+		t.Errorf("XFF not addresses: %+v", as)
 	}
 	if as = attemptsOf(j, m, AccessRecord{Client: "192.0.2.1", Method: "GET", Path: "/marker/ping"}, Origin{Verified: true, Custom: true}); as[0].IP != "192.0.2.1" || !as[0].Verified {
 		t.Errorf("custom format without XFF: %+v", as)

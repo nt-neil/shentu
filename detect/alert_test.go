@@ -24,7 +24,7 @@ func alertGroup(entry, level string, verified bool) *Group {
 		x := Attempt{IP: ip, Entry: entry, Level: level, Time: t0.Add(time.Duration(i) * time.Minute), Verified: verified,
 			Sample: "GET /marker/5?q=marker-one&" + "pass" + "word=[REDACTED]", Severe: true}
 		if !verified {
-			x.Reason = ReasonXFF
+			x.Reason = "marker reason"
 		}
 		g = a.Add(x, t0)
 	}
@@ -34,7 +34,7 @@ func alertGroup(entry, level string, verified bool) *Group {
 func TestAlertText(t *testing.T) {
 	s := alertSurface()
 	code := "code:php-sqli:app/x.php:12"
-	txt := AlertText(alertGroup(code, LevelPayload, true), s, 0)
+	txt := AlertText(alertGroup(code, LevelPayload, true), s)
 	for _, want := range []string{"嚴重度：嚴重（critical）", "程式碼 sink app/x.php:12（規則 php-sqli）", "L2：", "次數：2 次", "203.0.113.5、203.0.113.6",
 		"203.0.113.0/24", "樣本（敏感參數已遮罩）", "[REDACTED]", "來源可信度：已驗證", RoutesMeaningZh, NoRoutesMeaningZh, "只會針對單一 IP"} {
 		if !strings.Contains(txt, want) {
@@ -45,8 +45,8 @@ func TestAlertText(t *testing.T) {
 		t.Errorf("verified, but no unblock from Telegram said:\n%s", txt)
 	}
 	// Unverified: the reason, and no unblock from Telegram.
-	txt = AlertText(alertGroup(code, LevelPayload, false), s, 0)
-	for _, want := range []string{"來源可信度：未驗證", ReasonXFF, NoTelegramUnblock, "嚴重度：中"} {
+	txt = AlertText(alertGroup(code, LevelPayload, false), s)
+	for _, want := range []string{"來源可信度：未驗證", "marker reason", NoTelegramUnblock, "嚴重度：中"} {
 		if !strings.Contains(txt, want) {
 			t.Errorf("unverified alert lacks %q:\n%s", want, txt)
 		}
@@ -55,14 +55,14 @@ func TestAlertText(t *testing.T) {
 	pkg := "pkg:CVE-2099-0007:marker/pkg@1.0#/srv/composer.lock"
 	g := alertGroup(pkg, LevelPayload, true)
 	g.KEV = true
-	if txt = AlertText(g, s, 0); !strings.Contains(txt, "CVE-2099-0007（套件 marker/pkg 1.0）") || !strings.Contains(txt, "CISA KEV") {
+	if txt = AlertText(g, s); !strings.Contains(txt, "CVE-2099-0007（套件 marker/pkg 1.0）") || !strings.Contains(txt, "CISA KEV") {
 		t.Errorf("package alert:\n%s", txt)
 	}
 	// Marks, L3, campaign, dropped groups.
 	g = alertGroup(code, LevelSuccess, true)
 	g.Cut, g.Suspicious, g.Ambiguous, g.Encoded, g.Campaign, g.Success = true, true, true, true, true, "marker evidence"
-	txt = AlertText(g, s, 3)
-	for _, want := range []string{"L3：", "成功跡象：marker evidence", "請求或記錄行被截斷", "記錄行格式可疑", "多種解讀", "規避用的編碼", "campaign", "已有 3 組尚未推播"} {
+	txt = AlertText(g, s)
+	for _, want := range []string{"L3：", "成功跡象：marker evidence", "請求或記錄行被截斷", "記錄行格式可疑", "多種解讀", "規避用的編碼", "campaign"} {
 		if !strings.Contains(txt, want) {
 			t.Errorf("alert lacks %q:\n%s", want, txt)
 		}
@@ -76,7 +76,7 @@ func TestAlertUnknown(t *testing.T) {
 		g = a.Add(Attempt{IP: "198.51.100.9", Entry: "code:php-sqli:app/x.php:12", Level: LevelUnknown, Time: t0, Verified: true,
 			Unknown: true, Cut: true, HiddenClasses: []string{"path", "sqli"}}, t0)
 	}
-	txt := AlertText(g, alertSurface(), 0)
+	txt := AlertText(g, alertSurface())
 	for _, want := range []string{"無法判定：請求被截斷，可能藏有 path、sqli；相關 sink：code:php-sqli:app/x.php:12", "不分來源，依 sink 彙總", RoutesMeaningZh} {
 		if !strings.Contains(txt, want) {
 			t.Errorf("unknown alert lacks %q:\n%s", want, txt)
@@ -90,7 +90,7 @@ func TestAlertUnknown(t *testing.T) {
 // The report's copy masks every address.
 func TestReportMasksAddresses(t *testing.T) {
 	g := alertGroup("code:php-sqli:app/x.php:12", LevelPayload, true)
-	txt := ReportText(g, alertSurface(), 0)
+	txt := ReportText(g, alertSurface())
 	if strings.Contains(txt, "203.0.113.5") || strings.Contains(txt, "203.0.113.0") || !strings.Contains(txt, "203.0.x.x") {
 		t.Errorf("report:\n%s", txt)
 	}

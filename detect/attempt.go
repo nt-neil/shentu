@@ -1,8 +1,11 @@
 package detect
 
 import (
+	"fmt"
+	"net/netip"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/nt-neil/shentu/hostenv"
@@ -49,11 +52,20 @@ type Attempt struct {
 	// says why not, in Chinese.
 	Verified bool   `json:"verified"`
 	Reason   string `json:"reason,omitempty"`
+	// ForwardedFor: X-Forwarded-For as logged by a format written out in
+	// place, a note only (NoteXFF), never the source.
+	ForwardedFor string `json:"forwarded_for,omitempty"`
+	// ReqLen: the request's path and query, in bytes: what a response may
+	// echo back, taken off its size for L3.
+	ReqLen int `json:"req_len,omitempty"`
 	// LogVerified: the access log itself is trusted (Origin.Verified),
 	// whatever the IP: its status and size may back L3.
 	LogVerified bool `json:"log_verified,omitempty"`
-	// Success: why the attempt is L3, in Chinese (l3.go's Upgrade).
-	Success string `json:"success,omitempty"`
+	// Success: why the attempt is L3, in Chinese (l3.go's Upgrade);
+	// Evidence: how many kinds back it (the response's size, the error
+	// log): with one, at most high.
+	Success  string `json:"success,omitempty"`
+	Evidence int    `json:"evidence,omitempty"`
 	// Severe: the entry is KEV or rated critical (CVSS 9 or more): one step
 	// up, kept for the campaign step.
 	Severe     bool     `json:"severe,omitempty"`
@@ -74,8 +86,8 @@ type Attempt struct {
 	HiddenSinksMore                                        int      `json:"hidden_sinks_more,omitempty"`
 }
 
-// ReasonXFF is said of an IP taken from X-Forwarded-For.
-const ReasonXFF = "此 IP 來自代理標頭（X-Forwarded-For），可以偽造，無法確認真實來源"
+// NoteXFF is said with an X-Forwarded-For note.
+const NoteXFF = "代理標頭 X-Forwarded-For（僅供參考，可以偽造，未用來判斷來源或封鎖）"
 
 // Attempts are the attempts one matched and judged request makes: one per
 // candidate, and, when the judgment is Unknown, one per sink the cut may
@@ -84,7 +96,10 @@ func (j *Judge) Attempts(rec AccessRecord, o Origin, m MatchResult, g Judgment) 
 	base := Attempt{Time: rec.Time, Sample: Sample(rec), Status: rec.Status, Bytes: rec.Bytes, Path: m.Request.Path,
 		Cut: g.Cut || rec.Cut, Suspicious: rec.Suspicious, Ambiguous: rec.Ambiguous, Encoded: m.Request.Encoded, TimedOut: g.TimedOut}
 	base.IP, base.Verified, base.Reason = clientOf(rec, o)
+	base.IP = cutUTF8(Printable(base.IP), 64)
 	base.LogVerified = o.Verified
+	base.ForwardedFor = forwardedFor(rec, o)
+	base.ReqLen = len(rec.Path) + len(rec.Query)
 	var out []Attempt
 	for _, c := range g.Candidates {
 		a := base
@@ -100,7 +115,7 @@ func (j *Judge) Attempts(rec AccessRecord, o Origin, m MatchResult, g Judgment) 
 			}
 			a.Severe = e.KEV || strings.EqualFold(e.Severity, "critical")
 		}
-		a.Severity = SeverityOf(a.Level, a.Severe, false, a.Verified)
+		a.Severity = a.SeverityWith(false)
 		out = append(out, a)
 	}
 	if g.Unknown {
@@ -120,28 +135,96 @@ func (j *Judge) Attempts(rec AccessRecord, o Origin, m MatchResult, g Judgment) 
 	return out
 }
 
-// clientOf is the request's client address: remote_addr for a known
-// format; for one written out in place, X-Forwarded-For when it has one
-// (its last address, the one the nearest proxy added), never verified.
+// clientOf is the request's client address: remote_addr (the record's
+// Client), believed as its log is. X-Forwarded-For is never the source,
+// only a note (forwardedFor).
 func clientOf(rec AccessRecord, o Origin) (ip string, verified bool, reason string) {
 	ip, verified, reason = rec.Client, o.Verified, o.Reason
 	if !o.Verified && reason == "" {
 		reason = "記錄檔未通過信任檢查（擁有者或權限不符），內容可能被竄改"
 	}
-	if o.Custom && strings.TrimSpace(rec.XFF) != "" {
-		parts := strings.Split(rec.XFF, ",")
-		ip, verified = strings.TrimSpace(parts[len(parts)-1]), false
-		if reason != "" && reason != ReasonXFF {
-			reason += "；" + ReasonXFF
-		} else {
-			reason = ReasonXFF
-		}
-	}
 	return ip, verified, reason
 }
 
-// SeverityOf is an attempt's severity: L1 info, L2 high, L3 critical, an
-// unknown one low; a step up when the vulnerability is KEV or critical
+// forwardedFor is X-Forwarded-For as a note (a format written out in
+// place logs it): never the source, at most MaxForwarded bytes; one not
+// a list of addresses is said invalid, its text not shown.
+func forwardedFor(rec AccessRecord, o Origin) string {
+	x := strings.TrimSpace(rec.XFF)
+	if !o.Custom || x == "" || x == "-" {
+		return ""
+	}
+	if !validXFF(x) {
+		return "（XFF 無效：不是 IP 位址清單，內容不顯示）"
+	}
+	return cutUTF8(x, MaxForwarded)
+}
+
+// validXFF: x is a comma-separated list of IP addresses, nothing else.
+func validXFF(x string) bool {
+	for _, p := range strings.Split(x, ",") {
+		if _, err := netip.ParseAddr(strings.TrimSpace(p)); err != nil {
+			return false
+		}
+	}
+	return true
+}
+
+// Printable is s with every character that could start a line or change
+// how a line reads (C0 and C1 controls, DEL, U+2028/2029, format
+// characters such as U+202E) written as \xHH or \u{HHHH}: what an alert
+// shows is one line per field, as written by shentu.
+func Printable(s string) string {
+	if !strings.ContainsFunc(s, unprintable) && utf8.ValidString(s) {
+		return s
+	}
+	var b strings.Builder
+	for i, r := range s {
+		switch {
+		case r == utf8.RuneError && !strings.HasPrefix(s[i:], "\uFFFD"):
+			fmt.Fprintf(&b, `\x%02X`, s[i])
+		case r < 0x80 && unprintable(r):
+			fmt.Fprintf(&b, `\x%02X`, r)
+		case unprintable(r):
+			fmt.Fprintf(&b, `\u{%04X}`, r)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+func unprintable(r rune) bool {
+	return unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || r == '\u2028' || r == '\u2029'
+}
+
+// MaxForwarded bounds Attempt.ForwardedFor.
+const MaxForwarded = 128
+
+// cutUTF8 is s cut to n bytes on a character's boundary.
+func cutUTF8(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n]
+}
+
+// SeverityWith is a's severity, a campaign or not: SeverityOf, and an L3
+// backed by one kind of evidence alone at most high (both kinds: it may be
+// critical).
+func (a Attempt) SeverityWith(campaign bool) string {
+	s := SeverityOf(a.Level, a.Severe, campaign, a.Verified)
+	if a.Level == LevelSuccess && a.Evidence < 2 && severityIndex(s) > severityIndex("high") {
+		s = "high"
+	}
+	return s
+}
+
+// SeverityOf is an attempt's severity: L1 info, L2 high, L3 critical (at most
+// high on one kind of evidence: SeverityWith), an unknown one low; a step up when the vulnerability is KEV or critical
 // (severe), another for a campaign (one IP trying three or more in 24
 // hours); at most medium when the IP cannot be believed.
 func SeverityOf(level string, severe, campaign, verified bool) string {
@@ -160,7 +243,9 @@ func SeverityOf(level string, severe, campaign, verified bool) string {
 }
 
 // sensitive are parameter names whose value a sample never shows.
-var sensitive = []string{"token", "password", "passwd", "secret", "email", "session", "cookie", "authorization"}
+var sensitive = []string{"token", "password", "passwd", "pwd", "pass", "pw", "passphrase", "secret", "email", "session", "sessid", "sid",
+	"cookie", "auth", "apikey", "api_key", "key", "jwt", "code", "sig", "signature", "otp", "pin", "card", "cc", "cvv", "ssn",
+	"private_key", "credential"}
 
 // sensitiveName: a parameter name, decoded as a server reads it (%XX
 // twice, + as a space, PHP's a[b] and a.b), holds a sensitive word; one
@@ -181,9 +266,24 @@ func sensitiveName(k string) bool {
 }
 
 // Sample is the record's request line for a person to read: parameters
-// with a sensitive name masked, then hostenv.MaskSecrets, then cut to
-// MaxSample bytes on a character's boundary.
+// with a sensitive name masked (in the query, and a path segment's
+// ;name=value), then hostenv.MaskSecrets, then made Printable, then cut
+// to MaxSample bytes on a character's boundary.
 func Sample(rec AccessRecord) string {
+	p := rec.Path
+	if strings.Contains(p, ";") {
+		segs := strings.Split(p, "/")
+		for i, sg := range segs {
+			parts := strings.Split(sg, ";")
+			for j := 1; j < len(parts); j++ {
+				if k, _, ok := strings.Cut(parts[j], "="); ok && sensitiveName(k) {
+					parts[j] = k + "=[REDACTED]"
+				}
+			}
+			segs[i] = strings.Join(parts, ";")
+		}
+		p = strings.Join(segs, "/")
+	}
 	q := rec.Query
 	if q != "" {
 		kvs := strings.Split(q, "&")
@@ -207,13 +307,6 @@ func Sample(rec AccessRecord) string {
 		}
 		q = "?" + strings.Join(kvs, "&")
 	}
-	s := hostenv.MaskSecrets(strings.TrimSpace(rec.Method + " " + rec.Path + q))
-	if len(s) > MaxSample {
-		n := MaxSample
-		for n > 0 && !utf8.RuneStart(s[n]) {
-			n--
-		}
-		s = s[:n]
-	}
-	return s
+	s := Printable(hostenv.MaskSecrets(strings.TrimSpace(rec.Method + " " + p + q)))
+	return cutUTF8(s, MaxSample)
 }

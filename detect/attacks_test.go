@@ -45,7 +45,7 @@ func TestAttacksGroups(t *testing.T) {
 	if len(a.Groups) != 3 {
 		t.Fatalf("%d groups, want 3 (/24 x level)", len(a.Groups))
 	}
-	g := a.Groups["203.0.113.0/24|e1|L2"]
+	g := a.Groups["203.0.113.0/24|e1|L2|v"]
 	if g == nil || g.Count != 3 || strings.Join(g.IPs, ",") != "203.0.113.1,203.0.113.2" || g.IPsSeen != 2 ||
 		!g.First.Equal(t0) || !g.Last.Equal(t0.Add(2*time.Minute)) || len(g.Samples) != 1 || g.Severity != "high" {
 		t.Errorf("group %+v", g)
@@ -54,7 +54,7 @@ func TestAttacksGroups(t *testing.T) {
 	for i := 0; i < MaxGroupIPs+2; i++ {
 		a.Add(att(fmt.Sprintf("2001:db8::%x", i+1), "e2", LevelPayload, t0), t0)
 	}
-	g = a.Groups["2001:db8::/64|e2|L2"]
+	g = a.Groups["2001:db8::/64|e2|L2|v"]
 	if len(g.IPs) != MaxGroupIPs || g.IPsSeen != MaxGroupIPs+2 {
 		t.Errorf("v6: %d listed, %d seen", len(g.IPs), g.IPsSeen)
 	}
@@ -64,13 +64,13 @@ func TestAttacksGroups(t *testing.T) {
 		x.Sample = fmt.Sprintf("GET /marker/%d", i)
 		a.Add(x, t0)
 	}
-	if g = a.Groups["192.0.2.0/24|e3|L2"]; len(g.Samples) != MaxGroupSamples {
+	if g = a.Groups["192.0.2.0/24|e3|L2|v"]; len(g.Samples) != MaxGroupSamples {
 		t.Errorf("samples %v", g.Samples)
 	}
 	// An unverified IP: at most medium, the reason kept.
 	u := att("192.0.2.9", "e4", LevelPayload, t0)
-	u.Verified, u.Reason, u.Severe = false, ReasonXFF, true
-	if g = a.Add(u, t0); !g.Unverified || g.Severity != "medium" || strings.Join(g.Reasons, "") != ReasonXFF {
+	u.Verified, u.Reason, u.Severe = false, "marker reason", true
+	if g = a.Add(u, t0); !g.Unverified || g.Severity != "medium" || strings.Join(g.Reasons, "") != "marker reason" {
 		t.Errorf("unverified: %+v", g)
 	}
 }
@@ -180,8 +180,9 @@ func TestAttacksSaveLoad(t *testing.T) {
 	if m, _ := filepath.Glob(filepath.Join(dir, "*.tmp")); len(m) != 0 {
 		t.Errorf("temporary files left: %v", m)
 	}
+	a.Close() // attacks.lock is held from load to close
 	b, err := LoadAttacks(dir, t0)
-	if err != nil || len(b.Groups) != 1 || b.Groups["203.0.113.0/24|e1|L2"] == nil || b.Groups["203.0.113.0/24|e1|L2"].Count != 1 {
+	if err != nil || len(b.Groups) != 1 || b.Groups["203.0.113.0/24|e1|L2|v"] == nil || b.Groups["203.0.113.0/24|e1|L2|v"].Count != 1 {
 		t.Errorf("after a save past the TTL: %v %+v", err, b.Groups)
 	}
 	// MaxGroups: the least recently seen go.
@@ -191,6 +192,7 @@ func TestAttacksSaveLoad(t *testing.T) {
 	if err := b.Save(dir, t0.Add(time.Hour)); err != nil || len(b.Groups) != MaxGroups {
 		t.Errorf("%v: %d groups", err, len(b.Groups))
 	}
+	b.Close()
 	// A file that does not parse is set aside, said, and the state starts empty.
 	if err := os.WriteFile(filepath.Join(dir, AttacksFile), []byte("{not json"), 0o600); err != nil {
 		t.Fatal(err)
@@ -199,6 +201,7 @@ func TestAttacksSaveLoad(t *testing.T) {
 	if err != nil || len(c.Groups) != 0 || c.Note == "" {
 		t.Fatalf("%v %+v", err, c)
 	}
+	c.Close()
 	if m, _ := filepath.Glob(filepath.Join(dir, AttacksFile+".bad-*")); len(m) != 1 {
 		t.Errorf("not set aside: %v", m)
 	}
@@ -228,8 +231,8 @@ func TestAttacksEvictionKeepsPending(t *testing.T) {
 		}
 	}
 	a.prune(t0.Add(time.Hour))
-	if len(a.Groups) != MaxGroups || a.Groups["203.0.113.0/24|target|L2"] == nil {
-		t.Fatalf("%d groups; the pending L2 kept: %v", len(a.Groups), a.Groups["203.0.113.0/24|target|L2"] != nil)
+	if len(a.Groups) != MaxGroups || a.Groups["203.0.113.0/24|target|L2|v"] == nil {
+		t.Fatalf("%d groups; the pending L2 kept: %v", len(a.Groups), a.Groups["203.0.113.0/24|target|L2|v"] != nil)
 	}
 	if a.DroppedPending == 0 {
 		t.Error("pending groups dropped without being counted")
@@ -249,7 +252,7 @@ func TestAttacksEvictionKeepsOldestPending(t *testing.T) {
 		a.Add(x, t0)
 	}
 	a.prune(t0.Add(time.Hour))
-	if a.Groups["203.0.113.0/24|target|L2"] == nil || a.DroppedPending == 0 {
+	if a.Groups["203.0.113.0/24|target|L2|v"] == nil || a.DroppedPending == 0 {
 		t.Errorf("the oldest pending group pushed out by a newer flood (dropped pending %d)", a.DroppedPending)
 	}
 }

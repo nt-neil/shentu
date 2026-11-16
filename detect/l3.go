@@ -1,12 +1,8 @@
 package detect
 
 import (
-	"encoding/json"
-	"errors"
-	"io/fs"
-	"os"
+	"fmt"
 	"path"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -27,7 +23,10 @@ const (
 	BaselineKeep  = 64                  // sizes kept per route, the latest
 	MaxBaselines  = 1024
 	MinBaseline   = 20 // fewer sizes than this: size says nothing
-	ErrorWindow   = 120 * time.Second
+	// An error log entry backs an attempt from ErrorBefore before it (the
+	// clocks of two logs differ a little) to ErrorWindow after it.
+	ErrorWindow = 120 * time.Second
+	ErrorBefore = 5 * time.Second
 	// SizeFloor: a response this close to the median never stands out,
 	// however steady the route.
 	SizeFloor = 512
@@ -47,41 +46,58 @@ type Baselines struct {
 type baseline struct {
 	Sizes []int64   `json:"sizes"` // the latest BaselineKeep, oldest first
 	Last  time.Time `json:"last"`
+	// Day and Took: how many sizes each source gave on Day (a UTC date),
+	// at most PerSourceDay each: one source cannot fill the baseline.
+	Day  string         `json:"day,omitempty"`
+	Took map[string]int `json:"took,omitempty"`
 }
+
+// PerSourceDay bounds the sizes one source (an IPv4 address, an IPv6
+// /64) gives a route's baseline in a day.
+const PerSourceDay = 4
 
 // RouteKey is the baseline's key for an attempt or a request: the method
-// and the code sink's route pattern; the routed path when there is no
-// route (a package's vulnerability).
+// (one of the usual ones, HEAD as GET, any other as OTHER) and the code
+// sink's route pattern, as the surface gives it: only routes of the
+// surface have a baseline, so requests cannot make new ones, and no path
+// as sent (which may hold a token) is kept. "" for none: a package's
+// vulnerability has no route, so no size evidence.
 func RouteKey(method string, route *engine.RouteRef, routedPath string) string {
-	if route != nil && route.Pattern != "" {
-		return strings.ToUpper(method) + " " + route.Pattern
+	if route == nil || route.Pattern == "" {
+		return ""
 	}
-	return strings.ToUpper(method) + " path:" + routedPath
+	m := strings.ToUpper(method)
+	switch m {
+	case "HEAD":
+		m = "GET"
+	case "GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS":
+	default:
+		m = "OTHER"
+	}
+	return m + " " + route.Pattern
 }
 
-// LoadBaselines reads dir's baselines.json; none is empty; one that does
-// not parse is set aside and said (Note).
+// LoadBaselines reads dir's baselines.json as LoadAttacks reads its file
+// (no link, ours, bounded); none is empty; one that does not parse is set
+// aside, and routes that do not hold together dropped, said in Note.
 func LoadBaselines(dir string, now time.Time) (*Baselines, error) {
 	b := &Baselines{Version: 1, Routes: map[string]*baseline{}}
-	p := filepath.Join(dir, BaselinesFile)
-	raw, err := os.ReadFile(p)
-	if errors.Is(err, fs.ErrNotExist) {
-		return b, nil
-	}
+	var got Baselines
+	note, err := readState(dir, BaselinesFile, &got, now)
 	if err != nil {
 		return nil, err
 	}
-	var got Baselines
-	if err := json.Unmarshal(raw, &got); err != nil || got.Version != 1 {
-		bad := p + ".bad-" + strconv.FormatInt(now.Unix(), 10)
-		if rerr := os.Rename(p, bad); rerr != nil {
-			return nil, errors.Join(err, rerr)
+	b.Note = note
+	dropped := 0
+	for k, r := range got.Routes {
+		if r == nil || k == "" {
+			dropped++
+			continue
 		}
-		b.Note = "baselines.json did not parse and was set aside as " + filepath.Base(bad) + "; sizes are learnt again"
-		return b, nil
+		b.Routes[k] = r
 	}
-	if got.Routes != nil {
-		b.Routes = got.Routes
+	if dropped > 0 {
+		b.Note = join(b.Note, fmt.Sprintf("baselines.json held %d routes that did not hold together; they were dropped", dropped))
 	}
 	return b, nil
 }
@@ -108,10 +124,13 @@ func (b *Baselines) evict(n int) {
 	for k := range b.Routes {
 		keys = append(keys, k)
 	}
-	sort.Slice(keys, func(i, j int) bool {
-		x, y := b.Routes[keys[i]].Last, b.Routes[keys[j]].Last
-		if !x.Equal(y) {
-			return x.After(y)
+	sort.Slice(keys, func(i, j int) bool { // the ones with the fewest sizes go first, then the least recently seen
+		x, y := b.Routes[keys[i]], b.Routes[keys[j]]
+		if len(x.Sizes) != len(y.Sizes) {
+			return len(x.Sizes) > len(y.Sizes)
+		}
+		if !x.Last.Equal(y.Last) {
+			return x.Last.After(y.Last)
 		}
 		return keys[i] < keys[j]
 	})
@@ -120,9 +139,14 @@ func (b *Baselines) evict(n int) {
 	}
 }
 
-// Observe adds an ordinary response's size to key's baseline. The caller
-// observes only requests with no hit, a 2xx status, from a verified log.
-func (b *Baselines) Observe(key string, size int64, at time.Time) {
+// Observe adds an ordinary response's size to key's baseline, from ip
+// (at most PerSourceDay a day per source). The caller observes only
+// requests with no hit, a 2xx status, from a verified log. A "" key (no
+// route) is not kept.
+func (b *Baselines) Observe(key, ip string, size int64, at time.Time) {
+	if key == "" {
+		return
+	}
 	r := b.Routes[key]
 	if r == nil {
 		if len(b.Routes) >= MaxBaselines+MaxBaselines/4 {
@@ -131,6 +155,17 @@ func (b *Baselines) Observe(key string, size int64, at time.Time) {
 		r = &baseline{}
 		b.Routes[key] = r
 	}
+	if day := at.UTC().Format(time.DateOnly); r.Day != day {
+		r.Day, r.Took = day, map[string]int{}
+	}
+	if r.Took == nil {
+		r.Took = map[string]int{}
+	}
+	src := campaignSource(ip)
+	if r.Took[src] >= PerSourceDay || len(r.Took) >= 4*BaselineKeep && r.Took[src] == 0 {
+		return
+	}
+	r.Took[src]++
 	r.Sizes = append(r.Sizes, size)
 	if len(r.Sizes) > BaselineKeep {
 		r.Sizes = r.Sizes[len(r.Sizes)-BaselineKeep:]
@@ -140,9 +175,10 @@ func (b *Baselines) Observe(key string, size int64, at time.Time) {
 	}
 }
 
-// Deviates says whether size stands out from key's baseline: farther from
-// the median than three scaled MADs, half the median and SizeFloor. known
-// is false with fewer than MinBaseline sizes.
+// Deviates says whether size stands out above key's baseline: larger
+// than the median by more than three scaled MADs, half the median and
+// SizeFloor (a smaller response is an error page as often as anything:
+// not taken). known is false with fewer than MinBaseline sizes.
 func (b *Baselines) Deviates(key string, size int64) (deviates, known bool) {
 	r := b.Routes[key]
 	if r == nil || len(r.Sizes) < MinBaseline {
@@ -155,7 +191,7 @@ func (b *Baselines) Deviates(key string, size int64) (deviates, known bool) {
 	}
 	mad := median(dev)
 	limit := max(float64(SizeFloor), float64(med)/2, 3*1.4826*float64(mad))
-	return float64(abs64(size-med)) > limit, true
+	return float64(size-med) > limit, true
 }
 
 func median(xs []int64) int64 {
@@ -198,42 +234,61 @@ var (
 	apacheTime = regexp.MustCompile(`^\[[A-Za-z]{3} ([A-Za-z]{3} \d{1,2} \d{2}:\d{2}:\d{2})(?:\.\d+)? (\d{4})\]`)
 	isoTime    = regexp.MustCompile(`^\[?(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2})(?:[.,]\d+)?(Z|[+-]\d{2}:?\d{2})?`)
 	// The runtime's own location on an entry's line: PHP's "in FILE on
-	// line N", in the whole line's shape of each log that carries PHP's
-	// messages, the message's prefix at its fixed place: PHP's own log
-	// ([time] PHP Warning:  ...), Apache's ([time] [module:level] [pid]
-	// ... PHP Warning: ...), nginx's FastCGI stderr (time [level] pid#tid:
-	// *cid FastCGI sent in stderr: "PHP message: PHP Warning: ..." while
-	// reading). The location is the last one before the line's end (or
-	// nginx's closing quote and " while reading"): what the message echoes
-	// comes before it. A server's own error (nginx's open() "..." failed,
-	// quoting the request's path) is none of these.
+	// line N" ending a PHP message, in the whole line's shape of each log
+	// that carries PHP's messages, the message's prefix at its fixed
+	// place (phpLocation). The message echoes what the request sent, and
+	// a server appends request fields after it, so where the message ends
+	// is taken only where it is certain; any doubt, no frame.
 	phpLevel  = `PHP (?:Fatal error|Warning|Notice|Parse error|Deprecated|Catchable fatal error|Recoverable fatal error|Strict Standards|Core error|Compile error|User (?:error|warning|notice|deprecated)):`
-	phpWheres = []*regexp.Regexp{
-		regexp.MustCompile(`^\[[^\]]+\] ` + phpLevel + ` .* in (/\S+?) on line (\d+)$`),
-		regexp.MustCompile(`^\[[^\]]+\](?: \[[^\]]*\])+ ` + phpLevel + ` .* in (/\S+?) on line (\d+)$`),
-		regexp.MustCompile(`^\d{4}/\d\d/\d\d \d\d:\d\d:\d\d \[\w+\] \d+#\d+: \*\d+ FastCGI sent in stderr: "PHP message: ` + phpLevel + ` .* in (/\S+?) on line (\d+)" while reading `),
-	}
-	// Frame lines after an entry, each in the runtime's own shape: PHP's
-	// "#0 /srv/x.php(12)", Python's '  File "/srv/x.py", line 40', Node's
-	// "    at fn (/srv/x.js:7:13)". Any other line without a time is not
-	// the entry's.
-	frameLines = []*regexp.Regexp{
-		regexp.MustCompile(`^#\d+ (/[^\s()"']+)\((\d+)\)`),
-		regexp.MustCompile(`^\s+File "(/[^"]+)", line (\d+)`),
-		regexp.MustCompile(`^\s+at (?:\S+ \()?(/[^\s()"':]+):(\d+)(?::\d+)?\)?$`),
-	}
-	// What servers append to an error line from the request itself
-	// (nginx's ", client: ... request: ...", Apache's ", referer: ..."):
-	// cut before frames are looked for, as the client writes it.
-	requestFields = regexp.MustCompile(`, (?:client|server|request|upstream|host|referrer|referer): `)
+	phpOwn    = regexp.MustCompile(`^\[[^\]]+\] ` + phpLevel + ` .* in (/\S+?) on line (\d+)$`)
+	apachePHP = regexp.MustCompile(`^\[[^\]]+\](?: \[[^\]]*\])+ ` + phpLevel + ` .* in (/\S+?) on line (\d+)$`)
+	nginxPHP  = regexp.MustCompile(`^\d{4}/\d\d/\d\d \d\d:\d\d:\d\d \[\w+\] \d+#\d+: \*\d+ FastCGI sent in stderr: "PHP message: ` + phpLevel + ` .* in (/\S+?) on line (\d+)"$`)
+	nginxEnd  = regexp.MustCompile(`on line \d+" while reading `)
+	apacheRef = regexp.MustCompile(`on line \d+, referer: `)
+	lineEnd   = regexp.MustCompile(`on line \d+$`)
 )
 
+// phpLocation is the file and line PHP wrote ending its message on l, or
+// nil when that is not certain:
+//   - PHP's own log: the line's end.
+//   - nginx: the message ends at `on line N" while reading `, which must
+//     be there exactly once (the request's fields after it, the message
+//     before it, could hold another).
+//   - Apache: the line's end when no ", referer: " is on it; when one is
+//     (and the client's text after it), `on line N, referer: ` must be
+//     there exactly once and the line must not end with a location too.
+func phpLocation(l string) []string {
+	if m := phpOwn.FindStringSubmatch(l); m != nil {
+		return m
+	}
+	if strings.Contains(l, "FastCGI sent in stderr: ") {
+		ends := nginxEnd.FindAllStringIndex(l, -1)
+		if len(ends) != 1 {
+			return nil
+		}
+		return nginxPHP.FindStringSubmatch(l[:ends[0][1]-len(" while reading ")])
+	}
+	if !strings.HasPrefix(l, "[") {
+		return nil
+	}
+	if lineEnd.MatchString(l) && !strings.Contains(l, ", referer: ") {
+		return apachePHP.FindStringSubmatch(l)
+	}
+	refs := apacheRef.FindAllStringIndex(l, -1)
+	if len(refs) != 1 || lineEnd.MatchString(l) { // a referer marker and a location at the end: either may be the client's
+		return nil
+	}
+	return apachePHP.FindStringSubmatch(l[:refs[0][1]-len(", referer: ")])
+}
+
 // ErrorEvents reads an error log's lines: an entry is a line with a time,
-// its frame the runtime's own location on it, and the frame lines after
-// it (a traceback's). Only what the runtime writes is taken: the request
-// fields a server appends are cut, a frame is an absolute path, and a
-// line without a time joins the entry only in a frame line's shape. An
-// attacker's request echoed in the log cannot name a sink's line.
+// its frame the runtime's own location on that line, nothing else: PHP's
+// location only where it certainly ends the message (phpLocation), an
+// absolute path. The lines after an entry (a traceback's frames) are not
+// taken: a message keeps the newlines the request sent, so they may be
+// the request's text. An entry made of the request's text after such a
+// newline remains possible; one kind of evidence alone is at most high
+// (SeverityWith).
 func ErrorEvents(lines []string, verified bool, from string, loc *time.Location) []ErrorEvent {
 	var out []ErrorEvent
 	add := func(m []string) {
@@ -246,26 +301,14 @@ func ErrorEvents(lines []string, verified bool, from string, loc *time.Location)
 		l = hostenv.MaskSecrets(l)
 		if t, ok := errorTime(l, loc); ok {
 			out = append(out, ErrorEvent{Time: t, Verified: verified, From: from})
-			if i := requestFields.FindStringIndex(l); i != nil {
-				l = l[:i[0]]
-			}
-			for _, re := range phpWheres {
-				if m := re.FindStringSubmatch(l); m != nil {
-					add(m)
-					break
-				}
+			if m := phpLocation(l); m != nil {
+				add(m)
 			}
 			continue
 		}
-		if len(out) == 0 {
-			continue // frames before any time: no time to compare
-		}
-		for _, re := range frameLines {
-			if m := re.FindStringSubmatch(l); m != nil {
-				add(m)
-				break
-			}
-		}
+		// A line without a time is never a frame: a message keeps the
+		// newlines the request sent, so a "frame line" after an entry may
+		// be the request's own text (review 1 of #90, N-10).
 	}
 	return out
 }
@@ -308,15 +351,35 @@ func errorTime(l string, loc *time.Location) (time.Time, bool) {
 // sinkFile: an error log's file (absolute, as the runtime names it) is the
 // audit's sink file (relative to the code root, or absolute): the logged
 // one ends with the sink's at a path segment.
-func sinkFile(logged, sink string) bool {
-	a, b := path.Clean("/"+strings.TrimPrefix(logged, "/")), path.Clean("/"+strings.TrimPrefix(sink, "/"))
-	return a == b || strings.HasSuffix(a, b) // never the other way: a short logged name would match many sinks
+func sinkFile(logged, sink string, roots []string) bool {
+	a := path.Clean("/" + strings.TrimPrefix(logged, "/"))
+	if path.IsAbs(sink) {
+		return a == path.Clean(sink)
+	}
+	if len(roots) > 0 {
+		for _, r := range roots {
+			if a == path.Clean(path.Join("/", r, sink)) {
+				return true
+			}
+		}
+		return false
+	}
+	b := path.Clean("/" + sink)
+	if strings.Count(b, "/") < 2 {
+		return false // one segment: it would match any directory's file of that name
+	}
+	return strings.HasSuffix(a, b) // never the other way: a short logged name would match many sinks
 }
 
 // Evidence is what L3 is judged on.
 type Evidence struct {
 	Baselines *Baselines
 	Errors    []ErrorEvent
+	// CodeRoots: where the audited code lives (the sink's file relative
+	// to one of them): an error log's file must be one of those exactly.
+	// None: it must end with the sink's file, and that must be at least
+	// two segments (x.php alone would match any directory's).
+	CodeRoots []string
 }
 
 // Upgrade raises an L2 attempt to L3 when the evidence says it likely
@@ -326,32 +389,36 @@ func Upgrade(a *Attempt, method string, ev Evidence) bool {
 	if a.Level != LevelPayload {
 		return false
 	}
-	var why string
-	okStatus := a.Status >= 200 && a.Status < 300 || a.Status == 500
-	if okStatus && a.LogVerified && ev.Baselines != nil {
-		if dev, known := ev.Baselines.Deviates(RouteKey(method, a.Route, a.Path), a.Bytes); known && dev {
-			why = "回應碼 " + strconv.Itoa(a.Status) + "，回應大小 " + strconv.FormatInt(a.Bytes, 10) + " bytes 明顯偏離這條路由平常的大小"
+	if !a.LogVerified { // the request itself must be one a trusted log wrote
+		return false
+	}
+	var why []string
+	// Size: a 2xx response larger than the route's usual by more than the
+	// request itself could echo back (a 500 is an error page: not size
+	// evidence).
+	if a.Status >= 200 && a.Status < 300 && ev.Baselines != nil {
+		if dev, known := ev.Baselines.Deviates(RouteKey(method, a.Route, a.Path), a.Bytes-int64(a.ReqLen)); known && dev {
+			why = append(why, "回應碼 "+strconv.Itoa(a.Status)+"，回應大小 "+strconv.FormatInt(a.Bytes, 10)+" bytes 明顯大於這條路由平常的大小")
 		}
 	}
-	if why == "" && a.File != "" && a.Line > 0 && !a.Time.IsZero() {
+	if a.File != "" && a.Line > 0 && !a.Time.IsZero() {
+	errors:
 		for _, e := range ev.Errors {
-			if !e.Verified || e.Time.Sub(a.Time) > ErrorWindow || a.Time.Sub(e.Time) > ErrorWindow {
+			if d := e.Time.Sub(a.Time); !e.Verified || d > ErrorWindow || d < -ErrorBefore {
 				continue
 			}
 			for _, f := range e.Frames {
-				if f.Line == a.Line && sinkFile(f.File, a.File) {
-					why = "請求前後 120 秒內，錯誤記錄指向這個 sink 的檔案與行號（" + a.File + ":" + strconv.Itoa(a.Line) + "）"
+				if f.Line == a.Line && sinkFile(f.File, a.File, ev.CodeRoots) {
+					why = append(why, "請求後 120 秒內，錯誤記錄指向這個 sink 的檔案與行號（"+a.File+":"+strconv.Itoa(a.Line)+"）")
+					break errors
 				}
-			}
-			if why != "" {
-				break
 			}
 		}
 	}
-	if why == "" {
+	if len(why) == 0 {
 		return false
 	}
-	a.Level, a.Success = LevelSuccess, why
-	a.Severity = SeverityOf(LevelSuccess, a.Severe, false, a.Verified)
+	a.Level, a.Success, a.Evidence = LevelSuccess, strings.Join(why, "；"), len(why)
+	a.Severity = a.SeverityWith(false)
 	return true
 }
