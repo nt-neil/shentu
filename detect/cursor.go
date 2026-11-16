@@ -22,8 +22,11 @@ const MaxCursors = 1024
 
 // Cursor is how far one log was read.
 type Cursor struct {
-	ID      string    `json:"id,omitempty"` // device:inode of the file read; "" where the source cannot tell
-	Offset  int64     `json:"offset"`       // bytes read, up to the end of the last whole line
+	ID     string `json:"id,omitempty"` // device:inode of the file read; "" where the source cannot tell
+	Offset int64  `json:"offset"`       // bytes read, up to the end of the last whole line
+	// MidLine: Offset is inside a line longer than MaxLine, whose start was
+	// given: the next read skips to its end rather than read the rest again.
+	MidLine bool      `json:"mid_line,omitempty"`
 	Size    int64     `json:"size"`
 	ModTime time.Time `json:"mtime"`
 	// Head is the SHA-256 of the file's first HeadLen bytes (at most 256):

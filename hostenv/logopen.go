@@ -22,14 +22,30 @@ type LogFile interface {
 // offset, however large it is.
 type LogOpener interface {
 	OpenLog(path string) (LogFile, error)
+	// OpenLogNoFollow refuses a symlink in the final element: for files
+	// found by a pattern (rotated logs), whose trust was not judged.
+	OpenLogNoFollow(path string) (LogFile, error)
 }
 
 // OpenLog opens p for reading through src. A Source without LogOpener (a
 // fixture) gives the file as it read it, up to MaxFileBytes, with the stat
 // it has (none: zero, and an empty ID).
-func OpenLog(src Source, p string) (LogFile, error) {
+func OpenLog(src Source, p string) (LogFile, error) { return openLog(src, p, false) }
+
+// OpenLogNoFollow is OpenLog refusing a symlink in the final element.
+func OpenLogNoFollow(src Source, p string) (LogFile, error) { return openLog(src, p, true) }
+
+func openLog(src Source, p string, noFollow bool) (LogFile, error) {
 	if o, ok := src.(LogOpener); ok {
+		if noFollow {
+			return o.OpenLogNoFollow(p)
+		}
 		return o.OpenLog(p)
+	}
+	if noFollow {
+		if _, err := src.Readlink(p); err == nil {
+			return nil, &fs.PathError{Op: "open", Path: p, Err: ErrSymlink}
+		}
 	}
 	st, err := Stat(src, p)
 	if err != nil && !errors.Is(err, ErrNoStat) && !errors.Is(err, ErrNotRecorded) {
@@ -55,8 +71,12 @@ func (m *memLog) Stat() FileStat { return m.st }
 
 // OpenLog opens a regular file (never a FIFO: openRead does not block),
 // following links: the log's trust was judged on the path (LogTrust).
-func (l *Live) OpenLog(p string) (LogFile, error) {
-	f, err := openRead(l.path(p), false)
+func (l *Live) OpenLog(p string) (LogFile, error) { return l.openLog(p, false) }
+
+func (l *Live) OpenLogNoFollow(p string) (LogFile, error) { return l.openLog(p, true) }
+
+func (l *Live) openLog(p string, noFollow bool) (LogFile, error) {
+	f, err := openRead(l.path(p), noFollow)
 	if err != nil {
 		return nil, err
 	}

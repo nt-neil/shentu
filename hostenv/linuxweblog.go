@@ -317,16 +317,28 @@ func (l *logLoader) add(s LogSource) {
 	l.out[k] = &s
 }
 
+// WebAccounts is the web servers' and PHP's accounts and groups, as their
+// configuration and the defaults give them: what LogTrust is given.
+func (LinuxCollector) WebAccounts(src Source) WebAccounts {
+	l := &logLoader{src: src, conf: DefaultWebConf, out: map[string]*LogSource{}}
+	l.nginx()
+	l.apache()
+	l.phpFPM()
+	return l.webAccounts()
+}
+
 // webAccounts is the uids and gids of the web servers' and PHP's accounts
 // and groups: the defaults and those the configuration names, and each
 // such account's primary group.
 func (l *logLoader) webAccounts() WebAccounts {
 	w := WebAccounts{UIDs: map[int]string{}, GIDs: map[int]string{}}
 	users, groups := map[string]bool{}, map[string]bool{}
+	numUIDs := map[int]bool{}
 	for _, u := range append(append([]string{}, defaultWebUsers...), l.users...) {
-		if id, ok := numericID(u); ok { // User #33, user = 33: no name to look up
+		if id, ok := numericID(u); ok { // User #33, user = 33: kept by number, and looked up below
 			if id != 0 {
 				w.UIDs[id] = "uid " + strconv.Itoa(id)
+				numUIDs[id] = true
 			}
 			continue
 		}
@@ -343,7 +355,13 @@ func (l *logLoader) webAccounts() WebAccounts {
 	}
 	primary := map[int]bool{}
 	if b, err := l.src.ReadFile("/etc/passwd"); err == nil {
-		for _, e := range ParsePasswd(b) {
+		entries := ParsePasswd(b)
+		for _, e := range entries { // a numeric user's name, for its group memberships
+			if uid, err := strconv.Atoi(e.UID); err == nil && numUIDs[uid] {
+				users[e.Name] = true
+			}
+		}
+		for _, e := range entries {
 			uid, err := strconv.Atoi(e.UID)
 			if err != nil || uid == 0 || !users[e.Name] {
 				continue

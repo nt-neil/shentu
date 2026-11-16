@@ -37,7 +37,8 @@ func read(t *testing.T, src hostenv.Source, cur *Cursor, b *Budget) (Cursor, Rea
 		b = NewBudget(DefaultBudgetBytes, time.Minute)
 	}
 	var lines []string
-	c, r, err := ReadLog(src, "/logs/a.log", cur, b, func(l []byte) { lines = append(lines, string(l)) })
+	trust := func(p string) (bool, hostenv.Reason) { return strings.HasSuffix(p, ".1"), "" }
+	c, r, err := ReadLog(src, "/logs/a.log", cur, b, trust, func(_ string, l []byte) { lines = append(lines, string(l)) })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +87,7 @@ func TestReadLogRenamed(t *testing.T) {
 	write(t, a, "three\n", os.O_CREATE)
 	c, r, lines := read(t, src, &c, nil)
 	eq(t, "renamed", lines, []string{"two", "three"})
-	if len(r.Partial) != 0 || len(r.Rotated) != 1 || r.Rotated[0] != "/logs/a.log.1" || c.Offset != 6 {
+	if len(r.Partial) != 0 || len(r.Rotated) != 1 || r.Rotated[0].Path != "/logs/a.log.1" || !r.Rotated[0].Verified || c.Offset != 6 {
 		t.Errorf("result %+v, cursor %+v", r, c)
 	}
 }
@@ -126,7 +127,7 @@ func TestReadLogGzip(t *testing.T) {
 	write(t, a, "new\n", os.O_CREATE)
 	_, r, lines := read(t, src, &c, nil)
 	eq(t, "gzip", lines, []string{"two", "last without newline", "new"})
-	if len(r.Rotated) != 1 || r.Rotated[0] != "/logs/a.log.1.gz" {
+	if len(r.Rotated) != 1 || r.Rotated[0].Path != "/logs/a.log.1.gz" || r.Rotated[0].Verified {
 		t.Errorf("result %+v", r)
 	}
 }
@@ -232,4 +233,73 @@ func TestCursorsSaveLoad(t *testing.T) {
 	if c, err := LoadCursors(d); err == nil || len(c.Sources) != 0 {
 		t.Errorf("corrupt file: %v, %d cursors; want an error and none", err, len(c.Sources))
 	}
+}
+
+// A rotated candidate that is a symlink is not followed (it could point at
+// any file), and an empty head matches no candidate.
+func TestReadLogRotatedNotFollowed(t *testing.T) {
+	src, d := logDir(t)
+	a := filepath.Join(d, "a.log")
+	write(t, a, "one\n", os.O_CREATE)
+	c, _, _ := read(t, src, nil, nil)
+	write(t, filepath.Join(d, "secret"), "one\nsecret\n", os.O_CREATE)
+	os.Rename(a, filepath.Join(d, "moved"))
+	if err := os.Symlink(filepath.Join(d, "secret"), a+".1"); err != nil {
+		t.Fatal(err)
+	}
+	write(t, a, "new\n", os.O_CREATE)
+	_, r, lines := read(t, src, &c, nil)
+	eq(t, "symlinked candidate", lines, []string{"new"})
+	if strings.Join(r.Partial, ",") != ReadRotatedGap {
+		t.Errorf("partial %v, want rotated_gap", r.Partial)
+	}
+
+	write(t, filepath.Join(d, "b.log"), "", os.O_CREATE)
+	var got []string
+	bsrc := src
+	cb, _, err := ReadLog(bsrc, "/logs/b.log", nil, NewBudget(DefaultBudgetBytes, time.Minute), nil, func(_ string, l []byte) { got = append(got, string(l)) })
+	if err != nil || cb.HeadLen != 0 {
+		t.Fatalf("empty log: %v, %+v", err, cb)
+	}
+	os.Remove(filepath.Join(d, "b.log"))
+	write(t, filepath.Join(d, "b.log.old"), "planted\n", os.O_CREATE)
+	write(t, filepath.Join(d, "b.log"), "real\n", os.O_CREATE)
+	_, _, err = ReadLog(bsrc, "/logs/b.log", &cb, NewBudget(DefaultBudgetBytes, time.Minute), nil, func(_ string, l []byte) { got = append(got, string(l)) })
+	if err != nil || strings.Join(got, "|") != "real" {
+		t.Errorf("after an empty head: %v, lines %q; want only real", err, got)
+	}
+}
+
+// A long line not ended yet: its start is given once, and the next run
+// skips the rest instead of reading it again.
+func TestReadLogLongLineUnended(t *testing.T) {
+	src, d := logDir(t)
+	a := filepath.Join(d, "a.log")
+	write(t, a, strings.Repeat("x", 20<<10), os.O_CREATE)
+	c, r, lines := read(t, src, nil, nil)
+	if len(lines) != 1 || len(lines[0]) != MaxLine || !c.MidLine || c.Offset != 20<<10 || r.LongLines != 1 {
+		t.Fatalf("%d lines, cursor %+v, result %+v", len(lines), c, r)
+	}
+	write(t, a, strings.Repeat("y", 100)+"\nnext\n", os.O_APPEND)
+	c, _, lines = read(t, src, &c, nil)
+	eq(t, "after the long line", lines, []string{"next"})
+	if c.MidLine {
+		t.Error("still mid-line")
+	}
+}
+
+// The budget holds inside a long line too: a gigabyte without a newline
+// costs no more than the budget, and the next run does not read it again.
+func TestReadLogLongLineBudget(t *testing.T) {
+	src, d := logDir(t)
+	a := filepath.Join(d, "a.log")
+	write(t, a, "ok\n", os.O_CREATE)
+	c, _, _ := read(t, src, nil, nil)
+	write(t, a, strings.Repeat("z", 200<<10)+"\nafter\n", os.O_APPEND)
+	c, r, _ := read(t, src, &c, NewBudget(40<<10, time.Minute))
+	if !c.MidLine || c.Offset >= 3+200<<10 || strings.Join(r.Partial, ",") != ReadTruncated {
+		t.Fatalf("cursor %+v, result %+v: want stopped inside the line, truncated", c, r)
+	}
+	_, _, lines := read(t, src, &c, nil)
+	eq(t, "next run", lines, []string{"after"})
 }

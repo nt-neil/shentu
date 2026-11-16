@@ -232,3 +232,16 @@ func TestWebAccountsMembersAndNumbers(t *testing.T) {
 		t.Errorf("775 root:adm with www-data in adm: %q, want web_user_writable", why)
 	}
 }
+
+// A user given by number brings its primary group and its memberships, as
+// one given by name does.
+func TestWebAccountsNumericUserGroups(t *testing.T) {
+	h := logHost()
+	h.files["/etc/passwd"] += "web2:x:2000:2001::/srv:/usr/sbin/nologin\n"
+	h.files["/etc/group"] += "web2grp:x:2001:\nshared:x:2002:web2\n"
+	h.files["/etc/apache2/apache2.conf"] += "User #2000\n"
+	w := LinuxCollector{}.WebAccounts(h)
+	if w.UIDs[2000] == "" || w.GIDs[2001] != "web2grp" || w.GIDs[2002] != "shared" {
+		t.Errorf("accounts %+v: want uid 2000 with its primary group web2grp and its group shared", w)
+	}
+}
