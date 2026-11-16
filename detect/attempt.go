@@ -3,7 +3,6 @@ package detect
 import (
 	"fmt"
 	"net/netip"
-	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -257,11 +256,14 @@ func SeverityOf(level string, severe, campaign, verified bool) string {
 
 // sensitive are words that, inside a parameter's name, mark its value
 // as one a sample never shows (access_token, user_email, PHPSESSID);
-// sensitiveWords are short ones that do only as a whole word of the name,
-// split at _ - [ ] . and spaces (pw, key, pin: not keyword, shipping).
+// sensitiveWords are short ones that do only as a word of the name, or
+// the end of one (split at _ - [ ] . spaces and camelCase: userpass,
+// accessKey, authcode), never its start (keyword, shipping, success,
+// author, side are not).
 var (
 	sensitive = []string{"token", "password", "passwd", "passphrase", "secret", "email", "session", "sessid", "cookie",
-		"authorization", "apikey", "api_key", "credential", "signature", "private_key"}
+		"authorization", "apikey", "api_key", "credential", "signature", "private_key", "privatekey", "authkey", "accesskey",
+		"secretkey", "passcode", "authcode", "creditcard", "cardnum", "ccnum", "pincode", "otp", "jwt", "cvv", "ssn"}
 	sensitiveWords = []string{"pwd", "pass", "pw", "auth", "key", "sid", "code", "sig", "otp", "pin", "card", "cc", "cvv", "ssn", "jwt"}
 )
 
@@ -269,7 +271,7 @@ var (
 // twice, + as a space, PHP's a[b] and a.b), holds a sensitive word; one
 // still holding a % after decoding is taken as sensitive (fail closed).
 func sensitiveName(k string) bool {
-	n, _, _ := normalizeText(k, true)
+	n, _, _ := normalizeText(camelSplit(k), true)
 	if strings.Contains(n, "%") {
 		return true
 	}
@@ -280,12 +282,30 @@ func sensitiveName(k string) bool {
 			}
 		}
 		for _, w := range strings.FieldsFunc(name, func(r rune) bool { return strings.ContainsRune("_-[]. ", r) }) {
-			if slices.Contains(sensitiveWords, w) {
-				return true
+			for _, sw := range sensitiveWords {
+				if strings.HasSuffix(w, sw) {
+					return true
+				}
 			}
 		}
 	}
 	return false
+}
+
+// camelSplit puts _ where a lower-case letter or digit is followed by an
+// upper-case one (accessKey -> access_Key), before the name is
+// lower-cased: a word boundary the name's case shows.
+func camelSplit(k string) string {
+	var b strings.Builder
+	prev := rune(0)
+	for _, r := range k {
+		if unicode.IsUpper(r) && (unicode.IsLower(prev) || unicode.IsDigit(prev)) {
+			b.WriteByte('_')
+		}
+		b.WriteRune(r)
+		prev = r
+	}
+	return b.String()
 }
 
 // Sample is the record's request line for a person to read: parameters

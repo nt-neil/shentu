@@ -421,7 +421,9 @@ func TestReview2Small(t *testing.T) {
 			t.Errorf("%s masked: %s", n, s)
 		}
 	}
-	for _, n := range []string{"user_key", "pin", "card-no", "x[pw]", "auth.code", "PHPSESSID", "access_token"} {
+	// Security review of review 2's fix: a short word ending a word, or
+	// after a camelCase boundary, still masks.
+	for _, n := range []string{"user_key", "pin", "card-no", "x[pw]", "auth.code", "PHPSESSID", "access_token", "userpass", "authkey", "accessKey", "x_authcode", "creditCardNumber", "zipPin"} {
 		if s := Sample(AccessRecord{Method: "GET", Path: "/m", Query: n + "=marker-v"}); strings.Contains(s, "marker-v") {
 			t.Errorf("%s shown: %s", n, s)
 		}
