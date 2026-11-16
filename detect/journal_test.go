@@ -1,0 +1,124 @@
+package detect
+
+import (
+	"context"
+	"io/fs"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/nt-neil/shentu/hostenv"
+)
+
+const (
+	jc1 = "s=0123456789abcdef0123456789abcdef;i=1;b=0123456789abcdef0123456789abcdef;m=1;t=1;x=1"
+	jc2 = "s=0123456789abcdef0123456789abcdef;i=2;b=0123456789abcdef0123456789abcdef;m=2;t=2;x=2"
+)
+
+// journalSrc answers journalctl reads of one unit: since a time, the whole
+// journal; after a cursor, what follows it; a cursor it does not know, the
+// error journalctl gives.
+type journalSrc struct {
+	entries []string // JSON lines, cursors jc1, jc2...
+	cursors []string
+	asked   []string
+}
+
+func (j *journalSrc) Info() hostenv.SourceInfo           { return hostenv.SourceInfo{GOOS: "linux"} }
+func (j *journalSrc) ReadFile(p string) ([]byte, error)  { return nil, fs.ErrNotExist }
+func (j *journalSrc) ReadDir(p string) ([]string, error) { return nil, fs.ErrNotExist }
+func (j *journalSrc) Readlink(p string) (string, error)  { return "", fs.ErrNotExist }
+func (j *journalSrc) Run(_ context.Context, argv []string) (hostenv.CmdResult, error) {
+	if argv[0] != "/usr/bin/journalctl" {
+		return hostenv.CmdResult{}, &fs.PathError{Op: "exec", Path: argv[0], Err: fs.ErrNotExist}
+	}
+	j.asked = append(j.asked, argv[3]+" "+argv[4])
+	from := 0
+	if argv[3] == "--after-cursor" {
+		from = -1
+		for i, c := range j.cursors {
+			if c == argv[4] {
+				from = i + 1
+			}
+		}
+		if from < 0 {
+			return hostenv.CmdResult{ExitCode: 1, Stderr: "Failed to seek to cursor: Invalid argument"}, nil
+		}
+	}
+	return hostenv.CmdResult{Stdout: []byte(strings.Join(j.entries[from:], "\n") + "\n")}, nil
+}
+
+func entry(cursor, unit, uid, msg string) string {
+	return `{"__CURSOR":"` + cursor + `","__REALTIME_TIMESTAMP":"1794700000000000","_SYSTEMD_UNIT":"` + unit + `","_UID":"` + uid + `","MESSAGE":"` + msg + `"}`
+}
+
+func TestEntryTrust(t *testing.T) {
+	web := hostenv.WebAccounts{UIDs: map[int]string{33: "www-data"}}
+	const u = "php8.2-fpm.service"
+	for _, c := range []struct {
+		e    hostenv.JournalEntry
+		want JournalTrust
+	}{
+		{hostenv.JournalEntry{Unit: u, UID: 0}, JournalTrust{Verified: true}},
+		{hostenv.JournalEntry{Unit: u, UID: 33}, JournalTrust{Reason: hostenv.ReasonWebUserWritable}},
+		{hostenv.JournalEntry{Unit: u, UID: 1000}, JournalTrust{Reason: hostenv.ReasonUntrusted}},
+		{hostenv.JournalEntry{Unit: "init.scope", UID: 0}, JournalTrust{Reason: hostenv.ReasonUnverified}}, // systemd's message about the unit
+		{hostenv.JournalEntry{Unit: u, UID: -1}, JournalTrust{Reason: hostenv.ReasonUnverified}},
+	} {
+		if got := EntryTrust(c.e, u, web); got != c.want {
+			t.Errorf("%+v: %+v, want %+v", c.e, got, c.want)
+		}
+	}
+}
+
+func TestReadJournalUnit(t *testing.T) {
+	const u = "php8.2-fpm.service"
+	src := &journalSrc{
+		entries: []string{entry(jc1, u, "33", "PHP Warning: one"), entry(jc2, u, "0", "two")},
+		cursors: []string{jc1, jc2},
+	}
+	web := hostenv.WebAccounts{UIDs: map[int]string{33: "www-data"}}
+	var got []string
+	fn := func(e hostenv.JournalEntry, tr JournalTrust) { got = append(got, e.Message+"/"+string(tr.Reason)) }
+
+	// First run, a budget for one entry: stops after it, says so.
+	c, r, err := ReadJournalUnit(context.Background(), src, u, nil, NewBudget(10, time.Minute), web, fn)
+	if err != nil || c.Journal != jc1 || strings.Join(r.Partial, ",") != ReadFirstRun+","+ReadTruncated {
+		t.Fatalf("first run: %v, cursor %q, partial %v", err, c.Journal, r.Partial)
+	}
+	if strings.Join(got, "|") != "PHP Warning: one/web_user_writable" {
+		t.Errorf("first run entries %q", got)
+	}
+	// The next run goes on after it.
+	got = nil
+	c, r, err = ReadJournalUnit(context.Background(), src, u, &c, NewBudget(DefaultBudgetBytes, time.Minute), web, fn)
+	if err != nil || c.Journal != jc2 || len(r.Partial) != 0 || strings.Join(got, "|") != "two/" {
+		t.Errorf("next run: %v, cursor %q, partial %v, entries %q", err, c.Journal, r.Partial, got)
+	}
+	if !strings.HasPrefix(src.asked[1], "--after-cursor "+jc1) {
+		t.Errorf("asked %q", src.asked)
+	}
+	// Nothing new: the cursor stays.
+	c2, _, err := ReadJournalUnit(context.Background(), src, u, &c, NewBudget(DefaultBudgetBytes, time.Minute), web, fn)
+	if err != nil || c2.Journal != jc2 {
+		t.Errorf("nothing new: %v, cursor %q", err, c2.Journal)
+	}
+}
+
+// A cursor the journal no longer has (rotated past it): read the window
+// again, and say what may be lost.
+func TestReadJournalUnitStaleCursor(t *testing.T) {
+	const u = "gunicorn.service"
+	src := &journalSrc{entries: []string{entry(jc2, u, "0", "after rotation")}, cursors: []string{jc2}}
+	stale := Cursor{Journal: jc1}
+	var got []string
+	c, r, err := ReadJournalUnit(context.Background(), src, u, &stale, NewBudget(DefaultBudgetBytes, time.Minute), hostenv.WebAccounts{},
+		func(e hostenv.JournalEntry, _ JournalTrust) { got = append(got, e.Message) })
+	if err != nil || c.Journal != jc2 || strings.Join(got, "|") != "after rotation" {
+		t.Fatalf("%v, cursor %q, entries %q", err, c.Journal, got)
+	}
+	p := strings.Join(r.Partial, ",")
+	if !strings.Contains(p, ReadRotatedGap) || !strings.Contains(p, ReadFirstRun) {
+		t.Errorf("partial %v, want rotated_gap and first_run", r.Partial)
+	}
+}
