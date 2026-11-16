@@ -235,6 +235,8 @@ func tomlString(s string) string {
 			b.WriteString(`\r`)
 		case r == utf8.RuneError:
 			b.WriteString(`\uFFFD`)
+		case invisible(r) && r > 0xFFFF: // TOML's \u takes four digits
+			fmt.Fprintf(&b, `\U%08X`, r)
 		case invisible(r):
 			fmt.Fprintf(&b, `\u%04X`, r)
 		default:

@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -113,4 +115,72 @@ func TestExtractFormatCharacters(t *testing.T) {
 	if !strings.Contains(out, `nuclei_template = "markerabcdefg"`) || !strings.Contains(out, `path = "/ab"`) || !strings.Contains(out, `contains = ["vw"]`) {
 		t.Errorf("draft:\n%s", out)
 	}
+}
+
+// Review 3 of #87: a character past U+FFFF is escaped as TOML's \U, and
+// every string decodes back (a TOML basic string decoder of its own: the
+// module has no TOML dependency).
+func TestTOMLStringRoundTrip(t *testing.T) {
+	for _, s := range []string{"plain", "q\"b\\s", "a\nb\tc\rd", "\x00\x1f\x7f", "‮ ​", "\U000E0001x", "中文", "\U0001F600"} {
+		q := tomlString(s)
+		if strings.ContainsFunc(q, invisible) {
+			t.Errorf("%q: an invisible character left in %q", s, q)
+		}
+		got, err := decodeBasic(q)
+		if err != nil || got != s {
+			t.Errorf("%q: %s decodes to %q (%v)", s, q, got, err)
+		}
+	}
+	if q := tomlString("\U000E0001"); q != `"\U000E0001"` {
+		t.Errorf("tomlString: %s", q)
+	}
+}
+
+func decodeBasic(q string) (string, error) {
+	if len(q) < 2 || q[0] != '"' || q[len(q)-1] != '"' {
+		return "", fmt.Errorf("not quoted")
+	}
+	q = q[1 : len(q)-1]
+	var b strings.Builder
+	for i := 0; i < len(q); i++ {
+		c := q[i]
+		if c == '"' {
+			return "", fmt.Errorf("unescaped quote at %d", i)
+		}
+		if c != '\\' {
+			b.WriteByte(c)
+			continue
+		}
+		i++
+		if i >= len(q) {
+			return "", fmt.Errorf("trailing backslash")
+		}
+		switch q[i] {
+		case '"', '\\':
+			b.WriteByte(q[i])
+		case 'n':
+			b.WriteByte('\n')
+		case 't':
+			b.WriteByte('\t')
+		case 'r':
+			b.WriteByte('\r')
+		case 'u', 'U':
+			n := 4
+			if q[i] == 'U' {
+				n = 8
+			}
+			if i+n >= len(q)+1 || i+1+n > len(q) {
+				return "", fmt.Errorf("short escape")
+			}
+			v, err := strconv.ParseUint(q[i+1:i+1+n], 16, 32)
+			if err != nil {
+				return "", err
+			}
+			b.WriteRune(rune(v))
+			i += n
+		default:
+			return "", fmt.Errorf("escape \\%c is not TOML's", q[i])
+		}
+	}
+	return b.String(), nil
 }
