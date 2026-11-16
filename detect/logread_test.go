@@ -163,8 +163,8 @@ func TestReadLogRewritten(t *testing.T) {
 	f.Close()
 	_, r, lines := read(t, src, &c, nil)
 	eq(t, "rewritten", lines, []string{"ONE", "two"})
-	if strings.Join(r.Partial, ",") != ReadRewritten {
-		t.Errorf("partial %v, want rewritten", r.Partial)
+	if strings.Join(r.Partial, ",") != ReadRotatedGap { // the same inode, another start: not the file read
+		t.Errorf("partial %v, want rotated_gap", r.Partial)
 	}
 }
 

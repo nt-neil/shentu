@@ -30,7 +30,6 @@ const (
 const (
 	ReadFirstRun   = "first_run"   // no cursor: only the last budget's worth was read
 	ReadRotatedGap = "rotated_gap" // what the file read last time got after the cursor is lost: gone, unreadable, or not read to its end
-	ReadRewritten  = "rewritten"   // the same file with other content at its start: read again from the start (tampering?)
 	ReadTruncated  = "truncated"   // the run's budget ran out: the next run goes on from here
 	ReadIOError    = "io_error"    // a read failed before the end (a corrupt .gz, a disk error): what follows is not read
 )
@@ -55,7 +54,7 @@ type ReadResult struct {
 	Bytes     int64         `json:"bytes"`
 	LongLines int           `json:"long_lines,omitempty"` // cut at MaxLine
 	Rotated   []RotatedFile `json:"rotated,omitempty"`    // rotated files the rest of the last read was found in
-	Partial   []string      `json:"partial,omitempty"`    // ReadFirstRun, ReadRotatedGap, ReadRewritten, ReadTruncated, ReadIOError
+	Partial   []string      `json:"partial,omitempty"`    // ReadFirstRun, ReadRotatedGap, ReadTruncated, ReadIOError
 	// Verified: the log's own lines are trusted: ReadOpts.Want was verified
 	// and the file opened is still it, root's, writable by root alone.
 	Verified bool           `json:"verified"`
@@ -159,11 +158,9 @@ func ReadLog(src hostenv.Source, p string, cur *Cursor, b *Budget, opts ReadOpts
 			// it got before the rotation (copytruncate) cannot be told apart.
 			res.partial(ReadRotatedGap)
 		}
-	default: // rotated, copied and truncated, or rewritten
+	default: // rotated, copied and truncated, rewritten, or a new file that got the old one's inode
 		if rf, ok := readRotated(src, p, cur, b, opts.Trust, &res, fn); ok {
 			res.Rotated = append(res.Rotated, rf)
-		} else if cur.ID != "" && cur.ID == st.ID && st.Size >= cur.Offset {
-			res.partial(ReadRewritten)
 		} else {
 			res.partial(ReadRotatedGap)
 		}
@@ -222,7 +219,10 @@ func newlineBefore(f io.ReadSeeker, off int64) bool {
 
 // sameFile: p is still the file cur was in, grown or not: the same ID
 // where both are known, no shorter than what was read, and the same first
-// cur.HeadLen bytes.
+// cur.HeadLen bytes. The ID alone proves nothing: ext4 and tmpfs give a
+// file created after another's removal the same inode, so the same ID
+// with another head is a new file (read from its start, the old one's
+// rest a gap), whether it was rewritten in place or replaced.
 func sameFile(cur *Cursor, st hostenv.FileStat, head []byte) bool {
 	switch {
 	case cur.ID != "" && st.ID != "" && cur.ID != st.ID:
@@ -333,10 +333,15 @@ func rotatedSince(src hostenv.Source, p string, t time.Time) bool {
 }
 
 // readRotated finds the rotated file holding the rest of what cur was
-// reading, by its ID (renamed) or by its head (copied, compressed; never by
-// an empty head, which any file has), reads it from cur.Offset to its end,
-// and says which it was and how far it is trusted.
+// reading, by its ID (renamed) or by its head (copied, compressed), reads
+// it from cur.Offset to its end, and says which it was and how far it is
+// trusted. Its head must be cur's either way: an ID may be a reused inode.
+// With an empty head (the log was empty when last read) nothing tells the
+// file read from another, so none is taken.
 func readRotated(src hostenv.Source, p string, cur *Cursor, b *Budget, trust TrustFunc, res *ReadResult, fn LineFunc) (RotatedFile, bool) {
+	if cur.HeadLen == 0 {
+		return RotatedFile{}, false
+	}
 	cands := rotatedFiles(src, p)
 	if cur.ID != "" { // by ID first: a stat, no read
 		for _, c := range cands {
@@ -349,9 +354,6 @@ func readRotated(src hostenv.Source, p string, cur *Cursor, b *Budget, trust Tru
 				}
 			}
 		}
-	}
-	if cur.HeadLen == 0 {
-		return RotatedFile{}, false
 	}
 	for _, c := range cands {
 		if rf, ok := readRest(src, c, strings.HasSuffix(c, ".gz"), false, cur, b, trust, res, fn); ok {
