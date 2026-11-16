@@ -37,6 +37,11 @@ type Request struct {
 	Params        map[string][]string // every value of every parameter, in order (a repeated one keeps all)
 	UserAgent     string
 	Referer       string
+	// Raw holds what the request sent, as logged (not decoded, its case),
+	// for the evidence an alert shows: the record's path, query, user
+	// agent and referer, and each parameter's values under its key.
+	Raw       AccessRecord
+	RawParams map[string][]string
 	// Encoded: decoding changed something past the first round (a double
 	// encoding), or a %u or overlong form was used: evasion, a signal.
 	Encoded bool
@@ -47,13 +52,14 @@ type Request struct {
 // with url.ParseQuery, which refuses a malformed escape an attacker would
 // send on purpose.
 func Normalize(r AccessRecord) Request {
-	q := Request{Method: strings.ToUpper(r.Method), Params: map[string][]string{}}
-	var enc bool
-	q.RawPath, enc = normalizeText(r.Path, false)
-	q.Encoded = q.Encoded || enc
+	q := Request{Method: strings.ToUpper(r.Method), Params: map[string][]string{}, RawParams: map[string][]string{}, Raw: r}
+	q.Raw.Alts = nil
+	var enc, cut bool
+	q.RawPath, enc, cut = normalizeText(r.Path, false)
+	q.Encoded, q.Cut = q.Encoded || enc, q.Cut || cut
 	q.Path = cleanPath(q.RawPath)
-	q.Query, enc = normalizeText(r.Query, true)
-	q.Encoded = q.Encoded || enc
+	q.Query, enc, cut = normalizeText(r.Query, true)
+	q.Encoded, q.Cut = q.Encoded || enc, q.Cut || cut
 	n := 0
 	for _, kv := range strings.Split(r.Query, "&") {
 		if kv == "" {
@@ -65,25 +71,42 @@ func Normalize(r AccessRecord) Request {
 		}
 		n++
 		k, v, _ := strings.Cut(kv, "=")
-		nk, e1 := normalizeText(k, true)
-		nv, e2 := normalizeText(v, true)
-		q.Encoded = q.Encoded || e1 || e2
-		q.Params[nk] = append(q.Params[nk], nv)
-	}
-	q.UserAgent, _ = normalizeText(r.UserAgent, false)
-	q.Referer, _ = normalizeText(r.Referer, false)
-	for _, s := range []string{q.RawPath, q.Query, q.UserAgent, q.Referer} {
-		if len(s) >= MaxNormalized {
-			q.Cut = true
+		nk, e1, c1 := normalizeText(k, true)
+		nv, e2, c2 := normalizeText(v, true)
+		q.Encoded, q.Cut = q.Encoded || e1 || e2, q.Cut || c1 || c2
+		for _, key := range paramNames(nk) { // as sent, and as PHP and others read it
+			q.Params[key] = append(q.Params[key], nv)
+			q.RawParams[key] = append(q.RawParams[key], v)
 		}
 	}
+	q.UserAgent, _, cut = normalizeText(r.UserAgent, false)
+	q.Cut = q.Cut || cut
+	q.Referer, _, cut = normalizeText(r.Referer, false)
+	q.Cut = q.Cut || cut
 	return q
 }
 
+// paramNames is a parameter's name as sent, and as a framework reads it
+// when that differs: PHP turns ' ', '.' and '[' into '_' and takes
+// a[b] or a[] for a: a signature for "id" must see i.d and id[].
+func paramNames(k string) []string {
+	c := k
+	if i := strings.IndexByte(c, '['); i > 0 && strings.HasSuffix(c, "]") {
+		c = c[:i]
+	}
+	c = strings.NewReplacer(" ", "_", ".", "_", "[", "_").Replace(c)
+	if c == k {
+		return []string{k}
+	}
+	return []string{k, c}
+}
+
 // normalizeText decodes s at most MaxDecodeRounds times, folds overlong
-// UTF-8, and lower-cases it; enc says an evasive encoding was seen.
-func normalizeText(s string, query bool) (string, bool) {
-	if len(s) > MaxNormalized {
+// UTF-8, and lower-cases it; enc says an evasive encoding was seen, cut
+// that s was longer than MaxNormalized and only its start was taken.
+func normalizeText(s string, query bool) (string, bool, bool) {
+	cut := len(s) > MaxNormalized
+	if cut {
 		s = s[:MaxNormalized]
 	}
 	enc := false
@@ -104,7 +127,7 @@ func normalizeText(s string, query bool) (string, bool) {
 	if over {
 		enc = true
 	}
-	return strings.ToLower(f), enc
+	return strings.ToLower(f), enc, cut
 }
 
 // percentDecode decodes %XX and %uXXXX (u: one was), and + as a space when
@@ -171,22 +194,38 @@ func foldOverlong(s string) (string, bool) {
 	return b.String(), over
 }
 
-// cleanPath resolves dot segments and collapses slashes.
+// cleanPath is the path as a server routes it: dot segments resolved,
+// slashes collapsed, backslashes as slashes, each segment's ;parameters
+// dropped (Tomcat, Spring: /admin;x=1 is /admin), and the trailing dots,
+// spaces and ::$DATA Windows drops from a name.
 func cleanPath(p string) string {
 	if p == "" {
 		return "/"
 	}
-	c := path.Clean("/" + strings.ReplaceAll(p, "\\", "/"))
-	return c
+	segs := strings.Split(strings.ReplaceAll(p, "\\", "/"), "/")
+	for i, sg := range segs {
+		if j := strings.IndexByte(sg, ';'); j >= 0 {
+			sg = sg[:j]
+		}
+		sg = strings.TrimSuffix(sg, "::$data")
+		segs[i] = strings.TrimRight(sg, ". ")
+		if sg == "." || sg == ".." { // dot segments are resolved, not trimmed
+			segs[i] = sg
+		}
+	}
+	return path.Clean("/" + strings.Join(segs, "/"))
 }
 
 // Hit is one signature a request carried.
 type Hit struct {
 	Signature string `json:"signature"`
 	Class     string `json:"class"`
-	Part      string `json:"part,omitempty"`  // where the payload was (the first match's): path, query, param, user_agent, referer
-	Param     string `json:"param,omitempty"` // the parameter, for param and any_param
-	Excerpt   string `json:"excerpt,omitempty"`
+	Part      string `json:"part,omitempty"`    // where the payload was (the first match's): path, query, param, user_agent, referer
+	Param     string `json:"param,omitempty"`   // the parameter, for param and any_param
+	Excerpt   string `json:"excerpt,omitempty"` // the normalized text around the match
+	// Raw is what the request sent in that part, as logged (its case, not
+	// decoded), at most 256 bytes: the evidence an alert shows.
+	Raw       string `json:"raw,omitempty"`
 	RouteOnly bool   `json:"route_only,omitempty"` // a signature with routes and no match: the route alone
 }
 
@@ -257,6 +296,7 @@ func (m *Matcher) Match(q Request) MatchResult {
 			}
 			if j == 0 {
 				hit.Part, hit.Param, hit.Excerpt = part, param, ex
+				hit.Raw = rawOf(q, part, param)
 			}
 		}
 		if all {
@@ -271,8 +311,8 @@ func (m *Matcher) routeHolds(i int, q Request) bool {
 		if len(r.Methods) > 0 && !containsStr(r.Methods, q.Method) {
 			continue
 		}
-		if r.Path != "" && !strings.HasSuffix(q.Path, strings.ToLower(r.Path)) {
-			continue
+		if rp := strings.ToLower(r.Path); r.Path != "" && !strings.HasSuffix(q.Path, rp) && !strings.Contains(q.Path+"/", rp+"/") {
+			continue // the route, at the end or followed by PATH_INFO (/x.php/anything)
 		}
 		if re := m.routes[i][j]; re != nil && !re.MatchString(q.Path) {
 			continue
@@ -331,6 +371,27 @@ func matchOne(mt sig.Match, q Request) (part, param, excerpt string, ok bool) {
 		}
 	}
 	return "", "", "", false
+}
+
+// rawOf is what the request sent in part, as logged.
+func rawOf(q Request, part, param string) string {
+	var s string
+	switch part {
+	case "path":
+		s = q.Raw.Path
+	case "query":
+		s = q.Raw.Query
+	case "user_agent":
+		s = q.Raw.UserAgent
+	case "referer":
+		s = q.Raw.Referer
+	case "param", "any_param":
+		s = strings.Join(q.RawParams[strings.ToLower(param)], "&")
+	}
+	if len(s) > 256 {
+		s = s[:256]
+	}
+	return s
 }
 
 // excerptAt is up to 64 bytes around the match, for a person to read.

@@ -151,3 +151,49 @@ func TestMatchTimeBound(t *testing.T) {
 		t.Errorf("%+v: want timed out", r)
 	}
 }
+
+// Security review on b38ec2f: what the server routes and reads, not the
+// text as written; and the evidence as the request sent it.
+func TestMatchAsServersRead(t *testing.T) {
+	m := NewMatcher(loadSigs(t, matchSigs))
+	hit := func(r AccessRecord) []Hit {
+		var hs []Hit
+		for _, res := range m.MatchRecord(r) {
+			hs = append(hs, res.Hits...)
+		}
+		return hs
+	}
+	for _, p := range []string{"/wp-admin/admin-ajax.php;jsessionid=1", "/wp-admin/admin-ajax.php.", "/wp-admin/admin-ajax.php::$DATA", "/wp-admin/admin-ajax.php/extra"} {
+		if hs := hit(AccessRecord{Method: "GET", Path: p, Query: "action=evil_action&id=1'"}); len(hs) != 1 || hs[0].Signature != "wp-ajax-x" {
+			t.Errorf("%s: %+v", p, hs)
+		}
+	}
+	if hs := hit(AccessRecord{Method: "GET", Path: "/wp-admin/admin-ajax.php", Query: "action=evil_action&id[]=1'"}); len(hs) != 1 {
+		t.Errorf("id[]: %+v (PHP reads it as id)", hs)
+	}
+	php := NewMatcher(loadSigs(t, `
+[[signature]]
+id = "user-id"
+title = "t"
+class = "sqli"
+source = "shentu"
+license = "Apache-2.0"
+[[signature.match]]
+part = "param"
+param = "user_id"
+contains = ["'"]
+`))
+	for _, q := range []string{"user.id=1'", "user id=1'", "user[id=1'", "user_id=1'"} {
+		if r := php.Match(Normalize(AccessRecord{Method: "GET", Path: "/", Query: q})); len(r.Hits) != 1 {
+			t.Errorf("%s: %+v (PHP reads it as user_id)", q, r.Hits)
+		}
+	}
+	hs := hit(AccessRecord{Method: "GET", Path: "/x", Query: "Q=1%20UNION%20SeLeCt%202"})
+	if len(hs) != 1 || hs[0].Raw != "1%20UNION%20SeLeCt%202" || !strings.Contains(hs[0].Excerpt, "union select") {
+		t.Errorf("evidence: %+v", hs)
+	}
+	long := Normalize(AccessRecord{Path: "/", Query: "k=" + strings.Repeat("%41", MaxNormalized)})
+	if !long.Cut {
+		t.Error("a parameter value past MaxNormalized is not said cut (its decoded form is shorter)")
+	}
+}
