@@ -19,23 +19,40 @@ type JournalTrust struct {
 	Reason   hostenv.Reason `json:"reason,omitempty"`
 }
 
-// EntryTrust judges an entry of unit: written by a process of that unit
-// (_SYSTEMD_UNIT, which journald sets from the sender's cgroup) running as
-// root, verified; as a web server's or PHP's account (PHP-FPM's workers,
-// the application itself), web_user_writable: still unverified, a
-// compromised application can write what it likes there; anything else
-// (another unit's message about this one, another user) unverified.
+// EntryTrust judges an entry of unit. _SYSTEMD_UNIT and _UID are set by
+// journald, but what they say depends on the transport:
+//   - journal (sd_journal_send) and syslog: each message carries its
+//     sender's credentials. A root process of the unit is verified; the
+//     unit's web account web_user_writable; anything else untrusted.
+//   - stdout (a unit's stdout and stderr): the credentials are those of the
+//     process that opened the stream when the unit started, and every child
+//     writing to the inherited descriptor (PHP-FPM's workers with
+//     catch_workers_output, gunicorn's) is logged as that process, uid 0
+//     included. These units run the web application, so its output is
+//     web_user_writable, whatever _UID says.
+//   - kernel, audit, driver, or another unit's message about this one (the
+//     cgroup is not the unit's): unverified.
 func EntryTrust(e hostenv.JournalEntry, unit string, web hostenv.WebAccounts) JournalTrust {
-	switch {
-	case e.Unit != unit || e.UID < 0:
+	if e.Unit != unit || e.UID < 0 {
 		return JournalTrust{Reason: hostenv.ReasonUnverified}
-	case e.UID == 0:
-		return JournalTrust{Verified: true}
 	}
-	if _, ok := web.UIDs[e.UID]; ok {
-		return JournalTrust{Reason: hostenv.ReasonWebUserWritable}
+	_, webUID := web.UIDs[e.UID]
+	switch e.Transport {
+	case "stdout":
+		if e.UID == 0 || webUID {
+			return JournalTrust{Reason: hostenv.ReasonWebUserWritable}
+		}
+		return JournalTrust{Reason: hostenv.ReasonUntrusted}
+	case "journal", "syslog":
+		switch {
+		case e.UID == 0:
+			return JournalTrust{Verified: true}
+		case webUID:
+			return JournalTrust{Reason: hostenv.ReasonWebUserWritable}
+		}
+		return JournalTrust{Reason: hostenv.ReasonUntrusted}
 	}
-	return JournalTrust{Reason: hostenv.ReasonUntrusted}
+	return JournalTrust{Reason: hostenv.ReasonUnverified}
 }
 
 // ReadJournalUnit reads unit's entries after cur (nil: those of the last

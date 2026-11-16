@@ -49,7 +49,7 @@ func (j *journalSrc) Run(_ context.Context, argv []string) (hostenv.CmdResult, e
 }
 
 func entry(cursor, unit, uid, msg string) string {
-	return `{"__CURSOR":"` + cursor + `","__REALTIME_TIMESTAMP":"1794700000000000","_SYSTEMD_UNIT":"` + unit + `","_UID":"` + uid + `","MESSAGE":"` + msg + `"}`
+	return `{"__CURSOR":"` + cursor + `","__REALTIME_TIMESTAMP":"1794700000000000","_SYSTEMD_UNIT":"` + unit + `","_UID":"` + uid + `","_TRANSPORT":"journal","MESSAGE":"` + msg + `"}`
 }
 
 func TestEntryTrust(t *testing.T) {
@@ -59,11 +59,16 @@ func TestEntryTrust(t *testing.T) {
 		e    hostenv.JournalEntry
 		want JournalTrust
 	}{
-		{hostenv.JournalEntry{Unit: u, UID: 0}, JournalTrust{Verified: true}},
-		{hostenv.JournalEntry{Unit: u, UID: 33}, JournalTrust{Reason: hostenv.ReasonWebUserWritable}},
-		{hostenv.JournalEntry{Unit: u, UID: 1000}, JournalTrust{Reason: hostenv.ReasonUntrusted}},
-		{hostenv.JournalEntry{Unit: "init.scope", UID: 0}, JournalTrust{Reason: hostenv.ReasonUnverified}}, // systemd's message about the unit
-		{hostenv.JournalEntry{Unit: u, UID: -1}, JournalTrust{Reason: hostenv.ReasonUnverified}},
+		{hostenv.JournalEntry{Unit: u, UID: 0, Transport: "journal"}, JournalTrust{Verified: true}},
+		{hostenv.JournalEntry{Unit: u, UID: 0, Transport: "syslog"}, JournalTrust{Verified: true}},
+		{hostenv.JournalEntry{Unit: u, UID: 33, Transport: "journal"}, JournalTrust{Reason: hostenv.ReasonWebUserWritable}},
+		{hostenv.JournalEntry{Unit: u, UID: 1000, Transport: "syslog"}, JournalTrust{Reason: hostenv.ReasonUntrusted}},
+		// A worker writing to the stderr the root master opened is logged as uid 0.
+		{hostenv.JournalEntry{Unit: u, UID: 0, Transport: "stdout"}, JournalTrust{Reason: hostenv.ReasonWebUserWritable}},
+		{hostenv.JournalEntry{Unit: u, UID: 33, Transport: "stdout"}, JournalTrust{Reason: hostenv.ReasonWebUserWritable}},
+		{hostenv.JournalEntry{Unit: u, UID: 0, Transport: "kernel"}, JournalTrust{Reason: hostenv.ReasonUnverified}},
+		{hostenv.JournalEntry{Unit: "init.scope", UID: 0, Transport: "journal"}, JournalTrust{Reason: hostenv.ReasonUnverified}}, // systemd's message about the unit
+		{hostenv.JournalEntry{Unit: u, UID: -1, Transport: "journal"}, JournalTrust{Reason: hostenv.ReasonUnverified}},
 	} {
 		if got := EntryTrust(c.e, u, web); got != c.want {
 			t.Errorf("%+v: %+v, want %+v", c.e, got, c.want)

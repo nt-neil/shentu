@@ -40,8 +40,12 @@ func init() {
 const journalFields = "--output-fields=MESSAGE,_SYSTEMD_UNIT,_UID,_PID,_COMM,_TRANSPORT"
 
 // journalUnitArgv is a unit's read: after a cursor or since a time, with
-// --output-fields (systemd 236+) or without (older: every field, the same
-// trusted ones among them).
+// --output-fields (systemd 236+) or without. Without it is still -o json,
+// and still verified: the fields that are believed (_SYSTEMD_UNIT, _UID,
+// _PID, _COMM, _TRANSPORT) are filled in by journald from the sender's
+// credentials whether they are asked for or not, and a sender cannot set a
+// field starting with "_". --output-fields only leaves out the others; it
+// is no part of the trust. (Plan 0743f0 first said short-iso, unverified.)
 func journalUnitArgv(bin string, after, fields bool) []string {
 	a := []string{bin, "-u", SlotUnit}
 	if after {
