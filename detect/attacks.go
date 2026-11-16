@@ -44,7 +44,10 @@ const (
 	// MaxStateFile bounds what is read of a state file.
 	MaxStateFile = 64 << 20
 	// PrefixOverflow is the Prefix of a group the pending groups evicted
-	// past MaxGroups are merged into, one per (entry, level, belief).
+	// past MaxGroups are merged into, one per (entry, level, belief). Its
+	// addresses and severity are many groups' merged (the severity the
+	// highest, the addresses the first ten): it is notified, never blocked
+	// on. P5 must not offer or apply a block for an overflow group.
 	PrefixOverflow = "overflow"
 )
 
@@ -303,7 +306,7 @@ func saveJSON(dir, name string, v any) error {
 // not an address.
 func NetworkOf(ip string) string {
 	addr, err := netip.ParseAddr(ip)
-	if err != nil {
+	if err != nil || addr.Zone() != "" {
 		return cutUTF8(ip, 64)
 	}
 	addr = addr.Unmap()
@@ -434,6 +437,13 @@ func (g *Group) merge(src *Group) {
 		if len(g.Reasons) < 4 && !slices.Contains(g.Reasons, r) {
 			g.Reasons = append(g.Reasons, r)
 		}
+	}
+	for _, t := range src.Recent { // an Unknown group's threshold carries over
+		i, _ := slices.BinarySearchFunc(g.Recent, t, func(x, y time.Time) int { return x.Compare(y) })
+		g.Recent = slices.Insert(g.Recent, i, t)
+	}
+	if len(g.Recent) > UnknownNotifyAt {
+		g.Recent = g.Recent[len(g.Recent)-UnknownNotifyAt:]
 	}
 	g.Unverified = g.Unverified || src.Unverified
 	g.Campaign = g.Campaign || src.Campaign

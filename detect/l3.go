@@ -394,11 +394,13 @@ func Upgrade(a *Attempt, method string, ev Evidence) bool {
 	}
 	var why []string
 	// Size: a 2xx response larger than the route's usual by more than the
-	// request itself could echo back (a 500 is an error page: not size
-	// evidence).
-	if a.Status >= 200 && a.Status < 300 && ev.Baselines != nil {
+	// request itself could echo back, only when the request's length is
+	// known (logged, or a GET or HEAD: no body); a 500 is an error page,
+	// not size evidence.
+	if a.Status >= 200 && a.Status < 300 && a.ReqKnown && ev.Baselines != nil {
 		if dev, known := ev.Baselines.Deviates(RouteKey(method, a.Route, a.Path), a.Bytes-int64(a.ReqLen)); known && dev {
 			why = append(why, "回應碼 "+strconv.Itoa(a.Status)+"，回應大小 "+strconv.FormatInt(a.Bytes, 10)+" bytes 明顯大於這條路由平常的大小")
+			a.SizeEvidence = true
 		}
 	}
 	if a.File != "" && a.Line > 0 && !a.Time.IsZero() {
@@ -410,6 +412,7 @@ func Upgrade(a *Attempt, method string, ev Evidence) bool {
 			for _, f := range e.Frames {
 				if f.Line == a.Line && sinkFile(f.File, a.File, ev.CodeRoots) {
 					why = append(why, "請求後 120 秒內，錯誤記錄指向這個 sink 的檔案與行號（"+a.File+":"+strconv.Itoa(a.Line)+"）")
+					a.ErrorEvidence = true
 					break errors
 				}
 			}
@@ -418,7 +421,7 @@ func Upgrade(a *Attempt, method string, ev Evidence) bool {
 	if len(why) == 0 {
 		return false
 	}
-	a.Level, a.Success, a.Evidence = LevelSuccess, strings.Join(why, "；"), len(why)
+	a.Level, a.Success = LevelSuccess, strings.Join(why, "；")
 	a.Severity = a.SeverityWith(false)
 	return true
 }

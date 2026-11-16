@@ -17,7 +17,7 @@ import (
 func TestValidXFF(t *testing.T) {
 	for x, want := range map[string]bool{
 		"192.0.2.1": true, "192.0.2.1, 2001:db8::1": true, "marker": false, "0.0.0.0/0": false,
-		"192.0.2.1\n來源可信度：已驗證": false, "192.0.2.1,": false,
+		"192.0.2.1\n來源可信度：已驗證": false, "192.0.2.1,": false, "fe80::1%eth0": false, "fe80::1%marker x": false,
 	} {
 		if got := validXFF(x); got != want {
 			t.Errorf("%q: %v, want %v", x, got, want)
@@ -106,8 +106,8 @@ func TestOverflowAndNotices(t *testing.T) {
 	if overflow == nil || overflow.Merged != 10 || overflow.Count != 10 || overflow.Since != 10 {
 		t.Fatalf("overflow group %+v", overflow)
 	}
-	if txt := AlertText(overflow, nil); !strings.Contains(txt, "溢出彙總：10 組") {
-		t.Errorf("overflow alert:\n%s", txt)
+	if txt := AlertText(overflow, nil); !strings.Contains(txt, "溢出彙總：10 組") || strings.Contains(txt, "只會針對單一 IP") || !strings.Contains(txt, "溢出彙總組不提供封鎖") {
+		t.Errorf("overflow alert (never a block, N-R2-2):\n%s", txt)
 	}
 	if txt := NoticeText(b); !strings.Contains(txt, "有 10 組尚未推播") {
 		t.Errorf("notice: %q", txt)
@@ -214,14 +214,15 @@ func TestAttacksLock(t *testing.T) {
 // one's start are 38 within 24 hours.
 func TestUnknownSlidingWindow(t *testing.T) {
 	a := newAttacks()
-	for i := 0; i < UnknownNotifyAt-1; i++ {
+	a.Add(att("192.0.2.1", "sink", LevelUnknown, t0), t0) // opens a fixed window: 1 + 18 in it, 19 after it
+	for i := 0; i < UnknownNotifyAt-2; i++ {
 		a.Add(att("192.0.2.1", "sink", LevelUnknown, t0.Add(23*time.Hour+time.Duration(i)*time.Minute)), t0)
 	}
 	for i := 0; i < UnknownNotifyAt-1; i++ {
 		a.Add(att("192.0.2.1", "sink", LevelUnknown, t0.Add(25*time.Hour+time.Duration(i)*time.Minute)), t0)
 	}
 	if due := a.Due(t0.Add(26 * time.Hour)); len(due) != 1 {
-		t.Errorf("38 within 24 hours not notified: %d due", len(due))
+		t.Errorf("37 within 24 hours not notified: %d due", len(due))
 	}
 	b := newAttacks()
 	for i := 0; i < UnknownNotifyAt; i++ {
@@ -258,20 +259,46 @@ func TestPHPLocationCertain(t *testing.T) {
 	}
 }
 
-// Decision 2 of review 1: one kind of L3 evidence, at most high; both,
-// critical.
+// Decision 2 of review 1, N-R2-1 of review 2: L3 is at most high unless
+// both kinds of evidence back it and the entry is KEV or it is a
+// campaign (the error log counts half).
 func TestL3BothEvidence(t *testing.T) {
 	ev := Evidence{Baselines: steadyBaseline("GET /marker/:id", 30),
 		Errors: []ErrorEvent{{Time: t0.Add(10 * time.Second), Frames: []Frame{{"/srv/www/app/x.php", 12}}, Verified: true}}}
 	a := l2("app/x.php", 12, t0)
 	a.Bytes, a.Severe = 9000, true
-	if !Upgrade(&a, "GET", ev) || a.Evidence != 2 || a.Severity != "critical" {
-		t.Errorf("both kinds: %+v", a)
+	if !Upgrade(&a, "GET", ev) || !a.SizeEvidence || !a.ErrorEvidence || a.Severity != "high" {
+		t.Errorf("both kinds, critical entry, not KEV: %+v", a)
+	}
+	if a.KEV = true; a.SeverityWith(false) != "critical" || (Attempt{Level: LevelSuccess, Verified: true, SizeEvidence: true, ErrorEvidence: true}).SeverityWith(true) != "critical" {
+		t.Errorf("both kinds and KEV, or a campaign: %s", a.SeverityWith(false))
 	}
 	a = l2("app/x.php", 12, t0)
-	a.Severe = true
-	if !Upgrade(&a, "GET", ev) || a.Evidence != 1 || a.Severity != "high" {
-		t.Errorf("the error log alone, severe entry: %+v", a)
+	a.Severe, a.KEV = true, true
+	if !Upgrade(&a, "GET", ev) || a.SizeEvidence || a.Severity != "high" {
+		t.Errorf("the error log alone, KEV: %+v", a)
+	}
+	// N-R2-1: one request making both: a POST whose length is not logged
+	// (its body may be echoed back) is no size evidence.
+	evPost := Evidence{Baselines: steadyBaseline("POST /marker/:id", 30), Errors: ev.Errors}
+	a = l2("app/x.php", 12, t0)
+	a.Bytes, a.KEV, a.ReqKnown = 9000, true, false
+	if !Upgrade(&a, "POST", evPost) || a.SizeEvidence || a.Severity != "high" {
+		t.Errorf("POST, length not logged: %+v", a)
+	}
+	a = l2("app/x.php", 12, t0)
+	a.Bytes, a.KEV, a.ReqLen = 9000, true, 100 // logged: known
+	if !Upgrade(&a, "POST", evPost) || !a.SizeEvidence || a.Severity != "critical" {
+		t.Errorf("POST, length logged, both kinds, KEV: %+v", a)
+	}
+	ss := loadSigs(t, markerSigs)
+	j := NewJudge(Build([]CodeSink{{Rule: "js-sqli", CWE: "CWE-89", Severity: "warning", Path: "app/a.js", Line: 7,
+		Routes: []engine.RouteRef{{Model: "m", Framework: "express", Method: "all", Pattern: "/marker/ping", File: "app/a.js", Line: 7}}}}, nil), ss)
+	m := NewMatcher(ss)
+	post := attemptsOf(j, m, AccessRecord{Client: "192.0.2.1", Method: "POST", Path: "/marker/ping", Query: "q=marker-one", Status: 200, Bytes: 9000}, Origin{Verified: true})
+	logged := attemptsOf(j, m, AccessRecord{Client: "192.0.2.1", Method: "POST", Path: "/marker/ping", Query: "q=marker-one", Status: 200, Bytes: 9000, ReqLength: 8800}, Origin{Verified: true})
+	if post[0].ReqKnown || !logged[0].ReqKnown || logged[0].ReqLen != 8800 {
+		t.Errorf("request length: %+v %+v", post[0], logged[0])
 	}
 	// S-5: error log evidence needs the access log verified.
 	a = l2("app/x.php", 12, t0)
@@ -378,6 +405,30 @@ func TestReportMasksSamples(t *testing.T) {
 	g := a.Add(x, t0)
 	if txt := ReportText(g, nil); strings.Contains(txt, "198.51.100.77") || !strings.Contains(txt, "198.51.x.x") {
 		t.Errorf("report:\n%s", txt)
+	}
+}
+
+// Review 2 of #90 (S): a zone after % is no address for the log's client
+// either; short sensitive words only as whole words; a cut sample does
+// not end in half an address.
+func TestReview2Small(t *testing.T) {
+	var r AccessRecord
+	if r.set("client", "fe80::1%eth0") || !r.set("client", "2001:db8::1") {
+		t.Errorf("client with a zone taken, or one without refused: %q", r.Client)
+	}
+	for _, n := range []string{"keyword", "shipping", "success", "author", "side", "page", "q"} {
+		if s := Sample(AccessRecord{Method: "GET", Path: "/m", Query: n + "=marker-v"}); !strings.Contains(s, "marker-v") {
+			t.Errorf("%s masked: %s", n, s)
+		}
+	}
+	for _, n := range []string{"user_key", "pin", "card-no", "x[pw]", "auth.code", "PHPSESSID", "access_token"} {
+		if s := Sample(AccessRecord{Method: "GET", Path: "/m", Query: n + "=marker-v"}); strings.Contains(s, "marker-v") {
+			t.Errorf("%s shown: %s", n, s)
+		}
+	}
+	long := Sample(AccessRecord{Method: "GET", Path: "/" + strings.Repeat("m", MaxSample-12) + "/198.51.100.77/x"})
+	if strings.Contains(long, "198.51") || len(long) > MaxSample {
+		t.Errorf("a cut sample ends in part of an address: %q", long[len(long)-20:])
 	}
 }
 

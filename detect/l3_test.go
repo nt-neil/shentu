@@ -110,7 +110,7 @@ func TestErrorEvents(t *testing.T) {
 }
 
 func l2(file string, line int, at time.Time) Attempt {
-	return Attempt{Level: LevelPayload, Verified: true, LogVerified: true, Status: 200, Bytes: 1000, Time: at,
+	return Attempt{Level: LevelPayload, Verified: true, LogVerified: true, ReqKnown: true, Status: 200, Bytes: 1000, Time: at,
 		Route: &engine.RouteRef{Pattern: "/marker/:id"}, Path: "/marker/5", File: file, Line: line, Severity: "high"}
 }
 
@@ -123,7 +123,7 @@ func TestUpgrade(t *testing.T) {
 	}
 	a = l2("app/x.php", 12, t0)
 	a.Bytes = 9000
-	if !Upgrade(&a, "GET", ev) || a.Level != LevelSuccess || a.Severity != "high" || a.Success == "" || a.Evidence != 1 { // one kind of evidence: at most high
+	if !Upgrade(&a, "GET", ev) || a.Level != LevelSuccess || a.Severity != "high" || a.Success == "" || !a.SizeEvidence || a.ErrorEvidence { // one kind of evidence: at most high
 		t.Errorf("an odd size: %+v", a)
 	}
 	for name, f := range map[string]func(*Attempt){

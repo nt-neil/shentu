@@ -3,6 +3,7 @@ package detect
 import (
 	"fmt"
 	"net/netip"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -55,17 +56,22 @@ type Attempt struct {
 	// ForwardedFor: X-Forwarded-For as logged by a format written out in
 	// place, a note only (NoteXFF), never the source.
 	ForwardedFor string `json:"forwarded_for,omitempty"`
-	// ReqLen: the request's path and query, in bytes: what a response may
-	// echo back, taken off its size for L3.
-	ReqLen int `json:"req_len,omitempty"`
+	// ReqLen: the request's length, what a response may echo back, taken
+	// off its size for L3; ReqKnown: it is known: logged ($request_length,
+	// %I), or a GET or HEAD (no body: its path and query). Otherwise the
+	// size is no evidence.
+	ReqLen   int  `json:"req_len,omitempty"`
+	ReqKnown bool `json:"req_known,omitempty"`
 	// LogVerified: the access log itself is trusted (Origin.Verified),
 	// whatever the IP: its status and size may back L3.
 	LogVerified bool `json:"log_verified,omitempty"`
 	// Success: why the attempt is L3, in Chinese (l3.go's Upgrade);
-	// Evidence: how many kinds back it (the response's size, the error
-	// log): with one, at most high.
-	Success  string `json:"success,omitempty"`
-	Evidence int    `json:"evidence,omitempty"`
+	// SizeEvidence, ErrorEvidence: which kinds back it. The error log
+	// counts half (a request can write a line of its own into it): L3 is
+	// critical only with both and a KEV entry or a campaign (SeverityWith).
+	Success       string `json:"success,omitempty"`
+	SizeEvidence  bool   `json:"size_evidence,omitempty"`
+	ErrorEvidence bool   `json:"error_evidence,omitempty"`
 	// Severe: the entry is KEV or rated critical (CVSS 9 or more): one step
 	// up, kept for the campaign step.
 	Severe     bool     `json:"severe,omitempty"`
@@ -99,7 +105,12 @@ func (j *Judge) Attempts(rec AccessRecord, o Origin, m MatchResult, g Judgment) 
 	base.IP = cutUTF8(Printable(base.IP), 64)
 	base.LogVerified = o.Verified
 	base.ForwardedFor = forwardedFor(rec, o)
-	base.ReqLen = len(rec.Path) + len(rec.Query)
+	switch m := strings.ToUpper(rec.Method); {
+	case rec.ReqLength > 0:
+		base.ReqLen, base.ReqKnown = int(rec.ReqLength), true
+	case m == "GET" || m == "HEAD":
+		base.ReqLen, base.ReqKnown = len(rec.Path)+len(rec.Query), true
+	}
 	var out []Attempt
 	for _, c := range g.Candidates {
 		a := base
@@ -163,7 +174,7 @@ func forwardedFor(rec AccessRecord, o Origin) string {
 // validXFF: x is a comma-separated list of IP addresses, nothing else.
 func validXFF(x string) bool {
 	for _, p := range strings.Split(x, ",") {
-		if _, err := netip.ParseAddr(strings.TrimSpace(p)); err != nil {
+		if a, err := netip.ParseAddr(strings.TrimSpace(p)); err != nil || a.Zone() != "" { // a zone is any text after %
 			return false
 		}
 	}
@@ -213,11 +224,13 @@ func cutUTF8(s string, n int) string {
 }
 
 // SeverityWith is a's severity, a campaign or not: SeverityOf, and an L3
-// backed by one kind of evidence alone at most high (both kinds: it may be
-// critical).
+// at most high unless both kinds of evidence back it and its entry is KEV
+// or it is a campaign (the error log counts half: a request can write a
+// line of its own into it).
 func (a Attempt) SeverityWith(campaign bool) string {
 	s := SeverityOf(a.Level, a.Severe, campaign, a.Verified)
-	if a.Level == LevelSuccess && a.Evidence < 2 && severityIndex(s) > severityIndex("high") {
+	full := a.SizeEvidence && a.ErrorEvidence && (a.KEV || campaign)
+	if a.Level == LevelSuccess && !full && severityIndex(s) > severityIndex("high") {
 		s = "high"
 	}
 	return s
@@ -242,10 +255,15 @@ func SeverityOf(level string, severe, campaign, verified bool) string {
 	return severities[i]
 }
 
-// sensitive are parameter names whose value a sample never shows.
-var sensitive = []string{"token", "password", "passwd", "pwd", "pass", "pw", "passphrase", "secret", "email", "session", "sessid", "sid",
-	"cookie", "auth", "apikey", "api_key", "key", "jwt", "code", "sig", "signature", "otp", "pin", "card", "cc", "cvv", "ssn",
-	"private_key", "credential"}
+// sensitive are words that, inside a parameter's name, mark its value
+// as one a sample never shows (access_token, user_email, PHPSESSID);
+// sensitiveWords are short ones that do only as a whole word of the name,
+// split at _ - [ ] . and spaces (pw, key, pin: not keyword, shipping).
+var (
+	sensitive = []string{"token", "password", "passwd", "passphrase", "secret", "email", "session", "sessid", "cookie",
+		"authorization", "apikey", "api_key", "credential", "signature", "private_key"}
+	sensitiveWords = []string{"pwd", "pass", "pw", "auth", "key", "sid", "code", "sig", "otp", "pin", "card", "cc", "cvv", "ssn", "jwt"}
+)
 
 // sensitiveName: a parameter name, decoded as a server reads it (%XX
 // twice, + as a space, PHP's a[b] and a.b), holds a sensitive word; one
@@ -258,6 +276,11 @@ func sensitiveName(k string) bool {
 	for _, name := range paramNames(n) {
 		for _, s := range sensitive {
 			if strings.Contains(name, s) {
+				return true
+			}
+		}
+		for _, w := range strings.FieldsFunc(name, func(r rune) bool { return strings.ContainsRune("_-[]. ", r) }) {
+			if slices.Contains(sensitiveWords, w) {
 				return true
 			}
 		}
@@ -308,5 +331,10 @@ func Sample(rec AccessRecord) string {
 		q = "?" + strings.Join(kvs, "&")
 	}
 	s := Printable(hostenv.MaskSecrets(strings.TrimSpace(rec.Method + " " + p + q)))
-	return cutUTF8(s, MaxSample)
+	if len(s) <= MaxSample {
+		return s
+	}
+	// Cut, and not inside what may be an address: half of one would pass
+	// the report's masking (maskIPs) unmasked.
+	return strings.TrimRight(cutUTF8(s, MaxSample), "0123456789abcdefABCDEF:.")
 }

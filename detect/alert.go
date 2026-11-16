@@ -180,9 +180,12 @@ func alertText(g *Group, s *Surface, mask bool) string {
 		fmt.Fprintf(&b, "無法判定：請求被截斷，可能藏有 %s；相關 sink：%s\n", classes, Printable(sink))
 	}
 	b.WriteString("說明：" + RoutesMeaningZh + "。" + NoRoutesMeaningZh + "。\n")
-	if g.Unverified {
+	switch {
+	case g.Prefix == PrefixOverflow: // its addresses and severity are many groups' merged: never a block (P5 must not block on it)
+		b.WriteString("封鎖：溢出彙總組不提供封鎖，請上伺服器查看各來源的完整紀錄\n")
+	case g.Unverified:
 		b.WriteString("封鎖：" + NoTelegramUnblock + "\n")
-	} else if g.Level != LevelUnknown && g.Level != LevelRoute {
+	case g.Level != LevelUnknown && g.Level != LevelRoute:
 		b.WriteString("封鎖：只會針對單一 IP，不會封整個網段\n")
 	}
 	return b.String()
