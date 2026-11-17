@@ -17,9 +17,12 @@ sanitizers = ["intval", "(int)", "->prepare(", "pg_query_params", "count(", "siz
 fix = "Use a prepared statement with bound parameters (PDO::prepare + execute, mysqli bind_param); never build SQL with string concatenation or sprintf. Escaping (mysqli_real_escape_string) only protects a value inside quotes."
 refs = ["CVE-2026-56738"]
 
+# Input that is only an ORDER BY identifier is php-sqli-orderby-identifier's:
+# no sink counts it (unless_after in every block).
 [[args]]
 sinks = ["->exec(", "->multi_query(", "->real_query("]
 arg = 1
+unless_after = ["ORDER BY"]
 
 # WordPress's *_Query classes: query() takes an arguments array, not SQL.
 # $wpdb->query( is php-sqli-wpdb-unprepared's.
@@ -27,10 +30,16 @@ arg = 1
 sinks = ["->query("]
 arg = 1
 not_receiver = ["WP_Query", "WP_Comment_Query", "WP_User_Query", "WP_Term_Query", "WP_Site_Query", "WP_Network_Query", "$wpdb"]
+unless_after = ["ORDER BY"]
 
 [[args]]
 sinks = ["mysqli_query", "mysqli_multi_query(", "mysqli_real_query("]
 arg = 2
+unless_after = ["ORDER BY"]
+
+[[args]]
+sinks = ["pg_query"]
+unless_after = ["ORDER BY"]
 
 [[samples]]
 kind = "vulnerable"

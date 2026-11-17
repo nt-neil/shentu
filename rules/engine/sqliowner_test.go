@@ -7,7 +7,8 @@ import (
 
 // Each SQL injection line is reported by the one rule that owns it, and by
 // one at least: an ORDER BY identifier is php-sqli-orderby-identifier's
-// (unless_after), $wpdb's queries php-sqli-wpdb-unprepared's (not_receiver
+// (unless_after in php-sqli-wpdb-unprepared, php-sqli-prepare-query-text,
+// php-sqli-string-concat and php-sqli-laravel-raw), $wpdb's queries php-sqli-wpdb-unprepared's (not_receiver
 // $wpdb in php-sqli-string-concat), SQL text into sequelize.query()
 // js-sqli-raw-interpolation's, a Sequelize.literal() js-sqli-sequelize-literal's,
 // text() python-sqli-sqlalchemy-text's, SQL text into execute()
@@ -34,6 +35,28 @@ func TestSQLiOwner(t *testing.T) {
 			[]string{"php-sqli-wpdb-unprepared"}},
 		{"another db's query", "php", "<?php\n$db->query(\"DELETE FROM t WHERE id = \" . $_GET['id']);\n",
 			[]string{"php-sqli-string-concat"}},
+		{"db ORDER BY concatenated", "php", "<?php\n$db->query(\"SELECT * FROM t ORDER BY \" . $_GET['o']);\n",
+			[]string{"php-sqli-orderby-identifier"}},
+		{"db ORDER BY interpolated", "php", "<?php\n$col = $_GET['o'];\n$db->query(\"SELECT * FROM t ORDER BY $col\");\n",
+			[]string{"php-sqli-orderby-identifier"}},
+		{"mysqli ORDER BY", "php", "<?php\nmysqli_query($c, \"SELECT * FROM t ORDER BY \" . $_GET['o']);\n",
+			[]string{"php-sqli-orderby-identifier"}},
+		{"pg_query ORDER BY", "php", "<?php\npg_query($c, \"SELECT * FROM t ORDER BY \" . $_GET['o']);\n",
+			[]string{"php-sqli-orderby-identifier"}},
+		{"CodeIgniter ORDER BY", "php", "<?php\nclass C extends CI_Controller { function i() { $this->db->query(\"SELECT * FROM t ORDER BY \" . $this->input->get('o')); } }\n",
+			[]string{"php-sqli-orderby-identifier"}},
+		{"db input before ORDER BY", "php", "<?php\n$db->query(\"SELECT * FROM t WHERE id = \" . $_GET['id'] . \" ORDER BY \" . $_GET['o']);\n",
+			[]string{"php-sqli-orderby-identifier", "php-sqli-string-concat"}},
+		{"laravel ORDER BY", "php", "<?php\nclass C { function i(Request $request) { return DB::select(\"SELECT * FROM t ORDER BY \" . $request->input('o')); } }\n",
+			[]string{"php-sqli-orderby-identifier"}},
+		{"laravel ORDER BY in DB::raw", "php", "<?php\nclass C { function i(Request $request) { return DB::select(DB::raw(\"SELECT * FROM t ORDER BY \" . $request->query('o'))); } }\n",
+			[]string{"php-sqli-orderby-identifier"}},
+		{"laravel ORDER BY from Request::input", "php", "<?php\nclass C { function i() { return DB::select(\"SELECT * FROM t ORDER BY \" . Request::input('o')); } }\n",
+			[]string{"php-sqli-orderby-identifier"}},
+		{"laravel input before ORDER BY", "php", "<?php\nclass C { function i(Request $request) { return DB::select(\"SELECT * FROM t WHERE r = '\" . $request->input('r') . \"' ORDER BY \" . $request->input('o')); } }\n",
+			[]string{"php-sqli-laravel-raw", "php-sqli-orderby-identifier"}},
+		{"laravel WHERE only", "php", "<?php\nclass C { function i(Request $request) { return DB::select(\"SELECT * FROM t WHERE r = '\" . $request->all()['r'] . \"'\"); } }\n",
+			[]string{"php-sqli-laravel-raw"}},
 		{"prepare ORDER BY in the format", "php", "<?php\n$col = $_GET['sort'];\n$rows = $wpdb->get_results($wpdb->prepare(\"SELECT * FROM t ORDER BY $col LIMIT %d\", 10));\n",
 			[]string{"php-sqli-orderby-identifier"}},
 		{"prepare WHERE in the format", "php", "<?php\n$id = $_GET['id'];\n$rows = $wpdb->get_results($wpdb->prepare(\"SELECT * FROM t WHERE id = $id LIMIT %d\", 10));\n",
