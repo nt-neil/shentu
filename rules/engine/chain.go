@@ -28,10 +28,7 @@ func (c *crule) chainSinks() {
 		if cond, ok := c.args[s]; ok {
 			c.args[m] = cond
 		}
-		if more, ok := c.argsMore[s]; ok {
-			if c.argsMore == nil {
-				c.argsMore = map[*pat][]*argCond{}
-			}
+		if more, ok := c.argsMore[s]; ok { // ok only where argsMore is not nil
 			c.argsMore[m] = more
 		}
 	}
