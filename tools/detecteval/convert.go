@@ -129,8 +129,8 @@ func convert(file string, b []byte) (attack, error) {
 			for _, base := range []string{"{{BaseURL}}", "{{RootURL}}"} {
 				p = strings.TrimPrefix(p, base)
 			}
-			if p == "" {
-				p = "/"
+			if p == "" || strings.HasPrefix(p, "?") { // {{BaseURL}}?x=: the root's query
+				p = "/" + p
 			}
 			if tg, ok := fill(p, vars); ok {
 				add(method, tg)

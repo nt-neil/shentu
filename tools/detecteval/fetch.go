@@ -28,11 +28,18 @@ const (
 	templatesHash = "259cb2836719cc15521784577b2bdc334d1183a141d7ad7f364dc8e7469edb8c"
 )
 
+// wantHash is what templates checks against: templatesHash, which only a
+// test replaces (with its own placeholder archive's).
+var wantHash = templatesHash
+
 // Limits on what is downloaded and read out of it.
 const (
 	maxDownload  = 512 << 20 // the tarball
 	maxExtracted = 256 << 20 // the http/ templates, together
 	maxTemplate  = 16 << 20  // one template (the largest, a WordPress plugin list, is ~5 MB)
+	maxUnpacked  = 1 << 30   // the whole archive unpacked, every entry (58 MB at the commit)
+	maxEntries   = 100000    // entries in the archive (15526 at the commit)
+	maxTemplates = 50000     // http/**/*.yaml (11835 at the commit)
 )
 
 // Why the evaluation did not run: said apart, never a pass.
@@ -46,7 +53,10 @@ var (
 // long (2s, 4s, 8s).
 var retryBase = 2 * time.Second
 
-// download fetches url into dir, trying 3 more times on failure.
+// download fetches url into dir, trying 3 more times on failure. The
+// compressed tarball is written there (a temporary directory the caller
+// removes; a job killed before that leaves it to the runner's cleanup):
+// only what is read out of it stays in memory.
 func download(ctx context.Context, url, dir string) (string, error) {
 	f := filepath.Join(dir, "templates.tar.gz")
 	var last error
@@ -93,10 +103,10 @@ func fetchOnce(ctx context.Context, url, f string) error {
 }
 
 // readTemplates reads the http/**/*.yaml files out of a GitHub tarball
-// (one top directory), keyed by their path below it (http/...). Nothing is
-// written to disk. A name with "..", an absolute one, or a link or other
+// (one top directory), keyed by their path below it (http/...). Nothing
+// read out of it is written to disk. A name with "..", an absolute one, or a link or other
 // non-regular entry under http/ refuses the archive, as does going past
-// the size limits.
+// the limits (sizes, entries, templates).
 func readTemplates(tarball string) (map[string][]byte, error) {
 	fh, err := os.Open(tarball)
 	if err != nil {
@@ -111,16 +121,19 @@ func readTar(r io.Reader) (map[string][]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", errArchive, err)
 	}
-	tr := tar.NewReader(gz)
+	tr := tar.NewReader(&capped{r: gz, left: maxUnpacked})
 	out := map[string][]byte{}
 	var total int64
-	for {
+	for entries := 1; ; entries++ {
 		h, err := tr.Next()
 		if err == io.EOF {
 			return out, nil
 		}
 		if err != nil {
 			return nil, fmt.Errorf("%w: %v", errArchive, err)
+		}
+		if entries > maxEntries {
+			return nil, fmt.Errorf("%w: more than %d entries", errArchive, maxEntries)
 		}
 		name := h.Name
 		if strings.HasPrefix(name, "/") || strings.Contains(name, "\\") || slicesContains(strings.Split(name, "/"), "..") {
@@ -140,6 +153,9 @@ func readTar(r io.Reader) (map[string][]byte, error) {
 		if path.Clean(rel) != rel || path.Ext(rel) != ".yaml" {
 			continue
 		}
+		if len(out) >= maxTemplates {
+			return nil, fmt.Errorf("%w: more than %d http templates", errArchive, maxTemplates)
+		}
 		if h.Size > maxTemplate {
 			return nil, fmt.Errorf("%w: %s larger than %d bytes", errArchive, rel, maxTemplate)
 		}
@@ -155,6 +171,25 @@ func readTar(r io.Reader) (map[string][]byte, error) {
 		}
 		out[rel] = b
 	}
+}
+
+// capped reads r until left bytes are read, then fails: an archive that
+// unpacks to more is refused, whatever its entries.
+type capped struct {
+	r    io.Reader
+	left int64
+}
+
+func (c *capped) Read(p []byte) (int, error) {
+	if c.left <= 0 {
+		return 0, fmt.Errorf("unpacks to more than %d bytes", maxUnpacked)
+	}
+	if int64(len(p)) > c.left {
+		p = p[:c.left]
+	}
+	n, err := c.r.Read(p)
+	c.left -= int64(n)
+	return n, err
 }
 
 func slicesContains(xs []string, s string) bool {

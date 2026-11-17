@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -245,7 +246,21 @@ var fillers = map[string][]string{
 	"color":         {"navy blue", "red"},
 	"url":           {"/images/hero.png", "/uploads/team photo.jpg"},
 	"w":             {"640", "1080", "1920"},
+	// extras: what links and caches add to a request (campaign tags,
+	// click ids, a language switch, a cache buster).
+	"utm_source":   {"google", "newsletter", "facebook", "linkedin", "twitter"},
+	"utm_medium":   {"email", "cpc", "social", "referral"},
+	"utm_campaign": {"spring_sale", "black-friday-2026", "launch", "weekly digest"},
+	"ref":          {"homepage", "footer", "producthunt"},
+	"lang":         {"en", "zh-TW", "ja", "de", "fr"},
+	"fbclid":       {"IwAR2kQx7vYp", "IwZXh0bgNhZW0", "IwAR0aB3cD"},
 }
+
+// extras: parameters added, one at a time, to a request already made, so
+// that every request (method and target) differs: a repeated one says
+// nothing new of the signatures, which read the request line. "_" is a
+// cache buster, a millisecond time.
+var extras = []string{"utm_source", "utm_medium", "utm_campaign", "ref", "lang", "fbclid", "_"}
 
 var referers = []string{"-", "https://example.com/", "https://example.com/blog/", "https://www.example.com/search?q=shoes"}
 
@@ -263,7 +278,8 @@ type normalRequest struct{ ID, App, Line string }
 // perRoute: the requests made of each route.
 const perRoute = 8
 
-// normalRequests makes the ordinary requests, the same ones every run.
+// normalRequests makes the ordinary requests, the same ones every run,
+// each one's method and target different from all the others'.
 func normalRequests() ([]normalRequest, error) {
 	rnd := rand.New(rand.NewPCG(7, 17))
 	pick := func(k string) (string, error) {
@@ -274,6 +290,7 @@ func normalRequests() ([]normalRequest, error) {
 		return xs[rnd.IntN(len(xs))], nil
 	}
 	var out []normalRequest
+	seen := map[string]bool{}
 	for _, a := range apps {
 		for ri, r := range a.Routes {
 			for n := 0; n < perRoute; n++ {
@@ -289,10 +306,34 @@ func normalRequests() ([]normalRequest, error) {
 					}
 					v.Set(k, x)
 				}
-				tg := p
-				if len(v) > 0 {
-					tg += "?" + v.Encode()
+				target := func() string {
+					if len(v) == 0 {
+						return p
+					}
+					return p + "?" + v.Encode()
 				}
+				tg := target()
+				for seen[r.Method+" "+tg] {
+					var free []string
+					for _, k := range extras {
+						if !v.Has(k) {
+							free = append(free, k)
+						}
+					}
+					if len(free) == 0 {
+						return nil, fmt.Errorf("%s %s: no request left that differs", r.Method, r.Path)
+					}
+					k := free[rnd.IntN(len(free))]
+					x := strconv.Itoa(1763380800000 + rnd.IntN(86400000))
+					if k != "_" {
+						if x, err = pick(k); err != nil {
+							return nil, err
+						}
+					}
+					v.Set(k, x)
+					tg = target()
+				}
+				seen[r.Method+" "+tg] = true
 				line := fmt.Sprintf(`198.51.100.%d - - [17/Nov/2026:12:00:00 +0000] "%s %s HTTP/1.1" 200 2048 "%s" "%s"`,
 					10+rnd.IntN(200), r.Method, tg, referers[rnd.IntN(len(referers))], userAgents[rnd.IntN(len(userAgents))])
 				out = append(out, normalRequest{fmt.Sprintf("%s#%d#%d", a.Name, ri, n), a.Name, line})

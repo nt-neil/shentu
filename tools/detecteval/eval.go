@@ -62,6 +62,7 @@ type evaluator struct {
 	parser *detect.Parser
 	host   *detect.Judge
 	hostCV map[string]bool
+	cases  int // hostCases read
 }
 
 func newEvaluator(repo string) (*evaluator, int, error) {
@@ -77,7 +78,7 @@ func newEvaluator(repo string) (*evaluator, int, error) {
 	if err != nil {
 		return nil, 0, err
 	}
-	return &evaluator{sigs: ss, m: detect.NewMatcher(ss), parser: p, host: detect.NewJudge(detect.Build(nil, pkgs), ss), hostCV: cves}, len(pkgs), nil
+	return &evaluator{sigs: ss, m: detect.NewMatcher(ss), parser: p, host: detect.NewJudge(detect.Build(nil, pkgs), ss), hostCV: cves, cases: len(pkgs)}, len(pkgs), nil
 }
 
 // hostPackages reads hostCases.
@@ -168,6 +169,7 @@ func (ev *evaluator) grade(line string) graded {
 func (ev *evaluator) run(files map[string][]byte, normal []normalRequest) *Stats {
 	st := &Stats{NucleiCommit: templatesCommit, TemplatesHash: manifestHash(files), Templates: len(files),
 		Classes: map[string]*ClassStat{}, AttackLevels: map[string]int{}, NormalLevels: map[string]int{}}
+	st.Host.Cases = ev.cases
 	var lines []string // what the graded hash is of
 	names := make([]string, 0, len(files))
 	for n := range files {
@@ -241,7 +243,7 @@ func (ev *evaluator) run(files map[string][]byte, normal []normalRequest) *Stats
 			}
 			st.AttackLevels[level]++
 		}
-		lines = append(lines, fmt.Sprintf("%s\t%s\t%s\t%v\t%s\t%s\t%v", n, a.ID, a.Class, caught, sortedKeys(hit), level, host))
+		lines = append(lines, fmt.Sprintf("%s\t%s\t%s\t%v\t%s\t%s\t%v\t%v\t%v", n, a.ID, a.Class, caught, sortedKeys(hit), level, host, forCVE, vu))
 	}
 	st.NormalRequests = len(normal)
 	for _, r := range normal {
@@ -267,6 +269,7 @@ func (ev *evaluator) run(files map[string][]byte, normal []normalRequest) *Stats
 		}
 		lines = append(lines, fmt.Sprintf("%s\t%s\t%s\t%v", r.ID, strings.Join(fp, ","), g.level, g.hostAlert))
 	}
+	lines = append(lines, fmt.Sprintf("host\t%+v", st.Host))
 	h := sha256.Sum256([]byte(strings.Join(lines, "\n")))
 	st.GradedHash = hex.EncodeToString(h[:])
 	return st

@@ -4,7 +4,7 @@
 
 v0.4.0 ships 27 attack signatures, and they are not extended to catch rewritten forms of an attack.
 The cases below are known misses. A miss only costs an alert: Shentu misses the request or rates it lower. None of them can make Shentu block the wrong address.
-v0.4.0 never blocks on its own: `block_ip` always needs the operator's confirmation. Its attacks are checked too: an address with attack attempts is blocked only for a verified L2 or L3 group of its own, not an overflow summary of many sources. Attempts that only reached a route (L1), could not be judged (Unknown) or come from unverified logs do not back a block; the address's SSH logins that journald itself confirms still can. An internal address (private, loopback, CGNAT and the like) is refused unless overridden on the server.
+v0.4.0 never blocks on its own: `block_ip` always needs the operator's confirmation. Its attacks are checked too: an address with attack attempts is blocked only for a verified L2 or L3 group of its own, not an overflow summary of many sources. Attempts that only reached a route (L1), could not be judged (Unknown) or come from unverified logs do not back a block; the address's SSH logins that journald itself confirms still can. An internal address (private, loopback, CGNAT and the like) is refused. `override_unverified` lifts all of these checks but one, and only from the server (`shentu chat`), never from Telegram: attempts that are unverified, L1 or Unknown no longer hold a block back, SSH logins are not checked, and an internal address may be blocked, so the block rests on the operator's own reading of the logs. An address listed only in an overflow summary is still refused.
 
 ## What is never seen
 
@@ -13,7 +13,14 @@ v0.4.0 never blocks on its own: `block_ip` always needs the operator's confirmat
 - **No request bodies.** Access logs do not record POST bodies, JSON or uploads, so a payload there is never seen. A route reached that way is L1 at most.
 - **Two decoding rounds.** URL encoding is decoded at most twice (with `%u` and overlong UTF-8). Base64, gzip and other encodings are not decoded.
 - **Unknown requests are counted, and L1 is not pushed.** A request cut where it may hide a payload (Unknown) is counted, and pushed only when one sink gets 20 of them within 24 hours. L1 attempts are counted and reported, never pushed as alerts.
-- **Unverified logs never back a block.** Attempts from a log Shentu cannot verify (not a regular file, not owned by root, writable by group or others, or not the file it judged) are marked unverified, and the alert says why. `block_ip` refuses them as a basis for blocking. Only the operator on the server can override that, with `shentu chat` and `override_unverified`; it is refused from Telegram.
+- **Unverified logs never back a block.** Attempts from a log Shentu cannot verify are marked unverified, and the alert names the reason. `block_ip` refuses them as a basis for blocking; only the operator on the server can override that (see above). The reasons:
+  - `web_user_writable`: the web server's or PHP's account owns the log or can write a directory above it. This is the default for nginx on Debian, Ubuntu and Rocky, whose logrotate creates the logs so. A server that runs application code in its own processes (mod_php, application modules in nginx), and a web account that can ptrace the server's workers count the same.
+  - `untrusted_owner`: the log, a link to it or a directory above it is owned by an account other than root, or the log is writable by group or others, or a directory above it by others.
+  - `unverified_source`: Shentu cannot confirm that only root can change the log: a directory writable by a group whose members are not known, an ACL, account databases or links that could not be read. Also a file that is not the one judged when it is read (replaced in between), and a rotated file that fails the check.
+  - `not_regular_file`: the log is not a regular file.
+  - `symlink_not_followed`: the log could only be looked at by following a link, which Shentu does not do.
+  - `client_from_header`: the server takes the client address from a request header (nginx's realip, Apache's mod_remoteip), so the logged address is what a proxy or the client wrote.
+  - `custom_format`: the log format is not a standard one (nginx combined or main, Apache combined or common). Its lines are matched, but a field the client writes shifting the others is not ruled out.
 
 ## Requests that may be missed
 
@@ -65,7 +72,7 @@ The cost is misses. A call with a space before its parenthesis is caught only wh
 
 ## Measured detection
 
-The numbers come from the evaluation tool (`tools/detecteval`, PR #94) with the signatures and matching of integ adff9e6 (#87, #90 and #91 merged), measured at detect-eval 5d647d4. They include parameter names, path segments, anchored routes and the three narrowed signatures.
+The numbers come from the evaluation tool (`tools/detecteval`, PR #94) with the signatures and matching of integ adff9e6 (#87, #90 and #91 merged); they are the ones in `tools/detecteval/baseline.json` next to this document. They include parameter names, path segments, anchored routes and the three narrowed signatures.
 
 What they mean:
 
@@ -75,12 +82,12 @@ What they mean:
 
 The results:
 
-- **All templates: 40.5% detected (1545 of 3819).**
+- **All templates: 40.5% detected (1548 of 3822).**
   - Source: nuclei-templates v10.5.2 (commit 5442582a), the 11835 templates under `http/`.
-  - Templates the tool could not convert (1147), unclassified ones (6618) and `rce-unspecified` ones (251) are not counted.
-- **Ordinary traffic: no false alerts in 1216 requests.**
-  - The requests are 8 for each of 152 routes of 8 applications (WordPress, Django, Flask, Laravel, Express, Immich, Nest, Next).
-  - With this sample size, the false-alert rate can only be said to be below about 0.25% (95% upper bound).
+  - Templates the tool could not convert (1143), unclassified ones (6618) and `rce-unspecified` ones (252) are not counted.
+- **Ordinary traffic: no false alerts in 1216 requests, each different from all the others in method and target.**
+  - The requests are 8 for each of 152 routes of 8 applications (WordPress, Django, Flask, Laravel, Express, Immich, Nest, Next). Where a route's fillers run out, ordinary extras (campaign tags, a click id, a language, a cache buster) make the request differ.
+  - With 1216 different requests, the false-alert rate can only be said to be below about 0.25% (95% upper bound).
 - **Templates for a vulnerability the host really has: 3 of 10 alerted.** Each row is what `-explain-host` reports.
 
 | CVE | Alert | Why |
