@@ -798,13 +798,24 @@ func (a *analysis) pathKey(t []Token) (key, container string, ok bool) {
 		case t[j].op("["):
 			c := closeOf(t, j)
 			container = key
-			key += sepCh + "[" + idxKey(inside(t, j, c)) + "]"
+			key += sepCh + "[" + a.idxOf(key, inside(t, j, c)) + "]"
 			j = c + 1
 		default:
 			return "", "", false
 		}
 	}
 	return key, container, true
+}
+
+// idxOf is idxKey for an index under key: in JavaScript a header name under
+// headers is lower case, as Node stores it (req.headers['Host'] is
+// req.headers['host']).
+func (a *analysis) idxOf(key string, t []Token) string {
+	ik := idxKey(t)
+	if a.js && strings.HasSuffix(key, sepCh+".headers") {
+		ik = strings.ToLower(ik)
+	}
+	return ik
 }
 
 func idxKey(t []Token) string {
@@ -1402,7 +1413,7 @@ func (a *analysis) postfix(st state, t []Token, start, baseEnd int, v val, whole
 		case tk.op("["):
 			c := closeOf(t, j)
 			if key != "" {
-				ik := idxKey(inside(t, j, c))
+				ik := a.idxOf(key, inside(t, j, c))
 				key += sepCh + "[" + ik + "]"
 				litIdx = ik != "*"
 			}

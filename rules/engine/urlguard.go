@@ -153,12 +153,12 @@ func (a *analysis) hostCheck(atom []Token) bool {
 	if n > 3 && atom[n-1].op(")") {
 		open := openOf(atom, n-1)
 		if open >= 2 && memberOp(false, atom[open-2]) && (atom[open-1].word("has") || atom[open-1].word("includes")) {
-			return a.collection(atom[:open-2], 0)
+			return a.collection(atom[:open-2])
 		}
 	}
 	if a.py {
 		if i := indexTop(atom, 0, isWord("in")); i > 0 {
-			return a.collection(atom[i+1:], 0)
+			return a.collection(atom[i+1:])
 		}
 	}
 	for _, op := range []string{"===", "==", "!==", "!="} {
@@ -178,7 +178,13 @@ func (a *analysis) hostCheck(atom []Token) bool {
 // out, new Set(...), set(...), the result of .split(...), or a name the file
 // assigns only such values. A string, an environment value, or a name the file
 // does not assign (imported, a parameter) may be a string.
-func (a *analysis) collection(t []Token, depth int) bool {
+func (a *analysis) collection(t []Token) bool {
+	return a.collectionIn(t, 0, map[string]bool{})
+}
+
+// collectionIn is collection a few names deep, each name looked at once and
+// through at most 8 of its definitions.
+func (a *analysis) collectionIn(t []Token, depth int, seen map[string]bool) bool {
 	t = stripParens(t)
 	n := len(t)
 	if n == 0 || depth > 4 {
@@ -207,16 +213,23 @@ func (a *analysis) collection(t []Token, depth int) bool {
 	if n != 1 || t[0].Kind != Ident {
 		return false
 	}
+	if seen[t[0].Text] {
+		return false
+	}
+	seen[t[0].Text] = true
 	if a.rdefs == nil {
 		a.rdefs = recvDefs(a.ftoks)
 	}
 	ds := a.rdefs[t[0].Text]
+	if len(ds) == 0 || len(ds) > 8 {
+		return false
+	}
 	for _, d := range ds {
-		if !a.collection(d, depth+1) {
+		if !a.collectionIn(d, depth+1, seen) {
 			return false
 		}
 	}
-	return len(ds) > 0
+	return true
 }
 
 // urlChecked adds, to the values an allowlist check of a host validates, the
