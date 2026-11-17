@@ -45,7 +45,8 @@ type Request struct {
 	// routes.
 	RawPath, Path string
 	// CasePath is Path in the case it was sent ("" when the path was
-	// longer than MaxNormalized), for a case-sensitive route.
+	// longer than MaxNormalized: Path is used then), for a
+	// case-sensitive route.
 	CasePath string
 	Query    string              // the whole query, decoded
 	Params   map[string][]string // every value of every parameter, in order (a repeated one keeps all)
@@ -370,7 +371,7 @@ type Matcher struct {
 // end, or followed by PATH_INFO (/x.php/anything).
 func pathHolds(r sig.Route, q Request) bool {
 	p, rp := q.Path, strings.ToLower(r.Path)
-	if r.CaseSensitive {
+	if r.CaseSensitive && q.CasePath != "" { // a path too long for it: compared without case, not skipped
 		p, rp = q.CasePath, r.Path
 	}
 	var prefix string
@@ -381,7 +382,14 @@ func pathHolds(r sig.Route, q Request) bool {
 	} else {
 		return false
 	}
-	return !r.Anchored || !strings.Contains(prefix, ".")
+	if r.Anchored {
+		for _, sg := range strings.Split(prefix, "/") {
+			if strings.Contains(sg, ".") && !strings.EqualFold(sg, "index.php") { // a front controller, as without URL rewriting
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func NewMatcher(ss []sig.Signature) *Matcher {

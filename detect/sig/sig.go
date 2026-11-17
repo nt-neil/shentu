@@ -69,7 +69,7 @@ type Route struct {
 	// CaseSensitive: Path is compared with the path in the case it was
 	// sent, for an application whose router is case sensitive. Anchored:
 	// what comes before Path may only be directories (no segment with a
-	// dot), so a route of a common name (/logout) does not hold under
+	// dot) or index.php, so a route of a common name (/logout) does not hold under
 	// another application's file (/Shibboleth.sso/Logout).
 	CaseSensitive bool `toml:"case_sensitive"`
 	Anchored      bool `toml:"anchored"`

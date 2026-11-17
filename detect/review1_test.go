@@ -538,6 +538,9 @@ func TestRouteCaseAndAnchor(t *testing.T) {
 		{"/app/LOGOUT", 0},            // case sensitive
 		{"/logout", 1},
 		{"/forum/logout", 1},
+		{"/index.php/logout", 1},                                  // without URL rewriting
+		{"/forum/index.php/logout", 1},                            // the same, under a directory
+		{"/" + strings.Repeat("a/", MaxNormalized) + "logout", 1}, // too long for CasePath: compared without case
 	} {
 		g := NewJudge(s, ss).Judge(m.Match(Normalize(AccessRecord{Method: "GET", Path: c.path, Query: ret})))
 		if len(g.Candidates) != c.want {
