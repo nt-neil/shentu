@@ -19,6 +19,12 @@ sinks = [".query(", "knex.raw(", ".raw(", ".whereRaw(", ".orderByRaw("]
 arg = 1   # the SQL text; values in the bindings array are safe
 whole = true   # query({ sql: "... ?", args: [input] }) binds the input; only SQL text built from input is the attack
 
+# query({ sql: "SELECT ... " + input }): the SQL text under the sql key
+[[args]]
+sinks = [".query("]
+arg = 1
+key = "sql"
+
 # execute() is also a VM's, a tool's or a job's: it counts on a receiver the
 # file says nothing about (a parameter, an import) or one tied to a database
 # client or connection, not on one the file builds from something else
