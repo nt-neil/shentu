@@ -133,16 +133,16 @@ How the engine reads them:
     callback) returns sanitized values, with the keys of `$x`;
   - `extract(shortcode_atts(array('id' => 0, ...), $atts))` and `extract(array(...))`
     define one variable per literal key;
-  - in the SSRF rules, a check of a parsed URL's host validates the URL and the
-    value it was parsed from, as the request can then only go to an allowed host:
-    `u.hostname`, `u.host` or `u.origin` after `u = new URL(x)` (or `URL.parse`,
-    `url.parse`), `p.hostname` or `p.netloc` after `p = urlparse(x)` (or
-    `urlsplit`), `$p['host']` after `$p = parse_url($x)`, and a variable assigned
-    the host itself (`host = new URL(x).hostname`, `$h = parse_url($x,
-    PHP_URL_HOST)`). Only such an assignment is followed, not a parse written
-    inside the check, and a new value of either variable ends it. A URL whose host
-    is allowed may still carry a script or a quote in its path, so no other rule
-    reads it;
+  - in the SSRF rules, a check of a parsed URL's host against an allowlist
+    (`.has(`, `.includes(`, `in`) or a host written out (`=== 'a.example'`)
+    validates that URL object: `u.hostname`, `u.host` or `u.origin` after
+    `u = new URL(x)` (or `URL.parse`), `p.hostname` or `p.netloc` after
+    `p = urlparse(x)` (or `urlsplit`), so `fetch(u)` and `requests.get(p.geturl())`
+    are clean. Not the string `x` itself, which another parser (the client's,
+    `url.parse`, PHP's `parse_url`) may read as another host; not a truth test, a
+    pattern or a prefix check of the host; not a URL that is something else on one
+    of the paths to the check, or given a new value. A URL whose host is allowed
+    may still carry a script or a quote in its path, so no other rule reads it;
   - an assignment written in a condition (`if ($x = $_GET['y'])`) is followed;
   - a variable holding a value written in the code (`$o = array('test_form' =>
     false)`, `const opts = { shell: true }`, `$f = LIBXML_NOENT`) is read in its place

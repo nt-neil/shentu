@@ -104,11 +104,15 @@ func mergeInto(x, y state) state {
 	}
 	var adds []add
 	for k, e := range y {
-		if _, ok := x[k]; !ok {
+		if _, ok := x[k]; !ok && !strings.HasPrefix(k, urlKey) {
 			adds = append(adds, add{k, both(look(x, k, e.src), e)})
 		}
 	}
 	for k, e := range x {
+		if _, ok := y[k]; !ok && strings.HasPrefix(k, urlKey) {
+			delete(x, k) // a URL object on one path only is not one after the join (urlguard.go)
+			continue
+		}
 		x[k] = both(e, look(y, k, e.src))
 	}
 	for _, d := range adds {
@@ -1795,7 +1799,7 @@ func (a *analysis) cleans(st state, cond []Token, truth bool) ([]keyRef, []strin
 // (urlguard.go).
 func (a *analysis) guard(st state, atom []Token) (bool, []keyRef) {
 	pos, keys := a.guardAtom(st, atom)
-	return pos, a.urlChecked(st, keys)
+	return pos, a.urlChecked(st, atom, keys)
 }
 
 func (a *analysis) guardAtom(st state, atom []Token) (pos bool, keys []keyRef) {

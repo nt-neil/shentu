@@ -86,7 +86,7 @@ async def fetch(request):
 
 [[samples]]
 kind = "safe"
-note = "the parsed URL's host is checked against an allowlist before the request"
+note = "the parsed URL's host is checked against an allowlist and the request is made from that parsed URL"
 code = '''
 ALLOWED_HOSTS = {"api.partner-a.example", "api.partner-b.example"}
 
@@ -96,6 +96,6 @@ def fetch():
     parts = urlparse(url)
     if parts.hostname not in ALLOWED_HOSTS:
         abort(403)
-    return requests.get(url, timeout=5).text
+    return requests.get(parts.geturl(), timeout=5).text
 '''
 
