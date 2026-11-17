@@ -39,15 +39,14 @@ func levelBot(t *testing.T, model *hostileModel, levels [4]int) (*bot, *fakeTele
 	return b, tg
 }
 
+// blockDecision returns the audit entry of block_ip once the answer that
+// made it, or declined it, is over: each caller has let it reach its end.
 func blockDecision(t *testing.T, b *bot) *logEntry {
-	for i := 0; i < 150; i++ {
-		for _, e := range auditLines(t, b.cfg.StateDir) {
-			if e.Tool == "block_ip" {
-				e := e
-				return &e
-			}
+	answered(t, b)
+	for _, e := range auditLines(t, b.cfg.StateDir) {
+		if e.Tool == "block_ip" {
+			return &e
 		}
-		time.Sleep(20 * time.Millisecond)
 	}
 	return nil
 }

@@ -79,8 +79,32 @@ func testBot(t *testing.T, model *hostileModel, allowControl bool) (*bot, *fakeT
 		llmDial = (&net.Dialer{}).DialContext
 		t.Cleanup(func() { llmDial = localDialer })
 	}
-	return &bot{cfg: cfg, env: &tools.Env{}, token: "1:T", api: srv.URL, hc: srv.Client(), log: newAuditLog(cfg.StateDir),
-		waiting: map[string]chan bool{}, ignoreAt: map[int64]time.Time{}, canAct: allowControl}, tg
+	b := &bot{cfg: cfg, env: &tools.Env{}, token: "1:T", api: srv.URL, hc: srv.Client(), log: newAuditLog(cfg.StateDir),
+		waiting: map[string]chan bool{}, ignoreAt: map[int64]time.Time{}, canAct: allowControl}
+	// Registered after t.TempDir, so it runs before the directory is removed:
+	// an answer still running writes into it (its last state, the history).
+	t.Cleanup(func() { answered(t, b) })
+	return b, tg
+}
+
+// answered waits for the bot's answer in progress, if any, to end. A tool's
+// audit entry is written when its run is over, while the answer goes on (the
+// model's next turn, the reply, the history saved in the state directory).
+func answered(t *testing.T, b *bot) {
+	deadline := time.Now().Add(3 * time.Minute) // past the 2-minute cap of one tool run
+	for {
+		b.mu.Lock()
+		busy := b.busy
+		b.mu.Unlock()
+		if !busy {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Error("the bot's answer never ended")
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 func msg(user, chat int64, chatType, text string) tgUpdate {
