@@ -614,6 +614,7 @@ func (a *analysis) assign(st state, t []Token) (val, bool) {
 			} else if _, had := st[canonKey+key]; had {
 				delete(st, canonKey+key)
 			}
+			a.setURLOf(st, key, rhs, t[k].Text == "=")
 			if a.js {
 				a.setRelative(st, key, rhs, t[k].Text == "=")
 				if rel, base, ok := urlRelative(rhs); ok && t[k].Text == "=" {
@@ -1789,8 +1790,15 @@ func (a *analysis) cleans(st state, cond []Token, truth bool) ([]keyRef, []strin
 }
 
 // guard reads one condition atom. When it is a check, keys are the values it
-// validates and pos tells whether the atom is true when the check passes.
-func (a *analysis) guard(st state, atom []Token) (pos bool, keys []keyRef) {
+// validates and pos tells whether the atom is true when the check passes. An
+// allowed host validates, for the SSRF rules, the URL it is the host of
+// (urlguard.go).
+func (a *analysis) guard(st state, atom []Token) (bool, []keyRef) {
+	pos, keys := a.guardAtom(st, atom)
+	return pos, a.urlChecked(st, keys)
+}
+
+func (a *analysis) guardAtom(st state, atom []Token) (pos bool, keys []keyRef) {
 	pos = true
 	atom = stripParens(atom)
 	for len(atom) > 0 && (atom[0].op("!") || a.py && atom[0].word("not")) {

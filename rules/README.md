@@ -133,6 +133,16 @@ How the engine reads them:
     callback) returns sanitized values, with the keys of `$x`;
   - `extract(shortcode_atts(array('id' => 0, ...), $atts))` and `extract(array(...))`
     define one variable per literal key;
+  - in the SSRF rules, a check of a parsed URL's host validates the URL and the
+    value it was parsed from, as the request can then only go to an allowed host:
+    `u.hostname`, `u.host` or `u.origin` after `u = new URL(x)` (or `URL.parse`,
+    `url.parse`), `p.hostname` or `p.netloc` after `p = urlparse(x)` (or
+    `urlsplit`), `$p['host']` after `$p = parse_url($x)`, and a variable assigned
+    the host itself (`host = new URL(x).hostname`, `$h = parse_url($x,
+    PHP_URL_HOST)`). Only such an assignment is followed, not a parse written
+    inside the check, and a new value of either variable ends it. A URL whose host
+    is allowed may still carry a script or a quote in its path, so no other rule
+    reads it;
   - an assignment written in a condition (`if ($x = $_GET['y'])`) is followed;
   - a variable holding a value written in the code (`$o = array('test_form' =>
     false)`, `const opts = { shell: true }`, `$f = LIBXML_NOENT`) is read in its place
@@ -550,7 +560,8 @@ What it does not do: follow values across files (input read in a controller and
 used in another class of another file is missed), judge the output context of HTML
 built in a variable and echoed later (the echo's own context is used), see a CSRF
 nonce check whose result is kept in a variable, treat a check on a value derived from another (`in_array($ext, ...)`
-after `$ext = pathinfo($name, ...)`) as a check on the original, while a check on part
+after `$ext = pathinfo($name, ...)`) as a check on the original (but for a URL's
+host in the SSRF rules, see above), while a check on part
 of a value written in place counts for all of it (`in_array(pathinfo($n, PATHINFO_EXTENSION), ...)`
 cleans `$n` for every rule, path traversal included), know framework semantics beyond
 the rules (a lookup in a constant dict is not an allowlist), look into options

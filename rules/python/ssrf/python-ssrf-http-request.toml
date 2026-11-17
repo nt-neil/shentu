@@ -83,3 +83,19 @@ async def fetch(request):
     body = urlopen(data["url"]).read()
     return web.json_response({"size": len(body)})
 '''
+
+[[samples]]
+kind = "safe"
+note = "the parsed URL's host is checked against an allowlist before the request"
+code = '''
+ALLOWED_HOSTS = {"api.partner-a.example", "api.partner-b.example"}
+
+@app.route("/fetch")
+def fetch():
+    url = request.args["url"]
+    parts = urlparse(url)
+    if parts.hostname not in ALLOWED_HOSTS:
+        abort(403)
+    return requests.get(url, timeout=5).text
+'''
+
