@@ -3,6 +3,8 @@ package detect
 import (
 	"fmt"
 	"net/netip"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -42,9 +44,12 @@ type Origin struct {
 // LevelUnknown, cut where it may hide one).
 type Attempt struct {
 	Entry string `json:"entry"` // the surface entry's ID; for LevelUnknown a sink the cut may hide a payload for, "" when none is known
-	Level string `json:"level"` // L1, L2, L3, unknown
-	CVE   string `json:"cve,omitempty"`
-	KEV   bool   `json:"kev,omitempty"`
+	// Rules: for a code sink, every rule that flags it (one file, one
+	// line): rules on one sink are one attempt (sinkKey).
+	Rules []string `json:"rules,omitempty"`
+	Level string   `json:"level"` // L1, L2, L3, unknown
+	CVE   string   `json:"cve,omitempty"`
+	KEV   bool     `json:"kev,omitempty"`
 	// VersionUnknown: the installed version could not be placed in the
 	// signature's range; the entry is there as OSV judged it affected.
 	VersionUnknown bool      `json:"version_unknown,omitempty"`
@@ -127,6 +132,9 @@ func (j *Judge) Attempts(rec AccessRecord, o Origin, m MatchResult, g Judgment) 
 		if i, ok := j.byID[c.Entry]; ok {
 			e := j.surface.Entries[i]
 			a.CVE, a.KEV, a.File, a.Line = e.CVE, e.KEV, e.Path, e.Line
+			if e.Kind == "code" {
+				a.Rules = []string{e.Rule}
+			}
 			if e.KEVCVE != "" {
 				a.CVE = e.KEVCVE
 			}
@@ -146,10 +154,69 @@ func (j *Judge) Attempts(rec AccessRecord, o Origin, m MatchResult, g Judgment) 
 		for _, s := range g.HiddenSinks {
 			x := u
 			x.Entry = s
+			if i, ok := j.byID[s]; ok && j.surface.Entries[i].Kind == "code" {
+				e := j.surface.Entries[i]
+				x.File, x.Line, x.Rules = e.Path, e.Line, []string{e.Rule}
+			}
 			out = append(out, x)
 		}
 	}
+	return mergeSinks(out)
+}
+
+// mergeSinks makes the attempts on one code sink (one file, one line)
+// one: rules that flag the same line are one vulnerability, one group and
+// one alert, never more campaign entries (VM acceptance of adff9e6, N2).
+// The merged one has the highest level, that candidate's route, every
+// rule and signature, and the entry first in order (stable whatever the
+// candidates' order).
+func mergeSinks(as []Attempt) []Attempt {
+	var out []Attempt
+	at := map[string]int{}
+	for _, a := range as {
+		k := sinkKey(a.Entry, a.File, a.Line)
+		if a.Level == LevelUnknown {
+			k = "unknown|" + k
+		}
+		i, ok := at[k]
+		if !ok || k == a.Entry || a.Entry == "" {
+			at[k] = len(out)
+			out = append(out, a)
+			continue
+		}
+		m := &out[i]
+		if a.Level > m.Level {
+			m.Level, m.Route, m.VersionUnknown = a.Level, a.Route, a.VersionUnknown
+		}
+		if a.Entry < m.Entry {
+			m.Entry = a.Entry
+		}
+		m.Severe = m.Severe || a.Severe
+		for _, r := range a.Rules {
+			if !slices.Contains(m.Rules, r) {
+				m.Rules = append(m.Rules, r)
+			}
+		}
+		slices.Sort(m.Rules)
+		for _, s := range a.Signatures {
+			if !slices.Contains(m.Signatures, s) {
+				m.Signatures = append(m.Signatures, s)
+			}
+		}
+		if m.Level != LevelUnknown {
+			m.Severity = m.SeverityWith(false)
+		}
+	}
 	return out
+}
+
+// sinkKey is what attempts and groups on one vulnerability share: a code
+// sink's file and line (whichever rules flag it), else the entry.
+func sinkKey(entry, file string, line int) string {
+	if strings.HasPrefix(entry, "code:") && file != "" {
+		return "code@" + file + ":" + strconv.Itoa(line)
+	}
+	return entry
 }
 
 // clientOf is the request's client address: remote_addr (the record's

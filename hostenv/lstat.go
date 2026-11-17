@@ -1,8 +1,11 @@
 package hostenv
 
 import (
+	"encoding/binary"
 	"errors"
+	"fmt"
 	"os"
+	"strings"
 )
 
 // Lstater is implemented by Sources that can stat a symbolic link itself,
@@ -46,3 +49,91 @@ func HasACL(src Source, path string) (bool, error) {
 }
 
 func (l *Live) HasACL(path string) (bool, error) { return hasACL(l.path(path)) }
+
+// ACLEntry is one entry of a POSIX access ACL (acl_ea_entry): its tag,
+// its permissions (r 4, w 2, x 1) and, for a named user or group, its id.
+type ACLEntry struct {
+	Tag, Perm uint16
+	ID        uint32
+}
+
+// ACL entry tags (acl_ea_entry's e_tag).
+const (
+	aclUserObj  = 0x01
+	aclUser     = 0x02
+	aclGroupObj = 0x04
+	aclGroup    = 0x08
+	aclMask     = 0x10
+	aclOther    = 0x20
+)
+
+// ACLEntryReader is implemented by Sources that can read a path's POSIX
+// access ACL entries (none: no ACL).
+type ACLEntryReader interface {
+	ACLEntries(path string) ([]ACLEntry, error)
+}
+
+// ACLEntries asks src; ErrNoACL when it cannot tell.
+func ACLEntries(src Source, path string) ([]ACLEntry, error) {
+	if a, ok := src.(ACLEntryReader); ok {
+		return a.ACLEntries(path)
+	}
+	return nil, ErrNoACL
+}
+
+func (l *Live) ACLEntries(path string) ([]ACLEntry, error) { return aclEntries(l.path(path)) }
+
+// parseACL reads a system.posix_acl_access value: a version 2 header,
+// then 8-byte entries, little-endian.
+func parseACL(b []byte) ([]ACLEntry, error) {
+	if len(b) < 4 || (len(b)-4)%8 != 0 || binary.LittleEndian.Uint32(b) != 2 {
+		return nil, fmt.Errorf("hostenv: not a POSIX ACL (%d bytes)", len(b))
+	}
+	var out []ACLEntry
+	for i := 4; i < len(b); i += 8 {
+		out = append(out, ACLEntry{binary.LittleEndian.Uint16(b[i:]), binary.LittleEndian.Uint16(b[i+2:]), binary.LittleEndian.Uint32(b[i+4:])})
+	}
+	return out, nil
+}
+
+// aclWriters names the users and groups an ACL's named entries let write
+// (the mask applied), "" when none or when the ACL cannot be read (the
+// caller's mode check stands then).
+func aclWriters(src Source, p string, web WebAccounts) string {
+	es, err := ACLEntries(src, p)
+	if err != nil {
+		return ""
+	}
+	mask := uint16(7)
+	for _, e := range es {
+		if e.Tag == aclMask {
+			mask = e.Perm
+		}
+	}
+	var names []string
+	for _, e := range es {
+		if e.Perm&mask&2 == 0 {
+			continue
+		}
+		id := int(e.ID)
+		switch e.Tag {
+		case aclUser:
+			if n, ok := web.UIDs[id]; ok {
+				names = append(names, fmt.Sprintf("%s (uid %d)", n, id))
+			} else {
+				names = append(names, fmt.Sprintf("uid %d", id))
+			}
+		case aclGroup:
+			n, ok := web.GIDs[id]
+			if !ok {
+				n, ok = web.LogGIDs[id]
+			}
+			if ok {
+				names = append(names, fmt.Sprintf("group %s (gid %d)", n, id))
+			} else {
+				names = append(names, fmt.Sprintf("gid %d", id))
+			}
+		}
+	}
+	return strings.Join(names, ", ")
+}
