@@ -62,9 +62,11 @@ Chinese for the zh-TW pages; keep the two in step.
   never seen, and such a request is L1 at most.
 - The signatures expect the plain form of an attack. Rewritten forms (other encodings, padded
   paths, comments or other whitespace inside SQL, commands split by quotes) may be missed.
-- nginx's default access log on Debian, Ubuntu and Rocky Linux, and Apache's on Rocky Linux, is
-  `web_user_writable` (the web server's account can write it or a directory above it): its
-  attempts are alerted on, but they cannot back a block.
+- nginx's default access log on Debian, Ubuntu and Rocky Linux is `web_user_writable` (the web
+  server's account can write it or a directory above it): its attempts are alerted on, but they
+  cannot back a block. Rocky Linux's default httpd configuration loads modules outside the list
+  Shentu knows to be safe, so its Apache logs are always judged `web_user_writable` too; weighing
+  those modules is planned for v0.4.1.
 - There are no signatures for particular WordPress plugin vulnerabilities yet.
 - Scans are still slower than v0.3.0: WordPress about 13%, TypeScript projects about 20%.
 - Still open from v0.3.1: CVE-2021-23664's fixed release is reported; `filesize()` on an

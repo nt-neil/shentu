@@ -43,8 +43,9 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 - access log 不記錄請求本文（POST 表單、JSON、上傳檔）：payload 放在那裡就看不到，這類請求最多是 L1。
 - 特徵比對的是攻擊的原始寫法。改寫過的寫法（其他編碼、加料的路徑、SQL 裡的註解或其他空白字元、
   用引號拆開的指令）可能漏掉。
-- Debian、Ubuntu、Rocky Linux 上 nginx 預設的 access log，以及 Rocky Linux 上 Apache 的，都是
-  `web_user_writable`（網站伺服器的帳號寫得到紀錄本身或上層目錄）：裡面的嘗試會告警，但不能當封鎖依據。
+- Debian、Ubuntu、Rocky Linux 上 nginx 預設的 access log 是 `web_user_writable`（網站伺服器的帳號寫得到
+  紀錄本身或上層目錄）：裡面的嘗試會告警，但不能當封鎖依據。Rocky Linux 的預設 httpd 設定會載入白名單以外的模組，
+  所以 Apache 的紀錄一律判成 `web_user_writable`；這些模組的評估排在 v0.4.1。
 - 目前還沒有針對個別 WordPress 外掛漏洞的特徵。
 - 掃描仍比 v0.3.0 慢：WordPress 約 13%，TypeScript 專案約 20%。
 - v0.3.1 仍未解決的：CVE-2021-23664 的已修版本仍會被報；WordPress 上傳暫存路徑的 `filesize()`；
