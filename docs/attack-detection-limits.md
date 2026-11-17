@@ -45,6 +45,7 @@ Class signatures are tried on parameter names and on each path segment too, so o
 - A hit in a parameter name counts like one in its value: on a route of the same class it is L2.
 - A hit in a path segment is L2 only where a route's placeholder took that segment. Otherwise the route stays at L1 and the hit is unanchored.
 - For a route written as a regular expression, its capture groups are the placeholders. A route with no group leaves a path segment hit at L1. A fixed word inside a group (such as `(user|list)`) is taken as a placeholder value, so a hit in that word is L2.
+- A route whose ordinary requests often carry a class signature's text in their path, and get larger responses, learns too small a usual response size: requests with a hit are left out of it. An L2 on that route then gets size evidence more easily. An L3 on a single piece of evidence is at most high.
 
 ## Narrowed to spare ordinary text
 
