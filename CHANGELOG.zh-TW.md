@@ -3,6 +3,53 @@
 CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本與日期必須一致，
 每個版本都要有內容（`go test ./cmd/sitegen` 會檢查）。
 
+## v0.4.0 (unreleased)
+
+- 攻擊偵測（Linux）：每一輪巡檢都會讀網站伺服器的紀錄，挑出打向這台主機真實存在的漏洞的請求。
+  它只告警，不會自己封鎖。看不到什麼、可能漏掉什麼，列在
+  [docs/attack-detection-limits.zh-TW.md](docs/attack-detection-limits.zh-TW.md)。
+- 漏洞面：每日巡檢把這台主機已知的漏洞存到 `state_dir/surface.json`，其他輪次讀這份：程式碼稽核的結果，
+  同一個檔案看得出來時，附上註冊該 handler 的路由（#84）；應用程式相依套件與已安裝 OS 套件的漏洞公告，
+  版本照 dpkg 與 rpm 的規則比較；已安裝的 WordPress 外掛與版本（#91）。漏洞面不存在、讀不到或超過 26
+  小時，會在該輪的通知和報告裡寫明，不會默默沿用。
+- 紀錄來源：nginx 與 Apache 設定裡寫的 access log（含自訂格式）、PHP-FPM 的紀錄，以及應用程式 unit 的
+  journald；每輪從上次讀到的位置接著讀，紀錄輪替也接得上（#85）。只有確定只有 root 寫得進去的紀錄才算已查證；
+  其他紀錄裡的嘗試標成未查證，告警會寫出原因。
+- 27 條攻擊特徵，由 Shentu 自己撰寫，或從審過的 nuclei-templates（MIT，見 `detect/sig/NOTICE`）起草；
+  請求最多解碼兩輪後比對（#87）。只打到有漏洞 handler 的路由是 L1；同時帶有該漏洞類別的 payload 是 L2；
+  L3 要有生效的跡象：回應大小和這條路由平常差很多，或錯誤紀錄在有漏洞的檔案與行號出現例外（#90）。
+  請求在可能藏 payload 的地方被截斷時是 Unknown。主機沒有的漏洞算雜訊。
+- 告警是偵測器自己寫的純文字，經由通知管道送出，不經過模型。嘗試依網段（/24 或 /64）、目標與等級分組，
+  同一組一天只送一次。L1 只在每日報告裡計數，不推送；Unknown 要同一個目標 24 小時內累積 20 筆才推送。
+  樣本會遮罩，每日檔案 `state_dir/reports/attacks-<date>.txt`（保留 30 天）的位址也會遮罩（#90、#91）。
+  `shentu detect [--since] [--json]` 讀一輪並判定，但不送出也不存檔；`attack_attempts` 工具和 bot 的
+  `/attacks` 列出最近一天的群組。
+- `block_ip` 與攻擊偵測：偵測器看過的 IP，要有它自己的、已查證的 L2 或 L3 群組，經營運者確認後才會封鎖。
+  來自未查證紀錄、只有 L1 或 Unknown 的嘗試，以及內部位址，一律拒絕，除非營運者在伺服器上（`shentu chat`）
+  用 `override_unverified` 覆寫；Telegram 永遠不行。只列在多個來源合併的溢出彙總組裡的 IP，有沒有覆寫都拒絕（#91）。
+- 引擎：跳過不會改變結果的 summary 計算，分析時也少做複製。和 v0.3.1 相比，WordPress 掃描快了約 34%，
+  TypeScript 專案快了約 22%，結果完全相同（#92）。benchmark 不變：已公開漏洞 97 個抓到 16 個、已修版本誤報
+  1 個；holdout 30 個抓到 3 個；TypeScript 18 個抓到 1 個、已修版本誤報 1 個。
+- `tools/detecteval`（CI 會跑）用合成的請求衡量攻擊偵測（#94）：
+  - 從 nuclei-templates v10.5.2 轉出的請求：同類別的特徵比中 40.5%（有分類的 3822 個模板中 1548 個）。
+    這是請求行的比中，不是告警；
+  - 8 個應用程式、152 條路由的一般請求：誤報 0 筆，95% 上限約 0.8%（其中只有 363 筆在追蹤參數以外有差異，
+    所以只能說誤報率低於約 0.8%）；
+  - 針對測試主機真實存在的漏洞的模板：10 個中 3 個告警，其中 2 個只到 L1（payload 在請求本文裡）。
+
+### 已知問題
+
+- 攻擊偵測只支援 Linux。
+- access log 不記錄請求本文（POST 表單、JSON、上傳檔）：payload 放在那裡就看不到，這類請求最多是 L1。
+- 特徵比對的是攻擊的原始寫法。改寫過的寫法（其他編碼、加料的路徑、SQL 裡的註解或其他空白字元、
+  用引號拆開的指令）可能漏掉。
+- Debian、Ubuntu、Rocky Linux 上 nginx 預設的 access log，以及 Rocky Linux 上 Apache 的，都是
+  `web_user_writable`（網站伺服器的帳號寫得到紀錄本身或上層目錄）：裡面的嘗試會告警，但不能當封鎖依據。
+- 目前還沒有針對個別 WordPress 外掛漏洞的特徵。
+- 掃描仍比 v0.3.0 慢：WordPress 約 13%，TypeScript 專案約 20%。
+- v0.3.1 仍未解決的：CVE-2021-23664 的已修版本仍會被報；WordPress 上傳暫存路徑的 `filesize()`；
+  `markup` 不會追進先組在變數裡的標記。
+
 ## v0.3.1 — 2026-11-16
 
 - 程式碼稽核規則從 70 條增加到 127 條（PHP 25 → 51、Python 22 → 43、JavaScript 與 TypeScript
