@@ -4,7 +4,7 @@
 
 v0.4.0 ships 27 attack signatures, and they are not extended to catch rewritten forms of an attack.
 The cases below are known misses. A miss only costs an alert: Shentu misses the request or rates it lower. None of them can make Shentu block the wrong address.
-v0.4.0 never blocks on its own: `block_ip` always needs the operator's confirmation. In this tree the check that the evidence is verified covers SSH login evidence only. The gate that keeps unverified web logs from backing a block comes with P5 (#91).
+v0.4.0 never blocks on its own: `block_ip` always needs the operator's confirmation. Its attacks are checked too: an address with attack attempts is blocked only for a verified L2 or L3 group of its own, not an overflow summary of many sources. Attempts that only reached a route (L1), could not be judged (Unknown) or come from unverified logs do not back a block; the address's SSH logins that journald itself confirms still can. An internal address (private, loopback, CGNAT and the like) is refused unless overridden on the server.
 
 ## What is never seen
 
@@ -12,8 +12,8 @@ v0.4.0 never blocks on its own: `block_ip` always needs the operator's confirmat
 - **Some log formats are refused.** nginx's and Apache's access logs are read, custom formats from their configuration included. A format with a field Shentu does not support, with `escape=none` or with a custom time format is refused.
 - **No request bodies.** Access logs do not record POST bodies, JSON or uploads, so a payload there is never seen. A route reached that way is L1 at most.
 - **Two decoding rounds.** URL encoding is decoded at most twice (with `%u` and overlong UTF-8). Base64, gzip and other encodings are not decoded.
-- **Unknown requests are counted, and L1 is not pushed (needs #91).** A request Shentu cannot judge is only counted. L1 attempts are not sent as alerts. This tree does not have that code yet; it holds once #91 is in.
-- **Unverified logs never back a block (needs #91).** A log Shentu cannot verify (one the web user can write to, for example) is said so in the alert, and it is not a basis for blocking. This holds once #91 is in.
+- **Unknown requests are counted, and L1 is not pushed.** A request cut where it may hide a payload (Unknown) is counted, and pushed only when one sink gets 20 of them within 24 hours. L1 attempts are counted and reported, never pushed as alerts.
+- **Unverified logs never back a block.** Attempts from a log Shentu cannot verify (not a regular file, not owned by root, writable by group or others, or not the file it judged) are marked unverified, and the alert says why. `block_ip` refuses them as a basis for blocking. Only the operator on the server can override that, with `shentu chat` and `override_unverified`; it is refused from Telegram.
 
 ## Requests that may be missed
 
