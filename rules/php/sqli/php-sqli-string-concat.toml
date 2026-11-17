@@ -4,10 +4,14 @@ class = "sqli"
 cwe = "CWE-89"
 severity = "high"
 title = "Request input concatenated or interpolated into a SQL string"
-sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "get_query_var(", "->get_param("]
+# CodeIgniter's input too: SQL text built from it into $this->db->query( is
+# this rule's, not php-sqli-codeigniter-query's (its query builder methods).
+sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "get_query_var(", "->get_param(",
+           "$this->input->get(", "$this->input->post(", "$this->input->get_post(", "$this->input->cookie(", "$this->request->getGet(", "$this->request->getPost(",
+           "$this->request->getVar(", "$this->request->getJSON(", "request("]
 # Input written into prepare()'s statement or format is php-sqli-prepare-query-text's
 sinks = ["mysqli_query", "mysqli_multi_query(", "mysqli_real_query(", "->query(", "->exec(", "->multi_query(", "->real_query(", "pg_query"]
-sanitizers = ["intval", "(int)", "->prepare(", "pg_query_params", "count(", "sizeof(", "sanitize_sql_orderby("]
+sanitizers = ["intval", "(int)", "->prepare(", "pg_query_params", "count(", "sizeof(", "sanitize_sql_orderby(", "$this->db->escape(", "$db->escape("]
 fix = "Use a prepared statement with bound parameters (PDO::prepare + execute, mysqli bind_param); never build SQL with string concatenation or sprintf. Escaping (mysqli_real_escape_string) only protects a value inside quotes."
 refs = ["CVE-2026-56738"]
 
@@ -78,5 +82,21 @@ code = '''
 <?php
 function rows($db) {
 	return $db->query("SELECT * FROM t WHERE name = '" . $_GET['name'] . "'");
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "CodeIgniter: input interpolated into $this->db->query()"
+code = '''
+<?php
+class Reports extends CI_Controller
+{
+    public function by_city()
+    {
+        $city = $this->input->post('city');
+        $rows = $this->db->query("SELECT * FROM sales WHERE city = '$city'")->result();
+        $this->output->set_output(json_encode($rows));
+    }
 }
 '''
