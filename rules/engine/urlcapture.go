@@ -44,7 +44,7 @@ func (a *analysis) captured(name string) bool {
 		switch {
 		case r.param[j]:
 			binds[in] = true
-		case j > 0 && (t[j-1].word("global") || t[j-1].word("nonlocal")):
+		case inDeclare(t, j):
 			forced[in] = true
 		case !a.py && j > 0 && (t[j-1].word("const") || t[j-1].word("let") || t[j-1].word("var")):
 			binds[in] = true
@@ -206,4 +206,18 @@ func pyBlockEnd(t []Token, i int) int {
 		}
 	}
 	return len(t)
+}
+
+// inDeclare reports whether t[j] is one of the names of a global or nonlocal
+// statement: global u, nonlocal a, u.
+func inDeclare(t []Token, j int) bool {
+	for k := j - 1; k >= 0 && t[k].Line == t[j].Line; k -= 2 {
+		if t[k].word("global") || t[k].word("nonlocal") {
+			return true
+		}
+		if !t[k].op(",") || k == 0 || t[k-1].Kind != Ident {
+			return false
+		}
+	}
+	return false
 }
