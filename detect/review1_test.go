@@ -548,3 +548,49 @@ func TestRouteCaseAndAnchor(t *testing.T) {
 		}
 	}
 }
+
+// The three ordinary texts of review 1 (S) that matched a class
+// signature: narrowed, they no longer do. classes_test.go keeps the
+// signatures' own cases.
+func TestClassesNarrowed(t *testing.T) {
+	ss, err := sig.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := NewMatcher(ss)
+	for _, c := range []struct{ id, query string }{
+		{"code-eval-call", "q=file+system+(ext4)"},
+		{"code-eval-call", "q=we+will+eval+(and+decide)+later"},
+		{"sqli-quote-comment", "q=%22hello%22+--+world"},
+		{"sqli-quote-comment", "q=say+%27hi%27+--+bye"},
+		{"cmdi-chained-command", "q=tom;+id+card"},
+		{"cmdi-chained-command", "q=cats+%26%26+id+photos"},
+	} {
+		for _, h := range m.Match(Normalize(AccessRecord{Method: "GET", Path: "/search", Query: c.query})).Hits {
+			if h.Signature == c.id {
+				t.Errorf("%s: matched %s (%q)", c.query, c.id, h.Excerpt)
+			}
+		}
+	}
+}
+
+// Anchored holds for a path too long for CasePath: Shibboleth's logout
+// padded before or after its file is still not Flarum's.
+func TestAnchoredLongPath(t *testing.T) {
+	ss, err := sig.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := NewMatcher(ss)
+	s := Build(nil, []PackageVuln{{Source: "/srv/composer.lock", Ecosystem: "Packagist", Package: "flarum/core", Version: "1.8.4", ID: "CVE-2024-21641"}})
+	pad := strings.Repeat("a/", MaxNormalized)
+	for _, p := range []string{"/" + pad + "Shibboleth.sso/Logout", "/Shibboleth.sso/" + pad + "Logout", "/Shibboleth.sso/" + pad + "logout"} {
+		q := Normalize(AccessRecord{Method: "GET", Path: p, Query: "return=https%3A%2F%2Fexample.org%2F"})
+		if q.CasePath != "" {
+			t.Fatalf("%d bytes: CasePath kept", len(p))
+		}
+		if g := NewJudge(s, ss).Judge(m.Match(q)); len(g.Candidates) != 0 {
+			t.Errorf("padded %s…%s: %+v", p[:20], p[len(p)-20:], g.Candidates)
+		}
+	}
+}

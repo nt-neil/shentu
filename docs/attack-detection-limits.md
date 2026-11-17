@@ -24,15 +24,15 @@ None of them can make Shentu block an address. v0.4.0 never blocks on its own. A
 - **Flarum's open redirect (composer-cves) without slashes.** A redirect target written as a scheme and a colon, with no `//`, may not match, though browsers still leave the site for it.
 - **WordPress plugins.** There are no signatures for particular WordPress plugin vulnerabilities. A request against an installed vulnerable plugin is seen only if a generic class signature catches it, and then it is not tied to that plugin's CVE.
 
-## Ordinary requests that may match
+## Narrowed to spare ordinary text
 
-Three kinds of ordinary text can match a class signature:
+Three class signatures were narrowed so that ordinary text no longer matches them:
 
-- a common word followed by a parenthesis, such as "system (";
-- a quote followed by a double dash;
-- a semicolon followed by a short word that is also a command name.
+- a common word followed by a space and a parenthesis, such as "system (";
+- a quote, a space and a double dash, as in a search;
+- a semicolon followed by "id" and more words.
 
-Such a request is listed as noise. If it reaches a route whose code has a sink of that class, it is rated L2. It is never blocked automatically.
+The cost is misses. A call written with a space before its parenthesis is not caught. Neither is a comment that starts after a space following the quote, or `id` run with arguments after a separator.
 
 ## Measured detection
 
