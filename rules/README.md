@@ -256,7 +256,7 @@ arguments, not the options).
 | `sinks` | the rule's sinks this entry applies to; omitted means all of them; a sink has at most one entry |
 | `arg` | only this argument counts, from 1; `0` is the receiver of a method sink (`tf.extractall()`: the archive is the input) |
 | `when` | the call is a sink only if one of these appears among its arguments |
-| `unless` | the call is not a sink if one of these appears among its arguments |
+| `unless` | the call is not a sink if one of these appears among its arguments: an option with its value (`shell=True`), a string, a whole argument, or a name among flags joined by `\|` (`LIBXML_NOENT` in `LIBXML_DTDLOAD \| LIBXML_NOENT`) |
 | `unless_at` | where `unless` looks: `start`, only at the start of the argument (`arg`, or the first): a Server-Sent Events line `"data: " + x`, not a ternary one branch of which is a line; `top`, only as an element or key of the argument itself (`arg`, or any one), not inside what it holds: TypeORM's `{ relations: [...] }`, not `{ projection: { relations: 1 } }`. Empty: anywhere among the arguments |
 | `unless_content_type` | the call is not a sink once the response's Content-Type was set to one of these on every path before it in the same function: `res.setHeader("Content-Type", ...)`, `res.set`, `res.header`, `res.type`, `res.contentType`, `res.writeHead(200, {...})`, each as a statement of its own. Set in one branch only, asked about (`req.accepts(...)`) or set elsewhere (middleware) does not count. For Server-Sent Events: `text/event-stream` is read by EventSource, not rendered |
 | `whole` | the argument must be the input itself (or spread from it), not an object or array literal holding a value from it |

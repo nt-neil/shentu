@@ -2537,10 +2537,19 @@ func (a *analysis) unless(st state, ps []*pat, region []Token) bool {
 				return true
 			}
 		}
-		// Any other fragment (yaml.SafeLoader) must be a whole argument.
+		// Any other fragment (yaml.SafeLoader) must be a whole argument, or a
+		// flag among flags joined by "|" (LIBXML_DTDLOAD | LIBXML_NOENT); one
+		// under "~" is cleared, not set.
 		for _, arg := range splitTop(region, isComma) {
 			if tokensEqual(arg, p.toks) {
 				return true
+			}
+			if flags := splitTop(arg, isOp("|")); len(flags) > 1 && len(p.toks) == 1 && p.toks[0].Kind == Ident {
+				for _, f := range flags {
+					if tokensEqual(stripParens(f), p.toks) {
+						return true
+					}
+				}
 			}
 		}
 	}

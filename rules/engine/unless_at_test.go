@@ -50,3 +50,29 @@ func TestUnlessAt(t *testing.T) {
 		}
 	}
 }
+
+// unless finds a name among flags joined by "|" too, as when finds one: a
+// DTD loaded with LIBXML_NOENT is the entity rule's, so the DTD rule leaves
+// it; a flag cleared with "~" is not set.
+func TestUnlessFlag(t *testing.T) {
+	e, err := New([]rules.Rule{{ID: "dtd", Lang: "php", Class: "xxe", CWE: "CWE-611", Severity: "high", Title: "t",
+		Sources: []string{}, Sinks: []string{"->loadXML("}, Sanitizers: []string{},
+		Args: []rules.Args{{When: []string{"LIBXML_DTDLOAD"}, Unless: []string{"LIBXML_NOENT"}}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for flags, want := range map[string]bool{
+		"LIBXML_DTDLOAD":                               true,
+		"LIBXML_DTDLOAD | LIBXML_NOENT":                false,
+		"LIBXML_NOENT | LIBXML_DTDLOAD | LIBXML_NONET": false,
+		"LIBXML_DTDLOAD | (LIBXML_NOENT)":              false,
+		"LIBXML_DTDLOAD | ~LIBXML_NOENT":               true,
+		"LIBXML_DTDLOAD | LIBXML_NONET":                true,
+	} {
+		src := "<?php\n$doc->loadXML($x, " + flags + ");\n"
+		fs, _ := e.Scan("php", "a.php", []byte(src))
+		if got := len(fs) > 0; got != want {
+			t.Errorf("%s: reported %v, want %v", flags, got, want)
+		}
+	}
+}
