@@ -66,6 +66,7 @@ func TestLoadValidation(t *testing.T) {
 		"bad version":              "[[signature.applies_to]]\necosystem = \"npm\"\npackage = \"x\"\nversions = \"~>1\"",
 		"route without /":          "[[signature.route]]\npath = \"admin\"",
 		"unknown key":              `severity = "high"`,
+		"route and any_param":      "[[signature.route]]\npath = \"/x\"\n[[signature.match]]\npart = \"any_param\"\ncontains = [\"x\"]",
 	}
 	for name, extra := range bad {
 		src := good
