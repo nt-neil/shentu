@@ -36,6 +36,7 @@ frameworks = ["laravel"]           # optional: laravel, wordpress, symfony, doct
 route_input = false                # optional: route handlers' parameters are not this rule's input, only its sources (a rule for the Host header)
 route_members = ["query", "body"]  # optional: of the request members a route model makes input, only these (a rule for a query object: req.params is always a string)
 route_not = ["headers.host"]       # optional: values under those members that are not this rule's input, as member.name (the Host header, another rule's)
+chain_not = ["AsyncClient"]        # optional: calls the chain form of a receiver.method( sink may not go through: they make another object (httpx.AsyncClient().get( is not httpx.get()
 sources = ["$_GET", "$request->input("]   # where user input comes from; [] for a rule without sources
 sinks = ["mysqli_query", "->query("]      # the dangerous calls
 sanitizers = ["intval", "->prepare("]     # calls whose result is safe for these sinks; [] if none
@@ -139,7 +140,8 @@ How the engine reads them:
   - a sink written as receiver, member and method (`Process::run(`, `res.send(`,
     `requests.get(`) also matches at the end of a chain of calls from the same
     receiver: `Process::timeout(30)->run($cmd)`, `res.status(400).send(x)`,
-    `requests.Session().get(url)`, with the same argument conditions;
+    `requests.Session().get(url)`, with the same argument conditions; not through
+    a call the rule's `chain_not` names (`AsyncClient`: another object);
   - text sinks match outside string interpolations: `"... $where"` is the variable
     `$where`, not the operator text `'$where'`;
   - a number carries no injection: `(int)`, `(float)`, `(bool)`, `intval`,

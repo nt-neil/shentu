@@ -52,6 +52,11 @@ type Rule struct {
 	// takes), read as req.headers.host or req.headers['host'].
 	RouteNot []string `toml:"route_not"`
 
+	// ChainNot: calls the chain form of the rule's receiver.method( sinks may
+	// not go through (chain.go): they make another object, another rule's
+	// (httpx.AsyncClient().get( is an async client's call, not httpx.get().
+	ChainNot []string `toml:"chain_not"`
+
 	File string `toml:"-"` // path inside rules/, set by Load
 }
 

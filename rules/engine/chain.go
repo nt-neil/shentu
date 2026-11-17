@@ -24,6 +24,12 @@ func (c *crule) chainSinks() {
 		}
 		m := &pat{raw: op + t[2].Text + "(", php: php, member: true, name: t[2].Text, chain: t[0].Text,
 			toks: []Token{{Kind: Op, Text: op}, t[2], t[3]}}
+		if len(c.rule.ChainNot) > 0 {
+			m.chainNot = map[string]bool{}
+			for _, n := range c.rule.ChainNot {
+				m.chainNot[n] = true
+			}
+		}
 		c.sinks = append(c.sinks, m)
 		if cond, ok := c.args[s]; ok {
 			c.args[m] = cond
@@ -36,7 +42,9 @@ func (c *crule) chainSinks() {
 
 // chainFrom reports whether the member operator at toks[i] ends a chain of
 // calls that starts at the receiver cls: cls::a(...)->b(...)->, cls.a(...).b(...).
-func chainFrom(toks []Token, i int, cls string) bool {
+// A call named in not makes another object, which the chain may not go
+// through: httpx.AsyncClient().get( is a client's, not httpx's.
+func chainFrom(toks []Token, i int, cls string, not map[string]bool) bool {
 	php := toks[i].Text == "->"
 	j := i - 1
 	for steps := 0; j >= 1 && steps < 32; steps++ {
@@ -44,7 +52,7 @@ func chainFrom(toks []Token, i int, cls string) bool {
 			return false
 		}
 		open := openOf(toks, j)
-		if open < 2 || toks[open-1].Kind != Ident || !memberOp(php, toks[open-2]) {
+		if open < 2 || toks[open-1].Kind != Ident || !memberOp(php, toks[open-2]) || not[toks[open-1].Text] {
 			return false
 		}
 		j = open - 3 // the receiver of this call
