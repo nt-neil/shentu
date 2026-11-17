@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/nt-neil/shentu/detect"
 	"github.com/nt-neil/shentu/hostenv"
 )
 
@@ -39,19 +40,46 @@ const osvAPI = "https://api.osv.dev/v1"
 
 // PackageVulns queries OSV for every installed package.
 func PackageVulns(ctx context.Context, hc *http.Client, detailFor string) (map[string]any, error) {
+	out, _, err := packageVulnsAll(ctx, hc, detailFor)
+	return out, err
+}
+
+// PackageVulnsSurface is PackageVulns' overview, and every affected
+// installed package's advisories as the vulnerability surface's entries
+// (attack detection, plan 0743f0 P5): the list the overview cuts for the
+// model, whole.
+func PackageVulnsSurface(ctx context.Context, hc *http.Client) (map[string]any, []detect.PackageVuln, error) {
+	return packageVulnsAll(ctx, hc, surfaceDetail)
+}
+
+// surfaceDetail is packageVulnsAll's detailFor for the surface: no package's
+// detail, and every entry's CVEs looked up (surfaceCVEs).
+const surfaceDetail = "\x00surface"
+
+// surfaceCVELookups bounds the advisories looked up for their CVEs past the
+// KEV check (KEV unavailable, or past its 300 per package).
+const surfaceCVELookups = 3000
+
+func packageVulnsAll(ctx context.Context, hc *http.Client, detailFor string) (map[string]any, []detect.PackageVuln, error) {
+	forSurface := detailFor == surfaceDetail
+	if forSurface {
+		detailFor = ""
+	}
 	switch hostSource().Info().GOOS { // the host read, so a fixture of another OS is checked as that OS
 	case "windows":
-		return msrcVulns(ctx, hc, cacheDir, winSource())
+		out, err := msrcVulns(ctx, hc, cacheDir, winSource())
+		return out, nil, err
 	case "darwin":
-		return macOSVulns(ctx, hc)
+		out, err := macOSVulns(ctx, hc)
+		return out, nil, err
 	}
 	eco, feed, items, setPartial, err := installedSet(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	pkgs := pkgsOf(items)
 	if len(pkgs) == 0 { // a package list that parsed to nothing is not "no vulnerabilities"
-		return nil, fmt.Errorf("cannot tell: no installed packages were read from the %s package list", eco)
+		return nil, nil, fmt.Errorf("cannot tell: no installed packages were read from the %s package list", eco)
 	}
 	type affected struct {
 		Package string   `json:"package"`
@@ -71,9 +99,9 @@ func PackageVulns(ctx context.Context, hc *http.Client, detailFor string) (map[s
 		}
 		if err != nil {
 			if errors.Is(err, errCacheDropped) {
-				return nil, fmt.Errorf("Amazon Linux security advisories (ALAS): a damaged cached copy was dropped; the next run fetches it again: %w", err)
+				return nil, nil, fmt.Errorf("Amazon Linux security advisories (ALAS): a damaged cached copy was dropped; the next run fetches it again: %w", err)
 			}
-			return nil, fmt.Errorf("Amazon Linux security advisories (ALAS) unavailable (is the server online?): %w", err)
+			return nil, nil, fmt.Errorf("Amazon Linux security advisories (ALAS) unavailable (is the server online?): %w", err)
 		}
 		advisories = advs
 		for _, h := range hits {
@@ -104,7 +132,7 @@ func PackageVulns(ctx context.Context, hc *http.Client, detailFor string) (map[s
 					} `json:"results"`
 				}
 				if err := postJSON(ctx, hc, osvAPI+"/querybatch", map[string]any{"queries": qs}, &resp); err != nil {
-					return nil, fmt.Errorf("OSV query failed (is the server online?): %w", err)
+					return nil, nil, fmt.Errorf("OSV query failed (is the server online?): %w", err)
 				}
 				for i, r := range resp.Results {
 					if len(r.Vulns) == 0 || i >= len(chunk) {
@@ -153,6 +181,20 @@ func PackageVulns(ctx context.Context, hc *http.Client, detailFor string) (map[s
 	if advisories != nil {
 		cvesOf = func(id string) ([]string, bool) { return advisories[id].CVEs, true }
 	}
+	// What the KEV check looks up is kept for the surface's entries: their
+	// advisories (DSA-, USN-, RLSA-, ALAS) name their CVEs only there.
+	var cveMu sync.Mutex
+	cveMemo := map[string][]string{}
+	lookup := cvesOf
+	cvesOf = func(id string) ([]string, bool) {
+		c, ok := lookup(id)
+		if ok {
+			cveMu.Lock()
+			cveMemo[id] = c
+			cveMu.Unlock()
+		}
+		return c, ok
+	}
 	exploited := map[string][]Exploit{} // package -> KEV matches
 	if kev, err := loadKEV(ctx, hc); err != nil {
 		out["kev"] = "CISA KEV list unavailable: " + err.Error()
@@ -175,6 +217,55 @@ func PackageVulns(ctx context.Context, hc *http.Client, detailFor string) (map[s
 			out["kev"] = fmt.Sprintf("%d vulnerabilities could not be checked against the CISA KEV list (their CVEs could not be looked up, or over 300 for one package): exploited ones among them are not marked", unchecked)
 		case len(all) == 0:
 			out["kev"] = "none of these vulnerabilities is on the CISA KEV list of actively exploited vulnerabilities"
+		}
+	}
+	// The surface's entries: every affected package's every advisory, in the
+	// ecosystem a signature's range names (OSV's Debian:12, Red Hat...).
+	osEco := eco
+	if len(feed.Ecosystems) > 0 {
+		osEco = feed.Ecosystems[0]
+	}
+	if feed.Kind == "alas" {
+		osEco = "Amazon Linux"
+	}
+	var surface []detect.PackageVuln
+	for _, a := range found {
+		for _, id := range a.IDs {
+			v := detect.PackageVuln{Source: "os", Ecosystem: osEco, Package: a.Package, Version: a.Version, ID: id}
+			// Its CVEs: in the id (CVE-, DEBIAN-CVE-, UBUNTU-CVE-), else as
+			// the KEV check looked them up (an ALAS advisory's, OSV's
+			// aliases); a signature written for a CVE finds the entry.
+			v.CVEs = cveRe.FindAllString(strings.ToUpper(id), -1)
+			if len(v.CVEs) == 0 {
+				cveMu.Lock()
+				v.CVEs = cveMemo[id]
+				cveMu.Unlock()
+				if v.CVEs == nil && advisories != nil {
+					v.CVEs = advisories[id].CVEs
+				}
+			}
+			for _, e := range exploited[a.Package] {
+				if e.ID == id {
+					v.KEV, v.KEVSince, v.KEVCVE = true, e.Added, e.CVE
+					if v.CVE == "" {
+						v.CVE = e.CVE
+					}
+				}
+			}
+			surface = append(surface, v)
+		}
+	}
+	if forSurface {
+		// The KEV check did not look up every advisory's CVEs (the list
+		// unavailable, or past 300 for one package): those it did not,
+		// looked up now; those still unknown are said.
+		if missing := surfaceCVEs(surface, cveMemo, &cveMu, lookup); missing > 0 {
+			out["surface_cves_missing"] = missing
+		}
+	}
+	for i := range surface {
+		if v := &surface[i]; v.CVE == "" && len(v.CVEs) > 0 {
+			v.CVE = v.CVEs[0]
 		}
 	}
 	sort.SliceStable(found, func(i, j int) bool {
@@ -211,7 +302,7 @@ func PackageVulns(ctx context.Context, hc *http.Client, detailFor string) (map[s
 			rows = append(rows, row{a.Package, a.Version, len(a.IDs), a.IDs[:min(3, len(a.IDs))], len(exploited[a.Package])})
 		}
 		out["affected"] = rows
-		return out, nil
+		return out, surface, nil
 	}
 	type detail struct {
 		ID       string `json:"id"`
@@ -276,7 +367,7 @@ func PackageVulns(ctx context.Context, hc *http.Client, detailFor string) (map[s
 	}
 	out["package"] = detailFor
 	out["vulns"] = details
-	return out, nil
+	return out, surface, nil
 }
 
 // kevURL is CISA's catalog of vulnerabilities known to be exploited in the wild.
@@ -297,6 +388,50 @@ type Exploit struct {
 	Name       string `json:"name"`
 	Added      string `json:"kev_since"`
 	Ransomware bool   `json:"used_by_ransomware,omitempty"`
+}
+
+// surfaceCVEs fills the CVEs of surface's entries neither their id nor
+// the KEV check (memo) gave, by lookup, at most surfaceCVELookups, 8 at a
+// time; it gives how many are left without (lookup failed, or past it).
+// An advisory OSV knows no CVE for is not missing.
+func surfaceCVEs(surface []detect.PackageVuln, memo map[string][]string, mu *sync.Mutex, lookup func(string) ([]string, bool)) (missing int) {
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 8)
+	var cnt sync.Mutex
+	asked := 0
+	for i := range surface {
+		v := &surface[i]
+		if len(v.CVEs) > 0 || v.KEVCVE != "" {
+			continue
+		}
+		mu.Lock()
+		_, done := memo[v.ID]
+		mu.Unlock()
+		if done {
+			continue
+		}
+		if asked++; asked > surfaceCVELookups {
+			cnt.Lock()
+			missing++
+			cnt.Unlock()
+			continue
+		}
+		wg.Add(1)
+		sem <- struct{}{}
+		go func() {
+			defer func() { <-sem; wg.Done() }()
+			c, ok := lookup(v.ID)
+			if !ok {
+				cnt.Lock()
+				missing++
+				cnt.Unlock()
+				return
+			}
+			v.CVEs = c
+		}()
+	}
+	wg.Wait()
+	return missing
 }
 
 func loadKEV(ctx context.Context, hc *http.Client) (map[string]kevEntry, error) {

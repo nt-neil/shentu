@@ -135,7 +135,7 @@ var placeholder = regexp.MustCompile(`\{[^/{}]+\}|<[^/<>]+>|:[A-Za-z_][A-Za-z0-9
 // Flask's and Django's <path:f>, FastAPI's {p:path}, Express's * and :p*.
 func manySegments(ph string) bool {
 	return strings.HasPrefix(ph, "<path:") || strings.HasSuffix(ph, ":path}") || strings.HasPrefix(ph, "*") ||
-		strings.HasSuffix(ph, "*") || strings.HasSuffix(ph, "+")
+		strings.HasSuffix(ph, "*") || strings.HasSuffix(ph, "+") || strings.HasPrefix(ph, "{*") // Spring's {*path}
 }
 
 // routeRegexp makes a route pattern (as written: /users/{id}, /run/<cmd>,
@@ -181,10 +181,21 @@ func routeRegexp(pattern string) (re *regexp.Regexp, loose bool) {
 	var b strings.Builder
 	idx := placeholder.FindAllStringIndex(pattern, -1)
 	last := 0
+	// A :name right after a word character is a literal (Google's
+	// /v1/items:batch); after / or a delimiter it is a parameter
+	// (Express's /flights/:from-:to, /file.:ext).
+	idx = slices.DeleteFunc(idx, func(m []int) bool {
+		if pattern[m[0]] != ':' || m[0] == 0 {
+			return false
+		}
+		c := pattern[m[0]-1]
+		return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_'
+	})
 	for _, m := range idx {
 		lit, ph := pattern[last:m[0]], pattern[m[0]:m[1]]
+		optional := strings.HasSuffix(ph, "?") || strings.HasSuffix(ph, "?}") // Express's /:id?, Laravel's /{id?}
 		switch {
-		case strings.HasSuffix(ph, "?") && strings.HasSuffix(lit, "/"): // Express's optional /:id?
+		case optional && strings.HasSuffix(lit, "/"):
 			b.WriteString(regexp.QuoteMeta(lit[:len(lit)-1]) + `(?:/([^/]+))?`)
 		case manySegments(ph):
 			b.WriteString(regexp.QuoteMeta(lit) + `(.+)`)
@@ -348,7 +359,14 @@ func (j *Judge) Judge(m MatchResult) Judgment {
 				in, known = appliesTo(s, e)
 			}
 			if !in && known {
-				continue
+				if e.Source != "os" || !baseRangeFor(s, e) {
+					continue
+				}
+				// OSV found this installed OS package affected; a range
+				// written for the whole base (fixed versions differ by
+				// release) does not overrule it: a candidate, not known.
+				// One written for this release does.
+				known = false
 			}
 			level := LevelPayload
 			if h.RouteOnly || pathCut && len(s.Routes) > 0 {
@@ -397,7 +415,8 @@ func (j *Judge) Judge(m MatchResult) Judgment {
 }
 
 // forEntry: s is written for e's vulnerability: a CVE or an advisory id in
-// common, or (with no ids) its package.
+// common, or (with no ids, or e an installed package with none) its
+// package.
 func forEntry(s sig.Signature, e Entry) bool {
 	ids := map[string]bool{strings.ToUpper(e.Advisory): true, strings.ToUpper(e.CVE): true, strings.ToUpper(e.KEVCVE): true}
 	for _, a := range e.Aliases {
@@ -409,9 +428,9 @@ func forEntry(s sig.Signature, e Entry) bool {
 			return true
 		}
 	}
-	if len(s.CVEs) == 0 && len(s.Advisories) == 0 {
+	if len(s.CVEs) == 0 && len(s.Advisories) == 0 || e.Installed { // an installed package has no ids: its package and range decide
 		for _, r := range s.AppliesTo {
-			if strings.EqualFold(r.Ecosystem, e.Ecosystem) && samePackage(e.Ecosystem, r.Package, e.Package) {
+			if sameEcosystem(r.Ecosystem, e.Ecosystem) && samePackage(e.Ecosystem, r.Package, e.Package) {
 				return true
 			}
 		}
@@ -427,7 +446,7 @@ func appliesTo(s sig.Signature, e Entry) (in, known bool) {
 	known = true
 	listed := false
 	for _, r := range s.AppliesTo {
-		if !strings.EqualFold(r.Ecosystem, e.Ecosystem) || !samePackage(e.Ecosystem, r.Package, e.Package) {
+		if !sameEcosystem(r.Ecosystem, e.Ecosystem) || !samePackage(e.Ecosystem, r.Package, e.Package) {
 			continue
 		}
 		listed = true
@@ -441,6 +460,33 @@ func appliesTo(s sig.Signature, e Entry) (in, known bool) {
 		}
 	}
 	return false, known && listed
+}
+
+// baseRangeFor: s has a range for e's package written for e's whole
+// ecosystem (Debian), no release named, while e names its release
+// (Debian:12): that range's fixed versions may be another release's.
+func baseRangeFor(s sig.Signature, e Entry) bool {
+	if !strings.Contains(e.Ecosystem, ":") {
+		return false
+	}
+	for _, r := range s.AppliesTo {
+		if !strings.Contains(r.Ecosystem, ":") && sameEcosystem(r.Ecosystem, e.Ecosystem) && samePackage(e.Ecosystem, r.Package, e.Package) {
+			return true
+		}
+	}
+	return false
+}
+
+// sameEcosystem: a and b are one ecosystem: the same base, and, when both
+// name a release after ":", the same release (Debian:11's fixed versions
+// are not Debian:12's); one naming none is for every release.
+func sameEcosystem(a, b string) bool {
+	ab, ar, _ := strings.Cut(a, ":")
+	bb, br, _ := strings.Cut(b, ":")
+	if !strings.EqualFold(strings.TrimSpace(ab), strings.TrimSpace(bb)) {
+		return false
+	}
+	return ar == "" || br == "" || strings.EqualFold(strings.TrimSpace(ar), strings.TrimSpace(br))
 }
 
 var pep503 = regexp.MustCompile(`[-_.]+`)

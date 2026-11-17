@@ -13,6 +13,7 @@ import (
 	"slices"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/nt-neil/shentu/internal/osutil"
@@ -61,10 +62,13 @@ type Group struct {
 	Entry  string `json:"entry"`
 	Level  string `json:"level"`
 
-	CVE  string `json:"cve,omitempty"`
-	KEV  bool   `json:"kev,omitempty"`
-	File string `json:"file,omitempty"`
-	Line int    `json:"line,omitempty"`
+	CVE string `json:"cve,omitempty"`
+	KEV bool   `json:"kev,omitempty"`
+	// VersionUnknown: some attempt's installed version could not be placed
+	// in the signature's range (said in the alert; the gate is the same).
+	VersionUnknown bool   `json:"version_unknown,omitempty"`
+	File           string `json:"file,omitempty"`
+	Line           int    `json:"line,omitempty"`
 
 	First    time.Time `json:"first"`
 	Last     time.Time `json:"last"`
@@ -123,6 +127,9 @@ type Attacks struct {
 	// own bound, lost) since the last notice (NoticesSent): said apart
 	// (NoticeText), never quietly.
 	DroppedPending int `json:"dropped_pending,omitempty"`
+	// PassTimeouts: rounds in a row given up before their end (PassRound.
+	// Abandon); a round read to its end sets it back to 0.
+	PassTimeouts int `json:"pass_timeouts,omitempty"`
 	// Note says, when not empty, what loading found wrong: a file that did
 	// not parse, set aside, or entries dropped. Said by NoticeText. Not saved.
 	Note string `json:"-"`
@@ -164,7 +171,7 @@ func LoadAttacks(dir string, now time.Time) (*Attacks, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := osutil.Lock(lock); err != nil {
+	if err := lockBounded(lock); err != nil {
 		lock.Close()
 		return nil, err
 	}
@@ -202,10 +209,67 @@ func LoadAttacks(dir string, now time.Time) (*Attacks, error) {
 		a.IPs[ip] = r
 	}
 	a.DroppedPending = max(0, got.DroppedPending)
+	a.PassTimeouts = max(0, got.PassTimeouts)
 	if dropped > 0 {
 		a.Note = join(a.Note, fmt.Sprintf("attacks.json held %d entries that did not hold together; they were dropped", dropped))
 	}
 	return a, nil
+}
+
+// LockTries and LockWait bound the wait for attacks.lock: a stopped
+// `shentu detect` (Ctrl-Z) holding it must not stall every patrol after it.
+var (
+	LockTries = 30
+	LockWait  = time.Second
+)
+
+// ErrStateLocked: attacks.lock stayed held through LockTries.
+var ErrStateLocked = errors.New("attack detection's state is held by another shentu (a stopped `shentu detect`?): this round was skipped")
+
+func lockBounded(f *os.File) error {
+	for i := 0; ; i++ {
+		err := osutil.TryLock(f)
+		if !errors.Is(err, osutil.ErrWouldBlock) {
+			return err
+		}
+		if i+1 >= LockTries {
+			return ErrStateLocked
+		}
+		time.Sleep(LockWait)
+	}
+}
+
+// AttacksExist says whether dir has attacks.json: none means detection has
+// not run yet, not "no attacks".
+func AttacksExist(dir string) bool {
+	_, err := os.Lstat(filepath.Join(dir, AttacksFile))
+	return err == nil
+}
+
+// ReadStateFile reads dir/name as the state files are read: not following
+// a link, ours and not writable by others, at most max bytes (more is an
+// error). A file not there is fs.ErrNotExist.
+func ReadStateFile(dir, name string, max int64) ([]byte, error) {
+	f, err := openNoFollow(filepath.Join(dir, name))
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if why := ownedByUs(st); why != "" {
+		return nil, fmt.Errorf("%s: %s", name, why)
+	}
+	b, err := io.ReadAll(io.LimitReader(f, max+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(b)) > max {
+		return nil, fmt.Errorf("%s: larger than %d bytes", name, max)
+	}
+	return b, nil
 }
 
 // Close releases attacks.lock; it may be called more than once.
@@ -264,7 +328,26 @@ func readState(dir, name string, v any, now time.Time) (note string, err error) 
 	if rerr := os.Rename(p, bad); rerr != nil {
 		return "", errors.Join(perr, rerr)
 	}
+	keepBad(p, MaxBadFiles)
 	return name + " did not parse (or was of another version, or too large) and was set aside as " + filepath.Base(bad) + "; it starts again", nil
+}
+
+// MaxBadFiles is how many set-aside copies of a state file are kept, the
+// latest: what a file that did not parse held stays to be looked at,
+// without filling the disk.
+const MaxBadFiles = 5
+
+// keepBad removes all but the latest n of p's set-aside copies.
+func keepBad(p string, n int) {
+	old, _ := filepath.Glob(globEscape(p) + ".bad-*")
+	sort.Slice(old, func(i, j int) bool { // by the time in the name: newest first
+		a, _ := strconv.ParseInt(old[i][strings.LastIndex(old[i], "-")+1:], 10, 64)
+		b, _ := strconv.ParseInt(old[j][strings.LastIndex(old[j], "-")+1:], 10, 64)
+		return a > b
+	})
+	for _, f := range old[min(n, len(old)):] {
+		os.Remove(f)
+	}
 }
 
 // Save writes the state to dir, pruned (prune): to a new temporary file
@@ -298,7 +381,7 @@ func saveJSON(dir, name string, v any) error {
 		os.Remove(tmp)
 		return err
 	}
-	return syncDir(dir)
+	return dirSynced(dir)
 }
 
 // NetworkOf is the source network an address is grouped by: its /24
@@ -318,6 +401,31 @@ func NetworkOf(ip string) string {
 	return p.String()
 }
 
+// MaxNonIPPrefixes bounds the sources that are not addresses (a client
+// field holding text): past it they share one, PrefixNonIP.
+const (
+	MaxNonIPPrefixes = 64
+	PrefixNonIP      = "non-ip"
+)
+
+// nonIP is prefix, a source that is not an address, or PrefixNonIP once
+// MaxNonIPPrefixes others have groups.
+func (a *Attacks) nonIP(prefix string) string {
+	seen := map[string]bool{}
+	for _, g := range a.Groups {
+		if g.Prefix == prefix {
+			return prefix
+		}
+		if _, err := netip.ParsePrefix(g.Prefix); err != nil && g.Prefix != "*" && g.Prefix != PrefixNonIP {
+			seen[g.Prefix] = true
+		}
+	}
+	if len(seen) >= MaxNonIPPrefixes {
+		return PrefixNonIP
+	}
+	return prefix
+}
+
 func groupKey(prefix, entry, level string, verified bool) string {
 	v := "v"
 	if !verified {
@@ -334,6 +442,8 @@ func (a *Attacks) Add(t Attempt, at time.Time) *Group {
 	prefix := NetworkOf(t.IP)
 	if t.Level == LevelUnknown {
 		prefix = "*"
+	} else if _, err := netip.ParsePrefix(prefix); err != nil {
+		prefix = a.nonIP(prefix)
 	}
 	key := groupKey(prefix, t.Entry, t.Level, t.Verified)
 	g := a.Groups[key]
@@ -371,8 +481,11 @@ func (g *Group) add(t Attempt, at time.Time) {
 		}
 	}
 	g.addIP(t.IP)
-	if len(g.Samples) < MaxGroupSamples && t.Sample != "" && !slices.Contains(g.Samples, t.Sample) {
+	if t.Sample != "" && !slices.Contains(g.Samples, t.Sample) { // the latest kept: early neutral requests cannot fill them for good
 		g.Samples = append(g.Samples, t.Sample)
+		if len(g.Samples) > MaxGroupSamples {
+			g.Samples = g.Samples[len(g.Samples)-MaxGroupSamples:]
+		}
 	}
 	if !t.Verified {
 		g.Unverified = true
@@ -382,6 +495,7 @@ func (g *Group) add(t Attempt, at time.Time) {
 	}
 	g.Cut, g.Suspicious, g.Ambiguous = g.Cut || t.Cut, g.Suspicious || t.Suspicious, g.Ambiguous || t.Ambiguous
 	g.Encoded, g.TimedOut = g.Encoded || t.Encoded, g.TimedOut || t.TimedOut
+	g.VersionUnknown = g.VersionUnknown || t.VersionUnknown
 	for _, c := range t.HiddenClasses {
 		if !slices.Contains(g.HiddenClasses, c) {
 			g.HiddenClasses = append(g.HiddenClasses, c)
@@ -394,6 +508,22 @@ func (g *Group) add(t Attempt, at time.Time) {
 	if t.ForwardedFor != "" && len(g.ForwardedFor) < MaxGroupSamples && !slices.Contains(g.ForwardedFor, t.ForwardedFor) {
 		g.ForwardedFor = append(g.ForwardedFor, t.ForwardedFor)
 	}
+}
+
+// pending: g has attempts not yet notified that will be (L1 never is: it
+// is counted and reported, so it is never "pending", never pushed out
+// first, never counted as dropped).
+func (g *Group) pending() bool {
+	if g.Since == 0 || g.Level == LevelRoute {
+		return false
+	}
+	return g.Level != LevelUnknown || g.unknownDue() // an Unknown group below its threshold is not to be notified
+}
+
+// unknownDue: an Unknown group's latest UnknownNotifyAt fall within
+// NotifyEvery (Due's threshold).
+func (g *Group) unknownDue() bool {
+	return len(g.Recent) >= UnknownNotifyAt && g.Recent[len(g.Recent)-1].Sub(g.Recent[0]) <= NotifyEvery
 }
 
 // addIP lists ip (at most MaxGroupIPs) and counts it if new.
@@ -498,6 +628,15 @@ func (a *Attacks) campaign(t Attempt, at time.Time) bool {
 	return len(r.Entries) >= CampaignEntries
 }
 
+// canonAddr is ip in one form: unmapped, as netip prints it; the text as
+// given when it is not an address.
+func canonAddr(ip string) string {
+	if a, err := netip.ParseAddr(ip); err == nil && a.Zone() == "" {
+		return a.Unmap().String()
+	}
+	return ip
+}
+
 // campaignSource is the campaign index's key for an address: an IPv4
 // address itself, an IPv6 address's /64 (one host has many in it).
 func campaignSource(ip string) string {
@@ -551,7 +690,7 @@ func (a *Attacks) evict(n int) {
 	keys := rank(a.Groups)
 	for _, k := range keys[n:] {
 		g := a.Groups[k]
-		if g.Since > 0 {
+		if g.pending() {
 			a.DroppedPending++
 			ok := groupKey(PrefixOverflow, g.Entry, g.Level, !g.Unverified)
 			o := a.Overflow[ok]
@@ -579,7 +718,7 @@ func rank(gs map[string]*Group) []string {
 		keys = append(keys, k)
 	}
 	keep := func(g *Group) [3]int { // larger is kept longer
-		return [3]int{b2i(g.Since > 0), b2i(!g.Unverified), severityIndex(g.Severity)}
+		return [3]int{b2i(g.pending()), b2i(!g.Unverified), severityIndex(g.Severity)}
 	}
 	sort.Slice(keys, func(i, j int) bool {
 		x, y := gs[keys[i]], gs[keys[j]]
@@ -590,7 +729,7 @@ func rank(gs map[string]*Group) []string {
 				}
 			}
 		}
-		if x.Since > 0 { // both pending: the older is kept (a flood is newer than what it would push out)
+		if x.pending() { // both pending: the older is kept (a flood is newer than what it would push out)
 			if !x.First.Equal(y.First) {
 				return x.First.Before(y.First)
 			}
@@ -609,8 +748,9 @@ func b2i(b bool) int {
 	return 0
 }
 
-// Due are the groups (and overflow groups) to notify at now: one not
-// notified in NotifyEvery that has attempts since; an Unknown group only
+// Due are the groups (and overflow groups) to notify at now: one at L2,
+// L3 or Unknown (L1, the route alone, is counted and reported, never
+// pushed) not notified in NotifyEvery that has attempts since; an Unknown group only
 // once its latest UnknownNotifyAt fall within NotifyEvery. A group last
 // notified past now (the clock was set back) is due, its ClockSkew set.
 // Noise, unanchored hits and signals are never groups (Round counts them).
@@ -621,10 +761,13 @@ func (a *Attacks) Due(now time.Time) []*Group {
 			if g.Notified.After(now) {
 				g.ClockSkew, g.Notified = true, time.Time{}
 			}
+			if g.Level == LevelRoute { // L1 is counted and reported, never pushed (plan: alert fatigue)
+				continue
+			}
 			if g.Since == 0 || !g.Notified.IsZero() && now.Sub(g.Notified) < NotifyEvery {
 				continue
 			}
-			if g.Level == LevelUnknown && (len(g.Recent) < UnknownNotifyAt || g.Recent[len(g.Recent)-1].Sub(g.Recent[0]) > NotifyEvery) {
+			if g.Level == LevelUnknown && !g.unknownDue() {
 				continue
 			}
 			out = append(out, g)
@@ -653,18 +796,37 @@ func (a *Attacks) NoticesSent() {
 	a.DroppedPending, a.Note = 0, ""
 }
 
-// prune drops groups not seen in AttackTTL, then evicts past MaxGroups,
+// prune drops groups not seen in AttackTTL (one not yet notified is merged
+// into its overflow group and counted in DroppedPending), then evicts past
+// MaxGroups,
 // and drops the campaign index's entries past CampaignWindow. A time past
 // now (the clock was set back) is taken as now, and said (ClockSkew).
 func (a *Attacks) prune(now time.Time) {
+	if a.Overflow == nil {
+		a.Overflow = map[string]*Group{}
+	}
 	for _, gs := range []map[string]*Group{a.Groups, a.Overflow} {
 		for k, g := range gs {
 			if g.Last.After(now) {
 				g.Last, g.ClockSkew = now, true
 			}
-			if now.Sub(g.Last) > AttackTTL {
-				delete(gs, k)
+			if now.Sub(g.Last) <= AttackTTL {
+				continue
 			}
+			if g.pending() { // not yet notified: never dropped quietly
+				a.DroppedPending++
+				if g.Prefix != PrefixOverflow {
+					ok := groupKey(PrefixOverflow, g.Entry, g.Level, !g.Unverified)
+					o := a.Overflow[ok]
+					if o == nil {
+						o = &Group{Key: ok, Prefix: PrefixOverflow, Entry: g.Entry, Level: g.Level, CVE: g.CVE, KEV: g.KEV, File: g.File, Line: g.Line}
+						a.Overflow[ok] = o
+					}
+					o.merge(g)
+					o.Last = now // kept until it is notified
+				}
+			}
+			delete(gs, k)
 		}
 	}
 	a.evict(MaxGroups)
@@ -685,3 +847,62 @@ func (a *Attacks) prune(now time.Time) {
 }
 
 func severityIndex(s string) int { return slices.Index(severities, s) }
+
+// PeekAttacks reads dir's attacks.json for a reader that changes nothing
+// (block_ip's gate, attack_attempts, /attacks): without the lock (a patrol
+// holding it for its round must not stall them), not following a link,
+// ours, bounded. A file that does not parse is an error, left in place.
+// None yet: an empty state.
+func PeekAttacks(dir string) (*Attacks, error) {
+	a := emptyAttacks()
+	f, err := openNoFollow(filepath.Join(dir, AttacksFile))
+	if errors.Is(err, fs.ErrNotExist) {
+		return a, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", AttacksFile, err)
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if why := ownedByUs(st); why != "" {
+		return nil, fmt.Errorf("%s: %s", AttacksFile, why)
+	}
+	b, err := io.ReadAll(io.LimitReader(f, MaxStateFile+1))
+	if err != nil {
+		return nil, err
+	}
+	var got Attacks
+	if len(b) > MaxStateFile || json.Unmarshal(b, &got) != nil || got.Version != 1 {
+		return nil, fmt.Errorf("%s does not parse", AttacksFile)
+	}
+	for k, g := range got.Groups {
+		if g != nil && g.Key == k {
+			a.Groups[k] = g
+		}
+	}
+	for k, g := range got.Overflow {
+		if g != nil && g.Key == k {
+			a.Overflow[k] = g
+		}
+	}
+	return a, nil
+}
+
+// GroupsOf are the groups (and overflow groups) listing ip among their
+// addresses, an IPv4-mapped address and its IPv4 one being the same.
+func (a *Attacks) GroupsOf(ip string) []*Group {
+	want := canonAddr(ip)
+	var out []*Group
+	for _, gs := range []map[string]*Group{a.Groups, a.Overflow} {
+		for _, g := range gs {
+			if slices.ContainsFunc(g.IPs, func(x string) bool { return canonAddr(x) == want }) {
+				out = append(out, g)
+			}
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
+	return out
+}

@@ -2,6 +2,7 @@ package detect
 
 import (
 	"fmt"
+	"github.com/nt-neil/shentu/detect/sig"
 	"os"
 	"path/filepath"
 	"strings"
@@ -474,3 +475,155 @@ func TestP4CloseOut(t *testing.T) {
 }
 
 var _ = engine.RouteRef{}
+
+// P5 part 4: an installed WordPress plugin is matched by a signature
+// written for its slug and version range, CVE or not.
+func TestInstalledPlugins(t *testing.T) {
+	ss := loadSigs(t, `
+[[signature]]
+id = "wp-marker"
+title = "a plugin's"
+class = "sqli"
+cves = ["CVE-2099-0101"]
+source = "shentu"
+license = "Apache-2.0"
+[[signature.applies_to]]
+ecosystem = "WordPress"
+package = "marker-plugin"
+versions = "<1.3"
+[[signature.match]]
+part = "any_param"
+contains = ["marker-one"]
+`)
+	judge := func(v string) Judgment {
+		s := Build(nil, nil, InstalledPackage{Source: "/srv/www", Ecosystem: "WordPress", Package: "marker-plugin", Version: v})
+		return NewJudge(s, ss).Judge(NewMatcher(ss).Match(Normalize(AccessRecord{Method: "GET", Path: "/", Query: "q=marker-one"})))
+	}
+	if g := judge("1.2.3"); len(g.Candidates) != 1 || g.Candidates[0].Level != LevelPayload || g.Candidates[0].VersionUnknown {
+		t.Errorf("1.2.3 in <1.3: %+v", g)
+	}
+	if g := judge("1.3.0"); len(g.Candidates) != 0 || len(g.Noise) != 1 {
+		t.Errorf("1.3.0: %+v", g)
+	}
+	if g := judge("1.2-beta"); len(g.Candidates) != 1 || !g.Candidates[0].VersionUnknown {
+		t.Errorf("a suffix, unknown: %+v", g)
+	}
+	if g := judge(""); len(g.Candidates) != 1 || !g.Candidates[0].VersionUnknown {
+		t.Errorf("no version header: %+v", g)
+	}
+	s := Build(nil, nil, InstalledPackage{Source: "/srv/www", Ecosystem: "WordPress", Package: "other", Version: "1.0"})
+	if g := NewJudge(s, ss).Judge(NewMatcher(ss).Match(Normalize(AccessRecord{Method: "GET", Path: "/", Query: "q=marker-one"}))); len(g.Candidates) != 0 {
+		t.Errorf("another plugin: %+v", g)
+	}
+}
+
+// P5 part 5: an OS package's advisory (Debian:12) is found by a signature
+// written for Debian, its range compared in dpkg's order.
+func TestOSPackageEntries(t *testing.T) {
+	ss := loadSigs(t, `
+[[signature]]
+id = "deb-marker"
+title = "an OS package's"
+class = "path"
+cves = ["CVE-2099-0200"]
+source = "shentu"
+license = "Apache-2.0"
+[[signature.applies_to]]
+ecosystem = "Debian"
+package = "marker-httpd"
+versions = "<2.4.62-1~deb12u1"
+[[signature.match]]
+part = "any_param"
+contains = ["marker-one"]
+`)
+	judge := func(v string) Judgment {
+		s := Build(nil, []PackageVuln{{Source: "os", Ecosystem: "Debian:12", Package: "marker-httpd", Version: v, ID: "DSA-0000-1", CVE: "CVE-2099-0200"}})
+		return NewJudge(s, ss).Judge(NewMatcher(ss).Match(Normalize(AccessRecord{Method: "GET", Path: "/", Query: "q=marker-one"})))
+	}
+	if g := judge("2.4.61-1~deb12u1"); len(g.Candidates) != 1 || g.Candidates[0].Level != LevelPayload || g.Candidates[0].VersionUnknown {
+		t.Errorf("in range: %+v", g)
+	}
+	// Review 2 of #91 (N-B2): OSV found it affected; the base's range does
+	// not overrule that: a candidate, version unknown.
+	if g := judge("2.4.62-1~deb12u1"); len(g.Candidates) != 1 || !g.Candidates[0].VersionUnknown {
+		t.Errorf("out of a base range: %+v", g)
+	}
+	if g := judge("2.4.62-1~deb12u0"); len(g.Candidates) != 1 {
+		t.Errorf("~deb12u0 before ~deb12u1: %+v", g)
+	}
+}
+
+// Review 2 of #91 (N-B1, N-B2): an OS advisory named DSA- or DEBIAN-CVE-
+// is found by a CVE signature through its CVEs; a release-specific range
+// for another release does not apply.
+func TestOSEntriesReview2(t *testing.T) {
+	ss := loadSigs(t, `
+[[signature]]
+id = "deb11-marker"
+title = "for Debian 11"
+class = "path"
+cves = ["CVE-2099-0201"]
+source = "shentu"
+license = "Apache-2.0"
+[[signature.applies_to]]
+ecosystem = "Debian:11"
+package = "marker-httpd"
+versions = "<2.4.62-1~deb11u1"
+[[signature.match]]
+part = "any_param"
+contains = ["marker-two"]
+`)
+	s := Build(nil, []PackageVuln{{Source: "os", Ecosystem: "Debian:12", Package: "marker-httpd", Version: "2.4.62-1~deb12u1", ID: "DSA-9999-1", CVEs: []string{"CVE-2099-0201"}, CVE: "CVE-2099-0201"}})
+	g := NewJudge(s, ss).Judge(NewMatcher(ss).Match(Normalize(AccessRecord{Method: "GET", Path: "/", Query: "q=marker-two"})))
+	if len(g.Candidates) != 1 || !g.Candidates[0].VersionUnknown {
+		t.Errorf("Debian:11's range on a Debian:12 entry: %+v", g)
+	}
+	if sameEcosystem("Debian:11", "Debian:12") || !sameEcosystem("Debian", "Debian:12") || !sameEcosystem("debian:12", "Debian:12") {
+		t.Error("sameEcosystem")
+	}
+}
+
+// Final check of #91 (S-2): a range written for the entry's own release
+// excludes a patched host (no L2); one for the base alone does not, and
+// the alert says the version is unknown.
+func TestOSEntriesSameRelease(t *testing.T) {
+	sigs := func(eco string) []sig.Signature {
+		return loadSigs(t, `
+[[signature]]
+id = "rel-marker"
+title = "t"
+class = "path"
+cves = ["CVE-2099-0202"]
+source = "shentu"
+license = "Apache-2.0"
+[[signature.applies_to]]
+ecosystem = "`+eco+`"
+package = "marker-httpd"
+versions = "<2.4.62-1~deb12u1"
+[[signature.match]]
+part = "any_param"
+contains = ["marker-three"]
+`)
+	}
+	s := Build(nil, []PackageVuln{{Source: "os", Ecosystem: "Debian:12", Package: "marker-httpd", Version: "2.4.62-1~deb12u1", ID: "DSA-0000-2", CVEs: []string{"CVE-2099-0202"}, CVE: "CVE-2099-0202"}})
+	rec := AccessRecord{Method: "GET", Path: "/", Query: "q=marker-three", Client: "198.51.100.7", Status: 200, Time: t0}
+	judge := func(ss []sig.Signature) Judgment {
+		return NewJudge(s, ss).Judge(NewMatcher(ss).Match(Normalize(rec)))
+	}
+	if g := judge(sigs("Debian:12")); len(g.Candidates) != 0 {
+		t.Errorf("patched, same release: %+v", g)
+	}
+	ss := sigs("Debian")
+	g := judge(ss)
+	if len(g.Candidates) != 1 || !g.Candidates[0].VersionUnknown {
+		t.Fatalf("base only: %+v", g)
+	}
+	a := newAttacks()
+	var grp *Group
+	for _, at := range NewJudge(s, ss).Attempts(rec, Origin{Verified: true}, NewMatcher(ss).Match(Normalize(rec)), g) {
+		grp = a.Add(at, t0)
+	}
+	if grp == nil || !grp.VersionUnknown || !strings.Contains(alertText(grp, &s, true), "版本未知（依 OSV 判定受影響）") {
+		t.Errorf("alert: %v", grp)
+	}
+}

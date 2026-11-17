@@ -737,3 +737,19 @@ func TestConfTrustedThroughLinkedDir(t *testing.T) {
 		t.Errorf("resolving outside /etc and the package directories: %q", why)
 	}
 }
+
+// P5 (p5-review2): a log path's "..", "." and "//" are taken off as
+// written: one log named two ways is one source.
+func TestLogPathCleaned(t *testing.T) {
+	l := &logLoader{out: map[string]*LogSource{}}
+	l.add(LogSource{Path: "/var/log/nginx/../nginx//access.log", Server: "nginx", Kind: "access"})
+	l.add(LogSource{Path: "/var/log/nginx/./access.log", Server: "nginx", Kind: "access"})
+	if len(l.out) != 1 {
+		t.Fatalf("%d sources: %v", len(l.out), l.out)
+	}
+	for _, s := range l.out {
+		if s.Path != "/var/log/nginx/access.log" {
+			t.Errorf("path %q", s.Path)
+		}
+	}
+}

@@ -39,6 +39,7 @@ Usage:
                [--local] [--provider anthropic|openai|openrouter|appletoken] [--model NAME] [--yes]
   shentu chat [question]      ask in plain language; with a question, answer once and exit
   shentu patrol [--daily]     run the checks once and notify on new findings (for a systemd timer)
+  shentu detect [--since 24h] [--json]  read and judge the web logs now, list attack attempts (sends and saves nothing)
                 [--dry-run]   print the report instead of sending it
   shentu survey               survey this server (services, exposure, stacks, SSH, firewall) and save it as the baseline
   shentu bot [pair|unpair|status|approve|totp|resume]
@@ -89,7 +90,7 @@ func main() {
 	switch cmd { // before the config: help and a mistyped command need none
 	case "help", "--help", "-h":
 		os.Exit(printUsage(cmd, os.Stdout, os.Stderr))
-	case "version", "--version", "setup", "chat", "survey", "bot", "budget", "usage", "patrol", "service":
+	case "version", "--version", "setup", "chat", "survey", "bot", "budget", "usage", "patrol", "detect", "service":
 	default:
 		os.Exit(printUsage(cmd, os.Stdout, os.Stderr))
 	}
@@ -110,6 +111,7 @@ func main() {
 	tools.SetWebUsers(cfg.Tools.WebUsers)
 	tools.SetAuditLimits(cfg.Tools.AuditMaxMemoryMB, cfg.Tools.AuditWorkers)
 	tools.SetCacheDir(filepath.Join(cfg.StateDir, "cache"))
+	tools.SetStateDir(cfg.StateDir)
 	env := &tools.Env{
 		LogPaths:    cfg.Tools.LogPaths,
 		WatchPaths:  cfg.Tools.WatchPaths,
@@ -144,6 +146,17 @@ func main() {
 		dry := fs.Bool("dry-run", false, "print the report, do not notify")
 		fs.Parse(args)
 		err = patrol(ctx, cfg, env, *daily, *dry)
+	case "detect":
+		fs := flag.NewFlagSet("detect", flag.ExitOnError)
+		since := fs.Duration("since", 24*time.Hour, "list groups seen within this long")
+		asJSON := fs.Bool("json", false, "print JSON")
+		fs.Parse(args)
+		if err = stateReady(cfg.StateDir); err == nil {
+			err = detectStateDir(cfg.StateDir, privileged())
+		}
+		if err == nil {
+			err = detectCommand(ctx, cfg, *since, *asJSON, os.Stdout)
+		}
 	case "service":
 		err = serviceCommand(ctx, cfg, env, args)
 	default:

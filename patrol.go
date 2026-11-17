@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nt-neil/shentu/detect/sig"
 	"github.com/nt-neil/shentu/hostenv"
 	"github.com/nt-neil/shentu/tools"
 )
@@ -466,7 +467,20 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 	unchecked := uncheckedSection(st.Profile.Risks) + sshUnchecked // listed in every report, never pushed
 	if daily {
 		// Once a day: installed packages with vulnerabilities that are being exploited now.
-		r, err := tools.PackageVulns(ctx, env.HTTP, "")
+		r, osSurface, err := tools.PackageVulnsSurface(ctx, env.HTTP)
+		var partial []string // what the vulnerability surface lacks today
+		osFailed := err != nil
+		if osFailed {
+			partial = append(partial, "作業系統套件（"+err.Error()+"）")
+		} else if p, _ := r["partial"].(string); p != "" {
+			partial = append(partial, "作業系統套件只查了一部分（"+p+"）")
+		}
+		if n, _ := r["surface_cves_missing"].(int); n > 0 {
+			partial = append(partial, fmt.Sprintf("作業系統套件有 %d 筆 advisory 查不到對應的 CVE：以 CVE 寫的簽章對不到它們", n))
+		}
+		if len(osSurface) > 0 && !sig.ComparesVersions(osSurface[0].Ecosystem) {
+			partial = append(partial, osSurface[0].Ecosystem+" 的套件版本沒有比較器：簽章對到的 CVE 一律列為版本未知（VersionUnknown），不會依版本排除")
+		}
 		unchecked += uncheckedVulns("installed packages", r, err)
 		if err == nil {
 			list, _ := r["actively_exploited"].([]tools.Exploit)
@@ -478,8 +492,21 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 		// The same for application dependencies (npm, PyPI, Composer, Go, RubyGems).
 		r, err = tools.AppVulns(ctx, env.HTTP, env.AppPaths)
 		unchecked += uncheckedVulns("application dependencies", r, err)
+		var apps []tools.AppResult
+		failedApps := map[string]bool{} // lock files whose check failed: their entries are yesterday's
+		if err != nil {
+			failedApps["*"] = true
+			partial = append(partial, "應用程式相依套件（"+err.Error()+"）")
+		}
 		if err == nil {
-			for _, f := range r["files"].([]tools.AppResult) {
+			apps, _ = r["files"].([]tools.AppResult)
+			for _, f := range apps {
+				if f.Error != "" { // OSV unreachable for this file: AppVulns says so per file, not as its error
+					failedApps[f.Path] = true
+					partial = append(partial, "應用程式相依套件 "+f.Path+"（"+f.Error+"）")
+				}
+			}
+			for _, f := range apps {
 				for _, e := range f.Exploited {
 					all = append(all, finding{"kev:" + f.Path + ":" + e.Package + ":" + e.CVE, "critical",
 						fmt.Sprintf("%s pins %s %s, which has %s, exploited in the wild (%s); upgrade it", f.Path, e.Package, e.Version, e.CVE, e.Name), e})
@@ -491,6 +518,26 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 		audit := tools.AppCodeAudit(ctx, env.AppPaths, web)
 		all = replaceOrAppend(all, codeAuditFindings(audit))
 		unchecked += uncheckedConfigs(unread) + notCheckedSection(audit.NotChecked)
+		// The vulnerability surface attack detection judges by, until
+		// tomorrow: saved before the report goes (a notify that fails, or
+		// none configured, does not lose it); a dry run makes none.
+		if dryRun {
+			unchecked += "\nAttack detection: --dry-run does not build the vulnerability surface (surface.json); `shentu patrol --daily` does.\n"
+		} else {
+			unchecked += saveDailySurface(cfg, env, audit, web, apps, osSurface, failedApps, osFailed, partial, time.Now())
+		}
+	}
+	// Attack detection: read and judged now (the daily report gets its
+	// summary); its alerts go out on their own, as the detector's words,
+	// after this patrol's report (deferred: whatever path it ends on).
+	carry := detectCarryOver(cfg.StateDir) // what the last patrol's sends could not do
+	unchecked = carry + unchecked
+	dr := detectJudge(ctx, cfg, time.Now(), daily, dryRun)
+	defer finishDetect(ctx, env, dr)
+	if daily {
+		unchecked += detectSection(dr.sum)
+	} else if dr.sum.Err != "" {
+		unchecked += "\nAttack detection: " + dr.sum.Err + "\n"
 	}
 	var fresh []finding
 	for _, f := range all {
@@ -502,6 +549,9 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 	st.LastRun = time.Now()
 	if len(fresh) == 0 && !daily {
 		fmt.Println("patrol: nothing new")
+		if err := sayCarryOver(ctx, env, cfg.StateDir, carry, dryRun); err != nil {
+			fmt.Fprintln(os.Stderr, "shentu: attack detection: the last patrol's failures could not be sent:", err)
+		}
 		return st.save(cfg.StateDir)
 	}
 
@@ -565,6 +615,9 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 	}
 	if err := tools.Notify(ctx, env, title, answer, sev); err != nil {
 		return fmt.Errorf("notify failed (findings are not marked as sent): %w", err)
+	}
+	if carry != "" {
+		clearCarryOver(cfg.StateDir) // said in this report
 	}
 	for _, f := range fresh {
 		st.Alerted[f.Key] = time.Now()

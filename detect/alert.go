@@ -76,6 +76,9 @@ func alertText(g *Group, s *Surface, mask bool) string {
 		b.WriteString("時鐘異常：這組紀錄的時間晚於主機現在的時間（時鐘曾被調回），請檢查主機時間\n")
 	}
 	b.WriteString("漏洞：" + Printable(vulnText(g, e, found)) + "\n")
+	if g.VersionUnknown {
+		b.WriteString("版本：版本未知（依 OSV 判定受影響）\n")
+	}
 	b.WriteString("等級：" + levelZh[g.Level] + "\n")
 	if g.Success != "" {
 		b.WriteString("成功跡象：" + Printable(g.Success) + "\n")

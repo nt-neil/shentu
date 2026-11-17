@@ -33,6 +33,11 @@ const (
 	ReadCursorStuck = "cursor_stuck"
 )
 
+// JournalEntryCost is what each entry costs the budget beside its MESSAGE:
+// journalctl's JSON around it. Many empty entries spend the budget too,
+// not only the time.
+const JournalEntryCost = 256
+
 // StuckAfter is how many failed runs in a row make a cursor stuck.
 const StuckAfter = 3
 
@@ -107,7 +112,7 @@ func ReadJournalUnit(ctx context.Context, src hostenv.Source, unit hostenv.AppUn
 			res.partial(ReadTruncated)
 			return hostenv.ErrStopJournal
 		}
-		n := int64(len(e.Message))
+		n := int64(len(e.Message)) + JournalEntryCost // an empty MESSAGE still costs a read
 		if e.MessageMissing {
 			res.partial(ReadMessageMissing)
 		}
