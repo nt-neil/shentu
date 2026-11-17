@@ -32,7 +32,7 @@ Three class signatures were narrowed so that ordinary text no longer matches the
 - a quote, a space and a double dash, as in a search;
 - a semicolon followed by "id" and more words.
 
-The cost is misses. A call written with a space before its parenthesis is not caught. Neither is a comment that starts after a space following the quote, or `id` run with arguments after a separator.
+The cost is misses. A call with a space before its parenthesis is caught only when its argument looks like code (a quote, `$` or another call). A comment after a space following the quote is caught only when it ends the value. `id` run with arguments after a separator is not caught.
 
 ## Measured detection
 

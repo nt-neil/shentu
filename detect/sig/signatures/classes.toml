@@ -46,8 +46,9 @@ source = "shentu"
 license = "Apache-2.0"
 [[signature.match]]
 part = "any_param"
-# -- right after the quote: "hello" -- world in a search is not this.
-regex = '''['"](?:\s*\)*\s*(?:#|/\*)|\)*--[\s-])'''
+# -- right after the quote, or ending the value: "hello" -- world in a
+# search is not this.
+regex = '''['"](?:\s*\)*\s*(?:#|/\*)|\)*--[\s-]|\s*\)*\s*--[\s-][\s-]*$)'''
 
 # --- Path traversal and local file inclusion (CWE-22, CWE-98) ---
 
@@ -95,8 +96,9 @@ source = "shentu"
 license = "Apache-2.0"
 [[signature.match]]
 part = "any_param"
-# id only at the end or before another separator: tom; id card is not this.
-regex = '(?:[;&|`\n]|\$\()\s*(?:id(?:$|\s*[;&|`)\n])|(?:whoami|uname(?:\s+-a)?|hostname|cat\s+/etc/\w+|wget\s+\S|curl\s+\S|nc\s+-\w|ncat\s|bash\s+-[ci]|sh\s+-c|ping\s+-c\s*\d|nslookup\s+\S|powershell\b|cmd(?:\.exe)?\s+/c)\b)'
+# id only at the end, or before a separator, a redirection or a comment:
+# tom; id card is not this.
+regex = '(?:[;&|`\n]|\$\()\s*(?:id(?:\s*(?:$|[;&|`)\n#>])|\s+\d+>)|(?:whoami|uname(?:\s+-a)?|hostname|cat\s+/etc/\w+|wget\s+\S|curl\s+\S|nc\s+-\w|ncat\s|bash\s+-[ci]|sh\s+-c|ping\s+-c\s*\d|nslookup\s+\S|powershell\b|cmd(?:\.exe)?\s+/c)\b)'
 
 [[signature]]
 id = "cmdi-ifs"
@@ -203,8 +205,9 @@ source = "shentu"
 license = "Apache-2.0"
 [[signature.match]]
 part = "any_param"
-# The name right before its (: file system (ext4) is not this.
-regex = '\b(?:eval|assert|system|passthru|shell_exec|proc_open|popen|create_function|call_user_func(?:_array)?|base64_decode|gzinflate|str_rot13)\(|__import__\s*\(|\bruntime\.getruntime\(\)\.exec|\bprocessbuilder\b'
+# The name right before its (, or a code-like argument after it: file
+# system (ext4) is not this.
+regex = '\b(?:eval|assert|system|passthru|shell_exec|proc_open|popen|create_function|call_user_func(?:_array)?|base64_decode|gzinflate|str_rot13)(?:\(|\s+\(\s*(?:[\x27"$]|\w+\s*\())|__import__\s*\(|\bruntime\.getruntime\(\)\.exec|\bprocessbuilder\b'
 
 [[signature]]
 id = "code-jndi-lookup"
