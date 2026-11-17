@@ -185,11 +185,8 @@ func mergeSinks(as []Attempt) []Attempt {
 			continue
 		}
 		m := &out[i]
-		if a.Level > m.Level {
-			m.Level, m.Route, m.VersionUnknown = a.Level, a.Route, a.VersionUnknown
-		}
-		if a.Entry < m.Entry {
-			m.Entry = a.Entry
+		if a.Level > m.Level || a.Level == m.Level && a.Entry < m.Entry { // the level's rule names it, whatever the order (#97 review 1, S-5)
+			m.Entry, m.Level, m.Route, m.VersionUnknown = a.Entry, a.Level, a.Route, a.VersionUnknown
 		}
 		m.Severe = m.Severe || a.Severe
 		for _, r := range a.Rules {

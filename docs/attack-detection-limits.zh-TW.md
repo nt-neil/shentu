@@ -21,6 +21,7 @@ v0.4.0 不會自動封鎖：`block_ip` 一定要經營運者確認。攻擊紀�
   - `symlink_not_followed`：紀錄檔要經過連結才看得到，Shentu 不跟隨連結。
   - `client_from_header`：伺服器從請求的 header 取用戶端位址（nginx 的 realip、Apache 的 mod_remoteip），紀錄裡的 IP 是代理或用戶端自己寫的。
   - `custom_format`：紀錄格式不是標準格式（nginx combined 或 main、Apache combined 或 common）。照樣比對，但無法排除用戶端寫的欄位讓其他欄位錯位。
+- **不是 root 時讀到的 SSH 登入**：只有 root，或 systemd-journal、adm 群組的成員，journald 的 SSH 登入紀錄才算完整，可以當封鎖依據。wheel 群組的成員（RHEL、Fedora）其實可能讀得到整份 journal，但會被當成只讀到一部分，所以它讀到的 SSH 登入不能當封鎖依據。反過來，adm 群組的成員一律當成讀得到全部，即使 journal 沒有開放給 adm（例如 journal 只放在 /run/log/journal）。
 
 ## 可能漏掉的請求
 

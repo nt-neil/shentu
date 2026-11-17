@@ -59,3 +59,73 @@ func TestBaselineSkipsOnlyL2(t *testing.T) {
 		t.Errorf("sizes %v: want the 30 ordinary and the unanchored one, not the L2 one", fmt.Sprint(b.Sizes))
 	}
 }
+
+// Reviews of #97 and #98 for v0.4.1: loading v0.4.0's per-rule groups of
+// one sink counts a time as often as one group holds it (fix2 S-1), takes
+// samples and Success in the order of the rules' entries, whatever the
+// map's order (fix2 S-2), and converts only a line past 0 (#97 r3 S-1).
+func TestOldGroupsLoadedStable(t *testing.T) {
+	at := time.Date(2026, 11, 17, 12, 0, 0, 0, time.UTC)
+	hour := at.Add(-time.Hour)
+	ip, prefix := "203.0.113.10", "203.0.113.0/24"
+	for n := range 20 {
+		dir := t.TempDir()
+		old := newAttacks()
+		old.IPs[ip] = &ipRecord{Entries: map[string]time.Time{"code:marker-rule-a:app.py:-1": hour}, Last: hour}
+		for _, r := range []string{"marker-rule-a", "marker-rule-b", "marker-rule-c"} {
+			e := "code:" + r + ":app.py:30"
+			k := groupKey("*", e, LevelUnknown, true)
+			old.Groups[k] = &Group{Key: k, Prefix: "*", Entry: e, Level: LevelUnknown, First: hour, Last: hour, Count: 3, Since: 3, Severity: "low", IPs: []string{ip}, IPsSeen: 1,
+				Recent: []time.Time{hour, hour, hour.Add(time.Second)}}
+			e = "code:" + r + ":app.py:20"
+			k = groupKey(prefix, e, LevelSuccess, true)
+			old.Groups[k] = &Group{Key: k, Prefix: prefix, Entry: e, Level: LevelSuccess, File: "app.py", Line: 20, First: hour, Last: hour, Count: 1, Since: 1, Severity: "high", IPs: []string{ip}, IPsSeen: 1,
+				Samples: []string{"sample-" + r}, Success: "success-" + r}
+		}
+		e := "code:marker-rule-a:app.py:-1"
+		k := groupKey(prefix, e, LevelPayload, true)
+		old.Groups[k] = &Group{Key: k, Prefix: prefix, Entry: e, Level: LevelPayload, File: "app.py", Line: -1, First: hour, Last: hour, Count: 1, Since: 1, Severity: "medium", IPs: []string{ip}, IPsSeen: 1}
+		if err := old.Save(dir, at); err != nil {
+			t.Fatal(err)
+		}
+		a, err := LoadAttacks(dir, at)
+		if err != nil {
+			t.Fatal(err)
+		}
+		u := a.Groups[groupKey("*", "code@app.py:30", LevelUnknown, true)]
+		if u == nil || !slices.Equal(u.Recent, []time.Time{hour, hour, hour.Add(time.Second)}) {
+			t.Fatalf("load %d: Unknown group %+v: want each time as often as one group holds it", n, u)
+		}
+		s := a.Groups[groupKey(prefix, "code@app.py:20", LevelSuccess, true)]
+		if s == nil || !slices.Equal(s.Samples, []string{"sample-marker-rule-a", "sample-marker-rule-b", "sample-marker-rule-c"}) || s.Success != "success-marker-rule-a" {
+			t.Fatalf("load %d: L3 group %+v: want the rules' order", n, s)
+		}
+		if a.Groups[k] == nil || a.IPs[ip].Entries[e].IsZero() {
+			t.Fatalf("load %d: line -1 converted: %v %v", n, keys(a.Groups), a.IPs[ip].Entries)
+		}
+		a.Close()
+	}
+}
+
+// #97 review 1, S-5: rules flagging one sink at different levels make an
+// attempt whose entry and route are the level's rule's; at one level, the
+// smaller entry's, whatever the order.
+func TestMergedSinkEntryOfItsLevel(t *testing.T) {
+	ra := &engine.RouteRef{Pattern: "/marker/a", File: "app.py", Line: 3}
+	rb := &engine.RouteRef{Pattern: "/marker/b", File: "app.py", Line: 4}
+	a := Attempt{Entry: "code:marker-rule-a:app.py:14", File: "app.py", Line: 14, Level: LevelRoute, Rules: []string{"marker-rule-a"}, Route: ra}
+	b := Attempt{Entry: "code:marker-rule-b:app.py:14", File: "app.py", Line: 14, Level: LevelPayload, Rules: []string{"marker-rule-b"}, Route: rb}
+	for _, in := range [][]Attempt{{a, b}, {b, a}} {
+		out := mergeSinks(in)
+		if len(out) != 1 || out[0].Entry != b.Entry || out[0].Route != rb || out[0].Level != LevelPayload {
+			t.Errorf("L1 and L2: %+v", out)
+		}
+	}
+	a.Level = LevelPayload
+	for _, in := range [][]Attempt{{a, b}, {b, a}} {
+		out := mergeSinks(in)
+		if len(out) != 1 || out[0].Entry != a.Entry || out[0].Route != ra {
+			t.Errorf("two L2: %+v", out)
+		}
+	}
+}

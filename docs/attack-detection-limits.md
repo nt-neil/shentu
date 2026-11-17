@@ -21,6 +21,7 @@ v0.4.0 never blocks on its own: `block_ip` always needs the operator's confirmat
   - `symlink_not_followed`: the log could only be looked at by following a link, which Shentu does not do.
   - `client_from_header`: the server takes the client address from a request header (nginx's realip, Apache's mod_remoteip), so the logged address is what a proxy or the client wrote.
   - `custom_format`: the log format is not a standard one (nginx combined or main, Apache combined or common). Its lines are matched, but a field the client writes shifting the others is not ruled out.
+- **SSH logins read by a user other than root**: journald's SSH logins count as complete for a block only for root or a member of the systemd-journal or adm group. A member of wheel (RHEL, Fedora), who may read the whole journal, is taken as reading only part of it, so its SSH logins do not back a block. An adm member is taken as reading all of it even where the journal grants adm nothing (for example a journal kept only in /run/log/journal).
 
 ## Requests that may be missed
 
