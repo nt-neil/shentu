@@ -2,6 +2,8 @@ package engine
 
 import (
 	"fmt"
+	"maps"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -104,6 +106,8 @@ type summaries struct {
 	busy   map[string]bool
 	rel    map[string]uint8     // relevance to the rule, once known: 1 yes, 2 no (relevance.go)
 	direct map[string]bool      // what in the function itself matters to the rule, calls aside; nil until worked out
+	srcMay map[string]bool      // ... what may bring input in by itself (mayBringInput)
+	srcRel map[string]uint8     // whether that is reached from the function, once known: 1 yes, 2 no (reachSource)
 	cross  map[string][]relNode // the functions of other files the function calls
 	retUnk map[string]uint8     // 1: the function returns the result of a call the analysis does not know; 2: it does not
 	keyed  map[string]*summary  // sinks a parameter reaches when only some keys of its argument carry input (keyedSinks)
@@ -117,7 +121,7 @@ func newSummaries(ff *fileFuncs) *summaries {
 		return nil
 	}
 	return &summaries{ff: ff, funcs: ff.byKey, done: map[string]*summary{}, busy: map[string]bool{},
-		rel: map[string]uint8{}, retUnk: map[string]uint8{}, keyed: map[string]*summary{}}
+		rel: map[string]uint8{}, srcRel: map[string]uint8{}, retUnk: map[string]uint8{}, keyed: map[string]*summary{}}
 }
 
 // fileFuncs are the named functions of a file and how they call one another,
@@ -137,11 +141,13 @@ type fileFuncs struct {
 	desc     map[string][]string // class → the classes of the file under it, worked out once
 	callsUp  map[string]bool     // memo of callsParent(): key + "\x00" + name
 	vcls     map[string]string   // names given one class's new object (varClasses)
+	tails    map[string]bool     // every part of a key after a "::" (hasTail)
 }
 
 func newFileFuncs(funcs map[string][]*fnInfo, lang string) *fileFuncs {
-	ff := &fileFuncs{php: lang == "php", byKey: funcs, parents: map[string]string{}, traits: map[string][]string{}}
-	for _, infos := range funcs {
+	ff := &fileFuncs{php: lang == "php", byKey: funcs, parents: map[string]string{}, traits: map[string][]string{}, tails: map[string]bool{}}
+	for k, infos := range funcs {
+		ff.addTails(k)
 		for _, fi := range infos {
 			if c := fi.f.class; c != "" {
 				c = ff.norm(c)
@@ -158,6 +164,18 @@ func newFileFuncs(funcs map[string][]*fnInfo, lang string) *fileFuncs {
 	}
 	return ff
 }
+
+// addTails records the parts of key k after each "::" it has.
+func (ff *fileFuncs) addTails(k string) {
+	for i := 0; i+2 <= len(k); i++ {
+		if k[i:i+2] == "::" {
+			ff.tails[k[i+2:]] = true
+		}
+	}
+}
+
+// hasTail reports whether a key ends in "::" + n.
+func (ff *fileFuncs) hasTail(n string) bool { return ff.tails[n] }
 
 // norm is a class name as keys use it: without namespace, PHP in lower case.
 func (ff *fileFuncs) norm(c string) string {
@@ -636,6 +654,7 @@ func (ff *fileFuncs) this(class, name, caller string) string {
 			infos = append(infos, ff.byKey[k]...)
 		}
 		ff.byKey[vk] = infos
+		ff.addTails(vk)
 		if ff.unions == nil {
 			ff.unions = map[string][]string{}
 		}
@@ -1014,7 +1033,7 @@ func (a *analysis) graph() bool {
 func (a *analysis) summarizeKey(key string) *summary {
 	s := &summary{}
 	for _, fi := range a.sc.funcs[key] {
-		a.summarize(fi, s)
+		a.summarize(key, fi, s)
 	}
 	return s
 }
@@ -1164,7 +1183,7 @@ var checkWords = words("in_array array_key_exists preg_match ctype_digit ctype_a
 	"fullmatch match includes has test startsWith")
 
 // summarize adds what fi does to s.
-func (a *analysis) summarize(fi *fnInfo, s *summary) {
+func (a *analysis) summarize(key string, fi *fnInfo, s *summary) {
 	if s.params == nil {
 		s.params = fi.params
 	}
@@ -1186,9 +1205,18 @@ func (a *analysis) summarize(fi *fnInfo, s *summary) {
 	// With the rule's sources and no parameter: input of its own. Only input
 	// returned as is counts (sanitize_locale_name($_GET['l']) is left out, as it
 	// was before calls were followed).
-	base := run(0, true)
-	if base.ret.taint && !base.ret.weak {
-		s.retSrc = true
+	// Worked out only where it may be true: the function returns a value, and
+	// a source of the rule, or a call the graph does not resolve, is reached
+	// from it. With checkSkips the skipped run is made anyway and must agree.
+	if a.mayReturnInput(key, fi) {
+		base := run(0, true)
+		if base.ret.taint && !base.ret.weak {
+			s.retSrc = true
+		}
+	} else if checkSkips {
+		if base := run(0, true); base.ret.taint && !base.ret.weak {
+			panic(fmt.Sprintf("engine: skipped the sources run of %s (%s, rule %s), which returns input", key, a.file, a.r.rule.ID))
+		}
 	}
 	if n == 0 || a.b.hit {
 		return
@@ -1216,11 +1244,30 @@ func (a *analysis) summarize(fi *fnInfo, s *summary) {
 	if len(all.lines) == 0 && !all.ret.taint && len(all.checks) == 0 {
 		return
 	}
+	read := paramsRead(fi)
+	var none *summRun // the run with no parameter given input
 	for i := 0; i < n && !a.b.hit; i++ {
 		if fi.params[i] == "" {
 			continue
 		}
-		r := run(1<<i, false)
+		var r *summRun
+		if read != nil && !read[fi.params[i]] {
+			// A parameter the body never reads changes nothing: its run is the
+			// run with no parameter given input, made once for all of them. That
+			// run need not be empty: a call that returns input of its own
+			// (callVal) carries it with the sources off too.
+			if none == nil {
+				none = run(0, false)
+			}
+			r = none
+			if checkSkips {
+				if o := run(1<<i, false); !sameRun(o, none) || validates(o, i) != validates(none, i) {
+					panic(fmt.Sprintf("engine: the run of unread parameter %s of %s (%s, rule %s) differs from the run with no parameter", fi.params[i], key, a.file, a.r.rule.ID))
+				}
+			}
+		} else {
+			r = run(1<<i, false)
+		}
 		if s.checks&(1<<i) == 0 && validates(r, i) {
 			s.condChecks |= 1 << i
 		}
@@ -1253,6 +1300,13 @@ func (a *analysis) summarize(fi *fnInfo, s *summary) {
 	}
 }
 
+// sameRun reports whether two summary runs found the same.
+func sameRun(x, y *summRun) bool {
+	return maps.Equal(x.lines, y.lines) && maps.Equal(x.emb, y.emb) && x.ret.taint == y.ret.taint &&
+		x.ret.weak == y.ret.weak && x.ret.emb == y.ret.emb &&
+		slices.EqualFunc(x.checks, y.checks, func(p, q map[string]bool) bool { return maps.Equal(p, q) })
+}
+
 // runBody analyses the body of fi from st, with the rule's sources on or off.
 func (a *analysis) runBody(fi *fnInfo, st state, sources bool) *summRun {
 	x := &analysis{r: a.r, php: a.php, py: a.py, js: a.js, b: a.b, kw: a.kw, seen: map[loc]bool{}, sc: a.sc, defs: a.defs,
@@ -1278,11 +1332,12 @@ func partialArg(st state, arg []Token) map[string]entry {
 		return nil
 	}
 	sub, tainted := map[string]entry{}, false
+	under := v + sepCh
 	for k, e := range st {
-		if !strings.HasPrefix(k, v+sepCh) {
+		if !strings.HasPrefix(k, under) {
 			continue
 		}
-		first, _, _ := strings.Cut(k[len(v)+len(sepCh):], sepCh)
+		first, _, _ := strings.Cut(k[len(under):], sepCh)
 		if !strings.HasPrefix(first, "[") || first == "[*]" {
 			if e.taint {
 				return nil // input under a member or an unknown index: the whole parameter
@@ -1376,6 +1431,85 @@ func (a *analysis) keyedSinks(t []Token, i int, key string, p int, sub map[strin
 		lines = append(lines, l[0])
 	}
 	return lines, true
+}
+
+// checkSkips (SHENTU_CHECK_SKIPS=1) makes every summary run the analysis
+// skips as unneeded anyway and panics where it would have found something:
+// for tests and CI, never for a scan.
+var checkSkips = os.Getenv("SHENTU_CHECK_SKIPS") != ""
+
+// mayReturnInput reports whether the function key may return input of its
+// own: it returns a value (return with one, yield, an arrow's expression) and
+// what may bring input in is reached from it (reachSource).
+func (a *analysis) mayReturnInput(key string, fi *fnInfo) bool {
+	if !returnsValue(fi.f.body, 0) {
+		return false
+	}
+	return a.reachSource(relNode{a.file, key})
+}
+
+// paramsRead returns the names the body of fi reads, its function literals
+// and string interpolations included, or nil where every parameter must count
+// as read: code nested too deep to read, or a way of reading parameters
+// without naming them (func_get_args, compact, get_defined_vars, extract,
+// $$name, arguments, locals, vars, eval).
+func paramsRead(fi *fnInfo) map[string]bool {
+	set := map[string]bool{}
+	if !walkAll(fi.f.body, 0, func(t []Token) {
+		nameSet(t, set)
+		for i, tk := range t {
+			if tk.Kind == Var && (tk.Text == "$" || strings.HasPrefix(tk.Text, "$$")) || tk.op("$") && i+1 < len(t) {
+				set["$$"] = true
+			}
+		}
+	}) {
+		return nil
+	}
+	for _, w := range []string{"$$", "func_get_args", "func_get_arg", "compact", "get_defined_vars", "extract", "arguments", "locals", "vars", "eval"} {
+		if set[w] {
+			return nil
+		}
+	}
+	return set
+}
+
+// returnsValue reports whether a body returns or yields a value, its function
+// literals included (counted, as they may be called inline).
+func returnsValue(ss []*stmt, depth int) bool {
+	if depth > maxNest {
+		return len(ss) > 0
+	}
+	for _, s := range ss {
+		for i, tk := range s.toks {
+			if tk.Kind == Ident && (tk.Text == "yield" || tk.Text == "return" && i+1 < len(s.toks) && !s.toks[i+1].op(";")) {
+				return true
+			}
+		}
+		for _, fn := range s.funcs {
+			if returnsValue(fn.body, depth+1) {
+				return true
+			}
+		}
+		if s.fn != nil && s.fn.name == "" && returnsValue(s.fn.body, depth+1) {
+			return true
+		}
+		for _, b := range [][]*stmt{s.body, s.els, s.orelse} {
+			if returnsValue(b, depth+1) {
+				return true
+			}
+		}
+		for _, h := range s.handlers {
+			if returnsValue(h, depth+1) {
+				return true
+			}
+		}
+		for _, c := range s.cases {
+			if returnsValue(c, depth+1) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // callArgs returns the arguments of the call whose "(" is at open.

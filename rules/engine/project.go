@@ -54,11 +54,11 @@ type Project struct {
 	ctx                  map[string]*fileCtx
 	lru                  []string
 	resident             int
-	sums                 map[string]*summaries          // rule id + "\x00" + path
-	kept                 map[string]map[string]*summary // finished summaries of files no longer kept parsed
-	incl                 map[string][]string            // memo of includes()
-	fnMemo               map[string]string              // memo of function(): from + "\x00" + name → file
-	seen                 map[string]bool                // findings already returned: rule, path, line
+	sums                 map[ruleFile]*summaries
+	kept                 map[ruleFile]map[string]*summary // finished summaries of files no longer kept parsed
+	incl                 map[string][]string              // memo of includes()
+	fnMemo               map[[2]string]string             // memo of function(): {from, name} → file
+	seen                 map[string]bool                  // findings already returned: rule, path, line
 	stopped              string
 	byMachine            bool                       // stopped by the clock or the heap: where depends on the machine
 	unsteady             bool                       // the current scan met a file it could not read, or parse in time
@@ -154,8 +154,8 @@ func (e *Engine) NewProject(paths []string, read func(string) ([]byte, error), o
 	}
 	p := &Project{e: e, opt: opt, read: read, files: map[string]*fileIndex{}, bySuffix: map[string][]string{}, byClean: map[string]string{},
 		funcs: map[string]map[string][]string{}, classes: map[string]map[string][]string{}, declared: map[string]map[string][]string{},
-		ctx: map[string]*fileCtx{}, sums: map[string]*summaries{}, kept: map[string]map[string]*summary{}, seen: map[string]bool{},
-		incl: map[string][]string{}, fnMemo: map[string]string{}, deps: map[string]map[string]bool{}, unread: map[string]bool{}, sinkRules: map[string]bool{},
+		ctx: map[string]*fileCtx{}, sums: map[ruleFile]*summaries{}, kept: map[ruleFile]map[string]*summary{}, seen: map[string]bool{},
+		incl: map[string][]string{}, fnMemo: map[[2]string]string{}, deps: map[string]map[string]bool{}, unread: map[string]bool{}, sinkRules: map[string]bool{},
 		deadline: time.Now().Add(opt.MaxTime)}
 	key := e.indexKey()
 	cache := loadIndexCache(opt.CacheFile, key)
@@ -770,6 +770,9 @@ func (p *Project) summary(a *analysis, c callee) *summary {
 	return x.summaryOf(name) // worked out in a budget of its own (own): kept whoever asked // name is the key in that file (Class::m for a method)
 }
 
+// ruleFile keys the summaries of one rule in one file.
+type ruleFile struct{ rule, file string }
+
 // analysisFor returns an analysis of file f for the same rule, sharing the
 // caller's budget and the project's summaries of f.
 func (p *Project) analysisFor(a *analysis, f string) *analysis {
@@ -778,7 +781,7 @@ func (p *Project) analysisFor(a *analysis, f string) *analysis {
 		return nil
 	}
 	p.dep(a.file, f)
-	key := a.r.rule.ID + "\x00" + f
+	key := ruleFile{a.r.rule.ID, f}
 	sc, ok := p.sums[key]
 	if !ok {
 		sc = newSummaries(ctx.ff)
@@ -849,7 +852,7 @@ func (p *Project) keep(f string, c *fileCtx) {
 			// computing them again is what costs. The map itself is kept, so what
 			// is still written to it (a cycle being settled) is kept too.
 			for k, sc := range p.sums {
-				if strings.HasSuffix(k, "\x00"+old) {
+				if k.file == old {
 					p.kept[k] = sc.done
 					delete(p.sums, k)
 				}
@@ -956,7 +959,7 @@ func (p *Project) shrink(all bool) {
 		// The summaries stay, with the file's functions: a file parsed again
 		// gets them back (analysisFor), as when the LRU lets it go (keep).
 		for k, sc := range p.sums {
-			if !p.inUse(k[strings.IndexByte(k, 0)+1:]) {
+			if !p.inUse(k.file) {
 				p.kept[k] = sc.done
 				delete(p.sums, k)
 			}
@@ -964,7 +967,7 @@ func (p *Project) shrink(all bool) {
 		return
 	}
 	for k := range p.sums {
-		if !p.inUse(k[strings.IndexByte(k, 0)+1:]) {
+		if !p.inUse(k.file) {
 			delete(p.sums, k)
 		}
 	}
@@ -1112,7 +1115,7 @@ func (p *Project) declares(f, name string) bool {
 // function finds the file declaring a plain function: one the file includes,
 // else the only one declaring it.
 func (p *Project) function(from string, fi *fileIndex, name string) string {
-	mk := from + "\x00" + name
+	mk := [2]string{from, name}
 	if f, ok := p.fnMemo[mk]; ok {
 		if f == "?" {
 			p.ambig = name
