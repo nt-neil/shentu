@@ -72,6 +72,11 @@ func TestRulesValid(t *testing.T) {
 				t.Errorf("%s: route_members %q is no member a %s route model makes input", f, m, r.Lang)
 			}
 		}
+		for _, n := range r.RouteNot {
+			if m, name, ok := strings.Cut(n, "."); !ok || name == "" || !members[r.Lang+"/"+m] {
+				t.Errorf("%s: route_not %q is not member.name of a member a %s route model makes input", f, n, r.Lang)
+			}
+		}
 		if prev, dup := seen[r.ID]; dup {
 			t.Errorf("%s: id %q already used by %s", f, r.ID, prev)
 		}
@@ -210,16 +215,17 @@ func checkArgs(t *testing.T, r Rule) {
 	}
 }
 
-// checkSourceArgs: each [[source_args]] entry names call sources of the rule,
-// an argument from 1 and at least one value.
+// checkSourceArgs: each [[source_args]] entry names call or index sources of
+// the rule (an index source, ending with "[", takes arg 1), an argument from 1
+// and at least one value.
 func checkSourceArgs(t *testing.T, r Rule) {
 	for i, sa := range r.SourceArgs {
 		if sa.Arg < 1 || sa.Arg > 10 || len(sa.Values) == 0 || len(sa.Sources) == 0 {
 			t.Errorf("%s: source_args %d needs sources, arg 1 to 10 and values", r.File, i)
 		}
 		for _, s := range sa.Sources {
-			if !slices.Contains(r.Sources, s) || !strings.HasSuffix(s, "(") {
-				t.Errorf("%s: source_args %d: %q is not one of the call sources", r.File, i, s)
+			if !slices.Contains(r.Sources, s) || !strings.HasSuffix(s, "(") && !(strings.HasSuffix(s, "[") && sa.Arg == 1) {
+				t.Errorf("%s: source_args %d: %q is not one of the call or index sources (an index source takes arg 1)", r.File, i, s)
 			}
 		}
 	}

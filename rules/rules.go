@@ -47,6 +47,10 @@ type Rule struct {
 	// req.params), only these are this rule's (a rule for a query object: a
 	// path parameter is always a string). Unset: all of them.
 	RouteMembers []string `toml:"route_members"`
+	// RouteNot: values under those members that are not this rule's input,
+	// written member.name (headers.host: the Host header, which another rule
+	// takes), read as req.headers.host or req.headers['host'].
+	RouteNot []string `toml:"route_not"`
 
 	File string `toml:"-"` // path inside rules/, set by Load
 }
@@ -106,7 +110,7 @@ type Args struct {
 type SourceArgs struct {
 	Sources []string `toml:"sources"` // the rule's call sources this applies to
 	Arg     int      `toml:"arg"`     // the argument (from 1) that must be a string literal
-	Values  []string `toml:"values"`  // the values (any case) that make the call a source; any other value, or none, does not; "*": any string literal; "!x": never x
+	Values  []string `toml:"values"`  // the values (any case) that make the call a source; any other value, or none, does not; "*": any string literal; "!x": never x; "?": an argument that is not a string literal
 }
 
 // Sample is a minimal, self-written snippet: "vulnerable" must be reported, "safe" must not.

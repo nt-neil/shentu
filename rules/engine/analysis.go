@@ -1476,9 +1476,9 @@ func (a *analysis) srcMatch(s *pat, t []Token, i int) (int, bool) {
 	if !ok || s.srcArg == 0 {
 		return end, ok
 	}
-	open := i + s.callParen()
-	if open >= len(t) || !t[open].op("(") {
-		return 0, false
+	open := i + s.argOpen()
+	if open >= len(t) || !t[open].op(s.toks[s.argOpen()].Text) {
+		return 0, false // the call's "(", or the index's "["
 	}
 	args := splitTop(inside(t, open, closeOf(t, open)), isComma)
 	if s.srcArg > len(args) {
@@ -1488,7 +1488,11 @@ func (a *analysis) srcMatch(s *pat, t []Token, i int) (int, bool) {
 	if len(arg) > 1 && arg[0].Kind == Ident && arg[1].op(":") {
 		arg = arg[2:] // a named argument: filter: 'raw'
 	}
-	return end, len(arg) == 1 && arg[0].Kind == Str && len(arg[0].Parts) == 0 && !s.srcVals["!"+strings.ToLower(arg[0].Text)] && (s.srcVals["*"] || s.srcVals[strings.ToLower(arg[0].Text)])
+	if len(arg) != 1 || arg[0].Kind != Str || len(arg[0].Parts) > 0 {
+		return end, len(arg) > 0 && s.srcVals["?"] // a name not written out: "?" takes it
+	}
+	v := strings.ToLower(arg[0].Text)
+	return end, !s.srcVals["!"+v] && (s.srcVals["*"] || s.srcVals[v])
 }
 
 // argsTaint reports whether a call's arguments carry taint into its result. Most

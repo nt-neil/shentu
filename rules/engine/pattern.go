@@ -20,8 +20,9 @@ type pat struct {
 	name     string         // last name in the pattern (to recognise prefix checks)
 	chain    string         // PHP: "->m(" made from the sink "Class::m(": the chain must start at Class:: (chain.go)
 	wild     bool           // holds "[*]", which matches any one index: $_FILES[*]['name']
-	// sources only (source_args): the call is input only when its srcArg-th
-	// argument is a string literal among srcVals (lower case; "*": any; "!x": not x)
+	// sources only (source_args): the call (or index) is input only when its
+	// srcArg-th argument is a string literal among srcVals (lower case; "*": any; "!x": not x;
+	// "?": an argument that is not a string literal)
 	srcArg  int
 	srcVals map[string]bool
 }
@@ -233,6 +234,19 @@ func (p *pat) callParen() int {
 		if p.toks[stack[k]].op("(") {
 			return stack[k]
 		}
+	}
+	return -1
+}
+
+// argOpen is where a source with source_args takes its arguments: the "(" of
+// a call source, or the "[" a source ends with (req.headers[: the index is
+// its one argument), else -1.
+func (p *pat) argOpen() int {
+	if k := p.callParen(); k >= 0 {
+		return k
+	}
+	if n := len(p.toks); n > 0 && p.toks[n-1].op("[") {
+		return n - 1
 	}
 	return -1
 }

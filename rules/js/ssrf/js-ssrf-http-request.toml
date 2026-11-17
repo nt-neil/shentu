@@ -9,7 +9,8 @@ frameworks = ["express", "nestjs", "nextjs", "koa", "fastify", "hapi"]
 # Headers by name in brackets (x-callback-url), the referrer and the origin, in
 # each framework's spelling: req.headers.host, the base of
 # new URL(req.url, `http://${req.headers.host}`), is the host-header rules' input
-# (request.headers.get('host') too, see source_args)
+# (req.get('host'), req.headers['x-forwarded-host'] and the other ways of reading
+# those two by name too, see source_args)
 # Known fixed-release finding: a plain Node proxy forwarding req.url still
 # reports after an allow check the engine does not read as a sanitizer.
 sources = ["req.query", "req.body", "req.params", "req.headers[", "req.headers.referer", "req.headers.origin",
@@ -20,7 +21,11 @@ sanitizers = ["parseInt(", "encodeURIComponent("]
 fix = "Keep the scheme and host fixed and take only an encoded path or id from the request, or accept only URLs from an allowlist. If you parse the URL to check its host, build the request from the checked host (new URL(input) -> allowed host -> 'https://' + host + path), not from the parsed input object: a check on url.hostname is not recognised as cleaning url itself. Make sure the host resolves to a public address."
 refs = ["CVE-2024-32964", "CVE-2024-38514", "CVE-2025-9805", "CVE-2024-47066", "CVE-2026-82477", "GHSA-89v5-38xr-9m4j"]
 
-source_args = [{ sources = ["request.headers.get("], arg = 1, values = ["*", "!host"] }]
+# Host and X-Forwarded-Host read by name are js-ssrf-host-header's (the same
+# sources there take only those two), also inside a route (route_not); a name
+# not written out may be any header.
+route_not = ["headers.host", "headers.x-forwarded-host"]
+source_args = [{ sources = ["request.headers.get(", "req.get(", "req.header(", "req.headers[", "ctx.get(", "ctx.headers[", "ctx.request.header[", "ctx.request.headers[", "request.headers["], arg = 1, values = ["*", "?", "!host", "!x-forwarded-host"] }]
 
 [[args]]
 arg = 1
@@ -206,13 +211,3 @@ export async function POST(request: Request) {
 }
 '''
 
-[[samples]]
-kind = "safe"
-dialect = "ts"
-note = "request.headers.get('host') is the host-header rules' input"
-code = '''
-export async function GET(request: Request) {
-  const r = await fetch(`https://${request.headers.get("host")}/health`);
-  return new Response(await r.text());
-}
-'''

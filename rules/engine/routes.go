@@ -509,8 +509,15 @@ func (a *analysis) routeParams(f *fn, x state) {
 		}
 		for _, m := range members {
 			// route_members names the last member: Koa's ctx.request.body is the body
-			if rm := a.r.rule.RouteMembers; rm == nil || slices.Contains(rm, m[strings.LastIndex(m, ".")+1:]) {
-				x[p+sepCh+"."+strings.ReplaceAll(m, ".", sepCh+".")] = entry{taint: true}
+			last := m[strings.LastIndex(m, ".")+1:]
+			if rm := a.r.rule.RouteMembers; rm == nil || slices.Contains(rm, last) {
+				k := p + sepCh + "." + strings.ReplaceAll(m, ".", sepCh+".")
+				x[k] = entry{taint: true}
+				for _, n := range a.r.rule.RouteNot { // headers.host: req.headers.host and req.headers['host'] are not input
+					if mem, name, _ := strings.Cut(n, "."); mem == last {
+						x[k+sepCh+"."+name], x[k+sepCh+"["+name+"]"] = entry{}, entry{}
+					}
+				}
 			}
 		}
 	}

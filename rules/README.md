@@ -35,6 +35,7 @@ title = "Request input concatenated into a SQL string"
 frameworks = ["laravel"]           # optional: laravel, wordpress, symfony, doctrine, django, flask, express, nestjs, nextjs, koa, fastify, hapi
 route_input = false                # optional: route handlers' parameters are not this rule's input, only its sources (a rule for the Host header)
 route_members = ["query", "body"]  # optional: of the request members a route model makes input, only these (a rule for a query object: req.params is always a string)
+route_not = ["headers.host"]       # optional: values under those members that are not this rule's input, as member.name (the Host header, another rule's)
 sources = ["$_GET", "$request->input("]   # where user input comes from; [] for a rule without sources
 sinks = ["mysqli_query", "->query("]      # the dangerous calls
 sanitizers = ["intval", "->prepare("]     # calls whose result is safe for these sinks; [] if none
@@ -404,7 +405,8 @@ default (`render_template`, `res.render`, Blade `{{ }}`) are not sinks.
 
 ### Source arguments
 
-A call source can depend on one of its arguments. Joomla's
+A call source, or an index source (one that ends with `[`, whose index is its
+argument 1), can depend on one of its arguments. Joomla's
 `$input->get($name, $default, $filter)` returns the raw value with the `raw`
 filter, but only letters, digits, `.`, `-` and `_` with the default (`cmd`):
 
@@ -419,7 +421,11 @@ The call is input only when that argument is written as one of the values; with
 another value, a variable, or no such argument it is not. `values = ["*"]` takes
 any string literal: Express's `req.get('Referer')` reads a header, `req.get()`
 reads none. A value written `!name` is never the source, also with `*`:
-`values = ["*", "!host"]` takes every header but Host.
+`values = ["*", "!host"]` takes every header but Host. `?` takes an argument
+that is not a string literal (a variable, a template): `req.headers[name]` may
+be any header. Two rules can so split one source between them: the Host header
+to js-ssrf-host-header (`values = ["host", "x-forwarded-host"]`), every other
+header to js-ssrf-http-request (`values = ["*", "?", "!host", "!x-forwarded-host"]`).
 
 ### Rules without sources
 
@@ -442,8 +448,8 @@ credential-like string is kept in the repository.
 - `text` entries are sources or sinks; `[[args]]` entries set something, name only
   the rule's sinks, give each sink at most one entry, and use `arg = 0` only for
   method sinks; `min_len` and `exclude` come with `literal`, and `keys` not with
-  `key`; `[[source_args]]` entries name call sources of the rule, an argument and
-  values;
+  `key`; `[[source_args]]` entries name call or index sources of the rule, an
+  argument (1 for an index source) and values;
 - there is at least one `vulnerable` and one `safe` sample, and each vulnerable sample
   contains one of the rule's sources and one of its sinks.
 

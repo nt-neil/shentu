@@ -163,8 +163,8 @@ func compileRule(r rules.Rule) (*crule, error) {
 		}
 		for _, s := range sa.Sources {
 			p, ok := srcs[s]
-			if !ok || p.text != nil || p.callParen() < 0 {
-				return nil, fmt.Errorf("source_args: %q is not one of the call sources", s)
+			if !ok || p.text != nil || p.argOpen() < 0 || p.callParen() < 0 && sa.Arg != 1 {
+				return nil, fmt.Errorf("source_args: %q is not one of the call or index sources (an index source takes arg 1)", s)
 			}
 			p.srcArg, p.srcVals = sa.Arg, map[string]bool{}
 			for _, v := range sa.Values {
