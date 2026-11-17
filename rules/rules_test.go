@@ -337,3 +337,41 @@ func sourceEndsIn(sources []string, m string) bool {
 	}
 	return false
 }
+
+// A rule whose sinks leave input after ORDER BY to php-sqli-orderby-identifier
+// (unless_after) must not read input that rule does not: otherwise that input
+// in an ORDER BY would be reported by neither.
+func TestUnlessAfterOwnerReads(t *testing.T) {
+	rs, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var owner *Rule
+	for i := range rs {
+		if rs[i].ID == "php-sqli-orderby-identifier" {
+			owner = &rs[i]
+		}
+	}
+	if owner == nil {
+		t.Fatal("php-sqli-orderby-identifier not found")
+	}
+	n := 0
+	for _, r := range rs {
+		hands := false
+		for _, a := range r.Args {
+			hands = hands || slices.ContainsFunc(a.UnlessAfter, func(s string) bool { return strings.EqualFold(s, "ORDER BY") })
+		}
+		if !hands || r.Lang != owner.Lang {
+			continue
+		}
+		n++
+		for _, s := range r.Sources {
+			if !slices.Contains(owner.Sources, s) && !slices.Contains(owner.Sources, s+"(") { // get_query_var is read as get_query_var(
+				t.Errorf("%s hands ORDER BY to %s, which does not read its source %q", r.ID, owner.ID, s)
+			}
+		}
+	}
+	if n == 0 {
+		t.Error("no rule hands ORDER BY to php-sqli-orderby-identifier")
+	}
+}

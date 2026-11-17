@@ -80,7 +80,13 @@ func (a *analysis) setURLOf(st state, key string, rhs []Token, plain bool) {
 	} else if rk, _, ok := a.pathKey(stripParens(rhs)); ok && rk != key {
 		if _, parsed := st[urlKey+rk]; parsed {
 			st[urlKey+key] = entry{san: true}
-			st[urlAlias+key+"\x01"+rk], st[urlAlias+rk+"\x01"+key] = entry{san: true}, entry{san: true}
+			// x = w after w = u: x is an alias of u too, so a write through
+			// any of them ends every check
+			for _, y := range append(aliasesOf(st, rk), rk) {
+				if y != key {
+					st[urlAlias+key+"\x01"+y], st[urlAlias+y+"\x01"+key] = entry{san: true}, entry{san: true}
+				}
+			}
 		}
 	}
 }
@@ -99,12 +105,7 @@ func (a *analysis) urlWrite(st state, key string, v val) {
 		}
 		k = k[:i]
 		if _, parsed := st[urlKey+k]; parsed {
-			roots := []string{k}
-			for x := range st {
-				if y, ok := strings.CutPrefix(x, urlAlias+k+"\x01"); ok {
-					roots = append(roots, y)
-				}
-			}
+			roots := append(aliasesOf(st, k), k)
 			for _, r := range roots {
 				delete(st, urlKey+r)
 				if v.taint {
@@ -116,6 +117,17 @@ func (a *analysis) urlWrite(st state, key string, v val) {
 			return
 		}
 	}
+}
+
+// aliasesOf lists the names that hold the same URL object as k.
+func aliasesOf(st state, k string) []string {
+	var out []string
+	for x := range st {
+		if y, ok := strings.CutPrefix(x, urlAlias+k+"\x01"); ok {
+			out = append(out, y)
+		}
+	}
+	return out
 }
 
 // urlAssignStmt is urlWrite for Object.assign(u, {...}): each later argument

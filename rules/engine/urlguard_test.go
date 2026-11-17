@@ -60,6 +60,8 @@ func TestURLHostGuard(t *testing.T) {
 			route("  const u = new URL(req.query.target);\n  if (!ALLOWED.has(u.hostname)) return res.sendStatus(403);\n  Object.assign(u, { host: req.query.h });\n  const r = await fetch(u);\n"), true},
 		{"js: w.host written through an alias", "js", "js-ssrf-http-request",
 			route("  const u = new URL(req.query.target);\n  if (!ALLOWED.has(u.hostname)) return res.sendStatus(403);\n  const w = u;\n  w.host = req.query.h;\n  const r = await fetch(u);\n"), true},
+		{"js: x.host written through an alias of an alias", "js", "js-ssrf-http-request",
+			route("  const u = new URL(req.query.target);\n  if (!ALLOWED.has(u.hostname)) return res.sendStatus(403);\n  const w = u;\n  const x = w;\n  x.host = req.query.h;\n  const r = await fetch(u);\n"), true},
 		{"js: u.pathname written with a fixed value", "js", "js-ssrf-http-request",
 			route("  const u = new URL(req.query.target);\n  if (!ALLOWED.has(u.hostname)) return res.sendStatus(403);\n  u.pathname = '/v1/items';\n  const r = await fetch(u);\n"), false},
 		{"js: includes on a string", "js", "js-ssrf-http-request",
