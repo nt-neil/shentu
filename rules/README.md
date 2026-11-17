@@ -138,15 +138,22 @@ How the engine reads them:
     callback) returns sanitized values, with the keys of `$x`;
   - `extract(shortcode_atts(array('id' => 0, ...), $atts))` and `extract(array(...))`
     define one variable per literal key;
-  - in the SSRF rules, a check of a parsed URL's host against an allowlist
-    (`.has(`, `.includes(`, `in`) or a host written out (`=== 'a.example'`)
+  - in the SSRF rules, a check of a parsed URL's host against an allowlist that
+    is surely a collection (`.has(`, `.includes(`, `in` on a list, set or array
+    written out, `new Set(...)`, `.split(...)`, or a name the file assigns only
+    those; on a string or an environment value they are substring tests) or a
+    host written out (`=== 'a.example'`)
     validates that URL object: `u.hostname`, `u.host` or `u.origin` after
     `u = new URL(x)` (or `URL.parse`), `p.hostname` or `p.netloc` after
     `p = urlparse(x)` (or `urlsplit`), so `fetch(u)` and `requests.get(p.geturl())`
     are clean. Not the string `x` itself, which another parser (the client's,
     `url.parse`, PHP's `parse_url`) may read as another host; not a truth test, a
     pattern or a prefix check of the host; not a URL that is something else on one
-    of the paths to the check, or given a new value. A URL whose host is allowed
+    of the paths to the check, or given a new value, or written into after it
+    (`u.host = v`, `Object.assign(u, ...)`, a member of an alias `w = u`).
+    `p.geturl()` is a string the client parses again; urlparse and the client's
+    parser agree on the host of what urlparse itself wrote out, which is why it
+    counts, but a client with its own normalisation could read it otherwise. A URL whose host is allowed
     may still carry a script or a quote in its path, so no other rule reads it;
   - an assignment written in a condition (`if ($x = $_GET['y'])`) is followed;
   - a variable holding a value written in the code (`$o = array('test_form' =>
