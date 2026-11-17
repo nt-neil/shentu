@@ -80,8 +80,8 @@ func TestRulesValid(t *testing.T) {
 			}
 		}
 		for _, n := range r.RouteNot {
-			if m, name, ok := strings.Cut(n, "."); !ok || name == "" || !members[r.Lang+"/"+m] {
-				t.Errorf("%s: route_not %q is not member.name of a member a %s route model makes input", f, n, r.Lang)
+			if m, name, ok := strings.Cut(n, "."); !ok || name == "" || !members[r.Lang+"/"+m] && !sourceEndsIn(r.Sources, m) {
+				t.Errorf("%s: route_not %q is not member.name of a member a %s route model makes input or one of the rule's sources ends in", f, n, r.Lang)
 			}
 		}
 		if prev, dup := seen[r.ID]; dup {
@@ -314,6 +314,18 @@ func chainedSink(code string, sinks []string) bool {
 	for _, s := range sinks {
 		cls, method, ok := strings.Cut(strings.TrimSuffix(s, "("), "::")
 		if ok && strings.HasSuffix(s, "(") && strings.Contains(code, cls+"::") && strings.Contains(code, "->"+method+"(") {
+			return true
+		}
+	}
+	return false
+}
+
+// sourceEndsIn reports whether one of sources ends in the member m (route_not
+// leaves its names out of those too): req.headers, ctx.request.header[, @Headers(.
+func sourceEndsIn(sources []string, m string) bool {
+	for _, s := range sources {
+		s = strings.TrimRight(s, "[(")
+		if i := strings.LastIndexAny(s, ".@^"); strings.EqualFold(s[i+1:], m) {
 			return true
 		}
 	}

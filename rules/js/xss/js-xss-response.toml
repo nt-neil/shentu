@@ -7,9 +7,12 @@ tier = "info"
 title = "Request value sent back in an HTML response without escaping"
 frameworks = ["express", "nestjs", "nextjs", "koa", "fastify", "hapi"]
 # Headers by name in brackets (user-agent), the referrer and the origin, in each
-# framework's spelling (as js-ssrf-http-request): req.headers.host is the
-# host-header rules' input, and a header read by name is not Host or
-# Content-Type, which a cross-site page cannot set (see source_args)
+# framework's spelling (as js-ssrf-http-request). Not Host, which a cross-site
+# page cannot make the victim's browser send with another value: not in a route
+# handler's headers, req.headers['host'] or @Headers('host') (route_not), nor
+# read by name (source_args, which also leave out Content-Type for
+# request.headers.get). Host stays input to the SSRF and redirect rules
+# (js-ssrf-host-header, js-open-redirect-next).
 sources = ["req.query", "req.params", "req.body", "req.cookies", "req.headers[", "req.headers.referer", "req.headers.referrer", "req.headers.origin",
            "ctx.headers.referer", "ctx.headers.origin", "ctx.request.header.referer", "ctx.request.header.origin",
            "ctx.request.headers.referer", "ctx.request.headers.origin", "request.headers.referer", "request.headers.referrer", "request.headers.origin", "request.headers.get(", "@Query(", "@Body(", "@Param(", "@Headers(", "^request.nextUrl", "^req.nextUrl", "^searchParams", "^request.json(", "^req.json(", "^request.text(", "^req.text(", "^request.formData(", "^req.formData(", "^formData.get(", "req.get(", "req.header(", "^headers().get(", "^cookies().get(", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload", "ctx.params", "request.params", "ctx.headers[", "ctx.cookies.get(", "request.headers[", "ctx.request.header[", "ctx.request.headers[", "ctx.get("]
@@ -18,8 +21,10 @@ sources = ["req.query", "req.params", "req.body", "req.cookies", "req.headers[",
 # a context option that counts only where the HTML before the value is known.
 sinks = ["res.send(", "res.write(", "res.end("]
 # a header read by its name: req.get() and req.get(42) read no header
-source_args = [{ sources = ["req.get(", "req.header(", "ctx.get("], arg = 1, values = ["*"] },
-               { sources = ["request.headers.get("], arg = 1, values = ["*", "!host", "!content-type"] }]
+route_not = ["headers.host", "header.host"]
+source_args = [{ sources = ["req.get(", "req.header(", "ctx.get("], arg = 1, values = ["*", "!host"] },
+               { sources = ["request.headers.get("], arg = 1, values = ["*", "!host", "!content-type"] },
+               { sources = ["^headers().get("], arg = 1, values = ["*", "?", "!host"] }]
 sanitizers = ["escapeHtml(", "escape(", "he.encode(", "he.escape(", "validator.escape(", "_.escape(", "DOMPurify.sanitize(", "sanitizeHtml(", "xss(", "encodeURIComponent("]
 fix = "Render with a template engine that escapes by default (res.render), send JSON with res.json(), or escape each value (escape-html, he.encode) before putting it into HTML."
 refs = ["CVE-2013-7370"]

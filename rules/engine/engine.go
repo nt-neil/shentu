@@ -172,6 +172,7 @@ func compileRule(r rules.Rule) (*crule, error) {
 			}
 		}
 	}
+	c.setNotMembers()
 	sinks, err := compile(r.Sinks, &c.sinks, &c.textSinks)
 	if err != nil {
 		return nil, err

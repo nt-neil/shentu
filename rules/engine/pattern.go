@@ -26,6 +26,9 @@ type pat struct {
 	// "?": an argument that is not a string literal)
 	srcArg  int
 	srcVals map[string]bool
+	// sources only: members the rule's route_not leaves out of a source that
+	// ends in that member (sourcenot.go)
+	notMembers []string
 }
 
 func compilePattern(lang, raw string, text bool) (*pat, error) {

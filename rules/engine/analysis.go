@@ -612,6 +612,7 @@ func (a *analysis) assign(st state, t []Token) (val, bool) {
 	for _, tg := range a.targetList(lhs) {
 		a.setTarget(st, tg, v, t[k].Text, sep)
 		a.sourceParts(st, tg, rhs, t[k].Text)
+		a.sourceNot(st, tg, rhs, t[k].Text)
 		if key, _, ok := a.pathKey(tg); ok {
 			if t[k].Text == "=" && a.canonical(st, rhs) {
 				st[canonKey+key] = entry{san: true}
@@ -1478,6 +1479,9 @@ func (a *analysis) srcMatch(s *pat, t []Token, i int) (int, bool) {
 	}
 	strict := len(s.toks) > 1 && s.toks[0].Kind == Ident && s.toks[1].op("(")
 	end, ok := s.match(t, i, strict)
+	if ok && notMember(s, t, end) {
+		return 0, false // req.headers.host where the rule's route_not names headers.host
+	}
 	if !ok || s.srcArg == 0 {
 		return end, ok
 	}
