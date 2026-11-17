@@ -71,11 +71,13 @@ Chinese for the zh-TW pages; keep the two in step.
   never seen, and such a request is L1 at most.
 - The signatures expect the plain form of an attack. Rewritten forms (other encodings, padded
   paths, comments or other whitespace inside SQL, commands split by quotes) may be missed.
-- nginx's default access log on Debian, Ubuntu and Rocky Linux is `web_user_writable` (the web
-  server's account can write it or a directory above it): its attempts are alerted on, but they
-  cannot back a block. On Ubuntu the log is owned by `www-data:adm` and logrotate creates it with
-  `create 0640 www-data adm`, so changing its owner by hand is undone at the next rotation;
-  this is planned for v0.4.1. Rocky Linux's default httpd configuration loads modules outside the list
+- With nginx as installed by default on Debian, Ubuntu and Rocky Linux, v0.4.0 judges its access
+  log `web_user_writable` (the web server's account could write it or a directory above it): its
+  attempts are alerted on, but they cannot back a block. On Debian and Ubuntu nginx and PHP both
+  run as `www-data`, so the risk is real (on Ubuntu the log is `www-data:adm`, and logrotate
+  creates it with `create 0640 www-data adm`). On Rocky Linux nginx runs as `nginx` and PHP-FPM
+  as `apache`, which cannot write nginx's log: there v0.4.0 is only being cautious. Changing the
+  log's owner by hand is undone at the next rotation. This is planned for v0.4.1. Rocky Linux's default httpd configuration loads modules outside the list
   Shentu knows to be safe, so its Apache logs are always judged `web_user_writable` too; weighing
   those modules is planned for v0.4.1.
 - There are no signatures for particular WordPress plugin vulnerabilities yet.

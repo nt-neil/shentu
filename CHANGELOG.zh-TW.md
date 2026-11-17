@@ -48,9 +48,10 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 - access log 不記錄請求本文（POST 表單、JSON、上傳檔）：payload 放在那裡就看不到，這類請求最多是 L1。
 - 特徵比對的是攻擊的原始寫法。改寫過的寫法（其他編碼、加料的路徑、SQL 裡的註解或其他空白字元、
   用引號拆開的指令）可能漏掉。
-- Debian、Ubuntu、Rocky Linux 上 nginx 預設的 access log 是 `web_user_writable`（網站伺服器的帳號寫得到
-  紀錄本身或上層目錄）：裡面的嘗試會告警，但不能當封鎖依據。Ubuntu 上這份紀錄屬於 `www-data:adm`，logrotate 也用
-  `create 0640 www-data adm` 建檔，手動改擁有者會在下次輪替時被改回去；這部分排在 v0.4.1 處理。Rocky Linux 的預設 httpd 設定會載入白名單以外的模組，
+- Debian、Ubuntu、Rocky Linux 預設安裝的 nginx，v0.4.0 都會把 access log 判成 `web_user_writable`（網站帳號可寫），
+  所以只能告警、不能當封鎖依據。Debian、Ubuntu 上 nginx 和 PHP 都用 `www-data`，風險是真的（Ubuntu 的紀錄屬於
+  `www-data:adm`，logrotate 也用 `create 0640 www-data adm` 建檔）；Rocky 上 nginx 用 `nginx` 帳號、PHP-FPM 用 `apache`
+  帳號，寫不到 nginx 的紀錄，是 v0.4.0 判得比較保守。手動改擁有者，下次輪替時會被改回去。v0.4.1 會處理。Rocky Linux 的預設 httpd 設定會載入白名單以外的模組，
   所以 Apache 的紀錄一律判成 `web_user_writable`；這些模組的評估排在 v0.4.1。
 - 目前還沒有針對個別 WordPress 外掛漏洞的特徵。
 - 掃描仍比 v0.3.0 慢：WordPress 約 35%（上面 Ubuntu VM 的實際經過時間），TypeScript 專案約 20%（Mac 本機的
