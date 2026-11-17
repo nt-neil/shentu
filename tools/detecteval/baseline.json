@@ -1,0 +1,78 @@
+{
+  "nuclei_commit": "5442582a875f96887bfe403c6de562de460897e7",
+  "templates_hash": "259cb2836719cc15521784577b2bdc334d1183a141d7ad7f364dc8e7469edb8c",
+  "not_converted": 1147,
+  "unclassified": 6674,
+  "false_positives": 0,
+  "normal_requests": 1216,
+  "graded_sha256": "06097c37de15032aaadd7a48caf12bd698114da7e63010f204f00c7b1b1e767d",
+  "stats": {
+    "nuclei_commit": "5442582a875f96887bfe403c6de562de460897e7",
+    "templates_hash": "259cb2836719cc15521784577b2bdc334d1183a141d7ad7f364dc8e7469edb8c",
+    "templates": 11835,
+    "not_converted": 1147,
+    "unclassified": 6674,
+    "classes": {
+      "cmdi": {
+        "templates": 910,
+        "caught": 43
+      },
+      "code": {
+        "templates": 24,
+        "caught": 1
+      },
+      "deser": {
+        "templates": 42,
+        "caught": 0
+      },
+      "path": {
+        "templates": 895,
+        "caught": 599
+      },
+      "redirect": {
+        "templates": 179,
+        "caught": 2
+      },
+      "sqli": {
+        "templates": 470,
+        "caught": 80
+      },
+      "ssrf": {
+        "templates": 199,
+        "caught": 9
+      },
+      "upload": {
+        "templates": 53,
+        "caught": 0
+      },
+      "xss": {
+        "templates": 1199,
+        "caught": 648
+      },
+      "xxe": {
+        "templates": 43,
+        "caught": 2
+      }
+    },
+    "attack_levels": {
+      "L1": 2497,
+      "L2": 1462,
+      "none": 54,
+      "unanchored": 1
+    },
+    "host": {
+      "cases": 97,
+      "templates_for_cves": 10,
+      "alerted": 4,
+      "alerted_for_cves": 3,
+      "normal_alerted": 0
+    },
+    "normal_requests": 1216,
+    "false_positives": 0,
+    "normal_levels": {
+      "L1": 1211,
+      "none": 5
+    },
+    "graded_sha256": "06097c37de15032aaadd7a48caf12bd698114da7e63010f204f00c7b1b1e767d"
+  }
+}
