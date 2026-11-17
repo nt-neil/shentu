@@ -66,6 +66,13 @@ type Route struct {
 	// router may be mounted under a prefix); PathRegex, RE2, anywhere in it.
 	Path      string `toml:"path"`
 	PathRegex string `toml:"path_regex"`
+	// CaseSensitive: Path is compared with the path in the case it was
+	// sent, for an application whose router is case sensitive. Anchored:
+	// what comes before Path may only be directories (no segment with a
+	// dot), so a route of a common name (/logout) does not hold under
+	// another application's file (/Shibboleth.sso/Logout).
+	CaseSensitive bool `toml:"case_sensitive"`
+	Anchored      bool `toml:"anchored"`
 }
 
 // Match is one thing the request must carry.

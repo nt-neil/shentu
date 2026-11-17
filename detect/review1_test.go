@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nt-neil/shentu/detect/sig"
 	"github.com/nt-neil/shentu/rules/engine"
 )
 
@@ -474,5 +475,73 @@ func TestHiddenSinksMore(t *testing.T) {
 	g := j.Judge(MatchResult{Request: Request{Cut: true}})
 	if !g.Unknown || len(g.HiddenSinks) != MaxHidden || g.HiddenSinksMore != 4 || strings.Join(g.HiddenClasses, ",") != "path" {
 		t.Errorf("%d sinks of no route: %d listed, %d more, classes %v", len(sinks), len(g.HiddenSinks), g.HiddenSinksMore, g.HiddenClasses)
+	}
+}
+
+// N-4, N-5 of review 1: a class signature's text in a parameter's name
+// (sent with no = or with a value), or in a path segment a route
+// parameter reads, is matched; a path-parameter sink reached so is L2.
+func TestNameAndSegmentMatched(t *testing.T) {
+	ss := loadSigs(t, markerSigs)
+	m := NewMatcher(ss)
+	hit := func(r AccessRecord) Hit {
+		for _, h := range m.Match(Normalize(r)).Hits {
+			if h.Signature == "class-marker" {
+				return h
+			}
+		}
+		return Hit{}
+	}
+	for _, c := range []struct {
+		r         AccessRecord
+		part, raw string
+	}{
+		{AccessRecord{Method: "GET", Path: "/a.php", Query: "marker-one"}, "query", "marker-one"},
+		{AccessRecord{Method: "GET", Path: "/a.php", Query: "x=1&marker-one=2"}, "query", "x=1&marker-one=2"},
+		{AccessRecord{Method: "GET", Path: "/user/marker-one/edit"}, "path", "/user/marker-one/edit"},
+		{AccessRecord{Method: "GET", Path: "/user/marker%2Done"}, "path", "/user/marker%2Done"},
+	} {
+		if h := hit(c.r); h.Part != c.part || h.Raw != c.raw {
+			t.Errorf("%s?%s: %+v, want part %s raw %q", c.r.Path, c.r.Query, h, c.part, c.raw)
+		}
+	}
+	// An ordinary request: nothing.
+	if h := hit(AccessRecord{Method: "GET", Path: "/user/42/edit", Query: "tab=profile"}); h.Signature != "" {
+		t.Errorf("ordinary request: %+v", h)
+	}
+	sink := []CodeSink{{Rule: "js-sqli", CWE: "CWE-89", Severity: "critical", Path: "a.js", Line: 1,
+		Routes: []engine.RouteRef{{Model: "m", Framework: "express", Method: "get", Pattern: "/user/:id", File: "a.js", Line: 1}}}}
+	g := NewJudge(Build(sink, nil), ss).Judge(m.Match(Normalize(AccessRecord{Method: "GET", Path: "/user/marker-one"})))
+	if len(g.Candidates) != 1 || g.Candidates[0].Level != LevelPayload {
+		t.Errorf("path-parameter sink: %+v", g)
+	}
+}
+
+// PR #94's evaluation: a route of a common name held under another
+// application's file. Shibboleth SP's /Shibboleth.sso/Logout with an
+// off-site return is not Flarum's CVE-2024-21641; Flarum's own /logout,
+// mounted under a directory or not, still is.
+func TestRouteCaseAndAnchor(t *testing.T) {
+	ss, err := sig.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := NewMatcher(ss)
+	s := Build(nil, []PackageVuln{{Source: "/srv/composer.lock", Ecosystem: "Packagist", Package: "flarum/core", Version: "1.8.4", ID: "CVE-2024-21641"}})
+	ret := "return=https%3A%2F%2Fexample.org%2F"
+	for _, c := range []struct {
+		path string
+		want int
+	}{
+		{"/Shibboleth.sso/Logout", 0},
+		{"/Shibboleth.sso/logout", 0}, // anchored: a file before the route
+		{"/app/LOGOUT", 0},            // case sensitive
+		{"/logout", 1},
+		{"/forum/logout", 1},
+	} {
+		g := NewJudge(s, ss).Judge(m.Match(Normalize(AccessRecord{Method: "GET", Path: c.path, Query: ret})))
+		if len(g.Candidates) != c.want {
+			t.Errorf("%s: %+v, want %d candidate(s)", c.path, g.Candidates, c.want)
+		}
 	}
 }

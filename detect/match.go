@@ -44,8 +44,11 @@ type Request struct {
 	// evidence); Path the same with them resolved and // collapsed, for
 	// routes.
 	RawPath, Path string
-	Query         string              // the whole query, decoded
-	Params        map[string][]string // every value of every parameter, in order (a repeated one keeps all)
+	// CasePath is Path in the case it was sent ("" when the path was
+	// longer than MaxNormalized), for a case-sensitive route.
+	CasePath string
+	Query    string              // the whole query, decoded
+	Params   map[string][]string // every value of every parameter, in order (a repeated one keeps all)
 	// Sent: the names in Params as the request sent them; the others are
 	// how a framework reads one (PHP's id for id[]) and hold its values
 	// again: any_param tries only these, so a value is not matched twice.
@@ -97,6 +100,10 @@ func Normalize(r AccessRecord) Request {
 	q.Encoded = q.Encoded || enc
 	said(cut, "path", "", len(r.Path), len(q.RawPath))
 	q.Path = cleanPath(q.RawPath)
+	if len(r.Path) <= MaxNormalized {
+		cp, _ := decodePiece(r.Path, false)
+		q.CasePath = cleanPath(cp)
+	}
 	q.Query, enc, cut = normalizeTextN(r.Query, true, MaxParamsText) // the whole query: the parameters' bound
 	q.Encoded = q.Encoded || enc
 	said(cut, "query", "", len(r.Query), len(q.Query))
@@ -213,6 +220,16 @@ func normalizeTextN(s string, query bool, limit int) (string, bool, bool) {
 // neither \s nor a word character, so it joins nothing) and is said as
 // an evasive encoding.
 func normalizePiece(s string, query bool) (string, bool) {
+	f, enc := decodePiece(s, query)
+	l := strings.ToLower(f)
+	if strings.Contains(l, cutMark) { // sent to split a payload as a cut would: evasion, said
+		l, enc = strings.ReplaceAll(l, cutMark, "\uFFFD"), true
+	}
+	return l, enc
+}
+
+// decodePiece is s decoded and its overlong UTF-8 folded, in its case.
+func decodePiece(s string, query bool) (string, bool) {
 	enc := false
 	for round := 0; round < MaxDecodeRounds; round++ {
 		d, u := percentDecode(s, query && round == 0)
@@ -228,14 +245,7 @@ func normalizePiece(s string, query bool) (string, bool) {
 		s = d
 	}
 	f, over := foldOverlong(s)
-	if over {
-		enc = true
-	}
-	l := strings.ToLower(f)
-	if strings.Contains(l, cutMark) { // sent to split a payload as a cut would: evasion, said
-		l, enc = strings.ReplaceAll(l, cutMark, "\uFFFD"), true
-	}
-	return l, enc
+	return f, enc || over
 }
 
 // percentDecode decodes %XX and %uXXXX (u: one was), and + as a space when
@@ -356,6 +366,24 @@ type Matcher struct {
 // NewMatcher compiles the routes of ss. Signatures with a route or written
 // for a vulnerability are tried first, then the classes', each group in
 // the order given: the hits that name a vulnerability lead.
+// pathHolds says whether a route's Path is in the request's path: at the
+// end, or followed by PATH_INFO (/x.php/anything).
+func pathHolds(r sig.Route, q Request) bool {
+	p, rp := q.Path, strings.ToLower(r.Path)
+	if r.CaseSensitive {
+		p, rp = q.CasePath, r.Path
+	}
+	var prefix string
+	if strings.HasSuffix(p, rp) {
+		prefix = p[:len(p)-len(rp)]
+	} else if i := strings.Index(p+"/", rp+"/"); i >= 0 {
+		prefix = p[:i]
+	} else {
+		return false
+	}
+	return !r.Anchored || !strings.Contains(prefix, ".")
+}
+
 func NewMatcher(ss []sig.Signature) *Matcher {
 	ss = slices.Clone(ss)
 	sort.SliceStable(ss, func(a, b int) bool { return specific(ss[a]) && !specific(ss[b]) })
@@ -427,8 +455,8 @@ func (m *Matcher) routeHolds(i int, q Request) bool {
 		if len(r.Methods) > 0 && !containsStr(r.Methods, q.Method) && !(q.Method == "HEAD" && containsStr(r.Methods, "GET")) {
 			continue // a GET route takes HEAD too, as methodOK says
 		}
-		if rp := strings.ToLower(r.Path); r.Path != "" && !strings.HasSuffix(q.Path, rp) && !strings.Contains(q.Path+"/", rp+"/") {
-			continue // the route, at the end or followed by PATH_INFO (/x.php/anything)
+		if r.Path != "" && !pathHolds(r, q) {
+			continue
 		}
 		if re := m.routes[i][j]; re != nil && !re.MatchString(q.Path) {
 			continue
@@ -487,6 +515,23 @@ func matchOne(mt sig.Match, q Request) (part, param, excerpt string, ok bool) {
 				if ex, ok := try(v); ok {
 					return "any_param", k, ex, true
 				}
+			}
+		}
+		// A name holds what an application may read too: one sent without
+		// =, or the whole query string PHP reads (review 1 of #87, N-4).
+		for _, k := range keys {
+			if ex, ok := try(k); ok {
+				return "query", "", ex, true
+			}
+		}
+		// A path segment is a route parameter's value ({id}, :id, <id>)
+		// (review 1 of #87, N-5).
+		for _, sg := range strings.Split(q.RawPath, "/") {
+			if sg == "" {
+				continue
+			}
+			if ex, ok := try(sg); ok {
+				return "path", "", ex, true
 			}
 		}
 	}
