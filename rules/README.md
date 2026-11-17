@@ -35,6 +35,7 @@ title = "Request input concatenated into a SQL string"
 frameworks = ["laravel"]           # optional: laravel, wordpress, symfony, doctrine, django, flask, express, nestjs, nextjs, koa, fastify, hapi
 route_input = false                # optional: route handlers' parameters are not this rule's input, only its sources (a rule for the Host header)
 route_members = ["query", "body"]  # optional: of the request members a route model makes input, only these (a rule for a query object: req.params is always a string)
+route_only = ["headers.host"]      # optional: of a route handler's request, only these values (as route_not writes them) are this rule's input, whatever the parameter is called ((r, s) => r.headers.host), also with route_input = false; h.host after h = r.headers too. For the rule another rule's route_not hands those values to
 route_not = ["headers.host"]       # optional: values under those members that are not this rule's input, as member.name (the Host header): in a route handler's parameters and in the rule's own sources that end in the member (req.headers.host, req.headers['host'], req.headers.get('host'), @Headers('host'), h.host after h = req.headers, also when req is a route handler's parameter)
 routes_not = ["wp-shortcode"]      # optional: route models (by id) whose handlers' input is another rule's (a shortcode's attributes)
 chain_not = ["AsyncClient"]        # optional: calls the chain form of a receiver.method( sink may not go through: they make another object (httpx.AsyncClient().get( is not httpx.get()
@@ -139,12 +140,14 @@ How the engine reads them:
   - `extract(shortcode_atts(array('id' => 0, ...), $atts))` and `extract(array(...))`
     define one variable per literal key;
   - in the SSRF rules, a check of a parsed URL's host against an allowlist that
-    is surely a collection (`.has(`, `.includes(`, `in` on a list, set or array
-    written out, `new Set(...)`, or a chain of reads ending in `.split(...)`, as
-    the whole expression; or a name the file binds once, at its top level, to
-    one of those and otherwise only reads. A parameter, destructuring, `catch`,
-    `for`, `with`, a key of that name, a default value, `+=` or a tuple of
-    targets anywhere in the file makes the name unknown; on a string or an
+    is surely a collection (`.has(`, `.includes(`, `in` on a list, set, tuple
+    or array written out, `new Set(...)`, `set(...)` or `frozenset(...)` of one
+    of those, or a chain of reads ending in `.split(...)`, as the whole
+    expression; or a name the file binds once, at its top level, to one of
+    those and otherwise only reads. A parameter, destructuring, `catch`, `for`,
+    `with`, a key of that name, a default value, `+=`, a tuple of targets or an
+    argument anywhere in the file makes the name unknown, and so does Python's
+    `from x import *` for every name; on a string or an
     environment value `.includes(` and `in` are substring tests) or a host
     written out (`=== 'a.example'`)
     validates that URL object: `u.hostname`, `u.host` or `u.origin` after
@@ -158,7 +161,13 @@ How the engine reads them:
     any alias `w = u`, `x = w`). In JavaScript a URL passed to any other call
     than the rule's sinks may be changed there (`setHost(u, v)`), so the check
     ends and u holds again the input it held before it; this also ends it for a
-    call that only reads u (`log(u)`), which reports more than it must.
+    call that only reads u (`log(u)`), which reports more than it must. So does
+    a URL written into an object or array (`{ target: u }`, `[u]`). Only a
+    plain name holds a checked URL (not `this.u`), only one no function written
+    inside another uses without binding it itself (a closure or callback that
+    reads or changes u, whenever it runs: `() => { u.host = v }`,
+    `[v].forEach(h => { u.host = h })`), and only while fewer than 64 names
+    hold it (each alias is kept with each other one).
     `p.geturl()` is a string the client parses again; urlparse and the client's
     parser agree on the host of what urlparse itself wrote out, which is why it
     counts, but a client with its own normalisation could read it otherwise. A URL whose host is allowed

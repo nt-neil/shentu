@@ -177,6 +177,7 @@ type analysis struct {
 	rdefs  map[string][][]Token // what names of the file are assigned or annotated with, built on first use
 	rcls   map[string][]string  // PHP: variables the file binds only to new objects, and their classes (recvClasses), built on first use
 	colls  map[string]bool      // names the file binds once, at the top, to a collection (urlguard.go collectionName), built on use
+	fregs  *fnRegions           // the file's function literals (urlcapture.go), built on use
 	ifacts map[string]bool      // JavaScript: "m:" modules the file imports, "w:" names it uses (imports.go), built on first use or kept by the project
 }
 

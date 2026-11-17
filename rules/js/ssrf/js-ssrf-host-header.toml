@@ -7,6 +7,10 @@ tier = "info"
 title = "Server builds a URL from the request's Host header and fetches it"
 frameworks = ["express", "koa", "fastify", "hapi"]
 route_input = false   # a route's req.query or ctx.params is not the Host header: only the sources below count
+# ...and, of a route handler's request whatever its parameter is called
+# ((r, s) => r.headers.host), the two headers js-ssrf-http-request leaves to
+# this rule with route_not.
+route_only = ["headers.host", "headers.x-forwarded-host"]
 # A header read by its name is this rule's only for Host and X-Forwarded-Host
 # (source_args), in any case; js-ssrf-http-request takes every other name from
 # the same sources, so a line is reported by one of the two. A whole headers

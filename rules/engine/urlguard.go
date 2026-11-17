@@ -61,6 +61,10 @@ func (a *analysis) isURLParse(t []Token) bool {
 // a write into one changes the other. Kept where either path has it.
 const urlAlias = "\x00urlalias:"
 
+// maxURLAliases: a URL held by more names than this holds no check (the
+// aliases of each are kept for each, so they cost their square).
+const maxURLAliases = 64
+
 // setURLOf records, for an assignment key = rhs, whether key holds a URL a
 // parser made, forgetting what it knew of key and of what is under it. After
 // w = u, w is that URL too and an alias of u.
@@ -75,11 +79,27 @@ func (a *analysis) setURLOf(st state, key string, rhs []Token, plain bool) {
 	if !plain {
 		return
 	}
+	// only a plain name holds a checked URL, and only one no other function
+	// of the file reaches (captured): a member (this.u, o.u) or a name a
+	// closure uses may change where the analysis does not look
+	own := func() bool { return !strings.Contains(key, sepCh) && !a.captured(key) }
 	if a.isURLParse(rhs) {
-		st[urlKey+key] = entry{san: true}
-	} else if rk, _, ok := a.pathKey(stripParens(rhs)); ok && rk != key {
-		if _, parsed := st[urlKey+rk]; parsed {
+		if own() {
 			st[urlKey+key] = entry{san: true}
+		}
+	} else if rk, _, ok := a.pathKey(stripParens(rhs)); ok && rk != key {
+		if e, parsed := st[urlKey+rk]; parsed {
+			if als := aliasesOf(st, rk); len(als) >= maxURLAliases || !own() {
+				// u went where it may change, or too many names hold it:
+				// u, its aliases and key hold again what u held before a check
+				a.urlChanged(st, rk, val{}, true)
+				if x, ok := st[rk]; ok {
+					st[key] = x
+				}
+				return
+			}
+			// and the input u held before a check, for urlChanged
+			st[urlKey+key] = entry{san: true, taint: e.taint, raw: e.raw}
 			// x = w after w = u: x is an alias of u too, so a write through
 			// any of them ends every check
 			for _, y := range append(aliasesOf(st, rk), rk) {
@@ -149,6 +169,29 @@ func (a *analysis) urlCallsStmt(st state, t []Token) {
 	if a.r.rule.Class != "ssrf" || !a.js {
 		return
 	}
+	// a URL written into an object or array ({ target: u }, [u]) goes where
+	// it may be changed through that literal
+	var lit []bool // per open bracket: an object or array written out
+	in := 0        // how many of them hold the token
+	for i, tk := range t {
+		switch {
+		case isOpen(tk):
+			l := (tk.op("{") || tk.op("[")) && literalOpen(t, i)
+			lit = append(lit, l)
+			if l {
+				in++
+			}
+		case isClose(tk) && len(lit) > 0:
+			if lit[len(lit)-1] {
+				in--
+			}
+			lit = lit[:len(lit)-1]
+		case in > 0 && tk.Kind == Ident:
+			if _, parsed := st[urlKey+tk.Text]; parsed {
+				a.urlChanged(st, tk.Text, val{}, true)
+			}
+		}
+	}
 	for i := 1; i < len(t); i++ {
 		if !t[i].op("(") || !(t[i-1].Kind == Ident || t[i-1].op(")")) {
 			continue
@@ -182,6 +225,20 @@ func (a *analysis) urlCallsStmt(st state, t []Token) {
 			a.urlChanged(st, key, v, !write)
 		}
 	}
+}
+
+// literalOpen reports whether the { or [ at t[i] starts an object or array
+// written out, not an index (a[i]) or a block (=> {).
+func literalOpen(t []Token, i int) bool {
+	if i == 0 {
+		return true
+	}
+	p := t[i-1]
+	if t[i].op("[") {
+		return !(p.Kind == Ident && !p.word("return") && !p.word("in") && !p.word("of") || p.Kind == Str || p.op(")") || p.op("]") || p.op("?."))
+	}
+	return p.op("=") || p.op("(") || p.op(",") || p.op(":") || p.op("[") || p.op("?") || p.op("||") || p.op("&&") || p.op("??") || p.op("...") ||
+		p.word("return") || p.word("yield") || p.word("await")
 }
 
 // hostCheck reports whether a condition atom checks a value against an
@@ -226,15 +283,21 @@ func (a *analysis) hostCheck(atom []Token) bool {
 //   - a name the file binds once, at its top level, to one of those
 //     (collectionName).
 func (a *analysis) collection(t []Token) bool {
-	t = stripParens(t)
 	if a.collectionValue(t) {
 		return true
 	}
+	t = stripParens(t)
 	return len(t) == 1 && t[0].Kind == Ident && a.collectionName(t[0].Text)
 }
 
 // collectionValue reports whether the whole of t makes a collection.
 func (a *analysis) collectionValue(t []Token) bool {
+	for len(t) >= 2 && t[0].op("(") && closeOf(t, 0) == len(t)-1 {
+		if a.py && indexTop(t[1:len(t)-1], 0, isComma) >= 0 {
+			return true // a tuple: ('a', 'b')
+		}
+		t = t[1 : len(t)-1]
+	}
 	n := len(t)
 	if n == 0 {
 		return false
@@ -242,18 +305,16 @@ func (a *analysis) collectionValue(t []Token) bool {
 	if (t[0].op("[") || a.py && t[0].op("{")) && closeOf(t, 0) == n-1 {
 		return true
 	}
-	if a.py && t[0].op("(") && closeOf(t, 0) == n-1 && indexTop(t[1:n-1], 0, isComma) >= 0 {
-		return true // a tuple
-	}
 	if !t[n-1].op(")") {
 		return false
 	}
 	open := openOf(t, n-1)
 	switch {
-	case !a.py && open == 2 && t[0].word("new") && t[1].word("Set"):
-		return true
-	case a.py && open == 1 && (t[0].word("set") || t[0].word("frozenset")):
-		return true
+	case !a.py && open == 2 && t[0].word("new") && t[1].word("Set"),
+		a.py && open == 1 && (t[0].word("set") || t[0].word("frozenset")):
+		// of a collection: new Set(process.env.H) is a set of characters
+		arg := t[open+1 : n-1]
+		return len(arg) > 0 && a.collection(arg)
 	case open >= 3 && (t[open-2].op(".") || t[open-2].op("?.")) && t[open-1].word("split"):
 		return postfixChain(t[:open-2])
 	}
@@ -300,7 +361,16 @@ func (a *analysis) collectionName(name string) bool {
 	if a.colls == nil {
 		a.colls = map[string]bool{}
 	}
+	a.colls[name] = false // while it is worked out: A = new Set(B), B = new Set(A)
 	t := a.ftoks
+	if a.py {
+		for i := 1; i < len(t); i++ {
+			if t[i].op("*") && t[i-1].word("import") {
+				a.colls[name] = false // from x import * may bind any name
+				return false
+			}
+		}
+	}
 	defs, ok := 0, true
 	depth, indent := 0, 0
 	for i := 0; i < len(t) && ok; i++ {
@@ -326,7 +396,7 @@ func (a *analysis) collectionName(name string) bool {
 		case next.op("=") && depth == 0 && (a.py && indent == 0 && lineStart(t, i) ||
 			!a.py && i > 0 && (t[i-1].word("const") || t[i-1].word("let") || t[i-1].word("var"))):
 			defs++
-			if defs > 1 || !a.collectionValue(stripParens(stmtRest(t, i+2))) {
+			if defs > 1 || !a.collectionValue(stmtRest(t, i+2)) {
 				ok = false
 			}
 		case next.op(".") || next.op("?.") || next.op("["):

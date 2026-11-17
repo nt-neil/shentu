@@ -1,7 +1,9 @@
 package engine
 
 import (
+	"fmt"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -154,6 +156,72 @@ func TestURLHostGuard(t *testing.T) {
 			"ALLOWED = ['a.example']\n@app.route('/p')\ndef p():\n    u = urlparse(request.args['u'])\n    if u.hostname not in ALLOWED:\n        abort(403)\n    u = u._replace(path='/v1')\n    return requests.get(u.geturl()).text\n", false},
 		{"python: list(u) with a new host", "python", "python-ssrf-http-request",
 			"ALLOWED = ['a.example']\n@app.route('/p')\ndef p():\n    u = urlparse(request.args['u'])\n    if u.hostname not in ALLOWED:\n        abort(403)\n    parts = list(u)\n    parts[1] = request.args['h']\n    return requests.get(urlunparse(parts)).text\n", true},
+		{"js: ?? default", "js", "js-ssrf-http-request",
+			"const ALLOWED = process.env.H ?? 'a,b'.split(',');\napp.get('/p', async (req, res) => {\n  const u = new URL(req.query.target);\n  if (!ALLOWED.includes(u.hostname)) return res.sendStatus(403);\n  const r = await fetch(u);\n  res.json(await r.json());\n});\n", true},
+		{"python: a dict key of the name", "python", "python-ssrf-http-request",
+			"ALLOWED = ['a.example']\nd = {ALLOWED: 1}\n@app.route('/p')\ndef p():\n    u = urlparse(request.args['u'])\n    if u.hostname not in ALLOWED:\n        abort(403)\n    return requests.get(u.geturl()).text\n", true},
+		{"python: a default parameter", "python", "python-ssrf-http-request",
+			"ALLOWED = ['a.example']\ndef f(ALLOWED=['b.example']):\n    return ALLOWED\n@app.route('/p')\ndef p():\n    u = urlparse(request.args['u'])\n    if u.hostname not in ALLOWED:\n        abort(403)\n    return requests.get(u.geturl()).text\n", true},
+		{"python: += turns the list into another value", "python", "python-ssrf-http-request",
+			"ALLOWED = ['a.example']\nALLOWED += os.environ['H']\n@app.route('/p')\ndef p():\n    u = urlparse(request.args['u'])\n    if u.hostname not in ALLOWED:\n        abort(403)\n    return requests.get(u.geturl()).text\n", true},
+		{"python: a tuple at the top", "python", "python-ssrf-http-request",
+			"ALLOWED = ('a.example', 'b.example')\n@app.route('/p')\ndef p():\n    u = urlparse(request.args['u'])\n    if u.hostname not in ALLOWED:\n        abort(403)\n    return requests.get(u.geturl()).text\n", false},
+		{"python: in a tuple written out", "python", "python-ssrf-http-request",
+			"@app.route('/p')\ndef p():\n    u = urlparse(request.args['u'])\n    if u.hostname not in ('a.example', 'b.example'):\n        abort(403)\n    return requests.get(u.geturl()).text\n", false},
+		{"python: a tuple in parentheses twice", "python", "python-ssrf-http-request",
+			"ALLOWED = (('a.example', 'b.example'))\n@app.route('/p')\ndef p():\n    u = urlparse(request.args['u'])\n    if u.hostname not in ALLOWED:\n        abort(403)\n    return requests.get(u.geturl()).text\n", false},
+		{"python: a string in parentheses is no tuple", "python", "python-ssrf-http-request",
+			"ALLOWED = ('a.example')\n@app.route('/p')\ndef p():\n    u = urlparse(request.args['u'])\n    if u.hostname not in ALLOWED:\n        abort(403)\n    return requests.get(u.geturl()).text\n", true},
+		{"js: new Set of an environment value", "js", "js-ssrf-http-request",
+			"const ALLOWED = new Set(process.env.H);\napp.get('/p', async (req, res) => {\n  const u = new URL(req.query.target);\n  if (!ALLOWED.has(u.hostname)) return res.sendStatus(403);\n  const r = await fetch(u);\n  res.json(await r.json());\n});\n", true},
+		{"js: new Set of a split", "js", "js-ssrf-http-request",
+			"const ALLOWED = new Set(process.env.H.split(','));\napp.get('/p', async (req, res) => {\n  const u = new URL(req.query.target);\n  if (!ALLOWED.has(u.hostname)) return res.sendStatus(403);\n  const r = await fetch(u);\n  res.json(await r.json());\n});\n", false},
+		{"js: new Set of a name (an argument may be changed by the call)", "js", "js-ssrf-http-request",
+			"const LIST = ['a.example'];\nconst ALLOWED = new Set(LIST);\napp.get('/p', async (req, res) => {\n  const u = new URL(req.query.target);\n  if (!ALLOWED.has(u.hostname)) return res.sendStatus(403);\n  const r = await fetch(u);\n  res.json(await r.json());\n});\n", true},
+		{"js: two sets made of each other", "js", "js-ssrf-http-request",
+			"const A = new Set(B);\nconst B = new Set(A);\nconst ALLOWED = A;\napp.get('/p', async (req, res) => {\n  const u = new URL(req.query.target);\n  if (!A.has(u.hostname)) return res.sendStatus(403);\n  const r = await fetch(u);\n  res.json(await r.json());\n});\n", true},
+		{"python: set of an environment value", "python", "python-ssrf-http-request",
+			"ALLOWED = set(os.environ['H'])\n@app.route('/p')\ndef p():\n    u = urlparse(request.args['u'])\n    if u.hostname not in ALLOWED:\n        abort(403)\n    return requests.get(u.geturl()).text\n", true},
+		{"python: frozenset of a list", "python", "python-ssrf-http-request",
+			"ALLOWED = frozenset(['a.example'])\n@app.route('/p')\ndef p():\n    u = urlparse(request.args['u'])\n    if u.hostname not in ALLOWED:\n        abort(403)\n    return requests.get(u.geturl()).text\n", false},
+		{"python: from x import * after the set", "python", "python-ssrf-http-request",
+			"ALLOWED = {'a.example'}\nfrom settings import *\n@app.route('/p')\ndef p():\n    u = urlparse(request.args['u'])\n    if u.hostname not in ALLOWED:\n        abort(403)\n    return requests.get(u.geturl()).text\n", true},
+		{"python: from x import * before the set", "python", "python-ssrf-http-request",
+			"from settings import *\nALLOWED = {'a.example'}\n@app.route('/p')\ndef p():\n    u = urlparse(request.args['u'])\n    if u.hostname not in ALLOWED:\n        abort(403)\n    return requests.get(u.geturl()).text\n", true},
+		{"js: a closure writes u.host", "js", "js-ssrf-http-request",
+			"const ALLOWED = ['a.example'];\napp.get('/p', async (req, res) => {\n  const u = new URL(req.query.target);\n  if (!ALLOWED.includes(u.hostname)) return res.sendStatus(403);\n  const mut = () => { u.host = req.query.h; };\n  mut();\n  const r = await fetch(u);\n  res.json(await r.json());\n});\n", true},
+		{"js: a callback writes u.host", "js", "js-ssrf-http-request",
+			"const ALLOWED = ['a.example'];\napp.get('/p', async (req, res) => {\n  const u = new URL(req.query.target);\n  if (!ALLOWED.includes(u.hostname)) return res.sendStatus(403);\n  [req.query.h].forEach(h => { u.host = h; });\n  const r = await fetch(u);\n  res.json(await r.json());\n});\n", true},
+		{"js: a callback written before the check", "js", "js-ssrf-http-request",
+			"const ALLOWED = ['a.example'];\napp.get('/p', async (req, res) => {\n  const u = new URL(req.query.target);\n  const mut = function () { u.host = req.query.h; };\n  if (!ALLOWED.includes(u.hostname)) return res.sendStatus(403);\n  mut();\n  const r = await fetch(u);\n  res.json(await r.json());\n});\n", true},
+		{"js: a nested function only reads u", "js", "js-ssrf-http-request",
+			"const ALLOWED = ['a.example'];\napp.get('/p', async (req, res) => {\n  const u = new URL(req.query.target);\n  if (!ALLOWED.includes(u.hostname)) return res.sendStatus(403);\n  res.on('finish', () => log(u.href));\n  const r = await fetch(u);\n  res.json(await r.json());\n});\n", true},
+		{"js: an alias a closure writes", "js", "js-ssrf-http-request",
+			"const ALLOWED = ['a.example'];\napp.get('/p', async (req, res) => {\n  const u = new URL(req.query.target);\n  if (!ALLOWED.includes(u.hostname)) return res.sendStatus(403);\n  const w = u;\n  setTimeout(() => { w.host = req.query.h; });\n  const r = await fetch(u);\n  res.json(await r.json());\n});\n", true},
+		{"js: a callback that does not use u", "js", "js-ssrf-http-request",
+			"const ALLOWED = ['a.example'];\napp.get('/p', async (req, res) => {\n  const u = new URL(req.query.target);\n  if (!ALLOWED.includes(u.hostname)) return res.sendStatus(403);\n  [1, 2].forEach(n => log(n));\n  const r = await fetch(u);\n  res.json(await r.json());\n});\n", false},
+		{"js: another handler's own u", "js", "js-ssrf-http-request",
+			"const ALLOWED = ['a.example'];\napp.get('/q', (req, res) => { const u = new URL(req.query.t); res.send(u.href); });\napp.get('/p', async (req, res) => {\n  const u = new URL(req.query.target);\n  if (!ALLOWED.includes(u.hostname)) return res.sendStatus(403);\n  const r = await fetch(u);\n  res.json(await r.json());\n});\n", false},
+		{"js: handlers inside a module function", "js", "js-ssrf-http-request",
+			"const ALLOWED = ['a.example'];\nmodule.exports = (app) => {\n  app.get('/p', async (req, res) => {\n    const u = new URL(req.query.target);\n    if (!ALLOWED.includes(u.hostname)) return res.sendStatus(403);\n    const r = await fetch(u);\n    res.json(await r.json());\n  });\n};\n", false},
+		{"js: u kept on this", "js", "js-ssrf-http-request",
+			"const ALLOWED = ['a.example'];\nclass P {\n  async get(req, res) {\n    this.u = new URL(req.query.target);\n    if (!ALLOWED.includes(this.u.hostname)) return res.sendStatus(403);\n    const r = await fetch(this.u);\n    res.json(await r.json());\n  }\n}\napp.get('/p', (req, res) => new P().get(req, res));\n", true},
+		{"python: a nested function reads u", "python", "python-ssrf-http-request",
+			"ALLOWED = ['a.example']\n@app.route('/p')\ndef p():\n    u = urlparse(request.args['u'])\n    def again():\n        return u.geturl()\n    if u.hostname not in ALLOWED:\n        abort(403)\n    return requests.get(u.geturl()).text\n", true},
+		{"python: a lambda reads u", "python", "python-ssrf-http-request",
+			"ALLOWED = ['a.example']\n@app.route('/p')\ndef p():\n    u = urlparse(request.args['u'])\n    f = lambda: u.geturl()\n    if u.hostname not in ALLOWED:\n        abort(403)\n    return requests.get(u.geturl()).text\n", true},
+		{"js: u in an object literal", "js", "js-ssrf-http-request",
+			"const ALLOWED = ['a.example'];\napp.get('/p', async (req, res) => {\n  const u = new URL(req.query.target);\n  if (!ALLOWED.includes(u.hostname)) return res.sendStatus(403);\n  const o = { target: u };\n  o.target.host = req.query.h;\n  const r = await fetch(u);\n  res.json(await r.json());\n});\n", true},
+		{"js: u in an object passed to a function", "js", "js-ssrf-http-request",
+			"const ALLOWED = ['a.example'];\napp.get('/p', async (req, res) => {\n  const u = new URL(req.query.target);\n  if (!ALLOWED.includes(u.hostname)) return res.sendStatus(403);\n  setHost({ url: u }, req.query.h);\n  const r = await fetch(u);\n  res.json(await r.json());\n});\n", true},
+		{"js: u in an array", "js", "js-ssrf-http-request",
+			"const ALLOWED = ['a.example'];\napp.get('/p', async (req, res) => {\n  const u = new URL(req.query.target);\n  if (!ALLOWED.includes(u.hostname)) return res.sendStatus(403);\n  const list = [u];\n  list[0].host = req.query.h;\n  const r = await fetch(u);\n  res.json(await r.json());\n});\n", true},
+		{"js: u in an object shorthand", "js", "js-ssrf-http-request",
+			"const ALLOWED = ['a.example'];\napp.get('/p', async (req, res) => {\n  const u = new URL(req.query.target);\n  if (!ALLOWED.includes(u.hostname)) return res.sendStatus(403);\n  const o = { u };\n  const r = await fetch(u);\n  res.json(await r.json());\n});\n", true},
+		{"js: an index with u's name is no literal", "js", "js-ssrf-http-request",
+			"const ALLOWED = ['a.example'];\napp.get('/p', async (req, res) => {\n  const u = new URL(req.query.target);\n  if (!ALLOWED.includes(u.hostname)) return res.sendStatus(403);\n  const x = cache[u.href];\n  const r = await fetch(u);\n  res.json(await r.json());\n});\n", false},
+		{"js: an alias passed to a function after the check", "js", "js-ssrf-http-request",
+			"const ALLOWED = ['a.example'];\napp.get('/p', async (req, res) => {\n  const u = new URL(req.query.target);\n  if (!ALLOWED.includes(u.hostname)) return res.sendStatus(403);\n  const w = u;\n  touch(w);\n  const r = await fetch(w);\n  res.json(await r.json());\n});\n", true},
 		{"php: parse_url's host (another parser than the client's)", "php", "php-ssrf-http-request",
 			"<?php\n$p = parse_url($_GET['u']);\nif (!in_array($p['host'], $allowed, true)) { exit; }\n$r = wp_remote_get($_GET['u']);\n", true},
 	}
@@ -169,6 +237,30 @@ func TestURLHostGuard(t *testing.T) {
 		}
 		if got := slices.Contains(ids, c.rule); got != c.want {
 			t.Errorf("%s: %s reported %v, want %v (all: %v)", c.name, c.rule, got, c.want, ids)
+		}
+	}
+}
+
+// A URL held by many names holds no check past maxURLAliases, and the names
+// cost no more than their number: 300 and 2000 aliases are scanned without
+// reaching the analysis cap (which 450 reached when every alias kept every
+// other), and the request is reported.
+func TestURLAliasCap(t *testing.T) {
+	e := engineForTest(t)
+	for _, n := range []int{maxURLAliases - 1, 300, 2000} {
+		var b strings.Builder
+		b.WriteString("const ALLOWED = ['a.example'];\napp.get('/p', async (req, res) => {\n  const u = new URL(req.query.target);\n  if (!ALLOWED.includes(u.hostname)) return res.sendStatus(403);\n  const w0 = u;\n")
+		for i := 1; i < n; i++ {
+			fmt.Fprintf(&b, "  const w%d = w%d;\n", i, i-1)
+		}
+		fmt.Fprintf(&b, "  const r = await fetch(w%d);\n  res.json(await r.json());\n});\n", n-1)
+		fs, err := e.Scan("js", "a.js", []byte(b.String()))
+		if err != nil {
+			t.Fatalf("%d aliases: %v", n, err)
+		}
+		got := slices.ContainsFunc(fs, func(f Finding) bool { return f.RuleID == "js-ssrf-http-request" })
+		if want := n >= maxURLAliases; got != want {
+			t.Errorf("%d aliases: reported %v, want %v", n, got, want)
 		}
 	}
 }

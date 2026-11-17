@@ -51,6 +51,11 @@ type Rule struct {
 	// written member.name (headers.host: the Host header, which another rule
 	// takes), read as req.headers.host or req.headers['host'].
 	RouteNot []string `toml:"route_not"`
+	// RouteOnly: with it, a route model's input is this rule's only for these
+	// values, written as in route_not, whatever the handler's parameter is
+	// called (the Host header under (r, s) => r.headers.host, which another
+	// rule leaves with route_not); route_input = false does not turn it off.
+	RouteOnly []string `toml:"route_only"`
 
 	// ChainNot: calls the chain form of the rule's receiver.method( sinks may
 	// not go through (chain.go): they make another object, another rule's

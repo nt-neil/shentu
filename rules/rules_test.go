@@ -79,6 +79,11 @@ func TestRulesValid(t *testing.T) {
 				t.Errorf("%s: routes_not %q is no route model", f, id)
 			}
 		}
+		for _, n := range r.RouteOnly {
+			if m, name, ok := strings.Cut(n, "."); !ok || name == "" || !members[r.Lang+"/"+m] {
+				t.Errorf("%s: route_only %q is not member.name of a member a %s route model makes input", f, n, r.Lang)
+			}
+		}
 		for _, n := range r.RouteNot {
 			if m, name, ok := strings.Cut(n, "."); !ok || name == "" || !members[r.Lang+"/"+m] && !sourceEndsIn(r.Sources, m) {
 				t.Errorf("%s: route_not %q is not member.name of a member a %s route model makes input or one of the rule's sources ends in", f, n, r.Lang)
@@ -341,6 +346,22 @@ func sourceEndsIn(sources []string, m string) bool {
 // A rule whose sinks leave input after ORDER BY to php-sqli-orderby-identifier
 // (unless_after) must not read input that rule does not: otherwise that input
 // in an ORDER BY would be reported by neither.
+// orderBySafe: sanitizers after which a value is safe as an ORDER BY
+// identifier, so php-sqli-orderby-identifier may clean with them where a rule
+// handing it ORDER BY does not (that rule reads them elsewhere in the query
+// too, where an allowlist of its own values may not apply). Adding to this
+// list needs a reason here.
+var orderBySafe = map[string]bool{
+	"in_array":             true, // checked against a list (the documented fix for ORDER BY)
+	"Rule::in":             true, // Laravel's validation against a list
+	"sanitize_sql_orderby": true, // WordPress: an ORDER BY clause of names and ASC/DESC only
+	"absint":               true, // integers
+	"intval":               true,
+	"(int)":                true,
+	"count(":               true,
+	"sizeof(":              true,
+}
+
 func TestUnlessAfterOwnerReads(t *testing.T) {
 	rs, err := Load()
 	if err != nil {
@@ -368,6 +389,38 @@ func TestUnlessAfterOwnerReads(t *testing.T) {
 		for _, s := range r.Sources {
 			if !slices.Contains(owner.Sources, s) && !slices.Contains(owner.Sources, s+"(") { // get_query_var is read as get_query_var(
 				t.Errorf("%s hands ORDER BY to %s, which does not read its source %q", r.ID, owner.ID, s)
+			}
+		}
+		// what the owner cleans the handing rule cleans too, but for the
+		// values an ORDER BY identifier is safe as: an integer, or one checked
+		// against a list (a quote escape such as esc_sql is not one)
+		for _, s := range owner.Sanitizers {
+			if !slices.Contains(r.Sanitizers, s) && !slices.Contains(r.Sanitizers, s+"(") && !orderBySafe[s] {
+				t.Errorf("%s hands ORDER BY to %s, which cleans with %q and it does not", r.ID, owner.ID, s)
+			}
+		}
+		// and the owner takes a route handler's input wherever it does
+		if owner.RouteInput != nil && !*owner.RouteInput && (r.RouteInput == nil || *r.RouteInput) {
+			t.Errorf("%s hands ORDER BY to %s, which takes no route input", r.ID, owner.ID)
+		}
+		for _, id := range owner.RoutesNot {
+			if !slices.Contains(r.RoutesNot, id) {
+				t.Errorf("%s hands ORDER BY to %s, which leaves out route model %s", r.ID, owner.ID, id)
+			}
+		}
+		for _, x := range owner.RouteNot {
+			if !slices.Contains(r.RouteNot, x) {
+				t.Errorf("%s hands ORDER BY to %s, which leaves out the route's %s", r.ID, owner.ID, x)
+			}
+		}
+		if owner.RouteMembers != nil {
+			for _, m := range r.RouteMembers {
+				if !slices.Contains(owner.RouteMembers, m) {
+					t.Errorf("%s hands ORDER BY to %s, which leaves out the route's %s", r.ID, owner.ID, m)
+				}
+			}
+			if r.RouteMembers == nil {
+				t.Errorf("%s hands ORDER BY to %s, which takes only some route members", r.ID, owner.ID)
 			}
 		}
 	}

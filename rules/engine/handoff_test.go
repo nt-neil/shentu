@@ -31,10 +31,25 @@ func TestHandoffOwner(t *testing.T) {
 	node := func(v string) string {
 		return "http.createServer((req, res) => {\n  const q = url.parse(req.url, true).query;\n  connection.query('SELECT * FROM t WHERE id = ' + " + v + ", (e, r) => res.end(JSON.stringify(r)));\n}).listen(8080);\n"
 	}
+	route := func(params, pre, v string) string { // a handler whose request is not called req
+		return "app.get('/p', async (" + params + ") => {\n" + pre + "  const r = await fetch('https://' + " + v + " + '/x');\n  return r.text();\n});\n"
+	}
 	cases := []struct {
 		name, lang, cwe, src string
 		want                 []string
 	}{
+		{"(r, s) => r.headers.host", "js", "CWE-918", route("r, s", "", "r.headers.host"), []string{"js-ssrf-host-header"}},
+		{"(r, s) => r.headers['host']", "js", "CWE-918", route("r, s", "", "r.headers['host']"), []string{"js-ssrf-host-header"}},
+		{"(r, s) => r.headers['x-forwarded-host']", "js", "CWE-918", route("r, s", "", "r.headers['x-forwarded-host']"), []string{"js-ssrf-host-header"}},
+		{"(r, s) => r.headers['X-Forwarded-Host'] keeps its case", "js", "CWE-918", route("r, s", "", "r.headers['X-Forwarded-Host']"), []string{"js-ssrf-http-request"}},
+		{"(request, response) => request.headers.host", "js", "CWE-918", route("request, response", "", "request.headers.host"), []string{"js-ssrf-host-header"}},
+		{"(c) => c.headers.host", "js", "CWE-918", route("c", "", "c.headers.host"), []string{"js-ssrf-host-header"}},
+		{"(rq, rs) => rq.headers['x-forwarded-host']", "js", "CWE-918", route("rq, rs", "", "rq.headers['x-forwarded-host']"), []string{"js-ssrf-host-header"}},
+		{"(r, s) => h = r.headers; h.host", "js", "CWE-918", route("r, s", "  const h = r.headers;\n", "h.host"), []string{"js-ssrf-host-header"}},
+		{"(r, s) => r.headers.referer", "js", "CWE-918", route("r, s", "", "r.headers.referer"), []string{"js-ssrf-http-request"}},
+		{"(r, s) => r.headers[name]", "js", "CWE-918", route("r, s", "  const name = r.query.h;\n", "r.headers[name]"), []string{"js-ssrf-http-request"}},
+		{"(r, s) => r.query.u", "js", "CWE-918", route("r, s", "", "r.query.u"), []string{"js-ssrf-http-request"}},
+		{"c.request.headers.host", "js", "CWE-918", route("c", "", "c.request.headers.host"), []string{"js-ssrf-host-header"}},
 		{"express req.headers.host", "js", "CWE-918", express("req.headers.host"), []string{"js-ssrf-host-header"}},
 		{"express req.get('host')", "js", "CWE-918", express("req.get('host')"), []string{"js-ssrf-host-header"}},
 		{"express x-forwarded-host", "js", "CWE-918", express("req.headers['x-forwarded-host']"), []string{"js-ssrf-host-header"}},
@@ -91,6 +106,8 @@ func TestHandoffOwner(t *testing.T) {
 		{"node: conn.escape", "js", "CWE-89", node("conn.escape(q.id)"), nil},
 		{"node: this.connection.escape", "js", "CWE-89", node("this.connection.escape(q.id)"), nil},
 		{"node: this.pool.escape", "js", "CWE-89", node("this.pool.escape(q.id)"), nil},
+		{"node: this.conn.escape", "js", "CWE-89", node("this.conn.escape(q.id)"), nil},
+		{"httpx client: .json().get(k) reads the answer (known over-report)", "python", "CWE-918", flask("httpx.Client(timeout=5).get('https://api.example.org/x').json().get(u)"), []string{"python-ssrf-async-client"}},
 		{"node: db.escape is not a driver's", "js", "CWE-89", node("db.escape(q.id)"), []string{"js-sqli-node-http-query"}},
 		{"node: myconnection.escape is not connection's", "js", "CWE-89", node("myconnection.escape(q.id)"), []string{"js-sqli-node-http-query"}},
 		{"node: this.db.escape is not a driver's", "js", "CWE-89", node("this.db.escape(q.id)"), []string{"js-sqli-node-http-query"}},

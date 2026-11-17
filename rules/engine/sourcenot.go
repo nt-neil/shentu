@@ -121,6 +121,13 @@ func (a *analysis) sourceNot(st state, tg, rhs []Token, op string) {
 				st[key+sepCh+"."+n], st[key+sepCh+"["+n+"]"] = entry{}, entry{}
 			}
 		}
+		// ...and those route_only takes from it are input under h too
+		for _, ro := range a.r.rule.RouteOnly {
+			mem, n, _ := strings.Cut(ro, ".")
+			if e, had := st[rk+sepCh+"."+n]; had && e.taint && strings.EqualFold(lastName(rhs), mem) {
+				st[key+sepCh+"."+n], st[key+sepCh+"["+n+"]"] = e, e
+			}
+		}
 	}
 	a.sourceOnly(st, key, rhs)
 }
