@@ -27,8 +27,13 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 - `block_ip` 與攻擊偵測：偵測器看過的 IP，要有它自己的、已查證的 L2 或 L3 群組，經營運者確認後才會封鎖。
   來自未查證紀錄、只有 L1 或 Unknown 的嘗試，以及內部位址，一律拒絕，除非營運者在伺服器上（`shentu chat`）
   用 `override_unverified` 覆寫；Telegram 永遠不行。只列在多個來源合併的溢出彙總組裡的 IP，有沒有覆寫都拒絕（#91）。
-- 引擎：跳過不會改變結果的 summary 計算，分析時也少做複製。和 v0.3.1 相比，WordPress 掃描快了約 34%，
-  TypeScript 專案快了約 22%，結果完全相同（#92）。benchmark 不變：已公開漏洞 97 個抓到 16 個、已修版本誤報
+  在 Ubuntu VM 上驗收：已查證紀錄裡的攻擊判成 L3，可以封鎖；未查證紀錄裡的最多到 L2，從 Telegram 封鎖會被拒絕。
+- `block_ip` 的 SSH 證據，只有 journald 裡 sshd 自己的事件確認過的登入才算（#91）：用 `logger` 偽造的 sshd 紀錄，
+  就算是在 sshd 自己的 cgroup 裡偽造的，也不能再當封鎖依據（v0.3.1 會封）。
+- 引擎：跳過不會改變結果的 summary 計算，分析時也少做複製。以 Mac 本機的 user CPU 時間量，WordPress 掃描比 v0.3.1
+  快約 34%，TypeScript 專案快約 22%，結果完全相同（#92）。以 Ubuntu 24.04 VM（arm64、4 CPU、4 GB）上的實際經過時間量，
+  同一台機器依序跑三版，WordPress 掃描 97.2 秒（v0.3.1 120.0 秒、v0.3.0 72.1 秒），比 v0.3.1 少 19%；三版都是 2279 個檔、
+  43 筆結果，記憶體高峰都在 848～858 MB；每日巡檢（root）126 秒（v0.3.1 146 秒、v0.3.0 99 秒）。benchmark 不變：已公開漏洞 97 個抓到 16 個、已修版本誤報
   1 個；holdout 30 個抓到 3 個；TypeScript 18 個抓到 1 個、已修版本誤報 1 個。
 - `tools/detecteval`（CI 會跑）用合成的請求衡量攻擊偵測（#94）：
   - 從 nuclei-templates v10.5.2 轉出的請求：同類別的特徵比中 40.5%（有分類的 3822 個模板中 1548 個）。
@@ -44,10 +49,12 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 - 特徵比對的是攻擊的原始寫法。改寫過的寫法（其他編碼、加料的路徑、SQL 裡的註解或其他空白字元、
   用引號拆開的指令）可能漏掉。
 - Debian、Ubuntu、Rocky Linux 上 nginx 預設的 access log 是 `web_user_writable`（網站伺服器的帳號寫得到
-  紀錄本身或上層目錄）：裡面的嘗試會告警，但不能當封鎖依據。Rocky Linux 的預設 httpd 設定會載入白名單以外的模組，
+  紀錄本身或上層目錄）：裡面的嘗試會告警，但不能當封鎖依據。Ubuntu 上這份紀錄屬於 `www-data:adm`，logrotate 也用
+  `create 0640 www-data adm` 建檔，手動改擁有者會在下次輪替時被改回去；這部分排在 v0.4.1 處理。Rocky Linux 的預設 httpd 設定會載入白名單以外的模組，
   所以 Apache 的紀錄一律判成 `web_user_writable`；這些模組的評估排在 v0.4.1。
 - 目前還沒有針對個別 WordPress 外掛漏洞的特徵。
-- 掃描仍比 v0.3.0 慢：WordPress 約 13%，TypeScript 專案約 20%。
+- 掃描仍比 v0.3.0 慢：WordPress 約 35%（上面 Ubuntu VM 的實際經過時間），TypeScript 專案約 20%（Mac 本機的
+  user CPU 時間，#92）。
 - v0.3.1 仍未解決的：CVE-2021-23664 的已修版本仍會被報；WordPress 上傳暫存路徑的 `filesize()`；
   `markup` 不會追進先組在變數裡的標記。
 

@@ -40,9 +40,18 @@ Chinese for the zh-TW pages; keep the two in step.
   or Unknown, and internal addresses are refused unless the operator overrides with
   `override_unverified` on the server (`shentu chat`); Telegram never can. An address listed
   only in an overflow summary of many sources is refused, override or not (#91).
+  On an Ubuntu VM, an attack in a verified log was judged L3 and could be blocked; one in an
+  unverified log reached L2 at most, and its block was refused from Telegram.
+- `block_ip`'s SSH evidence counts a login only when sshd's own events in journald confirm it
+  (#91): sshd lines forged with `logger`, even from inside sshd's own cgroup, no longer back a
+  block (v0.3.1 blocked on them).
 - Engine: summary runs that cannot change the result are skipped, and the analysis copies less.
-  Against v0.3.1, WordPress is scanned about 34% faster and TypeScript projects about 22%, with
-  the same findings (#92). Benchmark unchanged: published vulnerabilities 16 of 97 caught, 1
+  Measured as user CPU time on a Mac, WordPress is scanned about 34% faster than v0.3.1 and
+  TypeScript projects about 22% faster, with the same findings (#92). Measured as elapsed time
+  on an Ubuntu 24.04 VM (arm64, 4 CPUs, 4 GB), one version after another on the same machine,
+  the WordPress scan took 97.2 s (v0.3.1 120.0 s, v0.3.0 72.1 s), 19% less than v0.3.1, with
+  the same 2279 files and 43 findings and a peak memory of 848–858 MB in all three; the daily
+  patrol as root took 126 s (v0.3.1 146 s, v0.3.0 99 s). Benchmark unchanged: published vulnerabilities 16 of 97 caught, 1
   fixed-release false positive; held-out cases 3 of 30; TypeScript cases 1 of 18 with 1
   fixed-release false positive.
 - `tools/detecteval`, run in CI, measures attack detection on synthetic requests (#94):
@@ -64,11 +73,14 @@ Chinese for the zh-TW pages; keep the two in step.
   paths, comments or other whitespace inside SQL, commands split by quotes) may be missed.
 - nginx's default access log on Debian, Ubuntu and Rocky Linux is `web_user_writable` (the web
   server's account can write it or a directory above it): its attempts are alerted on, but they
-  cannot back a block. Rocky Linux's default httpd configuration loads modules outside the list
+  cannot back a block. On Ubuntu the log is owned by `www-data:adm` and logrotate creates it with
+  `create 0640 www-data adm`, so changing its owner by hand is undone at the next rotation;
+  this is planned for v0.4.1. Rocky Linux's default httpd configuration loads modules outside the list
   Shentu knows to be safe, so its Apache logs are always judged `web_user_writable` too; weighing
   those modules is planned for v0.4.1.
 - There are no signatures for particular WordPress plugin vulnerabilities yet.
-- Scans are still slower than v0.3.0: WordPress about 13%, TypeScript projects about 20%.
+- Scans are still slower than v0.3.0: WordPress about 35% (elapsed time on the Ubuntu VM above),
+  TypeScript projects about 20% (user CPU time on a Mac, #92).
 - Still open from v0.3.1: CVE-2021-23664's fixed release is reported; `filesize()` on an
   upload's temporary path in WordPress; `markup` not followed through a variable.
 
