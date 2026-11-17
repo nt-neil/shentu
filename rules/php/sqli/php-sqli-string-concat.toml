@@ -11,7 +11,9 @@ sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "get_query_var(", "->get_
            "$this->request->getVar(", "$this->request->getJSON(", "request("]
 # Input written into prepare()'s statement or format is php-sqli-prepare-query-text's
 sinks = ["mysqli_query", "mysqli_multi_query(", "mysqli_real_query(", "->query(", "->exec(", "->multi_query(", "->real_query(", "pg_query"]
-sanitizers = ["intval", "(int)", "->prepare(", "pg_query_params", "count(", "sizeof(", "sanitize_sql_orderby(", "$this->db->escape(", "$db->escape("]
+# Not $db->escape( or $this->db->escape(: CodeIgniter's quotes the value, but
+# other libraries' (Joomla's) only escape it, which a numeric position does not stop.
+sanitizers = ["intval", "(int)", "->prepare(", "pg_query_params", "count(", "sizeof(", "sanitize_sql_orderby("]
 fix = "Use a prepared statement with bound parameters (PDO::prepare + execute, mysqli bind_param); never build SQL with string concatenation or sprintf. Escaping (mysqli_real_escape_string) only protects a value inside quotes."
 refs = ["CVE-2026-56738"]
 
