@@ -193,6 +193,15 @@ func TestHostCases(t *testing.T) {
 	if len(pkgs) != len(hostCases) || len(cves) != len(hostCases) {
 		t.Errorf("%d packages, %d CVEs, %d cases", len(pkgs), len(cves), len(hostCases))
 	}
+	got := map[string]bool{}
+	for _, p := range pkgs {
+		got[p.Package] = true
+	}
+	for k, r := range registryName { // each renaming is used
+		if !got[r.Package] {
+			t.Errorf("%s: no case has %s", k, r.Package)
+		}
+	}
 }
 
 func TestNormalRequests(t *testing.T) {

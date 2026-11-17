@@ -105,3 +105,23 @@ var hostCases = []string{
 	"cves/CVE-2026-88029",
 	"cves/CVE-2026-9231",
 }
+
+// registryName: the name a host's lock file or plugin list reports, for
+// cases whose package cvebench names by its repository (checked against
+// repo.packagist.org, 11-17). The ecosystem is changed too where the
+// package is not a Composer one. Joomla is left as cvebench has it: it is
+// not on Packagist, so no Composer lock names it.
+var registryName = map[string]struct{ Ecosystem, Package string }{
+	"composer:KnpLabs/snappy":            {"composer", "knplabs/knp-snappy"},
+	"composer:PHPMailer/PHPMailer":       {"composer", "phpmailer/phpmailer"},
+	"composer:PHPOffice/Math":            {"composer", "phpoffice/math"},
+	"composer:flarum/flarum-core":        {"composer", "flarum/core"},
+	"composer:mongodb/mongo-php-library": {"composer", "mongodb/mongodb"},
+	"composer:sebastianbergmann/phpunit": {"composer", "phpunit/phpunit"},
+	"composer:smarty-php/smarty":         {"composer", "smarty/smarty"},
+	"composer:thorsten/phpMyFAQ":         {"composer", "thorsten/phpmyfaq"},
+	"composer:redaxo/redaxo":             {"composer", "redaxo/source"},
+	// A WordPress plugin (wordpress.org/plugins/onelogin-saml-sso), not a
+	// Composer package.
+	"composer:onelogin/wordpress-saml": {"wordpress-plugin", "onelogin-saml-sso"},
+}

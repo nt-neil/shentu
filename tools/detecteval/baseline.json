@@ -71,7 +71,8 @@
       "templates_for_cves": 10,
       "alerted": 4,
       "alerted_for_cves": 3,
-      "normal_alerted": 0
+      "normal_alerted": 0,
+      "version_unknown": 0
     },
     "normal_requests": 1216,
     "false_positives": 0,

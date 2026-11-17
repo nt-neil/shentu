@@ -48,6 +48,7 @@ type HostStat struct {
 	Alerted         int `json:"alerted"`            // templates with a candidate of the host's (a package vulnerability)
 	AlertedForCVE   int `json:"alerted_for_cves"`   // of those, templates naming one of the cases' CVEs
 	NormalAlerted   int `json:"normal_alerted"`     // ordinary requests with such a candidate
+	VersionUnknown  int `json:"version_unknown"`    // alerted templates with a candidate whose version could not be compared
 }
 
 var classCWE = map[string]string{"sqli": "CWE-89", "cmdi": "CWE-78", "path": "CWE-22", "ssrf": "CWE-918", "xss": "CWE-79",
@@ -89,6 +90,9 @@ func hostPackages(repo string) ([]detect.PackageVuln, map[string]bool, error) {
 		if _, err := toml.DecodeFile(filepath.Join(repo, "bench", c+".toml"), &x); err != nil {
 			return nil, nil, fmt.Errorf("host case %s: %v", c, err)
 		}
+		if r, ok := registryName[x.Ecosystem+":"+x.Package]; ok {
+			x.Ecosystem, x.Package = r.Ecosystem, r.Package
+		}
 		e, ok := eco[x.Ecosystem]
 		if !ok || x.ID == "" || x.Package == "" || x.Vulnerable == "" {
 			return nil, nil, fmt.Errorf("host case %s: ecosystem %q, package %q, version %q", c, x.Ecosystem, x.Package, x.Vulnerable)
@@ -102,11 +106,12 @@ func hostPackages(repo string) ([]detect.PackageVuln, map[string]bool, error) {
 
 // graded is what one line came to.
 type graded struct {
-	sigs      map[string][]string // class -> signature ids
-	level     string              // on a surface with a sink of every class at its path
-	hostAlert bool                // a package candidate of the host's
-	hostWhy   []string            // those candidates: entry level via signatures
-	parsed    bool
+	sigs           map[string][]string // class -> signature ids
+	level          string              // on a surface with a sink of every class at its path
+	hostAlert      bool                // a package candidate of the host's
+	hostWhy        []string            // those candidates: entry level via signatures
+	versionUnknown bool                // one of them has its version not known
+	parsed         bool
 }
 
 func (ev *evaluator) grade(line string) graded {
@@ -148,7 +153,12 @@ func (ev *evaluator) grade(line string) graded {
 		for _, h := range c.Hits {
 			ids = append(ids, h.Signature)
 		}
-		g.hostWhy = append(g.hostWhy, c.Entry+" "+c.Level+" via "+strings.Join(ids, ","))
+		w := c.Entry + " " + c.Level + " via " + strings.Join(ids, ",")
+		if c.VersionUnknown {
+			w += " (version unknown)"
+			g.versionUnknown = true
+		}
+		g.hostWhy = append(g.hostWhy, w)
 	}
 	g.hostAlert = len(g.hostWhy) > 0
 	return g
@@ -171,7 +181,7 @@ func (ev *evaluator) run(files map[string][]byte, normal []normalRequest) *Stats
 			lines = append(lines, n+"\tnot-converted")
 			continue
 		}
-		level, caught, host, parsed := "none", false, false, 0
+		level, caught, host, vu, parsed := "none", false, false, false, 0
 		hit := map[string]bool{}
 		for _, t := range a.Lines {
 			g := ev.grade(logLine(t))
@@ -191,6 +201,7 @@ func (ev *evaluator) run(files map[string][]byte, normal []normalRequest) *Stats
 				}
 			}
 			host = host || g.hostAlert
+			vu = vu || g.versionUnknown
 		}
 		if parsed == 0 {
 			st.NotConverted++
@@ -203,6 +214,9 @@ func (ev *evaluator) run(files map[string][]byte, normal []normalRequest) *Stats
 		}
 		if forCVE {
 			st.Host.TemplatesForCVE++
+		}
+		if vu {
+			st.Host.VersionUnknown++
 		}
 		if host {
 			st.Host.Alerted++
@@ -291,8 +305,8 @@ func report(st *Stats) {
 		fmt.Printf("  %s\n", f)
 	}
 	fmt.Printf("normal levels: %s\n", levels(st.NormalLevels))
-	fmt.Printf("host layer (%d cvebench cases): templates naming their CVEs %d; templates alerted %d (of them naming the CVEs %d); ordinary requests alerted %d\n",
-		st.Host.Cases, st.Host.TemplatesForCVE, st.Host.Alerted, st.Host.AlertedForCVE, st.Host.NormalAlerted)
+	fmt.Printf("host layer (%d cvebench cases): templates naming their CVEs %d; templates alerted %d (of them naming the CVEs %d); ordinary requests alerted %d; version unknown %d\n",
+		st.Host.Cases, st.Host.TemplatesForCVE, st.Host.Alerted, st.Host.AlertedForCVE, st.Host.NormalAlerted, st.Host.VersionUnknown)
 	fmt.Printf("graded sha256 %s\n", st.GradedHash)
 }
 
