@@ -6,14 +6,17 @@ severity = "high"
 tier = "info"
 title = "Query string of a plain Node http request concatenated into SQL"
 frameworks = []
+# Only what a plain Node server parses out of req.url (the sources below): a
+# framework's request members are js-sqli-raw-interpolation's.
+route_input = false
 sources = ["url.parse(request.url", "url.parse(req.url", "URL(req.url", "URL(request.url", "querystring.parse(req.url", "querystring.parse(request.url"]
-sinks = [".query(", ".execute("]
+sinks = [".query(", ".execute(", "knex.raw(", ".raw(", ".whereRaw(", ".orderByRaw("]
 sanitizers = ["parseInt(", "Number(", ".escape(", "mysql.escape(", "SqlString.escape("]
 fix = "Pass the values as query parameters (query('... WHERE a = ?', [a])); a table or column name from the query string must come from a fixed list."
 refs = ["CVE-2015-10035"]
 
 [[args]]
-sinks = [".query("]
+sinks = [".query(", "knex.raw(", ".raw(", ".whereRaw(", ".orderByRaw("]
 arg = 1   # the SQL text; values in the bindings array are safe
 
 # execute() only on a receiver that may be a database client (as in js-sqli-raw-interpolation)

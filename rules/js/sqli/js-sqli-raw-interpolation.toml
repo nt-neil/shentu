@@ -7,7 +7,10 @@ title = "Request input concatenated or interpolated into SQL for a driver or kne
 frameworks = ["express", "nestjs", "nextjs", "koa", "fastify", "hapi"]
 sources = ["req.query", "req.body", "req.params", "req.cookies", "@Query(", "@Body(", "@Param(", "@Req(", "req.originalUrl", "^request.nextUrl", "^req.nextUrl", "^request.url", "^req.url", "^searchParams", "^request.json(", "^req.json(", "^request.text(", "^req.text(", "^request.formData(", "^req.formData(", "^formData.get(", "^cookies().get(", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload", "ctx.params", "request.params", "ctx.cookies.get("]
 sinks = [".query(", ".execute(", "knex.raw(", ".raw(", ".whereRaw(", ".orderByRaw("]
-sanitizers = ["parseInt(", "Number("]
+# A plain Node server's url.parse(req.url), querystring.parse(req.url) and
+# new URL(req.url) are js-sqli-node-http-query's input, not this rule's
+# (req.url read as such stays this rule's).
+sanitizers = ["parseInt(", "Number(", "url.parse(request.url", "url.parse(req.url", "URL(req.url", "URL(request.url", "querystring.parse(req.url", "querystring.parse(request.url"]
 fix = "Use placeholders and pass values separately (query('... WHERE id = ?', [id]), knex.raw('?? = ?', [col, val])); never build SQL with + or template literals."
 refs = ["CVE-2026-47384"]
 
