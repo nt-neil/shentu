@@ -32,7 +32,9 @@ func (a *analysis) afterIn(st state, texts []*pat, region []Token) (ok, any bool
 	for _, arg := range splitTop(region, isComma) {
 		seen := false
 		for _, op := range splitTop(arg, isOp(concat)) {
-			op = stripParens(op)
+			// ("... ORDER BY ") . $c: php-sqli-orderby-identifier's text sink does
+			// not read past the ")", so a string in parentheses does not count
+			// as the text and the sink keeps the input after it.
 			if len(op) == 1 && op[0].Kind == Str {
 				tk := op[0]
 				for _, p := range tk.Parts {

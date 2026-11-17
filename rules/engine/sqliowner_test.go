@@ -47,6 +47,12 @@ func TestSQLiOwner(t *testing.T) {
 			[]string{"php-sqli-orderby-identifier"}},
 		{"db input before ORDER BY", "php", "<?php\n$db->query(\"SELECT * FROM t WHERE id = \" . $_GET['id'] . \" ORDER BY \" . $_GET['o']);\n",
 			[]string{"php-sqli-orderby-identifier", "php-sqli-string-concat"}},
+		{"db ORDER BY string in parentheses", "php", "<?php\n$db->query((\"SELECT * FROM t ORDER BY \") . $_GET['c']);\n",
+			[]string{"php-sqli-string-concat"}},
+		{"mysqli ORDER BY string in parentheses", "php", "<?php\nmysqli_query($c, (\"SELECT * FROM t ORDER BY \") . $_GET['c']);\n",
+			[]string{"php-sqli-string-concat"}},
+		{"laravel ORDER BY string in parentheses", "php", "<?php\nclass C { function i(Request $request) { return DB::select((\"SELECT * FROM t ORDER BY \") . $request->input('o')); } }\n",
+			[]string{"php-sqli-laravel-raw"}},
 		{"laravel ORDER BY", "php", "<?php\nclass C { function i(Request $request) { return DB::select(\"SELECT * FROM t ORDER BY \" . $request->input('o')); } }\n",
 			[]string{"php-sqli-orderby-identifier"}},
 		{"laravel ORDER BY in DB::raw", "php", "<?php\nclass C { function i(Request $request) { return DB::select(DB::raw(\"SELECT * FROM t ORDER BY \" . $request->query('o'))); } }\n",
@@ -89,5 +95,28 @@ func TestSQLiOwner(t *testing.T) {
 		if !slices.Equal(got, c.want) {
 			t.Errorf("%s: SQL injection reported by %v, want %v", c.name, got, c.want)
 		}
+	}
+}
+
+// A call over several lines is reported where the ORDER BY identifier is
+// written, the string's line, not the call's first line.
+func TestOrderByLine(t *testing.T) {
+	e := engineForTest(t)
+	src := "<?php\n$col = $_GET['orderby'];\n$rows = $wpdb->get_results(\n    \"SELECT * FROM t ORDER BY $col\"\n);\n"
+	fs, err := e.Scan("php", "a.php", []byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lines []int
+	for _, f := range fs {
+		if f.CWE == "CWE-89" {
+			if f.RuleID != "php-sqli-orderby-identifier" {
+				t.Errorf("reported by %s", f.RuleID)
+			}
+			lines = append(lines, f.Line)
+		}
+	}
+	if !slices.Equal(lines, []int{4}) {
+		t.Errorf("reported at lines %v, want [4]", lines)
 	}
 }

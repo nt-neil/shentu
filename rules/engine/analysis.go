@@ -176,6 +176,7 @@ type analysis struct {
 	ftoks  []Token              // the file's tokens, for the receiver condition (receiver.go)
 	rdefs  map[string][][]Token // what names of the file are assigned or annotated with, built on first use
 	rcls   map[string][]string  // PHP: variables the file binds only to new objects, and their classes (recvClasses), built on first use
+	colls  map[string]bool      // names the file binds once, at the top, to a collection (urlguard.go collectionName), built on use
 	ifacts map[string]bool      // JavaScript: "m:" modules the file imports, "w:" names it uses (imports.go), built on first use or kept by the project
 }
 
@@ -246,7 +247,7 @@ func (a *analysis) stmt(s *stmt, st state) (state, uint8) {
 			}
 		}
 		a.assignStmt(st, s.toks)
-		a.urlAssignStmt(st, s.toks)
+		a.urlCallsStmt(st, s.toks)
 		a.assertStmt(st, s.toks)
 		a.raisingCheckStmt(st, s.toks)
 		a.nonceStmt(st, s.toks)
@@ -807,16 +808,21 @@ func (a *analysis) pathKey(t []Token) (key, container string, ok bool) {
 	return key, container, true
 }
 
-// idxOf is idxKey for an index under key: in JavaScript a header name under
-// headers is lower case, as Node stores it (req.headers['Host'] is
-// req.headers['host']).
+// idxOf is idxKey for an index under key: in JavaScript a header name in a
+// request's headers is lower case, as Node stores it (req.headers['Host'] is
+// req.headers['host']). Another object's headers keep their case.
 func (a *analysis) idxOf(key string, t []Token) string {
 	ik := idxKey(t)
-	if a.js && strings.HasSuffix(key, sepCh+".headers") {
+	if a.js && requestHeaders[strings.ReplaceAll(key, sepCh, "")] {
 		ik = strings.ToLower(ik)
 	}
 	return ik
 }
+
+// requestHeaders are the paths of a request's headers in Express, Node, Koa
+// and Fastify (sepCh left out).
+var requestHeaders = map[string]bool{"req.headers": true, "request.headers": true, "ctx.headers": true, "ctx.header": true,
+	"ctx.request.headers": true, "ctx.request.header": true, "ctx.req.headers": true}
 
 func idxKey(t []Token) string {
 	if len(t) == 1 && (t[0].Kind == Str || t[0].Kind == Num) && len(t[0].Parts) == 0 {

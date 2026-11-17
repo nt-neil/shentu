@@ -92,8 +92,8 @@ func (a *analysis) setURLOf(st state, key string, rhs []Token, plain bool) {
 }
 
 // urlWrite: a write into a member of a parsed URL (u.host = v, u.href = v,
-// Object.assign(u, {host: v}), or w.host = v after w = u) makes it another URL:
-// what a check of its host said ends, and v's input is now in it.
+// or w.host = v after w = u) makes it another URL: what a check of its host
+// said ends, and v's input is now in it.
 func (a *analysis) urlWrite(st state, key string, v val) {
 	if a.r.rule.Class != "ssrf" {
 		return
@@ -105,16 +105,23 @@ func (a *analysis) urlWrite(st state, key string, v val) {
 		}
 		k = k[:i]
 		if _, parsed := st[urlKey+k]; parsed {
-			roots := append(aliasesOf(st, k), k)
-			for _, r := range roots {
-				delete(st, urlKey+r)
-				if v.taint {
-					e := st[r]
-					e.taint, e.raw = true, e.raw || v.raw
-					st[r] = e
-				}
-			}
+			a.urlChanged(st, k, v, false)
 			return
+		}
+	}
+}
+
+// urlChanged ends what a check said of the URL object u and of every name
+// holding it, and puts v's input into them; with unknown (u went into a
+// function that may change it), also the input u held before the check.
+func (a *analysis) urlChanged(st state, u string, v val, unknown bool) {
+	for _, r := range append(aliasesOf(st, u), u) {
+		e, parsed := st[urlKey+r]
+		delete(st, urlKey+r)
+		if v.taint || unknown && parsed && e.taint {
+			x := st[r]
+			x.taint, x.raw = true, x.raw || v.raw || unknown && e.raw
+			st[r] = x
 		}
 	}
 }
@@ -130,26 +137,51 @@ func aliasesOf(st state, k string) []string {
 	return out
 }
 
-// urlAssignStmt is urlWrite for Object.assign(u, {...}): each later argument
-// is written into u.
-func (a *analysis) urlAssignStmt(st state, t []Token) {
-	if a.r.rule.Class != "ssrf" || !a.js || len(t) < 5 || !t[0].word("Object") || !t[1].op(".") || !t[2].word("assign") || !t[3].op("(") ||
-		closeOf(t, 3) != len(t)-1 && !(closeOf(t, 3) == len(t)-2 && t[len(t)-1].op(";")) {
+// urlCallsStmt: a call in the statement that is given a parsed URL may
+// change it. Object.assign(u, {host: v}) and Reflect.set(u, 'host', v) write
+// the other arguments into u, anywhere in the statement (const z =
+// Object.assign(u, ...)). In JavaScript any other call given u, except the
+// rule's own sinks, may change it too (setHost(u, v)): the check of u ends and
+// u holds again the input it held before it. Python's parse results cannot be
+// changed in place. This reports more than it must: a call that only reads u
+// (log(u)) ends the check as well.
+func (a *analysis) urlCallsStmt(st state, t []Token) {
+	if a.r.rule.Class != "ssrf" || !a.js {
 		return
 	}
-	args := splitTop(inside(t, 3, closeOf(t, 3)), isComma)
-	if len(args) < 2 {
-		return
+	for i := 1; i < len(t); i++ {
+		if !t[i].op("(") || !(t[i-1].Kind == Ident || t[i-1].op(")")) {
+			continue
+		}
+		args := splitTop(inside(t, i, closeOf(t, i)), isComma)
+		start := a.chainStart(t, i)
+		write := i-start == 3 && t[start+1].op(".") && (t[start].word("Object") && t[start+2].word("assign") || t[start].word("Reflect") && t[start+2].word("set"))
+		if !write {
+			sink := false
+			for _, s := range a.r.sinks {
+				sink = sink || s.at(t, start, false)
+			}
+			if sink {
+				continue
+			}
+		}
+		for k, arg := range args {
+			key, _, ok := a.pathKey(stripParens(arg))
+			if !ok {
+				continue
+			}
+			if _, parsed := st[urlKey+key]; !parsed {
+				continue
+			}
+			var v val
+			for m, x := range args {
+				if m != k {
+					v = or(v, a.expr(st, x, false))
+				}
+			}
+			a.urlChanged(st, key, v, !write)
+		}
 	}
-	key, _, ok := a.pathKey(stripParens(args[0]))
-	if !ok {
-		return
-	}
-	var v val
-	for _, x := range args[1:] {
-		v = or(v, a.expr(st, x, false))
-	}
-	a.urlWrite(st, key+sepCh+".*", v)
 }
 
 // hostCheck reports whether a condition atom checks a value against an
@@ -186,62 +218,148 @@ func (a *analysis) hostCheck(atom []Token) bool {
 }
 
 // collection reports whether t is surely a collection, so that .includes( and
-// in test membership, not a substring: a list, array, tuple or set written
-// out, new Set(...), set(...), the result of .split(...), or a name the file
-// assigns only such values. A string, an environment value, or a name the file
-// does not assign (imported, a parameter) may be a string.
+// in test membership, not a substring. Only the simplest cases count, and
+// anything else may be a string (more findings, never fewer):
+//   - a list, array, set or tuple written out, new Set(...), set(...),
+//     frozenset(...), or a chain of member reads and calls ending in .split(...),
+//     as the whole expression (no ||, or, ?: around it);
+//   - a name the file binds once, at its top level, to one of those
+//     (collectionName).
 func (a *analysis) collection(t []Token) bool {
-	return a.collectionIn(t, 0, map[string]bool{})
+	t = stripParens(t)
+	if a.collectionValue(t) {
+		return true
+	}
+	return len(t) == 1 && t[0].Kind == Ident && a.collectionName(t[0].Text)
 }
 
-// collectionIn is collection a few names deep, each name looked at once and
-// through at most 8 of its definitions.
-func (a *analysis) collectionIn(t []Token, depth int, seen map[string]bool) bool {
-	t = stripParens(t)
+// collectionValue reports whether the whole of t makes a collection.
+func (a *analysis) collectionValue(t []Token) bool {
 	n := len(t)
-	if n == 0 || depth > 4 {
+	if n == 0 {
 		return false
 	}
-	if (t[0].op("[") || t[0].op("{") && a.py) && closeOf(t, 0) == n-1 {
+	if (t[0].op("[") || a.py && t[0].op("{")) && closeOf(t, 0) == n-1 {
 		return true
 	}
 	if a.py && t[0].op("(") && closeOf(t, 0) == n-1 && indexTop(t[1:n-1], 0, isComma) >= 0 {
 		return true // a tuple
 	}
-	if t[n-1].op(")") {
-		open := openOf(t, n-1)
+	if !t[n-1].op(")") {
+		return false
+	}
+	open := openOf(t, n-1)
+	switch {
+	case !a.py && open == 2 && t[0].word("new") && t[1].word("Set"):
+		return true
+	case a.py && open == 1 && (t[0].word("set") || t[0].word("frozenset")):
+		return true
+	case open >= 3 && (t[open-2].op(".") || t[open-2].op("?.")) && t[open-1].word("split"):
+		return postfixChain(t[:open-2])
+	}
+	return false
+}
+
+// postfixChain reports whether t is one value read through members, indexes
+// and calls only (process.env.HOSTS, os.environ.get('H', 'a'), (x || y)), with
+// no operator at its top.
+func postfixChain(t []Token) bool {
+	if len(t) == 0 {
+		return false
+	}
+	i := 1
+	switch {
+	case t[0].op("("):
+		i = closeOf(t, 0) + 1
+	case t[0].Kind != Ident && t[0].Kind != Str:
+		return false
+	}
+	for i < len(t) {
 		switch {
-		case open >= 2 && memberOp(a.php, t[open-2]) && t[open-1].word("split"):
-			return true
-		case !a.py && open == 2 && t[0].word("new") && (t[1].word("Set") || t[1].word("Map")):
-			return true
-		case !a.py && open == 3 && t[0].word("Object") && t[1].op(".") && (t[2].word("keys") || t[2].word("values")):
-			return true
-		case a.py && open == 1 && (t[0].word("set") || t[0].word("frozenset") || t[0].word("list") || t[0].word("tuple")):
-			return true
-		}
-		return false
-	}
-	if n != 1 || t[0].Kind != Ident {
-		return false
-	}
-	if seen[t[0].Text] {
-		return false
-	}
-	seen[t[0].Text] = true
-	if a.rdefs == nil {
-		a.rdefs = recvDefs(a.ftoks)
-	}
-	ds := a.rdefs[t[0].Text]
-	if len(ds) == 0 || len(ds) > 8 {
-		return false
-	}
-	for _, d := range ds {
-		if !a.collectionIn(d, depth+1, seen) {
+		case (t[i].op(".") || t[i].op("?.")) && i+1 < len(t) && t[i+1].Kind == Ident:
+			i += 2
+		case t[i].op("(") || t[i].op("["):
+			i = closeOf(t, i) + 1
+		default:
 			return false
 		}
 	}
-	return true
+	return i == len(t)
+}
+
+// collectionName reports whether the file binds name exactly once, with const
+// (let, var) or a plain assignment at its top level, to a collection
+// (collectionValue), and otherwise only reads it: name.has(...), name[i],
+// Python's x in name. Any other occurrence (a parameter, destructuring, catch,
+// for, with, a key name: in an object, a default value, +=, a tuple of
+// targets, an argument) may bind or change it, so the name does not count.
+func (a *analysis) collectionName(name string) bool {
+	if v, ok := a.colls[name]; ok {
+		return v
+	}
+	if a.colls == nil {
+		a.colls = map[string]bool{}
+	}
+	t := a.ftoks
+	defs, ok := 0, true
+	depth, indent := 0, 0
+	for i := 0; i < len(t) && ok; i++ {
+		tk := t[i]
+		switch {
+		case isOpen(tk):
+			depth++
+		case isClose(tk):
+			depth--
+		case tk.Kind == Indent:
+			indent++
+		case tk.Kind == Dedent:
+			indent--
+		}
+		if tk.Kind != Ident || tk.Text != name || i > 0 && (memberOp(a.php, t[i-1]) || t[i-1].op("?.")) {
+			continue
+		}
+		next := Token{}
+		if i+1 < len(t) {
+			next = t[i+1]
+		}
+		switch {
+		case next.op("=") && depth == 0 && (a.py && indent == 0 && lineStart(t, i) ||
+			!a.py && i > 0 && (t[i-1].word("const") || t[i-1].word("let") || t[i-1].word("var"))):
+			defs++
+			if defs > 1 || !a.collectionValue(stripParens(stmtRest(t, i+2))) {
+				ok = false
+			}
+		case next.op(".") || next.op("?.") || next.op("["):
+			// a read: ALLOWED.has(h), ALLOWED[0]
+		case a.py && i > 0 && t[i-1].word("in") && !(i > 1 && t[i-2].word("for")):
+			// x in ALLOWED
+		default:
+			ok = false
+		}
+	}
+	v := ok && defs == 1
+	a.colls[name] = v
+	return v
+}
+
+// stmtRest returns the expression starting at t[i] up to the end of its
+// statement: a ";", a "," or a new line outside brackets.
+func stmtRest(t []Token, i int) []Token {
+	depth := 0
+	for j := i; j < len(t); j++ {
+		switch {
+		case isOpen(t[j]):
+			depth++
+		case isClose(t[j]):
+			if depth == 0 {
+				return t[i:j]
+			}
+			depth--
+		case depth == 0 && (t[j].op(";") || t[j].op(",") || t[j].Kind == Newline || j > i && t[j].Line != t[j-1].Line):
+			return t[i:j]
+		}
+	}
+	return t[i:]
 }
 
 // urlChecked adds, to the values an allowlist check of a host validates, the
@@ -262,6 +380,11 @@ func (a *analysis) urlChecked(st state, atom []Token, keys []keyRef) []keyRef {
 			}
 			if e, parsed := st[urlKey+u]; parsed && e.san && !slices.ContainsFunc(keys, func(x keyRef) bool { return x.key == u }) {
 				keys = append(keys, keyRef{key: u, src: k.src})
+				// remember the input u held before the check, for a call that may change it (urlCallsStmt)
+				if x, _ := st.get(u); x.taint {
+					e.taint, e.raw = true, x.raw
+					st[urlKey+u] = e
+				}
 			}
 		}
 	}

@@ -140,9 +140,13 @@ How the engine reads them:
     define one variable per literal key;
   - in the SSRF rules, a check of a parsed URL's host against an allowlist that
     is surely a collection (`.has(`, `.includes(`, `in` on a list, set or array
-    written out, `new Set(...)`, `.split(...)`, or a name the file assigns only
-    those; on a string or an environment value they are substring tests) or a
-    host written out (`=== 'a.example'`)
+    written out, `new Set(...)`, or a chain of reads ending in `.split(...)`, as
+    the whole expression; or a name the file binds once, at its top level, to
+    one of those and otherwise only reads. A parameter, destructuring, `catch`,
+    `for`, `with`, a key of that name, a default value, `+=` or a tuple of
+    targets anywhere in the file makes the name unknown; on a string or an
+    environment value `.includes(` and `in` are substring tests) or a host
+    written out (`=== 'a.example'`)
     validates that URL object: `u.hostname`, `u.host` or `u.origin` after
     `u = new URL(x)` (or `URL.parse`), `p.hostname` or `p.netloc` after
     `p = urlparse(x)` (or `urlsplit`), so `fetch(u)` and `requests.get(p.geturl())`
@@ -150,7 +154,11 @@ How the engine reads them:
     `url.parse`, PHP's `parse_url`) may read as another host; not a truth test, a
     pattern or a prefix check of the host; not a URL that is something else on one
     of the paths to the check, or given a new value, or written into after it
-    (`u.host = v`, `Object.assign(u, ...)`, a member of an alias `w = u`).
+    (`u.host = v`, `Object.assign(u, ...)`, `Reflect.set(u, ...)`, a member of
+    any alias `w = u`, `x = w`). In JavaScript a URL passed to any other call
+    than the rule's sinks may be changed there (`setHost(u, v)`), so the check
+    ends and u holds again the input it held before it; this also ends it for a
+    call that only reads u (`log(u)`), which reports more than it must.
     `p.geturl()` is a string the client parses again; urlparse and the client's
     parser agree on the host of what urlparse itself wrote out, which is why it
     counts, but a client with its own normalisation could read it otherwise. A URL whose host is allowed
