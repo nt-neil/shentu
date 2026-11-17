@@ -5,7 +5,10 @@ cwe = "CWE-89"
 severity = "high"
 title = "Sort column or direction taken from the request and placed into ORDER BY"
 frameworks = ["laravel", "wordpress"]
-sources = ["$_GET", "$_POST", "$_REQUEST", "$request->input(", "$request->get(", "request(", "Yii::$app->request->get(", "$request->query->get(", "$request->request->get(", "$request->attributes->get("]
+# Yii's request readers as php-sqli-yii-query has them: ->orderBy( is this rule's.
+sources = ["$_GET", "$_POST", "$_REQUEST", "$request->input(", "$request->get(", "request(", "Yii::$app->request->get(", "$request->query->get(", "$request->request->get(", "$request->attributes->get(",
+           "->request->get(", "->request->post(", "->request->getQueryParam(", "->request->getBodyParam(", "->request->getParam(", "->request->getQuery(", "->request->getPost(",
+           "->getRequest()->get(", "->getRequest()->post(", "->getRequest()->getParam(", "$request->post(", "$request->getQueryParam(", "$request->getBodyParam("]
 sinks = ["->orderByRaw(", "::orderByRaw(", "DB::raw", "->orderBy(", "::orderBy(", "ORDER BY"]
 sanitizers = ["in_array", "sanitize_sql_orderby", "Rule::in"]
 fix = "Identifiers cannot be bound as parameters: map the requested sort key to a fixed allowlist of column names and force the direction to ASC or DESC."
@@ -75,4 +78,20 @@ code = '''
 <?php
 $sort = $this->settings->request('default_sort');
 $rows = DB::table('posts')->orderBy($sort)->get();
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "Yii: a column taken from the request as the key of orderBy()"
+code = '''
+<?php
+class StockController extends Controller
+{
+    public function actionTable()
+    {
+        [$field, $dir] = explode('|', (string) $this->request->getParam('sort', 'name|asc'));
+        $rows = Item::find()->orderBy($field . ' ' . $dir)->limit(50)->all();
+        return $this->asJson($rows);
+    }
+}
 '''
