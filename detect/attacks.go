@@ -189,20 +189,23 @@ func LoadAttacks(dir string, now time.Time) (*Attacks, error) {
 		return a, nil
 	}
 	dropped := 0
+	olds, oldOverflow := map[string]*Group{}, map[string]*Group{}
 	for k, g := range got.Groups {
 		if g == nil || g.Key != k || g.Count < 0 || g.Since < 0 {
 			dropped++
 			continue
 		}
-		loadGroup(a.Groups, k, g)
+		loadGroup(a.Groups, olds, k, g)
 	}
+	addOld(a.Groups, olds)
 	for k, g := range got.Overflow {
 		if g == nil || g.Key != k {
 			dropped++
 			continue
 		}
-		loadGroup(a.Overflow, k, g)
+		loadGroup(a.Overflow, oldOverflow, k, g)
 	}
+	addOld(a.Overflow, oldOverflow)
 	for ip, r := range got.IPs {
 		if r == nil || r.Entries == nil {
 			dropped++
@@ -237,12 +240,12 @@ func oldSinkKey(e string) string {
 	return e
 }
 
-// loadGroup puts g in gs under its sink's key: a group saved before sinks
-// were keyed by location is merged into its sink's, which keeps the later
-// notice. The key keeps its prefix, level and verified flag. An old Unknown
-// group has no File: its entry gives it. A group whose entry, File and Line
-// do not name the same sink is kept as it is.
-func loadGroup(gs map[string]*Group, k string, g *Group) {
+// loadGroup puts g in gs under its key, or, saved before sinks were keyed
+// by location, in olds under its sink's key (addOld). The key keeps its
+// prefix, level and verified flag. An old Unknown group has no File: its
+// entry gives it. A group whose entry, File and Line do not name the same
+// sink is kept as it is.
+func loadGroup(gs, olds map[string]*Group, k string, g *Group) {
 	if s := oldSinkKey(g.Entry); s != g.Entry {
 		file, line := g.File, g.Line
 		if file == "" {
@@ -260,19 +263,47 @@ func loadGroup(gs map[string]*Group, k string, g *Group) {
 				if rule, _, ok := strings.Cut(strings.TrimPrefix(g.Entry, "code:"), ":"); ok && len(g.Rules) == 0 {
 					g.Rules = []string{rule}
 				}
-				break
+				g.Key = k
+				if d := olds[k]; d != nil {
+					// One group per rule, the same requests: not added up.
+					c, s, m := max(d.Count, g.Count), max(d.Since, g.Since), max(d.Merged, g.Merged)
+					r := append(slices.Clone(d.Recent), g.Recent...)
+					slices.SortFunc(r, func(x, y time.Time) int { return x.Compare(y) })
+					r = slices.CompactFunc(r, func(x, y time.Time) bool { return x.Equal(y) })
+					if len(r) > UnknownNotifyAt {
+						r = r[len(r)-UnknownNotifyAt:]
+					}
+					mergeLoaded(d, g)
+					d.Count, d.Since, d.Merged, d.Recent = c, s, m, r
+				} else {
+					olds[k] = g
+				}
+				return
 			}
 		}
 	}
-	d := gs[k]
-	if d == nil {
-		g.Key = k
-		gs[k] = g
-		return
+	gs[k] = g
+}
+
+// addOld adds the old groups to gs: into a group keyed by the sink (other
+// requests, saved after the upgrade) they are added up.
+func addOld(gs, olds map[string]*Group) {
+	for k, g := range olds {
+		d := gs[k]
+		if d == nil {
+			gs[k] = g
+			continue
+		}
+		n := d.Merged + g.Merged
+		mergeLoaded(d, g)
+		d.Merged = n
 	}
-	n := d.Merged + g.Merged
+}
+
+// mergeLoaded merges the loaded group g into d (merge), keeping the later
+// notice and the smaller entry.
+func mergeLoaded(d, g *Group) {
 	d.merge(g)
-	d.Merged = n
 	if g.Notified.After(d.Notified) {
 		d.Notified = g.Notified
 	}
