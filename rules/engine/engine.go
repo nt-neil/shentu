@@ -751,7 +751,7 @@ func (si *srcIndex) hasSource(r *crule) bool {
 // matched as the analysis matches sinks (strictly, see the function hasSink).
 func (si *srcIndex) hasSink(r *crule) bool {
 	for _, s := range r.sinks {
-		if s.text == nil && si.has("s"+s.raw+"\x00"+s.chain, s, true) {
+		if s.text == nil && si.has("s"+s.raw+"\x00"+s.chainKey(), s, true) {
 			return true
 		}
 	}

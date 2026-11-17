@@ -11,7 +11,9 @@ frameworks = []
 route_input = false
 sources = ["url.parse(request.url", "url.parse(req.url", "URL(req.url", "URL(request.url", "querystring.parse(req.url", "querystring.parse(request.url"]
 sinks = [".query(", ".execute(", "knex.raw(", ".raw(", ".whereRaw(", ".orderByRaw("]
-sanitizers = ["parseInt(", "Number(", ".escape(", "mysql.escape(", "SqlString.escape("]
+# The SQL drivers' escape only: an HTML escape (_.escape, validator.escape) does
+# not stop input in a numeric position.
+sanitizers = ["parseInt(", "Number(", "mysql.escape(", "SqlString.escape(", "connection.escape(", "pool.escape(", "sequelize.escape("]
 fix = "Pass the values as query parameters (query('... WHERE a = ?', [a])); a table or column name from the query string must come from a fixed list."
 refs = ["CVE-2015-10035"]
 

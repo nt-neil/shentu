@@ -35,7 +35,7 @@ title = "Request input concatenated into a SQL string"
 frameworks = ["laravel"]           # optional: laravel, wordpress, symfony, doctrine, django, flask, express, nestjs, nextjs, koa, fastify, hapi
 route_input = false                # optional: route handlers' parameters are not this rule's input, only its sources (a rule for the Host header)
 route_members = ["query", "body"]  # optional: of the request members a route model makes input, only these (a rule for a query object: req.params is always a string)
-route_not = ["headers.host"]       # optional: values under those members that are not this rule's input, as member.name (the Host header): in a route handler's parameters and in the rule's own sources that end in the member (req.headers.host, req.headers['host'], req.headers.get('host'), @Headers('host'), h.host after h = req.headers)
+route_not = ["headers.host"]       # optional: values under those members that are not this rule's input, as member.name (the Host header): in a route handler's parameters and in the rule's own sources that end in the member (req.headers.host, req.headers['host'], req.headers.get('host'), @Headers('host'), h.host after h = req.headers, also when req is a route handler's parameter)
 routes_not = ["wp-shortcode"]      # optional: route models (by id) whose handlers' input is another rule's (a shortcode's attributes)
 chain_not = ["AsyncClient"]        # optional: calls the chain form of a receiver.method( sink may not go through: they make another object (httpx.AsyncClient().get( is not httpx.get()
 sources = ["$_GET", "$request->input("]   # where user input comes from; [] for a rule without sources
@@ -99,6 +99,11 @@ How the engine reads them:
   matches `$_FILES['doc']['name']` (and `$_FILES['doc']['name'][$i]`) but not
   `$_FILES['doc']['tmp_name']`. After `$f = $_FILES['doc']`, `$f['name']` is input
   and `$f['tmp_name']` is not.
+- A call or index source whose `[[source_args]]` take only some names
+  (`req.headers[` and `@Headers(` with `host` and `x-forwarded-host`) also gives
+  those members of the whole object: after `h = req.headers` or NestJS's
+  `@Headers() h`, `h.host` and `h['x-forwarded-host']` are input and `h.referer`
+  is not.
 - A string in a pattern compares its content, whatever the quotes; an unclosed
   one is a prefix: `$_SERVER['HTTP_` matches every `$_SERVER['HTTP_...']`.
 - A **sanitizer** is a call whose result is clean (`intval(`, `shlex.quote(`,
@@ -153,6 +158,9 @@ How the engine reads them:
     receiver: `Process::timeout(30)->run($cmd)`, `res.status(400).send(x)`,
     `requests.Session().get(url)`, with the same argument conditions; not through
     a call the rule's `chain_not` names (`AsyncClient`: another object);
+  - a sink written `receiver.Maker(*).method(` (`httpx.Client(*).get(`) matches
+    `.method(` at the end of a chain from the receiver that goes through a call
+    to `Maker`, with any arguments: `httpx.Client(timeout=5).get(u)`;
   - text sinks match outside string interpolations: `"... $where"` is the variable
     `$where`, not the operator text `'$where'`;
   - a number carries no injection: `(int)`, `(float)`, `(bool)`, `intval`,

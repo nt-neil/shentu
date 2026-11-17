@@ -9,8 +9,10 @@ frameworks = ["express", "koa", "fastify", "hapi"]
 route_input = false   # a route's req.query or ctx.params is not the Host header: only the sources below count
 # A header read by its name is this rule's only for Host and X-Forwarded-Host
 # (source_args), in any case; js-ssrf-http-request takes every other name from
-# the same sources, so a line is reported by one of the two.
-sources = ["req.get(", "req.header(", "req.hostname", "req.host", "req.headers.host", "req.headers[", "ctx.host", "ctx.hostname", "ctx.request.host", "ctx.request.hostname", "ctx.get(", "ctx.headers[", "ctx.request.header[", "ctx.request.headers[", "request.hostname", "request.headers.host", "request.headers[", "request.headers.get(", "request.info.host", "@Headers(", "^headers().get("]
+# the same sources, so a line is reported by one of the two. A whole headers
+# object (h = req.headers, NestJS's @Headers() h) gives its host and
+# x-forwarded-host members (sourcenot.go).
+sources = ["req.get(", "req.header(", "req.hostname", "req.host", "req.headers.host", "req.headers[", "ctx.host", "ctx.hostname", "ctx.request.host", "ctx.request.hostname", "ctx.get(", "ctx.headers.host", "ctx.headers[", "ctx.request.header[", "ctx.request.headers[", "request.hostname", "request.headers.host", "request.headers[", "request.headers.get(", "request.info.host", "@Headers(", "^headers().get("]
 source_args = [{ sources = ["req.get(", "req.header(", "req.headers[", "ctx.get(", "ctx.headers[", "ctx.request.header[", "ctx.request.headers[", "request.headers[", "request.headers.get(", "@Headers(", "^headers().get("], arg = 1, values = ["host", "x-forwarded-host"] }]
 sinks = ["fetch(", "axios(", "axios.get(", "axios.post(", "axios.put(", "axios.delete(", "axios.head(", "got(", "got.get(", "got.post(", "http.get(", "https.get(", "http.request(", "https.request(", "needle(", "superagent.get("]
 sanitizers = ["encodeURIComponent("]   # an encoded value in the path or query of a fixed URL does not choose the host

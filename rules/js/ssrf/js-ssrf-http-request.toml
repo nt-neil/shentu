@@ -25,7 +25,7 @@ refs = ["CVE-2024-32964", "CVE-2024-38514", "CVE-2025-9805", "CVE-2024-47066", "
 # sources there take only those two), also inside a route (route_not); a name
 # not written out may be any header.
 route_not = ["headers.host", "headers.x-forwarded-host"]
-source_args = [{ sources = ["request.headers.get(", "req.get(", "req.header(", "req.headers[", "ctx.get(", "ctx.headers[", "ctx.request.header[", "ctx.request.headers[", "request.headers["], arg = 1, values = ["*", "?", "!host", "!x-forwarded-host"] }]
+source_args = [{ sources = ["request.headers.get(", "^headers().get(", "req.get(", "req.header(", "req.headers[", "ctx.get(", "ctx.headers[", "ctx.request.header[", "ctx.request.headers[", "request.headers["], arg = 1, values = ["*", "?", "!host", "!x-forwarded-host"] }]
 
 [[args]]
 arg = 1

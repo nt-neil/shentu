@@ -18,8 +18,8 @@ import (
 // The state records which variable holds a URL a parser made (urlKey+x); a new
 // value of x ends it, and so does a path on which x is something else (merge
 // keeps it only where both paths have it). Only the check of a host against an
-// allowlist (.has(, .includes(, in) or a host written out (=== 'a.example')
-// counts, and only the SSRF rules read it: a URL whose host is allowed may
+// allowlist that is surely a collection (.has(, .includes(, in; see
+// collection) or a host written out (=== 'a.example') counts, and only the SSRF rules read it: a URL whose host is allowed may
 // still carry a script or a quote in its path.
 const urlKey = "\x00url:"
 
@@ -57,8 +57,13 @@ func (a *analysis) isURLParse(t []Token) bool {
 	return false
 }
 
+// urlAlias+x+"\x01"+y records that x and y hold the same URL object (w = u):
+// a write into one changes the other. Kept where either path has it.
+const urlAlias = "\x00urlalias:"
+
 // setURLOf records, for an assignment key = rhs, whether key holds a URL a
-// parser made, forgetting what it knew of key and of what is under it.
+// parser made, forgetting what it knew of key and of what is under it. After
+// w = u, w is that URL too and an alias of u.
 func (a *analysis) setURLOf(st state, key string, rhs []Token, plain bool) {
 	if a.r.rule.Class != "ssrf" {
 		return
@@ -67,9 +72,72 @@ func (a *analysis) setURLOf(st state, key string, rhs []Token, plain bool) {
 		return
 	}
 	delete(st, urlKey+key)
-	if plain && a.isURLParse(rhs) {
-		st[urlKey+key] = entry{san: true}
+	if !plain {
+		return
 	}
+	if a.isURLParse(rhs) {
+		st[urlKey+key] = entry{san: true}
+	} else if rk, _, ok := a.pathKey(stripParens(rhs)); ok && rk != key {
+		if _, parsed := st[urlKey+rk]; parsed {
+			st[urlKey+key] = entry{san: true}
+			st[urlAlias+key+"\x01"+rk], st[urlAlias+rk+"\x01"+key] = entry{san: true}, entry{san: true}
+		}
+	}
+}
+
+// urlWrite: a write into a member of a parsed URL (u.host = v, u.href = v,
+// Object.assign(u, {host: v}), or w.host = v after w = u) makes it another URL:
+// what a check of its host said ends, and v's input is now in it.
+func (a *analysis) urlWrite(st state, key string, v val) {
+	if a.r.rule.Class != "ssrf" {
+		return
+	}
+	for k := key; ; {
+		i := strings.LastIndex(k, sepCh)
+		if i < 0 {
+			return
+		}
+		k = k[:i]
+		if _, parsed := st[urlKey+k]; parsed {
+			roots := []string{k}
+			for x := range st {
+				if y, ok := strings.CutPrefix(x, urlAlias+k+"\x01"); ok {
+					roots = append(roots, y)
+				}
+			}
+			for _, r := range roots {
+				delete(st, urlKey+r)
+				if v.taint {
+					e := st[r]
+					e.taint, e.raw = true, e.raw || v.raw
+					st[r] = e
+				}
+			}
+			return
+		}
+	}
+}
+
+// urlAssignStmt is urlWrite for Object.assign(u, {...}): each later argument
+// is written into u.
+func (a *analysis) urlAssignStmt(st state, t []Token) {
+	if a.r.rule.Class != "ssrf" || !a.js || len(t) < 5 || !t[0].word("Object") || !t[1].op(".") || !t[2].word("assign") || !t[3].op("(") ||
+		closeOf(t, 3) != len(t)-1 && !(closeOf(t, 3) == len(t)-2 && t[len(t)-1].op(";")) {
+		return
+	}
+	args := splitTop(inside(t, 3, closeOf(t, 3)), isComma)
+	if len(args) < 2 {
+		return
+	}
+	key, _, ok := a.pathKey(stripParens(args[0]))
+	if !ok {
+		return
+	}
+	var v val
+	for _, x := range args[1:] {
+		v = or(v, a.expr(st, x, false))
+	}
+	a.urlWrite(st, key+sepCh+".*", v)
 }
 
 // hostCheck reports whether a condition atom checks a value against an
@@ -85,11 +153,13 @@ func (a *analysis) hostCheck(atom []Token) bool {
 	if n > 3 && atom[n-1].op(")") {
 		open := openOf(atom, n-1)
 		if open >= 2 && memberOp(false, atom[open-2]) && (atom[open-1].word("has") || atom[open-1].word("includes")) {
-			return true
+			return a.collection(atom[:open-2], 0)
 		}
 	}
-	if a.py && indexTop(atom, 0, isWord("in")) > 0 {
-		return true
+	if a.py {
+		if i := indexTop(atom, 0, isWord("in")); i > 0 {
+			return a.collection(atom[i+1:], 0)
+		}
 	}
 	for _, op := range []string{"===", "==", "!==", "!="} {
 		if i := indexTop(atom, 0, isOp(op)); i > 0 {
@@ -101,6 +171,52 @@ func (a *analysis) hostCheck(atom []Token) bool {
 		}
 	}
 	return false
+}
+
+// collection reports whether t is surely a collection, so that .includes( and
+// in test membership, not a substring: a list, array, tuple or set written
+// out, new Set(...), set(...), the result of .split(...), or a name the file
+// assigns only such values. A string, an environment value, or a name the file
+// does not assign (imported, a parameter) may be a string.
+func (a *analysis) collection(t []Token, depth int) bool {
+	t = stripParens(t)
+	n := len(t)
+	if n == 0 || depth > 4 {
+		return false
+	}
+	if (t[0].op("[") || t[0].op("{") && a.py) && closeOf(t, 0) == n-1 {
+		return true
+	}
+	if a.py && t[0].op("(") && closeOf(t, 0) == n-1 && indexTop(t[1:n-1], 0, isComma) >= 0 {
+		return true // a tuple
+	}
+	if t[n-1].op(")") {
+		open := openOf(t, n-1)
+		switch {
+		case open >= 2 && memberOp(a.php, t[open-2]) && t[open-1].word("split"):
+			return true
+		case !a.py && open == 2 && t[0].word("new") && (t[1].word("Set") || t[1].word("Map")):
+			return true
+		case !a.py && open == 3 && t[0].word("Object") && t[1].op(".") && (t[2].word("keys") || t[2].word("values")):
+			return true
+		case a.py && open == 1 && (t[0].word("set") || t[0].word("frozenset") || t[0].word("list") || t[0].word("tuple")):
+			return true
+		}
+		return false
+	}
+	if n != 1 || t[0].Kind != Ident {
+		return false
+	}
+	if a.rdefs == nil {
+		a.rdefs = recvDefs(a.ftoks)
+	}
+	ds := a.rdefs[t[0].Text]
+	for _, d := range ds {
+		if !a.collection(d, depth+1) {
+			return false
+		}
+	}
+	return len(ds) > 0
 }
 
 // urlChecked adds, to the values an allowlist check of a host validates, the

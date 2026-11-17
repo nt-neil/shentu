@@ -6,21 +6,22 @@ severity = "high"
 tier = "info"
 title = "httpx, aiohttp or Tornado client fetches a URL taken from the request"
 sources = ["request.query_params", "request.path_params", "request.form(", "request.json(", "request.body(", "request.query", "request.match_info", "request.post(", "self.get_argument(", "self.get_query_argument(", "self.get_body_argument(", "self.request.body", "request.args", "request.form", "request.values", "request.json", "request.get_json(", "request.GET", "request.POST", "request.data"]
-sinks = ["httpx.AsyncClient().get(", "httpx.AsyncClient().post(", "httpx.AsyncClient().request(", "httpx.Client().get(", "httpx.Client().post(", "httpx.Client().request(", "aiohttp.ClientSession().get(", "aiohttp.ClientSession().post(", "aiohttp.ClientSession().request(", "http_client.get(", "http_client.post(", "http_client.request(", "httpx_client.get(", "httpx_client.post(", "httpx_client.request(", "http_session.get(", "http_session.post(", "http_session.request(", "aiohttp_session.get(", "aiohttp_session.post(", "aiohttp_session.request(", "http_client.stream(", "httpx_client.stream(", "httpx.stream(", "httpx.put(", "httpx.patch(", "httpx.delete(", "httpx.head(", "http_client.fetch(", "AsyncHTTPClient().fetch("]
+sinks = ["httpx.AsyncClient(*).get(", "httpx.AsyncClient(*).post(", "httpx.AsyncClient(*).request(", "httpx.Client(*).get(", "httpx.Client(*).post(", "httpx.Client(*).request(", "aiohttp.ClientSession(*).get(", "aiohttp.ClientSession(*).post(", "aiohttp.ClientSession(*).request(", "http_client.get(", "http_client.post(", "http_client.request(", "httpx_client.get(", "httpx_client.post(", "httpx_client.request(", "http_session.get(", "http_session.post(", "http_session.request(", "aiohttp_session.get(", "aiohttp_session.post(", "aiohttp_session.request(", "http_client.stream(", "httpx_client.stream(", "httpx.stream(", "httpx.put(", "httpx.patch(", "httpx.delete(", "httpx.head(", "http_client.fetch(", "AsyncHTTPClient().fetch("]
 sanitizers = ["url_has_allowed_host_and_scheme(", "int("]
 fix = "Keep the scheme and host fixed and take only a path or an id from the request, or parse the URL, require its host to be in an allowlist and resolve it to a public address before the client connects (and check every redirect)."
 refs = ["CVE-2026-67426"]
 
 # The engine has no types, so a client is recognised by its constructor in the
-# same call or by a receiver name that only HTTP clients use; client.get and
+# same call, with any arguments (httpx.Client(*).get( matches
+# httpx.Client(timeout=5).get(u)), or by a receiver name that only HTTP clients use; client.get and
 # session.get are left out (Redis clients, Flask's session, SQLAlchemy's session).
 [[args]]
-sinks = ["httpx.AsyncClient().request(", "httpx.Client().request(", "aiohttp.ClientSession().request(", "http_client.request(", "httpx_client.request(", "http_session.request(", "aiohttp_session.request(", "http_client.stream(", "httpx_client.stream(", "httpx.stream("]
+sinks = ["httpx.AsyncClient(*).request(", "httpx.Client(*).request(", "aiohttp.ClientSession(*).request(", "http_client.request(", "httpx_client.request(", "http_session.request(", "aiohttp_session.request(", "http_client.stream(", "httpx_client.stream(", "httpx.stream("]
 arg = 2
 leading = true
 
 [[args]]
-sinks = ["httpx.AsyncClient().get(", "httpx.AsyncClient().post(", "httpx.Client().get(", "httpx.Client().post(", "aiohttp.ClientSession().get(", "aiohttp.ClientSession().post(", "http_client.get(", "http_client.post(", "httpx_client.get(", "httpx_client.post(", "http_session.get(", "http_session.post(", "aiohttp_session.get(", "aiohttp_session.post(", "httpx.put(", "httpx.patch(", "httpx.delete(", "httpx.head(", "http_client.fetch(", "AsyncHTTPClient().fetch("]
+sinks = ["httpx.AsyncClient(*).get(", "httpx.AsyncClient(*).post(", "httpx.Client(*).get(", "httpx.Client(*).post(", "aiohttp.ClientSession(*).get(", "aiohttp.ClientSession(*).post(", "http_client.get(", "http_client.post(", "httpx_client.get(", "httpx_client.post(", "http_session.get(", "http_session.post(", "aiohttp_session.get(", "aiohttp_session.post(", "httpx.put(", "httpx.patch(", "httpx.delete(", "httpx.head(", "http_client.fetch(", "AsyncHTTPClient().fetch("]
 arg = 1
 leading = true
 

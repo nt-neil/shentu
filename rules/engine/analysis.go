@@ -246,6 +246,7 @@ func (a *analysis) stmt(s *stmt, st state) (state, uint8) {
 			}
 		}
 		a.assignStmt(st, s.toks)
+		a.urlAssignStmt(st, s.toks)
 		a.assertStmt(st, s.toks)
 		a.raisingCheckStmt(st, s.toks)
 		a.nonceStmt(st, s.toks)
@@ -620,6 +621,7 @@ func (a *analysis) assign(st state, t []Token) (val, bool) {
 				delete(st, canonKey+key)
 			}
 			a.setURLOf(st, key, rhs, t[k].Text == "=")
+			a.urlWrite(st, key, v)
 			if a.js {
 				a.setRelative(st, key, rhs, t[k].Text == "=")
 				if rel, base, ok := urlRelative(rhs); ok && t[k].Text == "=" {

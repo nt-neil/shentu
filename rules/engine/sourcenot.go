@@ -79,7 +79,8 @@ func notMember(s *pat, t []Token, end int) bool {
 }
 
 // sourceNot: after h = req.headers or h = @Headers(), the members route_not
-// leaves out of that source are not input under h either.
+// leaves out of that source are not input under h either, whether the source
+// is the rule's own or a route handler's parameter.
 func (a *analysis) sourceNot(st state, tg, rhs []Token, op string) {
 	if op != "=" {
 		return
@@ -109,6 +110,66 @@ func (a *analysis) sourceNot(st state, tg, rhs []Token, op string) {
 		}
 		for _, n := range s.notMembers {
 			st[key+sepCh+"."+n], st[key+sepCh+"["+n+"]"] = entry{}, entry{}
+		}
+	}
+	// h = req.headers inside a route: the members route_not leaves out of the
+	// route's req.headers are not input under h either.
+	if rk, _, ok := a.pathKey(rhs); ok {
+		for _, rn := range a.r.rule.RouteNot {
+			mem, n, _ := strings.Cut(rn, ".")
+			if e, had := st[rk+sepCh+"."+n]; had && !e.taint && strings.EqualFold(lastName(rhs), mem) {
+				st[key+sepCh+"."+n], st[key+sepCh+"["+n+"]"] = entry{}, entry{}
+			}
+		}
+	}
+	a.sourceOnly(st, key, rhs)
+}
+
+// lastName is the last identifier of a path (req.headers: headers).
+func lastName(t []Token) string {
+	for k := len(t) - 1; k >= 0; k-- {
+		if t[k].Kind == Ident {
+			return t[k].Text
+		}
+	}
+	return ""
+}
+
+// sourceOnly: a source read by name, whose source_args take only some names
+// (req.headers[ or @Headers( with "host" and "x-forwarded-host"), makes those
+// members input when the whole object is assigned: after h = req.headers or
+// h = @Headers(), h.host and h['host'] are input, h.referer is not.
+func (a *analysis) sourceOnly(st state, key string, rhs []Token) {
+	if a.noSrc {
+		return
+	}
+	for _, s := range a.r.sources {
+		n := len(s.toks)
+		if s.srcArg != 1 || len(s.srcVals) == 0 || n < 2 || s.srcVals["*"] || s.srcVals["?"] {
+			continue
+		}
+		whole := false
+		switch last := s.toks[n-1]; {
+		case last.op("["):
+			whole = len(rhs) == n-1
+		case last.op("("):
+			whole = len(rhs) == n+1 && rhs[n].op(")")
+		}
+		for k := 0; whole && k < n-1; k++ {
+			whole = tokEq(s.toks[k], rhs[k])
+		}
+		if !whole {
+			continue
+		}
+		for v := range s.srcVals {
+			if strings.HasPrefix(v, "!") {
+				continue
+			}
+			e := entry{taint: !a.nonced(st), raw: true}
+			st[key+sepCh+"["+v+"]"] = e
+			if !strings.Contains(v, "-") {
+				st[key+sepCh+"."+v] = e
+			}
 		}
 	}
 }

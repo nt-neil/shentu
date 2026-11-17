@@ -51,6 +51,18 @@ func blockDecision(t *testing.T, b *bot) *logEntry {
 	return nil
 }
 
+// waitFor waits until cond holds, checking it every 10 ms, or fails the test.
+func waitFor(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(30 * time.Second)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s", what)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 // confirm = 1: Telegram only proposes; the action waits for `shentu bot approve`.
 func TestBotConfirmOnServer(t *testing.T) {
 	if runtime.GOOS == "windows" {
@@ -91,15 +103,15 @@ func TestBotConfirmNeedsCode(t *testing.T) {
 	ctx := context.Background()
 	b.handle(ctx, msg(pairedUser, pairedChat, "private", "block it"))
 	nonce := ""
-	for i := 0; i < 150 && nonce == ""; i++ {
+	waitFor(t, "the ✅ button", func() bool {
 		for _, s := range tg.sent() {
 			if rm, ok := s["reply_markup"].(map[string]any); ok {
 				data := rm["inline_keyboard"].([]any)[0].([]any)[0].(map[string]any)["callback_data"].(string)
 				nonce, _, _ = strings.Cut(data, ":")
 			}
 		}
-		time.Sleep(20 * time.Millisecond)
-	}
+		return nonce != ""
+	})
 	var u tgUpdate
 	u.Callback = &struct {
 		ID      string     `json:"id"`
@@ -108,10 +120,16 @@ func TestBotConfirmNeedsCode(t *testing.T) {
 		Message *tgMessage `json:"message"`
 	}{ID: "q", From: tgUser{ID: pairedUser}, Data: nonce + ":y", Message: msg(pairedUser, pairedChat, "private", "").Message}
 	b.handle(ctx, u)
-	time.Sleep(100 * time.Millisecond)
+	// Each code goes in once the bot asks for one and has taken the one before:
+	// a code sent while the last one is still unread would be dropped.
+	codeTaken := func() bool {
+		b.mu.Lock()
+		defer b.mu.Unlock()
+		return b.codeWait != nil && len(b.codeWait) == 0
+	}
 	for _, wrong := range []string{"000000", "111111", "222222"} {
+		waitFor(t, "the bot to ask for a code", codeTaken)
 		b.handle(ctx, msg(pairedUser, pairedChat, "private", wrong))
-		time.Sleep(50 * time.Millisecond)
 	}
 	e := blockDecision(t, b)
 	if e == nil || e.Confirmed {

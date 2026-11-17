@@ -284,6 +284,12 @@ func containsAny(code string, needles []string) bool {
 		if i := strings.Index(n, "[*]"); i > 0 {
 			n = n[:i] // $_FILES[*]['name']: any index of $_FILES
 		}
+		if pre, post, ok := strings.Cut(n, "(*)"); ok { // httpx.Client(*).get(: any arguments
+			if regexp.MustCompile(regexp.QuoteMeta(pre) + `\([^()]*(\([^()]*\)[^()]*)*\)` + regexp.QuoteMeta(post)).MatchString(code) {
+				return true
+			}
+			continue
+		}
 		if strings.Contains(code, strings.TrimPrefix(n, "^")) {
 			return true
 		}

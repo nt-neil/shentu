@@ -20,6 +20,7 @@ type pat struct {
 	name     string          // last name in the pattern (to recognise prefix checks)
 	chain    string          // PHP: "->m(" made from the sink "Class::m(": the chain must start at Class:: (chain.go)
 	chainNot map[string]bool // calls the chain may not go through: they make another object (rule chain_not)
+	chainVia string          // a call the chain must go through: httpx.Client(*).get( (chain.go viaSink)
 	wild     bool            // holds "[*]", which matches any one index: $_FILES[*]['name']
 	// sources only (source_args): the call (or index) is input only when its
 	// srcArg-th argument is a string literal among srcVals (lower case; "*": any; "!x": not x;
@@ -150,7 +151,7 @@ func (p *pat) match(toks []Token, i int, strict bool) (int, bool) {
 		}
 		j++
 	}
-	if p.chain != "" && !chainFrom(toks, i, p.chain, p.chainNot) {
+	if p.chain != "" && !chainFrom(toks, i, p.chain, p.chainVia, p.chainNot) {
 		return 0, false
 	}
 	if !strict || p.member || i == 0 || !memberOp(p.php, toks[i-1]) {
