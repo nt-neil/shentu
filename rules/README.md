@@ -36,6 +36,7 @@ frameworks = ["laravel"]           # optional: laravel, wordpress, symfony, doct
 route_input = false                # optional: route handlers' parameters are not this rule's input, only its sources (a rule for the Host header)
 route_members = ["query", "body"]  # optional: of the request members a route model makes input, only these (a rule for a query object: req.params is always a string)
 route_not = ["headers.host"]       # optional: values under those members that are not this rule's input, as member.name (the Host header, another rule's)
+routes_not = ["wp-shortcode"]      # optional: route models (by id) whose handlers' input is another rule's (a shortcode's attributes)
 chain_not = ["AsyncClient"]        # optional: calls the chain form of a receiver.method( sink may not go through: they make another object (httpx.AsyncClient().get( is not httpx.get()
 sources = ["$_GET", "$request->input("]   # where user input comes from; [] for a rule without sources
 sinks = ["mysqli_query", "->query("]      # the dangerous calls

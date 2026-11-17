@@ -57,6 +57,11 @@ type Rule struct {
 	// (httpx.AsyncClient().get( is an async client's call, not httpx.get().
 	ChainNot []string `toml:"chain_not"`
 
+	// RoutesNot: route models (by id) whose handlers' input is not this
+	// rule's: another rule is for it (wp-shortcode's attributes are
+	// php-xss-shortcode-attribute's).
+	RoutesNot []string `toml:"routes_not"`
+
 	File string `toml:"-"` // path inside rules/, set by Load
 }
 

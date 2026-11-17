@@ -285,6 +285,33 @@ func TestRouteNot(t *testing.T) {
 	}
 }
 
+// A rule with routes_not leaves a route model's handlers to another rule: a
+// shortcode's attributes are no input to it, a REST callback's still are.
+func TestRoutesNot(t *testing.T) {
+	rule := func(id string, not []string) rules.Rule {
+		return rules.Rule{ID: id, Lang: "php", Class: "xss", CWE: "CWE-79", Severity: "medium", Title: "t",
+			Sources: []string{"$_GET"}, Sinks: []string{"echo"}, Sanitizers: []string{}, RoutesNot: not}
+	}
+	e, err := New([]rules.Rule{rule("all", nil), rule("noshortcode", []string{"wp-shortcode"})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string][]string{
+		"<?php\nadd_shortcode('b', 'f');\nfunction f($a) {\n\techo '<p>' . $a['c'] . '</p>';\n}\n":                                     {"all"},
+		"<?php\nregister_rest_route('x/v1', '/r', array('callback' => 'f'));\nfunction f($r) {\n\techo '<p>' . $r['c'] . '</p>';\n}\n": {"all", "noshortcode"},
+	} {
+		fs, _ := e.Scan("php", "a.php", []byte(name))
+		var got []string
+		for _, f := range fs {
+			got = append(got, f.RuleID)
+		}
+		slices.Sort(got)
+		if !slices.Equal(got, want) {
+			t.Errorf("%q: reported by %v, want %v", name, got, want)
+		}
+	}
+}
+
 // source_args on an index source (one ending with "["): its index is
 // argument 1. Two rules split req.headers[ between them by name; "?" takes an
 // index that is not a string literal (any header may be read so), without it

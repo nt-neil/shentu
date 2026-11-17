@@ -123,6 +123,9 @@ func (c *croute) takes(r *crule) bool {
 	if r.rule.RouteInput != nil && !*r.rule.RouteInput {
 		return false // the rule says so: only its own sources (route_input = false)
 	}
+	if slices.Contains(r.rule.RoutesNot, c.r.ID) {
+		return false // this model's input is another rule's (routes_not)
+	}
 	for _, s := range r.rule.Sources {
 		if !c.field(s) {
 			return true

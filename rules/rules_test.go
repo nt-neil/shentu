@@ -59,7 +59,9 @@ func TestRulesValid(t *testing.T) {
 		t.Fatal(err)
 	}
 	members := map[string]bool{} // lang/member a route model makes input
+	routeIDs := map[string]bool{}
 	for _, rt := range routes {
+		routeIDs[rt.ID] = true
 		for _, m := range rt.Members {
 			members[rt.Lang+"/"+m] = true
 		}
@@ -70,6 +72,11 @@ func TestRulesValid(t *testing.T) {
 		for _, m := range r.RouteMembers {
 			if !members[r.Lang+"/"+m] {
 				t.Errorf("%s: route_members %q is no member a %s route model makes input", f, m, r.Lang)
+			}
+		}
+		for _, id := range r.RoutesNot {
+			if !routeIDs[id] {
+				t.Errorf("%s: routes_not %q is no route model", f, id)
 			}
 		}
 		for _, n := range r.RouteNot {
