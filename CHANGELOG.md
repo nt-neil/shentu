@@ -64,6 +64,26 @@ Chinese for the zh-TW pages; keep the two in step.
   - templates for vulnerabilities the test host has: 3 of 10 alerted, 2 of them only at L1
     (the payload is in the request body).
 
+### Fixed
+
+- When one request hits several rules on the same line of code, you get one alert that lists
+  every rule, instead of one alert per rule (#97).
+- Alerts for a package's CVE no longer carry the note on what routes mean; that note is for
+  alerts about your own code only (#97).
+- When an ACL lets another account write a log or a directory above it, the reason names that
+  account, for example `ACL grants write to www-data (uid 33)` (#97).
+- When the patrol runs as an account that is not root and not in the `systemd-journal` or `adm`
+  group, the SSH result is marked as only partly read (#97).
+
+### Upgrade notes
+
+- An attack state saved by a v0.4.0 build from before these fixes (one group per rule) is
+  merged into the new format (one group per line of code) when it is loaded (#97, #98). The
+  counts from before the upgrade are a lower bound: when rules of different classes on the same
+  line were hit by different requests, the count may be too low. This changes only the counts
+  shown, not alerts or blocks. v0.3.x keeps no attack state, so an upgrade from it has nothing
+  to merge.
+
 ### Known issues
 
 - Attack detection is for Linux only.
