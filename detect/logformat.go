@@ -23,15 +23,19 @@ var ErrFormatUnrecognized = errors.New(string(ReasonFormatUnrecognized))
 
 // AccessRecord is one request of an access log.
 type AccessRecord struct {
-	Client    string    // the address that connected (behind a proxy, the proxy)
-	Time      time.Time // zero when the format has no time detect reads
-	Request   string    // the request line as logged, unescaped
-	Method    string
-	Path      string // the target before '?', as sent (not decoded)
-	Query     string // after '?'
-	Proto     string
-	Status    int
-	Bytes     int64
+	Client  string    // the address that connected (behind a proxy, the proxy)
+	Time    time.Time // zero when the format has no time detect reads
+	Request string    // the request line as logged, unescaped
+	Method  string
+	Path    string // the target before '?', as sent (not decoded)
+	Query   string // after '?'
+	Proto   string
+	Status  int
+	Bytes   int64
+	// ReqLength: the request's length as the server logged it (nginx's
+	// $request_length, Apache's %I: line, headers and body); 0 when the
+	// format does not log it.
+	ReqLength int64
 	Referer   string
 	UserAgent string
 	Host      string
@@ -92,7 +96,7 @@ var ngxFields = map[string]string{
 	"remote_addr": "client", "remote_user": "user",
 	"time_local": "time_local", "time_iso8601": "time_iso", "msec": "msec",
 	"request": "request", "request_method": "method", "request_uri": "uri", "uri": "path", "args": "query", "query_string": "query",
-	"server_protocol": "proto", "status": "status", "body_bytes_sent": "bytes", "bytes_sent": "bytes",
+	"server_protocol": "proto", "status": "status", "body_bytes_sent": "bytes", "bytes_sent": "bytes", "request_length": "reqlen",
 	"http_referer": "referer", "http_user_agent": "ua", "http_x_forwarded_for": "xff", "host": "host", "http_host": "host",
 	"server_name": "vhost", "server_port": "port",
 }
@@ -195,6 +199,8 @@ func apacheParser(spec string, lookups, identity bool) (*Parser, error) {
 			f = "status"
 		case "b", "B", "O":
 			f = "bytes"
+		case "I": // mod_logio: bytes received, the request's line and headers included
+			f = "reqlen"
 		case "m":
 			f = "method"
 		case "U":
@@ -236,7 +242,7 @@ var clientWritten = map[string]bool{"": true, "user": true, "request": true, "ur
 
 // safeBeforeClient are the fields the client may follow: none of them is
 // written by the request, so none can hold a forged address.
-var safeBeforeClient = map[string]bool{"ident": true, "time_local": true, "time_iso": true, "time_apache": true, "msec": true, "status": true, "bytes": true, "vhost": true, "port": true}
+var safeBeforeClient = map[string]bool{"ident": true, "time_local": true, "time_iso": true, "time_apache": true, "msec": true, "status": true, "bytes": true, "reqlen": true, "vhost": true, "port": true}
 
 // check: every field is delimited by literal text (two side by side cannot
 // be split without guessing), nothing the request writes comes before the
@@ -611,7 +617,7 @@ func (r *AccessRecord) set(f, v string) bool {
 			return true
 		}
 		a, err := netip.ParseAddr(v)
-		if err != nil {
+		if err != nil || a.Zone() != "" { // a zone is any text after %
 			return false
 		}
 		r.Client = a.String()
@@ -671,6 +677,14 @@ func (r *AccessRecord) set(f, v string) bool {
 			}
 			r.Bytes = n
 		}
+	case "reqlen":
+		if !dash {
+			n, err := strconv.ParseInt(v, 10, 64)
+			if err != nil || n < 0 {
+				return false
+			}
+			r.ReqLength = n
+		}
 	case "referer":
 		if !dash {
 			r.Referer = v
@@ -680,7 +694,7 @@ func (r *AccessRecord) set(f, v string) bool {
 			r.UserAgent = v
 		}
 	case "xff":
-		if !dash {
+		if !dash && validXFF(v) { // addresses only: anything else is a client's text, not a proxy's
 			r.XFF = v
 		}
 	case "host":
