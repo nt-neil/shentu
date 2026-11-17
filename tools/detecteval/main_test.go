@@ -98,6 +98,7 @@ func TestManifestHash(t *testing.T) {
 	}
 }
 
+// Changes package-level variables (retryBase): never t.Parallel.
 func TestDownloadRetries(t *testing.T) {
 	retryBase = time.Millisecond
 	defer func() { retryBase = 2 * time.Second }()
@@ -361,6 +362,7 @@ func TestEvaluatorRun(t *testing.T) {
 	}
 }
 
+// Changes package-level variables (wantHash): never t.Parallel.
 func TestRunExitCodes(t *testing.T) {
 	dir := t.TempDir()
 	tb, base := dir+"/t.tar.gz", dir+"/baseline.json"
@@ -409,6 +411,7 @@ func TestRunExitCodes(t *testing.T) {
 }
 
 // The limits a run is unlikely to reach, lowered, through the whole path.
+// Changes package-level variables (maxEntries, maxUnpacked, maxDownload, retryBase): never t.Parallel.
 func TestLimitsWholePath(t *testing.T) {
 	defer func(e int, u, d int64, r time.Duration) { maxEntries, maxUnpacked, maxDownload, retryBase = e, u, d, r }(maxEntries, maxUnpacked, maxDownload, retryBase)
 	maxEntries = 3
