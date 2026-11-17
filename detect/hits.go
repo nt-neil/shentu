@@ -196,11 +196,11 @@ func routeRegexp(pattern string) (re *regexp.Regexp, loose bool) {
 		optional := strings.HasSuffix(ph, "?") || strings.HasSuffix(ph, "?}") // Express's /:id?, Laravel's /{id?}
 		switch {
 		case optional && strings.HasSuffix(lit, "/"):
-			b.WriteString(regexp.QuoteMeta(lit[:len(lit)-1]) + `(?:/[^/]+)?`)
+			b.WriteString(regexp.QuoteMeta(lit[:len(lit)-1]) + `(?:/([^/]+))?`)
 		case manySegments(ph):
-			b.WriteString(regexp.QuoteMeta(lit) + `.+`)
+			b.WriteString(regexp.QuoteMeta(lit) + `(.+)`)
 		default:
-			b.WriteString(regexp.QuoteMeta(lit) + `[^/]+`)
+			b.WriteString(regexp.QuoteMeta(lit) + `([^/]+)`)
 		}
 		last = m[1]
 	}
@@ -258,6 +258,22 @@ func stripAnchors(expr string) (string, error) {
 	return strip(re).String(), nil
 }
 
+// placeholderTook says whether one of a route's placeholder values holds
+// one of the path segments whole. The segments are the ones the hit held
+// in, cleaned ones included only where the hit still holds after cleaning
+// (matchOne).
+func placeholderTook(vals, segs []string) bool {
+	for _, v := range vals {
+		v = "/" + strings.ToLower(v) + "/"
+		for _, sg := range segs {
+			if v != "//" && strings.Contains(v, "/"+sg+"/") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // Judge judges one matched request (MatchResult of the record or of one
 // of its other splits).
 func (j *Judge) Judge(m MatchResult) Judgment {
@@ -282,13 +298,21 @@ func (j *Judge) Judge(m MatchResult) Judgment {
 	}
 	// Code sinks whose route the request reached: L1, and L2 with a hit of
 	// the sink's payload class.
-	reached := map[int]bool{}
+	// reached: the entry, and the values its routes' placeholders took.
+	reached := map[int][]string{}
 	for _, r := range j.routes {
 		// The routed path, and the path with its dot segments as sent: a
 		// router that does not resolve them (or a traversal it lets
 		// through) routes that one.
 		q := m.Request
-		if !methodOK(r.ref.Method, q.Method) || !(r.re.MatchString(q.Path) || q.RawPath != "" && r.re.MatchString(q.RawPath)) {
+		if !methodOK(r.ref.Method, q.Method) {
+			continue
+		}
+		sm := r.re.FindStringSubmatch(q.Path)
+		if sm == nil && q.RawPath != "" {
+			sm = r.re.FindStringSubmatch(q.RawPath)
+		}
+		if sm == nil {
 			continue
 		}
 		ref := r.ref
@@ -296,7 +320,7 @@ func (j *Judge) Judge(m MatchResult) Judgment {
 		if c := &out.Candidates[byEntry[r.entry]]; c.Route == nil {
 			c.Route = &ref
 		}
-		reached[r.entry] = true
+		reached[r.entry] = append(reached[r.entry], sm[1:]...)
 	}
 	// A path cut may join two far parts into a route (the cut is between
 	// them): a route reached then is L1 at most, its hits unanchored.
@@ -308,12 +332,16 @@ func (j *Judge) Judge(m MatchResult) Judgment {
 			continue
 		}
 		if len(s.CVEs) == 0 && len(s.Advisories) == 0 && len(s.AppliesTo) == 0 { // a class signature
-			for i := range reached {
-				if j.surface.Entries[i].Payload == h.Class && !pathCut {
+			for i, vals := range reached {
+				// A hit in a path segment counts only when the route's
+				// placeholder took that segment: a mount prefix or the
+				// route's own words reach no handler (review 2 of #87, N-1).
+				taken := len(h.Segments) == 0 || placeholderTook(vals, h.Segments)
+				if j.surface.Entries[i].Payload == h.Class && !pathCut && taken {
 					add(i, LevelPayload, &h)
 					used[hi] = true
 				}
-				if j.surface.Entries[i].Payload == h.Class && pathCut && !used[hi] {
+				if j.surface.Entries[i].Payload == h.Class && (pathCut || !taken) && !used[hi] {
 					out.Unanchored, used[hi] = append(out.Unanchored, h), true
 				}
 			}

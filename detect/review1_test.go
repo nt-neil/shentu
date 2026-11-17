@@ -1,9 +1,12 @@
 package detect
 
 import (
+	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 
+	"github.com/nt-neil/shentu/detect/sig"
 	"github.com/nt-neil/shentu/rules/engine"
 )
 
@@ -33,7 +36,8 @@ license = "Apache-2.0"
 [[signature.route]]
 path = "/marker/route"
 [[signature.match]]
-part = "any_param"
+part = "param"
+param = "a"
 contains = ["marker-one"]
 
 [[signature]]
@@ -474,5 +478,249 @@ func TestHiddenSinksMore(t *testing.T) {
 	g := j.Judge(MatchResult{Request: Request{Cut: true}})
 	if !g.Unknown || len(g.HiddenSinks) != MaxHidden || g.HiddenSinksMore != 4 || strings.Join(g.HiddenClasses, ",") != "path" {
 		t.Errorf("%d sinks of no route: %d listed, %d more, classes %v", len(sinks), len(g.HiddenSinks), g.HiddenSinksMore, g.HiddenClasses)
+	}
+}
+
+// N-4, N-5 of review 1: a class signature's text in a parameter's name
+// (sent with no = or with a value), or in a path segment a route
+// parameter reads, is matched; a path-parameter sink reached so is L2.
+func TestNameAndSegmentMatched(t *testing.T) {
+	ss := loadSigs(t, markerSigs)
+	m := NewMatcher(ss)
+	hit := func(r AccessRecord) Hit {
+		for _, h := range m.Match(Normalize(r)).Hits {
+			if h.Signature == "class-marker" {
+				return h
+			}
+		}
+		return Hit{}
+	}
+	for _, c := range []struct {
+		r         AccessRecord
+		part, raw string
+	}{
+		{AccessRecord{Method: "GET", Path: "/a.php", Query: "marker-one"}, "query", "marker-one"},
+		{AccessRecord{Method: "GET", Path: "/a.php", Query: "x=1&marker-one=2"}, "query", "x=1&marker-one=2"},
+		{AccessRecord{Method: "GET", Path: "/user/marker-one/edit"}, "path", "/user/marker-one/edit"},
+		{AccessRecord{Method: "GET", Path: "/user/marker%2Done"}, "path", "/user/marker%2Done"},
+	} {
+		if h := hit(c.r); h.Part != c.part || h.Raw != c.raw {
+			t.Errorf("%s?%s: %+v, want part %s raw %q", c.r.Path, c.r.Query, h, c.part, c.raw)
+		}
+	}
+	// An ordinary request: nothing.
+	if h := hit(AccessRecord{Method: "GET", Path: "/user/42/edit", Query: "tab=profile"}); h.Signature != "" {
+		t.Errorf("ordinary request: %+v", h)
+	}
+	sink := []CodeSink{{Rule: "js-sqli", CWE: "CWE-89", Severity: "critical", Path: "a.js", Line: 1,
+		Routes: []engine.RouteRef{{Model: "m", Framework: "express", Method: "get", Pattern: "/user/:id", File: "a.js", Line: 1}}}}
+	g := NewJudge(Build(sink, nil), ss).Judge(m.Match(Normalize(AccessRecord{Method: "GET", Path: "/user/marker-one"})))
+	if len(g.Candidates) != 1 || g.Candidates[0].Level != LevelPayload {
+		t.Errorf("path-parameter sink: %+v", g)
+	}
+}
+
+// PR #94's evaluation: a route of a common name held under another
+// application's file. Shibboleth SP's /Shibboleth.sso/Logout with an
+// off-site return is not Flarum's CVE-2024-21641; Flarum's own /logout,
+// mounted under a directory or not, still is.
+func TestRouteCaseAndAnchor(t *testing.T) {
+	ss, err := sig.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := NewMatcher(ss)
+	s := Build(nil, []PackageVuln{{Source: "/srv/composer.lock", Ecosystem: "Packagist", Package: "flarum/core", Version: "1.8.4", ID: "CVE-2024-21641"}})
+	ret := "return=https%3A%2F%2Fexample.org%2F"
+	for _, c := range []struct {
+		path string
+		want int
+	}{
+		{"/Shibboleth.sso/Logout", 0},
+		{"/Shibboleth.sso/logout", 0}, // anchored: a file before the route
+		{"/app/LOGOUT", 0},            // case sensitive
+		{"/logout", 1},
+		{"/forum/logout", 1},
+		{"/index.php/logout", 1},                                  // without URL rewriting
+		{"/forum/index.php/logout", 1},                            // the same, under a directory
+		{"/" + strings.Repeat("a/", MaxNormalized) + "logout", 1}, // too long for CasePath: compared without case
+	} {
+		g := NewJudge(s, ss).Judge(m.Match(Normalize(AccessRecord{Method: "GET", Path: c.path, Query: ret})))
+		if len(g.Candidates) != c.want {
+			t.Errorf("%s: %+v, want %d candidate(s)", c.path, g.Candidates, c.want)
+		}
+	}
+}
+
+// The three ordinary texts of review 1 (S) that matched a class
+// signature: narrowed, they no longer do. classes_test.go keeps the
+// signatures' own cases.
+func TestClassesNarrowed(t *testing.T) {
+	ss, err := sig.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := NewMatcher(ss)
+	// The three regexes before they were narrowed (ca27a97^): each text
+	// below matched there, so the test shows the narrowing, not a text
+	// that never matched.
+	before := map[string]*regexp.Regexp{
+		"code-eval-call":       regexp.MustCompile(`\b(?:eval|assert|system|passthru|shell_exec|proc_open|popen|create_function|call_user_func(?:_array)?|base64_decode|gzinflate|str_rot13)\s*\(|__import__\s*\(|\bruntime\.getruntime\(\)\.exec|\bprocessbuilder\b`),
+		"sqli-quote-comment":   regexp.MustCompile(`['"]\s*\)*\s*(?:--[\s-]|#|/\*)`),
+		"cmdi-chained-command": regexp.MustCompile("(?:[;&|`\n]|\\$\\()\\s*(?:id|whoami|uname(?:\\s+-a)?|hostname|cat\\s+/etc/\\w+|wget\\s+\\S|curl\\s+\\S|nc\\s+-\\w|ncat\\s|bash\\s+-[ci]|sh\\s+-c|ping\\s+-c\\s*\\d|nslookup\\s+\\S|powershell\\b|cmd(?:\\.exe)?\\s+/c)\\b"),
+	}
+	hits := func(id, query string) bool {
+		for _, h := range m.Match(Normalize(AccessRecord{Method: "GET", Path: "/search", Query: query})).Hits {
+			if h.Signature == id {
+				return true
+			}
+		}
+		return false
+	}
+	for _, c := range []struct{ id, query string }{
+		{"code-eval-call", "q=file+system+(ext4)"},
+		{"code-eval-call", "q=we+will+eval+(and+decide)+later"},
+		{"sqli-quote-comment", "q=%22hello%22+--+world"},
+		{"sqli-quote-comment", "q=say+%27hi%27+--+bye"},
+		{"cmdi-chained-command", "q=tom;+id+card"},
+		{"cmdi-chained-command", "q=cats+%26%26+id+photos"},
+	} {
+		v, err := url.QueryUnescape(strings.TrimPrefix(c.query, "q="))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !before[c.id].MatchString(strings.ToLower(v)) {
+			t.Errorf("%s: did not match %s before the narrowing either", c.query, c.id)
+		}
+		if hits(c.id, c.query) {
+			t.Errorf("%s: matched %s", c.query, c.id)
+		}
+	}
+	// The forms 784fa50 kept (review 3 of #87, S-4), in ordinary text:
+	// they still match.
+	for _, c := range []struct{ id, query string }{
+		{"code-eval-call", "q=file+system+(%27ext4%27)"}, // a quote after the (
+		{"code-eval-call", "q=we+will+eval+(plan(b))"},
+		{"code-eval-call", "q=file+system+($home)"},     // a $ after the (   // another call after the (
+		{"sqli-quote-comment", "q=say+%27hi%27+--+"},    // -- ending the value
+		{"cmdi-chained-command", "q=tom;+id+%23note"},   // id, then a comment
+		{"cmdi-chained-command", "q=tom;+id+2%3Enotes"}, // id, then a redirection
+	} {
+		if !hits(c.id, c.query) {
+			t.Errorf("%s: no longer matches %s", c.query, c.id)
+		}
+	}
+}
+
+// Anchored holds for a path too long for CasePath: Shibboleth's logout
+// padded before or after its file is still not Flarum's.
+func TestAnchoredLongPath(t *testing.T) {
+	ss, err := sig.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := NewMatcher(ss)
+	s := Build(nil, []PackageVuln{{Source: "/srv/composer.lock", Ecosystem: "Packagist", Package: "flarum/core", Version: "1.8.4", ID: "CVE-2024-21641"}})
+	pad := strings.Repeat("a/", MaxNormalized)
+	for _, p := range []string{"/" + pad + "Shibboleth.sso/Logout", "/Shibboleth.sso/" + pad + "Logout", "/Shibboleth.sso/" + pad + "logout"} {
+		q := Normalize(AccessRecord{Method: "GET", Path: p, Query: "return=https%3A%2F%2Fexample.org%2F"})
+		if q.CasePath != "" {
+			t.Fatalf("%d bytes: CasePath kept", len(p))
+		}
+		if g := NewJudge(s, ss).Judge(m.Match(q)); len(g.Candidates) != 0 {
+			t.Errorf("padded %s…%s: %+v", p[:20], p[len(p)-20:], g.Candidates)
+		}
+	}
+}
+
+// Review 2 of #87, N-1: a hit in a path segment is L2 only where the
+// route's placeholder took that segment; a mount prefix or the route's
+// own words leave the entry at L1, the hit unanchored. N-2: the
+// segments are split as sent, then decoded, so an encoded / stays in
+// its value.
+func TestSegmentHitNeedsPlaceholder(t *testing.T) {
+	ss := loadSigs(t, markerSigs+`
+[[signature]]
+id = "slash-marker"
+title = "a marker with a slash"
+class = "path"
+source = "shentu"
+license = "Apache-2.0"
+[[signature.match]]
+part = "any_param"
+contains = ["shentu-marker/y"]
+`)
+	m := NewMatcher(ss)
+	route := func(rule, cwe, pattern string) []CodeSink {
+		return []CodeSink{{Rule: rule, CWE: cwe, Severity: "critical", Path: "a.js", Line: 1,
+			Routes: []engine.RouteRef{{Model: "m", Framework: "express", Method: "get", Pattern: pattern, File: "a.js", Line: 1}}}}
+	}
+	for _, c := range []struct {
+		sinks      []CodeSink
+		path, want string
+	}{
+		{route("js-sqli", "CWE-89", "/search"), "/marker-one/search", LevelRoute},     // the mount prefix
+		{route("js-sqli", "CWE-89", "/marker-one/:id"), "/marker-one/42", LevelRoute}, // the route's own word
+		{route("js-sqli", "CWE-89", "/user/:id"), "/user/marker-one", LevelPayload},
+		{route("js-path", "CWE-22", "/files/*"), "/files/shentu-marker%2Fy", LevelPayload},
+		// Every segment that holds it counts: a first one in the mount
+		// prefix does not hide the placeholder's.
+		{route("js-sqli", "CWE-89", "/user/:id"), "/marker-one-a/user/marker-one-b", LevelPayload},
+		// The segment as cleanPath reads it, as the route was matched.
+		{route("js-sqli", "CWE-89", "/user/:id"), "/user/marker-one;x", LevelPayload},
+		{route("js-sqli", "CWE-89", "/user/:id"), "/user/marker-one.", LevelPayload},
+		// Review 3, N-1': the marker is in a ; parameter of the mount
+		// prefix; cleaned, that segment is 42, the placeholder's value,
+		// but the marker is gone from it.
+		{route("js-sqli", "CWE-89", "/user/:id"), "/42;marker-one/user/42", LevelRoute},
+	} {
+		g := NewJudge(Build(c.sinks, nil), ss).Judge(m.Match(Normalize(AccessRecord{Method: "GET", Path: c.path})))
+		if len(g.Candidates) != 1 || g.Candidates[0].Level != c.want {
+			t.Errorf("%s: %+v, want %s", c.path, g, c.want)
+			continue
+		}
+		if c.want == LevelRoute && len(g.Unanchored) != 1 {
+			t.Errorf("%s: the hit not unanchored: %+v", c.path, g)
+		}
+	} // Review 3, S (N-2): a single-segment placeholder does not take an
+	// encoded / (the route is matched on the decoded path), as the limits
+	// say: no candidate.
+	sinks := route("js-path", "CWE-22", "/files/:name")
+	if g := NewJudge(Build(sinks, nil), ss).Judge(m.Match(Normalize(AccessRecord{Method: "GET", Path: "/files/shentu-marker%2Fy"}))); len(g.Candidates) != 0 {
+		t.Errorf("/files/:name with %%2F: %+v, want none", g)
+	}
+}
+
+// Review 2 of #87, N-3 and S-4: index.php only right before an anchored
+// route; and the route is taken from the path as decoded, not as
+// cleanPath reads it (; parameters, trailing dots, an encoded /,
+// PATH_INFO).
+func TestAnchoredPlainPath(t *testing.T) {
+	ss, err := sig.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := NewMatcher(ss)
+	s := Build(nil, []PackageVuln{{Source: "/srv/composer.lock", Ecosystem: "Packagist", Package: "flarum/core", Version: "1.8.4", ID: "CVE-2024-21641"}})
+	for _, c := range []struct {
+		path string
+		want int
+	}{
+		{"/app/index.php/x/logout", 0},
+		{"/index.php/x/logout", 0},
+		{"/index.php/index.php/logout", 0},
+		{"/a;.b/logout", 0},
+		{"/x%2Flogout", 0},
+		{"/logout.", 0},
+		{"/logout;x", 0},
+		{"/logout/x", 0},
+		{"/index.php/logout", 1},
+		{"/forum/index.php/logout", 1},
+		{"/forum/logout", 1},
+	} {
+		g := NewJudge(s, ss).Judge(m.Match(Normalize(AccessRecord{Method: "GET", Path: c.path, Query: "return=https%3A%2F%2Fexample.org%2F"})))
+		if len(g.Candidates) != c.want {
+			t.Errorf("%s: %+v, want %d candidate(s)", c.path, g.Candidates, c.want)
+		}
 	}
 }
