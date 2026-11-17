@@ -10,7 +10,8 @@
 // them is kept in this repository.
 //
 // It compares what it got with baseline.json: a different count of false
-// positives, of templates not converted or unclassified, or a different
+// positives, of templates not converted, unclassified or rce-unspecified,
+// or a different
 // hash of the graded results, is an error (exit 1). A download that fails,
 // or templates whose hash differs, is "NOT RUN" (exit 3): never a pass.
 //
@@ -33,6 +34,7 @@ type baseline struct {
 	TemplatesHash  string `json:"templates_hash"`
 	NotConverted   int    `json:"not_converted"`
 	Unclassified   int    `json:"unclassified"`
+	RCEUnspecified int    `json:"rce_unspecified"`
 	FalsePositives int    `json:"false_positives"`
 	NormalRequests int    `json:"normal_requests"`
 	GradedHash     string `json:"graded_sha256"`
@@ -45,7 +47,11 @@ func main() {
 	write := flag.Bool("write-baseline", false, "write the baseline instead of comparing")
 	repo := flag.String("repo", "../..", "the shentu repository (for bench/)")
 	tarball := flag.String("templates", "", "a nuclei-templates tarball already downloaded (default: download it)")
+	explain := flag.Bool("explain-host", false, "say, per template of the host layer, what it came to (ids and reasons only), and compare nothing")
 	flag.Parse()
+	if *explain {
+		os.Exit(explainHost(*repo, *tarball))
+	}
 	os.Exit(run(*base, *write, *repo, *tarball))
 }
 
@@ -77,7 +83,7 @@ func run(base string, write bool, repo, tarball string) int {
 	st := ev.run(files, normal)
 	st.Host.Cases = cases
 	report(st)
-	b := baseline{st.NucleiCommit, st.TemplatesHash, st.NotConverted, st.Unclassified, st.FalsePositives, st.NormalRequests, st.GradedHash, st}
+	b := baseline{st.NucleiCommit, st.TemplatesHash, st.NotConverted, st.Unclassified, st.RCEUnspecified, st.FalsePositives, st.NormalRequests, st.GradedHash, st}
 	if write {
 		out, _ := json.MarshalIndent(b, "", "  ")
 		if err := os.WriteFile(base, append(out, '\n'), 0o644); err != nil {
@@ -109,6 +115,7 @@ func run(base string, write bool, repo, tarball string) int {
 	diff("normal_requests", b.NormalRequests, want.NormalRequests)
 	diff("not_converted", b.NotConverted, want.NotConverted)
 	diff("unclassified", b.Unclassified, want.Unclassified)
+	diff("rce_unspecified", b.RCEUnspecified, want.RCEUnspecified)
 	diff("graded_sha256", b.GradedHash, want.GradedHash)
 	if want.Stats != nil && bad > 0 { // which counts moved, to help read the change
 		for c, s := range st.Classes {
@@ -151,4 +158,19 @@ func templates(tarball string) (map[string][]byte, error) {
 		return nil, fmt.Errorf("%w: http templates hash %s, want %s", errHash, h, templatesHash)
 	}
 	return files, nil
+}
+
+func explainHost(repo, tarball string) int {
+	ev, _, err := newEvaluator(repo)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "detecteval:", err)
+		return 2
+	}
+	files, err := templates(tarball)
+	if err != nil {
+		fmt.Printf("detecteval NOT RUN: %v\n", err)
+		return 3
+	}
+	ev.explainHost(files)
+	return 0
 }

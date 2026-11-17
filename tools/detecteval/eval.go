@@ -19,9 +19,10 @@ import (
 type Stats struct {
 	NucleiCommit   string                `json:"nuclei_commit"`
 	TemplatesHash  string                `json:"templates_hash"`
-	Templates      int                   `json:"templates"`     // http/**/*.yaml
-	NotConverted   int                   `json:"not_converted"` // no request a log keeps could be made of it
-	Unclassified   int                   `json:"unclassified"`  // converted, its tags name no payload class: not in the rates
+	Templates      int                   `json:"templates"`       // http/**/*.yaml
+	NotConverted   int                   `json:"not_converted"`   // no request a log keeps could be made of it
+	Unclassified   int                   `json:"unclassified"`    // converted, its tags name no payload class: not in the rates
+	RCEUnspecified int                   `json:"rce_unspecified"` // converted, tagged rce, no tag or CWE says what it carries: not in the rates
 	Classes        map[string]*ClassStat `json:"classes"`
 	AttackLevels   map[string]int        `json:"attack_levels"` // per classified template, its best level
 	Host           HostStat              `json:"host"`
@@ -104,6 +105,7 @@ type graded struct {
 	sigs      map[string][]string // class -> signature ids
 	level     string              // on a surface with a sink of every class at its path
 	hostAlert bool                // a package candidate of the host's
+	hostWhy   []string            // those candidates: entry level via signatures
 	parsed    bool
 }
 
@@ -141,7 +143,14 @@ func (ev *evaluator) grade(line string) graded {
 	case len(jd.Noise) > 0:
 		g.level = "noise"
 	}
-	g.hostAlert = len(ev.host.Judge(res).Candidates) > 0
+	for _, c := range ev.host.Judge(res).Candidates {
+		var ids []string
+		for _, h := range c.Hits {
+			ids = append(ids, h.Signature)
+		}
+		g.hostWhy = append(g.hostWhy, c.Entry+" "+c.Level+" via "+strings.Join(ids, ","))
+	}
+	g.hostAlert = len(g.hostWhy) > 0
 	return g
 }
 
@@ -201,9 +210,12 @@ func (ev *evaluator) run(files map[string][]byte, normal []normalRequest) *Stats
 				st.Host.AlertedForCVE++
 			}
 		}
-		if a.Class == "" {
+		switch a.Class {
+		case "":
 			st.Unclassified++
-		} else {
+		case rceUnspecified:
+			st.RCEUnspecified++
+		default:
 			cs := st.Classes[a.Class]
 			if cs == nil {
 				cs = &ClassStat{}
@@ -258,7 +270,7 @@ func sortedKeys(m map[string]bool) string {
 // report prints the stats.
 func report(st *Stats) {
 	fmt.Printf("nuclei-templates %s, http templates %d (hash %s)\n", st.NucleiCommit, st.Templates, st.TemplatesHash)
-	fmt.Printf("not converted %d, unclassified %d (not in the rates)\n", st.NotConverted, st.Unclassified)
+	fmt.Printf("not converted %d, unclassified %d, rce unspecified %d (not in the rates)\n", st.NotConverted, st.Unclassified, st.RCEUnspecified)
 	fmt.Println("detection by class (templates caught by a signature of their class):")
 	cls := make([]string, 0, len(st.Classes))
 	for c := range st.Classes {
@@ -297,4 +309,68 @@ func levels(m map[string]int) string {
 		out = append(out, fmt.Sprintf("%s %d", l, m[l]))
 	}
 	return strings.Join(out, ", ")
+}
+
+// explainHost says, for each template naming one of the host's CVEs or
+// alerting in the host layer, what it came to: ids and reasons, never a
+// request.
+func (ev *evaluator) explainHost(files map[string][]byte) {
+	sigFor := map[string][]string{} // CVE -> signatures written for it
+	for _, x := range ev.sigs {
+		for _, c := range x.CVEs {
+			sigFor[strings.ToUpper(c)] = append(sigFor[strings.ToUpper(c)], x.ID)
+		}
+	}
+	names := make([]string, 0, len(files))
+	for n := range files {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	for _, n := range names {
+		a, err := convert(n, files[n])
+		var host []string
+		for _, c := range a.CVEs {
+			if ev.hostCV[c] {
+				host = append(host, c)
+			}
+		}
+		var why, hits []string
+		methods := map[string]bool{}
+		hit := map[string]bool{}
+		for _, t := range a.Lines {
+			methods[t.Method] = true
+			g := ev.grade(logLine(t))
+			why = append(why, g.hostWhy...)
+			for c, ids := range g.sigs {
+				for _, id := range ids {
+					hit[c+":"+id] = true
+				}
+			}
+		}
+		if len(host) == 0 && len(why) == 0 {
+			continue
+		}
+		for k := range hit {
+			hits = append(hits, k)
+		}
+		sort.Strings(hits)
+		var written []string
+		for _, c := range host {
+			written = append(written, sigFor[c]...)
+		}
+		fmt.Printf("%s (%s)\n  host CVEs %v; converted %v (err %v); requests %d %v; body %v\n  signatures for these CVEs %v\n  hits %v\n  host candidates %v\n",
+			a.ID, n, host, err == nil, err, len(a.Lines), sortedKeys(methods), a.Body, written, hits, dedup(why))
+	}
+}
+
+func dedup(xs []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, x := range xs {
+		if !seen[x] {
+			seen[x] = true
+			out = append(out, x)
+		}
+	}
+	return out
 }

@@ -17,6 +17,7 @@ type template struct {
 		Tags           any `yaml:"tags"`
 		Classification struct {
 			CVE any `yaml:"cve-id"`
+			CWE any `yaml:"cwe-id"`
 		} `yaml:"classification"`
 	} `yaml:"info"`
 	Variables map[string]any `yaml:"variables"`
@@ -28,6 +29,7 @@ type request struct {
 	Method   string         `yaml:"method"`
 	Path     []string       `yaml:"path"`
 	Raw      []string       `yaml:"raw"`
+	Body     string         `yaml:"body"`
 	Payloads map[string]any `yaml:"payloads"`
 }
 
@@ -38,17 +40,57 @@ type attack struct {
 	Class string   // the payload class its tags name; "" when none does
 	CVEs  []string // upper case
 	Lines []target // at most maxPerTemplate
+	// Body: a request of it sends a body (a log does not keep it).
+	Body bool
 }
 
 type target struct{ Method, Target string }
 
 const maxPerTemplate = 20
 
-// classByTag: as tools/sigextract maps a template's tags to a class.
+// classByTag maps a template's tags to a payload class: sigextract's map,
+// with "rce" left out. "rce" says what an attack achieves, not what it
+// carries (OGNL, a deserialization, a template, a command): a template
+// with no tag more specific is classed by its CWE (rceByCWE), and when
+// that says nothing either it is counted as rce-unspecified, outside the
+// rates. Only a command injection is cmdi.
 var classByTag = map[string]string{
-	"sqli": "sqli", "lfi": "path", "traversal": "path", "file-inclusion": "path", "rce": "cmdi", "cmdi": "cmdi",
-	"command-injection": "cmdi", "ssrf": "ssrf", "xss": "xss", "xxe": "xxe", "ssti": "code", "code-injection": "code",
-	"deserialization": "deser", "redirect": "redirect", "upload": "upload", "fileupload": "upload",
+	"sqli": "sqli", "lfi": "path", "traversal": "path", "file-inclusion": "path", "cmdi": "cmdi",
+	"command-injection": "cmdi", "os-command-injection": "cmdi", "ssrf": "ssrf", "xss": "xss", "xxe": "xxe",
+	"ssti": "code", "code-injection": "code", "ognl": "code", "spel": "code", "el-injection": "code",
+	"deserialization": "deser", "deserialize": "deser", "jndi": "jndi", "log4j": "jndi", "log4shell": "jndi",
+	"redirect": "redirect", "upload": "upload", "fileupload": "upload", "file-upload": "upload",
+}
+
+// rceByCWE classes an "rce" template by its CWE.
+var rceByCWE = map[string]string{
+	"CWE-77": "cmdi", "CWE-78": "cmdi", "CWE-88": "cmdi",
+	"CWE-94": "code", "CWE-95": "code", "CWE-917": "code", "CWE-1336": "code",
+	"CWE-502": "deser", "CWE-434": "upload", "CWE-89": "sqli", "CWE-22": "path", "CWE-98": "path",
+	"CWE-918": "ssrf", "CWE-611": "xxe",
+}
+
+// rceUnspecified: an "rce" template whose tags and CWE name no class.
+const rceUnspecified = "rce-unspecified"
+
+func classify(tags, cwes []string) string {
+	rce := false
+	for _, t := range tags {
+		t = strings.ToLower(strings.TrimSpace(t))
+		if c, ok := classByTag[t]; ok {
+			return c
+		}
+		rce = rce || t == "rce"
+	}
+	if !rce {
+		return ""
+	}
+	for _, w := range cwes {
+		if c, ok := rceByCWE[strings.ToUpper(strings.TrimSpace(w))]; ok {
+			return c
+		}
+	}
+	return rceUnspecified
 }
 
 var helperRe = regexp.MustCompile(`\{\{([^{}]*)\}\}`)
@@ -64,11 +106,7 @@ func convert(file string, b []byte) (attack, error) {
 	if a.ID == "" {
 		return a, fmt.Errorf("no id")
 	}
-	for _, tag := range list(t.Info.Tags) {
-		if c, ok := classByTag[strings.ToLower(strings.TrimSpace(tag))]; ok && a.Class == "" {
-			a.Class = c
-		}
-	}
+	a.Class = classify(list(t.Info.Tags), list(t.Info.Classification.CWE))
 	for _, c := range list(t.Info.Classification.CVE) {
 		a.CVEs = append(a.CVEs, strings.ToUpper(strings.TrimSpace(c)))
 	}
@@ -98,7 +136,12 @@ func convert(file string, b []byte) (attack, error) {
 				add(method, tg)
 			}
 		}
+		a.Body = a.Body || strings.TrimSpace(r.Body) != ""
 		for _, raw := range r.Raw {
+			raw = strings.ReplaceAll(raw, "\r\n", "\n")
+			if _, body, ok := strings.Cut(strings.TrimLeft(raw, "\n\t "), "\n\n"); ok && strings.TrimSpace(body) != "" {
+				a.Body = true
+			}
 			line, _, _ := strings.Cut(strings.TrimLeft(raw, "\r\n\t "), "\n")
 			f := strings.Fields(fillAll(strings.TrimSpace(line), vars))
 			if len(f) < 2 {

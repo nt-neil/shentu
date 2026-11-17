@@ -228,3 +228,26 @@ func TestNormalRequests(t *testing.T) {
 		}
 	}
 }
+
+func TestClassify(t *testing.T) {
+	for _, c := range []struct {
+		tags, cwes []string
+		want       string
+	}{
+		{[]string{"cve", "rce", "ognl"}, nil, "code"},
+		{[]string{"rce", "deserialization", "java"}, nil, "deser"},
+		{[]string{"rce", "ssti"}, nil, "code"},
+		{[]string{"rce", "log4j"}, nil, "jndi"},
+		{[]string{"rce", "command-injection"}, nil, "cmdi"},
+		{[]string{"rce", "java"}, []string{"CWE-78"}, "cmdi"},
+		{[]string{"rce", "java"}, []string{"cwe-502"}, "deser"},
+		{[]string{"rce", "java"}, []string{"CWE-284"}, rceUnspecified},
+		{[]string{"rce"}, nil, rceUnspecified},
+		{[]string{"rce", "file-upload"}, nil, "upload"},
+		{[]string{"cve", "panel"}, nil, ""},
+	} {
+		if got := classify(c.tags, c.cwes); got != c.want {
+			t.Errorf("%v %v: %q, want %q", c.tags, c.cwes, got, c.want)
+		}
+	}
+}
