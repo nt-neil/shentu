@@ -35,8 +35,8 @@ title = "Request input concatenated into a SQL string"
 frameworks = ["laravel"]           # optional: laravel, wordpress, symfony, doctrine, django, flask, express, nestjs, nextjs, koa, fastify, hapi
 route_input = false                # optional: route handlers' parameters are not this rule's input, only its sources (a rule for the Host header)
 route_members = ["query", "body"]  # optional: of the request members a route model makes input, only these (a rule for a query object: req.params is always a string)
-route_only = ["headers.host"]      # optional: of a route handler's request, only these values (as route_not writes them) are this rule's input, whatever the parameter is called ((r, s) => r.headers.host), also with route_input = false; h.host after h = r.headers too. For the rule another rule's route_not hands those values to
-route_not = ["headers.host"]       # optional: values under those members that are not this rule's input, as member.name (the Host header): in a route handler's parameters and in the rule's own sources that end in the member (req.headers.host, req.headers['host'], req.headers.get('host'), @Headers('host'), h.host after h = req.headers, also when req is a route handler's parameter)
+route_only = ["headers.host"]      # optional: of a route handler's request, only these values (as route_not writes them) are this rule's input, whatever the parameter is called ((r, s) => r.headers.host, NestJS's @Req() r or @Request() r), also with route_input = false; h.host after h = r.headers too. For the rule another rule's route_not hands those values to
+route_not = ["headers.host"]       # optional: values under those members that are not this rule's input, as member.name (the Host header): in a route handler's parameters and in the rule's own sources that end in the member (req.headers.host, req.headers['host'], req.headers.get('host'), @Headers('host'), h.host after h = req.headers, also when req is a route handler's parameter or NestJS's @Req() req)
 routes_not = ["wp-shortcode"]      # optional: route models (by id) whose handlers' input is another rule's (a shortcode's attributes)
 chain_not = ["AsyncClient"]        # optional: calls the chain form of a receiver.method( sink may not go through: they make another object (httpx.AsyncClient().get( is not httpx.get()
 sources = ["$_GET", "$request->input("]   # where user input comes from; [] for a rule without sources
@@ -168,7 +168,8 @@ How the engine reads them:
     plain name holds a checked URL (not `this.u`), only one no function written
     inside another uses without binding it itself (a closure or callback that
     reads or changes u, whenever it runs: `() => { u.host = v }`,
-    `[v].forEach(h => { u.host = h })`), and only while fewer than 64 names
+    `[v].forEach(h => { u.host = h })`) and no function declares `global` or
+    `nonlocal` (Python's `def m(): nonlocal u; u = urlparse(v)`), and only while fewer than 64 names
     hold it (each alias is kept with each other one).
     `p.geturl()` is a string the client parses again; urlparse and the client's
     parser agree on the host of what urlparse itself wrote out, which is why it

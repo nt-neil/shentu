@@ -18,8 +18,9 @@ type fnRegions struct {
 }
 
 // captured reports whether a function of the file uses name without binding
-// it while an enclosing one (or the module) binds it, or whether the name is
-// this or self (a member of the object, which any method may change).
+// it while an enclosing one (or the module) binds it, declares it global or
+// nonlocal, or whether the name is this or self (a member of the object,
+// which any method may change).
 func (a *analysis) captured(name string) bool {
 	if name == "this" || name == "self" {
 		return true
@@ -53,7 +54,9 @@ func (a *analysis) captured(name string) bool {
 			uses = append(uses, j)
 		}
 	}
-	free := false
+	// a function that declares the name global or nonlocal rebinds the outer
+	// u when it assigns it (Python's only way to change a parsed URL elsewhere)
+	free := len(forced) > 0
 	for _, j := range uses {
 		f := r.inner[j]
 		b := f

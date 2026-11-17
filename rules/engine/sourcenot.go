@@ -129,7 +129,30 @@ func (a *analysis) sourceNot(st state, tg, rhs []Token, op string) {
 			}
 		}
 	}
+	// NestJS's @Req() r is a route handler's request whatever it is called:
+	// the TypeScript lowering writes r.headers = @Req() (lex_typescript.go), so
+	// route_not leaves those members out under it and route_only takes them.
+	if nestReq(rhs) {
+		tn := lastName(tg)
+		for _, rn := range a.r.rule.RouteNot {
+			if mem, n, _ := strings.Cut(rn, "."); strings.EqualFold(tn, mem) {
+				st[key+sepCh+"."+n], st[key+sepCh+"["+n+"]"] = entry{}, entry{}
+			}
+		}
+		for _, ro := range a.r.rule.RouteOnly {
+			if mem, n, _ := strings.Cut(ro, "."); strings.EqualFold(tn, mem) && !a.noSrc {
+				e := entry{taint: !a.nonced(st), raw: true}
+				st[key+sepCh+"."+n], st[key+sepCh+"["+n+"]"] = e, e
+			}
+		}
+	}
 	a.sourceOnly(st, key, rhs)
+}
+
+// nestReq reports whether t is NestJS's @Req() or @Request(), whole.
+func nestReq(t []Token) bool {
+	return len(t) >= 3 && t[0].Kind == Ident && (t[0].Text == "@Req" || t[0].Text == "@Request") &&
+		t[1].op("(") && closeOf(t, 1) == len(t)-1
 }
 
 // lastName is the last identifier of a path (req.headers: headers).
@@ -147,8 +170,8 @@ func lastName(t []Token) string {
 // members input when the whole object is assigned: after h = req.headers or
 // h = @Headers(), h.host and h['host'] are input, h.referer is not.
 func (a *analysis) sourceOnly(st state, key string, rhs []Token) {
-	if a.noSrc {
-		return
+	if a.noSrc || nestReq(rhs) {
+		return // NestJS's @Req(): the request, whose headers route_only names (sourceNot)
 	}
 	for _, s := range a.r.sources {
 		n := len(s.toks)
