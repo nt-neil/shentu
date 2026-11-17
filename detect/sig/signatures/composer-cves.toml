@@ -72,6 +72,10 @@ versions = "<1.8.5"
 [[signature.route]]
 methods = ["GET"]
 path = "/logout"
+# Flarum's router is case sensitive, and other applications' logout
+# endpoints end in /logout too (Shibboleth SP's /Shibboleth.sso/Logout).
+case_sensitive = true
+anchored = true
 [[signature.match]]
 part = "param"
 param = "return"

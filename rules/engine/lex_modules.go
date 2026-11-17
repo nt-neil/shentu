@@ -129,6 +129,9 @@ func (m *modScope) resolve(name string, u int) (modBinding, bool) {
 func joinArrays(t []Token, b *budget) []Token {
 	cl := closers(t)
 	var out []Token
+	if len(t) > 0 {
+		out = make([]Token, 0, len(t)) // at least every token of t
+	}
 	for i := 0; i < len(t); i++ {
 		c := closeAt(cl, i)
 		if t[i].op("[") && (len(out) == 0 || !jsValue(out[len(out)-1])) && c+3 < len(t) && t[c+1].op(".") && t[c+2].word("join") && t[c+3].op("(") {

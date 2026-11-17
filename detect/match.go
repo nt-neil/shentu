@@ -44,8 +44,20 @@ type Request struct {
 	// evidence); Path the same with them resolved and // collapsed, for
 	// routes.
 	RawPath, Path string
-	Query         string              // the whole query, decoded
-	Params        map[string][]string // every value of every parameter, in order (a repeated one keeps all)
+	// Segments: the path as sent split at /, each segment then decoded
+	// and lower-cased, as a router hands a parameter its value (nil when
+	// the path was longer than MaxNormalized).
+	Segments []string
+	// PlainPath: those segments decoded in their case, an / one held
+	// kept as %2F, dot segments resolved, nothing else cleaned: an
+	// anchored route's path ("" when longer than MaxNormalized).
+	PlainPath string
+	// CasePath is Path in the case it was sent ("" when the path was
+	// longer than MaxNormalized: Path is used then), for a
+	// case-sensitive route.
+	CasePath string
+	Query    string              // the whole query, decoded
+	Params   map[string][]string // every value of every parameter, in order (a repeated one keeps all)
 	// Sent: the names in Params as the request sent them; the others are
 	// how a framework reads one (PHP's id for id[]) and hold its values
 	// again: any_param tries only these, so a value is not matched twice.
@@ -97,6 +109,18 @@ func Normalize(r AccessRecord) Request {
 	q.Encoded = q.Encoded || enc
 	said(cut, "path", "", len(r.Path), len(q.RawPath))
 	q.Path = cleanPath(q.RawPath)
+	if len(r.Path) <= MaxNormalized {
+		cp, _ := decodePiece(r.Path, false)
+		q.CasePath = cleanPath(cp)
+		var plain []string
+		for _, sg := range strings.Split(r.Path, "/") {
+			d, _ := decodePiece(sg, false)
+			n, _ := normalizePiece(sg, false)
+			q.Segments = append(q.Segments, n)
+			plain = append(plain, strings.ReplaceAll(d, "/", "%2F"))
+		}
+		q.PlainPath = path.Clean("/" + strings.Join(plain, "/"))
+	}
 	q.Query, enc, cut = normalizeTextN(r.Query, true, MaxParamsText) // the whole query: the parameters' bound
 	q.Encoded = q.Encoded || enc
 	said(cut, "query", "", len(r.Query), len(q.Query))
@@ -213,6 +237,16 @@ func normalizeTextN(s string, query bool, limit int) (string, bool, bool) {
 // neither \s nor a word character, so it joins nothing) and is said as
 // an evasive encoding.
 func normalizePiece(s string, query bool) (string, bool) {
+	f, enc := decodePiece(s, query)
+	l := strings.ToLower(f)
+	if strings.Contains(l, cutMark) { // sent to split a payload as a cut would: evasion, said
+		l, enc = strings.ReplaceAll(l, cutMark, "\uFFFD"), true
+	}
+	return l, enc
+}
+
+// decodePiece is s decoded and its overlong UTF-8 folded, in its case.
+func decodePiece(s string, query bool) (string, bool) {
 	enc := false
 	for round := 0; round < MaxDecodeRounds; round++ {
 		d, u := percentDecode(s, query && round == 0)
@@ -228,14 +262,7 @@ func normalizePiece(s string, query bool) (string, bool) {
 		s = d
 	}
 	f, over := foldOverlong(s)
-	if over {
-		enc = true
-	}
-	l := strings.ToLower(f)
-	if strings.Contains(l, cutMark) { // sent to split a payload as a cut would: evasion, said
-		l, enc = strings.ReplaceAll(l, cutMark, "\uFFFD"), true
-	}
-	return l, enc
+	return f, enc || over
 }
 
 // percentDecode decodes %XX and %uXXXX (u: one was), and + as a space when
@@ -312,16 +339,21 @@ func cleanPath(p string) string {
 	}
 	segs := strings.Split(strings.ReplaceAll(p, "\\", "/"), "/")
 	for i, sg := range segs {
-		if j := strings.IndexByte(sg, ';'); j >= 0 {
-			sg = sg[:j]
-		}
-		sg = strings.TrimSuffix(sg, "::$data")
-		segs[i] = strings.TrimRight(sg, ". ")
-		if sg == "." || sg == ".." { // dot segments are resolved, not trimmed
-			segs[i] = sg
-		}
+		segs[i] = cleanSegment(sg)
 	}
 	return path.Clean("/" + strings.Join(segs, "/"))
+}
+
+// cleanSegment is one segment as cleanPath reads it.
+func cleanSegment(sg string) string {
+	if j := strings.IndexByte(sg, ';'); j >= 0 {
+		sg = sg[:j]
+	}
+	sg = strings.TrimSuffix(sg, "::$data")
+	if sg == "." || sg == ".." { // dot segments are resolved, not trimmed
+		return sg
+	}
+	return strings.TrimRight(sg, ". ")
 }
 
 // Hit is one signature a request carried.
@@ -335,6 +367,10 @@ type Hit struct {
 	// decoded), at most 256 bytes: the evidence an alert shows.
 	Raw       string `json:"raw,omitempty"`
 	RouteOnly bool   `json:"route_only,omitempty"` // a signature with routes and no match: the route alone
+	// Segments: the path segments a class signature held in (part path,
+	// any_param), decoded, every one of them: L2 only where a route's
+	// placeholder took one.
+	Segments []string `json:"segments,omitempty"`
 }
 
 // MatchResult is what a request matched.
@@ -351,6 +387,47 @@ type Matcher struct {
 	sigs   []sig.Signature
 	routes [][]*regexp.Regexp
 	now    func() time.Time
+}
+
+// pathHolds says whether a route's Path is in the request's path: at the
+// end, or followed by PATH_INFO (/x.php/anything). An anchored route is
+// taken from PlainPath, at its end only.
+func pathHolds(r sig.Route, q Request) bool {
+	p, rp := q.Path, strings.ToLower(r.Path)
+	if r.CaseSensitive && q.CasePath != "" { // a path too long for it: compared without case, not skipped
+		p, rp = q.CasePath, r.Path
+	}
+	if r.Anchored && q.PlainPath != "" {
+		// Not cleanPath's: ; parameters and trailing dots are not how a
+		// PHP router reads a path, an encoded / stays in its segment
+		// (review 2 of #87, S-4).
+		p = q.PlainPath
+		if !r.CaseSensitive {
+			p = strings.ToLower(p)
+		}
+		return strings.HasSuffix(p, rp) && anchorOK(p[:len(p)-len(rp)])
+	}
+	var prefix string
+	if strings.HasSuffix(p, rp) {
+		prefix = p[:len(p)-len(rp)]
+	} else if i := strings.Index(p+"/", rp+"/"); i >= 0 {
+		prefix = p[:i]
+	} else {
+		return false
+	}
+	return !r.Anchored || anchorOK(prefix)
+}
+
+// anchorOK says whether what comes before an anchored route is only
+// directories (no segment with a dot), the last of them possibly the
+// front controller index.php, as without URL rewriting (review 2 of #87,
+// N-3: index.php right before the route only).
+func anchorOK(prefix string) bool {
+	k := strings.LastIndexByte(prefix, '/')
+	if k >= 0 && strings.EqualFold(prefix[k+1:], "index.php") {
+		prefix = prefix[:k]
+	}
+	return !strings.Contains(prefix, ".")
 }
 
 // NewMatcher compiles the routes of ss. Signatures with a route or written
@@ -405,13 +482,13 @@ func (m *Matcher) Match(q Request) (res MatchResult) {
 		hit := Hit{Signature: s.ID, Class: s.Class}
 		all := true
 		for j, mt := range s.Matches {
-			part, param, ex, ok := matchOne(mt, q)
+			part, param, ex, segs, ok := matchOne(mt, q)
 			if !ok {
 				all = false
 				break
 			}
 			if j == 0 {
-				hit.Part, hit.Param, hit.Excerpt = part, param, ex
+				hit.Part, hit.Param, hit.Excerpt, hit.Segments = part, param, ex, segs
 				hit.Raw = rawOf(q, part, param)
 			}
 		}
@@ -427,8 +504,8 @@ func (m *Matcher) routeHolds(i int, q Request) bool {
 		if len(r.Methods) > 0 && !containsStr(r.Methods, q.Method) && !(q.Method == "HEAD" && containsStr(r.Methods, "GET")) {
 			continue // a GET route takes HEAD too, as methodOK says
 		}
-		if rp := strings.ToLower(r.Path); r.Path != "" && !strings.HasSuffix(q.Path, rp) && !strings.Contains(q.Path+"/", rp+"/") {
-			continue // the route, at the end or followed by PATH_INFO (/x.php/anything)
+		if r.Path != "" && !pathHolds(r, q) {
+			continue
 		}
 		if re := m.routes[i][j]; re != nil && !re.MatchString(q.Path) {
 			continue
@@ -439,7 +516,7 @@ func (m *Matcher) routeHolds(i int, q Request) bool {
 }
 
 // matchOne tries one match: where it held, and an excerpt of what held.
-func matchOne(mt sig.Match, q Request) (part, param, excerpt string, ok bool) {
+func matchOne(mt sig.Match, q Request) (part, param, excerpt string, segments []string, ok bool) {
 	try := func(whole string) (string, bool) {
 		for _, text := range pieces(whole) { // a cut text's start and end apart
 			for _, c := range mt.Contains {
@@ -458,20 +535,20 @@ func matchOne(mt sig.Match, q Request) (part, param, excerpt string, ok bool) {
 	switch mt.Part {
 	case "path":
 		ex, ok := try(q.RawPath)
-		return "path", "", ex, ok
+		return "path", "", ex, nil, ok
 	case "query":
 		ex, ok := try(q.Query)
-		return "query", "", ex, ok
+		return "query", "", ex, nil, ok
 	case "user_agent":
 		ex, ok := try(q.UserAgent)
-		return "user_agent", "", ex, ok
+		return "user_agent", "", ex, nil, ok
 	case "referer":
 		ex, ok := try(q.Referer)
-		return "referer", "", ex, ok
+		return "referer", "", ex, nil, ok
 	case "param":
 		for _, v := range q.Params[strings.ToLower(mt.Param)] {
 			if ex, ok := try(v); ok {
-				return "param", mt.Param, ex, true
+				return "param", mt.Param, ex, nil, true
 			}
 		}
 	case "any_param":
@@ -485,12 +562,51 @@ func matchOne(mt sig.Match, q Request) (part, param, excerpt string, ok bool) {
 		for _, k := range keys {
 			for _, v := range q.Params[k] {
 				if ex, ok := try(v); ok {
-					return "any_param", k, ex, true
+					return "any_param", k, ex, nil, true
 				}
 			}
 		}
+		// A name holds what an application may read too: one sent without
+		// =, or the whole query string PHP reads (review 1 of #87, N-4).
+		for _, k := range keys {
+			if ex, ok := try(k); ok {
+				return "query", k, ex, nil, true
+			}
+		}
+		// A path segment is a route parameter's value ({id}, :id, <id>)
+		// (review 1 of #87, N-5): each segment as sent, decoded apart (a
+		// router splits before it decodes: %2F stays in its value; review
+		// 2, N-2), and the decoded path's segments.
+		// Every segment that holds it, not the first: one the route's
+		// words take must not hide one its placeholder takes.
+		var first string
+		var held []string
+		for _, segs := range [][]string{q.Segments, strings.Split(q.RawPath, "/")} {
+			for _, sg := range segs {
+				if sg == "" || sg == "." || sg == ".." || slices.Contains(held, sg) {
+					continue
+				}
+				if ex, ok := try(sg); ok {
+					if held == nil {
+						first = ex
+					}
+					held = append(held, sg)
+					// The route is matched on the cleaned path: the segment
+					// as cleanPath reads it counts only if it still holds
+					// (review 3 of #87, N-1': "42;x" must not count as "42").
+					if cs := cleanSegment(sg); cs != sg && cs != "" && !slices.Contains(held, cs) {
+						if _, ok := try(cs); ok {
+							held = append(held, cs)
+						}
+					}
+				}
+			}
+		}
+		if held != nil {
+			return "path", "", first, held, true
+		}
 	}
-	return "", "", "", false
+	return "", "", "", nil, false
 }
 
 // rawOf is what the request sent in part, as logged.
