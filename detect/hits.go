@@ -244,11 +244,15 @@ func stripAnchors(expr string) (string, error) {
 }
 
 // placeholderTook says whether one of a route's placeholder values holds
-// the path segment seg whole.
-func placeholderTook(vals []string, seg string) bool {
+// one of the path segments whole, as sent or as cleanPath reads it (the
+// route is matched on the cleaned path).
+func placeholderTook(vals, segs []string) bool {
 	for _, v := range vals {
-		if v != "" && strings.Contains("/"+strings.ToLower(v)+"/", "/"+seg+"/") {
-			return true
+		v = "/" + strings.ToLower(v) + "/"
+		for _, sg := range segs {
+			if v != "//" && (strings.Contains(v, "/"+sg+"/") || strings.Contains(v, "/"+cleanSegment(sg)+"/")) {
+				return true
+			}
 		}
 	}
 	return false
@@ -316,7 +320,7 @@ func (j *Judge) Judge(m MatchResult) Judgment {
 				// A hit in a path segment counts only when the route's
 				// placeholder took that segment: a mount prefix or the
 				// route's own words reach no handler (review 2 of #87, N-1).
-				taken := h.Segment == "" || placeholderTook(vals, h.Segment)
+				taken := len(h.Segments) == 0 || placeholderTook(vals, h.Segments)
 				if j.surface.Entries[i].Payload == h.Class && !pathCut && taken {
 					add(i, LevelPayload, &h)
 					used[hi] = true

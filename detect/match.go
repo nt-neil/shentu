@@ -339,16 +339,21 @@ func cleanPath(p string) string {
 	}
 	segs := strings.Split(strings.ReplaceAll(p, "\\", "/"), "/")
 	for i, sg := range segs {
-		if j := strings.IndexByte(sg, ';'); j >= 0 {
-			sg = sg[:j]
-		}
-		sg = strings.TrimSuffix(sg, "::$data")
-		segs[i] = strings.TrimRight(sg, ". ")
-		if sg == "." || sg == ".." { // dot segments are resolved, not trimmed
-			segs[i] = sg
-		}
+		segs[i] = cleanSegment(sg)
 	}
 	return path.Clean("/" + strings.Join(segs, "/"))
+}
+
+// cleanSegment is one segment as cleanPath reads it.
+func cleanSegment(sg string) string {
+	if j := strings.IndexByte(sg, ';'); j >= 0 {
+		sg = sg[:j]
+	}
+	sg = strings.TrimSuffix(sg, "::$data")
+	if sg == "." || sg == ".." { // dot segments are resolved, not trimmed
+		return sg
+	}
+	return strings.TrimRight(sg, ". ")
 }
 
 // Hit is one signature a request carried.
@@ -362,9 +367,10 @@ type Hit struct {
 	// decoded), at most 256 bytes: the evidence an alert shows.
 	Raw       string `json:"raw,omitempty"`
 	RouteOnly bool   `json:"route_only,omitempty"` // a signature with routes and no match: the route alone
-	// Segment: the path segment a class signature held in (part path,
-	// any_param), decoded: L2 only where a route's placeholder took it.
-	Segment string `json:"segment,omitempty"`
+	// Segments: the path segments a class signature held in (part path,
+	// any_param), decoded, every one of them: L2 only where a route's
+	// placeholder took one.
+	Segments []string `json:"segments,omitempty"`
 }
 
 // MatchResult is what a request matched.
@@ -476,13 +482,13 @@ func (m *Matcher) Match(q Request) (res MatchResult) {
 		hit := Hit{Signature: s.ID, Class: s.Class}
 		all := true
 		for j, mt := range s.Matches {
-			part, param, ex, seg, ok := matchOne(mt, q)
+			part, param, ex, segs, ok := matchOne(mt, q)
 			if !ok {
 				all = false
 				break
 			}
 			if j == 0 {
-				hit.Part, hit.Param, hit.Excerpt, hit.Segment = part, param, ex, seg
+				hit.Part, hit.Param, hit.Excerpt, hit.Segments = part, param, ex, segs
 				hit.Raw = rawOf(q, part, param)
 			}
 		}
@@ -510,7 +516,7 @@ func (m *Matcher) routeHolds(i int, q Request) bool {
 }
 
 // matchOne tries one match: where it held, and an excerpt of what held.
-func matchOne(mt sig.Match, q Request) (part, param, excerpt, segment string, ok bool) {
+func matchOne(mt sig.Match, q Request) (part, param, excerpt string, segments []string, ok bool) {
 	try := func(whole string) (string, bool) {
 		for _, text := range pieces(whole) { // a cut text's start and end apart
 			for _, c := range mt.Contains {
@@ -529,20 +535,20 @@ func matchOne(mt sig.Match, q Request) (part, param, excerpt, segment string, ok
 	switch mt.Part {
 	case "path":
 		ex, ok := try(q.RawPath)
-		return "path", "", ex, "", ok
+		return "path", "", ex, nil, ok
 	case "query":
 		ex, ok := try(q.Query)
-		return "query", "", ex, "", ok
+		return "query", "", ex, nil, ok
 	case "user_agent":
 		ex, ok := try(q.UserAgent)
-		return "user_agent", "", ex, "", ok
+		return "user_agent", "", ex, nil, ok
 	case "referer":
 		ex, ok := try(q.Referer)
-		return "referer", "", ex, "", ok
+		return "referer", "", ex, nil, ok
 	case "param":
 		for _, v := range q.Params[strings.ToLower(mt.Param)] {
 			if ex, ok := try(v); ok {
-				return "param", mt.Param, ex, "", true
+				return "param", mt.Param, ex, nil, true
 			}
 		}
 	case "any_param":
@@ -556,7 +562,7 @@ func matchOne(mt sig.Match, q Request) (part, param, excerpt, segment string, ok
 		for _, k := range keys {
 			for _, v := range q.Params[k] {
 				if ex, ok := try(v); ok {
-					return "any_param", k, ex, "", true
+					return "any_param", k, ex, nil, true
 				}
 			}
 		}
@@ -564,25 +570,35 @@ func matchOne(mt sig.Match, q Request) (part, param, excerpt, segment string, ok
 		// =, or the whole query string PHP reads (review 1 of #87, N-4).
 		for _, k := range keys {
 			if ex, ok := try(k); ok {
-				return "query", k, ex, "", true
+				return "query", k, ex, nil, true
 			}
 		}
 		// A path segment is a route parameter's value ({id}, :id, <id>)
 		// (review 1 of #87, N-5): each segment as sent, decoded apart (a
 		// router splits before it decodes: %2F stays in its value; review
 		// 2, N-2), and the decoded path's segments.
+		// Every segment that holds it, not the first: one the route's
+		// words take must not hide one its placeholder takes.
+		var first string
+		var held []string
 		for _, segs := range [][]string{q.Segments, strings.Split(q.RawPath, "/")} {
 			for _, sg := range segs {
-				if sg == "" {
+				if sg == "" || sg == "." || sg == ".." || slices.Contains(held, sg) {
 					continue
 				}
 				if ex, ok := try(sg); ok {
-					return "path", "", ex, sg, true
+					if held == nil {
+						first = ex
+					}
+					held = append(held, sg)
 				}
 			}
 		}
+		if held != nil {
+			return "path", "", first, held, true
+		}
 	}
-	return "", "", "", "", false
+	return "", "", "", nil, false
 }
 
 // rawOf is what the request sent in part, as logged.

@@ -626,6 +626,12 @@ contains = ["shentu-marker/y"]
 		{route("js-sqli", "CWE-89", "/marker-one/:id"), "/marker-one/42", LevelRoute}, // the route's own word
 		{route("js-sqli", "CWE-89", "/user/:id"), "/user/marker-one", LevelPayload},
 		{route("js-path", "CWE-22", "/files/*"), "/files/shentu-marker%2Fy", LevelPayload},
+		// Every segment that holds it counts: a first one in the mount
+		// prefix does not hide the placeholder's.
+		{route("js-sqli", "CWE-89", "/user/:id"), "/marker-one-a/user/marker-one-b", LevelPayload},
+		// The segment as cleanPath reads it, as the route was matched.
+		{route("js-sqli", "CWE-89", "/user/:id"), "/user/marker-one;x", LevelPayload},
+		{route("js-sqli", "CWE-89", "/user/:id"), "/user/marker-one.", LevelPayload},
 	} {
 		g := NewJudge(Build(c.sinks, nil), ss).Judge(m.Match(Normalize(AccessRecord{Method: "GET", Path: c.path})))
 		if len(g.Candidates) != 1 || g.Candidates[0].Level != c.want {
