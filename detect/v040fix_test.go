@@ -1,6 +1,7 @@
 package detect
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -137,8 +138,8 @@ func TestOldSinkKeysLoaded(t *testing.T) {
 	if n := len(a.IPs[ip].Entries); n != 1 || g.Campaign {
 		t.Errorf("campaign entries %v (campaign %v): one sink, want 1", a.IPs[ip].Entries, g.Campaign)
 	}
-	if g.Count != 3 || strings.Join(g.Rules, ",") != "marker-rule-a,marker-rule-b" {
-		t.Errorf("group %+v: want the sink's, count 3, both rules", g)
+	if g.Count != 2 || strings.Join(g.Rules, ",") != "marker-rule-a,marker-rule-b" { // the two rules' groups are the same request (VM acceptance of 5b57563), and one new
+		t.Errorf("group %+v: want the sink's, count 2, both rules", g)
 	}
 	for _, k := range []string{groupKey(prefix, "code@app.py:14", LevelRoute, true), groupKey(prefix, "code@app.py:14", LevelPayload, true), groupKey(prefix, "code@app.py:14", LevelPayload, false), weird, other} {
 		if a.Groups[k] == nil {
@@ -172,4 +173,72 @@ func keys(gs map[string]*Group) []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+// VM acceptance of 5b57563: v0.4.0 saved one group per rule for the same
+// requests at a sink. Loaded, they are the same requests, not added up:
+// counts and Merged are the largest, Recent their times once each. Added to
+// a group already keyed by the sink (other requests), they are added up.
+func TestOldRuleGroupsNotAdded(t *testing.T) {
+	dir := t.TempDir()
+	at := time.Date(2026, 11, 17, 12, 0, 0, 0, time.UTC)
+	hour := at.Add(-time.Hour)
+	old := newAttacks()
+	ip, prefix := "203.0.113.10", "203.0.113.0/24"
+	put := func(entry string, line int, level string, count int, sinkKeyed bool) *Group {
+		e := entry
+		if sinkKeyed {
+			e = "code@app.py:" + strconv.Itoa(line)
+		}
+		pfx := prefix
+		if level == LevelUnknown {
+			pfx = "*"
+		}
+		k := groupKey(pfx, e, level, true)
+		g := &Group{Key: k, Prefix: pfx, Entry: entry, Level: level, File: "app.py", Line: line, First: hour, Last: hour, Count: count, Since: count, Severity: "medium", IPs: []string{ip}, IPsSeen: 1}
+		old.Groups[k] = g
+		return g
+	}
+	for _, r := range []string{"marker-rule-a", "marker-rule-b"} {
+		put("code:"+r+":app.py:14", 14, LevelRoute, 32, false)
+		u := put("code:"+r+":app.py:30", 30, LevelUnknown, 15, false)
+		u.File, u.Line = "", 0 // as v0.4.0 saved an Unknown group
+		for i := range 15 {
+			u.Recent = append(u.Recent, hour.Add(time.Duration(i)*time.Second))
+		}
+		put("code:"+r+":app.py:40", 40, LevelPayload, 2, false)
+	}
+	put("code:marker-rule-a:app.py:20", 20, LevelSuccess, 2, false)
+	put("code:marker-rule-b:app.py:20", 20, LevelSuccess, 1, false)
+	put("code:marker-rule-a:app.py:40", 40, LevelPayload, 3, true) // saved after the upgrade: other requests
+	if err := old.Save(dir, at); err != nil {
+		t.Fatal(err)
+	}
+	a, err := LoadAttacks(dir, at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	want := map[string]int{
+		groupKey(prefix, "code@app.py:14", LevelRoute, true):   32,
+		groupKey(prefix, "code@app.py:20", LevelSuccess, true): 2,
+		groupKey("*", "code@app.py:30", LevelUnknown, true):    15,
+		groupKey(prefix, "code@app.py:40", LevelPayload, true): 5,
+	}
+	if len(a.Groups) != len(want) {
+		t.Errorf("groups %v", keys(a.Groups))
+	}
+	for k, n := range want {
+		if g := a.Groups[k]; g == nil || g.Count != n || g.Since != n || g.Merged != 0 {
+			t.Errorf("%s: %+v, want count %d", k, g, n)
+		}
+	}
+	if g := a.Groups[groupKey("*", "code@app.py:30", LevelUnknown, true)]; g == nil || len(g.Recent) != 15 {
+		t.Errorf("Unknown group's times: %+v, want the 15 once each", g)
+	}
+	for _, g := range a.Due(at) {
+		if g.Level == LevelUnknown {
+			t.Errorf("the Unknown group is due at 15 requests: %+v", g)
+		}
+	}
 }
