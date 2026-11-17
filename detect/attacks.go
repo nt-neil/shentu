@@ -194,19 +194,27 @@ func LoadAttacks(dir string, now time.Time) (*Attacks, error) {
 			dropped++
 			continue
 		}
-		a.Groups[k] = g
+		loadGroup(a.Groups, k, g)
 	}
 	for k, g := range got.Overflow {
 		if g == nil || g.Key != k {
 			dropped++
 			continue
 		}
-		a.Overflow[k] = g
+		loadGroup(a.Overflow, k, g)
 	}
 	for ip, r := range got.IPs {
 		if r == nil || r.Entries == nil {
 			dropped++
 			continue
+		}
+		for e, last := range r.Entries {
+			if s := oldSinkKey(e); s != e {
+				delete(r.Entries, e)
+				if last.After(r.Entries[s]) {
+					r.Entries[s] = last
+				}
+			}
 		}
 		a.IPs[ip] = r
 	}
@@ -216,6 +224,46 @@ func LoadAttacks(dir string, now time.Time) (*Attacks, error) {
 		a.Note = join(a.Note, fmt.Sprintf("attacks.json held %d entries that did not hold together; they were dropped", dropped))
 	}
 	return a, nil
+}
+
+// oldSinkKey is a campaign entry saved before sinks were keyed by location
+// (code:<rule>:<path>:<line>) as its sink's (sinkKey); any other as it is.
+func oldSinkKey(e string) string {
+	if rest, ok := strings.CutPrefix(e, "code:"); ok {
+		if _, p, ok := strings.Cut(rest, ":"); ok && strings.Contains(p, ":") {
+			return "code@" + p
+		}
+	}
+	return e
+}
+
+// loadGroup puts g in gs under its sink's key: a group saved before sinks
+// were keyed by location is merged into its sink's, which keeps the later
+// notice. The key keeps its prefix, level and verified flag.
+func loadGroup(gs map[string]*Group, k string, g *Group) {
+	for _, v := range []bool{true, false} {
+		if s := sinkKey(g.Entry, g.File, g.Line); s != g.Entry && k == groupKey(g.Prefix, g.Entry, g.Level, v) {
+			k = groupKey(g.Prefix, s, g.Level, v)
+			if rule, _, ok := strings.Cut(strings.TrimPrefix(g.Entry, "code:"), ":"); ok && len(g.Rules) == 0 {
+				g.Rules = []string{rule}
+			}
+		}
+	}
+	d := gs[k]
+	if d == nil {
+		g.Key = k
+		gs[k] = g
+		return
+	}
+	n := d.Merged + g.Merged
+	d.merge(g)
+	d.Merged = n
+	if g.Notified.After(d.Notified) {
+		d.Notified = g.Notified
+	}
+	if g.Entry < d.Entry {
+		d.Entry = g.Entry
+	}
 }
 
 // LockTries and LockWait bound the wait for attacks.lock: a stopped

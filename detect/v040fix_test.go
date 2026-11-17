@@ -80,3 +80,45 @@ func TestRoutesNoteCodeOnly(t *testing.T) {
 		t.Errorf("a code sink's alert lacks the routes note:\n%s", txt)
 	}
 }
+
+// Review 1 of #97, N-1 and S-1: a state saved before sinks were keyed by
+// location keeps its old keys (code:<rule>:<path>:<line>). Loaded, they are
+// the sink's: the campaign counts the sink once, and its old groups and the
+// new one are one group, notified when they were.
+func TestOldSinkKeysLoaded(t *testing.T) {
+	dir := t.TempDir()
+	at := time.Date(2026, 11, 17, 12, 0, 0, 0, time.UTC)
+	old := newAttacks()
+	ip, prefix := "203.0.113.10", "203.0.113.0/24"
+	old.IPs[ip] = &ipRecord{Entries: map[string]time.Time{
+		"code:marker-rule-a:app.py:14": at.Add(-time.Hour),
+		"code:marker-rule-b:app.py:14": at.Add(-time.Hour),
+	}, Last: at.Add(-time.Hour)}
+	for _, r := range []string{"marker-rule-a", "marker-rule-b"} {
+		e := "code:" + r + ":app.py:14"
+		k := groupKey(prefix, e, LevelPayload, true)
+		old.Groups[k] = &Group{Key: k, Prefix: prefix, Entry: e, Level: LevelPayload, File: "app.py", Line: 14, First: at.Add(-time.Hour), Last: at.Add(-time.Hour), Count: 1, Severity: "medium", IPs: []string{ip}, IPsSeen: 1, Notified: at.Add(-time.Hour)}
+	}
+	if err := old.Save(dir, at); err != nil {
+		t.Fatal(err)
+	}
+	a, err := LoadAttacks(dir, at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	x := Attempt{IP: ip, Entry: "code:marker-rule-a:app.py:14", Rules: []string{"marker-rule-a"}, File: "app.py", Line: 14, Level: LevelPayload, Verified: true, Severity: "medium"}
+	g := a.Add(x, at)
+	if n := len(a.IPs[ip].Entries); n != 1 || g.Campaign {
+		t.Errorf("campaign entries %v (campaign %v): one sink, want 1", a.IPs[ip].Entries, g.Campaign)
+	}
+	if len(a.Groups) != 1 || g.Count != 3 || strings.Join(g.Rules, ",") != "marker-rule-a,marker-rule-b" {
+		t.Errorf("groups %d, group %+v: want one for the sink, count 3, both rules", len(a.Groups), g)
+	}
+	if d := a.Due(at.Add(time.Minute)); len(d) != 0 {
+		t.Errorf("due %d: the sink was notified an hour ago", len(d))
+	}
+	if gs := a.GroupsOf(ip); len(gs) != 1 || gs[0].Level != LevelPayload || gs[0].Unverified || gs[0].Prefix == PrefixOverflow {
+		t.Errorf("groups of %s: %+v", ip, gs)
+	}
+}
