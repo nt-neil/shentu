@@ -228,7 +228,7 @@ func AttackList(st *detect.Attacks, now time.Time, d time.Duration) map[string]a
 		}
 		out = append(out, map[string]any{"entry": detect.Printable(g.Entry), "level": g.Level, "severity": g.Severity, "count": g.Count,
 			"first": g.First, "last": g.Last, "ips": ips, "ips_seen": g.IPsSeen, "samples": samples, "verified": !g.Unverified,
-			"overflow": g.Prefix == detect.PrefixOverflow, "campaign": g.Campaign, "cve": g.CVE, "kev": g.KEV})
+			"overflow": g.Prefix == detect.PrefixOverflow, "campaign": g.Campaign, "cve": g.CVE, "kev": g.KEV, "rules": g.Rules})
 	}
 	return map[string]any{"groups": out, "within_hours": int(d.Hours())}
 }

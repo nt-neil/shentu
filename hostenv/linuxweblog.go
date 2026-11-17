@@ -286,6 +286,9 @@ func JudgeLog(src Source, p string, web WebAccounts) TrustResult {
 		}
 		return no(ReasonUntrusted, fmt.Sprintf("%s is owned by uid %d, not root", real, st.UID))
 	case st.Mode.Perm()&0o022 != 0:
+		if w := aclWriters(src, real, web); w != "" { // the group bits are only the ACL's mask (VM acceptance of adff9e6, N4)
+			return no(ReasonUntrusted, real+": ACL grants write to "+w)
+		}
 		return no(ReasonUntrusted, fmt.Sprintf("%s is writable by group or others (%v)", real, st.Mode.Perm()))
 	}
 	links, err := linkChain(src, p)
@@ -372,6 +375,9 @@ func groupWritable(src Source, d string, ds FileStat, web WebAccounts) (Reason, 
 	gid := *ds.GID
 	if name, ok := web.GIDs[gid]; ok {
 		return ReasonWebUserWritable, fmt.Sprintf("directory %s is writable by group %s (gid %d): %s", d, name, gid, WebUserWritableMeaning)
+	}
+	if w := aclWriters(src, d, web); w != "" { // the group bits are only the ACL's mask (N4)
+		return ReasonUnverified, "directory " + d + ": ACL grants write to " + w
 	}
 	switch name, ok := web.LogGIDs[gid]; {
 	case gid == 0:

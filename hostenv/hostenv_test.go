@@ -446,10 +446,13 @@ func TestWebFact(t *testing.T) {
 // an owner.
 type statHost struct {
 	*fakeHost
-	st  map[string]FileStat
-	lst map[string]FileStat // links' own stat; a link not in it is root's
-	acl map[string]bool
+	st   map[string]FileStat
+	lst  map[string]FileStat // links' own stat; a link not in it is root's
+	acl  map[string]bool
+	acle map[string][]ACLEntry // ACLEntries; a path not in it has none
 }
+
+func (h statHost) ACLEntries(p string) ([]ACLEntry, error) { return h.acle[p], nil }
 
 // Lstat is a link's own stat: lst, or root's for a link in links.
 func (h statHost) Lstat(p string) (FileStat, error) {

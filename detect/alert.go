@@ -182,7 +182,9 @@ func alertText(g *Group, s *Surface, mask bool) string {
 		}
 		fmt.Fprintf(&b, "無法判定：請求被截斷，可能藏有 %s；相關 sink：%s\n", classes, Printable(sink))
 	}
-	b.WriteString("說明：" + RoutesMeaningZh + "。" + NoRoutesMeaningZh + "。\n")
+	if strings.HasPrefix(g.Entry, "code:") { // about a code sink's routes: not for a package's CVE (VM acceptance of adff9e6, N3)
+		b.WriteString("說明：" + RoutesMeaningZh + "。" + NoRoutesMeaningZh + "。\n")
+	}
 	switch {
 	case g.Prefix == PrefixOverflow: // its addresses and severity are many groups' merged: never a block (P5 must not block on it)
 		b.WriteString("封鎖：溢出彙總組不提供封鎖，請上伺服器查看各來源的完整紀錄\n")
@@ -220,7 +222,11 @@ func vulnText(g *Group, e Entry, found bool) string {
 		}
 		return fmt.Sprintf("%s（套件 %s %s）", id, e.Package, e.Version)
 	case found && e.Kind == "code":
-		return fmt.Sprintf("程式碼 sink %s:%d（規則 %s）", e.Path, e.Line, e.Rule)
+		rules := e.Rule
+		if len(g.Rules) > 0 { // every rule that flags the sink (N2)
+			rules = strings.Join(g.Rules, "、")
+		}
+		return fmt.Sprintf("程式碼 sink %s:%d（規則 %s）", e.Path, e.Line, rules)
 	case g.CVE != "":
 		return g.CVE
 	case g.File != "":

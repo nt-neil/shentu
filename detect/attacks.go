@@ -61,6 +61,8 @@ type Group struct {
 	Prefix string `json:"prefix"` // 203.0.113.0/24, 2001:db8::/64, the address as logged when it is not one, "*", PrefixOverflow
 	Entry  string `json:"entry"`
 	Level  string `json:"level"`
+	// Rules: a code sink's rules, all its attempts' (Attempt.Rules).
+	Rules []string `json:"rules,omitempty"`
 
 	CVE string `json:"cve,omitempty"`
 	KEV bool   `json:"kev,omitempty"`
@@ -192,19 +194,27 @@ func LoadAttacks(dir string, now time.Time) (*Attacks, error) {
 			dropped++
 			continue
 		}
-		a.Groups[k] = g
+		loadGroup(a.Groups, k, g)
 	}
 	for k, g := range got.Overflow {
 		if g == nil || g.Key != k {
 			dropped++
 			continue
 		}
-		a.Overflow[k] = g
+		loadGroup(a.Overflow, k, g)
 	}
 	for ip, r := range got.IPs {
 		if r == nil || r.Entries == nil {
 			dropped++
 			continue
+		}
+		for e, last := range r.Entries {
+			if s := oldSinkKey(e); s != e {
+				delete(r.Entries, e)
+				if last.After(r.Entries[s]) {
+					r.Entries[s] = last
+				}
+			}
 		}
 		a.IPs[ip] = r
 	}
@@ -214,6 +224,61 @@ func LoadAttacks(dir string, now time.Time) (*Attacks, error) {
 		a.Note = join(a.Note, fmt.Sprintf("attacks.json held %d entries that did not hold together; they were dropped", dropped))
 	}
 	return a, nil
+}
+
+// oldSinkKey is a campaign entry saved before sinks were keyed by location
+// (code:<rule>:<path>:<line>) as its sink's (sinkKey); any other as it is.
+func oldSinkKey(e string) string {
+	if rest, ok := strings.CutPrefix(e, "code:"); ok {
+		if _, p, ok := strings.Cut(rest, ":"); ok && strings.Contains(p, ":") {
+			return "code@" + p
+		}
+	}
+	return e
+}
+
+// loadGroup puts g in gs under its sink's key: a group saved before sinks
+// were keyed by location is merged into its sink's, which keeps the later
+// notice. The key keeps its prefix, level and verified flag. An old Unknown
+// group has no File: its entry gives it. A group whose entry, File and Line
+// do not name the same sink is kept as it is.
+func loadGroup(gs map[string]*Group, k string, g *Group) {
+	if s := oldSinkKey(g.Entry); s != g.Entry {
+		file, line := g.File, g.Line
+		if file == "" {
+			p := strings.TrimPrefix(s, "code@")
+			i := strings.LastIndex(p, ":")
+			n, err := strconv.Atoi(p[i+1:])
+			if err == nil {
+				file, line = p[:i], n
+			}
+		}
+		for _, v := range []bool{true, false} {
+			if sinkKey(g.Entry, file, line) == s && k == groupKey(g.Prefix, g.Entry, g.Level, v) {
+				k = groupKey(g.Prefix, s, g.Level, v)
+				g.File, g.Line = file, line
+				if rule, _, ok := strings.Cut(strings.TrimPrefix(g.Entry, "code:"), ":"); ok && len(g.Rules) == 0 {
+					g.Rules = []string{rule}
+				}
+				break
+			}
+		}
+	}
+	d := gs[k]
+	if d == nil {
+		g.Key = k
+		gs[k] = g
+		return
+	}
+	n := d.Merged + g.Merged
+	d.merge(g)
+	d.Merged = n
+	if g.Notified.After(d.Notified) {
+		d.Notified = g.Notified
+	}
+	if g.Entry < d.Entry {
+		d.Entry = g.Entry
+	}
 }
 
 // LockTries and LockWait bound the wait for attacks.lock: a stopped
@@ -445,7 +510,7 @@ func (a *Attacks) Add(t Attempt, at time.Time) *Group {
 	} else if _, err := netip.ParsePrefix(prefix); err != nil {
 		prefix = a.nonIP(prefix)
 	}
-	key := groupKey(prefix, t.Entry, t.Level, t.Verified)
+	key := groupKey(prefix, sinkKey(t.Entry, t.File, t.Line), t.Level, t.Verified)
 	g := a.Groups[key]
 	if g == nil {
 		if len(a.Groups) >= MaxGroups+MaxGroups/4 { // bounded between saves too
@@ -481,6 +546,7 @@ func (g *Group) add(t Attempt, at time.Time) {
 		}
 	}
 	g.addIP(t.IP)
+	g.addRules(t.Rules)
 	if t.Sample != "" && !slices.Contains(g.Samples, t.Sample) { // the latest kept: early neutral requests cannot fill them for good
 		g.Samples = append(g.Samples, t.Sample)
 		if len(g.Samples) > MaxGroupSamples {
@@ -558,6 +624,7 @@ func (g *Group) merge(src *Group) {
 		g.addIP(ip)
 	}
 	g.IPsSeen = max(g.IPsSeen, len(g.IPs))
+	g.addRules(src.Rules)
 	for _, s := range src.Samples {
 		if len(g.Samples) < MaxGroupSamples && !slices.Contains(g.Samples, s) {
 			g.Samples = append(g.Samples, s)
@@ -587,6 +654,19 @@ func (g *Group) merge(src *Group) {
 	}
 }
 
+// addRules adds rules to g's, in order, at most MaxGroupRules.
+func (g *Group) addRules(rules []string) {
+	for _, r := range rules {
+		if !slices.Contains(g.Rules, r) && len(g.Rules) < MaxGroupRules {
+			g.Rules = append(g.Rules, r)
+		}
+	}
+	slices.Sort(g.Rules)
+}
+
+// MaxGroupRules bounds Group.Rules.
+const MaxGroupRules = 16
+
 // campaign records a believed L2 or L3 attempt in the index and says
 // whether its source (campaignSource) tried CampaignEntries or more
 // vulnerabilities in CampaignWindow. An attempt whose source is not
@@ -610,7 +690,8 @@ func (a *Attacks) campaign(t Attempt, at time.Time) bool {
 			delete(r.Entries, e)
 		}
 	}
-	if _, ok := r.Entries[t.Entry]; !ok && len(r.Entries) >= MaxIPEntries {
+	sink := sinkKey(t.Entry, t.File, t.Line) // one sink, one entry, however many rules flag it
+	if _, ok := r.Entries[sink]; !ok && len(r.Entries) >= MaxIPEntries {
 		oldest := ""
 		for e, last := range r.Entries {
 			if oldest == "" || last.Before(r.Entries[oldest]) || last.Equal(r.Entries[oldest]) && e < oldest {
@@ -619,8 +700,8 @@ func (a *Attacks) campaign(t Attempt, at time.Time) bool {
 		}
 		delete(r.Entries, oldest)
 	}
-	if at.After(r.Entries[t.Entry]) {
-		r.Entries[t.Entry] = at
+	if at.After(r.Entries[sink]) {
+		r.Entries[sink] = at
 	}
 	if at.After(r.Last) {
 		r.Last = at
@@ -692,7 +773,7 @@ func (a *Attacks) evict(n int) {
 		g := a.Groups[k]
 		if g.pending() {
 			a.DroppedPending++
-			ok := groupKey(PrefixOverflow, g.Entry, g.Level, !g.Unverified)
+			ok := groupKey(PrefixOverflow, sinkKey(g.Entry, g.File, g.Line), g.Level, !g.Unverified)
 			o := a.Overflow[ok]
 			if o == nil {
 				o = &Group{Key: ok, Prefix: PrefixOverflow, Entry: g.Entry, Level: g.Level, CVE: g.CVE, KEV: g.KEV, File: g.File, Line: g.Line}
@@ -816,7 +897,7 @@ func (a *Attacks) prune(now time.Time) {
 			if g.pending() { // not yet notified: never dropped quietly
 				a.DroppedPending++
 				if g.Prefix != PrefixOverflow {
-					ok := groupKey(PrefixOverflow, g.Entry, g.Level, !g.Unverified)
+					ok := groupKey(PrefixOverflow, sinkKey(g.Entry, g.File, g.Line), g.Level, !g.Unverified)
 					o := a.Overflow[ok]
 					if o == nil {
 						o = &Group{Key: ok, Prefix: PrefixOverflow, Entry: g.Entry, Level: g.Level, CVE: g.CVE, KEV: g.KEV, File: g.File, Line: g.Line}
