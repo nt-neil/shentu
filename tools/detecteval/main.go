@@ -10,7 +10,8 @@
 // them is kept in this repository.
 //
 // It compares what it got with baseline.json: a different templates hash,
-// count of ordinary requests or false positives, of templates not
+// count of ordinary requests (all, those different in more than tracking
+// parameters, their routes) or of false positives, of templates not
 // converted, unclassified or rce-unspecified, any different count of the
 // host layer, or a different hash of the graded results (each template's
 // class, hits, level and host alert, each ordinary request's), is an
@@ -43,6 +44,8 @@ type baseline struct {
 	RCEUnspecified int    `json:"rce_unspecified"`
 	FalsePositives int    `json:"false_positives"`
 	NormalRequests int    `json:"normal_requests"`
+	NormalDistinct int    `json:"normal_distinct"`
+	NormalRoutes   int    `json:"normal_routes"`
 	GradedHash     string `json:"graded_sha256"`
 	// Stats: its Host is compared too; the rest is said, the graded hash
 	// covering it.
@@ -89,7 +92,7 @@ func run(base string, write bool, repo, tarball string) int {
 	}
 	st := ev.run(files, normal)
 	report(st)
-	b := baseline{st.NucleiCommit, st.TemplatesHash, st.NotConverted, st.Unclassified, st.RCEUnspecified, st.FalsePositives, st.NormalRequests, st.GradedHash, st}
+	b := baseline{st.NucleiCommit, st.TemplatesHash, st.NotConverted, st.Unclassified, st.RCEUnspecified, st.FalsePositives, st.NormalRequests, st.NormalDistinct, st.NormalRoutes, st.GradedHash, st}
 	if write {
 		out, _ := json.MarshalIndent(b, "", "  ")
 		if err := os.WriteFile(base, append(out, '\n'), 0o644); err != nil {
@@ -120,6 +123,8 @@ func run(base string, write bool, repo, tarball string) int {
 	diff("templates_hash", b.TemplatesHash, want.TemplatesHash)
 	diff("false_positives", b.FalsePositives, want.FalsePositives)
 	diff("normal_requests", b.NormalRequests, want.NormalRequests)
+	diff("normal_distinct", b.NormalDistinct, want.NormalDistinct)
+	diff("normal_routes", b.NormalRoutes, want.NormalRoutes)
 	diff("not_converted", b.NotConverted, want.NotConverted)
 	diff("unclassified", b.Unclassified, want.Unclassified)
 	diff("rce_unspecified", b.RCEUnspecified, want.RCEUnspecified)

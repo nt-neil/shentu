@@ -27,6 +27,8 @@ type Stats struct {
 	AttackLevels   map[string]int        `json:"attack_levels"` // per classified template, its best level
 	Host           HostStat              `json:"host"`
 	NormalRequests int                   `json:"normal_requests"`
+	NormalDistinct int                   `json:"normal_distinct"` // ordinary requests different in more than extras: the n of the false positive rate
+	NormalRoutes   int                   `json:"normal_routes"`   // the routes they come from
 	FalsePositives int                   `json:"false_positives"`
 	NormalLevels   map[string]int        `json:"normal_levels"`
 	FalseHits      []string              `json:"false_positive_ids,omitempty"` // request id: signature ids
@@ -246,6 +248,11 @@ func (ev *evaluator) run(files map[string][]byte, normal []normalRequest) *Stats
 		lines = append(lines, fmt.Sprintf("%s\t%s\t%s\t%v\t%s\t%s\t%v\t%v\t%v", n, a.ID, a.Class, caught, sortedKeys(hit), level, host, forCVE, vu))
 	}
 	st.NormalRequests = len(normal)
+	distinct, routes := map[string]bool{}, map[string]bool{}
+	for _, r := range normal {
+		distinct[r.Base], routes[r.Route] = true, true
+	}
+	st.NormalDistinct, st.NormalRoutes = len(distinct), len(routes)
 	for _, r := range normal {
 		g := ev.grade(r.Line)
 		if !g.parsed {
@@ -303,7 +310,8 @@ func report(st *Stats) {
 	}
 	fmt.Printf("  %-9s %5d / %5d  %5.1f%%\n", "all", caught, tot, pct(caught, tot))
 	fmt.Printf("attack levels: %s\n", levels(st.AttackLevels))
-	fmt.Printf("false positives: %d / %d ordinary requests (%.2f%%)\n", st.FalsePositives, st.NormalRequests, pct(st.FalsePositives, st.NormalRequests))
+	fmt.Printf("false positives: %d / %d ordinary requests (%.2f%%); %d of them differ in more than tracking parameters, from %d routes\n",
+		st.FalsePositives, st.NormalRequests, pct(st.FalsePositives, st.NormalRequests), st.NormalDistinct, st.NormalRoutes)
 	for _, f := range st.FalseHits {
 		fmt.Printf("  %s\n", f)
 	}

@@ -349,7 +349,8 @@ func TestEvaluatorRun(t *testing.T) {
 	st := ev.run(files, normal)
 	if st.Templates != 5 || st.NotConverted != 1 || st.Unclassified != 1 || st.RCEUnspecified != 1 ||
 		len(st.Classes) != 2 || *st.Classes["path"] != (ClassStat{1, 0}) || *st.Classes["xss"] != (ClassStat{1, 0}) ||
-		st.Host.Cases != cases || st.Host.TemplatesForCVE != 1 || st.NormalRequests != len(normal) || st.FalsePositives != 0 {
+		st.Host.Cases != cases || st.Host.TemplatesForCVE != 1 || st.NormalRequests != len(normal) || st.FalsePositives != 0 ||
+		st.NormalRoutes != len(normal)/perRoute || st.NormalDistinct < st.NormalRoutes || st.NormalDistinct >= len(normal) {
 		t.Errorf("stats %+v", st)
 	}
 	again := ev.run(files, normal)
@@ -381,6 +382,7 @@ func TestRunExitCodes(t *testing.T) {
 		"false positives": func(x *baseline) { x.FalsePositives++ },
 		"host":            func(x *baseline) { x.Stats.Host.VersionUnknown++ },
 		"templates hash":  func(x *baseline) { x.TemplatesHash = "0" },
+		"normal distinct": func(x *baseline) { x.NormalDistinct++ },
 	} {
 		var x baseline
 		json.Unmarshal(raw, &x)
@@ -403,5 +405,24 @@ func TestRunExitCodes(t *testing.T) {
 	}
 	if rc := run(base, false, "../..", dir+"/missing.tar.gz"); rc != 3 {
 		t.Errorf("no tarball: %d, want 3", rc)
+	}
+}
+
+// The limits a run is unlikely to reach, lowered, through the whole path.
+func TestLimitsWholePath(t *testing.T) {
+	defer func(e int, u, d int64, r time.Duration) { maxEntries, maxUnpacked, maxDownload, retryBase = e, u, d, r }(maxEntries, maxUnpacked, maxDownload, retryBase)
+	maxEntries = 3
+	if _, err := readTar(bytes.NewReader(tarball(t, []entry{{"top/a", "a", tar.TypeReg}, {"top/b", "b", tar.TypeReg}, {"top/c", "c", tar.TypeReg}, {"top/d", "d", tar.TypeReg}}))); !errors.Is(err, errArchive) {
+		t.Errorf("4 entries past 3: %v", err)
+	}
+	maxEntries, maxUnpacked = 100, 8192
+	if _, err := readTar(bytes.NewReader(tarball(t, []entry{{"top/docs/a.md", strings.Repeat("a", 20000), tar.TypeReg}}))); !errors.Is(err, errArchive) {
+		t.Errorf("unpacking past the cap, outside http/: %v", err)
+	}
+	maxDownload, retryBase = 10, time.Millisecond
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write(bytes.Repeat([]byte("a"), 100)) }))
+	defer srv.Close()
+	if _, err := download(context.Background(), srv.URL, t.TempDir()); !errors.Is(err, errDownload) {
+		t.Errorf("downloading past the cap: %v", err)
 	}
 }

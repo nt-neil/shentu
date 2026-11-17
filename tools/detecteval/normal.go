@@ -271,9 +271,11 @@ var userAgents = []string{
 	"Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0",
 }
 
-// normalRequest is one generated request: an id (app#route#n) and the
-// combined log line.
-type normalRequest struct{ ID, App, Line string }
+// normalRequest is one generated request: an id (app#route#n), the
+// combined log line, its route (app#route) and Base, its method and target
+// before extras: requests differing only in extras are the same ordinary
+// content to the signatures, not independent samples.
+type normalRequest struct{ ID, App, Line, Route, Base string }
 
 // perRoute: the requests made of each route.
 const perRoute = 8
@@ -313,6 +315,7 @@ func normalRequests() ([]normalRequest, error) {
 					return p + "?" + v.Encode()
 				}
 				tg := target()
+				base := r.Method + " " + tg
 				for seen[r.Method+" "+tg] {
 					var free []string
 					for _, k := range extras {
@@ -336,7 +339,7 @@ func normalRequests() ([]normalRequest, error) {
 				seen[r.Method+" "+tg] = true
 				line := fmt.Sprintf(`198.51.100.%d - - [17/Nov/2026:12:00:00 +0000] "%s %s HTTP/1.1" 200 2048 "%s" "%s"`,
 					10+rnd.IntN(200), r.Method, tg, referers[rnd.IntN(len(referers))], userAgents[rnd.IntN(len(userAgents))])
-				out = append(out, normalRequest{fmt.Sprintf("%s#%d#%d", a.Name, ri, n), a.Name, line})
+				out = append(out, normalRequest{fmt.Sprintf("%s#%d#%d", a.Name, ri, n), a.Name, line, fmt.Sprintf("%s#%d", a.Name, ri), base})
 			}
 		}
 	}

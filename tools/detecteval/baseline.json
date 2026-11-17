@@ -6,6 +6,8 @@
   "rce_unspecified": 252,
   "false_positives": 0,
   "normal_requests": 1216,
+  "normal_distinct": 363,
+  "normal_routes": 152,
   "graded_sha256": "ccd55ddb60595d6faa7a1e2e44326b6d6a3c1f59b53df5a6dec74eb7e471936d",
   "stats": {
     "nuclei_commit": "5442582a875f96887bfe403c6de562de460897e7",
@@ -75,6 +77,8 @@
       "version_unknown": 0
     },
     "normal_requests": 1216,
+    "normal_distinct": 363,
+    "normal_routes": 152,
     "false_positives": 0,
     "normal_levels": {
       "L1": 1209,

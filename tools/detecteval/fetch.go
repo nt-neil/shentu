@@ -34,12 +34,16 @@ var wantHash = templatesHash
 
 // Limits on what is downloaded and read out of it.
 const (
-	maxDownload  = 512 << 20 // the tarball
 	maxExtracted = 256 << 20 // the http/ templates, together
 	maxTemplate  = 16 << 20  // one template (the largest, a WordPress plugin list, is ~5 MB)
-	maxUnpacked  = 1 << 30   // the whole archive unpacked, every entry (58 MB at the commit)
-	maxEntries   = 100000    // entries in the archive (15526 at the commit)
 	maxTemplates = 50000     // http/**/*.yaml (11835 at the commit)
+)
+
+// The limits a test lowers, to reach them without gigabytes.
+var (
+	maxDownload int64 = 512 << 20 // the tarball
+	maxUnpacked int64 = 1 << 30   // the whole archive unpacked, every entry (58 MB at the commit)
+	maxEntries        = 100000    // entries in the archive (15526 at the commit)
 )
 
 // Why the evaluation did not run: said apart, never a pass.

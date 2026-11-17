@@ -4,7 +4,7 @@
 
 v0.4.0 ships 27 attack signatures, and they are not extended to catch rewritten forms of an attack.
 The cases below are known misses. A miss only costs an alert: Shentu misses the request or rates it lower. None of them can make Shentu block the wrong address.
-v0.4.0 never blocks on its own: `block_ip` always needs the operator's confirmation. Its attacks are checked too: an address with attack attempts is blocked only for a verified L2 or L3 group of its own, not an overflow summary of many sources. Attempts that only reached a route (L1), could not be judged (Unknown) or come from unverified logs do not back a block; the address's SSH logins that journald itself confirms still can. An internal address (private, loopback, CGNAT and the like) is refused. `override_unverified` lifts all of these checks but one, and only from the server (`shentu chat`), never from Telegram: attempts that are unverified, L1 or Unknown no longer hold a block back, SSH logins are not checked, and an internal address may be blocked, so the block rests on the operator's own reading of the logs. An address listed only in an overflow summary is still refused.
+v0.4.0 never blocks on its own: `block_ip` always needs the operator's confirmation. Its attacks are checked too: an address with attack attempts is blocked only for a verified L2 or L3 group of its own, not an overflow summary of many sources. Attempts that only reached a route (L1), could not be judged (Unknown) or come from unverified logs do not back a block; the address's SSH logins that journald itself confirms still can. An internal address (private, loopback, CGNAT and the like) is refused. `override_unverified` lifts all of these checks but one, and only from the server (`shentu chat`), never from Telegram: attempts that are unverified, L1 or Unknown no longer hold a block back, SSH logins are not checked, and an internal address may be blocked, so the block rests on the operator's own reading of the logs. An address listed in an overflow summary is still refused, unless it also has a verified L2 or L3 group of its own.
 
 ## What is never seen
 
@@ -16,7 +16,7 @@ v0.4.0 never blocks on its own: `block_ip` always needs the operator's confirmat
 - **Unverified logs never back a block.** Attempts from a log Shentu cannot verify are marked unverified, and the alert names the reason. `block_ip` refuses them as a basis for blocking; only the operator on the server can override that (see above). The reasons:
   - `web_user_writable`: the web server's or PHP's account owns the log or can write a directory above it. This is the default for nginx on Debian, Ubuntu and Rocky, whose logrotate creates the logs so. A server that runs application code in its own processes (mod_php, application modules in nginx), and a web account that can ptrace the server's workers count the same.
   - `untrusted_owner`: the log, a link to it or a directory above it is owned by an account other than root, or the log is writable by group or others, or a directory above it by others.
-  - `unverified_source`: Shentu cannot confirm that only root can change the log: a directory writable by a group whose members are not known, an ACL, account databases or links that could not be read. Also a file that is not the one judged when it is read (replaced in between), and a rotated file that fails the check.
+  - `unverified_source`: Shentu cannot confirm that only root can change the log: a directory writable by a group whose members are not known, an ACL, account databases or links that could not be read. Also a file that is not the one judged when it is read (replaced in between), and a rotated file that fails the check. When the web server's configuration could not be read in full, or it names more log sources than Shentu reads, every log is unverified for this reason.
   - `not_regular_file`: the log is not a regular file.
   - `symlink_not_followed`: the log could only be looked at by following a link, which Shentu does not do.
   - `client_from_header`: the server takes the client address from a request header (nginx's realip, Apache's mod_remoteip), so the logged address is what a proxy or the client wrote.
@@ -85,9 +85,9 @@ The results:
 - **All templates: 40.5% detected (1548 of 3822).**
   - Source: nuclei-templates v10.5.2 (commit 5442582a), the 11835 templates under `http/`.
   - Templates the tool could not convert (1143), unclassified ones (6618) and `rce-unspecified` ones (252) are not counted.
-- **Ordinary traffic: no false alerts in 1216 requests, each different from all the others in method and target.**
-  - The requests are 8 for each of 152 routes of 8 applications (WordPress, Django, Flask, Laravel, Express, Immich, Nest, Next). Where a route's fillers run out, ordinary extras (campaign tags, a click id, a language, a cache buster) make the request differ.
-  - With 1216 different requests, the false-alert rate can only be said to be below about 0.25% (95% upper bound).
+- **Ordinary traffic: no false alerts in 1216 requests.**
+  - The requests are 8 for each of 152 routes of 8 applications (WordPress, Django, Flask, Laravel, Express, Immich, Nest, Next). Where a route's fillers run out, tracking parameters make the request differ.
+  - Of the 1216 requests, 363 differ in more than tracking parameters (campaign tags, click ids, language, cache buster); with that many, the false-alert rate can only be said to be below about 0.8% (95% upper bound), and they come from only 152 routes. The tool counts both (`normal_distinct`, `normal_routes` in `baseline.json`).
 - **Templates for a vulnerability the host really has: 3 of 10 alerted.** Each row is what `-explain-host` reports.
 
 | CVE | Alert | Why |
