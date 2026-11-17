@@ -14,13 +14,13 @@ type pat struct {
 	raw      string
 	php      bool
 	toks     []Token
-	member   bool           // starts with ".", "->" or "?->": a method on any receiver
-	anchored bool           // written with a leading "^": never a member of something else, even as a source
-	text     *regexp.Regexp // text patterns only
-	name     string         // last name in the pattern (to recognise prefix checks)
-	chain    string         // PHP: "->m(" made from the sink "Class::m(": the chain must start at Class:: (chain.go)
+	member   bool            // starts with ".", "->" or "?->": a method on any receiver
+	anchored bool            // written with a leading "^": never a member of something else, even as a source
+	text     *regexp.Regexp  // text patterns only
+	name     string          // last name in the pattern (to recognise prefix checks)
+	chain    string          // PHP: "->m(" made from the sink "Class::m(": the chain must start at Class:: (chain.go)
 	chainNot map[string]bool // calls the chain may not go through: they make another object (rule chain_not)
-	wild     bool           // holds "[*]", which matches any one index: $_FILES[*]['name']
+	wild     bool            // holds "[*]", which matches any one index: $_FILES[*]['name']
 	// sources only (source_args): the call (or index) is input only when its
 	// srcArg-th argument is a string literal among srcVals (lower case; "*": any; "!x": not x;
 	// "?": an argument that is not a string literal)
