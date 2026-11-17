@@ -44,6 +44,14 @@ type Request struct {
 	// evidence); Path the same with them resolved and // collapsed, for
 	// routes.
 	RawPath, Path string
+	// Segments: the path as sent split at /, each segment then decoded
+	// and lower-cased, as a router hands a parameter its value (nil when
+	// the path was longer than MaxNormalized).
+	Segments []string
+	// PlainPath: those segments decoded in their case, an / one held
+	// kept as %2F, dot segments resolved, nothing else cleaned: an
+	// anchored route's path ("" when longer than MaxNormalized).
+	PlainPath string
 	// CasePath is Path in the case it was sent ("" when the path was
 	// longer than MaxNormalized: Path is used then), for a
 	// case-sensitive route.
@@ -104,6 +112,14 @@ func Normalize(r AccessRecord) Request {
 	if len(r.Path) <= MaxNormalized {
 		cp, _ := decodePiece(r.Path, false)
 		q.CasePath = cleanPath(cp)
+		var plain []string
+		for _, sg := range strings.Split(r.Path, "/") {
+			d, _ := decodePiece(sg, false)
+			n, _ := normalizePiece(sg, false)
+			q.Segments = append(q.Segments, n)
+			plain = append(plain, strings.ReplaceAll(d, "/", "%2F"))
+		}
+		q.PlainPath = path.Clean("/" + strings.Join(plain, "/"))
 	}
 	q.Query, enc, cut = normalizeTextN(r.Query, true, MaxParamsText) // the whole query: the parameters' bound
 	q.Encoded = q.Encoded || enc
@@ -346,6 +362,9 @@ type Hit struct {
 	// decoded), at most 256 bytes: the evidence an alert shows.
 	Raw       string `json:"raw,omitempty"`
 	RouteOnly bool   `json:"route_only,omitempty"` // a signature with routes and no match: the route alone
+	// Segment: the path segment a class signature held in (part path,
+	// any_param), decoded: L2 only where a route's placeholder took it.
+	Segment string `json:"segment,omitempty"`
 }
 
 // MatchResult is what a request matched.
@@ -364,15 +383,23 @@ type Matcher struct {
 	now    func() time.Time
 }
 
-// NewMatcher compiles the routes of ss. Signatures with a route or written
-// for a vulnerability are tried first, then the classes', each group in
-// the order given: the hits that name a vulnerability lead.
 // pathHolds says whether a route's Path is in the request's path: at the
-// end, or followed by PATH_INFO (/x.php/anything).
+// end, or followed by PATH_INFO (/x.php/anything). An anchored route is
+// taken from PlainPath, at its end only.
 func pathHolds(r sig.Route, q Request) bool {
 	p, rp := q.Path, strings.ToLower(r.Path)
 	if r.CaseSensitive && q.CasePath != "" { // a path too long for it: compared without case, not skipped
 		p, rp = q.CasePath, r.Path
+	}
+	if r.Anchored && q.PlainPath != "" {
+		// Not cleanPath's: ; parameters and trailing dots are not how a
+		// PHP router reads a path, an encoded / stays in its segment
+		// (review 2 of #87, S-4).
+		p = q.PlainPath
+		if !r.CaseSensitive {
+			p = strings.ToLower(p)
+		}
+		return strings.HasSuffix(p, rp) && anchorOK(p[:len(p)-len(rp)])
 	}
 	var prefix string
 	if strings.HasSuffix(p, rp) {
@@ -382,16 +409,24 @@ func pathHolds(r sig.Route, q Request) bool {
 	} else {
 		return false
 	}
-	if r.Anchored {
-		for _, sg := range strings.Split(prefix, "/") {
-			if strings.Contains(sg, ".") && !strings.EqualFold(sg, "index.php") { // a front controller, as without URL rewriting
-				return false
-			}
-		}
-	}
-	return true
+	return !r.Anchored || anchorOK(prefix)
 }
 
+// anchorOK says whether what comes before an anchored route is only
+// directories (no segment with a dot), the last of them possibly the
+// front controller index.php, as without URL rewriting (review 2 of #87,
+// N-3: index.php right before the route only).
+func anchorOK(prefix string) bool {
+	k := strings.LastIndexByte(prefix, '/')
+	if k >= 0 && strings.EqualFold(prefix[k+1:], "index.php") {
+		prefix = prefix[:k]
+	}
+	return !strings.Contains(prefix, ".")
+}
+
+// NewMatcher compiles the routes of ss. Signatures with a route or written
+// for a vulnerability are tried first, then the classes', each group in
+// the order given: the hits that name a vulnerability lead.
 func NewMatcher(ss []sig.Signature) *Matcher {
 	ss = slices.Clone(ss)
 	sort.SliceStable(ss, func(a, b int) bool { return specific(ss[a]) && !specific(ss[b]) })
@@ -441,13 +476,13 @@ func (m *Matcher) Match(q Request) (res MatchResult) {
 		hit := Hit{Signature: s.ID, Class: s.Class}
 		all := true
 		for j, mt := range s.Matches {
-			part, param, ex, ok := matchOne(mt, q)
+			part, param, ex, seg, ok := matchOne(mt, q)
 			if !ok {
 				all = false
 				break
 			}
 			if j == 0 {
-				hit.Part, hit.Param, hit.Excerpt = part, param, ex
+				hit.Part, hit.Param, hit.Excerpt, hit.Segment = part, param, ex, seg
 				hit.Raw = rawOf(q, part, param)
 			}
 		}
@@ -475,7 +510,7 @@ func (m *Matcher) routeHolds(i int, q Request) bool {
 }
 
 // matchOne tries one match: where it held, and an excerpt of what held.
-func matchOne(mt sig.Match, q Request) (part, param, excerpt string, ok bool) {
+func matchOne(mt sig.Match, q Request) (part, param, excerpt, segment string, ok bool) {
 	try := func(whole string) (string, bool) {
 		for _, text := range pieces(whole) { // a cut text's start and end apart
 			for _, c := range mt.Contains {
@@ -494,20 +529,20 @@ func matchOne(mt sig.Match, q Request) (part, param, excerpt string, ok bool) {
 	switch mt.Part {
 	case "path":
 		ex, ok := try(q.RawPath)
-		return "path", "", ex, ok
+		return "path", "", ex, "", ok
 	case "query":
 		ex, ok := try(q.Query)
-		return "query", "", ex, ok
+		return "query", "", ex, "", ok
 	case "user_agent":
 		ex, ok := try(q.UserAgent)
-		return "user_agent", "", ex, ok
+		return "user_agent", "", ex, "", ok
 	case "referer":
 		ex, ok := try(q.Referer)
-		return "referer", "", ex, ok
+		return "referer", "", ex, "", ok
 	case "param":
 		for _, v := range q.Params[strings.ToLower(mt.Param)] {
 			if ex, ok := try(v); ok {
-				return "param", mt.Param, ex, true
+				return "param", mt.Param, ex, "", true
 			}
 		}
 	case "any_param":
@@ -521,7 +556,7 @@ func matchOne(mt sig.Match, q Request) (part, param, excerpt string, ok bool) {
 		for _, k := range keys {
 			for _, v := range q.Params[k] {
 				if ex, ok := try(v); ok {
-					return "any_param", k, ex, true
+					return "any_param", k, ex, "", true
 				}
 			}
 		}
@@ -529,21 +564,25 @@ func matchOne(mt sig.Match, q Request) (part, param, excerpt string, ok bool) {
 		// =, or the whole query string PHP reads (review 1 of #87, N-4).
 		for _, k := range keys {
 			if ex, ok := try(k); ok {
-				return "query", "", ex, true
+				return "query", k, ex, "", true
 			}
 		}
 		// A path segment is a route parameter's value ({id}, :id, <id>)
-		// (review 1 of #87, N-5).
-		for _, sg := range strings.Split(q.RawPath, "/") {
-			if sg == "" {
-				continue
-			}
-			if ex, ok := try(sg); ok {
-				return "path", "", ex, true
+		// (review 1 of #87, N-5): each segment as sent, decoded apart (a
+		// router splits before it decodes: %2F stays in its value; review
+		// 2, N-2), and the decoded path's segments.
+		for _, segs := range [][]string{q.Segments, strings.Split(q.RawPath, "/")} {
+			for _, sg := range segs {
+				if sg == "" {
+					continue
+				}
+				if ex, ok := try(sg); ok {
+					return "path", "", ex, sg, true
+				}
 			}
 		}
 	}
-	return "", "", "", false
+	return "", "", "", "", false
 }
 
 // rawOf is what the request sent in part, as logged.

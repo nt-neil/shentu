@@ -3,8 +3,17 @@
 [繁體中文](attack-detection-limits.zh-TW.md)
 
 v0.4.0 ships 27 attack signatures, and they are not extended to catch rewritten forms of an attack.
-The cases below are known misses. Each one can only cost an alert: Shentu misses the request or rates it lower.
-None of them can make Shentu block an address. v0.4.0 never blocks on its own. A block always needs the operator's confirmation and a verified client address.
+The cases below are known misses. A miss only costs an alert: Shentu misses the request or rates it lower. None of them can make Shentu block the wrong address.
+v0.4.0 never blocks on its own: `block_ip` always needs the operator's confirmation. In this tree the check that the evidence is verified covers SSH login evidence only. The gate that keeps unverified web logs from backing a block comes with P5 (#91).
+
+## What is never seen
+
+- **Linux only.** Attack detection reads Linux hosts' logs only.
+- **Standard log formats only.** Only nginx's and Apache's standard access log formats are read. A format with `escape=none` or a custom time format is refused.
+- **No request bodies.** Access logs do not record POST bodies, JSON or uploads, so a payload there is never seen. A route reached that way is L1 at most.
+- **Two decoding rounds.** URL encoding is decoded at most twice (with `%u` and overlong UTF-8). Base64, gzip and other encodings are not decoded.
+- **Unknown requests are counted, and L1 is not pushed.** A request Shentu cannot judge is only counted. L1 attempts are not sent as alerts.
+- **Unverified logs never back a block.** A log Shentu cannot verify (one the web user can write to, for example) is said so in the alert, and it is not a basis for blocking.
 
 ## Requests that may be missed
 
@@ -19,10 +28,18 @@ None of them can make Shentu block an address. v0.4.0 never blocks on its own. A
   - a command outside the short list the signature names;
   - a command name split by quotes.
 - **Log4Shell lookups written differently or sent elsewhere.** A lookup built from nested lookups may not match. So may one sent in the Referer header, which is not checked.
-- **Deserialization payloads written differently.** A PHP serialized object with a sign before its length, or a custom-serialized one, may not match. The Java serialized-bytes signature never matches, because lower-casing the request text changes those bytes.
-- **Other PHP stream wrappers.** File parameters that use a wrapper the signature does not list (such as data, glob or compression wrappers) may not match.
+- **Deserialization payloads written differently.**
+  - A PHP serialized object with a sign before its length, or a custom-serialized one, may not match.
+  - For Java, the branch for raw serialized bytes never matches, because the request text is lower-cased first. The base64 and hex forms still match.
+- **Other PHP stream wrappers.** The signature covers `php://filter`, `php://input`, base64 `data:`, `expect://` and `zip://`. Other wrappers (such as `glob://`, `compress.zlib://` or `phar://`) and `data:` without base64 do not match.
 - **Flarum's open redirect (composer-cves) without slashes.** A redirect target written as a scheme and a colon, with no `//`, may not match, though browsers still leave the site for it.
+- **Flarum under a directory with a dot.** Flarum's logout route is anchored: only directories, or `index.php` right before it, may come first. Flarum mounted under a directory whose name has a dot (such as `/v1.2/`) is missed.
+- **An encoded `/` in a route parameter.** Routes are matched on the decoded path. A request whose route parameter holds an encoded `/` (such as `/files/:name`) does not reach the route, unless the route takes several segments.
 - **WordPress plugins.** There are no signatures for particular WordPress plugin vulnerabilities. A request against an installed vulnerable plugin is seen only if a generic class signature catches it, and then it is not tied to that plugin's CVE.
+
+## Parameter names and path segments
+
+Class signatures are tried on parameter names and on each path segment too, so ordinary traffic has more text that can match. A name or a segment that happens to hold a class signature's text is listed as noise. A path segment counts toward L2 only where a route's placeholder took that segment.
 
 ## Narrowed to spare ordinary text
 
@@ -36,13 +53,21 @@ The cost is misses. A call with a space before its parenthesis is caught only wh
 
 ## Measured detection
 
-Measured with the evaluation tool (`tools/detecteval`, PR #94) at detect-eval bfb6d75, then rerun at 8f4d496 with the same result. Both runs use the 27 built-in signatures.
+The numbers come from the evaluation tool (`tools/detecteval`, PR #94) at detect-eval 8f4d496, using the signatures of detect-p5 6c54200. They do not include this branch's changes (parameter names, path segments, anchored routes, the three narrowed signatures). They will be measured again once #87, #90 and #91 are in integ.
+
+What they mean:
+
+- **"Detected"**: a signature of the same class matched the request line a template converts to. It is not an alert, and not an L2 on a host.
+- **"False alert"**: an ordinary request matched any signature other than a scanner's.
+- **The samples are synthetic**: requests converted from nuclei templates, and requests generated with a fixed seed. They are not real traffic.
+
+The results:
 
 - **All templates: 36.4% detected (1390 of 3819).**
   - Source: nuclei-templates v10.5.2 (commit 5442582a), the 11835 templates under `http/`.
   - Templates the tool could not convert (1147), unclassified ones (6618) and `rce-unspecified` ones (251) are not counted.
 - **Ordinary traffic: no false alerts in 1216 requests.**
-  - The requests are 8 generated with a fixed seed for each of 152 routes of 8 applications (WordPress, Django, Flask, Laravel, Express, Immich, Nest, Next).
+  - The requests are 8 for each of 152 routes of 8 applications (WordPress, Django, Flask, Laravel, Express, Immich, Nest, Next).
   - With this sample size, the false-alert rate can only be said to be below about 0.25% (95% upper bound).
 - **Templates for a vulnerability the host really has: 3 of 10 alerted.** Each row is what `-explain-host` reports.
 
@@ -51,7 +76,7 @@ Measured with the evaluation tool (`tools/detecteval`, PR #94) at detect-eval bf
 | CVE-2017-9841 | L1 | Has its own signature. The payload is in the request body, which access logs do not record, so it reaches L1 only. |
 | CVE-2021-3129 | L1 | Has its own signature. The payload is in the body, so L1 only. |
 | CVE-2024-21641 | L2 | Has its own signature. |
-| CVE-2021-21315 | none | No signature of its own. A class signature matched the path, but its class is not this CVE's (cmdi), so it is noise. |
+| CVE-2021-21315 | none | No signature of its own. A class signature matched the path, but class signatures are never tied to a package's CVE, whatever their class, so it is noise. |
 | CVE-2021-23337 | none | No signature of its own. The payload is in the body. |
 | CVE-2022-29078 | none | No signature of its own, and no class signature matched. |
 | CVE-2023-0297 | none | No signature of its own. The payload is in the body. |

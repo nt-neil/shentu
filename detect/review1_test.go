@@ -34,7 +34,8 @@ license = "Apache-2.0"
 [[signature.route]]
 path = "/marker/route"
 [[signature.match]]
-part = "any_param"
+part = "param"
+param = "a"
 contains = ["marker-one"]
 
 [[signature]]
@@ -591,6 +592,82 @@ func TestAnchoredLongPath(t *testing.T) {
 		}
 		if g := NewJudge(s, ss).Judge(m.Match(q)); len(g.Candidates) != 0 {
 			t.Errorf("padded %s…%s: %+v", p[:20], p[len(p)-20:], g.Candidates)
+		}
+	}
+}
+
+// Review 2 of #87, N-1: a hit in a path segment is L2 only where the
+// route's placeholder took that segment; a mount prefix or the route's
+// own words leave the entry at L1, the hit unanchored. N-2: the
+// segments are split as sent, then decoded, so an encoded / stays in
+// its value.
+func TestSegmentHitNeedsPlaceholder(t *testing.T) {
+	ss := loadSigs(t, markerSigs+`
+[[signature]]
+id = "slash-marker"
+title = "a marker with a slash"
+class = "path"
+source = "shentu"
+license = "Apache-2.0"
+[[signature.match]]
+part = "any_param"
+contains = ["shentu-marker/y"]
+`)
+	m := NewMatcher(ss)
+	route := func(rule, cwe, pattern string) []CodeSink {
+		return []CodeSink{{Rule: rule, CWE: cwe, Severity: "critical", Path: "a.js", Line: 1,
+			Routes: []engine.RouteRef{{Model: "m", Framework: "express", Method: "get", Pattern: pattern, File: "a.js", Line: 1}}}}
+	}
+	for _, c := range []struct {
+		sinks      []CodeSink
+		path, want string
+	}{
+		{route("js-sqli", "CWE-89", "/search"), "/marker-one/search", LevelRoute},     // the mount prefix
+		{route("js-sqli", "CWE-89", "/marker-one/:id"), "/marker-one/42", LevelRoute}, // the route's own word
+		{route("js-sqli", "CWE-89", "/user/:id"), "/user/marker-one", LevelPayload},
+		{route("js-path", "CWE-22", "/files/*"), "/files/shentu-marker%2Fy", LevelPayload},
+	} {
+		g := NewJudge(Build(c.sinks, nil), ss).Judge(m.Match(Normalize(AccessRecord{Method: "GET", Path: c.path})))
+		if len(g.Candidates) != 1 || g.Candidates[0].Level != c.want {
+			t.Errorf("%s: %+v, want %s", c.path, g, c.want)
+			continue
+		}
+		if c.want == LevelRoute && len(g.Unanchored) != 1 {
+			t.Errorf("%s: the hit not unanchored: %+v", c.path, g)
+		}
+	}
+}
+
+// Review 2 of #87, N-3 and S-4: index.php only right before an anchored
+// route; and the route is taken from the path as decoded, not as
+// cleanPath reads it (; parameters, trailing dots, an encoded /,
+// PATH_INFO).
+func TestAnchoredPlainPath(t *testing.T) {
+	ss, err := sig.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := NewMatcher(ss)
+	s := Build(nil, []PackageVuln{{Source: "/srv/composer.lock", Ecosystem: "Packagist", Package: "flarum/core", Version: "1.8.4", ID: "CVE-2024-21641"}})
+	for _, c := range []struct {
+		path string
+		want int
+	}{
+		{"/app/index.php/x/logout", 0},
+		{"/index.php/x/logout", 0},
+		{"/index.php/index.php/logout", 0},
+		{"/a;.b/logout", 0},
+		{"/x%2Flogout", 0},
+		{"/logout.", 0},
+		{"/logout;x", 0},
+		{"/logout/x", 0},
+		{"/index.php/logout", 1},
+		{"/forum/index.php/logout", 1},
+		{"/forum/logout", 1},
+	} {
+		g := NewJudge(s, ss).Judge(m.Match(Normalize(AccessRecord{Method: "GET", Path: c.path, Query: "return=https%3A%2F%2Fexample.org%2F"})))
+		if len(g.Candidates) != c.want {
+			t.Errorf("%s: %+v, want %d candidate(s)", c.path, g.Candidates, c.want)
 		}
 	}
 }

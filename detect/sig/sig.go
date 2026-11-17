@@ -14,6 +14,7 @@ import (
 	"path"
 	"regexp"
 	"regexp/syntax"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -195,6 +196,10 @@ func (s *Signature) check() error {
 		return fmt.Errorf("neither a route nor a match: it would match every request")
 	case len(s.Matches) > MaxMatches || len(s.Routes) > MaxRoutes:
 		return fmt.Errorf("more than %d matches or %d routes", MaxMatches, MaxRoutes)
+	case len(s.Routes) > 0 && slices.ContainsFunc(s.Matches, func(m Match) bool { return m.Part == "any_param" }):
+		// any_param tries the path's segments too: the route's own words
+		// would match it (review 2 of #87, S-3).
+		return fmt.Errorf("a route and an any_param match: name the parameter (part param)")
 	}
 	switch s.Source {
 	case "shentu":
