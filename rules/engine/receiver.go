@@ -170,6 +170,11 @@ func (a *analysis) recvSurely(ps []*pat, recv []Token) bool {
 	if len(t) != 1 || t[0].Kind != Var {
 		return false
 	}
+	for _, p := range ps {
+		if len(p.toks) == 1 && p.toks[0].Kind == Var && p.toks[0].Text == t[0].Text {
+			return true // not_receiver names the object itself: $wpdb
+		}
+	}
 	if a.rcls == nil {
 		a.rcls = recvClasses(a.ftoks)
 	}

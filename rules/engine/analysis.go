@@ -2267,6 +2267,9 @@ func (a *analysis) sinkWith(st state, t []Token, i int, s *pat, cond *argCond) b
 	if lr := a.expandLits(st, region); cond != nil && (len(cond.when) > 0 && !a.when(cond.when, lr) || a.unlessIn(st, cond, lr)) {
 		return false
 	}
+	if cond != nil && len(cond.unlessAfter) > 0 && a.onlyAfter(st, cond.unlessAfter, region) {
+		return false // "... ORDER BY $col": another rule's, at that text (unless_after)
+	}
 	if cond != nil && len(cond.unlessCT) > 0 && contentTypeSet(st, cond.unlessCT) {
 		return false // a Server-Sent Events stream: EventSource reads it as text
 	}

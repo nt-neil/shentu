@@ -7,7 +7,8 @@ title = "Request input formatted into a SQL string passed to a DB-API cursor"
 frameworks = ["flask", "django"]
 sources = ["request.args", "request.form", "request.values", "request.json", "request.GET", "request.POST", "request.query_params", "request.path_params", "request.form(", "request.json(", "request.body(", "request.query", "request.match_info", "request.post(", "request.text(", "request.read(", "self.get_argument(", "self.get_arguments(", "self.get_query_argument(", "self.get_body_argument(", "self.request.body", "self.request.arguments"]
 sinks = [".execute(", ".executemany(", ".executescript("]
-sanitizers = ["int("]
+# text() and literal_column() are SQLAlchemy's, python-sqli-sqlalchemy-text's
+sanitizers = ["int(", "text(", "literal_column("]
 fix = "Pass values as the second argument of execute() with the driver's placeholder (%s or ?); never use f-strings, % or .format() to build SQL."
 refs = ["CVE-2026-10105", "CVE-2022-41892"]
 

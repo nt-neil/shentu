@@ -5,8 +5,10 @@ cwe = "CWE-89"
 severity = "high"
 title = "Request input formatted into sqlalchemy text() or a raw SQL string"
 frameworks = ["flask"]
-sources = ["request.args", "request.form", "request.json", "request.values"]
-sinks = ["text(", "literal_column(", ".execute("]
+# python-sqli-dbapi-format's sources: SQL text in text() is this rule's, SQL
+# text passed to execute() as such that rule's.
+sources = ["request.args", "request.form", "request.values", "request.json", "request.GET", "request.POST", "request.query_params", "request.path_params", "request.form(", "request.json(", "request.body(", "request.query", "request.match_info", "request.post(", "request.text(", "request.read(", "self.get_argument(", "self.get_arguments(", "self.get_query_argument(", "self.get_body_argument(", "self.request.body", "self.request.arguments"]
+sinks = ["text(", "literal_column("]
 sanitizers = [".bindparams(", "int("]
 fix = "Use text() with :name placeholders and pass values separately; for column names use getattr on the model against an allowlist, never literal_column on input."
 refs = ["CVE-2026-26198"]

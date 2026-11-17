@@ -22,10 +22,11 @@ sinks = ["->exec(", "->multi_query(", "->real_query("]
 arg = 1
 
 # WordPress's *_Query classes: query() takes an arguments array, not SQL.
+# $wpdb->query( is php-sqli-wpdb-unprepared's.
 [[args]]
 sinks = ["->query("]
 arg = 1
-not_receiver = ["WP_Query", "WP_Comment_Query", "WP_User_Query", "WP_Term_Query", "WP_Site_Query", "WP_Network_Query"]
+not_receiver = ["WP_Query", "WP_Comment_Query", "WP_User_Query", "WP_Term_Query", "WP_Site_Query", "WP_Network_Query", "$wpdb"]
 
 [[args]]
 sinks = ["mysqli_query", "mysqli_multi_query(", "mysqli_real_query("]

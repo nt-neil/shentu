@@ -169,8 +169,8 @@ func checkText(t *testing.T, r Rule) {
 func checkArgs(t *testing.T, r Rule) {
 	covered := map[string]bool{}
 	for i, a := range r.Args {
-		if a.Arg == nil && len(a.When) == 0 && len(a.Unless) == 0 && !a.Whole && !a.Leading && len(a.Context) == 0 && !a.Literal && a.Key == "" && !a.Keys && len(a.Receiver) == 0 && len(a.NotReceiver) == 0 {
-			t.Errorf("%s: args %d sets none of arg, when, unless, whole, leading, context, literal, key, keys, receiver, not_receiver", r.File, i)
+		if a.Arg == nil && len(a.When) == 0 && len(a.Unless) == 0 && !a.Whole && !a.Leading && len(a.Context) == 0 && !a.Literal && a.Key == "" && !a.Keys && len(a.Receiver) == 0 && len(a.NotReceiver) == 0 && len(a.UnlessAfter) == 0 {
+			t.Errorf("%s: args %d sets none of arg, when, unless, whole, leading, context, literal, key, keys, receiver, not_receiver, unless_after", r.File, i)
 		}
 		if a.UnlessAt != "" && (a.UnlessAt != "start" && a.UnlessAt != "top" || len(a.Unless) == 0) {
 			t.Errorf("%s: args %d: unless_at must be start or top, with unless", r.File, i)

@@ -100,6 +100,7 @@ type argCond struct {
 	unlessImports  []string // nor in a file importing one of these modules (imports.go)
 	importsNot     []string // ... unless the file or the receiver names one of these
 	unlessSub      []*pat   // the argument does not count when it is one item of one of these (request.files["f"])
+	unlessAfter    []*pat   // text patterns: nor when all the input in it comes after one of these (unlessafter.go)
 }
 
 // New compiles rules. A pattern that does not lex as code of its language is an error.
@@ -216,6 +217,13 @@ func compileRule(r rules.Rule) (*crule, error) {
 			ac.context = append(ac.context, cs...)
 		}
 		c.leading = c.leading || a.Leading
+		for _, raw := range a.UnlessAfter {
+			p, err := compilePattern(r.Lang, raw, true)
+			if err != nil {
+				return nil, err
+			}
+			ac.unlessAfter = append(ac.unlessAfter, p)
+		}
 		for _, list := range []struct {
 			raw []string
 			out *[]*pat

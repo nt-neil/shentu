@@ -86,8 +86,14 @@ type Args struct {
 	// NotReceiver: a method sink does not count on an object surely made by
 	// one of these classes: new Class(...), or a name every assignment of the
 	// file gives such an object ($q = new WP_Query; $q->query($args)). A
-	// receiver the file says nothing about still counts.
+	// receiver the file says nothing about still counts. An entry written as a
+	// variable ($wpdb) names the object itself: WordPress's global wpdb.
 	NotReceiver []string `toml:"not_receiver"`
+	// UnlessAfter: the SQL text (or other text) does not count when every
+	// value from the input in it comes after one of these texts (any case)
+	// in a string written in the call: "... ORDER BY $col" is
+	// php-sqli-orderby-identifier's, which reports it at that text.
+	UnlessAfter []string `toml:"unless_after"`
 	// UnlessAt narrows where unless looks: "start", only at the start of the
 	// argument (arg, or the first): a Server-Sent Events line "data: " + x;
 	// "top", only as an element or key of the argument itself (arg, or any
