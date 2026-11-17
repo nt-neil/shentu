@@ -1,3 +1,4 @@
 /dist/
 /shentu
 __pycache__/
+/tools/detecteval/detecteval
