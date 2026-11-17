@@ -75,6 +75,9 @@ func (a *analysis) setURLOf(st state, key string, rhs []Token, plain bool) {
 	if _, ok := urlParses[a.lang()]; !ok {
 		return
 	}
+	if rk, _, ok := a.pathKey(stripParens(rhs)); ok && rk == key && plain {
+		return // u = u: the same object
+	}
 	delete(st, urlKey+key)
 	if !plain {
 		return
@@ -171,6 +174,33 @@ func (a *analysis) urlCallsStmt(st state, t []Token) {
 	}
 	// a URL written into an object or array ({ target: u }, [u]) goes where
 	// it may be changed through that literal
+	// u used as a value in any other way than a member read (u.hostname), a
+	// whole argument (handled below), the whole right side (w = u: an alias)
+	// or the target (u = ...) may now be held by another name (a1 = u || null,
+	// c ? u : w, return u), which the analysis does not follow
+	for i, tk := range t {
+		if tk.Kind != Ident || i > 0 && (memberOp(false, t[i-1]) || t[i-1].op("?.")) {
+			continue
+		}
+		if _, parsed := st[urlKey+tk.Text]; !parsed {
+			continue
+		}
+		var prev, next Token
+		if i > 0 {
+			prev = t[i-1]
+		}
+		if i+1 < len(t) {
+			next = t[i+1]
+		}
+		switch {
+		case next.op(".") || next.op("?.") || next.op("["), // u.hostname, u['host']
+			next.op("=") || next.op("+="), // u = ..., written by assign
+			(prev.op("(") || prev.op(",")) && (next.op(")") || next.op(",")) && callArg(t, i), // f(u)
+			prev.op("=") && i == len(t)-1 || prev.op("=") && next.op(";"):                     // w = u
+			continue
+		}
+		a.urlChanged(st, tk.Text, val{}, true)
+	}
 	var lit []bool // per open bracket: an object or array written out
 	in := 0        // how many of them hold the token
 	for i, tk := range t {
@@ -225,6 +255,23 @@ func (a *analysis) urlCallsStmt(st state, t []Token) {
 			a.urlChanged(st, key, v, !write)
 		}
 	}
+}
+
+// callArg reports whether t[i] is directly inside a call's parentheses.
+func callArg(t []Token, i int) bool {
+	depth := 0
+	for j := i - 1; j >= 0; j-- {
+		switch {
+		case isClose(t[j]):
+			depth++
+		case isOpen(t[j]):
+			if depth == 0 {
+				return t[j].op("(") && j > 0 && (t[j-1].Kind == Ident || t[j-1].op(")"))
+			}
+			depth--
+		}
+	}
+	return false
 }
 
 // literalOpen reports whether the { or [ at t[i] starts an object or array

@@ -162,7 +162,9 @@ How the engine reads them:
     than the rule's sinks may be changed there (`setHost(u, v)`), so the check
     ends and u holds again the input it held before it; this also ends it for a
     call that only reads u (`log(u)`), which reports more than it must. So does
-    a URL written into an object or array (`{ target: u }`, `[u]`). Only a
+    a URL written into an object or array (`{ target: u }`, `[u]`), or used as
+    a value in any other way than a member read, a whole argument or the whole
+    right side of an assignment (`a1 = u || null`, `c ? u : w`, `return u`). Only a
     plain name holds a checked URL (not `this.u`), only one no function written
     inside another uses without binding it itself (a closure or callback that
     reads or changes u, whenever it runs: `() => { u.host = v }`,
