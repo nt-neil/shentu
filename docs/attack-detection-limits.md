@@ -9,11 +9,11 @@ v0.4.0 never blocks on its own: `block_ip` always needs the operator's confirmat
 ## What is never seen
 
 - **Linux only.** Attack detection reads Linux hosts' logs only.
-- **Standard log formats only.** Only nginx's and Apache's standard access log formats are read. A format with `escape=none` or a custom time format is refused.
+- **Some log formats are refused.** nginx's and Apache's access logs are read, custom formats from their configuration included. A format with a field Shentu does not support, with `escape=none` or with a custom time format is refused.
 - **No request bodies.** Access logs do not record POST bodies, JSON or uploads, so a payload there is never seen. A route reached that way is L1 at most.
 - **Two decoding rounds.** URL encoding is decoded at most twice (with `%u` and overlong UTF-8). Base64, gzip and other encodings are not decoded.
-- **Unknown requests are counted, and L1 is not pushed.** A request Shentu cannot judge is only counted. L1 attempts are not sent as alerts.
-- **Unverified logs never back a block.** A log Shentu cannot verify (one the web user can write to, for example) is said so in the alert, and it is not a basis for blocking.
+- **Unknown requests are counted, and L1 is not pushed (needs #91).** A request Shentu cannot judge is only counted. L1 attempts are not sent as alerts. This tree does not have that code yet; it holds once #91 is in.
+- **Unverified logs never back a block (needs #91).** A log Shentu cannot verify (one the web user can write to, for example) is said so in the alert, and it is not a basis for blocking. This holds once #91 is in.
 
 ## Requests that may be missed
 
@@ -31,7 +31,7 @@ v0.4.0 never blocks on its own: `block_ip` always needs the operator's confirmat
 - **Deserialization payloads written differently.**
   - A PHP serialized object with a sign before its length, or a custom-serialized one, may not match.
   - For Java, the branch for raw serialized bytes never matches, because the request text is lower-cased first. The base64 and hex forms still match.
-- **Other PHP stream wrappers.** The signature covers `php://filter`, `php://input`, base64 `data:`, `expect://` and `zip://`. Other wrappers (such as `glob://`, `compress.zlib://` or `phar://`) and `data:` without base64 do not match.
+- **Other PHP stream wrappers.** The signature covers `php://filter`, `php://input`, base64 `data:`, `expect://` and `zip://`. Other wrappers (such as `glob://` or `compress.zlib://`) and `data:` without base64 do not match. `phar://` is not in this signature, but the deserialization signature matches a value that starts with it.
 - **Flarum's open redirect (composer-cves) without slashes.** A redirect target written as a scheme and a colon, with no `//`, may not match, though browsers still leave the site for it.
 - **Flarum under a directory with a dot.** Flarum's logout route is anchored: only directories, or `index.php` right before it, may come first. Flarum mounted under a directory whose name has a dot (such as `/v1.2/`) is missed.
 - **An encoded `/` in a route parameter.** Routes are matched on the decoded path. A request whose route parameter holds an encoded `/` (such as `/files/:name`) does not reach the route, unless the route takes several segments.
@@ -39,17 +39,27 @@ v0.4.0 never blocks on its own: `block_ip` always needs the operator's confirmat
 
 ## Parameter names and path segments
 
-Class signatures are tried on parameter names and on each path segment too, so ordinary traffic has more text that can match. A name or a segment that happens to hold a class signature's text is listed as noise. A path segment counts toward L2 only where a route's placeholder took that segment.
+Class signatures are tried on parameter names and on each path segment too, so ordinary traffic has more text that can match.
+
+- A hit in a parameter name counts like one in its value: on a route of the same class it is L2.
+- A hit in a path segment is L2 only where a route's placeholder took that segment. Otherwise the route stays at L1 and the hit is unanchored.
+- For a route written as a regular expression, its capture groups are the placeholders. A route with no group leaves a path segment hit at L1. A fixed word inside a group (such as `(user|list)`) is taken as a placeholder value, so a hit in that word is L2.
 
 ## Narrowed to spare ordinary text
 
-Three class signatures were narrowed so that ordinary text no longer matches them:
+Three class signatures were narrowed so that the three forms listed below no longer match them:
 
 - a common word followed by a space and a parenthesis, such as "system (";
 - a quote, a space and a double dash, as in a search;
 - a semicolon followed by "id" and more words.
 
-The cost is misses. A call with a space before its parenthesis is caught only when its argument looks like code (a quote, `$` or another call). A comment after a space following the quote is caught only when it ends the value. `id` run with arguments after a separator is not caught.
+Ordinary text of other forms still matches, for example:
+
+- a word, a space and a parenthesis holding a quote or another parenthesis;
+- a value ending in a quote and `--`;
+- a semicolon followed by a short command name.
+
+The cost is misses. A call with a space before its parenthesis is caught only when its argument looks like code (a quote, `$` or another call). After the quote, only `--` must end the value when a space comes first; `#` and `/*` are still caught after a space. `id` after a separator is not caught when arguments or a quote follow it.
 
 ## Measured detection
 

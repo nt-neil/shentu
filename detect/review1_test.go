@@ -1,6 +1,8 @@
 package detect
 
 import (
+	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -559,6 +561,22 @@ func TestClassesNarrowed(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := NewMatcher(ss)
+	// The three regexes before they were narrowed (ca27a97^): each text
+	// below matched there, so the test shows the narrowing, not a text
+	// that never matched.
+	before := map[string]*regexp.Regexp{
+		"code-eval-call":       regexp.MustCompile(`\b(?:eval|assert|system|passthru|shell_exec|proc_open|popen|create_function|call_user_func(?:_array)?|base64_decode|gzinflate|str_rot13)\s*\(|__import__\s*\(|\bruntime\.getruntime\(\)\.exec|\bprocessbuilder\b`),
+		"sqli-quote-comment":   regexp.MustCompile(`['"]\s*\)*\s*(?:--[\s-]|#|/\*)`),
+		"cmdi-chained-command": regexp.MustCompile("(?:[;&|`\n]|\\$\\()\\s*(?:id|whoami|uname(?:\\s+-a)?|hostname|cat\\s+/etc/\\w+|wget\\s+\\S|curl\\s+\\S|nc\\s+-\\w|ncat\\s|bash\\s+-[ci]|sh\\s+-c|ping\\s+-c\\s*\\d|nslookup\\s+\\S|powershell\\b|cmd(?:\\.exe)?\\s+/c)\\b"),
+	}
+	hits := func(id, query string) bool {
+		for _, h := range m.Match(Normalize(AccessRecord{Method: "GET", Path: "/search", Query: query})).Hits {
+			if h.Signature == id {
+				return true
+			}
+		}
+		return false
+	}
 	for _, c := range []struct{ id, query string }{
 		{"code-eval-call", "q=file+system+(ext4)"},
 		{"code-eval-call", "q=we+will+eval+(and+decide)+later"},
@@ -567,10 +585,28 @@ func TestClassesNarrowed(t *testing.T) {
 		{"cmdi-chained-command", "q=tom;+id+card"},
 		{"cmdi-chained-command", "q=cats+%26%26+id+photos"},
 	} {
-		for _, h := range m.Match(Normalize(AccessRecord{Method: "GET", Path: "/search", Query: c.query})).Hits {
-			if h.Signature == c.id {
-				t.Errorf("%s: matched %s (%q)", c.query, c.id, h.Excerpt)
-			}
+		v, err := url.QueryUnescape(strings.TrimPrefix(c.query, "q="))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !before[c.id].MatchString(strings.ToLower(v)) {
+			t.Errorf("%s: did not match %s before the narrowing either", c.query, c.id)
+		}
+		if hits(c.id, c.query) {
+			t.Errorf("%s: matched %s", c.query, c.id)
+		}
+	}
+	// The forms 784fa50 kept (review 3 of #87, S-4), in ordinary text:
+	// they still match.
+	for _, c := range []struct{ id, query string }{
+		{"code-eval-call", "q=file+system+(%27ext4%27)"}, // a quote after the (
+		{"code-eval-call", "q=we+will+eval+(plan(b))"},   // another call after the (
+		{"sqli-quote-comment", "q=say+%27hi%27+--+"},     // -- ending the value
+		{"cmdi-chained-command", "q=tom;+id+%23note"},    // id, then a comment
+		{"cmdi-chained-command", "q=tom;+id+2%3Enotes"},  // id, then a redirection
+	} {
+		if !hits(c.id, c.query) {
+			t.Errorf("%s: no longer matches %s", c.query, c.id)
 		}
 	}
 }
@@ -632,6 +668,10 @@ contains = ["shentu-marker/y"]
 		// The segment as cleanPath reads it, as the route was matched.
 		{route("js-sqli", "CWE-89", "/user/:id"), "/user/marker-one;x", LevelPayload},
 		{route("js-sqli", "CWE-89", "/user/:id"), "/user/marker-one.", LevelPayload},
+		// Review 3, N-1': the marker is in a ; parameter of the mount
+		// prefix; cleaned, that segment is 42, the placeholder's value,
+		// but the marker is gone from it.
+		{route("js-sqli", "CWE-89", "/user/:id"), "/42;marker-one/user/42", LevelRoute},
 	} {
 		g := NewJudge(Build(c.sinks, nil), ss).Judge(m.Match(Normalize(AccessRecord{Method: "GET", Path: c.path})))
 		if len(g.Candidates) != 1 || g.Candidates[0].Level != c.want {
@@ -641,6 +681,12 @@ contains = ["shentu-marker/y"]
 		if c.want == LevelRoute && len(g.Unanchored) != 1 {
 			t.Errorf("%s: the hit not unanchored: %+v", c.path, g)
 		}
+	} // Review 3, S (N-2): a single-segment placeholder does not take an
+	// encoded / (the route is matched on the decoded path), as the limits
+	// say: no candidate.
+	sinks := route("js-path", "CWE-22", "/files/:name")
+	if g := NewJudge(Build(sinks, nil), ss).Judge(m.Match(Normalize(AccessRecord{Method: "GET", Path: "/files/shentu-marker%2Fy"}))); len(g.Candidates) != 0 {
+		t.Errorf("/files/:name with %%2F: %+v, want none", g)
 	}
 }
 
