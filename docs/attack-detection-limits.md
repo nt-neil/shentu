@@ -35,6 +35,7 @@ v0.4.0 never blocks on its own: `block_ip` always needs the operator's confirmat
 - **Flarum's open redirect (composer-cves) without slashes.** A redirect target written as a scheme and a colon, with no `//`, may not match, though browsers still leave the site for it.
 - **Flarum under a directory with a dot.** Flarum's logout route is anchored: only directories, or `index.php` right before it, may come first. Flarum mounted under a directory whose name has a dot (such as `/v1.2/`) is missed.
 - **An encoded `/` in a route parameter.** Routes are matched on the decoded path. A request whose route parameter holds an encoded `/` (such as `/files/:name`) does not reach the route, unless the route takes several segments.
+- **A `;` parameter in a route parameter's value.** A placeholder's value is taken from the path after `;` parameters are cleaned away, so a hit in a segment that carries one (such as `/user/:id` with `/user/42;…`) is L1 only. The hit is still listed as unanchored.
 - **WordPress plugins.** There are no signatures for particular WordPress plugin vulnerabilities. A request against an installed vulnerable plugin is seen only if a generic class signature catches it, and then it is not tied to that plugin's CVE.
 
 ## Parameter names and path segments
@@ -55,8 +56,8 @@ Three class signatures were narrowed so that the three forms listed below no lon
 
 Ordinary text of other forms still matches, for example:
 
-- a word, a space and a parenthesis holding a quote or another parenthesis;
-- a value ending in a quote and `--`;
+- one of the function names the signature lists, a space and a parenthesis whose content starts with a quote, `$` or another call (a parenthesis inside a parenthesis alone does not match);
+- a value ending in a quote, `--` and at least one more space or `-`;
 - a semicolon followed by a short command name.
 
 The cost is misses. A call with a space before its parenthesis is caught only when its argument looks like code (a quote, `$` or another call). After the quote, only `--` must end the value when a space comes first; `#` and `/*` are still caught after a space. `id` after a separator is not caught when arguments or a quote follow it.

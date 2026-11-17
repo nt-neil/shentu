@@ -600,10 +600,11 @@ func TestClassesNarrowed(t *testing.T) {
 	// they still match.
 	for _, c := range []struct{ id, query string }{
 		{"code-eval-call", "q=file+system+(%27ext4%27)"}, // a quote after the (
-		{"code-eval-call", "q=we+will+eval+(plan(b))"},   // another call after the (
-		{"sqli-quote-comment", "q=say+%27hi%27+--+"},     // -- ending the value
-		{"cmdi-chained-command", "q=tom;+id+%23note"},    // id, then a comment
-		{"cmdi-chained-command", "q=tom;+id+2%3Enotes"},  // id, then a redirection
+		{"code-eval-call", "q=we+will+eval+(plan(b))"},
+		{"code-eval-call", "q=file+system+($home)"},     // a $ after the (   // another call after the (
+		{"sqli-quote-comment", "q=say+%27hi%27+--+"},    // -- ending the value
+		{"cmdi-chained-command", "q=tom;+id+%23note"},   // id, then a comment
+		{"cmdi-chained-command", "q=tom;+id+2%3Enotes"}, // id, then a redirection
 	} {
 		if !hits(c.id, c.query) {
 			t.Errorf("%s: no longer matches %s", c.query, c.id)
