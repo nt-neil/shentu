@@ -591,6 +591,14 @@ func matchOne(mt sig.Match, q Request) (part, param, excerpt string, segments []
 						first = ex
 					}
 					held = append(held, sg)
+					// The route is matched on the cleaned path: the segment
+					// as cleanPath reads it counts only if it still holds
+					// (review 3 of #87, N-1': "42;x" must not count as "42").
+					if cs := cleanSegment(sg); cs != sg && cs != "" && !slices.Contains(held, cs) {
+						if _, ok := try(cs); ok {
+							held = append(held, cs)
+						}
+					}
 				}
 			}
 		}

@@ -244,13 +244,14 @@ func stripAnchors(expr string) (string, error) {
 }
 
 // placeholderTook says whether one of a route's placeholder values holds
-// one of the path segments whole, as sent or as cleanPath reads it (the
-// route is matched on the cleaned path).
+// one of the path segments whole. The segments are the ones the hit held
+// in, cleaned ones included only where the hit still holds after cleaning
+// (matchOne).
 func placeholderTook(vals, segs []string) bool {
 	for _, v := range vals {
 		v = "/" + strings.ToLower(v) + "/"
 		for _, sg := range segs {
-			if v != "//" && (strings.Contains(v, "/"+sg+"/") || strings.Contains(v, "/"+cleanSegment(sg)+"/")) {
+			if v != "//" && strings.Contains(v, "/"+sg+"/") {
 				return true
 			}
 		}
