@@ -84,21 +84,46 @@ func TestRoutesNoteCodeOnly(t *testing.T) {
 // Review 1 of #97, N-1 and S-1: a state saved before sinks were keyed by
 // location keeps its old keys (code:<rule>:<path>:<line>). Loaded, they are
 // the sink's: the campaign counts the sink once, and its old groups and the
-// new one are one group, notified when they were.
+// new one are one group, notified when they were. Review 2: an old Unknown
+// group (no File) is the sink's too; levels and the verified flag stay
+// apart; an overflow group stays one; a key that does not hold together is
+// kept as it is.
 func TestOldSinkKeysLoaded(t *testing.T) {
 	dir := t.TempDir()
 	at := time.Date(2026, 11, 17, 12, 0, 0, 0, time.UTC)
+	hour := at.Add(-time.Hour)
 	old := newAttacks()
+	old.Overflow = map[string]*Group{}
 	ip, prefix := "203.0.113.10", "203.0.113.0/24"
 	old.IPs[ip] = &ipRecord{Entries: map[string]time.Time{
-		"code:marker-rule-a:app.py:14": at.Add(-time.Hour),
-		"code:marker-rule-b:app.py:14": at.Add(-time.Hour),
-	}, Last: at.Add(-time.Hour)}
-	for _, r := range []string{"marker-rule-a", "marker-rule-b"} {
-		e := "code:" + r + ":app.py:14"
-		k := groupKey(prefix, e, LevelPayload, true)
-		old.Groups[k] = &Group{Key: k, Prefix: prefix, Entry: e, Level: LevelPayload, File: "app.py", Line: 14, First: at.Add(-time.Hour), Last: at.Add(-time.Hour), Count: 1, Severity: "medium", IPs: []string{ip}, IPsSeen: 1, Notified: at.Add(-time.Hour)}
+		"code:marker-rule-a:app.py:14": hour,
+		"code:marker-rule-b:app.py:14": hour,
+	}, Last: hour}
+	put := func(gs map[string]*Group, pfx, entry, file string, line int, level string, verified bool, notified time.Time) *Group {
+		k := groupKey(pfx, entry, level, verified)
+		g := &Group{Key: k, Prefix: pfx, Entry: entry, Level: level, File: file, Line: line, First: hour, Last: hour, Count: 1, Severity: "medium", IPs: []string{ip}, IPsSeen: 1, Unverified: !verified, Notified: notified}
+		if notified.IsZero() {
+			g.Since = 1
+		}
+		gs[k] = g
+		return g
 	}
+	for _, r := range []string{"marker-rule-a", "marker-rule-b"} {
+		put(old.Groups, prefix, "code:"+r+":app.py:14", "app.py", 14, LevelPayload, true, hour)
+	}
+	put(old.Groups, prefix, "code:marker-rule-a:app.py:14", "app.py", 14, LevelRoute, true, time.Time{})
+	put(old.Groups, prefix, "code:marker-rule-a:app.py:14", "app.py", 14, LevelPayload, false, hour)
+	// An Unknown group as v0.4.0 saved it: the hidden sink's entry, no File.
+	u := put(old.Groups, "*", "code:marker-rule-c:app.py:30", "", 0, LevelUnknown, true, time.Time{})
+	u.Count, u.Since = 15, 15
+	for i := range 15 {
+		u.Recent = append(u.Recent, hour.Add(time.Duration(i)*time.Second))
+	}
+	o := put(old.Overflow, PrefixOverflow, "code:marker-rule-a:app.py:40", "app.py", 40, LevelPayload, true, hour)
+	o.IPs, o.Merged = []string{"198.51.100.7"}, 2
+	// Keys that do not hold together are kept as they are.
+	weird := put(old.Groups, "192.0.2.0/24", "code:weird", "app.py", 14, LevelPayload, true, hour).Key
+	other := put(old.Groups, "192.0.2.0/24", "code:marker-rule-a:app.py:60", "other.py", 60, LevelPayload, true, hour).Key
 	if err := old.Save(dir, at); err != nil {
 		t.Fatal(err)
 	}
@@ -112,13 +137,39 @@ func TestOldSinkKeysLoaded(t *testing.T) {
 	if n := len(a.IPs[ip].Entries); n != 1 || g.Campaign {
 		t.Errorf("campaign entries %v (campaign %v): one sink, want 1", a.IPs[ip].Entries, g.Campaign)
 	}
-	if len(a.Groups) != 1 || g.Count != 3 || strings.Join(g.Rules, ",") != "marker-rule-a,marker-rule-b" {
-		t.Errorf("groups %d, group %+v: want one for the sink, count 3, both rules", len(a.Groups), g)
+	if g.Count != 3 || strings.Join(g.Rules, ",") != "marker-rule-a,marker-rule-b" {
+		t.Errorf("group %+v: want the sink's, count 3, both rules", g)
 	}
-	if d := a.Due(at.Add(time.Minute)); len(d) != 0 {
-		t.Errorf("due %d: the sink was notified an hour ago", len(d))
+	for _, k := range []string{groupKey(prefix, "code@app.py:14", LevelRoute, true), groupKey(prefix, "code@app.py:14", LevelPayload, true), groupKey(prefix, "code@app.py:14", LevelPayload, false), weird, other} {
+		if a.Groups[k] == nil {
+			t.Errorf("no group %s", k)
+		}
 	}
-	if gs := a.GroupsOf(ip); len(gs) != 1 || gs[0].Level != LevelPayload || gs[0].Unverified || gs[0].Prefix == PrefixOverflow {
-		t.Errorf("groups of %s: %+v", ip, gs)
+	// The hidden sink: 15 before, 5 now, one group at the threshold.
+	for i := range 5 {
+		a.Add(Attempt{IP: ip, Entry: "code:marker-rule-c:app.py:30", Rules: []string{"marker-rule-c"}, File: "app.py", Line: 30, Level: LevelUnknown, Verified: true}, at.Add(time.Duration(i)*time.Second))
 	}
+	if len(a.Groups) != 6 {
+		t.Errorf("groups %d, want 6: %v", len(a.Groups), keys(a.Groups))
+	}
+	d := a.Due(at.Add(time.Minute))
+	if len(d) != 1 || d[0].Level != LevelUnknown || d[0].Count != 20 {
+		t.Errorf("due %d (%v): want the hidden sink's Unknown group at 20, the others notified an hour ago", len(d), d)
+	}
+	// The overflow group: one, still an overflow summary (never a source's own).
+	ok := a.Overflow[groupKey(PrefixOverflow, "code@app.py:40", LevelPayload, true)]
+	if len(a.Overflow) != 1 || ok == nil || ok.Merged != 2 {
+		t.Errorf("overflow %v", keys(a.Overflow))
+	}
+	if gs := a.GroupsOf("198.51.100.7"); len(gs) != 1 || gs[0].Prefix != PrefixOverflow {
+		t.Errorf("groups of the overflow's address: %+v", gs)
+	}
+}
+
+func keys(gs map[string]*Group) []string {
+	var out []string
+	for k := range gs {
+		out = append(out, k)
+	}
+	return out
 }

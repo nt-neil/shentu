@@ -239,13 +239,28 @@ func oldSinkKey(e string) string {
 
 // loadGroup puts g in gs under its sink's key: a group saved before sinks
 // were keyed by location is merged into its sink's, which keeps the later
-// notice. The key keeps its prefix, level and verified flag.
+// notice. The key keeps its prefix, level and verified flag. An old Unknown
+// group has no File: its entry gives it. A group whose entry, File and Line
+// do not name the same sink is kept as it is.
 func loadGroup(gs map[string]*Group, k string, g *Group) {
-	for _, v := range []bool{true, false} {
-		if s := sinkKey(g.Entry, g.File, g.Line); s != g.Entry && k == groupKey(g.Prefix, g.Entry, g.Level, v) {
-			k = groupKey(g.Prefix, s, g.Level, v)
-			if rule, _, ok := strings.Cut(strings.TrimPrefix(g.Entry, "code:"), ":"); ok && len(g.Rules) == 0 {
-				g.Rules = []string{rule}
+	if s := oldSinkKey(g.Entry); s != g.Entry {
+		file, line := g.File, g.Line
+		if file == "" {
+			p := strings.TrimPrefix(s, "code@")
+			i := strings.LastIndex(p, ":")
+			n, err := strconv.Atoi(p[i+1:])
+			if err == nil {
+				file, line = p[:i], n
+			}
+		}
+		for _, v := range []bool{true, false} {
+			if sinkKey(g.Entry, file, line) == s && k == groupKey(g.Prefix, g.Entry, g.Level, v) {
+				k = groupKey(g.Prefix, s, g.Level, v)
+				g.File, g.Line = file, line
+				if rule, _, ok := strings.Cut(strings.TrimPrefix(g.Entry, "code:"), ":"); ok && len(g.Rules) == 0 {
+					g.Rules = []string{rule}
+				}
+				break
 			}
 		}
 	}
