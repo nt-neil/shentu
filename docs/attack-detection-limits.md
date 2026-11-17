@@ -65,7 +65,7 @@ The cost is misses. A call with a space before its parenthesis is caught only wh
 
 ## Measured detection
 
-The numbers come from the evaluation tool (`tools/detecteval`, PR #94) at detect-eval 8f4d496, using the signatures of detect-p5 6c54200. They do not include this branch's changes (parameter names, path segments, anchored routes, the three narrowed signatures). They will be measured again once #87, #90 and #91 are in integ.
+The numbers come from the evaluation tool (`tools/detecteval`, PR #94) with the signatures and matching of integ adff9e6 (#87, #90 and #91 merged), measured at detect-eval 5d647d4. They include parameter names, path segments, anchored routes and the three narrowed signatures.
 
 What they mean:
 
@@ -75,7 +75,7 @@ What they mean:
 
 The results:
 
-- **All templates: 36.4% detected (1390 of 3819).**
+- **All templates: 40.5% detected (1545 of 3819).**
   - Source: nuclei-templates v10.5.2 (commit 5442582a), the 11835 templates under `http/`.
   - Templates the tool could not convert (1147), unclassified ones (6618) and `rce-unspecified` ones (251) are not counted.
 - **Ordinary traffic: no false alerts in 1216 requests.**
@@ -95,5 +95,7 @@ The results:
 | CVE-2023-3452 | none | No signature of its own. A class signature of the same class matched the path, but a package CVE needs a signature of its own, so it is noise. |
 | CVE-2024-3136 | none | No signature of its own. The payload is in the body. A class signature matched the path and is noise as well. |
 | CVE-2025-69971 | none | No signature of its own. The flaw is a hard-coded secret, so the request line carries no payload. |
+
+No template that names none of these CVEs alerts on the host: Shibboleth SP's logout no longer maps to Flarum's CVE-2024-21641.
 
 Raising "class matches and the host has the package vulnerability" to L1 is deferred to v0.4.1.

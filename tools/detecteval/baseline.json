@@ -6,7 +6,7 @@
   "rce_unspecified": 251,
   "false_positives": 0,
   "normal_requests": 1216,
-  "graded_sha256": "bc34d875b3b9e733a4cefbd7392a0d261bb83042aa45b321b4a4923439751602",
+  "graded_sha256": "ab21868a522b192ee50f5463990cc29ce0477115e391b2c1627fff1a9b7bdcaf",
   "stats": {
     "nuclei_commit": "5442582a875f96887bfe403c6de562de460897e7",
     "templates_hash": "259cb2836719cc15521784577b2bdc334d1183a141d7ad7f364dc8e7469edb8c",
@@ -17,11 +17,11 @@
     "classes": {
       "cmdi": {
         "templates": 254,
-        "caught": 34
+        "caught": 39
       },
       "code": {
         "templates": 160,
-        "caught": 6
+        "caught": 8
       },
       "deser": {
         "templates": 98,
@@ -33,15 +33,15 @@
       },
       "path": {
         "templates": 928,
-        "caught": 607
+        "caught": 643
       },
       "redirect": {
         "templates": 179,
-        "caught": 2
+        "caught": 1
       },
       "sqli": {
         "templates": 478,
-        "caught": 81
+        "caught": 83
       },
       "ssrf": {
         "templates": 201,
@@ -53,7 +53,7 @@
       },
       "xss": {
         "templates": 1199,
-        "caught": 648
+        "caught": 759
       },
       "xxe": {
         "templates": 44,
@@ -61,15 +61,15 @@
       }
     },
     "attack_levels": {
-      "L1": 2324,
-      "L2": 1444,
-      "none": 50,
-      "unanchored": 1
+      "L1": 2266,
+      "L2": 1502,
+      "none": 22,
+      "unanchored": 29
     },
     "host": {
       "cases": 97,
       "templates_for_cves": 10,
-      "alerted": 4,
+      "alerted": 3,
       "alerted_for_cves": 3,
       "normal_alerted": 0,
       "version_unknown": 0
@@ -80,6 +80,6 @@
       "L1": 1211,
       "none": 5
     },
-    "graded_sha256": "bc34d875b3b9e733a4cefbd7392a0d261bb83042aa45b321b4a4923439751602"
+    "graded_sha256": "ab21868a522b192ee50f5463990cc29ce0477115e391b2c1627fff1a9b7bdcaf"
   }
 }
