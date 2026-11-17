@@ -1,0 +1,84 @@
+# Signatures written for one vulnerability each, of Composer packages whose
+# request enters at a known route (bench/cves). Each says what it rests on:
+# the fix and the advisory; no exploit database or proof-of-concept was
+# read. Only cases whose request a web server logs: a payload in a body or a
+# cookie leaves a route-only signature, or none.
+
+# CVE-2017-9841. Fix: src/Util/PHP/eval-stdin.php (5.6.2 -> 5.6.3), which
+# evaluated PHP read from the request body. Advisory:
+# https://nvd.nist.gov/vuln/detail/CVE-2017-9841 (before 4.8.28, 5.x before
+# 5.6.3). The body is not logged: the route alone, on any method (scanners
+# probe it with GET too).
+[[signature]]
+id = "cve-2017-9841-phpunit-eval-stdin"
+title = "PHPUnit eval-stdin.php reached over HTTP (CVE-2017-9841)"
+class = "code"
+cwe = ["CWE-94"]
+cves = ["CVE-2017-9841"]
+source = "shentu"
+license = "Apache-2.0"
+[[signature.applies_to]]
+ecosystem = "Packagist"
+package = "phpunit/phpunit"
+versions = "<4.8.28"
+[[signature.applies_to]]
+ecosystem = "Packagist"
+package = "phpunit/phpunit"
+versions = ">=5.0, <5.6.3"
+[[signature.route]]
+path = "/phpunit/src/Util/PHP/eval-stdin.php"
+
+# CVE-2021-3129. Fix: src/Solutions/MakeViewVariableOptionalSolution.php
+# (2.5.1 -> 2.5.2), whose solution read and wrote a file path from the
+# request (phar deserialization). Advisory:
+# https://nvd.nist.gov/vuln/detail/CVE-2021-3129 (before 2.5.2). Solutions
+# run through Ignition's execute-solution route; the path is in the JSON
+# body, not logged: the route alone.
+[[signature]]
+id = "cve-2021-3129-ignition-execute-solution"
+title = "Ignition's execute-solution route called (CVE-2021-3129)"
+class = "deser"
+cwe = ["CWE-502"]
+cves = ["CVE-2021-3129"]
+source = "shentu"
+license = "Apache-2.0"
+[[signature.applies_to]]
+ecosystem = "Packagist"
+package = "facade/ignition"
+versions = "<2.5.2"
+[[signature.route]]
+methods = ["POST"]
+path = "/_ignition/execute-solution"
+
+# CVE-2024-21641. Fix: src/Forum/Controller/LogOutController.php (v1.8.4 ->
+# v1.8.5), which redirected to the return query parameter unchecked.
+# Advisory: https://github.com/advisories/GHSA-733r-8xcp-w9mr (before
+# 1.8.5). An absolute or protocol-relative return URL; one to the forum's
+# own host matches too (the host is not known here), so it is L2 only on a
+# host with the vulnerable version.
+[[signature]]
+id = "cve-2024-21641-flarum-logout-redirect"
+title = "Flarum logout with a return URL off the forum (CVE-2024-21641)"
+class = "redirect"
+cwe = ["CWE-601"]
+cves = ["CVE-2024-21641"]
+advisories = ["GHSA-733r-8xcp-w9mr"]
+source = "shentu"
+license = "Apache-2.0"
+[[signature.applies_to]]
+ecosystem = "Packagist"
+package = "flarum/core"
+versions = "<1.8.5"
+[[signature.route]]
+methods = ["GET"]
+path = "/logout"
+# Flarum's router is case sensitive, and other applications' logout
+# endpoints end in /logout too (Shibboleth SP's /Shibboleth.sso/Logout).
+case_sensitive = true
+anchored = true
+[[signature.match]]
+part = "param"
+param = "return"
+# A browser takes \ for / and drops tab and newline in a URL: /\evil, \\evil
+# and /%09/evil leave the forum as //evil does.
+regex = '^[\s\x00-\x1f]*(?:[a-z][a-z0-9+.\t\n\r-]*:)?[\t\n\r]*[/\\][\t\n\r]*[/\\]'

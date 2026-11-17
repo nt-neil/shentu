@@ -39,11 +39,15 @@ type PackageVuln struct {
 	Version   string // installed
 	ID        string // the advisory id: CVE-2024-1234, GHSA-..., USN-...
 	CVE       string // the CVE id when known (from the KEV match or the id itself)
-	Severity  string // as the advisory gives it; may be empty
-	Fixed     string // the first fixed version; may be empty
-	KEV       bool   // CISA lists it as exploited in the wild
-	KEVSince  string // the date CISA added it
-	KEVCVE    string // the CVE CISA lists, which CVE (keyed on another of the advisory's) may not be
+	// CVEs: every CVE the advisory names, when it names several (CVE is
+	// one of them): the others are kept as the entry's aliases, so a
+	// signature written for any of them finds it.
+	CVEs     []string
+	Severity string // as the advisory gives it; may be empty
+	Fixed    string // the first fixed version; may be empty
+	KEV      bool   // CISA lists it as exploited in the wild
+	KEVSince string // the date CISA added it
+	KEVCVE   string // the CVE CISA lists, which CVE (keyed on another of the advisory's) may not be
 }
 
 // Coverage says what detect can match for an entry.
@@ -179,11 +183,17 @@ func Build(code []CodeSink, pkgs []PackageVuln) Surface {
 		if p.Source != "" && p.Source != "os" {
 			id += "#" + p.Source // the same dependency in two lock files is two places to fix
 		}
+		alias := func(e *Entry, ids ...string) {
+			for _, a := range ids {
+				if a != "" && a != e.Advisory && a != e.CVE && !slices.Contains(e.Aliases, a) {
+					e.Aliases = append(e.Aliases, a)
+				}
+			}
+		}
 		if i, ok := byID[id]; ok {
 			e := &out[i]
-			if adv != e.Advisory && !slices.Contains(e.Aliases, adv) {
-				e.Aliases = append(e.Aliases, adv)
-			}
+			alias(e, adv)
+			alias(e, p.CVEs...)
 			if e.Severity == "" {
 				e.Severity = p.Severity
 			}
@@ -205,6 +215,7 @@ func Build(code []CodeSink, pkgs []PackageVuln) Surface {
 		byID[id] = len(out)
 		out = append(out, Entry{ID: id, Kind: "package", Severity: p.Severity, Source: p.Source, Ecosystem: p.Ecosystem,
 			Package: p.Package, Version: p.Version, Advisory: adv, CVE: cve, Fixed: p.Fixed, KEV: p.KEV, KEVSince: p.KEVSince, KEVCVE: p.KEVCVE})
+		alias(&out[len(out)-1], p.CVEs...)
 	}
 	for i := range out {
 		switch {

@@ -120,7 +120,9 @@ func TestSurfaceAppsAliases(t *testing.T) {
 			merged = e
 		}
 	}
-	if merged.Advisory != "GHSA-aaaa" || len(merged.Aliases) != 1 || merged.Aliases[0] != "PYSEC-2021-1" {
+	// The advisory's other CVE is an alias too (review 1 of #87): a
+	// signature written for CVE-2021-33571 finds this entry.
+	if merged.Advisory != "GHSA-aaaa" || strings.Join(merged.Aliases, ",") != "PYSEC-2021-1,CVE-2021-33571" {
 		t.Errorf("merged entry %+v", merged)
 	}
 	b, _ := json.Marshal(r)
