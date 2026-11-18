@@ -6,6 +6,26 @@ a release are not written here: they are worked out from the rule snapshots in
 `docs/site-src/rules-history/`. `CHANGELOG.zh-TW.md` holds the same releases in Traditional
 Chinese for the zh-TW pages; keep the two in step.
 
+## v0.5.0 (unreleased)
+
+- Sub-agents (Linux, one host): in the Telegram bot and `shentu chat`, the agent can hand
+  read-only checks to up to 3 sub-agents with the `dispatch` tool, each in one role: `patrol`,
+  `surface`, `attack` or `incident` (#101). Each role has a fixed list of read-only tools; a
+  sub-agent cannot block or unblock an address, notify, use a skill or dispatch again. They run
+  one after another. Patrol rounds and the eval bot never dispatch.
+- Limits: a sub-agent gets at most 6 model calls, 3 tool calls a step, 2048 output tokens a
+  call, 40,000 tokens and 5 minutes; a dispatch at most 120,000 tokens and 12 minutes, and the
+  monthly budget still applies. Tokens are estimated before each call and counted after it,
+  reasoning tokens included. A sub-agent stopped by a limit, or one that does not answer in the
+  required report, is reported incomplete with the reason, never as done. A model call cut off
+  by a time limit is no longer retried.
+- Reports: each sub-agent answers in a fixed JSON shape (findings, proposals, what it did not
+  check), checked field by field and masked, and the agent reads it marked untrusted. A proposal
+  to block is only a suggestion: after a dispatch, every `block_ip` or `unblock_ip` in that
+  conversation asks for the ✅ button even with `[bot] confirm = 4`, until `/new`, and its audit
+  log line names the dispatch. The bot's progress message shows the sub-agents' steps (the last
+  12), and a tool name it does not know as "unknown tool".
+
 ## v0.4.0 — 2026-11-18
 
 - Attack detection (Linux): each patrol round reads the web server's logs and picks out the
