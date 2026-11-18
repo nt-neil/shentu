@@ -31,6 +31,10 @@ Blocked 203.0.113.7 until tomorrow 09:14. To undo: "unblock 203.0.113.7".
 - **`shentu patrol`**: run by a systemd timer every 30 minutes. It runs fixed checks without the
   LLM. If something new shows up, the LLM explains it and the report goes to Telegram, Slack, Discord,
   ntfy or a webhook. If the LLM is down, you still get the raw findings.
+- **Attack detection** (v0.4.0, Linux): each patrol also reads the nginx and Apache access logs
+  and alerts on requests aimed at vulnerabilities this server really has, from level L1 (the route
+  was reached) to L3 (it likely worked). It never blocks on its own. See
+  [docs/attack-detection.md](docs/attack-detection.md).
 - **`shentu survey`**: learns the server first, like a guard walking the premises. Patrol keeps the
   survey as a baseline and reports risky settings (a database open to the network, SSH password
   login) and changes (new accounts, cron files, SSH configuration). The model gets a summary, so its
@@ -63,6 +67,7 @@ Blocked 203.0.113.7 until tomorrow 09:14. To undo: "unblock 203.0.113.7".
 | `file_changes` | recently changed files in watched directories, plus webshell patterns (PHP, JSP, Node.js, Python) |
 | `cert_expiry` | TLS certificate expiry |
 | `log_search` | regex search, limited to configured log files |
+| `attack_attempts` | attack detection's groups for the last 24 hours (up to 168): vulnerability, level, severity, count, addresses, masked samples, and whether the log can be believed. Samples are left out when asked from a chat channel |
 | `block_ip` / `unblock_ip` | timed nftables blocks in a separate `inet shentu` table. **Chat only, needs your confirmation.** |
 | `notify` | send a message to your channel (Telegram, Slack, Discord, ntfy or a signed JSON webhook) |
 
