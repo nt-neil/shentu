@@ -2,6 +2,8 @@
 
 [繁體中文](attack-detection-limits.zh-TW.md)
 
+How detection works, how to read an alert and why a block needs you: [attack-detection.md](attack-detection.md).
+
 v0.4.0 ships 27 attack signatures, and they are not extended to catch rewritten forms of an attack.
 The cases below are known misses. A miss only costs an alert: Shentu misses the request or rates it lower. None of them can make Shentu block the wrong address.
 v0.4.0 never blocks on its own: `block_ip` always needs the operator's confirmation. Its attacks are checked too: an address with attack attempts is blocked only for a verified L2 or L3 group of its own, not an overflow summary of many sources. Attempts that only reached a route (L1), could not be judged (Unknown) or come from unverified logs do not back a block; the address's SSH logins that journald itself confirms still can. An internal address (private, loopback, CGNAT and the like) is refused. `override_unverified` lifts all of these checks but one, and only from the server (`shentu chat`), never from Telegram: attempts that are unverified, L1 or Unknown no longer hold a block back, SSH logins are not checked, and an internal address may be blocked, so the block rests on the operator's own reading of the logs. An address listed in an overflow summary is still refused, unless it also has a verified L2 or L3 group of its own.
