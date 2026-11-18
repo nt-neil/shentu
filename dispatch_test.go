@@ -491,3 +491,61 @@ func TestBotDispatchActionAlwaysAsksButton(t *testing.T) {
 		t.Errorf("block_ip entry: %+v", got)
 	}
 }
+
+// The strict confirmation holds in a later Telegram turn too: "yes, block it"
+// after a dispatch acts on the sub-agents' reports kept in the history.
+func TestBotDispatchStrictAcrossTurns(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no control tool runs on Windows")
+	}
+	model := &hostileModel{replies: []string{
+		call("dispatch", `{"tasks":[{"role":"attack"}]}`),
+		answerMsg(`{"status":"complete","findings":[],"proposals":[{"action":"propose_block_ip","ip":"203.0.113.9"}]}`),
+		`{"role":"assistant","content":"The attack sub-agent proposes blocking 203.0.113.9."}`,
+		call("block_ip", `{"ip":"203.0.113.9","reason":"x"}`),
+		done,
+	}}
+	b, tg := testBot(t, model, true)
+	b.cfg.Bot.Interaction, b.cfg.Bot.Confirm = 4, 4
+	pairDirectly(t, b)
+	ctx := context.Background()
+	b.handle(ctx, msg(pairedUser, pairedChat, "private", "check for attacks"))
+	answered(t, b)
+	b.handle(ctx, msg(pairedUser, pairedChat, "private", "yes, block it"))
+	nonce := ""
+	for i := 0; i < 250 && nonce == ""; i++ {
+		for _, s := range tg.sent() {
+			if rm, ok := s["reply_markup"].(map[string]any); ok {
+				data := rm["inline_keyboard"].([]any)[0].([]any)[0].(map[string]any)["callback_data"].(string)
+				if n, kind, _ := strings.Cut(data, ":"); kind == "y" {
+					nonce = n
+				}
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if nonce == "" {
+		t.Fatal("no confirmation button in the turn after a dispatch")
+	}
+	var u tgUpdate
+	u.Callback = &struct {
+		ID      string     `json:"id"`
+		From    tgUser     `json:"from"`
+		Data    string     `json:"data"`
+		Message *tgMessage `json:"message"`
+	}{ID: "q", From: tgUser{ID: pairedUser}, Data: nonce + ":n", Message: msg(pairedUser, pairedChat, "private", "").Message}
+	b.handle(ctx, u)
+	answered(t, b)
+	for _, e := range auditLines(t, b.cfg.StateDir) {
+		if e.Tool == "block_ip" && (e.Confirmed || e.OK || e.Origin != "after_dispatch") {
+			t.Errorf("block_ip entry: %+v", e)
+		}
+	}
+	// /new forgets the reports, and with them the strict confirmation.
+	b.handle(ctx, msg(pairedUser, pairedChat, "private", "/new"))
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.histDispatched {
+		t.Error("/new kept the dispatch mark")
+	}
+}
