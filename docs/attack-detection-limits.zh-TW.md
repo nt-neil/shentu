@@ -14,13 +14,52 @@ v0.4.0 不會自動封鎖：`block_ip` 一定要經營運者確認。攻擊紀�
 - **最多解碼兩輪**：網址編碼最多解兩次（含 `%u` 和過長的 UTF-8）。base64、gzip 和其他編碼都不解。
 - **無法判定的請求只計數，L1 不推播**：請求被截斷、可能藏有 payload（Unknown）時只計數；同一個 sink 在 24 小時內累積到 20 次才推播。L1 的嘗試只計數並列入報告，不會推播成告警。
 - **未查證的紀錄不能拿來封鎖**：Shentu 無法查證的紀錄裡的嘗試，會標成未查證，告警會寫出原因。`block_ip` 不會拿它當封鎖依據；只有營運者在伺服器上才能覆寫（見上文）。原因有這幾種：
-  - `web_user_writable`：web 伺服器或 PHP 的帳號擁有這個紀錄檔，或寫得到它上層的目錄。Debian、Ubuntu、Rocky 上的 nginx 預設就是這樣，因為 logrotate 會這樣建立紀錄檔。伺服器在自己的程序裡執行應用程式碼（mod_php、nginx 的應用模組），以及 web 帳號可以 ptrace 伺服器的 worker，也都算這一種。
+  - `web_user_writable`：應用程式碼執行的帳號（PHP-FPM 的、應用程式 unit 的，或 web 伺服器和 PHP 共用的 `www-data`、`apache` 這類帳號）擁有這個紀錄檔，或寫得到它上層的目錄。Debian、Ubuntu 上的 nginx 預設就是這樣，因為 logrotate 用 `www-data` 建立紀錄檔。伺服器在自己的程序裡執行應用程式碼（mod_php、有 handler 的 mod_lua、nginx 的應用模組），以及應用程式碼可以 ptrace 伺服器的 worker，也都算這一種。怎樣才能放行，見下一節。
   - `untrusted_owner`：紀錄檔、指向它的連結或它上層的目錄，擁有者不是 root；或紀錄檔可被群組或其他人寫入，或上層目錄可被其他人寫入。
   - `unverified_source`：Shentu 無法確認只有 root 能改動這個紀錄檔，例如上層目錄可被某個群組寫入、但不知道群組成員，有 ACL，或帳號資料庫、連結讀不到。讀取時的檔案不是判定時的那個（中間被換掉），以及沒通過檢查的輪替檔，也算這一種。web 伺服器的設定沒有讀完整，或設定列出的紀錄來源超過 Shentu 讀取的上限時，所有紀錄都會因為這個原因變成未查證。
   - `not_regular_file`：紀錄檔不是一般檔案。
   - `symlink_not_followed`：紀錄檔要經過連結才看得到，Shentu 不跟隨連結。
   - `client_from_header`：伺服器從請求的 header 取用戶端位址（nginx 的 realip、Apache 的 mod_remoteip），紀錄裡的 IP 是代理或用戶端自己寫的。
   - `custom_format`：紀錄格式不是標準格式（nginx combined 或 main、Apache combined 或 common）。照樣比對，但無法排除用戶端寫的欄位讓其他欄位錯位。
+
+## 哪些網站紀錄可以支撐封鎖
+
+紀錄要能支撐封鎖，前提是應用程式碼執行的帳號改不了它的內容：不能直接寫檔，不能透過開著這個檔案的 worker 寫，也不能冒充伺服器送紀錄。這裡假設的攻擊者是已經能以網站應用程式的身分執行程式碼（例如利用 PHP 漏洞）。不在防禦範圍內的：root 被拿下，以及 nginx 或 Apache 本身被攻破（worker 執行攻擊者的程式碼），這兩種情況任何紀錄檢查都擋不住。
+
+- **伺服器自己的帳號**：紀錄檔屬於 nginx worker 或 Apache children 執行的帳號時，在下列條件全部成立下，會和 root 擁有的一樣被信任：
+  - 沒有別的東西以這個帳號執行，不論是同 uid 還是同群組：沒有 PHP-FPM pool、沒有其他 systemd unit、沒有 crontab，也沒有 linger 的使用者管理程序；
+  - 伺服器本身不執行應用程式碼；
+  - 帳號在 `/etc/passwd`，而且只有它用這個 uid；
+  - 帳號資料庫只來自檔案；
+  - 設定完整讀到。
+
+  這時也不必擔心 worker 被 ptrace，因為沒有應用程式帳號追蹤得到它。共用的預設帳號（`www-data`、`apache`、`nobody` 等）不論 Shentu 讀到什麼，都不算伺服器自己的帳號，因為 Shentu 沒讀到的東西可能也以它執行。
+- **Apache 的模組**：只做設定、存取控制、快取或代理的模組沒有影響。以 children 帳號執行外部程式的模組（`mod_actions`、`mod_ext_filter`、`mod_include`、`mod_suexec`、`mod_userdir`、`mod_cgid`）要求 `kernel.yama.ptrace_scope` 至少為 1，這樣那些程式才追蹤不到 children；告警會寫明這點。`mod_lua` 只要有任何指令提到 Lua，或有任何 `AllowOverride` 不是 `None`，就算應用程式碼。`mod_cgi`、`mod_php`，以及 Shentu 不認得的模組，都算應用程式碼。
+- **nginx 經 journald**：nginx 也可以把存取紀錄送到 journald（`access_log syslog:server=unix:/dev/log,nohostname combined;`）。journald 會替每一行記下送出者的 unit、帳號和執行檔，這三項任何程序都改不了。Shentu 從 `nginx.service` 的紀錄讀這份存取紀錄；只有經 syslog、由 nginx 的執行檔、以 worker 帳號、在這個 unit 裡送出的那一行，才算已查證。PHP 執行的 `logger` 在別的 unit、是別的執行檔，所以照樣讀，但不算已查證。前提有五個：
+  - `/dev/log` 是 journald 的 socket；
+  - `nginx.service` 用絕對路徑啟動 nginx；
+  - 只有一個 `user` 指令；
+  - 這個 tag 沒有被其他 nginx 紀錄使用；
+  - 除非 worker 的帳號是伺服器自己的帳號，否則 `ptrace_scope` 至少為 1。
+
+  原本的檔案紀錄照舊保留，判定也不變。
+
+預設安裝的判定如下，依據是在 GitHub runner 和 Ubuntu VM 上的量測。`ptrace_scope`：Ubuntu 實測 1，Debian 推定 1，Rocky 推定 0。
+
+| | 預設 | 怎樣能放行 |
+|---|---|---|
+| Debian 12、Ubuntu 24.04 的 nginx | `web_user_writable`（`www-data:adm 0640`，而 `www-data` 也是 PHP 的帳號） | 加上 journald 那一行，並且 `ptrace_scope` 為 1 |
+| Debian 12、Ubuntu 24.04 的 Apache | `ptrace_scope` 為 1 時已查證（`root:adm 640`，預設 19 個模組） | `ptrace_scope` 為 1 |
+| Rocky 9 的 nginx | `web_user_writable`：第一次輪替前是 `root 0644`，之後是 `nginx:root 0640`；預設的 `nsswitch.conf` 也查 sss，帳號資料庫不完整 | 從 `nsswitch.conf` 拿掉 `sss`，而且 PHP-FPM 以 `apache` 執行：輪替前後都是已查證 |
+| Rocky 9 的 httpd | `ptrace_scope` 為 0 時是 `web_user_writable`（告警會寫明設 `ptrace_scope=1` 就能放行） | `ptrace_scope` 為 1；如果還載入 mod_lua，每個 `AllowOverride` 都要是 `None` |
+
+`shentu log-trust suggest` 會印出適用於所在主機的修改：
+- journald 那一行；
+- 解除 journald 對 nginx 的單一 unit 限流的 drop-in。預設每個 unit 每 30 秒最多保留 10000 筆，多的會丟掉，忙碌時段的攻擊就會漏看；它也會列出 journald 過去一天丟掉的筆數。
+- `kernel.yama.ptrace_scope = 1`。之後一般帳號不能再對自己正在執行的程序掛除錯器。
+- PHP-FPM pool 改用獨立帳號。
+
+它不會改動任何東西：營運者自行決定套用哪些，下一輪巡檢會重新判定。不建議在 logrotate 改紀錄檔的擁有者，原因有兩個：nginx reopen 時會不會把檔案交還給 worker，還要在 VM 上確認；套件升級時，發行版的設定也可能被蓋回去。
 
 ## 可能漏掉的請求
 
