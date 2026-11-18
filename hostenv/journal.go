@@ -332,8 +332,10 @@ func dropInNames(unit string) []string {
 // path and every applicable name, a file name in a higher-priority path
 // hiding the same name in a lower one, in file name order. Anything that
 // cannot be read or told fails closed: Elevated.
-func appUnit(src Source, name string, unit []byte, conf WebConf) (AppUnit, bool) {
-	u := AppUnit{Name: name}
+// unitConfs are the unit's file, the one of the highest-priority path, and
+// its drop-ins in the order systemd applies them (appUnit); unread: one of
+// them could not be read or listed.
+func unitConfs(src Source, name string, unit []byte, conf WebConf) (all [][]byte, unread bool) {
 	tmpl := name
 	if at := strings.IndexByte(name, '@'); at >= 0 {
 		tmpl = name[:at+1] + ".service"
@@ -347,7 +349,7 @@ func appUnit(src Source, name string, unit []byte, conf WebConf) (AppUnit, bool)
 			}
 			b, why := readWebConf(src, f, conf)
 			if why != "" {
-				u.Elevated = true
+				unread = true
 			} else {
 				unit = b
 			}
@@ -369,7 +371,7 @@ func appUnit(src Source, name string, unit []byte, conf WebConf) (AppUnit, bool)
 			entries, err := src.ReadDir(d)
 			if err != nil {
 				if !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, ErrNotRecorded) {
-					u.Elevated = true // there, but not listed: a User= we cannot see
+					unread = true // there, but not listed: a User= we cannot see
 				}
 				continue
 			}
@@ -388,15 +390,22 @@ func appUnit(src Source, name string, unit []byte, conf WebConf) (AppUnit, bool)
 		files = append(files, f)
 	}
 	sort.Strings(files)
-	all := [][]byte{unit}
+	all = [][]byte{unit}
 	for _, f := range files {
 		b, why := readWebConf(src, chosen[f].file, conf)
 		if why != "" {
-			u.Elevated = true
+			unread = true
 			continue
 		}
 		all = append(all, b)
 	}
+	return all, unread
+}
+
+func appUnit(src Source, name string, unit []byte, conf WebConf) (AppUnit, bool) {
+	u := AppUnit{Name: name}
+	all, unread := unitConfs(src, name, unit, conf)
+	u.Elevated = unread
 	found := false
 	for _, b := range all {
 		ok, fpm, priv := unitRunsApp(b)

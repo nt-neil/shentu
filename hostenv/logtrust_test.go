@@ -53,6 +53,54 @@ func TestServerAccountApart(t *testing.T) {
 			h.st[wants] = FileStat{Mode: fs.ModeDir | 0o755}
 			h.files[wants+"/marker.service"] = "[Service]\nUser=nginx\nExecStart=/usr/bin/gunicorn marker\n"
 		}, ReasonWebUserWritable},
+		{"any enabled unit runs as nginx", 1, true, func(h statHost) {
+			systemdDirs(h)
+			h.files[wants+"/marker.service"] = "[Service]\nUser=nginx\nExecStart=/usr/local/bin/marker-tool\n"
+		}, ReasonWebUserWritable},
+		{"a drop-in makes a unit run as nginx", 1, true, func(h statHost) {
+			systemdDirs(h)
+			h.files[wants+"/marker.service"] = "[Service]\nExecStart=/usr/local/bin/marker-tool\n"
+			h.st["/etc/systemd/system/marker.service.d"] = FileStat{Mode: fs.ModeDir | 0o755}
+			h.files["/etc/systemd/system/marker.service.d/user.conf"] = "[Service]\nUser=nginx\n"
+		}, ReasonWebUserWritable},
+		{"a timer's service runs as nginx", 1, true, func(h statHost) {
+			systemdDirs(h)
+			h.st["/etc/systemd/system/timers.target.wants"] = FileStat{Mode: fs.ModeDir | 0o755}
+			h.links["/etc/systemd/system/timers.target.wants/marker.timer"] = "/usr/lib/systemd/system/marker.timer"
+			h.files["/usr/lib/systemd/system/marker.timer"] = "[Timer]\nOnCalendar=daily\n"
+			h.files["/usr/lib/systemd/system/marker.service"] = "[Service]\nUser=nginx\nExecStart=/usr/local/bin/marker-tool\n"
+		}, ReasonWebUserWritable},
+		{"a unit runs with nginx's group", 1, true, func(h statHost) {
+			systemdDirs(h)
+			h.files[wants+"/marker.service"] = "[Service]\nUser=root\nSupplementaryGroups=nginx\nExecStart=/usr/local/bin/marker-tool\n"
+		}, ReasonWebUserWritable},
+		{"a unit whose account its instance names", 1, true, func(h statHost) {
+			systemdDirs(h)
+			h.files[wants+"/marker@a.service"] = "[Service]\nUser=%i\nExecStart=/usr/local/bin/marker-tool\n"
+		}, ReasonWebUserWritable},
+		{"user manager kept for nginx", 1, true, func(h statHost) {
+			h.st["/var/lib/systemd/linger"] = FileStat{Mode: fs.ModeDir | 0o755}
+			h.files["/var/lib/systemd/linger/nginx"] = ""
+		}, ReasonWebUserWritable},
+		{"cron.d line as nginx", 1, true, func(h statHost) {
+			h.files["/etc/cron.d/marker"] = "SHELL=/bin/sh\n*/5 * * * * nginx /usr/local/bin/marker-tool\n"
+		}, ReasonWebUserWritable},
+		{"@daily line as nginx", 1, true, func(h statHost) {
+			h.files["/etc/crontab"] = "@daily nginx /usr/local/bin/marker-tool\n"
+		}, ReasonWebUserWritable},
+		{"nginx's own crontab", 1, true, func(h statHost) {
+			h.files["/var/spool/cron/nginx"] = "* * * * * /usr/local/bin/marker-tool\n"
+		}, ReasonWebUserWritable},
+		{"crontabs not listed", 1, true, func(h statHost) {
+			h.denied["/var/spool/cron"] = true
+		}, ReasonWebUserWritable},
+		{"cron of root and a unit as another account", 1, true, func(h statHost) {
+			systemdDirs(h)
+			h.files["/etc/passwd"] += "marker:x:1500:1500::/home/marker:/bin/sh\n"
+			h.files["/etc/group"] += "marker:x:1500:\n"
+			h.files[wants+"/marker.service"] = "[Service]\nUser=marker\nExecStart=/usr/local/bin/marker-tool\n"
+			h.files["/etc/cron.d/marker"] = "0 * * * * root /usr/local/bin/marker-tool\n"
+		}, ""},
 		{"another account with nginx's uid", 1, true, func(h statHost) {
 			h.files["/etc/passwd"] += "marker:x:999:1500::/home/marker:/bin/sh\n"
 		}, ReasonWebUserWritable},
@@ -105,14 +153,26 @@ func TestServerAccountNotForConf(t *testing.T) {
 	h.st["/etc/nginx"] = FileStat{Mode: fs.ModeDir | 0o755}
 	h.st["/etc/nginx/conf.d"] = FileStat{Mode: fs.ModeDir | 0o755, UID: 999}
 	web := LinuxCollector{}.WebAccounts(h)
-	if _, ok := web.ServerUIDs[999]; !ok {
+	if _, ok := web.ServerUIDs["nginx"][999]; !ok {
 		t.Fatalf("nginx not a server account: %+v", web.ServerUIDs)
 	}
-	if why := confTrusted(h, "/etc/nginx/conf.d/marker.conf", WebConf{Root: "/etc"}, web); why == "" {
+	if why := confTrusted(h, "/etc/nginx/conf.d/marker.conf", WebConf{Root: "/etc"}, web.ForServer("nginx")); why == "" {
 		t.Errorf("a configuration directory of nginx's own trusted")
 	}
-	if r := JudgeLog(h, "/var/log/nginx/access.log", web); !r.Verified {
+	if r := JudgeLog(h, "/var/log/nginx/access.log", web.ForServer("nginx")); !r.Verified {
 		t.Errorf("the log itself: %+v", r)
+	}
+	// Another server's log, or no server named: root's alone.
+	for _, w := range []WebAccounts{web.ForServer("apache"), web} {
+		if r := JudgeLog(h, "/var/log/nginx/access.log", w); r.Verified {
+			t.Errorf("nginx's file judged for %q: verified", w.judging)
+		}
+	}
+}
+
+func systemdDirs(h statHost) {
+	for _, d := range []string{"/etc/systemd", "/etc/systemd/system", "/etc/systemd/system/multi-user.target.wants", "/usr/lib/systemd", "/usr/lib/systemd/system"} {
+		h.st[d] = FileStat{Mode: fs.ModeDir | 0o755}
 	}
 }
 
@@ -150,7 +210,10 @@ func TestApacheModulesTrust(t *testing.T) {
 		{"AllowOverride All", 1, "<Directory /var/www/html>\nAllowOverride All\n</Directory>\n", ReasonWebUserWritable},
 		{"AllowOverride FileInfo", 1, "<Directory /var/www/html>\nAllowOverride FileInfo AuthConfig\n</Directory>\n", ReasonWebUserWritable},
 		{"AllowOverrideList", 1, "<Directory /var/www/html>\nAllowOverride None\nAllowOverrideList SetHandler\n</Directory>\n", ReasonWebUserWritable},
-		{"AllowOverride AuthConfig Indexes", 1, "<Directory /var/www/html>\nAllowOverride AuthConfig Indexes Limit Options=Indexes\n</Directory>\n", ""},
+		{"AllowOverride AuthConfig Indexes", 1, "<Directory /var/www/html>\nAllowOverride AuthConfig Indexes Limit Options=Indexes\n</Directory>\n", ReasonWebUserWritable},
+		{"AllowOverride None", 1, "<Directory /var/www/html>\nAllowOverride None\n</Directory>\n", ""},
+		{"AddType lua-script", 1, "AddType lua-script .marker\n", ReasonWebUserWritable},
+		{"RewriteRule H=lua-script", 1, "RewriteRule ^/marker - [H=lua-script]\n", ReasonWebUserWritable},
 		{"mod_cgi", 1, "LoadModule cgi_module modules/mod_cgi.so\n", ReasonWebUserWritable},
 		{"mod_php", 1, "LoadModule php_module modules/libphp.so\n", ReasonWebUserWritable},
 	}

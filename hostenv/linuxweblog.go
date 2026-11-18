@@ -156,6 +156,7 @@ func (c LinuxCollector) WebLogs(src Source) Obs[[]LogSource] {
 	l.phpFPM()
 	l.lighttpd()
 	l.unitUsers(c, src)
+	l.runAsAccounts()
 	web := l.webAccounts()
 	for _, p := range l.extraRead { // in a package directory, or read through a link: judged as a log is
 		if why := confTrusted(src, p, l.conf, web); why != "" {
@@ -166,7 +167,7 @@ func (c LinuxCollector) WebLogs(src Source) Obs[[]LogSource] {
 	var out []LogSource
 	for _, s := range l.out {
 		if s.Reason == "" {
-			t := JudgeLog(src, s.Path, web)
+			t := JudgeLog(src, s.Path, web.ForServer(s.Server))
 			s.Verified, s.Reason, s.Detail = t.Verified, t.Reason, t.Detail
 			if t.Verified {
 				s.FileID, s.FileUID = t.File.ID, t.File.UID
@@ -267,7 +268,16 @@ type WebAccounts struct {
 	// the account databases are complete and the configuration was read in
 	// full. What they write is the server's own: forging it takes breaking
 	// into nginx or Apache itself, which no log check can stand against.
-	ServerUIDs map[int]string
+	// By server: a log is judged against its own server's (ForServer).
+	ServerUIDs map[string]map[int]string
+	judging    string // the server whose log JudgeLog judges (ForServer); "": root alone
+}
+
+// ForServer is w for judging a log server writes: its own accounts
+// (ServerUIDs) may own the file as well as root.
+func (w WebAccounts) ForServer(server string) WebAccounts {
+	w.judging = server
+	return w
 }
 
 // TrustResult is what JudgeLog found: the file it judged, by its stat.
@@ -298,7 +308,7 @@ func LogTrust(src Source, p string, web WebAccounts) (verified bool, why Reason,
 func JudgeLog(src Source, p string, web WebAccounts) TrustResult {
 	no := func(r Reason, d string) TrustResult { return TrustResult{Reason: r, Detail: d} }
 	owner := func(uid int) bool { // root, or a server's own account
-		_, ok := web.ServerUIDs[uid]
+		_, ok := web.ServerUIDs[web.judging][uid]
 		return uid == 0 || ok
 	}
 	real, err := EvalSymlinks(src, p)
@@ -392,7 +402,7 @@ func confTrusted(src Source, p string, conf WebConf, web WebAccounts) string {
 	// The file itself (regular, root's, not writable by group or others),
 	// every link on the way, and every directory above them: as a log, but
 	// root's alone (a worker is not to change what the server runs).
-	web.ServerUIDs = nil
+	web.judging = ""
 	if t := JudgeLog(src, p, web); !t.Verified {
 		return t.Detail
 	}
@@ -496,8 +506,13 @@ type logLoader struct {
 	// apart: the server's workers run as accounts no application code
 	// runs as, by uid or primary group (webAccounts), so application code
 	// cannot ptrace them.
-	apart  map[string]bool
-	modPHP bool // Apache loads PHP as a module
+	apart map[string]bool
+	// runAs, runAsGroups: the accounts and groups every enabled unit,
+	// lingering user manager and crontab runs programs as (runAsAccounts);
+	// runAsLost: one could not be read or told.
+	runAs, runAsGroups []string
+	runAsLost          bool
+	modPHP             bool // Apache loads PHP as a module
 	// extraRead: files read from logConf.Extra, whose directories are
 	// judged once the web accounts are known.
 	extraRead []string
@@ -509,10 +524,11 @@ type logLoader struct {
 	// in the children: they can ptrace the children only under ptrace_scope
 	// 0, and write what the children's account may.
 	apacheExec []string
-	// apacheLua: mod_lua is loaded; it runs Lua in the children only with
-	// a Lua directive or handler (apacheLuaUsed), or where .htaccess may add
-	// a handler (apacheOverride: AllowOverride FileInfo or All, an
-	// AllowOverrideList).
+	// apacheLua: mod_lua is loaded; it runs Lua in the children only when
+	// a request can reach it: any directive naming Lua (a handler, a type,
+	// a rewrite flag, a hook: apacheLuaUsed), or any .htaccess at all
+	// (apacheOverride: an AllowOverride other than None, an
+	// AllowOverrideList), as mod_lua's own directives are allowed there.
 	apacheLua, apacheLuaUsed, apacheOverride bool
 	// ngxRealIP, apacheRemoteIP: the client address may come from a header.
 	ngxRealIP, apacheRemoteIP bool
@@ -619,6 +635,7 @@ func (c LinuxCollector) WebAccounts(src Source) WebAccounts {
 	l.phpFPM()
 	l.lighttpd()
 	l.unitUsers(c, src)
+	l.runAsAccounts()
 	return l.webAccounts()
 }
 
@@ -665,6 +682,110 @@ func (l *logLoader) unitUsers(c LinuxCollector, src Source) {
 	for _, u := range c.AppUnits(src).Value {
 		if u.User != "" {
 			l.users = append(l.users, u.User)
+		}
+	}
+}
+
+// runAsAccounts gathers who programs run as beside the application
+// servers: every enabled unit's User=, Group= and SupplementaryGroups=
+// (a timer's, socket's or path's service too), the users systemd keeps a
+// manager for (linger), and the users of the crontabs. None of them is
+// known to run only what root wrote, so a server's account among them is
+// not apart.
+func (l *logLoader) runAsAccounts() {
+	gone := func(err error) bool { return errors.Is(err, fs.ErrNotExist) || errors.Is(err, ErrNotRecorded) }
+	conf := WebConf{Root: "/", Owner: 0} // as AppUnits reads them
+	seen := map[string]bool{}
+	dirs, err := l.src.ReadDir("/etc/systemd/system")
+	if err != nil && !gone(err) {
+		l.runAsLost = true
+	}
+	for _, d := range dirs {
+		if !strings.HasSuffix(d, ".wants") {
+			continue
+		}
+		wants := path.Join("/etc/systemd/system", d)
+		names, err := l.src.ReadDir(wants)
+		if err != nil {
+			l.runAsLost = l.runAsLost || !gone(err)
+			continue
+		}
+		for _, n := range names {
+			svc := n
+			for _, suf := range []string{".timer", ".socket", ".path"} {
+				if base, ok := strings.CutSuffix(n, suf); ok {
+					svc = base + ".service"
+				}
+			}
+			if !strings.HasSuffix(svc, ".service") || seen[svc] {
+				continue
+			}
+			if seen[svc] = true; len(seen) > maxUnits {
+				l.runAsLost = true
+				return
+			}
+			var unit []byte
+			if svc == n {
+				b, why := readWebConf(l.src, path.Join(wants, n), conf)
+				if why != "" {
+					l.runAsLost = true
+					continue
+				}
+				unit = b
+			}
+			all, unread := unitConfs(l.src, svc, unit, conf)
+			l.runAsLost = l.runAsLost || unread
+			user := ""
+			for _, b := range all {
+				if u, set := unitUser(b); set {
+					user = u
+				}
+				for _, ln := range strings.Split(string(b), "\n") {
+					k, v, ok := strings.Cut(strings.TrimSpace(ln), "=")
+					if k = strings.TrimSpace(k); ok && (k == "Group" || k == "SupplementaryGroups") {
+						l.runAsGroups = append(l.runAsGroups, strings.Fields(v)...)
+					}
+				}
+			}
+			if strings.Contains(user, "%") {
+				l.runAsLost = true // the instance names the account
+			} else if user != "" {
+				l.runAs = append(l.runAs, user)
+			}
+		}
+	}
+	linger, err := l.src.ReadDir("/var/lib/systemd/linger")
+	if err != nil && !gone(err) {
+		l.runAsLost = true
+	}
+	l.runAs = append(l.runAs, linger...)
+	for _, f := range append([]string{"/etc/crontab"}, Glob(l.src, "/etc/cron.d/*")...) {
+		b, err := l.src.ReadFile(f)
+		if err != nil {
+			l.runAsLost = l.runAsLost || !gone(err)
+			continue
+		}
+		for _, ln := range strings.Split(string(b), "\n") {
+			f := strings.Fields(ln)
+			switch {
+			case len(f) == 0 || strings.HasPrefix(f[0], "#") || strings.Contains(f[0], "="):
+			case strings.HasPrefix(f[0], "@") && len(f) > 2:
+				l.runAs = append(l.runAs, f[1])
+			case len(f) > 6:
+				l.runAs = append(l.runAs, f[5])
+			}
+		}
+	}
+	for _, spool := range []string{"/var/spool/cron/crontabs", "/var/spool/cron"} { // Debian's, RHEL's: a file per user
+		names, err := l.src.ReadDir(spool)
+		if err != nil {
+			l.runAsLost = l.runAsLost || !gone(err)
+			continue
+		}
+		for _, n := range names {
+			if n != "crontabs" && n != "atjobs" && n != "atspool" && !strings.HasPrefix(n, ".") {
+				l.runAs = append(l.runAs, n)
+			}
 		}
 	}
 }
@@ -843,7 +964,7 @@ func (l *logLoader) webAccounts() WebAccounts {
 // processes.
 func (l *logLoader) appAccounts() map[string]bool {
 	app := map[string]bool{}
-	for _, u := range l.users {
+	for _, u := range append(append([]string{}, l.users...), l.runAs...) {
 		app[u] = true
 	}
 	named := map[string]bool{}
@@ -882,8 +1003,8 @@ func (l *logLoader) runsApp(server string) bool {
 // could have either). Only with complete account databases and the
 // configuration read in full; otherwise none is.
 func (l *logLoader) serverAccounts(w *WebAccounts, app map[string]bool, appGIDs map[int]bool, nameUID map[string]int, uidGID map[int]int, groupGID map[string]int) {
-	w.ServerUIDs, l.apart = map[int]string{}, map[string]bool{}
-	if !w.Complete || len(l.unread) > 0 || l.cut {
+	w.ServerUIDs, l.apart = map[string]map[int]string{}, map[string]bool{}
+	if !w.Complete || len(l.unread) > 0 || l.cut || l.runAsLost {
 		return
 	}
 	// resolve: the account's uid, and its primary group (-1: not known,
@@ -924,7 +1045,7 @@ func (l *logLoader) serverAccounts(w *WebAccounts, app map[string]bool, appGIDs 
 		}
 		appGIDs[gid] = true
 	}
-	for _, g := range l.groups {
+	for _, g := range append(append([]string{}, l.groups...), l.runAsGroups...) {
 		if id, num := numericID(g); num {
 			appGIDs[id] = true
 		} else if gid, ok := groupGID[g]; ok {
@@ -960,10 +1081,10 @@ func (l *logLoader) serverAccounts(w *WebAccounts, app map[string]bool, appGIDs 
 		if !ok {
 			continue
 		}
-		l.apart[server] = true
+		l.apart[server], w.ServerUIDs[server] = true, map[int]string{}
 		for _, u := range us {
 			if uid, _, _ := resolve(u); uid != 0 {
-				w.ServerUIDs[uid] = u
+				w.ServerUIDs[server][uid] = u
 			}
 		}
 	}
@@ -1537,9 +1658,9 @@ func (l *logLoader) apache() {
 	st.cur = &st.main
 	l.apacheFile(st, conf, 0)
 	if l.apacheLua && (l.apacheLuaUsed || l.apacheOverride) && !contains(l.apacheApp, "lua_module") {
-		why := "a lua-script handler"
+		why := "a directive names Lua"
 		if !l.apacheLuaUsed {
-			why = ".htaccess may add a handler (AllowOverride)"
+			why = ".htaccess is read (AllowOverride)"
 		}
 		l.apacheApp = append(l.apacheApp, "lua_module ("+why+")")
 	}
@@ -1668,6 +1789,13 @@ func (l *logLoader) apacheFile(st *apacheState, p string, depth int) {
 		if apacheAppDirective.MatchString(name) && !contains(l.apacheApp, name) {
 			l.apacheApp = append(l.apacheApp, name)
 		}
+		if name != "loadmodule" {
+			for _, a := range args { // SetHandler lua-script, AddType, ForceType, RewriteRule [H=lua-script]...
+				if strings.Contains(strings.ToLower(a), "lua") {
+					l.apacheLuaUsed = true
+				}
+			}
+		}
 		switch name {
 		case "include", "includeoptional":
 			if len(args) == 0 {
@@ -1733,11 +1861,9 @@ func (l *logLoader) apacheFile(st *apacheState, p string, depth int) {
 					l.apacheApp = append(l.apacheApp, m)
 				}
 			}
-		case "allowoverride": // what .htaccess may set: FileInfo (SetHandler, AddHandler) or All lets it run Lua
+		case "allowoverride": // .htaccess read at all: it may name a Lua handler or hook
 			for _, a := range args {
-				switch a = strings.ToLower(a); {
-				case a == "none", a == "authconfig", a == "indexes", a == "limit", strings.HasPrefix(a, "options"), strings.HasPrefix(a, "nonfatal"):
-				default:
+				if !strings.EqualFold(a, "none") {
 					l.apacheOverride = true
 				}
 			}
@@ -1745,12 +1871,6 @@ func (l *logLoader) apacheFile(st *apacheState, p string, depth int) {
 			for _, a := range args {
 				if !strings.EqualFold(a, "none") {
 					l.apacheOverride = true
-				}
-			}
-		case "sethandler", "addhandler":
-			for _, a := range args {
-				if strings.EqualFold(a, "lua-script") {
-					l.apacheLuaUsed = true
 				}
 			}
 		case "loadfile": // a library loaded into the server's own processes (libpython for mod_wsgi)

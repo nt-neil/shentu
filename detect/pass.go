@@ -151,7 +151,9 @@ func (p *PassRound) Run(ctx context.Context) {
 	if units.Status == hostenv.StatusPartial {
 		p.notice("應用程式 unit 只列出一部分（" + string(units.Reason) + "）：" + Printable(units.Detail))
 	}
-	trust := func(path string) hostenv.TrustResult { return hostenv.JudgeLog(in.Src, path, web) }
+	trust := func(server string) TrustFunc { // a rotated file beside a log of server's
+		return func(path string) hostenv.TrustResult { return hostenv.JudgeLog(in.Src, path, web.ForServer(server)) }
+	}
 	// start says a source is being read, false when the round was given up.
 	start := func(key string) bool {
 		p.mu.Lock()
@@ -173,7 +175,7 @@ func (p *PassRound) Run(ctx context.Context) {
 		}
 		var good, bad []string
 		cur := cs.get(ls.Path)
-		c, res, err := ReadLog(in.Src, ls.Path, cur, in.Budget, ReadOpts{Want: &ls, Trust: trust}, func(l Line) {
+		c, res, err := ReadLog(in.Src, ls.Path, cur, in.Budget, ReadOpts{Want: &ls, Trust: trust(ls.Server)}, func(l Line) {
 			if l.Verified {
 				good = append(good, string(l.Text))
 			} else {
@@ -215,7 +217,7 @@ func (p *PassRound) Run(ctx context.Context) {
 		if !ls.Verified {
 			reason = "記錄檔未通過信任檢查（" + string(ls.Reason) + "），內容可能被竄改"
 		}
-		c, res, sigs, err := ScanAccess(in.Src, ls, cs.get(ls.Path), dropped[ls.Path], in.Budget, trust, func(rec AccessRecord, l Line) {
+		c, res, sigs, err := ScanAccess(in.Src, ls, cs.get(ls.Path), dropped[ls.Path], in.Budget, trust(ls.Server), func(rec AccessRecord, l Line) {
 			o := Origin{Verified: l.Verified, Custom: custom}
 			if !l.Verified {
 				o.Reason = reason
