@@ -65,7 +65,7 @@ sudo SHENTU_API_KEY=<your key> shentu setup --provider appletoken
 sudo shentu setup --local --model qwen2.5:3b
 ```
 
-`--model` picks another model. [Choosing a model](models.md) compares 12 of them on accuracy,
+`--model` picks another model. [Choosing a model](models.md) compares 14 of them on accuracy,
 prompt-injection resistance, speed and cost.
 
 ## 3. Set the notify channel

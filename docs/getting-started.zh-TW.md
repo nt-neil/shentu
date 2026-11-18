@@ -65,7 +65,7 @@ sudo SHENTU_API_KEY=<你的金鑰> shentu setup --provider appletoken
 sudo shentu setup --local --model qwen2.5:3b
 ```
 
-加上 `--model` 可以換成其他模型。不知道選哪個的話，可以看[模型評測](models.md)：12 個模型在準確度、抗提示注入、速度和成本上的比較。
+加上 `--model` 可以換成其他模型。不知道選哪個的話，可以看[模型評測](models.md)：14 個模型在準確度、抗提示注入、速度和成本上的比較。
 
 ## 3. 設定通知管道
 

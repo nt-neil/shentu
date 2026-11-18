@@ -112,8 +112,8 @@ same Windows APIs, build 17763) but not verified on GitHub-hosted runners (they 
 configuration and state live in `%ProgramData%\Shentu`, open to SYSTEM and Administrators only.
 Step by step, with the configuration: [packaging/windows/INSTALL.md](packaging/windows/INSTALL.md).
 
-Limits in v0.3.0: Windows is read-only (`block_ip` and `unblock_ip` are not supported), `shentu
-setup` does not run there yet (the configuration is written by hand), there is no MSI, and the
+Limits on Windows (v0.4.0): it is read-only (`block_ip` and `unblock_ip` are not supported),
+attack detection is Linux only, `shentu setup` does not run there yet (the configuration is written by hand), there is no MSI, and the
 binary is not code-signed: SmartScreen may warn and Microsoft Defender or another antivirus may
 flag it, because it reads the event log, autostart keys and WMI subscriptions as malware
 scanners do. Check the zip against `checksums.txt` and with
@@ -160,11 +160,11 @@ largest of `qwen2.5:3b`/`7b`/`14b` that fits in memory. `--model` picks another 
   block of an address past them is judged by its SSH logins alone.
 - **No listening ports, no daemon, no database.** Every tool call and model call is
   recorded in `/var/lib/shentu/log.jsonl`.
-- **Small attack surface**: one third-party dependency (a TOML parser), and everything else is the
-  Go standard library.
+- **Small attack surface**: two third-party dependencies (a TOML parser, and golang.org/x/sys for
+  Windows), and everything else is the Go standard library.
 - **Guarantees are tests**: `invariants_test.go` plays a hostile model and checks each rule above
   (no control tools in patrol, confirmation before every control action, lockout guards, log
-  allowlist, masking, the patrol sandbox, one dependency). A change that breaks one fails CI.
+  allowlist, masking, the patrol sandbox, the dependency allowlist). A change that breaks one fails CI.
   `injection_test.go` runs a real model against attacker-written log lines before each release,
   and `govulncheck` blocks a release with a known reachable vulnerability.
 
