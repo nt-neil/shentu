@@ -470,6 +470,9 @@ type logLoader struct {
 	// catchWorkers: a PHP-FPM pool sets catch_workers_output, so the root
 	// master logs what its workers write.
 	catchWorkers bool
+	// ngxDir: the directory nginx's relative includes are under ("" for
+	// /etc/nginx; OpenResty's is its own, nginxh2.go).
+	ngxDir string
 }
 
 // read reads one configuration file, counting it against the bound.
@@ -988,7 +991,11 @@ func (l *logLoader) ngxIncludes(ds []*ngxDir, depth int) []*ngxDir {
 				l.unread = append(l.unread, fmt.Sprintf("%s (included more than %d deep)", d.args[0], maxLogConfDepth))
 				continue
 			}
-			for _, f := range l.include("/etc/nginx", d.args[0], false) {
+			dir := l.ngxDir
+			if dir == "" {
+				dir = "/etc/nginx"
+			}
+			for _, f := range l.include(dir, d.args[0], false) {
 				out = append(out, l.ngxFile(f, depth+1)...)
 			}
 			continue
