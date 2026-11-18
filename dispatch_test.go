@@ -539,7 +539,7 @@ func TestBotDispatchStrictAcrossTurns(t *testing.T) {
 	b.handle(ctx, u)
 	answered(t, b)
 	for _, e := range auditLines(t, b.cfg.StateDir) {
-		if e.Tool == "block_ip" && (e.Confirmed || e.OK || e.Origin != "after_dispatch") {
+		if e.Tool == "block_ip" && (e.Confirmed || e.OK || e.Origin != "after_dispatch" || e.Dispatch == "") {
 			t.Errorf("block_ip entry: %+v", e)
 		}
 	}
@@ -547,7 +547,7 @@ func TestBotDispatchStrictAcrossTurns(t *testing.T) {
 	b.handle(ctx, msg(pairedUser, pairedChat, "private", "/new"))
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if b.histDispatched {
+	if b.histDispatch != "" {
 		t.Error("/new kept the dispatch mark")
 	}
 }
@@ -781,5 +781,57 @@ func TestInvariantDispatchOutputLastResort(t *testing.T) {
 	}
 	if len(o.Data.Reports) != 1 || o.Data.Reports[0].Status != "incomplete" || len(o.Data.Reports[0].Proposals) != 0 {
 		t.Errorf("report: %+v", o.Data.Reports)
+	}
+}
+
+// VM N-1: a control call after dispatches names the latest one in the log.
+func TestInvariantControlLogsLatestDispatch(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("block_ip is not offered on Windows")
+	}
+	empty := answerMsg(`{"status":"complete","findings":[]}`)
+	h := &hostileModel{replies: []string{
+		call("dispatch", `{"tasks":[{"role":"patrol"}]}`), empty,
+		call("dispatch", `{"tasks":[{"role":"attack"}]}`), empty,
+		call("block_ip", `{"ip":"203.0.113.9","reason":"x"}`),
+		done,
+	}}
+	a, state := dispatchAgent(t, h, nil, func(string, string) bool { return false })
+	if _, _, err := a.run(context.Background(), []message{{Role: "user", Content: "go"}}); err != nil {
+		t.Fatal(err)
+	}
+	var ids []string
+	var block *logEntry
+	for _, e := range auditLines(t, state) {
+		switch e.Tool {
+		case "dispatch":
+			ids = append(ids, e.Dispatch)
+		case "block_ip":
+			e := e
+			block = &e
+		}
+	}
+	if len(ids) != 2 || ids[0] == ids[1] || block == nil || block.Dispatch != ids[1] || block.Origin != "after_dispatch" {
+		t.Errorf("dispatches %v, block_ip %+v", ids, block)
+	}
+}
+
+// VM N-2: a sub-agent that used every step and was made to answer is incomplete,
+// whatever its report says.
+func TestInvariantSubagentStepLimitIncomplete(t *testing.T) {
+	refused := call("block_ip", `{"ip":"203.0.113.9","reason":"x"}`)
+	h := &hostileModel{replies: []string{
+		call("dispatch", `{"tasks":[{"role":"patrol"}]}`),
+		refused, refused, refused, refused, refused, refused,
+		answerMsg(`{"status":"complete","findings":[]}`),
+		done,
+	}}
+	a, _ := dispatchAgent(t, h, nil, nil)
+	if _, _, err := a.run(context.Background(), []message{{Role: "user", Content: "go"}}); err != nil {
+		t.Fatal(err)
+	}
+	reps := lastReports(t, h)
+	if len(reps) != 1 || reps[0].Status != "incomplete" || reps[0].Reason != "the step limit was used up" {
+		t.Errorf("reports: %+v", reps)
 	}
 }

@@ -293,7 +293,7 @@ func (a *agent) dispatch(ctx context.Context, args json.RawMessage) string {
 	rand.Read(idb)
 	id := hex.EncodeToString(idb)
 	entry.Dispatch = id
-	a.dispatched = true // from now on, any control call in this agent is treated as coming from a sub-agent's report
+	a.lastDispatch = id // from now on, any control call in this agent is treated as coming from a sub-agent's report
 
 	dctx, cancel := context.WithTimeout(ctx, dispatchTimeout)
 	defer cancel()
@@ -416,6 +416,9 @@ func (a *agent) runSub(ctx context.Context, id string, t subTask, tokenCap int) 
 		rep = subReport{Role: t.Role, Status: "incomplete", Reason: clean("model error: "+short, 200), Findings: []subFinding{}}
 	default:
 		rep = parseReport(t.Role, answer)
+		if sub.outOfSteps { // made to answer: what it did not get to is unknown
+			rep.Status, rep.Reason = "incomplete", "the step limit was used up"
+		}
 	}
 	rep.Tokens = sub.tokensUsed
 	if rep.Status != "complete" && a.progress != nil {

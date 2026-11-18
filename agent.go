@@ -33,7 +33,8 @@ type agent struct {
 	dispatchID    string                          // the dispatch a sub-agent belongs to, for the log
 	tokenCap      int                             // if set, input+output tokens this agent may use
 	tokensUsed    int                             // input+output tokens used so far
-	dispatched    bool                            // a dispatch ran: later control calls come from sub-agent reports
+	lastDispatch  string                          // id of the latest dispatch: later control calls may act on its reports
+	outOfSteps    bool                            // the run used every step and was made to answer
 	confirmStrict func(tool, preview string) bool // used instead of confirm after a dispatch; nil means confirm
 }
 
@@ -133,6 +134,7 @@ func (a *agent) run(ctx context.Context, msgs []message) (string, []message, err
 		}
 	}
 	// Out of steps: ask for an answer with what we have.
+	a.outOfSteps = true
 	msgs = append(msgs, message{Role: "user", Content: "Stop calling tools. Give your answer now with the evidence you have."})
 	reply, err := a.chat(ctx, msgs, nil)
 	if err != nil {
@@ -243,8 +245,11 @@ func (a *agent) callTool(ctx context.Context, name, rawArgs string) string {
 		}
 		entry.Preview = mask(preview)
 		confirm := a.confirm
-		if a.dispatched {
+		if a.lastDispatch != "" {
 			entry.Origin = "after_dispatch"
+			if entry.Dispatch == "" {
+				entry.Dispatch = a.lastDispatch
+			}
 			if a.confirmStrict != nil {
 				confirm = a.confirmStrict
 			}

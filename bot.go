@@ -320,16 +320,16 @@ type bot struct {
 	busy    bool
 	history []message
 	histFor string // pairing the history belongs to (user id + paired time)
-	// histDispatched: a turn still in history dispatched sub-agents, so a control
-	// call in a later turn may act on their reports and gets the strict confirmation.
-	histDispatched bool
-	waiting        map[string]chan bool // confirmation nonce -> answer
-	ignoreAt       map[int64]time.Time  // last audit entry per ignored chat
-	codeWait       chan string          // confirm = 2: the next 6-digit message from the paired user
-	sugNonce       string               // the buttons under the latest answer
-	sugText        []string             // what each of those buttons asks
-	canAct         bool                 // interaction >= 3 and the service holds CAP_NET_ADMIN
-	stop           context.CancelFunc   // /lockdown and a token leak stop the service
+	// histDispatch: the latest dispatch of a turn still in history, so a control
+	// call in a later turn may act on its reports: strict confirmation, and its id in the log.
+	histDispatch string
+	waiting      map[string]chan bool // confirmation nonce -> answer
+	ignoreAt     map[int64]time.Time  // last audit entry per ignored chat
+	codeWait     chan string          // confirm = 2: the next 6-digit message from the paired user
+	sugNonce     string               // the buttons under the latest answer
+	sugText      []string             // what each of those buttons asks
+	canAct       bool                 // interaction >= 3 and the service holds CAP_NET_ADMIN
+	stop         context.CancelFunc   // /lockdown and a token leak stop the service
 }
 
 func (b *bot) zh() bool {
@@ -576,7 +576,7 @@ func (b *bot) handle(ctx context.Context, u tgUpdate) {
 	}
 	if text == "/new" {
 		b.mu.Lock()
-		b.history, b.histDispatched = nil, false
+		b.history, b.histDispatch = nil, ""
 		b.mu.Unlock()
 		b.send(ctx, m.Chat.ID, b.t("new"), nil)
 		return
@@ -588,7 +588,7 @@ func (b *bot) handle(ctx context.Context, u tgUpdate) {
 	b.mu.Lock()
 	// A new pairing never sees the previous user's conversation.
 	if who := fmt.Sprintf("%d@%d", st.UserID, st.PairedAt.UnixNano()); b.histFor != who {
-		b.history, b.histFor, b.histDispatched = nil, who, false
+		b.history, b.histFor, b.histDispatch = nil, who, ""
 	}
 	if b.busy {
 		b.mu.Unlock()
@@ -657,7 +657,7 @@ func (b *bot) answer(ctx context.Context, chat int64, text string) {
 	}
 	b.mu.Lock()
 	owner := b.histFor // the pairing this answer belongs to
-	a.dispatched = b.histDispatched
+	a.lastDispatch = b.histDispatch
 	hist := append([]message{{Role: "system", Content: systemPrompt(b.cfg, skills) + answerRule(b.cfg.Bot.Answers, b.zh())}}, b.history...)
 	b.mu.Unlock()
 	hist = append(hist, message{Role: "user", Content: text})
@@ -709,7 +709,9 @@ func (b *bot) answer(ctx context.Context, chat int64, text string) {
 	b.mu.Lock()
 	if b.histFor == owner { // the pairing changed while this answer ran: drop it
 		b.history = keep[max(0, len(keep)-botHistoryLimit):]
-		b.histDispatched = b.histDispatched || a.dispatched
+		if a.lastDispatch != "" {
+			b.histDispatch = a.lastDispatch
+		}
 	}
 	b.mu.Unlock()
 }
