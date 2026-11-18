@@ -317,6 +317,15 @@ func TestJournalChannel(t *testing.T) {
 		{"client from a header", 1, func(h statHost) {
 			h.files["/etc/nginx/nginx.conf"] = "user www-data;\nhttp {\n\tset_real_ip_from 192.0.2.0/24;\n\taccess_log syslog:server=unix:/dev/log,nohostname combined;\n}\n"
 		}, ReasonClientFromHeader},
+		{"error log under the same tag", 1, func(h statHost) {
+			h.files["/etc/nginx/nginx.conf"] = "user www-data;\nerror_log syslog:server=unix:/dev/log,nohostname;\nhttp {\n\taccess_log syslog:server=unix:/dev/log,nohostname combined;\n}\n"
+		}, ReasonUnverified},
+		{"another access log format, same tag", 1, func(h statHost) {
+			h.files["/etc/nginx/nginx.conf"] = "user www-data;\nhttp {\n\tlog_format marker '$remote_addr $request';\n\taccess_log syslog:server=unix:/dev/log,nohostname combined;\n\tserver {\n\t\tserver_name a.example;\n\t}\n\tserver {\n\t\tserver_name b.example;\n\t\taccess_log syslog:server=unix:/dev/log,nohostname,severity=info marker;\n\t}\n}\n"
+		}, ReasonUnverified},
+		{"error log under its own tag", 1, func(h statHost) {
+			h.files["/etc/nginx/nginx.conf"] = "user www-data;\nerror_log syslog:server=unix:/dev/log,nohostname,tag=nginx_error;\nhttp {\n\taccess_log syslog:server=unix:/dev/log,nohostname combined;\n}\n"
+		}, ""},
 		{"nginx runs code", 1, func(h statHost) {
 			h.files["/etc/nginx/nginx.conf"] = "user www-data;\nload_module modules/ngx_http_js_module.so;\nhttp {\n\taccess_log syslog:server=unix:/dev/log,nohostname combined;\n}\n"
 		}, ReasonWebUserWritable},

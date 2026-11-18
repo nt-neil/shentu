@@ -520,6 +520,9 @@ type logLoader struct {
 	apart map[string]bool
 	// nameUID: /etc/passwd's accounts, by name (webAccounts).
 	nameUID map[string]int
+	// ngxSyslog: the nginx log directives (kind, format, destination) sent
+	// to syslog, by tag: a journal source is one tag's alone.
+	ngxSyslog map[string]map[string]bool
 	// runAs, runAsGroups: the accounts and groups every enabled unit,
 	// lingering user manager and crontab runs programs as (runAsAccounts);
 	// runAsLost: one could not be read or told.
@@ -1002,6 +1005,10 @@ func (l *logLoader) webAccounts() WebAccounts {
 // makes any access log unverified (WebLogs) is judged after.
 func (l *logLoader) judgeJournal(s *LogSource, web WebAccounts) {
 	no := func(r Reason, d string) { s.Verified, s.Reason, s.Detail = false, r, d }
+	if len(l.ngxSyslog[s.JournalTag]) > 1 { // an error log, or another format, would read as this one
+		no(ReasonUnverified, "more than one nginx log goes to syslog tagged "+s.JournalTag+": its entries are not this access log's alone")
+		return
+	}
 	if strings.Contains(s.Path, "unix:/dev/log") {
 		if real, err := EvalSymlinks(l.src, "/dev/log"); err != nil || real != journaldSocket {
 			no(ReasonUnverified, "/dev/log is not journald's socket ("+journaldSocket+"): another syslog daemon takes the log")
@@ -1726,6 +1733,21 @@ func (l *logLoader) ngxLog(d *ngxDir, kind, dest, format string, formats map[str
 		if f, ok := formats[format]; ok {
 			s.Spec, s.Escape = f.spec, f.escape
 		}
+	}
+	if params, ok := strings.CutPrefix(dest, "syslog:"); ok {
+		tag := "nginx"
+		for _, p := range strings.Split(params, ",") {
+			if v, ok := strings.CutPrefix(p, "tag="); ok {
+				tag = v
+			}
+		}
+		if l.ngxSyslog == nil {
+			l.ngxSyslog = map[string]map[string]bool{}
+		}
+		if l.ngxSyslog[tag] == nil {
+			l.ngxSyslog[tag] = map[string]bool{}
+		}
+		l.ngxSyslog[tag][kind+"\x00"+format+"\x00"+dest] = true
 	}
 	switch {
 	case dest == "off":
