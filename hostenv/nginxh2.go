@@ -32,12 +32,15 @@ func NginxHTTP2At(src Source, conf string) (on, found bool, unread []string) {
 	}
 	l := &logLoader{src: src, conf: wc, out: map[string]*LogSource{}, ngxDir: dir}
 	main := l.ngxFile(conf, 0)
-	// A file read through a link (a linked directory on the way to it) whose
-	// real path is outside the configuration's root is not one only root
-	// controls: what it says may hide HTTP/2, so it counts as not read.
+	// A file read through a link (a linked directory on the way to it) or
+	// from a package directory is judged as WebLogs judges it: its real path
+	// under the root, it and every directory above it root's and not
+	// writable by others. One that fails is not one only root controls: what
+	// it says may hide HTTP/2, so it counts as not read.
+	web := l.webAccounts()
 	for _, p := range l.extraRead {
-		if real, err := EvalSymlinks(src, p); err != nil || !underDir(real, wc.Root) && !underAny(real, wc.Extra) {
-			l.unread = append(l.unread, p+" (read through a link to outside "+wc.Root+")")
+		if why := confTrusted(src, p, wc, web); why != "" {
+			l.unread = append(l.unread, p+" ("+why+")")
 		}
 	}
 	ngxWalk(main, 0, func(d *ngxDir) {
