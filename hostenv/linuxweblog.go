@@ -51,6 +51,9 @@ type LogSource struct {
 	// FileID is the device:inode judged: a reader opening the path must find
 	// the same file (and still root's) for its lines to be verified.
 	FileID string `json:"file_id,omitempty"`
+	// FileUID is the judged file's owner: root, or a server account
+	// (WebAccounts.ServerUIDs) the reader must find it still is.
+	FileUID int `json:"file_uid,omitempty"`
 }
 
 // Reasons a log source is not verified or not readable, beside the
@@ -112,6 +115,19 @@ const (
 // distributions shentu supports, beside those the configuration names.
 var defaultWebUsers = []string{"www-data", "nginx", "apache", "httpd", "nobody", "wwwrun", "http", "lighttpd", "php-fpm", "caddy", "uwsgi"}
 
+// sharedWebUsers are the default web accounts made to be shared: the
+// distributions run their web servers, PHP and other applications all as
+// one of them (Debian's www-data, RHEL's apache, nobody), so whatever
+// configuration shentu read, something it did not may run as them. Only
+// an account of the server's own (RHEL's nginx) can be apart.
+var sharedWebUsers = map[string]bool{}
+
+func init() {
+	for _, u := range defaultWebUsers {
+		sharedWebUsers[u] = u != "nginx"
+	}
+}
+
 // logGroupNames are the groups a log directory may be writable by and still
 // be trusted (Ubuntu's /var/log is 775 root:syslog), provided none of
 // their members is a web account.
@@ -153,7 +169,7 @@ func (c LinuxCollector) WebLogs(src Source) Obs[[]LogSource] {
 			t := JudgeLog(src, s.Path, web)
 			s.Verified, s.Reason, s.Detail = t.Verified, t.Reason, t.Detail
 			if t.Verified {
-				s.FileID = t.File.ID
+				s.FileID, s.FileUID = t.File.ID, t.File.UID
 			}
 		}
 		if s.Verified {
@@ -161,7 +177,7 @@ func (c LinuxCollector) WebLogs(src Source) Obs[[]LogSource] {
 			// hold it open or feed it: whoever can make them write can.
 			// v0.4.0 trusts only nginx's and Apache's access logs, and
 			// those only while no application code runs in their workers.
-			no := func(r Reason, d string) { s.Verified, s.Reason, s.Detail, s.FileID = false, r, d, "" }
+			no := func(r Reason, d string) { s.Verified, s.Reason, s.Detail, s.FileID, s.FileUID = false, r, d, "", 0 }
 			switch {
 			case s.Kind != "access" || (s.Server != "nginx" && s.Server != "apache"):
 				no(ReasonWebUserWritable, "an error or slow log, or PHP-FPM's: it takes what workers, FastCGI and PHP write (their stderr, a script's name): "+WebUserWritableMeaning)
@@ -175,7 +191,7 @@ func (c LinuxCollector) WebLogs(src Source) Obs[[]LogSource] {
 				no(ReasonWebUserWritable, "Apache runs application code in its own children ("+strings.Join(l.apacheApp, ", ")+"), which hold the log open: "+WebUserWritableMeaning)
 			case s.Server == "nginx" && len(l.ngxApp) > 0:
 				no(ReasonWebUserWritable, "nginx runs application code in its workers ("+strings.Join(l.ngxApp, ", ")+"), which hold the log open: "+WebUserWritableMeaning)
-			case !scoped:
+			case !scoped && !l.apart[s.Server]: // application code runs as the workers' account, or may (webAccounts)
 				no(ReasonWebUserWritable, scopeWhy+": the web account can ptrace the server's workers, which hold the log open; "+WebUserWritableMeaning)
 			}
 		}
@@ -197,7 +213,7 @@ func (c LinuxCollector) WebLogs(src Source) Obs[[]LogSource] {
 	}
 	for i := range out {
 		if w := worst[key(&out[i])]; out[i].Verified && !w.Verified {
-			out[i].Verified, out[i].Reason, out[i].FileID = false, w.Reason, ""
+			out[i].Verified, out[i].Reason, out[i].FileID, out[i].FileUID = false, w.Reason, "", 0
 			out[i].Detail = "the same file is also PHP-FPM's or another server's " + w.Kind + " log: " + w.Detail
 		}
 	}
@@ -216,7 +232,7 @@ func (c LinuxCollector) WebLogs(src Source) Obs[[]LogSource] {
 		}
 		for i := range out {
 			if out[i].Verified {
-				out[i].Verified, out[i].Reason, out[i].FileID, out[i].Detail = false, ReasonUnverified, "", why
+				out[i].Verified, out[i].Reason, out[i].FileID, out[i].FileUID, out[i].Detail = false, ReasonUnverified, "", 0, why
 			}
 		}
 	}
@@ -242,6 +258,14 @@ type WebAccounts struct {
 	// account and group comes from (nsswitch: files, compat, systemd).
 	// Otherwise (sssd, LDAP, unread) no group-writable directory is trusted.
 	Complete bool
+	// ServerUIDs are the accounts nginx's workers or Apache's children run
+	// as that a log may be owned by and still be trusted: no application
+	// code runs as them (PHP-FPM pools, app units, a vhost's own account),
+	// by uid or primary group, the server runs none in its own processes,
+	// the account databases are complete and the configuration was read in
+	// full. What they write is the server's own: forging it takes breaking
+	// into nginx or Apache itself, which no log check can stand against.
+	ServerUIDs map[int]string
 }
 
 // TrustResult is what JudgeLog found: the file it judged, by its stat.
@@ -258,17 +282,23 @@ func LogTrust(src Source, p string, web WebAccounts) (verified bool, why Reason,
 	return t.Verified, t.Reason, t.Detail
 }
 
-// JudgeLog says whether only root can change p. It, after its links, is a
-// regular file owned by root that neither group nor others can write;
-// every link on the way is root's own; every directory above it and above
-// each link is root's, not writable by others, and writable by its group
-// only when that group is a log group (WebAccounts.LogGIDs, the account
-// databases complete) with no ACL widening it. A sticky directory lets no
+// JudgeLog says whether only root, or a server account no application
+// code runs as (WebAccounts.ServerUIDs), can change p. It, after its
+// links, is a regular file owned by one of them that neither group nor
+// others can write; every link on the way is one of theirs; every
+// directory above it and above each link is one of theirs, not writable
+// by others, and writable by its group only when that group is a log
+// group (WebAccounts.LogGIDs, the account databases complete) with no ACL
+// widening it. A sticky directory lets no
 // one but a file's owner replace it. Anything that cannot be told (a
 // group, an ACL, a link's owner) is unverified: judging fails closed. The
 // web accounts only make the reason precise.
 func JudgeLog(src Source, p string, web WebAccounts) TrustResult {
 	no := func(r Reason, d string) TrustResult { return TrustResult{Reason: r, Detail: d} }
+	owner := func(uid int) bool { // root, or a server's own account
+		_, ok := web.ServerUIDs[uid]
+		return uid == 0 || ok
+	}
 	real, err := EvalSymlinks(src, p)
 	if err != nil {
 		return no(statReason(err), whyUnread(err))
@@ -280,7 +310,7 @@ func JudgeLog(src Source, p string, web WebAccounts) TrustResult {
 	switch {
 	case !st.Mode.IsRegular():
 		return no(ReasonNotRegular, real+" is not a regular file")
-	case st.UID != 0:
+	case !owner(st.UID):
 		if name, ok := web.UIDs[st.UID]; ok {
 			return no(ReasonWebUserWritable, fmt.Sprintf("%s is owned by %s (uid %d): %s", real, name, st.UID, WebUserWritableMeaning))
 		}
@@ -300,7 +330,7 @@ func JudgeLog(src Source, p string, web WebAccounts) TrustResult {
 		if err != nil {
 			return no(ReasonUnverified, "link "+ln+": "+whyUnread(err))
 		}
-		if ls.UID != 0 {
+		if !owner(ls.UID) {
 			if name, ok := web.UIDs[ls.UID]; ok {
 				return no(ReasonWebUserWritable, fmt.Sprintf("link %s is owned by %s (uid %d): %s", ln, name, ls.UID, WebUserWritableMeaning))
 			}
@@ -328,7 +358,7 @@ func JudgeLog(src Source, p string, web WebAccounts) TrustResult {
 		}
 		sticky := ds.Mode&fs.ModeSticky != 0
 		switch {
-		case ds.UID != 0:
+		case !owner(ds.UID):
 			if name, ok := web.UIDs[ds.UID]; ok {
 				return no(ReasonWebUserWritable, fmt.Sprintf("directory %s is owned by %s (uid %d): %s", d, name, ds.UID, WebUserWritableMeaning))
 			}
@@ -358,7 +388,9 @@ func confTrusted(src Source, p string, conf WebConf, web WebAccounts) string {
 		return "resolves to " + real + ", outside " + conf.Root + " and the package directories"
 	}
 	// The file itself (regular, root's, not writable by group or others),
-	// every link on the way, and every directory above them: as a log.
+	// every link on the way, and every directory above them: as a log, but
+	// root's alone (a worker is not to change what the server runs).
+	web.ServerUIDs = nil
 	if t := JudgeLog(src, p, web); !t.Verified {
 		return t.Detail
 	}
@@ -451,9 +483,19 @@ type logLoader struct {
 	unread []string
 	out    map[string]*LogSource // server\x00kind\x00path
 	cut    bool
-	users  []string // accounts the configuration runs the servers as
+	users  []string // accounts application code runs as (PHP-FPM pools, app units, lighttpd, a vhost's own)
 	groups []string // and groups
-	modPHP bool     // Apache loads PHP as a module
+	// serverUsers, serverGroups: the accounts nginx's workers (user) and
+	// Apache's children (User, Group) run as, by server.
+	serverUsers, serverGroups map[string][]string
+	// apacheSwitch: Apache's children take a vhost's own account
+	// (AssignUserID, RUidGid): they run as an application account.
+	apacheSwitch bool
+	// apart: the server's workers run as accounts no application code
+	// runs as, by uid or primary group (webAccounts), so application code
+	// cannot ptrace them.
+	apart  map[string]bool
+	modPHP bool // Apache loads PHP as a module
 	// extraRead: files read from logConf.Extra, whose directories are
 	// judged once the web accounts are known.
 	extraRead []string
@@ -589,6 +631,22 @@ func (l *logLoader) lighttpd() {
 	}
 }
 
+// serverUser adds an account server's workers run as.
+func (l *logLoader) serverUser(server, u string) {
+	if l.serverUsers == nil {
+		l.serverUsers = map[string][]string{}
+	}
+	l.serverUsers[server] = append(l.serverUsers[server], u)
+}
+
+// serverGroup adds a group server's workers run as.
+func (l *logLoader) serverGroup(server, g string) {
+	if l.serverGroups == nil {
+		l.serverGroups = map[string][]string{}
+	}
+	l.serverGroups[server] = append(l.serverGroups[server], g)
+}
+
 // unitUsers adds the User= of the application units (gunicorn, uwsgi,
 // node...): their processes are the web application too.
 func (l *logLoader) unitUsers(c LinuxCollector, src Source) {
@@ -636,7 +694,14 @@ func (l *logLoader) webAccounts() WebAccounts {
 	w := WebAccounts{UIDs: map[int]string{}, GIDs: map[int]string{}}
 	users, groups := map[string]bool{}, map[string]bool{}
 	numUIDs := map[int]bool{}
-	for _, u := range append(append([]string{}, defaultWebUsers...), l.users...) {
+	var servers, serverGroups []string
+	for _, us := range l.serverUsers {
+		servers = append(servers, us...)
+	}
+	for _, gs := range l.serverGroups {
+		serverGroups = append(serverGroups, gs...)
+	}
+	for _, u := range append(append(append([]string{}, defaultWebUsers...), l.users...), servers...) {
 		if id, ok := numericID(u); ok { // User #33, user = 33: kept by number, and looked up below
 			if id != 0 {
 				w.UIDs[id] = "uid " + strconv.Itoa(id)
@@ -646,7 +711,7 @@ func (l *logLoader) webAccounts() WebAccounts {
 		}
 		users[u] = true
 	}
-	for _, g := range append(append(append([]string{}, defaultWebUsers...), defaultWebGroups...), l.groups...) {
+	for _, g := range append(append(append(append([]string{}, defaultWebUsers...), defaultWebGroups...), l.groups...), serverGroups...) {
 		if id, ok := numericID(g); ok {
 			if id != 0 {
 				w.GIDs[id] = "gid " + strconv.Itoa(id)
@@ -658,6 +723,7 @@ func (l *logLoader) webAccounts() WebAccounts {
 	primary := map[int]bool{}
 	byPrimary := map[int][]string{} // gid -> accounts with it as primary group
 	nameUID := map[string]int{}
+	uidGID := map[int]int{} // an account's primary group, by uid
 	passwdOK, groupOK, nis := false, false, false
 	if b, err := l.src.ReadFile("/etc/passwd"); err == nil {
 		passwdOK = true
@@ -669,6 +735,11 @@ func (l *logLoader) webAccounts() WebAccounts {
 			}
 			if uid, err := strconv.Atoi(e.UID); err == nil {
 				nameUID[e.Name] = uid
+				if _, dup := uidGID[uid]; dup {
+					uidGID[uid] = -1 // two accounts, one uid: either one may be what runs as it
+				} else if gid, err := strconv.Atoi(e.GID); err == nil {
+					uidGID[uid] = gid
+				}
 			}
 		}
 		for _, e := range entries { // a numeric user's name, for its group memberships
@@ -687,6 +758,9 @@ func (l *logLoader) webAccounts() WebAccounts {
 			}
 		}
 	}
+	app := l.appAccounts()
+	appGIDs := map[int]bool{} // groups an application account has, as primary group or listed member
+	groupGID := map[string]int{}
 	w.LogGIDs = map[int]string{}
 	if b, err := l.src.ReadFile("/etc/group"); err == nil {
 		groupOK = true
@@ -700,11 +774,17 @@ func (l *logLoader) webAccounts() WebAccounts {
 			if err != nil || gid == 0 {
 				continue
 			}
+			if _, dup := groupGID[f[0]]; !dup {
+				groupGID[f[0]] = gid
+			}
 			member := false // a web user in the group's list: it may write what the group may
 			if len(f) > 3 {
 				for _, m := range strings.Split(f[3], ",") {
 					if users[strings.TrimSpace(m)] {
 						member = true
+					}
+					if app[strings.TrimSpace(m)] {
+						appGIDs[gid] = true
 					}
 				}
 			}
@@ -740,7 +820,141 @@ func (l *logLoader) webAccounts() WebAccounts {
 			w.GIDs[gid] = "gid " + strconv.Itoa(gid)
 		}
 	}
+	l.serverAccounts(&w, app, appGIDs, nameUID, uidGID, groupGID)
 	return w
+}
+
+// appAccounts are the names (or numbers) of the accounts application code
+// may run as: PHP-FPM pools, app units, lighttpd, a vhost's own account,
+// the default web accounts no server's configuration names as its own,
+// and the accounts of a server that runs application code in its own
+// processes.
+func (l *logLoader) appAccounts() map[string]bool {
+	app := map[string]bool{}
+	for _, u := range l.users {
+		app[u] = true
+	}
+	named := map[string]bool{}
+	for _, us := range l.serverUsers {
+		for _, u := range us {
+			named[u] = true
+		}
+	}
+	for _, u := range defaultWebUsers {
+		if !named[u] {
+			app[u] = true
+		}
+	}
+	for _, server := range []string{"nginx", "apache"} {
+		if l.runsApp(server) {
+			for _, u := range l.serverUsers[server] {
+				app[u] = true
+			}
+		}
+	}
+	return app
+}
+
+// runsApp: the server runs application code in its own processes, or its
+// children take an application account.
+func (l *logLoader) runsApp(server string) bool {
+	if server == "nginx" {
+		return len(l.ngxApp) > 0
+	}
+	return len(l.apacheApp) > 0 || l.apacheSwitch
+}
+
+// serverAccounts fills w.ServerUIDs and l.apart: a server's accounts are
+// apart when each is in /etc/passwd, and no application account has its
+// uid or its primary group (an application account named but not found
+// could have either). Only with complete account databases and the
+// configuration read in full; otherwise none is.
+func (l *logLoader) serverAccounts(w *WebAccounts, app map[string]bool, appGIDs map[int]bool, nameUID map[string]int, uidGID map[int]int, groupGID map[string]int) {
+	w.ServerUIDs, l.apart = map[int]string{}, map[string]bool{}
+	if !w.Complete || len(l.unread) > 0 || l.cut {
+		return
+	}
+	// resolve: the account's uid, and its primary group (-1: not known,
+	// or the uid is two accounts'); found false when it is not there.
+	resolve := func(u string) (uid, gid int, found bool) {
+		if id, num := numericID(u); num {
+			uid = id
+		} else if uid, found = nameUID[u]; !found {
+			return 0, -1, false
+		}
+		if gid, found = uidGID[uid]; !found {
+			gid = -1
+		}
+		return uid, gid, true
+	}
+	defaults := map[string]bool{}
+	for _, u := range defaultWebUsers {
+		defaults[u] = true
+	}
+	appUIDs, lost := map[int]bool{}, false
+	for u := range sharedWebUsers {
+		if uid, ok := nameUID[u]; ok && sharedWebUsers[u] {
+			appUIDs[uid] = true
+			if gid, ok := uidGID[uid]; ok && gid >= 0 {
+				appGIDs[gid] = true
+			}
+		}
+	}
+	for u := range app {
+		uid, gid, found := resolve(u)
+		if !found {
+			lost = lost || !defaults[u] // a default account not in /etc/passwd is not there at all
+			continue
+		}
+		appUIDs[uid] = true
+		if gid < 0 {
+			lost = true // its group could be the server's
+		}
+		appGIDs[gid] = true
+	}
+	for _, g := range l.groups {
+		if id, num := numericID(g); num {
+			appGIDs[id] = true
+		} else if gid, ok := groupGID[g]; ok {
+			appGIDs[gid] = true
+		} else {
+			lost = true
+		}
+	}
+	if lost {
+		return
+	}
+	for _, server := range []string{"nginx", "apache"} {
+		us := l.serverUsers[server]
+		if len(us) == 0 || l.runsApp(server) {
+			continue
+		}
+		ok := true
+		for _, u := range us {
+			uid, gid, found := resolve(u)
+			if !found || gid < 0 || appUIDs[uid] || appGIDs[gid] {
+				ok = false
+			}
+		}
+		for _, g := range l.serverGroups[server] { // the workers' group, as configured
+			gid, num := numericID(g)
+			if !num {
+				gid, num = groupGID[g]
+			}
+			if !num || appGIDs[gid] {
+				ok = false
+			}
+		}
+		if !ok {
+			continue
+		}
+		l.apart[server] = true
+		for _, u := range us {
+			if uid, _, _ := resolve(u); uid != 0 {
+				w.ServerUIDs[uid] = u
+			}
+		}
+	}
 }
 
 // filesOnlyNSS: nsswitch.conf takes accounts and groups only from the
@@ -1084,12 +1298,12 @@ func (l *logLoader) nginx() {
 		switch d.name {
 		case "user": // user www-data [group]
 			if len(d.args) > 0 {
-				l.users = append(l.users, d.args[0])
+				l.serverUser("nginx", d.args[0])
 			}
 			if len(d.args) > 1 {
-				l.groups = append(l.groups, d.args[1])
+				l.serverGroup("nginx", d.args[1])
 			} else if len(d.args) == 1 { // no group: nginx takes the user's name
-				l.groups = append(l.groups, d.args[0])
+				l.serverGroup("nginx", d.args[0])
 			}
 		case "load_module":
 			if len(d.args) > 0 && !ngxSafeModules[path.Base(d.args[0])] && !contains(l.ngxApp, path.Base(d.args[0])) {
@@ -1439,11 +1653,11 @@ func (l *logLoader) apacheFile(st *apacheState, p string, depth int) {
 			}
 		case "user":
 			if len(args) > 0 {
-				l.users = append(l.users, st.expand(args[0]))
+				l.serverUser("apache", st.expand(args[0]))
 			}
 		case "group":
 			if len(args) > 0 {
-				l.groups = append(l.groups, st.expand(args[0]))
+				l.serverGroup("apache", st.expand(args[0]))
 			}
 		case "identitycheck":
 			if len(args) > 0 && !strings.EqualFold(args[0], "off") {
@@ -1454,6 +1668,9 @@ func (l *logLoader) apacheFile(st *apacheState, p string, depth int) {
 				st.lookups = true
 			}
 		case "assignuserid", "suexecusergroup", "ruidgid": // mpm-itk, suEXEC, mod_ruid2: a vhost's own account
+			if name != "suexecusergroup" { // the children themselves become it
+				l.apacheSwitch = true
+			}
 			if len(args) > 0 {
 				l.users = append(l.users, st.expand(args[0]))
 			}
