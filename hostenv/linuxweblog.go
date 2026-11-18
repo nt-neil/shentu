@@ -518,6 +518,8 @@ type logLoader struct {
 	// runs as, by uid or primary group (webAccounts), so application code
 	// cannot ptrace them.
 	apart map[string]bool
+	// fpmUsers: the PHP-FPM pools' accounts (in users too).
+	fpmUsers []string
 	// nameUID: /etc/passwd's accounts, by name (webAccounts).
 	nameUID map[string]int
 	// ngxSyslog: the nginx log directives (kind, format, destination) sent
@@ -2172,6 +2174,7 @@ func (l *logLoader) fpmFile(p, section string, depth int) string {
 		case "user":
 			if section != "global" {
 				l.users = append(l.users, v)
+				l.fpmUsers = append(l.fpmUsers, v)
 			}
 		case "group", "listen.group":
 			if section != "global" {
