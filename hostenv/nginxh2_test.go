@@ -1,6 +1,7 @@
 package hostenv
 
 import (
+	"path"
 	"strings"
 	"testing"
 )
@@ -59,5 +60,27 @@ func TestNginxHTTP2OpenResty(t *testing.T) {
 	h.files["/etc/elsewhere/site.conf"] = "server {\n  listen 443 http2;\n}\n"
 	if on, _, unread := NginxHTTP2At(h, OpenRestyConf); on || len(unread) != 1 {
 		t.Errorf("include outside the prefix: on %v unread %v", on, unread)
+	}
+}
+
+// A directory on the way that links outside the prefix: what the file there
+// says is not trusted, so it counts as not read and the result fails closed
+// (review of #107 S-1).
+func TestNginxHTTP2LinkedDir(t *testing.T) {
+	for _, conf := range []string{OpenRestyConf, NginxConf} {
+		h := newFake(true)
+		dir := path.Dir(conf)
+		h.files[conf] = "http {\n  http2 on;\n  include sites/site.conf;\n}\n"
+		h.links[dir+"/sites"] = "/home/u/sites"
+		site := "server {\n  listen 443 ssl;\n  http2 off;\n}\n"
+		h.files[dir+"/sites/site.conf"], h.files["/home/u/sites/site.conf"] = site, site // the system follows the linked directory
+		on, found, unread := NginxHTTP2At(h, conf)
+		if on || !found || len(unread) != 1 || !strings.Contains(unread[0], "sites/site.conf") {
+			t.Errorf("%s: on %v found %v unread %v, want the linked file not read", conf, on, found, unread)
+		}
+		h.links = map[string]string{} // a real directory inside the prefix: read
+		if _, _, unread := NginxHTTP2At(h, conf); len(unread) != 0 {
+			t.Errorf("%s, no link: unread %v", conf, unread)
+		}
 	}
 }

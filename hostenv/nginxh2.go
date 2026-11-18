@@ -32,6 +32,14 @@ func NginxHTTP2At(src Source, conf string) (on, found bool, unread []string) {
 	}
 	l := &logLoader{src: src, conf: wc, out: map[string]*LogSource{}, ngxDir: dir}
 	main := l.ngxFile(conf, 0)
+	// A file read through a link (a linked directory on the way to it) whose
+	// real path is outside the configuration's root is not one only root
+	// controls: what it says may hide HTTP/2, so it counts as not read.
+	for _, p := range l.extraRead {
+		if real, err := EvalSymlinks(src, p); err != nil || !underDir(real, wc.Root) && !underAny(real, wc.Extra) {
+			l.unread = append(l.unread, p+" (read through a link to outside "+wc.Root+")")
+		}
+	}
 	ngxWalk(main, 0, func(d *ngxDir) {
 		switch {
 		case d.name == ngxTooDeep:
