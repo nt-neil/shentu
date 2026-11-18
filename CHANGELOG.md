@@ -6,12 +6,12 @@ a release are not written here: they are worked out from the rule snapshots in
 `docs/site-src/rules-history/`. `CHANGELOG.zh-TW.md` holds the same releases in Traditional
 Chinese for the zh-TW pages; keep the two in step.
 
-## v0.4.0 (unreleased)
+## v0.4.0 — 2026-11-18
 
 - Attack detection (Linux): each patrol round reads the web server's logs and picks out the
   requests aimed at vulnerabilities this host really has. It alerts; it never blocks on its
   own. What it cannot see and what it may miss are listed in
-  [docs/attack-detection-limits.md](docs/attack-detection-limits.md).
+  `docs/attack-detection-limits.md`.
 - The vulnerability surface: the daily round saves what this host is known to be vulnerable to
   in `state_dir/surface.json`, and the other rounds read it: code audit findings, with the
   routes registering the handler a finding sits in when the same file shows them (#84);
@@ -55,15 +55,7 @@ Chinese for the zh-TW pages; keep the two in step.
   patrol as root took 126 s (v0.3.1 146 s, v0.3.0 99 s). Benchmark unchanged: published vulnerabilities 16 of 97 caught, 1
   fixed-release false positive; held-out cases 3 of 30; TypeScript cases 1 of 18 with 1
   fixed-release false positive.
-- `tools/detecteval`, run in CI, measures attack detection on synthetic requests (#94):
-  - requests converted from nuclei-templates v10.5.2: a signature of the same class matched
-    40.5% of them (1548 of 3822 classified templates). This is a match on the request line,
-    not an alert;
-  - ordinary requests for 152 routes of 8 applications: 0 false alerts; 363 of them differ in
-    more than tracking parameters, so the rate can only be said to be below about 0.8% (95%
-    upper bound);
-  - templates for vulnerabilities the test host has: 3 of 10 alerted, 2 of them only at L1
-    (the payload is in the request body).
+- `tools/detecteval`, run in CI, measures attack detection on synthetic requests (#94): requests converted from nuclei-templates v10.5.2: a signature of the same class matched 40.5% of them (1548 of 3822 classified templates). This is a match on the request line, not an alert; ordinary requests for 152 routes of 8 applications: 0 false alerts; 363 of them differ in more than tracking parameters, so the rate can only be said to be below about 0.8% (95% upper bound); templates for vulnerabilities the test host has: 3 of 10 alerted, 2 of them only at L1 (the payload is in the request body).
 
 ### Fixed
 
