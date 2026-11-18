@@ -762,3 +762,24 @@ func TestInvariantDispatchOutputValidJSON(t *testing.T) {
 		}
 	}
 }
+
+// r3 S-1: when nothing more can be removed and the result still does not fit
+// (a reason far past its limit), every report becomes a bare incomplete one:
+// valid JSON, untrusted first, and no proposal survives.
+func TestInvariantDispatchOutputLastResort(t *testing.T) {
+	reports := []subReport{{Role: "attack", Status: "complete", Reason: strings.Repeat("shentu-marker-x ", 2000), Findings: []subFinding{},
+		Proposals: []subProposal{{Action: "propose_block_ip", IP: "203.0.113.9"}}}}
+	out := dispatchOutput("0123456789ab", reports)
+	var o struct {
+		Untrusted bool `json:"untrusted"`
+		Data      struct {
+			Reports []subReport `json:"reports"`
+		} `json:"data"`
+	}
+	if !json.Valid([]byte(out)) || json.Unmarshal([]byte(out), &o) != nil || !o.Untrusted || !strings.HasPrefix(out, `{"untrusted":true`) {
+		t.Fatalf("not valid JSON with the marker first: %.120s", out)
+	}
+	if len(o.Data.Reports) != 1 || o.Data.Reports[0].Status != "incomplete" || len(o.Data.Reports[0].Proposals) != 0 {
+		t.Errorf("report: %+v", o.Data.Reports)
+	}
+}
