@@ -10,7 +10,7 @@ v0.4.0 不會自動封鎖：`block_ip` 一定要經營運者確認。攻擊紀�
 
 - **只支援 Linux**：攻擊偵測只讀 Linux 主機的紀錄。
 - **部分紀錄格式會被拒絕**：會讀 nginx 和 Apache 的存取紀錄，設定檔裡的自訂格式也讀。格式裡有 Shentu 不支援的欄位、用了 `escape=none` 或自訂時間格式，都會被拒絕。
-- **看不到協定層的攻擊**：access log 記錄的是伺服器解析完成的請求，不記錄承載請求的 HTTP/2 frame 或 TLS record。所以針對協定層本身的攻擊，這裡完全看不到，例如 nginx 的 HTTP/2 漏洞 CVE-2026-123007 和 CVE-2026-123633。這類風險改由主機盤點依版本和設定判斷：受影響的 nginx 開了 HTTP/2，就會提出警告。distro 是否已 backport 修補，是從套件的 changelog 判斷。沒有 changelog 的映像（Ubuntu minimized 映像、部分容器映像），修好了也可能仍然警告；這種情況請以 distro 的公告為準。
+- **看不到協定層的攻擊**：access log 記錄的是伺服器解析完成的請求，不記錄承載請求的 HTTP/2 frame 或 TLS record。所以針對協定層本身的攻擊，這裡完全看不到，例如 nginx 的 HTTP/2 漏洞 CVE-2026-123007 和 CVE-2026-123633。這類風險改由主機盤點依版本和設定判斷：受影響的 nginx 開了 HTTP/2，就會提出警告。distro 是否已 backport 修補，是從套件的 changelog 判斷。沒有 changelog 的映像（Ubuntu minimized 映像、部分容器映像），修好了也可能仍然警告；這種情況請以 distro 的公告為準。移除了 nginx 套件、留下設定檔，又另外裝了自行編譯的 nginx（不在盤點會找的位置）時，可能不會出聲。
 - **看不到請求本文**：存取紀錄不記 POST 本文、JSON 或上傳檔，放在那裡的 payload 永遠看不到；這種請求打到路由時，最多只到 L1。
 - **最多解碼兩輪**：網址編碼最多解兩次（含 `%u` 和過長的 UTF-8）。base64、gzip 和其他編碼都不解。
 - **無法判定的請求只計數，L1 不推播**：請求被截斷、可能藏有 payload（Unknown）時只計數；同一個 sink 在 24 小時內累積到 20 次才推播。L1 的嘗試只計數並列入報告，不會推播成告警。
