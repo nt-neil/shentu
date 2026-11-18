@@ -78,6 +78,37 @@ func TestServerAccountApart(t *testing.T) {
 			systemdDirs(h)
 			h.files[wants+"/marker@a.service"] = "[Service]\nUser=%i\nExecStart=/usr/local/bin/marker-tool\n"
 		}, ReasonWebUserWritable},
+		{"a unit not enabled runs as nginx", 1, true, func(h statHost) {
+			systemdDirs(h)
+			h.files["/usr/lib/systemd/system/marker.service"] = "[Service]\nUser=nginx\nExecStart=/usr/local/bin/marker-tool\n"
+		}, ReasonWebUserWritable},
+		{"a requires link to a unit as nginx", 1, true, func(h statHost) {
+			systemdDirs(h)
+			h.st["/etc/systemd/system/marker.target.requires"] = FileStat{Mode: fs.ModeDir | 0o755}
+			h.files["/etc/systemd/system/marker.target.requires/marker.service"] = "[Service]\nUser=nginx\nExecStart=/usr/local/bin/marker-tool\n"
+		}, ReasonWebUserWritable},
+		{"a template's instance is nginx", 1, true, func(h statHost) {
+			systemdDirs(h)
+			h.files["/usr/lib/systemd/system/marker@.service"] = "[Service]\nUser=%i\nExecStart=/usr/local/bin/marker-tool\n"
+			h.links[wants+"/marker@nginx.service"] = "/usr/lib/systemd/system/marker@.service"
+		}, ReasonWebUserWritable},
+		{"a template with no instance listed", 1, true, func(h statHost) {
+			systemdDirs(h)
+			h.files["/usr/lib/systemd/system/marker@.service"] = "[Service]\nUser=%i\nExecStart=/usr/local/bin/marker-tool\n"
+		}, ""},
+		{"a unit's account by another specifier", 1, true, func(h statHost) {
+			systemdDirs(h)
+			h.files["/usr/lib/systemd/system/marker.service"] = "[Service]\nUser=%u\nExecStart=/usr/local/bin/marker-tool\n"
+		}, ReasonWebUserWritable},
+		{"unit directory not listed", 1, true, func(h statHost) {
+			systemdDirs(h)
+			h.files["/usr/lib/systemd/system/other.service"] = "[Service]\nExecStart=/usr/local/bin/marker-tool\n"
+			h.denied["/usr/lib/systemd/system"] = true
+		}, ReasonWebUserWritable},
+		{"cron.d not listed", 1, true, func(h statHost) {
+			h.files["/etc/cron.d/marker"] = "0 * * * * root /usr/local/bin/marker-tool\n"
+			h.denied["/etc/cron.d"] = true
+		}, ReasonWebUserWritable},
 		{"user manager kept for nginx", 1, true, func(h statHost) {
 			h.st["/var/lib/systemd/linger"] = FileStat{Mode: fs.ModeDir | 0o755}
 			h.files["/var/lib/systemd/linger/nginx"] = ""

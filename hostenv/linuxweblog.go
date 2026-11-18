@@ -687,71 +687,86 @@ func (l *logLoader) unitUsers(c LinuxCollector, src Source) {
 }
 
 // runAsAccounts gathers who programs run as beside the application
-// servers: every enabled unit's User=, Group= and SupplementaryGroups=
-// (a timer's, socket's or path's service too), the users systemd keeps a
-// manager for (linger), and the users of the crontabs. None of them is
-// known to run only what root wrote, so a server's account among them is
-// not apart.
+// servers: the User=, Group= and SupplementaryGroups= of every service
+// unit in every systemd search path, enabled or not (a timer, socket,
+// path or dependency may start any), a template's for each instance any
+// dependency directory names; the users systemd keeps a manager for
+// (linger); and the users of the crontabs. None of them is known to run
+// only what root wrote, so a server's account among them is not apart.
 func (l *logLoader) runAsAccounts() {
 	gone := func(err error) bool { return errors.Is(err, fs.ErrNotExist) || errors.Is(err, ErrNotRecorded) }
 	conf := WebConf{Root: "/", Owner: 0} // as AppUnits reads them
-	seen := map[string]bool{}
-	dirs, err := l.src.ReadDir("/etc/systemd/system")
-	if err != nil && !gone(err) {
-		l.runAsLost = true
+	units := map[string]string{}         // service names, templates (a@.service) and instances (a@b.service): where a dependency names it, or ""
+	list := func(d string) []string {
+		names, err := l.src.ReadDir(d)
+		if err != nil && !gone(err) {
+			l.runAsLost = true
+		}
+		return names
 	}
-	for _, d := range dirs {
-		if !strings.HasSuffix(d, ".wants") {
-			continue
-		}
-		wants := path.Join("/etc/systemd/system", d)
-		names, err := l.src.ReadDir(wants)
-		if err != nil {
-			l.runAsLost = l.runAsLost || !gone(err)
-			continue
-		}
-		for _, n := range names {
-			svc := n
-			for _, suf := range []string{".timer", ".socket", ".path"} {
-				if base, ok := strings.CutSuffix(n, suf); ok {
-					svc = base + ".service"
+	for _, dir := range unitPaths {
+		for _, n := range list(dir) {
+			switch {
+			case strings.HasSuffix(n, ".service"):
+				if _, ok := units[n]; !ok {
+					units[n] = ""
 				}
-			}
-			if !strings.HasSuffix(svc, ".service") || seen[svc] {
-				continue
-			}
-			if seen[svc] = true; len(seen) > maxUnits {
-				l.runAsLost = true
-				return
-			}
-			var unit []byte
-			if svc == n {
-				b, why := readWebConf(l.src, path.Join(wants, n), conf)
-				if why != "" {
-					l.runAsLost = true
-					continue
-				}
-				unit = b
-			}
-			all, unread := unitConfs(l.src, svc, unit, conf)
-			l.runAsLost = l.runAsLost || unread
-			user := ""
-			for _, b := range all {
-				if u, set := unitUser(b); set {
-					user = u
-				}
-				for _, ln := range strings.Split(string(b), "\n") {
-					k, v, ok := strings.Cut(strings.TrimSpace(ln), "=")
-					if k = strings.TrimSpace(k); ok && (k == "Group" || k == "SupplementaryGroups") {
-						l.runAsGroups = append(l.runAsGroups, strings.Fields(v)...)
+			case strings.HasSuffix(n, ".wants"), strings.HasSuffix(n, ".requires"), strings.HasSuffix(n, ".upholds"):
+				for _, m := range list(path.Join(dir, n)) {
+					if strings.HasSuffix(m, ".service") && units[m] == "" {
+						units[m] = path.Join(dir, n, m)
 					}
 				}
 			}
-			if strings.Contains(user, "%") {
-				l.runAsLost = true // the instance names the account
-			} else if user != "" {
+		}
+	}
+	if len(units) > maxRunAsUnits {
+		l.runAsLost = true
+		return
+	}
+	names := make([]string, 0, len(units))
+	for n := range units {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	for _, n := range names {
+		var unit []byte // a dependency's link (or file) to it, as AppUnits reads one
+		if dep := units[n]; dep != "" {
+			b, why := readWebConf(l.src, dep, conf)
+			if why != "" {
+				l.runAsLost = true
+			}
+			unit = b
+		}
+		all, unread := unitConfs(l.src, n, unit, conf)
+		l.runAsLost = l.runAsLost || unread
+		user := ""
+		for _, b := range all {
+			if u, set := unitUser(b); set {
+				user = u
+			}
+			for _, ln := range strings.Split(string(b), "\n") {
+				k, v, ok := strings.Cut(strings.TrimSpace(ln), "=")
+				if k = strings.TrimSpace(k); ok && (k == "Group" || k == "SupplementaryGroups") {
+					if strings.Contains(v, "%") {
+						l.runAsLost = true
+					}
+					l.runAsGroups = append(l.runAsGroups, strings.Fields(v)...)
+				}
+			}
+		}
+		_, inst, isTmpl := strings.Cut(strings.TrimSuffix(n, ".service"), "@")
+		switch {
+		case !strings.Contains(user, "%"):
+			if user != "" {
 				l.runAs = append(l.runAs, user)
 			}
+		case isTmpl && inst == "" && (user == "%i" || user == "%I"):
+			// the template itself: its instances, listed, say who
+		case isTmpl && inst != "" && (user == "%i" || user == "%I"):
+			l.runAs = append(l.runAs, inst)
+		default:
+			l.runAsLost = true // another specifier: the account is not told
 		}
 	}
 	linger, err := l.src.ReadDir("/var/lib/systemd/linger")
@@ -759,7 +774,11 @@ func (l *logLoader) runAsAccounts() {
 		l.runAsLost = true
 	}
 	l.runAs = append(l.runAs, linger...)
-	for _, f := range append([]string{"/etc/crontab"}, Glob(l.src, "/etc/cron.d/*")...) {
+	crons := []string{"/etc/crontab"}
+	for _, n := range list("/etc/cron.d") {
+		crons = append(crons, path.Join("/etc/cron.d", n))
+	}
+	for _, f := range crons {
 		b, err := l.src.ReadFile(f)
 		if err != nil {
 			l.runAsLost = l.runAsLost || !gone(err)
@@ -789,6 +808,10 @@ func (l *logLoader) runAsAccounts() {
 		}
 	}
 }
+
+// maxRunAsUnits bounds the service units runAsAccounts reads; more leaves
+// no server apart.
+const maxRunAsUnits = 4096
 
 // iniValue is a php-fpm.conf value: quotes taken off, or an inline
 // comment (" ; ...") cut from an unquoted one.
