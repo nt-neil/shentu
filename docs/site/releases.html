@@ -57,7 +57,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.89; --x: 16.6">
+    <li class="era-node" style="--old: 0.90; --x: 15.6">
       <a class="lamp" href="releases.html#v0.1.1" aria-describedby="rv-0.1.1">
         <i aria-hidden="true"></i><span class="ver">v0.1.1</span>
         <time datetime="2026-11-07">11-07</time>
@@ -69,7 +69,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.78; --x: 26.1">
+    <li class="era-node" style="--old: 0.80; --x: 24.2">
       <a class="lamp" href="releases.html#v0.2.0" aria-describedby="rv-0.2.0">
         <i aria-hidden="true"></i><span class="ver">v0.2.0</span>
         <time datetime="2026-11-07">11-07</time>
@@ -81,7 +81,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.67; --x: 35.7">
+    <li class="era-node" style="--old: 0.70; --x: 32.8">
       <a class="lamp" href="releases.html#v0.2.1" aria-describedby="rv-0.2.1">
         <i aria-hidden="true"></i><span class="ver">v0.2.1</span>
         <time datetime="2026-11-08">11-08</time>
@@ -93,7 +93,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.56; --x: 45.2">
+    <li class="era-node" style="--old: 0.60; --x: 41.4">
       <a class="lamp" href="releases.html#v0.2.2" aria-describedby="rv-0.2.2">
         <i aria-hidden="true"></i><span class="ver">v0.2.2</span>
         <time datetime="2026-11-08">11-08</time>
@@ -105,7 +105,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.44; --x: 54.8">
+    <li class="era-node" style="--old: 0.50; --x: 50.0">
       <a class="lamp" href="releases.html#v0.2.3" aria-describedby="rv-0.2.3">
         <i aria-hidden="true"></i><span class="ver">v0.2.3</span>
         <time datetime="2026-11-09">11-09</time>
@@ -117,7 +117,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.33; --x: 64.3">
+    <li class="era-node" style="--old: 0.40; --x: 58.6">
       <a class="lamp" href="releases.html#v0.2.4" aria-describedby="rv-0.2.4">
         <i aria-hidden="true"></i><span class="ver">v0.2.4</span>
         <time datetime="2026-11-09">11-09</time>
@@ -129,7 +129,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.22; --x: 73.9">
+    <li class="era-node" style="--old: 0.30; --x: 67.2">
       <a class="lamp" href="releases.html#v0.2.5" aria-describedby="rv-0.2.5">
         <i aria-hidden="true"></i><span class="ver">v0.2.5</span>
         <time datetime="2026-11-13">11-13</time>
@@ -141,7 +141,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.11; --x: 83.4">
+    <li class="era-node" style="--old: 0.20; --x: 75.8">
       <a class="lamp" href="releases.html#v0.3.0" aria-describedby="rv-0.3.0">
         <i aria-hidden="true"></i><span class="ver">v0.3.0</span>
         <time datetime="2026-11-13">11-13</time>
@@ -153,21 +153,33 @@
       </div>
     </li>
   
-    <li class="era-node now" style="--old: 0.00; --x: 93.0">
+    <li class="era-node" style="--old: 0.10; --x: 84.4">
       <a class="lamp" href="releases.html#v0.3.1" aria-describedby="rv-0.3.1">
         <i aria-hidden="true"></i><span class="ver">v0.3.1</span>
         <time datetime="2026-11-16">11-16</time>
       </a>
       <p class="acc"><span><b>127</b> rules</span><span><b>16</b>/97 caught</span></p>
+      <div class="peek" id="rv-0.3.1">
+        <p class="word">New rules enshrined</p>
+        <ul><li>Code audit rules: 70 → 127 (PHP 25 → 51, Python 22 → 43, JavaScript and TypeScript 23 → 33). PHP: WordPress, Laravel, Symfony, Joomla, Drupal, CodeIgniter, Yii and Smarty sinks, sockets and HTTP clients, XML DTDs, template strings, crypto keys and shortcodes (#76). Python: keyword arguments (<code>args=</code>, <code>search_filter=</code>, <code>where=</code>), ldap3 filters and helper flows (#36). JavaScript and TypeScript: Koa and chained Express responses, BSON and launder sanitizers, Host-header redirects and SSRF; <code>.execute(</code> counts only on a receiver that may be a database client (#70).</li><li>The v0.2.5 known false positives are fixed in the engine: TypeORM repository calls in a file importing <code>typeorm</code> are no MongoDB queries, unless the file uses a MongoDB repository, driver or Mongoose (<code>unless_imports</code>, #59); <code>spawn()</code> and <code>execFile()</code> with <code>shell: true</code> are reported only when the command or its arguments carry input, not the options (several <code>[[args]]</code> blocks per sink, #62); a Server-Sent Events handler (<code>Content-Type: text/event-stream</code> set on every path) is no XSS (<code>unless_content_type</code>, #58; <code>unless_at</code>, #57); <code>-&gt;get_settings()</code> is Elementor widget input only in classes extending <code>\Elementor\Widget_Base</code> (#60); a placeholder list built by <code>array_map</code> with a callback returning a constant is no input (#61); <code>zipfile.ZipFile(request.files[...])</code> opens the upload&#39;s stream, not a path (<code>unless_subscript</code>, #67).</li><li><code>js-ssrf-http-request</code> now reads the referrer and origin in Koa, hapi and Fetch API spelling (<code>ctx.request.header.referer</code>, <code>request.headers.referer</code>, <code>request.headers.get(&#39;x-callback-url&#39;)</code>; not Host), which were missed. Input written into a prepared statement&#39;s text is reported once, by <code>php-sqli-prepare-query-text</code>, instead of also by <code>php-sqli-string-concat</code>. The benchmark numbers are unchanged.</li></ul>
+      </div>
+    </li>
+  
+    <li class="era-node now" style="--old: 0.00; --x: 93.0">
+      <a class="lamp" href="releases.html#v0.4.0" aria-describedby="rv-0.4.0">
+        <i aria-hidden="true"></i><span class="ver">v0.4.0</span>
+        <time datetime="2026-11-18">11-18</time>
+      </a>
+      <p class="acc"><span><b>127</b> rules</span></p>
       
     </li>
   
   </ol>
 </div>
 
-<div class="newest" id="rv-0.3.1">
-  <div class="newest-head"><p class="word">New rules enshrined</p><span class="ver">v0.3.1</span><time datetime="2026-11-16">2026-11-16</time></div>
-  <div class="grp grp-reach"><h4><i aria-hidden="true"></i>Sees further</h4><ul><li>Code audit rules: 70 → 127 (PHP 25 → 51, Python 22 → 43, JavaScript and TypeScript 23 → 33). PHP: WordPress, Laravel, Symfony, Joomla, Drupal, CodeIgniter, Yii and Smarty sinks, sockets and HTTP clients, XML DTDs, template strings, crypto keys and shortcodes (#76). Python: keyword arguments (<code>args=</code>, <code>search_filter=</code>, <code>where=</code>), ldap3 filters and helper flows (#36). JavaScript and TypeScript: Koa and chained Express responses, BSON and launder sanitizers, Host-header redirects and SSRF; <code>.execute(</code> counts only on a receiver that may be a database client (#70).</li><li><code>js-ssrf-http-request</code> now reads the referrer and origin in Koa, hapi and Fetch API spelling (<code>ctx.request.header.referer</code>, <code>request.headers.referer</code>, <code>request.headers.get(&#39;x-callback-url&#39;)</code>; not Host), which were missed. Input written into a prepared statement&#39;s text is reported once, by <code>php-sqli-prepare-query-text</code>, instead of also by <code>php-sqli-string-concat</code>. The benchmark numbers are unchanged.</li><li>Engine: <code>new URL(a, base)</code> takes its path and query from <code>a</code> when <code>a</code> starts with <code>/</code> or a scheme (#63); method calls on an object of a class in the same file are followed (#64); an anchored regex test fixing a value&#39;s start (<code>re.match(re.escape(base) + r&#39;/[a-z]&#39;, url)</code>) is a check for redirect and URL rules (#65); a helper returning a string constant is followed (#66); <code>markup</code> makes an output sink count input only after literal markup (#71); recursive cycles are followed until they settle and paid for once, so WordPress files whose calls were cut went from 48 to 4 (#72); <code>route_input = false</code> for the Host-header rules, and Koa&#39;s <code>ctx</code> in the Express model (#50).</li><li>Survey warns about Apache 2.4.55–2.4.70 with <code>mod_http2</code> loaded and <code>h2</code> or <code>h2c</code> in <code>Protocols</code> (CVE-2026-119618; upgrade to 2.4.71, or set <code>Protocols http/1.1</code> until then) (#54). When a file that could load <code>mod_http2</code> or turn on h2 cannot be read (no rights, a link not trusted), the check is listed as not checked instead of passed over; the warning says it can be ignored when the distribution has backported the fix.</li><li>Code audit: a resumed walk cut before its stored position keeps that position, and the position is stored by the root&#39;s path; vendor, node_modules and WordPress code folders count only below the site root; <code>wp-content/blogs.dir/*/files</code> and <code>/var/www/&lt;uploads|files&gt;</code> without a site&#39;s index are upload folders; <code>authorized_key_unparsed</code> lists the first 20 line numbers (#73).</li><li>The hourly and daily reports list SSH logins as not checked when the login logs could not be read in full (journald hiding the system&#39;s entries from a non-root user, <code>auth.log</code> or <code>secure</code> unreadable, a log cut short). Before, such a run said &#34;nothing new&#34; (#80). The reason given is what kept the logs from counting (on a quiet host: a journal with no sshd entry and no text auth log), and running as root is advised only when rights were missing; on macOS, which keeps sshd&#39;s events where Shentu does not read, the report says it has no sshd log source there.</li><li>Linux builds no longer send an EDNS(0) record with DNS queries, as glibc does not: some DNS servers, VMware&#39;s NAT DNS among them, answered such queries without the address, so every lookup (OSV, GitHub) failed with &#34;no such host&#34;. When a lookup still fails, the daily report&#39;s Not checked line says to check the host&#39;s DNS (#80).</li><li><code>block_ip</code> refuses an IP whose SSH login events come only from text logs anyone on the host can write to (<code>verified</code> false), or whose logins cannot be read; <code>override_unverified</code> goes ahead after the operator has checked them, from <code>shentu chat</code> only. From the Telegram bot it is always refused, at every confirm level. The check covers SSH login evidence only: a block based on other logs (syslog, nginx, an application log through <code>log_search</code>) is not checked and is the operator&#39;s to judge. On a host whose journald has no sshd entries (text logs only), <code>block_ip</code> refuses every IP with SSH login events, whatever the date of the lines; such a block cannot be made from Telegram, only on the server with <code>shentu chat</code> and <code>override_unverified</code>. <code>ssh_logins</code> looks back at most 720 hours, as far as the check (#80). A refusal for login events that may be forged names the text logs they are in.</li><li>macOS: binary plists count array and dictionary entries, and UTF-16 strings at 9 bytes a character, against the decoding limit; a program path ending in a space is kept as it is; a process named on two <code>ps</code> lines is marked <code>parse_error</code>; <code>periodic_conf_files</code> past 16 files are listed as not read (#80). CI runs <code>go vet</code> and <code>go test</code> on macOS 15 (#81); no macOS binary is published yet.</li><li>Tests build credential-shaped fake values at run time, so the tree has no secret-shaped literals (#77).</li><li>CVE-2021-23664 (<code>@isomorphic-git/cors-proxy</code>): <code>js-ssrf-http-request</code> still reports the fixed release. The proxy forwards <code>req.url</code> after an allow check the engine does not yet read as a sanitizer; reading such checks before a request is planned.</li><li>Scans take longer with the added rules, as each file is run through more rules: WordPress about 40–60% depending on the machine (on an Ubuntu VM the code audit went from 73.8 s to 120.0 s and the daily patrol from 100 s to 144 s, with the same findings and peak RSS), TypeScript projects about 43%. The fix at the root is planned after v0.3.1.</li><li><code>block_ip</code>&#39;s check covers SSH login evidence only (see above): a block based on other logs is the operator&#39;s to judge.</li><li><code>php-deserialization-phar-wrapper</code> still reports <code>filesize()</code> on an upload&#39;s temporary path in WordPress&#39;s REST attachments controller: the engine cannot yet tell an upload&#39;s <code>tmp_name</code> from its client-set <code>name</code>.</li><li><code>markup</code> does not follow markup put together in a variable first (<code>const h = &#39;&lt;p&gt;&#39; + x; ctx.body = h</code>).</li></ul></div><div class="grp grp-sharp"><h4><i aria-hidden="true"></i>Sees more precisely</h4><ul><li>The v0.2.5 known false positives are fixed in the engine: TypeORM repository calls in a file importing <code>typeorm</code> are no MongoDB queries, unless the file uses a MongoDB repository, driver or Mongoose (<code>unless_imports</code>, #59); <code>spawn()</code> and <code>execFile()</code> with <code>shell: true</code> are reported only when the command or its arguments carry input, not the options (several <code>[[args]]</code> blocks per sink, #62); a Server-Sent Events handler (<code>Content-Type: text/event-stream</code> set on every path) is no XSS (<code>unless_content_type</code>, #58; <code>unless_at</code>, #57); <code>-&gt;get_settings()</code> is Elementor widget input only in classes extending <code>\Elementor\Widget_Base</code> (#60); a placeholder list built by <code>array_map</code> with a callback returning a constant is no input (#61); <code>zipfile.ZipFile(request.files[...])</code> opens the upload&#39;s stream, not a path (<code>unless_subscript</code>, #67).</li><li>Benchmark against v0.3.0: published vulnerabilities 16 of 97 caught (was 15), 1 fixed-release false positive (was 0, see below); held-out cases 3 of 30 (was 2), no fixed-release false positive; TypeScript cases 1 of 18 with 1 fixed-release false positive (n8n), both unchanged.</li></ul></div>
+<div class="newest" id="rv-0.4.0">
+  <div class="newest-head"><p class="word">Restored</p><span class="ver">v0.4.0</span><time datetime="2026-11-18">2026-11-18</time></div>
+  <div class="grp grp-reach"><h4><i aria-hidden="true"></i>Sees further</h4><ul><li>Attack detection (Linux): each patrol round reads the web server&#39;s logs and picks out the requests aimed at vulnerabilities this host really has. It alerts; it never blocks on its own. What it cannot see and what it may miss are listed in <code>docs/attack-detection-limits.md</code>.</li><li>The vulnerability surface: the daily round saves what this host is known to be vulnerable to in <code>state_dir/surface.json</code>, and the other rounds read it: code audit findings, with the routes registering the handler a finding sits in when the same file shows them (#84); advisories of application dependencies and of installed OS packages, compared in dpkg&#39;s and rpm&#39;s version order; installed WordPress plugins and their versions (#91). A surface missing, unreadable or older than 26 hours is said in the round&#39;s notices and the report, never used quietly.</li><li>Log sources: the access logs nginx and Apache are configured to write, custom formats included, PHP-FPM&#39;s logs and journald for application units, read from where the last round stopped across rotation (#85). A log counts as verified only when root alone could have written it; otherwise its attempts are marked unverified and the alert names the reason.</li><li>27 attack signatures, written for Shentu or drafted from reviewed nuclei-templates (MIT, see <code>detect/sig/NOTICE</code>), matched after decoding a request at most twice (#87). A request that only reaches a route of a vulnerable handler is L1; one that also carries a payload of the vulnerability&#39;s class is L2; L3 needs a sign it had an effect: a response size far from the route&#39;s usual one, or an error at the vulnerable file and line (#90). A request cut where it may hide a payload is Unknown. A vulnerability the host does not have is noise.</li><li>Alerts are the detector&#39;s own plain text, sent through the notify channel, not through the model. Attempts are grouped by network (/24 or /64), target and level, and a group is sent once a day. L1 is counted in the daily report, never pushed; Unknown is pushed only when one target gets 20 of them within 24 hours. Sensitive parameters in samples are masked, and the daily file <code>state_dir/reports/attacks-&lt;date&gt;.txt</code> (kept 30 days) masks addresses (#90, #91). <code>shentu detect [--since] [--json]</code> reads and judges a round without sending or saving; the <code>attack_attempts</code> tool and the bot&#39;s <code>/attacks</code> list the last day&#39;s groups.</li><li><code>block_ip</code> and attack detection: an address the detector saw is blocked, after the operator confirms, only for a verified L2 or L3 group of its own. Attempts from unverified logs, at L1 or Unknown, and internal addresses are refused unless the operator overrides with <code>override_unverified</code> on the server (<code>shentu chat</code>); Telegram never can. An address listed only in an overflow summary of many sources is refused, override or not (#91). On an Ubuntu VM, an attack in a verified log was judged L3 and could be blocked; one in an unverified log reached L2 at most, and its block was refused from Telegram.</li><li><code>block_ip</code>&#39;s SSH evidence counts a login only when sshd&#39;s own events in journald confirm it (#91): sshd lines that another program in sshd&#39;s own unit writes to journald (for example with <code>logger</code>) no longer back a block; v0.3.1 blocked on them. Lines forged into text logs were refused already.</li><li><code>tools/detecteval</code>, run in CI, measures attack detection on synthetic requests (#94): requests converted from nuclei-templates v10.5.2: a signature of the same class matched 40.5% of them (1548 of 3822 classified templates). This is a match on the request line, not an alert; ordinary requests for 152 routes of 8 applications: 0 false alerts; 363 of them differ in more than tracking parameters, so the rate can only be said to be below about 0.8% (95% upper bound); templates for vulnerabilities the test host has: 3 of 10 alerted, 2 of them only at L1 (the payload is in the request body).</li><li>When one request hits several rules on the same line of code, you get one alert that lists every rule, instead of one alert per rule (#97).</li><li>Alerts for a package&#39;s CVE no longer carry the note on what routes mean; that note is for alerts about your own code only (#97).</li><li>When an ACL lets another account write a log or a directory above it, the reason names that account, for example <code>ACL grants write to www-data (uid 33)</code> (#97).</li><li>When the patrol runs as an account that is not root and not in the <code>systemd-journal</code> or <code>adm</code> group, the SSH result is marked as only partly read (#97).</li><li>An attack state saved by a v0.4.0 build from before these fixes (one group per rule) is merged into the new format (one group per line of code) when it is loaded (#97, #98). The counts from before the upgrade are a lower bound: when rules of different classes on the same line were hit by different requests, the count may be too low. This changes only the counts shown, not alerts or blocks. v0.3.x keeps no attack state, so an upgrade from it has nothing to merge.</li><li>Attack detection is for Linux only.</li><li>Access logs do not record request bodies (POST forms, JSON, uploads): a payload there is never seen, and such a request is L1 at most.</li><li>The signatures expect the plain form of an attack. Rewritten forms (other encodings, padded paths, comments or other whitespace inside SQL, commands split by quotes) may be missed.</li><li>With nginx as installed by default on Debian, Ubuntu and Rocky Linux, v0.4.0 judges its access log <code>web_user_writable</code> (the web server&#39;s account could write it or a directory above it): its attempts are alerted on, but they cannot back a block. On Debian and Ubuntu nginx and PHP both run as <code>www-data</code>, so the risk is real (on Ubuntu the log is <code>www-data:adm</code>, and logrotate creates it with <code>create 0640 www-data adm</code>). On Rocky Linux nginx runs as <code>nginx</code> and PHP-FPM as <code>apache</code>, which cannot write nginx&#39;s log: there v0.4.0 is only being cautious. Changing the log&#39;s owner by hand is undone at the next rotation. This is planned for v0.4.1. Rocky Linux&#39;s default httpd configuration loads modules outside the list Shentu knows to be safe, so its Apache logs are always judged <code>web_user_writable</code> too; weighing those modules is planned for v0.4.1.</li><li>There are no signatures for particular WordPress plugin vulnerabilities yet.</li><li>Scans are still slower than v0.3.0: WordPress about 35% (elapsed time on the Ubuntu VM above), TypeScript projects about 20% (user CPU time on a Mac, #92).</li><li>Still open from v0.3.1: CVE-2021-23664&#39;s fixed release is reported; <code>filesize()</code> on an upload&#39;s temporary path in WordPress; <code>markup</code> not followed through a variable.</li></ul></div><div class="grp grp-light"><h4><i aria-hidden="true"></i>Runs lightly</h4><ul><li>Engine: summary runs that cannot change the result are skipped, and the analysis copies less. Measured as user CPU time on a Mac, WordPress is scanned about 34% faster than v0.3.1 and TypeScript projects about 22% faster, with the same findings (#92). Measured as elapsed time on an Ubuntu 24.04 VM (arm64, 4 CPUs, 4 GB), one version after another on the same machine, the WordPress scan took 97.2 s (v0.3.1 120.0 s, v0.3.0 72.1 s), 19% less than v0.3.1, with the same 2279 files and 43 findings and a peak memory of 848–858 MB in all three; the daily patrol as root took 126 s (v0.3.1 146 s, v0.3.0 99 s). Benchmark unchanged: published vulnerabilities 16 of 97 caught, 1 fixed-release false positive; held-out cases 3 of 30; TypeScript cases 1 of 18 with 1 fixed-release false positive.</li></ul></div>
 </div>
 
 
@@ -186,7 +198,7 @@
     </div>
   </li>
 
-  <li class="era" id="v0.1.1" style="--old: 0.89">
+  <li class="era" id="v0.1.1" style="--old: 0.90">
     <div class="mark">
       <p class="when"><time datetime="2026-11-07">2026-11-07</time></p>
       <h2><span class="word">3 changes</span> <span class="ver">v0.1.1</span></h2>
@@ -198,7 +210,7 @@
     </div>
   </li>
 
-  <li class="era" id="v0.2.0" style="--old: 0.78">
+  <li class="era" id="v0.2.0" style="--old: 0.80">
     <div class="mark">
       <p class="when"><time datetime="2026-11-07">2026-11-07</time></p>
       <h2><span class="word">2 changes</span> <span class="ver">v0.2.0</span></h2>
@@ -210,7 +222,7 @@
     </div>
   </li>
 
-  <li class="era" id="v0.2.1" style="--old: 0.67">
+  <li class="era" id="v0.2.1" style="--old: 0.70">
     <div class="mark">
       <p class="when"><time datetime="2026-11-08">2026-11-08</time></p>
       <h2><span class="word">3 changes</span> <span class="ver">v0.2.1</span></h2>
@@ -222,7 +234,7 @@
     </div>
   </li>
 
-  <li class="era" id="v0.2.2" style="--old: 0.56">
+  <li class="era" id="v0.2.2" style="--old: 0.60">
     <div class="mark">
       <p class="when"><time datetime="2026-11-08">2026-11-08</time></p>
       <h2><span class="word">1 changes</span> <span class="ver">v0.2.2</span></h2>
@@ -234,7 +246,7 @@
     </div>
   </li>
 
-  <li class="era" id="v0.2.3" style="--old: 0.44">
+  <li class="era" id="v0.2.3" style="--old: 0.50">
     <div class="mark">
       <p class="when"><time datetime="2026-11-09">2026-11-09</time></p>
       <h2><span class="word">1 changes</span> <span class="ver">v0.2.3</span></h2>
@@ -246,7 +258,7 @@
     </div>
   </li>
 
-  <li class="era" id="v0.2.4" style="--old: 0.33">
+  <li class="era" id="v0.2.4" style="--old: 0.40">
     <div class="mark">
       <p class="when"><time datetime="2026-11-09">2026-11-09</time></p>
       <h2><span class="word">New rules enshrined</span> <span class="ver">v0.2.4</span></h2>
@@ -269,7 +281,7 @@
     </div>
   </li>
 
-  <li class="era" id="v0.2.5" style="--old: 0.22">
+  <li class="era" id="v0.2.5" style="--old: 0.30">
     <div class="mark">
       <p class="when"><time datetime="2026-11-13">2026-11-13</time></p>
       <h2><span class="word">New rules enshrined</span> <span class="ver">v0.2.5</span></h2>
@@ -292,7 +304,7 @@
     </div>
   </li>
 
-  <li class="era" id="v0.3.0" style="--old: 0.11">
+  <li class="era" id="v0.3.0" style="--old: 0.20">
     <div class="mark">
       <p class="when"><time datetime="2026-11-13">2026-11-13</time></p>
       <h2><span class="word">19 changes</span> <span class="ver">v0.3.0</span></h2>
@@ -309,7 +321,7 @@
     </div>
   </li>
 
-  <li class="era" id="v0.3.1" style="--old: 0.00">
+  <li class="era" id="v0.3.1" style="--old: 0.10">
     <div class="mark">
       <p class="when"><time datetime="2026-11-16">2026-11-16</time></p>
       <h2><span class="word">New rules enshrined</span> <span class="ver">v0.3.1</span></h2>
@@ -328,6 +340,23 @@
         <div class="wide"><dt>Rules added (57)</dt><dd><details class="ids"><summary>PHP <span class="n">26</span></summary><p><code>php-cmdi-process-shell-commandline</code> <code>php-code-eval-dynamic-callback</code> <code>php-code-eval-smarty-string</code> <code>php-code-eval-template-string</code> <code>php-deserialization-wp-maybe-unserialize</code> <code>php-file-upload-wp-upload-bits</code> <code>php-hardcoded-secret-crypto-key</code> <code>php-open-redirect-redirect-response</code> <code>php-path-traversal-joomla-file</code> <code>php-path-traversal-symfony-file-response</code> <code>php-path-traversal-wp-filesystem</code> <code>php-path-traversal-wp-template-loader</code> <code>php-sqli-codeigniter-query</code> <code>php-sqli-doctrine-query-text</code> <code>php-sqli-drupal-db-query</code> <code>php-sqli-joomla-query</code> <code>php-sqli-laravel-raw</code> <code>php-sqli-prepare-query-text</code> <code>php-sqli-yii-query</code> <code>php-ssrf-http-client</code> <code>php-ssrf-socket-connect</code> <code>php-ssrf-url-readers</code> <code>php-xss-drupal-markup-create</code> <code>php-xss-shortcode-attribute</code> <code>php-xss-shortcode-script</code> <code>php-xxe-libxml-dtdload</code> </p></details><details class="ids"><summary>Python <span class="n">21</span></summary><p><code>python-cmdi-argv-from-input</code> <code>python-code-eval-dynamic-import</code> <code>python-code-eval-numexpr</code> <code>python-deserialization-downloaded-pickle</code> <code>python-deserialization-torch-load</code> <code>python-path-traversal-image-open</code> <code>python-path-traversal-upload-filename</code> <code>python-sqli-orm-raw-query</code> <code>python-sqli-pandas-read-sql</code> <code>python-ssrf-async-client</code> <code>python-xss-aiohttp-text-attr</code> <code>python-xss-aiohttp-text-html</code> <code>python-xss-format-html-preformatted</code> <code>python-xss-starlette-attr</code> <code>python-xss-starlette-html</code> <code>python-xss-starlette-js</code> <code>python-xss-starlette-url</code> <code>python-xss-tornado-write-attr</code> <code>python-xss-tornado-write-html</code> <code>python-xss-tornado-write-js</code> <code>python-xss-tornado-write-url</code> </p></details><details class="ids"><summary>JavaScript / TypeScript <span class="n">10</span></summary><p><code>js-cmdi-promisified-exec</code> <code>js-cmdi-spawn-sh-c</code> <code>js-open-redirect-framework</code> <code>js-open-redirect-host-header</code> <code>js-open-redirect-location-header</code> <code>js-open-redirect-next</code> <code>js-path-traversal-exists-probe</code> <code>js-path-traversal-fs-ops</code> <code>js-sqli-node-http-query</code> <code>js-ssrf-host-header</code> </p></details></dd></div>
         
       </dl>
+      
+    </div>
+  </li>
+
+  <li class="era" id="v0.4.0" style="--old: 0.00">
+    <div class="mark">
+      <p class="when"><time datetime="2026-11-18">2026-11-18</time></p>
+      <h2><span class="word">21 changes</span> <span class="ver">v0.4.0</span></h2>
+    </div>
+    <div class="body">
+      <ul class="items"><li>Attack detection (Linux): each patrol round reads the web server&#39;s logs and picks out the requests aimed at vulnerabilities this host really has. It alerts; it never blocks on its own. What it cannot see and what it may miss are listed in <code>docs/attack-detection-limits.md</code>.</li><li>The vulnerability surface: the daily round saves what this host is known to be vulnerable to in <code>state_dir/surface.json</code>, and the other rounds read it: code audit findings, with the routes registering the handler a finding sits in when the same file shows them (#84); advisories of application dependencies and of installed OS packages, compared in dpkg&#39;s and rpm&#39;s version order; installed WordPress plugins and their versions (#91). A surface missing, unreadable or older than 26 hours is said in the round&#39;s notices and the report, never used quietly.</li><li>Log sources: the access logs nginx and Apache are configured to write, custom formats included, PHP-FPM&#39;s logs and journald for application units, read from where the last round stopped across rotation (#85). A log counts as verified only when root alone could have written it; otherwise its attempts are marked unverified and the alert names the reason.</li><li>27 attack signatures, written for Shentu or drafted from reviewed nuclei-templates (MIT, see <code>detect/sig/NOTICE</code>), matched after decoding a request at most twice (#87). A request that only reaches a route of a vulnerable handler is L1; one that also carries a payload of the vulnerability&#39;s class is L2; L3 needs a sign it had an effect: a response size far from the route&#39;s usual one, or an error at the vulnerable file and line (#90). A request cut where it may hide a payload is Unknown. A vulnerability the host does not have is noise.</li><li>Alerts are the detector&#39;s own plain text, sent through the notify channel, not through the model. Attempts are grouped by network (/24 or /64), target and level, and a group is sent once a day. L1 is counted in the daily report, never pushed; Unknown is pushed only when one target gets 20 of them within 24 hours. Sensitive parameters in samples are masked, and the daily file <code>state_dir/reports/attacks-&lt;date&gt;.txt</code> (kept 30 days) masks addresses (#90, #91). <code>shentu detect [--since] [--json]</code> reads and judges a round without sending or saving; the <code>attack_attempts</code> tool and the bot&#39;s <code>/attacks</code> list the last day&#39;s groups.</li><li><code>block_ip</code> and attack detection: an address the detector saw is blocked, after the operator confirms, only for a verified L2 or L3 group of its own. Attempts from unverified logs, at L1 or Unknown, and internal addresses are refused unless the operator overrides with <code>override_unverified</code> on the server (<code>shentu chat</code>); Telegram never can. An address listed only in an overflow summary of many sources is refused, override or not (#91). On an Ubuntu VM, an attack in a verified log was judged L3 and could be blocked; one in an unverified log reached L2 at most, and its block was refused from Telegram.</li><li><code>block_ip</code>&#39;s SSH evidence counts a login only when sshd&#39;s own events in journald confirm it (#91): sshd lines that another program in sshd&#39;s own unit writes to journald (for example with <code>logger</code>) no longer back a block; v0.3.1 blocked on them. Lines forged into text logs were refused already.</li><li>Engine: summary runs that cannot change the result are skipped, and the analysis copies less. Measured as user CPU time on a Mac, WordPress is scanned about 34% faster than v0.3.1 and TypeScript projects about 22% faster, with the same findings (#92). Measured as elapsed time on an Ubuntu 24.04 VM (arm64, 4 CPUs, 4 GB), one version after another on the same machine, the WordPress scan took 97.2 s (v0.3.1 120.0 s, v0.3.0 72.1 s), 19% less than v0.3.1, with the same 2279 files and 43 findings and a peak memory of 848–858 MB in all three; the daily patrol as root took 126 s (v0.3.1 146 s, v0.3.0 99 s). Benchmark unchanged: published vulnerabilities 16 of 97 caught, 1 fixed-release false positive; held-out cases 3 of 30; TypeScript cases 1 of 18 with 1 fixed-release false positive.</li><li><code>tools/detecteval</code>, run in CI, measures attack detection on synthetic requests (#94): requests converted from nuclei-templates v10.5.2: a signature of the same class matched 40.5% of them (1548 of 3822 classified templates). This is a match on the request line, not an alert; ordinary requests for 152 routes of 8 applications: 0 false alerts; 363 of them differ in more than tracking parameters, so the rate can only be said to be below about 0.8% (95% upper bound); templates for vulnerabilities the test host has: 3 of 10 alerted, 2 of them only at L1 (the payload is in the request body).</li><li>When one request hits several rules on the same line of code, you get one alert that lists every rule, instead of one alert per rule (#97).</li><li>Alerts for a package&#39;s CVE no longer carry the note on what routes mean; that note is for alerts about your own code only (#97).</li><li>When an ACL lets another account write a log or a directory above it, the reason names that account, for example <code>ACL grants write to www-data (uid 33)</code> (#97).</li><li>When the patrol runs as an account that is not root and not in the <code>systemd-journal</code> or <code>adm</code> group, the SSH result is marked as only partly read (#97).</li><li>An attack state saved by a v0.4.0 build from before these fixes (one group per rule) is merged into the new format (one group per line of code) when it is loaded (#97, #98). The counts from before the upgrade are a lower bound: when rules of different classes on the same line were hit by different requests, the count may be too low. This changes only the counts shown, not alerts or blocks. v0.3.x keeps no attack state, so an upgrade from it has nothing to merge.</li><li>Attack detection is for Linux only.</li><li>Access logs do not record request bodies (POST forms, JSON, uploads): a payload there is never seen, and such a request is L1 at most.</li><li>The signatures expect the plain form of an attack. Rewritten forms (other encodings, padded paths, comments or other whitespace inside SQL, commands split by quotes) may be missed.</li><li>With nginx as installed by default on Debian, Ubuntu and Rocky Linux, v0.4.0 judges its access log <code>web_user_writable</code> (the web server&#39;s account could write it or a directory above it): its attempts are alerted on, but they cannot back a block. On Debian and Ubuntu nginx and PHP both run as <code>www-data</code>, so the risk is real (on Ubuntu the log is <code>www-data:adm</code>, and logrotate creates it with <code>create 0640 www-data adm</code>). On Rocky Linux nginx runs as <code>nginx</code> and PHP-FPM as <code>apache</code>, which cannot write nginx&#39;s log: there v0.4.0 is only being cautious. Changing the log&#39;s owner by hand is undone at the next rotation. This is planned for v0.4.1. Rocky Linux&#39;s default httpd configuration loads modules outside the list Shentu knows to be safe, so its Apache logs are always judged <code>web_user_writable</code> too; weighing those modules is planned for v0.4.1.</li><li>There are no signatures for particular WordPress plugin vulnerabilities yet.</li><li>Scans are still slower than v0.3.0: WordPress about 35% (elapsed time on the Ubuntu VM above), TypeScript projects about 20% (user CPU time on a Mac, #92).</li><li>Still open from v0.3.1: CVE-2021-23664&#39;s fixed release is reported; <code>filesize()</code> on an upload&#39;s temporary path in WordPress; <code>markup</code> not followed through a variable.</li></ul>
+      
+      <div class="grow">
+        <p><span class="bar" style="--w: 100.0%"></span><b>127</b> rules</p>
+        
+      </div>
+      
       
     </div>
   </li>
