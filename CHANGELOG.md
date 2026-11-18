@@ -6,6 +6,16 @@ a release are not written here: they are worked out from the rule snapshots in
 `docs/site-src/rules-history/`. `CHANGELOG.zh-TW.md` holds the same releases in Traditional
 Chinese for the zh-TW pages; keep the two in step.
 
+## v0.4.2 (unreleased)
+
+- The host survey warns about nginx 1.9.5 through 1.31.8 serving HTTP/2 (a `listen ... http2`, or
+  `http2 on` for a server): CVE-2026-123007 and CVE-2026-123633, HTTP/2 memory corruption that lets
+  a client crash the workers. Upgrade to 1.31.9 or 1.30.7, or to the distribution's fixed package;
+  until then, turning HTTP/2 off avoids it. It is advice: the configuration is not changed. A
+  distribution package whose changelog names the CVEs (a backported fix) is not warned about; the
+  package scan reports the distributions' advisories once they reach OSV, and this check covers
+  nginx.org's packages and builds from source, which that scan does not.
+
 ## v0.4.0 — 2026-11-18
 
 - Attack detection (Linux): each patrol round reads the web server's logs and picks out the

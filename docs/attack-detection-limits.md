@@ -10,6 +10,7 @@ v0.4.0 never blocks on its own: `block_ip` always needs the operator's confirmat
 
 - **Linux only.** Attack detection reads Linux hosts' logs only.
 - **Some log formats are refused.** nginx's and Apache's access logs are read, custom formats from their configuration included. A format with a field Shentu does not support, with `escape=none` or with a custom time format is refused.
+- **No protocol-layer attacks.** An access log records the requests a server parsed, not the HTTP/2 frames or TLS records that carried them, so an attack on the protocol layer itself (nginx's HTTP/2 flaws CVE-2026-123007 and CVE-2026-123633, for example) is never seen here. The host survey covers those by version and configuration instead: it warns when an affected nginx serves HTTP/2.
 - **No request bodies.** Access logs do not record POST bodies, JSON or uploads, so a payload there is never seen. A route reached that way is L1 at most.
 - **Two decoding rounds.** URL encoding is decoded at most twice (with `%u` and overlong UTF-8). Base64, gzip and other encodings are not decoded.
 - **Unknown requests are counted, and L1 is not pushed.** A request cut where it may hide a payload (Unknown) is counted, and pushed only when one sink gets 20 of them within 24 hours. L1 attempts are counted and reported, never pushed as alerts.
