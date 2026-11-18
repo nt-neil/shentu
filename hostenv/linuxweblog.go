@@ -1581,6 +1581,26 @@ func (l *logLoader) nginx() {
 			}
 		case ngxAppDirective.MatchString(d.name) && !contains(l.ngxApp, d.name):
 			l.ngxApp = append(l.ngxApp, d.name)
+		case d.name == "access_log" || d.name == "error_log": // anywhere: http, server, location, stream, mail
+			for _, a := range d.args {
+				params, ok := strings.CutPrefix(a, "syslog:")
+				if !ok {
+					continue
+				}
+				tag := "nginx"
+				for _, p := range strings.Split(params, ",") {
+					if v, ok := strings.CutPrefix(p, "tag="); ok {
+						tag = v
+					}
+				}
+				if l.ngxSyslog == nil {
+					l.ngxSyslog = map[string]map[string]bool{}
+				}
+				if l.ngxSyslog[tag] == nil {
+					l.ngxSyslog[tag] = map[string]bool{}
+				}
+				l.ngxSyslog[tag][d.name+"\x00"+strings.Join(d.args, "\x00")] = true
+			}
 		}
 	})
 	formats := map[string]ngxFormat{"combined": {spec: ngxCombined}}
@@ -1733,21 +1753,6 @@ func (l *logLoader) ngxLog(d *ngxDir, kind, dest, format string, formats map[str
 		if f, ok := formats[format]; ok {
 			s.Spec, s.Escape = f.spec, f.escape
 		}
-	}
-	if params, ok := strings.CutPrefix(dest, "syslog:"); ok {
-		tag := "nginx"
-		for _, p := range strings.Split(params, ",") {
-			if v, ok := strings.CutPrefix(p, "tag="); ok {
-				tag = v
-			}
-		}
-		if l.ngxSyslog == nil {
-			l.ngxSyslog = map[string]map[string]bool{}
-		}
-		if l.ngxSyslog[tag] == nil {
-			l.ngxSyslog[tag] = map[string]bool{}
-		}
-		l.ngxSyslog[tag][kind+"\x00"+format+"\x00"+dest] = true
 	}
 	switch {
 	case dest == "off":

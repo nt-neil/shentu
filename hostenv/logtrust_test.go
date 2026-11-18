@@ -323,6 +323,12 @@ func TestJournalChannel(t *testing.T) {
 		{"another access log format, same tag", 1, func(h statHost) {
 			h.files["/etc/nginx/nginx.conf"] = "user www-data;\nhttp {\n\tlog_format marker '$remote_addr $request';\n\taccess_log syslog:server=unix:/dev/log,nohostname combined;\n\tserver {\n\t\tserver_name a.example;\n\t}\n\tserver {\n\t\tserver_name b.example;\n\t\taccess_log syslog:server=unix:/dev/log,nohostname,severity=info marker;\n\t}\n}\n"
 		}, ReasonUnverified},
+		{"a stream block's log under the same tag", 1, func(h statHost) {
+			h.files["/etc/nginx/nginx.conf"] = "user www-data;\nstream {\n\tlog_format basic '$remote_addr';\n\taccess_log syslog:server=unix:/dev/log,nohostname basic;\n\tserver {\n\t\tlisten 9000;\n\t}\n}\nhttp {\n\taccess_log syslog:server=unix:/dev/log,nohostname combined;\n}\n"
+		}, ReasonUnverified},
+		{"a location's error log under the same tag", 1, func(h statHost) {
+			h.files["/etc/nginx/nginx.conf"] = "user www-data;\nhttp {\n\taccess_log syslog:server=unix:/dev/log,nohostname combined;\n\tserver {\n\t\tlocation /m {\n\t\t\terror_log syslog:server=unix:/dev/log,nohostname;\n\t\t}\n\t}\n}\n"
+		}, ReasonUnverified},
 		{"error log under its own tag", 1, func(h statHost) {
 			h.files["/etc/nginx/nginx.conf"] = "user www-data;\nerror_log syslog:server=unix:/dev/log,nohostname,tag=nginx_error;\nhttp {\n\taccess_log syslog:server=unix:/dev/log,nohostname combined;\n}\n"
 		}, ""},
