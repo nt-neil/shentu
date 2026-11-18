@@ -31,7 +31,7 @@ Chinese for the zh-TW pages; keep the two in step.
 - Alerts are the detector's own plain text, sent through the notify channel, not through the
   model. Attempts are grouped by network (/24 or /64), target and level, and a group is sent
   once a day. L1 is counted in the daily report, never pushed; Unknown is pushed only when one
-  target gets 20 of them within 24 hours. Samples are masked, and the daily file
+  target gets 20 of them within 24 hours. Sensitive parameters in samples are masked, and the daily file
   `state_dir/reports/attacks-<date>.txt` (kept 30 days) masks addresses (#90, #91).
   `shentu detect [--since] [--json]` reads and judges a round without sending or saving;
   the `attack_attempts` tool and the bot's `/attacks` list the last day's groups.
