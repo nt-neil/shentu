@@ -47,6 +47,25 @@ type Rule struct {
 	// req.params), only these are this rule's (a rule for a query object: a
 	// path parameter is always a string). Unset: all of them.
 	RouteMembers []string `toml:"route_members"`
+	// RouteNot: values under those members that are not this rule's input,
+	// written member.name (headers.host: the Host header, which another rule
+	// takes), read as req.headers.host or req.headers['host'].
+	RouteNot []string `toml:"route_not"`
+	// RouteOnly: with it, a route model's input is this rule's only for these
+	// values, written as in route_not, whatever the handler's parameter is
+	// called (the Host header under (r, s) => r.headers.host, which another
+	// rule leaves with route_not); route_input = false does not turn it off.
+	RouteOnly []string `toml:"route_only"`
+
+	// ChainNot: calls the chain form of the rule's receiver.method( sinks may
+	// not go through (chain.go): they make another object, another rule's
+	// (httpx.AsyncClient().get( is an async client's call, not httpx.get().
+	ChainNot []string `toml:"chain_not"`
+
+	// RoutesNot: route models (by id) whose handlers' input is not this
+	// rule's: another rule is for it (wp-shortcode's attributes are
+	// php-xss-shortcode-attribute's).
+	RoutesNot []string `toml:"routes_not"`
 
 	File string `toml:"-"` // path inside rules/, set by Load
 }
@@ -72,8 +91,14 @@ type Args struct {
 	// NotReceiver: a method sink does not count on an object surely made by
 	// one of these classes: new Class(...), or a name every assignment of the
 	// file gives such an object ($q = new WP_Query; $q->query($args)). A
-	// receiver the file says nothing about still counts.
+	// receiver the file says nothing about still counts. An entry written as a
+	// variable ($wpdb) names the object itself: WordPress's global wpdb.
 	NotReceiver []string `toml:"not_receiver"`
+	// UnlessAfter: the SQL text (or other text) does not count when every
+	// value from the input in it comes after one of these texts (any case)
+	// in a string written in the call: "... ORDER BY $col" is
+	// php-sqli-orderby-identifier's, which reports it at that text.
+	UnlessAfter []string `toml:"unless_after"`
 	// UnlessAt narrows where unless looks: "start", only at the start of the
 	// argument (arg, or the first): a Server-Sent Events line "data: " + x;
 	// "top", only as an element or key of the argument itself (arg, or any
@@ -106,7 +131,7 @@ type Args struct {
 type SourceArgs struct {
 	Sources []string `toml:"sources"` // the rule's call sources this applies to
 	Arg     int      `toml:"arg"`     // the argument (from 1) that must be a string literal
-	Values  []string `toml:"values"`  // the values (any case) that make the call a source; any other value, or none, does not; "*": any string literal; "!x": never x
+	Values  []string `toml:"values"`  // the values (any case) that make the call a source; any other value, or none, does not; "*": any string literal; "!x": never x; "?": an argument that is not a string literal
 }
 
 // Sample is a minimal, self-written snippet: "vulnerable" must be reported, "safe" must not.

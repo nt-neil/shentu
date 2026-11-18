@@ -4,26 +4,42 @@ class = "sqli"
 cwe = "CWE-89"
 severity = "high"
 title = "Request input concatenated or interpolated into a SQL string"
-sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "get_query_var(", "->get_param("]
+# CodeIgniter's input too: SQL text built from it into $this->db->query( is
+# this rule's, not php-sqli-codeigniter-query's (its query builder methods).
+sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "get_query_var(", "->get_param(",
+           "$this->input->get(", "$this->input->post(", "$this->input->get_post(", "$this->input->cookie(", "$this->request->getGet(", "$this->request->getPost(",
+           "$this->request->getVar(", "$this->request->getJSON(", "request("]
 # Input written into prepare()'s statement or format is php-sqli-prepare-query-text's
 sinks = ["mysqli_query", "mysqli_multi_query(", "mysqli_real_query(", "->query(", "->exec(", "->multi_query(", "->real_query(", "pg_query"]
+# Not $db->escape( or $this->db->escape(: CodeIgniter's quotes the value, but
+# other libraries' (Joomla's) only escape it, which a numeric position does not stop.
 sanitizers = ["intval", "(int)", "->prepare(", "pg_query_params", "count(", "sizeof(", "sanitize_sql_orderby("]
 fix = "Use a prepared statement with bound parameters (PDO::prepare + execute, mysqli bind_param); never build SQL with string concatenation or sprintf. Escaping (mysqli_real_escape_string) only protects a value inside quotes."
 refs = ["CVE-2026-56738"]
 
+# Input that is only an ORDER BY identifier is php-sqli-orderby-identifier's:
+# no sink counts it (unless_after in every block).
 [[args]]
 sinks = ["->exec(", "->multi_query(", "->real_query("]
 arg = 1
+unless_after = ["ORDER BY"]
 
 # WordPress's *_Query classes: query() takes an arguments array, not SQL.
+# $wpdb->query( is php-sqli-wpdb-unprepared's.
 [[args]]
 sinks = ["->query("]
 arg = 1
-not_receiver = ["WP_Query", "WP_Comment_Query", "WP_User_Query", "WP_Term_Query", "WP_Site_Query", "WP_Network_Query"]
+not_receiver = ["WP_Query", "WP_Comment_Query", "WP_User_Query", "WP_Term_Query", "WP_Site_Query", "WP_Network_Query", "$wpdb"]
+unless_after = ["ORDER BY"]
 
 [[args]]
 sinks = ["mysqli_query", "mysqli_multi_query(", "mysqli_real_query("]
 arg = 2
+unless_after = ["ORDER BY"]
+
+[[args]]
+sinks = ["pg_query"]
+unless_after = ["ORDER BY"]
 
 [[samples]]
 kind = "vulnerable"
@@ -78,5 +94,21 @@ code = '''
 <?php
 function rows($db) {
 	return $db->query("SELECT * FROM t WHERE name = '" . $_GET['name'] . "'");
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "CodeIgniter: input interpolated into $this->db->query()"
+code = '''
+<?php
+class Reports extends CI_Controller
+{
+    public function by_city()
+    {
+        $city = $this->input->post('city');
+        $rows = $this->db->query("SELECT * FROM sales WHERE city = '$city'")->result();
+        $this->output->set_output(json_encode($rows));
+    }
 }
 '''

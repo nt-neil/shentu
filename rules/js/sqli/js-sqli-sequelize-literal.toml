@@ -6,14 +6,11 @@ severity = "high"
 title = "Request input placed into Sequelize.literal or a raw sequelize.query string"
 frameworks = ["express", "nestjs", "nextjs", "koa", "fastify", "hapi"]
 sources = ["req.query", "req.body", "req.params", "@Query(", "@Body(", "@Param(", "@Req(", "req.originalUrl", "^request.nextUrl", "^req.nextUrl", "^request.url", "^req.url", "^searchParams", "^request.json(", "^req.json(", "^request.text(", "^req.text(", "^request.formData(", "^req.formData(", "^formData.get(", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload", "ctx.params", "request.params"]
-sinks = ["Sequelize.literal(", "sequelize.literal(", "sequelize.query(", "Sequelize.fn("]
+# SQL text into sequelize.query() is js-sqli-raw-interpolation's
+sinks = ["Sequelize.literal(", "sequelize.literal(", "Sequelize.fn("]
 sanitizers = ["sequelize.escape("]
 fix = "Keep literal() for constant SQL only; pass values with the replacements or bind options of sequelize.query, or use operator objects ({ [Op.lt]: value })."
 refs = ["CVE-2026-52887"]
-
-[[args]]
-sinks = ["sequelize.query("]
-arg = 1   # the SQL text; replacements and bind values are safe
 
 [[samples]]
 kind = "vulnerable"
@@ -51,18 +48,6 @@ router.get("/messages", async (req, res) => {
 '''
 
 [[samples]]
-kind = "safe"
-code = '''
-router.get("/search", async (req, res) => {
-  const rows = await sequelize.query("SELECT * FROM items WHERE title = :t", {
-    replacements: { t: String(req.query.t) },
-    type: QueryTypes.SELECT,
-  });
-  res.json(rows);
-});
-'''
-
-[[samples]]
 kind = "vulnerable"
 dialect = "ts"
 code = '''
@@ -72,32 +57,5 @@ export class MessagesController {
   list(@Param("day") day: string) {
     return Message.findAll({ where: Sequelize.literal(`date("createdAt") = '${day}'`) });
   }
-}
-'''
-
-[[samples]]
-kind = "vulnerable"
-dialect = "ts"
-note = "Next.js: a form field from request.formData()"
-code = '''
-export async function POST(request: Request) {
-  const form = await request.formData();
-  const tag = form.get("tag") as string;
-  const rows = await sequelize.query(`SELECT * FROM items WHERE tag = '${tag}'`);
-  return Response.json(rows);
-}
-'''
-
-[[samples]]
-kind = "safe"
-dialect = "ts"
-code = '''
-export async function POST(request: Request) {
-  const form = await request.formData();
-  const rows = await sequelize.query("SELECT * FROM items WHERE tag = :tag", {
-    replacements: { tag: String(form.get("tag")) },
-    type: QueryTypes.SELECT,
-  });
-  return Response.json(rows);
 }
 '''

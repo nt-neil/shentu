@@ -87,7 +87,8 @@ func recvDefs(toks []Token) map[string][][]Token {
 				defs[key] = append(defs[key], stmt(k+1))
 			}
 		case toks[k].op(":"): // an annotation: a parameter, or a variable declared with its type
-			if k+1 < len(toks) {
+			// (not the colon ending "if x in ALLOWED:")
+			if k+1 < len(toks) && (i == 0 || lineStart(toks, i) || toks[i-1].op("(") || toks[i-1].op(",")) {
 				ann := stmt(k + 1)
 				for j, t := range ann {
 					if t.op(",") || t.op("=") {
@@ -169,6 +170,11 @@ func (a *analysis) recvSurely(ps []*pat, recv []Token) bool {
 	}
 	if len(t) != 1 || t[0].Kind != Var {
 		return false
+	}
+	for _, p := range ps {
+		if len(p.toks) == 1 && p.toks[0].Kind == Var && p.toks[0].Text == t[0].Text {
+			return true // not_receiver names the object itself: $wpdb
+		}
 	}
 	if a.rcls == nil {
 		a.rcls = recvClasses(a.ftoks)

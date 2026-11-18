@@ -2,6 +2,7 @@ package engine
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -460,5 +461,37 @@ func TestChainSinkModes(t *testing.T) {
 	lib := []byte("<?php\nfunction run_in($dir) {\n    return Process::timeout(30)->run('ls ' . $dir);\n}\n")
 	if fs, _ := e.Scan("php", "lib.php", lib); len(fs) == 0 {
 		t.Error("library mode: parameter into a chained Process::run not reported")
+	}
+}
+
+// chain_not: the chain form of a receiver.method( sink does not go through a
+// call that makes another object. requests.Session().get(url) is still
+// requests'; httpx.AsyncClient().get(url) is a client's, another rule's.
+func TestChainNot(t *testing.T) {
+	rule := func(id string, not []string) rules.Rule {
+		return rules.Rule{ID: id, Lang: "python", Class: "ssrf", CWE: "CWE-918", Severity: "high", Title: "t",
+			Sources: []string{"request.args"}, Sinks: []string{"requests.get(", "httpx.get("}, Sanitizers: []string{}, ChainNot: not}
+	}
+	e, err := New([]rules.Rule{rule("all", nil), rule("modules", []string{"AsyncClient", "Client"})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for call, want := range map[string][]string{
+		"requests.get":                {"all", "modules"},
+		"requests.Session().get":      {"all", "modules"},
+		"httpx.get":                   {"all", "modules"},
+		"httpx.AsyncClient().get":     {"all"},
+		"httpx.Client(timeout=5).get": {"all"},
+	} {
+		src := "def f(request):\n    return " + call + "(request.args['u'])\n"
+		fs, _ := e.Scan("python", "a.py", []byte(src))
+		var got []string
+		for _, f := range fs {
+			got = append(got, f.RuleID)
+		}
+		slices.Sort(got)
+		if !slices.Equal(got, want) {
+			t.Errorf("%s: reported by %v, want %v", call, got, want)
+		}
 	}
 }

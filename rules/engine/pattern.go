@@ -14,16 +14,22 @@ type pat struct {
 	raw      string
 	php      bool
 	toks     []Token
-	member   bool           // starts with ".", "->" or "?->": a method on any receiver
-	anchored bool           // written with a leading "^": never a member of something else, even as a source
-	text     *regexp.Regexp // text patterns only
-	name     string         // last name in the pattern (to recognise prefix checks)
-	chain    string         // PHP: "->m(" made from the sink "Class::m(": the chain must start at Class:: (chain.go)
-	wild     bool           // holds "[*]", which matches any one index: $_FILES[*]['name']
-	// sources only (source_args): the call is input only when its srcArg-th
-	// argument is a string literal among srcVals (lower case; "*": any; "!x": not x)
+	member   bool            // starts with ".", "->" or "?->": a method on any receiver
+	anchored bool            // written with a leading "^": never a member of something else, even as a source
+	text     *regexp.Regexp  // text patterns only
+	name     string          // last name in the pattern (to recognise prefix checks)
+	chain    string          // PHP: "->m(" made from the sink "Class::m(": the chain must start at Class:: (chain.go)
+	chainNot map[string]bool // calls the chain may not go through: they make another object (rule chain_not)
+	chainVia string          // a call the chain must go through: httpx.Client(*).get( (chain.go viaSink)
+	wild     bool            // holds "[*]", which matches any one index: $_FILES[*]['name']
+	// sources only (source_args): the call (or index) is input only when its
+	// srcArg-th argument is a string literal among srcVals (lower case; "*": any; "!x": not x;
+	// "?": an argument that is not a string literal)
 	srcArg  int
 	srcVals map[string]bool
+	// sources only: members the rule's route_not leaves out of a source that
+	// ends in that member (sourcenot.go)
+	notMembers []string
 }
 
 func compilePattern(lang, raw string, text bool) (*pat, error) {
@@ -145,7 +151,7 @@ func (p *pat) match(toks []Token, i int, strict bool) (int, bool) {
 		}
 		j++
 	}
-	if p.chain != "" && !chainFrom(toks, i, p.chain) {
+	if p.chain != "" && !chainFrom(toks, i, p.chain, p.chainVia, p.chainNot) {
 		return 0, false
 	}
 	if !strict || p.member || i == 0 || !memberOp(p.php, toks[i-1]) {
@@ -233,6 +239,19 @@ func (p *pat) callParen() int {
 		if p.toks[stack[k]].op("(") {
 			return stack[k]
 		}
+	}
+	return -1
+}
+
+// argOpen is where a source with source_args takes its arguments: the "(" of
+// a call source, or the "[" a source ends with (req.headers[: the index is
+// its one argument), else -1.
+func (p *pat) argOpen() int {
+	if k := p.callParen(); k >= 0 {
+		return k
+	}
+	if n := len(p.toks); n > 0 && p.toks[n-1].op("[") {
+		return n - 1
 	}
 	return -1
 }

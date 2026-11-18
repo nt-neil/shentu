@@ -5,6 +5,10 @@ cwe = "CWE-22"
 severity = "high"
 title = "Archive entry names used as output paths without containment check (zip slip)"
 frameworks = ["express"]
+# Only the archive's entries and the uploaded files below: a route's query,
+# body or params written to a path are js-path-traversal-fs-ops' and
+# js-path-traversal-send-file's.
+route_input = false
 sources = ["req.file", "req.files", "entry.entryName", "entry.path", "header.name"]
 sinks = ["fs.writeFile(", "fs.createWriteStream(", "fs.writeFileSync(", ".extractAllTo(", ".extractEntryTo("]
 sanitizers = [".startsWith("]

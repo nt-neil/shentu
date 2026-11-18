@@ -5,14 +5,19 @@ cwe = "CWE-89"
 severity = "high"
 title = "WordPress $wpdb query built from request input without $wpdb->prepare"
 frameworks = ["wordpress"]
-sources = ["$_GET", "$_POST", "$_REQUEST", "get_query_var(", "->get_param("]
+sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "get_query_var(", "->get_param("]
 sinks = ["$wpdb->query", "$wpdb->get_results", "$wpdb->get_row", "$wpdb->get_var", "$wpdb->get_col"]
-sanitizers = ["$wpdb->prepare", "absint", "intval", "count(", "sizeof(", "sanitize_sql_orderby("]
+sanitizers = ["$wpdb->prepare", "absint", "intval", "(int)", "count(", "sizeof(", "sanitize_sql_orderby("]
 fix = "Pass every value through $wpdb->prepare() placeholders (%d, %s); sanitize_text_field() and esc_sql() alone do not make a value safe in SQL."
 refs = ["CVE-2025-7036"]
 
 # Input written into prepare()'s format (not bound by it) is reported by
 # php-sqli-string-concat, whose ->prepare( sink covers $wpdb->prepare too.
+# $wpdb's queries are this rule's (php-sqli-string-concat leaves $wpdb out),
+# except input that is only an ORDER BY identifier: prepare() cannot bind
+# that, and php-sqli-orderby-identifier reports it.
+[[args]]
+unless_after = ["ORDER BY"]
 
 [[samples]]
 kind = "vulnerable"
@@ -69,30 +74,6 @@ code = '''
 <?php
 $ids = array_map('absint', $_POST['ids']);
 $wpdb->query("DELETE FROM {$wpdb->prefix}items WHERE id IN (" . implode(',', $ids) . ")");
-'''
-
-[[samples]]
-kind = "vulnerable"
-note = "the failed check only logs, the query still runs"
-code = '''
-<?php
-$col = $_GET['orderby'];
-if (!in_array($col, array('date', 'title'), true)) {
-    error_log('unexpected orderby');
-}
-$rows = $wpdb->get_results("SELECT * FROM {$wpdb->posts} ORDER BY $col");
-'''
-
-[[samples]]
-kind = "safe"
-note = "wp_send_json_error ends the request, so after it the column is one of the two"
-code = '''
-<?php
-$col = $_GET['orderby'];
-if (!in_array($col, array('date', 'title'), true)) {
-    wp_send_json_error('bad orderby');
-}
-$rows = $wpdb->get_results("SELECT * FROM {$wpdb->posts} ORDER BY $col");
 '''
 
 [[samples]]

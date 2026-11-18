@@ -5,7 +5,10 @@ cwe = "CWE-78"
 severity = "critical"
 title = "Request data (including headers) placed into a shell command"
 frameworks = ["laravel"]
-sources = ["$_GET", "$_POST", "$_REQUEST", "$_FILES[*]['name']", "$_FILES[*]['type']", "$_SERVER['HTTP_", "$request->input(", "$request->getHost()", "$request->header("]
+# Symfony's and WordPress's request readers too, which php-cmdi-process-shell-commandline
+# took into Process::run( before leaving Laravel's Process to this rule.
+sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "$_FILES[*]['name']", "$_FILES[*]['type']", "$_SERVER['HTTP_", "$request->input(", "$request->query(", "$request->getHost()", "$request->header(",
+           "$request->query->get(", "$request->attributes->get(", "$request->request->get(", "$request->get(", "$request->query->all(", "->get_param("]
 sinks = ["exec(", "shell_exec(", "system(", "passthru(", "popen(", "proc_open(", "`", "$this->process->execute(", "$this->process->executeAsync(", "Process::run(", "Process::start("]
 sanitizers = ["escapeshellarg", "ProcessExecutor::escape("]
 fix = "Avoid the shell: use a PHP function or an argument array (proc_open with an array, Symfony Process); if a shell is unavoidable, wrap every value in escapeshellarg()."
@@ -100,4 +103,34 @@ code = '''
 $up = $_FILES['map'];
 exec('file -b --mime-type ' . $up['tmp_name']);
 exec('convert ' . escapeshellarg('/srv/maps/' . basename($up['name'])) . ' -resize 800x /srv/maps/preview.png');
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "Laravel Process: a string runs through the shell"
+code = '''
+<?php
+class PingController extends Controller
+{
+    public function ping(Request $request)
+    {
+        $result = Process::run('ping -c 1 ' . $request->input('host'));
+        return $result->output();
+    }
+}
+'''
+
+[[samples]]
+kind = "safe"
+note = "Laravel Process: an argument array, which no shell parses"
+code = '''
+<?php
+class PingController extends Controller
+{
+    public function ping(Request $request)
+    {
+        $result = Process::run(['ping', '-c', '1', $request->input('host')]);
+        return $result->output();
+    }
+}
 '''

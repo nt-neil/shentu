@@ -14,8 +14,10 @@ sanitizers = ["intval", "(int)", "in_array", "Rule::in"]
 fix = "Keep the SQL text fixed and pass values as bindings, the second argument (DB::select('... where id = ?', [$id]), whereRaw('name like ?', [\"%$q%\"])), or use where() and the other builder methods, which bind for you."
 refs = ["CVE-2025-65103"]
 
+# Input that is only an ORDER BY identifier is php-sqli-orderby-identifier's.
 [[args]]
 arg = 1
+unless_after = ["ORDER BY"]
 
 [[samples]]
 kind = "vulnerable"
