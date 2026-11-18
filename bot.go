@@ -648,8 +648,9 @@ func (b *bot) answer(ctx context.Context, chat int64, text string) {
 	env.Remote = true // a Telegram request: no override of safety checks
 	a := &agent{
 		cfg: b.cfg, llm: newLLM(b.cfg), env: &env, skills: skills,
-		allowControl: b.canAct, actor: "bot", log: b.log,
-		confirm: func(tool, preview string) bool { return b.confirm(ctx, chat, tool, preview) },
+		allowControl: b.canAct, actor: "bot", log: b.log, canDispatch: true,
+		confirm:       func(tool, preview string) bool { return b.confirm(ctx, chat, tool, preview, false) },
+		confirmStrict: func(tool, preview string) bool { return b.confirm(ctx, chat, tool, preview, true) },
 	}
 	b.mu.Lock()
 	owner := b.histFor // the pairing this answer belongs to
@@ -709,8 +710,9 @@ func (b *bot) answer(ctx context.Context, chat int64, text string) {
 }
 
 // confirm applies [bot] confirm: 1 approve on the server, 2 ✅ and a one-time code,
-// 3 ✅ only, 4 none. Every approved action is notified.
-func (b *bot) confirm(ctx context.Context, chat int64, tool, preview string) bool {
+// 3 ✅ only, 4 none. strict (an action after sub-agent reports) never skips the
+// button: level 4 becomes 3. Every approved action is notified.
+func (b *bot) confirm(ctx context.Context, chat int64, tool, preview string, strict bool) bool {
 	ok := false
 	switch b.cfg.Bot.Confirm {
 	case 1:
@@ -720,6 +722,10 @@ func (b *bot) confirm(ctx context.Context, chat int64, tool, preview string) boo
 	case 3:
 		ok = b.confirmButton(ctx, chat, tool, preview)
 	default:
+		if strict {
+			ok = b.confirmButton(ctx, chat, tool, preview)
+			break
+		}
 		ok = true
 	}
 	if ok {
@@ -923,6 +929,17 @@ var toolLabels = map[string][2]string{
 	"file_changes": {"changed files", "最近改動的檔案"}, "log_search": {"logs", "搜尋系統紀錄"},
 	"block_ip": {"block IP", "封鎖 IP"}, "unblock_ip": {"unblock IP", "解除封鎖 IP"},
 	"notify": {"notification", "發送通知"}, "use_skill": {"playbook", "查閱處理步驟"},
+	"dispatch":                {"sub-agents", "派出子 agent"},
+	"attack_attempts":         {"attack attempts", "攻擊嘗試"},
+	"app_code_audit":          {"app code audit", "應用程式程式碼檢查"},
+	"sub:patrol":              {"sub-agent: patrol", "子 agent：巡檢"},
+	"sub:surface":             {"sub-agent: attack surface", "子 agent：漏洞面"},
+	"sub:attack":              {"sub-agent: attacks", "子 agent：攻擊偵測"},
+	"sub:incident":            {"sub-agent: incident", "子 agent：事件調查"},
+	"sub_incomplete:patrol":   {"patrol not finished", "巡檢未完成"},
+	"sub_incomplete:surface":  {"attack surface not finished", "漏洞面未完成"},
+	"sub_incomplete:attack":   {"attacks not finished", "攻擊偵測未完成"},
+	"sub_incomplete:incident": {"incident not finished", "事件調查未完成"},
 }
 
 // botProgress turns the placeholder message into a live list of what the agent is
