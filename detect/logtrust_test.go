@@ -60,7 +60,7 @@ func TestScanJournalAccess(t *testing.T) {
 		cursors: []string{jc1, jc2, "c3", "c4", "c5", "c6", "c7"},
 	}
 	ls := hostenv.LogSource{Path: "syslog:server=unix:/dev/log,nohostname", Server: "nginx", Kind: "access", Format: "combined",
-		Spec: `$remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent"`,
+		Spec:     `$remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent"`,
 		Verified: true, Journal: u, JournalTag: "nginx", JournalExe: exe, JournalUID: 33}
 	got := map[string]bool{}
 	scan := func(ls hostenv.LogSource) {
