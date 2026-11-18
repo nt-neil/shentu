@@ -89,35 +89,74 @@ var nginxBinaries = []string{"/usr/sbin/nginx", "/usr/bin/nginx", "/usr/local/sb
 // openresty/1.25.3.1.
 var ngxVersionString = regexp.MustCompile(`(?:nginx|openresty)/(\d+\.\d+\.\d+(?:\.\d+)?)\x00`)
 
-// nginxVersion is the installed nginx's version, and the package holding it
-// ("" for a binary no package holds; version "" when there is no nginx).
-// The binary's version is read from the file, not by running it.
-var nginxVersion = func(ctx context.Context) (version, pkg, dist string) {
+// ngxInstall is the nginx this host has: its version ("" when none is
+// found), the package holding it ("" for a binary no package holds), the
+// package manager, and its configuration file. removed: a package of it was
+// removed and its configuration left behind (dpkg's config-files, rpm's
+// .rpmsave), so a configuration without a version is no nginx.
+type ngxInstall struct {
+	version, pkg, dist, conf string
+	removed                  bool
+}
+
+// ngxRun, ngxRead and ngxExists run a package manager's query, read a binary
+// (up to 64 MiB) and look for a file: variables for the tests.
+var (
+	ngxRun = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		return exec.CommandContext(ctx, name, args...).Output()
+	}
+	ngxRead = func(p string) ([]byte, error) {
+		f, err := os.Open(p)
+		if err != nil {
+			return nil, err
+		}
+		defer f.Close()
+		return io.ReadAll(io.LimitReader(f, 64<<20))
+	}
+	ngxExists = func(p string) bool { _, err := os.Stat(p); return err == nil }
+)
+
+// ngxConfOf is the configuration of nginx installed by pkg or at bin:
+// OpenResty keeps its own under its prefix.
+func ngxConfOf(pkg, bin string) string {
+	if pkg == "openresty" || strings.HasPrefix(bin, "/usr/local/openresty/") {
+		return hostenv.OpenRestyConf
+	}
+	return hostenv.NginxConf
+}
+
+// nginxVersion finds the installed nginx. The binary's version is read from
+// the file, not by running it.
+var nginxVersion = func(ctx context.Context) ngxInstall {
+	removed := false
 	for _, p := range nginxPackages {
-		out, err := exec.CommandContext(ctx, "dpkg-query", "-W", "-f", "${db:Status-Status} ${Version}", p).Output()
-		if f := strings.Fields(string(out)); err == nil && len(f) == 2 && f[0] == "installed" {
-			return f[1], p, "dpkg"
+		out, err := ngxRun(ctx, "dpkg-query", "-W", "-f", "${db:Status-Status} ${Version}", p)
+		switch f := strings.Fields(string(out)); {
+		case err == nil && len(f) == 2 && f[0] == "installed":
+			return ngxInstall{version: f[1], pkg: p, dist: "dpkg", conf: ngxConfOf(p, "")}
+		case len(f) > 0 && f[0] == "config-files":
+			removed = true // dpkg -r without --purge: the configuration stays
 		}
 	}
 	for _, p := range []string{"nginx", "openresty"} {
-		if out, err := exec.CommandContext(ctx, "rpm", "-q", "--qf", "%{EPOCHNUM}:%{VERSION}-%{RELEASE}", p).Output(); err == nil {
+		if out, err := ngxRun(ctx, "rpm", "-q", "--qf", "%{EPOCHNUM}:%{VERSION}-%{RELEASE}", p); err == nil {
 			if v := strings.TrimSpace(string(out)); v != "" && !strings.Contains(v, "not installed") {
-				return v, p, "rpm"
+				return ngxInstall{version: v, pkg: p, dist: "rpm", conf: ngxConfOf(p, "")}
 			}
 		}
 	}
 	for _, b := range nginxBinaries {
-		f, err := os.Open(b)
-		if err != nil {
-			continue
-		}
-		data, err := io.ReadAll(io.LimitReader(f, 64<<20))
-		f.Close()
-		if m := ngxVersionString.FindSubmatch(data); err == nil && m != nil {
-			return string(m[1]), "", ""
+		if data, err := ngxRead(b); err == nil {
+			if m := ngxVersionString.FindSubmatch(data); m != nil {
+				return ngxInstall{version: string(m[1]), conf: ngxConfOf("", b)}
+			}
 		}
 	}
-	return "", "", ""
+	// rpm -e keeps a changed configuration as nginx.conf.rpmsave
+	for _, c := range []string{hostenv.NginxConf, hostenv.OpenRestyConf} {
+		removed = removed || ngxExists(c+".rpmsave")
+	}
+	return ngxInstall{removed: removed}
 }
 
 // nginxChangelog is the installed package's changelog, where a distribution
@@ -157,15 +196,19 @@ func mentionsCVE(text, id string) bool {
 	}
 }
 
-// nginxHTTP2 reports whether nginx's configuration speaks HTTP/2.
-var nginxHTTP2 = func() (on, found bool, unread []string) { return hostenv.NginxHTTP2(hostSource()) }
+// nginxHTTP2 reports whether nginx's configuration at conf speaks HTTP/2.
+var nginxHTTP2 = func(conf string) (on, found bool, unread []string) { return hostenv.NginxHTTP2At(hostSource(), conf) }
 
 // nginxH2Risk is the risk of nginx's HTTP/2 advisories on this server, if any.
 func nginxH2Risk(ctx context.Context) []Risk {
-	v, pkg, dist := nginxVersion(ctx)
+	in := nginxVersion(ctx)
+	v, conf := in.version, in.conf
+	if conf == "" {
+		conf = hostenv.NginxConf
+	}
 	cves := nginxH2Affected(v)
-	if pkg != "" && len(cves) > 0 {
-		log := nginxChangelog(ctx, pkg, dist)
+	if in.pkg != "" && len(cves) > 0 {
+		log := nginxChangelog(ctx, in.pkg, in.dist)
 		var open []string
 		for _, c := range cves {
 			if !mentionsCVE(log, c) {
@@ -174,11 +217,12 @@ func nginxH2Risk(ctx context.Context) []Risk {
 		}
 		cves = open
 	}
-	on, found, unread := nginxHTTP2()
-	if v == "" && found {
+	on, found, unread := nginxHTTP2(conf)
+	if v == "" && found && !in.removed {
 		// nginx is configured, but neither a package nor a binary where one is
-		// looked for gives its version (a build installed elsewhere, a fork)
-		return []Risk{{uncheckedPrefix + "nginx:version", "info", "/etc/nginx/nginx.conf is there, but the version of nginx could not be found " +
+		// looked for gives its version (a build installed elsewhere, a fork);
+		// a package removed without its configuration is no nginx
+		return []Risk{{uncheckedPrefix + "nginx:version", "info", conf + " is there, but the version of nginx could not be found " +
 			"(no package, no binary in " + strings.Join(nginxBinaries, ", ") + "), so whether CVE-2026-123007 and CVE-2026-123633 affect it is unknown"}}
 	}
 	if len(cves) == 0 {
@@ -197,7 +241,7 @@ func nginxH2Risk(ctx context.Context) []Risk {
 			"(an image without package changelogs, such as Ubuntu's minimized ones, keeps this warning after the fix)"}}
 	case !found:
 		return []Risk{{uncheckedPrefix + "nginx:" + cves[0], "info", "nginx " + v + " is in the range of " + ids +
-			", but /etc/nginx/nginx.conf was not found, so whether it serves HTTP/2 is unknown"}}
+			", but " + conf + " was not found, so whether it serves HTTP/2 is unknown"}}
 	case len(unread) > 0:
 		// A file not read may be the one turning HTTP/2 on: not "not exposed".
 		return []Risk{{uncheckedPrefix + "nginx:" + cves[0], "info", "nginx " + v + " is in the range of " + ids +

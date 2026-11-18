@@ -41,3 +41,23 @@ func TestNginxHTTP2(t *testing.T) {
 		t.Errorf("unreadable site: on %v found %v unread %v", on, found, unread)
 	}
 }
+
+// OpenResty's configuration is under its own prefix: its relative includes
+// are there too (review 2 S-3).
+func TestNginxHTTP2OpenResty(t *testing.T) {
+	h := newFake(true)
+	h.files[OpenRestyConf] = "http {\n  include conf.d/*.conf;\n}\n"
+	h.files["/usr/local/openresty/nginx/conf/conf.d/site.conf"] = "server {\n  listen 443 ssl;\n  http2 on;\n}\n"
+	if on, found, unread := NginxHTTP2At(h, OpenRestyConf); !on || !found || len(unread) != 0 {
+		t.Errorf("OpenResty: on %v found %v unread %v", on, found, unread)
+	}
+	if _, found, _ := NginxHTTP2(h); found {
+		t.Error("OpenResty only: /etc/nginx/nginx.conf found")
+	}
+	// an include outside its prefix is not read: may be the one turning HTTP/2 on
+	h.files[OpenRestyConf] = "http {\n  include /etc/elsewhere/site.conf;\n}\n"
+	h.files["/etc/elsewhere/site.conf"] = "server {\n  listen 443 http2;\n}\n"
+	if on, _, unread := NginxHTTP2At(h, OpenRestyConf); on || len(unread) != 1 {
+		t.Errorf("include outside the prefix: on %v unread %v", on, unread)
+	}
+}
