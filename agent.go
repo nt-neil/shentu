@@ -104,13 +104,9 @@ func (a *agent) run(ctx context.Context, msgs []message) (string, []message, err
 	defer budgetAlert(context.WithoutCancel(ctx), a.cfg, a.env, time.Now())
 	defs := a.toolDefs()
 	for step := 0; step < a.cfg.LLM.MaxSteps; step++ {
-		reply, err := a.llm.chat(ctx, msgs, defs)
-		a.logLLM(err)
+		reply, err := a.chat(ctx, msgs, defs)
 		if err != nil {
 			return "", msgs, err
-		}
-		if a.tokenCap > 0 && a.tokensUsed >= a.tokenCap {
-			return "", msgs, errTokenCap
 		}
 		reply.Role = "assistant"
 		if len(reply.ToolCalls) == 0 {
@@ -125,6 +121,10 @@ func (a *agent) run(ctx context.Context, msgs []message) (string, []message, err
 				call.ID = fmt.Sprintf("call_%d_%d", step, i)
 				reply.ToolCalls[i].ID = call.ID
 			}
+			if a.allow != nil && i >= subMaxToolCalls { // a sub-agent: bounded work per step, whatever the model asks
+				msgs = append(msgs, message{Role: "tool", ToolCallID: call.ID, Content: errText(fmt.Sprintf("at most %d tool calls per step; this one was not run", subMaxToolCalls))})
+				continue
+			}
 			if a.progress != nil {
 				a.progress(call.Function.Name)
 			}
@@ -134,8 +134,7 @@ func (a *agent) run(ctx context.Context, msgs []message) (string, []message, err
 	}
 	// Out of steps: ask for an answer with what we have.
 	msgs = append(msgs, message{Role: "user", Content: "Stop calling tools. Give your answer now with the evidence you have."})
-	reply, err := a.llm.chat(ctx, msgs, nil)
-	a.logLLM(err)
+	reply, err := a.chat(ctx, msgs, nil)
 	if err != nil {
 		return "", msgs, err
 	}
@@ -150,8 +149,7 @@ func (a *agent) answerOnce(ctx context.Context, answer string, msgs []message) (
 		return answer, msgs, nil
 	}
 	msgs = append(msgs, message{Role: "user", Content: "Your reply was empty. Answer now in a few short paragraphs, without calling tools and without long reasoning."})
-	reply, err := a.llm.chat(ctx, msgs, nil)
-	a.logLLM(err)
+	reply, err := a.chat(ctx, msgs, nil)
 	if err != nil {
 		return "", msgs, err
 	}
@@ -159,11 +157,34 @@ func (a *agent) answerOnce(ctx context.Context, answer string, msgs []message) (
 	return reply.Content, append(msgs, reply), nil
 }
 
+// chat is one model call within the agent's token limit, if it has one: a call
+// whose estimated input and full output would pass the limit is not made, and a
+// call that passed it ends the run. Either way the run is incomplete (errTokenCap).
+func (a *agent) chat(ctx context.Context, msgs []message, defs []toolDef) (message, error) {
+	if a.tokenCap > 0 && a.tokensUsed+estimateTokens(msgs, defs)+a.llm.maxTokens > a.tokenCap {
+		return message{}, errTokenCap
+	}
+	reply, err := a.llm.chat(ctx, msgs, defs)
+	a.logLLM(err)
+	if err == nil && a.tokenCap > 0 && a.tokensUsed >= a.tokenCap {
+		return message{}, errTokenCap
+	}
+	return reply, err
+}
+
+// estimateTokens is a rough, high count of the input tokens of a call: about
+// three bytes of JSON per token.
+func estimateTokens(msgs []message, defs []toolDef) int {
+	b, _ := json.Marshal(msgs)
+	d, _ := json.Marshal(defs)
+	return (len(b) + len(d)) / 3
+}
+
 // logLLM records one model call with its token use, so cost can be tracked.
 func (a *agent) logLLM(err error) {
 	e := logEntry{Actor: a.actor, Tool: "llm", Args: a.llm.model, OK: err == nil, InTokens: a.llm.usedIn, OutTokens: a.llm.usedOut,
 		ReasonTokens: a.llm.usedReason, Cost: a.llm.usedCost, Dispatch: a.dispatchID}
-	a.tokensUsed += a.llm.usedIn + a.llm.usedOut
+	a.tokensUsed += a.llm.usedIn + a.llm.usedOut + a.llm.usedReason // as monthUsage counts them
 	if err != nil {
 		e.Error = err.Error()
 	}

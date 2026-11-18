@@ -954,9 +954,13 @@ type botProgress struct {
 	chat  int64
 	msg   int64
 	start time.Time
-	steps []string
+	steps []string // the last progressShown steps
+	count int      // all steps
 	last  time.Time
 }
+
+// progressShown bounds the progress message (Telegram allows 4096 characters).
+const progressShown = 12
 
 func (p *botProgress) label(tool string) string {
 	i := 0
@@ -966,11 +970,16 @@ func (p *botProgress) label(tool string) string {
 	if l, ok := toolLabels[tool]; ok {
 		return l[i]
 	}
-	return tool
+	// A name the model made up (it may come from text in a log) is not shown.
+	return [2]string{"unknown tool", "未知工具"}[i]
 }
 
 func (p *botProgress) step(tool string) {
 	p.steps = append(p.steps, p.label(tool))
+	p.count++
+	if len(p.steps) > progressShown {
+		p.steps = p.steps[len(p.steps)-progressShown:]
+	}
 	if p.msg == 0 || time.Since(p.last) < time.Second { // Telegram limits edits; the next step shows them all
 		return
 	}
@@ -998,7 +1007,7 @@ func (p *botProgress) finish(ctx context.Context, ok bool) {
 	if !ok {
 		key = "failed"
 	}
-	text := fmt.Sprintf(p.b.t(key), len(p.steps), int(time.Since(p.start).Seconds()))
+	text := fmt.Sprintf(p.b.t(key), p.count, int(time.Since(p.start).Seconds()))
 	if len(p.steps) > 0 {
 		sep := ", "
 		if p.b.zh() {
