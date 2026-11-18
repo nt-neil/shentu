@@ -194,8 +194,10 @@ func (a *analysis) urlCallsStmt(st state, t []Token) {
 			next = t[i+1]
 		}
 		switch {
-		case (next.op(".") || next.op("?.")) && i+3 < len(t) && t[i+2].word("valueOf") && t[i+3].op("("):
-			// u.valueOf() is u itself, not a member of it: held by another name
+		case (next.op(".") || next.op("?.")) && i+3 < len(t) && t[i+2].word("valueOf") && t[i+3].op("("),
+			next.op("[") && closeOf(t, i+1)+1 < len(t) && t[closeOf(t, i+1)+1].op("("):
+			// u.valueOf() is u itself, not a member of it: held by another name;
+			// so may be a method called by a computed name (u['valueOf']())
 		case next.op(".") || next.op("?.") || next.op("["), // u.hostname, u['host']
 			next.op("=") || next.op("+="), // u = ..., written by assign
 			(prev.op("(") || prev.op(",")) && (next.op(")") || next.op(",")) && callArg(t, i), // f(u)
