@@ -19,3 +19,21 @@ func hasACL(p string) (bool, error) {
 	}
 	return false, err
 }
+
+// aclEntries reads and parses system.posix_acl_access: none without one.
+func aclEntries(p string) ([]ACLEntry, error) {
+	n, err := syscall.Getxattr(p, "system.posix_acl_access", nil)
+	switch {
+	case errors.Is(err, syscall.ENODATA), errors.Is(err, syscall.ENOTSUP):
+		return nil, nil
+	case err != nil:
+		return nil, err
+	case n <= 0:
+		return nil, nil
+	}
+	b := make([]byte, n)
+	if n, err = syscall.Getxattr(p, "system.posix_acl_access", b); err != nil {
+		return nil, err
+	}
+	return parseACL(b[:n])
+}
