@@ -217,11 +217,15 @@ func (p *PassRound) Run(ctx context.Context) {
 		if !ls.Verified {
 			reason = "記錄檔未通過信任檢查（" + string(ls.Reason) + "），內容可能被竄改"
 		}
-		c, res, sigs, err := ScanAccess(in.Src, ls, cs.get(ls.Path), dropped[ls.Path], in.Budget, trust(ls.Server), func(rec AccessRecord, l Line) {
+		onRecord := func(rec AccessRecord, l Line) {
 			o := Origin{Verified: l.Verified, Custom: custom}
 			if !l.Verified {
 				o.Reason = reason
-				if o.Reason == "" {
+				switch {
+				case o.Reason != "":
+				case ls.Journal != "":
+					o.Reason = "這筆 journald 紀錄不是 nginx 的 worker 經 syslog 送出的（程式、帳號或傳送方式不符），可能是別的程序冒充"
+				default:
 					o.Reason = "這段紀錄來自未通過信任檢查的輪替檔"
 				}
 			}
@@ -244,7 +248,16 @@ func (p *PassRound) Run(ctx context.Context) {
 					}
 				}
 			}
-		})
+		}
+		var c Cursor
+		var res ReadResult
+		var sigs Signals
+		var err error
+		if ls.Journal != "" {
+			c, res, sigs, err = ScanJournalAccess(ctx, in.Src, ls, cs.get(ls.Path), dropped[ls.Path], in.Budget, onRecord)
+		} else {
+			c, res, sigs, err = ScanAccess(in.Src, ls, cs.get(ls.Path), dropped[ls.Path], in.Budget, trust(ls.Server), onRecord)
+		}
 		p.read(ls.Path, ls.Kind, ls.Verified, c, res, &sigs, err)
 		p.mu.Lock()
 		if !p.abandoned {

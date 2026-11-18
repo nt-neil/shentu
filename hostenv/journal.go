@@ -37,7 +37,7 @@ func init() {
 // journalFields are the fields asked for: the message, and those journald
 // fills in from the sender's credentials (the _ ones), which the sender
 // cannot set. __CURSOR and __REALTIME_TIMESTAMP come always.
-const journalFields = "--output-fields=MESSAGE,_SYSTEMD_UNIT,_UID,_PID,_COMM,_TRANSPORT"
+const journalFields = "--output-fields=MESSAGE,_SYSTEMD_UNIT,_UID,_PID,_COMM,_EXE,_TRANSPORT,SYSLOG_IDENTIFIER"
 
 // journalUnitArgv is a unit's read: after a cursor or since a time, with
 // --output-fields (systemd 236+) or without. Without it is still -o json,
@@ -80,8 +80,12 @@ type JournalEntry struct {
 	UID       int       `json:"uid"`            // _UID; -1 when absent
 	PID       int       `json:"pid,omitempty"`
 	Comm      string    `json:"comm,omitempty"`
+	Exe       string    `json:"exe,omitempty"`       // _EXE: the sender's program, as the kernel has it
 	Transport string    `json:"transport,omitempty"` // stdout, journal, syslog, kernel, driver, audit
-	Message   string    `json:"message"`             // what the sender wrote: never trusted; cut at MaxJournalMessage
+	// Ident is SYSLOG_IDENTIFIER, the tag the sender wrote: never trusted,
+	// only which of a unit's messages are its access log's.
+	Ident   string `json:"ident,omitempty"`
+	Message string `json:"message"` // what the sender wrote: never trusted; cut at MaxJournalMessage
 	// MessageMissing: journald gave no MESSAGE as text or bytes (null, or
 	// none): the entry is counted, not taken as an empty message.
 	MessageMissing bool `json:"message_missing,omitempty"`
@@ -211,7 +215,7 @@ func parseJournalJSON(l string) (JournalEntry, error) {
 		}
 		return ""
 	}
-	e := JournalEntry{Cursor: str("__CURSOR"), Unit: str("_SYSTEMD_UNIT"), Comm: str("_COMM"), Transport: str("_TRANSPORT"), Message: str("MESSAGE"), UID: -1}
+	e := JournalEntry{Cursor: str("__CURSOR"), Unit: str("_SYSTEMD_UNIT"), Comm: str("_COMM"), Exe: str("_EXE"), Transport: str("_TRANSPORT"), Ident: str("SYSLOG_IDENTIFIER"), Message: str("MESSAGE"), UID: -1}
 	if raw, ok := m["MESSAGE"]; !ok || string(raw) == "null" {
 		e.MessageMissing = true
 	}

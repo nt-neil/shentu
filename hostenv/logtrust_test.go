@@ -273,3 +273,76 @@ func TestApacheModulesTrust(t *testing.T) {
 		}
 	}
 }
+
+// journalHost is Debian 12's nginx (distroHost) sending its access log to
+// journald, as shentu's suggested line has it.
+func journalHost(ptrace int) statHost {
+	h := distroHost("debian12", ptrace, false)
+	h.files["/etc/nginx/nginx.conf"] = "user www-data;\nhttp {\n\taccess_log syslog:server=unix:/dev/log,nohostname combined;\n\terror_log /var/log/nginx/error.log;\n}\n"
+	for _, d := range []string{"/dev", "/run", "/run/systemd", "/run/systemd/journal", "/usr", "/usr/sbin", "/lib", "/lib/systemd", "/lib/systemd/system"} {
+		h.st[d] = FileStat{Mode: fs.ModeDir | 0o755, GID: intp(0)}
+	}
+	h.links["/dev/log"] = "/run/systemd/journal/dev-log"
+	h.files["/run/systemd/journal/dev-log"] = ""
+	h.files["/lib/systemd/system/nginx.service"] = "[Service]\nType=forking\nExecStartPre=/usr/sbin/nginx -t -q -g 'daemon on; master_process on;'\nExecStart=/usr/sbin/nginx -g 'daemon on; master_process on;'\n"
+	h.files["/usr/sbin/nginx"] = ""
+	h.st["/usr/sbin/nginx"] = FileStat{Mode: 0o755, GID: intp(0)}
+	return h
+}
+
+func TestJournalChannel(t *testing.T) {
+	const log = "nginx access syslog:server=unix:/dev/log,nohostname"
+	rows := []struct {
+		name   string
+		ptrace int
+		edit   func(h statHost)
+		want   Reason // "" verified
+	}{
+		{"suggested line, ptrace_scope 1", 1, nil, ""},
+		// www-data is PHP's too: it may ptrace the workers.
+		{"ptrace_scope 0", 0, nil, ReasonWebUserWritable},
+		{"/dev/log is another daemon's", 1, func(h statHost) {
+			h.links["/dev/log"] = "/run/marker-syslog.sock"
+			h.files["/run/marker-syslog.sock"] = ""
+		}, ReasonUnverified},
+		{"no unit", 1, func(h statHost) {
+			delete(h.files, "/lib/systemd/system/nginx.service")
+		}, ReasonUnverified},
+		{"program writable by its group", 1, func(h statHost) {
+			h.st["/usr/sbin/nginx"] = FileStat{Mode: 0o775, GID: intp(0)}
+		}, ReasonUntrusted},
+		{"workers' account not set", 1, func(h statHost) {
+			h.files["/etc/nginx/nginx.conf"] = "http {\n\taccess_log syslog:server=unix:/dev/log,nohostname combined;\n}\n"
+		}, ReasonUnverified},
+		{"client from a header", 1, func(h statHost) {
+			h.files["/etc/nginx/nginx.conf"] = "user www-data;\nhttp {\n\tset_real_ip_from 192.0.2.0/24;\n\taccess_log syslog:server=unix:/dev/log,nohostname combined;\n}\n"
+		}, ReasonClientFromHeader},
+		{"nginx runs code", 1, func(h statHost) {
+			h.files["/etc/nginx/nginx.conf"] = "user www-data;\nload_module modules/ngx_http_js_module.so;\nhttp {\n\taccess_log syslog:server=unix:/dev/log,nohostname combined;\n}\n"
+		}, ReasonWebUserWritable},
+	}
+	for _, r := range rows {
+		h := journalHost(r.ptrace)
+		if r.edit != nil {
+			r.edit(h)
+		}
+		s, ok := webLogsByKey(t, LinuxCollector{}.WebLogs(h))[log]
+		if !ok {
+			t.Errorf("%s: %s not found among %v", r.name, log, webLogsByKey(t, LinuxCollector{}.WebLogs(h)))
+			continue
+		}
+		if s.Verified != (r.want == "") || (r.want != "" && s.Reason != r.want && !(r.want == ReasonUntrusted && s.Reason == ReasonUnverified)) {
+			t.Errorf("%s: verified %v %q (%s); want %q", r.name, s.Verified, s.Reason, s.Detail, r.want)
+		}
+		if r.want == "" && (s.Journal != "nginx.service" || s.JournalTag != "nginx" || s.JournalExe != "/usr/sbin/nginx" || s.JournalUID != 33) {
+			t.Errorf("%s: journal %q tag %q exe %q uid %d", r.name, s.Journal, s.JournalTag, s.JournalExe, s.JournalUID)
+		}
+	}
+	// Without nohostname the hostname comes before the tag: not read as
+	// the journal, as any syslog destination.
+	h := journalHost(1)
+	h.files["/etc/nginx/nginx.conf"] = "user www-data;\nhttp {\n\taccess_log syslog:server=unix:/dev/log combined;\n}\n"
+	if s := webLogsByKey(t, LinuxCollector{}.WebLogs(h))["nginx access syslog:server=unix:/dev/log"]; s.Verified || s.Reason != ReasonNotAFile || s.Journal != "" {
+		t.Errorf("without nohostname: %+v", s)
+	}
+}

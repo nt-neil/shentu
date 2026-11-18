@@ -54,6 +54,15 @@ type LogSource struct {
 	// FileUID is the judged file's owner: root, or a server account
 	// (WebAccounts.ServerUIDs) the reader must find it still is.
 	FileUID int `json:"file_uid,omitempty"`
+	// Journal: nginx sends the log to journald (access_log
+	// syslog:server=unix:/dev/log): it is read from the entries of this
+	// unit tagged JournalTag, and an entry is verified only when journald
+	// says it came over syslog from JournalExe running as JournalUID in
+	// the unit (cgroup and credentials, which the sender cannot set).
+	Journal    string `json:"journal,omitempty"`
+	JournalTag string `json:"journal_tag,omitempty"`
+	JournalExe string `json:"journal_exe,omitempty"`
+	JournalUID int    `json:"journal_uid,omitempty"`
 }
 
 // Reasons a log source is not verified or not readable, beside the
@@ -166,7 +175,9 @@ func (c LinuxCollector) WebLogs(src Source) Obs[[]LogSource] {
 	scoped, scopeWhy := ptraceScoped(src)
 	var out []LogSource
 	for _, s := range l.out {
-		if s.Reason == "" {
+		if s.Reason == "" && s.Journal != "" {
+			l.judgeJournal(s, web)
+		} else if s.Reason == "" {
 			t := JudgeLog(src, s.Path, web.ForServer(s.Server))
 			s.Verified, s.Reason, s.Detail = t.Verified, t.Reason, t.Detail
 			if t.Verified {
@@ -507,6 +518,8 @@ type logLoader struct {
 	// runs as, by uid or primary group (webAccounts), so application code
 	// cannot ptrace them.
 	apart map[string]bool
+	// nameUID: /etc/passwd's accounts, by name (webAccounts).
+	nameUID map[string]int
 	// runAs, runAsGroups: the accounts and groups every enabled unit,
 	// lingering user manager and crontab runs programs as (runAsAccounts);
 	// runAsLost: one could not be read or told.
@@ -615,7 +628,7 @@ func (l *logLoader) add(s LogSource) {
 		l.cut = true
 		return
 	}
-	if s.Reason == "" {
+	if s.Reason == "" && s.Journal == "" {
 		switch {
 		case strings.Contains(s.Path, "$"):
 			s.Reason, s.Detail = ReasonVariablePath, "the path holds a variable"
@@ -978,7 +991,69 @@ func (l *logLoader) webAccounts() WebAccounts {
 		}
 	}
 	l.serverAccounts(&w, app, appGIDs, nameUID, uidGID, groupGID)
+	l.nameUID = nameUID
 	return w
+}
+
+// judgeJournal judges an access log nginx sends to journald (Journal):
+// the socket is journald's, nginx.service's ExecStart names nginx's
+// program and it is root's alone (the _EXE an entry must have), and the
+// workers run as one account of /etc/passwd, not root (the _UID). What
+// makes any access log unverified (WebLogs) is judged after.
+func (l *logLoader) judgeJournal(s *LogSource, web WebAccounts) {
+	no := func(r Reason, d string) { s.Verified, s.Reason, s.Detail = false, r, d }
+	if strings.Contains(s.Path, "unix:/dev/log") {
+		if real, err := EvalSymlinks(l.src, "/dev/log"); err != nil || real != journaldSocket {
+			no(ReasonUnverified, "/dev/log is not journald's socket ("+journaldSocket+"): another syslog daemon takes the log")
+			return
+		}
+	}
+	all, unread := unitConfs(l.src, ngxJournalUnit, nil, WebConf{Root: "/", Owner: 0})
+	if unread {
+		no(ReasonUnverified, ngxJournalUnit+": a unit file or drop-in could not be read")
+		return
+	}
+	exe := ""
+	for _, b := range all {
+		for _, ln := range strings.Split(string(b), "\n") {
+			k, v, ok := strings.Cut(strings.TrimSpace(ln), "=")
+			if !ok || strings.TrimSpace(k) != "ExecStart" {
+				continue
+			}
+			v = strings.TrimLeft(strings.TrimSpace(v), "@-:+!|")
+			exe = ""
+			if f := strings.Fields(v); len(f) > 0 {
+				exe = f[0]
+			}
+		}
+	}
+	if !strings.HasPrefix(exe, "/") {
+		no(ReasonUnverified, ngxJournalUnit+" has no ExecStart naming nginx's program by its path")
+		return
+	}
+	real, err := EvalSymlinks(l.src, exe)
+	if err != nil {
+		no(ReasonUnverified, "nginx's program "+exe+": "+whyUnread(err))
+		return
+	}
+	if t := JudgeLog(l.src, real, web); !t.Verified { // root's alone, as a log is
+		no(ReasonUnverified, "nginx's program "+real+": "+t.Detail)
+		return
+	}
+	us := l.serverUsers["nginx"]
+	if len(us) != 1 {
+		no(ReasonUnverified, "nginx's workers' account is not set by one user directive: which _UID is theirs is not known")
+		return
+	}
+	uid, ok := numericID(us[0])
+	if !ok {
+		uid, ok = l.nameUID[us[0]]
+	}
+	if !ok || uid == 0 {
+		no(ReasonUnverified, "nginx's workers' account "+us[0]+" is not in /etc/passwd, or is root")
+		return
+	}
+	s.Verified, s.JournalExe, s.JournalUID = true, real, uid
 }
 
 // appAccounts are the names (or numbers) of the accounts application code
@@ -1440,6 +1515,41 @@ func ngxWalk(ds []*ngxDir, depth int, fn func(*ngxDir)) {
 	}
 }
 
+// ngxJournalUnit is the unit nginx runs as, whose journal entries an
+// access_log sent to journald is read from.
+const ngxJournalUnit = "nginx.service"
+
+// journaldSocket is where /dev/log leads when journald takes syslog.
+const journaldSocket = "/run/systemd/journal/dev-log"
+
+// ngxJournal is the tag of an access_log sent to the local syslog socket
+// (syslog:server=unix:/dev/log or journald's own, nohostname), "nginx" if
+// none is set; "" for any other destination. Without nohostname the
+// hostname comes before the tag, which journald does not take apart: not
+// read as the journal.
+func ngxJournal(dest string) string {
+	params, ok := strings.CutPrefix(dest, "syslog:")
+	if !ok {
+		return ""
+	}
+	server, tag, nohost := "", "nginx", false
+	for _, p := range strings.Split(params, ",") {
+		k, v, _ := strings.Cut(p, "=")
+		switch k {
+		case "server":
+			server = v
+		case "tag":
+			tag = v
+		case "nohostname":
+			nohost = true
+		}
+	}
+	if (server != "unix:/dev/log" && server != "unix:"+journaldSocket) || !nohost || tag == "" {
+		return ""
+	}
+	return tag
+}
+
 // ngxCombined is nginx's predefined format.
 const ngxCombined = `$remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent"`
 
@@ -1620,6 +1730,8 @@ func (l *logLoader) ngxLog(d *ngxDir, kind, dest, format string, formats map[str
 	switch {
 	case dest == "off":
 		s.Reason, s.Detail = ReasonLoggingDisabled, kind+"_log off"
+	case kind == "access" && ngxJournal(dest) != "":
+		s.Journal, s.JournalTag = ngxJournalUnit, ngxJournal(dest)
 	case strings.HasPrefix(dest, "syslog:"), strings.HasPrefix(dest, "memory:"), dest == "stderr", dest == "/dev/stderr", dest == "/dev/stdout", dest == "/dev/null":
 		s.Reason, s.Detail = ReasonNotAFile, "written to "+dest
 	}
