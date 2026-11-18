@@ -164,7 +164,8 @@ How the engine reads them:
     call that only reads u (`log(u)`), which reports more than it must. So does
     a URL written into an object or array (`{ target: u }`, `[u]`), or used as
     a value in any other way than a member read (`u.valueOf()` is u itself, not a
-    member), a whole argument or the whole
+    member; a method called by a computed name, `u[k]()`, counts as changing it
+    whatever k is, `u['toString']()` too), a whole argument or the whole
     right side of an assignment (`a1 = u || null`, `c ? u : w`, `return u`). Only a
     plain name holds a checked URL (not `this.u`), only one no function written
     inside another uses without binding it itself (a closure or callback that
