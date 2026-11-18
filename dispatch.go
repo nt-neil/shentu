@@ -417,7 +417,11 @@ func (a *agent) runSub(ctx context.Context, id string, t subTask, tokenCap int) 
 	default:
 		rep = parseReport(t.Role, answer)
 		if sub.outOfSteps { // made to answer: what it did not get to is unknown
-			rep.Status, rep.Reason = "incomplete", "the step limit was used up"
+			why := "the step limit was used up"
+			if rep.Reason != "" {
+				why += "; " + rep.Reason
+			}
+			rep.Status, rep.Reason = "incomplete", why
 		}
 	}
 	rep.Tokens = sub.tokensUsed

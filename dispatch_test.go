@@ -834,4 +834,19 @@ func TestInvariantSubagentStepLimitIncomplete(t *testing.T) {
 	if len(reps) != 1 || reps[0].Status != "incomplete" || reps[0].Reason != "the step limit was used up" {
 		t.Errorf("reports: %+v", reps)
 	}
+	// A report that was not the shape either keeps both reasons.
+	h2 := &hostileModel{replies: []string{
+		call("dispatch", `{"tasks":[{"role":"patrol"}]}`),
+		refused, refused, refused, refused, refused, refused,
+		answerMsg("all good"),
+		done,
+	}}
+	a2, _ := dispatchAgent(t, h2, nil, nil)
+	if _, _, err := a2.run(context.Background(), []message{{Role: "user", Content: "go"}}); err != nil {
+		t.Fatal(err)
+	}
+	reps = lastReports(t, h2)
+	if len(reps) != 1 || reps[0].Status != "incomplete" || reps[0].Reason != "the step limit was used up; the report was not in the required JSON shape" {
+		t.Errorf("reports: %+v", reps)
+	}
 }
