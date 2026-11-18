@@ -39,7 +39,7 @@ func All() []Tool {
 	return guardWindows([]Tool{
 		sshLogins, listeningPorts, processesTool, accountsAudit,
 		packageVulns, appVulns, appCodeAudit, siteProfile, fileChanges, certExpiry, logSearch,
-		blockIP, unblockIP, notifyTool,
+		attackAttempts, blockIP, unblockIP, notifyTool,
 	})
 }
 

@@ -1,7 +1,6 @@
 package detect
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/netip"
@@ -9,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf16"
+	"unicode/utf8"
 
 	"github.com/nt-neil/shentu/hostenv"
 )
@@ -23,15 +24,19 @@ var ErrFormatUnrecognized = errors.New(string(ReasonFormatUnrecognized))
 
 // AccessRecord is one request of an access log.
 type AccessRecord struct {
-	Client    string    // the address that connected (behind a proxy, the proxy)
-	Time      time.Time // zero when the format has no time detect reads
-	Request   string    // the request line as logged, unescaped
-	Method    string
-	Path      string // the target before '?', as sent (not decoded)
-	Query     string // after '?'
-	Proto     string
-	Status    int
-	Bytes     int64
+	Client  string    // the address that connected (behind a proxy, the proxy)
+	Time    time.Time // zero when the format has no time detect reads
+	Request string    // the request line as logged, unescaped
+	Method  string
+	Path    string // the target before '?', as sent (not decoded)
+	Query   string // after '?'
+	Proto   string
+	Status  int
+	Bytes   int64
+	// ReqLength: the request's length as the server logged it (nginx's
+	// $request_length, Apache's %I: line, headers and body); 0 when the
+	// format does not log it.
+	ReqLength int64
 	Referer   string
 	UserAgent string
 	Host      string
@@ -92,7 +97,7 @@ var ngxFields = map[string]string{
 	"remote_addr": "client", "remote_user": "user",
 	"time_local": "time_local", "time_iso8601": "time_iso", "msec": "msec",
 	"request": "request", "request_method": "method", "request_uri": "uri", "uri": "path", "args": "query", "query_string": "query",
-	"server_protocol": "proto", "status": "status", "body_bytes_sent": "bytes", "bytes_sent": "bytes",
+	"server_protocol": "proto", "status": "status", "body_bytes_sent": "bytes", "bytes_sent": "bytes", "request_length": "reqlen",
 	"http_referer": "referer", "http_user_agent": "ua", "http_x_forwarded_for": "xff", "host": "host", "http_host": "host",
 	"server_name": "vhost", "server_port": "port",
 }
@@ -195,6 +200,8 @@ func apacheParser(spec string, lookups, identity bool) (*Parser, error) {
 			f = "status"
 		case "b", "B", "O":
 			f = "bytes"
+		case "I": // mod_logio: bytes received, the request's line and headers included
+			f = "reqlen"
 		case "m":
 			f = "method"
 		case "U":
@@ -236,7 +243,7 @@ var clientWritten = map[string]bool{"": true, "user": true, "request": true, "ur
 
 // safeBeforeClient are the fields the client may follow: none of them is
 // written by the request, so none can hold a forged address.
-var safeBeforeClient = map[string]bool{"ident": true, "time_local": true, "time_iso": true, "time_apache": true, "msec": true, "status": true, "bytes": true, "vhost": true, "port": true}
+var safeBeforeClient = map[string]bool{"ident": true, "time_local": true, "time_iso": true, "time_apache": true, "msec": true, "status": true, "bytes": true, "reqlen": true, "vhost": true, "port": true}
 
 // check: every field is delimited by literal text (two side by side cannot
 // be split without guessing), nothing the request writes comes before the
@@ -611,10 +618,10 @@ func (r *AccessRecord) set(f, v string) bool {
 			return true
 		}
 		a, err := netip.ParseAddr(v)
-		if err != nil {
+		if err != nil || a.Zone() != "" { // a zone is any text after %
 			return false
 		}
-		r.Client = a.String()
+		r.Client = a.Unmap().String() // a dual-stack listener logs ::ffff:<IPv4>: one address, one form
 	case "user":
 		if !dash {
 			r.User = v
@@ -671,6 +678,14 @@ func (r *AccessRecord) set(f, v string) bool {
 			}
 			r.Bytes = n
 		}
+	case "reqlen":
+		if !dash {
+			n, err := strconv.ParseInt(v, 10, 64)
+			if err != nil || n < 0 {
+				return false
+			}
+			r.ReqLength = n
+		}
 	case "referer":
 		if !dash {
 			r.Referer = v
@@ -680,7 +695,7 @@ func (r *AccessRecord) set(f, v string) bool {
 			r.UserAgent = v
 		}
 	case "xff":
-		if !dash {
+		if !dash && validXFF(v) { // addresses only: anything else is a client's text, not a proxy's
 			r.XFF = v
 		}
 	case "host":
@@ -705,6 +720,60 @@ func (r *AccessRecord) splitRequest() {
 	}
 }
 
+// unescapeJSON undoes JSON's escapes (\" \\ \/ \b \f \n \r \t \uXXXX,
+// a surrogate pair as one character) and keeps every other byte as it is:
+// a byte nginx left raw (0xff, invalid UTF-8) stays that byte whether or
+// not the value holds an escape (json.Unmarshal turned it to U+FFFD only
+// when it did). false: an escape JSON does not have.
+func unescapeJSON(v string) (string, bool) {
+	var sb strings.Builder
+	for i := 0; i < len(v); i++ {
+		if v[i] != '\\' {
+			sb.WriteByte(v[i])
+			continue
+		}
+		if i+1 >= len(v) {
+			return "", false
+		}
+		i++
+		switch v[i] {
+		case '"', '\\', '/':
+			sb.WriteByte(v[i])
+		case 'b':
+			sb.WriteByte('\b')
+		case 'f':
+			sb.WriteByte('\f')
+		case 'n':
+			sb.WriteByte('\n')
+		case 'r':
+			sb.WriteByte('\r')
+		case 't':
+			sb.WriteByte('\t')
+		case 'u':
+			if i+4 >= len(v) {
+				return "", false
+			}
+			n, err := strconv.ParseUint(v[i+1:i+5], 16, 16)
+			if err != nil {
+				return "", false
+			}
+			i += 4
+			r := rune(n)
+			if utf16.IsSurrogate(r) && i+6 < len(v) && v[i+1] == '\\' && v[i+2] == 'u' {
+				if lo, err := strconv.ParseUint(v[i+3:i+7], 16, 16); err == nil {
+					if p := utf16.DecodeRune(r, rune(lo)); p != utf8.RuneError {
+						r, i = p, i+6
+					}
+				}
+			}
+			sb.WriteRune(r)
+		default:
+			return "", false
+		}
+	}
+	return sb.String(), true
+}
+
 // unescape undoes the server's escaping of a value: nginx's \xHH (default),
 // JSON's (escape=json), Apache's \xhh, \" and \\. false: an escape the
 // server does not write, so not a line it wrote.
@@ -716,11 +785,7 @@ func (p *Parser) unescape(v string) (string, bool) {
 	case "none":
 		return v, true
 	case "json":
-		var s string
-		if err := json.Unmarshal([]byte(`"`+v+`"`), &s); err != nil {
-			return "", false
-		}
-		return s, true
+		return unescapeJSON(v)
 	}
 	var sb strings.Builder
 	for i := 0; i < len(v); i++ {

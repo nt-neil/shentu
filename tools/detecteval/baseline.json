@@ -1,0 +1,89 @@
+{
+  "nuclei_commit": "5442582a875f96887bfe403c6de562de460897e7",
+  "templates_hash": "259cb2836719cc15521784577b2bdc334d1183a141d7ad7f364dc8e7469edb8c",
+  "not_converted": 1143,
+  "unclassified": 6618,
+  "rce_unspecified": 252,
+  "false_positives": 0,
+  "normal_requests": 1216,
+  "normal_distinct": 363,
+  "normal_routes": 152,
+  "graded_sha256": "ccd55ddb60595d6faa7a1e2e44326b6d6a3c1f59b53df5a6dec74eb7e471936d",
+  "stats": {
+    "nuclei_commit": "5442582a875f96887bfe403c6de562de460897e7",
+    "templates_hash": "259cb2836719cc15521784577b2bdc334d1183a141d7ad7f364dc8e7469edb8c",
+    "templates": 11835,
+    "not_converted": 1143,
+    "unclassified": 6618,
+    "rce_unspecified": 252,
+    "classes": {
+      "cmdi": {
+        "templates": 254,
+        "caught": 39
+      },
+      "code": {
+        "templates": 161,
+        "caught": 9
+      },
+      "deser": {
+        "templates": 98,
+        "caught": 1
+      },
+      "jndi": {
+        "templates": 44,
+        "caught": 0
+      },
+      "path": {
+        "templates": 928,
+        "caught": 643
+      },
+      "redirect": {
+        "templates": 179,
+        "caught": 1
+      },
+      "sqli": {
+        "templates": 479,
+        "caught": 83
+      },
+      "ssrf": {
+        "templates": 201,
+        "caught": 9
+      },
+      "upload": {
+        "templates": 234,
+        "caught": 0
+      },
+      "xss": {
+        "templates": 1200,
+        "caught": 761
+      },
+      "xxe": {
+        "templates": 44,
+        "caught": 2
+      }
+    },
+    "attack_levels": {
+      "L1": 2266,
+      "L2": 1505,
+      "none": 22,
+      "unanchored": 29
+    },
+    "host": {
+      "cases": 97,
+      "templates_for_cves": 10,
+      "alerted": 3,
+      "alerted_for_cves": 3,
+      "normal_alerted": 0,
+      "version_unknown": 0
+    },
+    "normal_requests": 1216,
+    "normal_distinct": 363,
+    "normal_routes": 152,
+    "false_positives": 0,
+    "normal_levels": {
+      "L1": 1209,
+      "none": 7
+    },
+    "graded_sha256": "ccd55ddb60595d6faa7a1e2e44326b6d6a3c1f59b53df5a6dec74eb7e471936d"
+  }
+}

@@ -140,7 +140,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.89; --x: 16.6">
+    <li class="era-node" style="--old: 0.90; --x: 15.6">
       <a class="lamp" href="../zh-TW/releases.html#v0.1.1" aria-describedby="rv-0.1.1">
         <i aria-hidden="true"></i><span class="ver">v0.1.1</span>
         <time datetime="2026-11-07">11-07</time>
@@ -152,7 +152,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.78; --x: 26.1">
+    <li class="era-node" style="--old: 0.80; --x: 24.2">
       <a class="lamp" href="../zh-TW/releases.html#v0.2.0" aria-describedby="rv-0.2.0">
         <i aria-hidden="true"></i><span class="ver">v0.2.0</span>
         <time datetime="2026-11-07">11-07</time>
@@ -164,7 +164,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.67; --x: 35.7">
+    <li class="era-node" style="--old: 0.70; --x: 32.8">
       <a class="lamp" href="../zh-TW/releases.html#v0.2.1" aria-describedby="rv-0.2.1">
         <i aria-hidden="true"></i><span class="ver">v0.2.1</span>
         <time datetime="2026-11-08">11-08</time>
@@ -176,7 +176,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.56; --x: 45.2">
+    <li class="era-node" style="--old: 0.60; --x: 41.4">
       <a class="lamp" href="../zh-TW/releases.html#v0.2.2" aria-describedby="rv-0.2.2">
         <i aria-hidden="true"></i><span class="ver">v0.2.2</span>
         <time datetime="2026-11-08">11-08</time>
@@ -188,7 +188,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.44; --x: 54.8">
+    <li class="era-node" style="--old: 0.50; --x: 50.0">
       <a class="lamp" href="../zh-TW/releases.html#v0.2.3" aria-describedby="rv-0.2.3">
         <i aria-hidden="true"></i><span class="ver">v0.2.3</span>
         <time datetime="2026-11-09">11-09</time>
@@ -200,7 +200,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.33; --x: 64.3">
+    <li class="era-node" style="--old: 0.40; --x: 58.6">
       <a class="lamp" href="../zh-TW/releases.html#v0.2.4" aria-describedby="rv-0.2.4">
         <i aria-hidden="true"></i><span class="ver">v0.2.4</span>
         <time datetime="2026-11-09">11-09</time>
@@ -212,7 +212,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.22; --x: 73.9">
+    <li class="era-node" style="--old: 0.30; --x: 67.2">
       <a class="lamp" href="../zh-TW/releases.html#v0.2.5" aria-describedby="rv-0.2.5">
         <i aria-hidden="true"></i><span class="ver">v0.2.5</span>
         <time datetime="2026-11-13">11-13</time>
@@ -224,7 +224,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.11; --x: 83.4">
+    <li class="era-node" style="--old: 0.20; --x: 75.8">
       <a class="lamp" href="../zh-TW/releases.html#v0.3.0" aria-describedby="rv-0.3.0">
         <i aria-hidden="true"></i><span class="ver">v0.3.0</span>
         <time datetime="2026-11-13">11-13</time>
@@ -236,21 +236,33 @@
       </div>
     </li>
   
-    <li class="era-node now" style="--old: 0.00; --x: 93.0">
+    <li class="era-node" style="--old: 0.10; --x: 84.4">
       <a class="lamp" href="../zh-TW/releases.html#v0.3.1" aria-describedby="rv-0.3.1">
         <i aria-hidden="true"></i><span class="ver">v0.3.1</span>
         <time datetime="2026-11-16">11-16</time>
       </a>
       <p class="acc"><span><b>127</b> 條規則</span><span><b>16</b>/97 樣本抓到</span></p>
+      <div class="peek" id="rv-0.3.1">
+        <p class="word">增祀</p>
+        <ul><li>程式碼稽核規則從 70 條增加到 127 條（PHP 25 → 51、Python 22 → 43、JavaScript 與 TypeScript 23 → 33）。PHP：WordPress、Laravel、Symfony、Joomla、Drupal、CodeIgniter、Yii 與 Smarty 的危險呼叫，socket 與 HTTP client、XML DTD、template 字串、加密金鑰與 shortcode（#76）。Python：keyword 參數（<code>args=</code>、<code>search_filter=</code>、<code>where=</code>）、ldap3 filter 與經過 helper 的流向（#36）。JavaScript 與 TypeScript：Koa 和 Express 串接式回應、BSON 與 launder 的 sanitizer、Host header 的 open redirect 與 SSRF；<code>.execute(</code> 只在可能是資料庫 client 的物件上才算（#70）。</li><li>v0.2.5 列出的已知誤報，已經在引擎修正：有 import <code>typeorm</code> 的檔案，TypeORM repository 的呼叫不算 MongoDB 查詢；檔案也用了 MongoDB repository、driver 或 Mongoose 時照樣算（<code>unless_imports</code>，#59）；<code>shell: true</code> 的 <code>spawn()</code> 和 <code>execFile()</code>，只有指令或參數帶有輸入才報，只有選項帶輸入不報（一個危險呼叫可以有多個 <code>[[args]]</code>，#62）；每條路徑都設了 <code>Content-Type: text/event-stream</code> 的 Server-Sent Events handler 不算 XSS （<code>unless_content_type</code>，#58；<code>unless_at</code>，#57）；<code>-&gt;get_settings()</code> 只在繼承 <code>\Elementor\Widget_Base</code> 的類別裡才算 Elementor widget 的輸入（#60）；用 <code>array_map</code> 加上回傳常數的 callback 組出的 placeholder 清單不算輸入（#61）；<code>zipfile.ZipFile(request.files[...])</code> 開的是上傳檔的串流，不是路徑（<code>unless_subscript</code>，#67）。</li><li><code>js-ssrf-http-request</code>（漏報）：Koa、hapi 與 Fetch API 寫法的 Referer／Origin 之前沒被當成輸入，<code>fetch(ctx.request.header.referer)</code>、<code>fetch(request.headers.referer)</code>、<code>fetch(request.headers.get(&#39;x-callback-url&#39;))</code> 會漏報；現在都算輸入（Host 除外，那是 Host header 規則的輸入），規則格式的 <code>source_args</code> 也新增 <code>&#34;!name&#34;</code> 排除值。<code>php-sqli-string-concat</code> 與 <code>php-sqli-prepare-query-text</code>（重複回報）：輸入寫進 <code>prepare()</code> 的查詢文字時，兩條規則之前在同一行都會報一次，現在只由 <code>php-sqli-prepare-query-text</code> 回報。benchmark 的數字不變。</li></ul>
+      </div>
+    </li>
+  
+    <li class="era-node now" style="--old: 0.00; --x: 93.0">
+      <a class="lamp" href="../zh-TW/releases.html#v0.4.0" aria-describedby="rv-0.4.0">
+        <i aria-hidden="true"></i><span class="ver">v0.4.0</span>
+        <time datetime="2026-11-18">11-18</time>
+      </a>
+      <p class="acc"><span><b>127</b> 條規則</span></p>
       
     </li>
   
   </ol>
 </div>
 
-<div class="newest" id="rv-0.3.1">
-  <div class="newest-head"><p class="word">增祀</p><span class="ver">v0.3.1</span><time datetime="2026-11-16">2026-11-16</time></div>
-  <div class="grp grp-reach"><h4><i aria-hidden="true"></i>看得更遠</h4><ul><li>程式碼稽核規則從 70 條增加到 127 條（PHP 25 → 51、Python 22 → 43、JavaScript 與 TypeScript 23 → 33）。PHP：WordPress、Laravel、Symfony、Joomla、Drupal、CodeIgniter、Yii 與 Smarty 的危險呼叫，socket 與 HTTP client、XML DTD、template 字串、加密金鑰與 shortcode（#76）。Python：keyword 參數（<code>args=</code>、<code>search_filter=</code>、<code>where=</code>）、ldap3 filter 與經過 helper 的流向（#36）。JavaScript 與 TypeScript：Koa 和 Express 串接式回應、BSON 與 launder 的 sanitizer、Host header 的 open redirect 與 SSRF；<code>.execute(</code> 只在可能是資料庫 client 的物件上才算（#70）。</li><li><code>js-ssrf-http-request</code>（漏報）：Koa、hapi 與 Fetch API 寫法的 Referer／Origin 之前沒被當成輸入，<code>fetch(ctx.request.header.referer)</code>、<code>fetch(request.headers.referer)</code>、<code>fetch(request.headers.get(&#39;x-callback-url&#39;))</code> 會漏報；現在都算輸入（Host 除外，那是 Host header 規則的輸入），規則格式的 <code>source_args</code> 也新增 <code>&#34;!name&#34;</code> 排除值。<code>php-sqli-string-concat</code> 與 <code>php-sqli-prepare-query-text</code>（重複回報）：輸入寫進 <code>prepare()</code> 的查詢文字時，兩條規則之前在同一行都會報一次，現在只由 <code>php-sqli-prepare-query-text</code> 回報。benchmark 的數字不變。</li><li>引擎：<code>new URL(a, base)</code> 的 <code>a</code> 以 <code>/</code> 或 scheme 起始時，路徑和 query 只取自 <code>a</code>（#63）；同一個檔案裡已知類別的物件，呼叫它的方法會追進方法裡（#64）；用 regex 從起始處比對、固定值起始的檢查（<code>re.match(re.escape(base) + r&#39;/[a-z]&#39;, url)</code>）對 redirect 和 URL 規則算是檢查（#65）；會追進回傳字串常數的 helper（#66）；<code>markup</code>：輸出類的危險呼叫，只有在輸入前面接著 HTML 標記時才報（#71）；recursive 的呼叫 cycle 會一直追到結果不再改變，成本只算一次，WordPress 呼叫沒有跟完的檔案從 48 個少到 4 個（#72）；Host header 規則用 <code>route_input = false</code>，Express 模型也認得 Koa 的 <code>ctx</code>（#50）。</li><li>主機盤點會對 Apache 2.4.55～2.4.70、載入 <code>mod_http2</code> 並在 <code>Protocols</code> 開了 <code>h2</code> 或 <code>h2c</code> 的情況提出警告（CVE-2026-119618；請更新到 2.4.71，更新前先把 <code>Protocols</code> 設成只有 <code>http/1.1</code>）（#54）。可能載入 <code>mod_http2</code> 或開啟 h2 的檔案讀不到時（沒有權限、不能用的連結），這項會列為沒有檢查，不再當成沒事；警告也註明發行版已經 backport 修補時可以不理會。</li><li>程式碼稽核：接續的掃描在跑到上次位置前就沒有時間時，保留原本的位置，位置也改用根目錄的路徑記錄；vendor、node_modules 和 WordPress 的程式碼資料夾只在網站根目錄之下才算；<code>wp-content/blogs.dir/*/files</code>，以及沒有網站首頁檔的 <code>/var/www/&lt;uploads|files&gt;</code>，都算上傳資料夾；<code>authorized_key_unparsed</code> 只列出前 20 個行號（#73）。</li><li>登入紀錄沒有完整讀到時（root 以外的帳號看不到 journald 的系統紀錄、讀不到 <code>auth.log</code> 或 <code>secure</code>、紀錄只讀到一部分），hourly 和每日報告都會把 SSH 登入列為沒有檢查。之前這個情況只會寫「nothing new」（#80）。寫出的原因是紀錄不能用的真正理由（例如沒有任何登入的主機：journald 沒有 sshd 紀錄，也沒有文字紀錄），只有缺少權限時才建議用 root 執行；macOS 的 sshd 紀錄不在 Shentu 讀的地方，報告會明說 macOS 上沒有 sshd 紀錄來源。</li><li>Linux 版本查 DNS 時不再帶 EDNS(0) 記錄，和 glibc 一樣：有些 DNS 伺服器（例如 VMware NAT 的 DNS）回應這樣的查詢時會少了位址，所以每次查詢（OSV、GitHub）都失敗，回報「no such host」。如果查詢還是失敗，每日報告的 Not checked 會提示檢查這台主機的 DNS（#80）。</li><li><code>block_ip</code> 不再執行在這兩個情況：IP 的 SSH 登入紀錄只來自主機上任何人都能寫入的文字紀錄（<code>verified</code> 為 false），或是登入紀錄讀不到。管理員自己確認過紀錄後，可以在 <code>shentu chat</code> 用 <code>override_unverified</code> 照樣執行；從 Telegram bot 不能用，每個確認等級都一樣。這個檢查只看 SSH 登入紀錄：用 <code>log_search</code> 讀 syslog、nginx 或應用程式的紀錄而提出的 <code>block_ip</code>，不在檢查範圍內，要由管理員自己確認。journald 裡完全沒有 sshd 紀錄的主機（只有文字紀錄），只要 IP 有 SSH 登入紀錄，<code>block_ip</code> 都不會執行，不管紀錄上寫的是什麼時間；這時不能從 Telegram 執行，只能在伺服器上用 <code>shentu chat</code> 加 <code>override_unverified</code>。<code>ssh_logins</code> 最多回查 720 hours，和這個檢查一樣（#80）。因為登入紀錄可能是偽造而不執行時，訊息會列出這些紀錄所在的文字紀錄檔。</li><li>macOS：binary plist 的 array 和 dictionary 項目也計入讀取上限，UTF-16 字串每個字元算 9 bytes；最後一個字元是 space 的程式路徑照原樣保留；同一個 PID 出現在兩行 <code>ps</code> 輸出時標為 <code>parse_error</code>；<code>periodic_conf_files</code> 多於 16 個時，沒有讀到的會列出來（#80）。CI 在 macOS 15 上跑 <code>go vet</code> 和 <code>go test</code>（#81）；還沒有提供 macOS 執行檔。</li><li>測試裡看起來和憑證一樣的測試值，改成執行時才組出來，repo 裡不再有金鑰格式的字串（#77）。</li><li>CVE-2021-23664（<code>@isomorphic-git/cors-proxy</code>）：<code>js-ssrf-http-request</code> 在修補版仍會報出。這個 proxy 在通過 allowlist 檢查後才送出 <code>req.url</code>，引擎還不會把這個檢查當成 sanitizer；之後會使引擎辨別送出請求前的這類檢查。</li><li>規則變多，掃描時間變長，因為每個檔案要跑的規則更多：WordPress 多了 40～60%，依機器而定（在 Ubuntu VM 上，程式碼稽核從 73.8 s 變成 120.0 s，每日巡檢從 100 s 變成 144 s，結果數與 RSS 最高值都沒有變），TypeScript 專案多了 43%。根本的修正排在 v0.3.1 之後。</li><li><code>block_ip</code> 的檢查只包含 SSH 登入紀錄（見上方）：根據別的紀錄要求的 <code>block_ip</code>，要由管理員自己決定。</li><li><code>php-deserialization-phar-wrapper</code> 仍會把 WordPress REST attachments controller 裡對上傳暫存路徑做的 <code>filesize()</code> 報出來：引擎還分不出上傳檔的 <code>tmp_name</code> 和客戶端填的 <code>name</code>。</li><li><code>markup</code> 不會追蹤先在變數裡組成的 HTML 標記（<code>const h = &#39;&lt;p&gt;&#39; + x; ctx.body = h</code>）。</li></ul></div><div class="grp grp-sharp"><h4><i aria-hidden="true"></i>看得更準</h4><ul><li>v0.2.5 列出的已知誤報，已經在引擎修正：有 import <code>typeorm</code> 的檔案，TypeORM repository 的呼叫不算 MongoDB 查詢；檔案也用了 MongoDB repository、driver 或 Mongoose 時照樣算（<code>unless_imports</code>，#59）；<code>shell: true</code> 的 <code>spawn()</code> 和 <code>execFile()</code>，只有指令或參數帶有輸入才報，只有選項帶輸入不報（一個危險呼叫可以有多個 <code>[[args]]</code>，#62）；每條路徑都設了 <code>Content-Type: text/event-stream</code> 的 Server-Sent Events handler 不算 XSS （<code>unless_content_type</code>，#58；<code>unless_at</code>，#57）；<code>-&gt;get_settings()</code> 只在繼承 <code>\Elementor\Widget_Base</code> 的類別裡才算 Elementor widget 的輸入（#60）；用 <code>array_map</code> 加上回傳常數的 callback 組出的 placeholder 清單不算輸入（#61）；<code>zipfile.ZipFile(request.files[...])</code> 開的是上傳檔的串流，不是路徑（<code>unless_subscript</code>，#67）。</li><li>和 v0.3.0 比較的 benchmark：已公開漏洞 97 個抓到 16 個（原本 15 個），修補版誤報 1 個（原本 0 個，見下方）；保留測試案例（held-out）30 個抓到 3 個（原本 2 個），沒有修補版誤報；TypeScript 案例 18 個抓到 1 個、修補版誤報 1 個（n8n），都沒有變。</li></ul></div>
+<div class="newest" id="rv-0.4.0">
+  <div class="newest-head"><p class="word">重修</p><span class="ver">v0.4.0</span><time datetime="2026-11-18">2026-11-18</time></div>
+  <div class="grp grp-reach"><h4><i aria-hidden="true"></i>看得更遠</h4><ul><li>攻擊偵測（Linux）：每一輪巡檢都會讀網站伺服器的紀錄，挑出打向這台主機真實存在的漏洞的請求。它只告警，不會自己封鎖。看不到什麼、可能漏掉什麼，列在 <code>docs/attack-detection-limits.zh-TW.md</code>。</li><li>漏洞面：每日巡檢把這台主機已知的漏洞存到 <code>state_dir/surface.json</code>，其他輪次讀這份：程式碼稽核的結果，同一個檔案看得出來時，附上註冊該 handler 的路由（#84）；應用程式相依套件與已安裝 OS 套件的漏洞公告，版本照 dpkg 與 rpm 的規則比較；已安裝的 WordPress 外掛與版本（#91）。漏洞面不存在、讀不到或超過 26 小時，會在該輪的通知和報告裡寫明，不會默默沿用。</li><li>紀錄來源：nginx 與 Apache 設定裡寫的 access log（含自訂格式）、PHP-FPM 的紀錄，以及應用程式 unit 的 journald；每輪從上次讀到的位置接著讀，紀錄輪替也接得上（#85）。只有確定只有 root 寫得進去的紀錄才算已查證；其他紀錄裡的嘗試標成未查證，告警會寫出原因。</li><li>27 條攻擊特徵，由 Shentu 自己撰寫，或從審過的 nuclei-templates（MIT，見 <code>detect/sig/NOTICE</code>）起草；請求最多解碼兩輪後比對（#87）。只打到有漏洞 handler 的路由是 L1；同時帶有該漏洞類別的 payload 是 L2；L3 要有生效的跡象：回應大小和這條路由平常差很多，或錯誤紀錄在有漏洞的檔案與行號出現例外（#90）。請求在可能藏 payload 的地方被截斷時是 Unknown。主機沒有的漏洞算雜訊。</li><li>告警是偵測器自己寫的純文字，經由通知管道送出，不經過模型。嘗試依網段（/24 或 /64）、目標與等級分組，同一組一天只送一次。L1 只在每日報告裡計數，不推送；Unknown 要同一個目標 24 小時內累積 20 筆才推送。樣本裡的敏感參數會遮罩，每日檔案 <code>state_dir/reports/attacks-&lt;date&gt;.txt</code>（保留 30 天）的位址也會遮罩（#90、#91）。<code>shentu detect [--since] [--json]</code> 讀一輪並判定，但不送出也不存檔；<code>attack_attempts</code> 工具和 bot 的 <code>/attacks</code> 列出最近一天的群組。</li><li><code>block_ip</code> 與攻擊偵測：偵測器看過的 IP，要有它自己的、已查證的 L2 或 L3 群組，經營運者確認後才會封鎖。來自未查證紀錄、只有 L1 或 Unknown 的嘗試，以及內部位址，一律拒絕，除非營運者在伺服器上（<code>shentu chat</code>）用 <code>override_unverified</code> 覆寫；Telegram 永遠不行。只列在多個來源合併的溢出彙總組裡的 IP，有沒有覆寫都拒絕（#91）。在 Ubuntu VM 上驗收：已查證紀錄裡的攻擊判成 L3，可以封鎖；未查證紀錄裡的最多到 L2，從 Telegram 封鎖會被拒絕。</li><li>同一個請求在同一行程式碼命中多條規則時，只發一則告警，並列出所有規則，不再每條規則各發一則（#97）。</li><li>套件 CVE 的告警不再附上路由的說明；那段說明只放在你自己程式碼的告警裡（#97）。</li><li>紀錄檔或上層目錄透過 ACL 讓其他帳號可以寫入時，原因裡會寫出是哪個帳號，例如 <code>ACL grants write to www-data (uid 33)</code>（#97）。</li><li>用非 root、也不在 <code>systemd-journal</code> 或 <code>adm</code> 群組的帳號跑巡檢時，SSH 的結果會標成「只讀到一部分」（#97）。</li><li>修正之前的 v0.4.0 版本存下的攻擊紀錄（每條規則一組），載入時會合併成新格式（每行程式碼一組）（#97、#98）。升級前的次數是下限：同一行上不同類別的規則被不同請求打到時，次數可能偏低。這只影響顯示的次數，不影響告警或封鎖。v0.3.x 沒有攻擊紀錄，從 v0.3.x 升級不需要合併。</li><li>攻擊偵測只支援 Linux。</li><li>access log 不記錄請求本文（POST 表單、JSON、上傳檔）：payload 放在那裡就看不到，這類請求最多是 L1。</li><li>特徵比對的是攻擊的原始寫法。改寫過的寫法（其他編碼、加料的路徑、SQL 裡的註解或其他空白字元、用引號拆開的指令）可能漏掉。</li><li>Debian、Ubuntu、Rocky Linux 預設安裝的 nginx，v0.4.0 都會把 access log 判成 <code>web_user_writable</code>（網站帳號可寫），所以只能告警、不能當封鎖依據。Debian、Ubuntu 上 nginx 和 PHP 都用 <code>www-data</code>，風險是真的（Ubuntu 的紀錄屬於 <code>www-data:adm</code>，logrotate 也用 <code>create 0640 www-data adm</code> 建檔）；Rocky 上 nginx 用 <code>nginx</code> 帳號、PHP-FPM 用 <code>apache</code> 帳號，寫不到 nginx 的紀錄，是 v0.4.0 判得比較保守。手動改擁有者，下次輪替時會被改回去。v0.4.1 會處理。Rocky Linux 的預設 httpd 設定會載入白名單以外的模組，所以 Apache 的紀錄一律判成 <code>web_user_writable</code>；這些模組的評估排在 v0.4.1。</li><li>目前還沒有針對個別 WordPress 外掛漏洞的特徵。</li><li>掃描仍比 v0.3.0 慢：WordPress 約 35%（上面 Ubuntu VM 的實際經過時間），TypeScript 專案約 20%（Mac 本機的 user CPU 時間，#92）。</li><li>v0.3.1 仍未解決的：CVE-2021-23664 的已修版本仍會被報；WordPress 上傳暫存路徑的 <code>filesize()</code>；<code>markup</code> 不會追進先組在變數裡的標記。</li></ul></div><div class="grp grp-sharp"><h4><i aria-hidden="true"></i>看得更準</h4><ul><li><code>tools/detecteval</code>（CI 會跑）用合成的請求衡量攻擊偵測（#94）：從 nuclei-templates v10.5.2 轉出的請求：同類別的特徵比中 40.5%（有分類的 3822 個模板中 1548 個）。這是請求行的比中，不是告警；8 個應用程式、152 條路由的一般請求：誤報 0 筆，95% 上限約 0.8%（其中只有 363 筆在追蹤參數以外有差異，所以只能說誤報率低於約 0.8%）；針對測試主機真實存在的漏洞的模板：10 個中 3 個告警，其中 2 個只到 L1（payload 在請求本文裡）。</li></ul></div><div class="grp grp-light"><h4><i aria-hidden="true"></i>不拖慢網站</h4><ul><li><code>block_ip</code> 的 SSH 證據，只有 journald 裡 sshd 自己的事件確認過的登入才算（#91）：在 sshd 自己的 unit（cgroup）裡由其他程式寫進 journald 的 sshd 紀錄（例如用 <code>logger</code>），不能再當封鎖依據；v0.3.1 會封。偽造進文字紀錄的本來就會拒絕。</li><li>引擎：跳過不會改變結果的 summary 計算，分析時也少做複製。以 Mac 本機的 user CPU 時間量，WordPress 掃描比 v0.3.1 快約 34%，TypeScript 專案快約 22%，結果完全相同（#92）。以 Ubuntu 24.04 VM（arm64、4 CPU、4 GB）上的實際經過時間量，同一台機器依序跑三版，WordPress 掃描 97.2 秒（v0.3.1 120.0 秒、v0.3.0 72.1 秒），比 v0.3.1 少 19%；三版都是 2279 個檔、43 筆結果，記憶體高峰都在 848～858 MB；每日巡檢（root）126 秒（v0.3.1 146 秒、v0.3.0 99 秒）。benchmark 不變：已公開漏洞 97 個抓到 16 個、已修版本誤報 1 個；holdout 30 個抓到 3 個；TypeScript 18 個抓到 1 個、已修版本誤報 1 個。</li></ul></div>
 </div>
 
 

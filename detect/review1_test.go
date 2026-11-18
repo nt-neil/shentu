@@ -673,13 +673,24 @@ contains = ["shentu-marker/y"]
 		// prefix; cleaned, that segment is 42, the placeholder's value,
 		// but the marker is gone from it.
 		{route("js-sqli", "CWE-89", "/user/:id"), "/42;marker-one/user/42", LevelRoute},
+		// An optional placeholder (Express's /:id?, Laravel's /{id?}; the
+		// merge of #90 into P5 met here): the value it took is L2; no
+		// value, an ordinary one or a hit in the prefix is L1.
+		{route("js-sqli", "CWE-89", "/user/:id?"), "/user/marker-one", LevelPayload},
+		{route("js-sqli", "CWE-89", "/user/{id?}"), "/user/marker-one", LevelPayload},
+		{route("js-sqli", "CWE-89", "/user/:id?"), "/user", LevelRoute},
+		{route("js-sqli", "CWE-89", "/user/{id?}"), "/user", LevelRoute},
+		{route("js-sqli", "CWE-89", "/user/:id?"), "/user/42", LevelRoute},
+		{route("js-sqli", "CWE-89", "/user/{id?}"), "/user/42", LevelRoute},
+		{route("js-sqli", "CWE-89", "/user/:id?"), "/marker-one/user/42", LevelRoute},
+		{route("js-sqli", "CWE-89", "/user/{id?}"), "/marker-one/user", LevelRoute},
 	} {
 		g := NewJudge(Build(c.sinks, nil), ss).Judge(m.Match(Normalize(AccessRecord{Method: "GET", Path: c.path})))
 		if len(g.Candidates) != 1 || g.Candidates[0].Level != c.want {
 			t.Errorf("%s: %+v, want %s", c.path, g, c.want)
 			continue
 		}
-		if c.want == LevelRoute && len(g.Unanchored) != 1 {
+		if c.want == LevelRoute && strings.Contains(c.path, "marker") && len(g.Unanchored) != 1 {
 			t.Errorf("%s: the hit not unanchored: %+v", c.path, g)
 		}
 	} // Review 3, S (N-2): a single-segment placeholder does not take an

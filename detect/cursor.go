@@ -124,6 +124,19 @@ func LoadCursors(dir string) (*Cursors, error) {
 	return c, nil
 }
 
+// ErrDirNotSynced: a state file was written and renamed into place, but
+// its directory could not be synced: it is saved, and only a crash before
+// the system writes the directory back could lose it. Not "not saved".
+var ErrDirNotSynced = errors.New("saved, but the directory was not synced (a crash could lose this save)")
+
+// dirSynced is syncDir, its failure said as ErrDirNotSynced.
+func dirSynced(dir string) error {
+	if err := syncDir(dir); err != nil {
+		return fmt.Errorf("%w: %v", ErrDirNotSynced, err)
+	}
+	return nil
+}
+
 // Save writes the cursors to dir, keeping the MaxCursors most recently
 // read: to a new temporary file (created exclusively, never through a link
 // someone left there), synced, then renamed over the old one.
@@ -165,5 +178,5 @@ func (c *Cursors) Save(dir string) error {
 		os.Remove(tmp)
 		return err
 	}
-	return syncDir(dir) // the rename itself, past a crash
+	return dirSynced(dir) // the rename itself, past a crash
 }

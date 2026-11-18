@@ -35,6 +35,43 @@ jobs:
       # Its YAML dependency is scanned too: the module is not in ./... above.
       - run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
         working-directory: tools/sigextract
+  # Attack detection measured on Nuclei's http templates (downloaded at the
+  # commit in tools/detecteval/fetch.go, hash checked) and on ordinary
+  # requests: a change in false positives, conversion counts or the graded
+  # results fails; templates that could not be downloaded or whose hash
+  # differs are NOT RUN, and fail too (never a pass).
+  detect-eval:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tools/detecteval
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      # A pinned Go: the graded hash is of what shentu's matching makes of
+      # the requests, which a Go release may change (regexp, net/url).
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version: '1.27.4'
+      - run: go vet ./... && go test ./...
+      - run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+      - run: go build -o "$RUNNER_TEMP/detecteval" .
+      # Run the binary itself: go run exits 1 whatever its program's code,
+      # and 3 (NOT RUN) must stay 3.
+      - name: evaluate
+        run: |
+          set +e
+          "$RUNNER_TEMP/detecteval" > "$RUNNER_TEMP/eval.txt" 2>&1
+          rc=$?
+          cat "$RUNNER_TEMP/eval.txt"
+          { echo '## detect-eval'; echo '```'; cat "$RUNNER_TEMP/eval.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$rc" -eq 3 ]; then
+            echo "::error title=detect-eval NOT RUN::$(grep -m1 'NOT RUN' "$RUNNER_TEMP/eval.txt")"
+          elif [ "$rc" -eq 1 ]; then
+            echo "::error title=detect-eval::results differ from tools/detecteval/baseline.json (exit 1)"
+          elif [ "$rc" -ne 0 ]; then
+            echo "::error title=detect-eval::could not run (exit $rc): see the log"
+          fi
+          exit "$rc"
   # macOS: the whole suite on a GitHub-hosted Mac (arm64), without sudo. Most darwin
   # collector tests replay fixtures; this also builds and runs them on macOS itself.
   # No macOS release binary is built yet.

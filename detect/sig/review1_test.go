@@ -42,8 +42,8 @@ func TestLoadReview1(t *testing.T) {
 		return LoadFS(fstest.MapFS{"s/a.toml": {Data: []byte(good + extra + "\n")}}, "s")
 	}
 	for name, extra := range map[string]string{
-		"Debian ecosystem":        "[[signature.applies_to]]\necosystem = \"Debian\"\npackage = \"x\"\nversions = \"<1.0\"",
-		"Debian release":          "[[signature.applies_to]]\necosystem = \"Debian:12\"\npackage = \"x\"\nversions = \"<1.0\"",
+		"Alpine ecosystem":        "[[signature.applies_to]]\necosystem = \"Alpine\"\npackage = \"x\"\nversions = \"<1.0\"",
+		"Debian bound not dpkg":   "[[signature.applies_to]]\necosystem = \"Debian:12\"\npackage = \"x\"\nversions = \"<abc\"",
 		"bound not a version":     "[[signature.applies_to]]\necosystem = \"npm\"\npackage = \"x\"\nversions = \">=1.0.0_beta\"",
 		"upper case literal":      "[[signature.match]]\npart = \"query\"\nregex = \"marker-X\"",
 		"upper case class":        "[[signature.match]]\npart = \"query\"\nregex = \"marker[A-Z]\"",
@@ -79,6 +79,15 @@ func TestLoadErrorSaid(t *testing.T) {
 	if _, err := Load(); err != nil {
 		t.Fatal(err)
 	}
+	// Load() itself says the build is at fault (P5, n18-6): a broken
+	// built-in set, not a quiet empty one.
+	old := builtin
+	t.Cleanup(func() { builtin = old })
+	builtin = fstest.MapFS{"signatures/a.toml": {Data: []byte(good + "[[signature.match]]\npart = \"query\"\nregex = \"x*\"\n")}}
+	if ss, err := Load(); err == nil || ss != nil || !strings.Contains(err.Error(), "built-in attack signatures do not load") || !strings.Contains(err.Error(), "x-one") {
+		t.Errorf("a broken built-in set: %v %v", ss, err)
+	}
+	builtin = old
 	_, err := LoadFS(fstest.MapFS{"s/a.toml": {Data: []byte(good + "[[signature.match]]\npart = \"query\"\nregex = \"x*\"\n")}}, "s")
 	if err == nil || !strings.Contains(err.Error(), "s/a.toml") || !strings.Contains(err.Error(), "x-one") {
 		t.Errorf("error %v: should name the file and the signature", err)
@@ -96,7 +105,7 @@ func TestLoadReview2(t *testing.T) {
 	rng := func(eco, versions string) string {
 		return "[[signature.applies_to]]\necosystem = \"" + eco + "\"\npackage = \"x\"\nversions = \"" + versions + "\""
 	}
-	for _, eco := range []string{"PyPI", "Maven", "RubyGems", "rpm", "Red Hat", "Alpine", "apk", "Debian", "Ubuntu", "Go"} {
+	for _, eco := range []string{"PyPI", "Maven", "RubyGems", "rpm", "Alpine", "apk", "Go"} { // Debian, Ubuntu and rpm distributions are compared since P5
 		err := load(rng(eco, "<1.0"))
 		if err == nil || !strings.Contains(err.Error(), "not supported yet") {
 			t.Errorf("%s: %v, want refused as not supported yet", eco, err)

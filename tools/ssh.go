@@ -6,7 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
+	"os/user"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -37,6 +40,27 @@ var sshLogins = Tool{
 	},
 }
 
+// scanAuthLogs reads the SSH events (a test's seam).
+var scanAuthLogs = linux.ScanAuthLogs
+
+// journalAll: journald shows this process every unit's entries: root, or
+// a member of systemd-journal or adm (a test's seam).
+var journalAll = func() bool {
+	if os.Geteuid() == 0 {
+		return true
+	}
+	gids, err := os.Getgroups()
+	if err != nil {
+		return false
+	}
+	for _, id := range append(gids, os.Getegid()) {
+		if g, err := user.LookupGroupId(strconv.Itoa(id)); err == nil && (g.Name == "systemd-journal" || g.Name == "adm") {
+			return true
+		}
+	}
+	return false
+}
+
 // SSHSource is the per-IP summary (hostenv.SSHSource).
 type SSHSource = hostenv.SSHSource
 
@@ -48,7 +72,7 @@ func SSHSummary(ctx context.Context, env *Env, since time.Time, onlyIP string) (
 	}
 	var aggs []*hostenv.SSHLogins
 	now := time.Now()
-	source, verified, err := linux.ScanAuthLogs(ctx, hostSource(), env.LogPaths, since, func() func(string) {
+	source, verified, err := scanAuthLogs(ctx, hostSource(), env.LogPaths, since, func() func(string) {
 		a := hostenv.NewSSHLogins(since, now, onlyIP)
 		aggs = append(aggs, a)
 		return a.Add
@@ -58,7 +82,15 @@ func SSHSummary(ctx context.Context, env *Env, since time.Time, onlyIP string) (
 	// complete is false when a log was cut short or could not be read, or
 	// when an empty journal had no text log to confirm it: the counts are
 	// then a lower bound.
-	complete := err == nil && (verified || !strings.HasPrefix(source, "journald"))
+	// A user outside systemd-journal and adm is shown only what it may see
+	// of journald, with no error: a lower bound too, root would read it
+	// all (VM acceptance of adff9e6, N1).
+	journald := strings.HasPrefix(source, "journald")
+	partial := journald && !journalAll()
+	complete := err == nil && (verified || !journald) && !partial
+	if partial {
+		source += " (only part of it: this user is neither root nor in systemd-journal or adm)"
+	}
 	out := map[string]any{"source": source, "verified": verified, "complete": complete, "since": since, "sources": sources}
 	if runtime.GOOS == "darwin" && errors.Is(err, hostenv.ErrNotAllowed) {
 		// No journalctl and no text auth log: macOS keeps sshd's events in
@@ -72,7 +104,7 @@ func SSHSummary(ctx context.Context, env *Env, since time.Time, onlyIP string) (
 	}
 	// permission: a log was not read for want of rights (a text log root
 	// can read, a journal hiding the system's entries): root would read it.
-	if errors.Is(err, fs.ErrPermission) || strings.Contains(source, string(hostenv.ReasonPermission)) {
+	if partial || errors.Is(err, fs.ErrPermission) || strings.Contains(source, string(hostenv.ReasonPermission)) {
 		out["permission"] = true
 	}
 	if n := evicted; n > 0 {

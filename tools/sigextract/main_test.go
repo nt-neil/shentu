@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/BurntSushi/toml"
 )
 
 // A made-up template of Nuclei's shape (not one of nuclei-templates').
@@ -183,4 +185,40 @@ func decodeBasic(q string) (string, error) {
 		}
 	}
 	return b.String(), nil
+}
+
+// P5 (n19-5, n21): DEL and the C1 controls are escaped too, and every
+// draft reads back through a TOML parser with its strings as they were
+// (U+1D173, a format character past U+FFFF, dropped from names).
+func TestDraftReadsBack(t *testing.T) {
+	for _, r := range []rune{0x7f, 0x80, 0x85, 0x9f} {
+		if q := tomlString("a" + string(r) + "b"); !strings.Contains(q, fmt.Sprintf(`\u%04X`, r)) {
+			t.Errorf("U+%04X: %s", r, q)
+		}
+	}
+	src := "id: \"marker\\U0001D173x\"\ninfo:\n  name: \"n\\u0085y\"\nhttp:\n  - path: [\"{{BaseURL}}/a\\U0001D173b?k=v\\u007fw\\\"q\"]\n"
+	d, err := Extract([]byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var b bytes.Buffer
+	d.TOML(&b, "v1")
+	var f struct {
+		Signature []struct {
+			ID, Title      string
+			NucleiTemplate string `toml:"nuclei_template"`
+			Route          []struct{ Path string }
+			Match          []struct {
+				Param    string
+				Contains []string
+			}
+		}
+	}
+	if _, err := toml.Decode(b.String(), &f); err != nil {
+		t.Fatalf("the draft is not TOML: %v\n%s", err, b.String())
+	}
+	s := f.Signature[0]
+	if s.NucleiTemplate != "markerx" || s.Title != "ny" || s.Route[0].Path != "/ab" || s.Match[0].Contains[0] != "vw\"q" {
+		t.Errorf("read back %+v", s)
+	}
 }

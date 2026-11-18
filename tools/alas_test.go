@@ -77,6 +77,13 @@ func TestPackageVulnsAmazonLinux(t *testing.T) {
 			t.Errorf("missing %s in %s", want, s)
 		}
 	}
+	// P5 part 5: the same advisories as the surface's entries, whole.
+	_, surface, err := PackageVulnsSurface(context.Background(), srv.Client())
+	if err != nil || len(surface) != 1 || surface[0].Ecosystem != "Amazon Linux" || surface[0].Package != "openssl" ||
+		surface[0].ID != "ALAS2023-2025-100" || !surface[0].KEV || surface[0].KEVCVE != "CVE-2099-0001" || surface[0].Source != "os" ||
+		len(surface[0].CVEs) != 1 || surface[0].CVEs[0] != "CVE-2099-0001" { // review 2 of #91 (N-B1): an ALAS id's CVEs
+		t.Errorf("surface %v %+v", err, surface)
+	}
 	if strings.Contains(s, "ALAS2023-2023-007") {
 		t.Errorf("an advisory older than the installed bash counted: %s", s)
 	}

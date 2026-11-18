@@ -7,11 +7,12 @@ import (
 	"testing"
 )
 
-// The default installs probed on GitHub runners (plan 0743f0 notes n10 and
-// n11): owners, groups and modes of the log directories and files as apt or
-// dnf and logrotate leave them. ptrace_scope was not probed: both values.
-// Debian 12's Apache and its /var/log were not probed either: they are
-// Ubuntu 24.04's here, to be measured in P6.
+// The default installs probed on GitHub runners and an Ubuntu VM (plan
+// 0743f0 notes n10, n11 and n30): owners, groups and modes of the log
+// directories and files as apt or dnf and logrotate leave them, and
+// Rocky's httpd modules. ptrace_scope: Ubuntu measured 1, Debian 12
+// inferred 1, Rocky 9 inferred 0 (elfutils-default-yama-scope); both
+// values are tested.
 func distroHost(distro string, ptrace int, rotated bool) statHost {
 	h := statHost{fakeHost: newFake(true), st: map[string]FileStat{}, acl: map[string]bool{}}
 	g := func(n int) *int { return &n }
@@ -27,14 +28,14 @@ func distroHost(distro string, ptrace int, rotated bool) statHost {
 	dir("/var", 0o755, 0, 0)
 	dir("/etc", 0o755, 0, 0)
 	switch distro {
-	case "debian12", "ubuntu2404": // Debian 12: Apache and /var/log as Ubuntu's, until P6 measures them
+	case "debian12", "ubuntu2404": // Debian 12's Apache as Ubuntu's (the same 19 default modules, n30)
 		h.files["/etc/passwd"] = "root:x:0:0::/root:/bin/bash\nwww-data:x:33:33::/var/www:/usr/sbin/nologin\nsyslog:x:102:102::/:/usr/sbin/nologin\n"
 		h.files["/etc/group"] = "root:x:0:\nadm:x:4:syslog\nwww-data:x:33:\nsyslog:x:102:\n"
 		h.files["/etc/nsswitch.conf"] = "passwd: files systemd\ngroup: files systemd\nshadow: files\n"
 		if distro == "ubuntu2404" {
 			dir("/var/log", 0o775, 0, 102) // root:syslog
 		} else {
-			dir("/var/log", 0o755, 0, 0)
+			dir("/var/log", 0o755, 0, 0) // root:root 755, measured (n30)
 		}
 		h.files["/etc/nginx/nginx.conf"] = "user www-data;\nhttp {\n\taccess_log /var/log/nginx/access.log;\n\terror_log /var/log/nginx/error.log;\n}\n"
 		dir("/var/log/nginx", 0o755, 0, 4)
@@ -55,12 +56,23 @@ func distroHost(distro string, ptrace int, rotated bool) statHost {
 		if rotated { // after logrotate -f (n11)
 			file("/var/log/nginx/access.log", 0o640, 999, 0) // create 0640 nginx root
 			file("/var/log/nginx/error.log", 0o644, 999, 0)
-			file("/var/log/nginx/access.log.1", 0o644, 0, 0) // the file the root master wrote, renamed
+			file("/var/log/nginx/access.log-20261116", 0o644, 0, 0) // the file the root master wrote, renamed (dateext)
 		} else {
 			file("/var/log/nginx/access.log", 0o644, 0, 0) // written first by the root master
 			file("/var/log/nginx/error.log", 0o644, 0, 0)
 		}
-		h.files["/etc/httpd/conf/httpd.conf"] = "User apache\nGroup apache\nErrorLog \"logs/error_log\"\nLogFormat \"%h %l %u %t \\\"%r\\\" %>s %b\" common\nCustomLog \"logs/access_log\" common\n"
+		h.files["/etc/httpd/conf/httpd.conf"] = "ServerRoot \"/etc/httpd\"\nInclude conf.modules.d/*.conf\nUser apache\nGroup apache\nErrorLog \"logs/error_log\"\nLogFormat \"%h %l %u %t \\\"%r\\\" %>s %b\" common\nCustomLog \"logs/access_log\" common\n"
+		// The default modules (httpd 2.4, Rocky 9, n30): many, mod_lua,
+		// mod_dav, mod_include, suexec and userdir among them, are not
+		// known to run no application code.
+		dir("/etc/httpd/conf.modules.d", 0o755, 0, 0)
+		for name, mods := range rockyHTTPDModules {
+			var b strings.Builder
+			for _, m := range strings.Fields(mods) {
+				fmt.Fprintf(&b, "LoadModule %s_module modules/mod_%s.so\n", m, m)
+			}
+			h.files["/etc/httpd/conf.modules.d/"+name] = b.String()
+		}
 		dir("/etc/httpd", 0o755, 0, 0)
 		h.links["/etc/httpd/logs"] = "../../var/log/httpd"
 		dir("/var/log/httpd", 0o700, 0, 0)
@@ -68,6 +80,27 @@ func distroHost(distro string, ptrace int, rotated bool) statHost {
 		file("/var/log/httpd/error_log", 0o644, 0, 0)
 	}
 	return h
+}
+
+// rockyHTTPDModules are Rocky 9's httpd default LoadModule lines (n30),
+// by name without _module.
+var rockyHTTPDModules = map[string]string{
+	"00-base.conf": `access_compat actions alias allowmethods auth_basic auth_digest authn_anon authn_core authn_dbd
+		authn_dbm authn_file authn_socache authz_core authz_dbd authz_dbm authz_groupfile authz_host authz_owner authz_user
+		autoindex cache cache_disk cache_socache data dbd deflate dir dumpio echo env expires ext_filter filter headers
+		include info log_config logio macro mime_magic mime negotiation remoteip reqtimeout request rewrite setenvif
+		slotmem_plain slotmem_shm socache_dbm socache_memcache socache_redis socache_shmcb status substitute suexec
+		unique_id unixd userdir version vhost_alias watchdog`,
+	"00-brotli.conf": "brotli",
+	"00-dav.conf":    "dav dav_fs dav_lock",
+	"00-lua.conf":    "lua",
+	"00-mpm.conf":    "mpm_event",
+	"00-proxy.conf": `proxy lbmethod_bybusyness lbmethod_byrequests lbmethod_bytraffic lbmethod_heartbeat proxy_ajp
+		proxy_balancer proxy_connect proxy_express proxy_fcgi proxy_fdpass proxy_ftp proxy_http proxy_hcheck proxy_scgi
+		proxy_uwsgi proxy_wstunnel`,
+	"00-systemd.conf":  "systemd",
+	"10-h2.conf":       "http2",
+	"10-proxy_h2.conf": "proxy_http2",
 }
 
 func TestWebLogsDistroDefaults(t *testing.T) {
@@ -90,7 +123,9 @@ func TestWebLogsDistroDefaults(t *testing.T) {
 			row{"ubuntu2404", "apache access /var/log/apache2/access.log", false, p, wuw},
 			row{"rocky9", "nginx access /var/log/nginx/access.log", false, p, wuw},
 			row{"rocky9", "nginx access /var/log/nginx/access.log", true, p, ReasonWebUserWritable},
-			row{"rocky9", "apache access /etc/httpd/logs/access_log", false, p, wuw},
+			// Rocky's default modules make Apache's logs web_user_writable,
+			// whatever ptrace_scope is (n30).
+			row{"rocky9", "apache access /etc/httpd/logs/access_log", false, p, ReasonWebUserWritable},
 		)
 	}
 	var table []string
@@ -112,7 +147,7 @@ func TestWebLogsDistroDefaults(t *testing.T) {
 	t.Log("\n" + strings.Join(table, "\n"))
 
 	// Rocky after rotation: the error log is nginx's (999:0 644), and so not
-	// verified on two counts; the renamed access.log.1 is root's (0:0 644)
+	// verified on two counts; the renamed access.log-DATE is root's (0:0 644)
 	// and passes as a file, but the reader never trusts a rotated file more
 	// than its log (detect: TestReadLogRotatedCeiling), here web_user_writable.
 	h := distroHost("rocky9", 1, true)
@@ -120,7 +155,7 @@ func TestWebLogsDistroDefaults(t *testing.T) {
 	if e := m["nginx error /var/log/nginx/error.log"]; e.Verified || e.Reason != ReasonWebUserWritable {
 		t.Errorf("rocky9 rotated error.log: %+v", e)
 	}
-	if r := JudgeLog(h, "/var/log/nginx/access.log.1", LinuxCollector{}.WebAccounts(h)); !r.Verified {
-		t.Errorf("rocky9 access.log.1 as a file: %+v", r)
+	if r := JudgeLog(h, "/var/log/nginx/access.log-20261116", LinuxCollector{}.WebAccounts(h)); !r.Verified {
+		t.Errorf("rocky9 access.log-20261116 as a file: %+v", r)
 	}
 }
