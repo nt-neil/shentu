@@ -2,6 +2,7 @@ package hostenv
 
 import (
 	"io/fs"
+	"strings"
 	"testing"
 )
 
@@ -116,3 +117,56 @@ func TestServerAccountNotForConf(t *testing.T) {
 }
 
 func intp(n int) *int { return &n }
+
+// Every module Rocky 9 loads by default is classified: known to run no
+// application code, run programs as the children's account, or mod_lua.
+func TestRockyModulesClassified(t *testing.T) {
+	n := 0
+	for _, mods := range rockyHTTPDModules {
+		for _, m := range strings.Fields(mods) {
+			m += "_module"
+			if !apacheSafeModules[m] && !apacheExecModules[m] && m != "lua_module" && m != "remoteip_module" {
+				t.Errorf("%s not classified", m)
+			}
+			n++
+		}
+	}
+	t.Logf("%d modules", n)
+}
+
+func TestApacheModulesTrust(t *testing.T) {
+	const log = "apache access /etc/httpd/logs/access_log"
+	rows := []struct {
+		name   string
+		ptrace int
+		conf   string // added to httpd.conf
+		want   Reason
+	}{
+		{"defaults, ptrace_scope 1", 1, "", ""},
+		{"defaults, ptrace_scope 0", 0, "", ReasonWebUserWritable},
+		{"a lua-script handler", 1, "<Location /marker>\nSetHandler lua-script\n</Location>\n", ReasonWebUserWritable},
+		{"AddHandler lua-script", 1, "AddHandler lua-script .lua\n", ReasonWebUserWritable},
+		{"a Lua hook", 1, "LuaHookTranslateName /etc/httpd/marker.lua marker_hook\n", ReasonWebUserWritable},
+		{"AllowOverride All", 1, "<Directory /var/www/html>\nAllowOverride All\n</Directory>\n", ReasonWebUserWritable},
+		{"AllowOverride FileInfo", 1, "<Directory /var/www/html>\nAllowOverride FileInfo AuthConfig\n</Directory>\n", ReasonWebUserWritable},
+		{"AllowOverrideList", 1, "<Directory /var/www/html>\nAllowOverride None\nAllowOverrideList SetHandler\n</Directory>\n", ReasonWebUserWritable},
+		{"AllowOverride AuthConfig Indexes", 1, "<Directory /var/www/html>\nAllowOverride AuthConfig Indexes Limit Options=Indexes\n</Directory>\n", ""},
+		{"mod_cgi", 1, "LoadModule cgi_module modules/mod_cgi.so\n", ReasonWebUserWritable},
+		{"mod_php", 1, "LoadModule php_module modules/libphp.so\n", ReasonWebUserWritable},
+	}
+	for _, r := range rows {
+		h := distroHost("rocky9", r.ptrace, false)
+		h.files["/etc/httpd/conf/httpd.conf"] += r.conf
+		s, ok := webLogsByKey(t, LinuxCollector{}.WebLogs(h))[log]
+		if !ok {
+			t.Errorf("%s: %s not found", r.name, log)
+			continue
+		}
+		if s.Verified != (r.want == "") || s.Reason != r.want {
+			t.Errorf("%s: verified %v %q (%s); want %q", r.name, s.Verified, s.Reason, s.Detail, r.want)
+		}
+		if r.name == "defaults, ptrace_scope 0" && !strings.Contains(s.Detail, "ptrace_scope=1") {
+			t.Errorf("%s: the alert does not say what lets it pass: %s", r.name, s.Detail)
+		}
+	}
+}

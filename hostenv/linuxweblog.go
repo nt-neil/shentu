@@ -191,6 +191,8 @@ func (c LinuxCollector) WebLogs(src Source) Obs[[]LogSource] {
 				no(ReasonWebUserWritable, "Apache runs application code in its own children ("+strings.Join(l.apacheApp, ", ")+"), which hold the log open: "+WebUserWritableMeaning)
 			case s.Server == "nginx" && len(l.ngxApp) > 0:
 				no(ReasonWebUserWritable, "nginx runs application code in its workers ("+strings.Join(l.ngxApp, ", ")+"), which hold the log open: "+WebUserWritableMeaning)
+			case !scoped && s.Server == "apache" && len(l.apacheExec) > 0:
+				no(ReasonWebUserWritable, scopeWhy+": Apache runs programs as its children's account ("+strings.Join(l.apacheExec, ", ")+"), which may ptrace the children holding the log open; kernel.yama.ptrace_scope=1 stops that. "+WebUserWritableMeaning)
 			case !scoped && !l.apart[s.Server]: // application code runs as the workers' account, or may (webAccounts)
 				no(ReasonWebUserWritable, scopeWhy+": the web account can ptrace the server's workers, which hold the log open; "+WebUserWritableMeaning)
 			}
@@ -502,6 +504,16 @@ type logLoader struct {
 	// apacheApp, ngxApp: the modules or directives that run application
 	// code in the server's own workers (not on the list known not to).
 	apacheApp, ngxApp []string
+	// apacheExec: loaded modules that run programs as the children's
+	// account (CGI by actions, SSI exec, ext_filter, suexec, userdir), not
+	// in the children: they can ptrace the children only under ptrace_scope
+	// 0, and write what the children's account may.
+	apacheExec []string
+	// apacheLua: mod_lua is loaded; it runs Lua in the children only with
+	// a Lua directive or handler (apacheLuaUsed), or where .htaccess may add
+	// a handler (apacheOverride: AllowOverride FileInfo or All, an
+	// AllowOverrideList).
+	apacheLua, apacheLuaUsed, apacheOverride bool
 	// ngxRealIP, apacheRemoteIP: the client address may come from a header.
 	ngxRealIP, apacheRemoteIP bool
 	// catchWorkers: a PHP-FPM pool sets catch_workers_output, so the root
@@ -861,7 +873,7 @@ func (l *logLoader) runsApp(server string) bool {
 	if server == "nginx" {
 		return len(l.ngxApp) > 0
 	}
-	return len(l.apacheApp) > 0 || l.apacheSwitch
+	return len(l.apacheApp) > 0 || l.apacheSwitch || len(l.apacheExec) > 0
 }
 
 // serverAccounts fills w.ServerUIDs and l.apart: a server's accounts are
@@ -1211,9 +1223,21 @@ func (l *logLoader) ngxIncludes(ds []*ngxDir, depth int) []*ngxDir {
 }
 
 // apacheSafeModules are the Apache modules known to run no application
-// code in the children that hold the logs open. Any other (php, wsgi,
-// perl, lua, passenger, cgi...) makes Apache's logs web_user_writable.
+// code in the children that hold the logs open: configuration, access
+// control, caching and proxying, and rewriting what passes through. Any
+// other (php, wsgi, perl, passenger, cgi...) but those of apacheExecModules
+// and mod_lua (logLoader.apacheLua) makes Apache's logs web_user_writable.
 var apacheSafeModules = map[string]bool{}
+
+// apacheExecModules run programs as the children's account, not in the
+// children (actions' CGI, SSI's exec cmd, ext_filter, suexec, userdir,
+// cgid's daemon): the programs are no ancestors of the children, which
+// ptrace_scope 1 keeps them from tracing, and the log's descriptor is
+// close-on-exec (APR).
+var apacheExecModules = map[string]bool{
+	"actions_module": true, "ext_filter_module": true, "include_module": true, "suexec_module": true,
+	"userdir_module": true, "cgid_module": true,
+}
 
 func init() {
 	for _, m := range strings.Fields(`access_compat_module alias_module allowmethods_module auth_basic_module auth_digest_module
@@ -1224,7 +1248,13 @@ func init() {
 		proxy_module proxy_ajp_module proxy_balancer_module proxy_fcgi_module proxy_http_module proxy_http2_module
 		proxy_wstunnel_module reqtimeout_module request_module rewrite_module setenvif_module slotmem_shm_module
 		socache_shmcb_module ssl_module status_module substitute_module systemd_module unique_id_module unixd_module
-		version_module watchdog_module`) {
+		version_module watchdog_module
+		authn_anon_module authn_dbd_module authn_dbm_module authn_socache_module authz_dbd_module authz_dbm_module
+		authz_owner_module data_module dbd_module dumpio_module echo_module lbmethod_bybusyness_module
+		lbmethod_bytraffic_module lbmethod_heartbeat_module macro_module proxy_connect_module proxy_express_module
+		proxy_fdpass_module proxy_ftp_module proxy_hcheck_module proxy_scgi_module proxy_uwsgi_module slotmem_plain_module
+		socache_dbm_module socache_memcache_module socache_redis_module vhost_alias_module dav_module dav_fs_module
+		dav_lock_module`) {
 		apacheSafeModules[m] = true
 	}
 }
@@ -1506,6 +1536,13 @@ func (l *logLoader) apache() {
 	}
 	st.cur = &st.main
 	l.apacheFile(st, conf, 0)
+	if l.apacheLua && (l.apacheLuaUsed || l.apacheOverride) && !contains(l.apacheApp, "lua_module") {
+		why := "a lua-script handler"
+		if !l.apacheLuaUsed {
+			why = ".htaccess may add a handler (AllowOverride)"
+		}
+		l.apacheApp = append(l.apacheApp, "lua_module ("+why+")")
+	}
 	emit := func(sc *apacheScope, inherit *apacheScope) {
 		custom, errs := sc.custom, sc.errs
 		if inherit != nil {
@@ -1683,10 +1720,37 @@ func (l *logLoader) apacheFile(st *apacheState, p string, depth int) {
 				if strings.Contains(m, "php") || strings.Contains(strings.ToLower(args[1]), "libphp") {
 					l.modPHP = true
 				}
-				if m == "remoteip_module" {
+				switch {
+				case m == "remoteip_module":
 					st.remoteIP = true
-				} else if !apacheSafeModules[m] && !contains(l.apacheApp, m) {
+				case m == "lua_module":
+					l.apacheLua = true
+				case apacheExecModules[m]:
+					if !contains(l.apacheExec, m) {
+						l.apacheExec = append(l.apacheExec, m)
+					}
+				case !apacheSafeModules[m] && !contains(l.apacheApp, m):
 					l.apacheApp = append(l.apacheApp, m)
+				}
+			}
+		case "allowoverride": // what .htaccess may set: FileInfo (SetHandler, AddHandler) or All lets it run Lua
+			for _, a := range args {
+				switch a = strings.ToLower(a); {
+				case a == "none", a == "authconfig", a == "indexes", a == "limit", strings.HasPrefix(a, "options"), strings.HasPrefix(a, "nonfatal"):
+				default:
+					l.apacheOverride = true
+				}
+			}
+		case "allowoverridelist": // directives .htaccess may set, one by one
+			for _, a := range args {
+				if !strings.EqualFold(a, "none") {
+					l.apacheOverride = true
+				}
+			}
+		case "sethandler", "addhandler":
+			for _, a := range args {
+				if strings.EqualFold(a, "lua-script") {
+					l.apacheLuaUsed = true
 				}
 			}
 		case "loadfile": // a library loaded into the server's own processes (libpython for mod_wsgi)
