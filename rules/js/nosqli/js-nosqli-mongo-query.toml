@@ -6,7 +6,7 @@ severity = "high"
 tier = "info"
 title = "Request data placed in a MongoDB query without forcing it to a string"
 frameworks = ["express", "nestjs", "nextjs", "koa", "fastify", "hapi"]
-sources = ["req.body", "req.query", "@Query(", "@Body(", "@Req(", "^request.json(", "^req.json(", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload"]
+sources = ["req.body", "req.query", "@Query(", "@Body(", "@Req(", "@Request(", "^request.json(", "^req.json(", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload"]
 route_members = ["query", "body"]
 sinks = [".findOne(", ".find(", ".findOneAndUpdate(", ".findOneAndDelete(", ".updateOne(", ".updateMany(", ".deleteOne(", ".deleteMany(", ".countDocuments(", ".exists(", "$where"]
 sanitizers = ["String(", ".toString(", "mongoSanitize(", "sanitize(", "parseInt(", "ObjectId(", "ObjectID(", "Binary(", "mongodb.Binary(", "bson.Binary(", "BSON.Binary(", "typeof", ".launder.string(", ".launder.strings(", ".launder.id(", ".launder.ids(", ".launder.integer(", ".launder.float(", ".launder.boolean("]   # BSON constructors make a value, not an operator object; ApostropheCMS launder returns scalars
@@ -137,4 +137,19 @@ code = '''
 app.get("/people", async (req, res) => {
   res.json(await db.collection("people").find({ name: req.query.name }, { projection: { relations: 1 } }).toArray());
 });
+'''
+
+[[samples]]
+kind = "vulnerable"
+dialect = "ts"
+note = "NestJS's @Request() is @Req() by another name, whatever the parameter is called"
+code = '''
+@Controller()
+export class AppController {
+  @Post("login")
+  async login(@Request() r: Request) {
+    const user = await User.findOne({ username: r.body.username, password: r.body.password });
+    return { ok: !!user };
+  }
+}
 '''

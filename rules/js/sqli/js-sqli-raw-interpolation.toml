@@ -5,7 +5,7 @@ cwe = "CWE-89"
 severity = "high"
 title = "Request input concatenated or interpolated into SQL for a driver or knex.raw"
 frameworks = ["express", "nestjs", "nextjs", "koa", "fastify", "hapi"]
-sources = ["req.query", "req.body", "req.params", "req.cookies", "@Query(", "@Body(", "@Param(", "@Req(", "req.originalUrl", "^request.nextUrl", "^req.nextUrl", "^request.url", "^req.url", "^searchParams", "^request.json(", "^req.json(", "^request.text(", "^req.text(", "^request.formData(", "^req.formData(", "^formData.get(", "^cookies().get(", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload", "ctx.params", "request.params", "ctx.cookies.get("]
+sources = ["req.query", "req.body", "req.params", "req.cookies", "@Query(", "@Body(", "@Param(", "@Req(", "@Request(", "req.originalUrl", "^request.nextUrl", "^req.nextUrl", "^request.url", "^req.url", "^searchParams", "^request.json(", "^req.json(", "^request.text(", "^req.text(", "^request.formData(", "^req.formData(", "^formData.get(", "^cookies().get(", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload", "ctx.params", "request.params", "ctx.cookies.get("]
 sinks = [".query(", ".execute(", "knex.raw(", ".raw(", ".whereRaw(", ".orderByRaw("]
 # A plain Node server's url.parse(req.url), querystring.parse(req.url) and
 # new URL(req.url) are js-sqli-node-http-query's input, not this rule's
@@ -293,5 +293,20 @@ export async function POST(request: Request) {
     type: QueryTypes.SELECT,
   });
   return Response.json(rows);
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+dialect = "ts"
+note = "NestJS's @Request() is @Req() by another name, whatever the parameter is called"
+code = '''
+@Controller()
+export class AppController {
+  @Get("users")
+  async users(@Request() r: Request) {
+    const [rows] = await pool.query("SELECT id, email FROM users WHERE name = '" + r.query.name + "'");
+    return rows;
+  }
 }
 '''

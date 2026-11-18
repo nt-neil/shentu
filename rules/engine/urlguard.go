@@ -174,10 +174,11 @@ func (a *analysis) urlCallsStmt(st state, t []Token) {
 	}
 	// a URL written into an object or array ({ target: u }, [u]) goes where
 	// it may be changed through that literal
-	// u used as a value in any other way than a member read (u.hostname), a
-	// whole argument (handled below), the whole right side (w = u: an alias)
-	// or the target (u = ...) may now be held by another name (a1 = u || null,
-	// c ? u : w, return u), which the analysis does not follow
+	// u used as a value in any other way than a member read (u.hostname, but
+	// not u.valueOf(), which is u), a whole argument (handled below), the whole
+	// right side (w = u: an alias) or the target (u = ...) may now be held by
+	// another name (a1 = u || null, c ? u : w, return u), which the analysis
+	// does not follow
 	for i, tk := range t {
 		if tk.Kind != Ident || i > 0 && (memberOp(false, t[i-1]) || t[i-1].op("?.")) {
 			continue
@@ -193,6 +194,8 @@ func (a *analysis) urlCallsStmt(st state, t []Token) {
 			next = t[i+1]
 		}
 		switch {
+		case (next.op(".") || next.op("?.")) && i+3 < len(t) && t[i+2].word("valueOf") && t[i+3].op("("):
+			// u.valueOf() is u itself, not a member of it: held by another name
 		case next.op(".") || next.op("?.") || next.op("["), // u.hostname, u['host']
 			next.op("=") || next.op("+="), // u = ..., written by assign
 			(prev.op("(") || prev.op(",")) && (next.op(")") || next.op(",")) && callArg(t, i), // f(u)
