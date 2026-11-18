@@ -28,8 +28,9 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
   來自未查證紀錄、只有 L1 或 Unknown 的嘗試，以及內部位址，一律拒絕，除非營運者在伺服器上（`shentu chat`）
   用 `override_unverified` 覆寫；Telegram 永遠不行。只列在多個來源合併的溢出彙總組裡的 IP，有沒有覆寫都拒絕（#91）。
   在 Ubuntu VM 上驗收：已查證紀錄裡的攻擊判成 L3，可以封鎖；未查證紀錄裡的最多到 L2，從 Telegram 封鎖會被拒絕。
-- `block_ip` 的 SSH 證據，只有 journald 裡 sshd 自己的事件確認過的登入才算（#91）：用 `logger` 偽造的 sshd 紀錄，
-  就算是在 sshd 自己的 cgroup 裡偽造的，也不能再當封鎖依據（v0.3.1 會封）。
+- `block_ip` 的 SSH 證據，只有 journald 裡 sshd 自己的事件確認過的登入才算（#91）：在 sshd 自己的 unit
+  （cgroup）裡由其他程式寫進 journald 的 sshd 紀錄（例如用 `logger`），不能再當封鎖依據；v0.3.1 會封。偽造進文字紀錄的
+  本來就會拒絕。
 - 引擎：跳過不會改變結果的 summary 計算，分析時也少做複製。以 Mac 本機的 user CPU 時間量，WordPress 掃描比 v0.3.1
   快約 34%，TypeScript 專案快約 22%，結果完全相同（#92）。以 Ubuntu 24.04 VM（arm64、4 CPU、4 GB）上的實際經過時間量，
   同一台機器依序跑三版，WordPress 掃描 97.2 秒（v0.3.1 120.0 秒、v0.3.0 72.1 秒），比 v0.3.1 少 19%；三版都是 2279 個檔、

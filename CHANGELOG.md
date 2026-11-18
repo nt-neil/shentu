@@ -43,8 +43,9 @@ Chinese for the zh-TW pages; keep the two in step.
   On an Ubuntu VM, an attack in a verified log was judged L3 and could be blocked; one in an
   unverified log reached L2 at most, and its block was refused from Telegram.
 - `block_ip`'s SSH evidence counts a login only when sshd's own events in journald confirm it
-  (#91): sshd lines forged with `logger`, even from inside sshd's own cgroup, no longer back a
-  block (v0.3.1 blocked on them).
+  (#91): sshd lines that another program in sshd's own unit writes to journald (for example
+  with `logger`) no longer back a block; v0.3.1 blocked on them. Lines forged into text logs
+  were refused already.
 - Engine: summary runs that cannot change the result are skipped, and the analysis copies less.
   Measured as user CPU time on a Mac, WordPress is scanned about 34% faster than v0.3.1 and
   TypeScript projects about 22% faster, with the same findings (#92). Measured as elapsed time
