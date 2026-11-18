@@ -104,11 +104,15 @@ func mergeInto(x, y state) state {
 	}
 	var adds []add
 	for k, e := range y {
-		if _, ok := x[k]; !ok {
+		if _, ok := x[k]; !ok && !strings.HasPrefix(k, urlKey) {
 			adds = append(adds, add{k, both(look(x, k, e.src), e)})
 		}
 	}
 	for k, e := range x {
+		if _, ok := y[k]; !ok && strings.HasPrefix(k, urlKey) {
+			delete(x, k) // a URL object on one path only is not one after the join (urlguard.go)
+			continue
+		}
 		x[k] = both(e, look(y, k, e.src))
 	}
 	for _, d := range adds {
@@ -172,6 +176,8 @@ type analysis struct {
 	ftoks  []Token              // the file's tokens, for the receiver condition (receiver.go)
 	rdefs  map[string][][]Token // what names of the file are assigned or annotated with, built on first use
 	rcls   map[string][]string  // PHP: variables the file binds only to new objects, and their classes (recvClasses), built on first use
+	colls  map[string]bool      // names the file binds once, at the top, to a collection (urlguard.go collectionName), built on use
+	fregs  *fnRegions           // the file's function literals (urlcapture.go), built on use
 	ifacts map[string]bool      // JavaScript: "m:" modules the file imports, "w:" names it uses (imports.go), built on first use or kept by the project
 }
 
@@ -242,6 +248,7 @@ func (a *analysis) stmt(s *stmt, st state) (state, uint8) {
 			}
 		}
 		a.assignStmt(st, s.toks)
+		a.urlCallsStmt(st, s.toks)
 		a.assertStmt(st, s.toks)
 		a.raisingCheckStmt(st, s.toks)
 		a.nonceStmt(st, s.toks)
@@ -608,12 +615,15 @@ func (a *analysis) assign(st state, t []Token) (val, bool) {
 	for _, tg := range a.targetList(lhs) {
 		a.setTarget(st, tg, v, t[k].Text, sep)
 		a.sourceParts(st, tg, rhs, t[k].Text)
+		a.sourceNot(st, tg, rhs, t[k].Text)
 		if key, _, ok := a.pathKey(tg); ok {
 			if t[k].Text == "=" && a.canonical(st, rhs) {
 				st[canonKey+key] = entry{san: true}
 			} else if _, had := st[canonKey+key]; had {
 				delete(st, canonKey+key)
 			}
+			a.setURLOf(st, key, rhs, t[k].Text == "=")
+			a.urlWrite(st, key, v)
 			if a.js {
 				a.setRelative(st, key, rhs, t[k].Text == "=")
 				if rel, base, ok := urlRelative(rhs); ok && t[k].Text == "=" {
@@ -790,7 +800,7 @@ func (a *analysis) pathKey(t []Token) (key, container string, ok bool) {
 		case t[j].op("["):
 			c := closeOf(t, j)
 			container = key
-			key += sepCh + "[" + idxKey(inside(t, j, c)) + "]"
+			key += sepCh + "[" + a.idxOf(key, inside(t, j, c)) + "]"
 			j = c + 1
 		default:
 			return "", "", false
@@ -798,6 +808,22 @@ func (a *analysis) pathKey(t []Token) (key, container string, ok bool) {
 	}
 	return key, container, true
 }
+
+// idxOf is idxKey for an index under key: in JavaScript a header name in a
+// request's headers is lower case, as Node stores it (req.headers['Host'] is
+// req.headers['host']). Another object's headers keep their case.
+func (a *analysis) idxOf(key string, t []Token) string {
+	ik := idxKey(t)
+	if a.js && requestHeaders[strings.ReplaceAll(key, sepCh, "")] {
+		ik = strings.ToLower(ik)
+	}
+	return ik
+}
+
+// requestHeaders are the paths of a request's headers in Express, Node, Koa
+// and Fastify (sepCh left out).
+var requestHeaders = map[string]bool{"req.headers": true, "request.headers": true, "ctx.headers": true, "ctx.header": true,
+	"ctx.request.headers": true, "ctx.request.header": true, "ctx.req.headers": true}
 
 func idxKey(t []Token) string {
 	if len(t) == 1 && (t[0].Kind == Str || t[0].Kind == Num) && len(t[0].Parts) == 0 {
@@ -1394,7 +1420,7 @@ func (a *analysis) postfix(st state, t []Token, start, baseEnd int, v val, whole
 		case tk.op("["):
 			c := closeOf(t, j)
 			if key != "" {
-				ik := idxKey(inside(t, j, c))
+				ik := a.idxOf(key, inside(t, j, c))
 				key += sepCh + "[" + ik + "]"
 				litIdx = ik != "*"
 			}
@@ -1473,12 +1499,15 @@ func (a *analysis) srcMatch(s *pat, t []Token, i int) (int, bool) {
 	}
 	strict := len(s.toks) > 1 && s.toks[0].Kind == Ident && s.toks[1].op("(")
 	end, ok := s.match(t, i, strict)
+	if ok && notMember(s, t, end) {
+		return 0, false // req.headers.host where the rule's route_not names headers.host
+	}
 	if !ok || s.srcArg == 0 {
 		return end, ok
 	}
-	open := i + s.callParen()
-	if open >= len(t) || !t[open].op("(") {
-		return 0, false
+	open := i + s.argOpen()
+	if open >= len(t) || !t[open].op(s.toks[s.argOpen()].Text) {
+		return 0, false // the call's "(", or the index's "["
 	}
 	args := splitTop(inside(t, open, closeOf(t, open)), isComma)
 	if s.srcArg > len(args) {
@@ -1488,7 +1517,11 @@ func (a *analysis) srcMatch(s *pat, t []Token, i int) (int, bool) {
 	if len(arg) > 1 && arg[0].Kind == Ident && arg[1].op(":") {
 		arg = arg[2:] // a named argument: filter: 'raw'
 	}
-	return end, len(arg) == 1 && arg[0].Kind == Str && len(arg[0].Parts) == 0 && !s.srcVals["!"+strings.ToLower(arg[0].Text)] && (s.srcVals["*"] || s.srcVals[strings.ToLower(arg[0].Text)])
+	if len(arg) != 1 || arg[0].Kind != Str || len(arg[0].Parts) > 0 {
+		return end, len(arg) > 0 && s.srcVals["?"] // a name not written out: "?" takes it
+	}
+	v := strings.ToLower(arg[0].Text)
+	return end, !s.srcVals["!"+v] && (s.srcVals["*"] || s.srcVals[v])
 }
 
 // argsTaint reports whether a call's arguments carry taint into its result. Most
@@ -1785,8 +1818,15 @@ func (a *analysis) cleans(st state, cond []Token, truth bool) ([]keyRef, []strin
 }
 
 // guard reads one condition atom. When it is a check, keys are the values it
-// validates and pos tells whether the atom is true when the check passes.
-func (a *analysis) guard(st state, atom []Token) (pos bool, keys []keyRef) {
+// validates and pos tells whether the atom is true when the check passes. An
+// allowed host validates, for the SSRF rules, the URL it is the host of
+// (urlguard.go).
+func (a *analysis) guard(st state, atom []Token) (bool, []keyRef) {
+	pos, keys := a.guardAtom(st, atom)
+	return pos, a.urlChecked(st, atom, keys)
+}
+
+func (a *analysis) guardAtom(st state, atom []Token) (pos bool, keys []keyRef) {
 	pos = true
 	atom = stripParens(atom)
 	for len(atom) > 0 && (atom[0].op("!") || a.py && atom[0].word("not")) {
@@ -2247,6 +2287,9 @@ func (a *analysis) sinkWith(st state, t []Token, i int, s *pat, cond *argCond) b
 	if lr := a.expandLits(st, region); cond != nil && (len(cond.when) > 0 && !a.when(cond.when, lr) || a.unlessIn(st, cond, lr)) {
 		return false
 	}
+	if cond != nil && len(cond.unlessAfter) > 0 && a.onlyAfter(st, cond.unlessAfter, region) {
+		return false // "... ORDER BY $col": another rule's, at that text (unless_after)
+	}
 	if cond != nil && len(cond.unlessCT) > 0 && contentTypeSet(st, cond.unlessCT) {
 		return false // a Server-Sent Events stream: EventSource reads it as text
 	}
@@ -2533,10 +2576,19 @@ func (a *analysis) unless(st state, ps []*pat, region []Token) bool {
 				return true
 			}
 		}
-		// Any other fragment (yaml.SafeLoader) must be a whole argument.
+		// Any other fragment (yaml.SafeLoader) must be a whole argument, or a
+		// flag among flags joined by "|" (LIBXML_DTDLOAD | LIBXML_NOENT); one
+		// under "~" is cleared, not set.
 		for _, arg := range splitTop(region, isComma) {
 			if tokensEqual(arg, p.toks) {
 				return true
+			}
+			if flags := splitTop(arg, isOp("|")); len(flags) > 1 && len(p.toks) == 1 && p.toks[0].Kind == Ident {
+				for _, f := range flags {
+					if tokensEqual(stripParens(f), p.toks) {
+						return true
+					}
+				}
 			}
 		}
 	}

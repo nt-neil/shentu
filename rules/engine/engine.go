@@ -100,6 +100,7 @@ type argCond struct {
 	unlessImports  []string // nor in a file importing one of these modules (imports.go)
 	importsNot     []string // ... unless the file or the receiver names one of these
 	unlessSub      []*pat   // the argument does not count when it is one item of one of these (request.files["f"])
+	unlessAfter    []*pat   // text patterns: nor when all the input in it comes after one of these (unlessafter.go)
 }
 
 // New compiles rules. A pattern that does not lex as code of its language is an error.
@@ -163,8 +164,8 @@ func compileRule(r rules.Rule) (*crule, error) {
 		}
 		for _, s := range sa.Sources {
 			p, ok := srcs[s]
-			if !ok || p.text != nil || p.callParen() < 0 {
-				return nil, fmt.Errorf("source_args: %q is not one of the call sources", s)
+			if !ok || p.text != nil || p.argOpen() < 0 || p.callParen() < 0 && sa.Arg != 1 {
+				return nil, fmt.Errorf("source_args: %q is not one of the call or index sources (an index source takes arg 1)", s)
 			}
 			p.srcArg, p.srcVals = sa.Arg, map[string]bool{}
 			for _, v := range sa.Values {
@@ -172,6 +173,7 @@ func compileRule(r rules.Rule) (*crule, error) {
 			}
 		}
 	}
+	c.setNotMembers()
 	sinks, err := compile(r.Sinks, &c.sinks, &c.textSinks)
 	if err != nil {
 		return nil, err
@@ -215,6 +217,13 @@ func compileRule(r rules.Rule) (*crule, error) {
 			ac.context = append(ac.context, cs...)
 		}
 		c.leading = c.leading || a.Leading
+		for _, raw := range a.UnlessAfter {
+			p, err := compilePattern(r.Lang, raw, true)
+			if err != nil {
+				return nil, err
+			}
+			ac.unlessAfter = append(ac.unlessAfter, p)
+		}
 		for _, list := range []struct {
 			raw []string
 			out *[]*pat
@@ -742,7 +751,7 @@ func (si *srcIndex) hasSource(r *crule) bool {
 // matched as the analysis matches sinks (strictly, see the function hasSink).
 func (si *srcIndex) hasSink(r *crule) bool {
 	for _, s := range r.sinks {
-		if s.text == nil && si.has("s"+s.raw+"\x00"+s.chain, s, true) {
+		if s.text == nil && si.has("s"+s.raw+"\x00"+s.chainKey(), s, true) {
 			return true
 		}
 	}

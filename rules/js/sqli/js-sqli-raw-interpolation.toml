@@ -7,7 +7,10 @@ title = "Request input concatenated or interpolated into SQL for a driver or kne
 frameworks = ["express", "nestjs", "nextjs", "koa", "fastify", "hapi"]
 sources = ["req.query", "req.body", "req.params", "req.cookies", "@Query(", "@Body(", "@Param(", "@Req(", "req.originalUrl", "^request.nextUrl", "^req.nextUrl", "^request.url", "^req.url", "^searchParams", "^request.json(", "^req.json(", "^request.text(", "^req.text(", "^request.formData(", "^req.formData(", "^formData.get(", "^cookies().get(", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload", "ctx.params", "request.params", "ctx.cookies.get("]
 sinks = [".query(", ".execute(", "knex.raw(", ".raw(", ".whereRaw(", ".orderByRaw("]
-sanitizers = ["parseInt(", "Number("]
+# A plain Node server's url.parse(req.url), querystring.parse(req.url) and
+# new URL(req.url) are js-sqli-node-http-query's input, not this rule's
+# (req.url read as such stays this rule's).
+sanitizers = ["parseInt(", "Number(", "sequelize.escape(", "url.parse(request.url", "url.parse(req.url", "URL(req.url", "URL(request.url", "querystring.parse(req.url", "querystring.parse(request.url"]
 fix = "Use placeholders and pass values separately (query('... WHERE id = ?', [id]), knex.raw('?? = ?', [col, val])); never build SQL with + or template literals."
 refs = ["CVE-2026-47384"]
 
@@ -15,6 +18,12 @@ refs = ["CVE-2026-47384"]
 sinks = [".query(", "knex.raw(", ".raw(", ".whereRaw(", ".orderByRaw("]
 arg = 1   # the SQL text; values in the bindings array are safe
 whole = true   # query({ sql: "... ?", args: [input] }) binds the input; only SQL text built from input is the attack
+
+# query({ sql: "SELECT ... " + input }): the SQL text under the sql key
+[[args]]
+sinks = [".query("]
+arg = 1
+key = "sql"
 
 # execute() is also a VM's, a tool's or a job's: it counts on a receiver the
 # file says nothing about (a parameter, an import) or one tied to a database
@@ -246,4 +255,43 @@ fastify.post("/tools/:name", async (request) => {
   const tool = tools.find((t) => t.name === request.params.name);
   return tool.execute(JSON.parse(request.body.input));
 });
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+router.get("/search", async (req, res) => {
+  const rows = await sequelize.query("SELECT * FROM items WHERE title = :t", {
+    replacements: { t: String(req.query.t) },
+    type: QueryTypes.SELECT,
+  });
+  res.json(rows);
+});
+'''
+
+[[samples]]
+kind = "vulnerable"
+dialect = "ts"
+note = "Next.js: a form field from request.formData()"
+code = '''
+export async function POST(request: Request) {
+  const form = await request.formData();
+  const tag = form.get("tag") as string;
+  const rows = await sequelize.query(`SELECT * FROM items WHERE tag = '${tag}'`);
+  return Response.json(rows);
+}
+'''
+
+[[samples]]
+kind = "safe"
+dialect = "ts"
+code = '''
+export async function POST(request: Request) {
+  const form = await request.formData();
+  const rows = await sequelize.query("SELECT * FROM items WHERE tag = :tag", {
+    replacements: { tag: String(form.get("tag")) },
+    type: QueryTypes.SELECT,
+  });
+  return Response.json(rows);
+}
 '''
