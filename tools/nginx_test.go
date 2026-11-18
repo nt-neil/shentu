@@ -18,6 +18,8 @@ func TestNginxH2Affected(t *testing.T) {
 		"1.30.6": both, "1.30.7": nil, "1.30.8-1~bookworm": nil,
 		"1.31.0": both, "1.31.8-1~bookworm": both, "1.31.9": nil, "1.31.9-1~noble": nil, "1.32.0": nil, "2.0.0": nil,
 		"": nil, "garbage": nil, "1.24": nil, "1.24.x": nil,
+		// OpenResty: nginx's version and its own release
+		"1.25.3.1-1~jammy": both, "1.27.1.2": both, "1.31.9.1": nil, "1.25.3.1.1": nil,
 	} {
 		if got := nginxH2Affected(v); !slices.Equal(got, want) {
 			t.Errorf("%q: %v, want %v", v, got, want)
@@ -66,12 +68,28 @@ func TestNginxH2Risk(t *testing.T) {
 	}{
 		{"fixed version", "1.31.9-1~bookworm", true, true},
 		{"HTTP/1.1 only", "1.24.0-2ubuntu7", false, true},
-		{"no nginx", "", true, true},
+		{"no nginx", "", true, false},
 		{"before HTTP/2", "1.9.4", true, true},
 	} {
 		if r := risk(c.v, "nginx", "dpkg", "", c.on, c.found); len(r) != 0 {
 			t.Errorf("%s: %+v", c.why, r)
 		}
+	}
+	// A longer CVE id that starts the same is not a backport of this one (review S-1).
+	if r := risk("1.22.1-9+deb12u3", "nginx", "dpkg", "  * CVE-2026-1230071, CVE-2026-1236330: other fixes\n", true, true); len(r) != 1 ||
+		!strings.Contains(r[0].Summary, "CVE-2026-123007 and CVE-2026-123633") {
+		t.Errorf("longer ids: %+v", r)
+	}
+	if r := risk("1.22.1-9+deb12u3", "nginx", "dpkg", "CVE-2026-123007\nCVE-2026-123633", true, true); len(r) != 0 {
+		t.Errorf("ids at the end of the text: %+v", r)
+	}
+	// nginx configured, its version not found (review S-3): not known.
+	if r := risk("", "", "", "", true, true); len(r) != 1 || !Unchecked(r[0]) || r[0].Key != uncheckedPrefix+"nginx:version" {
+		t.Errorf("configured, no version: %+v", r)
+	}
+	// The warning says the distribution's advisory counts (review S-2).
+	if r := risk("1.24.0-2ubuntu7", "nginx", "dpkg", "", true, true); len(r) != 1 || !strings.Contains(r[0].Summary, "minimized") {
+		t.Errorf("distribution note: %+v", r)
 	}
 	// Not known: no configuration found, or a file of it not read.
 	if r := risk("1.25.4", "", "", "", false, false); len(r) != 1 || r[0].Severity != "info" || !Unchecked(r[0]) ||
@@ -92,5 +110,19 @@ func TestNginxVersionString(t *testing.T) {
 	bin := []byte("\x00\x7fELF...nginx version: \x00nginx/1.24.0\x00Server: \x00")
 	if m := ngxVersionString.FindSubmatch(bin); m == nil || string(m[1]) != "1.24.0" {
 		t.Errorf("version in the binary: %q", m)
+	}
+	if m := ngxVersionString.FindSubmatch([]byte("\x00openresty/1.25.3.1\x00")); m == nil || string(m[1]) != "1.25.3.1" {
+		t.Errorf("OpenResty's version in the binary: %q", m)
+	}
+}
+
+func TestMentionsCVE(t *testing.T) {
+	for text, want := range map[string]bool{
+		"CVE-2026-123007": true, "fix CVE-2026-123007.": true, "CVE-2026-123007, CVE-2026-1": true,
+		"CVE-2026-1230071": false, "CVE-2026-1230071 and CVE-2026-123007": true, "": false, "CVE-2026-12300": false,
+	} {
+		if got := mentionsCVE(text, "CVE-2026-123007"); got != want {
+			t.Errorf("%q: %v, want %v", text, got, want)
+		}
 	}
 }
