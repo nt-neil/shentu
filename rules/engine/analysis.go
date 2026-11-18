@@ -39,11 +39,10 @@ type entry struct {
 type state map[string]entry
 
 func (s state) clone() state {
-	c := make(state, len(s))
-	for k, v := range s {
-		c[k] = v
+	if s == nil {
+		return state{}
 	}
-	return c
+	return maps.Clone(s)
 }
 
 // get returns the entry of key or of its longest stored prefix. A literal key
@@ -70,16 +69,24 @@ func (s state) get(key string) (entry, bool) {
 
 // del removes key and every path under it.
 func (s state) del(key string) {
+	under := key + sepCh
 	for k := range s {
-		if k == key || strings.HasPrefix(k, key+sepCh) {
+		if k == key || strings.HasPrefix(k, under) {
 			delete(s, k)
 		}
 	}
 }
 
 // merge joins the states of two paths: tainted on either path is tainted.
-func merge(x, y state) state {
-	out := make(state, len(x)+len(y))
+func merge(x, y state) state { return mergeInto(x.clone(), y) }
+
+// mergeInto is merge written into x, for a caller that owns x and does not
+// use it after: the keys only y holds are worked out from x as it was, before
+// any key of x changes.
+func mergeInto(x, y state) state {
+	if x == nil {
+		x = state{}
+	}
 	look := func(s state, k string, src bool) entry {
 		if e, ok := s.get(k); ok {
 			return e
@@ -91,15 +98,23 @@ func merge(x, y state) state {
 			raw: a.raw || b.raw, emb: a.emb || b.emb, weak: weakOf(a.taint, a.weak, b.taint, b.weak),
 			keys: (a.taint || b.taint) && (!a.taint || a.keys) && (!b.taint || b.keys)} // tainted only under literal keys on every path that taints it
 	}
-	for k, e := range x {
-		out[k] = both(e, look(y, k, e.src))
+	type add struct {
+		k string
+		e entry
 	}
+	var adds []add
 	for k, e := range y {
 		if _, ok := x[k]; !ok {
-			out[k] = both(look(x, k, e.src), e)
+			adds = append(adds, add{k, both(look(x, k, e.src), e)})
 		}
 	}
-	return out
+	for k, e := range x {
+		x[k] = both(e, look(y, k, e.src))
+	}
+	for _, d := range adds {
+		x[d.k] = d.e
+	}
+	return x
 }
 
 type val struct{ taint, san, pre, raw, emb, weak bool } // pre, raw: see entry; set by assign only
@@ -216,7 +231,7 @@ func (a *analysis) stmt(s *stmt, st state) (state, uint8) {
 			// nothing passed in). A closure's return is not one of these.
 			if rest := s.toks[1:]; a.nested == 0 && !(len(rest) == 1 && falsy(rest)) {
 				set := map[string]bool{}
-				if _, cleaned := a.refine(st, rest, true); len(cleaned) > 0 {
+				if _, cleaned := a.cleans(st, rest, true); len(cleaned) > 0 {
 					for _, k := range cleaned {
 						if st[k].taint {
 							set[k] = true
@@ -242,7 +257,7 @@ func (a *analysis) stmt(s *stmt, st state) (state, uint8) {
 		t1, _ := a.refine(st, s.toks, true)
 		a.nonceCond(t1, s.toks, true)
 		t1, e1 := a.block(s.body, t1)
-		t2, g2 := a.refine(st, s.toks, false)
+		t2, g2 := a.refineInPlace(st, s.toks, false) // st is not used after this
 		a.nonceCond(t2, s.toks, false)
 		e2 := noExit
 		if len(s.els) > 0 {
@@ -261,7 +276,7 @@ func (a *analysis) stmt(s *stmt, st state) (state, uint8) {
 		case e2 != noExit:
 			return t1, noExit
 		}
-		return merge(t1, t2), noExit
+		return mergeInto(t1, t2), noExit // t1 is the true branch's own copy
 	case sLoop:
 		return a.loop(s, st), noExit
 	case sWith:
@@ -484,10 +499,10 @@ func (a *analysis) loop(s *stmt, st state) state {
 	bind(st)
 	a.guards = append(a.guards, map[string]bool{})
 	s1, _ := a.block(body, enter(st))
-	m := merge(st, s1)
+	m := mergeInto(st, s1) // st and m are not used after their merge
 	bind(m)
 	s2, _ := a.block(body, enter(m))
-	out := merge(m, s2)
+	out := mergeInto(m, s2)
 	checked := a.guards[len(a.guards)-1]
 	a.guards = a.guards[:len(a.guards)-1]
 	// Every member was checked and a bad one rejects the whole input (raise,
@@ -1686,12 +1701,40 @@ var zeroMeansMatch = map[string]bool{"strncmp": true, "strncasecmp": true, "strc
 // refine returns a copy of st for the path where cond is truth, with the values
 // that a check in cond validates made clean, and the keys it cleaned.
 func (a *analysis) refine(st state, cond []Token, truth bool) (state, []string) {
+	edits, cleaned := a.cleans(st, cond, truth)
 	out := st.clone()
+	applyCleans(out, edits)
+	return out, cleaned
+}
+
+// refineInPlace is refine made on st itself, for a caller that has no further
+// use of st as it was.
+func (a *analysis) refineInPlace(st state, cond []Token, truth bool) (state, []string) {
+	edits, cleaned := a.cleans(st, cond, truth)
+	applyCleans(st, edits)
+	return st, cleaned
+}
+
+// applyCleans makes the values of edits clean in st, keeping what else is
+// known of them (a base's separator).
+func applyCleans(st state, edits []keyRef) {
+	for _, k := range edits {
+		e := st[k.key]
+		e.taint, e.src = false, e.src || k.src
+		st[k.key] = e
+	}
+}
+
+// cleans works out what refine does without making the state: the values a
+// check in cond validates where cond is truth, as read from st, and the keys
+// it cleaned.
+func (a *analysis) cleans(st state, cond []Token, truth bool) ([]keyRef, []string) {
 	cond = stripParens(cond)
 	split := func(t Token) bool { return t.op("||") || t.word("or") }
 	if truth {
 		split = func(t Token) bool { return t.op("&&") || t.word("and") }
 	}
+	var edits []keyRef
 	var cleaned []string
 	other := func(t Token) bool { return t.op("&&") || t.word("and") }
 	if truth {
@@ -1702,7 +1745,7 @@ func (a *analysis) refine(st state, cond []Token, truth bool) (state, []string) 
 		// validated where every part on its own validates it.
 		var common map[string]bool
 		for _, p := range parts {
-			_, ck := a.refine(st, p, truth)
+			_, ck := a.cleans(st, p, truth)
 			set := map[string]bool{}
 			for _, k := range ck {
 				if common == nil || common[k] {
@@ -1712,22 +1755,18 @@ func (a *analysis) refine(st state, cond []Token, truth bool) (state, []string) 
 			common = set
 		}
 		for k := range common {
-			e := out[k]
-			e.taint = false
-			out[k] = e
+			edits = append(edits, keyRef{key: k})
 			cleaned = append(cleaned, k)
 		}
 		slices.Sort(cleaned)
-		return out, cleaned
+		return edits, cleaned
 	}
 	for _, atom := range splitTop(cond, split) {
 		if truth {
 			// A || B || C where each validates the same value: where it holds, one did
 			if parts := splitTop(stripParens(atom), func(t Token) bool { return t.op("||") || t.word("or") }); len(parts) > 1 {
 				for _, k := range a.allValidate(st, parts) {
-					e := out[k.key]
-					e.taint, e.src = false, e.src || k.src
-					out[k.key] = e
+					edits = append(edits, k)
 					cleaned = append(cleaned, k.key)
 				}
 				continue
@@ -1738,13 +1777,11 @@ func (a *analysis) refine(st state, cond []Token, truth bool) (state, []string) 
 			continue
 		}
 		for _, k := range keys {
-			e := out[k.key]
-			e.taint, e.src = false, e.src || k.src // keep what else is known (a base's separator)
-			out[k.key] = e
+			edits = append(edits, k)
 			cleaned = append(cleaned, k.key)
 		}
 	}
-	return out, cleaned
+	return edits, cleaned
 }
 
 // guard reads one condition atom. When it is a check, keys are the values it

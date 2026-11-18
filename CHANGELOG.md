@@ -6,6 +6,99 @@ a release are not written here: they are worked out from the rule snapshots in
 `docs/site-src/rules-history/`. `CHANGELOG.zh-TW.md` holds the same releases in Traditional
 Chinese for the zh-TW pages; keep the two in step.
 
+## v0.4.0 — 2026-11-18
+
+- Attack detection (Linux): each patrol round reads the web server's logs and picks out the
+  requests aimed at vulnerabilities this host really has. It alerts; it never blocks on its
+  own. What it cannot see and what it may miss are listed in
+  `docs/attack-detection-limits.md`.
+- The vulnerability surface: the daily round saves what this host is known to be vulnerable to
+  in `state_dir/surface.json`, and the other rounds read it: code audit findings, with the
+  routes registering the handler a finding sits in when the same file shows them (#84);
+  advisories of application dependencies and of installed OS packages, compared in dpkg's and
+  rpm's version order; installed WordPress plugins and their versions (#91). A surface missing,
+  unreadable or older than 26 hours is said in the round's notices and the report, never used quietly.
+- Log sources: the access logs nginx and Apache are configured to write, custom formats
+  included, PHP-FPM's logs and journald for application units, read from where the last round
+  stopped across rotation (#85). A log counts as verified only when root alone could have
+  written it; otherwise its attempts are marked unverified and the alert names the reason.
+- 27 attack signatures, written for Shentu or drafted from reviewed nuclei-templates (MIT,
+  see `detect/sig/NOTICE`), matched after decoding a request at most twice (#87). A request
+  that only reaches a route of a vulnerable handler is L1; one that also carries a payload of
+  the vulnerability's class is L2; L3 needs a sign it had an effect: a response size far from
+  the route's usual one, or an error at the vulnerable file and line (#90). A request cut where
+  it may hide a payload is Unknown. A vulnerability the host does not have is noise.
+- Alerts are the detector's own plain text, sent through the notify channel, not through the
+  model. Attempts are grouped by network (/24 or /64), target and level, and a group is sent
+  once a day. L1 is counted in the daily report, never pushed; Unknown is pushed only when one
+  target gets 20 of them within 24 hours. Sensitive parameters in samples are masked, and the daily file
+  `state_dir/reports/attacks-<date>.txt` (kept 30 days) masks addresses (#90, #91).
+  `shentu detect [--since] [--json]` reads and judges a round without sending or saving;
+  the `attack_attempts` tool and the bot's `/attacks` list the last day's groups.
+- `block_ip` and attack detection: an address the detector saw is blocked, after the operator
+  confirms, only for a verified L2 or L3 group of its own. Attempts from unverified logs, at L1
+  or Unknown, and internal addresses are refused unless the operator overrides with
+  `override_unverified` on the server (`shentu chat`); Telegram never can. An address listed
+  only in an overflow summary of many sources is refused, override or not (#91).
+  On an Ubuntu VM, an attack in a verified log was judged L3 and could be blocked; one in an
+  unverified log reached L2 at most, and its block was refused from Telegram.
+- `block_ip`'s SSH evidence counts a login only when sshd's own events in journald confirm it
+  (#91): sshd lines that another program in sshd's own unit writes to journald (for example
+  with `logger`) no longer back a block; v0.3.1 blocked on them. Lines forged into text logs
+  were refused already.
+- Engine: summary runs that cannot change the result are skipped, and the analysis copies less.
+  Measured as user CPU time on a Mac, WordPress is scanned about 34% faster than v0.3.1 and
+  TypeScript projects about 22% faster, with the same findings (#92). Measured as elapsed time
+  on an Ubuntu 24.04 VM (arm64, 4 CPUs, 4 GB), one version after another on the same machine,
+  the WordPress scan took 97.2 s (v0.3.1 120.0 s, v0.3.0 72.1 s), 19% less than v0.3.1, with
+  the same 2279 files and 43 findings and a peak memory of 848–858 MB in all three; the daily
+  patrol as root took 126 s (v0.3.1 146 s, v0.3.0 99 s). Benchmark unchanged: published vulnerabilities 16 of 97 caught, 1
+  fixed-release false positive; held-out cases 3 of 30; TypeScript cases 1 of 18 with 1
+  fixed-release false positive.
+- `tools/detecteval`, run in CI, measures attack detection on synthetic requests (#94): requests converted from nuclei-templates v10.5.2: a signature of the same class matched 40.5% of them (1548 of 3822 classified templates). This is a match on the request line, not an alert; ordinary requests for 152 routes of 8 applications: 0 false alerts; 363 of them differ in more than tracking parameters, so the rate can only be said to be below about 0.8% (95% upper bound); templates for vulnerabilities the test host has: 3 of 10 alerted, 2 of them only at L1 (the payload is in the request body).
+
+### Fixed
+
+- When one request hits several rules on the same line of code, you get one alert that lists
+  every rule, instead of one alert per rule (#97).
+- Alerts for a package's CVE no longer carry the note on what routes mean; that note is for
+  alerts about your own code only (#97).
+- When an ACL lets another account write a log or a directory above it, the reason names that
+  account, for example `ACL grants write to www-data (uid 33)` (#97).
+- When the patrol runs as an account that is not root and not in the `systemd-journal` or `adm`
+  group, the SSH result is marked as only partly read (#97).
+
+### Upgrade notes
+
+- An attack state saved by a v0.4.0 build from before these fixes (one group per rule) is
+  merged into the new format (one group per line of code) when it is loaded (#97, #98). The
+  counts from before the upgrade are a lower bound: when rules of different classes on the same
+  line were hit by different requests, the count may be too low. This changes only the counts
+  shown, not alerts or blocks. v0.3.x keeps no attack state, so an upgrade from it has nothing
+  to merge.
+
+### Known issues
+
+- Attack detection is for Linux only.
+- Access logs do not record request bodies (POST forms, JSON, uploads): a payload there is
+  never seen, and such a request is L1 at most.
+- The signatures expect the plain form of an attack. Rewritten forms (other encodings, padded
+  paths, comments or other whitespace inside SQL, commands split by quotes) may be missed.
+- With nginx as installed by default on Debian, Ubuntu and Rocky Linux, v0.4.0 judges its access
+  log `web_user_writable` (the web server's account could write it or a directory above it): its
+  attempts are alerted on, but they cannot back a block. On Debian and Ubuntu nginx and PHP both
+  run as `www-data`, so the risk is real (on Ubuntu the log is `www-data:adm`, and logrotate
+  creates it with `create 0640 www-data adm`). On Rocky Linux nginx runs as `nginx` and PHP-FPM
+  as `apache`, which cannot write nginx's log: there v0.4.0 is only being cautious. Changing the
+  log's owner by hand is undone at the next rotation. This is planned for v0.4.1. Rocky Linux's default httpd configuration loads modules outside the list
+  Shentu knows to be safe, so its Apache logs are always judged `web_user_writable` too; weighing
+  those modules is planned for v0.4.1.
+- There are no signatures for particular WordPress plugin vulnerabilities yet.
+- Scans are still slower than v0.3.0: WordPress about 35% (elapsed time on the Ubuntu VM above),
+  TypeScript projects about 20% (user CPU time on a Mac, #92).
+- Still open from v0.3.1: CVE-2021-23664's fixed release is reported; `filesize()` on an
+  upload's temporary path in WordPress; `markup` not followed through a variable.
+
 ## v0.3.1 — 2026-11-16
 
 - Code audit rules: 70 → 127 (PHP 25 → 51, Python 22 → 43, JavaScript and TypeScript

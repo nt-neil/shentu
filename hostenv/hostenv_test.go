@@ -446,8 +446,26 @@ func TestWebFact(t *testing.T) {
 // an owner.
 type statHost struct {
 	*fakeHost
-	st map[string]FileStat
+	st   map[string]FileStat
+	lst  map[string]FileStat // links' own stat; a link not in it is root's
+	acl  map[string]bool
+	acle map[string][]ACLEntry // ACLEntries; a path not in it has none
 }
+
+func (h statHost) ACLEntries(p string) ([]ACLEntry, error) { return h.acle[p], nil }
+
+// Lstat is a link's own stat: lst, or root's for a link in links.
+func (h statHost) Lstat(p string) (FileStat, error) {
+	if s, ok := h.lst[p]; ok {
+		return s, nil
+	}
+	if _, ok := h.links[p]; ok {
+		return FileStat{Mode: fs.ModeSymlink | 0o777, UID: 0}, nil
+	}
+	return h.Stat(p)
+}
+
+func (h statHost) HasACL(p string) (bool, error) { return h.acl[p], nil }
 
 func (h statHost) Stat(p string) (FileStat, error) {
 	for i := 0; i < 8; i++ { // follow links on the whole path, as stat(2) does

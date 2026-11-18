@@ -37,6 +37,24 @@ var journalSockArgv = []string{"/usr/bin/journalctl", "-u", "ssh@*", "-u", "sshd
 
 var journalSockBinArgv = append([]string{"/bin/journalctl"}, journalSockArgv[1:]...)
 
+// journalSSHDArgv reads the ssh and sshd units' entries that sshd itself
+// wrote: _COMM sshd or sshd-session (OpenSSH 9.8+) and _UID 0. Without
+// pam_systemd a user's shell stays in ssh.service's cgroup, so the unit
+// alone does not tell sshd's lines from `logger -t sshd`'s; journald
+// fills _COMM and _UID from the sender's credentials. Different fields
+// are ANDed, values of one field ORed, and all ANDed with -u's matches.
+var journalSSHDArgv = []string{"/usr/bin/journalctl", "-u", "ssh", "-u", "sshd", "--since", SlotTime, "-o", "short-iso", "--no-pager",
+	"_COMM=sshd", "_COMM=sshd-session", "_UID=0"}
+
+var journalSSHDBinArgv = append([]string{"/bin/journalctl"}, journalSSHDArgv[1:]...)
+
+// journalSSHDSockArgv is the same for a socket-activated sshd's units
+// (ssh@*, sshd@*), which the summary reads too.
+var journalSSHDSockArgv = []string{"/usr/bin/journalctl", "-u", "ssh@*", "-u", "sshd@*", "--since", SlotTime, "-o", "short-iso", "--no-pager",
+	"_COMM=sshd", "_COMM=sshd-session", "_UID=0"}
+
+var journalSSHDSockBinArgv = append([]string{"/bin/journalctl"}, journalSSHDSockArgv[1:]...)
+
 // JournalTimeout caps the journald read (streamed, no stdout cap). A
 // journal that takes longer falls back to the text logs, marked
 // unverified. The runner allows at most the value set here at start-up.
@@ -47,6 +65,60 @@ func init() {
 	registerBig(journalBinArgv, 0, JournalTimeout)
 	registerBig(journalSockArgv, 0, JournalTimeout)
 	registerBig(journalSockBinArgv, 0, JournalTimeout)
+	registerBig(journalSSHDArgv, 0, JournalTimeout)
+	registerBig(journalSSHDBinArgv, 0, JournalTimeout)
+	registerBig(journalSSHDSockArgv, 0, JournalTimeout)
+	registerBig(journalSSHDSockBinArgv, 0, JournalTimeout)
+}
+
+// SSHDJournalLines is ip's SSH login events (failed, invalid user,
+// accepted, as the summary parses them, the client address being ip)
+// among the lines sshd itself wrote to the journal from since to until
+// (the window the summary read)
+// (journalSSHDArgv): a block resting on SSH logins believes journald only
+// as far as sshd's own lines go (a user's logger lines in sshd's cgroup
+// are not, nor a line of sshd's that only names ip, as a user name). An
+// error: journald could not tell.
+func SSHDJournalLines(ctx context.Context, src Source, since, until time.Time, ip string) (SSHSource, error) {
+	ctx, cancel := context.WithTimeout(ctx, JournalTimeout)
+	defer cancel()
+	var out SSHSource
+	c := NewSSHLogins(since, until, ip)
+	// The units the summary reads: ssh and sshd, and a socket-activated
+	// sshd's per-connection ones.
+	for k, pair := range [][2][]string{{journalSSHDArgv, journalSSHDBinArgv}, {journalSSHDSockArgv, journalSSHDSockBinArgv}} {
+		var err error
+		for _, base := range pair {
+			argv := append([]string(nil), base...)
+			argv[6] = since.UTC().Format("2006-01-02 15:04:05") + " UTC"
+			var res CmdResult
+			res, err = RunLinesUnmasked(ctx, src, argv, func(l string) {
+				if ts, ok := ParseLogTime(l, until); ok && ts.After(until) {
+					return // after the summary's read: not what it counted
+				}
+				c.Add(l)
+			})
+			if err == nil && res.ExitCode != 0 {
+				err = &exitError{res.ExitCode}
+			}
+			if !errors.Is(err, fs.ErrNotExist) {
+				break
+			}
+		}
+		if err != nil && k == 0 {
+			return out, err
+		}
+		// The socket units' read failing (journalctl exits non-zero, "No
+		// data available", on a host whose journal never had them) is no
+		// lines from them: fewer events counted can only refuse more.
+	}
+	list, _ := MaxLogins(c)
+	for _, s := range list {
+		if CanonicalIP(s.IP) == CanonicalIP(ip) {
+			out = s
+		}
+	}
+	return out, nil
 }
 
 // reSSHDLine is a line sshd wrote: the only lines that can count.

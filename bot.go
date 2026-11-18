@@ -567,6 +567,10 @@ func (b *bot) handle(ctx context.Context, u tgUpdate) {
 		b.send(ctx, m.Chat.ID, "📊 "+r, nil)
 		return
 	}
+	if text == "/attacks" {
+		b.send(ctx, m.Chat.ID, attacksBrief(b.cfg, time.Now(), b.zh()), nil)
+		return
+	}
 	if text == "/new" {
 		b.mu.Lock()
 		b.history = nil

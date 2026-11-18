@@ -34,6 +34,13 @@ type Finding struct {
 	CWE      string `json:"cwe"`
 	Fix      string `json:"fix"`
 	Tier     string `json:"tier"` // the rule's tier: "info" or "alert"
+	// Routes: the routes registering the handler the sink sits in, when the
+	// file says so for certain (routerefs.go); absent otherwise.
+	Routes []RouteRef `json:"routes,omitempty"`
+	// RoutesTruncated: the file registers more handlers, or this one more
+	// times, than are kept: Routes may lack some, or be absent though one
+	// reaches the sink.
+	RoutesTruncated bool `json:"routes_truncated,omitempty"`
 }
 
 // Engine holds compiled rules. It is safe for concurrent use.
@@ -480,14 +487,14 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 			sc := newSummaries(ff)
 			if proj != nil {
 				if sc == nil {
-					sc = &summaries{ff: ff, funcs: ff.byKey, done: map[string]*summary{}, busy: map[string]bool{}, rel: map[string]uint8{}, retUnk: map[string]uint8{}, keyed: map[string]*summary{}}
+					sc = &summaries{ff: ff, funcs: ff.byKey, done: map[string]*summary{}, busy: map[string]bool{}, rel: map[string]uint8{}, srcRel: map[string]uint8{}, retUnk: map[string]uint8{}, keyed: map[string]*summary{}}
 				}
 				// Summaries are worked out the same whoever asks (own): those the
 				// project has of this file already (as another file's callee, or a
 				// cycle settled through it) are the ones this scan would work out.
-				key := r.rule.ID + "\x00" + path
+				key := ruleFile{r.rule.ID, path}
 				if old := proj.sums[key]; old != nil {
-					sc.done, sc.rel, sc.direct, sc.cross, sc.keyed = old.done, old.rel, old.direct, old.cross, old.keyed
+					sc.done, sc.rel, sc.direct, sc.cross, sc.keyed, sc.srcMay, sc.srcRel = old.done, old.rel, old.direct, old.cross, old.keyed, old.srcMay, old.srcRel
 				} else if kept := proj.kept[key]; kept != nil {
 					sc.done = kept
 					delete(proj.kept, key)
@@ -563,6 +570,7 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 			add(r, lines)
 		}
 	}
+	e.annotateRoutes(out, base, path, toks, tree, ff) // which routes reach each sink's handler; no finding changes
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Path != out[j].Path {
 			return out[i].Path < out[j].Path

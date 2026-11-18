@@ -1,0 +1,26 @@
+# Signatures of a whole payload class: they apply to the code sinks of
+# that class (detect, P3 segment 3), whatever the route. Written for shentu.
+
+[[signature]]
+id = "generic-sqli-union-select"
+title = "SQL injection: UNION SELECT in a parameter"
+class = "sqli"
+cwe = ["CWE-89"]
+source = "shentu"
+license = "Apache-2.0"
+
+[[signature.match]]
+part = "any_param"
+regex = '(?i)\bunion\b[\s/*()]+(?:all\b[\s/*()]+)?select\b'
+
+[[signature]]
+id = "generic-path-traversal-dotdot"
+title = "Path traversal: ../ reaching out of the web root"
+class = "path"
+cwe = ["CWE-22"]
+source = "shentu"
+license = "Apache-2.0"
+
+[[signature.match]]
+part = "any_param"
+regex = '(?:\.\./){2,}|(?:\.\.\\){2,}|/etc/passwd|\bwin\.ini\b'
