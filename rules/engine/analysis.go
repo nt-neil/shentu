@@ -179,6 +179,10 @@ type analysis struct {
 	colls  map[string]bool      // names the file binds once, at the top, to a collection (urlguard.go collectionName), built on use
 	fregs  *fnRegions           // the file's function literals (urlcapture.go), built on use
 	ifacts map[string]bool      // JavaScript: "m:" modules the file imports, "w:" names it uses (imports.go), built on first use or kept by the project
+
+	// reqs: JavaScript names holding a route handler's request or a part of
+	// it, and the paths they stand for (reqalias.go), per function.
+	reqs map[string][]string
 }
 
 // loc is a place a sink is reached: a line of a file.
@@ -436,7 +440,9 @@ func (a *analysis) function(f *fn, st state) {
 		a.types = maps.Clone(types)
 	}
 	a.paramTypes(f)
-	defer func() { a.cls, a.parent, a.fname, a.types = cls, parent, fname, types }()
+	reqs := a.reqs
+	a.reqs = a.fnReqs(f, reqs)
+	defer func() { a.cls, a.parent, a.fname, a.types, a.reqs = cls, parent, fname, types, reqs }()
 	a.depth++
 	a.nested++
 	a.block(f.body, x)
@@ -644,6 +650,7 @@ func (a *analysis) assign(st state, t []Token) (val, bool) {
 			a.setType(tg[0].Text, cls)
 		}
 	}
+	a.reqAssign(st, lhs, rhs, t[k].Text)
 	return v, sep
 }
 
@@ -814,8 +821,8 @@ func (a *analysis) pathKey(t []Token) (key, container string, ok bool) {
 // req.headers['host']). Another object's headers keep their case.
 func (a *analysis) idxOf(key string, t []Token) string {
 	ik := idxKey(t)
-	if a.js && requestHeaders[strings.ReplaceAll(key, sepCh, "")] {
-		ik = strings.ToLower(ik)
+	if a.js && (requestHeaders[strings.ReplaceAll(key, sepCh, "")] || slices.ContainsFunc(a.reqCanon(key), func(k string) bool { return requestHeaders[k] })) {
+		ik = strings.ToLower(ik) // also a handler's request by another name: r.headers['Host'] (reqalias.go)
 	}
 	return ik
 }
@@ -1488,6 +1495,21 @@ func (a *analysis) postfix(st state, t []Token, start, baseEnd int, v val, whole
 // with source_args is input only when its argument says so (Joomla's
 // ->get($k, $d, 'raw')); written another way, or left out, it is not.
 func (a *analysis) srcMatch(s *pat, t []Token, i int) (int, bool) {
+	end, ok := a.srcMatchAt(s, t, i)
+	if ok || a.reqs == nil || len(s.toks) == 0 || !s.toks[0].word("req") && !s.toks[0].word("ctx") {
+		return end, ok
+	}
+	// a source written for req or ctx, at a name holding a handler's request (reqalias.go)
+	vs, add := a.reqVariants(t, i)
+	for _, v := range vs {
+		if end, ok := a.srcMatchAt(s, v, i); ok && end-add > i {
+			return end - add, true
+		}
+	}
+	return 0, false
+}
+
+func (a *analysis) srcMatchAt(s *pat, t []Token, i int) (int, bool) {
 	if s.text != nil {
 		return 0, false
 	}

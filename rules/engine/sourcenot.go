@@ -131,9 +131,17 @@ func (a *analysis) sourceNot(st state, tg, rhs []Token, op string) {
 	}
 	// NestJS's @Req() r is a route handler's request whatever it is called:
 	// the TypeScript lowering writes r.headers = @Req() (lex_typescript.go), so
-	// route_not leaves those members out under it and route_only takes them.
-	if nestReq(rhs) {
+	// route_not leaves those members out under it and route_only takes them,
+	// and the sources written for req read r too (reqalias.go). Only in a
+	// NestJS application: another library's @Req() is not its request.
+	if nestReq(rhs) && a.nestFile() {
 		tn := lastName(tg)
+		if a.reqs != nil && len(tg) > 0 && tg[0].Kind == Ident {
+			a.reqs[tg[0].Text] = []string{"req"}
+		}
+		if (tn == "get" || tn == "header") && a.readsByArg("req", tn) {
+			delete(st, key) // r.get('host'): the rule's req.get( source decides by the name, not what was written to r.get
+		}
 		for _, rn := range a.r.rule.RouteNot {
 			if mem, n, _ := strings.Cut(rn, "."); strings.EqualFold(tn, mem) {
 				st[key+sepCh+"."+n], st[key+sepCh+"["+n+"]"] = entry{}, entry{}
@@ -147,6 +155,17 @@ func (a *analysis) sourceNot(st state, tg, rhs []Token, op string) {
 		}
 	}
 	a.sourceOnly(st, key, rhs)
+}
+
+// readsByArg reports whether the rule takes root.member( as a source by its
+// argument (source_args: req.get('host') for some names only).
+func (a *analysis) readsByArg(root, member string) bool {
+	for _, s := range a.r.sources {
+		if s.srcArg > 0 && len(s.toks) == 4 && s.toks[0].word(root) && s.toks[1].op(".") && s.toks[2].word(member) && s.toks[3].op("(") {
+			return true
+		}
+	}
+	return false
 }
 
 // nestReq reports whether t is NestJS's @Req() or @Request(), whole.
