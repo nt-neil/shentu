@@ -173,11 +173,20 @@ func (a *agent) chat(ctx context.Context, msgs []message, defs []toolDef) (messa
 }
 
 // estimateTokens is a rough, high count of the input tokens of a call: about
-// three bytes of JSON per token.
+// three bytes of ASCII JSON per token, and a token for every other byte, the
+// worst a tokenizer does with text it splits into bytes.
 func estimateTokens(msgs []message, defs []toolDef) int {
 	b, _ := json.Marshal(msgs)
 	d, _ := json.Marshal(defs)
-	return (len(b) + len(d)) / 3
+	ascii, other := 0, 0
+	for _, c := range append(b, d...) {
+		if c < 0x80 {
+			ascii++
+		} else {
+			other++
+		}
+	}
+	return ascii/3 + other
 }
 
 // logLLM records one model call with its token use, so cost can be tracked.
@@ -257,8 +266,12 @@ func (a *agent) callTool(ctx context.Context, name, rawArgs string) string {
 	}
 	b, _ := json.Marshal(map[string]any{"untrusted": true, "data": out})
 	text := mask(string(b))
-	if len(text) > 24000 {
-		text = tools.Cut(text, 24000) + `(truncated; narrow the query)`
+	limit := 24000
+	if a.allow != nil { // a sub-agent: smaller results keep each step's input small
+		limit = subToolOutput
+	}
+	if len(text) > limit {
+		text = tools.Cut(text, limit) + `(truncated; narrow the query)`
 	}
 	entry.OK = true
 	a.log.write(entry)
