@@ -94,7 +94,16 @@ func TestServerAccountApart(t *testing.T) {
 		}, ReasonWebUserWritable},
 		{"a template with no instance listed", 1, true, func(h statHost) {
 			systemdDirs(h)
-			h.files["/usr/lib/systemd/system/marker@.service"] = "[Service]\nUser=%i\nExecStart=/usr/local/bin/marker-tool\n"
+			h.files["/usr/lib/systemd/system/marker@.service"] = "[Service]\nUser=%I\nExecStart=/usr/local/bin/marker-tool\n"
+		}, ReasonWebUserWritable},
+		{"a user manager started for nginx's uid", 1, true, func(h statHost) {
+			systemdDirs(h)
+			h.files["/usr/lib/systemd/system/user@.service"] = "[Service]\nUser=%i\nExecStart=/usr/lib/systemd/systemd --user\n"
+			h.links[wants+"/user@999.service"] = "/usr/lib/systemd/system/user@.service"
+		}, ReasonWebUserWritable},
+		{"systemd's user manager", 1, true, func(h statHost) {
+			systemdDirs(h)
+			h.files["/usr/lib/systemd/system/user@.service"] = "[Service]\nUser=%i\nExecStart=/usr/lib/systemd/systemd --user\n"
 		}, ""},
 		{"a unit's account by another specifier", 1, true, func(h statHost) {
 			systemdDirs(h)

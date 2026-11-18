@@ -689,10 +689,11 @@ func (l *logLoader) unitUsers(c LinuxCollector, src Source) {
 // runAsAccounts gathers who programs run as beside the application
 // servers: the User=, Group= and SupplementaryGroups= of every service
 // unit in every systemd search path, enabled or not (a timer, socket,
-// path or dependency may start any), a template's for each instance any
-// dependency directory names; the users systemd keeps a manager for
-// (linger); and the users of the crontabs. None of them is known to run
-// only what root wrote, so a server's account among them is not apart.
+// path or dependency may start any; a template whose account its
+// instance names leaves no server apart, but for systemd's own user@);
+// the users systemd keeps a manager for (linger); and the users of the
+// crontabs. None of them is known to run only what root wrote, so a
+// server's account among them is not apart.
 func (l *logLoader) runAsAccounts() {
 	gone := func(err error) bool { return errors.Is(err, fs.ErrNotExist) || errors.Is(err, ErrNotRecorded) }
 	conf := WebConf{Root: "/", Owner: 0} // as AppUnits reads them
@@ -755,18 +756,18 @@ func (l *logLoader) runAsAccounts() {
 				}
 			}
 		}
-		_, inst, isTmpl := strings.Cut(strings.TrimSuffix(n, ".service"), "@")
 		switch {
 		case !strings.Contains(user, "%"):
 			if user != "" {
 				l.runAs = append(l.runAs, user)
 			}
-		case isTmpl && inst == "" && (user == "%i" || user == "%I"):
-			// the template itself: its instances, listed, say who
-		case isTmpl && inst != "" && (user == "%i" || user == "%I"):
-			l.runAs = append(l.runAs, inst)
+		case n == "user@.service" && user == "%i":
+			// systemd's user manager, one per user logged in or kept
+			// (linger, read below): not started for an account by others
+		case strings.HasPrefix(n, "user@") && user == "%i": // one a dependency starts: for that uid
+			l.runAs = append(l.runAs, strings.TrimSuffix(strings.TrimPrefix(n, "user@"), ".service"))
 		default:
-			l.runAsLost = true // another specifier: the account is not told
+			l.runAsLost = true // the instance, or another specifier, names the account
 		}
 	}
 	linger, err := l.src.ReadDir("/var/lib/systemd/linger")
