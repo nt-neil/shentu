@@ -1581,7 +1581,19 @@ func (l *logLoader) nginx() {
 			}
 		case ngxAppDirective.MatchString(d.name) && !contains(l.ngxApp, d.name):
 			l.ngxApp = append(l.ngxApp, d.name)
-		case d.name == "access_log" || d.name == "error_log": // anywhere: http, server, location, stream, mail
+		}
+	})
+	// Every access_log and error_log sent to syslog, anywhere, by tag and
+	// by its top-level context: http's log_format names are not stream's.
+	for _, top := range main {
+		ctx, block := "main", []*ngxDir{top}
+		if top.hasBlock {
+			ctx, block = top.name, top.block
+		}
+		ngxWalk(block, 1, func(d *ngxDir) {
+			if d.name != "access_log" && d.name != "error_log" {
+				return
+			}
 			for _, a := range d.args {
 				params, ok := strings.CutPrefix(a, "syslog:")
 				if !ok {
@@ -1599,10 +1611,10 @@ func (l *logLoader) nginx() {
 				if l.ngxSyslog[tag] == nil {
 					l.ngxSyslog[tag] = map[string]bool{}
 				}
-				l.ngxSyslog[tag][d.name+"\x00"+strings.Join(d.args, "\x00")] = true
+				l.ngxSyslog[tag][ctx+"\x00"+d.name+"\x00"+strings.Join(d.args, "\x00")] = true
 			}
-		}
-	})
+		})
+	}
 	formats := map[string]ngxFormat{"combined": {spec: ngxCombined}}
 	var mainErr []*ngxDir
 	var https []*ngxDir
