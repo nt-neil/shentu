@@ -14,9 +14,12 @@ description: Investigate SSH brute-force attempts and decide whether to block th
    reason "SSH brute force: N failed attempts". The operator will confirm. Never propose blocking
    an IP that has successful logins without saying it might be a legitimate user.
    block_ip itself refuses an IP whose SSH logins are only in text logs or could not be read in
-   full; that check covers SSH login evidence only. A block based on any other log (log_search
-   over syslog, nginx or an application log) is not checked by it: say where the evidence came
-   from and that anyone on the host may have written it, so the operator judges it.
+   full; that check covers SSH login evidence only. On the server (shentu chat), a block based on
+   any other log (log_search over syslog, nginx or an application log) is not checked by it: say
+   where the evidence came from and that anyone on the host may have written it, so the operator
+   judges it. From Telegram only an IP with verified evidence can be blocked (a verified L2 or L3
+   attack group listing it, or SSH logins sshd itself logged); any other IP is for the server,
+   with shentu chat.
    On a host whose journald has no sshd entries (text logs only), block_ip refuses every IP
    with SSH login events: such a block cannot be made from Telegram, only on the server with
    shentu chat and override_unverified, after the operator has checked the logs.
