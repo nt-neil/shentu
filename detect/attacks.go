@@ -189,7 +189,7 @@ func LoadAttacks(dir string, now time.Time) (*Attacks, error) {
 		return a, nil
 	}
 	dropped := 0
-	olds, oldOverflow := map[string]*Group{}, map[string]*Group{}
+	olds, oldOverflow := map[string][]*Group{}, map[string][]*Group{}
 	for k, g := range got.Groups {
 		if g == nil || g.Key != k || g.Count < 0 || g.Since < 0 {
 			dropped++
@@ -234,7 +234,9 @@ func LoadAttacks(dir string, now time.Time) (*Attacks, error) {
 func oldSinkKey(e string) string {
 	if rest, ok := strings.CutPrefix(e, "code:"); ok {
 		if _, p, ok := strings.Cut(rest, ":"); ok && strings.Contains(p, ":") {
-			return "code@" + p
+			if n, err := strconv.Atoi(p[strings.LastIndex(p, ":")+1:]); err == nil && n > 0 { // a line (#97 review 3, S-1)
+				return "code@" + p
+			}
 		}
 	}
 	return e
@@ -245,7 +247,7 @@ func oldSinkKey(e string) string {
 // prefix, level and verified flag. An old Unknown group has no File: its
 // entry gives it. A group whose entry, File and Line do not name the same
 // sink is kept as it is.
-func loadGroup(gs, olds map[string]*Group, k string, g *Group) {
+func loadGroup(gs map[string]*Group, olds map[string][]*Group, k string, g *Group) {
 	if s := oldSinkKey(g.Entry); s != g.Entry {
 		file, line := g.File, g.Line
 		if file == "" {
@@ -257,27 +259,14 @@ func loadGroup(gs, olds map[string]*Group, k string, g *Group) {
 			}
 		}
 		for _, v := range []bool{true, false} {
-			if sinkKey(g.Entry, file, line) == s && k == groupKey(g.Prefix, g.Entry, g.Level, v) {
+			if line > 0 && sinkKey(g.Entry, file, line) == s && k == groupKey(g.Prefix, g.Entry, g.Level, v) {
 				k = groupKey(g.Prefix, s, g.Level, v)
 				g.File, g.Line = file, line
 				if rule, _, ok := strings.Cut(strings.TrimPrefix(g.Entry, "code:"), ":"); ok && len(g.Rules) == 0 {
 					g.Rules = []string{rule}
 				}
 				g.Key = k
-				if d := olds[k]; d != nil {
-					// One group per rule, the same requests: not added up.
-					c, s, m := max(d.Count, g.Count), max(d.Since, g.Since), max(d.Merged, g.Merged)
-					r := append(slices.Clone(d.Recent), g.Recent...)
-					slices.SortFunc(r, func(x, y time.Time) int { return x.Compare(y) })
-					r = slices.CompactFunc(r, func(x, y time.Time) bool { return x.Equal(y) })
-					if len(r) > UnknownNotifyAt {
-						r = r[len(r)-UnknownNotifyAt:]
-					}
-					mergeLoaded(d, g)
-					d.Count, d.Since, d.Merged, d.Recent = c, s, m, r
-				} else {
-					olds[k] = g
-				}
+				olds[k] = append(olds[k], g)
 				return
 			}
 		}
@@ -285,10 +274,12 @@ func loadGroup(gs, olds map[string]*Group, k string, g *Group) {
 	gs[k] = g
 }
 
-// addOld adds the old groups to gs: into a group keyed by the sink (other
-// requests, saved after the upgrade) they are added up.
-func addOld(gs, olds map[string]*Group) {
-	for k, g := range olds {
+// addOld adds the old groups to gs, a sink's first merged (oldOfSink); into
+// a group keyed by the sink (other requests, saved after the upgrade) they
+// are added up.
+func addOld(gs map[string]*Group, olds map[string][]*Group) {
+	for k, og := range olds {
+		g := oldOfSink(og)
 		d := gs[k]
 		if d == nil {
 			gs[k] = g
@@ -298,6 +289,41 @@ func addOld(gs, olds map[string]*Group) {
 		mergeLoaded(d, g)
 		d.Merged = n
 	}
+}
+
+// oldOfSink merges one sink's old groups, one per rule for the same
+// requests, in the order of their entries (whatever the map's), without
+// adding: Count, Since and Merged are the largest, and a time is in Recent
+// as often as one group holds it.
+func oldOfSink(gs []*Group) *Group {
+	slices.SortFunc(gs, func(x, y *Group) int { return strings.Compare(x.Entry, y.Entry) })
+	d := gs[0]
+	for _, g := range gs[1:] {
+		c, s, m := max(d.Count, g.Count), max(d.Since, g.Since), max(d.Merged, g.Merged)
+		n := map[time.Time]int{}
+		for _, r := range [][]time.Time{d.Recent, g.Recent} {
+			per := map[time.Time]int{}
+			for _, x := range r {
+				per[x.UTC()]++
+			}
+			for x, c := range per {
+				n[x] = max(n[x], c)
+			}
+		}
+		var rec []time.Time
+		for x, c := range n {
+			for range c {
+				rec = append(rec, x)
+			}
+		}
+		slices.SortFunc(rec, func(x, y time.Time) int { return x.Compare(y) })
+		if len(rec) > UnknownNotifyAt {
+			rec = rec[len(rec)-UnknownNotifyAt:]
+		}
+		mergeLoaded(d, g)
+		d.Count, d.Since, d.Merged, d.Recent = c, s, m, rec
+	}
+	return d
 }
 
 // mergeLoaded merges the loaded group g into d (merge), keeping the later

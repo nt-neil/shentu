@@ -3,6 +3,10 @@
 CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本與日期必須一致，
 每個版本都要有內容（`go test ./cmd/sitegen` 會檢查）。
 
+## v0.4.1 (unreleased)
+
+- 主機盤點會對開了 HTTP/2 的 nginx 1.9.5～1.31.8 提出警告（`listen ... http2`，或對 server 生效的 `http2 on`）：CVE-2026-123007 和 CVE-2026-123633 是 HTTP/2 的記憶體錯誤，用戶端可以讓 worker 當掉。請更新到 1.31.9 或 1.30.7，或 distro 修補後的套件；更新前先改回只用 HTTP/1.1 就沒有這個問題。這只是建議，不會改設定。套件的 changelog 已列出這兩個 CVE（distro 已 backport 修補）時不警告；distro 的公告進了 OSV 之後，套件掃描就會報，這項檢查補的是 nginx.org 的套件和自行建置的 nginx，套件掃描看不到這兩類。
+
 ## v0.4.0 — 2026-11-18
 
 - 攻擊偵測（Linux）：每一輪巡檢都會讀網站伺服器的紀錄，挑出打向這台主機真實存在的漏洞的請求。它只告警，不會自己封鎖。看不到什麼、可能漏掉什麼，列在 `docs/attack-detection-limits.zh-TW.md`。

@@ -236,7 +236,11 @@ func (p *PassRound) Run(ctx context.Context) {
 					Upgrade(&at, rec.Method, ev)
 					p.attacks.Add(at, in.Now)
 				}
-				if len(mr.Hits) == 0 && l.Verified && rec.Status >= 200 && rec.Status < 300 {
+				// The size baseline leaves out only a request a hit took to
+				// L2: an unanchored or noise hit is an ordinary response
+				// of the route (v0.4.1, n36).
+				l2 := slices.ContainsFunc(g.Candidates, func(c Candidate) bool { return c.Level == LevelPayload })
+				if !l2 && l.Verified && rec.Status >= 200 && rec.Status < 300 {
 					for _, c := range g.Candidates {
 						p.baselines.Observe(RouteKey(rec.Method, c.Route, ""), rec.Client, rec.Bytes, rec.Time)
 					}
