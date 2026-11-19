@@ -98,11 +98,11 @@ func parseACL(b []byte) ([]ACLEntry, error) {
 
 // aclWriters names the users and groups an ACL's named entries let write
 // (the mask applied), "" when none or when the ACL cannot be read (the
-// caller's mode check stands then).
-func aclWriters(src Source, p string, web WebAccounts) string {
+// caller's mode check stands then); webAccount: one is a web account's.
+func aclWriters(src Source, p string, web WebAccounts) (names string, webAccount bool) {
 	es, err := ACLEntries(src, p)
 	if err != nil {
-		return ""
+		return "", false
 	}
 	mask := uint16(7)
 	for _, e := range es {
@@ -110,7 +110,7 @@ func aclWriters(src Source, p string, web WebAccounts) string {
 			mask = e.Perm
 		}
 	}
-	var names []string
+	var ns []string
 	for _, e := range es {
 		if e.Perm&mask&2 == 0 {
 			continue
@@ -119,21 +119,22 @@ func aclWriters(src Source, p string, web WebAccounts) string {
 		switch e.Tag {
 		case aclUser:
 			if n, ok := web.UIDs[id]; ok {
-				names = append(names, fmt.Sprintf("%s (uid %d)", n, id))
+				ns, webAccount = append(ns, fmt.Sprintf("%s (uid %d)", n, id)), true
 			} else {
-				names = append(names, fmt.Sprintf("uid %d", id))
+				ns = append(ns, fmt.Sprintf("uid %d", id))
 			}
 		case aclGroup:
 			n, ok := web.GIDs[id]
+			webAccount = webAccount || ok
 			if !ok {
 				n, ok = web.LogGIDs[id]
 			}
 			if ok {
-				names = append(names, fmt.Sprintf("group %s (gid %d)", n, id))
+				ns = append(ns, fmt.Sprintf("group %s (gid %d)", n, id))
 			} else {
-				names = append(names, fmt.Sprintf("gid %d", id))
+				ns = append(ns, fmt.Sprintf("gid %d", id))
 			}
 		}
 	}
-	return strings.Join(names, ", ")
+	return strings.Join(ns, ", "), webAccount
 }

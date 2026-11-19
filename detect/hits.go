@@ -300,6 +300,12 @@ func (j *Judge) Judge(m MatchResult) Judgment {
 	// the sink's payload class.
 	// reached: the entry, and the values its routes' placeholders took.
 	reached := map[int][]string{}
+	// The path with its ;parameters kept: a router that keeps them hands
+	// the placeholder "42;x" where cleanPath read "42" (v0.4.1, n34).
+	var kept string
+	if strings.Contains(m.Request.RawPath, ";") {
+		kept = paramPath(m.Request.RawPath)
+	}
 	for _, r := range j.routes {
 		// The routed path, and the path with its dot segments as sent: a
 		// router that does not resolve them (or a traversal it lets
@@ -321,6 +327,11 @@ func (j *Judge) Judge(m MatchResult) Judgment {
 			c.Route = &ref
 		}
 		reached[r.entry] = append(reached[r.entry], sm[1:]...)
+		if kept != "" && kept != q.Path {
+			if km := r.re.FindStringSubmatch(kept); km != nil {
+				reached[r.entry] = append(reached[r.entry], km[1:]...)
+			}
+		}
 	}
 	// A path cut may join two far parts into a route (the cut is between
 	// them): a route reached then is L1 at most, its hits unanchored.
@@ -332,20 +343,25 @@ func (j *Judge) Judge(m MatchResult) Judgment {
 			continue
 		}
 		if len(s.CVEs) == 0 && len(s.Advisories) == 0 && len(s.AppliesTo) == 0 { // a class signature
+			// unanchored: a reached route of its class did not take it.
+			unanchored := j.classes[h.Class]
 			for i, vals := range reached {
+				if j.surface.Entries[i].Payload != h.Class {
+					continue
+				}
 				// A hit in a path segment counts only when the route's
 				// placeholder took that segment: a mount prefix or the
 				// route's own words reach no handler (review 2 of #87, N-1).
-				taken := len(h.Segments) == 0 || placeholderTook(vals, h.Segments)
-				if j.surface.Entries[i].Payload == h.Class && !pathCut && taken {
+				if !pathCut && (len(h.Segments) == 0 || placeholderTook(vals, h.Segments)) {
 					add(i, LevelPayload, &h)
 					used[hi] = true
-				}
-				if j.surface.Entries[i].Payload == h.Class && (pathCut || !taken) && !used[hi] {
-					out.Unanchored, used[hi] = append(out.Unanchored, h), true
+				} else {
+					unanchored = true
 				}
 			}
-			if !used[hi] && j.classes[h.Class] {
+			// Only once every route is judged: one taken at L2 is not
+			// unanchored, whichever the map gave first (v0.4.1, n35).
+			if !used[hi] && unanchored {
 				out.Unanchored, used[hi] = append(out.Unanchored, h), true
 			}
 			continue
