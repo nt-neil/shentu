@@ -15,13 +15,62 @@ import (
 // supervisorConfs are supervisord's own files (RHEL's, Debian's) and the
 // directories packages and operators put programs in.
 var (
-	supervisorConfs = []string{"/etc/supervisord.conf", "/etc/supervisor/supervisord.conf"}
+	supervisorConfs = []string{"/etc/supervisord.conf", "/etc/supervisor/supervisord.conf", "/usr/local/etc/supervisord.conf", "/usr/local/supervisord.conf"}
 	supervisorDirs  = []string{"/etc/supervisord.d", "/etc/supervisor/conf.d"}
 )
 
 // maxRunAsFiles bounds the supervisord and sudoers files read; more
 // leaves no server apart.
 const maxRunAsFiles = 256
+
+// supervisordRunning: the configuration files running supervisords were
+// given by -c (or --configuration); lost, /proc could not all be read.
+func supervisordRunning(src Source) (confs []string, lost bool) {
+	names, err := src.ReadDir("/proc")
+	if err != nil {
+		return nil, true
+	}
+	for _, n := range names {
+		if !numeric(n) {
+			continue
+		}
+		b, err := src.ReadFile("/proc/" + n + "/cmdline")
+		if err != nil {
+			lost = lost || !gone(err)
+			continue
+		}
+		argv := strings.Split(strings.TrimRight(string(b), "\x00"), "\x00")
+		run := false
+		for i, a := range argv {
+			if i < 2 && strings.HasPrefix(path.Base(a), "supervisord") {
+				run = true // supervisord, or python running it
+			}
+		}
+		if !run {
+			continue
+		}
+		for i, a := range argv {
+			var c string
+			switch {
+			case (a == "-c" || a == "--configuration") && i+1 < len(argv):
+				c = argv[i+1]
+			case strings.HasPrefix(a, "--configuration="):
+				c = strings.TrimPrefix(a, "--configuration=")
+			case strings.HasPrefix(a, "-c") && len(a) > 2:
+				c = a[2:]
+			}
+			if c == "" {
+				continue
+			}
+			if !path.IsAbs(c) {
+				lost = true // relative to its working directory
+				continue
+			}
+			confs = append(confs, path.Clean(c))
+		}
+	}
+	return confs, lost
+}
 
 func gone(err error) bool { return errors.Is(err, fs.ErrNotExist) || errors.Is(err, ErrNotRecorded) }
 
@@ -38,6 +87,11 @@ func (l *logLoader) supervisorAccounts() {
 		}
 	}
 	for _, p := range supervisorConfs {
+		add(p)
+	}
+	confs, lost := supervisordRunning(l.src) // the -c a running supervisord was given
+	l.runAsLost = l.runAsLost || lost
+	for _, p := range confs {
 		add(p)
 	}
 	for _, d := range supervisorDirs {
@@ -61,17 +115,29 @@ func (l *logLoader) supervisorAccounts() {
 			l.runAsLost = l.runAsLost || !gone(err)
 			continue
 		}
-		section := ""
-		for _, ln := range strings.Split(string(b), "\n") {
-			ln = strings.TrimSpace(ln)
+		section, last := "", "" // last: the key an indented line would continue
+		for _, raw := range strings.Split(string(b), "\n") {
+			ln := strings.TrimSpace(raw)
+			if ln == "" || strings.HasPrefix(ln, ";") || strings.HasPrefix(ln, "#") {
+				continue
+			}
+			if raw[0] == ' ' || raw[0] == '\t' { // configparser: the value goes on
+				if last == "user" || last == "files" {
+					l.runAsLost = true
+				}
+				continue
+			}
 			if strings.HasPrefix(ln, "[") {
-				section = strings.ToLower(strings.Trim(ln, "[] \t"))
+				section, last = strings.ToLower(strings.Trim(ln, "[] \t")), ""
 				continue
 			}
-			k, v, ok := strings.Cut(ln, "=")
-			if !ok || strings.HasPrefix(ln, ";") || strings.HasPrefix(ln, "#") {
+			i := strings.IndexAny(ln, "=:") // configparser's delimiters, the first one
+			if i < 0 {
+				l.runAsLost = true // supervisord would not start; not told what it means
 				continue
 			}
+			k, v := ln[:i], ln[i+1:]
+			last = strings.ToLower(strings.TrimSpace(k))
 			if i := strings.Index(v, " ;"); i >= 0 { // an inline comment
 				v = v[:i]
 			}

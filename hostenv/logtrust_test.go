@@ -175,6 +175,19 @@ func TestServerAccountApart(t *testing.T) {
 		{"supervisord program's user from the environment", 1, true, func(h statHost) {
 			h.files["/etc/supervisord.d/marker.ini"] = "[program:marker]\ncommand=/usr/local/bin/marker-tool\nuser=%(ENV_MARKER)s\n"
 		}, ReasonWebUserWritable},
+		{"supervisord user: with a colon", 1, true, func(h statHost) {
+			h.files["/etc/supervisord.d/marker.ini"] = "[program:marker]\ncommand: /usr/local/bin/marker-tool\nuser: nginx\n"
+		}, ReasonWebUserWritable},
+		{"supervisord user on a continuation line", 1, true, func(h statHost) {
+			h.files["/etc/supervisord.d/marker.ini"] = "[program:marker]\ncommand=/usr/local/bin/marker-tool\nuser =\n  nginx\n"
+		}, ReasonWebUserWritable},
+		{"a running supervisord's own configuration", 1, true, func(h statHost) {
+			h.files["/proc/4400/cmdline"] = "/usr/bin/python3\x00/usr/local/bin/supervisord\x00-c\x00/srv/marker/sup.conf\x00"
+			h.files["/srv/marker/sup.conf"] = "[program:marker]\ncommand=/usr/local/bin/marker-tool\nuser=nginx\n"
+		}, ReasonWebUserWritable},
+		{"a running supervisord's configuration by a relative path", 1, true, func(h statHost) {
+			h.files["/proc/4400/cmdline"] = "/usr/local/bin/supervisord\x00-c\x00sup.conf\x00"
+		}, ReasonWebUserWritable},
 		{"supervisord programs not listed", 1, true, func(h statHost) {
 			h.files["/etc/supervisord.d/marker.ini"] = "[program:marker]\ncommand=/usr/local/bin/marker-tool\n"
 			h.denied["/etc/supervisord.d"] = true
@@ -183,6 +196,11 @@ func TestServerAccountApart(t *testing.T) {
 			h.files["/etc/passwd"] += "marker:x:1500:1500::/home/marker:/sbin/nologin\n"
 			h.files["/etc/group"] += "marker:x:1500:\n"
 			h.files["/etc/supervisord.d/marker.ini"] = "[program:marker]\ncommand=/usr/local/bin/marker-tool\nuser=marker\n"
+		}, ""},
+		{"supervisord user: another account, with a colon", 1, true, func(h statHost) {
+			h.files["/etc/passwd"] += "marker:x:1500:1500::/home/marker:/sbin/nologin\n"
+			h.files["/etc/group"] += "marker:x:1500:\n"
+			h.files["/etc/supervisord.d/marker.ini"] = "[program:marker]\ncommand: /usr/local/bin/marker-tool\nuser: marker\n"
 		}, ""},
 		{"sudo runs commands as nginx", 1, true, func(h statHost) {
 			h.files["/etc/sudoers"] = "root ALL=(ALL) ALL\n#includedir /etc/sudoers.d\n"
