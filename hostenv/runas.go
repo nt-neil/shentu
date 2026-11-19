@@ -23,8 +23,11 @@ var (
 // leaves no server apart.
 const maxRunAsFiles = 256
 
-// supervisordRunning: the configuration files running supervisords were
-// given by -c (or --configuration); lost, /proc could not all be read.
+// supervisordRunning: the configuration files running supervisords read:
+// the -c (or --configuration) they were given, or else the files it looks
+// for beside its program and in its working directory. lost: /proc could
+// not all be read, or a supervisord's arguments or root are not told
+// (another option, another root, a relative path).
 func supervisordRunning(src Source) (confs []string, lost bool) {
 	names, err := src.ReadDir("/proc")
 	if err != nil {
@@ -34,39 +37,56 @@ func supervisordRunning(src Source) (confs []string, lost bool) {
 		if !numeric(n) {
 			continue
 		}
-		b, err := src.ReadFile("/proc/" + n + "/cmdline")
+		dir := "/proc/" + n
+		b, err := src.ReadFile(dir + "/cmdline")
 		if err != nil {
 			lost = lost || !gone(err)
 			continue
 		}
 		argv := strings.Split(strings.TrimRight(string(b), "\x00"), "\x00")
-		run := false
+		at := -1 // supervisord's own argument: its program, or python's -m module
 		for i, a := range argv {
-			if i < 2 && strings.HasPrefix(path.Base(a), "supervisord") {
-				run = true // supervisord, or python running it
+			if strings.HasPrefix(path.Base(a), "supervisord") || a == "supervisor.supervisord" {
+				at = i
+				break
 			}
 		}
-		if !run {
+		if at < 0 {
 			continue
 		}
-		for i, a := range argv {
-			var c string
-			switch {
+		if root, err := src.Readlink(dir + "/root"); err != nil || root != "/" {
+			lost = true // another root, or not read: its paths are not ours
+			continue
+		}
+		c := ""
+		for i := at + 1; i < len(argv); i++ {
+			switch a := argv[i]; {
+			case a == "-n" || a == "--nodaemon":
 			case (a == "-c" || a == "--configuration") && i+1 < len(argv):
 				c = argv[i+1]
+				i++
 			case strings.HasPrefix(a, "--configuration="):
 				c = strings.TrimPrefix(a, "--configuration=")
 			case strings.HasPrefix(a, "-c") && len(a) > 2:
 				c = a[2:]
+			default:
+				lost = true // an option not told (an abbreviation, grouped flags...)
 			}
-			if c == "" {
-				continue
-			}
-			if !path.IsAbs(c) {
-				lost = true // relative to its working directory
-				continue
-			}
+		}
+		switch {
+		case c != "" && path.IsAbs(c):
 			confs = append(confs, path.Clean(c))
+		case c != "":
+			lost = true // relative to its working directory
+		default: // supervisord's own search, beside its program and in its working directory
+			cwd, err := src.Readlink(dir + "/cwd")
+			if err != nil || !path.IsAbs(argv[at]) {
+				lost = true
+				continue
+			}
+			bin := path.Dir(argv[at])
+			confs = append(confs, path.Join(bin, "../etc/supervisord.conf"), path.Join(bin, "../supervisord.conf"),
+				path.Join(cwd, "supervisord.conf"), path.Join(cwd, "etc/supervisord.conf"))
 		}
 	}
 	return confs, lost
@@ -115,20 +135,18 @@ func (l *logLoader) supervisorAccounts() {
 			l.runAsLost = l.runAsLost || !gone(err)
 			continue
 		}
-		section, last := "", "" // last: the key an indented line would continue
+		section := ""
 		for _, raw := range strings.Split(string(b), "\n") {
 			ln := strings.TrimSpace(raw)
 			if ln == "" || strings.HasPrefix(ln, ";") || strings.HasPrefix(ln, "#") {
 				continue
 			}
-			if raw[0] == ' ' || raw[0] == '\t' { // configparser: the value goes on
-				if last == "user" || last == "files" {
-					l.runAsLost = true
-				}
+			if raw[0] == ' ' || raw[0] == '\t' { // configparser: a value going on, or more; not told
+				l.runAsLost = true
 				continue
 			}
 			if strings.HasPrefix(ln, "[") {
-				section, last = strings.ToLower(strings.Trim(ln, "[] \t")), ""
+				section = strings.ToLower(strings.Trim(ln, "[] \t"))
 				continue
 			}
 			i := strings.IndexAny(ln, "=:") // configparser's delimiters, the first one
@@ -137,7 +155,6 @@ func (l *logLoader) supervisorAccounts() {
 				continue
 			}
 			k, v := ln[:i], ln[i+1:]
-			last = strings.ToLower(strings.TrimSpace(k))
 			if i := strings.Index(v, " ;"); i >= 0 { // an inline comment
 				v = v[:i]
 			}
