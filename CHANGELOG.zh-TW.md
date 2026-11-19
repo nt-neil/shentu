@@ -6,7 +6,7 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 ## v0.4.1 (unreleased)
 
 - 主機盤點會對開了 HTTP/2 的 nginx 1.9.5～1.31.8 提出警告（`listen ... http2`，或對 server 生效的 `http2 on`）：CVE-2026-123007 和 CVE-2026-123633 是 HTTP/2 的記憶體錯誤，用戶端可以讓 worker 當掉。請更新到 1.31.9 或 1.30.7，或 distro 修補後的套件；更新前先改回只用 HTTP/1.1 就沒有這個問題。這只是建議，不會改設定。套件的 changelog 已列出這兩個 CVE（distro 已 backport 修補）時不警告；distro 的公告進了 OSV 之後，套件掃描就會報，這項檢查補的是 nginx.org 的套件和自行建置的 nginx，套件掃描看不到這兩類。
-- 伺服器自己的帳號（例如 Rocky Linux 的 `nginx`）擁有的網站紀錄，在沒有其他程式用這個帳號執行時，可以和 root 擁有的紀錄一樣當封鎖依據：沒有 PHP-FPM pool、systemd unit、crontab、supervisord 程式、sudo 或 doas 規則、登入 shell，巡檢時也沒有伺服器本身以外的程序；帳號資料只來自檔案，要查的也都讀到了。有任何一項讀不到，紀錄就仍是 `web_user_writable`。共用的預設帳號（`www-data`、`apache`、`nobody`）一律不算。其他條件見[限制文件](https://github.com/nt-neil/shentu/blob/main/docs/attack-detection-limits.zh-TW.md#哪些網站紀錄可以支撐封鎖)。
+- 伺服器自己的帳號（例如 Rocky Linux 的 `nginx`）擁有的網站紀錄，在沒有其他程式用這個帳號執行時，可以和 root 擁有的紀錄一樣當封鎖依據：沒有 PHP-FPM pool、systemd unit、crontab、supervisord 程式、sudo 或 doas 規則、登入 shell，巡檢時也沒有伺服器本身以外的程序；帳號資料只來自檔案，要查的也都讀到了。有任何一項讀不到，紀錄就仍是 `web_user_writable`。共用的預設帳號（`www-data`、`apache`、`nobody`）一律不算。其他條件見限制文件 `docs/attack-detection-limits.zh-TW.md` 裡，說明哪些網站紀錄可以當封鎖依據的那一段。
 - nginx 送到 journald 的存取紀錄（`access_log syslog:server=unix:/dev/log,...`）會被讀取，並逐行查證：只有經 syslog、由 nginx 本身的程式、以 worker 的帳號在 `nginx.service` 裡送出的那一行才算查證。其他程式送出的行會讀，但不算查證。
 - 新增 `shentu log-trust suggest`，列出讓這台主機的網站紀錄能當封鎖依據的改法：nginx 送 journald 的那一行設定、調高 journald 對 nginx 筆數上限的 drop-in、`kernel.yama.ptrace_scope = 1`，以及 PHP-FPM 改用各自帳號的 pool。它只列出建議，不會改任何設定。
 - Apache 的模組改用名單判斷：只做設定、限制存取、快取或 proxy 的模組沒有影響；會用子程序帳號執行程式的模組，以及 `RewriteMap` 的 `prg:`，要 `ptrace_scope` 1 以上；`mod_php`、`mod_cgi` 和不認得的模組都算應用程式碼。

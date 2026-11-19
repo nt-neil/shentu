@@ -430,34 +430,18 @@ var codeRe = regexp.MustCompile("`([^`]+)`")
 // never has (the code tags around it already keep it apart).
 var cjkSpace = regexp.MustCompile(` +([，。、；：！？）」』])|([（「『，。、；：！？]) +`)
 
-// linkRe is a Markdown link into the repository itself; other links stay text.
-var linkRe = regexp.MustCompile(`\[([^\]` + "`" + `]+)\]\((` + regexp.QuoteMeta(repo) + `/[^()\s"<>]+)\)`)
-
-// item renders a changelog line: text, with `code` in code tags and links
-// into the repository as links.
+// item renders a changelog line: text, with `code` in code tags.
 func item(s string) template.HTML {
 	s = cjkSpace.ReplaceAllString(s, "$1$2")
 	var b strings.Builder
 	last := 0
 	for _, m := range codeRe.FindAllStringSubmatchIndex(s, -1) {
-		b.WriteString(itemText(s[last:m[0]]))
+		b.WriteString(template.HTMLEscapeString(s[last:m[0]]))
 		b.WriteString("<code>" + template.HTMLEscapeString(s[m[2]:m[3]]) + "</code>")
 		last = m[1]
 	}
-	b.WriteString(itemText(s[last:]))
-	return template.HTML(b.String())
-}
-
-func itemText(s string) string {
-	var b strings.Builder
-	last := 0
-	for _, m := range linkRe.FindAllStringSubmatchIndex(s, -1) {
-		b.WriteString(template.HTMLEscapeString(s[last:m[0]]))
-		b.WriteString(`<a href="` + template.HTMLEscapeString(s[m[4]:m[5]]) + `">` + template.HTMLEscapeString(s[m[2]:m[3]]) + "</a>")
-		last = m[1]
-	}
 	b.WriteString(template.HTMLEscapeString(s[last:]))
-	return b.String()
+	return template.HTML(b.String())
 }
 
 // atom is the releases as an Atom feed, the released ones only.

@@ -21,7 +21,7 @@ Chinese for the zh-TW pages; keep the two in step.
   but the server's own; the account databases come only from the files, and everything checked
   was read. Anything unread leaves the log `web_user_writable`. The shared default accounts
   (`www-data`, `apache`, `nobody`) never count. The other conditions are in
-  [the limits document](https://github.com/nt-neil/shentu/blob/main/docs/attack-detection-limits.md#which-web-logs-can-back-a-block).
+  the limits document, `docs/attack-detection-limits.md`, under "Which web logs can back a block".
 - nginx's access log sent to journald (`access_log syslog:server=unix:/dev/log,...`) is read and
   verified line by line: a line counts only when it came over syslog from nginx's own program,
   running as nginx's worker account in `nginx.service`. A line another program sent is read but not
