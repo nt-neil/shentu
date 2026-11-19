@@ -54,6 +54,16 @@ v0.4.0 不會自動封鎖：`block_ip` 一定要經營運者確認。攻擊紀�
 | Rocky 9 的 nginx | `web_user_writable`：第一次輪替前是 `root 0644`，之後是 `nginx:root 0640`；預設的 `nsswitch.conf` 也查 sss，帳號資料庫不完整 | 從 `nsswitch.conf` 拿掉 `sss`，而且 PHP-FPM 以 `apache` 執行：輪替前後都是已查證 |
 | Rocky 9 的 httpd | `ptrace_scope` 為 0 時是 `web_user_writable`（告警會寫明設 `ptrace_scope=1` 就能放行） | `ptrace_scope` 為 1；如果還載入 mod_lua，每個 `AllowOverride` 都要是 `None` |
 
+
+**Rocky 9 與 sss**：預設安裝的 Rocky 9 上，nginx 紀錄在其他檢查之前就判定為 `web_user_writable`，原因是 `/etc/nsswitch.conf` 寫的是 `passwd: files sss systemd`。只有 `passwd`、`group`、`initgroups` 這幾行都只列 `files`、`compat`、`systemd` 時，shentu 才承認伺服器自己的帳號。SSSD 提供的帳號或群組（來自 LDAP、Active Directory 或 FreeIPA）不在 shentu 讀得到的檔案裡，它可能和伺服器帳號同一個 uid，也可能把應用程式的帳號放進伺服器的群組。shentu 不放寬這一條。確定沒有在用 SSSD 的主機，可以這樣拿掉 sss：
+
+1. 先確認 SSSD 沒有提供任何東西：`systemctl is-enabled sssd` 和 `systemctl is-active sssd` 顯示 disabled、inactive；`/etc/sssd/sssd.conf` 不存在，或裡面沒有任何 domain；也沒有人用 `/etc/passwd` 以外的帳號登入。
+2. 看 authselect 目前的設定：`authselect current` 會列出設定檔（預設是 `sssd`）和啟用的功能，例如 `with-faillock`、`with-mkhomedir`。
+3. 改用不含 sss 的設定檔，保留原本的功能並留備份：`authselect list` 會列出這個設定檔（`local`，較舊的版本叫 `minimal`），接著執行 `authselect select local <原本的功能> --backup=before-shentu`。authselect 管理期間不要手動改 `nsswitch.conf`，下一次 `authselect apply-changes` 會把它蓋回去。如果沒有 authselect 設定（`authselect current` 顯示沒有），就自己從 `/etc/nsswitch.conf` 的 `passwd`、`group`、`initgroups` 三行拿掉 `sss`。
+4. 確認：`grep -E '^(passwd|group|initgroups):' /etc/nsswitch.conf` 裡沒有 `sss`，而且 `getent passwd nginx` 仍查得到。
+
+拿掉之後的影響：SSSD 提供的帳號和群組查不到，也無法登入（PAM 的 `pam_sss` 會跟著設定檔一起拿掉）；來自 SSSD 的 sudo 規則和 automount 對應失效；它們擁有的檔案只會顯示數字。本機帳號不受影響。要還原就執行 `authselect backup-restore before-shentu`。下一輪巡檢時 shentu 會重新判定；上表那一列的其他條件（PHP-FPM 以 `apache` 執行）仍然要滿足。
+
 `shentu log-trust suggest` 會印出適用於所在主機的修改：
 - journald 那一行；
 - 解除 journald 對 nginx 的單一 unit 限流的 drop-in。預設每個 unit 每 30 秒最多保留 10000 筆，多的會丟掉，忙碌時段的攻擊就會漏看；它也會列出 journald 過去一天丟掉的筆數。
