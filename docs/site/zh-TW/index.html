@@ -31,7 +31,7 @@
 <main id="main">
 
 
-<section class="walk" id="watch" aria-labelledby="title" data-hud='["廟門","廟埕","迴廊","後殿","發現","回報"]'>
+<section class="walk" id="watch" aria-labelledby="title" data-hud='["廟門","廟埕","迴廊","後殿","發現","回報","門外"]'>
   <div class="stage">
     <div class="sky" aria-hidden="true"></div>
     <div class="world">
@@ -41,6 +41,7 @@
       <div class="scene sc4" data-bg="../img/scroll/rear.webp" aria-hidden="true"></div>
       <div class="scene sc5" data-bg="../img/scroll/door.webp" aria-hidden="true"></div>
       <div class="scene sc6" data-bg="../img/scroll/guardian-front.webp" aria-hidden="true"></div>
+      <div class="scene sc7" data-bg="../img/scroll/knock.webp" aria-hidden="true"></div>
     </div>
     <div class="evil" aria-hidden="true"></div>
     <div class="haze" aria-hidden="true"></div>
@@ -51,7 +52,7 @@
 
     <div class="station st1">
       <h1 id="title"><span>夜裡，</span> <span>有人守門。</span></h1>
-      <p class="lede">你睡覺的時候，Shentu 在你的伺服器上巡邏；有狀況，你只會收到一則白話訊息。</p>
+      <p class="lede">你睡覺的時候，Shentu 在你的伺服器上巡邏，也盯著打向它真實漏洞的請求；有狀況，你只會收到一則白話訊息。</p>
       <p class="actions"><a class="button" href="install.html">安裝</a><a class="link" href="https://github.com/nt-neil/shentu">原始碼在 GitHub</a></p>
       <p class="cue" aria-hidden="true">往下捲，跟著神荼巡一次夜</p>
     </div>
@@ -59,6 +60,7 @@
     <div class="station st3"><time>03:04</time><h2>一盞燈，照一項檢查。</h2><p>程序，再來是有已知漏洞的套件；光照到的，就打勾。</p></div>
     <div class="station st4"><time>03:09</time><h2>到後殿，讀網站的原始碼。</h2><p>機器上每個網站，用自己的規則逐行比對，程式碼不會離開這台伺服器。</p></div>
     <div class="station st5"><time>03:12</time><h2>它找到那個不對勁的地方。</h2><p>上傳資料夾多了一個檔案：陌生人送什麼過來，它就執行什麼。</p></div>
+    <div class="station st7"><time>03:15</time><h2>有人在敲那扇門。</h2><p>有一個請求打向商店程式真的有的漏洞，回應比平常大得多。</p></div>
 
     <div class="checks" aria-hidden="true">
       <p class="example">示範</p>
@@ -83,6 +85,17 @@
         </p>
       </div>
     </div>
+    <div class="talk talk2" role="group" aria-labelledby="talk2-name">
+      <div class="face" aria-hidden="true"></div>
+      <div class="talk-body">
+        <p class="talk-name" id="talk2-name">神荼 · 03:15 <span class="example">示範</span></p>
+        <p class="talk-text" data-full="03:15 有人從 203.0.113.10 打向商店程式 app.py 第 14 行的 SQL 漏洞，回應明顯比平常大，攻擊很可能已經成功（L3）。這份紀錄只有 root 寫得進去，可以當封鎖依據。要封鎖這個 IP 嗎？" aria-live="polite">03:15 有人從 203.0.113.10 打向商店程式 app.py 第 14 行的 SQL 漏洞，回應明顯比平常大，攻擊很可能已經成功（L3）。這份紀錄只有 root 寫得進去，可以當封鎖依據。要封鎖這個 IP 嗎？</p>
+        <p class="talk-opts">
+          <button type="button" data-say="已封鎖 203.0.113.10。封鎖有時限，到期會自動解除；只封這一個 IP，不會封整個網段。">封鎖這個 IP</button>
+          <button type="button" data-say="先不封。這則告警會留著，等你決定；同一組今天不會再通知。">先不要</button>
+        </p>
+      </div>
+    </div>
     <div class="hud" aria-hidden="true"><span class="hud-name">廟門</span><i><b></b></i></div>
   </div>
 </section>
@@ -95,6 +108,8 @@
     <div><dd>127</dd><dt>條程式碼稽核規則</dt></div>
     <div><dd>16<small>/ 97</small></dd><dt>個主組公開漏洞已抓到</dt></div>
     <div><dd>1</dd><dt>次修補版誤報</dt></div>
+    <div><dd>27</dd><dt>條攻擊特徵（Linux）</dt></div>
+    <div><dd>0<small>/ 363</small></dd><dt>個不同的一般請求誤報（合成請求實測，95% 上限約 0.8%）</dt></div>
   </dl>
   <p class="more"><a href="bench.html">看實測方法與完整結果</a> <a href="bench.html#attack">攻擊偵測怎麼量</a></p>
 </section>

@@ -1,5 +1,5 @@
 /* The night-watch scroll. Scrolling down walks the guardian to the right through
-   six stations; the scenes move under it at their own depths. Only transform and
+   seven stations; the scenes move under it at their own depths. Only transform and
    opacity change while scrolling, geometry is read on resize, the page scroll is
    never held. With reduced motion the stations stand as still cards. */
 (function () {
@@ -8,23 +8,29 @@
   var still = matchMedia('(prefers-reduced-motion: reduce)').matches;
   var q = function (s) { return run.querySelector(s); }, qa = function (s) { return run.querySelectorAll(s); };
 
-  /* the report: words that type themselves, choices that answer */
-  var talk = q('.talk'), text = q('.talk-text'), full = text.dataset.full, typed = false, typing = 0;
-  function type(str) {
-    clearInterval(typing);
-    if (still) { text.textContent = str; return; }
-    var i = 0; text.textContent = '';
-    typing = setInterval(function () { i += 2; text.textContent = str.slice(0, i); if (i >= str.length) { clearInterval(typing); talk.classList.add('said'); } }, 28);
-  }
-  /* the choices wait until the words are out; a click on the words brings them out at once */
-  text.addEventListener('click', function () { clearInterval(typing); text.textContent = text.dataset.now || full; talk.classList.add('said'); });
-  qa('.talk-opts button').forEach(function (b) {
-    b.addEventListener('click', function () {
-      qa('.talk-opts button').forEach(function (o) { o.setAttribute('aria-pressed', o === b); });
-      text.dataset.now = b.dataset.say; type(b.dataset.say);
-      talk.classList.add('answered');
+  /* the reports (03:13, 03:15): words that type themselves, choices that answer */
+  function report(talk) {
+    var text = talk.querySelector('.talk-text'), full = text.dataset.full, typing = 0, r = { el: talk, typed: false };
+    r.type = function (str) {
+      clearInterval(typing);
+      if (still) { text.textContent = str; return; }
+      var i = 0; text.textContent = '';
+      typing = setInterval(function () { i += 2; text.textContent = str.slice(0, i); if (i >= str.length) { clearInterval(typing); talk.classList.add('said'); } }, 28);
+    };
+    r.start = function () { if (!r.typed) { r.typed = true; r.type(full); } };
+    /* the choices wait until the words are out; a click on the words brings them out at once */
+    text.addEventListener('click', function () { clearInterval(typing); text.textContent = text.dataset.now || full; talk.classList.add('said'); });
+    var opts = talk.querySelectorAll('.talk-opts button');
+    opts.forEach(function (b) {
+      b.addEventListener('click', function () {
+        opts.forEach(function (o) { o.setAttribute('aria-pressed', o === b); });
+        text.dataset.now = b.dataset.say; r.type(b.dataset.say);
+        talk.classList.add('answered');
+      });
     });
-  });
+    return r;
+  }
+  var talks = [].map.call(qa('.talk'), report);
   /* still: every scene shows at once, as a card above its words */
   if (still) { qa('.scene[data-bg]').forEach(function (e) { e.style.backgroundImage = 'url(' + e.dataset.bg + ')'; delete e.dataset.bg; }); return; }
 
@@ -32,7 +38,8 @@
   var stage = q('.stage'), sky = q('.sky'), world = q('.world'), haze = q('.haze'), boughs = q('.boughs'), scenes = qa('.scene'), walker = q('.walker'), evil = q('.evil'),
       st = qa('.station'), checks = q('.checks'), roll = q('.checks ul'), items = qa('.checks li'), poses = qa('.walker i'), names = [].map.call(qa('.station'), function (e) { return e.querySelector('h2'); }), hudName = q('.hud-name'), hudBar = q('.hud b'), cue = q('.cue');
   var hud = JSON.parse(run.dataset.hud || '[]');
-  var top = 0, span = 1, vw = 1, vh = 1, last = -1, ticking = false, moving = 0, N = scenes.length - 1;
+  /* the world stops at the last scene; the last half step is the 03:15 report's to type and be answered */
+  var top = 0, span = 1, vw = 1, vh = 1, last = -1, ticking = false, moving = 0, N = scenes.length - 1, END = N + .5;
 
   function measure() {
     vw = innerWidth; vh = innerHeight;
@@ -47,34 +54,38 @@
 
   function frame() {
     ticking = false;
-    var p = clamp((scrollY - top) / span), s = p * N;
+    var p = clamp((scrollY - top) / span), s = p * END, w = Math.min(s, N);
     if (s === last) return; last = s;
-    world.style.transform = 'translate3d(' + (-s * vw).toFixed(1) + 'px,0,0)';
-    sky.style.transform = 'translate3d(' + (-s * vw * .18).toFixed(1) + 'px,0,0)';
-    haze.style.transform = 'translate3d(' + (-s * vw * 1.12).toFixed(1) + 'px,0,0)';
-    boughs.style.transform = 'translate3d(' + (-s * vw * 1.25).toFixed(1) + 'px,0,0)';
+    world.style.transform = 'translate3d(' + (-w * vw).toFixed(1) + 'px,0,0)';
+    sky.style.transform = 'translate3d(' + (-w * vw * .18).toFixed(1) + 'px,0,0)';
+    haze.style.transform = 'translate3d(' + (-w * vw * 1.12).toFixed(1) + 'px,0,0)';
+    boughs.style.transform = 'translate3d(' + (-w * vw * 1.25).toFixed(1) + 'px,0,0)';
     /* scenes come in as the walk nears them */
     for (var i = 0; i < scenes.length; i++) if (scenes[i].dataset.bg && s > i - 1.6) { scenes[i].style.backgroundImage = 'url(' + scenes[i].dataset.bg + ')'; delete scenes[i].dataset.bg; }
-    /* stations: always the nearest one, so the screen never goes without words; the report box takes over at the end */
-    var cur = s < 4.55 ? Math.min(st.length - 1, Math.round(s)) : -1;
+    /* stations: always the nearest one, so the screen never goes without words; the report box takes over,
+       then the knock at the door (the last station, whose scene is the last one) between the two reports */
+    var last7 = st.length - 1, cur = s < 4.55 ? Math.min(last7 - 1, Math.round(s)) : s >= 5.5 && s < 5.9 ? last7 : -1;
     for (var k = 0; k < st.length; k++) st[k].classList.toggle('on', k === cur);
     /* the name of the station drifts past as the walk goes on, so the guardian walks in front of every word in turn */
-    if (cur > 0) names[cur].style.transform = 'translate3d(' + ((cur - s) * .25 * vw).toFixed(1) + 'px,0,0)';
+    if (cur > 0) names[cur].style.transform = 'translate3d(' + (((cur === last7 ? N : cur) - s) * .25 * vw).toFixed(1) + 'px,0,0)';
     cue.style.opacity = (1 - ease(ramp(s, 0, .12))).toFixed(3);
     /* the checks: lit as the lantern passes them */
     checks.style.opacity = (ease(ramp(s, .65, .95)) * (1 - ease(ramp(s, 4.45, 4.75)))).toFixed(3);
     var now = 0;
     for (var j = 0; j < items.length; j++) { var lit = s >= +items[j].dataset.at; items[j].classList.toggle('lit', lit); if (lit) now = j; }
     roll.style.setProperty('--k', now);
-    /* the find: the door shakes, the miasma rises, the light turns red */
-    var red = near(s, 4, .7);
+    /* the find: the door shakes, the miasma rises, the light turns red; at 03:15 the red comes back, softer */
+    var red = Math.max(near(s, 4, .7), .6 * ease(ramp(s, 5.6, 6)));
     evil.style.opacity = red.toFixed(3);
     scenes[4].classList.toggle('shake', s > 3.75 && s < 4.35);
     /* the report: the guardian turns to face you, the words come */
-    var show = ease(ramp(s, 4.5, 4.85));
-    talk.style.opacity = show.toFixed(3); talk.style.transform = 'translate3d(0,' + (30 * (1 - show)).toFixed(1) + 'px,0)';
-    talk.inert = show < .5;
-    if (show > .6 && !typed) { typed = true; type(full); }
+    var shows = [ease(ramp(s, 4.5, 4.85)) * (1 - ease(ramp(s, 5.35, 5.6))), ease(ramp(s, 5.85, 6.15))];
+    for (var t = 0; t < talks.length; t++) {
+      var show = shows[t], el = talks[t].el;
+      el.style.opacity = show.toFixed(3); el.style.transform = 'translate3d(0,' + (30 * (1 - show)).toFixed(1) + 'px,0)';
+      el.inert = show < .5;
+      if (show > .6) talks[t].start();
+    }
     scenes[5].style.transform = 'scale(' + (1.18 - .18 * ease(ramp(s, 4.2, 5))).toFixed(4) + ')';
     walker.style.opacity = (ease(ramp(s, .2, .5)) * (1 - ease(ramp(s, 4.4, 4.8)))).toFixed(3);
     var at = Math.min(N, Math.round(s));
@@ -110,7 +121,7 @@
   var dust = []; for (var u = 0; u < 60; u++) dust.push({ x: Math.random(), y: Math.random(), r: Math.random() * 1.4 + .3, v: Math.random() * .0002 + .00006, ph: Math.random() * 6.28 });
   function draw(t) {
     if (!on) return;
-    var s = last < 0 ? 0 : last;
+    var s = last < 0 ? 0 : Math.min(last, N);
     x.clearRect(0, 0, W, H);
     for (var i = 0; i < P.length; i++) {
       var e = P[i]; e.life += e.v * (e.kind === 'evil' ? 1.6 : 1);

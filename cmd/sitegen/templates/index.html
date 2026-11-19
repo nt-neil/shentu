@@ -1,7 +1,7 @@
 {{define "main"}}
 <!-- The night-watch scroll: one stage, pinned while the page scrolls past it.
-     Scrolling down walks the guardian to the right, through six stations. -->
-<section class="walk" id="watch" aria-labelledby="title" data-hud='["{{t "hud.0"}}","{{t "hud.1"}}","{{t "hud.2"}}","{{t "hud.3"}}","{{t "hud.4"}}","{{t "hud.5"}}"]'>
+     Scrolling down walks the guardian to the right, through seven stations. -->
+<section class="walk" id="watch" aria-labelledby="title" data-hud='["{{t "hud.0"}}","{{t "hud.1"}}","{{t "hud.2"}}","{{t "hud.3"}}","{{t "hud.4"}}","{{t "hud.5"}}","{{t "hud.6"}}"]'>
   <div class="stage">
     <div class="sky" aria-hidden="true"></div>
     <div class="world">
@@ -11,6 +11,7 @@
       <div class="scene sc4" data-bg="{{.L.Root}}img/scroll/rear.webp" aria-hidden="true"></div>
       <div class="scene sc5" data-bg="{{.L.Root}}img/scroll/door.webp" aria-hidden="true"></div>
       <div class="scene sc6" data-bg="{{.L.Root}}img/scroll/guardian-front.webp" aria-hidden="true"></div>
+      <div class="scene sc7" data-bg="{{.L.Root}}img/scroll/knock.webp" aria-hidden="true"></div>
     </div>
     <div class="evil" aria-hidden="true"></div>
     <div class="haze" aria-hidden="true"></div>
@@ -29,6 +30,7 @@
     <div class="station st3"><time>03:04</time><h2>{{t "st3.t"}}</h2><p>{{t "st3.p"}}</p></div>
     <div class="station st4"><time>03:09</time><h2>{{t "st4.t"}}</h2><p>{{t "st4.p"}}</p></div>
     <div class="station st5"><time>03:12</time><h2>{{t "act2.t"}}</h2><p>{{t "act2.p"}}</p></div>
+    <div class="station st7"><time>03:15</time><h2>{{t "st7.t"}}</h2><p>{{t "st7.p"}}</p></div>
 
     <div class="checks" aria-hidden="true">
       <p class="example">{{t "story.example"}}</p>
@@ -53,6 +55,17 @@
         </p>
       </div>
     </div>
+    <div class="talk talk2" role="group" aria-labelledby="talk2-name">
+      <div class="face" aria-hidden="true"></div>
+      <div class="talk-body">
+        <p class="talk-name" id="talk2-name">神荼 · 03:15 <span class="example">{{t "story.example"}}</span></p>
+        <p class="talk-text" data-full="{{t "story2.msg"}}" aria-live="polite">{{t "story2.msg"}}</p>
+        <p class="talk-opts">
+          <button type="button" data-say="{{t "talk2.yes.r"}}">{{t "talk2.yes"}}</button>
+          <button type="button" data-say="{{t "talk2.no.r"}}">{{t "talk2.no"}}</button>
+        </p>
+      </div>
+    </div>
     <div class="hud" aria-hidden="true"><span class="hud-name">{{t "hud.0"}}</span><i><b></b></i></div>
   </div>
 </section>
@@ -65,6 +78,8 @@
     <div><dd>{{$.Count}}</dd><dt>{{t "nails.rules"}}</dt></div>
     <div><dd>{{$all.Caught}}<small>/ {{$all.Cases}}</small></dd><dt>{{t "nails.bench"}}</dt></div>
     <div><dd>{{$all.FixedFP}}</dd><dt>{{t "nails.fp"}}</dt></div>
+    {{with $.Attack}}<div><dd>{{.Signatures}}</dd><dt>{{t "nails.sigs"}}</dt></div>
+    <div><dd>0<small>/ {{.Distinct}}</small></dd><dt>{{tf "nails.attackfp" .Upper}}</dt></div>{{end}}
   </dl>
   <p class="more"><a href="bench.html">{{t "nails.more"}}</a> <a href="bench.html#attack">{{t "nails.attack"}}</a></p>
 </section>

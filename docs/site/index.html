@@ -31,7 +31,7 @@
 <main id="main">
 
 
-<section class="walk" id="watch" aria-labelledby="title" data-hud='["The gate","Courtyard","Colonnade","Back hall","The find","The report"]'>
+<section class="walk" id="watch" aria-labelledby="title" data-hud='["The gate","Courtyard","Colonnade","Back hall","The find","The report","At the door"]'>
   <div class="stage">
     <div class="sky" aria-hidden="true"></div>
     <div class="world">
@@ -41,6 +41,7 @@
       <div class="scene sc4" data-bg="img/scroll/rear.webp" aria-hidden="true"></div>
       <div class="scene sc5" data-bg="img/scroll/door.webp" aria-hidden="true"></div>
       <div class="scene sc6" data-bg="img/scroll/guardian-front.webp" aria-hidden="true"></div>
+      <div class="scene sc7" data-bg="img/scroll/knock.webp" aria-hidden="true"></div>
     </div>
     <div class="evil" aria-hidden="true"></div>
     <div class="haze" aria-hidden="true"></div>
@@ -51,7 +52,7 @@
 
     <div class="station st1">
       <h1 id="title"><span>The night</span> <span>watch.</span></h1>
-      <p class="lede">While you sleep, Shentu patrols your server. If something is wrong, you get one message in plain words.</p>
+      <p class="lede">While you sleep, Shentu patrols your server and watches for requests aimed at its real weak spots. If something is wrong, you get one message in plain words.</p>
       <p class="actions"><a class="button" href="install.html">Install</a><a class="link" href="https://github.com/nt-neil/shentu">Source on GitHub</a></p>
       <p class="cue" aria-hidden="true">Scroll to walk the night watch</p>
     </div>
@@ -59,6 +60,7 @@
     <div class="station st3"><time>03:04</time><h2>One lantern, one check.</h2><p>Processes, then packages with known exploits; what the light reaches is checked off.</p></div>
     <div class="station st4"><time>03:09</time><h2>In the back hall it reads the code.</h2><p>Every site on the machine, line by line, with its own rules. The code never leaves the server.</p></div>
     <div class="station st5"><time>03:12</time><h2>It finds the one thing wrong.</h2><p>A new file in the uploads folder runs whatever a stranger posts to it.</p></div>
+    <div class="station st7"><time>03:15</time><h2>Someone is knocking on that door.</h2><p>A request hit a hole the shop&#39;s code really has, and the reply came back far larger than usual.</p></div>
 
     <div class="checks" aria-hidden="true">
       <p class="example">Example</p>
@@ -83,6 +85,17 @@
         </p>
       </div>
     </div>
+    <div class="talk talk2" role="group" aria-labelledby="talk2-name">
+      <div class="face" aria-hidden="true"></div>
+      <div class="talk-body">
+        <p class="talk-name" id="talk2-name">神荼 · 03:15 <span class="example">Example</span></p>
+        <p class="talk-text" data-full="At 03:15, 203.0.113.10 aimed a request at the SQL hole on line 14 of the shop&#39;s app.py, and the reply was far larger than usual: the attack has likely succeeded (L3). Only root can write this log, so it can back a block. Block this IP?" aria-live="polite">At 03:15, 203.0.113.10 aimed a request at the SQL hole on line 14 of the shop&#39;s app.py, and the reply was far larger than usual: the attack has likely succeeded (L3). Only root can write this log, so it can back a block. Block this IP?</p>
+        <p class="talk-opts">
+          <button type="button" data-say="203.0.113.10 is blocked, for a limited time; it lifts on its own. Only this address, not its whole network.">Block this IP</button>
+          <button type="button" data-say="Not blocked. The alert stays until you decide; this group is not sent again today.">Not now</button>
+        </p>
+      </div>
+    </div>
     <div class="hud" aria-hidden="true"><span class="hud-name">The gate</span><i><b></b></i></div>
   </div>
 </section>
@@ -95,6 +108,8 @@
     <div><dd>127</dd><dt>rules in the code audit</dt></div>
     <div><dd>16<small>/ 97</small></dd><dt>published vulnerabilities caught in the main bench set</dt></div>
     <div><dd>1</dd><dt>reports on the fixed versions</dt></div>
+    <div><dd>27</dd><dt>attack signatures (Linux)</dt></div>
+    <div><dd>0<small>/ 363</small></dd><dt>false alerts on distinct ordinary requests (synthetic, 95% upper bound about 0.8%)</dt></div>
   </dl>
   <p class="more"><a href="bench.html">How they were measured</a> <a href="bench.html#attack">How attack detection was measured</a></p>
 </section>
