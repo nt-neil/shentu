@@ -206,7 +206,7 @@ sudo shentu bot pair
    - `來源可信度`：已驗證，或未驗證並附原因。
 4. **要封鎖這個位址**，就在 `sudo shentu chat`（或互動能力 3 以上的 bot）裡說「封鎖 203.0.113.10 24 小時」。只有這個位址自己的已驗證 L2 或 L3 群組才能當封鎖依據，否則會被拒絕，並說明原因。
 
-在 Debian、Ubuntu 上，nginx 的存取紀錄屬於 `www-data`，所以 v0.4.0 會把它的攻擊標成未驗證：告警照樣會送，但不能從 Telegram 當封鎖依據。請在伺服器上自己看過紀錄，確定是真的攻擊，再用 `sudo shentu chat` 封鎖，並要求使用 `override_unverified`。
+在 Debian、Ubuntu 上，nginx 的存取紀錄預設屬於 `www-data`，所以它的攻擊會標成未驗證：告警照樣會送，但不能從 Telegram 當封鎖依據。請在伺服器上自己看過紀錄，確定是真的攻擊，再用 `sudo shentu chat` 封鎖，並要求使用 `override_unverified`。`sudo shentu log-trust suggest`（v0.4.1）會列出在這台主機上怎樣能讓紀錄放行，例如把紀錄也送到 journald；它不會改動任何東西。
 
 每個欄位、各等級和紀錄信任的規則，說明在[攻擊偵測怎麼運作](attack-detection.zh-TW.md)；看不到的部分寫在[攻擊偵測的已知限制](attack-detection-limits.zh-TW.md)。
 

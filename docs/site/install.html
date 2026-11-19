@@ -52,7 +52,7 @@
 </ul>
 <h2>Supported systems</h2>
 <p>Ubuntu 22.04 and 24.04, Debian 12, Rocky and Alma 9, on amd64 and arm64 (systemd is required). Each release carries <code>.deb</code>, <code>.rpm</code> and <code>.tar.gz</code> packages, a Windows <code>.zip</code> and <code>install.sh</code>, with a signed build provenance you can check with <code>gh attestation verify</code>.</p>
-<p>On Debian and Ubuntu, the default nginx log can be written by the web account, so it raises alerts but cannot back a block. See <a href="https://github.com/nt-neil/shentu/blob/main/docs/attack-detection.md">how attack detection works</a>.</p>
+<p>On Debian and Ubuntu, the default nginx log can be written by the web account, so it raises alerts but cannot back a block; <code>shentu log-trust suggest</code> lists what would let it pass. See <a href="https://github.com/nt-neil/shentu/blob/main/docs/attack-detection.md">how attack detection works</a>.</p>
 <p>Windows Server 2022 and 2025 (from v0.3.0, amd64, verified on GitHub-hosted windows-2022/2025 runners); Windows Server 2019 is best effort (the same APIs, build 17763, not verified on GitHub-hosted runners). download <code>shentu_windows_amd64.zip</code> and install it as a service from an elevated prompt; it only reads, and has no attack detection. Step by step: <a href="https://github.com/nt-neil/shentu/blob/main/packaging/windows/INSTALL.md">Windows install</a>.</p>
 <p>It never changes the system on its own: every action that changes something waits for a human to confirm it. Step by step: <a href="https://github.com/nt-neil/shentu/blob/main/docs/getting-started.md">Getting started</a>.</p>
 

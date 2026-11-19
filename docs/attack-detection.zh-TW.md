@@ -85,17 +85,19 @@ Shentu 不會自己封鎖。`block_ip` 是控制工具：只在 `shentu chat` �
 
 ## 紀錄信任
 
-只有 root 才寫得進去的紀錄才算**已驗證**，條件是：
-- 檔案、每個連到它的連結、上面的每一層目錄都屬於 root，其他人寫不進去；
+應用程式碼執行的帳號改不了的紀錄，才算**已驗證**，條件是：
+- 檔案、每個連到它的連結、上面的每一層目錄都屬於 root（或在嚴格條件下，屬於網站伺服器自己的帳號），其他人寫不進去；
 - 它是標準格式的 nginx（combined、main）或 Apache（combined、common）存取紀錄；
 - 用戶端位址取自連線，不是取自標頭；
 - 網站伺服器自己的工作程序裡沒有執行應用程式碼。
+
+從 v0.4.1 起，nginx 的存取紀錄也可以經 journald 送出，journald 會記下每一行是哪個 unit、帳號和執行檔送的。完整條件見[哪些網站紀錄可以支撐封鎖](attack-detection-limits.zh-TW.md#哪些網站紀錄可以支撐封鎖)。
 
 不符合時，進得了網站的攻擊者就能寫假紀錄去陷害任何位址，所以這些攻擊仍會告警，但標成未驗證並附上原因：
 
 | 原因 | 意思 |
 |---|---|
-| `web_user_writable` | 網站伺服器或 PHP 的帳號擁有這個紀錄，或寫得進它上面的目錄；或伺服器在自己的工作程序裡執行應用程式碼（mod_php、nginx 裡的 perl、lua、njs）；或網站帳號能 ptrace 這些工作程序。 |
+| `web_user_writable` | 應用程式碼執行的帳號（PHP-FPM 的、應用程式 unit 的，或網站伺服器和 PHP 共用的 `www-data`、`apache` 這類帳號）擁有這個紀錄，或寫得進它上面的目錄；或伺服器在自己的工作程序裡執行應用程式碼（mod_php、有 handler 的 mod_lua、nginx 裡的 perl、lua、njs）；或應用程式碼能 ptrace 這些工作程序。 |
 | `untrusted_owner` | 紀錄、連結或上層目錄屬於其他帳號，或紀錄能被群組或其他人寫入（含 ACL）。 |
 | `unverified_source` | Shentu 無法確認只有 root 能改它：成員不明的群組、讀不到的 ACL 或帳號資料庫、檢查和讀取之間被換掉的檔案，或沒辦法完整讀到網站伺服器的設定。 |
 | `client_from_header` | 伺服器從標頭取用戶端位址（nginx 的 realip、Apache 的 mod_remoteip）。 |
@@ -104,9 +106,14 @@ Shentu 不會自己封鎖。`block_ip` 是控制工具：只在 `shentu chat` �
 
 未驗證的攻擊最多是中、不會到 L3、不算進 campaign，也不能從 Telegram 當封鎖依據。
 
-**Debian、Ubuntu 的 nginx。** 照預設安裝時，nginx 和 PHP 都以 `www-data` 執行，logrotate 建立的存取紀錄是 `www-data:adm`（`create 0640 www-data adm`）。網站裡跑的程式碼改得了它，所以 v0.4.0 判為 `web_user_writable`：告警會送，但不能從 Telegram 當封鎖依據。手動改擁有者，下一次輪替又會被改回來。
+**預設安裝**（v0.4.1）：
 
-**Rocky Linux。** nginx 的紀錄由它自己的 `nginx` 帳號建立，PHP-FPM（`apache`）寫不進去；v0.4.0 仍判為 `web_user_writable`，這只是判得比較保守。Rocky 預設的 httpd 設定會載入不在 Shentu 安全清單裡的模組，所以 Apache 的紀錄也一律判為 `web_user_writable`。這兩件事預計在 v0.4.1 處理。
+- **Debian、Ubuntu 的 nginx。** nginx 和 PHP 都以 `www-data` 執行，logrotate 建立的存取紀錄是 `www-data:adm`（`create 0640 www-data adm`）。網站裡跑的程式碼改得了它，所以判為 `web_user_writable`：告警會送，但不能從 Telegram 當封鎖依據。手動改擁有者，下一次輪替又會被改回來。要放行：把存取紀錄也送到 journald，並把 `kernel.yama.ptrace_scope` 設為 1。
+- **Debian、Ubuntu 的 Apache**：`ptrace_scope` 為 1 時已查證（紀錄是 `root:adm 640`）。
+- **Rocky 9 的 nginx** 判為 `web_user_writable`，因為預設的 `nsswitch.conf` 也向 SSSD 查帳號，Shentu 無法確定看到了所有帳號。拿掉 `sss`（步驟見限制文件），而且 PHP-FPM 以 `apache` 執行，輪替前後都是已查證。
+- **Rocky 9 的 httpd**：`ptrace_scope` 為 0 時是 `web_user_writable`，設為 1 就能放行（如果還載入 mod_lua，每個 `AllowOverride` 都要是 `None`）。
+
+`shentu log-trust suggest` 會印出適用於所在主機的修改。它不會改動任何東西，下一輪巡檢會重新判定。
 
 ## 實測
 

@@ -124,16 +124,20 @@ with `shentu chat`, never from Telegram. Use it only after you have read the log
 
 ## Log trust
 
-A log is **verified** only when root alone could have written it: the file, every link to it and
-every directory above it belong to root and cannot be written by others; it is a standard
+A log is **verified** only when the account the application code runs as could not have changed
+it: the file, every link to it and every directory above it belong to root (or, under strict
+conditions, to the web server's own account) and cannot be written by others; it is a standard
 nginx (combined, main) or Apache (combined, common) access log; the client address comes from
 the connection, not a header; and no application code runs inside the web server's own workers.
+Since v0.4.1, nginx's access log can also come through journald, which records the unit, account
+and program that sent each line. The full conditions are in
+[Which web logs can back a block](attack-detection-limits.md#which-web-logs-can-back-a-block).
 Otherwise an attacker who got into the site could write log lines to frame any address, so its
 attempts are alerted on but marked unverified, with the reason:
 
 | Reason | Meaning |
 |---|---|
-| `web_user_writable` | The web server's or PHP's account owns the log or can write a directory above it; or the server runs application code in its own workers (mod_php, perl, lua or njs in nginx); or a web account can ptrace the workers. |
+| `web_user_writable` | An account application code runs as (PHP-FPM's, an application unit's, or one the web server shares with PHP, such as `www-data` or `apache`) owns the log or can write a directory above it; or the server runs application code in its own workers (mod_php, mod_lua with a handler, perl, lua or njs in nginx); or application code can ptrace the workers. |
 | `untrusted_owner` | The log, a link or a directory above it is owned by another account, or the log can be written by its group or others (an ACL included). |
 | `unverified_source` | Shentu cannot confirm that only root can change it: a group whose members are unknown, an ACL or account database that could not be read, a file replaced between the check and the read, or a web server configuration that could not be read in full. |
 | `client_from_header` | The server takes the client address from a header (nginx's realip, Apache's mod_remoteip). |
@@ -143,15 +147,22 @@ attempts are alerted on but marked unverified, with the reason:
 An unverified attempt is at most medium, never L3, never counts towards a campaign, and never
 backs a block from Telegram.
 
-**nginx on Debian and Ubuntu.** As installed by default, nginx and PHP both run as `www-data`,
-and logrotate creates the access log as `www-data:adm` (`create 0640 www-data adm`). Code running
-in the site can rewrite it, so v0.4.0 judges it `web_user_writable`: you get the alerts, but they
-cannot back a block from Telegram. Changing the owner by hand is undone at the next rotation.
+**Default installs** (v0.4.1):
 
-**Rocky Linux.** nginx's log is created by its own `nginx` account, which PHP-FPM (`apache`) cannot
-write; v0.4.0 still judges it `web_user_writable`, which is only cautious. Rocky's default httpd
-configuration loads modules outside the list Shentu knows to be safe, so its Apache logs are judged
-`web_user_writable` too. Both are planned for v0.4.1.
+- **nginx on Debian and Ubuntu.** nginx and PHP both run as `www-data`, and logrotate creates the
+  access log as `www-data:adm` (`create 0640 www-data adm`). Code running in the site can rewrite
+  it, so it is `web_user_writable`: you get the alerts, but they cannot back a block from
+  Telegram. Changing the owner by hand is undone at the next rotation. What lets it pass: send
+  the access log to journald as well, with `kernel.yama.ptrace_scope` 1.
+- **Apache on Debian and Ubuntu** is verified with `ptrace_scope` 1 (the log is `root:adm 640`).
+- **nginx on Rocky 9** is `web_user_writable`, because the default `nsswitch.conf` also asks SSSD
+  for accounts, so Shentu cannot know every account. With `sss` taken out (the limits document
+  gives the steps) and PHP-FPM running as `apache`, it is verified, before and after rotation.
+- **httpd on Rocky 9** is `web_user_writable` with `ptrace_scope` 0; with 1 it passes (and with
+  `AllowOverride None` everywhere if mod_lua stays loaded).
+
+`shentu log-trust suggest` prints the changes that apply to the host it runs on. It changes
+nothing; the next patrol judges the logs again.
 
 ## Measured
 

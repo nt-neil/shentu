@@ -142,17 +142,23 @@ On Linux, `WebLogs` lists the logs nginx, Apache, lighttpd and PHP-FPM write, as
 configuration on disk names them, for attack detection to read. It is not part of `Facts`. Each
 `LogSource` has `path`, `server`, `kind` (`access`, `error`, `slow`, `php_error`), `format` and
 `format_spec` (the format as defined), `vhosts`, `config` (the `file:line` naming it, or
-`default`), and `verified` with a `reason` and `detail` when it is not.
+`default`), `journal` and `journal_tag` when nginx sends the log to journald, and `verified`
+with a `reason` and `detail` when it is not.
 
-A log is `verified` only when root alone can change it (the file, every link to it and every
-folder above it belong to root and cannot be written by others), it is an nginx or Apache
-access log in a standard format (nginx `combined` or `main`, Apache `combined` or `common`), the
-client address comes from the connection, and no web account can make a process write to it.
+A log is `verified` only when the account application code runs as cannot change it (the file,
+every link to it and every folder above it belong to root, or under strict conditions to the web
+server's own account, and cannot be written by others), it is an nginx or Apache access log in a
+standard format (nginx `combined` or `main`, Apache `combined` or `common`), the client address
+comes from the connection, and no application account can make a process write to it. For a log
+through journald, a line is verified only when journald records it as sent over syslog by
+nginx's program, as the workers' account, in `nginx.service`. The full conditions:
+[attack-detection-limits.md](attack-detection-limits.md#which-web-logs-can-back-a-block).
+`shentu log-trust suggest` (`LogTrustSuggestions`) prints what would verify more of them.
 Besides the general reasons, a log source can have:
 
 | reason | typical cause |
 |---|---|
-| `web_user_writable` | the web server's or PHP's account owns the log or a folder above it; or it is an error, slow or PHP-FPM log; or Apache runs application code in its own children (mod_php), nginx runs perl, lua or njs, or a web account can ptrace the workers |
+| `web_user_writable` | an account application code runs as (PHP-FPM's, an application unit's, or one shared with the web server such as `www-data`) owns the log or a folder above it; or it is an error, slow or PHP-FPM log; or Apache runs application code in its own children (mod_php, mod_lua with a handler), nginx runs perl, lua or njs, or application code can ptrace the workers |
 | `client_from_header` | the server takes the client address from a header (nginx `set_real_ip_from`/`real_ip_header`, Apache `mod_remoteip`) |
 | `custom_format` | the access log's format is not a standard one; it is still parsed and matched |
 | `logging_disabled` | `access_log off` |

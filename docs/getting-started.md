@@ -230,10 +230,11 @@ from the web server's own configuration.
    "block 203.0.113.10 for 24 hours". Only a verified L2 or L3 group of the address's own backs a
    block. Otherwise the block is refused and the reason says why.
 
-On Debian and Ubuntu, nginx's access log is owned by `www-data`, so v0.4.0 marks its attempts
-unverified: you get the alerts, but they cannot back a block from Telegram. Read the log yourself
-on the server and, if the attempts are real, block there with `sudo shentu chat`, asking for
-`override_unverified`.
+On Debian and Ubuntu, nginx's access log is owned by `www-data` by default, so its attempts are
+marked unverified: you get the alerts, but they cannot back a block from Telegram. Read the log
+yourself on the server and, if the attempts are real, block there with `sudo shentu chat`, asking
+for `override_unverified`. `sudo shentu log-trust suggest` (v0.4.1) lists what would let the log
+pass on this host, such as sending it to journald as well; it changes nothing.
 
 The alert text is in Chinese only in v0.4.0. Every field, the levels and the log trust rules are
 explained in [attack-detection.md](attack-detection.md); what it cannot see is in

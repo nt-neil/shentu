@@ -33,7 +33,8 @@ Blocked 203.0.113.7 until tomorrow 09:14. To undo: "unblock 203.0.113.7".
   ntfy or a webhook. If the LLM is down, you still get the raw findings.
 - **Attack detection** (v0.4.0, Linux): each patrol also reads the nginx and Apache access logs
   and alerts on requests aimed at vulnerabilities this server really has, from level L1 (the route
-  was reached) to L3 (it likely worked). It never blocks on its own. See
+  was reached) to L3 (it likely worked). It never blocks on its own. `shentu log-trust suggest`
+  lists what would let more of the host's logs back a block. See
   [docs/attack-detection.md](docs/attack-detection.md).
 - **`shentu survey`**: learns the server first, like a guard walking the premises. Patrol keeps the
   survey as a baseline and reports risky settings (a database open to the network, SSH password
