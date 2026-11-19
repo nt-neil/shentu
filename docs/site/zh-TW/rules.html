@@ -76,13 +76,14 @@ class ThumbController extends AbstractController
         return new Response(&#39;ok&#39;);
     }
 }</code></pre></div>
-      <div class="sample good-s"><h3 class="good">修正後</h3><pre><code>&lt;?php
-class PingController extends Controller
+      <div class="sample good-s"><h3 class="good">修正後</h3><p class="note">the fix in Symfony: an argument array, which no shell parses</p><pre><code>&lt;?php
+class ThumbController extends AbstractController
 {
-    public function ping(Request $request)
+    public function make(Request $request): Response
     {
-        $result = Process::run([&#39;ping&#39;, &#39;-c&#39;, &#39;1&#39;, $request-&gt;input(&#39;host&#39;)]);
-        return $result-&gt;output();
+        $p = new Process([&#39;convert&#39;, &#39;in.png&#39;, &#39;-resize&#39;, $request-&gt;query-&gt;get(&#39;size&#39;, &#39;200x200&#39;), &#39;out.png&#39;]);
+        $p-&gt;mustRun();
+        return new Response(&#39;ok&#39;);
     }
 }</code></pre></div>
     </div>
@@ -810,13 +811,13 @@ $row = $wpdb-&gt;get_row($wpdb-&gt;prepare(
     
     <div class="samples">
       <div class="sample bad-s"><h3 class="bad">會報出</h3><pre><code>&lt;?php
-class StockController extends Controller
+class SearchController extends Controller
 {
-    public function actionTable()
+    public function actionIndex()
     {
-        [$field, $dir] = explode(&#39;|&#39;, (string) $this-&gt;request-&gt;getParam(&#39;sort&#39;, &#39;name|asc&#39;));
-        $rows = Item::find()-&gt;orderBy($field . &#39; &#39; . $dir)-&gt;limit(50)-&gt;all();
-        return $this-&gt;asJson($rows);
+        $q = Yii::$app-&gt;request-&gt;get(&#39;q&#39;);
+        $rows = Yii::$app-&gt;db-&gt;createCommand(&#34;SELECT id, title FROM post WHERE title LIKE &#39;%$q%&#39;&#34;)-&gt;queryAll();
+        return $this-&gt;render(&#39;index&#39;, [&#39;rows&#39; =&gt; $rows]);
     }
 }</code></pre></div>
       <div class="sample good-s"><h3 class="good">修正後</h3><p class="note">the fix: allowlists for the field and the direction</p><pre><code>&lt;?php
@@ -2441,7 +2442,7 @@ app.get(&#34;/thumb/:id&#34;, async (req, res) =&gt; {
   res.json(await r.json());
 });</code></pre></div>
     </div>
-    <p class="fix"><strong>修法</strong> Keep the scheme and host fixed and take only an encoded path or id from the request, or accept only URLs from an allowlist. If you parse the URL to check its host, build the request from the checked host (new URL(input) -&gt; allowed host -&gt; &#39;https://&#39; &#43; host &#43; path), not from the parsed input object: a check on url.hostname is not recognised as cleaning url itself. Make sure the host resolves to a public address.</p>
+    <p class="fix"><strong>修法</strong> Keep the scheme and host fixed and take only an encoded path or id from the request, or accept only URLs whose host is in an allowlist: parse the URL into a variable (const u = new URL(input)), check u.hostname against the allowlist and fetch u itself, or build the request from the checked host; do not fetch the original string, which another parser may read as another host. Make sure the host resolves to a public address.</p>
   </details>
   
 </section>

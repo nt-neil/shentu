@@ -56,6 +56,7 @@ type page struct {
 	Main     *Bench
 	Holdout  *Bench
 	TS       *Bench
+	Attack   *AttackEval
 	Count    int
 	Repo     string // the public repository, for every link to the source
 }
@@ -144,6 +145,9 @@ func build(root, src, out, base string) error {
 	}
 	if p.Main == nil {
 		return fmt.Errorf("no bench results in %s/bench", src)
+	}
+	if p.Attack, err = loadAttackEval(root); err != nil {
+		return err
 	}
 	css, err := tmplFS.ReadFile("templates/site.css")
 	if err != nil {
@@ -290,6 +294,13 @@ func funcs(l Lang) template.FuncMap {
 			}
 			return k
 		},
+		// tf is t with numbers put in its %d and %s.
+		"tf": func(k string, args ...any) string {
+			if s, ok := l.T[k]; ok {
+				return fmt.Sprintf(s, args...)
+			}
+			return k
+		},
 		"langName":  func(s string) string { return langNames[s] },
 		"className": func(c string) string { return className(l, c) },
 		"item":      item,
@@ -368,7 +379,7 @@ func benchKind(group string) string {
 
 // itemGroup is the lines of a release under one heading of the river.
 type itemGroup struct {
-	Key   string // the words of the heading: grp.reach, grp.sharp or grp.light
+	Key   string // the words of the heading: grp.reach, grp.sharp, grp.light, or a section's grp.fixed, grp.upgrade, grp.known
 	Items []string
 }
 
@@ -378,18 +389,28 @@ var (
 )
 
 // groups sorts a release's lines into what Shentu now sees (reach), how
-// precisely (sharp) and how lightly it runs (light), for the river's card.
-func groups(items []string) []itemGroup {
-	g := []itemGroup{{Key: "grp.reach"}, {Key: "grp.sharp"}, {Key: "grp.light"}}
-	for _, it := range items {
-		switch {
-		case lightRe.MatchString(it):
-			g[2].Items = append(g[2].Items, it)
-		case sharpRe.MatchString(it):
-			g[1].Items = append(g[1].Items, it)
-		default:
-			g[0].Items = append(g[0].Items, it)
+// precisely (sharp) and how lightly it runs (light), for the river's card;
+// the lines of a "###" section (fixes, upgrade notes, known issues) are a
+// group of their own. Lines are sorted by their English text, so both
+// languages group them alike.
+func groups(r Release) []itemGroup {
+	g := []itemGroup{{Key: "grp.reach"}, {Key: "grp.sharp"}, {Key: "grp.light"}, {Key: "grp.fixed"}, {Key: "grp.upgrade"}, {Key: "grp.known"}}
+	section := map[string]int{"fixed": 3, "upgrade": 4, "known": 5}
+	for i, it := range r.Items {
+		en := it
+		if i < len(r.English) {
+			en = r.English[i]
 		}
+		k := 0
+		switch {
+		case i < len(r.Sections) && r.Sections[i] != "":
+			k = section[r.Sections[i]]
+		case lightRe.MatchString(en):
+			k = 2
+		case sharpRe.MatchString(en):
+			k = 1
+		}
+		g[k].Items = append(g[k].Items, it)
 	}
 	out := g[:0]
 	for _, x := range g {

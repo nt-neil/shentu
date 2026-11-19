@@ -96,7 +96,7 @@
     <div><dd>16<small>/ 97</small></dd><dt>個主組公開漏洞已抓到</dt></div>
     <div><dd>1</dd><dt>次修補版誤報</dt></div>
   </dl>
-  <p><a href="bench.html">看實測方法與完整結果</a></p>
+  <p class="more"><a href="bench.html">看實測方法與完整結果</a> <a href="bench.html#attack">攻擊偵測怎麼量</a></p>
 </section>
 
 
@@ -140,7 +140,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.90; --x: 15.6">
+    <li class="era-node" style="--old: 0.91; --x: 14.8">
       <a class="lamp" href="../zh-TW/releases.html#v0.1.1" aria-describedby="rv-0.1.1">
         <i aria-hidden="true"></i><span class="ver">v0.1.1</span>
         <time datetime="2026-11-07">11-07</time>
@@ -152,7 +152,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.80; --x: 24.2">
+    <li class="era-node" style="--old: 0.82; --x: 22.6">
       <a class="lamp" href="../zh-TW/releases.html#v0.2.0" aria-describedby="rv-0.2.0">
         <i aria-hidden="true"></i><span class="ver">v0.2.0</span>
         <time datetime="2026-11-07">11-07</time>
@@ -164,7 +164,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.70; --x: 32.8">
+    <li class="era-node" style="--old: 0.73; --x: 30.5">
       <a class="lamp" href="../zh-TW/releases.html#v0.2.1" aria-describedby="rv-0.2.1">
         <i aria-hidden="true"></i><span class="ver">v0.2.1</span>
         <time datetime="2026-11-08">11-08</time>
@@ -176,7 +176,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.60; --x: 41.4">
+    <li class="era-node" style="--old: 0.64; --x: 38.3">
       <a class="lamp" href="../zh-TW/releases.html#v0.2.2" aria-describedby="rv-0.2.2">
         <i aria-hidden="true"></i><span class="ver">v0.2.2</span>
         <time datetime="2026-11-08">11-08</time>
@@ -188,7 +188,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.50; --x: 50.0">
+    <li class="era-node" style="--old: 0.55; --x: 46.1">
       <a class="lamp" href="../zh-TW/releases.html#v0.2.3" aria-describedby="rv-0.2.3">
         <i aria-hidden="true"></i><span class="ver">v0.2.3</span>
         <time datetime="2026-11-09">11-09</time>
@@ -200,7 +200,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.40; --x: 58.6">
+    <li class="era-node" style="--old: 0.45; --x: 53.9">
       <a class="lamp" href="../zh-TW/releases.html#v0.2.4" aria-describedby="rv-0.2.4">
         <i aria-hidden="true"></i><span class="ver">v0.2.4</span>
         <time datetime="2026-11-09">11-09</time>
@@ -212,7 +212,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.30; --x: 67.2">
+    <li class="era-node" style="--old: 0.36; --x: 61.7">
       <a class="lamp" href="../zh-TW/releases.html#v0.2.5" aria-describedby="rv-0.2.5">
         <i aria-hidden="true"></i><span class="ver">v0.2.5</span>
         <time datetime="2026-11-13">11-13</time>
@@ -224,7 +224,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.20; --x: 75.8">
+    <li class="era-node" style="--old: 0.27; --x: 69.5">
       <a class="lamp" href="../zh-TW/releases.html#v0.3.0" aria-describedby="rv-0.3.0">
         <i aria-hidden="true"></i><span class="ver">v0.3.0</span>
         <time datetime="2026-11-13">11-13</time>
@@ -236,7 +236,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.10; --x: 84.4">
+    <li class="era-node" style="--old: 0.18; --x: 77.4">
       <a class="lamp" href="../zh-TW/releases.html#v0.3.1" aria-describedby="rv-0.3.1">
         <i aria-hidden="true"></i><span class="ver">v0.3.1</span>
         <time datetime="2026-11-16">11-16</time>
@@ -248,10 +248,22 @@
       </div>
     </li>
   
-    <li class="era-node now" style="--old: 0.00; --x: 93.0">
+    <li class="era-node" style="--old: 0.09; --x: 85.2">
       <a class="lamp" href="../zh-TW/releases.html#v0.4.0" aria-describedby="rv-0.4.0">
         <i aria-hidden="true"></i><span class="ver">v0.4.0</span>
         <time datetime="2026-11-18">11-18</time>
+      </a>
+      <p class="acc"><span><b>127</b> 條規則</span></p>
+      <div class="peek" id="rv-0.4.0">
+        <p class="word">21 項改變</p>
+        <ul><li>攻擊偵測（Linux）：每一輪巡檢都會讀網站伺服器的紀錄，挑出打向這台主機真實存在的漏洞的請求。它只告警，不會自己封鎖。看不到什麼、可能漏掉什麼，列在 <code>docs/attack-detection-limits.zh-TW.md</code>。</li><li>漏洞面：每日巡檢把這台主機已知的漏洞存到 <code>state_dir/surface.json</code>，其他輪次讀這份：程式碼稽核的結果，同一個檔案看得出來時，附上註冊該 handler 的路由（#84）；應用程式相依套件與已安裝 OS 套件的漏洞公告，版本照 dpkg 與 rpm 的規則比較；已安裝的 WordPress 外掛與版本（#91）。漏洞面不存在、讀不到或超過 26 小時，會在該輪的通知和報告裡寫明，不會默默沿用。</li><li>紀錄來源：nginx 與 Apache 設定裡寫的 access log（含自訂格式）、PHP-FPM 的紀錄，以及應用程式 unit 的 journald；每輪從上次讀到的位置接著讀，紀錄輪替也接得上（#85）。只有確定只有 root 寫得進去的紀錄才算已查證；其他紀錄裡的嘗試標成未查證，告警會寫出原因。</li></ul>
+      </div>
+    </li>
+  
+    <li class="era-node now" style="--old: 0.00; --x: 93.0">
+      <a class="lamp" href="../zh-TW/releases.html#v0.4.1" aria-describedby="rv-0.4.1">
+        <i aria-hidden="true"></i><span class="ver">v0.4.1</span>
+        <b class="badge">即將發布</b>
       </a>
       <p class="acc"><span><b>127</b> 條規則</span></p>
       
@@ -260,9 +272,9 @@
   </ol>
 </div>
 
-<div class="newest" id="rv-0.4.0">
-  <div class="newest-head"><p class="word">重修</p><span class="ver">v0.4.0</span><time datetime="2026-11-18">2026-11-18</time></div>
-  <div class="grp grp-reach"><h4><i aria-hidden="true"></i>看得更遠</h4><ul><li>攻擊偵測（Linux）：每一輪巡檢都會讀網站伺服器的紀錄，挑出打向這台主機真實存在的漏洞的請求。它只告警，不會自己封鎖。看不到什麼、可能漏掉什麼，列在 <code>docs/attack-detection-limits.zh-TW.md</code>。</li><li>漏洞面：每日巡檢把這台主機已知的漏洞存到 <code>state_dir/surface.json</code>，其他輪次讀這份：程式碼稽核的結果，同一個檔案看得出來時，附上註冊該 handler 的路由（#84）；應用程式相依套件與已安裝 OS 套件的漏洞公告，版本照 dpkg 與 rpm 的規則比較；已安裝的 WordPress 外掛與版本（#91）。漏洞面不存在、讀不到或超過 26 小時，會在該輪的通知和報告裡寫明，不會默默沿用。</li><li>紀錄來源：nginx 與 Apache 設定裡寫的 access log（含自訂格式）、PHP-FPM 的紀錄，以及應用程式 unit 的 journald；每輪從上次讀到的位置接著讀，紀錄輪替也接得上（#85）。只有確定只有 root 寫得進去的紀錄才算已查證；其他紀錄裡的嘗試標成未查證，告警會寫出原因。</li><li>27 條攻擊特徵，由 Shentu 自己撰寫，或從審過的 nuclei-templates（MIT，見 <code>detect/sig/NOTICE</code>）起草；請求最多解碼兩輪後比對（#87）。只打到有漏洞 handler 的路由是 L1；同時帶有該漏洞類別的 payload 是 L2；L3 要有生效的跡象：回應大小和這條路由平常差很多，或錯誤紀錄在有漏洞的檔案與行號出現例外（#90）。請求在可能藏 payload 的地方被截斷時是 Unknown。主機沒有的漏洞算雜訊。</li><li>告警是偵測器自己寫的純文字，經由通知管道送出，不經過模型。嘗試依網段（/24 或 /64）、目標與等級分組，同一組一天只送一次。L1 只在每日報告裡計數，不推送；Unknown 要同一個目標 24 小時內累積 20 筆才推送。樣本裡的敏感參數會遮罩，每日檔案 <code>state_dir/reports/attacks-&lt;date&gt;.txt</code>（保留 30 天）的位址也會遮罩（#90、#91）。<code>shentu detect [--since] [--json]</code> 讀一輪並判定，但不送出也不存檔；<code>attack_attempts</code> 工具和 bot 的 <code>/attacks</code> 列出最近一天的群組。</li><li><code>block_ip</code> 與攻擊偵測：偵測器看過的 IP，要有它自己的、已查證的 L2 或 L3 群組，經營運者確認後才會封鎖。來自未查證紀錄、只有 L1 或 Unknown 的嘗試，以及內部位址，一律拒絕，除非營運者在伺服器上（<code>shentu chat</code>）用 <code>override_unverified</code> 覆寫；Telegram 永遠不行。只列在多個來源合併的溢出彙總組裡的 IP，有沒有覆寫都拒絕（#91）。在 Ubuntu VM 上驗收：已查證紀錄裡的攻擊判成 L3，可以封鎖；未查證紀錄裡的最多到 L2，從 Telegram 封鎖會被拒絕。</li><li>同一個請求在同一行程式碼命中多條規則時，只發一則告警，並列出所有規則，不再每條規則各發一則（#97）。</li><li>套件 CVE 的告警不再附上路由的說明；那段說明只放在你自己程式碼的告警裡（#97）。</li><li>紀錄檔或上層目錄透過 ACL 讓其他帳號可以寫入時，原因裡會寫出是哪個帳號，例如 <code>ACL grants write to www-data (uid 33)</code>（#97）。</li><li>用非 root、也不在 <code>systemd-journal</code> 或 <code>adm</code> 群組的帳號跑巡檢時，SSH 的結果會標成「只讀到一部分」（#97）。</li><li>修正之前的 v0.4.0 版本存下的攻擊紀錄（每條規則一組），載入時會合併成新格式（每行程式碼一組）（#97、#98）。升級前的次數是下限：同一行上不同類別的規則被不同請求打到時，次數可能偏低。這只影響顯示的次數，不影響告警或封鎖。v0.3.x 沒有攻擊紀錄，從 v0.3.x 升級不需要合併。</li><li>攻擊偵測只支援 Linux。</li><li>access log 不記錄請求本文（POST 表單、JSON、上傳檔）：payload 放在那裡就看不到，這類請求最多是 L1。</li><li>特徵比對的是攻擊的原始寫法。改寫過的寫法（其他編碼、加料的路徑、SQL 裡的註解或其他空白字元、用引號拆開的指令）可能漏掉。</li><li>Debian、Ubuntu、Rocky Linux 預設安裝的 nginx，v0.4.0 都會把 access log 判成 <code>web_user_writable</code>（網站帳號可寫），所以只能告警、不能當封鎖依據。Debian、Ubuntu 上 nginx 和 PHP 都用 <code>www-data</code>，風險是真的（Ubuntu 的紀錄屬於 <code>www-data:adm</code>，logrotate 也用 <code>create 0640 www-data adm</code> 建檔）；Rocky 上 nginx 用 <code>nginx</code> 帳號、PHP-FPM 用 <code>apache</code> 帳號，寫不到 nginx 的紀錄，是 v0.4.0 判得比較保守。手動改擁有者，下次輪替時會被改回去。v0.4.1 會處理。Rocky Linux 的預設 httpd 設定會載入白名單以外的模組，所以 Apache 的紀錄一律判成 <code>web_user_writable</code>；這些模組的評估排在 v0.4.1。</li><li>目前還沒有針對個別 WordPress 外掛漏洞的特徵。</li><li>掃描仍比 v0.3.0 慢：WordPress 約 35%（上面 Ubuntu VM 的實際經過時間），TypeScript 專案約 20%（Mac 本機的 user CPU 時間，#92）。</li><li>v0.3.1 仍未解決的：CVE-2021-23664 的已修版本仍會被報；WordPress 上傳暫存路徑的 <code>filesize()</code>；<code>markup</code> 不會追進先組在變數裡的標記。</li></ul></div><div class="grp grp-sharp"><h4><i aria-hidden="true"></i>看得更準</h4><ul><li><code>tools/detecteval</code>（CI 會跑）用合成的請求衡量攻擊偵測（#94）：從 nuclei-templates v10.5.2 轉出的請求：同類別的特徵比中 40.5%（有分類的 3822 個模板中 1548 個）。這是請求行的比中，不是告警；8 個應用程式、152 條路由的一般請求：誤報 0 筆，95% 上限約 0.8%（其中只有 363 筆在追蹤參數以外有差異，所以只能說誤報率低於約 0.8%）；針對測試主機真實存在的漏洞的模板：10 個中 3 個告警，其中 2 個只到 L1（payload 在請求本文裡）。</li></ul></div><div class="grp grp-light"><h4><i aria-hidden="true"></i>不拖慢網站</h4><ul><li><code>block_ip</code> 的 SSH 證據，只有 journald 裡 sshd 自己的事件確認過的登入才算（#91）：在 sshd 自己的 unit（cgroup）裡由其他程式寫進 journald 的 sshd 紀錄（例如用 <code>logger</code>），不能再當封鎖依據；v0.3.1 會封。偽造進文字紀錄的本來就會拒絕。</li><li>引擎：跳過不會改變結果的 summary 計算，分析時也少做複製。以 Mac 本機的 user CPU 時間量，WordPress 掃描比 v0.3.1 快約 34%，TypeScript 專案快約 22%，結果完全相同（#92）。以 Ubuntu 24.04 VM（arm64、4 CPU、4 GB）上的實際經過時間量，同一台機器依序跑三版，WordPress 掃描 97.2 秒（v0.3.1 120.0 秒、v0.3.0 72.1 秒），比 v0.3.1 少 19%；三版都是 2279 個檔、43 筆結果，記憶體高峰都在 848～858 MB；每日巡檢（root）126 秒（v0.3.1 146 秒、v0.3.0 99 秒）。benchmark 不變：已公開漏洞 97 個抓到 16 個、已修版本誤報 1 個；holdout 30 個抓到 3 個；TypeScript 18 個抓到 1 個、已修版本誤報 1 個。</li></ul></div>
+<div class="newest" id="rv-0.4.1">
+  <div class="newest-head"><p class="word">籌備中</p><span class="ver">v0.4.1</span><b class="badge">即將發布</b></div>
+  <div class="grp grp-light"><h4><i aria-hidden="true"></i>不拖慢網站</h4><ul><li>主機盤點會對開了 HTTP/2 的 nginx 1.9.5～1.31.8 提出警告（<code>listen ... http2</code>，或對 server 生效的 <code>http2 on</code>）：CVE-2026-123007 和 CVE-2026-123633 是 HTTP/2 的記憶體錯誤，用戶端可以讓 worker 當掉。請更新到 1.31.9 或 1.30.7，或 distro 修補後的套件；更新前先改回只用 HTTP/1.1 就沒有這個問題。這只是建議，不會改設定。套件的 changelog 已列出這兩個 CVE（distro 已 backport 修補）時不警告；distro 的公告進了 OSV 之後，套件掃描就會報，這項檢查補的是 nginx.org 的套件和自行建置的 nginx，套件掃描看不到這兩類。</li></ul></div>
 </div>
 
 
