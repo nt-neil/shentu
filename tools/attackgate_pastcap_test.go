@@ -18,15 +18,18 @@ import (
 // pastCapState: 12 unverified L2 attempts from 203.0.113.1 to .12 (.12
 // logged IPv4-mapped); overflow: merged into an overflow group, past
 // MaxGroups, as the patrol evicts.
-func pastCapState(t *testing.T, overflow bool) {
+func pastCapState(t *testing.T, overflow bool) { pastCapStateN(t, overflow, 12) }
+
+// pastCapStateN: as pastCapState, n sources (past 255, more networks).
+func pastCapStateN(t *testing.T, overflow bool, n int) {
 	t.Helper()
 	now := time.Now()
 	a := &detect.Attacks{} // as attacks.json loads: the campaign index too
 	if err := json.Unmarshal([]byte(`{"version":1,"groups":{},"ips":{},"overflow":{}}`), a); err != nil {
 		t.Fatal(err)
 	}
-	for i := 1; i <= 12; i++ {
-		ip := fmt.Sprintf("203.0.113.%d", i)
+	for i := 1; i <= n; i++ {
+		ip := fmt.Sprintf("203.0.%d.%d", 113+i/256, i%256)
 		if i == 12 {
 			ip = "::ffff:203.0.113.12"
 		}
@@ -67,7 +70,10 @@ func TestAttackGatePastCap(t *testing.T) {
 		{"override on the server: its logins decide", false, "203.0.113.11", true, gateNone, ""},
 		{"another network", false, "198.51.100.7", false, gateNone, ""},
 		{"merged into an overflow group", true, "203.0.113.11", false, gateRefuse, "overflow"},
-		{"merged, override: not for a summary", true, "203.0.113.11", true, gateRefuse, "overflow"},
+		// Not listed even in the summary: override on the server applies,
+		// or forged lines from many sources could keep any address from
+		// being blocked.
+		{"merged, override on the server", true, "203.0.113.11", true, gateNone, ""},
 		{"merged, logged IPv4-mapped", true, "::ffff:203.0.113.12", false, gateRefuse, "overflow"},
 		{"merged, a neighbour never seen", true, "203.0.113.200", false, gateNone, ""},
 	} {
@@ -97,5 +103,18 @@ func TestBlockGatePastCapVerifiedLogins(t *testing.T) {
 	}
 	if err := blockGate(context.Background(), &Env{Remote: true}, net.ParseIP("203.0.113.11"), false); err == nil {
 		t.Error("no SSH logins: blocked past the cap")
+	}
+}
+
+// An overflow summary whose hashes were cut (past MaxGroupSeen) cannot
+// tell its members: an address it does not list is refused from Telegram,
+// and left to its logins by an override on the server.
+func TestAttackGateCutSummary(t *testing.T) {
+	pastCapStateN(t, true, detect.MaxGroupSeen+6)
+	if v, err := attackGate(net.ParseIP("198.51.100.7"), false); v != gateRefuse || err == nil || !strings.Contains(err.Error(), "overflow") {
+		t.Errorf("cut summary: %v %v", v, err)
+	}
+	if v, err := attackGate(net.ParseIP("198.51.100.7"), true); v != gateNone || err != nil {
+		t.Errorf("cut summary, override on the server: %v %v", v, err)
 	}
 }

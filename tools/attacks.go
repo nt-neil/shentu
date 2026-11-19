@@ -67,7 +67,10 @@ func attackGate(ip net.IP, override bool) (gateVerdict, error) {
 			}
 			gs = append(gs, g)
 		}
-		if len(gs) == 0 {
+		if len(gs) == 0 || override {
+			// Override on the server: no group shows the address, an
+			// overflow summary included, and forged lines from many
+			// sources could otherwise keep any address from being blocked.
 			return gateNone, nil
 		}
 		past = ", may be among its addresses past those listed"
