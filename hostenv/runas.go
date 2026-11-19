@@ -65,12 +65,12 @@ func supervisordRunning(src Source) (confs []string, lost bool) {
 		for i := at + 1; i < len(argv); i++ {
 			switch a := argv[i]; {
 			case a == "-n" || a == "--nodaemon":
-			case (a == "-c" || a == "--configuration") && i+1 < len(argv):
+			case (shortC(a) && len(a) == 2 || a == "--configuration") && i+1 < len(argv):
 				c = argv[i+1]
 				i++
 			case strings.HasPrefix(a, "--configuration="):
 				c = strings.TrimPrefix(a, "--configuration=")
-			case strings.HasPrefix(a, "-c") && len(a) > 2:
+			case shortC(a) && len(a) > 2:
 				c = a[2:]
 			default:
 				lost = true // an option not told (an abbreviation, grouped flags...)
@@ -85,6 +85,10 @@ func supervisordRunning(src Source) (confs []string, lost bool) {
 	}
 	return confs, lost
 }
+
+// shortC: a supervisord argument starting with its -c option (read from
+// /proc, never built into a command).
+func shortC(a string) bool { return len(a) >= 2 && a[0] == '-' && a[1] == 'c' }
 
 func gone(err error) bool { return errors.Is(err, fs.ErrNotExist) || errors.Is(err, ErrNotRecorded) }
 
