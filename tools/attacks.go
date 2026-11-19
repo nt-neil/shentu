@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -86,6 +87,10 @@ func attackGate(ip net.IP, override bool) (gateVerdict, error) {
 			weak = append(weak, g.Entry+" ("+g.Level+past+")")
 		case g.Unverified:
 			unverified = append(unverified, g.Entry+" ("+strings.Join(g.Reasons, "; ")+past+")")
+		case !slices.ContainsFunc(g.IPs, func(x string) bool { return hostenv.CanonicalIP(x) == canon }):
+			// Found only by a looser reading of how it was logged: enough
+			// to refuse on, never to allow.
+			weak = append(weak, g.Entry+" (logged as another form of it)")
 		default:
 			verified = true // a verified L2 or L3 group of its own
 		}
@@ -164,6 +169,9 @@ func blockGate(ctx context.Context, env *Env, ip net.IP, override bool) error {
 	if why := internalAddr(ip); why != "" && !override {
 		return fmt.Errorf("refusing to block %s: it is %s, often a load balancer, proxy or this network's own host (a log without its real client address names it for every request): blocking it may cut off the whole site; check on the server and, if it is right, block it there with shentu chat and override_unverified", ip, why)
 	}
+	if env.Remote {
+		return remoteGate(ctx, env, ip)
+	}
 	v, refusal := attackGate(ip, override)
 	switch v {
 	case gateAllow:
@@ -175,6 +183,29 @@ func blockGate(ctx context.Context, env *Env, ip net.IP, override bool) error {
 		return nil
 	}
 	return refusal
+}
+
+// remoteGate is block_ip's gate from a chat channel (Telegram): refused
+// unless the address has evidence shentu verified, a verified L2 or L3
+// attack group listing it, or SSH login events sshd itself logged.
+// Anything else (no group found, an unverified, weak or overflow one, an
+// address written another way) is for the operator on the server.
+func remoteGate(ctx context.Context, env *Env, ip net.IP) error {
+	v, refusal := attackGate(ip, false)
+	if v == gateAllow {
+		return nil
+	}
+	verified, err := loginCheck(ctx, env, ip)
+	if err == nil && verified {
+		return nil
+	}
+	why := "it is not listed in a verified L2 or L3 attack group, and has no SSH login events sshd itself logged"
+	if refusal != nil {
+		why = refusal.Error()
+	} else if err != nil {
+		why = err.Error()
+	}
+	return fmt.Errorf("refusing to block %s from a chat channel: only an address with evidence shentu verified (a verified L2 or L3 attack group listing it, or SSH login events sshd itself logged) can be blocked from here, and its attempts cannot be believed or are not known (%s). This cannot be overridden from Telegram: check it on the server and, if it is right, block it there with shentu chat", ip, detect.Printable(why))
 }
 
 var attackAttempts = Tool{
