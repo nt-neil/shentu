@@ -37,7 +37,7 @@ func init() {
 // journalFields are the fields asked for: the message, and those journald
 // fills in from the sender's credentials (the _ ones), which the sender
 // cannot set. __CURSOR and __REALTIME_TIMESTAMP come always.
-const journalFields = "--output-fields=MESSAGE,_SYSTEMD_UNIT,_UID,_PID,_COMM,_TRANSPORT"
+const journalFields = "--output-fields=MESSAGE,_SYSTEMD_UNIT,_UID,_PID,_COMM,_EXE,_TRANSPORT,SYSLOG_IDENTIFIER"
 
 // journalUnitArgv is a unit's read: after a cursor or since a time, with
 // --output-fields (systemd 236+) or without. Without it is still -o json,
@@ -80,8 +80,12 @@ type JournalEntry struct {
 	UID       int       `json:"uid"`            // _UID; -1 when absent
 	PID       int       `json:"pid,omitempty"`
 	Comm      string    `json:"comm,omitempty"`
+	Exe       string    `json:"exe,omitempty"`       // _EXE: the sender's program, as the kernel has it
 	Transport string    `json:"transport,omitempty"` // stdout, journal, syslog, kernel, driver, audit
-	Message   string    `json:"message"`             // what the sender wrote: never trusted; cut at MaxJournalMessage
+	// Ident is SYSLOG_IDENTIFIER, the tag the sender wrote: never trusted,
+	// only which of a unit's messages are its access log's.
+	Ident   string `json:"ident,omitempty"`
+	Message string `json:"message"` // what the sender wrote: never trusted; cut at MaxJournalMessage
 	// MessageMissing: journald gave no MESSAGE as text or bytes (null, or
 	// none): the entry is counted, not taken as an empty message.
 	MessageMissing bool `json:"message_missing,omitempty"`
@@ -211,7 +215,7 @@ func parseJournalJSON(l string) (JournalEntry, error) {
 		}
 		return ""
 	}
-	e := JournalEntry{Cursor: str("__CURSOR"), Unit: str("_SYSTEMD_UNIT"), Comm: str("_COMM"), Transport: str("_TRANSPORT"), Message: str("MESSAGE"), UID: -1}
+	e := JournalEntry{Cursor: str("__CURSOR"), Unit: str("_SYSTEMD_UNIT"), Comm: str("_COMM"), Exe: str("_EXE"), Transport: str("_TRANSPORT"), Ident: str("SYSLOG_IDENTIFIER"), Message: str("MESSAGE"), UID: -1}
 	if raw, ok := m["MESSAGE"]; !ok || string(raw) == "null" {
 		e.MessageMissing = true
 	}
@@ -332,22 +336,30 @@ func dropInNames(unit string) []string {
 // path and every applicable name, a file name in a higher-priority path
 // hiding the same name in a lower one, in file name order. Anything that
 // cannot be read or told fails closed: Elevated.
-func appUnit(src Source, name string, unit []byte, conf WebConf) (AppUnit, bool) {
-	u := AppUnit{Name: name}
+// unitConfs are the unit's file, the one of the highest-priority path, and
+// its drop-ins in the order systemd applies them (appUnit); unread: one of
+// them could not be read or listed.
+func unitConfs(src Source, name string, unit []byte, conf WebConf) (all [][]byte, unread bool) {
 	tmpl := name
 	if at := strings.IndexByte(name, '@'); at >= 0 {
 		tmpl = name[:at+1] + ".service"
 	}
-	for _, dir := range unitPaths { // a full override of the unit file
-		found := false
-		for _, n := range []string{name, tmpl} {
+	// A full override of the unit file: systemd takes the unit's own name
+	// from every directory first, and only then its template's. One masked
+	// (linked to /dev/null) where it is taken does not exist.
+	found := false
+	for _, n := range []string{name, tmpl} {
+		for _, dir := range unitPaths {
 			f := path.Join(dir, n)
+			if t, err := src.Readlink(f); err == nil && t == "/dev/null" {
+				return nil, false // masked: systemd starts it for nothing
+			}
 			if _, err := Stat(src, f); err != nil {
 				continue
 			}
 			b, why := readWebConf(src, f, conf)
 			if why != "" {
-				u.Elevated = true
+				unread = true
 			} else {
 				unit = b
 			}
@@ -369,7 +381,7 @@ func appUnit(src Source, name string, unit []byte, conf WebConf) (AppUnit, bool)
 			entries, err := src.ReadDir(d)
 			if err != nil {
 				if !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, ErrNotRecorded) {
-					u.Elevated = true // there, but not listed: a User= we cannot see
+					unread = true // there, but not listed: a User= we cannot see
 				}
 				continue
 			}
@@ -388,15 +400,79 @@ func appUnit(src Source, name string, unit []byte, conf WebConf) (AppUnit, bool)
 		files = append(files, f)
 	}
 	sort.Strings(files)
-	all := [][]byte{unit}
+	all = [][]byte{unit}
 	for _, f := range files {
 		b, why := readWebConf(src, chosen[f].file, conf)
 		if why != "" {
-			u.Elevated = true
+			unread = true
 			continue
 		}
 		all = append(all, b)
 	}
+	return all, unread
+}
+
+// unitCandidates are every file that may apply to the unit, whichever
+// systemd takes: its own and its template's file in every directory, and
+// every drop-in of every applicable name in every directory, a name
+// hidden by another or not (runAsAccounts takes all their accounts: an
+// order taken wrong only makes it stricter). A unit masked where systemd
+// takes it (unitConfs) has none.
+func unitCandidates(src Source, name string, unit []byte, conf WebConf) (all [][]byte, unread bool) {
+	taken, unread := unitConfs(src, name, unit, conf)
+	if len(taken) == 0 && !unread {
+		return nil, false // masked
+	}
+	all = append(all, unit)
+	tmpl := name
+	if at := strings.IndexByte(name, '@'); at >= 0 {
+		tmpl = name[:at+1] + ".service"
+	}
+	read := func(f string) {
+		b, why := readWebConf(src, f, conf)
+		if why != "" {
+			unread = true
+			return
+		}
+		all = append(all, b)
+	}
+	for _, dir := range unitPaths {
+		for _, n := range []string{name, tmpl} {
+			f := path.Join(dir, n)
+			if t, err := src.Readlink(f); err == nil && t == "/dev/null" {
+				continue
+			}
+			if _, err := Stat(src, f); err == nil {
+				read(f)
+			}
+		}
+		for _, n := range dropInNames(name) {
+			d := path.Join(dir, n+".d")
+			entries, err := src.ReadDir(d)
+			if err != nil {
+				if !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, ErrNotRecorded) {
+					unread = true
+				}
+				continue
+			}
+			for _, e := range entries {
+				if strings.HasSuffix(e, ".conf") {
+					read(path.Join(d, e))
+				}
+			}
+		}
+	}
+	return all, unread
+}
+
+// unitBools: systemd's boolean words.
+var unitBools = map[string]bool{"1": true, "yes": true, "y": true, "true": true, "t": true, "on": true,
+	"0": false, "no": false, "n": false, "false": false, "f": false, "off": false}
+
+func appUnit(src Source, name string, unit []byte, conf WebConf) (AppUnit, bool) {
+	u := AppUnit{Name: name}
+	all, unread := unitConfs(src, name, unit, conf)
+	u.Elevated = unread
 	found := false
 	for _, b := range all {
 		ok, fpm, priv := unitRunsApp(b)
