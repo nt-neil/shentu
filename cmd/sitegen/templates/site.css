@@ -317,16 +317,16 @@ html:not([lang^="zh"]) .newest-head .word { font-weight: 600; font-family: var(-
 @media (prefers-color-scheme: light) { .flow path { opacity: .8; } .flow .shine { opacity: .6; } }
 
 /* home: the night-watch scroll */
-.walk { position: relative; height: 640vh; }
+.walk { position: relative; height: 802vh; }
 .walk .stage { position: sticky; top: 0; height: 100vh; height: 100svh; overflow: hidden; background: var(--bg); }
 .walk .sky { position: absolute; top: 0; left: 0; width: 260vw; height: 62%; background: url(img/scroll/sky.webp) 0 100% / auto 100% repeat-x; opacity: .9; will-change: transform; }
-.walk .world { position: absolute; inset: 0; display: flex; width: 600vw; will-change: transform; }
+.walk .world { position: absolute; inset: 0; display: flex; width: 700vw; will-change: transform; }
 .scene { position: relative; flex: 0 0 100vw; height: 100%; background: var(--bg-2) 50% 55% / cover no-repeat;
   -webkit-mask-image: linear-gradient(90deg, transparent, #000 14%, #000 86%, transparent); mask-image: linear-gradient(90deg, transparent, #000 14%, #000 86%, transparent); }
 .sc1 { background-image: var(--guardian); -webkit-mask-image: linear-gradient(90deg, #000 86%, transparent); mask-image: linear-gradient(90deg, #000 86%, transparent); }
 .sc6 { background-position: 50% 30%; transform-origin: 50% 40%; }
 /* the near layers: incense haze (light on black, screened in) and banyan boughs (dark on white, multiplied in) */
-.walk .haze, .walk .boughs { position: absolute; top: 0; left: 0; width: 700vw; pointer-events: none; will-change: transform; }
+.walk .haze, .walk .boughs { position: absolute; top: 0; left: 0; width: 900vw; pointer-events: none; will-change: transform; }
 /* each tile of haze fades out at its edges, so the tiles meet without a seam */
 .walk .haze { height: 100%; background: url(img/scroll/smoke.webp) 0 60% / 112vh 63vh repeat-x; mix-blend-mode: screen; opacity: .55;
   -webkit-mask: radial-gradient(closest-side, #000 55%, transparent) 0 60% / 112vh 63vh repeat-x; mask: radial-gradient(closest-side, #000 55%, transparent) 0 60% / 112vh 63vh repeat-x; }
@@ -352,10 +352,10 @@ canvas.near { position: absolute; inset: 0; width: 100%; height: 100%; pointer-e
 .station:not(.st1) { top: 16vh; bottom: 9vh; z-index: 2; width: min(70vw, 1400px); display: flex; flex-direction: column; align-items: flex-start; }
 .station:not(.st1) h2 { order: 3; margin: auto 0 0 12vw; white-space: nowrap; will-change: transform; font: 900 clamp(48px, 5.2vw, 104px)/1.05 var(--serif); letter-spacing: -.01em; color: var(--ink); text-shadow: 0 4px 40px rgba(0, 0, 0, .9); }
 .station p { color: var(--muted); margin: 0; }
-.st5 time, .st5 h2 { color: var(--alarm); }
+.st5 time, .st5 h2, .st7 time, .st7 h2 { color: var(--alarm); }
 /* the words of a station never sit on the picture bare: a dark plate with soft edges, above every layer */
 .station:not(.st1) p { order: 2; max-width: 26em; margin-top: 10px; padding: 12px 16px; color: #d8c9b2; background: rgba(11, 8, 6, .8); box-shadow: 0 0 40px 20px rgba(11, 8, 6, .55); border-left: 2px solid var(--ember); }
-.st5:not(.st1) p { border-left-color: var(--alarm); }
+.st5:not(.st1) p, .st7:not(.st1) p { border-left-color: var(--alarm); }
 html:not([lang|="zh"]) .station:not(.st1) h2 { white-space: normal; max-width: 12em; }
 .station.on { opacity: 1; transform: none; }
 .st1 { top: auto; bottom: 14vh; width: min(38vw, 520px); }
@@ -394,7 +394,7 @@ html:not(.walking) .st1 { opacity: 1; transform: none; }
 @media (prefers-color-scheme: light) {
   .walk .stage, body.p-index .top { --bg: #0b0806; --bg-2: #15100c; --bg-3: #1f1812; --ink: #efe3cf; --muted: #a8977f; --line: rgba(239, 227, 207, .13); --ember: #f2b45c; --alarm: #ff6a4d; --on-ember: #160f08; --glow: rgba(242, 180, 92, .45); color: var(--ink); }
 }
-@media (prefers-color-scheme: light) { .walk .stage { background: #0b0806; color: #efe3cf; } .walk .stage .station p { color: #d8c9b2; } .walk .stage .checks li { color: #b9a98f; } .walk .stage .checks li.lit { color: #f3e8d6; } .walk .stage .station time { color: #f2b45c; } .walk .stage .st5 time, .walk .stage .st5 h2 { color: #ff6a4d; } .walk .shade { background: linear-gradient(90deg, rgba(11, 8, 6, .75), transparent 42%), linear-gradient(#0b0806, transparent 16%, transparent 72%, #0b0806); } }
+@media (prefers-color-scheme: light) { .walk .stage { background: #0b0806; color: #efe3cf; } .walk .stage .station p { color: #d8c9b2; } .walk .stage .checks li { color: #b9a98f; } .walk .stage .checks li.lit { color: #f3e8d6; } .walk .stage .station time { color: #f2b45c; } .walk .stage .st5 time, .walk .stage .st5 h2, .walk .stage .st7 time, .walk .stage .st7 h2 { color: #ff6a4d; } .walk .shade { background: linear-gradient(90deg, rgba(11, 8, 6, .75), transparent 42%), linear-gradient(#0b0806, transparent 16%, transparent 72%, #0b0806); } }
 
 @media (max-width: 860px) {
   .tally dl { grid-template-columns: 1fr; gap: 6px; }
@@ -470,7 +470,7 @@ html:not(.walking) .st1 { opacity: 1; transform: none; }
   .scene { height: 46vh; -webkit-mask-image: none; mask-image: none; transform: none !important; }
   /* each scene stands above its own words, not all scenes before all words */
   .scene[data-bg] { display: none; }
-  .sc1 { order: 1; } .st1 { order: 2; } .sc2 { order: 3; } .st2 { order: 4; } .sc3 { order: 5; } .st3 { order: 6; } .sc4 { order: 7; } .st4 { order: 8; } .sc5 { order: 9; } .st5 { order: 10; } .checks { order: 11; } .sc6 { order: 12; } .talk { order: 13; }
+  .sc1 { order: 1; } .st1 { order: 2; } .sc2 { order: 3; } .st2 { order: 4; } .sc3 { order: 5; } .st3 { order: 6; } .sc4 { order: 7; } .st4 { order: 8; } .sc5 { order: 9; } .st5 { order: 10; } .checks { order: 11; } .sc6 { order: 12; } .talk { order: 13; } .sc7 { order: 14; } .st7 { order: 15; } .talk2 { order: 16; }
   .station, .checks, .talk { position: static; opacity: 1 !important; transform: none !important; width: auto; margin: 22px var(--gutter); }
   .checks ul { height: auto; }
   .checks li { transform: none; }

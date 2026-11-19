@@ -31,6 +31,11 @@ Blocked 203.0.113.7 until tomorrow 09:14. To undo: "unblock 203.0.113.7".
 - **`shentu patrol`**: run by a systemd timer every 30 minutes. It runs fixed checks without the
   LLM. If something new shows up, the LLM explains it and the report goes to Telegram, Slack, Discord,
   ntfy or a webhook. If the LLM is down, you still get the raw findings.
+- **Attack detection** (v0.4.0, Linux): each patrol also reads the nginx and Apache access logs
+  and alerts on requests aimed at vulnerabilities this server really has, from level L1 (the route
+  was reached) to L3 (it likely worked). It never blocks on its own. `shentu log-trust suggest`
+  lists what would let more of the host's logs back a block. See
+  [docs/attack-detection.md](docs/attack-detection.md).
 - **`shentu survey`**: learns the server first, like a guard walking the premises. Patrol keeps the
   survey as a baseline and reports risky settings (a database open to the network, SSH password
   login) and changes (new accounts, cron files, SSH configuration). The model gets a summary, so its
@@ -63,6 +68,7 @@ Blocked 203.0.113.7 until tomorrow 09:14. To undo: "unblock 203.0.113.7".
 | `file_changes` | recently changed files in watched directories, plus webshell patterns (PHP, JSP, Node.js, Python) |
 | `cert_expiry` | TLS certificate expiry |
 | `log_search` | regex search, limited to configured log files |
+| `attack_attempts` | attack detection's groups for the last 24 hours (up to 168): vulnerability, level, severity, count, addresses, masked samples, and whether the log can be believed. Samples are left out when asked from a chat channel |
 | `block_ip` / `unblock_ip` | timed nftables blocks in a separate `inet shentu` table. **Chat only, needs your confirmation.** |
 | `notify` | send a message to your channel (Telegram, Slack, Discord, ntfy or a signed JSON webhook) |
 
@@ -112,8 +118,8 @@ same Windows APIs, build 17763) but not verified on GitHub-hosted runners (they 
 configuration and state live in `%ProgramData%\Shentu`, open to SYSTEM and Administrators only.
 Step by step, with the configuration: [packaging/windows/INSTALL.md](packaging/windows/INSTALL.md).
 
-Limits in v0.3.0: Windows is read-only (`block_ip` and `unblock_ip` are not supported), `shentu
-setup` does not run there yet (the configuration is written by hand), there is no MSI, and the
+Limits on Windows (v0.4.0): it is read-only (`block_ip` and `unblock_ip` are not supported),
+attack detection is Linux only, `shentu setup` does not run there yet (the configuration is written by hand), there is no MSI, and the
 binary is not code-signed: SmartScreen may warn and Microsoft Defender or another antivirus may
 flag it, because it reads the event log, autostart keys and WMI subscriptions as malware
 scanners do. Check the zip against `checksums.txt` and with
@@ -161,11 +167,11 @@ largest of `qwen2.5:3b`/`7b`/`14b` that fits in memory. `--model` picks another 
   other is for the server (v0.4.1).
 - **No listening ports, no daemon, no database.** Every tool call and model call is
   recorded in `/var/lib/shentu/log.jsonl`.
-- **Small attack surface**: one third-party dependency (a TOML parser), and everything else is the
-  Go standard library.
+- **Small attack surface**: two third-party dependencies (a TOML parser, and golang.org/x/sys for
+  Windows), and everything else is the Go standard library.
 - **Guarantees are tests**: `invariants_test.go` plays a hostile model and checks each rule above
   (no control tools in patrol, confirmation before every control action, lockout guards, log
-  allowlist, masking, the patrol sandbox, one dependency). A change that breaks one fails CI.
+  allowlist, masking, the patrol sandbox, the dependency allowlist). A change that breaks one fails CI.
   `injection_test.go` runs a real model against attacker-written log lines before each release,
   and `govulncheck` blocks a release with a known reachable vulnerability.
 

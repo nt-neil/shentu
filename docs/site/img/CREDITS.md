@@ -26,6 +26,11 @@ The second batch (g07 to g12) was used as placeholders while the scroll was buil
 the maintainer saw the finished scroll and asked for none of them to be replaced.
 The maintainer chose the whole third batch (g13 to g16).
 
+The fourth batch (g17) was made on 2026-11-20 for the seventh station, the same way, with
+`door.webp` (g11) and `court.webp` (g08) as reference images. Six candidates were made
+(0.21 USD in all, 0.035 USD each); the maintainer chose the third, and the other five were
+not kept.
+
 | File | Candidate | Shows | Converted |
 |---|---|---|---|
 | `scroll/sky.webp` | g07 | the far layer: night sky and temple roofs | cwebp -resize 2400 0 -q 58 |
@@ -38,6 +43,7 @@ The maintainer chose the whole third batch (g13 to g16).
 | `scroll/smoke.webp` | g14 | incense haze for the near layer (screened in) | cwebp -resize 1600 0 -q 55 |
 | `scroll/branches.webp` | g15 | banyan boughs for the near layer (multiplied in) | greyscale, 960 px wide, cwebp -q 50 |
 | `scroll/walker2.webp` | g16 | the guardian walking, second step (made with g12 as the reference image) | cropped and keyed like walker.webp, cwebp -q 72 -alpha_q 80 |
+| `scroll/knock.webp` | g17 | the red door knocked on at 03:15, a fist's shadow on it | cwebp -resize 1600 0 -q 60 |
 
 Prompts:
 
@@ -51,3 +57,4 @@ Prompts:
 - g14: Wisps of thin incense smoke and drifting haze floating across the frame on a pure black background, soft, translucent, warm amber tint, wide composition, no objects, no text, no letters, no watermark
 - g15: Black silhouette of hanging banyan tree branches and small leaves along the top edge of the frame, on a pure white background, clean graphic silhouette, wide composition, no text, no letters, no watermark
 - g16: Full body side view of the same small temple door guardian in ornate armor with a flame-crested helmet, mid-stride walking to the right with the other leg forward, holding a glowing paper lantern on a pole in front, warm rim light, on a pure black background, no ground, no shadow, no text, no letters, no watermark
+- g17: The same heavy red temple door with iron bands as in the first reference image, same close framing, at 3:15 in the night it is being knocked on from outside: the cracks glow intense red and pulse brighter than before, dust and splinters shaking off the planks, the iron knocker ring swinging, a long dark shadow of a raised fist cast across the door, dark red smoke spreading along the stone floor like the second reference image, the door sits center-right of the frame, the left third is dark, the bottom edge is dark, red and black with a little amber, cinematic night scene, original Taiwanese temple, warm amber lantern light as the only light source, deep black shadows, backlit, ember gold and charcoal palette, same mood as a backlit temple door guardian, no people, no text, no letters, no watermark

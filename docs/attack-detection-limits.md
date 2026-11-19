@@ -1,8 +1,10 @@
-# Attack detection: known limitations in v0.4.0
+# Attack detection: known limitations in v0.4.1
 
 [繁體中文](attack-detection-limits.zh-TW.md)
 
-v0.4.0 ships 27 attack signatures, and they are not extended to catch rewritten forms of an attack.
+How detection works, how to read an alert and why a block needs you: [attack-detection.md](attack-detection.md).
+
+v0.4.1 ships 27 attack signatures (as v0.4.0 did), and they are not extended to catch rewritten forms of an attack.
 The cases below are known misses. A miss only costs an alert: Shentu misses the request or rates it lower. None of them can make Shentu block the wrong address.
 v0.4.0 never blocks on its own: `block_ip` always needs the operator's confirmation. Its attacks are checked too: an address with attack attempts is blocked only for a verified L2 or L3 group of its own, not an overflow summary of many sources. Attempts that only reached a route (L1), could not be judged (Unknown) or come from unverified logs do not back a block; the address's SSH logins that journald itself confirms still can. An internal address (private, loopback, CGNAT and the like) is refused. `override_unverified` lifts all of these checks but one, and only from the server (`shentu chat`), never from Telegram: attempts that are unverified, L1 or Unknown no longer hold a block back, SSH logins are not checked, and an internal address may be blocked, so the block rests on the operator's own reading of the logs. An address listed in an overflow summary is still refused, unless it also has a verified L2 or L3 group of its own. From Telegram, since v0.4.1, `block_ip` blocks only an address with evidence Shentu verified (a verified L2 or L3 group listing it, or SSH login events sshd itself logged); any other address, one no group lists included, is refused there and is for the operator on the server.
 
@@ -10,7 +12,7 @@ v0.4.0 never blocks on its own: `block_ip` always needs the operator's confirmat
 
 - **Linux only.** Attack detection reads Linux hosts' logs only.
 - **Some log formats are refused.** nginx's and Apache's access logs are read, custom formats from their configuration included. A format with a field Shentu does not support, with `escape=none` or with a custom time format is refused.
-- **No protocol-layer attacks.** An access log records the requests a server parsed, not the HTTP/2 frames or TLS records that carried them, so an attack on the protocol layer itself (nginx's HTTP/2 flaws CVE-2026-123007 and CVE-2026-123633, for example) is never seen here. The host survey covers those by version and configuration instead: it warns when an affected nginx serves HTTP/2. It reads a distribution's backported fix from the package changelog. Images without changelogs (Ubuntu's minimized images, some container images) keep the warning after the fix; there, the distribution's advisory is what counts. A host where the nginx package was removed with its configuration left behind, and another nginx was built from source outside the places the survey looks for one, may get no warning.
+- **No protocol-layer attacks.** An access log records the requests a server parsed, not the HTTP/2 frames or TLS records that carried them, so an attack on the protocol layer itself (nginx's HTTP/2 flaws CVE-2026-123007 and CVE-2026-123633, for example) is never seen here. The host survey covers those by version and configuration instead: it warns when an affected nginx serves HTTP/2. It reads a distribution's backported fix from the package changelog. Images without changelogs (Ubuntu's minimized images, some container images) keep the warning after the fix; there, the distribution's advisory is what counts. A host where the nginx package was removed with its configuration left behind, and another nginx was built from source outside the places the survey looks for one, may get no warning. When an nginx `include` passes through a directory that its group can write or that root does not own (`sites-enabled` pointing into a deploy account's directory, for example), the HTTP/2 check is listed as not checked. This is cautious by design, not a false alarm.
 - **No request bodies.** Access logs do not record POST bodies, JSON or uploads, so a payload there is never seen. A route reached that way is L1 at most.
 - **Two decoding rounds.** URL encoding is decoded at most twice (with `%u` and overlong UTF-8). Base64, gzip and other encodings are not decoded.
 - **Unknown requests are counted, and L1 is not pushed.** A request cut where it may hide a payload (Unknown) is counted, and pushed only when one sink gets 20 of them within 24 hours. L1 attempts are counted and reported, never pushed as alerts.
@@ -83,6 +85,7 @@ Class signatures are tried on parameter names and on each path segment too, so o
 - A hit in a path segment is L2 only where a route's placeholder took that segment. Otherwise the route stays at L1 and the hit is unanchored.
 - For a route written as a regular expression, its capture groups are the placeholders. A route with no group leaves a path segment hit at L1. A fixed word inside a group (such as `(user|list)`) is taken as a placeholder value, so a hit in that word is L2.
 - A placeholder's value is taken both from the path with `;` parameters cleaned away and from the path that keeps them, so a hit in a `;` parameter of the placeholder's segment (such as `/user/:id` with `/user/42;…`) is L2. One in a `;` parameter of the route's own words or of a mount prefix stays L1.
+- Some routers drop a path's `;` parameters before the handler sees them. Shentu still matches their values as payloads, so such a request may add an L2 that did not reach the code.
 - A route's usual response size is learned from its ordinary responses; only requests a hit took to L2 are left out (an unanchored hit or noise is learned). A route whose ordinary requests often carry a class signature's text where its placeholder or a parameter takes it, and get larger responses, still learns too small a usual size. An L2 on that route then gets size evidence more easily. An L3 on a single piece of evidence is at most high.
 
 ## Narrowed to spare ordinary text
@@ -103,7 +106,7 @@ The cost is misses. A call with a space before its parenthesis is caught only wh
 
 ## Measured detection
 
-The numbers come from the evaluation tool (`tools/detecteval`, PR #94) with the signatures and matching of integ adff9e6 (#87, #90 and #91 merged); they are the ones in `tools/detecteval/baseline.json` next to this document. They include parameter names, path segments, anchored routes and the three narrowed signatures.
+The numbers come from the evaluation tool (`tools/detecteval`, PR #94) with the signatures and matching of integ adff9e6 (#87, #90 and #91 merged); they are the ones in `tools/detecteval/baseline.json` next to this document. They include parameter names, path segments, anchored routes and the three narrowed signatures. CI's detect-eval measures them again on every change and fails when any differs from the baseline; v0.4.1 (integ 37dc016) gives the same numbers.
 
 What they mean:
 
