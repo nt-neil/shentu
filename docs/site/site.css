@@ -300,7 +300,9 @@ table.num .cid { font: 600 15px/1.4 var(--sans); }
 .peek { position: absolute; left: 0; bottom: 34px; transform: translate(-50%, 8px); width: 270px; padding: 14px 16px; background: var(--bg-2); border: 1px solid var(--line); border-top: 2px solid var(--ember);
   opacity: 0; pointer-events: none; transition: opacity .3s, transform .3s; z-index: 3; font-size: 14px; }
 .era-node:hover .peek, .era-node:focus-within .peek { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
-.era-node:first-child .peek { transform: translate(-20%, 8px); } .era-node:first-child:hover .peek, .era-node:first-child:focus-within .peek { transform: translate(-20%, 0); }
+.era-node:nth-child(-n+2) .peek { transform: translate(-20%, 8px); } .era-node:nth-child(-n+2):hover .peek, .era-node:nth-child(-n+2):focus-within .peek { transform: translate(-20%, 0); }
+/* the newest node has no peek (its card is below), so the one before it is the rightmost: keep it inside the page */
+.era-node:nth-last-child(2) .peek { transform: translate(-80%, 8px); } .era-node:nth-last-child(2):hover .peek, .era-node:nth-last-child(2):focus-within .peek { transform: translate(-80%, 0); }
 .peek .word { margin: 0 0 6px; font: 900 13px/1 var(--serif); letter-spacing: .14em; color: var(--ember); }
 html:not([lang^="zh"]) .peek .word { font-weight: 600; font-family: var(--sans); letter-spacing: .04em; }
 .peek ul { margin: 0; padding-left: 1.1em; } .peek li { margin: 3px 0; max-width: none; } .peek li::marker { color: var(--ember); }
