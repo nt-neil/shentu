@@ -340,6 +340,27 @@ func TestServerAccountApart(t *testing.T) {
 			h.st["/etc/systemd/system/marker.service.d"] = FileStat{Mode: fs.ModeDir | 0o755}
 			h.files["/etc/systemd/system/marker.service.d/user.conf"] = "[Service]\nUser=nginx\n"
 		}, ""},
+		// Review 2's last part: a masked template does not hide an
+		// instance's own file, which systemd takes first.
+		{"a masked template, an instance's own file as nginx", 1, true, func(h statHost) {
+			systemdDirs(h)
+			h.st["/dev/null"] = FileStat{Mode: fs.ModeDevice | fs.ModeCharDevice | 0o666}
+			h.links["/etc/systemd/system/marker@.service"] = "/dev/null"
+			h.files["/usr/lib/systemd/system/marker@a.service"] = "[Service]\nUser=nginx\nExecStart=/usr/local/bin/marker-tool\n"
+			h.links[wants+"/marker@a.service"] = "/usr/lib/systemd/system/marker@a.service"
+		}, ReasonWebUserWritable},
+		{"a template above, an instance's own file below as nginx", 1, true, func(h statHost) {
+			systemdDirs(h)
+			h.files["/etc/systemd/system/marker@.service"] = "[Service]\nUser=%i\nExecStart=/usr/local/bin/marker-tool\n"
+			h.files["/usr/lib/systemd/system/marker@a.service"] = "[Service]\nUser=nginx\nExecStart=/usr/local/bin/marker-tool\n"
+		}, ReasonWebUserWritable},
+		{"a masked template, its instance by a link only", 1, true, func(h statHost) {
+			systemdDirs(h)
+			h.st["/dev/null"] = FileStat{Mode: fs.ModeDevice | fs.ModeCharDevice | 0o666}
+			h.links["/etc/systemd/system/marker@.service"] = "/dev/null"
+			h.files["/usr/lib/systemd/system/marker@.service"] = "[Service]\nUser=%i\nExecStart=/usr/local/bin/marker-tool\n"
+			h.links[wants+"/marker@nginx.service"] = "/usr/lib/systemd/system/marker@.service"
+		}, ""},
 		{"a unit linked to another device", 1, true, func(h statHost) {
 			systemdDirs(h)
 			h.st["/dev/zero"] = FileStat{Mode: fs.ModeDevice | fs.ModeCharDevice | 0o666}

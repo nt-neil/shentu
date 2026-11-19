@@ -344,9 +344,12 @@ func unitConfs(src Source, name string, unit []byte, conf WebConf) (all [][]byte
 	if at := strings.IndexByte(name, '@'); at >= 0 {
 		tmpl = name[:at+1] + ".service"
 	}
-	for _, dir := range unitPaths { // a full override of the unit file
-		found := false
-		for _, n := range []string{name, tmpl} {
+	// A full override of the unit file: systemd takes the unit's own name
+	// from every directory first, and only then its template's. One masked
+	// (linked to /dev/null) where it is taken does not exist.
+	found := false
+	for _, n := range []string{name, tmpl} {
+		for _, dir := range unitPaths {
 			f := path.Join(dir, n)
 			if t, err := src.Readlink(f); err == nil && t == "/dev/null" {
 				return nil, false // masked: systemd starts it for nothing
