@@ -401,6 +401,17 @@ func TestServerAccountApart(t *testing.T) {
 			systemdDirs(h)
 			h.files["/usr/lib/systemd/system/marker.service"] = "[Service]\nDynamicUser=marker\nExecStart=/usr/local/bin/marker-tool\n"
 		}, ReasonWebUserWritable},
+		// Review 2, fourth check: an instance only a file names (a timer's
+		// Unit=), with no link, and its own drop-in as nginx.
+		{"a timer's instance, its drop-in as nginx", 1, true, func(h statHost) {
+			systemdDirs(h)
+			h.st["/etc/systemd/system/timers.target.wants"] = FileStat{Mode: fs.ModeDir | 0o755}
+			h.links["/etc/systemd/system/timers.target.wants/marker.timer"] = "/usr/lib/systemd/system/marker.timer"
+			h.files["/usr/lib/systemd/system/marker.timer"] = "[Timer]\nOnCalendar=daily\nUnit=marker@x.service\n"
+			h.files["/usr/lib/systemd/system/marker@.service"] = "[Service]\nExecStart=/usr/local/bin/marker-tool\n"
+			h.st["/etc/systemd/system/marker@x.service.d"] = FileStat{Mode: fs.ModeDir | 0o755}
+			h.files["/etc/systemd/system/marker@x.service.d/override.conf"] = "[Service]\nUser=nginx\n"
+		}, ReasonWebUserWritable},
 		{"a unit linked to another device", 1, true, func(h statHost) {
 			systemdDirs(h)
 			h.st["/dev/zero"] = FileStat{Mode: fs.ModeDevice | fs.ModeCharDevice | 0o666}

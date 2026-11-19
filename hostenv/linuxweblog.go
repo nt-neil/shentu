@@ -736,7 +736,10 @@ func (l *logLoader) runAsAccounts() {
 	for _, dir := range unitPaths {
 		for _, n := range list(dir) {
 			switch {
-			case strings.HasSuffix(n, ".service"):
+			case strings.HasSuffix(n, ".service"), strings.HasSuffix(n, ".service.d"):
+				// Every unit file and every drop-in directory's unit, enabled
+				// or not: a timer's Unit=, a Wants= or a socket may start any.
+				n = strings.TrimSuffix(n, ".d")
 				if _, ok := units[n]; !ok {
 					units[n] = ""
 				}
