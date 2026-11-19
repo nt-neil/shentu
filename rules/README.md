@@ -487,6 +487,23 @@ code (`literal = true`). Samples of `hardcoded-secret` rules write `__SECRET__` 
 the value goes; the sample test puts a made-up value there at run time, so no
 credential-like string is kept in the repository.
 
+## Rules and attack detection
+
+Since v0.4.0, the daily round puts each injection finding of these rules (rule, CWE, file,
+line) into the host's vulnerability surface (`state_dir/surface.json`), with the routes
+that register the handler the sink sits in when a route model in `routes/` shows them in the
+same file. The patrol's attack detection reads the web
+server's access logs against it: a request to one of those routes is L1, and one that also
+carries a payload of the class the finding's CWE names (`CWE-89` is SQL injection, `CWE-78`
+command injection, `CWE-22` path traversal and so on; `detect/surface.go` has the list) is
+L2. A finding without routes is still in the surface, but no request can be tied to it.
+How the levels are judged and alerted: [docs/attack-detection.md](../docs/attack-detection.md).
+
+These rules are not the 27 attack signatures of attack detection (`detect/sig`). The rules
+read the applications' code on disk and find where it is vulnerable; the signatures read
+request lines in the access logs and find what an attacker sent. A rule added here can make
+a request L1 or L2 through its routes and CWE; it never adds a signature.
+
 ## What CI checks (`rules_test.go`)
 
 - every file parses, and has no unknown keys;
