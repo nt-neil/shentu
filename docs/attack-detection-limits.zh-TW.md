@@ -29,7 +29,7 @@ v0.4.0 不會自動封鎖：`block_ip` 一定要經營運者確認。攻擊紀�
 紀錄要能支撐封鎖，前提是應用程式碼執行的帳號改不了它的內容：不能直接寫檔，不能透過開著這個檔案的 worker 寫，也不能冒充伺服器送紀錄。這裡假設的攻擊者是已經能以網站應用程式的身分執行程式碼（例如利用 PHP 漏洞）。不在防禦範圍內的：root 被拿下，以及 nginx 或 Apache 本身被攻破（worker 執行攻擊者的程式碼），這兩種情況任何紀錄檢查都擋不住。
 
 - **伺服器自己的帳號**：紀錄檔屬於 nginx worker 或 Apache children 執行的帳號時，在下列條件全部成立下，會和 root 擁有的一樣被信任：
-  - 沒有別的東西以這個帳號執行，不論是同 uid 還是同群組：沒有 PHP-FPM pool、沒有其他 systemd unit、沒有 crontab，沒有 linger 的使用者管理程序，沒有 supervisord 的 program，沒有 sudo 能以它執行的規則，帳號也沒有可登入的 shell；巡檢當下也沒有任何不是伺服器本身程式（root 擁有的 nginx 或 httpd）的程序以它的 uid 或群組執行；以上任何一項讀不到，都不算；
+  - 沒有別的東西以這個帳號執行，不論是同 uid 還是同群組：沒有 PHP-FPM pool、沒有其他 systemd unit、沒有 crontab，沒有 linger 的使用者管理程序，沒有 supervisord 的 program，沒有 sudo 或 doas 能以它執行的規則，帳號也沒有可登入的 shell；巡檢當下也沒有任何不是伺服器本身程式（root 擁有的 nginx 或 httpd）的程序以它的 uid 或群組執行；以上任何一項讀不到，都不算；
   - 伺服器本身不執行應用程式碼；
   - 帳號在 `/etc/passwd`，而且只有它用這個 uid；
   - 帳號資料庫只來自檔案；

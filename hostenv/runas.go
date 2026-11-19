@@ -144,7 +144,8 @@ func (l *logLoader) supervisorAccounts() {
 				continue
 			}
 			if strings.HasPrefix(ln, "[") {
-				section = strings.ToLower(strings.Trim(ln, "[] \t"))
+				name, _, _ := strings.Cut(ln[1:], "]") // to the first ]: a comment may follow
+				section = strings.ToLower(strings.TrimSpace(name))
 				continue
 			}
 			i := strings.IndexAny(ln, "=:") // configparser's delimiters, the first one
@@ -289,9 +290,10 @@ func (l *logLoader) sudoersAccounts() {
 					spec := rest[open+1 : open+end]
 					rest = rest[open+end+1:]
 					us, gs, _ := strings.Cut(spec, ":")
-					all := false
+					all, neg := false, false
 					for _, u := range strings.Split(us, ",") {
 						u = strings.TrimSpace(u)
+						neg = neg || strings.HasPrefix(u, "!")
 						switch {
 						case u == "" || strings.HasPrefix(u, "!"):
 						case u == "ALL":
@@ -306,6 +308,7 @@ func (l *logLoader) sudoersAccounts() {
 					}
 					for _, g := range strings.Split(gs, ",") {
 						g = strings.TrimSpace(g)
+						neg = neg || strings.HasPrefix(g, "!")
 						switch {
 						case g == "" || strings.HasPrefix(g, "!"):
 						case g == "ALL":
@@ -314,8 +317,8 @@ func (l *logLoader) sudoersAccounts() {
 							groups = append(groups, strings.TrimPrefix(g, "#"))
 						}
 					}
-					if all && !allCommands(rest) {
-						l.runAsLost = true // any account, for some commands
+					if all && (neg || !allCommands(rest)) {
+						l.runAsLost = true // any account for some commands, or all but some: (ALL, !root) is not root's power
 					}
 				}
 			}
@@ -332,6 +335,65 @@ func (l *logLoader) sudoersAccounts() {
 	for _, g := range groups {
 		if !aliases[g] {
 			l.runAsGroups = append(l.runAsGroups, g)
+		}
+	}
+}
+
+// doasConfs: opendoas's configuration (EPEL's, and a build's own).
+var doasConfs = []string{"/etc/doas.conf", "/usr/local/etc/doas.conf"}
+
+// doasAccounts adds the targets of doas's permit rules (as <user>); a rule
+// with no target runs as root, out of scope. A line not told leaves no
+// server apart.
+func (l *logLoader) doasAccounts() {
+	for _, p := range doasConfs {
+		b, err := l.src.ReadFile(p)
+		if err != nil {
+			l.runAsLost = l.runAsLost || !gone(err)
+			continue
+		}
+		for _, ln := range strings.Split(strings.ReplaceAll(string(b), "\\\n", " "), "\n") {
+			if i := strings.IndexByte(ln, '#'); i >= 0 {
+				ln = ln[:i]
+			}
+			if strings.ContainsAny(ln, `"'`) {
+				l.runAsLost = true // quoted words: not told
+				continue
+			}
+			f := strings.Fields(ln)
+			if len(f) == 0 || f[0] == "deny" { // a deny only takes away
+				continue
+			}
+			if f[0] != "permit" {
+				l.runAsLost = true
+				continue
+			}
+			for i := 1; i < len(f); i++ {
+				if f[i] == "{" { // setenv { ... }
+					for i < len(f) && f[i] != "}" {
+						i++
+					}
+					if i == len(f) {
+						l.runAsLost = true // not closed
+					}
+					continue
+				}
+				if strings.ContainsAny(f[i], "{}") {
+					l.runAsLost = true // a brace not spaced: not told
+					break
+				}
+				if f[i] == "cmd" {
+					break // the command and its args: not targets
+				}
+				if f[i] == "as" {
+					if i+1 >= len(f) {
+						l.runAsLost = true
+					} else {
+						l.runAs = append(l.runAs, f[i+1])
+					}
+					break
+				}
+			}
 		}
 	}
 }

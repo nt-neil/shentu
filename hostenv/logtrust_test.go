@@ -276,6 +276,36 @@ func TestServerAccountApart(t *testing.T) {
 			h.files["/etc/sudoers"] = "## Allow root to run any commands anywhere\nDefaults    secure_path = /sbin:/bin:/usr/sbin:/usr/bin\nroot\tALL=(ALL) \tALL\n%wheel\tALL=(ALL)\tALL\n%sudo ALL=(ALL:ALL) ALL\n#includedir /etc/sudoers.d\n"
 			h.files["/etc/sudoers.d/marker"] = "marker ALL=(root) NOPASSWD: /usr/local/bin/marker-tool\n"
 		}, ""},
+		// Review 2, S-1..S-3.
+		{"supervisord's [include] with a comment after it", 1, true, func(h statHost) {
+			h.files["/etc/supervisord.conf"] = "[supervisord]\n[include] ; marker\nfiles = /srv/marker/*.conf\n"
+			h.files["/srv/marker/a.conf"] = "[program:marker]\ncommand=/usr/local/bin/marker-tool\nuser=nginx\n"
+		}, ReasonWebUserWritable},
+		{"doas runs commands as nginx", 1, true, func(h statHost) {
+			h.files["/etc/doas.conf"] = "permit persist :wheel\npermit nopass marker as nginx cmd /usr/local/bin/marker-tool\n"
+		}, ReasonWebUserWritable},
+		{"doas as nginx past a setenv block", 1, true, func(h statHost) {
+			h.files["/etc/doas.conf"] = "permit setenv { PATH MARKER=1 } marker as nginx\n"
+		}, ReasonWebUserWritable},
+		{"doas rule not told", 1, true, func(h statHost) {
+			h.files["/etc/doas.conf"] = "allow marker as nginx\n"
+		}, ReasonWebUserWritable},
+		{"doas rule quoted", 1, true, func(h statHost) {
+			h.files["/etc/doas.conf"] = "permit marker as \"nginx\"\n"
+		}, ReasonWebUserWritable},
+		{"doas.conf unread", 1, true, func(h statHost) {
+			h.files["/etc/doas.conf"] = "permit persist :wheel\n"
+			h.denied["/etc/doas.conf"] = true
+		}, ReasonWebUserWritable},
+		{"doas only as root", 1, true, func(h statHost) {
+			h.files["/etc/doas.conf"] = "# marker\npermit persist :wheel\npermit nopass marker cmd /usr/local/bin/marker-tool\ndeny marker as nginx\n"
+		}, ""},
+		{"sudo as anyone but root", 1, true, func(h statHost) {
+			h.files["/etc/sudoers"] = "marker ALL=(ALL, !root) ALL\n"
+		}, ReasonWebUserWritable},
+		{"sudo with any group but one", 1, true, func(h statHost) {
+			h.files["/etc/sudoers"] = "marker ALL=(root : ALL, !wheel) ALL\n"
+		}, ReasonWebUserWritable},
 		{"nginx has a login shell", 1, true, func(h statHost) {
 			h.files["/etc/passwd"] = strings.Replace(h.files["/etc/passwd"], "/var/lib/nginx:/sbin/nologin", "/var/lib/nginx:/bin/bash", 1)
 		}, ReasonWebUserWritable},

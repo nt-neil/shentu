@@ -838,6 +838,7 @@ func (l *logLoader) runAsAccounts() {
 	}
 	l.supervisorAccounts()
 	l.sudoersAccounts()
+	l.doasAccounts()
 }
 
 // maxRunAsUnits bounds the service units runAsAccounts reads; more leaves
