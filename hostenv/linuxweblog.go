@@ -536,8 +536,12 @@ type logLoader struct {
 	// lingering user manager and crontab runs programs as (runAsAccounts);
 	// runAsLost: one could not be read or told.
 	runAs, runAsGroups []string
-	runAsLost          bool
-	modPHP             bool // Apache loads PHP as a module
+	// runAsDynamic, runAsDynamicGroups: those of units with DynamicUser=yes:
+	// application accounts when /etc/passwd (/etc/group) has them, else
+	// made at start, apart from every server's.
+	runAsDynamic, runAsDynamicGroups []string
+	runAsLost                        bool
+	modPHP                           bool // Apache loads PHP as a module
 	// extraRead: files read from logConf.Extra, whose directories are
 	// judged once the web accounts are known.
 	extraRead []string
@@ -775,6 +779,8 @@ func (l *logLoader) runAsAccounts() {
 		// Every User=, Group=, SupplementaryGroups= and DynamicUser= of
 		// every file that may apply, whichever wins: an order taken wrong
 		// only makes the judgement stricter.
+		var users, groups []string
+		dynamic, dynSeen := true, false // DynamicUser=yes in every file that sets it
 		for _, b := range all {
 			for _, ln := range strings.Split(string(b), "\n") {
 				k, v, ok := strings.Cut(strings.TrimSpace(ln), "=")
@@ -787,16 +793,18 @@ func (l *logLoader) runAsAccounts() {
 					if strings.Contains(v, "%") {
 						l.runAsLost = true
 					}
-					l.runAsGroups = append(l.runAsGroups, strings.Fields(v)...)
+					groups = append(groups, strings.Fields(v)...)
 				case "DynamicUser":
-					if _, known := unitBools[strings.ToLower(v)]; !known {
+					yes, known := unitBools[strings.ToLower(v)]
+					if !known {
 						l.runAsLost = true
 					}
+					dynamic, dynSeen = dynamic && yes, true
 				case "User":
 					switch {
 					case v == "": // a reset: no account
 					case !strings.Contains(v, "%"):
-						l.runAs = append(l.runAs, v)
+						users = append(users, v)
 					case n == "user@.service" && v == "%i":
 						// systemd's user manager, one per user logged in or kept
 						// (linger, read below): not started for an account by others
@@ -807,6 +815,15 @@ func (l *logLoader) runAsAccounts() {
 					}
 				}
 			}
+		}
+		if dynSeen && dynamic {
+			// DynamicUser=yes: an account not in /etc/passwd is made at
+			// start, from 61184-65519, no server's (webAccounts tells).
+			l.runAsDynamic = append(l.runAsDynamic, users...)
+			l.runAsDynamicGroups = append(l.runAsDynamicGroups, groups...)
+		} else {
+			l.runAs = append(l.runAs, users...)
+			l.runAsGroups = append(l.runAsGroups, groups...)
 		}
 	}
 	linger, err := l.src.ReadDir("/var/lib/systemd/linger")
@@ -962,6 +979,13 @@ func (l *logLoader) webAccounts() WebAccounts {
 		}
 	}
 	app := l.appAccounts()
+	for _, u := range l.runAsDynamic { // a static account systemd takes as it is
+		if _, num := numericID(u); num {
+			app[u] = true
+		} else if _, ok := nameUID[u]; ok {
+			app[u] = true
+		}
+	}
 	appGIDs := map[int]bool{} // groups an application account has, as primary group or listed member
 	groupGID := map[string]int{}
 	w.LogGIDs = map[int]string{}
@@ -1188,6 +1212,13 @@ func (l *logLoader) serverAccounts(w *WebAccounts, app map[string]bool, appGIDs 
 			appGIDs[gid] = true
 		} else {
 			lost = true
+		}
+	}
+	for _, g := range l.runAsDynamicGroups { // not in /etc/group: made at start
+		if id, num := numericID(g); num {
+			appGIDs[id] = true
+		} else if gid, ok := groupGID[g]; ok {
+			appGIDs[gid] = true
 		}
 	}
 	if lost {

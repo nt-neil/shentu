@@ -412,6 +412,27 @@ func TestServerAccountApart(t *testing.T) {
 			h.st["/etc/systemd/system/marker@x.service.d"] = FileStat{Mode: fs.ModeDir | 0o755}
 			h.files["/etc/systemd/system/marker@x.service.d/override.conf"] = "[Service]\nUser=nginx\n"
 		}, ReasonWebUserWritable},
+		// Rocky 9 VM acceptance (5ee1ac9): cockpit-ws's DynamicUser units
+		// name accounts /etc/passwd does not have (accounts as measured).
+		{"cockpit-ws's dynamic accounts", 0, true, func(h statHost) {
+			systemdDirs(h)
+			cockpitUnits(h)
+		}, ""},
+		{"a dynamic unit's account is nginx", 1, true, func(h statHost) {
+			systemdDirs(h)
+			cockpitUnits(h)
+			h.files["/usr/lib/systemd/system/marker.service"] = "[Service]\nDynamicUser=yes\nUser=nginx\nExecStart=/usr/local/bin/marker-tool\n"
+		}, ReasonWebUserWritable},
+		{"a dynamic unit's group is nginx's", 1, true, func(h statHost) {
+			systemdDirs(h)
+			h.files["/usr/lib/systemd/system/marker.service"] = "[Service]\nDynamicUser=yes\nUser=marker-dynamic\nGroup=nginx\nExecStart=/usr/local/bin/marker-tool\n"
+		}, ReasonWebUserWritable},
+		{"DynamicUser=yes undone by a drop-in", 1, true, func(h statHost) {
+			systemdDirs(h)
+			h.files["/usr/lib/systemd/system/marker.service"] = "[Service]\nDynamicUser=yes\nUser=marker-dynamic\nExecStart=/usr/local/bin/marker-tool\n"
+			h.st["/etc/systemd/system/marker.service.d"] = FileStat{Mode: fs.ModeDir | 0o755}
+			h.files["/etc/systemd/system/marker.service.d/override.conf"] = "[Service]\nDynamicUser=no\n"
+		}, ReasonWebUserWritable},
 		{"a unit linked to another device", 1, true, func(h statHost) {
 			systemdDirs(h)
 			h.st["/dev/zero"] = FileStat{Mode: fs.ModeDevice | fs.ModeCharDevice | 0o666}
@@ -509,6 +530,14 @@ func supervisordProc(h statHost, argv string) {
 	h.links["/proc/4400/root"] = "/"
 	h.links["/proc/4400/ns/mnt"] = "mnt:[4026531841]"
 	h.links["/proc/1/ns/mnt"] = "mnt:[4026531841]"
+}
+
+// cockpitUnits: cockpit-ws's units with DynamicUser=yes, as Rocky 9
+// GenericCloud ships it (the accounts are those measured on the VM).
+func cockpitUnits(h statHost) {
+	h.files["/usr/lib/systemd/system/cockpit-session-socket-user.service"] = "[Unit]\nDescription=Dynamic user for /run/cockpit/session socket\nDocumentation=man:cockpit-ws(8)\nBindsTo=cockpit-session.socket\n\n[Service]\nDynamicUser=yes\nUser=cockpit-session-socket\nGroup=cockpit-session-socket\nType=oneshot\nExecStart=/bin/true\nRemainAfterExit=yes\n"
+	h.files["/usr/lib/systemd/system/cockpit-wsinstance-socket-user.service"] = "[Unit]\nDescription=Dynamic user for cockpit-ws instance sockets\nDocumentation=man:cockpit-ws(8)\n\n[Service]\nDynamicUser=yes\nUser=cockpit-wsinstance-socket\nGroup=cockpit-wsinstance-socket\nType=oneshot\nExecStart=/bin/true\nRemainAfterExit=yes\n"
+	h.files["/usr/lib/systemd/system/cockpit-session@.service"] = "[Unit]\nDescription=Cockpit session %I\nDocumentation=man:cockpit-ws(8)\n\n[Service]\nExecStart=/usr/libexec/cockpit-session\nStandardInput=socket\nStandardOutput=inherit\nStandardError=journal\nDynamicUser=yes\nUser=cockpit-systemd-service\nGroup=cockpit-session-socket\n"
 }
 
 // nginxProcs: nginx's root master and one worker as nginx, running the
