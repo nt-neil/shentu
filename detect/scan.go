@@ -1,6 +1,10 @@
 package detect
 
-import "github.com/nt-neil/shentu/hostenv"
+import (
+	"context"
+
+	"github.com/nt-neil/shentu/hostenv"
+)
 
 // MaxSamples is how many lines each signal points at.
 const MaxSamples = 5
@@ -47,7 +51,14 @@ func ScanAccess(src hostenv.Source, ls hostenv.LogSource, cur *Cursor, dropped s
 	if err != nil {
 		return keep(cur), ReadResult{}, sig, err
 	}
-	c, res, err := ReadLog(src, ls.Path, cur, b, ReadOpts{Want: &ls, Trust: trust}, func(l Line) {
+	c, res, err := ReadLog(src, ls.Path, cur, b, ReadOpts{Want: &ls, Trust: trust}, scanLine(p, &sig, fn))
+	return c, res, sig, err
+}
+
+// scanLine parses each line in p's format, counting what it saw in sig,
+// and gives fn the records.
+func scanLine(p *Parser, sig *Signals, fn func(AccessRecord, Line)) func(Line) {
+	return func(l Line) {
 		sig.Lines++
 		var r AccessRecord
 		var ok bool
@@ -68,6 +79,30 @@ func ScanAccess(src hostenv.Source, ls hostenv.LogSource, cur *Cursor, dropped s
 			sig.Ambiguous.add(l)
 		}
 		fn(r, l)
+	}
+}
+
+// ScanJournalAccess is ScanAccess for an access log nginx sends to
+// journald (ls.Journal): the unit's entries tagged ls.JournalTag, in
+// order, each verified only when ls is and journald says it came over
+// syslog from ls.JournalExe running as ls.JournalUID in the unit. The tag
+// is the sender's to write: it only picks the access log's entries from
+// the unit's others. A line's Offset is its place in this read.
+func ScanJournalAccess(ctx context.Context, src hostenv.Source, ls hostenv.LogSource, cur *Cursor, dropped string, b *Budget, fn func(AccessRecord, Line)) (Cursor, ReadResult, Signals, error) {
+	sig := Signals{Dropped: dropped}
+	p, err := ParserFor(ls)
+	if err != nil {
+		return keep(cur), ReadResult{}, sig, err
+	}
+	scan := scanLine(p, &sig, fn)
+	var n int64
+	c, res, err := readJournal(ctx, src, ls.Journal, cur, b, func(e hostenv.JournalEntry) {
+		if e.Unit != ls.Journal || e.Ident != ls.JournalTag || e.MessageMissing {
+			return
+		}
+		n++
+		verified := ls.Verified && ls.JournalUID != 0 && e.Transport == "syslog" && e.Exe == ls.JournalExe && e.UID == ls.JournalUID
+		scan(Line{From: JournalKey(ls.Journal), Offset: n, Text: []byte(e.Message), Cut: e.Cut, Verified: verified})
 	})
 	return c, res, sig, err
 }
