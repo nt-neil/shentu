@@ -191,7 +191,7 @@
 
 <div class="newest" id="rv-0.4.1">
   <div class="newest-head"><p class="word">籌備中</p><span class="ver">v0.4.1</span><b class="badge">即將發布</b></div>
-  <div class="grp grp-light"><h4><i aria-hidden="true"></i>不拖慢網站</h4><ul><li>主機盤點會對開了 HTTP/2 的 nginx 1.9.5～1.31.8 提出警告（<code>listen ... http2</code>，或對 server 生效的 <code>http2 on</code>）：CVE-2026-123007 和 CVE-2026-123633 是 HTTP/2 的記憶體錯誤，用戶端可以讓 worker 當掉。請更新到 1.31.9 或 1.30.7，或 distro 修補後的套件；更新前先改回只用 HTTP/1.1 就沒有這個問題。這只是建議，不會改設定。套件的 changelog 已列出這兩個 CVE（distro 已 backport 修補）時不警告；distro 的公告進了 OSV 之後，套件掃描就會報，這項檢查補的是 nginx.org 的套件和自行建置的 nginx，套件掃描看不到這兩類。</li></ul></div>
+  <div class="grp grp-light"><h4><i aria-hidden="true"></i>不拖慢網站</h4><ul><li>主機盤點會對開了 HTTP/2 的 nginx 1.9.5～1.31.8 提出警告（<code>listen ... http2</code>，或對 server 生效的 <code>http2 on</code>）：CVE-2026-123007 和 CVE-2026-123633 是 HTTP/2 的記憶體錯誤，用戶端可以讓 worker 當掉。請更新到 1.31.9 或 1.30.7，或 distro 修補後的套件；更新前先改回只用 HTTP/1.1 就沒有這個問題。這只是建議，不會改設定。套件的 changelog 已列出這兩個 CVE（distro 已 backport 修補）時不警告；distro 的公告進了 OSV 之後，套件掃描就會報，這項檢查補的是 nginx.org 的套件和自行建置的 nginx，套件掃描看不到這兩類。</li></ul></div><div class="grp grp-fixed"><h4><i aria-hidden="true"></i>修正</h4><ul><li>從 Telegram 呼叫 <code>block_ip</code>，現在只封鎖 Shentu 已查證證據的位址：已查證的 L2 或 L3 攻擊群組有列出它，或有 sshd 自己寫下的 SSH 登入紀錄。其他位址在 Telegram 一律拒絕，要到伺服器上用 <code>shentu chat</code> 查看並封鎖，和 v0.4.0 對未查證嘗試的說法相同。先前攻擊群組沒有列出的位址（超出群組列出的 10 個、群組已從紀錄中清掉，或紀錄裡的寫法不同），只看 SSH 登入紀錄，所以沒有 SSH 紀錄的位址，可以憑未查證的嘗試從 Telegram 封鎖。</li><li>在伺服器上，超出群組列出位址數的位址，會和列出的位址一樣被拒絕，同網段的其他位址也是；群組被併進溢出彙總之後也一樣。紀錄裡寫法不同的位址也會被拒絕，包括方括號、port、zone、多寫的 0（例如 <code>203.0.113.012</code>，兩個讀法都比對），以及寫在 IPv6 裡的 IPv4。已查證的群組只放行它列出的那個位址。溢出彙總或依 sink 彙總的群組，來源超過它保留的 hash 數（64 個）之後，會拒絕所有沒列出的位址；營運者可以在伺服器上覆寫。</li></ul></div>
 </div>
 
 
@@ -379,7 +379,7 @@
       <h2><span class="word">籌備中</span> <span class="ver">v0.4.1</span></h2>
     </div>
     <div class="body">
-      <ul class="items"><li>主機盤點會對開了 HTTP/2 的 nginx 1.9.5～1.31.8 提出警告（<code>listen ... http2</code>，或對 server 生效的 <code>http2 on</code>）：CVE-2026-123007 和 CVE-2026-123633 是 HTTP/2 的記憶體錯誤，用戶端可以讓 worker 當掉。請更新到 1.31.9 或 1.30.7，或 distro 修補後的套件；更新前先改回只用 HTTP/1.1 就沒有這個問題。這只是建議，不會改設定。套件的 changelog 已列出這兩個 CVE（distro 已 backport 修補）時不警告；distro 的公告進了 OSV 之後，套件掃描就會報，這項檢查補的是 nginx.org 的套件和自行建置的 nginx，套件掃描看不到這兩類。</li></ul>
+      <ul class="items"><li>主機盤點會對開了 HTTP/2 的 nginx 1.9.5～1.31.8 提出警告（<code>listen ... http2</code>，或對 server 生效的 <code>http2 on</code>）：CVE-2026-123007 和 CVE-2026-123633 是 HTTP/2 的記憶體錯誤，用戶端可以讓 worker 當掉。請更新到 1.31.9 或 1.30.7，或 distro 修補後的套件；更新前先改回只用 HTTP/1.1 就沒有這個問題。這只是建議，不會改設定。套件的 changelog 已列出這兩個 CVE（distro 已 backport 修補）時不警告；distro 的公告進了 OSV 之後，套件掃描就會報，這項檢查補的是 nginx.org 的套件和自行建置的 nginx，套件掃描看不到這兩類。</li><li>從 Telegram 呼叫 <code>block_ip</code>，現在只封鎖 Shentu 已查證證據的位址：已查證的 L2 或 L3 攻擊群組有列出它，或有 sshd 自己寫下的 SSH 登入紀錄。其他位址在 Telegram 一律拒絕，要到伺服器上用 <code>shentu chat</code> 查看並封鎖，和 v0.4.0 對未查證嘗試的說法相同。先前攻擊群組沒有列出的位址（超出群組列出的 10 個、群組已從紀錄中清掉，或紀錄裡的寫法不同），只看 SSH 登入紀錄，所以沒有 SSH 紀錄的位址，可以憑未查證的嘗試從 Telegram 封鎖。</li><li>在伺服器上，超出群組列出位址數的位址，會和列出的位址一樣被拒絕，同網段的其他位址也是；群組被併進溢出彙總之後也一樣。紀錄裡寫法不同的位址也會被拒絕，包括方括號、port、zone、多寫的 0（例如 <code>203.0.113.012</code>，兩個讀法都比對），以及寫在 IPv6 裡的 IPv4。已查證的群組只放行它列出的那個位址。溢出彙總或依 sink 彙總的群組，來源超過它保留的 hash 數（64 個）之後，會拒絕所有沒列出的位址；營運者可以在伺服器上覆寫。</li></ul>
       
       <div class="grow">
         <p><span class="bar" style="--w: 100.0%"></span><b>127</b> 條規則</p>
