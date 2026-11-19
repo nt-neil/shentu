@@ -20,10 +20,10 @@ description: Investigate SSH brute-force attempts and decide whether to block th
    decide: block_ip refuses an IP whose events are only in text logs, are journald lines sshd
    did not write itself (for example from logger inside sshd's unit), or could not be read in
    full. It also refuses internal addresses (private, CGNAT), which may be a proxy or load
-   balancer. Besides attack detection, that check covers SSH login evidence only: a block based
-   on any other log (log_search over syslog, nginx or an application log) is not checked: say
-   where the evidence came from and that anyone on the host may have written it, so the
-   operator judges it.
-   A refused block cannot be made from Telegram, only on the server with shentu chat and
-   override_unverified, after the operator has checked the logs; an overflow summary is refused
-   even then.
+   balancer. On the server (shentu chat), a block based on any other log (log_search over
+   syslog, nginx or an application log) is not checked by it: say where the evidence came from
+   and that anyone on the host may have written it, so the operator judges it.
+   From Telegram only an IP with verified evidence can be blocked (a verified L2 or L3 attack
+   group listing it, or SSH logins sshd itself logged); any other IP is for the server, with
+   shentu chat. A refused block can be made only there, with override_unverified, after the
+   operator has checked the logs; an overflow summary is refused even then.

@@ -191,7 +191,7 @@ then asks you to approve that Telegram user with `y`. Until you approve, the bot
 
   | Range | 1 | 2 | 3 | 4 |
   |---|---|---|---|---|
-  | `interaction` | notifications only ★ | questions | + block/unblock IPs | + every control tool |
+  | `interaction` | notifications only ★ | questions | + unblock IPs, block those with verified evidence | + every control tool |
   | `answers` | problem or not | summary ★ | full, deleted after 24h | full, kept |
   | `confirm` (actions) | approve on the server (`shentu bot approve`) | ✅ + one-time code ★ (`shentu bot totp`) | ✅ only | none |
   | `protection` | strict: token leak → pause, 08–20h, 50 answers a day | standard: leak → pause ★ | loose: leak → alert | off |

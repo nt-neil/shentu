@@ -16,6 +16,21 @@ Chinese for the zh-TW pages; keep the two in step.
   package scan reports the distributions' advisories once they reach OSV, and this check covers
   nginx.org's packages and builds from source, which that scan does not.
 
+### Fixed
+
+- From Telegram, `block_ip` now blocks only an address with evidence Shentu verified: a verified L2
+  or L3 attack group listing it, or SSH login events sshd itself logged. Any other address is
+  refused there, to be checked and blocked on the server with `shentu chat`, as v0.4.0 said of
+  unverified attempts. Before, an address its attack groups did not list (past the ten a group
+  lists, in a group evicted from the state, or logged in another form) was judged by its SSH logins
+  alone, so one with none could be blocked from Telegram on unverified attempts.
+- On the server, an address past the addresses a group lists is refused as a listed one is, also
+  after the group is merged into an overflow summary, and so is the rest of its network. So is an
+  address logged in another form: brackets, a port, a zone, leading zeros (read both ways), or IPv4
+  embedded in IPv6. A verified group allows a block only of the address it lists. Once an overflow
+  or sink-wide summary has more sources than it keeps hashes of (64), it refuses every address it
+  does not list; the operator may override on the server.
+
 ## v0.4.0 — 2026-11-18
 
 - Attack detection (Linux): each patrol round reads the web server's logs and picks out the

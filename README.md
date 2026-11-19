@@ -161,8 +161,9 @@ largest of `qwen2.5:3b`/`7b`/`14b` that fits in memory. `--model` picks another 
   accepts the override. Private, CGNAT, link-local and loopback addresses need the same
   override (often a load balancer). When the attack state cannot be read, the gate refuses on
   it, but SSH logins that journald confirms sshd itself wrote can still justify a block: the
-  SSH evidence stands on its own. Only the first ten addresses of a group are listed, so a
-  block of an address past them is judged by its SSH logins alone.
+  SSH evidence stands on its own. From Telegram, only an address with verified evidence (a
+  verified L2 or L3 group listing it, or SSH logins sshd itself logged) can be blocked; any
+  other is for the server (v0.4.1).
 - **No listening ports, no daemon, no database.** Every tool call and model call is
   recorded in `/var/lib/shentu/log.jsonl`.
 - **Small attack surface**: two third-party dependencies (a TOML parser, and golang.org/x/sys for
