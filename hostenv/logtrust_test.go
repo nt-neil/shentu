@@ -182,34 +182,44 @@ func TestServerAccountApart(t *testing.T) {
 			h.files["/etc/supervisord.d/marker.ini"] = "[program:marker]\ncommand=/usr/local/bin/marker-tool\nuser =\n  nginx\n"
 		}, ReasonWebUserWritable},
 		{"a running supervisord's own configuration", 1, true, func(h statHost) {
-			h.files["/proc/4400/cmdline"] = "/usr/bin/python3\x00/usr/local/bin/supervisord\x00-c\x00/srv/marker/sup.conf\x00"
-			h.links["/proc/4400/root"] = "/"
+			supervisordProc(h, "/usr/bin/python3\x00/usr/local/bin/supervisord\x00-c\x00/srv/marker/sup.conf\x00")
+			h.files["/srv/marker/sup.conf"] = "[program:marker]\ncommand=/usr/local/bin/marker-tool\nuser=nginx\n"
+		}, ReasonWebUserWritable},
+		{"a running supervisord by python's -m, joined", 1, true, func(h statHost) {
+			supervisordProc(h, "/usr/bin/python3\x00-msupervisor.supervisord\x00-c\x00/srv/marker/sup.conf\x00")
 			h.files["/srv/marker/sup.conf"] = "[program:marker]\ncommand=/usr/local/bin/marker-tool\nuser=nginx\n"
 		}, ReasonWebUserWritable},
 		{"a running supervisord's configuration by a relative path", 1, true, func(h statHost) {
-			h.files["/proc/4400/cmdline"] = "/usr/local/bin/supervisord\x00-c\x00sup.conf\x00"
+			supervisordProc(h, "/usr/local/bin/supervisord\x00-c\x00sup.conf\x00")
 		}, ReasonWebUserWritable},
 		{"a running supervisord, another account", 1, true, func(h statHost) {
 			h.files["/etc/passwd"] += "marker:x:1500:1500::/home/marker:/sbin/nologin\n"
 			h.files["/etc/group"] += "marker:x:1500:\n"
-			h.files["/proc/4400/cmdline"] = "/usr/bin/python3\x00-m\x00supervisor.supervisord\x00-n\x00--configuration=/srv/marker/sup.conf\x00"
-			h.links["/proc/4400/root"] = "/"
+			supervisordProc(h, "/usr/bin/python3\x00-m\x00supervisor.supervisord\x00-n\x00--configuration=/srv/marker/sup.conf\x00")
 			h.files["/srv/marker/sup.conf"] = "[program:marker]\ncommand=/usr/local/bin/marker-tool\nuser=marker\n"
 		}, ""},
-		{"a running supervisord's own search, its working directory", 1, true, func(h statHost) {
-			h.files["/proc/4400/cmdline"] = "/opt/marker/bin/supervisord\x00"
-			h.links["/proc/4400/root"] = "/"
-			h.links["/proc/4400/cwd"] = "/srv/marker"
-			h.files["/srv/marker/supervisord.conf"] = "[program:marker]\ncommand=/usr/local/bin/marker-tool\nuser=nginx\n"
+		{"a running supervisord with no -c", 1, true, func(h statHost) {
+			supervisordProc(h, "/opt/marker/bin/supervisord\x00")
 		}, ReasonWebUserWritable},
 		{"a running supervisord with an option not told", 1, true, func(h statHost) {
-			h.files["/proc/4400/cmdline"] = "/usr/bin/supervisord\x00--conf=/srv/marker/sup.conf\x00"
-			h.links["/proc/4400/root"] = "/"
-			h.links["/proc/4400/cwd"] = "/"
+			h.files["/etc/passwd"] += "marker:x:1500:1500::/home/marker:/sbin/nologin\n"
+			h.files["/etc/group"] += "marker:x:1500:\n"
+			supervisordProc(h, "/usr/bin/supervisord\x00-c\x00/srv/marker/sup.conf\x00--marker\x00")
+			h.files["/srv/marker/sup.conf"] = "[program:marker]\ncommand=/usr/local/bin/marker-tool\nuser=marker\n"
 		}, ReasonWebUserWritable},
 		{"a running supervisord under another root", 1, true, func(h statHost) {
-			h.files["/proc/4400/cmdline"] = "/usr/bin/supervisord\x00-c\x00/etc/supervisord.conf\x00"
+			h.files["/etc/passwd"] += "marker:x:1500:1500::/home/marker:/sbin/nologin\n"
+			h.files["/etc/group"] += "marker:x:1500:\n"
+			supervisordProc(h, "/usr/bin/supervisord\x00-c\x00/srv/marker/sup.conf\x00")
+			h.files["/srv/marker/sup.conf"] = "[program:marker]\ncommand=/usr/local/bin/marker-tool\nuser=marker\n"
 			h.links["/proc/4400/root"] = "/srv/marker-root"
+		}, ReasonWebUserWritable},
+		{"a running supervisord in another mount namespace", 1, true, func(h statHost) {
+			h.files["/etc/passwd"] += "marker:x:1500:1500::/home/marker:/sbin/nologin\n"
+			h.files["/etc/group"] += "marker:x:1500:\n"
+			supervisordProc(h, "/usr/bin/supervisord\x00-c\x00/srv/marker/sup.conf\x00")
+			h.files["/srv/marker/sup.conf"] = "[program:marker]\ncommand=/usr/local/bin/marker-tool\nuser=marker\n"
+			h.links["/proc/4400/ns/mnt"] = "mnt:[4026532000]"
 		}, ReasonWebUserWritable},
 		{"an indented supervisord line", 1, true, func(h statHost) {
 			h.files["/etc/supervisord.d/marker.ini"] = "[program:marker]\n  user=nginx\ncommand=/usr/local/bin/marker-tool\n"
@@ -349,6 +359,15 @@ func TestServerAccountNotForConf(t *testing.T) {
 			t.Errorf("nginx's file judged for %q: verified", w.judging)
 		}
 	}
+}
+
+// supervisordProc: a supervisord running as pid 4400 with argv, in the
+// host's root and mount namespace.
+func supervisordProc(h statHost, argv string) {
+	h.files["/proc/4400/cmdline"] = argv
+	h.links["/proc/4400/root"] = "/"
+	h.links["/proc/4400/ns/mnt"] = "mnt:[4026531841]"
+	h.links["/proc/1/ns/mnt"] = "mnt:[4026531841]"
 }
 
 // nginxProcs: nginx's root master and one worker as nginx, running the

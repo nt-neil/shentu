@@ -23,11 +23,11 @@ var (
 // leaves no server apart.
 const maxRunAsFiles = 256
 
-// supervisordRunning: the configuration files running supervisords read:
-// the -c (or --configuration) they were given, or else the files it looks
-// for beside its program and in its working directory. lost: /proc could
-// not all be read, or a supervisord's arguments or root are not told
-// (another option, another root, a relative path).
+// supervisordRunning: the configuration files running supervisords read,
+// the absolute -c (or --configuration) they were given. lost: /proc could
+// not all be read, or a supervisord's file is not told: no -c (its search
+// starts in the directory it started in, not known now), a relative one,
+// another option, another root or mount namespace.
 func supervisordRunning(src Source) (confs []string, lost bool) {
 	names, err := src.ReadDir("/proc")
 	if err != nil {
@@ -46,7 +46,7 @@ func supervisordRunning(src Source) (confs []string, lost bool) {
 		argv := strings.Split(strings.TrimRight(string(b), "\x00"), "\x00")
 		at := -1 // supervisord's own argument: its program, or python's -m module
 		for i, a := range argv {
-			if strings.HasPrefix(path.Base(a), "supervisord") || a == "supervisor.supervisord" {
+			if strings.Contains(a, "supervisor") && path.Base(a) != "supervisorctl" { // its program, python's -m module, a script
 				at = i
 				break
 			}
@@ -54,8 +54,11 @@ func supervisordRunning(src Source) (confs []string, lost bool) {
 		if at < 0 {
 			continue
 		}
-		if root, err := src.Readlink(dir + "/root"); err != nil || root != "/" {
-			lost = true // another root, or not read: its paths are not ours
+		root, err := src.Readlink(dir + "/root")
+		ns, err2 := src.Readlink(dir + "/ns/mnt")
+		initNS, err3 := src.Readlink("/proc/1/ns/mnt")
+		if err != nil || err2 != nil || err3 != nil || root != "/" || ns != initNS {
+			lost = true // another root or mount namespace, or not read: its paths are not ours
 			continue
 		}
 		c := ""
@@ -76,17 +79,8 @@ func supervisordRunning(src Source) (confs []string, lost bool) {
 		switch {
 		case c != "" && path.IsAbs(c):
 			confs = append(confs, path.Clean(c))
-		case c != "":
-			lost = true // relative to its working directory
-		default: // supervisord's own search, beside its program and in its working directory
-			cwd, err := src.Readlink(dir + "/cwd")
-			if err != nil || !path.IsAbs(argv[at]) {
-				lost = true
-				continue
-			}
-			bin := path.Dir(argv[at])
-			confs = append(confs, path.Join(bin, "../etc/supervisord.conf"), path.Join(bin, "../supervisord.conf"),
-				path.Join(cwd, "supervisord.conf"), path.Join(cwd, "etc/supervisord.conf"))
+		default:
+			lost = true // relative to its working directory, or its own search from where it started
 		}
 	}
 	return confs, lost
