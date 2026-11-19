@@ -54,9 +54,23 @@ func attackGate(ip net.IP, override bool) (gateVerdict, error) {
 	if a == nil {
 		return gateNone, nil
 	}
-	gs := a.GroupsOf(hostenv.CanonicalIP(ip.String()))
+	canon := hostenv.CanonicalIP(ip.String())
+	gs, past := a.GroupsOf(canon), ""
 	if len(gs) == 0 {
-		return gateNone, nil
+		// Not listed, but maybe among a group's addresses past its listed
+		// ones: such a group refuses as if it listed it (a verified L2 or
+		// L3 group past its list does not allow: it does not show it).
+		for _, g := range a.MayHold(canon) {
+			strong := g.Level == detect.LevelPayload || g.Level == detect.LevelSuccess
+			if g.Prefix != detect.PrefixOverflow && strong && !g.Unverified {
+				continue
+			}
+			gs = append(gs, g)
+		}
+		if len(gs) == 0 {
+			return gateNone, nil
+		}
+		past = ", may be among its addresses past those listed"
 	}
 	var unverified, overflow, weak []string
 	verified := false
@@ -64,11 +78,11 @@ func attackGate(ip net.IP, override bool) (gateVerdict, error) {
 		strong := g.Level == detect.LevelPayload || g.Level == detect.LevelSuccess
 		switch {
 		case g.Prefix == detect.PrefixOverflow:
-			overflow = append(overflow, g.Entry)
+			overflow = append(overflow, g.Entry+past)
 		case !strong:
-			weak = append(weak, g.Entry+" ("+g.Level+")")
+			weak = append(weak, g.Entry+" ("+g.Level+past+")")
 		case g.Unverified:
-			unverified = append(unverified, g.Entry+" ("+strings.Join(g.Reasons, "; ")+")")
+			unverified = append(unverified, g.Entry+" ("+strings.Join(g.Reasons, "; ")+past+")")
 		default:
 			verified = true // a verified L2 or L3 group of its own
 		}

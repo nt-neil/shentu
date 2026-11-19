@@ -651,9 +651,7 @@ func (g *Group) unknownDue() bool {
 
 // addIP lists ip (at most MaxGroupIPs) and counts it if new.
 func (g *Group) addIP(ip string) {
-	h := fnv.New32a()
-	h.Write([]byte(ip))
-	sum := h.Sum32()
+	sum := ipSum(ip)
 	if slices.Contains(g.Seen, sum) || slices.Contains(g.IPs, ip) {
 		return
 	}
@@ -679,6 +677,19 @@ func (g *Group) merge(src *Group) {
 	g.Merged++
 	for _, ip := range src.IPs {
 		g.addIP(ip)
+	}
+	// The addresses past src's listed ones go on being counted and, by
+	// hash, known: an address past the cap stays one the gate refuses.
+	for _, sum := range src.Seen {
+		if !slices.Contains(g.Seen, sum) {
+			g.IPsSeen++
+			if len(g.Seen) < MaxGroupSeen {
+				g.Seen = append(g.Seen, sum)
+			}
+		}
+	}
+	if past := src.IPsSeen - max(len(src.Seen), len(src.IPs)); past > 0 { // past even the hashes
+		g.IPsSeen += past
 	}
 	g.IPsSeen = max(g.IPsSeen, len(g.IPs))
 	g.addRules(src.Rules)
@@ -764,6 +775,14 @@ func (a *Attacks) campaign(t Attempt, at time.Time) bool {
 		r.Last = at
 	}
 	return len(r.Entries) >= CampaignEntries
+}
+
+// ipSum is the hash a group keeps of an address (Seen), of its one form:
+// ::ffff:192.0.2.1 is 192.0.2.1.
+func ipSum(ip string) uint32 {
+	h := fnv.New32a()
+	h.Write([]byte(canonAddr(ip)))
+	return h.Sum32()
 }
 
 // canonAddr is ip in one form: unmapped, as netip prints it; the text as
@@ -1031,6 +1050,30 @@ func PeekAttacks(dir string) (*Attacks, error) {
 
 // GroupsOf are the groups (and overflow groups) listing ip among their
 // addresses, an IPv4-mapped address and its IPv4 one being the same.
+// MayHold is the groups that do not list ip but may hold it among the
+// addresses past their listed ones (MaxGroupIPs): its network's own, one
+// whose hashes hold it, and an overflow or sink-wide summary ("*") whose
+// hashes were cut too (MaxGroupSeen), whose members cannot be told by
+// network. The gate refuses on them as on a group listing it.
+func (a *Attacks) MayHold(ip string) []*Group {
+	want := canonAddr(ip)
+	network, sum := NetworkOf(want), ipSum(want)
+	var out []*Group
+	for _, gs := range []map[string]*Group{a.Groups, a.Overflow} {
+		for _, g := range gs {
+			if g.IPsSeen <= len(g.IPs) || slices.ContainsFunc(g.IPs, func(x string) bool { return canonAddr(x) == want }) {
+				continue
+			}
+			wide := g.Prefix == PrefixOverflow || g.Prefix == "*"
+			if g.Prefix == network || slices.Contains(g.Seen, sum) || wide && g.IPsSeen > len(g.Seen) {
+				out = append(out, g)
+			}
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
+	return out
+}
+
 func (a *Attacks) GroupsOf(ip string) []*Group {
 	want := canonAddr(ip)
 	var out []*Group

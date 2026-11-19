@@ -16,6 +16,13 @@ Chinese for the zh-TW pages; keep the two in step.
   package scan reports the distributions' advisories once they reach OSV, and this check covers
   nginx.org's packages and builds from source, which that scan does not.
 
+### Fixed
+
+- block_ip could block an address whose attack attempts came only from logs that cannot be
+  believed, from Telegram too, when it was past the addresses a group lists (10 per group): such an
+  address, and the rest of its network, are now refused as a listed one is, also after the group is
+  merged into an overflow summary.
+
 ## v0.4.0 — 2026-11-18
 
 - Attack detection (Linux): each patrol round reads the web server's logs and picks out the
