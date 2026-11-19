@@ -114,6 +114,9 @@ bot after you confirm it, never in the patrol. It also checks the evidence itsel
   could not be read in full, is refused.
 - Internal addresses (private, loopback, CGNAT and the like) are refused: in a log without the
   real client address, a proxy or load balancer can appear as every request's source.
+- From Telegram (since v0.4.1), only an address with verified evidence can be blocked: a verified
+  L2 or L3 group listing it, or SSH logins sshd itself logged. Any other address, one no group
+  lists included, is for the server.
 - A block is for one address, for a limited time. It never covers a network.
 
 `override_unverified` lifts these checks, except for overflow summaries, and only on the server
