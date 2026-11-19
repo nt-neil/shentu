@@ -6,11 +6,23 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 ## v0.4.1 (unreleased)
 
 - 主機盤點會對開了 HTTP/2 的 nginx 1.9.5～1.31.8 提出警告（`listen ... http2`，或對 server 生效的 `http2 on`）：CVE-2026-123007 和 CVE-2026-123633 是 HTTP/2 的記憶體錯誤，用戶端可以讓 worker 當掉。請更新到 1.31.9 或 1.30.7，或 distro 修補後的套件；更新前先改回只用 HTTP/1.1 就沒有這個問題。這只是建議，不會改設定。套件的 changelog 已列出這兩個 CVE（distro 已 backport 修補）時不警告；distro 的公告進了 OSV 之後，套件掃描就會報，這項檢查補的是 nginx.org 的套件和自行建置的 nginx，套件掃描看不到這兩類。
+- 伺服器自己的帳號（例如 Rocky Linux 的 `nginx`）擁有的網站紀錄，在沒有其他程式用這個帳號執行時，可以和 root 擁有的紀錄一樣當封鎖依據：沒有 PHP-FPM pool、systemd unit、crontab、supervisord 程式、sudo 或 doas 規則、登入 shell，巡檢時也沒有伺服器本身以外的程序；帳號資料只來自檔案，要查的也都讀到了。有任何一項讀不到，紀錄就仍是 `web_user_writable`。共用的預設帳號（`www-data`、`apache`、`nobody`）一律不算。其他條件見限制文件 `docs/attack-detection-limits.zh-TW.md` 裡，說明哪些網站紀錄可以當封鎖依據的那一段。
+- nginx 送到 journald 的存取紀錄（`access_log syslog:server=unix:/dev/log,...`）會被讀取，並逐行查證：只有經 syslog、由 nginx 本身的程式、以 worker 的帳號在 `nginx.service` 裡送出的那一行才算查證。其他程式送出的行會讀，但不算查證。
+- 新增 `shentu log-trust suggest`，列出讓這台主機的網站紀錄能當封鎖依據的改法：nginx 送 journald 的那一行設定、調高 journald 對 nginx 筆數上限的 drop-in、`kernel.yama.ptrace_scope = 1`，以及 PHP-FPM 改用各自帳號的 pool。它只列出建議，不會改任何設定。
+- Apache 的模組改用名單判斷：只做設定、限制存取、快取或 proxy 的模組沒有影響；會用子程序帳號執行程式的模組，以及 `RewriteMap` 的 `prg:`，要 `ptrace_scope` 1 以上；`mod_php`、`mod_cgi` 和不認得的模組都算應用程式碼。
+- 在路由 placeholder 那一段、帶有 `;` 參數的攻擊命中（例如 `/user/:id` 的 `/user/42;x`），現在會到 L2；先前只到 L1。
+- L3 用的回應大小基準，現在只排除被升到 L2 的請求；沒有對應到路由的命中和雜訊命中，都會算進基準。
+- 規則更準確：同一行被兩條規則重複回報的情況，現在只由一條規則回報（Host header 和 SSRF、SQL injection、`ORDER BY` 識別字）；解析後的 URL 已用固定的白名單比對過 host，SSRF 就算已檢查。有些 finding 會多出來，有些會不見，攻擊偵測認定能進入的路由也會跟著變。
 
 ### 修正
 
-- 從 Telegram 呼叫 `block_ip`，現在只封鎖 Shentu 已查證證據的位址：已查證的 L2 或 L3 攻擊群組有列出它，或有 sshd 自己寫下的 SSH 登入紀錄。其他位址在 Telegram 一律拒絕，要到伺服器上用 `shentu chat` 查看並封鎖，和 v0.4.0 對未查證嘗試的說法相同。先前攻擊群組沒有列出的位址（超出群組列出的 10 個、群組已從紀錄中清掉，或紀錄裡的寫法不同），只看 SSH 登入紀錄，所以沒有 SSH 紀錄的位址，可以憑未查證的嘗試從 Telegram 封鎖。
+- 從 Telegram 呼叫 `block_ip`，現在只封鎖 Shentu 已查證證據的位址：已查證的 L2 或 L3 攻擊群組有列出它，或有 sshd 自己寫下的 SSH 登入紀錄。其他位址在 Telegram 一律拒絕，要到伺服器上用 `shentu chat` 查看並封鎖，和 v0.4.0 對未查證嘗試的說法相同。先前攻擊群組沒有列出的位址（超出群組列出的 10 個、群組已從紀錄中清掉，或紀錄裡的寫法不同），只看 SSH 登入紀錄，所以沒有 SSH 紀錄的位址，可以憑未查證的嘗試從 Telegram 封鎖。一個群組最多列出 10 個位址，所以即使是已查證的 L2 或 L3 群組，第 11 個以後的位址從 Telegram 也會被拒絕，這是設計如此，要到伺服器上封鎖。
 - 在伺服器上，超出群組列出位址數的位址，會和列出的位址一樣被拒絕，同網段的其他位址也是；群組被併進溢出彙總之後也一樣。紀錄裡寫法不同的位址也會被拒絕，包括方括號、port、zone、多寫的 0（例如 `203.0.113.012`，兩個讀法都比對），以及寫在 IPv6 裡的 IPv4。已查證的群組只放行它列出的那個位址。溢出彙總或依 sink 彙總的群組，來源超過它保留的 hash 數（64 個）之後，會拒絕所有沒列出的位址；營運者可以在伺服器上覆寫。
+
+### 升級說明
+
+- v0.4.0 已知問題寫的「預設安裝的 nginx 紀錄不能當封鎖依據，v0.4.1 會處理」，現在的狀況如下（完整說明見 `docs/attack-detection-limits.zh-TW.md`）：Debian 12、Ubuntu 24.04 的 nginx 仍是 `web_user_writable`（`www-data` 也是 PHP 的帳號），要把存取紀錄送到 journald，並設 `ptrace_scope` 1；Debian 12、Ubuntu 24.04 的 Apache 在 `ptrace_scope` 1 時就算查證；Rocky 9 的 nginx 仍是 `web_user_writable`，因為預設的 `nsswitch.conf` 也會問 sss，確定沒在用 SSSD 時把 sss 去掉，PHP-FPM 用 `apache` 帳號，就算查證；Rocky 9 的 httpd 要設 `ptrace_scope` 1，如果 `mod_lua` 還載入著，各處也都要 `AllowOverride None`。
+- 紀錄改判為查證之後，新的嘗試會進查證過的群組；舊的未查證群組最多保留 7 天才到期，這段期間同一個目標可能出現兩組。新的 journald 來源第一次只從最新的位置開始讀，不讀以前的紀錄。
 
 ## v0.4.0 — 2026-11-18
 
