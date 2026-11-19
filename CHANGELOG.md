@@ -20,7 +20,8 @@ Chinese for the zh-TW pages; keep the two in step.
   crontab, supervisord program, sudo or doas rule or login shell, and at the patrol no process
   but the server's own; the account databases come only from the files, and everything checked
   was read. Anything unread leaves the log `web_user_writable`. The shared default accounts
-  (`www-data`, `apache`, `nobody`) never count.
+  (`www-data`, `apache`, `nobody`) never count. The other conditions are in
+  [the limits document](https://github.com/nt-neil/shentu/blob/main/docs/attack-detection-limits.md#which-web-logs-can-back-a-block).
 - nginx's access log sent to journald (`access_log syslog:server=unix:/dev/log,...`) is read and
   verified line by line: a line counts only when it came over syslog from nginx's own program,
   running as nginx's worker account in `nginx.service`. A line another program sent is read but not
@@ -69,6 +70,9 @@ Chinese for the zh-TW pages; keep the two in step.
   `nsswitch.conf` also asks sss: taken out (where no SSSD is used), with PHP-FPM as `apache`, it
   is verified. Rocky 9 httpd wants `ptrace_scope` 1, and `AllowOverride None` everywhere if
   `mod_lua` stays loaded.
+- Once a log is judged verified, new attempts go into verified groups, while the old unverified
+  groups expire only after up to 7 days: until then one target may show two groups. A new
+  journald source is read the first time from its latest position on, not from the past.
 
 ## v0.4.0 — 2026-11-18
 
