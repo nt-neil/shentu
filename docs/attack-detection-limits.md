@@ -1,10 +1,10 @@
-# Attack detection: known limitations in v0.4.0
+# Attack detection: known limitations in v0.4.1
 
 [繁體中文](attack-detection-limits.zh-TW.md)
 
 How detection works, how to read an alert and why a block needs you: [attack-detection.md](attack-detection.md).
 
-v0.4.0 ships 27 attack signatures, and they are not extended to catch rewritten forms of an attack.
+v0.4.1 ships 27 attack signatures (as v0.4.0 did), and they are not extended to catch rewritten forms of an attack.
 The cases below are known misses. A miss only costs an alert: Shentu misses the request or rates it lower. None of them can make Shentu block the wrong address.
 v0.4.0 never blocks on its own: `block_ip` always needs the operator's confirmation. Its attacks are checked too: an address with attack attempts is blocked only for a verified L2 or L3 group of its own, not an overflow summary of many sources. Attempts that only reached a route (L1), could not be judged (Unknown) or come from unverified logs do not back a block; the address's SSH logins that journald itself confirms still can. An internal address (private, loopback, CGNAT and the like) is refused. `override_unverified` lifts all of these checks but one, and only from the server (`shentu chat`), never from Telegram: attempts that are unverified, L1 or Unknown no longer hold a block back, SSH logins are not checked, and an internal address may be blocked, so the block rests on the operator's own reading of the logs. An address listed in an overflow summary is still refused, unless it also has a verified L2 or L3 group of its own. From Telegram, since v0.4.1, `block_ip` blocks only an address with evidence Shentu verified (a verified L2 or L3 group listing it, or SSH login events sshd itself logged); any other address, one no group lists included, is refused there and is for the operator on the server.
 
@@ -106,7 +106,7 @@ The cost is misses. A call with a space before its parenthesis is caught only wh
 
 ## Measured detection
 
-The numbers come from the evaluation tool (`tools/detecteval`, PR #94) with the signatures and matching of integ adff9e6 (#87, #90 and #91 merged); they are the ones in `tools/detecteval/baseline.json` next to this document. They include parameter names, path segments, anchored routes and the three narrowed signatures.
+The numbers come from the evaluation tool (`tools/detecteval`, PR #94) with the signatures and matching of integ adff9e6 (#87, #90 and #91 merged); they are the ones in `tools/detecteval/baseline.json` next to this document. They include parameter names, path segments, anchored routes and the three narrowed signatures. CI's detect-eval measures them again on every change and fails when any differs from the baseline; v0.4.1 (integ 37dc016) gives the same numbers.
 
 What they mean:
 

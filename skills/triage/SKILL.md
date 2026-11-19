@@ -18,6 +18,8 @@ Write the report for a busy administrator reading it on a phone:
 - Then "Suggested actions": concrete next steps, for example
   `shentu chat "block <ip> for 24h"`. You cannot run control tools here. Suggest a block only
   for an IP with a verified L2 or L3 attack group of its own, or SSH logins sshd itself logged
-  in journald; block_ip refuses the others (from Telegram always), and only the operator on the
-  server can override that.
+  in journald. From Telegram, block_ip refuses every other IP. On the server, it refuses an IP
+  attack detection saw without such evidence, unless the operator overrides it; an IP no attack
+  group lists and with no SSH login events is allowed there, so say what the evidence is and
+  leave the judgement to the operator.
 Keep it under 15 lines. Do not repeat raw JSON.

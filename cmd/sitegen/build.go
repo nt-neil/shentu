@@ -386,6 +386,9 @@ type itemGroup struct {
 var (
 	lightRe = regexp.MustCompile(`(?i)heap|cgroup|memory|workers|記憶體|並行`)
 	sharpRe = regexp.MustCompile(`(?i)false positive|known issue|誤報|已知問題`)
+	// cveRe: a line naming a CVE is about what Shentu sees, even when it
+	// says "memory" or "workers" of the flaw (nginx's HTTP/2 crash).
+	cveRe = regexp.MustCompile(`(?i)\bCVE-\d{4}-\d+`)
 )
 
 // groups sorts a release's lines into what Shentu now sees (reach), how
@@ -405,7 +408,7 @@ func groups(r Release) []itemGroup {
 		switch {
 		case i < len(r.Sections) && r.Sections[i] != "":
 			k = section[r.Sections[i]]
-		case lightRe.MatchString(en):
+		case lightRe.MatchString(en) && !cveRe.MatchString(en):
 			k = 2
 		case sharpRe.MatchString(en):
 			k = 1

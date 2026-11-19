@@ -227,8 +227,13 @@ from the web server's own configuration.
      it (upgrading, patching the code) is what actually ends the attack.
    - `來源可信度` (source trust): verified, or unverified with a reason.
 4. **To block the address**, ask in `sudo shentu chat` (or the bot, at interaction 3 or higher):
-   "block 203.0.113.10 for 24 hours". Only a verified L2 or L3 group of the address's own backs a
-   block. Otherwise the block is refused and the reason says why.
+   "block 203.0.113.10 for 24 hours". A verified L2 or L3 group of the address's own, or SSH
+   logins sshd itself logged, backs a block.
+   - From Telegram, any other address is refused.
+   - On the server, an address attack detection saw without such a group is refused too, and the
+     reason says why; after reading the logs yourself you can override it with
+     `override_unverified`. An address no group lists and with no SSH login events is allowed:
+     you judge it yourself.
 
 On Debian and Ubuntu, nginx's access log is owned by `www-data` by default, so its attempts are
 marked unverified: you get the alerts, but they cannot back a block from Telegram. Read the log

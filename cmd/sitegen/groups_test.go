@@ -98,6 +98,17 @@ func TestNewestGroups(t *testing.T) {
 	}
 }
 
+// A line naming a CVE is what Shentu sees, though it speaks of memory or
+// workers (v0.4.1's nginx HTTP/2 warning was put under "Runs lightly").
+func TestCVELineIsReach(t *testing.T) {
+	cve := "The host survey warns about nginx serving HTTP/2: CVE-2026-123007, HTTP/2 memory corruption that lets a client crash the workers."
+	light := "The patrol keeps its heap under 64 MB."
+	g := groups(Release{Items: []string{cve, light}})
+	if len(g) != 2 || g[0].Key != "grp.reach" || g[0].Items[0] != cve || g[1].Key != "grp.light" || g[1].Items[0] != light {
+		t.Errorf("groups %+v, want the CVE line under grp.reach and the heap line under grp.light", g)
+	}
+}
+
 // A "###" heading the card does not know is an error, not a silent group.
 func TestUnknownSection(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "CHANGELOG.md")
@@ -117,7 +128,7 @@ func TestAttackEval(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := []any{e.Version, e.Nuclei, e.Commit, e.Signatures, e.Caught, e.Templates, e.Rate, e.Distinct, e.Requests, e.Routes, e.Apps, e.Upper, e.HostCVEs, e.HostAlerted, e.HostL1}
-	want := []any{"0.4.0", "10.5.2", "5442582a", 27, 1548, 3822, "40.5%", 363, 1216, 152, 8, "0.8%", 10, 3, 2}
+	want := []any{"0.4.1", "10.5.2", "5442582a", 27, 1548, 3822, "40.5%", 363, 1216, 152, 8, "0.8%", 10, 3, 2}
 	for i := range want {
 		if got[i] != want[i] {
 			t.Errorf("field %d: got %v, want %v", i, got[i], want[i])
