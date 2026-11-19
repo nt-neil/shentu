@@ -426,14 +426,27 @@ func sudoersLines(s string) []string {
 	return out
 }
 
-// allCommands: what follows a run-as list is ALL commands, past any tags
-// (NOPASSWD:, SETENV:...).
+// allCommands: what follows a run-as list is ALL commands, past its tags
+// (NOPASSWD:, SETENV:..., several, a space after each colon or not, as
+// sudoers' Tag_Spec). A tag not known, or an option (CWD=...), is not told.
 func allCommands(rest string) bool {
-	f := strings.Fields(strings.ReplaceAll(rest, ",", " , "))
-	for len(f) > 0 && strings.HasSuffix(f[0], ":") && strings.ToUpper(f[0]) == f[0] {
-		f = f[1:]
+	r := strings.TrimSpace(rest)
+	for {
+		i := strings.IndexByte(r, ':')
+		if i < 0 || !sudoTags[r[:i]] {
+			break
+		}
+		r = strings.TrimSpace(r[i+1:])
 	}
+	f := strings.FieldsFunc(r, func(c rune) bool { return c == ' ' || c == '\t' || c == ',' })
 	return len(f) > 0 && f[0] == "ALL"
+}
+
+// sudoTags: sudoers' Tag_Spec words.
+var sudoTags = map[string]bool{
+	"NOPASSWD": true, "PASSWD": true, "NOEXEC": true, "EXEC": true, "SETENV": true, "NOSETENV": true,
+	"LOG_INPUT": true, "NOLOG_INPUT": true, "LOG_OUTPUT": true, "NOLOG_OUTPUT": true, "MAIL": true, "NOMAIL": true,
+	"FOLLOW": true, "NOFOLLOW": true, "INTERCEPT": true, "NOINTERCEPT": true,
 }
 
 // loginShells: an account with another shell may be logged in to (or su'd

@@ -348,6 +348,9 @@ func unitConfs(src Source, name string, unit []byte, conf WebConf) (all [][]byte
 		found := false
 		for _, n := range []string{name, tmpl} {
 			f := path.Join(dir, n)
+			if t, err := src.Readlink(f); err == nil && t == "/dev/null" {
+				return nil, false // masked: systemd starts it for nothing
+			}
 			if _, err := Stat(src, f); err != nil {
 				continue
 			}

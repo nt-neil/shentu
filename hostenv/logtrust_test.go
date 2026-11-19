@@ -306,6 +306,45 @@ func TestServerAccountApart(t *testing.T) {
 		{"sudo with any group but one", 1, true, func(h statHost) {
 			h.files["/etc/sudoers"] = "marker ALL=(root : ALL, !wheel) ALL\n"
 		}, ReasonWebUserWritable},
+		// Ubuntu VM acceptance (21598e8): cloud-init's sudoers line, and the
+		// units Ubuntu's packages mask.
+		{"cloud-init's sudoers line", 0, true, func(h statHost) {
+			h.files["/etc/sudoers"] = "@includedir /etc/sudoers.d\n"
+			h.files["/etc/sudoers.d/90-cloud-init-users"] = "# Created by cloud-init v. 24.4 on Thu, 19 Nov 2026 13:02:11 +0000\n\n# User rules for admin\nadmin ALL=(ALL) NOPASSWD:ALL\n"
+		}, ""},
+		{"tags run together before ALL", 1, true, func(h statHost) {
+			h.files["/etc/sudoers"] = "admin ALL=(ALL:ALL) NOPASSWD:SETENV: ALL\n"
+		}, ""},
+		{"tags run together before some commands", 1, true, func(h statHost) {
+			h.files["/etc/sudoers"] = "marker ALL=(ALL) NOPASSWD:SETENV:/usr/local/bin/marker-tool\n"
+		}, ReasonWebUserWritable},
+		{"a tag not known before ALL", 1, true, func(h statHost) {
+			h.files["/etc/sudoers"] = "marker ALL=(ALL) MARKERTAG:ALL\n"
+		}, ReasonWebUserWritable},
+		{"an option before ALL", 1, true, func(h statHost) {
+			h.files["/etc/sudoers"] = "marker ALL=(ALL) CWD=/srv ALL\n"
+		}, ReasonWebUserWritable},
+		{"units Ubuntu's packages mask", 0, true, func(h statHost) {
+			systemdDirs(h)
+			h.st["/dev/null"] = FileStat{Mode: fs.ModeDevice | fs.ModeCharDevice | 0o666}
+			for _, u := range []string{"cryptdisks-early", "cryptdisks", "hwclock", "multipath-tools-boot", "screen-cleanup", "sudo", "x11-common"} {
+				h.links["/usr/lib/systemd/system/"+u+".service"] = "/dev/null"
+			}
+			h.files["/usr/lib/systemd/system/marker.service"] = "[Service]\nExecStart=/usr/local/bin/marker-tool\n"
+		}, ""},
+		{"a masked unit's drop-in names nginx", 1, true, func(h statHost) {
+			systemdDirs(h)
+			h.st["/dev/null"] = FileStat{Mode: fs.ModeDevice | fs.ModeCharDevice | 0o666}
+			h.links["/etc/systemd/system/marker.service"] = "/dev/null"
+			h.files["/usr/lib/systemd/system/marker.service"] = "[Service]\nExecStart=/usr/local/bin/marker-tool\n"
+			h.st["/etc/systemd/system/marker.service.d"] = FileStat{Mode: fs.ModeDir | 0o755}
+			h.files["/etc/systemd/system/marker.service.d/user.conf"] = "[Service]\nUser=nginx\n"
+		}, ""},
+		{"a unit linked to another device", 1, true, func(h statHost) {
+			systemdDirs(h)
+			h.st["/dev/zero"] = FileStat{Mode: fs.ModeDevice | fs.ModeCharDevice | 0o666}
+			h.links["/usr/lib/systemd/system/marker.service"] = "/dev/zero"
+		}, ReasonWebUserWritable},
 		{"nginx has a login shell", 1, true, func(h statHost) {
 			h.files["/etc/passwd"] = strings.Replace(h.files["/etc/passwd"], "/var/lib/nginx:/sbin/nologin", "/var/lib/nginx:/bin/bash", 1)
 		}, ReasonWebUserWritable},
