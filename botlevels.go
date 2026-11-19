@@ -54,7 +54,7 @@ func describeLevels(l [4]int, zh bool) string {
 var levelSentences = [4][4][2]string{
 	{{"You will get reports and alerts here.", "這裡會收到報告和告警。"},
 		{"You can ask me questions; I will not change anything on the server.", "你可以直接問我問題，我不會改動伺服器上的任何東西。"},
-		{"You can ask me questions, ask me to unblock an IP, and to block one with verified evidence (an attack in a verified log, or SSH logins sshd logged); any other IP is for the server, with shentu chat.", "你可以直接問我問題，也可以請我解除封鎖某個 IP，或封鎖有查證證據的 IP（已查證紀錄裡的 L2、L3 攻擊，或經查證的 SSH 登入）；其他 IP 要到伺服器上用 shentu chat 處理。"},
+		{"You can ask me questions, ask me to unblock an IP, and to block one with verified evidence: an attack in a verified log, or SSH logins sshd logged. Any other IP is for the server, with shentu chat.", "你可以直接問我問題，也可以請我解除封鎖某個 IP，或封鎖有查證證據的 IP（已查證紀錄裡的 L2、L3 攻擊，或經查證的 SSH 登入）；其他 IP 要到伺服器上用 shentu chat 處理。"},
 		{"You can ask me questions and use every control tool.", "你可以直接問我問題，也可以使用所有控制功能。"}},
 	{{"My answers only say whether something is wrong, so little is left in this chat.", "我的回答只說有沒有問題，聊天室裡留下的資訊最少。"},
 		{"My answers are short summaries with advice, without raw logs.", "我的回答是重點摘要和建議，不附原始紀錄。"},
