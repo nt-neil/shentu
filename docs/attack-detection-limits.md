@@ -22,6 +22,7 @@ v0.4.0 never blocks on its own: `block_ip` always needs the operator's confirmat
   - `symlink_not_followed`: the log could only be looked at by following a link, which Shentu does not do.
   - `client_from_header`: the server takes the client address from a request header (nginx's realip, Apache's mod_remoteip), so the logged address is what a proxy or the client wrote.
   - `custom_format`: the log format is not a standard one (nginx combined or main, Apache combined or common). Its lines are matched, but a field the client writes shifting the others is not ruled out.
+- **SSH logins read by a user other than root**: journald's SSH logins count as complete for a block only for root or a member of the systemd-journal or adm group. A member of wheel (RHEL, Fedora), who may read the whole journal, is taken as reading only part of it, so its SSH logins do not back a block. An adm member is taken as reading all of it even where the journal grants adm nothing (for example a journal kept only in /run/log/journal).
 
 ## Requests that may be missed
 
@@ -43,7 +44,6 @@ v0.4.0 never blocks on its own: `block_ip` always needs the operator's confirmat
 - **Flarum's open redirect (composer-cves) without slashes.** A redirect target written as a scheme and a colon, with no `//`, may not match, though browsers still leave the site for it.
 - **Flarum under a directory with a dot.** Flarum's logout route is anchored: only directories, or `index.php` right before it, may come first. Flarum mounted under a directory whose name has a dot (such as `/v1.2/`) is missed.
 - **An encoded `/` in a route parameter.** Routes are matched on the decoded path. A request whose route parameter holds an encoded `/` (such as `/files/:name`) does not reach the route, unless the route takes several segments.
-- **A `;` parameter in a route parameter's value.** A placeholder's value is taken from the path after `;` parameters are cleaned away, so a hit in a segment that carries one (such as `/user/:id` with `/user/42;…`) is L1 only. The hit is still listed as unanchored.
 - **WordPress plugins.** There are no signatures for particular WordPress plugin vulnerabilities. A request against an installed vulnerable plugin is seen only if a generic class signature catches it, and then it is not tied to that plugin's CVE.
 
 ## Parameter names and path segments
@@ -53,7 +53,8 @@ Class signatures are tried on parameter names and on each path segment too, so o
 - A hit in a parameter name counts like one in its value: on a route of the same class it is L2.
 - A hit in a path segment is L2 only where a route's placeholder took that segment. Otherwise the route stays at L1 and the hit is unanchored.
 - For a route written as a regular expression, its capture groups are the placeholders. A route with no group leaves a path segment hit at L1. A fixed word inside a group (such as `(user|list)`) is taken as a placeholder value, so a hit in that word is L2.
-- A route whose ordinary requests often carry a class signature's text in their path, and get larger responses, learns too small a usual response size: requests with a hit are left out of it. An L2 on that route then gets size evidence more easily. An L3 on a single piece of evidence is at most high.
+- A placeholder's value is taken both from the path with `;` parameters cleaned away and from the path that keeps them, so a hit in a `;` parameter of the placeholder's segment (such as `/user/:id` with `/user/42;…`) is L2. One in a `;` parameter of the route's own words or of a mount prefix stays L1.
+- A route's usual response size is learned from its ordinary responses; only requests a hit took to L2 are left out (an unanchored hit or noise is learned). A route whose ordinary requests often carry a class signature's text where its placeholder or a parameter takes it, and get larger responses, still learns too small a usual size. An L2 on that route then gets size evidence more easily. An L3 on a single piece of evidence is at most high.
 
 ## Narrowed to spare ordinary text
 
