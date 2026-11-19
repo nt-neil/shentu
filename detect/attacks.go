@@ -651,9 +651,7 @@ func (g *Group) unknownDue() bool {
 
 // addIP lists ip (at most MaxGroupIPs) and counts it if new.
 func (g *Group) addIP(ip string) {
-	h := fnv.New32a()
-	h.Write([]byte(ip))
-	sum := h.Sum32()
+	sum := ipSum(ip)
 	if slices.Contains(g.Seen, sum) || slices.Contains(g.IPs, ip) {
 		return
 	}
@@ -679,6 +677,19 @@ func (g *Group) merge(src *Group) {
 	g.Merged++
 	for _, ip := range src.IPs {
 		g.addIP(ip)
+	}
+	// The addresses past src's listed ones go on being counted and, by
+	// hash, known: an address past the cap stays one the gate refuses.
+	for _, sum := range src.Seen {
+		if !slices.Contains(g.Seen, sum) {
+			g.IPsSeen++
+			if len(g.Seen) < MaxGroupSeen {
+				g.Seen = append(g.Seen, sum)
+			}
+		}
+	}
+	if past := src.IPsSeen - max(len(src.Seen), len(src.IPs)); past > 0 { // past even the hashes
+		g.IPsSeen += past
 	}
 	g.IPsSeen = max(g.IPsSeen, len(g.IPs))
 	g.addRules(src.Rules)
@@ -764,6 +775,85 @@ func (a *Attacks) campaign(t Attempt, at time.Time) bool {
 		r.Last = at
 	}
 	return len(r.Entries) >= CampaignEntries
+}
+
+// listsAny: g lists an address that may be one of wants, however it was
+// logged (looseForms).
+func listsAny(g *Group, wants map[string]bool) bool {
+	for _, x := range g.IPs {
+		for f := range looseForms(x) {
+			if wants[f] {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// looseForms are the addresses a source as logged may stand for, each in
+// canonAddr's form: brackets, a port and a zone taken off; an IPv4
+// address with leading zeros read both as decimal and as octal; an IPv4
+// address embedded in IPv6 (::ffff:a.b.c.d, ::a.b.c.d, 64:ff9b::a.b.c.d)
+// as itself too. A text that is none of these stands for itself.
+func looseForms(s string) map[string]bool {
+	out := map[string]bool{s: true, canonAddr(s): true}
+	t := strings.TrimSpace(s)
+	if strings.HasPrefix(t, "[") {
+		if end := strings.IndexByte(t, ']'); end > 0 {
+			t = t[1:end]
+		}
+	} else if host, port, ok := strings.Cut(t, ":"); ok && !strings.Contains(port, ":") && strings.Count(host, ".") == 3 {
+		t = host // a.b.c.d:port
+	}
+	if i := strings.IndexByte(t, '%'); i >= 0 {
+		t = t[:i]
+	}
+	add := func(a netip.Addr) {
+		a = a.Unmap()
+		out[a.String()] = true
+		if a.Is6() {
+			b := a.As16()
+			var zero [12]byte
+			if ([12]byte(b[:12]) == zero && (b[12] != 0 || b[13] != 0)) || [12]byte(b[:12]) == [12]byte{0, 0x64, 0xff, 0x9b} {
+				out[netip.AddrFrom4([4]byte(b[12:])).String()] = true
+			}
+		}
+	}
+	if a, err := netip.ParseAddr(t); err == nil {
+		add(a)
+		return out
+	}
+	parts := strings.Split(t, ".")
+	if len(parts) != 4 {
+		return out
+	}
+	for _, base := range []int{10, 8} {
+		var b [4]byte
+		ok := true
+		for i, part := range parts {
+			n, err := strconv.ParseUint(part, base, 8)
+			if base == 8 && (len(part) < 2 || part[0] != '0') {
+				n, err = strconv.ParseUint(part, 10, 8) // no leading zero: decimal either way
+			}
+			if part == "" || err != nil {
+				ok = false
+				break
+			}
+			b[i] = byte(n)
+		}
+		if ok {
+			out[netip.AddrFrom4(b).String()] = true
+		}
+	}
+	return out
+}
+
+// ipSum is the hash a group keeps of an address (Seen), of its one form:
+// ::ffff:192.0.2.1 is 192.0.2.1.
+func ipSum(ip string) uint32 {
+	h := fnv.New32a()
+	h.Write([]byte(canonAddr(ip)))
+	return h.Sum32()
 }
 
 // canonAddr is ip in one form: unmapped, as netip prints it; the text as
@@ -1031,12 +1121,53 @@ func PeekAttacks(dir string) (*Attacks, error) {
 
 // GroupsOf are the groups (and overflow groups) listing ip among their
 // addresses, an IPv4-mapped address and its IPv4 one being the same.
-func (a *Attacks) GroupsOf(ip string) []*Group {
-	want := canonAddr(ip)
+// MayHold is the groups that do not list ip but may hold it among the
+// addresses past their listed ones (MaxGroupIPs): its network's own, one
+// whose hashes hold it, and an overflow or sink-wide summary ("*") whose
+// hashes were cut too (MaxGroupSeen), whose members cannot be told by
+// network. The gate refuses on them as on a group listing it.
+func (a *Attacks) MayHold(ip string) []*Group {
+	wants := looseForms(ip)
+	networks, sums := map[string]bool{}, map[uint32]bool{}
+	for w := range wants {
+		networks[NetworkOf(w)] = true
+		sums[ipSum(w)] = true
+		if v4, err := netip.ParseAddr(w); err == nil && v4.Is4() { // as an IPv6 address embedding it is grouped
+			b := v4.As4()
+			for _, pre := range [][12]byte{{}, {0, 0x64, 0xff, 0x9b}} {
+				var a16 [16]byte
+				copy(a16[:], pre[:])
+				copy(a16[12:], b[:])
+				networks[NetworkOf(netip.AddrFrom16(a16).String())] = true
+			}
+		}
+	}
 	var out []*Group
 	for _, gs := range []map[string]*Group{a.Groups, a.Overflow} {
 		for _, g := range gs {
-			if slices.ContainsFunc(g.IPs, func(x string) bool { return canonAddr(x) == want }) {
+			if g.IPsSeen <= len(g.IPs) || listsAny(g, wants) {
+				continue
+			}
+			hit := networks[g.Prefix]
+			for _, sum := range g.Seen {
+				hit = hit || sums[sum]
+			}
+			wide := g.Prefix == PrefixOverflow || g.Prefix == "*"
+			if hit || wide && g.IPsSeen > len(g.Seen) {
+				out = append(out, g)
+			}
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
+	return out
+}
+
+func (a *Attacks) GroupsOf(ip string) []*Group {
+	wants := looseForms(ip)
+	var out []*Group
+	for _, gs := range []map[string]*Group{a.Groups, a.Overflow} {
+		for _, g := range gs {
+			if listsAny(g, wants) {
 				out = append(out, g)
 			}
 		}
