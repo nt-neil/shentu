@@ -412,6 +412,63 @@ func unitConfs(src Source, name string, unit []byte, conf WebConf) (all [][]byte
 	return all, unread
 }
 
+// unitCandidates are every file that may apply to the unit, whichever
+// systemd takes: its own and its template's file in every directory, and
+// every drop-in of every applicable name in every directory, a name
+// hidden by another or not (runAsAccounts takes all their accounts: an
+// order taken wrong only makes it stricter). A unit masked where systemd
+// takes it (unitConfs) has none.
+func unitCandidates(src Source, name string, unit []byte, conf WebConf) (all [][]byte, unread bool) {
+	taken, unread := unitConfs(src, name, unit, conf)
+	if len(taken) == 0 && !unread {
+		return nil, false // masked
+	}
+	all = append(all, unit)
+	tmpl := name
+	if at := strings.IndexByte(name, '@'); at >= 0 {
+		tmpl = name[:at+1] + ".service"
+	}
+	read := func(f string) {
+		b, why := readWebConf(src, f, conf)
+		if why != "" {
+			unread = true
+			return
+		}
+		all = append(all, b)
+	}
+	for _, dir := range unitPaths {
+		for _, n := range []string{name, tmpl} {
+			f := path.Join(dir, n)
+			if t, err := src.Readlink(f); err == nil && t == "/dev/null" {
+				continue
+			}
+			if _, err := Stat(src, f); err == nil {
+				read(f)
+			}
+		}
+		for _, n := range dropInNames(name) {
+			d := path.Join(dir, n+".d")
+			entries, err := src.ReadDir(d)
+			if err != nil {
+				if !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, ErrNotRecorded) {
+					unread = true
+				}
+				continue
+			}
+			for _, e := range entries {
+				if strings.HasSuffix(e, ".conf") {
+					read(path.Join(d, e))
+				}
+			}
+		}
+	}
+	return all, unread
+}
+
+// unitBools: systemd's boolean words.
+var unitBools = map[string]bool{"1": true, "yes": true, "y": true, "true": true, "t": true, "on": true,
+	"0": false, "no": false, "n": false, "false": false, "f": false, "off": false}
+
 func appUnit(src Source, name string, unit []byte, conf WebConf) (AppUnit, bool) {
 	u := AppUnit{Name: name}
 	all, unread := unitConfs(src, name, unit, conf)

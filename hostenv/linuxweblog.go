@@ -767,35 +767,43 @@ func (l *logLoader) runAsAccounts() {
 			}
 			unit = b
 		}
-		all, unread := unitConfs(l.src, n, unit, conf)
+		all, unread := unitCandidates(l.src, n, unit, conf)
 		l.runAsLost = l.runAsLost || unread
-		user := ""
+		// Every User=, Group=, SupplementaryGroups= and DynamicUser= of
+		// every file that may apply, whichever wins: an order taken wrong
+		// only makes the judgement stricter.
 		for _, b := range all {
-			if u, set := unitUser(b); set {
-				user = u
-			}
 			for _, ln := range strings.Split(string(b), "\n") {
 				k, v, ok := strings.Cut(strings.TrimSpace(ln), "=")
-				if k = strings.TrimSpace(k); ok && (k == "Group" || k == "SupplementaryGroups") {
+				if !ok {
+					continue
+				}
+				k, v = strings.TrimSpace(k), strings.TrimSpace(v)
+				switch k {
+				case "Group", "SupplementaryGroups":
 					if strings.Contains(v, "%") {
 						l.runAsLost = true
 					}
 					l.runAsGroups = append(l.runAsGroups, strings.Fields(v)...)
+				case "DynamicUser":
+					if _, known := unitBools[strings.ToLower(v)]; !known {
+						l.runAsLost = true
+					}
+				case "User":
+					switch {
+					case v == "": // a reset: no account
+					case !strings.Contains(v, "%"):
+						l.runAs = append(l.runAs, v)
+					case n == "user@.service" && v == "%i":
+						// systemd's user manager, one per user logged in or kept
+						// (linger, read below): not started for an account by others
+					case strings.HasPrefix(n, "user@") && v == "%i": // one a dependency starts: for that uid
+						l.runAs = append(l.runAs, strings.TrimSuffix(strings.TrimPrefix(n, "user@"), ".service"))
+					default:
+						l.runAsLost = true // the instance, or another specifier, names the account
+					}
 				}
 			}
-		}
-		switch {
-		case !strings.Contains(user, "%"):
-			if user != "" {
-				l.runAs = append(l.runAs, user)
-			}
-		case n == "user@.service" && user == "%i":
-			// systemd's user manager, one per user logged in or kept
-			// (linger, read below): not started for an account by others
-		case strings.HasPrefix(n, "user@") && user == "%i": // one a dependency starts: for that uid
-			l.runAs = append(l.runAs, strings.TrimSuffix(strings.TrimPrefix(n, "user@"), ".service"))
-		default:
-			l.runAsLost = true // the instance, or another specifier, names the account
 		}
 	}
 	linger, err := l.src.ReadDir("/var/lib/systemd/linger")

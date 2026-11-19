@@ -361,6 +361,46 @@ func TestServerAccountApart(t *testing.T) {
 			h.files["/usr/lib/systemd/system/marker@.service"] = "[Service]\nUser=%i\nExecStart=/usr/local/bin/marker-tool\n"
 			h.links[wants+"/marker@nginx.service"] = "/usr/lib/systemd/system/marker@.service"
 		}, ""},
+		// Review 2, third check: drop-ins of one file name at several
+		// levels (systemctl edit's override.conf): every account counts.
+		{"instance's and template's override.conf", 1, true, func(h statHost) {
+			systemdDirs(h)
+			h.files["/usr/lib/systemd/system/marker@.service"] = "[Service]\nExecStart=/usr/local/bin/marker-tool\n"
+			h.links[wants+"/marker@a.service"] = "/usr/lib/systemd/system/marker@.service"
+			for _, d := range []string{"/etc/systemd/system/marker@a.service.d", "/etc/systemd/system/marker@.service.d"} {
+				h.st[d] = FileStat{Mode: fs.ModeDir | 0o755}
+			}
+			h.files["/etc/systemd/system/marker@a.service.d/override.conf"] = "[Service]\nUser=nginx\n"
+			h.files["/etc/systemd/system/marker@.service.d/override.conf"] = "[Service]\nNice=5\n"
+		}, ReasonWebUserWritable},
+		{"service.d's and the unit's override.conf", 1, true, func(h statHost) {
+			systemdDirs(h)
+			h.files["/usr/lib/systemd/system/marker.service"] = "[Service]\nExecStart=/usr/local/bin/marker-tool\n"
+			for _, d := range []string{"/etc/systemd/system/marker.service.d", "/etc/systemd/system/service.d"} {
+				h.st[d] = FileStat{Mode: fs.ModeDir | 0o755}
+			}
+			h.files["/etc/systemd/system/marker.service.d/override.conf"] = "[Service]\nUser=nginx\n"
+			h.files["/etc/systemd/system/service.d/override.conf"] = "[Service]\nNice=5\n"
+		}, ReasonWebUserWritable},
+		{"a lower directory's unit file as nginx, overridden above", 1, true, func(h statHost) {
+			systemdDirs(h)
+			h.files["/etc/passwd"] += "marker:x:1500:1500::/home/marker:/sbin/nologin\n"
+			h.files["/etc/group"] += "marker:x:1500:\n"
+			h.files["/etc/systemd/system/marker.service"] = "[Service]\nUser=marker\nExecStart=/usr/local/bin/marker-tool\n"
+			h.files["/usr/lib/systemd/system/marker.service"] = "[Service]\nUser=nginx\nExecStart=/usr/local/bin/marker-tool\n"
+		}, ReasonWebUserWritable}, // stricter than systemd: every candidate counts
+		{"an empty User= resets, another account", 1, true, func(h statHost) {
+			systemdDirs(h)
+			h.files["/etc/passwd"] += "marker:x:1500:1500::/home/marker:/sbin/nologin\n"
+			h.files["/etc/group"] += "marker:x:1500:\n"
+			h.files["/usr/lib/systemd/system/marker.service"] = "[Service]\nUser=marker\nExecStart=/usr/local/bin/marker-tool\n"
+			h.st["/etc/systemd/system/marker.service.d"] = FileStat{Mode: fs.ModeDir | 0o755}
+			h.files["/etc/systemd/system/marker.service.d/override.conf"] = "[Service]\nUser=\n"
+		}, ""},
+		{"DynamicUser= not told", 1, true, func(h statHost) {
+			systemdDirs(h)
+			h.files["/usr/lib/systemd/system/marker.service"] = "[Service]\nDynamicUser=marker\nExecStart=/usr/local/bin/marker-tool\n"
+		}, ReasonWebUserWritable},
 		{"a unit linked to another device", 1, true, func(h statHost) {
 			systemdDirs(h)
 			h.st["/dev/zero"] = FileStat{Mode: fs.ModeDevice | fs.ModeCharDevice | 0o666}
