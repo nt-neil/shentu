@@ -28,14 +28,14 @@ v0.4.0 不會自動封鎖：`block_ip` 一定要經營運者確認。攻擊紀�
 紀錄要能支撐封鎖，前提是應用程式碼執行的帳號改不了它的內容：不能直接寫檔，不能透過開著這個檔案的 worker 寫，也不能冒充伺服器送紀錄。這裡假設的攻擊者是已經能以網站應用程式的身分執行程式碼（例如利用 PHP 漏洞）。不在防禦範圍內的：root 被拿下，以及 nginx 或 Apache 本身被攻破（worker 執行攻擊者的程式碼），這兩種情況任何紀錄檢查都擋不住。
 
 - **伺服器自己的帳號**：紀錄檔屬於 nginx worker 或 Apache children 執行的帳號時，在下列條件全部成立下，會和 root 擁有的一樣被信任：
-  - 沒有別的東西以這個帳號執行，不論是同 uid 還是同群組：沒有 PHP-FPM pool、沒有其他 systemd unit、沒有 crontab，也沒有 linger 的使用者管理程序；
+  - 沒有別的東西以這個帳號執行，不論是同 uid 還是同群組：沒有 PHP-FPM pool、沒有其他 systemd unit、沒有 crontab，沒有 linger 的使用者管理程序，沒有 supervisord 的 program，沒有 sudo 能以它執行的規則，帳號也沒有可登入的 shell；巡檢當下也沒有任何不是伺服器本身程式（root 擁有的 nginx 或 httpd）的程序以它的 uid 或群組執行；以上任何一項讀不到，都不算；
   - 伺服器本身不執行應用程式碼；
   - 帳號在 `/etc/passwd`，而且只有它用這個 uid；
   - 帳號資料庫只來自檔案；
   - 設定完整讀到。
 
   這時也不必擔心 worker 被 ptrace，因為沒有應用程式帳號追蹤得到它。共用的預設帳號（`www-data`、`apache`、`nobody` 等）不論 Shentu 讀到什麼，都不算伺服器自己的帳號，因為 Shentu 沒讀到的東西可能也以它執行。
-- **Apache 的模組**：只做設定、存取控制、快取或代理的模組沒有影響。以 children 帳號執行外部程式的模組（`mod_actions`、`mod_ext_filter`、`mod_include`、`mod_suexec`、`mod_userdir`、`mod_cgid`）要求 `kernel.yama.ptrace_scope` 至少為 1，這樣那些程式才追蹤不到 children；告警會寫明這點。`mod_lua` 只要有任何指令提到 Lua，或有任何 `AllowOverride` 不是 `None`，就算應用程式碼。`mod_cgi`、`mod_php`，以及 Shentu 不認得的模組，都算應用程式碼。
+- **Apache 的模組**：只做設定、存取控制、快取或代理的模組沒有影響。以 children 帳號執行外部程式的模組（`mod_actions`、`mod_ext_filter`、`mod_include`、`mod_suexec`、`mod_userdir`、`mod_cgid`），以及 `RewriteMap` 的 `prg:`，要求 `kernel.yama.ptrace_scope` 至少為 1，這樣那些程式才追蹤不到 children；告警會寫明這點。`mod_lua` 只要有任何指令提到 Lua，或有任何 `AllowOverride` 不是 `None`，就算應用程式碼。`mod_cgi`、`mod_php`，以及 Shentu 不認得的模組，都算應用程式碼。
 - **nginx 經 journald**：nginx 也可以把存取紀錄送到 journald（`access_log syslog:server=unix:/dev/log,nohostname combined;`）。journald 會替每一行記下送出者的 unit、帳號和執行檔，這三項任何程序都改不了。Shentu 從 `nginx.service` 的紀錄讀這份存取紀錄；只有經 syslog、由 nginx 的執行檔、以 worker 帳號、在這個 unit 裡送出的那一行，才算已查證。PHP 執行的 `logger` 在別的 unit、是別的執行檔，所以照樣讀，但不算已查證。前提有五個：
   - `/dev/log` 是 journald 的 socket；
   - `nginx.service` 用絕對路徑啟動 nginx；
@@ -43,7 +43,7 @@ v0.4.0 不會自動封鎖：`block_ip` 一定要經營運者確認。攻擊紀�
   - 這個 tag 沒有被其他 nginx 紀錄使用；
   - 除非 worker 的帳號是伺服器自己的帳號，否則 `ptrace_scope` 至少為 1。
 
-  原本的檔案紀錄照舊保留，判定也不變。
+  原本的檔案紀錄照舊保留，判定也不變。journald 是在收到訊息後，依送出者的 pid 去讀 /proc 填 unit 和執行檔；送出者送完立刻結束、pid 又剛好被 nginx 的 worker 重新使用時，理論上可能被記成 nginx 的。這個時機 web 帳號控制不了；較新的 systemd 用 SCM_PIDFD 取得送出者，沒有這個問題。
 
 預設安裝的判定如下，依據是在 GitHub runner 和 Ubuntu VM 上的量測。`ptrace_scope`：Ubuntu 實測 1，Debian 推定 1，Rocky 推定 0。
 

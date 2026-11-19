@@ -522,6 +522,8 @@ type logLoader struct {
 	fpmUsers []string
 	// nameUID: /etc/passwd's accounts, by name (webAccounts).
 	nameUID map[string]int
+	// uidLogin: a uid one of whose accounts has a login shell.
+	uidLogin map[int]bool
 	// ngxSyslog: the nginx log directives (kind, format, destination) sent
 	// to syslog, by tag: a journal source is one tag's alone.
 	ngxSyslog map[string]map[string]bool
@@ -829,6 +831,8 @@ func (l *logLoader) runAsAccounts() {
 			}
 		}
 	}
+	l.supervisorAccounts()
+	l.sudoersAccounts()
 }
 
 // maxRunAsUnits bounds the service units runAsAccounts reads; more leaves
@@ -903,6 +907,7 @@ func (l *logLoader) webAccounts() WebAccounts {
 	nameUID := map[string]int{}
 	uidGID := map[int]int{} // an account's primary group, by uid
 	passwdOK, groupOK, nis := false, false, false
+	l.uidLogin = map[int]bool{}
 	if b, err := l.src.ReadFile("/etc/passwd"); err == nil {
 		passwdOK = true
 		nis = nis || nisLines(b)
@@ -913,6 +918,9 @@ func (l *logLoader) webAccounts() WebAccounts {
 			}
 			if uid, err := strconv.Atoi(e.UID); err == nil {
 				nameUID[e.Name] = uid
+				if !noLoginShells[e.Shell] {
+					l.uidLogin[uid] = true
+				}
 				if _, dup := uidGID[uid]; dup {
 					uidGID[uid] = -1 // two accounts, one uid: either one may be what runs as it
 				} else if gid, err := strconv.Atoi(e.GID); err == nil {
@@ -1174,11 +1182,13 @@ func (l *logLoader) serverAccounts(w *WebAccounts, app map[string]bool, appGIDs 
 			continue
 		}
 		ok := true
+		uids, gids := map[int]bool{}, map[int]bool{}
 		for _, u := range us {
 			uid, gid, found := resolve(u)
-			if !found || gid < 0 || appUIDs[uid] || appGIDs[gid] {
-				ok = false
+			if !found || gid < 0 || appUIDs[uid] || appGIDs[gid] || l.uidLogin[uid] {
+				ok = false // a login shell: someone may log in, or su, as it
 			}
+			uids[uid], gids[gid] = true, true
 		}
 		for _, g := range l.serverGroups[server] { // the workers' group, as configured
 			gid, num := numericID(g)
@@ -1188,6 +1198,12 @@ func (l *logLoader) serverAccounts(w *WebAccounts, app map[string]bool, appGIDs 
 			if !num || appGIDs[gid] {
 				ok = false
 			}
+			gids[gid] = true
+		}
+		delete(uids, 0)
+		delete(gids, 0)
+		if ok && othersRun(l.src, server, uids, gids) { // started by hand, by rc.local, by anything not read above
+			ok = false
 		}
 		if !ok {
 			continue
@@ -2056,6 +2072,10 @@ func (l *logLoader) apacheFile(st *apacheState, p string, depth int) {
 				if !strings.EqualFold(a, "none") {
 					l.apacheOverride = true
 				}
+			}
+		case "rewritemap": // prg: a program run as the children's account, as the exec modules'
+			if len(args) > 1 && strings.HasPrefix(strings.ToLower(st.expand(args[1])), "prg:") && !contains(l.apacheExec, "RewriteMap prg:") {
+				l.apacheExec = append(l.apacheExec, "RewriteMap prg:")
 			}
 		case "loadfile": // a library loaded into the server's own processes (libpython for mod_wsgi)
 			if len(args) > 0 && !contains(l.apacheApp, "LoadFile "+args[0]) {

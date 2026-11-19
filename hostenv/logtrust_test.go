@@ -161,6 +161,98 @@ func TestServerAccountApart(t *testing.T) {
 		{"accounts also from sss", 1, true, func(h statHost) {
 			h.files["/etc/nsswitch.conf"] = "passwd: files sss systemd\ngroup: files sss systemd\n"
 		}, ReasonWebUserWritable},
+		// Whatever else runs programs as nginx, or its group (review 1, N-1).
+		{"supervisord program as nginx", 1, true, func(h statHost) {
+			h.files["/etc/supervisord.d/marker.ini"] = "[program:marker]\ncommand=/usr/local/bin/marker-tool\nuser=nginx\n"
+		}, ReasonWebUserWritable},
+		{"supervisord program as nginx, ptrace_scope 0", 0, true, func(h statHost) {
+			h.files["/etc/supervisor/conf.d/marker.conf"] = "[program:marker]\ncommand=/usr/local/bin/marker-tool\nuser = nginx ; marker\n"
+		}, ReasonWebUserWritable},
+		{"supervisord includes a file elsewhere", 1, true, func(h statHost) {
+			h.files["/etc/supervisord.conf"] = "[supervisord]\n[include]\nfiles = /srv/marker/*.conf\n"
+			h.files["/srv/marker/a.conf"] = "[program:marker]\ncommand=/usr/local/bin/marker-tool\nuser=nginx\n"
+		}, ReasonWebUserWritable},
+		{"supervisord program's user from the environment", 1, true, func(h statHost) {
+			h.files["/etc/supervisord.d/marker.ini"] = "[program:marker]\ncommand=/usr/local/bin/marker-tool\nuser=%(ENV_MARKER)s\n"
+		}, ReasonWebUserWritable},
+		{"supervisord programs not listed", 1, true, func(h statHost) {
+			h.files["/etc/supervisord.d/marker.ini"] = "[program:marker]\ncommand=/usr/local/bin/marker-tool\n"
+			h.denied["/etc/supervisord.d"] = true
+		}, ReasonWebUserWritable},
+		{"supervisord program as another account", 1, true, func(h statHost) {
+			h.files["/etc/passwd"] += "marker:x:1500:1500::/home/marker:/sbin/nologin\n"
+			h.files["/etc/group"] += "marker:x:1500:\n"
+			h.files["/etc/supervisord.d/marker.ini"] = "[program:marker]\ncommand=/usr/local/bin/marker-tool\nuser=marker\n"
+		}, ""},
+		{"sudo runs commands as nginx", 1, true, func(h statHost) {
+			h.files["/etc/sudoers"] = "root ALL=(ALL) ALL\n#includedir /etc/sudoers.d\n"
+			h.files["/etc/sudoers.d/marker"] = "marker ALL=(nginx) NOPASSWD: ALL\n"
+		}, ReasonWebUserWritable},
+		{"sudo runs commands as nginx by uid", 1, true, func(h statHost) {
+			h.files["/etc/sudoers"] = "marker ALL=(#999) /usr/local/bin/marker-tool\n"
+		}, ReasonWebUserWritable},
+		{"sudo runs commands with nginx's group", 1, true, func(h statHost) {
+			h.files["/etc/sudoers"] = "@includedir /etc/sudoers.d\n"
+			h.files["/etc/sudoers.d/marker"] = "marker ALL=(root : nginx) /usr/local/bin/marker-tool\n"
+		}, ReasonWebUserWritable},
+		{"sudo's Runas_Alias names nginx", 1, true, func(h statHost) {
+			h.files["/etc/sudoers"] = "Runas_Alias MARKER = nginx\nmarker ALL=(MARKER) /usr/local/bin/marker-tool\n"
+		}, ReasonWebUserWritable},
+		{"sudo runs some commands as anyone", 1, true, func(h statHost) {
+			h.files["/etc/sudoers"] = "marker ALL=(ALL) NOPASSWD: /usr/local/bin/marker-tool\n"
+		}, ReasonWebUserWritable},
+		{"sudoers.d not listed", 1, true, func(h statHost) {
+			h.files["/etc/sudoers"] = "#includedir /etc/sudoers.d\n"
+			h.files["/etc/sudoers.d/marker"] = "marker ALL=(root) /usr/local/bin/marker-tool\n"
+			h.denied["/etc/sudoers.d"] = true
+		}, ReasonWebUserWritable},
+		{"sudoers unread", 1, true, func(h statHost) {
+			h.files["/etc/sudoers"] = "root ALL=(ALL) ALL\n"
+			h.denied["/etc/sudoers"] = true
+		}, ReasonWebUserWritable},
+		{"sudoers also from sss", 1, true, func(h statHost) {
+			h.files["/etc/nsswitch.conf"] = "passwd: files systemd\ngroup: files systemd\nsudoers: files sss\n"
+		}, ReasonWebUserWritable},
+		{"the distribution's sudoers", 1, true, func(h statHost) {
+			h.files["/etc/sudoers"] = "## Allow root to run any commands anywhere\nDefaults    secure_path = /sbin:/bin:/usr/sbin:/usr/bin\nroot\tALL=(ALL) \tALL\n%wheel\tALL=(ALL)\tALL\n%sudo ALL=(ALL:ALL) ALL\n#includedir /etc/sudoers.d\n"
+			h.files["/etc/sudoers.d/marker"] = "marker ALL=(root) NOPASSWD: /usr/local/bin/marker-tool\n"
+		}, ""},
+		{"nginx has a login shell", 1, true, func(h statHost) {
+			h.files["/etc/passwd"] = strings.Replace(h.files["/etc/passwd"], "/var/lib/nginx:/sbin/nologin", "/var/lib/nginx:/bin/bash", 1)
+		}, ReasonWebUserWritable},
+		{"a program runs as nginx now", 1, true, func(h statHost) {
+			nginxProcs(h)
+			h.files["/proc/4300/status"] = "Name:\tnginx\nUid:\t999\t999\t999\t999\nGid:\t996\t996\t996\t996\nGroups:\t996\n"
+			h.links["/proc/4300/exe"] = "/usr/local/bin/marker-tool"
+		}, ReasonWebUserWritable},
+		{"a program runs with nginx's group now", 0, true, func(h statHost) {
+			nginxProcs(h)
+			h.files["/proc/4300/status"] = "Name:\tmarker\nUid:\t1500\t1500\t1500\t1500\nGid:\t1500\t1500\t1500\t1500\nGroups:\t996 1500\n"
+			h.links["/proc/4300/exe"] = "/usr/local/bin/marker-tool"
+		}, ReasonWebUserWritable},
+		{"nginx's program from a file not root's", 1, true, func(h statHost) {
+			nginxProcs(h)
+			h.st["/usr/sbin/nginx"] = FileStat{Mode: 0o755, UID: 999, GID: intp(0)}
+		}, ReasonWebUserWritable},
+		{"a worker of a deleted (upgraded) nginx", 1, true, func(h statHost) {
+			nginxProcs(h)
+			h.links["/proc/4201/exe"] = "/usr/sbin/nginx (deleted)"
+		}, ReasonWebUserWritable},
+		{"a process's program not read", 1, true, func(h statHost) {
+			nginxProcs(h)
+			delete(h.links, "/proc/4201/exe")
+		}, ReasonWebUserWritable},
+		{"/proc not listed", 1, true, func(h statHost) {
+			nginxProcs(h)
+			h.denied["/proc"] = true
+		}, ReasonWebUserWritable},
+		{"nginx's master and worker, another account's program", 0, true, func(h statHost) {
+			nginxProcs(h)
+			h.files["/etc/passwd"] += "marker:x:1500:1500::/home/marker:/sbin/nologin\n"
+			h.files["/etc/group"] += "marker:x:1500:\n"
+			h.files["/proc/4300/status"] = "Name:\tmarker\nUid:\t1500\t1500\t1500\t1500\nGid:\t1500\t1500\t1500\t1500\nGroups:\t1500\n"
+			h.links["/proc/4300/exe"] = "/usr/local/bin/marker-tool"
+		}, ""},
 		{"group-writable file", 1, true, func(h statHost) {
 			h.st["/var/log/nginx/access.log"] = FileStat{Mode: 0o660, UID: 999, GID: intp(0)}
 		}, ReasonUntrusted},
@@ -208,6 +300,17 @@ func TestServerAccountNotForConf(t *testing.T) {
 			t.Errorf("nginx's file judged for %q: verified", w.judging)
 		}
 	}
+}
+
+// nginxProcs: nginx's root master and one worker as nginx, running the
+// root-owned /usr/sbin/nginx.
+func nginxProcs(h statHost) {
+	h.files["/proc/4200/status"] = "Name:\tnginx\nUid:\t0\t0\t0\t0\nGid:\t0\t0\t0\t0\nGroups:\t\n"
+	h.links["/proc/4200/exe"] = "/usr/sbin/nginx"
+	h.files["/proc/4201/status"] = "Name:\tnginx\nUid:\t999\t999\t999\t999\nGid:\t996\t996\t996\t996\nGroups:\t996\n"
+	h.links["/proc/4201/exe"] = "/usr/sbin/nginx"
+	h.files["/usr/sbin/nginx"] = ""
+	h.st["/usr/sbin/nginx"] = FileStat{Mode: 0o755, GID: intp(0)}
 }
 
 func systemdDirs(h statHost) {
@@ -270,6 +373,40 @@ func TestApacheModulesTrust(t *testing.T) {
 		}
 		if r.name == "defaults, ptrace_scope 0" && !strings.Contains(s.Detail, "ptrace_scope=1") {
 			t.Errorf("%s: the alert does not say what lets it pass: %s", r.name, s.Detail)
+		}
+	}
+}
+
+// RewriteMap prg: runs a program as the children's account, as the exec
+// modules do: under ptrace_scope 0 it may trace the children, and the alert
+// names it (review 1, S-1). (apache is a shared account: never apart.)
+func TestApacheRewriteMapPrg(t *testing.T) {
+	const log = "apache access /etc/httpd/logs/access_log"
+	for _, r := range []struct {
+		name, conf string
+		named      bool
+	}{
+		{"no exec module", "", false},
+		{"RewriteMap prg:", "RewriteMap marker \"prg:/usr/local/bin/marker-map\"\n", true},
+		{"RewriteMap txt:", "RewriteMap marker \"txt:/etc/httpd/marker.map\"\n", false},
+	} {
+		h := distroHost("rocky9", 0, false)
+		h.files["/etc/nsswitch.conf"] = "passwd: files systemd\ngroup: files systemd\n"
+		base := h.files["/etc/httpd/conf.modules.d/00-base.conf"]
+		for _, m := range []string{"actions", "ext_filter", "include", "suexec", "userdir"} {
+			base = strings.Replace(base, "LoadModule "+m+"_module modules/mod_"+m+".so\n", "", 1)
+		}
+		h.files["/etc/httpd/conf.modules.d/00-base.conf"] = base
+		h.files["/etc/httpd/conf/httpd.conf"] += r.conf
+		s, ok := webLogsByKey(t, LinuxCollector{}.WebLogs(h))[log]
+		if !ok {
+			t.Fatalf("%s: %s not found", r.name, log)
+		}
+		if s.Verified || s.Reason != ReasonWebUserWritable {
+			t.Errorf("%s: verified %v %q (%s); want web_user_writable", r.name, s.Verified, s.Reason, s.Detail)
+		}
+		if strings.Contains(s.Detail, "RewriteMap prg:") != r.named || strings.Contains(s.Detail, "_module") {
+			t.Errorf("%s: alert %q; RewriteMap prg: named should be %v, no module", r.name, s.Detail, r.named)
 		}
 	}
 }
