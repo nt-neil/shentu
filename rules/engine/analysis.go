@@ -1513,10 +1513,11 @@ func (a *analysis) postfix(st state, t []Token, start, baseEnd int, v val, whole
 // ->get($k, $d, 'raw')); written another way, or left out, it is not.
 func (a *analysis) srcMatch(s *pat, t []Token, i int) (int, bool) {
 	end, ok := a.srcMatchAt(s, t, i)
-	if ok || a.reqs == nil || len(s.toks) == 0 || !s.toks[0].word("req") && !s.toks[0].word("ctx") {
+	if ok || a.reqs == nil || len(s.toks) == 0 || !s.toks[0].word("req") && !s.toks[0].word("ctx") && !s.toks[0].word("headers") {
 		return end, ok
 	}
-	// a source written for req or ctx, at a name holding a handler's request (reqalias.go)
+	// a source written for req or ctx, at a name holding a handler's request,
+	// or for Next's headers(), at a name holding its result (reqalias.go)
 	vs, adds := a.reqVariants(t, i)
 	for k, v := range vs {
 		if end, ok := a.srcMatchAt(s, v, i); ok && end-adds[k] > i {

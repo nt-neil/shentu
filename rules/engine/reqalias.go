@@ -182,6 +182,49 @@ func reqIndex(paths []string, key string) []string {
 // reqIdx marks a path's member read by a string index (reqIndex).
 const reqIdx = "\x02"
 
+// reqCall marks a path's root that is a call of no arguments (headers()).
+const reqCall = "\x03"
+
+// nextHeaders reports whether t is Next's headers() or await headers(), whole.
+func nextHeaders(t []Token) bool {
+	if len(t) > 0 && t[0].word("await") {
+		t = stripParens(t[1:])
+	}
+	return len(t) == 3 && t[0].Kind == Ident && t[0].Text == "headers" && t[1].op("(") && t[2].op(")")
+}
+
+// readsNextHeaders reports whether a rule has a source written for Next's
+// headers() (^headers().get(), which a name holding its result is read by.
+func readsNextHeaders(r *crule) bool {
+	for _, s := range r.sources {
+		if len(s.toks) > 0 && s.toks[0].word("headers") {
+			return true
+		}
+	}
+	return false
+}
+
+// importsModule reports whether the tokens import module m (import ... from
+// 'm', import 'm', require('m')).
+func importsModule(t []Token, m string) bool {
+	for i, tk := range t {
+		if tk.Kind == Str && len(tk.Parts) == 0 && tk.Text == m && i > 0 &&
+			(t[i-1].word("from") || t[i-1].word("import") || i > 1 && t[i-1].op("(") && t[i-2].word("require")) {
+			return true
+		}
+	}
+	return false
+}
+
+// nextHeadersFile reports whether the file imports Next's next/headers, whose
+// headers() is the request's headers.
+func (a *analysis) nextHeadersFile() bool {
+	if a.ifacts == nil && len(a.ftoks) > 0 {
+		a.ifacts = fileFacts(a.ftoks, nil)
+	}
+	return a.ifacts["m:next/headers"]
+}
+
 func setReq(out map[string][]string, name string, paths []string) {
 	if paths == nil {
 		delete(out, name)
@@ -228,6 +271,11 @@ func (a *analysis) reqAssign(st state, lhs, rhs []Token, op string) {
 	var paths []string
 	if op == "=" {
 		paths = a.reqPaths(stripParens(rhs))
+		if paths == nil && nextHeaders(stripParens(rhs)) && a.nextHeadersFile() {
+			// Next's const h = await headers() (or headers()): h stands for
+			// headers(), so the rules' ^headers().get( sources read h.get(name)
+			paths = []string{"headers" + reqCall}
+		}
 		if paths == nil && nestHeaders(stripParens(rhs)) && a.nestFile() {
 			// NestJS's @Headers() h, whole, is the request's headers object: h
 			// stands for req.headers, so its index is lower case as Node stores
@@ -334,6 +382,11 @@ func (a *analysis) reqVariants(t []Token, i int) ([][]Token, []int) {
 		}
 		var path []Token
 		for k, n := range strings.Split(p, ".") {
+			if name, ok := strings.CutSuffix(n, reqCall); ok && k == 0 { // headers(): a call of no arguments
+				path = append(path, Token{Kind: Ident, Text: name, Line: t[i].Line}, Token{Kind: Op, Text: "(", Line: t[i].Line},
+					Token{Kind: Op, Text: ")", Line: t[i].Line})
+				continue
+			}
 			if key, ok := strings.CutPrefix(n, reqIdx); ok { // ['x-forwarded-host']
 				path = append(path, Token{Kind: Op, Text: "[", Line: t[i].Line}, Token{Kind: Str, Text: key, Line: t[i].Line},
 					Token{Kind: Op, Text: "]", Line: t[i].Line})

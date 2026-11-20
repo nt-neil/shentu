@@ -431,6 +431,7 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 		return spans[r.rule.ID]
 	}
 	names := nameSet(toks, map[string]bool{})
+	nextHdrs := base == "js" && importsModule(toks, "next/headers") // h = await headers(): h.get( is a source no text shows (reqalias.go)
 	si := newSrcIndex(toks, b)
 	for _, r := range rs {
 		if time.Now().After(b.deadline) { // cheap: once per rule
@@ -451,7 +452,7 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 		// a file on its own without route handlers: in a project input also comes
 		// from the other files, and a handler's parameters are input with no
 		// source name in the file.
-		if proj == nil && len(routeFns) == 0 && e.skipBySources(r, names, src, si) {
+		if proj == nil && len(routeFns) == 0 && e.skipBySources(r, names, src, si) && !(nextHdrs && readsNextHeaders(r)) {
 			continue
 		}
 		ruleList = append(ruleList, r)
