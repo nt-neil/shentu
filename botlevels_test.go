@@ -65,6 +65,7 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 
 // confirm = 1: Telegram only proposes; the action waits for `shentu bot approve`.
 func TestBotConfirmOnServer(t *testing.T) {
+	stubGate(t, nil) // the gate allows: this tests the confirmation (U1 asks only what the gate would let through)
 	if runtime.GOOS == "windows" {
 		t.Skip("no control tool runs on Windows (the MVP is read-only; block_ip refuses there), so this confirm flow cannot start")
 	}
@@ -96,6 +97,7 @@ func TestBotConfirmOnServer(t *testing.T) {
 
 // confirm = 2: ✅ alone is not enough; the authenticator code is required.
 func TestBotConfirmNeedsCode(t *testing.T) {
+	stubGate(t, nil) // the gate allows: this tests the confirmation (U1 asks only what the gate would let through)
 	model := &hostileModel{replies: []string{call("block_ip", `{"ip":"203.0.113.9","reason":"x"}`), done}}
 	b, tg := levelBot(t, model, [4]int{3, 4, 2, 2})
 	secret := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString([]byte("12345678901234567890"))
@@ -139,6 +141,7 @@ func TestBotConfirmNeedsCode(t *testing.T) {
 
 // confirm = 4 runs at once, but it is still logged and the model is still told.
 func TestBotConfirmNone(t *testing.T) {
+	stubGate(t, nil) // the gate allows: this tests the confirmation (U1 asks only what the gate would let through)
 	if runtime.GOOS == "windows" {
 		t.Skip("no control tool runs on Windows (the MVP is read-only; block_ip refuses there), so this confirm flow cannot start")
 	}

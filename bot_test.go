@@ -235,6 +235,7 @@ func TestBotPairNeedsServerApproval(t *testing.T) {
 // A control action from Telegram runs only after the paired user presses ✅ on that
 // exact request. Someone else's press does nothing.
 func TestBotControlNeedsPairedUsersPress(t *testing.T) {
+	stubGate(t, nil) // the gate allows: this tests the confirmation (U1 asks only what the gate would let through)
 	if runtime.GOOS == "windows" {
 		t.Skip("no control tool runs on Windows (the MVP is read-only; block_ip refuses there), so this confirm flow cannot start")
 	}

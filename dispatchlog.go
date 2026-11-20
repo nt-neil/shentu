@@ -784,36 +784,40 @@ func (s *dispatchStore) Repair() (moved, dropped int, err error) {
 	if err != nil {
 		return 0, 0, err
 	}
+	added := 0
 	for _, e := range ents {
 		if !dayFileRe.MatchString(e.Name()) {
 			continue
 		}
-		m, d, err := s.repairFile(filepath.Join(s.dir, e.Name()))
-		moved, dropped = moved+m, dropped+d
+		m, d, a, err := s.repairFile(filepath.Join(s.dir, e.Name()))
+		moved, dropped, added = moved+m, dropped+d, added+a
 		if err != nil {
-			s.noteRepair(moved, dropped)
+			s.noteRepair(moved, dropped, added)
 			return moved, dropped, err
 		}
 	}
-	return moved, dropped, s.noteRepair(moved, dropped)
+	return moved, dropped, s.noteRepair(moved, dropped, added)
 }
 
 // repairNote is one line of repairs.jsonl: what one Repair did.
 type repairNote struct {
 	TS      time.Time `json:"ts"`
-	Moved   int       `json:"moved"`
-	Dropped int       `json:"dropped"`
+	Moved   int       `json:"moved"`   // lines that left the day files
+	Dropped int       `json:"dropped"` // empty lines
+	Added   int       `json:"added"`   // lines new to the .bad files (one moved before is not kept twice)
 }
 
 const repairsFile = "repairs.jsonl"
 
 // noteRepair adds what a Repair did to repairs.jsonl, keeping dispatchKeep.
-func (s *dispatchStore) noteRepair(moved, dropped int) error {
-	if moved == 0 && dropped == 0 {
+// When it cannot be written (the disk is full), that run is not noted:
+// the .bad files are what count.
+func (s *dispatchStore) noteRepair(moved, dropped, added int) error {
+	if moved == 0 && dropped == 0 && added == 0 {
 		return nil
 	}
 	notes := s.repairNotes(s.now().Add(-dispatchKeep))
-	notes = append(notes, repairNote{TS: s.now().UTC(), Moved: moved, Dropped: dropped})
+	notes = append(notes, repairNote{TS: s.now().UTC(), Moved: moved, Dropped: dropped, Added: added})
 	var b bytes.Buffer
 	for _, n := range notes {
 		line, _ := json.Marshal(n)
@@ -835,22 +839,22 @@ func (s *dispatchStore) repairNotes(t time.Time) []repairNote {
 	var notes []repairNote
 	for _, line := range bytes.Split(b, []byte{'\n'}) {
 		var n repairNote
-		if json.Unmarshal(line, &n) == nil && !n.TS.Before(t) && n.Moved >= 0 && n.Dropped >= 0 {
+		if json.Unmarshal(line, &n) == nil && !n.TS.Before(t) && n.Moved >= 0 && n.Dropped >= 0 && n.Added >= 0 {
 			notes = append(notes, n)
 		}
 	}
 	return notes
 }
 
-func (s *dispatchStore) repairFile(p string) (moved, dropped int, err error) {
+func (s *dispatchStore) repairFile(p string) (moved, dropped, added int, err error) {
 	f, _, err := openChecked(p, os.O_RDONLY)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, 0, err
 	}
 	defer f.Close()
 	b, err := io.ReadAll(f)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, 0, err
 	}
 	var good, bad bytes.Buffer
 	lines := bytes.Split(b, []byte{'\n'})
@@ -875,19 +879,19 @@ func (s *dispatchStore) repairFile(p string) (moved, dropped int, err error) {
 		moved++
 	}
 	if moved == 0 && dropped == 0 {
-		return 0, 0, nil
+		return 0, 0, 0, nil
 	}
 	if moved > 0 {
-		if err := appendBad(p+".bad", bad.Bytes()); err != nil {
-			return 0, 0, err
+		if added, err = appendBad(p+".bad", bad.Bytes()); err != nil {
+			return 0, 0, 0, err
 		}
 	}
 	// The kept lines replace the file in one rename: a write that fails
 	// (a full disk is why Repair runs) leaves the file as it was.
 	if err := replaceFile(p, good.Bytes()); err != nil {
-		return 0, 0, err
+		return 0, 0, added, err // the lines are still in the day file, but .bad got them
 	}
-	return moved, dropped, nil
+	return moved, dropped, added, nil
 }
 
 // lock takes the archive's lock: a .lock file next to the day files, so
@@ -945,28 +949,44 @@ func openChecked(p string, flag int) (*os.File, os.FileInfo, error) {
 // set it.
 var saveHeld func(p string)
 
-// appendBad appends lines to a .bad file, unless it already ends with them
-// (a Repair that stopped after this step and runs again).
-func appendBad(p string, lines []byte) error {
+// appendBad appends lines to a .bad file, each only if the file does not
+// hold it already (a Repair that stopped after this step and runs again,
+// or the same broken line again); added is how many it wrote.
+func appendBad(p string, lines []byte) (added int, err error) {
 	bf, err := osutil.OpenNoFollow(p, os.O_RDWR|os.O_APPEND|os.O_CREATE, 0o600, true)
 	if err != nil {
-		return fmt.Errorf("%w: %s: %v", errArchive, p, err)
+		return 0, fmt.Errorf("%w: %s: %v", errArchive, p, err)
 	}
 	defer bf.Close()
 	st, err := bf.Stat()
 	if err != nil || !trusted(st, false) {
-		return fmt.Errorf("%w: %s", errArchive, p)
+		return 0, fmt.Errorf("%w: %s", errArchive, p)
 	}
-	if st.Size() >= int64(len(lines)) {
-		tail := make([]byte, len(lines))
-		if _, err := bf.ReadAt(tail, st.Size()-int64(len(lines))); err == nil && bytes.Equal(tail, lines) {
-			return nil
+	old, err := io.ReadAll(bf)
+	if err != nil {
+		return 0, err
+	}
+	have := map[string]bool{}
+	for _, l := range bytes.Split(old, []byte{'\n'}) {
+		have[string(l)] = true
+	}
+	var add bytes.Buffer
+	for _, l := range bytes.Split(bytes.TrimSuffix(lines, []byte{'\n'}), []byte{'\n'}) {
+		if have[string(l)] { // kept already: a run cut short, or the same line again
+			continue
 		}
+		have[string(l)] = true
+		add.Write(l)
+		add.WriteByte('\n')
+		added++
 	}
-	if _, err := bf.Write(lines); err != nil {
-		return err
+	if added == 0 {
+		return 0, nil
 	}
-	return bf.Sync() // the moved lines are kept before they leave the day file
+	if _, err := bf.Write(add.Bytes()); err != nil {
+		return 0, err
+	}
+	return added, bf.Sync() // the moved lines are kept before they leave the day file
 }
 
 // replaceWrite writes a temporary file; tests swap it to fail midway.
@@ -1004,14 +1024,14 @@ func replaceFile(p string, b []byte) error {
 // repairedLine is the daily report's line about what Repair did in the
 // last day; "" when it did nothing.
 func (s *dispatchStore) repairedLine(now time.Time) string {
-	moved, dropped, runs := 0, 0, 0
+	moved, dropped, added, runs := 0, 0, 0, 0
 	for _, n := range s.repairNotes(now.Add(-24 * time.Hour)) {
-		moved, dropped, runs = moved+n.Moved, dropped+n.Dropped, runs+1
+		moved, dropped, added, runs = moved+n.Moved, dropped+n.Dropped, added+n.Added, runs+1
 	}
 	if runs == 0 {
 		return ""
 	}
-	return fmt.Sprintf("- `shentu dispatch repair` ran %d times: %d unreadable archive lines moved to *.jsonl.bad, %d empty lines dropped (%s)\n", runs, moved, dropped, s.dir)
+	return fmt.Sprintf("- `shentu dispatch repair` ran %d times: %d unreadable archive lines moved out (%d of them new to *.jsonl.bad), %d empty lines dropped (%s)\n", runs, moved, added, dropped, s.dir)
 }
 
 // repairHint is how to run the repair here: as root, or elevated on Windows.
@@ -1033,14 +1053,33 @@ func adminHintOn(goos, command string) string {
 // a message that blames the configuration. nil for root, and for the
 // other subcommands (dispatchCommand checks them).
 func dispatchPreflight(args []string, root bool, goos string) error {
-	if root || len(args) == 0 {
-		return nil
+	// Wrong arguments get the usage first, whatever the configuration is and
+	// whoever runs it; right ones need root.
+	usage := errors.New("usage: shentu dispatch repair | shentu dispatch stats [--days 7] [--json]")
+	if len(args) == 0 {
+		return usage
 	}
 	switch args[0] {
 	case "stats":
-		return errors.New("shentu dispatch stats reads the dispatch archive, which only root can read: run " + adminHintOn(goos, "shentu dispatch stats"))
+		fs := flag.NewFlagSet("dispatch stats", flag.ContinueOnError)
+		fs.SetOutput(io.Discard)
+		fs.Int("days", 7, "")
+		fs.Bool("json", false, "")
+		if fs.Parse(args[1:]) != nil || fs.NArg() > 0 {
+			return errors.New("usage: shentu dispatch stats [--days 7] [--json]")
+		}
+		if !root {
+			return errors.New("shentu dispatch stats reads the dispatch archive, which only root can read: run " + adminHintOn(goos, "shentu dispatch stats"))
+		}
 	case "repair":
-		return errors.New("shentu dispatch repair changes the dispatch archive: run " + adminHintOn(goos, "shentu dispatch repair"))
+		if len(args) != 1 {
+			return errors.New("usage: shentu dispatch repair")
+		}
+		if !root {
+			return errors.New("shentu dispatch repair changes the dispatch archive: run " + adminHintOn(goos, "shentu dispatch repair"))
+		}
+	default:
+		return usage
 	}
 	return nil
 }
@@ -1056,6 +1095,9 @@ func dispatchCommand(cfg *Config, args []string, root bool) error {
 		asJSON := fs.Bool("json", false, "print JSON")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
+		}
+		if fs.NArg() > 0 {
+			return errors.New("usage: shentu dispatch stats [--days 7] [--json]")
 		}
 		return statsReport(cfg, *days, *asJSON, os.Stdout, time.Now())
 	}
