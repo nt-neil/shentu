@@ -9,11 +9,16 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
 	"testing"
 )
+
+// usageCmdRe finds "shentu <command>" (or "sudo shentu <command>") at the
+// start of a usage line.
+var usageCmdRe = regexp.MustCompile(`(?m)^\s*(?:sudo )?shentu ([a-z][a-z-]*)`)
 
 // mainCommands are the commands main.go's main handles: the cases of its
 // switch on cmd and the commands it compares cmd with.
@@ -116,6 +121,21 @@ func TestCLIBinary(t *testing.T) {
 	}
 	if code, out := run("dispatch", "wipe"); code != 1 || !strings.Contains(out, "usage: shentu dispatch") {
 		t.Errorf("dispatch wipe: exit %d\n%s", code, out)
+	}
+	// S-CLI-1: every command the usage names, read from the binary's own
+	// help, gets past the check, however main tells it apart.
+	_, help := run("help")
+	named := map[string]bool{}
+	for _, m := range usageCmdRe.FindAllStringSubmatch(help+usage, -1) {
+		named[m[1]] = true
+	}
+	if !named["dispatch"] || !named["chat"] || len(named) < 10 {
+		t.Fatalf("commands in the usage: %v", named)
+	}
+	for c := range named {
+		if !knownCommand(c) {
+			t.Errorf("the usage names %q but the check before the config refuses it", c)
+		}
 	}
 	if code, out := run("dispatchx"); code != 2 {
 		t.Errorf("an unknown command: exit %d\n%s", code, out)
