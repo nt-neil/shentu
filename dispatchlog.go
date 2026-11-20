@@ -336,11 +336,19 @@ func (s *dispatchStore) Save(rec dispatchRecord) error {
 		return fmt.Errorf("%w: %s", errArchive, s.dir)
 	}
 	p := filepath.Join(s.dir, rec.TS.Local().Format(time.DateOnly)+".jsonl")
-	f, st, err := openDayLocked(p, os.O_RDWR|os.O_APPEND|os.O_CREATE)
+	unlock, err := s.lock()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	f, st, err := openChecked(p, os.O_RDWR|os.O_APPEND|os.O_CREATE)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
+	if saveHeld != nil {
+		saveHeld(p)
+	}
 	line := append(b, '\n')
 	if st.Size() > 0 {
 		last := make([]byte, 1)
@@ -694,6 +702,11 @@ func (s *dispatchStore) Repair() (moved, dropped int, err error) {
 	if err != nil || !trusted(st, true) {
 		return 0, 0, fmt.Errorf("%w: %s", errArchive, s.dir)
 	}
+	unlock, err := s.lock()
+	if err != nil {
+		return 0, 0, err
+	}
+	defer unlock()
 	ents, err := os.ReadDir(s.dir)
 	if err != nil {
 		return 0, 0, err
@@ -757,7 +770,7 @@ func (s *dispatchStore) repairNotes(t time.Time) []repairNote {
 }
 
 func (s *dispatchStore) repairFile(p string) (moved, dropped int, err error) {
-	f, _, err := openDayLocked(p, os.O_RDONLY)
+	f, _, err := openChecked(p, os.O_RDONLY)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -804,31 +817,45 @@ func (s *dispatchStore) repairFile(p string) (moved, dropped int, err error) {
 	return moved, dropped, nil
 }
 
-// openDayLocked opens a day file without following a link, takes its lock
-// and checks it, and opens it again if Repair replaced it meanwhile (the
-// lock was then on the old file).
-func openDayLocked(p string, flag int) (*os.File, os.FileInfo, error) {
-	for range 3 {
-		f, err := osutil.OpenNoFollow(p, flag, 0o600, true)
-		if err != nil {
-			return nil, nil, fmt.Errorf("%w: %s: %v", errArchive, p, err)
-		}
-		if err := osutil.Lock(f); err != nil {
-			f.Close()
-			return nil, nil, err
-		}
-		st, err := f.Stat()
-		if err != nil || !trusted(st, false) {
-			f.Close()
-			return nil, nil, fmt.Errorf("%w: %s", errArchive, p)
-		}
-		if now, err := os.Lstat(p); err == nil && os.SameFile(st, now) {
-			return f, st, nil
-		}
-		f.Close()
+// lock takes the archive's lock: a .lock file next to the day files, so
+// the files that are read are never locked themselves (on Windows a lock
+// is mandatory, and a reader would fail while a Save holds it). Save,
+// Repair and SaveFeedback hold it while they write; unlock releases it.
+func (s *dispatchStore) lock() (unlock func(), err error) {
+	p := filepath.Join(s.dir, ".lock")
+	f, err := osutil.OpenNoFollow(p, os.O_RDWR|os.O_CREATE, 0o600, true)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s: %v", errArchive, p, err)
 	}
-	return nil, nil, fmt.Errorf("%w: %s keeps changing", errArchive, p)
+	if st, err := f.Stat(); err != nil || !trusted(st, false) {
+		f.Close()
+		return nil, fmt.Errorf("%w: %s", errArchive, p)
+	}
+	if err := osutil.Lock(f); err != nil {
+		f.Close()
+		return nil, err
+	}
+	return func() { f.Close() }, nil
 }
+
+// openChecked opens an archive file without following a link and checks
+// it; the caller holds the archive's lock.
+func openChecked(p string, flag int) (*os.File, os.FileInfo, error) {
+	f, err := osutil.OpenNoFollow(p, flag, 0o600, true)
+	if err != nil {
+		return nil, nil, fmt.Errorf("%w: %s: %v", errArchive, p, err)
+	}
+	st, err := f.Stat()
+	if err != nil || !trusted(st, false) {
+		f.Close()
+		return nil, nil, fmt.Errorf("%w: %s", errArchive, p)
+	}
+	return f, st, nil
+}
+
+// saveHeld runs while Save holds the lock and the day file is open; tests
+// set it.
+var saveHeld func(p string)
 
 // appendBad appends lines to a .bad file, unless it already ends with them
 // (a Repair that stopped after this step and runs again).
@@ -899,13 +926,21 @@ func (s *dispatchStore) repairedLine(now time.Time) string {
 	return fmt.Sprintf("- `shentu dispatch repair` ran %d times: %d unreadable archive lines moved to *.jsonl.bad, %d empty lines dropped (%s)\n", runs, moved, dropped, s.dir)
 }
 
+// repairHint is how to run the repair here: as root, or elevated on Windows.
+func repairHint() string {
+	if runtime.GOOS == "windows" {
+		return "`shentu dispatch repair` from an elevated prompt (Run as administrator)"
+	}
+	return "`sudo shentu dispatch repair`"
+}
+
 // dispatchCommand is `shentu dispatch repair`.
 func dispatchCommand(cfg *Config, args []string, root bool) error {
 	if len(args) != 1 || args[0] != "repair" {
 		return errors.New("usage: shentu dispatch repair")
 	}
 	if !root {
-		return errors.New("shentu dispatch repair changes the dispatch archive: run it as root (sudo shentu dispatch repair)")
+		return errors.New("shentu dispatch repair changes the dispatch archive: run " + repairHint())
 	}
 	n, d, err := newDispatchStore(cfg).Repair()
 	if err != nil {
