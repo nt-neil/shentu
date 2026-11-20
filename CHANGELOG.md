@@ -11,12 +11,14 @@ Chinese for the zh-TW pages; keep the two in step.
 - Telegram blocks ask only what the gate would allow (#155, #158): from a chat channel, block_ip
   runs the checks of #108's gate before asking for ✅. An address the gate refuses is refused at
   once, with no ✅ to press; the agent is told the gate's fixed word (and the address), and the
-  gate's own message stays in the server's log. The same holds when the block itself fails after
-  the confirmation. Confirmed blocks are checked again when they run, as before.
+  gate's own message stays in the server's log only. When the block itself fails after the
+  confirmation, its error too stays in the log only. Confirmed blocks are checked again when they
+  run, as before.
 - While the bot waits (#156, #158): a message sent meanwhile is told what it waits for (the ✅
   above, the authenticator code, or the server's approval with `sudo shentu bot approve`) instead
-  of "Still working", and is not read. A proposal or suggestion button pressed meanwhile stays, to
-  be pressed again later; a suggestion is no longer used up.
+  of "Still working"; a question sent meanwhile is not passed to the agent (the authenticator code
+  and the commands /lockdown, /new, /usage and /attacks still work). A proposal or suggestion
+  button pressed meanwhile stays, to be pressed again later; a suggestion is no longer used up.
 - `shentu dispatch` (#158): wrong arguments get the usage first, before the configuration is read
   and whoever runs it; `stats` and `repair` then ask for root (an elevated prompt on Windows).
   `sudo shentu dispatch repair` keeps each broken line in `*.jsonl.bad` once, and the daily report

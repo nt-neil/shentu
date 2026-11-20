@@ -361,7 +361,7 @@
 
 <div class="newest" id="rv-0.5.3" data-groups="1">
   <div class="newest-head"><p class="word">籌備中</p><span class="ver">v0.5.3</span><b class="badge">即將發布</b></div>
-  <div class="grp grp-reach"><h4><i aria-hidden="true"></i>看得更遠</h4><ul><li>Telegram 的封鎖只詢問閘門會放行的位址（#155、#158）：從聊天管道執行 block_ip 時，會在要求按 ✅ 之前先跑一次 #108 閘門的檢查。閘門會拒絕的位址立刻被拒，不會出現 ✅；agent 只會收到閘門的固定字詞（和位址），閘門的原始訊息只留在伺服器的紀錄裡。確認之後封鎖本身失敗時也一樣。確認過的封鎖在執行時照舊會再檢查一次。</li><li>bot 等待時（#156、#158）：等待期間傳來的訊息不會被讀取，回覆會說明正在等什麼（上面的 ✅、驗證器的密碼，或伺服器以 <code>sudo shentu bot approve</code> 核准），不再回「上一個問題還在處理中」。等待期間按下的建議動作按鈕或回覆建議按鈕會保留，之後可以再按；回覆建議不會再被用掉。</li><li><code>shentu dispatch</code>（#158）：參數錯誤時先顯示用法，在讀設定之前，不論是誰執行；參數正確時，<code>stats</code> 和 <code>repair</code> 才要求 root（Windows 是系統管理員）。<code>sudo shentu dispatch repair</code> 在 <code>*.jsonl.bad</code> 裡每一行壞紀錄只保存一次，每日報告會寫出搬出的行裡有幾行是新加入的。</li></ul></div>
+  <div class="grp grp-reach"><h4><i aria-hidden="true"></i>看得更遠</h4><ul><li>Telegram 的封鎖只詢問閘門會放行的位址（#155、#158）：從聊天管道執行 block_ip 時，會在要求按 ✅ 之前先跑一次 #108 閘門的檢查。閘門會拒絕的位址立刻被拒，不會出現 ✅；agent 只會收到閘門的固定字詞（和位址），閘門的原始訊息只留在伺服器的紀錄裡；確認之後封鎖本身失敗時，錯誤內容也只留在紀錄裡。確認過的封鎖在執行時照舊會再檢查一次。</li><li>bot 等待時（#156、#158）：等待期間傳來的訊息，回覆會說明正在等什麼（上面的 ✅、驗證器的密碼，或伺服器以 <code>sudo shentu bot approve</code> 核准），不再回「上一個問題還在處理中」；等待期間傳來的問題不會交給 agent（驗證碼，以及 /lockdown、/new、/usage、/attacks 這些指令照常有效）。等待期間按下的建議動作按鈕或回覆建議按鈕會保留，之後可以再按；回覆建議不會再被用掉。</li><li><code>shentu dispatch</code>（#158）：參數錯誤時先顯示用法，在讀設定之前，不論是誰執行；參數正確時，<code>stats</code> 和 <code>repair</code> 才要求 root（Windows 是系統管理員）。<code>sudo shentu dispatch repair</code> 在 <code>*.jsonl.bad</code> 裡每一行壞紀錄只保存一次，每日報告會寫出搬出的行裡有幾行是新加入的。</li></ul></div>
 </div>
 
 
