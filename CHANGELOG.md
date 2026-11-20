@@ -34,13 +34,10 @@ Chinese for the zh-TW pages; keep the two in step.
   directories (`/etc/userdb`, `/run/userdb`, `/run/host/userdb`, `/usr/local/lib/userdb`,
   `/usr/lib/userdb`) hold any entry or cannot be read: userdb can add accounts and group
   memberships that `/etc/passwd` and `/etc/group` do not show (#113).
-- Blocking: an address logged in an `inet_aton` form, one to four parts in decimal, octal or
-  hexadecimal (`3405803788`, `203.28940`, `203.0.28940`, `0xcb.0.113.12`), refuses a block of
-  that address, from Telegram and on the server, as v0.4.1 did for brackets, a port or leading
-  zeros; on the server the operator may override (#113).
-- An attack source logged as `::ffff:a.b.c.d` is the same campaign source as `a.b.c.d` (#113). A
-  state saved before v0.4.2 with one source under both keys is merged when it is loaded, so that
-  source no longer needs three more vulnerabilities to count as a campaign (#124).
+- Hardening only: the block check also reads an address in an `inet_aton` form (`3405803788`,
+  `0xcb.0.113.12`, ...), and the block check and campaigns read `::ffff:a.b.c.d` as `a.b.c.d`.
+  Access logs never yield these forms (since v0.4.0 a client must be a plain address, and
+  `::ffff:` is read as IPv4), so nothing changes in practice (#113, #124).
 
 ### Upgrade notes
 
@@ -53,9 +50,12 @@ Chinese for the zh-TW pages; keep the two in step.
 - On a host whose systemd userdb directories hold any entry, the server's own account no longer
   counts as apart after the upgrade: a log that could back a block in v0.4.1 (Rocky 9 nginx's,
   say) is judged `web_user_writable` again. The conditions are in `docs/attack-detection-limits.md`
-  under "Which web logs can back a block".
-- A source logged both as `::ffff:a.b.c.d` and as `a.b.c.d` is now one campaign source, its saved
-  entries merged on load, so a campaign may form sooner than it did in v0.4.1.
+  under "Which web logs can back a block". Default Ubuntu 24.04 and Rocky 9 installs have none of
+  the five directories, so they are not affected (checked on both at 4fcfc52).
+- A correction to v0.4.1's notes: "an address logged in another form (brackets, a port, a
+  zone, leading zeros) is refused" cannot happen through the access logs, which keep only plain
+  addresses. It takes effect only when a log has an IPv4-compatible (`::a.b.c.d`) or NAT64
+  (`64:ff9b::a.b.c.d`) client. The released v0.4.1 entry is left as it was.
 
 ### Known issues
 

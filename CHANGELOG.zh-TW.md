@@ -13,14 +13,13 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 ### 修正
 
 - systemd 的 userdb 目錄（`/etc/userdb`、`/run/userdb`、`/run/host/userdb`、`/usr/local/lib/userdb`、`/usr/lib/userdb`）有任何項目、或讀不到時，伺服器自己的帳號擁有的網站紀錄不再能當封鎖依據：userdb 可以加上 `/etc/passwd`、`/etc/group` 看不到的帳號和群組成員（#113）。
-- 封鎖：紀錄裡用 `inet_aton` 寫法記下的位址，也就是十進位、八進位或十六進位的一到四段（`3405803788`、`203.28940`、`203.0.28940`、`0xcb.0.113.12`），也會讓封鎖這個位址被拒絕，Telegram 和伺服器上都一樣，和 v0.4.1 對方括號、port、多寫的 0 的處理相同；在伺服器上可以 override（#113）。
-- 紀錄成 `::ffff:a.b.c.d` 的攻擊來源，和 `a.b.c.d` 算同一個 campaign 來源（#113）。v0.4.2 之前存下、同一個來源分在兩個 key 底下的狀態，載入時會合併，這個來源不用再多累積三個漏洞才算 campaign（#124）。
+- 防禦性檢查：封鎖檢查也認得 `inet_aton` 寫法（`3405803788`、`0xcb.0.113.12` 等），封鎖檢查和 campaign 都把 `::ffff:a.b.c.d` 當成 `a.b.c.d`；存取紀錄本來就不會產生這些寫法（v0.4.0 起只收一般位址，`::ffff:` 也會讀成 IPv4），實際行為不變（#113、#124）。
 
 ### 升級說明
 
 - 有些 JavaScript 的發現會換一條規則回報：以 `r.headers['X-Forwarded-Host']` 或 `const { host } = req.headers` 讀的 Host header，改由 js-ssrf-host-header 回報，不再是 js-ssrf-http-request；專案沒有 import NestJS 時，`@Req()` 由 js-ssrf-http-request 回報；`const { host } = req.headers` 寫進回應，js-xss-response 不再回報，因為從 v0.4.1 起 Host 不算 XSS 的輸入。攻擊偵測認定可到達的路由也可能跟著變。
-- 主機的 systemd userdb 目錄有任何項目時，升級後伺服器自己的帳號就不再算獨立：v0.4.1 能當封鎖依據的紀錄（例如 Rocky 9 的 nginx），會重新判成 `web_user_writable`。條件見 `docs/attack-detection-limits.zh-TW.md` 的「哪些網站紀錄可以支撐封鎖」。
-- 同一個來源同時以 `::ffff:a.b.c.d` 和 `a.b.c.d` 記錄時，現在算同一個 campaign 來源，存下的項目載入時會合併，所以 campaign 可能比 v0.4.1 更早成立。
+- 主機的 systemd userdb 目錄有任何項目時，升級後伺服器自己的帳號就不再算獨立：v0.4.1 能當封鎖依據的紀錄（例如 Rocky 9 的 nginx），會重新判成 `web_user_writable`。條件見 `docs/attack-detection-limits.zh-TW.md` 的「哪些網站紀錄可以支撐封鎖」。Ubuntu 24.04、Rocky 9 的預設安裝五個目錄都不存在，不受影響（4fcfc52 在兩台實機驗收時實測）。
+- 更正 v0.4.1 的說明：「用其他寫法記下的位址（方括號、port、zone、多寫的 0）也會被拒」在實際的存取紀錄流程裡碰不到，因為紀錄只收一般位址；只有紀錄裡出現 IPv4-compatible（`::a.b.c.d`）或 NAT64（`64:ff9b::a.b.c.d`）位址時才會生效。已發版的 v0.4.1 條目原文不改。
 
 ### 已知問題
 
