@@ -331,10 +331,15 @@ func writeUse(t *testing.T, cfg *Config, tokens int) {
 }
 
 // N-C1: a use that cannot be read is not 0%: log.jsonl that cannot be
-// opened stops automatic dispatches.
+// opened, or a model call's line too long to read, stops automatic
+// dispatches.
 func TestAutoDispatchBudgetUnreadable(t *testing.T) {
 	for name, setup := range map[string]func(t *testing.T, cfg *Config){
 		"not a file": func(t *testing.T, cfg *Config) { os.Mkdir(filepath.Join(cfg.StateDir, "log.jsonl"), 0o700) },
+		"long model call": func(t *testing.T, cfg *Config) {
+			b, _ := json.Marshal(logEntry{Time: time.Now(), Tool: "llm", InTokens: 1, Error: strings.Repeat("x", 2<<20)})
+			os.WriteFile(filepath.Join(cfg.StateDir, "log.jsonl"), append(b, '\n'), 0o600)
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			h := &hostileModel{replies: []string{done}}

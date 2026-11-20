@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -28,6 +29,8 @@ func monthUsage(stateDir string, now time.Time) (cost float64, tokens int) {
 // call's line is far shorter, so a longer one is skipped and counted.
 const maxLogLine = 1 << 20
 
+var errLongLLMLine = errors.New("log.jsonl: a model call's line is longer than 1 MiB")
+
 // monthUsageStrict is monthUsage that also says when log.jsonl could not
 // be read to its end (no log yet is no use, not an error): what stops on
 // it must not take a part for the whole. long counts the lines past
@@ -47,6 +50,11 @@ func monthUsageStrict(stateDir string, now time.Time) (cost float64, tokens, lon
 	for {
 		line, err := r.ReadSlice('\n')
 		if errors.Is(err, bufio.ErrBufferFull) {
+			// A model call's line (its error can quote a provider's answer)
+			// is never skipped: its use would go uncounted.
+			if bytes.Contains(line[:min(len(line), 4096)], []byte(`"tool":"llm"`)) {
+				return cost, tokens, long, errLongLLMLine
+			}
 			long++
 			for errors.Is(err, bufio.ErrBufferFull) { // the rest of it
 				_, err = r.ReadSlice('\n')
