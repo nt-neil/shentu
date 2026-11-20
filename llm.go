@@ -96,7 +96,7 @@ func (l *llmClient) chat(ctx context.Context, msgs []message, tools []toolDef) (
 		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 		resp.Body.Close()
 		if resp.StatusCode/100 != 2 {
-			lastErr = fmt.Errorf("LLM HTTP %d: %s", resp.StatusCode, truncate(string(raw), 300))
+			lastErr = fmt.Errorf("LLM HTTP %d: %s", resp.StatusCode, l.scrub(string(raw), 300))
 			if resp.StatusCode >= 500 || resp.StatusCode == 429 {
 				continue
 			}
@@ -116,13 +116,25 @@ func (l *llmClient) chat(ctx context.Context, msgs []message, tools []toolDef) (
 			Charged float64 `json:"price_charged"` // AppleToken reports what the call cost
 		}
 		if err := json.Unmarshal(raw, &r); err != nil || len(r.Choices) == 0 {
-			lastErr = fmt.Errorf("unexpected LLM response: %s", truncate(string(raw), 300))
+			lastErr = fmt.Errorf("unexpected LLM response: %s", l.scrub(string(raw), 300))
 			continue
 		}
 		l.usedIn, l.usedOut, l.usedReason, l.usedCost = r.Usage.In, r.Usage.Out, r.Usage.Details.Reasoning, r.Charged
 		return r.Choices[0].Message, nil
 	}
 	return message{}, lastErr
+}
+
+// scrub is a provider's answer for an error message, at most n bytes: the
+// key replaced by [key] first, wherever it is (some gateways echo the
+// Authorization header back in a 401), then cut, so a cut never leaves part
+// of a key behind. Errors go to log.jsonl and, through a sub-agent's
+// report, to the commander's model, which may be another provider's.
+func (l *llmClient) scrub(s string, n int) string {
+	if l.apiKey != "" {
+		s = strings.ReplaceAll(s, l.apiKey, "[key]")
+	}
+	return truncate(s, n)
 }
 
 func truncate(s string, n int) string {
