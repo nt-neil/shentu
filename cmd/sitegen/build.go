@@ -464,11 +464,12 @@ func itemText(s string) string {
 	return b.String()
 }
 
-// leavesPath reports a URL whose path could step out of the repository: a /..
-// or an encoded dot (%2e, either case). Such a link stays text.
+// leavesPath reports a URL whose path could step out of the repository: a /..,
+// an encoded dot (%2e, either case) or a backslash, which browsers read as a
+// slash. Such a link stays text.
 func leavesPath(u string) bool {
 	l := strings.ToLower(u)
-	return strings.Contains(l, "/..") || strings.Contains(l, "%2e")
+	return strings.Contains(l, "/..") || strings.Contains(l, "%2e") || strings.Contains(l, `\`)
 }
 
 // atom is the releases as an Atom feed, the released ones only.

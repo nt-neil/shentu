@@ -15,6 +15,9 @@ func TestItemLinks(t *testing.T) {
 		{"[enc](" + repo + "/%2E./other)", "[enc](" + repo + "/%2E./other)"},
 		{"[enc](" + repo + "/blob/x%2Ey)", "[enc](" + repo + "/blob/x%2Ey)"},
 		{"[dot](" + repo + "/blob/main/a.b.md)", `<a href="` + repo + `/blob/main/a.b.md">dot</a>`},
+		// Browsers read a backslash as a slash, so it stays text; %5c does not step out.
+		{"[bs](" + repo + "/x\\..\\..\\o)", "[bs](" + repo + "/x\\..\\..\\o)"},
+		{"[pct](" + repo + "/x%5c..%5co)", `<a href="` + repo + `/x%5c..%5co">pct</a>`},
 	} {
 		if got := string(item(c.in)); got != c.want {
 			t.Errorf("item(%q) = %q, want %q", c.in, got, c.want)
