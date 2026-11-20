@@ -823,19 +823,29 @@ func (s *dispatchStore) repairFile(p string) (moved, dropped int, err error) {
 // Repair and SaveFeedback hold it while they write; unlock releases it.
 func (s *dispatchStore) lock() (unlock func(), err error) {
 	p := filepath.Join(s.dir, ".lock")
+	// Not moved aside on its own: whoever replaced it may still be at work.
+	fix := fmt.Sprintf("it must be a regular file of this service's user, mode 0600; check who changed it, then move it aside (%s) and the archive's next write makes a new one", lockFixHint(p))
 	f, err := osutil.OpenNoFollow(p, os.O_RDWR|os.O_CREATE, 0o600, true)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %s: %v", errArchive, p, err)
+		return nil, fmt.Errorf("%w: %s cannot be opened (%v): %s", errArchive, p, err, fix)
 	}
 	if st, err := f.Stat(); err != nil || !trusted(st, false) {
 		f.Close()
-		return nil, fmt.Errorf("%w: %s", errArchive, p)
+		return nil, fmt.Errorf("%w: %s is not trusted: %s", errArchive, p, fix)
 	}
 	if err := osutil.Lock(f); err != nil {
 		f.Close()
 		return nil, err
 	}
 	return func() { f.Close() }, nil
+}
+
+// lockFixHint is the command that moves an untrusted lock file aside.
+func lockFixHint(p string) string {
+	if runtime.GOOS == "windows" {
+		return fmt.Sprintf(`as administrator: move "%s" "%s.bad"`, p, p)
+	}
+	return fmt.Sprintf("sudo mv %s %s.bad", p, p)
 }
 
 // openChecked opens an archive file without following a link and checks

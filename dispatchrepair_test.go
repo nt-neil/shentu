@@ -274,3 +274,27 @@ func TestDispatchDayFileNotLocked(t *testing.T) {
 		t.Errorf("the day file was locked while saving: %v (hook ran %v)", tryErr, ran)
 	}
 }
+
+// S-H4-1: an untrusted lock file stops writes, Repair included, and the
+// error names the file and the command; nothing moves it aside on its own.
+func TestDispatchLockUntrusted(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("modes are not checked on Windows")
+	}
+	s := testStore(t)
+	if err := s.Save(testRecord("000000000001", time.Now())); err != nil {
+		t.Fatal(err)
+	}
+	lock := filepath.Join(s.dir, ".lock")
+	os.Chmod(lock, 0o644)
+	err := s.Save(testRecord("000000000002", time.Now()))
+	if !errors.Is(err, errArchive) || !strings.Contains(err.Error(), lock) || !strings.Contains(err.Error(), "sudo mv "+lock+" "+lock+".bad") {
+		t.Errorf("Save: %v", err)
+	}
+	if _, _, err := s.Repair(); !errors.Is(err, errArchive) {
+		t.Errorf("Repair: %v", err)
+	}
+	if _, err := os.Stat(lock + ".bad"); !errors.Is(err, os.ErrNotExist) {
+		t.Error("the lock file was moved aside on its own")
+	}
+}
