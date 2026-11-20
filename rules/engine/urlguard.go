@@ -348,8 +348,8 @@ func tsType(t []Token, j int) bool {
 //   - a global object (globalThis, window, self, global) anywhere but read
 //     through a named member (globalThis.process): given to another name,
 //     passed on, read by a computed name (globalThis['String'], ?.[);
-//   - GLOBAL and top as the global objects are; this read by a computed name
-//     or for a built-in's name (this['console'], this.String);
+//   - GLOBAL and top as the global objects are; this other than read through a
+//     named member that is no built-in's (this.db keeps them);
 //   - getPrototypeOf, setPrototypeOf; vm's runInContext, runInNewContext and
 //     compileFunction; Reflect.construct and Reflect.apply; Function as any
 //     value but a TypeScript type (const F = Function);
@@ -391,8 +391,12 @@ func globalReplace(t []Token) bool {
 		case "eval", "runInThisContext", "runInContext", "runInNewContext", "compileFunction", "__proto__", "getPrototypeOf", "setPrototypeOf":
 			return true // any code run from text, a prototype reached or replaced
 		case "this":
-			if next(1).op("[") || next(1).op(".") && builtin(next(2)) {
-				return true // this['console'], this.String (a script's this, or a sloppy function's, is the global object)
+			// a script's this, or a sloppy function's, is the global object: only a
+			// named member that is no built-in's (this.db) keeps the calls read-only;
+			// this['console'], this.String, const g = this, f(this),
+			// Object.assign(this, ...), return this do not
+			if !(next(1).op(".") && next(2).Kind == Ident && !builtin(next(2))) {
+				return true
 			}
 		case "Function":
 			if !member && !tsType(t, i) {
