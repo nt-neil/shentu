@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -92,7 +93,10 @@ func externalDispatchWith(t *testing.T, budget bool, handler func(http.ResponseW
 		srv = httptest.NewServer(sub)
 	}
 	t.Cleanup(srv.Close)
-	key = strings.Join([]string{"sk-test", "agents", "0123456789abcdef"}, "-")
+	key = testAgentsKey
+	if key == "" {
+		key = strings.Join([]string{"sk-test", "agents", "0123456789abcdef"}, "-")
+	}
 	t.Setenv("SHENTU_TEST_AGENTS_KEY", key)
 	a.cfg.Agents.BaseURL, a.cfg.Agents.Model, a.cfg.Agents.APIKeyEnv = srv.URL, "remote-model", "SHENTU_TEST_AGENTS_KEY"
 	if budget {
@@ -186,6 +190,9 @@ func TestAgentsExternalCostOnlyRefused(t *testing.T) {
 	}
 }
 
+// testAgentsKey, when set, is the key externalDispatchWith uses.
+var testAgentsKey string
+
 // B-F1: a provider that echoes the key back in an error (text or JSON)
 // does not get it into the state, the dispatch output or the commander's
 // model, which may be another provider's.
@@ -200,7 +207,7 @@ func TestAgentsModelErrorKeyScrubbed(t *testing.T) {
 			_, state, out, sub, key := externalDispatchWith(t, true, func(w http.ResponseWriter, r *http.Request) {
 				ct, b := body(r.Header.Get("Authorization"))
 				w.Header().Set("Content-Type", ct)
-				w.WriteHeader(http.StatusUnauthorized)
+				w.WriteHeader(http.StatusBadRequest)
 				w.Write([]byte(b))
 			})
 			if out == "" || strings.Contains(out, key) {
@@ -258,5 +265,58 @@ func TestLLMErrorKeyScrubbed(t *testing.T) {
 	_, err = l2.chat(context.Background(), []message{{Role: "user", Content: "x"}}, nil)
 	if err == nil || strings.Contains(err.Error(), key[:5]) {
 		t.Errorf("a cut key: %v", err)
+	}
+}
+
+// N-F-r2-1: a key with / and + is found however the answer encodes it, and
+// a 401 or 403 keeps none of the answer.
+func TestAgentsModelErrorKeyEncoded(t *testing.T) {
+	testAgentsKey = strings.Join([]string{"zqA/b+c", "Probe/77=="}, "")
+	t.Cleanup(func() { testAgentsKey = "" })
+	for name, tc := range map[string]struct {
+		status int
+		body   func(key string) string
+	}{
+		"query": {400, func(k string) string { return "bad key=" + url.QueryEscape(k) }},
+		"path":  {400, func(k string) string { return "no route /keys/" + url.PathEscape(k) }},
+		"json": {400, func(k string) string {
+			return `{"error":"key \"` + strings.ReplaceAll(k, "/", `\/`) + `\" is unknown"}`
+		}},
+		"401": {401, func(k string) string { return "invalid api key " + url.QueryEscape(k) + " " + k }},
+		"403": {403, func(k string) string { return "forbidden for " + strings.ToLower(k) + " / " + k }},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, state, out, sub, key := externalDispatchWith(t, true, func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tc.status)
+				w.Write([]byte(tc.body(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))))
+			})
+			forms := keyForms(key)
+			if len(forms) < 3 {
+				t.Fatalf("forms: %v", forms)
+			}
+			check := func(where, text string) {
+				for _, f := range append(forms, strings.ToLower(key)) {
+					if strings.Contains(text, f) {
+						t.Errorf("%s holds the key (as %q)", where, f)
+					}
+				}
+			}
+			check("the dispatch output", out)
+			filepath.Walk(state, func(p string, info os.FileInfo, err error) error {
+				if err == nil && info.Mode().IsRegular() {
+					b, _ := os.ReadFile(p)
+					check(p, string(b))
+				}
+				return nil
+			})
+			sub.commander.mu.Lock()
+			for _, r := range sub.commander.requests {
+				check("a request to the commander's model", r)
+			}
+			sub.commander.mu.Unlock()
+			if tc.status/100 == 4 && tc.status != 400 && !strings.Contains(out, "refused the request") {
+				t.Errorf("output: %s", out)
+			}
+		})
 	}
 }
