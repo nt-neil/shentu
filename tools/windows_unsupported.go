@@ -17,6 +17,27 @@ var windowsSupported = map[string]bool{
 	"file_changes": true, "cert_expiry": true, "log_search": true, "notify": true,
 }
 
+// darwinSupported are the tools that read macOS itself; the others still
+// read Linux's sources there (/proc, Linux log paths) and would come back
+// empty, which must not pass for clean. The platform's own readers are
+// for later.
+var darwinSupported = map[string]bool{
+	"package_vulns": true, "app_vulns": true, "app_code_audit": true, "cert_expiry": true, "site_profile": true, "notify": true,
+}
+
+// SupportedOn says whether tool name gives a real result on goos.
+func SupportedOn(name, goos string) bool {
+	switch goos {
+	case "linux":
+		return true
+	case "windows":
+		return windowsSupported[name]
+	case "darwin":
+		return darwinSupported[name]
+	}
+	return false
+}
+
 // unsupportedHere is true on Windows; tests flip it.
 var unsupportedHere = runtime.GOOS == "windows"
 
