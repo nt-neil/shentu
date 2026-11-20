@@ -36,9 +36,9 @@ func TestDispatchRepair(t *testing.T) {
 		t.Fatalf("before: %v", err)
 	}
 
-	n, err := s.Repair()
-	if err != nil || n != 3 {
-		t.Fatalf("Repair: %d %v", n, err)
+	n, d, err := s.Repair()
+	if err != nil || n != 3 || d != 0 {
+		t.Fatalf("Repair: %d %d %v", n, d, err)
 	}
 	recs, bad, err := s.Since(now.Add(-time.Hour))
 	if err != nil || bad != 0 || len(recs) != 2 {
@@ -54,14 +54,14 @@ func TestDispatchRepair(t *testing.T) {
 	if st, _ := os.Stat(p + ".bad"); runtime.GOOS != "windows" && st.Mode().Perm() != 0o600 {
 		t.Errorf(".bad mode %v", st.Mode())
 	}
-	if line := s.repairedLine(now); !strings.Contains(line, "3 lines are kept in 1") {
+	if line := s.repairedLine(now); !strings.Contains(line, "ran 1 times: 3 unreadable archive lines moved") {
 		t.Errorf("daily line: %q", line)
 	}
 	if err := s.Save(testRecord("000000000004", now)); err != nil {
 		t.Fatal(err)
 	}
-	if n, err := s.Repair(); err != nil || n != 0 {
-		t.Errorf("second Repair: %d %v", n, err)
+	if n, d, err := s.Repair(); err != nil || n != 0 || d != 0 {
+		t.Errorf("second Repair: %d %d %v", n, d, err)
 	}
 	if recs, bad, _ := s.Since(now.Add(-time.Hour)); bad != 0 || len(recs) != 3 {
 		t.Errorf("after a save: %d records, %d bad", len(recs), bad)
@@ -83,7 +83,7 @@ func TestDispatchRepairRefusesUntrusted(t *testing.T) {
 	os.WriteFile(target, []byte("not json\n"), 0o600)
 	os.Remove(p)
 	os.Symlink(target, p)
-	if _, err := s.Repair(); !errors.Is(err, errArchive) {
+	if _, _, err := s.Repair(); !errors.Is(err, errArchive) {
 		t.Errorf("a linked day file: %v", err)
 	}
 	if b, _ := os.ReadFile(target); string(b) != "not json\n" {
@@ -91,7 +91,7 @@ func TestDispatchRepairRefusesUntrusted(t *testing.T) {
 	}
 	os.Remove(p)
 	os.Chmod(s.dir, 0o750)
-	if _, err := s.Repair(); !errors.Is(err, errArchive) {
+	if _, _, err := s.Repair(); !errors.Is(err, errArchive) {
 		t.Errorf("a 0750 directory: %v", err)
 	}
 }
@@ -120,5 +120,104 @@ func TestDispatchRepairPruned(t *testing.T) {
 	s.Since(time.Now().Add(-time.Hour))
 	if _, err := os.Stat(old); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("an old .bad file was kept: %v", err)
+	}
+}
+
+// N-H1: an empty line, which Since counts unreadable, is dropped, and the
+// automatic count works again.
+func TestDispatchRepairEmptyLine(t *testing.T) {
+	s := testStore(t)
+	now := time.Now()
+	a1 := testRecord("000000000001", now)
+	a1.Origin = originAuto
+	if err := s.Save(a1); err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(s.dir, now.Local().Format(time.DateOnly)+".jsonl")
+	f, _ := os.OpenFile(p, os.O_APPEND|os.O_WRONLY, 0)
+	f.WriteString("\n") // left by a hand edit
+	f.Close()
+	if _, _, err := s.AutoSince(now.Add(-time.Hour)); !errors.Is(err, errArchive) {
+		t.Fatalf("before: %v", err)
+	}
+	if n, d, err := s.Repair(); err != nil || n != 0 || d != 1 {
+		t.Fatalf("Repair: %d %d %v", n, d, err)
+	}
+	if _, err := os.Stat(p + ".bad"); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("an empty line was moved to .bad: %v", err)
+	}
+	if n, _, err := s.AutoSince(now.Add(-time.Hour)); err != nil || n != 1 {
+		t.Errorf("AutoSince after: %d %v", n, err)
+	}
+}
+
+// N-H2: a rewrite that fails midway (a full disk) leaves the day file as
+// it was, and no temporary file behind.
+func TestDispatchRepairWriteFails(t *testing.T) {
+	s := testStore(t)
+	now := time.Now()
+	if err := s.Save(testRecord("000000000001", now)); err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(s.dir, now.Local().Format(time.DateOnly)+".jsonl")
+	f, _ := os.OpenFile(p, os.O_APPEND|os.O_WRONLY, 0)
+	f.WriteString("not json\n")
+	f.Close()
+	before, _ := os.ReadFile(p)
+	old := replaceWrite
+	replaceWrite = func(f *os.File, b []byte) error {
+		f.Write(b[:len(b)/2])
+		return errors.New("no space left on device")
+	}
+	t.Cleanup(func() { replaceWrite = old })
+	if _, _, err := s.Repair(); err == nil {
+		t.Fatal("Repair said it worked")
+	}
+	if after, _ := os.ReadFile(p); string(after) != string(before) {
+		t.Errorf("the day file changed:\n%s\nwas\n%s", after, before)
+	}
+	if tmp, _ := filepath.Glob(filepath.Join(s.dir, ".*.tmp")); len(tmp) > 0 {
+		t.Errorf("left behind: %v", tmp)
+	}
+	// S-H1: run again once the disk has room: the moved lines are in .bad once.
+	replaceWrite = old
+	if n, _, err := s.Repair(); err != nil || n != 1 {
+		t.Fatalf("Repair again: %d %v", n, err)
+	}
+	if b, _ := os.ReadFile(p + ".bad"); strings.Count(string(b), "not json") != 1 {
+		t.Errorf(".bad after a second run: %q", b)
+	}
+	// S-H2: the daily line counts each run's own lines, not the whole .bad file.
+	if line := s.repairedLine(now); !strings.Contains(line, "ran 1 times: 1 unreadable") {
+		t.Errorf("daily line: %q", line)
+	}
+}
+
+// N-H2: a Save waiting while Repair replaced the file writes to the new
+// file, not to the one that was replaced.
+func TestDispatchSaveAfterReplace(t *testing.T) {
+	s := testStore(t)
+	now := time.Now()
+	if err := s.Save(testRecord("000000000001", now)); err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(s.dir, now.Local().Format(time.DateOnly)+".jsonl")
+	f, _, err := openDayLocked(p, os.O_RDONLY)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error)
+	go func() { done <- s.Save(testRecord("000000000002", now)) }()
+	time.Sleep(100 * time.Millisecond) // Save opens the old file and waits for its lock
+	b, _ := os.ReadFile(p)
+	if err := replaceFile(p, b); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if recs, bad, err := s.Since(now.Add(-time.Hour)); err != nil || bad != 0 || len(recs) != 2 {
+		t.Errorf("after: %d records, %d bad, %v", len(recs), bad, err)
 	}
 }

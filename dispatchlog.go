@@ -138,7 +138,6 @@ var (
 	refRe        = regexp.MustCompile(`^d([0-9a-f]{12}):b([1-9][0-9]{0,2})$`)
 	dayFileRe    = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2})\.jsonl$`)
 	keptFileRe   = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2})\.jsonl(\.bad)?$`) // what prune ages out
-	badFileRe    = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}\.jsonl\.bad$`)
 )
 
 // triggerID is what the archive stores for a trigger: a short hash of the
@@ -336,18 +335,11 @@ func (s *dispatchStore) Save(rec dispatchRecord) error {
 		return fmt.Errorf("%w: %s", errArchive, s.dir)
 	}
 	p := filepath.Join(s.dir, rec.TS.Local().Format(time.DateOnly)+".jsonl")
-	f, err := osutil.OpenNoFollow(p, os.O_RDWR|os.O_APPEND|os.O_CREATE, 0o600, true)
+	f, st, err := openDayLocked(p, os.O_RDWR|os.O_APPEND|os.O_CREATE)
 	if err != nil {
-		return fmt.Errorf("%w: %s: %v", errArchive, p, err)
-	}
-	defer f.Close()
-	if err := osutil.Lock(f); err != nil { // Repair rewrites the file under the same lock
 		return err
 	}
-	st, err := f.Stat()
-	if err != nil || !trusted(st, false) {
-		return fmt.Errorf("%w: %s", errArchive, p)
-	}
+	defer f.Close()
 	line := append(b, '\n')
 	if st.Size() > 0 {
 		last := make([]byte, 1)
@@ -679,58 +671,102 @@ func (a *agent) dispatchOrigin() string {
 
 // Repair moves every line of the archive's day files that Since cannot
 // read (cut short by a full disk, say) to <date>.jsonl.bad next to it
-// (0600), and keeps the others as they were, so the automatic incident
-// checks need not wait for the file to age out. It takes each file's lock,
-// as Save does, and refuses an archive Since would not read. moved is how
-// many lines were moved.
-func (s *dispatchStore) Repair() (moved int, err error) {
+// (0600), drops empty lines (they are no record, but Since counts them
+// unreadable), and keeps the others as they were, so the automatic
+// incident checks need not wait for the file to age out. It takes each
+// file's lock, as Save does, refuses an archive Since would not read, and
+// notes what it did in repairs.jsonl for the daily report.
+func (s *dispatchStore) Repair() (moved, dropped int, err error) {
 	if !filepath.IsAbs(s.dir) {
-		return 0, fmt.Errorf("%w: state_dir is not an absolute path", errArchive)
+		return 0, 0, fmt.Errorf("%w: state_dir is not an absolute path", errArchive)
 	}
 	st, err := os.Lstat(s.dir)
 	if errors.Is(err, fs.ErrNotExist) {
-		return 0, nil
+		return 0, 0, nil
 	}
 	if err != nil || !trusted(st, true) {
-		return 0, fmt.Errorf("%w: %s", errArchive, s.dir)
+		return 0, 0, fmt.Errorf("%w: %s", errArchive, s.dir)
 	}
 	ents, err := os.ReadDir(s.dir)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	for _, e := range ents {
 		if !dayFileRe.MatchString(e.Name()) {
 			continue
 		}
-		n, err := s.repairFile(filepath.Join(s.dir, e.Name()))
-		moved += n
+		m, d, err := s.repairFile(filepath.Join(s.dir, e.Name()))
+		moved, dropped = moved+m, dropped+d
 		if err != nil {
-			return moved, err
+			s.noteRepair(moved, dropped)
+			return moved, dropped, err
 		}
 	}
-	return moved, nil
+	return moved, dropped, s.noteRepair(moved, dropped)
 }
 
-func (s *dispatchStore) repairFile(p string) (int, error) {
-	f, err := osutil.OpenNoFollow(p, os.O_RDWR, 0, true)
+// repairNote is one line of repairs.jsonl: what one Repair did.
+type repairNote struct {
+	TS      time.Time `json:"ts"`
+	Moved   int       `json:"moved"`
+	Dropped int       `json:"dropped"`
+}
+
+const repairsFile = "repairs.jsonl"
+
+// noteRepair adds what a Repair did to repairs.jsonl, keeping dispatchKeep.
+func (s *dispatchStore) noteRepair(moved, dropped int) error {
+	if moved == 0 && dropped == 0 {
+		return nil
+	}
+	notes := s.repairNotes(s.now().Add(-dispatchKeep))
+	notes = append(notes, repairNote{TS: s.now().UTC(), Moved: moved, Dropped: dropped})
+	var b bytes.Buffer
+	for _, n := range notes {
+		line, _ := json.Marshal(n)
+		b.Write(append(line, '\n'))
+	}
+	p := filepath.Join(s.dir, repairsFile)
+	if st, err := os.Lstat(p); err == nil && !trusted(st, false) {
+		return fmt.Errorf("%w: %s", errArchive, p)
+	}
+	return replaceFile(p, b.Bytes())
+}
+
+// repairNotes are the notes at or after t; an unreadable file or line is none.
+func (s *dispatchStore) repairNotes(t time.Time) []repairNote {
+	b, err := readTrusted(filepath.Join(s.dir, repairsFile))
 	if err != nil {
-		return 0, fmt.Errorf("%w: %s: %v", errArchive, p, err)
+		return nil
+	}
+	var notes []repairNote
+	for _, line := range bytes.Split(b, []byte{'\n'}) {
+		var n repairNote
+		if json.Unmarshal(line, &n) == nil && !n.TS.Before(t) && n.Moved >= 0 && n.Dropped >= 0 {
+			notes = append(notes, n)
+		}
+	}
+	return notes
+}
+
+func (s *dispatchStore) repairFile(p string) (moved, dropped int, err error) {
+	f, _, err := openDayLocked(p, os.O_RDONLY)
+	if err != nil {
+		return 0, 0, err
 	}
 	defer f.Close()
-	if err := osutil.Lock(f); err != nil {
-		return 0, err
-	}
-	if st, err := f.Stat(); err != nil || !trusted(st, false) {
-		return 0, fmt.Errorf("%w: %s", errArchive, p)
-	}
 	b, err := io.ReadAll(f)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	var good, bad bytes.Buffer
-	n := 0
-	for _, line := range bytes.Split(b, []byte{'\n'}) {
-		if len(line) == 0 {
+	lines := bytes.Split(b, []byte{'\n'})
+	if len(lines) > 0 && len(lines[len(lines)-1]) == 0 {
+		lines = lines[:len(lines)-1] // what follows the last newline
+	}
+	for _, line := range lines {
+		if len(line) == 0 { // not a record: Since counts it unreadable, Repair drops it
+			dropped++
 			continue
 		}
 		var rec dispatchRecord
@@ -743,58 +779,117 @@ func (s *dispatchStore) repairFile(p string) (int, error) {
 		}
 		bad.Write(line)
 		bad.WriteByte('\n')
-		n++
+		moved++
 	}
-	if n == 0 {
-		return 0, nil
+	if moved == 0 && dropped == 0 {
+		return 0, 0, nil
 	}
-	bf, err := osutil.OpenNoFollow(p+".bad", os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o600, true)
-	if err != nil {
-		return 0, fmt.Errorf("%w: %s.bad: %v", errArchive, p, err)
+	if moved > 0 {
+		if err := appendBad(p+".bad", bad.Bytes()); err != nil {
+			return 0, 0, err
+		}
 	}
-	defer bf.Close()
-	if st, err := bf.Stat(); err != nil || !trusted(st, false) {
-		return 0, fmt.Errorf("%w: %s.bad", errArchive, p)
+	// The kept lines replace the file in one rename: a write that fails
+	// (a full disk is why Repair runs) leaves the file as it was.
+	if err := replaceFile(p, good.Bytes()); err != nil {
+		return 0, 0, err
 	}
-	if _, err := bf.Write(bad.Bytes()); err != nil {
-		return 0, err
-	}
-	if err := bf.Sync(); err != nil { // the moved lines are kept before they leave the day file
-		return 0, err
-	}
-	if err := f.Truncate(0); err != nil {
-		return 0, err
-	}
-	if _, err := f.WriteAt(good.Bytes(), 0); err != nil {
-		return 0, err
-	}
-	return n, f.Sync()
+	return moved, dropped, nil
 }
 
-// repairedLine is the daily report's line about lines Repair moved aside
-// in the last day; "" when it moved none.
-func (s *dispatchStore) repairedLine(now time.Time) string {
-	ents, _ := os.ReadDir(s.dir)
-	files, lines := 0, 0
-	for _, e := range ents {
-		if !badFileRe.MatchString(e.Name()) {
-			continue
-		}
-		info, err := e.Info()
-		if err != nil || now.Sub(info.ModTime()) > 24*time.Hour {
-			continue
-		}
-		b, err := readTrusted(filepath.Join(s.dir, e.Name()))
+// openDayLocked opens a day file without following a link, takes its lock
+// and checks it, and opens it again if Repair replaced it meanwhile (the
+// lock was then on the old file).
+func openDayLocked(p string, flag int) (*os.File, os.FileInfo, error) {
+	for range 3 {
+		f, err := osutil.OpenNoFollow(p, flag, 0o600, true)
 		if err != nil {
-			continue
+			return nil, nil, fmt.Errorf("%w: %s: %v", errArchive, p, err)
 		}
-		files++
-		lines += bytes.Count(b, []byte{'\n'})
+		if err := osutil.Lock(f); err != nil {
+			f.Close()
+			return nil, nil, err
+		}
+		st, err := f.Stat()
+		if err != nil || !trusted(st, false) {
+			f.Close()
+			return nil, nil, fmt.Errorf("%w: %s", errArchive, p)
+		}
+		if now, err := os.Lstat(p); err == nil && os.SameFile(st, now) {
+			return f, st, nil
+		}
+		f.Close()
 	}
-	if files == 0 {
+	return nil, nil, fmt.Errorf("%w: %s keeps changing", errArchive, p)
+}
+
+// appendBad appends lines to a .bad file, unless it already ends with them
+// (a Repair that stopped after this step and runs again).
+func appendBad(p string, lines []byte) error {
+	bf, err := osutil.OpenNoFollow(p, os.O_RDWR|os.O_APPEND|os.O_CREATE, 0o600, true)
+	if err != nil {
+		return fmt.Errorf("%w: %s: %v", errArchive, p, err)
+	}
+	defer bf.Close()
+	st, err := bf.Stat()
+	if err != nil || !trusted(st, false) {
+		return fmt.Errorf("%w: %s", errArchive, p)
+	}
+	if st.Size() >= int64(len(lines)) {
+		tail := make([]byte, len(lines))
+		if _, err := bf.ReadAt(tail, st.Size()-int64(len(lines))); err == nil && bytes.Equal(tail, lines) {
+			return nil
+		}
+	}
+	if _, err := bf.Write(lines); err != nil {
+		return err
+	}
+	return bf.Sync() // the moved lines are kept before they leave the day file
+}
+
+// replaceWrite writes a temporary file; tests swap it to fail midway.
+var replaceWrite = func(f *os.File, b []byte) error {
+	_, err := f.Write(b)
+	return err
+}
+
+// replaceFile puts b in place of p: a temporary file in the same directory
+// (0600), synced, then renamed over p, so p is either all old or all new.
+func replaceFile(p string, b []byte) error {
+	tf, err := os.CreateTemp(filepath.Dir(p), "."+filepath.Base(p)+".*.tmp")
+	if err != nil {
+		return err
+	}
+	tmp := tf.Name()
+	werr := replaceWrite(tf, b)
+	serr := tf.Sync()
+	cerr := tf.Close()
+	if err := errors.Join(werr, serr, cerr); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, p); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	if d, err := os.Open(filepath.Dir(p)); err == nil { // the rename itself, on disk
+		d.Sync()
+		d.Close()
+	}
+	return nil
+}
+
+// repairedLine is the daily report's line about what Repair did in the
+// last day; "" when it did nothing.
+func (s *dispatchStore) repairedLine(now time.Time) string {
+	moved, dropped, runs := 0, 0, 0
+	for _, n := range s.repairNotes(now.Add(-24 * time.Hour)) {
+		moved, dropped, runs = moved+n.Moved, dropped+n.Dropped, runs+1
+	}
+	if runs == 0 {
 		return ""
 	}
-	return fmt.Sprintf("- `shentu dispatch repair` moved unreadable archive lines aside: %d lines are kept in %d *.jsonl.bad files in %s\n", lines, files, s.dir)
+	return fmt.Sprintf("- `shentu dispatch repair` ran %d times: %d unreadable archive lines moved to *.jsonl.bad, %d empty lines dropped (%s)\n", runs, moved, dropped, s.dir)
 }
 
 // dispatchCommand is `shentu dispatch repair`.
@@ -805,14 +900,14 @@ func dispatchCommand(cfg *Config, args []string, root bool) error {
 	if !root {
 		return errors.New("shentu dispatch repair changes the dispatch archive: run it as root (sudo shentu dispatch repair)")
 	}
-	n, err := newDispatchStore(cfg).Repair()
+	n, d, err := newDispatchStore(cfg).Repair()
 	if err != nil {
 		return err
 	}
-	if n == 0 {
+	if n == 0 && d == 0 {
 		fmt.Println("shentu dispatch repair: every line of the dispatch archive can be read; nothing moved.")
 		return nil
 	}
-	fmt.Printf("shentu dispatch repair: moved %d unreadable lines to *.jsonl.bad in %s; automatic incident checks count again from the next patrol.\n", n, filepath.Join(cfg.StateDir, dispatchDir))
+	fmt.Printf("shentu dispatch repair: moved %d unreadable lines to *.jsonl.bad and dropped %d empty lines in %s; automatic incident checks count again from the next patrol.\n", n, d, filepath.Join(cfg.StateDir, dispatchDir))
 	return nil
 }
