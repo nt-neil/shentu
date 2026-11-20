@@ -65,7 +65,7 @@ sudo SHENTU_API_KEY=<your key> shentu setup --provider appletoken
 sudo shentu setup --local --model qwen2.5:3b
 ```
 
-`--model` picks another model. [Choosing a model](models.md) compares 12 of them on accuracy,
+`--model` picks another model. [Choosing a model](models.md) compares 14 of them on accuracy,
 prompt-injection resistance, speed and cost.
 
 ## 3. Set the notify channel
@@ -191,7 +191,7 @@ then asks you to approve that Telegram user with `y`. Until you approve, the bot
 
   | Range | 1 | 2 | 3 | 4 |
   |---|---|---|---|---|
-  | `interaction` | notifications only ★ | questions | + block/unblock IPs | + every control tool |
+  | `interaction` | notifications only ★ | questions | + unblock IPs, block those with verified evidence | + every control tool |
   | `answers` | problem or not | summary ★ | full, deleted after 24h | full, kept |
   | `confirm` (actions) | approve on the server (`shentu bot approve`) | ✅ + one-time code ★ (`shentu bot totp`) | ✅ only | none |
   | `protection` | strict: token leak → pause, 08–20h, 50 answers a day | standard: leak → pause ★ | loose: leak → alert | off |
@@ -203,6 +203,47 @@ then asks you to approve that Telegram user with `y`. Until you approve, the bot
 - `/new` starts a fresh conversation.
 - Upgrading from an older version keeps your `shentu.toml`, so add the `[bot]` section yourself
   (see `packaging/shentu.toml`), or put the bot in a `telegram://` notify URL.
+
+## Your first attack alert (Linux, from v0.4.0)
+
+Once patrols are on, Shentu also reads your nginx or Apache access logs and alerts on requests
+aimed at vulnerabilities this server really has. There is nothing to configure: the log paths come
+from the web server's own configuration.
+
+1. **Build the vulnerability surface now.** Alerts are judged against what the daily round found
+   (code audit, application and OS package advisories, WordPress plugins). Instead of waiting for
+   09:00, run it once:
+
+   ```sh
+   sudo shentu patrol --daily
+   ```
+
+2. **Look without sending anything.** `sudo shentu detect` reads the logs, judges them and prints
+   the groups. It sends nothing and saves nothing. `--since 24h` and `--json` are there too.
+3. **When an alert comes**, read three lines first:
+   - `等級` (level): L2 means a payload reached the vulnerability; L3 means it likely worked. L1
+     (only the route was reached) is never pushed; it is in the daily report.
+   - `漏洞` (vulnerability): the CVE and package, or the file and line of a code finding. Fixing
+     it (upgrading, patching the code) is what actually ends the attack.
+   - `來源可信度` (source trust): verified, or unverified with a reason.
+4. **To block the address**, ask in `sudo shentu chat` (or the bot, at interaction 3 or higher):
+   "block 203.0.113.10 for 24 hours". A verified L2 or L3 group of the address's own, or SSH
+   logins sshd itself logged, backs a block.
+   - From Telegram, any other address is refused.
+   - On the server, an address attack detection saw without such a group is refused too, and the
+     reason says why; after reading the logs yourself you can override it with
+     `override_unverified`. An address no group lists and with no SSH login events is allowed:
+     you judge it yourself.
+
+On Debian and Ubuntu, nginx's access log is owned by `www-data` by default, so its attempts are
+marked unverified: you get the alerts, but they cannot back a block from Telegram. Read the log
+yourself on the server and, if the attempts are real, block there with `sudo shentu chat`, asking
+for `override_unverified`. `sudo shentu log-trust suggest` (v0.4.1) lists what would let the log
+pass on this host, such as sending it to journald as well; it changes nothing.
+
+The alert text is in Chinese only in v0.4.0. Every field, the levels and the log trust rules are
+explained in [attack-detection.md](attack-detection.md); what it cannot see is in
+[attack-detection-limits.md](attack-detection-limits.md).
 
 ## Day to day
 

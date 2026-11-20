@@ -10,6 +10,9 @@ Collect, in this order:
 5. package_vulns: number of affected packages; name the 3 most affected.
 6. cert_expiry: certificates expiring within 30 days.
 7. app_code_audit: secrets or backups the web server serves, debug mode, webshells, keys in code, injection flaws (rule, file and line).
+8. attack_attempts (hours 24): groups at L2 or L3 first, with their vulnerability, level and whether
+   `verified` is true. L1 groups only reached a vulnerable route: give their count, not each one.
+   An unverified group comes from a log the site itself could have written: say so.
 
 Report:
 - First line: overall status — OK, Needs attention, or Urgent.

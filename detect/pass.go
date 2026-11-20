@@ -151,7 +151,9 @@ func (p *PassRound) Run(ctx context.Context) {
 	if units.Status == hostenv.StatusPartial {
 		p.notice("應用程式 unit 只列出一部分（" + string(units.Reason) + "）：" + Printable(units.Detail))
 	}
-	trust := func(path string) hostenv.TrustResult { return hostenv.JudgeLog(in.Src, path, web) }
+	trust := func(server string) TrustFunc { // a rotated file beside a log of server's
+		return func(path string) hostenv.TrustResult { return hostenv.JudgeLog(in.Src, path, web.ForServer(server)) }
+	}
 	// start says a source is being read, false when the round was given up.
 	start := func(key string) bool {
 		p.mu.Lock()
@@ -173,7 +175,7 @@ func (p *PassRound) Run(ctx context.Context) {
 		}
 		var good, bad []string
 		cur := cs.get(ls.Path)
-		c, res, err := ReadLog(in.Src, ls.Path, cur, in.Budget, ReadOpts{Want: &ls, Trust: trust}, func(l Line) {
+		c, res, err := ReadLog(in.Src, ls.Path, cur, in.Budget, ReadOpts{Want: &ls, Trust: trust(ls.Server)}, func(l Line) {
 			if l.Verified {
 				good = append(good, string(l.Text))
 			} else {
@@ -215,11 +217,15 @@ func (p *PassRound) Run(ctx context.Context) {
 		if !ls.Verified {
 			reason = "記錄檔未通過信任檢查（" + string(ls.Reason) + "），內容可能被竄改"
 		}
-		c, res, sigs, err := ScanAccess(in.Src, ls, cs.get(ls.Path), dropped[ls.Path], in.Budget, trust, func(rec AccessRecord, l Line) {
+		onRecord := func(rec AccessRecord, l Line) {
 			o := Origin{Verified: l.Verified, Custom: custom}
 			if !l.Verified {
 				o.Reason = reason
-				if o.Reason == "" {
+				switch {
+				case o.Reason != "":
+				case ls.Journal != "":
+					o.Reason = "這筆 journald 紀錄不是 nginx 的 worker 經 syslog 送出的（程式、帳號或傳送方式不符），可能是別的程序冒充"
+				default:
 					o.Reason = "這段紀錄來自未通過信任檢查的輪替檔"
 				}
 			}
@@ -236,13 +242,26 @@ func (p *PassRound) Run(ctx context.Context) {
 					Upgrade(&at, rec.Method, ev)
 					p.attacks.Add(at, in.Now)
 				}
-				if len(mr.Hits) == 0 && l.Verified && rec.Status >= 200 && rec.Status < 300 {
+				// The size baseline leaves out only a request a hit took to
+				// L2: an unanchored or noise hit is an ordinary response
+				// of the route (v0.4.1, n36).
+				l2 := slices.ContainsFunc(g.Candidates, func(c Candidate) bool { return c.Level == LevelPayload })
+				if !l2 && l.Verified && rec.Status >= 200 && rec.Status < 300 {
 					for _, c := range g.Candidates {
 						p.baselines.Observe(RouteKey(rec.Method, c.Route, ""), rec.Client, rec.Bytes, rec.Time)
 					}
 				}
 			}
-		})
+		}
+		var c Cursor
+		var res ReadResult
+		var sigs Signals
+		var err error
+		if ls.Journal != "" {
+			c, res, sigs, err = ScanJournalAccess(ctx, in.Src, ls, cs.get(ls.Path), dropped[ls.Path], in.Budget, onRecord)
+		} else {
+			c, res, sigs, err = ScanAccess(in.Src, ls, cs.get(ls.Path), dropped[ls.Path], in.Budget, trust(ls.Server), onRecord)
+		}
 		p.read(ls.Path, ls.Kind, ls.Verified, c, res, &sigs, err)
 		p.mu.Lock()
 		if !p.abandoned {

@@ -1,7 +1,10 @@
 # hostfacts/1: the host facts schema
 
 Shentu has two core modules. The **rules engine** (`rules/engine`) analyses application code. The
-**host environment module** (`hostenv`) analyses the machine.
+**host environment module** (`hostenv`) analyses the machine. Attack detection (`detect`, v0.4.0,
+Linux) is built on both: the rules engine's findings and the package advisories make the host's
+vulnerability surface, and `hostenv` names the web server logs it reads and says which of them
+can be trusted (see [Web server logs](#web-server-logs)).
 
 `hostenv` detects the platform, reads system files and APIs, and runs a few read-only commands. It
 returns one normalized document, `hostenv.Facts`. Host checks (`checks`) read that document and
@@ -9,12 +12,14 @@ nothing else, so the same check works on every platform that has a collector.
 
 ```
 patrol / survey / bot / LLM tools
-        │
+        │                          │
      checks ── reads ──> hostenv.Facts  (schema hostfacts/1)
-                              ▲
-                     Collector (linux, windows, …)
-                              ▲
-                     Source (Live | Recorder | Replay)
+        │                     ▲
+        │            Collector (linux, windows, darwin)
+        │                     ▲
+        │            Source (Live | Recorder | Replay)
+        │
+     detect ── reads ──> hostenv.WebLogs (Linux) + surface.json (rules engine, packages)
 ```
 
 ## Versioning
@@ -58,8 +63,10 @@ A missing or unreadable fact never passes a check. A check that needs a fact the
 | `command_failed`        | non-zero exit, or another failure                           |
 | `symlink_not_followed`  | a user-controlled path was a link and was not followed      |
 | `not_regular_file`      | a FIFO, device or socket where a file was expected          |
-| `untrusted_owner`       | readable, but owned or writable by someone other than root (Windows: SYSTEM, Administrators, TrustedInstaller); the content is not used |
+| `untrusted_owner`       | readable, but the file, a link to it or a folder above it is owned by someone other than root (Windows: SYSTEM, Administrators, TrustedInstaller), or the file can be written by its group or others (an ACL included); the content is not used |
 | `unverified_source`     | read, but the source does not record who wrote it, so a local user could have forged it (text auth logs, busybox `/var/log/messages`) |
+
+Web server logs have reasons of their own, listed under [Web server logs](#web-server-logs).
 
 ## Fields
 
@@ -128,6 +135,38 @@ known `default_inbound` becomes `allow`.
 
 `auth_events.notable[].kind` values: `log_cleared`, `account_created`, `group_member_added`,
 `service_installed`.
+
+## Web server logs
+
+On Linux, `WebLogs` lists the logs nginx, Apache, lighttpd and PHP-FPM write, as their
+configuration on disk names them, for attack detection to read. It is not part of `Facts`. Each
+`LogSource` has `path`, `server`, `kind` (`access`, `error`, `slow`, `php_error`), `format` and
+`format_spec` (the format as defined), `vhosts`, `config` (the `file:line` naming it, or
+`default`), `journal` and `journal_tag` when nginx sends the log to journald, and `verified`
+with a `reason` and `detail` when it is not.
+
+A log is `verified` only when the account application code runs as cannot change it (the file,
+every link to it and every folder above it belong to root, or under strict conditions to the web
+server's own account, and cannot be written by others), it is an nginx or Apache access log in a
+standard format (nginx `combined` or `main`, Apache `combined` or `common`), the client address
+comes from the connection, and no application account can make a process write to it. For a log
+through journald, a line is verified only when journald records it as sent over syslog by
+nginx's program, as the workers' account, in `nginx.service`. The full conditions:
+[attack-detection-limits.md](attack-detection-limits.md#which-web-logs-can-back-a-block).
+`shentu log-trust suggest` (`LogTrustSuggestions`) prints what would verify more of them.
+Besides the general reasons, a log source can have:
+
+| reason | typical cause |
+|---|---|
+| `web_user_writable` | an account application code runs as (PHP-FPM's, an application unit's, or one shared with the web server such as `www-data`) owns the log or a folder above it; or it is an error, slow or PHP-FPM log; or Apache runs application code in its own children (mod_php, mod_lua with a handler), nginx runs perl, lua or njs, or application code can ptrace the workers |
+| `client_from_header` | the server takes the client address from a header (nginx `set_real_ip_from`/`real_ip_header`, Apache `mod_remoteip`) |
+| `custom_format` | the access log's format is not a standard one; it is still parsed and matched |
+| `logging_disabled` | `access_log off` |
+| `not_a_file` | written to syslog, a pipe or stderr |
+| `variable_path` | the path holds a variable or is relative |
+| `not_found` | named in the configuration but not there |
+
+How detect uses them: [attack-detection.md](attack-detection.md#log-trust).
 
 ## macOS
 
