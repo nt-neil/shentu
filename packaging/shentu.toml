@@ -66,8 +66,10 @@ cooldown = "24h"                # do not repeat the same alert within this time
 [agents]
 auto_incident = false
 # The sub-agents' own model; unset, they use [llm]. A model outside this host is
-# sent this host's logs and settings (masked) and is refused without a monthly
-# [budget]; each dispatch that used one says so, and so does the daily report.
+# sent this host's logs and settings (masked) and is refused without [budget]
+# monthly_tokens; each dispatch that used one says so, and so does the daily report.
+# Only 127.0.0.0/8, ::1 and localhost count as this host: a name or a LAN address
+# (this host's own too) is outside.
 # The key is read from the named environment variable (as for [llm]).
 # base_url    = "https://api.openai.com/v1"
 # model       = "gpt-4.1-mini"

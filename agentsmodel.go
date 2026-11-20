@@ -3,8 +3,10 @@ package main
 import (
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
+	"strings"
 )
 
 // The sub-agents' own model ([agents] base_url, model, api_key_env), off
@@ -16,9 +18,21 @@ import (
 // [llm]'s, and never written anywhere.
 
 // agentsExternal says whether baseURL is outside this host; tests swap it.
+// Only a literal loopback address or "localhost" is this host: any other
+// name is outside, whatever it resolves to now (it can resolve elsewhere
+// at the next connection), and so is a LAN address, this host's own
+// included; its user sets the budget it then needs.
 var agentsExternal = func(baseURL string) bool {
 	u, err := url.Parse(baseURL)
-	return err != nil || !isLoopbackHost(u.Hostname())
+	if err != nil {
+		return true
+	}
+	h := u.Hostname()
+	if strings.EqualFold(h, "localhost") {
+		return false
+	}
+	ip := net.ParseIP(h)
+	return ip == nil || !ip.IsLoopback()
 }
 
 // agentsLLM is the client the sub-agents of a dispatch use, and whether it
@@ -33,8 +47,10 @@ func agentsLLM(cfg *Config, main *llmClient) (*llmClient, bool, error) {
 		return nil, false, errors.New("[agents] base_url and model go together")
 	}
 	external := agentsExternal(ag.BaseURL)
-	if external && cfg.Budget.MonthlyTokens <= 0 && cfg.Budget.MonthlyCost <= 0 {
-		return nil, true, errors.New("[agents] names a model outside this host: set a monthly limit first ([budget] monthly_tokens or monthly_cost, `shentu budget`)")
+	// Tokens, not cost: only some providers report what a call cost, so a
+	// cost limit alone may never be reached.
+	if external && cfg.Budget.MonthlyTokens <= 0 {
+		return nil, true, errors.New("[agents] names a model outside this host: set a monthly token limit first ([budget] monthly_tokens, `shentu budget --tokens N`)")
 	}
 	if ag.APIKeyEnv != "" && os.Getenv(ag.APIKeyEnv) == "" {
 		return nil, external, fmt.Errorf("[agents] api_key_env names %s, which is not set", ag.APIKeyEnv)
