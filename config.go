@@ -60,6 +60,10 @@ type Config struct {
 	// or past 80% of it). Off by default.
 	Agents struct {
 		AutoIncident bool `toml:"auto_incident"`
+		// The sub-agents' own model; unset, they use [llm]. One outside this host needs a monthly budget.
+		BaseURL   string `toml:"base_url"`
+		Model     string `toml:"model"`
+		APIKeyEnv string `toml:"api_key_env"`
 	} `toml:"agents"`
 	StateDir string `toml:"state_dir"`
 	Language string `toml:"language"`

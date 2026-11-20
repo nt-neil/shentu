@@ -87,6 +87,7 @@ type dispatchRecord struct {
 	TokensUsed int         `json:"tokens_used"`
 	TokensCap  int         `json:"tokens_cap"`
 	Millis     int64       `json:"ms"`
+	External   bool        `json:"external,omitempty"` // the sub-agents used a model outside this host
 	Subs       []subRecord `json:"subs"`
 }
 
@@ -564,9 +565,12 @@ func dispatchSection(recs []dispatchRecord, bad int, err error) string {
 	}
 	origins, statuses, roles, reasons := map[string]int{}, map[string]int{}, map[string]int{}, map[string]int{}
 	var props []string
-	more := 0
+	more, external := 0, 0
 	for _, r := range recs {
 		origins[r.Origin]++
+		if r.External {
+			external++
+		}
 		statuses[r.Status]++
 		for _, s := range r.Subs {
 			roles[s.Role+" "+s.Status]++
@@ -585,6 +589,9 @@ func dispatchSection(recs []dispatchRecord, bad int, err error) string {
 	var b strings.Builder
 	b.WriteString("\nSub-agent dispatches (last day; reports are the model's, not verified):\n")
 	fmt.Fprintf(&b, "- %d dispatches: %s; %s\n", len(recs), countLine(origins), countLine(statuses))
+	if external > 0 {
+		fmt.Fprintf(&b, "- %d used the sub-agents' model outside this host ([agents] base_url): masked logs and settings were sent to it\n", external)
+	}
 	if len(roles) > 0 {
 		fmt.Fprintf(&b, "- sub-agents: %s\n", countLine(roles))
 	}
@@ -639,10 +646,18 @@ func (a *agent) runDispatch(ctx context.Context, origin, trigger string, tasks [
 	a.lastDispatch = id // from now on, any control call in this agent is treated as coming from a sub-agent's report
 	start := time.Now()
 
+	sl, external, modelErr := agentsLLM(a.cfg, a.llm)
+	a.subLLM = sl
+	defer func() { a.subLLM = nil }()
+
 	dctx, cancel := context.WithTimeout(ctx, dispatchTimeout)
 	defer cancel()
 	left := dispatchTokenCap
 	for _, t := range tasks {
+		if modelErr != nil { // no sub-agent runs on a model setting that cannot be used
+			reports = append(reports, subReport{Role: t.Role, Status: "incomplete", Reason: clean("the sub-agents' model cannot be used: "+modelErr.Error(), 300), Findings: []subFinding{}, code: reasonModelError})
+			continue
+		}
 		if dctx.Err() != nil || left <= 0 {
 			why, code := "the dispatch time limit was reached before this sub-agent started", reasonTimeout
 			if left <= 0 {
@@ -657,6 +672,7 @@ func (a *agent) runDispatch(ctx context.Context, origin, trigger string, tasks [
 	}
 
 	rec = newDispatchRecord(id, origin, trigger, start, dispatchTokenCap-left, dispatchTokenCap, reports)
+	rec.External = external && modelErr == nil
 	gctx, gcancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
 	defer gcancel()
 	for i := range rec.Subs {
@@ -845,7 +861,12 @@ func lockFixHint(p string) string {
 	if runtime.GOOS == "windows" {
 		return fmt.Sprintf(`as administrator: move "%s" "%s.bad"`, p, p)
 	}
-	return fmt.Sprintf("sudo mv %s %s.bad", p, p)
+	return "sudo mv " + shellQuote(p) + " " + shellQuote(p+".bad")
+}
+
+// shellQuote is s in single quotes for a POSIX shell.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // openChecked opens an archive file without following a link and checks
