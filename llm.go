@@ -95,6 +95,11 @@ func (l *llmClient) chat(ctx context.Context, msgs []message, tools []toolDef) (
 		}
 		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 		resp.Body.Close()
+		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+			// A refused key is the answer most likely to quote the key back, in
+			// whatever encoding: none of it is kept.
+			return message{}, fmt.Errorf("LLM HTTP %d: the provider refused the request (check the API key; its answer is not shown)", resp.StatusCode)
+		}
 		if resp.StatusCode/100 != 2 {
 			lastErr = fmt.Errorf("LLM HTTP %d: %s", resp.StatusCode, l.scrub(string(raw), 300))
 			if resp.StatusCode >= 500 || resp.StatusCode == 429 {
@@ -132,9 +137,29 @@ func (l *llmClient) chat(ctx context.Context, msgs []message, tools []toolDef) (
 // report, to the commander's model, which may be another provider's.
 func (l *llmClient) scrub(s string, n int) string {
 	if l.apiKey != "" {
-		s = strings.ReplaceAll(s, l.apiKey, "[key]")
+		for _, form := range keyForms(l.apiKey) {
+			s = strings.ReplaceAll(s, form, "[key]")
+		}
 	}
 	return truncate(s, n)
+}
+
+// keyForms are the ways an answer can quote key: as is, escaped for a URL
+// query or path, and escaped in JSON (a slash as \/, and Go's own escapes).
+func keyForms(key string) []string {
+	j, _ := json.Marshal(key)
+	forms := []string{key, url.QueryEscape(key), url.PathEscape(key),
+		strings.ReplaceAll(key, "/", `\/`), strings.Trim(string(j), `"`),
+		strings.ReplaceAll(strings.Trim(string(j), `"`), "/", `\/`)}
+	seen := map[string]bool{}
+	var out []string
+	for _, f := range forms {
+		if f != "" && !seen[f] {
+			seen[f] = true
+			out = append(out, f)
+		}
+	}
+	return out
 }
 
 func truncate(s string, n int) string {
