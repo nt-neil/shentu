@@ -141,6 +141,7 @@ type analysis struct {
 	js    bool
 	b     *budget
 	kw    map[string]bool // words that are keywords in this language
+	seed  *paramSeed      // the value a callback's parameter is called with (whenSeeds), for the next function analysed
 	mws   map[*fn]bool    // Koa middleware: the functions app.use(fn) registers (reqalias.go koaMiddleware)
 	seen  map[loc]bool
 	lines []loc
@@ -246,9 +247,12 @@ func (a *analysis) block(ss []*stmt, st state) (state, uint8) {
 func (a *analysis) stmt(s *stmt, st state) (state, uint8) {
 	defer func(old []*fn) { a.sfuncs = old }(a.sfuncs)
 	a.sfuncs = s.funcs // the function literals its Func tokens name (mapSanAt)
+	seeds := a.whenSeeds(st, s.toks, s.funcs)
 	for _, f := range s.funcs {
+		a.seed = seeds[f]
 		a.function(f, st)
 	}
+	a.seed = nil
 	switch s.kind {
 	case sSimple:
 		a.sinks(st, s.toks)
@@ -442,6 +446,13 @@ func (a *analysis) function(f *fn, st state) {
 		if p.Kind == Var || p.Kind == Ident {
 			x.del(p.Text)
 		}
+	}
+	if a.seed != nil {
+		if name := paramName(f.params, a.seed.param); name != "" {
+			v := a.seed.v
+			x[name] = entry{taint: v.taint, san: v.san, pre: v.pre, raw: v.raw, emb: v.emb, weak: v.weak}
+		}
+		a.seed = nil
 	}
 	a.libParams(f, x)
 	a.routeParams(f, x)
