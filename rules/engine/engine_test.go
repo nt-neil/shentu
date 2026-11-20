@@ -246,6 +246,7 @@ func TestEngineLimits(t *testing.T) {
 func TestEngineHostile(t *testing.T) {
 	e := engineForTest(t)
 	const limit = 500 * time.Millisecond
+	const slack = 3 * time.Second
 	e.Limits = Limits{MaxTokens: DefaultLimits.MaxTokens * 4, MaxTime: limit}
 	R := strings.Repeat
 	for _, c := range []struct{ name, lang, src string }{
@@ -267,8 +268,11 @@ func TestEngineHostile(t *testing.T) {
 		_, err := e.Scan(c.lang, "x", []byte(c.src))
 		took := time.Since(start)
 		t.Logf("%-22s %v err=%v", c.name, took.Round(time.Millisecond), err)
-		if took > limit+time.Second {
-			t.Errorf("%s: took %v, cap %v", c.name, took, limit)
+		// The wall-clock slack is generous because loaded CI runners overshoot;
+		// the ErrLimit check below is what pins the behaviour. Keep +3s: a
+		// slower engine still shows in t.Logf and in detect-eval timings.
+		if took > limit+slack {
+			t.Errorf("%s: took %v, cap %v + slack %v", c.name, took, limit, slack)
 		}
 		if took > limit && err != ErrLimit {
 			t.Errorf("%s: over the cap (%v) but err = %v", c.name, took, err)

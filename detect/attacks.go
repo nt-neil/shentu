@@ -219,7 +219,31 @@ func LoadAttacks(dir string, now time.Time) (*Attacks, error) {
 				}
 			}
 		}
-		a.IPs[ip] = r
+		// A source saved under another key (::ffff:192.0.2.1 before
+		// v0.4.2) joins its own: one source's entries count together.
+		key := campaignSource(ip)
+		cur := a.IPs[key]
+		if cur == nil {
+			a.IPs[key] = r
+			continue
+		}
+		for e, last := range r.Entries {
+			if last.After(cur.Entries[e]) {
+				cur.Entries[e] = last
+			}
+		}
+		if r.Last.After(cur.Last) {
+			cur.Last = r.Last
+		}
+		for len(cur.Entries) > MaxIPEntries {
+			oldest := ""
+			for e, last := range cur.Entries {
+				if oldest == "" || last.Before(cur.Entries[oldest]) || last.Equal(cur.Entries[oldest]) && e < oldest {
+					oldest = e
+				}
+			}
+			delete(cur.Entries, oldest)
+		}
 	}
 	a.DroppedPending = max(0, got.DroppedPending)
 	a.PassTimeouts = max(0, got.PassTimeouts)
@@ -823,6 +847,9 @@ func looseForms(s string) map[string]bool {
 		add(a)
 		return out
 	}
+	if a, ok := inetAton(t); ok {
+		out[a.String()] = true
+	}
 	parts := strings.Split(t, ".")
 	if len(parts) != 4 {
 		return out
@@ -848,6 +875,43 @@ func looseForms(s string) map[string]bool {
 	return out
 }
 
+// inetAton reads s as inet_aton does: one to four parts, each decimal,
+// octal after a 0 or hexadecimal after 0x, the last filling the bytes left
+// (3405803788, 203.28940, 203.0.28940, 0xcb.0.113.12).
+func inetAton(s string) (netip.Addr, bool) {
+	parts := strings.Split(s, ".")
+	if len(parts) > 4 {
+		return netip.Addr{}, false
+	}
+	var v [4]uint64
+	for i, part := range parts {
+		n, err := strconv.ParseUint(part, 0, 32)
+		low := strings.ToLower(part)
+		if part == "" || part[0] == '+' || strings.Contains(part, "_") || strings.HasPrefix(low, "0b") || strings.HasPrefix(low, "0o") || err != nil {
+			return netip.Addr{}, false
+		}
+		v[i] = n
+	}
+	last := len(parts) - 1
+	for i := 0; i < last; i++ {
+		if v[i] > 0xff {
+			return netip.Addr{}, false
+		}
+	}
+	if v[last] >= 1<<(8*(4-last)) {
+		return netip.Addr{}, false
+	}
+	var b [4]byte
+	for i := 0; i < last; i++ {
+		b[i] = byte(v[i])
+	}
+	for i := 3; i >= last; i-- {
+		b[i] = byte(v[last])
+		v[last] >>= 8
+	}
+	return netip.AddrFrom4(b), true
+}
+
 // ipSum is the hash a group keeps of an address (Seen), of its one form:
 // ::ffff:192.0.2.1 is 192.0.2.1.
 func ipSum(ip string) uint32 {
@@ -866,12 +930,13 @@ func canonAddr(ip string) string {
 }
 
 // campaignSource is the campaign index's key for an address: an IPv4
-// address itself, an IPv6 address's /64 (one host has many in it).
+// address itself (::ffff:192.0.2.1 is 192.0.2.1), an IPv6 address's /64
+// (one host has many in it).
 func campaignSource(ip string) string {
 	if addr, err := netip.ParseAddr(ip); err == nil && !addr.Unmap().Is4() {
 		return NetworkOf(ip)
 	}
-	return ip
+	return canonAddr(ip)
 }
 
 // evictIP drops the source of the index that tried the fewest
