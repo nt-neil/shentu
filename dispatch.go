@@ -294,7 +294,7 @@ func (a *agent) dispatch(ctx context.Context, args json.RawMessage) string {
 		a.log.write(entry)
 		return errText(err.Error())
 	}
-	id, reports := a.runDispatch(ctx, a.dispatchOrigin(), "", tasks)
+	id, reports, _, _ := a.runDispatch(ctx, a.dispatchOrigin(), "", tasks) // an archive failure is logged; the commander still gets the reports
 	entry.Dispatch = id
 	entry.OK = true
 	a.log.write(entry)

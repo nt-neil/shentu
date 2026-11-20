@@ -10,16 +10,19 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"net"
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/nt-neil/shentu/internal/osutil"
 	"github.com/nt-neil/shentu/tools"
 )
 
@@ -291,23 +294,28 @@ func newDispatchStore(cfg *Config) *dispatchStore {
 }
 
 // trusted says whether st, a file or the directory of the archive, can be
-// believed: not a link, this process's user's, and nobody else may write
-// (for a file, read) it.
+// believed: not a link, this process's user's, and nobody else may read,
+// write or (for the directory) list it.
 func trusted(st os.FileInfo, dir bool) bool {
 	mode := st.Mode()
 	if mode&os.ModeSymlink != 0 || !ownDir(st) {
 		return false
 	}
+	if runtime.GOOS == "windows" { // modes there say nothing of who may read; the state dir's ACL does
+		return mode.IsDir() == dir && (dir || mode.IsRegular())
+	}
 	if dir {
-		return mode.IsDir() && mode.Perm()&0o022 == 0
+		return mode.IsDir() && mode.Perm()&0o077 == 0
 	}
 	return mode.IsRegular() && mode.Perm()&0o077 == 0
 }
 
 // Save appends rec to its day's file (0600, in a 0700 directory, both this
-// process's user's), after checking every field; a record that fails is
-// refused, never written in part. It also removes files older than
-// dispatchKeep.
+// process's user's, the file opened without following a link), after
+// checking every field; a record that fails is refused. The line goes out in
+// one write, after a newline when the file does not end in one (a write cut
+// short before), so a broken line never takes the next record with it. It
+// also removes files older than dispatchKeep.
 func (s *dispatchStore) Save(rec dispatchRecord) error {
 	if !filepath.IsAbs(s.dir) {
 		return fmt.Errorf("%w: state_dir is not an absolute path", errArchive)
@@ -326,24 +334,38 @@ func (s *dispatchStore) Save(rec dispatchRecord) error {
 		return fmt.Errorf("%w: %s", errArchive, s.dir)
 	}
 	p := filepath.Join(s.dir, rec.TS.Local().Format(time.DateOnly)+".jsonl")
-	if st, err := os.Lstat(p); err == nil && !trusted(st, false) {
-		return fmt.Errorf("%w: %s", errArchive, p)
-	} else if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return err
-	}
-	f, err := os.OpenFile(p, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o600)
+	f, err := osutil.OpenNoFollow(p, os.O_RDWR|os.O_APPEND|os.O_CREATE, 0o600, true)
 	if err != nil {
+		return fmt.Errorf("%w: %s: %v", errArchive, p, err)
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil || !trusted(st, false) {
+		return fmt.Errorf("%w: %s", errArchive, p)
+	}
+	line := append(b, '\n')
+	if st.Size() > 0 {
+		last := make([]byte, 1)
+		if _, err := f.ReadAt(last, st.Size()-1); err != nil {
+			return err
+		}
+		if last[0] != '\n' {
+			line = append([]byte{'\n'}, line...)
+		}
+	}
+	if _, err := f.Write(line); err != nil {
 		return err
 	}
-	_, werr := f.Write(append(b, '\n'))
-	if err := errors.Join(werr, f.Close()); err != nil {
+	if err := f.Close(); err != nil {
 		return err
 	}
 	s.prune()
 	return nil
 }
 
-// prune removes day files older than dispatchKeep.
+// prune removes day files older than dispatchKeep. Save and Since both run
+// it, so a host that stops dispatching still drops old files on its daily
+// report.
 func (s *dispatchStore) prune() {
 	ents, _ := os.ReadDir(s.dir)
 	for _, e := range ents {
@@ -373,6 +395,7 @@ func (s *dispatchStore) Since(t time.Time) (recs []dispatchRecord, bad int, err 
 	if err != nil || !trusted(st, true) {
 		return nil, 0, fmt.Errorf("%w: %s", errArchive, s.dir)
 	}
+	s.prune()
 	ents, err := os.ReadDir(s.dir)
 	if err != nil {
 		return nil, 0, err
@@ -384,11 +407,7 @@ func (s *dispatchStore) Since(t time.Time) (recs []dispatchRecord, bad int, err 
 			continue
 		}
 		p := filepath.Join(s.dir, e.Name())
-		st, err := os.Lstat(p)
-		if err != nil || !trusted(st, false) {
-			return nil, 0, fmt.Errorf("%w: %s", errArchive, p)
-		}
-		b, err := os.ReadFile(p)
+		b, err := readTrusted(p)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -412,6 +431,20 @@ func (s *dispatchStore) Since(t time.Time) (recs []dispatchRecord, bad int, err 
 	}
 	sort.SliceStable(recs, func(i, j int) bool { return recs[i].TS.Before(recs[j].TS) })
 	return recs, bad, nil
+}
+
+// readTrusted reads p, opened without following a link, when it is a file
+// trusted can believe.
+func readTrusted(p string) ([]byte, error) {
+	f, err := osutil.OpenNoFollow(p, os.O_RDONLY, 0, true)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s: %v", errArchive, p, err)
+	}
+	defer f.Close()
+	if st, err := f.Stat(); err != nil || !trusted(st, false) {
+		return nil, fmt.Errorf("%w: %s", errArchive, p)
+	}
+	return io.ReadAll(f)
 }
 
 // Get returns the record with this dispatch id from the last dispatchKeep.
@@ -455,11 +488,15 @@ func (s *dispatchStore) Proposal(ref proposalRef) (dispatchRecord, proposalRecor
 
 // AutoSince counts the automatic dispatches (originAuto) at or after t and
 // the triggers (triggerID) they were for, for C's daily cap and its
-// once-per-group rule.
+// once-per-group rule. A line it cannot read could be one of them, so any
+// makes it an error: C then does not dispatch (fail closed).
 func (s *dispatchStore) AutoSince(t time.Time) (n int, triggers map[string]bool, err error) {
-	recs, _, err := s.Since(t)
+	recs, bad, err := s.Since(t)
 	if err != nil {
 		return 0, nil, err
+	}
+	if bad > 0 {
+		return 0, nil, fmt.Errorf("%w: %d lines could not be read", errArchive, bad)
 	}
 	triggers = map[string]bool{}
 	for _, r := range recs {
@@ -572,19 +609,19 @@ func dispatchDaily(cfg *Config, now time.Time) string {
 // the dispatch's record (with each proposal's tools.RemoteBlockCheck code)
 // before anyone reads the reports. (*agent).dispatch and C's automatic
 // incident dispatch both use it; trigger is the detector's group key for
-// originAuto, "" otherwise. An archive that cannot be written is logged,
-// never a reason to drop the reports.
-func (a *agent) runDispatch(ctx context.Context, origin, trigger string, tasks []subTask) (string, []subReport) {
+// originAuto, "" otherwise. rec is the record as saved (or as it would have
+// been); saveErr says it was not. An archive that cannot be written is also
+// logged, never a reason to drop the reports.
+func (a *agent) runDispatch(ctx context.Context, origin, trigger string, tasks []subTask) (id string, reports []subReport, rec dispatchRecord, saveErr error) {
 	idb := make([]byte, 6)
 	rand.Read(idb)
-	id := hex.EncodeToString(idb)
+	id = hex.EncodeToString(idb)
 	a.lastDispatch = id // from now on, any control call in this agent is treated as coming from a sub-agent's report
 	start := time.Now()
 
 	dctx, cancel := context.WithTimeout(ctx, dispatchTimeout)
 	defer cancel()
 	left := dispatchTokenCap
-	var reports []subReport
 	for _, t := range tasks {
 		if dctx.Err() != nil || left <= 0 {
 			why, code := "the dispatch time limit was reached before this sub-agent started", reasonTimeout
@@ -599,7 +636,7 @@ func (a *agent) runDispatch(ctx context.Context, origin, trigger string, tasks [
 		reports = append(reports, rep)
 	}
 
-	rec := newDispatchRecord(id, origin, trigger, start, dispatchTokenCap-left, dispatchTokenCap, reports)
+	rec = newDispatchRecord(id, origin, trigger, start, dispatchTokenCap-left, dispatchTokenCap, reports)
 	gctx, gcancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
 	defer gcancel()
 	for i := range rec.Subs {
@@ -612,10 +649,10 @@ func (a *agent) runDispatch(ctx context.Context, origin, trigger string, tasks [
 			p.Gate = code
 		}
 	}
-	if err := newDispatchStore(a.cfg).Save(rec); err != nil {
-		a.log.write(logEntry{Actor: a.actor, Tool: "dispatch", Dispatch: id, Error: mask("archive: " + err.Error())})
+	if saveErr = newDispatchStore(a.cfg).Save(rec); saveErr != nil {
+		a.log.write(logEntry{Actor: a.actor, Tool: "dispatch", Dispatch: id, Error: mask("archive: " + saveErr.Error())})
 	}
-	return id, reports
+	return id, reports, rec, saveErr
 }
 
 // dispatchOrigin is where a's dispatches come from: the bot's agents have
