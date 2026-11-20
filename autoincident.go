@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -86,10 +84,10 @@ type autoPending struct {
 	Seen    time.Time `json:"seen"`
 }
 
-// autoArchive is the part of the dispatch archive (A) C uses.
+// autoArchive is the part of the dispatch archive (A) C reads; runDispatch
+// writes it.
 type autoArchive interface {
 	AutoSince(t time.Time) (int, map[string]bool, error)
-	Save(rec dispatchRecord) error
 }
 
 // Seams for tests.
@@ -143,7 +141,7 @@ func autoIncident(ctx context.Context, cfg *Config, env *tools.Env, cands []auto
 	if err != nil || pick == nil {
 		return "", err
 	}
-	rec, err := autoRun(ctx, cfg, env, *pick, now)
+	rec, err := autoRun(ctx, cfg, env, *pick)
 	ferr := autoFinish(cfg, *pick, rec, now)
 	if err != nil {
 		return rec.ID, errors.Join(err, ferr)
@@ -207,7 +205,7 @@ func autoReserve(cfg *Config, cands []autoCandidate, now time.Time) (*autoPendin
 		for _, d := range st.Dispatches {
 			if !d.TS.Before(since) {
 				taken++
-				triggers[d.Trigger] = true
+				triggers[triggerID(d.Trigger)] = true
 			}
 		}
 		if max(n, taken) >= autoDailyCap {
@@ -217,7 +215,7 @@ func autoReserve(cfg *Config, cands []autoCandidate, now time.Time) (*autoPendin
 		for len(st.Pending) > 0 {
 			p := st.Pending[0]
 			st.Pending = st.Pending[1:]
-			if triggers[p.Trigger] {
+			if triggers[triggerID(p.Trigger)] {
 				st.skip(now, autoSkipGroup)
 				continue
 			}
@@ -232,25 +230,23 @@ func autoReserve(cfg *Config, cands []autoCandidate, now time.Time) (*autoPendin
 	return pick, nil
 }
 
-// autoRun dispatches the incident sub-agent for p and archives it.
-func autoRun(ctx context.Context, cfg *Config, env *tools.Env, p autoPending, now time.Time) (dispatchRecord, error) {
+// autoRun dispatches the incident sub-agent for p; runDispatch archives
+// it. The record returned is for the notice.
+func autoRun(ctx context.Context, cfg *Config, env *tools.Env, p autoPending) (dispatchRecord, error) {
 	args, _ := json.Marshal(map[string][]subTask{"tasks": {{Role: "incident", IP: p.IP, Hours: autoIncidentHours}}})
 	tasks, err := parseTasks(args)
 	if err != nil {
 		return dispatchRecord{}, err
 	}
-	idb := make([]byte, 6)
-	rand.Read(idb)
-	id := hex.EncodeToString(idb)
 	a := &agent{cfg: cfg, llm: newLLM(cfg), env: env, actor: "auto", log: newAuditLog(cfg.StateDir)}
-	a.log.write(logEntry{Actor: a.actor, Tool: "dispatch", Args: mask(string(args)), Dispatch: id, Origin: originAuto, OK: true})
-	dctx, cancel := context.WithTimeout(ctx, dispatchTimeout)
-	defer cancel()
 	start := time.Now()
-	rep := a.runSub(dctx, id, tasks[0], subTokenCap)
-	rec := newDispatchRecord(id, originAuto, p.Trigger, start, rep.Tokens, subTokenCap, []subReport{rep}, nil)
-	rec.ID, rec.Origin, rec.Trigger = id, originAuto, p.Trigger
-	return rec, autoStore(cfg).Save(rec)
+	id, reps := a.runDispatch(ctx, originAuto, p.Trigger, tasks)
+	used := 0
+	for _, r := range reps {
+		used += r.Tokens
+	}
+	a.log.write(logEntry{Actor: a.actor, Tool: "dispatch", Args: mask(string(args)), Dispatch: id, Origin: originAuto, OK: true})
+	return newDispatchRecord(id, originAuto, p.Trigger, start, used, dispatchTokenCap, reps), nil
 }
 
 // autoFinish writes the dispatch's id and status into its slot.

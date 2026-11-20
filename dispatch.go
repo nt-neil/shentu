@@ -11,8 +11,6 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -23,6 +21,7 @@ import (
 	"time"
 
 	"github.com/nt-neil/shentu/detect"
+	"github.com/nt-neil/shentu/hostenv"
 	"github.com/nt-neil/shentu/tools"
 )
 
@@ -152,6 +151,10 @@ type subReport struct {
 	Proposals []subProposal `json:"proposals,omitempty"`
 	Unchecked []string      `json:"unchecked,omitempty"`
 	Tokens    int           `json:"tokens"`
+
+	// For the archive only (dispatchRecord), never shown to the commander.
+	code                                       string // a reason* constant
+	steps, toolCalls, tokIn, tokOut, tokReason int
 }
 
 type subFinding struct {
@@ -165,7 +168,7 @@ type subProposal struct {
 	Action string `json:"action"` // only "propose_block_ip"
 	IP     string `json:"ip"`
 	Group  string `json:"group,omitempty"`
-	Loose  bool   `json:"-"` // the address was not written in canonical form; TODO(A): set in parseReport
+	Loose  bool   `json:"-"` // the address was not written in canonical form (::ffff:a.b.c.d, upper case, ...)
 }
 
 var severities = map[string]bool{"info": true, "low": true, "medium": true, "high": true, "critical": true}
@@ -197,13 +200,13 @@ func parseReport(role string, answer string) subReport {
 		Unchecked []string `json:"unchecked"`
 	}
 	if i < 0 || j < i || json.Unmarshal([]byte(c[i:j+1]), &in) != nil {
-		rep.Reason = "the report was not in the required JSON shape"
+		rep.Reason, rep.code = "the report was not in the required JSON shape", reasonBadReport
 		return rep
 	}
 	if in.Status == "complete" {
-		rep.Status = "complete"
+		rep.Status, rep.code = "complete", reasonOK
 	} else {
-		rep.Reason = "the sub-agent said it did not finish"
+		rep.Reason, rep.code = "the sub-agent said it did not finish", reasonSaidNot
 	}
 	for _, f := range in.Findings {
 		if len(rep.Findings) == maxFindings {
@@ -221,7 +224,8 @@ func parseReport(role string, answer string) subReport {
 	}
 	if subRoles[role].propose {
 		for _, p := range in.Proposals {
-			ip := net.ParseIP(strings.TrimSpace(p.IP))
+			raw := strings.TrimSpace(p.IP)
+			ip := net.ParseIP(raw)
 			if p.Action != "propose_block_ip" || ip == nil || len(rep.Proposals) == maxSubagents*3 {
 				continue
 			}
@@ -229,7 +233,7 @@ func parseReport(role string, answer string) subReport {
 			if !groupID.MatchString(g) {
 				g = ""
 			}
-			rep.Proposals = append(rep.Proposals, subProposal{Action: "propose_block_ip", IP: ip.String(), Group: g})
+			rep.Proposals = append(rep.Proposals, subProposal{Action: "propose_block_ip", IP: ip.String(), Group: g, Loose: raw != hostenv.CanonicalIP(raw) || raw != ip.String()})
 		}
 	}
 	for _, u := range in.Unchecked {
@@ -290,29 +294,8 @@ func (a *agent) dispatch(ctx context.Context, args json.RawMessage) string {
 		a.log.write(entry)
 		return errText(err.Error())
 	}
-	idb := make([]byte, 6)
-	rand.Read(idb)
-	id := hex.EncodeToString(idb)
+	id, reports := a.runDispatch(ctx, a.dispatchOrigin(), "", tasks)
 	entry.Dispatch = id
-	a.lastDispatch = id // from now on, any control call in this agent is treated as coming from a sub-agent's report
-
-	dctx, cancel := context.WithTimeout(ctx, dispatchTimeout)
-	defer cancel()
-	left := dispatchTokenCap
-	var reports []subReport
-	for _, t := range tasks {
-		if dctx.Err() != nil || left <= 0 {
-			why := "the dispatch time limit was reached before this sub-agent started"
-			if left <= 0 {
-				why = "the dispatch token limit was reached before this sub-agent started"
-			}
-			reports = append(reports, subReport{Role: t.Role, Status: "incomplete", Reason: why, Findings: []subFinding{}})
-			continue
-		}
-		rep := a.runSub(dctx, id, t, min(subTokenCap, left))
-		left -= rep.Tokens
-		reports = append(reports, rep)
-	}
 	entry.OK = true
 	a.log.write(entry)
 	return dispatchOutput(id, reports)
@@ -407,14 +390,14 @@ func (a *agent) runSub(ctx context.Context, id string, t subTask, tokenCap int) 
 	var rep subReport
 	switch {
 	case errors.Is(err, errTokenCap):
-		rep = subReport{Role: t.Role, Status: "incomplete", Reason: "the token limit was reached", Findings: []subFinding{}}
+		rep = subReport{Role: t.Role, Status: "incomplete", Reason: "the token limit was reached", Findings: []subFinding{}, code: reasonTokenCap}
 	case errors.Is(err, errBudget):
-		rep = subReport{Role: t.Role, Status: "incomplete", Reason: "the monthly AI budget is used up", Findings: []subFinding{}}
+		rep = subReport{Role: t.Role, Status: "incomplete", Reason: "the monthly AI budget is used up", Findings: []subFinding{}, code: reasonBudget}
 	case sctx.Err() != nil:
-		rep = subReport{Role: t.Role, Status: "incomplete", Reason: "the time limit was reached", Findings: []subFinding{}}
+		rep = subReport{Role: t.Role, Status: "incomplete", Reason: "the time limit was reached", Findings: []subFinding{}, code: reasonTimeout}
 	case err != nil:
 		short, _, _ := strings.Cut(err.Error(), ": {")
-		rep = subReport{Role: t.Role, Status: "incomplete", Reason: clean("model error: "+short, 200), Findings: []subFinding{}}
+		rep = subReport{Role: t.Role, Status: "incomplete", Reason: clean("model error: "+short, 200), Findings: []subFinding{}, code: reasonModelError}
 	default:
 		rep = parseReport(t.Role, answer)
 		if sub.outOfSteps { // made to answer: what it did not get to is unknown
@@ -422,10 +405,11 @@ func (a *agent) runSub(ctx context.Context, id string, t subTask, tokenCap int) 
 			if rep.Reason != "" {
 				why += "; " + rep.Reason
 			}
-			rep.Status, rep.Reason = "incomplete", why
+			rep.Status, rep.Reason, rep.code = "incomplete", why, reasonStepLimit
 		}
 	}
 	rep.Tokens = sub.tokensUsed
+	rep.steps, rep.toolCalls, rep.tokIn, rep.tokOut, rep.tokReason = sub.calls, sub.toolsRun, sub.tokIn, sub.tokOut, sub.tokReason
 	if rep.Status != "complete" && a.progress != nil {
 		a.progress("sub_incomplete:" + t.Role)
 	}
