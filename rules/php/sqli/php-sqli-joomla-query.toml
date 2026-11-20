@@ -77,3 +77,20 @@ class ReservationsModelList extends ListModel
     }
 }
 '''
+
+[[samples]]
+kind = "vulnerable"
+note = "Joomla's own input in ->where( and ->orWhere(: this rule's (yields_to leaves only $_GET-like input shared with Yii)"
+code = '''
+<?php
+class ArticlesModelList extends ListModel
+{
+    protected function getListQuery()
+    {
+        $input = Factory::getApplication()->input;
+        $query = $this->getDbo()->getQuery(true)->select('*')->from('#__articles');
+        $query->where('state = 1')->orWhere("author = '" . $input->getString('author') . "'");
+        return $query;
+    }
+}
+'''

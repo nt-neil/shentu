@@ -49,6 +49,11 @@ func TestRulesLoad(t *testing.T) {
 	}
 }
 
+var (
+	tierRank = map[string]int{"info": 0, "alert": 1}
+	sevRank  = map[string]int{"low": 0, "medium": 1, "high": 2, "critical": 3}
+)
+
 func TestRulesValid(t *testing.T) {
 	rs, err := Load()
 	if err != nil {
@@ -81,6 +86,10 @@ func TestRulesValid(t *testing.T) {
 				t.Errorf("%s: yields_to names the rule itself", r.File)
 			case o.Lang != r.Lang || o.CWE != r.CWE:
 				t.Errorf("%s: yields_to %q is another language or CWE", r.File, id)
+			case tierRank[r.Tier] > tierRank[o.Tier] || sevRank[r.Severity] > sevRank[o.Severity]:
+				// the patrol report pushes alert findings only: a line an alert rule
+				// leaves to an info one would no longer be pushed
+				t.Errorf("%s: yields_to %q, whose tier or severity (%s, %s) is below this rule's (%s, %s)", r.File, id, o.Tier, o.Severity, r.Tier, r.Severity)
 			}
 		}
 	}

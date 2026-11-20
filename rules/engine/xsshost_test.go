@@ -26,6 +26,9 @@ func TestXSSHostAndHeaders(t *testing.T) {
 		{"nest: @Req() r, r.query.q", "ts", "a.ts", "import { Controller, Get, Req, Res } from '@nestjs/common';\n@Controller()\nexport class C {\n  @Get('p')\n  p(@Req() r: any, @Res() res: any) {\n    res.send('<p>' + r.query.q + '</p>');\n  }\n}\n", []string{"js-xss-response"}},
 		{"nest: @Req() r, r.headers.host is no XSS input", "ts", "a.ts", "import { Controller, Get, Req, Res } from '@nestjs/common';\n@Controller()\nexport class C {\n  @Get('p')\n  p(@Req() r: any, @Res() res: any) {\n    res.send('<p>' + r.headers.host + '</p>');\n  }\n}\n", nil},
 		{"nest: @Body() b, b.name", "ts", "a.ts", "import { Controller, Post, Body, Res } from '@nestjs/common';\n@Controller()\nexport class C {\n  @Post('p')\n  p(@Body() b: any, @Res() res: any) {\n    res.send('<p>' + b.name + '</p>');\n  }\n}\n", []string{"js-xss-response"}},
+		{"nest: @Headers() h, h['host'] is no XSS input", "ts", "a.ts", nest("h['host']"), nil},
+		{"nest: @Headers() h, h['Host'] is no XSS input (lower-cased as Node stores it)", "ts", "a.ts", nest("h['Host']"), nil},
+		{"nest: @Headers() h, h['User-Agent'] is the header", "ts", "a.ts", nest("h['User-Agent']"), []string{"js-xss-response"}},
 		{"nest: @Headers('host') is no XSS input", "ts", "a.ts", "import { Controller, Get, Headers, Res } from '@nestjs/common';\n@Controller()\nexport class C {\n  @Get('p')\n  p(@Headers('host') v: string, @Res() res: any) {\n    res.send('<p>' + v + '</p>');\n  }\n}\n", nil},
 	}
 	for _, c := range cases {

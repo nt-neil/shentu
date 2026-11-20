@@ -98,3 +98,35 @@ class CustomerRepository extends ServiceEntityRepository
     }
 }
 '''
+
+[[samples]]
+kind = "vulnerable"
+note = "Symfony's own input in ->where(: this rule's, though Drupal reads $request->query too (yields_to leaves it here)"
+code = '''
+<?php
+class OrderController extends AbstractController
+{
+    public function list(Request $request, EntityManagerInterface $em)
+    {
+        $qb = $em->createQueryBuilder()->select('o')->from(Order::class, 'o');
+        $qb->where("o.status = '" . $request->query->get('status') . "'");
+        return $this->json($qb->getQuery()->getResult());
+    }
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "a route attribute in ->andWhere(: Symfony's own input, no other rule's"
+code = '''
+<?php
+class OrderController extends AbstractController
+{
+    public function show(Request $request, EntityManagerInterface $em)
+    {
+        $qb = $em->createQueryBuilder()->select('o')->from(Order::class, 'o');
+        $qb->where('o.active = 1')->andWhere('o.id = ' . $request->attributes->get('id'));
+        return $this->json($qb->getQuery()->getResult());
+    }
+}
+'''
