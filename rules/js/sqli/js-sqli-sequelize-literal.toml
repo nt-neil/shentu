@@ -5,7 +5,7 @@ cwe = "CWE-89"
 severity = "high"
 title = "Request input placed into Sequelize.literal or a raw sequelize.query string"
 frameworks = ["express", "nestjs", "nextjs", "koa", "fastify", "hapi"]
-sources = ["req.query", "req.body", "req.params", "@Query(", "@Body(", "@Param(", "@Req(", "req.originalUrl", "^request.nextUrl", "^req.nextUrl", "^request.url", "^req.url", "^searchParams", "^request.json(", "^req.json(", "^request.text(", "^req.text(", "^request.formData(", "^req.formData(", "^formData.get(", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload", "ctx.params", "request.params"]
+sources = ["req.query", "req.body", "req.params", "@Query(", "@Body(", "@Param(", "@Req(", "@Request(", "req.originalUrl", "^request.nextUrl", "^req.nextUrl", "^request.url", "^req.url", "^searchParams", "^request.json(", "^req.json(", "^request.text(", "^req.text(", "^request.formData(", "^req.formData(", "^formData.get(", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload", "ctx.params", "request.params"]
 # SQL text into sequelize.query() is js-sqli-raw-interpolation's
 sinks = ["Sequelize.literal(", "sequelize.literal(", "Sequelize.fn("]
 sanitizers = ["sequelize.escape("]
@@ -56,6 +56,20 @@ export class MessagesController {
   @Get(":day")
   list(@Param("day") day: string) {
     return Message.findAll({ where: Sequelize.literal(`date("createdAt") = '${day}'`) });
+  }
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+dialect = "ts"
+note = "NestJS's @Request() is @Req() by another name, whatever the parameter is called"
+code = '''
+@Controller()
+export class AppController {
+  @Get("messages")
+  async list(@Request() r: Request) {
+    return Message.findAll({ where: Sequelize.literal(`"createdAt" < '${r.query.before}'`) });
   }
 }
 '''

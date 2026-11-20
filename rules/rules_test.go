@@ -49,6 +49,11 @@ func TestRulesLoad(t *testing.T) {
 	}
 }
 
+var (
+	tierRank = map[string]int{"info": 0, "alert": 1}
+	sevRank  = map[string]int{"low": 0, "medium": 1, "high": 2, "critical": 3}
+)
+
 func TestRulesValid(t *testing.T) {
 	rs, err := Load()
 	if err != nil {
@@ -67,6 +72,45 @@ func TestRulesValid(t *testing.T) {
 		}
 	}
 	seen := map[string]string{}
+	byID := map[string]Rule{}
+	for _, r := range rs {
+		byID[r.ID] = r
+	}
+	for _, r := range rs {
+		for _, id := range r.YieldsTo {
+			o, ok := byID[id]
+			switch {
+			case !ok:
+				t.Errorf("%s: yields_to %q is no rule", r.File, id)
+			case id == r.ID:
+				t.Errorf("%s: yields_to names the rule itself", r.File)
+			case o.Lang != r.Lang || o.CWE != r.CWE:
+				t.Errorf("%s: yields_to %q is another language or CWE", r.File, id)
+			case tierRank[r.Tier] > tierRank[o.Tier] || sevRank[r.Severity] > sevRank[o.Severity]:
+				// the patrol report pushes alert findings only: a line an alert rule
+				// leaves to an info one would no longer be pushed
+				t.Errorf("%s: yields_to %q, whose tier or severity (%s, %s) is below this rule's (%s, %s)", r.File, id, o.Tier, o.Severity, r.Tier, r.Severity)
+			}
+		}
+	}
+	// no cycle: two rules yielding to each other would both leave the sink out
+	var reach func(from, to string, depth int) bool
+	reach = func(from, to string, depth int) bool {
+		if depth > len(rs) {
+			return true
+		}
+		for _, id := range byID[from].YieldsTo {
+			if id == to || reach(id, to, depth+1) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, r := range rs {
+		if len(r.YieldsTo) > 0 && reach(r.ID, r.ID, 0) {
+			t.Errorf("%s: yields_to makes a cycle", r.File)
+		}
+	}
 	for _, r := range rs {
 		f := r.File
 		for _, m := range r.RouteMembers {
@@ -426,5 +470,32 @@ func TestUnlessAfterOwnerReads(t *testing.T) {
 	}
 	if n == 0 {
 		t.Error("no rule hands ORDER BY to php-sqli-orderby-identifier")
+	}
+}
+
+// TestNestRequestAlias: NestJS's @Request() is @Req() by another name (the
+// TypeScript lowering reads both as the handler's request), so a rule that
+// takes one as a source takes the other, in sources and in source_args.
+func TestNestRequestAlias(t *testing.T) {
+	rs, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, r := range rs {
+		lists := [][]string{r.Sources}
+		for _, sa := range r.SourceArgs {
+			lists = append(lists, sa.Sources)
+		}
+		for _, l := range lists {
+			if req, request := slices.Contains(l, "@Req("), slices.Contains(l, "@Request("); req != request {
+				t.Errorf("%s: lists only one of @Req( and @Request(", r.File)
+			} else if req {
+				n++
+			}
+		}
+	}
+	if n == 0 {
+		t.Error("no rule takes NestJS's @Req() as a source")
 	}
 }

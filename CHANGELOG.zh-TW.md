@@ -34,13 +34,57 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 - 存檔裡有寫到一半的行時（例如磁碟滿了），自動事件調查會停大約兩天，直到那個檔案離開讀取的範圍；每日報告會寫明。
 - 用 7B 的本機模型時，子 agent 常常用完 6 步，被標成未完成。
 
-## v0.5.0 (unreleased)
+## v0.5.0 — 2026-11-20
 
 - 子 agent（Linux、單機）：在 Telegram bot 和 `shentu chat` 裡，agent 可以用 `dispatch` 工具把唯讀的檢查交給最多 3 個子 agent，每個子 agent 一個角色：`patrol`、`surface`、`attack` 或 `incident`（#101）。每個角色有固定的唯讀工具清單；子 agent 不能封鎖或解除封鎖位址、不能發通知、不能用 skill，也不能再派遣。子 agent 依序一個接一個執行。巡檢輪次和 eval bot 不會派遣。
 - 上限：每個子 agent 最多 6 次模型呼叫、每步 3 個工具呼叫、每次 2048 個輸出 token、合計 40,000 個 token、5 分鐘；一次派遣最多 120,000 個 token、12 分鐘，月預算照樣適用。每次呼叫前先估 token、呼叫後再計入，reasoning token 也算。被上限擋下、或沒有照規定格式回報的子 agent，會標成未完成並寫出原因，不會當成已完成。被時間上限切斷的模型呼叫不再重試。
 - 回報：每個子 agent 用固定的 JSON 格式回答（發現、建議、沒查到的項目），逐欄檢查並遮罩，agent 讀到時標成 untrusted。封鎖建議只是建議：派遣之後，同一段對話裡每一次 `block_ip` 或 `unblock_ip` 都要按 ✅ 按鈕，`[bot] confirm = 4` 也一樣，直到 `/new` 為止；稽核紀錄會寫出是哪一次派遣。bot 的進度訊息會顯示子 agent 的步驟（最後 12 步），不認得的工具名稱顯示成「未知工具」。
 
-## v0.4.1 (unreleased)
+## v0.4.3 — 2026-11-20
+
+- SSRF：URL 的 host 檢查過之後，`console.log(u)`、`JSON.stringify(u)`、`String(u)` 不再讓檢查失效，條件是檔案只用 `console`、`JSON`、`String` 來呼叫（沒有同名的參數或宣告，沒有 `console.log = f`），也沒有可能在別處替換這些呼叫的寫法（`globalThis` 這類 global 物件除了讀具名成員以外的用法、`eval`、`Function(`、`with` 敘述、改寫內建物件的 prototype）（#119）。
+- JavaScript 的路由 handler：字串 key 的解構 `const { 'x-forwarded-host': xfh } = req.headers` 追得到，這個值改由 js-ssrf-host-header 回報，不再是 js-ssrf-http-request。Koa 的路由 handler 參數解構時取了 `request`（`({ request }) => request.header.host`），在這個檔案或專案裡的其他檔案有 import `koa`、`@koa/router` 或 `koa-router` 的情況下，就當成 Koa 的 context（#119）。
+- 新的來源：Next 15 的 `(await headers()).get(...)`，這樣讀到的 Host header 傳進 redirect 時由 js-open-redirect-next 回報；php-sqli-orderby-identifier 讀 Laravel 的 `Request::query(`、`Request::get(`（`DB::raw`、`->orderBy(`）（#118）。
+- NestJS：整個 `@Headers()` 物件的欄位寫進回應（`res.send(` 裡的 `h['x-note']`）時，由 js-xss-response 回報（#125）。
+- 去除重複回報。同一個呼叫只由一條 SQL injection 規則回報：兩條規則在同一行的同一個呼叫都會報時，其中一條讓另一條回報（`yields_to`）。`->where(` 用 Symfony 的 `$request->query->get(` 時只歸 php-sqli-doctrine-query-text，不再同時由 php-sqli-drupal-db-query 回報；`DB::raw(...)` 放在 php-sqli-laravel-raw 的呼叫裡，在 laravel-raw 也回報時歸 laravel-raw。同一行的其他呼叫照樣回報（#125）。另外在 SSRF 規則裡，`h` 是整個 NestJS `@Headers()` 物件或 Express 的 `r.headers` 時，`const x = h` 之後的 `x.host`（`x['Host']`、`x['x-forwarded-host']` 也一樣）只由 js-ssrf-host-header 回報，不再同時由 js-ssrf-http-request 回報；名稱也可能是 request 的其他值時（在某個分支裡是 `r.query`），兩條規則照樣回報（#132）。
+
+### 升級說明
+
+- 有些回報換了規則：用 request 輸入組成的 `sa.text(...)` 改由 python-sqli-sqlalchemy-text 回報，不再是 python-sqli-dbapi-format（#118）；用字串 key 解構出來的 Host header 改由 js-ssrf-host-header 回報，不再是 js-ssrf-http-request（#119）；兩條 SQL injection 規則都會報的呼叫只報一次（#125）。php-sqli-laravel-raw 的修正建議加了說明：ORDER BY 的欄位和排序方向要對照白名單。因為這些變動，攻擊偵測判斷為可到達的路由也可能改變。
+
+### 已知問題
+
+- 用 `app.use` 註冊的 Koa middleware 不是路由 handler：它的 context 只認直接的寫法（`ctx.request.headers['x-forwarded-host']`），不追解構（`const { host } = ctx.request.headers`），也不追別名（`const h = ctx.request.headers`）。
+- 每個分支都重新指定過的名稱，在分支之後仍然會被追蹤，所以會多報。
+- Next 15 的 `const h = await headers(); h.get(name)` 和同步的 `h = headers()` 還不算來源。
+- JavaScript 的只讀呼叫判斷還看不到 `Object.getPrototypeOf`、`Function` 的別名、`Reflect.construct`、`vm.compileFunction`，也看不到經由 `this`、`GLOBAL`、`top` 取得的 global 物件；`typeof window` 會讓整個檔案回到「`console.log(u)` 就讓檢查失效」。
+
+## v0.4.2 — 2026-11-20
+
+- JavaScript 規則不管路由 handler 的 request 叫什麼名字都追得到：不叫 `req` 的參數（`(r, s) =>`）、不叫 `ctx` 的 Koa context、別名（`const q = r`、`const h = r.headers`），以及解構（`({ headers }, res) =>`、`const { headers, hostname: hn } = r`、`const { host } = req.headers`）。所以 `r.hostname`、`r.get('host')`、`c.host` 和解構出來的 `headers` 現在都會回報；這樣讀到的 Host header 歸 js-ssrf-host-header，其他 header 歸 js-ssrf-http-request。request header 的索引照 Node 的存法以小寫讀（`r.headers['Host']`）。在 SSRF 規則裡，Koa 的 `ctx.header` 和 `ctx.request.get(` 也算來源，Host header 另外加上 `ctx.request.header.host` 和 `ctx.request.headers.host`（#106）。
+- NestJS：在讀 `@Req()` 的 13 條 JavaScript 規則裡（SSRF、SQL 與 NoSQL injection、命令注入、程式碼執行、路徑穿越、LDAP injection、反序列化），`@Request()` 和 `@Req()` 一樣算 handler 的 request。兩者都只有在這個檔案或專案裡的其他檔案 import 了 `@nestjs/common` 或 `@nestjs/core` 時，才算 NestJS 的；其他情況就是普通的物件（#103、#106）。
+- Python：用反斜線接到下一行的 `global`、`nonlocal`，會讀到整個敘述結束，下一行的名稱也算宣告（#103）。
+- SSRF：URL 的 host 檢查過之後，`a = u.valueOf()` 再改 `a`，或用計算出來的名稱呼叫 `u` 的方法（`u['valueOf']()`、`u[k](...)`），都會讓檢查失效，和 `a = u` 一樣（#103）。
+
+### 修正
+
+- systemd 的 userdb 目錄（`/etc/userdb`、`/run/userdb`、`/run/host/userdb`、`/usr/local/lib/userdb`、`/usr/lib/userdb`）有任何項目、或讀不到時，伺服器自己的帳號擁有的網站紀錄不再能當封鎖依據：userdb 可以加上 `/etc/passwd`、`/etc/group` 看不到的帳號和群組成員（#113）。
+- 防禦性檢查：封鎖檢查也認得 `inet_aton` 寫法（`3405803788`、`0xcb.0.113.12` 等），封鎖檢查和 campaign 都把 `::ffff:a.b.c.d` 當成 `a.b.c.d`；存取紀錄本來就不會產生這些寫法（v0.4.0 起只收一般位址，`::ffff:` 也會讀成 IPv4），實際行為不變（#113、#124）。
+
+### 升級說明
+
+- 有些 JavaScript 的發現會換一條規則回報：以 `r.headers['X-Forwarded-Host']` 或 `const { host } = req.headers` 讀的 Host header，改由 js-ssrf-host-header 回報，不再是 js-ssrf-http-request；專案沒有 import NestJS 時，`@Req()` 由 js-ssrf-http-request 回報；`const { host } = req.headers` 寫進回應，js-xss-response 不再回報，因為從 v0.4.1 起 Host 不算 XSS 的輸入。攻擊偵測認定可到達的路由也可能跟著變。
+- 主機的 systemd userdb 目錄有任何項目時，升級後伺服器自己的帳號就不再算獨立：v0.4.1 能當封鎖依據的紀錄（例如 Rocky 9 的 nginx），會重新判成 `web_user_writable`。條件見 `docs/attack-detection-limits.zh-TW.md` 的「哪些網站紀錄可以支撐封鎖」。Ubuntu 24.04、Rocky 9 的預設安裝五個目錄都不存在，不受影響（4fcfc52 在兩台實機驗收時實測）。
+- 更正 v0.4.1 的說明：「用其他寫法記下的位址（方括號、port、zone、多寫的 0）也會被拒」在實際的存取紀錄流程裡碰不到，因為紀錄只收一般位址；只有紀錄裡出現 IPv4-compatible（`::a.b.c.d`）或 NAT64（`64:ff9b::a.b.c.d`）位址時才會生效。已發版的 v0.4.1 條目原文不改。
+
+### 已知問題
+
+- Koa handler 的 context 是看 handler 怎麼用它來認（`c.request`、`c.response`、`c.state`、`c.throw`、`c.assert`，或設定 `c.body`、`c.status`、`c.type`）；其他參數都當成 Express 的 request。解構的參數也當成 Express 的 request，所以 Koa 的 `({ request }) =>` 不會追。巢狀解構（`{ headers: { host } }`）和字串 key（`{ 'x-forwarded-host': xfh }`）也不追；後者仍會回報，只是歸 js-ssrf-http-request。
+- request 的別名以函式為單位記錄；別名只要在某一個分支被重新指定，就所有路徑都不再追。
+- 檔案沒有 import NestJS、專案裡也沒有時，`@Req() req` 不算 NestJS 的：它的 `req.headers.host` 會同時被 js-ssrf-host-header 和 js-ssrf-http-request 回報。
+- URL 檢查偏向保守：檔案裡任何地方有 `global u` 或 `nonlocal u`（含反斜線接行），整個檔案的 `u` 都不算檢查過；檢查後的 `fetch(u.valueOf())`，以及無害的 `u['toString']()`，也會回報。
+
+## v0.4.1 — 2026-11-20
 
 - 主機盤點會對開了 HTTP/2 的 nginx 1.9.5～1.31.8 提出警告（`listen ... http2`，或對 server 生效的 `http2 on`）：CVE-2026-123007 和 CVE-2026-123633 是 HTTP/2 的記憶體錯誤，用戶端可以讓 worker 當掉。請更新到 1.31.9 或 1.30.7，或 distro 修補後的套件；更新前先改回只用 HTTP/1.1 就沒有這個問題。這只是建議，不會改設定。套件的 changelog 已列出這兩個 CVE（distro 已 backport 修補）時不警告；distro 的公告進了 OSV 之後，套件掃描就會報，這項檢查補的是 nginx.org 的套件和自行建置的 nginx，套件掃描看不到這兩類。
 - 伺服器自己的帳號（例如 Rocky Linux 的 `nginx`）擁有的網站紀錄，在沒有其他程式用這個帳號執行時，可以和 root 擁有的紀錄一樣當封鎖依據：沒有 PHP-FPM pool、systemd unit、crontab、supervisord 程式、sudo 或 doas 規則、登入 shell，巡檢時也沒有伺服器本身以外的程序；帳號資料只來自檔案，要查的也都讀到了。有任何一項讀不到，紀錄就仍是 `web_user_writable`。共用的預設帳號（`www-data`、`apache`、`nobody`）一律不算。其他條件見限制文件 `docs/attack-detection-limits.zh-TW.md` 裡，說明哪些網站紀錄可以當封鎖依據的那一段。

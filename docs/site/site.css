@@ -297,8 +297,10 @@ table.num .cid { font: 600 15px/1.4 var(--sans); }
 .acc { position: absolute; left: 0; top: 96px; transform: translateX(-50%); margin: 0; display: grid; gap: 2px; justify-items: center; white-space: nowrap; font-size: 13px; color: var(--muted); }
 .acc b { font: 300 20px/1 var(--serif); color: var(--ink); }
 /* a release's lines show above its lamp on hover or focus; the newest stays open below the river */
-.peek { position: absolute; left: 0; bottom: 34px; transform: translate(-50%, 8px); width: 270px; padding: 14px 16px; background: var(--bg-2); border: 1px solid var(--line); border-top: 2px solid var(--ember);
-  opacity: 0; pointer-events: none; transition: opacity .3s, transform .3s; z-index: 3; font-size: 14px; }
+.peek { position: absolute; left: 0; bottom: 34px; transform: translate(-50%, 8px); width: 270px; padding: 14px 16px; border: 1px solid var(--line);
+  /* when the lines overflow, a glow at the bottom edge says there is more; a cover riding the end of the content hides it once scrolled to the bottom */
+  background: linear-gradient(var(--bg-2), var(--bg-2)) 0 100% / 100% 24px no-repeat local, linear-gradient(transparent, var(--glow)) 0 100% / 100% 24px no-repeat scroll, var(--bg-2); border-top: 2px solid var(--ember);
+  opacity: 0; pointer-events: none; transition: opacity .3s, transform .3s; z-index: 3; font-size: 14px; max-height: 190px; overflow-y: auto; overscroll-behavior: contain; }
 .era-node:hover .peek, .era-node:focus-within .peek { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
 .era-node:nth-child(-n+2) .peek { transform: translate(-20%, 8px); } .era-node:nth-child(-n+2):hover .peek, .era-node:nth-child(-n+2):focus-within .peek { transform: translate(-20%, 0); }
 /* the newest node has no peek (its card is below), so the one before it is the rightmost: keep it inside the page */
@@ -308,6 +310,10 @@ html:not([lang^="zh"]) .peek .word { font-weight: 600; font-family: var(--sans);
 .peek ul { margin: 0; padding-left: 1.1em; } .peek li { margin: 3px 0; max-width: none; } .peek li::marker { color: var(--ember); }
 .newest { display: grid; grid-template-columns: auto repeat(3, minmax(0, 1fr)); gap: 18px 30px; align-items: start; margin: 8px 0 0; padding: 22px 24px; background: var(--bg-2); border: 1px solid var(--line); border-top: 2px solid var(--ember); font-size: 15px; }
 .newest-head { display: grid; gap: 8px; justify-items: start; }
+/* a fourth group (Known issues) starts a second row under the three, not in the head's column */
+.newest .grp:nth-child(n+5) { grid-column: 2 / -1; }
+.newest .grp:nth-child(2):last-child { grid-column: 2 / -1; }
+.newest .grp:nth-child(2):last-child ul { columns: 2; column-gap: 30px; } .newest .grp:nth-child(2):last-child li { break-inside: avoid; margin: 0 0 8px; }
 .newest-head .ver { font: 300 40px/1 var(--serif); }
 .newest-head .word { font: 900 13px/1 var(--serif); letter-spacing: .14em; color: var(--ember); margin: 0; }
 html:not([lang^="zh"]) .newest-head .word { font-weight: 600; font-family: var(--sans); letter-spacing: .04em; }
@@ -417,9 +423,11 @@ html:not(.walking) .st1 { opacity: 1; transform: none; }
   .lamp i { position: absolute; left: -32px; }
   .lamp .ver { margin-top: 0; }
   .acc { position: static; transform: none; display: flex; gap: 16px; justify-items: start; }
-  .peek { position: static; opacity: 1; transform: none !important; width: auto; pointer-events: auto; margin-top: 8px; display: block; padding: 0; border: 0; background: none; }
+  .peek { position: static; opacity: 1; transform: none !important; width: auto; pointer-events: auto; margin-top: 8px; display: block; padding: 0; border: 0; background: none; max-height: none; overflow: visible; }
   .peek ul { display: none; }
   .newest { grid-template-columns: 1fr; }
+  .newest .grp:nth-child(n+5) { grid-column: auto; }
+  .newest .grp:nth-child(2):last-child { grid-column: auto; } .newest .grp:nth-child(2):last-child ul { columns: 1; }
   /* phones: the walk, words above and below the guardian */
   .walk .sky { height: 46%; }
   .scene { background-position: 50% 45%; }
