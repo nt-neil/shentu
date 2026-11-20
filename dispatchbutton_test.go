@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -548,9 +550,13 @@ func TestDispatchButtonAuto(t *testing.T) {
 			withBotState(b.cfg.StateDir, func(s *botState) error { s.UserID, s.ChatID = 0, 0; return nil })
 		}, 0},
 		{"paired", func() {}, 1},
+		// review 2 S-r2-B1: the service started without CAP_NET_ADMIN.
+		{"service cannot act", func() {
+			withBotState(b.cfg.StateDir, func(s *botState) error { s.CanAct = false; return nil })
+		}, 0},
 	} {
 		b.cfg.Bot.Interaction = 3
-		withBotState(b.cfg.StateDir, func(s *botState) error { s.Paused = ""; return nil })
+		withBotState(b.cfg.StateDir, func(s *botState) error { s.Paused, s.CanAct = "", true; return nil })
 		pairDirectly(t, b)
 		c.edit()
 		n := len(tg.sent())
@@ -568,6 +574,12 @@ func TestDispatchButtonAuto(t *testing.T) {
 		}
 		if got != c.want {
 			t.Errorf("%s: %d button messages, want %d", c.name, got, c.want)
+		}
+		if c.name == "service cannot act" {
+			sent := tg.sent()[n:]
+			if len(sent) != 1 || !strings.Contains(sent[0]["text"].(string), "CAP_NET_ADMIN") {
+				t.Errorf("%s: the reason was not sent: %v", c.name, sent)
+			}
 		}
 	}
 	_, data := buttons(tg)
@@ -591,5 +603,29 @@ func TestDispatchButtonAuto(t *testing.T) {
 	answered(t, b)
 	if r := g.runs(); len(r) != 1 {
 		t.Errorf("runs after a second press: %v", r)
+	}
+}
+
+// review 2 S-r2-B1: the bot service records at start whether it can act,
+// so the patrol does not offer buttons a service without CAP_NET_ADMIN
+// would refuse.
+func TestBotRecordsCanAct(t *testing.T) {
+	if hasNetAdmin() {
+		t.Skip("this process holds CAP_NET_ADMIN: the false case cannot be shown")
+	}
+	b, _ := levelBot(t, nil, [4]int{3, 2, 3, 2})
+	withBotState(b.cfg.StateDir, func(s *botState) error { s.CanAct = true; return nil }) // stale, from an earlier start
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"ok":true,"result":[]}`))
+	}))
+	defer srv.Close()
+	b.api, b.hc = srv.URL, srv.Client()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	b.run(ctx)
+	var st botState
+	withBotState(b.cfg.StateDir, func(s *botState) error { st = *s; return nil })
+	if st.CanAct {
+		t.Error("bot.json says the service can act, though it has no CAP_NET_ADMIN")
 	}
 }

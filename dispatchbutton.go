@@ -70,7 +70,7 @@ func (b *bot) proposalCode(ctx context.Context, p proposalRecord) (preview strin
 // pairing the answer belonged to; origin is the dispatch's that may be
 // offered (originTelegram for the bot's own answer, originAuto for C).
 func (b *bot) offerProposals(ctx context.Context, chat int64, id, owner, origin string) {
-	if !b.canAct || b.archive == nil || id == "" {
+	if b.archive == nil || id == "" || !b.canAct && origin != originAuto {
 		return
 	}
 	rec, err := b.archive.Get(id)
@@ -87,6 +87,8 @@ func (b *bot) offerProposals(ctx context.Context, chat int64, id, owner, origin 
 			switch {
 			case code != tools.BlockOK:
 				lines = append(lines, fmt.Sprintf("%d. %s — "+b.t("prop_nobutton"), p.Seq, addr, b.blockWord(code)))
+			case !b.canAct: // an automatic dispatch's, for a service that cannot act: the reasons only
+				lines = append(lines, fmt.Sprintf("%d. %s — %s", p.Seq, addr, b.t("prop_noact")))
 			case len(rows) == maxProposalButtons:
 				lines = append(lines, fmt.Sprintf("%d. %s — %s", p.Seq, addr, b.t("prop_more")))
 			default:
@@ -146,8 +148,9 @@ func (b *bot) offerProposals(ctx context.Context, chat int64, id, owner, origin 
 // offerAutoButtons is how an automatic incident dispatch (C) offers its
 // proposals: from the patrol, to the paired chat, as the bot's answers do,
 // once the record is in the archive. Nothing is sent without a paired,
-// running bot that may act ([bot] interaction >= 3); the press is the bot
-// service's, with every check there (CAP_NET_ADMIN included).
+// running bot ([bot] interaction >= 3). A service that did not start able
+// to change the firewall (bot.json's can_act) gets the reasons, no buttons;
+// the press is the bot service's, with every check there.
 func offerAutoButtons(ctx context.Context, cfg *Config, env *tools.Env, id string) error {
 	token := botToken(cfg)
 	if token == "" || cfg.Bot.Interaction < 3 {
@@ -161,7 +164,7 @@ func offerAutoButtons(ctx context.Context, cfg *Config, env *tools.Env, id strin
 		return nil
 	}
 	b := &bot{cfg: cfg, env: env, token: token, api: telegramBotAPI, hc: &http.Client{Timeout: 30 * time.Second},
-		archive: newDispatchStore(cfg), canAct: true}
+		archive: newDispatchStore(cfg), canAct: st.CanAct && cfg.Bot.Interaction >= 3}
 	b.offerProposals(ctx, st.ChatID, id, pairKey(st), originAuto)
 	return nil
 }
