@@ -34,7 +34,7 @@ v0.4.0 不會自動封鎖：`block_ip` 一定要經營運者確認。攻擊紀�
   - 沒有別的東西以這個帳號執行，不論是同 uid 還是同群組：沒有 PHP-FPM pool、沒有其他 systemd unit、沒有 crontab，沒有 linger 的使用者管理程序，沒有 supervisord 的 program，沒有 sudo 或 doas 能以它執行的規則，帳號也沒有可登入的 shell；巡檢當下也沒有任何不是伺服器本身程式（root 擁有的 nginx 或 httpd）的程序以它的 uid 或群組執行；以上任何一項讀不到，都不算；
   - 伺服器本身不執行應用程式碼；
   - 帳號在 `/etc/passwd`，而且只有它用這個 uid；
-  - 帳號資料庫只來自檔案；
+  - 帳號資料庫只來自檔案；systemd 的 userdb 目錄（`/etc/userdb`、`/run/userdb`、`/run/host/userdb`、`/usr/local/lib/userdb`、`/usr/lib/userdb`）沒有任何項目，也都讀得到，因為 userdb 可以加上這些檔案看不到的帳號和群組成員；
   - 設定完整讀到。
 
   這時也不必擔心 worker 被 ptrace，因為沒有應用程式帳號追蹤得到它。共用的預設帳號（`www-data`、`apache`、`nobody` 等）不論 Shentu 讀到什麼，都不算伺服器自己的帳號，因為 Shentu 沒讀到的東西可能也以它執行。

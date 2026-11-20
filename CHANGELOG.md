@@ -48,6 +48,12 @@ Chinese for the zh-TW pages; keep the two in step.
   NestJS is reported by js-ssrf-http-request; `const { host } = req.headers` written into a
   response is no longer reported by js-xss-response, as Host has not been XSS input since v0.4.1.
   With them, the routes attack detection takes as reachable may change.
+- On a host whose systemd userdb directories hold any entry, the server's own account no longer
+  counts as apart after the upgrade: a log that could back a block in v0.4.1 (Rocky 9 nginx's,
+  say) is judged `web_user_writable` again. The conditions are in `docs/attack-detection-limits.md`
+  under "Which web logs can back a block".
+- A source logged both as `::ffff:a.b.c.d` and as `a.b.c.d` is now one campaign source, its saved
+  entries merged on load, so a campaign may form sooner than it did in v0.4.1.
 
 ### Known issues
 
