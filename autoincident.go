@@ -76,6 +76,8 @@ type autoSlot struct {
 	Trigger string    `json:"trigger"`
 	ID      string    `json:"id,omitempty"`
 	Status  string    `json:"status,omitempty"`
+	// NotArchived: the dispatch ran but its record did not reach the archive.
+	NotArchived bool `json:"not_archived,omitempty"`
 }
 
 // autoPending is an L3 alert waiting for a round with no dispatch yet.
@@ -94,6 +96,7 @@ type autoArchive interface {
 // Seams for tests.
 var (
 	autoStore     = func(cfg *Config) autoArchive { return newDispatchStore(cfg) }
+	autoButtons   = offerAutoButtons
 	autoLockTries = 10
 	autoLockWait  = time.Second
 )
@@ -142,13 +145,22 @@ func autoIncident(ctx context.Context, cfg *Config, env *tools.Env, cands []auto
 	if err != nil || pick == nil {
 		return "", err
 	}
-	rec, err := autoRun(ctx, cfg, env, *pick)
-	ferr := autoFinish(cfg, *pick, rec, now)
+	rec, saveErr, err := autoRun(ctx, cfg, env, *pick)
+	ferr := autoFinish(cfg, *pick, rec, saveErr != nil)
 	if err != nil {
 		return rec.ID, errors.Join(err, ferr)
 	}
-	nerr := detectNotify(ctx, env, "Automatic incident check", autoNotice(rec), "warning")
-	return rec.ID, errors.Join(ferr, nerr)
+	if saveErr != nil {
+		saveErr = fmt.Errorf("archive: %w", saveErr)
+	}
+	nerr := detectNotify(ctx, env, "Automatic incident check", autoNotice(rec, saveErr != nil), "warning")
+	var berr error
+	if saveErr == nil { // B reads the record back: none without it
+		if berr = autoButtons(ctx, cfg, env, rec.ID); berr != nil {
+			berr = fmt.Errorf("buttons: %w", berr)
+		}
+	}
+	return rec.ID, errors.Join(saveErr, ferr, nerr, berr)
 }
 
 // autoReserve queues cands and, when every limit allows, takes a slot for
@@ -250,31 +262,32 @@ func autoBudget(cfg *Config, now time.Time) string {
 	return ""
 }
 
-// autoRun dispatches the incident sub-agent for p; runDispatch archives
-// it. The record returned is for the notice.
-func autoRun(ctx context.Context, cfg *Config, env *tools.Env, p autoPending) (dispatchRecord, error) {
+// autoRun dispatches the incident sub-agent for p. runDispatch archives
+// it; the record it returns (the one saved, gates filled in) is the one
+// the notice is made from, and saveErr says whether it reached the archive.
+func autoRun(ctx context.Context, cfg *Config, env *tools.Env, p autoPending) (rec dispatchRecord, saveErr, err error) {
 	args, _ := json.Marshal(map[string][]subTask{"tasks": {{Role: "incident", IP: p.IP, Hours: autoIncidentHours}}})
 	tasks, err := parseTasks(args)
 	if err != nil {
-		return dispatchRecord{}, err
+		return dispatchRecord{}, nil, err
 	}
 	a := &agent{cfg: cfg, llm: newLLM(cfg), env: env, actor: "auto", log: newAuditLog(cfg.StateDir)}
-	start := time.Now()
-	id, reps := a.runDispatch(ctx, originAuto, p.Trigger, tasks)
-	used := 0
-	for _, r := range reps {
-		used += r.Tokens
-	}
+	id, _, rec, saveErr := a.runDispatch(ctx, originAuto, p.Trigger, tasks)
 	a.log.write(logEntry{Actor: a.actor, Tool: "dispatch", Args: mask(string(args)), Dispatch: id, Origin: originAuto, OK: true})
-	return newDispatchRecord(id, originAuto, p.Trigger, start, used, dispatchTokenCap, reps), nil
+	rec.ID = id
+	return rec, saveErr, nil
 }
 
-// autoFinish writes the dispatch's id and status into its slot.
-func autoFinish(cfg *Config, p autoPending, rec dispatchRecord, now time.Time) error {
-	return withAutoState(cfg.StateDir, now, func(st *autoState) {
+// autoFinish writes the dispatch's id, status and whether its record was
+// archived into its slot. The slot counts either way.
+func autoFinish(cfg *Config, p autoPending, rec dispatchRecord, notArchived bool) error {
+	return withAutoState(cfg.StateDir, time.Now(), func(st *autoState) {
 		for i := len(st.Dispatches) - 1; i >= 0; i-- {
 			if d := &st.Dispatches[i]; d.Trigger == p.Trigger && d.ID == "" {
-				d.ID, d.Status = rec.ID, rec.Status
+				d.ID, d.Status, d.NotArchived = rec.ID, rec.Status, notArchived
+				if d.ID == "" {
+					d.ID = "-" // ran, but no dispatch was made (cannot happen with a fixed task): not left as unfinished
+				}
 				return
 			}
 		}
@@ -283,7 +296,7 @@ func autoFinish(cfg *Config, p autoPending, rec dispatchRecord, now time.Time) e
 
 // autoNotice is the alert about a finished dispatch: enumerations and
 // numbers from its record only, never a sub-agent's words.
-func autoNotice(rec dispatchRecord) string {
+func autoNotice(rec dispatchRecord, notArchived bool) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "An L3 attack alert was checked by the incident sub-agent on its own (read-only; nothing was changed).\n- dispatch: %s\n- status: %s\n", rec.ID, word(rec.Status))
 	for _, s := range rec.Subs {
@@ -298,6 +311,9 @@ func autoNotice(rec dispatchRecord) string {
 			sev = []string{"none"}
 		}
 		fmt.Fprintf(&b, "- findings: %s; not checked: %d; proposals: %d (not acted on)\n", strings.Join(sev, ", "), s.Unchecked, len(s.Proposals))
+	}
+	if notArchived {
+		b.WriteString("- its record could not be saved to the dispatch archive (state_dir/dispatch): no buttons; the slot still counts\n")
 	}
 	if rec.Status != statusComplete {
 		b.WriteString("- an incomplete check is not a clean one: what it did not check is unknown\n")
@@ -338,16 +354,30 @@ func autoIncidentSection(cfg *Config, now time.Time) string {
 		return b.String()
 	}
 	since := now.Add(-autoWindow)
-	n, incomplete := 0, 0
+	n, incomplete, unfinished, notArchived := 0, 0, 0, 0
 	for _, d := range st.Dispatches {
-		if !d.TS.Before(since) {
-			n++
-			if d.Status != statusComplete {
-				incomplete++
-			}
+		if d.TS.Before(since) {
+			continue
+		}
+		n++
+		switch {
+		case d.ID == "" && now.Sub(d.TS) > dispatchTimeout+2*time.Minute: // older than any dispatch: left by a crash
+			unfinished++
+		case d.ID == "":
+		case d.Status != statusComplete:
+			incomplete++
+		}
+		if d.NotArchived {
+			notArchived++
 		}
 	}
 	fmt.Fprintf(&b, "- dispatched: %d of at most %d (not complete: %d)\n", n, autoDailyCap, incomplete)
+	if unfinished > 0 {
+		fmt.Fprintf(&b, "- unfinished: %d (a slot was taken but the dispatch never ended: shentu stopped during it; the slot still counts)\n", unfinished)
+	}
+	if notArchived > 0 {
+		fmt.Fprintf(&b, "- not saved to the dispatch archive: %d (the slot still counts; see the audit log)\n", notArchived)
+	}
 	counts := st.skippedSince(since)
 	var parts []string
 	for _, k := range autoSkipOrder {
@@ -470,4 +500,11 @@ func withAutoState(dir string, now time.Time, f func(*autoState)) error {
 		return err
 	}
 	return writeAtomic(filepath.Join(dir, autoIncidentFile), b)
+}
+
+// offerAutoButtons is B's (#116): it sends the archived dispatch's
+// proposals as buttons to the paired chat, prechecked; its error is only
+// a bot.json that could not be read. A stub until #116 is in agents-p2.
+func offerAutoButtons(ctx context.Context, cfg *Config, env *tools.Env, id string) error {
+	return nil
 }

@@ -53,8 +53,11 @@ func autoSetup(t *testing.T, h *hostileModel) (*Config, *tools.Env, *[]autoSent)
 	cfg.Budget.MonthlyTokens = 1_000_000
 	cfg.Agents.AutoIncident = true
 	var out []autoSent
-	oldStore, oldNotify, oldTries := autoStore, detectNotify, autoLockTries
-	t.Cleanup(func() { autoStore, detectNotify, autoLockTries = oldStore, oldNotify, oldTries })
+	oldStore, oldNotify, oldTries, oldButtons := autoStore, detectNotify, autoLockTries, autoButtons
+	t.Cleanup(func() {
+		autoStore, detectNotify, autoLockTries, autoButtons = oldStore, oldNotify, oldTries, oldButtons
+	})
+	autoButtons = func(context.Context, *Config, *tools.Env, string) error { return nil }
 	detectNotify = func(_ context.Context, _ *tools.Env, title, text, _ string) error {
 		out = append(out, autoSent{title, text})
 		return nil
@@ -182,7 +185,7 @@ func TestAutoDispatchBudget(t *testing.T) {
 		if n := len(archived(t, cfg)); n != 0 || len(h.requests) != 0 {
 			t.Fatalf("dispatched without a budget: %d records, %d model calls", n, len(h.requests))
 		}
-		if s := autoIncidentSection(cfg, now); !strings.Contains(s, "no monthly AI budget is set") || !strings.Contains(s, "no_budget 1") {
+		if s := autoIncidentSection(cfg, now); !strings.Contains(s, "no monthly token budget is set") || !strings.Contains(s, "no_budget 1") {
 			t.Errorf("daily report:\n%s", s)
 		}
 	})
@@ -316,5 +319,136 @@ func TestAutoDispatchStateFailsClosed(t *testing.T) {
 	autoIncident(context.Background(), cfg, env, []autoCandidate{l3(2)}, time.Now())
 	if n := len(archived(t, cfg)); n != 0 || len(h.requests) != 0 {
 		t.Fatalf("dispatched on a broken state or archive: %d records, %d model calls", n, len(h.requests))
+	}
+}
+
+func writeUse(t *testing.T, cfg *Config, tokens int) {
+	t.Helper()
+	b, _ := json.Marshal(logEntry{Time: time.Now(), Actor: "chat", Tool: "llm", OK: true, InTokens: tokens})
+	if err := os.WriteFile(filepath.Join(cfg.StateDir, "log.jsonl"), append(b, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// N-C1: a use that cannot be read is not 0%: log.jsonl that cannot be
+// opened, or a line past the scanner's limit, stops automatic dispatches.
+func TestAutoDispatchBudgetUnreadable(t *testing.T) {
+	for name, setup := range map[string]func(t *testing.T, cfg *Config){
+		"not a file": func(t *testing.T, cfg *Config) { os.Mkdir(filepath.Join(cfg.StateDir, "log.jsonl"), 0o700) },
+		"long line": func(t *testing.T, cfg *Config) {
+			b, _ := json.Marshal(logEntry{Time: time.Now(), Tool: "llm", Args: strings.Repeat("x", 2<<20)})
+			os.WriteFile(filepath.Join(cfg.StateDir, "log.jsonl"), append(b, '\n'), 0o600)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := &hostileModel{replies: []string{done}}
+			cfg, env, _ := autoSetup(t, h)
+			setup(t, cfg)
+			now := time.Now()
+			autoIncident(context.Background(), cfg, env, []autoCandidate{l3(1)}, now)
+			if n := len(archived(t, cfg)); n != 0 || len(h.requests) != 0 {
+				t.Fatalf("dispatched on an unreadable use: %d records, %d model calls", n, len(h.requests))
+			}
+			if s := autoIncidentSection(cfg, now); !strings.Contains(s, "budget_unknown 1") || !strings.Contains(s, "could not be read") {
+				t.Errorf("daily report:\n%s", s)
+			}
+		})
+	}
+}
+
+// S-C1: a whole dispatch's cap is reserved before the 80% line.
+func TestAutoDispatchBudgetReservesCap(t *testing.T) {
+	for _, c := range []struct {
+		used int
+		want int
+	}{{800_000 - dispatchTokenCap + 1, 0}, {800_000 - dispatchTokenCap - 1, 1}} {
+		h := &hostileModel{replies: []string{done}}
+		cfg, env, _ := autoSetup(t, h)
+		writeUse(t, cfg, c.used)
+		autoIncident(context.Background(), cfg, env, []autoCandidate{l3(1)}, time.Now())
+		if n := len(archived(t, cfg)); n != c.want {
+			t.Errorf("used %d of %d: %d dispatches, want %d", c.used, cfg.Budget.MonthlyTokens, n, c.want)
+		}
+	}
+}
+
+// S-C2: monthly_cost alone is no budget (a local model reports no cost).
+func TestAutoDispatchCostOnlyIsNoBudget(t *testing.T) {
+	h := &hostileModel{replies: []string{done}}
+	cfg, env, _ := autoSetup(t, h)
+	cfg.Budget.MonthlyTokens, cfg.Budget.MonthlyCost = 0, 5
+	now := time.Now()
+	autoIncident(context.Background(), cfg, env, []autoCandidate{l3(1)}, now)
+	if n := len(archived(t, cfg)); n != 0 || len(h.requests) != 0 {
+		t.Fatalf("dispatched with monthly_cost only: %d records, %d model calls", n, len(h.requests))
+	}
+	if s := autoIncidentSection(cfg, now); !strings.Contains(s, "monthly_cost alone") || !strings.Contains(s, "no_budget 1") {
+		t.Errorf("daily report:\n%s", s)
+	}
+}
+
+// N-C2: a waiting alert is dispatched by a later round with no new L3,
+// through the patrol's own path.
+func TestAutoDispatchQueueEveryRound(t *testing.T) {
+	cfg, env, _ := autoSetup(t, &hostileModel{replies: []string{done}})
+	autoIncident(context.Background(), cfg, env, []autoCandidate{l3(1), l3(2)}, time.Now())
+	if n := len(archived(t, cfg)); n != 1 {
+		t.Fatalf("first round: %d dispatches", n)
+	}
+	finishDetect(context.Background(), env, &detectRun{cfg: cfg, now: time.Now().Add(30 * time.Minute)}) // no detection, no L3
+	recs := archived(t, cfg)
+	if len(recs) != 2 || recs[1].Trigger != triggerID(l3(2).Trigger) {
+		t.Fatalf("the waiting alert was not dispatched: %+v", recs)
+	}
+	if st := readState(t, cfg); len(st.Pending) != 0 {
+		t.Errorf("still waiting: %+v", st.Pending)
+	}
+}
+
+// N-C3: a slot whose record did not reach the archive, and one a crash left
+// with no id, still count, and the daily report says each.
+func TestAutoDispatchSlotsAccounted(t *testing.T) {
+	cfg, env, _ := autoSetup(t, &hostileModel{replies: []string{done}})
+	now := time.Now()
+	st := autoState{V: 1, Dispatches: []autoSlot{
+		{TS: now.Add(-3 * time.Hour), Trigger: l3(1).Trigger},                                                                // a crash
+		{TS: now.Add(-2 * time.Hour), Trigger: l3(2).Trigger, ID: "bbbbbbbbbbbb", Status: statusComplete, NotArchived: true}, // Save failed
+	}}
+	b, _ := json.Marshal(st)
+	os.WriteFile(filepath.Join(cfg.StateDir, autoIncidentFile), b, 0o600)
+	s := autoIncidentSection(cfg, now)
+	if !strings.Contains(s, "dispatched: 2 of at most 3") || !strings.Contains(s, "unfinished: 1") || !strings.Contains(s, "not saved to the dispatch archive: 1") {
+		t.Errorf("daily report:\n%s", s)
+	}
+	// Both count: one more today, then the cap.
+	autoIncident(context.Background(), cfg, env, []autoCandidate{l3(3)}, now)
+	autoIncident(context.Background(), cfg, env, []autoCandidate{l3(4)}, now.Add(time.Hour))
+	if n := len(archived(t, cfg)); n != 1 {
+		t.Errorf("%d dispatches after two slots, want 1", n)
+	}
+	if !strings.Contains(autoNotice(dispatchRecord{ID: "cccccccccccc"}, true), "could not be saved") {
+		t.Error("the notice does not say the record was not saved")
+	}
+}
+
+// N-C3, N-C4: the notice is made from the archived record, and B's buttons
+// are offered for it, only once it is saved.
+func TestAutoDispatchNoticeAndButtonsFromArchive(t *testing.T) {
+	cfg, env, out := autoSetup(t, &hostileModel{replies: []string{done}})
+	var offered []string
+	autoButtons = func(_ context.Context, _ *Config, _ *tools.Env, id string) error {
+		offered = append(offered, id)
+		return nil
+	}
+	id, err := autoIncident(context.Background(), cfg, env, []autoCandidate{l3(1)}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	recs := archived(t, cfg)
+	if len(recs) != 1 || recs[0].ID != id || len(offered) != 1 || offered[0] != id {
+		t.Fatalf("id %s, archive %+v, buttons for %v", id, recs, offered)
+	}
+	if !strings.Contains((*out)[0].text, "dispatch: "+id) || !strings.Contains((*out)[0].text, "status: "+recs[0].Status) {
+		t.Errorf("the notice is not the archived record's:\n%s", (*out)[0].text)
 	}
 }
