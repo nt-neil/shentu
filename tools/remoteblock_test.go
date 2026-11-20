@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net"
 	"strings"
@@ -94,7 +95,8 @@ func TestRemoteBlockCheckAlwaysRemote(t *testing.T) {
 	if env.Remote {
 		t.Error("the caller's env was changed")
 	}
-	if strings.Contains(string(ProposalBlockArgs(net.ParseIP("203.0.113.12"))), "override") {
+	var a ipArgs
+	if json.Unmarshal(ProposalBlockArgs(net.ParseIP("203.0.113.12")), &a) != nil || a.OverrideUnverified || a.IP != "203.0.113.12" {
 		t.Error("the proposal's arguments carry an override")
 	}
 }

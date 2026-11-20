@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net"
 	"strings"
@@ -95,7 +96,10 @@ func stubGate(t *testing.T, codes map[string]tools.BlockCode) *gateStub {
 	blockRun = func(_ context.Context, env *tools.Env, args []byte) (any, error) {
 		g.mu.Lock()
 		defer g.mu.Unlock()
-		if !env.Remote || strings.Contains(string(args), "override") {
+		var a struct {
+			Override bool `json:"override_unverified"`
+		}
+		if !env.Remote || json.Unmarshal(args, &a) != nil || a.Override {
 			return nil, errors.New("not run as Telegram")
 		}
 		g.ran = append(g.ran, string(args))
