@@ -2,6 +2,7 @@ package engine
 
 import (
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -150,7 +151,8 @@ func TestOrderByLine(t *testing.T) {
 
 // In a Laravel project (some file uses a class of Illuminate), a service's
 // untyped $request parameter is the request a controller passed on; a typed
-// one is that type (v053 r2 S-2).
+// one is that type (v053 r2 S-2). Scanned as the code audit scans a project
+// (tools/codeaudit.go: ScanTimed, then ScanCallsPart), not with Project.Scan.
 func TestLaravelProjectService(t *testing.T) {
 	e := engineForTest(t)
 	ctl := "<?php\nnamespace App\\Http\\Controllers;\nuse Illuminate\\Http\\Request;\nuse App\\Services\\Sorter;\nclass PostController extends Controller {\n    public function index(Request $request, Sorter $sorter) {\n        return $sorter->apply(Post::query(), $request);\n    }\n}\n"
@@ -176,10 +178,7 @@ func TestLaravelProjectService(t *testing.T) {
 		files := map[string]string{"app/Http/Controllers/PostController.php": c.ctl, "app/Services/Sorter.php": c.svc}
 		read := func(p string) ([]byte, error) { return []byte(files[p]), nil }
 		pr := e.NewProject([]string{"app/Http/Controllers/PostController.php", "app/Services/Sorter.php"}, read, ProjectOptions{})
-		fs, err := pr.Scan("app/Services/Sorter.php", []byte(c.svc))
-		if err != nil {
-			t.Fatal(err)
-		}
+		fs := auditPath(t, e, pr, "app/Services/Sorter.php", []byte(c.svc))
 		var got []string
 		for _, f := range fs {
 			if f.CWE == "CWE-89" && !slices.Contains(got, f.RuleID) {
@@ -190,4 +189,28 @@ func TestLaravelProjectService(t *testing.T) {
 			t.Errorf("%s: reported by %v, want %v", c.name, got, c.want)
 		}
 	}
+}
+
+// auditPath scans a file of a project as tools/codeaudit.go does: the file on
+// its own (Engine.ScanTimed), then what the project adds (Project.ScanCallsPart),
+// one finding per rule, file and line.
+func auditPath(t *testing.T, e *Engine, pr *Project, path string, src []byte) []Finding {
+	t.Helper()
+	own, _, err := e.ScanTimed(LangOf(path), path, src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	part, err := pr.ScanCallsPart(path, src, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	var out []Finding
+	for _, f := range append(own, part.Found...) {
+		if k := f.RuleID + "\x00" + f.Path + "\x00" + strconv.Itoa(f.Line); !seen[k] {
+			seen[k] = true
+			out = append(out, f)
+		}
+	}
+	return out
 }

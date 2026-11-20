@@ -70,6 +70,7 @@ type Engine struct {
 type crule struct {
 	rule                   rules.Rule
 	sources, sinks         []*pat // code patterns
+	memberWild             bool   // a source ends in ->* ($request->*), which a Laravel project's untyped parameter reads (callbacks.go)
 	textSources, textSinks []*pat // text inside string literals
 	sanitizers             []*pat
 	args                   map[*pat]*argCond
@@ -157,6 +158,9 @@ func compileRule(r rules.Rule) (*crule, error) {
 	srcs, err := compile(r.Sources, &c.sources, &c.textSources)
 	if err != nil {
 		return nil, err
+	}
+	for _, sp := range c.sources {
+		c.memberWild = c.memberWild || sp.memberWild
 	}
 	for _, sa := range r.SourceArgs {
 		if sa.Arg < 1 || len(sa.Values) == 0 || len(sa.Sources) == 0 {
@@ -523,10 +527,13 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 			}
 			a := &analysis{r: r, php: base == "php", py: base == "python", js: base == "js", b: b2, kw: keywords[base], seen: map[loc]bool{}, sc: sc,
 				defs: defs, file: path, proj: proj, ftoks: toks, routes: routeFns, mws: mws, sinkSpans: spansOf(r)}
-			if !e.Library && !a.r.output && !viaProject && !a.crossNeeded(tree) {
+			if !e.Library && !a.r.output && !viaProject && !a.crossNeeded(tree) && !(proj != nil && proj.laravel && a.php && r.memberWild) {
 				// no call can change this rule's result: the first pass stands. Output
 				// rules read calls to the file's own functions in this pass only
-				// (htmlctx.go); handlers registered in another file need it too.
+				// (htmlctx.go); handlers registered in another file need it too. A
+				// PHP rule reading $request->* in a Laravel project is run here too:
+				// the first pass, without the project, does not know an untyped
+				// $request is Laravel's (callbacks.go laravelRequest).
 				ruleDone()
 				continue
 			}

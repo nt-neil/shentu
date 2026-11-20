@@ -398,7 +398,17 @@ func globalReplace(t []Token) bool {
 		case "require":
 			// only a direct call of one plain string: require('con' + 'sole'),
 			// require(m), const r = require, require.call(null, m),
-			// [require][0](m) may load a module the file does not name
+			// [require][0](m) may load a module the file does not name;
+			// require.main and require.resolve('x') load nothing
+			if next(1).op(".") && next(2).word("main") && !next(3).op("(") {
+				continue
+			}
+			if next(1).op(".") && next(2).word("resolve") && next(3).op("(") {
+				if arg := inside(t, i+3, closeOf(t, i+3)); len(arg) == 1 && arg[0].Kind == Str && len(arg[0].Parts) == 0 {
+					continue
+				}
+				return true
+			}
 			if !next(1).op("(") {
 				return true
 			}
