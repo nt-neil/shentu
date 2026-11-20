@@ -219,7 +219,31 @@ func LoadAttacks(dir string, now time.Time) (*Attacks, error) {
 				}
 			}
 		}
-		a.IPs[ip] = r
+		// A source saved under another key (::ffff:192.0.2.1 before
+		// v0.4.2) joins its own: one source's entries count together.
+		key := campaignSource(ip)
+		cur := a.IPs[key]
+		if cur == nil {
+			a.IPs[key] = r
+			continue
+		}
+		for e, last := range r.Entries {
+			if last.After(cur.Entries[e]) {
+				cur.Entries[e] = last
+			}
+		}
+		if r.Last.After(cur.Last) {
+			cur.Last = r.Last
+		}
+		for len(cur.Entries) > MaxIPEntries {
+			oldest := ""
+			for e, last := range cur.Entries {
+				if oldest == "" || last.Before(cur.Entries[oldest]) || last.Equal(cur.Entries[oldest]) && e < oldest {
+					oldest = e
+				}
+			}
+			delete(cur.Entries, oldest)
+		}
 	}
 	a.DroppedPending = max(0, got.DroppedPending)
 	a.PassTimeouts = max(0, got.PassTimeouts)

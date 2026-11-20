@@ -75,6 +75,30 @@ func TestCampaignIPv4Mapped(t *testing.T) {
 	}
 }
 
+// v0.4.2 review S-4: a source saved IPv4-mapped before v0.4.2 counts with
+// its IPv4 form as soon as the state is loaded.
+func TestCampaignRekeyOnLoad(t *testing.T) {
+	dir := t.TempDir()
+	a := newAttacks()
+	a.IPs["::ffff:192.0.2.7"] = &ipRecord{Entries: map[string]time.Time{sinkKey("e1", "", 0): t0, sinkKey("e2", "", 0): t0}, Last: t0}
+	a.IPs["192.0.2.7"] = &ipRecord{Entries: map[string]time.Time{sinkKey("e2", "", 0): t0.Add(time.Minute)}, Last: t0.Add(time.Minute)}
+	if err := a.Save(dir, t0.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	b, err := LoadAttacks(dir, t0.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := b.IPs["192.0.2.7"]
+	if len(b.IPs) != 1 || r == nil || len(r.Entries) != 2 || !r.Last.Equal(t0.Add(time.Minute)) || !r.Entries[sinkKey("e2", "", 0)].Equal(t0.Add(time.Minute)) {
+		t.Fatalf("index after load: %v %+v", b.IPs, r)
+	}
+	at := t0.Add(2 * time.Hour)
+	if g := b.Add(att("192.0.2.7", "e3", LevelPayload, at), at); !g.Campaign {
+		t.Errorf("third vulnerability after the upgrade: %+v", g)
+	}
+}
+
 // N-3: believed and unbelieved attempts are separate groups.
 func TestGroupsByBelief(t *testing.T) {
 	a := newAttacks()
