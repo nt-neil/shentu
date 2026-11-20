@@ -2,6 +2,7 @@ package engine
 
 import (
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -156,6 +157,10 @@ func TestLaravelProjectService(t *testing.T) {
 	plain := "<?php\nnamespace App\\Http\\Controllers;\nuse App\\Services\\Sorter;\nclass PostController {\n    public function index($input, Sorter $sorter) {\n        return $sorter->apply(Post::query(), $input);\n    }\n}\n"
 	svc := "<?php\nnamespace App\\Services;\nclass Sorter {\n    public function apply($q, $request) {\n        return $q->orderBy($request->sort)->get();\n    }\n}\n"
 	typed := "<?php\nnamespace App\\Services;\nclass Sorter {\n    public function apply($q, SearchQuery $request) {\n        return $q->orderBy($request->column)->get();\n    }\n}\n"
+	groupUse := strings.Replace(ctl, "use Illuminate\\Http\\Request;", "use Illuminate\\{Http\\Request, Support\\Facades\\DB};", 1)
+	lower := strings.Replace(ctl, "use Illuminate\\Http\\Request;", "use illuminate\\http\\Request;", 1)
+	byRef := strings.Replace(svc, "apply($q, $request)", "apply($q, &$request)", 1)
+	refFn := strings.Replace(svc, "public function apply(", "public function &apply(", 1)
 	for _, c := range []struct {
 		name, ctl, svc string
 		want           []string
@@ -163,6 +168,10 @@ func TestLaravelProjectService(t *testing.T) {
 		{"a Laravel project: the service's untyped $request", ctl, svc, []string{"php-sqli-orderby-identifier"}},
 		{"no file uses Illuminate (control)", plain, svc, nil},
 		{"a Laravel project: a typed DTO parameter (control)", ctl, typed, nil},
+		{"a group use of Illuminate (security review)", groupUse, svc, []string{"php-sqli-orderby-identifier"}},
+		{"Illuminate written in lower case (security review)", lower, svc, []string{"php-sqli-orderby-identifier"}},
+		{"a by-reference $request parameter (security review)", ctl, byRef, []string{"php-sqli-orderby-identifier"}},
+		{"a method returning by reference (security review)", ctl, refFn, []string{"php-sqli-orderby-identifier"}},
 	} {
 		files := map[string]string{"app/Http/Controllers/PostController.php": c.ctl, "app/Services/Sorter.php": c.svc}
 		read := func(p string) ([]byte, error) { return []byte(files[p]), nil }

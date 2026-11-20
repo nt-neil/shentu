@@ -395,11 +395,20 @@ func globalReplace(t []Token) bool {
 			if !member && !(next(1).op(".") && next(2).Kind == Ident) {
 				return true // const g = globalThis, f(window), globalThis['String'], self?.[k], GLOBAL, top
 			}
-		case "require", "import":
+		case "require":
+			// only a direct call of one plain string: require('con' + 'sole'),
+			// require(m), const r = require, require.call(null, m),
+			// [require][0](m) may load a module the file does not name
+			if !next(1).op("(") {
+				return true
+			}
+			if arg := inside(t, i+1, closeOf(t, i+1)); len(arg) != 1 || arg[0].Kind != Str || len(arg[0].Parts) > 0 {
+				return true
+			}
+		case "import":
 			if next(1).op("(") {
-				arg := inside(t, i+1, closeOf(t, i+1))
-				if len(arg) != 1 || arg[0].Kind != Str || len(arg[0].Parts) > 0 {
-					return true // require('con' + 'sole'), require(m), import(m): a module the file does not name
+				if arg := inside(t, i+1, closeOf(t, i+1)); len(arg) != 1 || arg[0].Kind != Str || len(arg[0].Parts) > 0 {
+					return true // import(m): a module the file does not name
 				}
 			}
 		case "createRequire":

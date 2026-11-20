@@ -74,7 +74,7 @@ func (a *analysis) laravelRequest(name string) bool {
 	}
 	t, v := a.ftoks, len(a.ftoks) == 0 // a file analysed for a call without its tokens: unknown, kept
 	for i, tk := range t {
-		if tk.Kind == Ident && tk.Text == "Illuminate" || tk.Kind == Ident && strings.HasSuffix(tk.Text, "Request") && i+1 < len(t) && t[i+1].Kind == Var && t[i+1].Text == name ||
+		if tk.Kind == Ident && strings.EqualFold(tk.Text, "Illuminate") || tk.Kind == Ident && strings.HasSuffix(tk.Text, "Request") && i+1 < len(t) && t[i+1].Kind == Var && t[i+1].Text == name ||
 			tk.Kind == Ident && strings.HasSuffix(tk.Text, "Controller") && i > 0 && t[i-1].word("extends") {
 			v = true
 			break
@@ -94,11 +94,18 @@ func (a *analysis) laravelRequest(name string) bool {
 // declared without a type: function apply($q, $request), fn ($request) => ...
 func untypedParam(t []Token, name string) bool {
 	for j := 1; j < len(t); j++ {
-		if t[j].Kind != Var || t[j].Text != name || !(t[j-1].op("(") || t[j-1].op(",")) {
+		if t[j].Kind != Var || t[j].Text != name {
+			continue
+		}
+		b := j - 1 // before the name: by reference (&$request) or variadic (...$request)
+		for b > 0 && (t[b].op("&") || t[b].op("...")) {
+			b--
+		}
+		if !(t[b].op("(") || t[b].op(",")) {
 			continue
 		}
 		depth := 0
-		for k := j - 1; k >= 1; k-- {
+		for k := b; k >= 1; k-- {
 			switch {
 			case isClose(t[k]):
 				depth++
@@ -107,7 +114,14 @@ func untypedParam(t []Token, name string) bool {
 					depth--
 					continue
 				}
-				if t[k].op("(") && (t[k-1].word("function") || t[k-1].word("fn") || k > 1 && t[k-1].Kind == Ident && t[k-2].word("function")) {
+				h := k - 1 // function name(, function &name(, function (, function &(, fn (
+				if h > 0 && t[h].Kind == Ident && !t[h].word("function") && !t[h].word("fn") {
+					h--
+				}
+				if h > 0 && t[h].op("&") {
+					h--
+				}
+				if t[k].op("(") && (t[h].word("function") || t[h].word("fn")) {
 					return true
 				}
 				k = 0
