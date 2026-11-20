@@ -28,11 +28,15 @@ type agent struct {
 	log          *auditLog
 	progress     func(tool string) // told before each tool runs; may be nil
 
-	canDispatch   bool                            // may send sub-agents (chat and bot only; never a sub-agent)
-	allow         map[string]bool                 // if set, the only tools this agent may use (sub-agents)
-	dispatchID    string                          // the dispatch a sub-agent belongs to, for the log
-	tokenCap      int                             // if set, input+output tokens this agent may use
-	tokensUsed    int                             // input+output tokens used so far
+	canDispatch   bool            // may send sub-agents (chat and bot only; never a sub-agent)
+	allow         map[string]bool // if set, the only tools this agent may use (sub-agents)
+	dispatchID    string          // the dispatch a sub-agent belongs to, for the log
+	tokenCap      int             // if set, input+output tokens this agent may use
+	tokensUsed    int             // input+output tokens used so far
+	calls         int             // model calls made, for the dispatch archive
+	toolsRun      int             // tool calls run
+	tokIn, tokOut int             // tokens, split as the provider reported them
+	tokReason     int
 	lastDispatch  string                          // id of the latest dispatch: later control calls may act on its reports
 	outOfSteps    bool                            // the run used every step and was made to answer
 	confirmStrict func(tool, preview string) bool // used instead of confirm after a dispatch; nil means confirm
@@ -129,6 +133,7 @@ func (a *agent) run(ctx context.Context, msgs []message) (string, []message, err
 			if a.progress != nil {
 				a.progress(call.Function.Name)
 			}
+			a.toolsRun++
 			result := a.callTool(ctx, call.Function.Name, call.Function.Arguments)
 			msgs = append(msgs, message{Role: "tool", ToolCallID: call.ID, Content: result})
 		}
@@ -196,6 +201,8 @@ func (a *agent) logLLM(err error) {
 	e := logEntry{Actor: a.actor, Tool: "llm", Args: a.llm.model, OK: err == nil, InTokens: a.llm.usedIn, OutTokens: a.llm.usedOut,
 		ReasonTokens: a.llm.usedReason, Cost: a.llm.usedCost, Dispatch: a.dispatchID}
 	a.tokensUsed += a.llm.usedIn + a.llm.usedOut + a.llm.usedReason // as monthUsage counts them
+	a.calls++
+	a.tokIn, a.tokOut, a.tokReason = a.tokIn+a.llm.usedIn, a.tokOut+a.llm.usedOut, a.tokReason+a.llm.usedReason
 	if err != nil {
 		e.Error = err.Error()
 	}
