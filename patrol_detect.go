@@ -208,6 +208,7 @@ type detectRun struct {
 	daily   bool
 	dryRun  bool
 	sum     detectSummary
+	auto    []autoCandidate // L3 groups pushed this round, for automatic incident checks
 }
 
 // detectJudge reads and judges a round (bounded by detectTimeout; the
@@ -268,6 +269,11 @@ const detectLastFile = "detect-last.json"
 // keep what failed for the next report, and say it on stderr.
 func finishDetect(ctx context.Context, env *tools.Env, dr *detectRun) {
 	sum := dr.send(ctx, env)
+	if !dr.dryRun && len(dr.auto) > 0 { // after the save: the sub-agent's attack_attempts sees this round
+		if _, err := autoIncident(ctx, dr.cfg, env, dr.auto, dr.now); err != nil {
+			sum.Err = strings.TrimPrefix(sum.Err+"; automatic incident check: "+err.Error(), "; ")
+		}
+	}
 	if sum.Err == "" || dr.dryRun {
 		return
 	}
@@ -356,6 +362,7 @@ func (r *detectRun) send(ctx context.Context, env *tools.Env) detectSummary {
 			for _, g := range rest {
 				p.Notified(g)
 				r.sum.Sent++
+				r.noteAuto(g)
 			}
 			break
 		}
@@ -370,6 +377,7 @@ func (r *detectRun) send(ctx context.Context, env *tools.Env) detectSummary {
 		}
 		p.Notified(g)
 		r.sum.Sent++
+		r.noteAuto(g)
 	}
 	notices := p.NoticeText()
 	surfaceNotes := len(r.notes) > 0 && r.surfaceNoticeDue()
@@ -397,6 +405,13 @@ func (r *detectRun) send(ctx context.Context, env *tools.Env) detectSummary {
 		fail("save", err)
 	}
 	return r.sum
+}
+
+// noteAuto keeps a pushed L3 group for autoIncident.
+func (r *detectRun) noteAuto(g *detect.Group) {
+	if c, ok := autoCandidateOf(g); ok {
+		r.auto = append(r.auto, c)
+	}
 }
 
 // surfaceNoticeDue: the surface's notes were not sent in the last day.

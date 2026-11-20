@@ -535,7 +535,7 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 	dr := detectJudge(ctx, cfg, time.Now(), daily, dryRun)
 	defer finishDetect(ctx, env, dr)
 	if daily {
-		unchecked += detectSection(dr.sum)
+		unchecked += detectSection(dr.sum) + autoIncidentSection(cfg, time.Now())
 	} else if dr.sum.Err != "" {
 		unchecked += "\nAttack detection: " + dr.sum.Err + "\n"
 	}
