@@ -4,6 +4,8 @@ import (
 	"maps"
 	"slices"
 	"strings"
+
+	"github.com/nt-neil/shentu/rules"
 )
 
 // A route handler's request is the rules' input whatever it is called. The
@@ -97,6 +99,16 @@ func (a *analysis) fnReqs(f *fn, outer map[string][]string) map[string][]string 
 	}
 	sd := a.routes[f]
 	if sd == nil {
+		if a.mws[f] && len(parts) > 0 && len(parts[0]) > 0 {
+			// Koa middleware, app.use(async (ctx, next) => ...): its context is
+			// the request's as a handler's is, for the rules' ctx. sources
+			switch p := parts[0]; {
+			case p[0].Kind == Ident && (len(p) == 1 || p[1].op(":") || p[1].op("=")):
+				out[p[0].Text] = []string{"ctx"}
+			case p[0].op("{"):
+				reqPattern(out, p[:closeOf(p, 0)+1], []string{"ctx"})
+			}
+		}
 		return out
 	}
 	for i, p := range parts {
@@ -468,6 +480,54 @@ func (a *analysis) koaFile() bool {
 		}
 	}
 	return a.proj != nil && a.proj.koa || a.cproj != nil && a.cproj.koa
+}
+
+// koaMiddleware finds, in a Koa application's file (it or another file of the
+// project imports Koa), the functions app.use(fn) registers: middleware, which
+// the route models leave out (they register handlers by path). Their first
+// parameter is the context, followed by the rules' ctx. sources through
+// aliases and destructuring as a route handler's is; nothing else of them is
+// input that was not before.
+func koaMiddleware(lang string, toks []Token, tree []*stmt, ff *fileFuncs, proj *Project) map[*fn]bool {
+	if lang != "js" || !(slices.ContainsFunc(koaModules, func(m string) bool { return importsModule(toks, m) }) || proj != nil && proj.koa) {
+		return nil
+	}
+	use := []*croute{{r: rules.Route{Handler: -1}, register: []callName{{recv: "*", name: "use"}}}}
+	out := map[*fn]bool{}
+	mark := func(_ *croute, f *fn, _ []Token) {
+		if f != nil {
+			out[f] = true
+		}
+	}
+	var e Engine
+	var walk func(ss []*stmt, depth int)
+	walk = func(ss []*stmt, depth int) {
+		if depth > maxNest {
+			return
+		}
+		for _, s := range ss {
+			e.registrations(false, s, use, ff, mark)
+			for _, f := range s.funcs {
+				if f != nil {
+					walk(f.body, depth+1)
+				}
+			}
+			if s.fn != nil {
+				walk(s.fn.body, depth+1)
+			}
+			walk(s.body, depth+1)
+			walk(s.els, depth+1)
+			walk(s.orelse, depth+1)
+			for _, h := range s.handlers {
+				walk(h, depth+1)
+			}
+			for _, c := range s.cases {
+				walk(c, depth+1)
+			}
+		}
+	}
+	walk(tree, 0)
+	return out
 }
 
 // koaModules are the modules a Koa application imports.

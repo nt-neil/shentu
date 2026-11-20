@@ -393,6 +393,7 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 	local := len(routeFns)
 	routeFns = e.projectHandlers(proj, path, ff, routeFns) // ... registered in another file (urls.py, routes/web.php)
 	viaProject := len(routeFns) > local
+	mws := koaMiddleware(base, toks, tree, ff, proj) // Koa's app.use(fn): fn's context is followed as a handler's (reqalias.go)
 	defs := phpDefines(base, toks)
 	if proj != nil {
 		proj.keep(path, &fileCtx{lang: base, tree: tree, ff: ff, tokens: len(toks), rdefs: fileRecvDefs(base, toks), rcls: fileRecvClasses(base, toks), ifacts: e.importFacts(base, toks), defs: defs})
@@ -449,15 +450,16 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 			continue
 		}
 		// No source of it in the file: nothing to find, in either pass. Only for
-		// a file on its own without route handlers: in a project input also comes
-		// from the other files, and a handler's parameters are input with no
-		// source name in the file.
-		if proj == nil && len(routeFns) == 0 && e.skipBySources(r, names, src, si) && !(nextHdrs && readsNextHeaders(r)) {
+		// a file on its own without route handlers or Koa middleware: in a project
+		// input also comes from the other files, and a handler's parameters (a
+		// middleware's context, through an alias) are input with no source name
+		// in the file.
+		if proj == nil && len(routeFns) == 0 && len(mws) == 0 && e.skipBySources(r, names, src, si) && !(nextHdrs && readsNextHeaders(r)) {
 			continue
 		}
 		ruleList = append(ruleList, r)
 		if hs && !callsOnly {
-			a := &analysis{r: r, php: base == "php", py: base == "python", js: base == "js", b: b, kw: keywords[base], seen: map[loc]bool{}, defs: defs, file: path, ftoks: toks, routes: routeFns, cproj: proj,
+			a := &analysis{r: r, php: base == "php", py: base == "python", js: base == "js", b: b, kw: keywords[base], seen: map[loc]bool{}, defs: defs, file: path, ftoks: toks, routes: routeFns, mws: mws, cproj: proj,
 				sinkSpans: spansOf(r)}
 			a.block(tree, state{})
 			direct[r] = a.lines
@@ -520,7 +522,7 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 				proj.sums[key] = sc
 			}
 			a := &analysis{r: r, php: base == "php", py: base == "python", js: base == "js", b: b2, kw: keywords[base], seen: map[loc]bool{}, sc: sc,
-				defs: defs, file: path, proj: proj, ftoks: toks, routes: routeFns, sinkSpans: spansOf(r)}
+				defs: defs, file: path, proj: proj, ftoks: toks, routes: routeFns, mws: mws, sinkSpans: spansOf(r)}
 			if !e.Library && !a.r.output && !viaProject && !a.crossNeeded(tree) {
 				// no call can change this rule's result: the first pass stands. Output
 				// rules read calls to the file's own functions in this pass only
@@ -530,7 +532,7 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 			}
 			a.block(tree, state{})
 			if e.Library && libClasses[r.rule.Class] && !testPath(path) && !b2.hit {
-				l := &analysis{r: r, php: a.php, py: a.py, js: a.js, b: b2, kw: a.kw, seen: a.seen, sc: sc, lib: true, defs: defs, file: path, proj: proj, ftoks: toks, routes: routeFns,
+				l := &analysis{r: r, php: a.php, py: a.py, js: a.js, b: b2, kw: a.kw, seen: a.seen, sc: sc, lib: true, defs: defs, file: path, proj: proj, ftoks: toks, routes: routeFns, mws: mws,
 					sinkSpans: a.sinkSpans}
 				l.block(tree, state{})
 				a.lines = append(a.lines, l.lines...)

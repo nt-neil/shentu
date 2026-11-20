@@ -141,6 +141,7 @@ type analysis struct {
 	js    bool
 	b     *budget
 	kw    map[string]bool // words that are keywords in this language
+	mws   map[*fn]bool    // Koa middleware: the functions app.use(fn) registers (reqalias.go koaMiddleware)
 	seen  map[loc]bool
 	lines []loc
 	// sinkSpans: per line reported, the sink calls that reported it, as
