@@ -35,6 +35,10 @@ title = "Request input concatenated into a SQL string"
 frameworks = ["laravel"]           # optional: laravel, wordpress, symfony, doctrine, django, flask, express, nestjs, nextjs, koa, fastify, hapi
 route_input = false                # optional: route handlers' parameters are not this rule's input, only its sources (a rule for the Host header)
 route_members = ["query", "body"]  # optional: of the request members a route model makes input, only these (a rule for a query object: req.params is always a string)
+route_only = ["headers.host"]      # optional: of a route handler's request, only these values (as route_not writes them) are this rule's input, whatever the parameter is called ((r, s) => r.headers.host, NestJS's @Req() r or @Request() r), also with route_input = false; h.host after h = r.headers too. For the rule another rule's route_not hands those values to
+route_not = ["headers.host"]       # optional: values under those members that are not this rule's input, as member.name (the Host header): in a route handler's parameters and in the rule's own sources that end in the member (req.headers.host, req.headers['host'], req.headers.get('host'), @Headers('host'), h.host after h = req.headers, also when req is a route handler's parameter or NestJS's @Req() req)
+routes_not = ["wp-shortcode"]      # optional: route models (by id) whose handlers' input is another rule's (a shortcode's attributes)
+chain_not = ["AsyncClient"]        # optional: calls the chain form of a receiver.method( sink may not go through: they make another object (httpx.AsyncClient().get( is not httpx.get()
 sources = ["$_GET", "$request->input("]   # where user input comes from; [] for a rule without sources
 sinks = ["mysqli_query", "->query("]      # the dangerous calls
 sanitizers = ["intval", "->prepare("]     # calls whose result is safe for these sinks; [] if none
@@ -96,6 +100,11 @@ How the engine reads them:
   matches `$_FILES['doc']['name']` (and `$_FILES['doc']['name'][$i]`) but not
   `$_FILES['doc']['tmp_name']`. After `$f = $_FILES['doc']`, `$f['name']` is input
   and `$f['tmp_name']` is not.
+- A call or index source whose `[[source_args]]` take only some names
+  (`req.headers[` and `@Headers(` with `host` and `x-forwarded-host`) also gives
+  those members of the whole object: after `h = req.headers` or NestJS's
+  `@Headers() h`, `h.host` and `h['x-forwarded-host']` are input and `h.referer`
+  is not.
 - A string in a pattern compares its content, whatever the quotes; an unclosed
   one is a prefix: `$_SERVER['HTTP_` matches every `$_SERVER['HTTP_...']`.
 - A **sanitizer** is a call whose result is clean (`intval(`, `shlex.quote(`,
@@ -130,6 +139,42 @@ How the engine reads them:
     callback) returns sanitized values, with the keys of `$x`;
   - `extract(shortcode_atts(array('id' => 0, ...), $atts))` and `extract(array(...))`
     define one variable per literal key;
+  - in the SSRF rules, a check of a parsed URL's host against an allowlist that
+    is surely a collection (`.has(`, `.includes(`, `in` on a list, set, tuple
+    or array written out, `new Set(...)`, `set(...)` or `frozenset(...)` of one
+    of those, or a chain of reads ending in `.split(...)`, as the whole
+    expression; or a name the file binds once, at its top level, to one of
+    those and otherwise only reads. A parameter, destructuring, `catch`, `for`,
+    `with`, a key of that name, a default value, `+=`, a tuple of targets or an
+    argument anywhere in the file makes the name unknown, and so does Python's
+    `from x import *` for every name; on a string or an
+    environment value `.includes(` and `in` are substring tests) or a host
+    written out (`=== 'a.example'`)
+    validates that URL object: `u.hostname`, `u.host` or `u.origin` after
+    `u = new URL(x)` (or `URL.parse`), `p.hostname` or `p.netloc` after
+    `p = urlparse(x)` (or `urlsplit`), so `fetch(u)` and `requests.get(p.geturl())`
+    are clean. Not the string `x` itself, which another parser (the client's,
+    `url.parse`, PHP's `parse_url`) may read as another host; not a truth test, a
+    pattern or a prefix check of the host; not a URL that is something else on one
+    of the paths to the check, or given a new value, or written into after it
+    (`u.host = v`, `Object.assign(u, ...)`, `Reflect.set(u, ...)`, a member of
+    any alias `w = u`, `x = w`). In JavaScript a URL passed to any other call
+    than the rule's sinks may be changed there (`setHost(u, v)`), so the check
+    ends and u holds again the input it held before it; this also ends it for a
+    call that only reads u (`log(u)`), which reports more than it must. So does
+    a URL written into an object or array (`{ target: u }`, `[u]`), or used as
+    a value in any other way than a member read, a whole argument or the whole
+    right side of an assignment (`a1 = u || null`, `c ? u : w`, `return u`). Only a
+    plain name holds a checked URL (not `this.u`), only one no function written
+    inside another uses without binding it itself (a closure or callback that
+    reads or changes u, whenever it runs: `() => { u.host = v }`,
+    `[v].forEach(h => { u.host = h })`) and no function declares `global` or
+    `nonlocal` (Python's `def m(): nonlocal u; u = urlparse(v)`), and only while fewer than 64 names
+    hold it (each alias is kept with each other one).
+    `p.geturl()` is a string the client parses again; urlparse and the client's
+    parser agree on the host of what urlparse itself wrote out, which is why it
+    counts, but a client with its own normalisation could read it otherwise. A URL whose host is allowed
+    may still carry a script or a quote in its path, so no other rule reads it;
   - an assignment written in a condition (`if ($x = $_GET['y'])`) is followed;
   - a variable holding a value written in the code (`$o = array('test_form' =>
     false)`, `const opts = { shell: true }`, `$f = LIBXML_NOENT`) is read in its place
@@ -138,7 +183,11 @@ How the engine reads them:
   - a sink written as receiver, member and method (`Process::run(`, `res.send(`,
     `requests.get(`) also matches at the end of a chain of calls from the same
     receiver: `Process::timeout(30)->run($cmd)`, `res.status(400).send(x)`,
-    `requests.Session().get(url)`, with the same argument conditions;
+    `requests.Session().get(url)`, with the same argument conditions; not through
+    a call the rule's `chain_not` names (`AsyncClient`: another object);
+  - a sink written `receiver.Maker(*).method(` (`httpx.Client(*).get(`) matches
+    `.method(` at the end of a chain from the receiver that goes through a call
+    to `Maker`, with any arguments: `httpx.Client(timeout=5).get(u)`;
   - text sinks match outside string interpolations: `"... $where"` is the variable
     `$where`, not the operator text `'$where'`;
   - a number carries no injection: `(int)`, `(float)`, `(bool)`, `intval`,
@@ -255,7 +304,7 @@ arguments, not the options).
 | `sinks` | the rule's sinks this entry applies to; omitted means all of them; a sink has at most one entry |
 | `arg` | only this argument counts, from 1; `0` is the receiver of a method sink (`tf.extractall()`: the archive is the input) |
 | `when` | the call is a sink only if one of these appears among its arguments |
-| `unless` | the call is not a sink if one of these appears among its arguments |
+| `unless` | the call is not a sink if one of these appears among its arguments: an option with its value (`shell=True`), a string, a whole argument, or a name among flags joined by `\|` (`LIBXML_NOENT` in `LIBXML_DTDLOAD \| LIBXML_NOENT`) |
 | `unless_at` | where `unless` looks: `start`, only at the start of the argument (`arg`, or the first): a Server-Sent Events line `"data: " + x`, not a ternary one branch of which is a line; `top`, only as an element or key of the argument itself (`arg`, or any one), not inside what it holds: TypeORM's `{ relations: [...] }`, not `{ projection: { relations: 1 } }`. Empty: anywhere among the arguments |
 | `unless_content_type` | the call is not a sink once the response's Content-Type was set to one of these on every path before it in the same function: `res.setHeader("Content-Type", ...)`, `res.set`, `res.header`, `res.type`, `res.contentType`, `res.writeHead(200, {...})`, each as a statement of its own. Set in one branch only, asked about (`req.accepts(...)`) or set elsewhere (middleware) does not count. For Server-Sent Events: `text/event-stream` is read by EventSource, not rendered |
 | `whole` | the argument must be the input itself (or spread from it), not an object or array literal holding a value from it |
@@ -268,8 +317,9 @@ arguments, not the options).
 | `exclude` | with `literal`: regular expressions (any case); a string matching one does not count, so `exclude = ["^[a-z0-9_]+-(sha\|md5)[0-9]*$"]` leaves out a purpose label such as `'wp-sha384'` |
 | `receiver` | method sinks only: the call does not count when the file shows its receiver is another kind of object than these. The receiver qualifies when one of the fragments appears in it, or in what its root name (`db`, `self._files`) is assigned, annotated or imported with in the file (`db = MongoClient(url).shop`, `def __init__(self, db: Database)`, `from pymongo.collection import Collection`), followed up to four steps; an import says what a name holds only when it comes from the standard library or a well-known package that is not MongoDB (`os`, `re`, `django`, `flask`...). A root the file says nothing about (no assignment, an import from a module of the project such as `from app.db import mongo` or `from .db import mongo`, a parameter without a type) still counts. So `finders.find(path)` after `from django.contrib.staticfiles import finders`, `'abc'.find(x)` and `data['text'].find(x)` after `data = request.get_json()` are not MongoDB queries, while `mongo.find(x)` after `from app.db import mongo` is; a `.find(` on an object of the project that is not a collection is then still reported (a false positive, kept over a miss) |
 | `unless_imports`, `unless_imports_not` | method sinks only (JavaScript): the call does not count in a file that imports one of `unless_imports` (`import ... from 'typeorm'`, `require('typeorm')`), unless the file or the call's receiver also names one of `unless_imports_not` (an identifier, or an imported module: `MongoRepository`, `mongoose`, `collection`). For a TypeORM repository on an SQL database, whose `find({ where })` binds the values as parameters. A function analysed from a caller in another file leaves nothing out |
+| `unless_after` | text patterns (any case): the arguments do not count when every value from the input in them comes after one of these texts in a string written in the call, read as a concatenation (`.` in PHP, `+` elsewhere) or a string's interpolated parts: `$wpdb->get_results("... ORDER BY $col")` is `php-sqli-orderby-identifier`'s, which reports it at that text. A call written there is read by its own arguments (`DB::select(DB::raw("... ORDER BY " . $col))`). Input before the text, or SQL built in a variable elsewhere, keeps the sink |
 | `unless_subscript` | the argument does not count when it is, as a whole and written in the call, one item of one of these: `zipfile.ZipFile(request.files["archive"])` reads the upload's stream as a file object, not a path. `request.files["a"].filename`, or the item through a variable, still counts |
-| `not_receiver` | method sinks only, the other way round: the call does not count when its receiver is surely an object of one of these classes, made in place (`(new WP_Query($args))->query($a)`, `new \WP_Query`) or a variable the file binds only to such objects (`$q = new WP_Query; $q->query($a)`): every occurrence of the name in the file is a statement assigning `new Class` or `new Class(...)`, a call or read through it, or the whole argument of a call. Assignments are not followed from one name to another (`$r = $q`), and a parameter is never taken to be of a class, its default value included (`function run($q = new WP_Query())`). The file is the one the code is in, also when it is reached from a caller in another file. A receiver the file says nothing about, or a name also assigned anything else or bound any other way (a parameter, `global`, `foreach ... as`, `list()`, `use`, `&`), still counts, so `$db->query($sql)` on a parameter is reported as before. Passing the name to a call (`update_post_thumbnail_cache($q)`) keeps it, unless the file declares a function or method of that name with a parameter by reference (`function f(&$x)`). A limit: a callee declared in another file that takes the object by reference and assigns it something else is not seen, and the sink is then left out; only the application's own code can do that, not its input |
+| `not_receiver` | method sinks only, the other way round: the call does not count when its receiver is surely an object of one of these classes, made in place (`(new WP_Query($args))->query($a)`, `new \WP_Query`) or a variable the file binds only to such objects (`$q = new WP_Query; $q->query($a)`): every occurrence of the name in the file is a statement assigning `new Class` or `new Class(...)`, a call or read through it, or the whole argument of a call. Assignments are not followed from one name to another (`$r = $q`), and a parameter is never taken to be of a class, its default value included (`function run($q = new WP_Query())`). The file is the one the code is in, also when it is reached from a caller in another file. An entry written as a variable names the object itself: `not_receiver = ["$wpdb"]` leaves out `$wpdb->query(...)` (WordPress's global wpdb, another rule's). A receiver the file says nothing about, or a name also assigned anything else or bound any other way (a parameter, `global`, `foreach ... as`, `list()`, `use`, `&`), still counts, so `$db->query($sql)` on a parameter is reported as before. Passing the name to a call (`update_post_thumbnail_cache($q)`) keeps it, unless the file declares a function or method of that name with a parameter by reference (`function f(&$x)`). A limit: a callee declared in another file that takes the object by reference and assigns it something else is not seen, and the sink is then left out; only the application's own code can do that, not its input |
 | `leading` | the input must be at the start of the argument: a fixed prefix makes the call safe, as `WP_PLUGIN_DIR . "/$name"` cannot choose a `phar://` stream. A fixed prefix is a literal (or a run of literals) holding a character no URL scheme has (`/`, `_`, a space) before any `:`, so `'phar' . $x` and `'ph' . 'ar' . $x` are none; a constant; a ternary whose branches both are; a variable assigned one; a property or array key the input never reached (`$this->dir`, `$u['basedir']`), but never a superglobal or request object (`$_COOKIE[...]`, `$_SERVER['HTTP_...']`; `$_SERVER['DOCUMENT_ROOT']` is allowed); a call whose arguments hold no input, even through a sanitizer (`dirname(__FILE__)`, `get_template_directory()`, `strval(intval($x))`, but not `trim(basename($_GET['d']))`); `sprintf` whose format starts with such a literal; a Laravel path helper (`storage_path(...)`); a WordPress URL helper that ends in a path (`admin_url(...)`, `get_permalink(...)`, `rest_url(...)`; `home_url('/...')` and `site_url('/...')` only with a path); `add_query_arg` / `remove_query_arg` whose URL argument is fixed (or absent: the request's own path); `apply_filters` whose filtered value is fixed; `trailingslashit` or `user_trailingslashit` whose first argument is fixed; In the `ssrf`, `open-redirect` and `xss` rules the prefix must also keep the request on a known host: a literal scheme and host followed by `/`, `?` or `#` (`https://api.example.com/...`), a root path whose second character is neither `/` nor `\` (`/account`, not `/` that the input turns into `//evil.com`), or a relative path (`users.php?id=`); `home_url()` without a path, `untrailingslashit` and `rtrim` are not fixed there, and a PHP constant is fixed only when this file defines it (`define('API', 'https://api.example.com/')`) with such a text, or when it names a folder (`__DIR__`, `ABSPATH`, `*_DIR`, `*_PATH`). A call on input (`basename($_GET['d'])`) is not; a clean call that returns `""` (`trim(' ')`, an unset `getenv()`) is a known miss |
 
 `when` and `unless` entries are code fragments matched anywhere in the call's
@@ -404,7 +454,8 @@ default (`render_template`, `res.render`, Blade `{{ }}`) are not sinks.
 
 ### Source arguments
 
-A call source can depend on one of its arguments. Joomla's
+A call source, or an index source (one that ends with `[`, whose index is its
+argument 1), can depend on one of its arguments. Joomla's
 `$input->get($name, $default, $filter)` returns the raw value with the `raw`
 filter, but only letters, digits, `.`, `-` and `_` with the default (`cmd`):
 
@@ -419,7 +470,11 @@ The call is input only when that argument is written as one of the values; with
 another value, a variable, or no such argument it is not. `values = ["*"]` takes
 any string literal: Express's `req.get('Referer')` reads a header, `req.get()`
 reads none. A value written `!name` is never the source, also with `*`:
-`values = ["*", "!host"]` takes every header but Host.
+`values = ["*", "!host"]` takes every header but Host. `?` takes an argument
+that is not a string literal (a variable, a template): `req.headers[name]` may
+be any header. Two rules can so split one source between them: the Host header
+to js-ssrf-host-header (`values = ["host", "x-forwarded-host"]`), every other
+header to js-ssrf-http-request (`values = ["*", "?", "!host", "!x-forwarded-host"]`).
 
 ### Rules without sources
 
@@ -432,6 +487,23 @@ code (`literal = true`). Samples of `hardcoded-secret` rules write `__SECRET__` 
 the value goes; the sample test puts a made-up value there at run time, so no
 credential-like string is kept in the repository.
 
+## Rules and attack detection
+
+Since v0.4.0, the daily round puts each injection finding of these rules (rule, CWE, file,
+line) into the host's vulnerability surface (`state_dir/surface.json`), with the routes
+that register the handler the sink sits in when a route model in `routes/` shows them in the
+same file. The patrol's attack detection reads the web
+server's access logs against it: a request to one of those routes is L1, and one that also
+carries a payload of the class the finding's CWE names (`CWE-89` is SQL injection, `CWE-78`
+command injection, `CWE-22` path traversal and so on; `detect/surface.go` has the list) is
+L2. A finding without routes is still in the surface, but no request can be tied to it.
+How the levels are judged and alerted: [docs/attack-detection.md](../docs/attack-detection.md).
+
+These rules are not the 27 attack signatures of attack detection (`detect/sig`). The rules
+read the applications' code on disk and find where it is vulnerable; the signatures read
+request lines in the access logs and find what an attacker sent. A rule added here can make
+a request L1 or L2 through its routes and CWE; it never adds a signature.
+
 ## What CI checks (`rules_test.go`)
 
 - every file parses, and has no unknown keys;
@@ -442,8 +514,8 @@ credential-like string is kept in the repository.
 - `text` entries are sources or sinks; `[[args]]` entries set something, name only
   the rule's sinks, give each sink at most one entry, and use `arg = 0` only for
   method sinks; `min_len` and `exclude` come with `literal`, and `keys` not with
-  `key`; `[[source_args]]` entries name call sources of the rule, an argument and
-  values;
+  `key`; `[[source_args]]` entries name call or index sources of the rule, an
+  argument (1 for an index source) and values;
 - there is at least one `vulnerable` and one `safe` sample, and each vulnerable sample
   contains one of the rule's sources and one of its sinks.
 
@@ -541,7 +613,8 @@ What it does not do: follow values across files (input read in a controller and
 used in another class of another file is missed), judge the output context of HTML
 built in a variable and echoed later (the echo's own context is used), see a CSRF
 nonce check whose result is kept in a variable, treat a check on a value derived from another (`in_array($ext, ...)`
-after `$ext = pathinfo($name, ...)`) as a check on the original, while a check on part
+after `$ext = pathinfo($name, ...)`) as a check on the original (but for a URL's
+host in the SSRF rules, see above), while a check on part
 of a value written in place counts for all of it (`in_array(pathinfo($n, PATHINFO_EXTENSION), ...)`
 cleans `$n` for every rule, path traversal included), know framework semantics beyond
 the rules (a lookup in a constant dict is not an allowlist), look into options

@@ -20,13 +20,16 @@ sanitizers = ["absint", "intval", "(int)", "count(", "sizeof(", "sanitize_sql_or
 fix = "Only placeholders (%s, %d, ? or :name) may stand for values in the query text; pass the values as the following arguments, or to execute(), and map identifiers such as column names to a fixed allowlist."
 refs = ["CVE-2026-109977", "CVE-2026-120558"]
 
+# Input that is only an ORDER BY identifier is php-sqli-orderby-identifier's.
 [[args]]
 sinks = ["->prepare("]
 arg = 1
+unless_after = ["ORDER BY"]
 
 [[args]]
 sinks = ["mysqli_prepare("]
 arg = 2
+unless_after = ["ORDER BY"]
 
 [[samples]]
 kind = "vulnerable"
@@ -162,17 +165,6 @@ add_action('template_redirect', function () {
     $slug = get_query_var('book');
     $row = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$wpdb->prefix}books WHERE slug = '$slug' AND status = %s", 'live'));
 });
-'''
-
-[[samples]]
-kind = "vulnerable"
-code = '''
-<?php
-function shop_items($req) {
-    global $wpdb;
-    $col = $req->get_param('sort');
-    return $wpdb->get_results($wpdb->prepare("SELECT * FROM {$wpdb->prefix}items ORDER BY $col LIMIT %d", 10));
-}
 '''
 
 [[samples]]

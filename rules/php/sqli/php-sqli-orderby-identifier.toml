@@ -5,9 +5,17 @@ cwe = "CWE-89"
 severity = "high"
 title = "Sort column or direction taken from the request and placed into ORDER BY"
 frameworks = ["laravel", "wordpress"]
-sources = ["$_GET", "$_POST", "$_REQUEST", "$request->input(", "$request->get(", "request(", "Yii::$app->request->get(", "$request->query->get(", "$request->request->get(", "$request->attributes->get("]
+# Yii's request readers as php-sqli-yii-query has them: ->orderBy( is this rule's.
+# WordPress's readers as php-sqli-wpdb-unprepared and php-sqli-prepare-query-text
+# have them, and php-sqli-string-concat's (CodeIgniter's) and php-sqli-laravel-raw's:
+# input that is only an ORDER BY identifier is this rule's.
+sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "get_query_var(", "->get_param(", "$request['", "shortcode_atts(", "$atts[", "->get_json_params(", "->get_body_params(", "->get_query_params(", "$request->input(", "$request->get(", "request(", "Yii::$app->request->get(", "$request->query->get(", "$request->request->get(", "$request->attributes->get(",
+           "->request->get(", "->request->post(", "->request->getQueryParam(", "->request->getBodyParam(", "->request->getParam(", "->request->getQuery(", "->request->getPost(",
+           "->getRequest()->get(", "->getRequest()->post(", "->getRequest()->getParam(", "$request->post(", "$request->getQueryParam(", "$request->getBodyParam(",
+           "$this->input->get(", "$this->input->post(", "$this->input->get_post(", "$this->input->cookie(", "$this->request->getGet(", "$this->request->getPost(",
+           "$this->request->getVar(", "$this->request->getJSON(", "$request->query(", "$request->all(", "$request->string(", "request()->input(", "Request::input("]
 sinks = ["->orderByRaw(", "::orderByRaw(", "DB::raw", "->orderBy(", "::orderBy(", "ORDER BY"]
-sanitizers = ["in_array", "sanitize_sql_orderby", "Rule::in"]
+sanitizers = ["in_array", "sanitize_sql_orderby", "Rule::in", "absint", "intval", "(int)", "count(", "sizeof("]
 fix = "Identifiers cannot be bound as parameters: map the requested sort key to a fixed allowlist of column names and force the direction to ASC or DESC."
 refs = ["CVE-2026-13357"]
 text = ["ORDER BY"]
@@ -75,4 +83,55 @@ code = '''
 <?php
 $sort = $this->settings->request('default_sort');
 $rows = DB::table('posts')->orderBy($sort)->get();
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "Yii: a column taken from the request as the key of orderBy()"
+code = '''
+<?php
+class StockController extends Controller
+{
+    public function actionTable()
+    {
+        [$field, $dir] = explode('|', (string) $this->request->getParam('sort', 'name|asc'));
+        $rows = Item::find()->orderBy($field . ' ' . $dir)->limit(50)->all();
+        return $this->asJson($rows);
+    }
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "the failed check only logs, the query still runs"
+code = '''
+<?php
+$col = $_GET['orderby'];
+if (!in_array($col, array('date', 'title'), true)) {
+    error_log('unexpected orderby');
+}
+$rows = $wpdb->get_results("SELECT * FROM {$wpdb->posts} ORDER BY $col");
+'''
+
+[[samples]]
+kind = "safe"
+note = "wp_send_json_error ends the request, so after it the column is one of the two"
+code = '''
+<?php
+$col = $_GET['orderby'];
+if (!in_array($col, array('date', 'title'), true)) {
+    wp_send_json_error('bad orderby');
+}
+$rows = $wpdb->get_results("SELECT * FROM {$wpdb->posts} ORDER BY $col");
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+function shop_items($req) {
+    global $wpdb;
+    $col = $req->get_param('sort');
+    return $wpdb->get_results($wpdb->prepare("SELECT * FROM {$wpdb->prefix}items ORDER BY $col LIMIT %d", 10));
+}
 '''

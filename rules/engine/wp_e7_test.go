@@ -16,9 +16,9 @@ func TestWordPressE7Cases(t *testing.T) {
 			"<?php\n$u = 'http://api.wordpress.org/patterns/1.0/?q=' . $_GET['q'];\nif (wp_http_supports(array('ssl'))) {\n\t$u = set_url_scheme($u, 'https');\n}\nwp_remote_get($u);\n", false},
 		{"set_url_scheme of an input URL", "php-ssrf-http-request",
 			"<?php\n$u = set_url_scheme($_GET['u'], 'https');\nwp_remote_get($u);\n", true},
-		{"array_diff takes its first argument's values", "php-sqli-string-concat",
+		{"array_diff takes its first argument's values", "php-sqli-wpdb-unprepared",
 			"<?php\n$old = $wpdb->get_col('SELECT id FROM t');\n$gone = array_diff($old, $_GET['ids']);\n$wpdb->query(\"DELETE FROM t WHERE id IN ('\" . implode(\"','\", $gone) . \"')\");\n", false},
-		{"array_diff of the input", "php-sqli-string-concat",
+		{"array_diff of the input", "php-sqli-wpdb-unprepared",
 			"<?php\n$old = $wpdb->get_col('SELECT id FROM t');\n$new = array_diff($_GET['ids'], $old);\n$wpdb->query(\"DELETE FROM t WHERE id IN ('\" . implode(\"','\", $new) . \"')\");\n", true},
 		// The client's file name is the request's: phar:// in it reaches file_exists. (Its tmp_name, the
 		// path PHP wrote, is still reported too: the engine cannot clear one key of the array; a known issue.)

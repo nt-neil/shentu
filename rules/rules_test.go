@@ -59,7 +59,9 @@ func TestRulesValid(t *testing.T) {
 		t.Fatal(err)
 	}
 	members := map[string]bool{} // lang/member a route model makes input
+	routeIDs := map[string]bool{}
 	for _, rt := range routes {
+		routeIDs[rt.ID] = true
 		for _, m := range rt.Members {
 			members[rt.Lang+"/"+m] = true
 		}
@@ -70,6 +72,21 @@ func TestRulesValid(t *testing.T) {
 		for _, m := range r.RouteMembers {
 			if !members[r.Lang+"/"+m] {
 				t.Errorf("%s: route_members %q is no member a %s route model makes input", f, m, r.Lang)
+			}
+		}
+		for _, id := range r.RoutesNot {
+			if !routeIDs[id] {
+				t.Errorf("%s: routes_not %q is no route model", f, id)
+			}
+		}
+		for _, n := range r.RouteOnly {
+			if m, name, ok := strings.Cut(n, "."); !ok || name == "" || !members[r.Lang+"/"+m] {
+				t.Errorf("%s: route_only %q is not member.name of a member a %s route model makes input", f, n, r.Lang)
+			}
+		}
+		for _, n := range r.RouteNot {
+			if m, name, ok := strings.Cut(n, "."); !ok || name == "" || !members[r.Lang+"/"+m] && !sourceEndsIn(r.Sources, m) {
+				t.Errorf("%s: route_not %q is not member.name of a member a %s route model makes input or one of the rule's sources ends in", f, n, r.Lang)
 			}
 		}
 		if prev, dup := seen[r.ID]; dup {
@@ -157,8 +174,8 @@ func checkText(t *testing.T, r Rule) {
 func checkArgs(t *testing.T, r Rule) {
 	covered := map[string]bool{}
 	for i, a := range r.Args {
-		if a.Arg == nil && len(a.When) == 0 && len(a.Unless) == 0 && !a.Whole && !a.Leading && len(a.Context) == 0 && !a.Literal && a.Key == "" && !a.Keys && len(a.Receiver) == 0 && len(a.NotReceiver) == 0 {
-			t.Errorf("%s: args %d sets none of arg, when, unless, whole, leading, context, literal, key, keys, receiver, not_receiver", r.File, i)
+		if a.Arg == nil && len(a.When) == 0 && len(a.Unless) == 0 && !a.Whole && !a.Leading && len(a.Context) == 0 && !a.Literal && a.Key == "" && !a.Keys && len(a.Receiver) == 0 && len(a.NotReceiver) == 0 && len(a.UnlessAfter) == 0 {
+			t.Errorf("%s: args %d sets none of arg, when, unless, whole, leading, context, literal, key, keys, receiver, not_receiver, unless_after", r.File, i)
 		}
 		if a.UnlessAt != "" && (a.UnlessAt != "start" && a.UnlessAt != "top" || len(a.Unless) == 0) {
 			t.Errorf("%s: args %d: unless_at must be start or top, with unless", r.File, i)
@@ -210,16 +227,17 @@ func checkArgs(t *testing.T, r Rule) {
 	}
 }
 
-// checkSourceArgs: each [[source_args]] entry names call sources of the rule,
-// an argument from 1 and at least one value.
+// checkSourceArgs: each [[source_args]] entry names call or index sources of
+// the rule (an index source, ending with "[", takes arg 1), an argument from 1
+// and at least one value.
 func checkSourceArgs(t *testing.T, r Rule) {
 	for i, sa := range r.SourceArgs {
 		if sa.Arg < 1 || sa.Arg > 10 || len(sa.Values) == 0 || len(sa.Sources) == 0 {
 			t.Errorf("%s: source_args %d needs sources, arg 1 to 10 and values", r.File, i)
 		}
 		for _, s := range sa.Sources {
-			if !slices.Contains(r.Sources, s) || !strings.HasSuffix(s, "(") {
-				t.Errorf("%s: source_args %d: %q is not one of the call sources", r.File, i, s)
+			if !slices.Contains(r.Sources, s) || !strings.HasSuffix(s, "(") && !(strings.HasSuffix(s, "[") && sa.Arg == 1) {
+				t.Errorf("%s: source_args %d: %q is not one of the call or index sources (an index source takes arg 1)", r.File, i, s)
 			}
 		}
 	}
@@ -271,6 +289,12 @@ func containsAny(code string, needles []string) bool {
 		if i := strings.Index(n, "[*]"); i > 0 {
 			n = n[:i] // $_FILES[*]['name']: any index of $_FILES
 		}
+		if pre, post, ok := strings.Cut(n, "(*)"); ok { // httpx.Client(*).get(: any arguments
+			if regexp.MustCompile(regexp.QuoteMeta(pre) + `\([^()]*(\([^()]*\)[^()]*)*\)` + regexp.QuoteMeta(post)).MatchString(code) {
+				return true
+			}
+			continue
+		}
 		if strings.Contains(code, strings.TrimPrefix(n, "^")) {
 			return true
 		}
@@ -305,4 +329,102 @@ func chainedSink(code string, sinks []string) bool {
 		}
 	}
 	return false
+}
+
+// sourceEndsIn reports whether one of sources ends in the member m (route_not
+// leaves its names out of those too): req.headers, ctx.request.header[, @Headers(.
+func sourceEndsIn(sources []string, m string) bool {
+	for _, s := range sources {
+		s = strings.TrimRight(s, "[(")
+		if i := strings.LastIndexAny(s, ".@^"); strings.EqualFold(s[i+1:], m) {
+			return true
+		}
+	}
+	return false
+}
+
+// A rule whose sinks leave input after ORDER BY to php-sqli-orderby-identifier
+// (unless_after) must not read input that rule does not: otherwise that input
+// in an ORDER BY would be reported by neither.
+// orderBySafe: sanitizers after which a value is safe as an ORDER BY
+// identifier, so php-sqli-orderby-identifier may clean with them where a rule
+// handing it ORDER BY does not (that rule reads them elsewhere in the query
+// too, where an allowlist of its own values may not apply). Adding to this
+// list needs a reason here.
+var orderBySafe = map[string]bool{
+	"in_array":             true, // checked against a list (the documented fix for ORDER BY)
+	"Rule::in":             true, // Laravel's validation against a list
+	"sanitize_sql_orderby": true, // WordPress: an ORDER BY clause of names and ASC/DESC only
+	"absint":               true, // integers
+	"intval":               true,
+	"(int)":                true,
+	"count(":               true,
+	"sizeof(":              true,
+}
+
+func TestUnlessAfterOwnerReads(t *testing.T) {
+	rs, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var owner *Rule
+	for i := range rs {
+		if rs[i].ID == "php-sqli-orderby-identifier" {
+			owner = &rs[i]
+		}
+	}
+	if owner == nil {
+		t.Fatal("php-sqli-orderby-identifier not found")
+	}
+	n := 0
+	for _, r := range rs {
+		hands := false
+		for _, a := range r.Args {
+			hands = hands || slices.ContainsFunc(a.UnlessAfter, func(s string) bool { return strings.EqualFold(s, "ORDER BY") })
+		}
+		if !hands || r.Lang != owner.Lang {
+			continue
+		}
+		n++
+		for _, s := range r.Sources {
+			if !slices.Contains(owner.Sources, s) && !slices.Contains(owner.Sources, s+"(") { // get_query_var is read as get_query_var(
+				t.Errorf("%s hands ORDER BY to %s, which does not read its source %q", r.ID, owner.ID, s)
+			}
+		}
+		// what the owner cleans the handing rule cleans too, but for the
+		// values an ORDER BY identifier is safe as: an integer, or one checked
+		// against a list (a quote escape such as esc_sql is not one)
+		for _, s := range owner.Sanitizers {
+			if !slices.Contains(r.Sanitizers, s) && !slices.Contains(r.Sanitizers, s+"(") && !orderBySafe[s] {
+				t.Errorf("%s hands ORDER BY to %s, which cleans with %q and it does not", r.ID, owner.ID, s)
+			}
+		}
+		// and the owner takes a route handler's input wherever it does
+		if owner.RouteInput != nil && !*owner.RouteInput && (r.RouteInput == nil || *r.RouteInput) {
+			t.Errorf("%s hands ORDER BY to %s, which takes no route input", r.ID, owner.ID)
+		}
+		for _, id := range owner.RoutesNot {
+			if !slices.Contains(r.RoutesNot, id) {
+				t.Errorf("%s hands ORDER BY to %s, which leaves out route model %s", r.ID, owner.ID, id)
+			}
+		}
+		for _, x := range owner.RouteNot {
+			if !slices.Contains(r.RouteNot, x) {
+				t.Errorf("%s hands ORDER BY to %s, which leaves out the route's %s", r.ID, owner.ID, x)
+			}
+		}
+		if owner.RouteMembers != nil {
+			for _, m := range r.RouteMembers {
+				if !slices.Contains(owner.RouteMembers, m) {
+					t.Errorf("%s hands ORDER BY to %s, which leaves out the route's %s", r.ID, owner.ID, m)
+				}
+			}
+			if r.RouteMembers == nil {
+				t.Errorf("%s hands ORDER BY to %s, which takes only some route members", r.ID, owner.ID)
+			}
+		}
+	}
+	if n == 0 {
+		t.Error("no rule hands ORDER BY to php-sqli-orderby-identifier")
+	}
 }

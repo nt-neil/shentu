@@ -197,14 +197,15 @@ func TestRouteInputOff(t *testing.T) {
 }
 
 // The rules a route model is not for are exactly those for one field of the
-// request (a password), those without sources and those saying route_input =
-// false: every other rule with sources gets the handlers' parameters.
+// request (a password), those without sources, those saying route_input =
+// false and those naming the model in routes_not: every other rule with
+// sources gets the handlers' parameters.
 func TestRouteRulesLeftOut(t *testing.T) {
 	e := engineForTest(t)
 	for lang, routes := range e.routes {
 		for _, c := range routes {
 			for _, r := range e.byLang[lang] {
-				if c.takes(r) || len(r.rule.Sources) == 0 || r.rule.RouteInput != nil && !*r.rule.RouteInput {
+				if c.takes(r) || len(r.rule.Sources) == 0 || r.rule.RouteInput != nil && !*r.rule.RouteInput || slices.Contains(r.rule.RoutesNot, c.r.ID) {
 					continue
 				}
 				for _, s := range r.rule.Sources {
@@ -236,6 +237,107 @@ func TestRouteMembers(t *testing.T) {
 		"req.query.id":  {"all", "objects"},
 	} {
 		src := "router.get('/item/:id', (req, res) => {\n  db.items.findOne({_id: " + in + "}, (err, item) => res.json(item));\n});\n"
+		fs, _ := e.Scan("js", "a.js", []byte(src))
+		var got []string
+		for _, f := range fs {
+			got = append(got, f.RuleID)
+		}
+		slices.Sort(got)
+		if !slices.Equal(got, want) {
+			t.Errorf("%s: reported by %v, want %v", in, got, want)
+		}
+	}
+}
+
+// A rule with route_not leaves those values of a handler's request to another
+// rule: headers.host makes req.headers.host and req.headers['host'] no input
+// in a route, while the other headers still are; a rule without it takes them
+// all. Koa's ctx.headers and ctx.request.headers end with the same member.
+func TestRouteNot(t *testing.T) {
+	rule := func(id string, not []string) rules.Rule {
+		return rules.Rule{ID: id, Lang: "js", Class: "ssrf", CWE: "CWE-918", Severity: "high", Title: "t",
+			Sources: []string{"req.query"}, Sinks: []string{"fetch("}, Sanitizers: []string{}, RouteNot: not}
+	}
+	e, err := New([]rules.Rule{rule("all", nil), rule("nohost", []string{"headers.host", "headers.x-forwarded-host"})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for in, want := range map[string][]string{
+		"req.headers.host":                {"all"},
+		"req.headers['host']":             {"all"},
+		"req.headers['x-forwarded-host']": {"all"},
+		"req.headers.referer":             {"all", "nohost"},
+		"req.headers['x-callback-url']":   {"all", "nohost"},
+	} {
+		src := "router.get('/p', async (req, res) => {\n  const r = await fetch(\"https://\" + " + in + ");\n  res.send(await r.text());\n});\n"
+		fs, _ := e.Scan("js", "a.js", []byte(src))
+		var got []string
+		for _, f := range fs {
+			got = append(got, f.RuleID)
+		}
+		slices.Sort(got)
+		if !slices.Equal(got, want) {
+			t.Errorf("%s: reported by %v, want %v", in, got, want)
+		}
+	}
+	src := "router.get('/p', async (ctx) => {\n  ctx.body = await fetch(\"https://\" + ctx.request.headers.host);\n});\n"
+	if fs, _ := e.Scan("js", "a.js", []byte(src)); len(fs) != 1 || fs[0].RuleID != "all" {
+		t.Errorf("Koa ctx.request.headers.host: %v, want all only", fs)
+	}
+}
+
+// A rule with routes_not leaves a route model's handlers to another rule: a
+// shortcode's attributes are no input to it, a REST callback's still are.
+func TestRoutesNot(t *testing.T) {
+	rule := func(id string, not []string) rules.Rule {
+		return rules.Rule{ID: id, Lang: "php", Class: "xss", CWE: "CWE-79", Severity: "medium", Title: "t",
+			Sources: []string{"$_GET"}, Sinks: []string{"echo"}, Sanitizers: []string{}, RoutesNot: not}
+	}
+	e, err := New([]rules.Rule{rule("all", nil), rule("noshortcode", []string{"wp-shortcode"})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string][]string{
+		"<?php\nadd_shortcode('b', 'f');\nfunction f($a) {\n\techo '<p>' . $a['c'] . '</p>';\n}\n":                                     {"all"},
+		"<?php\nregister_rest_route('x/v1', '/r', array('callback' => 'f'));\nfunction f($r) {\n\techo '<p>' . $r['c'] . '</p>';\n}\n": {"all", "noshortcode"},
+	} {
+		fs, _ := e.Scan("php", "a.php", []byte(name))
+		var got []string
+		for _, f := range fs {
+			got = append(got, f.RuleID)
+		}
+		slices.Sort(got)
+		if !slices.Equal(got, want) {
+			t.Errorf("%q: reported by %v, want %v", name, got, want)
+		}
+	}
+}
+
+// source_args on an index source (one ending with "["): its index is
+// argument 1. Two rules split req.headers[ between them by name; "?" takes an
+// index that is not a string literal (any header may be read so), without it
+// such an index is no input ("*" alone takes every name written out).
+func TestSourceArgsIndex(t *testing.T) {
+	rule := func(id string, values []string) rules.Rule {
+		return rules.Rule{ID: id, Lang: "js", Class: "ssrf", CWE: "CWE-918", Severity: "high", Title: "t",
+			Sources: []string{"req.headers[", "req.get("}, Sinks: []string{"fetch("}, Sanitizers: []string{}, RouteInput: new(bool),
+			SourceArgs: []rules.SourceArgs{{Sources: []string{"req.headers[", "req.get("}, Arg: 1, Values: values}}}
+	}
+	e, err := New([]rules.Rule{rule("host", []string{"host"}), rule("other", []string{"*", "?", "!host"}), rule("named", []string{"*"})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for in, want := range map[string][]string{
+		"req.headers['host']":        {"host", "named"},
+		"req.headers['Host']":        {"host", "named"},
+		"req.get('host')":            {"host", "named"},
+		"req.headers['x-target']":    {"named", "other"},
+		"req.get('x-target')":        {"named", "other"},
+		"req.headers[name]":          {"other"},
+		"req.headers[`x-${suffix}`]": {"other"},
+		"req.get(name)":              {"other"},
+	} {
+		src := "function f(req, name, suffix) {\n  return fetch(\"https://\" + " + in + ");\n}\n"
 		fs, _ := e.Scan("js", "a.js", []byte(src))
 		var got []string
 		for _, f := range fs {

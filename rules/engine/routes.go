@@ -120,6 +120,12 @@ func (e *Engine) compileRoutes(rs []rules.Route) error {
 // $_POST['password']). A rule for one field of the request does not take every
 // handler parameter; any other rule with sources does.
 func (c *croute) takes(r *crule) bool {
+	if slices.Contains(r.rule.RoutesNot, c.r.ID) {
+		return false // this model's input is another rule's (routes_not)
+	}
+	if len(r.rule.RouteOnly) > 0 {
+		return true // only the values route_only names (routeParams)
+	}
 	if r.rule.RouteInput != nil && !*r.rule.RouteInput {
 		return false // the rule says so: only its own sources (route_input = false)
 	}
@@ -504,13 +510,31 @@ func (a *analysis) routeParams(f *fn, x state) {
 			members = m
 		}
 		if len(members) == 0 {
+			if len(a.r.rule.RouteOnly) > 0 {
+				continue // no members to name a value of
+			}
 			x[p] = entry{taint: true}
 			continue
 		}
 		for _, m := range members {
 			// route_members names the last member: Koa's ctx.request.body is the body
-			if rm := a.r.rule.RouteMembers; rm == nil || slices.Contains(rm, m[strings.LastIndex(m, ".")+1:]) {
-				x[p+sepCh+"."+strings.ReplaceAll(m, ".", sepCh+".")] = entry{taint: true}
+			last := m[strings.LastIndex(m, ".")+1:]
+			k := p + sepCh + "." + strings.ReplaceAll(m, ".", sepCh+".")
+			if len(a.r.rule.RouteOnly) > 0 {
+				for _, n := range a.r.rule.RouteOnly { // headers.host: only r.headers.host and r.headers['host']
+					if mem, name, _ := strings.Cut(n, "."); mem == last {
+						x[k+sepCh+"."+name], x[k+sepCh+"["+name+"]"] = entry{taint: true}, entry{taint: true}
+					}
+				}
+				continue
+			}
+			if rm := a.r.rule.RouteMembers; rm == nil || slices.Contains(rm, last) {
+				x[k] = entry{taint: true}
+				for _, n := range a.r.rule.RouteNot { // headers.host: req.headers.host and req.headers['host'] are not input
+					if mem, name, _ := strings.Cut(n, "."); mem == last {
+						x[k+sepCh+"."+name], x[k+sepCh+"["+name+"]"] = entry{}, entry{}
+					}
+				}
 			}
 		}
 	}

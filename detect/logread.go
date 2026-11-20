@@ -113,15 +113,16 @@ type ReadOpts struct {
 var rootUID = 0
 
 // opened says whether the file opened is the one judged, and still only
-// root's to change: the judgment was on the path, and the path may have
+// root's, or the server account's it was judged to be (judgedUID, not
+// root), to change: the judgment was on the path, and the path may have
 // been swapped since.
-func opened(st hostenv.FileStat, judgedID string) (bool, hostenv.Reason) {
+func opened(st hostenv.FileStat, judgedID string, judgedUID int) (bool, hostenv.Reason) {
 	switch {
 	case judgedID == "" || st.ID == "" || st.ID != judgedID:
 		return false, hostenv.ReasonUnverified // not the file judged, or not known to be
 	case !st.Mode.IsRegular():
 		return false, hostenv.ReasonNotRegular
-	case st.UID != rootUID || st.Mode.Perm()&0o022 != 0:
+	case st.UID != rootUID && (judgedUID == 0 || st.UID != judgedUID), st.Mode.Perm()&0o022 != 0:
 		return false, hostenv.ReasonUntrusted
 	}
 	return true, ""
@@ -144,7 +145,7 @@ func ReadLog(src hostenv.Source, p string, cur *Cursor, b *Budget, opts ReadOpts
 	st := f.Stat()
 	res.Reason = hostenv.ReasonUnverified
 	if opts.Want != nil && opts.Want.Verified {
-		res.Verified, res.Reason = opened(st, opts.Want.FileID)
+		res.Verified, res.Reason = opened(st, opts.Want.FileID, opts.Want.FileUID)
 	} else if opts.Want != nil && opts.Want.Reason != "" {
 		res.Reason = opts.Want.Reason
 	}
@@ -454,7 +455,7 @@ func readRest(src hostenv.Source, c string, gz, byID bool, cur *Cursor, b *Budge
 			rf.Reason = want.Reason
 		}
 	case judged.Verified:
-		rf.Verified, rf.Reason = opened(st, judged.File.ID)
+		rf.Verified, rf.Reason = opened(st, judged.File.ID, judged.File.UID)
 	case judged.Reason != "":
 		rf.Reason = judged.Reason
 	}

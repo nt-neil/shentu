@@ -76,6 +76,17 @@
 
 
 
+<h2 id="attack">Attack detection (synthetic requests)</h2>
+<p>Since v0.4.0, CI measures attack detection on synthetic requests: attack requests converted from nuclei-templates, plus ordinary requests for 152 routes of 8 applications. They are not real traffic. A match means a signature of the same class matched the request; it is not an alert, which needs a vulnerability the host really has.</p>
+<p class="meta">Measured with v0.4.1 (nuclei-templates v10.5.2, commit 5442582a), 27 attack signatures.</p>
+<dl class="scores">
+  <div><dt>Same-class signature matched</dt><dd>1548<small>/ 3822</small><span>40.5%, templates that could not be converted (1143), unclassified ones (6618) and rce-unspecified ones (252) are not counted</span></dd></div>
+  <div><dt>False alerts on ordinary requests</dt><dd>0<small>/ 363</small><span>distinct requests among 1216, a 95% upper bound of about 0.8%, from only 152 routes</span></dd></div>
+  <div><dt>Vulnerabilities the test host really has</dt><dd>3<small>/ 10</small><span>3 of 10 templates alerted, 2 of them only at L1 (the payload is in the request body, which access logs do not record)</span></dd></div>
+</dl>
+<p><a href="https://github.com/nt-neil/shentu/blob/main/docs/attack-detection-limits.md#measured-detection">Each case, and what it cannot do: the attack detection limits</a></p>
+
+
 </main>
 <footer class="foot">
   <p>Apache-2.0. Generated from the repository by cmd/sitegen.</p>

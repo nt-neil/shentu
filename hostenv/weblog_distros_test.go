@@ -123,9 +123,11 @@ func TestWebLogsDistroDefaults(t *testing.T) {
 			row{"ubuntu2404", "apache access /var/log/apache2/access.log", false, p, wuw},
 			row{"rocky9", "nginx access /var/log/nginx/access.log", false, p, wuw},
 			row{"rocky9", "nginx access /var/log/nginx/access.log", true, p, ReasonWebUserWritable},
-			// Rocky's default modules make Apache's logs web_user_writable,
-			// whatever ptrace_scope is (n30).
-			row{"rocky9", "apache access /etc/httpd/logs/access_log", false, p, ReasonWebUserWritable},
+			// Rocky's default modules run no application code in the
+			// children (plan shentu-v0-4-1-log-trust): only those running
+			// programs as the children's account (actions, include,
+			// ext_filter, suexec, userdir) want ptrace_scope 1.
+			row{"rocky9", "apache access /etc/httpd/logs/access_log", false, p, wuw},
 		)
 	}
 	var table []string
