@@ -22,6 +22,10 @@ type pat struct {
 	chainNot map[string]bool // calls the chain may not go through: they make another object (rule chain_not)
 	chainVia string          // a call the chain must go through: httpx.Client(*).get( (chain.go viaSink)
 	wild     bool            // holds "[*]", which matches any one index: $_FILES[*]['name']
+	// memberWild: ends in "->*" (".*"): any one member read as a value, neither
+	// called nor read further: $request->sort, not $request->user() or
+	// $request->query->get(
+	memberWild bool
 	// sources only (source_args): the call (or index) is input only when its
 	// srcArg-th argument is a string literal among srcVals (lower case; "*": any; "!x": not x;
 	// "?": an argument that is not a string literal)
@@ -82,6 +86,9 @@ func compilePattern(lang, raw string, text bool) (*pat, error) {
 		if toks[k].op("[") && toks[k+1].op("*") && toks[k+2].op("]") {
 			p.wild = true
 		}
+	}
+	if n := len(toks); n >= 3 && toks[n-1].op("*") && memberOp(p.php, toks[n-2]) {
+		p.memberWild = true
 	}
 	p.member = memberOp(p.php, toks[0]) && toks[0].Text != "::"
 	for _, t := range toks {
@@ -144,6 +151,13 @@ func (p *pat) match(toks []Token, i int, strict bool) (int, bool) {
 				return 0, false
 			}
 			j, k = closeOf(toks, j)+1, k+2
+			continue
+		}
+		if p.memberWild && k == len(p.toks)-1 {
+			if j >= len(toks) || toks[j].Kind != Ident || j+1 < len(toks) && (toks[j+1].op("(") || toks[j+1].op("[") || memberOp(p.php, toks[j+1]) || toks[j+1].op("?.")) {
+				return 0, false
+			}
+			j++
 			continue
 		}
 		if j >= len(toks) || !tokEq(p.toks[k], toks[j]) {
