@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -214,7 +217,7 @@ func TestDispatchButtonOffer(t *testing.T) {
 	)
 	g := stubGate(t, map[string]tools.BlockCode{"203.0.113.2": tools.BlockUnverified, "203.0.113.3": tools.BlockOverflow, "10.0.0.1": tools.BlockInternal})
 	b, tg, _ := buttonBot(t, rec)
-	b.offerProposals(context.Background(), pairedChat, testDispatch, owner(b))
+	b.offerProposals(context.Background(), pairedChat, testDispatch, owner(b), originTelegram)
 	text, data := buttons(tg)
 	if len(data) != maxProposalButtons {
 		t.Fatalf("%d buttons, want %d: %v\n%s", len(data), maxProposalButtons, data, text)
@@ -258,7 +261,7 @@ func TestDispatchButtonNotOffered(t *testing.T) {
 		b, tg, arc := buttonBot(t, rec)
 		c.edit(b, &rec)
 		arc.recs[rec.ID] = rec
-		b.offerProposals(context.Background(), pairedChat, testDispatch, owner(b))
+		b.offerProposals(context.Background(), pairedChat, testDispatch, owner(b), originTelegram)
 		if _, data := buttons(tg); len(data) != 0 {
 			t.Errorf("%s: buttons %v", c.name, data)
 		}
@@ -268,7 +271,7 @@ func TestDispatchButtonNotOffered(t *testing.T) {
 func offerOne(t *testing.T, rec dispatchRecord) (*bot, *fakeTelegram, *fakeArchive, *gateStub, []string) {
 	g := stubGate(t, map[string]tools.BlockCode{})
 	b, tg, arc := buttonBot(t, rec)
-	b.offerProposals(context.Background(), pairedChat, testDispatch, owner(b))
+	b.offerProposals(context.Background(), pairedChat, testDispatch, owner(b), originTelegram)
 	_, data := buttons(tg)
 	if len(data) == 0 {
 		t.Fatal("no button was offered")
@@ -386,7 +389,7 @@ func TestDispatchButtonConfirmFour(t *testing.T) {
 	g := stubGate(t, map[string]tools.BlockCode{})
 	b, tg, _ := buttonBot(t, propRec(proposalRecord{IP: "203.0.113.1"}))
 	b.cfg.Bot.Confirm = 4
-	b.offerProposals(context.Background(), pairedChat, testDispatch, owner(b))
+	b.offerProposals(context.Background(), pairedChat, testDispatch, owner(b), originTelegram)
 	_, data := buttons(tg)
 	if len(data) != 1 {
 		t.Fatalf("buttons: %v", data)
@@ -411,5 +414,182 @@ func TestDispatchButtonUsesRemoteBlockCheck(t *testing.T) {
 	_, code, _ := blockCheck(context.Background(), &tools.Env{}, net.ParseIP("127.0.0.1"))
 	if code == tools.BlockOK {
 		t.Error("the default check lets loopback through")
+	}
+}
+
+// review 1 N-B1: when block_ip's Run refuses, the chat gets the fixed word
+// only, never the refusal's text (it quotes what attackers logged); an
+// error that is not a refusal says only that it failed.
+func TestDispatchButtonRunRefusalWordOnly(t *testing.T) {
+	marker := "ENTRY-" + "written-by-the-attacker"
+	_, refusal, _ := tools.RemoteBlockCheck(context.Background(), &tools.Env{}, net.ParseIP("127.0.0.1"))
+	if refusal != tools.BlockInternal {
+		t.Fatalf("loopback: %q", refusal)
+	}
+	for _, c := range []struct {
+		name string
+		err  func() error
+		want string
+	}{
+		{"a refusal", func() error {
+			_, _, err := tools.RemoteBlockCheck(context.Background(), &tools.Env{}, net.ParseIP("127.0.0.1"))
+			return fmt.Errorf("%w (%s)", err, marker)
+		}, "internal"},
+		{"not a refusal", func() error { return errors.New("nft: " + marker) }, ""},
+	} {
+		b, tg, _, g, data := offerOne(t, propRec(proposalRecord{IP: "203.0.113.1"}))
+		run := blockRun
+		blockRun = func(ctx context.Context, env *tools.Env, args []byte) (any, error) {
+			run(ctx, env, args)
+			return nil, c.err()
+		}
+		b.handle(context.Background(), press(pairedUser, data[0]))
+		confirmPress(t, b, tg, true)
+		answered(t, b)
+		if len(g.runs()) != 1 {
+			t.Fatalf("%s: runs %v", c.name, g.runs())
+		}
+		var last string
+		for _, s := range tg.sent() {
+			text, _ := s["text"].(string)
+			if strings.Contains(text, marker) {
+				t.Errorf("%s: the refusal's text reached the chat: %q", c.name, text)
+			}
+			last = text
+		}
+		if c.want != "" && !strings.Contains(last, c.want) {
+			t.Errorf("%s: last message %q does not say %q", c.name, last, c.want)
+		}
+		if es := buttonEntries(t, b); len(es) != 1 || !strings.Contains(es[0].Error, marker) {
+			t.Errorf("%s: the log lost the refusal: %+v", c.name, es)
+		}
+	}
+}
+
+// breakState makes bot.json unwritable (its temporary file is a directory)
+// while it stays readable.
+func breakState(t *testing.T, b *bot) {
+	if err := os.Mkdir(filepath.Join(b.cfg.StateDir, "bot.json.tmp"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if withBotState(b.cfg.StateDir, func(*botState) error { return nil }) == nil {
+		t.Fatal("bot.json is still writable")
+	}
+}
+
+// review 1 N-B2: a press whose use cannot be saved does not go on: the
+// button could be pressed again.
+func TestDispatchButtonPressUnsaved(t *testing.T) {
+	b, tg, _, g, data := offerOne(t, propRec(proposalRecord{IP: "203.0.113.1"}))
+	breakState(t, b)
+	b.handle(context.Background(), press(pairedUser, data[0]))
+	time.Sleep(200 * time.Millisecond)
+	for _, s := range tg.sent() {
+		if strings.Contains(s["text"].(string), "nft add element") {
+			t.Fatal("a confirmation was asked though the button's use was not saved")
+		}
+	}
+	answered(t, b)
+	if r := g.runs(); len(r) != 0 {
+		t.Errorf("runs: %v", r)
+	}
+	sent := tg.sent()
+	if last, _ := sent[len(sent)-1]["text"].(string); !strings.Contains(last, "shentu chat") {
+		t.Errorf("last message %q", last)
+	}
+	if es := buttonEntries(t, b); len(es) != 1 || !strings.Contains(es[0].Error, "could not be saved") {
+		t.Errorf("audit: %+v", es)
+	}
+}
+
+// review 1 S-B1: buttons bot.json cannot keep are not sent; the reasons are.
+func TestDispatchButtonOfferUnsaved(t *testing.T) {
+	stubGate(t, map[string]tools.BlockCode{"203.0.113.2": tools.BlockWeak})
+	b, tg, _ := buttonBot(t, propRec(proposalRecord{IP: "203.0.113.1"}, proposalRecord{IP: "203.0.113.2"}))
+	breakState(t, b)
+	b.offerProposals(context.Background(), pairedChat, testDispatch, owner(b), originTelegram)
+	text, data := buttons(tg)
+	if len(data) != 0 {
+		t.Errorf("buttons %v", data)
+	}
+	if !strings.Contains(text, "state_error") || !strings.Contains(text, "weak") {
+		t.Errorf("text %q", text)
+	}
+}
+
+// review 1 N-C4: an automatic incident dispatch's proposals get buttons in
+// the paired chat, sent from the patrol; a press is checked as any other.
+func TestDispatchButtonAuto(t *testing.T) {
+	g := stubGate(t, map[string]tools.BlockCode{})
+	b, tg := testBot(t, nil, true)
+	pairDirectly(t, b)
+	oldAPI := telegramBotAPI
+	telegramBotAPI = b.api
+	t.Cleanup(func() { telegramBotAPI = oldAPI })
+	b.cfg.Bot.TelegramToken = "1:T"
+	rec := propRec(proposalRecord{IP: "203.0.113.1"})
+	rec.Origin, rec.Trigger = originAuto, "t0123456789abcdef"
+	store := newDispatchStore(b.cfg)
+	if err := store.Save(rec); err != nil {
+		t.Fatal(err)
+	}
+	b.archive = store
+
+	for _, c := range []struct {
+		name string
+		edit func()
+		want int
+	}{
+		{"interaction 2", func() { b.cfg.Bot.Interaction = 2 }, 0},
+		{"paused", func() {
+			withBotState(b.cfg.StateDir, func(s *botState) error { s.Paused = "lockdown"; return nil })
+		}, 0},
+		{"unpaired", func() {
+			withBotState(b.cfg.StateDir, func(s *botState) error { s.UserID, s.ChatID = 0, 0; return nil })
+		}, 0},
+		{"paired", func() {}, 1},
+	} {
+		b.cfg.Bot.Interaction = 3
+		withBotState(b.cfg.StateDir, func(s *botState) error { s.Paused = ""; return nil })
+		pairDirectly(t, b)
+		c.edit()
+		n := len(tg.sent())
+		if err := offerAutoButtons(context.Background(), b.cfg, &tools.Env{}, testDispatch); err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		got := 0
+		for _, s := range tg.sent()[n:] {
+			if _, ok := s["reply_markup"].(map[string]any); ok && strings.Contains(s["text"].(string), testDispatch) {
+				got++
+				if s["chat_id"].(float64) != pairedChat {
+					t.Errorf("%s: sent to %v", c.name, s["chat_id"])
+				}
+			}
+		}
+		if got != c.want {
+			t.Errorf("%s: %d button messages, want %d", c.name, got, c.want)
+		}
+	}
+	_, data := buttons(tg)
+	if len(data) != 1 {
+		t.Fatalf("buttons %v", data)
+	}
+	// A Telegram answer does not offer an automatic dispatch's proposals.
+	n := len(tg.sent())
+	b.offerProposals(context.Background(), pairedChat, testDispatch, owner(b), originTelegram)
+	if len(tg.sent()) != n {
+		t.Error("the bot's answer offered an automatic dispatch")
+	}
+	b.handle(context.Background(), press(pairedUser, data[0]))
+	confirmPress(t, b, tg, true)
+	answered(t, b)
+	if r := g.runs(); len(r) != 1 {
+		t.Errorf("runs: %v", r)
+	}
+	// Pressed again: used.
+	b.handle(context.Background(), press(pairedUser, data[0]))
+	answered(t, b)
+	if r := g.runs(); len(r) != 1 {
+		t.Errorf("runs after a second press: %v", r)
 	}
 }

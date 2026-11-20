@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/http"
 	"strings"
 	"time"
 
@@ -66,16 +67,17 @@ func (b *bot) proposalCode(ctx context.Context, p proposalRecord) (preview strin
 
 // offerProposals sends the proposals of dispatch id with a button for each
 // that passes the checks now (at most maxProposalButtons). owner is the
-// pairing the answer belonged to.
-func (b *bot) offerProposals(ctx context.Context, chat int64, id, owner string) {
+// pairing the answer belonged to; origin is the dispatch's that may be
+// offered (originTelegram for the bot's own answer, originAuto for C).
+func (b *bot) offerProposals(ctx context.Context, chat int64, id, owner, origin string) {
 	if !b.canAct || b.archive == nil || id == "" {
 		return
 	}
 	rec, err := b.archive.Get(id)
-	if err != nil || rec.Origin != originTelegram || time.Since(rec.TS) > buttonTTL {
+	if err != nil || rec.Origin != origin || time.Since(rec.TS) > buttonTTL {
 		return
 	}
-	var lines []string
+	var lines, unsaved []string // unsaved: the lines if the buttons cannot be kept
 	var rows [][]map[string]string
 	set := &buttonSet{Pair: owner, At: rec.TS, IPs: map[int]string{}}
 	for _, s := range rec.Subs {
@@ -89,6 +91,7 @@ func (b *bot) offerProposals(ctx context.Context, chat int64, id, owner string) 
 				lines = append(lines, fmt.Sprintf("%d. %s — %s", p.Seq, addr, b.t("prop_more")))
 			default:
 				lines = append(lines, fmt.Sprintf("%d. %s — %s", p.Seq, addr, b.t("prop_button")))
+				unsaved = append(unsaved, fmt.Sprintf("%d. %s — "+b.t("prop_nobutton"), p.Seq, addr, b.blockWord(tools.BlockStateError)))
 				ref := proposalRef{Dispatch: id, Seq: p.Seq}
 				rows = append(rows, []map[string]string{{"text": fmt.Sprintf(b.t("prop_block"), ip), "callback_data": ref.String()}})
 				set.IPs[p.Seq] = ip.String()
@@ -101,8 +104,8 @@ func (b *bot) offerProposals(ctx context.Context, chat int64, id, owner string) 
 	var kb any
 	if len(rows) > 0 {
 		ok := true
-		withBotState(b.cfg.StateDir, func(s *botState) error {
-			if pairKey(*s) != owner { // the pairing changed meanwhile
+		err := withBotState(b.cfg.StateDir, func(s *botState) error {
+			if pairKey(*s) != owner || s.Paused != "" { // the pairing changed meanwhile, or the bot stopped
 				ok = false
 				return nil
 			}
@@ -117,12 +120,50 @@ func (b *bot) offerProposals(ctx context.Context, chat int64, id, owner string) 
 			s.Buttons[id] = set
 			return nil
 		})
-		if !ok {
+		switch {
+		case !ok:
 			return
+		case err != nil:
+			// A button bot.json does not hold could not be checked when
+			// pressed: the reasons only.
+			n := 0
+			for i, l := range lines {
+				if strings.HasSuffix(l, b.t("prop_button")) {
+					lines[i], n = unsaved[n], n+1
+				}
+			}
+		default:
+			kb = map[string]any{"inline_keyboard": rows}
 		}
-		kb = map[string]any{"inline_keyboard": rows}
 	}
-	b.send(ctx, chat, fmt.Sprintf(b.t("prop_title"), id)+"\n"+strings.Join(lines, "\n"), kb)
+	title := "prop_title"
+	if origin == originAuto {
+		title = "prop_title_auto"
+	}
+	b.send(ctx, chat, fmt.Sprintf(b.t(title), id)+"\n"+strings.Join(lines, "\n"), kb)
+}
+
+// offerAutoButtons is how an automatic incident dispatch (C) offers its
+// proposals: from the patrol, to the paired chat, as the bot's answers do,
+// once the record is in the archive. Nothing is sent without a paired,
+// running bot that may act ([bot] interaction >= 3); the press is the bot
+// service's, with every check there (CAP_NET_ADMIN included).
+func offerAutoButtons(ctx context.Context, cfg *Config, env *tools.Env, id string) error {
+	token := botToken(cfg)
+	if token == "" || cfg.Bot.Interaction < 3 {
+		return nil
+	}
+	var st botState
+	if err := withBotState(cfg.StateDir, func(s *botState) error { st = *s; return nil }); err != nil {
+		return err
+	}
+	if st.UserID == 0 || st.ChatID == 0 || st.Paused != "" {
+		return nil
+	}
+	b := &bot{cfg: cfg, env: env, token: token, api: telegramBotAPI, hc: &http.Client{Timeout: 30 * time.Second},
+		archive: newDispatchStore(cfg), canAct: true}
+	b.offerProposals(ctx, st.ChatID, id, pairKey(st), originAuto)
+	return nil
 }
 
 // pressProposal handles a press of a proposal button by the paired user.
@@ -153,7 +194,7 @@ func (b *bot) pressProposal(ctx context.Context, st botState, ref proposalRef) {
 	// Taken before anything else: a second press of the same button, now or
 	// after a restart, finds it used.
 	offered, why := "", "no such button"
-	withBotState(b.cfg.StateDir, func(s *botState) error {
+	err := withBotState(b.cfg.StateDir, func(s *botState) error {
 		set := s.Buttons[ref.Dispatch]
 		switch {
 		case set == nil:
@@ -176,6 +217,11 @@ func (b *bot) pressProposal(ctx context.Context, st botState, ref proposalRef) {
 	})
 	go func() {
 		defer func() { b.mu.Lock(); b.busy = false; b.mu.Unlock() }()
+		if err != nil {
+			// Used is not on disk: the button could be pressed again.
+			refuse("the button's use could not be saved: "+mask(err.Error()), b.t("prop_unsaved"))
+			return
+		}
 		if why != "" {
 			refuse(why, b.t("prop_gone"))
 			return
@@ -185,8 +231,8 @@ func (b *bot) pressProposal(ctx context.Context, st botState, ref proposalRef) {
 		case err != nil:
 			refuse("the proposal could not be read back: "+mask(err.Error()), b.t("prop_gone"))
 			return
-		case rec.Origin != originTelegram || time.Since(rec.TS) > buttonTTL:
-			refuse("the dispatch is not a Telegram one within the button's time", b.t("prop_gone"))
+		case rec.Origin != originTelegram && rec.Origin != originAuto || time.Since(rec.TS) > buttonTTL:
+			refuse("the dispatch is not a Telegram or automatic one within the button's time", b.t("prop_gone"))
 			return
 		case p.IP != offered:
 			refuse("the archive's address differs from the one the button was offered for", b.t("prop_gone"))
@@ -210,9 +256,15 @@ func (b *bot) pressProposal(ctx context.Context, st botState, ref proposalRef) {
 		tctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 		defer cancel()
 		if _, err := blockRun(tctx, &env, tools.ProposalBlockArgs(ip)); err != nil {
+			// The message is for the log: a refusal quotes what attackers
+			// logged. The chat gets its fixed word, or that it failed.
 			entry.Error = mask(err.Error())
 			b.log.write(entry)
-			b.send(ctx, chat, b.t("error")+tools.Cut(mask(err.Error()), 300), nil)
+			if code, ok := tools.RefusalCode(err); ok {
+				b.send(ctx, chat, fmt.Sprintf(b.t("prop_refused"), detect.Printable(p.IP), b.blockWord(code)), nil)
+			} else {
+				b.send(ctx, chat, b.t("prop_failed"), nil)
+			}
 			return
 		}
 		entry.OK = true

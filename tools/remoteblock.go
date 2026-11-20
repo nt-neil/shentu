@@ -42,11 +42,20 @@ func codeOf(err error) BlockCode {
 	if err == nil {
 		return BlockOK
 	}
-	var c *codedError
-	if errors.As(err, &c) {
-		return c.code
+	if c, ok := RefusalCode(err); ok {
+		return c
 	}
 	return BlockStateError
+}
+
+// RefusalCode is the BlockCode a check's refusal carries; false for nil and
+// for an error that is not a refusal (an nft failure, say).
+func RefusalCode(err error) (BlockCode, bool) {
+	var c *codedError
+	if errors.As(err, &c) {
+		return c.code, true
+	}
+	return "", false
 }
 
 // ProposalReason is the reason a block from a proposal button gives.
