@@ -216,11 +216,11 @@
     <li class="era-node" style="--old: 0.07; --x: 87.3">
       <a class="lamp" href="releases.html#v0.5.0" aria-describedby="rv-0.5.0">
         <i aria-hidden="true"></i><span class="ver">v0.5.0</span>
-        <b class="badge">Coming soon</b>
+        <time datetime="2026-11-20">11-20</time>
       </a>
       <p class="acc"><span><b>127</b> rules</span></p>
       <div class="peek" id="rv-0.5.0">
-        <p class="word">In progress</p>
+        <p class="word">3 changes</p>
         <ul><li>Sub-agents (Linux, one host): in the Telegram bot and <code>shentu chat</code>, the agent can hand read-only checks to up to 3 sub-agents with the <code>dispatch</code> tool, each in one role: <code>patrol</code>, <code>surface</code>, <code>attack</code> or <code>incident</code> (#101). Each role has a fixed list of read-only tools; a sub-agent cannot block or unblock an address, notify, use a skill or dispatch again. They run one after another. Patrol rounds and the eval bot never dispatch.</li><li>Limits: a sub-agent gets at most 6 model calls, 3 tool calls a step, 2048 output tokens a call, 40,000 tokens and 5 minutes; a dispatch at most 120,000 tokens and 12 minutes, and the monthly budget still applies. Tokens are estimated before each call and counted after it, reasoning tokens included. A sub-agent stopped by a limit, or one that does not answer in the required report, is reported incomplete with the reason, never as done. A model call cut off by a time limit is no longer retried.</li><li>Reports: each sub-agent answers in a fixed JSON shape (findings, proposals, what it did not check), checked field by field and masked, and the agent reads it marked untrusted. A proposal to block is only a suggestion: after a dispatch, every <code>block_ip</code> or <code>unblock_ip</code> in that conversation asks for the ✅ button even with <code>[bot] confirm = 4</code>, until <code>/new</code>, and its audit log line names the dispatch. The bot&#39;s progress message shows the sub-agents&#39; steps (the last 12), and a tool name it does not know as &#34;unknown tool&#34;.</li></ul>
       </div>
     </li>
@@ -472,10 +472,10 @@
     </div>
   </li>
 
-  <li class="era pending" id="v0.5.0" style="--old: 0.07">
+  <li class="era" id="v0.5.0" style="--old: 0.07">
     <div class="mark">
-      <p class="when">unreleased</p>
-      <h2><span class="word">In progress</span> <span class="ver">v0.5.0</span></h2>
+      <p class="when"><time datetime="2026-11-20">2026-11-20</time></p>
+      <h2><span class="word">3 changes</span> <span class="ver">v0.5.0</span></h2>
     </div>
     <div class="body">
       <ul class="items"><li>Sub-agents (Linux, one host): in the Telegram bot and <code>shentu chat</code>, the agent can hand read-only checks to up to 3 sub-agents with the <code>dispatch</code> tool, each in one role: <code>patrol</code>, <code>surface</code>, <code>attack</code> or <code>incident</code> (#101). Each role has a fixed list of read-only tools; a sub-agent cannot block or unblock an address, notify, use a skill or dispatch again. They run one after another. Patrol rounds and the eval bot never dispatch.</li><li>Limits: a sub-agent gets at most 6 model calls, 3 tool calls a step, 2048 output tokens a call, 40,000 tokens and 5 minutes; a dispatch at most 120,000 tokens and 12 minutes, and the monthly budget still applies. Tokens are estimated before each call and counted after it, reasoning tokens included. A sub-agent stopped by a limit, or one that does not answer in the required report, is reported incomplete with the reason, never as done. A model call cut off by a time limit is no longer retried.</li><li>Reports: each sub-agent answers in a fixed JSON shape (findings, proposals, what it did not check), checked field by field and masked, and the agent reads it marked untrusted. A proposal to block is only a suggestion: after a dispatch, every <code>block_ip</code> or <code>unblock_ip</code> in that conversation asks for the ✅ button even with <code>[bot] confirm = 4</code>, until <code>/new</code>, and its audit log line names the dispatch. The bot&#39;s progress message shows the sub-agents&#39; steps (the last 12), and a tool name it does not know as &#34;unknown tool&#34;.</li></ul>

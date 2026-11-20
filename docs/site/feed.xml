@@ -9,6 +9,13 @@
     <name>Shentu</name>
   </author>
   <entry>
+    <title>Shentu v0.5.0</title>
+    <id>https://nt-neil.github.io/shentu/releases.html#v0.5.0</id>
+    <updated>2026-11-20T00:00:00Z</updated>
+    <link href="https://nt-neil.github.io/shentu/releases.html#v0.5.0"></link>
+    <content type="html">&lt;ul&gt;&lt;li&gt;Sub-agents (Linux, one host): in the Telegram bot and &lt;code&gt;shentu chat&lt;/code&gt;, the agent can hand read-only checks to up to 3 sub-agents with the &lt;code&gt;dispatch&lt;/code&gt; tool, each in one role: &lt;code&gt;patrol&lt;/code&gt;, &lt;code&gt;surface&lt;/code&gt;, &lt;code&gt;attack&lt;/code&gt; or &lt;code&gt;incident&lt;/code&gt; (#101). Each role has a fixed list of read-only tools; a sub-agent cannot block or unblock an address, notify, use a skill or dispatch again. They run one after another. Patrol rounds and the eval bot never dispatch.&lt;/li&gt;&lt;li&gt;Limits: a sub-agent gets at most 6 model calls, 3 tool calls a step, 2048 output tokens a call, 40,000 tokens and 5 minutes; a dispatch at most 120,000 tokens and 12 minutes, and the monthly budget still applies. Tokens are estimated before each call and counted after it, reasoning tokens included. A sub-agent stopped by a limit, or one that does not answer in the required report, is reported incomplete with the reason, never as done. A model call cut off by a time limit is no longer retried.&lt;/li&gt;&lt;li&gt;Reports: each sub-agent answers in a fixed JSON shape (findings, proposals, what it did not check), checked field by field and masked, and the agent reads it marked untrusted. A proposal to block is only a suggestion: after a dispatch, every &lt;code&gt;block_ip&lt;/code&gt; or &lt;code&gt;unblock_ip&lt;/code&gt; in that conversation asks for the ✅ button even with &lt;code&gt;[bot] confirm = 4&lt;/code&gt;, until &lt;code&gt;/new&lt;/code&gt;, and its audit log line names the dispatch. The bot&amp;#39;s progress message shows the sub-agents&amp;#39; steps (the last 12), and a tool name it does not know as &amp;#34;unknown tool&amp;#34;.&lt;/li&gt;&lt;/ul&gt;</content>
+  </entry>
+  <entry>
     <title>Shentu v0.4.3</title>
     <id>https://nt-neil.github.io/shentu/releases.html#v0.4.3</id>
     <updated>2026-11-20T00:00:00Z</updated>

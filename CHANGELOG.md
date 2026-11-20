@@ -38,7 +38,7 @@ Chinese for the zh-TW pages; keep the two in step.
   two days, until its file is out of the window they read; the daily report says so.
 - With a 7B local model, sub-agents often use up their 6 steps and are reported incomplete.
 
-## v0.5.0 (unreleased)
+## v0.5.0 — 2026-11-20
 
 - Sub-agents (Linux, one host): in the Telegram bot and `shentu chat`, the agent can hand
   read-only checks to up to 3 sub-agents with the `dispatch` tool, each in one role: `patrol`,

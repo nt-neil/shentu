@@ -216,11 +216,11 @@
     <li class="era-node" style="--old: 0.07; --x: 87.3">
       <a class="lamp" href="../zh-TW/releases.html#v0.5.0" aria-describedby="rv-0.5.0">
         <i aria-hidden="true"></i><span class="ver">v0.5.0</span>
-        <b class="badge">即將發布</b>
+        <time datetime="2026-11-20">11-20</time>
       </a>
       <p class="acc"><span><b>127</b> 條規則</span></p>
       <div class="peek" id="rv-0.5.0">
-        <p class="word">籌備中</p>
+        <p class="word">3 項改變</p>
         <ul><li>子 agent（Linux、單機）：在 Telegram bot 和 <code>shentu chat</code> 裡，agent 可以用 <code>dispatch</code> 工具把唯讀的檢查交給最多 3 個子 agent，每個子 agent 一個角色：<code>patrol</code>、<code>surface</code>、<code>attack</code> 或 <code>incident</code>（#101）。每個角色有固定的唯讀工具清單；子 agent 不能封鎖或解除封鎖位址、不能發通知、不能用 skill，也不能再派遣。子 agent 依序一個接一個執行。巡檢輪次和 eval bot 不會派遣。</li><li>上限：每個子 agent 最多 6 次模型呼叫、每步 3 個工具呼叫、每次 2048 個輸出 token、合計 40,000 個 token、5 分鐘；一次派遣最多 120,000 個 token、12 分鐘，月預算照樣適用。每次呼叫前先估 token、呼叫後再計入，reasoning token 也算。被上限擋下、或沒有照規定格式回報的子 agent，會標成未完成並寫出原因，不會當成已完成。被時間上限切斷的模型呼叫不再重試。</li><li>回報：每個子 agent 用固定的 JSON 格式回答（發現、建議、沒查到的項目），逐欄檢查並遮罩，agent 讀到時標成 untrusted。封鎖建議只是建議：派遣之後，同一段對話裡每一次 <code>block_ip</code> 或 <code>unblock_ip</code> 都要按 ✅ 按鈕，<code>[bot] confirm = 4</code> 也一樣，直到 <code>/new</code> 為止；稽核紀錄會寫出是哪一次派遣。bot 的進度訊息會顯示子 agent 的步驟（最後 12 步），不認得的工具名稱顯示成「未知工具」。</li></ul>
       </div>
     </li>
@@ -472,10 +472,10 @@
     </div>
   </li>
 
-  <li class="era pending" id="v0.5.0" style="--old: 0.07">
+  <li class="era" id="v0.5.0" style="--old: 0.07">
     <div class="mark">
-      <p class="when">尚未發布</p>
-      <h2><span class="word">籌備中</span> <span class="ver">v0.5.0</span></h2>
+      <p class="when"><time datetime="2026-11-20">2026-11-20</time></p>
+      <h2><span class="word">3 項改變</span> <span class="ver">v0.5.0</span></h2>
     </div>
     <div class="body">
       <ul class="items"><li>子 agent（Linux、單機）：在 Telegram bot 和 <code>shentu chat</code> 裡，agent 可以用 <code>dispatch</code> 工具把唯讀的檢查交給最多 3 個子 agent，每個子 agent 一個角色：<code>patrol</code>、<code>surface</code>、<code>attack</code> 或 <code>incident</code>（#101）。每個角色有固定的唯讀工具清單；子 agent 不能封鎖或解除封鎖位址、不能發通知、不能用 skill，也不能再派遣。子 agent 依序一個接一個執行。巡檢輪次和 eval bot 不會派遣。</li><li>上限：每個子 agent 最多 6 次模型呼叫、每步 3 個工具呼叫、每次 2048 個輸出 token、合計 40,000 個 token、5 分鐘；一次派遣最多 120,000 個 token、12 分鐘，月預算照樣適用。每次呼叫前先估 token、呼叫後再計入，reasoning token 也算。被上限擋下、或沒有照規定格式回報的子 agent，會標成未完成並寫出原因，不會當成已完成。被時間上限切斷的模型呼叫不再重試。</li><li>回報：每個子 agent 用固定的 JSON 格式回答（發現、建議、沒查到的項目），逐欄檢查並遮罩，agent 讀到時標成 untrusted。封鎖建議只是建議：派遣之後，同一段對話裡每一次 <code>block_ip</code> 或 <code>unblock_ip</code> 都要按 ✅ 按鈕，<code>[bot] confirm = 4</code> 也一樣，直到 <code>/new</code> 為止；稽核紀錄會寫出是哪一次派遣。bot 的進度訊息會顯示子 agent 的步驟（最後 12 步），不認得的工具名稱顯示成「未知工具」。</li></ul>
