@@ -11,7 +11,7 @@ import (
 	"github.com/nt-neil/shentu/detect"
 )
 
-// v0.6.0 B: RemoteBlockCheck decides as block_ip from Telegram decides,
+// v0.5.1 B: RemoteBlockCheck decides as block_ip from Telegram decides,
 // and names the refusal with a fixed word (n3 B1-B4).
 func TestRemoteBlockCheckCodes(t *testing.T) {
 	past := grp("p", "203.0.113.0/24", "L2", false, "203.0.113.200") // its addresses past the listed one may hold .12

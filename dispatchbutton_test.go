@@ -18,7 +18,7 @@ import (
 	"github.com/nt-neil/shentu/tools"
 )
 
-// v0.6.0 B: proposal buttons (plan c0e392, n3 B1-B8). The gate's own
+// v0.5.1 B: proposal buttons (plan c0e392, n3 B1-B8). The gate's own
 // decisions are tested in tools (TestRemoteBlockCheckCodes); here, that the
 // bot offers a button only for what passes it, and a press checks again.
 

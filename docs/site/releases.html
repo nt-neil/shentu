@@ -57,7 +57,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.91; --x: 14.8">
+    <li class="era-node" style="--old: 0.93; --x: 13.1">
       <a class="lamp" href="releases.html#v0.1.1" aria-describedby="rv-0.1.1">
         <i aria-hidden="true"></i><span class="ver">v0.1.1</span>
         <time datetime="2026-11-07">11-07</time>
@@ -69,7 +69,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.82; --x: 22.6">
+    <li class="era-node" style="--old: 0.86; --x: 19.3">
       <a class="lamp" href="releases.html#v0.2.0" aria-describedby="rv-0.2.0">
         <i aria-hidden="true"></i><span class="ver">v0.2.0</span>
         <time datetime="2026-11-07">11-07</time>
@@ -81,7 +81,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.73; --x: 30.5">
+    <li class="era-node" style="--old: 0.79; --x: 25.4">
       <a class="lamp" href="releases.html#v0.2.1" aria-describedby="rv-0.2.1">
         <i aria-hidden="true"></i><span class="ver">v0.2.1</span>
         <time datetime="2026-11-08">11-08</time>
@@ -93,7 +93,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.64; --x: 38.3">
+    <li class="era-node" style="--old: 0.71; --x: 31.6">
       <a class="lamp" href="releases.html#v0.2.2" aria-describedby="rv-0.2.2">
         <i aria-hidden="true"></i><span class="ver">v0.2.2</span>
         <time datetime="2026-11-08">11-08</time>
@@ -105,7 +105,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.55; --x: 46.1">
+    <li class="era-node" style="--old: 0.64; --x: 37.7">
       <a class="lamp" href="releases.html#v0.2.3" aria-describedby="rv-0.2.3">
         <i aria-hidden="true"></i><span class="ver">v0.2.3</span>
         <time datetime="2026-11-09">11-09</time>
@@ -117,7 +117,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.45; --x: 53.9">
+    <li class="era-node" style="--old: 0.57; --x: 43.9">
       <a class="lamp" href="releases.html#v0.2.4" aria-describedby="rv-0.2.4">
         <i aria-hidden="true"></i><span class="ver">v0.2.4</span>
         <time datetime="2026-11-09">11-09</time>
@@ -129,7 +129,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.36; --x: 61.7">
+    <li class="era-node" style="--old: 0.50; --x: 50.0">
       <a class="lamp" href="releases.html#v0.2.5" aria-describedby="rv-0.2.5">
         <i aria-hidden="true"></i><span class="ver">v0.2.5</span>
         <time datetime="2026-11-13">11-13</time>
@@ -141,7 +141,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.27; --x: 69.5">
+    <li class="era-node" style="--old: 0.43; --x: 56.1">
       <a class="lamp" href="releases.html#v0.3.0" aria-describedby="rv-0.3.0">
         <i aria-hidden="true"></i><span class="ver">v0.3.0</span>
         <time datetime="2026-11-13">11-13</time>
@@ -153,7 +153,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.18; --x: 77.4">
+    <li class="era-node" style="--old: 0.36; --x: 62.3">
       <a class="lamp" href="releases.html#v0.3.1" aria-describedby="rv-0.3.1">
         <i aria-hidden="true"></i><span class="ver">v0.3.1</span>
         <time datetime="2026-11-16">11-16</time>
@@ -165,7 +165,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.09; --x: 85.2">
+    <li class="era-node" style="--old: 0.29; --x: 68.4">
       <a class="lamp" href="releases.html#v0.4.0" aria-describedby="rv-0.4.0">
         <i aria-hidden="true"></i><span class="ver">v0.4.0</span>
         <time datetime="2026-11-18">11-18</time>
@@ -177,9 +177,45 @@
       </div>
     </li>
   
-    <li class="era-node now" style="--old: 0.00; --x: 93.0">
+    <li class="era-node" style="--old: 0.21; --x: 74.6">
       <a class="lamp" href="releases.html#v0.4.1" aria-describedby="rv-0.4.1">
         <i aria-hidden="true"></i><span class="ver">v0.4.1</span>
+        <b class="badge">Coming soon</b>
+      </a>
+      <p class="acc"><span><b>127</b> rules</span></p>
+      <div class="peek" id="rv-0.4.1">
+        <p class="word">In progress</p>
+        <ul><li>The host survey warns about nginx 1.9.5 through 1.31.8 serving HTTP/2 (a <code>listen ... http2</code>, or <code>http2 on</code> for a server): CVE-2026-123007 and CVE-2026-123633, HTTP/2 memory corruption that lets a client crash the workers. Upgrade to 1.31.9 or 1.30.7, or to the distribution&#39;s fixed package; until then, turning HTTP/2 off avoids it. It is advice: the configuration is not changed. A distribution package whose changelog names the CVEs (a backported fix) is not warned about; the package scan reports the distributions&#39; advisories once they reach OSV, and this check covers nginx.org&#39;s packages and builds from source, which that scan does not.</li><li>A web log owned by the server&#39;s own account (<code>nginx</code> on Rocky Linux, say) can back a block, as a log root owns can, when nothing else runs as that account: no PHP-FPM pool, systemd unit, crontab, supervisord program, sudo or doas rule or login shell, and at the patrol no process but the server&#39;s own; the account databases come only from the files, and everything checked was read. Anything unread leaves the log <code>web_user_writable</code>. The shared default accounts (<code>www-data</code>, <code>apache</code>, <code>nobody</code>) never count. The other conditions are in the limits document, <code>docs/attack-detection-limits.md</code>, under &#34;Which web logs can back a block&#34;.</li><li>nginx&#39;s access log sent to journald (<code>access_log syslog:server=unix:/dev/log,...</code>) is read and verified line by line: a line counts only when it came over syslog from nginx&#39;s own program, running as nginx&#39;s worker account in <code>nginx.service</code>. A line another program sent is read but not verified.</li></ul>
+      </div>
+    </li>
+  
+    <li class="era-node" style="--old: 0.14; --x: 80.7">
+      <a class="lamp" href="releases.html#v0.5.0" aria-describedby="rv-0.5.0">
+        <i aria-hidden="true"></i><span class="ver">v0.5.0</span>
+        <b class="badge">Coming soon</b>
+      </a>
+      <p class="acc"><span><b>127</b> rules</span></p>
+      <div class="peek" id="rv-0.5.0">
+        <p class="word">In progress</p>
+        <ul><li>Sub-agents (Linux, one host): in the Telegram bot and <code>shentu chat</code>, the agent can hand read-only checks to up to 3 sub-agents with the <code>dispatch</code> tool, each in one role: <code>patrol</code>, <code>surface</code>, <code>attack</code> or <code>incident</code> (#101). Each role has a fixed list of read-only tools; a sub-agent cannot block or unblock an address, notify, use a skill or dispatch again. They run one after another. Patrol rounds and the eval bot never dispatch.</li><li>Limits: a sub-agent gets at most 6 model calls, 3 tool calls a step, 2048 output tokens a call, 40,000 tokens and 5 minutes; a dispatch at most 120,000 tokens and 12 minutes, and the monthly budget still applies. Tokens are estimated before each call and counted after it, reasoning tokens included. A sub-agent stopped by a limit, or one that does not answer in the required report, is reported incomplete with the reason, never as done. A model call cut off by a time limit is no longer retried.</li><li>Reports: each sub-agent answers in a fixed JSON shape (findings, proposals, what it did not check), checked field by field and masked, and the agent reads it marked untrusted. A proposal to block is only a suggestion: after a dispatch, every <code>block_ip</code> or <code>unblock_ip</code> in that conversation asks for the ✅ button even with <code>[bot] confirm = 4</code>, until <code>/new</code>, and its audit log line names the dispatch. The bot&#39;s progress message shows the sub-agents&#39; steps (the last 12), and a tool name it does not know as &#34;unknown tool&#34;.</li></ul>
+      </div>
+    </li>
+  
+    <li class="era-node" style="--old: 0.07; --x: 86.9">
+      <a class="lamp" href="releases.html#v0.5.1" aria-describedby="rv-0.5.1">
+        <i aria-hidden="true"></i><span class="ver">v0.5.1</span>
+        <b class="badge">Coming soon</b>
+      </a>
+      <p class="acc"><span><b>127</b> rules</span></p>
+      <div class="peek" id="rv-0.5.1">
+        <p class="word">In progress</p>
+        <ul><li>Dispatch archive (#112): each sub-agent dispatch is saved to <code>state_dir/dispatch/&lt;date&gt;.jsonl</code> (0600 in a 0700 directory, kept 30 days) before its reports go back: roles, statuses and reasons as fixed words, counts, and the proposed addresses in canonical form with what the Telegram gate says of each. No text a sub-agent or a log wrote is kept. Every field is checked when a record is written and when it is read; an archive another user could write, or a link, is not read. The daily report has a section on the last day&#39;s dispatches, with addresses masked to /24 (/64 for IPv6).</li><li>Proposal buttons (#116, #122): after a Telegram answer that dispatched, the bot lists the proposed blocks, with a button for each one that passes the checks <code>block_ip</code> runs from Telegram (#108&#39;s gate included) at that moment and was written in canonical form, at most five; any other gets a fixed word for why. A button carries only the dispatch id and a number. Pressing it runs the checks again, then asks for ✅ (with <code>[bot] confirm = 4</code> too), then blocks. A press is refused for another pairing, after 24 hours, a second time (after a restart too), or when the archive&#39;s address differs.</li><li>Automatic incident checks (#117), off by default (<code>[agents] auto_incident</code>): an L3 group the patrol pushed dispatches the read-only <code>incident</code> sub-agent on its own. One a round, at most 3 a day, a group once a day; none for unverified or overflow groups, none without <code>[budget] monthly_tokens</code> or past 80% of it, and none while the archive or <code>log.jsonl</code> cannot be read to its end. The notice carries fixed words and numbers; its proposals get the same buttons, sent only while the bot service runs and can change the firewall.</li></ul>
+      </div>
+    </li>
+  
+    <li class="era-node now" style="--old: 0.00; --x: 93.0">
+      <a class="lamp" href="releases.html#v0.5.2" aria-describedby="rv-0.5.2">
+        <i aria-hidden="true"></i><span class="ver">v0.5.2</span>
         <b class="badge">Coming soon</b>
       </a>
       <p class="acc"><span><b>127</b> rules</span></p>
@@ -189,9 +225,9 @@
   </ol>
 </div>
 
-<div class="newest" id="rv-0.4.1">
-  <div class="newest-head"><p class="word">In progress</p><span class="ver">v0.4.1</span><b class="badge">Coming soon</b></div>
-  <div class="grp grp-reach"><h4><i aria-hidden="true"></i>Sees further</h4><ul><li>The host survey warns about nginx 1.9.5 through 1.31.8 serving HTTP/2 (a <code>listen ... http2</code>, or <code>http2 on</code> for a server): CVE-2026-123007 and CVE-2026-123633, HTTP/2 memory corruption that lets a client crash the workers. Upgrade to 1.31.9 or 1.30.7, or to the distribution&#39;s fixed package; until then, turning HTTP/2 off avoids it. It is advice: the configuration is not changed. A distribution package whose changelog names the CVEs (a backported fix) is not warned about; the package scan reports the distributions&#39; advisories once they reach OSV, and this check covers nginx.org&#39;s packages and builds from source, which that scan does not.</li><li>A web log owned by the server&#39;s own account (<code>nginx</code> on Rocky Linux, say) can back a block, as a log root owns can, when nothing else runs as that account: no PHP-FPM pool, systemd unit, crontab, supervisord program, sudo or doas rule or login shell, and at the patrol no process but the server&#39;s own; the account databases come only from the files, and everything checked was read. Anything unread leaves the log <code>web_user_writable</code>. The shared default accounts (<code>www-data</code>, <code>apache</code>, <code>nobody</code>) never count. The other conditions are in the limits document, <code>docs/attack-detection-limits.md</code>, under &#34;Which web logs can back a block&#34;.</li><li>nginx&#39;s access log sent to journald (<code>access_log syslog:server=unix:/dev/log,...</code>) is read and verified line by line: a line counts only when it came over syslog from nginx&#39;s own program, running as nginx&#39;s worker account in <code>nginx.service</code>. A line another program sent is read but not verified.</li><li><code>shentu log-trust suggest</code> prints the changes that would let this host&#39;s web logs back a block: the journald line for nginx, a drop-in lifting journald&#39;s rate limit for nginx, <code>kernel.yama.ptrace_scope = 1</code>, and PHP-FPM pools of their own account. It only prints them and changes nothing.</li><li>Apache&#39;s modules are judged against a list: modules that only configure, control access, cache or proxy are no concern; those that run programs as the children&#39;s account, and <code>RewriteMap</code>&#39;s <code>prg:</code>, want <code>ptrace_scope</code> 1 or more; <code>mod_php</code>, <code>mod_cgi</code> and unknown modules count as application code.</li><li>An attack hit in a route placeholder&#39;s segment that carries <code>;</code> parameters (<code>/user/42;x</code> for <code>/user/:id</code>) now reaches L2; before, it stayed at L1.</li><li>The response-size baseline used for L3 now leaves out only requests taken to L2; requests with hits that are unanchored or noise are learned from.</li><li>Rule precision: findings that two rules both reported on one line now have one owner (Host header against SSRF, SQL injection, <code>ORDER BY</code> identifiers), and an SSRF host checked against a fixed allowlist on a parsed URL counts as checked. Some findings appear or go away, and with them the routes attack detection takes as reachable.</li></ul></div><div class="grp grp-fixed"><h4><i aria-hidden="true"></i>Fixed</h4><ul><li>From Telegram, <code>block_ip</code> now blocks only an address with evidence Shentu verified: a verified L2 or L3 attack group listing it, or SSH login events sshd itself logged. Any other address is refused there, to be checked and blocked on the server with <code>shentu chat</code>, as v0.4.0 said of unverified attempts. Before, an address its attack groups did not list (past the ten a group lists, in a group evicted from the state, or logged in another form) was judged by its SSH logins alone, so one with none could be blocked from Telegram on unverified attempts. A group lists at most ten addresses, so the eleventh and later of even a verified L2 or L3 group are refused from Telegram too, by design, and are to be blocked on the server.</li><li>On the server, an address past the addresses a group lists is refused as a listed one is, also after the group is merged into an overflow summary, and so is the rest of its network. So is an address logged in another form: brackets, a port, a zone, leading zeros (read both ways), or IPv4 embedded in IPv6. A verified group allows a block only of the address it lists. Once an overflow or sink-wide summary has more sources than it keeps hashes of (64), it refuses every address it does not list; the operator may override on the server.</li></ul></div><div class="grp grp-upgrade"><h4><i aria-hidden="true"></i>Upgrade notes</h4><ul><li>v0.4.0&#39;s known issue that default nginx logs cannot back a block, planned for v0.4.1, now stands as follows (<code>docs/attack-detection-limits.md</code> has the details): Debian 12 and Ubuntu 24.04 nginx stay <code>web_user_writable</code> (<code>www-data</code> is PHP&#39;s account too): send the access log to journald, with <code>ptrace_scope</code> 1. Debian 12 and Ubuntu 24.04 Apache are verified with <code>ptrace_scope</code> 1. Rocky 9 nginx stays <code>web_user_writable</code>, because the default <code>nsswitch.conf</code> also asks sss: taken out (where no SSSD is used), with PHP-FPM as <code>apache</code>, it is verified. Rocky 9 httpd wants <code>ptrace_scope</code> 1, and <code>AllowOverride None</code> everywhere if <code>mod_lua</code> stays loaded.</li><li>Once a log is judged verified, new attempts go into verified groups, while the old unverified groups expire only after up to 7 days: until then one target may show two groups. A new journald source is read the first time from its latest position on, not from the past.</li></ul></div>
+<div class="newest" id="rv-0.5.2">
+  <div class="newest-head"><p class="word">In progress</p><span class="ver">v0.5.2</span><b class="badge">Coming soon</b></div>
+  <div class="grp grp-reach"><h4><i aria-hidden="true"></i>Sees further</h4><ul><li>The sub-agents&#39; own model (#135): <code>[agents] base_url</code>, <code>model</code> and <code>api_key_env</code> give them a model of their own; unset, they use <code>[llm]</code>. A model outside this host (anything but 127.0.0.0/8, ::1 and localhost) needs <code>[budget] monthly_tokens</code>, or no sub-agent runs and nothing is sent; a dispatch that used one says so to the agent, in the archive and in the daily report. What it is sent is masked as before. From it, an error answer keeps only its status, as its text could quote the key; redirects are not followed, and a request that fails keeps only the kind of failure, not its URL. <code>[llm]</code>&#39;s errors have the key replaced, as is and in its common encodings, before they are cut.</li><li>Sub-agents at once (#136): on a model outside this host they run together, each with an equal share of the dispatch&#39;s token cap, when this month&#39;s token limit has room for a whole dispatch and, with <code>monthly_cost</code> set, under half of it is spent. On a model at this host, in any address form, they still take turns.</li><li><code>sudo shentu dispatch repair</code> (#134): moves the archive&#39;s unreadable lines to <code>&lt;date&gt;.jsonl.bad</code> and drops empty ones, so automatic incident checks resume without waiting up to 72 hours. Files are replaced in one rename, and the archive&#39;s lock is <code>dispatch/.lock</code>.</li><li>Platforms (#138): a role gets only the tools that work on this platform, and the others are listed as unchecked; proposals only on Linux; on macOS only <code>surface</code> runs for now; automatic incident checks run on Linux only and take no daily slot elsewhere.</li></ul></div><div class="grp grp-sharp"><h4><i aria-hidden="true"></i>Sees more precisely</h4><ul><li>Operator feedback (#137): under a dispatch&#39;s report the bot offers 👍 useful and 👎 false positive, once, for 7 days, to the paired user. <code>sudo shentu dispatch stats [--days 7] [--json]</code> adds the numbers up by role and suggests changes within fixed ranges (steps 4 to 10, tokens 20,000 to 60,000, a prompt review). A tool could only ever be suggested away, never added; no tool suggestion is made yet. Shentu applies none itself.</li></ul></div><div class="grp grp-upgrade"><h4><i aria-hidden="true"></i>Upgrade notes</h4><ul><li>An <code>[agents]</code> model on a LAN address or a host name, Ollama on another machine of the network included, counts as outside this host, and so do 127.1, 0.0.0.0, [::] and this host&#39;s own LAN address: set <code>[budget] monthly_tokens</code>.</li></ul></div><div class="grp grp-known"><h4><i aria-hidden="true"></i>Known issues</h4><ul><li>With a costly model, a dispatch&#39;s cost can pass half of <code>monthly_cost</code> in one go; the limit stops the next calls, not that one.</li><li>The bot and the patrol each reserve room for their dispatches without seeing the other&#39;s.</li><li>Automatic incident checks are off on Windows and macOS for now, the incident role included (on Windows it runs with fewer tools and proposes nothing).</li></ul></div>
 </div>
 
 
@@ -210,7 +246,7 @@
     </div>
   </li>
 
-  <li class="era" id="v0.1.1" style="--old: 0.91">
+  <li class="era" id="v0.1.1" style="--old: 0.93">
     <div class="mark">
       <p class="when"><time datetime="2026-11-07">2026-11-07</time></p>
       <h2><span class="word">3 changes</span> <span class="ver">v0.1.1</span></h2>
@@ -222,7 +258,7 @@
     </div>
   </li>
 
-  <li class="era" id="v0.2.0" style="--old: 0.82">
+  <li class="era" id="v0.2.0" style="--old: 0.86">
     <div class="mark">
       <p class="when"><time datetime="2026-11-07">2026-11-07</time></p>
       <h2><span class="word">2 changes</span> <span class="ver">v0.2.0</span></h2>
@@ -234,7 +270,7 @@
     </div>
   </li>
 
-  <li class="era" id="v0.2.1" style="--old: 0.73">
+  <li class="era" id="v0.2.1" style="--old: 0.79">
     <div class="mark">
       <p class="when"><time datetime="2026-11-08">2026-11-08</time></p>
       <h2><span class="word">3 changes</span> <span class="ver">v0.2.1</span></h2>
@@ -246,7 +282,7 @@
     </div>
   </li>
 
-  <li class="era" id="v0.2.2" style="--old: 0.64">
+  <li class="era" id="v0.2.2" style="--old: 0.71">
     <div class="mark">
       <p class="when"><time datetime="2026-11-08">2026-11-08</time></p>
       <h2><span class="word">1 changes</span> <span class="ver">v0.2.2</span></h2>
@@ -258,7 +294,7 @@
     </div>
   </li>
 
-  <li class="era" id="v0.2.3" style="--old: 0.55">
+  <li class="era" id="v0.2.3" style="--old: 0.64">
     <div class="mark">
       <p class="when"><time datetime="2026-11-09">2026-11-09</time></p>
       <h2><span class="word">1 changes</span> <span class="ver">v0.2.3</span></h2>
@@ -270,7 +306,7 @@
     </div>
   </li>
 
-  <li class="era" id="v0.2.4" style="--old: 0.45">
+  <li class="era" id="v0.2.4" style="--old: 0.57">
     <div class="mark">
       <p class="when"><time datetime="2026-11-09">2026-11-09</time></p>
       <h2><span class="word">New rules enshrined</span> <span class="ver">v0.2.4</span></h2>
@@ -293,7 +329,7 @@
     </div>
   </li>
 
-  <li class="era" id="v0.2.5" style="--old: 0.36">
+  <li class="era" id="v0.2.5" style="--old: 0.50">
     <div class="mark">
       <p class="when"><time datetime="2026-11-13">2026-11-13</time></p>
       <h2><span class="word">New rules enshrined</span> <span class="ver">v0.2.5</span></h2>
@@ -316,7 +352,7 @@
     </div>
   </li>
 
-  <li class="era" id="v0.3.0" style="--old: 0.27">
+  <li class="era" id="v0.3.0" style="--old: 0.43">
     <div class="mark">
       <p class="when"><time datetime="2026-11-13">2026-11-13</time></p>
       <h2><span class="word">19 changes</span> <span class="ver">v0.3.0</span></h2>
@@ -333,7 +369,7 @@
     </div>
   </li>
 
-  <li class="era" id="v0.3.1" style="--old: 0.18">
+  <li class="era" id="v0.3.1" style="--old: 0.36">
     <div class="mark">
       <p class="when"><time datetime="2026-11-16">2026-11-16</time></p>
       <h2><span class="word">New rules enshrined</span> <span class="ver">v0.3.1</span></h2>
@@ -356,7 +392,7 @@
     </div>
   </li>
 
-  <li class="era" id="v0.4.0" style="--old: 0.09">
+  <li class="era" id="v0.4.0" style="--old: 0.29">
     <div class="mark">
       <p class="when"><time datetime="2026-11-18">2026-11-18</time></p>
       <h2><span class="word">21 changes</span> <span class="ver">v0.4.0</span></h2>
@@ -373,13 +409,64 @@
     </div>
   </li>
 
-  <li class="era pending" id="v0.4.1" style="--old: 0.00">
+  <li class="era pending" id="v0.4.1" style="--old: 0.21">
     <div class="mark">
       <p class="when">unreleased</p>
       <h2><span class="word">In progress</span> <span class="ver">v0.4.1</span></h2>
     </div>
     <div class="body">
       <ul class="items"><li>The host survey warns about nginx 1.9.5 through 1.31.8 serving HTTP/2 (a <code>listen ... http2</code>, or <code>http2 on</code> for a server): CVE-2026-123007 and CVE-2026-123633, HTTP/2 memory corruption that lets a client crash the workers. Upgrade to 1.31.9 or 1.30.7, or to the distribution&#39;s fixed package; until then, turning HTTP/2 off avoids it. It is advice: the configuration is not changed. A distribution package whose changelog names the CVEs (a backported fix) is not warned about; the package scan reports the distributions&#39; advisories once they reach OSV, and this check covers nginx.org&#39;s packages and builds from source, which that scan does not.</li><li>A web log owned by the server&#39;s own account (<code>nginx</code> on Rocky Linux, say) can back a block, as a log root owns can, when nothing else runs as that account: no PHP-FPM pool, systemd unit, crontab, supervisord program, sudo or doas rule or login shell, and at the patrol no process but the server&#39;s own; the account databases come only from the files, and everything checked was read. Anything unread leaves the log <code>web_user_writable</code>. The shared default accounts (<code>www-data</code>, <code>apache</code>, <code>nobody</code>) never count. The other conditions are in the limits document, <code>docs/attack-detection-limits.md</code>, under &#34;Which web logs can back a block&#34;.</li><li>nginx&#39;s access log sent to journald (<code>access_log syslog:server=unix:/dev/log,...</code>) is read and verified line by line: a line counts only when it came over syslog from nginx&#39;s own program, running as nginx&#39;s worker account in <code>nginx.service</code>. A line another program sent is read but not verified.</li><li><code>shentu log-trust suggest</code> prints the changes that would let this host&#39;s web logs back a block: the journald line for nginx, a drop-in lifting journald&#39;s rate limit for nginx, <code>kernel.yama.ptrace_scope = 1</code>, and PHP-FPM pools of their own account. It only prints them and changes nothing.</li><li>Apache&#39;s modules are judged against a list: modules that only configure, control access, cache or proxy are no concern; those that run programs as the children&#39;s account, and <code>RewriteMap</code>&#39;s <code>prg:</code>, want <code>ptrace_scope</code> 1 or more; <code>mod_php</code>, <code>mod_cgi</code> and unknown modules count as application code.</li><li>An attack hit in a route placeholder&#39;s segment that carries <code>;</code> parameters (<code>/user/42;x</code> for <code>/user/:id</code>) now reaches L2; before, it stayed at L1.</li><li>The response-size baseline used for L3 now leaves out only requests taken to L2; requests with hits that are unanchored or noise are learned from.</li><li>Rule precision: findings that two rules both reported on one line now have one owner (Host header against SSRF, SQL injection, <code>ORDER BY</code> identifiers), and an SSRF host checked against a fixed allowlist on a parsed URL counts as checked. Some findings appear or go away, and with them the routes attack detection takes as reachable.</li><li>From Telegram, <code>block_ip</code> now blocks only an address with evidence Shentu verified: a verified L2 or L3 attack group listing it, or SSH login events sshd itself logged. Any other address is refused there, to be checked and blocked on the server with <code>shentu chat</code>, as v0.4.0 said of unverified attempts. Before, an address its attack groups did not list (past the ten a group lists, in a group evicted from the state, or logged in another form) was judged by its SSH logins alone, so one with none could be blocked from Telegram on unverified attempts. A group lists at most ten addresses, so the eleventh and later of even a verified L2 or L3 group are refused from Telegram too, by design, and are to be blocked on the server.</li><li>On the server, an address past the addresses a group lists is refused as a listed one is, also after the group is merged into an overflow summary, and so is the rest of its network. So is an address logged in another form: brackets, a port, a zone, leading zeros (read both ways), or IPv4 embedded in IPv6. A verified group allows a block only of the address it lists. Once an overflow or sink-wide summary has more sources than it keeps hashes of (64), it refuses every address it does not list; the operator may override on the server.</li><li>v0.4.0&#39;s known issue that default nginx logs cannot back a block, planned for v0.4.1, now stands as follows (<code>docs/attack-detection-limits.md</code> has the details): Debian 12 and Ubuntu 24.04 nginx stay <code>web_user_writable</code> (<code>www-data</code> is PHP&#39;s account too): send the access log to journald, with <code>ptrace_scope</code> 1. Debian 12 and Ubuntu 24.04 Apache are verified with <code>ptrace_scope</code> 1. Rocky 9 nginx stays <code>web_user_writable</code>, because the default <code>nsswitch.conf</code> also asks sss: taken out (where no SSSD is used), with PHP-FPM as <code>apache</code>, it is verified. Rocky 9 httpd wants <code>ptrace_scope</code> 1, and <code>AllowOverride None</code> everywhere if <code>mod_lua</code> stays loaded.</li><li>Once a log is judged verified, new attempts go into verified groups, while the old unverified groups expire only after up to 7 days: until then one target may show two groups. A new journald source is read the first time from its latest position on, not from the past.</li></ul>
+      
+      <div class="grow">
+        <p><span class="bar" style="--w: 100.0%"></span><b>127</b> rules</p>
+        
+      </div>
+      
+      
+    </div>
+  </li>
+
+  <li class="era pending" id="v0.5.0" style="--old: 0.14">
+    <div class="mark">
+      <p class="when">unreleased</p>
+      <h2><span class="word">In progress</span> <span class="ver">v0.5.0</span></h2>
+    </div>
+    <div class="body">
+      <ul class="items"><li>Sub-agents (Linux, one host): in the Telegram bot and <code>shentu chat</code>, the agent can hand read-only checks to up to 3 sub-agents with the <code>dispatch</code> tool, each in one role: <code>patrol</code>, <code>surface</code>, <code>attack</code> or <code>incident</code> (#101). Each role has a fixed list of read-only tools; a sub-agent cannot block or unblock an address, notify, use a skill or dispatch again. They run one after another. Patrol rounds and the eval bot never dispatch.</li><li>Limits: a sub-agent gets at most 6 model calls, 3 tool calls a step, 2048 output tokens a call, 40,000 tokens and 5 minutes; a dispatch at most 120,000 tokens and 12 minutes, and the monthly budget still applies. Tokens are estimated before each call and counted after it, reasoning tokens included. A sub-agent stopped by a limit, or one that does not answer in the required report, is reported incomplete with the reason, never as done. A model call cut off by a time limit is no longer retried.</li><li>Reports: each sub-agent answers in a fixed JSON shape (findings, proposals, what it did not check), checked field by field and masked, and the agent reads it marked untrusted. A proposal to block is only a suggestion: after a dispatch, every <code>block_ip</code> or <code>unblock_ip</code> in that conversation asks for the ✅ button even with <code>[bot] confirm = 4</code>, until <code>/new</code>, and its audit log line names the dispatch. The bot&#39;s progress message shows the sub-agents&#39; steps (the last 12), and a tool name it does not know as &#34;unknown tool&#34;.</li></ul>
+      
+      <div class="grow">
+        <p><span class="bar" style="--w: 100.0%"></span><b>127</b> rules</p>
+        
+      </div>
+      
+      
+    </div>
+  </li>
+
+  <li class="era pending" id="v0.5.1" style="--old: 0.07">
+    <div class="mark">
+      <p class="when">unreleased</p>
+      <h2><span class="word">In progress</span> <span class="ver">v0.5.1</span></h2>
+    </div>
+    <div class="body">
+      <ul class="items"><li>Dispatch archive (#112): each sub-agent dispatch is saved to <code>state_dir/dispatch/&lt;date&gt;.jsonl</code> (0600 in a 0700 directory, kept 30 days) before its reports go back: roles, statuses and reasons as fixed words, counts, and the proposed addresses in canonical form with what the Telegram gate says of each. No text a sub-agent or a log wrote is kept. Every field is checked when a record is written and when it is read; an archive another user could write, or a link, is not read. The daily report has a section on the last day&#39;s dispatches, with addresses masked to /24 (/64 for IPv6).</li><li>Proposal buttons (#116, #122): after a Telegram answer that dispatched, the bot lists the proposed blocks, with a button for each one that passes the checks <code>block_ip</code> runs from Telegram (#108&#39;s gate included) at that moment and was written in canonical form, at most five; any other gets a fixed word for why. A button carries only the dispatch id and a number. Pressing it runs the checks again, then asks for ✅ (with <code>[bot] confirm = 4</code> too), then blocks. A press is refused for another pairing, after 24 hours, a second time (after a restart too), or when the archive&#39;s address differs.</li><li>Automatic incident checks (#117), off by default (<code>[agents] auto_incident</code>): an L3 group the patrol pushed dispatches the read-only <code>incident</code> sub-agent on its own. One a round, at most 3 a day, a group once a day; none for unverified or overflow groups, none without <code>[budget] monthly_tokens</code> or past 80% of it, and none while the archive or <code>log.jsonl</code> cannot be read to its end. The notice carries fixed words and numbers; its proposals get the same buttons, sent only while the bot service runs and can change the firewall.</li><li>The bot&#39;s and <code>shentu chat</code>&#39;s monthly AI budget limit counts a <code>log.jsonl</code> it could not read to its end as used up.</li><li>Sub-agents still run one after another, and they are built and tested for Linux only.</li><li>A line cut short in the archive (a full disk, say) stops automatic incident checks for about two days, until its file is out of the window they read; the daily report says so.</li><li>With a 7B local model, sub-agents often use up their 6 steps and are reported incomplete.</li></ul>
+      
+      <div class="grow">
+        <p><span class="bar" style="--w: 100.0%"></span><b>127</b> rules</p>
+        
+      </div>
+      
+      
+    </div>
+  </li>
+
+  <li class="era pending" id="v0.5.2" style="--old: 0.00">
+    <div class="mark">
+      <p class="when">unreleased</p>
+      <h2><span class="word">In progress</span> <span class="ver">v0.5.2</span></h2>
+    </div>
+    <div class="body">
+      <ul class="items"><li>The sub-agents&#39; own model (#135): <code>[agents] base_url</code>, <code>model</code> and <code>api_key_env</code> give them a model of their own; unset, they use <code>[llm]</code>. A model outside this host (anything but 127.0.0.0/8, ::1 and localhost) needs <code>[budget] monthly_tokens</code>, or no sub-agent runs and nothing is sent; a dispatch that used one says so to the agent, in the archive and in the daily report. What it is sent is masked as before. From it, an error answer keeps only its status, as its text could quote the key; redirects are not followed, and a request that fails keeps only the kind of failure, not its URL. <code>[llm]</code>&#39;s errors have the key replaced, as is and in its common encodings, before they are cut.</li><li>Sub-agents at once (#136): on a model outside this host they run together, each with an equal share of the dispatch&#39;s token cap, when this month&#39;s token limit has room for a whole dispatch and, with <code>monthly_cost</code> set, under half of it is spent. On a model at this host, in any address form, they still take turns.</li><li><code>sudo shentu dispatch repair</code> (#134): moves the archive&#39;s unreadable lines to <code>&lt;date&gt;.jsonl.bad</code> and drops empty ones, so automatic incident checks resume without waiting up to 72 hours. Files are replaced in one rename, and the archive&#39;s lock is <code>dispatch/.lock</code>.</li><li>Operator feedback (#137): under a dispatch&#39;s report the bot offers 👍 useful and 👎 false positive, once, for 7 days, to the paired user. <code>sudo shentu dispatch stats [--days 7] [--json]</code> adds the numbers up by role and suggests changes within fixed ranges (steps 4 to 10, tokens 20,000 to 60,000, a prompt review). A tool could only ever be suggested away, never added; no tool suggestion is made yet. Shentu applies none itself.</li><li>Platforms (#138): a role gets only the tools that work on this platform, and the others are listed as unchecked; proposals only on Linux; on macOS only <code>surface</code> runs for now; automatic incident checks run on Linux only and take no daily slot elsewhere.</li><li>An <code>[agents]</code> model on a LAN address or a host name, Ollama on another machine of the network included, counts as outside this host, and so do 127.1, 0.0.0.0, [::] and this host&#39;s own LAN address: set <code>[budget] monthly_tokens</code>.</li><li>With a costly model, a dispatch&#39;s cost can pass half of <code>monthly_cost</code> in one go; the limit stops the next calls, not that one.</li><li>The bot and the patrol each reserve room for their dispatches without seeing the other&#39;s.</li><li>Automatic incident checks are off on Windows and macOS for now, the incident role included (on Windows it runs with fewer tools and proposes nothing).</li></ul>
       
       <div class="grow">
         <p><span class="bar" style="--w: 100.0%"></span><b>127</b> rules</p>
