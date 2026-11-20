@@ -57,13 +57,13 @@ func TestBotBlockAllowedStillAsks(t *testing.T) {
 func TestRemotePrecheckScope(t *testing.T) {
 	stubGate(t, map[string]tools.BlockCode{"203.0.113.9": tools.BlockUnverified})
 	args := json.RawMessage(`{"ip":"203.0.113.9"}`)
-	if err := remotePrecheck(context.Background(), &tools.Env{Remote: false}, "block_ip", args); err != nil {
+	if _, err := remotePrecheck(context.Background(), &tools.Env{Remote: false}, "block_ip", args); err != nil {
 		t.Errorf("shentu chat: %v", err)
 	}
-	if err := remotePrecheck(context.Background(), &tools.Env{Remote: true}, "unblock_ip", args); err != nil {
+	if _, err := remotePrecheck(context.Background(), &tools.Env{Remote: true}, "unblock_ip", args); err != nil {
 		t.Errorf("unblock_ip: %v", err)
 	}
-	if err := remotePrecheck(context.Background(), &tools.Env{Remote: true}, "block_ip", args); err == nil {
+	if _, err := remotePrecheck(context.Background(), &tools.Env{Remote: true}, "block_ip", args); err == nil {
 		t.Error("Telegram block_ip was not prechecked")
 	}
 }

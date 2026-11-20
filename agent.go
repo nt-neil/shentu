@@ -217,9 +217,14 @@ func (a *agent) logLLM(err error) {
 // operator is asked: an address the gate refuses is refused now, with the
 // gate's reason, rather than after a ✅ that could not count. Run still
 // checks again; this only decides whether to ask.
-func remotePrecheck(ctx context.Context, env *tools.Env, name string, args json.RawMessage) error {
+//
+// refusal, what the model is told, is built from fixed words, the address
+// as parsed and the gate's BlockCode only: never the gate's message, which
+// can quote what a log holds (a sample, an entry an attacker wrote). detail
+// is that message, for the server's log.
+func remotePrecheck(ctx context.Context, env *tools.Env, name string, args json.RawMessage) (refusal string, detail error) {
 	if env == nil || !env.Remote || name != "block_ip" {
-		return nil
+		return "", nil
 	}
 	var a struct {
 		IP string `json:"ip"`
@@ -227,15 +232,16 @@ func remotePrecheck(ctx context.Context, env *tools.Env, name string, args json.
 	json.Unmarshal(args, &a)
 	ip := net.ParseIP(strings.TrimSpace(a.IP))
 	if ip == nil {
-		return nil // Preview read it some other way; Run decides
+		return "", nil // Preview read it some other way; Run decides
 	}
-	if _, code, err := blockCheck(ctx, env, ip); code != tools.BlockOK {
-		if err == nil {
-			err = fmt.Errorf("refused: %s", code)
-		}
-		return err
+	_, code, err := blockCheck(ctx, env, ip)
+	if code == tools.BlockOK {
+		return "", nil
 	}
-	return nil
+	if err == nil {
+		err = fmt.Errorf("refused: %s", code)
+	}
+	return fmt.Sprintf("refusing to block %s from a chat channel: the gate says %s. Nothing was asked of the operator; it can be checked on the server with shentu chat.", ip, code), err
 }
 
 // callTool runs one tool and returns the text the model will see.
@@ -279,11 +285,11 @@ func (a *agent) callTool(ctx context.Context, name, rawArgs string) string {
 			return errText(err.Error())
 		}
 		entry.Preview = mask(preview)
-		if err := remotePrecheck(ctx, a.env, name, args); err != nil {
+		if refusal, detail := remotePrecheck(ctx, a.env, name, args); detail != nil {
 			// Refused by the gate now: no ✅ for something that would be refused after it.
-			entry.Error = mask(err.Error())
+			entry.Error = mask(detail.Error()) // the gate's own message, for the server's log
 			a.log.write(entry)
-			return errText(err.Error())
+			return errText(refusal)
 		}
 		confirm := a.confirm
 		if a.lastDispatch != "" {

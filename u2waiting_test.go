@@ -58,7 +58,7 @@ func TestProposalPressWhileConfirming(t *testing.T) {
 	b.waiting["pending"] = make(chan bool, 1)
 	b.mu.Unlock()
 	b.handle(context.Background(), press(pairedUser, data[0]))
-	if got := lastText(tg); got != b.t("busy_confirm") {
+	if got := lastText(tg); got != b.t("busy_press") { // S-U2-2: the button stays, press it later
 		t.Errorf("reply: %q", got)
 	}
 	if r := g.runs(); len(r) != 0 {

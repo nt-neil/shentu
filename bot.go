@@ -507,6 +507,13 @@ func (b *bot) handle(ctx context.Context, u tgUpdate) {
 			}
 		}
 		b.mu.Lock()
+		if strings.HasPrefix(answer, "s") && nonce == b.sugNonce && b.busy {
+			// A suggestion pressed while busy stays for later: it is not used up.
+			word := b.busyWord(st, true)
+			b.mu.Unlock()
+			b.send(ctx, st.ChatID, b.t(word), nil)
+			return
+		}
 		ch := b.waiting[nonce]
 		delete(b.waiting, nonce)
 		var ask string
@@ -611,18 +618,35 @@ func (b *bot) handle(ctx context.Context, u tgUpdate) {
 		b.history, b.histFor, b.histDispatch = nil, who, ""
 	}
 	if b.busy {
-		pending := len(b.waiting) > 0 // a confirmation is waiting for its button
+		word := b.busyWord(st, false)
 		b.mu.Unlock()
-		if pending { // the prompt above is the one to answer: it is not sent again
-			b.send(ctx, m.Chat.ID, b.t("busy_confirm"), nil)
-		} else {
-			b.send(ctx, m.Chat.ID, b.t("busy"), nil)
-		}
+		b.send(ctx, m.Chat.ID, b.t(word), nil) // what waits is not sent again
 		return
 	}
 	b.busy = true
 	b.mu.Unlock()
 	go b.answer(ctx, m.Chat.ID, text)
+}
+
+// busyWord is the reply while an answer is running, by what it waits for:
+// the authenticator code, the confirmation button, the server's approval,
+// or nothing (still working). press is for a button pressed meanwhile,
+// which stays for later. b.mu is held.
+func (b *bot) busyWord(st botState, press bool) string {
+	waiting := b.codeWait != nil || len(b.waiting) > 0 || st.Action != nil
+	switch {
+	case press && waiting:
+		return "busy_press"
+	case press:
+		return "busy_later"
+	case b.codeWait != nil:
+		return "busy_code"
+	case len(b.waiting) > 0:
+		return "busy_confirm"
+	case st.Action != nil:
+		return "busy_server"
+	}
+	return "busy"
 }
 
 // tryPair checks a /pair code. A correct code only records a pending request for root.
@@ -917,6 +941,10 @@ var botText = map[string][2]string{ // English, Chinese
 	"accepted":        {"Code accepted. Approve the request on the server terminal to finish pairing.", "已收到配對碼。請在伺服器終端機核准這個要求，才會完成配對。"},
 	"new":             {"OK, new conversation.", "好，開始新的對話。"},
 	"busy":            {"Still working on the previous question.", "上一個問題還在處理中，請稍候。"},
+	"busy_code":       {"Please send the 6-digit code from your authenticator app first. This message was not read; send it again afterwards.", "請先傳送驗證器上的 6 位數密碼。這則訊息沒有被讀取，之後請再傳一次。"},
+	"busy_server":     {"An action is waiting for approval on the server (sudo shentu bot approve). This message was not read; send it again afterwards.", "有一個動作正在等伺服器核准（sudo shentu bot approve）。這則訊息沒有被讀取，之後請再傳一次。"},
+	"busy_press":      {"Please answer what is waiting above first; the button stays, press it again afterwards.", "請先處理上面正在等待的事項；按鈕還在，之後再按一次。"},
+	"busy_later":      {"Still working on the previous question; the button stays, press it again afterwards.", "上一個問題還在處理中；按鈕還在，稍後再按一次。"},
 	"busy_confirm":    {"Please answer the confirmation above first (✅ or ❌). This message was not read; send it again afterwards.", "請先回覆上面的確認（✅ 或 ❌）。這則訊息沒有被讀取，處理完確認後請再傳一次。"},
 	"error":           {"Error: ", "發生錯誤："},
 	"settled_yes":     {"✅ Confirmed.", "✅ 你已確認。"},
