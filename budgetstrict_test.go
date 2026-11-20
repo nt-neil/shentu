@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -43,27 +43,24 @@ func TestBotClearsCanActOnExit(t *testing.T) {
 	netAdmin = func() bool { return true }
 	t.Cleanup(func() { netAdmin = old })
 	b, _ := levelBot(t, nil, [4]int{3, 2, 3, 2})
-	var mu sync.Mutex
-	seen := false
+	var seen atomic.Bool // no lock held around bot.json's: a handler may hold that one
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/getUpdates") {
 			withBotState(b.cfg.StateDir, func(s *botState) error {
-				mu.Lock()
-				seen = seen || s.CanAct
-				mu.Unlock()
+				if s.CanAct {
+					seen.Store(true)
+				}
 				return nil
 			})
 		}
 		w.Write([]byte(`{"ok":true,"result":[]}`))
 	}))
-	defer srv.Close()
 	b.api, b.hc = srv.URL, srv.Client()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	b.run(ctx)
-	mu.Lock()
-	defer mu.Unlock()
-	if !seen {
+	srv.Close() // waits for a request still being answered
+	if !seen.Load() {
 		t.Error("bot.json did not say the running service can act")
 	}
 	var st botState
