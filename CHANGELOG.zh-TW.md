@@ -3,7 +3,7 @@
 CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本與日期必須一致，
 每個版本都要有內容（`go test ./cmd/sitegen` 會檢查）。
 
-## v0.5.0 (unreleased)
+## v0.5.0 — 2026-11-20
 
 - 子 agent（Linux、單機）：在 Telegram bot 和 `shentu chat` 裡，agent 可以用 `dispatch` 工具把唯讀的檢查交給最多 3 個子 agent，每個子 agent 一個角色：`patrol`、`surface`、`attack` 或 `incident`（#101）。每個角色有固定的唯讀工具清單；子 agent 不能封鎖或解除封鎖位址、不能發通知、不能用 skill，也不能再派遣。子 agent 依序一個接一個執行。巡檢輪次和 eval bot 不會派遣。
 - 上限：每個子 agent 最多 6 次模型呼叫、每步 3 個工具呼叫、每次 2048 個輸出 token、合計 40,000 個 token、5 分鐘；一次派遣最多 120,000 個 token、12 分鐘，月預算照樣適用。每次呼叫前先估 token、呼叫後再計入，reasoning token 也算。被上限擋下、或沒有照規定格式回報的子 agent，會標成未完成並寫出原因，不會當成已完成。被時間上限切斷的模型呼叫不再重試。
