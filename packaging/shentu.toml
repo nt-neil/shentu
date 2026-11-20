@@ -65,3 +65,10 @@ cooldown = "24h"                # do not repeat the same alert within this time
 # a monthly [budget] or once 80% of it is used. The daily report says what was skipped.
 [agents]
 auto_incident = false
+# The sub-agents' own model; unset, they use [llm]. A model outside this host is
+# sent this host's logs and settings (masked) and is refused without a monthly
+# [budget]; each dispatch that used one says so, and so does the daily report.
+# The key is read from the named environment variable (as for [llm]).
+# base_url    = "https://api.openai.com/v1"
+# model       = "gpt-4.1-mini"
+# api_key_env = "SHENTU_AGENTS_API_KEY"

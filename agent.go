@@ -33,6 +33,7 @@ type agent struct {
 	dispatchID    string          // the dispatch a sub-agent belongs to, for the log
 	tokenCap      int             // if set, input+output tokens this agent may use
 	tokensUsed    int             // input+output tokens used so far
+	subLLM        *llmClient      // the sub-agents' model for the dispatch running now; nil means llm
 	calls         int             // model calls made, for the dispatch archive
 	toolsRun      int             // tool calls run
 	tokIn, tokOut int             // tokens, split as the provider reported them
