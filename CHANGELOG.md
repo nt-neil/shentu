@@ -6,7 +6,7 @@ a release are not written here: they are worked out from the rule snapshots in
 `docs/site-src/rules-history/`. `CHANGELOG.zh-TW.md` holds the same releases in Traditional
 Chinese for the zh-TW pages; keep the two in step.
 
-## v0.4.3 (unreleased)
+## v0.4.3 — 2026-11-20
 
 - SSRF: after a URL's host is checked, `console.log(u)`, `JSON.stringify(u)` or `String(u)`
   no longer ends the check, while the file uses `console`, `JSON` and `String` only to call
