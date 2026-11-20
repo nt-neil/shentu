@@ -565,7 +565,8 @@ func TestDispatchButtonAuto(t *testing.T) {
 		}
 		got := 0
 		for _, s := range tg.sent()[n:] {
-			if _, ok := s["reply_markup"].(map[string]any); ok && strings.Contains(s["text"].(string), testDispatch) {
+			if rm, ok := s["reply_markup"].(map[string]any); ok && strings.Contains(s["text"].(string), testDispatch) &&
+				strings.Contains(fmt.Sprint(rm), ":b") { // proposal buttons, not the feedback ones (G)
 				got++
 				if s["chat_id"].(float64) != pairedChat {
 					t.Errorf("%s: sent to %v", c.name, s["chat_id"])
@@ -577,7 +578,7 @@ func TestDispatchButtonAuto(t *testing.T) {
 		}
 		if c.name == "service cannot act" {
 			sent := tg.sent()[n:]
-			if len(sent) != 1 || !strings.Contains(sent[0]["text"].(string), "CAP_NET_ADMIN") {
+			if len(sent) < 1 || !strings.Contains(sent[0]["text"].(string), "CAP_NET_ADMIN") {
 				t.Errorf("%s: the reason was not sent: %v", c.name, sent)
 			}
 		}

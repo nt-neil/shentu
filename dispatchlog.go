@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"io/fs"
@@ -901,8 +902,17 @@ func (s *dispatchStore) repairedLine(now time.Time) string {
 
 // dispatchCommand is `shentu dispatch repair`.
 func dispatchCommand(cfg *Config, args []string, root bool) error {
+	if len(args) > 0 && args[0] == "stats" {
+		fs := flag.NewFlagSet("dispatch stats", flag.ContinueOnError)
+		days := fs.Int("days", 7, "add up this many days (1 to 30)")
+		asJSON := fs.Bool("json", false, "print JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		return statsReport(cfg, *days, *asJSON, os.Stdout, time.Now())
+	}
 	if len(args) != 1 || args[0] != "repair" {
-		return errors.New("usage: shentu dispatch repair")
+		return errors.New("usage: shentu dispatch repair | shentu dispatch stats [--days 7] [--json]")
 	}
 	if !root {
 		return errors.New("shentu dispatch repair changes the dispatch archive: run it as root (sudo shentu dispatch repair)")

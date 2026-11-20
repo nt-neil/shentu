@@ -67,17 +67,18 @@ type botState struct {
 	Pending     *pendingPair `json:"pending,omitempty"`
 	Offset      int64        `json:"offset,omitempty"`
 
-	Levels     [4]int                `json:"levels"`                // what the service last ran with
-	TOTPSecret string                `json:"totp_secret,omitempty"` // confirm = 2
-	TOTPLast   uint64                `json:"totp_last,omitempty"`   // last time step used, never accepted again
-	CodeFails  int                   `json:"code_fails,omitempty"`  // wrong codes since the last right one; 5 pause the bot
-	Action     *pendingAction        `json:"action,omitempty"`      // confirm = 1: waiting for `shentu bot approve`
-	Paused     string                `json:"paused,omitempty"`      // why the bot stopped (lockdown, token leak)
-	ToDelete   []sentMsg             `json:"to_delete,omitempty"`   // answers = 1..3: deleted after 24h
-	Day        string                `json:"day,omitempty"`         // protection = 1: answers counted per day
-	DayCount   int                   `json:"day_count,omitempty"`
-	CanAct     bool                  `json:"can_act,omitempty"` // the service, as it last started, may change the firewall (interaction >= 3, CAP_NET_ADMIN)
-	Buttons    map[string]*buttonSet `json:"buttons,omitempty"` // proposal buttons offered, by dispatch id
+	Levels     [4]int                  `json:"levels"`                // what the service last ran with
+	TOTPSecret string                  `json:"totp_secret,omitempty"` // confirm = 2
+	TOTPLast   uint64                  `json:"totp_last,omitempty"`   // last time step used, never accepted again
+	CodeFails  int                     `json:"code_fails,omitempty"`  // wrong codes since the last right one; 5 pause the bot
+	Action     *pendingAction          `json:"action,omitempty"`      // confirm = 1: waiting for `shentu bot approve`
+	Paused     string                  `json:"paused,omitempty"`      // why the bot stopped (lockdown, token leak)
+	ToDelete   []sentMsg               `json:"to_delete,omitempty"`   // answers = 1..3: deleted after 24h
+	Day        string                  `json:"day,omitempty"`         // protection = 1: answers counted per day
+	DayCount   int                     `json:"day_count,omitempty"`
+	CanAct     bool                    `json:"can_act,omitempty"`  // the service, as it last started, may change the firewall (interaction >= 3, CAP_NET_ADMIN)
+	Buttons    map[string]*buttonSet   `json:"buttons,omitempty"`  // proposal buttons offered, by dispatch id
+	Feedback   map[string]*feedbackSet `json:"feedback,omitempty"` // feedback buttons offered, by dispatch id
 }
 
 type pendingAction struct {
@@ -499,6 +500,12 @@ func (b *bot) handle(ctx context.Context, u tgUpdate) {
 				return
 			}
 		}
+		if strings.HasPrefix(answer, "f") {
+			if ref, err := parseFeedbackRef(c.Data); err == nil {
+				b.pressFeedback(ctx, st, ref)
+				return
+			}
+		}
 		b.mu.Lock()
 		ch := b.waiting[nonce]
 		delete(b.waiting, nonce)
@@ -716,6 +723,7 @@ func (b *bot) answer(ctx context.Context, chat int64, text string) {
 	b.sendAs(ctx, chat, answer, kb, true)
 	if a.lastDispatch != prior { // this turn dispatched: its proposals, under the answer
 		b.offerProposals(ctx, chat, a.lastDispatch, owner, originTelegram)
+		b.offerFeedback(ctx, chat, a.lastDispatch, owner, originTelegram)
 	}
 	var keep []message // keep plain turns only, so tool output does not pile up
 	for _, m := range msgs[1:] {
@@ -930,6 +938,10 @@ var botText = map[string][2]string{ // English, Chinese
 	"prop_nobutton":   {"no button: %s", "不提供按鈕：%s"},
 	"prop_block":      {"Block %s", "封鎖 %s"},
 	"prop_gone":       {"This button no longer works.", "這個按鈕已經失效。"},
+	"fb_ask":          {"Was the sub-agents' report (dispatch %s) right? Your answer only goes into the weekly numbers; nothing changes by itself.", "子 Agent 這次的回報（派遣 %s）對嗎？你的回答只會算進每週統計，不會自動改變任何設定。"},
+	"fb_useful":       {"👍 Useful", "👍 有用"},
+	"fb_false":        {"👎 False positive", "👎 誤報"},
+	"fb_thanks":       {"Noted, thank you.", "已記錄，謝謝。"},
 	"prop_refused":    {"Not blocked: %s cannot be blocked from Telegram now: %s", "沒有封鎖：%s 現在不能從 Telegram 封鎖，原因：%s"},
 	"prop_blocked":    {"Blocked %s.", "已封鎖 %s。"},
 	"lockdown":        {"🔒 Locked down. The bot is unpaired and stopped; re-enable it on the server.", "🔒 已緊急關閉。bot 已解除配對並停止，要重新開啟請到伺服器操作。"},
