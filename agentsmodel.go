@@ -82,7 +82,21 @@ var agentsOnThisHost = func(baseURL string) bool {
 	if h == "localhost" || strings.HasSuffix(h, ".localhost") {
 		return true
 	}
-	local := func(ip net.IP) bool { return ip.IsLoopback() || ip.IsUnspecified() || isLocalIP(ip) }
+	local := func(ip net.IP) bool {
+		if ip.IsLoopback() || ip.IsUnspecified() {
+			return true
+		}
+		addrs, err := interfaceAddrs()
+		if err != nil { // cannot tell: this host, so in turn
+			return true
+		}
+		for _, a := range addrs {
+			if n, ok := a.(*net.IPNet); ok && n.IP.Equal(ip) {
+				return true
+			}
+		}
+		return false
+	}
 	if ip := net.ParseIP(h); ip != nil {
 		return local(ip)
 	}
@@ -100,6 +114,9 @@ var agentsOnThisHost = func(baseURL string) bool {
 	}
 	return false
 }
+
+// interfaceAddrs is net.InterfaceAddrs; tests swap it.
+var interfaceAddrs = net.InterfaceAddrs
 
 // atonV4 reads an IPv4 address the way inet_aton does (and so connect does):
 // one to four parts, each decimal, octal (0...) or hex (0x...), the last

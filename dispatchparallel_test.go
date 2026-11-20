@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -197,6 +198,19 @@ func TestAgentsOnThisHost(t *testing.T) {
 	for _, s := range []string{"256.1", "1.2.3.4.5", "a.b", "", "1..2", "127.0.0.256"} {
 		if got := atonV4(s); got != nil {
 			t.Errorf("atonV4(%q) = %v", s, got)
+		}
+	}
+}
+
+// N-D-r3-1: when this host's interfaces cannot be read, an address that
+// may be its own counts as this host (in turn).
+func TestAgentsOnThisHostNoInterfaces(t *testing.T) {
+	old := interfaceAddrs
+	interfaceAddrs = func() ([]net.Addr, error) { return nil, errors.New("netlink: operation not permitted") }
+	t.Cleanup(func() { interfaceAddrs = old })
+	for _, u := range []string{"http://192.168.1.5:11434", "http://10.0.0.2:1", "http://[2001:db8::1]:1"} {
+		if !agentsOnThisHost(u) {
+			t.Errorf("%s: taken as elsewhere though the interfaces could not be read", u)
 		}
 	}
 }
