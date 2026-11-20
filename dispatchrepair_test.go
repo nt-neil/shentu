@@ -167,6 +167,10 @@ func TestDispatchRepairWriteFails(t *testing.T) {
 	before, _ := os.ReadFile(p)
 	old := replaceWrite
 	replaceWrite = func(f *os.File, b []byte) error {
+		if strings.HasPrefix(filepath.Base(f.Name()), ".repairs.jsonl") { // the note itself is written (N-158-1)
+			_, err := f.Write(b)
+			return err
+		}
 		f.Write(b[:len(b)/2])
 		return errors.New("no space left on device")
 	}
@@ -189,7 +193,11 @@ func TestDispatchRepairWriteFails(t *testing.T) {
 		t.Errorf(".bad after a second run: %q", b)
 	}
 	// S-H2: the daily line counts each run's own lines, not the whole .bad file.
-	if line := s.repairedLine(now); !strings.Contains(line, "ran 1 times: 1 unreadable") {
+	// N-158-1: the run that failed still noted what it put in .bad.
+	if notes := s.repairNotes(now.Add(-time.Hour)); len(notes) != 2 || notes[0].Added != 1 || notes[0].Moved != 0 || notes[1].Moved != 1 || notes[1].Added != 0 {
+		t.Errorf("notes: %+v", notes)
+	}
+	if line := s.repairedLine(now); !strings.Contains(line, "ran 2 times: 1 unreadable archive lines moved out (1 of them new") {
 		t.Errorf("daily line: %q", line)
 	}
 }

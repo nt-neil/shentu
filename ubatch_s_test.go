@@ -132,13 +132,13 @@ func TestCLIDispatchUsageBeforeRoot(t *testing.T) {
 	if out, err := exec.Command("go", "build", "-o", bin, ".").CombinedOutput(); err != nil {
 		t.Fatalf("build: %v\n%s", err, out)
 	}
-	cfg := filepath.Join(dir, "shentu.toml")
-	os.WriteFile(cfg, []byte("state_dir = \""+filepath.Join(dir, "state")+"\"\n"), 0o600)
-	for _, args := range [][]string{{"dispatch", "repair", "extra"}, {"dispatch", "stats", "extra"}, {"dispatch", "stats", "--bogus"}} {
+	cfg := filepath.Join(dir, "shentu.toml") // S-158-3: one that cannot be read, so the usage must come first
+	os.WriteFile(cfg, []byte("state_dir = [\n"), 0o600)
+	for _, args := range [][]string{{"dispatch", "repair", "extra"}, {"dispatch", "stats", "extra"}, {"dispatch", "stats", "--bogus"}, {"dispatch", "wipe"}, {"dispatch"}} {
 		cmd := exec.Command(bin, args...)
 		cmd.Env = append(os.Environ(), "SHENTU_CONFIG="+cfg)
 		out, _ := cmd.CombinedOutput()
-		if strings.Contains(string(out), "sudo") || !(strings.Contains(string(out), "usage") || strings.Contains(string(out), "flag provided but not defined")) {
+		if strings.Contains(string(out), "sudo") || strings.Contains(string(out), "toml") || !strings.Contains(string(out), "usage: shentu dispatch") {
 			t.Errorf("%v: %s", args, out)
 		}
 	}
@@ -174,5 +174,46 @@ func TestDispatchRepairCountsNew(t *testing.T) {
 	}
 	if line := s.repairedLine(now); !strings.Contains(line, "2 unreadable archive lines moved out (1 of them new") {
 		t.Errorf("daily: %q", line)
+	}
+}
+
+// S-158-1: when block_ip's Run fails from Telegram (the gate changed its
+// mind after the precheck), the model is not given the failure's message.
+func TestBotBlockRunFailureWordsOnly(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("block_ip is not offered on Windows")
+	}
+	stubGate(t, nil)
+	blockRun = func(context.Context, *tools.Env, []byte) (any, error) {
+		return nil, errors.New("refusing: sample GET /wp?x=ZZMARK-ATTACKERTEXT")
+	}
+	model := &hostileModel{replies: []string{call("block_ip", `{"ip":"203.0.113.9","reason":"x"}`), done}}
+	b, _ := levelBot(t, model, [4]int{3, 2, 4, 2}) // confirm = 4: no button to press
+	b.handle(context.Background(), msg(pairedUser, pairedChat, "private", "block 203.0.113.9"))
+	e := blockDecision(t, b)
+	if e == nil || !strings.Contains(e.Error, "ZZMARK") {
+		t.Errorf("the server's log lost the message: %+v", e)
+	}
+	model.mu.Lock()
+	defer model.mu.Unlock()
+	last := model.requests[len(model.requests)-1]
+	if strings.Contains(last, "ZZMARK") || !strings.Contains(last, "did not succeed") {
+		t.Errorf("what the model was told: %s", last[max(0, len(last)-400):])
+	}
+}
+
+// S-158-2: an Action left by a crash, past its expiry, is no wait for the server.
+func TestBusyWordStaleAction(t *testing.T) {
+	b := &bot{waiting: map[string]chan bool{}}
+	stale := botState{Action: &pendingAction{Expires: time.Now().Add(-55 * time.Minute)}}
+	fresh := botState{Action: &pendingAction{Expires: time.Now().Add(5 * time.Minute)}}
+	if w := b.busyWord(stale, false); w != "busy" {
+		t.Errorf("stale: %s", w)
+	}
+	if w := b.busyWord(fresh, false); w != "busy_server" {
+		t.Errorf("fresh: %s", w)
+	}
+	if w := b.busyWord(stale, true); w != "busy_later" {
+		t.Errorf("stale, a press: %s", w)
 	}
 }

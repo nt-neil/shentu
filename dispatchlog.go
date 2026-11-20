@@ -811,7 +811,7 @@ const repairsFile = "repairs.jsonl"
 
 // noteRepair adds what a Repair did to repairs.jsonl, keeping dispatchKeep.
 func (s *dispatchStore) noteRepair(moved, dropped, added int) error {
-	if moved == 0 && dropped == 0 {
+	if moved == 0 && dropped == 0 && added == 0 {
 		return nil
 	}
 	notes := s.repairNotes(s.now().Add(-dispatchKeep))
@@ -887,7 +887,7 @@ func (s *dispatchStore) repairFile(p string) (moved, dropped, added int, err err
 	// The kept lines replace the file in one rename: a write that fails
 	// (a full disk is why Repair runs) leaves the file as it was.
 	if err := replaceFile(p, good.Bytes()); err != nil {
-		return 0, 0, 0, err
+		return 0, 0, added, err // the lines are still in the day file, but .bad got them
 	}
 	return moved, dropped, added, nil
 }
@@ -1051,8 +1051,11 @@ func adminHintOn(goos, command string) string {
 // a message that blames the configuration. nil for root, and for the
 // other subcommands (dispatchCommand checks them).
 func dispatchPreflight(args []string, root bool, goos string) error {
-	if root || len(args) == 0 {
-		return nil
+	// Wrong arguments get the usage first, whatever the configuration is and
+	// whoever runs it; right ones need root.
+	usage := errors.New("usage: shentu dispatch repair | shentu dispatch stats [--days 7] [--json]")
+	if len(args) == 0 {
+		return usage
 	}
 	switch args[0] {
 	case "stats":
@@ -1061,14 +1064,20 @@ func dispatchPreflight(args []string, root bool, goos string) error {
 		fs.Int("days", 7, "")
 		fs.Bool("json", false, "")
 		if fs.Parse(args[1:]) != nil || fs.NArg() > 0 {
-			return nil // a mistake in the arguments: the usage first, root after
+			return errors.New("usage: shentu dispatch stats [--days 7] [--json]")
 		}
-		return errors.New("shentu dispatch stats reads the dispatch archive, which only root can read: run " + adminHintOn(goos, "shentu dispatch stats"))
+		if !root {
+			return errors.New("shentu dispatch stats reads the dispatch archive, which only root can read: run " + adminHintOn(goos, "shentu dispatch stats"))
+		}
 	case "repair":
 		if len(args) != 1 {
-			return nil // a mistake in the arguments: the usage first, root after
+			return errors.New("usage: shentu dispatch repair")
 		}
-		return errors.New("shentu dispatch repair changes the dispatch archive: run " + adminHintOn(goos, "shentu dispatch repair"))
+		if !root {
+			return errors.New("shentu dispatch repair changes the dispatch archive: run " + adminHintOn(goos, "shentu dispatch repair"))
+		}
+	default:
+		return usage
 	}
 	return nil
 }

@@ -633,7 +633,8 @@ func (b *bot) handle(ctx context.Context, u tgUpdate) {
 // or nothing (still working). press is for a button pressed meanwhile,
 // which stays for later. b.mu is held.
 func (b *bot) busyWord(st botState, press bool) string {
-	waiting := b.codeWait != nil || len(b.waiting) > 0 || st.Action != nil
+	server := st.Action != nil && time.Now().Before(st.Action.Expires) // a stale one (a crash) waits for nothing
+	waiting := b.codeWait != nil || len(b.waiting) > 0 || server
 	switch {
 	case press && waiting:
 		return "busy_press"
@@ -643,7 +644,7 @@ func (b *bot) busyWord(st botState, press bool) string {
 		return "busy_code"
 	case len(b.waiting) > 0:
 		return "busy_confirm"
-	case st.Action != nil:
+	case server:
 		return "busy_server"
 	}
 	return "busy"

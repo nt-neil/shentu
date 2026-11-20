@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nt-neil/shentu/detect"
 	"github.com/nt-neil/shentu/tools"
 )
 
@@ -244,6 +245,21 @@ func remotePrecheck(ctx context.Context, env *tools.Env, name string, args json.
 	return fmt.Sprintf("refusing to block %s from a chat channel: the gate says %s. Nothing was asked of the operator; it can be checked on the server with shentu chat.", ip, code), err
 }
 
+// remoteRefusal is what the model is told when block_ip's Run fails from a
+// chat channel: the refusal's BlockCode, or that the block did not succeed;
+// never the message, which stays in the server's log.
+func remoteRefusal(args json.RawMessage, err error) string {
+	var a struct {
+		IP string `json:"ip"`
+	}
+	json.Unmarshal(args, &a)
+	ip := detect.Printable(tools.Cut(strings.TrimSpace(a.IP), 64))
+	if code, ok := tools.RefusalCode(err); ok {
+		return fmt.Sprintf("refusing to block %s from a chat channel: the gate says %s (checked again when it ran). It can be checked on the server with shentu chat.", ip, code)
+	}
+	return fmt.Sprintf("the block of %s did not succeed; the reason is in the server's log.", ip)
+}
+
 // callTool runs one tool and returns the text the model will see.
 func (a *agent) callTool(ctx context.Context, name, rawArgs string) string {
 	if rawArgs == "" {
@@ -310,10 +326,21 @@ func (a *agent) callTool(ctx context.Context, name, rawArgs string) string {
 	}
 	tctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
-	out, err := t.Run(tctx, a.env, args)
+	run := t.Run
+	if name == "block_ip" {
+		run = func(ctx context.Context, env *tools.Env, args json.RawMessage) (any, error) {
+			return blockRun(ctx, env, args) // block_ip's own Run; tests swap it
+		}
+	}
+	out, err := run(tctx, a.env, args)
 	if err != nil {
 		entry.Error = mask(err.Error())
 		a.log.write(entry)
+		if a.env != nil && a.env.Remote && name == "block_ip" {
+			// From a chat channel the gate's message stays in the server's log
+			// here too (it was checked before asking, and Run checked again).
+			return errText(remoteRefusal(args, err))
+		}
 		return errText(err.Error())
 	}
 	b, _ := json.Marshal(map[string]any{"untrusted": true, "data": out})
