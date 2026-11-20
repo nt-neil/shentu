@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"github.com/nt-neil/shentu/internal/osutil"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -98,7 +99,7 @@ func TestDispatchRepairRefusesUntrusted(t *testing.T) {
 
 func TestDispatchRepairCommand(t *testing.T) {
 	cfg := &Config{StateDir: t.TempDir()}
-	if err := dispatchCommand(cfg, []string{"repair"}, false); err == nil || !strings.Contains(err.Error(), "as root") {
+	if err := dispatchCommand(cfg, []string{"repair"}, false); err == nil || !strings.Contains(err.Error(), repairHint()) {
 		t.Errorf("not root: %v", err)
 	}
 	if err := dispatchCommand(cfg, []string{"wipe"}, true); err == nil {
@@ -202,18 +203,18 @@ func TestDispatchSaveAfterReplace(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := filepath.Join(s.dir, now.Local().Format(time.DateOnly)+".jsonl")
-	f, _, err := openDayLocked(p, os.O_RDONLY)
+	unlock, err := s.lock() // a Repair holds the archive
 	if err != nil {
 		t.Fatal(err)
 	}
+	b, _ := os.ReadFile(p) // what the Repair read, under the lock
 	done := make(chan error)
 	go func() { done <- s.Save(testRecord("000000000002", now)) }()
-	time.Sleep(100 * time.Millisecond) // Save opens the old file and waits for its lock
-	b, _ := os.ReadFile(p)
+	time.Sleep(100 * time.Millisecond) // Save waits for the lock meanwhile
 	if err := replaceFile(p, b); err != nil {
 		t.Fatal(err)
 	}
-	f.Close()
+	unlock()
 	if err := <-done; err != nil {
 		t.Fatal(err)
 	}
@@ -240,5 +241,36 @@ func TestDispatchPruneTemp(t *testing.T) {
 	}
 	if _, err := os.Stat(fresh); err != nil {
 		t.Errorf("a fresh temporary file was removed: %v", err)
+	}
+}
+
+// S-H3: the day files are never locked themselves, so a reader (on
+// Windows, where a lock is mandatory, it would fail) can read one while a
+// Save writes it.
+func TestDispatchDayFileNotLocked(t *testing.T) {
+	s := testStore(t)
+	now := time.Now()
+	if err := s.Save(testRecord("000000000001", now)); err != nil {
+		t.Fatal(err)
+	}
+	var tryErr error
+	ran := false
+	saveHeld = func(p string) {
+		ran = true
+		f, err := os.Open(p)
+		if err != nil {
+			tryErr = err
+			return
+		}
+		defer f.Close()
+		tryErr = osutil.TryLock(f) // taken: Save holds a lock on the file itself
+		osutil.Unlock(f)
+	}
+	t.Cleanup(func() { saveHeld = nil })
+	if err := s.Save(testRecord("000000000002", now)); err != nil {
+		t.Fatal(err)
+	}
+	if !ran || tryErr != nil {
+		t.Errorf("the day file was locked while saving: %v (hook ran %v)", tryErr, ran)
 	}
 }
