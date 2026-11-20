@@ -34,10 +34,10 @@ Chinese for the zh-TW pages; keep the two in step.
   directories (`/etc/userdb`, `/run/userdb`, `/run/host/userdb`, `/usr/local/lib/userdb`,
   `/usr/lib/userdb`) hold any entry or cannot be read: userdb can add accounts and group
   memberships that `/etc/passwd` and `/etc/group` do not show (#113).
-- Hardening only: the block check and campaigns also read an address in an `inet_aton` form
-  (`3405803788`, `0xcb.0.113.12`, ...) and `::ffff:a.b.c.d` as `a.b.c.d`. Access logs never yield
-  these forms (since v0.4.0 a client must be a plain address, and `::ffff:` is read as IPv4), so
-  nothing changes in practice (#113, #124).
+- Hardening only: the block check also reads an address in an `inet_aton` form (`3405803788`,
+  `0xcb.0.113.12`, ...), and the block check and campaigns read `::ffff:a.b.c.d` as `a.b.c.d`.
+  Access logs never yield these forms (since v0.4.0 a client must be a plain address, and
+  `::ffff:` is read as IPv4), so nothing changes in practice (#113, #124).
 
 ### Upgrade notes
 

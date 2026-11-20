@@ -13,7 +13,7 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 ### 修正
 
 - systemd 的 userdb 目錄（`/etc/userdb`、`/run/userdb`、`/run/host/userdb`、`/usr/local/lib/userdb`、`/usr/lib/userdb`）有任何項目、或讀不到時，伺服器自己的帳號擁有的網站紀錄不再能當封鎖依據：userdb 可以加上 `/etc/passwd`、`/etc/group` 看不到的帳號和群組成員（#113）。
-- 防禦性檢查：封鎖檢查和 campaign 也認得 `inet_aton` 寫法（`3405803788`、`0xcb.0.113.12` 等）與 `::ffff:a.b.c.d`；存取紀錄本來就不會產生這些寫法（v0.4.0 起只收一般位址，`::ffff:` 也會讀成 IPv4），實際行為不變（#113、#124）。
+- 防禦性檢查：封鎖檢查也認得 `inet_aton` 寫法（`3405803788`、`0xcb.0.113.12` 等），封鎖檢查和 campaign 都把 `::ffff:a.b.c.d` 當成 `a.b.c.d`；存取紀錄本來就不會產生這些寫法（v0.4.0 起只收一般位址，`::ffff:` 也會讀成 IPv4），實際行為不變（#113、#124）。
 
 ### 升級說明
 
