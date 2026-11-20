@@ -348,6 +348,11 @@ func tsType(t []Token, j int) bool {
 //   - a global object (globalThis, window, self, global) anywhere but read
 //     through a named member (globalThis.process): given to another name,
 //     passed on, read by a computed name (globalThis['String'], ?.[);
+//   - GLOBAL and top as the global objects are; this read by a computed name
+//     or for a built-in's name (this['console'], this.String);
+//   - getPrototypeOf, setPrototypeOf; vm's runInContext, runInNewContext and
+//     compileFunction; Reflect.construct and Reflect.apply; Function as any
+//     value but a TypeScript type (const F = Function);
 //   - eval, the name anywhere; runInThisContext; Function(, new Function; a
 //     value's constructor read for anything but its name (x.constructor,
 //     ['constructor'], { constructor: F } = f), which reaches Function; a
@@ -379,15 +384,19 @@ func globalReplace(t []Token) bool {
 			continue
 		}
 		switch tk.Text {
-		case "globalThis", "window", "self", "global":
+		case "globalThis", "window", "self", "global", "GLOBAL", "top":
 			if !member && !(next(1).op(".") && next(2).Kind == Ident) {
-				return true // const g = globalThis, f(window), globalThis['String'], self?.[k]
+				return true // const g = globalThis, f(window), globalThis['String'], self?.[k], GLOBAL, top
 			}
-		case "eval", "runInThisContext", "__proto__":
-			return true
+		case "eval", "runInThisContext", "runInContext", "runInNewContext", "compileFunction", "__proto__", "getPrototypeOf", "setPrototypeOf":
+			return true // any code run from text, a prototype reached or replaced
+		case "this":
+			if next(1).op("[") || next(1).op(".") && builtin(next(2)) {
+				return true // this['console'], this.String (a script's this, or a sloppy function's, is the global object)
+			}
 		case "Function":
-			if next(1).op("(") || i > 0 && t[i-1].word("new") {
-				return true
+			if !member && !tsType(t, i) {
+				return true // Function(...), new Function, const F = Function; not a TypeScript type (f: Function)
 			}
 		case "constructor":
 			// any read of a value's constructor but its name reaches Function:
@@ -414,6 +423,9 @@ func globalReplace(t []Token) bool {
 				return true
 			}
 		case "Reflect":
+			if !member && next(1).op(".") && next(3).op("(") && (next(2).word("construct") || next(2).word("apply")) {
+				return true // Reflect.construct(Function, [...]), Reflect.apply(f, ...): a call the file does not show
+			}
 			if !member && next(1).op(".") && next(3).op("(") && (next(2).word("set") || next(2).word("defineProperty") || next(2).word("setPrototypeOf")) && builtin(next(4)) {
 				return true
 			}
