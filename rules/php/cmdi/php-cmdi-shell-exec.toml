@@ -15,7 +15,12 @@ sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "$_FILES[*]['name']", "$_
 sinks = ["exec(", "shell_exec(", "system(", "passthru(", "popen(", "proc_open(", "`", "$this->process->execute(", "$this->process->executeAsync(", "Process::run(", "Process::start("]
 # request()->ip() and ->method() are not free text: Symfony's getClientIp() keeps
 # only valid addresses, and getMethod() only letters. ->path() and ->url() are
-# input: the path is decoded, so %3B becomes ";".
+# input: RFC 3986 lets ; $ & ' ( ) stand unencoded in a path, and without trusted
+# hosts url()'s host name comes from the Host header.
+# Only request()->ip( and request()->method( are reached today (request( is a
+# source); the other six ($request->ip(, Request::ip(, $request->getClientIp(,
+# $request->method(, Request::method(, $request->getMethod() are in place for
+# when those receivers become sources.
 sanitizers = ["escapeshellarg", "ProcessExecutor::escape(",
               "request()->ip(", "$request->ip(", "Request::ip(", "$request->getClientIp(", "request()->method(", "$request->method(", "Request::method(", "$request->getMethod("]
 fix = "Avoid the shell: use a PHP function or an argument array (proc_open with an array, Symfony Process); if a shell is unavoidable, wrap every value in escapeshellarg()."
