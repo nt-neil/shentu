@@ -14,7 +14,8 @@ Chinese for the zh-TW pages; keep the two in step.
   nothing is sent; a dispatch that used one says so to the agent, in the archive and in the daily
   report. What it is sent is masked as before. From it, an error answer keeps only its status, as
   its text could quote the key; redirects are not followed, and a request that fails keeps only
-  the kind of failure, not its URL. `[llm]`'s errors have the key replaced before they are cut.
+  the kind of failure, not its URL. `[llm]`'s errors have the key replaced, as is and in its common
+  encodings, before they are cut.
 - Sub-agents at once (#136): on a model outside this host they run together, each with an equal
   share of the dispatch's token cap, when this month's token limit has room for a whole dispatch
   and, with `monthly_cost` set, under half of it is spent. On a model at this host, in any address
@@ -23,9 +24,10 @@ Chinese for the zh-TW pages; keep the two in step.
   `<date>.jsonl.bad` and drops empty ones, so automatic incident checks resume without waiting up
   to 72 hours. Files are replaced in one rename, and the archive's lock is `dispatch/.lock`.
 - Operator feedback (#137): under a dispatch's report the bot offers 👍 useful and 👎 false
-  positive, once, for 7 days, to the paired user. `shentu dispatch stats [--days 7] [--json]` adds
-  the numbers up by role and suggests changes within fixed ranges (steps 4 to 10, tokens 20,000 to
-  60,000, a prompt review, a tool removed, never added). Shentu applies none itself.
+  positive, once, for 7 days, to the paired user. `sudo shentu dispatch stats [--days 7] [--json]`
+  adds the numbers up by role and suggests changes within fixed ranges (steps 4 to 10, tokens
+  20,000 to 60,000, a prompt review). A tool could only ever be suggested away, never added; no
+  tool suggestion is made yet. Shentu applies none itself.
 - Platforms (#138): a role gets only the tools that work on this platform, and the others are
   listed as unchecked; proposals only on Linux; on macOS only `surface` runs for now; automatic
   incident checks run on Linux only and take no daily slot elsewhere.
@@ -33,7 +35,8 @@ Chinese for the zh-TW pages; keep the two in step.
 ### Upgrade notes
 
 - An `[agents]` model on a LAN address or a host name, Ollama on another machine of the network
-  included, counts as outside this host: set `[budget] monthly_tokens`.
+  included, counts as outside this host, and so do 127.1, 0.0.0.0, [::] and this host's own LAN
+  address: set `[budget] monthly_tokens`.
 
 ### Known issues
 
