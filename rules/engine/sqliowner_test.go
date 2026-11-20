@@ -191,6 +191,40 @@ func TestLaravelProjectService(t *testing.T) {
 	}
 }
 
+// In a Laravel project the second pass runs php-sqli-orderby-identifier for
+// an untyped $request, and with it the rules it yields to, so that one call
+// two rules report stays one rule's there too (v053 r4 N-1): DB::raw inside
+// DB::select is php-sqli-laravel-raw's, as in v043c's c-dbraw-in-select.
+func TestLaravelProjectYields(t *testing.T) {
+	e := engineForTest(t)
+	ctl := "<?php\nnamespace App\\Http\\Controllers;\nuse Illuminate\\Http\\Request;\nclass PostController extends Controller {\n    public function index(Request $request) {\n        return view('p');\n    }\n}\n"
+	plain := "<?php\nclass PostController {\n    public function index($input) {\n        return $input;\n    }\n}\n"
+	q := "<?php\n$rows = DB::select(DB::raw(\"SELECT * FROM t WHERE id = \" . $_GET['id']));\n"
+	svc := "<?php\nnamespace App\\Services;\nclass Sorter {\n    public function apply($q, $request) {\n        return $q->orderBy($request->sort)->get();\n    }\n}\n"
+	for _, c := range []struct {
+		name, ctl, path, src string
+		want                 []string
+	}{
+		{"a Laravel project: DB::raw inside DB::select is laravel-raw's", ctl, "q.php", q, []string{"2:php-sqli-laravel-raw"}},
+		{"no Laravel project: the same (control)", plain, "q.php", q, []string{"2:php-sqli-laravel-raw"}},
+		{"a Laravel project: the service's untyped $request still reported", ctl, "app/Services/Sorter.php", svc, []string{"5:php-sqli-orderby-identifier"}},
+	} {
+		files := map[string]string{"app/Http/Controllers/PostController.php": c.ctl, c.path: c.src}
+		read := func(p string) ([]byte, error) { return []byte(files[p]), nil }
+		pr := e.NewProject([]string{"app/Http/Controllers/PostController.php", c.path}, read, ProjectOptions{})
+		var got []string
+		for _, f := range auditPath(t, e, pr, c.path, []byte(c.src)) {
+			if f.CWE == "CWE-89" {
+				got = append(got, strconv.Itoa(f.Line)+":"+f.RuleID)
+			}
+		}
+		slices.Sort(got)
+		if !slices.Equal(got, c.want) {
+			t.Errorf("%s: reported %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
 // auditPath scans a file of a project as tools/codeaudit.go does: the file on
 // its own (Engine.ScanTimed), then what the project adds (Project.ScanCallsPart),
 // one finding per rule, file and line.
