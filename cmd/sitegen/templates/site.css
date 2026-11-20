@@ -310,6 +310,8 @@ html:not([lang^="zh"]) .peek .word { font-weight: 600; font-family: var(--sans);
 .peek ul { margin: 0; padding-left: 1.1em; } .peek li { margin: 3px 0; max-width: none; } .peek li::marker { color: var(--ember); }
 .newest { display: grid; grid-template-columns: auto repeat(3, minmax(0, 1fr)); gap: 18px 30px; align-items: start; margin: 8px 0 0; padding: 22px 24px; background: var(--bg-2); border: 1px solid var(--line); border-top: 2px solid var(--ember); font-size: 15px; }
 .newest-head { display: grid; gap: 8px; justify-items: start; }
+/* a fourth group (Known issues) starts a second row under the three, not in the head's column */
+.newest .grp:nth-child(n+5) { grid-column: 2 / -1; }
 .newest-head .ver { font: 300 40px/1 var(--serif); }
 .newest-head .word { font: 900 13px/1 var(--serif); letter-spacing: .14em; color: var(--ember); margin: 0; }
 html:not([lang^="zh"]) .newest-head .word { font-weight: 600; font-family: var(--sans); letter-spacing: .04em; }
@@ -422,6 +424,7 @@ html:not(.walking) .st1 { opacity: 1; transform: none; }
   .peek { position: static; opacity: 1; transform: none !important; width: auto; pointer-events: auto; margin-top: 8px; display: block; padding: 0; border: 0; background: none; max-height: none; overflow: visible; }
   .peek ul { display: none; }
   .newest { grid-template-columns: 1fr; }
+  .newest .grp:nth-child(n+5) { grid-column: auto; }
   /* phones: the walk, words above and below the guardian */
   .walk .sky { height: 46%; }
   .scene { background-position: 50% 45%; }
