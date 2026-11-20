@@ -93,7 +93,12 @@ func (s *dispatchStore) SaveFeedback(id, verdict string, now time.Time) error {
 	}
 	b, _ := json.Marshal(l)
 	p := filepath.Join(s.dir, feedbackFile)
-	f, _, err := openDayLocked(p, os.O_RDWR|os.O_APPEND|os.O_CREATE)
+	unlock, err := s.lock()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	f, _, err := openChecked(p, os.O_RDWR|os.O_APPEND|os.O_CREATE)
 	if err != nil {
 		return err
 	}
