@@ -239,6 +239,9 @@ func botApprove(cfg *Config, in *bufio.Reader, out io.Writer) error {
 // hasNetAdmin reports whether this process may change the firewall (CAP_NET_ADMIN,
 // bit 12). The bot unit grants it only through the drop-in that setup writes for
 // interaction 3 and 4.
+// netAdmin is hasNetAdmin; tests swap it.
+var netAdmin = hasNetAdmin
+
 func hasNetAdmin() bool {
 	b, err := os.ReadFile("/proc/self/status")
 	if err != nil {

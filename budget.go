@@ -83,12 +83,17 @@ func monthUsageStrict(stateDir string, now time.Time) (cost float64, tokens, lon
 	}
 }
 
-// budgetUsed is the larger share of the limits that are set (0 when none is).
+// budgetUsed is the larger share of the limits that are set (0 when none is),
+// and 1 when log.jsonl could not be read to its end.
 func budgetUsed(cfg *Config, now time.Time) float64 {
 	if cfg.Budget.MonthlyCost <= 0 && cfg.Budget.MonthlyTokens <= 0 {
 		return 0
 	}
-	cost, tokens := monthUsage(cfg.StateDir, now)
+	// A log read only in part could hide use: count it as the limit reached.
+	cost, tokens, _, err := monthUsageStrict(cfg.StateDir, now)
+	if err != nil {
+		return 1
+	}
 	used := 0.0
 	if cfg.Budget.MonthlyCost > 0 {
 		used = cost / cfg.Budget.MonthlyCost

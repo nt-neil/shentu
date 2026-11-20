@@ -427,9 +427,11 @@ func (b *bot) run(ctx context.Context) error {
 	ctx, b.stop = context.WithCancel(ctx)
 	defer b.stop()
 	b.noteLevelChanges(ctx)
-	b.canAct = b.cfg.Bot.Interaction >= 3 && hasNetAdmin()
-	// The patrol offers automatic dispatches' buttons only to a service that can act on them.
+	b.canAct = b.cfg.Bot.Interaction >= 3 && netAdmin()
+	// The patrol offers automatic dispatches' buttons only to a service that can act on them,
+	// and only while it runs: a stopped service would leave the buttons unanswered.
 	withBotState(b.cfg.StateDir, func(s *botState) error { s.CanAct = b.canAct; return nil })
+	defer withBotState(b.cfg.StateDir, func(s *botState) error { s.CanAct = false; return nil })
 	if b.cfg.Bot.Interaction >= 3 && !b.canAct {
 		fmt.Fprintln(os.Stderr, "shentu bot: interaction >= 3 but the service cannot change the firewall; run `sudo shentu setup` (it adds the systemd drop-in). Answering questions only.")
 	}
