@@ -238,6 +238,9 @@ func (a *analysis) reqAssign(st state, lhs, rhs []Token, op string) {
 	switch {
 	case len(lhs) == 1 && lhs[0].Kind == Ident:
 		setReq(a.reqs, lhs[0].Text, paths)
+		if len(paths) > 0 && !a.noSrc {
+			a.reqRouteNotUnder(st, lhs[0].Text, paths)
+		}
 	case lhs[0].op("{") && closeOf(lhs, 0) == len(lhs)-1:
 		reqPattern(a.reqs, lhs, paths)
 		if paths == nil || a.noSrc {
@@ -262,6 +265,23 @@ func (a *analysis) reqAssign(st state, lhs, rhs []Token, op string) {
 				st[name] = entry{taint: !a.nonced(st), raw: true}
 			}
 		}
+	}
+}
+
+// reqRouteNotUnder: after x = h where h holds a request's headers (x holds
+// req.headers on every path: h = r.headers, NestJS's h = @Headers()), the
+// members route_not leaves out of them are not input under x either, as
+// sourceNot leaves them out under h. A name that also holds another path (x
+// was r.query on some path) keeps them: that path may carry them.
+func (a *analysis) reqRouteNotUnder(st state, name string, paths []string) {
+	for _, rn := range a.r.rule.RouteNot {
+		mem, n, ok := strings.Cut(rn, ".")
+		if !ok || slices.ContainsFunc(paths, func(p string) bool {
+			return !strings.HasSuffix(strings.ToLower(strings.ReplaceAll(p, reqIdx, "")), "."+strings.ToLower(mem))
+		}) {
+			continue
+		}
+		st[name+sepCh+"."+n], st[name+sepCh+"["+n+"]"] = entry{}, entry{}
 	}
 }
 
