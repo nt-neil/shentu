@@ -5,7 +5,7 @@ cwe = "CWE-89"
 severity = "medium"
 title = "Parsed request value (may be an object or array) passed straight into a query-builder condition"
 frameworks = ["express", "nestjs", "nextjs", "koa", "fastify", "hapi"]
-sources = ["req.query", "req.body", "@Query(", "@Body(", "@Req(", "^request.json(", "^req.json(", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload"]
+sources = ["req.query", "req.body", "@Query(", "@Body(", "@Req(", "@Request(", "^request.json(", "^req.json(", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload"]
 route_members = ["query", "body"]
 sinks = [".where(", ".whereIn(", ".findOne(", ".findAll(", ".andWhere("]
 # A Sequelize.literal() is SQL text, js-sqli-sequelize-literal's, not an object.
@@ -100,5 +100,20 @@ code = '''
 async function loadDraft(req) {
   const id = self.apos.launder.id(req.query.id);
   return knex("drafts").where({ id }).first();
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+dialect = "ts"
+note = "NestJS's @Request() is @Req() by another name, whatever the parameter is called"
+code = '''
+@Controller()
+export class AppController {
+  @Post("login")
+  async login(@Request() r: Request) {
+    const user = await knex("users").where({ email: r.body.email }).first();
+    return { found: Boolean(user) };
+  }
 }
 '''

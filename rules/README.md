@@ -163,13 +163,16 @@ How the engine reads them:
     ends and u holds again the input it held before it; this also ends it for a
     call that only reads u (`log(u)`), which reports more than it must. So does
     a URL written into an object or array (`{ target: u }`, `[u]`), or used as
-    a value in any other way than a member read, a whole argument or the whole
+    a value in any other way than a member read (`u.valueOf()` is u itself, not a
+    member; a method called by a computed name, `u[k]()`, counts as changing it
+    whatever k is, `u['toString']()` too), a whole argument or the whole
     right side of an assignment (`a1 = u || null`, `c ? u : w`, `return u`). Only a
     plain name holds a checked URL (not `this.u`), only one no function written
     inside another uses without binding it itself (a closure or callback that
     reads or changes u, whenever it runs: `() => { u.host = v }`,
     `[v].forEach(h => { u.host = h })`) and no function declares `global` or
-    `nonlocal` (Python's `def m(): nonlocal u; u = urlparse(v)`), and only while fewer than 64 names
+    `nonlocal` (Python's `def m(): nonlocal u; u = urlparse(v)`, a list of names
+    and a statement continued with a backslash included), and only while fewer than 64 names
     hold it (each alias is kept with each other one).
     `p.geturl()` is a string the client parses again; urlparse and the client's
     parser agree on the host of what urlparse itself wrote out, which is why it
@@ -257,16 +260,32 @@ on a parameter, which becomes an assignment at the start of the body:
 `find(@Param('id') id: string) { ... }` reads as `find(id) { id = @Param('id'); ... }`,
 so a decorator is a source like any call (`@Body(`, `@Query(`, `@Param(`,
 `@Headers(`); a destructured parameter (`run(@Body() { cmd }: Dto)`) becomes
-`let { cmd } = @Body();`. With `@Req()` only the parts of the request that come
+`let { cmd } = @Body();`. With `@Req()` (or `@Request()`, the same decorator by
+another name, which a rule that takes `@Req(` takes too) only the parts of the request that come
 from the client are input (`query`, `body`, `params`, `headers`, `cookies`,
 `originalUrl`, `url`, `get()`, `header()`), not what the server put on it
-(`req.user`). A parameter with a NestJS parse pipe (`ParseIntPipe`, `ParseUUIDPipe`,
+(`req.user`). `@Req()` is NestJS's request only in a NestJS application: a file
+that imports `@nestjs/common` or `@nestjs/core`, or any file of a project one of
+whose files does (another library's `@Req()` is an object like any other). A parameter with a NestJS parse pipe (`ParseIntPipe`, `ParseUUIDPipe`,
 ...) is not input; a DTO's class-validator decorators are not read. In `.jsx` and
 `.tsx`, element text is not code: quotes, slashes and colons in it are text. A
 declaration whose bracket never closes (`interface I {`) is dropped up to that
 bracket only; the rest is read as code and the file is reported as not fully
 analysed. Next.js route and page `params` are not sources yet (that needs the
 route model).
+
+A route handler's request is read by the rules' `req.` and `ctx.` sources
+whatever it is called (reqalias.go). The names that hold it in a function are
+followed: the handler's request parameter (`(r, s) => r.hostname`,
+`r.get('host')`; a parameter used as a Koa context, `c.request` or
+`c.body = ...`, stands for `ctx`, any other for `req`), NestJS's `@Req() r`, an
+alias (`const q = r`, `const h = r.headers`) and destructuring, of the parameter
+(`({ headers }, res) => headers.host`) or in the body (`const { hostname: hn } = r`,
+`const { host } = req.headers`). Under such a name a request's header index is
+lower case, as Node stores it (`r.headers['Host']`), and a destructured name
+under a member route_not names is that rule's input no more than the member is.
+A name assigned anything else, or a parameter of an inner function with the
+same name, is not followed.
 
 A sample written in TypeScript says so with `dialect = "ts"` (or `"tsx"`); it is
 lexed as such and must hold the same as any other sample of the rule.

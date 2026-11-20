@@ -5,7 +5,7 @@ cwe = "CWE-78"
 severity = "critical"
 title = "spawn/execFile with shell: true on a command line that includes untrusted values"
 frameworks = ["express", "nestjs", "nextjs", "koa", "fastify", "hapi"]
-sources = ["req.query", "req.body", "req.params", "@Query(", "@Body(", "@Param(", "@Req(", "req.originalUrl", "^request.nextUrl", "^req.nextUrl", "^request.url", "^req.url", "^searchParams", "^request.json(", "^req.json(", "^request.text(", "^req.text(", "^request.formData(", "^req.formData(", "^formData.get(", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload", "ctx.params", "request.params"]
+sources = ["req.query", "req.body", "req.params", "@Query(", "@Body(", "@Param(", "@Req(", "@Request(", "req.originalUrl", "^request.nextUrl", "^req.nextUrl", "^request.url", "^req.url", "^searchParams", "^request.json(", "^req.json(", "^request.text(", "^req.text(", "^request.formData(", "^req.formData(", "^formData.get(", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload", "ctx.params", "request.params"]
 sinks = ["spawn(", "spawnSync(", "execFile(", "execFileSync(", ".spawn(", ".spawnSync(", ".execFile(", ".execFileSync("]
 sanitizers = []
 fix = "Drop shell: true and pass the program and each value as separate arguments; shell: true turns the joined arguments back into a shell command line."
@@ -73,4 +73,18 @@ app.post("/rebuild", (req, res) => {
   const child = spawn("npm", ["run", "build"], { shell: true, env: process.env });
   child.on("close", (code) => res.json({ code }));
 });
+'''
+
+[[samples]]
+kind = "vulnerable"
+dialect = "ts"
+note = "NestJS's @Request() is @Req() by another name, whatever the parameter is called"
+code = '''
+@Controller()
+export class AppController {
+  @Post("build")
+  build(@Request() r: Request) {
+    spawn("gradle", ["build", `-Pflavor=${r.body.flavor}`], { shell: true });
+  }
+}
 '''

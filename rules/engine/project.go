@@ -68,6 +68,7 @@ type Project struct {
 	partCut              bool                       // ... one of them cut short by a cap
 	partAt               string                     // ... the rule the clock cut short
 	deps                 map[string]map[string]bool // file → files its functions' calls were followed into
+	nestjs               bool                       // some JavaScript file imports NestJS (reqalias.go nestFile)
 	routeTo              map[string][]routeTarget   // file → its functions other files register as handlers (routes.go)
 	stack                []*sumFrame                // summaries being worked out, the first asked first (sumstack.go)
 	held                 map[*summaries]map[string]heldSum
@@ -308,6 +309,9 @@ func (p *Project) stop(reason string) {
 
 func (p *Project) add(f string, fi *fileIndex) {
 	p.files[f] = fi
+	for _, m := range fi.Imports {
+		p.nestjs = p.nestjs || baseLang(fi.Lang) == "js" && slices.Contains(nestModules, m.Module)
+	}
 	s := path.Clean(filepath.ToSlash(f))
 	p.byClean[s] = f
 	for {

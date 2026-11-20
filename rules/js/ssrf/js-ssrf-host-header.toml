@@ -17,9 +17,11 @@ route_only = ["headers.host", "headers.x-forwarded-host"]
 # object (h = req.headers, NestJS's @Headers() h) gives its host and
 # x-forwarded-host members (sourcenot.go). NestJS's @Req() r and @Request() r
 # are a handler's request: of them only r.headers.host and
-# r.headers['x-forwarded-host'] (route_only, sourcenot.go nestReq).
-sources = ["req.get(", "req.header(", "req.hostname", "req.host", "req.headers.host", "req.headers[", "ctx.host", "ctx.hostname", "ctx.request.host", "ctx.request.hostname", "ctx.get(", "ctx.headers.host", "ctx.headers[", "ctx.request.header[", "ctx.request.headers[", "request.hostname", "request.headers.host", "request.headers[", "request.headers.get(", "request.info.host", "@Headers(", "@Req(", "@Request(", "^headers().get("]
-source_args = [{ sources = ["req.get(", "req.header(", "req.headers[", "ctx.get(", "ctx.headers[", "ctx.request.header[", "ctx.request.headers[", "request.headers[", "request.headers.get(", "@Headers(", "@Req(", "@Request(", "^headers().get("], arg = 1, values = ["host", "x-forwarded-host"] }]
+# r.headers['x-forwarded-host'] (route_only, sourcenot.go nestReq). A handler's
+# request by another name reads these sources as req's or ctx's (reqalias.go):
+# r.hostname, r.get('host'), c.request.header.host, ({ headers }) => headers.host.
+sources = ["req.get(", "req.header(", "req.hostname", "req.host", "req.headers.host", "req.headers[", "ctx.host", "ctx.hostname", "ctx.request.host", "ctx.request.hostname", "ctx.get(", "ctx.request.get(", "ctx.headers.host", "ctx.header.host", "ctx.request.header.host", "ctx.request.headers.host", "ctx.headers[", "ctx.header[", "ctx.request.header[", "ctx.request.headers[", "request.hostname", "request.headers.host", "request.headers[", "request.headers.get(", "request.info.host", "@Headers(", "@Req(", "@Request(", "^headers().get("]
+source_args = [{ sources = ["req.get(", "req.header(", "req.headers[", "ctx.get(", "ctx.request.get(", "ctx.headers[", "ctx.header[", "ctx.request.header[", "ctx.request.headers[", "request.headers[", "request.headers.get(", "@Headers(", "@Req(", "@Request(", "^headers().get("], arg = 1, values = ["host", "x-forwarded-host"] }]
 sinks = ["fetch(", "axios(", "axios.get(", "axios.post(", "axios.put(", "axios.delete(", "axios.head(", "got(", "got.get(", "got.post(", "http.get(", "https.get(", "http.request(", "https.request(", "needle(", "superagent.get("]
 sanitizers = ["encodeURIComponent("]   # an encoded value in the path or query of a fixed URL does not choose the host
 fix = "Build server-side URLs from a configured base URL (or a fixed internal address), never from the Host or X-Forwarded-Host header, which the client chooses."
