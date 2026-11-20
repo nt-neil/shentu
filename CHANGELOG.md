@@ -46,7 +46,7 @@ Chinese for the zh-TW pages; keep the two in step.
 - Automatic incident checks are off on Windows and macOS for now, the incident role included (on
   Windows it runs with fewer tools and proposes nothing).
 
-## v0.5.1 (unreleased)
+## v0.5.1 — 2026-11-20
 
 - Dispatch archive (#112): each sub-agent dispatch is saved to `state_dir/dispatch/<date>.jsonl`
   (0600 in a 0700 directory, kept 30 days) before its reports go back: roles, statuses and
@@ -74,8 +74,9 @@ Chinese for the zh-TW pages; keep the two in step.
 ### Known issues
 
 - Sub-agents still run one after another, and they are built and tested for Linux only.
-- A line cut short in the archive (a full disk, say) stops automatic incident checks for about
-  two days, until its file is out of the window they read; the daily report says so.
+- A line cut short in the archive (a full disk, say) stops automatic incident checks for at most
+  72 hours (usually about two days), until its file is out of the window they read; the daily
+  report says so.
 - With a 7B local model, sub-agents often use up their 6 steps and are reported incomplete.
 
 ## v0.5.0 — 2026-11-20

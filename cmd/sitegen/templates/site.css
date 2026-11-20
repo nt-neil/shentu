@@ -312,8 +312,10 @@ html:not([lang^="zh"]) .peek .word { font-weight: 600; font-family: var(--sans);
 .newest-head { display: grid; gap: 8px; justify-items: start; }
 /* a fourth group (Known issues) starts a second row under the three, not in the head's column */
 .newest .grp:nth-child(n+5) { grid-column: 2 / -1; }
-.newest .grp:nth-child(2):last-child { grid-column: 2 / -1; }
-.newest .grp:nth-child(2):last-child ul { columns: 2; column-gap: 30px; } .newest .grp:nth-child(2):last-child li { break-inside: avoid; margin: 0 0 8px; }
+/* one or two groups (data-groups, set by sitegen) take the whole width: one group's list in two columns, two groups side by side */
+.newest[data-groups="1"] { grid-template-columns: auto minmax(0, 1fr); }
+.newest[data-groups="1"] ul { columns: 2; column-gap: 30px; } .newest[data-groups="1"] li { break-inside: avoid; margin: 0 0 8px; }
+.newest[data-groups="2"] { grid-template-columns: auto repeat(2, minmax(0, 1fr)); }
 .newest-head .ver { font: 300 40px/1 var(--serif); }
 .newest-head .word { font: 900 13px/1 var(--serif); letter-spacing: .14em; color: var(--ember); margin: 0; }
 html:not([lang^="zh"]) .newest-head .word { font-weight: 600; font-family: var(--sans); letter-spacing: .04em; }
@@ -427,7 +429,7 @@ html:not(.walking) .st1 { opacity: 1; transform: none; }
   .peek ul { display: none; }
   .newest { grid-template-columns: 1fr; }
   .newest .grp:nth-child(n+5) { grid-column: auto; }
-  .newest .grp:nth-child(2):last-child { grid-column: auto; } .newest .grp:nth-child(2):last-child ul { columns: 1; }
+  .newest[data-groups] { grid-template-columns: 1fr; } .newest[data-groups="1"] ul { columns: auto; }
   /* phones: the walk, words above and below the guardian */
   .walk .sky { height: 46%; }
   .scene { background-position: 50% 45%; }

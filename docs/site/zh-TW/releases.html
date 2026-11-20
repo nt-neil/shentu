@@ -228,11 +228,11 @@
     <li class="era-node" style="--old: 0.06; --x: 87.6">
       <a class="lamp" href="../zh-TW/releases.html#v0.5.1" aria-describedby="rv-0.5.1">
         <i aria-hidden="true"></i><span class="ver">v0.5.1</span>
-        <b class="badge">即將發布</b>
+        <time datetime="2026-11-20">11-20</time>
       </a>
       <p class="acc"><span><b>127</b> 條規則</span></p>
       <div class="peek" id="rv-0.5.1">
-        <p class="word">籌備中</p>
+        <p class="word">7 項改變</p>
         <ul><li>派遣存檔（#112）：每一次子 agent 派遣，在回報交回 agent 之前，都會存進 <code>state_dir/dispatch/&lt;date&gt;.jsonl</code>（檔案 0600、目錄 0700，保留 30 天）。存的是角色、狀態與原因（固定字詞）、各項計數，以及建議封鎖的位址（canonical 形式）和 Telegram 閘門對每一個的判定。子 agent 或紀錄寫的文字一律不存。寫入和讀取時都會逐欄檢查；其他使用者寫得進去的存檔，或是連結，都不會讀。每日報告新增一段，列出最近一天的派遣，位址遮罩成 /24（IPv6 是 /64）。</li><li>建議動作按鈕（#116、#122）：Telegram 的回答派遣過子 agent 之後，bot 會列出建議封鎖的位址。當下通過 <code>block_ip</code> 從 Telegram 執行時的檢查（含 #108 的閘門）、而且以 canonical 形式寫的，各附一顆按鈕，最多五顆；其餘只寫出固定字詞的原因。按鈕只帶派遣 id 和一個序號。按下後會再檢查一次，接著要按 ✅（<code>[bot] confirm = 4</code> 也一樣），然後才封鎖。換了配對、超過 24 小時、按第二次（重啟後也一樣），或存檔裡的位址不同，都會拒絕。</li><li>自動事件調查（#117），預設關閉（<code>[agents] auto_incident</code>）：巡檢推送的 L3 群組，會自動派出唯讀的 <code>incident</code> 子 agent。每輪最多一次、每天最多 3 次、同一個群組一天一次；未查證或溢出的群組不派，沒設 <code>[budget] monthly_tokens</code> 或已用超過 80% 也不派，存檔或 <code>log.jsonl</code> 讀不到結尾時也不派。通知只有固定字詞和數字；它的建議動作也用同樣的按鈕，只在 bot 服務執行中、而且能改防火牆時才送出。</li></ul>
       </div>
     </li>
@@ -249,7 +249,7 @@
   </ol>
 </div>
 
-<div class="newest" id="rv-0.5.2">
+<div class="newest" id="rv-0.5.2" data-groups="4">
   <div class="newest-head"><p class="word">籌備中</p><span class="ver">v0.5.2</span><b class="badge">即將發布</b></div>
   <div class="grp grp-reach"><h4><i aria-hidden="true"></i>看得更遠</h4><ul><li>子 agent 專用模型（#135）：<code>[agents] base_url</code>、<code>model</code>、<code>api_key_env</code> 可以讓子 agent 用自己的模型；沒設定時沿用 <code>[llm]</code>。這台主機以外的模型（127.0.0.0/8、::1、localhost 以外都算）必須設 <code>[budget] monthly_tokens</code>，否則一個子 agent 都不跑，也不送出任何請求；用過外部模型的派遣，會在給 agent 的訊息、存檔和每日報告裡寫明。送出去的內容照舊遮罩。外部模型回錯誤時只留狀態碼，因為錯誤內容可能引用金鑰；不跟隨轉址；連線失敗時只保留失敗的種類，不帶網址。<code>[llm]</code> 的錯誤會先把金鑰（原樣和常見的編碼形式）換掉再截斷。</li><li>子 agent 同時執行（#136）：用這台主機以外的模型時，若本月 token 上限還容得下一整次派遣，而且有設 <code>monthly_cost</code> 時花費還不到一半，子 agent 會同時執行，各分得相同的 token 份額；模型在這台主機上（任何位址寫法）時，仍然依序執行。</li><li><code>sudo shentu dispatch repair</code>（#134）：把存檔裡讀不懂的行搬到 <code>&lt;date&gt;.jsonl.bad</code>，並刪掉空行，自動事件調查就不必再等最多 72 小時。檔案以一次 rename 換掉，存檔鎖改為 <code>dispatch/.lock</code>。</li><li>平台（#138）：角色只拿得到這個平台能用的工具，其餘列為沒有檢查；只有 Linux 會提出封鎖建議；macOS 目前只跑 <code>surface</code>；自動事件調查只在 Linux 執行，其他平台不占每日次數。</li></ul></div><div class="grp grp-sharp"><h4><i aria-hidden="true"></i>看得更準</h4><ul><li>操作者回饋（#137）：派遣的回報下面，bot 會給已配對的人「👍 有用」「👎 誤報」兩個按鈕，只能按一次，7 天內有效。<code>sudo shentu dispatch stats [--days 7] [--json]</code> 依角色加總數字，並在固定範圍內提出調整建議（步數 4～10、token 20,000～60,000、檢討提示詞）。工具只可能被建議移除、絕不新增；目前不會產生工具建議。Shentu 不會自己套用。</li></ul></div><div class="grp grp-upgrade"><h4><i aria-hidden="true"></i>升級說明</h4><ul><li><code>[agents]</code> 的模型若寫成區網位址或主機名稱（包括網路上另一台機器的 Ollama），都算這台主機以外；127.1、0.0.0.0、[::]、這台主機自己的區網 IP 也一樣。必須設 <code>[budget] monthly_tokens</code>。</li></ul></div><div class="grp grp-known"><h4><i aria-hidden="true"></i>已知問題</h4><ul><li>用單價高的模型時，一次派遣的花費可能一次就超過 <code>monthly_cost</code> 的一半；上限擋得住之後的呼叫，擋不住那一次。</li><li>bot 和巡檢各自為自己的派遣預留額度，看不到對方的預留。</li><li>自動事件調查目前在 Windows 和 macOS 上都不執行，包括 incident 角色（在 Windows 上，這個角色可用的工具較少，也不提出建議）。</li></ul></div>
 </div>
@@ -501,13 +501,13 @@
     </div>
   </li>
 
-  <li class="era pending" id="v0.5.1" style="--old: 0.06">
+  <li class="era" id="v0.5.1" style="--old: 0.06">
     <div class="mark">
-      <p class="when">尚未發布</p>
-      <h2><span class="word">籌備中</span> <span class="ver">v0.5.1</span></h2>
+      <p class="when"><time datetime="2026-11-20">2026-11-20</time></p>
+      <h2><span class="word">7 項改變</span> <span class="ver">v0.5.1</span></h2>
     </div>
     <div class="body">
-      <ul class="items"><li>派遣存檔（#112）：每一次子 agent 派遣，在回報交回 agent 之前，都會存進 <code>state_dir/dispatch/&lt;date&gt;.jsonl</code>（檔案 0600、目錄 0700，保留 30 天）。存的是角色、狀態與原因（固定字詞）、各項計數，以及建議封鎖的位址（canonical 形式）和 Telegram 閘門對每一個的判定。子 agent 或紀錄寫的文字一律不存。寫入和讀取時都會逐欄檢查；其他使用者寫得進去的存檔，或是連結，都不會讀。每日報告新增一段，列出最近一天的派遣，位址遮罩成 /24（IPv6 是 /64）。</li><li>建議動作按鈕（#116、#122）：Telegram 的回答派遣過子 agent 之後，bot 會列出建議封鎖的位址。當下通過 <code>block_ip</code> 從 Telegram 執行時的檢查（含 #108 的閘門）、而且以 canonical 形式寫的，各附一顆按鈕，最多五顆；其餘只寫出固定字詞的原因。按鈕只帶派遣 id 和一個序號。按下後會再檢查一次，接著要按 ✅（<code>[bot] confirm = 4</code> 也一樣），然後才封鎖。換了配對、超過 24 小時、按第二次（重啟後也一樣），或存檔裡的位址不同，都會拒絕。</li><li>自動事件調查（#117），預設關閉（<code>[agents] auto_incident</code>）：巡檢推送的 L3 群組，會自動派出唯讀的 <code>incident</code> 子 agent。每輪最多一次、每天最多 3 次、同一個群組一天一次；未查證或溢出的群組不派，沒設 <code>[budget] monthly_tokens</code> 或已用超過 80% 也不派，存檔或 <code>log.jsonl</code> 讀不到結尾時也不派。通知只有固定字詞和數字；它的建議動作也用同樣的按鈕，只在 bot 服務執行中、而且能改防火牆時才送出。</li><li>bot 和 <code>shentu chat</code> 的每月 AI 預算上限：<code>log.jsonl</code> 讀不到結尾時，當成預算已用完。</li><li>子 agent 仍然依序一個接一個執行，而且只在 Linux 上開發與測試。</li><li>存檔裡有寫到一半的行時（例如磁碟滿了），自動事件調查會停大約兩天，直到那個檔案離開讀取的範圍；每日報告會寫明。</li><li>用 7B 的本機模型時，子 agent 常常用完 6 步，被標成未完成。</li></ul>
+      <ul class="items"><li>派遣存檔（#112）：每一次子 agent 派遣，在回報交回 agent 之前，都會存進 <code>state_dir/dispatch/&lt;date&gt;.jsonl</code>（檔案 0600、目錄 0700，保留 30 天）。存的是角色、狀態與原因（固定字詞）、各項計數，以及建議封鎖的位址（canonical 形式）和 Telegram 閘門對每一個的判定。子 agent 或紀錄寫的文字一律不存。寫入和讀取時都會逐欄檢查；其他使用者寫得進去的存檔，或是連結，都不會讀。每日報告新增一段，列出最近一天的派遣，位址遮罩成 /24（IPv6 是 /64）。</li><li>建議動作按鈕（#116、#122）：Telegram 的回答派遣過子 agent 之後，bot 會列出建議封鎖的位址。當下通過 <code>block_ip</code> 從 Telegram 執行時的檢查（含 #108 的閘門）、而且以 canonical 形式寫的，各附一顆按鈕，最多五顆；其餘只寫出固定字詞的原因。按鈕只帶派遣 id 和一個序號。按下後會再檢查一次，接著要按 ✅（<code>[bot] confirm = 4</code> 也一樣），然後才封鎖。換了配對、超過 24 小時、按第二次（重啟後也一樣），或存檔裡的位址不同，都會拒絕。</li><li>自動事件調查（#117），預設關閉（<code>[agents] auto_incident</code>）：巡檢推送的 L3 群組，會自動派出唯讀的 <code>incident</code> 子 agent。每輪最多一次、每天最多 3 次、同一個群組一天一次；未查證或溢出的群組不派，沒設 <code>[budget] monthly_tokens</code> 或已用超過 80% 也不派，存檔或 <code>log.jsonl</code> 讀不到結尾時也不派。通知只有固定字詞和數字；它的建議動作也用同樣的按鈕，只在 bot 服務執行中、而且能改防火牆時才送出。</li><li>bot 和 <code>shentu chat</code> 的每月 AI 預算上限：<code>log.jsonl</code> 讀不到結尾時，當成預算已用完。</li><li>子 agent 仍然依序一個接一個執行，而且只在 Linux 上開發與測試。</li><li>存檔裡有寫到一半的行時（例如磁碟滿了），自動事件調查會停最多 72 小時（通常約兩天），直到那個檔案離開讀取的範圍；每日報告會寫明。</li><li>用 7B 的本機模型時，子 agent 常常用完 6 步，被標成未完成。</li></ul>
       
       <div class="grow">
         <p><span class="bar" style="--w: 100.0%"></span><b>127</b> 條規則</p>
