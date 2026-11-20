@@ -4,8 +4,6 @@ import (
 	"maps"
 	"slices"
 	"strings"
-
-	"github.com/nt-neil/shentu/rules"
 )
 
 // A route handler's request is the rules' input whatever it is called. The
@@ -483,30 +481,45 @@ func (a *analysis) koaFile() bool {
 }
 
 // koaMiddleware finds, in a Koa application's file (it or another file of the
-// project imports Koa), the functions app.use(fn) registers: middleware, which
-// the route models leave out (they register handlers by path). Their first
-// parameter is the context, followed by the rules' ctx. sources through
-// aliases and destructuring as a route handler's is; nothing else of them is
-// input that was not before.
+// project imports Koa), the functions a Koa application or router registers
+// with use: middleware, which the route models leave out (they register
+// handlers by path). Only X.use(fn) where X was made with new Koa() or new
+// Router() (koaInstances), and only a fn whose first parameter is used as a
+// context (koaContext, koaPattern): an HTTP client's interceptors.use or a
+// library's plugin use takes something else. Their first parameter is the
+// context, followed by the rules' ctx. sources through aliases and
+// destructuring as a route handler's is; nothing else of them is input that
+// was not before.
 func koaMiddleware(lang string, toks []Token, tree []*stmt, ff *fileFuncs, proj *Project) map[*fn]bool {
 	if lang != "js" || !(slices.ContainsFunc(koaModules, func(m string) bool { return importsModule(toks, m) }) || proj != nil && proj.koa) {
 		return nil
 	}
-	use := []*croute{{r: rules.Route{Handler: -1}, register: []callName{{recv: "*", name: "use"}}}}
-	out := map[*fn]bool{}
-	mark := func(_ *croute, f *fn, _ []Token) {
-		if f != nil {
-			out[f] = true
-		}
+	inst := koaInstances(toks)
+	if len(inst) == 0 {
+		return nil
 	}
-	var e Engine
+	out := map[*fn]bool{}
 	var walk func(ss []*stmt, depth int)
 	walk = func(ss []*stmt, depth int) {
 		if depth > maxNest {
 			return
 		}
 		for _, s := range ss {
-			e.registrations(false, s, use, ff, mark)
+			t := s.toks
+			for i := 2; i+1 < len(t); i++ {
+				if !t[i].word("use") || !t[i+1].op("(") || !t[i-1].op(".") || t[i-2].Kind != Ident || !inst[t[i-2].Text] || i > 2 && memberOp(false, t[i-3]) {
+					continue
+				}
+				args := splitTop(inside(t, i+1, closeOf(t, i+1)), isComma)
+				if len(args) == 0 {
+					continue
+				}
+				for _, f := range handlerFuncs(false, s, args[len(args)-1], ff) {
+					if f != nil && usesContext(f) {
+						out[f] = true
+					}
+				}
+			}
 			for _, f := range s.funcs {
 				if f != nil {
 					walk(f.body, depth+1)
@@ -528,6 +541,55 @@ func koaMiddleware(lang string, toks []Token, tree []*stmt, ff *fileFuncs, proj 
 	}
 	walk(tree, 0)
 	return out
+}
+
+// koaInstances are the names the file binds to new Koa(), new Router() (or
+// new KoaRouter(), or a class imported from a Koa module under another name),
+// and the names given one of those: const app = new Koa(); const a2 = app.
+func koaInstances(t []Token) map[string]bool {
+	ctors := map[string]bool{"Koa": true, "Router": true, "KoaRouter": true}
+	for i := 2; i < len(t); i++ { // import X from 'koa'; const X = require('@koa/router')
+		if t[i].Kind != Str || !slices.Contains(koaModules, t[i].Text) {
+			continue
+		}
+		switch {
+		case t[i-1].word("from") && t[i-2].Kind == Ident:
+			ctors[t[i-2].Text] = true
+		case t[i-1].op("(") && t[i-2].word("require") && i > 3 && t[i-3].op("=") && t[i-4].Kind == Ident:
+			ctors[t[i-4].Text] = true
+		}
+	}
+	inst := map[string]bool{}
+	for changed := true; changed; {
+		changed = false
+		for i := 1; i+2 < len(t); i++ {
+			if !t[i].op("=") || t[i-1].Kind != Ident || inst[t[i-1].Text] {
+				continue
+			}
+			if t[i+1].word("new") && t[i+2].Kind == Ident && ctors[t[i+2].Text] || t[i+1].Kind == Ident && inst[t[i+1].Text] && (i+2 >= len(t) || !memberOp(false, t[i+2]) && !t[i+2].op("(")) {
+				inst[t[i-1].Text], changed = true, true
+			}
+		}
+	}
+	return inst
+}
+
+// usesContext reports whether a function's first parameter is used as a Koa
+// context: named, as koaContext sees it in the body; destructured, taking a
+// member only a context has (koaPattern).
+func usesContext(f *fn) bool {
+	parts := splitTop(f.params, isComma)
+	if len(parts) == 0 || len(parts[0]) == 0 {
+		return false
+	}
+	p := parts[0]
+	switch {
+	case p[0].Kind == Ident:
+		return koaContext(f.body, p[0].Text)
+	case p[0].op("{"):
+		return koaPattern(p[:closeOf(p, 0)+1])
+	}
+	return false
 }
 
 // koaModules are the modules a Koa application imports.

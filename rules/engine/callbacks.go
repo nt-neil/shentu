@@ -1,5 +1,7 @@
 package engine
 
+import "strings"
+
 // A callback some calls are known to call with a value they were given:
 // Laravel's $query->when($value, fn ($q, $v) => ...) (and ->unless) calls the
 // closure with the query and $value, so $v holds what $value held.
@@ -52,4 +54,26 @@ func paramName(params []Token, k int) string {
 		}
 	}
 	return name
+}
+
+// laravelRequest reports whether the PHP variable name may be Laravel's
+// request, whose magic properties ($request->sort) are input: the file
+// imports from Illuminate, or declares the variable with a type named
+// Request or ending in it (Request $request, StorePostRequest $request).
+func (a *analysis) laravelRequest(name string) bool {
+	if v, ok := a.laravelVars[name]; ok {
+		return v
+	}
+	if a.laravelVars == nil {
+		a.laravelVars = map[string]bool{}
+	}
+	t, v := a.ftoks, false
+	for i, tk := range t {
+		if tk.Kind == Ident && tk.Text == "Illuminate" || tk.Kind == Ident && strings.HasSuffix(tk.Text, "Request") && i+1 < len(t) && t[i+1].Kind == Var && t[i+1].Text == name {
+			v = true
+			break
+		}
+	}
+	a.laravelVars[name] = v
+	return v
 }

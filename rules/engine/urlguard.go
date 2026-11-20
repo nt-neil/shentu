@@ -359,6 +359,8 @@ func tsType(t []Token, j int) bool {
 //     with statement;
 //   - anything under URL, String, JSON or Object's prototype, __proto__, or
 //     Symbol.toPrimitive (what String(u) and JSON.stringify(u) call);
+//   - the console module imported or required ('console', 'node:console'),
+//     which is the global console under another name;
 //   - Object.defineProperty and the like or Reflect.set on console, String,
 //     JSON or URL.
 func globalReplace(t []Token) bool {
@@ -379,6 +381,10 @@ func globalReplace(t []Token) bool {
 		member := i > 0 && (memberOp(false, t[i-1]) || t[i-1].op("?."))
 		if tk.Kind == Str && len(tk.Parts) == 0 && (tk.Text == "constructor" || tk.Text == "__proto__") {
 			return true // x['constructor'], o['__proto__']
+		}
+		if tk.Kind == Str && len(tk.Parts) == 0 && (tk.Text == "console" || tk.Text == "node:console") && i > 0 &&
+			(t[i-1].word("from") || t[i-1].word("import") || i > 1 && t[i-1].op("(") && (t[i-2].word("require") || t[i-2].word("import"))) {
+			return true // require('console') is the global console under another name: c.log = f
 		}
 		if tk.Kind != Ident {
 			continue

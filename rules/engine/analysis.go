@@ -135,16 +135,17 @@ const (
 )
 
 type analysis struct {
-	r     *crule
-	php   bool
-	py    bool
-	js    bool
-	b     *budget
-	kw    map[string]bool // words that are keywords in this language
-	seed  *paramSeed      // the value a callback's parameter is called with (whenSeeds), for the next function analysed
-	mws   map[*fn]bool    // Koa middleware: the functions app.use(fn) registers (reqalias.go koaMiddleware)
-	seen  map[loc]bool
-	lines []loc
+	r           *crule
+	php         bool
+	py          bool
+	js          bool
+	b           *budget
+	kw          map[string]bool // words that are keywords in this language
+	seed        *paramSeed      // the value a callback's parameter is called with (whenSeeds), for the next function analysed
+	laravelVars map[string]bool // per PHP variable, whether it may be Laravel's request (laravelRequest)
+	mws         map[*fn]bool    // Koa middleware: the functions app.use(fn) registers (reqalias.go koaMiddleware)
+	seen        map[loc]bool
+	lines       []loc
 	// sinkSpans: per line reported, the sink calls that reported it, as
 	// spanText (yields.go); "" for a line reported through a summary or a
 	// text sink. span is the call about to be reported.
@@ -1551,6 +1552,9 @@ func (a *analysis) srcMatchAt(s *pat, t []Token, i int) (int, bool) {
 	}
 	strict := len(s.toks) > 1 && s.toks[0].Kind == Ident && s.toks[1].op("(")
 	end, ok := s.match(t, i, strict)
+	if ok && s.memberWild && a.php && !a.laravelRequest(s.toks[0].Text) {
+		return 0, false // $request->sort: Laravel's magic property, not any object's member
+	}
 	if ok && notMember(s, t, end) {
 		return 0, false // req.headers.host where the rule's route_not names headers.host
 	}
