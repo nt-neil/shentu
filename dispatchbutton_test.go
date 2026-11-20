@@ -578,8 +578,15 @@ func TestDispatchButtonAuto(t *testing.T) {
 		}
 		if c.name == "service cannot act" {
 			sent := tg.sent()[n:]
-			if len(sent) < 1 || !strings.Contains(sent[0]["text"].(string), "CAP_NET_ADMIN") {
+			if len(sent) != 2 || !strings.Contains(sent[0]["text"].(string), "CAP_NET_ADMIN") {
 				t.Errorf("%s: the reason was not sent: %v", c.name, sent)
+			}
+			if len(sent) == 2 { // and then only the feedback buttons (G)
+				rm, _ := sent[1]["reply_markup"].(map[string]any)
+				got := fmt.Sprint(rm)
+				if !strings.Contains(got, testDispatch+":fu") || !strings.Contains(got, testDispatch+":fp") || strings.Contains(got, ":b") {
+					t.Errorf("%s: the second message's buttons: %s", c.name, got)
+				}
 			}
 		}
 	}

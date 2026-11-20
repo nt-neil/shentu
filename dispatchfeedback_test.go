@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -52,7 +53,12 @@ func feedbackData(tg *fakeTelegram, id string) []string {
 
 func verdicts(t *testing.T, s *dispatchStore) []feedbackLine {
 	t.Helper()
-	b, _ := os.ReadFile(filepath.Join(s.dir, feedbackFile))
+	var b []byte
+	files, _ := filepath.Glob(filepath.Join(s.dir, feedbackPrefix+"*.jsonl"))
+	for _, f := range files {
+		x, _ := os.ReadFile(f)
+		b = append(b, x...)
+	}
 	var out []feedbackLine
 	for _, line := range bytes.Split(b, []byte{'\n'}) {
 		var l feedbackLine
@@ -227,5 +233,26 @@ func TestDispatchStatsReport(t *testing.T) {
 	}
 	if err := statsReport(cfg, 31, false, &out, now); err == nil {
 		t.Error("--days 31 was taken")
+	}
+}
+
+// S-G2: feedback files age out with the day files, on reading too.
+func TestFeedbackPruned(t *testing.T) {
+	s := testStore(t)
+	now := time.Now()
+	if err := s.Save(testRecord(testDispatch, now)); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SaveFeedback(testDispatch, verdictUseful, now); err != nil {
+		t.Fatal(err)
+	}
+	old := filepath.Join(s.dir, feedbackPrefix+now.Add(-40*24*time.Hour).Format(time.DateOnly)+".jsonl")
+	os.WriteFile(old, []byte(`{"id":"`+testDispatch+`","verdict":"useful","ts":"2020-01-01T00:00:00Z"}`+"\n"), 0o600)
+	s.Since(now.Add(-time.Hour))
+	if _, err := os.Stat(old); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("a 40-day-old feedback file was kept: %v", err)
+	}
+	if got, bad, err := s.Feedback(now.Add(-time.Hour)); err != nil || bad != 0 || got[testDispatch] != verdictUseful {
+		t.Errorf("today's feedback: %v %d %v", got, bad, err)
 	}
 }

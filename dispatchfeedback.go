@@ -18,14 +18,14 @@ import (
 // Operator feedback on sub-agent reports (phase 3, G): two buttons under a
 // dispatch's report, "useful" and "false positive", for the paired user,
 // each set once, within feedbackTTL. A press is a fixed word in
-// dispatch/feedback.jsonl, nothing else. `shentu dispatch stats` adds the
+// dispatch/feedback-<date>.jsonl, nothing else (aged out with the day files). `shentu dispatch stats` adds the
 // archive and the feedback up by role, in numbers, and suggests changes
 // within fixed ranges for a person to review: Shentu never applies one
 // itself, and a tool can only be suggested away, never added.
 
 const (
 	feedbackTTL          = 7 * 24 * time.Hour
-	feedbackFile         = "feedback.jsonl"
+	feedbackPrefix       = "feedback-" // feedback-<date>.jsonl, aged out with the day files
 	verdictUseful        = "useful"
 	verdictFalsePos      = "false_positive"
 	statsMinRuns         = 5   // a role's suggestions need this many runs
@@ -49,7 +49,10 @@ type feedbackRef struct {
 	Verdict  string
 }
 
-var feedbackRe = regexp.MustCompile(`^d([0-9a-f]{12}):f([up])$`)
+var (
+	feedbackRe     = regexp.MustCompile(`^d([0-9a-f]{12}):f([up])$`)
+	feedbackFileRe = regexp.MustCompile(`^feedback-(\d{4}-\d{2}-\d{2})\.jsonl$`)
+)
 
 func (r feedbackRef) String() string {
 	v := "u"
@@ -71,7 +74,7 @@ func parseFeedbackRef(s string) (feedbackRef, error) {
 	return feedbackRef{Dispatch: m[1], Verdict: v}, nil
 }
 
-// feedbackLine is one line of feedback.jsonl.
+// feedbackLine is one line of a feedback file.
 type feedbackLine struct {
 	ID      string    `json:"id"`
 	Verdict string    `json:"verdict"`
@@ -92,7 +95,7 @@ func (s *dispatchStore) SaveFeedback(id, verdict string, now time.Time) error {
 		return err
 	}
 	b, _ := json.Marshal(l)
-	p := filepath.Join(s.dir, feedbackFile)
+	p := filepath.Join(s.dir, feedbackPrefix+now.Local().Format(time.DateOnly)+".jsonl")
 	unlock, err := s.lock()
 	if err != nil {
 		return err
@@ -112,13 +115,25 @@ func (s *dispatchStore) SaveFeedback(id, verdict string, now time.Time) error {
 // Feedback is the latest verdict on each dispatch given at or after t; a
 // line that does not check out is skipped and counted in bad.
 func (s *dispatchStore) Feedback(t time.Time) (map[string]string, int, error) {
-	p := filepath.Join(s.dir, feedbackFile)
-	if _, err := os.Lstat(p); errors.Is(err, os.ErrNotExist) {
+	ents, err := os.ReadDir(s.dir)
+	if errors.Is(err, os.ErrNotExist) {
 		return map[string]string{}, 0, nil
 	}
-	b, err := readTrusted(p)
 	if err != nil {
 		return nil, 0, err
+	}
+	from := t.Local().Add(-24 * time.Hour).Format(time.DateOnly)
+	var b []byte
+	for _, e := range ents { // in name order, so by date
+		m := feedbackFileRe.FindStringSubmatch(e.Name())
+		if m == nil || m[1] < from {
+			continue
+		}
+		x, err := readTrusted(filepath.Join(s.dir, e.Name()))
+		if err != nil {
+			return nil, 0, err
+		}
+		b = append(append(b, x...), '\n')
 	}
 	out, bad := map[string]string{}, 0
 	for _, line := range bytes.Split(b, []byte{'\n'}) {

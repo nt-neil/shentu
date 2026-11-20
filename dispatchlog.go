@@ -139,7 +139,7 @@ var (
 	refRe        = regexp.MustCompile(`^d([0-9a-f]{12}):b([1-9][0-9]{0,2})$`)
 	dayFileRe    = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2})\.jsonl$`)
 	tmpFileRe    = regexp.MustCompile(`^\.(\d{4}-\d{2}-\d{2}\.jsonl|repairs\.jsonl)\..*\.tmp$`) // replaceFile's
-	keptFileRe   = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2})\.jsonl(\.bad)?$`)                   // what prune ages out
+	keptFileRe   = regexp.MustCompile(`^(?:feedback-)?(\d{4}-\d{2}-\d{2})\.jsonl(\.bad)?$`)     // what prune ages out
 )
 
 // triggerID is what the archive stores for a trigger: a short hash of the
