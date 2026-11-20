@@ -2,7 +2,9 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -10,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/nt-neil/shentu/detect/sig"
 	"github.com/nt-neil/shentu/rules"
 )
 
@@ -19,6 +22,8 @@ type Release struct {
 	Version    string // "0.2.5"
 	Date       string // "2026-11-09", "" when unreleased
 	Items      []string
+	English    []string // the English items, which the card's groups are chosen by
+	Sections   []string // each item's "###" section: "" before any, else fixed, upgrade or known
 	Added      []string // rule ids new in this release
 	Removed    []string // rule ids gone in this release
 	AddedBy    []IDGroup
@@ -30,12 +35,18 @@ type Release struct {
 }
 
 var (
+	// sectionKeys are the "###" headings a release may have, in either language.
+	sectionKeys = map[string]string{
+		"Fixed": "fixed", "Upgrade notes": "upgrade", "Known issues": "known",
+		"修正": "fixed", "升級說明": "upgrade", "已知問題": "known",
+	}
 	headRe = regexp.MustCompile(`^## v(\d+\.\d+\.\d+)(?: — (\d{4}-\d{2}-\d{2})| \(unreleased\))\s*$`)
 	verRe  = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
 )
 
 // parseChangelog reads the releases of CHANGELOG.md, newest first as written.
-// A release's items are its "- " lines (a line indented under one continues it).
+// A release's items are its "- " lines (a line indented under one continues it);
+// a "###" heading puts the lines after it in that section.
 func parseChangelog(path string) ([]Release, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -43,11 +54,13 @@ func parseChangelog(path string) ([]Release, error) {
 	}
 	defer f.Close()
 	var out []Release
+	section := ""
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {
 		line := sc.Text()
 		if m := headRe.FindStringSubmatch(line); m != nil {
 			out = append(out, Release{Version: m[1], Date: m[2], Rules: -1})
+			section = ""
 			continue
 		}
 		if strings.HasPrefix(line, "## ") {
@@ -58,8 +71,15 @@ func parseChangelog(path string) ([]Release, error) {
 		}
 		r := &out[len(out)-1]
 		switch {
+		case strings.HasPrefix(line, "### "):
+			k, ok := sectionKeys[strings.TrimSpace(line[4:])]
+			if !ok {
+				return nil, fmt.Errorf("%s: v%s: section %q is not one of Fixed, Upgrade notes, Known issues (修正, 升級說明, 已知問題)", path, r.Version, line)
+			}
+			section = k
 		case strings.HasPrefix(line, "- "):
 			r.Items = append(r.Items, strings.TrimSpace(line[2:]))
+			r.Sections = append(r.Sections, section)
 		case strings.HasPrefix(line, "  ") && strings.TrimSpace(line) != "" && len(r.Items) > 0:
 			r.Items[len(r.Items)-1] += " " + strings.TrimSpace(line)
 		}
@@ -216,7 +236,9 @@ func byLang(ids []string) []IDGroup {
 }
 
 // translate returns the releases with their items taken from a translated
-// changelog, which must have the same releases, each with items.
+// changelog, which must have the same releases, each with items, and the
+// same sections with as many items in each: the card groups a translated
+// line where it groups the English one.
 func translate(rels, tr []Release, path string) ([]Release, error) {
 	if len(tr) != len(rels) {
 		return nil, fmt.Errorf("%s has %d releases, CHANGELOG.md has %d", path, len(tr), len(rels))
@@ -229,8 +251,12 @@ func translate(rels, tr []Release, path string) ([]Release, error) {
 		if len(r.Items) == 0 || len(tr[i].Items) == 0 {
 			return nil, fmt.Errorf("v%s has no items in CHANGELOG.md or %s", r.Version, path)
 		}
+		if strings.Join(tr[i].Sections, ",") != strings.Join(r.Sections, ",") {
+			return nil, fmt.Errorf("v%s: %s has %d items in sections %q, CHANGELOG.md has %d in %q", r.Version, path, len(tr[i].Items), tr[i].Sections, len(r.Items), r.Sections)
+		}
 		out[i] = r
 		out[i].Items = tr[i].Items
+		out[i].English = r.Items
 	}
 	return out, nil
 }
@@ -407,4 +433,125 @@ func importBench(src, version, commit, main, holdout, ts string) error {
 		}
 	}
 	return nil
+}
+
+// AttackEval is attack detection's measurement on synthetic requests, as the
+// bench page shows it: tools/detecteval/baseline.json, with what it does not
+// keep (the nuclei-templates release, the applications, each host case's
+// level) read from the table and text of docs/attack-detection-limits.md.
+type AttackEval struct {
+	Version      string // the release the limits document is for
+	Signatures   int
+	Nuclei       string // nuclei-templates release
+	Commit       string // its commit, shortened
+	Caught       int
+	Templates    int
+	Rate         string // Caught of Templates
+	NotConverted int
+	Unclassified int
+	RCEUnspec    int
+	Distinct     int
+	Requests     int
+	Routes       int
+	Apps         int
+	Upper        string // the false-alert rate's 95% upper bound with none seen
+	HostCVEs     int
+	HostAlerted  int
+	HostL1       int // of HostAlerted, those only at L1
+}
+
+var (
+	limitsVerRe = regexp.MustCompile(`(?m)^# .* in v(\d+\.\d+\.\d+)\s*$`)
+	nucleiRe    = regexp.MustCompile(`nuclei-templates v(\d+\.\d+\.\d+) \(commit ([0-9a-f]+)\)`)
+	appsRe      = regexp.MustCompile(`(\d+) for each of (\d+) routes of (\d+) applications`)
+	hostRowRe   = regexp.MustCompile(`(?m)^\| (CVE-\d+-\d+) \| (L1|L2|L3|none) \|`)
+)
+
+// loadAttackEval reads attack detection's measurement under root. It fails
+// when the numbers no longer agree with each other or the page's words: a
+// false alert, or a host table that does not add up to the baseline.
+func loadAttackEval(root string) (*AttackEval, error) {
+	bp := filepath.Join(root, "tools", "detecteval", "baseline.json")
+	b, err := os.ReadFile(bp)
+	if err != nil {
+		return nil, err
+	}
+	var base struct {
+		Stats struct {
+			NucleiCommit   string `json:"nuclei_commit"`
+			NotConverted   int    `json:"not_converted"`
+			Unclassified   int    `json:"unclassified"`
+			RCEUnspecified int    `json:"rce_unspecified"`
+			Classes        map[string]struct {
+				Templates int `json:"templates"`
+				Caught    int `json:"caught"`
+			} `json:"classes"`
+			Host struct {
+				TemplatesForCVEs int `json:"templates_for_cves"`
+				AlertedForCVEs   int `json:"alerted_for_cves"`
+			} `json:"host"`
+			NormalRequests int `json:"normal_requests"`
+			NormalDistinct int `json:"normal_distinct"`
+			NormalRoutes   int `json:"normal_routes"`
+			FalsePositives int `json:"false_positives"`
+		} `json:"stats"`
+	}
+	if err := json.Unmarshal(b, &base); err != nil {
+		return nil, fmt.Errorf("%s: %v", bp, err)
+	}
+	s := base.Stats
+	e := &AttackEval{NotConverted: s.NotConverted, Unclassified: s.Unclassified, RCEUnspec: s.RCEUnspecified,
+		Distinct: s.NormalDistinct, Requests: s.NormalRequests, Routes: s.NormalRoutes,
+		HostCVEs: s.Host.TemplatesForCVEs, HostAlerted: s.Host.AlertedForCVEs}
+	for _, c := range s.Classes {
+		e.Caught += c.Caught
+		e.Templates += c.Templates
+	}
+	if e.Templates == 0 || e.Distinct == 0 {
+		return nil, fmt.Errorf("%s: no templates or ordinary requests", bp)
+	}
+	if s.FalsePositives != 0 {
+		return nil, fmt.Errorf("%s: %d false alerts: the bench page says there are none, rewrite it", bp, s.FalsePositives)
+	}
+	e.Rate = fmt.Sprintf("%.1f%%", 100*float64(e.Caught)/float64(e.Templates))
+	e.Upper = fmt.Sprintf("%.1f%%", 100*(1-math.Pow(0.05, 1/float64(e.Distinct))))
+
+	lp := filepath.Join(root, "docs", "attack-detection-limits.md")
+	lb, err := os.ReadFile(lp)
+	if err != nil {
+		return nil, err
+	}
+	l := string(lb)
+	m := limitsVerRe.FindStringSubmatch(l)
+	n := nucleiRe.FindStringSubmatch(l)
+	a := appsRe.FindStringSubmatch(l)
+	if m == nil || n == nil || a == nil {
+		return nil, fmt.Errorf("%s: no release in its title, nuclei-templates release or routes of applications", lp)
+	}
+	e.Version, e.Nuclei, e.Commit = m[1], n[1], n[2]
+	if !strings.HasPrefix(s.NucleiCommit, e.Commit) {
+		return nil, fmt.Errorf("%s names nuclei-templates commit %s, %s has %s", lp, e.Commit, bp, s.NucleiCommit)
+	}
+	e.Apps, _ = strconv.Atoi(a[3])
+	if routes, _ := strconv.Atoi(a[2]); routes != e.Routes {
+		return nil, fmt.Errorf("%s names %d routes, %s has %d", lp, routes, bp, e.Routes)
+	}
+	alerted := 0
+	for _, r := range hostRowRe.FindAllStringSubmatch(l, -1) {
+		if r[2] != "none" {
+			alerted++
+		}
+		if r[2] == "L1" {
+			e.HostL1++
+		}
+	}
+	if alerted != e.HostAlerted {
+		return nil, fmt.Errorf("%s: its host table has %d alerted, %s has %d", lp, alerted, bp, e.HostAlerted)
+	}
+	ss, err := sig.Load()
+	if err != nil {
+		return nil, err
+	}
+	e.Signatures = len(ss)
+	return e, nil
 }

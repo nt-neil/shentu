@@ -97,6 +97,11 @@ func EntryTrust(e hostenv.JournalEntry, unit hostenv.AppUnit, web hostenv.WebAcc
 // A stale cursor (the journal rotated past it) reads nothing from journald
 // and is said as rotated_gap.
 func ReadJournalUnit(ctx context.Context, src hostenv.Source, unit hostenv.AppUnit, cur *Cursor, b *Budget, web hostenv.WebAccounts, fn func(hostenv.JournalEntry, JournalTrust)) (Cursor, ReadResult, error) {
+	return readJournal(ctx, src, unit.Name, cur, b, func(e hostenv.JournalEntry) { fn(e, EntryTrust(e, unit, web)) })
+}
+
+// readJournal is ReadJournalUnit for any unit, giving fn each entry.
+func readJournal(ctx context.Context, src hostenv.Source, unit string, cur *Cursor, b *Budget, fn func(hostenv.JournalEntry)) (Cursor, ReadResult, error) {
 	var res ReadResult
 	after := ""
 	since := b.now().Add(-FirstJournalWindow)
@@ -107,7 +112,7 @@ func ReadJournalUnit(ctx context.Context, src hostenv.Source, unit hostenv.AppUn
 	}
 	deadline, cancel := context.WithDeadline(ctx, b.deadline)
 	defer cancel()
-	last, err := hostenv.ReadJournal(deadline, src, unit.Name, after, since, func(e hostenv.JournalEntry) error {
+	last, err := hostenv.ReadJournal(deadline, src, unit, after, since, func(e hostenv.JournalEntry) error {
 		if b.spent() {
 			res.partial(ReadTruncated)
 			return hostenv.ErrStopJournal
@@ -123,7 +128,7 @@ func ReadJournalUnit(ctx context.Context, src hostenv.Source, unit hostenv.AppUn
 		res.Lines++
 		res.Bytes += n
 		b.left -= n
-		fn(e, EntryTrust(e, unit, web))
+		fn(e)
 		return nil
 	})
 	next := keep(cur)
@@ -140,7 +145,7 @@ func ReadJournalUnit(ctx context.Context, src hostenv.Source, unit hostenv.AppUn
 			// journalctl refused the cursor itself: read again from the
 			// window, and say what may be lost or repeated.
 			res.partial(ReadCursorRejected)
-			c, r2, err2 := ReadJournalUnit(ctx, src, unit, nil, b, web, fn)
+			c, r2, err2 := readJournal(ctx, src, unit, nil, b, fn)
 			r2.Partial = append(r2.Partial, res.Partial...)
 			return c, r2, err2
 		}

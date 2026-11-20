@@ -35,7 +35,7 @@ type Config struct {
 	// Telegram interaction: four ranges, each a level from 1 (safest) to 4.
 	Bot struct {
 		TelegramToken string `toml:"telegram_token"` // default: the bot of a telegram:// notify url
-		Interaction   int    `toml:"interaction"`    // 1 notifications only, 2 questions, 3 + block/unblock, 4 + every control tool
+		Interaction   int    `toml:"interaction"`    // 1 notifications only, 2 questions, 3 + unblock, block with verified evidence, 4 + every control tool
 		Answers       int    `toml:"answers"`        // 1 problem or not, 2 summary, 3 full (deleted after 24h), 4 full and kept
 		Confirm       int    `toml:"confirm"`        // actions: 1 approve on the server, 2 ✅ + one-time code, 3 ✅, 4 none
 		Protection    int    `toml:"protection"`     // 1 strict, 2 standard, 3 loose, 4 off

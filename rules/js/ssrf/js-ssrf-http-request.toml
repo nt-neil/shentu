@@ -15,7 +15,7 @@ frameworks = ["express", "nestjs", "nextjs", "koa", "fastify", "hapi"]
 # reports after an allow check the engine does not read as a sanitizer.
 sources = ["req.query", "req.body", "req.params", "req.headers[", "req.headers.referer", "req.headers.origin",
            "ctx.headers.referer", "ctx.headers.origin", "ctx.header.referer", "ctx.header.origin", "ctx.header[", "ctx.request.get(", "ctx.request.header.referer", "ctx.request.header.origin",
-           "ctx.request.headers.referer", "ctx.request.headers.origin", "request.headers.referer", "request.headers.origin", "request.headers.get(", "@Query(", "@Body(", "@Param(", "@Headers(", "@Req(", "req.originalUrl", "^request.nextUrl", "^req.nextUrl", "^request.url", "^req.url", "^searchParams", "^request.json(", "^req.json(", "^request.text(", "^req.text(", "^request.formData(", "^req.formData(", "^formData.get(", "req.get(", "req.header(", "^headers().get(", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload", "ctx.params", "request.params", "ctx.headers[", "request.headers[", "ctx.request.header[", "ctx.request.headers[", "ctx.get("]
+           "ctx.request.headers.referer", "ctx.request.headers.origin", "request.headers.referer", "request.headers.origin", "request.headers.get(", "@Query(", "@Body(", "@Param(", "@Headers(", "@Req(", "@Request(", "req.originalUrl", "^request.nextUrl", "^req.nextUrl", "^request.url", "^req.url", "^searchParams", "^request.json(", "^req.json(", "^request.text(", "^req.text(", "^request.formData(", "^req.formData(", "^formData.get(", "req.get(", "req.header(", "^headers().get(", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload", "ctx.params", "request.params", "ctx.headers[", "request.headers[", "ctx.request.header[", "ctx.request.headers[", "ctx.get("]
 sinks = ["fetch(", "axios(", "axios.get(", "axios.post(", "axios.put(", "axios.delete(", "axios.head(", "got(", "got.get(", "got.post(", "http.get(", "https.get(", "http.request(", "https.request(", "needle(", "superagent.get("]
 sanitizers = ["parseInt(", "encodeURIComponent("]
 fix = "Keep the scheme and host fixed and take only an encoded path or id from the request, or accept only URLs whose host is in an allowlist: parse the URL into a variable (const u = new URL(input)), check u.hostname against the allowlist and fetch u itself, or build the request from the checked host; do not fetch the original string, which another parser may read as another host. Make sure the host resolves to a public address."
@@ -237,3 +237,17 @@ app.get("/proxy", async (req, res) => {
 });
 '''
 
+[[samples]]
+kind = "vulnerable"
+dialect = "ts"
+note = "NestJS's @Request() is @Req() by another name, whatever the parameter is called"
+code = '''
+@Controller()
+export class AppController {
+  @Get("proxy")
+  async proxy(@Request() r: Request) {
+    const res = await fetch(r.query.url);
+    return res.text();
+  }
+}
+'''

@@ -6,6 +6,74 @@ a release are not written here: they are worked out from the rule snapshots in
 `docs/site-src/rules-history/`. `CHANGELOG.zh-TW.md` holds the same releases in Traditional
 Chinese for the zh-TW pages; keep the two in step.
 
+## v0.4.1 (unreleased)
+
+- The host survey warns about nginx 1.9.5 through 1.31.8 serving HTTP/2 (a `listen ... http2`, or
+  `http2 on` for a server): CVE-2026-123007 and CVE-2026-123633, HTTP/2 memory corruption that lets
+  a client crash the workers. Upgrade to 1.31.9 or 1.30.7, or to the distribution's fixed package;
+  until then, turning HTTP/2 off avoids it. It is advice: the configuration is not changed. A
+  distribution package whose changelog names the CVEs (a backported fix) is not warned about; the
+  package scan reports the distributions' advisories once they reach OSV, and this check covers
+  nginx.org's packages and builds from source, which that scan does not.
+- A web log owned by the server's own account (`nginx` on Rocky Linux, say) can back a block,
+  as a log root owns can, when nothing else runs as that account: no PHP-FPM pool, systemd unit,
+  crontab, supervisord program, sudo or doas rule or login shell, and at the patrol no process
+  but the server's own; the account databases come only from the files, and everything checked
+  was read. Anything unread leaves the log `web_user_writable`. The shared default accounts
+  (`www-data`, `apache`, `nobody`) never count. The other conditions are in
+  the limits document, `docs/attack-detection-limits.md`, under "Which web logs can back a block".
+- nginx's access log sent to journald (`access_log syslog:server=unix:/dev/log,...`) is read and
+  verified line by line: a line counts only when it came over syslog from nginx's own program,
+  running as nginx's worker account in `nginx.service`. A line another program sent is read but not
+  verified.
+- `shentu log-trust suggest` prints the changes that would let this host's web logs back a block:
+  the journald line for nginx, a drop-in lifting journald's rate limit for nginx,
+  `kernel.yama.ptrace_scope = 1`, and PHP-FPM pools of their own account. It only prints them and
+  changes nothing.
+- Apache's modules are judged against a list: modules that only configure, control access, cache
+  or proxy are no concern; those that run programs as the children's account, and `RewriteMap`'s
+  `prg:`, want `ptrace_scope` 1 or more; `mod_php`, `mod_cgi` and unknown modules count as
+  application code.
+- An attack hit in a route placeholder's segment that carries `;` parameters (`/user/42;x` for
+  `/user/:id`) now reaches L2; before, it stayed at L1.
+- The response-size baseline used for L3 now leaves out only requests taken to L2; requests with
+  hits that are unanchored or noise are learned from.
+- Rule precision: findings that two rules both reported on one line now have one owner (Host
+  header against SSRF, SQL injection, `ORDER BY` identifiers), and an SSRF host checked against a
+  fixed allowlist on a parsed URL counts as checked. Some findings appear or go away, and with them
+  the routes attack detection takes as reachable.
+
+### Fixed
+
+- From Telegram, `block_ip` now blocks only an address with evidence Shentu verified: a verified L2
+  or L3 attack group listing it, or SSH login events sshd itself logged. Any other address is
+  refused there, to be checked and blocked on the server with `shentu chat`, as v0.4.0 said of
+  unverified attempts. Before, an address its attack groups did not list (past the ten a group
+  lists, in a group evicted from the state, or logged in another form) was judged by its SSH logins
+  alone, so one with none could be blocked from Telegram on unverified attempts. A group lists at
+  most ten addresses, so the eleventh and later of even a verified L2 or L3 group are refused from
+  Telegram too, by design, and are to be blocked on the server.
+- On the server, an address past the addresses a group lists is refused as a listed one is, also
+  after the group is merged into an overflow summary, and so is the rest of its network. So is an
+  address logged in another form: brackets, a port, a zone, leading zeros (read both ways), or IPv4
+  embedded in IPv6. A verified group allows a block only of the address it lists. Once an overflow
+  or sink-wide summary has more sources than it keeps hashes of (64), it refuses every address it
+  does not list; the operator may override on the server.
+
+### Upgrade notes
+
+- v0.4.0's known issue that default nginx logs cannot back a block, planned for v0.4.1, now
+  stands as follows (`docs/attack-detection-limits.md` has the details):
+  Debian 12 and Ubuntu 24.04 nginx stay `web_user_writable` (`www-data` is PHP's account too):
+  send the access log to journald, with `ptrace_scope` 1. Debian 12 and Ubuntu 24.04 Apache are
+  verified with `ptrace_scope` 1. Rocky 9 nginx stays `web_user_writable`, because the default
+  `nsswitch.conf` also asks sss: taken out (where no SSSD is used), with PHP-FPM as `apache`, it
+  is verified. Rocky 9 httpd wants `ptrace_scope` 1, and `AllowOverride None` everywhere if
+  `mod_lua` stays loaded.
+- Once a log is judged verified, new attempts go into verified groups, while the old unverified
+  groups expire only after up to 7 days: until then one target may show two groups. A new
+  journald source is read the first time from its latest position on, not from the past.
+
 ## v0.4.0 — 2026-11-18
 
 - Attack detection (Linux): each patrol round reads the web server's logs and picks out the

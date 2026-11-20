@@ -45,13 +45,15 @@
 <h2>主要指令</h2>
 <ul>
   <li><code>shentu chat</code>：用白話問伺服器的資安狀況，模型自己挑工具執行並說明結果。</li>
-  <li><code>shentu patrol</code>：由 systemd timer 每 30 分鐘執行固定檢查，包括稽核網站應用程式的原始碼；有新發現時，由 LLM 說明後送到通知管道。LLM 掛了也照樣送出原始發現。</li>
+  <li><code>shentu patrol</code>：由 systemd timer 每 30 分鐘執行固定檢查，包括稽核網站應用程式的原始碼；有新發現時，由 LLM 說明後送到通知管道。LLM 掛了也照樣送出原始發現。它也會讀網站伺服器的存取紀錄，挑出打向這台主機真實漏洞的請求告警（只支援 Linux）。</li>
+  <li><code>shentu detect</code>：讀一輪紀錄並判定，列出最近一天的攻擊群組；不送出也不存檔。</li>
   <li><code>shentu survey</code>：先認識伺服器，當作巡邏的基準。</li>
   <li><code>shentu bot</code>（選用）：從 Telegram 跟 Shentu 對話，權限分級、預設只收通知。</li>
 </ul>
 <h2>支援的系統</h2>
-<p>Ubuntu 22.04、24.04，Debian 12，Rocky 與 Alma 9，amd64 與 arm64（需要 systemd）。每個 release 附 <code>.deb</code> 與 <code>.rpm</code>，以及可用 <code>gh attestation verify</code> 驗證的簽章建置來源。</p>
-<p>Windows Server 2022 與 2025（v0.3.0 起，amd64，已在 GitHub 提供的 Windows Server 2022/2025 測試機上驗證）；Windows Server 2019 為 best effort（相同的 API，build 17763，沒有在 GitHub 提供的測試機上驗證）。下載 <code>shentu_windows_amd64.zip</code>，以系統管理員身分安裝成服務，只讀不寫。步驟見 <a href="https://github.com/nt-neil/shentu/blob/main/packaging/windows/INSTALL.md">Windows 安裝說明</a>。</p>
+<p>Ubuntu 22.04、24.04，Debian 12，Rocky 與 Alma 9，amd64 與 arm64（需要 systemd）。每個 release 附 <code>.deb</code>、<code>.rpm</code>、<code>.tar.gz</code>、Windows 的 <code>.zip</code> 與 <code>install.sh</code>，以及可用 <code>gh attestation verify</code> 驗證的簽章建置來源。</p>
+<p>Debian、Ubuntu 預設的 nginx 紀錄，網站帳號寫得到，所以只能告警、不能當封鎖依據；<code>shentu log-trust suggest</code> 會列出怎樣能放行。見<a href="https://github.com/nt-neil/shentu/blob/main/docs/attack-detection.zh-TW.md">攻擊偵測怎麼運作</a>。</p>
+<p>Windows Server 2022 與 2025（v0.3.0 起，amd64，已在 GitHub 提供的 Windows Server 2022/2025 測試機上驗證）；Windows Server 2019 為 best effort（相同的 API，build 17763，沒有在 GitHub 提供的測試機上驗證）。下載 <code>shentu_windows_amd64.zip</code>，以系統管理員身分安裝成服務，只讀不寫，沒有攻擊偵測。步驟見 <a href="https://github.com/nt-neil/shentu/blob/main/packaging/windows/INSTALL.md">Windows 安裝說明</a>。</p>
 <p>它不會自己改動系統：每個會改變系統的動作都要人確認。詳細步驟見<a href="https://github.com/nt-neil/shentu/blob/main/docs/getting-started.zh-TW.md">入門指南</a>。</p>
 
 <script>

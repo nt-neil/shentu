@@ -418,7 +418,7 @@ func (w *wiz) chooseInteraction(ctx context.Context, in *bufio.Reader) string {
 	l[0] = pick(0, 1, [4][2]string{
 		{"reports and alerts only; the bot reads nothing", "只收報告和告警，bot 不讀任何訊息"},
 		{"ask questions; nothing on the server changes", "可以問問題，伺服器不會有任何改變"},
-		{"also block and unblock IPs", "還可以封鎖、解除封鎖 IP"},
+		{"also unblock IPs, and block those with verified evidence", "還可以解除封鎖 IP、封鎖有查證證據的 IP"},
 		{"also every control tool added later", "還包括之後新增的所有控制功能"}})
 	if l[0] >= 2 {
 		l[1] = pick(1, 2, [4][2]string{

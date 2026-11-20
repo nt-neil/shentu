@@ -41,6 +41,7 @@ Usage:
   shentu patrol [--daily]     run the checks once and notify on new findings (for a systemd timer)
   shentu detect [--since 24h] [--json]  read and judge the web logs now, list attack attempts (sends and saves nothing)
                 [--dry-run]   print the report instead of sending it
+  shentu log-trust suggest    print what to change so that more web logs can back a block (changes nothing)
   shentu survey               survey this server (services, exposure, stacks, SSH, firewall) and save it as the baseline
   shentu bot [pair|unpair|status|approve|totp|resume]
                               answer questions from Telegram (a systemd service); pair one user first
@@ -90,12 +91,18 @@ func main() {
 	switch cmd { // before the config: help and a mistyped command need none
 	case "help", "--help", "-h":
 		os.Exit(printUsage(cmd, os.Stdout, os.Stderr))
-	case "version", "--version", "setup", "chat", "survey", "bot", "budget", "usage", "patrol", "detect", "service":
+	case "version", "--version", "setup", "chat", "survey", "bot", "budget", "usage", "patrol", "detect", "service", "log-trust":
 	default:
 		os.Exit(printUsage(cmd, os.Stdout, os.Stderr))
 	}
 	if cmd == "version" || cmd == "--version" {
 		fmt.Println("shentu", version)
+		return
+	}
+	if cmd == "log-trust" { // reads the host only: no configuration
+		if err := logTrustCommand(ctx, args, os.Stdout); err != nil {
+			fatal(err)
+		}
 		return
 	}
 	if cmd == "setup" {

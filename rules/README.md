@@ -163,13 +163,16 @@ How the engine reads them:
     ends and u holds again the input it held before it; this also ends it for a
     call that only reads u (`log(u)`), which reports more than it must. So does
     a URL written into an object or array (`{ target: u }`, `[u]`), or used as
-    a value in any other way than a member read, a whole argument or the whole
+    a value in any other way than a member read (`u.valueOf()` is u itself, not a
+    member; a method called by a computed name, `u[k]()`, counts as changing it
+    whatever k is, `u['toString']()` too), a whole argument or the whole
     right side of an assignment (`a1 = u || null`, `c ? u : w`, `return u`). Only a
     plain name holds a checked URL (not `this.u`), only one no function written
     inside another uses without binding it itself (a closure or callback that
     reads or changes u, whenever it runs: `() => { u.host = v }`,
     `[v].forEach(h => { u.host = h })`) and no function declares `global` or
-    `nonlocal` (Python's `def m(): nonlocal u; u = urlparse(v)`), and only while fewer than 64 names
+    `nonlocal` (Python's `def m(): nonlocal u; u = urlparse(v)`, a list of names
+    and a statement continued with a backslash included), and only while fewer than 64 names
     hold it (each alias is kept with each other one).
     `p.geturl()` is a string the client parses again; urlparse and the client's
     parser agree on the host of what urlparse itself wrote out, which is why it
@@ -257,7 +260,8 @@ on a parameter, which becomes an assignment at the start of the body:
 `find(@Param('id') id: string) { ... }` reads as `find(id) { id = @Param('id'); ... }`,
 so a decorator is a source like any call (`@Body(`, `@Query(`, `@Param(`,
 `@Headers(`); a destructured parameter (`run(@Body() { cmd }: Dto)`) becomes
-`let { cmd } = @Body();`. With `@Req()` only the parts of the request that come
+`let { cmd } = @Body();`. With `@Req()` (or `@Request()`, the same decorator by
+another name, which a rule that takes `@Req(` takes too) only the parts of the request that come
 from the client are input (`query`, `body`, `params`, `headers`, `cookies`,
 `originalUrl`, `url`, `get()`, `header()`), not what the server put on it
 (`req.user`). `@Req()` is NestJS's request only in a NestJS application: a file
@@ -501,6 +505,23 @@ the call (`when = ["'aes-128-ecb'"]`), XML entity expansion turned on
 code (`literal = true`). Samples of `hardcoded-secret` rules write `__SECRET__` where
 the value goes; the sample test puts a made-up value there at run time, so no
 credential-like string is kept in the repository.
+
+## Rules and attack detection
+
+Since v0.4.0, the daily round puts each injection finding of these rules (rule, CWE, file,
+line) into the host's vulnerability surface (`state_dir/surface.json`), with the routes
+that register the handler the sink sits in when a route model in `routes/` shows them in the
+same file. The patrol's attack detection reads the web
+server's access logs against it: a request to one of those routes is L1, and one that also
+carries a payload of the class the finding's CWE names (`CWE-89` is SQL injection, `CWE-78`
+command injection, `CWE-22` path traversal and so on; `detect/surface.go` has the list) is
+L2. A finding without routes is still in the surface, but no request can be tied to it.
+How the levels are judged and alerted: [docs/attack-detection.md](../docs/attack-detection.md).
+
+These rules are not the 27 attack signatures of attack detection (`detect/sig`). The rules
+read the applications' code on disk and find where it is vulnerable; the signatures read
+request lines in the access logs and find what an attacker sent. A rule added here can make
+a request L1 or L2 through its routes and CWE; it never adds a signature.
 
 ## What CI checks (`rules_test.go`)
 

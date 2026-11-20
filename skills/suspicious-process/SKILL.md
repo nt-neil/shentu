@@ -12,7 +12,11 @@ description: Look for webshells, reverse shells and malware-like processes.
    For a miner, also look for how it restarts: log_search for cron and systemd entries that
    start it, and ssh_logins for how it got in (miners usually arrive by SSH password guessing).
    Name the pool address from its command line; offer block_ip for it, and run it only after
-   the operator confirms.
+   the operator confirms. block_ip refuses internal addresses (private, CGNAT): if the pool is
+   reached through one, say so and tell the operator to block it on the server. From Telegram,
+   block_ip blocks only an address with verified evidence (a verified L2 or L3 attack group, or
+   SSH logins sshd itself logged), which a pool address does not have: there, tell the operator
+   to block it on the server with shentu chat.
 5. Report what you found, how confident you are, and what the operator should do: isolate the
    server, preserve evidence (do not delete files yet), kill the process, rotate credentials.
    You cannot kill processes or delete files; tell the operator the exact commands instead.

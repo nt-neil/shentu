@@ -280,7 +280,7 @@ func TestBotCodeFailuresPause(t *testing.T) {
 // The chat gets plain sentences, not level numbers; confirm is left out when the chat cannot act.
 func TestWelcomeIsPlain(t *testing.T) {
 	w := welcome([4]int{3, 2, 3, 2}, true)
-	for _, want := range []string{"封鎖或解除封鎖", "重點摘要", "按 ✅ 才會執行", "立刻暫停", "/lockdown"} {
+	for _, want := range []string{"解除封鎖某個 IP，或封鎖有查證證據的 IP", "重點摘要", "按 ✅ 才會執行", "立刻暫停", "/lockdown"} {
 		if !strings.Contains(w, want) {
 			t.Errorf("welcome lacks %q:\n%s", want, w)
 		}

@@ -4,6 +4,8 @@ description: Find vulnerable installed packages and suggest what to update first
 ---
 1. Run package_vulns without arguments, and app_vulns for the applications' own dependencies.
 2. Anything listed under actively_exploited comes first: it is being exploited now (CISA KEV).
+   Run attack_attempts too: a package whose CVE has an L2 or L3 group is being attacked on this
+   host, so it comes before the rest.
    Then pick up to 5 packages that matter most: network-facing services (openssh, nginx, apache2,
    openssl, sudo, the kernel, curl, the database) first, then the ones with the most vulnerabilities.
 3. Run package_vulns with package set for each of them, and read the summaries and fixed versions.

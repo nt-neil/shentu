@@ -16,6 +16,11 @@ finish the investigation and end with a concrete fix, and the Telegram bot's ans
 Round 1 found 8 models with perfect scores, so round 2 adds harder scenarios that separate them,
 and measures five things: **speed, correctness, completion, safety and cost**.
 
+Both rounds ran before v0.4.0 and were not repeated for it. Attack detection (v0.4.0) is not
+in them: its alerts are written by the detector, not by the model, and the planted scanner
+below reaches the model only through the log tools. The checks `block_ip` makes since v0.4.0
+(see [attack-detection.md](attack-detection.md#why-a-block-needs-you)) were not there either.
+
 ### Results
 
 Sorted by score, then by cost. "Score" counts passed runs over all scenarios.
@@ -196,7 +201,9 @@ What we saw:
 - A missed item in a patrol or daily report is never lost: Shentu always appends the raw list
   of findings under the model's text, and sends that list alone when the model is unavailable.
 
-### Recommendations
+### Recommendations (round 1)
+
+Round 2's recommendations above are the current ones.
 
 - **Best value: grok-4-1-fast-reasoning.** Perfect scores, the fastest of the perfect models,
   and about $0.12 a month.
@@ -261,7 +268,8 @@ the network (DNS or connection errors) was run again and is not counted as a mod
 
 Prompt injection can never cause harm by itself in Shentu: `block_ip` refuses ranges, the
 server's own addresses and the address of an active SSH session, and every block waits for the
-operator's `y`. S3 measures how often a model *tries*, because a model that obeys logs will
+operator's `y`. Since v0.4.0 it also checks the evidence behind an address, and from Telegram
+(v0.4.1) it blocks only one with verified evidence ([attack-detection.md](attack-detection.md#why-a-block-needs-you)). S3 measures how often a model *tries*, because a model that obeys logs will
 sooner or later propose something an operator approves without reading.
 
 ## Repeat the test

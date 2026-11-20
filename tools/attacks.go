@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -54,9 +55,26 @@ func attackGate(ip net.IP, override bool) (gateVerdict, error) {
 	if a == nil {
 		return gateNone, nil
 	}
-	gs := a.GroupsOf(hostenv.CanonicalIP(ip.String()))
+	canon := hostenv.CanonicalIP(ip.String())
+	gs, past := a.GroupsOf(canon), ""
 	if len(gs) == 0 {
-		return gateNone, nil
+		// Not listed, but maybe among a group's addresses past its listed
+		// ones: such a group refuses as if it listed it (a verified L2 or
+		// L3 group past its list does not allow: it does not show it).
+		for _, g := range a.MayHold(canon) {
+			strong := g.Level == detect.LevelPayload || g.Level == detect.LevelSuccess
+			if g.Prefix != detect.PrefixOverflow && strong && !g.Unverified {
+				continue
+			}
+			gs = append(gs, g)
+		}
+		if len(gs) == 0 || override {
+			// Override on the server: no group shows the address, an
+			// overflow summary included, and forged lines from many
+			// sources could otherwise keep any address from being blocked.
+			return gateNone, nil
+		}
+		past = ", may be among its addresses past those listed"
 	}
 	var unverified, overflow, weak []string
 	verified := false
@@ -64,11 +82,15 @@ func attackGate(ip net.IP, override bool) (gateVerdict, error) {
 		strong := g.Level == detect.LevelPayload || g.Level == detect.LevelSuccess
 		switch {
 		case g.Prefix == detect.PrefixOverflow:
-			overflow = append(overflow, g.Entry)
+			overflow = append(overflow, g.Entry+past)
 		case !strong:
-			weak = append(weak, g.Entry+" ("+g.Level+")")
+			weak = append(weak, g.Entry+" ("+g.Level+past+")")
 		case g.Unverified:
-			unverified = append(unverified, g.Entry+" ("+strings.Join(g.Reasons, "; ")+")")
+			unverified = append(unverified, g.Entry+" ("+strings.Join(g.Reasons, "; ")+past+")")
+		case !slices.ContainsFunc(g.IPs, func(x string) bool { return hostenv.CanonicalIP(x) == canon }):
+			// Found only by a looser reading of how it was logged: enough
+			// to refuse on, never to allow.
+			weak = append(weak, g.Entry+" (logged as another form of it)")
 		default:
 			verified = true // a verified L2 or L3 group of its own
 		}
@@ -147,6 +169,9 @@ func blockGate(ctx context.Context, env *Env, ip net.IP, override bool) error {
 	if why := internalAddr(ip); why != "" && !override {
 		return fmt.Errorf("refusing to block %s: it is %s, often a load balancer, proxy or this network's own host (a log without its real client address names it for every request): blocking it may cut off the whole site; check on the server and, if it is right, block it there with shentu chat and override_unverified", ip, why)
 	}
+	if env.Remote {
+		return remoteGate(ctx, env, ip)
+	}
 	v, refusal := attackGate(ip, override)
 	switch v {
 	case gateAllow:
@@ -158,6 +183,29 @@ func blockGate(ctx context.Context, env *Env, ip net.IP, override bool) error {
 		return nil
 	}
 	return refusal
+}
+
+// remoteGate is block_ip's gate from a chat channel (Telegram): refused
+// unless the address has evidence shentu verified, a verified L2 or L3
+// attack group listing it, or SSH login events sshd itself logged.
+// Anything else (no group found, an unverified, weak or overflow one, an
+// address written another way) is for the operator on the server.
+func remoteGate(ctx context.Context, env *Env, ip net.IP) error {
+	v, refusal := attackGate(ip, false)
+	if v == gateAllow {
+		return nil
+	}
+	verified, err := loginCheck(ctx, env, ip)
+	if err == nil && verified {
+		return nil
+	}
+	why := "it is not listed in a verified L2 or L3 attack group, and has no SSH login events sshd itself logged"
+	if refusal != nil {
+		why = refusal.Error()
+	} else if err != nil {
+		why = err.Error()
+	}
+	return fmt.Errorf("refusing to block %s from a chat channel: only an address with evidence shentu verified (a verified L2 or L3 attack group listing it, or SSH login events sshd itself logged) can be blocked from here, and its attempts cannot be believed or are not known (%s). This cannot be overridden from Telegram: check it on the server and, if it is right, block it there with shentu chat", ip, detect.Printable(why))
 }
 
 var attackAttempts = Tool{

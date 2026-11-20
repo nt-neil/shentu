@@ -51,7 +51,7 @@ cves = ["CVE-2099-0001"]
 source = "shentu"
 license = "Apache-2.0"
 [[signature.match]]
-part = "any_param"
+part = "query"
 contains = ["../"]
 `
 

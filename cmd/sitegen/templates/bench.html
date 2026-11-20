@@ -35,6 +35,17 @@
 <p class="meta">{{t "bench.measured"}} {{.Date}}{{with .Measure}}{{t "lp"}}{{.}}{{t "rp"}}{{end}}{{t "end"}}</p>
 {{template "groups" (slice .Groups 0 1)}}
 {{end}}
+{{with .Attack}}
+<h2 id="attack">{{t "attack.title"}}</h2>
+<p>{{tf "attack.intro" .Routes .Apps}}</p>
+<p class="meta">{{tf "attack.meta" .Version .Nuclei .Commit .Signatures}}</p>
+<dl class="scores">
+  <div><dt>{{t "attack.match"}}</dt><dd>{{.Caught}}<small>/ {{.Templates}}</small><span>{{.Rate}}{{t "comma"}}{{tf "attack.match.d" .NotConverted .Unclassified .RCEUnspec}}</span></dd></div>
+  <div><dt>{{t "attack.fp"}}</dt><dd>0<small>/ {{.Distinct}}</small><span>{{tf "attack.fp.d" .Requests .Upper .Routes}}</span></dd></div>
+  <div><dt>{{t "attack.host"}}</dt><dd>{{.HostAlerted}}<small>/ {{.HostCVEs}}</small><span>{{tf "attack.host.d" .HostCVEs .HostAlerted .HostL1}}</span></dd></div>
+</dl>
+<p><a href="{{$.Repo}}/blob/main/{{t "attack.doc"}}">{{t "attack.more"}}</a></p>
+{{end}}
 {{end}}
 {{define "groups"}}
 <table class="num"><thead><tr><th>{{t "group"}}</th><th>{{t "cases"}}</th><th>{{t "caught"}}</th><th>{{t "rate"}}</th><th>{{t "fixedfp"}}</th><th>{{t "fprate"}}</th></tr></thead><tbody>
