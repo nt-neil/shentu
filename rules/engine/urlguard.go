@@ -67,8 +67,9 @@ const maxURLAliases = 64
 
 // setURLOf records, for an assignment key = rhs, whether key holds a URL a
 // parser made, forgetting what it knew of key and of what is under it. After
-// w = u, w is that URL too and an alias of u.
-func (a *analysis) setURLOf(st state, key string, rhs []Token, plain bool) {
+// w = u, w is that URL too and an alias of u. line is the target's, which
+// tells the binding key is (captured).
+func (a *analysis) setURLOf(st state, key string, rhs []Token, plain bool, line int) {
 	if a.r.rule.Class != "ssrf" {
 		return
 	}
@@ -85,7 +86,7 @@ func (a *analysis) setURLOf(st state, key string, rhs []Token, plain bool) {
 	// only a plain name holds a checked URL, and only one no other function
 	// of the file reaches (captured): a member (this.u, o.u) or a name a
 	// closure uses may change where the analysis does not look
-	own := func() bool { return !strings.Contains(key, sepCh) && !a.captured(key) }
+	own := func() bool { return !strings.Contains(key, sepCh) && !a.captured(key, line) }
 	if a.isURLParse(rhs) {
 		if own() {
 			st[urlKey+key] = entry{san: true}
@@ -167,7 +168,7 @@ func aliasesOf(st state, k string) []string {
 // rule's own sinks, may change it too (setHost(u, v)): the check of u ends and
 // u holds again the input it held before it. Python's parse results cannot be
 // changed in place. This reports more than it must: a call that only reads u
-// (log(u)) ends the check as well.
+// (log(u)) ends the check as well, except the built-in readOnlyCalls.
 func (a *analysis) urlCallsStmt(st state, t []Token) {
 	if a.r.rule.Class != "ssrf" || !a.js {
 		return
@@ -239,7 +240,7 @@ func (a *analysis) urlCallsStmt(st state, t []Token) {
 			for _, s := range a.r.sinks {
 				sink = sink || s.at(t, start, false)
 			}
-			if sink {
+			if sink || a.readOnlyCall(t[start:i]) {
 				continue
 			}
 		}
@@ -260,6 +261,165 @@ func (a *analysis) urlCallsStmt(st state, t []Token) {
 			a.urlChanged(st, key, v, !write)
 		}
 	}
+}
+
+// readOnlyCalls: JavaScript's calls that only read a URL given to them (its
+// string, its toJSON): console.log(u), JSON.stringify(u), String(u).
+var readOnlyCalls = map[string]bool{
+	"console.log": true, "console.info": true, "console.warn": true, "console.error": true, "console.debug": true,
+	"console.trace": true, "JSON.stringify": true, "String": true,
+}
+
+// readOnlyCall reports whether callee (the tokens before a call's "(") is one
+// of readOnlyCalls and its first name is the built-in one: the file uses that
+// name only to read a member or call it (console.log(...), String(...)), or
+// as a TypeScript type (s: String). Any other use may replace it or what is
+// under it (a parameter or declaration of the name, console.log = ...,
+// globalThis.String = ..., Object.assign(console, ...)), and then the call
+// does not count; nor in a file that may replace it unseen (globalReplace).
+func (a *analysis) readOnlyCall(callee []Token) bool {
+	var b strings.Builder
+	for _, tk := range callee {
+		if tk.Kind != Ident && !tk.op(".") {
+			return false
+		}
+		b.WriteString(tk.Text)
+	}
+	if len(callee) == 0 || !readOnlyCalls[b.String()] {
+		return false
+	}
+	if a.fregs == nil {
+		a.fregs = fileRegions(a.ftoks, a.py)
+	}
+	t, root := a.ftoks, callee[0].Text
+	if globalReplace(t) {
+		return false
+	}
+	for j, tk := range t {
+		if tk.Kind != Ident || tk.Text != root {
+			continue
+		}
+		if a.fregs.param[j] || j > 0 && (memberOp(false, t[j-1]) || t[j-1].op("?.") || t[j-1].word("const") || t[j-1].word("let") ||
+			t[j-1].word("var") || t[j-1].word("function") || t[j-1].word("class") || t[j-1].word("import")) {
+			return false
+		}
+		if tsType(t, j) {
+			continue // let s: String = ..., f(): String {
+		}
+		k := j + 1
+		for k+1 < len(t) && t[k].op(".") && t[k+1].Kind == Ident {
+			k += 2
+		}
+		if k >= len(t) || !t[k].op("(") || k == j+1 && root != "String" {
+			return false // console.log = f, a value: f(console), { String }, console alone
+		}
+	}
+	return true
+}
+
+// tsType reports whether the name at t[j] is a TypeScript type annotation of
+// its own, which binds nothing: after ":" (or as), and followed by what ends
+// a type: let s: String = ..., (s: String) => ..., f(): String {, String[].
+// Not where an object pattern may hold it ({ a: String } = o, { a: String, b }),
+// which rebinds the name.
+func tsType(t []Token, j int) bool {
+	if j < 2 || j+1 >= len(t) {
+		return false
+	}
+	p, n := t[j-1], t[j+1]
+	switch {
+	case p.word("as"):
+		return true
+	case !p.op(":"):
+		return false
+	case n.op(")") || n.op(";") || n.op("[") || n.op("|") || n.op("&") || n.op(">"):
+		return true
+	case n.op("="):
+		return j >= 3 && t[j-2].Kind == Ident && (t[j-3].word("let") || t[j-3].word("const") || t[j-3].word("var"))
+	case n.op("{"):
+		return t[j-2].op(")") // a function's return type
+	}
+	return false
+}
+
+// globalReplace reports whether the file holds a way to replace a built-in
+// the analysis does not follow by name, and so ends readOnlyCalls for the
+// whole file (failing closed):
+//   - a global object (globalThis, window, self, global) anywhere but read
+//     through a named member (globalThis.process): given to another name,
+//     passed on, read by a computed name (globalThis['String'], ?.[);
+//   - eval, the name anywhere; runInThisContext; Function(, new Function; a
+//     value's constructor read for anything but its name (x.constructor,
+//     ['constructor'], { constructor: F } = f), which reaches Function; a
+//     with statement;
+//   - anything under URL, String, JSON or Object's prototype, __proto__, or
+//     Symbol.toPrimitive (what String(u) and JSON.stringify(u) call);
+//   - Object.defineProperty and the like or Reflect.set on console, String,
+//     JSON or URL.
+func globalReplace(t []Token) bool {
+	builtin := func(tk Token) bool {
+		switch tk.Text {
+		case "console", "String", "JSON", "URL":
+			return tk.Kind == Ident
+		}
+		return false
+	}
+	for i, tk := range t {
+		next := func(k int) Token {
+			if i+k < len(t) {
+				return t[i+k]
+			}
+			return Token{}
+		}
+		member := i > 0 && (memberOp(false, t[i-1]) || t[i-1].op("?."))
+		if tk.Kind == Str && len(tk.Parts) == 0 && (tk.Text == "constructor" || tk.Text == "__proto__") {
+			return true // x['constructor'], o['__proto__']
+		}
+		if tk.Kind != Ident {
+			continue
+		}
+		switch tk.Text {
+		case "globalThis", "window", "self", "global":
+			if !member && !(next(1).op(".") && next(2).Kind == Ident) {
+				return true // const g = globalThis, f(window), globalThis['String'], self?.[k]
+			}
+		case "eval", "runInThisContext", "__proto__":
+			return true
+		case "Function":
+			if next(1).op("(") || i > 0 && t[i-1].word("new") {
+				return true
+			}
+		case "constructor":
+			// any read of a value's constructor but its name reaches Function:
+			// F = (() => {}).constructor, [].constructor.constructor('...')(),
+			// { constructor: F } = f; a class's own constructor(...) { is a
+			// definition, and x.constructor.name only a name
+			if member && !(next(1).op(".") && next(2).word("name")) || !member && (next(1).op(":") || next(1).op(",") || next(1).op("}") || next(1).op("=")) {
+				return true
+			}
+		case "with":
+			if !member && next(1).op("(") {
+				return true
+			}
+		case "toPrimitive":
+			if member && i > 1 && t[i-2].word("Symbol") {
+				return true
+			}
+		case "URL", "String", "JSON", "Object":
+			if !member && next(1).op(".") && next(2).word("prototype") {
+				return true
+			}
+			if tk.Text == "Object" && !member && next(1).op(".") && next(3).op("(") && (next(2).word("defineProperty") || next(2).word("defineProperties") ||
+				next(2).word("assign") || next(2).word("setPrototypeOf")) && builtin(next(4)) {
+				return true
+			}
+		case "Reflect":
+			if !member && next(1).op(".") && next(3).op("(") && (next(2).word("set") || next(2).word("defineProperty") || next(2).word("setPrototypeOf")) && builtin(next(4)) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // callArg reports whether t[i] is directly inside a call's parentheses.
@@ -448,7 +608,7 @@ func (a *analysis) collectionName(name string) bool {
 		case next.op("=") && depth == 0 && (a.py && indent == 0 && lineStart(t, i) ||
 			!a.py && i > 0 && (t[i-1].word("const") || t[i-1].word("let") || t[i-1].word("var"))):
 			defs++
-			if defs > 1 || !a.collectionValue(stmtRest(t, i+2)) {
+			if defs > 1 || !a.collectionValue(stmtRest(t, i+2)) && !(a.py && pyBareTuple(t, i+2)) {
 				ok = false
 			}
 		case next.op(".") || next.op("?.") || next.op("["):
@@ -462,6 +622,29 @@ func (a *analysis) collectionName(name string) bool {
 	v := ok && defs == 1
 	a.colls[name] = v
 	return v
+}
+
+// pyBareTuple reports whether the Python expression starting at t[i], to the
+// end of its logical line, is a tuple written without parentheses: 'a', 'b'
+// (a comma outside brackets, a trailing one too).
+func pyBareTuple(t []Token, i int) bool {
+	depth := 0
+	for j := i; j < len(t); j++ {
+		switch {
+		case isOpen(t[j]):
+			depth++
+		case isClose(t[j]):
+			if depth == 0 {
+				return false
+			}
+			depth--
+		case depth == 0 && (t[j].Kind == Newline || t[j].op(";")):
+			return false
+		case depth == 0 && t[j].op(","):
+			return j > i
+		}
+	}
+	return false
 }
 
 // stmtRest returns the expression starting at t[i] up to the end of its
