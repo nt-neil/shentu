@@ -165,8 +165,16 @@ How the engine reads them:
     call that only reads u (`log(u)`), which reports more than it must, except
     `console.log` (`.info`, `.warn`, `.error`, `.debug`, `.trace`),
     `JSON.stringify` and `String`, while the file uses `console`, `JSON` and
-    `String` only to call them (no parameter or declaration of the name, no
-    `console.log = f`, `globalThis.String = f` or `Object.assign(console, ...)`). So does
+    `String` only to call them or, for `String`, as a TypeScript type (no
+    parameter or declaration of the name, no `console.log = f`,
+    `globalThis.String = f` or `Object.assign(console, ...)`), and holds nothing
+    that may replace them unseen: a global object (`globalThis`, `window`,
+    `self`, `global`) other than read through a named member, `eval` (the name
+    anywhere), `Function(`, `runInThisContext`, a constructor reached through a
+    value (`[].constructor.constructor(...)`), `with (`, anything under the
+    prototype of `URL`, `String`, `JSON` or `Object`, `__proto__` or
+    `Symbol.toPrimitive`. A module that replaces a global when it is imported
+    is another file, which this does not see. So does
     a URL written into an object or array (`{ target: u }`, `[u]`), or used as
     a value in any other way than a member read (`u.valueOf()` is u itself, not a
     member; a method called by a computed name, `u[k]()`, counts as changing it

@@ -343,50 +343,73 @@ func tsType(t []Token, j int) bool {
 }
 
 // globalReplace reports whether the file holds a way to replace a built-in
-// the analysis does not follow by name: a global object's member set by a
-// computed name (globalThis['String'], window[k], self[...], global[...]),
-// Object.defineProperty and the like or Reflect.set on a global, console,
-// String, JSON or URL, eval, Function, a with statement, or anything written
-// under URL.prototype (its toString and toJSON are what String(u) and
-// JSON.stringify(u) call). Any of them ends readOnlyCalls for the file.
+// the analysis does not follow by name, and so ends readOnlyCalls for the
+// whole file (failing closed):
+//   - a global object (globalThis, window, self, global) anywhere but read
+//     through a named member (globalThis.process): given to another name,
+//     passed on, read by a computed name (globalThis['String'], ?.[);
+//   - eval, the name anywhere; runInThisContext; Function(, new Function; a
+//     constructor read and called through a value (x.constructor(...),
+//     ['constructor']), which reaches Function; a with statement;
+//   - anything under URL, String, JSON or Object's prototype, __proto__, or
+//     Symbol.toPrimitive (what String(u) and JSON.stringify(u) call);
+//   - Object.defineProperty and the like or Reflect.set on console, String,
+//     JSON or URL.
 func globalReplace(t []Token) bool {
-	globals := func(tk Token) bool {
+	builtin := func(tk Token) bool {
 		switch tk.Text {
-		case "globalThis", "window", "self", "global", "console", "String", "JSON", "URL":
+		case "console", "String", "JSON", "URL":
 			return tk.Kind == Ident
 		}
 		return false
 	}
 	for i, tk := range t {
-		if tk.Kind != Ident {
-			continue
-		}
 		next := func(k int) Token {
 			if i+k < len(t) {
 				return t[i+k]
 			}
 			return Token{}
 		}
+		member := i > 0 && (memberOp(false, t[i-1]) || t[i-1].op("?."))
+		if tk.Kind == Str && len(tk.Parts) == 0 && (tk.Text == "constructor" || tk.Text == "__proto__") {
+			return true // x['constructor'], o['__proto__']
+		}
+		if tk.Kind != Ident {
+			continue
+		}
 		switch tk.Text {
 		case "globalThis", "window", "self", "global":
-			if next(1).op("[") {
+			if !member && !(next(1).op(".") && next(2).Kind == Ident) {
+				return true // const g = globalThis, f(window), globalThis['String'], self?.[k]
+			}
+		case "eval", "runInThisContext", "__proto__":
+			return true
+		case "Function":
+			if next(1).op("(") || i > 0 && t[i-1].word("new") {
 				return true
 			}
-		case "eval", "Function":
-			if next(1).op("(") || tk.Text == "Function" && i > 0 && t[i-1].word("new") {
-				return true
+		case "constructor":
+			if member && (next(1).op("(") || next(1).op(".") && next(2).word("constructor")) {
+				return true // [].constructor.constructor('...')(): a class's own constructor(...) { is no call
 			}
 		case "with":
-			if next(1).op("(") {
+			if !member && next(1).op("(") {
 				return true
 			}
-		case "URL", "String", "JSON":
-			if next(1).op(".") && next(2).word("prototype") {
+		case "toPrimitive":
+			if member && i > 1 && t[i-2].word("Symbol") {
 				return true
 			}
-		case "Object", "Reflect":
-			if next(1).op(".") && next(3).op("(") && (next(2).word("defineProperty") || next(2).word("defineProperties") ||
-				next(2).word("set") || next(2).word("assign") || next(2).word("setPrototypeOf")) && globals(next(4)) {
+		case "URL", "String", "JSON", "Object":
+			if !member && next(1).op(".") && next(2).word("prototype") {
+				return true
+			}
+			if tk.Text == "Object" && !member && next(1).op(".") && next(3).op("(") && (next(2).word("defineProperty") || next(2).word("defineProperties") ||
+				next(2).word("assign") || next(2).word("setPrototypeOf")) && builtin(next(4)) {
+				return true
+			}
+		case "Reflect":
+			if !member && next(1).op(".") && next(3).op("(") && (next(2).word("set") || next(2).word("defineProperty") || next(2).word("setPrototypeOf")) && builtin(next(4)) {
 				return true
 			}
 		}
