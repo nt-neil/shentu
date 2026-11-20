@@ -109,8 +109,8 @@ func (a *analysis) fnReqs(f *fn, outer map[string][]string) map[string][]string 
 		case p[0].op("{"):
 			pat := p[:closeOf(p, 0)+1]
 			root := []string{"req"} // ({ query, headers }, res): Express's request
-			if koaPattern(pat) {
-				root = []string{"ctx"} // ({ request, state }) => ...: Koa's context
+			if koaPattern(pat) && a.koaFile() {
+				root = []string{"ctx"} // ({ request, state }) => ...: Koa's context, in a Koa application
 			}
 			reqPattern(out, pat, root)
 		}
@@ -118,9 +118,10 @@ func (a *analysis) fnReqs(f *fn, outer map[string][]string) map[string][]string 
 	return out
 }
 
-// koaPattern reports whether an object pattern takes a member only a Koa
-// context has (request, response, state, throw, assert), as koaContext does
-// for a name.
+// koaPattern reports whether an object pattern takes a member a Koa context
+// has (request, response, state, throw, assert), as koaContext does for a
+// name. Express's request may carry such a member too (req.state, set by a
+// middleware), so it counts only in a Koa application (koaFile).
 func koaPattern(p []Token) bool {
 	c := closeOf(p, 0)
 	if c <= 0 {
@@ -237,29 +238,38 @@ func (a *analysis) reqAssign(st state, lhs, rhs []Token, op string) {
 			return
 		}
 		for _, tg := range a.targetList(lhs) {
-			switch {
-			case len(tg) != 1 || tg[0].Kind != Ident:
-			case a.reqRouteNot(a.reqs[tg[0].Text]):
-				st[tg[0].Text] = entry{} // const { host } = r.headers: route_not leaves it to another rule
-			case a.reqIsSource(tg[0]):
-				st[tg[0].Text] = entry{taint: !a.nonced(st), raw: true}
+			if len(tg) != 1 || tg[0].Kind != Ident {
+				continue
+			}
+			name := tg[0].Text
+			// const { host } = r.headers: route_not leaves it to another rule;
+			// a name that also holds another path (h was r.query on some path)
+			// keeps that one, which this rule still reads
+			if rest := a.reqRouteNotRest(a.reqs[name]); len(rest) < len(a.reqs[name]) {
+				a.reqs[name] = rest
+				if len(rest) == 0 {
+					st[name] = entry{}
+					continue
+				}
+			}
+			if a.reqIsSource(tg[0]) {
+				st[name] = entry{taint: !a.nonced(st), raw: true}
 			}
 		}
 	}
 }
 
-// reqRouteNot reports whether a path ends in a member the rule's route_not
-// names (req.headers.host for headers.host).
-func (a *analysis) reqRouteNot(paths []string) bool {
+// reqRouteNotRest is paths without those ending in a member the rule's
+// route_not names (req.headers.host for headers.host).
+func (a *analysis) reqRouteNotRest(paths []string) []string {
+	var rest []string
 	for _, p := range paths {
-		p = strings.ReplaceAll(p, reqIdx, "") // req.headers['x-forwarded-host'] as req.headers.x-forwarded-host
-		for _, rn := range a.r.rule.RouteNot {
-			if strings.HasSuffix(strings.ToLower(p), "."+strings.ToLower(rn)) {
-				return true
-			}
+		q := strings.ToLower(strings.ReplaceAll(p, reqIdx, "")) // req.headers['x-forwarded-host'] as req.headers.x-forwarded-host
+		if !slices.ContainsFunc(a.r.rule.RouteNot, func(rn string) bool { return strings.HasSuffix(q, "."+strings.ToLower(rn)) }) {
+			rest = append(rest, p)
 		}
 	}
-	return false
+	return rest
 }
 
 // reqIsSource reports whether a name of reqs stands for a whole source of the
@@ -366,6 +376,23 @@ func (a *analysis) nestFile() bool {
 	}
 	return a.proj != nil && a.proj.nestjs || a.cproj != nil && a.cproj.nestjs
 }
+
+// koaFile reports whether the file is a Koa application's: it imports Koa or
+// its router, or another file of its project does.
+func (a *analysis) koaFile() bool {
+	if a.ifacts == nil && len(a.ftoks) > 0 {
+		a.ifacts = fileFacts(a.ftoks, nil)
+	}
+	for _, m := range koaModules {
+		if a.ifacts["m:"+m] {
+			return true
+		}
+	}
+	return a.proj != nil && a.proj.koa || a.cproj != nil && a.cproj.koa
+}
+
+// koaModules are the modules a Koa application imports.
+var koaModules = []string{"koa", "@koa/router", "koa-router"}
 
 // nestModules are the modules a NestJS application imports its decorators from.
 var nestModules = []string{"@nestjs/common", "@nestjs/core"}

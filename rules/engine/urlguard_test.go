@@ -280,10 +280,34 @@ func TestURLHostGuard(t *testing.T) {
 			"Object.assign(console, { log: (x) => { x.host = 'evil.example'; } });\nconst ALLOWED = ['a.example'];\napp.get('/p', async (req, res) => {\n  const u = new URL(req.query.target);\n  if (!ALLOWED.includes(u.hostname)) return res.sendStatus(403);\n  console.log(u);\n  const r = await fetch(u);\n  res.json(await r.json());\n});\n", true},
 		{"js: another function's closure over its own u, keeps the check", "js", "js-ssrf-http-request",
 			"const ALLOWED = ['a.example'];\nfunction other(req) {\n  const u = new URL('https://a.example/');\n  setTimeout(() => { u.host = req.query.h; });\n  return u;\n}\napp.get('/p', async (req, res) => {\n  const u = new URL(req.query.target);\n  if (!ALLOWED.includes(u.hostname)) return res.sendStatus(403);\n  const r = await fetch(u);\n  res.json(await r.json());\n});\n", false},
+		{"js: globalThis['String'] replaced (N-1)", "js", "js-ssrf-http-request",
+			"globalThis['String'] = (x) => { x.host = 'evil.example'; return ''; };\nconst ALLOWED = ['a.example'];\napp.get('/p', async (req, res) => {\n  const u = new URL(req.query.target);\n  if (!ALLOWED.includes(u.hostname)) return res.sendStatus(403);\n  log(String(u));\n  const r = await fetch(u);\n  res.json(await r.json());\n});\n", true},
+		{"js: window['console'] replaced (N-1)", "js", "js-ssrf-http-request",
+			"window['console'] = { log: (x) => { x.host = 'evil.example'; } };\nconst ALLOWED = ['a.example'];\napp.get('/p', async (req, res) => {\n  const u = new URL(req.query.target);\n  if (!ALLOWED.includes(u.hostname)) return res.sendStatus(403);\n  console.log(u);\n  const r = await fetch(u);\n  res.json(await r.json());\n});\n", true},
+		{"js: Object.defineProperty on globalThis (N-1)", "js", "js-ssrf-http-request",
+			"Object.defineProperty(globalThis, 'String', { value: (x) => { x.host = 'evil.example'; return ''; } });\nconst ALLOWED = ['a.example'];\napp.get('/p', async (req, res) => {\n  const u = new URL(req.query.target);\n  if (!ALLOWED.includes(u.hostname)) return res.sendStatus(403);\n  log(String(u));\n  const r = await fetch(u);\n  res.json(await r.json());\n});\n", true},
+		{"js: Reflect.set on console (N-1)", "js", "js-ssrf-http-request",
+			"Reflect.set(console, 'log', (x) => { x.host = 'evil.example'; });\nconst ALLOWED = ['a.example'];\napp.get('/p', async (req, res) => {\n  const u = new URL(req.query.target);\n  if (!ALLOWED.includes(u.hostname)) return res.sendStatus(403);\n  console.log(u);\n  const r = await fetch(u);\n  res.json(await r.json());\n});\n", true},
+		{"js: eval in the file (N-1)", "js", "js-ssrf-http-request",
+			"eval(process.env.INIT);\nconst ALLOWED = ['a.example'];\napp.get('/p', async (req, res) => {\n  const u = new URL(req.query.target);\n  if (!ALLOWED.includes(u.hostname)) return res.sendStatus(403);\n  console.log(u);\n  const r = await fetch(u);\n  res.json(await r.json());\n});\n", true},
+		{"js: new Function in the file (N-1)", "js", "js-ssrf-http-request",
+			"const init = new Function(process.env.INIT);\ninit();\nconst ALLOWED = ['a.example'];\napp.get('/p', async (req, res) => {\n  const u = new URL(req.query.target);\n  if (!ALLOWED.includes(u.hostname)) return res.sendStatus(403);\n  console.log(u);\n  const r = await fetch(u);\n  res.json(await r.json());\n});\n", true},
+		{"js: a with statement (N-1)", "js", "js-ssrf-http-request",
+			"with (Math) { log(PI); }\nconst ALLOWED = ['a.example'];\napp.get('/p', async (req, res) => {\n  const u = new URL(req.query.target);\n  if (!ALLOWED.includes(u.hostname)) return res.sendStatus(403);\n  log(String(u));\n  const r = await fetch(u);\n  res.json(await r.json());\n});\n", true},
+		{"js: URL.prototype.toString replaced (N-1)", "js", "js-ssrf-http-request",
+			"URL.prototype.toString = function () { this.host = 'evil.example'; return this.href; };\nconst ALLOWED = ['a.example'];\napp.get('/p', async (req, res) => {\n  const u = new URL(req.query.target);\n  if (!ALLOWED.includes(u.hostname)) return res.sendStatus(403);\n  log(String(u));\n  const r = await fetch(u);\n  res.json(await r.json());\n});\n", true},
+		{"js: URL.prototype.toJSON replaced (N-1)", "js", "js-ssrf-http-request",
+			"URL.prototype.toJSON = function () { this.host = 'evil.example'; return this.href; };\nconst ALLOWED = ['a.example'];\napp.get('/p', async (req, res) => {\n  const u = new URL(req.query.target);\n  if (!ALLOWED.includes(u.hostname)) return res.sendStatus(403);\n  log(JSON.stringify(u));\n  const r = await fetch(u);\n  res.json(await r.json());\n});\n", true},
+		{"js: globalThis read by name only keeps the check (N-1 control)", "js", "js-ssrf-http-request",
+			"const g = globalThis.process;\nconst ALLOWED = ['a.example'];\napp.get('/p', async (req, res) => {\n  const u = new URL(req.query.target);\n  if (!ALLOWED.includes(u.hostname)) return res.sendStatus(403);\n  console.log(u);\n  const r = await fetch(u);\n  res.json(await r.json());\n});\n", false},
+		{"ts: a String type annotation keeps the check (S-1)", "ts", "js-ssrf-http-request",
+			"const ALLOWED = ['a.example'];\napp.get('/p', async (req, res) => {\n  const u = new URL(req.query.target);\n  if (!ALLOWED.includes(u.hostname)) return res.sendStatus(403);\n  let s: String = String(u);\n  log(s);\n  const r = await fetch(u);\n  res.json(await r.json());\n});\n", false},
+		{"js: String rebound by an object pattern (S-1 control)", "js", "js-ssrf-http-request",
+			"({ conv: String } = helpers);\nconst ALLOWED = ['a.example'];\napp.get('/p', async (req, res) => {\n  const u = new URL(req.query.target);\n  if (!ALLOWED.includes(u.hostname)) return res.sendStatus(403);\n  log(String(u));\n  const r = await fetch(u);\n  res.json(await r.json());\n});\n", true},
 		{"php: parse_url's host (another parser than the client's)", "php", "php-ssrf-http-request",
 			"<?php\n$p = parse_url($_GET['u']);\nif (!in_array($p['host'], $allowed, true)) { exit; }\n$r = wp_remote_get($_GET['u']);\n", true},
 	}
-	ext := map[string]string{"js": "js", "python": "py", "php": "php"}
+	ext := map[string]string{"js": "js", "ts": "ts", "python": "py", "php": "php"}
 	for _, c := range cases {
 		fs, err := e.Scan(c.lang, "a."+ext[c.lang], []byte(c.src))
 		if err != nil {

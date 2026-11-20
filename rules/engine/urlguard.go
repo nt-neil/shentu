@@ -272,10 +272,11 @@ var readOnlyCalls = map[string]bool{
 
 // readOnlyCall reports whether callee (the tokens before a call's "(") is one
 // of readOnlyCalls and its first name is the built-in one: the file uses that
-// name only to read a member or call it (console.log(...), String(...)). Any
-// other use may replace it or what is under it (a parameter or declaration of
-// the name, console.log = ..., globalThis.String = ...,
-// Object.assign(console, ...)), and then the call does not count.
+// name only to read a member or call it (console.log(...), String(...)), or
+// as a TypeScript type (s: String). Any other use may replace it or what is
+// under it (a parameter or declaration of the name, console.log = ...,
+// globalThis.String = ..., Object.assign(console, ...)), and then the call
+// does not count; nor in a file that may replace it unseen (globalReplace).
 func (a *analysis) readOnlyCall(callee []Token) bool {
 	var b strings.Builder
 	for _, tk := range callee {
@@ -291,6 +292,9 @@ func (a *analysis) readOnlyCall(callee []Token) bool {
 		a.fregs = fileRegions(a.ftoks, a.py)
 	}
 	t, root := a.ftoks, callee[0].Text
+	if globalReplace(t) {
+		return false
+	}
 	for j, tk := range t {
 		if tk.Kind != Ident || tk.Text != root {
 			continue
@@ -298,6 +302,9 @@ func (a *analysis) readOnlyCall(callee []Token) bool {
 		if a.fregs.param[j] || j > 0 && (memberOp(false, t[j-1]) || t[j-1].op("?.") || t[j-1].word("const") || t[j-1].word("let") ||
 			t[j-1].word("var") || t[j-1].word("function") || t[j-1].word("class") || t[j-1].word("import")) {
 			return false
+		}
+		if tsType(t, j) {
+			continue // let s: String = ..., f(): String {
 		}
 		k := j + 1
 		for k+1 < len(t) && t[k].op(".") && t[k+1].Kind == Ident {
@@ -308,6 +315,83 @@ func (a *analysis) readOnlyCall(callee []Token) bool {
 		}
 	}
 	return true
+}
+
+// tsType reports whether the name at t[j] is a TypeScript type annotation of
+// its own, which binds nothing: after ":" (or as), and followed by what ends
+// a type: let s: String = ..., (s: String) => ..., f(): String {, String[].
+// Not where an object pattern may hold it ({ a: String } = o, { a: String, b }),
+// which rebinds the name.
+func tsType(t []Token, j int) bool {
+	if j < 2 || j+1 >= len(t) {
+		return false
+	}
+	p, n := t[j-1], t[j+1]
+	switch {
+	case p.word("as"):
+		return true
+	case !p.op(":"):
+		return false
+	case n.op(")") || n.op(";") || n.op("[") || n.op("|") || n.op("&") || n.op(">"):
+		return true
+	case n.op("="):
+		return j >= 3 && t[j-2].Kind == Ident && (t[j-3].word("let") || t[j-3].word("const") || t[j-3].word("var"))
+	case n.op("{"):
+		return t[j-2].op(")") // a function's return type
+	}
+	return false
+}
+
+// globalReplace reports whether the file holds a way to replace a built-in
+// the analysis does not follow by name: a global object's member set by a
+// computed name (globalThis['String'], window[k], self[...], global[...]),
+// Object.defineProperty and the like or Reflect.set on a global, console,
+// String, JSON or URL, eval, Function, a with statement, or anything written
+// under URL.prototype (its toString and toJSON are what String(u) and
+// JSON.stringify(u) call). Any of them ends readOnlyCalls for the file.
+func globalReplace(t []Token) bool {
+	globals := func(tk Token) bool {
+		switch tk.Text {
+		case "globalThis", "window", "self", "global", "console", "String", "JSON", "URL":
+			return tk.Kind == Ident
+		}
+		return false
+	}
+	for i, tk := range t {
+		if tk.Kind != Ident {
+			continue
+		}
+		next := func(k int) Token {
+			if i+k < len(t) {
+				return t[i+k]
+			}
+			return Token{}
+		}
+		switch tk.Text {
+		case "globalThis", "window", "self", "global":
+			if next(1).op("[") {
+				return true
+			}
+		case "eval", "Function":
+			if next(1).op("(") || tk.Text == "Function" && i > 0 && t[i-1].word("new") {
+				return true
+			}
+		case "with":
+			if next(1).op("(") {
+				return true
+			}
+		case "URL", "String", "JSON":
+			if next(1).op(".") && next(2).word("prototype") {
+				return true
+			}
+		case "Object", "Reflect":
+			if next(1).op(".") && next(3).op("(") && (next(2).word("defineProperty") || next(2).word("defineProperties") ||
+				next(2).word("set") || next(2).word("assign") || next(2).word("setPrototypeOf")) && globals(next(4)) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // callArg reports whether t[i] is directly inside a call's parentheses.
