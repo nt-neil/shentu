@@ -48,6 +48,8 @@ Usage:
                 approve       show the action proposed from Telegram and run it or not (confirm = 1)
                 totp          enrol an authenticator app; actions from Telegram then ask for its code (confirm = 2)
                 resume        unpause the bot after /lockdown, then restart the service
+  shentu dispatch repair      move unreadable lines of the sub-agent dispatch archive aside (*.jsonl.bad),
+                              so automatic incident checks resume without waiting for the file to age out
   shentu usage                model calls, tokens and cost: today, last 7 and 30 days
   shentu budget [--cost USD] [--tokens N] [--off]
                               optional monthly AI limit: alert at 80%, stop calling the model at 100%
@@ -166,6 +168,10 @@ func main() {
 		}
 	case "service":
 		err = serviceCommand(ctx, cfg, env, args)
+	case "dispatch":
+		if err = stateReady(cfg.StateDir); err == nil {
+			err = dispatchCommand(cfg, args, privileged())
+		}
 	default:
 		os.Exit(printUsage(cmd, os.Stdout, os.Stderr))
 	}
