@@ -861,7 +861,12 @@ func lockFixHint(p string) string {
 	if runtime.GOOS == "windows" {
 		return fmt.Sprintf(`as administrator: move "%s" "%s.bad"`, p, p)
 	}
-	return fmt.Sprintf("sudo mv %s %s.bad", p, p)
+	return "sudo mv " + shellQuote(p) + " " + shellQuote(p+".bad")
+}
+
+// shellQuote is s in single quotes for a POSIX shell.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // openChecked opens an archive file without following a link and checks

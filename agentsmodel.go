@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"strings"
@@ -59,6 +60,9 @@ func agentsLLM(cfg *Config, main *llmClient) (*llmClient, bool, error) {
 	c.LLM.BaseURL, c.LLM.Model, c.LLM.APIKeyEnv = ag.BaseURL, ag.Model, ag.APIKeyEnv
 	l := newLLM(&c)
 	l.opaqueErrors = external // keyForms still scrubs the rest, as a second line
+	hc := *l.http
+	hc.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse } // a 3xx is an error answer
+	l.http = &hc
 	if main != nil && main.maxTokens > 0 {
 		l.maxTokens = main.maxTokens
 	}

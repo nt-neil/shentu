@@ -288,7 +288,7 @@ func TestDispatchLockUntrusted(t *testing.T) {
 	lock := filepath.Join(s.dir, ".lock")
 	os.Chmod(lock, 0o644)
 	err := s.Save(testRecord("000000000002", time.Now()))
-	if !errors.Is(err, errArchive) || !strings.Contains(err.Error(), lock) || !strings.Contains(err.Error(), "sudo mv "+lock+" "+lock+".bad") {
+	if !errors.Is(err, errArchive) || !strings.Contains(err.Error(), lock) || !strings.Contains(err.Error(), "sudo mv '"+lock+"' '"+lock+".bad'") {
 		t.Errorf("Save: %v", err)
 	}
 	if _, _, err := s.Repair(); !errors.Is(err, errArchive) {
@@ -296,5 +296,13 @@ func TestDispatchLockUntrusted(t *testing.T) {
 	}
 	if _, err := os.Stat(lock + ".bad"); !errors.Is(err, os.ErrNotExist) {
 		t.Error("the lock file was moved aside on its own")
+	}
+}
+
+func TestShellQuote(t *testing.T) {
+	for in, want := range map[string]string{"/var/lib/shentu/dispatch/.lock": "'/var/lib/shentu/dispatch/.lock'", "/srv/開源 x/it's": `'/srv/開源 x/it'\''s'`} {
+		if got := shellQuote(in); got != want {
+			t.Errorf("%q: %s", in, got)
+		}
 	}
 }

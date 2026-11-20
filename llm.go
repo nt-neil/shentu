@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/nt-neil/shentu/tools"
@@ -89,6 +90,9 @@ func (l *llmClient) chat(ctx context.Context, msgs []message, tools []toolDef) (
 		}
 		resp, err := l.http.Do(req)
 		if err != nil {
+			if l.opaqueErrors { // url.Error quotes the URL, which may hold a secret
+				err = opaqueDoError(ctx, err)
+			}
 			lastErr = err
 			if ctx.Err() != nil { // cancelled or past its deadline: a retry cannot help
 				return message{}, err
@@ -155,6 +159,27 @@ func (l *llmClient) scrub(s string, n int) string {
 		}
 	}
 	return truncate(s, n)
+}
+
+// opaqueDoError is a failed request to a model outside this host as a
+// kind of failure only: no URL, no address, no text the far end chose.
+func opaqueDoError(ctx context.Context, err error) error {
+	kind := "connection failed"
+	var nerr net.Error
+	var dnsErr *net.DNSError
+	switch {
+	case ctx.Err() != nil:
+		return fmt.Errorf("LLM request to the model outside this host: %w", ctx.Err())
+	case errors.As(err, &dnsErr):
+		kind = "name lookup failed"
+	case errors.Is(err, syscall.ECONNREFUSED):
+		kind = "connection refused"
+	case errors.As(err, &nerr) && nerr.Timeout():
+		kind = "timeout"
+	case strings.Contains(err.Error(), "tls:") || strings.Contains(err.Error(), "x509:"):
+		kind = "TLS failed"
+	}
+	return errors.New("LLM request to the model outside this host: " + kind)
 }
 
 // keyForms are the ways an answer can quote key: as is, escaped for a URL
