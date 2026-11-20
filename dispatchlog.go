@@ -20,6 +20,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/nt-neil/shentu/internal/osutil"
@@ -633,6 +634,10 @@ func (a *agent) runDispatch(ctx context.Context, origin, trigger string, tasks [
 	dctx, cancel := context.WithTimeout(ctx, dispatchTimeout)
 	defer cancel()
 	left := dispatchTokenCap
+	if modelErr == nil && external && len(tasks) > 1 {
+		reports, left = a.runSubsParallel(dctx, id, tasks)
+		tasks = nil
+	}
 	for _, t := range tasks {
 		if modelErr != nil { // no sub-agent runs on a model setting that cannot be used
 			reports = append(reports, subReport{Role: t.Role, Status: "incomplete", Reason: clean("the sub-agents' model cannot be used: "+modelErr.Error(), 300), Findings: []subFinding{}, code: reasonModelError})
@@ -669,6 +674,39 @@ func (a *agent) runDispatch(ctx context.Context, origin, trigger string, tasks [
 		a.log.write(logEntry{Actor: a.actor, Tool: "dispatch", Dispatch: id, Error: mask("archive: " + saveErr.Error())})
 	}
 	return id, reports, rec, saveErr
+}
+
+// runSubsParallel runs tasks at once, for a model outside this host (on
+// this host's model they would only compete for it). Each gets an equal
+// share of the dispatch's token cap, at most subTokenCap, so together they
+// stay within it; the reports keep the tasks' order. The progress callback
+// is serialised, as the bot's is not safe to call at once.
+func (a *agent) runSubsParallel(ctx context.Context, id string, tasks []subTask) ([]subReport, int) {
+	share := min(subTokenCap, dispatchTokenCap/len(tasks))
+	if prog := a.progress; prog != nil {
+		var mu sync.Mutex
+		a.progress = func(tool string) {
+			mu.Lock()
+			defer mu.Unlock()
+			prog(tool)
+		}
+		defer func() { a.progress = prog }()
+	}
+	reports := make([]subReport, len(tasks))
+	var wg sync.WaitGroup
+	for i, t := range tasks {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			reports[i] = a.runSub(ctx, id, t, share)
+		}()
+	}
+	wg.Wait()
+	left := dispatchTokenCap
+	for _, r := range reports {
+		left -= r.Tokens
+	}
+	return reports, left
 }
 
 // dispatchOrigin is where a's dispatches come from: the bot's agents have
