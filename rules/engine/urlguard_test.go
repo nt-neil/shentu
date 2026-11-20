@@ -302,6 +302,8 @@ func TestURLHostGuard(t *testing.T) {
 			"const g = globalThis.process;\nconst ALLOWED = ['a.example'];\napp.get('/p', async (req, res) => {\n  const u = new URL(req.query.target);\n  if (!ALLOWED.includes(u.hostname)) return res.sendStatus(403);\n  console.log(u);\n  const r = await fetch(u);\n  res.json(await r.json());\n});\n", false},
 		{"ts: a String type annotation keeps the check (S-1)", "ts", "js-ssrf-http-request",
 			"const ALLOWED = ['a.example'];\napp.get('/p', async (req, res) => {\n  const u = new URL(req.query.target);\n  if (!ALLOWED.includes(u.hostname)) return res.sendStatus(403);\n  let s: String = String(u);\n  log(s);\n  const r = await fetch(u);\n  res.json(await r.json());\n});\n", false},
+		{"js: a Flow String type annotation keeps the check (S-1)", "js", "js-ssrf-http-request",
+			"// @flow\nconst ALLOWED = ['a.example'];\napp.get('/p', async (req, res) => {\n  const u = new URL(req.query.target);\n  if (!ALLOWED.includes(u.hostname)) return res.sendStatus(403);\n  let s: String = String(u);\n  log(s);\n  const r = await fetch(u);\n  res.json(await r.json());\n});\n", false},
 		{"js: String rebound by an object pattern (S-1 control)", "js", "js-ssrf-http-request",
 			"({ conv: String } = helpers);\nconst ALLOWED = ['a.example'];\napp.get('/p', async (req, res) => {\n  const u = new URL(req.query.target);\n  if (!ALLOWED.includes(u.hostname)) return res.sendStatus(403);\n  log(String(u));\n  const r = await fetch(u);\n  res.json(await r.json());\n});\n", true},
 		{"php: parse_url's host (another parser than the client's)", "php", "php-ssrf-http-request",
