@@ -46,19 +46,20 @@ const (
 
 // Why an L3 alert was not dispatched (autoState.Skipped). Fixed words.
 const (
-	autoSkipNoBudget   = "no_budget"  // no monthly budget is set
-	autoSkipBudget     = "budget"     // the month's budget is at autoBudgetStop
-	autoSkipDailyCap   = "daily_cap"  // autoDailyCap in the last autoWindow
-	autoSkipGroup      = "group"      // this group was dispatched for in the last autoWindow
-	autoSkipUnverified = "unverified" // an L3 group of logs that cannot be believed
-	autoSkipOverflow   = "overflow"   // an overflow group: no one source network
-	autoSkipNoIP       = "no_ip"      // the group lists no usable address
-	autoSkipQueueFull  = "queue_full" // autoPendingMax were already waiting
-	autoSkipExpired    = "expired"    // waited longer than autoWindow
-	autoSkipArchive    = "archive"    // the dispatch archive could not be read: its count is unknown
+	autoSkipNoBudget      = "no_budget"      // no monthly_tokens budget is set (monthly_cost alone: a local model costs 0)
+	autoSkipBudget        = "budget"         // the month's budget, with this dispatch's cap reserved, is at autoBudgetStop
+	autoSkipBudgetUnknown = "budget_unknown" // log.jsonl could not be read to its end: the use is not known
+	autoSkipDailyCap      = "daily_cap"      // autoDailyCap in the last autoWindow
+	autoSkipGroup         = "group"          // this group was dispatched for in the last autoWindow
+	autoSkipUnverified    = "unverified"     // an L3 group of logs that cannot be believed
+	autoSkipOverflow      = "overflow"       // an overflow group: no one source network
+	autoSkipNoIP          = "no_ip"          // the group lists no usable address
+	autoSkipQueueFull     = "queue_full"     // autoPendingMax were already waiting
+	autoSkipExpired       = "expired"        // waited longer than autoWindow
+	autoSkipArchive       = "archive"        // the dispatch archive could not be read: its count is unknown
 )
 
-var autoSkipOrder = []string{autoSkipNoBudget, autoSkipBudget, autoSkipDailyCap, autoSkipGroup, autoSkipUnverified,
+var autoSkipOrder = []string{autoSkipNoBudget, autoSkipBudget, autoSkipBudgetUnknown, autoSkipDailyCap, autoSkipGroup, autoSkipUnverified,
 	autoSkipOverflow, autoSkipNoIP, autoSkipQueueFull, autoSkipExpired, autoSkipArchive}
 
 // autoState is auto-incident.json.
@@ -184,12 +185,8 @@ func autoReserve(cfg *Config, cands []autoCandidate, now time.Time) (*autoPendin
 			}
 			st.Pending = nil
 		}
-		if cfg.Budget.MonthlyCost <= 0 && cfg.Budget.MonthlyTokens <= 0 {
-			dropAll(autoSkipNoBudget)
-			return
-		}
-		if budgetUsed(cfg, now) >= autoBudgetStop {
-			dropAll(autoSkipBudget)
+		if why := autoBudget(cfg, now); why != "" {
+			dropAll(why)
 			return
 		}
 		since := now.Add(-autoWindow)
@@ -228,6 +225,29 @@ func autoReserve(cfg *Config, cands []autoCandidate, now time.Time) (*autoPendin
 		return nil, err
 	}
 	return pick, nil
+}
+
+// autoBudget is why the month's budget allows no automatic dispatch, ""
+// when it does. It needs monthly_tokens (a local model reports no cost,
+// so monthly_cost alone never stops it), reserves a whole dispatch's cap
+// before comparing with autoBudgetStop, and fails closed when the use
+// cannot be read.
+func autoBudget(cfg *Config, now time.Time) string {
+	if cfg.Budget.MonthlyTokens <= 0 {
+		return autoSkipNoBudget
+	}
+	cost, tokens, err := monthUsageStrict(cfg.StateDir, now)
+	if err != nil {
+		return autoSkipBudgetUnknown
+	}
+	used := float64(tokens+dispatchTokenCap) / float64(cfg.Budget.MonthlyTokens)
+	if cfg.Budget.MonthlyCost > 0 {
+		used = max(used, cost/cfg.Budget.MonthlyCost)
+	}
+	if used >= autoBudgetStop {
+		return autoSkipBudget
+	}
+	return ""
 }
 
 // autoRun dispatches the incident sub-agent for p; runDispatch archives
@@ -309,8 +329,8 @@ func autoIncidentSection(cfg *Config, now time.Time) string {
 	}
 	var b strings.Builder
 	b.WriteString("\nAutomatic incident checks (L3 alerts, read-only, last day):\n")
-	if cfg.Budget.MonthlyCost <= 0 && cfg.Budget.MonthlyTokens <= 0 {
-		b.WriteString("- none are made: no monthly AI budget is set ([budget] monthly_cost or monthly_tokens)\n")
+	if cfg.Budget.MonthlyTokens <= 0 {
+		b.WriteString("- none are made: no monthly token budget is set ([budget] monthly_tokens; monthly_cost alone does not stop a local model, which reports no cost)\n")
 	}
 	st, err := readAutoState(cfg.StateDir)
 	if err != nil {
@@ -337,6 +357,9 @@ func autoIncidentSection(cfg *Config, now time.Time) string {
 	}
 	if len(parts) > 0 {
 		fmt.Fprintf(&b, "- not dispatched: %s\n", strings.Join(parts, ", "))
+	}
+	if counts[autoSkipBudgetUnknown] > 0 {
+		b.WriteString("- the month's AI use could not be read (log.jsonl): none were made\n")
 	}
 	if counts[autoSkipBudget] > 0 {
 		fmt.Fprintf(&b, "- the month's AI budget reached %d%%: automatic checks stopped until next month\n", int(autoBudgetStop*100))

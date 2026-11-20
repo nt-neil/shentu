@@ -7,6 +7,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"time"
@@ -18,9 +19,20 @@ var errBudget = errors.New("the monthly AI budget is used up; raise it with `sud
 
 // monthUsage adds up model cost and tokens since the start of this month.
 func monthUsage(stateDir string, now time.Time) (cost float64, tokens int) {
+	cost, tokens, _ = monthUsageStrict(stateDir, now)
+	return cost, tokens
+}
+
+// monthUsageStrict is monthUsage that also says when log.jsonl could not
+// be read to its end (no log yet is no use, not an error): what stops on
+// it must not take a part for the whole.
+func monthUsageStrict(stateDir string, now time.Time) (cost float64, tokens int, err error) {
 	f, err := os.Open(filepath.Join(stateDir, "log.jsonl"))
+	if errors.Is(err, fs.ErrNotExist) {
+		return 0, 0, nil
+	}
 	if err != nil {
-		return 0, 0
+		return 0, 0, err
 	}
 	defer f.Close()
 	y, m, _ := now.Date()
@@ -35,7 +47,7 @@ func monthUsage(stateDir string, now time.Time) (cost float64, tokens int) {
 		cost += e.Cost
 		tokens += e.InTokens + e.OutTokens + e.ReasonTokens
 	}
-	return cost, tokens
+	return cost, tokens, sc.Err()
 }
 
 // budgetUsed is the larger share of the limits that are set (0 when none is).

@@ -269,7 +269,7 @@ const detectLastFile = "detect-last.json"
 // keep what failed for the next report, and say it on stderr.
 func finishDetect(ctx context.Context, env *tools.Env, dr *detectRun) {
 	sum := dr.send(ctx, env)
-	if !dr.dryRun && len(dr.auto) > 0 { // after the save: the sub-agent's attack_attempts sees this round
+	if !dr.dryRun && dr.cfg.Agents.AutoIncident { // every round: alerts wait in its queue; after the save, so attack_attempts sees this round
 		if _, err := autoIncident(ctx, dr.cfg, env, dr.auto, dr.now); err != nil {
 			sum.Err = strings.TrimPrefix(sum.Err+"; automatic incident check: "+err.Error(), "; ")
 		}
