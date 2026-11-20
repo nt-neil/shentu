@@ -64,15 +64,16 @@ const (
 
 // Why a sub-agent ended as it did (subRecord.Reason). Never free text.
 const (
-	reasonOK         = "ok"
-	reasonStepLimit  = "step_limit"
-	reasonTokenCap   = "token_cap"
-	reasonBudget     = "budget"
-	reasonTimeout    = "timeout"
-	reasonModelError = "model_error"
-	reasonBadReport  = "bad_report"
-	reasonSaidNot    = "said_incomplete" // the report itself said it did not finish
-	reasonOther      = "other"           // none of the above (should not happen)
+	reasonOK          = "ok"
+	reasonStepLimit   = "step_limit"
+	reasonTokenCap    = "token_cap"
+	reasonBudget      = "budget"
+	reasonTimeout     = "timeout"
+	reasonModelError  = "model_error"
+	reasonBadReport   = "bad_report"
+	reasonSaidNot     = "said_incomplete" // the report itself said it did not finish
+	reasonUnsupported = "unsupported"     // the role does not run on this platform yet
+	reasonOther       = "other"           // none of the above (should not happen)
 )
 
 // A proposal's kind (proposalRecord.Action); only blocking for now.
@@ -229,7 +230,7 @@ var (
 	recOrigins  = map[string]bool{originChat: true, originTelegram: true, originAuto: true}
 	recStatuses = map[string]bool{statusComplete: true, statusPartial: true, statusIncomplete: true}
 	recReasons  = map[string]bool{reasonOK: true, reasonStepLimit: true, reasonTokenCap: true, reasonBudget: true, reasonTimeout: true,
-		reasonModelError: true, reasonBadReport: true, reasonSaidNot: true, reasonOther: true}
+		reasonModelError: true, reasonBadReport: true, reasonSaidNot: true, reasonUnsupported: true, reasonOther: true}
 	recGates = map[tools.BlockCode]bool{"": true, tools.BlockOK: true, tools.BlockUnverified: true, tools.BlockOverflow: true, tools.BlockWeak: true,
 		tools.BlockInternal: true, tools.BlockLockout: true, tools.BlockNotCanonical: true, tools.BlockNoEvidence: true, tools.BlockStateError: true}
 )
