@@ -13,7 +13,10 @@ sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "$_FILES[*]['name']", "$_
            "$request->query->get(", "$request->attributes->get(", "$request->request->get(", "$request->get(", "$request->query->all(", "->get_param(",
            "request(", "$request->post(", "$request->all(", "Request::input(", "Request::query("]
 sinks = ["exec(", "shell_exec(", "system(", "passthru(", "popen(", "proc_open(", "`", "$this->process->execute(", "$this->process->executeAsync(", "Process::run(", "Process::start("]
-sanitizers = ["escapeshellarg", "ProcessExecutor::escape("]
+# request()->ip() and ->method() are not free text: Symfony's getClientIp() keeps
+# only valid addresses, and getMethod() only letters. ->path() and ->url() are
+# input: the path is decoded, so %3B becomes ";".
+sanitizers = ["escapeshellarg", "ProcessExecutor::escape(", "->ip(", "->getClientIp(", "->method(", "->getMethod("]
 fix = "Avoid the shell: use a PHP function or an argument array (proc_open with an array, Symfony Process); if a shell is unavoidable, wrap every value in escapeshellarg()."
 refs = ["CVE-2026-54182", "CVE-2021-29472", "CVE-2026-107639"]
 
@@ -206,6 +209,34 @@ class StatusController extends Controller
     {
         $code = $this->http->request('GET', 'https://status.example.com/v1')->getStatusCode();
         exec('logger -t status ' . $code);
+    }
+}
+'''
+
+[[samples]]
+kind = "safe"
+note = "Laravel: the client address and the method are checked by the framework"
+code = '''
+<?php
+class WhoisController extends Controller
+{
+    public function show()
+    {
+        return shell_exec('whois ' . request()->ip() . ' # ' . request()->method());
+    }
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "Laravel: the request path is decoded input"
+code = '''
+<?php
+class MirrorController extends Controller
+{
+    public function fetch()
+    {
+        return shell_exec('wget -q -O - https://mirror.example.com/' . request()->path());
     }
 }
 '''
