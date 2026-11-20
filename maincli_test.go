@@ -203,7 +203,11 @@ func TestDispatchPreflight(t *testing.T) {
 			t.Errorf("elevated %s: %v", sub, err)
 		}
 	}
-	if err := dispatchPreflight([]string{"wipe"}, false, "linux"); err != nil {
-		t.Errorf("another subcommand: %v", err)
+	for _, args := range [][]string{{"wipe"}, {}, {"repair", "extra"}, {"stats", "--bogus"}} { // S-158-3: the usage, root or not
+		for _, root := range []bool{false, true} {
+			if err := dispatchPreflight(args, root, "windows"); err == nil || !strings.Contains(err.Error(), "usage") {
+				t.Errorf("%v (root %v): %v", args, root, err)
+			}
+		}
 	}
 }

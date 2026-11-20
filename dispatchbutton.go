@@ -189,13 +189,9 @@ func (b *bot) pressProposal(ctx context.Context, st botState, ref proposalRef) {
 	}
 	b.mu.Lock()
 	if b.busy {
-		pending := len(b.waiting) > 0
+		word := b.busyWord(st, true)
 		b.mu.Unlock()
-		if pending { // the button stays: nothing was decided
-			b.send(ctx, chat, b.t("busy_confirm"), nil)
-		} else {
-			b.send(ctx, chat, b.t("busy"), nil)
-		}
+		b.send(ctx, chat, b.t(word), nil) // the button stays: nothing was decided
 		return
 	}
 	b.busy = true
