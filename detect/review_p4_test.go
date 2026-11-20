@@ -62,6 +62,19 @@ func TestCampaignIPv6Network(t *testing.T) {
 	}
 }
 
+// v0.4.2 (#108 r1 S-3): an IPv4 address logged IPv4-mapped is one source.
+func TestCampaignIPv4Mapped(t *testing.T) {
+	a := newAttacks()
+	a.Add(att("192.0.2.7", "e1", LevelPayload, t0), t0)
+	a.Add(att("::ffff:192.0.2.7", "e2", LevelPayload, t0), t0)
+	if g := a.Add(att("::ffff:192.0.2.7", "e3", LevelPayload, t0), t0); !g.Campaign {
+		t.Errorf("one address, two forms, trying three: %+v", g)
+	}
+	if _, ok := a.IPs["192.0.2.7"]; !ok || len(a.IPs) != 1 {
+		t.Errorf("index %v", a.IPs)
+	}
+}
+
 // N-3: believed and unbelieved attempts are separate groups.
 func TestGroupsByBelief(t *testing.T) {
 	a := newAttacks()

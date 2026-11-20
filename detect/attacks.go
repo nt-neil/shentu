@@ -906,12 +906,13 @@ func canonAddr(ip string) string {
 }
 
 // campaignSource is the campaign index's key for an address: an IPv4
-// address itself, an IPv6 address's /64 (one host has many in it).
+// address itself (::ffff:192.0.2.1 is 192.0.2.1), an IPv6 address's /64
+// (one host has many in it).
 func campaignSource(ip string) string {
 	if addr, err := netip.ParseAddr(ip); err == nil && !addr.Unmap().Is4() {
 		return NetworkOf(ip)
 	}
-	return ip
+	return canonAddr(ip)
 }
 
 // evictIP drops the source of the index that tried the fewest
