@@ -6,6 +6,24 @@ a release are not written here: they are worked out from the rule snapshots in
 `docs/site-src/rules-history/`. `CHANGELOG.zh-TW.md` holds the same releases in Traditional
 Chinese for the zh-TW pages; keep the two in step.
 
+## v0.5.3 (unreleased)
+
+- Telegram blocks ask only what the gate would allow (#155, #158): from a chat channel, block_ip
+  runs the checks of #108's gate before asking for ✅. An address the gate refuses is refused at
+  once, with no ✅ to press; the agent is told the gate's fixed word (and the address), and the
+  gate's own message stays in the server's log only. When the block itself fails after the
+  confirmation, its error too stays in the log only. Confirmed blocks are checked again when they
+  run, as before.
+- While the bot waits (#156, #158): a message sent meanwhile is told what it waits for (the ✅
+  above, the authenticator code, or the server's approval with `sudo shentu bot approve`) instead
+  of "Still working"; a question sent meanwhile is not passed to the agent (the authenticator code
+  and the commands /lockdown, /new, /usage and /attacks still work). A proposal or suggestion
+  button pressed meanwhile stays, to be pressed again later; a suggestion is no longer used up.
+- `shentu dispatch` (#158): wrong arguments get the usage first, before the configuration is read
+  and whoever runs it; `stats` and `repair` then ask for root (an elevated prompt on Windows).
+  `sudo shentu dispatch repair` keeps each broken line in `*.jsonl.bad` once, and the daily report
+  says how many moved lines were new to it.
+
 ## v0.5.2 — 2026-11-20
 
 - The sub-agents' own model (#135): `[agents] base_url`, `model` and `api_key_env` give them a

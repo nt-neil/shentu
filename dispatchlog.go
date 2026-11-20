@@ -810,6 +810,8 @@ type repairNote struct {
 const repairsFile = "repairs.jsonl"
 
 // noteRepair adds what a Repair did to repairs.jsonl, keeping dispatchKeep.
+// When it cannot be written (the disk is full), that run is not noted:
+// the .bad files are what count.
 func (s *dispatchStore) noteRepair(moved, dropped, added int) error {
 	if moved == 0 && dropped == 0 && added == 0 {
 		return nil
