@@ -12,10 +12,12 @@ frameworks = ["express", "nestjs", "nextjs", "koa", "fastify", "hapi"]
 # handler's headers, req.headers['host'] or @Headers('host') (route_not), nor
 # read by name (source_args, which also leave out Content-Type for
 # request.headers.get). Host stays input to the SSRF and redirect rules
-# (js-ssrf-host-header, js-open-redirect-next).
+# (js-ssrf-host-header, js-open-redirect-next). NestJS's @Headers() h is the
+# whole headers object, so h['user-agent'] is input (Host under it is not), and
+# @Req() r is the request: r.query, r.headers['user-agent'] (as for SSRF).
 sources = ["req.query", "req.params", "req.body", "req.cookies", "req.headers[", "req.headers.referer", "req.headers.referrer", "req.headers.origin",
            "ctx.headers.referer", "ctx.headers.origin", "ctx.request.header.referer", "ctx.request.header.origin",
-           "ctx.request.headers.referer", "ctx.request.headers.origin", "request.headers.referer", "request.headers.referrer", "request.headers.origin", "request.headers.get(", "@Query(", "@Body(", "@Param(", "@Headers(", "^request.nextUrl", "^req.nextUrl", "^searchParams", "^request.json(", "^req.json(", "^request.text(", "^req.text(", "^request.formData(", "^req.formData(", "^formData.get(", "req.get(", "req.header(", "^headers().get(", "^cookies().get(", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload", "ctx.params", "request.params", "ctx.headers[", "ctx.cookies.get(", "request.headers[", "ctx.request.header[", "ctx.request.headers[", "ctx.get("]
+           "ctx.request.headers.referer", "ctx.request.headers.origin", "request.headers.referer", "request.headers.referrer", "request.headers.origin", "request.headers.get(", "@Query(", "@Body(", "@Param(", "@Headers(", "@Req(", "@Request(", "^request.nextUrl", "^req.nextUrl", "^searchParams", "^request.json(", "^req.json(", "^request.text(", "^req.text(", "^request.formData(", "^req.formData(", "^formData.get(", "req.get(", "req.header(", "^headers().get(", "^cookies().get(", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload", "ctx.params", "request.params", "ctx.headers[", "ctx.cookies.get(", "request.headers[", "ctx.request.header[", "ctx.request.headers[", "ctx.get("]
 # Not Koa's ctx.body =: a body whose HTML context is not known (a variable, a
 # call's result) is almost always a data object sent as JSON. Koa HTML waits for
 # a context option that counts only where the HTML before the value is known.
@@ -127,6 +129,51 @@ export class SearchController {
   @Get()
   page(@Query("q") q: string, @Res() res: Response) {
     res.send("<h1>Results for " + escapeHtml(q) + "</h1>");
+  }
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+dialect = "ts"
+note = "NestJS: a header read from the whole @Headers() object, written into HTML"
+code = '''
+import { Controller, Get, Headers, Res } from "@nestjs/common";
+@Controller("about")
+export class AboutController {
+  @Get()
+  page(@Headers() h: Record<string, string>, @Res() res: Response) {
+    res.send("<p>Your browser: " + h["user-agent"] + "</p>");
+  }
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+dialect = "ts"
+note = "NestJS: @Req() r, a query value written into HTML"
+code = '''
+import { Controller, Get, Req, Res } from "@nestjs/common";
+@Controller("search")
+export class SearchController {
+  @Get()
+  page(@Req() r: Request, @Res() res: Response) {
+    res.send("<h1>Results for " + r.query.q + "</h1>");
+  }
+}
+'''
+
+[[samples]]
+kind = "safe"
+dialect = "ts"
+note = "NestJS: Host from the whole @Headers() object is not XSS input; the other header is escaped"
+code = '''
+import { Controller, Get, Headers, Res } from "@nestjs/common";
+@Controller("about")
+export class AboutController {
+  @Get()
+  page(@Headers() h: Record<string, string>, @Res() res: Response) {
+    res.send("<p>" + h.host + ": " + escapeHtml(h["user-agent"]) + "</p>");
   }
 }
 '''

@@ -6,6 +6,58 @@ a release are not written here: they are worked out from the rule snapshots in
 `docs/site-src/rules-history/`. `CHANGELOG.zh-TW.md` holds the same releases in Traditional
 Chinese for the zh-TW pages; keep the two in step.
 
+## v0.4.3 — 2026-11-20
+
+- SSRF: after a URL's host is checked, `console.log(u)`, `JSON.stringify(u)` or `String(u)`
+  no longer ends the check, while the file uses `console`, `JSON` and `String` only to call
+  them (no parameter or declaration of those names, no `console.log = f`) and holds nothing that
+  may replace them unseen (a global object such as `globalThis` other than read through a named
+  member, `eval`, `Function(`, a `with` statement, anything under a built-in's prototype)
+  (#119).
+- JavaScript route handlers: destructuring with a string key,
+  `const { 'x-forwarded-host': xfh } = req.headers`, is followed, so the value is reported by
+  js-ssrf-host-header instead of js-ssrf-http-request. In a Koa route handler, a destructured
+  parameter taking `request` (`({ request }) => request.header.host`) is read as Koa's context
+  when the file, or another file of the project, imports `koa`, `@koa/router` or `koa-router`
+  (#119).
+- New sources: Next 15's `(await headers()).get(...)`, so a Host header read that way and passed
+  to a redirect is reported by js-open-redirect-next; Laravel's `Request::query(` and
+  `Request::get(` in php-sqli-orderby-identifier (`DB::raw`, `->orderBy(`) (#118).
+- NestJS: a field of a whole `@Headers()` object written into a response (`h['x-note']` in
+  `res.send(`) is reported by js-xss-response (#125).
+- Duplicate reports removed. One call, one SQL injection rule: where two rules report the same
+  call on the same line, one of them leaves it to the other (`yields_to`). `->where(` with
+  Symfony's `$request->query->get(` is php-sqli-doctrine-query-text's, no longer also
+  php-sqli-drupal-db-query's; `DB::raw(...)` inside one of php-sqli-laravel-raw's calls is
+  laravel-raw's where laravel-raw reports it. Another call on the same line is still reported
+  (#125). And in the SSRF rules, after `const x = h` where `h` is a whole NestJS `@Headers()`
+  object or Express's `r.headers`, `x.host` (also `x['Host']`, `x['x-forwarded-host']`) is
+  reported by js-ssrf-host-header alone, no longer by js-ssrf-http-request too; a name that may
+  also hold another value of the request (`r.query` on one branch) is still reported by both
+  (#132).
+
+### Upgrade notes
+
+- Some findings move to another rule: `sa.text(...)` built from request input is reported by
+  python-sqli-sqlalchemy-text instead of python-sqli-dbapi-format (#118); a string-key
+  destructuring of a Host header by js-ssrf-host-header instead of js-ssrf-http-request (#119);
+  and a call two SQL injection rules reported is reported once (#125). php-sqli-laravel-raw's fix
+  now says an ORDER BY column or direction needs an allowlist. With them, the routes attack
+  detection takes as reachable may change.
+
+### Known issues
+
+- A Koa middleware registered with `app.use` is not a route handler: its context is followed
+  only as written (`ctx.request.headers['x-forwarded-host']`), not through destructuring
+  (`const { host } = ctx.request.headers`) or an alias (`const h = ctx.request.headers`).
+- A name reassigned on every branch is still followed after them, which reports more than it
+  must.
+- Next 15's `const h = await headers(); h.get(name)` and the sync `h = headers()` are not
+  sources yet.
+- The JavaScript read-only calls do not yet see `Object.getPrototypeOf`, an alias of `Function`,
+  `Reflect.construct`, `vm.compileFunction`, or a global object reached through `this`, `GLOBAL`
+  or `top`; and `typeof window` sends the whole file back to ending the check at `console.log(u)`.
+
 ## v0.4.2 — 2026-11-20
 
 - The JavaScript rules follow a route handler's request whatever it is called: a parameter not

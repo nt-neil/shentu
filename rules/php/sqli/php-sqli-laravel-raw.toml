@@ -11,7 +11,7 @@ sinks = ["DB::select(", "DB::selectOne(", "DB::statement(", "DB::unprepared(", "
          "->whereRaw(", "->orWhereRaw(", "->selectRaw(", "->havingRaw(", "->orHavingRaw(", "->groupByRaw(",
          "::whereRaw(", "::orWhereRaw(", "::selectRaw(", "::havingRaw("]
 sanitizers = ["intval", "(int)", "in_array", "Rule::in"]
-fix = "Keep the SQL text fixed and pass values as bindings, the second argument (DB::select('... where id = ?', [$id]), whereRaw('name like ?', [\"%$q%\"])), or use where() and the other builder methods, which bind for you."
+fix = "Keep the SQL text fixed and pass values as bindings, the second argument (DB::select('... where id = ?', [$id]), whereRaw('name like ?', [\"%$q%\"])), or use where() and the other builder methods, which bind for you. An identifier cannot be bound: map an ORDER BY column or direction taken from the request to a fixed allowlist of column names and ASC or DESC (DB::raw inside one of these calls is reported here, not by php-sqli-orderby-identifier)."
 refs = ["CVE-2025-65103"]
 
 # Input that is only an ORDER BY identifier is php-sqli-orderby-identifier's.

@@ -135,18 +135,23 @@ const (
 )
 
 type analysis struct {
-	r      *crule
-	php    bool
-	py     bool
-	js     bool
-	b      *budget
-	kw     map[string]bool // words that are keywords in this language
-	seen   map[loc]bool
-	lines  []loc
-	guards []map[string]bool // per enclosing loop: keys a rejecting check validated
-	depth  int
-	nested int  // functions defined inside the one analysed: their returns are not its returns
-	raw    bool // evaluating whether a value came from input at all: sanitizers do not clean
+	r     *crule
+	php   bool
+	py    bool
+	js    bool
+	b     *budget
+	kw    map[string]bool // words that are keywords in this language
+	seen  map[loc]bool
+	lines []loc
+	// sinkSpans: per line reported, the sink calls that reported it, as
+	// spanText (yields.go); "" for a line reported through a summary or a
+	// text sink. span is the call about to be reported.
+	sinkSpans map[loc][]string
+	span      string
+	guards    []map[string]bool // per enclosing loop: keys a rejecting check validated
+	depth     int
+	nested    int  // functions defined inside the one analysed: their returns are not its returns
+	raw       bool // evaluating whether a value came from input at all: sanitizers do not clean
 
 	sc      *summaries    // this rule's function summaries for the file (interproc.go)
 	summ    *summRun      // set while a function body is analysed for its summary
@@ -196,12 +201,17 @@ func (a *analysis) report(line int) { a.reportSink(loc{a.file, line}, false) }
 // reportSink reports a sink reached at line; emb tells whether the input was
 // embedded in a larger string, which a summary keeps for library mode.
 func (a *analysis) reportSink(l loc, emb bool) {
+	sp := a.span
+	a.span = ""
 	if a.summ != nil {
 		a.summ.lines[l] = true
 		if emb {
 			a.summ.emb[l] = true
 		}
 		return
+	}
+	if a.sinkSpans != nil {
+		a.sinkSpans[l] = append(a.sinkSpans[l], sp)
 	}
 	if !a.seen[l] {
 		a.seen[l] = true
@@ -212,6 +222,13 @@ func (a *analysis) reportSink(l loc, emb bool) {
 // ---- statements ----
 
 func (a *analysis) block(ss []*stmt, st state) (state, uint8) {
+	if a.reqs != nil {
+		// a block may not run, or run on one path only (a branch, a loop's
+		// body): after it a name holds a request where it did before it or at
+		// its end (reqalias.go)
+		before := maps.Clone(a.reqs)
+		defer func() { unionReqs(a.reqs, before) }()
+	}
 	for _, s := range ss {
 		if !a.b.step() {
 			return st, noExit
@@ -628,7 +645,7 @@ func (a *analysis) assign(st state, t []Token) (val, bool) {
 			} else if _, had := st[canonKey+key]; had {
 				delete(st, canonKey+key)
 			}
-			a.setURLOf(st, key, rhs, t[k].Text == "=")
+			a.setURLOf(st, key, rhs, t[k].Text == "=", tg[0].Line)
 			a.urlWrite(st, key, v)
 			if a.js {
 				a.setRelative(st, key, rhs, t[k].Text == "=")
@@ -1500,10 +1517,10 @@ func (a *analysis) srcMatch(s *pat, t []Token, i int) (int, bool) {
 		return end, ok
 	}
 	// a source written for req or ctx, at a name holding a handler's request (reqalias.go)
-	vs, add := a.reqVariants(t, i)
-	for _, v := range vs {
-		if end, ok := a.srcMatchAt(s, v, i); ok && end-add > i {
-			return end - add, true
+	vs, adds := a.reqVariants(t, i)
+	for k, v := range vs {
+		if end, ok := a.srcMatchAt(s, v, i); ok && end-adds[k] > i {
+			return end - adds[k], true
 		}
 	}
 	return 0, false
@@ -2319,6 +2336,7 @@ func (a *analysis) sinkWith(st state, t []Token, i int, s *pat, cond *argCond) b
 		return false
 	}
 	if a.noSources() {
+		a.span = spanText(t, i, end, open)
 		a.report(t[i].Line)
 		return true
 	}
@@ -2401,6 +2419,7 @@ func (a *analysis) sinkWith(st state, t []Token, i int, s *pat, cond *argCond) b
 		tainted = hit(a.expr(st, region, whole))
 	}
 	if tainted {
+		a.span = spanText(t, i, end, open)
 		a.reportSink(loc{a.file, t[i].Line}, emb)
 	}
 	return tainted

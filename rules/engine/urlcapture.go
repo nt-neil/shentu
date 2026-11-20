@@ -5,23 +5,36 @@ import "slices"
 // A parsed URL a function literal written inside another reaches by name (a
 // closure, a callback: () => { u.host = v }, [v].forEach(h => { u.host = h }))
 // may be changed when that function runs, which the analysis does not follow:
-// such a name holds no checked URL (setURLOf). The test is by name, over the
-// whole file, and errs towards more findings: any use of the name from a
-// function that does not itself bind it counts, a read as well as a write.
+// such a name holds no checked URL (setURLOf). The test is by binding: the
+// function (or the module) where the name is a local, as JavaScript's
+// declarations and Python's assignments, global and nonlocal resolve it. It
+// errs towards more findings: in JavaScript any use of the binding from a
+// function inside it counts, a read as well as a write. Python's parse results
+// cannot be changed in place, so there only a global or nonlocal statement
+// that resolves to the binding counts (a function that may rebind it).
 
 // fnRegions: the function literals of a file, as token ranges.
 type fnRegions struct {
 	inner  []int  // per token: the innermost function whose body or parameters hold it, or -1
 	param  []bool // per token: inside a function's parameter list
 	parent []int  // per function: the function its start is inside, or -1
-	free   map[string]bool
+	free   map[string]*nameScopes
 }
 
-// captured reports whether a function of the file uses name without binding
-// it while an enclosing one (or the module) binds it, declares it global or
-// nonlocal, or whether the name is this or self (a member of the object,
-// which any method may change).
-func (a *analysis) captured(name string) bool {
+// nameScopes: for one name, which bindings a function inside them reaches
+// (by function, -1 the module), and the functions that resolve the name to
+// one of them.
+type nameScopes struct {
+	free    map[int]bool
+	resolve func(f int) int
+}
+
+// captured reports whether the name, bound where the statement on line binds
+// it, is reached by a function that does not itself bind it (see above), or
+// whether the name is this or self (a member of the object, which any method
+// may change). Where the line does not tell the binding, any binding of the
+// name that is reached counts.
+func (a *analysis) captured(name string, line int) bool {
 	if name == "this" || name == "self" {
 		return true
 	}
@@ -29,12 +42,40 @@ func (a *analysis) captured(name string) bool {
 		a.fregs = fileRegions(a.ftoks, a.py)
 	}
 	r := a.fregs
-	if v, ok := r.free[name]; ok {
-		return v
+	ns, ok := r.free[name]
+	if !ok {
+		ns = a.scopesOf(name)
+		r.free[name] = ns
 	}
 	t := a.ftoks
-	binds := map[int]bool{} // functions (-1: the module) where name is a local
-	forced := map[int]bool{}
+	found := false
+	for j, tk := range t {
+		if tk.Kind != Ident || tk.Text != name || tk.Line != line || j > 0 && (memberOp(false, t[j-1]) || t[j-1].op("?.")) {
+			continue
+		}
+		found = true
+		if ns.free[ns.resolve(r.inner[j])] {
+			return true
+		}
+	}
+	if !found {
+		for _, v := range ns.free {
+			if v {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// scopesOf works out the bindings of name and which of them a function
+// inside them reaches.
+func (a *analysis) scopesOf(name string) *nameScopes {
+	r := a.fregs
+	t := a.ftoks
+	binds := map[int]bool{}  // functions (-1: the module) where name is a local
+	global := map[int]bool{} // functions that declare it global
+	nonloc := map[int]bool{} // functions that declare it nonlocal
 	var uses []int
 	for j, tk := range t {
 		if tk.Kind != Ident || tk.Text != name || j > 0 && (memberOp(false, t[j-1]) || t[j-1].op("?.")) {
@@ -45,7 +86,11 @@ func (a *analysis) captured(name string) bool {
 		case r.param[j]:
 			binds[in] = true
 		case inDeclare(t, j, a.py):
-			forced[in] = true
+			if declWord(t, j) == "global" {
+				global[in] = true
+			} else {
+				nonloc[in] = true
+			}
 		case !a.py && j > 0 && (t[j-1].word("const") || t[j-1].word("let") || t[j-1].word("var")):
 			binds[in] = true
 		case a.py && lineStart(t, j) && j+1 < len(t) && (t[j+1].op("=") || t[j+1].op(":")):
@@ -54,22 +99,56 @@ func (a *analysis) captured(name string) bool {
 			uses = append(uses, j)
 		}
 	}
-	// a function that declares the name global or nonlocal rebinds the outer
-	// u when it assigns it (Python's only way to change a parsed URL elsewhere)
-	free := len(forced) > 0
-	for _, j := range uses {
-		f := r.inner[j]
+	// resolve: the binding a use in function f reads. global goes to the
+	// module, nonlocal to the nearest enclosing function that binds it.
+	resolve := func(f int) int {
 		b := f
-		for b >= 0 && !(binds[b] && !forced[b]) {
+		for b >= 0 {
+			switch {
+			case global[b]:
+				return -1
+			case nonloc[b]:
+			case binds[b]:
+				return b
+			}
 			b = r.parent[b]
 		}
-		if b != f {
-			free = true
-			break
+		return -1
+	}
+	ns := &nameScopes{free: map[int]bool{}, resolve: resolve}
+	// a function that declares the name global or nonlocal rebinds that
+	// binding when it assigns it (Python's only way to change a parsed URL
+	// elsewhere); the binding a nonlocal resolves to is its enclosing one's
+	if len(global) > 0 {
+		ns.free[-1] = true
+	}
+	for f := range nonloc {
+		p := -1
+		if f >= 0 {
+			p = r.parent[f]
+		}
+		ns.free[resolve(p)] = true
+	}
+	if !a.py {
+		for _, j := range uses {
+			f := r.inner[j]
+			if b := resolve(f); b != f {
+				ns.free[b] = true
+			}
 		}
 	}
-	r.free[name] = free
-	return free
+	return ns
+}
+
+// declWord returns the keyword of the global or nonlocal statement t[j] is a
+// name of (inDeclare).
+func declWord(t []Token, j int) string {
+	for k := j - 1; k >= 0; k-- {
+		if t[k].word("global") || t[k].word("nonlocal") {
+			return t[k].Text
+		}
+	}
+	return ""
 }
 
 // fileRegions finds the function literals of a file: JavaScript's function
@@ -162,7 +241,7 @@ func fileRegions(t []Token, py bool) *fnRegions {
 		}
 	}
 	slices.SortStableFunc(fs, func(x, y fnr) int { return x.start - y.start })
-	r := &fnRegions{inner: make([]int, n), param: make([]bool, n), parent: make([]int, len(fs)), free: map[string]bool{}}
+	r := &fnRegions{inner: make([]int, n), param: make([]bool, n), parent: make([]int, len(fs)), free: map[string]*nameScopes{}}
 	for i := range r.inner {
 		r.inner[i] = -1
 	}

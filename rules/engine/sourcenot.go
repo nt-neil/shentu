@@ -157,6 +157,12 @@ func (a *analysis) sourceNot(st state, tg, rhs []Token, op string) {
 	a.sourceOnly(st, key, rhs)
 }
 
+// nestHeaders reports whether t is NestJS's @Headers() with no argument: the
+// whole headers object.
+func nestHeaders(t []Token) bool {
+	return len(t) == 3 && t[0].Kind == Ident && t[0].Text == "@Headers" && t[1].op("(") && t[2].op(")")
+}
+
 // readsByArg reports whether the rule takes root.member( as a source by its
 // argument (source_args: req.get('host') for some names only).
 func (a *analysis) readsByArg(root, member string) bool {
