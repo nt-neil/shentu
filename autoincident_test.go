@@ -331,14 +331,10 @@ func writeUse(t *testing.T, cfg *Config, tokens int) {
 }
 
 // N-C1: a use that cannot be read is not 0%: log.jsonl that cannot be
-// opened, or a line past the scanner's limit, stops automatic dispatches.
+// opened stops automatic dispatches.
 func TestAutoDispatchBudgetUnreadable(t *testing.T) {
 	for name, setup := range map[string]func(t *testing.T, cfg *Config){
 		"not a file": func(t *testing.T, cfg *Config) { os.Mkdir(filepath.Join(cfg.StateDir, "log.jsonl"), 0o700) },
-		"long line": func(t *testing.T, cfg *Config) {
-			b, _ := json.Marshal(logEntry{Time: time.Now(), Tool: "llm", Args: strings.Repeat("x", 2<<20)})
-			os.WriteFile(filepath.Join(cfg.StateDir, "log.jsonl"), append(b, '\n'), 0o600)
-		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			h := &hostileModel{replies: []string{done}}
@@ -450,5 +446,83 @@ func TestAutoDispatchNoticeAndButtonsFromArchive(t *testing.T) {
 	}
 	if !strings.Contains((*out)[0].text, "dispatch: "+id) || !strings.Contains((*out)[0].text, "status: "+recs[0].Status) {
 		t.Errorf("the notice is not the archived record's:\n%s", (*out)[0].text)
+	}
+}
+
+// S-r2-C1: a line past maxLogLine is skipped and counted, and the use after
+// it still counts.
+func TestAutoDispatchBudgetLongLine(t *testing.T) {
+	h := &hostileModel{replies: []string{done}}
+	cfg, env, _ := autoSetup(t, h)
+	now := time.Now()
+	long, _ := json.Marshal(logEntry{Time: now, Tool: "log_search", Args: strings.Repeat("x", 2<<20)})
+	use, _ := json.Marshal(logEntry{Time: now, Tool: "llm", OK: true, InTokens: cfg.Budget.MonthlyTokens * 9 / 10})
+	os.WriteFile(filepath.Join(cfg.StateDir, "log.jsonl"), append(append(append(long, '\n'), use...), '\n'), 0o600)
+	if _, tokens, n, err := monthUsageStrict(cfg.StateDir, now); err != nil || n != 1 || tokens != cfg.Budget.MonthlyTokens*9/10 {
+		t.Fatalf("tokens %d, long %d, err %v", tokens, n, err)
+	}
+	autoIncident(context.Background(), cfg, env, []autoCandidate{l3(1)}, now)
+	if n := len(archived(t, cfg)); n != 0 || len(h.requests) != 0 {
+		t.Fatalf("the use after a long line was not counted: %d records, %d model calls", n, len(h.requests))
+	}
+	if s := autoIncidentSection(cfg, now); !strings.Contains(s, "longer than 1024 KiB skipped") || !strings.Contains(s, "use: 1") || !strings.Contains(s, "budget 1") {
+		t.Errorf("daily report:\n%s", s)
+	}
+}
+
+// N-r2-C1: an archive with lines that cannot be read stops automatic
+// dispatches; the daily report says so every day, L3 or not, with when it
+// resumes and how to resume sooner.
+func TestAutoDispatchArchiveStoppedSaid(t *testing.T) {
+	cfg, env, _ := autoSetup(t, &hostileModel{replies: []string{done}})
+	dir := filepath.Join(cfg.StateDir, dispatchDir)
+	os.Mkdir(dir, 0o700)
+	y, m, d := time.Now().Date()
+	today := time.Date(y, m, d, 0, 0, 0, 0, time.Local)
+	for _, c := range []struct {
+		day  time.Time
+		want time.Time
+	}{{today, today.AddDate(0, 0, 3)}, {today.AddDate(0, 0, -2), today.AddDate(0, 0, 1)}} {
+		f := filepath.Join(dir, c.day.Format(time.DateOnly)+".jsonl")
+		os.WriteFile(f, []byte("{\"v\":1,\"id\":\"half"), 0o600) // a line cut short
+		s := autoIncidentSection(cfg, time.Now())                // no L3 today
+		for _, want := range []string{"stopped: 1 lines", c.day.Format(time.DateOnly) + ".jsonl", c.want.Format("2006-01-02 15:04"), "at most 72 hours", "moved out of " + dir} {
+			if !strings.Contains(s, want) {
+				t.Errorf("bad line on %s: the daily report lacks %q:\n%s", c.day.Format(time.DateOnly), want, s)
+			}
+		}
+		autoIncident(context.Background(), cfg, env, []autoCandidate{l3(c.day.Day())}, time.Now())
+		if n := readState(t, cfg).skippedSince(time.Now().Add(-time.Hour))[autoSkipArchive]; n == 0 {
+			t.Error("dispatched on an archive with bad lines")
+		}
+		os.Remove(f)
+	}
+	if s := autoIncidentSection(cfg, time.Now()); strings.Contains(s, "stopped:") {
+		t.Errorf("the archive is whole again, yet:\n%s", s)
+	}
+}
+
+// A record that does not reach the archive gets no buttons (B reads it
+// back), still takes its slot, and the notice says so.
+func TestAutoDispatchNoButtonsWhenNotArchived(t *testing.T) {
+	cfg, env, out := autoSetup(t, &hostileModel{replies: []string{done}})
+	calls := 0
+	autoButtons = func(context.Context, *Config, *tools.Env, string) error { calls++; return nil }
+	dir := filepath.Join(cfg.StateDir, dispatchDir)
+	os.Mkdir(dir, 0o500) // trusted, readable, but Save cannot write
+	t.Cleanup(func() { os.Chmod(dir, 0o700) })
+	_, err := autoIncident(context.Background(), cfg, env, []autoCandidate{l3(1)}, time.Now())
+	if err == nil || !strings.Contains(err.Error(), "archive") {
+		t.Fatalf("err %v, want the archive's", err)
+	}
+	if calls != 0 {
+		t.Errorf("buttons offered %d times for a record not archived", calls)
+	}
+	st := readState(t, cfg)
+	if len(st.Dispatches) != 1 || !st.Dispatches[0].NotArchived || st.Dispatches[0].ID == "" {
+		t.Errorf("slots %+v", st.Dispatches)
+	}
+	if len(*out) != 1 || !strings.Contains((*out)[0].text, "could not be saved") {
+		t.Errorf("notices %+v", *out)
 	}
 }

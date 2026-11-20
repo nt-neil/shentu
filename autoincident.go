@@ -248,7 +248,7 @@ func autoBudget(cfg *Config, now time.Time) string {
 	if cfg.Budget.MonthlyTokens <= 0 {
 		return autoSkipNoBudget
 	}
-	cost, tokens, err := monthUsageStrict(cfg.StateDir, now)
+	cost, tokens, _, err := monthUsageStrict(cfg.StateDir, now)
 	if err != nil {
 		return autoSkipBudgetUnknown
 	}
@@ -348,6 +348,10 @@ func autoIncidentSection(cfg *Config, now time.Time) string {
 	if cfg.Budget.MonthlyTokens <= 0 {
 		b.WriteString("- none are made: no monthly token budget is set ([budget] monthly_tokens; monthly_cost alone does not stop a local model, which reports no cost)\n")
 	}
+	b.WriteString(autoArchiveLine(cfg, now))
+	if _, _, long, err := monthUsageStrict(cfg.StateDir, now); err == nil && long > 0 {
+		fmt.Fprintf(&b, "- log.jsonl lines longer than %d KiB skipped when adding up the month's AI use: %d\n", maxLogLine>>10, long)
+	}
 	st, err := readAutoState(cfg.StateDir)
 	if err != nil {
 		fmt.Fprintf(&b, "- not known: %s could not be read (%s)\n", autoIncidentFile, mask(err.Error()))
@@ -398,6 +402,37 @@ func autoIncidentSection(cfg *Config, now time.Time) string {
 		fmt.Fprintf(&b, "- waiting for a later round: %d\n", len(st.Pending))
 	}
 	return b.String()
+}
+
+// autoArchiveLine is the daily report's line when the dispatch archive
+// stops automatic dispatches (autoReserve fails closed on it), whether or
+// not an L3 came: why, when it resumes on its own, and how to resume
+// sooner. "" when the archive can be read.
+func autoArchiveLine(cfg *Config, now time.Time) string {
+	store := newDispatchStore(cfg)
+	_, bad, err := store.Since(now.Add(-autoWindow))
+	if err != nil {
+		return fmt.Sprintf("- stopped: the dispatch archive (%s) cannot be trusted (%s); none are made until its owner and mode are fixed (0700, files 0600, this service's user)\n",
+			filepath.Join(cfg.StateDir, dispatchDir), mask(err.Error()))
+	}
+	if bad == 0 {
+		return ""
+	}
+	// The newest day file with a bad line: Since reads a day's file while
+	// it is within a day of the window's start, so it stops counting at
+	// its day's midnight plus three days.
+	y, m, d := now.Local().Date()
+	day := time.Date(y, m, d, 0, 0, 0, 0, time.Local)
+	last := day.AddDate(0, 0, -2)
+	for dd := day; !dd.Before(day.AddDate(0, 0, -2)); dd = dd.AddDate(0, 0, -1) {
+		if _, n, err := store.Since(dd.AddDate(0, 0, 1)); err == nil && n > 0 { // reads the files from dd on
+			last = dd
+			break
+		}
+	}
+	resume := last.AddDate(0, 0, 3)
+	return fmt.Sprintf("- stopped: %d lines of the dispatch archive could not be read (the newest in %s); none are made until that file leaves the count at %s (at most 72 hours), or sooner once the damaged day files are moved out of %s\n",
+		bad, last.Format(time.DateOnly)+".jsonl", resume.Format("2006-01-02 15:04 MST"), filepath.Join(cfg.StateDir, dispatchDir))
 }
 
 func (st *autoState) skip(now time.Time, why string) {
@@ -500,11 +535,4 @@ func withAutoState(dir string, now time.Time, f func(*autoState)) error {
 		return err
 	}
 	return writeAtomic(filepath.Join(dir, autoIncidentFile), b)
-}
-
-// offerAutoButtons is B's (#116): it sends the archived dispatch's
-// proposals as buttons to the paired chat, prechecked; its error is only
-// a bot.json that could not be read. A stub until #116 is in agents-p2.
-func offerAutoButtons(ctx context.Context, cfg *Config, env *tools.Env, id string) error {
-	return nil
 }
