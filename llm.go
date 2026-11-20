@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -11,6 +12,7 @@ import (
 	"net/url"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/nt-neil/shentu/tools"
@@ -51,6 +53,7 @@ type llmClient struct {
 	usedIn, usedOut        int     // tokens used by the last call, for the audit log
 	usedReason             int     // reasoning tokens, when the provider reports them
 	usedCost               float64 // what the provider charged, when it says
+	opaqueErrors           bool    // keep no part of an error answer (a model outside this host, for sub-agents)
 }
 
 func newLLM(c *Config) *llmClient {
@@ -87,6 +90,9 @@ func (l *llmClient) chat(ctx context.Context, msgs []message, tools []toolDef) (
 		}
 		resp, err := l.http.Do(req)
 		if err != nil {
+			if l.opaqueErrors { // url.Error quotes the URL, which may hold a secret
+				err = opaqueDoError(ctx, err)
+			}
 			lastErr = err
 			if ctx.Err() != nil { // cancelled or past its deadline: a retry cannot help
 				return message{}, err
@@ -95,8 +101,21 @@ func (l *llmClient) chat(ctx context.Context, msgs []message, tools []toolDef) (
 		}
 		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 		resp.Body.Close()
+		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+			// A refused key is the answer most likely to quote the key back, in
+			// whatever encoding: none of it is kept.
+			return message{}, fmt.Errorf("LLM HTTP %d: the provider refused the request (check the API key; its answer is not shown)", resp.StatusCode)
+		}
+		if resp.StatusCode/100 != 2 && l.opaqueErrors {
+			// Its answer could quote the key in any encoding: none of it is kept.
+			lastErr = fmt.Errorf("LLM HTTP %d: the model outside this host answered with an error (its answer is not shown)", resp.StatusCode)
+			if resp.StatusCode >= 500 || resp.StatusCode == 429 {
+				continue
+			}
+			return message{}, lastErr
+		}
 		if resp.StatusCode/100 != 2 {
-			lastErr = fmt.Errorf("LLM HTTP %d: %s", resp.StatusCode, truncate(string(raw), 300))
+			lastErr = fmt.Errorf("LLM HTTP %d: %s", resp.StatusCode, l.scrub(string(raw), 300))
 			if resp.StatusCode >= 500 || resp.StatusCode == 429 {
 				continue
 			}
@@ -116,13 +135,69 @@ func (l *llmClient) chat(ctx context.Context, msgs []message, tools []toolDef) (
 			Charged float64 `json:"price_charged"` // AppleToken reports what the call cost
 		}
 		if err := json.Unmarshal(raw, &r); err != nil || len(r.Choices) == 0 {
-			lastErr = fmt.Errorf("unexpected LLM response: %s", truncate(string(raw), 300))
+			lastErr = fmt.Errorf("unexpected LLM response: %s", l.scrub(string(raw), 300))
+			if l.opaqueErrors {
+				lastErr = errors.New("unexpected LLM response from the model outside this host (not shown)")
+			}
 			continue
 		}
 		l.usedIn, l.usedOut, l.usedReason, l.usedCost = r.Usage.In, r.Usage.Out, r.Usage.Details.Reasoning, r.Charged
 		return r.Choices[0].Message, nil
 	}
 	return message{}, lastErr
+}
+
+// scrub is a provider's answer for an error message, at most n bytes: the
+// key replaced by [key] first, wherever it is (some gateways echo the
+// Authorization header back in a 401), then cut, so a cut never leaves part
+// of a key behind. Errors go to log.jsonl and, through a sub-agent's
+// report, to the commander's model, which may be another provider's.
+func (l *llmClient) scrub(s string, n int) string {
+	if l.apiKey != "" {
+		for _, form := range keyForms(l.apiKey) {
+			s = strings.ReplaceAll(s, form, "[key]")
+		}
+	}
+	return truncate(s, n)
+}
+
+// opaqueDoError is a failed request to a model outside this host as a
+// kind of failure only: no URL, no address, no text the far end chose.
+func opaqueDoError(ctx context.Context, err error) error {
+	kind := "connection failed"
+	var nerr net.Error
+	var dnsErr *net.DNSError
+	switch {
+	case ctx.Err() != nil:
+		return fmt.Errorf("LLM request to the model outside this host: %w", ctx.Err())
+	case errors.As(err, &dnsErr):
+		kind = "name lookup failed"
+	case errors.Is(err, syscall.ECONNREFUSED):
+		kind = "connection refused"
+	case errors.As(err, &nerr) && nerr.Timeout():
+		kind = "timeout"
+	case strings.Contains(err.Error(), "tls:") || strings.Contains(err.Error(), "x509:"):
+		kind = "TLS failed"
+	}
+	return errors.New("LLM request to the model outside this host: " + kind)
+}
+
+// keyForms are the ways an answer can quote key: as is, escaped for a URL
+// query or path, and escaped in JSON (a slash as \/, and Go's own escapes).
+func keyForms(key string) []string {
+	j, _ := json.Marshal(key)
+	forms := []string{key, url.QueryEscape(key), url.PathEscape(key),
+		strings.ReplaceAll(key, "/", `\/`), strings.Trim(string(j), `"`),
+		strings.ReplaceAll(strings.Trim(string(j), `"`), "/", `\/`)}
+	seen := map[string]bool{}
+	var out []string
+	for _, f := range forms {
+		if f != "" && !seen[f] {
+			seen[f] = true
+			out = append(out, f)
+		}
+	}
+	return out
 }
 
 func truncate(s string, n int) string {
