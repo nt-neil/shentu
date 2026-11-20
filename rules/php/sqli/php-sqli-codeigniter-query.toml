@@ -11,6 +11,9 @@ sources = ["$this->input->get(", "$this->input->post(", "$this->input->get_post(
 # (its ->query( sink), which reads CodeIgniter's input too.
 # CodeIgniter 4's ->orderBy( is php-sqli-orderby-identifier's, as Laravel's and Yii's.
 sinks = ["$this->db->simple_query(", "->order_by(", "->where(", "->or_where(", "->orWhere(", "->having("]
+# ->where( and ->orWhere( are Yii's calls too: input both read on the same
+# call is php-sqli-yii-query's (yields.go); CodeIgniter's own input stays here.
+yields_to = ["php-sqli-yii-query"]
 sanitizers = ["$this->db->escape(", "$db->escape(", "intval", "(int)", "in_array"]
 fix = "Pass values as query bindings ($this->db->query('... WHERE id = ?', [$id])), let where() quote them (where('name', $name)), and map sort columns and directions to a fixed allowlist; escape_str() is safe only inside quotes."
 refs = ["CVE-2025-50383"]

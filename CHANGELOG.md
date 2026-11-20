@@ -26,7 +26,126 @@ Chinese for the zh-TW pages; keep the two in step.
   log line names the dispatch. The bot's progress message shows the sub-agents' steps (the last
   12), and a tool name it does not know as "unknown tool".
 
-## v0.4.1 (unreleased)
+## v0.4.3 — 2026-11-20
+
+- SSRF: after a URL's host is checked, `console.log(u)`, `JSON.stringify(u)` or `String(u)`
+  no longer ends the check, while the file uses `console`, `JSON` and `String` only to call
+  them (no parameter or declaration of those names, no `console.log = f`) and holds nothing that
+  may replace them unseen (a global object such as `globalThis` other than read through a named
+  member, `eval`, `Function(`, a `with` statement, anything under a built-in's prototype)
+  (#119).
+- JavaScript route handlers: destructuring with a string key,
+  `const { 'x-forwarded-host': xfh } = req.headers`, is followed, so the value is reported by
+  js-ssrf-host-header instead of js-ssrf-http-request. In a Koa route handler, a destructured
+  parameter taking `request` (`({ request }) => request.header.host`) is read as Koa's context
+  when the file, or another file of the project, imports `koa`, `@koa/router` or `koa-router`
+  (#119).
+- New sources: Next 15's `(await headers()).get(...)`, so a Host header read that way and passed
+  to a redirect is reported by js-open-redirect-next; Laravel's `Request::query(` and
+  `Request::get(` in php-sqli-orderby-identifier (`DB::raw`, `->orderBy(`) (#118).
+- NestJS: a field of a whole `@Headers()` object written into a response (`h['x-note']` in
+  `res.send(`) is reported by js-xss-response (#125).
+- Duplicate reports removed. One call, one SQL injection rule: where two rules report the same
+  call on the same line, one of them leaves it to the other (`yields_to`). `->where(` with
+  Symfony's `$request->query->get(` is php-sqli-doctrine-query-text's, no longer also
+  php-sqli-drupal-db-query's; `DB::raw(...)` inside one of php-sqli-laravel-raw's calls is
+  laravel-raw's where laravel-raw reports it. Another call on the same line is still reported
+  (#125). And in the SSRF rules, after `const x = h` where `h` is a whole NestJS `@Headers()`
+  object or Express's `r.headers`, `x.host` (also `x['Host']`, `x['x-forwarded-host']`) is
+  reported by js-ssrf-host-header alone, no longer by js-ssrf-http-request too; a name that may
+  also hold another value of the request (`r.query` on one branch) is still reported by both
+  (#132).
+
+### Upgrade notes
+
+- Some findings move to another rule: `sa.text(...)` built from request input is reported by
+  python-sqli-sqlalchemy-text instead of python-sqli-dbapi-format (#118); a string-key
+  destructuring of a Host header by js-ssrf-host-header instead of js-ssrf-http-request (#119);
+  and a call two SQL injection rules reported is reported once (#125). php-sqli-laravel-raw's fix
+  now says an ORDER BY column or direction needs an allowlist. With them, the routes attack
+  detection takes as reachable may change.
+
+### Known issues
+
+- A Koa middleware registered with `app.use` is not a route handler: its context is followed
+  only as written (`ctx.request.headers['x-forwarded-host']`), not through destructuring
+  (`const { host } = ctx.request.headers`) or an alias (`const h = ctx.request.headers`).
+- A name reassigned on every branch is still followed after them, which reports more than it
+  must.
+- Next 15's `const h = await headers(); h.get(name)` and the sync `h = headers()` are not
+  sources yet.
+- The JavaScript read-only calls do not yet see `Object.getPrototypeOf`, an alias of `Function`,
+  `Reflect.construct`, `vm.compileFunction`, or a global object reached through `this`, `GLOBAL`
+  or `top`; and `typeof window` sends the whole file back to ending the check at `console.log(u)`.
+
+## v0.4.2 — 2026-11-20
+
+- The JavaScript rules follow a route handler's request whatever it is called: a parameter not
+  named `req` (`(r, s) =>`), a Koa context not named `ctx`, an alias (`const q = r`,
+  `const h = r.headers`) and destructuring (`({ headers }, res) =>`,
+  `const { headers, hostname: hn } = r`, `const { host } = req.headers`). So `r.hostname`,
+  `r.get('host')`, `c.host` and a destructured `headers` are reported now; a Host header read this
+  way goes to js-ssrf-host-header, other headers to js-ssrf-http-request. A request header index
+  is read in lower case, as Node stores it (`r.headers['Host']`). In the SSRF rules, Koa's
+  `ctx.header` and `ctx.request.get(` are sources too, and so are `ctx.request.header.host` and
+  `ctx.request.headers.host` for the Host header (#106).
+- NestJS: `@Request()` counts as the handler's request, as `@Req()` does, in the 13 JavaScript
+  rules that read `@Req()` (SSRF, SQL and NoSQL injection, command injection, code evaluation, path
+  traversal, LDAP injection, deserialization). Both count as NestJS's only when the file, or another
+  file of the project, imports `@nestjs/common` or `@nestjs/core`; elsewhere they are an object like
+  any other (#103, #106).
+- Python: `global` and `nonlocal` continued with a backslash are read to the end of the
+  statement, so a name on the next line is declared too (#103).
+- SSRF: after a URL's host is checked, `a = u.valueOf()` followed by a change to `a`, or a method
+  of `u` called by a computed name (`u['valueOf']()`, `u[k](...)`), ends the check, as `a = u`
+  does (#103).
+
+### Fixed
+
+- A web log owned by the server's own account no longer backs a block when systemd's userdb
+  directories (`/etc/userdb`, `/run/userdb`, `/run/host/userdb`, `/usr/local/lib/userdb`,
+  `/usr/lib/userdb`) hold any entry or cannot be read: userdb can add accounts and group
+  memberships that `/etc/passwd` and `/etc/group` do not show (#113).
+- Hardening only: the block check also reads an address in an `inet_aton` form (`3405803788`,
+  `0xcb.0.113.12`, ...), and the block check and campaigns read `::ffff:a.b.c.d` as `a.b.c.d`.
+  Access logs never yield these forms (since v0.4.0 a client must be a plain address, and
+  `::ffff:` is read as IPv4), so nothing changes in practice (#113, #124).
+
+### Upgrade notes
+
+- Some JavaScript findings move to another rule: a Host header read as
+  `r.headers['X-Forwarded-Host']` or `const { host } = req.headers` is reported by
+  js-ssrf-host-header instead of js-ssrf-http-request; `@Req()` in a project that does not import
+  NestJS is reported by js-ssrf-http-request; `const { host } = req.headers` written into a
+  response is no longer reported by js-xss-response, as Host has not been XSS input since v0.4.1.
+  With them, the routes attack detection takes as reachable may change.
+- On a host whose systemd userdb directories hold any entry, the server's own account no longer
+  counts as apart after the upgrade: a log that could back a block in v0.4.1 (Rocky 9 nginx's,
+  say) is judged `web_user_writable` again. The conditions are in `docs/attack-detection-limits.md`
+  under "Which web logs can back a block". Default Ubuntu 24.04 and Rocky 9 installs have none of
+  the five directories, so they are not affected (checked on both at 4fcfc52).
+- A correction to v0.4.1's notes: "an address logged in another form (brackets, a port, a
+  zone, leading zeros) is refused" cannot happen through the access logs, which keep only plain
+  addresses. It takes effect only when a log has an IPv4-compatible (`::a.b.c.d`) or NAT64
+  (`64:ff9b::a.b.c.d`) client. The released v0.4.1 entry is left as it was.
+
+### Known issues
+
+- A Koa handler's context is recognized by how the handler uses it (`c.request`, `c.response`,
+  `c.state`, `c.throw`, `c.assert`, or setting `c.body`, `c.status` or `c.type`); any other
+  parameter is read as Express's request. A destructured parameter is read as Express's request,
+  so Koa's `({ request }) =>` is not followed. Nested patterns (`{ headers: { host } }`) and
+  string keys (`{ 'x-forwarded-host': xfh }`) are not followed either; the latter is still
+  reported, by js-ssrf-http-request.
+- Request aliases are kept per function, and an alias reassigned on one branch is no longer
+  followed on any path.
+- `@Req() req` in a file that does not import NestJS, outside a project that does, is not NestJS's:
+  its `req.headers.host` is reported by both js-ssrf-host-header and js-ssrf-http-request.
+- The URL check fails closed: `global u` or `nonlocal u` anywhere in a file, backslash-continued
+  too, ends it for every `u` of the file; `fetch(u.valueOf())` after a check, and a harmless
+  `u['toString']()`, are reported.
+
+## v0.4.1 — 2026-11-20
 
 - The host survey warns about nginx 1.9.5 through 1.31.8 serving HTTP/2 (a `listen ... http2`, or
   `http2 on` for a server): CVE-2026-123007 and CVE-2026-123633, HTTP/2 memory corruption that lets

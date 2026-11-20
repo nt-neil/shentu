@@ -56,6 +56,13 @@ type Rule struct {
 	// called (the Host header under (r, s) => r.headers.host, which another
 	// rule leaves with route_not); route_input = false does not turn it off.
 	RouteOnly []string `toml:"route_only"`
+	// YieldsTo: rules (of the same language and CWE) this one leaves a sink
+	// to when both report it: a finding of this rule is left out where one of
+	// them reports the same line through the same sink call, one call holding
+	// the other (DB::raw(...) inside DB::select(...)). Another sink on that
+	// line, or a sink the analysis did not see written out (a function's
+	// summary, a text sink), still reports.
+	YieldsTo []string `toml:"yields_to"`
 
 	// ChainNot: calls the chain form of the rule's receiver.method( sinks may
 	// not go through (chain.go): they make another object, another rule's

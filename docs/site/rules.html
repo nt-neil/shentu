@@ -728,7 +728,7 @@ class ReportController extends Controller
     }
 }</code></pre></div>
     </div>
-    <p class="fix"><strong>Fix</strong> Keep the SQL text fixed and pass values as bindings, the second argument (DB::select(&#39;... where id = ?&#39;, [$id]), whereRaw(&#39;name like ?&#39;, [&#34;%$q%&#34;])), or use where() and the other builder methods, which bind for you.</p>
+    <p class="fix"><strong>Fix</strong> Keep the SQL text fixed and pass values as bindings, the second argument (DB::select(&#39;... where id = ?&#39;, [$id]), whereRaw(&#39;name like ?&#39;, [&#34;%$q%&#34;])), or use where() and the other builder methods, which bind for you. An identifier cannot be bound: map an ORDER BY column or direction taken from the request to a fixed allowlist of column names and ASC or DESC (DB::raw inside one of these calls is reported here, not by php-sqli-orderby-identifier).</p>
   </details>
   
   <details class="rule" id="php-sqli-orderby-identifier" data-rule-id="php-sqli-orderby-identifier" data-lang="php" data-class="sqli" data-sev="high" data-text="php-sqli-orderby-identifier CWE-89 Sort column or direction taken from the request and placed into ORDER BY">

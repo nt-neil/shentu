@@ -155,7 +155,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.91; --x: 14.8">
+    <li class="era-node" style="--old: 0.92; --x: 13.6">
       <a class="lamp" href="../zh-TW/releases.html#v0.1.1" aria-describedby="rv-0.1.1">
         <i aria-hidden="true"></i><span class="ver">v0.1.1</span>
         <time datetime="2026-11-07">11-07</time>
@@ -167,7 +167,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.82; --x: 22.6">
+    <li class="era-node" style="--old: 0.85; --x: 20.2">
       <a class="lamp" href="../zh-TW/releases.html#v0.2.0" aria-describedby="rv-0.2.0">
         <i aria-hidden="true"></i><span class="ver">v0.2.0</span>
         <time datetime="2026-11-07">11-07</time>
@@ -179,7 +179,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.73; --x: 30.5">
+    <li class="era-node" style="--old: 0.77; --x: 26.8">
       <a class="lamp" href="../zh-TW/releases.html#v0.2.1" aria-describedby="rv-0.2.1">
         <i aria-hidden="true"></i><span class="ver">v0.2.1</span>
         <time datetime="2026-11-08">11-08</time>
@@ -191,7 +191,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.64; --x: 38.3">
+    <li class="era-node" style="--old: 0.69; --x: 33.5">
       <a class="lamp" href="../zh-TW/releases.html#v0.2.2" aria-describedby="rv-0.2.2">
         <i aria-hidden="true"></i><span class="ver">v0.2.2</span>
         <time datetime="2026-11-08">11-08</time>
@@ -203,7 +203,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.55; --x: 46.1">
+    <li class="era-node" style="--old: 0.62; --x: 40.1">
       <a class="lamp" href="../zh-TW/releases.html#v0.2.3" aria-describedby="rv-0.2.3">
         <i aria-hidden="true"></i><span class="ver">v0.2.3</span>
         <time datetime="2026-11-09">11-09</time>
@@ -215,7 +215,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.45; --x: 53.9">
+    <li class="era-node" style="--old: 0.54; --x: 46.7">
       <a class="lamp" href="../zh-TW/releases.html#v0.2.4" aria-describedby="rv-0.2.4">
         <i aria-hidden="true"></i><span class="ver">v0.2.4</span>
         <time datetime="2026-11-09">11-09</time>
@@ -227,7 +227,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.36; --x: 61.7">
+    <li class="era-node" style="--old: 0.46; --x: 53.3">
       <a class="lamp" href="../zh-TW/releases.html#v0.2.5" aria-describedby="rv-0.2.5">
         <i aria-hidden="true"></i><span class="ver">v0.2.5</span>
         <time datetime="2026-11-13">11-13</time>
@@ -239,7 +239,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.27; --x: 69.5">
+    <li class="era-node" style="--old: 0.38; --x: 59.9">
       <a class="lamp" href="../zh-TW/releases.html#v0.3.0" aria-describedby="rv-0.3.0">
         <i aria-hidden="true"></i><span class="ver">v0.3.0</span>
         <time datetime="2026-11-13">11-13</time>
@@ -251,7 +251,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.18; --x: 77.4">
+    <li class="era-node" style="--old: 0.31; --x: 66.5">
       <a class="lamp" href="../zh-TW/releases.html#v0.3.1" aria-describedby="rv-0.3.1">
         <i aria-hidden="true"></i><span class="ver">v0.3.1</span>
         <time datetime="2026-11-16">11-16</time>
@@ -263,7 +263,7 @@
       </div>
     </li>
   
-    <li class="era-node" style="--old: 0.09; --x: 85.2">
+    <li class="era-node" style="--old: 0.23; --x: 73.2">
       <a class="lamp" href="../zh-TW/releases.html#v0.4.0" aria-describedby="rv-0.4.0">
         <i aria-hidden="true"></i><span class="ver">v0.4.0</span>
         <time datetime="2026-11-18">11-18</time>
@@ -275,10 +275,34 @@
       </div>
     </li>
   
-    <li class="era-node now" style="--old: 0.00; --x: 93.0">
+    <li class="era-node" style="--old: 0.15; --x: 79.8">
       <a class="lamp" href="../zh-TW/releases.html#v0.4.1" aria-describedby="rv-0.4.1">
         <i aria-hidden="true"></i><span class="ver">v0.4.1</span>
-        <b class="badge">即將發布</b>
+        <time datetime="2026-11-20">11-20</time>
+      </a>
+      <p class="acc"><span><b>127</b> 條規則</span></p>
+      <div class="peek" id="rv-0.4.1">
+        <p class="word">12 項改變</p>
+        <ul><li>主機盤點會對開了 HTTP/2 的 nginx 1.9.5～1.31.8 提出警告（<code>listen ... http2</code>，或對 server 生效的 <code>http2 on</code>）：CVE-2026-123007 和 CVE-2026-123633 是 HTTP/2 的記憶體錯誤，用戶端可以讓 worker 當掉。請更新到 1.31.9 或 1.30.7，或 distro 修補後的套件；更新前先改回只用 HTTP/1.1 就沒有這個問題。這只是建議，不會改設定。套件的 changelog 已列出這兩個 CVE（distro 已 backport 修補）時不警告；distro 的公告進了 OSV 之後，套件掃描就會報，這項檢查補的是 nginx.org 的套件和自行建置的 nginx，套件掃描看不到這兩類。</li><li>伺服器自己的帳號（例如 Rocky Linux 的 <code>nginx</code>）擁有的網站紀錄，在沒有其他程式用這個帳號執行時，可以和 root 擁有的紀錄一樣當封鎖依據：沒有 PHP-FPM pool、systemd unit、crontab、supervisord 程式、sudo 或 doas 規則、登入 shell，巡檢時也沒有伺服器本身以外的程序；帳號資料只來自檔案，要查的也都讀到了。有任何一項讀不到，紀錄就仍是 <code>web_user_writable</code>。共用的預設帳號（<code>www-data</code>、<code>apache</code>、<code>nobody</code>）一律不算。其他條件見限制文件 <code>docs/attack-detection-limits.zh-TW.md</code> 裡，說明哪些網站紀錄可以當封鎖依據的那一段。</li><li>nginx 送到 journald 的存取紀錄（<code>access_log syslog:server=unix:/dev/log,...</code>）會被讀取，並逐行查證：只有經 syslog、由 nginx 本身的程式、以 worker 的帳號在 <code>nginx.service</code> 裡送出的那一行才算查證。其他程式送出的行會讀，但不算查證。</li></ul>
+      </div>
+    </li>
+  
+    <li class="era-node" style="--old: 0.08; --x: 86.4">
+      <a class="lamp" href="../zh-TW/releases.html#v0.4.2" aria-describedby="rv-0.4.2">
+        <i aria-hidden="true"></i><span class="ver">v0.4.2</span>
+        <time datetime="2026-11-20">11-20</time>
+      </a>
+      <p class="acc"><span><b>127</b> 條規則</span></p>
+      <div class="peek" id="rv-0.4.2">
+        <p class="word">13 項改變</p>
+        <ul><li>JavaScript 規則不管路由 handler 的 request 叫什麼名字都追得到：不叫 <code>req</code> 的參數（<code>(r, s) =&gt;</code>）、不叫 <code>ctx</code> 的 Koa context、別名（<code>const q = r</code>、<code>const h = r.headers</code>），以及解構（<code>({ headers }, res) =&gt;</code>、<code>const { headers, hostname: hn } = r</code>、<code>const { host } = req.headers</code>）。所以 <code>r.hostname</code>、<code>r.get(&#39;host&#39;)</code>、<code>c.host</code> 和解構出來的 <code>headers</code> 現在都會回報；這樣讀到的 Host header 歸 js-ssrf-host-header，其他 header 歸 js-ssrf-http-request。request header 的索引照 Node 的存法以小寫讀（<code>r.headers[&#39;Host&#39;]</code>）。在 SSRF 規則裡，Koa 的 <code>ctx.header</code> 和 <code>ctx.request.get(</code> 也算來源，Host header 另外加上 <code>ctx.request.header.host</code> 和 <code>ctx.request.headers.host</code>（#106）。</li><li>NestJS：在讀 <code>@Req()</code> 的 13 條 JavaScript 規則裡（SSRF、SQL 與 NoSQL injection、命令注入、程式碼執行、路徑穿越、LDAP injection、反序列化），<code>@Request()</code> 和 <code>@Req()</code> 一樣算 handler 的 request。兩者都只有在這個檔案或專案裡的其他檔案 import 了 <code>@nestjs/common</code> 或 <code>@nestjs/core</code> 時，才算 NestJS 的；其他情況就是普通的物件（#103、#106）。</li><li>Python：用反斜線接到下一行的 <code>global</code>、<code>nonlocal</code>，會讀到整個敘述結束，下一行的名稱也算宣告（#103）。</li></ul>
+      </div>
+    </li>
+  
+    <li class="era-node now" style="--old: 0.00; --x: 93.0">
+      <a class="lamp" href="../zh-TW/releases.html#v0.4.3" aria-describedby="rv-0.4.3">
+        <i aria-hidden="true"></i><span class="ver">v0.4.3</span>
+        <time datetime="2026-11-20">11-20</time>
       </a>
       <p class="acc"><span><b>127</b> 條規則</span></p>
       
@@ -287,9 +311,9 @@
   </ol>
 </div>
 
-<div class="newest" id="rv-0.4.1">
-  <div class="newest-head"><p class="word">籌備中</p><span class="ver">v0.4.1</span><b class="badge">即將發布</b></div>
-  <div class="grp grp-reach"><h4><i aria-hidden="true"></i>看得更遠</h4><ul><li>主機盤點會對開了 HTTP/2 的 nginx 1.9.5～1.31.8 提出警告（<code>listen ... http2</code>，或對 server 生效的 <code>http2 on</code>）：CVE-2026-123007 和 CVE-2026-123633 是 HTTP/2 的記憶體錯誤，用戶端可以讓 worker 當掉。請更新到 1.31.9 或 1.30.7，或 distro 修補後的套件；更新前先改回只用 HTTP/1.1 就沒有這個問題。這只是建議，不會改設定。套件的 changelog 已列出這兩個 CVE（distro 已 backport 修補）時不警告；distro 的公告進了 OSV 之後，套件掃描就會報，這項檢查補的是 nginx.org 的套件和自行建置的 nginx，套件掃描看不到這兩類。</li><li>伺服器自己的帳號（例如 Rocky Linux 的 <code>nginx</code>）擁有的網站紀錄，在沒有其他程式用這個帳號執行時，可以和 root 擁有的紀錄一樣當封鎖依據：沒有 PHP-FPM pool、systemd unit、crontab、supervisord 程式、sudo 或 doas 規則、登入 shell，巡檢時也沒有伺服器本身以外的程序；帳號資料只來自檔案，要查的也都讀到了。有任何一項讀不到，紀錄就仍是 <code>web_user_writable</code>。共用的預設帳號（<code>www-data</code>、<code>apache</code>、<code>nobody</code>）一律不算。其他條件見限制文件 <code>docs/attack-detection-limits.zh-TW.md</code> 裡，說明哪些網站紀錄可以當封鎖依據的那一段。</li><li>nginx 送到 journald 的存取紀錄（<code>access_log syslog:server=unix:/dev/log,...</code>）會被讀取，並逐行查證：只有經 syslog、由 nginx 本身的程式、以 worker 的帳號在 <code>nginx.service</code> 裡送出的那一行才算查證。其他程式送出的行會讀，但不算查證。</li><li>新增 <code>shentu log-trust suggest</code>，列出讓這台主機的網站紀錄能當封鎖依據的改法：nginx 送 journald 的那一行設定、調高 journald 對 nginx 筆數上限的 drop-in、<code>kernel.yama.ptrace_scope = 1</code>，以及 PHP-FPM 改用各自帳號的 pool。它只列出建議，不會改任何設定。</li><li>Apache 的模組改用名單判斷：只做設定、限制存取、快取或 proxy 的模組沒有影響；會用子程序帳號執行程式的模組，以及 <code>RewriteMap</code> 的 <code>prg:</code>，要 <code>ptrace_scope</code> 1 以上；<code>mod_php</code>、<code>mod_cgi</code> 和不認得的模組都算應用程式碼。</li><li>在路由 placeholder 那一段、帶有 <code>;</code> 參數的攻擊命中（例如 <code>/user/:id</code> 的 <code>/user/42;x</code>），現在會到 L2；先前只到 L1。</li><li>L3 用的回應大小基準，現在只排除被升到 L2 的請求；沒有對應到路由的命中和雜訊命中，都會算進基準。</li><li>規則更準確：同一行被兩條規則重複回報的情況，現在只由一條規則回報（Host header 和 SSRF、SQL injection、<code>ORDER BY</code> 識別字）；解析後的 URL 已用固定的白名單比對過 host，SSRF 就算已檢查。有些 finding 會多出來，有些會不見，攻擊偵測認定能進入的路由也會跟著變。</li></ul></div><div class="grp grp-fixed"><h4><i aria-hidden="true"></i>修正</h4><ul><li>從 Telegram 呼叫 <code>block_ip</code>，現在只封鎖 Shentu 已查證證據的位址：已查證的 L2 或 L3 攻擊群組有列出它，或有 sshd 自己寫下的 SSH 登入紀錄。其他位址在 Telegram 一律拒絕，要到伺服器上用 <code>shentu chat</code> 查看並封鎖，和 v0.4.0 對未查證嘗試的說法相同。先前攻擊群組沒有列出的位址（超出群組列出的 10 個、群組已從紀錄中清掉，或紀錄裡的寫法不同），只看 SSH 登入紀錄，所以沒有 SSH 紀錄的位址，可以憑未查證的嘗試從 Telegram 封鎖。一個群組最多列出 10 個位址，所以即使是已查證的 L2 或 L3 群組，第 11 個以後的位址從 Telegram 也會被拒絕，這是設計如此，要到伺服器上封鎖。</li><li>在伺服器上，超出群組列出位址數的位址，會和列出的位址一樣被拒絕，同網段的其他位址也是；群組被併進溢出彙總之後也一樣。紀錄裡寫法不同的位址也會被拒絕，包括方括號、port、zone、多寫的 0（例如 <code>203.0.113.012</code>，兩個讀法都比對），以及寫在 IPv6 裡的 IPv4。已查證的群組只放行它列出的那個位址。溢出彙總或依 sink 彙總的群組，來源超過它保留的 hash 數（64 個）之後，會拒絕所有沒列出的位址；營運者可以在伺服器上覆寫。</li></ul></div><div class="grp grp-upgrade"><h4><i aria-hidden="true"></i>升級說明</h4><ul><li>v0.4.0 已知問題寫的「預設安裝的 nginx 紀錄不能當封鎖依據，v0.4.1 會處理」，現在的狀況如下（完整說明見 <code>docs/attack-detection-limits.zh-TW.md</code>）：Debian 12、Ubuntu 24.04 的 nginx 仍是 <code>web_user_writable</code>（<code>www-data</code> 也是 PHP 的帳號），要把存取紀錄送到 journald，並設 <code>ptrace_scope</code> 1；Debian 12、Ubuntu 24.04 的 Apache 在 <code>ptrace_scope</code> 1 時就算查證；Rocky 9 的 nginx 仍是 <code>web_user_writable</code>，因為預設的 <code>nsswitch.conf</code> 也會問 sss，確定沒在用 SSSD 時把 sss 去掉，PHP-FPM 用 <code>apache</code> 帳號，就算查證；Rocky 9 的 httpd 要設 <code>ptrace_scope</code> 1，如果 <code>mod_lua</code> 還載入著，各處也都要 <code>AllowOverride None</code>。</li><li>紀錄改判為查證之後，新的嘗試會進查證過的群組；舊的未查證群組最多保留 7 天才到期，這段期間同一個目標可能出現兩組。新的 journald 來源第一次只從最新的位置開始讀，不讀以前的紀錄。</li></ul></div>
+<div class="newest" id="rv-0.4.3">
+  <div class="newest-head"><p class="word">重修</p><span class="ver">v0.4.3</span><time datetime="2026-11-20">2026-11-20</time></div>
+  <div class="grp grp-reach"><h4><i aria-hidden="true"></i>看得更遠</h4><ul><li>SSRF：URL 的 host 檢查過之後，<code>console.log(u)</code>、<code>JSON.stringify(u)</code>、<code>String(u)</code> 不再讓檢查失效，條件是檔案只用 <code>console</code>、<code>JSON</code>、<code>String</code> 來呼叫（沒有同名的參數或宣告，沒有 <code>console.log = f</code>），也沒有可能在別處替換這些呼叫的寫法（<code>globalThis</code> 這類 global 物件除了讀具名成員以外的用法、<code>eval</code>、<code>Function(</code>、<code>with</code> 敘述、改寫內建物件的 prototype）（#119）。</li><li>JavaScript 的路由 handler：字串 key 的解構 <code>const { &#39;x-forwarded-host&#39;: xfh } = req.headers</code> 追得到，這個值改由 js-ssrf-host-header 回報，不再是 js-ssrf-http-request。Koa 的路由 handler 參數解構時取了 <code>request</code>（<code>({ request }) =&gt; request.header.host</code>），在這個檔案或專案裡的其他檔案有 import <code>koa</code>、<code>@koa/router</code> 或 <code>koa-router</code> 的情況下，就當成 Koa 的 context（#119）。</li><li>新的來源：Next 15 的 <code>(await headers()).get(...)</code>，這樣讀到的 Host header 傳進 redirect 時由 js-open-redirect-next 回報；php-sqli-orderby-identifier 讀 Laravel 的 <code>Request::query(</code>、<code>Request::get(</code>（<code>DB::raw</code>、<code>-&gt;orderBy(</code>）（#118）。</li><li>NestJS：整個 <code>@Headers()</code> 物件的欄位寫進回應（<code>res.send(</code> 裡的 <code>h[&#39;x-note&#39;]</code>）時，由 js-xss-response 回報（#125）。</li><li>去除重複回報。同一個呼叫只由一條 SQL injection 規則回報：兩條規則在同一行的同一個呼叫都會報時，其中一條讓另一條回報（<code>yields_to</code>）。<code>-&gt;where(</code> 用 Symfony 的 <code>$request-&gt;query-&gt;get(</code> 時只歸 php-sqli-doctrine-query-text，不再同時由 php-sqli-drupal-db-query 回報；<code>DB::raw(...)</code> 放在 php-sqli-laravel-raw 的呼叫裡，在 laravel-raw 也回報時歸 laravel-raw。同一行的其他呼叫照樣回報（#125）。另外在 SSRF 規則裡，<code>h</code> 是整個 NestJS <code>@Headers()</code> 物件或 Express 的 <code>r.headers</code> 時，<code>const x = h</code> 之後的 <code>x.host</code>（<code>x[&#39;Host&#39;]</code>、<code>x[&#39;x-forwarded-host&#39;]</code> 也一樣）只由 js-ssrf-host-header 回報，不再同時由 js-ssrf-http-request 回報；名稱也可能是 request 的其他值時（在某個分支裡是 <code>r.query</code>），兩條規則照樣回報（#132）。</li></ul></div><div class="grp grp-upgrade"><h4><i aria-hidden="true"></i>升級說明</h4><ul><li>有些回報換了規則：用 request 輸入組成的 <code>sa.text(...)</code> 改由 python-sqli-sqlalchemy-text 回報，不再是 python-sqli-dbapi-format（#118）；用字串 key 解構出來的 Host header 改由 js-ssrf-host-header 回報，不再是 js-ssrf-http-request（#119）；兩條 SQL injection 規則都會報的呼叫只報一次（#125）。php-sqli-laravel-raw 的修正建議加了說明：ORDER BY 的欄位和排序方向要對照白名單。因為這些變動，攻擊偵測判斷為可到達的路由也可能改變。</li></ul></div><div class="grp grp-known"><h4><i aria-hidden="true"></i>已知問題</h4><ul><li>用 <code>app.use</code> 註冊的 Koa middleware 不是路由 handler：它的 context 只認直接的寫法（<code>ctx.request.headers[&#39;x-forwarded-host&#39;]</code>），不追解構（<code>const { host } = ctx.request.headers</code>），也不追別名（<code>const h = ctx.request.headers</code>）。</li><li>每個分支都重新指定過的名稱，在分支之後仍然會被追蹤，所以會多報。</li><li>Next 15 的 <code>const h = await headers(); h.get(name)</code> 和同步的 <code>h = headers()</code> 還不算來源。</li><li>JavaScript 的只讀呼叫判斷還看不到 <code>Object.getPrototypeOf</code>、<code>Function</code> 的別名、<code>Reflect.construct</code>、<code>vm.compileFunction</code>，也看不到經由 <code>this</code>、<code>GLOBAL</code>、<code>top</code> 取得的 global 物件；<code>typeof window</code> 會讓整個檔案回到「<code>console.log(u)</code> 就讓檢查失效」。</li></ul></div>
 </div>
 
 

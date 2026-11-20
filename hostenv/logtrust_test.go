@@ -293,6 +293,18 @@ func TestServerAccountApart(t *testing.T) {
 		{"doas rule quoted", 1, true, func(h statHost) {
 			h.files["/etc/doas.conf"] = "permit marker as \"nginx\"\n"
 		}, ReasonWebUserWritable},
+		// v0.4.2, #105 S-1: systemd's userdb may hold an account /etc/passwd
+		// does not, with the server's uid, or put one in its group.
+		{"a userdb record", 1, true, func(h statHost) {
+			h.files["/etc/userdb/marker.user"] = "{}\n"
+		}, ReasonWebUserWritable},
+		{"a userdb membership", 1, true, func(h statHost) {
+			h.files["/run/userdb/marker:nginx.membership"] = "{}\n"
+		}, ReasonWebUserWritable},
+		{"userdb unread", 1, true, func(h statHost) {
+			h.files["/usr/lib/userdb/marker.user"] = "{}\n"
+			h.denied["/usr/lib/userdb"] = true
+		}, ReasonWebUserWritable},
 		{"doas.conf unread", 1, true, func(h statHost) {
 			h.files["/etc/doas.conf"] = "permit persist :wheel\n"
 			h.denied["/etc/doas.conf"] = true
