@@ -634,7 +634,7 @@ func (a *agent) runDispatch(ctx context.Context, origin, trigger string, tasks [
 	dctx, cancel := context.WithTimeout(ctx, dispatchTimeout)
 	defer cancel()
 	left := dispatchTokenCap
-	if modelErr == nil && external && len(tasks) > 1 {
+	if modelErr == nil && external && len(tasks) > 1 && budgetRoom(a.cfg, time.Now()) {
 		reports, left = a.runSubsParallel(dctx, id, tasks)
 		tasks = nil
 	}
@@ -674,6 +674,18 @@ func (a *agent) runDispatch(ctx context.Context, origin, trigger string, tasks [
 		a.log.write(logEntry{Actor: a.actor, Tool: "dispatch", Dispatch: id, Error: mask("archive: " + saveErr.Error())})
 	}
 	return id, reports, rec, saveErr
+}
+
+// budgetRoom says whether this month's token limit has room for a whole
+// dispatch's cap: sub-agents run at once each pass the limit check before
+// any has used tokens, so the room is reserved first; without it they take
+// turns, and each one after the first is stopped at the limit as before.
+func budgetRoom(cfg *Config, now time.Time) bool {
+	if cfg.Budget.MonthlyTokens <= 0 {
+		return false
+	}
+	_, used, _, err := monthUsageStrict(cfg.StateDir, now)
+	return err == nil && used+dispatchTokenCap <= cfg.Budget.MonthlyTokens
 }
 
 // runSubsParallel runs tasks at once, for a model outside this host (on
