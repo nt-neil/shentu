@@ -21,6 +21,7 @@ func TestAgentsExternalDefault(t *testing.T) {
 		"https://api.example.com/v1": true, "::not a url": true,
 		"http://192.168.1.5:11434/v1": true, "http://10.0.0.2:11434": true, // a LAN address, this host's own too
 		"http://ollama.local:11434": true, "http://localhost.example.com": true, // a name: it can resolve anywhere
+		"http://foo.localhost:11434":  true, // a name, though it resolves to loopback
 		"http://[::ffff:127.0.0.1]:1": false,
 	} {
 		if got := agentsExternal(u); got != want {
@@ -116,7 +117,7 @@ func TestAgentsExternalNeedsBudget(t *testing.T) {
 	if n != 0 {
 		t.Errorf("%d requests reached the outside model without a budget", n)
 	}
-	if !strings.Contains(out, "monthly limit") || strings.Contains(out, externalNote) {
+	if !strings.Contains(out, "monthly_tokens") || strings.Contains(out, externalNote) {
 		t.Errorf("output: %s", out)
 	}
 	recs, _, err := newDispatchStore(a.cfg).Since(time.Now().Add(-time.Hour))
