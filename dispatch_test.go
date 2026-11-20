@@ -452,6 +452,7 @@ func TestParseReport(t *testing.T) {
 // From Telegram at confirm level 4 ("none"), an action after a dispatch still
 // waits for the paired user's button.
 func TestBotDispatchActionAlwaysAsksButton(t *testing.T) {
+	stubGate(t, nil) // the gate allows: this tests the confirmation (U1 asks only what the gate would let through)
 	if runtime.GOOS == "windows" {
 		t.Skip("no control tool runs on Windows")
 	}
@@ -507,6 +508,7 @@ func TestBotDispatchActionAlwaysAsksButton(t *testing.T) {
 // The strict confirmation holds in a later Telegram turn too: "yes, block it"
 // after a dispatch acts on the sub-agents' reports kept in the history.
 func TestBotDispatchStrictAcrossTurns(t *testing.T) {
+	stubGate(t, nil) // the gate allows: this tests the confirmation (U1 asks only what the gate would let through)
 	if runtime.GOOS == "windows" {
 		t.Skip("no control tool runs on Windows")
 	}
