@@ -245,7 +245,7 @@ func TestAgentsModelErrorKeyScrubbed(t *testing.T) {
 func TestLLMErrorKeyScrubbed(t *testing.T) {
 	key := strings.Join([]string{"sk", "main", "fedcba9876543210"}, "-")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusUnauthorized)
+		w.WriteHeader(http.StatusBadRequest) // a 401 keeps no answer at all
 		w.Write([]byte("no such key: " + r.Header.Get("Authorization") + strings.Repeat(" ", 280) + key))
 	}))
 	defer srv.Close()
@@ -257,7 +257,7 @@ func TestLLMErrorKeyScrubbed(t *testing.T) {
 	// a key cut at the 300-byte limit leaves no part of it behind
 	l2 := &llmClient{baseURL: srv.URL, apiKey: key, http: srv.Client()}
 	srv2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusUnauthorized)
+		w.WriteHeader(http.StatusBadRequest) // a 401 keeps no answer at all
 		w.Write([]byte(strings.Repeat("x", 295) + key))
 	}))
 	defer srv2.Close()
