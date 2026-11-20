@@ -537,6 +537,7 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 	if daily {
 		unchecked += detectSection(dr.sum)
 		unchecked += dispatchDaily(cfg, time.Now())
+		unchecked += autoIncidentSection(cfg, time.Now())
 	} else if dr.sum.Err != "" {
 		unchecked += "\nAttack detection: " + dr.sum.Err + "\n"
 	}
