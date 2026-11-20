@@ -67,15 +67,16 @@ type botState struct {
 	Pending     *pendingPair `json:"pending,omitempty"`
 	Offset      int64        `json:"offset,omitempty"`
 
-	Levels     [4]int         `json:"levels"`                // what the service last ran with
-	TOTPSecret string         `json:"totp_secret,omitempty"` // confirm = 2
-	TOTPLast   uint64         `json:"totp_last,omitempty"`   // last time step used, never accepted again
-	CodeFails  int            `json:"code_fails,omitempty"`  // wrong codes since the last right one; 5 pause the bot
-	Action     *pendingAction `json:"action,omitempty"`      // confirm = 1: waiting for `shentu bot approve`
-	Paused     string         `json:"paused,omitempty"`      // why the bot stopped (lockdown, token leak)
-	ToDelete   []sentMsg      `json:"to_delete,omitempty"`   // answers = 1..3: deleted after 24h
-	Day        string         `json:"day,omitempty"`         // protection = 1: answers counted per day
-	DayCount   int            `json:"day_count,omitempty"`
+	Levels     [4]int                `json:"levels"`                // what the service last ran with
+	TOTPSecret string                `json:"totp_secret,omitempty"` // confirm = 2
+	TOTPLast   uint64                `json:"totp_last,omitempty"`   // last time step used, never accepted again
+	CodeFails  int                   `json:"code_fails,omitempty"`  // wrong codes since the last right one; 5 pause the bot
+	Action     *pendingAction        `json:"action,omitempty"`      // confirm = 1: waiting for `shentu bot approve`
+	Paused     string                `json:"paused,omitempty"`      // why the bot stopped (lockdown, token leak)
+	ToDelete   []sentMsg             `json:"to_delete,omitempty"`   // answers = 1..3: deleted after 24h
+	Day        string                `json:"day,omitempty"`         // protection = 1: answers counted per day
+	DayCount   int                   `json:"day_count,omitempty"`
+	Buttons    map[string]*buttonSet `json:"buttons,omitempty"` // proposal buttons offered, by dispatch id
 }
 
 type pendingAction struct {
@@ -173,7 +174,7 @@ func botCommand(ctx context.Context, cfg *Config, env *tools.Env, args []string)
 		if token == "" {
 			return errors.New("no Telegram bot token: set [bot] telegram_token or a telegram:// notify url")
 		}
-		b := &bot{cfg: cfg, env: env, token: token, api: telegramBotAPI, hc: &http.Client{Timeout: 70 * time.Second}, log: audit}
+		b := &bot{cfg: cfg, env: env, token: token, api: telegramBotAPI, hc: &http.Client{Timeout: 70 * time.Second}, log: audit, archive: newDispatchStore(cfg)}
 		return b.run(ctx)
 	case "pair":
 		return botPair(ctx, cfg, env, audit, bufio.NewReader(os.Stdin), os.Stdout)
@@ -330,6 +331,7 @@ type bot struct {
 	sugText      []string             // what each of those buttons asks
 	canAct       bool                 // interaction >= 3 and the service holds CAP_NET_ADMIN
 	stop         context.CancelFunc   // /lockdown and a token leak stop the service
+	archive      proposalArchive      // the dispatch archive, for proposal buttons
 }
 
 func (b *bot) zh() bool {
@@ -485,6 +487,12 @@ func (b *bot) handle(ctx context.Context, u tgUpdate) {
 		if !ok || st.UserID == 0 || c.From.ID != st.UserID || c.Message == nil || c.Message.Chat.ID != st.ChatID {
 			b.ignored(0, "callback from someone who is not the paired user")
 			return
+		}
+		if strings.HasPrefix(answer, "b") {
+			if ref, err := parseProposalRef(c.Data); err == nil {
+				b.pressProposal(ctx, st, ref)
+				return
+			}
 		}
 		b.mu.Lock()
 		ch := b.waiting[nonce]
@@ -658,6 +666,7 @@ func (b *bot) answer(ctx context.Context, chat int64, text string) {
 	b.mu.Lock()
 	owner := b.histFor // the pairing this answer belongs to
 	a.lastDispatch = b.histDispatch
+	prior := a.lastDispatch
 	hist := append([]message{{Role: "system", Content: systemPrompt(b.cfg, skills) + answerRule(b.cfg.Bot.Answers, b.zh())}}, b.history...)
 	b.mu.Unlock()
 	hist = append(hist, message{Role: "user", Content: text})
@@ -700,6 +709,9 @@ func (b *bot) answer(ctx context.Context, chat int64, text string) {
 		b.mu.Unlock()
 	}
 	b.sendAs(ctx, chat, answer, kb, true)
+	if a.lastDispatch != prior { // this turn dispatched: its proposals, under the answer
+		b.offerProposals(ctx, chat, a.lastDispatch, owner)
+	}
 	var keep []message // keep plain turns only, so tool output does not pile up
 	for _, m := range msgs[1:] {
 		if (m.Role == "user" || m.Role == "assistant") && len(m.ToolCalls) == 0 && m.Content != "" {
@@ -903,6 +915,14 @@ var botText = map[string][2]string{ // English, Chinese
 	"cancel":         {"❌ Cancel", "❌ 取消"},
 	"confirm":        {"⚠️ %s wants to run:\n%s\n\nValid for 5 minutes.", "⚠️ %s 要執行：\n%s\n\n5 分鐘內有效。"},
 	"cancelled":      {"Cancelled.", "已取消。"},
+	"prop_title":     {"Sub-agent proposals (dispatch %s). A button runs every check again and asks you to confirm:", "子 Agent 的建議（派遣 %s）。按下按鈕會重新檢查一次，再請你確認："},
+	"prop_button":    {"button below", "見下方按鈕"},
+	"prop_more":      {"no button: at most 5 buttons", "不提供按鈕：最多 5 顆"},
+	"prop_nobutton":  {"no button: %s", "不提供按鈕：%s"},
+	"prop_block":     {"Block %s", "封鎖 %s"},
+	"prop_gone":      {"This button no longer works.", "這個按鈕已經失效。"},
+	"prop_refused":   {"Not blocked: %s cannot be blocked from Telegram now: %s", "沒有封鎖：%s 現在不能從 Telegram 封鎖，原因：%s"},
+	"prop_blocked":   {"Blocked %s.", "已封鎖 %s。"},
 	"lockdown":       {"🔒 Locked down. The bot is unpaired and stopped; re-enable it on the server.", "🔒 已緊急關閉。bot 已解除配對並停止，要重新開啟請到伺服器操作。"},
 	"closed":         {"Outside the hours set on the server (08:00–20:00).", "現在不在伺服器設定的開放時段（08:00–20:00）。"},
 	"limit":          {"Today's limit of answers is reached.", "今天的回答次數已達上限。"},

@@ -50,7 +50,7 @@ const (
 func attackGate(ip net.IP, override bool) (gateVerdict, error) {
 	a, err := attackState()
 	if err != nil {
-		return gateRefuse, fmt.Errorf("refusing to block %s: attack detection's state could not be read (%v), so whether its attempts can be believed is unknown; check on the server", ip, err)
+		return gateRefuse, coded(BlockStateError, fmt.Errorf("refusing to block %s: attack detection's state could not be read (%v), so whether its attempts can be believed is unknown; check on the server", ip, err))
 	}
 	if a == nil {
 		return gateNone, nil
@@ -99,18 +99,18 @@ func attackGate(ip net.IP, override bool) (gateVerdict, error) {
 	case verified:
 		return gateAllow, nil
 	case override && len(overflow) > 0:
-		return gateRefuse, fmt.Errorf("refusing to block %s: it is listed in an overflow summary of many sources (%s), whose addresses and severity are merged; override does not apply to a summary: check the full record on the server and block from what it shows", ip, detect.Printable(strings.Join(overflow, ", ")))
+		return gateRefuse, coded(BlockOverflow, fmt.Errorf("refusing to block %s: it is listed in an overflow summary of many sources (%s), whose addresses and severity are merged; override does not apply to a summary: check the full record on the server and block from what it shows", ip, detect.Printable(strings.Join(overflow, ", "))))
 	case override && len(overflow) == 0:
 		// The operator, on the server, overrides: unverified, L1 and
 		// Unknown groups (lines anyone could forge) cannot keep an address
 		// from being blocked; its SSH logins decide, override applied.
 		return gateNone, nil
 	case len(unverified) > 0:
-		return gateRefuse, fmt.Errorf("refusing to block %s: its attack attempts come from sources that cannot be believed: %s. This cannot be overridden from Telegram: check them on the server and, if they are real, block it there with shentu chat and override_unverified", ip, detect.Printable(strings.Join(unverified, "; ")))
+		return gateRefuse, coded(BlockUnverified, fmt.Errorf("refusing to block %s: its attack attempts come from sources that cannot be believed: %s. This cannot be overridden from Telegram: check them on the server and, if they are real, block it there with shentu chat and override_unverified", ip, detect.Printable(strings.Join(unverified, "; "))))
 	case len(overflow) > 0:
-		return gateRefuse, fmt.Errorf("refusing to block %s: it is listed only in an overflow summary of many sources (%s), whose addresses and severity are merged: check the full record on the server", ip, detect.Printable(strings.Join(overflow, ", ")))
+		return gateRefuse, coded(BlockOverflow, fmt.Errorf("refusing to block %s: it is listed only in an overflow summary of many sources (%s), whose addresses and severity are merged: check the full record on the server", ip, detect.Printable(strings.Join(overflow, ", "))))
 	}
-	return gateRefuse, fmt.Errorf("refusing to block %s: its attempts only reached a route or could not be judged (%s): not enough to block", ip, detect.Printable(strings.Join(weak, ", ")))
+	return gateRefuse, coded(BlockWeak, fmt.Errorf("refusing to block %s: its attempts only reached a route or could not be judged (%s): not enough to block", ip, detect.Printable(strings.Join(weak, ", "))))
 }
 
 // internalAddr says why ip is an internal address (private, CGNAT,
@@ -167,7 +167,7 @@ func internalAddr(ip net.IP) string {
 // unverified ones or none.
 func blockGate(ctx context.Context, env *Env, ip net.IP, override bool) error {
 	if why := internalAddr(ip); why != "" && !override {
-		return fmt.Errorf("refusing to block %s: it is %s, often a load balancer, proxy or this network's own host (a log without its real client address names it for every request): blocking it may cut off the whole site; check on the server and, if it is right, block it there with shentu chat and override_unverified", ip, why)
+		return coded(BlockInternal, fmt.Errorf("refusing to block %s: it is %s, often a load balancer, proxy or this network's own host (a log without its real client address names it for every request): blocking it may cut off the whole site; check on the server and, if it is right, block it there with shentu chat and override_unverified", ip, why))
 	}
 	if env.Remote {
 		return remoteGate(ctx, env, ip)
@@ -199,13 +199,13 @@ func remoteGate(ctx context.Context, env *Env, ip net.IP) error {
 	if err == nil && verified {
 		return nil
 	}
-	why := "it is not listed in a verified L2 or L3 attack group, and has no SSH login events sshd itself logged"
+	why, code := "it is not listed in a verified L2 or L3 attack group, and has no SSH login events sshd itself logged", BlockNoEvidence
 	if refusal != nil {
-		why = refusal.Error()
+		why, code = refusal.Error(), codeOf(refusal)
 	} else if err != nil {
-		why = err.Error()
+		why, code = err.Error(), codeOf(err)
 	}
-	return fmt.Errorf("refusing to block %s from a chat channel: only an address with evidence shentu verified (a verified L2 or L3 attack group listing it, or SSH login events sshd itself logged) can be blocked from here, and its attempts cannot be believed or are not known (%s). This cannot be overridden from Telegram: check it on the server and, if it is right, block it there with shentu chat", ip, detect.Printable(why))
+	return coded(code, fmt.Errorf("refusing to block %s from a chat channel: only an address with evidence shentu verified (a verified L2 or L3 attack group listing it, or SSH login events sshd itself logged) can be blocked from here, and its attempts cannot be believed or are not known (%s). This cannot be overridden from Telegram: check it on the server and, if it is right, block it there with shentu chat", ip, detect.Printable(why)))
 }
 
 var attackAttempts = Tool{
