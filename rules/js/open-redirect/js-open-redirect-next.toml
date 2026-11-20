@@ -6,11 +6,15 @@ severity = "medium"
 tier = "info"
 title = "Next.js redirect to a URL taken from the request or the Host header"
 frameworks = ["nextjs"]
-sources = [".searchParams.get(", "^searchParams.get(", "^searchParams", "^formData.get(", "^request.json(", "^req.json(", "request.headers.get('host')", "request.headers.get('x-forwarded-host')", "req.headers.get('host')", "req.headers.get('x-forwarded-host')", "headers().get('host')", "headers().get('x-forwarded-host')", "(await headers()).get('host')", "(await headers()).get('x-forwarded-host')"]
+sources = [".searchParams.get(", "^searchParams.get(", "^searchParams", "^formData.get(", "^request.json(", "^req.json(", "request.headers.get(", "req.headers.get(", "^headers().get(", "(await headers()).get("]
 sinks = ["NextResponse.redirect(", "Response.redirect(", "redirect(", "permanentRedirect("]   # pages-router res.redirect is js-open-redirect-redirect
 sanitizers = ["encodeURIComponent("]
 fix = "Redirect only to a path from an allowlist, or resolve the value with new URL(value, request.url) and use it only when its origin equals the site's own; build absolute URLs from request.url, never from the Host header. A check that the value starts with a single \"/\" is not enough: browsers drop tabs and newlines, so /\t/evil.example becomes //evil.example."
 refs = ["CVE-2026-12811", "CVE-2025-63784"]
+
+# Only Host and X-Forwarded-Host of the headers, by name in any case (the Headers
+# API does not tell case apart).
+source_args = [{ sources = ["request.headers.get(", "req.headers.get(", "^headers().get(", "(await headers()).get("], arg = 1, values = ["host", "x-forwarded-host"] }]
 
 [[args]]
 leading = true   # new URL(value, request.url) resolves an absolute value to another host
@@ -78,7 +82,7 @@ code = '''
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 export default async function SignInGate() {
-  const site = (await headers()).get('x-forwarded-host');
+  const site = (await headers()).get("x-forwarded-host");
   redirect(`https://${site}/signin`);
 }
 '''
@@ -90,7 +94,30 @@ code = '''
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 export default async function SignInGate() {
-  const site = (await headers()).get('x-forwarded-host') ?? "";
+  const site = (await headers()).get("x-forwarded-host") ?? "";
   redirect(`/signin?site=${encodeURIComponent(site)}`);
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "header names in any case"
+code = '''
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
+export default async function SignInGate() {
+  const site = (await headers()).get("X-Forwarded-Host");
+  redirect(`https://${site}/signin`);
+}
+'''
+
+[[samples]]
+kind = "safe"
+note = "the fixed path comes first; another header only fills the query"
+code = '''
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
+export default async function LocaleGate() {
+  redirect(`/start?lang=${(await headers()).get("Accept-Language")}`);
 }
 '''
