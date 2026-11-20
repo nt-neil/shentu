@@ -166,6 +166,7 @@ func offerAutoButtons(ctx context.Context, cfg *Config, env *tools.Env, id strin
 	b := &bot{cfg: cfg, env: env, token: token, api: telegramBotAPI, hc: &http.Client{Timeout: 30 * time.Second},
 		archive: newDispatchStore(cfg), canAct: st.CanAct && cfg.Bot.Interaction >= 3}
 	b.offerProposals(ctx, st.ChatID, id, pairKey(st), originAuto)
+	b.offerFeedback(ctx, st.ChatID, id, pairKey(st), originAuto)
 	return nil
 }
 

@@ -756,7 +756,7 @@ func TestInvariantDispatchOutputValidJSON(t *testing.T) {
 			reports[i].Unchecked[j] = strings.Repeat(`\x01`, 200)
 		}
 	}
-	out := dispatchOutput("0123456789ab", reports)
+	out := dispatchOutput("0123456789ab", reports, false)
 	var o struct {
 		Untrusted bool `json:"untrusted"`
 		Data      struct {
@@ -779,7 +779,7 @@ func TestInvariantDispatchOutputValidJSON(t *testing.T) {
 func TestInvariantDispatchOutputLastResort(t *testing.T) {
 	reports := []subReport{{Role: "attack", Status: "complete", Reason: strings.Repeat("shentu-marker-x ", 2000), Findings: []subFinding{},
 		Proposals: []subProposal{{Action: "propose_block_ip", IP: "203.0.113.9"}}}}
-	out := dispatchOutput("0123456789ab", reports)
+	out := dispatchOutput("0123456789ab", reports, false)
 	var o struct {
 		Untrusted bool `json:"untrusted"`
 		Data      struct {
