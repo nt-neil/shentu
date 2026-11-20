@@ -396,22 +396,31 @@ func TestInvariantSubagentTimeout(t *testing.T) {
 	}
 }
 
+// lastReports are the reports in the commander's last request that has them.
+// A sub-agent's request cut off by its time limit can be recorded after the
+// commander's next one (the server sees the cancel late), so the last request
+// is not always the commander's.
 func lastReports(t *testing.T, h *hostileModel) []subReport {
 	t.Helper()
 	h.mu.Lock()
-	last := h.requests[len(h.requests)-1]
+	reqs := append([]string(nil), h.requests...)
 	h.mu.Unlock()
-	var body struct{ Messages []message }
-	json.Unmarshal([]byte(last), &body)
-	for _, m := range body.Messages {
-		if m.Role == "tool" && strings.Contains(m.Content, `"reports"`) {
-			var out struct {
-				Data struct {
-					Reports []subReport `json:"reports"`
-				} `json:"data"`
+	for i := len(reqs) - 1; i >= 0; i-- {
+		if strings.Contains(reqs[i], subMarker) {
+			continue
+		}
+		var body struct{ Messages []message }
+		json.Unmarshal([]byte(reqs[i]), &body)
+		for _, m := range body.Messages {
+			if m.Role == "tool" && strings.Contains(m.Content, `"reports"`) {
+				var out struct {
+					Data struct {
+						Reports []subReport `json:"reports"`
+					} `json:"data"`
+				}
+				json.Unmarshal([]byte(m.Content), &out)
+				return out.Data.Reports
 			}
-			json.Unmarshal([]byte(m.Content), &out)
-			return out.Data.Reports
 		}
 	}
 	return nil
