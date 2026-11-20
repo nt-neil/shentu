@@ -7,8 +7,11 @@ title = "Request data (including headers) placed into a shell command"
 frameworks = ["laravel"]
 # Symfony's and WordPress's request readers too, which php-cmdi-process-shell-commandline
 # took into Process::run( before leaving Laravel's Process to this rule.
+# Laravel's request() helper (also request()->input(), whose receiver is the
+# helper's result), $request->post( and ->all(, and the Request facade.
 sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "$_FILES[*]['name']", "$_FILES[*]['type']", "$_SERVER['HTTP_", "$request->input(", "$request->query(", "$request->getHost()", "$request->header(",
-           "$request->query->get(", "$request->attributes->get(", "$request->request->get(", "$request->get(", "$request->query->all(", "->get_param("]
+           "$request->query->get(", "$request->attributes->get(", "$request->request->get(", "$request->get(", "$request->query->all(", "->get_param(",
+           "request(", "$request->post(", "$request->all(", "Request::input(", "Request::query("]
 sinks = ["exec(", "shell_exec(", "system(", "passthru(", "popen(", "proc_open(", "`", "$this->process->execute(", "$this->process->executeAsync(", "Process::run(", "Process::start("]
 sanitizers = ["escapeshellarg", "ProcessExecutor::escape("]
 fix = "Avoid the shell: use a PHP function or an argument array (proc_open with an array, Symfony Process); if a shell is unavoidable, wrap every value in escapeshellarg()."
@@ -131,6 +134,78 @@ class PingController extends Controller
     {
         $result = Process::run(['ping', '-c', '1', $request->input('host')]);
         return $result->output();
+    }
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "Laravel's request() helper"
+code = '''
+<?php
+class BackupController extends Controller
+{
+    public function dump()
+    {
+        return shell_exec('pg_dump --table=' . request('table') . ' shop');
+    }
+}
+'''
+
+[[samples]]
+kind = "safe"
+note = "Laravel's request() helper, quoted as one argument"
+code = '''
+<?php
+class BackupController extends Controller
+{
+    public function dump()
+    {
+        return shell_exec('pg_dump --table=' . escapeshellarg(request('table')) . ' shop');
+    }
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "Laravel: $request->post() and the Request facade"
+code = '''
+<?php
+class DeployController extends Controller
+{
+    public function checkout(Request $request)
+    {
+        exec('git -C /srv/app checkout ' . $request->post('branch'));
+        exec('git -C /srv/app log -1 ' . Request::input('ref'));
+    }
+}
+'''
+
+[[samples]]
+kind = "safe"
+note = "Laravel: an argument array, which no shell parses"
+code = '''
+<?php
+class DeployController extends Controller
+{
+    public function checkout(Request $request)
+    {
+        Process::run(['git', '-C', '/srv/app', 'checkout', '--', $request->post('branch')]);
+    }
+}
+'''
+
+[[samples]]
+kind = "safe"
+note = "request( is Laravel's helper only, not an HTTP client's ->request( method"
+code = '''
+<?php
+class StatusController extends Controller
+{
+    public function report()
+    {
+        $code = $this->http->request('GET', 'https://status.example.com/v1')->getStatusCode();
+        exec('logger -t status ' . $code);
     }
 }
 '''
