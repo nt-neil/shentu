@@ -6,7 +6,7 @@ severity = "medium"
 tier = "info"
 title = "Next.js redirect to a URL taken from the request or the Host header"
 frameworks = ["nextjs"]
-sources = [".searchParams.get(", "^searchParams.get(", "^searchParams", "^formData.get(", "^request.json(", "^req.json(", "request.headers.get('host')", "request.headers.get('x-forwarded-host')", "req.headers.get('host')", "req.headers.get('x-forwarded-host')", "headers().get('host')", "headers().get('x-forwarded-host')"]
+sources = [".searchParams.get(", "^searchParams.get(", "^searchParams", "^formData.get(", "^request.json(", "^req.json(", "request.headers.get('host')", "request.headers.get('x-forwarded-host')", "req.headers.get('host')", "req.headers.get('x-forwarded-host')", "headers().get('host')", "headers().get('x-forwarded-host')", "(await headers()).get('host')", "(await headers()).get('x-forwarded-host')"]
 sinks = ["NextResponse.redirect(", "Response.redirect(", "redirect(", "permanentRedirect("]   # pages-router res.redirect is js-open-redirect-redirect
 sanitizers = ["encodeURIComponent("]
 fix = "Redirect only to a path from an allowlist, or resolve the value with new URL(value, request.url) and use it only when its origin equals the site's own; build absolute URLs from request.url, never from the Host header. A check that the value starts with a single \"/\" is not enough: browsers drop tabs and newlines, so /\t/evil.example becomes //evil.example."
@@ -68,5 +68,29 @@ note = "a fixed path resolved against the request URL"
 code = '''
 export function GET(request: NextRequest) {
   return NextResponse.redirect(new URL("/login", request.url));
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "Next 15: headers() returns a promise"
+code = '''
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
+export default async function SignInGate() {
+  const site = (await headers()).get("x-forwarded-host");
+  redirect(`https://${site}/signin`);
+}
+'''
+
+[[samples]]
+kind = "safe"
+note = "Next 15: a relative path; the header is only an encoded query value"
+code = '''
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
+export default async function SignInGate() {
+  const site = (await headers()).get("x-forwarded-host") ?? "";
+  redirect(`/signin?site=${encodeURIComponent(site)}`);
 }
 '''
