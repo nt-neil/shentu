@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"io/fs"
@@ -140,7 +141,7 @@ var (
 	refRe        = regexp.MustCompile(`^d([0-9a-f]{12}):b([1-9][0-9]{0,2})$`)
 	dayFileRe    = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2})\.jsonl$`)
 	tmpFileRe    = regexp.MustCompile(`^\.(\d{4}-\d{2}-\d{2}\.jsonl|repairs\.jsonl)\..*\.tmp$`) // replaceFile's
-	keptFileRe   = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2})\.jsonl(\.bad)?$`)                   // what prune ages out
+	keptFileRe   = regexp.MustCompile(`^(?:feedback-)?(\d{4}-\d{2}-\d{2})\.jsonl(\.bad)?$`)     // what prune ages out
 )
 
 // triggerID is what the archive stores for a trigger: a short hash of the
@@ -1022,8 +1023,17 @@ func repairHint() string {
 
 // dispatchCommand is `shentu dispatch repair`.
 func dispatchCommand(cfg *Config, args []string, root bool) error {
+	if len(args) > 0 && args[0] == "stats" {
+		fs := flag.NewFlagSet("dispatch stats", flag.ContinueOnError)
+		days := fs.Int("days", 7, "add up this many days (1 to 30)")
+		asJSON := fs.Bool("json", false, "print JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		return statsReport(cfg, *days, *asJSON, os.Stdout, time.Now())
+	}
 	if len(args) != 1 || args[0] != "repair" {
-		return errors.New("usage: shentu dispatch repair")
+		return errors.New("usage: shentu dispatch repair | shentu dispatch stats [--days 7] [--json]")
 	}
 	if !root {
 		return errors.New("shentu dispatch repair changes the dispatch archive: run " + repairHint())

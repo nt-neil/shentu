@@ -50,6 +50,8 @@ Usage:
                 resume        unpause the bot after /lockdown, then restart the service
   shentu dispatch repair      move unreadable lines of the sub-agent dispatch archive aside (*.jsonl.bad),
                               so automatic incident checks resume without waiting for the file to age out
+  shentu dispatch stats [--days 7] [--json]
+                              sub-agent numbers by role, operator feedback, and suggestions to review (changes nothing)
   shentu usage                model calls, tokens and cost: today, last 7 and 30 days
   shentu budget [--cost USD] [--tokens N] [--off]
                               optional monthly AI limit: alert at 80%, stop calling the model at 100%
