@@ -22,7 +22,9 @@ Chinese for the zh-TW pages; keep the two in step.
   form, they still take turns.
 - `sudo shentu dispatch repair` (#134): moves the archive's unreadable lines to
   `<date>.jsonl.bad` and drops empty ones, so automatic incident checks resume without waiting up
-  to 72 hours. Files are replaced in one rename, and the archive's lock is `dispatch/.lock`.
+  to 72 hours. Files are replaced in one rename, and the archive's lock is `dispatch/.lock`. On
+  Windows it and `dispatch stats` run from an elevated prompt; run by anyone else, both say so
+  before reading the configuration.
 - Operator feedback (#137): under a dispatch's report the bot offers 👍 useful and 👎 false
   positive, once, for 7 days, to the paired user. `sudo shentu dispatch stats [--days 7] [--json]`
   adds the numbers up by role and suggests changes within fixed ranges (steps 4 to 10, tokens

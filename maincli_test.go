@@ -161,3 +161,49 @@ func TestDispatchStatsCommandRoot(t *testing.T) {
 		t.Errorf("root: %v", err)
 	}
 }
+
+// The Windows acceptance: a user who is not elevated got the configuration
+// refused (the state folder denied) instead of the hint. dispatch stats and
+// repair say it before the configuration is read, the same on every
+// platform; here the configuration cannot be read at all.
+func TestCLIDispatchHintBeforeConfig(t *testing.T) {
+	if testing.Short() || runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("builds the binary; needs a user who is not root")
+	}
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "shentu")
+	if out, err := exec.Command("go", "build", "-o", bin, ".").CombinedOutput(); err != nil {
+		t.Fatalf("build: %v\n%s", err, out)
+	}
+	bad := filepath.Join(dir, "shentu.toml") // a configuration that cannot be read, as the state folder could not be on Windows
+	os.WriteFile(bad, []byte("state_dir = [\n"), 0o600)
+	for _, sub := range []string{"stats", "repair"} {
+		cmd := exec.Command(bin, "dispatch", sub)
+		cmd.Env = append(os.Environ(), "SHENTU_CONFIG="+bad)
+		out, err := cmd.CombinedOutput()
+		var ee *exec.ExitError
+		if !errors.As(err, &ee) || ee.ExitCode() != 1 || !strings.Contains(string(out), "sudo shentu dispatch "+sub) ||
+			strings.Contains(string(out), "configuration") || strings.Contains(string(out), "toml") || strings.Contains(string(out), "shentu.toml") {
+			t.Errorf("dispatch %s: %v\n%s", sub, err, out)
+		}
+	}
+}
+
+// The same on Windows, at the function main calls before the config.
+func TestDispatchPreflight(t *testing.T) {
+	for _, sub := range []string{"stats", "repair"} {
+		err := dispatchPreflight([]string{sub}, false, "windows")
+		if err == nil || !strings.Contains(err.Error(), "Run as administrator") || !strings.Contains(err.Error(), "shentu dispatch "+sub) {
+			t.Errorf("windows %s: %v", sub, err)
+		}
+		if err := dispatchPreflight([]string{sub}, false, "linux"); err == nil || !strings.Contains(err.Error(), "`sudo shentu dispatch "+sub+"`") {
+			t.Errorf("linux %s: %v", sub, err)
+		}
+		if err := dispatchPreflight([]string{sub}, true, "windows"); err != nil {
+			t.Errorf("elevated %s: %v", sub, err)
+		}
+	}
+	if err := dispatchPreflight([]string{"wipe"}, false, "linux"); err != nil {
+		t.Errorf("another subcommand: %v", err)
+	}
+}

@@ -119,6 +119,11 @@ func main() {
 		}
 		return
 	}
+	if cmd == "dispatch" { // before the config and the state, which a user who is not root may not read
+		if err := dispatchPreflight(args, privileged(), runtime.GOOS); err != nil {
+			fatal(err)
+		}
+	}
 	cfg, err := loadConfig(configPath())
 	if err != nil {
 		fatal(err)
