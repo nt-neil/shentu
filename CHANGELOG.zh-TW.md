@@ -3,7 +3,7 @@
 CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本與日期必須一致，
 每個版本都要有內容（`go test ./cmd/sitegen` 會檢查）。
 
-## v0.4.1 (unreleased)
+## v0.4.1 — 2026-11-20
 
 - 主機盤點會對開了 HTTP/2 的 nginx 1.9.5～1.31.8 提出警告（`listen ... http2`，或對 server 生效的 `http2 on`）：CVE-2026-123007 和 CVE-2026-123633 是 HTTP/2 的記憶體錯誤，用戶端可以讓 worker 當掉。請更新到 1.31.9 或 1.30.7，或 distro 修補後的套件；更新前先改回只用 HTTP/1.1 就沒有這個問題。這只是建議，不會改設定。套件的 changelog 已列出這兩個 CVE（distro 已 backport 修補）時不警告；distro 的公告進了 OSV 之後，套件掃描就會報，這項檢查補的是 nginx.org 的套件和自行建置的 nginx，套件掃描看不到這兩類。
 - 伺服器自己的帳號（例如 Rocky Linux 的 `nginx`）擁有的網站紀錄，在沒有其他程式用這個帳號執行時，可以和 root 擁有的紀錄一樣當封鎖依據：沒有 PHP-FPM pool、systemd unit、crontab、supervisord 程式、sudo 或 doas 規則、登入 shell，巡檢時也沒有伺服器本身以外的程序；帳號資料只來自檔案，要查的也都讀到了。有任何一項讀不到，紀錄就仍是 `web_user_writable`。共用的預設帳號（`www-data`、`apache`、`nobody`）一律不算。其他條件見限制文件 `docs/attack-detection-limits.zh-TW.md` 裡，說明哪些網站紀錄可以當封鎖依據的那一段。

@@ -1164,7 +1164,7 @@ func (l *logLoader) runsApp(server string) bool {
 // configuration read in full; otherwise none is.
 func (l *logLoader) serverAccounts(w *WebAccounts, app map[string]bool, appGIDs map[int]bool, nameUID map[string]int, uidGID map[int]int, groupGID map[string]int) {
 	w.ServerUIDs, l.apart = map[string]map[int]string{}, map[string]bool{}
-	if !w.Complete || len(l.unread) > 0 || l.cut || l.runAsLost {
+	if !w.Complete || len(l.unread) > 0 || l.cut || l.runAsLost || userdbRecords(l.src) {
 		return
 	}
 	// resolve: the account's uid, and its primary group (-1: not known,
@@ -1300,6 +1300,23 @@ func filesOnlyNSS(src Source) bool {
 		}
 	}
 	return true
+}
+
+// userdbDirs: where systemd's userdb takes its records from.
+var userdbDirs = []string{"/etc/userdb", "/run/userdb", "/run/host/userdb", "/usr/local/lib/userdb", "/usr/lib/userdb"}
+
+// userdbRecords: a userdb directory has an entry, or could not be read.
+// Its records (.user, .group, .membership) may give an account /etc/passwd
+// does not have the server's uid, or put one in the server's group, and
+// systemd honours them whatever nsswitch.conf says.
+func userdbRecords(src Source) bool {
+	for _, d := range userdbDirs {
+		names, err := src.ReadDir(d)
+		if err != nil && !gone(err) || len(names) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // nisLines: the file has +/- lines, which compat mode answers from NIS.
