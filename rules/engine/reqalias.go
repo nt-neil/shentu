@@ -484,9 +484,9 @@ func (a *analysis) koaFile() bool {
 // project imports Koa), the functions a Koa application or router registers
 // with use: middleware, which the route models leave out (they register
 // handlers by path). Only X.use(fn) where X was made with new Koa() or new
-// Router() (koaInstances), and only a fn whose first parameter is used as a
-// context (koaContext, koaPattern): an HTTP client's interceptors.use or a
-// library's plugin use takes something else. Their first parameter is the
+// Router() (koaInstances), any X when the file makes none, and only a fn whose
+// first parameter is used as a context (koaContext, koaPattern): an HTTP
+// client's interceptors.use or a library's plugin use takes something else. Their first parameter is the
 // context, followed by the rules' ctx. sources through aliases and
 // destructuring as a route handler's is; nothing else of them is input that
 // was not before.
@@ -494,10 +494,11 @@ func koaMiddleware(lang string, toks []Token, tree []*stmt, ff *fileFuncs, proj 
 	if lang != "js" || !(slices.ContainsFunc(koaModules, func(m string) bool { return importsModule(toks, m) }) || proj != nil && proj.koa) {
 		return nil
 	}
+	// the file's own Koa and Router instances; where it makes none (the
+	// application comes from another module, or is a parameter:
+	// module.exports = (app) => app.use(...)), any receiver's use, still only
+	// for a function using its first parameter as a context
 	inst := koaInstances(toks)
-	if len(inst) == 0 {
-		return nil
-	}
 	out := map[*fn]bool{}
 	var walk func(ss []*stmt, depth int)
 	walk = func(ss []*stmt, depth int) {
@@ -507,7 +508,7 @@ func koaMiddleware(lang string, toks []Token, tree []*stmt, ff *fileFuncs, proj 
 		for _, s := range ss {
 			t := s.toks
 			for i := 2; i+1 < len(t); i++ {
-				if !t[i].word("use") || !t[i+1].op("(") || !t[i-1].op(".") || t[i-2].Kind != Ident || !inst[t[i-2].Text] || i > 2 && memberOp(false, t[i-3]) {
+				if !t[i].word("use") || !t[i+1].op("(") || !t[i-1].op(".") || len(inst) > 0 && (t[i-2].Kind != Ident || !inst[t[i-2].Text] || i > 2 && memberOp(false, t[i-3])) {
 					continue
 				}
 				args := splitTop(inside(t, i+1, closeOf(t, i+1)), isComma)

@@ -58,8 +58,10 @@ func paramName(params []Token, k int) string {
 
 // laravelRequest reports whether the PHP variable name may be Laravel's
 // request, whose magic properties ($request->sort) are input: the file
-// imports from Illuminate, or declares the variable with a type named
-// Request or ending in it (Request $request, StorePostRequest $request).
+// imports from Illuminate, holds a class extending a Controller, or declares
+// the variable with a type named Request or ending in it (Request $request,
+// StorePostRequest $request). A file analysed without its tokens (a callee
+// in another file of a project) counts, failing toward a finding.
 func (a *analysis) laravelRequest(name string) bool {
 	if v, ok := a.laravelVars[name]; ok {
 		return v
@@ -67,9 +69,10 @@ func (a *analysis) laravelRequest(name string) bool {
 	if a.laravelVars == nil {
 		a.laravelVars = map[string]bool{}
 	}
-	t, v := a.ftoks, false
+	t, v := a.ftoks, len(a.ftoks) == 0 // a file analysed for a call without its tokens: unknown, kept
 	for i, tk := range t {
-		if tk.Kind == Ident && tk.Text == "Illuminate" || tk.Kind == Ident && strings.HasSuffix(tk.Text, "Request") && i+1 < len(t) && t[i+1].Kind == Var && t[i+1].Text == name {
+		if tk.Kind == Ident && tk.Text == "Illuminate" || tk.Kind == Ident && strings.HasSuffix(tk.Text, "Request") && i+1 < len(t) && t[i+1].Kind == Var && t[i+1].Text == name ||
+			tk.Kind == Ident && strings.HasSuffix(tk.Text, "Controller") && i > 0 && t[i-1].word("extends") {
 			v = true
 			break
 		}

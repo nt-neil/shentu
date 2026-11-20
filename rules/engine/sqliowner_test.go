@@ -101,6 +101,8 @@ func TestSQLiOwner(t *testing.T) {
 			[]string{"php-sqli-orderby-identifier"}},
 		{"Laravel: a FormRequest parameter, $request->sort (v053 r1 S-1 control)", "php", "<?php\nclass C extends Controller {\n    public function index(IndexPostRequest $request) {\n        return Post::query()->orderBy($request->sort)->get();\n    }\n}\n",
 			[]string{"php-sqli-orderby-identifier"}},
+		{"Laravel: a class extending Controller, an untyped $request (security review)", "php", "<?php\nclass C extends Controller {\n    public function index($request) {\n        return Post::query()->orderBy($request->sort)->get();\n    }\n}\n",
+			[]string{"php-sqli-orderby-identifier"}},
 		{"Django input in text()", "python", "def s(request):\n    col = request.GET.get('column')\n    row = db.session.execute(text(f\"SELECT max({col}) FROM orders\")).scalar()\n    return JsonResponse({'max': row})\n",
 			[]string{"python-sqli-sqlalchemy-text"}},
 	}
