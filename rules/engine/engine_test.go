@@ -269,7 +269,8 @@ func TestEngineHostile(t *testing.T) {
 		took := time.Since(start)
 		t.Logf("%-22s %v err=%v", c.name, took.Round(time.Millisecond), err)
 		// The wall-clock slack is generous because loaded CI runners overshoot;
-		// the ErrLimit check below is what pins the behaviour.
+		// the ErrLimit check below is what pins the behaviour. Keep +3s: a
+		// slower engine still shows in t.Logf and in detect-eval timings.
 		if took > limit+slack {
 			t.Errorf("%s: took %v, cap %v + slack %v", c.name, took, limit, slack)
 		}

@@ -431,6 +431,7 @@ var codeRe = regexp.MustCompile("`([^`]+)`")
 var cjkSpace = regexp.MustCompile(` +([，。、；：！？）」』])|([（「『，。、；：！？]) +`)
 
 // linkRe is a Markdown link into the repository itself; other links stay text.
+// A link inside a code span is never a link: item cuts code spans out first.
 var linkRe = regexp.MustCompile(`\[([^\]` + "`" + `]+)\]\((` + regexp.QuoteMeta(repo) + `/[^()\s"<>]+)\)`)
 
 // item renders a changelog line: text, with `code` in code tags and links
@@ -452,12 +453,23 @@ func itemText(s string) string {
 	var b strings.Builder
 	last := 0
 	for _, m := range linkRe.FindAllStringSubmatchIndex(s, -1) {
+		if leavesPath(s[m[4]:m[5]]) {
+			continue // stays text, written with what follows
+		}
 		b.WriteString(template.HTMLEscapeString(s[last:m[0]]))
 		b.WriteString(`<a href="` + template.HTMLEscapeString(s[m[4]:m[5]]) + `">` + template.HTMLEscapeString(s[m[2]:m[3]]) + "</a>")
 		last = m[1]
 	}
 	b.WriteString(template.HTMLEscapeString(s[last:]))
 	return b.String()
+}
+
+// leavesPath reports a URL whose path could step out of the repository: a /..,
+// an encoded dot (%2e, either case) or a backslash, which browsers read as a
+// slash. Such a link stays text.
+func leavesPath(u string) bool {
+	l := strings.ToLower(u)
+	return strings.Contains(l, "/..") || strings.Contains(l, "%2e") || strings.Contains(l, `\`)
 }
 
 // atom is the releases as an Atom feed, the released ones only.
