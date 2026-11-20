@@ -3,6 +3,26 @@
 CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本與日期必須一致，
 每個版本都要有內容（`go test ./cmd/sitegen` 會檢查）。
 
+## v0.4.3 (unreleased)
+
+- SSRF：URL 的 host 檢查過之後，`console.log(u)`、`JSON.stringify(u)`、`String(u)` 不再讓檢查失效，條件是檔案只用 `console`、`JSON`、`String` 來呼叫（沒有同名的參數或宣告，沒有 `console.log = f`），也沒有可能在別處替換這些呼叫的寫法（`globalThis` 這類 global 物件除了讀具名成員以外的用法、`eval`、`Function(`、`with` 敘述、改寫內建物件的 prototype）（#119）。
+- JavaScript 的路由 handler：字串 key 的解構 `const { 'x-forwarded-host': xfh } = req.headers` 追得到，這個值改由 js-ssrf-host-header 回報，不再是 js-ssrf-http-request。Koa 的路由 handler 參數解構時取了 `request`（`({ request }) => request.header.host`），在這個檔案或專案裡的其他檔案有 import `koa`、`@koa/router` 或 `koa-router` 的情況下，就當成 Koa 的 context（#119）。
+- 新的來源：Next 15 的 `(await headers()).get(...)`，這樣讀到的 Host header 傳進 redirect 時由 js-open-redirect-next 回報；php-sqli-orderby-identifier 讀 Laravel 的 `Request::query(`、`Request::get(`（`DB::raw`、`->orderBy(`）（#118）。
+- NestJS：整個 `@Headers()` 物件的欄位寫進回應（`res.send(` 裡的 `h['x-note']`）時，由 js-xss-response 回報（#125）。
+- 同一個呼叫只由一條 SQL injection 規則回報：兩條規則在同一行的同一個呼叫都會報時，其中一條讓另一條回報（`yields_to`）。`->where(` 用 Symfony 的 `$request->query->get(` 時只歸 php-sqli-doctrine-query-text，不再同時由 php-sqli-drupal-db-query 回報；`DB::raw(...)` 放在 php-sqli-laravel-raw 的呼叫裡時歸 laravel-raw。同一行的其他呼叫照樣回報（#125）。
+
+### 升級說明
+
+- 有些回報換了規則：用 request 輸入組成的 `sa.text(...)` 改由 python-sqli-sqlalchemy-text 回報，不再是 python-sqli-dbapi-format（#118）；用字串 key 解構出來的 Host header 改由 js-ssrf-host-header 回報，不再是 js-ssrf-http-request（#119）；兩條 SQL injection 規則都會報的呼叫只報一次（#125）。php-sqli-laravel-raw 的修正建議加了說明：ORDER BY 的欄位和排序方向要對照白名單。因為這些變動，攻擊偵測判斷為可到達的路由也可能改變。
+
+### 已知問題
+
+- 用 `app.use` 註冊的 Koa middleware 不是路由 handler：它的 context 只認直接的寫法（`ctx.request.headers['x-forwarded-host']`），不追解構（`const { host } = ctx.request.headers`），也不追別名（`const h = ctx.request.headers`）。
+- 每個分支都重新指定過的名稱，在分支之後仍然會被追蹤，所以會多報。
+- Next 15 的 `const h = await headers(); h.get(name)` 和同步的 `h = headers()` 還不算來源。
+- JavaScript 的只讀呼叫判斷還看不到 `Object.getPrototypeOf`、`Function` 的別名、`Reflect.construct`、`vm.compileFunction`，也看不到經由 `this`、`GLOBAL`、`top` 取得的 global 物件；`typeof window` 會讓整個檔案回到「`console.log(u)` 就讓檢查失效」。
+- Drupal 的 `\Drupal::request()->query->get()` 放在 `->where(` 裡時，由 php-sqli-doctrine-query-text 回報，修正建議是 Doctrine 的寫法。
+
 ## v0.4.2 — 2026-11-20
 
 - JavaScript 規則不管路由 handler 的 request 叫什麼名字都追得到：不叫 `req` 的參數（`(r, s) =>`）、不叫 `ctx` 的 Koa context、別名（`const q = r`、`const h = r.headers`），以及解構（`({ headers }, res) =>`、`const { headers, hostname: hn } = r`、`const { host } = req.headers`）。所以 `r.hostname`、`r.get('host')`、`c.host` 和解構出來的 `headers` 現在都會回報；這樣讀到的 Host header 歸 js-ssrf-host-header，其他 header 歸 js-ssrf-http-request。request header 的索引照 Node 的存法以小寫讀（`r.headers['Host']`）。在 SSRF 規則裡，Koa 的 `ctx.header` 和 `ctx.request.get(` 也算來源，Host header 另外加上 `ctx.request.header.host` 和 `ctx.request.headers.host`（#106）。
