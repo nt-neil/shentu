@@ -9,7 +9,9 @@ frameworks = ["laravel", "wordpress"]
 # WordPress's readers as php-sqli-wpdb-unprepared and php-sqli-prepare-query-text
 # have them, and php-sqli-string-concat's (CodeIgniter's) and php-sqli-laravel-raw's:
 # input that is only an ORDER BY identifier is this rule's.
-sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "get_query_var(", "->get_param(", "$request['", "shortcode_atts(", "$atts[", "->get_json_params(", "->get_body_params(", "->get_query_params(", "$request->input(", "$request->get(", "request(", "Yii::$app->request->get(", "$request->query->get(", "$request->request->get(", "$request->attributes->get(",
+# $request->* is Laravel's magic property ($request->sort): any member read as a
+# value, neither called ($request->user()) nor read further ($request->query->get().
+sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "get_query_var(", "->get_param(", "$request['", "shortcode_atts(", "$atts[", "->get_json_params(", "->get_body_params(", "->get_query_params(", "$request->input(", "$request->get(", "$request->*", "request(", "Yii::$app->request->get(", "$request->query->get(", "$request->request->get(", "$request->attributes->get(",
            "->request->get(", "->request->post(", "->request->getQueryParam(", "->request->getBodyParam(", "->request->getParam(", "->request->getQuery(", "->request->getPost(",
            "->getRequest()->get(", "->getRequest()->post(", "->getRequest()->getParam(", "$request->post(", "$request->getQueryParam(", "$request->getBodyParam(",
            "$this->input->get(", "$this->input->post(", "$this->input->get_post(", "$this->input->cookie(", "$this->request->getGet(", "$this->request->getPost(",
@@ -169,6 +171,35 @@ class InvoiceController extends Controller
         }
         $dir = Request::query('dir') === 'asc' ? 'asc' : 'desc';
         return view('invoices.index', ['invoices' => Invoice::query()->orderBy($sort, $dir)->paginate()]);
+    }
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "Laravel: a request magic property as the sort column"
+code = '''
+<?php
+class PostController extends Controller
+{
+    public function index(Request $request)
+    {
+        return Post::query()->orderBy($request->sort)->paginate(20);
+    }
+}
+'''
+
+[[samples]]
+kind = "safe"
+note = "Laravel: the magic property checked against an allowlist; a method of the request is no input"
+code = '''
+<?php
+class PostController extends Controller
+{
+    public function index(Request $request)
+    {
+        $sort = in_array($request->sort, ['title', 'created_at'], true) ? $request->sort : 'created_at';
+        return Post::query()->where('user_id', $request->user()->id)->orderBy($sort)->paginate(20);
     }
 }
 '''

@@ -23,6 +23,39 @@ Chinese for the zh-TW pages; keep the two in step.
   and whoever runs it; `stats` and `repair` then ask for root (an elevated prompt on Windows).
   `sudo shentu dispatch repair` keeps each broken line in `*.jsonl.bad` once, and the daily report
   says how many moved lines were new to it.
+- Next 15: `const h = await headers(); h.get(name)` and the sync `const h = headers()` are read
+  as `headers().get(name)` in a file that imports `next/headers`, so a Host header read this way
+  and passed to a redirect is reported by js-open-redirect-next (and by the SSRF and command
+  injection rules that read `headers()`) (#157).
+- Koa: a middleware a Koa application or router registers with `use` is followed through
+  destructuring and aliases of its context, as a route handler is
+  (`app.use(async (ctx) => { const { host } = ctx.request.headers; ... })`), when the function
+  uses its first parameter as a context. An HTTP client's interceptor or a library's plugin
+  registered with `use` is not read as one (#157).
+- Laravel: `$request->sort`, a magic property, and the closure of
+  `->when($request->input('sort'), fn ($q, $s) => $q->orderBy($s))` (and `->unless`) are read
+  by php-sqli-orderby-identifier, where `$request` may be Laravel's request: the file uses a
+  class of Illuminate, declares it with a `Request` type, or holds a class extending a
+  Controller, or, in a project using Illuminate, it is a function's untyped parameter (#157).
+- SSRF: the check of a URL's host is no longer kept at `console.log(u)`, `JSON.stringify(u)` or
+  `String(u)` in a file that may replace them unseen in more ways: `Function` as a value,
+  `Function.prototype.bind`, `getPrototypeOf`, `Reflect.construct`, vm's runners, `GLOBAL`,
+  `top`, `this` other than read through a named member, the `console` module required or
+  imported, and a `require(` or `import(` of anything but a plain string, or `createRequire` (#157).
+
+### Upgrade notes
+
+- Files with any of the patterns above report an SSRF finding again at `fetch(u)` after
+  `console.log(u)`, as before v0.4.3. With the new Next, Koa and Laravel reads, the routes
+  attack detection takes as reachable may change.
+
+### Known issues
+
+- A data object whose type name ends in `Request` (`SearchRequest $request`) is read as
+  Laravel's request, as a FormRequest is.
+- Next's `headers()` is followed only in a file that imports `next/headers` itself.
+- `in_array($request->query('s'), [...], true) ? $request->query('s') : null` is not taken as
+  a check of the value, with a request call as the source (the same with a magic property is).
 
 ## v0.5.2 — 2026-11-20
 

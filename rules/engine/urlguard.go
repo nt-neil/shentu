@@ -348,12 +348,20 @@ func tsType(t []Token, j int) bool {
 //   - a global object (globalThis, window, self, global) anywhere but read
 //     through a named member (globalThis.process): given to another name,
 //     passed on, read by a computed name (globalThis['String'], ?.[);
+//   - GLOBAL and top as the global objects are; this other than read through a
+//     named member that is no built-in's (this.db keeps them);
+//   - getPrototypeOf, setPrototypeOf; vm's runInContext, runInNewContext and
+//     compileFunction; Reflect.construct and Reflect.apply; Function as any
+//     value but a TypeScript type (const F = Function);
 //   - eval, the name anywhere; runInThisContext; Function(, new Function; a
 //     value's constructor read for anything but its name (x.constructor,
 //     ['constructor'], { constructor: F } = f), which reaches Function; a
 //     with statement;
 //   - anything under URL, String, JSON or Object's prototype, __proto__, or
 //     Symbol.toPrimitive (what String(u) and JSON.stringify(u) call);
+//   - the console module imported or required ('console', 'node:console'),
+//     which is the global console under another name; a require( or import(
+//     of anything but a plain string, or createRequire, which may load it;
 //   - Object.defineProperty and the like or Reflect.set on console, String,
 //     JSON or URL.
 func globalReplace(t []Token) bool {
@@ -375,19 +383,59 @@ func globalReplace(t []Token) bool {
 		if tk.Kind == Str && len(tk.Parts) == 0 && (tk.Text == "constructor" || tk.Text == "__proto__") {
 			return true // x['constructor'], o['__proto__']
 		}
+		if tk.Kind == Str && len(tk.Parts) == 0 && (tk.Text == "console" || tk.Text == "node:console") && i > 0 &&
+			(t[i-1].word("from") || t[i-1].word("import") || i > 1 && t[i-1].op("(") && (t[i-2].word("require") || t[i-2].word("import"))) {
+			return true // require('console') is the global console under another name: c.log = f
+		}
 		if tk.Kind != Ident {
 			continue
 		}
 		switch tk.Text {
-		case "globalThis", "window", "self", "global":
+		case "globalThis", "window", "self", "global", "GLOBAL", "top":
 			if !member && !(next(1).op(".") && next(2).Kind == Ident) {
-				return true // const g = globalThis, f(window), globalThis['String'], self?.[k]
+				return true // const g = globalThis, f(window), globalThis['String'], self?.[k], GLOBAL, top
 			}
-		case "eval", "runInThisContext", "__proto__":
-			return true
-		case "Function":
-			if next(1).op("(") || i > 0 && t[i-1].word("new") {
+		case "require":
+			// only a direct call of one plain string: require('con' + 'sole'),
+			// require(m), const r = require, require.call(null, m),
+			// [require][0](m) may load a module the file does not name;
+			// require.main and require.resolve('x') load nothing
+			if next(1).op(".") && next(2).word("main") && !next(3).op("(") {
+				continue
+			}
+			if next(1).op(".") && next(2).word("resolve") && next(3).op("(") {
+				if arg := inside(t, i+3, closeOf(t, i+3)); len(arg) == 1 && arg[0].Kind == Str && len(arg[0].Parts) == 0 {
+					continue
+				}
 				return true
+			}
+			if !next(1).op("(") {
+				return true
+			}
+			if arg := inside(t, i+1, closeOf(t, i+1)); len(arg) != 1 || arg[0].Kind != Str || len(arg[0].Parts) > 0 {
+				return true
+			}
+		case "import":
+			if next(1).op("(") {
+				if arg := inside(t, i+1, closeOf(t, i+1)); len(arg) != 1 || arg[0].Kind != Str || len(arg[0].Parts) > 0 {
+					return true // import(m): a module the file does not name
+				}
+			}
+		case "createRequire":
+			return true // createRequire(__filename)('console')
+		case "eval", "runInThisContext", "runInContext", "runInNewContext", "compileFunction", "__proto__", "getPrototypeOf", "setPrototypeOf":
+			return true // any code run from text, a prototype reached or replaced
+		case "this":
+			// a script's this, or a sloppy function's, is the global object: only a
+			// named member that is no built-in's (this.db) keeps the calls read-only;
+			// this['console'], this.String, const g = this, f(this),
+			// Object.assign(this, ...), return this do not
+			if !(next(1).op(".") && next(2).Kind == Ident && !builtin(next(2))) {
+				return true
+			}
+		case "Function":
+			if !member && !tsType(t, i) {
+				return true // Function(...), new Function, const F = Function; not a TypeScript type (f: Function)
 			}
 		case "constructor":
 			// any read of a value's constructor but its name reaches Function:
@@ -414,6 +462,9 @@ func globalReplace(t []Token) bool {
 				return true
 			}
 		case "Reflect":
+			if !member && next(1).op(".") && next(3).op("(") && (next(2).word("construct") || next(2).word("apply")) {
+				return true // Reflect.construct(Function, [...]), Reflect.apply(f, ...): a call the file does not show
+			}
 			if !member && next(1).op(".") && next(3).op("(") && (next(2).word("set") || next(2).word("defineProperty") || next(2).word("setPrototypeOf")) && builtin(next(4)) {
 				return true
 			}

@@ -97,6 +97,16 @@ func (a *analysis) fnReqs(f *fn, outer map[string][]string) map[string][]string 
 	}
 	sd := a.routes[f]
 	if sd == nil {
+		if a.mws[f] && len(parts) > 0 && len(parts[0]) > 0 {
+			// Koa middleware, app.use(async (ctx, next) => ...): its context is
+			// the request's as a handler's is, for the rules' ctx. sources
+			switch p := parts[0]; {
+			case p[0].Kind == Ident && (len(p) == 1 || p[1].op(":") || p[1].op("=")):
+				out[p[0].Text] = []string{"ctx"}
+			case p[0].op("{"):
+				reqPattern(out, p[:closeOf(p, 0)+1], []string{"ctx"})
+			}
+		}
 		return out
 	}
 	for i, p := range parts {
@@ -182,6 +192,49 @@ func reqIndex(paths []string, key string) []string {
 // reqIdx marks a path's member read by a string index (reqIndex).
 const reqIdx = "\x02"
 
+// reqCall marks a path's root that is a call of no arguments (headers()).
+const reqCall = "\x03"
+
+// nextHeaders reports whether t is Next's headers() or await headers(), whole.
+func nextHeaders(t []Token) bool {
+	if len(t) > 0 && t[0].word("await") {
+		t = stripParens(t[1:])
+	}
+	return len(t) == 3 && t[0].Kind == Ident && t[0].Text == "headers" && t[1].op("(") && t[2].op(")")
+}
+
+// readsNextHeaders reports whether a rule has a source written for Next's
+// headers() (^headers().get(), which a name holding its result is read by.
+func readsNextHeaders(r *crule) bool {
+	for _, s := range r.sources {
+		if len(s.toks) > 0 && s.toks[0].word("headers") {
+			return true
+		}
+	}
+	return false
+}
+
+// importsModule reports whether the tokens import module m (import ... from
+// 'm', import 'm', require('m')).
+func importsModule(t []Token, m string) bool {
+	for i, tk := range t {
+		if tk.Kind == Str && len(tk.Parts) == 0 && tk.Text == m && i > 0 &&
+			(t[i-1].word("from") || t[i-1].word("import") || i > 1 && t[i-1].op("(") && t[i-2].word("require")) {
+			return true
+		}
+	}
+	return false
+}
+
+// nextHeadersFile reports whether the file imports Next's next/headers, whose
+// headers() is the request's headers.
+func (a *analysis) nextHeadersFile() bool {
+	if a.ifacts == nil && len(a.ftoks) > 0 {
+		a.ifacts = fileFacts(a.ftoks, nil)
+	}
+	return a.ifacts["m:next/headers"]
+}
+
 func setReq(out map[string][]string, name string, paths []string) {
 	if paths == nil {
 		delete(out, name)
@@ -228,6 +281,11 @@ func (a *analysis) reqAssign(st state, lhs, rhs []Token, op string) {
 	var paths []string
 	if op == "=" {
 		paths = a.reqPaths(stripParens(rhs))
+		if paths == nil && nextHeaders(stripParens(rhs)) && a.nextHeadersFile() {
+			// Next's const h = await headers() (or headers()): h stands for
+			// headers(), so the rules' ^headers().get( sources read h.get(name)
+			paths = []string{"headers" + reqCall}
+		}
 		if paths == nil && nestHeaders(stripParens(rhs)) && a.nestFile() {
 			// NestJS's @Headers() h, whole, is the request's headers object: h
 			// stands for req.headers, so its index is lower case as Node stores
@@ -334,6 +392,11 @@ func (a *analysis) reqVariants(t []Token, i int) ([][]Token, []int) {
 		}
 		var path []Token
 		for k, n := range strings.Split(p, ".") {
+			if name, ok := strings.CutSuffix(n, reqCall); ok && k == 0 { // headers(): a call of no arguments
+				path = append(path, Token{Kind: Ident, Text: name, Line: t[i].Line}, Token{Kind: Op, Text: "(", Line: t[i].Line},
+					Token{Kind: Op, Text: ")", Line: t[i].Line})
+				continue
+			}
 			if key, ok := strings.CutPrefix(n, reqIdx); ok { // ['x-forwarded-host']
 				path = append(path, Token{Kind: Op, Text: "[", Line: t[i].Line}, Token{Kind: Str, Text: key, Line: t[i].Line},
 					Token{Kind: Op, Text: "]", Line: t[i].Line})
@@ -415,6 +478,119 @@ func (a *analysis) koaFile() bool {
 		}
 	}
 	return a.proj != nil && a.proj.koa || a.cproj != nil && a.cproj.koa
+}
+
+// koaMiddleware finds, in a Koa application's file (it or another file of the
+// project imports Koa), the functions a Koa application or router registers
+// with use: middleware, which the route models leave out (they register
+// handlers by path). Only X.use(fn) where X was made with new Koa() or new
+// Router() (koaInstances), any X when the file makes none, and only a fn whose
+// first parameter is used as a context (koaContext, koaPattern): an HTTP
+// client's interceptors.use or a library's plugin use takes something else. Their first parameter is the
+// context, followed by the rules' ctx. sources through aliases and
+// destructuring as a route handler's is; nothing else of them is input that
+// was not before.
+func koaMiddleware(lang string, toks []Token, tree []*stmt, ff *fileFuncs, proj *Project) map[*fn]bool {
+	if lang != "js" || !(slices.ContainsFunc(koaModules, func(m string) bool { return importsModule(toks, m) }) || proj != nil && proj.koa) {
+		return nil
+	}
+	// the file's own Koa and Router instances; where it makes none (the
+	// application comes from another module, or is a parameter:
+	// module.exports = (app) => app.use(...)), any receiver's use, still only
+	// for a function using its first parameter as a context
+	inst := koaInstances(toks)
+	out := map[*fn]bool{}
+	var walk func(ss []*stmt, depth int)
+	walk = func(ss []*stmt, depth int) {
+		if depth > maxNest {
+			return
+		}
+		for _, s := range ss {
+			t := s.toks
+			for i := 2; i+1 < len(t); i++ {
+				if !t[i].word("use") || !t[i+1].op("(") || !t[i-1].op(".") || len(inst) > 0 && (t[i-2].Kind != Ident || !inst[t[i-2].Text] || i > 2 && memberOp(false, t[i-3])) {
+					continue
+				}
+				args := splitTop(inside(t, i+1, closeOf(t, i+1)), isComma)
+				if len(args) == 0 {
+					continue
+				}
+				for _, f := range handlerFuncs(false, s, args[len(args)-1], ff) {
+					if f != nil && usesContext(f) {
+						out[f] = true
+					}
+				}
+			}
+			for _, f := range s.funcs {
+				if f != nil {
+					walk(f.body, depth+1)
+				}
+			}
+			if s.fn != nil {
+				walk(s.fn.body, depth+1)
+			}
+			walk(s.body, depth+1)
+			walk(s.els, depth+1)
+			walk(s.orelse, depth+1)
+			for _, h := range s.handlers {
+				walk(h, depth+1)
+			}
+			for _, c := range s.cases {
+				walk(c, depth+1)
+			}
+		}
+	}
+	walk(tree, 0)
+	return out
+}
+
+// koaInstances are the names the file binds to new Koa(), new Router() (or
+// new KoaRouter(), or a class imported from a Koa module under another name),
+// and the names given one of those: const app = new Koa(); const a2 = app.
+func koaInstances(t []Token) map[string]bool {
+	ctors := map[string]bool{"Koa": true, "Router": true, "KoaRouter": true}
+	for i := 2; i < len(t); i++ { // import X from 'koa'; const X = require('@koa/router')
+		if t[i].Kind != Str || !slices.Contains(koaModules, t[i].Text) {
+			continue
+		}
+		switch {
+		case t[i-1].word("from") && t[i-2].Kind == Ident:
+			ctors[t[i-2].Text] = true
+		case t[i-1].op("(") && t[i-2].word("require") && i > 3 && t[i-3].op("=") && t[i-4].Kind == Ident:
+			ctors[t[i-4].Text] = true
+		}
+	}
+	inst := map[string]bool{}
+	for changed := true; changed; {
+		changed = false
+		for i := 1; i+2 < len(t); i++ {
+			if !t[i].op("=") || t[i-1].Kind != Ident || inst[t[i-1].Text] {
+				continue
+			}
+			if t[i+1].word("new") && t[i+2].Kind == Ident && ctors[t[i+2].Text] || t[i+1].Kind == Ident && inst[t[i+1].Text] && (i+2 >= len(t) || !memberOp(false, t[i+2]) && !t[i+2].op("(")) {
+				inst[t[i-1].Text], changed = true, true
+			}
+		}
+	}
+	return inst
+}
+
+// usesContext reports whether a function's first parameter is used as a Koa
+// context: named, as koaContext sees it in the body; destructured, taking a
+// member only a context has (koaPattern).
+func usesContext(f *fn) bool {
+	parts := splitTop(f.params, isComma)
+	if len(parts) == 0 || len(parts[0]) == 0 {
+		return false
+	}
+	p := parts[0]
+	switch {
+	case p[0].Kind == Ident:
+		return koaContext(f.body, p[0].Text)
+	case p[0].op("{"):
+		return koaPattern(p[:closeOf(p, 0)+1])
+	}
+	return false
 }
 
 // koaModules are the modules a Koa application imports.
