@@ -228,6 +228,12 @@ func (a *analysis) reqAssign(st state, lhs, rhs []Token, op string) {
 	var paths []string
 	if op == "=" {
 		paths = a.reqPaths(stripParens(rhs))
+		if paths == nil && nestHeaders(stripParens(rhs)) && a.nestFile() {
+			// NestJS's @Headers() h, whole, is the request's headers object: h
+			// stands for req.headers, so its index is lower case as Node stores
+			// it and route_not leaves h['Host'] out as it does req.headers['host']
+			paths = []string{"req.headers"}
+		}
 	}
 	switch {
 	case len(lhs) == 1 && lhs[0].Kind == Ident:

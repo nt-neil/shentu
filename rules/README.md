@@ -39,6 +39,7 @@ route_only = ["headers.host"]      # optional: of a route handler's request, onl
 route_not = ["headers.host"]       # optional: values under those members that are not this rule's input, as member.name (the Host header): in a route handler's parameters and in the rule's own sources that end in the member (req.headers.host, req.headers['host'], req.headers.get('host'), @Headers('host'), h.host after h = req.headers, also when req is a route handler's parameter or NestJS's @Req() req)
 routes_not = ["wp-shortcode"]      # optional: route models (by id) whose handlers' input is another rule's (a shortcode's attributes)
 chain_not = ["AsyncClient"]        # optional: calls the chain form of a receiver.method( sink may not go through: they make another object (httpx.AsyncClient().get( is not httpx.get()
+yields_to = ["php-sqli-yii-query"] # optional: rules of the same language and CWE this one leaves a sink to: its finding is left out where one of them reports the same line through the same sink call (one call holding the other: DB::raw(...) inside DB::select(...), the same ->where(...)); another sink on that line, or one reached through a function's summary or a text sink, still reports (yields.go)
 sources = ["$_GET", "$request->input("]   # where user input comes from; [] for a rule without sources
 sinks = ["mysqli_query", "->query("]      # the dangerous calls
 sanitizers = ["intval", "->prepare("]     # calls whose result is safe for these sinks; [] if none

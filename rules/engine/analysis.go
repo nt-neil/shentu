@@ -135,18 +135,23 @@ const (
 )
 
 type analysis struct {
-	r      *crule
-	php    bool
-	py     bool
-	js     bool
-	b      *budget
-	kw     map[string]bool // words that are keywords in this language
-	seen   map[loc]bool
-	lines  []loc
-	guards []map[string]bool // per enclosing loop: keys a rejecting check validated
-	depth  int
-	nested int  // functions defined inside the one analysed: their returns are not its returns
-	raw    bool // evaluating whether a value came from input at all: sanitizers do not clean
+	r     *crule
+	php   bool
+	py    bool
+	js    bool
+	b     *budget
+	kw    map[string]bool // words that are keywords in this language
+	seen  map[loc]bool
+	lines []loc
+	// sinkSpans: per line reported, the sink calls that reported it, as
+	// spanText (yields.go); "" for a line reported through a summary or a
+	// text sink. span is the call about to be reported.
+	sinkSpans map[loc][]string
+	span      string
+	guards    []map[string]bool // per enclosing loop: keys a rejecting check validated
+	depth     int
+	nested    int  // functions defined inside the one analysed: their returns are not its returns
+	raw       bool // evaluating whether a value came from input at all: sanitizers do not clean
 
 	sc      *summaries    // this rule's function summaries for the file (interproc.go)
 	summ    *summRun      // set while a function body is analysed for its summary
@@ -196,12 +201,17 @@ func (a *analysis) report(line int) { a.reportSink(loc{a.file, line}, false) }
 // reportSink reports a sink reached at line; emb tells whether the input was
 // embedded in a larger string, which a summary keeps for library mode.
 func (a *analysis) reportSink(l loc, emb bool) {
+	sp := a.span
+	a.span = ""
 	if a.summ != nil {
 		a.summ.lines[l] = true
 		if emb {
 			a.summ.emb[l] = true
 		}
 		return
+	}
+	if a.sinkSpans != nil {
+		a.sinkSpans[l] = append(a.sinkSpans[l], sp)
 	}
 	if !a.seen[l] {
 		a.seen[l] = true
@@ -2326,6 +2336,7 @@ func (a *analysis) sinkWith(st state, t []Token, i int, s *pat, cond *argCond) b
 		return false
 	}
 	if a.noSources() {
+		a.span = spanText(t, i, end, open)
 		a.report(t[i].Line)
 		return true
 	}
@@ -2408,6 +2419,7 @@ func (a *analysis) sinkWith(st state, t []Token, i int, s *pat, cond *argCond) b
 		tainted = hit(a.expr(st, region, whole))
 	}
 	if tainted {
+		a.span = spanText(t, i, end, open)
 		a.reportSink(loc{a.file, t[i].Line}, emb)
 	}
 	return tainted

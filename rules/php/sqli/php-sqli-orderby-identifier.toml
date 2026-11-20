@@ -15,6 +15,9 @@ sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "get_query_var(", "->get_
            "$this->input->get(", "$this->input->post(", "$this->input->get_post(", "$this->input->cookie(", "$this->request->getGet(", "$this->request->getPost(",
            "$this->request->getVar(", "$this->request->getJSON(", "$request->query(", "$request->all(", "$request->string(", "request()->input(", "Request::input(", "Request::query(", "Request::get("]
 sinks = ["->orderByRaw(", "::orderByRaw(", "DB::raw", "->orderBy(", "::orderBy(", "ORDER BY"]
+# DB::raw(...) inside one of laravel-raw's calls (DB::select(DB::raw("... WHERE
+# id = $id"))) is laravel-raw's: both read the same call (yields.go).
+yields_to = ["php-sqli-laravel-raw"]
 sanitizers = ["in_array", "sanitize_sql_orderby", "Rule::in", "absint", "intval", "(int)", "count(", "sizeof("]
 fix = "Identifiers cannot be bound as parameters: map the requested sort key to a fixed allowlist of column names and force the direction to ASC or DESC."
 refs = ["CVE-2026-13357"]

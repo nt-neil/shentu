@@ -423,6 +423,13 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 	// a file without a sink may still pass its input to another file's sink.
 	var ruleList []*crule
 	direct := map[*crule][]loc{}
+	spans := map[string]map[loc][]string{} // rule id: the sink calls each line was reported through (yields.go)
+	spansOf := func(r *crule) map[loc][]string {
+		if spans[r.rule.ID] == nil {
+			spans[r.rule.ID] = map[loc][]string{}
+		}
+		return spans[r.rule.ID]
+	}
 	names := nameSet(toks, map[string]bool{})
 	si := newSrcIndex(toks, b)
 	for _, r := range rs {
@@ -449,7 +456,8 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 		}
 		ruleList = append(ruleList, r)
 		if hs && !callsOnly {
-			a := &analysis{r: r, php: base == "php", py: base == "python", js: base == "js", b: b, kw: keywords[base], seen: map[loc]bool{}, defs: defs, file: path, ftoks: toks, routes: routeFns, cproj: proj}
+			a := &analysis{r: r, php: base == "php", py: base == "python", js: base == "js", b: b, kw: keywords[base], seen: map[loc]bool{}, defs: defs, file: path, ftoks: toks, routes: routeFns, cproj: proj,
+				sinkSpans: spansOf(r)}
 			a.block(tree, state{})
 			direct[r] = a.lines
 		}
@@ -511,7 +519,7 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 				proj.sums[key] = sc
 			}
 			a := &analysis{r: r, php: base == "php", py: base == "python", js: base == "js", b: b2, kw: keywords[base], seen: map[loc]bool{}, sc: sc,
-				defs: defs, file: path, proj: proj, ftoks: toks, routes: routeFns}
+				defs: defs, file: path, proj: proj, ftoks: toks, routes: routeFns, sinkSpans: spansOf(r)}
 			if !e.Library && !a.r.output && !viaProject && !a.crossNeeded(tree) {
 				// no call can change this rule's result: the first pass stands. Output
 				// rules read calls to the file's own functions in this pass only
@@ -521,7 +529,8 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 			}
 			a.block(tree, state{})
 			if e.Library && libClasses[r.rule.Class] && !testPath(path) && !b2.hit {
-				l := &analysis{r: r, php: a.php, py: a.py, js: a.js, b: b2, kw: a.kw, seen: a.seen, sc: sc, lib: true, defs: defs, file: path, proj: proj, ftoks: toks, routes: routeFns}
+				l := &analysis{r: r, php: a.php, py: a.py, js: a.js, b: b2, kw: a.kw, seen: a.seen, sc: sc, lib: true, defs: defs, file: path, proj: proj, ftoks: toks, routes: routeFns,
+					sinkSpans: a.sinkSpans}
 				l.block(tree, state{})
 				a.lines = append(a.lines, l.lines...)
 			}
@@ -579,6 +588,11 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 			add(r, lines)
 		}
 	}
+	byID := map[string]*crule{}
+	for _, r := range rs {
+		byID[r.rule.ID] = r
+	}
+	out = yieldFindings(out, byID, spans)             // one sink two rules report: the one it yields to (yields.go)
 	e.annotateRoutes(out, base, path, toks, tree, ff) // which routes reach each sink's handler; no finding changes
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Path != out[j].Path {
