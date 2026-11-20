@@ -22,6 +22,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -48,9 +49,9 @@ Usage:
                 approve       show the action proposed from Telegram and run it or not (confirm = 1)
                 totp          enrol an authenticator app; actions from Telegram then ask for its code (confirm = 2)
                 resume        unpause the bot after /lockdown, then restart the service
-  shentu dispatch repair      move unreadable lines of the sub-agent dispatch archive aside (*.jsonl.bad),
+  sudo shentu dispatch repair move unreadable lines of the sub-agent dispatch archive aside (*.jsonl.bad),
                               so automatic incident checks resume without waiting for the file to age out
-  shentu dispatch stats [--days 7] [--json]
+  sudo shentu dispatch stats [--days 7] [--json]
                               sub-agent numbers by role, operator feedback, and suggestions to review (changes nothing)
   shentu usage                model calls, tokens and cost: today, last 7 and 30 days
   shentu budget [--cost USD] [--tokens N] [--off]
@@ -59,6 +60,12 @@ Usage:
 
 Config: /etc/shentu/shentu.toml (override with SHENTU_CONFIG)
 `
+
+// commands are the commands main runs; a test checks that every one main's
+// switch handles is here.
+var commands = []string{"version", "--version", "setup", "chat", "survey", "bot", "budget", "usage", "patrol", "detect", "service", "log-trust", "dispatch"}
+
+func knownCommand(cmd string) bool { return slices.Contains(commands, cmd) }
 
 func configPath() string {
 	if p := os.Getenv("SHENTU_CONFIG"); p != "" {
@@ -92,11 +99,8 @@ func main() {
 	defer stop()
 
 	cmd, args := os.Args[1], os.Args[2:]
-	switch cmd { // before the config: help and a mistyped command need none
-	case "help", "--help", "-h":
-		os.Exit(printUsage(cmd, os.Stdout, os.Stderr))
-	case "version", "--version", "setup", "chat", "survey", "bot", "budget", "usage", "patrol", "detect", "service", "log-trust":
-	default:
+	// Before the config: help and a mistyped command need none.
+	if cmd == "help" || cmd == "--help" || cmd == "-h" || !knownCommand(cmd) {
 		os.Exit(printUsage(cmd, os.Stdout, os.Stderr))
 	}
 	if cmd == "version" || cmd == "--version" {
