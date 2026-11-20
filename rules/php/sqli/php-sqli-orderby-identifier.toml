@@ -13,7 +13,7 @@ sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "get_query_var(", "->get_
            "->request->get(", "->request->post(", "->request->getQueryParam(", "->request->getBodyParam(", "->request->getParam(", "->request->getQuery(", "->request->getPost(",
            "->getRequest()->get(", "->getRequest()->post(", "->getRequest()->getParam(", "$request->post(", "$request->getQueryParam(", "$request->getBodyParam(",
            "$this->input->get(", "$this->input->post(", "$this->input->get_post(", "$this->input->cookie(", "$this->request->getGet(", "$this->request->getPost(",
-           "$this->request->getVar(", "$this->request->getJSON(", "$request->query(", "$request->all(", "$request->string(", "request()->input(", "Request::input("]
+           "$this->request->getVar(", "$this->request->getJSON(", "$request->query(", "$request->all(", "$request->string(", "request()->input(", "Request::input(", "Request::query(", "Request::get("]
 sinks = ["->orderByRaw(", "::orderByRaw(", "DB::raw", "->orderBy(", "::orderBy(", "ORDER BY"]
 sanitizers = ["in_array", "sanitize_sql_orderby", "Rule::in", "absint", "intval", "(int)", "count(", "sizeof("]
 fix = "Identifiers cannot be bound as parameters: map the requested sort key to a fixed allowlist of column names and force the direction to ASC or DESC."
@@ -133,5 +133,39 @@ function shop_items($req) {
     global $wpdb;
     $col = $req->get_param('sort');
     return $wpdb->get_results($wpdb->prepare("SELECT * FROM {$wpdb->prefix}items ORDER BY $col LIMIT %d", 10));
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "Laravel: the sort key from the query string, read with $request->query() and the Request facade"
+code = '''
+<?php
+class InvoiceController extends Controller
+{
+    public function index(Request $request)
+    {
+        $invoices = Invoice::query()->orderBy($request->query('sort', 'issued_at'), Request::query('dir', 'desc'));
+        return view('invoices.index', ['invoices' => $invoices->paginate()]);
+    }
+}
+'''
+
+[[samples]]
+kind = "safe"
+note = "Laravel: the sort key checked against a fixed list and the direction forced"
+code = '''
+<?php
+class InvoiceController extends Controller
+{
+    public function index(Request $request)
+    {
+        $sort = $request->query('sort', 'issued_at');
+        if (!in_array($sort, ['issued_at', 'total', 'number'], true)) {
+            $sort = 'issued_at';
+        }
+        $dir = Request::query('dir') === 'asc' ? 'asc' : 'desc';
+        return view('invoices.index', ['invoices' => Invoice::query()->orderBy($sort, $dir)->paginate()]);
+    }
 }
 '''
