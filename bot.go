@@ -67,15 +67,16 @@ type botState struct {
 	Pending     *pendingPair `json:"pending,omitempty"`
 	Offset      int64        `json:"offset,omitempty"`
 
-	Levels     [4]int         `json:"levels"`                // what the service last ran with
-	TOTPSecret string         `json:"totp_secret,omitempty"` // confirm = 2
-	TOTPLast   uint64         `json:"totp_last,omitempty"`   // last time step used, never accepted again
-	CodeFails  int            `json:"code_fails,omitempty"`  // wrong codes since the last right one; 5 pause the bot
-	Action     *pendingAction `json:"action,omitempty"`      // confirm = 1: waiting for `shentu bot approve`
-	Paused     string         `json:"paused,omitempty"`      // why the bot stopped (lockdown, token leak)
-	ToDelete   []sentMsg      `json:"to_delete,omitempty"`   // answers = 1..3: deleted after 24h
-	Day        string         `json:"day,omitempty"`         // protection = 1: answers counted per day
-	DayCount   int            `json:"day_count,omitempty"`
+	Levels     [4]int                `json:"levels"`                // what the service last ran with
+	TOTPSecret string                `json:"totp_secret,omitempty"` // confirm = 2
+	TOTPLast   uint64                `json:"totp_last,omitempty"`   // last time step used, never accepted again
+	CodeFails  int                   `json:"code_fails,omitempty"`  // wrong codes since the last right one; 5 pause the bot
+	Action     *pendingAction        `json:"action,omitempty"`      // confirm = 1: waiting for `shentu bot approve`
+	Paused     string                `json:"paused,omitempty"`      // why the bot stopped (lockdown, token leak)
+	ToDelete   []sentMsg             `json:"to_delete,omitempty"`   // answers = 1..3: deleted after 24h
+	Day        string                `json:"day,omitempty"`         // protection = 1: answers counted per day
+	DayCount   int                   `json:"day_count,omitempty"`
+	Buttons    map[string]*buttonSet `json:"buttons,omitempty"` // proposal buttons offered, by dispatch id
 }
 
 type pendingAction struct {
@@ -173,7 +174,7 @@ func botCommand(ctx context.Context, cfg *Config, env *tools.Env, args []string)
 		if token == "" {
 			return errors.New("no Telegram bot token: set [bot] telegram_token or a telegram:// notify url")
 		}
-		b := &bot{cfg: cfg, env: env, token: token, api: telegramBotAPI, hc: &http.Client{Timeout: 70 * time.Second}, log: audit}
+		b := &bot{cfg: cfg, env: env, token: token, api: telegramBotAPI, hc: &http.Client{Timeout: 70 * time.Second}, log: audit, archive: newDispatchStore(cfg)}
 		return b.run(ctx)
 	case "pair":
 		return botPair(ctx, cfg, env, audit, bufio.NewReader(os.Stdin), os.Stdout)
@@ -330,6 +331,7 @@ type bot struct {
 	sugText      []string             // what each of those buttons asks
 	canAct       bool                 // interaction >= 3 and the service holds CAP_NET_ADMIN
 	stop         context.CancelFunc   // /lockdown and a token leak stop the service
+	archive      proposalArchive      // the dispatch archive, for proposal buttons
 }
 
 func (b *bot) zh() bool {
@@ -485,6 +487,12 @@ func (b *bot) handle(ctx context.Context, u tgUpdate) {
 		if !ok || st.UserID == 0 || c.From.ID != st.UserID || c.Message == nil || c.Message.Chat.ID != st.ChatID {
 			b.ignored(0, "callback from someone who is not the paired user")
 			return
+		}
+		if strings.HasPrefix(answer, "b") {
+			if ref, err := parseProposalRef(c.Data); err == nil {
+				b.pressProposal(ctx, st, ref)
+				return
+			}
 		}
 		b.mu.Lock()
 		ch := b.waiting[nonce]
@@ -658,6 +666,7 @@ func (b *bot) answer(ctx context.Context, chat int64, text string) {
 	b.mu.Lock()
 	owner := b.histFor // the pairing this answer belongs to
 	a.lastDispatch = b.histDispatch
+	prior := a.lastDispatch
 	hist := append([]message{{Role: "system", Content: systemPrompt(b.cfg, skills) + answerRule(b.cfg.Bot.Answers, b.zh())}}, b.history...)
 	b.mu.Unlock()
 	hist = append(hist, message{Role: "user", Content: text})
@@ -700,6 +709,9 @@ func (b *bot) answer(ctx context.Context, chat int64, text string) {
 		b.mu.Unlock()
 	}
 	b.sendAs(ctx, chat, answer, kb, true)
+	if a.lastDispatch != prior { // this turn dispatched: its proposals, under the answer
+		b.offerProposals(ctx, chat, a.lastDispatch, owner, originTelegram)
+	}
 	var keep []message // keep plain turns only, so tool output does not pile up
 	for _, m := range msgs[1:] {
 		if (m.Role == "user" || m.Role == "assistant") && len(m.ToolCalls) == 0 && m.Content != "" {
@@ -884,39 +896,50 @@ func (b *bot) deleteDue(ctx context.Context) {
 }
 
 var botText = map[string][2]string{ // English, Chinese
-	"accepted":       {"Code accepted. Approve the request on the server terminal to finish pairing.", "已收到配對碼。請在伺服器終端機核准這個要求，才會完成配對。"},
-	"new":            {"OK, new conversation.", "好，開始新的對話。"},
-	"busy":           {"Still working on the previous question.", "上一個問題還在處理中，請稍候。"},
-	"error":          {"Error: ", "發生錯誤："},
-	"settled_yes":    {"✅ Confirmed.", "✅ 你已確認。"},
-	"settled_no":     {"❌ Not run (cancelled or timed out).", "❌ 沒有執行（已取消或逾時）。"},
-	"cmd_new":        {"Start a fresh conversation", "開始新的對話"},
-	"budget_out":     {"⛔ This month's AI budget is used up, so I cannot answer. Patrol alerts still come. To raise it, run on the server: sudo shentu budget --cost <amount>", "⛔ 這個月的 AI 預算已經用完，暫時不能回答。巡邏告警照常會送出。要提高上限，請在伺服器執行：sudo shentu budget --cost <金額>"},
-	"cmd_usage":      {"Model use and cost", "AI 用量與費用"},
-	"cmd_lockdown":   {"Emergency stop: unpair and stop the bot", "緊急關閉：解除配對並停止 bot"},
-	"working":        {"⏳ Working…", "⏳ 處理中…"},
-	"done":           {"✅ Done (%d checks, %ds)", "✅ 完成（查了 %d 項，%d 秒）"},
-	"failed":         {"⚠️ Stopped (%d checks, %ds)", "⚠️ 中斷（查了 %d 項，%d 秒）"},
-	"error_hint":     {"\nPlease ask again. Details are in the log on the server.", "\n請再問一次；詳細內容記在伺服器的紀錄裡。"},
-	"text_only":      {"I can only read text messages for now; photos, voice notes and files are not supported.", "我目前只看得懂文字訊息，圖片、語音和檔案還不支援，請改用文字問我。"},
-	"run":            {"✅ Run", "✅ 執行"},
-	"cancel":         {"❌ Cancel", "❌ 取消"},
-	"confirm":        {"⚠️ %s wants to run:\n%s\n\nValid for 5 minutes.", "⚠️ %s 要執行：\n%s\n\n5 分鐘內有效。"},
-	"cancelled":      {"Cancelled.", "已取消。"},
-	"lockdown":       {"🔒 Locked down. The bot is unpaired and stopped; re-enable it on the server.", "🔒 已緊急關閉。bot 已解除配對並停止，要重新開啟請到伺服器操作。"},
-	"closed":         {"Outside the hours set on the server (08:00–20:00).", "現在不在伺服器設定的開放時段（08:00–20:00）。"},
-	"limit":          {"Today's limit of answers is reached.", "今天的回答次數已達上限。"},
-	"no_totp":        {"No one-time code app is set up. On the server run: sudo shentu bot totp", "還沒有設定動態密碼。請在伺服器執行：sudo shentu bot totp"},
-	"ask_code":       {"Send the 6-digit code from your authenticator app (2 minutes).", "請傳送驗證器 App 上的 6 位數動態密碼（2 分鐘內）。"},
-	"wrong_code":     {"Wrong code, try again.", "密碼不對，請再試一次。"},
-	"on_server":      {"⚠️ %s wants to run:\n%s\n\nApprove it on the server within 5 minutes: sudo shentu bot approve", "⚠️ %s 要執行：\n%s\n\n請在 5 分鐘內到伺服器核准：sudo shentu bot approve"},
-	"paused_title":   {"Telegram bot paused", "Telegram bot 已暫停"},
-	"paused_hint":    {"Resume on the server: sudo shentu bot resume", "要恢復請到伺服器執行：sudo shentu bot resume"},
-	"leak_title":     {"Bot token may be leaked", "bot token 可能外洩"},
-	"leak_body":      {"Another program is reading this bot's messages. Revoke the token in @BotFather.", "有其他程式在讀這個 bot 的訊息。請到 @BotFather 撤銷並更換 token。"},
-	"levels_changed": {"Telegram bot settings changed", "Telegram bot 的設定改了"},
-	"levels_now":     {"From now on:", "從現在起："},
-	"levels_hint":    {"If you did not change this, check who can log in to the server.", "如果不是你改的，請檢查有誰能登入這台伺服器。"},
+	"accepted":        {"Code accepted. Approve the request on the server terminal to finish pairing.", "已收到配對碼。請在伺服器終端機核准這個要求，才會完成配對。"},
+	"new":             {"OK, new conversation.", "好，開始新的對話。"},
+	"busy":            {"Still working on the previous question.", "上一個問題還在處理中，請稍候。"},
+	"error":           {"Error: ", "發生錯誤："},
+	"settled_yes":     {"✅ Confirmed.", "✅ 你已確認。"},
+	"settled_no":      {"❌ Not run (cancelled or timed out).", "❌ 沒有執行（已取消或逾時）。"},
+	"cmd_new":         {"Start a fresh conversation", "開始新的對話"},
+	"budget_out":      {"⛔ This month's AI budget is used up, so I cannot answer. Patrol alerts still come. To raise it, run on the server: sudo shentu budget --cost <amount>", "⛔ 這個月的 AI 預算已經用完，暫時不能回答。巡邏告警照常會送出。要提高上限，請在伺服器執行：sudo shentu budget --cost <金額>"},
+	"cmd_usage":       {"Model use and cost", "AI 用量與費用"},
+	"cmd_lockdown":    {"Emergency stop: unpair and stop the bot", "緊急關閉：解除配對並停止 bot"},
+	"working":         {"⏳ Working…", "⏳ 處理中…"},
+	"done":            {"✅ Done (%d checks, %ds)", "✅ 完成（查了 %d 項，%d 秒）"},
+	"failed":          {"⚠️ Stopped (%d checks, %ds)", "⚠️ 中斷（查了 %d 項，%d 秒）"},
+	"error_hint":      {"\nPlease ask again. Details are in the log on the server.", "\n請再問一次；詳細內容記在伺服器的紀錄裡。"},
+	"text_only":       {"I can only read text messages for now; photos, voice notes and files are not supported.", "我目前只看得懂文字訊息，圖片、語音和檔案還不支援，請改用文字問我。"},
+	"run":             {"✅ Run", "✅ 執行"},
+	"cancel":          {"❌ Cancel", "❌ 取消"},
+	"confirm":         {"⚠️ %s wants to run:\n%s\n\nValid for 5 minutes.", "⚠️ %s 要執行：\n%s\n\n5 分鐘內有效。"},
+	"cancelled":       {"Cancelled.", "已取消。"},
+	"prop_title":      {"Sub-agent proposals (dispatch %s). A button runs every check again and asks you to confirm:", "子 Agent 的建議（派遣 %s）。按下按鈕會重新檢查一次，再請你確認："},
+	"prop_title_auto": {"Proposals of an automatic incident check (dispatch %s). A button runs every check again and asks you to confirm:", "自動事件調查的建議（派遣 %s）。按下按鈕會重新檢查一次，再請你確認："},
+	"prop_unsaved":    {"Not blocked: the bot's state could not be saved. Handle it on the server with shentu chat.", "沒有封鎖：狀態無法儲存，請到伺服器上用 shentu chat 處理。"},
+	"prop_failed":     {"Not blocked: the block did not succeed. Details are in the log on the server.", "沒有封鎖：封鎖沒有成功，詳細原因記在伺服器的紀錄裡。"},
+	"prop_button":     {"button below", "見下方按鈕"},
+	"prop_more":       {"no button: at most 5 buttons", "不提供按鈕：最多 5 顆"},
+	"prop_nobutton":   {"no button: %s", "不提供按鈕：%s"},
+	"prop_block":      {"Block %s", "封鎖 %s"},
+	"prop_gone":       {"This button no longer works.", "這個按鈕已經失效。"},
+	"prop_refused":    {"Not blocked: %s cannot be blocked from Telegram now: %s", "沒有封鎖：%s 現在不能從 Telegram 封鎖，原因：%s"},
+	"prop_blocked":    {"Blocked %s.", "已封鎖 %s。"},
+	"lockdown":        {"🔒 Locked down. The bot is unpaired and stopped; re-enable it on the server.", "🔒 已緊急關閉。bot 已解除配對並停止，要重新開啟請到伺服器操作。"},
+	"closed":          {"Outside the hours set on the server (08:00–20:00).", "現在不在伺服器設定的開放時段（08:00–20:00）。"},
+	"limit":           {"Today's limit of answers is reached.", "今天的回答次數已達上限。"},
+	"no_totp":         {"No one-time code app is set up. On the server run: sudo shentu bot totp", "還沒有設定動態密碼。請在伺服器執行：sudo shentu bot totp"},
+	"ask_code":        {"Send the 6-digit code from your authenticator app (2 minutes).", "請傳送驗證器 App 上的 6 位數動態密碼（2 分鐘內）。"},
+	"wrong_code":      {"Wrong code, try again.", "密碼不對，請再試一次。"},
+	"on_server":       {"⚠️ %s wants to run:\n%s\n\nApprove it on the server within 5 minutes: sudo shentu bot approve", "⚠️ %s 要執行：\n%s\n\n請在 5 分鐘內到伺服器核准：sudo shentu bot approve"},
+	"paused_title":    {"Telegram bot paused", "Telegram bot 已暫停"},
+	"paused_hint":     {"Resume on the server: sudo shentu bot resume", "要恢復請到伺服器執行：sudo shentu bot resume"},
+	"leak_title":      {"Bot token may be leaked", "bot token 可能外洩"},
+	"leak_body":       {"Another program is reading this bot's messages. Revoke the token in @BotFather.", "有其他程式在讀這個 bot 的訊息。請到 @BotFather 撤銷並更換 token。"},
+	"levels_changed":  {"Telegram bot settings changed", "Telegram bot 的設定改了"},
+	"levels_now":      {"From now on:", "從現在起："},
+	"levels_hint":     {"If you did not change this, check who can log in to the server.", "如果不是你改的，請檢查有誰能登入這台伺服器。"},
 }
 
 // t returns a fixed bot message in the configured language (Chinese or English).
