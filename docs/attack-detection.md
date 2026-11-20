@@ -46,9 +46,9 @@ may miss is in [attack-detection-limits.md](attack-detection-limits.md).
    counted per target, whatever the source, and pushed only when one target gets 20 of them
    within 24 hours. One round pushes at most 20 alerts; the rest come in one summary, which
    offers no block.
-6. **Campaigns.** When one address (or one IPv6 /64) tries 3 or more different targets at L2 or
-   L3 within 24 hours, from verified logs, it is a campaign: its alerts say so and their severity
-   goes up a step.
+6. **Campaigns.** When one address (or one IPv6 /64; `::ffff:a.b.c.d` is the address `a.b.c.d`)
+   tries 3 or more different targets at L2 or L3 within 24 hours, from verified logs, it is a
+   campaign: its alerts say so and their severity goes up a step.
 
 Severity starts at info for L1, low for Unknown, high for L2 and critical for L3. A KEV-listed
 or critical vulnerability and a campaign each raise it a step. An L3 is at most high unless both

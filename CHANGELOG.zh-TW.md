@@ -3,6 +3,32 @@
 CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本與日期必須一致，
 每個版本都要有內容（`go test ./cmd/sitegen` 會檢查）。
 
+## v0.4.2 (unreleased)
+
+- JavaScript 規則不管路由 handler 的 request 叫什麼名字都追得到：不叫 `req` 的參數（`(r, s) =>`）、不叫 `ctx` 的 Koa context、別名（`const q = r`、`const h = r.headers`），以及解構（`({ headers }, res) =>`、`const { headers, hostname: hn } = r`、`const { host } = req.headers`）。所以 `r.hostname`、`r.get('host')`、`c.host` 和解構出來的 `headers` 現在都會回報；這樣讀到的 Host header 歸 js-ssrf-host-header，其他 header 歸 js-ssrf-http-request。request header 的索引照 Node 的存法以小寫讀（`r.headers['Host']`）。在 SSRF 規則裡，Koa 的 `ctx.header` 和 `ctx.request.get(` 也算來源，Host header 另外加上 `ctx.request.header.host` 和 `ctx.request.headers.host`（#106）。
+- NestJS：在讀 `@Req()` 的 13 條 JavaScript 規則裡（SSRF、SQL 與 NoSQL injection、命令注入、程式碼執行、路徑穿越、LDAP injection、反序列化），`@Request()` 和 `@Req()` 一樣算 handler 的 request。兩者都只有在這個檔案或專案裡的其他檔案 import 了 `@nestjs/common` 或 `@nestjs/core` 時，才算 NestJS 的；其他情況就是普通的物件（#103、#106）。
+- Python：用反斜線接到下一行的 `global`、`nonlocal`，會讀到整個敘述結束，下一行的名稱也算宣告（#103）。
+- SSRF：URL 的 host 檢查過之後，`a = u.valueOf()` 再改 `a`，或用計算出來的名稱呼叫 `u` 的方法（`u['valueOf']()`、`u[k](...)`），都會讓檢查失效，和 `a = u` 一樣（#103）。
+
+### 修正
+
+- systemd 的 userdb 目錄（`/etc/userdb`、`/run/userdb`、`/run/host/userdb`、`/usr/local/lib/userdb`、`/usr/lib/userdb`）有任何項目、或讀不到時，伺服器自己的帳號擁有的網站紀錄不再能當封鎖依據：userdb 可以加上 `/etc/passwd`、`/etc/group` 看不到的帳號和群組成員（#113）。
+- 封鎖：紀錄裡用 `inet_aton` 寫法記下的位址，也就是十進位、八進位或十六進位的一到四段（`3405803788`、`203.28940`、`203.0.28940`、`0xcb.0.113.12`），也會讓封鎖這個位址被拒絕，Telegram 和伺服器上都一樣，和 v0.4.1 對方括號、port、多寫的 0 的處理相同；在伺服器上可以 override（#113）。
+- 紀錄成 `::ffff:a.b.c.d` 的攻擊來源，和 `a.b.c.d` 算同一個 campaign 來源（#113）。v0.4.2 之前存下、同一個來源分在兩個 key 底下的狀態，載入時會合併，這個來源不用再多累積三個漏洞才算 campaign（#124）。
+
+### 升級說明
+
+- 有些 JavaScript 的發現會換一條規則回報：以 `r.headers['X-Forwarded-Host']` 或 `const { host } = req.headers` 讀的 Host header，改由 js-ssrf-host-header 回報，不再是 js-ssrf-http-request；專案沒有 import NestJS 時，`@Req()` 由 js-ssrf-http-request 回報；`const { host } = req.headers` 寫進回應，js-xss-response 不再回報，因為從 v0.4.1 起 Host 不算 XSS 的輸入。攻擊偵測認定可到達的路由也可能跟著變。
+- 主機的 systemd userdb 目錄有任何項目時，升級後伺服器自己的帳號就不再算獨立：v0.4.1 能當封鎖依據的紀錄（例如 Rocky 9 的 nginx），會重新判成 `web_user_writable`。條件見 `docs/attack-detection-limits.zh-TW.md` 的「哪些網站紀錄可以支撐封鎖」。
+- 同一個來源同時以 `::ffff:a.b.c.d` 和 `a.b.c.d` 記錄時，現在算同一個 campaign 來源，存下的項目載入時會合併，所以 campaign 可能比 v0.4.1 更早成立。
+
+### 已知問題
+
+- Koa handler 的 context 是看 handler 怎麼用它來認（`c.request`、`c.response`、`c.state`、`c.throw`、`c.assert`，或設定 `c.body`、`c.status`、`c.type`）；其他參數都當成 Express 的 request。解構的參數也當成 Express 的 request，所以 Koa 的 `({ request }) =>` 不會追。巢狀解構（`{ headers: { host } }`）和字串 key（`{ 'x-forwarded-host': xfh }`）也不追；後者仍會回報，只是歸 js-ssrf-http-request。
+- request 的別名以函式為單位記錄；別名只要在某一個分支被重新指定，就所有路徑都不再追。
+- 檔案沒有 import NestJS、專案裡也沒有時，`@Req() req` 不算 NestJS 的：它的 `req.headers.host` 會同時被 js-ssrf-host-header 和 js-ssrf-http-request 回報。
+- URL 檢查偏向保守：檔案裡任何地方有 `global u` 或 `nonlocal u`（含反斜線接行），整個檔案的 `u` 都不算檢查過；檢查後的 `fetch(u.valueOf())`，以及無害的 `u['toString']()`，也會回報。
+
 ## v0.4.1 — 2026-11-20
 
 - 主機盤點會對開了 HTTP/2 的 nginx 1.9.5～1.31.8 提出警告（`listen ... http2`，或對 server 生效的 `http2 on`）：CVE-2026-123007 和 CVE-2026-123633 是 HTTP/2 的記憶體錯誤，用戶端可以讓 worker 當掉。請更新到 1.31.9 或 1.30.7，或 distro 修補後的套件；更新前先改回只用 HTTP/1.1 就沒有這個問題。這只是建議，不會改設定。套件的 changelog 已列出這兩個 CVE（distro 已 backport 修補）時不警告；distro 的公告進了 OSV 之後，套件掃描就會報，這項檢查補的是 nginx.org 的套件和自行建置的 nginx，套件掃描看不到這兩類。
