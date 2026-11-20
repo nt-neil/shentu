@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -211,6 +212,32 @@ func (a *agent) logLLM(err error) {
 	a.llm.usedIn, a.llm.usedOut, a.llm.usedReason, a.llm.usedCost = 0, 0, 0, 0
 }
 
+// remotePrecheck runs, for block_ip from a chat channel, the checks its Run
+// will run (blockCheck: RemoteRefused, Preview, the #108 gate) before the
+// operator is asked: an address the gate refuses is refused now, with the
+// gate's reason, rather than after a ✅ that could not count. Run still
+// checks again; this only decides whether to ask.
+func remotePrecheck(ctx context.Context, env *tools.Env, name string, args json.RawMessage) error {
+	if env == nil || !env.Remote || name != "block_ip" {
+		return nil
+	}
+	var a struct {
+		IP string `json:"ip"`
+	}
+	json.Unmarshal(args, &a)
+	ip := net.ParseIP(strings.TrimSpace(a.IP))
+	if ip == nil {
+		return nil // Preview read it some other way; Run decides
+	}
+	if _, code, err := blockCheck(ctx, env, ip); code != tools.BlockOK {
+		if err == nil {
+			err = fmt.Errorf("refused: %s", code)
+		}
+		return err
+	}
+	return nil
+}
+
 // callTool runs one tool and returns the text the model will see.
 func (a *agent) callTool(ctx context.Context, name, rawArgs string) string {
 	if rawArgs == "" {
@@ -252,6 +279,12 @@ func (a *agent) callTool(ctx context.Context, name, rawArgs string) string {
 			return errText(err.Error())
 		}
 		entry.Preview = mask(preview)
+		if err := remotePrecheck(ctx, a.env, name, args); err != nil {
+			// Refused by the gate now: no ✅ for something that would be refused after it.
+			entry.Error = mask(err.Error())
+			a.log.write(entry)
+			return errText(err.Error())
+		}
 		confirm := a.confirm
 		if a.lastDispatch != "" {
 			entry.Origin = "after_dispatch"
