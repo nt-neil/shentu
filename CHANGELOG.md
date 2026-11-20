@@ -25,11 +25,15 @@ Chinese for the zh-TW pages; keep the two in step.
   `Request::get(` in php-sqli-orderby-identifier (`DB::raw`, `->orderBy(`) (#118).
 - NestJS: a field of a whole `@Headers()` object written into a response (`h['x-note']` in
   `res.send(`) is reported by js-xss-response (#125).
-- One call, one SQL injection rule: where two rules report the same call on the same line, one
-  of them leaves it to the other (`yields_to`). `->where(` with Symfony's
+- Duplicate reports removed. One call, one SQL injection rule: where two rules report the same
+  call on the same line, one of them leaves it to the other (`yields_to`). `->where(` with Symfony's
   `$request->query->get(` is php-sqli-doctrine-query-text's, no longer also
   php-sqli-drupal-db-query's; `DB::raw(...)` inside one of php-sqli-laravel-raw's calls is
-  laravel-raw's. Another call on the same line is still reported (#125).
+  laravel-raw's. Another call on the same line is still reported (#125). And in the SSRF rules,
+  after `const x = h` where `h` is a whole NestJS `@Headers()` object or Express's `r.headers`,
+  `x.host` (also `x['Host']`, `x['x-forwarded-host']`) is reported by js-ssrf-host-header alone,
+  no longer by js-ssrf-http-request too; a name that may also hold another value of the request
+  (`r.query` on one branch) is still reported by both (#132).
 
 ### Upgrade notes
 

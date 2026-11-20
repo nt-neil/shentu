@@ -9,7 +9,7 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 - JavaScript 的路由 handler：字串 key 的解構 `const { 'x-forwarded-host': xfh } = req.headers` 追得到，這個值改由 js-ssrf-host-header 回報，不再是 js-ssrf-http-request。Koa 的路由 handler 參數解構時取了 `request`（`({ request }) => request.header.host`），在這個檔案或專案裡的其他檔案有 import `koa`、`@koa/router` 或 `koa-router` 的情況下，就當成 Koa 的 context（#119）。
 - 新的來源：Next 15 的 `(await headers()).get(...)`，這樣讀到的 Host header 傳進 redirect 時由 js-open-redirect-next 回報；php-sqli-orderby-identifier 讀 Laravel 的 `Request::query(`、`Request::get(`（`DB::raw`、`->orderBy(`）（#118）。
 - NestJS：整個 `@Headers()` 物件的欄位寫進回應（`res.send(` 裡的 `h['x-note']`）時，由 js-xss-response 回報（#125）。
-- 同一個呼叫只由一條 SQL injection 規則回報：兩條規則在同一行的同一個呼叫都會報時，其中一條讓另一條回報（`yields_to`）。`->where(` 用 Symfony 的 `$request->query->get(` 時只歸 php-sqli-doctrine-query-text，不再同時由 php-sqli-drupal-db-query 回報；`DB::raw(...)` 放在 php-sqli-laravel-raw 的呼叫裡時歸 laravel-raw。同一行的其他呼叫照樣回報（#125）。
+- 去除重複回報。同一個呼叫只由一條 SQL injection 規則回報：兩條規則在同一行的同一個呼叫都會報時，其中一條讓另一條回報（`yields_to`）。`->where(` 用 Symfony 的 `$request->query->get(` 時只歸 php-sqli-doctrine-query-text，不再同時由 php-sqli-drupal-db-query 回報；`DB::raw(...)` 放在 php-sqli-laravel-raw 的呼叫裡時歸 laravel-raw。同一行的其他呼叫照樣回報（#125）。另外在 SSRF 規則裡，`h` 是整個 NestJS `@Headers()` 物件或 Express 的 `r.headers` 時，`const x = h` 之後的 `x.host`（`x['Host']`、`x['x-forwarded-host']` 也一樣）只由 js-ssrf-host-header 回報，不再同時由 js-ssrf-http-request 回報；名稱也可能是 request 的其他值時（在某個分支裡是 `r.query`），兩條規則照樣回報（#132）。
 
 ### 升級說明
 
