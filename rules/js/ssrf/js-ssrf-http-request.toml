@@ -14,7 +14,7 @@ frameworks = ["express", "nestjs", "nextjs", "koa", "fastify", "hapi"]
 # Known fixed-release finding: a plain Node proxy forwarding req.url still
 # reports after an allow check the engine does not read as a sanitizer.
 sources = ["req.query", "req.body", "req.params", "req.headers[", "req.headers.referer", "req.headers.origin",
-           "ctx.headers.referer", "ctx.headers.origin", "ctx.request.header.referer", "ctx.request.header.origin",
+           "ctx.headers.referer", "ctx.headers.origin", "ctx.header.referer", "ctx.header.origin", "ctx.header[", "ctx.request.get(", "ctx.request.header.referer", "ctx.request.header.origin",
            "ctx.request.headers.referer", "ctx.request.headers.origin", "request.headers.referer", "request.headers.origin", "request.headers.get(", "@Query(", "@Body(", "@Param(", "@Headers(", "@Req(", "@Request(", "req.originalUrl", "^request.nextUrl", "^req.nextUrl", "^request.url", "^req.url", "^searchParams", "^request.json(", "^req.json(", "^request.text(", "^req.text(", "^request.formData(", "^req.formData(", "^formData.get(", "req.get(", "req.header(", "^headers().get(", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload", "ctx.params", "request.params", "ctx.headers[", "request.headers[", "ctx.request.header[", "ctx.request.headers[", "ctx.get("]
 sinks = ["fetch(", "axios(", "axios.get(", "axios.post(", "axios.put(", "axios.delete(", "axios.head(", "got(", "got.get(", "got.post(", "http.get(", "https.get(", "http.request(", "https.request(", "needle(", "superagent.get("]
 sanitizers = ["parseInt(", "encodeURIComponent("]
@@ -25,7 +25,7 @@ refs = ["CVE-2024-32964", "CVE-2024-38514", "CVE-2025-9805", "CVE-2024-47066", "
 # sources there take only those two), also inside a route (route_not); a name
 # not written out may be any header.
 route_not = ["headers.host", "headers.x-forwarded-host"]
-source_args = [{ sources = ["request.headers.get(", "^headers().get(", "req.get(", "req.header(", "req.headers[", "ctx.get(", "ctx.headers[", "ctx.request.header[", "ctx.request.headers[", "request.headers["], arg = 1, values = ["*", "?", "!host", "!x-forwarded-host"] }]
+source_args = [{ sources = ["request.headers.get(", "^headers().get(", "req.get(", "req.header(", "req.headers[", "ctx.get(", "ctx.request.get(", "ctx.headers[", "ctx.header[", "ctx.request.header[", "ctx.request.headers[", "request.headers["], arg = 1, values = ["*", "?", "!host", "!x-forwarded-host"] }]
 
 [[args]]
 arg = 1

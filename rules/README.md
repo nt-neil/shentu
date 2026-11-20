@@ -264,13 +264,28 @@ so a decorator is a source like any call (`@Body(`, `@Query(`, `@Param(`,
 another name, which a rule that takes `@Req(` takes too) only the parts of the request that come
 from the client are input (`query`, `body`, `params`, `headers`, `cookies`,
 `originalUrl`, `url`, `get()`, `header()`), not what the server put on it
-(`req.user`). A parameter with a NestJS parse pipe (`ParseIntPipe`, `ParseUUIDPipe`,
+(`req.user`). `@Req()` is NestJS's request only in a NestJS application: a file
+that imports `@nestjs/common` or `@nestjs/core`, or any file of a project one of
+whose files does (another library's `@Req()` is an object like any other). A parameter with a NestJS parse pipe (`ParseIntPipe`, `ParseUUIDPipe`,
 ...) is not input; a DTO's class-validator decorators are not read. In `.jsx` and
 `.tsx`, element text is not code: quotes, slashes and colons in it are text. A
 declaration whose bracket never closes (`interface I {`) is dropped up to that
 bracket only; the rest is read as code and the file is reported as not fully
 analysed. Next.js route and page `params` are not sources yet (that needs the
 route model).
+
+A route handler's request is read by the rules' `req.` and `ctx.` sources
+whatever it is called (reqalias.go). The names that hold it in a function are
+followed: the handler's request parameter (`(r, s) => r.hostname`,
+`r.get('host')`; a parameter used as a Koa context, `c.request` or
+`c.body = ...`, stands for `ctx`, any other for `req`), NestJS's `@Req() r`, an
+alias (`const q = r`, `const h = r.headers`) and destructuring, of the parameter
+(`({ headers }, res) => headers.host`) or in the body (`const { hostname: hn } = r`,
+`const { host } = req.headers`). Under such a name a request's header index is
+lower case, as Node stores it (`r.headers['Host']`), and a destructured name
+under a member route_not names is that rule's input no more than the member is.
+A name assigned anything else, or a parameter of an inner function with the
+same name, is not followed.
 
 A sample written in TypeScript says so with `dialect = "ts"` (or `"tsx"`); it is
 lexed as such and must hold the same as any other sample of the rule.
