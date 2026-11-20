@@ -67,6 +67,41 @@ func TestRulesValid(t *testing.T) {
 		}
 	}
 	seen := map[string]string{}
+	byID := map[string]Rule{}
+	for _, r := range rs {
+		byID[r.ID] = r
+	}
+	for _, r := range rs {
+		for _, id := range r.YieldsTo {
+			o, ok := byID[id]
+			switch {
+			case !ok:
+				t.Errorf("%s: yields_to %q is no rule", r.File, id)
+			case id == r.ID:
+				t.Errorf("%s: yields_to names the rule itself", r.File)
+			case o.Lang != r.Lang || o.CWE != r.CWE:
+				t.Errorf("%s: yields_to %q is another language or CWE", r.File, id)
+			}
+		}
+	}
+	// no cycle: two rules yielding to each other would both leave the sink out
+	var reach func(from, to string, depth int) bool
+	reach = func(from, to string, depth int) bool {
+		if depth > len(rs) {
+			return true
+		}
+		for _, id := range byID[from].YieldsTo {
+			if id == to || reach(id, to, depth+1) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, r := range rs {
+		if len(r.YieldsTo) > 0 && reach(r.ID, r.ID, 0) {
+			t.Errorf("%s: yields_to makes a cycle", r.File)
+		}
+	}
 	for _, r := range rs {
 		f := r.File
 		for _, m := range r.RouteMembers {

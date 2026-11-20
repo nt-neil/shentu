@@ -7,6 +7,10 @@ tier = "info"
 title = "Joomla request input written into a database query without quote() or a cast"
 sources = ["->getString(", "->getRaw(", "->getHtml(", "->getArray(", "->getBase64(", "->getPath(", "->getUserStateFromRequest(", "JRequest::getVar(", "JRequest::getString(", "$_GET", "$_POST", "$_REQUEST"]
 sinks = ["->setQuery(", "->where(", "->orWhere(", "->order(", "->having(", "$query->select(", "$query->group("]
+# ->where(, ->orWhere( and ->having( are Yii's calls too: input both read on
+# the same call ($_GET) is php-sqli-yii-query's (yields.go); Joomla's own
+# input (->getString(, JRequest::) stays here.
+yields_to = ["php-sqli-yii-query"]
 sanitizers = ["->quote(", "->q(", "->quoteName(", "->qn(", "(int)", "intval", "absint", "in_array"]
 fix = "Quote every value with $db->quote() (or bind it with $query->bind()), cast ids with (int), and read numbers with $input->getInt(); escape() alone is safe only inside quotes."
 refs = ["CVE-2016-15016", "CVE-2018-8045"]
