@@ -91,9 +91,9 @@
   </ol>
 </div>
 {{with index .Releases 0}}
-<div class="newest" id="rv-{{.Version}}">
+{{$groups := groups .}}<div class="newest" id="rv-{{.Version}}" data-groups="{{len $groups}}">
   <div class="newest-head"><p class="word">{{t (chron . (eq (len $.Releases) 1))}}</p><span class="ver">v{{.Version}}</span>{{if .Date}}<time datetime="{{.Date}}">{{.Date}}</time>{{else}}<b class="badge">{{t "soon"}}</b>{{end}}</div>
-  {{range groups .}}<div class="grp grp-{{slice .Key 4}}"><h4><i aria-hidden="true"></i>{{t .Key}}</h4><ul>{{range .Items}}<li>{{item .}}</li>{{end}}</ul></div>{{end}}
+  {{range $groups}}<div class="grp grp-{{slice .Key 4}}"><h4><i aria-hidden="true"></i>{{t .Key}}</h4><ul>{{range .Items}}<li>{{item .}}</li>{{end}}</ul></div>{{end}}
 </div>
 {{end}}
 {{end}}
