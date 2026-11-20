@@ -34,8 +34,9 @@ Chinese for the zh-TW pages; keep the two in step.
 ### Known issues
 
 - Sub-agents still run one after another, and they are built and tested for Linux only.
-- A line cut short in the archive (a full disk, say) stops automatic incident checks for about
-  two days, until its file is out of the window they read; the daily report says so.
+- A line cut short in the archive (a full disk, say) stops automatic incident checks for at most
+  72 hours (usually about two days), until its file is out of the window they read; the daily
+  report says so.
 - With a 7B local model, sub-agents often use up their 6 steps and are reported incomplete.
 
 ## v0.5.0 — 2026-11-20
