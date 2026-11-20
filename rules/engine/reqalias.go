@@ -268,7 +268,10 @@ func (a *analysis) reqIsSource(name Token) bool {
 	vs, adds := a.reqVariants([]Token{name}, 0)
 	for k, v := range vs {
 		for _, s := range a.r.sources {
-			if end, ok := a.srcMatchAt(s, v, 0); ok && end == adds[k]+1 {
+			end, ok := a.srcMatchAt(s, v, 0)
+			// the whole path, or a source ending in the index's "[" whose
+			// index ends it (req.headers['x-forwarded-host'] for xfh)
+			if ok && (end == adds[k]+1 || end > 0 && v[end-1].op("[") && closeOf(v, end-1) == len(v)-1) {
 				return true
 			}
 		}
