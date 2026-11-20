@@ -58,3 +58,10 @@ audit_workers       = 0
 [patrol]
 ssh_threshold = 10              # failed SSH logins per IP per hour before alerting
 cooldown = "24h"                # do not repeat the same alert within this time
+
+# Sub-agents. auto_incident: an L3 attack alert dispatches the read-only incident
+# sub-agent on its own and sends its counts (no changes, no blocking: proposals wait
+# for a person). At most 3 a day, a group once a day, one per patrol; none without
+# a monthly [budget] or once 80% of it is used. The daily report says what was skipped.
+[agents]
+auto_incident = false

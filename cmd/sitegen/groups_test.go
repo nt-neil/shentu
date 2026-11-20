@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -93,6 +94,43 @@ func TestNewestGroups(t *testing.T) {
 			}
 			if len(en) < len(c.want) || strings.Join(en[len(en)-len(c.want):], ",") != strings.Join(c.want, ",") {
 				t.Errorf("v%s: groups %v, want them to end with %v", c.version, en, c.want)
+			}
+		})
+	}
+}
+
+var dataGroupsRe = regexp.MustCompile(`<div class="newest" id="rv-[^"]+" data-groups="(\d+)">`)
+
+// The newest release's card says how many groups it has (data-groups), and
+// site.css lays the card out by that number, so it must be the number of
+// groups the card holds: one to four in the releases checked here.
+func TestNewestDataGroups(t *testing.T) {
+	for _, c := range []struct {
+		version string
+		want    string
+	}{
+		{"0.5.0", "1"}, {"0.5.1", "2"}, {"0.4.3", "3"}, {"0.4.2", "4"},
+	} {
+		t.Run(c.version, func(t *testing.T) {
+			out := t.TempDir()
+			if err := build(fromVersion(t, c.version), "../../docs/site-src", out, "https://example.test/"); err != nil {
+				t.Fatal(err)
+			}
+			for _, page := range []string{"index.html", filepath.Join("zh-TW", "index.html"), "releases.html", filepath.Join("zh-TW", "releases.html")} {
+				b, err := os.ReadFile(filepath.Join(out, page))
+				if err != nil {
+					t.Fatal(err)
+				}
+				m := dataGroupsRe.FindStringSubmatch(string(b))
+				if m == nil {
+					t.Fatalf("v%s %s: no data-groups on the newest release's card", c.version, page)
+				}
+				// the card's own groups: from its start to its closing tag
+				card := string(b)[strings.Index(string(b), m[0]):]
+				card = card[:strings.Index(card, "\n</div>")]
+				if n := len(grpRe.FindAllString(card, -1)); m[1] != c.want || m[1] != strconv.Itoa(n) {
+					t.Errorf("v%s %s: data-groups=%s, %d groups on the card, want %s", c.version, page, m[1], n, c.want)
+				}
 			}
 		})
 	}
