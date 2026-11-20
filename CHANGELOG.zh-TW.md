@@ -3,6 +3,12 @@
 CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本與日期必須一致，
 每個版本都要有內容（`go test ./cmd/sitegen` 會檢查）。
 
+## v0.5.0 — 2026-11-20
+
+- 子 agent（Linux、單機）：在 Telegram bot 和 `shentu chat` 裡，agent 可以用 `dispatch` 工具把唯讀的檢查交給最多 3 個子 agent，每個子 agent 一個角色：`patrol`、`surface`、`attack` 或 `incident`（#101）。每個角色有固定的唯讀工具清單；子 agent 不能封鎖或解除封鎖位址、不能發通知、不能用 skill，也不能再派遣。子 agent 依序一個接一個執行。巡檢輪次和 eval bot 不會派遣。
+- 上限：每個子 agent 最多 6 次模型呼叫、每步 3 個工具呼叫、每次 2048 個輸出 token、合計 40,000 個 token、5 分鐘；一次派遣最多 120,000 個 token、12 分鐘，月預算照樣適用。每次呼叫前先估 token、呼叫後再計入，reasoning token 也算。被上限擋下、或沒有照規定格式回報的子 agent，會標成未完成並寫出原因，不會當成已完成。被時間上限切斷的模型呼叫不再重試。
+- 回報：每個子 agent 用固定的 JSON 格式回答（發現、建議、沒查到的項目），逐欄檢查並遮罩，agent 讀到時標成 untrusted。封鎖建議只是建議：派遣之後，同一段對話裡每一次 `block_ip` 或 `unblock_ip` 都要按 ✅ 按鈕，`[bot] confirm = 4` 也一樣，直到 `/new` 為止；稽核紀錄會寫出是哪一次派遣。bot 的進度訊息會顯示子 agent 的步驟（最後 12 步），不認得的工具名稱顯示成「未知工具」。
+
 ## v0.4.3 — 2026-11-20
 
 - SSRF：URL 的 host 檢查過之後，`console.log(u)`、`JSON.stringify(u)`、`String(u)` 不再讓檢查失效，條件是檔案只用 `console`、`JSON`、`String` 來呼叫（沒有同名的參數或宣告，沒有 `console.log = f`），也沒有可能在別處替換這些呼叫的寫法（`globalThis` 這類 global 物件除了讀具名成員以外的用法、`eval`、`Function(`、`with` 敘述、改寫內建物件的 prototype）（#119）。

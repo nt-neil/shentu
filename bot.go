@@ -316,17 +316,20 @@ type bot struct {
 	hc    *http.Client
 	log   *auditLog
 
-	mu       sync.Mutex
-	busy     bool
-	history  []message
-	histFor  string               // pairing the history belongs to (user id + paired time)
-	waiting  map[string]chan bool // confirmation nonce -> answer
-	ignoreAt map[int64]time.Time  // last audit entry per ignored chat
-	codeWait chan string          // confirm = 2: the next 6-digit message from the paired user
-	sugNonce string               // the buttons under the latest answer
-	sugText  []string             // what each of those buttons asks
-	canAct   bool                 // interaction >= 3 and the service holds CAP_NET_ADMIN
-	stop     context.CancelFunc   // /lockdown and a token leak stop the service
+	mu      sync.Mutex
+	busy    bool
+	history []message
+	histFor string // pairing the history belongs to (user id + paired time)
+	// histDispatch: the latest dispatch of a turn still in history, so a control
+	// call in a later turn may act on its reports: strict confirmation, and its id in the log.
+	histDispatch string
+	waiting      map[string]chan bool // confirmation nonce -> answer
+	ignoreAt     map[int64]time.Time  // last audit entry per ignored chat
+	codeWait     chan string          // confirm = 2: the next 6-digit message from the paired user
+	sugNonce     string               // the buttons under the latest answer
+	sugText      []string             // what each of those buttons asks
+	canAct       bool                 // interaction >= 3 and the service holds CAP_NET_ADMIN
+	stop         context.CancelFunc   // /lockdown and a token leak stop the service
 }
 
 func (b *bot) zh() bool {
@@ -573,7 +576,7 @@ func (b *bot) handle(ctx context.Context, u tgUpdate) {
 	}
 	if text == "/new" {
 		b.mu.Lock()
-		b.history = nil
+		b.history, b.histDispatch = nil, ""
 		b.mu.Unlock()
 		b.send(ctx, m.Chat.ID, b.t("new"), nil)
 		return
@@ -585,7 +588,7 @@ func (b *bot) handle(ctx context.Context, u tgUpdate) {
 	b.mu.Lock()
 	// A new pairing never sees the previous user's conversation.
 	if who := fmt.Sprintf("%d@%d", st.UserID, st.PairedAt.UnixNano()); b.histFor != who {
-		b.history, b.histFor = nil, who
+		b.history, b.histFor, b.histDispatch = nil, who, ""
 	}
 	if b.busy {
 		b.mu.Unlock()
@@ -648,11 +651,13 @@ func (b *bot) answer(ctx context.Context, chat int64, text string) {
 	env.Remote = true // a Telegram request: no override of safety checks
 	a := &agent{
 		cfg: b.cfg, llm: newLLM(b.cfg), env: &env, skills: skills,
-		allowControl: b.canAct, actor: "bot", log: b.log,
-		confirm: func(tool, preview string) bool { return b.confirm(ctx, chat, tool, preview) },
+		allowControl: b.canAct, actor: "bot", log: b.log, canDispatch: true,
+		confirm:       func(tool, preview string) bool { return b.confirm(ctx, chat, tool, preview, false) },
+		confirmStrict: func(tool, preview string) bool { return b.confirm(ctx, chat, tool, preview, true) },
 	}
 	b.mu.Lock()
 	owner := b.histFor // the pairing this answer belongs to
+	a.lastDispatch = b.histDispatch
 	hist := append([]message{{Role: "system", Content: systemPrompt(b.cfg, skills) + answerRule(b.cfg.Bot.Answers, b.zh())}}, b.history...)
 	b.mu.Unlock()
 	hist = append(hist, message{Role: "user", Content: text})
@@ -704,13 +709,17 @@ func (b *bot) answer(ctx context.Context, chat int64, text string) {
 	b.mu.Lock()
 	if b.histFor == owner { // the pairing changed while this answer ran: drop it
 		b.history = keep[max(0, len(keep)-botHistoryLimit):]
+		if a.lastDispatch != "" {
+			b.histDispatch = a.lastDispatch
+		}
 	}
 	b.mu.Unlock()
 }
 
 // confirm applies [bot] confirm: 1 approve on the server, 2 ✅ and a one-time code,
-// 3 ✅ only, 4 none. Every approved action is notified.
-func (b *bot) confirm(ctx context.Context, chat int64, tool, preview string) bool {
+// 3 ✅ only, 4 none. strict (an action after sub-agent reports) never skips the
+// button: level 4 becomes 3. Every approved action is notified.
+func (b *bot) confirm(ctx context.Context, chat int64, tool, preview string, strict bool) bool {
 	ok := false
 	switch b.cfg.Bot.Confirm {
 	case 1:
@@ -720,6 +729,10 @@ func (b *bot) confirm(ctx context.Context, chat int64, tool, preview string) boo
 	case 3:
 		ok = b.confirmButton(ctx, chat, tool, preview)
 	default:
+		if strict {
+			ok = b.confirmButton(ctx, chat, tool, preview)
+			break
+		}
 		ok = true
 	}
 	if ok {
@@ -923,6 +936,17 @@ var toolLabels = map[string][2]string{
 	"file_changes": {"changed files", "最近改動的檔案"}, "log_search": {"logs", "搜尋系統紀錄"},
 	"block_ip": {"block IP", "封鎖 IP"}, "unblock_ip": {"unblock IP", "解除封鎖 IP"},
 	"notify": {"notification", "發送通知"}, "use_skill": {"playbook", "查閱處理步驟"},
+	"dispatch":                {"sub-agents", "派出子 agent"},
+	"attack_attempts":         {"attack attempts", "攻擊嘗試"},
+	"app_code_audit":          {"app code audit", "應用程式程式碼檢查"},
+	"sub:patrol":              {"sub-agent: patrol", "子 agent：巡檢"},
+	"sub:surface":             {"sub-agent: attack surface", "子 agent：漏洞面"},
+	"sub:attack":              {"sub-agent: attacks", "子 agent：攻擊偵測"},
+	"sub:incident":            {"sub-agent: incident", "子 agent：事件調查"},
+	"sub_incomplete:patrol":   {"patrol not finished", "巡檢未完成"},
+	"sub_incomplete:surface":  {"attack surface not finished", "漏洞面未完成"},
+	"sub_incomplete:attack":   {"attacks not finished", "攻擊偵測未完成"},
+	"sub_incomplete:incident": {"incident not finished", "事件調查未完成"},
 }
 
 // botProgress turns the placeholder message into a live list of what the agent is
@@ -932,9 +956,13 @@ type botProgress struct {
 	chat  int64
 	msg   int64
 	start time.Time
-	steps []string
+	steps []string // the last progressShown steps
+	count int      // all steps
 	last  time.Time
 }
+
+// progressShown bounds the progress message (Telegram allows 4096 characters).
+const progressShown = 12
 
 func (p *botProgress) label(tool string) string {
 	i := 0
@@ -944,11 +972,16 @@ func (p *botProgress) label(tool string) string {
 	if l, ok := toolLabels[tool]; ok {
 		return l[i]
 	}
-	return tool
+	// A name the model made up (it may come from text in a log) is not shown.
+	return [2]string{"unknown tool", "未知工具"}[i]
 }
 
 func (p *botProgress) step(tool string) {
 	p.steps = append(p.steps, p.label(tool))
+	p.count++
+	if len(p.steps) > progressShown {
+		p.steps = p.steps[len(p.steps)-progressShown:]
+	}
 	if p.msg == 0 || time.Since(p.last) < time.Second { // Telegram limits edits; the next step shows them all
 		return
 	}
@@ -976,7 +1009,7 @@ func (p *botProgress) finish(ctx context.Context, ok bool) {
 	if !ok {
 		key = "failed"
 	}
-	text := fmt.Sprintf(p.b.t(key), len(p.steps), int(time.Since(p.start).Seconds()))
+	text := fmt.Sprintf(p.b.t(key), p.count, int(time.Since(p.start).Seconds()))
 	if len(p.steps) > 0 {
 		sep := ", "
 		if p.b.zh() {

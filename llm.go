@@ -88,6 +88,9 @@ func (l *llmClient) chat(ctx context.Context, msgs []message, tools []toolDef) (
 		resp, err := l.http.Do(req)
 		if err != nil {
 			lastErr = err
+			if ctx.Err() != nil { // cancelled or past its deadline: a retry cannot help
+				return message{}, err
+			}
 			continue
 		}
 		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))

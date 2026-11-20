@@ -186,7 +186,7 @@ func chat(ctx context.Context, cfg *Config, env *tools.Env, question string) err
 	skills := loadSkills(filepath.Join(filepath.Dir(configPath()), "skills"))
 	a := &agent{
 		cfg: cfg, llm: newLLM(cfg), env: env, skills: skills,
-		allowControl: true, actor: "chat", log: newAuditLog(cfg.StateDir),
+		allowControl: true, actor: "chat", log: newAuditLog(cfg.StateDir), canDispatch: true,
 		confirm: func(tool, preview string) bool {
 			fmt.Printf("\n⚠️  %s wants to run:\n    %s\nAllow? [y/N] ", tool, printable(preview))
 			line, _ := in.ReadString('\n')
