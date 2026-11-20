@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"io/fs"
@@ -20,6 +21,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/nt-neil/shentu/internal/osutil"
@@ -62,15 +64,16 @@ const (
 
 // Why a sub-agent ended as it did (subRecord.Reason). Never free text.
 const (
-	reasonOK         = "ok"
-	reasonStepLimit  = "step_limit"
-	reasonTokenCap   = "token_cap"
-	reasonBudget     = "budget"
-	reasonTimeout    = "timeout"
-	reasonModelError = "model_error"
-	reasonBadReport  = "bad_report"
-	reasonSaidNot    = "said_incomplete" // the report itself said it did not finish
-	reasonOther      = "other"           // none of the above (should not happen)
+	reasonOK          = "ok"
+	reasonStepLimit   = "step_limit"
+	reasonTokenCap    = "token_cap"
+	reasonBudget      = "budget"
+	reasonTimeout     = "timeout"
+	reasonModelError  = "model_error"
+	reasonBadReport   = "bad_report"
+	reasonSaidNot     = "said_incomplete" // the report itself said it did not finish
+	reasonUnsupported = "unsupported"     // the role does not run on this platform yet
+	reasonOther       = "other"           // none of the above (should not happen)
 )
 
 // A proposal's kind (proposalRecord.Action); only blocking for now.
@@ -87,6 +90,7 @@ type dispatchRecord struct {
 	TokensUsed int         `json:"tokens_used"`
 	TokensCap  int         `json:"tokens_cap"`
 	Millis     int64       `json:"ms"`
+	External   bool        `json:"external,omitempty"` // the sub-agents used a model outside this host
 	Subs       []subRecord `json:"subs"`
 }
 
@@ -137,6 +141,8 @@ var (
 	triggerRe    = regexp.MustCompile(`^t[0-9a-f]{16}$`)
 	refRe        = regexp.MustCompile(`^d([0-9a-f]{12}):b([1-9][0-9]{0,2})$`)
 	dayFileRe    = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2})\.jsonl$`)
+	tmpFileRe    = regexp.MustCompile(`^\.(\d{4}-\d{2}-\d{2}\.jsonl|repairs\.jsonl)\..*\.tmp$`) // replaceFile's
+	keptFileRe   = regexp.MustCompile(`^(?:feedback-)?(\d{4}-\d{2}-\d{2})\.jsonl(\.bad)?$`)     // what prune ages out
 )
 
 // triggerID is what the archive stores for a trigger: a short hash of the
@@ -224,7 +230,7 @@ var (
 	recOrigins  = map[string]bool{originChat: true, originTelegram: true, originAuto: true}
 	recStatuses = map[string]bool{statusComplete: true, statusPartial: true, statusIncomplete: true}
 	recReasons  = map[string]bool{reasonOK: true, reasonStepLimit: true, reasonTokenCap: true, reasonBudget: true, reasonTimeout: true,
-		reasonModelError: true, reasonBadReport: true, reasonSaidNot: true, reasonOther: true}
+		reasonModelError: true, reasonBadReport: true, reasonSaidNot: true, reasonUnsupported: true, reasonOther: true}
 	recGates = map[tools.BlockCode]bool{"": true, tools.BlockOK: true, tools.BlockUnverified: true, tools.BlockOverflow: true, tools.BlockWeak: true,
 		tools.BlockInternal: true, tools.BlockLockout: true, tools.BlockNotCanonical: true, tools.BlockNoEvidence: true, tools.BlockStateError: true}
 )
@@ -334,14 +340,18 @@ func (s *dispatchStore) Save(rec dispatchRecord) error {
 		return fmt.Errorf("%w: %s", errArchive, s.dir)
 	}
 	p := filepath.Join(s.dir, rec.TS.Local().Format(time.DateOnly)+".jsonl")
-	f, err := osutil.OpenNoFollow(p, os.O_RDWR|os.O_APPEND|os.O_CREATE, 0o600, true)
+	unlock, err := s.lock()
 	if err != nil {
-		return fmt.Errorf("%w: %s: %v", errArchive, p, err)
+		return err
+	}
+	defer unlock()
+	f, st, err := openChecked(p, os.O_RDWR|os.O_APPEND|os.O_CREATE)
+	if err != nil {
+		return err
 	}
 	defer f.Close()
-	st, err := f.Stat()
-	if err != nil || !trusted(st, false) {
-		return fmt.Errorf("%w: %s", errArchive, p)
+	if saveHeld != nil {
+		saveHeld(p)
 	}
 	line := append(b, '\n')
 	if st.Size() > 0 {
@@ -363,13 +373,19 @@ func (s *dispatchStore) Save(rec dispatchRecord) error {
 	return nil
 }
 
-// prune removes day files older than dispatchKeep. Save and Since both run
-// it, so a host that stops dispatching still drops old files on its daily
-// report.
+// prune removes day files older than dispatchKeep, and the lines Repair
+// moved aside with them. Save and Since both run it, so a host that stops
+// dispatching still drops old files on its daily report.
 func (s *dispatchStore) prune() {
 	ents, _ := os.ReadDir(s.dir)
 	for _, e := range ents {
-		m := dayFileRe.FindStringSubmatch(e.Name())
+		if tmpFileRe.MatchString(e.Name()) { // a Repair that died before its rename
+			if info, err := e.Info(); err == nil && info.Mode().IsRegular() && s.now().Sub(info.ModTime()) > 24*time.Hour {
+				os.Remove(filepath.Join(s.dir, e.Name()))
+			}
+			continue
+		}
+		m := keptFileRe.FindStringSubmatch(e.Name())
 		if m == nil {
 			continue
 		}
@@ -552,9 +568,12 @@ func dispatchSection(recs []dispatchRecord, bad int, err error) string {
 	}
 	origins, statuses, roles, reasons := map[string]int{}, map[string]int{}, map[string]int{}, map[string]int{}
 	var props []string
-	more := 0
+	more, external := 0, 0
 	for _, r := range recs {
 		origins[r.Origin]++
+		if r.External {
+			external++
+		}
 		statuses[r.Status]++
 		for _, s := range r.Subs {
 			roles[s.Role+" "+s.Status]++
@@ -573,6 +592,9 @@ func dispatchSection(recs []dispatchRecord, bad int, err error) string {
 	var b strings.Builder
 	b.WriteString("\nSub-agent dispatches (last day; reports are the model's, not verified):\n")
 	fmt.Fprintf(&b, "- %d dispatches: %s; %s\n", len(recs), countLine(origins), countLine(statuses))
+	if external > 0 {
+		fmt.Fprintf(&b, "- %d used the sub-agents' model outside this host ([agents] base_url): masked logs and settings were sent to it\n", external)
+	}
 	if len(roles) > 0 {
 		fmt.Fprintf(&b, "- sub-agents: %s\n", countLine(roles))
 	}
@@ -601,8 +623,16 @@ func cmpOr(s, def string) string {
 
 // dispatchDaily is dispatchSection for the day before now, for the daily report.
 func dispatchDaily(cfg *Config, now time.Time) string {
-	recs, bad, err := newDispatchStore(cfg).Since(now.Add(-24 * time.Hour))
-	return dispatchSection(recs, bad, err)
+	s := newDispatchStore(cfg)
+	recs, bad, err := s.Since(now.Add(-24 * time.Hour))
+	sec := dispatchSection(recs, bad, err)
+	if line := s.repairedLine(now); line != "" {
+		if sec == "" {
+			sec = "\nSub-agent dispatches (last day; reports are the model's, not verified):\n"
+		}
+		sec += line
+	}
+	return sec
 }
 
 // runDispatch runs tasks one after another as sub-agents of a, then saves
@@ -619,10 +649,22 @@ func (a *agent) runDispatch(ctx context.Context, origin, trigger string, tasks [
 	a.lastDispatch = id // from now on, any control call in this agent is treated as coming from a sub-agent's report
 	start := time.Now()
 
+	sl, external, modelErr := agentsLLM(a.cfg, a.llm)
+	a.subLLM = sl
+	defer func() { a.subLLM = nil }()
+
 	dctx, cancel := context.WithTimeout(ctx, dispatchTimeout)
 	defer cancel()
 	left := dispatchTokenCap
+	if modelErr == nil && external && len(tasks) > 1 && !agentsOnThisHost(a.cfg.Agents.BaseURL) && budgetRoom(a.cfg, time.Now()) {
+		reports, left = a.runSubsParallel(dctx, id, tasks)
+		tasks = nil
+	}
 	for _, t := range tasks {
+		if modelErr != nil { // no sub-agent runs on a model setting that cannot be used
+			reports = append(reports, subReport{Role: t.Role, Status: "incomplete", Reason: clean("the sub-agents' model cannot be used: "+modelErr.Error(), 300), Findings: []subFinding{}, code: reasonModelError})
+			continue
+		}
 		if dctx.Err() != nil || left <= 0 {
 			why, code := "the dispatch time limit was reached before this sub-agent started", reasonTimeout
 			if left <= 0 {
@@ -637,6 +679,7 @@ func (a *agent) runDispatch(ctx context.Context, origin, trigger string, tasks [
 	}
 
 	rec = newDispatchRecord(id, origin, trigger, start, dispatchTokenCap-left, dispatchTokenCap, reports)
+	rec.External = external && modelErr == nil
 	gctx, gcancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
 	defer gcancel()
 	for i := range rec.Subs {
@@ -655,6 +698,56 @@ func (a *agent) runDispatch(ctx context.Context, origin, trigger string, tasks [
 	return id, reports, rec, saveErr
 }
 
+// budgetRoom says whether this month's token limit has room for a whole
+// dispatch's cap: sub-agents run at once each pass the limit check before
+// any has used tokens, so the room is reserved first; without it they take
+// turns, and each one after the first is stopped at the limit as before.
+// A cost limit gets no such reservation (a call's cost is not known ahead),
+// so with one set they run at once only while under half of it.
+func budgetRoom(cfg *Config, now time.Time) bool {
+	if cfg.Budget.MonthlyTokens <= 0 {
+		return false
+	}
+	cost, used, _, err := monthUsageStrict(cfg.StateDir, now)
+	if err != nil || used+dispatchTokenCap > cfg.Budget.MonthlyTokens {
+		return false
+	}
+	return cfg.Budget.MonthlyCost <= 0 || cost < cfg.Budget.MonthlyCost/2
+}
+
+// runSubsParallel runs tasks at once, for a model outside this host (on
+// this host's model they would only compete for it). Each gets an equal
+// share of the dispatch's token cap, at most subTokenCap, so together they
+// stay within it; the reports keep the tasks' order. The progress callback
+// is serialised, as the bot's is not safe to call at once.
+func (a *agent) runSubsParallel(ctx context.Context, id string, tasks []subTask) ([]subReport, int) {
+	share := min(subTokenCap, dispatchTokenCap/len(tasks))
+	if prog := a.progress; prog != nil {
+		var mu sync.Mutex
+		a.progress = func(tool string) {
+			mu.Lock()
+			defer mu.Unlock()
+			prog(tool)
+		}
+		defer func() { a.progress = prog }()
+	}
+	reports := make([]subReport, len(tasks))
+	var wg sync.WaitGroup
+	for i, t := range tasks {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			reports[i] = a.runSub(ctx, id, t, share)
+		}()
+	}
+	wg.Wait()
+	left := dispatchTokenCap
+	for _, r := range reports {
+		left -= r.Tokens
+	}
+	return reports, left
+}
+
 // dispatchOrigin is where a's dispatches come from: the bot's agents have
 // Remote set, the server's chat does not.
 func (a *agent) dispatchOrigin() string {
@@ -662,4 +755,304 @@ func (a *agent) dispatchOrigin() string {
 		return originTelegram
 	}
 	return originChat
+}
+
+// Repair moves every line of the archive's day files that Since cannot
+// read (cut short by a full disk, say) to <date>.jsonl.bad next to it
+// (0600), drops empty lines (they are no record, but Since counts them
+// unreadable), and keeps the others as they were, so the automatic
+// incident checks need not wait for the file to age out. It takes each
+// file's lock, as Save does, refuses an archive Since would not read, and
+// notes what it did in repairs.jsonl for the daily report.
+func (s *dispatchStore) Repair() (moved, dropped int, err error) {
+	if !filepath.IsAbs(s.dir) {
+		return 0, 0, fmt.Errorf("%w: state_dir is not an absolute path", errArchive)
+	}
+	st, err := os.Lstat(s.dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return 0, 0, nil
+	}
+	if err != nil || !trusted(st, true) {
+		return 0, 0, fmt.Errorf("%w: %s", errArchive, s.dir)
+	}
+	unlock, err := s.lock()
+	if err != nil {
+		return 0, 0, err
+	}
+	defer unlock()
+	ents, err := os.ReadDir(s.dir)
+	if err != nil {
+		return 0, 0, err
+	}
+	for _, e := range ents {
+		if !dayFileRe.MatchString(e.Name()) {
+			continue
+		}
+		m, d, err := s.repairFile(filepath.Join(s.dir, e.Name()))
+		moved, dropped = moved+m, dropped+d
+		if err != nil {
+			s.noteRepair(moved, dropped)
+			return moved, dropped, err
+		}
+	}
+	return moved, dropped, s.noteRepair(moved, dropped)
+}
+
+// repairNote is one line of repairs.jsonl: what one Repair did.
+type repairNote struct {
+	TS      time.Time `json:"ts"`
+	Moved   int       `json:"moved"`
+	Dropped int       `json:"dropped"`
+}
+
+const repairsFile = "repairs.jsonl"
+
+// noteRepair adds what a Repair did to repairs.jsonl, keeping dispatchKeep.
+func (s *dispatchStore) noteRepair(moved, dropped int) error {
+	if moved == 0 && dropped == 0 {
+		return nil
+	}
+	notes := s.repairNotes(s.now().Add(-dispatchKeep))
+	notes = append(notes, repairNote{TS: s.now().UTC(), Moved: moved, Dropped: dropped})
+	var b bytes.Buffer
+	for _, n := range notes {
+		line, _ := json.Marshal(n)
+		b.Write(append(line, '\n'))
+	}
+	p := filepath.Join(s.dir, repairsFile)
+	if st, err := os.Lstat(p); err == nil && !trusted(st, false) {
+		return fmt.Errorf("%w: %s", errArchive, p)
+	}
+	return replaceFile(p, b.Bytes())
+}
+
+// repairNotes are the notes at or after t; an unreadable file or line is none.
+func (s *dispatchStore) repairNotes(t time.Time) []repairNote {
+	b, err := readTrusted(filepath.Join(s.dir, repairsFile))
+	if err != nil {
+		return nil
+	}
+	var notes []repairNote
+	for _, line := range bytes.Split(b, []byte{'\n'}) {
+		var n repairNote
+		if json.Unmarshal(line, &n) == nil && !n.TS.Before(t) && n.Moved >= 0 && n.Dropped >= 0 {
+			notes = append(notes, n)
+		}
+	}
+	return notes
+}
+
+func (s *dispatchStore) repairFile(p string) (moved, dropped int, err error) {
+	f, _, err := openChecked(p, os.O_RDONLY)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer f.Close()
+	b, err := io.ReadAll(f)
+	if err != nil {
+		return 0, 0, err
+	}
+	var good, bad bytes.Buffer
+	lines := bytes.Split(b, []byte{'\n'})
+	if len(lines) > 0 && len(lines[len(lines)-1]) == 0 {
+		lines = lines[:len(lines)-1] // what follows the last newline
+	}
+	for _, line := range lines {
+		if len(line) == 0 { // not a record: Since counts it unreadable, Repair drops it
+			dropped++
+			continue
+		}
+		var rec dispatchRecord
+		dec := json.NewDecoder(bytes.NewReader(line))
+		dec.DisallowUnknownFields()
+		if len(line) <= 1<<20 && dec.Decode(&rec) == nil && rec.check() == nil { // as Since reads it
+			good.Write(line)
+			good.WriteByte('\n')
+			continue
+		}
+		bad.Write(line)
+		bad.WriteByte('\n')
+		moved++
+	}
+	if moved == 0 && dropped == 0 {
+		return 0, 0, nil
+	}
+	if moved > 0 {
+		if err := appendBad(p+".bad", bad.Bytes()); err != nil {
+			return 0, 0, err
+		}
+	}
+	// The kept lines replace the file in one rename: a write that fails
+	// (a full disk is why Repair runs) leaves the file as it was.
+	if err := replaceFile(p, good.Bytes()); err != nil {
+		return 0, 0, err
+	}
+	return moved, dropped, nil
+}
+
+// lock takes the archive's lock: a .lock file next to the day files, so
+// the files that are read are never locked themselves (on Windows a lock
+// is mandatory, and a reader would fail while a Save holds it). Save,
+// Repair and SaveFeedback hold it while they write; unlock releases it.
+func (s *dispatchStore) lock() (unlock func(), err error) {
+	p := filepath.Join(s.dir, ".lock")
+	// Not moved aside on its own: whoever replaced it may still be at work.
+	fix := fmt.Sprintf("it must be a regular file of this service's user, mode 0600; check who changed it, then move it aside (%s) and the archive's next write makes a new one", lockFixHint(p))
+	f, err := osutil.OpenNoFollow(p, os.O_RDWR|os.O_CREATE, 0o600, true)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s cannot be opened (%v): %s", errArchive, p, err, fix)
+	}
+	if st, err := f.Stat(); err != nil || !trusted(st, false) {
+		f.Close()
+		return nil, fmt.Errorf("%w: %s is not trusted: %s", errArchive, p, fix)
+	}
+	if err := osutil.Lock(f); err != nil {
+		f.Close()
+		return nil, err
+	}
+	return func() { f.Close() }, nil
+}
+
+// lockFixHint is the command that moves an untrusted lock file aside.
+func lockFixHint(p string) string {
+	if runtime.GOOS == "windows" {
+		return fmt.Sprintf(`as administrator: move "%s" "%s.bad"`, p, p)
+	}
+	return "sudo mv " + shellQuote(p) + " " + shellQuote(p+".bad")
+}
+
+// shellQuote is s in single quotes for a POSIX shell.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// openChecked opens an archive file without following a link and checks
+// it; the caller holds the archive's lock.
+func openChecked(p string, flag int) (*os.File, os.FileInfo, error) {
+	f, err := osutil.OpenNoFollow(p, flag, 0o600, true)
+	if err != nil {
+		return nil, nil, fmt.Errorf("%w: %s: %v", errArchive, p, err)
+	}
+	st, err := f.Stat()
+	if err != nil || !trusted(st, false) {
+		f.Close()
+		return nil, nil, fmt.Errorf("%w: %s", errArchive, p)
+	}
+	return f, st, nil
+}
+
+// saveHeld runs while Save holds the lock and the day file is open; tests
+// set it.
+var saveHeld func(p string)
+
+// appendBad appends lines to a .bad file, unless it already ends with them
+// (a Repair that stopped after this step and runs again).
+func appendBad(p string, lines []byte) error {
+	bf, err := osutil.OpenNoFollow(p, os.O_RDWR|os.O_APPEND|os.O_CREATE, 0o600, true)
+	if err != nil {
+		return fmt.Errorf("%w: %s: %v", errArchive, p, err)
+	}
+	defer bf.Close()
+	st, err := bf.Stat()
+	if err != nil || !trusted(st, false) {
+		return fmt.Errorf("%w: %s", errArchive, p)
+	}
+	if st.Size() >= int64(len(lines)) {
+		tail := make([]byte, len(lines))
+		if _, err := bf.ReadAt(tail, st.Size()-int64(len(lines))); err == nil && bytes.Equal(tail, lines) {
+			return nil
+		}
+	}
+	if _, err := bf.Write(lines); err != nil {
+		return err
+	}
+	return bf.Sync() // the moved lines are kept before they leave the day file
+}
+
+// replaceWrite writes a temporary file; tests swap it to fail midway.
+var replaceWrite = func(f *os.File, b []byte) error {
+	_, err := f.Write(b)
+	return err
+}
+
+// replaceFile puts b in place of p: a temporary file in the same directory
+// (0600), synced, then renamed over p, so p is either all old or all new.
+func replaceFile(p string, b []byte) error {
+	tf, err := os.CreateTemp(filepath.Dir(p), "."+filepath.Base(p)+".*.tmp")
+	if err != nil {
+		return err
+	}
+	tmp := tf.Name()
+	werr := replaceWrite(tf, b)
+	serr := tf.Sync()
+	cerr := tf.Close()
+	if err := errors.Join(werr, serr, cerr); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, p); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	if d, err := os.Open(filepath.Dir(p)); err == nil { // the rename itself, on disk
+		d.Sync()
+		d.Close()
+	}
+	return nil
+}
+
+// repairedLine is the daily report's line about what Repair did in the
+// last day; "" when it did nothing.
+func (s *dispatchStore) repairedLine(now time.Time) string {
+	moved, dropped, runs := 0, 0, 0
+	for _, n := range s.repairNotes(now.Add(-24 * time.Hour)) {
+		moved, dropped, runs = moved+n.Moved, dropped+n.Dropped, runs+1
+	}
+	if runs == 0 {
+		return ""
+	}
+	return fmt.Sprintf("- `shentu dispatch repair` ran %d times: %d unreadable archive lines moved to *.jsonl.bad, %d empty lines dropped (%s)\n", runs, moved, dropped, s.dir)
+}
+
+// repairHint is how to run the repair here: as root, or elevated on Windows.
+func repairHint() string { return adminHint("shentu dispatch repair") }
+
+// adminHint is how to run command as root, or elevated on Windows.
+func adminHint(command string) string {
+	if runtime.GOOS == "windows" {
+		return "`" + command + "` from an elevated prompt (Run as administrator)"
+	}
+	return "`sudo " + command + "`"
+}
+
+// dispatchCommand is `shentu dispatch repair`.
+func dispatchCommand(cfg *Config, args []string, root bool) error {
+	if len(args) > 0 && args[0] == "stats" {
+		if !root { // the archive is root's alone (0700)
+			return errors.New("shentu dispatch stats reads the dispatch archive, which only root can read: run " + adminHint("shentu dispatch stats"))
+		}
+		fs := flag.NewFlagSet("dispatch stats", flag.ContinueOnError)
+		days := fs.Int("days", 7, "add up this many days (1 to 30)")
+		asJSON := fs.Bool("json", false, "print JSON")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		return statsReport(cfg, *days, *asJSON, os.Stdout, time.Now())
+	}
+	if len(args) != 1 || args[0] != "repair" {
+		return errors.New("usage: shentu dispatch repair | shentu dispatch stats [--days 7] [--json]")
+	}
+	if !root {
+		return errors.New("shentu dispatch repair changes the dispatch archive: run " + repairHint())
+	}
+	n, d, err := newDispatchStore(cfg).Repair()
+	if err != nil {
+		return err
+	}
+	if n == 0 && d == 0 {
+		fmt.Println("shentu dispatch repair: every line of the dispatch archive can be read; nothing moved.")
+		return nil
+	}
+	fmt.Printf("shentu dispatch repair: moved %d unreadable lines to *.jsonl.bad and dropped %d empty lines in %s; automatic incident checks count again from the next patrol.\n", n, d, filepath.Join(cfg.StateDir, dispatchDir))
+	return nil
 }

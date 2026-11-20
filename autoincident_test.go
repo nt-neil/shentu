@@ -491,7 +491,7 @@ func TestAutoDispatchArchiveStoppedSaid(t *testing.T) {
 		f := filepath.Join(dir, c.day.Format(time.DateOnly)+".jsonl")
 		os.WriteFile(f, []byte("{\"v\":1,\"id\":\"half"), 0o600) // a line cut short
 		s := autoIncidentSection(cfg, time.Now())                // no L3 today
-		for _, want := range []string{"stopped: 1 lines", c.day.Format(time.DateOnly) + ".jsonl", c.want.Format("2006-01-02 15:04"), "at most 72 hours", "moved out of " + dir} {
+		for _, want := range []string{"stopped: 1 lines", c.day.Format(time.DateOnly) + ".jsonl", c.want.Format("2006-01-02 15:04"), "at most 72 hours", "sudo shentu dispatch repair", dir} {
 			if !strings.Contains(s, want) {
 				t.Errorf("bad line on %s: the daily report lacks %q:\n%s", c.day.Format(time.DateOnly), want, s)
 			}
