@@ -14,8 +14,9 @@ Chinese for the zh-TW pages; keep the two in step.
   `const { headers, hostname: hn } = r`, `const { host } = req.headers`). So `r.hostname`,
   `r.get('host')`, `c.host` and a destructured `headers` are reported now; a Host header read this
   way goes to js-ssrf-host-header, other headers to js-ssrf-http-request. A request header index
-  is read in lower case, as Node stores it (`r.headers['Host']`). Koa's `ctx.header`,
-  `ctx.request.header`, `ctx.request.headers` and `ctx.request.get(` are sources too (#106).
+  is read in lower case, as Node stores it (`r.headers['Host']`). In the SSRF rules, Koa's
+  `ctx.header` and `ctx.request.get(` are sources too, and so are `ctx.request.header.host` and
+  `ctx.request.headers.host` for the Host header (#106).
 - NestJS: `@Request()` counts as the handler's request, as `@Req()` does, in the 13 JavaScript
   rules that read `@Req()` (SSRF, SQL and NoSQL injection, command injection, code evaluation, path
   traversal, LDAP injection, deserialization). Both count as NestJS's only when the file, or another
@@ -33,9 +34,10 @@ Chinese for the zh-TW pages; keep the two in step.
   directories (`/etc/userdb`, `/run/userdb`, `/run/host/userdb`, `/usr/local/lib/userdb`,
   `/usr/lib/userdb`) hold any entry or cannot be read: userdb can add accounts and group
   memberships that `/etc/passwd` and `/etc/group` do not show (#113).
-- Blocking: an address written in an `inet_aton` form, one to four parts in decimal, octal or
-  hexadecimal (`3405803788`, `203.28940`, `203.0.28940`, `0xcb.0.113.12`), is refused as another
-  form of an address, as v0.4.1 refused brackets, a port or leading zeros (#113).
+- Blocking: an address logged in an `inet_aton` form, one to four parts in decimal, octal or
+  hexadecimal (`3405803788`, `203.28940`, `203.0.28940`, `0xcb.0.113.12`), refuses a block of
+  that address, from Telegram and on the server, as v0.4.1 did for brackets, a port or leading
+  zeros; on the server the operator may override (#113).
 - An attack source logged as `::ffff:a.b.c.d` is the same campaign source as `a.b.c.d` (#113). A
   state saved before v0.4.2 with one source under both keys is merged when it is loaded, so that
   source no longer needs three more vulnerabilities to count as a campaign (#124).

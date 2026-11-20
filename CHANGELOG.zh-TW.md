@@ -5,7 +5,7 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 
 ## v0.4.2 (unreleased)
 
-- JavaScript 規則不管路由 handler 的 request 叫什麼名字都追得到：不叫 `req` 的參數（`(r, s) =>`）、不叫 `ctx` 的 Koa context、別名（`const q = r`、`const h = r.headers`），以及解構（`({ headers }, res) =>`、`const { headers, hostname: hn } = r`、`const { host } = req.headers`）。所以 `r.hostname`、`r.get('host')`、`c.host` 和解構出來的 `headers` 現在都會回報；這樣讀到的 Host header 歸 js-ssrf-host-header，其他 header 歸 js-ssrf-http-request。request header 的索引照 Node 的存法以小寫讀（`r.headers['Host']`）。Koa 的 `ctx.header`、`ctx.request.header`、`ctx.request.headers` 和 `ctx.request.get(` 也算來源（#106）。
+- JavaScript 規則不管路由 handler 的 request 叫什麼名字都追得到：不叫 `req` 的參數（`(r, s) =>`）、不叫 `ctx` 的 Koa context、別名（`const q = r`、`const h = r.headers`），以及解構（`({ headers }, res) =>`、`const { headers, hostname: hn } = r`、`const { host } = req.headers`）。所以 `r.hostname`、`r.get('host')`、`c.host` 和解構出來的 `headers` 現在都會回報；這樣讀到的 Host header 歸 js-ssrf-host-header，其他 header 歸 js-ssrf-http-request。request header 的索引照 Node 的存法以小寫讀（`r.headers['Host']`）。在 SSRF 規則裡，Koa 的 `ctx.header` 和 `ctx.request.get(` 也算來源，Host header 另外加上 `ctx.request.header.host` 和 `ctx.request.headers.host`（#106）。
 - NestJS：在讀 `@Req()` 的 13 條 JavaScript 規則裡（SSRF、SQL 與 NoSQL injection、命令注入、程式碼執行、路徑穿越、LDAP injection、反序列化），`@Request()` 和 `@Req()` 一樣算 handler 的 request。兩者都只有在這個檔案或專案裡的其他檔案 import 了 `@nestjs/common` 或 `@nestjs/core` 時，才算 NestJS 的；其他情況就是普通的物件（#103、#106）。
 - Python：用反斜線接到下一行的 `global`、`nonlocal`，會讀到整個敘述結束，下一行的名稱也算宣告（#103）。
 - SSRF：URL 的 host 檢查過之後，`a = u.valueOf()` 再改 `a`，或用計算出來的名稱呼叫 `u` 的方法（`u['valueOf']()`、`u[k](...)`），都會讓檢查失效，和 `a = u` 一樣（#103）。
@@ -13,7 +13,7 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 ### 修正
 
 - systemd 的 userdb 目錄（`/etc/userdb`、`/run/userdb`、`/run/host/userdb`、`/usr/local/lib/userdb`、`/usr/lib/userdb`）有任何項目、或讀不到時，伺服器自己的帳號擁有的網站紀錄不再能當封鎖依據：userdb 可以加上 `/etc/passwd`、`/etc/group` 看不到的帳號和群組成員（#113）。
-- 封鎖：用 `inet_aton` 寫法寫的位址，也就是十進位、八進位或十六進位的一到四段（`3405803788`、`203.28940`、`203.0.28940`、`0xcb.0.113.12`），會被當成位址的另一種寫法而拒絕，和 v0.4.1 拒絕方括號、port、多寫的 0 一樣（#113）。
+- 封鎖：紀錄裡用 `inet_aton` 寫法記下的位址，也就是十進位、八進位或十六進位的一到四段（`3405803788`、`203.28940`、`203.0.28940`、`0xcb.0.113.12`），也會讓封鎖這個位址被拒絕，Telegram 和伺服器上都一樣，和 v0.4.1 對方括號、port、多寫的 0 的處理相同；在伺服器上可以 override（#113）。
 - 紀錄成 `::ffff:a.b.c.d` 的攻擊來源，和 `a.b.c.d` 算同一個 campaign 來源（#113）。v0.4.2 之前存下、同一個來源分在兩個 key 底下的狀態，載入時會合併，這個來源不用再多累積三個漏洞才算 campaign（#124）。
 
 ### 升級說明
