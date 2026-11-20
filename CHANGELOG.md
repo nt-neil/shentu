@@ -6,6 +6,38 @@ a release are not written here: they are worked out from the rule snapshots in
 `docs/site-src/rules-history/`. `CHANGELOG.zh-TW.md` holds the same releases in Traditional
 Chinese for the zh-TW pages; keep the two in step.
 
+## v0.6.0 (unreleased)
+
+- Dispatch archive (#112): each sub-agent dispatch is saved to `state_dir/dispatch/<date>.jsonl`
+  (0600 in a 0700 directory, kept 30 days) before its reports go back: roles, statuses and
+  reasons as fixed words, counts, and the proposed addresses in canonical form with what the
+  Telegram gate says of each. No text a sub-agent or a log wrote is kept. Every field is checked
+  when a record is written and when it is read; an archive another user could write, or a link,
+  is not read. The daily report has a section on the last day's dispatches, with addresses
+  masked to /24 (/64 for IPv6).
+- Proposal buttons (#116, #122): after a Telegram answer that dispatched, the bot lists the
+  proposed blocks, with a button for each one that passes the checks `block_ip` runs from
+  Telegram (#108's gate included) at that moment and was written in canonical form, at most
+  five; any other gets a fixed word for why. A button carries only the dispatch id and a number.
+  Pressing it runs the checks again, then asks for ✅ (with `[bot] confirm = 4` too), then
+  blocks. A press is refused for another pairing, after 24 hours, a second time (after a restart
+  too), or when the archive's address differs.
+- Automatic incident checks (#117), off by default (`[agents] auto_incident`): an L3 group the
+  patrol pushed dispatches the read-only `incident` sub-agent on its own. One a round, at most 3
+  a day, a group once a day; none for unverified or overflow groups, none without
+  `[budget] monthly_tokens` or past 80% of it, and none while the archive or `log.jsonl` cannot
+  be read to its end. The notice carries fixed words and numbers; its proposals get the same
+  buttons, sent only while the bot service runs and can change the firewall.
+- The bot's and `shentu chat`'s monthly AI budget limit counts a `log.jsonl` it could not read
+  to its end as used up.
+
+### Known issues
+
+- Sub-agents still run one after another, and they are built and tested for Linux only.
+- A line cut short in the archive (a full disk, say) stops automatic incident checks for about
+  two days, until its file is out of the window they read; the daily report says so.
+- With a 7B local model, sub-agents often use up their 6 steps and are reported incomplete.
+
 ## v0.5.0 (unreleased)
 
 - Sub-agents (Linux, one host): in the Telegram bot and `shentu chat`, the agent can hand
