@@ -8,6 +8,13 @@ func TestItemLinks(t *testing.T) {
 		{"[other](https://example.com/x) stays", "[other](https://example.com/x) stays"},
 		{"`[c](" + repo + "/x)` is code", "<code>[c](" + repo + "/x)</code> is code"},
 		{"[a\"b](" + repo + "/x)", `<a href="` + repo + `/x">a&#34;b</a>`},
+		// A path that steps out with /.. or an encoded dot stays text.
+		{"[up](" + repo + "/../other)", "[up](" + repo + "/../other)"},
+		{"[up](" + repo + "/blob/main/..)", "[up](" + repo + "/blob/main/..)"},
+		{"[enc](" + repo + "/%2e%2e/other)", "[enc](" + repo + "/%2e%2e/other)"},
+		{"[enc](" + repo + "/%2E./other)", "[enc](" + repo + "/%2E./other)"},
+		{"[enc](" + repo + "/blob/x%2Ey)", "[enc](" + repo + "/blob/x%2Ey)"},
+		{"[dot](" + repo + "/blob/main/a.b.md)", `<a href="` + repo + `/blob/main/a.b.md">dot</a>`},
 	} {
 		if got := string(item(c.in)); got != c.want {
 			t.Errorf("item(%q) = %q, want %q", c.in, got, c.want)
