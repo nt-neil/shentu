@@ -6,7 +6,7 @@ a release are not written here: they are worked out from the rule snapshots in
 `docs/site-src/rules-history/`. `CHANGELOG.zh-TW.md` holds the same releases in Traditional
 Chinese for the zh-TW pages; keep the two in step.
 
-## v0.4.2 (unreleased)
+## v0.4.2 — 2026-11-20
 
 - The JavaScript rules follow a route handler's request whatever it is called: a parameter not
   named `req` (`(r, s) =>`), a Koa context not named `ctx`, an alias (`const q = r`,
