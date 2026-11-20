@@ -165,6 +165,7 @@ type subProposal struct {
 	Action string `json:"action"` // only "propose_block_ip"
 	IP     string `json:"ip"`
 	Group  string `json:"group,omitempty"`
+	Loose  bool   `json:"-"` // the address was not written in canonical form; TODO(A): set in parseReport
 }
 
 var severities = map[string]bool{"info": true, "low": true, "medium": true, "high": true, "critical": true}
