@@ -226,8 +226,8 @@
     </li>
   
     <li class="era-node now" style="--old: 0.00; --x: 93.0">
-      <a class="lamp" href="releases.html#v0.6.0" aria-describedby="rv-0.6.0">
-        <i aria-hidden="true"></i><span class="ver">v0.6.0</span>
+      <a class="lamp" href="releases.html#v0.5.1" aria-describedby="rv-0.5.1">
+        <i aria-hidden="true"></i><span class="ver">v0.5.1</span>
         <b class="badge">Coming soon</b>
       </a>
       <p class="acc"><span><b>127</b> rules</span></p>
@@ -237,8 +237,8 @@
   </ol>
 </div>
 
-<div class="newest" id="rv-0.6.0">
-  <div class="newest-head"><p class="word">In progress</p><span class="ver">v0.6.0</span><b class="badge">Coming soon</b></div>
+<div class="newest" id="rv-0.5.1">
+  <div class="newest-head"><p class="word">In progress</p><span class="ver">v0.5.1</span><b class="badge">Coming soon</b></div>
   <div class="grp grp-reach"><h4><i aria-hidden="true"></i>Sees further</h4><ul><li>Dispatch archive (#112): each sub-agent dispatch is saved to <code>state_dir/dispatch/&lt;date&gt;.jsonl</code> (0600 in a 0700 directory, kept 30 days) before its reports go back: roles, statuses and reasons as fixed words, counts, and the proposed addresses in canonical form with what the Telegram gate says of each. No text a sub-agent or a log wrote is kept. Every field is checked when a record is written and when it is read; an archive another user could write, or a link, is not read. The daily report has a section on the last day&#39;s dispatches, with addresses masked to /24 (/64 for IPv6).</li><li>Proposal buttons (#116, #122): after a Telegram answer that dispatched, the bot lists the proposed blocks, with a button for each one that passes the checks <code>block_ip</code> runs from Telegram (#108&#39;s gate included) at that moment and was written in canonical form, at most five; any other gets a fixed word for why. A button carries only the dispatch id and a number. Pressing it runs the checks again, then asks for ✅ (with <code>[bot] confirm = 4</code> too), then blocks. A press is refused for another pairing, after 24 hours, a second time (after a restart too), or when the archive&#39;s address differs.</li><li>Automatic incident checks (#117), off by default (<code>[agents] auto_incident</code>): an L3 group the patrol pushed dispatches the read-only <code>incident</code> sub-agent on its own. One a round, at most 3 a day, a group once a day; none for unverified or overflow groups, none without <code>[budget] monthly_tokens</code> or past 80% of it, and none while the archive or <code>log.jsonl</code> cannot be read to its end. The notice carries fixed words and numbers; its proposals get the same buttons, sent only while the bot service runs and can change the firewall.</li><li>The bot&#39;s and <code>shentu chat</code>&#39;s monthly AI budget limit counts a <code>log.jsonl</code> it could not read to its end as used up.</li></ul></div><div class="grp grp-known"><h4><i aria-hidden="true"></i>Known issues</h4><ul><li>Sub-agents still run one after another, and they are built and tested for Linux only.</li><li>A line cut short in the archive (a full disk, say) stops automatic incident checks for about two days, until its file is out of the window they read; the daily report says so.</li><li>With a 7B local model, sub-agents often use up their 6 steps and are reported incomplete.</li></ul></div>
 </div>
 
@@ -489,10 +489,10 @@
     </div>
   </li>
 
-  <li class="era pending" id="v0.6.0" style="--old: 0.00">
+  <li class="era pending" id="v0.5.1" style="--old: 0.00">
     <div class="mark">
       <p class="when">unreleased</p>
-      <h2><span class="word">In progress</span> <span class="ver">v0.6.0</span></h2>
+      <h2><span class="word">In progress</span> <span class="ver">v0.5.1</span></h2>
     </div>
     <div class="body">
       <ul class="items"><li>Dispatch archive (#112): each sub-agent dispatch is saved to <code>state_dir/dispatch/&lt;date&gt;.jsonl</code> (0600 in a 0700 directory, kept 30 days) before its reports go back: roles, statuses and reasons as fixed words, counts, and the proposed addresses in canonical form with what the Telegram gate says of each. No text a sub-agent or a log wrote is kept. Every field is checked when a record is written and when it is read; an archive another user could write, or a link, is not read. The daily report has a section on the last day&#39;s dispatches, with addresses masked to /24 (/64 for IPv6).</li><li>Proposal buttons (#116, #122): after a Telegram answer that dispatched, the bot lists the proposed blocks, with a button for each one that passes the checks <code>block_ip</code> runs from Telegram (#108&#39;s gate included) at that moment and was written in canonical form, at most five; any other gets a fixed word for why. A button carries only the dispatch id and a number. Pressing it runs the checks again, then asks for ✅ (with <code>[bot] confirm = 4</code> too), then blocks. A press is refused for another pairing, after 24 hours, a second time (after a restart too), or when the archive&#39;s address differs.</li><li>Automatic incident checks (#117), off by default (<code>[agents] auto_incident</code>): an L3 group the patrol pushed dispatches the read-only <code>incident</code> sub-agent on its own. One a round, at most 3 a day, a group once a day; none for unverified or overflow groups, none without <code>[budget] monthly_tokens</code> or past 80% of it, and none while the archive or <code>log.jsonl</code> cannot be read to its end. The notice carries fixed words and numbers; its proposals get the same buttons, sent only while the bot service runs and can change the firewall.</li><li>The bot&#39;s and <code>shentu chat</code>&#39;s monthly AI budget limit counts a <code>log.jsonl</code> it could not read to its end as used up.</li><li>Sub-agents still run one after another, and they are built and tested for Linux only.</li><li>A line cut short in the archive (a full disk, say) stops automatic incident checks for about two days, until its file is out of the window they read; the daily report says so.</li><li>With a 7B local model, sub-agents often use up their 6 steps and are reported incomplete.</li></ul>

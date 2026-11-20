@@ -6,7 +6,7 @@ a release are not written here: they are worked out from the rule snapshots in
 `docs/site-src/rules-history/`. `CHANGELOG.zh-TW.md` holds the same releases in Traditional
 Chinese for the zh-TW pages; keep the two in step.
 
-## v0.6.0 (unreleased)
+## v0.5.1 (unreleased)
 
 - Dispatch archive (#112): each sub-agent dispatch is saved to `state_dir/dispatch/<date>.jsonl`
   (0600 in a 0700 directory, kept 30 days) before its reports go back: roles, statuses and
