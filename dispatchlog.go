@@ -634,7 +634,7 @@ func (a *agent) runDispatch(ctx context.Context, origin, trigger string, tasks [
 	dctx, cancel := context.WithTimeout(ctx, dispatchTimeout)
 	defer cancel()
 	left := dispatchTokenCap
-	if modelErr == nil && external && len(tasks) > 1 && budgetRoom(a.cfg, time.Now()) {
+	if modelErr == nil && external && len(tasks) > 1 && !agentsOnThisHost(a.cfg.Agents.BaseURL) && budgetRoom(a.cfg, time.Now()) {
 		reports, left = a.runSubsParallel(dctx, id, tasks)
 		tasks = nil
 	}
@@ -680,12 +680,17 @@ func (a *agent) runDispatch(ctx context.Context, origin, trigger string, tasks [
 // dispatch's cap: sub-agents run at once each pass the limit check before
 // any has used tokens, so the room is reserved first; without it they take
 // turns, and each one after the first is stopped at the limit as before.
+// A cost limit gets no such reservation (a call's cost is not known ahead),
+// so with one set they run at once only while under half of it.
 func budgetRoom(cfg *Config, now time.Time) bool {
 	if cfg.Budget.MonthlyTokens <= 0 {
 		return false
 	}
-	_, used, _, err := monthUsageStrict(cfg.StateDir, now)
-	return err == nil && used+dispatchTokenCap <= cfg.Budget.MonthlyTokens
+	cost, used, _, err := monthUsageStrict(cfg.StateDir, now)
+	if err != nil || used+dispatchTokenCap > cfg.Budget.MonthlyTokens {
+		return false
+	}
+	return cfg.Budget.MonthlyCost <= 0 || cost < cfg.Budget.MonthlyCost/2
 }
 
 // runSubsParallel runs tasks at once, for a model outside this host (on
