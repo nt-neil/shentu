@@ -143,8 +143,9 @@ How the engine reads them:
     is surely a collection (`.has(`, `.includes(`, `in` on a list, set, tuple
     or array written out, `new Set(...)`, `set(...)` or `frozenset(...)` of one
     of those, or a chain of reads ending in `.split(...)`, as the whole
-    expression; or a name the file binds once, at its top level, to one of
-    those and otherwise only reads. A parameter, destructuring, `catch`, `for`,
+    expression; Python's tuple without parentheses, `'a', 'b'`, too; or a name
+    the file binds once, at its top level, to one of those and otherwise only
+    reads. A parameter, destructuring, `catch`, `for`,
     `with`, a key of that name, a default value, `+=`, a tuple of targets or an
     argument anywhere in the file makes the name unknown, and so does Python's
     `from x import *` for every name; on a string or an
@@ -161,19 +162,31 @@ How the engine reads them:
     any alias `w = u`, `x = w`). In JavaScript a URL passed to any other call
     than the rule's sinks may be changed there (`setHost(u, v)`), so the check
     ends and u holds again the input it held before it; this also ends it for a
-    call that only reads u (`log(u)`), which reports more than it must. So does
+    call that only reads u (`log(u)`), which reports more than it must, except
+    `console.log` (`.info`, `.warn`, `.error`, `.debug`, `.trace`),
+    `JSON.stringify` and `String`, while the file uses `console`, `JSON` and
+    `String` only to call them (no parameter or declaration of the name, no
+    `console.log = f`, `globalThis.String = f` or `Object.assign(console, ...)`). So does
     a URL written into an object or array (`{ target: u }`, `[u]`), or used as
     a value in any other way than a member read (`u.valueOf()` is u itself, not a
     member; a method called by a computed name, `u[k]()`, counts as changing it
     whatever k is, `u['toString']()` too), a whole argument or the whole
     right side of an assignment (`a1 = u || null`, `c ? u : w`, `return u`). Only a
-    plain name holds a checked URL (not `this.u`), only one no function written
-    inside another uses without binding it itself (a closure or callback that
-    reads or changes u, whenever it runs: `() => { u.host = v }`,
-    `[v].forEach(h => { u.host = h })`) and no function declares `global` or
-    `nonlocal` (Python's `def m(): nonlocal u; u = urlparse(v)`, a list of names
-    and a statement continued with a backslash included), and only while fewer than 64 names
-    hold it (each alias is kept with each other one).
+    plain name holds a checked URL (not `this.u`), and only while the binding
+    of it (the function, or the module, where the name is a local) is not
+    reached from elsewhere. In JavaScript no function written inside that
+    binding's function may use it without binding it itself (a closure or
+    callback that reads or changes u, whenever it runs: `() => { u.host = v }`,
+    `[v].forEach(h => { u.host = h })`). In Python, whose parse results cannot
+    be changed in place, a nested `def` or `lambda` that only reads u keeps the
+    check; a `global` or `nonlocal` that resolves to that binding ends it
+    (`def m(): nonlocal u; u = urlparse(v)`, a list of names and a statement
+    continued with a backslash included), and `global u` in the function that
+    assigns u ends it too. A `global` or `nonlocal` of another binding of the
+    same name (another function's u) does not. Where the assignment's line does
+    not show which binding it is, the name counts as reached when any of its
+    bindings is. And only while fewer than 64 names hold it (each alias is kept with each
+    other one).
     `p.geturl()` is a string the client parses again; urlparse and the client's
     parser agree on the host of what urlparse itself wrote out, which is why it
     counts, but a client with its own normalisation could read it otherwise. A URL whose host is allowed

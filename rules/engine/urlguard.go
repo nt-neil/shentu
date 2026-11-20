@@ -67,8 +67,9 @@ const maxURLAliases = 64
 
 // setURLOf records, for an assignment key = rhs, whether key holds a URL a
 // parser made, forgetting what it knew of key and of what is under it. After
-// w = u, w is that URL too and an alias of u.
-func (a *analysis) setURLOf(st state, key string, rhs []Token, plain bool) {
+// w = u, w is that URL too and an alias of u. line is the target's, which
+// tells the binding key is (captured).
+func (a *analysis) setURLOf(st state, key string, rhs []Token, plain bool, line int) {
 	if a.r.rule.Class != "ssrf" {
 		return
 	}
@@ -85,7 +86,7 @@ func (a *analysis) setURLOf(st state, key string, rhs []Token, plain bool) {
 	// only a plain name holds a checked URL, and only one no other function
 	// of the file reaches (captured): a member (this.u, o.u) or a name a
 	// closure uses may change where the analysis does not look
-	own := func() bool { return !strings.Contains(key, sepCh) && !a.captured(key) }
+	own := func() bool { return !strings.Contains(key, sepCh) && !a.captured(key, line) }
 	if a.isURLParse(rhs) {
 		if own() {
 			st[urlKey+key] = entry{san: true}
@@ -167,7 +168,7 @@ func aliasesOf(st state, k string) []string {
 // rule's own sinks, may change it too (setHost(u, v)): the check of u ends and
 // u holds again the input it held before it. Python's parse results cannot be
 // changed in place. This reports more than it must: a call that only reads u
-// (log(u)) ends the check as well.
+// (log(u)) ends the check as well, except the built-in readOnlyCalls.
 func (a *analysis) urlCallsStmt(st state, t []Token) {
 	if a.r.rule.Class != "ssrf" || !a.js {
 		return
@@ -239,7 +240,7 @@ func (a *analysis) urlCallsStmt(st state, t []Token) {
 			for _, s := range a.r.sinks {
 				sink = sink || s.at(t, start, false)
 			}
-			if sink {
+			if sink || a.readOnlyCall(t[start:i]) {
 				continue
 			}
 		}
@@ -260,6 +261,53 @@ func (a *analysis) urlCallsStmt(st state, t []Token) {
 			a.urlChanged(st, key, v, !write)
 		}
 	}
+}
+
+// readOnlyCalls: JavaScript's calls that only read a URL given to them (its
+// string, its toJSON): console.log(u), JSON.stringify(u), String(u).
+var readOnlyCalls = map[string]bool{
+	"console.log": true, "console.info": true, "console.warn": true, "console.error": true, "console.debug": true,
+	"console.trace": true, "JSON.stringify": true, "String": true,
+}
+
+// readOnlyCall reports whether callee (the tokens before a call's "(") is one
+// of readOnlyCalls and its first name is the built-in one: the file uses that
+// name only to read a member or call it (console.log(...), String(...)). Any
+// other use may replace it or what is under it (a parameter or declaration of
+// the name, console.log = ..., globalThis.String = ...,
+// Object.assign(console, ...)), and then the call does not count.
+func (a *analysis) readOnlyCall(callee []Token) bool {
+	var b strings.Builder
+	for _, tk := range callee {
+		if tk.Kind != Ident && !tk.op(".") {
+			return false
+		}
+		b.WriteString(tk.Text)
+	}
+	if len(callee) == 0 || !readOnlyCalls[b.String()] {
+		return false
+	}
+	if a.fregs == nil {
+		a.fregs = fileRegions(a.ftoks, a.py)
+	}
+	t, root := a.ftoks, callee[0].Text
+	for j, tk := range t {
+		if tk.Kind != Ident || tk.Text != root {
+			continue
+		}
+		if a.fregs.param[j] || j > 0 && (memberOp(false, t[j-1]) || t[j-1].op("?.") || t[j-1].word("const") || t[j-1].word("let") ||
+			t[j-1].word("var") || t[j-1].word("function") || t[j-1].word("class") || t[j-1].word("import")) {
+			return false
+		}
+		k := j + 1
+		for k+1 < len(t) && t[k].op(".") && t[k+1].Kind == Ident {
+			k += 2
+		}
+		if k >= len(t) || !t[k].op("(") || k == j+1 && root != "String" {
+			return false // console.log = f, a value: f(console), { String }, console alone
+		}
+	}
+	return true
 }
 
 // callArg reports whether t[i] is directly inside a call's parentheses.
@@ -448,7 +496,7 @@ func (a *analysis) collectionName(name string) bool {
 		case next.op("=") && depth == 0 && (a.py && indent == 0 && lineStart(t, i) ||
 			!a.py && i > 0 && (t[i-1].word("const") || t[i-1].word("let") || t[i-1].word("var"))):
 			defs++
-			if defs > 1 || !a.collectionValue(stmtRest(t, i+2)) {
+			if defs > 1 || !a.collectionValue(stmtRest(t, i+2)) && !(a.py && pyBareTuple(t, i+2)) {
 				ok = false
 			}
 		case next.op(".") || next.op("?.") || next.op("["):
@@ -462,6 +510,29 @@ func (a *analysis) collectionName(name string) bool {
 	v := ok && defs == 1
 	a.colls[name] = v
 	return v
+}
+
+// pyBareTuple reports whether the Python expression starting at t[i], to the
+// end of its logical line, is a tuple written without parentheses: 'a', 'b'
+// (a comma outside brackets, a trailing one too).
+func pyBareTuple(t []Token, i int) bool {
+	depth := 0
+	for j := i; j < len(t); j++ {
+		switch {
+		case isOpen(t[j]):
+			depth++
+		case isClose(t[j]):
+			if depth == 0 {
+				return false
+			}
+			depth--
+		case depth == 0 && (t[j].Kind == Newline || t[j].op(";")):
+			return false
+		case depth == 0 && t[j].op(","):
+			return j > i
+		}
+	}
+	return false
 }
 
 // stmtRest returns the expression starting at t[i] up to the end of its

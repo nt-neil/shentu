@@ -628,7 +628,7 @@ func (a *analysis) assign(st state, t []Token) (val, bool) {
 			} else if _, had := st[canonKey+key]; had {
 				delete(st, canonKey+key)
 			}
-			a.setURLOf(st, key, rhs, t[k].Text == "=")
+			a.setURLOf(st, key, rhs, t[k].Text == "=", tg[0].Line)
 			a.urlWrite(st, key, v)
 			if a.js {
 				a.setRelative(st, key, rhs, t[k].Text == "=")
