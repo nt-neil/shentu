@@ -8,7 +8,8 @@ frameworks = ["flask"]
 # python-sqli-dbapi-format's sources: SQL text in text() is this rule's, SQL
 # text passed to execute() as such that rule's.
 sources = ["request.args", "request.form", "request.values", "request.json", "request.GET", "request.POST", "request.query_params", "request.path_params", "request.form(", "request.json(", "request.body(", "request.query", "request.match_info", "request.post(", "request.text(", "request.read(", "self.get_argument(", "self.get_arguments(", "self.get_query_argument(", "self.get_body_argument(", "self.request.body", "self.request.arguments"]
-sinks = ["text(", "literal_column("]
+# Module-qualified spellings are written out: import sqlalchemy as sa.
+sinks = ["text(", "literal_column(", "sa.text(", "sa.literal_column(", "sqlalchemy.text(", "sqlalchemy.literal_column("]
 sanitizers = [".bindparams(", "int("]
 fix = "Use text() with :name placeholders and pass values separately; for column names use getattr on the model against an allowlist, never literal_column on input."
 refs = ["CVE-2026-26198"]
@@ -45,4 +46,67 @@ def orders():
     stmt = text("SELECT * FROM orders WHERE customer = :c")
     rows = db.session.execute(stmt, {"c": request.args.get("customer")}).all()
     return {"rows": [dict(r._mapping) for r in rows]}
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "sa.text() as a filter, never passed to execute()"
+code = '''
+import sqlalchemy as sa
+
+@app.get("/orders")
+def orders():
+    cond = request.args.get("where", "1=1")
+    return {"rows": [o.id for o in Order.query.filter(sa.text(cond)).all()]}
+'''
+
+[[samples]]
+kind = "safe"
+note = "sa.text() with a bound parameter"
+code = '''
+import sqlalchemy as sa
+
+@app.get("/orders")
+def orders():
+    cond = sa.text("customer = :c").bindparams(c=request.args.get("customer"))
+    return {"rows": [o.id for o in Order.query.filter(cond).all()]}
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "sqlalchemy.literal_column() as a sort key"
+code = '''
+import sqlalchemy
+
+@app.get("/orders")
+def orders():
+    key = request.args.get("sort", "id")
+    return {"rows": [o.id for o in Order.query.order_by(sqlalchemy.literal_column(key)).all()]}
+'''
+
+[[samples]]
+kind = "safe"
+note = "the sort key looked up on a fixed map of columns"
+code = '''
+import sqlalchemy as sa
+
+SORTS = {"id": Order.id, "total": Order.total}
+
+@app.get("/orders")
+def orders():
+    col = SORTS.get(request.args.get("sort"), Order.id)
+    return {"rows": [o.id for o in Order.query.order_by(sa.desc(col)).all()]}
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "bindparams() binds the :name values only, not what the f-string put into the text"
+code = '''
+import sqlalchemy as sa
+
+@app.get("/orders")
+def orders():
+    where = request.args.get("where", "1=1")
+    stmt = sa.text(f"SELECT id FROM orders WHERE {where} AND shop = :s").bindparams(s=1)
+    return {"rows": [r.id for r in db.session.execute(stmt)]}
 '''
