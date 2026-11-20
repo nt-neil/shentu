@@ -6,7 +6,7 @@ a release are not written here: they are worked out from the rule snapshots in
 `docs/site-src/rules-history/`. `CHANGELOG.zh-TW.md` holds the same releases in Traditional
 Chinese for the zh-TW pages; keep the two in step.
 
-## v0.5.0 (unreleased)
+## v0.5.0 — 2026-11-20
 
 - Sub-agents (Linux, one host): in the Telegram bot and `shentu chat`, the agent can hand
   read-only checks to up to 3 sub-agents with the `dispatch` tool, each in one role: `patrol`,
