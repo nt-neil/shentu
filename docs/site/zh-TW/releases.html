@@ -228,7 +228,7 @@
     <li class="era-node now" style="--old: 0.00; --x: 93.0">
       <a class="lamp" href="../zh-TW/releases.html#v0.5.1" aria-describedby="rv-0.5.1">
         <i aria-hidden="true"></i><span class="ver">v0.5.1</span>
-        <b class="badge">即將發布</b>
+        <time datetime="2026-11-20">11-20</time>
       </a>
       <p class="acc"><span><b>127</b> 條規則</span></p>
       
@@ -238,7 +238,7 @@
 </div>
 
 <div class="newest" id="rv-0.5.1" data-groups="2">
-  <div class="newest-head"><p class="word">籌備中</p><span class="ver">v0.5.1</span><b class="badge">即將發布</b></div>
+  <div class="newest-head"><p class="word">重修</p><span class="ver">v0.5.1</span><time datetime="2026-11-20">2026-11-20</time></div>
   <div class="grp grp-reach"><h4><i aria-hidden="true"></i>看得更遠</h4><ul><li>派遣存檔（#112）：每一次子 agent 派遣，在回報交回 agent 之前，都會存進 <code>state_dir/dispatch/&lt;date&gt;.jsonl</code>（檔案 0600、目錄 0700，保留 30 天）。存的是角色、狀態與原因（固定字詞）、各項計數，以及建議封鎖的位址（canonical 形式）和 Telegram 閘門對每一個的判定。子 agent 或紀錄寫的文字一律不存。寫入和讀取時都會逐欄檢查；其他使用者寫得進去的存檔，或是連結，都不會讀。每日報告新增一段，列出最近一天的派遣，位址遮罩成 /24（IPv6 是 /64）。</li><li>建議動作按鈕（#116、#122）：Telegram 的回答派遣過子 agent 之後，bot 會列出建議封鎖的位址。當下通過 <code>block_ip</code> 從 Telegram 執行時的檢查（含 #108 的閘門）、而且以 canonical 形式寫的，各附一顆按鈕，最多五顆；其餘只寫出固定字詞的原因。按鈕只帶派遣 id 和一個序號。按下後會再檢查一次，接著要按 ✅（<code>[bot] confirm = 4</code> 也一樣），然後才封鎖。換了配對、超過 24 小時、按第二次（重啟後也一樣），或存檔裡的位址不同，都會拒絕。</li><li>自動事件調查（#117），預設關閉（<code>[agents] auto_incident</code>）：巡檢推送的 L3 群組，會自動派出唯讀的 <code>incident</code> 子 agent。每輪最多一次、每天最多 3 次、同一個群組一天一次；未查證或溢出的群組不派，沒設 <code>[budget] monthly_tokens</code> 或已用超過 80% 也不派，存檔或 <code>log.jsonl</code> 讀不到結尾時也不派。通知只有固定字詞和數字；它的建議動作也用同樣的按鈕，只在 bot 服務執行中、而且能改防火牆時才送出。</li><li>bot 和 <code>shentu chat</code> 的每月 AI 預算上限：<code>log.jsonl</code> 讀不到結尾時，當成預算已用完。</li></ul></div><div class="grp grp-known"><h4><i aria-hidden="true"></i>已知問題</h4><ul><li>子 agent 仍然依序一個接一個執行，而且只在 Linux 上開發與測試。</li><li>存檔裡有寫到一半的行時（例如磁碟滿了），自動事件調查會停大約兩天，直到那個檔案離開讀取的範圍；每日報告會寫明。</li><li>用 7B 的本機模型時，子 agent 常常用完 6 步，被標成未完成。</li></ul></div>
 </div>
 
@@ -489,10 +489,10 @@
     </div>
   </li>
 
-  <li class="era pending" id="v0.5.1" style="--old: 0.00">
+  <li class="era" id="v0.5.1" style="--old: 0.00">
     <div class="mark">
-      <p class="when">尚未發布</p>
-      <h2><span class="word">籌備中</span> <span class="ver">v0.5.1</span></h2>
+      <p class="when"><time datetime="2026-11-20">2026-11-20</time></p>
+      <h2><span class="word">7 項改變</span> <span class="ver">v0.5.1</span></h2>
     </div>
     <div class="body">
       <ul class="items"><li>派遣存檔（#112）：每一次子 agent 派遣，在回報交回 agent 之前，都會存進 <code>state_dir/dispatch/&lt;date&gt;.jsonl</code>（檔案 0600、目錄 0700，保留 30 天）。存的是角色、狀態與原因（固定字詞）、各項計數，以及建議封鎖的位址（canonical 形式）和 Telegram 閘門對每一個的判定。子 agent 或紀錄寫的文字一律不存。寫入和讀取時都會逐欄檢查；其他使用者寫得進去的存檔，或是連結，都不會讀。每日報告新增一段，列出最近一天的派遣，位址遮罩成 /24（IPv6 是 /64）。</li><li>建議動作按鈕（#116、#122）：Telegram 的回答派遣過子 agent 之後，bot 會列出建議封鎖的位址。當下通過 <code>block_ip</code> 從 Telegram 執行時的檢查（含 #108 的閘門）、而且以 canonical 形式寫的，各附一顆按鈕，最多五顆；其餘只寫出固定字詞的原因。按鈕只帶派遣 id 和一個序號。按下後會再檢查一次，接著要按 ✅（<code>[bot] confirm = 4</code> 也一樣），然後才封鎖。換了配對、超過 24 小時、按第二次（重啟後也一樣），或存檔裡的位址不同，都會拒絕。</li><li>自動事件調查（#117），預設關閉（<code>[agents] auto_incident</code>）：巡檢推送的 L3 群組，會自動派出唯讀的 <code>incident</code> 子 agent。每輪最多一次、每天最多 3 次、同一個群組一天一次；未查證或溢出的群組不派，沒設 <code>[budget] monthly_tokens</code> 或已用超過 80% 也不派，存檔或 <code>log.jsonl</code> 讀不到結尾時也不派。通知只有固定字詞和數字；它的建議動作也用同樣的按鈕，只在 bot 服務執行中、而且能改防火牆時才送出。</li><li>bot 和 <code>shentu chat</code> 的每月 AI 預算上限：<code>log.jsonl</code> 讀不到結尾時，當成預算已用完。</li><li>子 agent 仍然依序一個接一個執行，而且只在 Linux 上開發與測試。</li><li>存檔裡有寫到一半的行時（例如磁碟滿了），自動事件調查會停大約兩天，直到那個檔案離開讀取的範圍；每日報告會寫明。</li><li>用 7B 的本機模型時，子 agent 常常用完 6 步，被標成未完成。</li></ul>
