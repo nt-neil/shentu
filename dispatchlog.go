@@ -1018,18 +1018,38 @@ func (s *dispatchStore) repairedLine(now time.Time) string {
 func repairHint() string { return adminHint("shentu dispatch repair") }
 
 // adminHint is how to run command as root, or elevated on Windows.
-func adminHint(command string) string {
-	if runtime.GOOS == "windows" {
+func adminHint(command string) string { return adminHintOn(runtime.GOOS, command) }
+
+func adminHintOn(goos, command string) string {
+	if goos == "windows" {
 		return "`" + command + "` from an elevated prompt (Run as administrator)"
 	}
 	return "`sudo " + command + "`"
 }
 
+// dispatchPreflight is what dispatch stats and repair say to a user who is
+// not root (not elevated on Windows), checked before the configuration
+// and the state are read: without it they would fail on those first, with
+// a message that blames the configuration. nil for root, and for the
+// other subcommands (dispatchCommand checks them).
+func dispatchPreflight(args []string, root bool, goos string) error {
+	if root || len(args) == 0 {
+		return nil
+	}
+	switch args[0] {
+	case "stats":
+		return errors.New("shentu dispatch stats reads the dispatch archive, which only root can read: run " + adminHintOn(goos, "shentu dispatch stats"))
+	case "repair":
+		return errors.New("shentu dispatch repair changes the dispatch archive: run " + adminHintOn(goos, "shentu dispatch repair"))
+	}
+	return nil
+}
+
 // dispatchCommand is `shentu dispatch repair`.
 func dispatchCommand(cfg *Config, args []string, root bool) error {
 	if len(args) > 0 && args[0] == "stats" {
-		if !root { // the archive is root's alone (0700)
-			return errors.New("shentu dispatch stats reads the dispatch archive, which only root can read: run " + adminHint("shentu dispatch stats"))
+		if err := dispatchPreflight(args, root, runtime.GOOS); err != nil { // the archive is root's alone (0700)
+			return err
 		}
 		fs := flag.NewFlagSet("dispatch stats", flag.ContinueOnError)
 		days := fs.Int("days", 7, "add up this many days (1 to 30)")
@@ -1042,8 +1062,8 @@ func dispatchCommand(cfg *Config, args []string, root bool) error {
 	if len(args) != 1 || args[0] != "repair" {
 		return errors.New("usage: shentu dispatch repair | shentu dispatch stats [--days 7] [--json]")
 	}
-	if !root {
-		return errors.New("shentu dispatch repair changes the dispatch archive: run " + repairHint())
+	if err := dispatchPreflight(args, root, runtime.GOOS); err != nil {
+		return err
 	}
 	n, d, err := newDispatchStore(cfg).Repair()
 	if err != nil {
