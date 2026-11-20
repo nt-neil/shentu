@@ -76,6 +76,7 @@ type botState struct {
 	ToDelete   []sentMsg             `json:"to_delete,omitempty"`   // answers = 1..3: deleted after 24h
 	Day        string                `json:"day,omitempty"`         // protection = 1: answers counted per day
 	DayCount   int                   `json:"day_count,omitempty"`
+	CanAct     bool                  `json:"can_act,omitempty"` // the service, as it last started, may change the firewall (interaction >= 3, CAP_NET_ADMIN)
 	Buttons    map[string]*buttonSet `json:"buttons,omitempty"` // proposal buttons offered, by dispatch id
 }
 
@@ -427,6 +428,8 @@ func (b *bot) run(ctx context.Context) error {
 	defer b.stop()
 	b.noteLevelChanges(ctx)
 	b.canAct = b.cfg.Bot.Interaction >= 3 && hasNetAdmin()
+	// The patrol offers automatic dispatches' buttons only to a service that can act on them.
+	withBotState(b.cfg.StateDir, func(s *botState) error { s.CanAct = b.canAct; return nil })
 	if b.cfg.Bot.Interaction >= 3 && !b.canAct {
 		fmt.Fprintln(os.Stderr, "shentu bot: interaction >= 3 but the service cannot change the firewall; run `sudo shentu setup` (it adds the systemd drop-in). Answering questions only.")
 	}
@@ -919,6 +922,7 @@ var botText = map[string][2]string{ // English, Chinese
 	"prop_title_auto": {"Proposals of an automatic incident check (dispatch %s). A button runs every check again and asks you to confirm:", "自動事件調查的建議（派遣 %s）。按下按鈕會重新檢查一次，再請你確認："},
 	"prop_unsaved":    {"Not blocked: the bot's state could not be saved. Handle it on the server with shentu chat.", "沒有封鎖：狀態無法儲存，請到伺服器上用 shentu chat 處理。"},
 	"prop_failed":     {"Not blocked: the block did not succeed. Details are in the log on the server.", "沒有封鎖：封鎖沒有成功，詳細原因記在伺服器的紀錄裡。"},
+	"prop_noact":      {"no button: the bot service cannot change the firewall (interaction < 3 or no CAP_NET_ADMIN)", "不提供按鈕：bot 服務不能改防火牆（interaction < 3 或沒有 CAP_NET_ADMIN）"},
 	"prop_button":     {"button below", "見下方按鈕"},
 	"prop_more":       {"no button: at most 5 buttons", "不提供按鈕：最多 5 顆"},
 	"prop_nobutton":   {"no button: %s", "不提供按鈕：%s"},
