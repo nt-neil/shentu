@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -67,4 +68,89 @@ func agentsLLM(cfg *Config, main *llmClient) (*llmClient, bool, error) {
 		l.maxTokens = main.maxTokens
 	}
 	return l, external, nil
+}
+
+// agentsOnThisHost says whether baseURL may well be this host, for running
+// sub-agents at once (on this host's model they only compete for it): any
+// loopback or unspecified address in any form (127.1, 0x7f.1, 0.0.0.0, ::),
+// an address of this host's interfaces, a .localhost name, or a name that
+// resolves to one of those. Anything it cannot tell counts as this host:
+// the cost of a wrong guess is only running in turn. The budget and the
+// labels go by agentsExternal's literal reading instead. Tests swap it.
+var agentsOnThisHost = func(baseURL string) bool {
+	u, err := url.Parse(baseURL)
+	if err != nil || u.Hostname() == "" {
+		return true
+	}
+	h := strings.ToLower(u.Hostname())
+	if h == "localhost" || strings.HasSuffix(h, ".localhost") {
+		return true
+	}
+	local := func(ip net.IP) bool {
+		if ip.IsLoopback() || ip.IsUnspecified() {
+			return true
+		}
+		addrs, err := interfaceAddrs()
+		if err != nil { // cannot tell: this host, so in turn
+			return true
+		}
+		for _, a := range addrs {
+			if n, ok := a.(*net.IPNet); ok && n.IP.Equal(ip) {
+				return true
+			}
+		}
+		return false
+	}
+	if ip := net.ParseIP(h); ip != nil {
+		return local(ip)
+	}
+	if ip := atonV4(h); ip != nil {
+		return local(ip)
+	}
+	ips, err := net.LookupIP(h)
+	if err != nil {
+		return true
+	}
+	for _, ip := range ips {
+		if local(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+// interfaceAddrs is net.InterfaceAddrs; tests swap it.
+var interfaceAddrs = net.InterfaceAddrs
+
+// atonV4 reads an IPv4 address the way inet_aton does (and so connect does):
+// one to four parts, each decimal, octal (0...) or hex (0x...), the last
+// filling the bytes left (127.1 is 127.0.0.1). nil when s is not one.
+func atonV4(s string) net.IP {
+	parts := strings.Split(s, ".")
+	if len(parts) == 0 || len(parts) > 4 {
+		return nil
+	}
+	var v [4]uint64
+	for i, p := range parts {
+		n, err := strconv.ParseUint(p, 0, 32)
+		if err != nil || p == "" {
+			return nil
+		}
+		v[i] = n
+	}
+	last := len(parts) - 1
+	for i := 0; i < last; i++ {
+		if v[i] > 255 {
+			return nil
+		}
+	}
+	if v[last] >= 1<<(8*uint(4-last)) {
+		return nil
+	}
+	var a uint64
+	for i := 0; i < last; i++ {
+		a |= v[i] << (8 * uint(3-i))
+	}
+	a |= v[last]
+	return net.IPv4(byte(a>>24), byte(a>>16), byte(a>>8), byte(a))
 }
