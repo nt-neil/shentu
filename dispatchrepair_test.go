@@ -221,3 +221,24 @@ func TestDispatchSaveAfterReplace(t *testing.T) {
 		t.Errorf("after: %d records, %d bad, %v", len(recs), bad, err)
 	}
 }
+
+// S-H2 (round 2): a temporary file a Repair left (it died before its
+// rename) goes after a day, not before.
+func TestDispatchPruneTemp(t *testing.T) {
+	s := testStore(t)
+	if err := s.Save(testRecord("0123456789ab", time.Now())); err != nil {
+		t.Fatal(err)
+	}
+	old := filepath.Join(s.dir, "."+time.Now().Format(time.DateOnly)+".jsonl.123.tmp")
+	fresh := filepath.Join(s.dir, ".repairs.jsonl.456.tmp")
+	os.WriteFile(old, []byte("x"), 0o600)
+	os.WriteFile(fresh, []byte("x"), 0o600)
+	os.Chtimes(old, time.Now().Add(-25*time.Hour), time.Now().Add(-25*time.Hour))
+	s.Since(time.Now().Add(-time.Hour))
+	if _, err := os.Stat(old); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("a day-old temporary file was kept: %v", err)
+	}
+	if _, err := os.Stat(fresh); err != nil {
+		t.Errorf("a fresh temporary file was removed: %v", err)
+	}
+}

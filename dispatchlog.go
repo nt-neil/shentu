@@ -137,6 +137,7 @@ var (
 	triggerRe    = regexp.MustCompile(`^t[0-9a-f]{16}$`)
 	refRe        = regexp.MustCompile(`^d([0-9a-f]{12}):b([1-9][0-9]{0,2})$`)
 	dayFileRe    = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2})\.jsonl$`)
+	tmpFileRe    = regexp.MustCompile(`^\.(\d{4}-\d{2}-\d{2}\.jsonl|repairs\.jsonl)\..*\.tmp$`) // replaceFile's
 	keptFileRe   = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2})\.jsonl(\.bad)?$`) // what prune ages out
 )
 
@@ -366,6 +367,12 @@ func (s *dispatchStore) Save(rec dispatchRecord) error {
 func (s *dispatchStore) prune() {
 	ents, _ := os.ReadDir(s.dir)
 	for _, e := range ents {
+		if tmpFileRe.MatchString(e.Name()) { // a Repair that died before its rename
+			if info, err := e.Info(); err == nil && info.Mode().IsRegular() && s.now().Sub(info.ModTime()) > 24*time.Hour {
+				os.Remove(filepath.Join(s.dir, e.Name()))
+			}
+			continue
+		}
 		m := keptFileRe.FindStringSubmatch(e.Name())
 		if m == nil {
 			continue
