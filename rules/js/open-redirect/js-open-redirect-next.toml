@@ -78,7 +78,7 @@ code = '''
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 export default async function SignInGate() {
-  const site = (await headers()).get("x-forwarded-host");
+  const site = (await headers()).get('x-forwarded-host');
   redirect(`https://${site}/signin`);
 }
 '''
@@ -90,7 +90,7 @@ code = '''
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 export default async function SignInGate() {
-  const site = (await headers()).get("x-forwarded-host") ?? "";
+  const site = (await headers()).get('x-forwarded-host') ?? "";
   redirect(`/signin?site=${encodeURIComponent(site)}`);
 }
 '''
