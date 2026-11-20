@@ -146,3 +146,39 @@ func TestOrderByLine(t *testing.T) {
 		t.Errorf("reported at lines %v, want [4]", lines)
 	}
 }
+
+// In a Laravel project (some file uses a class of Illuminate), a service's
+// untyped $request parameter is the request a controller passed on; a typed
+// one is that type (v053 r2 S-2).
+func TestLaravelProjectService(t *testing.T) {
+	e := engineForTest(t)
+	ctl := "<?php\nnamespace App\\Http\\Controllers;\nuse Illuminate\\Http\\Request;\nuse App\\Services\\Sorter;\nclass PostController extends Controller {\n    public function index(Request $request, Sorter $sorter) {\n        return $sorter->apply(Post::query(), $request);\n    }\n}\n"
+	plain := "<?php\nnamespace App\\Http\\Controllers;\nuse App\\Services\\Sorter;\nclass PostController {\n    public function index($input, Sorter $sorter) {\n        return $sorter->apply(Post::query(), $input);\n    }\n}\n"
+	svc := "<?php\nnamespace App\\Services;\nclass Sorter {\n    public function apply($q, $request) {\n        return $q->orderBy($request->sort)->get();\n    }\n}\n"
+	typed := "<?php\nnamespace App\\Services;\nclass Sorter {\n    public function apply($q, SearchQuery $request) {\n        return $q->orderBy($request->column)->get();\n    }\n}\n"
+	for _, c := range []struct {
+		name, ctl, svc string
+		want           []string
+	}{
+		{"a Laravel project: the service's untyped $request", ctl, svc, []string{"php-sqli-orderby-identifier"}},
+		{"no file uses Illuminate (control)", plain, svc, nil},
+		{"a Laravel project: a typed DTO parameter (control)", ctl, typed, nil},
+	} {
+		files := map[string]string{"app/Http/Controllers/PostController.php": c.ctl, "app/Services/Sorter.php": c.svc}
+		read := func(p string) ([]byte, error) { return []byte(files[p]), nil }
+		pr := e.NewProject([]string{"app/Http/Controllers/PostController.php", "app/Services/Sorter.php"}, read, ProjectOptions{})
+		fs, err := pr.Scan("app/Services/Sorter.php", []byte(c.svc))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got []string
+		for _, f := range fs {
+			if f.CWE == "CWE-89" && !slices.Contains(got, f.RuleID) {
+				got = append(got, f.RuleID)
+			}
+		}
+		if !slices.Equal(got, c.want) {
+			t.Errorf("%s: reported by %v, want %v", c.name, got, c.want)
+		}
+	}
+}

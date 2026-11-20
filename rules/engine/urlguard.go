@@ -360,7 +360,8 @@ func tsType(t []Token, j int) bool {
 //   - anything under URL, String, JSON or Object's prototype, __proto__, or
 //     Symbol.toPrimitive (what String(u) and JSON.stringify(u) call);
 //   - the console module imported or required ('console', 'node:console'),
-//     which is the global console under another name;
+//     which is the global console under another name; a require( or import(
+//     of anything but a plain string, or createRequire, which may load it;
 //   - Object.defineProperty and the like or Reflect.set on console, String,
 //     JSON or URL.
 func globalReplace(t []Token) bool {
@@ -394,6 +395,15 @@ func globalReplace(t []Token) bool {
 			if !member && !(next(1).op(".") && next(2).Kind == Ident) {
 				return true // const g = globalThis, f(window), globalThis['String'], self?.[k], GLOBAL, top
 			}
+		case "require", "import":
+			if next(1).op("(") {
+				arg := inside(t, i+1, closeOf(t, i+1))
+				if len(arg) != 1 || arg[0].Kind != Str || len(arg[0].Parts) > 0 {
+					return true // require('con' + 'sole'), require(m), import(m): a module the file does not name
+				}
+			}
+		case "createRequire":
+			return true // createRequire(__filename)('console')
 		case "eval", "runInThisContext", "runInContext", "runInNewContext", "compileFunction", "__proto__", "getPrototypeOf", "setPrototypeOf":
 			return true // any code run from text, a prototype reached or replaced
 		case "this":

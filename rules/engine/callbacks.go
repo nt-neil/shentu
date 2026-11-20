@@ -60,8 +60,11 @@ func paramName(params []Token, k int) string {
 // request, whose magic properties ($request->sort) are input: the file
 // imports from Illuminate, holds a class extending a Controller, or declares
 // the variable with a type named Request or ending in it (Request $request,
-// StorePostRequest $request). A file analysed without its tokens (a callee
-// in another file of a project) counts, failing toward a finding.
+// StorePostRequest $request). In a project some PHP file of which uses a
+// class of Illuminate, an untyped parameter of that name counts too (a
+// service the controller passes the request to). A file analysed without its
+// tokens (a callee in another file of a project) counts, failing toward a
+// finding.
 func (a *analysis) laravelRequest(name string) bool {
 	if v, ok := a.laravelVars[name]; ok {
 		return v
@@ -77,6 +80,39 @@ func (a *analysis) laravelRequest(name string) bool {
 			break
 		}
 	}
+	if !v && (a.proj != nil && a.proj.laravel || a.cproj != nil && a.cproj.laravel) {
+		// a Laravel project: a service's untyped $request parameter is the
+		// request a controller passed on (apply($q, $request)); a typed one
+		// (SearchQuery $request) is that type
+		v = untypedParam(t, name)
+	}
 	a.laravelVars[name] = v
 	return v
+}
+
+// untypedParam reports whether name is a parameter of a function of the file
+// declared without a type: function apply($q, $request), fn ($request) => ...
+func untypedParam(t []Token, name string) bool {
+	for j := 1; j < len(t); j++ {
+		if t[j].Kind != Var || t[j].Text != name || !(t[j-1].op("(") || t[j-1].op(",")) {
+			continue
+		}
+		depth := 0
+		for k := j - 1; k >= 1; k-- {
+			switch {
+			case isClose(t[k]):
+				depth++
+			case isOpen(t[k]):
+				if depth > 0 {
+					depth--
+					continue
+				}
+				if t[k].op("(") && (t[k-1].word("function") || t[k-1].word("fn") || k > 1 && t[k-1].Kind == Ident && t[k-2].word("function")) {
+					return true
+				}
+				k = 0
+			}
+		}
+	}
+	return false
 }
