@@ -137,6 +137,8 @@ var (
 	triggerRe    = regexp.MustCompile(`^t[0-9a-f]{16}$`)
 	refRe        = regexp.MustCompile(`^d([0-9a-f]{12}):b([1-9][0-9]{0,2})$`)
 	dayFileRe    = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2})\.jsonl$`)
+	keptFileRe   = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2})\.jsonl(\.bad)?$`) // what prune ages out
+	badFileRe    = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}\.jsonl\.bad$`)
 )
 
 // triggerID is what the archive stores for a trigger: a short hash of the
@@ -339,6 +341,9 @@ func (s *dispatchStore) Save(rec dispatchRecord) error {
 		return fmt.Errorf("%w: %s: %v", errArchive, p, err)
 	}
 	defer f.Close()
+	if err := osutil.Lock(f); err != nil { // Repair rewrites the file under the same lock
+		return err
+	}
 	st, err := f.Stat()
 	if err != nil || !trusted(st, false) {
 		return fmt.Errorf("%w: %s", errArchive, p)
@@ -363,13 +368,13 @@ func (s *dispatchStore) Save(rec dispatchRecord) error {
 	return nil
 }
 
-// prune removes day files older than dispatchKeep. Save and Since both run
-// it, so a host that stops dispatching still drops old files on its daily
-// report.
+// prune removes day files older than dispatchKeep, and the lines Repair
+// moved aside with them. Save and Since both run it, so a host that stops
+// dispatching still drops old files on its daily report.
 func (s *dispatchStore) prune() {
 	ents, _ := os.ReadDir(s.dir)
 	for _, e := range ents {
-		m := dayFileRe.FindStringSubmatch(e.Name())
+		m := keptFileRe.FindStringSubmatch(e.Name())
 		if m == nil {
 			continue
 		}
@@ -601,8 +606,16 @@ func cmpOr(s, def string) string {
 
 // dispatchDaily is dispatchSection for the day before now, for the daily report.
 func dispatchDaily(cfg *Config, now time.Time) string {
-	recs, bad, err := newDispatchStore(cfg).Since(now.Add(-24 * time.Hour))
-	return dispatchSection(recs, bad, err)
+	s := newDispatchStore(cfg)
+	recs, bad, err := s.Since(now.Add(-24 * time.Hour))
+	sec := dispatchSection(recs, bad, err)
+	if line := s.repairedLine(now); line != "" {
+		if sec == "" {
+			sec = "\nSub-agent dispatches (last day; reports are the model's, not verified):\n"
+		}
+		sec += line
+	}
+	return sec
 }
 
 // runDispatch runs tasks one after another as sub-agents of a, then saves
@@ -662,4 +675,144 @@ func (a *agent) dispatchOrigin() string {
 		return originTelegram
 	}
 	return originChat
+}
+
+// Repair moves every line of the archive's day files that Since cannot
+// read (cut short by a full disk, say) to <date>.jsonl.bad next to it
+// (0600), and keeps the others as they were, so the automatic incident
+// checks need not wait for the file to age out. It takes each file's lock,
+// as Save does, and refuses an archive Since would not read. moved is how
+// many lines were moved.
+func (s *dispatchStore) Repair() (moved int, err error) {
+	if !filepath.IsAbs(s.dir) {
+		return 0, fmt.Errorf("%w: state_dir is not an absolute path", errArchive)
+	}
+	st, err := os.Lstat(s.dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return 0, nil
+	}
+	if err != nil || !trusted(st, true) {
+		return 0, fmt.Errorf("%w: %s", errArchive, s.dir)
+	}
+	ents, err := os.ReadDir(s.dir)
+	if err != nil {
+		return 0, err
+	}
+	for _, e := range ents {
+		if !dayFileRe.MatchString(e.Name()) {
+			continue
+		}
+		n, err := s.repairFile(filepath.Join(s.dir, e.Name()))
+		moved += n
+		if err != nil {
+			return moved, err
+		}
+	}
+	return moved, nil
+}
+
+func (s *dispatchStore) repairFile(p string) (int, error) {
+	f, err := osutil.OpenNoFollow(p, os.O_RDWR, 0, true)
+	if err != nil {
+		return 0, fmt.Errorf("%w: %s: %v", errArchive, p, err)
+	}
+	defer f.Close()
+	if err := osutil.Lock(f); err != nil {
+		return 0, err
+	}
+	if st, err := f.Stat(); err != nil || !trusted(st, false) {
+		return 0, fmt.Errorf("%w: %s", errArchive, p)
+	}
+	b, err := io.ReadAll(f)
+	if err != nil {
+		return 0, err
+	}
+	var good, bad bytes.Buffer
+	n := 0
+	for _, line := range bytes.Split(b, []byte{'\n'}) {
+		if len(line) == 0 {
+			continue
+		}
+		var rec dispatchRecord
+		dec := json.NewDecoder(bytes.NewReader(line))
+		dec.DisallowUnknownFields()
+		if len(line) <= 1<<20 && dec.Decode(&rec) == nil && rec.check() == nil { // as Since reads it
+			good.Write(line)
+			good.WriteByte('\n')
+			continue
+		}
+		bad.Write(line)
+		bad.WriteByte('\n')
+		n++
+	}
+	if n == 0 {
+		return 0, nil
+	}
+	bf, err := osutil.OpenNoFollow(p+".bad", os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o600, true)
+	if err != nil {
+		return 0, fmt.Errorf("%w: %s.bad: %v", errArchive, p, err)
+	}
+	defer bf.Close()
+	if st, err := bf.Stat(); err != nil || !trusted(st, false) {
+		return 0, fmt.Errorf("%w: %s.bad", errArchive, p)
+	}
+	if _, err := bf.Write(bad.Bytes()); err != nil {
+		return 0, err
+	}
+	if err := bf.Sync(); err != nil { // the moved lines are kept before they leave the day file
+		return 0, err
+	}
+	if err := f.Truncate(0); err != nil {
+		return 0, err
+	}
+	if _, err := f.WriteAt(good.Bytes(), 0); err != nil {
+		return 0, err
+	}
+	return n, f.Sync()
+}
+
+// repairedLine is the daily report's line about lines Repair moved aside
+// in the last day; "" when it moved none.
+func (s *dispatchStore) repairedLine(now time.Time) string {
+	ents, _ := os.ReadDir(s.dir)
+	files, lines := 0, 0
+	for _, e := range ents {
+		if !badFileRe.MatchString(e.Name()) {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil || now.Sub(info.ModTime()) > 24*time.Hour {
+			continue
+		}
+		b, err := readTrusted(filepath.Join(s.dir, e.Name()))
+		if err != nil {
+			continue
+		}
+		files++
+		lines += bytes.Count(b, []byte{'\n'})
+	}
+	if files == 0 {
+		return ""
+	}
+	return fmt.Sprintf("- `shentu dispatch repair` moved unreadable archive lines aside: %d lines are kept in %d *.jsonl.bad files in %s\n", lines, files, s.dir)
+}
+
+// dispatchCommand is `shentu dispatch repair`.
+func dispatchCommand(cfg *Config, args []string, root bool) error {
+	if len(args) != 1 || args[0] != "repair" {
+		return errors.New("usage: shentu dispatch repair")
+	}
+	if !root {
+		return errors.New("shentu dispatch repair changes the dispatch archive: run it as root (sudo shentu dispatch repair)")
+	}
+	n, err := newDispatchStore(cfg).Repair()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		fmt.Println("shentu dispatch repair: every line of the dispatch archive can be read; nothing moved.")
+		return nil
+	}
+	fmt.Printf("shentu dispatch repair: moved %d unreadable lines to *.jsonl.bad in %s; automatic incident checks count again from the next patrol.\n", n, filepath.Join(cfg.StateDir, dispatchDir))
+	return nil
 }
