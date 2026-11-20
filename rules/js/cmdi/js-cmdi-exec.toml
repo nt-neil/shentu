@@ -5,7 +5,7 @@ cwe = "CWE-78"
 severity = "critical"
 title = "Untrusted value placed into a command string run by exec/execSync"
 frameworks = ["express", "nestjs", "nextjs", "koa", "fastify", "hapi"]
-sources = ["req.query", "req.body", "req.params", "req.headers", "req.file", "originalname", "@Query(", "@Body(", "@Param(", "@Headers(", "@Req(", "req.originalUrl", "^request.nextUrl", "^req.nextUrl", "^request.url", "^req.url", "^searchParams", "^request.json(", "^req.json(", "^request.text(", "^req.text(", "^request.formData(", "^req.formData(", "^formData.get(", "req.get(", "req.header(", "^headers().get(", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload", "ctx.params", "request.params", "ctx.headers", "request.headers", "ctx.request.header", "ctx.request.headers", "ctx.get("]
+sources = ["req.query", "req.body", "req.params", "req.headers", "req.file", "originalname", "@Query(", "@Body(", "@Param(", "@Headers(", "@Req(", "@Request(", "req.originalUrl", "^request.nextUrl", "^req.nextUrl", "^request.url", "^req.url", "^searchParams", "^request.json(", "^req.json(", "^request.text(", "^req.text(", "^request.formData(", "^req.formData(", "^formData.get(", "req.get(", "req.header(", "^headers().get(", "(await headers()).get(", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload", "ctx.params", "request.params", "ctx.headers", "request.headers", "ctx.request.header", "ctx.request.headers", "ctx.get("]
 sinks = ["exec(", "execSync(", ".execSync(", "child_process.exec(", "childProcess.exec(", "cp.exec(", "require('child_process').exec(", "shell.exec("]
 sanitizers = ["execFile(", "execFileSync(", "spawn("]
 fix = "Use execFile or spawn with an argument array (no shell) so the value is one argument; never build a command string from input."
@@ -239,4 +239,42 @@ function speakArgs(f) {
 app.post("/say", (req, res) => {
   execFile("espeak", speakArgs(req.body), (err) => res.sendStatus(err ? 500 : 204));
 });
+'''
+
+[[samples]]
+kind = "vulnerable"
+dialect = "ts"
+note = "NestJS's @Request() is @Req() by another name, whatever the parameter is called"
+code = '''
+@Controller()
+export class AppController {
+  @Post("ping")
+  ping(@Request() r: Request) {
+    exec(`ping -c 1 ${r.body.host}`, () => undefined);
+  }
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+note = "Next 15: headers() returns a promise"
+code = '''
+import { headers } from "next/headers";
+import { execSync } from "child_process";
+export async function GET() {
+  const tz = (await headers()).get("x-timezone") ?? "UTC";
+  return new Response(execSync(`zdump ${tz}`).toString());
+}
+'''
+
+[[samples]]
+kind = "safe"
+note = "Next 15: an argument array, which no shell parses"
+code = '''
+import { headers } from "next/headers";
+import { execFileSync } from "child_process";
+export async function GET() {
+  const tz = (await headers()).get("x-timezone") ?? "UTC";
+  return new Response(execFileSync("zdump", ["--", tz]).toString());
+}
 '''

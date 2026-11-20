@@ -39,6 +39,7 @@ route_only = ["headers.host"]      # optional: of a route handler's request, onl
 route_not = ["headers.host"]       # optional: values under those members that are not this rule's input, as member.name (the Host header): in a route handler's parameters and in the rule's own sources that end in the member (req.headers.host, req.headers['host'], req.headers.get('host'), @Headers('host'), h.host after h = req.headers, also when req is a route handler's parameter or NestJS's @Req() req)
 routes_not = ["wp-shortcode"]      # optional: route models (by id) whose handlers' input is another rule's (a shortcode's attributes)
 chain_not = ["AsyncClient"]        # optional: calls the chain form of a receiver.method( sink may not go through: they make another object (httpx.AsyncClient().get( is not httpx.get()
+yields_to = ["php-sqli-yii-query"] # optional: rules of the same language and CWE this one leaves a sink to: its finding is left out where one of them reports the same line through the same sink call (one call holding the other: DB::raw(...) inside DB::select(...), the same ->where(...)); another sink on that line, or one reached through a function's summary or a text sink, still reports (yields.go)
 sources = ["$_GET", "$request->input("]   # where user input comes from; [] for a rule without sources
 sinks = ["mysqli_query", "->query("]      # the dangerous calls
 sanitizers = ["intval", "->prepare("]     # calls whose result is safe for these sinks; [] if none
@@ -143,8 +144,9 @@ How the engine reads them:
     is surely a collection (`.has(`, `.includes(`, `in` on a list, set, tuple
     or array written out, `new Set(...)`, `set(...)` or `frozenset(...)` of one
     of those, or a chain of reads ending in `.split(...)`, as the whole
-    expression; or a name the file binds once, at its top level, to one of
-    those and otherwise only reads. A parameter, destructuring, `catch`, `for`,
+    expression; Python's tuple without parentheses, `'a', 'b'`, too; or a name
+    the file binds once, at its top level, to one of those and otherwise only
+    reads. A parameter, destructuring, `catch`, `for`,
     `with`, a key of that name, a default value, `+=`, a tuple of targets or an
     argument anywhere in the file makes the name unknown, and so does Python's
     `from x import *` for every name; on a string or an
@@ -161,16 +163,39 @@ How the engine reads them:
     any alias `w = u`, `x = w`). In JavaScript a URL passed to any other call
     than the rule's sinks may be changed there (`setHost(u, v)`), so the check
     ends and u holds again the input it held before it; this also ends it for a
-    call that only reads u (`log(u)`), which reports more than it must. So does
+    call that only reads u (`log(u)`), which reports more than it must, except
+    `console.log` (`.info`, `.warn`, `.error`, `.debug`, `.trace`),
+    `JSON.stringify` and `String`, while the file uses `console`, `JSON` and
+    `String` only to call them or, for `String`, as a TypeScript type (no
+    parameter or declaration of the name, no `console.log = f`,
+    `globalThis.String = f` or `Object.assign(console, ...)`), and holds nothing
+    that may replace them unseen: a global object (`globalThis`, `window`,
+    `self`, `global`) other than read through a named member, `eval` (the name
+    anywhere), `Function(`, `runInThisContext`, a value's constructor read for
+    anything but its name (`(() => {}).constructor`, `{ constructor: F } = f`), `with (`, anything under the
+    prototype of `URL`, `String`, `JSON` or `Object`, `__proto__` or
+    `Symbol.toPrimitive`. A module that replaces a global when it is imported
+    is another file, which this does not see. So does
     a URL written into an object or array (`{ target: u }`, `[u]`), or used as
-    a value in any other way than a member read, a whole argument or the whole
+    a value in any other way than a member read (`u.valueOf()` is u itself, not a
+    member; a method called by a computed name, `u[k]()`, counts as changing it
+    whatever k is, `u['toString']()` too), a whole argument or the whole
     right side of an assignment (`a1 = u || null`, `c ? u : w`, `return u`). Only a
-    plain name holds a checked URL (not `this.u`), only one no function written
-    inside another uses without binding it itself (a closure or callback that
-    reads or changes u, whenever it runs: `() => { u.host = v }`,
-    `[v].forEach(h => { u.host = h })`) and no function declares `global` or
-    `nonlocal` (Python's `def m(): nonlocal u; u = urlparse(v)`), and only while fewer than 64 names
-    hold it (each alias is kept with each other one).
+    plain name holds a checked URL (not `this.u`), and only while the binding
+    of it (the function, or the module, where the name is a local) is not
+    reached from elsewhere. In JavaScript no function written inside that
+    binding's function may use it without binding it itself (a closure or
+    callback that reads or changes u, whenever it runs: `() => { u.host = v }`,
+    `[v].forEach(h => { u.host = h })`). In Python, whose parse results cannot
+    be changed in place, a nested `def` or `lambda` that only reads u keeps the
+    check; a `global` or `nonlocal` that resolves to that binding ends it
+    (`def m(): nonlocal u; u = urlparse(v)`, a list of names and a statement
+    continued with a backslash included), and `global u` in the function that
+    assigns u ends it too. A `global` or `nonlocal` of another binding of the
+    same name (another function's u) does not. Where the assignment's line does
+    not show which binding it is, the name counts as reached when any of its
+    bindings is. And only while fewer than 64 names hold it (each alias is kept with each
+    other one).
     `p.geturl()` is a string the client parses again; urlparse and the client's
     parser agree on the host of what urlparse itself wrote out, which is why it
     counts, but a client with its own normalisation could read it otherwise. A URL whose host is allowed
@@ -257,16 +282,39 @@ on a parameter, which becomes an assignment at the start of the body:
 `find(@Param('id') id: string) { ... }` reads as `find(id) { id = @Param('id'); ... }`,
 so a decorator is a source like any call (`@Body(`, `@Query(`, `@Param(`,
 `@Headers(`); a destructured parameter (`run(@Body() { cmd }: Dto)`) becomes
-`let { cmd } = @Body();`. With `@Req()` only the parts of the request that come
+`let { cmd } = @Body();`. With `@Req()` (or `@Request()`, the same decorator by
+another name, which a rule that takes `@Req(` takes too) only the parts of the request that come
 from the client are input (`query`, `body`, `params`, `headers`, `cookies`,
 `originalUrl`, `url`, `get()`, `header()`), not what the server put on it
-(`req.user`). A parameter with a NestJS parse pipe (`ParseIntPipe`, `ParseUUIDPipe`,
+(`req.user`). `@Req()` is NestJS's request only in a NestJS application: a file
+that imports `@nestjs/common` or `@nestjs/core`, or any file of a project one of
+whose files does (another library's `@Req()` is an object like any other). A parameter with a NestJS parse pipe (`ParseIntPipe`, `ParseUUIDPipe`,
 ...) is not input; a DTO's class-validator decorators are not read. In `.jsx` and
 `.tsx`, element text is not code: quotes, slashes and colons in it are text. A
 declaration whose bracket never closes (`interface I {`) is dropped up to that
 bracket only; the rest is read as code and the file is reported as not fully
 analysed. Next.js route and page `params` are not sources yet (that needs the
 route model).
+
+A route handler's request is read by the rules' `req.` and `ctx.` sources
+whatever it is called (reqalias.go). The names that hold it in a function are
+followed: the handler's request parameter (`(r, s) => r.hostname`,
+`r.get('host')`; a parameter used as a Koa context, `c.request` or
+`c.body = ...`, stands for `ctx`, any other for `req`; a destructured one taking
+`request`, `response`, `state`, `throw` or `assert`, `({ request }) => ...`,
+for `ctx`), NestJS's `@Req() r`, an alias (`const q = r`, `const h = r.headers`)
+and destructuring, of the parameter (`({ headers }, res) => headers.host`) or in
+the body (`const { hostname: hn } = r`, `const { host } = req.headers`), nested
+(`const { headers: { host } } = r`) and with a string key
+(`const { 'x-forwarded-host': xfh } = req.headers`). Under such a name a
+request's header index is lower case, as Node stores it (`r.headers['Host']`),
+and a destructured name under a member route_not names is that rule's input no
+more than the member is. A name assigned anything else, or a parameter of an
+inner function with the same name, is not followed. A name assigned on some
+paths only (in a branch, a loop's body, a `try`) is followed on the others: after
+the block it holds what it held before it and what it holds at its end. So a
+name assigned on every branch is still followed after them, which reports more
+than it must.
 
 A sample written in TypeScript says so with `dialect = "ts"` (or `"tsx"`); it is
 lexed as such and must hold the same as any other sample of the rule.

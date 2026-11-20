@@ -465,7 +465,7 @@ func (a *analysis) markAssign(st state, t []Token) {
 		st[ctrKey+name] = entry{taint: true}
 	case len(rhs) == 1 && (rhs[0].Text == "$_GET" || rhs[0].Text == "$_POST" || rhs[0].Text == "$_REQUEST" || rhs[0].Text == "$_COOKIE"):
 		st[ctrKey+name] = entry{taint: true}
-	case rhs[len(rhs)-1].op(")") && a.chainStart(rhs, len(rhs)) == 0:
+	case rhs[len(rhs)-1].op(")") && a.chainStart(rhs, len(rhs)) == 0 && !a.wholeSource(rhs):
 		open := openOf(rhs, len(rhs)-1)
 		if open >= 1 && rhs[open-1].Kind == Ident && !splitters[rhs[open-1].Text] && !formatFuncs[rhs[open-1].Text] {
 			if _, esc := escapers[rhs[open-1].Text]; !esc {
@@ -473,6 +473,18 @@ func (a *analysis) markAssign(st state, t []Token) {
 			}
 		}
 	}
+}
+
+// wholeSource reports whether t, as a whole, is a source of the rule: a call
+// that returns the request's data (NestJS's @Headers() h, written h =
+// @Headers(); @Body() b), whose fields are that data, not what some call built.
+func (a *analysis) wholeSource(t []Token) bool {
+	for _, s := range a.r.sources {
+		if end, ok := a.srcMatch(s, t, 0); ok && (end == len(t) || end > 0 && t[end-1].op("(") && closeOf(t, end-1) == len(t)-1) {
+			return true // the source's call written out to its ")": @Headers()
+		}
+	}
+	return false
 }
 
 func marked(st state, key string) bool {

@@ -5,7 +5,7 @@ cwe = "CWE-502"
 severity = "high"
 title = "js-yaml 3.x load() (or a full schema) on untrusted YAML"
 frameworks = ["express", "nestjs", "nextjs", "koa", "fastify", "hapi"]
-sources = ["req.body", "req.file", "req.files", "@Body(", "@Req(", "^request.json(", "^req.json(", "^request.text(", "^req.text(", "^request.formData(", "^req.formData(", "^formData.get(", "ctx.request.body", "request.body", "request.payload"]
+sources = ["req.body", "req.file", "req.files", "@Body(", "@Req(", "@Request(", "^request.json(", "^req.json(", "^request.text(", "^req.text(", "^request.formData(", "^req.formData(", "^formData.get(", "ctx.request.body", "request.body", "request.payload"]
 sinks = ["yaml.load(", "yaml.loadAll(", "yaml.safeLoad(", "yaml.safeLoadAll("]
 sanitizers = []
 fix = "Upgrade to js-yaml 4 (load is safe by default) or call safeLoad on 3.x; never pass DEFAULT_FULL_SCHEMA for untrusted input."
@@ -61,6 +61,21 @@ export class PipelineController {
   @Post()
   load(@Body() body: string) {
     const spec = yaml.safeLoad(body) as { steps: unknown[] };
+    return { steps: spec.steps.length };
+  }
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+dialect = "ts"
+note = "NestJS's @Request() is @Req() by another name, whatever the parameter is called"
+code = '''
+@Controller()
+export class AppController {
+  @Post("pipeline")
+  pipeline(@Request() r: Request) {
+    const spec = yaml.load(r.body, { schema: yaml.DEFAULT_FULL_SCHEMA });
     return { steps: spec.steps.length };
   }
 }
