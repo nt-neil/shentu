@@ -212,6 +212,13 @@ func (a *analysis) reportSink(l loc, emb bool) {
 // ---- statements ----
 
 func (a *analysis) block(ss []*stmt, st state) (state, uint8) {
+	if a.reqs != nil {
+		// a block may not run, or run on one path only (a branch, a loop's
+		// body): after it a name holds a request where it did before it or at
+		// its end (reqalias.go)
+		before := maps.Clone(a.reqs)
+		defer func() { unionReqs(a.reqs, before) }()
+	}
 	for _, s := range ss {
 		if !a.b.step() {
 			return st, noExit
@@ -1500,10 +1507,10 @@ func (a *analysis) srcMatch(s *pat, t []Token, i int) (int, bool) {
 		return end, ok
 	}
 	// a source written for req or ctx, at a name holding a handler's request (reqalias.go)
-	vs, add := a.reqVariants(t, i)
-	for _, v := range vs {
-		if end, ok := a.srcMatchAt(s, v, i); ok && end-add > i {
-			return end - add, true
+	vs, adds := a.reqVariants(t, i)
+	for k, v := range vs {
+		if end, ok := a.srcMatchAt(s, v, i); ok && end-adds[k] > i {
+			return end - adds[k], true
 		}
 	}
 	return 0, false

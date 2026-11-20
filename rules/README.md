@@ -291,14 +291,21 @@ A route handler's request is read by the rules' `req.` and `ctx.` sources
 whatever it is called (reqalias.go). The names that hold it in a function are
 followed: the handler's request parameter (`(r, s) => r.hostname`,
 `r.get('host')`; a parameter used as a Koa context, `c.request` or
-`c.body = ...`, stands for `ctx`, any other for `req`), NestJS's `@Req() r`, an
-alias (`const q = r`, `const h = r.headers`) and destructuring, of the parameter
-(`({ headers }, res) => headers.host`) or in the body (`const { hostname: hn } = r`,
-`const { host } = req.headers`). Under such a name a request's header index is
-lower case, as Node stores it (`r.headers['Host']`), and a destructured name
-under a member route_not names is that rule's input no more than the member is.
-A name assigned anything else, or a parameter of an inner function with the
-same name, is not followed.
+`c.body = ...`, stands for `ctx`, any other for `req`; a destructured one taking
+`request`, `response`, `state`, `throw` or `assert`, `({ request }) => ...`,
+for `ctx`), NestJS's `@Req() r`, an alias (`const q = r`, `const h = r.headers`)
+and destructuring, of the parameter (`({ headers }, res) => headers.host`) or in
+the body (`const { hostname: hn } = r`, `const { host } = req.headers`), nested
+(`const { headers: { host } } = r`) and with a string key
+(`const { 'x-forwarded-host': xfh } = req.headers`). Under such a name a
+request's header index is lower case, as Node stores it (`r.headers['Host']`),
+and a destructured name under a member route_not names is that rule's input no
+more than the member is. A name assigned anything else, or a parameter of an
+inner function with the same name, is not followed. A name assigned on some
+paths only (in a branch, a loop's body, a `try`) is followed on the others: after
+the block it holds what it held before it and what it holds at its end. So a
+name assigned on every branch is still followed after them, which reports more
+than it must.
 
 A sample written in TypeScript says so with `dialect = "ts"` (or `"tsx"`); it is
 lexed as such and must hold the same as any other sample of the rule.

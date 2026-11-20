@@ -2,6 +2,7 @@ package engine
 
 import (
 	"maps"
+	"slices"
 	"strings"
 )
 
@@ -106,10 +107,34 @@ func (a *analysis) fnReqs(f *fn, outer map[string][]string) map[string][]string 
 		case p[0].Kind == Ident && (len(p) == 1 || p[1].op(":") || p[1].op("=")):
 			out[p[0].Text] = handlerRoots(p[0].Text, f.body)
 		case p[0].op("{"):
-			reqPattern(out, p[:closeOf(p, 0)+1], []string{"req"}) // ({ query, headers }, res): Express's request
+			pat := p[:closeOf(p, 0)+1]
+			root := []string{"req"} // ({ query, headers }, res): Express's request
+			if koaPattern(pat) {
+				root = []string{"ctx"} // ({ request, state }) => ...: Koa's context
+			}
+			reqPattern(out, pat, root)
 		}
 	}
 	return out
+}
+
+// koaPattern reports whether an object pattern takes a member only a Koa
+// context has (request, response, state, throw, assert), as koaContext does
+// for a name.
+func koaPattern(p []Token) bool {
+	c := closeOf(p, 0)
+	if c <= 0 {
+		return false
+	}
+	for _, e := range splitTop(inside(p, 0, c), isComma) {
+		if len(e) > 0 && (e[0].Kind == Ident || reqStrKey(e[0])) {
+			switch e[0].Text {
+			case "request", "response", "state", "throw", "assert":
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // reqPattern records the names an object pattern takes from paths ({ headers,
@@ -123,14 +148,38 @@ func reqPattern(out map[string][]string, p []Token, paths []string) {
 		switch {
 		case len(e) == 2 && e[0].op("...") && e[1].Kind == Ident:
 			setReq(out, e[1].Text, paths) // the rest of the request
-		case len(e) == 0 || e[0].Kind != Ident:
-		case len(e) == 1 || e[1].op("="):
+		case len(e) == 0:
+		case e[0].Kind == Ident && (len(e) == 1 || e[1].op("=")):
 			setReq(out, e[0].Text, reqMembers(paths, e[0].Text))
-		case e[1].op(":") && len(e) >= 3 && e[2].Kind == Ident && (len(e) == 3 || e[3].op("=")):
-			setReq(out, e[2].Text, reqMembers(paths, e[0].Text))
+		case len(e) >= 3 && e[1].op(":") && (e[0].Kind == Ident || reqStrKey(e[0])):
+			sub := reqMembers(paths, e[0].Text)
+			if e[0].Kind == Str {
+				sub = reqIndex(paths, e[0].Text) // { 'x-forwarded-host': xfh }
+			}
+			switch c2 := closeOf(e, 2); {
+			case e[2].Kind == Ident && (len(e) == 3 || e[3].op("=")):
+				setReq(out, e[2].Text, sub)
+			case e[2].op("{") && c2 > 2 && (c2 == len(e)-1 || e[c2+1].op("=")):
+				reqPattern(out, e[2:c2+1], sub) // { headers: { host } }
+			}
 		}
 	}
 }
+
+// reqStrKey reports whether a pattern's key is a string written out that a
+// path can hold ('x-forwarded-host'): no interpolation, no dot.
+func reqStrKey(tk Token) bool {
+	return tk.Kind == Str && len(tk.Parts) == 0 && tk.Text != "" && !strings.ContainsAny(tk.Text, ".\x02")
+}
+
+// reqIndex is reqMembers for a member read by a string index
+// (req.headers['x-forwarded-host']), which a path writes as "." + reqIdx + key.
+func reqIndex(paths []string, key string) []string {
+	return reqMembers(paths, reqIdx+key)
+}
+
+// reqIdx marks a path's member read by a string index (reqIndex).
+const reqIdx = "\x02"
 
 func setReq(out map[string][]string, name string, paths []string) {
 	if paths == nil {
@@ -203,6 +252,7 @@ func (a *analysis) reqAssign(st state, lhs, rhs []Token, op string) {
 // names (req.headers.host for headers.host).
 func (a *analysis) reqRouteNot(paths []string) bool {
 	for _, p := range paths {
+		p = strings.ReplaceAll(p, reqIdx, "") // req.headers['x-forwarded-host'] as req.headers.x-forwarded-host
 		for _, rn := range a.r.rule.RouteNot {
 			if strings.HasSuffix(strings.ToLower(p), "."+strings.ToLower(rn)) {
 				return true
@@ -215,10 +265,10 @@ func (a *analysis) reqRouteNot(paths []string) bool {
 // reqIsSource reports whether a name of reqs stands for a whole source of the
 // rule (hostname for req.hostname).
 func (a *analysis) reqIsSource(name Token) bool {
-	vs, add := a.reqVariants([]Token{name}, 0)
-	for _, v := range vs {
+	vs, adds := a.reqVariants([]Token{name}, 0)
+	for k, v := range vs {
 		for _, s := range a.r.sources {
-			if end, ok := a.srcMatchAt(s, v, 0); ok && end == add+1 {
+			if end, ok := a.srcMatchAt(s, v, 0); ok && end == adds[k]+1 {
 				return true
 			}
 		}
@@ -227,24 +277,29 @@ func (a *analysis) reqIsSource(name Token) bool {
 }
 
 // reqVariants is t with the name at i written as each path it stands for
-// (r.hostname as req.hostname and ctx.hostname), and how many tokens that
+// (r.hostname as req.hostname and ctx.hostname), and how many tokens each
 // adds: none when t[i] is no name of reqs, or a member of something else.
-func (a *analysis) reqVariants(t []Token, i int) ([][]Token, int) {
+func (a *analysis) reqVariants(t []Token, i int) ([][]Token, []int) {
 	if a.reqs == nil || i >= len(t) || t[i].Kind != Ident || i > 0 && (memberOp(false, t[i-1]) || t[i-1].op("?.")) {
-		return nil, 0
+		return nil, nil
 	}
 	paths := a.reqs[t[i].Text]
 	if len(paths) == 0 {
-		return nil, 0
+		return nil, nil
 	}
 	var out [][]Token
-	add := 0
+	var adds []int
 	for _, p := range paths {
 		if p == t[i].Text {
 			continue // req itself: the sources read it as written
 		}
 		var path []Token
 		for k, n := range strings.Split(p, ".") {
+			if key, ok := strings.CutPrefix(n, reqIdx); ok { // ['x-forwarded-host']
+				path = append(path, Token{Kind: Op, Text: "[", Line: t[i].Line}, Token{Kind: Str, Text: key, Line: t[i].Line},
+					Token{Kind: Op, Text: "]", Line: t[i].Line})
+				continue
+			}
 			if k > 0 {
 				path = append(path, Token{Kind: Op, Text: ".", Line: t[i].Line})
 			}
@@ -253,9 +308,28 @@ func (a *analysis) reqVariants(t []Token, i int) ([][]Token, int) {
 		v := make([]Token, 0, len(t)+len(path))
 		v = append(append(append(v, t[:i]...), path...), t[i+1:]...)
 		out = append(out, v)
-		add = len(path) - 1 // every path of a name has the same length
+		adds = append(adds, len(path)-1) // paths of one name may differ in length after a branch (unionReqs)
 	}
-	return out, add
+	return out, adds
+}
+
+// unionReqs adds to reqs what before held: a name holds each path it held on
+// either side of a block.
+func unionReqs(reqs, before map[string][]string) {
+	for name, ps := range before {
+		cur, ok := reqs[name]
+		if !ok {
+			reqs[name] = ps
+			continue
+		}
+		out := slices.Clone(cur)
+		for _, p := range ps {
+			if !slices.Contains(out, p) {
+				out = append(out, p)
+			}
+		}
+		reqs[name] = out
+	}
 }
 
 // reqCanon is a request path's key as the rules' sources write it, for
