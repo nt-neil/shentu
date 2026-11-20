@@ -6,6 +6,65 @@ a release are not written here: they are worked out from the rule snapshots in
 `docs/site-src/rules-history/`. `CHANGELOG.zh-TW.md` holds the same releases in Traditional
 Chinese for the zh-TW pages; keep the two in step.
 
+## v0.4.2 (unreleased)
+
+- The JavaScript rules follow a route handler's request whatever it is called: a parameter not
+  named `req` (`(r, s) =>`), a Koa context not named `ctx`, an alias (`const q = r`,
+  `const h = r.headers`) and destructuring (`({ headers }, res) =>`,
+  `const { headers, hostname: hn } = r`, `const { host } = req.headers`). So `r.hostname`,
+  `r.get('host')`, `c.host` and a destructured `headers` are reported now; a Host header read this
+  way goes to js-ssrf-host-header, other headers to js-ssrf-http-request. A request header index
+  is read in lower case, as Node stores it (`r.headers['Host']`). Koa's `ctx.header`,
+  `ctx.request.header`, `ctx.request.headers` and `ctx.request.get(` are sources too (#106).
+- NestJS: `@Request()` counts as the handler's request, as `@Req()` does, in the 13 JavaScript
+  rules that read `@Req()` (SSRF, SQL and NoSQL injection, command injection, code evaluation, path
+  traversal, LDAP injection, deserialization). Both count as NestJS's only when the file, or another
+  file of the project, imports `@nestjs/common` or `@nestjs/core`; elsewhere they are an object like
+  any other (#103, #106).
+- Python: `global` and `nonlocal` continued with a backslash are read to the end of the
+  statement, so a name on the next line is declared too (#103).
+- SSRF: after a URL's host is checked, `a = u.valueOf()` followed by a change to `a`, or a method
+  of `u` called by a computed name (`u['valueOf']()`, `u[k](...)`), ends the check, as `a = u`
+  does (#103).
+
+### Fixed
+
+- A web log owned by the server's own account no longer backs a block when systemd's userdb
+  directories (`/etc/userdb`, `/run/userdb`, `/run/host/userdb`, `/usr/local/lib/userdb`,
+  `/usr/lib/userdb`) hold any entry or cannot be read: userdb can add accounts and group
+  memberships that `/etc/passwd` and `/etc/group` do not show (#113).
+- Blocking: an address written in an `inet_aton` form, one to four parts in decimal, octal or
+  hexadecimal (`3405803788`, `203.28940`, `203.0.28940`, `0xcb.0.113.12`), is refused as another
+  form of an address, as v0.4.1 refused brackets, a port or leading zeros (#113).
+- An attack source logged as `::ffff:a.b.c.d` is the same campaign source as `a.b.c.d` (#113). A
+  state saved before v0.4.2 with one source under both keys is merged when it is loaded, so that
+  source no longer needs three more vulnerabilities to count as a campaign (#124).
+
+### Upgrade notes
+
+- Some JavaScript findings move to another rule: a Host header read as
+  `r.headers['X-Forwarded-Host']` or `const { host } = req.headers` is reported by
+  js-ssrf-host-header instead of js-ssrf-http-request; `@Req()` in a project that does not import
+  NestJS is reported by js-ssrf-http-request; `const { host } = req.headers` written into a
+  response is no longer reported by js-xss-response, as Host has not been XSS input since v0.4.1.
+  With them, the routes attack detection takes as reachable may change.
+
+### Known issues
+
+- A Koa handler's context is recognized by how the handler uses it (`c.request`, `c.response`,
+  `c.state`, `c.throw`, `c.assert`, or setting `c.body`, `c.status` or `c.type`); any other
+  parameter is read as Express's request. A destructured parameter is read as Express's request,
+  so Koa's `({ request }) =>` is not followed. Nested patterns (`{ headers: { host } }`) and
+  string keys (`{ 'x-forwarded-host': xfh }`) are not followed either; the latter is still
+  reported, by js-ssrf-http-request.
+- Request aliases are kept per function, and an alias reassigned on one branch is no longer
+  followed on any path.
+- `@Req() req` in a file that does not import NestJS, outside a project that does, is not NestJS's:
+  its `req.headers.host` is reported by both js-ssrf-host-header and js-ssrf-http-request.
+- The URL check fails closed: `global u` or `nonlocal u` anywhere in a file, backslash-continued
+  too, ends it for every `u` of the file; `fetch(u.valueOf())` after a check, and a harmless
+  `u['toString']()`, are reported.
+
 ## v0.4.1 — 2026-11-20
 
 - The host survey warns about nginx 1.9.5 through 1.31.8 serving HTTP/2 (a `listen ... http2`, or
