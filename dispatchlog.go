@@ -1015,16 +1015,22 @@ func (s *dispatchStore) repairedLine(now time.Time) string {
 }
 
 // repairHint is how to run the repair here: as root, or elevated on Windows.
-func repairHint() string {
+func repairHint() string { return adminHint("shentu dispatch repair") }
+
+// adminHint is how to run command as root, or elevated on Windows.
+func adminHint(command string) string {
 	if runtime.GOOS == "windows" {
-		return "`shentu dispatch repair` from an elevated prompt (Run as administrator)"
+		return "`" + command + "` from an elevated prompt (Run as administrator)"
 	}
-	return "`sudo shentu dispatch repair`"
+	return "`sudo " + command + "`"
 }
 
 // dispatchCommand is `shentu dispatch repair`.
 func dispatchCommand(cfg *Config, args []string, root bool) error {
 	if len(args) > 0 && args[0] == "stats" {
+		if !root { // the archive is root's alone (0700)
+			return errors.New("shentu dispatch stats reads the dispatch archive, which only root can read: run " + adminHint("shentu dispatch stats"))
+		}
 		fs := flag.NewFlagSet("dispatch stats", flag.ContinueOnError)
 		days := fs.Int("days", 7, "add up this many days (1 to 30)")
 		asJSON := fs.Bool("json", false, "print JSON")
