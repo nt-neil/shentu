@@ -611,8 +611,13 @@ func (b *bot) handle(ctx context.Context, u tgUpdate) {
 		b.history, b.histFor, b.histDispatch = nil, who, ""
 	}
 	if b.busy {
+		pending := len(b.waiting) > 0 // a confirmation is waiting for its button
 		b.mu.Unlock()
-		b.send(ctx, m.Chat.ID, b.t("busy"), nil)
+		if pending { // the prompt above is the one to answer: it is not sent again
+			b.send(ctx, m.Chat.ID, b.t("busy_confirm"), nil)
+		} else {
+			b.send(ctx, m.Chat.ID, b.t("busy"), nil)
+		}
 		return
 	}
 	b.busy = true
@@ -912,6 +917,7 @@ var botText = map[string][2]string{ // English, Chinese
 	"accepted":        {"Code accepted. Approve the request on the server terminal to finish pairing.", "已收到配對碼。請在伺服器終端機核准這個要求，才會完成配對。"},
 	"new":             {"OK, new conversation.", "好，開始新的對話。"},
 	"busy":            {"Still working on the previous question.", "上一個問題還在處理中，請稍候。"},
+	"busy_confirm":    {"Please answer the confirmation above first (✅ or ❌). This message was not read; send it again afterwards.", "請先回覆上面的確認（✅ 或 ❌）。這則訊息沒有被讀取，處理完確認後請再傳一次。"},
 	"error":           {"Error: ", "發生錯誤："},
 	"settled_yes":     {"✅ Confirmed.", "✅ 你已確認。"},
 	"settled_no":      {"❌ Not run (cancelled or timed out).", "❌ 沒有執行（已取消或逾時）。"},
