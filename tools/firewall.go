@@ -122,7 +122,7 @@ func loginCheck(ctx context.Context, env *Env, ip net.IP) (verified bool, err er
 		var err error
 		summarySince = time.Now().Add(-back)
 		if r, err = loginSummary(ctx, env, summarySince, want); err != nil {
-			return false, fmt.Errorf("refusing to block %s: its SSH logins could not be read to check whether they are real (%v); if the block rests on other evidence, ask again with override_unverified", ip, err)
+			return false, coded(BlockStateError, fmt.Errorf("refusing to block %s: its SSH logins could not be read to check whether they are real (%v); if the block rests on other evidence, ask again with override_unverified", ip, err))
 		}
 		// The summary read up to now (journald without --until): the
 		// confirming read must cover all it may have counted, an attack
@@ -150,7 +150,7 @@ func loginCheck(ctx context.Context, env *Env, ip net.IP) (verified bool, err er
 		if e, _ := r["error"].(string); e != "" {
 			why += ": " + e
 		}
-		return false, fmt.Errorf("refusing to block %s: its SSH logins could not be read in full (%s), so forged ones cannot be ruled out; check the logs as root and, if they are real, ask again with override_unverified", ip, why)
+		return false, coded(BlockStateError, fmt.Errorf("refusing to block %s: its SSH logins could not be read in full (%s), so forged ones cannot be ruled out; check the logs as root and, if they are real, ask again with override_unverified", ip, why))
 	}
 	if seen && verified {
 		// journald has the IP's logins in sshd's units; a user's shell left
@@ -168,18 +168,18 @@ func loginCheck(ctx context.Context, env *Env, ip net.IP) (verified bool, err er
 		}
 		own, err := sshdJournal(ctx, summarySince, summaryUntil, want)
 		if err != nil {
-			return false, fmt.Errorf("refusing to block %s: whether its SSH login events in journald were written by sshd itself could not be checked (%v); check them as root and, if they are real, ask again with override_unverified", ip, err)
+			return false, coded(BlockStateError, fmt.Errorf("refusing to block %s: whether its SSH login events in journald were written by sshd itself could not be checked (%v); check them as root and, if they are real, ask again with override_unverified", ip, err))
 		}
 		if own.Failed < claimed.Failed || own.InvalidUser < claimed.InvalidUser || own.Accepted < claimed.Accepted {
-			return false, fmt.Errorf("refusing to block %s: of its SSH login events in journald (failed %d, invalid user %d, accepted %d), sshd itself wrote failed %d, invalid user %d, accepted %d (the others came from another program in sshd's unit, e.g. logger), so they may be forged; check them as root and, if they are real, ask again with override_unverified",
-				ip, claimed.Failed, claimed.InvalidUser, claimed.Accepted, own.Failed, own.InvalidUser, own.Accepted)
+			return false, coded(BlockUnverified, fmt.Errorf("refusing to block %s: of its SSH login events in journald (failed %d, invalid user %d, accepted %d), sshd itself wrote failed %d, invalid user %d, accepted %d (the others came from another program in sshd's unit, e.g. logger), so they may be forged; check them as root and, if they are real, ask again with override_unverified",
+				ip, claimed.Failed, claimed.InvalidUser, claimed.Accepted, own.Failed, own.InvalidUser, own.Accepted))
 		}
 		return true, nil // sshd itself logged the IP: the text logs need not be read
 	}
 	text, files, unread := textLogins(env, want)
 	switch {
 	case len(unread) > 0:
-		return false, fmt.Errorf("refusing to block %s: the text auth logs could not all be read (%s), so forged SSH logins in them cannot be ruled out; check them as root and, if the block is right, ask again with override_unverified", ip, strings.Join(unread, ", "))
+		return false, coded(BlockStateError, fmt.Errorf("refusing to block %s: the text auth logs could not all be read (%s), so forged SSH logins in them cannot be ruled out; check them as root and, if the block is right, ask again with override_unverified", ip, strings.Join(unread, ", ")))
 	case seen, text > 0: // seen here means unverified
 		// Name the text logs the events are in, not the summary's source
 		// (that is "journald" when journald had other sshd entries).
@@ -187,7 +187,7 @@ func loginCheck(ctx context.Context, env *Env, ip net.IP) (verified bool, err er
 		if where == "" {
 			where = fmt.Sprint(r["source"])
 		}
-		return false, fmt.Errorf("refusing to block %s: its SSH login events come from text logs (%s), which anyone on this host can write to, so they may be forged; check them (journalctl -u ssh, the IP's other traffic) and, if they are real, ask again with override_unverified", ip, where)
+		return false, coded(BlockUnverified, fmt.Errorf("refusing to block %s: its SSH login events come from text logs (%s), which anyone on this host can write to, so they may be forged; check them (journalctl -u ssh, the IP's other traffic) and, if they are real, ask again with override_unverified", ip, where))
 	}
 	return false, nil
 }
@@ -275,26 +275,26 @@ func checkBlock(args json.RawMessage) (ipArgs, net.IP, time.Duration, error) {
 	}
 	ip := net.ParseIP(strings.TrimSpace(a.IP))
 	if ip == nil {
-		return a, nil, 0, errors.New("not a single IP address (ranges are not allowed): " + a.IP)
+		return a, nil, 0, coded(BlockNotCanonical, errors.New("not a single IP address (ranges are not allowed): "+a.IP))
 	}
 	if v4 := ip.To4(); v4 != nil {
 		ip = v4
 	}
 	if ip.IsLoopback() || ip.IsUnspecified() || ip.IsMulticast() || ip.IsLinkLocalUnicast() {
-		return a, nil, 0, errors.New("refusing to block a loopback, unspecified, multicast or link-local address")
+		return a, nil, 0, coded(BlockInternal, errors.New("refusing to block a loopback, unspecified, multicast or link-local address"))
 	}
 	if ownAddrs()[ip.String()] {
-		return a, nil, 0, errors.New("refusing to block one of this server's own addresses")
+		return a, nil, 0, coded(BlockInternal, errors.New("refusing to block one of this server's own addresses"))
 	}
 	if infraAddrs()[ip.String()] {
-		return a, nil, 0, errors.New("refusing to block this server's default gateway or DNS server")
+		return a, nil, 0, coded(BlockLockout, errors.New("refusing to block this server's default gateway or DNS server"))
 	}
 	peers, err := SSHPeers()
 	if err != nil {
-		return a, nil, 0, errors.New("refusing to block: " + err.Error() + "; the IP may be the operator's")
+		return a, nil, 0, coded(BlockStateError, errors.New("refusing to block: "+err.Error()+"; the IP may be the operator's"))
 	}
 	if peers[ip.String()] {
-		return a, nil, 0, errors.New("refusing to block an IP with an active SSH session to this server (it may be the operator)")
+		return a, nil, 0, coded(BlockLockout, errors.New("refusing to block an IP with an active SSH session to this server (it may be the operator)"))
 	}
 	ttl := 24 * time.Hour
 	if a.TTL != "" {

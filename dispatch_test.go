@@ -33,6 +33,7 @@ func dispatchAgent(t *testing.T, h http.Handler, confirm, strict func(string, st
 	cfg := &Config{}
 	cfg.LLM.MaxSteps = 5
 	state, _ := filepath.EvalSymlinks(t.TempDir())
+	cfg.StateDir = state
 	return &agent{
 		cfg: cfg, llm: &llmClient{baseURL: srv.URL, http: srv.Client(), maxTokens: 4096},
 		env: &tools.Env{LogPaths: []string{filepath.Join(state, "*.log")}}, skills: map[string]skill{},

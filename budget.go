@@ -2,11 +2,14 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"time"
@@ -18,32 +21,79 @@ var errBudget = errors.New("the monthly AI budget is used up; raise it with `sud
 
 // monthUsage adds up model cost and tokens since the start of this month.
 func monthUsage(stateDir string, now time.Time) (cost float64, tokens int) {
+	cost, tokens, _, _ = monthUsageStrict(stateDir, now)
+	return cost, tokens
+}
+
+// maxLogLine is the longest log.jsonl line monthUsageStrict reads; a model
+// call's line is far shorter, so a longer one is skipped and counted.
+const maxLogLine = 1 << 20
+
+var errLongLLMLine = errors.New("log.jsonl: a model call's line is longer than 1 MiB")
+
+// monthUsageStrict is monthUsage that also says when log.jsonl could not
+// be read to its end (no log yet is no use, not an error): what stops on
+// it must not take a part for the whole. long counts the lines past
+// maxLogLine, skipped without stopping the count.
+func monthUsageStrict(stateDir string, now time.Time) (cost float64, tokens, long int, err error) {
 	f, err := os.Open(filepath.Join(stateDir, "log.jsonl"))
+	if errors.Is(err, fs.ErrNotExist) {
+		return 0, 0, 0, nil
+	}
 	if err != nil {
-		return 0, 0
+		return 0, 0, 0, err
 	}
 	defer f.Close()
 	y, m, _ := now.Date()
 	start := time.Date(y, m, 1, 0, 0, 0, 0, now.Location())
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 1<<20), 1<<20)
-	for sc.Scan() {
-		var e logEntry
-		if json.Unmarshal(sc.Bytes(), &e) != nil || e.Tool != "llm" || e.Time.Before(start) {
+	r := bufio.NewReaderSize(f, maxLogLine)
+	for {
+		line, err := r.ReadSlice('\n')
+		if errors.Is(err, bufio.ErrBufferFull) {
+			// A model call's line (its error can quote a provider's answer)
+			// is never skipped: its use would go uncounted.
+			if bytes.Contains(line[:min(len(line), 4096)], []byte(`"tool":"llm"`)) {
+				return cost, tokens, long, errLongLLMLine
+			}
+			long++
+			for errors.Is(err, bufio.ErrBufferFull) { // the rest of it
+				_, err = r.ReadSlice('\n')
+			}
+			if err == io.EOF {
+				return cost, tokens, long, nil
+			}
+			if err != nil {
+				return cost, tokens, long, err
+			}
 			continue
 		}
-		cost += e.Cost
-		tokens += e.InTokens + e.OutTokens + e.ReasonTokens
+		if len(line) > 0 {
+			var e logEntry
+			if json.Unmarshal(line, &e) == nil && e.Tool == "llm" && !e.Time.Before(start) {
+				cost += e.Cost
+				tokens += e.InTokens + e.OutTokens + e.ReasonTokens
+			}
+		}
+		if err == io.EOF {
+			return cost, tokens, long, nil
+		}
+		if err != nil {
+			return cost, tokens, long, err
+		}
 	}
-	return cost, tokens
 }
 
-// budgetUsed is the larger share of the limits that are set (0 when none is).
+// budgetUsed is the larger share of the limits that are set (0 when none is),
+// and 1 when log.jsonl could not be read to its end.
 func budgetUsed(cfg *Config, now time.Time) float64 {
 	if cfg.Budget.MonthlyCost <= 0 && cfg.Budget.MonthlyTokens <= 0 {
 		return 0
 	}
-	cost, tokens := monthUsage(cfg.StateDir, now)
+	// A log read only in part could hide use: count it as the limit reached.
+	cost, tokens, _, err := monthUsageStrict(cfg.StateDir, now)
+	if err != nil {
+		return 1
+	}
 	used := 0.0
 	if cfg.Budget.MonthlyCost > 0 {
 		used = cost / cfg.Budget.MonthlyCost

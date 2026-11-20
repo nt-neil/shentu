@@ -55,6 +55,12 @@ type Config struct {
 		SSHThreshold int    `toml:"ssh_threshold"`
 		Cooldown     string `toml:"cooldown"`
 	} `toml:"patrol"`
+	// Sub-agents. AutoIncident: an L3 alert dispatches the read-only incident
+	// sub-agent on its own (at most 3 a day, none without a monthly budget
+	// or past 80% of it). Off by default.
+	Agents struct {
+		AutoIncident bool `toml:"auto_incident"`
+	} `toml:"agents"`
 	StateDir string `toml:"state_dir"`
 	Language string `toml:"language"`
 }
