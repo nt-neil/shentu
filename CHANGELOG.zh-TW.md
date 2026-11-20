@@ -3,7 +3,7 @@
 CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本與日期必須一致，
 每個版本都要有內容（`go test ./cmd/sitegen` 會檢查）。
 
-## v0.4.3 (unreleased)
+## v0.4.3 — 2026-11-20
 
 - SSRF：URL 的 host 檢查過之後，`console.log(u)`、`JSON.stringify(u)`、`String(u)` 不再讓檢查失效，條件是檔案只用 `console`、`JSON`、`String` 來呼叫（沒有同名的參數或宣告，沒有 `console.log = f`），也沒有可能在別處替換這些呼叫的寫法（`globalThis` 這類 global 物件除了讀具名成員以外的用法、`eval`、`Function(`、`with` 敘述、改寫內建物件的 prototype）（#119）。
 - JavaScript 的路由 handler：字串 key 的解構 `const { 'x-forwarded-host': xfh } = req.headers` 追得到，這個值改由 js-ssrf-host-header 回報，不再是 js-ssrf-http-request。Koa 的路由 handler 參數解構時取了 `request`（`({ request }) => request.header.host`），在這個檔案或專案裡的其他檔案有 import `koa`、`@koa/router` 或 `koa-router` 的情況下，就當成 Koa 的 context（#119）。
