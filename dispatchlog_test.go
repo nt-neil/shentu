@@ -310,3 +310,106 @@ func TestDispatchSectionMasks(t *testing.T) {
 		t.Error("empty section")
 	}
 }
+
+// N-A1: old files go on reading too, not only when a dispatch is saved.
+func TestDispatchArchivePrunedOnRead(t *testing.T) {
+	s := testStore(t)
+	if err := s.Save(testRecord("0123456789ab", time.Now())); err != nil {
+		t.Fatal(err)
+	}
+	old := filepath.Join(s.dir, time.Now().Add(-40*24*time.Hour).Format(time.DateOnly)+".jsonl")
+	if err := os.WriteFile(old, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.Since(time.Now().Add(-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(old); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("a 40-day-old file was kept: %v", err)
+	}
+	os.WriteFile(old, nil, 0o600)
+	dispatchDaily(&Config{StateDir: filepath.Dir(s.dir)}, time.Now())
+	if _, err := os.Stat(old); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("the daily report kept a 40-day-old file: %v", err)
+	}
+}
+
+// N-A2: a line cut short does not take the next record with it, and the
+// automatic count fails closed while a line cannot be read.
+func TestDispatchArchiveShortWrite(t *testing.T) {
+	s := testStore(t)
+	now := time.Now()
+	a1 := testRecord("000000000001", now.Add(-time.Minute))
+	a1.Origin = originAuto
+	if err := s.Save(a1); err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(s.dir, now.Local().Format(time.DateOnly)+".jsonl")
+	f, _ := os.OpenFile(p, os.O_APPEND|os.O_WRONLY, 0)
+	f.WriteString(`{"v":1,"id":"0000000000`) // the disk filled up mid-line
+	f.Close()
+	a2 := testRecord("000000000002", now)
+	a2.Origin = originAuto
+	if err := s.Save(a2); err != nil {
+		t.Fatal(err)
+	}
+	recs, bad, err := s.Since(now.Add(-time.Hour))
+	if err != nil || len(recs) != 2 || bad != 1 {
+		t.Errorf("Since: %d records, %d bad, %v", len(recs), bad, err)
+	}
+	if n, _, err := s.AutoSince(now.Add(-time.Hour)); !errors.Is(err, errArchive) {
+		t.Errorf("AutoSince with a broken line: n=%d err=%v", n, err)
+	}
+}
+
+// S-A1, S-A2: the directory must be 0700, and a file that is a link is
+// neither written through nor read.
+func TestDispatchArchiveStrictDirAndLinks(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("modes and links are not checked this way on Windows")
+	}
+	s := testStore(t)
+	now := time.Now()
+	if err := s.Save(testRecord("0123456789ab", now)); err != nil {
+		t.Fatal(err)
+	}
+	os.Chmod(s.dir, 0o750)
+	if _, _, err := s.Since(now.Add(-time.Hour)); !errors.Is(err, errArchive) {
+		t.Errorf("0750 dir read: %v", err)
+	}
+	if err := s.Save(testRecord("0123456789ac", now)); !errors.Is(err, errArchive) {
+		t.Errorf("0750 dir written: %v", err)
+	}
+	os.Chmod(s.dir, 0o700)
+
+	p := filepath.Join(s.dir, now.Local().Format(time.DateOnly)+".jsonl")
+	target := filepath.Join(t.TempDir(), "elsewhere")
+	os.WriteFile(target, []byte("keep\n"), 0o600)
+	os.Remove(p)
+	if err := os.Symlink(target, p); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Save(testRecord("0123456789ad", now)); !errors.Is(err, errArchive) {
+		t.Errorf("Save through a link: %v", err)
+	}
+	if b, _ := os.ReadFile(target); string(b) != "keep\n" {
+		t.Errorf("the link's target was written: %q", b)
+	}
+	if _, _, err := s.Since(now.Add(-time.Hour)); !errors.Is(err, errArchive) {
+		t.Errorf("Since through a link: %v", err)
+	}
+}
+
+// runDispatch hands back the record it saved, and the error when it could not.
+func TestRunDispatchReturnsRecord(t *testing.T) {
+	h := &hostileModel{replies: []string{answerMsg(`{"status":"complete","findings":[]}`)}}
+	a, _ := dispatchAgent(t, h, nil, nil)
+	id, reps, rec, err := a.runDispatch(context.Background(), originAuto, "203.0.113.0/24|/x|L3|v", []subTask{{Role: "incident"}})
+	if err != nil || rec.ID != id || len(reps) != 1 || rec.Origin != originAuto || rec.Trigger != triggerID("203.0.113.0/24|/x|L3|v") {
+		t.Errorf("runDispatch: %s %+v %v", id, rec, err)
+	}
+	a.cfg.StateDir = "relative"
+	if _, _, rec, err := a.runDispatch(context.Background(), originAuto, "k", []subTask{{Role: "incident"}}); !errors.Is(err, errArchive) || rec.ID == "" {
+		t.Errorf("unsaved: %+v %v", rec, err)
+	}
+}
