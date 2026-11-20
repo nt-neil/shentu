@@ -298,7 +298,7 @@ table.num .cid { font: 600 15px/1.4 var(--sans); }
 .acc b { font: 300 20px/1 var(--serif); color: var(--ink); }
 /* a release's lines show above its lamp on hover or focus; the newest stays open below the river */
 .peek { position: absolute; left: 0; bottom: 34px; transform: translate(-50%, 8px); width: 270px; padding: 14px 16px; background: var(--bg-2); border: 1px solid var(--line); border-top: 2px solid var(--ember);
-  opacity: 0; pointer-events: none; transition: opacity .3s, transform .3s; z-index: 3; font-size: 14px; }
+  opacity: 0; pointer-events: none; transition: opacity .3s, transform .3s; z-index: 3; font-size: 14px; max-height: 190px; overflow-y: auto; overscroll-behavior: contain; }
 .era-node:hover .peek, .era-node:focus-within .peek { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
 .era-node:nth-child(-n+2) .peek { transform: translate(-20%, 8px); } .era-node:nth-child(-n+2):hover .peek, .era-node:nth-child(-n+2):focus-within .peek { transform: translate(-20%, 0); }
 /* the newest node has no peek (its card is below), so the one before it is the rightmost: keep it inside the page */
@@ -417,7 +417,7 @@ html:not(.walking) .st1 { opacity: 1; transform: none; }
   .lamp i { position: absolute; left: -32px; }
   .lamp .ver { margin-top: 0; }
   .acc { position: static; transform: none; display: flex; gap: 16px; justify-items: start; }
-  .peek { position: static; opacity: 1; transform: none !important; width: auto; pointer-events: auto; margin-top: 8px; display: block; padding: 0; border: 0; background: none; }
+  .peek { position: static; opacity: 1; transform: none !important; width: auto; pointer-events: auto; margin-top: 8px; display: block; padding: 0; border: 0; background: none; max-height: none; overflow: visible; }
   .peek ul { display: none; }
   .newest { grid-template-columns: 1fr; }
   /* phones: the walk, words above and below the guardian */
