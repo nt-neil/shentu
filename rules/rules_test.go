@@ -428,3 +428,30 @@ func TestUnlessAfterOwnerReads(t *testing.T) {
 		t.Error("no rule hands ORDER BY to php-sqli-orderby-identifier")
 	}
 }
+
+// TestNestRequestAlias: NestJS's @Request() is @Req() by another name (the
+// TypeScript lowering reads both as the handler's request), so a rule that
+// takes one as a source takes the other, in sources and in source_args.
+func TestNestRequestAlias(t *testing.T) {
+	rs, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, r := range rs {
+		lists := [][]string{r.Sources}
+		for _, sa := range r.SourceArgs {
+			lists = append(lists, sa.Sources)
+		}
+		for _, l := range lists {
+			if req, request := slices.Contains(l, "@Req("), slices.Contains(l, "@Request("); req != request {
+				t.Errorf("%s: lists only one of @Req( and @Request(", r.File)
+			} else if req {
+				n++
+			}
+		}
+	}
+	if n == 0 {
+		t.Error("no rule takes NestJS's @Req() as a source")
+	}
+}

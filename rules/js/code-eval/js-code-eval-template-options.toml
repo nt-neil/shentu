@@ -5,7 +5,7 @@ cwe = "CWE-94"
 severity = "critical"
 title = "Whole request object passed as template render data or options, or compiled as a template"
 frameworks = ["express", "nestjs", "nextjs", "koa", "fastify", "hapi"]
-sources = ["req.query", "req.body", "@Query(", "@Body(", "@Req(", "req.originalUrl", "^request.nextUrl", "^req.nextUrl", "^request.url", "^req.url", "^searchParams", "^request.json(", "^req.json(", "^request.text(", "^req.text(", "^request.formData(", "^req.formData(", "^formData.get(", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload"]
+sources = ["req.query", "req.body", "@Query(", "@Body(", "@Req(", "@Request(", "req.originalUrl", "^request.nextUrl", "^req.nextUrl", "^request.url", "^req.url", "^searchParams", "^request.json(", "^req.json(", "^request.text(", "^req.text(", "^request.formData(", "^req.formData(", "^formData.get(", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload"]
 sinks = ["res.render(", "ejs.render(", "ejs.compile(", "_.template(", "Handlebars.compile(", "pug.render("]
 sanitizers = []
 fix = "Pass only the named fields the template needs (res.render('page', { q: String(req.query.q) })); never spread req.query or req.body into render data, which some engines read as options, and never compile user text as a template."
@@ -111,4 +111,18 @@ async function probeDb(req, res) {
   res.json(await tryConnect(settings));
 }
 router.post("/api/db/probe", requireAdmin, probeDb);
+'''
+
+[[samples]]
+kind = "vulnerable"
+dialect = "ts"
+note = "NestJS's @Request() is @Req() by another name, whatever the parameter is called"
+code = '''
+@Controller()
+export class AppController {
+  @Get("page")
+  page(@Request() r: Request, @Res() res: Response) {
+    res.render("page", r.query);
+  }
+}
 '''

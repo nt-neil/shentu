@@ -5,7 +5,7 @@ cwe = "CWE-502"
 severity = "critical"
 title = "Function-reviving deserializer (node-serialize, serialize-to-js, funcster) on client data"
 frameworks = ["express", "nestjs", "nextjs", "koa", "fastify", "hapi"]
-sources = ["req.cookies", "req.body", "req.query", "Buffer.from(", "@Query(", "@Body(", "@Req(", "req.originalUrl", "^request.nextUrl", "^req.nextUrl", "^request.url", "^req.url", "^searchParams", "^request.json(", "^req.json(", "^request.text(", "^req.text(", "^request.formData(", "^req.formData(", "^formData.get(", "^cookies().get(", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload", "ctx.cookies.get("]
+sources = ["req.cookies", "req.body", "req.query", "Buffer.from(", "@Query(", "@Body(", "@Req(", "@Request(", "req.originalUrl", "^request.nextUrl", "^req.nextUrl", "^request.url", "^req.url", "^searchParams", "^request.json(", "^req.json(", "^request.text(", "^req.text(", "^request.formData(", "^req.formData(", "^formData.get(", "^cookies().get(", "ctx.query", "ctx.request.query", "request.query", "ctx.request.body", "request.body", "request.payload", "ctx.cookies.get("]
 sinks = ["serialize.unserialize(", "unserialize(", "deserialize("]
 sanitizers = []
 fix = "Use JSON.parse on client data and validate the shape; never use a deserializer that can recreate functions."
@@ -57,6 +57,21 @@ export class HomeController {
   @Get()
   home(@Req() req: Request & { user: { prefs: string } }) {
     const prefs = serialize.unserialize(req.user.prefs);
+    return { theme: prefs?.theme };
+  }
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+dialect = "ts"
+note = "NestJS's @Request() is @Req() by another name, whatever the parameter is called"
+code = '''
+@Controller()
+export class AppController {
+  @Get()
+  home(@Request() r: Request) {
+    const prefs = serialize.unserialize(r.cookies.prefs);
     return { theme: prefs?.theme };
   }
 }
