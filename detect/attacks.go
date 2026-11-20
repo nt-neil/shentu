@@ -853,7 +853,7 @@ func looseForms(s string) map[string]bool {
 
 // inetAton reads s as inet_aton does: one to four parts, each decimal,
 // octal after a 0 or hexadecimal after 0x, the last filling the bytes left
-// (3405803788, 203.29452, 203.0.28940, 0xcb.0.113.12).
+// (3405803788, 203.28940, 203.0.28940, 0xcb.0.113.12).
 func inetAton(s string) (netip.Addr, bool) {
 	parts := strings.Split(s, ".")
 	if len(parts) > 4 {

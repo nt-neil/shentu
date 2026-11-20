@@ -80,7 +80,7 @@ func TestAttackGateLooseForms(t *testing.T) {
 		// v0.4.2: inet_aton's forms.
 		{"hexadecimal", "0xcb.0.113.12", "203.0.113.12", gateRefuse},
 		{"one number", "3405803788", "203.0.113.12", gateRefuse},
-		{"two parts", "203.29452", "203.0.113.12", gateRefuse},
+		{"two parts", "203.28940", "203.0.113.12", gateRefuse},
 		{"three parts", "203.0.28940", "203.0.113.12", gateRefuse},
 		{"a hexadecimal part", "203.0.0x71.12", "203.0.113.12", gateRefuse},
 		{"another address", "203.0.113.13", "203.0.113.12", gateNone},
