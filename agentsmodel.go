@@ -58,6 +58,7 @@ func agentsLLM(cfg *Config, main *llmClient) (*llmClient, bool, error) {
 	c := *cfg
 	c.LLM.BaseURL, c.LLM.Model, c.LLM.APIKeyEnv = ag.BaseURL, ag.Model, ag.APIKeyEnv
 	l := newLLM(&c)
+	l.opaqueErrors = external // keyForms still scrubs the rest, as a second line
 	if main != nil && main.maxTokens > 0 {
 		l.maxTokens = main.maxTokens
 	}

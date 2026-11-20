@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"html"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -220,12 +222,12 @@ func TestAgentsModelErrorKeyScrubbed(t *testing.T) {
 					if strings.Contains(string(b), key) {
 						t.Errorf("the key is in %s", p)
 					}
-					found = found || strings.Contains(string(b), "[key]")
+					found = found || strings.Contains(string(b), "its answer is not shown") // N-F-r3-1: none of it kept
 				}
 				return nil
 			})
 			if !found {
-				t.Error("no [key] in the state: the error was not logged as expected")
+				t.Error("the error was not logged as expected")
 			}
 			sub.commander.mu.Lock()
 			defer sub.commander.mu.Unlock()
@@ -318,5 +320,60 @@ func TestAgentsModelErrorKeyEncoded(t *testing.T) {
 				t.Errorf("output: %s", out)
 			}
 		})
+	}
+}
+
+// N-F-r3-1: from a sub-agents' model outside this host, no part of any
+// error answer is kept, whatever encoding it quotes the key in.
+func TestAgentsExternalErrorOpaque(t *testing.T) {
+	testAgentsKey = strings.Join([]string{"zqA/b+c", "Probe/77=="}, "")
+	t.Cleanup(func() { testAgentsKey = "" })
+	b64 := func(s string) string { return base64.StdEncoding.EncodeToString([]byte(s)) }
+	for name, body := range map[string]func(k string) string{
+		"lower percent": func(k string) string { return strings.ToLower(url.QueryEscape(k)) },
+		"partial":       func(k string) string { return strings.NewReplacer("+", "%2B", "=", "%3D").Replace(k) },
+		"base64":        func(k string) string { return b64(k) + " " + b64("Bearer "+k) },
+		"html":          func(k string) string { return html.EscapeString(strings.ReplaceAll(k, "+", "&#43;")) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, state, out, sub, key := externalDispatchWith(t, true, func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusBadRequest)
+				w.Write([]byte("bad request for " + body(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))))
+			})
+			leak := body(key)
+			check := func(where, text string) {
+				if strings.Contains(text, leak) || strings.Contains(text, "bad request for") {
+					t.Errorf("%s holds the model's answer", where)
+				}
+			}
+			check("the dispatch output", out)
+			if !strings.Contains(out, "answered with an error (its answer is not shown)") {
+				t.Errorf("output: %s", out)
+			}
+			filepath.Walk(state, func(p string, info os.FileInfo, err error) error {
+				if err == nil && info.Mode().IsRegular() {
+					b, _ := os.ReadFile(p)
+					check(p, string(b))
+				}
+				return nil
+			})
+			sub.commander.mu.Lock()
+			for _, r := range sub.commander.requests {
+				check("a request to the commander's model", r)
+			}
+			sub.commander.mu.Unlock()
+		})
+	}
+}
+
+// keyForms, the second line ([llm] and a sub-agents' model on this host):
+// scrub finds the key as is, query- and path-escaped and JSON-escaped.
+func TestLLMScrubKeyForms(t *testing.T) {
+	key := strings.Join([]string{"zqA/b+c", "Probe/77=="}, "")
+	l := &llmClient{apiKey: key}
+	for _, form := range []string{key, url.QueryEscape(key), url.PathEscape(key), strings.ReplaceAll(key, "/", `\/`)} {
+		if got := l.scrub("answer: "+form+" end", 300); strings.Contains(got, form) || !strings.Contains(got, "[key]") {
+			t.Errorf("%q: %q", form, got)
+		}
 	}
 }

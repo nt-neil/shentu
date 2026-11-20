@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -51,6 +52,7 @@ type llmClient struct {
 	usedIn, usedOut        int     // tokens used by the last call, for the audit log
 	usedReason             int     // reasoning tokens, when the provider reports them
 	usedCost               float64 // what the provider charged, when it says
+	opaqueErrors           bool    // keep no part of an error answer (a model outside this host, for sub-agents)
 }
 
 func newLLM(c *Config) *llmClient {
@@ -100,6 +102,14 @@ func (l *llmClient) chat(ctx context.Context, msgs []message, tools []toolDef) (
 			// whatever encoding: none of it is kept.
 			return message{}, fmt.Errorf("LLM HTTP %d: the provider refused the request (check the API key; its answer is not shown)", resp.StatusCode)
 		}
+		if resp.StatusCode/100 != 2 && l.opaqueErrors {
+			// Its answer could quote the key in any encoding: none of it is kept.
+			lastErr = fmt.Errorf("LLM HTTP %d: the model outside this host answered with an error (its answer is not shown)", resp.StatusCode)
+			if resp.StatusCode >= 500 || resp.StatusCode == 429 {
+				continue
+			}
+			return message{}, lastErr
+		}
 		if resp.StatusCode/100 != 2 {
 			lastErr = fmt.Errorf("LLM HTTP %d: %s", resp.StatusCode, l.scrub(string(raw), 300))
 			if resp.StatusCode >= 500 || resp.StatusCode == 429 {
@@ -122,6 +132,9 @@ func (l *llmClient) chat(ctx context.Context, msgs []message, tools []toolDef) (
 		}
 		if err := json.Unmarshal(raw, &r); err != nil || len(r.Choices) == 0 {
 			lastErr = fmt.Errorf("unexpected LLM response: %s", l.scrub(string(raw), 300))
+			if l.opaqueErrors {
+				lastErr = errors.New("unexpected LLM response from the model outside this host (not shown)")
+			}
 			continue
 		}
 		l.usedIn, l.usedOut, l.usedReason, l.usedCost = r.Usage.In, r.Usage.Out, r.Usage.Details.Reasoning, r.Charged
