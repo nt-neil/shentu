@@ -431,8 +431,8 @@ func autoArchiveLine(cfg *Config, now time.Time) string {
 		}
 	}
 	resume := last.AddDate(0, 0, 3)
-	return fmt.Sprintf("- stopped: %d lines of the dispatch archive could not be read (the newest in %s); none are made until that file leaves the count at %s (at most 72 hours), or sooner once the damaged day files are moved out of %s\n",
-		bad, last.Format(time.DateOnly)+".jsonl", resume.Format("2006-01-02 15:04 MST"), filepath.Join(cfg.StateDir, dispatchDir))
+	return fmt.Sprintf("- stopped: %d lines of the dispatch archive could not be read (the newest in %s); none are made until that file leaves the count at %s (at most 72 hours), or sooner after %s (it moves them to *.jsonl.bad in %s)\n",
+		bad, last.Format(time.DateOnly)+".jsonl", resume.Format("2006-01-02 15:04 MST"), repairHint(), filepath.Join(cfg.StateDir, dispatchDir))
 }
 
 func (st *autoState) skip(now time.Time, why string) {

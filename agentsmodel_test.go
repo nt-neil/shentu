@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -101,6 +102,9 @@ func externalDispatchWith(t *testing.T, budget bool, handler func(http.ResponseW
 	}
 	t.Setenv("SHENTU_TEST_AGENTS_KEY", key)
 	a.cfg.Agents.BaseURL, a.cfg.Agents.Model, a.cfg.Agents.APIKeyEnv = srv.URL, "remote-model", "SHENTU_TEST_AGENTS_KEY"
+	if testAgentsBaseURL != nil {
+		a.cfg.Agents.BaseURL = testAgentsBaseURL(key)
+	}
 	if budget {
 		a.cfg.Budget.MonthlyTokens = 1_000_000
 	}
@@ -194,6 +198,9 @@ func TestAgentsExternalCostOnlyRefused(t *testing.T) {
 
 // testAgentsKey, when set, is the key externalDispatchWith uses.
 var testAgentsKey string
+
+// testAgentsBaseURL, when set, makes the [agents] base_url from the key.
+var testAgentsBaseURL func(key string) string
 
 // B-F1: a provider that echoes the key back in an error (text or JSON)
 // does not get it into the state, the dispatch output or the commander's
@@ -376,4 +383,68 @@ func TestLLMScrubKeyForms(t *testing.T) {
 			t.Errorf("%q: %q", form, got)
 		}
 	}
+}
+
+// leakCheck fails t where any of forms is found: the dispatch output, the
+// state and every request to the commander's model.
+func leakCheck(t *testing.T, out, state string, sub *agentsServer, forms ...string) {
+	t.Helper()
+	check := func(where, text string) {
+		for _, f := range forms {
+			if strings.Contains(text, f) {
+				t.Errorf("%s holds %q", where, f)
+			}
+		}
+	}
+	check("the dispatch output", out)
+	filepath.Walk(state, func(p string, info os.FileInfo, err error) error {
+		if err == nil && info.Mode().IsRegular() {
+			b, _ := os.ReadFile(p)
+			check(p, string(b))
+		}
+		return nil
+	})
+	sub.commander.mu.Lock()
+	defer sub.commander.mu.Unlock()
+	for _, r := range sub.commander.requests {
+		check("a request to the commander's model", r)
+	}
+}
+
+// N-F-r4-1: a redirect from the sub-agents' outside model is not followed
+// (the key would go to wherever it points) and is reported as an error
+// answer, without its Location.
+func TestAgentsExternalRedirect(t *testing.T) {
+	var hits atomic.Int32
+	elsewhere := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits.Add(1) }))
+	defer elsewhere.Close()
+	_, state, out, sub, key := externalDispatchWith(t, true, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Location", elsewhere.URL+"/?k="+url.QueryEscape(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")))
+		w.WriteHeader(http.StatusFound)
+	})
+	if n := hits.Load(); n != 0 {
+		t.Errorf("the redirect was followed %d times", n)
+	}
+	if !strings.Contains(out, "LLM HTTP 302") || !strings.Contains(out, "not shown") {
+		t.Errorf("output: %s", out)
+	}
+	leakCheck(t, out, state, sub, key, url.QueryEscape(key), elsewhere.URL)
+}
+
+// N-F-r4-1: a request that fails to connect keeps only the kind of
+// failure, not the URL (a base_url can hold a secret in its path).
+func TestAgentsExternalConnectError(t *testing.T) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	closed := l.Addr().String()
+	l.Close()
+	testAgentsBaseURL = func(key string) string { return "http://" + closed + "/t/" + url.PathEscape(key) + "/v1" }
+	t.Cleanup(func() { testAgentsBaseURL = nil })
+	_, state, out, sub, key := externalDispatchWith(t, true, nil)
+	if !strings.Contains(out, "model outside this host: connection refused") {
+		t.Errorf("output: %s", out)
+	}
+	leakCheck(t, out, state, sub, key, url.PathEscape(key), closed)
 }
