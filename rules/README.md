@@ -170,8 +170,8 @@ How the engine reads them:
     `globalThis.String = f` or `Object.assign(console, ...)`), and holds nothing
     that may replace them unseen: a global object (`globalThis`, `window`,
     `self`, `global`) other than read through a named member, `eval` (the name
-    anywhere), `Function(`, `runInThisContext`, a constructor reached through a
-    value (`[].constructor.constructor(...)`), `with (`, anything under the
+    anywhere), `Function(`, `runInThisContext`, a value's constructor read for
+    anything but its name (`(() => {}).constructor`, `{ constructor: F } = f`), `with (`, anything under the
     prototype of `URL`, `String`, `JSON` or `Object`, `__proto__` or
     `Symbol.toPrimitive`. A module that replaces a global when it is imported
     is another file, which this does not see. So does

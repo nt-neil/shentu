@@ -349,8 +349,9 @@ func tsType(t []Token, j int) bool {
 //     through a named member (globalThis.process): given to another name,
 //     passed on, read by a computed name (globalThis['String'], ?.[);
 //   - eval, the name anywhere; runInThisContext; Function(, new Function; a
-//     constructor read and called through a value (x.constructor(...),
-//     ['constructor']), which reaches Function; a with statement;
+//     value's constructor read for anything but its name (x.constructor,
+//     ['constructor'], { constructor: F } = f), which reaches Function; a
+//     with statement;
 //   - anything under URL, String, JSON or Object's prototype, __proto__, or
 //     Symbol.toPrimitive (what String(u) and JSON.stringify(u) call);
 //   - Object.defineProperty and the like or Reflect.set on console, String,
@@ -389,8 +390,12 @@ func globalReplace(t []Token) bool {
 				return true
 			}
 		case "constructor":
-			if member && (next(1).op("(") || next(1).op(".") && next(2).word("constructor")) {
-				return true // [].constructor.constructor('...')(): a class's own constructor(...) { is no call
+			// any read of a value's constructor but its name reaches Function:
+			// F = (() => {}).constructor, [].constructor.constructor('...')(),
+			// { constructor: F } = f; a class's own constructor(...) { is a
+			// definition, and x.constructor.name only a name
+			if member && !(next(1).op(".") && next(2).word("name")) || !member && (next(1).op(":") || next(1).op(",") || next(1).op("}") || next(1).op("=")) {
+				return true
 			}
 		case "with":
 			if !member && next(1).op("(") {
