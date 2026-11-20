@@ -6,7 +6,7 @@ a release are not written here: they are worked out from the rule snapshots in
 `docs/site-src/rules-history/`. `CHANGELOG.zh-TW.md` holds the same releases in Traditional
 Chinese for the zh-TW pages; keep the two in step.
 
-## v0.5.2 (unreleased)
+## v0.5.2 — 2026-11-20
 
 - The sub-agents' own model (#135): `[agents] base_url`, `model` and `api_key_env` give them a
   model of their own; unset, they use `[llm]`. A model outside this host (anything but
