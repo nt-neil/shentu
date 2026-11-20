@@ -2,7 +2,7 @@
 {{define "main"}}
 <header class="hall">
   <h1>{{t "rules.title"}}</h1>
-  <p class="intro">{{t "rules.intro"}}</p>
+  <p class="intro">{{t "rules.intro"}}{{with .Attack}}{{tf "rules.attack" .Signatures}}<a href="{{$.Repo}}/blob/main/{{t "rules.attack.doc"}}">{{t "rules.attack.a"}}</a>{{t "end"}}{{end}}</p>
 </header>
 <form class="filters" onsubmit="return false" role="search">
   <label>{{t "filter"}} <input id="q" type="search" placeholder="{{t "filter.ph"}}"></label>

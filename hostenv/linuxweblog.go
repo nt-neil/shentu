@@ -51,6 +51,18 @@ type LogSource struct {
 	// FileID is the device:inode judged: a reader opening the path must find
 	// the same file (and still root's) for its lines to be verified.
 	FileID string `json:"file_id,omitempty"`
+	// FileUID is the judged file's owner: root, or a server account
+	// (WebAccounts.ServerUIDs) the reader must find it still is.
+	FileUID int `json:"file_uid,omitempty"`
+	// Journal: nginx sends the log to journald (access_log
+	// syslog:server=unix:/dev/log): it is read from the entries of this
+	// unit tagged JournalTag, and an entry is verified only when journald
+	// says it came over syslog from JournalExe running as JournalUID in
+	// the unit (cgroup and credentials, which the sender cannot set).
+	Journal    string `json:"journal,omitempty"`
+	JournalTag string `json:"journal_tag,omitempty"`
+	JournalExe string `json:"journal_exe,omitempty"`
+	JournalUID int    `json:"journal_uid,omitempty"`
 }
 
 // Reasons a log source is not verified or not readable, beside the
@@ -112,6 +124,19 @@ const (
 // distributions shentu supports, beside those the configuration names.
 var defaultWebUsers = []string{"www-data", "nginx", "apache", "httpd", "nobody", "wwwrun", "http", "lighttpd", "php-fpm", "caddy", "uwsgi"}
 
+// sharedWebUsers are the default web accounts made to be shared: the
+// distributions run their web servers, PHP and other applications all as
+// one of them (Debian's www-data, RHEL's apache, nobody), so whatever
+// configuration shentu read, something it did not may run as them. Only
+// an account of the server's own (RHEL's nginx) can be apart.
+var sharedWebUsers = map[string]bool{}
+
+func init() {
+	for _, u := range defaultWebUsers {
+		sharedWebUsers[u] = u != "nginx"
+	}
+}
+
 // logGroupNames are the groups a log directory may be writable by and still
 // be trusted (Ubuntu's /var/log is 775 root:syslog), provided none of
 // their members is a web account.
@@ -140,6 +165,7 @@ func (c LinuxCollector) WebLogs(src Source) Obs[[]LogSource] {
 	l.phpFPM()
 	l.lighttpd()
 	l.unitUsers(c, src)
+	l.runAsAccounts()
 	web := l.webAccounts()
 	for _, p := range l.extraRead { // in a package directory, or read through a link: judged as a log is
 		if why := confTrusted(src, p, l.conf, web); why != "" {
@@ -149,11 +175,13 @@ func (c LinuxCollector) WebLogs(src Source) Obs[[]LogSource] {
 	scoped, scopeWhy := ptraceScoped(src)
 	var out []LogSource
 	for _, s := range l.out {
-		if s.Reason == "" {
-			t := JudgeLog(src, s.Path, web)
+		if s.Reason == "" && s.Journal != "" {
+			l.judgeJournal(s, web)
+		} else if s.Reason == "" {
+			t := JudgeLog(src, s.Path, web.ForServer(s.Server))
 			s.Verified, s.Reason, s.Detail = t.Verified, t.Reason, t.Detail
 			if t.Verified {
-				s.FileID = t.File.ID
+				s.FileID, s.FileUID = t.File.ID, t.File.UID
 			}
 		}
 		if s.Verified {
@@ -161,7 +189,7 @@ func (c LinuxCollector) WebLogs(src Source) Obs[[]LogSource] {
 			// hold it open or feed it: whoever can make them write can.
 			// v0.4.0 trusts only nginx's and Apache's access logs, and
 			// those only while no application code runs in their workers.
-			no := func(r Reason, d string) { s.Verified, s.Reason, s.Detail, s.FileID = false, r, d, "" }
+			no := func(r Reason, d string) { s.Verified, s.Reason, s.Detail, s.FileID, s.FileUID = false, r, d, "", 0 }
 			switch {
 			case s.Kind != "access" || (s.Server != "nginx" && s.Server != "apache"):
 				no(ReasonWebUserWritable, "an error or slow log, or PHP-FPM's: it takes what workers, FastCGI and PHP write (their stderr, a script's name): "+WebUserWritableMeaning)
@@ -175,7 +203,9 @@ func (c LinuxCollector) WebLogs(src Source) Obs[[]LogSource] {
 				no(ReasonWebUserWritable, "Apache runs application code in its own children ("+strings.Join(l.apacheApp, ", ")+"), which hold the log open: "+WebUserWritableMeaning)
 			case s.Server == "nginx" && len(l.ngxApp) > 0:
 				no(ReasonWebUserWritable, "nginx runs application code in its workers ("+strings.Join(l.ngxApp, ", ")+"), which hold the log open: "+WebUserWritableMeaning)
-			case !scoped:
+			case !scoped && s.Server == "apache" && len(l.apacheExec) > 0:
+				no(ReasonWebUserWritable, scopeWhy+": Apache runs programs as its children's account ("+strings.Join(l.apacheExec, ", ")+"), which may ptrace the children holding the log open; kernel.yama.ptrace_scope=1 stops that. "+WebUserWritableMeaning)
+			case !scoped && !l.apart[s.Server]: // application code runs as the workers' account, or may (webAccounts)
 				no(ReasonWebUserWritable, scopeWhy+": the web account can ptrace the server's workers, which hold the log open; "+WebUserWritableMeaning)
 			}
 		}
@@ -197,7 +227,7 @@ func (c LinuxCollector) WebLogs(src Source) Obs[[]LogSource] {
 	}
 	for i := range out {
 		if w := worst[key(&out[i])]; out[i].Verified && !w.Verified {
-			out[i].Verified, out[i].Reason, out[i].FileID = false, w.Reason, ""
+			out[i].Verified, out[i].Reason, out[i].FileID, out[i].FileUID = false, w.Reason, "", 0
 			out[i].Detail = "the same file is also PHP-FPM's or another server's " + w.Kind + " log: " + w.Detail
 		}
 	}
@@ -216,7 +246,7 @@ func (c LinuxCollector) WebLogs(src Source) Obs[[]LogSource] {
 		}
 		for i := range out {
 			if out[i].Verified {
-				out[i].Verified, out[i].Reason, out[i].FileID, out[i].Detail = false, ReasonUnverified, "", why
+				out[i].Verified, out[i].Reason, out[i].FileID, out[i].FileUID, out[i].Detail = false, ReasonUnverified, "", 0, why
 			}
 		}
 	}
@@ -242,6 +272,23 @@ type WebAccounts struct {
 	// account and group comes from (nsswitch: files, compat, systemd).
 	// Otherwise (sssd, LDAP, unread) no group-writable directory is trusted.
 	Complete bool
+	// ServerUIDs are the accounts nginx's workers or Apache's children run
+	// as that a log may be owned by and still be trusted: no application
+	// code runs as them (PHP-FPM pools, app units, a vhost's own account),
+	// by uid or primary group, the server runs none in its own processes,
+	// the account databases are complete and the configuration was read in
+	// full. What they write is the server's own: forging it takes breaking
+	// into nginx or Apache itself, which no log check can stand against.
+	// By server: a log is judged against its own server's (ForServer).
+	ServerUIDs map[string]map[int]string
+	judging    string // the server whose log JudgeLog judges (ForServer); "": root alone
+}
+
+// ForServer is w for judging a log server writes: its own accounts
+// (ServerUIDs) may own the file as well as root.
+func (w WebAccounts) ForServer(server string) WebAccounts {
+	w.judging = server
+	return w
 }
 
 // TrustResult is what JudgeLog found: the file it judged, by its stat.
@@ -258,17 +305,23 @@ func LogTrust(src Source, p string, web WebAccounts) (verified bool, why Reason,
 	return t.Verified, t.Reason, t.Detail
 }
 
-// JudgeLog says whether only root can change p. It, after its links, is a
-// regular file owned by root that neither group nor others can write;
-// every link on the way is root's own; every directory above it and above
-// each link is root's, not writable by others, and writable by its group
-// only when that group is a log group (WebAccounts.LogGIDs, the account
-// databases complete) with no ACL widening it. A sticky directory lets no
+// JudgeLog says whether only root, or a server account no application
+// code runs as (WebAccounts.ServerUIDs), can change p. It, after its
+// links, is a regular file owned by one of them that neither group nor
+// others can write; every link on the way is one of theirs; every
+// directory above it and above each link is one of theirs, not writable
+// by others, and writable by its group only when that group is a log
+// group (WebAccounts.LogGIDs, the account databases complete) with no ACL
+// widening it. A sticky directory lets no
 // one but a file's owner replace it. Anything that cannot be told (a
 // group, an ACL, a link's owner) is unverified: judging fails closed. The
 // web accounts only make the reason precise.
 func JudgeLog(src Source, p string, web WebAccounts) TrustResult {
 	no := func(r Reason, d string) TrustResult { return TrustResult{Reason: r, Detail: d} }
+	owner := func(uid int) bool { // root, or a server's own account
+		_, ok := web.ServerUIDs[web.judging][uid]
+		return uid == 0 || ok
+	}
 	real, err := EvalSymlinks(src, p)
 	if err != nil {
 		return no(statReason(err), whyUnread(err))
@@ -280,13 +333,16 @@ func JudgeLog(src Source, p string, web WebAccounts) TrustResult {
 	switch {
 	case !st.Mode.IsRegular():
 		return no(ReasonNotRegular, real+" is not a regular file")
-	case st.UID != 0:
+	case !owner(st.UID):
 		if name, ok := web.UIDs[st.UID]; ok {
 			return no(ReasonWebUserWritable, fmt.Sprintf("%s is owned by %s (uid %d): %s", real, name, st.UID, WebUserWritableMeaning))
 		}
 		return no(ReasonUntrusted, fmt.Sprintf("%s is owned by uid %d, not root", real, st.UID))
 	case st.Mode.Perm()&0o022 != 0:
-		if w := aclWriters(src, real, web); w != "" { // the group bits are only the ACL's mask (VM acceptance of adff9e6, N4)
+		if w, _ := aclWriters(src, real, web); w != "" { // the group bits are only the ACL's mask (VM acceptance of adff9e6, N4)
+			if st.Mode.Perm()&0o002 != 0 {
+				w += fmt.Sprintf(", and others may write it (%v)", st.Mode.Perm())
+			}
 			return no(ReasonUntrusted, real+": ACL grants write to "+w)
 		}
 		return no(ReasonUntrusted, fmt.Sprintf("%s is writable by group or others (%v)", real, st.Mode.Perm()))
@@ -300,7 +356,7 @@ func JudgeLog(src Source, p string, web WebAccounts) TrustResult {
 		if err != nil {
 			return no(ReasonUnverified, "link "+ln+": "+whyUnread(err))
 		}
-		if ls.UID != 0 {
+		if !owner(ls.UID) {
 			if name, ok := web.UIDs[ls.UID]; ok {
 				return no(ReasonWebUserWritable, fmt.Sprintf("link %s is owned by %s (uid %d): %s", ln, name, ls.UID, WebUserWritableMeaning))
 			}
@@ -328,7 +384,7 @@ func JudgeLog(src Source, p string, web WebAccounts) TrustResult {
 		}
 		sticky := ds.Mode&fs.ModeSticky != 0
 		switch {
-		case ds.UID != 0:
+		case !owner(ds.UID):
 			if name, ok := web.UIDs[ds.UID]; ok {
 				return no(ReasonWebUserWritable, fmt.Sprintf("directory %s is owned by %s (uid %d): %s", d, name, ds.UID, WebUserWritableMeaning))
 			}
@@ -358,7 +414,9 @@ func confTrusted(src Source, p string, conf WebConf, web WebAccounts) string {
 		return "resolves to " + real + ", outside " + conf.Root + " and the package directories"
 	}
 	// The file itself (regular, root's, not writable by group or others),
-	// every link on the way, and every directory above them: as a log.
+	// every link on the way, and every directory above them: as a log, but
+	// root's alone (a worker is not to change what the server runs).
+	web.judging = ""
 	if t := JudgeLog(src, p, web); !t.Verified {
 		return t.Detail
 	}
@@ -376,7 +434,9 @@ func groupWritable(src Source, d string, ds FileStat, web WebAccounts) (Reason, 
 	if name, ok := web.GIDs[gid]; ok {
 		return ReasonWebUserWritable, fmt.Sprintf("directory %s is writable by group %s (gid %d): %s", d, name, gid, WebUserWritableMeaning)
 	}
-	if w := aclWriters(src, d, web); w != "" { // the group bits are only the ACL's mask (N4)
+	if w, webAccount := aclWriters(src, d, web); webAccount {
+		return ReasonWebUserWritable, "directory " + d + ": ACL grants write to " + w + ": " + WebUserWritableMeaning
+	} else if w != "" { // the group bits are only the ACL's mask (N4)
 		return ReasonUnverified, "directory " + d + ": ACL grants write to " + w
 	}
 	switch name, ok := web.LogGIDs[gid]; {
@@ -451,20 +511,62 @@ type logLoader struct {
 	unread []string
 	out    map[string]*LogSource // server\x00kind\x00path
 	cut    bool
-	users  []string // accounts the configuration runs the servers as
+	users  []string // accounts application code runs as (PHP-FPM pools, app units, lighttpd, a vhost's own)
 	groups []string // and groups
-	modPHP bool     // Apache loads PHP as a module
+	// serverUsers, serverGroups: the accounts nginx's workers (user) and
+	// Apache's children (User, Group) run as, by server.
+	serverUsers, serverGroups map[string][]string
+	// apacheSwitch: Apache's children take a vhost's own account
+	// (AssignUserID, RUidGid): they run as an application account.
+	apacheSwitch bool
+	// apart: the server's workers run as accounts no application code
+	// runs as, by uid or primary group (webAccounts), so application code
+	// cannot ptrace them.
+	apart map[string]bool
+	// fpmUsers: the PHP-FPM pools' accounts (in users too).
+	fpmUsers []string
+	// nameUID: /etc/passwd's accounts, by name (webAccounts).
+	nameUID map[string]int
+	// uidLogin: a uid one of whose accounts has a login shell.
+	uidLogin map[int]bool
+	// ngxSyslog: the nginx log directives (kind, format, destination) sent
+	// to syslog, by tag: a journal source is one tag's alone.
+	ngxSyslog map[string]map[string]bool
+	// runAs, runAsGroups: the accounts and groups every enabled unit,
+	// lingering user manager and crontab runs programs as (runAsAccounts);
+	// runAsLost: one could not be read or told.
+	runAs, runAsGroups []string
+	// runAsDynamic, runAsDynamicGroups: those of units with DynamicUser=yes:
+	// application accounts when /etc/passwd (/etc/group) has them, else
+	// made at start, apart from every server's.
+	runAsDynamic, runAsDynamicGroups []string
+	runAsLost                        bool
+	modPHP                           bool // Apache loads PHP as a module
 	// extraRead: files read from logConf.Extra, whose directories are
 	// judged once the web accounts are known.
 	extraRead []string
 	// apacheApp, ngxApp: the modules or directives that run application
 	// code in the server's own workers (not on the list known not to).
 	apacheApp, ngxApp []string
+	// apacheExec: loaded modules that run programs as the children's
+	// account (CGI by actions, SSI exec, ext_filter, suexec, userdir), not
+	// in the children: they can ptrace the children only under ptrace_scope
+	// 0, and write what the children's account may.
+	apacheExec []string
+	// apacheLua: mod_lua is loaded; it runs Lua in the children only when
+	// a request can reach it: any directive naming Lua (a handler, a type,
+	// a rewrite flag, a hook: apacheLuaUsed), or any .htaccess at all
+	// (apacheOverride: an AllowOverride other than None, an
+	// AllowOverrideList), as mod_lua's own directives are allowed there.
+	apacheLua, apacheLuaUsed, apacheOverride bool
 	// ngxRealIP, apacheRemoteIP: the client address may come from a header.
 	ngxRealIP, apacheRemoteIP bool
 	// catchWorkers: a PHP-FPM pool sets catch_workers_output, so the root
 	// master logs what its workers write.
 	catchWorkers bool
+	// ngxDir: the directory nginx's relative includes are under ("" for
+	// /etc/nginx; OpenResty's is its own, nginxh2.go).
+	ngxDir string
 }
 
 // read reads one configuration file, counting it against the bound.
@@ -545,7 +647,7 @@ func (l *logLoader) add(s LogSource) {
 		l.cut = true
 		return
 	}
-	if s.Reason == "" {
+	if s.Reason == "" && s.Journal == "" {
 		switch {
 		case strings.Contains(s.Path, "$"):
 			s.Reason, s.Detail = ReasonVariablePath, "the path holds a variable"
@@ -565,6 +667,7 @@ func (c LinuxCollector) WebAccounts(src Source) WebAccounts {
 	l.phpFPM()
 	l.lighttpd()
 	l.unitUsers(c, src)
+	l.runAsAccounts()
 	return l.webAccounts()
 }
 
@@ -589,6 +692,22 @@ func (l *logLoader) lighttpd() {
 	}
 }
 
+// serverUser adds an account server's workers run as.
+func (l *logLoader) serverUser(server, u string) {
+	if l.serverUsers == nil {
+		l.serverUsers = map[string][]string{}
+	}
+	l.serverUsers[server] = append(l.serverUsers[server], u)
+}
+
+// serverGroup adds a group server's workers run as.
+func (l *logLoader) serverGroup(server, g string) {
+	if l.serverGroups == nil {
+		l.serverGroups = map[string][]string{}
+	}
+	l.serverGroups[server] = append(l.serverGroups[server], g)
+}
+
 // unitUsers adds the User= of the application units (gunicorn, uwsgi,
 // node...): their processes are the web application too.
 func (l *logLoader) unitUsers(c LinuxCollector, src Source) {
@@ -598,6 +717,161 @@ func (l *logLoader) unitUsers(c LinuxCollector, src Source) {
 		}
 	}
 }
+
+// runAsAccounts gathers who programs run as beside the application
+// servers: the User=, Group= and SupplementaryGroups= of every service
+// unit in every systemd search path, enabled or not (a timer, socket,
+// path or dependency may start any; a template whose account its
+// instance names leaves no server apart, but for systemd's own user@);
+// the users systemd keeps a manager for (linger); and the users of the
+// crontabs. None of them is known to run only what root wrote, so a
+// server's account among them is not apart.
+func (l *logLoader) runAsAccounts() {
+	gone := func(err error) bool { return errors.Is(err, fs.ErrNotExist) || errors.Is(err, ErrNotRecorded) }
+	conf := WebConf{Root: "/", Owner: 0} // as AppUnits reads them
+	units := map[string]string{}         // service names, templates (a@.service) and instances (a@b.service): where a dependency names it, or ""
+	list := func(d string) []string {
+		names, err := l.src.ReadDir(d)
+		if err != nil && !gone(err) {
+			l.runAsLost = true
+		}
+		return names
+	}
+	for _, dir := range unitPaths {
+		for _, n := range list(dir) {
+			switch {
+			case strings.HasSuffix(n, ".service"), strings.HasSuffix(n, ".service.d"):
+				// Every unit file and every drop-in directory's unit, enabled
+				// or not: a timer's Unit=, a Wants= or a socket may start any.
+				n = strings.TrimSuffix(n, ".d")
+				if _, ok := units[n]; !ok {
+					units[n] = ""
+				}
+			case strings.HasSuffix(n, ".wants"), strings.HasSuffix(n, ".requires"), strings.HasSuffix(n, ".upholds"):
+				for _, m := range list(path.Join(dir, n)) {
+					if strings.HasSuffix(m, ".service") && units[m] == "" {
+						units[m] = path.Join(dir, n, m)
+					}
+				}
+			}
+		}
+	}
+	if len(units) > maxRunAsUnits {
+		l.runAsLost = true
+		return
+	}
+	names := make([]string, 0, len(units))
+	for n := range units {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	for _, n := range names {
+		var unit []byte // a dependency's link (or file) to it, as AppUnits reads one
+		if dep := units[n]; dep != "" {
+			b, why := readWebConf(l.src, dep, conf)
+			if why != "" {
+				l.runAsLost = true
+			}
+			unit = b
+		}
+		all, unread := unitCandidates(l.src, n, unit, conf)
+		l.runAsLost = l.runAsLost || unread
+		// Every User=, Group=, SupplementaryGroups= and DynamicUser= of
+		// every file that may apply, whichever wins: an order taken wrong
+		// only makes the judgement stricter.
+		var users, groups []string
+		dynamic, dynSeen := true, false // DynamicUser=yes in every file that sets it
+		for _, b := range all {
+			for _, ln := range strings.Split(string(b), "\n") {
+				k, v, ok := strings.Cut(strings.TrimSpace(ln), "=")
+				if !ok {
+					continue
+				}
+				k, v = strings.TrimSpace(k), strings.TrimSpace(v)
+				switch k {
+				case "Group", "SupplementaryGroups":
+					if strings.Contains(v, "%") {
+						l.runAsLost = true
+					}
+					groups = append(groups, strings.Fields(v)...)
+				case "DynamicUser":
+					yes, known := unitBools[strings.ToLower(v)]
+					if !known {
+						l.runAsLost = true
+					}
+					dynamic, dynSeen = dynamic && yes, true
+				case "User":
+					switch {
+					case v == "": // a reset: no account
+					case !strings.Contains(v, "%"):
+						users = append(users, v)
+					case n == "user@.service" && v == "%i":
+						// systemd's user manager, one per user logged in or kept
+						// (linger, read below): not started for an account by others
+					case strings.HasPrefix(n, "user@") && v == "%i": // one a dependency starts: for that uid
+						l.runAs = append(l.runAs, strings.TrimSuffix(strings.TrimPrefix(n, "user@"), ".service"))
+					default:
+						l.runAsLost = true // the instance, or another specifier, names the account
+					}
+				}
+			}
+		}
+		if dynSeen && dynamic {
+			// DynamicUser=yes: an account not in /etc/passwd is made at
+			// start, from 61184-65519, no server's (webAccounts tells).
+			l.runAsDynamic = append(l.runAsDynamic, users...)
+			l.runAsDynamicGroups = append(l.runAsDynamicGroups, groups...)
+		} else {
+			l.runAs = append(l.runAs, users...)
+			l.runAsGroups = append(l.runAsGroups, groups...)
+		}
+	}
+	linger, err := l.src.ReadDir("/var/lib/systemd/linger")
+	if err != nil && !gone(err) {
+		l.runAsLost = true
+	}
+	l.runAs = append(l.runAs, linger...)
+	crons := []string{"/etc/crontab"}
+	for _, n := range list("/etc/cron.d") {
+		crons = append(crons, path.Join("/etc/cron.d", n))
+	}
+	for _, f := range crons {
+		b, err := l.src.ReadFile(f)
+		if err != nil {
+			l.runAsLost = l.runAsLost || !gone(err)
+			continue
+		}
+		for _, ln := range strings.Split(string(b), "\n") {
+			f := strings.Fields(ln)
+			switch {
+			case len(f) == 0 || strings.HasPrefix(f[0], "#") || strings.Contains(f[0], "="):
+			case strings.HasPrefix(f[0], "@") && len(f) > 2:
+				l.runAs = append(l.runAs, f[1])
+			case len(f) > 6:
+				l.runAs = append(l.runAs, f[5])
+			}
+		}
+	}
+	for _, spool := range []string{"/var/spool/cron/crontabs", "/var/spool/cron"} { // Debian's, RHEL's: a file per user
+		names, err := l.src.ReadDir(spool)
+		if err != nil {
+			l.runAsLost = l.runAsLost || !gone(err)
+			continue
+		}
+		for _, n := range names {
+			if n != "crontabs" && n != "atjobs" && n != "atspool" && !strings.HasPrefix(n, ".") {
+				l.runAs = append(l.runAs, n)
+			}
+		}
+	}
+	l.supervisorAccounts()
+	l.sudoersAccounts()
+	l.doasAccounts()
+}
+
+// maxRunAsUnits bounds the service units runAsAccounts reads; more leaves
+// no server apart.
+const maxRunAsUnits = 4096
 
 // iniValue is a php-fpm.conf value: quotes taken off, or an inline
 // comment (" ; ...") cut from an unquoted one.
@@ -636,7 +910,14 @@ func (l *logLoader) webAccounts() WebAccounts {
 	w := WebAccounts{UIDs: map[int]string{}, GIDs: map[int]string{}}
 	users, groups := map[string]bool{}, map[string]bool{}
 	numUIDs := map[int]bool{}
-	for _, u := range append(append([]string{}, defaultWebUsers...), l.users...) {
+	var servers, serverGroups []string
+	for _, us := range l.serverUsers {
+		servers = append(servers, us...)
+	}
+	for _, gs := range l.serverGroups {
+		serverGroups = append(serverGroups, gs...)
+	}
+	for _, u := range append(append(append([]string{}, defaultWebUsers...), l.users...), servers...) {
 		if id, ok := numericID(u); ok { // User #33, user = 33: kept by number, and looked up below
 			if id != 0 {
 				w.UIDs[id] = "uid " + strconv.Itoa(id)
@@ -646,7 +927,7 @@ func (l *logLoader) webAccounts() WebAccounts {
 		}
 		users[u] = true
 	}
-	for _, g := range append(append(append([]string{}, defaultWebUsers...), defaultWebGroups...), l.groups...) {
+	for _, g := range append(append(append(append([]string{}, defaultWebUsers...), defaultWebGroups...), l.groups...), serverGroups...) {
 		if id, ok := numericID(g); ok {
 			if id != 0 {
 				w.GIDs[id] = "gid " + strconv.Itoa(id)
@@ -658,7 +939,9 @@ func (l *logLoader) webAccounts() WebAccounts {
 	primary := map[int]bool{}
 	byPrimary := map[int][]string{} // gid -> accounts with it as primary group
 	nameUID := map[string]int{}
+	uidGID := map[int]int{} // an account's primary group, by uid
 	passwdOK, groupOK, nis := false, false, false
+	l.uidLogin = map[int]bool{}
 	if b, err := l.src.ReadFile("/etc/passwd"); err == nil {
 		passwdOK = true
 		nis = nis || nisLines(b)
@@ -669,6 +952,14 @@ func (l *logLoader) webAccounts() WebAccounts {
 			}
 			if uid, err := strconv.Atoi(e.UID); err == nil {
 				nameUID[e.Name] = uid
+				if !noLoginShells[e.Shell] {
+					l.uidLogin[uid] = true
+				}
+				if _, dup := uidGID[uid]; dup {
+					uidGID[uid] = -1 // two accounts, one uid: either one may be what runs as it
+				} else if gid, err := strconv.Atoi(e.GID); err == nil {
+					uidGID[uid] = gid
+				}
 			}
 		}
 		for _, e := range entries { // a numeric user's name, for its group memberships
@@ -687,6 +978,16 @@ func (l *logLoader) webAccounts() WebAccounts {
 			}
 		}
 	}
+	app := l.appAccounts()
+	for _, u := range l.runAsDynamic { // a static account systemd takes as it is
+		if _, num := numericID(u); num {
+			app[u] = true
+		} else if _, ok := nameUID[u]; ok {
+			app[u] = true
+		}
+	}
+	appGIDs := map[int]bool{} // groups an application account has, as primary group or listed member
+	groupGID := map[string]int{}
 	w.LogGIDs = map[int]string{}
 	if b, err := l.src.ReadFile("/etc/group"); err == nil {
 		groupOK = true
@@ -700,11 +1001,17 @@ func (l *logLoader) webAccounts() WebAccounts {
 			if err != nil || gid == 0 {
 				continue
 			}
+			if _, dup := groupGID[f[0]]; !dup {
+				groupGID[f[0]] = gid
+			}
 			member := false // a web user in the group's list: it may write what the group may
 			if len(f) > 3 {
 				for _, m := range strings.Split(f[3], ",") {
 					if users[strings.TrimSpace(m)] {
 						member = true
+					}
+					if app[strings.TrimSpace(m)] {
+						appGIDs[gid] = true
 					}
 				}
 			}
@@ -740,7 +1047,222 @@ func (l *logLoader) webAccounts() WebAccounts {
 			w.GIDs[gid] = "gid " + strconv.Itoa(gid)
 		}
 	}
+	l.serverAccounts(&w, app, appGIDs, nameUID, uidGID, groupGID)
+	l.nameUID = nameUID
 	return w
+}
+
+// judgeJournal judges an access log nginx sends to journald (Journal):
+// the socket is journald's, nginx.service's ExecStart names nginx's
+// program and it is root's alone (the _EXE an entry must have), and the
+// workers run as one account of /etc/passwd, not root (the _UID). What
+// makes any access log unverified (WebLogs) is judged after.
+func (l *logLoader) judgeJournal(s *LogSource, web WebAccounts) {
+	no := func(r Reason, d string) { s.Verified, s.Reason, s.Detail = false, r, d }
+	if len(l.ngxSyslog[s.JournalTag]) > 1 { // an error log, or another format, would read as this one
+		no(ReasonUnverified, "more than one nginx log goes to syslog tagged "+s.JournalTag+": its entries are not this access log's alone")
+		return
+	}
+	if strings.Contains(s.Path, "unix:/dev/log") {
+		if real, err := EvalSymlinks(l.src, "/dev/log"); err != nil || real != journaldSocket {
+			no(ReasonUnverified, "/dev/log is not journald's socket ("+journaldSocket+"): another syslog daemon takes the log")
+			return
+		}
+	}
+	all, unread := unitConfs(l.src, ngxJournalUnit, nil, WebConf{Root: "/", Owner: 0})
+	if unread {
+		no(ReasonUnverified, ngxJournalUnit+": a unit file or drop-in could not be read")
+		return
+	}
+	exe := ""
+	for _, b := range all {
+		for _, ln := range strings.Split(string(b), "\n") {
+			k, v, ok := strings.Cut(strings.TrimSpace(ln), "=")
+			if !ok || strings.TrimSpace(k) != "ExecStart" {
+				continue
+			}
+			v = strings.TrimLeft(strings.TrimSpace(v), "@-:+!|")
+			exe = ""
+			if f := strings.Fields(v); len(f) > 0 {
+				exe = f[0]
+			}
+		}
+	}
+	if !strings.HasPrefix(exe, "/") {
+		no(ReasonUnverified, ngxJournalUnit+" has no ExecStart naming nginx's program by its path")
+		return
+	}
+	real, err := EvalSymlinks(l.src, exe)
+	if err != nil {
+		no(ReasonUnverified, "nginx's program "+exe+": "+whyUnread(err))
+		return
+	}
+	if t := JudgeLog(l.src, real, web); !t.Verified { // root's alone, as a log is
+		no(ReasonUnverified, "nginx's program "+real+": "+t.Detail)
+		return
+	}
+	us := l.serverUsers["nginx"]
+	if len(us) != 1 {
+		no(ReasonUnverified, "nginx's workers' account is not set by one user directive: which _UID is theirs is not known")
+		return
+	}
+	uid, ok := numericID(us[0])
+	if !ok {
+		uid, ok = l.nameUID[us[0]]
+	}
+	if !ok || uid == 0 {
+		no(ReasonUnverified, "nginx's workers' account "+us[0]+" is not in /etc/passwd, or is root")
+		return
+	}
+	s.Verified, s.JournalExe, s.JournalUID = true, real, uid
+}
+
+// appAccounts are the names (or numbers) of the accounts application code
+// may run as: PHP-FPM pools, app units, lighttpd, a vhost's own account,
+// the default web accounts no server's configuration names as its own,
+// and the accounts of a server that runs application code in its own
+// processes.
+func (l *logLoader) appAccounts() map[string]bool {
+	app := map[string]bool{}
+	for _, u := range append(append([]string{}, l.users...), l.runAs...) {
+		app[u] = true
+	}
+	named := map[string]bool{}
+	for _, us := range l.serverUsers {
+		for _, u := range us {
+			named[u] = true
+		}
+	}
+	for _, u := range defaultWebUsers {
+		if !named[u] {
+			app[u] = true
+		}
+	}
+	for _, server := range []string{"nginx", "apache"} {
+		if l.runsApp(server) {
+			for _, u := range l.serverUsers[server] {
+				app[u] = true
+			}
+		}
+	}
+	return app
+}
+
+// runsApp: the server runs application code in its own processes, or its
+// children take an application account.
+func (l *logLoader) runsApp(server string) bool {
+	if server == "nginx" {
+		return len(l.ngxApp) > 0
+	}
+	return len(l.apacheApp) > 0 || l.apacheSwitch || len(l.apacheExec) > 0
+}
+
+// serverAccounts fills w.ServerUIDs and l.apart: a server's accounts are
+// apart when each is in /etc/passwd, and no application account has its
+// uid or its primary group (an application account named but not found
+// could have either). Only with complete account databases and the
+// configuration read in full; otherwise none is.
+func (l *logLoader) serverAccounts(w *WebAccounts, app map[string]bool, appGIDs map[int]bool, nameUID map[string]int, uidGID map[int]int, groupGID map[string]int) {
+	w.ServerUIDs, l.apart = map[string]map[int]string{}, map[string]bool{}
+	if !w.Complete || len(l.unread) > 0 || l.cut || l.runAsLost {
+		return
+	}
+	// resolve: the account's uid, and its primary group (-1: not known,
+	// or the uid is two accounts'); found false when it is not there.
+	resolve := func(u string) (uid, gid int, found bool) {
+		if id, num := numericID(u); num {
+			uid = id
+		} else if uid, found = nameUID[u]; !found {
+			return 0, -1, false
+		}
+		if gid, found = uidGID[uid]; !found {
+			gid = -1
+		}
+		return uid, gid, true
+	}
+	defaults := map[string]bool{}
+	for _, u := range defaultWebUsers {
+		defaults[u] = true
+	}
+	appUIDs, lost := map[int]bool{}, false
+	for u := range sharedWebUsers {
+		if uid, ok := nameUID[u]; ok && sharedWebUsers[u] {
+			appUIDs[uid] = true
+			if gid, ok := uidGID[uid]; ok && gid >= 0 {
+				appGIDs[gid] = true
+			}
+		}
+	}
+	for u := range app {
+		uid, gid, found := resolve(u)
+		if !found {
+			lost = lost || !defaults[u] // a default account not in /etc/passwd is not there at all
+			continue
+		}
+		appUIDs[uid] = true
+		if gid < 0 {
+			lost = true // its group could be the server's
+		}
+		appGIDs[gid] = true
+	}
+	for _, g := range append(append([]string{}, l.groups...), l.runAsGroups...) {
+		if id, num := numericID(g); num {
+			appGIDs[id] = true
+		} else if gid, ok := groupGID[g]; ok {
+			appGIDs[gid] = true
+		} else {
+			lost = true
+		}
+	}
+	for _, g := range l.runAsDynamicGroups { // not in /etc/group: made at start
+		if id, num := numericID(g); num {
+			appGIDs[id] = true
+		} else if gid, ok := groupGID[g]; ok {
+			appGIDs[gid] = true
+		}
+	}
+	if lost {
+		return
+	}
+	for _, server := range []string{"nginx", "apache"} {
+		us := l.serverUsers[server]
+		if len(us) == 0 || l.runsApp(server) {
+			continue
+		}
+		ok := true
+		uids, gids := map[int]bool{}, map[int]bool{}
+		for _, u := range us {
+			uid, gid, found := resolve(u)
+			if !found || gid < 0 || appUIDs[uid] || appGIDs[gid] || l.uidLogin[uid] {
+				ok = false // a login shell: someone may log in, or su, as it
+			}
+			uids[uid], gids[gid] = true, true
+		}
+		for _, g := range l.serverGroups[server] { // the workers' group, as configured
+			gid, num := numericID(g)
+			if !num {
+				gid, num = groupGID[g]
+			}
+			if !num || appGIDs[gid] {
+				ok = false
+			}
+			gids[gid] = true
+		}
+		delete(uids, 0)
+		delete(gids, 0)
+		if ok && othersRun(l.src, server, uids, gids) { // started by hand, by rc.local, by anything not read above
+			ok = false
+		}
+		if !ok {
+			continue
+		}
+		l.apart[server], w.ServerUIDs[server] = true, map[int]string{}
+		for _, u := range us {
+			if uid, _, _ := resolve(u); uid != 0 {
+				w.ServerUIDs[server][uid] = u
+			}
+		}
+	}
 }
 
 // filesOnlyNSS: nsswitch.conf takes accounts and groups only from the
@@ -983,7 +1505,11 @@ func (l *logLoader) ngxIncludes(ds []*ngxDir, depth int) []*ngxDir {
 				l.unread = append(l.unread, fmt.Sprintf("%s (included more than %d deep)", d.args[0], maxLogConfDepth))
 				continue
 			}
-			for _, f := range l.include("/etc/nginx", d.args[0], false) {
+			dir := l.ngxDir
+			if dir == "" {
+				dir = "/etc/nginx"
+			}
+			for _, f := range l.include(dir, d.args[0], false) {
 				out = append(out, l.ngxFile(f, depth+1)...)
 			}
 			continue
@@ -997,9 +1523,21 @@ func (l *logLoader) ngxIncludes(ds []*ngxDir, depth int) []*ngxDir {
 }
 
 // apacheSafeModules are the Apache modules known to run no application
-// code in the children that hold the logs open. Any other (php, wsgi,
-// perl, lua, passenger, cgi...) makes Apache's logs web_user_writable.
+// code in the children that hold the logs open: configuration, access
+// control, caching and proxying, and rewriting what passes through. Any
+// other (php, wsgi, perl, passenger, cgi...) but those of apacheExecModules
+// and mod_lua (logLoader.apacheLua) makes Apache's logs web_user_writable.
 var apacheSafeModules = map[string]bool{}
+
+// apacheExecModules run programs as the children's account, not in the
+// children (actions' CGI, SSI's exec cmd, ext_filter, suexec, userdir,
+// cgid's daemon): the programs are no ancestors of the children, which
+// ptrace_scope 1 keeps them from tracing, and the log's descriptor is
+// close-on-exec (APR).
+var apacheExecModules = map[string]bool{
+	"actions_module": true, "ext_filter_module": true, "include_module": true, "suexec_module": true,
+	"userdir_module": true, "cgid_module": true,
+}
 
 func init() {
 	for _, m := range strings.Fields(`access_compat_module alias_module allowmethods_module auth_basic_module auth_digest_module
@@ -1010,7 +1548,13 @@ func init() {
 		proxy_module proxy_ajp_module proxy_balancer_module proxy_fcgi_module proxy_http_module proxy_http2_module
 		proxy_wstunnel_module reqtimeout_module request_module rewrite_module setenvif_module slotmem_shm_module
 		socache_shmcb_module ssl_module status_module substitute_module systemd_module unique_id_module unixd_module
-		version_module watchdog_module`) {
+		version_module watchdog_module
+		authn_anon_module authn_dbd_module authn_dbm_module authn_socache_module authz_dbd_module authz_dbm_module
+		authz_owner_module data_module dbd_module dumpio_module echo_module lbmethod_bybusyness_module
+		lbmethod_bytraffic_module lbmethod_heartbeat_module macro_module proxy_connect_module proxy_express_module
+		proxy_fdpass_module proxy_ftp_module proxy_hcheck_module proxy_scgi_module proxy_uwsgi_module slotmem_plain_module
+		socache_dbm_module socache_memcache_module socache_redis_module vhost_alias_module dav_module dav_fs_module
+		dav_lock_module`) {
 		apacheSafeModules[m] = true
 	}
 }
@@ -1051,6 +1595,41 @@ func ngxWalk(ds []*ngxDir, depth int, fn func(*ngxDir)) {
 	}
 }
 
+// ngxJournalUnit is the unit nginx runs as, whose journal entries an
+// access_log sent to journald is read from.
+const ngxJournalUnit = "nginx.service"
+
+// journaldSocket is where /dev/log leads when journald takes syslog.
+const journaldSocket = "/run/systemd/journal/dev-log"
+
+// ngxJournal is the tag of an access_log sent to the local syslog socket
+// (syslog:server=unix:/dev/log or journald's own, nohostname), "nginx" if
+// none is set; "" for any other destination. Without nohostname the
+// hostname comes before the tag, which journald does not take apart: not
+// read as the journal.
+func ngxJournal(dest string) string {
+	params, ok := strings.CutPrefix(dest, "syslog:")
+	if !ok {
+		return ""
+	}
+	server, tag, nohost := "", "nginx", false
+	for _, p := range strings.Split(params, ",") {
+		k, v, _ := strings.Cut(p, "=")
+		switch k {
+		case "server":
+			server = v
+		case "tag":
+			tag = v
+		case "nohostname":
+			nohost = true
+		}
+	}
+	if (server != "unix:/dev/log" && server != "unix:"+journaldSocket) || !nohost || tag == "" {
+		return ""
+	}
+	return tag
+}
+
 // ngxCombined is nginx's predefined format.
 const ngxCombined = `$remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent"`
 
@@ -1077,6 +1656,38 @@ func (l *logLoader) nginx() {
 			l.ngxApp = append(l.ngxApp, d.name)
 		}
 	})
+	// Every access_log and error_log sent to syslog, anywhere, by tag and
+	// by its top-level context: http's log_format names are not stream's.
+	for _, top := range main {
+		ctx, block := "main", []*ngxDir{top}
+		if top.hasBlock {
+			ctx, block = top.name, top.block
+		}
+		ngxWalk(block, 1, func(d *ngxDir) {
+			if d.name != "access_log" && d.name != "error_log" {
+				return
+			}
+			for _, a := range d.args {
+				params, ok := strings.CutPrefix(a, "syslog:")
+				if !ok {
+					continue
+				}
+				tag := "nginx"
+				for _, p := range strings.Split(params, ",") {
+					if v, ok := strings.CutPrefix(p, "tag="); ok {
+						tag = v
+					}
+				}
+				if l.ngxSyslog == nil {
+					l.ngxSyslog = map[string]map[string]bool{}
+				}
+				if l.ngxSyslog[tag] == nil {
+					l.ngxSyslog[tag] = map[string]bool{}
+				}
+				l.ngxSyslog[tag][ctx+"\x00"+d.name+"\x00"+strings.Join(d.args, "\x00")] = true
+			}
+		})
+	}
 	formats := map[string]ngxFormat{"combined": {spec: ngxCombined}}
 	var mainErr []*ngxDir
 	var https []*ngxDir
@@ -1084,12 +1695,12 @@ func (l *logLoader) nginx() {
 		switch d.name {
 		case "user": // user www-data [group]
 			if len(d.args) > 0 {
-				l.users = append(l.users, d.args[0])
+				l.serverUser("nginx", d.args[0])
 			}
 			if len(d.args) > 1 {
-				l.groups = append(l.groups, d.args[1])
+				l.serverGroup("nginx", d.args[1])
 			} else if len(d.args) == 1 { // no group: nginx takes the user's name
-				l.groups = append(l.groups, d.args[0])
+				l.serverGroup("nginx", d.args[0])
 			}
 		case "load_module":
 			if len(d.args) > 0 && !ngxSafeModules[path.Base(d.args[0])] && !contains(l.ngxApp, path.Base(d.args[0])) {
@@ -1231,6 +1842,8 @@ func (l *logLoader) ngxLog(d *ngxDir, kind, dest, format string, formats map[str
 	switch {
 	case dest == "off":
 		s.Reason, s.Detail = ReasonLoggingDisabled, kind+"_log off"
+	case kind == "access" && ngxJournal(dest) != "":
+		s.Journal, s.JournalTag = ngxJournalUnit, ngxJournal(dest)
 	case strings.HasPrefix(dest, "syslog:"), strings.HasPrefix(dest, "memory:"), dest == "stderr", dest == "/dev/stderr", dest == "/dev/stdout", dest == "/dev/null":
 		s.Reason, s.Detail = ReasonNotAFile, "written to "+dest
 	}
@@ -1292,6 +1905,13 @@ func (l *logLoader) apache() {
 	}
 	st.cur = &st.main
 	l.apacheFile(st, conf, 0)
+	if l.apacheLua && (l.apacheLuaUsed || l.apacheOverride) && !contains(l.apacheApp, "lua_module") {
+		why := "a directive names Lua"
+		if !l.apacheLuaUsed {
+			why = ".htaccess is read (AllowOverride)"
+		}
+		l.apacheApp = append(l.apacheApp, "lua_module ("+why+")")
+	}
 	emit := func(sc *apacheScope, inherit *apacheScope) {
 		custom, errs := sc.custom, sc.errs
 		if inherit != nil {
@@ -1417,6 +2037,13 @@ func (l *logLoader) apacheFile(st *apacheState, p string, depth int) {
 		if apacheAppDirective.MatchString(name) && !contains(l.apacheApp, name) {
 			l.apacheApp = append(l.apacheApp, name)
 		}
+		if name != "loadmodule" {
+			for _, a := range args { // SetHandler lua-script, AddType, ForceType, RewriteRule [H=lua-script]...
+				if strings.Contains(strings.ToLower(a), "lua") {
+					l.apacheLuaUsed = true
+				}
+			}
+		}
 		switch name {
 		case "include", "includeoptional":
 			if len(args) == 0 {
@@ -1439,11 +2066,11 @@ func (l *logLoader) apacheFile(st *apacheState, p string, depth int) {
 			}
 		case "user":
 			if len(args) > 0 {
-				l.users = append(l.users, st.expand(args[0]))
+				l.serverUser("apache", st.expand(args[0]))
 			}
 		case "group":
 			if len(args) > 0 {
-				l.groups = append(l.groups, st.expand(args[0]))
+				l.serverGroup("apache", st.expand(args[0]))
 			}
 		case "identitycheck":
 			if len(args) > 0 && !strings.EqualFold(args[0], "off") {
@@ -1454,6 +2081,9 @@ func (l *logLoader) apacheFile(st *apacheState, p string, depth int) {
 				st.lookups = true
 			}
 		case "assignuserid", "suexecusergroup", "ruidgid": // mpm-itk, suEXEC, mod_ruid2: a vhost's own account
+			if name != "suexecusergroup" { // the children themselves become it
+				l.apacheSwitch = true
+			}
 			if len(args) > 0 {
 				l.users = append(l.users, st.expand(args[0]))
 			}
@@ -1466,11 +2096,34 @@ func (l *logLoader) apacheFile(st *apacheState, p string, depth int) {
 				if strings.Contains(m, "php") || strings.Contains(strings.ToLower(args[1]), "libphp") {
 					l.modPHP = true
 				}
-				if m == "remoteip_module" {
+				switch {
+				case m == "remoteip_module":
 					st.remoteIP = true
-				} else if !apacheSafeModules[m] && !contains(l.apacheApp, m) {
+				case m == "lua_module":
+					l.apacheLua = true
+				case apacheExecModules[m]:
+					if !contains(l.apacheExec, m) {
+						l.apacheExec = append(l.apacheExec, m)
+					}
+				case !apacheSafeModules[m] && !contains(l.apacheApp, m):
 					l.apacheApp = append(l.apacheApp, m)
 				}
+			}
+		case "allowoverride": // .htaccess read at all: it may name a Lua handler or hook
+			for _, a := range args {
+				if !strings.EqualFold(a, "none") {
+					l.apacheOverride = true
+				}
+			}
+		case "allowoverridelist": // directives .htaccess may set, one by one
+			for _, a := range args {
+				if !strings.EqualFold(a, "none") {
+					l.apacheOverride = true
+				}
+			}
+		case "rewritemap": // prg: a program run as the children's account, as the exec modules'
+			if len(args) > 1 && strings.HasPrefix(strings.ToLower(st.expand(args[1])), "prg:") && !contains(l.apacheExec, "RewriteMap prg:") {
+				l.apacheExec = append(l.apacheExec, "RewriteMap prg:")
 			}
 		case "loadfile": // a library loaded into the server's own processes (libpython for mod_wsgi)
 			if len(args) > 0 && !contains(l.apacheApp, "LoadFile "+args[0]) {
@@ -1596,6 +2249,7 @@ func (l *logLoader) fpmFile(p, section string, depth int) string {
 		case "user":
 			if section != "global" {
 				l.users = append(l.users, v)
+				l.fpmUsers = append(l.fpmUsers, v)
 			}
 		case "group", "listen.group":
 			if section != "global" {

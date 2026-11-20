@@ -203,6 +203,10 @@ func (s *Signature) check() error {
 		// any_param tries the path's segments too: the route's own words
 		// would match it (review 2 of #87, S-3).
 		return fmt.Errorf("a route and an any_param match: name the parameter (part param)")
+	case (len(s.CVEs) > 0 || len(s.Advisories) > 0 || len(s.AppliesTo) > 0) && slices.ContainsFunc(s.Matches, func(m Match) bool { return m.Part == "any_param" }):
+		// Without a route either: no placeholder anchors a path segment
+		// hit, so it would be L2 on any path (v0.4.1, n35).
+		return fmt.Errorf("a vulnerability's signature and an any_param match: name the parameter (part param)")
 	}
 	switch s.Source {
 	case "shentu":

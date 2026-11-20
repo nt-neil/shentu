@@ -52,7 +52,7 @@ ecosystem = "Packagist"
 package = "Marker/Pkg-Core"
 versions = "<2.0"
 [[signature.match]]
-part = "any_param"
+part = "query"
 contains = ["marker-one"]
 `
 
@@ -96,8 +96,10 @@ func TestNormalizeRequestBound(t *testing.T) {
 	}
 	m := NewMatcher(loadSigs(t, markerSigs))
 	r := m.Match(Normalize(AccessRecord{Method: "GET", Path: "/", Query: "x[]=marker-one"}))
-	if len(r.Hits) != 2 || r.Hits[0].Param != "x[]" || r.Hits[1].Param != "x[]" {
-		t.Errorf("x[]: %+v, want each signature's hit naming x[]", r.Hits)
+	// cve-marker reads the whole query since v0.4.1 (any_param is for
+	// class signatures only, n35): the any_param hit names x[].
+	if len(r.Hits) != 2 || r.Hits[1].Part != "any_param" || r.Hits[1].Param != "x[]" {
+		t.Errorf("x[]: %+v, want the any_param hit naming x[]", r.Hits)
 	}
 }
 
@@ -673,6 +675,13 @@ contains = ["shentu-marker/y"]
 		// prefix; cleaned, that segment is 42, the placeholder's value,
 		// but the marker is gone from it.
 		{route("js-sqli", "CWE-89", "/user/:id"), "/42;marker-one/user/42", LevelRoute},
+		// v0.4.1 (n34): the capture also runs on the path with its ;
+		// parameters kept, as a router that keeps them hands the value:
+		// a hit in the ; parameter of the placeholder's segment is L2;
+		// one in the route's own word stays L1.
+		{route("js-sqli", "CWE-89", "/user/:id"), "/user/42;marker-one", LevelPayload},
+		{route("js-sqli", "CWE-89", "/user/:id"), "/user/42;marker-one.", LevelPayload},
+		{route("js-sqli", "CWE-89", "/user/:id"), "/user;marker-one/42", LevelRoute},
 		// An optional placeholder (Express's /:id?, Laravel's /{id?}; the
 		// merge of #90 into P5 met here): the value it took is L2; no
 		// value, an ordinary one or a hit in the prefix is L1.

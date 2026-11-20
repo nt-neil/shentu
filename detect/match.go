@@ -344,11 +344,30 @@ func cleanPath(p string) string {
 	return path.Clean("/" + strings.Join(segs, "/"))
 }
 
+// paramPath is p as cleanPath reads it but with each segment's
+// ;parameters kept, as a router that does not drop them hands a
+// placeholder its value (/user/42;x: "42;x").
+func paramPath(p string) string {
+	if p == "" {
+		return "/"
+	}
+	segs := strings.Split(strings.ReplaceAll(p, "\\", "/"), "/")
+	for i, sg := range segs {
+		segs[i] = trimSegment(sg)
+	}
+	return path.Clean("/" + strings.Join(segs, "/"))
+}
+
 // cleanSegment is one segment as cleanPath reads it.
 func cleanSegment(sg string) string {
 	if j := strings.IndexByte(sg, ';'); j >= 0 {
 		sg = sg[:j]
 	}
+	return trimSegment(sg)
+}
+
+// trimSegment is one segment as paramPath reads it.
+func trimSegment(sg string) string {
 	sg = strings.TrimSuffix(sg, "::$data")
 	if sg == "." || sg == ".." { // dot segments are resolved, not trimmed
 		return sg
@@ -594,9 +613,12 @@ func matchOne(mt sig.Match, q Request) (part, param, excerpt string, segments []
 					// The route is matched on the cleaned path: the segment
 					// as cleanPath reads it counts only if it still holds
 					// (review 3 of #87, N-1': "42;x" must not count as "42").
-					if cs := cleanSegment(sg); cs != sg && cs != "" && !slices.Contains(held, cs) {
-						if _, ok := try(cs); ok {
-							held = append(held, cs)
+					// So does it as paramPath reads it (v0.4.1, n34).
+					for _, cs := range []string{cleanSegment(sg), trimSegment(sg)} {
+						if cs != sg && cs != "" && !slices.Contains(held, cs) {
+							if _, ok := try(cs); ok {
+								held = append(held, cs)
+							}
 						}
 					}
 				}

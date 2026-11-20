@@ -53,10 +53,11 @@ The services run as LocalSystem: reading the Security event log, the
 scheduled-task store and other users' processes needs it. Run `shentu`
 from an elevated prompt; unelevated, some checks report "unknown".
 
-### Limits (v0.3.0)
+### Limits (v0.4.0)
 
 - Read-only: `block_ip` and `unblock_ip` are not supported on Windows;
   Shentu reports, it does not change the host.
+- No attack detection: it reads Linux web server and journald logs only.
 - Windows Server 2019 is best effort: expected to work (build 17763, the
   same APIs) but not verified on GitHub-hosted runners (they offer no 2019 image).
 - The binary is not code-signed. SmartScreen may warn when it is started,
@@ -118,9 +119,10 @@ shentu.exe service start --bot
 程序都需要這個權限。手動執行 `shentu` 請用系統管理員權限的命令列；未提權時，
 部分檢查會回報「無法判斷」。
 
-### 目前的限制（v0.3.0）
+### 目前的限制（v0.4.0）
 
 - 只讀不寫：Windows 上不支援 `block_ip`、`unblock_ip`，Shentu 只回報，不改動主機。
+- 沒有攻擊偵測：攻擊偵測只讀 Linux 的網站伺服器紀錄與 journald。
 - Windows Server 2019 為 best effort：預期可用（build 17763，相同的 API），但沒有在 GitHub 提供的測試機上驗證。
 - 執行檔沒有程式碼簽章。啟動時 SmartScreen 可能出現警告，Microsoft Defender
   或其他防毒也可能誤判（Shentu 會讀取事件記錄、登錄檔的自動啟動機碼與 WMI

@@ -492,7 +492,7 @@ ecosystem = "WordPress"
 package = "marker-plugin"
 versions = "<1.3"
 [[signature.match]]
-part = "any_param"
+part = "query"
 contains = ["marker-one"]
 `)
 	judge := func(v string) Judgment {
@@ -533,7 +533,7 @@ ecosystem = "Debian"
 package = "marker-httpd"
 versions = "<2.4.62-1~deb12u1"
 [[signature.match]]
-part = "any_param"
+part = "query"
 contains = ["marker-one"]
 `)
 	judge := func(v string) Judgment {
@@ -570,7 +570,7 @@ ecosystem = "Debian:11"
 package = "marker-httpd"
 versions = "<2.4.62-1~deb11u1"
 [[signature.match]]
-part = "any_param"
+part = "query"
 contains = ["marker-two"]
 `)
 	s := Build(nil, []PackageVuln{{Source: "os", Ecosystem: "Debian:12", Package: "marker-httpd", Version: "2.4.62-1~deb12u1", ID: "DSA-9999-1", CVEs: []string{"CVE-2099-0201"}, CVE: "CVE-2099-0201"}})
@@ -601,7 +601,7 @@ ecosystem = "`+eco+`"
 package = "marker-httpd"
 versions = "<2.4.62-1~deb12u1"
 [[signature.match]]
-part = "any_param"
+part = "query"
 contains = ["marker-three"]
 `)
 	}

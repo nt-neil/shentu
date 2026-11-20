@@ -98,6 +98,29 @@ func TestLoadValidation(t *testing.T) {
 	}
 }
 
+// v0.4.1 (n35-b): a signature for a vulnerability has no placeholder to
+// anchor a path segment hit, so any_param is refused (with a route it
+// already was).
+func TestVulnAnyParamRefused(t *testing.T) {
+	anyParam := strings.Replace(good, "part = \"param\"\nparam = \"id\"", "part = \"any_param\"", 1)
+	if _, err := LoadFS(fstest.MapFS{"s/a.toml": {Data: []byte(anyParam)}}, "s"); err != nil {
+		t.Fatalf("a class signature with any_param: %v", err)
+	}
+	for name, extra := range map[string]string{
+		"cves":       `cves = ["CVE-2099-0001"]`,
+		"advisories": `advisories = ["GHSA-xxxx-xxxx-xxxx"]`,
+		"applies_to": "",
+	} {
+		src := strings.Replace(anyParam, "[[signature]]\n", "[[signature]]\n"+extra+"\n", 1)
+		if name == "applies_to" {
+			src += "[[signature.applies_to]]\necosystem = \"npm\"\npackage = \"marker\"\nversions = \"<2.0\"\n"
+		}
+		if _, err := LoadFS(fstest.MapFS{"s/a.toml": {Data: []byte(src)}}, "s"); err == nil {
+			t.Errorf("%s with any_param: accepted\n%s", name, src)
+		}
+	}
+}
+
 func TestInRange(t *testing.T) {
 	r := Range{Ecosystem: "npm", Package: "x", Versions: ">=1.2, <1.4.3"}
 	for v, want := range map[string]bool{"1.2": true, "1.2.0": true, "1.4.2": true, "1.4.3": false, "1.1.9": false, "v1.3.0": true} {
