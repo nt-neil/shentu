@@ -22,7 +22,8 @@ var windowsSupported = map[string]bool{
 // empty, which must not pass for clean. The platform's own readers are
 // for later.
 var darwinSupported = map[string]bool{
-	"package_vulns": true, "app_vulns": true, "app_code_audit": true, "cert_expiry": true, "site_profile": true, "notify": true,
+	"package_vulns": true, "app_vulns": true, "app_code_audit": true, "site_profile": true, "notify": true,
+	// not cert_expiry yet: its certbot paths are Linux's, not Homebrew's
 }
 
 // SupportedOn says whether tool name gives a real result on goos.

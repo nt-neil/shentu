@@ -417,8 +417,14 @@ func (a *agent) runSub(ctx context.Context, id string, t subTask, tokenCap int) 
 		if a.progress != nil {
 			a.progress("sub_incomplete:" + t.Role)
 		}
-		return subReport{Role: t.Role, Status: "incomplete", Reason: fmt.Sprintf("the %s role is not available on %s yet", t.Role, osName(hostGOOS)),
-			Findings: []subFinding{}, Unchecked: notAvailable(subRoles[t.Role].tools, hostGOOS), code: reasonUnsupported}
+		why := fmt.Sprintf("the %s role is not available on %s yet", t.Role, osName(hostGOOS))
+		unchecked := notAvailable(subRoles[t.Role].tools, hostGOOS)
+		for _, n := range subRoles[t.Role].tools { // every tool of the role went unchecked, not only the missing ones
+			if tools.SupportedOn(n, hostGOOS) {
+				unchecked = append(unchecked, n+": not run: "+why)
+			}
+		}
+		return subReport{Role: t.Role, Status: "incomplete", Reason: why, Findings: []subFinding{}, Unchecked: unchecked, code: reasonUnsupported}
 	}
 	cfg := *a.cfg
 	cfg.LLM.MaxSteps = subMaxSteps
