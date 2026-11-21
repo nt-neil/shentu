@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -260,8 +261,9 @@ func (b *bot) pressProposal(ctx context.Context, st botState, ref proposalRef) {
 		// From the start: RemoteRefused, Preview, blockGate (remoteGate), within pressCheckTimeout.
 		cctx, ccancel := context.WithTimeout(ctx, pressCheckTimeout)
 		preview, ip, code := b.proposalCode(cctx, p)
+		late := errors.Is(cctx.Err(), context.DeadlineExceeded) // read before the cancel below, which always sets it
 		ccancel()
-		if cctx.Err() != nil && code == tools.BlockOK {
+		if late {
 			code = tools.BlockStateError // not checked in time: refused, not asked
 		}
 		if code != tools.BlockOK {
