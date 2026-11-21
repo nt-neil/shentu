@@ -230,12 +230,12 @@ func TestEngineLimits(t *testing.T) {
 	e := engineForTest(t)
 	e.Limits = Limits{MaxTokens: 1000, MaxTime: time.Second}
 	src := "<?php\n" + strings.Repeat("$a = $b . $c;\n", 1000)
-	if _, err := e.Scan("php", "big.php", []byte(src)); err != ErrLimit {
+	if _, err := e.Scan("php", "big.php", []byte(src)); !errors.Is(err, ErrLimit) {
 		t.Errorf("token cap: got %v, want ErrLimit", err)
 	}
 	e.Limits = Limits{MaxTokens: 1 << 20, MaxTime: time.Nanosecond}
 	src = "<?php\n" + strings.Repeat("foreach ($a as $b) { foreach ($b as $c) { $d = $c . $_GET['x']; } }\n", 2000)
-	if _, err := e.Scan("php", "slow.php", []byte(src)); err != ErrLimit {
+	if _, err := e.Scan("php", "slow.php", []byte(src)); !errors.Is(err, ErrLimit) {
 		t.Errorf("time cap: got %v, want ErrLimit", err)
 	}
 }
@@ -274,18 +274,18 @@ func TestEngineHostile(t *testing.T) {
 		if took > limit+slack {
 			t.Errorf("%s: took %v, cap %v + slack %v", c.name, took, limit, slack)
 		}
-		if took > limit && err != ErrLimit {
+		if took > limit && !errors.Is(err, ErrLimit) {
 			t.Errorf("%s: over the cap (%v) but err = %v", c.name, took, err)
 		}
 	}
 
 	e.Limits = DefaultLimits
 	nested := "<?php " + R("if ($a) { ", 200) + "system($_GET['x']);" + R("}", 200)
-	if fs, err := e.Scan("php", "nested.php", []byte(nested)); len(fs) == 0 || err != ErrLimit {
+	if fs, err := e.Scan("php", "nested.php", []byte(nested)); len(fs) == 0 || !errors.Is(err, ErrLimit) {
 		t.Errorf("deep blocks: findings %v err %v, want a finding and ErrLimit", fs, err)
 	}
 	deep := "<?php\nsystem(" + R("(", 100) + "$_GET['c']" + R(")", 100) + ");\n"
-	if fs, err := e.Scan("php", "deep.php", []byte(deep)); len(fs) == 0 || err != ErrLimit {
+	if fs, err := e.Scan("php", "deep.php", []byte(deep)); len(fs) == 0 || !errors.Is(err, ErrLimit) {
 		t.Errorf("deep nesting: findings %v err %v, want a finding and ErrLimit", fs, err)
 	}
 	regex := "app.get('/x', (req, res) => {\n  if (ok) /`/.test(s);\n  exec(req.query.x);\n});\n"

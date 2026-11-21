@@ -33,7 +33,11 @@ type scanResult struct {
 	Findings   []engine.Finding // Path is relative to the release root, with "/"
 	Files      int              // files of a rule language that were scanned
 	Unfinished int              // files the engine could not finish (limits) or that were too big
-	Time       time.Duration
+	// CallsCut: files checked function by function to the end whose calls were
+	// not all followed (ErrCalls): cross-file findings may be missing.
+	CallsCut int
+	Cuts     map[string]int // files cut short (ErrLimit or ErrCalls), by cause (engine.CutOf)
+	Time     time.Duration
 }
 
 func scan(eng *engine.Engine, root string, perFile bool) scanResult {
@@ -89,8 +93,17 @@ func scan(eng *engine.Engine, root string, perFile bool) scanResult {
 			continue
 		}
 		fs, err := scanOne(rel, src)
-		if errors.Is(err, engine.ErrLimit) || errors.Is(err, engine.ErrPartial) {
+		switch {
+		case errors.Is(err, engine.ErrLimit) || errors.Is(err, engine.ErrPartial):
 			r.Unfinished++
+		case errors.Is(err, engine.ErrCalls):
+			r.CallsCut++
+		}
+		for _, n := range engine.CutOf(err).Names() {
+			if r.Cuts == nil {
+				r.Cuts = map[string]int{}
+			}
+			r.Cuts[n]++
 		}
 		r.Findings = append(r.Findings, fs...)
 	}
