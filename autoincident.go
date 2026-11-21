@@ -253,18 +253,43 @@ func autoBudget(cfg *Config, now time.Time) string {
 	if cfg.Budget.MonthlyTokens <= 0 {
 		return autoSkipNoBudget
 	}
-	cost, tokens, _, err := monthUsageStrict(cfg.StateDir, now)
+	u, err := usageWithOthers(cfg, "", now) // R1: what dispatches in progress hold is not room; S-R-2: one read
 	if err != nil {
 		return autoSkipBudgetUnknown
 	}
-	used := float64(tokens+dispatchTokenCap) / float64(cfg.Budget.MonthlyTokens)
+	cost, tokens, others, othersCost := u.cost, u.tokens, u.othersTokens, u.othersCost
+	used := float64(tokens+others+dispatchTokenCap) / float64(cfg.Budget.MonthlyTokens)
 	if cfg.Budget.MonthlyCost > 0 {
-		used = max(used, cost/cfg.Budget.MonthlyCost)
+		used = max(used, (cost+othersCost+dispatchCost(cfg))/cfg.Budget.MonthlyCost) // R2: priced caps
 	}
 	if used >= autoBudgetStop {
 		return autoSkipBudget
 	}
 	return ""
+}
+
+// autoMinTokens is the monthly token limit at or under which no automatic
+// check can ever start: one dispatch's cap must stay strictly below
+// autoBudgetStop of it, so the limit must be more than this (150000 with
+// the 120000 cap; at exactly 150000 the cap is 80% and the check skips).
+const autoMinTokens = int(dispatchTokenCap / autoBudgetStop)
+
+// warnAutoBudget says autoBudgetWarning on stderr (the journal), when the
+// bot starts to serve and on the daily patrol only: the patrol's timer
+// runs often, and every other command would repeat it.
+func warnAutoBudget(cfg *Config) {
+	if w := autoBudgetWarning(cfg); w != "" {
+		fmt.Fprintln(os.Stderr, "shentu: warning: "+w)
+	}
+}
+
+// autoBudgetWarning says when auto_incident is on but the monthly token
+// limit is too small for any check to start; "" otherwise.
+func autoBudgetWarning(cfg *Config) string {
+	if !cfg.Agents.AutoIncident || cfg.Budget.MonthlyTokens <= 0 || cfg.Budget.MonthlyTokens > autoMinTokens { // at autoMinTokens itself none starts either (N-168-1)
+		return ""
+	}
+	return fmt.Sprintf("auto_incident is on, but [budget] monthly_tokens = %d is not more than %d: an automatic check reserves %d tokens and starts only while that stays under %.0f%% of the limit, so none will ever start; raise monthly_tokens to more than %d", cfg.Budget.MonthlyTokens, autoMinTokens, dispatchTokenCap, autoBudgetStop*100, autoMinTokens)
 }
 
 // autoRun dispatches the incident sub-agent for p. runDispatch archives
@@ -352,6 +377,8 @@ func autoIncidentSection(cfg *Config, now time.Time) string {
 	b.WriteString("\nAutomatic incident checks (L3 alerts, read-only, last day):\n")
 	if cfg.Budget.MonthlyTokens <= 0 {
 		b.WriteString("- none are made: no monthly token budget is set ([budget] monthly_tokens; monthly_cost alone does not stop a local model, which reports no cost)\n")
+	} else if w := autoBudgetWarning(cfg); w != "" {
+		b.WriteString("- " + w + "\n")
 	}
 	b.WriteString(autoArchiveLine(cfg, now))
 	if _, _, long, err := monthUsageStrict(cfg.StateDir, now); err == nil && long > 0 {

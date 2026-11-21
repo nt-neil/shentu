@@ -74,3 +74,8 @@ auto_incident = false
 # base_url    = "https://api.openai.com/v1"
 # model       = "gpt-4.1-mini"
 # api_key_env = "SHENTU_AGENTS_API_KEY"
+# What that model costs per million tokens, in [budget] monthly_cost's currency.
+# With them, each dispatch reserves what it may cost (its whole token cap at the
+# dearer price), and sub-agents run at once only when monthly_cost has room for it.
+# price_per_mtok_in  = 3.0
+# price_per_mtok_out = 15.0

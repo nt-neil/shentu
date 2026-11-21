@@ -6,6 +6,25 @@ a release are not written here: they are worked out from the rule snapshots in
 `docs/site-src/rules-history/`. `CHANGELOG.zh-TW.md` holds the same releases in Traditional
 Chinese for the zh-TW pages; keep the two in step.
 
+## v0.5.4 (unreleased)
+
+- What a dispatch in progress has already used no longer counts twice near the budget limit: its
+  reservation knows the dispatch and when it started, and the others count only the rest of it,
+  from the same read of the log as the month's use. A reservation that cannot be matched counts in
+  full, as before.
+- Model prices (#162): `[agents] price_per_mtok_in` and `price_per_mtok_out` (dollars per million
+  tokens) price each dispatch's reservation at its token cap times the higher of the two, so the
+  monthly cost limit is shared between dispatches as the token limit is. When only the cost limit
+  is filled by the others' reservations, the reply names the dollars reserved.
+- Shared AI budget (#161): a dispatch from the bot, `shentu chat` or the automatic incident check
+  reserves its whole token cap in `state_dir/reservations.json` while it runs, and every budget
+  check counts the others' reservations, so together they overspend `[budget] monthly_tokens` by
+  about one dispatch's cap (120k tokens) plus the answer in progress. Upgrading: while a dispatch runs, a question elsewhere
+  can be told that its reservation leaves too little of the month's budget (it is released within
+  about 17 minutes); a reservations file that cannot be trusted stops every AI answer and dispatch until it is
+  moved aside (the bot says which file); and `auto_incident` with `monthly_tokens` of 150000 or less now warns, as no automatic
+  check could ever start.
+
 ## v0.5.3 (unreleased)
 
 - A proposal button pressed always gets an answer (#163): it says at once that it checks the

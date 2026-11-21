@@ -652,17 +652,28 @@ func (a *agent) runDispatch(ctx context.Context, origin, trigger string, tasks [
 	sl, external, modelErr := agentsLLM(a.cfg, a.llm)
 	a.subLLM = sl
 	defer func() { a.subLLM = nil }()
+	resID, release, resErr := reserveFor(a.cfg, dispatchTokenCap, dispatchCost(a.cfg), id, start) // R1, R2: the others see this one; S-R-2: less what it has logged
+	defer release()
+	a.resID = resID
+	defer func() { a.resID = "" }()
+	if resErr != nil && modelErr == nil { // fail closed: no sub-agent without the shared reservation
+		modelErr = resErr
+	}
 
 	dctx, cancel := context.WithTimeout(ctx, dispatchTimeout)
 	defer cancel()
 	left := dispatchTokenCap
-	if modelErr == nil && external && len(tasks) > 1 && !agentsOnThisHost(a.cfg.Agents.BaseURL) && budgetRoom(a.cfg, time.Now()) {
+	if modelErr == nil && external && len(tasks) > 1 && !agentsOnThisHost(a.cfg.Agents.BaseURL) && budgetRoom(a.cfg, time.Now(), resID) {
 		reports, left = a.runSubsParallel(dctx, id, tasks)
 		tasks = nil
 	}
 	for _, t := range tasks {
 		if modelErr != nil { // no sub-agent runs on a model setting that cannot be used
-			reports = append(reports, subReport{Role: t.Role, Status: "incomplete", Reason: clean("the sub-agents' model cannot be used: "+modelErr.Error(), 300), Findings: []subFinding{}, code: reasonModelError})
+			why, code := "the sub-agents' model cannot be used: "+modelErr.Error(), reasonModelError
+			if errors.Is(modelErr, errReservations) {
+				why, code = "the AI budget cannot be checked: "+modelErr.Error(), reasonBudget
+			}
+			reports = append(reports, subReport{Role: t.Role, Status: "incomplete", Reason: clean(why, 300), Findings: []subFinding{}, code: code})
 			continue
 		}
 		if dctx.Err() != nil || left <= 0 {
@@ -704,15 +715,22 @@ func (a *agent) runDispatch(ctx context.Context, origin, trigger string, tasks [
 // turns, and each one after the first is stopped at the limit as before.
 // A cost limit gets no such reservation (a call's cost is not known ahead),
 // so with one set they run at once only while under half of it.
-func budgetRoom(cfg *Config, now time.Time) bool {
+func budgetRoom(cfg *Config, now time.Time, self string) bool {
 	if cfg.Budget.MonthlyTokens <= 0 {
 		return false
 	}
-	cost, used, _, err := monthUsageStrict(cfg.StateDir, now)
-	if err != nil || used+dispatchTokenCap > cfg.Budget.MonthlyTokens {
+	u, err := usageWithOthers(cfg, self, now) // R1: what other dispatches hold is not room; S-R-2: one read
+	cost, used, others, othersCost := u.cost, u.tokens, u.othersTokens, u.othersCost
+	if err != nil || used+others+dispatchTokenCap > cfg.Budget.MonthlyTokens {
 		return false
 	}
-	return cfg.Budget.MonthlyCost <= 0 || cost < cfg.Budget.MonthlyCost/2
+	if cfg.Budget.MonthlyCost <= 0 {
+		return true
+	}
+	if c := dispatchCost(cfg); c > 0 { // R2: with prices, the room for what this dispatch may cost
+		return cost+othersCost+c <= cfg.Budget.MonthlyCost
+	}
+	return cost+othersCost < cfg.Budget.MonthlyCost/2
 }
 
 // runSubsParallel runs tasks at once, for a model outside this host (on
