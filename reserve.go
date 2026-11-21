@@ -50,6 +50,7 @@ var errReservations = errors.New("the shared AI budget reservations cannot be tr
 type reservation struct {
 	ID      string    `json:"id"`
 	Tokens  int       `json:"tokens"`
+	Cost    float64   `json:"cost,omitempty"` // what it may cost, with [agents] prices set (R2)
 	Expires time.Time `json:"expires"`
 }
 
@@ -112,7 +113,7 @@ func withReservations(cfg *Config, now time.Time, f func(*reservations)) error {
 
 // reserve reserves tokens for a dispatch and returns its id and a release.
 // Without a monthly token limit it reserves nothing.
-func reserve(cfg *Config, tokens int, now time.Time) (id string, release func(), err error) {
+func reserve(cfg *Config, tokens int, cost float64, now time.Time) (id string, release func(), err error) {
 	if cfg.Budget.MonthlyTokens <= 0 {
 		return "", func() {}, nil
 	}
@@ -120,7 +121,7 @@ func reserve(cfg *Config, tokens int, now time.Time) (id string, release func(),
 	rand.Read(b)
 	id = hex.EncodeToString(b)
 	err = withReservations(cfg, now, func(r *reservations) {
-		r.Items = append(r.Items, reservation{ID: id, Tokens: tokens, Expires: now.Add(reserveTTL())})
+		r.Items = append(r.Items, reservation{ID: id, Tokens: tokens, Cost: cost, Expires: now.Add(reserveTTL())})
 	})
 	if err != nil {
 		return "", func() {}, err
@@ -141,63 +142,74 @@ func reserve(cfg *Config, tokens int, now time.Time) (id string, release func(),
 	}, nil
 }
 
-// peekReserved is the tokens the live reservations hold, read without the
+// peekReserved is the tokens and cost the live reservations hold, read without the
 // lock and without writing (the file is replaced atomically): for the
 // budget line, which `sudo shentu budget` prints as another user, who must
 // not create the lock file.
-func peekReserved(cfg *Config, now time.Time) (int, error) {
+func peekReserved(cfg *Config, now time.Time) (int, float64, error) {
 	p := filepath.Join(cfg.StateDir, reservationsFile)
 	f, err := osutil.OpenNoFollow(p, os.O_RDONLY, 0, true)
 	if errors.Is(err, os.ErrNotExist) {
-		return 0, nil
+		return 0, 0, nil
 	}
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	defer f.Close()
 	b, err := io.ReadAll(io.LimitReader(f, 1<<20))
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	var r reservations
 	if len(b) > 0 && (json.Unmarshal(b, &r) != nil || r.V != 1) {
-		return 0, fmt.Errorf("%s does not parse", p)
+		return 0, 0, fmt.Errorf("%s does not parse", p)
 	}
 	if negativeReservation(r) {
-		return 0, fmt.Errorf("%s holds a negative reservation", p)
+		return 0, 0, fmt.Errorf("%s holds a negative reservation", p)
 	}
-	n := 0
+	n, c := 0, 0.0
 	for _, it := range r.Items {
 		if now.Before(it.Expires) {
 			n += it.Tokens
+			c += it.Cost
 		}
 	}
-	return n, nil
+	return n, c, nil
 }
 
 // negativeReservation: an item holds less than nothing, which no
 // dispatch writes; the file is then not trusted (S-R-6).
 func negativeReservation(r reservations) bool {
 	for _, it := range r.Items {
-		if it.Tokens < 0 {
+		if it.Tokens < 0 || it.Cost < 0 {
 			return true
 		}
 	}
 	return false
 }
 
-// othersReserved is the tokens the live reservations hold, but self's.
-func othersReserved(cfg *Config, self string, now time.Time) (int, error) {
+// othersReserved is the tokens and the cost the live reservations hold,
+// but self's.
+func othersReserved(cfg *Config, self string, now time.Time) (tokens int, cost float64, err error) {
 	if cfg.Budget.MonthlyTokens <= 0 {
-		return 0, nil
+		return 0, 0, nil
 	}
-	n := 0
-	err := withReservations(cfg, now, func(r *reservations) {
+	err = withReservations(cfg, now, func(r *reservations) {
 		for _, it := range r.Items {
 			if it.ID != self {
-				n += it.Tokens
+				tokens, cost = tokens+it.Tokens, cost+it.Cost
 			}
 		}
 	})
-	return n, err
+	return tokens, cost, err
+}
+
+// dispatchCost is what a dispatch may cost at most: its whole token cap at
+// the dearer of the [agents] prices; 0 when they are not set.
+func dispatchCost(cfg *Config) float64 {
+	price := max(cfg.Agents.PricePerMTokIn, cfg.Agents.PricePerMTokOut)
+	if price <= 0 {
+		return 0
+	}
+	return float64(dispatchTokenCap) / 1e6 * price
 }

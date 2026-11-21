@@ -257,13 +257,13 @@ func autoBudget(cfg *Config, now time.Time) string {
 	if err != nil {
 		return autoSkipBudgetUnknown
 	}
-	others, err := othersReserved(cfg, "", now) // R1: what dispatches in progress hold is not room
+	others, othersCost, err := othersReserved(cfg, "", now) // R1: what dispatches in progress hold is not room
 	if err != nil {
 		return autoSkipBudgetUnknown
 	}
 	used := float64(tokens+others+dispatchTokenCap) / float64(cfg.Budget.MonthlyTokens)
 	if cfg.Budget.MonthlyCost > 0 {
-		used = max(used, cost/cfg.Budget.MonthlyCost)
+		used = max(used, (cost+othersCost+dispatchCost(cfg))/cfg.Budget.MonthlyCost) // R2: priced caps
 	}
 	if used >= autoBudgetStop {
 		return autoSkipBudget
