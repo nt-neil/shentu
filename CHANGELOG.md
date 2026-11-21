@@ -6,6 +6,12 @@ a release are not written here: they are worked out from the rule snapshots in
 `docs/site-src/rules-history/`. `CHANGELOG.zh-TW.md` holds the same releases in Traditional
 Chinese for the zh-TW pages; keep the two in step.
 
+## v0.5.4 (unreleased)
+
+- `auto_incident` on with no `[notify] url` now warns (#165), when the bot starts, on the daily
+  patrol and in its report: a check starts only from an L3 alert the patrol pushed, and the patrol
+  pushes through the notify url alone, so none would ever start.
+
 ## v0.5.3 (unreleased)
 
 - A proposal button pressed always gets an answer (#163): it says at once that it checks the
