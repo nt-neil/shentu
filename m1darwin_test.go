@@ -38,6 +38,10 @@ var toolData = map[string][]string{
 // metaFields are never what a tool read, for a tool not in toolData.
 var metaFields = map[string]bool{"time": true, "os": true, "kernel": true, "source": true, "limit": true, "since": true, "path": true, "roots": true, "untrusted": true}
 
+// fallbackWords are what a reader returns when it read nothing, which
+// reads like a finding (N-173r-1): linux.Firewall's "none detected".
+var fallbackWords = map[string]bool{"none detected": true}
+
 // saysWhy are fields by which a tool says it could not (fully) read:
 // explicit, not a clean-looking result.
 var saysWhy = []string{"note", "error", "unsupported", "permission", "partial"}
@@ -99,7 +103,7 @@ func emptyValue(v any) bool {
 	case float64:
 		return x == 0
 	case string:
-		return x == ""
+		return x == "" || fallbackWords[x]
 	case []any:
 		return len(x) == 0
 	case map[string]any:
@@ -119,6 +123,7 @@ func TestM1LooksClean(t *testing.T) {
 		{"x", `{"ports":[],"source":"lsof"}`}, // a source is not data (N-173-1)
 		{"site_profile", `{"time":"2026-11-22T00:00:00Z","os":"darwin","kernel":"25.0","services":[],"ssh_config_hash":"ab"}`},
 		{"attack_attempts", `{"groups":[],"within_hours":24,"untrusted":"samples are written by the senders"}`},
+		{"site_profile", `{"time":"t","os":"darwin","kernel":"25.0","firewall":"none detected"}`}, // N-173r-1
 		{"x", `{"a":{"b":[]}}`},
 	} {
 		if !looksClean(c.tool, []byte(c.out)) {
