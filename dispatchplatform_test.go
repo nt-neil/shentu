@@ -93,7 +93,9 @@ func TestDispatchMacOSRoles(t *testing.T) {
 	if len(reps[0].Unchecked) != len(subRoles["patrol"].tools) {
 		t.Errorf("unchecked: %v", reps[0].Unchecked)
 	}
-	want := map[string]bool{"processes: not available on macOS": false, "site_profile: not run: the patrol role is not available on macOS yet": false}
+	// processes reads macOS since M0 (supported, so "not run" while the role is closed).
+	want := map[string]bool{"accounts_audit: not available on macOS": false, "processes: not run: the patrol role is not available on macOS yet": false,
+		"site_profile: not run: the patrol role is not available on macOS yet": false}
 	for _, u := range reps[0].Unchecked {
 		if _, ok := want[u]; ok {
 			want[u] = true
