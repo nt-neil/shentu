@@ -140,10 +140,12 @@ type analysis struct {
 	py          bool
 	js          bool
 	b           *budget
-	kw          map[string]bool // words that are keywords in this language
-	seed        *paramSeed      // the value a callback's parameter is called with (whenSeeds), for the next function analysed
-	laravelVars map[string]bool // per PHP variable, whether it may be Laravel's request (laravelRequest)
-	mws         map[*fn]bool    // Koa middleware: the functions app.use(fn) registers (reqalias.go koaMiddleware)
+	kw          map[string]bool   // words that are keywords in this language
+	seed        *paramSeed        // the value a callback's parameter is called with (whenSeeds), for the next function analysed
+	laravelVars map[string]bool   // per PHP variable, whether it may be Laravel's request (laravelRequest)
+	phpUses     map[string]string // PHP: short class name (lower case) to the name a use statement gives it (phpUseOther)
+	branchBlock bool              // the next block is an if's branch, whose request aliases the if joins (block, sIf)
+	mws         map[*fn]bool      // Koa middleware: the functions app.use(fn) registers (reqalias.go koaMiddleware)
 	seen        map[loc]bool
 	lines       []loc
 	// sinkSpans: per line reported, the sink calls that reported it, as
@@ -225,7 +227,9 @@ func (a *analysis) reportSink(l loc, emb bool) {
 // ---- statements ----
 
 func (a *analysis) block(ss []*stmt, st state) (state, uint8) {
-	if a.reqs != nil {
+	branch := a.branchBlock // an if's branch: the if joins its branches itself (sIf)
+	a.branchBlock = false
+	if a.reqs != nil && !branch {
 		// a block may not run, or run on one path only (a branch, a loop's
 		// body): after it a name holds a request where it did before it or at
 		// its end (reqalias.go)
@@ -290,12 +294,36 @@ func (a *analysis) stmt(s *stmt, st state) (state, uint8) {
 		a.condAssign(st, s.toks)
 		t1, _ := a.refine(st, s.toks, true)
 		a.nonceCond(t1, s.toks, true)
+		// request aliases (reqalias.go): each branch starts from what held
+		// before the if, and after it a name holds what it held at the end of a
+		// branch that goes on (the else path being the state before, without
+		// an else); a name reassigned on every branch is no longer followed
+		var r0, rT map[string][]string
+		if a.reqs != nil {
+			r0 = maps.Clone(a.reqs)
+			a.branchBlock = true
+		}
 		t1, e1 := a.block(s.body, t1)
+		if r0 != nil {
+			rT, a.reqs = a.reqs, maps.Clone(r0)
+		}
 		t2, g2 := a.refineInPlace(st, s.toks, false) // st is not used after this
 		a.nonceCond(t2, s.toks, false)
 		e2 := noExit
 		if len(s.els) > 0 {
+			a.branchBlock = r0 != nil
 			t2, e2 = a.block(s.els, t2)
+		}
+		if r0 != nil {
+			switch rE := a.reqs; {
+			case e1 != noExit && e2 == noExit:
+				a.reqs = rE
+			case e2 != noExit && e1 == noExit:
+				a.reqs = rT
+			default:
+				unionReqs(rE, rT)
+				a.reqs = rE
+			}
 		}
 		if e1 == hardExit && len(a.guards) > 0 {
 			for _, k := range g2 {
@@ -1552,6 +1580,9 @@ func (a *analysis) srcMatchAt(s *pat, t []Token, i int) (int, bool) {
 	}
 	strict := len(s.toks) > 1 && s.toks[0].Kind == Ident && s.toks[1].op("(")
 	end, ok := s.match(t, i, strict)
+	if ok && a.php && len(s.toks) > 1 && s.toks[0].Kind == Ident && s.toks[1].op("::") && a.phpUseOther(s.toks[0].Text) {
+		return 0, false // Request::get( where the file's Request is an HTTP client's (use Httpful\Request), not Laravel's facade
+	}
 	if ok && s.memberWild && a.php && !a.laravelRequest(s.toks[0].Text) {
 		return 0, false // $request->sort: Laravel's magic property, not any object's member
 	}
