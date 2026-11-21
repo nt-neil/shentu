@@ -48,6 +48,9 @@ type fnInfo struct {
 	numeric []bool   // declared int, float or bool
 	self    bool     // a Python method whose first parameter (self, cls) is the receiver
 	rest    bool     // takes any further arguments (...$a, *args, **kwargs)
+	// local: a PHP closure assigned to a $variable inside a function's body, a
+	// variable of that function: no other file can reach it (project index)
+	local bool
 }
 
 type summary struct {
@@ -215,21 +218,25 @@ func funcKey(f *fn, name, lang string) string {
 // plain name.
 func collectFuncs(ss []*stmt, lang string) map[string][]*fnInfo {
 	out := map[string][]*fnInfo{}
-	var walk func(ss []*stmt, depth int)
-	add := func(name string, f *fn) {
+	// fnVars is nil at a file's top level; in a function's body it holds the
+	// names that may leave it (sharedOf), whose closures stay candidates
+	var walk func(ss []*stmt, depth int, fnVars map[string]bool)
+	add := func(name string, f *fn, fnVars map[string]bool) {
 		if name != "" && f != nil {
 			k := funcKey(f, name, lang)
-			out[k] = append(out[k], paramInfo(f, lang))
+			fi := paramInfo(f, lang)
+			fi.local = fnVars != nil && strings.HasPrefix(name, "$") && !fnVars[name] && !fnVars["*"]
+			out[k] = append(out[k], fi)
 		}
 	}
-	walk = func(ss []*stmt, depth int) {
+	walk = func(ss []*stmt, depth int, fnVars map[string]bool) {
 		if depth > maxNest {
 			return
 		}
 		for _, s := range ss {
 			if s.fn != nil {
-				add(s.fn.name, s.fn)
-				walk(s.fn.body, depth+1)
+				add(s.fn.name, s.fn, fnVars)
+				walk(s.fn.body, depth+1, sharedOfFn(s.fn))
 			}
 			if s.kind == sSimple && len(s.funcs) > 0 {
 				t := s.toks
@@ -237,26 +244,92 @@ func collectFuncs(ss []*stmt, lang string) map[string][]*fnInfo {
 					t = t[1:]
 				}
 				if len(t) == 3 && (t[0].Kind == Ident || t[0].Kind == Var) && t[1].op("=") && t[2].Kind == Func && t[2].Fn < len(s.funcs) {
-					add(t[0].Text, s.funcs[t[2].Fn])
+					add(t[0].Text, s.funcs[t[2].Fn], fnVars)
 				} else if n := len(t); n >= 5 && t[n-1].Kind == Func && t[n-1].Fn < len(s.funcs) && t[n-2].op("=") && t[n-3].Kind == Ident && dotted(t[:n-2]) {
-					add(t[n-3].Text, s.funcs[t[n-1].Fn]) // exports.f = function, module.exports.f = (x) => ...
+					add(t[n-3].Text, s.funcs[t[n-1].Fn], fnVars) // exports.f = function, module.exports.f = (x) => ...
 				}
 			}
 			for _, f := range s.funcs {
-				walk(f.body, depth+1)
+				walk(f.body, depth+1, sharedOfFn(f))
 			}
-			walk(s.body, depth+1)
-			walk(s.els, depth+1)
-			walk(s.orelse, depth+1)
+			walk(s.body, depth+1, fnVars)
+			walk(s.els, depth+1, fnVars)
+			walk(s.orelse, depth+1, fnVars)
 			for _, h := range s.handlers {
-				walk(h, depth+1)
+				walk(h, depth+1, fnVars)
 			}
 			for _, c := range s.cases {
-				walk(c, depth+1)
+				walk(c, depth+1, fnVars)
 			}
 		}
 	}
-	walk(ss, 0)
+	walk(ss, 0, nil)
+	return out
+}
+
+// sharedOf returns the $names a PHP function's body may let out of it, so that
+// a closure assigned to one stays a candidate of the project index: declared
+// global; or used other than called ($name(...)) or assigned at a statement's
+// start ($name = ...): returned, static, passed on, stored, captured by an inner
+// closure's use (...); or named in compact('name'). get_defined_vars() lets
+// all of them out: "*". Never nil, so a body with none is still a function's.
+// Conservative: any doubt keeps the candidate.
+// sharedOfFn is sharedOf for a function: a closure's use (...) variables are
+// its enclosing function's too (use (&$runner) assigns the outer $runner).
+func sharedOfFn(f *fn) map[string]bool {
+	out := sharedOf(f.body)
+	for _, t := range f.uses {
+		if t.Kind == Var {
+			out[t.Text] = true
+		}
+	}
+	return out
+}
+
+func sharedOf(body []*stmt) map[string]bool {
+	out := map[string]bool{}
+	scan := func(t []Token, stmtStart bool) {
+		compact := false
+		for i, tk := range t {
+			switch {
+			case tk.Kind == Ident && strings.EqualFold(tk.Text, "compact"):
+				compact = true
+			case tk.Kind == Ident && strings.EqualFold(tk.Text, "get_defined_vars"):
+				out["*"] = true
+			case tk.Kind == Str && compact && len(tk.Parts) == 0:
+				out["$"+tk.Text] = true
+			case tk.Kind == Var:
+				called := i+1 < len(t) && t[i+1].op("(")
+				assigned := stmtStart && i == 0 && i+1 < len(t) && t[i+1].op("=")
+				if !called && !assigned {
+					out[tk.Text] = true
+				}
+			}
+		}
+	}
+	var walk func(ss []*stmt)
+	walk = func(ss []*stmt) {
+		for _, s := range ss {
+			scan(s.toks, s.kind == sSimple)
+			for _, f := range s.funcs {
+				scan(f.uses, false)
+				walk(f.body)
+			}
+			if s.fn != nil {
+				scan(s.fn.uses, false)
+			}
+			walk(s.body)
+			walk(s.els)
+			walk(s.orelse)
+			for _, h := range s.handlers {
+				walk(h)
+			}
+			for _, c := range s.cases {
+				walk(c)
+			}
+		}
+	}
+	walk(body)
 	return out
 }
 

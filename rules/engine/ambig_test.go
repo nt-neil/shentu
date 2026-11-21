@@ -9,9 +9,10 @@ import (
 // A call is not ambiguous (CutAmbiguous: "calls not followed") when the other
 // files declaring its name cannot be what it reaches: a module inside a
 // package, away from the importing file, for an absolute import; a stub that
-// only returns a constant (WordPress's noop.php). It stays ambiguous when one
-// of them may be: a closure variable of the same name in another file, a
-// module beside the importing file (#174 review S-1). Only a call one of whose
+// only returns a constant (WordPress's noop.php); a closure assigned to a
+// variable inside another file's function. It stays ambiguous when one of them
+// may be: a top-level closure variable of the same name in a file not
+// included, a module beside the importing file (#174 review S-1). Only a call one of whose
 // candidates matters to the rule is ever unsure. On the code audit's path.
 func TestAmbiguousCalls(t *testing.T) {
 	e := engineForTest(t)
@@ -22,10 +23,49 @@ func TestAmbiguousCalls(t *testing.T) {
 		want   []string // findings, as path:line:rule
 		unsure bool     // the call stays cut as ambiguous: no file can be ruled out
 	}{
-		{"$callback(...) of a method's parameter, with $callback closures in other files: unsure (#174 review S-1)", map[string]string{
+		// A closure assigned to a variable inside a method is that method's
+		// variable: no other file reaches it, so it is no candidate.
+		{"$callback(...) of a method's parameter, with method-local $callback closures in other files", map[string]string{
 			"a.php": "<?php\nclass A {\n    public function each($callback) {\n        return $callback($_GET['x']);\n    }\n}\n",
 			"b.php": "<?php\nclass B {\n    public function run() {\n        $callback = function ($v) { exec($v); };\n        return $callback('x');\n    }\n}\n",
 			"c.php": "<?php\nclass C {\n    public function run() {\n        $callback = fn ($v) => system($v);\n        return $callback('y');\n    }\n}\n",
+		}, "a.php", nil, false},
+		// A top-level closure is global: another file reaches it when it is
+		// included, so with none included the call stays unsure (#174 review S-1).
+		{"$callback(...) with top-level $callback closures in files not included: unsure", map[string]string{
+			"a.php": "<?php\nclass A {\n    public function each($callback) {\n        return $callback($_GET['x']);\n    }\n}\n",
+			"b.php": "<?php\n$callback = function ($v) {\n    exec($v);\n};\n",
+			"c.php": "<?php\n$callback = fn ($v) => system($v);\n",
+		}, "a.php", nil, true},
+		// global $callback; inside a function makes the closure it assigns
+		// global, as a top-level one is: still a candidate, still unsure.
+		// A closure that leaves its function stays a candidate (#178 review
+		// N-1): returned (r1), static (r2), assigned through use (&$runner)
+		// (r3), packed by compact (r8). Each was followed before #178.
+		{"r1: a local closure returned", map[string]string{
+			"a.php": "<?php\nrequire 'b.php';\n$runner = make_runner();\n$runner($_GET['x']);\n",
+			"b.php": "<?php\nfunction make_runner() {\n    $runner = function ($v) { exec($v); };\n    return $runner;\n}\n",
+		}, "a.php", []string{"b.php:3:php-cmdi-shell-exec"}, false},
+		{"r2: a static local closure", map[string]string{
+			"a.php": "<?php\nrequire 'b.php';\nget_runner();\n$runner($_GET['x']);\n",
+			"b.php": "<?php\nfunction get_runner() {\n    static $runner;\n    $runner = function ($v) { exec($v); };\n    return 1;\n}\n",
+		}, "a.php", []string{"b.php:4:php-cmdi-shell-exec"}, false},
+		{"r3: a closure assigned through use (&$runner)", map[string]string{
+			"a.php": "<?php\nrequire 'b.php';\n$runner = setup();\n$runner($_GET['x']);\n",
+			"b.php": "<?php\nfunction setup() {\n    $runner = null;\n    $init = function () use (&$runner) {\n        $runner = function ($v) { exec($v); };\n    };\n    $init();\n    return 1;\n}\n",
+		}, "a.php", []string{"b.php:5:php-cmdi-shell-exec"}, false},
+		{"r8: a local closure packed by compact", map[string]string{
+			"a.php": "<?php\nrequire 'b.php';\nextract(pack_runner());\n$runner($_GET['x']);\n",
+			"b.php": "<?php\nfunction pack_runner() {\n    $runner = function ($v) { exec($v); };\n    return compact('runner');\n}\n",
+		}, "a.php", []string{"b.php:3:php-cmdi-shell-exec"}, false},
+		{"r10: local closures handed out by get_defined_vars", map[string]string{
+			"a.php": "<?php\nrequire 'b.php';\nextract(all_vars());\n$runner($_GET['x']);\n",
+			"b.php": "<?php\nfunction all_vars() {\n    $runner = function ($v) { exec($v); };\n    return get_defined_vars();\n}\n",
+		}, "a.php", []string{"b.php:3:php-cmdi-shell-exec"}, false},
+		{"$callback(...) with closures assigned to a global $callback inside functions: unsure", map[string]string{
+			"a.php": "<?php\nclass A {\n    public function each($callback) {\n        return $callback($_GET['x']);\n    }\n}\n",
+			"b.php": "<?php\nfunction init() {\n    global $callback;\n    $callback = function ($v) { exec($v); };\n}\n",
+			"c.php": "<?php\nfunction boot() {\n    if (true) {\n        global $other, $callback;\n    }\n    $callback = fn ($v) => system($v);\n}\n",
 		}, "a.php", nil, true},
 		{"import json beside two package modules named json.py", map[string]string{
 			"app/__init__.py":       "",
