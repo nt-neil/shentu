@@ -128,9 +128,6 @@ func main() {
 	if err != nil {
 		fatal(err)
 	}
-	if w := autoBudgetWarning(cfg); w != "" {
-		fmt.Fprintln(os.Stderr, "shentu: warning: "+w)
-	}
 	tools.SetWebUsers(cfg.Tools.WebUsers)
 	tools.SetAuditLimits(cfg.Tools.AuditMaxMemoryMB, cfg.Tools.AuditWorkers)
 	tools.SetCacheDir(filepath.Join(cfg.StateDir, "cache"))
@@ -156,6 +153,9 @@ func main() {
 			fmt.Println(string(b))
 		}
 	case "bot":
+		if len(args) == 0 { // serving: once at start, not on every command (S-R-5)
+			warnAutoBudget(cfg)
+		}
 		if err = stateReady(cfg.StateDir); err == nil {
 			err = botCommand(ctx, cfg, env, args)
 		}
@@ -168,6 +168,9 @@ func main() {
 		daily := fs.Bool("daily", false, "always send a full daily report")
 		dry := fs.Bool("dry-run", false, "print the report, do not notify")
 		fs.Parse(args)
+		if *daily { // once a day; the daily report says it too
+			warnAutoBudget(cfg)
+		}
 		err = patrol(ctx, cfg, env, *daily, *dry)
 	case "detect":
 		fs := flag.NewFlagSet("detect", flag.ExitOnError)

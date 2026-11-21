@@ -11,10 +11,10 @@ Chinese for the zh-TW pages; keep the two in step.
 - Shared AI budget (#161): a dispatch from the bot, `shentu chat` or the automatic incident check
   reserves its whole token cap in `state_dir/reservations.json` while it runs, and every budget
   check counts the others' reservations, so together they overspend `[budget] monthly_tokens` by
-  at most one dispatch's cap (120k tokens). Upgrading: while a dispatch runs, a question elsewhere
+  about one dispatch's cap (120k tokens) plus the answer in progress. Upgrading: while a dispatch runs, a question elsewhere
   can be told that its reservation leaves too little of the month's budget (it is released within
-  about 17 minutes); a reservations file that cannot be trusted stops the dispatches until it is
-  moved aside; and `auto_incident` with `monthly_tokens` under 150k now warns, as no automatic
+  about 17 minutes); a reservations file that cannot be trusted stops every AI answer and dispatch until it is
+  moved aside (the bot says which file); and `auto_incident` with `monthly_tokens` under 150k now warns, as no automatic
   check could ever start.
 - Telegram blocks ask only what the gate would allow (#155, #158): from a chat channel, block_ip
   runs the checks of #108's gate before asking for ✅. An address the gate refuses is refused at

@@ -276,6 +276,15 @@ func autoBudget(cfg *Config, now time.Time) string {
 // autoBudgetStop of it (150k with the 120k cap).
 const autoMinTokens = int(dispatchTokenCap / autoBudgetStop)
 
+// warnAutoBudget says autoBudgetWarning on stderr (the journal), when the
+// bot starts to serve and on the daily patrol only: the patrol's timer
+// runs often, and every other command would repeat it.
+func warnAutoBudget(cfg *Config) {
+	if w := autoBudgetWarning(cfg); w != "" {
+		fmt.Fprintln(os.Stderr, "shentu: warning: "+w)
+	}
+}
+
 // autoBudgetWarning says when auto_incident is on but the monthly token
 // limit is too small for any check to start; "" otherwise.
 func autoBudgetWarning(cfg *Config) string {
