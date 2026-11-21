@@ -6,6 +6,12 @@ a release are not written here: they are worked out from the rule snapshots in
 `docs/site-src/rules-history/`. `CHANGELOG.zh-TW.md` holds the same releases in Traditional
 Chinese for the zh-TW pages; keep the two in step.
 
+## v0.5.5 (unreleased)
+
+- The nginx and Apache version checks (and nginx's changelog) read the surveyed host through its
+  host source, like every other check: a replay or a fixture is no longer answered by the machine
+  running the survey. Their package queries are exact commands in the allowlist.
+
 ## v0.5.3 (unreleased)
 
 - A proposal button pressed always gets an answer (#163): it says at once that it checks the

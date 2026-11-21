@@ -3,6 +3,11 @@
 CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本與日期必須一致，
 每個版本都要有內容（`go test ./cmd/sitegen` 會檢查）。
 
+## v0.5.5 (unreleased)
+
+- nginx 和 Apache 的版本檢查（以及 nginx 的 changelog）現在和其他檢查一樣，經由主機來源讀取受檢主機：
+  replay 或 fixture 不會再讀到執行檢查的那台機器。套件查詢都是 allowlist 裡的完整指令。
+
 ## v0.5.3 (unreleased)
 
 - 建議按鈕按下後一定會有回覆（#163）：會先立刻回覆「正在重新檢查這個位址」，檢查之前先在 log 記下這次按下
