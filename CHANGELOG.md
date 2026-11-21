@@ -18,11 +18,12 @@ Chinese for the zh-TW pages; keep the two in step.
   else { q = {...} }`) is no longer read as the request. A branch that returns or throws drops
   out; one that ends in `break` or `continue` still counts.
 - Read-only calls a URL check keeps (#160): `typeof window` (any global object after `typeof`)
-  and a TypeScript parameter typed `String` (`f(a: String, b)`) no longer end them for the whole
-  file. `String` after the colon of `c ? y : String` still does.
+  no longer ends them for the whole file. `String` after the colon of a conditional
+  (`const S = c ? y : String;`) now does, as `String` used as a value does; before, it was read
+  as a TypeScript type.
 - PHP: `Request::get(` in a file whose `use` makes `Request` another library's class
-  (`use Httpful\Request`, `use Unirest\Request`, `use Httpful\Http as Request`, also with an
-  upper-case `AS`) is no longer read as Laravel's request facade (#160).
+  (`use Httpful\Request`, `use Unirest\Request`, `use Httpful\Http as Request`) is no longer read
+  as Laravel's request facade (#160).
 
 ## v0.5.3 (unreleased)
 
