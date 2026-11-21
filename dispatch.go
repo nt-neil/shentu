@@ -334,8 +334,8 @@ func subQuestion(t subTask) string {
 func (a *agent) dispatch(ctx context.Context, args json.RawMessage) string {
 	entry := logEntry{Actor: a.actor, Tool: "dispatch", Args: mask(string(args))}
 	tasks, err := parseTasks(args)
-	if err == nil && budgetUsedExcept(a.cfg, time.Now(), "", true) >= 1 {
-		err = errBudget
+	if err == nil {
+		err = budgetStop(a.cfg, time.Now(), "")
 	}
 	if err != nil {
 		entry.Error = mask(err.Error())
