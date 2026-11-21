@@ -3,6 +3,10 @@
 CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本與日期必須一致，
 每個版本都要有內容（`go test ./cmd/sitegen` 會檢查）。
 
+## v0.5.5 (unreleased)
+
+- 沒跑完的檔案會說明是被什麼截斷的（#172）。程式碼稽核列出的未完成檔案多了 `cause`：token 上限、單一檔案的時間上限、巢狀層數超過上限、規則追呼叫的工作量上限、專案的上限（時間、記憶體或 token）、可能呼叫到別的檔案但沒有唯一對象可追的呼叫，或被呼叫函式的 summary 被截斷（並寫出原因：它自己的工作量上限、summary 一層接一層超過上限、參數超過上限，或它裡面另有截斷）。CVE bench 開始計入「呼叫沒有全部追完」的檔案（以前沒算），並依原因列出截斷數。
+
 ## v0.5.4 (unreleased)
 
 - 同一個呼叫被兩條規則回報時，就算檔案裡的某個呼叫只有其中一條規則會追，也照樣只留下被讓的那條（`yields_to`）（#160）。以前 `DB::select(DB::raw("..." . $_GET['a'] . "..." . col()))` 這種寫法，如果本地的 `col()` 回傳 `get_query_var('o')`（只有 php-sqli-orderby-identifier 讀這個輸入），會同時被 php-sqli-laravel-raw 和 php-sqli-orderby-identifier 回報；讓給 php-sqli-yii-query 的那幾條規則也有同樣的問題。
