@@ -8,6 +8,8 @@ Chinese for the zh-TW pages; keep the two in step.
 
 ## v0.5.3 (unreleased)
 
+- `shentu usage` and the bot's /usage count the sub-agents' model calls (and any other actor's):
+  they were left out of the totals, and a dispatch's calls now have a line of their own.
 - Telegram blocks ask only what the gate would allow (#155, #158): from a chat channel, block_ip
   runs the checks of #108's gate before asking for ✅. An address the gate refuses is refused at
   once, with no ✅ to press; the agent is told the gate's fixed word (and the address), and the
