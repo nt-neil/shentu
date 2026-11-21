@@ -15,6 +15,8 @@ import (
 // reserveDispatch runs one dispatch of patrol under a monthly token limit
 // with used tokens already spent, and returns the sub-agent requests and
 // what the commander was told.
+// A run refused before it dispatched at all (the commander's own model call
+// counts the others' reservations too) leaves its error in out.
 func reserveDispatch(t *testing.T, limit, used int, before func(cfg *Config)) (subs int, out string, cfg *Config) {
 	t.Helper()
 	h := &hostileModel{replies: []string{call("dispatch", `{"tasks":[{"role":"patrol"}]}`), answerMsg(`{"status":"complete","findings":[]}`), done}}
@@ -26,7 +28,10 @@ func reserveDispatch(t *testing.T, limit, used int, before func(cfg *Config)) (s
 	if before != nil {
 		before(a.cfg)
 	}
-	_, msgs, _ := a.run(context.Background(), []message{{Role: "user", Content: "go"}})
+	_, msgs, err := a.run(context.Background(), []message{{Role: "user", Content: "go"}})
+	if err != nil {
+		out = err.Error()
+	}
 	for _, m := range msgs {
 		if m.Role == "tool" {
 			out += m.Content
