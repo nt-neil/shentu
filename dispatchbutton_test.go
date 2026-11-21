@@ -193,7 +193,7 @@ func confirmPress(t *testing.T, b *bot, tg *fakeTelegram, yes bool) {
 func buttonEntries(t *testing.T, b *bot) []logEntry {
 	var out []logEntry
 	for _, e := range auditLines(t, b.cfg.StateDir) {
-		if e.Origin == "dispatch_button" {
+		if e.Origin == "dispatch_button" && e.Tool != "proposal_press" { // the decisions, not the press itself
 			out = append(out, e)
 		}
 	}
