@@ -14,7 +14,7 @@ import (
 
 // M0: on macOS (the synthetic fixture) accounts come from dscl: root is
 // uid 0, root and user1 can log in; root's authorized_keys could not be
-// read (not root) and sudoers is not in the fixture, which the note says;
+// read (not root), which the note says (its sudoers is readable);
 // the Linux-only checks are not applicable, not "none found".
 func TestMacAccountsAudit(t *testing.T) {
 	rp, err := hostenv.LoadReplay("../hostenv/testdata/darwin/macos27-synthetic-user")
@@ -26,7 +26,7 @@ func TestMacAccountsAudit(t *testing.T) {
 	if !slices.Equal(a.UID0, []string{"root"}) || !slices.Contains(a.LoginAccounts, "user1") || !slices.Contains(a.LoginAccounts, "root") || slices.Contains(a.LoginAccounts, "_www") {
 		t.Errorf("accounts: uid0 %v, login %v", a.UID0, a.LoginAccounts)
 	}
-	if !strings.Contains(a.Note, "authorized_keys") || !strings.Contains(a.Note, "sudoers") {
+	if !strings.Contains(a.Note, "authorized_keys") || strings.Contains(a.Note, "sudoers") { // the fixture's sudoers is readable
 		t.Errorf("note: %q", a.Note)
 	}
 	if !slices.Equal(a.NotApplicable, []string{"ld_so_preload", "pam_modules_not_from_a_package"}) || a.Preload != nil || a.UnpackagedPAM != nil {
