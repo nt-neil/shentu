@@ -8,18 +8,22 @@ import (
 // Cut says what cut a scan short. A scan returning ErrLimit or ErrCalls
 // returns them inside a *CutError naming the causes (errors.Is still finds
 // ErrLimit or ErrCalls); CutOf reads them back.
-type Cut uint8
+type Cut uint16
 
 const (
-	CutTokens   Cut = 1 << iota // the file's token cap (Limits.MaxTokens)
-	CutTime                     // the file's clock (Limits.MaxTime): depends on the machine
-	CutNesting                  // nesting too deep: read flat or skipped
-	CutCallWork                 // a rule's work cap for following calls (Limits.MaxCallWork)
-	CutSummary                  // a callee's summary hit its cap and may say too little
-	CutProject                  // the project's cap (its clock, heap or tokens): calls stopped crossing files
+	CutTokens    Cut = 1 << iota // the file's token cap (Limits.MaxTokens)
+	CutTime                      // the file's clock (Limits.MaxTime): depends on the machine
+	CutNesting                   // nesting too deep: read flat or skipped
+	CutCallWork                  // a rule's work cap for following calls (Limits.MaxCallWork)
+	CutSummary                   // a callee's summary hit its cap and may say too little
+	CutProject                   // the project's cap (its clock, heap or tokens): calls stopped crossing files
+	CutCallDepth                 // calls nested deeper than summaries are worked out (maxOwnNest, maxSumDepth)
+	CutCycle                     // a recursive cycle whose summaries did not settle (maxSumRounds)
+	CutParams                    // a function with more parameters than a summary tracks (maxSumParams)
+	CutAmbiguous                 // a call that may reach another file, with no one callee to follow
 )
 
-var cutNames = []string{"tokens", "time", "nesting", "call-work", "summary", "project"}
+var cutNames = []string{"tokens", "time", "nesting", "call-work", "summary", "project", "call-depth", "cycle", "params", "ambiguous-call"}
 
 // String names the causes, comma-separated, in a fixed order.
 func (c Cut) String() string {
@@ -74,7 +78,10 @@ func (b *budget) cut() Cut {
 		c |= CutTime
 	}
 	if b.limited {
-		c |= CutNesting
+		c |= b.deep
+		if b.deep == 0 && !b.hit {
+			c |= CutNesting // a hit budget also stops reading summaries (tooDeep): its cause is the hit's
+		}
 	}
 	if b.hit && b.maxWork > 0 && b.work > b.maxWork {
 		c |= CutCallWork

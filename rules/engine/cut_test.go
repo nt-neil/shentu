@@ -51,7 +51,7 @@ func TestCutCauses(t *testing.T) {
 	if CutOf(nil) != 0 || CutOf(ErrPartial) != 0 {
 		t.Errorf("no cut: CutOf(nil) = %v, CutOf(ErrPartial) = %v", CutOf(nil), CutOf(ErrPartial))
 	}
-	if s := (CutTime | CutProject).String(); s != "time,project" {
+	if s := (CutTime | CutProject | CutAmbiguous).String(); s != "time,project,ambiguous-call" {
 		t.Errorf("String: %q", s)
 	}
 }

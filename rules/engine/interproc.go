@@ -906,7 +906,7 @@ func (a *analysis) summaryOf(key string) *summary {
 				break
 			}
 			if round+1 >= maxSumRounds {
-				x.b.tooDeep() // a recursive cycle that does not settle
+				x.b.tooDeepFor(CutCycle) // a recursive cycle that does not settle
 				break
 			}
 		}
@@ -944,7 +944,7 @@ func (a *analysis) summaryOf(key string) *summary {
 // followed to the end, whether the summary was worked out now or before.
 func (a *analysis) used(s *summary) *summary {
 	if s != nil && s.capped {
-		a.b.tooDeep()
+		a.b.tooDeepFor(CutSummary)
 	}
 	// The asker pays what working it out cost, once, whether it was ready or
 	// not: so its own caps fall at the same place either way, and a rule's
@@ -979,7 +979,7 @@ const maxOwnNest = 2 * maxSumHeight
 func (a *analysis) own(work func(x *analysis)) (capped, keep bool, height, cost int) {
 	sc := a.sc
 	if a.nest >= maxOwnNest {
-		a.b.tooDeep()
+		a.b.tooDeepFor(CutCallDepth)
 		return true, false, 0, 0
 	}
 	nb := &budget{maxTok: a.b.maxTok, deadline: a.b.deadline, maxWork: a.b.sumWork, sumWork: a.b.sumWork}
@@ -1190,7 +1190,7 @@ func (a *analysis) summarize(key string, fi *fnInfo, s *summary) {
 	s.rest = s.rest || fi.rest
 	n := min(len(fi.params), maxSumParams)
 	if len(fi.params) > maxSumParams {
-		a.b.tooDeep() // more parameters than a summary tracks: the rest count as passed on (callVal)
+		a.b.tooDeepFor(CutParams) // more parameters than a summary tracks: the rest count as passed on (callVal)
 		a.sc.capped = true
 	}
 	run := func(mask uint64, sources bool) *summRun {
