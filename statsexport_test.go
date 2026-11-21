@@ -19,7 +19,8 @@ func TestStatsExportForm(t *testing.T) {
 	cfg := &Config{StateDir: filepath.Dir(s.dir)}
 	now := time.Now()
 	rec := testRecord(testDispatch, now) // proposals for 203.0.113.9 and 2001:db8:1:2::9
-	rec.Origin, rec.Trigger = originAuto, "a1b2c3d4e5f6"
+	trigger := triggerID("203.0.113.0/24|code@/srv/app.py:1|L3|v")
+	rec.Origin, rec.Trigger = originAuto, trigger
 	rec.Subs = append(rec.Subs, subRecord{Role: "attack", Status: statusIncomplete, Reason: reasonTokenCap, Steps: 3, TokensIn: 900})
 	if err := s.Save(rec); err != nil {
 		t.Fatal(err)
@@ -33,7 +34,7 @@ func TestStatsExportForm(t *testing.T) {
 	}
 	got := out.String()
 	host, _ := os.Hostname()
-	for _, secret := range []string{"203.0.113.9", "2001:db8", testDispatch, "a1b2c3d4e5f6", cfg.StateDir, host} {
+	for _, secret := range []string{"203.0.113.9", "2001:db8", testDispatch, trigger, "/srv/app.py", cfg.StateDir, host} {
 		if secret != "" && strings.Contains(got, secret) {
 			t.Errorf("the export holds %q:\n%s", secret, got)
 		}
