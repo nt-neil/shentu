@@ -39,6 +39,25 @@ func TestAmbiguousCalls(t *testing.T) {
 		}, "a.php", nil, true},
 		// global $callback; inside a function makes the closure it assigns
 		// global, as a top-level one is: still a candidate, still unsure.
+		// A closure that leaves its function stays a candidate (#178 review
+		// N-1): returned (r1), static (r2), assigned through use (&$runner)
+		// (r3), packed by compact (r8). Each was followed before #178.
+		{"r1: a local closure returned", map[string]string{
+			"a.php": "<?php\nrequire 'b.php';\n$runner = make_runner();\n$runner($_GET['x']);\n",
+			"b.php": "<?php\nfunction make_runner() {\n    $runner = function ($v) { exec($v); };\n    return $runner;\n}\n",
+		}, "a.php", []string{"b.php:3:php-cmdi-shell-exec"}, false},
+		{"r2: a static local closure", map[string]string{
+			"a.php": "<?php\nrequire 'b.php';\nget_runner();\n$runner($_GET['x']);\n",
+			"b.php": "<?php\nfunction get_runner() {\n    static $runner;\n    $runner = function ($v) { exec($v); };\n    return 1;\n}\n",
+		}, "a.php", []string{"b.php:4:php-cmdi-shell-exec"}, false},
+		{"r3: a closure assigned through use (&$runner)", map[string]string{
+			"a.php": "<?php\nrequire 'b.php';\n$runner = setup();\n$runner($_GET['x']);\n",
+			"b.php": "<?php\nfunction setup() {\n    $runner = null;\n    $init = function () use (&$runner) {\n        $runner = function ($v) { exec($v); };\n    };\n    $init();\n    return 1;\n}\n",
+		}, "a.php", []string{"b.php:5:php-cmdi-shell-exec"}, false},
+		{"r8: a local closure packed by compact", map[string]string{
+			"a.php": "<?php\nrequire 'b.php';\nextract(pack_runner());\n$runner($_GET['x']);\n",
+			"b.php": "<?php\nfunction pack_runner() {\n    $runner = function ($v) { exec($v); };\n    return compact('runner');\n}\n",
+		}, "a.php", []string{"b.php:3:php-cmdi-shell-exec"}, false},
 		{"$callback(...) with closures assigned to a global $callback inside functions: unsure", map[string]string{
 			"a.php": "<?php\nclass A {\n    public function each($callback) {\n        return $callback($_GET['x']);\n    }\n}\n",
 			"b.php": "<?php\nfunction init() {\n    global $callback;\n    $callback = function ($v) { exec($v); };\n}\n",

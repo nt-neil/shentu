@@ -219,7 +219,7 @@ func funcKey(f *fn, name, lang string) string {
 func collectFuncs(ss []*stmt, lang string) map[string][]*fnInfo {
 	out := map[string][]*fnInfo{}
 	// fnVars is nil at a file's top level; in a function's body it holds the
-	// names that body declares global (global $callback;), which stay global
+	// names that may leave it (sharedOf), whose closures stay candidates
 	var walk func(ss []*stmt, depth int, fnVars map[string]bool)
 	add := func(name string, f *fn, fnVars map[string]bool) {
 		if name != "" && f != nil {
@@ -236,7 +236,7 @@ func collectFuncs(ss []*stmt, lang string) map[string][]*fnInfo {
 		for _, s := range ss {
 			if s.fn != nil {
 				add(s.fn.name, s.fn, fnVars)
-				walk(s.fn.body, depth+1, globalsOf(s.fn.body))
+				walk(s.fn.body, depth+1, sharedOfFn(s.fn))
 			}
 			if s.kind == sSimple && len(s.funcs) > 0 {
 				t := s.toks
@@ -250,7 +250,7 @@ func collectFuncs(ss []*stmt, lang string) map[string][]*fnInfo {
 				}
 			}
 			for _, f := range s.funcs {
-				walk(f.body, depth+1, globalsOf(f.body))
+				walk(f.body, depth+1, sharedOfFn(f))
 			}
 			walk(s.body, depth+1, fnVars)
 			walk(s.els, depth+1, fnVars)
@@ -267,20 +267,53 @@ func collectFuncs(ss []*stmt, lang string) map[string][]*fnInfo {
 	return out
 }
 
-// globalsOf returns the names a PHP function's body declares global, at any
-// depth of its blocks but not inside nested functions (global $a, $b;); never
-// nil, so a body with none is still a function's.
-func globalsOf(body []*stmt) map[string]bool {
+// sharedOf returns the $names a PHP function's body may let out of it, so that
+// a closure assigned to one stays a candidate of the project index: declared
+// global; or used other than called ($name(...)) or assigned at a statement's
+// start ($name = ...): returned, static, passed on, stored, captured by an inner
+// closure's use (...); or named in compact('name'). Never nil, so a body with
+// none is still a function's. Conservative: any doubt keeps the candidate.
+// sharedOfFn is sharedOf for a function: a closure's use (...) variables are
+// its enclosing function's too (use (&$runner) assigns the outer $runner).
+func sharedOfFn(f *fn) map[string]bool {
+	out := sharedOf(f.body)
+	for _, t := range f.uses {
+		if t.Kind == Var {
+			out[t.Text] = true
+		}
+	}
+	return out
+}
+
+func sharedOf(body []*stmt) map[string]bool {
 	out := map[string]bool{}
+	scan := func(t []Token, stmtStart bool) {
+		compact := false
+		for i, tk := range t {
+			switch {
+			case tk.Kind == Ident && strings.EqualFold(tk.Text, "compact"):
+				compact = true
+			case tk.Kind == Str && compact && len(tk.Parts) == 0:
+				out["$"+tk.Text] = true
+			case tk.Kind == Var:
+				called := i+1 < len(t) && t[i+1].op("(")
+				assigned := stmtStart && i == 0 && i+1 < len(t) && t[i+1].op("=")
+				if !called && !assigned {
+					out[tk.Text] = true
+				}
+			}
+		}
+	}
 	var walk func(ss []*stmt)
 	walk = func(ss []*stmt) {
 		for _, s := range ss {
-			if s.kind == sSimple && len(s.toks) > 1 && s.toks[0].Kind == Ident && strings.EqualFold(s.toks[0].Text, "global") {
-				for _, t := range s.toks[1:] {
-					if t.Kind == Var {
-						out[t.Text] = true
-					}
-				}
+			scan(s.toks, s.kind == sSimple)
+			for _, f := range s.funcs {
+				scan(f.uses, false)
+				walk(f.body)
+			}
+			if s.fn != nil {
+				scan(s.fn.uses, false)
 			}
 			walk(s.body)
 			walk(s.els)
