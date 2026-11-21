@@ -95,9 +95,12 @@ func withReservations(cfg *Config, now time.Time, f func(*reservations)) error {
 			return fmt.Errorf("%w: %s does not parse (move it aside to reset it)", errReservations, p)
 		}
 	}
+	if negativeReservation(r) { // S-R-6: not dropped quietly, like a file that does not parse
+		return fmt.Errorf("%w: %s holds a negative reservation (move it aside to reset it)", errReservations, p)
+	}
 	var keep []reservation
 	for _, it := range r.Items {
-		if now.Before(it.Expires) && it.Tokens >= 0 {
+		if now.Before(it.Expires) {
 			keep = append(keep, it)
 		}
 	}
@@ -160,13 +163,27 @@ func peekReserved(cfg *Config, now time.Time) (int, error) {
 	if len(b) > 0 && (json.Unmarshal(b, &r) != nil || r.V != 1) {
 		return 0, fmt.Errorf("%s does not parse", p)
 	}
+	if negativeReservation(r) {
+		return 0, fmt.Errorf("%s holds a negative reservation", p)
+	}
 	n := 0
 	for _, it := range r.Items {
-		if now.Before(it.Expires) && it.Tokens >= 0 {
+		if now.Before(it.Expires) {
 			n += it.Tokens
 		}
 	}
 	return n, nil
+}
+
+// negativeReservation: an item holds less than nothing, which no
+// dispatch writes; the file is then not trusted (S-R-6).
+func negativeReservation(r reservations) bool {
+	for _, it := range r.Items {
+		if it.Tokens < 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // othersReserved is the tokens the live reservations hold, but self's.
