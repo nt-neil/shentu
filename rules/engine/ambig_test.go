@@ -59,6 +59,14 @@ func TestAmbiguousCalls(t *testing.T) {
 			"app/tools/json.py":     "def loads(s):\n    return s\n",
 			"app/run.py":            "import json\nfrom flask import request\n\ndef view():\n    json.loads(request.args['x'])\n",
 		}, "app/run.py", nil, true},
+		// One top-level helpers.py elsewhere and a package's beside the
+		// importing file: either may be loaded, so unsure (#174 review 2 S-1).
+		{"import helpers with one top-level helpers.py and a package's beside the importer", map[string]string{
+			"lib/helpers.py":  "def run(s):\n    return s\n",
+			"app/__init__.py": "",
+			"app/helpers.py":  "import os\n\ndef run(s):\n    os.system(s)\n",
+			"app/views.py":    "import helpers\nfrom flask import request\n\ndef view():\n    helpers.run(request.args['x'])\n",
+		}, "app/views.py", nil, true},
 		// A top-level json.py (the project root on sys.path, no __init__.py
 		// beside it) does shadow the standard library: it is followed.
 		{"import json with a top-level json.py beside a package's", map[string]string{
