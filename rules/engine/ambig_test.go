@@ -92,6 +92,23 @@ func TestAmbiguousCalls(t *testing.T) {
 			"app/helpers.py":  "import os\n\ndef run(s):\n    os.system(s)\n",
 			"app/views.py":    "import helpers\nfrom flask import request\n\ndef view():\n    helpers.run(request.args['x'])\n",
 		}, "app/views.py", nil, true},
+		// A package's module importing its own name absolutely gets the
+		// standard library's (django/utils/html.py: import html): it never
+		// loads itself, so it is no candidate of its own import.
+		{"import html in a package's html.py beside another package's", map[string]string{
+			"app/__init__.py":       "",
+			"app/forms/__init__.py": "",
+			"app/forms/html.py":     "def escape(s):\n    return s\n",
+			"app/html.py":           "import html\nimport os\nfrom flask import request\n\ndef view():\n    os.system(html.escape(request.args['x']))\n",
+		}, "app/html.py", []string{"app/html.py:6:python-cmdi-shell"}, false},
+		// Outside a package the importing file counts as before: several
+		// top-level html.py, one of them itself, stay unsure (control).
+		{"import html in a top-level html.py beside another top-level one", map[string]string{
+			"scripts/html.py": "import html\nimport os\nfrom flask import request\n\ndef view():\n    os.system(html.escape(request.args['x']))\n",
+			"lib/html.py":     "def escape(s):\n    return s\n",
+			"app/__init__.py": "",
+			"app/html.py":     "def escape(s):\n    return s\n",
+		}, "scripts/html.py", nil, true},
 		// A top-level json.py (the project root on sys.path, no __init__.py
 		// beside it) does shadow the standard library: it is followed.
 		{"import json with a top-level json.py beside a package's", map[string]string{
@@ -129,7 +146,8 @@ func TestAmbiguousCalls(t *testing.T) {
 			src := []byte(c.files[c.scan])
 			_, _, err1 := e.ScanTimed(LangOf(c.scan), c.scan, src)
 			part, err2 := pr.ScanCallsPart(c.scan, src, nil)
-			amb := CutOf(err1)&CutAmbiguous != 0 || CutOf(err2)&CutAmbiguous != 0
+			unsure := CutAmbiguous | CutCallableVar
+			amb := CutOf(err1)&unsure != 0 || CutOf(err2)&unsure != 0
 			if amb != c.unsure {
 				t.Errorf("%s: cut as an ambiguous call %v, want %v (%v, %v)", c.name, amb, c.unsure, CutOf(err1), CutOf(err2))
 			}
@@ -153,5 +171,22 @@ func TestAmbiguousCalls(t *testing.T) {
 				t.Errorf("%s: reported %v, want %v", c.name, got, c.want)
 			}
 		})
+	}
+}
+
+// A $variable call left unsure is cut as callable-var, not as an ambiguous call
+// (it holds a closure the call site does not know): the same decision, a cause
+// of its own in the report.
+func TestCallableVarCut(t *testing.T) {
+	e := engineForTest(t)
+	files := map[string]string{
+		"a.php": "<?php\nclass A {\n    public function each($callback) {\n        return $callback($_GET['x']);\n    }\n}\n",
+		"b.php": "<?php\n$callback = function ($v) {\n    exec($v);\n};\n",
+		"c.php": "<?php\n$callback = fn ($v) => system($v);\n",
+	}
+	pr := e.NewProject([]string{"a.php", "b.php", "c.php"}, func(p string) ([]byte, error) { return []byte(files[p]), nil }, ProjectOptions{})
+	_, err := pr.ScanCallsPart("a.php", []byte(files["a.php"]), nil)
+	if c := CutOf(err); c&CutCallableVar == 0 || c&CutAmbiguous != 0 {
+		t.Errorf("cut %q (%v), want callable-var and not ambiguous-call", c, err)
 	}
 }
