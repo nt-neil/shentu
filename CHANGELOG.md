@@ -8,6 +8,9 @@ Chinese for the zh-TW pages; keep the two in step.
 
 ## v0.5.5 (unreleased)
 
+- macOS: `accounts_audit` reads the Mac's accounts (dscl; no root needed) and the authorized_keys of
+  the login accounts and root, and sudoers when it can be read. What could not be read is in a note;
+  the Linux-only checks (ld.so.preload, PAM modules from packages) are listed as not applicable.
 - macOS: `listening_ports` and `processes` (and the patrol's process checks) read the Mac itself
   (netstat or lsof, and ps; no root needed) instead of Linux's /proc, which found nothing there and
   looked like a host with nothing running. An unreadable table is an error, and a partial one says so.
