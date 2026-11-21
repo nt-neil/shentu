@@ -6,6 +6,16 @@ a release are not written here: they are worked out from the rule snapshots in
 `docs/site-src/rules-history/`. `CHANGELOG.zh-TW.md` holds the same releases in Traditional
 Chinese for the zh-TW pages; keep the two in step.
 
+## v0.5.5 (unreleased)
+
+- PHP `use` aliases (#170): a class a `use` statement aliases is read as that class where code
+  names a class (before `::`, after `new` and `instanceof`, and as a parameter's type). So
+  `use Illuminate\Support\Facades\Request as Req; ... Req::get('sort')` is request input as
+  `Request::get(` is, and `S::by(...)` of `use App\Services\Sorter as S` is followed into Sorter
+  in another file. An alias of another library's class (`use Httpful\Request as R`) is still no
+  request input, also beside an Illuminate alias in the same file. `use` and `as` are read in any
+  letter case.
+
 ## v0.5.4 (unreleased)
 
 - One call two rules report stays the rule's it is left to (`yields_to`) also when only one of
