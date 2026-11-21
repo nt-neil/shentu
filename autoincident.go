@@ -271,9 +271,10 @@ func autoBudget(cfg *Config, now time.Time) string {
 	return ""
 }
 
-// autoMinTokens is the smallest monthly token limit under which an
-// automatic check can ever start: one dispatch's cap must fit below
-// autoBudgetStop of it (150k with the 120k cap).
+// autoMinTokens is the monthly token limit at or under which no automatic
+// check can ever start: one dispatch's cap must stay strictly below
+// autoBudgetStop of it, so the limit must be more than this (150000 with
+// the 120000 cap; at exactly 150000 the cap is 80% and the check skips).
 const autoMinTokens = int(dispatchTokenCap / autoBudgetStop)
 
 // warnAutoBudget says autoBudgetWarning on stderr (the journal), when the
@@ -288,10 +289,10 @@ func warnAutoBudget(cfg *Config) {
 // autoBudgetWarning says when auto_incident is on but the monthly token
 // limit is too small for any check to start; "" otherwise.
 func autoBudgetWarning(cfg *Config) string {
-	if !cfg.Agents.AutoIncident || cfg.Budget.MonthlyTokens <= 0 || cfg.Budget.MonthlyTokens >= autoMinTokens {
+	if !cfg.Agents.AutoIncident || cfg.Budget.MonthlyTokens <= 0 || cfg.Budget.MonthlyTokens > autoMinTokens { // at autoMinTokens itself none starts either (N-168-1)
 		return ""
 	}
-	return fmt.Sprintf("auto_incident is on, but [budget] monthly_tokens = %s is under %s: an automatic check reserves %s tokens and starts only while that stays under %.0f%% of the limit, so none will ever start; raise monthly_tokens to at least %s", kTokens(cfg.Budget.MonthlyTokens), kTokens(autoMinTokens), kTokens(dispatchTokenCap), autoBudgetStop*100, kTokens(autoMinTokens))
+	return fmt.Sprintf("auto_incident is on, but [budget] monthly_tokens = %d is not more than %d: an automatic check reserves %d tokens and starts only while that stays under %.0f%% of the limit, so none will ever start; raise monthly_tokens to more than %d", cfg.Budget.MonthlyTokens, autoMinTokens, dispatchTokenCap, autoBudgetStop*100, autoMinTokens)
 }
 
 // autoRun dispatches the incident sub-agent for p. runDispatch archives
