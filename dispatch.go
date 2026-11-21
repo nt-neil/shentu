@@ -334,7 +334,7 @@ func subQuestion(t subTask) string {
 func (a *agent) dispatch(ctx context.Context, args json.RawMessage) string {
 	entry := logEntry{Actor: a.actor, Tool: "dispatch", Args: mask(string(args))}
 	tasks, err := parseTasks(args)
-	if err == nil && budgetUsed(a.cfg, time.Now()) >= 1 {
+	if err == nil && budgetUsedExcept(a.cfg, time.Now(), "", true) >= 1 {
 		err = errBudget
 	}
 	if err != nil {
@@ -449,7 +449,7 @@ func (a *agent) runSub(ctx context.Context, id string, t subTask, tokenCap int) 
 	sub := &agent{
 		cfg: &cfg, llm: &llm, env: &env, skills: nil,
 		allowControl: false, confirm: nil, canDispatch: false,
-		allow: allow, actor: "sub:" + t.Role, log: a.log, dispatchID: id, tokenCap: tokenCap,
+		allow: allow, actor: "sub:" + t.Role, log: a.log, dispatchID: id, tokenCap: tokenCap, resID: a.resID,
 		progress: a.progress,
 	}
 	sctx, cancel := context.WithTimeout(ctx, subTimeout)

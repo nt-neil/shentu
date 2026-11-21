@@ -35,6 +35,7 @@ type agent struct {
 	dispatchID    string          // the dispatch a sub-agent belongs to, for the log
 	tokenCap      int             // if set, input+output tokens this agent may use
 	tokensUsed    int             // input+output tokens used so far
+	resID         string          // this dispatch's shared reservation (R1); "" for none
 	subLLM        *llmClient      // the sub-agents' model for the dispatch running now; nil means llm
 	calls         int             // model calls made, for the dispatch archive
 	toolsRun      int             // tool calls run
@@ -106,7 +107,7 @@ func (a *agent) toolDefs() []toolDef {
 
 // run continues the conversation in msgs and returns the final answer and the updated history.
 func (a *agent) run(ctx context.Context, msgs []message) (string, []message, error) {
-	if budgetUsed(a.cfg, time.Now()) >= 1 {
+	if budgetUsedExcept(a.cfg, time.Now(), a.resID, true) >= 1 { // others' reservations count (R1)
 		return "", msgs, errBudget
 	}
 	defer budgetAlert(context.WithoutCancel(ctx), a.cfg, a.env, time.Now())

@@ -85,7 +85,12 @@ func monthUsageStrict(stateDir string, now time.Time) (cost float64, tokens, lon
 
 // budgetUsed is the larger share of the limits that are set (0 when none is),
 // and 1 when log.jsonl could not be read to its end.
-func budgetUsed(cfg *Config, now time.Time) float64 {
+func budgetUsed(cfg *Config, now time.Time) float64 { return budgetUsedExcept(cfg, now, "", false) }
+
+// budgetUsedExcept is budgetUsed for a model call: with others set, the
+// tokens other dispatches have reserved count as used, all but self's; a
+// reservation file that cannot be read counts as the limit reached.
+func budgetUsedExcept(cfg *Config, now time.Time, self string, others bool) float64 {
 	if cfg.Budget.MonthlyCost <= 0 && cfg.Budget.MonthlyTokens <= 0 {
 		return 0
 	}
@@ -93,6 +98,13 @@ func budgetUsed(cfg *Config, now time.Time) float64 {
 	cost, tokens, _, err := monthUsageStrict(cfg.StateDir, now)
 	if err != nil {
 		return 1
+	}
+	if others && cfg.Budget.MonthlyTokens > 0 {
+		n, err := othersReserved(cfg, self, now)
+		if err != nil {
+			return 1
+		}
+		tokens += n
 	}
 	used := 0.0
 	if cfg.Budget.MonthlyCost > 0 {
