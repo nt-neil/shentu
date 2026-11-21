@@ -152,3 +152,55 @@ func TestReserveOthersCost(t *testing.T) {
 		t.Errorf("dispatchCost: %v", c)
 	}
 }
+
+// S-R-6: a reservation with negative tokens, which no dispatch writes, is
+// not dropped quietly: the file is not trusted (fail closed), and the
+// budget line says it cannot be read.
+func TestReserveNegativeUntrusted(t *testing.T) {
+	var cfg *Config
+	subs, out, _ := reserveDispatch(t, 1_000_000, 0, func(c *Config) {
+		cfg = c
+		b, _ := json.Marshal(reservations{V: 1, Items: []reservation{{ID: "neg000000000", Tokens: -500_000, Expires: time.Now().Add(time.Hour)}}})
+		os.WriteFile(filepath.Join(c.StateDir, reservationsFile), b, 0o600)
+	})
+	if subs != 0 || !strings.Contains(out, "negative reservation") {
+		t.Errorf("a negative reservation: %d sub-agent requests\n%s", subs, out)
+	}
+	if l := budgetLine(cfg, time.Now(), false); !strings.Contains(l, "cannot be read") {
+		t.Errorf("budget line: %q", l)
+	}
+}
+
+// S-R-7: a sub-agent another dispatch's reservation stops (two dispatches
+// at once, room for one) says so; the month is not used up.
+func TestReserveSubStoppedByOthers(t *testing.T) {
+	h := &hostileModel{replies: []string{answerMsg(`{"status":"complete","findings":[]}`)}}
+	a, state := dispatchAgent(t, h, nil, nil)
+	a.cfg.Budget.MonthlyTokens = 150_000
+	os.WriteFile(filepath.Join(state, "log.jsonl"), []byte(`{"time":"`+time.Now().UTC().Format(time.RFC3339)+`","tool":"llm","in_tokens":40000}`+"\n"), 0o600)
+	if _, _, err := reserve(a.cfg, dispatchTokenCap, 0, time.Now()); err != nil { // the other dispatch, reserved after this one's commander checked
+		t.Fatal(err)
+	}
+	tasks, err := parseTasks(json.RawMessage(`{"tasks":[{"role":"patrol"}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, reports, _, _ := a.runDispatch(context.Background(), originChat, "", tasks)
+	if len(reports) != 1 || !strings.Contains(reports[0].Reason, "reservations of other dispatches") || strings.Contains(reports[0].Reason, "is used up") {
+		t.Errorf("reports: %+v", reports)
+	}
+	if n := len(subRequestsOf(h)); n != 0 {
+		t.Errorf("the sub-agent called the model %d times", n)
+	}
+}
+
+// S-R-6 (R2): a negative cost is not trusted either.
+func TestReserveNegativeCostUntrusted(t *testing.T) {
+	subs, out, _ := reserveDispatch(t, 1_000_000, 0, func(c *Config) {
+		b, _ := json.Marshal(reservations{V: 1, Items: []reservation{{ID: "neg000000001", Tokens: 1000, Cost: -5, Expires: time.Now().Add(time.Hour)}}})
+		os.WriteFile(filepath.Join(c.StateDir, reservationsFile), b, 0o600)
+	})
+	if subs != 0 || !strings.Contains(out, "negative reservation") {
+		t.Errorf("a negative cost: %d sub-agent requests\n%s", subs, out)
+	}
+}

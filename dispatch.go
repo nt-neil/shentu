@@ -457,9 +457,12 @@ func (a *agent) runSub(ctx context.Context, id string, t subTask, tokenCap int) 
 	msgs := []message{{Role: "system", Content: subPrompt(a.cfg, t.Role, r)}, {Role: "user", Content: subQuestion(t)}}
 	answer, _, err := sub.run(sctx, msgs)
 	var rep subReport
+	var reserved errBudgetReserved
 	switch {
 	case errors.Is(err, errTokenCap):
 		rep = subReport{Role: t.Role, Status: "incomplete", Reason: "the token limit was reached", Findings: []subFinding{}, code: reasonTokenCap}
+	case errors.As(err, &reserved): // S-R-7: not used up; other dispatches hold the room
+		rep = subReport{Role: t.Role, Status: "incomplete", Reason: fmt.Sprintf("stopped by the reservations of other dispatches in progress (released within about %d minutes); the monthly AI budget itself is not used up", int(reserveTTL().Minutes())), Findings: []subFinding{}, code: reasonBudget}
 	case errors.Is(err, errBudget):
 		rep = subReport{Role: t.Role, Status: "incomplete", Reason: "the monthly AI budget is used up", Findings: []subFinding{}, code: reasonBudget}
 	case sctx.Err() != nil:
