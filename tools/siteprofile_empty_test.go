@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/nt-neil/shentu/hostenv"
@@ -12,7 +13,8 @@ import (
 // S-173r3-1: on a host where nothing can be read (a replay with no
 // entries: every read and command is "not recorded"), site_profile's data
 // fields, the ones the main package's M1 test judges (toolData there),
-// stay empty. A reader that puts a fixed fallback value in one of them
+// stay empty or say they could not be read: the SSH settings "unknown",
+// risks only "cannot tell" ones (key ...:unreadable). A reader that puts a fixed fallback value in one of them
 // would make an unread host look as if something were read; firewall is
 // not among them for that reason (N-173r2-1). Run for macOS and Linux.
 func TestSiteProfileEmptyHost(t *testing.T) {
@@ -34,16 +36,36 @@ func TestSiteProfileEmptyHost(t *testing.T) {
 				"services":       len(p.Services) == 0,
 				"app_stacks":     len(p.Stacks) == 0,
 				"lock_files":     len(p.Lockfiles) == 0,
-				"ssh":            len(p.SSH) == 0,
+				"ssh":            sshAllUnknown(p.SSH),
 				"containers":     len(p.Containers) == 0,
 				"cron_files":     len(p.CronFiles) == 0,
 				"login_accounts": len(p.LoginAccounts) == 0,
-				"risks":          len(p.Risks) == 0,
+				"risks":          risksAllUnreadable(p.Risks),
 			} {
 				if !empty {
-					t.Errorf("%s is not empty on a host where nothing could be read", name)
+					t.Errorf("%s holds a value on a host where nothing could be read", name)
 				}
 			}
 		})
 	}
+}
+
+// sshAllUnknown: no setting, or each one "unknown" (said, not a value read).
+func sshAllUnknown(m map[string]string) bool {
+	for _, v := range m {
+		if v != "unknown" {
+			return false
+		}
+	}
+	return true
+}
+
+// risksAllUnreadable: no risk, or only ones saying what could not be read.
+func risksAllUnreadable(rs []Risk) bool {
+	for _, r := range rs {
+		if !strings.HasSuffix(r.Key, ":unreadable") {
+			return false
+		}
+	}
+	return true
 }
