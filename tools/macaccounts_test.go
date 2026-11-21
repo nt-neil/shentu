@@ -1,0 +1,70 @@
+package tools
+
+import (
+	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"testing"
+
+	"github.com/nt-neil/shentu/hostenv"
+)
+
+// M0: on macOS (the synthetic fixture) accounts come from dscl: root is
+// uid 0, root and user1 can log in; root's authorized_keys could not be
+// read (not root) and sudoers is not in the fixture, which the note says;
+// the Linux-only checks are not applicable, not "none found".
+func TestMacAccountsAudit(t *testing.T) {
+	rp, err := hostenv.LoadReplay("../hostenv/testdata/darwin/macos27-synthetic-user")
+	if err != nil {
+		t.Fatal(err)
+	}
+	withHost(t, rp)
+	a := AccountsAudit()
+	if !slices.Equal(a.UID0, []string{"root"}) || !slices.Contains(a.LoginAccounts, "user1") || !slices.Contains(a.LoginAccounts, "root") || slices.Contains(a.LoginAccounts, "_www") {
+		t.Errorf("accounts: uid0 %v, login %v", a.UID0, a.LoginAccounts)
+	}
+	if !strings.Contains(a.Note, "authorized_keys") || !strings.Contains(a.Note, "sudoers") {
+		t.Errorf("note: %q", a.Note)
+	}
+	if !slices.Equal(a.NotApplicable, []string{"ld_so_preload", "pam_modules_not_from_a_package"}) || a.Preload != nil || a.UnpackagedPAM != nil {
+		t.Errorf("not applicable %v, preload %v, pam %v", a.NotApplicable, a.Preload, a.UnpackagedPAM)
+	}
+	tool, _ := Find("accounts_audit")
+	out, err := tool.Run(context.Background(), &Env{}, json.RawMessage(`{}`))
+	if acc, ok := out.(Accounts); err != nil || !ok || len(acc.LoginAccounts) == 0 {
+		t.Errorf("tool: %T %v %v", out, out, err)
+	}
+}
+
+// M0: an unreadable macOS host says so; no account list that looks clean.
+func TestMacAccountsUnknown(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "manifest.json"), []byte(`{"format":"`+hostenv.FixtureFormat+`","info":{"goos":"darwin","goarch":"arm64"},"entries":[]}`), 0o600)
+	os.Mkdir(filepath.Join(dir, "blobs"), 0o700)
+	rp, err := hostenv.LoadReplay(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	withHost(t, rp)
+	a := AccountsAudit()
+	if !strings.Contains(a.Note, "could not be read on macOS") || len(a.UID0)+len(a.LoginAccounts) != 0 {
+		t.Errorf("unreadable: %+v", a)
+	}
+}
+
+// M0: a partial account list is said.
+func TestMacAccountsPartial(t *testing.T) {
+	rp, _ := hostenv.LoadReplay("../hostenv/testdata/darwin/macos27-synthetic-user")
+	withHost(t, rp)
+	old := macAccountList
+	macAccountList = func(context.Context) hostenv.Obs[[]hostenv.Account] {
+		return hostenv.Partial([]hostenv.Account{{Name: "user1", UID: "501", CanLogin: true, Home: "/Users/user1"}}, hostenv.ReasonCommandFailed, "shells unknown")
+	}
+	t.Cleanup(func() { macAccountList = old })
+	if a := AccountsAudit(); !strings.Contains(a.Note, "accounts partly read") {
+		t.Errorf("partial: %q", a.Note)
+	}
+}

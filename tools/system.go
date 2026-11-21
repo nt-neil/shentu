@@ -337,10 +337,18 @@ type Accounts struct {
 	SharedKeys    []SharedKey `json:"keys_in_several_accounts,omitempty"`
 	Preload       []string    `json:"ld_so_preload,omitempty"`
 	UnpackagedPAM []string    `json:"pam_modules_not_from_a_package,omitempty"`
+	// Note says what could not be read (macOS: sudoers without root).
+	Note string `json:"note,omitempty"`
+	// NotApplicable are the checks that do not apply on this host's OS
+	// (macOS: ld.so.preload, PAM modules from packages): not "none found".
+	NotApplicable []string `json:"not_applicable,omitempty"`
 }
 
 // AccountsAudit reads /etc/passwd, sudoers and authorized_keys.
 func AccountsAudit() Accounts {
+	if onMac() {
+		return macAccountsAudit(context.Background())
+	}
 	var a Accounts
 	_, accts := linux.Accounts(hostSource())
 	for _, acct := range accts.Value {
@@ -353,7 +361,18 @@ func AccountsAudit() Accounts {
 		}
 	}
 	src := hostSource()
-	for _, kf := range linux.SSHKeyFiles(src, accts.Value).Value {
+	a.KeyFiles = keyFilesOf(linux.SSHKeyFiles(src, accts.Value).Value)
+	a.SudoRules, _ = linux.SudoRules(src)
+	a.SharedKeys = sharedKeys(a.KeyFiles)
+	a.Preload = preloadEntries("/etc/ld.so.preload")
+	a.UnpackagedPAM = unpackagedPAM()
+	return a
+}
+
+// keyFilesOf is the authorized_keys files as the tools report them.
+func keyFilesOf(files []hostenv.AuthorizedKeyFile) []KeyFile {
+	var out []KeyFile
+	for _, kf := range files {
 		var keys []KeyEntry
 		for _, k := range kf.Keys {
 			keys = append(keys, KeyEntry{k.Line, k.Type, k.Fingerprint})
@@ -362,13 +381,9 @@ func AccountsAudit() Accounts {
 		if kf.OutsideHome {
 			f.SymlinkOutsideHome = kf.SymlinkTarget
 		}
-		a.KeyFiles = append(a.KeyFiles, f)
+		out = append(out, f)
 	}
-	a.SudoRules, _ = linux.SudoRules(src)
-	a.SharedKeys = sharedKeys(a.KeyFiles)
-	a.Preload = preloadEntries("/etc/ld.so.preload")
-	a.UnpackagedPAM = unpackagedPAM()
-	return a
+	return out
 }
 
 // UIDOf returns the numeric UID of a user name from /etc/passwd.

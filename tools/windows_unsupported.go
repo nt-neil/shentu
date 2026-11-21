@@ -23,6 +23,7 @@ var windowsSupported = map[string]bool{
 // for later.
 var darwinSupported = map[string]bool{
 	"package_vulns": true, "app_vulns": true, "app_code_audit": true, "site_profile": true, "notify": true,
+	"accounts_audit": true, // M0: dscl, authorized_keys, sudoers when readable
 	// not cert_expiry yet: its certbot paths are Linux's, not Homebrew's
 }
 
