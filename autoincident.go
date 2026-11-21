@@ -257,7 +257,11 @@ func autoBudget(cfg *Config, now time.Time) string {
 	if err != nil {
 		return autoSkipBudgetUnknown
 	}
-	used := float64(tokens+dispatchTokenCap) / float64(cfg.Budget.MonthlyTokens)
+	others, err := othersReserved(cfg, "", now) // R1: what dispatches in progress hold is not room
+	if err != nil {
+		return autoSkipBudgetUnknown
+	}
+	used := float64(tokens+others+dispatchTokenCap) / float64(cfg.Budget.MonthlyTokens)
 	if cfg.Budget.MonthlyCost > 0 {
 		used = max(used, cost/cfg.Budget.MonthlyCost)
 	}
@@ -265,6 +269,20 @@ func autoBudget(cfg *Config, now time.Time) string {
 		return autoSkipBudget
 	}
 	return ""
+}
+
+// autoMinTokens is the smallest monthly token limit under which an
+// automatic check can ever start: one dispatch's cap must fit below
+// autoBudgetStop of it (150k with the 120k cap).
+const autoMinTokens = int(dispatchTokenCap / autoBudgetStop)
+
+// autoBudgetWarning says when auto_incident is on but the monthly token
+// limit is too small for any check to start; "" otherwise.
+func autoBudgetWarning(cfg *Config) string {
+	if !cfg.Agents.AutoIncident || cfg.Budget.MonthlyTokens <= 0 || cfg.Budget.MonthlyTokens >= autoMinTokens {
+		return ""
+	}
+	return fmt.Sprintf("auto_incident is on, but [budget] monthly_tokens = %s is under %s: an automatic check reserves %s tokens and starts only while that stays under %.0f%% of the limit, so none will ever start; raise monthly_tokens to at least %s", kTokens(cfg.Budget.MonthlyTokens), kTokens(autoMinTokens), kTokens(dispatchTokenCap), autoBudgetStop*100, kTokens(autoMinTokens))
 }
 
 // autoRun dispatches the incident sub-agent for p. runDispatch archives
@@ -352,6 +370,8 @@ func autoIncidentSection(cfg *Config, now time.Time) string {
 	b.WriteString("\nAutomatic incident checks (L3 alerts, read-only, last day):\n")
 	if cfg.Budget.MonthlyTokens <= 0 {
 		b.WriteString("- none are made: no monthly token budget is set ([budget] monthly_tokens; monthly_cost alone does not stop a local model, which reports no cost)\n")
+	} else if w := autoBudgetWarning(cfg); w != "" {
+		b.WriteString("- " + w + "\n")
 	}
 	b.WriteString(autoArchiveLine(cfg, now))
 	if _, _, long, err := monthUsageStrict(cfg.StateDir, now); err == nil && long > 0 {

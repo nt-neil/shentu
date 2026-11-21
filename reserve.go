@@ -23,6 +23,12 @@ import (
 // reserveTTL. A file that cannot be trusted or read stops the dispatch
 // (fail closed). Only with [budget] monthly_tokens: without a token limit
 // there is nothing to share.
+//
+// The bound: a model call goes ahead only while the month's use plus the
+// others' reservations is under the limit, so the others' whole caps fit in
+// it, and only the caller's own dispatch can run past it. Together they
+// overspend the monthly token limit by at most one dispatch's cap
+// (dispatchTokenCap), never by one cap per process.
 
 const (
 	reservationsFile = "reservations.json"
@@ -120,6 +126,37 @@ func reserve(cfg *Config, tokens int, now time.Time) (id string, release func(),
 			r.Items = keep
 		})
 	}, nil
+}
+
+// peekReserved is the tokens the live reservations hold, read without the
+// lock and without writing (the file is replaced atomically): for the
+// budget line, which `sudo shentu budget` prints as another user, who must
+// not create the lock file.
+func peekReserved(cfg *Config, now time.Time) (int, error) {
+	p := filepath.Join(cfg.StateDir, reservationsFile)
+	f, err := osutil.OpenNoFollow(p, os.O_RDONLY, 0, true)
+	if errors.Is(err, os.ErrNotExist) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+	b, err := io.ReadAll(io.LimitReader(f, 1<<20))
+	if err != nil {
+		return 0, err
+	}
+	var r reservations
+	if len(b) > 0 && (json.Unmarshal(b, &r) != nil || r.V != 1) {
+		return 0, fmt.Errorf("%s does not parse", p)
+	}
+	n := 0
+	for _, it := range r.Items {
+		if now.Before(it.Expires) && it.Tokens >= 0 {
+			n += it.Tokens
+		}
+	}
+	return n, nil
 }
 
 // othersReserved is the tokens the live reservations hold, but self's.
