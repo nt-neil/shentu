@@ -5,7 +5,7 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 
 ## v0.5.4 (unreleased)
 
-- `shentu usage` 與 bot 的 /usage 現在會計入子 Agent 的模型呼叫（以及其他來源的呼叫）：
+- `shentu usage` 與 bot 的 /usage 現在會計入子 Agent 的模型呼叫（以及其他來源的呼叫）（#164）：
   以前這些呼叫沒有算進總數；派遣的呼叫現在另列一行。
 
 ## v0.5.3 (unreleased)
