@@ -102,7 +102,9 @@ func TestYieldsSpans(t *testing.T) {
 // laravel-raw finding to leave DB::raw inside DB::select to.
 func TestYieldsSecondPass(t *testing.T) {
 	e := engineForTest(t)
-	src := "<?php\nfunction col() {\n    return get_query_var('o');\n}\n$rows = DB::select(DB::raw(\"SELECT * FROM t WHERE a = \" . $_GET['a'] . \" ORDER BY id, \" . col()));\n"
+	// no ORDER BY in the text: orderby-identifier's text sink would be another
+	// sink, which yields_to never leaves (yields.go)
+	src := "<?php\nfunction col() {\n    return get_query_var('o');\n}\n$rows = DB::select(DB::raw(\"SELECT * FROM t WHERE a = \" . $_GET['a'] . \" AND b = \" . col()));\n"
 	plain := "<?php\n$rows = DB::select(DB::raw(\"SELECT * FROM t WHERE a = \" . $_GET['a']));\n"
 	for _, c := range []struct {
 		name, src string
