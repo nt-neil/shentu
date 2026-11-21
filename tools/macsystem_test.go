@@ -141,3 +141,25 @@ func TestMacProcessesForPatrol(t *testing.T) {
 		t.Errorf("Processes on macOS: %v", ps)
 	}
 }
+
+// N-177-1: when the listening ports cannot be read in full (a user's lsof),
+// the survey says so in a risk the patrol lists as not checked, never an
+// empty, quiet-looking services list.
+func TestMacSurveyPortsUnreadable(t *testing.T) {
+	macFixture(t)
+	old := macListeners
+	macListeners = func(context.Context) hostenv.Obs[[]hostenv.Listener] {
+		return hostenv.Partial([]hostenv.Listener{}, hostenv.ReasonPermission, "netstat showed no socket; lsof sees this user's only")
+	}
+	t.Cleanup(func() { macListeners = old })
+	p := Survey(context.Background(), &Env{})
+	found := false
+	for _, r := range p.Risks {
+		if r.Key == "services:unreadable" && Unchecked(r) {
+			found = true
+		}
+	}
+	if !found || len(p.Services) != 0 {
+		t.Errorf("risks %v, services %v", p.Risks, p.Services)
+	}
+}

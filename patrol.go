@@ -384,35 +384,12 @@ func checks(ctx context.Context, cfg *Config, env *tools.Env, st *state, daily b
 	}
 
 	if ports, err := tools.ListeningPorts(); err == nil {
-		first := st.Ports == nil
-		if first {
-			st.Ports = map[string]bool{}
-		}
-		ollama, hasOllama := tools.UIDOf("ollama")
-		for _, p := range ports {
-			// The local model runtime opens a new loopback port each time it loads a model.
-			// Only the ollama account running Ollama's own root-owned binaries is skipped.
-			if hasOllama && p.UID == ollama && net.ParseIP(p.Addr).IsLoopback() &&
-				(p.Exe == "/usr/local/bin/ollama" || strings.HasPrefix(p.Exe, "/usr/local/lib/ollama/")) {
-				continue
-			}
-			// avahi-daemon opens a random UDP port for unicast mDNS queries on every start;
-			// only its fixed port 5353 is part of the baseline.
-			if strings.HasPrefix(p.Proto, "udp") && p.Exe == "/usr/sbin/avahi-daemon" && p.Port != 5353 {
-				continue
-			}
-			k := fmt.Sprintf("%s:%d", p.Proto, p.Port)
-			if !st.Ports[k] && !first {
-				out = append(out, finding{"port:" + k, "warning", fmt.Sprintf("new listening port %s by %s (%s)", k, p.Process, p.Exe), p})
-			}
-			st.Ports[k] = true
-		}
-	}
+		out = append(out, portFindings(st, ports)...)
+	} // else the survey's services:unreadable says it is not checked (N-177-1)
 
-	for _, p := range tools.Processes(false) {
-		out = append(out, finding{fmt.Sprintf("proc:%s:%s", p.Exe, p.Cmdline), "critical",
-			fmt.Sprintf("suspicious process pid %d (%s): %s", p.PID, strings.Join(p.Flags, ", "), p.Cmdline), p})
-	}
+	pf, why := procFindings(patrolProcesses(false))
+	out = append(out, pf...)
+	sshUnchecked += why
 
 	acc := tools.AccountsAudit()
 	for _, u := range acc.UID0 {
@@ -641,4 +618,51 @@ func keyFileFindings(keys []tools.KeyFile) []finding {
 		out = append(out, unparsedKeysFinding(k))
 	}
 	return out
+}
+
+// patrolProcesses is the patrol's process list; tests replace it.
+var patrolProcesses = tools.ProcessesErr
+
+// portFindings is the new listening ports against the baseline in st,
+// which it updates. An empty baseline is a first one, as none (N-177-2: a
+// release that read no port on macOS saved {} and would make every port
+// of the first good read look new).
+func portFindings(st *state, ports []tools.Port) (out []finding) {
+	first := len(st.Ports) == 0
+	if st.Ports == nil {
+		st.Ports = map[string]bool{}
+	}
+	ollama, hasOllama := tools.UIDOf("ollama")
+	for _, p := range ports {
+		// The local model runtime opens a new loopback port each time it loads a model.
+		// Only the ollama account running Ollama's own root-owned binaries is skipped.
+		if hasOllama && p.UID == ollama && net.ParseIP(p.Addr).IsLoopback() &&
+			(p.Exe == "/usr/local/bin/ollama" || strings.HasPrefix(p.Exe, "/usr/local/lib/ollama/")) {
+			continue
+		}
+		// avahi-daemon opens a random UDP port for unicast mDNS queries on every start;
+		// only its fixed port 5353 is part of the baseline.
+		if strings.HasPrefix(p.Proto, "udp") && p.Exe == "/usr/sbin/avahi-daemon" && p.Port != 5353 {
+			continue
+		}
+		k := fmt.Sprintf("%s:%d", p.Proto, p.Port)
+		if !st.Ports[k] && !first {
+			out = append(out, finding{"port:" + k, "warning", fmt.Sprintf("new listening port %s by %s (%s)", k, p.Process, p.Exe), p})
+		}
+		st.Ports[k] = true
+	}
+	return out
+}
+
+// procFindings is the suspicious processes, and why they were not checked
+// when the list could not be read (S-177-1).
+func procFindings(procs []tools.Proc, err error) (out []finding, why string) {
+	if err != nil {
+		return nil, fmt.Sprintf("\n\nNot checked: processes (%q).\n", cutLine(mask(err.Error())))
+	}
+	for _, p := range procs {
+		out = append(out, finding{fmt.Sprintf("proc:%s:%s", p.Exe, p.Cmdline), "critical",
+			fmt.Sprintf("suspicious process pid %d (%s): %s", p.PID, strings.Join(p.Flags, ", "), p.Cmdline), p})
+	}
+	return out, ""
 }

@@ -190,10 +190,22 @@ var shells = map[string]bool{"sh": true, "bash": true, "dash": true, "zsh": true
 // Processes lists processes from hostenv's processes fact. With all=false
 // only flagged processes are returned.
 func Processes(all bool) []Proc {
+	procs, _ := ProcessesErr(all)
+	return procs
+}
+
+// ProcessesErr is Processes with the error of a list that could not be
+// read (macOS's ps; the Linux reader has none to give), so the patrol can
+// say the check was not made (S-177-1).
+func ProcessesErr(all bool) ([]Proc, error) {
 	if onMac() { // the patrol's miner and temp checks too (M0)
-		procs, _, _ := macProcesses(context.Background(), all)
-		return procs
+		procs, _, err := macProcesses(context.Background(), all)
+		return procs, err
 	}
+	return linuxProcesses(all), nil
+}
+
+func linuxProcesses(all bool) []Proc {
 	names := userNames()
 	self := os.Getpid()
 	procs, _ := linux.Processes(hostSource(), nil)
