@@ -652,7 +652,7 @@ func (a *agent) runDispatch(ctx context.Context, origin, trigger string, tasks [
 	sl, external, modelErr := agentsLLM(a.cfg, a.llm)
 	a.subLLM = sl
 	defer func() { a.subLLM = nil }()
-	resID, release, resErr := reserve(a.cfg, dispatchTokenCap, dispatchCost(a.cfg), start) // R1, R2: the others see this one
+	resID, release, resErr := reserveFor(a.cfg, dispatchTokenCap, dispatchCost(a.cfg), id, start) // R1, R2: the others see this one; S-R-2: less what it has logged
 	defer release()
 	a.resID = resID
 	defer func() { a.resID = "" }()

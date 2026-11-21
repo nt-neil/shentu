@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -52,6 +53,11 @@ type reservation struct {
 	Tokens  int       `json:"tokens"`
 	Cost    float64   `json:"cost,omitempty"` // what it may cost, with [agents] prices set (R2)
 	Expires time.Time `json:"expires"`
+	// S-R-2: the dispatch it is for and when it started; what that dispatch
+	// has logged since is in log.jsonl already, so the others count only
+	// the rest of its reservation.
+	Dispatch string    `json:"dispatch,omitempty"`
+	Started  time.Time `json:"started,omitempty"`
 }
 
 type reservations struct {
@@ -114,6 +120,11 @@ func withReservations(cfg *Config, now time.Time, f func(*reservations)) error {
 // reserve reserves tokens for a dispatch and returns its id and a release.
 // Without a monthly token limit it reserves nothing.
 func reserve(cfg *Config, tokens int, cost float64, now time.Time) (id string, release func(), err error) {
+	return reserveFor(cfg, tokens, cost, "", now)
+}
+
+// reserveFor is reserve for the dispatch with that id (S-R-2), "" for none.
+func reserveFor(cfg *Config, tokens int, cost float64, dispatch string, now time.Time) (id string, release func(), err error) {
 	if cfg.Budget.MonthlyTokens <= 0 {
 		return "", func() {}, nil
 	}
@@ -121,7 +132,7 @@ func reserve(cfg *Config, tokens int, cost float64, now time.Time) (id string, r
 	rand.Read(b)
 	id = hex.EncodeToString(b)
 	err = withReservations(cfg, now, func(r *reservations) {
-		r.Items = append(r.Items, reservation{ID: id, Tokens: tokens, Cost: cost, Expires: now.Add(reserveTTL())})
+		r.Items = append(r.Items, reservation{ID: id, Tokens: tokens, Cost: cost, Expires: now.Add(reserveTTL()), Dispatch: dispatch, Started: now})
 	})
 	if err != nil {
 		return "", func() {}, err
@@ -194,14 +205,78 @@ func othersReserved(cfg *Config, self string, now time.Time) (tokens int, cost f
 	if cfg.Budget.MonthlyTokens <= 0 {
 		return 0, 0, nil
 	}
+	var items []reservation
 	err = withReservations(cfg, now, func(r *reservations) {
 		for _, it := range r.Items {
 			if it.ID != self {
-				tokens, cost = tokens+it.Tokens, cost+it.Cost
+				items = append(items, it)
 			}
 		}
 	})
-	return tokens, cost, err
+	if err != nil {
+		return 0, 0, err
+	}
+	spent := dispatchSpent(cfg.StateDir, items, now)
+	for _, it := range items {
+		s := spent[it.ID]
+		tokens += max(0, it.Tokens-s.tokens)
+		cost += max(0, it.Cost-s.cost)
+	}
+	return tokens, cost, nil
+}
+
+type spentUse struct {
+	tokens int
+	cost   float64
+}
+
+// dispatchSpent is, by reservation id, what each reserved dispatch has
+// logged as model use this month since it started: that is in the month's
+// use already (S-R-2). A reservation without a dispatch, one started in
+// the future, or a log that cannot be read to its end gets nothing taken
+// off: it counts in full, as before (fail closed).
+func dispatchSpent(stateDir string, items []reservation, now time.Time) map[string]spentUse {
+	byDispatch := map[string]reservation{}
+	for _, it := range items {
+		if len(it.Dispatch) == 12 && !it.Started.IsZero() && !it.Started.After(now) {
+			byDispatch[it.Dispatch] = it
+		}
+	}
+	if len(byDispatch) == 0 {
+		return nil
+	}
+	f, err := os.Open(filepath.Join(stateDir, "log.jsonl"))
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+	y, m, _ := now.Date()
+	month := time.Date(y, m, 1, 0, 0, 0, 0, now.Location())
+	out := map[string]spentUse{}
+	r := bufio.NewReaderSize(f, maxLogLine)
+	for {
+		line, err := r.ReadSlice('\n')
+		if errors.Is(err, bufio.ErrBufferFull) {
+			return nil // a line too long to read: take nothing off
+		}
+		if len(line) > 0 {
+			var e logEntry
+			if json.Unmarshal(line, &e) == nil && e.Tool == "llm" && e.Dispatch != "" {
+				if it, ok := byDispatch[e.Dispatch]; ok && !e.Time.Before(it.Started) && !e.Time.Before(month) {
+					s := out[it.ID]
+					s.tokens += e.InTokens + e.OutTokens + e.ReasonTokens
+					s.cost += e.Cost
+					out[it.ID] = s
+				}
+			}
+		}
+		if err == io.EOF {
+			return out
+		}
+		if err != nil {
+			return nil
+		}
+	}
 }
 
 // dispatchCost is what a dispatch may cost at most: its whole token cap at
