@@ -131,18 +131,6 @@ func untypedParam(t []Token, name string) bool {
 	return false
 }
 
-// phpUseOther reports whether the file's use statements make the class name
-// another library's than Laravel's: use Httpful\Request (or Unirest\Request)
-// makes Request::get( an HTTP client's call, not the Request facade. A name
-// no use statement gives, or one from Illuminate, is not another's.
-func (a *analysis) phpUseOther(name string) bool {
-	if a.phpUses == nil {
-		a.phpUses = phpUseMap(a.ftoks)
-	}
-	q, ok := a.phpUses[strings.ToLower(name)]
-	return ok && !strings.HasPrefix(strings.ToLower(q), "illuminate\\") && strings.Contains(q, "\\")
-}
-
 // phpUseMap reads a PHP file's class use statements: the lower-case name each
 // gives (its alias, or the class's short name) to the class it names. An alias
 // also gives the class's own short name, unless another use statement names
@@ -187,7 +175,11 @@ func phpUseMap(t []Token) map[string]string {
 // class's short name where PHP code names a class: before ::, after new and
 // instanceof, and as a parameter's type. So use Illuminate\Support\Facades\
 // Request as Req; Req::get('sort') is matched as Request::get( by sources and
-// sinks, and Req $r as a Request parameter.
+// sinks, and Req $r as a Request parameter. A name its use statements give
+// another library's class than Illuminate's (use Httpful\Request, Unirest's)
+// is flagged flagUseOther, by the name as written: so Request:: there is an
+// HTTP client's, not Laravel's facade, and Req:: of an Illuminate class stays
+// the facade although another use statement names Httpful\Request.
 func phpAliases(t []Token) {
 	var m map[string]string
 	for i := range t {
@@ -210,6 +202,9 @@ func phpAliases(t []Token) {
 		q, ok := m[strings.ToLower(t[i].Text)]
 		if !ok {
 			continue
+		}
+		if strings.Contains(q, "\\") && !strings.HasPrefix(strings.ToLower(q), "illuminate\\") {
+			t[i].Flags |= flagUseOther
 		}
 		if s := q[strings.LastIndex(q, "\\")+1:]; !strings.EqualFold(s, t[i].Text) {
 			t[i].Text = s

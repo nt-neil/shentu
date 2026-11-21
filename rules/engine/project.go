@@ -95,7 +95,7 @@ type ProjectOptions struct {
 }
 
 // indexVersion changes whenever fileIndex changes, so an old cache is ignored.
-const indexVersion = "7"
+const indexVersion = "8"
 
 type fileIndex struct {
 	Hash      string            `json:"h"`

@@ -8,7 +8,7 @@ import (
 // A class a use statement aliases is read as the class itself where code names
 // a class (phpAliases): Req:: of use Illuminate\Support\Facades\Request as Req
 // is Request::, and S:: of use App\Services\Sorter as S calls Sorter. An alias
-// of another library's Request stays no source (phpUseOther), and PHP keywords
+// of another library's Request stays no source (flagUseOther), and PHP keywords
 // ignore case (AS). On the code audit's path.
 func TestPHPUseAliases(t *testing.T) {
 	e := engineForTest(t)
@@ -27,6 +27,10 @@ func TestPHPUseAliases(t *testing.T) {
 		{"Httpful's Request by an alias stays no source", map[string]string{"a.php": cls(`use Httpful\Request as R;`,
 			"        $sort = R::get('https://api.example.org/sort')->send()->body;\n        return $q->orderBy($sort)->get();")}, nil},
 		{"use Httpful\\Http AS Request: Request:: is no facade (#160 review S-1)", map[string]string{"a.php": cls(`use Httpful\Http AS Request;`,
+			"        $sort = Request::get('https://api.example.org/sort')->send()->body;\n        return $q->orderBy($sort)->get();")}, nil},
+		{"Req of Illuminate's Request beside use Httpful\\Request: Req:: stays the facade (#170 review S-1)", map[string]string{"a.php": cls("use Illuminate\\Support\\Facades\\Request as Req;\nuse Httpful\\Request;",
+			"        return $q->orderBy(Req::get('sort'))->get();")}, []string{"a.php:6:php-sqli-orderby-identifier"}},
+		{"Request:: beside it is Httpful's (#170 review S-1 control)", map[string]string{"a.php": cls("use Illuminate\\Support\\Facades\\Request as Req;\nuse Httpful\\Request;",
 			"        $sort = Request::get('https://api.example.org/sort')->send()->body;\n        return $q->orderBy($sort)->get();")}, nil},
 		{"no use statement: Request:: is the facade's alias (control)", map[string]string{"a.php": cls(``,
 			"        return $q->orderBy(Request::get('sort'))->get();")}, []string{"a.php:5:php-sqli-orderby-identifier"}},

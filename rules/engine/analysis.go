@@ -140,12 +140,11 @@ type analysis struct {
 	py          bool
 	js          bool
 	b           *budget
-	kw          map[string]bool   // words that are keywords in this language
-	seed        *paramSeed        // the value a callback's parameter is called with (whenSeeds), for the next function analysed
-	laravelVars map[string]bool   // per PHP variable, whether it may be Laravel's request (laravelRequest)
-	phpUses     map[string]string // PHP: short class name (lower case) to the name a use statement gives it (phpUseOther)
-	branchBlock bool              // the next block is an if's branch, whose request aliases the if joins (block, sIf)
-	mws         map[*fn]bool      // Koa middleware: the functions app.use(fn) registers (reqalias.go koaMiddleware)
+	kw          map[string]bool // words that are keywords in this language
+	seed        *paramSeed      // the value a callback's parameter is called with (whenSeeds), for the next function analysed
+	laravelVars map[string]bool // per PHP variable, whether it may be Laravel's request (laravelRequest)
+	branchBlock bool            // the next block is an if's branch, whose request aliases the if joins (block, sIf)
+	mws         map[*fn]bool    // Koa middleware: the functions app.use(fn) registers (reqalias.go koaMiddleware)
 	seen        map[loc]bool
 	lines       []loc
 	// sinkSpans: per line reported, the sink calls that reported it, as
@@ -1583,7 +1582,7 @@ func (a *analysis) srcMatchAt(s *pat, t []Token, i int) (int, bool) {
 	}
 	strict := len(s.toks) > 1 && s.toks[0].Kind == Ident && s.toks[1].op("(")
 	end, ok := s.match(t, i, strict)
-	if ok && a.php && len(s.toks) > 1 && s.toks[0].Kind == Ident && s.toks[1].op("::") && a.phpUseOther(s.toks[0].Text) {
+	if ok && a.php && len(s.toks) > 1 && s.toks[0].Kind == Ident && s.toks[1].op("::") && t[i].Flags&flagUseOther != 0 {
 		return 0, false // Request::get( where the file's Request is an HTTP client's (use Httpful\Request), not Laravel's facade
 	}
 	if ok && s.memberWild && a.php && !a.laravelRequest(s.toks[0].Text) {
