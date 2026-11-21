@@ -6,7 +6,7 @@ a release are not written here: they are worked out from the rule snapshots in
 `docs/site-src/rules-history/`. `CHANGELOG.zh-TW.md` holds the same releases in Traditional
 Chinese for the zh-TW pages; keep the two in step.
 
-## v0.5.3 (unreleased)
+## v0.5.3 — 2026-11-22
 
 - A proposal button pressed always gets an answer (#163): it says at once that it checks the
   address again, the log notes the press (`proposal_press`) before the checks, the checks run
