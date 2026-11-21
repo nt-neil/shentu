@@ -18,7 +18,7 @@ Chinese for the zh-TW pages; keep the two in step.
   about one dispatch's cap (120k tokens) plus the answer in progress. Upgrading: while a dispatch runs, a question elsewhere
   can be told that its reservation leaves too little of the month's budget (it is released within
   about 17 minutes); a reservations file that cannot be trusted stops every AI answer and dispatch until it is
-  moved aside (the bot says which file); and `auto_incident` with `monthly_tokens` under 150k now warns, as no automatic
+  moved aside (the bot says which file); and `auto_incident` with `monthly_tokens` of 150000 or less now warns, as no automatic
   check could ever start.
 
 ## v0.5.3 (unreleased)

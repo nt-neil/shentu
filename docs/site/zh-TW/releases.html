@@ -275,7 +275,7 @@
 
 <div class="newest" id="rv-0.5.4" data-groups="1">
   <div class="newest-head"><p class="word">籌備中</p><span class="ver">v0.5.4</span><b class="badge">即將發布</b></div>
-  <div class="grp grp-reach"><h4><i aria-hidden="true"></i>看得更遠</h4><ul><li>模型價格（#162）：<code>[agents] price_per_mtok_in</code> 與 <code>price_per_mtok_out</code>（每一 M tokens 的價格，以 USD 計）會用來替每次派遣的預留估價：token 上限依兩者中較高的價格計算，所以每月金額上限也和 token 上限一樣由各派遣共用。只有金額上限被其他派遣的預留填滿時，回覆會寫出預留的金額。</li><li>共用 AI 預算（#161）：bot、<code>shentu chat</code> 與自動事件調查的每次派遣，執行期間會在 <code>state_dir/reservations.json</code> 預留它整份 token 上限，每一道預算檢查都會把其他派遣的預留算進去，所以合計超出 <code>[budget] monthly_tokens</code> 約一個派遣的上限（12 萬 tokens），再加上進行中的那一個回答。升級須知：派遣進行中時，別處的提問可能會被告知「其他派遣的預留讓本月剩餘預算不夠」 （預留最多約 17 分鐘就會釋放）；預留檔不可信時，所有 AI 回答與派遣都會停下，直到把檔案移開（bot 會指出要移開哪個檔案）；<code>auto_incident</code> 開啟而 <code>monthly_tokens</code> 低於 15 萬時，現在會發出警告，因為那樣自動調查永遠不會啟動。</li></ul></div>
+  <div class="grp grp-reach"><h4><i aria-hidden="true"></i>看得更遠</h4><ul><li>模型價格（#162）：<code>[agents] price_per_mtok_in</code> 與 <code>price_per_mtok_out</code>（每一 M tokens 的價格，以 USD 計）會用來替每次派遣的預留估價：token 上限依兩者中較高的價格計算，所以每月金額上限也和 token 上限一樣由各派遣共用。只有金額上限被其他派遣的預留填滿時，回覆會寫出預留的金額。</li><li>共用 AI 預算（#161）：bot、<code>shentu chat</code> 與自動事件調查的每次派遣，執行期間會在 <code>state_dir/reservations.json</code> 預留它整份 token 上限，每一道預算檢查都會把其他派遣的預留算進去，所以合計超出 <code>[budget] monthly_tokens</code> 約一個派遣的上限（12 萬 tokens），再加上進行中的那一個回答。升級須知：派遣進行中時，別處的提問可能會被告知「其他派遣的預留讓本月剩餘預算不夠」 （預留最多約 17 分鐘就會釋放）；預留檔不可信時，所有 AI 回答與派遣都會停下，直到把檔案移開（bot 會指出要移開哪個檔案）；<code>auto_incident</code> 開啟而 <code>monthly_tokens</code> 不超過 150000 時，現在會發出警告，因為那樣自動調查永遠不會啟動。</li></ul></div>
 </div>
 
 
@@ -582,7 +582,7 @@
       <h2><span class="word">籌備中</span> <span class="ver">v0.5.4</span></h2>
     </div>
     <div class="body">
-      <ul class="items"><li>模型價格（#162）：<code>[agents] price_per_mtok_in</code> 與 <code>price_per_mtok_out</code>（每一 M tokens 的價格，以 USD 計）會用來替每次派遣的預留估價：token 上限依兩者中較高的價格計算，所以每月金額上限也和 token 上限一樣由各派遣共用。只有金額上限被其他派遣的預留填滿時，回覆會寫出預留的金額。</li><li>共用 AI 預算（#161）：bot、<code>shentu chat</code> 與自動事件調查的每次派遣，執行期間會在 <code>state_dir/reservations.json</code> 預留它整份 token 上限，每一道預算檢查都會把其他派遣的預留算進去，所以合計超出 <code>[budget] monthly_tokens</code> 約一個派遣的上限（12 萬 tokens），再加上進行中的那一個回答。升級須知：派遣進行中時，別處的提問可能會被告知「其他派遣的預留讓本月剩餘預算不夠」 （預留最多約 17 分鐘就會釋放）；預留檔不可信時，所有 AI 回答與派遣都會停下，直到把檔案移開（bot 會指出要移開哪個檔案）；<code>auto_incident</code> 開啟而 <code>monthly_tokens</code> 低於 15 萬時，現在會發出警告，因為那樣自動調查永遠不會啟動。</li></ul>
+      <ul class="items"><li>模型價格（#162）：<code>[agents] price_per_mtok_in</code> 與 <code>price_per_mtok_out</code>（每一 M tokens 的價格，以 USD 計）會用來替每次派遣的預留估價：token 上限依兩者中較高的價格計算，所以每月金額上限也和 token 上限一樣由各派遣共用。只有金額上限被其他派遣的預留填滿時，回覆會寫出預留的金額。</li><li>共用 AI 預算（#161）：bot、<code>shentu chat</code> 與自動事件調查的每次派遣，執行期間會在 <code>state_dir/reservations.json</code> 預留它整份 token 上限，每一道預算檢查都會把其他派遣的預留算進去，所以合計超出 <code>[budget] monthly_tokens</code> 約一個派遣的上限（12 萬 tokens），再加上進行中的那一個回答。升級須知：派遣進行中時，別處的提問可能會被告知「其他派遣的預留讓本月剩餘預算不夠」 （預留最多約 17 分鐘就會釋放）；預留檔不可信時，所有 AI 回答與派遣都會停下，直到把檔案移開（bot 會指出要移開哪個檔案）；<code>auto_incident</code> 開啟而 <code>monthly_tokens</code> 不超過 150000 時，現在會發出警告，因為那樣自動調查永遠不會啟動。</li></ul>
       
       <div class="grow">
         <p><span class="bar" style="--w: 100.0%"></span><b>127</b> 條規則</p>
