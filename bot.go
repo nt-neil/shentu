@@ -988,6 +988,7 @@ var botText = map[string][2]string{ // English, Chinese
 	"prop_nobutton":        {"no button: %s", "不提供按鈕：%s"},
 	"prop_block":           {"Block %s", "封鎖 %s"},
 	"prop_gone":            {"This button no longer works.", "這個按鈕已經失效。"},
+	"prop_checking":        {"Checking %s again before asking you to confirm…", "正在重新檢查 %s，接著會請你確認…"},
 	"fb_ask":               {"Was the sub-agents' report (dispatch %s) right? Your answer only goes into the weekly numbers; nothing changes by itself.", "子 Agent 這次的回報（派遣 %s）對嗎？你的回答只會算進每週統計，不會自動改變任何設定。"},
 	"fb_useful":            {"👍 Useful", "👍 有用"},
 	"fb_false":             {"👎 False positive", "👎 誤報"},
