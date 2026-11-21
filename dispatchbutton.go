@@ -230,7 +230,7 @@ func (b *bot) pressProposal(ctx context.Context, st botState, ref proposalRef) {
 		defer func() { b.mu.Lock(); b.busy = false; b.mu.Unlock() }()
 		defer func() { // whatever happens below, the press gets an answer and a log line
 			if r := recover(); r != nil {
-				refuse(fmt.Sprintf("the press failed: %v", r), b.t("prop_failed"))
+				refuse("the press failed: "+tools.Cut(mask(fmt.Sprint(r)), 300), b.t("prop_failed")) // masked like every reason logged
 			}
 		}()
 		if err != nil {
