@@ -138,10 +138,10 @@ func TestNginxVersion(t *testing.T) {
 	run, read, exists := ngxRun, ngxRead, ngxExists
 	defer func() { ngxRun, ngxRead, ngxExists = run, read, exists }()
 	find := func(dpkg, rpm map[string]string, bins map[string]string, files ...string) ngxInstall {
-		ngxRun = func(_ context.Context, name string, args ...string) ([]byte, error) {
-			p := args[len(args)-1]
+		ngxRun = func(_ context.Context, argv []string) ([]byte, error) {
+			p := argv[len(argv)-1]
 			m := dpkg
-			if name == "rpm" {
+			if argv[0] == "/usr/bin/rpm" {
 				m = rpm
 			}
 			if out, ok := m[p]; ok {

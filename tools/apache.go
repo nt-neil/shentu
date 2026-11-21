@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
@@ -65,8 +64,8 @@ func apacheH2Enabled(confs [][]byte) bool {
 
 // apacheVersion is the installed Apache package's version ("" when none).
 var apacheVersion = func(ctx context.Context) string {
-	for _, c := range [][]string{{"dpkg-query", "-W", "-f", "${Version}", "apache2"}, {"rpm", "-q", "--qf", "%{EPOCHNUM}:%{VERSION}-%{RELEASE}", "httpd"}} {
-		if out, err := exec.CommandContext(ctx, c[0], c[1:]...).Output(); err == nil {
+	for _, argv := range hostenv.ApacheVersionArgvs() { // through the host source, as nginx's
+		if out, err := ngxRun(ctx, argv); err == nil {
 			if v := strings.TrimSpace(string(out)); v != "" && !strings.Contains(v, "not installed") {
 				return v
 			}
