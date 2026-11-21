@@ -95,7 +95,7 @@ type ProjectOptions struct {
 }
 
 // indexVersion changes whenever fileIndex changes, so an old cache is ignored.
-const indexVersion = "7"
+const indexVersion = "8"
 
 type fileIndex struct {
 	Hash      string            `json:"h"`
@@ -559,18 +559,23 @@ func indexPHP(t []Token, fi *fileIndex) {
 			// use Foo\Bar; use Foo\Bar as Baz; use Foo\{A, B}; (inside a class, a trait use)
 			q := strings.Trim(qualifiedName(t, i+1), `\`)
 			j := i + 1
-			for j < len(t) && (t[j].Kind == Ident || t[j].op(`\`)) {
+			for j < len(t) && (t[j].Kind == Ident && !t[j].kw("as") || t[j].op(`\`)) {
 				j++
 			}
 			if q == "" || j < len(t) && t[j].op("{") {
 				continue
 			}
 			short := q[strings.LastIndex(q, `\`)+1:]
-			if j+1 < len(t) && t[j].word("as") && t[j+1].Kind == Ident {
-				short = t[j+1].Text
-			}
 			if fi.Uses == nil {
 				fi.Uses = map[string]string{}
+			}
+			if j+1 < len(t) && t[j].kw("as") && t[j+1].Kind == Ident {
+				// the lexer reads the alias as the class's short name where
+				// code names a class (phpAliases), so both lead to it
+				if fi.Uses[strings.ToLower(short)] == "" {
+					fi.Uses[strings.ToLower(short)] = q
+				}
+				short = t[j+1].Text
 			}
 			fi.Uses[strings.ToLower(short)] = q // PHP class names ignore case
 		case "include", "include_once", "require", "require_once":

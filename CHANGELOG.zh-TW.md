@@ -3,6 +3,10 @@
 CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本與日期必須一致，
 每個版本都要有內容（`go test ./cmd/sitegen` 會檢查）。
 
+## v0.5.5 (unreleased)
+
+- PHP 的 `use` 別名（#170）：`use` 給類別取的別名，在程式指名類別的地方（`::` 前面、`new` 和 `instanceof` 後面、參數型別）會當成原本的類別來讀。所以 `use Illuminate\Support\Facades\Request as Req; ... Req::get('sort')` 和 `Request::get(` 一樣算 request 輸入；`use App\Services\Sorter as S` 之後的 `S::by(...)`，也會追進另一個檔案裡的 Sorter。別的函式庫的類別取了別名（`use Httpful\Request as R`）照樣不算 request 輸入，同一個檔案裡另外有 Illuminate 的別名時也一樣。`use` 和 `as` 不分大小寫。
+
 ## v0.5.4 (unreleased)
 
 - 同一個呼叫被兩條規則回報時，就算檔案裡的某個呼叫只有其中一條規則會追，也照樣只留下被讓的那條（`yields_to`）（#160）。以前 `DB::select(DB::raw("..." . $_GET['a'] . "..." . col()))` 這種寫法，如果本地的 `col()` 回傳 `get_query_var('o')`（只有 php-sqli-orderby-identifier 讀這個輸入），會同時被 php-sqli-laravel-raw 和 php-sqli-orderby-identifier 回報；讓給 php-sqli-yii-query 的那幾條規則也有同樣的問題。

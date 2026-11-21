@@ -2,6 +2,7 @@ package engine
 
 import (
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -22,13 +23,14 @@ const (
 
 // Token flags.
 const (
-	FlagOpen      uint16 = 1 << iota // the string or comment has no end (only accepted in rule patterns)
-	FlagShell                        // PHP `command`
-	FlagRegex                        // JS /regex/
-	FlagNL                           // first token on its line (JS statement ends)
-	FlagMultiline                    // JS /regex/m: ^ and $ match at every line
-	FlagModule                       // JS: a Node core module (fs, child_process, vm) after normalizeModules
-	flagCtxShift  = 8                // PHP echo or print after inline HTML: bits 8-10 hold the HTML context it writes into (htmlctx.go)
+	FlagOpen      uint16    = 1 << iota // the string or comment has no end (only accepted in rule patterns)
+	FlagShell                           // PHP `command`
+	FlagRegex                           // JS /regex/
+	FlagNL                              // first token on its line (JS statement ends)
+	FlagMultiline                       // JS /regex/m: ^ and $ match at every line
+	FlagModule                          // JS: a Node core module (fs, child_process, vm) after normalizeModules
+	flagCtxShift  = 8                   // PHP echo or print after inline HTML: bits 8-10 hold the HTML context it writes into (htmlctx.go)
+	flagUseOther  = 1 << 11             // PHP: a class name a use statement gives another library's class than Illuminate's (phpAliases)
 )
 
 // Token is one lexical unit. Comments are dropped. A string literal keeps its raw
@@ -53,6 +55,9 @@ type Part struct {
 func (t Token) is(kind Kind, text string) bool { return t.Kind == kind && t.Text == text }
 func (t Token) op(text string) bool            { return t.Kind == Op && t.Text == text }
 func (t Token) word(text string) bool          { return t.Kind == Ident && t.Text == text }
+
+// kw is word for a PHP keyword, which ignores case (use ... AS, NEW).
+func (t Token) kw(text string) bool { return t.Kind == Ident && strings.EqualFold(t.Text, text) }
 
 // Limits bound the work done on one file, so a huge or hostile file cannot stall a scan.
 type Limits struct {
