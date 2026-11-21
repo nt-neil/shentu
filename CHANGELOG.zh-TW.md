@@ -5,6 +5,9 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 
 ## v0.5.4 (unreleased)
 
+- 模型價格（#162）：`[agents] price_per_mtok_in` 與 `price_per_mtok_out`（每一 M tokens 的價格，以 USD 計）會用來替每次派遣的預留估價：
+  token 上限依兩者中較高的價格計算，所以每月金額上限也和 token 上限一樣由各派遣共用。只有金額上限被其他派遣的預留填滿時，
+  回覆會寫出預留的金額。
 - 共用 AI 預算（#161）：bot、`shentu chat` 與自動事件調查的每次派遣，執行期間會在 `state_dir/reservations.json`
   預留它整份 token 上限，每一道預算檢查都會把其他派遣的預留算進去，所以合計超出 `[budget] monthly_tokens`
   約一個派遣的上限（12 萬 tokens），再加上進行中的那一個回答。升級須知：派遣進行中時，別處的提問可能會被告知「其他派遣的預留讓本月剩餘預算不夠」

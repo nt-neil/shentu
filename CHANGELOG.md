@@ -8,6 +8,10 @@ Chinese for the zh-TW pages; keep the two in step.
 
 ## v0.5.4 (unreleased)
 
+- Model prices (#162): `[agents] price_per_mtok_in` and `price_per_mtok_out` (dollars per million
+  tokens) price each dispatch's reservation at its token cap times the higher of the two, so the
+  monthly cost limit is shared between dispatches as the token limit is. When only the cost limit
+  is filled by the others' reservations, the reply names the dollars reserved.
 - Shared AI budget (#161): a dispatch from the bot, `shentu chat` or the automatic incident check
   reserves its whole token cap in `state_dir/reservations.json` while it runs, and every budget
   check counts the others' reservations, so together they overspend `[budget] monthly_tokens` by
