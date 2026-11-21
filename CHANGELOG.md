@@ -6,7 +6,7 @@ a release are not written here: they are worked out from the rule snapshots in
 `docs/site-src/rules-history/`. `CHANGELOG.zh-TW.md` holds the same releases in Traditional
 Chinese for the zh-TW pages; keep the two in step.
 
-## v0.5.3 (unreleased)
+## v0.5.4 (unreleased)
 
 - Shared AI budget (#161): a dispatch from the bot, `shentu chat` or the automatic incident check
   reserves its whole token cap in `state_dir/reservations.json` while it runs, and every budget
@@ -16,6 +16,9 @@ Chinese for the zh-TW pages; keep the two in step.
   about 17 minutes); a reservations file that cannot be trusted stops every AI answer and dispatch until it is
   moved aside (the bot says which file); and `auto_incident` with `monthly_tokens` under 150k now warns, as no automatic
   check could ever start.
+
+## v0.5.3 (unreleased)
+
 - A proposal button pressed always gets an answer (#163): it says at once that it checks the
   address again, the log notes the press (`proposal_press`) before the checks, the checks run
   within a minute and past it the press is refused with the gate's word, and a failure inside is
