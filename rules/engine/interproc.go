@@ -62,6 +62,7 @@ type summary struct {
 	condChecks uint64   // ... only where the call's other arguments carry no input (the list may be one)
 	retSrc     bool     // the return value carries input of its own
 	capped     bool     // a cap of its own work cut it short: what it says may be too little
+	capCut     Cut      // why capped (cut.go: CutSum*, and the causes of summaries it used)
 	height     int      // the longest chain of summaries under it, itself included
 	cost       int      // its own work, not its callees': what an asker pays for using it
 	id         string   // file and key (a cycle's first function, for all its members): the same work done again (after a cache let it go) is paid for once
@@ -872,7 +873,7 @@ func (a *analysis) summaryOf(key string) *summary {
 		if s == nil { // nested too deep: not worked out
 			return nil
 		}
-		s.capped, s.height, s.cost, s.id = capped, height, cost, a.file+"\x00"+key
+		s.capped, s.capCut, s.height, s.cost, s.id = capped, a.sumCut, height, cost, a.file+"\x00"+key
 		switch {
 		case !keep:
 			a.proj.drop(fr)
@@ -906,7 +907,7 @@ func (a *analysis) summaryOf(key string) *summary {
 				break
 			}
 			if round+1 >= maxSumRounds {
-				x.b.tooDeep() // a recursive cycle that does not settle
+				x.b.tooDeepFor(CutCycle) // a recursive cycle that does not settle
 				break
 			}
 		}
@@ -918,7 +919,7 @@ func (a *analysis) summaryOf(key string) *summary {
 	id := a.file + "\x00" + sc.ff.comps[c][0]
 	for _, m := range members {
 		delete(sc.busy, m)
-		sc.done[m].capped, sc.done[m].height, sc.done[m].cost, sc.done[m].id = capped, height, cost, id
+		sc.done[m].capped, sc.done[m].capCut, sc.done[m].height, sc.done[m].cost, sc.done[m].id = capped, a.sumCut, height, cost, id
 		got[m] = sc.done[m]
 	}
 	s := sc.done[key]
@@ -944,7 +945,7 @@ func (a *analysis) summaryOf(key string) *summary {
 // followed to the end, whether the summary was worked out now or before.
 func (a *analysis) used(s *summary) *summary {
 	if s != nil && s.capped {
-		a.b.tooDeep()
+		a.b.tooDeepFor(CutSummary | s.capCut)
 	}
 	// The asker pays what working it out cost, once, whether it was ready or
 	// not: so its own caps fall at the same place either way, and a rule's
@@ -979,7 +980,7 @@ const maxOwnNest = 2 * maxSumHeight
 func (a *analysis) own(work func(x *analysis)) (capped, keep bool, height, cost int) {
 	sc := a.sc
 	if a.nest >= maxOwnNest {
-		a.b.tooDeep()
+		a.b.tooDeepFor(CutCallDepth)
 		return true, false, 0, 0
 	}
 	nb := &budget{maxTok: a.b.maxTok, deadline: a.b.deadline, maxWork: a.b.sumWork, sumWork: a.b.sumWork}
@@ -1000,6 +1001,19 @@ func (a *analysis) own(work func(x *analysis)) (capped, keep bool, height, cost 
 	// result depend on the scan order, as a chain through a cycle across files
 	// is a step or two longer or shorter depending on where it was entered.)
 	capped = sc.capped || nb.limited || nb.hit && !nb.timeHit || height > maxSumHeight
+	a.sumCut = 0
+	if sc.capped {
+		a.sumCut |= CutSumParams
+	}
+	if nb.limited {
+		a.sumCut |= nb.deep | CutSumInner
+	}
+	if nb.hit && !nb.timeHit {
+		a.sumCut |= CutSumWork
+	}
+	if height > maxSumHeight {
+		a.sumCut |= CutSumHeight
+	}
 	sc.depth, sc.runs, sc.capped = depth, runs, was
 	if a.proj != nil {
 		a.proj.depth = pdepth
@@ -1190,7 +1204,7 @@ func (a *analysis) summarize(key string, fi *fnInfo, s *summary) {
 	s.rest = s.rest || fi.rest
 	n := min(len(fi.params), maxSumParams)
 	if len(fi.params) > maxSumParams {
-		a.b.tooDeep() // more parameters than a summary tracks: the rest count as passed on (callVal)
+		a.b.tooDeepFor(CutParams) // more parameters than a summary tracks: the rest count as passed on (callVal)
 		a.sc.capped = true
 	}
 	run := func(mask uint64, sources bool) *summRun {
@@ -1414,7 +1428,7 @@ func (a *analysis) keyedSinks(t []Token, i int, key string, p int, sub map[strin
 		if !keep {
 			return nil, false
 		}
-		s = &summary{capped: capped, height: height, cost: cost, id: x.file + "\x00keyed\x00" + ck}
+		s = &summary{capped: capped, capCut: x.sumCut, height: height, cost: cost, id: x.file + "\x00keyed\x00" + ck}
 		for l := range got {
 			s.sink = append(s.sink, []loc{l})
 		}

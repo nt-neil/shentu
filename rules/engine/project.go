@@ -769,7 +769,7 @@ func (p *Project) summary(a *analysis, c callee) *summary {
 	p.depth++
 	defer func() { p.depth-- }()
 	if p.depth > maxSumDepth {
-		a.b.tooDeep()
+		a.b.tooDeepFor(CutCallDepth)
 		return nil
 	}
 	if x.sc.busy[name] {
@@ -1000,7 +1000,7 @@ func (p *Project) resolve(a *analysis, c callee) (string, string) {
 		}
 	}
 	if f == "" && unsure {
-		a.b.tooDeep() // the call may reach another file: the file's result says calls were not followed
+		a.b.tooDeepFor(CutAmbiguous) // the call may reach another file: the file's result says calls were not followed
 	}
 	return f, name
 }

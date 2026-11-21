@@ -145,6 +145,7 @@ type analysis struct {
 	laravelVars map[string]bool   // per PHP variable, whether it may be Laravel's request (laravelRequest)
 	phpUses     map[string]string // PHP: short class name (lower case) to the name a use statement gives it (phpUseOther)
 	branchBlock bool              // the next block is an if's branch, whose request aliases the if joins (block, sIf)
+	sumCut      Cut               // why the last summary own worked out was capped (interproc.go, cut.go)
 	mws         map[*fn]bool      // Koa middleware: the functions app.use(fn) registers (reqalias.go koaMiddleware)
 	seen        map[loc]bool
 	lines       []loc

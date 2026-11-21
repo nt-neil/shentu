@@ -417,7 +417,7 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 	b := newBudget(e.Limits)
 	toks := lex(lang, string(src), b)
 	if b.hit {
-		return nil, b.timeHit, ErrLimit
+		return nil, b.timeHit, cutErr(ErrLimit, b.cut())
 	}
 	tree := parse(base, toks, b)
 	ff := newFileFuncs(collectFuncs(tree, base), base)
@@ -508,6 +508,13 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 	limited := b.hit || b.limited || time.Now().After(b.deadline) // the first pass did not finish
 	timed = b.timeHit || time.Now().After(b.deadline)
 	callsCut := false
+	var cut Cut // what cut the scan short (cut.go)
+	if limited {
+		cut = b.cut()
+		if time.Now().After(b.deadline) {
+			cut |= CutTime
+		}
+	}
 	finished := map[*crule]bool{}
 	if !b.hit && (len(ff.byKey) > 0 || proj != nil) {
 		b2 := newBudget(e.Limits)
@@ -588,12 +595,14 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 				// The project stopped during the rule (its clock, its heap): calls
 				// stopped crossing files part way, as with the scan's own clock.
 				callsCut, timed = true, true
+				cut |= CutProject
 				add(r, direct[r])
 				delete(direct, r)
 				break
 			}
 			if b2.hit {
 				callsCut = true
+				cut |= b2.cut()
 				if b2.timeHit {
 					// Cut short by the clock, the flows found so far are not kept: how
 					// far it got depends on the machine's load, and a summary it had no
@@ -618,6 +627,7 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 				add(r, direct[r], a.lines)
 				delete(direct, r)
 				callsCut = true
+				cut |= CutSummary
 				ruleDone()
 				continue
 			}
@@ -626,11 +636,15 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 			ruleDone()
 		}
 		callsCut = callsCut || b2.hit || b2.limited
+		if b2.hit || b2.limited {
+			cut |= b2.cut()
+		}
 		timed = timed || b2.timeHit
 	}
 	// Past a project cap calls no longer cross files: say so, not "clean".
 	if proj != nil && proj.stopped != "" {
 		callsCut = true
+		cut |= CutProject
 		timed = timed || proj.byMachine // the clock or the heap, not the file limit
 	}
 	for _, r := range ruleList {
@@ -655,11 +669,11 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 	})
 	switch {
 	case limited:
-		return out, timed, ErrLimit
+		return out, timed, cutErr(ErrLimit, cut)
 	case b.partial:
 		return out, timed, ErrPartial
 	case callsCut:
-		return out, timed, ErrCalls
+		return out, timed, cutErr(ErrCalls, cut)
 	}
 	return out, timed, nil
 }

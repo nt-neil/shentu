@@ -91,6 +91,9 @@ type CodeFinding struct {
 type UnfinishedFile struct {
 	Path   string `json:"path"`
 	Reason string `json:"reason"`
+	// Cause: what cut the engine short, when it says (engine.Cut: tokens,
+	// time, nesting, call-work, summary, project), comma-separated.
+	Cause string `json:"cause,omitempty"`
 }
 
 // CodeAudit is the result of AppCodeAudit.
@@ -580,7 +583,7 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 	if err != nil {
 		var walk []UnfinishedFile
 		for _, r := range roots {
-			walk = append(walk, UnfinishedFile{r, "wait"})
+			walk = append(walk, UnfinishedFile{r, "wait", ""})
 		}
 		return CodeAudit{WebRoots: webRoots, Findings: []CodeFinding{stoppedFinding(walk, 0)}, Unfinished: true}
 	}
@@ -725,14 +728,14 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 				if cut == nil {
 					stopAt(second, ri, root)
 				}
-				walkCut = append(walkCut, UnfinishedFile{root, "walk"})
+				walkCut = append(walkCut, UnfinishedFile{root, "walk", ""})
 				continue
 			}
 			base := depth(filepath.Clean(root))
 			filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 				if ctx.Err() != nil {
 					stopAt(second, ri, p)
-					walkCut = append(walkCut, UnfinishedFile{root, "walk"})
+					walkCut = append(walkCut, UnfinishedFile{root, "walk", ""})
 					return filepath.SkipAll
 				}
 				if resumed && p != root { // the root holds every place: always walked into
@@ -804,7 +807,7 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 		// An ASP page may be UTF-16, full of NULs; IIS still runs it.
 		if !ok || lang == "" && !aspPage(name) && bytes.IndexByte(b, 0) >= 0 {
 			if lang != "" && eng != nil && info.Size() > auditMaxSize {
-				partial = append(partial, UnfinishedFile{p, "size"})
+				partial = append(partial, UnfinishedFile{p, "size", ""})
 			}
 			return nil
 		}
@@ -923,14 +926,14 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 			case r.unread:
 			case !r.ran: // the caller's time ran out: what was scanned is kept
 				notReached++
-				partial = append(partial, UnfinishedFile{p, "time"})
+				partial = append(partial, UnfinishedFile{p, "time", ""})
 			case r.late:
 				late++
-				partial = append(partial, UnfinishedFile{p, "time"})
+				partial = append(partial, UnfinishedFile{p, "time", ""})
 			default:
 				k := r.kept
 				if k == nil {
-					k = &passResult{Found: r.found, Over: r.over, Reason: unfinishedReason(r.err), Gen: r.gen}
+					k = &passResult{Found: r.found, Over: r.over, Reason: unfinishedReason(r.err), Cause: engine.CutOf(r.err).String(), Gen: r.gen}
 					if !r.timed && k.Reason != "panic" {
 						st.entry(p, hash[p]).Own = k
 					}
@@ -938,7 +941,7 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 				addNew(k.Found, k.Gen)
 				addOver(p, k.Over, k.Gen)
 				if k.Reason != "" { // "calls": its own calls were cut short
-					partial = append(partial, UnfinishedFile{p, k.Reason})
+					partial = append(partial, UnfinishedFile{p, k.Reason, k.Cause})
 				}
 			}
 		}
@@ -1022,7 +1025,7 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 							cut = !res.FileTime
 							continue
 						}
-						k = &passResult{Found: found, Over: n, Reason: unfinishedReason(err), Gen: gen}
+						k = &passResult{Found: found, Over: n, Reason: unfinishedReason(err), Cause: engine.CutOf(err).String(), Gen: gen}
 						if k.Reason == "" && (part.Cut || res.Cut || len(slow) > 0) {
 							k.Reason = "calls"
 						}
@@ -1035,7 +1038,7 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 					}
 				}
 				if k == nil {
-					waiting = append(waiting, UnfinishedFile{p, "calls"})
+					waiting = append(waiting, UnfinishedFile{p, "calls", ""})
 					continue
 				}
 				addNew(k.Found, k.Gen)

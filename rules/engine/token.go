@@ -104,6 +104,7 @@ type budget struct {
 	paid     int             // the work those costs came to
 	timeHit  bool            // hit because time ran out: the result depends on the machine
 	limited  bool            // something was skipped (nesting too deep): keep going, report ErrLimit
+	deep     Cut             // why limited, when a caller said (tooDeepFor); none: nesting
 	partial  bool            // an unterminated string or comment swallowed the rest of the file
 }
 
@@ -161,6 +162,14 @@ func (b *budget) step() bool { return b.charge(1) }
 func (b *budget) tooDeep() {
 	if b != nil {
 		b.limited = true
+	}
+}
+
+// tooDeepFor is tooDeep with the cause (cut.go), for a cap other than nesting.
+func (b *budget) tooDeepFor(c Cut) {
+	if b != nil {
+		b.limited = true
+		b.deep |= c
 	}
 }
 
