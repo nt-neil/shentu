@@ -296,8 +296,9 @@ func (a *analysis) stmt(s *stmt, st state) (state, uint8) {
 		a.nonceCond(t1, s.toks, true)
 		// request aliases (reqalias.go): each branch starts from what held
 		// before the if, and after it a name holds what it held at the end of a
-		// branch that goes on (the else path being the state before, without
-		// an else); a name reassigned on every branch is no longer followed
+		// branch that does not return or throw (the else path being the state
+		// before, without an else); a name reassigned on every branch is no
+		// longer followed
 		var r0, rT map[string][]string
 		if a.reqs != nil {
 			r0 = maps.Clone(a.reqs)
@@ -315,10 +316,12 @@ func (a *analysis) stmt(s *stmt, st state) (state, uint8) {
 			t2, e2 = a.block(s.els, t2)
 		}
 		if r0 != nil {
+			// only a branch that leaves the function drops out: one ending in
+			// break or continue carries its aliases on to the loop's end
 			switch rE := a.reqs; {
-			case e1 != noExit && e2 == noExit:
+			case e1 == hardExit && e2 != hardExit:
 				a.reqs = rE
-			case e2 != noExit && e1 == noExit:
+			case e2 == hardExit && e1 != hardExit:
 				a.reqs = rT
 			default:
 				unionReqs(rE, rT)

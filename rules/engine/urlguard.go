@@ -332,6 +332,8 @@ func tsType(t []Token, j int) bool {
 		return true
 	case !p.op(":"):
 		return false
+	case ternaryColon(t, j-1):
+		return false // c ? y : String is a value, whatever follows it
 	case n.op(")") || n.op(";") || n.op("[") || n.op("|") || n.op("&") || n.op(">"):
 		return true
 	case n.op(","):
@@ -341,6 +343,31 @@ func tsType(t []Token, j int) bool {
 		return j >= 3 && t[j-2].Kind == Ident && (t[j-3].word("let") || t[j-3].word("const") || t[j-3].word("var"))
 	case n.op("{"):
 		return t[j-2].op(")") // a function's return type
+	}
+	return false
+}
+
+// ternaryColon reports whether the colon t[c] closes a conditional
+// expression's first branch (c ? y : z): a ? before it in the same bracket and
+// expression. A ? right before the colon marks an optional parameter or
+// property (a?: T), and ?. and ?? are other tokens.
+func ternaryColon(t []Token, c int) bool {
+	depth := 0
+	for k := c - 1; k >= 0; k-- {
+		switch {
+		case isClose(t[k]):
+			depth++
+		case isOpen(t[k]):
+			if depth == 0 {
+				return false
+			}
+			depth--
+		case depth > 0:
+		case t[k].op("?"):
+			return k != c-1
+		case t[k].op(",") || t[k].op(";"):
+			return false
+		}
 	}
 	return false
 }
