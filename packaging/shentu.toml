@@ -65,8 +65,9 @@ cooldown = "24h"                # do not repeat the same alert within this time
 # a monthly [budget] or once 80% of it is used. The daily report says what was skipped.
 # auto_incident = true needs both of these, or no check ever starts (Shentu warns
 # when the bot starts, on the daily patrol and in its report):
-# - [budget] monthly_tokens of at least 150000: each check reserves 120000 tokens
-#   and starts only while that stays under 80% of the limit (2000000 above is ample);
+# - [budget] monthly_tokens of more than 150000: each check reserves 120000 tokens
+#   and starts only while that stays under 80% of the limit, so 150000 itself never
+#   starts one (2000000 above is ample);
 # - a [notify] url: a check starts from an L3 alert the patrol pushed, and the patrol
 #   pushes through the notify url alone (a bot token by itself does not carry it).
 [agents]
