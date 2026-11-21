@@ -27,8 +27,15 @@ import (
 // The bound: a model call goes ahead only while the month's use plus the
 // others' reservations is under the limit, so the others' whole caps fit in
 // it, and only the caller's own dispatch can run past it. Together they
-// overspend the monthly token limit by at most one dispatch's cap
-// (dispatchTokenCap), never by one cap per process.
+// overspend the monthly token limit by about one dispatch's cap
+// (dispatchTokenCap) plus the answer in progress (a commander's answer is
+// checked when it starts, then runs its steps), never by one cap per
+// process.
+//
+// What a dispatch in progress has already spent is in log.jsonl and in its
+// reservation both, so near the limit the check stops a little early. That
+// errs on the safe side and is kept: taking it out would need the
+// reservation to know which log lines are its own.
 
 const (
 	reservationsFile = "reservations.json"
@@ -116,7 +123,7 @@ func reserve(cfg *Config, tokens int, now time.Time) (id string, release func(),
 		return "", func() {}, err
 	}
 	return id, func() {
-		withReservations(cfg, time.Now(), func(r *reservations) {
+		err := withReservations(cfg, time.Now(), func(r *reservations) {
 			var keep []reservation
 			for _, it := range r.Items {
 				if it.ID != id {
@@ -125,6 +132,9 @@ func reserve(cfg *Config, tokens int, now time.Time) (id string, release func(),
 			}
 			r.Items = keep
 		})
+		if err != nil { // it holds its tokens until it expires: fail closed, but said
+			fmt.Fprintf(os.Stderr, "shentu: warning: the AI budget reservation %s could not be released (%v); it counts until it expires in %d minutes at most\n", id, err, int(reserveTTL().Minutes()))
+		}
 	}, nil
 }
 
