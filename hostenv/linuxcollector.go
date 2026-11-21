@@ -69,6 +69,18 @@ func ApacheVersionArgvs() [][]string {
 	return [][]string{DpkgVersionArgv(apacheDpkgPkg), RPMVersionArgv(apacheRPMPkg)}
 }
 
+// A package's changelog can be long, and rpm waits for a locked database:
+// as for the full rpm list, more room and time than the defaults, so the
+// backport evidence is not lost to a cut (S-175-1). Read limits for the
+// binary are the reader's (64 MiB, tools).
+func init() {
+	for _, p := range NginxRPMs {
+		registerBig(RPMChangelogArgv(p), 16<<20, MaxTimeout)
+		registerBig(RPMVersionArgv(p), 0, MaxTimeout)
+	}
+	registerBig(RPMVersionArgv(apacheRPMPkg), 0, MaxTimeout)
+}
+
 func webPackageArgvs() [][]string {
 	var l [][]string
 	for _, p := range NginxPackages {
