@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -33,10 +32,11 @@ import (
 // checked when it starts, then runs its steps), never by one cap per
 // process.
 //
-// What a dispatch in progress has already spent is in log.jsonl and in its
-// reservation both, so near the limit the check stops a little early. That
-// errs on the safe side and is kept: taking it out would need the
-// reservation to know which log lines are its own.
+// What a dispatch in progress has already spent is in log.jsonl and would
+// be in its reservation too: a reservation knows its dispatch and when it
+// started, and the checks take what that dispatch has logged since off it,
+// from the same read of the log as the month's use (S-R-2, usageWithOthers).
+// When that cannot be matched, the reservation counts in full.
 
 const (
 	reservationsFile = "reservations.json"
@@ -205,24 +205,14 @@ func othersReserved(cfg *Config, self string, now time.Time) (tokens int, cost f
 	if cfg.Budget.MonthlyTokens <= 0 {
 		return 0, 0, nil
 	}
-	var items []reservation
 	err = withReservations(cfg, now, func(r *reservations) {
 		for _, it := range r.Items {
 			if it.ID != self {
-				items = append(items, it)
+				tokens, cost = tokens+it.Tokens, cost+it.Cost
 			}
 		}
 	})
-	if err != nil {
-		return 0, 0, err
-	}
-	spent := dispatchSpent(cfg.StateDir, items, now)
-	for _, it := range items {
-		s := spent[it.ID]
-		tokens += max(0, it.Tokens-s.tokens)
-		cost += max(0, it.Cost-s.cost)
-	}
-	return tokens, cost, nil
+	return tokens, cost, err
 }
 
 type spentUse struct {
@@ -230,53 +220,55 @@ type spentUse struct {
 	cost   float64
 }
 
-// dispatchSpent is, by reservation id, what each reserved dispatch has
-// logged as model use this month since it started: that is in the month's
-// use already (S-R-2). A reservation without a dispatch, one started in
-// the future, or a log that cannot be read to its end gets nothing taken
-// off: it counts in full, as before (fail closed).
-func dispatchSpent(stateDir string, items []reservation, now time.Time) map[string]spentUse {
-	byDispatch := map[string]reservation{}
-	for _, it := range items {
-		if len(it.Dispatch) == 12 && !it.Started.IsZero() && !it.Started.After(now) {
-			byDispatch[it.Dispatch] = it
-		}
-	}
-	if len(byDispatch) == 0 {
-		return nil
-	}
-	f, err := os.Open(filepath.Join(stateDir, "log.jsonl"))
-	if err != nil {
-		return nil
-	}
-	defer f.Close()
-	y, m, _ := now.Date()
-	month := time.Date(y, m, 1, 0, 0, 0, 0, now.Location())
-	out := map[string]spentUse{}
-	r := bufio.NewReaderSize(f, maxLogLine)
-	for {
-		line, err := r.ReadSlice('\n')
-		if errors.Is(err, bufio.ErrBufferFull) {
-			return nil // a line too long to read: take nothing off
-		}
-		if len(line) > 0 {
-			var e logEntry
-			if json.Unmarshal(line, &e) == nil && e.Tool == "llm" && e.Dispatch != "" {
-				if it, ok := byDispatch[e.Dispatch]; ok && !e.Time.Before(it.Started) && !e.Time.Before(month) {
-					s := out[it.ID]
-					s.tokens += e.InTokens + e.OutTokens + e.ReasonTokens
-					s.cost += e.Cost
-					out[it.ID] = s
-				}
+// monthUse is the month's use and what the others' reservations hold of the
+// rest, from one read of each (S-R-2).
+type monthUse struct {
+	cost         float64
+	tokens       int
+	othersTokens int
+	othersCost   float64
+}
+
+// usageWithOthers reads the reservations (all but self's) under their
+// lock, then log.jsonl once: the month's use and, in the same pass, what
+// each reserved dispatch has logged since its reservation started. That
+// part is in the month's use already, so it is taken off the reservation,
+// down to 0 at most (S-R-2). A reservation without its dispatch's id or
+// started in the future counts in full. An untrusted reservation file is
+// an errReservations error; a log that cannot be read, its error.
+func usageWithOthers(cfg *Config, self string, now time.Time) (monthUse, error) {
+	var items []reservation
+	err := withReservations(cfg, now, func(r *reservations) {
+		for _, it := range r.Items {
+			if it.ID != self {
+				items = append(items, it)
 			}
 		}
-		if err == io.EOF {
-			return out
-		}
-		if err != nil {
-			return nil
+	})
+	if err != nil {
+		return monthUse{}, err
+	}
+	started := map[string]time.Time{}
+	for _, it := range items {
+		if len(it.Dispatch) == 12 && !it.Started.IsZero() && !it.Started.After(now) {
+			started[it.Dispatch] = it.Started
 		}
 	}
+	var u monthUse
+	var spent map[string]spentUse
+	u.cost, u.tokens, _, spent, err = monthScan(cfg.StateDir, now, started)
+	if err != nil {
+		return monthUse{}, err
+	}
+	for _, it := range items {
+		s := spentUse{}
+		if _, ok := started[it.Dispatch]; ok {
+			s = spent[it.Dispatch]
+		}
+		u.othersTokens += max(0, it.Tokens-s.tokens)
+		u.othersCost += max(0, it.Cost-s.cost)
+	}
+	return u, nil
 }
 
 // dispatchCost is what a dispatch may cost at most: its whole token cap at

@@ -719,11 +719,8 @@ func budgetRoom(cfg *Config, now time.Time, self string) bool {
 	if cfg.Budget.MonthlyTokens <= 0 {
 		return false
 	}
-	cost, used, _, err := monthUsageStrict(cfg.StateDir, now)
-	if err != nil {
-		return false
-	}
-	others, othersCost, err := othersReserved(cfg, self, now) // R1: what other dispatches hold is not room
+	u, err := usageWithOthers(cfg, self, now) // R1: what other dispatches hold is not room; S-R-2: one read
+	cost, used, others, othersCost := u.cost, u.tokens, u.othersTokens, u.othersCost
 	if err != nil || used+others+dispatchTokenCap > cfg.Budget.MonthlyTokens {
 		return false
 	}
