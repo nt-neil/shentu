@@ -6,6 +6,11 @@ a release are not written here: they are worked out from the rule snapshots in
 `docs/site-src/rules-history/`. `CHANGELOG.zh-TW.md` holds the same releases in Traditional
 Chinese for the zh-TW pages; keep the two in step.
 
+## v0.5.4 (unreleased)
+
+- A proposal press cut short by the bot stopping is logged as that (#166): "the bot stopped during
+  the checks" or "before it was confirmed", not as a refusal or as declined by the operator.
+
 ## v0.5.3 (unreleased)
 
 - A proposal button pressed always gets an answer (#163): it says at once that it checks the
