@@ -16,6 +16,12 @@ Chinese for the zh-TW pages; keep the two in step.
   about 17 minutes); a reservations file that cannot be trusted stops every AI answer and dispatch until it is
   moved aside (the bot says which file); and `auto_incident` with `monthly_tokens` under 150k now warns, as no automatic
   check could ever start.
+- A proposal button pressed always gets an answer (#163): it says at once that it checks the
+  address again, the log notes the press (`proposal_press`) before the checks, the checks run
+  within a minute and past it the press is refused with the gate's word, and a failure inside is
+  answered and logged. As before, a pressed button is used up whatever follows: one refused
+  because its checks ran out of time, failed or were cut by a restart cannot be pressed again,
+  and the next check's buttons are the ones to use.
 - Telegram blocks ask only what the gate would allow (#155, #158): from a chat channel, block_ip
   runs the checks of #108's gate before asking for ✅. An address the gate refuses is refused at
   once, with no ✅ to press; the agent is told the gate's fixed word (and the address), and the
