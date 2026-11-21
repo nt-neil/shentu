@@ -39,6 +39,14 @@ func TestParamCalls(t *testing.T) {
 			"d.php": "<?php\n$callback = function ($v) {\n    exec($v);\n};\n",
 			"e.php": "<?php\n$callback = fn ($v) => system($v);\n",
 		}, "b.php", nil, 0},
+		{"input of its own given to the callable, with no return value", map[string]string{
+			"b.php": "<?php\nfunction each_input($cb) {\n    $cb($_GET['x']);\n}\n",
+			"a.php": "<?php\nrequire 'b.php';\neach_input(function ($v) {\n    system($v);\n});\n",
+		}, "a.php", []string{"a.php:4:php-cmdi-shell-exec"}, 0},
+		// (a file with a sink of the rule: one with none is not analysed for it)
+		{"a closure calling its own parameter with input: cut as callable-param", map[string]string{
+			"a.php": "<?php\nfunction run() {\n    system('ls');\n    $f = function ($cb) {\n        $cb($_GET['x']);\n    };\n    return $f;\n}\n",
+		}, "a.php", nil, CutCallableParam},
 		{"a callable the call site does not show, with input: cut as callable-param", map[string]string{
 			"b.php": helper,
 			"a.php": "<?php\nrequire 'b.php';\n$h = make_handler();\ntap2($_GET['x'], $h);\n",
@@ -52,10 +60,11 @@ func TestParamCalls(t *testing.T) {
 			slices.Sort(paths)
 			pr := e.NewProject(paths, func(p string) ([]byte, error) { return []byte(c.files[p]), nil }, ProjectOptions{})
 			src := []byte(c.files[c.scan])
+			_, _, err1 := e.ScanTimed(LangOf(c.scan), c.scan, src)
 			_, err := pr.ScanCallsPart(c.scan, src, nil)
-			got := CutOf(err) & (CutCallableVar | CutCallableParam | CutAmbiguous)
+			got := (CutOf(err1) | CutOf(err)) & (CutCallableVar | CutCallableParam | CutAmbiguous)
 			if got != c.cut {
-				t.Errorf("cut %q (%v), want %q", got, err, c.cut)
+				t.Errorf("cut %q (%v, %v), want %q", got, err1, err, c.cut)
 			}
 			if c.cut != 0 {
 				return // calls not all followed: auditPath says so with ErrCalls

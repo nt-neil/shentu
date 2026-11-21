@@ -1330,15 +1330,18 @@ func (a *analysis) summarize(key string, fi *fnInfo, s *summary) {
 			s.pcall[n][k] |= bit
 		}
 	}
-	if a.mayReturnInput(key, fi) {
+	// A function calling its parameter makes the sources run too, returning a
+	// value or not: input of its own it gives the callable (pcallSrc) is what
+	// the caller's closure gets.
+	if returns, calls := a.mayReturnInput(key, fi), callsParam(fi); returns || calls {
 		base := run(0, true)
-		if base.ret.taint && !base.ret.weak {
+		if returns && base.ret.taint && !base.ret.weak {
 			s.retSrc = true
 		}
 		addCalls(base, 0)
 	} else if checkSkips {
-		if base := run(0, true); base.ret.taint && !base.ret.weak {
-			panic(fmt.Sprintf("engine: skipped the sources run of %s (%s, rule %s), which returns input", key, a.file, a.r.rule.ID))
+		if base := run(0, true); base.ret.taint && !base.ret.weak || len(base.pcall) > 0 {
+			panic(fmt.Sprintf("engine: skipped the sources run of %s (%s, rule %s), which returns input or gives it to a callable", key, a.file, a.r.rule.ID))
 		}
 	}
 	if n == 0 || a.b.hit {

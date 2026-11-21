@@ -210,11 +210,18 @@ func (a *analysis) pcallSeeds(st state, t []Token, funcs []*fn) map[*fn][]*param
 			// $callback(...) of a parameter: the input its arguments carry is
 			// what the function gives the callable (summary.pcall)
 			if p := a.paramIndex(t[i].Text); p >= 0 {
-				if a.summ != nil && a.nested == 0 {
-					for k, arg := range callArgs(t, i+1) {
-						if a.expr(st, arg, false).taint {
-							a.summ.pcall[[2]int{p, k}] = true
-						}
+				record := a.summ != nil && a.nested == 0
+				for k, arg := range callArgs(t, i+1) {
+					if !a.expr(st, arg, false).taint {
+						continue
+					}
+					if record {
+						a.summ.pcall[[2]int{p, k}] = true
+					} else {
+						// input reaches a callable no summary takes the effect
+						// of (a closure's own parameter, a function analysed
+						// on its own): said, not followed
+						a.b.tooDeepFor(CutCallableParam)
 					}
 				}
 				continue
@@ -293,4 +300,17 @@ func sortedKeys2[V1, V2 any](x map[int]V1, y map[int]V2) []int {
 	}
 	slices.Sort(out)
 	return out
+}
+
+// callsParam reports whether a PHP function's body calls one of its own
+// parameters ($callback(...)), outside nested functions as well as in them (a
+// closure there may call it through use).
+func callsParam(fi *fnInfo) bool {
+	found := false
+	walkToks(fi.f.body, 0, func(t []Token) {
+		for i := 0; !found && i+1 < len(t); i++ {
+			found = t[i].Kind == Var && t[i+1].op("(") && slices.Contains(fi.params, t[i].Text)
+		}
+	})
+	return found
 }
