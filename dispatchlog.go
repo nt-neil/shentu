@@ -652,7 +652,7 @@ func (a *agent) runDispatch(ctx context.Context, origin, trigger string, tasks [
 	sl, external, modelErr := agentsLLM(a.cfg, a.llm)
 	a.subLLM = sl
 	defer func() { a.subLLM = nil }()
-	resID, release, resErr := reserve(a.cfg, dispatchTokenCap, start) // R1: the others see this one
+	resID, release, resErr := reserve(a.cfg, dispatchTokenCap, dispatchCost(a.cfg), start) // R1, R2: the others see this one
 	defer release()
 	a.resID = resID
 	defer func() { a.resID = "" }()
@@ -723,11 +723,17 @@ func budgetRoom(cfg *Config, now time.Time, self string) bool {
 	if err != nil {
 		return false
 	}
-	others, err := othersReserved(cfg, self, now) // R1: what other dispatches hold is not room
+	others, othersCost, err := othersReserved(cfg, self, now) // R1: what other dispatches hold is not room
 	if err != nil || used+others+dispatchTokenCap > cfg.Budget.MonthlyTokens {
 		return false
 	}
-	return cfg.Budget.MonthlyCost <= 0 || cost < cfg.Budget.MonthlyCost/2
+	if cfg.Budget.MonthlyCost <= 0 {
+		return true
+	}
+	if c := dispatchCost(cfg); c > 0 { // R2: with prices, the room for what this dispatch may cost
+		return cost+othersCost+c <= cfg.Budget.MonthlyCost
+	}
+	return cost+othersCost < cfg.Budget.MonthlyCost/2
 }
 
 // runSubsParallel runs tasks at once, for a model outside this host (on

@@ -37,6 +37,7 @@ var errReservations = errors.New("the shared AI budget reservations cannot be tr
 type reservation struct {
 	ID      string    `json:"id"`
 	Tokens  int       `json:"tokens"`
+	Cost    float64   `json:"cost,omitempty"` // what it may cost, with [agents] prices set (R2)
 	Expires time.Time `json:"expires"`
 }
 
@@ -84,7 +85,7 @@ func withReservations(cfg *Config, now time.Time, f func(*reservations)) error {
 	}
 	var keep []reservation
 	for _, it := range r.Items {
-		if now.Before(it.Expires) && it.Tokens >= 0 {
+		if now.Before(it.Expires) && it.Tokens >= 0 && it.Cost >= 0 {
 			keep = append(keep, it)
 		}
 	}
@@ -96,7 +97,7 @@ func withReservations(cfg *Config, now time.Time, f func(*reservations)) error {
 
 // reserve reserves tokens for a dispatch and returns its id and a release.
 // Without a monthly token limit it reserves nothing.
-func reserve(cfg *Config, tokens int, now time.Time) (id string, release func(), err error) {
+func reserve(cfg *Config, tokens int, cost float64, now time.Time) (id string, release func(), err error) {
 	if cfg.Budget.MonthlyTokens <= 0 {
 		return "", func() {}, nil
 	}
@@ -104,7 +105,7 @@ func reserve(cfg *Config, tokens int, now time.Time) (id string, release func(),
 	rand.Read(b)
 	id = hex.EncodeToString(b)
 	err = withReservations(cfg, now, func(r *reservations) {
-		r.Items = append(r.Items, reservation{ID: id, Tokens: tokens, Expires: now.Add(reserveTTL())})
+		r.Items = append(r.Items, reservation{ID: id, Tokens: tokens, Cost: cost, Expires: now.Add(reserveTTL())})
 	})
 	if err != nil {
 		return "", func() {}, err
@@ -122,18 +123,28 @@ func reserve(cfg *Config, tokens int, now time.Time) (id string, release func(),
 	}, nil
 }
 
-// othersReserved is the tokens the live reservations hold, but self's.
-func othersReserved(cfg *Config, self string, now time.Time) (int, error) {
+// othersReserved is the tokens and the cost the live reservations hold,
+// but self's.
+func othersReserved(cfg *Config, self string, now time.Time) (tokens int, cost float64, err error) {
 	if cfg.Budget.MonthlyTokens <= 0 {
-		return 0, nil
+		return 0, 0, nil
 	}
-	n := 0
-	err := withReservations(cfg, now, func(r *reservations) {
+	err = withReservations(cfg, now, func(r *reservations) {
 		for _, it := range r.Items {
 			if it.ID != self {
-				n += it.Tokens
+				tokens, cost = tokens+it.Tokens, cost+it.Cost
 			}
 		}
 	})
-	return n, err
+	return tokens, cost, err
+}
+
+// dispatchCost is what a dispatch may cost at most: its whole token cap at
+// the dearer of the [agents] prices; 0 when they are not set.
+func dispatchCost(cfg *Config) float64 {
+	price := max(cfg.Agents.PricePerMTokIn, cfg.Agents.PricePerMTokOut)
+	if price <= 0 {
+		return 0
+	}
+	return float64(dispatchTokenCap) / 1e6 * price
 }

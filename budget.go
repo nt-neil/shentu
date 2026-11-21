@@ -100,11 +100,11 @@ func budgetUsedExcept(cfg *Config, now time.Time, self string, others bool) floa
 		return 1
 	}
 	if others && cfg.Budget.MonthlyTokens > 0 {
-		n, err := othersReserved(cfg, self, now)
+		n, c, err := othersReserved(cfg, self, now)
 		if err != nil {
 			return 1
 		}
-		tokens += n
+		tokens, cost = tokens+n, cost+c
 	}
 	used := 0.0
 	if cfg.Budget.MonthlyCost > 0 {
