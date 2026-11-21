@@ -6,6 +6,12 @@ a release are not written here: they are worked out from the rule snapshots in
 `docs/site-src/rules-history/`. `CHANGELOG.zh-TW.md` holds the same releases in Traditional
 Chinese for the zh-TW pages; keep the two in step.
 
+## v0.5.4 (unreleased)
+
+- `shentu dispatch stats --json` has a versioned form for the weekly summary: `v` (1), `shentu` (the
+  release), `until` (the UTC date) besides the days, counts, roles and suggestions, which are always
+  lists. It holds numbers and fixed words only: no host name, address, path, dispatch id or trigger.
+
 ## v0.5.3 (unreleased)
 
 - A proposal button pressed always gets an answer (#163): it says at once that it checks the
