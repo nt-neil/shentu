@@ -225,7 +225,7 @@ func collectFuncs(ss []*stmt, lang string) map[string][]*fnInfo {
 		if name != "" && f != nil {
 			k := funcKey(f, name, lang)
 			fi := paramInfo(f, lang)
-			fi.local = fnVars != nil && strings.HasPrefix(name, "$") && !fnVars[name]
+			fi.local = fnVars != nil && strings.HasPrefix(name, "$") && !fnVars[name] && !fnVars["*"]
 			out[k] = append(out[k], fi)
 		}
 	}
@@ -271,8 +271,9 @@ func collectFuncs(ss []*stmt, lang string) map[string][]*fnInfo {
 // a closure assigned to one stays a candidate of the project index: declared
 // global; or used other than called ($name(...)) or assigned at a statement's
 // start ($name = ...): returned, static, passed on, stored, captured by an inner
-// closure's use (...); or named in compact('name'). Never nil, so a body with
-// none is still a function's. Conservative: any doubt keeps the candidate.
+// closure's use (...); or named in compact('name'). get_defined_vars() lets
+// all of them out: "*". Never nil, so a body with none is still a function's.
+// Conservative: any doubt keeps the candidate.
 // sharedOfFn is sharedOf for a function: a closure's use (...) variables are
 // its enclosing function's too (use (&$runner) assigns the outer $runner).
 func sharedOfFn(f *fn) map[string]bool {
@@ -293,6 +294,8 @@ func sharedOf(body []*stmt) map[string]bool {
 			switch {
 			case tk.Kind == Ident && strings.EqualFold(tk.Text, "compact"):
 				compact = true
+			case tk.Kind == Ident && strings.EqualFold(tk.Text, "get_defined_vars"):
+				out["*"] = true
 			case tk.Kind == Str && compact && len(tk.Parts) == 0:
 				out["$"+tk.Text] = true
 			case tk.Kind == Var:

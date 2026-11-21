@@ -58,6 +58,10 @@ func TestAmbiguousCalls(t *testing.T) {
 			"a.php": "<?php\nrequire 'b.php';\nextract(pack_runner());\n$runner($_GET['x']);\n",
 			"b.php": "<?php\nfunction pack_runner() {\n    $runner = function ($v) { exec($v); };\n    return compact('runner');\n}\n",
 		}, "a.php", []string{"b.php:3:php-cmdi-shell-exec"}, false},
+		{"r10: local closures handed out by get_defined_vars", map[string]string{
+			"a.php": "<?php\nrequire 'b.php';\nextract(all_vars());\n$runner($_GET['x']);\n",
+			"b.php": "<?php\nfunction all_vars() {\n    $runner = function ($v) { exec($v); };\n    return get_defined_vars();\n}\n",
+		}, "a.php", []string{"b.php:3:php-cmdi-shell-exec"}, false},
 		{"$callback(...) with closures assigned to a global $callback inside functions: unsure", map[string]string{
 			"a.php": "<?php\nclass A {\n    public function each($callback) {\n        return $callback($_GET['x']);\n    }\n}\n",
 			"b.php": "<?php\nfunction init() {\n    global $callback;\n    $callback = function ($v) { exec($v); };\n}\n",
