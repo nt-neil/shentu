@@ -6,8 +6,32 @@ a release are not written here: they are worked out from the rule snapshots in
 `docs/site-src/rules-history/`. `CHANGELOG.zh-TW.md` holds the same releases in Traditional
 Chinese for the zh-TW pages; keep the two in step.
 
+## v0.5.4 (unreleased)
+
+- One call two rules report stays the rule's it is left to (`yields_to`) also when only one of
+  them follows a call in the file (#160). Before, `DB::select(DB::raw("..." . $_GET['a'] . "..." .
+  col()))` with a local `col()` returning `get_query_var('o')` (input only
+  php-sqli-orderby-identifier reads) was reported by both php-sqli-laravel-raw and
+  php-sqli-orderby-identifier; the rules that yield to php-sqli-yii-query had the same gap.
+- JavaScript request aliases (#160): after an `if`/`else`, a name holds what it held at the end of
+  a branch that goes on, so a name reassigned on every branch (`let q = req; if (a) { q = {...} }
+  else { q = {...} }`) is no longer read as the request. A branch that returns or throws drops
+  out; one that ends in `break` or `continue` still counts.
+- Read-only calls a URL check keeps (#160): `typeof window` (any global object after `typeof`)
+  and a TypeScript parameter typed `String` (`f(a: String, b)`) no longer end them for the whole
+  file. `String` after the colon of `c ? y : String` still does.
+- PHP: `Request::get(` in a file whose `use` makes `Request` another library's class
+  (`use Httpful\Request`, `use Unirest\Request`, `use Httpful\Http as Request`, also with an
+  upper-case `AS`) is no longer read as Laravel's request facade (#160).
+
 ## v0.5.3 (unreleased)
 
+- A proposal button pressed always gets an answer (#163): it says at once that it checks the
+  address again, the log notes the press (`proposal_press`) before the checks, the checks run
+  within a minute and past it the press is refused with the gate's word, and a failure inside is
+  answered and logged. As before, a pressed button is used up whatever follows: one refused
+  because its checks ran out of time, failed or were cut by a restart cannot be pressed again,
+  and the next check's buttons are the ones to use.
 - Telegram blocks ask only what the gate would allow (#155, #158): from a chat channel, block_ip
   runs the checks of #108's gate before asking for ✅. An address the gate refuses is refused at
   once, with no ✅ to press; the agent is told the gate's fixed word (and the address), and the
