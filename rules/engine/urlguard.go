@@ -332,7 +332,7 @@ func tsType(t []Token, j int) bool {
 		return true
 	case !p.op(":"):
 		return false
-	case ternaryColon(t, j-1):
+	case conditionalColon(t, j-1):
 		return false // c ? y : String is a value, whatever follows it
 	case n.op(")") || n.op(";") || n.op("[") || n.op("|") || n.op("&") || n.op(">"):
 		return true
@@ -347,11 +347,11 @@ func tsType(t []Token, j int) bool {
 	return false
 }
 
-// ternaryColon reports whether the colon t[c] closes a conditional
+// conditionalColon reports whether the colon t[c] closes a conditional
 // expression's first branch (c ? y : z): a ? before it in the same bracket and
 // expression. A ? right before the colon marks an optional parameter or
 // property (a?: T), and ?. and ?? are other tokens.
-func ternaryColon(t []Token, c int) bool {
+func conditionalColon(t []Token, c int) bool {
 	depth := 0
 	for k := c - 1; k >= 0; k-- {
 		switch {
