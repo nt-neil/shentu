@@ -6,6 +6,12 @@ a release are not written here: they are worked out from the rule snapshots in
 `docs/site-src/rules-history/`. `CHANGELOG.zh-TW.md` holds the same releases in Traditional
 Chinese for the zh-TW pages; keep the two in step.
 
+## v0.5.5 (unreleased)
+
+- macOS: `listening_ports` and `processes` (and the patrol's process checks) read the Mac itself
+  (netstat or lsof, and ps; no root needed) instead of Linux's /proc, which found nothing there and
+  looked like a host with nothing running. An unreadable table is an error, and a partial one says so.
+
 ## v0.5.3 (unreleased)
 
 - A proposal button pressed always gets an answer (#163): it says at once that it checks the

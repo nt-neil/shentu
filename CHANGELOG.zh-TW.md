@@ -3,6 +3,11 @@
 CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本與日期必須一致，
 每個版本都要有內容（`go test ./cmd/sitegen` 會檢查）。
 
+## v0.5.5 (unreleased)
+
+- macOS：`listening_ports`、`processes`（以及巡檢的程序檢查）現在讀取 Mac 本身（netstat 或 lsof，以及 ps；不需要 root），
+  不再讀 Linux 的 /proc。以前在 Mac 上什麼都讀不到，結果和一台什麼都沒在執行的主機一樣。讀不到時會回報錯誤，只讀到一部分也會寫明。
+
 ## v0.5.3 (unreleased)
 
 - 建議按鈕按下後一定會有回覆（#163）：會先立刻回覆「正在重新檢查這個位址」，檢查之前先在 log 記下這次按下
