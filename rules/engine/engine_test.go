@@ -285,6 +285,13 @@ func TestEngineHostile(t *testing.T) {
 		if !timed && err != nil && !errors.Is(err, ErrLimit) {
 			t.Errorf("%s: err = %v", c.name, err)
 		}
+		// A backstop on the test's own clock, kept apart from timed so that a
+		// scan that stops setting timed (engine.go, where the first pass reads
+		// its deadline) is still caught: a second past the cap with no error
+		// at all is a silent cut, not a busy runner's overshoot.
+		if took > limit+time.Second && err == nil {
+			t.Errorf("%s: %v, past the cap by over a second, but no error", c.name, took)
+		}
 	}
 
 	e.Limits = DefaultLimits
