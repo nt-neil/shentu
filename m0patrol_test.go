@@ -34,3 +34,21 @@ func TestProcFindingsNotChecked(t *testing.T) {
 		t.Errorf("read, nothing found: %q", why)
 	}
 }
+
+// The automated review's point on N-177-2: once a read made the baseline,
+// an empty one is a host with no listening port, and the first port opened
+// on it is new (the empty-is-first migration happens once, for a state
+// from before PortsV).
+func TestPortBaselineEmptyAfterRead(t *testing.T) {
+	st := &state{}
+	if f := portFindings(st, nil); len(f) != 0 || st.PortsV != portsBaselineV {
+		t.Fatalf("first read of no port: %v, v %d", f, st.PortsV)
+	}
+	if f := portFindings(st, []tools.Port{{Proto: "tcp", Addr: "0.0.0.0", Port: 4444, Process: "nc"}}); len(f) != 1 {
+		t.Errorf("a port opened on a host with none: %v", f)
+	}
+	old := &state{Ports: map[string]bool{"tcp:22": true}} // a Linux state from before PortsV
+	if f := portFindings(old, []tools.Port{{Proto: "tcp", Port: 22}, {Proto: "tcp", Port: 8080}}); len(f) != 1 {
+		t.Errorf("an old, non-empty baseline: %v", f)
+	}
+}

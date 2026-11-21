@@ -33,8 +33,11 @@ type finding struct {
 type state struct {
 	Alerted map[string]time.Time `json:"alerted"`
 	Ports   map[string]bool      `json:"ports"` // baseline of listening ports
-	LastRun time.Time            `json:"last_run"`
-	Profile tools.SiteProfile    `json:"profile"` // baseline from the last survey
+	// PortsV is the baseline's version, set once a read was made into it:
+	// 0 in a state from before it (N-177-2).
+	PortsV  int               `json:"ports_v,omitempty"`
+	LastRun time.Time         `json:"last_run"`
+	Profile tools.SiteProfile `json:"profile"` // baseline from the last survey
 }
 
 func loadState(dir string) *state {
@@ -623,15 +626,21 @@ func keyFileFindings(keys []tools.KeyFile) []finding {
 // patrolProcesses is the patrol's process list; tests replace it.
 var patrolProcesses = tools.ProcessesErr
 
+// portsBaselineV marks a baseline made from a read (see state.PortsV).
+const portsBaselineV = 1
+
 // portFindings is the new listening ports against the baseline in st,
-// which it updates. An empty baseline is a first one, as none (N-177-2: a
-// release that read no port on macOS saved {} and would make every port
-// of the first good read look new).
+// which it updates. The first read makes the baseline and warns of
+// nothing: no baseline, or an empty one from before PortsV (N-177-2: a
+// release that read no port on macOS saved {}, and the first good read
+// would have warned of every port), once. After that an empty baseline is
+// a host with no port, and the first port opened on it is new.
 func portFindings(st *state, ports []tools.Port) (out []finding) {
-	first := len(st.Ports) == 0
+	first := st.Ports == nil || st.PortsV < portsBaselineV && len(st.Ports) == 0
 	if st.Ports == nil {
 		st.Ports = map[string]bool{}
 	}
+	st.PortsV = portsBaselineV
 	ollama, hasOllama := tools.UIDOf("ollama")
 	for _, p := range ports {
 		// The local model runtime opens a new loopback port each time it loads a model.
