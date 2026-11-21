@@ -48,6 +48,9 @@ type fnInfo struct {
 	numeric []bool   // declared int, float or bool
 	self    bool     // a Python method whose first parameter (self, cls) is the receiver
 	rest    bool     // takes any further arguments (...$a, *args, **kwargs)
+	// local: a PHP closure assigned to a $variable inside a function's body, a
+	// variable of that function: no other file can reach it (project index)
+	local bool
 }
 
 type summary struct {
@@ -215,21 +218,23 @@ func funcKey(f *fn, name, lang string) string {
 // plain name.
 func collectFuncs(ss []*stmt, lang string) map[string][]*fnInfo {
 	out := map[string][]*fnInfo{}
-	var walk func(ss []*stmt, depth int)
-	add := func(name string, f *fn) {
+	var walk func(ss []*stmt, depth int, inFn bool)
+	add := func(name string, f *fn, inFn bool) {
 		if name != "" && f != nil {
 			k := funcKey(f, name, lang)
-			out[k] = append(out[k], paramInfo(f, lang))
+			fi := paramInfo(f, lang)
+			fi.local = inFn && strings.HasPrefix(name, "$")
+			out[k] = append(out[k], fi)
 		}
 	}
-	walk = func(ss []*stmt, depth int) {
+	walk = func(ss []*stmt, depth int, inFn bool) {
 		if depth > maxNest {
 			return
 		}
 		for _, s := range ss {
 			if s.fn != nil {
-				add(s.fn.name, s.fn)
-				walk(s.fn.body, depth+1)
+				add(s.fn.name, s.fn, inFn)
+				walk(s.fn.body, depth+1, true)
 			}
 			if s.kind == sSimple && len(s.funcs) > 0 {
 				t := s.toks
@@ -237,26 +242,26 @@ func collectFuncs(ss []*stmt, lang string) map[string][]*fnInfo {
 					t = t[1:]
 				}
 				if len(t) == 3 && (t[0].Kind == Ident || t[0].Kind == Var) && t[1].op("=") && t[2].Kind == Func && t[2].Fn < len(s.funcs) {
-					add(t[0].Text, s.funcs[t[2].Fn])
+					add(t[0].Text, s.funcs[t[2].Fn], inFn)
 				} else if n := len(t); n >= 5 && t[n-1].Kind == Func && t[n-1].Fn < len(s.funcs) && t[n-2].op("=") && t[n-3].Kind == Ident && dotted(t[:n-2]) {
-					add(t[n-3].Text, s.funcs[t[n-1].Fn]) // exports.f = function, module.exports.f = (x) => ...
+					add(t[n-3].Text, s.funcs[t[n-1].Fn], inFn) // exports.f = function, module.exports.f = (x) => ...
 				}
 			}
 			for _, f := range s.funcs {
-				walk(f.body, depth+1)
+				walk(f.body, depth+1, true)
 			}
-			walk(s.body, depth+1)
-			walk(s.els, depth+1)
-			walk(s.orelse, depth+1)
+			walk(s.body, depth+1, inFn)
+			walk(s.els, depth+1, inFn)
+			walk(s.orelse, depth+1, inFn)
 			for _, h := range s.handlers {
-				walk(h, depth+1)
+				walk(h, depth+1, inFn)
 			}
 			for _, c := range s.cases {
-				walk(c, depth+1)
+				walk(c, depth+1, inFn)
 			}
 		}
 	}
-	walk(ss, 0)
+	walk(ss, 0, false)
 	return out
 }
 

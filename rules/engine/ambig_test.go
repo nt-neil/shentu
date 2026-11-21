@@ -9,9 +9,10 @@ import (
 // A call is not ambiguous (CutAmbiguous: "calls not followed") when the other
 // files declaring its name cannot be what it reaches: a module inside a
 // package, away from the importing file, for an absolute import; a stub that
-// only returns a constant (WordPress's noop.php). It stays ambiguous when one
-// of them may be: a closure variable of the same name in another file, a
-// module beside the importing file (#174 review S-1). Only a call one of whose
+// only returns a constant (WordPress's noop.php); a closure assigned to a
+// variable inside another file's function. It stays ambiguous when one of them
+// may be: a top-level closure variable of the same name in a file not
+// included, a module beside the importing file (#174 review S-1). Only a call one of whose
 // candidates matters to the rule is ever unsure. On the code audit's path.
 func TestAmbiguousCalls(t *testing.T) {
 	e := engineForTest(t)
@@ -22,11 +23,25 @@ func TestAmbiguousCalls(t *testing.T) {
 		want   []string // findings, as path:line:rule
 		unsure bool     // the call stays cut as ambiguous: no file can be ruled out
 	}{
-		{"$callback(...) of a method's parameter, with $callback closures in other files: unsure (#174 review S-1)", map[string]string{
+		// A closure assigned to a variable inside a method is that method's
+		// variable: no other file reaches it, so it is no candidate.
+		{"$callback(...) of a method's parameter, with method-local $callback closures in other files", map[string]string{
 			"a.php": "<?php\nclass A {\n    public function each($callback) {\n        return $callback($_GET['x']);\n    }\n}\n",
 			"b.php": "<?php\nclass B {\n    public function run() {\n        $callback = function ($v) { exec($v); };\n        return $callback('x');\n    }\n}\n",
 			"c.php": "<?php\nclass C {\n    public function run() {\n        $callback = fn ($v) => system($v);\n        return $callback('y');\n    }\n}\n",
+		}, "a.php", nil, false},
+		// A top-level closure is global: another file reaches it when it is
+		// included, so with none included the call stays unsure (#174 review S-1).
+		{"$callback(...) with top-level $callback closures in files not included: unsure", map[string]string{
+			"a.php": "<?php\nclass A {\n    public function each($callback) {\n        return $callback($_GET['x']);\n    }\n}\n",
+			"b.php": "<?php\n$callback = function ($v) {\n    exec($v);\n};\n",
+			"c.php": "<?php\n$callback = fn ($v) => system($v);\n",
 		}, "a.php", nil, true},
+		{"$callback(...) with the top-level closure of an included file", map[string]string{
+			"a.php": "<?php\ninclude 'b.php';\n$callback($_GET['x']);\n",
+			"b.php": "<?php\n$callback = function ($v) {\n    exec($v);\n};\n",
+			"c.php": "<?php\n$callback = fn ($v) => system($v);\n",
+		}, "a.php", []string{"b.php:3:php-cmdi-shell-exec"}, false},
 		{"import json beside two package modules named json.py", map[string]string{
 			"app/__init__.py":       "",
 			"app/utils/__init__.py": "",

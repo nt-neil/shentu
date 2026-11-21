@@ -95,7 +95,7 @@ type ProjectOptions struct {
 }
 
 // indexVersion changes whenever fileIndex changes, so an old cache is ignored.
-const indexVersion = "8"
+const indexVersion = "9"
 
 type fileIndex struct {
 	Hash      string            `json:"h"`
@@ -436,7 +436,7 @@ func indexFile(e *Engine, lang string, src []byte) *fileIndex {
 		name := key[strings.LastIndex(key, ":")+1:]
 		for _, x := range infos {
 			if x.f.class == "" {
-				if !x.f.method {
+				if !x.f.method && !x.local {
 					fi.Funcs = append(fi.Funcs, name)
 					if stubBody(x.f.body) && x.f.name != "" && len(infos) == 1 {
 						fi.Empty = append(fi.Empty, name)
