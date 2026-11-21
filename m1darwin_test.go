@@ -92,6 +92,9 @@ func TestM1DarwinToolsReadThePlatform(t *testing.T) {
 			if !open && !probe {
 				t.Skipf("M1: %s is closed on macOS until the platform line's tools read macOS (plan f98c3c, m1-enable); not available there: %v", role, missing)
 			}
+			if open && len(r.tools) == 0 {
+				t.Fatalf("%s is open on macOS with no tool that works there", role)
+			}
 			for _, name := range r.tools {
 				tool, ok := tools.Find(name)
 				if !ok {
