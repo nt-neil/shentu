@@ -373,7 +373,7 @@
 
 <div class="newest" id="rv-0.5.5" data-groups="1">
   <div class="newest-head"><p class="word">In progress</p><span class="ver">v0.5.5</span><b class="badge">Coming soon</b></div>
-  <div class="grp grp-reach"><h4><i aria-hidden="true"></i>Sees further</h4><ul><li>macOS: <code>listening_ports</code> and <code>processes</code> (and the patrol&#39;s process checks) read the Mac itself (netstat or lsof, and ps; no root needed) instead of Linux&#39;s /proc, which found nothing there and looked like a host with nothing running. An unreadable table is an error, and a partial one says so.</li></ul></div>
+  <div class="grp grp-reach"><h4><i aria-hidden="true"></i>Sees further</h4><ul><li>macOS: <code>accounts_audit</code> reads the Mac&#39;s accounts (dscl; no root needed) and the authorized_keys of the login accounts and root, and sudoers when it can be read. What could not be read is in a note; the Linux-only checks (ld.so.preload, PAM modules from packages) are listed as not applicable.</li><li>macOS: <code>listening_ports</code> and <code>processes</code> (and the patrol&#39;s process checks) read the Mac itself (netstat or lsof, and ps; no root needed) instead of Linux&#39;s /proc, which found nothing there and looked like a host with nothing running. An unreadable table is an error, and a partial one says so.</li></ul></div>
 </div>
 
 
