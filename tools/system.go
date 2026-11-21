@@ -24,6 +24,13 @@ var listeningPorts = Tool{
 	Description: "TCP and UDP ports this server listens on, with the owning process and its executable path.",
 	Params:      schema(noParams),
 	Run: func(ctx context.Context, env *Env, args json.RawMessage) (any, error) {
+		if onMac() {
+			ports, partial, err := macPorts(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return withPartial("ports", ports, partial), nil
+		}
 		return ListeningPorts()
 	},
 }
@@ -44,6 +51,9 @@ type Port struct {
 func ListeningPorts() ([]Port, error) {
 	if runtime.GOOS == "windows" {
 		return portsFromFacts(windowsFacts(context.Background()))
+	}
+	if onMac() {
+		return macPortsStrict(context.Background())
 	}
 	src := hostSource()
 	procs, owners := linux.Processes(src, nil)
@@ -136,6 +146,13 @@ var processesTool = Tool{
 		}
 		if runtime.GOOS == "windows" {
 			return winProcesses(a.All)
+		}
+		if onMac() {
+			procs, partial, err := macProcesses(ctx, a.All)
+			if err != nil {
+				return nil, err
+			}
+			return withPartial("processes", procs, partial), nil
 		}
 		return Processes(a.All), nil
 	},

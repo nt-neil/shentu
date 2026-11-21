@@ -23,6 +23,7 @@ var windowsSupported = map[string]bool{
 // for later.
 var darwinSupported = map[string]bool{
 	"package_vulns": true, "app_vulns": true, "app_code_audit": true, "site_profile": true, "notify": true,
+	"listening_ports": true, "processes": true, // M0: hostenv's darwin collector (netstat/lsof, ps)
 	// not cert_expiry yet: its certbot paths are Linux's, not Homebrew's
 }
 
