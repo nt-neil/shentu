@@ -395,6 +395,7 @@ func checks(ctx context.Context, cfg *Config, env *tools.Env, st *state, daily b
 	sshUnchecked += why
 
 	acc := tools.AccountsAudit()
+	sshUnchecked += accountsUnchecked(acc)
 	for _, u := range acc.UID0 {
 		if u != "root" {
 			out = append(out, finding{"uid0:" + u, "critical", "account with UID 0 besides root: " + u, nil})
@@ -674,4 +675,20 @@ func procFindings(procs []tools.Proc, err error) (out []finding, why string) {
 			fmt.Sprintf("suspicious process pid %d (%s): %s", p.PID, strings.Join(p.Flags, ", "), p.Cmdline), p})
 	}
 	return out, ""
+}
+
+// accountsUnchecked is what the account checks could not read (N-180-1:
+// macOS's dscl, or the authorized_keys of homes not readable): "not
+// checked", not "nothing found".
+func accountsUnchecked(acc tools.Accounts) string {
+	var b strings.Builder
+	for _, what := range acc.NotRead {
+		switch what {
+		case "accounts":
+			fmt.Fprintf(&b, "\n\nNot checked: accounts (UID 0 and login accounts) (%q).\n", cutLine(mask(acc.Note)))
+		case "authorized_keys":
+			fmt.Fprintf(&b, "\n\nNot checked: authorized_keys in full (%q).\n", cutLine(mask(acc.Note)))
+		}
+	}
+	return b.String()
 }

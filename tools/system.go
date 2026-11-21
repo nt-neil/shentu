@@ -370,8 +370,11 @@ type Accounts struct {
 	SharedKeys    []SharedKey `json:"keys_in_several_accounts,omitempty"`
 	Preload       []string    `json:"ld_so_preload,omitempty"`
 	UnpackagedPAM []string    `json:"pam_modules_not_from_a_package,omitempty"`
-	// Note says what could not be read (macOS: sudoers without root).
-	Note string `json:"note,omitempty"`
+	// Note says what could not be read (macOS: sudoers without root), and
+	// NotRead names it, for the patrol and the survey: "accounts",
+	// "authorized_keys", "sudoers" (N-180-1).
+	Note    string   `json:"note,omitempty"`
+	NotRead []string `json:"not_read,omitempty"`
 	// NotApplicable are the checks that do not apply on this host's OS
 	// (macOS: ld.so.preload, PAM modules from packages): not "none found".
 	NotApplicable []string `json:"not_applicable,omitempty"`

@@ -82,3 +82,27 @@ func TestMacAccountsSudoersUnread(t *testing.T) {
 		t.Errorf("note: %q", a.Note)
 	}
 }
+
+// N-180-1: accounts that cannot be read are named (NotRead), and the survey
+// says so in a risk the patrol lists as not checked, never an empty,
+// clean-looking login account list.
+func TestMacSurveyAccountsUnreadable(t *testing.T) {
+	rp, _ := hostenv.LoadReplay("../hostenv/testdata/darwin/macos27-synthetic-user")
+	withHost(t, rp)
+	old := macAccountList
+	macAccountList = func(context.Context) hostenv.Obs[[]hostenv.Account] {
+		return hostenv.Unknown[[]hostenv.Account](hostenv.ReasonCommandFailed, "dscl failed")
+	}
+	t.Cleanup(func() { macAccountList = old })
+	if a := AccountsAudit(); !slices.Equal(a.NotRead, []string{"accounts", "authorized_keys", "sudoers"}) {
+		t.Errorf("not read: %v", a.NotRead)
+	}
+	p := Survey(context.Background(), &Env{})
+	found := false
+	for _, r := range p.Risks {
+		found = found || r.Key == "accounts:unreadable" && Unchecked(r)
+	}
+	if !found || len(p.LoginAccounts) != 0 {
+		t.Errorf("risks %v, login accounts %v", p.Risks, p.LoginAccounts)
+	}
+}

@@ -31,11 +31,13 @@ func macAccountsAudit(ctx context.Context) Accounts {
 	accts := macAccountList(ctx)
 	if !accts.Known() {
 		a.Note = "the accounts could not be read on macOS (" + string(accts.Reason) + "): " + Cut(accts.Detail, 200)
+		a.NotRead = []string{"accounts", "authorized_keys", "sudoers"}
 		a.NotApplicable = macNotApplicable
 		return a
 	}
 	if accts.Status == hostenv.StatusPartial {
 		notes = append(notes, "accounts partly read ("+string(accts.Reason)+"): "+Cut(accts.Detail, 200))
+		a.NotRead = append(a.NotRead, "accounts")
 	}
 	var keyed []hostenv.Account // whose authorized_keys sshd reads: login accounts and uid 0
 	for _, acct := range accts.Value {
@@ -53,8 +55,10 @@ func macAccountsAudit(ctx context.Context) Accounts {
 	keys := linux.SSHKeyFiles(src, keyed)
 	if !keys.Known() {
 		notes = append(notes, "authorized_keys could not be read ("+string(keys.Reason)+")")
+		a.NotRead = append(a.NotRead, "authorized_keys")
 	} else if keys.Status == hostenv.StatusPartial {
 		notes = append(notes, "some authorized_keys could not be read ("+string(keys.Reason)+")")
+		a.NotRead = append(a.NotRead, "authorized_keys")
 	}
 	a.KeyFiles = keyFilesOf(keys.Value)
 	a.SharedKeys = sharedKeys(a.KeyFiles)
@@ -62,6 +66,7 @@ func macAccountsAudit(ctx context.Context) Accounts {
 	a.SudoRules = rules
 	if sudo.Status != hostenv.StatusOK {
 		notes = append(notes, "sudoers could not be read ("+string(sudo.Reason)+"; it is root's only)")
+		a.NotRead = append(a.NotRead, "sudoers")
 	}
 	a.Note = strings.Join(notes, "; ")
 	a.NotApplicable = macNotApplicable
