@@ -3,6 +3,11 @@
 CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本與日期必須一致，
 每個版本都要有內容（`go test ./cmd/sitegen` 會檢查）。
 
+## v0.5.5 (unreleased)
+
+- survey（site_profile）現在和它的其他讀取一樣，經由主機來源檢查 Docker 和 Podman 的 socket：
+  replay 或 fixture 不會再讀到執行 survey 的那台機器。
+
 ## v0.5.3 (unreleased)
 
 - 建議按鈕按下後一定會有回覆（#163）：會先立刻回覆「正在重新檢查這個位址」，檢查之前先在 log 記下這次按下
