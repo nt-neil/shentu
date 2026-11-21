@@ -265,17 +265,25 @@ func TestEngineHostile(t *testing.T) {
 		{"js loops", "js", "function f(){" + R("for (const a of b) { x = x + req.query.y; }\n", 10000) + "exec(x);}"},
 	} {
 		start := time.Now()
-		_, err := e.Scan(c.lang, "x", []byte(c.src))
+		_, timed, err := e.ScanTimed(c.lang, "x", []byte(c.src))
 		took := time.Since(start)
-		t.Logf("%-22s %v err=%v", c.name, took.Round(time.Millisecond), err)
-		// The wall-clock slack is generous because loaded CI runners overshoot;
-		// the ErrLimit check below is what pins the behaviour. Keep +3s: a
-		// slower engine still shows in t.Logf and in detect-eval timings.
+		t.Logf("%-22s %v timed=%v err=%v", c.name, took.Round(time.Millisecond), timed, err)
+		// The wall clock only bounds a stall, so its slack is wide: loaded CI
+		// runners overshoot. Keep +3s: a slower engine still shows in t.Logf
+		// and in detect-eval timings.
 		if took > limit+slack {
 			t.Errorf("%s: took %v, cap %v + slack %v", c.name, took, limit, slack)
 		}
-		if took > limit && err != ErrLimit {
-			t.Errorf("%s: over the cap (%v) but err = %v", c.name, took, err)
+		// Whether the cap was reached is the engine's own reading of its clock
+		// (timed), not the test's: on a busy runner a scan that finished before
+		// its deadline can still end past it, outside the analysis (macOS CI,
+		// "js long call" at about 0.5s with err nil, twice in a week). What
+		// must hold is that a cut by the clock is said, never silent.
+		if timed && !errors.Is(err, ErrLimit) && !errors.Is(err, ErrCalls) {
+			t.Errorf("%s: the clock cut it short (%v) but err = %v", c.name, took, err)
+		}
+		if !timed && err != nil && !errors.Is(err, ErrLimit) {
+			t.Errorf("%s: err = %v", c.name, err)
 		}
 	}
 
