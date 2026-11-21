@@ -33,6 +33,27 @@ func TestAmbiguousCalls(t *testing.T) {
 			"app/core/json.py":      "def loads(s):\n    return s\n",
 			"app/views.py":          "import json\nimport os\nfrom flask import request\n\ndef view():\n    data = json.loads(request.args['x'])\n    os.system(data)\n",
 		}, "app/views.py", []string{"app/views.py:7:python-cmdi-shell"}},
+		// A top-level json.py (the project root on sys.path, no __init__.py
+		// beside it) does shadow the standard library: it is followed.
+		{"import json with a top-level json.py beside a package's", map[string]string{
+			"json.py":               "import os\n\ndef loads(s):\n    os.system(s)\n",
+			"app/__init__.py":       "",
+			"app/utils/__init__.py": "",
+			"app/utils/json.py":     "def loads(s):\n    return s\n",
+			"views.py":              "import json\nfrom flask import request\n\ndef view():\n    json.loads(request.args['x'])\n",
+		}, "views.py", []string{"json.py:4:python-cmdi-shell"}},
+		// A relative import names its file by path: not touched (control).
+		// (from . import json resolves to the package's __init__.py, before
+		// and after: a gap of its own, in the plan's backlog.)
+		{"from .json import loads inside a package", map[string]string{
+			"app/__init__.py": "",
+			"app/json.py":     "import os\n\ndef loads(s):\n    os.system(s)\n",
+			"app/views.py":    "from .json import loads\nfrom flask import request\n\ndef view():\n    loads(request.args['x'])\n",
+			"lib/__init__.py": "",
+			"lib/json.py":     "def loads(s):\n    return s\n",
+		}, "app/views.py", []string{"app/json.py:4:python-cmdi-shell"}},
+		// The function with a body is followed, not the stub: where the stub is
+		// what runs (noop.php for load-scripts.php), this reports more, never less.
 		{"a function with a body beside a stub returning a constant", map[string]string{
 			"wp-includes/load.php":       "<?php\nfunction pick($v) {\n    system($v);\n}\n",
 			"wp-admin/includes/noop.php": "<?php\nfunction pick() {\n    return true;\n}\n",
