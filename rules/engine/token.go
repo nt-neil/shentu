@@ -2,6 +2,7 @@ package engine
 
 import (
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -53,6 +54,9 @@ type Part struct {
 func (t Token) is(kind Kind, text string) bool { return t.Kind == kind && t.Text == text }
 func (t Token) op(text string) bool            { return t.Kind == Op && t.Text == text }
 func (t Token) word(text string) bool          { return t.Kind == Ident && t.Text == text }
+
+// kw is word for a PHP keyword, which ignores case (use ... AS, NEW).
+func (t Token) kw(text string) bool { return t.Kind == Ident && strings.EqualFold(t.Text, text) }
 
 // Limits bound the work done on one file, so a huge or hostile file cannot stall a scan.
 type Limits struct {

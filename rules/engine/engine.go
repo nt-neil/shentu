@@ -719,7 +719,9 @@ func (e *Engine) ScanFile(path string, src []byte) ([]Finding, error) {
 func lex(lang, src string, b *budget) []Token {
 	switch lang {
 	case "php":
-		return lexPHP(src, b, false)
+		t := lexPHP(src, b, false)
+		phpAliases(t)
+		return t
 	case "python":
 		return lexPython(src, b)
 	case "js":

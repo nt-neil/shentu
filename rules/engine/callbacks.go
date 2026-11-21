@@ -137,27 +137,82 @@ func untypedParam(t []Token, name string) bool {
 // no use statement gives, or one from Illuminate, is not another's.
 func (a *analysis) phpUseOther(name string) bool {
 	if a.phpUses == nil {
-		a.phpUses = map[string]string{}
-		t := a.ftoks
-		for i := 0; i+1 < len(t); i++ {
-			if !t[i].word("use") || i > 0 && !(t[i-1].op(";") || t[i-1].op("{") || t[i-1].op("}") || t[i-1].Kind == Newline || t[i-1].Text == "<?php") {
-				continue
-			}
-			j, q := i+1, ""
-			for j < len(t) && (t[j].Kind == Ident && !t[j].word("as") || t[j].op("\\")) {
-				q += t[j].Text
-				j++
-			}
-			if j < len(t) && t[j].op("{") || q == "" {
-				continue // a group use names its classes inside the braces
-			}
-			short := q[strings.LastIndex(q, "\\")+1:]
-			if j+1 < len(t) && t[j].word("as") && t[j+1].Kind == Ident {
-				short = t[j+1].Text
-			}
-			a.phpUses[strings.ToLower(short)] = strings.TrimPrefix(q, "\\")
-		}
+		a.phpUses = phpUseMap(a.ftoks)
 	}
 	q, ok := a.phpUses[strings.ToLower(name)]
 	return ok && !strings.HasPrefix(strings.ToLower(q), "illuminate\\") && strings.Contains(q, "\\")
+}
+
+// phpUseMap reads a PHP file's class use statements: the lower-case name each
+// gives (its alias, or the class's short name) to the class it names. An alias
+// also gives the class's own short name, unless another use statement names
+// that one (phpAliases reads R:: of use X\Request as R as Request::). Group,
+// function and const uses are left out.
+func phpUseMap(t []Token) map[string]string {
+	m, short := map[string]string{}, map[string]string{}
+	for i := 0; i+1 < len(t); i++ {
+		if !t[i].kw("use") || i > 0 && !(t[i-1].op(";") || t[i-1].op("{") || t[i-1].op("}") || t[i-1].Kind == Newline || t[i-1].Text == "<?php") {
+			continue
+		}
+		if t[i+1].kw("function") || t[i+1].kw("const") {
+			continue
+		}
+		j, q := i+1, ""
+		for j < len(t) && (t[j].Kind == Ident && !t[j].kw("as") || t[j].op("\\")) {
+			q += t[j].Text
+			j++
+		}
+		if j < len(t) && t[j].op("{") || q == "" {
+			continue // a group use names its classes inside the braces
+		}
+		q = strings.TrimPrefix(q, "\\")
+		name := q[strings.LastIndex(q, "\\")+1:]
+		if j+1 < len(t) && t[j].kw("as") && t[j+1].Kind == Ident {
+			if _, ok := short[strings.ToLower(name)]; !ok {
+				short[strings.ToLower(name)] = q
+			}
+			name = t[j+1].Text
+		}
+		m[strings.ToLower(name)] = q
+	}
+	for k, q := range short {
+		if _, ok := m[k]; !ok {
+			m[k] = q
+		}
+	}
+	return m
+}
+
+// phpAliases rewrites, in place, a class name a use statement aliases to the
+// class's short name where PHP code names a class: before ::, after new and
+// instanceof, and as a parameter's type. So use Illuminate\Support\Facades\
+// Request as Req; Req::get('sort') is matched as Request::get( by sources and
+// sinks, and Req $r as a Request parameter.
+func phpAliases(t []Token) {
+	var m map[string]string
+	for i := range t {
+		if t[i].Kind != Ident || i > 0 && (t[i-1].op("\\") || t[i-1].op("->") || t[i-1].op("::") || t[i-1].kw("use") || t[i-1].kw("as") || t[i-1].kw("function")) {
+			continue
+		}
+		n := Token{}
+		if i+1 < len(t) {
+			n = t[i+1]
+		}
+		class := n.op("::") || i > 0 && (t[i-1].kw("new") || t[i-1].kw("instanceof")) || n.Kind == Var || n.op("&") || n.op("...")
+		if !class {
+			continue
+		}
+		if m == nil {
+			if m = phpUseMap(t); len(m) == 0 {
+				return
+			}
+		}
+		q, ok := m[strings.ToLower(t[i].Text)]
+		if !ok {
+			continue
+		}
+		if s := q[strings.LastIndex(q, "\\")+1:]; !strings.EqualFold(s, t[i].Text) {
+			t[i].Text = s
+		}
+	}
 }
