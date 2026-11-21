@@ -218,23 +218,25 @@ func funcKey(f *fn, name, lang string) string {
 // plain name.
 func collectFuncs(ss []*stmt, lang string) map[string][]*fnInfo {
 	out := map[string][]*fnInfo{}
-	var walk func(ss []*stmt, depth int, inFn bool)
-	add := func(name string, f *fn, inFn bool) {
+	// fnVars is nil at a file's top level; in a function's body it holds the
+	// names that body declares global (global $callback;), which stay global
+	var walk func(ss []*stmt, depth int, fnVars map[string]bool)
+	add := func(name string, f *fn, fnVars map[string]bool) {
 		if name != "" && f != nil {
 			k := funcKey(f, name, lang)
 			fi := paramInfo(f, lang)
-			fi.local = inFn && strings.HasPrefix(name, "$")
+			fi.local = fnVars != nil && strings.HasPrefix(name, "$") && !fnVars[name]
 			out[k] = append(out[k], fi)
 		}
 	}
-	walk = func(ss []*stmt, depth int, inFn bool) {
+	walk = func(ss []*stmt, depth int, fnVars map[string]bool) {
 		if depth > maxNest {
 			return
 		}
 		for _, s := range ss {
 			if s.fn != nil {
-				add(s.fn.name, s.fn, inFn)
-				walk(s.fn.body, depth+1, true)
+				add(s.fn.name, s.fn, fnVars)
+				walk(s.fn.body, depth+1, globalsOf(s.fn.body))
 			}
 			if s.kind == sSimple && len(s.funcs) > 0 {
 				t := s.toks
@@ -242,26 +244,56 @@ func collectFuncs(ss []*stmt, lang string) map[string][]*fnInfo {
 					t = t[1:]
 				}
 				if len(t) == 3 && (t[0].Kind == Ident || t[0].Kind == Var) && t[1].op("=") && t[2].Kind == Func && t[2].Fn < len(s.funcs) {
-					add(t[0].Text, s.funcs[t[2].Fn], inFn)
+					add(t[0].Text, s.funcs[t[2].Fn], fnVars)
 				} else if n := len(t); n >= 5 && t[n-1].Kind == Func && t[n-1].Fn < len(s.funcs) && t[n-2].op("=") && t[n-3].Kind == Ident && dotted(t[:n-2]) {
-					add(t[n-3].Text, s.funcs[t[n-1].Fn], inFn) // exports.f = function, module.exports.f = (x) => ...
+					add(t[n-3].Text, s.funcs[t[n-1].Fn], fnVars) // exports.f = function, module.exports.f = (x) => ...
 				}
 			}
 			for _, f := range s.funcs {
-				walk(f.body, depth+1, true)
+				walk(f.body, depth+1, globalsOf(f.body))
 			}
-			walk(s.body, depth+1, inFn)
-			walk(s.els, depth+1, inFn)
-			walk(s.orelse, depth+1, inFn)
+			walk(s.body, depth+1, fnVars)
+			walk(s.els, depth+1, fnVars)
+			walk(s.orelse, depth+1, fnVars)
 			for _, h := range s.handlers {
-				walk(h, depth+1, inFn)
+				walk(h, depth+1, fnVars)
 			}
 			for _, c := range s.cases {
-				walk(c, depth+1, inFn)
+				walk(c, depth+1, fnVars)
 			}
 		}
 	}
-	walk(ss, 0, false)
+	walk(ss, 0, nil)
+	return out
+}
+
+// globalsOf returns the names a PHP function's body declares global, at any
+// depth of its blocks but not inside nested functions (global $a, $b;); never
+// nil, so a body with none is still a function's.
+func globalsOf(body []*stmt) map[string]bool {
+	out := map[string]bool{}
+	var walk func(ss []*stmt)
+	walk = func(ss []*stmt) {
+		for _, s := range ss {
+			if s.kind == sSimple && len(s.toks) > 1 && s.toks[0].Kind == Ident && strings.EqualFold(s.toks[0].Text, "global") {
+				for _, t := range s.toks[1:] {
+					if t.Kind == Var {
+						out[t.Text] = true
+					}
+				}
+			}
+			walk(s.body)
+			walk(s.els)
+			walk(s.orelse)
+			for _, h := range s.handlers {
+				walk(h)
+			}
+			for _, c := range s.cases {
+				walk(c)
+			}
+		}
+	}
+	walk(body)
 	return out
 }
 

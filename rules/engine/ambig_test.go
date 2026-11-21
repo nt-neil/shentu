@@ -37,11 +37,13 @@ func TestAmbiguousCalls(t *testing.T) {
 			"b.php": "<?php\n$callback = function ($v) {\n    exec($v);\n};\n",
 			"c.php": "<?php\n$callback = fn ($v) => system($v);\n",
 		}, "a.php", nil, true},
-		{"$callback(...) with the top-level closure of an included file", map[string]string{
-			"a.php": "<?php\ninclude 'b.php';\n$callback($_GET['x']);\n",
-			"b.php": "<?php\n$callback = function ($v) {\n    exec($v);\n};\n",
-			"c.php": "<?php\n$callback = fn ($v) => system($v);\n",
-		}, "a.php", []string{"b.php:3:php-cmdi-shell-exec"}, false},
+		// global $callback; inside a function makes the closure it assigns
+		// global, as a top-level one is: still a candidate, still unsure.
+		{"$callback(...) with closures assigned to a global $callback inside functions: unsure", map[string]string{
+			"a.php": "<?php\nclass A {\n    public function each($callback) {\n        return $callback($_GET['x']);\n    }\n}\n",
+			"b.php": "<?php\nfunction init() {\n    global $callback;\n    $callback = function ($v) { exec($v); };\n}\n",
+			"c.php": "<?php\nfunction boot() {\n    if (true) {\n        global $other, $callback;\n    }\n    $callback = fn ($v) => system($v);\n}\n",
+		}, "a.php", nil, true},
 		{"import json beside two package modules named json.py", map[string]string{
 			"app/__init__.py":       "",
 			"app/utils/__init__.py": "",
