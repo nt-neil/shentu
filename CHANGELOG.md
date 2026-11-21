@@ -8,6 +8,10 @@ Chinese for the zh-TW pages; keep the two in step.
 
 ## v0.5.4 (unreleased)
 
+- What a dispatch in progress has already used no longer counts twice near the budget limit: its
+  reservation knows the dispatch and when it started, and the others count only the rest of it,
+  from the same read of the log as the month's use. A reservation that cannot be matched counts in
+  full, as before.
 - Model prices (#162): `[agents] price_per_mtok_in` and `price_per_mtok_out` (dollars per million
   tokens) price each dispatch's reservation at its token cap times the higher of the two, so the
   monthly cost limit is shared between dispatches as the token limit is. When only the cost limit
