@@ -105,6 +105,9 @@ func withReservations(cfg *Config, now time.Time, f func(*reservations)) error {
 	if negativeReservation(r) { // S-R-6: not dropped quietly, like a file that does not parse
 		return fmt.Errorf("%w: %s holds a negative reservation (move it aside to reset it)", errReservations, p)
 	}
+	if sharedDispatch(r) { // S-169-1: what one dispatch logged would be taken off twice
+		return fmt.Errorf("%w: %s holds two reservations for one dispatch (move it aside to reset it)", errReservations, p)
+	}
 	var keep []reservation
 	for _, it := range r.Items {
 		if now.Before(it.Expires) {
@@ -178,6 +181,9 @@ func peekReserved(cfg *Config, now time.Time) (int, float64, error) {
 	if negativeReservation(r) {
 		return 0, 0, fmt.Errorf("%s holds a negative reservation", p)
 	}
+	if sharedDispatch(r) {
+		return 0, 0, fmt.Errorf("%s holds two reservations for one dispatch", p)
+	}
 	n, c := 0, 0.0
 	for _, it := range r.Items {
 		if now.Before(it.Expires) {
@@ -195,6 +201,23 @@ func negativeReservation(r reservations) bool {
 		if it.Tokens < 0 || it.Cost < 0 {
 			return true
 		}
+	}
+	return false
+}
+
+// sharedDispatch: two reservations of different ids name one dispatch,
+// which runDispatch never writes (one reservation per dispatch); what that
+// dispatch logged would be taken off both (S-169-1).
+func sharedDispatch(r reservations) bool {
+	seen := map[string]string{}
+	for _, it := range r.Items {
+		if it.Dispatch == "" {
+			continue
+		}
+		if id, ok := seen[it.Dispatch]; ok && id != it.ID {
+			return true
+		}
+		seen[it.Dispatch] = it.ID
 	}
 	return false
 }
@@ -230,12 +253,18 @@ type monthUse struct {
 }
 
 // usageWithOthers reads the reservations (all but self's) under their
-// lock, then log.jsonl once: the month's use and, in the same pass, what
-// each reserved dispatch has logged since its reservation started. That
-// part is in the month's use already, so it is taken off the reservation,
-// down to 0 at most (S-R-2). A reservation without its dispatch's id or
-// started in the future counts in full. An untrusted reservation file is
-// an errReservations error; a log that cannot be read, its error.
+// lock, then log.jsonl once, outside it: the month's use and, in the same
+// pass, what each reserved dispatch has logged since its reservation
+// started (S-R-2), taken off its reservation down to 0 at most. Its
+// correctness does not come from the lock (the log is read after it is
+// let go, and lines may be added meanwhile): it comes from the one scan,
+// in which a line taken off a reservation is always a line the month's sum
+// counted too, as the condition for taking off (the dispatch's id, at or
+// after its start) is stricter than the one for the sum (this month). A
+// reservation without its dispatch's id, or started in the future, counts
+// in full; two for one dispatch make the file untrusted (S-169-1). An
+// untrusted reservation file is an errReservations error; a log that
+// cannot be read, its error.
 func usageWithOthers(cfg *Config, self string, now time.Time) (monthUse, error) {
 	var items []reservation
 	err := withReservations(cfg, now, func(r *reservations) {

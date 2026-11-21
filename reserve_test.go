@@ -270,3 +270,25 @@ func TestReserveFutureStartCountsInFull(t *testing.T) {
 		t.Errorf("future start: %+v", u)
 	}
 }
+
+// S-169-1: two reservations of different ids for one dispatch, which no
+// dispatch writes, would have that dispatch's use taken off twice: the
+// file is not trusted (fail closed), and the budget line says so.
+func TestReserveSharedDispatchUntrusted(t *testing.T) {
+	var cfg *Config
+	subs, out, _ := reserveDispatch(t, 1_000_000, 0, func(c *Config) {
+		cfg = c
+		exp := time.Now().Add(time.Hour)
+		b, _ := json.Marshal(reservations{V: 1, Items: []reservation{
+			{ID: "aaa000000000", Tokens: 120_000, Expires: exp, Dispatch: "0123456789ab", Started: time.Now()},
+			{ID: "bbb000000000", Tokens: 120_000, Expires: exp, Dispatch: "0123456789ab", Started: time.Now()},
+		}})
+		os.WriteFile(filepath.Join(c.StateDir, reservationsFile), b, 0o600)
+	})
+	if subs != 0 || !strings.Contains(out, "two reservations for one dispatch") {
+		t.Errorf("two reservations for one dispatch: %d sub-agent requests\n%s", subs, out)
+	}
+	if l := budgetLine(cfg, time.Now(), false); !strings.Contains(l, "cannot be read") {
+		t.Errorf("budget line: %q", l)
+	}
+}
