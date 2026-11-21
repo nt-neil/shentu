@@ -1368,9 +1368,9 @@ func (p *Project) module(from, lang, mod, name string) string {
 				}
 			} else if f := p.unique(c); f != "" {
 				return f
-			} else if cs := p.pyTop(c); len(cs) == 1 {
+			} else if cs := p.pyTop(c); len(cs) == 1 && !p.pyBesideOther(dir, c, cs[0]) {
 				return cs[0]
-			} else if len(cs) > 1 || len(cs) == 0 && p.pyBeside(dir, c) {
+			} else if len(cs) > 0 || p.pyBeside(dir, c) {
 				p.unsure = true // two util.py: which one the import means depends on sys.path
 				return ""
 			}
@@ -1418,6 +1418,15 @@ func (p *Project) byPath(s string) string { return p.byClean[path.Clean(s)] }
 // importing file's own directory (on sys.path when that file runs as a script).
 func (p *Project) pyBeside(dir, s string) bool {
 	return slices.ContainsFunc(p.bySuffix[path.Clean(s)], func(f string) bool { return path.Dir(f) == path.Clean(path.Join(dir, path.Dir(s))) })
+}
+
+// pyBesideOther is pyBeside for a file other than top: with lib/helpers.py the
+// only top-level one and app/helpers.py beside app/views.py, import helpers
+// may mean either (app/ on sys.path when views.py runs as a script).
+func (p *Project) pyBesideOther(dir, s, top string) bool {
+	return slices.ContainsFunc(p.bySuffix[path.Clean(s)], func(f string) bool {
+		return f != top && path.Dir(f) == path.Clean(path.Join(dir, path.Dir(s)))
+	})
 }
 
 func (p *Project) pyTop(s string) []string {
