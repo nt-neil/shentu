@@ -133,3 +133,11 @@ func TestMacProcessesWebShell(t *testing.T) {
 		t.Errorf("web shell: %v %v", out, err)
 	}
 }
+
+// M0: Processes, which the patrol reads, is macOS's list on macOS too.
+func TestMacProcessesForPatrol(t *testing.T) {
+	macFixture(t)
+	if ps := Processes(true); len(ps) < 4 {
+		t.Errorf("Processes on macOS: %v", ps)
+	}
+}
