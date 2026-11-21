@@ -43,7 +43,11 @@ func TestSiteProfileEmptyHost(t *testing.T) {
 				"risks":          risksAllUnreadable(p.Risks),
 			} {
 				if !empty {
-					t.Errorf("%s holds a value on a host where nothing could be read", name)
+					var keys []string // risk keys are fixed words, never this host's
+					for _, r := range p.Risks {
+						keys = append(keys, r.Key)
+					}
+					t.Errorf("%s holds a value on a host where nothing could be read (risk keys %v)", name, keys)
 				}
 			}
 		})
