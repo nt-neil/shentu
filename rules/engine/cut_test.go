@@ -46,6 +46,8 @@ func TestCutCauses(t *testing.T) {
 		}
 		if got := CutOf(err); got&c.want == 0 {
 			t.Errorf("%s: cut %q, want it to name %q", c.name, got, c.want)
+		} else if c.proj != nil && got&CutTime != 0 {
+			t.Errorf("%s: cut %q: the project's clock is not the file's time limit", c.name, got)
 		}
 	}
 	if CutOf(nil) != 0 || CutOf(ErrPartial) != 0 {

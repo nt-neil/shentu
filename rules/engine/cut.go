@@ -93,3 +93,14 @@ func (b *budget) cut() Cut {
 	}
 	return c
 }
+
+// callsCutOf is what cut the calls pass's budget b2 short. In a project its
+// clock is the project's (scan: b2.deadline = proj.deadline), so running out
+// of time there is the project's cap, not the file's time limit.
+func callsCutOf(b2 *budget, proj *Project) Cut {
+	c := b2.cut()
+	if proj != nil && c&CutTime != 0 {
+		c = c&^CutTime | CutProject
+	}
+	return c
+}
