@@ -39,10 +39,11 @@ func TestBotBudgetReservedWords(t *testing.T) {
 	b.handle(context.Background(), msg(pairedUser, pairedChat, "private", "status?"))
 	answered(t, b)
 	got := lastText(tg)
-	if !strings.Contains(got, "120k") || !strings.Contains(got, "17") || strings.Contains(got, b.t("budget_out")) {
+	k := kTokens(dispatchTokenCap)
+	if !strings.Contains(got, k) || !strings.Contains(got, "17") || strings.Contains(got, b.t("budget_out")) {
 		t.Errorf("reply: %q", got)
 	}
-	if !strings.Contains(got, "120k are reserved by dispatches in progress") && !strings.Contains(got, "120k 被進行中的派遣預留") {
+	if !strings.Contains(got, k+" are reserved by dispatches in progress") && !strings.Contains(got, k+" 被進行中的派遣預留") {
 		t.Errorf("budget line: %q", got)
 	}
 }
@@ -88,7 +89,7 @@ func TestChatBudgetReservedWords(t *testing.T) {
 	spend(t, cfg, 40_000)
 	reserveOther(t, cfg, dispatchTokenCap)
 	err := chat(context.Background(), cfg, &tools.Env{}, "status?")
-	if err == nil || !strings.Contains(err.Error(), "reserved 120k tokens") || !strings.Contains(err.Error(), "17 minutes") {
+	if err == nil || !strings.Contains(err.Error(), "reserved "+kTokens(dispatchTokenCap)+" tokens") || !strings.Contains(err.Error(), "17 minutes") {
 		t.Errorf("chat: %v", err)
 	}
 }
@@ -116,7 +117,7 @@ func TestAutoBudgetTooSmallWarned(t *testing.T) {
 	h := &hostileModel{replies: []string{done}}
 	cfg, _, _ := autoSetup(t, h)
 	cfg.Budget.MonthlyTokens = 100_000
-	if w := autoBudgetWarning(cfg); !strings.Contains(w, "150k") {
+	if w := autoBudgetWarning(cfg); !strings.Contains(w, kTokens(autoMinTokens)) {
 		t.Errorf("warning: %q", w)
 	}
 	if s := autoIncidentSection(cfg, time.Now()); !strings.Contains(s, "none will ever start") {
