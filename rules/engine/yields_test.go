@@ -93,3 +93,55 @@ func TestYieldsSpans(t *testing.T) {
 		}
 	}
 }
+
+// A rule the second pass runs (a call can change its result) makes the rules
+// it yields to run there too, so a call both report stays the one it is
+// left to although no call changes that rule (v053 integ review S-1), for
+// orderby-identifier and laravel-raw as for the rules yielding to yii-query. Here
+// col() returns get_query_var('o'), php-sqli-orderby-identifier's input
+// only: before, orderby-identifier ran alone in the second pass and found no
+// laravel-raw finding to leave DB::raw inside DB::select to.
+func TestYieldsSecondPass(t *testing.T) {
+	e := engineForTest(t)
+	// no ORDER BY in the text: orderby-identifier's text sink would be another
+	// sink, which yields_to never leaves (yields.go)
+	src := "<?php\nfunction col() {\n    return get_query_var('o');\n}\n$rows = DB::select(DB::raw(\"SELECT * FROM t WHERE a = \" . $_GET['a'] . \" AND b = \" . col()));\n"
+	plain := "<?php\n$rows = DB::select(DB::raw(\"SELECT * FROM t WHERE a = \" . $_GET['a']));\n"
+	for _, c := range []struct {
+		name, src string
+		want      []string
+	}{
+		{"a call only orderby-identifier follows: laravel-raw's", src, []string{"5:php-sqli-laravel-raw"}},
+		{"no call (control)", plain, []string{"2:php-sqli-laravel-raw"}},
+		// php-sqli-codeigniter-query yields to php-sqli-yii-query; request( is
+		// codeigniter-query's input only, so it alone needed the second pass
+		{"a call only codeigniter-query follows: yii-query's", "<?php\nfunction col() {\n    return request('b');\n}\n$rows = $query->where(\"id = \" . $_GET['id'] . \" AND b = \" . col())->all();\n",
+			[]string{"5:php-sqli-yii-query"}},
+	} {
+		pr := e.NewProject([]string{"a.php"}, func(string) ([]byte, error) { return []byte(c.src), nil }, ProjectOptions{})
+		var got []string
+		for _, f := range auditPath(t, e, pr, "a.php", []byte(c.src)) {
+			if f.CWE == "CWE-89" {
+				got = append(got, fmt.Sprintf("%d:%s", f.Line, f.RuleID))
+			}
+		}
+		slices.Sort(got)
+		if !slices.Equal(got, c.want) {
+			t.Errorf("%s: reported %v, want %v", c.name, got, c.want)
+		}
+		fs, err := e.Scan("php", "a.php", []byte(c.src))
+		if err != nil {
+			t.Fatal(err)
+		}
+		got = nil
+		for _, f := range fs {
+			if f.CWE == "CWE-89" {
+				got = append(got, fmt.Sprintf("%d:%s", f.Line, f.RuleID))
+			}
+		}
+		slices.Sort(got)
+		if !slices.Equal(got, c.want) {
+			t.Errorf("%s, Engine.Scan: reported %v, want %v", c.name, got, c.want)
+		}
+	}
+}

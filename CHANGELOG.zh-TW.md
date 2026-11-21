@@ -3,6 +3,13 @@
 CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本與日期必須一致，
 每個版本都要有內容（`go test ./cmd/sitegen` 會檢查）。
 
+## v0.5.4 (unreleased)
+
+- 同一個呼叫被兩條規則回報時，就算檔案裡的某個呼叫只有其中一條規則會追，也照樣只留下被讓的那條（`yields_to`）（#160）。以前 `DB::select(DB::raw("..." . $_GET['a'] . "..." . col()))` 這種寫法，如果本地的 `col()` 回傳 `get_query_var('o')`（只有 php-sqli-orderby-identifier 讀這個輸入），會同時被 php-sqli-laravel-raw 和 php-sqli-orderby-identifier 回報；讓給 php-sqli-yii-query 的那幾條規則也有同樣的問題。
+- JavaScript 的 request 別名（#160）：`if`/`else` 之後，一個名稱的值取自「會繼續執行下去的分支」結尾時的值。所以每個分支都重新指定過的名稱（`let q = req; if (a) { q = {...} } else { q = {...} }`）不再當成 request。return 或 throw 的分支不算；以 `break` 或 `continue` 結尾的分支照樣算。
+- URL 檢查保留的唯讀呼叫（#160）：`typeof window`（`typeof` 後面接 `window`、`globalThis` 這類物件）不會再讓整個檔案的唯讀呼叫失效。條件運算式裡 `:` 後面的 `String`（`const S = c ? y : String;`）現在會讓它失效，和把 `String` 當成值來用一樣；以前它被當成 TypeScript 的型別。
+- PHP：如果檔案的 `use` 讓 `Request` 指向別的函式庫的類別（`use Httpful\Request`、`use Unirest\Request`、`use Httpful\Http as Request`），`Request::get(` 不再當成 Laravel 的 request facade（#160）。
+
 ## v0.5.3 (unreleased)
 
 - 建議按鈕按下後一定會有回覆（#163）：會先立刻回覆「正在重新檢查這個位址」，檢查之前先在 log 記下這次按下

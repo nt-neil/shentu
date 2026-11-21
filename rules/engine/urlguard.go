@@ -332,14 +332,61 @@ func tsType(t []Token, j int) bool {
 		return true
 	case !p.op(":"):
 		return false
+	case conditionalColon(t, j-1):
+		return false // c ? y : String is a value, whatever follows it
 	case n.op(")") || n.op(";") || n.op("[") || n.op("|") || n.op("&") || n.op(">"):
 		return true
+	case n.op(","):
+		// f(a: String, b): a parameter's type; { a: String, b } is a pattern
+		return t[j-2].Kind == Ident && innerOpen(t, j-1).op("(")
 	case n.op("="):
 		return j >= 3 && t[j-2].Kind == Ident && (t[j-3].word("let") || t[j-3].word("const") || t[j-3].word("var"))
 	case n.op("{"):
 		return t[j-2].op(")") // a function's return type
 	}
 	return false
+}
+
+// conditionalColon reports whether the colon t[c] closes a conditional
+// expression's first branch (c ? y : z): a ? before it in the same bracket and
+// expression. A ? right before the colon marks an optional parameter or
+// property (a?: T), and ?. and ?? are other tokens.
+func conditionalColon(t []Token, c int) bool {
+	depth := 0
+	for k := c - 1; k >= 0; k-- {
+		switch {
+		case isClose(t[k]):
+			depth++
+		case isOpen(t[k]):
+			if depth == 0 {
+				return false
+			}
+			depth--
+		case depth > 0:
+		case t[k].op("?"):
+			return k != c-1
+		case t[k].op(",") || t[k].op(";"):
+			return false
+		}
+	}
+	return false
+}
+
+// innerOpen returns the innermost bracket still open at t[j], or a zero token.
+func innerOpen(t []Token, j int) Token {
+	depth := 0
+	for k := j; k >= 0; k-- {
+		switch {
+		case isClose(t[k]):
+			depth++
+		case isOpen(t[k]):
+			if depth == 0 {
+				return t[k]
+			}
+			depth--
+		}
+	}
+	return Token{}
 }
 
 // globalReplace reports whether the file holds a way to replace a built-in
@@ -392,7 +439,7 @@ func globalReplace(t []Token) bool {
 		}
 		switch tk.Text {
 		case "globalThis", "window", "self", "global", "GLOBAL", "top":
-			if !member && !(next(1).op(".") && next(2).Kind == Ident) {
+			if !member && !(next(1).op(".") && next(2).Kind == Ident) && !(i > 0 && t[i-1].word("typeof")) { // typeof window only reads
 				return true // const g = globalThis, f(window), globalThis['String'], self?.[k], GLOBAL, top
 			}
 		case "require":
