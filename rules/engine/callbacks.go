@@ -144,7 +144,7 @@ func (a *analysis) phpUseOther(name string) bool {
 				continue
 			}
 			j, q := i+1, ""
-			for j < len(t) && (t[j].Kind == Ident || t[j].op("\\")) {
+			for j < len(t) && (t[j].Kind == Ident && !t[j].word("as") || t[j].op("\\")) {
 				q += t[j].Text
 				j++
 			}
