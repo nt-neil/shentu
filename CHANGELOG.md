@@ -6,6 +6,11 @@ a release are not written here: they are worked out from the rule snapshots in
 `docs/site-src/rules-history/`. `CHANGELOG.zh-TW.md` holds the same releases in Traditional
 Chinese for the zh-TW pages; keep the two in step.
 
+## v0.5.4 (unreleased)
+
+- `shentu usage` and the bot's /usage count the sub-agents' model calls (and any other actor's) (#164):
+  they were left out of the totals, and a dispatch's calls now have a line of their own.
+
 ## v0.5.3 (unreleased)
 
 - A proposal button pressed always gets an answer (#163): it says at once that it checks the

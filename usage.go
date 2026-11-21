@@ -66,7 +66,8 @@ func usageSummary(stateDir string, now time.Time) [3]map[string]*usageRow {
 func usageReport(stateDir string, now time.Time, zh bool) string {
 	sum := usageSummary(stateDir, now)
 	periods := [3][2]string{{"Today", "今天"}, {"Last 7 days", "最近 7 天"}, {"Last 30 days", "最近 30 天"}}
-	actors := map[string][2]string{"bot": {"Telegram", "Telegram 對話"}, "patrol": {"patrols", "自動巡邏"}, "chat": {"server chat", "伺服器上的 chat"}}
+	actors := map[string][2]string{"bot": {"Telegram", "Telegram 對話"}, "patrol": {"patrols", "自動巡邏"}, "chat": {"server chat", "伺服器上的 chat"},
+		"sub": {"sub-agents (dispatches)", "子 Agent（派遣）"}, "other": {"other", "其他"}}
 	i := 0
 	if zh {
 		i = 1
@@ -76,10 +77,27 @@ func usageReport(stateDir string, now time.Time, zh bool) string {
 		colon = "："
 	}
 	var b strings.Builder
-	for p, rows := range sum {
+	for p, byActor := range sum {
+		// Every call counts: the sub-agents' (actor sub:<role>) and any other
+		// actor's too, each group on its own line.
+		rows := map[string]*usageRow{}
+		for a, r := range byActor {
+			k := a
+			if strings.HasPrefix(a, "sub:") {
+				k = "sub"
+			} else if _, ok := actors[a]; !ok || a == "sub" || a == "other" {
+				k = "other"
+			}
+			g := rows[k]
+			if g == nil {
+				g = &usageRow{}
+				rows[k] = g
+			}
+			g.Calls, g.In, g.Out, g.Reason, g.Cost, g.Priced = g.Calls+r.Calls, g.In+r.In, g.Out+r.Out, g.Reason+r.Reason, g.Cost+r.Cost, g.Priced+r.Priced
+		}
 		var total usageRow
 		var lines []string
-		for _, a := range []string{"bot", "patrol", "chat"} {
+		for _, a := range []string{"bot", "patrol", "chat", "sub", "other"} {
 			r := rows[a]
 			if r == nil {
 				continue
