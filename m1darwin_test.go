@@ -27,7 +27,10 @@ import (
 // whose result is a list (listening_ports, processes, cert_expiry) is
 // judged by the list.
 var toolData = map[string][]string{
-	"site_profile":    {"services", "app_stacks", "lock_files", "firewall", "ssh", "containers", "cron_files", "login_accounts", "risks"},
+	// Not firewall (N-173r2-1): on macOS it is the Linux reader's summary of
+	// what it could not read ("no firewall enabled at boot (nftables...")
+	// until M0 reads pf and the application firewall; never empty.
+	"site_profile":    {"services", "app_stacks", "lock_files", "ssh", "containers", "cron_files", "login_accounts", "risks"},
 	"accounts_audit":  {"uid0_accounts", "login_accounts", "sudo_rules", "authorized_keys", "keys_in_several_accounts", "ld_so_preload", "pam_modules_not_from_a_package"},
 	"file_changes":    {"files"},
 	"ssh_logins":      {"sources"},
@@ -37,10 +40,6 @@ var toolData = map[string][]string{
 
 // metaFields are never what a tool read, for a tool not in toolData.
 var metaFields = map[string]bool{"time": true, "os": true, "kernel": true, "source": true, "limit": true, "since": true, "path": true, "roots": true, "untrusted": true}
-
-// fallbackWords are what a reader returns when it read nothing, which
-// reads like a finding (N-173r-1): linux.Firewall's "none detected".
-var fallbackWords = map[string]bool{"none detected": true}
 
 // saysWhy are fields by which a tool says it could not (fully) read:
 // explicit, not a clean-looking result.
@@ -103,7 +102,7 @@ func emptyValue(v any) bool {
 	case float64:
 		return x == 0
 	case string:
-		return x == "" || fallbackWords[x]
+		return x == ""
 	case []any:
 		return len(x) == 0
 	case map[string]any:
@@ -123,7 +122,10 @@ func TestM1LooksClean(t *testing.T) {
 		{"x", `{"ports":[],"source":"lsof"}`}, // a source is not data (N-173-1)
 		{"site_profile", `{"time":"2026-11-22T00:00:00Z","os":"darwin","kernel":"25.0","services":[],"ssh_config_hash":"ab"}`},
 		{"attack_attempts", `{"groups":[],"within_hours":24,"untrusted":"samples are written by the senders"}`},
-		{"site_profile", `{"time":"t","os":"darwin","kernel":"25.0","firewall":"none detected"}`}, // N-173r-1
+		// N-173r-1, N-173r2-1: what Survey gives on macOS for the firewall, a
+		// summary of what the Linux reader could not read, is not data.
+		{"site_profile", `{"time":"t","os":"darwin","kernel":"25.0","firewall":"no firewall enabled at boot (nftables.service is off); rules added at runtime cannot be read here, ask in chat","services":[]}`},
+		{"site_profile", `{"time":"t","os":"darwin","kernel":"25.0","firewall":"none detected"}`},
 		{"x", `{"a":{"b":[]}}`},
 	} {
 		if !looksClean(c.tool, []byte(c.out)) {
@@ -237,5 +239,39 @@ func TestM1DarwinToolsReadThePlatform(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// N-173r2-1: on a real Mac, site_profile with its data fields emptied
+// looks clean, whatever the other fields hold there (the firewall summary
+// of the Linux reader, time, os, kernel, hashes): no field outside
+// toolData passes for data. Runs on macOS (the CI macos job); prints no
+// value.
+func TestM1SiteProfileFieldsOnMac(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("runs on macOS (the CI macos job)")
+	}
+	tool, _ := tools.Find("site_profile")
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	out, err := tool.Run(ctx, productEnv(t), json.RawMessage(`{}`))
+	if err != nil {
+		t.Skipf("site_profile could not run here: %v", err)
+	}
+	b, _ := json.Marshal(out)
+	var m map[string]any
+	json.Unmarshal(b, &m)
+	for _, k := range toolData["site_profile"] {
+		delete(m, k)
+	}
+	rest, _ := json.Marshal(m)
+	if !looksClean("site_profile", rest) {
+		var keys []string
+		for k, v := range m {
+			if !emptyValue(v) {
+				keys = append(keys, k)
+			}
+		}
+		t.Errorf("fields outside toolData pass for data on macOS: %v", keys) // field names only
 	}
 }
