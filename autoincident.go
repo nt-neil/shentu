@@ -267,6 +267,15 @@ func autoBudget(cfg *Config, now time.Time) string {
 	return ""
 }
 
+// warnAutoNotify says autoNotifyWarning on stderr (the journal), when the
+// bot starts to serve and on the daily patrol only: the patrol's timer
+// runs often, and every other command would repeat it.
+func warnAutoNotify(cfg *Config) {
+	if w := autoNotifyWarning(cfg); w != "" {
+		fmt.Fprintln(os.Stderr, "shentu: warning: "+w)
+	}
+}
+
 // autoNotifyWarning says when auto_incident is on but no [notify] url is
 // set; "" otherwise. A check starts only from an L3 alert the patrol
 // pushed, and the patrol pushes through the notify url alone (the bot's

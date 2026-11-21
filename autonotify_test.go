@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -43,7 +44,8 @@ func TestAutoNotifyMissingWarned(t *testing.T) {
 	}
 }
 
-// The binary warns on stderr when it loads such a configuration.
+// The binary warns on stderr on the daily patrol (and when the bot starts
+// to serve), not on every command.
 func TestAutoNotifyMissingCLI(t *testing.T) {
 	if testing.Short() || runtime.GOOS == "windows" {
 		t.Skip("builds the binary")
@@ -53,21 +55,27 @@ func TestAutoNotifyMissingCLI(t *testing.T) {
 	if out, err := exec.Command("go", "build", "-o", bin, ".").CombinedOutput(); err != nil {
 		t.Fatalf("build: %v\n%s", err, out)
 	}
-	run := func(extra string) string {
+	// The warning is said before the patrol's work, which may fail here
+	// (no model): its exit is not what is checked.
+	run := func(extra string, args ...string) string {
 		cfgPath := filepath.Join(dir, "shentu.toml")
 		os.WriteFile(cfgPath, []byte("state_dir = "+strconv.Quote(filepath.Join(dir, "state"))+"\n"+extra), 0o600)
-		cmd := exec.Command(bin, "usage")
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, bin, args...)
 		cmd.Env = append(os.Environ(), "SHENTU_CONFIG="+cfgPath)
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("usage: %v\n%s", err, out)
-		}
+		out, _ := cmd.CombinedOutput()
 		return string(out)
 	}
-	if out := run("[agents]\nauto_incident = true\n"); !strings.Contains(out, "shentu: warning: auto_incident is on, but no [notify] url is set") {
-		t.Errorf("no warning:\n%s", out)
+	const on = "[agents]\nauto_incident = true\n"
+	const warned = "shentu: warning: auto_incident is on, but no [notify] url is set"
+	if out := run(on, "patrol", "--daily", "--dry-run"); !strings.Contains(out, warned) {
+		t.Errorf("no warning on the daily patrol:\n%s", out)
 	}
-	if out := run("[notify]\nurl = \"https://hooks.slack.com/services/x\"\n[agents]\nauto_incident = true\n"); strings.Contains(out, "no [notify] url") {
+	if out := run(on, "usage"); strings.Contains(out, warned) {
+		t.Errorf("warned on another command:\n%s", out)
+	}
+	if out := run("[notify]\nurl = \"https://hooks.slack.com/services/x\"\n"+on, "patrol", "--daily", "--dry-run"); strings.Contains(out, "no [notify] url") {
 		t.Errorf("warned with a url:\n%s", out)
 	}
 }
