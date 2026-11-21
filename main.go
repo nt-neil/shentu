@@ -128,6 +128,9 @@ func main() {
 	if err != nil {
 		fatal(err)
 	}
+	if w := autoNotifyWarning(cfg); w != "" {
+		fmt.Fprintln(os.Stderr, "shentu: warning: "+w)
+	}
 	tools.SetWebUsers(cfg.Tools.WebUsers)
 	tools.SetAuditLimits(cfg.Tools.AuditMaxMemoryMB, cfg.Tools.AuditWorkers)
 	tools.SetCacheDir(filepath.Join(cfg.StateDir, "cache"))
