@@ -30,6 +30,8 @@ var toolData = map[string][]string{
 	// Not firewall (N-173r2-1): on macOS it is the Linux reader's summary of
 	// what it could not read ("no firewall enabled at boot (nftables...")
 	// until M0 reads pf and the application firewall; never empty.
+	// tools.TestSiteProfileEmptyHost keeps these empty on a host where
+	// nothing can be read: keep the two lists in step.
 	"site_profile":    {"services", "app_stacks", "lock_files", "ssh", "containers", "cron_files", "login_accounts", "risks"},
 	"accounts_audit":  {"uid0_accounts", "login_accounts", "sudo_rules", "authorized_keys", "keys_in_several_accounts", "ld_so_preload", "pam_modules_not_from_a_package"},
 	"file_changes":    {"files"},
@@ -239,39 +241,5 @@ func TestM1DarwinToolsReadThePlatform(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-// N-173r2-1: on a real Mac, site_profile with its data fields emptied
-// looks clean, whatever the other fields hold there (the firewall summary
-// of the Linux reader, time, os, kernel, hashes): no field outside
-// toolData passes for data. Runs on macOS (the CI macos job); prints no
-// value.
-func TestM1SiteProfileFieldsOnMac(t *testing.T) {
-	if runtime.GOOS != "darwin" {
-		t.Skip("runs on macOS (the CI macos job)")
-	}
-	tool, _ := tools.Find("site_profile")
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-	defer cancel()
-	out, err := tool.Run(ctx, productEnv(t), json.RawMessage(`{}`))
-	if err != nil {
-		t.Skipf("site_profile could not run here: %v", err)
-	}
-	b, _ := json.Marshal(out)
-	var m map[string]any
-	json.Unmarshal(b, &m)
-	for _, k := range toolData["site_profile"] {
-		delete(m, k)
-	}
-	rest, _ := json.Marshal(m)
-	if !looksClean("site_profile", rest) {
-		var keys []string
-		for k, v := range m {
-			if !emptyValue(v) {
-				keys = append(keys, k)
-			}
-		}
-		t.Errorf("fields outside toolData pass for data on macOS: %v", keys) // field names only
 	}
 }
