@@ -1,6 +1,9 @@
 package engine
 
-import "strings"
+import (
+	"slices"
+	"strings"
+)
 
 // A callback some calls are known to call with a value they were given:
 // Laravel's $query->when($value, fn ($q, $v) => ...) (and ->unless) calls the
@@ -16,11 +19,11 @@ type paramSeed struct {
 // whenSeeds finds, in a PHP statement, the closures written as the second
 // argument of ->when( or ->unless( (also ::when(), and the value their
 // second parameter is called with: the call's first argument.
-func (a *analysis) whenSeeds(st state, t []Token, funcs []*fn) map[*fn]*paramSeed {
+func (a *analysis) whenSeeds(st state, t []Token, funcs []*fn) map[*fn][]*paramSeed {
 	if !a.php || len(funcs) == 0 {
 		return nil
 	}
-	var out map[*fn]*paramSeed
+	var out map[*fn][]*paramSeed
 	for i := 1; i+1 < len(t); i++ {
 		if !(t[i].word("when") || t[i].word("unless")) || !memberOp(true, t[i-1]) || !t[i+1].op("(") {
 			continue
@@ -30,9 +33,10 @@ func (a *analysis) whenSeeds(st state, t []Token, funcs []*fn) map[*fn]*paramSee
 			continue
 		}
 		if out == nil {
-			out = map[*fn]*paramSeed{}
+			out = map[*fn][]*paramSeed{}
 		}
-		out[funcs[args[1][0].Fn]] = &paramSeed{param: 1, v: a.expr(st, args[0], false)}
+		f := funcs[args[1][0].Fn]
+		out[f] = append(out[f], &paramSeed{param: 1, v: a.expr(st, args[0], false)})
 	}
 	return out
 }
@@ -160,4 +164,133 @@ func (a *analysis) phpUseOther(name string) bool {
 	}
 	q, ok := a.phpUses[strings.ToLower(name)]
 	return ok && !strings.HasPrefix(strings.ToLower(q), "illuminate\\") && strings.Contains(q, "\\")
+}
+
+// fnParamNames lists a function's parameter names, in order ("" where a
+// parameter has no plain name).
+func fnParamNames(f *fn) []string {
+	n := len(splitTop(f.params, isComma))
+	out := make([]string, n)
+	for k := range n {
+		out[k] = paramName(f.params, k)
+	}
+	return out
+}
+
+// paramIndex returns which parameter of the function being analysed name is,
+// or -1: a PHP $callback(...) of one is called with what the caller passed
+// (summary.pcall), not with another file's $callback.
+func (a *analysis) paramIndex(name string) int {
+	if !a.php || !strings.HasPrefix(name, "$") {
+		return -1
+	}
+	return slices.Index(a.curParams, name)
+}
+
+// pcallSeeds finds, in a PHP statement, calls of a function whose summary
+// calls one of its parameters (summary.pcall: tap($value, $callback), Arr::
+// first($array, $callback)) and follows the callable passed there:
+//   - a closure literal: its parameters are seeded with what the callee passes
+//     them (the input of the call's arguments the effect names), so its sinks
+//     are found;
+//   - the caller's own parameter: the effect moves up into the caller's
+//     summary (a.summ.pcall), to be followed where that is called;
+//   - anything else, when input would reach it: cut as callable-param, said,
+//     not followed (a function name, [$obj, 'm'] and foo(...) are not yet).
+func (a *analysis) pcallSeeds(st state, t []Token, funcs []*fn) map[*fn][]*paramSeed {
+	if !a.php {
+		return nil
+	}
+	var out map[*fn][]*paramSeed
+	for i := 0; i+1 < len(t); i++ {
+		if !t[i+1].op("(") || t[i].Kind != Ident && t[i].Kind != Var {
+			continue
+		}
+		if t[i].Kind == Var && (i == 0 || !memberOp(true, t[i-1])) {
+			// $callback(...) of a parameter: the input its arguments carry is
+			// what the function gives the callable (summary.pcall)
+			if p := a.paramIndex(t[i].Text); p >= 0 {
+				if a.summ != nil && a.nested == 0 {
+					for k, arg := range callArgs(t, i+1) {
+						if a.expr(st, arg, false).taint {
+							a.summ.pcall[[2]int{p, k}] = true
+						}
+					}
+				}
+				continue
+			}
+		}
+		if t[i].Kind == Ident && (declWords[t[i].Text] || t[i].word("function") || t[i].word("fn")) {
+			continue
+		}
+		sum := a.callSummary(t, i, a.calleeKey(t, i))
+		if sum == nil || len(sum.pcall) == 0 && len(sum.pcallSrc) == 0 {
+			continue
+		}
+		args := callArgs(t, i+1)
+		named := slices.ContainsFunc(args, func(arg []Token) bool { return len(arg) > 1 && arg[0].Kind == Ident && arg[1].op(":") })
+		for _, n := range sortedKeys2(sum.pcall, sum.pcallSrc) {
+			masks, srcs := sum.pcall[n], sum.pcallSrc[n]
+			seed := func(k int) val {
+				var v val
+				if k < len(masks) {
+					for m := range args {
+						if m < 64 && masks[k]&(1<<m) != 0 {
+							v = or(v, a.expr(st, args[m], false))
+						}
+					}
+				}
+				if k < len(srcs) && srcs[k] {
+					v.taint = true
+				}
+				return v
+			}
+			width := max(len(masks), len(srcs))
+			input := false
+			for k := range width {
+				input = input || seed(k).taint
+			}
+			switch {
+			case named || n >= len(args):
+				if input {
+					a.b.tooDeepFor(CutCallableParam)
+				}
+			case len(args[n]) == 1 && args[n][0].Kind == Func && args[n][0].Fn < len(funcs):
+				f := funcs[args[n][0].Fn]
+				if out == nil {
+					out = map[*fn][]*paramSeed{}
+				}
+				for k := range width {
+					out[f] = append(out[f], &paramSeed{param: k, v: seed(k)})
+				}
+			case len(args[n]) == 1 && args[n][0].Kind == Var && a.paramIndex(args[n][0].Text) >= 0:
+				if a.summ != nil && a.nested == 0 {
+					p := a.paramIndex(args[n][0].Text)
+					for k := range width {
+						if seed(k).taint {
+							a.summ.pcall[[2]int{p, k}] = true
+						}
+					}
+				}
+			case input:
+				a.b.tooDeepFor(CutCallableParam)
+			}
+		}
+	}
+	return out
+}
+
+// sortedKeys2 is the sorted union of two maps' keys.
+func sortedKeys2[V1, V2 any](x map[int]V1, y map[int]V2) []int {
+	var out []int
+	for k := range x {
+		out = append(out, k)
+	}
+	for k := range y {
+		if _, ok := x[k]; !ok {
+			out = append(out, k)
+		}
+	}
+	slices.Sort(out)
+	return out
 }

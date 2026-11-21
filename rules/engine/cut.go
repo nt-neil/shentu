@@ -22,14 +22,15 @@ const (
 	CutParams                    // a function with more parameters than a summary tracks (maxSumParams)
 	CutAmbiguous                 // a call that may reach another file, with no one callee to follow
 	// Why a summary used was capped (CutSummary with one or more of these):
-	CutSumWork     // its own work cap (the budget's sumWork)
-	CutSumHeight   // a chain of summaries under it longer than maxSumHeight
-	CutSumParams   // more parameters than it tracks
-	CutSumInner    // something inside it nested too deep
-	CutCallableVar // a call of a $variable that other files' closures of that name could be: what it holds is unknown here
+	CutSumWork       // its own work cap (the budget's sumWork)
+	CutSumHeight     // a chain of summaries under it longer than maxSumHeight
+	CutSumParams     // more parameters than it tracks
+	CutSumInner      // something inside it nested too deep
+	CutCallableVar   // a call of a $variable that other files' closures of that name could be: what it holds is unknown here
+	CutCallableParam // a callee calls a callable it was given, and the call site passes one it does not show (not a closure literal, nor its own parameter)
 )
 
-var cutNames = []string{"tokens", "time", "nesting", "call-work", "summary", "project", "call-depth", "cycle", "params", "ambiguous-call", "summary-work", "summary-height", "summary-params", "summary-inner", "callable-var"}
+var cutNames = []string{"tokens", "time", "nesting", "call-work", "summary", "project", "call-depth", "cycle", "params", "ambiguous-call", "summary-work", "summary-height", "summary-params", "summary-inner", "callable-var", "callable-param"}
 
 // String names the causes, comma-separated, in a fixed order.
 func (c Cut) String() string {

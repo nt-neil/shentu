@@ -64,15 +64,24 @@ type summary struct {
 	checks     uint64   // parameters the function validates when it returns true (a validator)
 	condChecks uint64   // ... only where the call's other arguments carry no input (the list may be one)
 	retSrc     bool     // the return value carries input of its own
-	capped     bool     // a cap of its own work cut it short: what it says may be too little
-	capCut     Cut      // why capped (cut.go: CutSum*, and the causes of summaries it used)
-	height     int      // the longest chain of summaries under it, itself included
-	cost       int      // its own work, not its callees': what an asker pays for using it
-	id         string   // file and key (a cycle's first function, for all its members): the same work done again (after a cache let it go) is paid for once
+	// pcall: the function calls its parameter N ($callback(...)), and argument
+	// k of that call carries the input of the parameters in pcall[N][k]
+	// (tap($value, $callback): pcall[1][0] = 1<<0); pcallSrc[N][k]: ... input
+	// of its own. The caller follows the callable it passes (pcallSeeds).
+	pcall    map[int][]uint64
+	pcallSrc map[int][]bool
+	capped   bool   // a cap of its own work cut it short: what it says may be too little
+	capCut   Cut    // why capped (cut.go: CutSum*, and the causes of summaries it used)
+	height   int    // the longest chain of summaries under it, itself included
+	cost     int    // its own work, not its callees': what an asker pays for using it
+	id       string // file and key (a cycle's first function, for all its members): the same work done again (after a cache let it go) is paid for once
 }
 
 func (s *summary) equal(o *summary) bool {
 	if s.ret != o.ret || s.retSrc != o.retSrc || s.retEmb != o.retEmb || s.retWeak != o.retWeak || s.sinkEmb != o.sinkEmb || s.checks != o.checks || s.condChecks != o.condChecks {
+		return false
+	}
+	if !maps.EqualFunc(s.pcall, o.pcall, slices.Equal[[]uint64]) || !maps.EqualFunc(s.pcallSrc, o.pcallSrc, slices.Equal[[]bool]) {
 		return false
 	}
 	for i := range max(len(s.sink), len(o.sink)) {
@@ -196,6 +205,7 @@ type summRun struct {
 	emb    map[loc]bool      // lines reached by input embedded in a larger string
 	checks []map[string]bool // per return that can be true: the paths it validates
 	ret    val
+	pcall  map[[2]int]bool // the body calls parameter N with input in argument k: {N, k}
 }
 
 // funcKey is the key of a function in fileFuncs.byKey. PHP function, method
@@ -645,6 +655,9 @@ func (a *analysis) callee(t []Token, i int) (callee, bool) {
 // one of this file at key, or, when there is none, one of another file of the
 // project.
 func (a *analysis) callSummary(t []Token, i int, key string) *summary {
+	if t[i].Kind == Var && (i == 0 || !memberOp(a.php, t[i-1])) && a.paramIndex(t[i].Text) >= 0 {
+		return nil // $callback(...) of a parameter: what the caller passes (summary.pcall), no other file's
+	}
 	if key != "" {
 		return a.summaryOf(key)
 	}
@@ -1295,11 +1308,34 @@ func (a *analysis) summarize(key string, fi *fnInfo, s *summary) {
 	// Worked out only where it may be true: the function returns a value, and
 	// a source of the rule, or a call the graph does not resolve, is reached
 	// from it. With checkSkips the skipped run is made anyway and must agree.
+	addCalls := func(r *summRun, bit uint64) {
+		for nk := range r.pcall {
+			n, k := nk[0], nk[1]
+			if bit == 0 {
+				if s.pcallSrc == nil {
+					s.pcallSrc = map[int][]bool{}
+				}
+				for len(s.pcallSrc[n]) <= k {
+					s.pcallSrc[n] = append(s.pcallSrc[n], false)
+				}
+				s.pcallSrc[n][k] = true
+				continue
+			}
+			if s.pcall == nil {
+				s.pcall = map[int][]uint64{}
+			}
+			for len(s.pcall[n]) <= k {
+				s.pcall[n] = append(s.pcall[n], 0)
+			}
+			s.pcall[n][k] |= bit
+		}
+	}
 	if a.mayReturnInput(key, fi) {
 		base := run(0, true)
 		if base.ret.taint && !base.ret.weak {
 			s.retSrc = true
 		}
+		addCalls(base, 0)
 	} else if checkSkips {
 		if base := run(0, true); base.ret.taint && !base.ret.weak {
 			panic(fmt.Sprintf("engine: skipped the sources run of %s (%s, rule %s), which returns input", key, a.file, a.r.rule.ID))
@@ -1328,7 +1364,7 @@ func (a *analysis) summarize(key string, fi *fnInfo, s *summary) {
 			s.checks |= 1 << i
 		}
 	}
-	if len(all.lines) == 0 && !all.ret.taint && len(all.checks) == 0 {
+	if len(all.lines) == 0 && !all.ret.taint && len(all.checks) == 0 && len(all.pcall) == 0 {
 		return
 	}
 	read := paramsRead(fi)
@@ -1354,6 +1390,7 @@ func (a *analysis) summarize(key string, fi *fnInfo, s *summary) {
 			}
 		} else {
 			r = run(1<<i, false)
+			addCalls(r, 1<<i)
 		}
 		if s.checks&(1<<i) == 0 && validates(r, i) {
 			s.condChecks |= 1 << i
@@ -1400,6 +1437,8 @@ func (a *analysis) runBody(fi *fnInfo, st state, sources bool) *summRun {
 		summ: &summRun{lines: map[loc]bool{}, emb: map[loc]bool{}}, noSrc: !sources, cls: fi.f.class, parent: fi.f.parent, fname: fi.f.name,
 		file: a.file, proj: a.proj, ftoks: a.ftoks, rdefs: a.rdefs, rcls: a.rcls, ifacts: a.ifacts, nest: a.nest, heights: a.heights}
 	x.paramTypes(fi.f)
+	x.curParams = fi.params
+	x.summ.pcall = map[[2]int]bool{}
 	a.sc.runs++
 	x.block(fi.f.body, st)
 	return x.summ
