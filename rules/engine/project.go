@@ -95,7 +95,7 @@ type ProjectOptions struct {
 }
 
 // indexVersion changes whenever fileIndex changes, so an old cache is ignored.
-const indexVersion = "7"
+const indexVersion = "8"
 
 type fileIndex struct {
 	Hash      string            `json:"h"`
@@ -438,7 +438,7 @@ func indexFile(e *Engine, lang string, src []byte) *fileIndex {
 			if x.f.class == "" {
 				if !x.f.method {
 					fi.Funcs = append(fi.Funcs, name)
-					if len(x.f.body) == 0 && x.f.name != "" && len(infos) == 1 {
+					if stubBody(x.f.body) && x.f.name != "" && len(infos) == 1 {
 						fi.Empty = append(fi.Empty, name)
 					}
 				}
@@ -1146,6 +1146,16 @@ func (p *Project) function(from string, fi *fileIndex, name string) string {
 
 func (p *Project) function1(from string, fi *fileIndex, name string) string {
 	cands := p.funcs[fi.Lang][name]
+	if strings.HasPrefix(name, "$") {
+		// $callback(...): a closure in a variable, of this file or of one it
+		// includes; another file's variable of that name is not this one
+		for _, inc := range p.includes(from, fi, 3) {
+			if slices.Contains(cands, inc) {
+				return inc
+			}
+		}
+		return ""
+	}
 	switch len(cands) {
 	case 0:
 		return ""
@@ -1368,7 +1378,9 @@ func (p *Project) module(from, lang, mod, name string) string {
 				}
 			} else if f := p.unique(c); f != "" {
 				return f
-			} else if len(p.bySuffix[path.Clean(c)]) > 1 {
+			} else if cs := p.pyTop(c); len(cs) == 1 {
+				return cs[0]
+			} else if len(cs) > 1 {
 				p.unsure = true // two util.py: which one the import means depends on sys.path
 				return ""
 			}
@@ -1405,6 +1417,22 @@ func (p *Project) module(from, lang, mod, name string) string {
 func (p *Project) byPath(s string) string { return p.byClean[path.Clean(s)] }
 
 // unique returns the one indexed file whose path ends with s.
+// pyTop returns the files ending with module path s that an absolute import
+// can mean: not inside a package (a directory with __init__.py), whose module
+// is imported by its package's name. So with django/utils/json.py and
+// django/core/serializers/json.py, import json means neither (the standard
+// library's): no file, and no doubt about which.
+func (p *Project) pyTop(s string) []string {
+	var out []string
+	for _, f := range p.bySuffix[path.Clean(s)] {
+		prefix := strings.TrimSuffix(strings.TrimSuffix(f, path.Clean(s)), "/")
+		if prefix == "" || p.byPath(path.Join(prefix, "__init__.py")) == "" {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
 func (p *Project) unique(s string) string {
 	if c := p.bySuffix[path.Clean(s)]; len(c) == 1 {
 		return c[0]
@@ -1526,4 +1554,29 @@ func saveIndexCache(name, key string, files map[string]*fileIndex) {
 		return
 	}
 	ok = os.Rename(tmp.Name(), name) == nil
+}
+
+// stubBody reports whether a function's body adds nothing to follow: empty, or
+// one return of a constant (WordPress's noop.php: function is_admin() { return
+// true; }), so that among files declaring the function the one with a body is
+// followed (preferred).
+func stubBody(body []*stmt) bool {
+	if len(body) == 0 {
+		return true
+	}
+	if len(body) != 1 || len(body[0].body) > 0 {
+		return false
+	}
+	t := body[0].toks
+	if len(t) > 0 && t[len(t)-1].op(";") {
+		t = t[:len(t)-1]
+	}
+	if len(t) == 1 && t[0].word("return") {
+		return true
+	}
+	if len(t) != 2 || !t[0].word("return") {
+		return false
+	}
+	v := t[1]
+	return v.Kind == Num || v.Kind == Str && len(v.Parts) == 0 || v.Kind == Ident && (strings.EqualFold(v.Text, "true") || strings.EqualFold(v.Text, "false") || strings.EqualFold(v.Text, "null"))
 }
