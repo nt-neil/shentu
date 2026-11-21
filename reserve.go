@@ -139,35 +139,36 @@ func reserve(cfg *Config, tokens int, cost float64, now time.Time) (id string, r
 	}, nil
 }
 
-// peekReserved is the tokens the live reservations hold, read without the
+// peekReserved is the tokens and cost the live reservations hold, read without the
 // lock and without writing (the file is replaced atomically): for the
 // budget line, which `sudo shentu budget` prints as another user, who must
 // not create the lock file.
-func peekReserved(cfg *Config, now time.Time) (int, error) {
+func peekReserved(cfg *Config, now time.Time) (int, float64, error) {
 	p := filepath.Join(cfg.StateDir, reservationsFile)
 	f, err := osutil.OpenNoFollow(p, os.O_RDONLY, 0, true)
 	if errors.Is(err, os.ErrNotExist) {
-		return 0, nil
+		return 0, 0, nil
 	}
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	defer f.Close()
 	b, err := io.ReadAll(io.LimitReader(f, 1<<20))
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	var r reservations
 	if len(b) > 0 && (json.Unmarshal(b, &r) != nil || r.V != 1) {
-		return 0, fmt.Errorf("%s does not parse", p)
+		return 0, 0, fmt.Errorf("%s does not parse", p)
 	}
-	n := 0
+	n, c := 0, 0.0
 	for _, it := range r.Items {
 		if now.Before(it.Expires) && it.Tokens >= 0 {
 			n += it.Tokens
+			c += it.Cost
 		}
 	}
-	return n, nil
+	return n, c, nil
 }
 
 // othersReserved is the tokens and the cost the live reservations hold,
