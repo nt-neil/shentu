@@ -68,3 +68,17 @@ func TestMacAccountsPartial(t *testing.T) {
 		t.Errorf("partial: %q", a.Note)
 	}
 }
+
+// M0: sudoers that cannot be read (not root, as on most Macs) is said.
+func TestMacAccountsSudoersUnread(t *testing.T) {
+	rp, _ := hostenv.LoadReplay("../hostenv/testdata/darwin/macos27-synthetic-user")
+	withHost(t, rp)
+	old := macSudoRules
+	macSudoRules = func(hostenv.Source) ([]string, hostenv.Obs[struct{}]) {
+		return nil, hostenv.Unknown[struct{}](hostenv.ReasonPermission, "/etc/sudoers: permission denied")
+	}
+	t.Cleanup(func() { macSudoRules = old })
+	if a := AccountsAudit(); !strings.Contains(a.Note, "sudoers could not be read") {
+		t.Errorf("note: %q", a.Note)
+	}
+}

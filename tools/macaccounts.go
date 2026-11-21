@@ -13,6 +13,9 @@ var macAccountList = func(ctx context.Context) hostenv.Obs[[]hostenv.Account] {
 	return hostenv.DarwinCollector{}.Accounts(ctx, hostSource())
 }
 
+// macSudoRules reads sudoers (root's only on macOS); tests replace it.
+var macSudoRules = func(src hostenv.Source) ([]string, hostenv.Obs[struct{}]) { return linux.SudoRules(src) }
+
 // macNotApplicable are the Linux account checks macOS has no counterpart of.
 var macNotApplicable = []string{"ld_so_preload", "pam_modules_not_from_a_package"}
 
@@ -55,7 +58,7 @@ func macAccountsAudit(ctx context.Context) Accounts {
 	}
 	a.KeyFiles = keyFilesOf(keys.Value)
 	a.SharedKeys = sharedKeys(a.KeyFiles)
-	rules, sudo := linux.SudoRules(src)
+	rules, sudo := macSudoRules(src)
 	a.SudoRules = rules
 	if sudo.Status != hostenv.StatusOK {
 		notes = append(notes, "sudoers could not be read ("+string(sudo.Reason)+"; it is root's only)")
