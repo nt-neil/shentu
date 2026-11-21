@@ -93,7 +93,10 @@ func TestDispatchMacOSRoles(t *testing.T) {
 	if len(reps[0].Unchecked) != len(subRoles["patrol"].tools) {
 		t.Errorf("unchecked: %v", reps[0].Unchecked)
 	}
-	want := map[string]bool{"processes: not available on macOS": false, "site_profile: not run: the patrol role is not available on macOS yet": false}
+	// processes and accounts_audit read macOS since M0 (supported, so "not run" while the role is closed).
+	want := map[string]bool{"file_changes: not available on macOS": false, "accounts_audit: not run: the patrol role is not available on macOS yet": false,
+		"processes: not run: the patrol role is not available on macOS yet":    false,
+		"site_profile: not run: the patrol role is not available on macOS yet": false}
 	for _, u := range reps[0].Unchecked {
 		if _, ok := want[u]; ok {
 			want[u] = true
@@ -116,9 +119,9 @@ func TestToolsSupportedOn(t *testing.T) {
 		want       bool
 	}{
 		{"attack_attempts", "linux", true}, {"attack_attempts", "windows", false}, {"attack_attempts", "darwin", false},
-		{"processes", "windows", true}, {"processes", "darwin", false}, {"listening_ports", "darwin", false},
-		{"accounts_audit", "darwin", true}, // M0 {"log_search", "darwin", false}, {"package_vulns", "darwin", true},
-		{"cert_expiry", "darwin", false},   // S-E2: Homebrew's certbot paths are not read yet
+		{"processes", "windows", true}, {"processes", "darwin", true}, {"listening_ports", "darwin", true}, // M0
+		{"accounts_audit", "darwin", true}, {"log_search", "darwin", false}, {"package_vulns", "darwin", true}, // M0
+		{"cert_expiry", "darwin", false}, // S-E2: Homebrew's certbot paths are not read yet
 		{"block_ip", "windows", false}, {"block_ip", "darwin", false}, {"processes", "plan9", false},
 	} {
 		if got := tools.SupportedOn(c.name, c.goos); got != c.want {

@@ -47,7 +47,7 @@ type Risk struct {
 // uncheckedRisks are the risks that say a check could not tell (a file it
 // needs could not be read): reports list them apart, every time, and never
 // push them as alerts.
-var uncheckedRisks = map[string]bool{"ssh:unreadable": true}
+var uncheckedRisks = map[string]bool{"ssh:unreadable": true, "services:unreadable": true}
 
 // uncheckedPrefix marks a risk from a check that could not tell (Windows
 // survey, see surveyFromFacts).
@@ -128,6 +128,10 @@ func Survey(ctx context.Context, env *Env) SiteProfile {
 				s.Public = true
 			}
 		}
+	} else {
+		// Not an empty, quiet-looking host (N-177-1): said, in the survey and
+		// in the patrol's "not checked" (the port baseline is skipped too).
+		p.Risks = append(p.Risks, Risk{"services:unreadable", "info", "cannot tell the listening services, and new listening ports are not checked: " + Cut(err.Error(), 200)})
 	}
 	for _, s := range by {
 		sort.Strings(s.Ports)
