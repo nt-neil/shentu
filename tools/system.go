@@ -311,6 +311,13 @@ func minerSigns(exe, cmdline string) bool {
 // userNames maps uid to account name from hostenv's accounts fact; the
 // first account with a uid wins.
 func userNames() map[string]string {
+	if onMac() { // dscl's accounts, not /etc/passwd's few (M0)
+		names := map[string]string{}
+		for _, a := range macAccountList(context.Background()).Value {
+			names[a.UID] = a.Name
+		}
+		return names
+	}
 	names, _ := linux.Accounts(hostSource())
 	if names == nil {
 		return map[string]string{}

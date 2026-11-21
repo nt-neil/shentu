@@ -77,10 +77,19 @@ var webshellPatterns = []*regexp.Regexp{
 func FileChanges(ctx context.Context, roots []string, since time.Time) (map[string]any, error) {
 	names := userNames()
 	var out []Changed
+	var unread []string
 	truncated := false
 	for _, root := range roots {
 		filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
-			if err != nil || ctx.Err() != nil {
+			if err != nil {
+				// Not read is not unchanged (M0: much of macOS's tree is
+				// closed to a user): said, up to a few.
+				if len(unread) < maxUnread {
+					unread = append(unread, p)
+				}
+				return nil
+			}
+			if ctx.Err() != nil {
 				return nil
 			}
 			if d.IsDir() {
@@ -129,8 +138,15 @@ func FileChanges(ctx context.Context, roots []string, since time.Time) (map[stri
 		}
 		return out[i].Modified.After(out[j].Modified)
 	})
-	return map[string]any{"since": since, "roots": roots, "files": out, "truncated": truncated}, nil
+	res := map[string]any{"since": since, "roots": roots, "files": out, "truncated": truncated}
+	if len(unread) > 0 {
+		res["unread"] = unread // what could not be read is not unchanged
+	}
+	return res, nil
 }
+
+// maxUnread bounds the unreadable paths file_changes lists.
+const maxUnread = 20
 
 func itoa(u uint32) string {
 	b := []byte{}
@@ -188,6 +204,9 @@ type Cert struct {
 }
 
 // CertExpiry checks network targets and local Let's Encrypt certificates.
+// certbotGlobs are where certbot keeps the live certificates.
+var certbotGlobs = []string{"/etc/letsencrypt/live/*/cert.pem", "/opt/homebrew/etc/letsencrypt/live/*/cert.pem", "/usr/local/etc/letsencrypt/live/*/cert.pem"}
+
 func CertExpiry(ctx context.Context, targets []string) []Cert {
 	var out []Cert
 	for _, t := range targets {
@@ -208,7 +227,12 @@ func CertExpiry(ctx context.Context, targets []string) []Cert {
 		}
 		out = append(out, c)
 	}
-	files, _ := filepath.Glob("/etc/letsencrypt/live/*/cert.pem")
+	var files []string
+	// certbot's Linux place, and Homebrew's on macOS (Apple silicon, Intel): M0
+	for _, g := range certbotGlobs {
+		m, _ := filepath.Glob(g)
+		files = append(files, m...)
+	}
 	for _, f := range files {
 		b, err := os.ReadFile(f)
 		if err != nil {
