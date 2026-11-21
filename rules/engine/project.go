@@ -1146,16 +1146,6 @@ func (p *Project) function(from string, fi *fileIndex, name string) string {
 
 func (p *Project) function1(from string, fi *fileIndex, name string) string {
 	cands := p.funcs[fi.Lang][name]
-	if strings.HasPrefix(name, "$") {
-		// $callback(...): a closure in a variable, of this file or of one it
-		// includes; another file's variable of that name is not this one
-		for _, inc := range p.includes(from, fi, 3) {
-			if slices.Contains(cands, inc) {
-				return inc
-			}
-		}
-		return ""
-	}
 	switch len(cands) {
 	case 0:
 		return ""
@@ -1380,7 +1370,7 @@ func (p *Project) module(from, lang, mod, name string) string {
 				return f
 			} else if cs := p.pyTop(c); len(cs) == 1 {
 				return cs[0]
-			} else if len(cs) > 1 {
+			} else if len(cs) > 1 || len(cs) == 0 && p.pyBeside(dir, c) {
 				p.unsure = true // two util.py: which one the import means depends on sys.path
 				return ""
 			}
@@ -1420,8 +1410,16 @@ func (p *Project) byPath(s string) string { return p.byClean[path.Clean(s)] }
 // pyTop returns the files ending with module path s that an absolute import
 // can mean: not inside a package (a directory with __init__.py), whose module
 // is imported by its package's name. So with django/utils/json.py and
-// django/core/serializers/json.py, import json means neither (the standard
-// library's): no file, and no doubt about which.
+// django/core/serializers/json.py, import json from a file elsewhere means
+// neither (the standard library's): no file, and no doubt about which. One
+// beside the importing file may still be loaded, when that file runs as a
+// script (pyBeside): that stays unsure.
+// pyBeside reports whether a file ending with module path s sits in dir, the
+// importing file's own directory (on sys.path when that file runs as a script).
+func (p *Project) pyBeside(dir, s string) bool {
+	return slices.ContainsFunc(p.bySuffix[path.Clean(s)], func(f string) bool { return path.Dir(f) == path.Clean(path.Join(dir, path.Dir(s))) })
+}
+
 func (p *Project) pyTop(s string) []string {
 	var out []string
 	for _, f := range p.bySuffix[path.Clean(s)] {

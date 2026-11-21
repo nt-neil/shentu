@@ -602,7 +602,7 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 			}
 			if b2.hit {
 				callsCut = true
-				cut |= b2.cut()
+				cut |= callsCutOf(b2, proj)
 				if b2.timeHit {
 					// Cut short by the clock, the flows found so far are not kept: how
 					// far it got depends on the machine's load, and a summary it had no
@@ -637,7 +637,7 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 		}
 		callsCut = callsCut || b2.hit || b2.limited
 		if b2.hit || b2.limited {
-			cut |= b2.cut()
+			cut |= callsCutOf(b2, proj)
 		}
 		timed = timed || b2.timeHit
 	}
