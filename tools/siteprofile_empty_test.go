@@ -31,6 +31,16 @@ func TestSiteProfileEmptyHost(t *testing.T) {
 				t.Fatal(err)
 			}
 			withHost(t, rp)
+			// The nginx and Apache checks run the package managers and read
+			// files directly, not through the host source (reported apart:
+			// they read the machine running them, e.g. a CI runner's nginx);
+			// here they find nothing, as on the empty host.
+			oldRun, oldRead, oldExists, oldApache := ngxRun, ngxRead, ngxExists, apacheVersion
+			ngxRun = func(context.Context, string, ...string) ([]byte, error) { return nil, os.ErrNotExist }
+			ngxRead = func(string) ([]byte, error) { return nil, os.ErrNotExist }
+			ngxExists = func(string) bool { return false }
+			apacheVersion = func(context.Context) string { return "" }
+			t.Cleanup(func() { ngxRun, ngxRead, ngxExists, apacheVersion = oldRun, oldRead, oldExists, oldApache })
 			p := Survey(context.Background(), &Env{})
 			for name, empty := range map[string]bool{
 				"services":       len(p.Services) == 0,
