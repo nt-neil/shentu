@@ -3,8 +3,18 @@
 CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本與日期必須一致，
 每個版本都要有內容（`go test ./cmd/sitegen` 會檢查）。
 
+## v0.5.4 (unreleased)
+
+- 同一個呼叫被兩條規則回報時，就算檔案裡的某個呼叫只有其中一條規則會追，也照樣只留下被讓的那條（`yields_to`）（#160）。以前 `DB::select(DB::raw("..." . $_GET['a'] . "..." . col()))` 這種寫法，如果本地的 `col()` 回傳 `get_query_var('o')`（只有 php-sqli-orderby-identifier 讀這個輸入），會同時被 php-sqli-laravel-raw 和 php-sqli-orderby-identifier 回報；讓給 php-sqli-yii-query 的那幾條規則也有同樣的問題。
+- JavaScript 的 request 別名（#160）：`if`/`else` 之後，一個名稱的值取自「會繼續執行下去的分支」結尾時的值。所以每個分支都重新指定過的名稱（`let q = req; if (a) { q = {...} } else { q = {...} }`）不再當成 request。return 或 throw 的分支不算；以 `break` 或 `continue` 結尾的分支照樣算。
+- URL 檢查保留的唯讀呼叫（#160）：`typeof window`（`typeof` 後面接 `window`、`globalThis` 這類物件），以及 TypeScript 參數型別寫成 `String`（`f(a: String, b)`），不會再讓整個檔案的唯讀呼叫失效。`c ? y : String` 裡 `:` 後面的 `String` 照樣會。
+- PHP：如果檔案的 `use` 讓 `Request` 指向別的函式庫的類別（`use Httpful\Request`、`use Unirest\Request`、`use Httpful\Http as Request`，`AS` 大寫也一樣），`Request::get(` 不再當成 Laravel 的 request facade（#160）。
+
 ## v0.5.3 (unreleased)
 
+- 建議按鈕按下後一定會有回覆（#163）：會先立刻回覆「正在重新檢查這個位址」，檢查之前先在 log 記下這次按下
+  （`proposal_press`），重新檢查最多一分鐘，超過時間就用閘門的固定字詞拒絕；過程中出錯也會回覆並記錄。
+  和以前一樣，按鈕按下後就算用掉了：因為檢查超過時間、出錯或被重啟中斷而被拒的按鈕不能再按，請改用下一次調查的按鈕。
 - Telegram 的封鎖只詢問閘門會放行的位址（#155、#158）：從聊天管道執行 block_ip 時，會在要求按 ✅ 之前先跑一次 #108 閘門的檢查。閘門會拒絕的位址立刻被拒，不會出現 ✅；agent 只會收到閘門的固定字詞（和位址），閘門的原始訊息只留在伺服器的紀錄裡；確認之後封鎖本身失敗時，錯誤內容也只留在紀錄裡。確認過的封鎖在執行時照舊會再檢查一次。
 - bot 等待時（#156、#158）：等待期間傳來的訊息，回覆會說明正在等什麼（上面的 ✅、驗證器的密碼，或伺服器以 `sudo shentu bot approve` 核准），不再回「上一個問題還在處理中」；等待期間傳來的問題不會交給 agent（驗證碼，以及 /lockdown、/new、/usage、/attacks 這些指令照常有效）。等待期間按下的建議動作按鈕或回覆建議按鈕會保留，之後可以再按；回覆建議不會再被用掉。
 - `shentu dispatch`（#158）：參數錯誤時先顯示用法，在讀設定之前，不論是誰執行；參數正確時，`stats` 和 `repair` 才要求 root（Windows 是系統管理員）。`sudo shentu dispatch repair` 在 `*.jsonl.bad` 裡每一行壞紀錄只保存一次，每日報告會寫出搬出的行裡有幾行是新加入的。
