@@ -305,9 +305,9 @@ func carryOverLines(dir string) string {
 
 // detectCarryOver is carryOverLines for this report's start. It stays
 // until clearCarryOver, once a report saying it went out.
-func detectCarryOver(dir string) string {
+func detectCarryOver(dir string, zh bool) string {
 	if l := carryOverLines(dir); l != "" {
-		return "\nAttack detection, last patrol(s) — not done after the report:\n" + l + "\n"
+		return "\n" + nt(zh, "det_carry_head") + "\n" + l + "\n"
 	}
 	return ""
 }
@@ -318,7 +318,7 @@ func clearCarryOver(dir string) { os.Remove(filepath.Join(dir, detectLastFile)) 
 // sayCarryOver sends carry, what the last patrol could not do, on its own
 // when this patrol has no report to send it in; forgotten once sent.
 // dryRun prints it and keeps it.
-func sayCarryOver(ctx context.Context, env *tools.Env, dir, carry string, dryRun bool) error {
+func sayCarryOver(ctx context.Context, env *tools.Env, dir, carry string, dryRun, zh bool) error {
 	if carry == "" {
 		return nil
 	}
@@ -326,7 +326,7 @@ func sayCarryOver(ctx context.Context, env *tools.Env, dir, carry string, dryRun
 		fmt.Print(carry)
 		return nil
 	}
-	if err := detectNotify(ctx, env, "Attack detection: last patrol's sends failed", mask(strings.TrimSpace(carry)), "warning"); err != nil {
+	if err := detectNotify(ctx, env, nt(zh, "det_carry_title"), mask(strings.TrimSpace(carry)), "warning"); err != nil {
 		return err
 	}
 	clearCarryOver(dir)
@@ -355,7 +355,7 @@ func (r *detectRun) send(ctx context.Context, env *tools.Env) detectSummary {
 				fmt.Printf("Attack attempts (summary)\n\n%s\n", text)
 				break
 			}
-			if err := detectNotify(ctx, env, fmt.Sprintf("%d more attack attempts", len(rest)), text, notifySeverity(rest[0].Severity)); err != nil {
+			if err := detectNotify(ctx, env, fmt.Sprintf(nt(isZh(r.cfg), "det_more_title"), len(rest)), text, notifySeverity(rest[0].Severity)); err != nil {
 				fail("notify (summary; the groups stay due)", err)
 				break
 			}
@@ -371,7 +371,7 @@ func (r *detectRun) send(ctx context.Context, env *tools.Env) detectSummary {
 			fmt.Printf("Attack attempt\n\n%s\n", text)
 			continue
 		}
-		if err := detectNotify(ctx, env, "Attack attempt", text, notifySeverity(g.Severity)); err != nil {
+		if err := detectNotify(ctx, env, nt(isZh(r.cfg), "det_attempt_title"), text, notifySeverity(g.Severity)); err != nil {
 			fail("notify (the group stays due)", err)
 			break
 		}
@@ -389,7 +389,7 @@ func (r *detectRun) send(ctx context.Context, env *tools.Env) detectSummary {
 	if notices != "" {
 		if r.dryRun {
 			fmt.Printf("Attack detection notice\n\n%s\n", notices)
-		} else if err := detectNotify(ctx, env, "Attack detection notice", notices, "warning"); err != nil {
+		} else if err := detectNotify(ctx, env, nt(isZh(r.cfg), "det_notice_title"), notices, "warning"); err != nil {
 			fail("notify (notices; sent again next round)", err)
 		} else {
 			p.NoticesSent()

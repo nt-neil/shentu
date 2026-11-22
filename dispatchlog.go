@@ -679,6 +679,15 @@ func (a *agent) runDispatch(ctx context.Context, origin, trigger string, tasks [
 	}
 
 	rec = newDispatchRecord(id, origin, trigger, start, dispatchTokenCap-left, dispatchTokenCap, reports)
+	for i, r := range reports { // the record's cap on proposals, after parseReport's
+		if i < len(rec.Subs) && len(rec.Subs[i].Proposals) < len(r.Proposals) {
+			var cut []droppedProposal
+			for _, p := range r.Proposals[len(rec.Subs[i].Proposals):] {
+				cut = append(cut, droppedProposal{Reason: dropTooMany, Action: p.Action, IP: p.IP})
+			}
+			a.logProposals(id, "sub:"+r.Role, true, len(r.Proposals), len(rec.Subs[i].Proposals), cut)
+		}
+	}
 	rec.External = external && modelErr == nil
 	gctx, gcancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
 	defer gcancel()

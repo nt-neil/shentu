@@ -530,7 +530,7 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 	// Attack detection: read and judged now (the daily report gets its
 	// summary); its alerts go out on their own, as the detector's words,
 	// after this patrol's report (deferred: whatever path it ends on).
-	carry := detectCarryOver(cfg.StateDir) // what the last patrol's sends could not do
+	carry := detectCarryOver(cfg.StateDir, isZh(cfg)) // what the last patrol's sends could not do
 	unchecked = carry + unchecked
 	dr := detectJudge(ctx, cfg, time.Now(), daily, dryRun)
 	defer finishDetect(ctx, env, dr)
@@ -551,7 +551,7 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 	st.LastRun = time.Now()
 	if len(fresh) == 0 && !daily {
 		fmt.Println("patrol: nothing new")
-		if err := sayCarryOver(ctx, env, cfg.StateDir, carry, dryRun); err != nil {
+		if err := sayCarryOver(ctx, env, cfg.StateDir, carry, dryRun, isZh(cfg)); err != nil {
 			fmt.Fprintln(os.Stderr, "shentu: attack detection: the last patrol's failures could not be sent:", err)
 		}
 		return st.save(cfg.StateDir)

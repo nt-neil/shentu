@@ -6,6 +6,26 @@ a release are not written here: they are worked out from the rule snapshots in
 `docs/site-src/rules-history/`. `CHANGELOG.zh-TW.md` holds the same releases in Traditional
 Chinese for the zh-TW pages; keep the two in step.
 
+## v0.5.4 (unreleased)
+
+- Notices follow `language` (F-1, F-4 of the v0.5.3 real-bot round): the automatic incident check,
+  "Approved from Telegram", pairing and unpairing, and the attack detection titles were English
+  whatever the setting said; they now go out in Chinese when `language` is Chinese, as the bot's
+  own messages do. The incident check's notice says in words what it found and what it did not
+  check (counts only: the sub-agent's words stay out of a notice, as before) and, with no
+  proposal, "nothing is suggested this time". The approval notice says first what happens
+  ("blocking 192.0.2.30, lifted after 24 hours; the bot's reply says whether it worked"), the
+  nft command after it as a detail. The daily and new-finding reports' own lines are not
+  translated yet.
+- Sub-agent proposals leave a trace (F-3): every report a role that may propose writes is logged
+  as a `proposals` entry (how many it wrote, how many were kept), and each one dropped says why, in
+  fixed words: `ip_is_a_network`, `ip_not_one_address`, `action_not_propose_block_ip`,
+  `too_many_proposals`, `role_cannot_propose`. Before, a dropped proposal and no proposal looked
+  the same. The sub-agents that may propose are now told to propose each attacking address, one
+  address per proposal (never a network), and the automatic check tells its sub-agent it comes
+  from a verified L3 alert. A proposal is still only a button: the gate and the press are
+  unchanged.
+
 ## v0.5.3 (unreleased)
 
 - A proposal button pressed always gets an answer (#163): it says at once that it checks the
