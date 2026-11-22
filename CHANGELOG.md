@@ -6,6 +6,21 @@ a release are not written here: they are worked out from the rule snapshots in
 `docs/site-src/rules-history/`. `CHANGELOG.zh-TW.md` holds the same releases in Traditional
 Chinese for the zh-TW pages; keep the two in step.
 
+## v0.5.5 (unreleased)
+
+- The host survey's nginx check covers the rest of nginx's advisories of 2026-11-18 (#190).
+  CVE-2026-118899, an infinite loop reading a request body over TLS 1.3, is warned about for nginx
+  1.13.0 through 1.31.8 with a TLS server (`listen ... ssl`, or `ssl on`) that speaks TLS 1.3: its
+  `ssl_protocols`, its own or else the http block's, names `TLSv1.3`, or it has none and nginx is
+  1.23.4 or later, whose default includes TLS 1.3. Turning HTTP/2 off does not avoid it.
+  CVE-2026-113425, a use-after-free in the mail proxy, is warned about only when a `mail` block has
+  a server. The six medium and minor ones (the resolver, HTTP/3, stream with client certificates or
+  `ssl_preread`, `try_files` with `alias`, PROXY protocol v2) are one line of advice by version,
+  as the check does not look for those features. All are fixed in 1.31.9 and 1.30.7. As for
+  HTTP/2, a distribution package whose changelog names a CVE is not warned about for it, and a
+  configuration file that could not be read is named in a line saying which of these could not
+  be checked.
+
 ## v0.5.3 (unreleased)
 
 - A proposal button pressed always gets an answer (#163): it says at once that it checks the

@@ -3,6 +3,10 @@
 CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本與日期必須一致，
 每個版本都要有內容（`go test ./cmd/sitegen` 會檢查）。
 
+## v0.5.5 (unreleased)
+
+- 主機盤點的 nginx 檢查補上 nginx 2026-11-18 公告的其餘項目（#190）。CVE-2026-118899 是透過 TLS 1.3 讀取 request body 時會一直重複、不會停下的問題：nginx 1.13.0～1.31.8 有 TLS 的 server（`listen ... ssl`，或 `ssl on`）會用 TLS 1.3 時就警告，也就是對它生效的 `ssl_protocols`（它自己的，否則是 http 區塊的）列了 `TLSv1.3`，或是沒有設定 `ssl_protocols` 而 nginx 是 1.23.4 以後的版本，預設就包含 TLS 1.3。關掉 HTTP/2 也沒有用。CVE-2026-113425 是 mail proxy 的 use-after-free，只有 `mail` 區塊裡有 server 時才警告。其餘 6 個中低風險項目（resolver、HTTP/3、用用戶端憑證或 `ssl_preread` 的 stream、`try_files` 加上 `alias`、PROXY protocol v2）依版本合成一行建議，因為這項檢查不看這些功能的設定。全部都在 1.31.9 和 1.30.7 修正。和 HTTP/2 的檢查一樣，套件的 changelog 已列出某個 CVE 時，不會為它警告；讀不到的設定檔會列在一行說明裡，指出哪幾項無法檢查。
+
 ## v0.5.3 (unreleased)
 
 - 建議按鈕按下後一定會有回覆（#163）：會先立刻回覆「正在重新檢查這個位址」，檢查之前先在 log 記下這次按下
