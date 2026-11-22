@@ -270,12 +270,14 @@ func (a *analysis) stmt(s *stmt, st state) (state, uint8) {
 	switch s.kind {
 	case sSimple:
 		a.sinks(st, s.toks)
-		if a.summ != nil && len(s.toks) > 0 && s.toks[0].word("return") {
+		if a.summ != nil && a.nested == 0 && len(s.toks) > 0 && s.toks[0].word("return") {
+			// a closure's return is not the function's: it is the closure's value,
+			// which reaches the function's result only as an expression
 			a.summ.ret = or(a.summ.ret, a.expr(st, s.toks[1:], false))
 			// What a return that can be true checks: values that still held a
 			// parameter's input there ($c = 'id'; return in_array($c, ...) checks
 			// nothing passed in). A closure's return is not one of these.
-			if rest := s.toks[1:]; a.nested == 0 && !(len(rest) == 1 && falsy(rest)) {
+			if rest := s.toks[1:]; !(len(rest) == 1 && falsy(rest)) {
 				set := map[string]bool{}
 				if _, cleaned := a.cleans(st, rest, true); len(cleaned) > 0 {
 					for _, k := range cleaned {
@@ -1395,8 +1397,8 @@ func (a *analysis) term(st state, t []Token, i int, whole bool) (val, int) {
 		return a.postfix(st, t, i, a.mapSanAt(t, i), val{}, whole) // array_map('absint', $x): each value sanitized (context.go)
 	case tk.Kind == Ident && (i == 0 || !memberOp(a.php, t[i-1])) && a.stripAllAt(t, i) >= 0:
 		return a.postfix(st, t, i, a.stripAllAt(t, i), val{}, whole) // preg_replace('/[^a-z0-9_]/', '', $x): only safe characters are left (context.go)
-	case tk.Kind == Ident && numericFuncs[a.lang()][tk.Text] && i+1 < len(t) && t[i+1].op("(") && (i == 0 || !memberOp(a.php, t[i-1])):
-		return a.postfix(st, t, i, closeOf(t, i+1)+1, val{}, whole) // intval($x), int(x), Number(x)
+	case tk.Kind == Ident && (numericFuncs[a.lang()][tk.Text] || a.php && hexFuncs[tk.Text]) && i+1 < len(t) && t[i+1].op("(") && (i == 0 || !memberOp(a.php, t[i-1])):
+		return a.postfix(st, t, i, closeOf(t, i+1)+1, val{}, whole) // intval($x), int(x), Number(x), wp_create_nonce($x)
 	case tk.Kind == Var || tk.Kind == Ident:
 		return a.postfix(st, t, i, i+1, val{}, whole)
 	}
@@ -1428,6 +1430,11 @@ var numericCasts = map[string]bool{"int": true, "integer": true, "float": true, 
 // one: is_numeric allows a sign, a decimal point, an exponent and surrounding
 // white space, none of which ends a quoted context or a path segment.
 var numericChecks = words("is_numeric is_int is_integer is_long is_float ctype_digit")
+
+// hexFuncs always return a string of hex digits, whatever they are given, which
+// carries no injection in any rule: WordPress wp_create_nonce() and wp_hash().
+// md5() and hash() do too, but not with raw output asked for (md5($x, true)).
+var hexFuncs = words("wp_create_nonce wp_hash")
 
 var numericFuncs = map[string]map[string]bool{
 	"php":    words("intval absint floatval boolval"),

@@ -502,6 +502,9 @@ func (a *analysis) passCallable(st state, arg []Token, funcs []*fn, seed func(in
 		if call := callableCall(arg); call != nil {
 			at := len(call) - 3 // the name before "(" ")"
 			if sum := a.callSummary(call, at, a.calleeKey(call, at)); sum != nil {
+				if a.nonced(st) {
+					return out // as at a sink: the request is the site's own (context.go)
+				}
 				for k := range width {
 					v := seed(k)
 					if !v.taint || v.weak {
