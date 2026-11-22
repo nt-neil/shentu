@@ -344,6 +344,37 @@ func ParseIISConfig(b []byte, systemRoot string) ([]string, error) {
 	return out, nil
 }
 
+// ParseIISFastCGI returns the program (fullPath) of every FastCGI
+// application in an applicationHost.config (<system.webServer><fastCgi>),
+// in file order, with %SystemDrive%, %windir% and %SystemRoot% expanded as
+// ParseIISConfig does: PHP under IIS is such an application, php-cgi.exe.
+func ParseIISFastCGI(b []byte, systemRoot string) ([]string, error) {
+	var cfg struct {
+		Apps []struct {
+			FullPath string `xml:"fullPath,attr"`
+		} `xml:"system.webServer>fastCgi>application"`
+	}
+	if err := xml.Unmarshal(bytes.TrimPrefix(b, []byte("\xef\xbb\xbf")), &cfg); err != nil {
+		return nil, err
+	}
+	drive := "C:"
+	if len(systemRoot) >= 2 && systemRoot[1] == ':' {
+		drive = systemRoot[:2]
+	}
+	var out []string
+	for _, a := range cfg.Apps {
+		p := strings.Trim(strings.TrimSpace(a.FullPath), `"`)
+		if p == "" {
+			continue
+		}
+		p = expandWinVar(p, "SystemDrive", drive)
+		p = expandWinVar(p, "windir", systemRoot)
+		p = expandWinVar(p, "SystemRoot", systemRoot)
+		out = append(out, p)
+	}
+	return out, nil
+}
+
 // expandWinVar replaces %name% (any case) with val.
 func expandWinVar(s, name, val string) string {
 	tok := "%" + strings.ToLower(name) + "%"

@@ -95,7 +95,9 @@ var riskyIfPublic = map[string]bool{"mysqld": true, "mariadbd": true, "postgres"
 // Survey builds the profile. It only reads; nothing is changed.
 func Survey(ctx context.Context, env *Env) SiteProfile {
 	if runtime.GOOS == "windows" {
-		return surveyFromFacts(windowsFacts(ctx), env)
+		p := surveyFromFacts(windowsFacts(ctx), env)
+		p.Risks = append(p.Risks, phpRisks(ctx)...)
+		return p
 	}
 	p := SiteProfile{Time: time.Now().UTC(), Firewall: firewall(ctx)}
 	plat, _ := hostPlatform()
@@ -160,6 +162,7 @@ func Survey(ctx context.Context, env *Env) SiteProfile {
 	if p.Firewall == "none detected" && hasPublic(p.Services) {
 		p.Risks = append(p.Risks, Risk{"firewall:none", "info", "no host firewall detected (nftables, ufw, firewalld); fine only if a cloud firewall covers this server"})
 	}
+	p.Risks = append(p.Risks, phpRisks(ctx)...)
 
 	for _, sock := range []string{"/run/docker.sock", "/var/run/docker.sock"} {
 		if st, err := os.Stat(sock); err == nil {
