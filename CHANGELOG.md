@@ -14,7 +14,10 @@ Chinese for the zh-TW pages; keep the two in step.
   and a sanitizer written `EscapeShellArg($x)` cleans. A method that happens to be named `system`
   (`$o->System(...)`, `Task::SYSTEM(...)`) is still no sink. JavaScript and Python names keep
   their case. A builtin named in a string with an escaped backslash (`array_map('\\system', $x)`,
-  `"\\system"`), which PHP reads as `\system`, is that builtin as well.
+  `"\\system"`), which PHP reads as `\system`, is that builtin as well. A pattern naming a PHP
+  function no longer matches a class built with `new` (`new File($p)`, `new System(...)`) or a
+  function of a namespace (`Storage\file($p)`, and `namespace\file($p)` in a file that declares a
+  namespace), as the lower-case `new file(` and `A\file(` did before; `\file($p)` is still PHP's.
 
 ## v0.5.5 (unreleased)
 

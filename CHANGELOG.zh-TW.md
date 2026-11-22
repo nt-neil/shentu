@@ -5,7 +5,7 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 
 ## v0.5.6 (unreleased)
 
-- PHP 的 sink 和清理函式，函式名稱與方法名稱改成不分大小寫比對，和 PHP 實際呼叫時一樣（#189）。`System($_GET['x'])`、`SYSTEM(...)`、`\SYSTEM(...)`、命名空間裡的 `System(...)`，以及被呼叫函式裡的 `Shell_Exec($c)`，現在都和小寫寫法一樣會回報；寫成 `EscapeShellArg($x)` 的清理函式也會生效。名稱也叫 `system` 的方法（`$o->System(...)`、`Task::SYSTEM(...)`）仍然不算 sink。JavaScript 和 Python 的名稱照舊分大小寫。字串裡用兩個反斜線寫的內建函式名稱（`array_map('\\system', $x)`、`"\\system"`），PHP 讀到的是 `\system`，現在也照內建函式處理。
+- PHP 的 sink 和清理函式，函式名稱與方法名稱改成不分大小寫比對，和 PHP 實際呼叫時一樣（#189）。`System($_GET['x'])`、`SYSTEM(...)`、`\SYSTEM(...)`、命名空間裡的 `System(...)`，以及被呼叫函式裡的 `Shell_Exec($c)`，現在都和小寫寫法一樣會回報；寫成 `EscapeShellArg($x)` 的清理函式也會生效。名稱也叫 `system` 的方法（`$o->System(...)`、`Task::SYSTEM(...)`）仍然不算 sink。JavaScript 和 Python 的名稱照舊分大小寫。字串裡用兩個反斜線寫的內建函式名稱（`array_map('\\system', $x)`、`"\\system"`），PHP 讀到的是 `\system`，現在也照內建函式處理。指向 PHP 內建函式的 pattern，不會再對上用 `new` 建立的類別（`new File($p)`、`new System(...)`），也不會對上命名空間裡的函式（`Storage\file($p)`，以及有宣告 namespace 的檔案裡的 `namespace\file($p)`）；以前小寫的 `new file(` 和 `A\file(` 會被對上。`\file($p)` 仍然是內建函式。
 
 ## v0.5.5 (unreleased)
 
