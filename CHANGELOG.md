@@ -56,6 +56,40 @@ Chinese for the zh-TW pages; keep the two in step.
   (`use Httpful\Request`, `use Unirest\Request`, `use Httpful\Http as Request`) is no longer read
   as Laravel's request facade (#160).
 
+- Upgrade note: going back to a version before v0.5.4, the dispatch records v0.5.4 wrote with
+  items not checked (their `unchecked_why`) cannot be read there. Their proposal buttons answer
+  that the dispatch is not in the archive; `shentu dispatch stats` skips them as unreadable lines;
+  and automatic incident checks stop, the archive not being trusted, until
+  `sudo shentu dispatch repair` moves those lines to `*.jsonl.bad` (kept, not deleted), after which
+  they count again from the next patrol.
+
+- Notices follow `language` (F-1, F-4 of the v0.5.3 real-bot round): the automatic incident check,
+  "Approved from Telegram", pairing and unpairing, and the attack detection titles were English
+  whatever the setting said; they now go out in Chinese when `language` is Chinese, as the bot's
+  own messages do. The incident check's notice says in words what it found and what it did not
+  check and, with no proposal, "nothing is suggested this time". What was not checked is said in
+  fixed words only (the sub-agent's own text stays out of a notice, as before): the sub-agent now
+  names the tool and picks a reason (`tool_failed`, `permission_denied`, `not_applicable`,
+  `time_limit`; anything else is "other"), the program adds `not_available` and `findings_cut`, the
+  archive keeps them (`unchecked_why`), the notice marks the sub-agent's picks as its own word,
+  not confirmed, and items with no fixed words are counted, to be treated as unknown. The approval notice says first what happens
+  ("blocking 192.0.2.30, lifted after 24 hours; the bot's reply says whether it worked"), the
+  nft command after it as a detail. The daily and new-finding reports' own lines are not
+  translated yet.
+
+- Sub-agent proposals leave a trace (F-3): every report a role that may propose writes is logged
+  as a `proposals` entry (how many it wrote, how many were kept), and each one dropped says why, in
+  fixed words: `ip_is_a_network`, `ip_not_one_address`, `action_not_propose_block_ip`,
+  `duplicate_ip`, `too_many_proposals`, `role_cannot_propose` (the first 20 listed, in shape only:
+  a network in canonical form, otherwise only an address's characters; the total counted; the
+  archive's own cap logs as `proposals_cut`). Before, a dropped proposal and no proposal looked
+  the same. The sub-agents that may propose are now told to propose only addresses with strong
+  evidence (a verified attack group's, or verified SSH logins with many failures), never one
+  taken from log text such as headers, and one address per proposal, never a network. The
+  automatic check tells its sub-agent it comes from a verified L3 alert, and that alert's address
+  is kept first; duplicates no longer take places. A proposal is still only a button: the gate
+  and the press are unchanged.
+
 ## v0.5.3 — 2026-11-22
 
 - A proposal button pressed always gets an answer (#163): it says at once that it checks the

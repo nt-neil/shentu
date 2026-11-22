@@ -427,7 +427,7 @@ func TestAutoDispatchSlotsAccounted(t *testing.T) {
 	if n := len(archived(t, cfg)); n != 1 {
 		t.Errorf("%d dispatches after two slots, want 1", n)
 	}
-	if !strings.Contains(autoNotice(dispatchRecord{ID: "cccccccccccc"}, true), "could not be saved") {
+	if !strings.Contains(autoNotice(dispatchRecord{ID: "cccccccccccc"}, true, false), "could not be saved") {
 		t.Error("the notice does not say the record was not saved")
 	}
 }
@@ -449,7 +449,7 @@ func TestAutoDispatchNoticeAndButtonsFromArchive(t *testing.T) {
 	if len(recs) != 1 || recs[0].ID != id || len(offered) != 1 || offered[0] != id {
 		t.Fatalf("id %s, archive %+v, buttons for %v", id, recs, offered)
 	}
-	if !strings.Contains((*out)[0].text, "dispatch: "+id) || !strings.Contains((*out)[0].text, "status: "+recs[0].Status) {
+	if !strings.Contains((*out)[0].text, "dispatch: "+id) || !strings.Contains((*out)[0].text, "result: "+recs[0].Status) {
 		t.Errorf("the notice is not the archived record's:\n%s", (*out)[0].text)
 	}
 }

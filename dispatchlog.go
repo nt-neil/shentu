@@ -107,6 +107,9 @@ type subRecord struct {
 	Findings     map[string]int   `json:"findings,omitempty"` // severity -> count
 	Proposals    []proposalRecord `json:"proposals,omitempty"`
 	Unchecked    int              `json:"unchecked"` // how many items it said it did not check
+	// UncheckedWhy is those items in fixed words, one each (records
+	// before v0.5.4 have none): never the model's text.
+	UncheckedWhy []uncheckedWhy `json:"unchecked_why,omitempty"`
 }
 
 // proposalRecord is one proposed action. Seq is unique within the record
@@ -189,6 +192,9 @@ func newDispatchRecord(id, origin, trigger string, start time.Time, used, tokenC
 	for _, r := range reps {
 		sr := subRecord{Role: r.Role, Status: statusIncomplete, Reason: r.code, Steps: r.steps, ToolCalls: r.toolCalls,
 			TokensIn: r.tokIn, TokensOut: r.tokOut, TokensReason: r.tokReason, Unchecked: len(r.Unchecked)}
+		if len(r.why) == len(r.Unchecked) {
+			sr.UncheckedWhy = append([]uncheckedWhy(nil), r.why...)
+		}
 		if r.Status == statusComplete {
 			sr.Status = statusComplete
 			done++
@@ -274,6 +280,14 @@ func (rec *dispatchRecord) check() error {
 		for sev, n := range s.Findings {
 			if (!severities[sev] && sev != "unknown") || n < 0 {
 				return bad("finding")
+			}
+		}
+		if len(s.UncheckedWhy) > s.Unchecked {
+			return bad("unchecked")
+		}
+		for _, u := range s.UncheckedWhy {
+			if _, ok := tools.Find(u.Tool); !uncheckedReasons[u.Reason] || u.Tool != "" && !ok {
+				return bad("unchecked")
 			}
 		}
 		for _, p := range s.Proposals {
@@ -690,6 +704,15 @@ func (a *agent) runDispatch(ctx context.Context, origin, trigger string, tasks [
 	}
 
 	rec = newDispatchRecord(id, origin, trigger, start, dispatchTokenCap-left, dispatchTokenCap, reports)
+	for i, r := range reports { // the record's cap on proposals, after parseReport's
+		if i < len(rec.Subs) && len(rec.Subs[i].Proposals) < len(r.Proposals) {
+			var cut subReport
+			for _, p := range r.Proposals[len(rec.Subs[i].Proposals):] {
+				cut.drop(dropTooMany, p.Action, p.IP)
+			}
+			a.logProposalsAs("proposals_cut", id, "sub:"+r.Role, true, len(r.Proposals), len(rec.Subs[i].Proposals), cut.dropped, cut.nDropped)
+		}
+	}
 	rec.External = external && modelErr == nil
 	gctx, gcancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
 	defer gcancel()
