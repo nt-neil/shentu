@@ -66,3 +66,40 @@ func TestCertbotGlobsHomebrew(t *testing.T) {
 		}
 	}
 }
+
+// N-183-2: a watched root that is a link (macOS's /etc) is walked where it
+// leads, and its files are shown under the root as set.
+func TestFileChangesSymlinkRoot(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix links")
+	}
+	dir := t.TempDir()
+	real := filepath.Join(dir, "private", "etc")
+	os.MkdirAll(real, 0o755)
+	os.WriteFile(filepath.Join(real, "planted"), []byte("x"), 0o600)
+	link := filepath.Join(dir, "etc")
+	os.Symlink(real, link)
+	tool, _ := Find("file_changes")
+	out, err := tool.Run(context.Background(), &Env{WatchPaths: []string{link}}, json.RawMessage(`{"since_hours":1}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, _ := out.(map[string]any)["files"].([]Changed)
+	if len(files) != 1 || files[0].Path != filepath.Join(link, "planted") {
+		t.Errorf("files under a linked root: %+v", files)
+	}
+}
+
+// S-183-1: a watched path this host does not have is missing, not unread.
+func TestFileChangesMissingNotUnread(t *testing.T) {
+	gone := filepath.Join(t.TempDir(), "no-such-dir")
+	tool, _ := Find("file_changes")
+	out, err := tool.Run(context.Background(), &Env{WatchPaths: []string{gone}}, json.RawMessage(`{"since_hours":1}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := out.(map[string]any)
+	if missing, _ := m["missing"].([]string); !slices.Equal(missing, []string{gone}) || m["unread"] != nil {
+		t.Errorf("missing %v, unread %v", m["missing"], m["unread"])
+	}
+}

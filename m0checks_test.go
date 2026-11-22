@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -12,11 +13,15 @@ import (
 )
 
 func checksOn(t *testing.T, src hostenv.Source, st *state) ([]finding, string) {
+	return checksOnEnv(t, src, st, &tools.Env{})
+}
+
+func checksOnEnv(t *testing.T, src hostenv.Source, st *state, env *tools.Env) ([]finding, string) {
 	t.Helper()
 	t.Cleanup(tools.SetHostSourceForTest(src))
 	cfg := &Config{StateDir: t.TempDir()}
 	cfg.Patrol.SSHThreshold = 10
-	out, why := checks(context.Background(), cfg, &tools.Env{}, st, false)
+	out, why := checks(context.Background(), cfg, env, st, false)
 	return out, uncheckedSection(st.Profile.Risks) + why
 }
 
@@ -63,5 +68,26 @@ func TestChecksMacOSBaselineFromEmpty(t *testing.T) {
 	}
 	if len(st.Ports) != 3 || st.PortsV != portsBaselineV {
 		t.Errorf("baseline: %v v%d", st.Ports, st.PortsV)
+	}
+}
+
+// N-183-1 through the patrol's entry: watched paths that cannot be read
+// are in the report's "not checked".
+func TestChecksFileChangesUnread(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("needs a non-root unix user")
+	}
+	closed := filepath.Join(t.TempDir(), "closed")
+	os.Mkdir(closed, 0o700)
+	os.Mkdir(filepath.Join(closed, "sub"), 0o700)
+	os.Chmod(filepath.Join(closed, "sub"), 0)
+	t.Cleanup(func() { os.Chmod(filepath.Join(closed, "sub"), 0o700) })
+	rp, err := hostenv.LoadReplay("hostenv/testdata/darwin/macos27-synthetic-user")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, unchecked := checksOnEnv(t, rp, &state{}, &tools.Env{WatchPaths: []string{closed}})
+	if !strings.Contains(unchecked, "Not checked: file changes under 1 paths") {
+		t.Errorf("not checked:\n%s", unchecked)
 	}
 }

@@ -77,15 +77,35 @@ var webshellPatterns = []*regexp.Regexp{
 func FileChanges(ctx context.Context, roots []string, since time.Time) (map[string]any, error) {
 	names := userNames()
 	var out []Changed
-	var unread []string
+	var unread, missing []string
 	truncated := false
 	for _, root := range roots {
-		filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		// A root that is a link is walked where it leads (N-183-2: macOS's
+		// /etc is a link to /private/etc, and WalkDir does not follow a
+		// link given as its root), the paths shown under the root as set.
+		real, err := filepath.EvalSymlinks(root)
+		switch {
+		case errors.Is(err, fs.ErrNotExist):
+			missing = append(missing, root) // not on this host: not "unread" (S-183-1)
+			continue
+		case err != nil:
+			if len(unread) < maxUnread {
+				unread = append(unread, root)
+			}
+			continue
+		}
+		shown := func(p string) string {
+			if real == root {
+				return p
+			}
+			return root + strings.TrimPrefix(p, real)
+		}
+		filepath.WalkDir(real, func(p string, d fs.DirEntry, err error) error {
 			if err != nil {
 				// Not read is not unchanged (M0: much of macOS's tree is
-				// closed to a user): said, up to a few.
-				if len(unread) < maxUnread {
-					unread = append(unread, p)
+				// closed to a user): said, up to a few. Gone meanwhile is not.
+				if !errors.Is(err, fs.ErrNotExist) && len(unread) < maxUnread {
+					unread = append(unread, shown(p))
 				}
 				return nil
 			}
@@ -117,7 +137,7 @@ func FileChanges(ctx context.Context, roots []string, since time.Time) (map[stri
 				truncated = true
 				return filepath.SkipAll
 			}
-			c := Changed{Path: p, Size: info.Size(), Mode: info.Mode().String(), Owner: owner, Modified: mt}
+			c := Changed{Path: shown(p), Size: info.Size(), Mode: info.Mode().String(), Owner: owner, Modified: mt}
 			if (webExt[strings.ToLower(filepath.Ext(p))] || aspPage(p)) && info.Size() < 512*1024 {
 				if b, err := os.ReadFile(p); err == nil {
 					for _, re := range webshellPatterns {
@@ -141,6 +161,9 @@ func FileChanges(ctx context.Context, roots []string, since time.Time) (map[stri
 	res := map[string]any{"since": since, "roots": roots, "files": out, "truncated": truncated}
 	if len(unread) > 0 {
 		res["unread"] = unread // what could not be read is not unchanged
+	}
+	if len(missing) > 0 {
+		res["missing"] = missing // watched paths this host does not have
 	}
 	return res, nil
 }

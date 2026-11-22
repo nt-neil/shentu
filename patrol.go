@@ -427,6 +427,7 @@ func checks(ctx context.Context, cfg *Config, env *tools.Env, st *state, daily b
 				out = append(out, finding{"webshell:" + f.Path, "critical", "possible webshell: " + f.Path, f})
 			}
 		}
+		sshUnchecked += fileChangesUnchecked(r)
 	}
 
 	for _, c := range tools.CertExpiry(ctx, env.CertTargets) {
@@ -691,4 +692,15 @@ func accountsUnchecked(acc tools.Accounts) string {
 		}
 	}
 	return b.String()
+}
+
+// fileChangesUnchecked is the watched paths file_changes could not read
+// (N-183-1: much of macOS is closed to a user): "not checked", not
+// "unchanged".
+func fileChangesUnchecked(r map[string]any) string {
+	unread, _ := r["unread"].([]string)
+	if len(unread) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("\n\nNot checked: file changes under %d paths (%q).\n", len(unread), cutLine(mask(strings.Join(unread, ", "))))
 }

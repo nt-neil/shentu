@@ -88,3 +88,13 @@ func TestMacDefaultWatchPaths(t *testing.T) {
 		}
 	}
 }
+
+// N-183-1: file_changes' unread paths are "not checked"; none, nothing.
+func TestFileChangesUnchecked(t *testing.T) {
+	if got := fileChangesUnchecked(map[string]any{"unread": []string{"/var/root/.ssh"}}); !strings.Contains(got, "Not checked: file changes under 1 paths") {
+		t.Errorf("unread: %q", got)
+	}
+	if got := fileChangesUnchecked(map[string]any{"missing": []string{"/var/www"}}); got != "" {
+		t.Errorf("missing only: %q", got)
+	}
+}
