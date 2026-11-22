@@ -263,6 +263,11 @@ func (b *bot) pressProposal(ctx context.Context, st botState, ref proposalRef) {
 		preview, ip, code := b.proposalCode(cctx, p)
 		late := errors.Is(cctx.Err(), context.DeadlineExceeded) // read before the cancel below, which always sets it
 		ccancel()
+		if ctx.Err() != nil { // the bot stopped during the checks: not refused, nothing more can be said
+			entry.Error = "the bot stopped during the checks"
+			b.log.write(entry)
+			return
+		}
 		if late {
 			code = tools.BlockStateError // not checked in time: refused, not asked
 		}
@@ -273,6 +278,9 @@ func (b *bot) pressProposal(ctx context.Context, st botState, ref proposalRef) {
 		entry.Preview = mask(preview)
 		if !b.confirm(ctx, chat, "block_ip", preview, true) {
 			entry.Error = "declined by operator"
+			if ctx.Err() != nil { // no answer came: the bot stopped while it waited for ✅
+				entry.Error = "the bot stopped before it was confirmed"
+			}
 			b.log.write(entry)
 			return
 		}
