@@ -143,6 +143,7 @@ type analysis struct {
 	kw          map[string]bool   // words that are keywords in this language
 	seed        []*paramSeed      // the values a callback's parameters are called with (whenSeeds, pcallSeeds), for the next function analysed
 	curParams   []string          // the parameters of the function being analysed (the innermost), by name: $callback(...) of one is no other file's
+	curMoved    map[string]bool   // ... those its body assigns again ($cb = wrap($cb)): no longer what the caller passed
 	laravelVars map[string]bool   // per PHP variable, whether it may be Laravel's request (laravelRequest)
 	phpUses     map[string]string // PHP: short class name (lower case) to the name a use statement gives it (phpUseOther)
 	branchBlock bool              // the next block is an if's branch, whose request aliases the if joins (block, sIf)
@@ -497,9 +498,10 @@ func (a *analysis) function(f *fn, st state) {
 		}
 	}
 	a.seed = nil
-	curParams := a.curParams
+	curParams, curMoved := a.curParams, a.curMoved
 	a.curParams = fnParamNames(f)
-	defer func() { a.curParams = curParams }()
+	a.curMoved = paramsMoved(f.body, a.curParams)
+	defer func() { a.curParams, a.curMoved = curParams, curMoved }()
 	a.libParams(f, x)
 	a.routeParams(f, x)
 	cls, parent, fname, types := a.cls, a.parent, a.fname, a.types

@@ -47,6 +47,18 @@ func TestParamCalls(t *testing.T) {
 		{"a closure calling its own parameter with input: cut as callable-param", map[string]string{
 			"a.php": "<?php\nfunction run() {\n    system('ls');\n    $f = function ($cb) {\n        $cb($_GET['x']);\n    };\n    return $f;\n}\n",
 		}, "a.php", nil, CutCallableParam},
+		{"named arguments are put in the callee's places (#182 review N-1)", map[string]string{
+			"b.php": "<?php\nfunction tap_value($value, $callback) {\n    $callback($value);\n    return $value;\n}\n",
+			"a.php": "<?php\nrequire 'b.php';\ntap_value(callback: function ($v) {\n    system($v);\n}, value: $_GET['c']);\n",
+		}, "a.php", []string{"a.php:4:php-cmdi-shell-exec"}, 0},
+		{"a named argument no parameter has, with input: cut as callable-param", map[string]string{
+			"b.php": "<?php\nfunction tap_value($value, $callback) {\n    $callback($value);\n    return $value;\n}\n",
+			"a.php": "<?php\nrequire 'b.php';\ntap_value(cb: function ($v) {\n    system($v);\n}, value: $_GET['c']);\n",
+		}, "a.php", nil, CutCallableParam},
+		{"a parameter assigned again before its call: cut as callable-param (#182 review S-1)", map[string]string{
+			"b.php": "<?php\nfunction wrap_call($v, $cb) {\n    $cb = wrap($cb);\n    $cb($v);\n}\n",
+			"a.php": "<?php\nrequire 'b.php';\nwrap_call($_GET['x'], function ($s) {\n    system($s);\n});\n",
+		}, "a.php", nil, CutCallableParam},
 		{"a callable the call site does not show, with input: cut as callable-param", map[string]string{
 			"b.php": helper,
 			"a.php": "<?php\nrequire 'b.php';\n$h = make_handler();\ntap2($_GET['x'], $h);\n",

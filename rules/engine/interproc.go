@@ -655,7 +655,7 @@ func (a *analysis) callee(t []Token, i int) (callee, bool) {
 // one of this file at key, or, when there is none, one of another file of the
 // project.
 func (a *analysis) callSummary(t []Token, i int, key string) *summary {
-	if t[i].Kind == Var && (i == 0 || !memberOp(a.php, t[i-1])) && a.paramIndex(t[i].Text) >= 0 {
+	if t[i].Kind == Var && (i == 0 || !memberOp(a.php, t[i-1])) && a.isParamName(t[i].Text) {
 		return nil // $callback(...) of a parameter: what the caller passes (summary.pcall), no other file's
 	}
 	if key != "" {
@@ -1441,6 +1441,7 @@ func (a *analysis) runBody(fi *fnInfo, st state, sources bool) *summRun {
 		file: a.file, proj: a.proj, ftoks: a.ftoks, rdefs: a.rdefs, rcls: a.rcls, ifacts: a.ifacts, nest: a.nest, heights: a.heights}
 	x.paramTypes(fi.f)
 	x.curParams = fi.params
+	x.curMoved = paramsMoved(fi.f.body, fi.params)
 	x.summ.pcall = map[[2]int]bool{}
 	a.sc.runs++
 	x.block(fi.f.body, st)

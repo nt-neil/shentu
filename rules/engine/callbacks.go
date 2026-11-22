@@ -181,10 +181,39 @@ func fnParamNames(f *fn) []string {
 // or -1: a PHP $callback(...) of one is called with what the caller passed
 // (summary.pcall), not with another file's $callback.
 func (a *analysis) paramIndex(name string) int {
-	if !a.php || !strings.HasPrefix(name, "$") {
+	if !a.isParamName(name) || a.curMoved[name] {
 		return -1
 	}
 	return slices.Index(a.curParams, name)
+}
+
+// isParamName reports whether name is a parameter of the function being
+// analysed, assigned again in its body or not: either way it is no other
+// file's $callback.
+func (a *analysis) isParamName(name string) bool {
+	return a.php && strings.HasPrefix(name, "$") && slices.Contains(a.curParams, name)
+}
+
+// paramsMoved returns the parameters a function's body assigns again
+// ($cb = wrap($cb), $cb .= ...), nested functions' tokens included (a closure
+// assigning a variable of that name moves it too: the safe side): after that a
+// call of one calls what the body made, not what the caller passed.
+func paramsMoved(body []*stmt, params []string) map[string]bool {
+	var out map[string]bool
+	walkToks(body, 0, func(t []Token) {
+		for i := 0; i+1 < len(t); i++ {
+			if t[i].Kind != Var || !slices.Contains(params, t[i].Text) || i > 0 && memberOp(true, t[i-1]) {
+				continue
+			}
+			if n := t[i+1]; n.Kind == Op && strings.HasSuffix(n.Text, "=") && n.Text != "==" && n.Text != "===" && n.Text != "!=" && n.Text != "!==" && n.Text != "<=" && n.Text != ">=" && n.Text != "=>" {
+				if out == nil {
+					out = map[string]bool{}
+				}
+				out[t[i].Text] = true
+			}
+		}
+	})
+	return out
 }
 
 // pcallSeeds finds, in a PHP statement, calls of a function whose summary
@@ -209,6 +238,17 @@ func (a *analysis) pcallSeeds(st state, t []Token, funcs []*fn) map[*fn][]*param
 		if t[i].Kind == Var && (i == 0 || !memberOp(true, t[i-1])) {
 			// $callback(...) of a parameter: the input its arguments carry is
 			// what the function gives the callable (summary.pcall)
+			if a.isParamName(t[i].Text) && a.paramIndex(t[i].Text) < 0 {
+				// a parameter the body assigned again ($cb = wrap($cb)): what it
+				// calls is not followed; with input in its arguments, said
+				for _, arg := range callArgs(t, i+1) {
+					if a.expr(st, arg, false).taint {
+						a.b.tooDeepFor(CutCallableParam)
+						break
+					}
+				}
+				continue
+			}
 			if p := a.paramIndex(t[i].Text); p >= 0 {
 				record := a.summ != nil && a.nested == 0
 				for k, arg := range callArgs(t, i+1) {
@@ -234,15 +274,26 @@ func (a *analysis) pcallSeeds(st state, t []Token, funcs []*fn) map[*fn][]*param
 		if sum == nil || len(sum.pcall) == 0 && len(sum.pcallSrc) == 0 {
 			continue
 		}
-		args := callArgs(t, i+1)
-		named := slices.ContainsFunc(args, func(arg []Token) bool { return len(arg) > 1 && arg[0].Kind == Ident && arg[1].op(":") })
+		args, mapped := byParam(callArgs(t, i+1), sum.params)
+		if !mapped {
+			// a named argument no parameter has, or a spread: the arguments
+			// cannot be put in the callee's places. With input in any of them,
+			// the callable may get it: said, not followed
+			for _, arg := range callArgs(t, i+1) {
+				if a.expr(st, arg, false).taint {
+					a.b.tooDeepFor(CutCallableParam)
+					break
+				}
+			}
+			continue
+		}
 		for _, n := range sortedKeys2(sum.pcall, sum.pcallSrc) {
 			masks, srcs := sum.pcall[n], sum.pcallSrc[n]
 			seed := func(k int) val {
 				var v val
 				if k < len(masks) {
 					for m := range args {
-						if m < 64 && masks[k]&(1<<m) != 0 {
+						if m < 64 && masks[k]&(1<<m) != 0 && args[m] != nil {
 							v = or(v, a.expr(st, args[m], false))
 						}
 					}
@@ -258,7 +309,7 @@ func (a *analysis) pcallSeeds(st state, t []Token, funcs []*fn) map[*fn][]*param
 				input = input || seed(k).taint
 			}
 			switch {
-			case named || n >= len(args):
+			case n >= len(args) || args[n] == nil:
 				if input {
 					a.b.tooDeepFor(CutCallableParam)
 				}
@@ -313,4 +364,33 @@ func callsParam(fi *fnInfo) bool {
 		}
 	})
 	return found
+}
+
+// byParam puts a PHP call's arguments in the callee's parameter places: by
+// position, then by name for named arguments (tap(callback: fn () => ...,
+// value: $v)); a place no argument fills is nil. mapped is false when an
+// argument has a name no parameter has, or is a spread (...$args).
+func byParam(args [][]Token, params []string) ([][]Token, bool) {
+	var out [][]Token
+	for i, arg := range args {
+		if len(arg) > 0 && arg[0].op("...") {
+			return nil, false
+		}
+		if len(arg) > 1 && arg[0].Kind == Ident && arg[1].op(":") {
+			p := slices.Index(params, "$"+arg[0].Text)
+			if p < 0 {
+				return nil, false
+			}
+			for len(out) <= p {
+				out = append(out, nil)
+			}
+			out[p] = arg[2:]
+			continue
+		}
+		for len(out) <= i {
+			out = append(out, nil)
+		}
+		out[i] = arg
+	}
+	return out, true
 }
