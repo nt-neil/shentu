@@ -13,7 +13,8 @@ Chinese for the zh-TW pages; keep the two in step.
   and `Shell_Exec($c)` in a function a call reaches now report as the lower-case spelling does,
   and a sanitizer written `EscapeShellArg($x)` cleans. A method that happens to be named `system`
   (`$o->System(...)`, `Task::SYSTEM(...)`) is still no sink. JavaScript and Python names keep
-  their case.
+  their case. A builtin named in a string with an escaped backslash (`array_map('\\system', $x)`,
+  `"\\system"`), which PHP reads as `\system`, is that builtin as well.
 
 ## v0.5.5 (unreleased)
 

@@ -23,6 +23,8 @@ func TestBuiltinNameCallables(t *testing.T) {
 		{"call_user_func('passthru', input)", "<?php\ncall_user_func('passthru', $_POST['c']);\n", []string{"a.php:2:php-cmdi-shell-exec"}, false},
 		{"array_map('\\system', input): the global name", "<?php\narray_map('\\system', $_GET['x']);\n", []string{"a.php:2:php-cmdi-shell-exec"}, false},
 		{"array_map('SYSTEM', input): names are case-insensitive", "<?php\narray_map('SYSTEM', $_GET['x']);\n", []string{"a.php:2:php-cmdi-shell-exec"}, false},
+		{"array_map('\\\\system', input): the escaped backslash", "<?php\narray_map('\\\\system', $_GET['x']);\n", []string{"a.php:2:php-cmdi-shell-exec"}, false},
+		{"array_map(\"\\\\system\", input)", "<?php\narray_map(\"\\\\system\", $_GET['x']);\n", []string{"a.php:2:php-cmdi-shell-exec"}, false},
 		{"a helper calling '\\system'", "<?php\nrequire 'b.php';\ntap2($_GET['x'], '\\system');\n", []string{"a.php:3:php-cmdi-shell-exec"}, false},
 		{"array_map('escapeshellarg', input)", "<?php\narray_map('escapeshellarg', $_GET['x']);\n", nil, false},
 		{"a helper calling 'system'", "<?php\nrequire 'b.php';\ntap2($_GET['x'], 'system');\n", []string{"a.php:3:php-cmdi-shell-exec"}, false},
