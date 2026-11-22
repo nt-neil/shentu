@@ -28,6 +28,7 @@ const (
 	FlagNL                           // first token on its line (JS statement ends)
 	FlagMultiline                    // JS /regex/m: ^ and $ match at every line
 	FlagModule                       // JS: a Node core module (fs, child_process, vm) after normalizeModules
+	FlagFold                         // in a PHP pattern: a function or method name, which PHP matches in any case (SYSTEM( is system()
 	flagCtxShift  = 8                // PHP echo or print after inline HTML: bits 8-10 hold the HTML context it writes into (htmlctx.go)
 )
 

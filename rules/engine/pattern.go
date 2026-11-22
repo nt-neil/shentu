@@ -81,6 +81,13 @@ func compilePattern(lang, raw string, text bool) (*pat, error) {
 	for i := range toks {
 		toks[i].Line, toks[i].Flags = 0, toks[i].Flags&^FlagNL
 	}
+	if p.php {
+		for k := 0; k+1 < len(toks); k++ {
+			if toks[k].Kind == Ident && toks[k+1].op("(") {
+				toks[k].Flags |= FlagFold // function and method names: SYSTEM($x) runs system()
+			}
+		}
+	}
 	p.toks = toks
 	for k := 0; k+2 < len(toks); k++ {
 		if toks[k].op("[") && toks[k+1].op("*") && toks[k+2].op("]") {
@@ -122,6 +129,9 @@ func tokEq(p, c Token) bool {
 		if p.Flags&FlagOpen != 0 {
 			return strings.HasPrefix(c.Text, p.Text)
 		}
+	}
+	if p.Flags&FlagFold != 0 {
+		return strings.EqualFold(p.Text, c.Text)
 	}
 	return p.Text == c.Text
 }
