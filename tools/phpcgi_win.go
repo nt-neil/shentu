@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
+	"os"
 	"path"
 	"regexp"
 	"strings"
@@ -65,8 +66,18 @@ func phpArgInjAffected(v [3]int, c phpArgInj) (affected, eol bool) {
 // The Windows host for the tests: listing a folder, the Apache
 // configurations to read, the system code page, the KEV catalog.
 var (
-	phpReadDir = func(d string) ([]string, error) { return winSource().ReadDir(d) }
-	phpWinACP  = func() (string, error) {
+	phpReadDir = func(d string) ([]string, error) {
+		if !phpLocalWinPath(d) {
+			return nil, errNotLocal
+		}
+		es, err := os.ReadDir(d)
+		var names []string
+		for _, e := range es {
+			names = append(names, e.Name())
+		}
+		return names, err
+	}
+	phpWinACP = func() (string, error) {
 		ws, ok := winSource().(hostenv.WinSource)
 		if !ok {
 			return "", fmt.Errorf("not a Windows source")
@@ -81,27 +92,40 @@ var (
 		return "", fmt.Errorf("no ACP value")
 	}
 	phpWinApacheConfs = winApacheConfs
-	phpLoadKEV        = loadKEV
+	// phpWinServiceBins are the services' command lines (BinaryPath).
+	phpWinServiceBins = func() []string {
+		var bins []string
+		if ws, ok := winSource().(hostenv.WinSource); ok {
+			if svcs, err := ws.Services(); err == nil {
+				for _, s := range svcs {
+					bins = append(bins, s.BinaryPath)
+				}
+			}
+		}
+		return bins
+	}
+	phpLoadKEV = loadKEV
 )
 
-// winApacheConfs are the httpd.conf files of Apache on this host: next to an
-// httpd.exe a service or a process runs, and XAMPP's and Apache Lounge's
-// places.
-func winApacheConfs() []string {
-	var bins []string
-	if ws, ok := winSource().(hostenv.WinSource); ok {
-		if svcs, err := ws.Services(); err == nil {
-			for _, s := range svcs {
-				bins = append(bins, s.BinaryPath)
-			}
-		}
-		if procs, err := ws.Processes(); err == nil {
-			for _, p := range procs {
-				bins = append(bins, p.Exe)
-			}
-		}
+// errNotLocal is a path not read: not a local absolute one.
+var errNotLocal = errors.New("not a local absolute path, not read")
+
+// phpWinFixedConfs are XAMPP's and Apache Lounge's places. Anyone may create
+// a folder at the root of C:, so a file there is read only when no one but
+// SYSTEM, Administrators and TrustedInstaller owns or may write it.
+var phpWinFixedConfs = []string{`C:\xampp\apache\conf\httpd.conf`, `C:\Apache24\conf\httpd.conf`}
+
+// winApacheConfs are the httpd.conf files of Apache on this host: next to
+// the httpd.exe of a service (registered by an administrator; a process's
+// path is anyone's choice), and phpWinFixedConfs kept to administrators.
+// unread are those there and not read.
+func winApacheConfs() (confs, unread []string) {
+	bins := phpWinServiceBins()
+	fixed := map[string]bool{}
+	for _, c := range phpWinFixedConfs {
+		fixed[strings.ToLower(c)] = true
+		confs = append(confs, c)
 	}
-	confs := []string{`C:\xampp\apache\conf\httpd.conf`, `C:\Apache24\conf\httpd.conf`}
 	for _, b := range bins {
 		b = strings.TrimSpace(b)
 		if strings.HasPrefix(b, `"`) {
@@ -110,20 +134,37 @@ func winApacheConfs() []string {
 			b = b[:i+4]
 		}
 		if strings.EqualFold(winBase(b), "httpd.exe") {
-			confs = append(confs, winDir(winDir(b))+`\conf\httpd.conf`)
+			if c := winDir(winDir(b)) + `\conf\httpd.conf`; phpLocalWinPath(c) {
+				confs = append(confs, c)
+				fixed[strings.ToLower(c)] = false // a service's: trusted wherever it is
+			}
 		}
 	}
 	var out []string
 	seen := map[string]bool{}
 	for _, c := range confs {
-		if k := strings.ToLower(c); !seen[k] {
-			seen[k] = true
-			if _, err := phpReadBin(c); err == nil {
-				out = append(out, c)
+		k := strings.ToLower(c)
+		if seen[k] {
+			continue
+		}
+		seen[k] = true
+		if _, err := phpReadBin(c); err != nil {
+			continue
+		}
+		if fixed[k] {
+			sec, err := winFileSecurity(c)
+			if err != nil {
+				unread = append(unread, c+" (who may write it could not be read: "+err.Error()+"; not read)")
+				continue
+			}
+			if bad := sec.Untrusted(); len(bad) > 0 {
+				unread = append(unread, c+" (not read: no service runs Apache from it, and "+strings.Join(bad, ", ")+" may write it)")
+				continue
 			}
 		}
+		out = append(out, c)
 	}
-	return out
+	return out, unread
 }
 
 func winBase(p string) string { return p[strings.LastIndexAny(p, `\/`)+1:] }
@@ -147,6 +188,9 @@ func winPath(p, root string) string {
 
 var apacheDefine = regexp.MustCompile(`\$\{([A-Za-z0-9_]+)\}`)
 
+// phpApacheMax caps the bytes of Apache configuration read in all.
+var phpApacheMax = int64(32 << 20)
+
 // phpApacheCGI reads Apache's configuration from conf, following Include and
 // IncludeOptional (globs too), and returns the php-cgi.exe programs Apache
 // runs as CGI: a ScriptAlias (or ScriptAliasMatch) onto php-cgi.exe or the
@@ -159,7 +203,25 @@ func phpApacheCGI(conf string, read func(string) ([]byte, error), list func(stri
 	aliases := map[string]string{} // URL prefix (lower case) -> folder
 	var actions []string
 	seenFile, seenExe := map[string]bool{}, map[string]bool{}
-	exists := func(p string) bool { _, err := read(p); return err == nil }
+	refused := map[string]bool{}
+	local := func(p string) bool {
+		if phpLocalWinPath(p) {
+			return true
+		}
+		if k := strings.ToLower(p); !refused[k] {
+			refused[k] = true
+			unread = append(unread, p+" ("+errNotLocal.Error()+")")
+		}
+		return false
+	}
+	exists := func(p string) bool {
+		if !local(p) {
+			return false
+		}
+		_, err := read(p)
+		return err == nil
+	}
+	total := int64(0) // bytes of configuration read, at most phpApacheMax
 	addExe := func(p string) {
 		if k := strings.ToLower(p); !seenExe[k] && exists(p) {
 			seenExe[k] = true
@@ -175,17 +237,25 @@ func phpApacheCGI(conf string, read func(string) ([]byte, error), list func(stri
 	}
 	var walk func(file string, depth int)
 	walk = func(file string, depth int) {
-		if depth > 8 || len(seenFile) >= 256 || seenFile[strings.ToLower(file)] {
+		if seenFile[strings.ToLower(file)] || !local(file) {
+			return
+		}
+		if depth > 8 || len(seenFile) >= 256 || total >= phpApacheMax {
+			unread = append(unread, file+" (not read: past the include limit)")
 			return
 		}
 		seenFile[strings.ToLower(file)] = true
 		b, err := read(file)
+		if err == nil && int64(len(b)) > phpConfMax {
+			err = errTooLarge
+		}
 		if err != nil {
 			if !errors.Is(err, fs.ErrNotExist) {
 				unread = append(unread, file+" ("+err.Error()+")")
 			}
 			return
 		}
+		total += int64(len(b))
 		dir := "" // the Directory block the line is in
 		for _, line := range strings.Split(string(b), "\n") {
 			line = strings.TrimSpace(apacheDefine.ReplaceAllStringFunc(line, func(m string) string {
@@ -206,6 +276,9 @@ func phpApacheCGI(conf string, read func(string) ([]byte, error), list func(stri
 			case (name == "include" || name == "includeoptional") && len(f) >= 2:
 				p := winPath(f[1], root)
 				if strings.ContainsAny(winBase(p), "*?[") {
+					if !local(winDir(p)) {
+						continue
+					}
 					names, _ := list(winDir(p))
 					for _, n := range names {
 						if ok, _ := path.Match(strings.ToLower(winBase(p)), strings.ToLower(n)); ok {

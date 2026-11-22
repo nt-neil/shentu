@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/nt-neil/shentu/detect"
+	"github.com/nt-neil/shentu/hostenv"
 )
 
 // phpWinHost is a hand-written Windows host: files (Apache's configuration,
@@ -23,6 +24,7 @@ type phpWinHost struct {
 	iis   []string
 	kev   map[string]kevEntry
 	kevOK bool
+	reads []string // every path read, to see none is a network one
 }
 
 func newPHPWinHost(t *testing.T) *phpWinHost {
@@ -34,6 +36,7 @@ func newPHPWinHost(t *testing.T) *phpWinHost {
 	phpWindows = true
 	phpWinFastCGI = func() ([]string, error) { return h.iis, nil }
 	phpReadBin = func(p string) ([]byte, error) {
+		h.reads = append(h.reads, p)
 		if s, ok := h.files[strings.ToLower(p)]; ok {
 			if s == "\x00denied" {
 				return nil, os.ErrPermission
@@ -56,7 +59,7 @@ func newPHPWinHost(t *testing.T) *phpWinHost {
 		sort.Strings(out)
 		return out, nil
 	}
-	phpWinApacheConfs = func() []string { return h.confs }
+	phpWinApacheConfs = func() ([]string, []string) { return h.confs, nil }
 	phpWinACP = func() (string, error) {
 		if !h.acpOK {
 			return "", errors.New("access denied")
@@ -109,6 +112,15 @@ func TestPHPApacheCGI(t *testing.T) {
 	h.confs = []string{`C:\Apache24\conf\httpd.conf`}
 	if got, _ := cgi(h); !slices.Equal(got, []string{`D:\php83\php-cgi.exe`}) {
 		t.Errorf("Action via ScriptAlias: %q", got)
+	}
+	// The Action's file in a folder under the alias: only the Action finds it.
+	h = newPHPWinHost(t)
+	h.file(`C:\Apache24\conf\httpd.conf`, "ServerRoot \"C:/Apache24\"\nScriptAlias /php/ \"D:/php/\"\n"+
+		"Action application/x-httpd-php \"/php/v83/php-cgi.exe\"\n")
+	h.phpCGI(`D:\php\v83`, "8.3.7")
+	h.confs = []string{`C:\Apache24\conf\httpd.conf`}
+	if got, _ := cgi(h); !slices.Equal(got, []string{`D:\php\v83\php-cgi.exe`}) {
+		t.Errorf("Action under the alias: %q", got)
 	}
 	// AddHandler cgi-script .exe in the PHP folder's Directory.
 	h = newPHPWinHost(t)
@@ -294,5 +306,109 @@ func TestPHPWinSurface(t *testing.T) {
 	h.acp = "950"
 	if s, _ := phpWinSurface(context.Background(), nil); len(s) != 0 {
 		t.Errorf("IIS: %+v", s)
+	}
+}
+
+// The security review of 2132c62: Apache's configuration names paths; a
+// network or device path is never read (reading \\host\share makes Windows
+// authenticate to that host), a fixed place anyone may create is read only
+// when kept to administrators, and what is read is capped.
+func TestPHPApacheCGINotLocal(t *testing.T) {
+	win, read, dir := phpWindows, phpReadBin, phpReadDir // the default readers, before any host replaces them
+	for _, conf := range []string{
+		"ServerRoot \"C:/Apache24\"\nInclude \"//files.example/share/php.conf\"\n",
+		"ServerRoot \"C:/Apache24\"\nIncludeOptional \\\\files.example\\share\\*.conf\n",
+		"ServerRoot \"//files.example/apache\"\nInclude conf/extra/php.conf\n",
+		"ServerRoot \"C:/Apache24\"\nScriptAlias /php/ \"//files.example/php/\"\n",
+		"ServerRoot \"C:/Apache24\"\nScriptAlias /php/ \"//?/C:/php/\"\n",
+		"ServerRoot \"C:/Apache24\"\n<Directory \"//./pipe/php\">\n  AddHandler cgi-script .exe\n</Directory>\n",
+	} {
+		h := newPHPWinHost(t)
+		h.file(`C:\Apache24\conf\httpd.conf`, conf)
+		h.confs = []string{`C:\Apache24\conf\httpd.conf`}
+		exes, un := phpApacheCGI(h.confs[0], phpReadBin, phpReadDir)
+		for _, p := range h.reads {
+			if !phpLocalWinPath(p) {
+				t.Errorf("%q: read %s", conf, p)
+			}
+		}
+		if len(exes) != 0 || len(un) == 0 || !strings.Contains(strings.Join(un, " "), "not a local absolute path") {
+			t.Errorf("%q: %q %q", conf, exes, un)
+		}
+	}
+	// The default readers refuse one too.
+	defer func() { phpWindows, phpReadBin, phpReadDir = win, read, dir }()
+	newPHPWinHost(t)
+	phpWindows, phpReadBin, phpReadDir = true, read, dir
+	if _, err := phpReadBin(`\\files.example\share\php8ts.dll`); err != errNotLocal {
+		t.Errorf("phpReadBin: %v", err)
+	}
+	if _, err := phpReadDir(`\\files.example\share`); err != errNotLocal {
+		t.Errorf("phpReadDir: %v", err)
+	}
+}
+
+func TestPHPApacheCGIReadCap(t *testing.T) {
+	max := phpApacheMax
+	defer func() { phpApacheMax = max }()
+	h := newPHPWinHost(t)
+	h.file(`C:\Apache24\conf\httpd.conf`, "ServerRoot \"C:/Apache24\"\n"+strings.Repeat("# padding\n", 20)+"Include conf/extra/php.conf\n")
+	h.file(`C:\Apache24\conf\extra\php.conf`, "ScriptAlias /php/ \"C:/php/\"\n")
+	h.phpCGI(`C:\php`, "8.3.7")
+	phpApacheMax = 50
+	if exes, un := phpApacheCGI(`C:\Apache24\conf\httpd.conf`, phpReadBin, phpReadDir); len(exes) != 0 || len(un) != 1 || !strings.Contains(un[0], "limit") {
+		t.Errorf("past the cap: %q %q", exes, un)
+	}
+	phpApacheMax = max
+	if exes, _ := phpApacheCGI(`C:\Apache24\conf\httpd.conf`, phpReadBin, phpReadDir); len(exes) != 1 {
+		t.Errorf("under the cap: %q", exes)
+	}
+}
+
+func TestPHPWinApacheConfs(t *testing.T) {
+	h := newPHPWinHost(t)
+	confs, svc, sec := phpWinApacheConfs, phpWinServiceBins, winFileSecurity
+	defer func() { phpWinApacheConfs, phpWinServiceBins, winFileSecurity = confs, svc, sec }()
+	phpWinApacheConfs = winApacheConfs
+	acl := map[string]hostenv.WinFileSecurity{}
+	winFileSecurity = func(p string) (hostenv.WinFileSecurity, error) {
+		if s, ok := acl[strings.ToLower(p)]; ok {
+			return s, nil
+		}
+		return hostenv.WinFileSecurity{}, errors.New("access denied")
+	}
+	admins := hostenv.WinFileSecurity{Owner: "S-1-5-18", Writers: []string{"S-1-5-18", "S-1-5-32-544"}}
+	users := hostenv.WinFileSecurity{Owner: "S-1-5-32-544", Writers: []string{"S-1-5-32-544", "S-1-5-32-545"}}
+	h.file(`C:\xampp\apache\conf\httpd.conf`, "ServerRoot \"C:/xampp/apache\"\n")
+	h.file(`D:\web\Apache24\conf\httpd.conf`, "ServerRoot \"D:/web/Apache24\"\n")
+	// A service's Apache is read wherever it is; XAMPP's place only when kept to administrators.
+	phpWinServiceBins = func() []string {
+		return []string{`"D:\web\Apache24\bin\httpd.exe" -k runservice`, `C:\Windows\System32\svchost.exe -k netsvcs`}
+	}
+	acl[`c:\xampp\apache\conf\httpd.conf`] = admins
+	got, un := winApacheConfs()
+	if !slices.Equal(got, []string{`C:\xampp\apache\conf\httpd.conf`, `D:\web\Apache24\conf\httpd.conf`}) || len(un) != 0 {
+		t.Errorf("admins only: %q %q", got, un)
+	}
+	acl[`c:\xampp\apache\conf\httpd.conf`] = users
+	got, un = winApacheConfs()
+	if !slices.Equal(got, []string{`D:\web\Apache24\conf\httpd.conf`}) || len(un) != 1 || !strings.Contains(un[0], "S-1-5-32-545") {
+		t.Errorf("writable by Users: %q %q", got, un)
+	}
+	delete(acl, `c:\xampp\apache\conf\httpd.conf`)
+	if got, un = winApacheConfs(); len(got) != 1 || len(un) != 1 || !strings.Contains(un[0], "could not be read") {
+		t.Errorf("ACL unknown: %q %q", got, un)
+	}
+	// A service whose httpd.exe is on a network share: its conf is not read.
+	phpWinServiceBins = func() []string { return []string{`\\files.example\apache\bin\httpd.exe`} }
+	acl[`c:\xampp\apache\conf\httpd.conf`] = admins
+	h.reads = nil
+	if got, _ = winApacheConfs(); !slices.Equal(got, []string{`C:\xampp\apache\conf\httpd.conf`}) {
+		t.Errorf("network service: %q", got)
+	}
+	for _, p := range h.reads {
+		if !phpLocalWinPath(p) {
+			t.Errorf("read %s", p)
+		}
 	}
 }
