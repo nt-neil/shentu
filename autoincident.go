@@ -154,7 +154,7 @@ func autoIncident(ctx context.Context, cfg *Config, env *tools.Env, cands []auto
 	if saveErr != nil {
 		saveErr = fmt.Errorf("archive: %w", saveErr)
 	}
-	nerr := detectNotify(ctx, env, "Automatic incident check", autoNotice(rec, saveErr != nil), "warning")
+	nerr := detectNotify(ctx, env, nt(isZh(cfg), "auto_title"), autoNotice(rec, saveErr != nil, isZh(cfg)), "warning")
 	var berr error
 	if saveErr == nil { // B reads the record back: none without it
 		if berr = autoButtons(ctx, cfg, env, rec.ID); berr != nil {
@@ -325,6 +325,7 @@ func autoRun(ctx context.Context, cfg *Config, env *tools.Env, p autoPending) (r
 	if err != nil {
 		return dispatchRecord{}, nil, err
 	}
+	tasks[0].l3 = true
 	a := &agent{cfg: cfg, llm: newLLM(cfg), env: env, actor: "auto", log: newAuditLog(cfg.StateDir)}
 	id, _, rec, saveErr := a.runDispatch(ctx, originAuto, p.Trigger, tasks)
 	a.log.write(logEntry{Actor: a.actor, Tool: "dispatch", Args: mask(string(args)), Dispatch: id, Origin: originAuto, OK: true})
@@ -349,28 +350,44 @@ func autoFinish(cfg *Config, p autoPending, rec dispatchRecord, notArchived bool
 }
 
 // autoNotice is the alert about a finished dispatch: enumerations and
-// numbers from its record only, never a sub-agent's words.
-func autoNotice(rec dispatchRecord, notArchived bool) string {
+// numbers from its record only, never a sub-agent's words, in the
+// configured language (F-1).
+func autoNotice(rec dispatchRecord, notArchived, zh bool) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "An L3 attack alert was checked by the incident sub-agent on its own (read-only; nothing was changed).\n- dispatch: %s\n- status: %s\n", rec.ID, word(rec.Status))
+	line := func(key string, a ...any) { fmt.Fprintf(&b, nt(zh, key)+"\n", a...) }
+	line("auto_head")
+	line("auto_id", rec.ID)
+	line("auto_status", enumWord(zh, statusZh, rec.Status))
 	for _, s := range rec.Subs {
-		fmt.Fprintf(&b, "- %s: %s (%s), %d steps, %d tokens\n", word(s.Role), word(s.Status), word(s.Reason), s.Steps, s.TokensIn+s.TokensOut+s.TokensReason)
+		line("auto_sub", enumWord(zh, roleZh, s.Role), enumWord(zh, statusZh, s.Status), enumWord(zh, reasonZh, s.Reason), s.Steps, s.TokensIn+s.TokensOut+s.TokensReason)
 		var sev []string
 		for _, k := range []string{"critical", "high", "medium", "low", "info", "unknown"} {
 			if n := s.Findings[k]; n > 0 {
-				sev = append(sev, fmt.Sprintf("%s %d", k, n))
+				sev = append(sev, fmt.Sprintf("%s %d", enumWord(zh, severityZh, k), n))
 			}
 		}
 		if len(sev) == 0 {
-			sev = []string{"none"}
+			sev = []string{nt(zh, "auto_nofind")}
 		}
-		fmt.Fprintf(&b, "- findings: %s; not checked: %d; proposals: %d (not acted on)\n", strings.Join(sev, ", "), s.Unchecked, len(s.Proposals))
+		sep := ", "
+		if zh {
+			sep = "、"
+		}
+		line("auto_findings", strings.Join(sev, sep))
+		for _, l := range uncheckedLines(zh, s) {
+			b.WriteString(l + "\n")
+		}
+		if len(s.Proposals) > 0 {
+			line("auto_prop", len(s.Proposals))
+		} else {
+			line("auto_noprop")
+		}
 	}
 	if notArchived {
-		b.WriteString("- its record could not be saved to the dispatch archive (state_dir/dispatch): no buttons; the slot still counts\n")
+		line("auto_unsaved")
 	}
 	if rec.Status != statusComplete {
-		b.WriteString("- an incomplete check is not a clean one: what it did not check is unknown\n")
+		line("auto_partial")
 	}
 	return b.String()
 }

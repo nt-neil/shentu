@@ -191,7 +191,7 @@ func botCommand(ctx context.Context, cfg *Config, env *tools.Env, args []string)
 			return err
 		}
 		audit.write(logEntry{Actor: "bot", Tool: "bot_unpair", Args: who, OK: true})
-		tools.Notify(ctx, env, "Telegram bot unpaired", "The bot no longer accepts commands from "+who+".", "warning")
+		tools.Notify(ctx, env, nt(isZh(cfg), "unpaired_title"), fmt.Sprintf(nt(isZh(cfg), "unpaired_body"), who), "warning")
 		fmt.Println("Unpaired. The bot now ignores everyone until you pair again.")
 		return nil
 	case "status":
@@ -259,7 +259,7 @@ func botPair(ctx context.Context, cfg *Config, env *tools.Env, audit *auditLog, 
 				return nil
 			}
 			audit.write(logEntry{Actor: "bot", Tool: "bot_pair", Args: who, Confirmed: true, OK: true})
-			tools.Notify(ctx, env, "Telegram bot paired", "The bot now accepts questions from "+who+". If this was not you, run: sudo shentu bot unpair", "warning")
+			tools.Notify(ctx, env, nt(isZh(cfg), "paired_title"), fmt.Sprintf(nt(isZh(cfg), "paired_body"), who), "warning")
 			fmt.Fprintln(out, "Paired.")
 			// Tell the user in Telegram too; their last message there was "code accepted".
 			if token := botToken(cfg); token != "" {
@@ -803,7 +803,8 @@ func (b *bot) confirm(ctx context.Context, chat int64, tool, preview string, str
 		ok = true
 	}
 	if ok {
-		tools.Notify(ctx, b.env, "Approved from Telegram", tool+": "+preview, "warning")
+		title, body := approvedNotice(b.zh(), tool, preview)
+		tools.Notify(ctx, b.env, title, body, "warning")
 	} else {
 		b.send(ctx, chat, b.t("cancelled"), nil)
 	}
