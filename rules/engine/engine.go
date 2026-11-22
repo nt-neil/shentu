@@ -162,12 +162,13 @@ func New(rs []rules.Rule) (*Engine, error) {
 }
 
 // foldMembers marks the method and class names of PHP sink and sanitizer
-// patterns to match in any case, as PHP calls them: the name after -> or ::
-// ($wpdb->query matches $wpdb->Query(...), DB::raw DB::RAW(...)) and the
-// class before :: (db::raw). A name followed by "(" is folded already
-// (compilePattern). Variables keep their case, as PHP's do ($WPDB is not
-// $wpdb), and so do sources, whose members may be properties, which PHP
-// reads by case.
+// patterns to match in any case, as PHP calls them: the last name after ->
+// or :: ($wpdb->query matches $wpdb->Query(...), DB::raw DB::RAW(...)) and
+// the class before :: (db::raw). A name followed by "(" is folded already
+// (compilePattern). A name with -> after it is a property ($this->db in
+// $this->db->escape(), which PHP reads by case: $this->DB is another), so
+// it keeps its case; so do variables ($WPDB is not $wpdb) and sources,
+// whose members may be properties.
 func foldMembers(ps []*pat) {
 	for _, p := range ps {
 		if !p.php {
@@ -177,7 +178,14 @@ func foldMembers(ps []*pat) {
 			if t.Kind != Ident {
 				continue
 			}
-			if k > 0 && memberOp(true, p.toks[k-1]) || k+1 < len(p.toks) && p.toks[k+1].op("::") {
+			next := Token{}
+			if k+1 < len(p.toks) {
+				next = p.toks[k+1]
+			}
+			if next.op("->") || next.op("?->") {
+				continue // a property on the way: by case
+			}
+			if k > 0 && memberOp(true, p.toks[k-1]) || next.op("::") {
 				p.toks[k].Flags |= FlagFold
 			}
 		}

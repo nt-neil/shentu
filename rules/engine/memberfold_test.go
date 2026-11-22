@@ -22,6 +22,9 @@ func TestPHPMemberNamesAnyCase(t *testing.T) {
 		{"lower case still reports (control)", "php-sqli-wpdb-unprepared", "<?php\n$wpdb->query(\"DELETE FROM t WHERE id = \" . $_GET['id']);\n", []string{"2"}},
 		{"$WPDB is another variable (control)", "php-sqli-wpdb-unprepared", "<?php\n$WPDB->query(\"DELETE FROM t WHERE id = \" . $_GET['id']);\n", nil},
 		{"db::RAW( and DB::Raw(", "php-sqli-orderby-identifier", "<?php\nuse Illuminate\\Support\\Facades\\DB;\n$a = db::RAW($_GET['s']);\n$b = DB::Raw($_GET['t']);\n", []string{"3", "4"}},
+		{"$this->DB is not $this->db: its escape( cleans nothing", "php-sqli-codeigniter-query", "<?php\nclass M extends CI_Model {\n    function f() {\n        return $this->db->simple_query(\"SELECT * FROM t WHERE id = \" . $this->DB->escape($_GET['id']));\n    }\n}\n", []string{"4"}},
+		{"$this->DB->simple_query( is not $this->db's (control)", "php-sqli-codeigniter-query", "<?php\nclass M extends CI_Model {\n    function f() {\n        return $this->DB->simple_query(\"SELECT * FROM t WHERE id = \" . $_GET['id']);\n    }\n}\n", nil},
+		{"$this->db->escape( cleans (control)", "php-sqli-codeigniter-query", "<?php\nclass M extends CI_Model {\n    function f() {\n        return $this->db->simple_query(\"SELECT * FROM t WHERE id = \" . $this->db->escape($_GET['id']));\n    }\n}\n", nil},
 		{"DB::raw( (control)", "php-sqli-orderby-identifier", "<?php\nuse Illuminate\\Support\\Facades\\DB;\n$a = DB::raw($_GET['s']);\n", []string{"3"}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
