@@ -18,6 +18,9 @@ Chinese for the zh-TW pages; keep the two in step.
   function no longer matches a class built with `new` (`new File($p)`, `new System(...)`) or a
   function of a namespace (`Storage\file($p)`, and `namespace\file($p)` in a file that declares a
   namespace), as the lower-case `new file(` and `A\file(` did before; `\file($p)` is still PHP's.
+  The method and class names of member patterns match in any case too (#198): `$wpdb->Query(...)`
+  and `$wpdb->GET_RESULTS(...)` are `php-sqli-wpdb-unprepared`'s sinks, `$wpdb->Prepare(...)`
+  cleans, and `DB::RAW(...)` is a sink; a variable keeps its case (`$WPDB` is not `$wpdb`).
 
 ## v0.5.5 (unreleased)
 
