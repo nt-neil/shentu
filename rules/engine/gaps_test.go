@@ -18,12 +18,9 @@ func TestClosureReturnNotFunctionResult(t *testing.T) {
 		{"a closure's return", "<?php\n" + tap + "function lang() {\n    tap($_GET['q'], function ($m) {\n        return $m;\n    });\n    return 'fr';\n}\ninclude 'lang/' . lang() . '.php';\n", false},
 		{"input returned (control)", "<?php\n" + tap + "function lang() {\n    tap($_GET['q'], function ($m) {\n        return 'x';\n    });\n    return $_GET['q'];\n}\ninclude 'lang/' . lang() . '.php';\n", true},
 	} {
-		f, _, err := e.ScanTimed("php", "a.php", []byte(c.src))
-		if err != nil {
-			t.Fatal(err)
-		}
+		pr := e.NewProject([]string{"a.php"}, func(string) ([]byte, error) { return []byte(c.src), nil }, ProjectOptions{})
 		got := false
-		for _, x := range f {
+		for _, x := range auditPath(t, e, pr, "a.php", []byte(c.src)) {
 			got = got || x.RuleID == "php-path-traversal-file-include"
 		}
 		if got != c.want {
