@@ -22,6 +22,9 @@ Chinese for the zh-TW pages; keep the two in step.
   monthly cost limit is shared between dispatches as the token limit is. When only the cost limit
   is filled by the others' reservations, the reply names the dollars reserved.
 
+- `shentu usage` and the bot's /usage count the sub-agents' model calls (and any other actor's) (#164):
+  they were left out of the totals, and a dispatch's calls now have a line of their own.
+
 ## v0.5.3 — 2026-11-22
 
 - A proposal button pressed always gets an answer (#163): it says at once that it checks the
