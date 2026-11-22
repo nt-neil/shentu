@@ -98,7 +98,7 @@ func FileChanges(ctx context.Context, roots []string, since time.Time) (map[stri
 			if real == root {
 				return p
 			}
-			return root + strings.TrimPrefix(p, real)
+			return filepath.Clean(root) + strings.TrimPrefix(p, real) // no "//" from a trailing slash
 		}
 		filepath.WalkDir(real, func(p string, d fs.DirEntry, err error) error {
 			if err != nil {
