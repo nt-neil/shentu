@@ -89,6 +89,11 @@ func (h *phpHost) dpkg(p, pkg, version string) {
 	h.run["dpkg-query -W -f ${db:Status-Status} ${Version} "+pkg] = "installed " + version
 }
 
+// rpm says package pkg, at version, from vendor, holds the binary at p.
+func (h *phpHost) rpm(p, pkg, version, vendor string) {
+	h.run["rpm -qf --qf %{NAME} %{EPOCHNUM}:%{VERSION}-%{RELEASE} %{VENDOR}\n "+p] = pkg + " " + version + " " + vendor + "\n"
+}
+
 func (h *phpHost) running(name, exe string) {
 	h.procs = append(h.procs, hostenv.Process{PID: 100 + len(h.procs), Name: name, Exe: exe, ExeKnown: exe != ""})
 }
@@ -272,7 +277,7 @@ func TestPHPRisksOrigins(t *testing.T) {
 	// Remi's repository on RHEL (a software collection under /opt/remi).
 	h := newPHPHost(t)
 	h.bin("/opt/remi/php85/root/usr/sbin/php-fpm", "8.5.12")
-	h.run["rpm -qf --qf %{NAME} %{EPOCHNUM}:%{VERSION}-%{RELEASE} /opt/remi/php85/root/usr/sbin/php-fpm"] = "php85-php-fpm 0:8.5.12-1.el9.remi"
+	h.rpm("/opt/remi/php85/root/usr/sbin/php-fpm", "php85-php-fpm", "0:8.5.12-1.el9.remi", "Remi's RPM repository")
 	h.run["rpm -q --changelog php85-php-fpm"] = "* Tue Nov 18 2026 Packager - 8.5.12-1\n- update to 8.5.12\n"
 	r := phpRisks(context.Background())
 	if v := phpFind(r, "php8.5:CVE-2026-129496"); v == nil || !strings.Contains(v.Summary, "Remi") || !strings.Contains(v.Summary, "CVE-2026-129474") ||
@@ -336,7 +341,7 @@ func TestPHPRisksNotCoveredNote(t *testing.T) {
 	}
 	h := newPHPHost(t)
 	h.bin("/opt/remi/php83/root/usr/bin/php", "8.3.30")
-	h.run["rpm -qf --qf %{NAME} %{EPOCHNUM}:%{VERSION}-%{RELEASE} /opt/remi/php83/root/usr/bin/php"] = "php83-php-cli 0:8.3.30-1.el9.remi"
+	h.rpm("/opt/remi/php83/root/usr/bin/php", "php83-php-cli", "0:8.3.30-1.el9.remi", "Remi's RPM repository")
 	if r := phpRisks(context.Background()); len(r) != 1 || !strings.Contains(r[0].Summary, "Remi's repository, "+note) {
 		t.Errorf("remi: %v", r)
 	}

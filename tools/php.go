@@ -11,6 +11,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -104,20 +105,74 @@ func phpEOL(v [3]int) bool { return v[0] > 0 && (v[0] < 8 || v[0] == 8 && v[1] <
 type phpInstall struct {
 	bin, version, sapi    string
 	pkg, pkgVersion, dist string
+	vendor                string // an rpm's %{VENDOR}
 	iis                   bool
 }
 
 // phpBinGlobs are where PHP binaries are: the distributions' (Debian's
 // php8.3, php-fpm8.3, php-cgi8.3 and /usr/lib/cgi-bin), the official Docker
-// images' and a build from source's (/usr/local), Remi's collections.
+// images' and a build from source's (/usr/local), Remi's collections,
+// cPanel's EasyApache (ea-php) and CloudLinux's alt-php.
 var phpBinGlobs = []string{"/usr/bin/php*", "/usr/sbin/php-fpm*", "/usr/lib/cgi-bin/php*", "/usr/local/bin/php*",
-	"/usr/local/sbin/php-fpm*", "/opt/remi/php*/root/usr/bin/php*", "/opt/remi/php*/root/usr/sbin/php-fpm*"}
+	"/usr/local/sbin/php-fpm*", "/opt/remi/php*/root/usr/bin/php*", "/opt/remi/php*/root/usr/sbin/php-fpm*",
+	"/opt/cpanel/ea-php*/root/usr/bin/php*", "/opt/cpanel/ea-php*/root/usr/sbin/php-fpm*",
+	"/opt/alt/php*/usr/bin/php*", "/opt/alt/php*/usr/sbin/php-fpm*"}
 
 // phpBinName is a PHP binary's name, not php-config's, phpize's or phpdbg's.
 var phpBinName = regexp.MustCompile(`^php(-cgi|-fpm)?(\d+(\.\d+)?)?$`)
 
 // phpVersionString is the X-Powered-By header PHP's core keeps as one string.
 var phpVersionString = regexp.MustCompile(`X-Powered-By: PHP/(\d+\.\d+\.\d+[0-9A-Za-z.+~-]*)\x00`)
+
+// phpBinMax and phpConfMax cap what is read of a binary and of a
+// configuration file or changelog.
+var phpBinMax, phpConfMax = int64(64 << 20), int64(8 << 20)
+
+// phpBinVersion is the version a binary names itself with. why says why
+// there is none: several different ones, or a program (ELF, PE) or a
+// read cut at phpBinMax without one; "" for a file that is no PHP (a script).
+func phpBinVersion(data []byte) (v, why string) {
+	var vs []string
+	for _, m := range phpVersionString.FindAllSubmatch(data, -1) {
+		if s := string(m[1]); !slices.Contains(vs, s) {
+			vs = append(vs, s)
+		}
+	}
+	switch {
+	case len(vs) == 1:
+		return vs[0], ""
+	case len(vs) > 1:
+		return "", "several versions: " + strings.Join(vs, ", ")
+	case bytes.HasPrefix(data, []byte("\x7fELF")) || bytes.HasPrefix(data, []byte("MZ")) || int64(len(data)) >= phpBinMax:
+		return "", "no version found"
+	}
+	return "", ""
+}
+
+// phpReadLimited reads a regular file, at most max bytes; errTooLarge when
+// there is more.
+func phpReadLimited(p string, max int64) ([]byte, error) {
+	f, err := os.Open(p)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	if st, err := f.Stat(); err != nil {
+		return nil, err
+	} else if !st.Mode().IsRegular() {
+		return nil, errNotRegular
+	}
+	b, err := io.ReadAll(io.LimitReader(f, max+1))
+	if err == nil && int64(len(b)) > max {
+		return b[:max], errTooLarge
+	}
+	return b, err
+}
+
+var (
+	errNotRegular = errors.New("not a regular file")
+	errTooLarge   = errors.New("too large")
+)
 
 // The host for the tests: the root the Linux paths are under, the package
 // manager, the process list, IIS's FastCGI applications and reading a binary.
@@ -134,9 +189,13 @@ var (
 	phpWinFastCGI = func() ([]string, error) { return hostenv.IISFastCGI(winSource()) }
 	phpReadBin    = func(p string) ([]byte, error) {
 		if phpWindows {
-			return hostenv.ReadFileMax(winSource(), p, 64<<20)
+			return hostenv.ReadFileMax(winSource(), p, phpBinMax)
 		}
-		return ngxRead(filepath.Join(phpRoot, p))
+		b, err := phpReadLimited(filepath.Join(phpRoot, p), phpBinMax)
+		if errors.Is(err, errTooLarge) {
+			err = nil // what was read is searched; phpBinVersion knows it was cut
+		}
+		return b, err
 	}
 )
 
@@ -149,21 +208,30 @@ func phpInstalls(ctx context.Context) (ins []phpInstall, unread []string) {
 			return nil, []string{"applicationHost.config could not be read (" + err.Error() + ")"}
 		}
 		for _, a := range apps {
+			a = strings.ReplaceAll(a, "/", `\`) // C:/PHP/php-cgi.exe
 			i := strings.LastIndex(a, `\`)
 			if !strings.EqualFold(a[i+1:], "php-cgi.exe") {
 				continue
 			}
-			v := ""
+			if !(len(a) >= 3 && a[1] == ':' && a[2] == '\\') {
+				// relative, or a network or device path (\\host\share, \\?\): not read, so
+				// that reading it cannot make the host authenticate to another machine
+				unread = append(unread, a+" (not a local absolute path)")
+				continue
+			}
+			v, why := "", "no version found"
 			for _, p := range []string{a[:i+1] + "php8ts.dll", a[:i+1] + "php8.dll", a[:i+1] + "php7ts.dll", a[:i+1] + "php7.dll", a} {
 				if data, err := phpReadBin(p); err == nil {
-					if m := phpVersionString.FindSubmatch(data); m != nil {
-						v = string(m[1])
+					if v, why = phpBinVersion(data); v != "" || strings.HasPrefix(why, "several") {
 						break
 					}
 				}
 			}
 			if v == "" {
-				unread = append(unread, a+" (no version found)")
+				if why == "" {
+					why = "no version found"
+				}
+				unread = append(unread, a+" ("+why+")")
 				continue
 			}
 			ins = append(ins, phpInstall{bin: a, version: v, sapi: "cgi", iis: true})
@@ -175,6 +243,7 @@ func phpInstalls(ctx context.Context) (ins []phpInstall, unread []string) {
 		return nil, nil
 	}
 	seen := map[string]bool{}
+	var stats []os.FileInfo // of ins, to know a hard link of one
 	for _, g := range phpBinGlobs {
 		matches, _ := filepath.Glob(filepath.Join(root, g))
 		for _, m := range matches {
@@ -194,51 +263,74 @@ func phpInstalls(ctx context.Context) (ins []phpInstall, unread []string) {
 				continue
 			}
 			seen[p] = true
-			if st, err := os.Stat(real); err != nil || !st.Mode().IsRegular() {
+			st, err := os.Stat(real)
+			if err != nil || !st.Mode().IsRegular() {
 				continue
 			}
 			data, err := phpReadBin(p)
 			if err != nil {
 				continue
 			}
-			v := phpVersionString.FindSubmatch(data)
-			if v == nil {
+			v, why := phpBinVersion(data)
+			if v == "" {
+				if why != "" {
+					unread = append(unread, p+" ("+why+")")
+				}
 				continue // a script, or not PHP
 			}
-			in := phpInstall{bin: p, version: string(v[1]), sapi: "cli"}
+			in := phpInstall{bin: p, version: v, sapi: "cli"}
 			switch base := filepath.Base(p); {
 			case strings.Contains(base, "fpm"):
 				in.sapi = "fpm"
 			case strings.Contains(base, "cgi") || strings.Contains(p, "/cgi-bin/"):
 				in.sapi = "cgi"
 			}
-			in.pkg, in.pkgVersion, in.dist = phpPackage(ctx, p)
+			in.pkg, in.pkgVersion, in.dist, in.vendor = phpPackage(ctx, p)
+			if i := slices.IndexFunc(stats, func(o os.FileInfo) bool { return os.SameFile(o, st) }); i >= 0 {
+				// a hard link of a binary already found: one binary, the package's
+				if ins[i].pkg == "" && in.pkg != "" {
+					ins[i] = in
+				}
+				continue
+			}
+			stats = append(stats, st)
 			ins = append(ins, in)
 		}
 	}
-	return ins, nil
+	return ins, unread
 }
 
-// phpPackage is the package holding the binary at p, its version and the
-// package manager; "" when none does.
-func phpPackage(ctx context.Context, p string) (pkg, version, dist string) {
+// phpPackage is the package holding the binary at p, its version, the
+// package manager and (rpm) the vendor; "" when none does.
+func phpPackage(ctx context.Context, p string) (pkg, version, dist, vendor string) {
 	if out, err := phpRun(ctx, "dpkg-query", "-S", p); err == nil {
 		line, _, _ := strings.Cut(string(out), "\n")
 		if name, _, ok := strings.Cut(line, ": "); ok {
 			name, _, _ = strings.Cut(name, ", ")
 			if o, err := phpRun(ctx, "dpkg-query", "-W", "-f", "${db:Status-Status} ${Version}", name); err == nil {
 				if f := strings.Fields(string(o)); len(f) == 2 && f[0] == "installed" {
-					return name, f[1], "dpkg"
+					return name, f[1], "dpkg", ""
 				}
 			}
 		}
 	}
-	if out, err := phpRun(ctx, "rpm", "-qf", "--qf", "%{NAME} %{EPOCHNUM}:%{VERSION}-%{RELEASE}", p); err == nil {
-		if f := strings.Fields(string(out)); len(f) == 2 && !strings.Contains(string(out), "not owned") {
-			return f[0], f[1], "rpm"
+	if out, err := phpRun(ctx, "rpm", "-qf", "--qf", "%{NAME} %{EPOCHNUM}:%{VERSION}-%{RELEASE} %{VENDOR}\n", p); err == nil {
+		line, _, _ := strings.Cut(string(out), "\n")
+		if f := strings.Fields(line); len(f) >= 2 && !strings.Contains(line, "not owned") {
+			return f[0], f[1], "rpm", strings.Join(f[2:], " ")
 		}
 	}
-	return "", "", ""
+	return "", "", "", ""
+}
+
+// phpDistroVendors are the rpm vendors of distributions whose advisories
+// reach the package scan; any other vendor (Remi, IUS, cPanel, CloudLinux's
+// alt-php, none) is a third party.
+var phpDistroVendors = []string{"red hat", "rocky", "almalinux", "fedora", "amazon", "centos", "oracle", "suse"}
+
+func phpDistroVendor(v string) bool {
+	v = strings.ToLower(v)
+	return slices.ContainsFunc(phpDistroVendors, func(d string) bool { return strings.Contains(v, d) })
 }
 
 // phpChangelog is a package's changelog, where its packager names the CVEs
@@ -248,7 +340,7 @@ func phpChangelog(ctx context.Context, in phpInstall, branch string) string {
 	case "dpkg":
 		name, _, _ := strings.Cut(in.pkg, ":") // php8.3-cli:amd64
 		for _, n := range []string{name, "php" + branch + "-common"} {
-			if b, err := os.ReadFile(filepath.Join(phpRoot, "/usr/share/doc", n, "changelog.Debian.gz")); err == nil {
+			if b, err := phpReadLimited(filepath.Join(phpRoot, "/usr/share/doc", n, "changelog.Debian.gz"), phpConfMax); err == nil {
 				if z, err := gzip.NewReader(bytes.NewReader(b)); err == nil {
 					text, _ := io.ReadAll(io.LimitReader(z, 16<<20))
 					return string(text)
@@ -299,6 +391,12 @@ func (g phpGroup) where() string {
 		from = "package " + in.pkg + " " + in.pkgVersion + " from deb.sury.org or the ondrej PPA, which the package scan does not cover"
 	case strings.Contains(in.pkgVersion, "remi") || strings.HasPrefix(in.bin, "/opt/remi/"):
 		from = "package " + in.pkg + " " + in.pkgVersion + " from Remi's repository, which the package scan does not cover"
+	case in.dist == "rpm" && !phpDistroVendor(in.vendor):
+		vendor := in.vendor
+		if vendor == "" || vendor == "(none)" {
+			vendor = "no vendor"
+		}
+		from = "package " + in.pkg + " " + in.pkgVersion + " from " + vendor + ", which the package scan does not cover"
 	case in.pkg != "":
 		from = "package " + in.pkg + " " + in.pkgVersion
 	}
@@ -310,7 +408,7 @@ func (g phpGroup) where() string {
 func (g phpGroup) thirdParty() bool {
 	in := g.ins[0]
 	return in.pkg == "" || in.iis || strings.Contains(in.pkgVersion, "deb.sury.org") || strings.Contains(in.pkgVersion, "remi") ||
-		strings.HasPrefix(in.bin, "/opt/remi/")
+		strings.HasPrefix(in.bin, "/opt/remi/") || in.dist == "rpm" && !phpDistroVendor(in.vendor)
 }
 
 func (g phpGroup) has(sapi string) bool {
@@ -346,50 +444,99 @@ var phpWebGlobs = []string{"/etc/nginx/nginx.conf", "/etc/nginx/conf.d/*.conf", 
 	"/usr/local/openresty/nginx/conf/nginx.conf", "/etc/apache2/apache2.conf", "/etc/apache2/sites-enabled/*",
 	"/etc/apache2/conf-enabled/*", "/etc/httpd/conf/httpd.conf", "/etc/httpd/conf.d/*.conf"}
 
-// phpReadGlobs reads the files of globs under phpRoot; unread are those that
-// are there but could not be read.
-func phpReadGlobs(globs []string) (files map[string]string, unread []string) {
-	files = map[string]string{}
+// phpConfFile is one configuration file read: its path (without phpRoot)
+// and text.
+type phpConfFile struct{ path, text string }
+
+// phpReadGlobs reads the files of globs under phpRoot, in path order;
+// unread are those that are there but could not be read (not a regular
+// file, too large, permission).
+func phpReadGlobs(globs []string) (files []phpConfFile, unread []string) {
+	seen := map[string]bool{}
 	for _, g := range globs {
 		matches, _ := filepath.Glob(filepath.Join(phpRoot, g))
 		for _, m := range matches {
-			p := "/" + strings.TrimPrefix(filepath.ToSlash(strings.TrimPrefix(m, filepath.Clean(phpRoot))), "/")
-			b, err := os.ReadFile(m)
-			switch {
-			case err == nil:
-				files[p] = string(b)
-			case errors.Is(err, fs.ErrPermission):
-				unread = append(unread, p+" (permission denied)")
+			p := phpRel(m)
+			if seen[p] {
+				continue
+			}
+			seen[p] = true
+			if text, why := phpReadConf(m); why == "" {
+				files = append(files, phpConfFile{p, text})
+			} else if why != "missing" {
+				unread = append(unread, p+" ("+why+")")
 			}
 		}
 	}
+	slices.SortFunc(files, func(a, b phpConfFile) int { return strings.Compare(a.path, b.path) })
 	return files, unread
 }
 
-// phpStatusExposed finds a pool's status page (pm.status_path) reachable from
-// outside: its socket (pm.status_listen, else the pool's listen) on an
-// address other than the host's own, or a web server passing the path on to
-// FPM without keeping it to the host. path is the page; unread the files
-// that decide and could not be read.
-func phpStatusExposed() (path string, exposed bool, unread []string) {
-	pools, unread := phpReadGlobs(phpPoolGlobs)
+// phpRel is a path under phpRoot as the host spells it.
+func phpRel(full string) string {
+	return "/" + strings.TrimPrefix(filepath.ToSlash(strings.TrimPrefix(full, filepath.Clean(phpRoot))), "/")
+}
+
+// phpReadConf reads a configuration file; why is "" when read, "missing"
+// when not there, else why it could not be.
+func phpReadConf(full string) (text, why string) {
+	b, err := phpReadLimited(full, phpConfMax)
+	switch {
+	case err == nil:
+		return string(b), ""
+	case errors.Is(err, fs.ErrNotExist):
+		return "", "missing"
+	case errors.Is(err, fs.ErrPermission):
+		return "", "permission denied"
+	}
+	return "", err.Error()
+}
+
+// phpPoolBranch is the PHP branch a pool file belongs to (Debian's
+// /etc/php/8.3/fpm/, Remi's /etc/opt/remi/php83/), "" for one shared.
+func phpPoolBranch(p string) string {
+	if rest, ok := strings.CutPrefix(p, "/etc/php/"); ok {
+		if b, _, ok := strings.Cut(rest, "/"); ok {
+			return b
+		}
+	}
+	if rest, ok := strings.CutPrefix(p, "/etc/opt/remi/php"); ok {
+		if b, _, ok := strings.Cut(rest, "/"); ok && len(b) == 2 {
+			return b[:1] + "." + b[1:]
+		}
+	}
+	return ""
+}
+
+// phpStatusExposed finds a status page (pm.status_path) of a pool of the
+// branch (or one shared by all) reachable from outside: its socket
+// (pm.status_listen, else the pool's listen) on an address other than the
+// host's own, or a web server passing the path on to FPM without keeping it
+// to the host. path is the page; unread what decides and could not be read.
+// A pool is its file and its name: [www] of 8.2 is not [www] of 8.3.
+func phpStatusExposed(branch string) (path string, exposed bool, unread []string) {
+	files, unread := phpReadGlobs(phpPoolGlobs)
 	type pool struct{ listen, status, statusListen string }
-	by := map[string]*pool{}
-	for _, text := range pools {
+	var pools []*pool
+	for _, f := range files {
+		if b := phpPoolBranch(f.path); b != "" && b != branch {
+			continue
+		}
+		by := map[string]*pool{}
 		var cur *pool
-		for _, line := range strings.Split(text, "\n") {
+		for _, line := range strings.Split(f.text, "\n") {
 			line = strings.TrimSpace(line)
 			if line == "" || line[0] == ';' || line[0] == '#' {
 				continue
 			}
 			if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
 				name := line[1 : len(line)-1]
-				if by[name] == nil {
-					by[name] = &pool{}
-				}
-				cur = by[name]
-				if name == "global" {
-					cur = nil
+				if cur = nil; name != "global" {
+					if by[name] == nil {
+						by[name] = &pool{}
+						pools = append(pools, by[name])
+					}
+					cur = by[name]
 				}
 				continue
 			}
@@ -413,11 +560,10 @@ func phpStatusExposed() (path string, exposed bool, unread []string) {
 		}
 	}
 	var paths []string
-	for _, p := range by {
+	for _, p := range pools {
 		if p.status == "" {
 			continue
 		}
-		paths = append(paths, p.status)
 		l := p.statusListen
 		if l == "" {
 			l = p.listen
@@ -425,21 +571,133 @@ func phpStatusExposed() (path string, exposed bool, unread []string) {
 		if phpNetAddr(l) {
 			return p.status, true, nil
 		}
+		if !slices.Contains(paths, p.status) {
+			paths = append(paths, p.status)
+		}
 	}
 	if len(paths) == 0 {
 		return "", false, unread
 	}
-	slices.Sort(paths)
-	web, wunread := phpReadGlobs(phpWebGlobs)
+	web, wunread := phpWebConf()
 	unread = append(unread, wunread...)
 	for _, sp := range paths {
-		for _, text := range web {
-			if ngxPassesTo(text, sp) || apachePassesTo(text, sp) {
+		for _, f := range web {
+			hit, unsure := false, ""
+			if f.nginx {
+				hit, unsure = ngxPassesTo(f.text, sp)
+			} else {
+				hit, unsure = apachePassesTo(f.text, sp)
+			}
+			if hit {
 				return sp, true, nil
+			}
+			if unsure != "" {
+				unread = append(unread, f.path+" ("+unsure+")")
 			}
 		}
 	}
 	return paths[0], false, unread
+}
+
+// phpWebFile is a web server's file with what it includes put in place
+// and its comments taken out.
+type phpWebFile struct {
+	path, text string
+	nginx      bool
+}
+
+// phpIncludeRoots are where a web server's include is followed: under its
+// own configuration (and nginx's modules folder on RHEL).
+var phpIncludeRoots = map[bool][]string{
+	true:  {"/etc/nginx/", "/usr/share/nginx/", "/usr/local/openresty/", "/usr/local/nginx/"},
+	false: {"/etc/apache2/", "/etc/httpd/"},
+}
+
+var (
+	ngxInclude    = regexp.MustCompile(`(?m)^[ \t]*include[ \t]+("[^"]*"|'[^']*'|[^;\s]+)[ \t]*;`)
+	apacheInclude = regexp.MustCompile(`(?im)^[ \t]*Include(?:Optional)?[ \t]+("[^"]*"|\S+)[ \t]*$`)
+)
+
+// phpWebConf reads the web servers' files of phpWebGlobs, includes followed
+// (8 deep, 256 files at most, under phpIncludeRoots); unread are the files
+// that could not be read, or were not.
+func phpWebConf() ([]phpWebFile, []string) {
+	files, unread := phpReadGlobs(phpWebGlobs)
+	count := len(files)
+	var expand func(p, text string, nginx bool, depth int) string
+	expand = func(p, text string, nginx bool, depth int) string {
+		re, root := apacheInclude, "/etc/apache2"
+		if nginx {
+			re, root = ngxInclude, "/etc/nginx"
+		} else if strings.HasPrefix(p, "/etc/httpd/") {
+			root = "/etc/httpd"
+		}
+		return re.ReplaceAllStringFunc(text, func(m string) string {
+			arg := strings.Trim(re.FindStringSubmatch(m)[1], `"'`)
+			if !strings.HasPrefix(arg, "/") {
+				arg = root + "/" + arg
+			}
+			if !slices.ContainsFunc(phpIncludeRoots[nginx], func(r string) bool { return strings.HasPrefix(path.Clean(arg), r) }) {
+				unread = append(unread, arg+" (included by "+p+", not read: outside "+strings.Join(phpIncludeRoots[nginx], ", ")+")")
+				return ""
+			}
+			matches, _ := filepath.Glob(filepath.Join(phpRoot, arg))
+			var b strings.Builder
+			for _, full := range matches {
+				ip := phpRel(full)
+				if depth >= 8 || count >= 256 {
+					unread = append(unread, ip+" (included by "+p+", not read: past the include limit)")
+					continue
+				}
+				count++
+				text, why := phpReadConf(full)
+				if why != "" {
+					unread = append(unread, ip+" (included by "+p+": "+why+")")
+					continue
+				}
+				b.WriteString("\n" + expand(ip, phpStripComments(text, nginx), nginx, depth+1) + "\n")
+			}
+			return b.String()
+		})
+	}
+	var out []phpWebFile
+	for _, f := range files {
+		nginx := strings.Contains(f.path, "nginx")
+		out = append(out, phpWebFile{f.path, expand(f.path, phpStripComments(f.text, nginx), nginx, 0), nginx})
+	}
+	return out, unread
+}
+
+// phpStripComments takes the comments out of a web server's file: nginx's
+// from a # outside quotes to the end of the line, Apache's lines that start
+// with # (Apache has no comment after a directive).
+func phpStripComments(text string, nginx bool) string {
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		if !nginx {
+			if strings.HasPrefix(strings.TrimSpace(line), "#") {
+				lines[i] = ""
+			}
+			continue
+		}
+		var quote byte
+		for j := 0; j < len(line); j++ {
+			switch c := line[j]; {
+			case quote != 0:
+				if c == '\\' {
+					j++
+				} else if c == quote {
+					quote = 0
+				}
+			case c == '"' || c == '\'':
+				quote = c
+			case c == '#':
+				lines[i] = line[:j]
+				j = len(line)
+			}
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 // phpNetAddr reports whether an FPM listen address takes connections from
@@ -466,6 +724,8 @@ func phpNetAddr(a string) bool {
 
 var (
 	ngxLocation   = regexp.MustCompile(`(?m)^\s*location\s+(=|~\*|~|\^~)?\s*("[^"]*"|\S+)\s*\{`)
+	ngxServer     = regexp.MustCompile(`(?m)^\s*server\s*\{`)
+	ngxListen     = regexp.MustCompile(`(?m)^\s*listen\s+([^;\s]+)`)
 	ngxKeptLocal  = regexp.MustCompile(`\bdeny\s+all\s*;|\binternal\s*;`)
 	apacheBlock   = regexp.MustCompile(`(?is)<(Location|LocationMatch)\s+("[^"]*"|\S+?)\s*>(.*?)</(?:Location|LocationMatch)>`)
 	apacheLocal   = regexp.MustCompile(`(?i)\bRequire\s+(local|ip|host|all\s+denied)\b|\bDeny\s+from\s+all\b`)
@@ -473,48 +733,102 @@ var (
 	apacheProxyRe = regexp.MustCompile(`(?im)^\s*ProxyPass(Match)?\s+("[^"]*"|\S+)\s+"?fcgi://`)
 )
 
-// ngxPassesTo reports whether an nginx file has a location that matches path
-// and passes it on to FastCGI, not kept to some addresses (deny all) or to
-// nginx itself (internal).
-func ngxPassesTo(text, path string) bool {
+// ngxBlockEnd is the index of the } closing the block whose { is at open.
+func ngxBlockEnd(text string, open int) int {
+	depth := 0
+	for i := open; i < len(text); i++ {
+		if text[i] == '{' {
+			depth++
+		} else if text[i] == '}' {
+			if depth--; depth == 0 {
+				return i
+			}
+		}
+	}
+	return len(text)
+}
+
+// ngxLocalServer reports whether the server block holding the offset at
+// listens on the host's own addresses only (127.0.0.1, [::1], localhost, a
+// Unix socket). A location in no server block, or a server with no listen
+// (port 80 on every address), is not.
+func ngxLocalServer(text string, at int) bool {
+	for _, m := range ngxServer.FindAllStringIndex(text, -1) {
+		end := ngxBlockEnd(text, m[1]-1)
+		if at < m[0] || at > end {
+			continue
+		}
+		ls := ngxListen.FindAllStringSubmatch(text[m[1]:end], -1)
+		if len(ls) == 0 {
+			return false
+		}
+		for _, l := range ls {
+			a := l[1]
+			if strings.HasPrefix(a, "unix:") {
+				continue
+			}
+			if !strings.Contains(a, ":") && !strings.Contains(a, ".") {
+				return false // a port alone: every address
+			}
+			if phpNetAddr(a) {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+
+// ngxPassesTo reports whether nginx's text (comments taken out) has a
+// location that matches path and passes it on to FastCGI, in a server not
+// listening on the host's own addresses only, and not kept to some
+// addresses (deny all) or to nginx itself (internal). unsure says why that
+// cannot be told (a regular expression Go cannot read).
+func ngxPassesTo(text, path string) (bool, string) {
+	unsure := ""
 	for _, m := range ngxLocation.FindAllStringSubmatchIndex(text, -1) {
 		mod, pat := "", strings.Trim(text[m[4]:m[5]], `"`)
 		if m[2] >= 0 {
 			mod = text[m[2]:m[3]]
 		}
-		depth, end := 0, len(text)
-		for i := m[1] - 1; i < len(text); i++ {
-			if text[i] == '{' {
-				depth++
-			} else if text[i] == '}' {
-				if depth--; depth == 0 {
-					end = i
-					break
-				}
-			}
-		}
-		body := text[m[1]:end]
-		if !strings.Contains(body, "fastcgi_pass") || ngxKeptLocal.MatchString(body) {
+		body := text[m[1]:ngxBlockEnd(text, m[1]-1)]
+		if !strings.Contains(body, "fastcgi_pass") || ngxKeptLocal.MatchString(body) || ngxLocalServer(text, m[0]) {
 			continue
 		}
-		if pathMatches(mod, pat, path) {
-			return true
+		switch ok, err := pathMatches(mod, pat, path); {
+		case ok:
+			return true, ""
+		case err != nil:
+			unsure = "location " + pat + " is a regular expression that could not be read"
 		}
 	}
-	return false
+	return false, unsure
 }
 
 // apachePassesTo is ngxPassesTo for Apache: a Location or LocationMatch that
 // hands path to FastCGI without Require local, ip or host, or a ProxyPass
-// (Match) of it to fcgi://.
-func apachePassesTo(text, path string) bool {
+// (Match) of it to fcgi:// that no such Location of it keeps to the host.
+func apachePassesTo(text, path string) (bool, string) {
+	unsure := ""
+	kept := false // a Location matching path keeps it to the host
 	for _, m := range apacheBlock.FindAllStringSubmatch(text, -1) {
 		mod := "^~" // a Location is a prefix
 		if strings.EqualFold(m[1], "LocationMatch") {
 			mod = "~"
 		}
-		if apacheFCGI.MatchString(m[3]) && !apacheLocal.MatchString(m[3]) && pathMatches(mod, strings.Trim(m[2], `"`), path) {
-			return true
+		ok, err := pathMatches(mod, strings.Trim(m[2], `"`), path)
+		if err != nil {
+			unsure = "LocationMatch " + m[2] + " is a regular expression that could not be read"
+		}
+		if !ok {
+			continue
+		}
+		if apacheLocal.MatchString(m[3]) {
+			kept = true
+			continue
+		}
+		if apacheFCGI.MatchString(m[3]) {
+			return true, ""
 		}
 	}
 	for _, m := range apacheProxyRe.FindAllStringSubmatch(text, -1) {
@@ -522,27 +836,35 @@ func apachePassesTo(text, path string) bool {
 		if m[1] != "" {
 			mod = "~"
 		}
-		if pathMatches(mod, strings.Trim(m[2], `"`), path) {
-			return true
+		ok, err := pathMatches(mod, strings.Trim(m[2], `"`), path)
+		if err != nil {
+			unsure = "ProxyPassMatch " + m[2] + " is a regular expression that could not be read"
+		}
+		if ok && !kept {
+			return true, ""
 		}
 	}
-	return false
+	return false, unsure
 }
 
 // pathMatches reports whether a location of modifier mod (=, ~, ~*, ^~ or
-// none) and pattern pat matches path.
-func pathMatches(mod, pat, path string) bool {
+// none) and pattern pat matches path; err when the regular expression is
+// one Go's RE2 cannot read (PCRE's lookarounds, backreferences).
+func pathMatches(mod, pat, path string) (bool, error) {
 	switch mod {
 	case "=":
-		return pat == path
+		return pat == path, nil
 	case "~", "~*":
 		if mod == "~*" {
 			pat = "(?i)" + pat
 		}
 		re, err := regexp.Compile(pat)
-		return err == nil && re.MatchString(path)
+		if err != nil {
+			return false, err
+		}
+		return re.MatchString(path), nil
 	}
-	return strings.HasPrefix(path, pat)
+	return strings.HasPrefix(path, pat), nil
 }
 
 // phpList is "X" or "X and Y" or "X, Y and Z".
@@ -558,7 +880,7 @@ func phpRisks(ctx context.Context) []Risk {
 	ins, unread := phpInstalls(ctx)
 	var out []Risk
 	if len(unread) > 0 {
-		out = append(out, Risk{uncheckedPrefix + "php:version", "info", "the PHP IIS runs could not be checked (" + strings.Join(unread, ", ") +
+		out = append(out, Risk{uncheckedPrefix + "php:version", "info", "PHP could not be checked (" + strings.Join(unread, ", ") +
 			"), so whether CVE-2026-129538 (php-cgi) and the other PHP advisories of 2026-11-19 affect it is unknown"})
 	}
 	if len(ins) == 0 {
@@ -569,17 +891,29 @@ func phpRisks(ctx context.Context) []Risk {
 	if !phpWindows {
 		procs, known = phpProcs()
 	}
-	statusRead := false
-	var statusPath string
-	var statusOut bool
-	var statusUnread []string
-	for _, g := range phpGroups(ins) {
+	type status struct {
+		path   string
+		out    bool
+		unread []string
+	}
+	statuses := map[string]*status{} // by branch: each reads its own pools
+	groups := phpGroups(ins)
+	branches := map[string]int{}
+	for _, g := range groups {
+		if rel, ok := phpRelease(g.version); ok {
+			branches[fmt.Sprintf("%d.%d", rel[0], rel[1])]++
+		}
+	}
+	for _, g := range groups {
 		rel, ok := phpRelease(g.version)
 		if !ok {
 			continue
 		}
 		branch := fmt.Sprintf("%d.%d", rel[0], rel[1])
 		key, name := "php"+branch+":", "PHP "+g.version+" ("+g.where()+")"
+		if branches[branch] > 1 {
+			key = "php" + branch + "@" + g.ins[0].bin + ":" // two builds of one branch: a risk each
+		}
 		if phpEOL(rel) {
 			if g.thirdParty() {
 				out = append(out, Risk{key + "eol", "info", name + " is a branch php.net no longer fixes; its fixes of 2026-11-19 " +
@@ -632,10 +966,13 @@ func phpRisks(ctx context.Context) []Risk {
 			}
 		}
 		if c := open(phpStatusCVE); len(c) > 0 && (fpmOn || fpmUnknown) {
-			if !statusRead {
-				statusPath, statusOut, statusUnread = phpStatusExposed()
-				statusRead = true
+			st := statuses[branch]
+			if st == nil {
+				st = &status{}
+				st.path, st.out, st.unread = phpStatusExposed(branch)
+				statuses[branch] = st
 			}
+			statusPath, statusOut, statusUnread := st.path, st.out, st.unread
 			switch {
 			case statusOut && fpmOn:
 				out = append(out, Risk{key + c[0], "warning", name + ": php-fpm's status page (pm.status_path " + statusPath +
