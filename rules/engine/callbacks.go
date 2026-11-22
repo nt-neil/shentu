@@ -194,27 +194,37 @@ func (a *analysis) isParamName(name string) bool {
 	return a.php && strings.HasPrefix(name, "$") && slices.Contains(a.curParams, name)
 }
 
-// paramsMoved returns the parameters a function's body may write: every use of
-// one but a call ($cb(...)) or a whole argument or parenthesized operand
-// (f($cb), if ($cb)) counts, so an assignment ($cb = wrap($cb), $cb .= ...),
-// destructuring ([$cb] = ..., list($cb) = ...), a foreach target (as $cb), a
-// reference (&$cb) and any other expression are all moves. Nested functions'
-// tokens are included (a closure using a variable of that name moves it too).
-// The safe side: after a move a call of it is cut, not followed. A whole
-// argument handed to a by-reference parameter is not seen.
+// paramsMoved returns the parameters a function's body may write, nested
+// functions' tokens included (a closure writing a variable of that name moves
+// it too):
+//   - assigned: $cb = ..., $cb .= ..., $cb ??= ... (comparisons are reads);
+//   - a destructuring target: [$cb] = ..., list($x, $cb) = ...;
+//   - a foreach target: as $cb, as $k => $cb;
+//   - referenced: &$cb (=& $cb, use (&$cb), f(&$cb)).
+//
+// Reads ($cb === null, $cb instanceof Closure, f($cb)) are not moves. After a
+// move a call of it is cut, not followed. Not seen: a whole argument handed to
+// a by-reference parameter (preg_match($p, $s, $cb)).
 func paramsMoved(body []*stmt, params []string) map[string]bool {
 	var out map[string]bool
+	reads := map[string]bool{"==": true, "===": true, "!=": true, "!==": true, "<=": true, ">=": true, "=>": true, "<=>": true}
 	walkToks(body, 0, func(t []Token) {
 		for i := range t {
 			if t[i].Kind != Var || !slices.Contains(params, t[i].Text) || i > 0 && memberOp(true, t[i-1]) {
 				continue
 			}
-			called := i+1 < len(t) && t[i+1].op("(")
-			whole := i > 0 && (t[i-1].op("(") || t[i-1].op(",")) && i+1 < len(t) && (t[i+1].op(")") || t[i+1].op(","))
-			if whole && i > 1 && t[i-1].op("(") && (t[i-2].word("list") || t[i-2].word("array")) {
-				whole = false // list($cb) = ...: a target
+			moved := false
+			switch {
+			case i+1 < len(t) && t[i+1].Kind == Op && strings.HasSuffix(t[i+1].Text, "=") && !reads[t[i+1].Text]:
+				moved = true // assigned
+			case i > 0 && t[i-1].op("&"):
+				moved = true // referenced
+			case i > 0 && (t[i-1].word("as") || t[i-1].op("=>") && foreachTarget(t, i)):
+				moved = true // a foreach target
+			case destructured(t, i):
+				moved = true
 			}
-			if !called && !whole {
+			if moved {
 				if out == nil {
 					out = map[string]bool{}
 				}
@@ -223,6 +233,58 @@ func paramsMoved(body []*stmt, params []string) map[string]bool {
 		}
 	})
 	return out
+}
+
+// foreachTarget reports whether t[i], after =>, is the value target of a
+// foreach header: an as comes before it in the same tokens.
+func foreachTarget(t []Token, i int) bool {
+	for k := i - 1; k >= 0; k-- {
+		if t[k].word("as") {
+			return true
+		}
+		if t[k].op(";") || t[k].op("{") {
+			return false
+		}
+	}
+	return false
+}
+
+// destructured reports whether t[i] sits inside a [...] or list(...) that an
+// assignment's = follows: [$a, $cb] = ..., list($cb) = ...
+func destructured(t []Token, i int) bool {
+	depth := 0
+	for k := i + 1; k < len(t); k++ {
+		switch {
+		case isOpen(t[k]):
+			depth++
+		case isClose(t[k]):
+			if depth > 0 {
+				depth--
+				continue
+			}
+			if k+1 < len(t) && t[k+1].op("=") {
+				if t[k].op("]") {
+					return true
+				}
+				if t[k].op(")") {
+					// list(...) =: the ( opening it follows list
+					d := 0
+					for o := k - 1; o >= 0; o-- {
+						if isClose(t[o]) {
+							d++
+						} else if isOpen(t[o]) {
+							if d == 0 {
+								return o > 0 && t[o-1].word("list")
+							}
+							d--
+						}
+					}
+				}
+			}
+			return false
+		}
+	}
+	return false
 }
 
 // pcallSeeds finds, in a PHP statement, calls of a function whose summary

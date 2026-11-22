@@ -67,6 +67,14 @@ func TestParamCalls(t *testing.T) {
 			"b.php": "<?php\nfunction loop_call($v, $cb) {\n    foreach (handlers() as $cb) {\n        $cb($v);\n    }\n}\n",
 			"a.php": "<?php\nrequire 'b.php';\nloop_call($_GET['x'], function ($s) {\n    system($s);\n});\n",
 		}, "a.php", nil, CutCallableParam},
+		{"a parameter referenced (&$cb) before its call: cut as callable-param", map[string]string{
+			"b.php": "<?php\nfunction ref_call($v, $cb) {\n    $x = &$cb;\n    $x = wrap($x);\n    $cb($v);\n}\n",
+			"a.php": "<?php\nrequire 'b.php';\nref_call($_GET['x'], function ($s) {\n    system($s);\n});\n",
+		}, "a.php", nil, CutCallableParam},
+		{"a parameter only read ($cb instanceof Closure) is still followed (control)", map[string]string{
+			"b.php": "<?php\nfunction guard_call($v, $cb) {\n    if ($cb instanceof Closure && $cb !== null) {\n        $cb($v);\n    }\n}\n",
+			"a.php": "<?php\nrequire 'b.php';\nguard_call($_GET['x'], function ($s) {\n    system($s);\n});\n",
+		}, "a.php", []string{"a.php:4:php-cmdi-shell-exec"}, 0},
 		{"a callable the call site does not show, with input: cut as callable-param", map[string]string{
 			"b.php": helper,
 			"a.php": "<?php\nrequire 'b.php';\n$h = make_handler();\ntap2($_GET['x'], $h);\n",
