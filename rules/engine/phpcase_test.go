@@ -44,6 +44,7 @@ func TestPHPNamesAnyCase(t *testing.T) {
 			"<?php\necho\\system($_GET['x']);\nfunction f() {\n    return\\SYSTEM($_GET['y']);\n}\n", nil, []string{"a.php:2", "a.php:4"}},
 		{`A\file( and A\B\file( are a namespace's, with no namespace declared`, "a.php", "php-path-traversal-file-read",
 			"<?php\n$a = A\\file($_GET['x']);\n$b = A\\B\\file($_GET['y']);\n", nil, nil},
+		{"Key( names a class, though PHP has key() (control)", "a.php", "php-hardcoded-secret-credentials", "<?php\nuse Firebase\\JWT\\Key;\n$k = new Key('change-me-jwt-key', 'HS256');\n", nil, []string{"a.php:3"}},
 		{"a class pattern still matches after new (control)", "a.php", "php-ssrf-url-readers", "<?php\n$a = new SoapClient($_GET['x']);\n$b = new soapclient($_GET['x']);\n", nil, []string{"a.php:2", "a.php:3"}},
 		{"JavaScript keeps its case (control)", "a.js", "js-cmdi-exec", "const cp = require('child_process')\ncp.EXEC(req.query.c)\n", nil, nil},
 		{"Python keeps its case (control)", "a.py", "python-cmdi-shell", "import os\nfrom flask import request\nos.SYSTEM(request.args['c'])\n", nil, nil},

@@ -179,7 +179,7 @@ func (p *pat) match(toks []Token, i int, strict bool) (int, bool) {
 		return 0, false
 	}
 	if strict && p.php && i > 0 && len(p.toks) > 1 && p.toks[0].Kind == Ident && p.toks[1].op("(") &&
-		phpBuiltins[strings.ToLower(p.toks[0].Text)] && phpNotGlobalCall(toks, i) {
+		phpFuncPattern(p.toks[0].Text) && phpNotGlobalCall(toks, i) {
 		return 0, false
 	}
 	if !strict || p.member || i == 0 || !memberOp(p.php, toks[i-1]) {
@@ -188,6 +188,13 @@ func (p *pat) match(toks []Token, i int, strict bool) (int, bool) {
 	// readFileSync( also matches fs.readFileSync( when fs is a core module
 	// (FlagModule, set by normalizeModules), never re.exec( on any object.
 	return j, !p.php && i >= 2 && toks[i-1].op(".") && toks[i-2].Flags&FlagModule != 0 && (i == 2 || !memberOp(false, toks[i-3]))
+}
+
+// phpFuncPattern reports whether a pattern name names a PHP function: written
+// in lower case, as the rules write functions, and one PHP has. Key( names
+// php-jwt's class Key, not key(), so new Key($secret) still matches it.
+func phpFuncPattern(name string) bool {
+	return name == strings.ToLower(name) && phpBuiltins[name]
 }
 
 // phpNotGlobalCall reports whether the name at toks[i], followed by "(", is
