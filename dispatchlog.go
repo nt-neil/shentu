@@ -437,7 +437,7 @@ func decodeArchiveLine(line []byte, v any) (extra bool, err error) {
 	dec := json.NewDecoder(bytes.NewReader(line))
 	dec.DisallowUnknownFields()
 	if err = dec.Decode(v); err == nil {
-		if dec.More() {
+		if _, terr := dec.Token(); terr != io.EOF { // only space may follow ("}", "]" too: S-197b-1)
 			return false, errors.New("json: data after the record")
 		}
 		return false, nil
