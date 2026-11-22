@@ -349,6 +349,22 @@ func (a *analysis) pcallSeeds(st state, t []Token, funcs []*fn) map[*fn][]*param
 		if t[i].Kind == Ident && (declWords[t[i].Text] || t[i].word("function") || t[i].word("fn")) {
 			continue
 		}
+		if cb, ok := callableBuiltins[strings.ToLower(t[i].Text)]; ok && t[i].Kind == Ident && (i == 0 || !memberOp(true, t[i-1]) && !t[i-1].op("::")) {
+			args := callArgs(t, i+1)
+			if cb.pos < len(args) {
+				seed := func(k int) val {
+					var v val
+					for _, m := range cb.from(k, len(args)) {
+						if m < len(args) {
+							v = or(v, a.expr(st, args[m], false))
+						}
+					}
+					return v
+				}
+				out = a.passCallable(st, args[cb.pos], funcs, seed, cb.width(len(args)), false, out)
+			}
+			continue
+		}
 		sum := a.callSummary(t, i, a.calleeKey(t, i))
 		if sum == nil || len(sum.pcall) == 0 && len(sum.pcallSrc) == 0 {
 			continue
@@ -387,31 +403,13 @@ func (a *analysis) pcallSeeds(st state, t []Token, funcs []*fn) map[*fn][]*param
 			for k := range width {
 				input = input || seed(k).taint
 			}
-			switch {
-			case n >= len(args) || args[n] == nil:
+			if n >= len(args) || args[n] == nil {
 				if input {
 					a.b.tooDeepFor(CutCallableParam)
 				}
-			case len(args[n]) == 1 && args[n][0].Kind == Func && args[n][0].Fn < len(funcs):
-				f := funcs[args[n][0].Fn]
-				if out == nil {
-					out = map[*fn][]*paramSeed{}
-				}
-				for k := range width {
-					out[f] = append(out[f], &paramSeed{param: k, v: seed(k)})
-				}
-			case len(args[n]) == 1 && args[n][0].Kind == Var && a.paramIndex(args[n][0].Text) >= 0:
-				if a.summ != nil && a.nested == 0 {
-					p := a.paramIndex(args[n][0].Text)
-					for k := range width {
-						if seed(k).taint {
-							a.summ.pcall[[2]int{p, k}] = true
-						}
-					}
-				}
-			case input:
-				a.b.tooDeepFor(CutCallableParam)
+				continue
 			}
+			out = a.passCallable(st, args[n], funcs, seed, width, true, out)
 		}
 	}
 	return out
@@ -438,11 +436,26 @@ func sortedKeys2[V1, V2 any](x map[int]V1, y map[int]V2) []int {
 func callsParam(fi *fnInfo) bool {
 	found := false
 	walkToks(fi.f.body, 0, func(t []Token) {
-		for i := 0; !found && i+1 < len(t); i++ {
-			found = t[i].Kind == Var && t[i+1].op("(") && slices.Contains(fi.params, t[i].Text)
-		}
+		found = found || callsParamIn(t, fi.params)
 	})
 	return found
+}
+
+// callsParamIn reports whether tokens call one of params: directly
+// ($callback(...)) or by handing it to a builtin that calls it
+// (array_map($callback, ...), usort($a, $cmp)).
+func callsParamIn(t []Token, params []string) bool {
+	for i := 0; i+1 < len(t); i++ {
+		if t[i].Kind == Var && t[i+1].op("(") && slices.Contains(params, t[i].Text) {
+			return true
+		}
+		if cb, ok := callableBuiltins[strings.ToLower(t[i].Text)]; ok && t[i].Kind == Ident && t[i+1].op("(") {
+			if args := callArgs(t, i+1); cb.pos < len(args) && len(args[cb.pos]) == 1 && args[cb.pos][0].Kind == Var && slices.Contains(params, args[cb.pos][0].Text) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // byParam puts a PHP call's arguments in the callee's parameter places: by
@@ -472,4 +485,159 @@ func byParam(args [][]Token, params []string) ([][]Token, bool) {
 		out[i] = arg
 	}
 	return out, true
+}
+
+// passCallable follows the callable a call passes where the callee (or a
+// builtin) calls it with arguments whose input seed(k) gives:
+//   - a closure literal: seeded, its sinks found when it is analysed;
+//   - the caller's own parameter: the effect moves up (a.summ.pcall);
+//   - a function name ('foo', 'Cls::m'), an array callable ([$this, 'm'],
+//     [Cls::class, 'm'], array(...)) or a first-class callable (foo(...)):
+//     resolved and its summary's sinks reported for the seeded arguments;
+//   - anything else: with input, cut as callable-param when cutUnknown (a
+//     callee's effect; a builtin's unknown callable stays as it was).
+func (a *analysis) passCallable(st state, arg []Token, funcs []*fn, seed func(int) val, width int, cutUnknown bool, out map[*fn][]*paramSeed) map[*fn][]*paramSeed {
+	input := false
+	for k := range width {
+		input = input || seed(k).taint
+	}
+	switch {
+	case len(arg) == 1 && arg[0].Kind == Func && arg[0].Fn < len(funcs):
+		f := funcs[arg[0].Fn]
+		if out == nil {
+			out = map[*fn][]*paramSeed{}
+		}
+		for k := range width {
+			out[f] = append(out[f], &paramSeed{param: k, v: seed(k)})
+		}
+	case len(arg) == 1 && arg[0].Kind == Var && a.paramIndex(arg[0].Text) >= 0:
+		if a.summ != nil && a.nested == 0 {
+			p := a.paramIndex(arg[0].Text)
+			for k := range width {
+				if seed(k).taint {
+					a.summ.pcall[[2]int{p, k}] = true
+				}
+			}
+		}
+	default:
+		if !input {
+			return out
+		}
+		if call := callableCall(arg); call != nil {
+			at := len(call) - 3 // the name before "(" ")"
+			if sum := a.callSummary(call, at, a.calleeKey(call, at)); sum != nil {
+				for k := range width {
+					v := seed(k)
+					if !v.taint || v.weak {
+						continue
+					}
+					for _, l := range sum.sinkOf(k) {
+						a.reportSink(l, v.emb || sum.sinkEmb&(1<<k) != 0)
+					}
+				}
+				return out
+			}
+			if a.calleeKey(call, at) != "" || a.resolves(call, at) {
+				return out // a known function the rule has no summary for: nothing of this rule reaches it
+			}
+		}
+		if cutUnknown {
+			a.b.tooDeepFor(CutCallableParam)
+		}
+	}
+	return out
+}
+
+// callableCall turns a PHP callable written as a value into the tokens of a
+// call of it, ending in "(" ")", or nil: 'foo' and 'Cls::m', [$this, 'm'],
+// [Cls::class, 'm'] and array(...) alike, and foo(...).
+func callableCall(arg []Token) []Token {
+	op := func(s string) Token { return Token{Kind: Op, Text: s} }
+	id := func(s string) Token { return Token{Kind: Ident, Text: s} }
+	tail := []Token{op("("), op(")")}
+	switch {
+	case len(arg) == 1 && arg[0].Kind == Str && len(arg[0].Parts) == 0:
+		name := arg[0].Text
+		if c, m, ok := strings.Cut(name, "::"); ok && c != "" && m != "" {
+			return append([]Token{id(c), op("::"), id(m)}, tail...)
+		}
+		if name == "" || strings.ContainsAny(name, " ()$") {
+			return nil
+		}
+		return append([]Token{id(name)}, tail...)
+	case len(arg) == 4 && arg[0].Kind == Ident && arg[1].op("(") && arg[2].op("...") && arg[3].op(")"):
+		return append([]Token{arg[0]}, tail...)
+	}
+	inner := arg
+	switch {
+	case len(arg) >= 2 && arg[0].op("[") && arg[len(arg)-1].op("]"):
+		inner = arg[1 : len(arg)-1]
+	case len(arg) >= 3 && arg[0].word("array") && arg[1].op("(") && arg[len(arg)-1].op(")"):
+		inner = arg[2 : len(arg)-1]
+	default:
+		return nil
+	}
+	parts := splitTop(inner, isComma)
+	if len(parts) != 2 || len(parts[1]) != 1 || parts[1][0].Kind != Str || len(parts[1][0].Parts) != 0 {
+		return nil
+	}
+	m := id(parts[1][0].Text)
+	switch obj := parts[0]; {
+	case len(obj) == 1 && obj[0].Kind == Var:
+		return append([]Token{obj[0], op("->"), m}, tail...)
+	case len(obj) == 3 && obj[0].Kind == Ident && obj[1].op("::") && obj[2].word("class"):
+		return append([]Token{obj[0], op("::"), m}, tail...)
+	case len(obj) == 1 && obj[0].Kind == Str && len(obj[0].Parts) == 0:
+		return append([]Token{id(obj[0].Text), op("::"), m}, tail...)
+	}
+	return nil
+}
+
+// callableBuiltin: a PHP builtin that calls a callable it is given. pos is the
+// callable's argument; arg k of each call it makes gets the input of the
+// call's arguments from(k) names (an array argument's input reaches the
+// callable through its elements).
+type callableBuiltin struct {
+	pos   int
+	from  func(k, nargs int) []int
+	width func(nargs int) int
+}
+
+func fixedFrom(m ...[]int) func(int, int) []int {
+	return func(k, _ int) []int {
+		if k < len(m) {
+			return m[k]
+		}
+		return nil
+	}
+}
+
+func fixedWidth(n int) func(int) int { return func(int) int { return n } }
+
+var callableBuiltins = map[string]callableBuiltin{
+	"array_map":             {0, func(k, n int) []int { return []int{k + 1} }, func(n int) int { return max(n-1, 1) }},
+	"array_filter":          {1, fixedFrom([]int{0}, []int{0}), fixedWidth(2)},
+	"array_walk":            {1, fixedFrom([]int{0}, []int{0}, []int{2}), fixedWidth(3)},
+	"array_walk_recursive":  {1, fixedFrom([]int{0}, []int{0}, []int{2}), fixedWidth(3)},
+	"usort":                 {1, fixedFrom([]int{0}, []int{0}), fixedWidth(2)},
+	"uasort":                {1, fixedFrom([]int{0}, []int{0}), fixedWidth(2)},
+	"uksort":                {1, fixedFrom([]int{0}, []int{0}), fixedWidth(2)},
+	"array_reduce":          {1, fixedFrom([]int{2}, []int{0}), fixedWidth(2)},
+	"preg_replace_callback": {1, fixedFrom([]int{2}), fixedWidth(1)},
+	"call_user_func":        {0, func(k, n int) []int { return []int{k + 1} }, func(n int) int { return max(n-1, 0) }},
+	"call_user_func_array":  {0, fixedFrom([]int{1}, []int{1}, []int{1}, []int{1}), fixedWidth(4)},
+}
+
+// resolves reports whether the call at t[i] reaches a function the project
+// knows (in another file), whatever the rule makes of it.
+func (a *analysis) resolves(t []Token, i int) bool {
+	if a.proj == nil {
+		return false
+	}
+	c, ok := a.callee(t, i)
+	if !ok {
+		return false
+	}
+	f, _, _, _ := a.proj.target(a, c)
+	return f != ""
 }
