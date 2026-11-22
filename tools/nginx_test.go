@@ -37,7 +37,9 @@ func TestNginxH2Risk(t *testing.T) {
 	risk := func(v, pkg, dist, log string, on, found bool, unread ...string) []Risk {
 		nginxVersion = func(context.Context) ngxInstall { return ngxInstall{version: v, pkg: pkg, dist: dist} }
 		nginxChangelog = func(context.Context, string, string) string { return log }
-		nginxFeatures = func(string) hostenv.NginxFeatures { return hostenv.NginxFeatures{Found: found, HTTP2: on, Unread: unread} }
+		nginxFeatures = func(string) hostenv.NginxFeatures {
+			return hostenv.NginxFeatures{Found: found, HTTP2: on, Unread: unread}
+		}
 		return withoutOther(nginxRisks(context.Background()))
 	}
 	r := risk("1.22.1-9+deb12u2", "nginx", "dpkg", "", true, true)
@@ -194,7 +196,10 @@ func TestNginxH2RiskInstall(t *testing.T) {
 	ver, feat := nginxVersion, nginxFeatures
 	defer func() { nginxVersion, nginxFeatures = ver, feat }()
 	var read string
-	nginxFeatures = func(conf string) hostenv.NginxFeatures { read = conf; return hostenv.NginxFeatures{Found: true, HTTP2: true} }
+	nginxFeatures = func(conf string) hostenv.NginxFeatures {
+		read = conf
+		return hostenv.NginxFeatures{Found: true, HTTP2: true}
+	}
 	nginxVersion = func(context.Context) ngxInstall { return ngxInstall{removed: true} }
 	if r := withoutOther(nginxRisks(context.Background())); len(r) != 0 {
 		t.Errorf("removed, configuration left: %+v", r)

@@ -127,6 +127,7 @@ func TestNginxFeatures(t *testing.T) {
 	}{
 		{"TLS 1.3 named", "http {\n  server {\n    listen 443 ssl;\n    ssl_protocols TLSv1.2 TLSv1.3;\n  }\n}\n", true, false, false, false},
 		{"no ssl_protocols: the default", "http {\n  server {\n    listen 443 ssl;\n  }\n}\n", false, true, false, false},
+		{"TLS 1.3 named in lower case", "http {\n  server {\n    listen 443 ssl;\n    ssl_protocols tlsv1.2 tlsv1.3;\n  }\n}\n", true, false, false, false},
 		{"the last ssl_protocols counts", "http {\n  ssl_protocols TLSv1.3;\n  ssl_protocols TLSv1.2;\n  server {\n    listen 443 ssl;\n  }\n}\n", false, false, false, false},
 		{"ssl off after listen ssl", "http {\n  server {\n    listen 443 ssl;\n    ssl off;\n  }\n}\n", false, true, false, false},
 		{"stream is not HTTP", "stream {\n  server {\n    listen 443 ssl;\n    ssl_protocols TLSv1.3;\n  }\n}\nhttp {\n}\n", false, false, false, false},

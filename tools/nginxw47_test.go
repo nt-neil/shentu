@@ -36,7 +36,9 @@ func nginxOn(t *testing.T, v, log, conf, site string) []Risk {
 	if log != "" {
 		pkg = "nginx"
 	}
-	nginxVersion = func(context.Context) ngxInstall { return ngxInstall{version: v, pkg: pkg, dist: "dpkg", conf: hostenv.NginxConf} }
+	nginxVersion = func(context.Context) ngxInstall {
+		return ngxInstall{version: v, pkg: pkg, dist: "dpkg", conf: hostenv.NginxConf}
+	}
 	nginxChangelog = func(context.Context, string, string) string { return log }
 	return nginxRisks(context.Background())
 }

@@ -1,6 +1,10 @@
 package hostenv
 
-import "path"
+import (
+	"path"
+	"slices"
+	"strings"
+)
 
 // NginxHTTP2 reads nginx's configuration as WebLogs does (/etc/nginx/nginx.conf
 // and what it includes) and reports whether a server of it speaks HTTP/2: a
@@ -117,7 +121,7 @@ func ngxTLS13(http []*ngxDir) (on, def bool) {
 		case !sslOn && !listen:
 		case !pset:
 			def = true
-		case contains(p, "TLSv1.3"):
+		case slices.ContainsFunc(p, func(v string) bool { return strings.EqualFold(v, "TLSv1.3") }): // nginx reads it in any case
 			on = true
 		}
 	}

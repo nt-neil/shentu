@@ -273,7 +273,7 @@ func nginxRisks(ctx context.Context) []Risk {
 			"or to your distribution's fixed package; until then, turning HTTP/2 off (remove http2 from listen, or http2 off;) avoids it, " +
 			"and clients fall back to HTTP/1.1"},
 		{open(nginxTLS13CVE), tls13, " serves TLS 1.3, which %s (an infinite loop while reading a request body over TLS 1.3: " +
-			"a client can tie up the worker processes). Turning HTTP/2 off does not avoid it. Upgrade to 1.31.9 (mainline) or 1.30.7 (stable), " +
+			"a client can tie up the worker processes). Turning HTTP/2 off does not avoid it; an nginx built with OpenSSL older than 1.1.1 has no TLS 1.3 and is not affected. Upgrade to 1.31.9 (mainline) or 1.30.7 (stable), " +
 			"or to your distribution's fixed package"},
 		{open(nginxMailCVE), f.Mail, " runs the mail proxy (a mail block with a server), which %s (a use-after-free in the mail proxy module). " +
 			"Upgrade to 1.31.9 (mainline) or 1.30.7 (stable), or to your distribution's fixed package; a mail block not needed can be removed"},
