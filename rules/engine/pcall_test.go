@@ -59,6 +59,14 @@ func TestParamCalls(t *testing.T) {
 			"b.php": "<?php\nfunction wrap_call($v, $cb) {\n    $cb = wrap($cb);\n    $cb($v);\n}\n",
 			"a.php": "<?php\nrequire 'b.php';\nwrap_call($_GET['x'], function ($s) {\n    system($s);\n});\n",
 		}, "a.php", nil, CutCallableParam},
+		{"a parameter destructured again before its call: cut as callable-param", map[string]string{
+			"b.php": "<?php\nfunction swap_call($v, $cb) {\n    [$cb] = [wrap($cb)];\n    $cb($v);\n}\n",
+			"a.php": "<?php\nrequire 'b.php';\nswap_call($_GET['x'], function ($s) {\n    system($s);\n});\n",
+		}, "a.php", nil, CutCallableParam},
+		{"a parameter reused as a foreach target: cut as callable-param", map[string]string{
+			"b.php": "<?php\nfunction loop_call($v, $cb) {\n    foreach (handlers() as $cb) {\n        $cb($v);\n    }\n}\n",
+			"a.php": "<?php\nrequire 'b.php';\nloop_call($_GET['x'], function ($s) {\n    system($s);\n});\n",
+		}, "a.php", nil, CutCallableParam},
 		{"a callable the call site does not show, with input: cut as callable-param", map[string]string{
 			"b.php": helper,
 			"a.php": "<?php\nrequire 'b.php';\n$h = make_handler();\ntap2($_GET['x'], $h);\n",

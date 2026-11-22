@@ -194,18 +194,27 @@ func (a *analysis) isParamName(name string) bool {
 	return a.php && strings.HasPrefix(name, "$") && slices.Contains(a.curParams, name)
 }
 
-// paramsMoved returns the parameters a function's body assigns again
-// ($cb = wrap($cb), $cb .= ...), nested functions' tokens included (a closure
-// assigning a variable of that name moves it too: the safe side): after that a
-// call of one calls what the body made, not what the caller passed.
+// paramsMoved returns the parameters a function's body may write: every use of
+// one but a call ($cb(...)) or a whole argument or parenthesized operand
+// (f($cb), if ($cb)) counts, so an assignment ($cb = wrap($cb), $cb .= ...),
+// destructuring ([$cb] = ..., list($cb) = ...), a foreach target (as $cb), a
+// reference (&$cb) and any other expression are all moves. Nested functions'
+// tokens are included (a closure using a variable of that name moves it too).
+// The safe side: after a move a call of it is cut, not followed. A whole
+// argument handed to a by-reference parameter is not seen.
 func paramsMoved(body []*stmt, params []string) map[string]bool {
 	var out map[string]bool
 	walkToks(body, 0, func(t []Token) {
-		for i := 0; i+1 < len(t); i++ {
+		for i := range t {
 			if t[i].Kind != Var || !slices.Contains(params, t[i].Text) || i > 0 && memberOp(true, t[i-1]) {
 				continue
 			}
-			if n := t[i+1]; n.Kind == Op && strings.HasSuffix(n.Text, "=") && n.Text != "==" && n.Text != "===" && n.Text != "!=" && n.Text != "!==" && n.Text != "<=" && n.Text != ">=" && n.Text != "=>" {
+			called := i+1 < len(t) && t[i+1].op("(")
+			whole := i > 0 && (t[i-1].op("(") || t[i-1].op(",")) && i+1 < len(t) && (t[i+1].op(")") || t[i+1].op(","))
+			if whole && i > 1 && t[i-1].op("(") && (t[i-2].word("list") || t[i-2].word("array")) {
+				whole = false // list($cb) = ...: a target
+			}
+			if !called && !whole {
 				if out == nil {
 					out = map[string]bool{}
 				}
