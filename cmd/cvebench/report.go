@@ -79,7 +79,7 @@ func markdown(results []caseResult, rs []rules.Rule, now time.Time) string {
 	if len(gaps) > 0 {
 		b.WriteString("\n## Known gaps\n\n")
 		b.WriteString("Cases the rules cannot catch yet, left out of the rates above. A gap caught here is a rule or engine change to look at.\n\n")
-		b.WriteString("| case | class | why | caught | fixed FP |\n|---|---|---|---|---|\n")
+		b.WriteString("| gap | class | why | caught | fixed FP |\n|---|---|---|---|---|\n")
 		for _, r := range gaps {
 			fmt.Fprintf(&b, "| %s | %s | %s | %s | %s |\n", r.ID, r.Class, r.KnownGap, mark(r.Caught, "caught"), mark(r.FixedFP, "still reports"))
 		}

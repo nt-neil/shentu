@@ -507,14 +507,17 @@ func (a *analysis) passCallable(st state, arg []Token, funcs []*fn, seed func(in
 					if !v.taint || v.weak {
 						continue
 					}
-					for _, l := range sum.sinkOf(k) {
-						a.reportSink(l, v.emb || sum.sinkEmb&(1<<k) != 0)
+					// as callSinks: in library mode only input embedded on the way
+					if emb := v.emb || sum.sinkEmb&(1<<k) != 0; !a.lib || emb {
+						for _, l := range sum.sinkOf(k) {
+							a.reportSink(l, emb)
+						}
 					}
 				}
 				return out
 			}
-			if a.calleeKey(call, at) != "" || a.resolves(call, at) {
-				return out // a known function the rule has no summary for: nothing of this rule reaches it
+			if a.irrelevant(call, at) {
+				return out // a function the rule finds nothing in: nothing of this rule reaches it
 			}
 		}
 		if cutUnknown {
@@ -569,9 +572,14 @@ func callableCall(arg []Token) []Token {
 	return nil
 }
 
-// resolves reports whether the call at t[i] reaches a function the project
-// knows (in another file), whatever the rule makes of it.
-func (a *analysis) resolves(t []Token, i int) bool {
+// irrelevant reports whether the call at t[i] reaches a function, in this file
+// or another, that the rule finds nothing in (relevance.go): no summary of it
+// is worked out because none is needed. A function whose summary is not ready
+// (a cycle still being worked out) or that is not found is not irrelevant.
+func (a *analysis) irrelevant(t []Token, i int) bool {
+	if key := a.calleeKey(t, i); key != "" {
+		return a.sc != nil && len(a.sc.funcs[key]) > 0 && !a.relevant(key)
+	}
 	if a.proj == nil {
 		return false
 	}
@@ -579,6 +587,10 @@ func (a *analysis) resolves(t []Token, i int) bool {
 	if !ok {
 		return false
 	}
-	f, _, _, _ := a.proj.target(a, c)
-	return f != ""
+	f, name, _, _ := a.proj.target(a, c)
+	if f == "" {
+		return false
+	}
+	x := a.proj.analysisFor(a, f)
+	return x != nil && x.sc != nil && len(x.sc.funcs[name]) > 0 && !x.relevant(name)
 }
