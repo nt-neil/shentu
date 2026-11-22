@@ -361,6 +361,26 @@ func checkSuggestion(s suggestion) error {
 	return nil
 }
 
+// statsExport is `shentu dispatch stats --json`, the weekly summary's
+// input (phase 4, G): what leaves the host. Its form is versioned (v) and
+// it holds numbers, the day it ends (UTC date) and fixed words only:
+// roles, reasons, suggestion kinds and tools are enumerations checked when
+// the archive is read, and a suggestion's why is made of numbers. No host
+// name, address, path, dispatch id, trigger or proposal reaches it.
+type statsExport struct {
+	V           int          `json:"v"`
+	Shentu      string       `json:"shentu"` // the release that made it
+	Until       string       `json:"until"`  // UTC date the days end on
+	Days        int          `json:"days"`
+	Dispatches  int          `json:"dispatches"`
+	Unreadable  int          `json:"unreadable_lines"`
+	Roles       []*roleStats `json:"roles"`
+	Suggestions []suggestion `json:"suggestions"`
+}
+
+// statsExportV is statsExport's form; a change of its fields changes it.
+const statsExportV = 1
+
 // statsReport is `shentu dispatch stats`: the last days' numbers by role
 // and the suggestions, as JSON or text.
 func statsReport(cfg *Config, days int, asJSON bool, w io.Writer, now time.Time) error {
@@ -382,7 +402,11 @@ func statsReport(cfg *Config, days int, asJSON bool, w io.Writer, now time.Time)
 	if asJSON {
 		e := json.NewEncoder(w)
 		e.SetIndent("", "  ")
-		return e.Encode(map[string]any{"days": days, "dispatches": len(recs), "unreadable_lines": bad + fbad, "roles": stats, "suggestions": sugs})
+		if sugs == nil {
+			sugs = []suggestion{}
+		}
+		return e.Encode(statsExport{V: statsExportV, Shentu: version, Until: now.UTC().Format("2006-01-02"), Days: days,
+			Dispatches: len(recs), Unreadable: bad + fbad, Roles: stats, Suggestions: sugs})
 	}
 	fmt.Fprintf(w, "Sub-agent dispatches, last %d days: %d (unreadable lines skipped: %d)\n", days, len(recs), bad+fbad)
 	for _, st := range stats {

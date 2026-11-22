@@ -32,6 +32,10 @@ Chinese for the zh-TW pages; keep the two in step.
 - A proposal press cut short by the bot stopping is logged as that (#166): "the bot stopped during
   the checks" or "before it was confirmed", not as a refusal or as declined by the operator.
 
+- `shentu dispatch stats --json` has a versioned form for the weekly summary: `v` (1), `shentu` (the
+  release), `until` (the UTC date) besides the days, counts, roles and suggestions, which are always
+  lists. It holds numbers and fixed words only: no host name, address, path, dispatch id or trigger.
+
 ## v0.5.3 — 2026-11-22
 
 - A proposal button pressed always gets an answer (#163): it says at once that it checks the
