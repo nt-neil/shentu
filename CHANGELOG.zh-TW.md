@@ -3,6 +3,14 @@
 CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本與日期必須一致，
 每個版本都要有內容（`go test ./cmd/sitegen` 會檢查）。
 
+## v0.5.6 (unreleased)
+
+- 攻擊偵測新增 CVE-2024-4577 的簽章（#199）：在 `.php` 檔或 `/php-cgi/php-cgi.exe` 的查詢字串裡送出 php-cgi 的命令列參數（軟連字號 `%AD` 或 `%C2%AD`，或連字號，後面接一個字母的參數）。這條簽章依 CVE 對應到主機，所以只在 surface 裡有 CVE-2024-4577 的主機上發出告警，並帶上該項目的 KEV 標示；其他主機上的命中只算雜訊。
+
+### 已知問題
+
+- 目前還沒有主機檢查會把 CVE-2024-4577（Windows 上的 PHP-CGI）寫進 surface，所以在實際主機上，這條簽章的命中在那項檢查完成之前都只算雜訊。
+
 ## v0.5.4 (unreleased)
 
 - 共用 AI 預算（#161）：bot、`shentu chat` 與自動事件調查的每次派遣，執行期間會在 `state_dir/reservations.json`

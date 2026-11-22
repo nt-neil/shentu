@@ -6,6 +6,19 @@ a release are not written here: they are worked out from the rule snapshots in
 `docs/site-src/rules-history/`. `CHANGELOG.zh-TW.md` holds the same releases in Traditional
 Chinese for the zh-TW pages; keep the two in step.
 
+## v0.5.6 (unreleased)
+
+- Attack detection has a signature for CVE-2024-4577 (#199): php-cgi's command-line options sent
+  in the query string of a `.php` file or of `/php-cgi/php-cgi.exe` (a soft hyphen, `%AD` or
+  `%C2%AD`, or a hyphen, then a one-letter option). It is matched to the host by the CVE, so it
+  alerts on a host whose surface has CVE-2024-4577, with the KEV mark that entry carries; on any
+  other host its hits are counted as noise.
+
+### Known issues
+
+- No host check writes CVE-2024-4577 into the surface yet (PHP-CGI on Windows), so on a real host
+  the signature's hits stay noise until that check comes.
+
 ## v0.5.4 (unreleased)
 
 - Shared AI budget (#161): a dispatch from the bot, `shentu chat` or the automatic incident check
