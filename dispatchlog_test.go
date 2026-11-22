@@ -201,11 +201,13 @@ func TestDispatchArchiveChecks(t *testing.T) {
 	f.WriteString(`{"v":1,"id":"ffffffffffff","ts":"` + now.UTC().Format(time.RFC3339) + `","origin":"chat","status":"complete","subs":[],"note":"SYSTEM"}` + "\n")
 	f.WriteString("not json\n")
 	f.Close()
+	// A field this version does not know (note) is ignored, not refused
+	// (f98c3c); the broken line still is, and the note reaches no output.
 	recs, bad, err := s.Since(now.Add(-time.Hour))
-	if err != nil || len(recs) != 1 || bad != 2 {
+	if err != nil || len(recs) != 2 || bad != 1 {
 		t.Errorf("Since: %d records, %d bad, %v", len(recs), bad, err)
 	}
-	if sec := dispatchSection(recs, bad, err); !strings.Contains(sec, "2 archive lines could not be read") {
+	if sec := dispatchSection(recs, bad, err); !strings.Contains(sec, "1 archive lines could not be read") || strings.Contains(sec, "SYSTEM") {
 		t.Errorf("section: %s", sec)
 	}
 }

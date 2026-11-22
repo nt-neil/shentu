@@ -16,6 +16,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"runtime"
 	"sort"
@@ -415,20 +416,55 @@ func (s *dispatchStore) prune() {
 // or fails the field checks is skipped and counted in bad. No archive yet
 // is no records.
 func (s *dispatchStore) Since(t time.Time) (recs []dispatchRecord, bad int, err error) {
+	recs, bad, _, err = s.since(t)
+	return recs, bad, err
+}
+
+// decodeArchiveLine reads one archive line into v (a pointer to a zero
+// value). A field this version does not know is ignored and said (extra):
+// a record a later version wrote still counts (an older version refusing
+// it stopped the automatic checks until a repair: v0.5.4's upgrade note).
+// The known fields are checked by the caller as before; the unknown ones
+// reach no output. Anything after the line's one value is an error
+// either way (S-197-1).
+//
+// A rule for later fields (S-197-2): an older version ignores a field it
+// does not know, so a restriction (a proposal withdrawn, used up, revoked)
+// must never be said by a new field alone: an older version would not see
+// it and allow what it forbids. Say it with a value of a known field that
+// the older check() refuses, or keep it in a file of its own.
+func decodeArchiveLine(line []byte, v any) (extra bool, err error) {
+	dec := json.NewDecoder(bytes.NewReader(line))
+	dec.DisallowUnknownFields()
+	if err = dec.Decode(v); err == nil {
+		if dec.More() {
+			return false, errors.New("json: data after the record")
+		}
+		return false, nil
+	}
+	if !strings.HasPrefix(err.Error(), "json: unknown field ") {
+		return false, err
+	}
+	reflect.ValueOf(v).Elem().SetZero()
+	return true, json.Unmarshal(line, v)
+}
+
+// since is Since with the count of lines that held unknown fields.
+func (s *dispatchStore) since(t time.Time) (recs []dispatchRecord, bad, extra int, err error) {
 	if !filepath.IsAbs(s.dir) {
-		return nil, 0, fmt.Errorf("%w: state_dir is not an absolute path", errArchive)
+		return nil, 0, 0, fmt.Errorf("%w: state_dir is not an absolute path", errArchive)
 	}
 	st, err := os.Lstat(s.dir)
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil, 0, nil
+		return nil, 0, 0, nil
 	}
 	if err != nil || !trusted(st, true) {
-		return nil, 0, fmt.Errorf("%w: %s", errArchive, s.dir)
+		return nil, 0, 0, fmt.Errorf("%w: %s", errArchive, s.dir)
 	}
 	s.prune()
 	ents, err := os.ReadDir(s.dir)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, 0, err
 	}
 	from := t.Local().Add(-24 * time.Hour).Format(time.DateOnly) // a day's file starts at local midnight
 	for _, e := range ents {
@@ -439,17 +475,19 @@ func (s *dispatchStore) Since(t time.Time) (recs []dispatchRecord, bad int, err 
 		p := filepath.Join(s.dir, e.Name())
 		b, err := readTrusted(p)
 		if err != nil {
-			return nil, 0, err
+			return nil, 0, 0, err
 		}
 		sc := bufio.NewScanner(bytes.NewReader(b))
 		sc.Buffer(make([]byte, 64<<10), 1<<20)
 		for sc.Scan() {
 			var rec dispatchRecord
-			dec := json.NewDecoder(bytes.NewReader(sc.Bytes()))
-			dec.DisallowUnknownFields()
-			if dec.Decode(&rec) != nil || rec.check() != nil {
+			x, err := decodeArchiveLine(sc.Bytes(), &rec)
+			if err != nil || rec.check() != nil {
 				bad++
 				continue
+			}
+			if x {
+				extra++
 			}
 			if !rec.TS.Before(t) {
 				recs = append(recs, rec)
@@ -460,7 +498,7 @@ func (s *dispatchStore) Since(t time.Time) (recs []dispatchRecord, bad int, err 
 		}
 	}
 	sort.SliceStable(recs, func(i, j int) bool { return recs[i].TS.Before(recs[j].TS) })
-	return recs, bad, nil
+	return recs, bad, extra, nil
 }
 
 // readTrusted reads p, opened without following a link, when it is a file
@@ -638,8 +676,14 @@ func cmpOr(s, def string) string {
 // dispatchDaily is dispatchSection for the day before now, for the daily report.
 func dispatchDaily(cfg *Config, now time.Time) string {
 	s := newDispatchStore(cfg)
-	recs, bad, err := s.Since(now.Add(-24 * time.Hour))
+	recs, bad, extra, err := s.since(now.Add(-24 * time.Hour))
 	sec := dispatchSection(recs, bad, err)
+	if extra > 0 {
+		if sec == "" {
+			sec = "\nSub-agent dispatches (last day; reports are the model's, not verified):\n"
+		}
+		sec += fmt.Sprintf("- archive lines with fields this version does not know: %d (read; those fields are ignored)\n", extra)
+	}
 	if line := s.repairedLine(now); line != "" {
 		if sec == "" {
 			sec = "\nSub-agent dispatches (last day; reports are the model's, not verified):\n"
@@ -911,9 +955,7 @@ func (s *dispatchStore) repairFile(p string) (moved, dropped, added int, err err
 			continue
 		}
 		var rec dispatchRecord
-		dec := json.NewDecoder(bytes.NewReader(line))
-		dec.DisallowUnknownFields()
-		if len(line) <= 1<<20 && dec.Decode(&rec) == nil && rec.check() == nil { // as Since reads it
+		if _, err := decodeArchiveLine(line, &rec); len(line) <= 1<<20 && err == nil && rec.check() == nil { // as Since reads it: unknown fields stay
 			good.Write(line)
 			good.WriteByte('\n')
 			continue

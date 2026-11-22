@@ -43,7 +43,7 @@ func TestStatsExportForm(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &top); err != nil {
 		t.Fatal(err)
 	}
-	if keys := sortedKeys(top); strings.Join(keys, ",") != "days,dispatches,roles,shentu,suggestions,unreadable_lines,until,v" {
+	if keys := sortedKeys(top); strings.Join(keys, ",") != "days,dispatches,roles,shentu,suggestions,unknown_field_lines,unreadable_lines,until,v" { // unknown_field_lines: in v1 before its first release (#197)
 		t.Errorf("top keys: %v", keys)
 	}
 	var e statsExport

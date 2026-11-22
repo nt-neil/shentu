@@ -34,6 +34,8 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 
 - PHP：如果檔案的 `use` 讓 `Request` 指向別的函式庫的類別（`use Httpful\Request`、`use Unirest\Request`、`use Httpful\Http as Request`），`Request::get(` 不再當成 Laravel 的 request facade（#160）。
 
+- 派遣紀錄可以讀有不認得欄位的行（f98c3c）：從 v0.5.4 起，之後的版本加了新欄位寫下的紀錄或回饋，這一版照樣會讀，認得的欄位照舊逐一檢查，不再整行當成讀不到（以前這會讓自動事件調查停到執行 repair 為止）。這種行會在 `shentu dispatch stats`（JSON 是 `unknown_field_lines`）和每日報告裡另外計數；`repair` 不會移動這些行；不認得的欄位內容不會出現在任何輸出。
+
 - 升級須知：裝回 v0.5.4 以前的版本後，v0.5.4 寫下、帶有沒查到項目（`unchecked_why`）的派遣紀錄，舊版讀不到。這些紀錄的建議按鈕會回答派遣紀錄裡沒有這次派遣；`shentu dispatch stats` 會把這些紀錄當成讀不到的行跳過；自動事件調查會因為派遣紀錄有讀不到的行而停止，直到執行 `sudo shentu dispatch repair`，把這些行移到 `*.jsonl.bad`（保留，不會刪除），之後從下一輪巡邏起重新計數。
 
 - 通知改用 `language` 設定的語言（v0.5.3 真 bot 驗收的 F-1、F-4）：自動事件調查、「Approved from Telegram」、配對與解除配對，以及攻擊偵測通知的標題，以前不管設定都是英文；現在 `language` 是中文時改用中文，和 bot 自己的訊息一樣。自動事件調查的通知用一般的說法寫出找到幾項，沒有建議時直接寫「這次沒有建議任何動作」。沒查到的項目只用固定字詞說明，子 Agent 寫的內容照舊不放進通知：子 Agent 現在要寫出是哪個工具，並從 `tool_failed`、`permission_denied`、`not_applicable`、`time_limit` 裡選原因（其他值一律算「其他」），程式另外會加上 `not_available` 和 `findings_cut`，派遣紀錄也會保存（`unchecked_why`）；子 Agent 選的原因在通知裡會標明是子 Agent 回報、未經確認；沒有固定字詞的項目只列數量，請當成「不知道」。確認後的通知先說會發生什麼事（「開始封鎖 192.0.2.30，24 小時後自動解除；是否成功以 bot 的回覆為準」），nft 指令改放在後面。每日報告和新發現報告裡的固定文字還是英文。
