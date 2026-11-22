@@ -11,8 +11,10 @@ report all read it back. It is for anyone changing what a record holds.
   not-checked reasons are fixed words; findings are counted by severity; the trigger is a hash;
   addresses are in canonical form. A sub-agent's or a model's words are never stored.
 - Every field is checked when a line is read back (`dispatchRecord.check`, `feedbackLine.ok`). A line
-  that fails is counted as unreadable, and an unreadable line stops the automatic incident checks until
-  `sudo shentu dispatch repair` moves it to `*.jsonl.bad`.
+  that fails is counted as unreadable. In a dispatch record file (`YYYY-MM-DD.jsonl`) an unreadable line
+  stops the automatic incident checks until `sudo shentu dispatch repair` moves it to `*.jsonl.bad`; in a
+  feedback file (`feedback-YYYY-MM-DD.jsonl`) an unreadable line is only skipped and counted, and nothing
+  stops.
 
 ## Adding a field
 
@@ -27,7 +29,9 @@ So a new field must be one an older version can safely not see:
   longer to be acted on: an older version ignores a field it does not know, so after a downgrade it would
   not see the restriction and would allow what it forbids. Say a restriction with a value of a field the
   older versions know and their `check()` refuses (so the line is unreadable to them: fail closed), or keep
-  it in a file of its own that the older versions already consult.
+  it in a file of its own that the older versions already consult. That value-of-a-known-field way works
+  in a dispatch record only: an older version skips a feedback line it cannot read and goes on, so a
+  restriction written there would be lost (fail open).
 - A new field holds counts and enumerations only, like the others, and is checked by the new `check()`.
 - An older version's outputs never show an unknown field's content; keep it that way (no generic
   "print every field").

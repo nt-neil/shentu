@@ -149,13 +149,17 @@ func TestArchiveUnknownFieldsStillChecked(t *testing.T) {
 // S-197-1: data after the record is refused whether or not the record has
 // an unknown field.
 func TestDecodeArchiveLineTrailing(t *testing.T) {
-	for _, l := range []string{`{"id":"aaaaaaaaaaaa"} {"x":1}`, `{"id":"aaaaaaaaaaaa","zz":1} {"x":1}`} {
+	for _, l := range []string{`{"id":"aaaaaaaaaaaa"} {"x":1}`, `{"id":"aaaaaaaaaaaa","zz":1} {"x":1}`,
+		`{"id":"aaaaaaaaaaaa"}}`, `{"id":"aaaaaaaaaaaa"}]`, `{"id":"aaaaaaaaaaaa"} }`, `{"id":"aaaaaaaaaaaa","zz":1}}`} {
 		var f feedbackLine
 		if _, err := decodeArchiveLine([]byte(l), &f); err == nil {
 			t.Errorf("%s: read", l)
 		}
 	}
 	var f feedbackLine
+	if x, err := decodeArchiveLine([]byte(`{"id":"aaaaaaaaaaaa"}  `), &f); err != nil || x {
+		t.Errorf("trailing space: %v %v", x, err)
+	}
 	if x, err := decodeArchiveLine([]byte(`{"id":"aaaaaaaaaaaa","zz":1}`), &f); err != nil || !x || f.ID != "aaaaaaaaaaaa" {
 		t.Errorf("unknown field: %v %v %+v", x, err, f)
 	}
