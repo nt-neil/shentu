@@ -166,7 +166,7 @@ func TestAutoNoticeUncheckedItems(t *testing.T) {
 		t.Fatal(err)
 	}
 	n := (*out)[0].text
-	for _, want := range []string{"沒查到：5 項", "  - SSH 登入紀錄：權限不足，讀不到\n", "  - 最近改動的檔案：權限不足，讀不到（2 項）\n", "  - 其他原因 2 項"} {
+	for _, want := range []string{"沒查到：5 項", "  - SSH 登入紀錄：權限不足，讀不到（子 Agent 回報，未經確認）\n", "  - 最近改動的檔案：權限不足，讀不到（子 Agent 回報，未經確認）（2 項）\n", "  - 其他原因 2 項"} {
 		if !strings.Contains(n, want) {
 			t.Errorf("missing %q:\n%s", want, n)
 		}
@@ -177,5 +177,17 @@ func TestAutoNoticeUncheckedItems(t *testing.T) {
 	recs := archived(t, cfg)
 	if len(recs) != 1 || len(recs[0].Subs[0].UncheckedWhy) != 5 {
 		t.Errorf("record: %+v", recs)
+	}
+}
+
+// S-193r-2: what the program found itself is said without the
+// sub-agent's caveat; an empty {} is no item.
+func TestUncheckedLinesProgramOwn(t *testing.T) {
+	l := uncheckedLines(true, subRecord{Unchecked: 1, UncheckedWhy: []uncheckedWhy{{"ssh_logins", uncheckedNotAvailable}}})
+	if len(l) != 2 || l[1] != "  - SSH 登入紀錄：這個平台還不支援" {
+		t.Errorf("%q", l)
+	}
+	if r := parseReport("incident", `{"status":"complete","findings":[],"unchecked":[{}]}`); len(r.Unchecked) != 0 || len(r.why) != 0 {
+		t.Errorf("{} kept: %q", r.Unchecked)
 	}
 }

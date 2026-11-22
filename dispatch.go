@@ -438,7 +438,7 @@ func uncheckedItem(raw json.RawMessage, roleTools []string) (string, uncheckedWh
 		return clean(str, 200), uncheckedWhy{Reason: uncheckedOther}
 	}
 	var o struct{ Tool, Reason, What string }
-	if json.Unmarshal(raw, &o) != nil {
+	if json.Unmarshal(raw, &o) != nil || strings.TrimSpace(o.Tool+o.Reason+o.What) == "" {
 		return "", uncheckedWhy{}
 	}
 	why := uncheckedWhy{Reason: uncheckedOther}

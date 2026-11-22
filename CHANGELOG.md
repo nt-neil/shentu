@@ -16,8 +16,8 @@ Chinese for the zh-TW pages; keep the two in step.
   fixed words only (the sub-agent's own text stays out of a notice, as before): the sub-agent now
   names the tool and picks a reason (`tool_failed`, `permission_denied`, `not_applicable`,
   `time_limit`; anything else is "other"), the program adds `not_available` and `findings_cut`, the
-  archive keeps them (`unchecked_why`), and items with no fixed words are counted, to be treated
-  as unknown. The approval notice says first what happens
+  archive keeps them (`unchecked_why`), the notice marks the sub-agent's picks as its own word,
+  not confirmed, and items with no fixed words are counted, to be treated as unknown. The approval notice says first what happens
   ("blocking 192.0.2.30, lifted after 24 hours; the bot's reply says whether it worked"), the
   nft command after it as a detail. The daily and new-finding reports' own lines are not
   translated yet.

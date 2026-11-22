@@ -23,6 +23,7 @@ var noticeText = map[string][2]string{ // English, Chinese
 	"auto_nofind":     {"none", "沒有"},
 	"auto_unlisted":   {"- not checked: %d item(s) (treat them as unknown, not clean):", "- 沒查到：%d 項（請當成「不知道」，不要當成「沒問題」）："},
 	"auto_unitem":     {"  - %s: %s", "  - %s：%s"},
+	"auto_unsaid":     {" (as the sub-agent says, not confirmed)", "（子 Agent 回報，未經確認）"},
 	"auto_unother":    {"  - %d item(s) for another reason (the sub-agent's own words, not put in a notice)", "  - 其他原因 %d 項（內容由 AI 撰寫，不放進通知）"},
 	"auto_unchecked":  {"- not checked: %d item(s) the sub-agent listed as not checked (written by the model, so not put in a notice); treat them as unknown, not clean", "- 沒查到：%d 項。這些是子 Agent 自己列出、說沒有查到的項目，內容由 AI 撰寫，所以不放進通知；請當成「不知道」，不要當成「沒問題」"},
 	"auto_allchecked": {"- not checked: nothing the sub-agent listed", "- 沒查到：子 Agent 沒有列出沒查的項目"},
@@ -138,7 +139,10 @@ func uncheckedLines(zh bool, s subRecord) []string {
 	if zh {
 		i = 1
 	}
-	type key struct{ tool, reason string }
+	type key struct {
+		tool, reason string
+		picked       bool
+	}
 	seen := map[key]int{}
 	var order []key
 	other := s.Unchecked - len(s.UncheckedWhy)
@@ -148,7 +152,7 @@ func uncheckedLines(zh bool, s subRecord) []string {
 			other++
 			continue
 		}
-		k := key{u.Tool, t[i]}
+		k := key{u.Tool, t[i], uncheckedPicks[u.Reason]}
 		if seen[k] == 0 {
 			order = append(order, k)
 		}
@@ -162,6 +166,9 @@ func uncheckedLines(zh bool, s subRecord) []string {
 			what = word(k.tool)
 		}
 		line := fmt.Sprintf(nt(zh, "auto_unitem"), what, k.reason)
+		if k.picked { // the sub-agent's pick, not the program's own finding (S-193r-2)
+			line += nt(zh, "auto_unsaid")
+		}
 		if n := seen[k]; n > 1 {
 			line += fmt.Sprintf(map[bool]string{false: " (%d)", true: "（%d 項）"}[zh], n)
 		}
