@@ -166,11 +166,12 @@ How the engine reads them:
     call that only reads u (`log(u)`), which reports more than it must, except
     `console.log` (`.info`, `.warn`, `.error`, `.debug`, `.trace`),
     `JSON.stringify` and `String`, while the file uses `console`, `JSON` and
-    `String` only to call them or, for `String`, as a TypeScript type (no
+    `String` only to call them or, for `String`, as a TypeScript type (a
+    parameter's, `f(a: String, b)`, included; no
     parameter or declaration of the name, no `console.log = f`,
     `globalThis.String = f` or `Object.assign(console, ...)`), and holds nothing
     that may replace them unseen: a global object (`globalThis`, `window`,
-    `self`, `global`) other than read through a named member, `eval` (the name
+    `self`, `global`) other than read through a named member or after `typeof`, `eval` (the name
     anywhere), `Function(`, `runInThisContext`, a value's constructor read for
     anything but its name (`(() => {}).constructor`, `{ constructor: F } = f`), `with (`, anything under the
     prototype of `URL`, `String`, `JSON` or `Object`, `__proto__` or
@@ -311,10 +312,12 @@ request's header index is lower case, as Node stores it (`r.headers['Host']`),
 and a destructured name under a member route_not names is that rule's input no
 more than the member is. A name assigned anything else, or a parameter of an
 inner function with the same name, is not followed. A name assigned on some
-paths only (in a branch, a loop's body, a `try`) is followed on the others: after
-the block it holds what it held before it and what it holds at its end. So a
-name assigned on every branch is still followed after them, which reports more
-than it must.
+paths only (in a branch, a loop's body, a `try`) is followed on the others. An
+if/else joins its branches: after it a name holds what it held at the end of a
+branch that goes on (one that returns or throws does not; without an else, the
+state before the if is the else path), so a name assigned on every branch is no
+longer followed. After a loop's body, a `try` or a `switch`, it holds what it
+held before them and what it holds at their end.
 
 A sample written in TypeScript says so with `dialect = "ts"` (or `"tsx"`); it is
 lexed as such and must hold the same as any other sample of the rule.
