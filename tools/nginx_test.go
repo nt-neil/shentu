@@ -32,13 +32,13 @@ func TestNginxH2Affected(t *testing.T) {
 }
 
 func TestNginxH2Risk(t *testing.T) {
-	ver, chlog, h2 := nginxVersion, nginxChangelog, nginxHTTP2
-	defer func() { nginxVersion, nginxChangelog, nginxHTTP2 = ver, chlog, h2 }()
+	ver, chlog, feat := nginxVersion, nginxChangelog, nginxFeatures
+	defer func() { nginxVersion, nginxChangelog, nginxFeatures = ver, chlog, feat }()
 	risk := func(v, pkg, dist, log string, on, found bool, unread ...string) []Risk {
 		nginxVersion = func(context.Context) ngxInstall { return ngxInstall{version: v, pkg: pkg, dist: dist} }
 		nginxChangelog = func(context.Context, string, string) string { return log }
-		nginxHTTP2 = func(string) (bool, bool, []string) { return on, found, unread }
-		return nginxH2Risk(context.Background())
+		nginxFeatures = func(string) hostenv.NginxFeatures { return hostenv.NginxFeatures{Found: found, HTTP2: on, Unread: unread} }
+		return withoutOther(nginxRisks(context.Background()))
 	}
 	r := risk("1.22.1-9+deb12u2", "nginx", "dpkg", "", true, true)
 	if len(r) != 1 || r[0].Severity != "warning" || r[0].Key != "nginx:CVE-2026-123007" || Unchecked(r[0]) {
@@ -104,8 +104,10 @@ func TestNginxH2Risk(t *testing.T) {
 		!Unchecked(r[0]) || !strings.Contains(r[0].Summary, "sites-enabled/shop") {
 		t.Errorf("a file unread: %+v", r)
 	}
-	// On in what could be read: the warning, not the unknown.
-	if r := risk("1.24.0-2ubuntu7", "nginx", "dpkg", "", true, true, "/etc/nginx/conf.d/x.conf (permission denied)"); len(r) != 1 || Unchecked(r[0]) {
+	// On in what could be read: the warning; TLS 1.3 and the mail proxy,
+	// which the file not read may turn on, are not known.
+	if r := risk("1.24.0-2ubuntu7", "nginx", "dpkg", "", true, true, "/etc/nginx/conf.d/x.conf (permission denied)"); len(r) != 2 ||
+		r[0].Key != "nginx:CVE-2026-123007" || Unchecked(r[0]) || r[1].Key != uncheckedPrefix+"nginx:CVE-2026-118899" {
 		t.Errorf("on with a file unread: %+v", r)
 	}
 }
@@ -189,26 +191,32 @@ func TestNginxVersion(t *testing.T) {
 // A configuration a removed package left is no nginx (review 2 S-2); an
 // OpenResty's own configuration is the one read (review 2 S-3).
 func TestNginxH2RiskInstall(t *testing.T) {
-	ver, h2 := nginxVersion, nginxHTTP2
-	defer func() { nginxVersion, nginxHTTP2 = ver, h2 }()
+	ver, feat := nginxVersion, nginxFeatures
+	defer func() { nginxVersion, nginxFeatures = ver, feat }()
 	var read string
-	nginxHTTP2 = func(conf string) (bool, bool, []string) { read = conf; return true, true, nil }
+	nginxFeatures = func(conf string) hostenv.NginxFeatures { read = conf; return hostenv.NginxFeatures{Found: true, HTTP2: true} }
 	nginxVersion = func(context.Context) ngxInstall { return ngxInstall{removed: true} }
-	if r := nginxH2Risk(context.Background()); len(r) != 0 {
+	if r := withoutOther(nginxRisks(context.Background())); len(r) != 0 {
 		t.Errorf("removed, configuration left: %+v", r)
 	}
 	nginxVersion = func(context.Context) ngxInstall { return ngxInstall{} }
-	if r := nginxH2Risk(context.Background()); len(r) != 1 || !Unchecked(r[0]) {
+	if r := withoutOther(nginxRisks(context.Background())); len(r) != 1 || !Unchecked(r[0]) {
 		t.Errorf("configured, no version, not removed: %+v", r)
 	}
 	nginxVersion = func(context.Context) ngxInstall {
 		return ngxInstall{version: "1.25.3.1", conf: hostenv.OpenRestyConf}
 	}
-	if r := nginxH2Risk(context.Background()); len(r) != 1 || r[0].Severity != "warning" || read != hostenv.OpenRestyConf {
+	if r := withoutOther(nginxRisks(context.Background())); len(r) != 1 || r[0].Severity != "warning" || read != hostenv.OpenRestyConf {
 		t.Errorf("OpenResty: %+v, read %s", r, read)
 	}
-	nginxHTTP2 = func(conf string) (bool, bool, []string) { read = conf; return false, false, nil }
-	if r := nginxH2Risk(context.Background()); len(r) != 1 || !strings.Contains(r[0].Summary, hostenv.OpenRestyConf) {
+	nginxFeatures = func(conf string) hostenv.NginxFeatures { read = conf; return hostenv.NginxFeatures{} }
+	if r := withoutOther(nginxRisks(context.Background())); len(r) != 1 || !strings.Contains(r[0].Summary, hostenv.OpenRestyConf) {
 		t.Errorf("OpenResty, its configuration not found: %+v", r)
 	}
+}
+
+// withoutOther leaves out the line on the six advisories checked by version
+// only (TestNginxOtherAdvisories).
+func withoutOther(r []Risk) []Risk {
+	return slices.DeleteFunc(r, func(x Risk) bool { return strings.Contains(x.Summary, "medium and minor") })
 }

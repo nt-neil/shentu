@@ -117,3 +117,28 @@ func TestNginxHTTP2LinkedDirOwner(t *testing.T) {
 		}
 	}
 }
+
+// TLS 1.3 (CVE-2026-118899) is an http server's; the mail proxy
+// (CVE-2026-113425) listens only with a server in its mail block.
+func TestNginxFeatures(t *testing.T) {
+	for _, c := range []struct {
+		why, conf               string
+		tls13, def, mail, http2 bool
+	}{
+		{"TLS 1.3 named", "http {\n  server {\n    listen 443 ssl;\n    ssl_protocols TLSv1.2 TLSv1.3;\n  }\n}\n", true, false, false, false},
+		{"no ssl_protocols: the default", "http {\n  server {\n    listen 443 ssl;\n  }\n}\n", false, true, false, false},
+		{"the last ssl_protocols counts", "http {\n  ssl_protocols TLSv1.3;\n  ssl_protocols TLSv1.2;\n  server {\n    listen 443 ssl;\n  }\n}\n", false, false, false, false},
+		{"ssl off after listen ssl", "http {\n  server {\n    listen 443 ssl;\n    ssl off;\n  }\n}\n", false, true, false, false},
+		{"stream is not HTTP", "stream {\n  server {\n    listen 443 ssl;\n    ssl_protocols TLSv1.3;\n  }\n}\nhttp {\n}\n", false, false, false, false},
+		{"mail with a server", "mail {\n  server {\n    listen 143;\n    protocol imap;\n  }\n}\n", false, false, true, false},
+		{"mail with no server", "mail {\n  auth_http 127.0.0.1:9000/auth;\n}\n", false, false, false, false},
+		{"HTTP/2 off, TLS 1.3 on", "http {\n  http2 off;\n  server {\n    listen 443 ssl;\n    ssl_protocols TLSv1.3;\n  }\n}\n", true, false, false, false},
+	} {
+		h := newFake(true)
+		h.files[NginxConf] = c.conf
+		f := NginxFeaturesAt(h, NginxConf)
+		if !f.Found || f.TLS13 != c.tls13 || f.TLSDefault != c.def || f.Mail != c.mail || f.HTTP2 != c.http2 || len(f.Unread) != 0 {
+			t.Errorf("%s: %+v", c.why, f)
+		}
+	}
+}
