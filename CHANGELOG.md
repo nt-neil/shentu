@@ -8,6 +8,12 @@ Chinese for the zh-TW pages; keep the two in step.
 
 ## v0.5.4 (unreleased)
 
+- Upgrade note: going back to a version before v0.5.4, the dispatch records v0.5.4 wrote with
+  items not checked (their `unchecked_why`) cannot be read there. Their proposal buttons answer
+  that the dispatch is not in the archive; `shentu dispatch stats` skips them as unreadable lines;
+  and automatic incident checks stop, the archive not being trusted, until
+  `sudo shentu dispatch repair` moves those lines to `*.jsonl.bad` (kept, not deleted), after which
+  they count again from the next patrol.
 - Notices follow `language` (F-1, F-4 of the v0.5.3 real-bot round): the automatic incident check,
   "Approved from Telegram", pairing and unpairing, and the attack detection titles were English
   whatever the setting said; they now go out in Chinese when `language` is Chinese, as the bot's
