@@ -207,13 +207,13 @@ func phpFuncPattern(name string) bool {
 // function is held to this: one naming a class, PDO( or mysqli(, is written
 // for new PDO(...).
 func phpNotGlobalCall(toks []Token, i int) bool {
-	if toks[i-1].word("new") || toks[i-1].op(`\`) && i >= 2 && toks[i-2].word("new") {
+	if phpWord(toks[i-1], "new") || toks[i-1].op(`\`) && i >= 2 && phpWord(toks[i-2], "new") {
 		return true
 	}
 	if !toks[i-1].op(`\`) || toks[i-1].Flags&FlagQualified == 0 {
 		return false
 	}
-	if i >= 2 && toks[i-2].word("namespace") {
+	if i >= 2 && phpWord(toks[i-2], "namespace") {
 		return declaresNamespace(toks) // with no namespace declared, namespace\ is the global one
 	}
 	// echo\system($c): PHP 8 reads one name, PHP 7 echo and \system(). Say the
@@ -229,16 +229,28 @@ var phpReserved = words("__halt_compiler abstract and array as break callable ca
 	"static switch throw trait try unset use var while xor yield from")
 
 // declaresNamespace reports whether toks declare a named namespace
-// (namespace App;). toks may be only part of the file; then it may say no
+// (namespace App;) and no global one (namespace { ... }), so namespace\ can
+// only be a named one. toks may be only part of the file; then it may say no
 // for a file that declares one, and the call counts as PHP's, which reports.
 func declaresNamespace(toks []Token) bool {
+	named := false
 	for k := 0; k+1 < len(toks); k++ {
-		if toks[k].word("namespace") && toks[k+1].Kind == Ident {
-			return true
+		if !phpWord(toks[k], "namespace") {
+			continue
+		}
+		switch {
+		case toks[k+1].op("{"):
+			return false // a global namespace block: namespace\ in it is the global one
+		case toks[k+1].Kind == Ident:
+			named = true
 		}
 	}
-	return false
+	return named
 }
+
+// phpWord reports whether t is the PHP keyword w, which PHP reads in any case
+// (NEW, Namespace).
+func phpWord(t Token, w string) bool { return t.Kind == Ident && strings.EqualFold(t.Text, w) }
 
 // baseAt reports whether the part of an indexed source before its first index
 // matches at i: $f = $_FILES['doc'] holds $_FILES[*]['name'] under 'name'
