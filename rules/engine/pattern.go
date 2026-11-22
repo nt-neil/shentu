@@ -192,15 +192,41 @@ func (p *pat) match(toks []Token, i int, strict bool) (int, bool) {
 
 // phpNotGlobalCall reports whether the name at toks[i], followed by "(", is
 // no call of the PHP function a pattern like "file(" names: a class built with
-// new (new File($p)), or a function of a namespace (Storage\file($p),
-// namespace\file($p)). \file($p), and file($p) inside a namespace, are the
-// PHP function. Only a pattern naming a PHP function is held to this: one
-// naming a class, PDO( or mysqli(, is written for new PDO(...).
+// new (new File($p)), or a function of a namespace (Storage\file($p), and
+// namespace\file($p) in a file that declares a namespace). \file($p), file($p)
+// inside a namespace, and \file($p) after a keyword (return, do, yield from)
+// are the PHP function. Only a pattern naming a PHP function is held to this:
+// one naming a class, PDO( or mysqli(, is written for new PDO(...).
 func phpNotGlobalCall(toks []Token, i int) bool {
 	if toks[i-1].word("new") || toks[i-1].op(`\`) && i >= 2 && toks[i-2].word("new") {
 		return true
 	}
-	return toks[i-1].op(`\`) && i >= 2 && toks[i-2].Kind == Ident && !keywords["php"][strings.ToLower(toks[i-2].Text)]
+	if !toks[i-1].op(`\`) || i < 2 || toks[i-2].Kind != Ident {
+		return false
+	}
+	switch w := strings.ToLower(toks[i-2].Text); {
+	case w == "namespace":
+		return declaresNamespace(toks) // with no namespace declared, namespace\ is the global one
+	case keywords["php"][w] || phpStmtWords[w]:
+		return false // return \file(, do \system(: the keyword ends before the name
+	}
+	return true
+}
+
+// phpStmtWords are PHP keywords besides keywords["php"] that a fully qualified
+// call can follow: do \system($c); while (0), yield from \file($p).
+var phpStmtWords = words("do from exit die print else")
+
+// declaresNamespace reports whether toks declare a named namespace
+// (namespace App;). toks may be only part of the file; then it may say no
+// for a file that declares one, and the call counts as PHP's, which reports.
+func declaresNamespace(toks []Token) bool {
+	for k := 0; k+1 < len(toks); k++ {
+		if toks[k].word("namespace") && toks[k+1].Kind == Ident {
+			return true
+		}
+	}
+	return false
 }
 
 // baseAt reports whether the part of an indexed source before its first index
