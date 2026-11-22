@@ -31,6 +31,7 @@ func TestGuardResetAndUnset(t *testing.T) {
 		{"a key that is not a literal (control)", "<?php\n$c = $_GET;\n$k = $_GET['k'];\nif (!is_numeric($c['port'])) { unset($c[$k]); }\nsystem('ls ' . $c['port']);\n", []string{"5"}},
 		{"the value used where the check failed (control)", "<?php\n$p = $_GET['x'];\nif (!is_numeric($p)) { system('ls ' . $p); }\n", []string{"3"}},
 		{"x && a failed check (control)", "<?php\n$a = $_GET;\nif ($z && !in_array($a['d'], array('x', 'y'), true)) { $a['d'] = 'x'; }\nsystem('ls ' . $a['d']);\n", []string{"4"}},
+		{"a number check of a transformed value (control)", "<?php\n$p = $_GET['x'];\nif (is_numeric(sanitize_text_field($p))) { system('ls ' . $p); }\n", []string{"3"}},
 		{"another value checked (control)", "<?php\n$p = $_GET['x'];\n$q = $_GET['y'];\nif (!is_numeric($q)) { $q = 0; }\nsystem('ls ' . $p);\n", []string{"5"}},
 	} {
 		t.Run(c.name, func(t *testing.T) {

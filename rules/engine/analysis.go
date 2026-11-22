@@ -2090,9 +2090,12 @@ func (a *analysis) checkKeys(st state, atom []Token) []keyRef {
 	n := len(atom)
 	// is_numeric($x), ctype_digit($x): where it holds, $x is a number, which
 	// carries no injection in any rule (numericFuncs), so every rule takes it.
+	// Only a plain path: is_numeric(sanitize_text_field($x)) holds for "<b>1".
 	if a.php && n > 3 && atom[0].Kind == Ident && numericChecks[strings.ToLower(atom[0].Text)] && atom[1].op("(") && closeOf(atom, 1) == n-1 {
 		if args := splitTop(atom[2:n-1], isComma); len(args) == 1 {
-			return a.keysOf(args[0])
+			if _, _, ok := a.pathKey(args[0]); ok {
+				return a.keysOf(args[0])
+			}
 		}
 		return nil
 	}
