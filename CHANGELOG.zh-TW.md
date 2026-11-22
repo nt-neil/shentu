@@ -7,6 +7,37 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 
 - 主機盤點加上 PHP 版本檢查，對照 php.net 2026-11-19 的版本（8.2.36、8.3.37、8.4.28、8.5.13；8.6.0 以後都已修正）。版本是每個 PHP 執行檔自己寫在檔案裡的版本（`php`、`php-fpm`、`php-cgi` 和帶版本號的名稱，在各發行版的位置、Docker 的 PHP image 用的 `/usr/local`，以及 Remi 的 `/opt/remi`），直接讀檔案，不執行它；Windows 上是 IIS 用 FastCGI 執行的 `php-cgi.exe`。套件掃描看不到的 PHP 這樣也查得到：deb.sury.org、ondrej PPA、Remi 的套件庫、Docker image、從原始碼 build 的，以及 IIS。和 nginx 的檢查一樣，套件的 changelog 已列出某個 CVE 時，不會為它警告。CVE-2026-129291 和 CVE-2026-129289 只有 php-fpm 在執行時才警告；CVE-2026-129292（狀態頁）只有 pool 的 `pm.status_path` 從外面連得到時才警告，也就是它的 socket 接受其他主機的連線，或 nginx、Apache 把這個路徑轉給 FPM，而且沒有用 `deny all` 或 `Require local` 限制。CVE-2026-129538 只有 php-cgi 在執行，或 IIS 會執行它時才警告。其餘 14 個依版本合成一行。php.net 已經不再修正的分支（8.2 以前）只有不是發行版套件時才列出；讀不到的資料（行程清單、設定檔、IIS 的設定）會列在一行說明裡，指出哪幾項無法檢查。
 
+## v0.5.4 (unreleased)
+
+- 共用 AI 預算（#161）：bot、`shentu chat` 與自動事件調查的每次派遣，執行期間會在 `state_dir/reservations.json`
+  預留它整份 token 上限，每一道預算檢查都會把其他派遣的預留算進去，所以合計超出 `[budget] monthly_tokens`
+  約一個派遣的上限（12 萬 tokens），再加上進行中的那一個回答。升級須知：派遣進行中時，別處的提問可能會被告知「其他派遣的預留讓本月剩餘預算不夠」
+  （預留最多約 17 分鐘就會釋放）；預留檔不可信時，所有 AI 回答與派遣都會停下，直到把檔案移開（bot 會指出要移開哪個檔案）；`auto_incident` 開啟而
+  `monthly_tokens` 不超過 150000 時，現在會發出警告，因為那樣自動調查永遠不會啟動。
+
+- 模型價格（#162）：`[agents] price_per_mtok_in` 與 `price_per_mtok_out`（每一 M tokens 的價格，以 USD 計）會用來替每次派遣的預留估價：
+  token 上限依兩者中較高的價格計算，所以每月金額上限也和 token 上限一樣由各派遣共用。只有金額上限被其他派遣的預留填滿時，
+  回覆會寫出預留的金額。
+
+- `shentu usage` 與 bot 的 /usage 現在會計入子 Agent 的模型呼叫（以及其他來源的呼叫）（#164）：
+  以前這些呼叫沒有算進總數；派遣的呼叫現在另列一行。
+
+- `auto_incident` 開啟但沒有設 `[notify] url` 時，現在會發出警告（#165），時機是 bot 啟動、每日巡檢與它的報告：
+  自動調查只會從巡檢推送出去的 L3 告警開始，而巡檢只經由 notify url 推送，所以一次也不會啟動。
+
+- 建議按鈕按下後，如果 bot 在檢查過程中或等待確認時被停止，log 會記成 bot 已停止（#166），不再記成被拒絕或操作者沒有確認。
+
+- `shentu dispatch stats --json` 現在有固定版本的格式，供每 7 天的彙整使用：除了天數、計數、角色和建議之外，多了 `v`（1）、`shentu`（版本）、
+  `until`（UTC 日期），角色和建議一律是清單。內容只有數字和固定字詞，不含主機名稱、位址、路徑、派遣 id 或 trigger。
+
+- 同一個呼叫被兩條規則回報時，就算檔案裡的某個呼叫只有其中一條規則會追，也照樣只留下被讓的那條（`yields_to`）（#160）。以前 `DB::select(DB::raw("..." . $_GET['a'] . "..." . col()))` 這種寫法，如果本地的 `col()` 回傳 `get_query_var('o')`（只有 php-sqli-orderby-identifier 讀這個輸入），會同時被 php-sqli-laravel-raw 和 php-sqli-orderby-identifier 回報；讓給 php-sqli-yii-query 的那幾條規則也有同樣的問題。
+
+- JavaScript 的 request 別名（#160）：`if`/`else` 之後，一個名稱的值取自「會繼續執行下去的分支」結尾時的值。所以每個分支都重新指定過的名稱（`let q = req; if (a) { q = {...} } else { q = {...} }`）不再當成 request。return 或 throw 的分支不算；以 `break` 或 `continue` 結尾的分支照樣算。
+
+- URL 檢查保留的唯讀呼叫（#160）：`typeof window`（`typeof` 後面接 `window`、`globalThis` 這類物件）不會再讓整個檔案的唯讀呼叫失效。條件運算式裡 `:` 後面的 `String`（`const S = c ? y : String;`）現在會讓它失效，和把 `String` 當成值來用一樣；以前它被當成 TypeScript 的型別。
+
+- PHP：如果檔案的 `use` 讓 `Request` 指向別的函式庫的類別（`use Httpful\Request`、`use Unirest\Request`、`use Httpful\Http as Request`），`Request::get(` 不再當成 Laravel 的 request facade（#160）。
+
 ## v0.5.3 — 2026-11-22
 
 - 建議按鈕按下後一定會有回覆（#163）：會先立刻回覆「正在重新檢查這個位址」，檢查之前先在 log 記下這次按下
