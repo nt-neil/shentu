@@ -79,3 +79,28 @@ func TestNumberCheckAttribute(t *testing.T) {
 		}
 	}
 }
+
+// #185 review N-1 (probe e13): a rule that lists ctype_digit itself keeps
+// taking it around a cast, as before the number checks.
+func TestRuleListedNumberCheck(t *testing.T) {
+	e := engineForTest(t)
+	for _, c := range []struct {
+		name, src string
+		want      bool
+	}{
+		{"ctype_digit((string) $id)", "<?php\n$id = $_GET['id'];\nif (ctype_digit((string) $id)) {\n  db_query(\"SELECT * FROM {node} WHERE nid = \" . $id);\n}\n", false},
+		{"no check (control)", "<?php\n$id = $_GET['id'];\ndb_query(\"SELECT * FROM {node} WHERE nid = \" . $id);\n", true},
+	} {
+		f, _, err := e.ScanTimed("php", "a.php", []byte(c.src))
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := false
+		for _, x := range f {
+			got = got || x.RuleID == "php-sqli-drupal-db-query"
+		}
+		if got != c.want {
+			t.Errorf("%s: reported %v, want %v", c.name, got, c.want)
+		}
+	}
+}

@@ -2097,7 +2097,7 @@ func (a *analysis) checkKeys(st state, atom []Token) []keyRef {
 				return a.keysOf(args[0])
 			}
 		}
-		return nil
+		// otherwise as before: a rule listing ctype_digit takes ctype_digit((string) $id)
 	}
 	if keys := a.validatorKeys(st, atom); keys != nil {
 		return keys
