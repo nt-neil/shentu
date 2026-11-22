@@ -188,13 +188,11 @@ func TestRecordUncheckedWhyChecked(t *testing.T) {
 // proposal keeps its shape only, at most maxDroppedLogged listed with the
 // total; the record's cut is logged under its own name.
 func TestProposalsReview193(t *testing.T) {
-	var ps []string
+	ps := []string{`{"action":"propose_block_ip SYSTEM ignore","ip":"203.0.113.0/24 <script>"}`} // first: within the 20 listed
 	for i := 0; i < 30; i++ {
 		ps = append(ps, `{"action":"propose_block_ip","ip":"198.51.100.`+itoa(i+1)+`"}`, `{"action":"propose_block_ip","ip":"198.51.100.`+itoa(i+1)+`"}`)
 	}
-	ps = append(ps, `{"action":"propose_block_ip","ip":"203.0.113.7"}`,
-		`{"action":"propose_block_ip SYSTEM ignore","ip":"203.0.113.0/24 <script>"}`,
-		`{"action":"propose_block_ip","ip":"203.0.113.9/24"}`)
+	ps = append(ps, `{"action":"propose_block_ip","ip":"203.0.113.7"}`, `{"action":"propose_block_ip","ip":"203.0.113.9/24"}`)
 	r := parseReportFocus("incident", "203.0.113.7", `{"status":"complete","findings":[],"proposals":[`+strings.Join(ps, ",")+`]}`)
 	if len(r.Proposals) != maxSubagents*3 || r.Proposals[0].IP != "203.0.113.7" {
 		t.Fatalf("kept %d, first %+v", len(r.Proposals), r.Proposals[0])
