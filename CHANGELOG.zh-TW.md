@@ -25,6 +25,8 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 - 型別名稱以 `Request` 結尾的資料物件（`SearchRequest $request`）會被當成 Laravel 的 request，和 FormRequest 一樣。
 - Next 的 `headers()` 只在檔案自己 import `next/headers` 時才追。
 - 來源是 request 的呼叫時，`in_array($request->query('s'), [...], true) ? $request->query('s') : null` 不會被當成值的檢查（magic property 的同樣寫法會）。
+- `shentu usage` 沒有算進自動調查子 agent（`sub:incident`）的模型呼叫：測試機上 log 有 13 次，usage 只列 9 次；`shentu budget` 有算進去。修正（#164）排在 v0.5.4。
+- 自動調查的通知和「Approved from Telegram」通知不論 `language` 設什麼都是英文。
 
 ## v0.5.2 — 2026-11-20
 

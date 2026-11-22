@@ -62,6 +62,11 @@ Chinese for the zh-TW pages; keep the two in step.
 - Next's `headers()` is followed only in a file that imports `next/headers` itself.
 - `in_array($request->query('s'), [...], true) ? $request->query('s') : null` is not taken as
   a check of the value, with a request call as the source (the same with a magic property is).
+- `shentu usage` leaves out the model calls of an automatic incident check's sub-agents
+  (`sub:incident`): on a test server it listed 9 calls where the log held 13. `shentu budget`
+  counts them. The fix (#164) is planned for v0.5.4.
+- The automatic incident check's notice and the "Approved from Telegram" notice are in English
+  whatever `language` is set to.
 
 ## v0.5.2 — 2026-11-20
 
