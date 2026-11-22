@@ -105,6 +105,8 @@ type phpInstall struct {
 	bin, version, sapi    string
 	pkg, pkgVersion, dist string
 	iis                   bool
+	apache                bool   // Apache runs it as CGI (Windows)
+	conf                  string // the httpd.conf that does
 }
 
 // phpBinGlobs are where PHP binaries are: the distributions' (Debian's
@@ -149,24 +151,27 @@ func phpInstalls(ctx context.Context) (ins []phpInstall, unread []string) {
 			return nil, []string{"applicationHost.config could not be read (" + err.Error() + ")"}
 		}
 		for _, a := range apps {
-			i := strings.LastIndex(a, `\`)
-			if !strings.EqualFold(a[i+1:], "php-cgi.exe") {
+			if !strings.EqualFold(winBase(a), "php-cgi.exe") {
 				continue
 			}
-			v := ""
-			for _, p := range []string{a[:i+1] + "php8ts.dll", a[:i+1] + "php8.dll", a[:i+1] + "php7ts.dll", a[:i+1] + "php7.dll", a} {
-				if data, err := phpReadBin(p); err == nil {
-					if m := phpVersionString.FindSubmatch(data); m != nil {
-						v = string(m[1])
-						break
-					}
-				}
-			}
+			v := phpWinVersion(a)
 			if v == "" {
 				unread = append(unread, a+" (no version found)")
 				continue
 			}
 			ins = append(ins, phpInstall{bin: a, version: v, sapi: "cgi", iis: true})
+		}
+		for _, conf := range phpWinApacheConfs() {
+			exes, un := phpApacheCGI(conf, phpReadBin, phpReadDir)
+			unread = append(unread, un...)
+			for _, a := range exes {
+				v := phpWinVersion(a)
+				if v == "" {
+					unread = append(unread, a+" (no version found)")
+					continue
+				}
+				ins = append(ins, phpInstall{bin: a, version: v, sapi: "cgi", apache: true, conf: conf})
+			}
 		}
 		return ins, unread
 	}
@@ -217,6 +222,21 @@ func phpInstalls(ctx context.Context) (ins []phpInstall, unread []string) {
 		}
 	}
 	return ins, nil
+}
+
+// phpWinVersion is the version of the PHP whose php-cgi.exe is at exe: in
+// PHP's core next to it (php8ts.dll, php8.dll, php7ts.dll, php7.dll), else
+// in the program; "" when none names one.
+func phpWinVersion(exe string) string {
+	d := winDir(exe) + `\`
+	for _, p := range []string{d + "php8ts.dll", d + "php8.dll", d + "php7ts.dll", d + "php7.dll", exe} {
+		if data, err := phpReadBin(p); err == nil {
+			if m := phpVersionString.FindSubmatch(data); m != nil {
+				return string(m[1])
+			}
+		}
+	}
+	return ""
 }
 
 // phpPackage is the package holding the binary at p, its version and the
@@ -295,6 +315,8 @@ func (g phpGroup) where() string {
 	switch {
 	case in.iis:
 		from = "run by IIS as its FastCGI application, which the package scan does not cover"
+	case in.apache:
+		from = "run by Apache as CGI from " + in.conf + ", which the package scan does not cover"
 	case strings.Contains(in.pkgVersion, "deb.sury.org"):
 		from = "package " + in.pkg + " " + in.pkgVersion + " from deb.sury.org or the ondrej PPA, which the package scan does not cover"
 	case strings.Contains(in.pkgVersion, "remi") || strings.HasPrefix(in.bin, "/opt/remi/"):
@@ -309,7 +331,7 @@ func (g phpGroup) where() string {
 // group: not from a package, or from deb.sury.org, the PPA, Remi, IIS.
 func (g phpGroup) thirdParty() bool {
 	in := g.ins[0]
-	return in.pkg == "" || in.iis || strings.Contains(in.pkgVersion, "deb.sury.org") || strings.Contains(in.pkgVersion, "remi") ||
+	return in.pkg == "" || in.iis || in.apache || strings.Contains(in.pkgVersion, "deb.sury.org") || strings.Contains(in.pkgVersion, "remi") ||
 		strings.HasPrefix(in.bin, "/opt/remi/")
 }
 
@@ -324,7 +346,7 @@ func (g phpGroup) runs(sapi string, procs []hostenv.Process) bool {
 		if in.sapi != sapi {
 			continue
 		}
-		if in.iis {
+		if in.iis || in.apache {
 			return true
 		}
 		for _, p := range procs {
@@ -558,7 +580,7 @@ func phpRisks(ctx context.Context) []Risk {
 	ins, unread := phpInstalls(ctx)
 	var out []Risk
 	if len(unread) > 0 {
-		out = append(out, Risk{uncheckedPrefix + "php:version", "info", "the PHP IIS runs could not be checked (" + strings.Join(unread, ", ") +
+		out = append(out, Risk{uncheckedPrefix + "php:version", "info", "the PHP IIS or Apache runs could not be checked (" + strings.Join(unread, ", ") +
 			"), so whether CVE-2026-129538 (php-cgi) and the other PHP advisories of 2026-11-19 affect it is unknown"})
 	}
 	if len(ins) == 0 {
@@ -579,12 +601,13 @@ func phpRisks(ctx context.Context) []Risk {
 			continue
 		}
 		branch := fmt.Sprintf("%d.%d", rel[0], rel[1])
+		iisNote := phpIISArgInjNote(g, rel)
 		key, name := "php"+branch+":", "PHP "+g.version+" ("+g.where()+")"
 		if phpEOL(rel) {
 			if g.thirdParty() {
 				out = append(out, Risk{key + "eol", "info", name + " is a branch php.net no longer fixes; its fixes of 2026-11-19 " +
 					"(18 CVEs) went into 8.2.36, 8.3.37, 8.4.28, 8.5.13 and 8.6.0. Move to a branch that is still fixed, " +
-					"or ask whoever builds this one whether it carries the fixes"})
+					"or ask whoever builds this one whether it carries the fixes" + iisNote})
 			}
 			continue
 		}
@@ -653,8 +676,11 @@ func phpRisks(ctx context.Context) []Risk {
 			switch {
 			case cgiOn:
 				runs := "php-cgi runs"
-				if g.ins[0].iis {
+				switch {
+				case g.ins[0].iis:
 					runs = "IIS runs it through FastCGI"
+				case g.ins[0].apache:
+					runs = "Apache runs it as CGI"
 				}
 				out = append(out, Risk{key + c[0], "warning", name + ": " + runs + ", and " + c[0] + " affects it " +
 					"(out-of-bounds read and write while php-cgi corrects PATH_INFO). " + upgrade + note})
@@ -669,8 +695,28 @@ func phpRisks(ctx context.Context) []Risk {
 		if c := open(phpOtherCVEs); len(c) > 0 {
 			out = append(out, Risk{key + c[0], "warning", name + " is in the range of " + phpList(c) + " (the engine and the " +
 				"extensions every PHP has: use-after-frees in Date, Session and SOAP that can lead to remote code execution, " +
-				"a Phar signature downgrade, mixed-case HTTPS and FTPS URLs sent in plaintext, and more). " + upgrade + note})
+				"a Phar signature downgrade, mixed-case HTTPS and FTPS URLs sent in plaintext, and more). " + upgrade + note + iisNote})
+		}
+	}
+	if phpWindows {
+		for _, k := range phpArgInjChecks(ins) {
+			out = append(out, phpArgInjRisk(k))
 		}
 	}
 	return out
+}
+
+// phpIISArgInjNote says, for php-cgi IIS runs whose version is in the range
+// of CVE-2024-4577 or CVE-2024-8926, why they are not reported.
+func phpIISArgInjNote(g phpGroup, rel [3]int) string {
+	if !slices.ContainsFunc(g.ins, func(in phpInstall) bool { return in.iis }) {
+		return ""
+	}
+	for _, c := range phpArgInjCVEs {
+		if aff, _ := phpArgInjAffected(rel, c); aff {
+			return ". CVE-2024-4577 and CVE-2024-8926 (argument injection in PHP-CGI) are not reported for it: their advisories cover " +
+				"PHP-CGI under Apache only, and IIS's FastCGI does not pass the query string as arguments"
+		}
+	}
+	return ""
 }

@@ -246,6 +246,7 @@ const (
 	KeyWinlogon       = `HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon`
 	KeyWindowsNT      = `HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows`
 	KeyIFEO           = `HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options`
+	KeyCodePage       = `HKLM\SYSTEM\CurrentControlSet\Control\Nls\CodePage`
 	SIDAdministrators = "S-1-5-32-544"
 
 	winSSHDir         = `C:\ProgramData\ssh`

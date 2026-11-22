@@ -23,6 +23,16 @@ Chinese for the zh-TW pages; keep the two in step.
   fixes (before 8.2) is noted only when no distribution package holds it, and what could not be
   read (the process list, a configuration file, IIS's configuration) is named in a line saying
   which of these could not be checked.
+- On Windows, the host survey and the daily vulnerability surface look for php-cgi.exe run by
+  Apache as CGI (httpd.conf and what it includes, XAMPP's `httpd-xampp.conf` too: a `ScriptAlias`
+  onto php-cgi.exe or its folder, an `Action` through such an alias, or `AddHandler cgi-script .exe`
+  in that folder) and check it for CVE-2024-4577 (fixed in 8.1.29, 8.2.20, 8.3.8) and its bypass
+  CVE-2024-8926 (8.1.30, 8.2.24, 8.3.12). The system code page (ACP) decides: 932, 936 or 950 for
+  CVE-2024-4577, an OEM code page set as the ANSI one for CVE-2024-8926; when it cannot be read,
+  they are reported as a warning with "code page unconfirmed". Branches before 8.1 are reported as
+  a warning, as the advisories do not list them and they get no fix. The surface marks an entry
+  KEV only when the CISA KEV catalog lists it. php-cgi.exe under IIS is not reported for them,
+  as the advisories cover Apache only; the version line says so.
 
 ## v0.5.4 (unreleased)
 
