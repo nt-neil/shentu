@@ -87,9 +87,10 @@ func TestMacDefaultWatchPaths(t *testing.T) {
 			t.Errorf("watch paths %v lack %s", cfg.Tools.WatchPaths, w)
 		}
 	}
-	// M0 PR4: and the logs are macOS's and Homebrew's, not Linux's.
-	if !slices.Contains(cfg.Tools.LogPaths, "/var/log/system.log") || !slices.Contains(cfg.Tools.LogPaths, "/opt/homebrew/var/log/nginx/*.log") ||
-		slices.Contains(cfg.Tools.LogPaths, "/var/log/auth.log") {
+	// M0 PR4: and the logs are macOS's, not Linux's.
+	// Not Homebrew's: a directory its user can hard-link root's files into.
+	if !slices.Contains(cfg.Tools.LogPaths, "/var/log/system.log") || slices.Contains(cfg.Tools.LogPaths, "/var/log/auth.log") ||
+		slices.ContainsFunc(cfg.Tools.LogPaths, func(p string) bool { return strings.Contains(p, "homebrew") || strings.HasPrefix(p, "/usr/local") }) {
 		t.Errorf("log paths: %v", cfg.Tools.LogPaths)
 	}
 }
