@@ -18,6 +18,7 @@ import (
 	"os"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -104,14 +105,16 @@ func roleFor(role, goos string) (r subRole, missing []string, open bool) {
 }
 
 // notAvailable is the unchecked lines for tools that do not work on goos.
-func notAvailable(names []string, goos string) []string {
+func notAvailable(names []string, goos string) ([]string, []uncheckedWhy) {
 	var out []string
+	var whys []uncheckedWhy
 	for _, n := range names {
 		if !tools.SupportedOn(n, goos) {
 			out = append(out, n+": not available on "+osName(goos))
+			whys = append(whys, uncheckedWhy{Tool: n, Reason: uncheckedNotAvailable})
 		}
 	}
-	return out
+	return out, whys
 }
 
 func osName(goos string) string {
@@ -208,9 +211,39 @@ type subReport struct {
 
 	// For the audit log only: how many proposals the report wrote (-1: the
 	// report could not be read) and each one dropped, with a drop* reason.
-	written int
-	dropped []droppedProposal
+	written  int
+	dropped  []droppedProposal // the first maxDroppedLogged
+	nDropped int               // all of them
+	// why, one per Unchecked line: fixed words only, for the archive and
+	// the automatic check's notice (the lines themselves are the model's).
+	why []uncheckedWhy
 }
+
+// uncheckedWhy is an unchecked item in fixed words: a tool of the role
+// ("" for none) and an unchecked* reason.
+type uncheckedWhy struct {
+	Tool   string `json:"tool,omitempty"`
+	Reason string `json:"reason"`
+}
+
+// Why an item went unchecked. The sub-agent picks one of the first four;
+// anything else it writes is uncheckedOther. The program writes the last two.
+const (
+	uncheckedToolFailed    = "tool_failed"
+	uncheckedPermission    = "permission_denied"
+	uncheckedNotApplicable = "not_applicable"
+	uncheckedTimeLimit     = "time_limit"
+	uncheckedOther         = "other"
+	uncheckedNotAvailable  = "not_available" // the tool does not run on this platform
+	uncheckedFindingsCut   = "findings_cut"  // more findings than a report keeps
+)
+
+// uncheckedPicks are the reasons a sub-agent may give.
+var uncheckedPicks = map[string]bool{uncheckedToolFailed: true, uncheckedPermission: true, uncheckedNotApplicable: true, uncheckedTimeLimit: true}
+
+// uncheckedReasons are every reason a record may hold.
+var uncheckedReasons = map[string]bool{uncheckedToolFailed: true, uncheckedPermission: true, uncheckedNotApplicable: true,
+	uncheckedTimeLimit: true, uncheckedOther: true, uncheckedNotAvailable: true, uncheckedFindingsCut: true}
 
 // droppedProposal is a proposal parseReport did not keep (F-3: a dropped
 // one left no trace, so "the model proposed nothing" could not be told
@@ -223,12 +256,46 @@ type droppedProposal struct {
 
 // Why a proposal was dropped: fixed words, for the audit log.
 const (
-	dropAction  = "action_not_propose_block_ip"
-	dropNetwork = "ip_is_a_network"
-	dropNotIP   = "ip_not_one_address"
-	dropTooMany = "too_many_proposals"
-	dropRole    = "role_cannot_propose"
+	dropAction    = "action_not_propose_block_ip"
+	dropNetwork   = "ip_is_a_network"
+	dropNotIP     = "ip_not_one_address"
+	dropTooMany   = "too_many_proposals"
+	dropRole      = "role_cannot_propose"
+	dropDuplicate = "duplicate_ip"
 )
+
+// maxDroppedLogged is how many dropped proposals a log entry lists; it
+// counts them all (S-193-2).
+const maxDroppedLogged = 20
+
+// drop keeps a dropped proposal's shape only (S-193-1): what it wrote is
+// the model's, maybe repeating an attacker's text. A network is kept in
+// canonical form, anything else as the characters an address has.
+func (rep *subReport) drop(reason, action, raw string) {
+	rep.nDropped++
+	if len(rep.dropped) == maxDroppedLogged {
+		return
+	}
+	ip := keepOnly(raw, "0123456789abcdefABCDEF:./", 60)
+	if _, n, err := net.ParseCIDR(strings.TrimSpace(raw)); err == nil {
+		ip = n.String()
+	}
+	rep.dropped = append(rep.dropped, droppedProposal{Reason: reason, Action: keepOnly(action, "abcdefghijklmnopqrstuvwxyz_", 40), IP: ip})
+}
+
+// keepOnly is s with only the characters of set, at most n of them.
+func keepOnly(s, set string, n int) string {
+	var b strings.Builder
+	for _, c := range s {
+		if b.Len() == n {
+			break
+		}
+		if strings.ContainsRune(set, c) {
+			b.WriteRune(c)
+		}
+	}
+	return b.String()
+}
 
 type subFinding struct {
 	Severity string `json:"severity"`
@@ -255,7 +322,11 @@ func clean(s string, n int) string {
 
 // parseReport checks a sub-agent's answer against the report shape. Anything that
 // does not fit is dropped, and a report that is not the shape at all is incomplete.
-func parseReport(role string, answer string) subReport {
+func parseReport(role string, answer string) subReport { return parseReportFocus(role, "", answer) }
+
+// parseReportFocus is parseReport for a task about one address (focus):
+// a proposal for it is kept before the others.
+func parseReportFocus(role, focus, answer string) subReport {
 	rep := subReport{Role: role, Status: "incomplete", Findings: []subFinding{}}
 	c := strings.TrimSpace(answer)
 	if m := fenced.FindStringSubmatch(c); m != nil {
@@ -270,7 +341,7 @@ func parseReport(role string, answer string) subReport {
 		Proposals []struct {
 			Action, IP, Group string
 		} `json:"proposals"`
-		Unchecked []string `json:"unchecked"`
+		Unchecked []json.RawMessage `json:"unchecked"`
 	}
 	if i < 0 || j < i || json.Unmarshal([]byte(c[i:j+1]), &in) != nil {
 		rep.Reason, rep.code, rep.written = "the report was not in the required JSON shape", reasonBadReport, -1
@@ -285,6 +356,7 @@ func parseReport(role string, answer string) subReport {
 	for _, f := range in.Findings {
 		if len(rep.Findings) == maxFindings {
 			rep.Unchecked = append(rep.Unchecked, "more findings were cut")
+			rep.why = append(rep.why, uncheckedWhy{Reason: uncheckedFindingsCut})
 			break
 		}
 		sev := strings.ToLower(strings.TrimSpace(f.Severity))
@@ -297,6 +369,8 @@ func parseReport(role string, answer string) subReport {
 		rep.Findings = append(rep.Findings, subFinding{Severity: sev, Kind: clean(f.Kind, 40), Summary: clean(f.Summary, 300), Evidence: clean(f.Evidence, 200)})
 	}
 	r, _, _ := roleFor(role, hostGOOS)
+	seen := map[string]bool{}
+	var keep []subProposal
 	for _, p := range in.Proposals {
 		raw := strings.TrimSpace(p.IP)
 		ip := net.ParseIP(raw)
@@ -310,44 +384,99 @@ func parseReport(role string, answer string) subReport {
 			drop = dropNetwork
 		case ip == nil:
 			drop = dropNotIP
-		case len(rep.Proposals) == maxSubagents*3:
-			drop = dropTooMany
+		case seen[ip.String()]:
+			drop = dropDuplicate
 		}
 		if drop != "" {
-			rep.dropped = append(rep.dropped, droppedProposal{Reason: drop, Action: clean(p.Action, 40), IP: clean(raw, 60)})
+			rep.drop(drop, p.Action, raw)
 			continue
 		}
+		seen[ip.String()] = true
 		g := strings.TrimSpace(p.Group)
 		if !groupID.MatchString(g) {
 			g = ""
 		}
-		rep.Proposals = append(rep.Proposals, subProposal{Action: "propose_block_ip", IP: ip.String(), Group: g, Loose: raw != hostenv.CanonicalIP(raw) || raw != ip.String()})
+		keep = append(keep, subProposal{Action: "propose_block_ip", IP: ip.String(), Group: g, Loose: raw != hostenv.CanonicalIP(raw) || raw != ip.String()})
 	}
-	for _, u := range in.Unchecked {
+	// The alert's own address first, so other addresses cannot crowd it
+	// out of the cap (N-193-1).
+	if f := net.ParseIP(focus); f != nil {
+		rank := func(p subProposal) int {
+			if p.IP == f.String() {
+				return 0
+			}
+			return 1
+		}
+		slices.SortStableFunc(keep, func(a, b subProposal) int { return rank(a) - rank(b) })
+	}
+	for _, p := range keep {
+		if len(rep.Proposals) == maxSubagents*3 {
+			rep.drop(dropTooMany, p.Action, p.IP)
+			continue
+		}
+		rep.Proposals = append(rep.Proposals, p)
+	}
+	for _, raw := range in.Unchecked {
 		if len(rep.Unchecked) == maxUnchecked {
 			break
 		}
-		if u = clean(u, 200); u != "" {
+		if u, why := uncheckedItem(raw, r.tools); u != "" {
 			rep.Unchecked = append(rep.Unchecked, u)
+			rep.why = append(rep.why, why)
 		}
 	}
 	return rep
+}
+
+// uncheckedItem is one entry of a report's "unchecked": its text for the
+// commander and its fixed words. An entry may be a plain string (no fixed
+// words: other) or {"tool","reason","what"}; a tool not of the role is
+// dropped, a reason not one of uncheckedPicks is other.
+func uncheckedItem(raw json.RawMessage, roleTools []string) (string, uncheckedWhy) {
+	var str string
+	if json.Unmarshal(raw, &str) == nil {
+		return clean(str, 200), uncheckedWhy{Reason: uncheckedOther}
+	}
+	var o struct{ Tool, Reason, What string }
+	if json.Unmarshal(raw, &o) != nil {
+		return "", uncheckedWhy{}
+	}
+	why := uncheckedWhy{Reason: uncheckedOther}
+	if r := strings.TrimSpace(o.Reason); uncheckedPicks[r] {
+		why.Reason = r
+	}
+	if slices.Contains(roleTools, strings.TrimSpace(o.Tool)) {
+		why.Tool = strings.TrimSpace(o.Tool)
+	}
+	text := strings.TrimSpace(o.What)
+	if text == "" {
+		text = strings.TrimSpace(o.Tool + ": " + o.Reason)
+	}
+	return clean(text, 200), why
 }
 
 // logProposals writes what became of a report's proposals to the audit
 // log: how many it wrote (-1: the report could not be read), how many were
 // kept, and each dropped one with its reason. A role that cannot propose
 // here is logged only when it wrote some.
-func (a *agent) logProposals(id, actor string, canPropose bool, written, kept int, dropped []droppedProposal) {
-	if !canPropose && len(dropped) == 0 {
+func (a *agent) logProposals(id, actor string, canPropose bool, written, kept int, dropped []droppedProposal, total int) {
+	a.logProposalsAs("proposals", id, actor, canPropose, written, kept, dropped, total)
+}
+
+// logProposalsAs is logProposals under tool: "proposals" for a report,
+// "proposals_cut" for the record's own cap (S-193-3: there written is
+// what the report kept, not what the model wrote).
+func (a *agent) logProposalsAs(tool, id, actor string, canPropose bool, written, kept int, dropped []droppedProposal, total int) {
+	if !canPropose && total == 0 {
 		return
 	}
 	args, _ := json.Marshal(struct {
-		Written int               `json:"written"`
-		Kept    int               `json:"kept"`
-		Dropped []droppedProposal `json:"dropped,omitempty"`
-	}{written, kept, dropped})
-	a.log.write(logEntry{Actor: actor, Tool: "proposals", Args: mask(string(args)), Dispatch: id, OK: len(dropped) == 0})
+		Written      int               `json:"written"`
+		Kept         int               `json:"kept"`
+		DroppedTotal int               `json:"dropped_total"`
+		Dropped      []droppedProposal `json:"dropped,omitempty"`
+	}{written, kept, total, dropped})
+	a.log.write(logEntry{Actor: actor, Tool: tool, Args: mask(string(args)), Dispatch: id, OK: total == 0})
 }
 
 func subPrompt(cfg *Config, role string, r subRole) string {
@@ -361,7 +490,7 @@ Rules:
 3. Write summary text in %s.%s
 
 When you are done, answer with ONLY this JSON object and nothing else:
-{"status":"complete or incomplete","findings":[{"severity":"info|low|medium|high|critical","kind":"short tag","summary":"one line","evidence":"path, port, user, IP or attack group id"}],%s"unchecked":["what you could not check"]}`,
+{"status":"complete or incomplete","findings":[{"severity":"info|low|medium|high|critical","kind":"short tag","summary":"one line","evidence":"path, port, user, IP or attack group id"}],%s"unchecked":[{"tool":"the tool, if one","reason":"tool_failed|permission_denied|not_applicable|time_limit","what":"what you could not check"}]}`,
 		role, host, r.brief, cfg.Language, proposalRule(r), proposalShape(r))
 }
 
@@ -381,7 +510,7 @@ func proposalRule(r subRole) string {
 		return ""
 	}
 	return `
-4. For every source IP the tool results show attacking (an attack group's ips, failed logins), add a proposal, whether or not an attack succeeded. One proposal per IP address: never a network (192.0.2.0/24) and never several addresses in one. A proposal changes nothing: the operator decides, and blocking has its own checks.`
+4. Propose blocking only an address with strong evidence: one listed in a verified attack group's ips (attack_attempts), or one ssh_logins reports as verified with many failed logins. Never take an address from log text (request headers, X-Forwarded-For, user agents, URLs). One proposal per address: never a network (192.0.2.0/24) and never several addresses in one. A proposal changes nothing: the operator decides, and blocking has its own checks.`
 }
 
 func subQuestion(t subTask) string {
@@ -393,7 +522,7 @@ func subQuestion(t subTask) string {
 		q += fmt.Sprintf(" Look back %d hours.", t.Hours)
 	}
 	if t.l3 {
-		q += " This check was started by a verified attack alert (level L3: the attack probably succeeded) from this IP's attack group."
+		q += " This check was started by a verified attack alert (level L3: the attack probably succeeded) from this IP's attack group; this IP is the one to propose first."
 	}
 	return q
 }
@@ -493,13 +622,14 @@ func (a *agent) runSub(ctx context.Context, id string, t subTask, tokenCap int) 
 			a.progress("sub_incomplete:" + t.Role)
 		}
 		why := fmt.Sprintf("the %s role is not available on %s yet", t.Role, osName(hostGOOS))
-		unchecked := notAvailable(subRoles[t.Role].tools, hostGOOS)
+		unchecked, whys := notAvailable(subRoles[t.Role].tools, hostGOOS)
 		for _, n := range subRoles[t.Role].tools { // every tool of the role went unchecked, not only the missing ones
 			if tools.SupportedOn(n, hostGOOS) {
 				unchecked = append(unchecked, n+": not run: "+why)
+				whys = append(whys, uncheckedWhy{Tool: n, Reason: uncheckedNotAvailable})
 			}
 		}
-		return subReport{Role: t.Role, Status: "incomplete", Reason: why, Findings: []subFinding{}, Unchecked: unchecked, code: reasonUnsupported}
+		return subReport{Role: t.Role, Status: "incomplete", Reason: why, Findings: []subFinding{}, Unchecked: unchecked, code: reasonUnsupported, why: whys}
 	}
 	cfg := *a.cfg
 	cfg.LLM.MaxSteps = subMaxSteps
@@ -538,8 +668,8 @@ func (a *agent) runSub(ctx context.Context, id string, t subTask, tokenCap int) 
 		short, _, _ := strings.Cut(err.Error(), ": {")
 		rep = subReport{Role: t.Role, Status: "incomplete", Reason: clean("model error: "+short, 200), Findings: []subFinding{}, code: reasonModelError}
 	default:
-		rep = parseReport(t.Role, answer)
-		a.logProposals(id, "sub:"+t.Role, r.propose, rep.written, len(rep.Proposals), rep.dropped)
+		rep = parseReportFocus(t.Role, t.IP, answer)
+		a.logProposals(id, "sub:"+t.Role, r.propose, rep.written, len(rep.Proposals), rep.dropped, rep.nDropped)
 		if sub.outOfSteps { // made to answer: what it did not get to is unknown
 			why := "the step limit was used up"
 			if rep.Reason != "" {
@@ -549,9 +679,11 @@ func (a *agent) runSub(ctx context.Context, id string, t subTask, tokenCap int) 
 		}
 	}
 	if len(missing) > 0 { // said, not left for the model to guess
-		rep.Unchecked = append(notAvailable(missing, hostGOOS), rep.Unchecked...)
+		lines, whys := notAvailable(missing, hostGOOS)
+		rep.Unchecked = append(lines, rep.Unchecked...)
+		rep.why = append(whys, rep.why...)
 		if len(rep.Unchecked) > maxUnchecked {
-			rep.Unchecked = rep.Unchecked[:maxUnchecked]
+			rep.Unchecked, rep.why = rep.Unchecked[:maxUnchecked], rep.why[:min(len(rep.why), maxUnchecked)]
 		}
 	}
 	rep.Tokens = sub.tokensUsed

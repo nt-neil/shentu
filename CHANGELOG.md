@@ -12,19 +12,27 @@ Chinese for the zh-TW pages; keep the two in step.
   "Approved from Telegram", pairing and unpairing, and the attack detection titles were English
   whatever the setting said; they now go out in Chinese when `language` is Chinese, as the bot's
   own messages do. The incident check's notice says in words what it found and what it did not
-  check (counts only: the sub-agent's words stay out of a notice, as before) and, with no
-  proposal, "nothing is suggested this time". The approval notice says first what happens
+  check and, with no proposal, "nothing is suggested this time". What was not checked is said in
+  fixed words only (the sub-agent's own text stays out of a notice, as before): the sub-agent now
+  names the tool and picks a reason (`tool_failed`, `permission_denied`, `not_applicable`,
+  `time_limit`; anything else is "other"), the program adds `not_available` and `findings_cut`, the
+  archive keeps them (`unchecked_why`), and items with no fixed words are counted, to be treated
+  as unknown. The approval notice says first what happens
   ("blocking 192.0.2.30, lifted after 24 hours; the bot's reply says whether it worked"), the
   nft command after it as a detail. The daily and new-finding reports' own lines are not
   translated yet.
 - Sub-agent proposals leave a trace (F-3): every report a role that may propose writes is logged
   as a `proposals` entry (how many it wrote, how many were kept), and each one dropped says why, in
   fixed words: `ip_is_a_network`, `ip_not_one_address`, `action_not_propose_block_ip`,
-  `too_many_proposals`, `role_cannot_propose`. Before, a dropped proposal and no proposal looked
-  the same. The sub-agents that may propose are now told to propose each attacking address, one
-  address per proposal (never a network), and the automatic check tells its sub-agent it comes
-  from a verified L3 alert. A proposal is still only a button: the gate and the press are
-  unchanged.
+  `duplicate_ip`, `too_many_proposals`, `role_cannot_propose` (the first 20 listed, in shape only:
+  a network in canonical form, otherwise only an address's characters; the total counted; the
+  archive's own cap logs as `proposals_cut`). Before, a dropped proposal and no proposal looked
+  the same. The sub-agents that may propose are now told to propose only addresses with strong
+  evidence (a verified attack group's, or verified SSH logins with many failures), never one
+  taken from log text such as headers, and one address per proposal, never a network. The
+  automatic check tells its sub-agent it comes from a verified L3 alert, and that alert's address
+  is kept first; duplicates no longer take places. A proposal is still only a button: the gate
+  and the press are unchanged.
 
 ## v0.5.3 (unreleased)
 

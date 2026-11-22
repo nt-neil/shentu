@@ -325,10 +325,8 @@ func autoNotice(rec dispatchRecord, notArchived, zh bool) string {
 			sep = "、"
 		}
 		line("auto_findings", strings.Join(sev, sep))
-		if s.Unchecked > 0 {
-			line("auto_unchecked", s.Unchecked)
-		} else {
-			line("auto_allchecked")
+		for _, l := range uncheckedLines(zh, s) {
+			b.WriteString(l + "\n")
 		}
 		if len(s.Proposals) > 0 {
 			line("auto_prop", len(s.Proposals))
