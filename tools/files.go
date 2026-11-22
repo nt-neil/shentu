@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"io/fs"
 	"net"
 	"os"
@@ -303,6 +304,16 @@ var logSearch = Tool{
 		}
 		if st, err := os.Stat(real); err != nil || !st.Mode().IsRegular() || !allowedLog(real, env.LogPaths) && !(onMac() && allowedLog(macUnprivate(real), env.LogPaths)) {
 			return nil, errors.New("path resolves outside the allowed log files: " + real)
+		}
+		// A hard link is not a symlink: EvalSymlinks does not see it. A user
+		// who can write to a log directory (Homebrew's; Linux without
+		// protected_hardlinks) could link a root-only file there, owner and
+		// all, for log_search run as root to read; logs have one link
+		// (S-186-1). A swap after this check is not ruled out.
+		if st, err := os.Stat(real); err == nil {
+			if n, ok := nlink(st); ok && n > 1 {
+				return nil, fmt.Errorf("%s has %d hard links: log_search reads a log file with one only", real, n)
+			}
 		}
 		a.Path = real
 		re, err := regexp.Compile(a.Pattern)

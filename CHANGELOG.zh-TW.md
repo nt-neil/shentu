@@ -6,10 +6,11 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 ## v0.5.5 (unreleased)
 
 - macOS：`ssh_logins`（以及巡檢的 SSH 檢查）現在從 unified log 讀取 sshd 的登入紀錄（`/usr/bin/log show --info`），
-  依 sshd-session 和 sshd 的程式路徑篩選。這兩個路徑受 SIP 保護，所以有人把程式複製到 /tmp 並取同樣的名字，也不會被算進來。計數方式和 Linux 相同。
-  這份 log 只有 root 和 admin 群組讀得到；其他帳號會得到寫明原因的權限錯誤，不會回空結果。目前還沒標為 verified。
+  依 sshd-session 和 sshd 的程式路徑篩選，所以有人把程式複製到 /tmp 並取同樣的名字，也不會被算進來。計數方式和 Linux 相同。
+  這份 log 只有 root 和 admin 群組讀得到；其他帳號會得到寫明原因的權限錯誤，不會回空結果。
+  目前沒有標為 verified：任何使用者都能用自己的設定執行系統的 sshd，寫出的紀錄看起來一樣。
 - macOS：`log_search` 預設讀取 macOS 的文字 log（system.log、install.log）。Homebrew 的 nginx 和 Apache log 不在預設裡，因為這些目錄屬於一般使用者，可以在裡面建連結指到 root 的檔案；要讀的話請自己加進設定。
-  放在 /var 的 log 現在可以用 log_paths 寫的路徑讀取（macOS 的 /var 是連到 /private/var 的連結，以前這種路徑會被拒絕）。
+  放在 /var 的 log 現在可以用 log_paths 寫的路徑讀取（macOS 的 /var 是連到 /private/var 的連結，以前這種路徑會被拒絕）。有一個以上 hard link 的 log 檔會被拒讀，因為連到 log 目錄的 root 專用檔案看起來也是這樣。
   sshd 的紀錄在 unified log 裡，log_search 不讀那裡，工具說明會寫明：在這些檔案裡找不到，不等於沒有 SSH 登入。
 - macOS：`file_changes` 現在依檔案的狀態變更時間（ctime）找出異動，改過修改時間也藏不住，並附上擁有者名稱；
   預設檢查 macOS 自己的位置（/private/etc、Homebrew、launchd 的 job），讀不到的目錄會列出來。`cert_expiry` 也會讀 Homebrew 的 certbot。

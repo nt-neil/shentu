@@ -36,8 +36,7 @@ func (m *macLog) RunLinesUnmasked(_ context.Context, argv []string, fn func(stri
 
 // M0 PR4: on macOS ssh_logins reads sshd's events from the unified log
 // (log show --info, by image path) and counts them as on Linux; not yet
-// verified (a VM has to confirm the predicate keeps a copy at
-// /tmp/sshd-session out).
+// verified (a user's own sshd passes the image-path predicate, N-186-1).
 func TestSSHSummaryMacUnifiedLog(t *testing.T) {
 	ip := "198.51.100." + "23"
 	at := time.Now().UTC().Add(-10 * time.Minute).Format("2006-01-02 15:04:05.000000-0700")
@@ -46,6 +45,9 @@ func TestSSHSummaryMacUnifiedLog(t *testing.T) {
 		lines = append(lines, at+"  localhost sshd-session[700]: Failed password for root from "+ip+" port 4000 ssh2")
 	}
 	lines = append(lines, at+"  localhost sshd-session[701]: Accepted publickey for root from "+ip+" port 4001 ssh2: ED25519 SHA256:x")
+	// Read because --start is an hour early, not counted: before since.
+	early := time.Now().UTC().Add(-90 * time.Minute).Format("2006-01-02 15:04:05.000000-0700")
+	lines = append(lines, early+"  localhost sshd-session[699]: Failed password for root from "+ip+" port 3999 ssh2")
 	m := &macLog{Live: &hostenv.Live{}, lines: lines}
 	withHost(t, m)
 	since := time.Now().Add(-time.Hour)
@@ -60,7 +62,7 @@ func TestSSHSummaryMacUnifiedLog(t *testing.T) {
 	if r["verified"] != false || r["complete"] != true || !strings.HasPrefix(r["source"].(string), "the unified log") || r["permission"] == true {
 		t.Errorf("summary: %v", r)
 	}
-	if len(m.argv) == 0 || m.argv[0] != "/usr/bin/log" || m.argv[len(m.argv)-1] != since.Local().Format("2006-01-02 15:04:05") {
+	if len(m.argv) == 0 || m.argv[0] != "/usr/bin/log" || m.argv[len(m.argv)-1] != since.Add(-time.Hour).Local().Format("2006-01-02 15:04:05") {
 		t.Errorf("ran %q", m.argv)
 	}
 }

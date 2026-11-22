@@ -18,22 +18,25 @@ import (
 //
 // The predicate names the program by its image path, not by process (its
 // file name): any user can copy a program to /tmp/sshd-session and log
-// as "sshd-session", while /usr/libexec and /usr/sbin are SIP-protected.
+// as "sshd-session". That is not enough to trust the lines (N-186-1): any
+// user can run the system's own /usr/sbin/sshd -D with a config and host
+// key of their own on a high port, and its lines pass the predicate.
 // senderImagePath keeps the libraries' lines (pam, Open Directory) out.
 const unifiedSSHPredicate = `(processImagePath == "/usr/libexec/sshd-session" AND senderImagePath == "/usr/libexec/sshd-session") OR ` +
 	`(processImagePath == "/usr/sbin/sshd" AND senderImagePath == "/usr/sbin/sshd")`
 
 // UnifiedSSHArgv reads those events since a local time ("--start" is
-// read in the Mac's time zone). /usr/bin/log in full: in zsh, macOS's
+// read in the Mac's time zone; an hour early, for the hour a DST change
+// repeats: the counts filter on since, S-186-2). /usr/bin/log in full: in zsh, macOS's
 // shell, "log" is a builtin.
 var UnifiedSSHArgv = []string{"/usr/bin/log", "show", "--info", "--style", "syslog", "--predicate", unifiedSSHPredicate, "--start", SlotTime}
 
 func init() { registerBig(UnifiedSSHArgv, 0, JournalTimeout) }
 
 // UnifiedVerified is whether the unified log's sshd lines count as
-// written by sshd. The predicate's image paths should make them so; it
-// stays false until a VM confirms a copy at /tmp/sshd-session is not
-// matched.
+// written by the system's sshd. The image paths do not make them so (a
+// user's own sshd has the same ones): false until only events logged by
+// root (ndjson's userID 0, sshd's monitor) are kept and a VM confirms it.
 const UnifiedVerified = false
 
 // unifiedExitDenied is log show's exit status for a user outside the
@@ -64,7 +67,7 @@ func (DarwinCollector) ScanAuthLogs(ctx context.Context, src Source, since time.
 	defer cancel()
 	fn := sink()
 	argv := append([]string(nil), UnifiedSSHArgv...)
-	argv[len(argv)-1] = since.Local().Format("2006-01-02 15:04:05")
+	argv[len(argv)-1] = since.Add(-time.Hour).Local().Format("2006-01-02 15:04:05")
 	res, err := RunLinesUnmasked(ctx, src, argv, func(l string) {
 		if a, ok := UnifiedToAuthLine(l); ok {
 			fn(a)

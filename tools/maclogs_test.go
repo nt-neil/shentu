@@ -55,3 +55,30 @@ func TestLogSearchMacVarLink(t *testing.T) {
 		t.Errorf("a link out of the log directory was read: %v", err)
 	}
 }
+
+// S-186-1: a log file with a second hard link (a root-only file linked
+// into a log directory looks the same) is refused.
+func TestLogSearchHardLink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix hard links")
+	}
+	dir, _ := filepath.EvalSymlinks(t.TempDir())
+	other, _ := filepath.EvalSymlinks(t.TempDir())
+	os.WriteFile(filepath.Join(other, "secret"), []byte("sshd secret\n"), 0o600)
+	if err := os.Link(filepath.Join(other, "secret"), filepath.Join(dir, "a.log")); err != nil {
+		t.Skip(err)
+	}
+	os.WriteFile(filepath.Join(dir, "b.log"), []byte("sshd ok\n"), 0o600)
+	env := &Env{LogPaths: []string{filepath.Join(dir, "*.log")}}
+	run := func(name string) error {
+		args, _ := json.Marshal(map[string]any{"pattern": "sshd", "path": filepath.Join(dir, name)})
+		_, err := logSearch.Run(context.Background(), env, args)
+		return err
+	}
+	if err := run("a.log"); err == nil || !strings.Contains(err.Error(), "hard links") {
+		t.Errorf("hard-linked a.log: %v", err)
+	}
+	if err := run("b.log"); err != nil {
+		t.Errorf("b.log: %v", err)
+	}
+}
