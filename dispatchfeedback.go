@@ -115,12 +115,18 @@ func (s *dispatchStore) SaveFeedback(id, verdict string, now time.Time) error {
 // Feedback is the latest verdict on each dispatch given at or after t; a
 // line that does not check out is skipped and counted in bad.
 func (s *dispatchStore) Feedback(t time.Time) (map[string]string, int, error) {
+	out, bad, _, err := s.feedback(t)
+	return out, bad, err
+}
+
+// feedback is Feedback with the count of lines that held unknown fields.
+func (s *dispatchStore) feedback(t time.Time) (map[string]string, int, int, error) {
 	ents, err := os.ReadDir(s.dir)
 	if errors.Is(err, os.ErrNotExist) {
-		return map[string]string{}, 0, nil
+		return map[string]string{}, 0, 0, nil
 	}
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, 0, err
 	}
 	from := t.Local().Add(-24 * time.Hour).Format(time.DateOnly)
 	var b []byte
@@ -131,27 +137,29 @@ func (s *dispatchStore) Feedback(t time.Time) (map[string]string, int, error) {
 		}
 		x, err := readTrusted(filepath.Join(s.dir, e.Name()))
 		if err != nil {
-			return nil, 0, err
+			return nil, 0, 0, err
 		}
 		b = append(append(b, x...), '\n')
 	}
-	out, bad := map[string]string{}, 0
+	out, bad, extra := map[string]string{}, 0, 0
 	for _, line := range bytes.Split(b, []byte{'\n'}) {
 		if len(line) == 0 {
 			continue
 		}
 		var l feedbackLine
-		dec := json.NewDecoder(bytes.NewReader(line))
-		dec.DisallowUnknownFields()
-		if dec.Decode(&l) != nil || !l.ok() {
+		x, err := decodeArchiveLine(line, &l)
+		if err != nil || !l.ok() {
 			bad++
 			continue
+		}
+		if x {
+			extra++
 		}
 		if !l.TS.Before(t) {
 			out[l.ID] = l.Verdict
 		}
 	}
-	return out, bad, nil
+	return out, bad, extra, nil
 }
 
 // offerFeedback sends the two feedback buttons under dispatch id's report.
@@ -368,17 +376,21 @@ func checkSuggestion(s suggestion) error {
 // the archive is read, and a suggestion's why is made of numbers. No host
 // name, address, path, dispatch id, trigger or proposal reaches it.
 type statsExport struct {
-	V           int          `json:"v"`
-	Shentu      string       `json:"shentu"` // the release that made it
-	Until       string       `json:"until"`  // UTC date the days end on
-	Days        int          `json:"days"`
-	Dispatches  int          `json:"dispatches"`
-	Unreadable  int          `json:"unreadable_lines"`
-	Roles       []*roleStats `json:"roles"`
-	Suggestions []suggestion `json:"suggestions"`
+	V          int    `json:"v"`
+	Shentu     string `json:"shentu"` // the release that made it
+	Until      string `json:"until"`  // UTC date the days end on
+	Days       int    `json:"days"`
+	Dispatches int    `json:"dispatches"`
+	Unreadable int    `json:"unreadable_lines"`
+	// Lines read with fields this version does not know (f98c3c).
+	UnknownFieldLines int          `json:"unknown_field_lines"`
+	Roles             []*roleStats `json:"roles"`
+	Suggestions       []suggestion `json:"suggestions"`
 }
 
 // statsExportV is statsExport's form; a change of its fields changes it.
+// One exception: unknown_field_lines came with v1 still unreleased (v0.5.4,
+// #197 on #167), so the first v1 released already has it and v stays 1.
 const statsExportV = 1
 
 // statsReport is `shentu dispatch stats`: the last days' numbers by role
@@ -389,11 +401,11 @@ func statsReport(cfg *Config, days int, asJSON bool, w io.Writer, now time.Time)
 	}
 	s := newDispatchStore(cfg)
 	since := now.Add(-time.Duration(days) * 24 * time.Hour)
-	recs, bad, err := s.Since(since)
+	recs, bad, extra, err := s.since(since)
 	if err != nil {
 		return err
 	}
-	verdicts, fbad, err := s.Feedback(since)
+	verdicts, fbad, fextra, err := s.feedback(since)
 	if err != nil {
 		return err
 	}
@@ -406,9 +418,12 @@ func statsReport(cfg *Config, days int, asJSON bool, w io.Writer, now time.Time)
 			sugs = []suggestion{}
 		}
 		return e.Encode(statsExport{V: statsExportV, Shentu: version, Until: now.UTC().Format("2006-01-02"), Days: days,
-			Dispatches: len(recs), Unreadable: bad + fbad, Roles: stats, Suggestions: sugs})
+			Dispatches: len(recs), Unreadable: bad + fbad, UnknownFieldLines: extra + fextra, Roles: stats, Suggestions: sugs})
 	}
 	fmt.Fprintf(w, "Sub-agent dispatches, last %d days: %d (unreadable lines skipped: %d)\n", days, len(recs), bad+fbad)
+	if n := extra + fextra; n > 0 {
+		fmt.Fprintf(w, "Archive lines with fields this version does not know: %d (read; those fields are ignored)\n", n)
+	}
 	for _, st := range stats {
 		reasons := make([]string, 0, len(st.Reasons))
 		for k := range st.Reasons {
