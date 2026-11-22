@@ -2,6 +2,8 @@ package engine
 
 import (
 	"slices"
+	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -77,6 +79,32 @@ func TestSQLiOwner(t *testing.T) {
 			[]string{"python-sqli-dbapi-format"}},
 		{"execute(text(f-string))", "python", "@app.get('/s')\ndef s():\n    col = request.args.get('column', 'price')\n    row = db.session.execute(text(f\"SELECT max({col}) FROM orders\")).scalar()\n    return {'max': row}\n",
 			[]string{"python-sqli-sqlalchemy-text"}},
+		{"Laravel magic property $request->sort into orderBy (a3)", "php", "<?php\nclass C extends Controller {\n    public function index(Request $request) {\n        return Post::query()->orderBy($request->sort)->get();\n    }\n}\n",
+			[]string{"php-sqli-orderby-identifier"}},
+		{"Laravel $request->user()->name is a method's result, no input (a3 control)", "php", "<?php\nclass C extends Controller {\n    public function index(Request $request) {\n        return Post::query()->orderBy($request->user()->name)->get();\n    }\n}\n",
+			nil},
+		{"Symfony bag $request->query->get('s') stays its own source (a3 control)", "php", "<?php\nclass C extends Controller {\n    public function index(Request $request) {\n        return Post::query()->orderBy($request->query->get('s'))->get();\n    }\n}\n",
+			[]string{"php-sqli-orderby-identifier"}},
+		{"Laravel $request->sort checked with in_array (a3 control)", "php", "<?php\nclass C extends Controller {\n    public function index(Request $request) {\n        $s = in_array($request->sort, ['a', 'b'], true) ? $request->sort : 'a'; return Post::query()->orderBy($s)->get();\n    }\n}\n",
+			nil},
+		{"Laravel ->when($request->query('sort'), fn ($q, $s) => $q->orderBy($s)) (a3)", "php", "<?php\nclass C extends Controller {\n    public function index(Request $request) {\n        return Post::query()->when($request->query('sort'), fn ($q, $s) => $q->orderBy($s))->get();\n    }\n}\n",
+			[]string{"php-sqli-orderby-identifier"}},
+		{"Laravel ->when with a function ($q, $sort) body (a3)", "php", "<?php\nclass C extends Controller {\n    public function index(Request $request) {\n        return Post::query()->when($request->input('sort'), function ($q, $sort) { return $q->orderBy($sort); })->get();\n    }\n}\n",
+			[]string{"php-sqli-orderby-identifier"}},
+		{"Laravel ->when with a fixed value (a3 control)", "php", "<?php\nclass C extends Controller {\n    public function index(Request $request) {\n        return Post::query()->when('created_at', fn ($q, $s) => $q->orderBy($s))->get();\n    }\n}\n",
+			nil},
+		{"Laravel ->when with an allowlisted value, as orderBy($s) itself (a3 control)", "php", "<?php\nclass C extends Controller {\n    public function index(Request $request) {\n        $s = in_array($request->sort, ['a', 'b'], true) ? $request->sort : null; return Post::query()->when($s, fn ($q, $v) => $q->orderBy($v))->get();\n    }\n}\n",
+			nil},
+		{"Laravel ->when, the closure's first parameter is the query (a3 control)", "php", "<?php\nclass C extends Controller {\n    public function index(Request $request) {\n        return Post::query()->when($request->query('sort'), fn ($q, $s) => $q->orderBy('created_at'))->get();\n    }\n}\n",
+			nil},
+		{"a DTO that happens to be called $request, no Laravel (v053 r1 S-1)", "php", "<?php\nclass Search {\n    public function run() {\n        $request = new SearchRequest('created_at');\n        return $this->db->table('t')->orderBy($request->column)->get();\n    }\n}\n",
+			nil},
+		{"Laravel: use Illuminate, $request->sort (v053 r1 S-1 control)", "php", "<?php\nuse Illuminate\\Support\\Facades\\DB;\nfunction run($request) {\n    return DB::table('t')->orderBy($request->sort)->get();\n}\n",
+			[]string{"php-sqli-orderby-identifier"}},
+		{"Laravel: a FormRequest parameter, $request->sort (v053 r1 S-1 control)", "php", "<?php\nclass C extends Controller {\n    public function index(IndexPostRequest $request) {\n        return Post::query()->orderBy($request->sort)->get();\n    }\n}\n",
+			[]string{"php-sqli-orderby-identifier"}},
+		{"Laravel: a class extending Controller, an untyped $request (security review)", "php", "<?php\nclass C extends Controller {\n    public function index($request) {\n        return Post::query()->orderBy($request->sort)->get();\n    }\n}\n",
+			[]string{"php-sqli-orderby-identifier"}},
 		{"Django input in text()", "python", "def s(request):\n    col = request.GET.get('column')\n    row = db.session.execute(text(f\"SELECT max({col}) FROM orders\")).scalar()\n    return JsonResponse({'max': row})\n",
 			[]string{"python-sqli-sqlalchemy-text"}},
 	}
@@ -119,4 +147,104 @@ func TestOrderByLine(t *testing.T) {
 	if !slices.Equal(lines, []int{4}) {
 		t.Errorf("reported at lines %v, want [4]", lines)
 	}
+}
+
+// In a Laravel project (some file uses a class of Illuminate), a service's
+// untyped $request parameter is the request a controller passed on; a typed
+// one is that type (v053 r2 S-2). Scanned as the code audit scans a project
+// (tools/codeaudit.go: ScanTimed, then ScanCallsPart), not with Project.Scan.
+func TestLaravelProjectService(t *testing.T) {
+	e := engineForTest(t)
+	ctl := "<?php\nnamespace App\\Http\\Controllers;\nuse Illuminate\\Http\\Request;\nuse App\\Services\\Sorter;\nclass PostController extends Controller {\n    public function index(Request $request, Sorter $sorter) {\n        return $sorter->apply(Post::query(), $request);\n    }\n}\n"
+	plain := "<?php\nnamespace App\\Http\\Controllers;\nuse App\\Services\\Sorter;\nclass PostController {\n    public function index($input, Sorter $sorter) {\n        return $sorter->apply(Post::query(), $input);\n    }\n}\n"
+	svc := "<?php\nnamespace App\\Services;\nclass Sorter {\n    public function apply($q, $request) {\n        return $q->orderBy($request->sort)->get();\n    }\n}\n"
+	typed := "<?php\nnamespace App\\Services;\nclass Sorter {\n    public function apply($q, SearchQuery $request) {\n        return $q->orderBy($request->column)->get();\n    }\n}\n"
+	groupUse := strings.Replace(ctl, "use Illuminate\\Http\\Request;", "use Illuminate\\{Http\\Request, Support\\Facades\\DB};", 1)
+	lower := strings.Replace(ctl, "use Illuminate\\Http\\Request;", "use illuminate\\http\\Request;", 1)
+	byRef := strings.Replace(svc, "apply($q, $request)", "apply($q, &$request)", 1)
+	refFn := strings.Replace(svc, "public function apply(", "public function &apply(", 1)
+	for _, c := range []struct {
+		name, ctl, svc string
+		want           []string
+	}{
+		{"a Laravel project: the service's untyped $request", ctl, svc, []string{"php-sqli-orderby-identifier"}},
+		{"no file uses Illuminate (control)", plain, svc, nil},
+		{"a Laravel project: a typed DTO parameter (control)", ctl, typed, nil},
+		{"a group use of Illuminate (security review)", groupUse, svc, []string{"php-sqli-orderby-identifier"}},
+		{"Illuminate written in lower case (security review)", lower, svc, []string{"php-sqli-orderby-identifier"}},
+		{"a by-reference $request parameter (security review)", ctl, byRef, []string{"php-sqli-orderby-identifier"}},
+		{"a method returning by reference (security review)", ctl, refFn, []string{"php-sqli-orderby-identifier"}},
+	} {
+		files := map[string]string{"app/Http/Controllers/PostController.php": c.ctl, "app/Services/Sorter.php": c.svc}
+		read := func(p string) ([]byte, error) { return []byte(files[p]), nil }
+		pr := e.NewProject([]string{"app/Http/Controllers/PostController.php", "app/Services/Sorter.php"}, read, ProjectOptions{})
+		fs := auditPath(t, e, pr, "app/Services/Sorter.php", []byte(c.svc))
+		var got []string
+		for _, f := range fs {
+			if f.CWE == "CWE-89" && !slices.Contains(got, f.RuleID) {
+				got = append(got, f.RuleID)
+			}
+		}
+		if !slices.Equal(got, c.want) {
+			t.Errorf("%s: reported by %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
+// In a Laravel project the second pass runs php-sqli-orderby-identifier for
+// an untyped $request, and with it the rules it yields to, so that one call
+// two rules report stays one rule's there too (v053 r4 N-1): DB::raw inside
+// DB::select is php-sqli-laravel-raw's, as in v043c's c-dbraw-in-select.
+func TestLaravelProjectYields(t *testing.T) {
+	e := engineForTest(t)
+	ctl := "<?php\nnamespace App\\Http\\Controllers;\nuse Illuminate\\Http\\Request;\nclass PostController extends Controller {\n    public function index(Request $request) {\n        return view('p');\n    }\n}\n"
+	plain := "<?php\nclass PostController {\n    public function index($input) {\n        return $input;\n    }\n}\n"
+	q := "<?php\n$rows = DB::select(DB::raw(\"SELECT * FROM t WHERE id = \" . $_GET['id']));\n"
+	svc := "<?php\nnamespace App\\Services;\nclass Sorter {\n    public function apply($q, $request) {\n        return $q->orderBy($request->sort)->get();\n    }\n}\n"
+	for _, c := range []struct {
+		name, ctl, path, src string
+		want                 []string
+	}{
+		{"a Laravel project: DB::raw inside DB::select is laravel-raw's", ctl, "q.php", q, []string{"2:php-sqli-laravel-raw"}},
+		{"no Laravel project: the same (control)", plain, "q.php", q, []string{"2:php-sqli-laravel-raw"}},
+		{"a Laravel project: the service's untyped $request still reported", ctl, "app/Services/Sorter.php", svc, []string{"5:php-sqli-orderby-identifier"}},
+	} {
+		files := map[string]string{"app/Http/Controllers/PostController.php": c.ctl, c.path: c.src}
+		read := func(p string) ([]byte, error) { return []byte(files[p]), nil }
+		pr := e.NewProject([]string{"app/Http/Controllers/PostController.php", c.path}, read, ProjectOptions{})
+		var got []string
+		for _, f := range auditPath(t, e, pr, c.path, []byte(c.src)) {
+			if f.CWE == "CWE-89" {
+				got = append(got, strconv.Itoa(f.Line)+":"+f.RuleID)
+			}
+		}
+		slices.Sort(got)
+		if !slices.Equal(got, c.want) {
+			t.Errorf("%s: reported %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
+// auditPath scans a file of a project as tools/codeaudit.go does: the file on
+// its own (Engine.ScanTimed), then what the project adds (Project.ScanCallsPart),
+// one finding per rule, file and line.
+func auditPath(t *testing.T, e *Engine, pr *Project, path string, src []byte) []Finding {
+	t.Helper()
+	own, _, err := e.ScanTimed(LangOf(path), path, src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	part, err := pr.ScanCallsPart(path, src, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	var out []Finding
+	for _, f := range append(own, part.Found...) {
+		if k := f.RuleID + "\x00" + f.Path + "\x00" + strconv.Itoa(f.Line); !seen[k] {
+			seen[k] = true
+			out = append(out, f)
+		}
+	}
+	return out
 }

@@ -70,6 +70,7 @@ type Project struct {
 	deps                 map[string]map[string]bool // file → files its functions' calls were followed into
 	nestjs               bool                       // some JavaScript file imports NestJS (reqalias.go nestFile)
 	koa                  bool                       // some JavaScript file imports Koa (reqalias.go koaFile)
+	laravel              bool                       // some PHP file uses a class of Illuminate (callbacks.go laravelRequest)
 	routeTo              map[string][]routeTarget   // file → its functions other files register as handlers (routes.go)
 	stack                []*sumFrame                // summaries being worked out, the first asked first (sumstack.go)
 	held                 map[*summaries]map[string]heldSum
@@ -94,7 +95,7 @@ type ProjectOptions struct {
 }
 
 // indexVersion changes whenever fileIndex changes, so an old cache is ignored.
-const indexVersion = "6"
+const indexVersion = "7"
 
 type fileIndex struct {
 	Hash      string            `json:"h"`
@@ -109,6 +110,7 @@ type fileIndex struct {
 	Limited   bool              `json:"x,omitempty"`  // could not be read to the end: not used for calls
 	Empty     []string          `json:"e,omitempty"`  // top-level functions with an empty body (stubs: noop.php)
 	Guarded   []string          `json:"g,omitempty"`  // PHP: "f:name" / "c:name" (lower case) declared under if (!function_exists / !class_exists)
+	Laravel   bool              `json:"lv,omitempty"` // PHP: names Illuminate (any case, any use form: use Illuminate\{...}, \Illuminate\...)
 	Routes    []routeRef        `json:"rt,omitempty"` // registrations naming a handler, maybe in another file (routes.go)
 	Sinks     []string          `json:"s,omitempty"`  // rules some sink of which the file may hold (sinkNames): one no file holds finds nothing across files
 }
@@ -314,6 +316,7 @@ func (p *Project) add(f string, fi *fileIndex) {
 		p.nestjs = p.nestjs || baseLang(fi.Lang) == "js" && slices.Contains(nestModules, m.Module)
 		p.koa = p.koa || baseLang(fi.Lang) == "js" && slices.Contains(koaModules, m.Module)
 	}
+	p.laravel = p.laravel || baseLang(fi.Lang) == "php" && fi.Laravel
 	s := path.Clean(filepath.ToSlash(f))
 	p.byClean[s] = f
 	for {
@@ -541,6 +544,9 @@ func existsGuards(t []Token) map[string]bool {
 func indexPHP(t []Token, fi *fileIndex) {
 	for i := 0; i < len(t); i++ {
 		tk := t[i]
+		if tk.Kind == Ident && strings.EqualFold(tk.Text, "Illuminate") {
+			fi.Laravel = true
+		}
 		if tk.Kind != Ident || i > 0 && memberOp(true, t[i-1]) {
 			continue
 		}

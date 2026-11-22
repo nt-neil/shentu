@@ -3,6 +3,31 @@
 CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本與日期必須一致，
 每個版本都要有內容（`go test ./cmd/sitegen` 會檢查）。
 
+## v0.5.3 — 2026-11-22
+
+- 建議按鈕按下後一定會有回覆（#163）：會先立刻回覆「正在重新檢查這個位址」，檢查之前先在 log 記下這次按下
+  （`proposal_press`），重新檢查最多一分鐘，超過時間就用閘門的固定字詞拒絕；過程中出錯也會回覆並記錄。
+  和以前一樣，按鈕按下後就算用掉了：因為檢查超過時間、出錯或被重啟中斷而被拒的按鈕不能再按，請改用下一次調查的按鈕。
+- Telegram 的封鎖只詢問閘門會放行的位址（#155、#158）：從聊天管道執行 block_ip 時，會在要求按 ✅ 之前先跑一次 #108 閘門的檢查。閘門會拒絕的位址立刻被拒，不會出現 ✅；agent 只會收到閘門的固定字詞（和位址），閘門的原始訊息只留在伺服器的紀錄裡；確認之後封鎖本身失敗時，錯誤內容也只留在紀錄裡。確認過的封鎖在執行時照舊會再檢查一次。
+- bot 等待時（#156、#158）：等待期間傳來的訊息，回覆會說明正在等什麼（上面的 ✅、驗證器的密碼，或伺服器以 `sudo shentu bot approve` 核准），不再回「上一個問題還在處理中」；等待期間傳來的問題不會交給 agent（驗證碼，以及 /lockdown、/new、/usage、/attacks 這些指令照常有效）。等待期間按下的建議動作按鈕或回覆建議按鈕會保留，之後可以再按；回覆建議不會再被用掉。
+- `shentu dispatch`（#158）：參數錯誤時先顯示用法，在讀設定之前，不論是誰執行；參數正確時，`stats` 和 `repair` 才要求 root（Windows 是系統管理員）。`sudo shentu dispatch repair` 在 `*.jsonl.bad` 裡每一行壞紀錄只保存一次，每日報告會寫出搬出的行裡有幾行是新加入的。
+- Next 15：在 import `next/headers` 的檔案裡，`const h = await headers(); h.get(name)` 和同步的 `const h = headers()` 會當成 `headers().get(name)` 來讀。所以這樣讀到的 Host header 傳進 redirect 時，由 js-open-redirect-next 回報（讀 `headers()` 的 SSRF 和命令注入規則也一樣）（#157）。
+- Koa：Koa application 或 router 用 `use` 註冊的 middleware，只要函式把第一個參數當成 context 用，它的 context 經過解構和別名也追得到，和路由 handler 一樣（`app.use(async (ctx) => { const { host } = ctx.request.headers; ... })`）。用 `use` 註冊的 HTTP client interceptor 或函式庫的 plugin，不會被當成 middleware（#157）。
+- Laravel：`$request->sort` 這種 magic property，以及 `->when($request->input('sort'), fn ($q, $s) => $q->orderBy($s))`（還有 `->unless`）的閉包，由 php-sqli-orderby-identifier 回報。前提是 `$request` 可能是 Laravel 的 request：檔案用到 Illuminate 的類別、宣告成 `Request` 型別、有類別 extends Controller，或在用到 Illuminate 的專案裡，它是函式沒有型別的參數（#157）。
+- SSRF：檔案裡有更多種可能在別處替換 `console.log(u)`、`JSON.stringify(u)`、`String(u)` 的寫法時，URL 的 host 檢查不再保留：`Function` 當成值、`Function.prototype.bind`、`getPrototypeOf`、`Reflect.construct`、vm 的執行函式、`GLOBAL`、`top`、`this` 除了讀具名成員以外的用法、require 或 import `console` 模組，以及 `require(` 或 `import(` 的參數不是單純字串，或用到 `createRequire`（#157）。
+
+### 升級說明
+
+- 有上面這些寫法的檔案，在 `console.log(u)` 之後的 `fetch(u)` 會再次回報 SSRF，和 v0.4.3 之前一樣。因為新的 Next、Koa、Laravel 讀法，攻擊偵測判斷為可到達的路由也可能改變。
+
+### 已知問題
+
+- 型別名稱以 `Request` 結尾的資料物件（`SearchRequest $request`）會被當成 Laravel 的 request，和 FormRequest 一樣。
+- Next 的 `headers()` 只在檔案自己 import `next/headers` 時才追。
+- 來源是 request 的呼叫時，`in_array($request->query('s'), [...], true) ? $request->query('s') : null` 不會被當成值的檢查（magic property 的同樣寫法會）。
+- `shentu usage` 沒有算進自動調查子 agent（`sub:incident`）的模型呼叫：測試機上 log 有 13 次，usage 只列 9 次；`shentu budget` 有算進去。修正（#164）排在 v0.5.4。
+- 自動調查的通知和「Approved from Telegram」通知不論 `language` 設什麼都是英文。
+
 ## v0.5.2 — 2026-11-20
 
 - 子 agent 專用模型（#135）：`[agents] base_url`、`model`、`api_key_env` 可以讓子 agent 用自己的模型；沒設定時沿用 `[llm]`。這台主機以外的模型（127.0.0.0/8、::1、localhost 以外都算）必須設 `[budget] monthly_tokens`，否則一個子 agent 都不跑，也不送出任何請求；用過外部模型的派遣，會在給 agent 的訊息、存檔和每日報告裡寫明。送出去的內容照舊遮罩。外部模型回錯誤時只留狀態碼，因為錯誤內容可能引用金鑰；不跟隨轉址；連線失敗時只保留失敗的種類，不帶網址。`[llm]` 的錯誤會先把金鑰（原樣和常見的編碼形式）換掉再截斷。

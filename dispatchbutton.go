@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -24,6 +25,11 @@ import (
 // for its pairing only, within buttonTTL of its dispatch.
 
 const maxProposalButtons = 5
+
+// pressCheckTimeout bounds the checks a press runs before it asks for ✅:
+// past it the press is refused with a word, never left without an answer.
+// Tests shorten it.
+var pressCheckTimeout = time.Minute
 
 // proposalArchive is what the buttons read of the dispatch archive
 // (dispatchStore).
@@ -189,8 +195,9 @@ func (b *bot) pressProposal(ctx context.Context, st botState, ref proposalRef) {
 	}
 	b.mu.Lock()
 	if b.busy {
+		word := b.busyWord(st, true)
 		b.mu.Unlock()
-		b.send(ctx, chat, b.t("busy"), nil) // the button stays: nothing was decided
+		b.send(ctx, chat, b.t(word), nil) // the button stays: nothing was decided
 		return
 	}
 	b.busy = true
@@ -221,6 +228,11 @@ func (b *bot) pressProposal(ctx context.Context, st botState, ref proposalRef) {
 	})
 	go func() {
 		defer func() { b.mu.Lock(); b.busy = false; b.mu.Unlock() }()
+		defer func() { // whatever happens below, the press gets an answer and a log line
+			if r := recover(); r != nil {
+				refuse("the press failed: "+tools.Cut(mask(fmt.Sprint(r)), 300), b.t("prop_failed")) // masked like every reason logged
+			}
+		}()
 		if err != nil {
 			// Used is not on disk: the button could be pressed again.
 			refuse("the button's use could not be saved: "+mask(err.Error()), b.t("prop_unsaved"))
@@ -242,8 +254,18 @@ func (b *bot) pressProposal(ctx context.Context, st botState, ref proposalRef) {
 			refuse("the archive's address differs from the one the button was offered for", b.t("prop_gone"))
 			return
 		}
-		// From the start: RemoteRefused, Preview, blockGate (remoteGate).
-		preview, ip, code := b.proposalCode(ctx, p)
+		// Said at once: the checks below can take a while, and a press must
+		// never look ignored. The log notes the press before them, too.
+		b.log.write(logEntry{Actor: "bot", Tool: "proposal_press", Dispatch: ref.Dispatch, Origin: "dispatch_button", Args: ref.String(), OK: true})
+		b.send(ctx, chat, fmt.Sprintf(b.t("prop_checking"), detect.Printable(p.IP)), nil)
+		// From the start: RemoteRefused, Preview, blockGate (remoteGate), within pressCheckTimeout.
+		cctx, ccancel := context.WithTimeout(ctx, pressCheckTimeout)
+		preview, ip, code := b.proposalCode(cctx, p)
+		late := errors.Is(cctx.Err(), context.DeadlineExceeded) // read before the cancel below, which always sets it
+		ccancel()
+		if late {
+			code = tools.BlockStateError // not checked in time: refused, not asked
+		}
 		if code != tools.BlockOK {
 			refuse("refused at press: "+string(code), fmt.Sprintf(b.t("prop_refused"), detect.Printable(p.IP), b.blockWord(code)))
 			return

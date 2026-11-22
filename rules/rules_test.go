@@ -339,6 +339,12 @@ func containsAny(code string, needles []string) bool {
 			}
 			continue
 		}
+		if pre, ok := strings.CutSuffix(n, "->*"); ok { // $request->*: a member read as a value ($request->sort)
+			if regexp.MustCompile(regexp.QuoteMeta(pre) + `->[A-Za-z_]\w*\b(?:\s*[^\s(\[\-?]|\s*$)`).MatchString(code) {
+				return true
+			}
+			continue
+		}
 		if strings.Contains(code, strings.TrimPrefix(n, "^")) {
 			return true
 		}
