@@ -161,6 +161,29 @@ func New(rs []rules.Rule) (*Engine, error) {
 	return e, nil
 }
 
+// foldMembers marks the method and class names of PHP sink and sanitizer
+// patterns to match in any case, as PHP calls them: the name after -> or ::
+// ($wpdb->query matches $wpdb->Query(...), DB::raw DB::RAW(...)) and the
+// class before :: (db::raw). A name followed by "(" is folded already
+// (compilePattern). Variables keep their case, as PHP's do ($WPDB is not
+// $wpdb), and so do sources, whose members may be properties, which PHP
+// reads by case.
+func foldMembers(ps []*pat) {
+	for _, p := range ps {
+		if !p.php {
+			continue
+		}
+		for k, t := range p.toks {
+			if t.Kind != Ident {
+				continue
+			}
+			if k > 0 && memberOp(true, p.toks[k-1]) || k+1 < len(p.toks) && p.toks[k+1].op("::") {
+				p.toks[k].Flags |= FlagFold
+			}
+		}
+	}
+}
+
 func compileRule(r rules.Rule) (*crule, error) {
 	c := &crule{rule: r, args: map[*pat]*argCond{}}
 	text := map[string]bool{}
@@ -219,6 +242,8 @@ func compileRule(r rules.Rule) (*crule, error) {
 			sp.toks[0].Flags |= FlagFold // a sanitizer named alone is a function: EscapeShellArg($x) cleans
 		}
 	}
+	foldMembers(c.sinks)
+	foldMembers(c.sanitizers)
 	for _, a := range r.Args {
 		ac := &argCond{arg: a.Arg, name: a.Name, whole: a.Whole, leading: a.Leading, literal: a.Literal, key: a.Key, keys: a.Keys, minLen: a.MinLen, unlessAt: a.UnlessAt,
 			unlessImports: a.UnlessImports, importsNot: a.UnlessImportsNot, markup: a.Markup}
