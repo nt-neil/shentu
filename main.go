@@ -155,6 +155,7 @@ func main() {
 	case "bot":
 		if len(args) == 0 { // serving: once at start, not on every command (S-R-5)
 			warnAutoBudget(cfg)
+			warnAutoNotify(cfg)
 		}
 		if err = stateReady(cfg.StateDir); err == nil {
 			err = botCommand(ctx, cfg, env, args)
@@ -170,6 +171,7 @@ func main() {
 		fs.Parse(args)
 		if *daily { // once a day; the daily report says it too
 			warnAutoBudget(cfg)
+			warnAutoNotify(cfg)
 		}
 		err = patrol(ctx, cfg, env, *daily, *dry)
 	case "detect":

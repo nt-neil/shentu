@@ -295,6 +295,27 @@ func autoBudgetWarning(cfg *Config) string {
 	return fmt.Sprintf("auto_incident is on, but [budget] monthly_tokens = %d is not more than %d: an automatic check reserves %d tokens and starts only while that stays under %.0f%% of the limit, so none will ever start; raise monthly_tokens to more than %d", cfg.Budget.MonthlyTokens, autoMinTokens, dispatchTokenCap, autoBudgetStop*100, autoMinTokens)
 }
 
+// warnAutoNotify says autoNotifyWarning on stderr (the journal), when the
+// bot starts to serve and on the daily patrol only: the patrol's timer
+// runs often, and every other command would repeat it.
+func warnAutoNotify(cfg *Config) {
+	if w := autoNotifyWarning(cfg); w != "" {
+		fmt.Fprintln(os.Stderr, "shentu: warning: "+w)
+	}
+}
+
+// autoNotifyWarning says when auto_incident is on but no [notify] url is
+// set; "" otherwise. A check starts only from an L3 alert the patrol
+// pushed, and the patrol pushes through the notify url alone (the bot's
+// token does not carry the patrol's alerts or the check's notice), so
+// without one no check ever starts.
+func autoNotifyWarning(cfg *Config) string {
+	if !cfg.Agents.AutoIncident || cfg.Notify.URL != "" {
+		return ""
+	}
+	return "auto_incident is on, but no [notify] url is set: a check starts only from an L3 alert the patrol pushed, and the patrol pushes through the notify url alone, so none will start and nothing would be sent. Set [notify] url (for Telegram telegram://<bot-token>@telegram?chats=<chat id>, the bot's own token works; or a Slack or Discord webhook), for example with `sudo shentu setup`"
+}
+
 // autoRun dispatches the incident sub-agent for p. runDispatch archives
 // it; the record it returns (the one saved, gates filled in) is the one
 // the notice is made from, and saveErr says whether it reached the archive.
@@ -378,6 +399,9 @@ func autoIncidentSection(cfg *Config, now time.Time) string {
 	}
 	var b strings.Builder
 	b.WriteString("\nAutomatic incident checks (L3 alerts, read-only, last day):\n")
+	if w := autoNotifyWarning(cfg); w != "" {
+		b.WriteString("- " + w + "\n")
+	}
 	if cfg.Budget.MonthlyTokens <= 0 {
 		b.WriteString("- none are made: no monthly token budget is set ([budget] monthly_tokens; monthly_cost alone does not stop a local model, which reports no cost)\n")
 	} else if w := autoBudgetWarning(cfg); w != "" {

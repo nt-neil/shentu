@@ -25,6 +25,10 @@ Chinese for the zh-TW pages; keep the two in step.
 - `shentu usage` and the bot's /usage count the sub-agents' model calls (and any other actor's) (#164):
   they were left out of the totals, and a dispatch's calls now have a line of their own.
 
+- `auto_incident` on with no `[notify] url` now warns (#165), when the bot starts, on the daily
+  patrol and in its report: a check starts only from an L3 alert the patrol pushed, and the patrol
+  pushes through the notify url alone, so none would ever start.
+
 ## v0.5.3 — 2026-11-22
 
 - A proposal button pressed always gets an answer (#163): it says at once that it checks the
