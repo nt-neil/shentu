@@ -21,6 +21,9 @@ func TestBuiltinNameCallables(t *testing.T) {
 		{"array_map('system', input)", "<?php\narray_map('system', $_GET['x']);\n", []string{"a.php:2:php-cmdi-shell-exec"}, false},
 		{"array_map('exec', input) on a later line", "<?php\n$x = $_GET['x'];\n$out = array_map(\n    'exec',\n    $x\n);\n", []string{"a.php:4:php-cmdi-shell-exec"}, false},
 		{"call_user_func('passthru', input)", "<?php\ncall_user_func('passthru', $_POST['c']);\n", []string{"a.php:2:php-cmdi-shell-exec"}, false},
+		{"array_map('\\system', input): the global name", "<?php\narray_map('\\system', $_GET['x']);\n", []string{"a.php:2:php-cmdi-shell-exec"}, false},
+		{"array_map('SYSTEM', input): names are case-insensitive", "<?php\narray_map('SYSTEM', $_GET['x']);\n", []string{"a.php:2:php-cmdi-shell-exec"}, false},
+		{"a helper calling '\\system'", "<?php\nrequire 'b.php';\ntap2($_GET['x'], '\\system');\n", []string{"a.php:3:php-cmdi-shell-exec"}, false},
 		{"array_map('escapeshellarg', input)", "<?php\narray_map('escapeshellarg', $_GET['x']);\n", nil, false},
 		{"a helper calling 'system'", "<?php\nrequire 'b.php';\ntap2($_GET['x'], 'system');\n", []string{"a.php:3:php-cmdi-shell-exec"}, false},
 		{"a helper calling 'urlencode'", "<?php\nrequire 'b.php';\ntap2($_GET['x'], 'urlencode');\n", nil, false},
@@ -69,6 +72,7 @@ func TestStrNamesSkipKeys(t *testing.T) {
 		{"<?php\n$info = ['filesize' => 0];\n", false},
 		{"<?php\n$n = array_map('filesize', $_GET['f']);\n", true},
 		{"<?php\n$cbs['k'] = 'filesize';\n", true},
+		{"<?php\n$n = array_map('\\FileSize', $_GET['f']);\n", true},
 	} {
 		var strs map[string]bool
 		if got := strNames(lex("php", c.src, newBudget(DefaultLimits)), &strs)["filesize"]; got != c.want {

@@ -544,8 +544,8 @@ func (a *analysis) passCallable(st state, arg []Token, funcs []*fn, seed func(in
 			if a.irrelevant(call, at) {
 				return out // a function the rule finds nothing in: nothing of this rule reaches it
 			}
-			if a.php && len(call) == 3 && call[0].Kind == Ident && phpBuiltins[strings.ToLower(call[0].Text)] {
-				a.builtinCallable(st, call[0].Text, arg[0].Line, seed, width)
+			if name := strings.ToLower(call[0].Text); a.php && len(call) == 3 && call[0].Kind == Ident && phpBuiltins[name] {
+				a.builtinCallable(st, name, arg[0].Line, seed, width) // 'SYSTEM' is system: PHP names are case-insensitive
 				return out
 			}
 		}
@@ -565,7 +565,7 @@ func callableCall(arg []Token) []Token {
 	tail := []Token{op("("), op(")")}
 	switch {
 	case len(arg) == 1 && arg[0].Kind == Str && len(arg[0].Parts) == 0:
-		name := arg[0].Text
+		name := strings.TrimPrefix(arg[0].Text, `\`) // '\system': the global name, as \system(
 		if c, m, ok := strings.Cut(name, "::"); ok && c != "" && m != "" {
 			return append([]Token{id(c), op("::"), id(m)}, tail...)
 		}
@@ -634,7 +634,7 @@ func strNames(toks []Token, set *map[string]bool) map[string]bool {
 			if i+1 < len(toks) && (toks[i+1].op("=>") || toks[i+1].op("]") && i > 0 && toks[i-1].op("[")) {
 				continue
 			}
-			(*set)[strings.ToLower(tk.Text)] = true
+			(*set)[strings.TrimPrefix(strings.ToLower(tk.Text), `\`)] = true
 		}
 	}
 	return *set
