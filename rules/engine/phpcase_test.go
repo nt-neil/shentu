@@ -28,6 +28,12 @@ func TestPHPNamesAnyCase(t *testing.T) {
 		{"a method named system (control)", "a.php", "php-cmdi-shell-exec", "<?php\n$o->system($_GET['x']);\n$o->System($_GET['x']);\n", nil, nil},
 		{"a static method named system (control)", "a.php", "php-cmdi-shell-exec", "<?php\nTask::SYSTEM($_GET['x']);\n", nil, nil},
 		{"lower case still reports (control)", "a.php", "php-cmdi-shell-exec", "<?php\nsystem($_GET['x']);\n", nil, []string{"a.php:2"}},
+		{"new File( builds a class, it calls no file()", "a.php", "php-path-traversal-file-read", "<?php\n$a = new File($_GET['x']);\n$b = new \\File($_GET['x']);\n$c = new A\\File($_GET['x']);\n$d = new file($_GET['x']);\n", nil, nil},
+		{"new System( builds a class", "a.php", "php-cmdi-shell-exec", "<?php\n$a = new System($_GET['x']);\n", nil, nil},
+		{"a function of a namespace is not file()", "a.php", "php-path-traversal-file-read", "<?php\n$a = Storage\\File($_GET['x']);\n$b = Storage\\file($_GET['x']);\n$c = namespace\\file($_GET['x']);\n", nil, nil},
+		{`\file( and return \SYSTEM( are PHP's`, "a.php", "php-cmdi-shell-exec", "<?php\nfunction f() {\n    return \\SYSTEM($_GET['x']);\n}\n", nil, []string{"a.php:3"}},
+		{`\File( is PHP's file()`, "a.php", "php-path-traversal-file-read", "<?php\n$a = \\File($_GET['x']);\n", nil, []string{"a.php:2"}},
+		{"a class pattern still matches after new (control)", "a.php", "php-ssrf-url-readers", "<?php\n$a = new SoapClient($_GET['x']);\n$b = new soapclient($_GET['x']);\n", nil, []string{"a.php:2", "a.php:3"}},
 		{"JavaScript keeps its case (control)", "a.js", "js-cmdi-exec", "const cp = require('child_process')\ncp.EXEC(req.query.c)\n", nil, nil},
 		{"Python keeps its case (control)", "a.py", "python-cmdi-shell", "import os\nfrom flask import request\nos.SYSTEM(request.args['c'])\n", nil, nil},
 	} {
