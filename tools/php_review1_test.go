@@ -236,8 +236,9 @@ func TestPHPReview1Includes(t *testing.T) {
 	}
 	h.file("/etc/nginx/conf.d/site.conf", "server {\n  include /srv/conf/status.conf;\n}\n")
 	h.file("/srv/conf/status.conf", "location = /status { fastcgi_pass unix:/run/php-fpm.sock; }\n")
-	if got := statusKey(phpRisks(context.Background())); got != "unknown" {
-		t.Errorf("nginx include outside /etc/nginx: %s", got)
+	if r := phpRisks(context.Background()); statusKey(r) != "unknown" ||
+		!strings.Contains(phpFind(r, uncheckedPrefix+"php8.3:CVE-2026-129292").Summary, "/srv/conf/status.conf (included by /etc/nginx/conf.d/site.conf, not read: outside") {
+		t.Errorf("nginx include outside /etc/nginx (its folder is not even listed): %v", r)
 	}
 	if err := os.MkdirAll(filepath.Join(h.root, "/etc/nginx/snippets/dir.conf"), 0o755); err != nil {
 		t.Fatal(err)
@@ -328,6 +329,18 @@ func TestPHPReview1Scope(t *testing.T) {
 		h.file(c.file, c.conf)
 		if got := statusKey(phpRisks(context.Background())); got != c.want {
 			t.Errorf("%s: %s, want %s", c.why, got, c.want)
+		}
+	}
+}
+
+// #195 review 2, S-2: more distributions' rpm vendors.
+func TestPHPReview2Vendors(t *testing.T) {
+	for _, vendor := range []string{"OpenAnolis Community", "openEuler", "EuroLinux", "Cybertrust Japan Co., Ltd."} {
+		h := newPHPHost(t)
+		h.bin("/usr/bin/php", "7.4.33")
+		h.rpm("/usr/bin/php", "php-cli", "0:7.4.33-1", vendor)
+		if r := phpRisks(context.Background()); len(r) != 0 {
+			t.Errorf("7.4 from %q is the distribution's: %v", vendor, r)
 		}
 	}
 }

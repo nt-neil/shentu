@@ -150,9 +150,12 @@ func phpBinVersion(data []byte) (v, why string) {
 }
 
 // phpReadLimited reads a regular file, at most max bytes; errTooLarge when
-// there is more.
+// there is more. Every read of a binary, a configuration file or a
+// changelog goes through it: it opens without blocking (phpOpenFlags) and
+// checks the open file itself, so a FIFO or a device is not waited on, and
+// nothing can be swapped in between a check and the open.
 func phpReadLimited(p string, max int64) ([]byte, error) {
-	f, err := os.Open(p)
+	f, err := os.OpenFile(p, phpOpenFlags, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -326,7 +329,8 @@ func phpPackage(ctx context.Context, p string) (pkg, version, dist, vendor strin
 // phpDistroVendors are the rpm vendors of distributions whose advisories
 // reach the package scan; any other vendor (Remi, IUS, cPanel, CloudLinux's
 // alt-php, none) is a third party.
-var phpDistroVendors = []string{"red hat", "rocky", "almalinux", "fedora", "amazon", "centos", "oracle", "suse"}
+var phpDistroVendors = []string{"red hat", "rocky", "almalinux", "fedora", "amazon", "centos", "oracle", "suse",
+	"openanolis", "openeuler", "eurolinux", "cybertrust"}
 
 func phpDistroVendor(v string) bool {
 	v = strings.ToLower(v)
@@ -470,6 +474,25 @@ func phpReadGlobs(globs []string) (files []phpConfFile, unread []string) {
 	}
 	slices.SortFunc(files, func(a, b phpConfFile) int { return strings.Compare(a.path, b.path) })
 	return files, unread
+}
+
+// phpResolve is where a path under phpRoot leads, links followed, as the
+// host spells it; false when it leads nowhere (it is then not read anyway).
+// Out of phpRoot ("/" outside the tests) it is a path no root holds.
+func phpResolve(full string) (string, bool) {
+	root, err := filepath.EvalSymlinks(phpRoot)
+	if err != nil {
+		return "", false
+	}
+	real, err := filepath.EvalSymlinks(full)
+	if err != nil {
+		return "", false
+	}
+	rel, err := filepath.Rel(root, real)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return "(out of " + phpRoot + ")", true
+	}
+	return "/" + filepath.ToSlash(rel), true
 }
 
 // phpRel is a path under phpRoot as the host spells it.
@@ -645,6 +668,11 @@ func phpWebConf() ([]phpWebFile, []string) {
 			var b strings.Builder
 			for _, full := range matches {
 				ip := phpRel(full)
+				if real, ok := phpResolve(full); ok && !slices.ContainsFunc(phpIncludeRoots[nginx], func(r string) bool { return strings.HasPrefix(real, r) }) {
+					// a link out of the server's folders
+					unread = append(unread, ip+" (included by "+p+", not read: it links to "+real+", outside "+strings.Join(phpIncludeRoots[nginx], ", ")+")")
+					continue
+				}
 				if depth >= 8 || count >= 256 {
 					unread = append(unread, ip+" (included by "+p+", not read: past the include limit)")
 					continue
