@@ -30,6 +30,10 @@ type Case struct {
 	FixFiles   []FixFile `toml:"fix_files"`
 	SourceURL  string    `toml:"source_url"` // CVE.org, NVD, GitHub Advisory or OSV
 	Note       string    `toml:"note"`       // one sentence in our own words
+	// KnownGap: why the rules cannot catch this case yet (its input is not a
+	// source they read, say). Such a case is run and reported on its own, out
+	// of the catch and fixed FP rates, so it does not dilute them.
+	KnownGap string `toml:"known_gap"`
 
 	file string
 }
