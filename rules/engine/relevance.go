@@ -137,6 +137,11 @@ func (a *analysis) build() bool {
 				if !direct[k] && x.toksRelevant(t) {
 					direct[k] = true
 				}
+				for i := 0; !direct[k] && a.php && i+1 < len(t); i++ {
+					if t[i].Kind == Var && t[i+1].op("(") && slices.Contains(fi.params, t[i].Text) {
+						direct[k] = true // it calls a callable it is given: what that does is the caller's (summary.pcall)
+					}
+				}
 				if a.proj == nil {
 					return
 				}

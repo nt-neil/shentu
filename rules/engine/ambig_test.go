@@ -25,15 +25,15 @@ func TestAmbiguousCalls(t *testing.T) {
 	}{
 		// A closure assigned to a variable inside a method is that method's
 		// variable: no other file reaches it, so it is no candidate.
-		{"$callback(...) of a method's parameter, with method-local $callback closures in other files", map[string]string{
-			"a.php": "<?php\nclass A {\n    public function each($callback) {\n        return $callback($_GET['x']);\n    }\n}\n",
+		{"$callback(...) of a variable, with method-local $callback closures in other files", map[string]string{
+			"a.php": "<?php\nfunction run() {\n    $callback = make_callback();\n    return $callback($_GET['x']);\n}\n",
 			"b.php": "<?php\nclass B {\n    public function run() {\n        $callback = function ($v) { exec($v); };\n        return $callback('x');\n    }\n}\n",
 			"c.php": "<?php\nclass C {\n    public function run() {\n        $callback = fn ($v) => system($v);\n        return $callback('y');\n    }\n}\n",
 		}, "a.php", nil, false},
 		// A top-level closure is global: another file reaches it when it is
 		// included, so with none included the call stays unsure (#174 review S-1).
 		{"$callback(...) with top-level $callback closures in files not included: unsure", map[string]string{
-			"a.php": "<?php\nclass A {\n    public function each($callback) {\n        return $callback($_GET['x']);\n    }\n}\n",
+			"a.php": "<?php\nfunction run() {\n    $callback = make_callback();\n    return $callback($_GET['x']);\n}\n",
 			"b.php": "<?php\n$callback = function ($v) {\n    exec($v);\n};\n",
 			"c.php": "<?php\n$callback = fn ($v) => system($v);\n",
 		}, "a.php", nil, true},
@@ -63,7 +63,7 @@ func TestAmbiguousCalls(t *testing.T) {
 			"b.php": "<?php\nfunction all_vars() {\n    $runner = function ($v) { exec($v); };\n    return get_defined_vars();\n}\n",
 		}, "a.php", []string{"b.php:3:php-cmdi-shell-exec"}, false},
 		{"$callback(...) with closures assigned to a global $callback inside functions: unsure", map[string]string{
-			"a.php": "<?php\nclass A {\n    public function each($callback) {\n        return $callback($_GET['x']);\n    }\n}\n",
+			"a.php": "<?php\nfunction run() {\n    $callback = make_callback();\n    return $callback($_GET['x']);\n}\n",
 			"b.php": "<?php\nfunction init() {\n    global $callback;\n    $callback = function ($v) { exec($v); };\n}\n",
 			"c.php": "<?php\nfunction boot() {\n    if (true) {\n        global $other, $callback;\n    }\n    $callback = fn ($v) => system($v);\n}\n",
 		}, "a.php", nil, true},
@@ -180,7 +180,7 @@ func TestAmbiguousCalls(t *testing.T) {
 func TestCallableVarCut(t *testing.T) {
 	e := engineForTest(t)
 	files := map[string]string{
-		"a.php": "<?php\nclass A {\n    public function each($callback) {\n        return $callback($_GET['x']);\n    }\n}\n",
+		"a.php": "<?php\nfunction run() {\n    $callback = make_callback();\n    return $callback($_GET['x']);\n}\n",
 		"b.php": "<?php\n$callback = function ($v) {\n    exec($v);\n};\n",
 		"c.php": "<?php\n$callback = fn ($v) => system($v);\n",
 	}
