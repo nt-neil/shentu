@@ -105,16 +105,17 @@ func TestFileChangesUnchecked(t *testing.T) {
 	}
 }
 
-// M0 PR4: a patrol alert from macOS's unified log says so, not "text
-// logs"; outside the admin group SSH is "not checked in full".
+// M0 PR4: a patrol alert from macOS's unified log (verified: sshd's own
+// lines, logged by root) carries no "check them" note; outside the admin
+// group SSH is "not checked in full".
 func TestSSHFindingsMacUnifiedLog(t *testing.T) {
-	r := map[string]any{"source": "the unified log (sshd-session, sshd)", "verified": false, "complete": true,
+	r := map[string]any{"source": "the unified log (sshd-session, sshd; logged by root)", "verified": true, "complete": true,
 		"sources": []tools.SSHSource{{IP: "198.51.100.23", Failed: 12}}}
 	f, why := sshFindings(r, nil, 10)
-	if len(f) != 1 || !strings.Contains(f[0].Summary, "macOS's unified log") || strings.Contains(f[0].Summary, "text logs") || why != "" {
+	if len(f) != 1 || strings.Contains(f[0].Summary, "check them") || why != "" {
 		t.Errorf("findings %+v, why %q", f, why)
 	}
-	r = map[string]any{"source": "the unified log (sshd-session, sshd)", "verified": false, "complete": false, "permission": true,
+	r = map[string]any{"source": "the unified log (sshd-session, sshd; logged by root)", "verified": true, "complete": false, "permission": true,
 		"error": "permission denied: log show: only root and members of the admin group can read the unified log"}
 	if f, why = sshFindings(r, nil, 10); len(f) != 0 || !strings.Contains(why, "Not checked in full: SSH logins") || !strings.Contains(why, "admin group") {
 		t.Errorf("not admin: %+v %q", f, why)

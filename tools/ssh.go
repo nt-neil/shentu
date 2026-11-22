@@ -21,7 +21,7 @@ var sshLogins = Tool{
 	Description: "SSH login attempts grouped by source IP: failed passwords, invalid users and successful logins. Use it to spot brute force and to check whether an attacking IP ever got in. " +
 		"verified is false when the events come from text logs, which anyone on the host can write to: then never block_ip on these counts alone, check them first (journalctl -u ssh, the IP's other traffic). " +
 		"complete is false when a log was cut short or unreadable (error says why): the counts are a lower bound. " +
-		"On macOS the events come from its unified log, which only root and the admin group can read (permission says when that stopped it); verified is false there too for now, so the same check applies. " +
+		"On macOS the events come from its unified log, which only root and the admin group can read (permission says when that stopped it); only sshd's own events logged by root are counted (verified), and source says how many others were left out and why. " +
 		"source names what was read (journald, or the log files and why journald was not used); note says when low-activity sources were not tracked.",
 	Params: schema(`{"type":"object","properties":{
 		"since_hours":{"type":"number","description":"look back this many hours (default 24, at most 720: as far as block_ip's login check looks)"},

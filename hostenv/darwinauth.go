@@ -2,10 +2,12 @@ package hostenv
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
 	"regexp"
+	"strings"
 	"time"
 )
 
@@ -18,62 +20,112 @@ import (
 //
 // The predicate names the program by its image path, not by process (its
 // file name): any user can copy a program to /tmp/sshd-session and log
-// as "sshd-session". That is not enough to trust the lines (N-186-1): any
-// user can run the system's own /usr/sbin/sshd -D with a config and host
-// key of their own on a high port, and its lines pass the predicate.
-// senderImagePath keeps the libraries' lines (pam, Open Directory) out.
+// as "sshd-session". That alone is not enough to trust the lines (N-186-1):
+// any user can run the system's own /usr/sbin/sshd -D with a config and
+// host key of their own on a high port, and its lines pass the predicate;
+// userID 0 keeps those out (UnifiedVerified). senderImagePath keeps the
+// libraries' lines (pam, Open Directory) out.
 const unifiedSSHPredicate = `(processImagePath == "/usr/libexec/sshd-session" AND senderImagePath == "/usr/libexec/sshd-session") OR ` +
 	`(processImagePath == "/usr/sbin/sshd" AND senderImagePath == "/usr/sbin/sshd")`
 
 // UnifiedSSHArgv reads those events since a local time ("--start" is
-// read in the Mac's time zone; an hour early, for the hour a DST change
-// repeats: the counts filter on since, S-186-2). /usr/bin/log in full: in zsh, macOS's
-// shell, "log" is a builtin.
-var UnifiedSSHArgv = []string{"/usr/bin/log", "show", "--info", "--style", "syslog", "--predicate", unifiedSSHPredicate, "--start", SlotTime}
+// read in the Mac's time zone, VM macos-pr186 check 3; an hour early, for
+// the hour a DST change repeats: the counts filter on since, S-186-2), one
+// JSON object a line (ndjson: userID is in it, syslog style has none).
+// /usr/bin/log in full: in zsh, macOS's shell, "log" is a builtin.
+var UnifiedSSHArgv = []string{"/usr/bin/log", "show", "--info", "--style", "ndjson", "--predicate", unifiedSSHPredicate, "--start", SlotTime}
 
 func init() { registerBig(UnifiedSSHArgv, 0, JournalTimeout) }
 
-// UnifiedVerified is whether the unified log's sshd lines count as
-// written by the system's sshd. The image paths do not make them so (a
-// user's own sshd has the same ones): false until only events logged by
-// root (ndjson's userID 0, sshd's monitor) are kept and a VM confirms it.
-const UnifiedVerified = false
+// UnifiedVerified: the lines kept are sshd's own, written by root. The
+// image paths keep a copied program out (VM macos-pr186 check 2: a
+// /tmp/sshd-session's lines carry /private/tmp/sshd-session); userID 0
+// keeps a user's own /usr/sbin/sshd out (check 5: its login lines carry
+// the user's uid, 501, the system sshd's carry 0). Only root can run an
+// sshd whose lines carry 0, as on Linux (_UID=0).
+const UnifiedVerified = true
 
 // unifiedExitDenied is log show's exit status for a user outside the
 // admin group: "Could not open local log store: Operation not permitted".
 const unifiedExitDenied = 77
 
-// reUnifiedLine is a --style syslog line: "<date> <time+zone>  <host>
-// <process>[<pid>]: <message>". The header and continuation lines (a tab
-// first) do not match.
-var reUnifiedLine = regexp.MustCompile(`^(\d{4}-\d\d-\d\d) (\d\d:\d\d:\d\d(?:\.\d+)?[+-]\d{4}) +(\S+ \S+\[\d+\]: .*)$`)
+// Why an event was not counted: fixed words, said in the source.
+const (
+	UnifiedDropNotRoot  = "not_logged_by_root" // userID missing or not 0
+	UnifiedDropNotSSHD  = "not_sshd_image"     // process and sender not one of the two sshd images
+	UnifiedDropBadEvent = "unreadable_event"   // not a JSON event with a timestamp and a message
+)
 
-// UnifiedToAuthLine rewrites a log show --style syslog line as an
-// auth.log one, "<date>T<time+zone> <host> <process>[<pid>]: <message>",
-// which sshdPrefix and ParseLogTime read; ok is false for any other line.
-func UnifiedToAuthLine(l string) (string, bool) {
-	m := reUnifiedLine.FindStringSubmatch(l)
-	if m == nil {
-		return "", false
+var unifiedImages = map[string]string{"/usr/libexec/sshd-session": "sshd-session", "/usr/sbin/sshd": "sshd"}
+
+// reUnifiedTime is ndjson's timestamp: "2006-01-02 15:04:05.000000-0700".
+var reUnifiedTime = regexp.MustCompile(`^(\d{4}-\d\d-\d\d) (\d\d:\d\d:\d\d(?:\.\d+)?[+-]\d{4})$`)
+
+// UnifiedToAuthLine rewrites one log show --style ndjson event as an
+// auth.log line, "<date>T<time+zone> localhost <process>[<pid>]:
+// <message>", which sshdPrefix and ParseLogTime read. drop is why it is
+// not one (a Unified* word), "" for a line that is not an event at all.
+func UnifiedToAuthLine(l string) (line, drop string) {
+	l = strings.TrimSpace(l)
+	if !strings.HasPrefix(l, "{") {
+		return "", "" // not an event (log show prints none today)
 	}
-	return m[1] + "T" + m[2] + " " + m[3], true
+	var e struct {
+		Timestamp        string `json:"timestamp"`
+		ProcessImagePath string `json:"processImagePath"`
+		SenderImagePath  string `json:"senderImagePath"`
+		EventMessage     string `json:"eventMessage"`
+		ProcessID        int64  `json:"processID"`
+		UserID           *int64 `json:"userID"`
+	}
+	if json.Unmarshal([]byte(l), &e) != nil {
+		return "", UnifiedDropBadEvent
+	}
+	name, ok := unifiedImages[e.ProcessImagePath]
+	if !ok || e.SenderImagePath != e.ProcessImagePath {
+		return "", UnifiedDropNotSSHD
+	}
+	if e.UserID == nil || *e.UserID != 0 {
+		return "", UnifiedDropNotRoot
+	}
+	m := reUnifiedTime.FindStringSubmatch(e.Timestamp)
+	msg, _, _ := strings.Cut(e.EventMessage, "\n")
+	if m == nil || strings.TrimSpace(msg) == "" || e.ProcessID <= 0 {
+		return "", UnifiedDropBadEvent
+	}
+	return fmt.Sprintf("%sT%s localhost %s[%d]: %s", m[1], m[2], name, e.ProcessID, msg), ""
 }
 
 // ScanAuthLogs streams sshd's login events since since from the unified
 // log to a consumer from sink, as auth.log lines. A user outside the
 // admin group is refused (fs.ErrPermission): root or an admin reads them.
+// Events not counted are said in source, with their reasons.
 func (DarwinCollector) ScanAuthLogs(ctx context.Context, src Source, since time.Time, sink func() func(line string)) (source string, verified bool, err error) {
 	ctx, cancel := context.WithTimeout(ctx, JournalTimeout)
 	defer cancel()
 	fn := sink()
 	argv := append([]string(nil), UnifiedSSHArgv...)
 	argv[len(argv)-1] = since.Add(-time.Hour).Local().Format("2006-01-02 15:04:05")
+	drops := map[string]int{}
 	res, err := RunLinesUnmasked(ctx, src, argv, func(l string) {
-		if a, ok := UnifiedToAuthLine(l); ok {
+		a, drop := UnifiedToAuthLine(l)
+		switch {
+		case drop != "":
+			drops[drop]++
+		case a != "":
 			fn(a)
 		}
 	})
-	source = "the unified log (sshd-session, sshd)"
+	source = "the unified log (sshd-session, sshd; logged by root)"
+	var said []string
+	for _, w := range []string{UnifiedDropNotRoot, UnifiedDropNotSSHD, UnifiedDropBadEvent} {
+		if n := drops[w]; n > 0 {
+			said = append(said, fmt.Sprintf("%s %d", w, n))
+		}
+	}
+	if len(said) > 0 {
+		source += "; events not counted: " + strings.Join(said, ", ")
+	}
 	switch {
 	case err == nil && res.ExitCode == unifiedExitDenied:
 		err = fmt.Errorf("%w: log show: only root and members of the admin group can read the unified log", fs.ErrPermission)

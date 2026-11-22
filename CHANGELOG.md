@@ -9,11 +9,13 @@ Chinese for the zh-TW pages; keep the two in step.
 ## v0.5.5 (unreleased)
 
 - macOS: `ssh_logins` (and the patrol's SSH check) reads sshd's login events from the unified log
-  (`/usr/bin/log show --info`, by the image paths of sshd-session and sshd, so a program copied to
-  /tmp under that name is left out) and counts them as on Linux. Only root and the admin group can
-  read that log: anyone else gets a permission error saying so, not an empty result. Not marked
-  verified: any user can run the system's sshd with a configuration of their own, and its lines look
-  the same.
+  (`/usr/bin/log show --info --style ndjson`) and counts them as on Linux, marked verified: only
+  events of sshd-session's or sshd's own image path, logged by root (userID 0), are counted. A
+  macOS 15 VM showed both hold: a program copied to /tmp under that name logs its own path, and a
+  user's own sshd (the system's binary with a configuration of their own) logs that user's ID, not
+  0. The events left out are counted in the result's source with their reason
+  (`not_logged_by_root`, `not_sshd_image`, `unreadable_event`). Only root and the admin group can
+  read that log: anyone else gets a permission error saying so, not an empty result.
 - macOS: `log_search` reads macOS's text logs (system.log, install.log) by default, not Homebrew's
   nginx and Apache logs, whose directories their user could link root's files into (add them
   knowingly). A log under /var is found by the path log_paths gives it (on macOS /var is a link to
