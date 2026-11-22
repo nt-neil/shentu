@@ -1,13 +1,12 @@
-# PHP's internal functions: get_defined_functions()['internal'] of PHP 8.5.12
-# (Homebrew build), one per line, sorted. Loaded extensions: bcmath bz2 calendar
-# Core ctype curl date dba dom exif FFI fileinfo filter ftp gd gettext gmp hash
-# iconv intl json ldap lexbor libxml mbstring mysqli mysqlnd odbc openssl pcntl
-# pcre PDO pdo_dblib pdo_mysql PDO_ODBC pdo_pgsql pdo_sqlite pgsql Phar posix
-# random readline Reflection session shmop SimpleXML snmp soap sockets sodium SPL
-# sqlite3 standard sysvmsg sysvsem sysvshm tidy tokenizer uri xml xmlreader
-# xmlwriter xsl Zend OPcache zip zlib.
-# Regenerate (the header is kept by hand):
-#   php -r '$f = get_defined_functions()["internal"]; sort($f); echo implode("\n", $f), "\n";'
+# PHP's internal functions: those of the extensions bundled with PHP itself (no
+# PECL extension), one per line, sorted byte-wise. Generated with PHP 8.5.13 on a
+# clean GitHub Actions runner (ubuntu-24.04, shivammathur/setup-php 2.40.0).
+# A function PHP defines only on some systems or library versions may be missing:
+# its name is then treated as a function no one defines, as before this list.
+# Regenerate with a PHP that loads these extensions (the command stops if one is
+# missing):
+#   php -r '$o = []; foreach (explode(",", "Core,PDO,SPL,SimpleXML,Zend OPcache,bcmath,bz2,calendar,ctype,curl,date,dba,dom,enchant,exif,fileinfo,filter,ftp,gd,gettext,gmp,hash,iconv,intl,json,ldap,libxml,mbstring,mysqli,odbc,openssl,pcntl,pcre,pgsql,posix,random,readline,session,shmop,snmp,soap,sockets,sodium,standard,sysvmsg,sysvsem,sysvshm,tidy,tokenizer,xml,xmlwriter,zip,zlib") as $e) { if (!extension_loaded($e)) { fwrite(STDERR, "missing $e\n"); exit(1); } foreach (get_extension_funcs($e) ?: [] as $f) $o[] = $f; } sort($o, SORT_STRING); echo implode("\n", $o), "\n";'
+Dom\import_simplexml
 _
 abs
 acos
@@ -130,6 +129,7 @@ chmod
 chop
 chown
 chr
+chroot
 chunk_split
 class_alias
 class_exists
@@ -303,11 +303,35 @@ dngettext
 dns_check_record
 dns_get_mx
 dns_get_record
-dom\import_simplexml
 dom_import_simplexml
 doubleval
 easter_date
 easter_days
+enchant_broker_describe
+enchant_broker_dict_exists
+enchant_broker_free
+enchant_broker_free_dict
+enchant_broker_get_dict_path
+enchant_broker_get_error
+enchant_broker_init
+enchant_broker_list_dicts
+enchant_broker_request_dict
+enchant_broker_request_pwl_dict
+enchant_broker_set_dict_path
+enchant_broker_set_ordering
+enchant_dict_add
+enchant_dict_add_to_personal
+enchant_dict_add_to_session
+enchant_dict_check
+enchant_dict_describe
+enchant_dict_get_error
+enchant_dict_is_added
+enchant_dict_is_in_session
+enchant_dict_quick_check
+enchant_dict_remove
+enchant_dict_remove_from_session
+enchant_dict_store_replacement
+enchant_dict_suggest
 end
 enum_exists
 error_clear_last
@@ -670,6 +694,7 @@ imagecreatefromtga
 imagecreatefromwbmp
 imagecreatefromwebp
 imagecreatefromxbm
+imagecreatefromxpm
 imagecreatetruecolor
 imagecrop
 imagecropauto
@@ -900,6 +925,7 @@ ldap_error
 ldap_escape
 ldap_exop
 ldap_exop_passwd
+ldap_exop_refresh
 ldap_exop_sync
 ldap_exop_whoami
 ldap_explode_dn
@@ -1374,15 +1400,19 @@ pcntl_errno
 pcntl_exec
 pcntl_fork
 pcntl_get_last_error
+pcntl_getcpu
+pcntl_getcpuaffinity
 pcntl_getpriority
-pcntl_getqos_class
+pcntl_setcpuaffinity
 pcntl_setpriority
-pcntl_setqos_class
 pcntl_signal
 pcntl_signal_dispatch
 pcntl_signal_get_handler
 pcntl_sigprocmask
+pcntl_sigtimedwait
+pcntl_sigwaitinfo
 pcntl_strerror
+pcntl_unshare
 pcntl_wait
 pcntl_waitid
 pcntl_waitpid
@@ -1401,7 +1431,6 @@ pg_change_password
 pg_client_encoding
 pg_clientencoding
 pg_close
-pg_close_stmt
 pg_cmdtuples
 pg_connect
 pg_connect_poll
@@ -1504,7 +1533,6 @@ pg_send_execute
 pg_send_prepare
 pg_send_query
 pg_send_query_params
-pg_set_chunked_rows_size
 pg_set_client_encoding
 pg_set_error_context_visibility
 pg_set_error_verbosity
@@ -1531,6 +1559,7 @@ popen
 pos
 posix_access
 posix_ctermid
+posix_eaccess
 posix_errno
 posix_fpathconf
 posix_get_last_error
@@ -1612,6 +1641,7 @@ readline_callback_read_char
 readline_clear_history
 readline_completion_function
 readline_info
+readline_list_history
 readline_on_new_line
 readline_read_history
 readline_redisplay
@@ -1772,12 +1802,6 @@ sodium_base642bin
 sodium_bin2base64
 sodium_bin2hex
 sodium_compare
-sodium_crypto_aead_aegis128l_decrypt
-sodium_crypto_aead_aegis128l_encrypt
-sodium_crypto_aead_aegis128l_keygen
-sodium_crypto_aead_aegis256_decrypt
-sodium_crypto_aead_aegis256_encrypt
-sodium_crypto_aead_aegis256_keygen
 sodium_crypto_aead_aes256gcm_decrypt
 sodium_crypto_aead_aes256gcm_encrypt
 sodium_crypto_aead_aes256gcm_is_available
