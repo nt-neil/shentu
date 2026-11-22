@@ -56,7 +56,7 @@ Chinese for the zh-TW pages; keep the two in step.
   (`use Httpful\Request`, `use Unirest\Request`, `use Httpful\Http as Request`) is no longer read
   as Laravel's request facade (#160).
 
-- The dispatch archive reads fields it does not know (f98c3c): from v0.5.4 a record or feedback
+- The dispatch archive reads fields it does not know (#197): from v0.5.4 a record or feedback
   line written by a later version with a new field is read, its known fields checked as before,
   instead of being refused as unreadable (which stopped the automatic incident checks until a
   repair). Such lines are counted in `shentu dispatch stats` (`unknown_field_lines` in JSON) and in
