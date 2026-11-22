@@ -461,7 +461,8 @@ type AttackEval struct {
 }
 
 var (
-	limitsVerRe = regexp.MustCompile(`(?m)^# .* in v(\d+\.\d+\.\d+)\s*$`)
+	limitsVerRe = regexp.MustCompile(`(?m)^Since v(\d+\.\d+\.\d+), Shentu ships (\d+) attack signatures`)
+	allRe       = regexp.MustCompile(`(?m)^- \*\*All templates: [\d.]+% detected \((\d+) of (\d+)\)\.\*\*`)
 	nucleiRe    = regexp.MustCompile(`nuclei-templates v(\d+\.\d+\.\d+) \(commit ([0-9a-f]+)\)`)
 	appsRe      = regexp.MustCompile(`(\d+) for each of (\d+) routes of (\d+) applications`)
 	hostRowRe   = regexp.MustCompile(`(?m)^\| (CVE-\d+-\d+) \| (L1|L2|L3|none) \|`)
@@ -525,8 +526,12 @@ func loadAttackEval(root string) (*AttackEval, error) {
 	m := limitsVerRe.FindStringSubmatch(l)
 	n := nucleiRe.FindStringSubmatch(l)
 	a := appsRe.FindStringSubmatch(l)
-	if m == nil || n == nil || a == nil {
-		return nil, fmt.Errorf("%s: no release in its title, nuclei-templates release or routes of applications", lp)
+	all := allRe.FindStringSubmatch(l)
+	if m == nil || n == nil || a == nil || all == nil {
+		return nil, fmt.Errorf("%s: no \"Since vX.Y.Z, Shentu ships N attack signatures\", nuclei-templates release, routes of applications or all templates' result", lp)
+	}
+	if fmt.Sprintf("%d of %d", e.Caught, e.Templates) != all[1]+" of "+all[2] {
+		return nil, fmt.Errorf("%s says %s of %s templates detected, %s has %d of %d", lp, all[1], all[2], bp, e.Caught, e.Templates)
 	}
 	e.Version, e.Nuclei, e.Commit = m[1], n[1], n[2]
 	if !strings.HasPrefix(s.NucleiCommit, e.Commit) {
@@ -553,5 +558,8 @@ func loadAttackEval(root string) (*AttackEval, error) {
 		return nil, err
 	}
 	e.Signatures = len(ss)
+	if m[2] != strconv.Itoa(e.Signatures) {
+		return nil, fmt.Errorf("%s says %s attack signatures, the build has %d", lp, m[2], e.Signatures)
+	}
 	return e, nil
 }

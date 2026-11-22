@@ -4,7 +4,8 @@
 
 How detection works, how to read an alert and why a block needs you: [attack-detection.md](attack-detection.md).
 
-v0.4.1 ships 27 attack signatures (as v0.4.0 did), and they are not extended to catch rewritten forms of an attack.
+Since v0.5.6, Shentu ships 28 attack signatures, measured below; they are not extended to catch rewritten forms of an attack.
+v0.4.1 shipped 27 (as v0.4.0 did), which caught 1548 of the same 3822 templates.
 The cases below are known misses. A miss only costs an alert: Shentu misses the request or rates it lower. None of them can make Shentu block the wrong address.
 v0.4.0 never blocks on its own: `block_ip` always needs the operator's confirmation. Its attacks are checked too: an address with attack attempts is blocked only for a verified L2 or L3 group of its own, not an overflow summary of many sources. Attempts that only reached a route (L1), could not be judged (Unknown) or come from unverified logs do not back a block; the address's SSH logins that journald itself confirms still can. An internal address (private, loopback, CGNAT and the like) is refused. `override_unverified` lifts all of these checks but one, and only from the server (`shentu chat`), never from Telegram: attempts that are unverified, L1 or Unknown no longer hold a block back, SSH logins are not checked, and an internal address may be blocked, so the block rests on the operator's own reading of the logs. An address listed in an overflow summary is still refused, unless it also has a verified L2 or L3 group of its own. From Telegram, since v0.4.1, `block_ip` blocks only an address with evidence Shentu verified (a verified L2 or L3 group listing it, or SSH login events sshd itself logged); any other address, one no group lists included, is refused there and is for the operator on the server. A group lists at most ten addresses: past those, the eleventh and later of even a verified L2 or L3 group are refused from Telegram, by design, and are to be blocked on the server.
 
@@ -116,7 +117,7 @@ What they mean:
 
 The results:
 
-- **All templates: 40.5% detected (1548 of 3822).**
+- **All templates: 40.5% detected (1549 of 3822).**
   - Source: nuclei-templates v10.5.2 (commit 5442582a), the 11835 templates under `http/`.
   - Templates the tool could not convert (1143), unclassified ones (6618) and `rce-unspecified` ones (252) are not counted.
 - **Ordinary traffic: no false alerts in 1216 requests.**
