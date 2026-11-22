@@ -5,6 +5,8 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 
 ## v0.5.5 (unreleased)
 
+- macOS：`file_changes` 現在依檔案的狀態變更時間（ctime）找出異動，改過修改時間也藏不住，並附上擁有者名稱；
+  預設檢查 macOS 自己的位置（/private/etc、Homebrew、launchd 的 job），讀不到的目錄會列出來。`cert_expiry` 也會讀 Homebrew 的 certbot。
 - macOS：`accounts_audit` 現在讀取 Mac 的帳號（dscl；不需要 root）、可登入帳號和 root 的 authorized_keys，
   sudoers 讀得到時也會讀。讀不到的部分寫在 note；Linux 才有的檢查（ld.so.preload、不是套件安裝的 PAM 模組）會列為不適用。
 - macOS：`listening_ports`、`processes`（以及巡檢的程序檢查）現在讀取 Mac 本身（netstat 或 lsof，以及 ps；不需要 root），
