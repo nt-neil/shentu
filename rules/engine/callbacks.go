@@ -565,7 +565,7 @@ func callableCall(arg []Token) []Token {
 	tail := []Token{op("("), op(")")}
 	switch {
 	case len(arg) == 1 && arg[0].Kind == Str && len(arg[0].Parts) == 0:
-		name := strings.TrimPrefix(arg[0].Text, `\`) // '\system': the global name, as \system(
+		name := globalName(arg[0].Text) // '\system': the global name, as \system(
 		if c, m, ok := strings.Cut(name, "::"); ok && c != "" && m != "" {
 			return append([]Token{id(c), op("::"), id(m)}, tail...)
 		}
@@ -622,6 +622,16 @@ func (a *analysis) builtinCallable(st state, name string, line int, seed func(in
 	a.sinks(tmp, toks)
 }
 
+// globalName drops the leading backslash of a fully qualified name written in
+// a string literal: '\system', and '\\system', which PHP reads as \system too
+// (the literal keeps its escapes).
+func globalName(s string) string {
+	if strings.HasPrefix(s, `\\`) {
+		return s[2:]
+	}
+	return strings.TrimPrefix(s, `\`)
+}
+
 // strNames returns the lower-case plain string literals of toks that are no
 // array key ($info['filesize'], 'filesize' => 0), made once per file into *set.
 func strNames(toks []Token, set *map[string]bool) map[string]bool {
@@ -634,7 +644,7 @@ func strNames(toks []Token, set *map[string]bool) map[string]bool {
 			if i+1 < len(toks) && (toks[i+1].op("=>") || toks[i+1].op("]") && i > 0 && toks[i-1].op("[")) {
 				continue
 			}
-			(*set)[strings.TrimPrefix(strings.ToLower(tk.Text), `\`)] = true
+			(*set)[globalName(strings.ToLower(tk.Text))] = true
 		}
 	}
 	return *set

@@ -214,6 +214,11 @@ func compileRule(r rules.Rule) (*crule, error) {
 	if _, err := compile(r.Sanitizers, &c.sanitizers, &none); err != nil {
 		return nil, err
 	}
+	for _, sp := range c.sanitizers {
+		if sp.php && len(sp.toks) == 1 && sp.toks[0].Kind == Ident {
+			sp.toks[0].Flags |= FlagFold // a sanitizer named alone is a function: EscapeShellArg($x) cleans
+		}
+	}
 	for _, a := range r.Args {
 		ac := &argCond{arg: a.Arg, name: a.Name, whole: a.Whole, leading: a.Leading, literal: a.Literal, key: a.Key, keys: a.Keys, minLen: a.MinLen, unlessAt: a.UnlessAt,
 			unlessImports: a.UnlessImports, importsNot: a.UnlessImportsNot, markup: a.Markup}
@@ -802,6 +807,10 @@ func (si *srcIndex) build() {
 			}
 			k := tokKey{t.Kind, t.Text}
 			si.at[k] = append(si.at[k], srcPos{l, int32(i)})
+			if low := strings.ToLower(t.Text); t.Kind == Ident && low != t.Text {
+				k = tokKey{Ident, low} // where a case-folded pattern name looks (FlagFold)
+				si.at[k] = append(si.at[k], srcPos{l, int32(i)})
+			}
 		}
 	}
 	add(si.toks)
@@ -894,6 +903,9 @@ func (si *srcIndex) search(s *pat, strict bool) bool {
 		at = func(toks []Token, i int) bool { return s.at(toks, i, true) } // a sink
 	}
 	if first := s.toks[0]; first.Kind != Str {
+		if first.Flags&FlagFold != 0 {
+			return try(si.at[tokKey{Ident, strings.ToLower(first.Text)}], at)
+		}
 		return try(si.at[tokKey{first.Kind, first.Text}], at)
 	}
 	return try(si.strs, at) // a string literal matches by more than its text (tokEq)
