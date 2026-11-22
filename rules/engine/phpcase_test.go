@@ -31,6 +31,8 @@ func TestPHPNamesAnyCase(t *testing.T) {
 		{"new File( builds a class, it calls no file()", "a.php", "php-path-traversal-file-read", "<?php\n$a = new File($_GET['x']);\n$b = new \\File($_GET['x']);\n$c = new A\\File($_GET['x']);\n$d = new file($_GET['x']);\n", nil, nil},
 		{"new System( builds a class", "a.php", "php-cmdi-shell-exec", "<?php\n$a = new System($_GET['x']);\n", nil, nil},
 		{"a function of a namespace is not file()", "a.php", "php-path-traversal-file-read", "<?php\nnamespace App;\n\n$a = Storage\\File($_GET['x']);\n$b = Storage\\file($_GET['x']);\n$c = namespace\\file($_GET['x']);\n", nil, nil},
+		{"NEW File( and Namespace\\file( in a namespace are no file()", "a.php", "php-path-traversal-file-read", "<?php\nNamespace App;\n\n$a = NEW File($_GET['x']);\n$b = Namespace\\file($_GET['y']);\n", nil, nil},
+		{`namespace\file( in a global namespace block is file()`, "a.php", "php-path-traversal-file-read", "<?php\nnamespace A {\n}\nnamespace {\n    $c = namespace\\file($_GET['x']);\n}\n", nil, []string{"a.php:5"}},
 		{`namespace\file( with no namespace declared is file()`, "a.php", "php-path-traversal-file-read", "<?php\n$c = namespace\\file($_GET['x']);\n", nil, []string{"a.php:2"}},
 		{`do \system( is PHP's`, "a.php", "php-cmdi-shell-exec", "<?php\ndo \\system($_GET['x']); while (false);\n", nil, []string{"a.php:2"}},
 		{`yield from \File( is PHP's`, "a.php", "php-path-traversal-file-read", "<?php\nfunction g() {\n    yield from \\File($_GET['x']);\n}\n", nil, []string{"a.php:3"}},
