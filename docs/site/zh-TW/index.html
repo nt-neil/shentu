@@ -385,7 +385,7 @@
 
 <div class="newest" id="rv-0.5.6" data-groups="2">
   <div class="newest-head"><p class="word">籌備中</p><span class="ver">v0.5.6</span><b class="badge">即將發布</b></div>
-  <div class="grp grp-reach"><h4><i aria-hidden="true"></i>看得更遠</h4><ul><li>攻擊偵測新增 CVE-2024-4577 的簽章（#199）：在 <code>.php</code> 檔或 <code>/php-cgi/php-cgi.exe</code> 的查詢字串裡送出 php-cgi 的命令列參數（軟連字號 <code>%AD</code> 或 <code>%C2%AD</code>，或連字號，後面接一個英文字的參數）。這條簽章依 CVE 對應到主機，所以只在 surface 裡有 CVE-2024-4577 的主機上發出告警，並帶上該項目的 KEV 標示；其他主機上的命中只算雜訊。</li></ul></div><div class="grp grp-known"><h4><i aria-hidden="true"></i>已知問題</h4><ul><li>目前還沒有主機檢查會把 CVE-2024-4577（Windows 上的 PHP-CGI）寫進 surface，所以在實際主機上，這條簽章的命中在那項檢查完成之前都只算雜訊。</li></ul></div>
+  <div class="grp grp-reach"><h4><i aria-hidden="true"></i>看得更遠</h4><ul><li>攻擊偵測新增 CVE-2024-4577 的簽章（#199）：在 <code>.php</code> 檔（後面有沒有 PATH_INFO 都算）、網站首頁（<code>/</code>）或 <code>/php-cgi/php-cgi.exe</code> 的查詢字串裡送出 php-cgi 的命令列參數（軟連字號 <code>%AD</code> 或 <code>%C2%AD</code> 後面接一個英文字的參數，或連字號後面接單獨一個英文字的參數）。這條簽章依 CVE 對應到主機，所以只在 surface 裡有 CVE-2024-4577 的主機上發出告警，並帶上該項目的 KEV 標示；其他主機上的命中只算雜訊。</li></ul></div><div class="grp grp-known"><h4><i aria-hidden="true"></i>已知問題</h4><ul><li>目前還沒有主機檢查會把 CVE-2024-4577（Windows 上的 PHP-CGI）寫進 surface，所以在實際主機上，這條簽章的命中在那項檢查完成之前都只算雜訊。</li><li>在這樣的主機上，沒有 <code>=</code>、只有一個字的查詢，如果最前面是不是 UTF-8 的位元組再接一個英文字（沒有用 UTF-8 送出的 Latin-1、Big5 或 Shift-JIS 字），會和 <code>%AD</code> 一樣比中 CVE-2024-4577 的特徵：請求是解碼後才比對，這類位元組都會讀成 U+FFFD（<code>docs/attack-detection-limits.zh-TW.md</code>）。</li></ul></div>
 </div>
 
 

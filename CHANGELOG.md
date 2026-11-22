@@ -9,8 +9,9 @@ Chinese for the zh-TW pages; keep the two in step.
 ## v0.5.6 (unreleased)
 
 - Attack detection has a signature for CVE-2024-4577 (#199): php-cgi's command-line options sent
-  in the query string of a `.php` file or of `/php-cgi/php-cgi.exe` (a soft hyphen, `%AD` or
-  `%C2%AD`, or a hyphen, then a one-letter option). It is matched to the host by the CVE, so it
+  in the query string of a `.php` file (with a PATH_INFO or not), the site's index page (`/`) or
+  `/php-cgi/php-cgi.exe` (a soft hyphen, `%AD` or `%C2%AD`, then a one-letter option, or
+  a hyphen and an option letter standing alone). It is matched to the host by the CVE, so it
   alerts on a host whose surface has CVE-2024-4577, with the KEV mark that entry carries; on any
   other host its hits are counted as noise.
 
@@ -18,6 +19,10 @@ Chinese for the zh-TW pages; keep the two in step.
 
 - No host check writes CVE-2024-4577 into the surface yet (PHP-CGI on Windows), so on a real host
   the signature's hits stay noise until that check comes.
+- On such a host, a one-word query with no `=` that starts with a byte that is not UTF-8 and a
+  letter (a Latin-1, Big5 or Shift-JIS word not sent as UTF-8) matches the CVE-2024-4577
+  signature as `%AD` does: requests are matched decoded, where every such byte reads as U+FFFD
+  (`docs/attack-detection-limits.md`).
 
 ## v0.5.4 (unreleased)
 

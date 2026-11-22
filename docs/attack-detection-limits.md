@@ -105,6 +105,10 @@ Ordinary text of other forms still matches, for example:
 
 The cost is misses. A call with a space before its parenthesis is caught only when its argument looks like code (a quote, `$` or another call). After the quote, only `--` must end the value when a space comes first; `#` and `/*` are still caught after a space. `id` after a separator is not caught when arguments or a quote follow it.
 
+## CVE-2024-4577: a byte that is not UTF-8
+
+The CVE-2024-4577 signature (since v0.5.6) looks for a soft hyphen at the start of a query string. Requests are matched decoded, and a decoded byte that is not UTF-8 reads as U+FFFD whatever byte it was. So a query of one word with no `=` that starts with such a byte and a letter, a Latin-1 or a Big5 or Shift-JIS word sent unencoded as UTF-8, matches it too, as `%AD` does. It alerts only on a host whose surface has CVE-2024-4577 (PHP-CGI on Windows), at L2. Telling `%AD` from the other bytes would take matching the query as it was sent, which the signatures cannot do yet.
+
 ## Measured detection
 
 The numbers come from the evaluation tool (`tools/detecteval`, PR #94) with the signatures and matching of integ adff9e6 (#87, #90 and #91 merged); they are the ones in `tools/detecteval/baseline.json` next to this document. They include parameter names, path segments, anchored routes and the three narrowed signatures. CI's detect-eval measures them again on every change and fails when any differs from the baseline; v0.4.1 (integ 37dc016) gives the same numbers.
