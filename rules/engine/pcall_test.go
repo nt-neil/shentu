@@ -75,6 +75,18 @@ func TestParamCalls(t *testing.T) {
 			"b.php": "<?php\nfunction guard_call($v, $cb) {\n    if ($cb instanceof Closure && $cb !== null) {\n        $cb($v);\n    }\n}\n",
 			"a.php": "<?php\nrequire 'b.php';\nguard_call($_GET['x'], function ($s) {\n    system($s);\n});\n",
 		}, "a.php", []string{"a.php:4:php-cmdi-shell-exec"}, 0},
+		{"a parameter in a nested destructuring target: cut as callable-param", map[string]string{
+			"b.php": "<?php\nfunction moved_call($v, $cb) {\n    [[$cb]] = [[wrap($cb)]];\n    $cb($v);\n}\n",
+			"a.php": "<?php\nrequire 'b.php';\nmoved_call($_GET['x'], function ($s) {\n    system($s);\n});\n",
+		}, "a.php", nil, CutCallableParam},
+		{"a parameter in a destructured foreach target: cut as callable-param", map[string]string{
+			"b.php": "<?php\nfunction moved_call($v, $cb) {\n    foreach (pairs() as [$k, $cb]) {\n        $cb($v);\n    }\n}\n",
+			"a.php": "<?php\nrequire 'b.php';\nmoved_call($_GET['x'], function ($s) {\n    system($s);\n});\n",
+		}, "a.php", nil, CutCallableParam},
+		{"a parameter declared static: cut as callable-param", map[string]string{
+			"b.php": "<?php\nfunction moved_call($v, $cb) {\n    static $cb;\n    $cb($v);\n}\n",
+			"a.php": "<?php\nrequire 'b.php';\nmoved_call($_GET['x'], function ($s) {\n    system($s);\n});\n",
+		}, "a.php", nil, CutCallableParam},
 		{"a callable the call site does not show, with input: cut as callable-param", map[string]string{
 			"b.php": helper,
 			"a.php": "<?php\nrequire 'b.php';\n$h = make_handler();\ntap2($_GET['x'], $h);\n",

@@ -198,9 +198,11 @@ func (a *analysis) isParamName(name string) bool {
 // functions' tokens included (a closure writing a variable of that name moves
 // it too):
 //   - assigned: $cb = ..., $cb .= ..., $cb ??= ... (comparisons are reads);
-//   - a destructuring target: [$cb] = ..., list($x, $cb) = ...;
-//   - a foreach target: as $cb, as $k => $cb;
-//   - referenced: &$cb (=& $cb, use (&$cb), f(&$cb)).
+//   - a destructuring target, at any depth: [$cb] = ..., [[$a, $cb]] = ...,
+//     list($x, $cb) = ...;
+//   - a foreach target, destructured too: as $cb, as $k => $cb, as [$a, $cb];
+//   - referenced: &$cb (=& $cb, use (&$cb), f(&$cb));
+//   - declared again: global $cb, static $cb, catch (E $cb).
 //
 // Reads ($cb === null, $cb instanceof Closure, f($cb)) are not moves. After a
 // move a call of it is cut, not followed. Not seen: a whole argument handed to
@@ -219,8 +221,10 @@ func paramsMoved(body []*stmt, params []string) map[string]bool {
 				moved = true // assigned
 			case i > 0 && t[i-1].op("&"):
 				moved = true // referenced
-			case i > 0 && (t[i-1].word("as") || t[i-1].op("=>") && foreachTarget(t, i)):
+			case foreachTarget(t, i):
 				moved = true // a foreach target
+			case i > 0 && (t[i-1].word("global") || t[i-1].word("static")) || i > 1 && t[i-1].Kind == Ident && t[i-2].op("(") && i > 2 && t[i-3].word("catch"):
+				moved = true // declared again
 			case destructured(t, i):
 				moved = true
 			}
@@ -235,22 +239,23 @@ func paramsMoved(body []*stmt, params []string) map[string]bool {
 	return out
 }
 
-// foreachTarget reports whether t[i], after =>, is the value target of a
-// foreach header: an as comes before it in the same tokens.
+// foreachTarget reports whether t[i] comes after the as of a foreach header in
+// the same tokens: as $cb, as $k => $cb, as [$a, $cb], as list($a, $cb).
 func foreachTarget(t []Token, i int) bool {
 	for k := i - 1; k >= 0; k-- {
 		if t[k].word("as") {
 			return true
 		}
-		if t[k].op(";") || t[k].op("{") {
+		if t[k].op(";") || t[k].op("{") || t[k].op("}") {
 			return false
 		}
 	}
 	return false
 }
 
-// destructured reports whether t[i] sits inside a [...] or list(...) that an
-// assignment's = follows: [$a, $cb] = ..., list($cb) = ...
+// destructured reports whether t[i] sits inside a [...] or list(...), at any
+// depth, that an assignment's = follows: [$a, $cb] = ..., [[$cb]] = ...,
+// list($cb) = ...
 func destructured(t []Token, i int) bool {
 	depth := 0
 	for k := i + 1; k < len(t); k++ {
@@ -262,26 +267,29 @@ func destructured(t []Token, i int) bool {
 				depth--
 				continue
 			}
-			if k+1 < len(t) && t[k+1].op("=") {
-				if t[k].op("]") {
-					return true
-				}
-				if t[k].op(")") {
-					// list(...) =: the ( opening it follows list
-					d := 0
-					for o := k - 1; o >= 0; o-- {
-						if isClose(t[o]) {
-							d++
-						} else if isOpen(t[o]) {
-							if d == 0 {
-								return o > 0 && t[o-1].word("list")
-							}
-							d--
-						}
-					}
-				}
+			// an enclosing bracket closes here: a target when = follows it;
+			// otherwise go on out (the next level up may be the target)
+			if k+1 < len(t) && t[k+1].op("=") && (t[k].op("]") || t[k].op(")") && listOpen(t, k)) {
+				return true
 			}
+		case t[k].op(";"):
 			return false
+		}
+	}
+	return false
+}
+
+// listOpen reports whether the ) at t[c] closes a list( ... ).
+func listOpen(t []Token, c int) bool {
+	d := 0
+	for o := c - 1; o >= 0; o-- {
+		if isClose(t[o]) {
+			d++
+		} else if isOpen(t[o]) {
+			if d == 0 {
+				return o > 0 && t[o-1].word("list")
+			}
+			d--
 		}
 	}
 	return false
