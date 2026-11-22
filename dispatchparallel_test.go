@@ -54,6 +54,7 @@ type parallelOpts struct {
 	tokens           int
 	costLimit, spent float64 // monthly_cost, and what this month already cost
 	price            float64 // what each call costs
+	pricePerMTok     float64 // [agents] prices (R2)
 }
 
 func parallelDispatchWith(t *testing.T, o parallelOpts) (*countingModel, []subReport, []string) {
@@ -86,6 +87,7 @@ func parallelDispatchWith(t *testing.T, o parallelOpts) (*countingModel, []subRe
 	a.cfg.Agents.BaseURL, a.cfg.Agents.Model = srv.URL, "m"
 	a.cfg.Budget.MonthlyTokens = limit
 	a.cfg.Budget.MonthlyCost = o.costLimit
+	a.cfg.Agents.PricePerMTokIn, a.cfg.Agents.PricePerMTokOut = o.pricePerMTok, o.pricePerMTok
 	var steps []string
 	a.progress = func(s string) { steps = append(steps, s) } // not safe to call at once: -race says if it is
 	a.run(context.Background(), []message{{Role: "user", Content: "go"}})

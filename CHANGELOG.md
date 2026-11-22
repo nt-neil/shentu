@@ -17,6 +17,10 @@ Chinese for the zh-TW pages; keep the two in step.
   moved aside (the bot says which file); and `auto_incident` with `monthly_tokens` of 150000 or less now warns, as no automatic
   check could ever start.
 
+- Model prices (#162): `[agents] price_per_mtok_in` and `price_per_mtok_out` (dollars per million
+  tokens) price each dispatch's reservation at its token cap times the higher of the two, so the
+  monthly cost limit is shared between dispatches as the token limit is. When only the cost limit
+  is filled by the others' reservations, the reply names the dollars reserved.
 
 ## v0.5.3 — 2026-11-22
 

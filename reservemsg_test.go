@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -17,7 +18,7 @@ import (
 func reserveOther(t *testing.T, cfg *Config, n int) {
 	t.Helper()
 	os.MkdirAll(cfg.StateDir, 0o700)
-	if _, _, err := reserve(cfg, n, time.Now()); err != nil {
+	if _, _, err := reserve(cfg, n, 0, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -143,5 +144,26 @@ func TestAutoBudgetTooSmallWarned(t *testing.T) {
 	cfg.Budget.MonthlyTokens = 100_000
 	if w := autoBudgetWarning(cfg); w != "" {
 		t.Errorf("warned with auto_incident off: %q", w)
+	}
+}
+
+// R2 S-R-4: when the reservations fill the cost limit, not the token one,
+// the words name the money reserved, and the budget line shows it.
+func TestBotBudgetReservedCostWords(t *testing.T) {
+	b, tg := testBot(t, &hostileModel{replies: []string{done}}, false)
+	pairDirectly(t, b)
+	b.cfg.Budget.MonthlyTokens, b.cfg.Budget.MonthlyCost = 10_000_000, 1.0
+	os.MkdirAll(b.cfg.StateDir, 0o700)
+	if _, _, err := reserve(b.cfg, 1000, 1.5, time.Now()); err != nil { // the other process
+		t.Fatal(err)
+	}
+	b.handle(context.Background(), msg(pairedUser, pairedChat, "private", "status?"))
+	answered(t, b)
+	got := lastText(tg)
+	if !strings.Contains(got, fmt.Sprintf(b.t("budget_reserved_cost"), 1.5)) {
+		t.Errorf("reply: %q", got)
+	}
+	if !strings.Contains(got, "$1.5000") || !strings.Contains(got, kTokens(1000)) {
+		t.Errorf("budget line: %q", got)
 	}
 }

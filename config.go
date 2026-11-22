@@ -64,6 +64,10 @@ type Config struct {
 		BaseURL   string `toml:"base_url"`
 		Model     string `toml:"model"`
 		APIKeyEnv string `toml:"api_key_env"`
+		// What the sub-agents' model costs per million tokens, in [budget] monthly_cost's
+		// currency: with them, a dispatch reserves what it may cost (R2).
+		PricePerMTokIn  float64 `toml:"price_per_mtok_in"`
+		PricePerMTokOut float64 `toml:"price_per_mtok_out"`
 	} `toml:"agents"`
 	StateDir string `toml:"state_dir"`
 	Language string `toml:"language"`

@@ -55,7 +55,7 @@ func TestReserveOthersCount(t *testing.T) {
 	var release func()
 	subs, out, _ := reserveDispatch(t, 150_000, 40_000, func(cfg *Config) {
 		var err error
-		if _, release, err = reserve(cfg, dispatchTokenCap, time.Now()); err != nil { // the other process
+		if _, release, err = reserve(cfg, dispatchTokenCap, 0, time.Now()); err != nil { // the other process
 			t.Fatal(err)
 		}
 	})
@@ -107,14 +107,49 @@ func TestReserveConcurrent(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if _, _, err := reserve(cfg, 1000, time.Now()); err != nil {
+			if _, _, err := reserve(cfg, 1000, 0.01, time.Now()); err != nil {
 				t.Error(err)
 			}
 		}()
 	}
 	wg.Wait()
-	if n, err := othersReserved(cfg, "", time.Now()); err != nil || n != 8000 {
-		t.Errorf("reserved: %d %v", n, err)
+	if n, c, err := othersReserved(cfg, "", time.Now()); err != nil || n != 8000 || c < 0.0799 || c > 0.0801 {
+		t.Errorf("reserved: %d %v %v", n, c, err)
+	}
+}
+
+// R2: with [agents] prices, a dispatch at $15 per million tokens (up to
+// $1.80) runs its sub-agents at once only when the month's cost limit has
+// room for that: 0.10 spent of 1.50 is under half, but not room enough.
+func TestReserveCostParallel(t *testing.T) {
+	sub, _, _ := parallelDispatchWith(t, parallelOpts{external: true, limit: 1_000_000, tokens: 10, costLimit: 1.5, spent: 0.10, price: 0.0001, pricePerMTok: 15})
+	if sub.most != 1 {
+		t.Errorf("$1.80 of room needed, $1.40 left: %d at once", sub.most)
+	}
+	sub, _, _ = parallelDispatchWith(t, parallelOpts{external: true, limit: 1_000_000, tokens: 10, costLimit: 5, spent: 0.10, price: 0.0001, pricePerMTok: 15})
+	if sub.most < 2 {
+		t.Errorf("$1.80 of room needed, $4.90 left: %d at once", sub.most)
+	}
+}
+
+// R2: what another dispatch may cost counts as spent for a model call.
+func TestReserveOthersCost(t *testing.T) {
+	var release func()
+	subs, out, _ := reserveDispatch(t, 1_000_000, 0, func(cfg *Config) {
+		cfg.Budget.MonthlyCost = 2
+		var err error
+		if _, release, err = reserve(cfg, 1000, 2.5, time.Now()); err != nil { // another dispatch that may cost $2.50
+			t.Fatal(err)
+		}
+	})
+	defer release()
+	if subs != 0 || !strings.Contains(out, "budget") {
+		t.Errorf("another's $2.50 against a $2 limit: %d sub-agent requests\n%s", subs, out)
+	}
+	priced := &Config{}
+	priced.Agents.PricePerMTokIn, priced.Agents.PricePerMTokOut = 3, 15
+	if c := dispatchCost(priced); c < 1.799 || c > 1.801 {
+		t.Errorf("dispatchCost: %v", c)
 	}
 }
 
@@ -143,7 +178,7 @@ func TestReserveSubStoppedByOthers(t *testing.T) {
 	a, state := dispatchAgent(t, h, nil, nil)
 	a.cfg.Budget.MonthlyTokens = 150_000
 	os.WriteFile(filepath.Join(state, "log.jsonl"), []byte(`{"time":"`+time.Now().UTC().Format(time.RFC3339)+`","tool":"llm","in_tokens":40000}`+"\n"), 0o600)
-	if _, _, err := reserve(a.cfg, dispatchTokenCap, time.Now()); err != nil { // the other dispatch, reserved after this one's commander checked
+	if _, _, err := reserve(a.cfg, dispatchTokenCap, 0, time.Now()); err != nil { // the other dispatch, reserved after this one's commander checked
 		t.Fatal(err)
 	}
 	tasks, err := parseTasks(json.RawMessage(`{"tasks":[{"role":"patrol"}]}`))
@@ -156,5 +191,16 @@ func TestReserveSubStoppedByOthers(t *testing.T) {
 	}
 	if n := len(subRequestsOf(h)); n != 0 {
 		t.Errorf("the sub-agent called the model %d times", n)
+	}
+}
+
+// S-R-6 (R2): a negative cost is not trusted either.
+func TestReserveNegativeCostUntrusted(t *testing.T) {
+	subs, out, _ := reserveDispatch(t, 1_000_000, 0, func(c *Config) {
+		b, _ := json.Marshal(reservations{V: 1, Items: []reservation{{ID: "neg000000001", Tokens: 1000, Cost: -5, Expires: time.Now().Add(time.Hour)}}})
+		os.WriteFile(filepath.Join(c.StateDir, reservationsFile), b, 0o600)
+	})
+	if subs != 0 || !strings.Contains(out, "negative reservation") {
+		t.Errorf("a negative cost: %d sub-agent requests\n%s", subs, out)
 	}
 }
