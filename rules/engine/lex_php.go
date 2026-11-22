@@ -97,7 +97,7 @@ func (s *scanner) php(stop bool) {
 				}
 			}
 			t := Token{Kind: Op, Text: o, Line: line}
-			if o == `\\` && s.pos >= 2 && isIdentChar(s.src[s.pos-2]) {
+			if o == `\` && s.pos >= 2 && isIdentChar(s.src[s.pos-2]) {
 				t.Flags |= FlagQualified // A\file: one name, no space before the backslash
 			}
 			s.emit(t)

@@ -209,8 +209,17 @@ func phpNotGlobalCall(toks []Token, i int) bool {
 	if i >= 2 && toks[i-2].word("namespace") {
 		return declaresNamespace(toks) // with no namespace declared, namespace\ is the global one
 	}
-	return true
+	// echo\system($c): PHP 8 reads one name, PHP 7 echo and \system(). Say the
+	// call is PHP's whenever a reserved word comes right before the backslash.
+	return i < 2 || !phpReserved[strings.ToLower(toks[i-2].Text)]
 }
+
+// phpReserved are PHP's reserved keywords (php.net, "List of Keywords").
+var phpReserved = words("__halt_compiler abstract and array as break callable case catch class clone const continue " +
+	"declare default die do echo else elseif empty enddeclare endfor endforeach endif endswitch endwhile enum eval exit " +
+	"extends final finally fn for foreach function global goto if implements include include_once instanceof insteadof " +
+	"interface isset list match namespace new or print private protected public readonly require require_once return " +
+	"static switch throw trait try unset use var while xor yield from")
 
 // declaresNamespace reports whether toks declare a named namespace
 // (namespace App;). toks may be only part of the file; then it may say no
