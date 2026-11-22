@@ -8,17 +8,67 @@ Chinese for the zh-TW pages; keep the two in step.
 
 ## v0.5.4 (unreleased)
 
+- Shared AI budget (#161): a dispatch from the bot, `shentu chat` or the automatic incident check
+  reserves its whole token cap in `state_dir/reservations.json` while it runs, and every budget
+  check counts the others' reservations, so together they overspend `[budget] monthly_tokens` by
+  about one dispatch's cap (120k tokens) plus the answer in progress. Upgrading: while a dispatch runs, a question elsewhere
+  can be told that its reservation leaves too little of the month's budget (it is released within
+  about 17 minutes); a reservations file that cannot be trusted stops every AI answer and dispatch until it is
+  moved aside (the bot says which file); and `auto_incident` with `monthly_tokens` of 150000 or less now warns, as no automatic
+  check could ever start.
+
+- Model prices (#162): `[agents] price_per_mtok_in` and `price_per_mtok_out` (dollars per million
+  tokens) price each dispatch's reservation at its token cap times the higher of the two, so the
+  monthly cost limit is shared between dispatches as the token limit is. When only the cost limit
+  is filled by the others' reservations, the reply names the dollars reserved.
+
+- `shentu usage` and the bot's /usage count the sub-agents' model calls (and any other actor's) (#164):
+  they were left out of the totals, and a dispatch's calls now have a line of their own.
+
+- `auto_incident` on with no `[notify] url` now warns (#165), when the bot starts, on the daily
+  patrol and in its report: a check starts only from an L3 alert the patrol pushed, and the patrol
+  pushes through the notify url alone, so none would ever start.
+
+- A proposal press cut short by the bot stopping is logged as that (#166): "the bot stopped during
+  the checks" or "before it was confirmed", not as a refusal or as declined by the operator.
+
+- `shentu dispatch stats --json` has a versioned form for the weekly summary: `v` (1), `shentu` (the
+  release), `until` (the UTC date) besides the days, counts, roles and suggestions, which are always
+  lists. It holds numbers and fixed words only: no host name, address, path, dispatch id or trigger.
+
+- One call two rules report stays the rule's it is left to (`yields_to`) also when only one of
+  them follows a call in the file (#160). Before, `DB::select(DB::raw("..." . $_GET['a'] . "..." .
+  col()))` with a local `col()` returning `get_query_var('o')` (input only
+  php-sqli-orderby-identifier reads) was reported by both php-sqli-laravel-raw and
+  php-sqli-orderby-identifier; the rules that yield to php-sqli-yii-query had the same gap.
+
+- JavaScript request aliases (#160): after an `if`/`else`, a name holds what it held at the end of
+  a branch that goes on, so a name reassigned on every branch (`let q = req; if (a) { q = {...} }
+  else { q = {...} }`) is no longer read as the request. A branch that returns or throws drops
+  out; one that ends in `break` or `continue` still counts.
+
+- Read-only calls a URL check keeps (#160): `typeof window` (any global object after `typeof`)
+  no longer ends them for the whole file. `String` after the colon of a conditional
+  (`const S = c ? y : String;`) now does, as `String` used as a value does; before, it was read
+  as a TypeScript type.
+
+- PHP: `Request::get(` in a file whose `use` makes `Request` another library's class
+  (`use Httpful\Request`, `use Unirest\Request`, `use Httpful\Http as Request`) is no longer read
+  as Laravel's request facade (#160).
+
 - The dispatch archive reads fields it does not know (f98c3c): from v0.5.4 a record or feedback
   line written by a later version with a new field is read, its known fields checked as before,
   instead of being refused as unreadable (which stopped the automatic incident checks until a
   repair). Such lines are counted in `shentu dispatch stats` (`unknown_field_lines` in JSON) and in
   the daily report; `repair` leaves them; the unknown fields' content reaches no output.
+
 - Upgrade note: going back to a version before v0.5.4, the dispatch records v0.5.4 wrote with
   items not checked (their `unchecked_why`) cannot be read there. Their proposal buttons answer
   that the dispatch is not in the archive; `shentu dispatch stats` skips them as unreadable lines;
   and automatic incident checks stop, the archive not being trusted, until
   `sudo shentu dispatch repair` moves those lines to `*.jsonl.bad` (kept, not deleted), after which
   they count again from the next patrol.
+
 - Notices follow `language` (F-1, F-4 of the v0.5.3 real-bot round): the automatic incident check,
   "Approved from Telegram", pairing and unpairing, and the attack detection titles were English
   whatever the setting said; they now go out in Chinese when `language` is Chinese, as the bot's
@@ -32,6 +82,7 @@ Chinese for the zh-TW pages; keep the two in step.
   ("blocking 192.0.2.30, lifted after 24 hours; the bot's reply says whether it worked"), the
   nft command after it as a detail. The daily and new-finding reports' own lines are not
   translated yet.
+
 - Sub-agent proposals leave a trace (F-3): every report a role that may propose writes is logged
   as a `proposals` entry (how many it wrote, how many were kept), and each one dropped says why, in
   fixed words: `ip_is_a_network`, `ip_not_one_address`, `action_not_propose_block_ip`,
@@ -45,7 +96,7 @@ Chinese for the zh-TW pages; keep the two in step.
   is kept first; duplicates no longer take places. A proposal is still only a button: the gate
   and the press are unchanged.
 
-## v0.5.3 (unreleased)
+## v0.5.3 — 2026-11-22
 
 - A proposal button pressed always gets an answer (#163): it says at once that it checks the
   address again, the log notes the press (`proposal_press`) before the checks, the checks run
@@ -101,6 +152,11 @@ Chinese for the zh-TW pages; keep the two in step.
 - Next's `headers()` is followed only in a file that imports `next/headers` itself.
 - `in_array($request->query('s'), [...], true) ? $request->query('s') : null` is not taken as
   a check of the value, with a request call as the source (the same with a magic property is).
+- `shentu usage` leaves out the model calls of an automatic incident check's sub-agents
+  (`sub:incident`): on a test server it listed 9 calls where the log held 13. `shentu budget`
+  counts them. The fix (#164) is planned for v0.5.4.
+- The automatic incident check's notice and the "Approved from Telegram" notice are in English
+  whatever `language` is set to.
 
 ## v0.5.2 — 2026-11-20
 

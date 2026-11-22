@@ -109,7 +109,11 @@ func TestArchiveUnknownFieldsRead(t *testing.T) {
 		t.Fatal(err)
 	}
 	outs = append(outs, autoNotice(rec, false, true), autoNotice(rec, false, false)) // what the patrol sends to Telegram
-	if !strings.Contains(outs[0], "fields this version does not know: 2") || !strings.Contains(outs[1], `"unknown_field_lines": 2`) ||
+	var ex statsExport
+	if err := json.Unmarshal(js.Bytes(), &ex); err != nil || ex.V != statsExportV || ex.UnknownFieldLines != 2 || ex.Unreadable != 0 || ex.Dispatches != 2 {
+		t.Errorf("stats export: %+v %v", ex, err)
+	}
+	if !strings.Contains(outs[0], "fields this version does not know: 2") ||
 		!strings.Contains(outs[2], "fields this version does not know: 1") {
 		t.Errorf("not counted:\n%s\n%s\n%s", outs[0], outs[1], outs[2])
 	}

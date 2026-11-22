@@ -130,3 +130,34 @@ func untypedParam(t []Token, name string) bool {
 	}
 	return false
 }
+
+// phpUseOther reports whether the file's use statements make the class name
+// another library's than Laravel's: use Httpful\Request (or Unirest\Request)
+// makes Request::get( an HTTP client's call, not the Request facade. A name
+// no use statement gives, or one from Illuminate, is not another's.
+func (a *analysis) phpUseOther(name string) bool {
+	if a.phpUses == nil {
+		a.phpUses = map[string]string{}
+		t := a.ftoks
+		for i := 0; i+1 < len(t); i++ {
+			if !t[i].word("use") || i > 0 && !(t[i-1].op(";") || t[i-1].op("{") || t[i-1].op("}") || t[i-1].Kind == Newline || t[i-1].Text == "<?php") {
+				continue
+			}
+			j, q := i+1, ""
+			for j < len(t) && (t[j].Kind == Ident && !t[j].word("as") || t[j].op("\\")) {
+				q += t[j].Text
+				j++
+			}
+			if j < len(t) && t[j].op("{") || q == "" {
+				continue // a group use names its classes inside the braces
+			}
+			short := q[strings.LastIndex(q, "\\")+1:]
+			if j+1 < len(t) && t[j].word("as") && t[j+1].Kind == Ident {
+				short = t[j+1].Text
+			}
+			a.phpUses[strings.ToLower(short)] = strings.TrimPrefix(q, "\\")
+		}
+	}
+	q, ok := a.phpUses[strings.ToLower(name)]
+	return ok && !strings.HasPrefix(strings.ToLower(q), "illuminate\\") && strings.Contains(q, "\\")
+}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -63,6 +64,11 @@ func autoSetup(t *testing.T, h *hostileModel) (*Config, *tools.Env, *[]autoSent)
 		return nil
 	}
 	autoLockTries = 1
+	// The fake model listens on loopback as this user: Linux's localDialer
+	// takes only root's or ollama's listeners (as agentsmodel_test does).
+	oldDial := llmDial
+	llmDial = (&net.Dialer{}).DialContext
+	t.Cleanup(func() { llmDial = oldDial })
 	env := &tools.Env{LogPaths: []string{filepath.Join(state, "*.log")}}
 	return cfg, env, &out
 }

@@ -5,12 +5,44 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 
 ## v0.5.4 (unreleased)
 
+- 共用 AI 預算（#161）：bot、`shentu chat` 與自動事件調查的每次派遣，執行期間會在 `state_dir/reservations.json`
+  預留它整份 token 上限，每一道預算檢查都會把其他派遣的預留算進去，所以合計超出 `[budget] monthly_tokens`
+  約一個派遣的上限（12 萬 tokens），再加上進行中的那一個回答。升級須知：派遣進行中時，別處的提問可能會被告知「其他派遣的預留讓本月剩餘預算不夠」
+  （預留最多約 17 分鐘就會釋放）；預留檔不可信時，所有 AI 回答與派遣都會停下，直到把檔案移開（bot 會指出要移開哪個檔案）；`auto_incident` 開啟而
+  `monthly_tokens` 不超過 150000 時，現在會發出警告，因為那樣自動調查永遠不會啟動。
+
+- 模型價格（#162）：`[agents] price_per_mtok_in` 與 `price_per_mtok_out`（每一 M tokens 的價格，以 USD 計）會用來替每次派遣的預留估價：
+  token 上限依兩者中較高的價格計算，所以每月金額上限也和 token 上限一樣由各派遣共用。只有金額上限被其他派遣的預留填滿時，
+  回覆會寫出預留的金額。
+
+- `shentu usage` 與 bot 的 /usage 現在會計入子 Agent 的模型呼叫（以及其他來源的呼叫）（#164）：
+  以前這些呼叫沒有算進總數；派遣的呼叫現在另列一行。
+
+- `auto_incident` 開啟但沒有設 `[notify] url` 時，現在會發出警告（#165），時機是 bot 啟動、每日巡檢與它的報告：
+  自動調查只會從巡檢推送出去的 L3 告警開始，而巡檢只經由 notify url 推送，所以一次也不會啟動。
+
+- 建議按鈕按下後，如果 bot 在檢查過程中或等待確認時被停止，log 會記成 bot 已停止（#166），不再記成被拒絕或操作者沒有確認。
+
+- `shentu dispatch stats --json` 現在有固定版本的格式，供每 7 天的彙整使用：除了天數、計數、角色和建議之外，多了 `v`（1）、`shentu`（版本）、
+  `until`（UTC 日期），角色和建議一律是清單。內容只有數字和固定字詞，不含主機名稱、位址、路徑、派遣 id 或 trigger。
+
+- 同一個呼叫被兩條規則回報時，就算檔案裡的某個呼叫只有其中一條規則會追，也照樣只留下被讓的那條（`yields_to`）（#160）。以前 `DB::select(DB::raw("..." . $_GET['a'] . "..." . col()))` 這種寫法，如果本地的 `col()` 回傳 `get_query_var('o')`（只有 php-sqli-orderby-identifier 讀這個輸入），會同時被 php-sqli-laravel-raw 和 php-sqli-orderby-identifier 回報；讓給 php-sqli-yii-query 的那幾條規則也有同樣的問題。
+
+- JavaScript 的 request 別名（#160）：`if`/`else` 之後，一個名稱的值取自「會繼續執行下去的分支」結尾時的值。所以每個分支都重新指定過的名稱（`let q = req; if (a) { q = {...} } else { q = {...} }`）不再當成 request。return 或 throw 的分支不算；以 `break` 或 `continue` 結尾的分支照樣算。
+
+- URL 檢查保留的唯讀呼叫（#160）：`typeof window`（`typeof` 後面接 `window`、`globalThis` 這類物件）不會再讓整個檔案的唯讀呼叫失效。條件運算式裡 `:` 後面的 `String`（`const S = c ? y : String;`）現在會讓它失效，和把 `String` 當成值來用一樣；以前它被當成 TypeScript 的型別。
+
+- PHP：如果檔案的 `use` 讓 `Request` 指向別的函式庫的類別（`use Httpful\Request`、`use Unirest\Request`、`use Httpful\Http as Request`），`Request::get(` 不再當成 Laravel 的 request facade（#160）。
+
 - 派遣紀錄可以讀有不認得欄位的行（f98c3c）：從 v0.5.4 起，之後的版本加了新欄位寫下的紀錄或回饋，這一版照樣會讀，認得的欄位照舊逐一檢查，不再整行當成讀不到（以前這會讓自動事件調查停到執行 repair 為止）。這種行會在 `shentu dispatch stats`（JSON 是 `unknown_field_lines`）和每日報告裡另外計數；`repair` 不會移動這些行；不認得的欄位內容不會出現在任何輸出。
+
 - 升級須知：裝回 v0.5.4 以前的版本後，v0.5.4 寫下、帶有沒查到項目（`unchecked_why`）的派遣紀錄，舊版讀不到。這些紀錄的建議按鈕會回答派遣紀錄裡沒有這次派遣；`shentu dispatch stats` 會把這些紀錄當成讀不到的行跳過；自動事件調查會因為派遣紀錄有讀不到的行而停止，直到執行 `sudo shentu dispatch repair`，把這些行移到 `*.jsonl.bad`（保留，不會刪除），之後從下一輪巡邏起重新計數。
+
 - 通知改用 `language` 設定的語言（v0.5.3 真 bot 驗收的 F-1、F-4）：自動事件調查、「Approved from Telegram」、配對與解除配對，以及攻擊偵測通知的標題，以前不管設定都是英文；現在 `language` 是中文時改用中文，和 bot 自己的訊息一樣。自動事件調查的通知用一般的說法寫出找到幾項，沒有建議時直接寫「這次沒有建議任何動作」。沒查到的項目只用固定字詞說明，子 Agent 寫的內容照舊不放進通知：子 Agent 現在要寫出是哪個工具，並從 `tool_failed`、`permission_denied`、`not_applicable`、`time_limit` 裡選原因（其他值一律算「其他」），程式另外會加上 `not_available` 和 `findings_cut`，派遣紀錄也會保存（`unchecked_why`）；子 Agent 選的原因在通知裡會標明是子 Agent 回報、未經確認；沒有固定字詞的項目只列數量，請當成「不知道」。確認後的通知先說會發生什麼事（「開始封鎖 192.0.2.30，24 小時後自動解除；是否成功以 bot 的回覆為準」），nft 指令改放在後面。每日報告和新發現報告裡的固定文字還是英文。
+
 - 子 Agent 的建議會留下紀錄（F-3）：可以提出建議的子 Agent 每次回報都會在 log 記一筆 `proposals`（寫了幾項、留下幾項），每一項被拿掉的建議都用固定字詞記下原因：`ip_is_a_network`、`ip_not_one_address`、`action_not_propose_block_ip`、`duplicate_ip`、`too_many_proposals`、`role_cannot_propose`（只列前 20 項，也只記形狀：網段記成標準寫法，其他只留位址會用到的字元；另外記總數；派遣紀錄本身的上限記在 `proposals_cut`）。以前建議被拿掉和根本沒有建議，看起來是一樣的。現在會要求可以提出建議的子 Agent：只對證據明確的位址提出建議（已驗證攻擊群組裡的位址，或已驗證的 SSH 紀錄裡失敗很多次的位址），不要從 header 這類紀錄文字取位址；一個建議只放一個位址，不能放網段。自動事件調查也會向子 Agent 說明，這次的起因是一則已驗證的 L3 警報，而且這則警報的位址會排在最前面；重複的位址不再佔名額。建議仍然只是一顆按鈕：閘門和按下後的檢查都沒有改。
 
-## v0.5.3 (unreleased)
+## v0.5.3 — 2026-11-22
 
 - 建議按鈕按下後一定會有回覆（#163）：會先立刻回覆「正在重新檢查這個位址」，檢查之前先在 log 記下這次按下
   （`proposal_press`），重新檢查最多一分鐘，超過時間就用閘門的固定字詞拒絕；過程中出錯也會回覆並記錄。
@@ -32,6 +64,8 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 - 型別名稱以 `Request` 結尾的資料物件（`SearchRequest $request`）會被當成 Laravel 的 request，和 FormRequest 一樣。
 - Next 的 `headers()` 只在檔案自己 import `next/headers` 時才追。
 - 來源是 request 的呼叫時，`in_array($request->query('s'), [...], true) ? $request->query('s') : null` 不會被當成值的檢查（magic property 的同樣寫法會）。
+- `shentu usage` 沒有算進自動調查子 agent（`sub:incident`）的模型呼叫：測試機上 log 有 13 次，usage 只列 9 次；`shentu budget` 有算進去。修正（#164）排在 v0.5.4。
+- 自動調查的通知和「Approved from Telegram」通知不論 `language` 設什麼都是英文。
 
 ## v0.5.2 — 2026-11-20
 
