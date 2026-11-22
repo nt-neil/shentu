@@ -276,7 +276,7 @@ func certInfo(target string, c *x509.Certificate) Cert {
 
 var logSearch = Tool{
 	Name:        "log_search",
-	Description: "Search a log file for a regular expression (RE2 syntax). Only files matching the configured log_paths may be read. Returns the most recent matching lines.",
+	Description: "Search a log file for a regular expression (RE2 syntax). Only files matching the configured log_paths may be read. Returns the most recent matching lines. On macOS sshd and most system events are in the unified log, not in these files: no match here says nothing about SSH logins.",
 	Params: schema(`{"type":"object","required":["pattern","path"],"properties":{
 		"pattern":{"type":"string","description":"RE2 regular expression"},
 		"path":{"type":"string","description":"log file path; must match a configured log path"},
@@ -301,7 +301,7 @@ var logSearch = Tool{
 		if err != nil {
 			return nil, err
 		}
-		if st, err := os.Stat(real); err != nil || !st.Mode().IsRegular() || !allowedLog(real, env.LogPaths) {
+		if st, err := os.Stat(real); err != nil || !st.Mode().IsRegular() || !allowedLog(real, env.LogPaths) && !(onMac() && allowedLog(macUnprivate(real), env.LogPaths)) {
 			return nil, errors.New("path resolves outside the allowed log files: " + real)
 		}
 		a.Path = real
@@ -337,6 +337,20 @@ var logSearch = Tool{
 		}
 		return map[string]any{"path": a.Path, "matches": hits}, nil
 	},
+}
+
+// macUnprivate maps a resolved path under macOS's /private/var, /private/etc
+// or /private/tmp back to the /var, /etc or /tmp the system links name it
+// by, so a configured /var/log/system.log matches what EvalSymlinks gives.
+// Only those three root-owned links: any other link is still resolved and
+// must match on its own.
+func macUnprivate(p string) string {
+	for _, d := range []string{"/private/var/", "/private/etc/", "/private/tmp/"} {
+		if strings.HasPrefix(p, d) {
+			return strings.TrimPrefix(p, "/private")
+		}
+	}
+	return p
 }
 
 func allowedLog(p string, patterns []string) bool {

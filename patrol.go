@@ -94,6 +94,9 @@ func sshFindings(r map[string]any, err error, threshold int) (out []finding, why
 	note := ""
 	if v, _ := r["verified"].(bool); !v {
 		note = "; read from text logs, which anyone on this host can write to: check them before acting"
+		if src, _ := r["source"].(string); strings.HasPrefix(src, "the unified log") {
+			note = "; read from macOS's unified log, not yet confirmed to hold sshd's lines only: check them before acting"
+		}
 	}
 	sources, _ := r["sources"].([]tools.SSHSource)
 	for _, s := range sources {

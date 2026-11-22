@@ -21,6 +21,7 @@ var sshLogins = Tool{
 	Description: "SSH login attempts grouped by source IP: failed passwords, invalid users and successful logins. Use it to spot brute force and to check whether an attacking IP ever got in. " +
 		"verified is false when the events come from text logs, which anyone on the host can write to: then never block_ip on these counts alone, check them first (journalctl -u ssh, the IP's other traffic). " +
 		"complete is false when a log was cut short or unreadable (error says why): the counts are a lower bound. " +
+		"On macOS the events come from its unified log, which only root and the admin group can read (permission says when that stopped it); verified is false there too for now, so the same check applies. " +
 		"source names what was read (journald, or the log files and why journald was not used); note says when low-activity sources were not tracked.",
 	Params: schema(`{"type":"object","properties":{
 		"since_hours":{"type":"number","description":"look back this many hours (default 24, at most 720: as far as block_ip's login check looks)"},
@@ -40,8 +41,14 @@ var sshLogins = Tool{
 	},
 }
 
-// scanAuthLogs reads the SSH events (a test's seam).
-var scanAuthLogs = linux.ScanAuthLogs
+// scanAuthLogs reads the SSH events (a test's seam): journald or the text
+// auth logs, and on macOS its unified log (M0).
+var scanAuthLogs = func(ctx context.Context, src hostenv.Source, logPaths []string, since time.Time, sink func() func(string)) (string, bool, error) {
+	if src.Info().GOOS == "darwin" {
+		return hostenv.DarwinCollector{}.ScanAuthLogs(ctx, src, since, sink)
+	}
+	return linux.ScanAuthLogs(ctx, src, logPaths, since, sink)
+}
 
 // journalAll: journald shows this process every unit's entries: root, or
 // a member of systemd-journal or adm (a test's seam).
@@ -92,13 +99,6 @@ func SSHSummary(ctx context.Context, env *Env, since time.Time, onlyIP string) (
 		source += " (only part of it: this user is neither root nor in systemd-journal or adm)"
 	}
 	out := map[string]any{"source": source, "verified": verified, "complete": complete, "since": since, "sources": sources}
-	if runtime.GOOS == "darwin" && errors.Is(err, hostenv.ErrNotAllowed) {
-		// No journalctl and no text auth log: macOS keeps sshd's events in
-		// its unified log, which Shentu does not read. Root would not help.
-		out["source"] = "none: Shentu has no sshd log source on macOS (it reads journald and the text auth logs, which macOS does not keep)"
-		out["unsupported"] = true
-		err = nil
-	}
 	if err != nil {
 		out["error"] = err.Error()
 	}

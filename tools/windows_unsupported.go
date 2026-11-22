@@ -26,6 +26,8 @@ var darwinSupported = map[string]bool{
 	"listening_ports": true, "processes": true, // M0: hostenv's darwin collector (netstat/lsof, ps)
 	"accounts_audit": true,                      // M0: dscl, authorized_keys, sudoers when readable
 	"file_changes":   true, "cert_expiry": true, // M0: ctime and owners on macOS; Homebrew's certbot
+	"log_search": true, // M0: macOS's and Homebrew's text logs (not the unified log)
+	"ssh_logins": true, // M0: sshd's events in the unified log (log show; root or the admin group)
 }
 
 // SupportedOn says whether tool name gives a real result on goos.

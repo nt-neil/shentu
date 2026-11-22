@@ -8,6 +8,15 @@ Chinese for the zh-TW pages; keep the two in step.
 
 ## v0.5.5 (unreleased)
 
+- macOS: `ssh_logins` (and the patrol's SSH check) reads sshd's login events from the unified log
+  (`/usr/bin/log show --info`, by the SIP-protected image paths of sshd-session and sshd, so a program
+  copied to /tmp under that name is left out) and counts them as on Linux. Only root and the admin
+  group can read that log: anyone else gets a permission error saying so, not an empty result. Not yet
+  marked verified.
+- macOS: `log_search` reads macOS's and Homebrew's text logs (system.log, install.log, Homebrew's
+  nginx and Apache logs) by default, and a log under /var is found by the path log_paths gives it (on
+  macOS /var is a link to /private/var, and such a path used to be refused). sshd is in the unified
+  log, which log_search does not read: the tool says no match there says nothing about SSH logins.
 - macOS: `file_changes` finds a file by its status-change time (a faked modification time no longer
   hides it) with its owner's name, watches macOS's own places by default (/private/etc, Homebrew,
   launchd jobs), and lists directories it could not read; `cert_expiry` also reads Homebrew's certbot.
