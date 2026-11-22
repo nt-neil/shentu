@@ -201,6 +201,12 @@ func TestPHPRisksStatusPage(t *testing.T) {
 	if status(phpRisks(context.Background())) {
 		t.Error("nginx: deny all")
 	}
+	// Kept to nginx itself (internal): not reachable from outside either.
+	h.file("/etc/nginx/conf.d/site.conf", "server {\n  location /status {\n    internal;\n"+
+		"    fastcgi_pass unix:/run/php-fpm.sock;\n  }\n}\n")
+	if status(phpRisks(context.Background())) {
+		t.Error("nginx: internal")
+	}
 	// A location that only serves .php files does not reach /status.
 	h.file("/etc/nginx/conf.d/site.conf", "server {\n  location ~ \\.php$ { fastcgi_pass unix:/run/php-fpm.sock; }\n}\n")
 	if status(phpRisks(context.Background())) {
@@ -304,6 +310,38 @@ func TestPHPRisksOrigins(t *testing.T) {
 	}
 }
 
+// The package scan covers a distribution's own packages; the line says when
+// it does not (deb.sury.org, the PPA, Remi, no package, IIS).
+func TestPHPRisksNotCoveredNote(t *testing.T) {
+	const note = "which the package scan does not cover"
+	for _, c := range []struct {
+		why, bin, binVersion, pkg, version string
+		covered                            bool
+	}{
+		{"deb.sury.org", "/usr/bin/php8.4", "8.4.20", "php8.4-cli", "8.4.20-1+deb.sury.org+1", false},
+		{"ondrej PPA", "/usr/bin/php8.3", "8.3.30", "php8.3-cli", "8.3.30-1+ubuntu24.04.1+deb.sury.org+1", false},
+		{"no package", "/usr/local/bin/php", "8.3.30", "", "", false},
+		{"Debian", "/usr/bin/php8.2", "8.2.30", "php8.2-cli", "8.2.30-1~deb12u1", true},
+		{"Ubuntu", "/usr/bin/php8.3", "8.3.6", "php8.3-cli", "8.3.6-0ubuntu0.24.04.5", true},
+	} {
+		h := newPHPHost(t)
+		h.bin(c.bin, c.binVersion)
+		if c.pkg != "" {
+			h.dpkg(c.bin, c.pkg, c.version)
+		}
+		r := phpRisks(context.Background())
+		if len(r) != 1 || strings.Contains(r[0].Summary, note) == c.covered {
+			t.Errorf("%s: covered %v: %v", c.why, c.covered, r)
+		}
+	}
+	h := newPHPHost(t)
+	h.bin("/opt/remi/php83/root/usr/bin/php", "8.3.30")
+	h.run["rpm -qf --qf %{NAME} %{EPOCHNUM}:%{VERSION}-%{RELEASE} /opt/remi/php83/root/usr/bin/php"] = "php83-php-cli 0:8.3.30-1.el9.remi"
+	if r := phpRisks(context.Background()); len(r) != 1 || !strings.Contains(r[0].Summary, "Remi's repository, "+note) {
+		t.Errorf("remi: %v", r)
+	}
+}
+
 func TestPHPRisksWindowsIIS(t *testing.T) {
 	newPHPHost(t)
 	phpWindows = true
@@ -319,7 +357,8 @@ func TestPHPRisksWindowsIIS(t *testing.T) {
 	phpWinFastCGI = func() ([]string, error) { return []string{`C:\PHP\php-cgi.exe`, `C:\Python\python.exe`}, nil }
 	r := phpRisks(context.Background())
 	cgi := phpFind(r, "php8.3:CVE-2026-129538")
-	if cgi == nil || cgi.Severity != "warning" || !strings.Contains(cgi.Summary, "IIS") || phpFind(r, "php8.3:CVE-2026-129496") == nil {
+	if cgi == nil || cgi.Severity != "warning" || !strings.Contains(cgi.Summary, "IIS") || !strings.Contains(cgi.Summary, "package scan does not cover") ||
+		phpFind(r, "php8.3:CVE-2026-129496") == nil {
 		t.Fatalf("IIS php-cgi: %v", r)
 	}
 	if phpFind(r, "php8.3:CVE-2026-129291") != nil {
