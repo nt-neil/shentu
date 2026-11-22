@@ -19,6 +19,7 @@ func markdown(results []caseResult, rs []rules.Rule, now time.Time) string {
 	b.WriteString("- rule source: a rule cites the id in its refs, so the rule was written from it; independent: no rule cites it.\n")
 	b.WriteString("- in fix files: reports of the case's class anywhere in the fix files of the vulnerable release, near the fix or not.\n")
 	b.WriteString("- findings and time: every report of every rule on the whole release, and the time to scan it.\n")
+	b.WriteString("- known gaps: cases the rules cannot catch yet (known_gap says why), run and listed apart, out of the rates.\n")
 	b.WriteString("- unfinished files: files a limit cut short, or too big to read; calls cut: files checked to the end whose calls were not all followed (cross-file findings may be missing). Cuts by cause count both.\n\n")
 
 	b.WriteString("## Summary\n\n")
@@ -48,7 +49,7 @@ func markdown(results []caseResult, rs []rules.Rule, now time.Time) string {
 		var n, caught, fp, vf, ff int
 		var t time.Duration
 		for _, r := range results {
-			if r.Err != "" || !g.in(r) {
+			if r.Err != "" || r.KnownGap != "" || !g.in(r) {
 				continue
 			}
 			n++
@@ -67,6 +68,21 @@ func markdown(results []caseResult, rs []rules.Rule, now time.Time) string {
 		}
 		fmt.Fprintf(&b, "| %s | %d | %d | %s | %d | %s | %.1f / %.1f | %.1fs |\n", g.name, n, caught, pct(caught, n), fp, pct(fp, caught),
 			float64(vf)/float64(n), float64(ff)/float64(n), t.Seconds()/float64(2*n))
+	}
+
+	var gaps []caseResult
+	for _, r := range results {
+		if r.KnownGap != "" && r.Err == "" {
+			gaps = append(gaps, r)
+		}
+	}
+	if len(gaps) > 0 {
+		b.WriteString("\n## Known gaps\n\n")
+		b.WriteString("Cases the rules cannot catch yet, left out of the rates above. A gap caught here is a rule or engine change to look at.\n\n")
+		b.WriteString("| case | class | why | caught | fixed FP |\n|---|---|---|---|---|\n")
+		for _, r := range gaps {
+			fmt.Fprintf(&b, "| %s | %s | %s | %s | %s |\n", r.ID, r.Class, r.KnownGap, mark(r.Caught, "caught"), mark(r.FixedFP, "still reports"))
+		}
 	}
 
 	var errs []string
