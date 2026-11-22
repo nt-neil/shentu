@@ -1,7 +1,9 @@
 package engine
 
 import (
+	_ "embed"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -349,6 +351,25 @@ func (a *analysis) pcallSeeds(st state, t []Token, funcs []*fn) map[*fn][]*param
 		if t[i].Kind == Ident && (declWords[t[i].Text] || t[i].word("function") || t[i].word("fn")) {
 			continue
 		}
+		if cb, ok := callableBuiltins[strings.ToLower(t[i].Text)]; ok && t[i].Kind == Ident && (i == 0 || !memberOp(true, t[i-1]) && !t[i-1].op("::")) {
+			args := callArgs(t, i+1)
+			// A parameter handed on (array_map($callback, $x)) is not followed
+			// yet: which callable a caller passes, often inside an options
+			// array, needs its own design.
+			if cb.pos < len(args) && !(len(args[cb.pos]) == 1 && args[cb.pos][0].Kind == Var && a.paramIndex(args[cb.pos][0].Text) >= 0) {
+				seed := func(k int) val {
+					var v val
+					for _, m := range cb.from(k, len(args)) {
+						if m < len(args) {
+							v = or(v, a.expr(st, args[m], false))
+						}
+					}
+					return v
+				}
+				out = a.passCallable(st, args[cb.pos], funcs, seed, cb.width(len(args)), false, out)
+			}
+			continue
+		}
 		sum := a.callSummary(t, i, a.calleeKey(t, i))
 		if sum == nil || len(sum.pcall) == 0 && len(sum.pcallSrc) == 0 {
 			continue
@@ -464,14 +485,15 @@ func byParam(args [][]Token, params []string) ([][]Token, bool) {
 	return out, true
 }
 
-// passCallable follows the callable a call passes where the callee calls it
-// with arguments whose input seed(k) gives:
+// passCallable follows the callable a call passes where the callee (or a
+// builtin) calls it with arguments whose input seed(k) gives:
 //   - a closure literal: seeded, its sinks found when it is analysed;
 //   - the caller's own parameter: the effect moves up (a.summ.pcall);
 //   - a function name ('foo', 'Cls::m'), an array callable ([$this, 'm'],
 //     [Cls::class, 'm'], array(...)) or a first-class callable (foo(...)):
 //     resolved and its summary's sinks reported for the seeded arguments;
-//   - anything else: with input, cut as callable-param (when cutUnknown).
+//   - anything else: with input, cut as callable-param when cutUnknown (a
+//     callee's effect; a builtin's unknown callable stays as it was).
 func (a *analysis) passCallable(st state, arg []Token, funcs []*fn, seed func(int) val, width int, cutUnknown bool, out map[*fn][]*paramSeed) map[*fn][]*paramSeed {
 	input := false
 	for k := range width {
@@ -521,6 +543,10 @@ func (a *analysis) passCallable(st state, arg []Token, funcs []*fn, seed func(in
 			}
 			if a.irrelevant(call, at) {
 				return out // a function the rule finds nothing in: nothing of this rule reaches it
+			}
+			if a.php && len(call) == 3 && call[0].Kind == Ident && phpBuiltins[strings.ToLower(call[0].Text)] {
+				a.builtinCallable(st, call[0].Text, arg[0].Line, seed, width)
+				return out
 			}
 		}
 		if cutUnknown {
@@ -573,6 +599,110 @@ func callableCall(arg []Token) []Token {
 		return append([]Token{id(obj[0].Text), op("::"), m}, tail...)
 	}
 	return nil
+}
+
+// builtinCallable reports what a PHP builtin given by name ('system',
+// 'intval', 'urlencode') does with the arguments it is called with: the rule's
+// sinks and sanitizers apply as to a call written out, with the seeded input in
+// its arguments, at the line the name is written. A builtin is no unknown
+// function, so it is not cut.
+func (a *analysis) builtinCallable(st state, name string, line int, seed func(int) val, width int) {
+	tmp := st.clone()
+	toks := []Token{{Kind: Ident, Text: name, Line: line}, {Kind: Op, Text: "(", Line: line}}
+	for k := range width {
+		if k > 0 {
+			toks = append(toks, Token{Kind: Op, Text: ",", Line: line})
+		}
+		v := seed(k)
+		x := Token{Kind: Var, Text: "$\x00cb" + strconv.Itoa(k), Line: line}
+		tmp[x.Text] = entry{taint: v.taint, raw: v.raw, emb: v.emb, weak: v.weak}
+		toks = append(toks, x)
+	}
+	toks = append(toks, Token{Kind: Op, Text: ")", Line: line})
+	a.sinks(tmp, toks)
+}
+
+// strNames returns the lower-case plain string literals of toks that are no
+// array key ($info['filesize'], 'filesize' => 0), made once per file into *set.
+func strNames(toks []Token, set *map[string]bool) map[string]bool {
+	if *set == nil {
+		*set = map[string]bool{}
+		for i, tk := range toks {
+			if tk.Kind != Str || len(tk.Parts) > 0 || len(tk.Text) >= 64 {
+				continue
+			}
+			if i+1 < len(toks) && (toks[i+1].op("=>") || toks[i+1].op("]") && i > 0 && toks[i-1].op("[")) {
+				continue
+			}
+			(*set)[strings.ToLower(tk.Text)] = true
+		}
+	}
+	return *set
+}
+
+// namedSink reports whether a sink of r that is a plain call of a PHP builtin
+// (system(, exec() is named by one of strs: the file may hand it to a builtin
+// or a function that calls it (builtinCallable).
+func namedSink(r *crule, strs map[string]bool) bool {
+	if r.rule.Lang != "php" {
+		return false
+	}
+	for _, s := range r.sinks {
+		if s.text == nil && !s.member && len(s.toks) == 2 && s.toks[0].Kind == Ident && s.toks[1].op("(") &&
+			phpBuiltins[strings.ToLower(s.toks[0].Text)] && strs[strings.ToLower(s.toks[0].Text)] {
+			return true
+		}
+	}
+	return false
+}
+
+//go:embed php_builtins.txt
+var phpBuiltinList string
+
+// phpBuiltins are PHP's internal functions (php_builtins.txt), lower case.
+var phpBuiltins = func() map[string]bool {
+	m := map[string]bool{}
+	for _, l := range strings.Split(phpBuiltinList, "\n") {
+		if l = strings.TrimSpace(l); l != "" && !strings.HasPrefix(l, "#") {
+			m[strings.ToLower(l)] = true
+		}
+	}
+	return m
+}()
+
+// callableBuiltin: a PHP builtin that calls a callable it is given. pos is the
+// callable's argument; arg k of each call it makes gets the input of the
+// call's arguments from(k) names (an array argument's input reaches the
+// callable through its elements).
+type callableBuiltin struct {
+	pos   int
+	from  func(k, nargs int) []int
+	width func(nargs int) int
+}
+
+func fixedFrom(m ...[]int) func(int, int) []int {
+	return func(k, _ int) []int {
+		if k < len(m) {
+			return m[k]
+		}
+		return nil
+	}
+}
+
+func fixedWidth(n int) func(int) int { return func(int) int { return n } }
+
+var callableBuiltins = map[string]callableBuiltin{
+	"array_map":             {0, func(k, n int) []int { return []int{k + 1} }, func(n int) int { return max(n-1, 1) }},
+	"array_filter":          {1, fixedFrom([]int{0}, []int{0}), fixedWidth(2)},
+	"array_walk":            {1, fixedFrom([]int{0}, []int{0}, []int{2}), fixedWidth(3)},
+	"array_walk_recursive":  {1, fixedFrom([]int{0}, []int{0}, []int{2}), fixedWidth(3)},
+	"usort":                 {1, fixedFrom([]int{0}, []int{0}), fixedWidth(2)},
+	"uasort":                {1, fixedFrom([]int{0}, []int{0}), fixedWidth(2)},
+	"uksort":                {1, fixedFrom([]int{0}, []int{0}), fixedWidth(2)},
+	"array_reduce":          {1, fixedFrom([]int{2}, []int{0}), fixedWidth(2)},
+	"preg_replace_callback": {1, fixedFrom([]int{2}), fixedWidth(1)},
+	"call_user_func":        {0, func(k, n int) []int { return []int{k + 1} }, func(n int) int { return max(n-1, 0) }},
+	"call_user_func_array":  {0, fixedFrom([]int{1}, []int{1}, []int{1}, []int{1}), fixedWidth(4)},
 }
 
 // irrelevant reports whether the call at t[i] reaches a function, in this file
