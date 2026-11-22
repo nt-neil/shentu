@@ -8,6 +8,11 @@ Chinese for the zh-TW pages; keep the two in step.
 
 ## v0.5.4 (unreleased)
 
+- The dispatch archive reads fields it does not know (f98c3c): from v0.5.4 a record or feedback
+  line written by a later version with a new field is read, its known fields checked as before,
+  instead of being refused as unreadable (which stopped the automatic incident checks until a
+  repair). Such lines are counted in `shentu dispatch stats` (`unknown_field_lines` in JSON) and in
+  the daily report; `repair` leaves them; the unknown fields' content reaches no output.
 - Upgrade note: going back to a version before v0.5.4, the dispatch records v0.5.4 wrote with
   items not checked (their `unchecked_why`) cannot be read there. Their proposal buttons answer
   that the dispatch is not in the archive; `shentu dispatch stats` skips them as unreadable lines;
