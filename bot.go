@@ -724,8 +724,16 @@ func (b *bot) answer(ctx context.Context, chat int64, text string) {
 	if err != nil {
 		// The full error is in the audit log; the chat gets its first part only
 		// (an LLM error body can echo the whole prompt).
-		if errors.Is(err, errBudget) {
+		var reserved errBudgetReserved
+		switch {
+		case errors.As(err, &reserved):
+			b.send(ctx, chat, fmt.Sprintf(b.t("budget_reserved"), kTokens(reserved.tokens), int(reserveTTL().Minutes()))+"\n"+budgetLine(b.cfg, time.Now(), b.zh()), nil)
+			return
+		case errors.Is(err, errBudget):
 			b.send(ctx, chat, b.t("budget_out")+"\n"+budgetLine(b.cfg, time.Now(), b.zh()), nil)
+			return
+		case errors.Is(err, errReservations):
+			b.send(ctx, chat, b.t("budget_unsure")+"\n"+tools.Cut(mask(err.Error()), 300), nil)
 			return
 		}
 		short, _, _ := strings.Cut(err.Error(), ": {")
@@ -952,6 +960,8 @@ var botText = map[string][2]string{ // English, Chinese
 	"settled_no":      {"❌ Not run (cancelled or timed out).", "❌ 沒有執行（已取消或逾時）。"},
 	"cmd_new":         {"Start a fresh conversation", "開始新的對話"},
 	"budget_out":      {"⛔ This month's AI budget is used up, so I cannot answer. Patrol alerts still come. To raise it, run on the server: sudo shentu budget --cost <amount>", "⛔ 這個月的 AI 預算已經用完，暫時不能回答。巡邏告警照常會送出。要提高上限，請在伺服器執行：sudo shentu budget --cost <金額>"},
+	"budget_reserved": {"Other dispatches in progress have reserved %s tokens, so this month's remaining AI budget is not enough to answer. A reservation is released within about %d minutes; please try again later.", "其他進行中的派遣預留了 %s tokens，本月剩餘預算不夠回答；預留最多約 %d 分鐘就會釋放，請稍後再試。"},
+	"budget_unsure":   {"The AI budget reservations shared by dispatches cannot be trusted, so nothing is asked of the model. On the server, check the file below (it must be a 0600 file of the shentu service's user), or move it aside to reset it:", "派遣共用的 AI 預算預留檔不可信，所以沒有詢問模型。請到伺服器上檢查下面這個檔案（必須是 shentu 服務使用者的 0600 檔），或把它移開重設："},
 	"cmd_usage":       {"Model use and cost", "AI 用量與費用"},
 	"cmd_lockdown":    {"Emergency stop: unpair and stop the bot", "緊急關閉：解除配對並停止 bot"},
 	"working":         {"⏳ Working…", "⏳ 處理中…"},

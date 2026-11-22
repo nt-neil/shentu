@@ -19,6 +19,38 @@ import (
 
 var errBudget = errors.New("the monthly AI budget is used up; raise it with `sudo shentu budget` or wait for next month")
 
+// errBudgetReserved is a budget stop that only other dispatches' live
+// reservations make (R1): the month's use alone is under the limit. It is
+// an errBudget, with its own words.
+type errBudgetReserved struct{ tokens int }
+
+func (e errBudgetReserved) Error() string {
+	return fmt.Sprintf("other dispatches in progress have reserved %s tokens, so this month's remaining AI budget is not enough to answer; a reservation is released within about %d minutes, try again later", kTokens(e.tokens), int(reserveTTL().Minutes()))
+}
+
+func (e errBudgetReserved) Is(target error) bool { return target == errBudget }
+
+// budgetStop is the check before a model call: errBudget when the month's
+// use reaches a limit, errBudgetReserved when only the others' reservations
+// (all but self's) make it, and an errReservations error, which names the
+// file and how to reset it, when the reservations cannot be trusted.
+func budgetStop(cfg *Config, now time.Time, self string) error {
+	if budgetUsed(cfg, now) >= 1 {
+		return errBudget
+	}
+	if cfg.Budget.MonthlyTokens <= 0 {
+		return nil
+	}
+	n, err := othersReserved(cfg, self, now)
+	if err != nil {
+		return err
+	}
+	if budgetUsedExcept(cfg, now, self, true) >= 1 {
+		return errBudgetReserved{n}
+	}
+	return nil
+}
+
 // monthUsage adds up model cost and tokens since the start of this month.
 func monthUsage(stateDir string, now time.Time) (cost float64, tokens int) {
 	cost, tokens, _, _ = monthUsageStrict(stateDir, now)
@@ -85,7 +117,12 @@ func monthUsageStrict(stateDir string, now time.Time) (cost float64, tokens, lon
 
 // budgetUsed is the larger share of the limits that are set (0 when none is),
 // and 1 when log.jsonl could not be read to its end.
-func budgetUsed(cfg *Config, now time.Time) float64 {
+func budgetUsed(cfg *Config, now time.Time) float64 { return budgetUsedExcept(cfg, now, "", false) }
+
+// budgetUsedExcept is budgetUsed for a model call: with others set, the
+// tokens other dispatches have reserved count as used, all but self's; a
+// reservation file that cannot be read counts as the limit reached.
+func budgetUsedExcept(cfg *Config, now time.Time, self string, others bool) float64 {
 	if cfg.Budget.MonthlyCost <= 0 && cfg.Budget.MonthlyTokens <= 0 {
 		return 0
 	}
@@ -93,6 +130,13 @@ func budgetUsed(cfg *Config, now time.Time) float64 {
 	cost, tokens, _, err := monthUsageStrict(cfg.StateDir, now)
 	if err != nil {
 		return 1
+	}
+	if others && cfg.Budget.MonthlyTokens > 0 {
+		n, err := othersReserved(cfg, self, now)
+		if err != nil {
+			return 1
+		}
+		tokens += n
 	}
 	used := 0.0
 	if cfg.Budget.MonthlyCost > 0 {
@@ -160,7 +204,16 @@ func budgetLine(cfg *Config, now time.Time, zh bool) string {
 		}
 		s += fmt.Sprintf("%s / %s tokens", kTokens(tokens), kTokens(cfg.Budget.MonthlyTokens))
 	}
-	return s + fmt.Sprintf(" (%.0f%%)", budgetUsed(cfg, now)*100)
+	s += fmt.Sprintf(" (%.0f%%)", budgetUsed(cfg, now)*100)
+	if cfg.Budget.MonthlyTokens > 0 { // R1: what dispatches in progress hold, read only
+		switch n, err := peekReserved(cfg, now); {
+		case err != nil:
+			s += map[bool]string{false: "; the reservations of dispatches in progress cannot be read", true: "；進行中派遣的預留無法讀取"}[zh]
+		case n > 0:
+			s += fmt.Sprintf(map[bool]string{false: "; besides that, %s are reserved by dispatches in progress", true: "；另有 %s 被進行中的派遣預留"}[zh], kTokens(n))
+		}
+	}
+	return s
 }
 
 func isZh(cfg *Config) bool {

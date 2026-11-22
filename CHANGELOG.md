@@ -6,6 +6,18 @@ a release are not written here: they are worked out from the rule snapshots in
 `docs/site-src/rules-history/`. `CHANGELOG.zh-TW.md` holds the same releases in Traditional
 Chinese for the zh-TW pages; keep the two in step.
 
+## v0.5.4 (unreleased)
+
+- Shared AI budget (#161): a dispatch from the bot, `shentu chat` or the automatic incident check
+  reserves its whole token cap in `state_dir/reservations.json` while it runs, and every budget
+  check counts the others' reservations, so together they overspend `[budget] monthly_tokens` by
+  about one dispatch's cap (120k tokens) plus the answer in progress. Upgrading: while a dispatch runs, a question elsewhere
+  can be told that its reservation leaves too little of the month's budget (it is released within
+  about 17 minutes); a reservations file that cannot be trusted stops every AI answer and dispatch until it is
+  moved aside (the bot says which file); and `auto_incident` with `monthly_tokens` of 150000 or less now warns, as no automatic
+  check could ever start.
+
+
 ## v0.5.3 — 2026-11-22
 
 - A proposal button pressed always gets an answer (#163): it says at once that it checks the
