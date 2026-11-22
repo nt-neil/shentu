@@ -425,11 +425,24 @@ func (s *dispatchStore) Since(t time.Time) (recs []dispatchRecord, bad int, err 
 // a record a later version wrote still counts (an older version refusing
 // it stopped the automatic checks until a repair: v0.5.4's upgrade note).
 // The known fields are checked by the caller as before; the unknown ones
-// reach no output.
+// reach no output. Anything after the line's one value is an error
+// either way (S-197-1).
+//
+// A rule for later fields (S-197-2): an older version ignores a field it
+// does not know, so a restriction (a proposal withdrawn, used up, revoked)
+// must never be said by a new field alone: an older version would not see
+// it and allow what it forbids. Say it with a value of a known field that
+// the older check() refuses, or keep it in a file of its own.
 func decodeArchiveLine(line []byte, v any) (extra bool, err error) {
 	dec := json.NewDecoder(bytes.NewReader(line))
 	dec.DisallowUnknownFields()
-	if err = dec.Decode(v); err == nil || !strings.HasPrefix(err.Error(), "json: unknown field ") {
+	if err = dec.Decode(v); err == nil {
+		if dec.More() {
+			return false, errors.New("json: data after the record")
+		}
+		return false, nil
+	}
+	if !strings.HasPrefix(err.Error(), "json: unknown field ") {
 		return false, err
 	}
 	reflect.ValueOf(v).Elem().SetZero()
