@@ -349,22 +349,6 @@ func (a *analysis) pcallSeeds(st state, t []Token, funcs []*fn) map[*fn][]*param
 		if t[i].Kind == Ident && (declWords[t[i].Text] || t[i].word("function") || t[i].word("fn")) {
 			continue
 		}
-		if cb, ok := callableBuiltins[strings.ToLower(t[i].Text)]; ok && t[i].Kind == Ident && (i == 0 || !memberOp(true, t[i-1]) && !t[i-1].op("::")) {
-			args := callArgs(t, i+1)
-			if cb.pos < len(args) {
-				seed := func(k int) val {
-					var v val
-					for _, m := range cb.from(k, len(args)) {
-						if m < len(args) {
-							v = or(v, a.expr(st, args[m], false))
-						}
-					}
-					return v
-				}
-				out = a.passCallable(st, args[cb.pos], funcs, seed, cb.width(len(args)), false, out)
-			}
-			continue
-		}
 		sum := a.callSummary(t, i, a.calleeKey(t, i))
 		if sum == nil || len(sum.pcall) == 0 && len(sum.pcallSrc) == 0 {
 			continue
@@ -441,18 +425,11 @@ func callsParam(fi *fnInfo) bool {
 	return found
 }
 
-// callsParamIn reports whether tokens call one of params: directly
-// ($callback(...)) or by handing it to a builtin that calls it
-// (array_map($callback, ...), usort($a, $cmp)).
+// callsParamIn reports whether tokens call one of params ($callback(...)).
 func callsParamIn(t []Token, params []string) bool {
 	for i := 0; i+1 < len(t); i++ {
 		if t[i].Kind == Var && t[i+1].op("(") && slices.Contains(params, t[i].Text) {
 			return true
-		}
-		if cb, ok := callableBuiltins[strings.ToLower(t[i].Text)]; ok && t[i].Kind == Ident && t[i+1].op("(") {
-			if args := callArgs(t, i+1); cb.pos < len(args) && len(args[cb.pos]) == 1 && args[cb.pos][0].Kind == Var && slices.Contains(params, args[cb.pos][0].Text) {
-				return true
-			}
 		}
 	}
 	return false
@@ -487,15 +464,14 @@ func byParam(args [][]Token, params []string) ([][]Token, bool) {
 	return out, true
 }
 
-// passCallable follows the callable a call passes where the callee (or a
-// builtin) calls it with arguments whose input seed(k) gives:
+// passCallable follows the callable a call passes where the callee calls it
+// with arguments whose input seed(k) gives:
 //   - a closure literal: seeded, its sinks found when it is analysed;
 //   - the caller's own parameter: the effect moves up (a.summ.pcall);
 //   - a function name ('foo', 'Cls::m'), an array callable ([$this, 'm'],
 //     [Cls::class, 'm'], array(...)) or a first-class callable (foo(...)):
 //     resolved and its summary's sinks reported for the seeded arguments;
-//   - anything else: with input, cut as callable-param when cutUnknown (a
-//     callee's effect; a builtin's unknown callable stays as it was).
+//   - anything else: with input, cut as callable-param (when cutUnknown).
 func (a *analysis) passCallable(st state, arg []Token, funcs []*fn, seed func(int) val, width int, cutUnknown bool, out map[*fn][]*paramSeed) map[*fn][]*paramSeed {
 	input := false
 	for k := range width {
@@ -591,41 +567,6 @@ func callableCall(arg []Token) []Token {
 		return append([]Token{id(obj[0].Text), op("::"), m}, tail...)
 	}
 	return nil
-}
-
-// callableBuiltin: a PHP builtin that calls a callable it is given. pos is the
-// callable's argument; arg k of each call it makes gets the input of the
-// call's arguments from(k) names (an array argument's input reaches the
-// callable through its elements).
-type callableBuiltin struct {
-	pos   int
-	from  func(k, nargs int) []int
-	width func(nargs int) int
-}
-
-func fixedFrom(m ...[]int) func(int, int) []int {
-	return func(k, _ int) []int {
-		if k < len(m) {
-			return m[k]
-		}
-		return nil
-	}
-}
-
-func fixedWidth(n int) func(int) int { return func(int) int { return n } }
-
-var callableBuiltins = map[string]callableBuiltin{
-	"array_map":             {0, func(k, n int) []int { return []int{k + 1} }, func(n int) int { return max(n-1, 1) }},
-	"array_filter":          {1, fixedFrom([]int{0}, []int{0}), fixedWidth(2)},
-	"array_walk":            {1, fixedFrom([]int{0}, []int{0}, []int{2}), fixedWidth(3)},
-	"array_walk_recursive":  {1, fixedFrom([]int{0}, []int{0}, []int{2}), fixedWidth(3)},
-	"usort":                 {1, fixedFrom([]int{0}, []int{0}), fixedWidth(2)},
-	"uasort":                {1, fixedFrom([]int{0}, []int{0}), fixedWidth(2)},
-	"uksort":                {1, fixedFrom([]int{0}, []int{0}), fixedWidth(2)},
-	"array_reduce":          {1, fixedFrom([]int{2}, []int{0}), fixedWidth(2)},
-	"preg_replace_callback": {1, fixedFrom([]int{2}), fixedWidth(1)},
-	"call_user_func":        {0, func(k, n int) []int { return []int{k + 1} }, func(n int) int { return max(n-1, 0) }},
-	"call_user_func_array":  {0, fixedFrom([]int{1}, []int{1}, []int{1}, []int{1}), fixedWidth(4)},
 }
 
 // resolves reports whether the call at t[i] reaches a function the project
