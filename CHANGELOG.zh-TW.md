@@ -3,7 +3,7 @@
 CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本與日期必須一致，
 每個版本都要有內容（`go test ./cmd/sitegen` 會檢查）。
 
-## v0.5.4 (unreleased)
+## v0.5.4 — 2026-11-23
 
 - 共用 AI 預算（#161）：bot、`shentu chat` 與自動事件調查的每次派遣，執行期間會在 `state_dir/reservations.json`
   預留它整份 token 上限，每一道預算檢查都會把其他派遣的預留算進去，所以合計超出 `[budget] monthly_tokens`
