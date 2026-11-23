@@ -24,6 +24,13 @@ var listeningPorts = Tool{
 	Description: "TCP and UDP ports this server listens on, with the owning process and its executable path.",
 	Params:      schema(noParams),
 	Run: func(ctx context.Context, env *Env, args json.RawMessage) (any, error) {
+		if onMac() {
+			ports, partial, err := macPorts(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return withPartial("ports", ports, partial), nil
+		}
 		return ListeningPorts()
 	},
 }
@@ -44,6 +51,9 @@ type Port struct {
 func ListeningPorts() ([]Port, error) {
 	if runtime.GOOS == "windows" {
 		return portsFromFacts(windowsFacts(context.Background()))
+	}
+	if onMac() {
+		return macPortsStrict(context.Background())
 	}
 	src := hostSource()
 	procs, owners := linux.Processes(src, nil)
@@ -137,6 +147,13 @@ var processesTool = Tool{
 		if runtime.GOOS == "windows" {
 			return winProcesses(a.All)
 		}
+		if onMac() {
+			procs, partial, err := macProcesses(ctx, a.All)
+			if err != nil {
+				return nil, err
+			}
+			return withPartial("processes", procs, partial), nil
+		}
 		return Processes(a.All), nil
 	},
 }
@@ -173,6 +190,22 @@ var shells = map[string]bool{"sh": true, "bash": true, "dash": true, "zsh": true
 // Processes lists processes from hostenv's processes fact. With all=false
 // only flagged processes are returned.
 func Processes(all bool) []Proc {
+	procs, _ := ProcessesErr(all)
+	return procs
+}
+
+// ProcessesErr is Processes with the error of a list that could not be
+// read (macOS's ps; the Linux reader has none to give), so the patrol can
+// say the check was not made (S-177-1).
+func ProcessesErr(all bool) ([]Proc, error) {
+	if onMac() { // the patrol's miner and temp checks too (M0)
+		procs, _, err := macProcesses(context.Background(), all)
+		return procs, err
+	}
+	return linuxProcesses(all), nil
+}
+
+func linuxProcesses(all bool) []Proc {
 	names := userNames()
 	self := os.Getpid()
 	procs, _ := linux.Processes(hostSource(), nil)

@@ -14,6 +14,9 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 - nginx 和 Apache 的版本檢查（以及 nginx 的 changelog）現在和其他檢查一樣，經由主機來源讀取受檢主機：
   replay 或 fixture 不會再讀到執行檢查的那台機器。套件查詢都是 allowlist 裡的完整指令。
 
+- macOS：`listening_ports`、`processes`（以及巡檢的程序檢查）現在讀取 Mac 本身（netstat 或 lsof，以及 ps；不需要 root），
+  不再讀 Linux 的 /proc。以前在 Mac 上什麼都讀不到，結果和一台什麼都沒在執行的主機一樣。讀不到時會回報錯誤，只讀到一部分也會寫明。
+
 ## v0.5.4 — 2026-11-23
 
 - 共用 AI 預算（#161）：bot、`shentu chat` 與自動事件調查的每次派遣，執行期間會在 `state_dir/reservations.json`

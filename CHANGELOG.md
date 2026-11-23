@@ -20,6 +20,10 @@ Chinese for the zh-TW pages; keep the two in step.
   host source, like every other check: a replay or a fixture is no longer answered by the machine
   running the survey. Their package queries are exact commands in the allowlist.
 
+- macOS: `listening_ports` and `processes` (and the patrol's process checks) read the Mac itself
+  (netstat or lsof, and ps; no root needed) instead of Linux's /proc, which found nothing there and
+  looked like a host with nothing running. An unreadable table is an error, and a partial one says so.
+
 ## v0.5.4 — 2026-11-23
 
 - Shared AI budget (#161): a dispatch from the bot, `shentu chat` or the automatic incident check
