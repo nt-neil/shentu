@@ -18,7 +18,7 @@ import (
 )
 
 // LinuxCollector gathers hostfacts on Linux from /proc, /etc and the package
-// database. It runs two commands at most (dpkg-query or rpm), both read-only.
+// database. It runs read-only commands only (dpkg-query, or rpm twice).
 type LinuxCollector struct{}
 
 func (LinuxCollector) Name() string { return "linux" }
@@ -29,7 +29,7 @@ var (
 )
 
 func (LinuxCollector) Allowlist() [][]string {
-	return append([][]string{dpkgArgv, rpmArgv, rpmQalArgv, nftListArgv, iptablesArgv, iptablesSbin, journalArgv, journalBinArgv, journalSockArgv, journalSockBinArgv, journalSSHDArgv, journalSSHDBinArgv, journalSSHDSockArgv, journalSSHDSockBinArgv}, journalUnitArgvs()...)
+	return append([][]string{dpkgArgv, rpmArgv, rpmVendorArgv, rpmQalArgv, nftListArgv, iptablesArgv, iptablesSbin, journalArgv, journalBinArgv, journalSockArgv, journalSockBinArgv, journalSSHDArgv, journalSSHDBinArgv, journalSSHDSockArgv, journalSSHDSockBinArgv}, journalUnitArgvs()...)
 }
 
 func (c LinuxCollector) Collect(ctx context.Context, src Source) *Facts {
@@ -192,6 +192,14 @@ func (LinuxCollector) packages(ctx context.Context, src Source, osr map[string]s
 		return unknownFrom[PackageSet](set.Manager, err), nil
 	case res.ExitCode != 0:
 		return Unknown[PackageSet](ReasonCommandFailed, fmt.Sprintf("%s exit %d: %s", set.Manager, res.ExitCode, firstLine(res.Stderr))), nil
+	}
+	switch set.Manager {
+	case "dpkg":
+		set.ThirdParty, set.OriginNotes = aptOrigins(src, items)
+	case "rpm":
+		set.OriginNotes = rpmOrigins(ctx, src, items, osr["ID"])
+	case "apk":
+		set.ThirdParty, set.OriginNotes = apkThirdParty(src)
 	}
 	set.Items = items
 	if set.Feed != nil {

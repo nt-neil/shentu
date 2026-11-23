@@ -6,6 +6,19 @@ a release are not written here: they are worked out from the rule snapshots in
 `docs/site-src/rules-history/`. `CHANGELOG.zh-TW.md` holds the same releases in Traditional
 Chinese for the zh-TW pages; keep the two in step.
 
+## v0.5.6 (unreleased)
+
+- The package vulnerability check (`vulns`) names the packages that came from a repository other
+  than the distribution's, as `third_party_unchecked` with the repository and how it was told
+  apart. OSV covers the distribution's packages only, so these were compared as if the
+  distribution had built them and matched nothing: that silence is not "no vulnerabilities".
+  A package is told apart by its version (deb.sury.org's `+deb.sury.org`, nginx.org's
+  `-N~codename`), by the package index of a third-party apt repository, or by an rpm vendor that
+  is not the distribution's. Third-party repositories (apt, and Alpine repositories other than
+  main, community and testing) are listed in `third_party_repositories`; when one is configured but its
+  packages cannot be told apart, a note says so. Indexes that could not be read are listed in
+  `origin_unread`.
+
 ## v0.5.4 — 2026-11-23
 
 - Shared AI budget (#161): a dispatch from the bot, `shentu chat` or the automatic incident check

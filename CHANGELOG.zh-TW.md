@@ -3,6 +3,10 @@
 CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本與日期必須一致，
 每個版本都要有內容（`go test ./cmd/sitegen` 會檢查）。
 
+## v0.5.6 (unreleased)
+
+- 套件弱點檢查（`vulns`）會列出不是從發行版套件庫安裝的套件，放在 `third_party_unchecked`，並寫明來自哪個套件庫、用什麼方式認出來的。OSV 只收發行版自己的套件，所以這些套件原本是被當成發行版的套件去比對，結果什麼都對不到；這種「沒有結果」不等於「沒有弱點」。認出的方式有三種：版本號（deb.sury.org 的 `+deb.sury.org`、nginx.org 的 `-N~codename`）、第三方 apt 套件庫的索引，以及不是發行版的 rpm vendor。第三方套件庫（apt，以及 Alpine 的 main、community、testing 以外的套件庫）會列在 `third_party_repositories`；設定了第三方套件庫，但分不出哪些套件來自它時，會加一行說明。讀不到的索引列在 `origin_unread`。
+
 ## v0.5.4 — 2026-11-23
 
 - 共用 AI 預算（#161）：bot、`shentu chat` 與自動事件調查的每次派遣，執行期間會在 `state_dir/reservations.json`
