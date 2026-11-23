@@ -154,7 +154,7 @@ func autoIncident(ctx context.Context, cfg *Config, env *tools.Env, cands []auto
 	if saveErr != nil {
 		saveErr = fmt.Errorf("archive: %w", saveErr)
 	}
-	nerr := detectNotify(ctx, env, "Automatic incident check", autoNotice(rec, saveErr != nil), "warning")
+	nerr := detectNotify(ctx, env, nt(isZh(cfg), "auto_title"), autoNotice(rec, saveErr != nil, isZh(cfg)), "warning")
 	var berr error
 	if saveErr == nil { // B reads the record back: none without it
 		if berr = autoButtons(ctx, cfg, env, rec.ID); berr != nil {
@@ -257,14 +257,63 @@ func autoBudget(cfg *Config, now time.Time) string {
 	if err != nil {
 		return autoSkipBudgetUnknown
 	}
-	used := float64(tokens+dispatchTokenCap) / float64(cfg.Budget.MonthlyTokens)
+	others, othersCost, err := othersReserved(cfg, "", now) // R1: what dispatches in progress hold is not room
+	if err != nil {
+		return autoSkipBudgetUnknown
+	}
+	used := float64(tokens+others+dispatchTokenCap) / float64(cfg.Budget.MonthlyTokens)
 	if cfg.Budget.MonthlyCost > 0 {
-		used = max(used, cost/cfg.Budget.MonthlyCost)
+		used = max(used, (cost+othersCost+dispatchCost(cfg))/cfg.Budget.MonthlyCost) // R2: priced caps
 	}
 	if used >= autoBudgetStop {
 		return autoSkipBudget
 	}
 	return ""
+}
+
+// autoMinTokens is the monthly token limit at or under which no automatic
+// check can ever start: one dispatch's cap must stay strictly below
+// autoBudgetStop of it, so the limit must be more than this (150000 with
+// the 120000 cap; at exactly 150000 the cap is 80% and the check skips).
+const autoMinTokens = int(dispatchTokenCap / autoBudgetStop)
+
+// warnAutoBudget says autoBudgetWarning on stderr (the journal), when the
+// bot starts to serve and on the daily patrol only: the patrol's timer
+// runs often, and every other command would repeat it.
+func warnAutoBudget(cfg *Config) {
+	if w := autoBudgetWarning(cfg); w != "" {
+		fmt.Fprintln(os.Stderr, "shentu: warning: "+w)
+	}
+}
+
+// autoBudgetWarning says when auto_incident is on but the monthly token
+// limit is too small for any check to start; "" otherwise.
+func autoBudgetWarning(cfg *Config) string {
+	if !cfg.Agents.AutoIncident || cfg.Budget.MonthlyTokens <= 0 || cfg.Budget.MonthlyTokens > autoMinTokens { // at autoMinTokens itself none starts either (N-168-1)
+		return ""
+	}
+	return fmt.Sprintf("auto_incident is on, but [budget] monthly_tokens = %d is not more than %d: an automatic check reserves %d tokens and starts only while that stays under %.0f%% of the limit, so none will ever start; raise monthly_tokens to more than %d", cfg.Budget.MonthlyTokens, autoMinTokens, dispatchTokenCap, autoBudgetStop*100, autoMinTokens)
+}
+
+// warnAutoNotify says autoNotifyWarning on stderr (the journal), when the
+// bot starts to serve and on the daily patrol only: the patrol's timer
+// runs often, and every other command would repeat it.
+func warnAutoNotify(cfg *Config) {
+	if w := autoNotifyWarning(cfg); w != "" {
+		fmt.Fprintln(os.Stderr, "shentu: warning: "+w)
+	}
+}
+
+// autoNotifyWarning says when auto_incident is on but no [notify] url is
+// set; "" otherwise. A check starts only from an L3 alert the patrol
+// pushed, and the patrol pushes through the notify url alone (the bot's
+// token does not carry the patrol's alerts or the check's notice), so
+// without one no check ever starts.
+func autoNotifyWarning(cfg *Config) string {
+	if !cfg.Agents.AutoIncident || cfg.Notify.URL != "" {
+		return ""
+	}
+	return "auto_incident is on, but no [notify] url is set: a check starts only from an L3 alert the patrol pushed, and the patrol pushes through the notify url alone, so none will start and nothing would be sent. Set [notify] url (for Telegram telegram://<bot-token>@telegram?chats=<chat id>, the bot's own token works; or a Slack or Discord webhook), for example with `sudo shentu setup`"
 }
 
 // autoRun dispatches the incident sub-agent for p. runDispatch archives
@@ -276,6 +325,7 @@ func autoRun(ctx context.Context, cfg *Config, env *tools.Env, p autoPending) (r
 	if err != nil {
 		return dispatchRecord{}, nil, err
 	}
+	tasks[0].l3 = true
 	a := &agent{cfg: cfg, llm: newLLM(cfg), env: env, actor: "auto", log: newAuditLog(cfg.StateDir)}
 	id, _, rec, saveErr := a.runDispatch(ctx, originAuto, p.Trigger, tasks)
 	a.log.write(logEntry{Actor: a.actor, Tool: "dispatch", Args: mask(string(args)), Dispatch: id, Origin: originAuto, OK: true})
@@ -300,28 +350,44 @@ func autoFinish(cfg *Config, p autoPending, rec dispatchRecord, notArchived bool
 }
 
 // autoNotice is the alert about a finished dispatch: enumerations and
-// numbers from its record only, never a sub-agent's words.
-func autoNotice(rec dispatchRecord, notArchived bool) string {
+// numbers from its record only, never a sub-agent's words, in the
+// configured language (F-1).
+func autoNotice(rec dispatchRecord, notArchived, zh bool) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "An L3 attack alert was checked by the incident sub-agent on its own (read-only; nothing was changed).\n- dispatch: %s\n- status: %s\n", rec.ID, word(rec.Status))
+	line := func(key string, a ...any) { fmt.Fprintf(&b, nt(zh, key)+"\n", a...) }
+	line("auto_head")
+	line("auto_id", rec.ID)
+	line("auto_status", enumWord(zh, statusZh, rec.Status))
 	for _, s := range rec.Subs {
-		fmt.Fprintf(&b, "- %s: %s (%s), %d steps, %d tokens\n", word(s.Role), word(s.Status), word(s.Reason), s.Steps, s.TokensIn+s.TokensOut+s.TokensReason)
+		line("auto_sub", enumWord(zh, roleZh, s.Role), enumWord(zh, statusZh, s.Status), enumWord(zh, reasonZh, s.Reason), s.Steps, s.TokensIn+s.TokensOut+s.TokensReason)
 		var sev []string
 		for _, k := range []string{"critical", "high", "medium", "low", "info", "unknown"} {
 			if n := s.Findings[k]; n > 0 {
-				sev = append(sev, fmt.Sprintf("%s %d", k, n))
+				sev = append(sev, fmt.Sprintf("%s %d", enumWord(zh, severityZh, k), n))
 			}
 		}
 		if len(sev) == 0 {
-			sev = []string{"none"}
+			sev = []string{nt(zh, "auto_nofind")}
 		}
-		fmt.Fprintf(&b, "- findings: %s; not checked: %d; proposals: %d (not acted on)\n", strings.Join(sev, ", "), s.Unchecked, len(s.Proposals))
+		sep := ", "
+		if zh {
+			sep = "、"
+		}
+		line("auto_findings", strings.Join(sev, sep))
+		for _, l := range uncheckedLines(zh, s) {
+			b.WriteString(l + "\n")
+		}
+		if len(s.Proposals) > 0 {
+			line("auto_prop", len(s.Proposals))
+		} else {
+			line("auto_noprop")
+		}
 	}
 	if notArchived {
-		b.WriteString("- its record could not be saved to the dispatch archive (state_dir/dispatch): no buttons; the slot still counts\n")
+		line("auto_unsaved")
 	}
 	if rec.Status != statusComplete {
-		b.WriteString("- an incomplete check is not a clean one: what it did not check is unknown\n")
+		line("auto_partial")
 	}
 	return b.String()
 }
@@ -350,8 +416,13 @@ func autoIncidentSection(cfg *Config, now time.Time) string {
 	}
 	var b strings.Builder
 	b.WriteString("\nAutomatic incident checks (L3 alerts, read-only, last day):\n")
+	if w := autoNotifyWarning(cfg); w != "" {
+		b.WriteString("- " + w + "\n")
+	}
 	if cfg.Budget.MonthlyTokens <= 0 {
 		b.WriteString("- none are made: no monthly token budget is set ([budget] monthly_tokens; monthly_cost alone does not stop a local model, which reports no cost)\n")
+	} else if w := autoBudgetWarning(cfg); w != "" {
+		b.WriteString("- " + w + "\n")
 	}
 	b.WriteString(autoArchiveLine(cfg, now))
 	if _, _, long, err := monthUsageStrict(cfg.StateDir, now); err == nil && long > 0 {

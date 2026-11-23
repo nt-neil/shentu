@@ -46,13 +46,12 @@ type Finding struct {
 // Engine holds compiled rules. It is safe for concurrent use.
 type Engine struct {
 	byLang map[string][]*crule
-	// laravelPass: the rules a Laravel project's second pass runs although
-	// no call can change them: those reading $request->* (an untyped $request
-	// is Laravel's only there) and, so that yields_to holds within that pass,
-	// every rule they yield to (yields.go)
-	laravelPass map[string]bool
-	watch       map[string]bool // "m:" modules and "w:" names some rule's unless_imports looks for (imports.go)
-	Limits      Limits
+	// yieldLevel orders the second pass so that a rule comes before the rules
+	// it yields to (yields.go): a rule no other rule yields to is at 0, one
+	// that is yielded to is one past the rules yielding to it.
+	yieldLevel map[string]int
+	watch      map[string]bool // "m:" modules and "w:" names some rule's unless_imports looks for (imports.go)
+	Limits     Limits
 	// SourcePrefilter (on in New) skips the rules none of whose sources occur in
 	// a file: a file scanned on its own gets input only from them, in the first
 	// pass and in the second, where calls are followed inside the file. A scan
@@ -135,26 +134,29 @@ func New(rs []rules.Rule) (*Engine, error) {
 	if err != nil {
 		return nil, fmt.Errorf("route models: %w", err)
 	}
-	e.laravelPass = map[string]bool{}
 	byID := map[string]*crule{}
 	for _, cs := range e.byLang {
 		for _, c := range cs {
 			byID[c.rule.ID] = c
 		}
 	}
-	var mark func(id string, depth int)
-	mark = func(id string, depth int) {
-		if c := byID[id]; c != nil && !e.laravelPass[id] && depth <= len(byID) {
-			e.laravelPass[id] = true
-			for _, to := range c.rule.YieldsTo {
-				mark(to, depth+1)
+	e.yieldLevel = map[string]int{}
+	var level func(id string, depth int) int
+	level = func(id string, depth int) int {
+		if v, ok := e.yieldLevel[id]; ok || depth > len(byID) {
+			return v
+		}
+		v := 0
+		for _, c := range byID {
+			if slices.Contains(c.rule.YieldsTo, id) {
+				v = max(v, level(c.rule.ID, depth+1)+1)
 			}
 		}
+		e.yieldLevel[id] = v
+		return v
 	}
-	for id, c := range byID {
-		if c.memberWild {
-			mark(id, 0)
-		}
+	for id := range byID {
+		level(id, 0)
 	}
 	return e, nil
 }
@@ -519,7 +521,15 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 		if perRule <= 0 {
 			perRule = DefaultLimits.MaxCallWork
 		}
-		for _, r := range ruleList {
+		// a rule run here makes the rules it yields to run here too, whether a
+		// call can change them or not: yields_to looks at what the same scan
+		// found (yields.go), so a rule this pass leaves out would not take the
+		// call back. They run after it (yieldLevel); their own result is what the
+		// first pass found when no call changes it.
+		order := slices.Clone(ruleList)
+		slices.SortStableFunc(order, func(x, y *crule) int { return e.yieldLevel[x.rule.ID] - e.yieldLevel[y.rule.ID] })
+		forced := map[string]bool{}
+		for _, r := range order {
 			if proj != nil && proj.skip[r.rule.ID] {
 				continue // followed in an earlier audit (ScanCallsPart)
 			}
@@ -553,17 +563,19 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 			}
 			a := &analysis{r: r, php: base == "php", py: base == "python", js: base == "js", b: b2, kw: keywords[base], seen: map[loc]bool{}, sc: sc,
 				defs: defs, file: path, proj: proj, ftoks: toks, routes: routeFns, mws: mws, sinkSpans: spansOf(r)}
-			if !e.Library && !a.r.output && !viaProject && !a.crossNeeded(tree) && !(proj != nil && proj.laravel && a.php && e.laravelPass[r.rule.ID]) {
+			if !e.Library && !a.r.output && !viaProject && !forced[r.rule.ID] && !a.crossNeeded(tree) && !(proj != nil && proj.laravel && a.php && r.memberWild) {
 				// no call can change this rule's result: the first pass stands. Output
 				// rules read calls to the file's own functions in this pass only
 				// (htmlctx.go); handlers registered in another file need it too. In a
 				// Laravel project a PHP rule reading $request->* is run here too (the
 				// first pass, without the project, does not know an untyped $request
-				// is Laravel's: callbacks.go laravelRequest), and so are the rules it
-				// yields to, whose own result this pass leaves as the first pass
-				// found it (no call changes it), so yields_to holds here as there.
+				// is Laravel's: callbacks.go laravelRequest); and so is a rule
+				// another rule run here yields to (forced).
 				ruleDone()
 				continue
+			}
+			for _, to := range r.rule.YieldsTo {
+				forced[to] = true
 			}
 			a.block(tree, state{})
 			if e.Library && libClasses[r.rule.Class] && !testPath(path) && !b2.hit {

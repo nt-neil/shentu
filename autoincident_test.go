@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -63,6 +64,11 @@ func autoSetup(t *testing.T, h *hostileModel) (*Config, *tools.Env, *[]autoSent)
 		return nil
 	}
 	autoLockTries = 1
+	// The fake model listens on loopback as this user: Linux's localDialer
+	// takes only root's or ollama's listeners (as agentsmodel_test does).
+	oldDial := llmDial
+	llmDial = (&net.Dialer{}).DialContext
+	t.Cleanup(func() { llmDial = oldDial })
 	env := &tools.Env{LogPaths: []string{filepath.Join(state, "*.log")}}
 	return cfg, env, &out
 }
@@ -427,7 +433,7 @@ func TestAutoDispatchSlotsAccounted(t *testing.T) {
 	if n := len(archived(t, cfg)); n != 1 {
 		t.Errorf("%d dispatches after two slots, want 1", n)
 	}
-	if !strings.Contains(autoNotice(dispatchRecord{ID: "cccccccccccc"}, true), "could not be saved") {
+	if !strings.Contains(autoNotice(dispatchRecord{ID: "cccccccccccc"}, true, false), "could not be saved") {
 		t.Error("the notice does not say the record was not saved")
 	}
 }
@@ -449,7 +455,7 @@ func TestAutoDispatchNoticeAndButtonsFromArchive(t *testing.T) {
 	if len(recs) != 1 || recs[0].ID != id || len(offered) != 1 || offered[0] != id {
 		t.Fatalf("id %s, archive %+v, buttons for %v", id, recs, offered)
 	}
-	if !strings.Contains((*out)[0].text, "dispatch: "+id) || !strings.Contains((*out)[0].text, "status: "+recs[0].Status) {
+	if !strings.Contains((*out)[0].text, "dispatch: "+id) || !strings.Contains((*out)[0].text, "result: "+recs[0].Status) {
 		t.Errorf("the notice is not the archived record's:\n%s", (*out)[0].text)
 	}
 }
