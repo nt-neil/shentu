@@ -6,7 +6,7 @@ severity = "high"
 tier = "info"
 title = "Request input placed in an LDAP search filter without ldap_escape"
 frameworks = ["wordpress", "laravel"]
-sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "->get_param(", "$request->input(", "$request->get("]
+sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "->get_param(", "$request->input(", "$request->get(", "filter_input(", "->filterInput(", "->filter_input("]
 sinks = ["ldap_search(", "ldap_list(", "ldap_read("]
 sanitizers = ["ldap_escape", "ctype_alnum", "ctype_digit", "intval", "absint"]
 fix = "Escape every value put into a filter with ldap_escape($value, '', LDAP_ESCAPE_FILTER)."
@@ -30,3 +30,9 @@ code = '''
 $user = ldap_escape($_POST['username'], '', LDAP_ESCAPE_FILTER);
 $sr = ldap_search($conn, 'ou=people,dc=example,dc=org', "(uid=$user)");
 '''
+
+# filter_input(INPUT_GET, ...) and an application's filterInput(INPUT_POST, ...) wrapper read the request like $_GET and $_POST
+[[source_args]]
+sources = ["filter_input(", "->filterInput(", "->filter_input("]
+arg = 1
+values = ["INPUT_GET", "INPUT_POST", "INPUT_COOKIE"]

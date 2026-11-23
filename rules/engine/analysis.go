@@ -1600,6 +1600,43 @@ func (a *analysis) srcMatch(s *pat, t []Token, i int) (int, bool) {
 	return 0, false
 }
 
+// constArg returns, in lower case, the name of a constant an argument is
+// (INPUT_POST, \INPUT_POST), or "".
+func constArg(arg []Token) string {
+	if len(arg) == 2 && arg[0].op(`\`) {
+		arg = arg[1:]
+	}
+	if len(arg) != 1 || arg[0].Kind != Ident {
+		return ""
+	}
+	return strings.ToLower(arg[0].Text)
+}
+
+// filterInputAt reports whether a source is a call of PHP's filter_input or a
+// method of that name (filterInput, filter_input, in any case), whose third
+// argument is the filter.
+func filterInputAt(s *pat) bool {
+	k := s.callParen()
+	if k < 1 || s.toks[k-1].Kind != Ident {
+		return false
+	}
+	n := strings.ToLower(s.toks[k-1].Text)
+	return n == "filter_input" || n == "filterinput"
+}
+
+// numericFilters leave only a number or a bool (or false or null when the
+// value does not pass), none of which carries an injection in any rule.
+var numericFilters = words("filter_validate_int filter_validate_float filter_validate_bool filter_validate_boolean " +
+	"filter_sanitize_number_int filter_sanitize_number_float")
+
+// escFilters HTML-encode the value as htmlspecialchars() does.
+var escFilters = words("filter_sanitize_special_chars filter_sanitize_full_special_chars")
+
+// cleansWith reports whether the rule has a sanitizer pattern naming fn.
+func (a *analysis) cleansWith(fn string) bool {
+	return slices.ContainsFunc(a.r.sanitizers, func(p *pat) bool { return strings.TrimSuffix(p.raw, "(") == fn })
+}
+
 func (a *analysis) srcMatchAt(s *pat, t []Token, i int) (int, bool) {
 	if s.text != nil {
 		return 0, false
@@ -1635,6 +1672,17 @@ func (a *analysis) srcMatchAt(s *pat, t []Token, i int) (int, bool) {
 	arg := stripParens(args[s.srcArg-1])
 	if len(arg) > 1 && arg[0].Kind == Ident && arg[1].op(":") {
 		arg = arg[2:] // a named argument: filter: 'raw'
+	}
+	if a.php && filterInputAt(s) && len(args) > 2 {
+		switch f := constArg(stripParens(args[2])); {
+		case numericFilters[f]:
+			return 0, false // filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT): a number, a bool or false/null
+		case escFilters[f] && a.cleansWith("htmlspecialchars"):
+			return 0, false // FILTER_SANITIZE_SPECIAL_CHARS is htmlspecialchars(), where the rule takes that as cleaning
+		}
+	}
+	if c := constArg(arg); c != "" && s.srcVals[c] {
+		return end, !s.srcVals["!"+c] // a constant named among the values: filter_input(INPUT_POST, ...)
 	}
 	if len(arg) != 1 || arg[0].Kind != Str || len(arg[0].Parts) > 0 {
 		return end, len(arg) > 0 && s.srcVals["?"] // a name not written out: "?" takes it

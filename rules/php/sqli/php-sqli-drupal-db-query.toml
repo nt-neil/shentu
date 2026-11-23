@@ -5,7 +5,7 @@ cwe = "CWE-89"
 severity = "high"
 tier = "info"
 title = "Request input written into the SQL text of a Drupal database query"
-sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "->query->get(", "->request->get(", "::request()->get(", "$form_state->getValue(", "$form_state->getUserInput(", "arg("]
+sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "->query->get(", "->request->get(", "::request()->get(", "$form_state->getValue(", "$form_state->getUserInput(", "arg(", "filter_input(", "->filterInput(", "->filter_input("]
 sinks = ["db_query(", "db_query_range(", "\\Drupal::database()->query(", "$this->database->query(", "$this->connection->query(", "$connection->query(", "$database->query(", "Database::getConnection()->query(", "->where("]
 # ->where( is a Yii, a CodeIgniter and a Doctrine call as well: on the same
 # call, input those rules read too is theirs (yields.go: Symfony's
@@ -64,3 +64,9 @@ class ReportController extends ControllerBase {
   }
 }
 '''
+
+# filter_input(INPUT_GET, ...) and an application's filterInput(INPUT_POST, ...) wrapper read the request like $_GET and $_POST
+[[source_args]]
+sources = ["filter_input(", "->filterInput(", "->filter_input("]
+arg = 1
+values = ["INPUT_GET", "INPUT_POST", "INPUT_COOKIE"]

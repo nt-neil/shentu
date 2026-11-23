@@ -5,7 +5,7 @@ cwe = "CWE-89"
 severity = "high"
 title = "WordPress $wpdb query built from request input without $wpdb->prepare"
 frameworks = ["wordpress"]
-sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "get_query_var(", "->get_param("]
+sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "get_query_var(", "->get_param(", "filter_input(", "->filterInput(", "->filter_input("]
 sinks = ["$wpdb->query", "$wpdb->get_results", "$wpdb->get_row", "$wpdb->get_var", "$wpdb->get_col"]
 sanitizers = ["$wpdb->prepare", "absint", "intval", "(int)", "count(", "sizeof(", "sanitize_sql_orderby("]
 fix = "Pass every value through $wpdb->prepare() placeholders (%d, %s); sanitize_text_field() and esc_sql() alone do not make a value safe in SQL."
@@ -132,3 +132,9 @@ function list_rows() {
     return $wpdb->get_results($wpdb->prepare($sql . ' LIMIT %d', 20));
 }
 '''
+
+# filter_input(INPUT_GET, ...) and an application's filterInput(INPUT_POST, ...) wrapper read the request like $_GET and $_POST
+[[source_args]]
+sources = ["filter_input(", "->filterInput(", "->filter_input("]
+arg = 1
+values = ["INPUT_GET", "INPUT_POST", "INPUT_COOKIE"]
