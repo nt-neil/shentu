@@ -1073,8 +1073,8 @@ func (a *analysis) crossNeeded(tree []*stmt) bool {
 	}
 	walkToks(tree, 0, look)
 	if a.proj != nil {
-		for _, infos := range sc.funcs { // and inside the file's functions, for calls into other files
-			for _, fi := range infos {
+		for _, k := range keys { // and inside the file's functions, for calls into other files, in a fixed order: what relevant() reads first stays the same
+			for _, fi := range sc.funcs[k] {
 				if !found {
 					walkToks(fi.f.body, 0, look)
 				}

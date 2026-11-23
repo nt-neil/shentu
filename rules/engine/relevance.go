@@ -57,6 +57,7 @@ func (a *analysis) walk(start relNode, src bool) bool {
 		return v == 1
 	}
 	visited := map[relNode]bool{}
+	var order []relNode // visited, in the order reached: scOf may re-read an evicted file, so the order it is asked in is kept fixed
 	stack := []relNode{start}
 	found := false
 	for len(stack) > 0 && !found {
@@ -66,6 +67,7 @@ func (a *analysis) walk(start relNode, src bool) bool {
 			continue
 		}
 		visited[n] = true
+		order = append(order, n)
 		sc, x := scOf(n.file)
 		if sc == nil {
 			continue
@@ -95,7 +97,7 @@ func (a *analysis) walk(start relNode, src bool) bool {
 		}
 		return true
 	}
-	for v := range visited {
+	for _, v := range order {
 		if sc, _ := scOf(v.file); sc != nil {
 			memo(sc)[v.key] = 2
 		}
