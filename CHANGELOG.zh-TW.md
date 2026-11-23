@@ -9,6 +9,10 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
   子 Agent 派遣、自動事件調查、SSH 登入）都改用中文；v0.5.4 以前不管 `language` 怎麼設，這些都是英文。檢查找到的內容、錯誤訊息和
   AI 模型寫的回答不會改寫，照原樣附上。
 
+- 巡檢自己的檢查找到的項目，在 `language` 設定是中文時也改用中文：新開的連接埠、不正常的程序、UID 0 的帳號、authorized_keys 的變動、
+  連結和共用的金鑰、ld.so.preload、PAM 模組、webshell、憑證、SSH 登入失敗、CISA KEV 漏洞，以及 authorized_keys 裡讀不懂的行。
+  英文文字和之前逐字相同，交給 AI 模型的仍是英文清單。來自工具的項目（伺服器設定的風險、和上次相比的設定變動、程式碼稽核）目前仍是英文。
+
 ## v0.5.4 (unreleased)
 
 - 共用 AI 預算（#161）：bot、`shentu chat` 與自動事件調查的每次派遣，執行期間會在 `state_dir/reservations.json`

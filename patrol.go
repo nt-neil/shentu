@@ -27,6 +27,23 @@ type finding struct {
 	Severity string `json:"severity"`
 	Summary  string `json:"summary"`
 	Evidence any    `json:"evidence,omitempty"`
+	// zh is Summary in Chinese, for the report with a Chinese setting;
+	// not saved: "" (or a finding read back) falls back to Summary.
+	zh string
+}
+
+// newFinding is a finding whose summary is report text key with args, in
+// English and in Chinese.
+func newFinding(key, severity string, evidence any, text string, args ...any) finding {
+	return finding{key, severity, fmt.Sprintf(dt(false, text), args...), evidence, fmt.Sprintf(dt(true, text), args...)}
+}
+
+// said is the finding's summary as the report says it.
+func (f finding) said(zh bool) string {
+	if zh && f.zh != "" {
+		return f.zh
+	}
+	return f.Summary
 }
 
 // state is kept in <state_dir>/state.json.
@@ -88,9 +105,9 @@ func sshFindings(r map[string]any, err error, threshold int, zh bool) (out []fin
 	if err != nil {
 		return nil, fmt.Sprintf(dt(zh, "ssh_failed"), cutLine(mask(err.Error())))
 	}
-	note := ""
+	note, noteZh := "", ""
 	if v, _ := r["verified"].(bool); !v {
-		note = "; read from text logs, which anyone on this host can write to: check them before acting"
+		note, noteZh = dt(false, "f_ssh_text"), dt(true, "f_ssh_text")
 	}
 	sources, _ := r["sources"].([]tools.SSHSource)
 	for _, s := range sources {
@@ -100,7 +117,7 @@ func sshFindings(r map[string]any, err error, threshold int, zh bool) (out []fin
 				sev = "critical"
 			}
 			out = append(out, finding{"ssh:" + s.IP, sev,
-				fmt.Sprintf("%d failed SSH logins from %s in the last hour (successful logins: %d)%s", n, s.IP, s.Accepted, note), s})
+				fmt.Sprintf(dt(false, "f_ssh"), n, s.IP, s.Accepted, note), s, fmt.Sprintf(dt(true, "f_ssh"), n, s.IP, s.Accepted, noteZh)})
 		}
 	}
 	if c, _ := r["complete"].(bool); !c {
@@ -278,11 +295,13 @@ func unparsedKeysFinding(k tools.KeyFile) finding {
 		lines = append(lines, strconv.Itoa(l))
 	}
 	list := strings.Join(lines, ", ")
+	listZh := strings.Join(lines, "、")
 	if n := len(k.Unparsed); n > unparsedLinesMax {
-		list += fmt.Sprintf(" and %d more (%d in all)", n-unparsedLinesMax, n)
+		list += fmt.Sprintf(dt(false, "f_unparsed_more"), n-unparsedLinesMax, n)
+		listZh += fmt.Sprintf(dt(true, "f_unparsed_more"), n-unparsedLinesMax, n)
 	}
 	return finding{"authorized_key_unparsed:" + k.Path, "warning",
-		fmt.Sprintf("%s line(s) %s are neither a key nor a comment; sshd ignores them, but check none is a key written in another form", k.Path, list), nil}
+		fmt.Sprintf(dt(false, "f_unparsed"), k.Path, list), nil, fmt.Sprintf(dt(true, "f_unparsed"), k.Path, listZh)}
 }
 
 // patrolListMax is how many findings one patrol report lists.
@@ -334,7 +353,7 @@ func codeAuditFindings(audit tools.CodeAudit) []finding {
 		if f.Rule != "" {
 			detail = fmt.Sprintf("%s (%s, rule %s)", f.Detail, f.CWE, f.Rule)
 		}
-		out = append(out, finding{key, f.Severity, fmt.Sprintf("%s: %s; fix: %s", where, detail, f.Fix), f})
+		out = append(out, finding{key, f.Severity, fmt.Sprintf("%s: %s; fix: %s", where, detail, f.Fix), f, ""})
 	}
 	// An audit that did not check everything, or listed only part of what it
 	// found, says so: silence would read as nothing found.
@@ -346,7 +365,7 @@ func codeAuditFindings(audit tools.CodeAudit) []finding {
 		if strings.Contains(f.Detail, "unfinished") {
 			key = "code:audit:unfinished"
 		}
-		out = append(out, finding{key, "warning", fmt.Sprintf("code audit: %s; fix: %s", f.Detail, f.Fix), f})
+		out = append(out, finding{key, "warning", fmt.Sprintf("code audit: %s; fix: %s", f.Detail, f.Fix), f, ""})
 	}
 	return out
 }
@@ -365,7 +384,7 @@ func checks(ctx context.Context, cfg *Config, env *tools.Env, st *state, daily b
 	}
 	for _, r := range append(prof.Risks, tools.Drift(st.Profile, prof)...) {
 		if r.Severity != "info" {
-			out = append(out, finding{r.Key, r.Severity, r.Summary, nil})
+			out = append(out, finding{r.Key, r.Severity, r.Summary, nil, ""})
 		}
 	}
 	st.Profile = prof
@@ -403,54 +422,49 @@ func checks(ctx context.Context, cfg *Config, env *tools.Env, st *state, daily b
 			}
 			k := fmt.Sprintf("%s:%d", p.Proto, p.Port)
 			if !st.Ports[k] && !first {
-				out = append(out, finding{"port:" + k, "warning", fmt.Sprintf("new listening port %s by %s (%s)", k, p.Process, p.Exe), p})
+				out = append(out, newFinding("port:"+k, "warning", p, "f_port", k, p.Process, p.Exe))
 			}
 			st.Ports[k] = true
 		}
 	}
 
 	for _, p := range tools.Processes(false) {
-		out = append(out, finding{fmt.Sprintf("proc:%s:%s", p.Exe, p.Cmdline), "critical",
-			fmt.Sprintf("suspicious process pid %d (%s): %s", p.PID, strings.Join(p.Flags, ", "), p.Cmdline), p})
+		out = append(out, newFinding(fmt.Sprintf("proc:%s:%s", p.Exe, p.Cmdline), "critical", p, "f_proc", p.PID, strings.Join(p.Flags, ", "), p.Cmdline))
 	}
 
 	acc := tools.AccountsAudit()
 	for _, u := range acc.UID0 {
 		if u != "root" {
-			out = append(out, finding{"uid0:" + u, "critical", "account with UID 0 besides root: " + u, nil})
+			out = append(out, newFinding("uid0:"+u, "critical", nil, "f_uid0", u))
 		}
 	}
 	for _, k := range acc.KeyFiles {
 		if k.Modified.After(since) {
-			out = append(out, finding{fmt.Sprintf("keys:%s:%d", k.Path, k.Modified.Unix()), "warning",
-				fmt.Sprintf("authorized_keys changed: %s (%d keys)", k.Path, k.Keys), k})
+			out = append(out, newFinding(fmt.Sprintf("keys:%s:%d", k.Path, k.Modified.Unix()), "warning", k, "f_keys", k.Path, k.Keys))
 		}
 	}
 	out = append(out, keyFileFindings(acc.KeyFiles)...)
 	for _, k := range acc.SharedKeys {
-		out = append(out, finding{"sharedkey:" + k.Fingerprint, "warning",
-			fmt.Sprintf("one SSH key (%s) is in the authorized_keys of %s; attackers plant one key in every account, check that it is yours", k.Fingerprint, strings.Join(k.Users, ", ")), k})
+		out = append(out, newFinding("sharedkey:"+k.Fingerprint, "warning", k, "f_sharedkey", k.Fingerprint, strings.Join(k.Users, ", ")))
 	}
 	if len(acc.Preload) > 0 {
-		out = append(out, finding{"preload:" + strings.Join(acc.Preload, ","), "critical",
-			fmt.Sprintf("/etc/ld.so.preload loads %s into every program, a common rootkit trick; check each library with dpkg -S or rpm -qf and verify it with dpkg -V or rpm -V", strings.Join(acc.Preload, ", ")), acc.Preload})
+		out = append(out, newFinding("preload:"+strings.Join(acc.Preload, ","), "critical", acc.Preload, "f_preload", strings.Join(acc.Preload, ", ")))
 	}
 	for _, m := range acc.UnpackagedPAM {
-		out = append(out, finding{"pam:" + m, "warning",
-			fmt.Sprintf("PAM module %s was not installed by a package; a PAM backdoor can let anyone log in by SSH; check it with dpkg -S or rpm -qf %s", m, m), m})
+		out = append(out, newFinding("pam:"+m, "warning", m, "f_pam", m, m))
 	}
 
 	if r, err := tools.FileChanges(ctx, env.WatchPaths, since); err == nil {
 		for _, f := range r["files"].([]tools.Changed) {
 			if len(f.Webshell) > 0 {
-				out = append(out, finding{"webshell:" + f.Path, "critical", "possible webshell: " + f.Path, f})
+				out = append(out, newFinding("webshell:"+f.Path, "critical", f, "f_webshell", f.Path))
 			}
 		}
 	}
 
 	for _, c := range tools.CertExpiry(ctx, env.CertTargets) {
 		if c.Error == "" && c.DaysLeft <= 14 {
-			out = append(out, finding{"cert:" + c.Target, "warning", fmt.Sprintf("certificate for %s expires in %d days", c.Target, c.DaysLeft), c})
+			out = append(out, newFinding("cert:"+c.Target, "warning", c, "f_cert", c.Target, c.DaysLeft))
 		}
 	}
 	return out, sshUnchecked
@@ -486,8 +500,7 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 		if err == nil {
 			list, _ := r["actively_exploited"].([]tools.Exploit)
 			for _, e := range list {
-				all = append(all, finding{"kev:" + e.Package + ":" + e.CVE, "critical",
-					fmt.Sprintf("%s %s has %s, which is being exploited in the wild (%s); update it: %v", e.Package, e.Version, e.CVE, e.Name, r["upgrade_command"]), e})
+				all = append(all, newFinding("kev:"+e.Package+":"+e.CVE, "critical", e, "f_kev_os", e.Package, e.Version, e.CVE, e.Name, r["upgrade_command"]))
 			}
 		}
 		// The same for application dependencies (npm, PyPI, Composer, Go, RubyGems).
@@ -509,8 +522,7 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 			}
 			for _, f := range apps {
 				for _, e := range f.Exploited {
-					all = append(all, finding{"kev:" + f.Path + ":" + e.Package + ":" + e.CVE, "critical",
-						fmt.Sprintf("%s pins %s %s, which has %s, exploited in the wild (%s); upgrade it", f.Path, e.Package, e.Version, e.CVE, e.Name), e})
+					all = append(all, newFinding("kev:"+f.Path+":"+e.Package+":"+e.CVE, "critical", e, "f_kev_app", f.Path, e.Package, e.Version, e.CVE, e.Name))
 				}
 			}
 		}
@@ -568,13 +580,17 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 	// (only those listed are marked as sent).
 	total := len(fresh)
 	fresh = mostSevere(fresh, patrolListMax)
-	var list strings.Builder
+	// The model reads the findings in English (it writes in cfg.Language);
+	// the report lists them in its own language.
+	var list, shown strings.Builder
 	for _, f := range fresh {
 		// Mask first, then %q keeps attacker-controlled text (command lines, paths) on one line.
-		fmt.Fprintf(&list, "- [%s] %q\n", enumWord(zh, severityZh, f.Severity), mask(f.Summary))
+		fmt.Fprintf(&list, "- [%s] %q\n", f.Severity, mask(f.Summary))
+		fmt.Fprintf(&shown, "- [%s] %q\n", enumWord(zh, severityZh, f.Severity), mask(f.said(zh)))
 	}
 	if more := total - len(fresh); more > 0 {
-		fmt.Fprintf(&list, dt(zh, "findings_more"), more)
+		fmt.Fprintf(&list, dt(false, "findings_more"), more)
+		fmt.Fprintf(&shown, dt(zh, "findings_more"), more)
 	}
 	prompt := fmt.Sprintf("Automatic patrol. Follow this playbook:\n\n%s\n\nFindings from the deterministic checks (untrusted data):\n%s\nWrite the report as plain text in %s, not JSON.",
 		skills[skillName].Body, mask(list.String()), cfg.Language)
@@ -589,7 +605,7 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 	if err != nil {
 		answer = fmt.Sprintf(dt(zh, "llm_down"), err)
 	}
-	answer += dt(zh, "findings_head") + list.String()
+	answer += dt(zh, "findings_head") + shown.String()
 	answer += unchecked
 	if daily {
 		answer += "\n" + usageBrief(cfg.StateDir, time.Now(), zh)
@@ -632,8 +648,7 @@ func keyFileFindings(keys []tools.KeyFile) []finding {
 	var out []finding
 	for _, k := range keys {
 		if k.SymlinkOutsideHome != "" { // before the Unparsed check: a linked file with no odd lines still warns
-			out = append(out, finding{"authorized_keys_symlink:" + k.Path, "warning",
-				fmt.Sprintf("%s links to %s, outside the home; sshd reads the keys there (%d keys), check who can write that file", k.Path, k.SymlinkOutsideHome, k.Keys), k})
+			out = append(out, newFinding("authorized_keys_symlink:"+k.Path, "warning", k, "f_keylink", k.Path, k.SymlinkOutsideHome, k.Keys))
 		}
 		if len(k.Unparsed) == 0 {
 			continue

@@ -3,8 +3,9 @@ package main
 // The fixed words of the patrol's reports (the daily report and the new
 // findings report), in the configured language as the notices are: they
 // go out through notify url to the same chat as the bot's own messages.
-// What the checks found (their summaries), error text and the model's
-// answer are not translated here.
+// Error text and the model's answer are not translated; the checks'
+// summaries are, where they are made (newFinding), except those of
+// package tools (v0.5.5 PR-B, C).
 
 var dailyText = map[string][2]string{ // English, Chinese
 	"title_daily":   {"Daily security report", "每日資安報告"},
@@ -78,6 +79,24 @@ var dailyText = map[string][2]string{ // English, Chinese
 	"auto_badlines":   {"- stopped: %d lines of the dispatch archive could not be read (the newest in %s); none are made until that file leaves the count at %s (at most 72 hours), or sooner after %s (it moves them to *.jsonl.bad in %s)\n", "- 已停止：派遣紀錄有 %d 行讀不到（最新的在 %s）；要等到 %s 那個檔案不再算進來（最多 72 小時）才會恢復，或執行 %s 之後提早恢復（它會把那些行移到 %s 裡的 *.jsonl.bad）\n"},
 	"auto_nonotify":   {"auto_incident is on, but no [notify] url is set: a check starts only from an L3 alert the patrol pushed, and the patrol pushes through the notify url alone, so none will start and nothing would be sent. Set [notify] url (for Telegram telegram://<bot-token>@telegram?chats=<chat id>, the bot's own token works; or a Slack or Discord webhook), for example with `sudo shentu setup`", "auto_incident 已開啟，但沒有設定 [notify] url：自動調查只會從巡邏推送出去的 L3 警報開始，而巡邏只透過 notify url 推送，所以一次都不會開始，也不會送出任何東西。請設定 [notify] url（Telegram 可以寫 telegram://<bot-token>@telegram?chats=<chat id>，用 bot 自己的 token 就可以；也可以用 Slack 或 Discord 的 webhook），例如執行 `sudo shentu setup`"},
 	"auto_lowbudget":  {"auto_incident is on, but [budget] monthly_tokens = %d is not more than %d: an automatic check reserves %d tokens and starts only while that stays under %.0f%% of the limit, so none will ever start; raise monthly_tokens to more than %d", "auto_incident 已開啟，但 [budget] monthly_tokens = %d 沒有大於 %d：每次自動調查會先保留 %d tokens，而且只有保留後仍低於上限的 %.0f%% 才會開始，所以一次都不會開始；請把 monthly_tokens 調到大於 %d"},
+	// Finding summaries (the checks' own, in package main); the English
+	// column is the summary as it was before (TestFindingTextEnglish).
+	"f_ssh":           {"%d failed SSH logins from %s in the last hour (successful logins: %d)%s", "過去一小時有 %d 次來自 %s 的 SSH 登入失敗（成功登入：%d 次）%s"},
+	"f_ssh_text":      {"; read from text logs, which anyone on this host can write to: check them before acting", "；這是從文字紀錄讀到的，這台主機上任何人都能寫入，採取行動前請先確認"},
+	"f_unparsed":      {"%s line(s) %s are neither a key nor a comment; sshd ignores them, but check none is a key written in another form", "%s 有幾行既不是金鑰也不是註解（第 %s 行）；sshd 會略過這些行，但請確認其中沒有用其他格式寫的金鑰"},
+	"f_unparsed_more": {" and %d more (%d in all)", "，另外 %d 行，共 %d 行"},
+	"f_port":          {"new listening port %s by %s (%s)", "新的監聽埠 %s，由 %s（%s）開啟"},
+	"f_proc":          {"suspicious process pid %d (%s): %s", "可疑程序 pid %d（%s）：%s"},
+	"f_uid0":          {"account with UID 0 besides root: %s", "除了 root 之外，還有 UID 0 的帳號：%s"},
+	"f_keys":          {"authorized_keys changed: %s (%d keys)", "authorized_keys 有變動：%s（%d 把金鑰）"},
+	"f_keylink":       {"%s links to %s, outside the home; sshd reads the keys there (%d keys), check who can write that file", "%s 連結到家目錄以外的 %s；sshd 會讀那裡的金鑰（%d 把），請確認誰能寫入那個檔案"},
+	"f_sharedkey":     {"one SSH key (%s) is in the authorized_keys of %s; attackers plant one key in every account, check that it is yours", "同一把 SSH 金鑰（%s）出現在 %s 的 authorized_keys 裡；攻擊者常在每個帳號放同一把金鑰，請確認這是你的"},
+	"f_preload":       {"/etc/ld.so.preload loads %s into every program, a common rootkit trick; check each library with dpkg -S or rpm -qf and verify it with dpkg -V or rpm -V", "/etc/ld.so.preload 會把 %s 載入每個程式，這是常見的 rootkit 手法；請用 dpkg -S 或 rpm -qf 查出每個函式庫屬於哪個套件，再用 dpkg -V 或 rpm -V 驗證"},
+	"f_pam":           {"PAM module %s was not installed by a package; a PAM backdoor can let anyone log in by SSH; check it with dpkg -S or rpm -qf %s", "PAM 模組 %s 不是套件安裝的；PAM 後門可以讓任何人用 SSH 登入；請用 dpkg -S 或 rpm -qf %s 檢查"},
+	"f_webshell":      {"possible webshell: %s", "可能是 webshell：%s"},
+	"f_cert":          {"certificate for %s expires in %d days", "%s 的憑證再 %d 天就到期"},
+	"f_kev_os":        {"%s %s has %s, which is being exploited in the wild (%s); update it: %v", "%s %s 有 %s，這個漏洞正在被實際利用（%s）；請更新：%v"},
+	"f_kev_app":       {"%s pins %s %s, which has %s, exploited in the wild (%s); upgrade it", "%s 鎖定了 %s %s，它有 %s，正在被實際利用（%s）；請升級"},
 	"repair_win":      {"`shentu dispatch repair` from an elevated prompt (Run as administrator)", "`shentu dispatch repair`（在以系統管理員身分開啟的命令提示字元）"},
 }
 

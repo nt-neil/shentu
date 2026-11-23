@@ -13,6 +13,13 @@ Chinese for the zh-TW pages; keep the two in step.
   automatic incident checks, SSH logins) are in Chinese; up to v0.5.4 they were in English whatever `language` said.
   What a check found, error text and the model's answer are not translated: they are added as they came.
 
+- What the patrol's own checks found is in Chinese too with a Chinese `language`: new listening ports,
+  suspicious processes, UID 0 accounts, authorized_keys changes, links and shared keys, ld.so.preload,
+  PAM modules, webshells, certificates, SSH login failures, CISA KEV vulnerabilities and unreadable
+  authorized_keys lines. The English text is word for word what it was, and the model is still sent
+  the English list. Findings from the tools (survey risks, changes since the last survey, the code
+  audit) are still in English.
+
 ## v0.5.4 (unreleased)
 
 - Shared AI budget (#161): a dispatch from the bot, `shentu chat` or the automatic incident check
