@@ -160,7 +160,7 @@ Chinese for the zh-TW pages; keep the two in step.
 
 - `new $var(...)` is taken as a call of the parameter `$var` (#182). A plugin that bundles the
   Freemius SDK has many files whose calls are marked as not all followed, and a false finding may
-  come of it; no finding is missed. To be fixed in v0.5.7.
+  come of it. No findings were lost on the E7 and CVE bench measurements. To be fixed in v0.5.7.
 
 ## v0.5.5 — 2026-11-23
 
