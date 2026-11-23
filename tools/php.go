@@ -109,7 +109,8 @@ type phpInstall struct {
 	iis                   bool
 	apache                bool   // Apache runs it as CGI (Windows)
 	conf                  string // the httpd.conf files that do, ", " between
-	cgiOff                bool   // none of them loads cgi_module or cgid_module
+	cgiOff                bool   // none of them loads cgi_module or cgid_module, all of them read
+	cgiUnread             bool   // none seen loading cgi_module, but some of the configuration was not read
 }
 
 // phpBinGlobs are where PHP binaries are: the distributions' (Debian's
@@ -244,7 +245,9 @@ func phpInstalls(ctx context.Context) (ins []phpInstall, unread []string) {
 			for _, a := range exes {
 				if i, ok := at[strings.ToLower(a)]; ok {
 					ins[i].conf += ", " + conf
-					ins[i].cgiOff = ins[i].cgiOff && !cgiMod
+					loaded := cgiMod || !ins[i].cgiOff && !ins[i].cgiUnread
+					partial := ins[i].cgiUnread || len(un) > 0
+					ins[i].cgiOff, ins[i].cgiUnread = !loaded && !partial, !loaded && partial
 					continue
 				}
 				v, why := phpWinVersion(a)
@@ -253,7 +256,8 @@ func phpInstalls(ctx context.Context) (ins []phpInstall, unread []string) {
 					continue
 				}
 				at[strings.ToLower(a)] = len(ins)
-				ins = append(ins, phpInstall{bin: a, version: v, sapi: "cgi", apache: true, conf: conf, cgiOff: !cgiMod})
+				ins = append(ins, phpInstall{bin: a, version: v, sapi: "cgi", apache: true, conf: conf,
+					cgiOff: !cgiMod && len(un) == 0, cgiUnread: !cgiMod && len(un) > 0})
 			}
 		}
 		return ins, unread
@@ -358,6 +362,9 @@ func phpWinLocal(p string) (string, error) {
 			return "", errNotLocal
 		}
 		p = winClean(p)
+		if strings.ContainsAny(p[2:], ":?") { // an alternate data stream, or a device or wildcard spelling
+			return "", errNotLocal
+		}
 		if hops > 16 {
 			return "", errors.New("too many links, not read")
 		}
@@ -366,8 +373,11 @@ func phpWinLocal(p string) (string, error) {
 		for i, part := range parts {
 			cur += `\` + part
 			st, err := phpLstat(cur)
-			if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
 				return p, nil // not there: the open says so
+			}
+			if err != nil {
+				return "", fmt.Errorf("its links could not be checked (%w), not read", err)
 			}
 			if st.Mode()&(os.ModeSymlink|os.ModeIrregular) == 0 {
 				continue

@@ -189,6 +189,18 @@ func TestPHPReview200CGIModule(t *testing.T) {
 	if s, _ := phpWinSurface(context.Background(), nil); len(s) != 1 || s[0].Severity != "medium" {
 		t.Errorf("surface: %+v", s)
 	}
+	// S2-2: a configuration file not read may be where it is loaded: kept
+	// critical, the reason said.
+	full := h.files[f]
+	h.files[f] += "Include //files.example/share/modules.conf\n"
+	if a := phpFind(phpRisks(context.Background()), "php8.3:CVE-2024-4577"); a == nil || a.Severity != "critical" ||
+		!strings.Contains(a.Summary, "some of the configuration was not read") {
+		t.Errorf("configuration not read: %v", a)
+	}
+	if s, _ := phpWinSurface(context.Background(), nil); len(s) != 1 || s[0].Severity != "critical" {
+		t.Errorf("surface, configuration not read: %+v", s)
+	}
+	h.files[f] = full
 	h.files[f] = strings.Replace(h.files[f], "#LoadModule cgi_module", "LoadModule cgid_module", 1)
 	if a := phpFind(phpRisks(context.Background()), "php8.3:CVE-2024-4577"); a == nil || a.Severity != "critical" {
 		t.Errorf("cgid_module: %v", a)
@@ -222,10 +234,17 @@ func TestPHPWinLocal(t *testing.T) {
 		`D:\conf\back`:           `\\files.example\share`,
 		`C:\Apache24\conf\dedup`: "",
 		`C:\Apache24\conf\slash`: `//files.example/share`,
+		`C:\Apache24\conf\ads`:   `C:\data\a.conf:s`,
 	}
 	var looked []string
 	phpLstat = func(p string) (os.FileInfo, error) {
 		looked = append(looked, p)
+		switch p {
+		case `C:\priv`:
+			return nil, fs.ErrPermission
+		case `C:\none`:
+			return nil, fs.ErrNotExist
+		}
 		if _, ok := links[p]; ok {
 			if p == `C:\Apache24\conf\dedup` {
 				return fakeInfo{os.ModeIrregular}, nil
@@ -248,6 +267,11 @@ func TestPHPWinLocal(t *testing.T) {
 		`C:\Apache24\conf/extra/php.conf`:      "not a local absolute path",
 		`C:\Apache24\conf\x\..\extra\php.conf`: "not a local absolute path",
 		`C:\Apache24\conf\.\\extra\php.conf`:   "not a local absolute path",
+		`C:\priv\link\a.conf`:                  "its links could not be checked",
+		`C:\none\a.conf`:                       `C:\none\a.conf`,
+		`C:\Apache24\conf\a.conf:stream`:       "not a local absolute path",
+		`C:\Apache24\conf\a?.conf`:             "not a local absolute path",
+		`C:\Apache24\conf\ads\x`:               "not a local absolute path",
 		`C:\Apache24\conf\slash\php.conf`:      "not a local absolute path",
 		`C:\..\..\Apache24\conf\httpd.conf`:    `C:\Apache24\conf\httpd.conf`,
 		`C:\Apache24\conf\root\php.conf`:       `C:\shared\php.conf`,

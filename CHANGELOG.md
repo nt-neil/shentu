@@ -41,7 +41,9 @@ Chinese for the zh-TW pages; keep the two in step.
   a network or device path in the configuration (`\\host\share`) is never read, nor an included
   file whose link leads to one. Without a `LoadModule` of cgi_module or cgid_module in what was
   read, Apache would not run CGI, so the entry is a warning, not critical (one inside an
-  `<IfModule>` counts as loaded).
+  `<IfModule>` counts as loaded); when some of the configuration could not be read, it stays
+  critical and says so. A path whose links cannot be checked, or with `:` or `?` after the drive
+  (an alternate data stream), is not read either.
 
 ## v0.5.4 (unreleased)
 

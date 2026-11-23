@@ -451,6 +451,10 @@ func phpArgInjRisk(k phpArgInjCheck) Risk {
 		cp += "; no LoadModule of cgi_module or cgid_module was found in the configuration read, so Apache may not run it " +
 			"(unconfirmed: a module loaded where Shentu does not read, or a LoadModule inside an <IfModule>, is counted as loaded too)"
 	}
+	if k.in.cgiUnread {
+		cp += "; no LoadModule of cgi_module or cgid_module was seen, but some of the configuration was not read " +
+			"(listed as not checked), so it may be loaded there"
+	}
 	if k.eol {
 		sev = "warning"
 		fix = ". This branch is not listed in the advisory and gets no fix (php.net no longer fixes it): move to a branch " +
