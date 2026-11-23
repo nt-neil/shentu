@@ -6,6 +6,14 @@ a release are not written here: they are worked out from the rule snapshots in
 `docs/site-src/rules-history/`. `CHANGELOG.zh-TW.md` holds the same releases in Traditional
 Chinese for the zh-TW pages; keep the two in step.
 
+## v0.5.5 (unreleased)
+
+- What a dispatch in progress has already used no longer counts twice near the budget limit: its
+  reservation knows the dispatch and when it started, and the others count only the rest of it,
+  from the same read of the log as the month's use. A reservation that cannot be matched counts in
+  full, as before.
+
+
 ## v0.5.4 — 2026-11-23
 
 - Shared AI budget (#161): a dispatch from the bot, `shentu chat` or the automatic incident check

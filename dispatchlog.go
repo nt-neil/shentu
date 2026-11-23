@@ -710,7 +710,7 @@ func (a *agent) runDispatch(ctx context.Context, origin, trigger string, tasks [
 	sl, external, modelErr := agentsLLM(a.cfg, a.llm)
 	a.subLLM = sl
 	defer func() { a.subLLM = nil }()
-	resID, release, resErr := reserve(a.cfg, dispatchTokenCap, dispatchCost(a.cfg), start) // R1, R2: the others see this one
+	resID, release, resErr := reserveFor(a.cfg, dispatchTokenCap, dispatchCost(a.cfg), id, start) // R1, R2: the others see this one; S-R-2: less what it has logged
 	defer release()
 	a.resID = resID
 	defer func() { a.resID = "" }()
@@ -786,11 +786,8 @@ func budgetRoom(cfg *Config, now time.Time, self string) bool {
 	if cfg.Budget.MonthlyTokens <= 0 {
 		return false
 	}
-	cost, used, _, err := monthUsageStrict(cfg.StateDir, now)
-	if err != nil {
-		return false
-	}
-	others, othersCost, err := othersReserved(cfg, self, now) // R1: what other dispatches hold is not room
+	u, err := usageWithOthers(cfg, self, now) // R1: what other dispatches hold is not room; S-R-2: one read
+	cost, used, others, othersCost := u.cost, u.tokens, u.othersTokens, u.othersCost
 	if err != nil || used+others+dispatchTokenCap > cfg.Budget.MonthlyTokens {
 		return false
 	}
