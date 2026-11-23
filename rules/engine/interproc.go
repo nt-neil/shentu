@@ -1075,7 +1075,11 @@ func (a *analysis) crossNeeded(tree []*stmt) bool {
 	}
 	walkToks(tree, 0, look)
 	if a.proj != nil {
-		for _, k := range keys { // and inside the file's functions, for calls into other files, in a fixed order: what relevant() reads first stays the same
+		// and inside the file's functions, for calls into other files, in a fixed
+		// order: what relevant() reads first stays the same. No test pins this
+		// yet (TestProjectEvictionOrderFixed pins the walk change in relevance.go);
+		// one comparing the cut list can come once cut causes are recorded.
+		for _, k := range keys {
 			for _, fi := range sc.funcs[k] {
 				if !found {
 					walkToks(fi.f.body, 0, look)
