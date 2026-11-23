@@ -32,16 +32,20 @@ func TestDailyTextVerbs(t *testing.T) {
 }
 
 // reportWords are the words a Chinese report keeps in Latin letters:
-// names, settings, file names and commands, not sentences.
+// names and abbreviations, not sentences. Words that are English only as
+// part of a command, a setting or a file name are in reportPhrases, whole.
 var reportWords = map[string]bool{
 	"Agent": true, "AI": true, "token": true, "tokens": true, "KiB": true, "L1": true, "L2": true, "L3": true, "IP": true,
-	"SSH": true, "DNS": true, "CISA": true, "KEV": true, "OSV": true, "lock": true, "root": true, "LocalSystem": true,
+	"SSH": true, "DNS": true, "CISA": true, "KEV": true, "OSV": true, "root": true, "LocalSystem": true, "Linux": true,
 	"WordPress": true, "Telegram": true, "Slack": true, "Discord": true, "webhook": true, "bot": true,
-	"auto_incident": true, "notify": true, "url": true, "budget": true, "monthly_tokens": true, "monthly_cost": true,
-	"agents": true, "base_url": true, "log": true, "jsonl": true, "bad": true, "chat": true, "shentu": true,
-	"surface": true, "json": true, "dry": true, "run": true, "patrol": true, "daily": true, "dispatch": true, "repair": true,
-	"auto": true, "incident": true, "resolv": true, "conf": true, "etc": true, "getent": true, "hosts": true,
-	"MST": true, "Linux": true, "UTC": true, "CST": true, "telegram": true, "chats": true, "id": true, "sudo": true, "setup": true,
+}
+
+// reportPhrases are settings, file names and commands said outside a
+// `quote` (a quoted one is taken out whole).
+var reportPhrases = []string{
+	"telegram://<bot-token>@telegram?chats=<chat id>", "[notify] url", "notify url", "[budget] monthly_tokens", "monthly_tokens",
+	"monthly_cost", "[agents] base_url", "auto_incident", "--dry-run", "shentu chat", "surface.json", "log.jsonl", "*.jsonl.bad",
+	".jsonl", "lock 檔",
 }
 
 var (
@@ -49,12 +53,30 @@ var (
 	reAddr   = regexp.MustCompile(`[0-9a-f]*:[0-9a-f:]*:[0-9a-f:]*(?:/\d+)?`)
 	rePath   = regexp.MustCompile(`(?:/[^\s（）()：，；、]*)+`)
 	reLatin  = regexp.MustCompile(`[A-Za-z][A-Za-z0-9_]*`)
+	// A time's zone abbreviation, whatever the host's zone (JST, CET).
+	reZone = regexp.MustCompile(`(\d\d:\d\d) [A-Z][A-Za-z]{1,5}\b`)
 )
 
-// englishLeft is what is left in s of English: each run of Latin letters
-// that is not one of reportWords, outside quoted values (what a check or a
-// log said) and paths. An English template's own fragments, cut at its
-// verbs, are looked for as they are.
+// latinLeft is each run of Latin letters in s that is not one of
+// reportWords, outside quoted values (what a check or a log said), paths,
+// addresses, a time's zone and reportPhrases.
+func latinLeft(s string) []string {
+	s = reZone.ReplaceAllString(reQuoted.ReplaceAllString(s, ""), "$1")
+	for _, p := range reportPhrases {
+		s = strings.ReplaceAll(s, p, "")
+	}
+	s = rePath.ReplaceAllString(reAddr.ReplaceAllString(s, ""), "")
+	var left []string
+	for _, w := range reLatin.FindAllString(s, -1) {
+		if !reportWords[w] {
+			left = append(left, w)
+		}
+	}
+	return left
+}
+
+// englishLeft is what is left in s of English: an English template's own
+// fragments, cut at its verbs, as they are, and latinLeft.
 func englishLeft(s string) []string {
 	var left []string
 	for _, v := range dailyText {
@@ -64,13 +86,17 @@ func englishLeft(s string) []string {
 			}
 		}
 	}
-	rest := rePath.ReplaceAllString(reAddr.ReplaceAllString(reQuoted.ReplaceAllString(s, ""), ""), "")
-	for _, w := range reLatin.FindAllString(rest, -1) {
-		if !reportWords[w] {
-			left = append(left, w)
+	return append(left, latinLeft(s)...)
+}
+
+// S-1: every Chinese text, whether or not a test reaches the line it is
+// on, is Chinese: its verbs taken out, no English is left.
+func TestDailyTextChineseColumn(t *testing.T) {
+	for k, v := range dailyText {
+		if left := latinLeft(reVerb.ReplaceAllString(v[1], " ")); len(left) > 0 {
+			t.Errorf("%s: English left %q in %q", k, left, v[1])
 		}
 	}
-	return left
 }
 
 // The report sections the daily patrol adds, built on a Chinese setting

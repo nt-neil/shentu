@@ -282,7 +282,7 @@ const autoMinTokens = int(dispatchTokenCap / autoBudgetStop)
 // bot starts to serve and on the daily patrol only: the patrol's timer
 // runs often, and every other command would repeat it.
 func warnAutoBudget(cfg *Config) {
-	if w := autoBudgetWarning(cfg, false); w != "" {
+	if w := autoBudgetWarning(cfg, isZh(cfg)); w != "" {
 		fmt.Fprintln(os.Stderr, "shentu: warning: "+w)
 	}
 }
@@ -300,7 +300,7 @@ func autoBudgetWarning(cfg *Config, zh bool) string {
 // bot starts to serve and on the daily patrol only: the patrol's timer
 // runs often, and every other command would repeat it.
 func warnAutoNotify(cfg *Config) {
-	if w := autoNotifyWarning(cfg, false); w != "" {
+	if w := autoNotifyWarning(cfg, isZh(cfg)); w != "" {
 		fmt.Fprintln(os.Stderr, "shentu: warning: "+w)
 	}
 }
