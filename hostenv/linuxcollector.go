@@ -18,7 +18,7 @@ import (
 )
 
 // LinuxCollector gathers hostfacts on Linux from /proc, /etc and the package
-// database. It runs two commands at most (dpkg-query or rpm), both read-only.
+// database. It runs read-only commands only (dpkg-query, or rpm twice).
 type LinuxCollector struct{}
 
 func (LinuxCollector) Name() string { return "linux" }
@@ -29,7 +29,87 @@ var (
 )
 
 func (LinuxCollector) Allowlist() [][]string {
-	return append([][]string{dpkgArgv, rpmArgv, rpmQalArgv, nftListArgv, iptablesArgv, iptablesSbin, journalArgv, journalBinArgv, journalSockArgv, journalSockBinArgv, journalSSHDArgv, journalSSHDBinArgv, journalSSHDSockArgv, journalSSHDSockBinArgv}, journalUnitArgvs()...)
+	l := append([][]string{dpkgArgv, rpmArgv, rpmVendorArgv, rpmQalArgv, nftListArgv, iptablesArgv, iptablesSbin, journalArgv, journalBinArgv, journalSockArgv, journalSockBinArgv, journalSSHDArgv, journalSSHDBinArgv, journalSSHDSockArgv, journalSSHDSockBinArgv}, append(journalUnitArgvs(), sshJournalArgvs()...)...)
+	return append(l, webPackageArgvs()...)
+}
+
+// The package queries of the web server checks (tools: nginx's and
+// Apache's versions and nginx's changelog), each an exact argv, so they
+// run through the host source like every other read: a replay or another
+// host's survey is never answered by the machine running it.
+var (
+	NginxPackages = []string{"nginx", "nginx-core", "nginx-full", "nginx-light", "nginx-extras", "openresty"}
+	NginxRPMs     = []string{"nginx", "openresty"}
+	dpkgStatusFmt = "${db:Status-Status} ${Version}"
+	rpmVersionFmt = "%{EPOCHNUM}:%{VERSION}-%{RELEASE}"
+	dpkgQueryPath = "/usr/bin/dpkg-query"
+	rpmPath       = "/usr/bin/rpm"
+	apacheDpkgPkg = "apache2"
+	apacheRPMPkg  = "httpd"
+)
+
+// DpkgStatusArgv asks dpkg for pkg's status and version.
+func DpkgStatusArgv(pkg string) []string {
+	return []string{dpkgQueryPath, "-W", "-f", dpkgStatusFmt, pkg}
+}
+
+// DpkgVersionArgv asks dpkg for pkg's version (Apache).
+func DpkgVersionArgv(pkg string) []string {
+	return []string{dpkgQueryPath, "-W", "-f", "${Version}", pkg}
+}
+
+// RPMVersionArgv asks rpm for pkg's epoch, version and release.
+func RPMVersionArgv(pkg string) []string { return []string{rpmPath, "-q", "--qf", rpmVersionFmt, pkg} }
+
+// RPMChangelogArgv asks rpm for pkg's changelog.
+func RPMChangelogArgv(pkg string) []string { return []string{rpmPath, "-q", "--changelog", pkg} }
+
+// The PHP check's queries (tools), about a binary found on the host or the
+// package holding it: which package owns the file, and that package's
+// status, owner and changelog. The file and the package are slots
+// (SlotPath, SlotPkg), never options.
+var rpmOwnerFmt = "%{NAME} %{EPOCHNUM}:%{VERSION}-%{RELEASE} %{VENDOR}\n"
+
+// DpkgSearchArgv asks dpkg which package holds the file p.
+func DpkgSearchArgv(p string) []string { return []string{dpkgQueryPath, "-S", p} }
+
+// RPMOwnerArgv asks rpm which package holds the file p, with its epoch,
+// version, release and vendor.
+func RPMOwnerArgv(p string) []string { return []string{rpmPath, "-qf", "--qf", rpmOwnerFmt, p} }
+
+func phpPackageArgvs() [][]string {
+	return [][]string{DpkgSearchArgv(SlotPath), DpkgStatusArgv(SlotPkg), RPMOwnerArgv(SlotPath), RPMChangelogArgv(SlotPkg)}
+}
+
+// ApacheVersionArgvs are Apache's version queries, dpkg's then rpm's.
+func ApacheVersionArgvs() [][]string {
+	return [][]string{DpkgVersionArgv(apacheDpkgPkg), RPMVersionArgv(apacheRPMPkg)}
+}
+
+// A package's changelog can be long, and rpm waits for a locked database:
+// as for the full rpm list, more room and time than the defaults, so the
+// backport evidence is not lost to a cut (S-175-1). Read limits for the
+// binary are the reader's (64 MiB, tools).
+func init() {
+	for _, p := range NginxRPMs {
+		registerBig(RPMChangelogArgv(p), 16<<20, MaxTimeout)
+		registerBig(RPMVersionArgv(p), 0, MaxTimeout)
+	}
+	registerBig(RPMVersionArgv(apacheRPMPkg), 0, MaxTimeout)
+	registerBig(RPMChangelogArgv(SlotPkg), 16<<20, MaxTimeout)
+	registerBig(RPMOwnerArgv(SlotPath), 0, MaxTimeout)
+}
+
+func webPackageArgvs() [][]string {
+	var l [][]string
+	for _, p := range NginxPackages {
+		l = append(l, DpkgStatusArgv(p))
+	}
+	for _, p := range NginxRPMs {
+		l = append(l, RPMVersionArgv(p), RPMChangelogArgv(p))
+	}
+	l = append(l, ApacheVersionArgvs()...)
+	return append(l, phpPackageArgvs()...)
 }
 
 func (c LinuxCollector) Collect(ctx context.Context, src Source) *Facts {
@@ -192,6 +272,14 @@ func (LinuxCollector) packages(ctx context.Context, src Source, osr map[string]s
 		return unknownFrom[PackageSet](set.Manager, err), nil
 	case res.ExitCode != 0:
 		return Unknown[PackageSet](ReasonCommandFailed, fmt.Sprintf("%s exit %d: %s", set.Manager, res.ExitCode, firstLine(res.Stderr))), nil
+	}
+	switch set.Manager {
+	case "dpkg":
+		set.ThirdParty, set.OriginNotes = aptOrigins(src, items)
+	case "rpm":
+		set.OriginNotes = rpmOrigins(ctx, src, items, osr["ID"])
+	case "apk":
+		set.ThirdParty, set.OriginNotes = apkThirdParty(src)
 	}
 	set.Items = items
 	if set.Feed != nil {

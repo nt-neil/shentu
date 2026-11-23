@@ -166,7 +166,11 @@ func NewLive(allow [][]string) (*Live, error) {
 }
 
 func (l *Live) Info() SourceInfo {
-	return SourceInfo{GOOS: runtime.GOOS, GOARCH: runtime.GOARCH, Elevated: elevated(), RecordedAt: l.now().UTC()}
+	now := time.Now // a Live made without NewLive (tests' &Live{Remap: ...}) has none
+	if l.now != nil {
+		now = l.now
+	}
+	return SourceInfo{GOOS: runtime.GOOS, GOARCH: runtime.GOARCH, Elevated: elevated(), RecordedAt: now().UTC()}
 }
 
 func (l *Live) ReadFile(path string) ([]byte, error) { return l.read(path, false, MaxFileBytes) }

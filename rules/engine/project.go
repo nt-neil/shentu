@@ -97,7 +97,7 @@ type ProjectOptions struct {
 }
 
 // indexVersion changes whenever fileIndex changes, so an old cache is ignored.
-const indexVersion = "7"
+const indexVersion = "9"
 
 type fileIndex struct {
 	Hash      string            `json:"h"`
@@ -449,9 +449,9 @@ func indexFile(e *Engine, lang string, src []byte) *fileIndex {
 		infos := funcs[key]
 		for _, x := range infos {
 			if x.f.class == "" {
-				if !x.f.method {
+				if !x.f.method && !x.local {
 					fi.Funcs = append(fi.Funcs, name)
-					if len(x.f.body) == 0 && x.f.name != "" && len(infos) == 1 {
+					if stubBody(x.f.body) && x.f.name != "" && len(infos) == 1 {
 						fi.Empty = append(fi.Empty, name)
 					}
 				}
@@ -782,7 +782,7 @@ func (p *Project) summary(a *analysis, c callee) *summary {
 	p.depth++
 	defer func() { p.depth-- }()
 	if p.depth > maxSumDepth {
-		a.b.tooDeep()
+		a.b.tooDeepFor(CutCallDepth)
 		return nil
 	}
 	if x.sc.busy[name] {
@@ -1055,7 +1055,11 @@ func (p *Project) resolve(a *analysis, c callee) (string, string) {
 		}
 	}
 	if f == "" && unsure {
-		a.b.tooDeep() // the call may reach another file: the file's result says calls were not followed
+		cause := CutAmbiguous // the call may reach another file: the file's result says calls were not followed
+		if strings.HasPrefix(ambig, "$") {
+			cause = CutCallableVar // $callback(...): which closure it holds is not known here
+		}
+		a.b.tooDeepFor(cause)
 	}
 	return f, name
 }
@@ -1423,7 +1427,9 @@ func (p *Project) module(from, lang, mod, name string) string {
 				}
 			} else if f := p.unique(c); f != "" {
 				return f
-			} else if len(p.bySuffix[path.Clean(c)]) > 1 {
+			} else if cs := p.pyTop(c); len(cs) == 1 && !p.pyBesideOther(from, dir, c, cs[0]) {
+				return cs[0]
+			} else if len(cs) > 0 || p.pyBeside(from, dir, c) {
 				p.unsure = true // two util.py: which one the import means depends on sys.path
 				return ""
 			}
@@ -1460,6 +1466,46 @@ func (p *Project) module(from, lang, mod, name string) string {
 func (p *Project) byPath(s string) string { return p.byClean[path.Clean(s)] }
 
 // unique returns the one indexed file whose path ends with s.
+// pyBeside reports whether a file ending with module path s sits in dir, the
+// importing file's own directory (on sys.path when that file runs as a script).
+// The importing file itself does not count when dir is a package (has
+// __init__.py): a package's module is not run as a script, and its absolute
+// import of its own name (django/utils/html.py: import html) is the standard
+// library's, never itself. Outside a package it counts: run as a script, the
+// file would import itself.
+func (p *Project) pyBeside(from, dir, s string) bool {
+	return p.pyBesideOther(from, dir, s, "")
+}
+
+// pyBesideOther is pyBeside for a file other than top: with lib/helpers.py the
+// only top-level one and app/helpers.py beside app/views.py, import helpers
+// may mean either (app/ on sys.path when views.py runs as a script).
+func (p *Project) pyBesideOther(from, dir, s, top string) bool {
+	in := path.Clean(path.Join(dir, path.Dir(s)))
+	pkg := p.byPath(path.Join(dir, "__init__.py")) != ""
+	return slices.ContainsFunc(p.bySuffix[path.Clean(s)], func(f string) bool {
+		return f != top && path.Dir(f) == in && !(pkg && f == path.Clean(filepath.ToSlash(from)))
+	})
+}
+
+// pyTop returns the files ending with module path s that an absolute import
+// can mean: not inside a package (a directory with __init__.py), whose module
+// is imported by its package's name. So with django/utils/json.py and
+// django/core/serializers/json.py, import json from a file elsewhere means
+// neither (the standard library's): no file, and no doubt about which. One
+// beside the importing file may still be loaded, when that file runs as a
+// script (pyBeside): that stays unsure.
+func (p *Project) pyTop(s string) []string {
+	var out []string
+	for _, f := range p.bySuffix[path.Clean(s)] {
+		prefix := strings.TrimSuffix(strings.TrimSuffix(f, path.Clean(s)), "/")
+		if prefix == "" || p.byPath(path.Join(prefix, "__init__.py")) == "" {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
 func (p *Project) unique(s string) string {
 	if c := p.bySuffix[path.Clean(s)]; len(c) == 1 {
 		return c[0]
@@ -1581,4 +1627,29 @@ func saveIndexCache(name, key string, files map[string]*fileIndex) {
 		return
 	}
 	ok = os.Rename(tmp.Name(), name) == nil
+}
+
+// stubBody reports whether a function's body adds nothing to follow: empty, or
+// one return of a constant (WordPress's noop.php: function is_admin() { return
+// true; }), so that among files declaring the function the one with a body is
+// followed (preferred).
+func stubBody(body []*stmt) bool {
+	if len(body) == 0 {
+		return true
+	}
+	if len(body) != 1 || len(body[0].body) > 0 {
+		return false
+	}
+	t := body[0].toks
+	if len(t) > 0 && t[len(t)-1].op(";") {
+		t = t[:len(t)-1]
+	}
+	if len(t) == 1 && t[0].word("return") {
+		return true
+	}
+	if len(t) != 2 || !t[0].word("return") {
+		return false
+	}
+	v := t[1]
+	return v.Kind == Num || v.Kind == Str && len(v.Parts) == 0 || v.Kind == Ident && (strings.EqualFold(v.Text, "true") || strings.EqualFold(v.Text, "false") || strings.EqualFold(v.Text, "null"))
 }

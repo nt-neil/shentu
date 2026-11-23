@@ -6,7 +6,240 @@ a release are not written here: they are worked out from the rule snapshots in
 `docs/site-src/rules-history/`. `CHANGELOG.zh-TW.md` holds the same releases in Traditional
 Chinese for the zh-TW pages; keep the two in step.
 
-## v0.5.4 (unreleased)
+## v0.5.6 — 2026-11-24
+
+- A file cut short says what cut it (#172). The code audit's unfinished files carry a `cause`:
+  the token cap, the file's time limit, nesting, a rule's work cap for following calls, the
+  project's cap (its time, memory or tokens), a call that may reach another file with no one
+  callee to follow, or a callee's summary cut short (with why: its own work cap, a chain of
+  summaries too long, too many parameters, or a cut inside it). The CVE bench counts files whose
+  calls were not all followed, which it did not count before, and lists cuts by cause.
+
+- PHP function and method names in sinks and sanitizers match in any case, as PHP calls them
+  (#189). `System($_GET['x'])`, `SYSTEM(...)`, `\SYSTEM(...)`, `System(...)` inside a namespace
+  and `Shell_Exec($c)` in a function a call reaches now report as the lower-case spelling does,
+  and a sanitizer written `EscapeShellArg($x)` cleans. A method that happens to be named `system`
+  (`$o->System(...)`, `Task::SYSTEM(...)`) is still no sink. JavaScript and Python names keep
+  their case. A builtin named in a string with an escaped backslash (`array_map('\\system', $x)`,
+  `"\\system"`), which PHP reads as `\system`, is that builtin as well. A pattern naming a PHP
+  function no longer matches a class built with `new` (`new File($p)`, `new System(...)`) or a
+  function of a namespace (`Storage\file($p)`, and `namespace\file($p)` in a file that declares a
+  namespace), as the lower-case `new file(` and `A\file(` did before; `\file($p)` is still PHP's.
+  The method and class names of member patterns match in any case too (#198): `$wpdb->Query(...)`
+  and `$wpdb->GET_RESULTS(...)` are `php-sqli-wpdb-unprepared`'s sinks, `$wpdb->Prepare(...)`
+  cleans, and `DB::RAW(...)` is a sink; a variable keeps its case (`$WPDB` is not `$wpdb`).
+
+- Calls through callables are followed (#182, #184, #188). A PHP function that calls its own
+  parameter (`$cb($v)`, as `tap()` and `Arr::first()` do) is followed at each caller with what the
+  caller passes: a closure, a function name (`'run_cmd'`, `'Cmd::run'`), an array callable
+  (`[Cmd::class, 'run']`, `[$this, 'run']`) or a first-class callable (`run_cmd(...)`). A closure
+  handed to a PHP builtin that calls it (`array_map`, `array_filter`, `array_walk`, `usort`,
+  `array_reduce`, `preg_replace_callback`, `call_user_func` and others) is analysed with the input
+  the builtin gives it, and a builtin's name given as the callable is that builtin:
+  `array_map('system', $_GET['x'])` and `array_map(function ($v) { system($v); }, $_GET['a'])` now
+  report. Fewer files are left with calls not followed (#174, #178, #179, #182): Python's
+  standard-library imports (`import json` in a package with its own `json.py`) and a closure that
+  cannot leave its function are no longer taken as calls of the project's other files. On the E7
+  corpus, laravel-framework's unfinished files went from 280 to 115 and Django's from 135 to 24.
+
+- Fewer false findings from checks and fixed values (#185, #187). After `unset($x)`,
+  `unset($a['k'])` or `unset($this->p)` the value carries no input; `is_numeric`, `is_int`,
+  `is_float`, `ctype_digit` and the other number checks count as checks in every rule
+  (`if (is_numeric($p)) { ... "WHERE id = " . $p }` no longer reports). `wp_create_nonce()` and
+  `wp_hash()` return a value with no input. A sink inside a function, called after the caller's
+  `check_admin_referer()` or another nonce check, is treated as a sink written in the caller is. A
+  sink that needs the input at its start (`header("Location: $u")`) is not reached through a
+  function when the argument starts with a fixed text (`go(admin_url('x') . '?a=' . $v)`).
+
+- The host survey checks PHP against php.net's releases of 2026-11-19 (8.2.36, 8.3.37, 8.4.28,
+  8.5.13; 8.6.0 and later are fixed). The version is the one each PHP binary names itself with
+  (`php`, `php-fpm`, `php-cgi` and their versioned names, in the distributions' places,
+  `/usr/local` as in the official Docker images, Remi's `/opt/remi`, cPanel's `/opt/cpanel/ea-php*`
+  and CloudLinux's `/opt/alt/php*`), read from the file, not by running it; on Windows, the
+  `php-cgi.exe` IIS runs as a FastCGI application. This covers PHP the package scan does not see:
+  deb.sury.org, the ondrej PPA, Remi's repository, an rpm whose vendor is not the distribution's
+  (IUS, cPanel), Docker images, builds from source and IIS. A binary naming several versions, a
+  program with none, and a FastCGI path that is not a local absolute one are named as not
+  checked. As for nginx, a package whose changelog names a CVE is not warned
+  about for it. CVE-2026-129291 and CVE-2026-129289 are warned about only when php-fpm runs, and
+  CVE-2026-129292 (the status page) only when a pool's `pm.status_path` can be reached from
+  outside: its socket takes connections from other hosts, or nginx (in a server not listening on
+  127.0.0.1 only) or Apache passes the path on to FPM without `deny all` or `Require local`. Each
+  branch reads its own pools; includes are followed and comments left out. CVE-2026-129538 is warned about only when php-cgi
+  runs or IIS runs it. The other fourteen are one line by version. A branch php.net no longer
+  fixes (before 8.2) is noted only when no distribution package holds it, and what could not be
+  read (the process list, a configuration file, IIS's configuration) is named in a line saying
+  which of these could not be checked.
+
+- On Windows, the host survey and the daily vulnerability surface look for php-cgi.exe run by
+  Apache as CGI (httpd.conf and what it includes, XAMPP's `httpd-xampp.conf` too: a `ScriptAlias`
+  onto php-cgi.exe or its folder, an `Action` through such an alias, or `AddHandler cgi-script .exe`
+  in that folder) and check it for CVE-2024-4577 (fixed in 8.1.29, 8.2.20, 8.3.8) and its bypass
+  CVE-2024-8926 (8.1.30, 8.2.24, 8.3.12). The system code page (ACP) decides: 932, 936 or 950 for
+  CVE-2024-4577, an OEM code page set as the ANSI one for CVE-2024-8926; when it cannot be read,
+  they are reported as a warning with "code page unconfirmed". Branches before 8.1 are reported as
+  a warning, as the advisories do not list them and they get no fix. The surface marks an entry
+  KEV only when the CISA KEV catalog lists it. php-cgi.exe under IIS is not reported for them,
+  as the advisories cover Apache only; the version line says so. Apache is the one a service
+  runs, or at XAMPP's or Apache Lounge's place when only administrators may write its httpd.conf;
+  a network or device path in the configuration (`\\host\share`) is never read, nor an included
+  file whose link leads to one. Without a `LoadModule` of cgi_module or cgid_module in what was
+  read, Apache would not run CGI, so the entry is a warning, not critical (one inside an
+  `<IfModule>` counts as loaded); when some of the configuration could not be read, it stays
+  critical and says so. A path whose links cannot be checked, or with `:` or `?` after the drive
+  (an alternate data stream), is not read either.
+
+- Attack detection has a signature for CVE-2024-4577 (#199): php-cgi's command-line options sent
+  in the query string of a `.php` file (with a PATH_INFO or not), the site's index page (`/`) or
+  `/php-cgi/php-cgi.exe` (a soft hyphen, `%AD` or `%C2%AD`, then a one-letter option, or
+  a hyphen and an option letter standing alone). It is matched to the host by the CVE, so it
+  alerts on a host whose surface has CVE-2024-4577, with the KEV mark that entry carries; on any
+  other host its hits are counted as noise.
+
+- What the patrol's own checks found is in Chinese too with a Chinese `language`: new listening ports,
+  suspicious processes, UID 0 accounts, authorized_keys changes, links and shared keys, ld.so.preload,
+  PAM modules, webshells, certificates, SSH login failures, CISA KEV vulnerabilities and unreadable
+  authorized_keys lines. The English text is word for word what it was, and the model is still sent
+  the English list. Findings from the tools (survey risks, changes since the last survey, the code
+  audit) are still in English.
+
+- The package vulnerability check (`vulns`) names the packages that came from a repository other
+  than the distribution's, as `third_party_unchecked` with the repository and how it was told
+  apart. OSV covers the distribution's packages only, so these were compared as if the
+  distribution had built them and matched nothing: that silence is not "no vulnerabilities".
+  A package is told apart by its version (deb.sury.org's `+deb.sury.org`, nginx.org's
+  `-N~codename`), by the package index of a third-party apt repository, or by an rpm vendor that
+  is not the distribution's. Third-party repositories (apt, and Alpine repositories other than
+  main, community and testing) are listed in `third_party_repositories`; when one is configured but its
+  packages cannot be told apart, a note says so. A flat repository (a `Packages` with no `Release`)
+  is third party. An rpm vendor counts as the distribution's only on that distribution (Oracle's
+  MySQL packages on Rocky are third party). Indexes that could not be read, or rpm vendor output
+  cut short, are listed in `origin_unread`. An Origin, a vendor and a repository path are written
+  by whoever publishes the repository, so a third-party repository that names itself after the
+  distribution is taken for it: this check can only add packages to the list, never show that a
+  package is the distribution's.
+
+- block_ip's check of an address's SSH logins no longer reads a month of journal each time. The
+  login events of sshd's units (ssh, sshd, and the socket-activated ssh@ and sshd@) are kept per
+  address in `loginindex.json` in the state directory (0600, written whole and renamed in place),
+  and each check, and the patrol every hour, reads on from the journal cursor where the last read
+  stopped. The rules are the same: an address's events count only when sshd itself (`_COMM` sshd or
+  sshd-session, `_UID` 0) wrote every one of them in the window (the last day if it has any there,
+  else 720 hours), and the text logs are read as before for an address journald has none of.
+  On a VM journal of 1.2 million entries one check had read for about 37 seconds.
+
+- The index answers as strictly as reading the whole window, and no more so for what that read
+  cannot see: with no index (the first run, a file of an older format) it starts from 720 hours
+  back, and a window it does not reach back to is read whole, as before. Each read also asks where
+  sshd's units now start in the journal: whatever the index kept from before that (vacuumed, or
+  flooded out by an attacker) no longer counts for an address or against it. When the cursor's own
+  entry is gone, journalctl seeks to the nearest one without an error: the index reads from its
+  cursor's entry, sees that it is gone, reads on from the first entry still there (that one
+  included), and notes it. Entries are read whole up to the 1 MiB line the whole read takes, so an
+  event with a 70 KB user name counts for its address; only an entry past that, which the whole read
+  fails on, makes a window holding it unverified for every address. A read cut short by the check's
+  time keeps what it read, so a flooded journal is read through over the checks, each within its
+  time. Past 65,536 addresses the others' events are counted together, and an address that may be
+  among them is refused, never let through. A saved cursor that is not one, or an address saved as
+  null, is dropped when the index is read.
+
+- A ✅ press whose checks ran out of time is refused as not checked in time (`timeout`), no longer as
+  records that could not be read (`state_error`).
+
+### Known issues
+
+- Only php-cgi.exe that Apache runs as CGI on Windows gets CVE-2024-4577 in the surface (#200).
+  php-cgi.exe under IIS's FastCGI does not, as the advisories name Apache only; neither does an
+  Apache whose configuration Shentu does not read (not a service's, not at XAMPP's or Apache
+  Lounge's place, or writable by other users). On those hosts the signature's hits stay noise.
+
+- On a host whose surface has CVE-2024-4577, a one-word query with no `=` that starts with a byte
+  that is not UTF-8 and a letter (a Latin-1, Big5 or Shift-JIS word not sent as UTF-8) matches the
+  CVE-2024-4577 signature as `%AD` does: requests are matched decoded, where every such byte reads
+  as U+FFFD (`docs/attack-detection-limits.md`).
+
+- `new $var(...)` is taken as a call of the parameter `$var` (#182). A plugin that bundles the
+  Freemius SDK has many files whose calls are marked as not all followed, and a false finding may
+  come of it. No findings were lost on the E7 and CVE bench measurements. To be fixed in v0.5.7.
+
+## v0.5.5 — 2026-11-23
+
+- What a dispatch in progress has already used no longer counts twice near the budget limit: its
+  reservation knows the dispatch and when it started, and the others count only the rest of it,
+  from the same read of the log as the month's use. A reservation that cannot be matched counts in
+  full, as before.
+
+- The survey (site_profile) checks the Docker and Podman sockets through the host source, like its
+  other reads: a replay or a fixture is no longer answered by the machine running the survey.
+
+- The nginx and Apache version checks (and nginx's changelog) read the surveyed host through its
+  host source, like every other check: a replay or a fixture is no longer answered by the machine
+  running the survey. Their package queries are exact commands in the allowlist.
+
+- macOS: `listening_ports` and `processes` (and the patrol's process checks) read the Mac itself
+  (netstat or lsof, and ps; no root needed) instead of Linux's /proc, which found nothing there and
+  looked like a host with nothing running. An unreadable table is an error, and a partial one says so.
+
+- macOS: `accounts_audit` reads the Mac's accounts (dscl; no root needed) and the authorized_keys of
+  the login accounts and root, and sudoers when it can be read. What could not be read is in a note;
+  the Linux-only checks (ld.so.preload, PAM modules not from a package) are listed as not applicable.
+
+- macOS: `file_changes` finds a file by its status-change time (a faked modification time no longer
+  hides it) with its owner's name, watches macOS's own places by default (/private/etc, Homebrew,
+  launchd jobs), and lists directories it could not read; `cert_expiry` also reads Homebrew's certbot.
+
+- macOS: `ssh_logins` (and the patrol's SSH check) reads sshd's login events from the unified log
+  (`/usr/bin/log show --info --style ndjson`) and counts them as on Linux, marked verified: only
+  events of sshd-session's or sshd's own image path, logged by root (userID 0), are counted. A
+  macOS 15 VM showed both hold: a program copied to /tmp under that name logs its own path, and a
+  user's own sshd (the system's binary with a configuration of their own) logs that user's ID, not
+  0. The events left out are counted in the result's source with their reason
+  (`not_logged_by_root`, `not_sshd_image`, `no_user_id`, `unreadable_event`). An event with no
+  userID or one that cannot be read, or output without log show's closing line, makes the result
+  incomplete (the counts are a lower bound), not a complete one with fewer events. Only root and the
+  admin group can read that log: anyone else gets a permission error saying so, not an empty result.
+
+- macOS: `log_search` reads macOS's text logs (system.log, install.log) by default, not Homebrew's
+  nginx and Apache logs, whose directories their user could link root's files into (add them
+  knowingly). A log under /var is found by the path log_paths gives it (on macOS /var is a link to
+  /private/var, and such a path used to be refused). A log file with more than one hard link is
+  refused (a root-only file linked into a log directory looks the same). sshd is in the unified
+  log, which log_search does not read: the tool says no match there says nothing about SSH logins.
+
+- The host survey's nginx check covers the rest of nginx's advisories of 2026-11-18 (#190).
+  CVE-2026-118899, an infinite loop reading a request body over TLS 1.3, is warned about for nginx
+  1.13.0 through 1.31.8 with a TLS server (`listen ... ssl`, or `ssl on`) that speaks TLS 1.3: its
+  `ssl_protocols`, its own or else the http block's, names `TLSv1.3`, or it has none and nginx is
+  1.23.4 or later, whose default includes TLS 1.3. Turning HTTP/2 off does not avoid it.
+  CVE-2026-113425, a use-after-free in the mail proxy, is warned about only when a `mail` block has
+  a server. The six medium and minor ones (the resolver, HTTP/3, stream with client certificates or
+  `ssl_preread`, `try_files` with `alias`, PROXY protocol v2) are one line of advice by version,
+  as the check does not look for those features. All are fixed in 1.31.9 and 1.30.7. As for
+  HTTP/2, a distribution package whose changelog names a CVE is not warned about for it, and a
+  configuration file that could not be read is named in a line saying which of these could not
+  be checked.
+
+- The daily report and the new-findings report follow `language` now: with a Chinese setting their title, section headings
+  and fixed lines (what was not checked, incomplete vulnerability checks, attack detection, sub-agent dispatches,
+  automatic incident checks, SSH logins) are in Chinese; up to v0.5.4 they were in English whatever `language` said.
+  What a check found, error text and the model's answer are not translated: they are added as they came.
+
+- macOS and Windows (#206): `block_ip` is refused as `unsupported` before any check. From Telegram
+  on macOS it used to read up to a month of the unified log (about two minutes) before refusing a
+  block that nftables cannot make there.
+
+- Proposal buttons (Linux, #206): the checks run before the buttons are sent end together within 90
+  seconds; a proposal not checked by then is listed as `timeout`, without a button, instead of
+  holding back every button. A check of the dispatch archive cut short by its time limit is
+  `timeout` too, not `state_error`. One address's SSH logins are read once for the archive, the
+  buttons and Telegram's precheck (the answer is reused for two minutes); `block_ip` itself reads
+  them again when it runs.
+
+- Upgrade note (#206): going back to v0.5.4, that version reads a dispatch record whose gate is
+  `timeout` or `unsupported` as a bad line, and the automatic incident checks can stop for up to 72
+  hours.
+
+## v0.5.4 — 2026-11-23
 
 - Shared AI budget (#161): a dispatch from the bot, `shentu chat` or the automatic incident check
   reserves its whole token cap in `state_dir/reservations.json` while it runs, and every budget
@@ -56,7 +289,7 @@ Chinese for the zh-TW pages; keep the two in step.
   (`use Httpful\Request`, `use Unirest\Request`, `use Httpful\Http as Request`) is no longer read
   as Laravel's request facade (#160).
 
-- The dispatch archive reads fields it does not know (f98c3c): from v0.5.4 a record or feedback
+- The dispatch archive reads fields it does not know (#197): from v0.5.4 a record or feedback
   line written by a later version with a new field is read, its known fields checked as before,
   instead of being refused as unreadable (which stopped the automatic incident checks until a
   repair). Such lines are counted in `shentu dispatch stats` (`unknown_field_lines` in JSON) and in

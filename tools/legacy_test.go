@@ -612,7 +612,7 @@ func TestLegacyPersistenceTree(t *testing.T) {
 
 	live, _ := hostenv.NewLive(nil)
 	live.Remap = map[string]string{"/": root}
-	withHost(t, live)
+	withHost(t, linuxLive{live}) // a Linux tree, wherever the test runs (M0 reads macOS on a Mac)
 	keys, sudo, cron := legacyAuditAt(root)
 	a := AccountsAudit()
 	if len(keys) != 3 || !reflect.DeepEqual(a.KeyFiles, keys) {

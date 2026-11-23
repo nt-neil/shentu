@@ -52,3 +52,7 @@ Project.hold	sums	1			SORTED	root.members gets keys in map order, but settle() s
 analysis.captured	ns.free	1			SAFE	Boolean any.
 analysis.scopesOf	nonloc	1		value resolve	SAFE	Sets ns.free[...] = true; order-independent. The call not followed is the local closure resolve, which only reads.
 aliasesOf	st	1			SAFE	Result order is unused: callers check len, or treat each alias independently (urlChanged reads/deletes/writes only that alias's own keys; alias pair writes are symmetric).
+analysis.stmt	a.pcallSeeds(st, s.toks, s.funcs)	1			SAFE	Each function appears once as a key, so seeds[f] is whenSeeds' seeds for f followed by pcallSeeds' for f whatever the order; the functions are then run in s.funcs order.
+sortedKeys2	x	1			SORTED	Key union; slices.Sort(out) before it is returned.
+sortedKeys2	y	1			SORTED	Key union; slices.Sort(out) before it is returned.
+analysis.summarize	r.pcall	1			SAFE	Grows s.pcallSrc[n] / s.pcall[n] to length k+1 and sets true / ORs bit at [n][k] for each key: the final lengths are the max and setting true and OR are commutative; no budget is charged in the loop.

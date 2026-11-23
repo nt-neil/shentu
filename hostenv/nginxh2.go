@@ -1,6 +1,10 @@
 package hostenv
 
-import "path"
+import (
+	"path"
+	"slices"
+	"strings"
+)
 
 // NginxHTTP2 reads nginx's configuration as WebLogs does (/etc/nginx/nginx.conf
 // and what it includes) and reports whether a server of it speaks HTTP/2: a
@@ -9,7 +13,23 @@ import "path"
 // when there is no nginx.conf. unread names the files that could not be
 // read: any of them may turn HTTP/2 on.
 func NginxHTTP2(src Source) (on, found bool, unread []string) {
-	return NginxHTTP2At(src, NginxConf)
+	f := NginxFeaturesAt(src, NginxConf)
+	return f.HTTP2, f.Found, f.Unread
+}
+
+// NginxFeatures is what of nginx's configuration the November 2026
+// advisories turn on: HTTP/2 (CVE-2026-123007, CVE-2026-123633), TLS 1.3
+// (CVE-2026-118899) and the mail proxy (CVE-2026-113425).
+type NginxFeatures struct {
+	Found bool // there is an nginx.conf
+	HTTP2 bool // a server speaks HTTP/2
+	// TLS13: a TLS server (listen ... ssl, or ssl on) whose ssl_protocols,
+	// its own or else the http block's, names TLSv1.3. TLSDefault: a TLS
+	// server with no ssl_protocols in effect, which speaks TLS 1.3 from
+	// nginx 1.23.4 on (nginx's default before it leaves TLS 1.3 out).
+	TLS13, TLSDefault bool
+	Mail              bool     // a mail block with a server: the mail proxy listens
+	Unread            []string // files not read: any of them may turn one of these on
 }
 
 // NginxConf is nginx's configuration; OpenRestyConf is OpenResty's, under
@@ -23,8 +43,15 @@ const (
 // OpenRestyConf): its relative includes are under its own directory, and
 // only files under that prefix are read.
 func NginxHTTP2At(src Source, conf string) (on, found bool, unread []string) {
+	f := NginxFeaturesAt(src, conf)
+	return f.HTTP2, f.Found, f.Unread
+}
+
+// NginxFeaturesAt reads the configuration at conf as NginxHTTP2At does and
+// reports the features the advisories need.
+func NginxFeaturesAt(src Source, conf string) NginxFeatures {
 	if !exists(src, conf) {
-		return false, false, nil
+		return NginxFeatures{}
 	}
 	wc, dir := logConf, ""
 	if conf != NginxConf {
@@ -43,15 +70,62 @@ func NginxHTTP2At(src Source, conf string) (on, found bool, unread []string) {
 			l.unread = append(l.unread, p+" ("+why+")")
 		}
 	}
+	f := NginxFeatures{Found: true}
 	ngxWalk(main, 0, func(d *ngxDir) {
 		switch {
 		case d.name == ngxTooDeep:
 			l.unread = append(l.unread, "configuration nested deeper than 64 levels")
-		case d.name == "http" && d.hasBlock && ngxHTTP2(d.block):
-			on = true
+		case d.name == "http" && d.hasBlock:
+			f.HTTP2 = f.HTTP2 || ngxHTTP2(d.block)
+			tls13, def := ngxTLS13(d.block)
+			f.TLS13, f.TLSDefault = f.TLS13 || tls13, f.TLSDefault || def
+		case d.name == "mail" && d.hasBlock:
+			for _, s := range d.block {
+				f.Mail = f.Mail || s.name == "server" && s.hasBlock
+			}
 		}
 	})
-	return on, true, l.unread
+	f.Unread = l.unread
+	return f
+}
+
+// ngxTLS13 reports whether a TLS server of an http block names TLSv1.3 in
+// the ssl_protocols in effect for it (on), or has none in effect (def).
+func ngxTLS13(http []*ngxDir) (on, def bool) {
+	var protos []string // the http block's, inherited by its servers
+	set, ssl := false, false
+	for _, d := range http {
+		switch {
+		case d.name == "ssl_protocols":
+			protos, set = d.args, true // the last one counts, as for http2
+		case d.name == "ssl" && len(d.args) == 1:
+			ssl = d.args[0] == "on"
+		}
+	}
+	for _, s := range http {
+		if s.name != "server" || !s.hasBlock {
+			continue
+		}
+		p, pset, sslOn, listen := protos, set, ssl, false
+		for _, d := range s.block {
+			switch {
+			case d.name == "ssl_protocols":
+				p, pset = d.args, true
+			case d.name == "ssl" && len(d.args) == 1:
+				sslOn = d.args[0] == "on"
+			case d.name == "listen" && contains(d.args, "ssl"):
+				listen = true // TLS whatever ssl says, as listen ... http2 is HTTP/2
+			}
+		}
+		switch {
+		case !sslOn && !listen:
+		case !pset:
+			def = true
+		case slices.ContainsFunc(p, func(v string) bool { return strings.EqualFold(v, "TLSv1.3") }): // nginx reads it in any case
+			on = true
+		}
+	}
+	return on, def
 }
 
 // ngxHTTP2 reports whether a server of an http block speaks HTTP/2.

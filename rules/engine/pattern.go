@@ -81,6 +81,13 @@ func compilePattern(lang, raw string, text bool) (*pat, error) {
 	for i := range toks {
 		toks[i].Line, toks[i].Flags = 0, toks[i].Flags&^FlagNL
 	}
+	if p.php {
+		for k := 0; k+1 < len(toks); k++ {
+			if toks[k].Kind == Ident && toks[k+1].op("(") {
+				toks[k].Flags |= FlagFold // function and method names: SYSTEM($x) runs system()
+			}
+		}
+	}
 	p.toks = toks
 	for k := 0; k+2 < len(toks); k++ {
 		if toks[k].op("[") && toks[k+1].op("*") && toks[k+2].op("]") {
@@ -122,6 +129,9 @@ func tokEq(p, c Token) bool {
 		if p.Flags&FlagOpen != 0 {
 			return strings.HasPrefix(c.Text, p.Text)
 		}
+	}
+	if p.Flags&FlagFold != 0 {
+		return strings.EqualFold(p.Text, c.Text)
 	}
 	return p.Text == c.Text
 }
@@ -168,6 +178,10 @@ func (p *pat) match(toks []Token, i int, strict bool) (int, bool) {
 	if p.chain != "" && !chainFrom(toks, i, p.chain, p.chainVia, p.chainNot) {
 		return 0, false
 	}
+	if strict && p.php && i > 0 && len(p.toks) > 1 && p.toks[0].Kind == Ident && p.toks[1].op("(") &&
+		phpFuncPattern(p.toks[0].Text) && phpNotGlobalCall(toks, i) {
+		return 0, false
+	}
 	if !strict || p.member || i == 0 || !memberOp(p.php, toks[i-1]) {
 		return j, true
 	}
@@ -175,6 +189,68 @@ func (p *pat) match(toks []Token, i int, strict bool) (int, bool) {
 	// (FlagModule, set by normalizeModules), never re.exec( on any object.
 	return j, !p.php && i >= 2 && toks[i-1].op(".") && toks[i-2].Flags&FlagModule != 0 && (i == 2 || !memberOp(false, toks[i-3]))
 }
+
+// phpFuncPattern reports whether a pattern name names a PHP function: written
+// in lower case, as the rules write functions, and one PHP has. Key( names
+// php-jwt's class Key, not key(), so new Key($secret) still matches it.
+func phpFuncPattern(name string) bool {
+	return name == strings.ToLower(name) && phpBuiltins[name]
+}
+
+// phpNotGlobalCall reports whether the name at toks[i], followed by "(", is
+// no call of the PHP function a pattern like "file(" names: a class built with
+// new (new File($p), new \File($p)), or a function of a namespace: a qualified
+// name, A\file($p) or A\B\file($p), written as one word (FlagQualified), and
+// namespace\file($p) in a file that declares a namespace. \file($p) after
+// anything else (echo \system(, $a and \system(, x ?: \file() and file($p)
+// inside a namespace are the PHP function. Only a pattern naming a PHP
+// function is held to this: one naming a class, PDO( or mysqli(, is written
+// for new PDO(...).
+func phpNotGlobalCall(toks []Token, i int) bool {
+	if phpWord(toks[i-1], "new") || toks[i-1].op(`\`) && i >= 2 && phpWord(toks[i-2], "new") {
+		return true
+	}
+	if !toks[i-1].op(`\`) || toks[i-1].Flags&FlagQualified == 0 {
+		return false
+	}
+	if i >= 2 && phpWord(toks[i-2], "namespace") {
+		return declaresNamespace(toks) // with no namespace declared, namespace\ is the global one
+	}
+	// echo\system($c): PHP 8 reads one name, PHP 7 echo and \system(). Say the
+	// call is PHP's whenever a reserved word comes right before the backslash.
+	return i < 2 || !phpReserved[strings.ToLower(toks[i-2].Text)]
+}
+
+// phpReserved are PHP's reserved keywords (php.net, "List of Keywords").
+var phpReserved = words("__halt_compiler abstract and array as break callable case catch class clone const continue " +
+	"declare default die do echo else elseif empty enddeclare endfor endforeach endif endswitch endwhile enum eval exit " +
+	"extends final finally fn for foreach function global goto if implements include include_once instanceof insteadof " +
+	"interface isset list match namespace new or print private protected public readonly require require_once return " +
+	"static switch throw trait try unset use var while xor yield from")
+
+// declaresNamespace reports whether toks declare a named namespace
+// (namespace App;) and no global one (namespace { ... }), so namespace\ can
+// only be a named one. toks may be only part of the file; then it may say no
+// for a file that declares one, and the call counts as PHP's, which reports.
+func declaresNamespace(toks []Token) bool {
+	named := false
+	for k := 0; k+1 < len(toks); k++ {
+		if !phpWord(toks[k], "namespace") {
+			continue
+		}
+		switch {
+		case toks[k+1].op("{"):
+			return false // a global namespace block: namespace\ in it is the global one
+		case toks[k+1].Kind == Ident:
+			named = true
+		}
+	}
+	return named
+}
+
+// phpWord reports whether t is the PHP keyword w, which PHP reads in any case
+// (NEW, Namespace).
+func phpWord(t Token, w string) bool { return t.Kind == Ident && strings.EqualFold(t.Text, w) }
 
 // baseAt reports whether the part of an indexed source before its first index
 // matches at i: $f = $_FILES['doc'] holds $_FILES[*]['name'] under 'name'
