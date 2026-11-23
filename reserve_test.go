@@ -204,3 +204,91 @@ func TestReserveNegativeCostUntrusted(t *testing.T) {
 		t.Errorf("a negative cost: %d sub-agent requests\n%s", subs, out)
 	}
 }
+
+// S-R-2: what another dispatch in progress has logged since its
+// reservation started is in the month's use already; it is taken off its
+// reservation, so near the limit the check no longer stops early. Its
+// reservation never goes below 0, and one without its dispatch counts in full.
+func TestReserveLessWhatItSpent(t *testing.T) {
+	cfg := &Config{}
+	tmp, _ := filepath.EvalSymlinks(t.TempDir())
+	cfg.StateDir = tmp
+	cfg.Budget.MonthlyTokens = 200_000
+	now := time.Now()
+	const other = "0123456789ab"
+	if _, _, err := reserveFor(cfg, dispatchTokenCap, 0, other, now.Add(-time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	line := func(d string, n int, at time.Time) string {
+		b, _ := json.Marshal(logEntry{Time: at, Actor: "sub:patrol", Tool: "llm", InTokens: n, Dispatch: d})
+		return string(b) + "\n"
+	}
+	// 70k logged by the other dispatch since it started, 10k before it did, 5k by another.
+	os.WriteFile(filepath.Join(tmp, "log.jsonl"), []byte(line(other, 70_000, now)+line(other, 10_000, now.Add(-time.Hour))+line("ffffffffffff", 5_000, now)), 0o600)
+	u, err := usageWithOthers(cfg, "", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u.tokens != 85_000 || u.othersTokens != dispatchTokenCap-70_000 {
+		t.Errorf("use %d, others hold %d; want 85000 and %d", u.tokens, u.othersTokens, dispatchTokenCap-70_000)
+	}
+	// 85k used + 50k held = 135k of 200k: a model call goes ahead (before
+	// S-R-2, 85k + 120k = 205k stopped it).
+	if err := budgetStop(cfg, now, ""); err != nil {
+		t.Errorf("stopped though the others hold only the rest: %v", err)
+	}
+	// Spent past the cap: held 0, not less.
+	os.WriteFile(filepath.Join(tmp, "log.jsonl"), []byte(line(other, 150_000, now)), 0o600)
+	if u, _ := usageWithOthers(cfg, "", now); u.othersTokens != 0 || u.tokens != 150_000 {
+		t.Errorf("past the cap: %+v", u)
+	}
+	// A reservation without its dispatch counts in full.
+	if _, _, err := reserve(cfg, 30_000, 0, now); err != nil {
+		t.Fatal(err)
+	}
+	if u, _ := usageWithOthers(cfg, "", now); u.othersTokens != 30_000 {
+		t.Errorf("without a dispatch: %+v", u)
+	}
+}
+
+// S-R-2: a reservation started in the future takes nothing off.
+func TestReserveFutureStartCountsInFull(t *testing.T) {
+	cfg := &Config{}
+	tmp, _ := filepath.EvalSymlinks(t.TempDir())
+	cfg.StateDir = tmp
+	cfg.Budget.MonthlyTokens = 1_000_000
+	now := time.Now()
+	const other = "0123456789ab"
+	withReservations(cfg, now, func(r *reservations) {
+		r.Items = append(r.Items, reservation{ID: "fut000000000", Tokens: 100_000, Expires: now.Add(time.Hour), Dispatch: other, Started: now.Add(time.Hour)})
+	})
+	// A line dated after that start too (a clock set ahead, or a forged
+	// time): still nothing is taken off a reservation that has not begun.
+	b, _ := json.Marshal(logEntry{Time: now.Add(2 * time.Hour), Tool: "llm", InTokens: 60_000, Dispatch: other})
+	os.WriteFile(filepath.Join(tmp, "log.jsonl"), append(b, '\n'), 0o600)
+	if u, _ := usageWithOthers(cfg, "", now); u.othersTokens != 100_000 {
+		t.Errorf("future start: %+v", u)
+	}
+}
+
+// S-169-1: two reservations of different ids for one dispatch, which no
+// dispatch writes, would have that dispatch's use taken off twice: the
+// file is not trusted (fail closed), and the budget line says so.
+func TestReserveSharedDispatchUntrusted(t *testing.T) {
+	var cfg *Config
+	subs, out, _ := reserveDispatch(t, 1_000_000, 0, func(c *Config) {
+		cfg = c
+		exp := time.Now().Add(time.Hour)
+		b, _ := json.Marshal(reservations{V: 1, Items: []reservation{
+			{ID: "aaa000000000", Tokens: 120_000, Expires: exp, Dispatch: "0123456789ab", Started: time.Now()},
+			{ID: "bbb000000000", Tokens: 120_000, Expires: exp, Dispatch: "0123456789ab", Started: time.Now()},
+		}})
+		os.WriteFile(filepath.Join(c.StateDir, reservationsFile), b, 0o600)
+	})
+	if subs != 0 || !strings.Contains(out, "two reservations for one dispatch") {
+		t.Errorf("two reservations for one dispatch: %d sub-agent requests\n%s", subs, out)
+	}
+	if l := budgetLine(cfg, time.Now(), false); !strings.Contains(l, "cannot be read") {
+		t.Errorf("budget line: %q", l)
+	}
+}

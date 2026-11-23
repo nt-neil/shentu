@@ -6,6 +6,47 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 ## v0.5.6 (unreleased)
 
 - 套件弱點檢查（`vulns`）會列出不是從發行版套件庫安裝的套件，放在 `third_party_unchecked`，並寫明來自哪個套件庫、用什麼方式認出來的。OSV 只收發行版自己的套件，所以這些套件原本是被當成發行版的套件去比對，結果什麼都對不到；這種「沒有結果」不等於「沒有弱點」。認出的方式有三種：版本號（deb.sury.org 的 `+deb.sury.org`、nginx.org 的 `-N~codename`）、第三方 apt 套件庫的索引，以及不是發行版的 rpm vendor。第三方套件庫（apt，以及 Alpine 的 main、community、testing 以外的套件庫）會列在 `third_party_repositories`；設定了第三方套件庫，但分不出哪些套件來自它時，會加一行說明。只有 `Packages`、沒有 `Release` 的套件庫（flat repo）算第三方。rpm vendor 只有在它自己的發行版上才算發行版的套件（Rocky 上的 Oracle MySQL 套件算第三方）。讀不到的索引，以及被截斷的 rpm vendor 輸出，會列在 `origin_unread`。Origin、vendor 和套件庫路徑都是發布套件庫的人自己寫的，第三方套件庫如果用發行版的名稱，就會被當成發行版：這個檢查只能把套件多列出來，不能證明套件是發行版的。
+## v0.5.5 — 2026-11-23
+
+- 預算接近上限時，進行中派遣已經用掉的部分不再重複計算：預留會記下它屬於哪一次派遣、何時開始，其他派遣只算它剩下的部分，
+  而且和本月用量在同一次讀取 log 時算出。對不起來的預留照舊整筆計算。
+
+- survey（site_profile）現在和它的其他讀取一樣，經由主機來源檢查 Docker 和 Podman 的 socket：
+  replay 或 fixture 不會再讀到執行 survey 的那台機器。
+
+- nginx 和 Apache 的版本檢查（以及 nginx 的 changelog）現在和其他檢查一樣，經由主機來源讀取受檢主機：
+  replay 或 fixture 不會再讀到執行檢查的那台機器。套件查詢都是 allowlist 裡的完整指令。
+
+- macOS：`listening_ports`、`processes`（以及巡檢的程序檢查）現在讀取 Mac 本身（netstat 或 lsof，以及 ps；不需要 root），
+  不再讀 Linux 的 /proc。以前在 Mac 上什麼都讀不到，結果和一台什麼都沒在執行的主機一樣。讀不到時會回報錯誤，只讀到一部分也會寫明。
+
+- macOS：`accounts_audit` 現在讀取 Mac 的帳號（dscl；不需要 root）、可登入帳號和 root 的 authorized_keys，
+  sudoers 讀得到時也會讀。讀不到的部分寫在 note；Linux 才有的檢查（ld.so.preload、不是套件安裝的 PAM 模組）會列為不適用。
+
+- macOS：`file_changes` 現在依檔案的狀態變更時間（ctime）找出異動，改過修改時間也藏不住，並附上擁有者名稱；
+  預設檢查 macOS 自己的位置（/private/etc、Homebrew、launchd 的 job），讀不到的目錄會列出來。`cert_expiry` 也會讀 Homebrew 的 certbot。
+
+- macOS：`ssh_logins`（以及巡檢的 SSH 檢查）現在從 unified log 讀取 sshd 的登入紀錄（`/usr/bin/log show --info --style ndjson`），計數方式和 Linux 相同，並標為 verified（已驗證）：只算 sshd-session 或 sshd 本身程式路徑、而且由 root 記下（userID 0）的紀錄。
+  這兩點已在 macOS 15 的 VM 上確認：有人把程式複製到 /tmp 並取同樣的名字，記下的是它自己的路徑；使用者用自己的設定執行系統的 sshd，記下的是那個使用者的 ID，不是 0。
+  沒有算進來的紀錄，會在結果的 source 寫明筆數和原因（`not_logged_by_root`、`not_sshd_image`、`no_user_id`、`unreadable_event`）。
+  紀錄沒有 userID 或讀不懂，或是輸出缺少 log show 最後的結束行時，結果會標成不完整（算到的次數只是下限），不會當成完整但次數較少的結果。
+  這份 log 只有 root 和 admin 群組讀得到；其他帳號會得到寫明原因的權限錯誤，不會回空結果。
+
+- macOS：`log_search` 預設讀取 macOS 的文字 log（system.log、install.log）。Homebrew 的 nginx 和 Apache log 不在預設裡，因為這些目錄屬於一般使用者，可以在裡面建連結指到 root 的檔案；要讀的話請自己加進設定。
+  放在 /var 的 log 現在可以用 log_paths 寫的路徑讀取（macOS 的 /var 是連到 /private/var 的連結，以前這種路徑會被拒絕）。有一個以上 hard link 的 log 檔會被拒讀，因為連到 log 目錄的 root 專用檔案看起來也是這樣。
+  sshd 的紀錄在 unified log 裡，log_search 不讀那裡，工具說明會寫明：在這些檔案裡找不到，不等於沒有 SSH 登入。
+
+- 主機盤點的 nginx 檢查補上 nginx 2026-11-18 公告的其餘項目（#190）。CVE-2026-118899 是透過 TLS 1.3 讀取 request body 時會一直重複、不會停下的問題：nginx 1.13.0～1.31.8 有 TLS 的 server（`listen ... ssl`，或 `ssl on`）會用 TLS 1.3 時就警告，也就是對它生效的 `ssl_protocols`（它自己的，否則是 http 區塊的）列了 `TLSv1.3`，或是沒有設定 `ssl_protocols` 而 nginx 是 1.23.4 以後的版本，預設就包含 TLS 1.3。關掉 HTTP/2 也沒有用。CVE-2026-113425 是 mail proxy 的 use-after-free，只有 `mail` 區塊裡有 server 時才警告。其餘 6 個中低風險項目（resolver、HTTP/3、用用戶端憑證或 `ssl_preread` 的 stream、`try_files` 加上 `alias`、PROXY protocol v2）依版本合成一行建議，因為這項檢查不看這些功能的設定。全部都在 1.31.9 和 1.30.7 修正。和 HTTP/2 的檢查一樣，套件的 changelog 已列出某個 CVE 時，不會為它警告；讀不到的設定檔會列在一行說明裡，指出哪幾項無法檢查。
+
+- 每日報告和新發現報告現在依照 `language` 設定：設定是中文時，標題、各段標題和固定的說明文字（沒檢查到的項目、漏洞檢查沒做完、攻擊偵測、
+  子 Agent 派遣、自動事件調查、SSH 登入）都改用中文；v0.5.4 以前不管 `language` 怎麼設，這些都是英文。檢查找到的內容、錯誤訊息和
+  AI 模型寫的回答不會改寫，照原樣附上。
+
+- macOS 和 Windows（#206）：`block_ip` 在任何檢查之前就以 `unsupported` 拒絕。之前在 macOS 上從 Telegram 呼叫時，會先讀最多一個月的 unified log（大約兩分鐘）才拒絕，而 nftables 在這兩個平台上本來就不能封鎖。
+
+- 提案按鈕（Linux，#206）：送出按鈕前的檢查，全部加起來在 90 秒內結束；到時還沒查完的提案列為 `timeout`，不給按鈕，其他提案的按鈕照常送出。派遣存檔的檢查因時限到了而中斷時，也記成 `timeout`，不再是 `state_error`。同一個位址的 SSH 登入，存檔、送按鈕和 Telegram 的事前檢查只讀一次（結果在兩分鐘內沿用）；`block_ip` 真正執行時仍會重新讀。
+
+- 升級須知（#206）：裝回 v0.5.4 時，舊版會把 gate 是 `timeout` 或 `unsupported` 的派遣紀錄當成壞行，自動事件調查最多會停 72 小時。
 
 ## v0.5.4 — 2026-11-23
 

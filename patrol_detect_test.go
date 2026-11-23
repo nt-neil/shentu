@@ -126,7 +126,7 @@ func TestDetectRound(t *testing.T) {
 	if st, _ := os.Stat(sum.ReportPath); st.Mode().Perm() != 0o600 {
 		t.Errorf("report mode %v", st.Mode())
 	}
-	if sec := detectSection(sum); !strings.Contains(sec, "alerts due this round: 1") || !strings.Contains(sec, "L2 1, L1 1") {
+	if sec := detectSection(sum, false); !strings.Contains(sec, "alerts due this round: 1") || !strings.Contains(sec, "L2 1, L1 1") {
 		t.Errorf("daily section %q", sec)
 	}
 	// The next round: nothing new, nothing sent again.
