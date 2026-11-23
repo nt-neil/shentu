@@ -126,6 +126,7 @@ func (p *Project) settle(fr *sumFrame, key string) *summary {
 		m.a.sc.done[m.key] = &summary{} // the fixed point starts from "does nothing"
 	}
 	capped, height := false, 0
+	var capCut Cut
 	cost := map[sumMember]int{} // each member's work in the last round
 	for round := 0; ; round++ {
 		changed := false
@@ -140,6 +141,7 @@ func (p *Project) settle(fr *sumFrame, key string) *summary {
 				return &summary{}
 			}
 			capped, height = capped || c, max(height, h)
+			capCut |= m.a.sumCut
 			if !n.equal(m.a.sc.done[m.key]) {
 				m.a.sc.done[m.key], changed = n, true
 			}
@@ -149,12 +151,13 @@ func (p *Project) settle(fr *sumFrame, key string) *summary {
 		}
 		if round+1 >= maxSumRounds {
 			capped = true // a cycle that does not settle
+			capCut |= CutCycle
 			break
 		}
 	}
 	for _, m := range members {
 		d := m.a.sc.done[m.key]
-		d.capped, d.height, d.cost, d.id = capped, height, cost[m], m.a.file+"\x00"+m.key
+		d.capped, d.capCut, d.height, d.cost, d.id = capped, capCut, height, cost[m], m.a.file+"\x00"+m.key
 	}
 	return fr.a.sc.done[key]
 }

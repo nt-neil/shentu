@@ -141,10 +141,13 @@ type analysis struct {
 	js          bool
 	b           *budget
 	kw          map[string]bool   // words that are keywords in this language
-	seed        *paramSeed        // the value a callback's parameter is called with (whenSeeds), for the next function analysed
+	seed        []*paramSeed      // the values a callback's parameters are called with (whenSeeds, pcallSeeds), for the next function analysed
+	curParams   []string          // the parameters of the function being analysed (the innermost), by name: $callback(...) of one is no other file's
+	curMoved    map[string]bool   // ... those its body assigns again ($cb = wrap($cb)): no longer what the caller passed
 	laravelVars map[string]bool   // per PHP variable, whether it may be Laravel's request (laravelRequest)
 	phpUses     map[string]string // PHP: short class name (lower case) to the name a use statement gives it (phpUseOther)
 	branchBlock bool              // the next block is an if's branch, whose request aliases the if joins (block, sIf)
+	sumCut      Cut               // why the last summary own worked out was capped (interproc.go, cut.go)
 	mws         map[*fn]bool      // Koa middleware: the functions app.use(fn) registers (reqalias.go koaMiddleware)
 	seen        map[loc]bool
 	lines       []loc
@@ -253,6 +256,12 @@ func (a *analysis) stmt(s *stmt, st state) (state, uint8) {
 	defer func(old []*fn) { a.sfuncs = old }(a.sfuncs)
 	a.sfuncs = s.funcs // the function literals its Func tokens name (mapSanAt)
 	seeds := a.whenSeeds(st, s.toks, s.funcs)
+	for f, ps := range a.pcallSeeds(st, s.toks, s.funcs) {
+		if seeds == nil {
+			seeds = map[*fn][]*paramSeed{}
+		}
+		seeds[f] = append(seeds[f], ps...)
+	}
 	for _, f := range s.funcs {
 		a.seed = seeds[f]
 		a.function(f, st)
@@ -261,12 +270,14 @@ func (a *analysis) stmt(s *stmt, st state) (state, uint8) {
 	switch s.kind {
 	case sSimple:
 		a.sinks(st, s.toks)
-		if a.summ != nil && len(s.toks) > 0 && s.toks[0].word("return") {
+		if a.summ != nil && a.nested == 0 && len(s.toks) > 0 && s.toks[0].word("return") {
+			// a closure's return is not the function's: it is the closure's value,
+			// which reaches the function's result only as an expression
 			a.summ.ret = or(a.summ.ret, a.expr(st, s.toks[1:], false))
 			// What a return that can be true checks: values that still held a
 			// parameter's input there ($c = 'id'; return in_array($c, ...) checks
 			// nothing passed in). A closure's return is not one of these.
-			if rest := s.toks[1:]; a.nested == 0 && !(len(rest) == 1 && falsy(rest)) {
+			if rest := s.toks[1:]; !(len(rest) == 1 && falsy(rest)) {
 				set := map[string]bool{}
 				if _, cleaned := a.cleans(st, rest, true); len(cleaned) > 0 {
 					for _, k := range cleaned {
@@ -287,6 +298,7 @@ func (a *analysis) stmt(s *stmt, st state) (state, uint8) {
 		a.stripKeys(st, s.toks)
 		a.markAssign(st, s.toks)
 		a.extractStmt(st, s.toks)
+		a.unsetStmt(st, s.toks)
 		a.recordLit(st, s.toks)
 		return st, a.exitOf(s.toks)
 	case sIf:
@@ -479,13 +491,20 @@ func (a *analysis) function(f *fn, st state) {
 			x.del(p.Text)
 		}
 	}
-	if a.seed != nil {
-		if name := paramName(f.params, a.seed.param); name != "" {
-			v := a.seed.v
+	for _, sd := range a.seed {
+		if name := paramName(f.params, sd.param); name != "" {
+			v := sd.v
+			if e, ok := x[name]; ok && e.taint && !v.taint {
+				continue // two seeds of one parameter: the tainted one holds
+			}
 			x[name] = entry{taint: v.taint, san: v.san, pre: v.pre, raw: v.raw, emb: v.emb, weak: v.weak}
 		}
-		a.seed = nil
 	}
+	a.seed = nil
+	curParams, curMoved := a.curParams, a.curMoved
+	a.curParams = fnParamNames(f)
+	a.curMoved = paramsMoved(f.body, a.curParams)
+	defer func() { a.curParams, a.curMoved = curParams, curMoved }()
 	a.libParams(f, x)
 	a.routeParams(f, x)
 	cls, parent, fname, types := a.cls, a.parent, a.fname, a.types
@@ -1378,8 +1397,8 @@ func (a *analysis) term(st state, t []Token, i int, whole bool) (val, int) {
 		return a.postfix(st, t, i, a.mapSanAt(t, i), val{}, whole) // array_map('absint', $x): each value sanitized (context.go)
 	case tk.Kind == Ident && (i == 0 || !memberOp(a.php, t[i-1])) && a.stripAllAt(t, i) >= 0:
 		return a.postfix(st, t, i, a.stripAllAt(t, i), val{}, whole) // preg_replace('/[^a-z0-9_]/', '', $x): only safe characters are left (context.go)
-	case tk.Kind == Ident && numericFuncs[a.lang()][tk.Text] && i+1 < len(t) && t[i+1].op("(") && (i == 0 || !memberOp(a.php, t[i-1])):
-		return a.postfix(st, t, i, closeOf(t, i+1)+1, val{}, whole) // intval($x), int(x), Number(x)
+	case tk.Kind == Ident && (numericFuncs[a.lang()][tk.Text] || a.php && hexFuncs[tk.Text]) && i+1 < len(t) && t[i+1].op("(") && (i == 0 || !memberOp(a.php, t[i-1])):
+		return a.postfix(st, t, i, closeOf(t, i+1)+1, val{}, whole) // intval($x), int(x), Number(x), wp_create_nonce($x)
 	case tk.Kind == Var || tk.Kind == Ident:
 		return a.postfix(st, t, i, i+1, val{}, whole)
 	}
@@ -1406,6 +1425,16 @@ func (a *analysis) matchExpr(st state, t []Token, i int, whole bool) (val, int) 
 // numericCasts and numericFuncs turn any value into a number (or a boolean), which
 // carries no injection in any rule.
 var numericCasts = map[string]bool{"int": true, "integer": true, "float": true, "double": true, "bool": true, "boolean": true}
+
+// numericChecks are the PHP checks that hold only for a number or a string of
+// one: is_numeric allows a sign, a decimal point, an exponent and surrounding
+// white space, none of which ends a quoted context or a path segment.
+var numericChecks = words("is_numeric is_int is_integer is_long is_float ctype_digit")
+
+// hexFuncs always return a string of hex digits, whatever they are given, which
+// carries no injection in any rule: WordPress wp_create_nonce() and wp_hash().
+// md5() and hash() do too, but not with raw output asked for (md5($x, true)).
+var hexFuncs = words("wp_create_nonce wp_hash")
 
 var numericFuncs = map[string]map[string]bool{
 	"php":    words("intval absint floatval boolval"),
@@ -2066,6 +2095,17 @@ func (a *analysis) hasSanitizerWord(w string) bool {
 // sanitizers used as a check (in_array, str_starts_with, .startsWith, .is_relative_to).
 func (a *analysis) checkKeys(st state, atom []Token) []keyRef {
 	n := len(atom)
+	// is_numeric($x), ctype_digit($x): where it holds, $x is a number, which
+	// carries no injection in any rule (numericFuncs), so every rule takes it.
+	// Only a plain path: is_numeric(sanitize_text_field($x)) holds for "<b>1".
+	if a.php && n > 3 && atom[0].Kind == Ident && numericChecks[strings.ToLower(atom[0].Text)] && atom[1].op("(") && closeOf(atom, 1) == n-1 {
+		if args := splitTop(atom[2:n-1], isComma); len(args) == 1 {
+			if _, _, ok := a.pathKey(args[0]); ok {
+				return a.keysOf(args[0])
+			}
+		}
+		// otherwise as before: a rule listing ctype_digit takes ctype_digit((string) $id)
+	}
 	if keys := a.validatorKeys(st, atom); keys != nil {
 		return keys
 	}

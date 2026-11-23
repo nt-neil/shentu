@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nt-neil/shentu/rules"
 	"github.com/nt-neil/shentu/rules/engine"
@@ -29,8 +30,8 @@ func TestCases(t *testing.T) {
 	first := map[string]bool{"sqli": true, "cmdi": true, "code-eval": true, "deserialization": true, "path-traversal": true}
 	wp, n := 0, 0
 	for _, c := range cases {
-		if !first[c.Class] {
-			continue
+		if !first[c.Class] || c.KnownGap != "" {
+			continue // a known gap is out of the rates, so out of their mix too
 		}
 		n++
 		if c.Ecosystem == "wordpress-plugin" {
@@ -326,5 +327,20 @@ func TestHoldout(t *testing.T) {
 		if cited[c.ID] {
 			t.Errorf("%s is a hold-out case but a rule cites it in refs", c.ID)
 		}
+	}
+}
+
+// A known gap is listed apart and left out of the summary's rates.
+func TestKnownGapOutOfRates(t *testing.T) {
+	results := []caseResult{
+		{Case: Case{ID: "CVE-0000-0001", Ecosystem: "composer", Class: "sqli"}, Caught: true},
+		{Case: Case{ID: "CVE-0000-0002", Ecosystem: "composer", Class: "sqli", KnownGap: "input is not a rule source"}},
+	}
+	md := markdown(results, nil, time.Unix(0, 0))
+	if !strings.Contains(md, "| all | 1 | 1 | 100.0% |") {
+		t.Errorf("the gap counted in the rates:\n%s", md)
+	}
+	if !strings.Contains(md, "## Known gaps") || !strings.Contains(md, "| CVE-0000-0002 | sqli | input is not a rule source | - | - |") {
+		t.Errorf("the gap is not listed apart:\n%s", md)
 	}
 }

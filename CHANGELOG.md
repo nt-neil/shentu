@@ -8,6 +8,95 @@ Chinese for the zh-TW pages; keep the two in step.
 
 ## v0.5.6 (unreleased)
 
+- A file cut short says what cut it (#172). The code audit's unfinished files carry a `cause`:
+  the token cap, the file's time limit, nesting, a rule's work cap for following calls, the
+  project's cap (its time, memory or tokens), a call that may reach another file with no one
+  callee to follow, or a callee's summary cut short (with why: its own work cap, a chain of
+  summaries too long, too many parameters, or a cut inside it). The CVE bench counts files whose
+  calls were not all followed, which it did not count before, and lists cuts by cause.
+
+- PHP function and method names in sinks and sanitizers match in any case, as PHP calls them
+  (#189). `System($_GET['x'])`, `SYSTEM(...)`, `\SYSTEM(...)`, `System(...)` inside a namespace
+  and `Shell_Exec($c)` in a function a call reaches now report as the lower-case spelling does,
+  and a sanitizer written `EscapeShellArg($x)` cleans. A method that happens to be named `system`
+  (`$o->System(...)`, `Task::SYSTEM(...)`) is still no sink. JavaScript and Python names keep
+  their case. A builtin named in a string with an escaped backslash (`array_map('\\system', $x)`,
+  `"\\system"`), which PHP reads as `\system`, is that builtin as well. A pattern naming a PHP
+  function no longer matches a class built with `new` (`new File($p)`, `new System(...)`) or a
+  function of a namespace (`Storage\file($p)`, and `namespace\file($p)` in a file that declares a
+  namespace), as the lower-case `new file(` and `A\file(` did before; `\file($p)` is still PHP's.
+  The method and class names of member patterns match in any case too (#198): `$wpdb->Query(...)`
+  and `$wpdb->GET_RESULTS(...)` are `php-sqli-wpdb-unprepared`'s sinks, `$wpdb->Prepare(...)`
+  cleans, and `DB::RAW(...)` is a sink; a variable keeps its case (`$WPDB` is not `$wpdb`).
+
+- The host survey checks PHP against php.net's releases of 2026-11-19 (8.2.36, 8.3.37, 8.4.28,
+  8.5.13; 8.6.0 and later are fixed). The version is the one each PHP binary names itself with
+  (`php`, `php-fpm`, `php-cgi` and their versioned names, in the distributions' places,
+  `/usr/local` as in the official Docker images, Remi's `/opt/remi`, cPanel's `/opt/cpanel/ea-php*`
+  and CloudLinux's `/opt/alt/php*`), read from the file, not by running it; on Windows, the
+  `php-cgi.exe` IIS runs as a FastCGI application. This covers PHP the package scan does not see:
+  deb.sury.org, the ondrej PPA, Remi's repository, an rpm whose vendor is not the distribution's
+  (IUS, cPanel), Docker images, builds from source and IIS. A binary naming several versions, a
+  program with none, and a FastCGI path that is not a local absolute one are named as not
+  checked. As for nginx, a package whose changelog names a CVE is not warned
+  about for it. CVE-2026-129291 and CVE-2026-129289 are warned about only when php-fpm runs, and
+  CVE-2026-129292 (the status page) only when a pool's `pm.status_path` can be reached from
+  outside: its socket takes connections from other hosts, or nginx (in a server not listening on
+  127.0.0.1 only) or Apache passes the path on to FPM without `deny all` or `Require local`. Each
+  branch reads its own pools; includes are followed and comments left out. CVE-2026-129538 is warned about only when php-cgi
+  runs or IIS runs it. The other fourteen are one line by version. A branch php.net no longer
+  fixes (before 8.2) is noted only when no distribution package holds it, and what could not be
+  read (the process list, a configuration file, IIS's configuration) is named in a line saying
+  which of these could not be checked.
+
+- On Windows, the host survey and the daily vulnerability surface look for php-cgi.exe run by
+  Apache as CGI (httpd.conf and what it includes, XAMPP's `httpd-xampp.conf` too: a `ScriptAlias`
+  onto php-cgi.exe or its folder, an `Action` through such an alias, or `AddHandler cgi-script .exe`
+  in that folder) and check it for CVE-2024-4577 (fixed in 8.1.29, 8.2.20, 8.3.8) and its bypass
+  CVE-2024-8926 (8.1.30, 8.2.24, 8.3.12). The system code page (ACP) decides: 932, 936 or 950 for
+  CVE-2024-4577, an OEM code page set as the ANSI one for CVE-2024-8926; when it cannot be read,
+  they are reported as a warning with "code page unconfirmed". Branches before 8.1 are reported as
+  a warning, as the advisories do not list them and they get no fix. The surface marks an entry
+  KEV only when the CISA KEV catalog lists it. php-cgi.exe under IIS is not reported for them,
+  as the advisories cover Apache only; the version line says so. Apache is the one a service
+  runs, or at XAMPP's or Apache Lounge's place when only administrators may write its httpd.conf;
+  a network or device path in the configuration (`\\host\share`) is never read, nor an included
+  file whose link leads to one. Without a `LoadModule` of cgi_module or cgid_module in what was
+  read, Apache would not run CGI, so the entry is a warning, not critical (one inside an
+  `<IfModule>` counts as loaded); when some of the configuration could not be read, it stays
+  critical and says so. A path whose links cannot be checked, or with `:` or `?` after the drive
+  (an alternate data stream), is not read either.
+
+- Attack detection has a signature for CVE-2024-4577 (#199): php-cgi's command-line options sent
+  in the query string of a `.php` file (with a PATH_INFO or not), the site's index page (`/`) or
+  `/php-cgi/php-cgi.exe` (a soft hyphen, `%AD` or `%C2%AD`, then a one-letter option, or
+  a hyphen and an option letter standing alone). It is matched to the host by the CVE, so it
+  alerts on a host whose surface has CVE-2024-4577, with the KEV mark that entry carries; on any
+  other host its hits are counted as noise.
+
+- What the patrol's own checks found is in Chinese too with a Chinese `language`: new listening ports,
+  suspicious processes, UID 0 accounts, authorized_keys changes, links and shared keys, ld.so.preload,
+  PAM modules, webshells, certificates, SSH login failures, CISA KEV vulnerabilities and unreadable
+  authorized_keys lines. The English text is word for word what it was, and the model is still sent
+  the English list. Findings from the tools (survey risks, changes since the last survey, the code
+  audit) are still in English.
+
+- The package vulnerability check (`vulns`) names the packages that came from a repository other
+  than the distribution's, as `third_party_unchecked` with the repository and how it was told
+  apart. OSV covers the distribution's packages only, so these were compared as if the
+  distribution had built them and matched nothing: that silence is not "no vulnerabilities".
+  A package is told apart by its version (deb.sury.org's `+deb.sury.org`, nginx.org's
+  `-N~codename`), by the package index of a third-party apt repository, or by an rpm vendor that
+  is not the distribution's. Third-party repositories (apt, and Alpine repositories other than
+  main, community and testing) are listed in `third_party_repositories`; when one is configured but its
+  packages cannot be told apart, a note says so. A flat repository (a `Packages` with no `Release`)
+  is third party. An rpm vendor counts as the distribution's only on that distribution (Oracle's
+  MySQL packages on Rocky are third party). Indexes that could not be read, or rpm vendor output
+  cut short, are listed in `origin_unread`. An Origin, a vendor and a repository path are written
+  by whoever publishes the repository, so a third-party repository that names itself after the
+  distribution is taken for it: this check can only add packages to the list, never show that a
+  package is the distribution's.
+
 - block_ip's check of an address's SSH logins no longer reads a month of journal each time. The
   login events of sshd's units (ssh, sshd, and the socket-activated ssh@ and sshd@) are kept per
   address in `loginindex.json` in the state directory (0600, written whole and renamed in place),
@@ -16,6 +105,7 @@ Chinese for the zh-TW pages; keep the two in step.
   sshd-session, `_UID` 0) wrote every one of them in the window (the last day if it has any there,
   else 720 hours), and the text logs are read as before for an address journald has none of.
   On a VM journal of 1.2 million entries one check had read for about 37 seconds.
+
 - The index answers as strictly as reading the whole window, and no more so for what that read
   cannot see: with no index (the first run, a file of an older format) it starts from 720 hours
   back, and a window it does not reach back to is read whole, as before. Each read also asks where
@@ -30,8 +120,19 @@ Chinese for the zh-TW pages; keep the two in step.
   time. Past 65,536 addresses the others' events are counted together, and an address that may be
   among them is refused, never let through. A saved cursor that is not one, or an address saved as
   null, is dropped when the index is read.
+
 - A ✅ press whose checks ran out of time is refused as not checked in time (`timeout`), no longer as
   records that could not be read (`state_error`).
+
+### Known issues
+
+- No host check writes CVE-2024-4577 into the surface yet (PHP-CGI on Windows), so on a real host
+  the signature's hits stay noise until that check comes.
+
+- On such a host, a one-word query with no `=` that starts with a byte that is not UTF-8 and a
+  letter (a Latin-1, Big5 or Shift-JIS word not sent as UTF-8) matches the CVE-2024-4577
+  signature as `%AD` does: requests are matched decoded, where every such byte reads as U+FFFD
+  (`docs/attack-detection-limits.md`).
 
 ## v0.5.5 — 2026-11-23
 
