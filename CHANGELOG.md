@@ -6,7 +6,7 @@ a release are not written here: they are worked out from the rule snapshots in
 `docs/site-src/rules-history/`. `CHANGELOG.zh-TW.md` holds the same releases in Traditional
 Chinese for the zh-TW pages; keep the two in step.
 
-## v0.5.6 (unreleased)
+## v0.5.6 — 2026-11-24
 
 - A file cut short says what cut it (#172). The code audit's unfinished files carry a `cause`:
   the token cap, the file's time limit, nesting, a rule's work cap for following calls, the
