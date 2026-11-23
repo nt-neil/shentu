@@ -3,6 +3,12 @@
 CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本與日期必須一致，
 每個版本都要有內容（`go test ./cmd/sitegen` 會檢查）。
 
+## v0.5.5 (unreleased)
+
+- 每日報告和新發現報告現在依照 `language` 設定：設定是中文時，標題、各段標題和固定的說明文字（沒檢查到的項目、漏洞檢查沒做完、攻擊偵測、
+  子 Agent 派遣、自動事件調查、SSH 登入）都改用中文；v0.5.4 以前不管 `language` 怎麼設，這些都是英文。檢查找到的內容、錯誤訊息和
+  AI 模型寫的回答不會改寫，照原樣附上。
+
 ## v0.5.4 (unreleased)
 
 - 共用 AI 預算（#161）：bot、`shentu chat` 與自動事件調查的每次派遣，執行期間會在 `state_dir/reservations.json`

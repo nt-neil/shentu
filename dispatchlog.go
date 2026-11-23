@@ -590,8 +590,8 @@ func maskNet(s string) string {
 	return (&net.IPNet{IP: ip.Mask(net.CIDRMask(64, 128)), Mask: net.CIDRMask(64, 128)}).String()
 }
 
-// countLine is "a 2, b 1" in the order of keys.
-func countLine(c map[string]int) string {
+// countLine is "a 2, b 1" in the order of keys, each key as name says it.
+func countLine(c map[string]int, name func(string) string, zh bool) string {
 	keys := make([]string, 0, len(c))
 	for k := range c {
 		keys = append(keys, k)
@@ -599,7 +599,10 @@ func countLine(c map[string]int) string {
 	sort.Strings(keys)
 	parts := make([]string, 0, len(keys))
 	for _, k := range keys {
-		parts = append(parts, fmt.Sprintf("%s %d", k, c[k]))
+		parts = append(parts, fmt.Sprintf("%s %d", name(k), c[k]))
+	}
+	if zh {
+		return strings.Join(parts, "、")
 	}
 	return strings.Join(parts, ", ")
 }
@@ -611,9 +614,9 @@ const maxReportProposals = 10
 // with their addresses masked to /24 (/64 for IPv6), like the attack
 // report. Only enumerations and numbers reach it. An archive error is said,
 // not hidden; no dispatches and no error give "".
-func dispatchSection(recs []dispatchRecord, bad int, err error) string {
+func dispatchSection(recs []dispatchRecord, bad int, err error, zh bool) string {
 	if err != nil {
-		return "\nSub-agent dispatches: the archive could not be read (" + err.Error() + ")\n"
+		return fmt.Sprintf(dt(zh, "disp_unread"), err.Error())
 	}
 	if len(recs) == 0 && bad == 0 {
 		return ""
@@ -628,7 +631,7 @@ func dispatchSection(recs []dispatchRecord, bad int, err error) string {
 		}
 		statuses[r.Status]++
 		for _, s := range r.Subs {
-			roles[s.Role+" "+s.Status]++
+			roles[s.Role+"\x00"+s.Status]++
 			if s.Status != statusComplete {
 				reasons[s.Reason]++
 			}
@@ -637,31 +640,42 @@ func dispatchSection(recs []dispatchRecord, bad int, err error) string {
 					more++
 					continue
 				}
-				props = append(props, fmt.Sprintf("%s (gate %s)", maskNet(p.IP), cmpOr(string(p.Gate), "not checked")))
+				props = append(props, fmt.Sprintf(dt(zh, "disp_prop"), maskNet(p.IP), cmpOr(string(p.Gate), dt(zh, "disp_nogate"))))
 			}
 		}
 	}
+	in := func(m map[string]string) func(string) string {
+		return func(k string) string { return enumWord(zh, m, k) }
+	}
+	roleStatus := func(k string) string {
+		role, status, _ := strings.Cut(k, "\x00")
+		return enumWord(zh, roleZh, role) + " " + enumWord(zh, statusZh, status)
+	}
+	sep := ", "
+	if zh {
+		sep = "、"
+	}
 	var b strings.Builder
-	b.WriteString("\nSub-agent dispatches (last day; reports are the model's, not verified):\n")
-	fmt.Fprintf(&b, "- %d dispatches: %s; %s\n", len(recs), countLine(origins), countLine(statuses))
+	b.WriteString(dt(zh, "disp_head"))
+	fmt.Fprintf(&b, dt(zh, "disp_count"), len(recs), countLine(origins, in(originZh), zh), countLine(statuses, in(statusZh), zh))
 	if external > 0 {
-		fmt.Fprintf(&b, "- %d used the sub-agents' model outside this host ([agents] base_url): masked logs and settings were sent to it\n", external)
+		fmt.Fprintf(&b, dt(zh, "disp_external"), external)
 	}
 	if len(roles) > 0 {
-		fmt.Fprintf(&b, "- sub-agents: %s\n", countLine(roles))
+		fmt.Fprintf(&b, dt(zh, "disp_subs"), countLine(roles, roleStatus, zh))
 	}
 	if len(reasons) > 0 {
-		fmt.Fprintf(&b, "- why incomplete: %s\n", countLine(reasons))
+		fmt.Fprintf(&b, dt(zh, "disp_why"), countLine(reasons, in(reasonZh), zh))
 	}
 	if len(props) > 0 {
-		fmt.Fprintf(&b, "- proposed blocks (suggestions, not actions): %s", strings.Join(props, ", "))
+		fmt.Fprintf(&b, dt(zh, "disp_props"), strings.Join(props, sep))
 		if more > 0 {
-			fmt.Fprintf(&b, ", and %d more", more)
+			fmt.Fprintf(&b, dt(zh, "disp_propmore"), more)
 		}
 		b.WriteString("\n")
 	}
 	if bad > 0 {
-		fmt.Fprintf(&b, "- %d archive lines could not be read and were skipped\n", bad)
+		fmt.Fprintf(&b, dt(zh, "disp_bad"), bad)
 	}
 	return b.String()
 }
@@ -675,18 +689,19 @@ func cmpOr(s, def string) string {
 
 // dispatchDaily is dispatchSection for the day before now, for the daily report.
 func dispatchDaily(cfg *Config, now time.Time) string {
+	zh := isZh(cfg)
 	s := newDispatchStore(cfg)
 	recs, bad, extra, err := s.since(now.Add(-24 * time.Hour))
-	sec := dispatchSection(recs, bad, err)
+	sec := dispatchSection(recs, bad, err, zh)
 	if extra > 0 {
 		if sec == "" {
-			sec = "\nSub-agent dispatches (last day; reports are the model's, not verified):\n"
+			sec = dt(zh, "disp_head")
 		}
-		sec += fmt.Sprintf("- archive lines with fields this version does not know: %d (read; those fields are ignored)\n", extra)
+		sec += fmt.Sprintf(dt(zh, "disp_extra"), extra)
 	}
-	if line := s.repairedLine(now); line != "" {
+	if line := s.repairedLine(now, zh); line != "" {
 		if sec == "" {
-			sec = "\nSub-agent dispatches (last day; reports are the model's, not verified):\n"
+			sec = dt(zh, "disp_head")
 		}
 		sec += line
 	}
@@ -1109,7 +1124,7 @@ func replaceFile(p string, b []byte) error {
 
 // repairedLine is the daily report's line about what Repair did in the
 // last day; "" when it did nothing.
-func (s *dispatchStore) repairedLine(now time.Time) string {
+func (s *dispatchStore) repairedLine(now time.Time, zh bool) string {
 	moved, dropped, added, runs := 0, 0, 0, 0
 	for _, n := range s.repairNotes(now.Add(-24 * time.Hour)) {
 		moved, dropped, added, runs = moved+n.Moved, dropped+n.Dropped, added+n.Added, runs+1
@@ -1117,7 +1132,7 @@ func (s *dispatchStore) repairedLine(now time.Time) string {
 	if runs == 0 {
 		return ""
 	}
-	return fmt.Sprintf("- `shentu dispatch repair` ran %d times: %d unreadable archive lines moved out (%d of them new to *.jsonl.bad), %d empty lines dropped (%s)\n", runs, moved, added, dropped, s.dir)
+	return fmt.Sprintf(dt(zh, "disp_repaired"), runs, moved, added, dropped, s.dir)
 }
 
 // repairHint is how to run the repair here: as root, or elevated on Windows.
