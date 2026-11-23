@@ -330,7 +330,10 @@ func funcs(l Lang) template.FuncMap {
 			}
 			return fmt.Sprintf("%.1f", 7+86*float64(i)/float64(n-1))
 		},
-		"groups": groups,
+		// from which river width each lamp's label has room (riverlabels.go)
+		"labmin":   labelWidths,
+		"labsteps": func(rs []Release) []int { return labelSteps(labelWidths(rs)) },
+		"groups":   groups,
 		"pct": func(a, b int) string {
 			if b <= 0 {
 				return "0%"
