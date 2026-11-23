@@ -1,7 +1,9 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 	"testing"
 )
 
@@ -94,6 +96,42 @@ func TestRiverLabelsNarrowEdge(t *testing.T) {
 				if k := len(px) - 1; k >= 0 && px[k]+lw[k]/2 > float64(w) {
 					t.Errorf("n=%d w=%d: the rightmost label ends at %.0fpx", n, w, px[k]+lw[k]/2)
 				}
+			}
+		}
+	}
+}
+
+// The estimate is a floor for what browsers draw (S-231r-1): every label of
+// the site as rendered (testdata/river-label-widths.json, measured with
+// testdata/measure-river-labels.js) is no wider than labelWidth says, in
+// both languages. Remeasure after a font or label change.
+func TestRiverLabelsAtLeastRendered(t *testing.T) {
+	b, err := os.ReadFile("testdata/river-label-widths.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var f struct {
+		Languages map[string][]struct {
+			Version, Date        string
+			Rules, Caught, Cases int
+			Width                float64
+		}
+	}
+	if err := json.Unmarshal(b, &f); err != nil {
+		t.Fatal(err)
+	}
+	tr := map[string]func(string) string{"en": enT, "zh-TW": func(k string) string { return zh[k] }}
+	for lang, rows := range f.Languages {
+		if tr[lang] == nil || len(rows) == 0 {
+			t.Fatalf("%s: no translation or no rows", lang)
+		}
+		for _, m := range rows {
+			r := Release{Version: m.Version, Date: m.Date, Rules: m.Rules}
+			if m.Cases > 0 {
+				r.Bench = &Bench{Groups: []BenchRow{{Group: "all", Cases: m.Cases, Caught: m.Caught}}}
+			}
+			if est := labelWidth(r, tr[lang]); est < m.Width {
+				t.Errorf("%s v%s: estimated %.0fpx, drawn %.0fpx", lang, m.Version, est, m.Width)
 			}
 		}
 	}
