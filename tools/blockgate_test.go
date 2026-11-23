@@ -125,7 +125,9 @@ func TestBlockIPGateUnreadableLogsRealSummary(t *testing.T) {
 	t.Cleanup(func() { os.Chmod(auth, 0o600) })
 	noCmds, _ := hostenv.NewRunner(nil)
 	prev := hostSource
-	hostSource = func() hostenv.Source { return &hostenv.Live{Runner: noCmds, Remap: map[string]string{"/var/log": dir}} }
+	hostSource = func() hostenv.Source {
+		return linuxLive{&hostenv.Live{Runner: noCmds, Remap: map[string]string{"/var/log": dir}}}
+	}
 	t.Cleanup(func() { hostSource = prev })
 	env := &Env{LogPaths: []string{"/var/log/auth.log"}}
 	r, err := SSHSummary(context.Background(), env, time.Now().Add(-24*time.Hour), "203.0.113.77")
@@ -154,7 +156,9 @@ func TestBlockIPGateOldForgedLine(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "auth.log"), []byte(old+" vm sshd[1]: Failed password for root from 203.0.113.77 port 22 ssh2\n"), 0o600)
 	noCmds, _ := hostenv.NewRunner(nil)
 	prev := hostSource
-	hostSource = func() hostenv.Source { return &hostenv.Live{Runner: noCmds, Remap: map[string]string{"/var/log": dir}} }
+	hostSource = func() hostenv.Source {
+		return linuxLive{&hostenv.Live{Runner: noCmds, Remap: map[string]string{"/var/log": dir}}}
+	}
 	t.Cleanup(func() { hostSource = prev })
 	env := &Env{LogPaths: []string{"/var/log/auth.log"}}
 	err := loginGate(context.Background(), env, net.ParseIP("203.0.113.77"), false)
@@ -223,7 +227,9 @@ func TestBlockIPGateNamesTextLog(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "secure"), []byte(now+" vm sshd[2]: Failed password for root from 198.51.100.4 port 22 ssh2\n"), 0o600)
 	noCmds, _ := hostenv.NewRunner(nil)
 	prevH, prevS := hostSource, loginSummary
-	hostSource = func() hostenv.Source { return &hostenv.Live{Runner: noCmds, Remap: map[string]string{"/var/log": dir}} }
+	hostSource = func() hostenv.Source {
+		return linuxLive{&hostenv.Live{Runner: noCmds, Remap: map[string]string{"/var/log": dir}}}
+	}
 	loginSummary = func(context.Context, *Env, time.Time, string) (map[string]any, error) {
 		return map[string]any{"verified": true, "complete": true, "source": "journald", "sources": []SSHSource(nil)}, nil
 	}

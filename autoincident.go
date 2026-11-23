@@ -254,14 +254,11 @@ func autoBudget(cfg *Config, now time.Time) string {
 	if cfg.Budget.MonthlyTokens <= 0 {
 		return autoSkipNoBudget
 	}
-	cost, tokens, _, err := monthUsageStrict(cfg.StateDir, now)
+	u, err := usageWithOthers(cfg, "", now) // R1: what dispatches in progress hold is not room; S-R-2: one read
 	if err != nil {
 		return autoSkipBudgetUnknown
 	}
-	others, othersCost, err := othersReserved(cfg, "", now) // R1: what dispatches in progress hold is not room
-	if err != nil {
-		return autoSkipBudgetUnknown
-	}
+	cost, tokens, others, othersCost := u.cost, u.tokens, u.othersTokens, u.othersCost
 	used := float64(tokens+others+dispatchTokenCap) / float64(cfg.Budget.MonthlyTokens)
 	if cfg.Budget.MonthlyCost > 0 {
 		used = max(used, (cost+othersCost+dispatchCost(cfg))/cfg.Budget.MonthlyCost) // R2: priced caps

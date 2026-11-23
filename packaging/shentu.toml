@@ -45,6 +45,10 @@ confirm     = 2   # actions: 1 approve on the server · 2 ✅ + one-time code ·
 protection  = 2   # 1 strict (leak → pause, 08–20h, 50 answers/day) · 2 standard (leak → pause) · 3 loose (leak → alert) · 4 off
 
 [tools]
+# On macOS the defaults are macOS's own: log_paths /var/log/system.log and install.log (sshd is
+# in the unified log, read without a setting); watch_paths /private/etc, Homebrew, launchd jobs.
+# Each user's ~/Library/LaunchAgents and ~/.ssh are not among them: add them to watch them.
+# The two lines below replace those defaults: on macOS remove them, or list macOS's paths in them.
 log_paths    = ["/var/log/auth.log", "/var/log/secure", "/var/log/syslog", "/var/log/nginx/*.log", "/var/log/apache2/*.log"]
 watch_paths  = ["/etc", "/usr/bin", "/usr/sbin", "/usr/local/bin", "/var/www", "/root/.ssh"]
 cert_targets = []               # e.g. ["localhost:443"]

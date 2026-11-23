@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
-	"os"
 	"regexp"
 	"runtime"
 	"slices"
@@ -47,7 +46,7 @@ type Risk struct {
 // uncheckedRisks are the risks that say a check could not tell (a file it
 // needs could not be read): reports list them apart, every time, and never
 // push them as alerts.
-var uncheckedRisks = map[string]bool{"ssh:unreadable": true}
+var uncheckedRisks = map[string]bool{"ssh:unreadable": true, "accounts:unreadable": true, "services:unreadable": true}
 
 // uncheckedPrefix marks a risk from a check that could not tell (Windows
 // survey, see surveyFromFacts).
@@ -128,6 +127,10 @@ func Survey(ctx context.Context, env *Env) SiteProfile {
 				s.Public = true
 			}
 		}
+	} else {
+		// Not an empty, quiet-looking host (N-177-1): said, in the survey and
+		// in the patrol's "not checked" (the port baseline is skipped too).
+		p.Risks = append(p.Risks, Risk{"services:unreadable", "info", "cannot tell the listening services, and new listening ports are not checked: " + Cut(err.Error(), 200)})
 	}
 	for _, s := range by {
 		sort.Strings(s.Ports)
@@ -156,25 +159,32 @@ func Survey(ctx context.Context, env *Env) SiteProfile {
 	p.SSH, p.SSHHash, unread = sshdSettings()
 	p.Risks = append(p.Risks, sshRisks(p.SSH, unread)...)
 	p.Risks = append(p.Risks, apacheH2Risk(ctx, apacheConfGlob)...)
-	p.Risks = append(p.Risks, nginxH2Risk(ctx)...)
+	p.Risks = append(p.Risks, nginxRisks(ctx)...)
 	if p.Firewall == "none detected" && hasPublic(p.Services) {
 		p.Risks = append(p.Risks, Risk{"firewall:none", "info", "no host firewall detected (nftables, ufw, firewalld); fine only if a cloud firewall covers this server"})
 	}
 
+	// Through the host source like every other read (S-173r3-1: os.Stat read
+	// the machine running the survey, not the host it surveys, in a replay).
+	src := hostSource()
 	for _, sock := range []string{"/run/docker.sock", "/var/run/docker.sock"} {
-		if st, err := os.Stat(sock); err == nil {
+		if st, err := hostenv.Stat(src, sock); err == nil {
 			p.Containers = append(p.Containers, "docker")
-			if st.Mode().Perm()&0o002 != 0 {
+			if st.Mode.Perm()&0o002 != 0 {
 				p.Risks = append(p.Risks, Risk{"docker:socket", "critical", sock + " is writable by every user, which gives them root"})
 			}
 			break
 		}
 	}
-	if _, err := os.Stat("/run/podman"); err == nil {
+	if _, err := hostenv.Stat(src, "/run/podman"); err == nil {
 		p.Containers = append(p.Containers, "podman")
 	}
 	p.CronFiles = cronFiles()
-	p.LoginAccounts = AccountsAudit().LoginAccounts
+	acc := AccountsAudit()
+	p.LoginAccounts = acc.LoginAccounts
+	if slices.Contains(acc.NotRead, "accounts") { // not an empty, clean-looking list (N-180-1)
+		p.Risks = append(p.Risks, Risk{"accounts:unreadable", "info", "cannot tell the login accounts in full: " + Cut(acc.Note, 200)})
+	}
 	return p
 }
 

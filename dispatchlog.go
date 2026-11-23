@@ -239,7 +239,8 @@ var (
 	recReasons  = map[string]bool{reasonOK: true, reasonStepLimit: true, reasonTokenCap: true, reasonBudget: true, reasonTimeout: true,
 		reasonModelError: true, reasonBadReport: true, reasonSaidNot: true, reasonUnsupported: true, reasonOther: true}
 	recGates = map[tools.BlockCode]bool{"": true, tools.BlockOK: true, tools.BlockUnverified: true, tools.BlockOverflow: true, tools.BlockWeak: true,
-		tools.BlockInternal: true, tools.BlockLockout: true, tools.BlockNotCanonical: true, tools.BlockNoEvidence: true, tools.BlockStateError: true}
+		tools.BlockInternal: true, tools.BlockLockout: true, tools.BlockNotCanonical: true, tools.BlockNoEvidence: true, tools.BlockStateError: true,
+		tools.BlockTimeout: true, tools.BlockUnsupported: true}
 )
 
 // check is the record's field checks: every word one of its enumeration,
@@ -725,7 +726,7 @@ func (a *agent) runDispatch(ctx context.Context, origin, trigger string, tasks [
 	sl, external, modelErr := agentsLLM(a.cfg, a.llm)
 	a.subLLM = sl
 	defer func() { a.subLLM = nil }()
-	resID, release, resErr := reserve(a.cfg, dispatchTokenCap, dispatchCost(a.cfg), start) // R1, R2: the others see this one
+	resID, release, resErr := reserveFor(a.cfg, dispatchTokenCap, dispatchCost(a.cfg), id, start) // R1, R2: the others see this one; S-R-2: less what it has logged
 	defer release()
 	a.resID = resID
 	defer func() { a.resID = "" }()
@@ -778,7 +779,7 @@ func (a *agent) runDispatch(ctx context.Context, origin, trigger string, tasks [
 	for i := range rec.Subs {
 		for j := range rec.Subs[i].Proposals {
 			p := &rec.Subs[i].Proposals[j]
-			_, code, _ := tools.RemoteBlockCheck(gctx, a.env, net.ParseIP(p.IP))
+			_, code, _ := blockCheck(gctx, a.env, net.ParseIP(p.IP)) // tools.RemoteBlockCheck; a test's stub too
 			if !recGates[code] || code == "" {
 				code = tools.BlockStateError
 			}
@@ -801,11 +802,8 @@ func budgetRoom(cfg *Config, now time.Time, self string) bool {
 	if cfg.Budget.MonthlyTokens <= 0 {
 		return false
 	}
-	cost, used, _, err := monthUsageStrict(cfg.StateDir, now)
-	if err != nil {
-		return false
-	}
-	others, othersCost, err := othersReserved(cfg, self, now) // R1: what other dispatches hold is not room
+	u, err := usageWithOthers(cfg, self, now) // R1: what other dispatches hold is not room; S-R-2: one read
+	cost, used, others, othersCost := u.cost, u.tokens, u.othersTokens, u.othersCost
 	if err != nil || used+others+dispatchTokenCap > cfg.Budget.MonthlyTokens {
 		return false
 	}
