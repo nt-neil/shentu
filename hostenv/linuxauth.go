@@ -444,20 +444,10 @@ func (c *SSHLogins) Add(l string) {
 	if !ok || ts.Before(c.since) {
 		return
 	}
-	var ip, user, kind string
-	if m := reFailed.FindStringSubmatch(l); m != nil {
-		user, ip, kind = m[1], m[2], "failed"
-	} else if m := reInvalid.FindStringSubmatch(l); m != nil {
-		user, ip, kind = m[1], m[2], "invalid"
-	} else if m := reAccepted.FindStringSubmatch(l); m != nil {
-		user, ip, kind = m[2], m[3], "accepted"
-	} else {
+	user, ip, kind, ok := sshdEvent(l)
+	if !ok {
 		return
 	}
-	if net.ParseIP(ip) == nil {
-		return
-	}
-	ip = CanonicalIP(ip) // one source however it is written (::ffff:a.b.c.d, upper case)
 	if strings.Contains(user, " from ") || strings.Contains(user, ": ") {
 		user = "[crafted user name]" // still an attempt from ip, but do not echo the bait
 	}
@@ -502,6 +492,53 @@ func (c *SSHLogins) Add(l string) {
 			heap.Fix(&c.low, s.slot)
 		}
 	}
+}
+
+// sshdEvent is the login event an sshd line tells of: the user named, the
+// source address (canonical) and the kind (failed, invalid, accepted).
+func sshdEvent(l string) (user, ip, kind string, ok bool) {
+	if m := reFailed.FindStringSubmatch(l); m != nil {
+		user, ip, kind = m[1], m[2], "failed"
+	} else if m := reInvalid.FindStringSubmatch(l); m != nil {
+		user, ip, kind = m[1], m[2], "invalid"
+	} else if m := reAccepted.FindStringSubmatch(l); m != nil {
+		user, ip, kind = m[2], m[3], "accepted"
+	} else {
+		return "", "", "", false
+	}
+	if net.ParseIP(ip) == nil {
+		return "", "", "", false
+	}
+	return user, CanonicalIP(ip), kind, true // one source however it is written (::ffff:a.b.c.d, upper case)
+}
+
+// SSHDLoginEvent is the login event a journal entry of sshd's units tells
+// of, read as journalctl -o short-iso writes it (the tag, SYSLOG_IDENTIFIER
+// or else _COMM, and _PID before the message): the source address, and
+// whether sshd itself wrote it (_COMM sshd or sshd-session, _UID 0, which
+// journald fills in from the sender), as SSHDJournalLines tells them.
+// An entry another program wrote in sshd's unit (logger -t sshd) is an
+// event, not sshd's own.
+func SSHDLoginEvent(e JournalEntry) (ip string, own, ok bool) {
+	if e.MessageMissing || e.Cut || e.PID <= 0 {
+		return "", false, false
+	}
+	tag := e.Ident
+	if tag == "" {
+		tag = e.Comm
+	}
+	l := e.Time.Format(time.RFC3339) + " h " + tag + "[" + strconv.Itoa(e.PID) + "]: " + e.Message
+	if !strings.Contains(l, " sshd") {
+		return "", false, false
+	}
+	_, ip, _, ok = sshdEvent(l)
+	return ip, ok && SSHDWrote(e), ok
+}
+
+// SSHDWrote: journald says sshd itself sent e (_COMM sshd or sshd-session,
+// _UID 0, both filled in from the sender's credentials).
+func SSHDWrote(e JournalEntry) bool {
+	return e.UID == 0 && (e.Comm == "sshd" || e.Comm == "sshd-session")
 }
 
 // evict drops the least active source that never logged in (a source that

@@ -97,6 +97,33 @@ Chinese for the zh-TW pages; keep the two in step.
   distribution is taken for it: this check can only add packages to the list, never show that a
   package is the distribution's.
 
+- block_ip's check of an address's SSH logins no longer reads a month of journal each time. The
+  login events of sshd's units (ssh, sshd, and the socket-activated ssh@ and sshd@) are kept per
+  address in `loginindex.json` in the state directory (0600, written whole and renamed in place),
+  and each check, and the patrol every hour, reads on from the journal cursor where the last read
+  stopped. The rules are the same: an address's events count only when sshd itself (`_COMM` sshd or
+  sshd-session, `_UID` 0) wrote every one of them in the window (the last day if it has any there,
+  else 720 hours), and the text logs are read as before for an address journald has none of.
+  On a VM journal of 1.2 million entries one check had read for about 37 seconds.
+
+- The index answers as strictly as reading the whole window, and no more so for what that read
+  cannot see: with no index (the first run, a file of an older format) it starts from 720 hours
+  back, and a window it does not reach back to is read whole, as before. Each read also asks where
+  sshd's units now start in the journal: whatever the index kept from before that (vacuumed, or
+  flooded out by an attacker) no longer counts for an address or against it. When the cursor's own
+  entry is gone, journalctl seeks to the nearest one without an error: the index reads from its
+  cursor's entry, sees that it is gone, reads on from the first entry still there (that one
+  included), and notes it. Entries are read whole up to the 1 MiB line the whole read takes, so an
+  event with a 70 KB user name counts for its address; only an entry past that, which the whole read
+  fails on, makes a window holding it unverified for every address. A read cut short by the check's
+  time keeps what it read, so a flooded journal is read through over the checks, each within its
+  time. Past 65,536 addresses the others' events are counted together, and an address that may be
+  among them is refused, never let through. A saved cursor that is not one, or an address saved as
+  null, is dropped when the index is read.
+
+- A ✅ press whose checks ran out of time is refused as not checked in time (`timeout`), no longer as
+  records that could not be read (`state_error`).
+
 ### Known issues
 
 - No host check writes CVE-2024-4577 into the surface yet (PHP-CGI on Windows), so on a real host
