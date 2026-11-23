@@ -7,7 +7,6 @@ import (
 	"os"
 	"strings"
 	"testing"
-	"time"
 )
 
 // #200 review 1.
@@ -210,15 +209,6 @@ func TestPHPReview200CGIModule(t *testing.T) {
 // The real readers, kept before any test host replaces them.
 var defaultReadApache, defaultStatWin, defaultReadDir, defaultReadBin = phpReadApache, phpStatWin, phpReadDir, phpReadBin
 
-type fakeInfo struct{ mode fs.FileMode }
-
-func (f fakeInfo) Name() string       { return "" }
-func (f fakeInfo) Size() int64        { return 0 }
-func (f fakeInfo) Mode() fs.FileMode  { return f.mode }
-func (f fakeInfo) ModTime() time.Time { return time.Time{} }
-func (f fakeInfo) IsDir() bool        { return f.mode.IsDir() }
-func (f fakeInfo) Sys() any           { return nil }
-
 // S-3: a link on the way to a file is followed only to a local path, and
 // nothing remote is looked at, not even with Lstat.
 func TestPHPWinLocal(t *testing.T) {
@@ -237,21 +227,21 @@ func TestPHPWinLocal(t *testing.T) {
 		`C:\Apache24\conf\ads`:   `C:\data\a.conf:s`,
 	}
 	var looked []string
-	phpLstat = func(p string) (os.FileInfo, error) {
+	phpLstat = func(p string) (fs.FileMode, error) {
 		looked = append(looked, p)
 		switch p {
 		case `C:\priv`:
-			return nil, fs.ErrPermission
+			return 0, fs.ErrPermission
 		case `C:\none`:
-			return nil, fs.ErrNotExist
+			return 0, fs.ErrNotExist
 		}
 		if _, ok := links[p]; ok {
 			if p == `C:\Apache24\conf\dedup` {
-				return fakeInfo{os.ModeIrregular}, nil
+				return fs.ModeIrregular, nil
 			}
-			return fakeInfo{os.ModeSymlink}, nil
+			return fs.ModeSymlink, nil
 		}
-		return fakeInfo{0}, nil
+		return 0, nil
 	}
 	phpReadlink = func(p string) (string, error) {
 		if t := links[p]; t != "" {

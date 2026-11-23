@@ -48,18 +48,19 @@ func TestPHPAffected(t *testing.T) {
 type phpHost struct {
 	t     *testing.T
 	root  string
-	run   map[string]string // "dpkg-query -S /usr/sbin/php-fpm8.4" → its output
+	run   map[string]string // "/usr/bin/dpkg-query -S /usr/sbin/php-fpm8.4" → its output
 	procs []hostenv.Process
 	known bool
 }
 
 func newPHPHost(t *testing.T) *phpHost {
 	h := &phpHost{t: t, root: t.TempDir(), run: map[string]string{}, known: true}
-	root, run, procs, win := phpRoot, phpRun, phpProcs, phpWindows
-	t.Cleanup(func() { phpRoot, phpRun, phpProcs, phpWindows = root, run, procs, win })
-	phpRoot, phpWindows = h.root, false
-	phpRun = func(_ context.Context, name string, args ...string) ([]byte, error) {
-		if out, ok := h.run[name+" "+strings.Join(args, " ")]; ok {
+	run, procs, win := phpRun, phpProcs, phpWindows
+	t.Cleanup(func() { phpRun, phpProcs, phpWindows = run, procs, win })
+	phpWindows = false
+	withHost(t, &hostenv.Live{Remap: map[string]string{"/": h.root}}) // the host's files are under h.root
+	phpRun = func(_ context.Context, argv []string) ([]byte, error) {
+		if out, ok := h.run[strings.Join(argv, " ")]; ok {
 			return []byte(out), nil
 		}
 		return nil, errors.New("not found")
@@ -85,13 +86,13 @@ func (h *phpHost) bin(p, version string) {
 
 // dpkg says package pkg, at version, holds the binary at p.
 func (h *phpHost) dpkg(p, pkg, version string) {
-	h.run["dpkg-query -S "+p] = pkg + ": " + p + "\n"
-	h.run["dpkg-query -W -f ${db:Status-Status} ${Version} "+pkg] = "installed " + version
+	h.run[strings.Join(hostenv.DpkgSearchArgv(p), " ")] = pkg + ": " + p + "\n"
+	h.run[strings.Join(hostenv.DpkgStatusArgv(pkg), " ")] = "installed " + version
 }
 
 // rpm says package pkg, at version, from vendor, holds the binary at p.
 func (h *phpHost) rpm(p, pkg, version, vendor string) {
-	h.run["rpm -qf --qf %{NAME} %{EPOCHNUM}:%{VERSION}-%{RELEASE} %{VENDOR}\n "+p] = pkg + " " + version + " " + vendor + "\n"
+	h.run[strings.Join(hostenv.RPMOwnerArgv(p), " ")] = pkg + " " + version + " " + vendor + "\n"
 }
 
 func (h *phpHost) running(name, exe string) {
@@ -278,7 +279,7 @@ func TestPHPRisksOrigins(t *testing.T) {
 	h := newPHPHost(t)
 	h.bin("/opt/remi/php85/root/usr/sbin/php-fpm", "8.5.12")
 	h.rpm("/opt/remi/php85/root/usr/sbin/php-fpm", "php85-php-fpm", "0:8.5.12-1.el9.remi", "Remi's RPM repository")
-	h.run["rpm -q --changelog php85-php-fpm"] = "* Tue Nov 18 2026 Packager - 8.5.12-1\n- update to 8.5.12\n"
+	h.run[strings.Join(hostenv.RPMChangelogArgv("php85-php-fpm"), " ")] = "* Tue Nov 18 2026 Packager - 8.5.12-1\n- update to 8.5.12\n"
 	r := phpRisks(context.Background())
 	if v := phpFind(r, "php8.5:CVE-2026-129496"); v == nil || !strings.Contains(v.Summary, "Remi") || !strings.Contains(v.Summary, "CVE-2026-129474") ||
 		!strings.Contains(v.Summary, "8.5.13") {
