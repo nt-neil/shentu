@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"errors"
 	"fmt"
 	"runtime"
 	"strings"
@@ -110,7 +111,7 @@ func TestCallGraphClock(t *testing.T) {
 	if took > limit+time.Second {
 		t.Errorf("took %v, cap %v", took, limit)
 	}
-	if took > limit && err != ErrLimit && err != ErrCalls {
+	if took > limit && !errors.Is(err, ErrLimit) && !errors.Is(err, ErrCalls) {
 		t.Errorf("over the cap (%v) but err = %v, want ErrLimit or ErrCalls", took, err)
 	}
 }

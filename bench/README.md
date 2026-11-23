@@ -38,6 +38,7 @@ One file per vulnerability, `cves/<id>.toml` (TypeScript cases in `cves-ts/`, ru
 | `[[fix_files]]` | each file the fix commit or changeset changed: `path` from the package root, and `vulnerable` / `fixed` lists of `[first, last]` lines it changed in each release |
 | `source_url` | the advisory on CVE.org, NVD, GitHub Advisory or OSV |
 | `note` | one plain sentence in our own words |
+| `known_gap` | optional: why the rules cannot catch the case yet (its input is not a source they read, say). Such a case is still run, but it is left out of the catch and fixed-FP rates and listed under "Known gaps" in the report, so a known blind spot neither dilutes the rates nor gets forgotten: a gap that shows as caught there is a change to look at. |
 
 Only cases with a public fix commit or changeset belong here. Open the fix and
 read it before filling in `fix_files`; keep only the hunks that fix this

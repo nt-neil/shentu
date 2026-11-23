@@ -139,6 +139,9 @@ func (a *analysis) build() bool {
 				if !direct[k] && x.toksRelevant(t) {
 					direct[k] = true
 				}
+				if !direct[k] && a.php && callsParamIn(t, fi.params) {
+					direct[k] = true // it calls a callable it is given: what that does is the caller's (summary.pcall)
+				}
 				if a.proj == nil {
 					return
 				}
