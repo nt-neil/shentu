@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -69,6 +70,18 @@ func (j *fakeJournal) addEntry(e fakeEntry) {
 	j.seq++
 	e.seq = j.seq
 	j.entries = append(j.entries, e)
+}
+
+// inTimeOrder puts the entries in time order and numbers them so, as
+// journald keeps a journal (an entry added out of order is a fixture's).
+func (j *fakeJournal) inTimeOrder() {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	sort.SliceStable(j.entries, func(a, b int) bool { return j.entries[a].at.Before(j.entries[b].at) })
+	for i := range j.entries {
+		j.entries[i].seq = i + 1
+	}
+	j.seq = len(j.entries)
 }
 
 // vacuum drops the entries up to entry n, as journalctl --vacuum-* does.
@@ -217,6 +230,7 @@ func TestLoginIndexAnswers(t *testing.T) {
 	j.failed(now.Add(-time.Hour), "203.0.113.13")
 	j.forged(now.Add(-30*time.Hour), "203.0.113.13") // before the day, which is the window
 	j.add(now.Add(-time.Hour), "sshd", 0, "Server listening on 0.0.0.0 port 22.")
+	j.inTimeOrder()
 	dir, whole := withIndex(t, j, &now)
 	for _, c := range []struct {
 		ip       string

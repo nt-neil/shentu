@@ -304,17 +304,7 @@ func TestLoginIndexAgreesWithWholeRead(t *testing.T) {
 			}
 			j.add(at, w.comm, w.uid, msg)
 		}
-		j.mu.Lock() // the journal in time order, as journald keeps it
-		for a := 1; a < len(j.entries); a++ {
-			for b := a; b > 0 && j.entries[b].at.Before(j.entries[b-1].at); b-- {
-				j.entries[b], j.entries[b-1] = j.entries[b-1], j.entries[b]
-			}
-		}
-		for i := range j.entries {
-			j.entries[i].seq = i + 1
-		}
-		j.seq = len(j.entries)
-		j.mu.Unlock()
+		j.inTimeOrder()
 		withIndex(t, j, &now)
 		wholeRead(t, j, now)
 		if len(j.entries) > 0 && rng.Intn(3) == 0 {
