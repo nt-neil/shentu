@@ -387,31 +387,13 @@ func (a *analysis) pcallSeeds(st state, t []Token, funcs []*fn) map[*fn][]*param
 			for k := range width {
 				input = input || seed(k).taint
 			}
-			switch {
-			case n >= len(args) || args[n] == nil:
+			if n >= len(args) || args[n] == nil {
 				if input {
 					a.b.tooDeepFor(CutCallableParam)
 				}
-			case len(args[n]) == 1 && args[n][0].Kind == Func && args[n][0].Fn < len(funcs):
-				f := funcs[args[n][0].Fn]
-				if out == nil {
-					out = map[*fn][]*paramSeed{}
-				}
-				for k := range width {
-					out[f] = append(out[f], &paramSeed{param: k, v: seed(k)})
-				}
-			case len(args[n]) == 1 && args[n][0].Kind == Var && a.paramIndex(args[n][0].Text) >= 0:
-				if a.summ != nil && a.nested == 0 {
-					p := a.paramIndex(args[n][0].Text)
-					for k := range width {
-						if seed(k).taint {
-							a.summ.pcall[[2]int{p, k}] = true
-						}
-					}
-				}
-			case input:
-				a.b.tooDeepFor(CutCallableParam)
+				continue
 			}
+			out = a.passCallable(st, args[n], funcs, seed, width, true, out)
 		}
 	}
 	return out
@@ -438,11 +420,19 @@ func sortedKeys2[V1, V2 any](x map[int]V1, y map[int]V2) []int {
 func callsParam(fi *fnInfo) bool {
 	found := false
 	walkToks(fi.f.body, 0, func(t []Token) {
-		for i := 0; !found && i+1 < len(t); i++ {
-			found = t[i].Kind == Var && t[i+1].op("(") && slices.Contains(fi.params, t[i].Text)
-		}
+		found = found || callsParamIn(t, fi.params)
 	})
 	return found
+}
+
+// callsParamIn reports whether tokens call one of params ($callback(...)).
+func callsParamIn(t []Token, params []string) bool {
+	for i := 0; i+1 < len(t); i++ {
+		if t[i].Kind == Var && t[i+1].op("(") && slices.Contains(params, t[i].Text) {
+			return true
+		}
+	}
+	return false
 }
 
 // byParam puts a PHP call's arguments in the callee's parameter places: by
@@ -472,4 +462,135 @@ func byParam(args [][]Token, params []string) ([][]Token, bool) {
 		out[i] = arg
 	}
 	return out, true
+}
+
+// passCallable follows the callable a call passes where the callee calls it
+// with arguments whose input seed(k) gives:
+//   - a closure literal: seeded, its sinks found when it is analysed;
+//   - the caller's own parameter: the effect moves up (a.summ.pcall);
+//   - a function name ('foo', 'Cls::m'), an array callable ([$this, 'm'],
+//     [Cls::class, 'm'], array(...)) or a first-class callable (foo(...)):
+//     resolved and its summary's sinks reported for the seeded arguments;
+//   - anything else: with input, cut as callable-param (when cutUnknown).
+func (a *analysis) passCallable(st state, arg []Token, funcs []*fn, seed func(int) val, width int, cutUnknown bool, out map[*fn][]*paramSeed) map[*fn][]*paramSeed {
+	input := false
+	for k := range width {
+		input = input || seed(k).taint
+	}
+	switch {
+	case len(arg) == 1 && arg[0].Kind == Func && arg[0].Fn < len(funcs):
+		f := funcs[arg[0].Fn]
+		if out == nil {
+			out = map[*fn][]*paramSeed{}
+		}
+		for k := range width {
+			out[f] = append(out[f], &paramSeed{param: k, v: seed(k)})
+		}
+	case len(arg) == 1 && arg[0].Kind == Var && a.paramIndex(arg[0].Text) >= 0:
+		if a.summ != nil && a.nested == 0 {
+			p := a.paramIndex(arg[0].Text)
+			for k := range width {
+				if seed(k).taint {
+					a.summ.pcall[[2]int{p, k}] = true
+				}
+			}
+		}
+	default:
+		if !input {
+			return out
+		}
+		if call := callableCall(arg); call != nil {
+			at := len(call) - 3 // the name before "(" ")"
+			if sum := a.callSummary(call, at, a.calleeKey(call, at)); sum != nil {
+				for k := range width {
+					v := seed(k)
+					if !v.taint || v.weak {
+						continue
+					}
+					// as callSinks: in library mode only input embedded on the way
+					if emb := v.emb || sum.sinkEmb&(1<<k) != 0; !a.lib || emb {
+						for _, l := range sum.sinkOf(k) {
+							a.reportSink(l, emb)
+						}
+					}
+				}
+				return out
+			}
+			if a.irrelevant(call, at) {
+				return out // a function the rule finds nothing in: nothing of this rule reaches it
+			}
+		}
+		if cutUnknown {
+			a.b.tooDeepFor(CutCallableParam)
+		}
+	}
+	return out
+}
+
+// callableCall turns a PHP callable written as a value into the tokens of a
+// call of it, ending in "(" ")", or nil: 'foo' and 'Cls::m', [$this, 'm'],
+// [Cls::class, 'm'] and array(...) alike, and foo(...).
+func callableCall(arg []Token) []Token {
+	op := func(s string) Token { return Token{Kind: Op, Text: s} }
+	id := func(s string) Token { return Token{Kind: Ident, Text: s} }
+	tail := []Token{op("("), op(")")}
+	switch {
+	case len(arg) == 1 && arg[0].Kind == Str && len(arg[0].Parts) == 0:
+		name := arg[0].Text
+		if c, m, ok := strings.Cut(name, "::"); ok && c != "" && m != "" {
+			return append([]Token{id(c), op("::"), id(m)}, tail...)
+		}
+		if name == "" || strings.ContainsAny(name, " ()$") {
+			return nil
+		}
+		return append([]Token{id(name)}, tail...)
+	case len(arg) == 4 && arg[0].Kind == Ident && arg[1].op("(") && arg[2].op("...") && arg[3].op(")"):
+		return append([]Token{arg[0]}, tail...)
+	}
+	inner := arg
+	switch {
+	case len(arg) >= 2 && arg[0].op("[") && arg[len(arg)-1].op("]"):
+		inner = arg[1 : len(arg)-1]
+	case len(arg) >= 3 && arg[0].word("array") && arg[1].op("(") && arg[len(arg)-1].op(")"):
+		inner = arg[2 : len(arg)-1]
+	default:
+		return nil
+	}
+	parts := splitTop(inner, isComma)
+	if len(parts) != 2 || len(parts[1]) != 1 || parts[1][0].Kind != Str || len(parts[1][0].Parts) != 0 {
+		return nil
+	}
+	m := id(parts[1][0].Text)
+	switch obj := parts[0]; {
+	case len(obj) == 1 && obj[0].Kind == Var:
+		return append([]Token{obj[0], op("->"), m}, tail...)
+	case len(obj) == 3 && obj[0].Kind == Ident && obj[1].op("::") && obj[2].word("class"):
+		return append([]Token{obj[0], op("::"), m}, tail...)
+	case len(obj) == 1 && obj[0].Kind == Str && len(obj[0].Parts) == 0:
+		return append([]Token{id(obj[0].Text), op("::"), m}, tail...)
+	}
+	return nil
+}
+
+// irrelevant reports whether the call at t[i] reaches a function, in this file
+// or another, that the rule finds nothing in (relevance.go): no summary of it
+// is worked out because none is needed. A function whose summary is not ready
+// (a cycle still being worked out) or that is not found is not irrelevant.
+func (a *analysis) irrelevant(t []Token, i int) bool {
+	if key := a.calleeKey(t, i); key != "" {
+		return a.sc != nil && len(a.sc.funcs[key]) > 0 && !a.relevant(key)
+	}
+	if a.proj == nil {
+		return false
+	}
+	c, ok := a.callee(t, i)
+	if !ok {
+		return false
+	}
+	f, name, _, _ := a.proj.target(a, c)
+	if f == "" {
+		return false
+	}
+	x := a.proj.analysisFor(a, f)
+	return x != nil && x.sc != nil && len(x.sc.funcs[name]) > 0 && !x.relevant(name)
 }
