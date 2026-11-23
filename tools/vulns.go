@@ -172,7 +172,8 @@ func packageVulnsAll(ctx context.Context, hc *http.Client, detailFor string) (ma
 	if feed.Note != "" {
 		out["ecosystems_note"] = feed.Note
 	}
-	thirdPartyOut(out, set)
+	up, upWhy := upstreamCompare(ctx, set) // third-party PHP and nginx, against php.net's and nginx.org's advisories
+	thirdPartyOut(out, set, up, upWhy)
 	if len(feed.Ecosystems) > 1 { // SUSE: one per module; ecosystem shows the first only
 		out["ecosystems"] = feed.Ecosystems
 	}
@@ -202,7 +203,8 @@ func packageVulnsAll(ctx context.Context, hc *http.Client, detailFor string) (ma
 		return c, ok
 	}
 	exploited := map[string][]Exploit{} // package -> KEV matches
-	if kev, err := loadKEV(ctx, hc); err != nil {
+	kev, kevErr := loadKEV(ctx, hc)     // kept for the upstream entries of the surface
+	if err := kevErr; err != nil {
 		out["kev"] = "CISA KEV list unavailable: " + err.Error()
 	} else {
 		var all []Exploit
@@ -261,6 +263,7 @@ func packageVulnsAll(ctx context.Context, hc *http.Client, detailFor string) (ma
 			surface = append(surface, v)
 		}
 	}
+	surface = append(surface, upstreamSurface(up, kev)...)
 	if forSurface {
 		// The KEV check did not look up every advisory's CVEs (the list
 		// unavailable, or past 300 for one package): those it did not,
@@ -604,18 +607,26 @@ func installedSet(ctx context.Context) (string, hostenv.PatchFeed, hostenv.Packa
 // the distribution's. OSV publishes the distribution's packages only, so
 // these were compared as if the distribution had built them and matched
 // nothing: that silence is not "no vulnerabilities", and says so.
-func thirdPartyOut(out map[string]any, set hostenv.PackageSet) {
+func thirdPartyOut(out map[string]any, set hostenv.PackageSet, up []upstreamHit, why map[string]string) {
 	type thirdParty struct {
 		Package string `json:"package"`
 		Version string `json:"version"`
 		Origin  string `json:"origin"`
 		FoundBy string `json:"found_by"`
+		Why     string `json:"why,omitempty"` // a PHP or nginx package not compared with its upstream: why
+	}
+	compared := map[string]bool{}
+	for _, h := range up {
+		compared[h.Package] = true
 	}
 	var tp []thirdParty
 	for _, it := range set.Items {
-		if it.Origin != "" {
-			tp = append(tp, thirdParty{it.Name, it.Version, it.Origin, it.OriginBy})
+		if it.Origin != "" && !compared[it.Name] {
+			tp = append(tp, thirdParty{it.Name, it.Version, it.Origin, it.OriginBy, why[it.Name]})
 		}
+	}
+	if len(up) > 0 {
+		out["third_party_upstream"] = up
 	}
 	if len(tp) > 0 {
 		out["third_party_unchecked"] = tp
