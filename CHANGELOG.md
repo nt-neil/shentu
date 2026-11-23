@@ -15,7 +15,6 @@ Chinese for the zh-TW pages; keep the two in step.
   summaries too long, too many parameters, or a cut inside it). The CVE bench counts files whose
   calls were not all followed, which it did not count before, and lists cuts by cause.
 
-
 ## v0.5.5 — 2026-11-23
 
 - What a dispatch in progress has already used no longer counts twice near the budget limit: its
