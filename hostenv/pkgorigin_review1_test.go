@@ -3,6 +3,8 @@ package hostenv
 import (
 	"context"
 	"maps"
+	"os"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -44,9 +46,10 @@ func TestReview208RpmVendorByOS(t *testing.T) {
 			"mysql-community-server": "Oracle and/or its affiliates by vendor",
 			"amazon-ssm-agent":       "Amazon.com, Inc. by vendor",
 		},
-		"ol": {
-			"bash":             "Example Linux Vendor by vendor",
-			"amazon-ssm-agent": "Amazon.com, Inc. by vendor",
+		"ol": { // S-208-4: repo.mysql.com's "Oracle and/or its affiliates" is not Oracle Linux
+			"bash":                   "Example Linux Vendor by vendor",
+			"mysql-community-server": "Oracle and/or its affiliates by vendor",
+			"amazon-ssm-agent":       "Amazon.com, Inc. by vendor",
 		},
 		"amzn": {
 			"bash":                   "Example Linux Vendor by vendor",
@@ -104,8 +107,72 @@ func TestReview208RpmVendorCut(t *testing.T) {
 	h.cmds[argvKey(rpmVendorArgv)] = r
 	p := Collect(context.Background(), h).Packages
 	if !slices.ContainsFunc(p.Value.OriginNotes, func(n string) bool {
-		return strings.Contains(n, "output cut short: 5 packages not told apart")
+		return strings.HasPrefix(n, "rpm vendors (not judged: output cut short, origin of 5 packages unknown")
 	}) {
 		t.Errorf("cut vendor output: %q", p.Value.OriginNotes)
+	}
+}
+
+// N-208-4: every rpm distribution the patch feed knows has its vendor here,
+// read from PatchFeedFor's cases so a new ID cannot be missed.
+func TestReview208VendorTableCoversFeed(t *testing.T) {
+	b, err := os.ReadFile("linuxdistros.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(b)
+	i := strings.Index(src, "func PatchFeedFor(")
+	end := strings.Index(src[i:], "\n}\n")
+	var ids []string
+	for _, l := range strings.Split(src[i:i+end], "\n") {
+		if strings.HasPrefix(l, "\tcase \"") { // the switch on the ID, not the ones inside it
+			for _, q := range regexp.MustCompile(`"([^"]+)"`).FindAllStringSubmatch(l, -1) {
+				ids = append(ids, q[1])
+			}
+		}
+	}
+	if !slices.Contains(ids, "sles_sap") || !slices.Contains(ids, "rocky") {
+		t.Fatalf("feed IDs not read: %q", ids)
+	}
+	for _, id := range ids {
+		switch id {
+		case "debian", "ubuntu", "alpine": // not rpm
+			continue
+		}
+		if _, ok := rpmDistroVendors[id]; !ok {
+			t.Errorf("feed ID %s has no vendor", id)
+		}
+	}
+}
+
+// N-208-5: an Open Build Service project is third party on SUSE.
+func TestReview208OBSVendor(t *testing.T) {
+	for _, id := range []string{"opensuse-leap", "sles"} {
+		for v, want := range map[string]bool{
+			"SUSE LLC <https://www.suse.com/>":             false,
+			"openSUSE":                                     false,
+			"obs://build.opensuse.org/home:alice":          true,
+			"obs://build.opensuse.org/devel:languages:php": true,
+			"Example Vendor":                               true,
+		} {
+			if got := !rpmDistroVendor(v, id); got != want {
+				t.Errorf("%s %q third party %v, want %v", id, v, got, want)
+			}
+		}
+	}
+}
+
+// N-208-6: a file: flat repository has a list name starting with "_": it is
+// named "local", never "".
+func TestReview208LocalFlatRepo(t *testing.T) {
+	h := aptHost()
+	h.files[AptListsDir+"/_srv_repo_._Packages"] = "Package: agent\nVersion: 2.0.1\n"
+	h.cmds[argvKey(dpkgArgv)] = CmdResult{Stdout: append(h.cmds[argvKey(dpkgArgv)].Stdout, "agent\t\t2.0.1\tarm64\tii \n"...)}
+	p := Collect(context.Background(), h).Packages
+	if got := originOf(p.Value.Items); got["agent"] != "local by apt-index" {
+		t.Errorf("file: repository: %v", got)
+	}
+	if slices.Contains(p.Value.ThirdParty, "") || !slices.Contains(p.Value.ThirdParty, "local") {
+		t.Errorf("third party %q", p.Value.ThirdParty)
 	}
 }

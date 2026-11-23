@@ -175,7 +175,9 @@ func aptOrigins(src Source, items []Package) (repos []string, notes []string) {
 			// No Release at all: a flat repository apt only installs from
 			// with [trusted=yes]. Every archive of a distribution has a
 			// Release, so this one is a third party, named by its host.
-			o, _, _ = strings.Cut(n, "_")
+			if o, _, _ = strings.Cut(n, "_"); o == "" {
+				o = "local" // a file: repository: its list name starts with the path
+			}
 			if !slices.Contains(repos, o) {
 				repos = append(repos, o)
 			}
@@ -242,15 +244,19 @@ func aptReleased(released map[string]bool, n string) bool {
 // Amazon's agents on RHEL, are third party; so is EPEL ("Fedora Project")
 // everywhere but Fedora.
 var rpmDistroVendors = map[string]string{
-	"rhel": "red hat", "centos": "centos", "rocky": "rocky", "almalinux": "almalinux", "ol": "oracle",
+	"rhel": "red hat", "centos": "centos", "rocky": "rocky", "almalinux": "almalinux", "ol": "oracle america",
 	"amzn": "amazon", "fedora": "fedora", "anolis": "openanolis", "openEuler": "openeuler",
 	"eurolinux": "eurolinux", "miraclelinux": "cybertrust",
-	"sles": "suse", "sled": "suse", "sle-micro": "suse", "opensuse-leap": "suse", "opensuse-tumbleweed": "suse",
+	"sles": "suse", "sled": "suse", "sles_sap": "suse", "sle-micro": "suse",
+	"opensuse-leap": "suse", "opensuse-tumbleweed": "suse", "opensuse-slowroll": "suse",
 }
 
+// An Open Build Service vendor (obs://build.opensuse.org/home:..., devel:...)
+// names a project anyone can build in: third party, though it says suse.
 func rpmDistroVendor(vendor, osID string) bool {
 	d, ok := rpmDistroVendors[osID]
-	return ok && strings.Contains(strings.ToLower(vendor), d)
+	v := strings.ToLower(vendor)
+	return ok && !strings.HasPrefix(v, "obs://") && strings.Contains(v, d)
 }
 
 // rpmOrigins sets Origin on the packages whose rpm vendor is not the
@@ -293,7 +299,7 @@ func rpmOrigins(ctx context.Context, src Source, items []Package, osID string) (
 		}
 	}
 	if missed > 0 {
-		return []string{"rpm vendors (output cut short: " + strconv.Itoa(missed) + " packages not told apart, checked as the distribution's)"}
+		return []string{"rpm vendors (not judged: output cut short, origin of " + strconv.Itoa(missed) + " packages unknown; they were compared as the distribution's own)"}
 	}
 	return nil
 }
