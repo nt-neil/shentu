@@ -6,7 +6,7 @@ a release are not written here: they are worked out from the rule snapshots in
 `docs/site-src/rules-history/`. `CHANGELOG.zh-TW.md` holds the same releases in Traditional
 Chinese for the zh-TW pages; keep the two in step.
 
-## v0.5.5 (unreleased)
+## v0.5.5 — 2026-11-23
 
 - What a dispatch in progress has already used no longer counts twice near the budget limit: its
   reservation knows the dispatch and when it started, and the others count only the rest of it,
