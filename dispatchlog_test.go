@@ -41,6 +41,7 @@ func testStore(t *testing.T) *dispatchStore {
 // A1, A2: what a sub-agent or a log wrote never reaches the archive or the
 // daily report; only enumerations, counts and canonical addresses do.
 func TestDispatchArchiveNoFreeText(t *testing.T) {
+	stubGate(t, nil) // the archive's gate check, not the host's logs (macOS's log show takes minutes)
 	h := &hostileModel{}
 	a, state := dispatchAgent(t, h, nil, nil)
 	a.env.Remote = true

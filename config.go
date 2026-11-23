@@ -86,6 +86,13 @@ func loadConfig(path string) (*Config, error) {
 	if runtime.GOOS == "darwin" { // macOS's own places (M0): /etc is /private/etc; Homebrew; launchd jobs
 		// Not each user's ~/Library/LaunchAgents and ~/.ssh: add them to
 		// watch_paths (S-183-2).
+		// macOS's own text logs, in root's /private/var/log; sshd is in the
+		// unified log, which log_search does not read. Not Homebrew's nginx
+		// and Apache logs: their directories belong to the Homebrew user,
+		// who could hard-link a root-only file there (macOS has no
+		// protected_hardlinks) for log_search, run as root, to read. Add
+		// them to log_paths knowingly.
+		c.Tools.LogPaths = []string{"/var/log/system.log", "/var/log/install.log"}
 		c.Tools.WatchPaths = []string{"/private/etc", "/usr/local/bin", "/usr/local/sbin", "/opt/homebrew/bin", "/Library/LaunchDaemons", "/Library/LaunchAgents", "/var/root/.ssh"}
 	}
 	c.Tools.WebUsers = []string{"www-data", "apache", "nginx", "http"}

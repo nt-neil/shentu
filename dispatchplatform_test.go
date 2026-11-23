@@ -121,8 +121,8 @@ func TestToolsSupportedOn(t *testing.T) {
 	}{
 		{"attack_attempts", "linux", true}, {"attack_attempts", "windows", false}, {"attack_attempts", "darwin", false},
 		{"processes", "windows", true}, {"processes", "darwin", true}, {"listening_ports", "darwin", true}, // M0
-		{"accounts_audit", "darwin", true}, {"log_search", "darwin", false}, {"package_vulns", "darwin", true}, // M0
-		{"cert_expiry", "darwin", true}, {"file_changes", "darwin", true}, {"ssh_logins", "darwin", false}, // M0
+		{"accounts_audit", "darwin", true}, {"log_search", "darwin", true}, {"package_vulns", "darwin", true}, // M0
+		{"cert_expiry", "darwin", true}, {"file_changes", "darwin", true}, {"ssh_logins", "darwin", true}, // M0
 		{"block_ip", "windows", false}, {"block_ip", "darwin", false}, {"processes", "plan9", false},
 	} {
 		if got := tools.SupportedOn(c.name, c.goos); got != c.want {
