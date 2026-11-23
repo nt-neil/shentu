@@ -32,7 +32,58 @@ func init() {
 	for _, a := range journalUnitArgvs() {
 		registerBig(a, 0, JournalTimeout)
 	}
+	for _, a := range sshJournalArgvs() {
+		registerBig(a, 0, JournalTimeout)
+	}
 }
+
+// sshJournalFirstArgv reads sshd's units from their first entry on; the
+// reader stops at that entry (SSHJournalFirst), so it costs one entry.
+func sshJournalFirstArgv(bin string, fields bool) []string {
+	a := []string{bin, "-u", "ssh", "-u", "sshd", "-u", "ssh@*", "-u", "sshd@*", "-o", "json", "--all"}
+	if fields {
+		a = append(a, journalFields)
+	}
+	return append(a, "--no-pager")
+}
+
+// sshJournalArgv is the read of sshd's units, the socket-activated ones
+// (ssh@, sshd@) with them, as JSON: from a cursor, that entry included, or
+// since a time, with --output-fields or without (as journalUnitArgv).
+// --cursor, not --after-cursor: journalctl takes a well-formed cursor whose
+// entry is gone (rotated, vacuumed) without an error and seeks to the
+// nearest entry, and --after-cursor would then skip that entry, the first
+// one after the gap. With the cursor's own entry read, the reader tells
+// (its __CURSOR differs) that the journal moved on past it.
+func sshJournalArgv(bin string, cursor, fields bool) []string {
+	a := []string{bin, "-u", "ssh", "-u", "sshd", "-u", "ssh@*", "-u", "sshd@*"}
+	if cursor {
+		a = append(a, "--cursor", SlotCursor)
+	} else {
+		a = append(a, "--since", SlotTime)
+	}
+	a = append(a, "-o", "json", "--all")
+	if fields {
+		a = append(a, journalFields)
+	}
+	return append(a, "--no-pager")
+}
+
+func sshJournalArgvs() [][]string {
+	var out [][]string
+	for _, bin := range []string{"/usr/bin/journalctl", "/bin/journalctl"} {
+		out = append(out, sshJournalFirstArgv(bin, true), sshJournalFirstArgv(bin, false))
+		for _, cursor := range []bool{true, false} {
+			for _, fields := range []bool{true, false} {
+				out = append(out, sshJournalArgv(bin, cursor, fields))
+			}
+		}
+	}
+	return out
+}
+
+// ValidCursor says whether c is a journal cursor as the reads take it.
+func ValidCursor(c string) bool { return slotShapes[SlotCursor].MatchString(c) }
 
 // journalFields are the fields asked for: the message, and those journald
 // fills in from the sender's credentials (the _ ones), which the sender
@@ -107,6 +158,9 @@ var ErrCursorRejected = errors.New("hostenv: journal cursor rejected")
 
 var cutCursor = regexp.MustCompile(`^\{"__CURSOR"\s*:\s*"([^"\\]+)"`)
 
+// cutTime is the time journalctl writes right after the cursor.
+var cutTime = regexp.MustCompile(`^\{"__CURSOR"\s*:\s*"[^"\\]+"\s*,\s*"__REALTIME_TIMESTAMP"\s*:\s*"(\d+)"`)
+
 // ErrStopJournal, returned by a ReadJournal consumer, ends the read there:
 // the cursor returned is the last entry consumed.
 var ErrStopJournal = errors.New("hostenv: journal read stopped")
@@ -117,6 +171,48 @@ var ErrStopJournal = errors.New("hostenv: journal read stopped")
 // read without it. A journal hiding the system's entries from this user is
 // a permission error, not an empty journal.
 func ReadJournal(ctx context.Context, src Source, unit, after string, since time.Time, fn func(JournalEntry) error) (last string, err error) {
+	return readJournal(ctx, src, after, since, MaxJournalLine, MaxJournalMessage, func(bin string, fields bool) []string {
+		argv := journalUnitArgv(bin, after != "", fields)
+		argv[2] = unit
+		return argv
+	}, fn)
+}
+
+// MaxSSHJournalMessage is the longest message of sshd's units read whole:
+// what fits a line the whole read of them (short-iso, MaxLineBytes) can
+// read with its prefix (time, host, tag[pid]: at most 512 bytes here), so
+// the login index reads every event that read does. A longer one fails
+// that read; the index takes it as cut. maxSSHJournalLine is the JSON line
+// that holds such a message with its escapes.
+const (
+	MaxSSHJournalMessage = MaxLineBytes - 512
+	maxSSHJournalLine    = 8 * MaxLineBytes
+)
+
+// ReadSSHJournal reads sshd's units (ssh, sshd, and the socket-activated
+// ssh@ and sshd@ instances) in one read, as ReadJournal does, but from the
+// cursor from with that entry included (see sshJournalArgv), or since since
+// when from is empty.
+func ReadSSHJournal(ctx context.Context, src Source, from string, since time.Time, fn func(JournalEntry) error) (last string, err error) {
+	return readJournal(ctx, src, from, since, maxSSHJournalLine, MaxSSHJournalMessage, func(bin string, fields bool) []string {
+		return sshJournalArgv(bin, from != "", fields)
+	}, fn)
+}
+
+// SSHJournalFirst is the first entry sshd's units still have in the
+// journal (ok false when they have none): what the journal has not
+// vacuumed starts there.
+func SSHJournalFirst(ctx context.Context, src Source) (e JournalEntry, ok bool, err error) {
+	_, err = readJournal(ctx, src, "", time.Time{}, maxSSHJournalLine, MaxSSHJournalMessage, sshJournalFirstArgv, func(f JournalEntry) error {
+		e, ok = f, true
+		return ErrStopJournal
+	})
+	return e, ok, err
+}
+
+// readJournal runs the read argvFor gives (its cursor or time slot filled
+// in here), as ReadJournal says.
+func readJournal(ctx context.Context, src Source, after string, since time.Time, maxLine, maxMsg int, argvFor func(bin string, fields bool) []string, fn func(JournalEntry) error) (last string, err error) {
 	ctx, cancel := context.WithTimeout(ctx, JournalTimeout)
 	defer cancel()
 	var stop, bad error
@@ -133,9 +229,14 @@ func ReadJournal(ctx context.Context, src Source, unit, after string, since time
 				return
 			}
 			e = JournalEntry{Cursor: m[1], UID: -1, MessageMissing: true, Cut: true}
+			if t := cutTime.FindStringSubmatch(l); t != nil {
+				if us, err := strconv.ParseInt(t[1], 10, 64); err == nil {
+					e.Time = time.UnixMicro(us).UTC()
+				}
+			}
 		} else {
 			var perr error
-			if e, perr = parseJournalJSON(l); perr != nil {
+			if e, perr = parseJournalJSON(l, maxMsg); perr != nil {
 				bad = perr
 				return
 			}
@@ -148,14 +249,16 @@ func ReadJournal(ctx context.Context, src Source, unit, after string, since time
 		last, n = e.Cursor, n+1
 	}
 	run := func(bin string, fields bool) (CmdResult, error) {
-		argv := journalUnitArgv(bin, after != "", fields)
-		argv[2] = unit
-		if after != "" {
-			argv[4] = after
-		} else {
-			argv[4] = since.UTC().Format("2006-01-02 15:04:05") + " UTC" // journalctl reads a bare time as local
+		argv := argvFor(bin, fields)
+		for i, a := range argv {
+			switch a {
+			case SlotCursor:
+				argv[i] = after
+			case SlotTime:
+				argv[i] = since.UTC().Format("2006-01-02 15:04:05") + " UTC" // journalctl reads a bare time as local
+			}
 		}
-		res, err := RunLinesCut(ctx, src, argv, MaxJournalLine, line)
+		res, err := RunLinesCut(ctx, src, argv, maxLine, line)
 		if err == nil && res.ExitCode != 0 {
 			err = &exitError{res.ExitCode}
 			if after != "" && n == 0 && strings.Contains(strings.ToLower(res.Stderr), "cursor") {
@@ -191,7 +294,7 @@ func ReadJournal(ctx context.Context, src Source, unit, after string, since time
 // parseJournalJSON reads one entry of journalctl -o json. A field journald
 // could not give as text (binary, or too large) comes as an array of
 // bytes, or null.
-func parseJournalJSON(l string) (JournalEntry, error) {
+func parseJournalJSON(l string, maxMsg int) (JournalEntry, error) {
 	var m map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(l), &m); err != nil {
 		return JournalEntry{}, err
@@ -219,8 +322,8 @@ func parseJournalJSON(l string) (JournalEntry, error) {
 	if raw, ok := m["MESSAGE"]; !ok || string(raw) == "null" {
 		e.MessageMissing = true
 	}
-	if len(e.Message) > MaxJournalMessage {
-		e.Message, e.Cut = e.Message[:MaxJournalMessage], true
+	if len(e.Message) > maxMsg {
+		e.Message, e.Cut = e.Message[:maxMsg], true
 	}
 	if e.Cursor == "" {
 		return e, errors.New("no __CURSOR")

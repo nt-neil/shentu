@@ -126,10 +126,18 @@ func hasSlot(argv []string) bool {
 const (
 	// SlotTime is "2006-01-02 15:04:05", optionally followed by " UTC".
 	SlotTime = "\x00slot:time"
+	// SlotPath is an absolute path of plain components (a file whose owning
+	// package is asked): it starts with "/", so it is never an option.
+	SlotPath = "\x00slot:path"
+	// SlotPkg is a package name: it starts with a letter or digit, so it is
+	// never an option.
+	SlotPkg = "\x00slot:pkg"
 )
 
 var slotShapes = map[string]*regexp.Regexp{
 	SlotTime: regexp.MustCompile(`^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d(?: UTC)?$`),
+	SlotPath: regexp.MustCompile(`^(/[A-Za-z0-9_+@][A-Za-z0-9._+@-]*)+$`),
+	SlotPkg:  regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}(:[a-z0-9]+)?$`),
 }
 
 // matchSlots reports whether argv equals pattern, slot arguments matched

@@ -3,15 +3,91 @@
 CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本與日期必須一致，
 每個版本都要有內容（`go test ./cmd/sitegen` 會檢查）。
 
-## v0.5.6 (unreleased)
-
-- PHP 的 sink 和清理函式，函式名稱與方法名稱改成不分大小寫比對，和 PHP 實際呼叫時一樣（#189）。`System($_GET['x'])`、`SYSTEM(...)`、`\SYSTEM(...)`、命名空間裡的 `System(...)`，以及被呼叫函式裡的 `Shell_Exec($c)`，現在都和小寫寫法一樣會回報；寫成 `EscapeShellArg($x)` 的清理函式也會生效。名稱也叫 `system` 的方法（`$o->System(...)`、`Task::SYSTEM(...)`）仍然不算 sink。JavaScript 和 Python 的名稱照舊分大小寫。字串裡用兩個反斜線寫的內建函式名稱（`array_map('\\system', $x)`、`"\\system"`），PHP 讀到的是 `\system`，現在也照內建函式處理。指向 PHP 內建函式的 pattern，不會再對上用 `new` 建立的類別（`new File($p)`、`new System(...)`），也不會對上命名空間裡的函式（`Storage\file($p)`，以及有宣告 namespace 的檔案裡的 `namespace\file($p)`）；以前小寫的 `new file(` 和 `A\file(` 會被對上。`\file($p)` 仍然是內建函式。成員 pattern 的方法名稱和類別名稱也改成不分大小寫比對（#198）：`$wpdb->Query(...)`、`$wpdb->GET_RESULTS(...)` 是 `php-sqli-wpdb-unprepared` 的 sink，`$wpdb->Prepare(...)` 會清理，`DB::RAW(...)` 也是 sink；變數名稱照舊分大小寫（`$WPDB` 不是 `$wpdb`）。
-
-## v0.5.5 (unreleased)
+## v0.5.6 — 2026-11-24
 
 - 沒跑完的檔案會說明是被什麼截斷的（#172）。程式碼稽核列出的未完成檔案多了 `cause`：token 上限、單一檔案的時間上限、巢狀層數超過上限、規則追呼叫的工作量上限、專案的上限（時間、記憶體或 token）、可能呼叫到別的檔案但沒有唯一對象可追的呼叫，或被呼叫函式的 summary 被截斷（並寫出原因：它自己的工作量上限、summary 一層接一層超過上限、參數超過上限，或它裡面另有截斷）。CVE bench 開始計入「呼叫沒有全部追完」的檔案（以前沒算），並依原因列出截斷數。
 
-## v0.5.4 (unreleased)
+- PHP 的 sink 和清理函式，函式名稱與方法名稱改成不分大小寫比對，和 PHP 實際呼叫時一樣（#189）。`System($_GET['x'])`、`SYSTEM(...)`、`\SYSTEM(...)`、命名空間裡的 `System(...)`，以及被呼叫函式裡的 `Shell_Exec($c)`，現在都和小寫寫法一樣會回報；寫成 `EscapeShellArg($x)` 的清理函式也會生效。名稱也叫 `system` 的方法（`$o->System(...)`、`Task::SYSTEM(...)`）仍然不算 sink。JavaScript 和 Python 的名稱照舊分大小寫。字串裡用兩個反斜線寫的內建函式名稱（`array_map('\\system', $x)`、`"\\system"`），PHP 讀到的是 `\system`，現在也照內建函式處理。指向 PHP 內建函式的 pattern，不會再對上用 `new` 建立的類別（`new File($p)`、`new System(...)`），也不會對上命名空間裡的函式（`Storage\file($p)`，以及有宣告 namespace 的檔案裡的 `namespace\file($p)`）；以前小寫的 `new file(` 和 `A\file(` 會被對上。`\file($p)` 仍然是內建函式。成員 pattern 的方法名稱和類別名稱也改成不分大小寫比對（#198）：`$wpdb->Query(...)`、`$wpdb->GET_RESULTS(...)` 是 `php-sqli-wpdb-unprepared` 的 sink，`$wpdb->Prepare(...)` 會清理，`DB::RAW(...)` 也是 sink；變數名稱照舊分大小寫（`$WPDB` 不是 `$wpdb`）。
+
+- 透過 callable 的呼叫會追下去（#182、#184、#188）。PHP 函式呼叫自己的參數時（`$cb($v)`，例如 `tap()`、`Arr::first()`），會在每個呼叫它的地方，用呼叫端傳進來的值追下去：closure、函式名稱（`'run_cmd'`、`'Cmd::run'`）、array 寫法的 callable（`[Cmd::class, 'run']`、`[$this, 'run']`），或 first-class callable（`run_cmd(...)`）。交給 PHP 內建函式呼叫的 closure（`array_map`、`array_filter`、`array_walk`、`usort`、`array_reduce`、`preg_replace_callback`、`call_user_func` 等），會用內建函式傳給它的輸入去分析；callable 寫成內建函式的名稱時，就是那個內建函式：`array_map('system', $_GET['x'])` 和 `array_map(function ($v) { system($v); }, $_GET['a'])` 現在都會回報。呼叫沒有追完的檔案也變少了（#174、#178、#179、#182）：Python 的標準函式庫 import（套件裡另有自己的 `json.py` 時的 `import json`），和離不開所在函式的 closure，不再被當成專案裡其他檔案的呼叫對象。在 E7 的語料上，laravel-framework 沒跑完的檔案從 280 個變成 115 個，Django 從 135 個變成 24 個。
+
+- 檢查和固定的值造成的誤報變少了（#185、#187）。`unset($x)`、`unset($a['k'])`、`unset($this->p)` 之後，值不再帶有輸入；`is_numeric`、`is_int`、`is_float`、`ctype_digit` 這類數字檢查在每條規則裡都算檢查（`if (is_numeric($p)) { ... "WHERE id = " . $p }` 不再回報）。`wp_create_nonce()` 和 `wp_hash()` 的回傳值不帶輸入。呼叫端先做過 `check_admin_referer()` 這類 nonce 檢查，再呼叫的函式裡的 sink，和直接寫在呼叫端的 sink 一樣處理；需要輸入出現在最前面的 sink（`header("Location: $u")`），參數最前面是固定文字時（`go(admin_url('x') . '?a=' . $v)`），經過函式也不算到達。
+
+- 主機盤點加上 PHP 版本檢查，對照 php.net 2026-11-19 的版本（8.2.36、8.3.37、8.4.28、8.5.13；8.6.0 以後都已修正）。版本是每個 PHP 執行檔自己寫在檔案裡的版本（`php`、`php-fpm`、`php-cgi` 和帶版本號的名稱，在各發行版的位置、Docker 的 PHP image 用的 `/usr/local`、Remi 的 `/opt/remi`、cPanel 的 `/opt/cpanel/ea-php*`，以及 CloudLinux 的 `/opt/alt/php*`），直接讀檔案，不執行它；Windows 上是 IIS 用 FastCGI 執行的 `php-cgi.exe`。套件掃描看不到的 PHP 這樣也查得到：deb.sury.org、ondrej PPA、Remi 的套件庫、vendor 不是發行版的 rpm（IUS、cPanel）、Docker image、從原始碼 build 的，以及 IIS。執行檔寫了不只一個版本、程式裡找不到版本，或 FastCGI 的路徑不是本機的絕對路徑時，會列為無法檢查。和 nginx 的檢查一樣，套件的 changelog 已列出某個 CVE 時，不會為它警告。CVE-2026-129291 和 CVE-2026-129289 只有 php-fpm 在執行時才警告；CVE-2026-129292（狀態頁）只有 pool 的 `pm.status_path` 從外面連得到時才警告，也就是它的 socket 接受其他主機的連線，或 nginx（server 不是只 listen 127.0.0.1）、Apache 把這個路徑轉給 FPM，而且沒有用 `deny all` 或 `Require local` 限制。每個分支只讀自己的 pool；設定檔的 include 會跟著讀，註解不算。CVE-2026-129538 只有 php-cgi 在執行，或 IIS 會執行它時才警告。其餘 14 個依版本合成一行。php.net 已經不再修正的分支（8.2 以前）只有不是發行版套件時才列出；讀不到的資料（行程清單、設定檔、IIS 的設定）會列在一行說明裡，指出哪幾項無法檢查。
+
+- Windows 上，主機盤點和每日的弱點面會找出 Apache 以 CGI 執行的 php-cgi.exe（讀 httpd.conf 和它 Include 的檔案，包括 XAMPP 的 `httpd-xampp.conf`：`ScriptAlias` 指到 php-cgi.exe 或它所在的資料夾、`Action` 透過這種 alias 指到它，或那個資料夾設了 `AddHandler cgi-script .exe`），檢查 CVE-2024-4577（8.1.29、8.2.20、8.3.8 修正）和它的 bypass CVE-2024-8926（8.1.30、8.2.24、8.3.12 修正）。是否受影響由系統字碼頁（ACP）決定：CVE-2024-4577 是 932、936 或 950，CVE-2024-8926 是 ANSI 字碼頁被設成 OEM 字碼頁；讀不到字碼頁時用 warning 回報，並註明「字碼頁未確認」。8.1 以前的分支公告沒有列出、也不會修正，用 warning 回報。弱點面只有在 CISA KEV 目錄列出時才標示 KEV。IIS 上的 php-cgi.exe 不為這兩個 CVE 回報，因為公告只寫到 Apache，版本那一行會寫明。Apache 只認服務執行的那一個，以及 XAMPP、Apache Lounge 的固定位置（只有在 httpd.conf 只有系統管理員能寫入時才讀）；設定檔裡的網路路徑或裝置路徑（`\\host\share`）一律不讀，被 Include 的檔案如果是指到這種路徑的 link，也不讀。讀到的設定裡沒有用 `LoadModule` 載入 cgi_module 或 cgid_module 時，Apache 不會執行 CGI，所以用 warning 回報，不是 critical；寫在 `<IfModule>` 裡的也當作已載入。如果有設定檔沒讀到，仍然用 critical 回報，並寫明有設定未讀。路徑上的 link 無法檢查，或是路徑在 `C:` 之後還有 `:` 或 `?`（例如 ADS）時，也不讀。
+
+- 攻擊偵測新增 CVE-2024-4577 的簽章（#199）：在 `.php` 檔（後面有沒有 PATH_INFO 都算）、網站首頁（`/`）或 `/php-cgi/php-cgi.exe` 的查詢字串裡送出 php-cgi 的命令列參數（軟連字號 `%AD` 或 `%C2%AD` 後面接一個英文字的參數，或連字號後面接單獨一個英文字的參數）。這條簽章依 CVE 對應到主機，所以只在 surface 裡有 CVE-2024-4577 的主機上發出告警，並帶上該項目的 KEV 標示；其他主機上的命中只算雜訊。
+
+- 巡檢自己的檢查找到的項目，在 `language` 設定是中文時也改用中文：新開的連接埠、不正常的程序、UID 0 的帳號、authorized_keys 的變動、
+  連結和共用的金鑰、ld.so.preload、PAM 模組、webshell、憑證、SSH 登入失敗、CISA KEV 漏洞，以及 authorized_keys 裡讀不懂的行。
+  英文文字和之前逐字相同，交給 AI 模型的仍是英文清單。來自工具的項目（伺服器設定的風險、和上次相比的設定變動、程式碼稽核）目前仍是英文。
+
+- 套件弱點檢查（`vulns`）會列出不是從發行版套件庫安裝的套件，放在 `third_party_unchecked`，並寫明來自哪個套件庫、用什麼方式認出來的。OSV 只收發行版自己的套件，所以這些套件原本是被當成發行版的套件去比對，結果什麼都對不到；這種「沒有結果」不等於「沒有弱點」。認出的方式有三種：版本號（deb.sury.org 的 `+deb.sury.org`、nginx.org 的 `-N~codename`）、第三方 apt 套件庫的索引，以及不是發行版的 rpm vendor。第三方套件庫（apt，以及 Alpine 的 main、community、testing 以外的套件庫）會列在 `third_party_repositories`；設定了第三方套件庫，但分不出哪些套件來自它時，會加一行說明。只有 `Packages`、沒有 `Release` 的套件庫（flat repo）算第三方。rpm vendor 只有在它自己的發行版上才算發行版的套件（Rocky 上的 Oracle MySQL 套件算第三方）。讀不到的索引，以及被截斷的 rpm vendor 輸出，會列在 `origin_unread`。Origin、vendor 和套件庫路徑都是發布套件庫的人自己寫的，第三方套件庫如果用發行版的名稱，就會被當成發行版：這個檢查只能把套件多列出來，不能證明套件是發行版的。
+
+- block_ip 檢查一個位址的 SSH 登入時，不再每次都讀一個月的 journal。sshd 那幾個 unit（ssh、sshd，以及 socket 啟動的 ssh@、sshd@）的登入紀錄，會按位址記在 state 目錄的 `loginindex.json`（權限 0600，整份寫完再換上）；每次檢查和每小時的巡檢，都從上次讀到的 journal cursor 接著讀。
+  判斷規則不變：一個位址在時間範圍內（最近一天有紀錄就看最近一天，否則看 720 小時）的每一筆紀錄，都要是 sshd 自己寫的（`_COMM` 是 sshd 或 sshd-session，`_UID` 是 0），才算數；journald 裡沒有紀錄的位址，照舊去讀文字 log。
+  在 VM 上一份 1,200,000 筆的 journal，原本一次檢查要讀大約 37 秒。
+
+- 整段讀取不放行的封鎖，索引也不會放行；整段讀取看不到的紀錄，也不會讓索引多擋。沒有索引時（第一次執行，或檔案是舊的格式），從 720 小時前開始讀；索引沒有讀到的時間範圍，照舊整段讀取。
+  每次讀取也會查 sshd 的 unit 現在從 journal 的哪一筆開始：在那之前的紀錄（被清理，或被攻擊者大量寫入而輪替掉）不再算數。cursor 那一筆已經不在時，journalctl 不會報錯，而是從最近的一筆開始讀：索引從 cursor 那一筆讀起，發現它不在了，就從還在的第一筆（含這一筆）接著讀，並記下一筆紀錄。
+  每一筆紀錄最多讀到 1 MiB，和整段讀取相同，所以 user 名稱有 70 KB 的紀錄，照樣算在它的位址上；只有超過這個長度、整段讀取也讀不了的紀錄，才會讓包含它的時間範圍一律算成無法驗證。
+  讀到一半時間用完，已經讀到的部分會保留，下一次接著讀，所以被大量寫入的 journal 會在幾次檢查之間讀完，每一次都不超過時限。
+  位址超過 65,536 個時，其他位址的紀錄合在一起計算；可能在其中的位址一律不放行封鎖。存下的 cursor 格式不對，或是位址的內容是 null，讀索引時會直接不用。
+
+- 按下 ✅ 後檢查來不及做完時，改成以「來不及檢查」（`timeout`）拒絕，不再說成「紀錄讀不到」（`state_error`）。
+
+### 已知問題
+
+- Windows 上只有 Apache 以 CGI 執行的 php-cgi.exe 會把 CVE-2024-4577 寫進 surface（#200）。IIS 用 FastCGI 執行的 php-cgi.exe 不寫，因為公告只寫到 Apache；Shentu 不讀的 Apache 設定也不寫，也就是不是服務執行的、不在 XAMPP 或 Apache Lounge 的固定位置，或是有一般使用者能寫入的。這些主機上，這條簽章的命中仍然只算雜訊。
+
+- 在 surface 有 CVE-2024-4577 的主機上，沒有 `=`、只有一個字的查詢，如果最前面是不是 UTF-8 的位元組再接一個英文字（沒有用 UTF-8 送出的 Latin-1、Big5 或 Shift-JIS 字），會和 `%AD` 一樣比中 CVE-2024-4577 的特徵：請求是解碼後才比對，這類位元組都會讀成 U+FFFD（`docs/attack-detection-limits.zh-TW.md`）。
+
+- `new $var(...)` 會被當成呼叫參數 `$var`（#182）。附帶 Freemius SDK 的外掛會有大量「呼叫沒有全部追完」的檔案，也可能因此出現誤報；在 E7 和 CVE bench 的量測中沒有少報。將在 v0.5.7 修正。
+
+## v0.5.5 — 2026-11-23
+
+- 預算接近上限時，進行中派遣已經用掉的部分不再重複計算：預留會記下它屬於哪一次派遣、何時開始，其他派遣只算它剩下的部分，
+  而且和本月用量在同一次讀取 log 時算出。對不起來的預留照舊整筆計算。
+
+- survey（site_profile）現在和它的其他讀取一樣，經由主機來源檢查 Docker 和 Podman 的 socket：
+  replay 或 fixture 不會再讀到執行 survey 的那台機器。
+
+- nginx 和 Apache 的版本檢查（以及 nginx 的 changelog）現在和其他檢查一樣，經由主機來源讀取受檢主機：
+  replay 或 fixture 不會再讀到執行檢查的那台機器。套件查詢都是 allowlist 裡的完整指令。
+
+- macOS：`listening_ports`、`processes`（以及巡檢的程序檢查）現在讀取 Mac 本身（netstat 或 lsof，以及 ps；不需要 root），
+  不再讀 Linux 的 /proc。以前在 Mac 上什麼都讀不到，結果和一台什麼都沒在執行的主機一樣。讀不到時會回報錯誤，只讀到一部分也會寫明。
+
+- macOS：`accounts_audit` 現在讀取 Mac 的帳號（dscl；不需要 root）、可登入帳號和 root 的 authorized_keys，
+  sudoers 讀得到時也會讀。讀不到的部分寫在 note；Linux 才有的檢查（ld.so.preload、不是套件安裝的 PAM 模組）會列為不適用。
+
+- macOS：`file_changes` 現在依檔案的狀態變更時間（ctime）找出異動，改過修改時間也藏不住，並附上擁有者名稱；
+  預設檢查 macOS 自己的位置（/private/etc、Homebrew、launchd 的 job），讀不到的目錄會列出來。`cert_expiry` 也會讀 Homebrew 的 certbot。
+
+- macOS：`ssh_logins`（以及巡檢的 SSH 檢查）現在從 unified log 讀取 sshd 的登入紀錄（`/usr/bin/log show --info --style ndjson`），計數方式和 Linux 相同，並標為 verified（已驗證）：只算 sshd-session 或 sshd 本身程式路徑、而且由 root 記下（userID 0）的紀錄。
+  這兩點已在 macOS 15 的 VM 上確認：有人把程式複製到 /tmp 並取同樣的名字，記下的是它自己的路徑；使用者用自己的設定執行系統的 sshd，記下的是那個使用者的 ID，不是 0。
+  沒有算進來的紀錄，會在結果的 source 寫明筆數和原因（`not_logged_by_root`、`not_sshd_image`、`no_user_id`、`unreadable_event`）。
+  紀錄沒有 userID 或讀不懂，或是輸出缺少 log show 最後的結束行時，結果會標成不完整（算到的次數只是下限），不會當成完整但次數較少的結果。
+  這份 log 只有 root 和 admin 群組讀得到；其他帳號會得到寫明原因的權限錯誤，不會回空結果。
+
+- macOS：`log_search` 預設讀取 macOS 的文字 log（system.log、install.log）。Homebrew 的 nginx 和 Apache log 不在預設裡，因為這些目錄屬於一般使用者，可以在裡面建連結指到 root 的檔案；要讀的話請自己加進設定。
+  放在 /var 的 log 現在可以用 log_paths 寫的路徑讀取（macOS 的 /var 是連到 /private/var 的連結，以前這種路徑會被拒絕）。有一個以上 hard link 的 log 檔會被拒讀，因為連到 log 目錄的 root 專用檔案看起來也是這樣。
+  sshd 的紀錄在 unified log 裡，log_search 不讀那裡，工具說明會寫明：在這些檔案裡找不到，不等於沒有 SSH 登入。
+
+- 主機盤點的 nginx 檢查補上 nginx 2026-11-18 公告的其餘項目（#190）。CVE-2026-118899 是透過 TLS 1.3 讀取 request body 時會一直重複、不會停下的問題：nginx 1.13.0～1.31.8 有 TLS 的 server（`listen ... ssl`，或 `ssl on`）會用 TLS 1.3 時就警告，也就是對它生效的 `ssl_protocols`（它自己的，否則是 http 區塊的）列了 `TLSv1.3`，或是沒有設定 `ssl_protocols` 而 nginx 是 1.23.4 以後的版本，預設就包含 TLS 1.3。關掉 HTTP/2 也沒有用。CVE-2026-113425 是 mail proxy 的 use-after-free，只有 `mail` 區塊裡有 server 時才警告。其餘 6 個中低風險項目（resolver、HTTP/3、用用戶端憑證或 `ssl_preread` 的 stream、`try_files` 加上 `alias`、PROXY protocol v2）依版本合成一行建議，因為這項檢查不看這些功能的設定。全部都在 1.31.9 和 1.30.7 修正。和 HTTP/2 的檢查一樣，套件的 changelog 已列出某個 CVE 時，不會為它警告；讀不到的設定檔會列在一行說明裡，指出哪幾項無法檢查。
+
+- 每日報告和新發現報告現在依照 `language` 設定：設定是中文時，標題、各段標題和固定的說明文字（沒檢查到的項目、漏洞檢查沒做完、攻擊偵測、
+  子 Agent 派遣、自動事件調查、SSH 登入）都改用中文；v0.5.4 以前不管 `language` 怎麼設，這些都是英文。檢查找到的內容、錯誤訊息和
+  AI 模型寫的回答不會改寫，照原樣附上。
+
+- macOS 和 Windows（#206）：`block_ip` 在任何檢查之前就以 `unsupported` 拒絕。之前在 macOS 上從 Telegram 呼叫時，會先讀最多一個月的 unified log（大約兩分鐘）才拒絕，而 nftables 在這兩個平台上本來就不能封鎖。
+
+- 提案按鈕（Linux，#206）：送出按鈕前的檢查，全部加起來在 90 秒內結束；到時還沒查完的提案列為 `timeout`，不給按鈕，其他提案的按鈕照常送出。派遣存檔的檢查因時限到了而中斷時，也記成 `timeout`，不再是 `state_error`。同一個位址的 SSH 登入，存檔、送按鈕和 Telegram 的事前檢查只讀一次（結果在兩分鐘內沿用）；`block_ip` 真正執行時仍會重新讀。
+
+- 升級須知（#206）：裝回 v0.5.4 時，舊版會把 gate 是 `timeout` 或 `unsupported` 的派遣紀錄當成壞行，自動事件調查最多會停 72 小時。
+
+## v0.5.4 — 2026-11-23
 
 - 共用 AI 預算（#161）：bot、`shentu chat` 與自動事件調查的每次派遣，執行期間會在 `state_dir/reservations.json`
   預留它整份 token 上限，每一道預算檢查都會把其他派遣的預留算進去，所以合計超出 `[budget] monthly_tokens`
@@ -42,7 +118,7 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 
 - PHP：如果檔案的 `use` 讓 `Request` 指向別的函式庫的類別（`use Httpful\Request`、`use Unirest\Request`、`use Httpful\Http as Request`），`Request::get(` 不再當成 Laravel 的 request facade（#160）。
 
-- 派遣紀錄可以讀有不認得欄位的行（f98c3c）：從 v0.5.4 起，之後的版本加了新欄位寫下的紀錄或回饋，這一版照樣會讀，認得的欄位照舊逐一檢查，不再整行當成讀不到（以前這會讓自動事件調查停到執行 repair 為止）。這種行會在 `shentu dispatch stats`（JSON 是 `unknown_field_lines`）和每日報告裡另外計數；`repair` 不會移動這些行；不認得的欄位內容不會出現在任何輸出。
+- 派遣紀錄可以讀有不認得欄位的行（#197）：從 v0.5.4 起，之後的版本加了新欄位寫下的紀錄或回饋，這一版照樣會讀，認得的欄位照舊逐一檢查，不再整行當成讀不到（以前這會讓自動事件調查停到執行 repair 為止）。這種行會在 `shentu dispatch stats`（JSON 是 `unknown_field_lines`）和每日報告裡另外計數；`repair` 不會移動這些行；不認得的欄位內容不會出現在任何輸出。
 
 - 升級須知：裝回 v0.5.4 以前的版本後，v0.5.4 寫下、帶有沒查到項目（`unchecked_why`）的派遣紀錄，舊版讀不到。這些紀錄的建議按鈕會回答派遣紀錄裡沒有這次派遣；`shentu dispatch stats` 會把這些紀錄當成讀不到的行跳過；自動事件調查會因為派遣紀錄有讀不到的行而停止，直到執行 `sudo shentu dispatch repair`，把這些行移到 `*.jsonl.bad`（保留，不會刪除），之後從下一輪巡邏起重新計數。
 

@@ -236,11 +236,11 @@ func TestJournalAllAndMissing(t *testing.T) {
 			t.Errorf("no --all: %q", a)
 		}
 	}
-	e, err := parseJournalJSON(`{"__CURSOR":"` + cur1 + `","MESSAGE":null,"_UID":"0"}`)
+	e, err := parseJournalJSON(`{"__CURSOR":"`+cur1+`","MESSAGE":null,"_UID":"0"}`, MaxJournalMessage)
 	if err != nil || !e.MessageMissing {
 		t.Errorf("null MESSAGE: %+v %v", e, err)
 	}
-	e, _ = parseJournalJSON(`{"__CURSOR":"` + cur1 + `","MESSAGE":"` + strings.Repeat("a", MaxJournalMessage+10) + `"}`)
+	e, _ = parseJournalJSON(`{"__CURSOR":"`+cur1+`","MESSAGE":"`+strings.Repeat("a", MaxJournalMessage+10)+`"}`, MaxJournalMessage)
 	if !e.Cut || len(e.Message) != MaxJournalMessage {
 		t.Errorf("long MESSAGE: cut %v, %d bytes", e.Cut, len(e.Message))
 	}

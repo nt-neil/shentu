@@ -8,7 +8,9 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/nt-neil/shentu/hostenv"
@@ -110,11 +112,108 @@ func loginGate(ctx context.Context, env *Env, ip net.IP, override bool) error {
 	return err
 }
 
+// HostGOOS is the platform block_ip runs on; tests swap it.
+var HostGOOS = runtime.GOOS
+
+// blockUnsupported refuses block_ip where nftables is not: before any check,
+// so macOS does not read a month of its unified log to refuse.
+func blockUnsupported() error {
+	if SupportedOn("block_ip", HostGOOS) {
+		return nil
+	}
+	return coded(BlockUnsupported, fmt.Errorf("block_ip is not supported on %s: it blocks with nftables, which only Linux has", HostGOOS))
+}
+
+// loginMemoTTL is how long a read-only check (RemoteBlockCheck: the dispatch
+// archive, the proposal buttons, a chat channel's precheck) reuses
+// loginCheck's answer for the same address, so one dispatch reads up to a
+// month of logs once per address rather than once per check. block_ip's Run
+// always reads again. An answer cut short by its context is not kept. (A
+// var: the tests, which swap the readers, set it to 0.)
+var loginMemoTTL = 2 * time.Minute
+
+type loginMemoKey struct{}
+
+type loginMemoEntry struct {
+	at       time.Time
+	verified bool
+	err      error
+}
+
+var (
+	loginMemoMu sync.Mutex
+	loginMemo   = map[string]loginMemoEntry{}
+	memoNow     = time.Now // tests move the clock
+)
+
+func withLoginMemo(ctx context.Context) context.Context {
+	return context.WithValue(ctx, loginMemoKey{}, true)
+}
+
 // loginCheck is loginGate's check: an error refuses; verified says the IP
 // has SSH login events journald itself confirms (nil and not verified: it
-// has none anywhere).
+// has none anywhere). Under withLoginMemo a recent answer for the same
+// address and log paths is reused; a check its context cut short refuses
+// with BlockTimeout.
 func loginCheck(ctx context.Context, env *Env, ip net.IP) (verified bool, err error) {
+	memo := ctx.Value(loginMemoKey{}) != nil
+	var paths []string
+	if env != nil {
+		paths = env.LogPaths
+	}
+	// The key is the address and the log paths only. That holds because one
+	// process has one setting: what else decides the answer (the journal
+	// read, its caps, env.Remote) is the same for every check in it. A key
+	// that comes to vary with more of these (an index, other caps, Remote)
+	// must take them in too, or one setting's answer is given to another.
+	key := hostenv.CanonicalIP(ip.String()) + "\x00" + strings.Join(paths, "\x00")
+	if memo {
+		loginMemoMu.Lock()
+		e, ok := loginMemo[key]
+		loginMemoMu.Unlock()
+		if age := memoNow().Sub(e.at); ok && age >= 0 && age < loginMemoTTL {
+			return e.verified, e.err
+		}
+	}
+	verified, err = loginCheckRead(ctx, env, ip)
+	if ctx.Err() != nil {
+		if err != nil {
+			err = coded(BlockTimeout, fmt.Errorf("refusing to block %s: the check of its SSH logins ran out of time (%v); ask again later, or check it on the server", ip, err))
+		}
+		return verified, err
+	}
+	if memo && loginMemoTTL > 0 {
+		now := memoNow()
+		loginMemoMu.Lock()
+		for k, e := range loginMemo {
+			if now.Sub(e.at) >= loginMemoTTL || now.Before(e.at) {
+				delete(loginMemo, k)
+			}
+		}
+		loginMemo[key] = loginMemoEntry{at: now, verified: verified, err: err}
+		loginMemoMu.Unlock()
+	}
+	return verified, err
+}
+
+// loginCheckRead is loginCheck's read of the logs: from the login index
+// when it answers (loginindex.go), else by reading the whole window.
+func loginCheckRead(ctx context.Context, env *Env, ip net.IP) (verified bool, err error) {
 	want := hostenv.CanonicalIP(ip.String())
+	x, err := updateLoginIndex(ctx)
+	switch {
+	case err == nil:
+		seen, err := x.indexedLogins(ip, indexNow())
+		if errors.Is(err, errIndexDoesNotCover) {
+			break
+		}
+		if err != nil || seen {
+			return err == nil, err // seen, and sshd itself wrote every event in the window
+		}
+		return textLoginCheck(env, ip, want, false, "journald")
+	case !errors.Is(err, errNoLoginIndex) && ctx.Err() != nil: // the index read on as far as it could in the time: the next check goes on
+		return false, coded(BlockTimeout, fmt.Errorf("refusing to block %s: its SSH logins could not be read in time (%v)", ip, err))
+	}
 	var r map[string]any
 	seen, complete := false, false
 	var summarySince, summaryUntil time.Time // the window the summary last read
@@ -176,6 +275,13 @@ func loginCheck(ctx context.Context, env *Env, ip net.IP) (verified bool, err er
 		}
 		return true, nil // sshd itself logged the IP: the text logs need not be read
 	}
+	return textLoginCheck(env, ip, want, seen, fmt.Sprint(r["source"]))
+}
+
+// textLoginCheck is the check of the text auth logs, when journald does not
+// show sshd itself logging ip: seen says the logins read had events for it
+// (unverified ones), source what they were read from.
+func textLoginCheck(env *Env, ip net.IP, want string, seen bool, source string) (verified bool, err error) {
 	text, files, unread := textLogins(env, want)
 	switch {
 	case len(unread) > 0:
@@ -185,7 +291,7 @@ func loginCheck(ctx context.Context, env *Env, ip net.IP) (verified bool, err er
 		// (that is "journald" when journald had other sshd entries).
 		where := strings.Join(files, ", ")
 		if where == "" {
-			where = fmt.Sprint(r["source"])
+			where = source
 		}
 		return false, coded(BlockUnverified, fmt.Errorf("refusing to block %s: its SSH login events come from text logs (%s), which anyone on this host can write to, so they may be forged; check them (journalctl -u ssh, the IP's other traffic) and, if they are real, ask again with override_unverified", ip, where))
 	}
@@ -202,6 +308,9 @@ var blockIP = Tool{
 		"reason":{"type":"string","description":"why, shown to the operator"},
 		"override_unverified":{"type":"boolean","description":"block even though the IP's SSH login events come only from text logs (verified=false); only after the operator has checked those logs"}}}`),
 	Preview: func(args json.RawMessage) (string, error) {
+		if err := blockUnsupported(); err != nil {
+			return "", err
+		}
 		a, ip, ttl, err := checkBlock(args)
 		if err != nil {
 			return "", err
@@ -214,6 +323,9 @@ var blockIP = Tool{
 	},
 	Run: func(ctx context.Context, env *Env, args json.RawMessage) (any, error) {
 		if err := RemoteRefused(env, "block_ip", args); err != nil {
+			return nil, err
+		}
+		if err := blockUnsupported(); err != nil {
 			return nil, err
 		}
 		a, ip, ttl, err := checkBlock(args)
