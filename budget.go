@@ -51,18 +51,21 @@ func budgetStop(cfg *Config, now time.Time, self string) error {
 	if cfg.Budget.MonthlyTokens <= 0 {
 		return nil
 	}
-	n, c, err := othersReserved(cfg, self, now)
-	if err != nil {
+	u, err := usageWithOthers(cfg, self, now) // one read of the log and the reservations (S-R-2)
+	if errors.Is(err, errReservations) {
 		return err
 	}
-	if budgetUsedExcept(cfg, now, self, true) < 1 {
+	if err != nil { // the log could not be read to its end: as the limit reached
+		return errBudget
+	}
+	n, c := u.othersTokens, u.othersCost
+	byTokens := float64(u.tokens+n) >= float64(cfg.Budget.MonthlyTokens)
+	byCostLimit := cfg.Budget.MonthlyCost > 0 && u.cost+c >= cfg.Budget.MonthlyCost
+	if !byTokens && !byCostLimit {
 		return nil
 	}
 	// Which limit the reservations fill: the token one unless only the cost one is reached.
-	usedCost, usedTokens, _, _ := monthUsageStrict(cfg.StateDir, now)
-	byTokens := float64(usedTokens+n) >= float64(cfg.Budget.MonthlyTokens)
-	byCost := !byTokens && cfg.Budget.MonthlyCost > 0 && usedCost+c >= cfg.Budget.MonthlyCost
-	return errBudgetReserved{tokens: n, cost: c, byCost: byCost}
+	return errBudgetReserved{tokens: n, cost: c, byCost: !byTokens}
 }
 
 // monthUsage adds up model cost and tokens since the start of this month.
@@ -82,12 +85,22 @@ var errLongLLMLine = errors.New("log.jsonl: a model call's line is longer than 1
 // it must not take a part for the whole. long counts the lines past
 // maxLogLine, skipped without stopping the count.
 func monthUsageStrict(stateDir string, now time.Time) (cost float64, tokens, long int, err error) {
+	cost, tokens, long, _, err = monthScan(stateDir, now, nil)
+	return cost, tokens, long, err
+}
+
+// monthScan is monthUsageStrict that, in the same read of log.jsonl, also
+// adds up the model use of the dispatches in started (dispatch id -> when
+// its reservation started) since then: S-R-2, one read for both, so what
+// is taken off a reservation is always use the month's sum saw.
+func monthScan(stateDir string, now time.Time, started map[string]time.Time) (cost float64, tokens, long int, spent map[string]spentUse, err error) {
+	spent = map[string]spentUse{}
 	f, err := os.Open(filepath.Join(stateDir, "log.jsonl"))
 	if errors.Is(err, fs.ErrNotExist) {
-		return 0, 0, 0, nil
+		return 0, 0, 0, spent, nil
 	}
 	if err != nil {
-		return 0, 0, 0, err
+		return 0, 0, 0, nil, err
 	}
 	defer f.Close()
 	y, m, _ := now.Date()
@@ -99,17 +112,17 @@ func monthUsageStrict(stateDir string, now time.Time) (cost float64, tokens, lon
 			// A model call's line (its error can quote a provider's answer)
 			// is never skipped: its use would go uncounted.
 			if bytes.Contains(line[:min(len(line), 4096)], []byte(`"tool":"llm"`)) {
-				return cost, tokens, long, errLongLLMLine
+				return cost, tokens, long, nil, errLongLLMLine
 			}
 			long++
 			for errors.Is(err, bufio.ErrBufferFull) { // the rest of it
 				_, err = r.ReadSlice('\n')
 			}
 			if err == io.EOF {
-				return cost, tokens, long, nil
+				return cost, tokens, long, spent, nil
 			}
 			if err != nil {
-				return cost, tokens, long, err
+				return cost, tokens, long, nil, err
 			}
 			continue
 		}
@@ -118,13 +131,19 @@ func monthUsageStrict(stateDir string, now time.Time) (cost float64, tokens, lon
 			if json.Unmarshal(line, &e) == nil && e.Tool == "llm" && !e.Time.Before(start) {
 				cost += e.Cost
 				tokens += e.InTokens + e.OutTokens + e.ReasonTokens
+				if t, ok := started[e.Dispatch]; ok && e.Dispatch != "" && !e.Time.Before(t) {
+					u := spent[e.Dispatch]
+					u.tokens += e.InTokens + e.OutTokens + e.ReasonTokens
+					u.cost += e.Cost
+					spent[e.Dispatch] = u
+				}
 			}
 		}
 		if err == io.EOF {
-			return cost, tokens, long, nil
+			return cost, tokens, long, spent, nil
 		}
 		if err != nil {
-			return cost, tokens, long, err
+			return cost, tokens, long, nil, err
 		}
 	}
 }
@@ -141,16 +160,19 @@ func budgetUsedExcept(cfg *Config, now time.Time, self string, others bool) floa
 		return 0
 	}
 	// A log read only in part could hide use: count it as the limit reached.
-	cost, tokens, _, err := monthUsageStrict(cfg.StateDir, now)
-	if err != nil {
-		return 1
-	}
+	var cost float64
+	var tokens int
 	if others && cfg.Budget.MonthlyTokens > 0 {
-		n, c, err := othersReserved(cfg, self, now)
+		u, err := usageWithOthers(cfg, self, now)
 		if err != nil {
 			return 1
 		}
-		tokens, cost = tokens+n, cost+c
+		cost, tokens = u.cost+u.othersCost, u.tokens+u.othersTokens
+	} else {
+		var err error
+		if cost, tokens, _, err = monthUsageStrict(cfg.StateDir, now); err != nil {
+			return 1
+		}
 	}
 	used := 0.0
 	if cfg.Budget.MonthlyCost > 0 {

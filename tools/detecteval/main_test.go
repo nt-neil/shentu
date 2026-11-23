@@ -349,7 +349,7 @@ func TestEvaluatorRun(t *testing.T) {
 	normal, _ := normalRequests()
 	st := ev.run(files, normal)
 	if st.Templates != 5 || st.NotConverted != 1 || st.Unclassified != 1 || st.RCEUnspecified != 1 ||
-		len(st.Classes) != 2 || *st.Classes["path"] != (ClassStat{1, 0}) || *st.Classes["xss"] != (ClassStat{1, 0}) ||
+		len(st.Classes) != 2 || !sameClass(st.Classes["path"], 1, 0) || !sameClass(st.Classes["xss"], 1, 0) ||
 		st.Host.Cases != cases || st.Host.TemplatesForCVE != 1 || st.NormalRequests != len(normal) || st.FalsePositives != 0 ||
 		st.NormalRoutes != len(normal)/perRoute || st.NormalDistinct < st.NormalRoutes || st.NormalDistinct >= len(normal) {
 		t.Errorf("stats %+v", st)
@@ -427,5 +427,20 @@ func TestLimitsWholePath(t *testing.T) {
 	defer srv.Close()
 	if _, err := download(context.Background(), srv.URL, t.TempDir()); !errors.Is(err, errDownload) {
 		t.Errorf("downloading past the cap: %v", err)
+	}
+}
+
+func sameClass(c *ClassStat, templates, caught int) bool {
+	return c != nil && c.Templates == templates && c.Caught == caught && len(c.CaughtIDs) == caught
+}
+
+// TestIDDiff: the template ids a class gained and lost against the baseline.
+func TestIDDiff(t *testing.T) {
+	g, l := idDiff([]string{"a", "c", "d"}, []string{"a", "b", "c"})
+	if fmt.Sprint(g) != "[d]" || fmt.Sprint(l) != "[b]" {
+		t.Errorf("gained %v lost %v", g, l)
+	}
+	if g, l := idDiff(nil, nil); g != nil || l != nil {
+		t.Errorf("empty: %v %v", g, l)
 	}
 }

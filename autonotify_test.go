@@ -20,7 +20,7 @@ func TestAutoNotifyMissingWarned(t *testing.T) {
 	cfg := &Config{StateDir: t.TempDir()}
 	cfg.Agents.AutoIncident = true
 	cfg.Budget.MonthlyTokens = 1_000_000
-	w := autoNotifyWarning(cfg)
+	w := autoNotifyWarning(cfg, false)
 	if !strings.Contains(w, "[notify] url") || !strings.Contains(w, "telegram://") || !strings.Contains(w, "sudo shentu setup") {
 		t.Errorf("warning: %q", w)
 	}
@@ -28,18 +28,18 @@ func TestAutoNotifyMissingWarned(t *testing.T) {
 		t.Errorf("daily report:\n%s", s)
 	}
 	cfg.Bot.TelegramToken = "1:" + "T" // a bot alone does not carry the patrol's alerts
-	if autoNotifyWarning(cfg) == "" {
+	if autoNotifyWarning(cfg, false) == "" {
 		t.Error("not warned with a bot token but no notify url")
 	}
 	cfg.Notify.URL = "https://hooks.slack.com/services/x"
-	if w := autoNotifyWarning(cfg); w != "" {
+	if w := autoNotifyWarning(cfg, false); w != "" {
 		t.Errorf("warned with a notify url: %q", w)
 	}
 	if s := autoIncidentSection(cfg, time.Now()); strings.Contains(s, "no [notify] url") {
 		t.Errorf("daily report with a notify url:\n%s", s)
 	}
 	cfg.Notify.URL, cfg.Agents.AutoIncident = "", false
-	if w := autoNotifyWarning(cfg); w != "" {
+	if w := autoNotifyWarning(cfg, false); w != "" {
 		t.Errorf("warned with auto_incident off: %q", w)
 	}
 }

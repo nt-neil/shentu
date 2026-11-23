@@ -36,10 +36,12 @@ type Stats struct {
 }
 
 // ClassStat: of the templates of a class, how many a signature of that
-// class caught (in any of its requests).
+// class caught (in any of its requests), and which (template ids, sorted):
+// what a changed graded hash is read with.
 type ClassStat struct {
-	Templates int `json:"templates"`
-	Caught    int `json:"caught"`
+	Templates int      `json:"templates"`
+	Caught    int      `json:"caught"`
+	CaughtIDs []string `json:"caught_ids,omitempty"`
 }
 
 // HostStat is the layer "a real vulnerability of this host": the host has
@@ -242,10 +244,14 @@ func (ev *evaluator) run(files map[string][]byte, normal []normalRequest) *Stats
 			cs.Templates++
 			if caught {
 				cs.Caught++
+				cs.CaughtIDs = append(cs.CaughtIDs, a.ID)
 			}
 			st.AttackLevels[level]++
 		}
 		lines = append(lines, fmt.Sprintf("%s\t%s\t%s\t%v\t%s\t%s\t%v\t%v\t%v", n, a.ID, a.Class, caught, sortedKeys(hit), level, host, forCVE, vu))
+	}
+	for _, cs := range st.Classes {
+		sort.Strings(cs.CaughtIDs)
 	}
 	st.NormalRequests = len(normal)
 	distinct, routes := map[string]bool{}, map[string]bool{}

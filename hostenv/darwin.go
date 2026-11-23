@@ -56,7 +56,7 @@ var (
 func (DarwinCollector) Allowlist() [][]string {
 	return [][]string{swVersArgv, macSysctlArgv, macPsArgv, macPsArgsArgv, netstatTCPArgv, netstatUDPArgv,
 		lsofListenArgv, alfStateArgv, alfBlockAllArgv, alfStealthArgv, pfInfoArgv, csrutilArgv, spctlArgv, fdesetupArgv,
-		dsclUIDArgv, dsclShellArgv, dsclHomeArgv, dsclAdminArgv}
+		dsclUIDArgv, dsclShellArgv, dsclHomeArgv, dsclAdminArgv, UnifiedSSHArgv}
 }
 
 func (c DarwinCollector) Collect(ctx context.Context, src Source) *Facts {
@@ -474,9 +474,11 @@ func parseEtime(s string) (time.Duration, bool) {
 	return time.Duration(days*86400+secs) * time.Second, true
 }
 
-// netstat -anv line: proto, queues, local, foreign, [state], counters, then
-// "process:pid" (the name may hold spaces and is cut at 16 characters).
-var netstatLine = regexp.MustCompile(`^(tcp[46]*|udp[46]*)\s+\d+\s+\d+\s+(\S+)\s+(\S+)\s+(?:([A-Z_0-9]+)\s+)?(?:\d+\s+){4}(.*):(\d+)\s+[0-9a-f]{5}\s`)
+// netstat -anv line: proto, queues, local, foreign, [state], four counters
+// (rxbytes txbytes rhiwat shiwat), then either "process:pid" (the name may
+// hold spaces and is cut at 16 characters) or, as macOS 15 writes it,
+// "pid epid" with no name; then the socket's 5-hex state.
+var netstatLine = regexp.MustCompile(`^(tcp[46]*|udp[46]*)\s+\d+\s+\d+\s+(\S+)\s+(\S+)\s+(?:([A-Z_0-9]+)\s+)?(?:\d+\s+){4}(?:(.*):(\d+)|(\d+)\s+\d+)\s+[0-9a-f]{5}\s`)
 
 // Listeners are TCP sockets in LISTEN and unconnected UDP sockets, with the
 // owning process netstat names (it sees every process's sockets). macOS can
@@ -487,7 +489,8 @@ func (c DarwinCollector) Listeners(ctx context.Context, src Source) Obs[[]Listen
 	var out []Listener
 	seen := map[string]bool{}
 	sockets := 0
-	var cut []string // netstat runs cut at the output cap
+	var unread []string // socket lines netstat wrote that netstatLine does not read
+	var cut []string    // netstat runs cut at the output cap
 	for _, argv := range [][]string{netstatTCPArgv, netstatUDPArgv} {
 		r, err := src.Run(ctx, argv)
 		switch {
@@ -502,6 +505,9 @@ func (c DarwinCollector) Listeners(ctx context.Context, src Source) Obs[[]Listen
 			}
 			m := netstatLine.FindStringSubmatch(l)
 			if m == nil {
+				if strings.HasPrefix(l, "tcp") || strings.HasPrefix(l, "udp") {
+					unread = append(unread, l)
+				}
 				continue
 			}
 			proto, local, foreign, state := m[1], m[2], m[3], m[4]
@@ -527,7 +533,11 @@ func (c DarwinCollector) Listeners(ctx context.Context, src Source) Obs[[]Listen
 			if strings.HasSuffix(proto, "6") || strings.Contains(addr, ":") {
 				base += "6"
 			}
-			pid, _ := strconv.Atoi(m[6])
+			pidField := m[6]
+			if pidField == "" {
+				pidField = m[7] // macOS 15: the pid alone, its name from ps below
+			}
+			pid, _ := strconv.Atoi(pidField)
 			ln := Listener{Proto: base, Addr: addr, Port: port, PID: pid, Process: strings.TrimSpace(m[5])}
 			k := fmt.Sprintf("%s %s %d %d", ln.Proto, ln.Addr, ln.Port, ln.PID)
 			if !seen[k] {
@@ -537,22 +547,80 @@ func (c DarwinCollector) Listeners(ctx context.Context, src Source) Obs[[]Listen
 		}
 	}
 	if sockets == 0 {
-		return c.lsofListeners(ctx, src)
+		return c.lsofListeners(ctx, src, "netstat showed no Internet sockets (macOS hides them from programs)")
+	}
+	if len(unread) > 0 {
+		// A layout this parser does not know: what it read may lack any
+		// listener, so it is not reported as all there is (B-055m-1).
+		return c.lsofListeners(ctx, src, fmt.Sprintf("netstat wrote %d socket line(s) in a layout not understood", len(unread)))
+	}
+	var why []string
+	if names := macProcNames(ctx, src, out); names != "" {
+		why = append(why, names)
 	}
 	sortListeners(out)
 	if len(cut) > 0 {
-		return Partial(out, ReasonTruncated, "output cut short: "+strings.Join(cut, ", "))
+		why = append([]string{"output cut short: " + strings.Join(cut, ", ")}, why...)
+		return Partial(out, ReasonTruncated, strings.Join(why, "; "))
+	}
+	if len(why) > 0 {
+		return Partial(out, ReasonCommandFailed, strings.Join(why, "; "))
 	}
 	return OK(out)
+}
+
+// macProcNames names the listeners netstat gave a pid alone (macOS 15),
+// from ps. It says why when some stay without a name ("" when none do).
+func macProcNames(ctx context.Context, src Source, out []Listener) string {
+	need := false
+	for _, l := range out {
+		need = need || l.Process == "" && l.PID > 0
+	}
+	if !need {
+		return ""
+	}
+	names := map[int]string{}
+	r, err := src.Run(ctx, macPsArgv)
+	if err == nil && r.ExitCode == 0 {
+		for _, l := range strings.Split(string(r.Stdout), "\n") {
+			// pid ppid uid user etime comm (comm, a path, may hold spaces)
+			f := strings.Fields(l)
+			if len(f) < 6 {
+				continue
+			}
+			pid, perr := strconv.Atoi(f[0])
+			if perr != nil {
+				continue
+			}
+			names[pid] = path.Base(strings.Join(f[5:], " "))
+		}
+	}
+	missing := 0
+	for i := range out {
+		if out[i].Process == "" && out[i].PID > 0 {
+			out[i].Process = names[out[i].PID]
+			if out[i].Process == "" {
+				missing++
+			}
+		}
+	}
+	if missing == 0 {
+		return ""
+	}
+	src2 := "not in ps"
+	if err != nil || r.ExitCode != 0 {
+		src2 = "ps: " + cmdErr(err, r).Error()
+	}
+	return fmt.Sprintf("%d listener(s) without a process name (%s)", missing, src2)
 }
 
 // lsofListeners parses lsof -F output: p<pid>, c<command>, t<IPv4|IPv6>,
 // P<TCP|UDP>, n<addr:port>. lsof sees only this user's processes unless
 // run as root.
-func (DarwinCollector) lsofListeners(ctx context.Context, src Source) Obs[[]Listener] {
+func (DarwinCollector) lsofListeners(ctx context.Context, src Source, why string) Obs[[]Listener] {
 	r, err := src.Run(ctx, lsofListenArgv)
 	if err != nil || r.ExitCode > 1 { // 1: nothing matched
-		return unknownFrom[[]Listener]("netstat showed no sockets, and lsof", cmdErr(err, r))
+		return unknownFrom[[]Listener](why+", and lsof", cmdErr(err, r))
 	}
 	var out []Listener
 	seen := map[string]bool{}
@@ -601,8 +669,7 @@ func (DarwinCollector) lsofListeners(ctx context.Context, src Source) Obs[[]List
 		}
 	}
 	sortListeners(out)
-	return Partial(out, ReasonPermission, "netstat showed no Internet sockets (macOS hides them from programs); "+
-		"lsof lists only this user's processes")
+	return Partial(out, ReasonPermission, why+"; lsof lists only this user's processes")
 }
 
 func sortListeners(out []Listener) {

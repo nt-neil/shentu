@@ -24,6 +24,13 @@ var listeningPorts = Tool{
 	Description: "TCP and UDP ports this server listens on, with the owning process and its executable path.",
 	Params:      schema(noParams),
 	Run: func(ctx context.Context, env *Env, args json.RawMessage) (any, error) {
+		if onMac() {
+			ports, partial, err := macPorts(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return withPartial("ports", ports, partial), nil
+		}
 		return ListeningPorts()
 	},
 }
@@ -44,6 +51,9 @@ type Port struct {
 func ListeningPorts() ([]Port, error) {
 	if runtime.GOOS == "windows" {
 		return portsFromFacts(windowsFacts(context.Background()))
+	}
+	if onMac() {
+		return macPortsStrict(context.Background())
 	}
 	src := hostSource()
 	procs, owners := linux.Processes(src, nil)
@@ -137,6 +147,13 @@ var processesTool = Tool{
 		if runtime.GOOS == "windows" {
 			return winProcesses(a.All)
 		}
+		if onMac() {
+			procs, partial, err := macProcesses(ctx, a.All)
+			if err != nil {
+				return nil, err
+			}
+			return withPartial("processes", procs, partial), nil
+		}
 		return Processes(a.All), nil
 	},
 }
@@ -173,6 +190,22 @@ var shells = map[string]bool{"sh": true, "bash": true, "dash": true, "zsh": true
 // Processes lists processes from hostenv's processes fact. With all=false
 // only flagged processes are returned.
 func Processes(all bool) []Proc {
+	procs, _ := ProcessesErr(all)
+	return procs
+}
+
+// ProcessesErr is Processes with the error of a list that could not be
+// read (macOS's ps; the Linux reader has none to give), so the patrol can
+// say the check was not made (S-177-1).
+func ProcessesErr(all bool) ([]Proc, error) {
+	if onMac() { // the patrol's miner and temp checks too (M0)
+		procs, _, err := macProcesses(context.Background(), all)
+		return procs, err
+	}
+	return linuxProcesses(all), nil
+}
+
+func linuxProcesses(all bool) []Proc {
 	names := userNames()
 	self := os.Getpid()
 	procs, _ := linux.Processes(hostSource(), nil)
@@ -278,6 +311,13 @@ func minerSigns(exe, cmdline string) bool {
 // userNames maps uid to account name from hostenv's accounts fact; the
 // first account with a uid wins.
 func userNames() map[string]string {
+	if onMac() { // dscl's accounts, not /etc/passwd's few (M0)
+		names := map[string]string{}
+		for _, a := range macAccountList(context.Background()).Value {
+			names[a.UID] = a.Name
+		}
+		return names
+	}
 	names, _ := linux.Accounts(hostSource())
 	if names == nil {
 		return map[string]string{}
@@ -337,10 +377,21 @@ type Accounts struct {
 	SharedKeys    []SharedKey `json:"keys_in_several_accounts,omitempty"`
 	Preload       []string    `json:"ld_so_preload,omitempty"`
 	UnpackagedPAM []string    `json:"pam_modules_not_from_a_package,omitempty"`
+	// Note says what could not be read (macOS: sudoers without root), and
+	// NotRead names it, for the patrol and the survey: "accounts",
+	// "authorized_keys", "sudoers" (N-180-1).
+	Note    string   `json:"note,omitempty"`
+	NotRead []string `json:"not_read,omitempty"`
+	// NotApplicable are the checks that do not apply on this host's OS
+	// (macOS: ld.so.preload, PAM modules from packages): not "none found".
+	NotApplicable []string `json:"not_applicable,omitempty"`
 }
 
 // AccountsAudit reads /etc/passwd, sudoers and authorized_keys.
 func AccountsAudit() Accounts {
+	if onMac() {
+		return macAccountsAudit(context.Background())
+	}
 	var a Accounts
 	_, accts := linux.Accounts(hostSource())
 	for _, acct := range accts.Value {
@@ -353,7 +404,18 @@ func AccountsAudit() Accounts {
 		}
 	}
 	src := hostSource()
-	for _, kf := range linux.SSHKeyFiles(src, accts.Value).Value {
+	a.KeyFiles = keyFilesOf(linux.SSHKeyFiles(src, accts.Value).Value)
+	a.SudoRules, _ = linux.SudoRules(src)
+	a.SharedKeys = sharedKeys(a.KeyFiles)
+	a.Preload = preloadEntries("/etc/ld.so.preload")
+	a.UnpackagedPAM = unpackagedPAM()
+	return a
+}
+
+// keyFilesOf is the authorized_keys files as the tools report them.
+func keyFilesOf(files []hostenv.AuthorizedKeyFile) []KeyFile {
+	var out []KeyFile
+	for _, kf := range files {
 		var keys []KeyEntry
 		for _, k := range kf.Keys {
 			keys = append(keys, KeyEntry{k.Line, k.Type, k.Fingerprint})
@@ -362,13 +424,9 @@ func AccountsAudit() Accounts {
 		if kf.OutsideHome {
 			f.SymlinkOutsideHome = kf.SymlinkTarget
 		}
-		a.KeyFiles = append(a.KeyFiles, f)
+		out = append(out, f)
 	}
-	a.SudoRules, _ = linux.SudoRules(src)
-	a.SharedKeys = sharedKeys(a.KeyFiles)
-	a.Preload = preloadEntries("/etc/ld.so.preload")
-	a.UnpackagedPAM = unpackagedPAM()
-	return a
+	return out
 }
 
 // UIDOf returns the numeric UID of a user name from /etc/passwd.

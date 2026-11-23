@@ -27,14 +27,57 @@ type finding struct {
 	Severity string `json:"severity"`
 	Summary  string `json:"summary"`
 	Evidence any    `json:"evidence,omitempty"`
+	// zh is Summary in Chinese, for the report with a Chinese setting;
+	// not saved: "" (or a finding read back) falls back to Summary.
+	zh string
+}
+
+// newFinding is a finding whose summary is report text key with args, in
+// English and in Chinese.
+func newFinding(key, severity string, evidence any, text string, args ...any) finding {
+	return newFindingIn(key, severity, evidence, text, args, args)
+}
+
+// newFindingIn is newFinding with values said differently in each language,
+// such as a list joined with ", " in English and "、" in Chinese.
+func newFindingIn(key, severity string, evidence any, text string, en, zh []any) finding {
+	return finding{key, severity, fmt.Sprintf(dt(false, text), en...), evidence, fmt.Sprintf(dt(true, text), zh...)}
+}
+
+// procFinding, sharedKeyFinding and preloadFinding list their values with
+// ", " in English and "、" in Chinese.
+func procFinding(p tools.Proc) finding {
+	return newFindingIn(fmt.Sprintf("proc:%s:%s", p.Exe, p.Cmdline), "critical", p, "f_proc",
+		[]any{p.PID, strings.Join(p.Flags, ", "), p.Cmdline}, []any{p.PID, strings.Join(p.Flags, "、"), p.Cmdline})
+}
+
+func sharedKeyFinding(k tools.SharedKey) finding {
+	return newFindingIn("sharedkey:"+k.Fingerprint, "warning", k, "f_sharedkey",
+		[]any{k.Fingerprint, strings.Join(k.Users, ", ")}, []any{k.Fingerprint, strings.Join(k.Users, "、")})
+}
+
+func preloadFinding(libs []string) finding {
+	return newFindingIn("preload:"+strings.Join(libs, ","), "critical", libs, "f_preload",
+		[]any{strings.Join(libs, ", ")}, []any{strings.Join(libs, "、")})
+}
+
+// said is the finding's summary as the report says it.
+func (f finding) said(zh bool) string {
+	if zh && f.zh != "" {
+		return f.zh
+	}
+	return f.Summary
 }
 
 // state is kept in <state_dir>/state.json.
 type state struct {
 	Alerted map[string]time.Time `json:"alerted"`
 	Ports   map[string]bool      `json:"ports"` // baseline of listening ports
-	LastRun time.Time            `json:"last_run"`
-	Profile tools.SiteProfile    `json:"profile"` // baseline from the last survey
+	// PortsV is the baseline's version, set once a read was made into it:
+	// 0 in a state from before it (N-177-2).
+	PortsV  int               `json:"ports_v,omitempty"`
+	LastRun time.Time         `json:"last_run"`
+	Profile tools.SiteProfile `json:"profile"` // baseline from the last survey
 }
 
 func loadState(dir string) *state {
@@ -84,13 +127,13 @@ func replaceOrAppend(all, add []finding) []finding {
 // or over threshold. why is a Not checked line when the logs could not be read
 // in full (an error, or a log cut short or unreadable): then no finding is no
 // proof that there were no failed logins.
-func sshFindings(r map[string]any, err error, threshold int) (out []finding, why string) {
+func sshFindings(r map[string]any, err error, threshold int, zh bool) (out []finding, why string) {
 	if err != nil {
-		return nil, fmt.Sprintf("\n\nNot checked: SSH logins (%q).\n", cutLine(mask(err.Error())))
+		return nil, fmt.Sprintf(dt(zh, "ssh_failed"), cutLine(mask(err.Error())))
 	}
-	note := ""
+	note, noteZh := "", ""
 	if v, _ := r["verified"].(bool); !v {
-		note = "; read from text logs, which anyone on this host can write to: check them before acting"
+		note, noteZh = dt(false, "f_ssh_text"), dt(true, "f_ssh_text")
 	}
 	sources, _ := r["sources"].([]tools.SSHSource)
 	for _, s := range sources {
@@ -100,7 +143,7 @@ func sshFindings(r map[string]any, err error, threshold int) (out []finding, why
 				sev = "critical"
 			}
 			out = append(out, finding{"ssh:" + s.IP, sev,
-				fmt.Sprintf("%d failed SSH logins from %s in the last hour (successful logins: %d)%s", n, s.IP, s.Accepted, note), s})
+				fmt.Sprintf(dt(false, "f_ssh"), n, s.IP, s.Accepted, note), s, fmt.Sprintf(dt(true, "f_ssh"), n, s.IP, s.Accepted, noteZh)})
 		}
 	}
 	if c, _ := r["complete"].(bool); !c {
@@ -111,35 +154,35 @@ func sshFindings(r map[string]any, err error, threshold int) (out []finding, why
 			detail, _ = r["source"].(string)
 		}
 		if detail == "" {
-			detail = "a login log was cut short or could not be read"
+			detail = dt(zh, "ssh_cut")
 		}
 		detail = cutLine(mask(detail))
 		if u, _ := r["unsupported"].(bool); u {
-			return out, fmt.Sprintf("\n\nNot checked: SSH logins (%q).\n", detail)
+			return out, fmt.Sprintf(dt(zh, "ssh_failed"), detail)
 		}
 		advice := ""
 		if p, _ := r["permission"].(bool); p { // root helps only when rights were missing
-			advice = " (run Shentu as root to read every log)"
+			advice = dt(zh, "ssh_root")
 		}
-		why = fmt.Sprintf("\n\nNot checked in full: SSH logins (%q); the failed logins counted are a lower bound%s.\n", detail, advice)
+		why = fmt.Sprintf(dt(zh, "ssh_partial"), detail, advice)
 	}
 	return out, why
 }
 
 // dnsHint says, after an error, that a failed name lookup is a DNS problem on
 // this host (the resolver in /etc/resolv.conf), not the service's; "" otherwise.
-func dnsHint(err error) string {
+func dnsHint(err error, zh bool) string {
 	var d *net.DNSError
 	if !errors.As(err, &d) {
 		return ""
 	}
-	return "; the name lookup failed: check this host's DNS (the resolver in /etc/resolv.conf) against `getent hosts " + mask(d.Name) + "`"
+	return fmt.Sprintf(dt(zh, "vuln_dns"), mask(d.Name))
 }
 
 // uncheckedSection lists, at the end of a report, the checks that could not
 // tell (a file they need could not be read, e.g. when not run as root), so a
 // silent part is not read as a clean one. "" when there are none.
-func uncheckedSection(risks []tools.Risk) string {
+func uncheckedSection(risks []tools.Risk, zh bool) string {
 	var b strings.Builder
 	for _, r := range risks {
 		if tools.Unchecked(r) {
@@ -149,21 +192,21 @@ func uncheckedSection(risks []tools.Risk) string {
 	if b.Len() == 0 {
 		return ""
 	}
-	as := "as root"
+	as := dt(zh, "perm_root")
 	if runtime.GOOS == "windows" {
-		as = "elevated, as the Shentu service does (LocalSystem)"
+		as = dt(zh, "perm_win")
 	}
-	return "\n\nNot checked (the permission to read what they need was missing; run Shentu " + as + "):\n" + b.String()
+	return fmt.Sprintf(dt(zh, "perm_head"), as) + b.String()
 }
 
 // notCheckedSection lists what the code audit could not tell (a web
 // root's ACL on Windows), so it is not read as checked. "" when nothing.
-func notCheckedSection(items []string) string {
+func notCheckedSection(items []string, zh bool) string {
 	if len(items) == 0 {
 		return ""
 	}
 	var b strings.Builder
-	b.WriteString("\n\nNot checked by the code audit:\n")
+	b.WriteString(dt(zh, "audit_head"))
 	for _, it := range items {
 		fmt.Fprintf(&b, "- %q\n", mask(it))
 	}
@@ -176,20 +219,20 @@ func notCheckedSection(items []string) string {
 // The same goes for the CISA KEV list (none on it must not read as "none
 // exploited"), lock files that could not be checked, and ecosystems OSV does
 // not carry.
-func uncheckedVulns(what string, r map[string]any, err error) string {
+func uncheckedVulns(what string, r map[string]any, err error, zh bool) string {
 	if err != nil {
-		return fmt.Sprintf("\n\nNot checked for vulnerabilities: %s (%q)%s.\n", what, cutLine(mask(err.Error())), dnsHint(err))
+		return fmt.Sprintf(dt(zh, "vuln_failed"), what, cutLine(mask(err.Error())), dnsHint(err, zh))
 	}
 	var lines []string
 	if p, ok := r["partial"]; ok {
-		lines = append(lines, fmt.Sprintf("- partly checked: %q", cutLine(mask(fmt.Sprint(p)))))
+		lines = append(lines, fmt.Sprintf(dt(zh, "vuln_partly"), cutLine(mask(fmt.Sprint(p)))))
 	}
 	// With no vulnerability found there is nothing to look up in KEV.
 	if n, _ := r["total_vulns"].(int); n > 0 {
 		if k, _ := r["kev"].(string); strings.Contains(k, "unavailable") {
-			lines = append(lines, fmt.Sprintf("- not checked against the CISA KEV list, so exploited ones are not marked: %q", cutLine(mask(k))))
+			lines = append(lines, fmt.Sprintf(dt(zh, "vuln_nokev"), cutLine(mask(k))))
 		} else if u, _ := r["kev_unchecked"].(int); u > 0 {
-			lines = append(lines, fmt.Sprintf("- %d vulnerabilities not checked against the CISA KEV list (lookups failed or over the cap)", u))
+			lines = append(lines, fmt.Sprintf(dt(zh, "vuln_kevleft"), u))
 		}
 	}
 	if files, ok := r["files"].([]tools.AppResult); ok {
@@ -220,25 +263,25 @@ func uncheckedVulns(what string, r map[string]any, err error) string {
 			for i, p := range show {
 				names[i] = mask(p)
 			}
-			line := fmt.Sprintf("- not checked (%q): %s", e, strings.Join(names, ", "))
+			line := fmt.Sprintf(dt(zh, "vuln_file"), e, strings.Join(names, ", "))
 			if more := len(paths) - len(show); more > 0 {
-				line += fmt.Sprintf(" and %d more", more)
+				line += fmt.Sprintf(dt(zh, "vuln_filemore"), more)
 			}
 			lines = append(lines, cutLine(line))
 		}
 		if skipped > 0 {
-			lines = append(lines, fmt.Sprintf("- and %d more lock files not checked, with other errors", skipped))
+			lines = append(lines, fmt.Sprintf(dt(zh, "vuln_otherfiles"), skipped))
 		}
 	}
 	if nq, ok := r["ecosystems_not_queried"].([]string); ok {
 		for _, e := range nq {
-			lines = append(lines, fmt.Sprintf("- not queried (OSV has no such ecosystem): %q", cutLine(mask(e))))
+			lines = append(lines, fmt.Sprintf(dt(zh, "vuln_noeco"), cutLine(mask(e))))
 		}
 	}
 	if len(lines) == 0 {
 		return ""
 	}
-	return "\n\nVulnerability check of " + what + " incomplete:\n" + strings.Join(lines, "\n") + "\n"
+	return fmt.Sprintf(dt(zh, "vuln_head"), what) + strings.Join(lines, "\n") + "\n"
 }
 
 // uncheckedFiles caps the lock file paths the unchecked section lists;
@@ -254,12 +297,12 @@ func cutLine(s string) string { return hostenv.CutString(s, maxUncheckedLine) }
 
 // uncheckedConfigs lists the web server configuration files the code audit
 // could not read: the sites they serve were audited as plain folders.
-func uncheckedConfigs(unread []string) string {
+func uncheckedConfigs(unread []string, zh bool) string {
 	if len(unread) == 0 {
 		return ""
 	}
 	var b strings.Builder
-	b.WriteString("\n\nWeb server configuration not read (its web roots are missing from the code audit):\n")
+	b.WriteString(dt(zh, "conf_head"))
 	for _, u := range unread {
 		fmt.Fprintf(&b, "- %q\n", mask(u))
 	}
@@ -277,12 +320,13 @@ func unparsedKeysFinding(k tools.KeyFile) finding {
 	for _, l := range k.Unparsed[:min(len(k.Unparsed), unparsedLinesMax)] {
 		lines = append(lines, strconv.Itoa(l))
 	}
-	list := strings.Join(lines, ", ")
+	more, moreZh := "", ""
 	if n := len(k.Unparsed); n > unparsedLinesMax {
-		list += fmt.Sprintf(" and %d more (%d in all)", n-unparsedLinesMax, n)
+		more = fmt.Sprintf(dt(false, "f_unparsed_more"), n-unparsedLinesMax, n)
+		moreZh = fmt.Sprintf(dt(true, "f_unparsed_more"), n-unparsedLinesMax, n)
 	}
-	return finding{"authorized_key_unparsed:" + k.Path, "warning",
-		fmt.Sprintf("%s line(s) %s are neither a key nor a comment; sshd ignores them, but check none is a key written in another form", k.Path, list), nil}
+	return newFindingIn("authorized_key_unparsed:"+k.Path, "warning", nil, "f_unparsed",
+		[]any{k.Path, strings.Join(lines, ", "), more}, []any{k.Path, strings.Join(lines, "、"), moreZh})
 }
 
 // patrolListMax is how many findings one patrol report lists.
@@ -334,7 +378,7 @@ func codeAuditFindings(audit tools.CodeAudit) []finding {
 		if f.Rule != "" {
 			detail = fmt.Sprintf("%s (%s, rule %s)", f.Detail, f.CWE, f.Rule)
 		}
-		out = append(out, finding{key, f.Severity, fmt.Sprintf("%s: %s; fix: %s", where, detail, f.Fix), f})
+		out = append(out, finding{key, f.Severity, fmt.Sprintf("%s: %s; fix: %s", where, detail, f.Fix), f, ""})
 	}
 	// An audit that did not check everything, or listed only part of what it
 	// found, says so: silence would read as nothing found.
@@ -346,7 +390,7 @@ func codeAuditFindings(audit tools.CodeAudit) []finding {
 		if strings.Contains(f.Detail, "unfinished") {
 			key = "code:audit:unfinished"
 		}
-		out = append(out, finding{key, "warning", fmt.Sprintf("code audit: %s; fix: %s", f.Detail, f.Fix), f})
+		out = append(out, finding{key, "warning", fmt.Sprintf("code audit: %s; fix: %s", f.Detail, f.Fix), f, ""})
 	}
 	return out
 }
@@ -365,7 +409,7 @@ func checks(ctx context.Context, cfg *Config, env *tools.Env, st *state, daily b
 	}
 	for _, r := range append(prof.Risks, tools.Drift(st.Profile, prof)...) {
 		if r.Severity != "info" {
-			out = append(out, finding{r.Key, r.Severity, r.Summary, nil})
+			out = append(out, finding{r.Key, r.Severity, r.Summary, nil, ""})
 		}
 	}
 	st.Profile = prof
@@ -378,79 +422,54 @@ func checks(ctx context.Context, cfg *Config, env *tools.Env, st *state, daily b
 	// a second alert for the same source would say "SSH" for RDP or SMB.
 	if runtime.GOOS != "windows" {
 		r, err := tools.SSHSummary(ctx, env, time.Now().Add(-1*time.Hour), "")
-		f, why := sshFindings(r, err, cfg.Patrol.SSHThreshold)
+		f, why := sshFindings(r, err, cfg.Patrol.SSHThreshold, isZh(cfg))
 		out = append(out, f...)
 		sshUnchecked = why
 	}
 
 	if ports, err := tools.ListeningPorts(); err == nil {
-		first := st.Ports == nil
-		if first {
-			st.Ports = map[string]bool{}
-		}
-		ollama, hasOllama := tools.UIDOf("ollama")
-		for _, p := range ports {
-			// The local model runtime opens a new loopback port each time it loads a model.
-			// Only the ollama account running Ollama's own root-owned binaries is skipped.
-			if hasOllama && p.UID == ollama && net.ParseIP(p.Addr).IsLoopback() &&
-				(p.Exe == "/usr/local/bin/ollama" || strings.HasPrefix(p.Exe, "/usr/local/lib/ollama/")) {
-				continue
-			}
-			// avahi-daemon opens a random UDP port for unicast mDNS queries on every start;
-			// only its fixed port 5353 is part of the baseline.
-			if strings.HasPrefix(p.Proto, "udp") && p.Exe == "/usr/sbin/avahi-daemon" && p.Port != 5353 {
-				continue
-			}
-			k := fmt.Sprintf("%s:%d", p.Proto, p.Port)
-			if !st.Ports[k] && !first {
-				out = append(out, finding{"port:" + k, "warning", fmt.Sprintf("new listening port %s by %s (%s)", k, p.Process, p.Exe), p})
-			}
-			st.Ports[k] = true
-		}
-	}
+		out = append(out, portFindings(st, ports)...)
+	} // else the survey's services:unreadable says it is not checked (N-177-1)
 
-	for _, p := range tools.Processes(false) {
-		out = append(out, finding{fmt.Sprintf("proc:%s:%s", p.Exe, p.Cmdline), "critical",
-			fmt.Sprintf("suspicious process pid %d (%s): %s", p.PID, strings.Join(p.Flags, ", "), p.Cmdline), p})
-	}
+	pf, why := procFindings(patrolProcesses(false))
+	out = append(out, pf...)
+	sshUnchecked += why
 
 	acc := tools.AccountsAudit()
+	sshUnchecked += accountsUnchecked(acc)
 	for _, u := range acc.UID0 {
 		if u != "root" {
-			out = append(out, finding{"uid0:" + u, "critical", "account with UID 0 besides root: " + u, nil})
+			out = append(out, newFinding("uid0:"+u, "critical", nil, "f_uid0", u))
 		}
 	}
 	for _, k := range acc.KeyFiles {
 		if k.Modified.After(since) {
-			out = append(out, finding{fmt.Sprintf("keys:%s:%d", k.Path, k.Modified.Unix()), "warning",
-				fmt.Sprintf("authorized_keys changed: %s (%d keys)", k.Path, k.Keys), k})
+			out = append(out, newFinding(fmt.Sprintf("keys:%s:%d", k.Path, k.Modified.Unix()), "warning", k, "f_keys", k.Path, k.Keys))
 		}
 	}
 	out = append(out, keyFileFindings(acc.KeyFiles)...)
 	for _, k := range acc.SharedKeys {
-		out = append(out, finding{"sharedkey:" + k.Fingerprint, "warning",
-			fmt.Sprintf("one SSH key (%s) is in the authorized_keys of %s; attackers plant one key in every account, check that it is yours", k.Fingerprint, strings.Join(k.Users, ", ")), k})
+		out = append(out, sharedKeyFinding(k))
 	}
 	if len(acc.Preload) > 0 {
-		out = append(out, finding{"preload:" + strings.Join(acc.Preload, ","), "critical",
-			fmt.Sprintf("/etc/ld.so.preload loads %s into every program, a common rootkit trick; check each library with dpkg -S or rpm -qf and verify it with dpkg -V or rpm -V", strings.Join(acc.Preload, ", ")), acc.Preload})
+		out = append(out, preloadFinding(acc.Preload))
 	}
 	for _, m := range acc.UnpackagedPAM {
-		out = append(out, finding{"pam:" + m, "warning",
-			fmt.Sprintf("PAM module %s was not installed by a package; a PAM backdoor can let anyone log in by SSH; check it with dpkg -S or rpm -qf %s", m, m), m})
+		out = append(out, newFinding("pam:"+m, "warning", m, "f_pam", m, m))
 	}
 
 	if r, err := tools.FileChanges(ctx, env.WatchPaths, since); err == nil {
 		for _, f := range r["files"].([]tools.Changed) {
 			if len(f.Webshell) > 0 {
-				out = append(out, finding{"webshell:" + f.Path, "critical", "possible webshell: " + f.Path, f})
+				out = append(out, newFinding("webshell:"+f.Path, "critical", f, "f_webshell", f.Path))
 			}
 		}
+		sshUnchecked += fileChangesUnchecked(r)
 	}
 
 	for _, c := range tools.CertExpiry(ctx, env.CertTargets) {
 		if c.Error == "" && c.DaysLeft <= 14 {
-			out = append(out, finding{"cert:" + c.Target, "warning", fmt.Sprintf("certificate for %s expires in %d days", c.Target, c.DaysLeft), c})
+			out = append(out, newFinding("cert:"+c.Target, "warning", c, "f_cert", c.Target, c.DaysLeft))
 		}
 	}
 	return out, sshUnchecked
@@ -463,8 +482,10 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 		return err
 	}
 	st := loadState(cfg.StateDir)
+	tools.RefreshLoginIndex(ctx) // block_ip's login check then reads only the last hour
+	zh := isZh(cfg)
 	all, sshUnchecked := checks(ctx, cfg, env, st, daily)
-	unchecked := uncheckedSection(st.Profile.Risks) + sshUnchecked // listed in every report, never pushed
+	unchecked := uncheckedSection(st.Profile.Risks, zh) + sshUnchecked // listed in every report, never pushed
 	if daily {
 		// Once a day: installed packages with vulnerabilities that are being exploited now.
 		r, osSurface, err := tools.PackageVulnsSurface(ctx, env.HTTP)
@@ -481,17 +502,16 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 		if len(osSurface) > 0 && !sig.ComparesVersions(osSurface[0].Ecosystem) {
 			partial = append(partial, osSurface[0].Ecosystem+" 的套件版本沒有比較器：簽章對到的 CVE 一律列為版本未知（VersionUnknown），不會依版本排除")
 		}
-		unchecked += uncheckedVulns("installed packages", r, err)
+		unchecked += uncheckedVulns(dt(zh, "vuln_os"), r, err, zh)
 		if err == nil {
 			list, _ := r["actively_exploited"].([]tools.Exploit)
 			for _, e := range list {
-				all = append(all, finding{"kev:" + e.Package + ":" + e.CVE, "critical",
-					fmt.Sprintf("%s %s has %s, which is being exploited in the wild (%s); update it: %v", e.Package, e.Version, e.CVE, e.Name, r["upgrade_command"]), e})
+				all = append(all, newFinding("kev:"+e.Package+":"+e.CVE, "critical", e, "f_kev_os", e.Package, e.Version, e.CVE, e.Name, r["upgrade_command"]))
 			}
 		}
 		// The same for application dependencies (npm, PyPI, Composer, Go, RubyGems).
 		r, err = tools.AppVulns(ctx, env.HTTP, env.AppPaths)
-		unchecked += uncheckedVulns("application dependencies", r, err)
+		unchecked += uncheckedVulns(dt(zh, "vuln_app"), r, err, zh)
 		var apps []tools.AppResult
 		failedApps := map[string]bool{} // lock files whose check failed: their entries are yesterday's
 		if err != nil {
@@ -508,8 +528,7 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 			}
 			for _, f := range apps {
 				for _, e := range f.Exploited {
-					all = append(all, finding{"kev:" + f.Path + ":" + e.Package + ":" + e.CVE, "critical",
-						fmt.Sprintf("%s pins %s %s, which has %s, exploited in the wild (%s); upgrade it", f.Path, e.Package, e.Version, e.CVE, e.Name), e})
+					all = append(all, newFinding("kev:"+f.Path+":"+e.Package+":"+e.CVE, "critical", e, "f_kev_app", f.Path, e.Package, e.Version, e.CVE, e.Name))
 				}
 			}
 		}
@@ -517,12 +536,12 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 		web, unread := tools.WebRootsReport()
 		audit := tools.AppCodeAudit(ctx, env.AppPaths, web)
 		all = replaceOrAppend(all, codeAuditFindings(audit))
-		unchecked += uncheckedConfigs(unread) + notCheckedSection(audit.NotChecked)
+		unchecked += uncheckedConfigs(unread, zh) + notCheckedSection(audit.NotChecked, zh)
 		// The vulnerability surface attack detection judges by, until
 		// tomorrow: saved before the report goes (a notify that fails, or
 		// none configured, does not lose it); a dry run makes none.
 		if dryRun {
-			unchecked += "\nAttack detection: --dry-run does not build the vulnerability surface (surface.json); `shentu patrol --daily` does.\n"
+			unchecked += dt(zh, "dry_surface")
 		} else {
 			unchecked += saveDailySurface(cfg, env, audit, web, apps, osSurface, failedApps, osFailed, partial, time.Now())
 		}
@@ -530,16 +549,16 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 	// Attack detection: read and judged now (the daily report gets its
 	// summary); its alerts go out on their own, as the detector's words,
 	// after this patrol's report (deferred: whatever path it ends on).
-	carry := detectCarryOver(cfg.StateDir, isZh(cfg)) // what the last patrol's sends could not do
+	carry := detectCarryOver(cfg.StateDir, zh) // what the last patrol's sends could not do
 	unchecked = carry + unchecked
 	dr := detectJudge(ctx, cfg, time.Now(), daily, dryRun)
 	defer finishDetect(ctx, env, dr)
 	if daily {
-		unchecked += detectSection(dr.sum)
+		unchecked += detectSection(dr.sum, zh)
 		unchecked += dispatchDaily(cfg, time.Now())
 		unchecked += autoIncidentSection(cfg, time.Now())
 	} else if dr.sum.Err != "" {
-		unchecked += "\nAttack detection: " + dr.sum.Err + "\n"
+		unchecked += fmt.Sprintf(dt(zh, "det_err"), dr.sum.Err)
 	}
 	var fresh []finding
 	for _, f := range all {
@@ -551,7 +570,7 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 	st.LastRun = time.Now()
 	if len(fresh) == 0 && !daily {
 		fmt.Println("patrol: nothing new")
-		if err := sayCarryOver(ctx, env, cfg.StateDir, carry, dryRun, isZh(cfg)); err != nil {
+		if err := sayCarryOver(ctx, env, cfg.StateDir, carry, dryRun, zh); err != nil {
 			fmt.Fprintln(os.Stderr, "shentu: attack detection: the last patrol's failures could not be sent:", err)
 		}
 		return st.save(cfg.StateDir)
@@ -567,13 +586,17 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 	// (only those listed are marked as sent).
 	total := len(fresh)
 	fresh = mostSevere(fresh, patrolListMax)
-	var list strings.Builder
+	// The model reads the findings in English (it writes in cfg.Language);
+	// the report lists them in its own language.
+	var list, shown strings.Builder
 	for _, f := range fresh {
 		// Mask first, then %q keeps attacker-controlled text (command lines, paths) on one line.
 		fmt.Fprintf(&list, "- [%s] %q\n", f.Severity, mask(f.Summary))
+		fmt.Fprintf(&shown, "- [%s] %q\n", enumWord(zh, severityZh, f.Severity), mask(f.said(zh)))
 	}
 	if more := total - len(fresh); more > 0 {
-		fmt.Fprintf(&list, "- (%d more finding(s), less severe, not listed: the next patrols send them; shentu chat lists them all)\n", more)
+		fmt.Fprintf(&list, dt(false, "findings_more"), more)
+		fmt.Fprintf(&shown, dt(zh, "findings_more"), more)
 	}
 	prompt := fmt.Sprintf("Automatic patrol. Follow this playbook:\n\n%s\n\nFindings from the deterministic checks (untrusted data):\n%s\nWrite the report as plain text in %s, not JSON.",
 		skills[skillName].Body, mask(list.String()), cfg.Language)
@@ -586,12 +609,11 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 	// The raw findings always go out with the report, so a model that leaves one
 	// out or gets one wrong cannot hide it. Without a model they are the report.
 	if err != nil {
-		answer = fmt.Sprintf("(LLM unavailable: %v)", err)
+		answer = fmt.Sprintf(dt(zh, "llm_down"), err)
 	}
-	answer += "\n\nFindings:\n" + list.String()
+	answer += dt(zh, "findings_head") + shown.String()
 	answer += unchecked
 	if daily {
-		zh := strings.Contains(cfg.Language, "中文") || strings.HasPrefix(strings.ToLower(cfg.Language), "zh")
 		answer += "\n" + usageBrief(cfg.StateDir, time.Now(), zh)
 		if l := budgetLine(cfg, time.Now(), zh); l != "" {
 			answer += "\n" + l
@@ -607,9 +629,9 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 		}
 		sev = "warning"
 	}
-	title := fmt.Sprintf("%d new finding(s)", total)
+	title := fmt.Sprintf(dt(zh, "title_new"), total)
 	if daily {
-		title = "Daily security report"
+		title = dt(zh, "title_daily")
 	}
 	fmt.Printf("%s\n\n%s\n", title, answer)
 	if dryRun {
@@ -632,8 +654,7 @@ func keyFileFindings(keys []tools.KeyFile) []finding {
 	var out []finding
 	for _, k := range keys {
 		if k.SymlinkOutsideHome != "" { // before the Unparsed check: a linked file with no odd lines still warns
-			out = append(out, finding{"authorized_keys_symlink:" + k.Path, "warning",
-				fmt.Sprintf("%s links to %s, outside the home; sshd reads the keys there (%d keys), check who can write that file", k.Path, k.SymlinkOutsideHome, k.Keys), k})
+			out = append(out, newFinding("authorized_keys_symlink:"+k.Path, "warning", k, "f_keylink", k.Path, k.SymlinkOutsideHome, k.Keys))
 		}
 		if len(k.Unparsed) == 0 {
 			continue
@@ -641,4 +662,83 @@ func keyFileFindings(keys []tools.KeyFile) []finding {
 		out = append(out, unparsedKeysFinding(k))
 	}
 	return out
+}
+
+// patrolProcesses is the patrol's process list; tests replace it.
+var patrolProcesses = tools.ProcessesErr
+
+// portsBaselineV marks a baseline made from a read (see state.PortsV).
+const portsBaselineV = 1
+
+// portFindings is the new listening ports against the baseline in st,
+// which it updates. The first read makes the baseline and warns of
+// nothing: no baseline, or an empty one from before PortsV (N-177-2: a
+// release that read no port on macOS saved {}, and the first good read
+// would have warned of every port), once. After that an empty baseline is
+// a host with no port, and the first port opened on it is new.
+func portFindings(st *state, ports []tools.Port) (out []finding) {
+	first := st.Ports == nil || st.PortsV < portsBaselineV && len(st.Ports) == 0
+	if st.Ports == nil {
+		st.Ports = map[string]bool{}
+	}
+	st.PortsV = portsBaselineV
+	ollama, hasOllama := tools.UIDOf("ollama")
+	for _, p := range ports {
+		// The local model runtime opens a new loopback port each time it loads a model.
+		// Only the ollama account running Ollama's own root-owned binaries is skipped.
+		if hasOllama && p.UID == ollama && net.ParseIP(p.Addr).IsLoopback() &&
+			(p.Exe == "/usr/local/bin/ollama" || strings.HasPrefix(p.Exe, "/usr/local/lib/ollama/")) {
+			continue
+		}
+		// avahi-daemon opens a random UDP port for unicast mDNS queries on every start;
+		// only its fixed port 5353 is part of the baseline.
+		if strings.HasPrefix(p.Proto, "udp") && p.Exe == "/usr/sbin/avahi-daemon" && p.Port != 5353 {
+			continue
+		}
+		k := fmt.Sprintf("%s:%d", p.Proto, p.Port)
+		if !st.Ports[k] && !first {
+			out = append(out, newFinding("port:"+k, "warning", p, "f_port", k, p.Process, p.Exe))
+		}
+		st.Ports[k] = true
+	}
+	return out
+}
+
+// procFindings is the suspicious processes, and why they were not checked
+// when the list could not be read (S-177-1).
+func procFindings(procs []tools.Proc, err error) (out []finding, why string) {
+	if err != nil {
+		return nil, fmt.Sprintf("\n\nNot checked: processes (%q).\n", cutLine(mask(err.Error())))
+	}
+	for _, p := range procs {
+		out = append(out, procFinding(p))
+	}
+	return out, ""
+}
+
+// accountsUnchecked is what the account checks could not read (N-180-1:
+// macOS's dscl, or the authorized_keys of homes not readable): "not
+// checked", not "nothing found".
+func accountsUnchecked(acc tools.Accounts) string {
+	var b strings.Builder
+	for _, what := range acc.NotRead {
+		switch what {
+		case "accounts":
+			fmt.Fprintf(&b, "\n\nNot checked: accounts (UID 0 and login accounts) (%q).\n", cutLine(mask(acc.Note)))
+		case "authorized_keys":
+			fmt.Fprintf(&b, "\n\nNot checked: authorized_keys in full (%q).\n", cutLine(mask(acc.Note)))
+		}
+	}
+	return b.String()
+}
+
+// fileChangesUnchecked is the watched paths file_changes could not read
+// (N-183-1: much of macOS is closed to a user): "not checked", not
+// "unchanged".
+func fileChangesUnchecked(r map[string]any) string {
+	unread, _ := r["unread"].([]string)
+	if len(unread) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("\n\nNot checked: file changes under %d paths (%q).\n", len(unread), cutLine(mask(strings.Join(unread, ", "))))
 }

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"io/fs"
 	"net"
 	"os"
@@ -77,10 +78,39 @@ var webshellPatterns = []*regexp.Regexp{
 func FileChanges(ctx context.Context, roots []string, since time.Time) (map[string]any, error) {
 	names := userNames()
 	var out []Changed
+	var unread, missing []string
 	truncated := false
 	for _, root := range roots {
-		filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
-			if err != nil || ctx.Err() != nil {
+		// A root that is a link is walked where it leads (N-183-2: macOS's
+		// /etc is a link to /private/etc, and WalkDir does not follow a
+		// link given as its root), the paths shown under the root as set.
+		real, err := filepath.EvalSymlinks(root)
+		switch {
+		case errors.Is(err, fs.ErrNotExist):
+			missing = append(missing, root) // not on this host: not "unread" (S-183-1)
+			continue
+		case err != nil:
+			if len(unread) < maxUnread {
+				unread = append(unread, root)
+			}
+			continue
+		}
+		shown := func(p string) string {
+			if real == root {
+				return p
+			}
+			return filepath.Clean(root) + strings.TrimPrefix(p, real) // no "//" from a trailing slash
+		}
+		filepath.WalkDir(real, func(p string, d fs.DirEntry, err error) error {
+			if err != nil {
+				// Not read is not unchanged (M0: much of macOS's tree is
+				// closed to a user): said, up to a few. Gone meanwhile is not.
+				if !errors.Is(err, fs.ErrNotExist) && len(unread) < maxUnread {
+					unread = append(unread, shown(p))
+				}
+				return nil
+			}
+			if ctx.Err() != nil {
 				return nil
 			}
 			if d.IsDir() {
@@ -108,7 +138,7 @@ func FileChanges(ctx context.Context, roots []string, since time.Time) (map[stri
 				truncated = true
 				return filepath.SkipAll
 			}
-			c := Changed{Path: p, Size: info.Size(), Mode: info.Mode().String(), Owner: owner, Modified: mt}
+			c := Changed{Path: shown(p), Size: info.Size(), Mode: info.Mode().String(), Owner: owner, Modified: mt}
 			if (webExt[strings.ToLower(filepath.Ext(p))] || aspPage(p)) && info.Size() < 512*1024 {
 				if b, err := os.ReadFile(p); err == nil {
 					for _, re := range webshellPatterns {
@@ -129,8 +159,18 @@ func FileChanges(ctx context.Context, roots []string, since time.Time) (map[stri
 		}
 		return out[i].Modified.After(out[j].Modified)
 	})
-	return map[string]any{"since": since, "roots": roots, "files": out, "truncated": truncated}, nil
+	res := map[string]any{"since": since, "roots": roots, "files": out, "truncated": truncated}
+	if len(unread) > 0 {
+		res["unread"] = unread // what could not be read is not unchanged
+	}
+	if len(missing) > 0 {
+		res["missing"] = missing // watched paths this host does not have
+	}
+	return res, nil
 }
+
+// maxUnread bounds the unreadable paths file_changes lists.
+const maxUnread = 20
 
 func itoa(u uint32) string {
 	b := []byte{}
@@ -188,6 +228,9 @@ type Cert struct {
 }
 
 // CertExpiry checks network targets and local Let's Encrypt certificates.
+// certbotGlobs are where certbot keeps the live certificates.
+var certbotGlobs = []string{"/etc/letsencrypt/live/*/cert.pem", "/opt/homebrew/etc/letsencrypt/live/*/cert.pem", "/usr/local/etc/letsencrypt/live/*/cert.pem"}
+
 func CertExpiry(ctx context.Context, targets []string) []Cert {
 	var out []Cert
 	for _, t := range targets {
@@ -208,7 +251,12 @@ func CertExpiry(ctx context.Context, targets []string) []Cert {
 		}
 		out = append(out, c)
 	}
-	files, _ := filepath.Glob("/etc/letsencrypt/live/*/cert.pem")
+	var files []string
+	// certbot's Linux place, and Homebrew's on macOS (Apple silicon, Intel): M0
+	for _, g := range certbotGlobs {
+		m, _ := filepath.Glob(g)
+		files = append(files, m...)
+	}
 	for _, f := range files {
 		b, err := os.ReadFile(f)
 		if err != nil {
@@ -229,7 +277,7 @@ func certInfo(target string, c *x509.Certificate) Cert {
 
 var logSearch = Tool{
 	Name:        "log_search",
-	Description: "Search a log file for a regular expression (RE2 syntax). Only files matching the configured log_paths may be read. Returns the most recent matching lines.",
+	Description: "Search a log file for a regular expression (RE2 syntax). Only files matching the configured log_paths may be read. Returns the most recent matching lines. On macOS sshd and most system events are in the unified log, not in these files: no match here says nothing about SSH logins.",
 	Params: schema(`{"type":"object","required":["pattern","path"],"properties":{
 		"pattern":{"type":"string","description":"RE2 regular expression"},
 		"path":{"type":"string","description":"log file path; must match a configured log path"},
@@ -254,8 +302,18 @@ var logSearch = Tool{
 		if err != nil {
 			return nil, err
 		}
-		if st, err := os.Stat(real); err != nil || !st.Mode().IsRegular() || !allowedLog(real, env.LogPaths) {
+		if st, err := os.Stat(real); err != nil || !st.Mode().IsRegular() || !allowedLog(real, env.LogPaths) && !(onMac() && allowedLog(macUnprivate(real), env.LogPaths)) {
 			return nil, errors.New("path resolves outside the allowed log files: " + real)
+		}
+		// A hard link is not a symlink: EvalSymlinks does not see it. A user
+		// who can write to a log directory (Homebrew's; Linux without
+		// protected_hardlinks) could link a root-only file there, owner and
+		// all, for log_search run as root to read; logs have one link
+		// (S-186-1). A swap after this check is not ruled out.
+		if st, err := os.Stat(real); err == nil {
+			if n, ok := nlink(st); ok && n > 1 {
+				return nil, fmt.Errorf("%s has %d hard links: log_search reads a log file with one only", real, n)
+			}
 		}
 		a.Path = real
 		re, err := regexp.Compile(a.Pattern)
@@ -290,6 +348,20 @@ var logSearch = Tool{
 		}
 		return map[string]any{"path": a.Path, "matches": hits}, nil
 	},
+}
+
+// macUnprivate maps a resolved path under macOS's /private/var, /private/etc
+// or /private/tmp back to the /var, /etc or /tmp the system links name it
+// by, so a configured /var/log/system.log matches what EvalSymlinks gives.
+// Only those three root-owned links: any other link is still resolved and
+// must match on its own.
+func macUnprivate(p string) string {
+	for _, d := range []string{"/private/var/", "/private/etc/", "/private/tmp/"} {
+		if strings.HasPrefix(p, d) {
+			return strings.TrimPrefix(p, "/private")
+		}
+	}
+	return p
 }
 
 func allowedLog(p string, patterns []string) bool {

@@ -31,7 +31,7 @@ func TestKeysThroughSymlink(t *testing.T) {
 	for _, d := range []string{"/etc", "/home", "/srv", "/root"} {
 		remap[d] = filepath.Join(root, d)
 	}
-	withHost(t, &hostenv.Live{Remap: remap})
+	withHost(t, linuxLive{&hostenv.Live{Remap: remap}}) // a Linux host, wherever the test runs (M0 reads macOS on a Mac)
 	a := AccountsAudit()
 	got := map[string]KeyFile{}
 	for _, kf := range a.KeyFiles {
@@ -67,7 +67,7 @@ func TestKeysThroughLinkedFolder(t *testing.T) {
 	for _, d := range []string{"/etc", "/home", "/srv", "/data"} {
 		remap[d] = filepath.Join(root, d)
 	}
-	withHost(t, &hostenv.Live{Remap: remap})
+	withHost(t, linuxLive{&hostenv.Live{Remap: remap}}) // a Linux host, wherever the test runs (M0 reads macOS on a Mac)
 	got := map[string]KeyFile{}
 	for _, kf := range AccountsAudit().KeyFiles {
 		got[kf.Path] = kf

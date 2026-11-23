@@ -69,7 +69,7 @@ var (
 		uncheckedNotAvailable:  {"not supported on this platform yet", "這個平台還不支援"},
 		uncheckedFindingsCut:   {"more findings than a report keeps", "發現太多，超過上限的沒有列出"},
 	}
-	severityZh = map[string]string{"critical": "嚴重", "high": "高", "medium": "中", "low": "低", "info": "資訊", "unknown": "未分級"}
+	severityZh = map[string]string{"critical": "嚴重", "high": "高", "medium": "中", "low": "低", "info": "資訊", "warning": "警告", "unknown": "未分級"}
 )
 
 // enumWord is an enumeration from a record, in the notice's language; a
