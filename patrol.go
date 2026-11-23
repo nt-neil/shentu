@@ -33,8 +33,11 @@ type finding struct {
 type state struct {
 	Alerted map[string]time.Time `json:"alerted"`
 	Ports   map[string]bool      `json:"ports"` // baseline of listening ports
-	LastRun time.Time            `json:"last_run"`
-	Profile tools.SiteProfile    `json:"profile"` // baseline from the last survey
+	// PortsV is the baseline's version, set once a read was made into it:
+	// 0 in a state from before it (N-177-2).
+	PortsV  int               `json:"ports_v,omitempty"`
+	LastRun time.Time         `json:"last_run"`
+	Profile tools.SiteProfile `json:"profile"` // baseline from the last survey
 }
 
 func loadState(dir string) *state {
@@ -84,9 +87,9 @@ func replaceOrAppend(all, add []finding) []finding {
 // or over threshold. why is a Not checked line when the logs could not be read
 // in full (an error, or a log cut short or unreadable): then no finding is no
 // proof that there were no failed logins.
-func sshFindings(r map[string]any, err error, threshold int) (out []finding, why string) {
+func sshFindings(r map[string]any, err error, threshold int, zh bool) (out []finding, why string) {
 	if err != nil {
-		return nil, fmt.Sprintf("\n\nNot checked: SSH logins (%q).\n", cutLine(mask(err.Error())))
+		return nil, fmt.Sprintf(dt(zh, "ssh_failed"), cutLine(mask(err.Error())))
 	}
 	note := ""
 	if v, _ := r["verified"].(bool); !v {
@@ -111,35 +114,35 @@ func sshFindings(r map[string]any, err error, threshold int) (out []finding, why
 			detail, _ = r["source"].(string)
 		}
 		if detail == "" {
-			detail = "a login log was cut short or could not be read"
+			detail = dt(zh, "ssh_cut")
 		}
 		detail = cutLine(mask(detail))
 		if u, _ := r["unsupported"].(bool); u {
-			return out, fmt.Sprintf("\n\nNot checked: SSH logins (%q).\n", detail)
+			return out, fmt.Sprintf(dt(zh, "ssh_failed"), detail)
 		}
 		advice := ""
 		if p, _ := r["permission"].(bool); p { // root helps only when rights were missing
-			advice = " (run Shentu as root to read every log)"
+			advice = dt(zh, "ssh_root")
 		}
-		why = fmt.Sprintf("\n\nNot checked in full: SSH logins (%q); the failed logins counted are a lower bound%s.\n", detail, advice)
+		why = fmt.Sprintf(dt(zh, "ssh_partial"), detail, advice)
 	}
 	return out, why
 }
 
 // dnsHint says, after an error, that a failed name lookup is a DNS problem on
 // this host (the resolver in /etc/resolv.conf), not the service's; "" otherwise.
-func dnsHint(err error) string {
+func dnsHint(err error, zh bool) string {
 	var d *net.DNSError
 	if !errors.As(err, &d) {
 		return ""
 	}
-	return "; the name lookup failed: check this host's DNS (the resolver in /etc/resolv.conf) against `getent hosts " + mask(d.Name) + "`"
+	return fmt.Sprintf(dt(zh, "vuln_dns"), mask(d.Name))
 }
 
 // uncheckedSection lists, at the end of a report, the checks that could not
 // tell (a file they need could not be read, e.g. when not run as root), so a
 // silent part is not read as a clean one. "" when there are none.
-func uncheckedSection(risks []tools.Risk) string {
+func uncheckedSection(risks []tools.Risk, zh bool) string {
 	var b strings.Builder
 	for _, r := range risks {
 		if tools.Unchecked(r) {
@@ -149,21 +152,21 @@ func uncheckedSection(risks []tools.Risk) string {
 	if b.Len() == 0 {
 		return ""
 	}
-	as := "as root"
+	as := dt(zh, "perm_root")
 	if runtime.GOOS == "windows" {
-		as = "elevated, as the Shentu service does (LocalSystem)"
+		as = dt(zh, "perm_win")
 	}
-	return "\n\nNot checked (the permission to read what they need was missing; run Shentu " + as + "):\n" + b.String()
+	return fmt.Sprintf(dt(zh, "perm_head"), as) + b.String()
 }
 
 // notCheckedSection lists what the code audit could not tell (a web
 // root's ACL on Windows), so it is not read as checked. "" when nothing.
-func notCheckedSection(items []string) string {
+func notCheckedSection(items []string, zh bool) string {
 	if len(items) == 0 {
 		return ""
 	}
 	var b strings.Builder
-	b.WriteString("\n\nNot checked by the code audit:\n")
+	b.WriteString(dt(zh, "audit_head"))
 	for _, it := range items {
 		fmt.Fprintf(&b, "- %q\n", mask(it))
 	}
@@ -176,20 +179,20 @@ func notCheckedSection(items []string) string {
 // The same goes for the CISA KEV list (none on it must not read as "none
 // exploited"), lock files that could not be checked, and ecosystems OSV does
 // not carry.
-func uncheckedVulns(what string, r map[string]any, err error) string {
+func uncheckedVulns(what string, r map[string]any, err error, zh bool) string {
 	if err != nil {
-		return fmt.Sprintf("\n\nNot checked for vulnerabilities: %s (%q)%s.\n", what, cutLine(mask(err.Error())), dnsHint(err))
+		return fmt.Sprintf(dt(zh, "vuln_failed"), what, cutLine(mask(err.Error())), dnsHint(err, zh))
 	}
 	var lines []string
 	if p, ok := r["partial"]; ok {
-		lines = append(lines, fmt.Sprintf("- partly checked: %q", cutLine(mask(fmt.Sprint(p)))))
+		lines = append(lines, fmt.Sprintf(dt(zh, "vuln_partly"), cutLine(mask(fmt.Sprint(p)))))
 	}
 	// With no vulnerability found there is nothing to look up in KEV.
 	if n, _ := r["total_vulns"].(int); n > 0 {
 		if k, _ := r["kev"].(string); strings.Contains(k, "unavailable") {
-			lines = append(lines, fmt.Sprintf("- not checked against the CISA KEV list, so exploited ones are not marked: %q", cutLine(mask(k))))
+			lines = append(lines, fmt.Sprintf(dt(zh, "vuln_nokev"), cutLine(mask(k))))
 		} else if u, _ := r["kev_unchecked"].(int); u > 0 {
-			lines = append(lines, fmt.Sprintf("- %d vulnerabilities not checked against the CISA KEV list (lookups failed or over the cap)", u))
+			lines = append(lines, fmt.Sprintf(dt(zh, "vuln_kevleft"), u))
 		}
 	}
 	if files, ok := r["files"].([]tools.AppResult); ok {
@@ -220,25 +223,25 @@ func uncheckedVulns(what string, r map[string]any, err error) string {
 			for i, p := range show {
 				names[i] = mask(p)
 			}
-			line := fmt.Sprintf("- not checked (%q): %s", e, strings.Join(names, ", "))
+			line := fmt.Sprintf(dt(zh, "vuln_file"), e, strings.Join(names, ", "))
 			if more := len(paths) - len(show); more > 0 {
-				line += fmt.Sprintf(" and %d more", more)
+				line += fmt.Sprintf(dt(zh, "vuln_filemore"), more)
 			}
 			lines = append(lines, cutLine(line))
 		}
 		if skipped > 0 {
-			lines = append(lines, fmt.Sprintf("- and %d more lock files not checked, with other errors", skipped))
+			lines = append(lines, fmt.Sprintf(dt(zh, "vuln_otherfiles"), skipped))
 		}
 	}
 	if nq, ok := r["ecosystems_not_queried"].([]string); ok {
 		for _, e := range nq {
-			lines = append(lines, fmt.Sprintf("- not queried (OSV has no such ecosystem): %q", cutLine(mask(e))))
+			lines = append(lines, fmt.Sprintf(dt(zh, "vuln_noeco"), cutLine(mask(e))))
 		}
 	}
 	if len(lines) == 0 {
 		return ""
 	}
-	return "\n\nVulnerability check of " + what + " incomplete:\n" + strings.Join(lines, "\n") + "\n"
+	return fmt.Sprintf(dt(zh, "vuln_head"), what) + strings.Join(lines, "\n") + "\n"
 }
 
 // uncheckedFiles caps the lock file paths the unchecked section lists;
@@ -254,12 +257,12 @@ func cutLine(s string) string { return hostenv.CutString(s, maxUncheckedLine) }
 
 // uncheckedConfigs lists the web server configuration files the code audit
 // could not read: the sites they serve were audited as plain folders.
-func uncheckedConfigs(unread []string) string {
+func uncheckedConfigs(unread []string, zh bool) string {
 	if len(unread) == 0 {
 		return ""
 	}
 	var b strings.Builder
-	b.WriteString("\n\nWeb server configuration not read (its web roots are missing from the code audit):\n")
+	b.WriteString(dt(zh, "conf_head"))
 	for _, u := range unread {
 		fmt.Fprintf(&b, "- %q\n", mask(u))
 	}
@@ -378,43 +381,21 @@ func checks(ctx context.Context, cfg *Config, env *tools.Env, st *state, daily b
 	// a second alert for the same source would say "SSH" for RDP or SMB.
 	if runtime.GOOS != "windows" {
 		r, err := tools.SSHSummary(ctx, env, time.Now().Add(-1*time.Hour), "")
-		f, why := sshFindings(r, err, cfg.Patrol.SSHThreshold)
+		f, why := sshFindings(r, err, cfg.Patrol.SSHThreshold, isZh(cfg))
 		out = append(out, f...)
 		sshUnchecked = why
 	}
 
 	if ports, err := tools.ListeningPorts(); err == nil {
-		first := st.Ports == nil
-		if first {
-			st.Ports = map[string]bool{}
-		}
-		ollama, hasOllama := tools.UIDOf("ollama")
-		for _, p := range ports {
-			// The local model runtime opens a new loopback port each time it loads a model.
-			// Only the ollama account running Ollama's own root-owned binaries is skipped.
-			if hasOllama && p.UID == ollama && net.ParseIP(p.Addr).IsLoopback() &&
-				(p.Exe == "/usr/local/bin/ollama" || strings.HasPrefix(p.Exe, "/usr/local/lib/ollama/")) {
-				continue
-			}
-			// avahi-daemon opens a random UDP port for unicast mDNS queries on every start;
-			// only its fixed port 5353 is part of the baseline.
-			if strings.HasPrefix(p.Proto, "udp") && p.Exe == "/usr/sbin/avahi-daemon" && p.Port != 5353 {
-				continue
-			}
-			k := fmt.Sprintf("%s:%d", p.Proto, p.Port)
-			if !st.Ports[k] && !first {
-				out = append(out, finding{"port:" + k, "warning", fmt.Sprintf("new listening port %s by %s (%s)", k, p.Process, p.Exe), p})
-			}
-			st.Ports[k] = true
-		}
-	}
+		out = append(out, portFindings(st, ports)...)
+	} // else the survey's services:unreadable says it is not checked (N-177-1)
 
-	for _, p := range tools.Processes(false) {
-		out = append(out, finding{fmt.Sprintf("proc:%s:%s", p.Exe, p.Cmdline), "critical",
-			fmt.Sprintf("suspicious process pid %d (%s): %s", p.PID, strings.Join(p.Flags, ", "), p.Cmdline), p})
-	}
+	pf, why := procFindings(patrolProcesses(false))
+	out = append(out, pf...)
+	sshUnchecked += why
 
 	acc := tools.AccountsAudit()
+	sshUnchecked += accountsUnchecked(acc)
 	for _, u := range acc.UID0 {
 		if u != "root" {
 			out = append(out, finding{"uid0:" + u, "critical", "account with UID 0 besides root: " + u, nil})
@@ -446,6 +427,7 @@ func checks(ctx context.Context, cfg *Config, env *tools.Env, st *state, daily b
 				out = append(out, finding{"webshell:" + f.Path, "critical", "possible webshell: " + f.Path, f})
 			}
 		}
+		sshUnchecked += fileChangesUnchecked(r)
 	}
 
 	for _, c := range tools.CertExpiry(ctx, env.CertTargets) {
@@ -463,8 +445,9 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 		return err
 	}
 	st := loadState(cfg.StateDir)
+	zh := isZh(cfg)
 	all, sshUnchecked := checks(ctx, cfg, env, st, daily)
-	unchecked := uncheckedSection(st.Profile.Risks) + sshUnchecked // listed in every report, never pushed
+	unchecked := uncheckedSection(st.Profile.Risks, zh) + sshUnchecked // listed in every report, never pushed
 	if daily {
 		// Once a day: installed packages with vulnerabilities that are being exploited now.
 		r, osSurface, err := tools.PackageVulnsSurface(ctx, env.HTTP)
@@ -481,7 +464,7 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 		if len(osSurface) > 0 && !sig.ComparesVersions(osSurface[0].Ecosystem) {
 			partial = append(partial, osSurface[0].Ecosystem+" 的套件版本沒有比較器：簽章對到的 CVE 一律列為版本未知（VersionUnknown），不會依版本排除")
 		}
-		unchecked += uncheckedVulns("installed packages", r, err)
+		unchecked += uncheckedVulns(dt(zh, "vuln_os"), r, err, zh)
 		if err == nil {
 			list, _ := r["actively_exploited"].([]tools.Exploit)
 			for _, e := range list {
@@ -491,7 +474,7 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 		}
 		// The same for application dependencies (npm, PyPI, Composer, Go, RubyGems).
 		r, err = tools.AppVulns(ctx, env.HTTP, env.AppPaths)
-		unchecked += uncheckedVulns("application dependencies", r, err)
+		unchecked += uncheckedVulns(dt(zh, "vuln_app"), r, err, zh)
 		var apps []tools.AppResult
 		failedApps := map[string]bool{} // lock files whose check failed: their entries are yesterday's
 		if err != nil {
@@ -517,12 +500,12 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 		web, unread := tools.WebRootsReport()
 		audit := tools.AppCodeAudit(ctx, env.AppPaths, web)
 		all = replaceOrAppend(all, codeAuditFindings(audit))
-		unchecked += uncheckedConfigs(unread) + notCheckedSection(audit.NotChecked)
+		unchecked += uncheckedConfigs(unread, zh) + notCheckedSection(audit.NotChecked, zh)
 		// The vulnerability surface attack detection judges by, until
 		// tomorrow: saved before the report goes (a notify that fails, or
 		// none configured, does not lose it); a dry run makes none.
 		if dryRun {
-			unchecked += "\nAttack detection: --dry-run does not build the vulnerability surface (surface.json); `shentu patrol --daily` does.\n"
+			unchecked += dt(zh, "dry_surface")
 		} else {
 			unchecked += saveDailySurface(cfg, env, audit, web, apps, osSurface, failedApps, osFailed, partial, time.Now())
 		}
@@ -530,16 +513,16 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 	// Attack detection: read and judged now (the daily report gets its
 	// summary); its alerts go out on their own, as the detector's words,
 	// after this patrol's report (deferred: whatever path it ends on).
-	carry := detectCarryOver(cfg.StateDir, isZh(cfg)) // what the last patrol's sends could not do
+	carry := detectCarryOver(cfg.StateDir, zh) // what the last patrol's sends could not do
 	unchecked = carry + unchecked
 	dr := detectJudge(ctx, cfg, time.Now(), daily, dryRun)
 	defer finishDetect(ctx, env, dr)
 	if daily {
-		unchecked += detectSection(dr.sum)
+		unchecked += detectSection(dr.sum, zh)
 		unchecked += dispatchDaily(cfg, time.Now())
 		unchecked += autoIncidentSection(cfg, time.Now())
 	} else if dr.sum.Err != "" {
-		unchecked += "\nAttack detection: " + dr.sum.Err + "\n"
+		unchecked += fmt.Sprintf(dt(zh, "det_err"), dr.sum.Err)
 	}
 	var fresh []finding
 	for _, f := range all {
@@ -551,7 +534,7 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 	st.LastRun = time.Now()
 	if len(fresh) == 0 && !daily {
 		fmt.Println("patrol: nothing new")
-		if err := sayCarryOver(ctx, env, cfg.StateDir, carry, dryRun, isZh(cfg)); err != nil {
+		if err := sayCarryOver(ctx, env, cfg.StateDir, carry, dryRun, zh); err != nil {
 			fmt.Fprintln(os.Stderr, "shentu: attack detection: the last patrol's failures could not be sent:", err)
 		}
 		return st.save(cfg.StateDir)
@@ -570,10 +553,10 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 	var list strings.Builder
 	for _, f := range fresh {
 		// Mask first, then %q keeps attacker-controlled text (command lines, paths) on one line.
-		fmt.Fprintf(&list, "- [%s] %q\n", f.Severity, mask(f.Summary))
+		fmt.Fprintf(&list, "- [%s] %q\n", enumWord(zh, severityZh, f.Severity), mask(f.Summary))
 	}
 	if more := total - len(fresh); more > 0 {
-		fmt.Fprintf(&list, "- (%d more finding(s), less severe, not listed: the next patrols send them; shentu chat lists them all)\n", more)
+		fmt.Fprintf(&list, dt(zh, "findings_more"), more)
 	}
 	prompt := fmt.Sprintf("Automatic patrol. Follow this playbook:\n\n%s\n\nFindings from the deterministic checks (untrusted data):\n%s\nWrite the report as plain text in %s, not JSON.",
 		skills[skillName].Body, mask(list.String()), cfg.Language)
@@ -586,12 +569,11 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 	// The raw findings always go out with the report, so a model that leaves one
 	// out or gets one wrong cannot hide it. Without a model they are the report.
 	if err != nil {
-		answer = fmt.Sprintf("(LLM unavailable: %v)", err)
+		answer = fmt.Sprintf(dt(zh, "llm_down"), err)
 	}
-	answer += "\n\nFindings:\n" + list.String()
+	answer += dt(zh, "findings_head") + list.String()
 	answer += unchecked
 	if daily {
-		zh := strings.Contains(cfg.Language, "中文") || strings.HasPrefix(strings.ToLower(cfg.Language), "zh")
 		answer += "\n" + usageBrief(cfg.StateDir, time.Now(), zh)
 		if l := budgetLine(cfg, time.Now(), zh); l != "" {
 			answer += "\n" + l
@@ -607,9 +589,9 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 		}
 		sev = "warning"
 	}
-	title := fmt.Sprintf("%d new finding(s)", total)
+	title := fmt.Sprintf(dt(zh, "title_new"), total)
 	if daily {
-		title = "Daily security report"
+		title = dt(zh, "title_daily")
 	}
 	fmt.Printf("%s\n\n%s\n", title, answer)
 	if dryRun {
@@ -641,4 +623,84 @@ func keyFileFindings(keys []tools.KeyFile) []finding {
 		out = append(out, unparsedKeysFinding(k))
 	}
 	return out
+}
+
+// patrolProcesses is the patrol's process list; tests replace it.
+var patrolProcesses = tools.ProcessesErr
+
+// portsBaselineV marks a baseline made from a read (see state.PortsV).
+const portsBaselineV = 1
+
+// portFindings is the new listening ports against the baseline in st,
+// which it updates. The first read makes the baseline and warns of
+// nothing: no baseline, or an empty one from before PortsV (N-177-2: a
+// release that read no port on macOS saved {}, and the first good read
+// would have warned of every port), once. After that an empty baseline is
+// a host with no port, and the first port opened on it is new.
+func portFindings(st *state, ports []tools.Port) (out []finding) {
+	first := st.Ports == nil || st.PortsV < portsBaselineV && len(st.Ports) == 0
+	if st.Ports == nil {
+		st.Ports = map[string]bool{}
+	}
+	st.PortsV = portsBaselineV
+	ollama, hasOllama := tools.UIDOf("ollama")
+	for _, p := range ports {
+		// The local model runtime opens a new loopback port each time it loads a model.
+		// Only the ollama account running Ollama's own root-owned binaries is skipped.
+		if hasOllama && p.UID == ollama && net.ParseIP(p.Addr).IsLoopback() &&
+			(p.Exe == "/usr/local/bin/ollama" || strings.HasPrefix(p.Exe, "/usr/local/lib/ollama/")) {
+			continue
+		}
+		// avahi-daemon opens a random UDP port for unicast mDNS queries on every start;
+		// only its fixed port 5353 is part of the baseline.
+		if strings.HasPrefix(p.Proto, "udp") && p.Exe == "/usr/sbin/avahi-daemon" && p.Port != 5353 {
+			continue
+		}
+		k := fmt.Sprintf("%s:%d", p.Proto, p.Port)
+		if !st.Ports[k] && !first {
+			out = append(out, finding{"port:" + k, "warning", fmt.Sprintf("new listening port %s by %s (%s)", k, p.Process, p.Exe), p})
+		}
+		st.Ports[k] = true
+	}
+	return out
+}
+
+// procFindings is the suspicious processes, and why they were not checked
+// when the list could not be read (S-177-1).
+func procFindings(procs []tools.Proc, err error) (out []finding, why string) {
+	if err != nil {
+		return nil, fmt.Sprintf("\n\nNot checked: processes (%q).\n", cutLine(mask(err.Error())))
+	}
+	for _, p := range procs {
+		out = append(out, finding{fmt.Sprintf("proc:%s:%s", p.Exe, p.Cmdline), "critical",
+			fmt.Sprintf("suspicious process pid %d (%s): %s", p.PID, strings.Join(p.Flags, ", "), p.Cmdline), p})
+	}
+	return out, ""
+}
+
+// accountsUnchecked is what the account checks could not read (N-180-1:
+// macOS's dscl, or the authorized_keys of homes not readable): "not
+// checked", not "nothing found".
+func accountsUnchecked(acc tools.Accounts) string {
+	var b strings.Builder
+	for _, what := range acc.NotRead {
+		switch what {
+		case "accounts":
+			fmt.Fprintf(&b, "\n\nNot checked: accounts (UID 0 and login accounts) (%q).\n", cutLine(mask(acc.Note)))
+		case "authorized_keys":
+			fmt.Fprintf(&b, "\n\nNot checked: authorized_keys in full (%q).\n", cutLine(mask(acc.Note)))
+		}
+	}
+	return b.String()
+}
+
+// fileChangesUnchecked is the watched paths file_changes could not read
+// (N-183-1: much of macOS is closed to a user): "not checked", not
+// "unchanged".
+func fileChangesUnchecked(r map[string]any) string {
+	unread, _ := r["unread"].([]string)
+	if len(unread) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("\n\nNot checked: file changes under %d paths (%q).\n", len(unread), cutLine(mask(strings.Join(unread, ", "))))
 }

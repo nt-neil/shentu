@@ -118,7 +118,7 @@ func TestAutoBudgetTooSmallWarned(t *testing.T) {
 	h := &hostileModel{replies: []string{done}}
 	cfg, _, _ := autoSetup(t, h)
 	cfg.Budget.MonthlyTokens = 100_000
-	if w := autoBudgetWarning(cfg); !strings.Contains(w, "more than 150000") {
+	if w := autoBudgetWarning(cfg, false); !strings.Contains(w, "more than 150000") {
 		t.Errorf("warning: %q", w)
 	}
 	if s := autoIncidentSection(cfg, time.Now()); !strings.Contains(s, "none will ever start") {
@@ -127,14 +127,14 @@ func TestAutoBudgetTooSmallWarned(t *testing.T) {
 	// N-168-1: at exactly 150000 the cap is 80% of the limit, so no check
 	// starts and it is warned; at 150001 one starts and it is not.
 	cfg.Budget.MonthlyTokens = 150_000
-	if w := autoBudgetWarning(cfg); w == "" {
+	if w := autoBudgetWarning(cfg, false); w == "" {
 		t.Error("not warned at 150000, where no check starts")
 	}
 	if why := autoBudget(cfg, time.Now()); why != autoSkipBudget {
 		t.Errorf("autoBudget at 150000: %q", why)
 	}
 	cfg.Budget.MonthlyTokens = 150_001
-	if w := autoBudgetWarning(cfg); w != "" {
+	if w := autoBudgetWarning(cfg, false); w != "" {
 		t.Errorf("warned at 150001: %q", w)
 	}
 	if why := autoBudget(cfg, time.Now()); why != "" {
@@ -142,7 +142,7 @@ func TestAutoBudgetTooSmallWarned(t *testing.T) {
 	}
 	cfg.Agents.AutoIncident = false
 	cfg.Budget.MonthlyTokens = 100_000
-	if w := autoBudgetWarning(cfg); w != "" {
+	if w := autoBudgetWarning(cfg, false); w != "" {
 		t.Errorf("warned with auto_incident off: %q", w)
 	}
 }

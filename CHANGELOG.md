@@ -6,6 +6,83 @@ a release are not written here: they are worked out from the rule snapshots in
 `docs/site-src/rules-history/`. `CHANGELOG.zh-TW.md` holds the same releases in Traditional
 Chinese for the zh-TW pages; keep the two in step.
 
+## v0.5.5 — 2026-11-23
+
+- What a dispatch in progress has already used no longer counts twice near the budget limit: its
+  reservation knows the dispatch and when it started, and the others count only the rest of it,
+  from the same read of the log as the month's use. A reservation that cannot be matched counts in
+  full, as before.
+
+- The survey (site_profile) checks the Docker and Podman sockets through the host source, like its
+  other reads: a replay or a fixture is no longer answered by the machine running the survey.
+
+- The nginx and Apache version checks (and nginx's changelog) read the surveyed host through its
+  host source, like every other check: a replay or a fixture is no longer answered by the machine
+  running the survey. Their package queries are exact commands in the allowlist.
+
+- macOS: `listening_ports` and `processes` (and the patrol's process checks) read the Mac itself
+  (netstat or lsof, and ps; no root needed) instead of Linux's /proc, which found nothing there and
+  looked like a host with nothing running. An unreadable table is an error, and a partial one says so.
+
+- macOS: `accounts_audit` reads the Mac's accounts (dscl; no root needed) and the authorized_keys of
+  the login accounts and root, and sudoers when it can be read. What could not be read is in a note;
+  the Linux-only checks (ld.so.preload, PAM modules not from a package) are listed as not applicable.
+
+- macOS: `file_changes` finds a file by its status-change time (a faked modification time no longer
+  hides it) with its owner's name, watches macOS's own places by default (/private/etc, Homebrew,
+  launchd jobs), and lists directories it could not read; `cert_expiry` also reads Homebrew's certbot.
+
+- macOS: `ssh_logins` (and the patrol's SSH check) reads sshd's login events from the unified log
+  (`/usr/bin/log show --info --style ndjson`) and counts them as on Linux, marked verified: only
+  events of sshd-session's or sshd's own image path, logged by root (userID 0), are counted. A
+  macOS 15 VM showed both hold: a program copied to /tmp under that name logs its own path, and a
+  user's own sshd (the system's binary with a configuration of their own) logs that user's ID, not
+  0. The events left out are counted in the result's source with their reason
+  (`not_logged_by_root`, `not_sshd_image`, `no_user_id`, `unreadable_event`). An event with no
+  userID or one that cannot be read, or output without log show's closing line, makes the result
+  incomplete (the counts are a lower bound), not a complete one with fewer events. Only root and the
+  admin group can read that log: anyone else gets a permission error saying so, not an empty result.
+
+- macOS: `log_search` reads macOS's text logs (system.log, install.log) by default, not Homebrew's
+  nginx and Apache logs, whose directories their user could link root's files into (add them
+  knowingly). A log under /var is found by the path log_paths gives it (on macOS /var is a link to
+  /private/var, and such a path used to be refused). A log file with more than one hard link is
+  refused (a root-only file linked into a log directory looks the same). sshd is in the unified
+  log, which log_search does not read: the tool says no match there says nothing about SSH logins.
+
+- The host survey's nginx check covers the rest of nginx's advisories of 2026-11-18 (#190).
+  CVE-2026-118899, an infinite loop reading a request body over TLS 1.3, is warned about for nginx
+  1.13.0 through 1.31.8 with a TLS server (`listen ... ssl`, or `ssl on`) that speaks TLS 1.3: its
+  `ssl_protocols`, its own or else the http block's, names `TLSv1.3`, or it has none and nginx is
+  1.23.4 or later, whose default includes TLS 1.3. Turning HTTP/2 off does not avoid it.
+  CVE-2026-113425, a use-after-free in the mail proxy, is warned about only when a `mail` block has
+  a server. The six medium and minor ones (the resolver, HTTP/3, stream with client certificates or
+  `ssl_preread`, `try_files` with `alias`, PROXY protocol v2) are one line of advice by version,
+  as the check does not look for those features. All are fixed in 1.31.9 and 1.30.7. As for
+  HTTP/2, a distribution package whose changelog names a CVE is not warned about for it, and a
+  configuration file that could not be read is named in a line saying which of these could not
+  be checked.
+
+- The daily report and the new-findings report follow `language` now: with a Chinese setting their title, section headings
+  and fixed lines (what was not checked, incomplete vulnerability checks, attack detection, sub-agent dispatches,
+  automatic incident checks, SSH logins) are in Chinese; up to v0.5.4 they were in English whatever `language` said.
+  What a check found, error text and the model's answer are not translated: they are added as they came.
+
+- macOS and Windows (#206): `block_ip` is refused as `unsupported` before any check. From Telegram
+  on macOS it used to read up to a month of the unified log (about two minutes) before refusing a
+  block that nftables cannot make there.
+
+- Proposal buttons (Linux, #206): the checks run before the buttons are sent end together within 90
+  seconds; a proposal not checked by then is listed as `timeout`, without a button, instead of
+  holding back every button. A check of the dispatch archive cut short by its time limit is
+  `timeout` too, not `state_error`. One address's SSH logins are read once for the archive, the
+  buttons and Telegram's precheck (the answer is reused for two minutes); `block_ip` itself reads
+  them again when it runs.
+
+- Upgrade note (#206): going back to v0.5.4, that version reads a dispatch record whose gate is
+  `timeout` or `unsupported` as a bad line, and the automatic incident checks can stop for up to 72
+  hours.
+
 ## v0.5.4 — 2026-11-23
 
 - Shared AI budget (#161): a dispatch from the bot, `shentu chat` or the automatic incident check

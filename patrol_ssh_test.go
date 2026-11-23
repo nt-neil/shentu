@@ -23,14 +23,14 @@ func TestSSHFindingsIncompleteIsNotChecked(t *testing.T) {
 		{"cut short", map[string]any{"complete": false, "verified": true, "sources": []tools.SSHSource{}}, nil, "cut short or could not be read"},
 		{"summary failed", nil, errors.New("journalctl: exit 1"), "journalctl: exit 1"},
 	} {
-		_, why := sshFindings(c.r, c.err, 5)
+		_, why := sshFindings(c.r, c.err, 5, false)
 		if c.want == "" && why != "" || c.want != "" && (!strings.Contains(why, "Not checked") || !strings.Contains(why, c.want)) {
 			t.Errorf("%s: %q", c.name, why)
 		}
 	}
 	// Sources over the threshold are still reported when the logs are partial.
 	r := map[string]any{"complete": false, "verified": true, "sources": []tools.SSHSource{{IP: "203.0.113.9", Failed: 7}}}
-	if f, why := sshFindings(r, nil, 5); len(f) != 1 || f[0].Key != "ssh:203.0.113.9" || why == "" {
+	if f, why := sshFindings(r, nil, 5, false); len(f) != 1 || f[0].Key != "ssh:203.0.113.9" || why == "" {
 		t.Errorf("partial with a source: %+v %q", f, why)
 	}
 }
@@ -55,7 +55,7 @@ func TestSSHFindingsNotCheckedReason(t *testing.T) {
 			"source": "none: Shentu has no sshd log source on macOS (it reads journald and the text auth logs, which macOS does not keep)"},
 			[]string{"Not checked: SSH logins", "no sshd log source on macOS"}, false, false},
 	} {
-		_, why := sshFindings(c.r, nil, 5)
+		_, why := sshFindings(c.r, nil, 5, false)
 		for _, w := range c.want {
 			if !strings.Contains(why, w) {
 				t.Errorf("%s: %q lacks %q", c.name, why, w)
