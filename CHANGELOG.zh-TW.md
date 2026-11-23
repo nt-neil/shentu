@@ -35,9 +35,9 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 
 ### 已知問題
 
-- 目前還沒有主機檢查會把 CVE-2024-4577（Windows 上的 PHP-CGI）寫進 surface，所以在實際主機上，這條簽章的命中在那項檢查完成之前都只算雜訊。
+- Windows 上只有 Apache 以 CGI 執行的 php-cgi.exe 會把 CVE-2024-4577 寫進 surface（#200）。IIS 用 FastCGI 執行的 php-cgi.exe 不寫，因為公告只寫到 Apache；Shentu 不讀的 Apache 設定也不寫，也就是不是服務執行的、不在 XAMPP 或 Apache Lounge 的固定位置，或是有一般使用者能寫入的。這些主機上，這條簽章的命中仍然只算雜訊。
 
-- 在這樣的主機上，沒有 `=`、只有一個字的查詢，如果最前面是不是 UTF-8 的位元組再接一個英文字（沒有用 UTF-8 送出的 Latin-1、Big5 或 Shift-JIS 字），會和 `%AD` 一樣比中 CVE-2024-4577 的特徵：請求是解碼後才比對，這類位元組都會讀成 U+FFFD（`docs/attack-detection-limits.zh-TW.md`）。
+- 在 surface 有 CVE-2024-4577 的主機上，沒有 `=`、只有一個字的查詢，如果最前面是不是 UTF-8 的位元組再接一個英文字（沒有用 UTF-8 送出的 Latin-1、Big5 或 Shift-JIS 字），會和 `%AD` 一樣比中 CVE-2024-4577 的特徵：請求是解碼後才比對，這類位元組都會讀成 U+FFFD（`docs/attack-detection-limits.zh-TW.md`）。
 
 ## v0.5.5 — 2026-11-23
 

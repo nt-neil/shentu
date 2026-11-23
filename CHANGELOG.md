@@ -126,13 +126,15 @@ Chinese for the zh-TW pages; keep the two in step.
 
 ### Known issues
 
-- No host check writes CVE-2024-4577 into the surface yet (PHP-CGI on Windows), so on a real host
-  the signature's hits stay noise until that check comes.
+- Only php-cgi.exe that Apache runs as CGI on Windows gets CVE-2024-4577 in the surface (#200).
+  php-cgi.exe under IIS's FastCGI does not, as the advisories name Apache only; neither does an
+  Apache whose configuration Shentu does not read (not a service's, not at XAMPP's or Apache
+  Lounge's place, or writable by other users). On those hosts the signature's hits stay noise.
 
-- On such a host, a one-word query with no `=` that starts with a byte that is not UTF-8 and a
-  letter (a Latin-1, Big5 or Shift-JIS word not sent as UTF-8) matches the CVE-2024-4577
-  signature as `%AD` does: requests are matched decoded, where every such byte reads as U+FFFD
-  (`docs/attack-detection-limits.md`).
+- On a host whose surface has CVE-2024-4577, a one-word query with no `=` that starts with a byte
+  that is not UTF-8 and a letter (a Latin-1, Big5 or Shift-JIS word not sent as UTF-8) matches the
+  CVE-2024-4577 signature as `%AD` does: requests are matched decoded, where every such byte reads
+  as U+FFFD (`docs/attack-detection-limits.md`).
 
 ## v0.5.5 — 2026-11-23
 
