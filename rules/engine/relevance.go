@@ -57,6 +57,7 @@ func (a *analysis) walk(start relNode, src bool) bool {
 		return v == 1
 	}
 	visited := map[relNode]bool{}
+	var order []relNode // visited, in the order reached: scOf may re-read an evicted file, so the order it is asked in is kept fixed
 	stack := []relNode{start}
 	found := false
 	for len(stack) > 0 && !found {
@@ -66,6 +67,7 @@ func (a *analysis) walk(start relNode, src bool) bool {
 			continue
 		}
 		visited[n] = true
+		order = append(order, n)
 		sc, x := scOf(n.file)
 		if sc == nil {
 			continue
@@ -95,7 +97,7 @@ func (a *analysis) walk(start relNode, src bool) bool {
 		}
 		return true
 	}
-	for v := range visited {
+	for _, v := range order {
 		if sc, _ := scOf(v.file); sc != nil {
 			memo(sc)[v.key] = 2
 		}
@@ -136,6 +138,9 @@ func (a *analysis) build() bool {
 			walkToks(fi.f.body, 0, func(t []Token) {
 				if !direct[k] && x.toksRelevant(t) {
 					direct[k] = true
+				}
+				if !direct[k] && a.php && callsParamIn(t, fi.params) {
+					direct[k] = true // it calls a callable it is given: what that does is the caller's (summary.pcall)
 				}
 				if a.proj == nil {
 					return

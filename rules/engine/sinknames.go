@@ -1,12 +1,18 @@
 package engine
 
+import "strings"
+
 // nameSet adds every identifier and variable of toks, also inside string
-// interpolations, to set.
+// interpolations, to set; an identifier also in lower case, for a pattern name
+// matched in any case (FlagFold).
 func nameSet(toks []Token, set map[string]bool) map[string]bool {
 	for _, t := range toks {
 		switch t.Kind {
 		case Ident, Var:
 			set[t.Text] = true
+			if t.Kind == Ident {
+				set[strings.ToLower(t.Text)] = true
+			}
 		case Str:
 			for _, p := range t.Parts {
 				nameSet(p.Toks, set)
@@ -37,7 +43,11 @@ func anyName(code, text []*pat, names map[string]bool, inSrc func(*pat) bool) bo
 	for _, p := range code {
 		all := true // every name of the pattern is matched token by token, so each must be in the file
 		for _, t := range p.toks {
-			if (t.Kind == Ident || t.Kind == Var) && !names[t.Text] {
+			name := t.Text
+			if t.Flags&FlagFold != 0 {
+				name = strings.ToLower(name)
+			}
+			if (t.Kind == Ident || t.Kind == Var) && !names[name] {
 				all = false
 				break
 			}

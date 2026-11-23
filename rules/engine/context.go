@@ -563,6 +563,24 @@ func constReturn(f *fn) bool {
 	return len(t) == 1 && t[0].Kind == Str && len(t[0].Parts) == 0
 }
 
+// unsetStmt: PHP unset($x, $a['k'], $this->p) leaves no value at those paths,
+// so they carry no input, as after an assignment of null. An index that is not
+// a literal ($a[$k]) may name any key and changes nothing.
+func (a *analysis) unsetStmt(st state, t []Token) {
+	if !a.php || len(t) < 4 || !t[0].word("unset") || !t[1].op("(") {
+		return
+	}
+	c := closeOf(t, 1)
+	if c < 0 || c != len(t)-1 && !(c == len(t)-2 && t[c+1].op(";")) {
+		return
+	}
+	for _, arg := range splitTop(inside(t, 1, c), isComma) {
+		if key, _, ok := a.pathKey(arg); ok && !strings.HasSuffix(key, "[*]") {
+			a.setTarget(st, arg, val{}, "=", false)
+		}
+	}
+}
+
 // extractStmt follows extract(shortcode_atts(array('id' => 0, ...), $atts)) and
 // extract(array(...)): each literal key becomes a variable holding what the
 // array holds.

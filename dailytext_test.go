@@ -38,6 +38,7 @@ var reportWords = map[string]bool{
 	"Agent": true, "AI": true, "token": true, "tokens": true, "KiB": true, "L1": true, "L2": true, "L3": true, "IP": true,
 	"SSH": true, "DNS": true, "CISA": true, "KEV": true, "OSV": true, "root": true, "LocalSystem": true, "Linux": true,
 	"WordPress": true, "Telegram": true, "Slack": true, "Discord": true, "webhook": true, "bot": true,
+	"sshd": true, "PAM": true, "UID": true, "pid": true, "rootkit": true, "webshell": true,
 }
 
 // reportPhrases are settings, file names and commands said outside a
@@ -45,7 +46,7 @@ var reportWords = map[string]bool{
 var reportPhrases = []string{
 	"telegram://<bot-token>@telegram?chats=<chat id>", "[notify] url", "notify url", "[budget] monthly_tokens", "monthly_tokens",
 	"monthly_cost", "[agents] base_url", "auto_incident", "--dry-run", "shentu chat", "surface.json", "log.jsonl", "*.jsonl.bad",
-	".jsonl", "lock 檔",
+	".jsonl", "lock 檔", "authorized_keys", "dpkg -S", "rpm -qf", "dpkg -V", "rpm -V",
 }
 
 var (

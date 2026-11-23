@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -267,7 +268,8 @@ type Bench struct {
 	Rules   string
 	Groups  []BenchRow
 	Cases   []BenchCase
-	Measure string // the commit the numbers were measured at, from the import
+	Gaps    []string // known gaps (cvebench known_gap): run, but out of the rates, the misses and the catches
+	Measure string   // the commit the numbers were measured at, from the import
 }
 
 // BenchRow is a row of the summary table.
@@ -296,22 +298,23 @@ func (b *Bench) All() BenchRow {
 	return BenchRow{}
 }
 
-// Missed lists the cases no rule caught.
+// Missed lists the cases no rule caught, known gaps left out (as from the
+// rates the summary gives).
 func (b *Bench) Missed() []BenchCase {
 	var out []BenchCase
 	for _, c := range b.Cases {
-		if !c.Caught {
+		if !c.Caught && !slices.Contains(b.Gaps, c.ID) {
 			out = append(out, c)
 		}
 	}
 	return out
 }
 
-// CaughtCases lists the cases a rule caught.
+// CaughtCases lists the cases a rule caught, known gaps left out.
 func (b *Bench) CaughtCases() []BenchCase {
 	var out []BenchCase
 	for _, c := range b.Cases {
-		if c.Caught {
+		if c.Caught && !slices.Contains(b.Gaps, c.ID) {
 			out = append(out, c)
 		}
 	}
@@ -347,7 +350,7 @@ func loadBench(path string) (*Bench, error) {
 			cells[i] = strings.TrimSpace(cells[i])
 		}
 		switch {
-		case cells[0] == "group" || cells[0] == "case":
+		case cells[0] == "group" || cells[0] == "case" || cells[0] == "gap":
 			table = cells[0]
 			continue
 		case strings.HasPrefix(cells[0], "---"):
@@ -360,6 +363,8 @@ func loadBench(path string) (*Bench, error) {
 			}
 			out.Groups = append(out.Groups, BenchRow{Group: cells[0], Cases: atoi(cells[1]), Caught: atoi(cells[2]),
 				Rate: cells[3], FixedFP: atoi(cells[4]), FPRate: cells[5]})
+		case "gap":
+			out.Gaps = append(out.Gaps, cells[0])
 		case "case":
 			if len(cells) < 7 {
 				return nil, fmt.Errorf("%s: short case row %q", path, line)
@@ -461,7 +466,8 @@ type AttackEval struct {
 }
 
 var (
-	limitsVerRe = regexp.MustCompile(`(?m)^# .* in v(\d+\.\d+\.\d+)\s*$`)
+	limitsVerRe = regexp.MustCompile(`(?m)^Since v(\d+\.\d+\.\d+), Shentu ships (\d+) attack signatures`)
+	allRe       = regexp.MustCompile(`(?m)^- \*\*All templates: [\d.]+% detected \((\d+) of (\d+)\)\.\*\*`)
 	nucleiRe    = regexp.MustCompile(`nuclei-templates v(\d+\.\d+\.\d+) \(commit ([0-9a-f]+)\)`)
 	appsRe      = regexp.MustCompile(`(\d+) for each of (\d+) routes of (\d+) applications`)
 	hostRowRe   = regexp.MustCompile(`(?m)^\| (CVE-\d+-\d+) \| (L1|L2|L3|none) \|`)
@@ -525,8 +531,12 @@ func loadAttackEval(root string) (*AttackEval, error) {
 	m := limitsVerRe.FindStringSubmatch(l)
 	n := nucleiRe.FindStringSubmatch(l)
 	a := appsRe.FindStringSubmatch(l)
-	if m == nil || n == nil || a == nil {
-		return nil, fmt.Errorf("%s: no release in its title, nuclei-templates release or routes of applications", lp)
+	all := allRe.FindStringSubmatch(l)
+	if m == nil || n == nil || a == nil || all == nil {
+		return nil, fmt.Errorf("%s: no \"Since vX.Y.Z, Shentu ships N attack signatures\", nuclei-templates release, routes of applications or all templates' result", lp)
+	}
+	if fmt.Sprintf("%d of %d", e.Caught, e.Templates) != all[1]+" of "+all[2] {
+		return nil, fmt.Errorf("%s says %s of %s templates detected, %s has %d of %d", lp, all[1], all[2], bp, e.Caught, e.Templates)
 	}
 	e.Version, e.Nuclei, e.Commit = m[1], n[1], n[2]
 	if !strings.HasPrefix(s.NucleiCommit, e.Commit) {
@@ -553,5 +563,8 @@ func loadAttackEval(root string) (*AttackEval, error) {
 		return nil, err
 	}
 	e.Signatures = len(ss)
+	if m[2] != strconv.Itoa(e.Signatures) {
+		return nil, fmt.Errorf("%s says %s attack signatures, the build has %d", lp, m[2], e.Signatures)
+	}
 	return e, nil
 }

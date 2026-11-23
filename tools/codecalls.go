@@ -60,6 +60,7 @@ type passResult struct {
 	Found  []engine.Finding `json:"f,omitempty"` // at most auditMaxPerFile of one rule in one file
 	Over   int              `json:"n,omitempty"` // the findings the cap left out
 	Reason string           `json:"r,omitempty"` // unfinishedReason; "" when it ran to the end
+	Cause  string           `json:"c,omitempty"` // engine.CutOf(err), when Reason is limit or calls
 	Gen    bool             `json:"g,omitempty"` // the file is minified or bundled JavaScript
 }
 
