@@ -221,6 +221,7 @@ func TestPHPWinLocal(t *testing.T) {
 		`C:\Apache24\conf\loop`:  `C:\Apache24\conf\loop`,
 		`D:\conf\back`:           `\\files.example\share`,
 		`C:\Apache24\conf\dedup`: "",
+		`C:\Apache24\conf\slash`: `//files.example/share`,
 	}
 	var looked []string
 	phpLstat = func(p string) (os.FileInfo, error) {
@@ -240,16 +241,21 @@ func TestPHPWinLocal(t *testing.T) {
 		return "", errors.New("not a link")
 	}
 	for in, want := range map[string]string{
-		`C:\Apache24\conf\httpd.conf`:        `C:\Apache24\conf\httpd.conf`,
-		`C:\Apache24\conf\extra\php.conf`:    "not a local absolute path",
-		`C:\Apache24\conf\local\php.conf`:    `D:\conf\php.conf`,
-		`C:\Apache24\conf\rel\php.conf`:      `C:\Apache24\conf\..\shared\php.conf`,
-		`C:\Apache24\conf\root\php.conf`:     `C:\shared\php.conf`,
-		`C:\Apache24\conf\dev\php.conf`:      "not a local absolute path",
-		`C:\Apache24\conf\loop\php.conf`:     "too many links",
-		`C:\Apache24\conf\local\back\x.conf`: "not a local absolute path",
-		`C:\Apache24\conf\dedup\php.conf`:    "not followed",
-		`\\files.example\share\php.conf`:     "not a local absolute path",
+		`C:\Apache24\conf\httpd.conf`:          `C:\Apache24\conf\httpd.conf`,
+		`C:\Apache24\conf\extra\php.conf`:      "not a local absolute path",
+		`C:\Apache24\conf\local\php.conf`:      `D:\conf\php.conf`,
+		`C:\Apache24\conf\rel\php.conf`:        `C:\Apache24\shared\php.conf`,
+		`C:\Apache24\conf/extra/php.conf`:      "not a local absolute path",
+		`C:\Apache24\conf\x\..\extra\php.conf`: "not a local absolute path",
+		`C:\Apache24\conf\.\\extra\php.conf`:   "not a local absolute path",
+		`C:\Apache24\conf\slash\php.conf`:      "not a local absolute path",
+		`C:\..\..\Apache24\conf\httpd.conf`:    `C:\Apache24\conf\httpd.conf`,
+		`C:\Apache24\conf\root\php.conf`:       `C:\shared\php.conf`,
+		`C:\Apache24\conf\dev\php.conf`:        "not a local absolute path",
+		`C:\Apache24\conf\loop\php.conf`:       "too many links",
+		`C:\Apache24\conf\local\back\x.conf`:   "not a local absolute path",
+		`C:\Apache24\conf\dedup\php.conf`:      "not followed",
+		`\\files.example\share\php.conf`:       "not a local absolute path",
 	} {
 		looked = nil
 		got, err := phpWinLocal(in)
@@ -260,7 +266,7 @@ func TestPHPWinLocal(t *testing.T) {
 			t.Errorf("%s: %q, want %q", in, got, want)
 		}
 		for _, p := range looked {
-			if !phpLocalWinPath(p) {
+			if !phpLocalWinPath(p) || strings.Contains(p, "/") || winClean(p) != p {
 				t.Errorf("%s: looked at %s", in, p)
 			}
 		}

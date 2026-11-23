@@ -348,12 +348,16 @@ func phpWinVersion(exe string) (v, why string) {
 // another machine (and hand it the host's credentials). Each component is
 // looked at with Lstat before anything below it, and a target is checked
 // before it is looked at, so nothing remote is ever touched. A link whose
-// target cannot be read is not followed.
+// target cannot be read is not followed. Paths are cleaned first (slashes
+// turned, "." and ".." resolved as Windows does), so the components looked
+// at are the ones the open walks.
 func phpWinLocal(p string) (string, error) {
 	for hops := 0; ; hops++ {
+		p = strings.ReplaceAll(p, "/", `\`)
 		if !phpLocalWinPath(p) {
 			return "", errNotLocal
 		}
+		p = winClean(p)
 		if hops > 16 {
 			return "", errors.New("too many links, not read")
 		}
@@ -372,6 +376,7 @@ func phpWinLocal(p string) (string, error) {
 			if err != nil {
 				return "", errors.New("a reparse point that is not a link, not followed")
 			}
+			t = strings.ReplaceAll(t, "/", `\`)
 			switch {
 			case phpLocalWinPath(t):
 			case strings.HasPrefix(t, `\`) && !strings.HasPrefix(t, `\\`): // the root of the same drive
@@ -389,6 +394,25 @@ func phpWinLocal(p string) (string, error) {
 		}
 		p = next
 	}
+}
+
+// winClean is the local absolute path p (backslashes only) with empty,
+// "." and ".." components resolved lexically, as Windows does before an
+// open; ".." stops at the drive's root.
+func winClean(p string) string {
+	var out []string
+	for _, c := range strings.Split(p[3:], `\`) {
+		switch c {
+		case "", ".":
+		case "..":
+			if len(out) > 0 {
+				out = out[:len(out)-1]
+			}
+		default:
+			out = append(out, c)
+		}
+	}
+	return p[:2] + `\` + strings.Join(out, `\`)
 }
 
 // phpLstat and phpReadlink look at one path component (tests replace them).
