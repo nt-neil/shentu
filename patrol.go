@@ -571,7 +571,7 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 	var list strings.Builder
 	for _, f := range fresh {
 		// Mask first, then %q keeps attacker-controlled text (command lines, paths) on one line.
-		fmt.Fprintf(&list, "- [%s] %q\n", f.Severity, mask(f.Summary))
+		fmt.Fprintf(&list, "- [%s] %q\n", enumWord(zh, severityZh, f.Severity), mask(f.Summary))
 	}
 	if more := total - len(fresh); more > 0 {
 		fmt.Fprintf(&list, dt(zh, "findings_more"), more)
