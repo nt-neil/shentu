@@ -56,7 +56,7 @@ var (
 func (DarwinCollector) Allowlist() [][]string {
 	return [][]string{swVersArgv, macSysctlArgv, macPsArgv, macPsArgsArgv, netstatTCPArgv, netstatUDPArgv,
 		lsofListenArgv, alfStateArgv, alfBlockAllArgv, alfStealthArgv, pfInfoArgv, csrutilArgv, spctlArgv, fdesetupArgv,
-		dsclUIDArgv, dsclShellArgv, dsclHomeArgv, dsclAdminArgv}
+		dsclUIDArgv, dsclShellArgv, dsclHomeArgv, dsclAdminArgv, UnifiedSSHArgv}
 }
 
 func (c DarwinCollector) Collect(ctx context.Context, src Source) *Facts {

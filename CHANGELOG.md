@@ -32,6 +32,24 @@ Chinese for the zh-TW pages; keep the two in step.
   hides it) with its owner's name, watches macOS's own places by default (/private/etc, Homebrew,
   launchd jobs), and lists directories it could not read; `cert_expiry` also reads Homebrew's certbot.
 
+- macOS: `ssh_logins` (and the patrol's SSH check) reads sshd's login events from the unified log
+  (`/usr/bin/log show --info --style ndjson`) and counts them as on Linux, marked verified: only
+  events of sshd-session's or sshd's own image path, logged by root (userID 0), are counted. A
+  macOS 15 VM showed both hold: a program copied to /tmp under that name logs its own path, and a
+  user's own sshd (the system's binary with a configuration of their own) logs that user's ID, not
+  0. The events left out are counted in the result's source with their reason
+  (`not_logged_by_root`, `not_sshd_image`, `no_user_id`, `unreadable_event`). An event with no
+  userID or one that cannot be read, or output without log show's closing line, makes the result
+  incomplete (the counts are a lower bound), not a complete one with fewer events. Only root and the
+  admin group can read that log: anyone else gets a permission error saying so, not an empty result.
+
+- macOS: `log_search` reads macOS's text logs (system.log, install.log) by default, not Homebrew's
+  nginx and Apache logs, whose directories their user could link root's files into (add them
+  knowingly). A log under /var is found by the path log_paths gives it (on macOS /var is a link to
+  /private/var, and such a path used to be refused). A log file with more than one hard link is
+  refused (a root-only file linked into a log directory looks the same). sshd is in the unified
+  log, which log_search does not read: the tool says no match there says nothing about SSH logins.
+
 ## v0.5.4 — 2026-11-23
 
 - Shared AI budget (#161): a dispatch from the bot, `shentu chat` or the automatic incident check

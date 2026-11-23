@@ -763,7 +763,7 @@ func (a *agent) runDispatch(ctx context.Context, origin, trigger string, tasks [
 	for i := range rec.Subs {
 		for j := range rec.Subs[i].Proposals {
 			p := &rec.Subs[i].Proposals[j]
-			_, code, _ := tools.RemoteBlockCheck(gctx, a.env, net.ParseIP(p.IP))
+			_, code, _ := blockCheck(gctx, a.env, net.ParseIP(p.IP)) // tools.RemoteBlockCheck; a test's stub too
 			if !recGates[code] || code == "" {
 				code = tools.BlockStateError
 			}
