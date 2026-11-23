@@ -99,8 +99,11 @@ type ProjectOptions struct {
 	MaxTime   time.Duration // a safety net for indexing and following calls (default 15 minutes), well past what MaxWork takes on an ordinary machine (CutClock)
 }
 
-// DefaultProjectWork is ProjectOptions.MaxWork's default: PROJECTWORK_TBD.
-const DefaultProjectWork = 900_000_000
+// DefaultProjectWork is ProjectOptions.MaxWork's default, set at low load
+// against the 90 seconds it replaces: every project of E7 and cvebench that
+// finished within them did under 600M; WordPress had done 640M to 830M when
+// they ran out.
+const DefaultProjectWork = 750_000_000
 
 // indexVersion changes whenever fileIndex changes, so an old cache is ignored.
 const indexVersion = "9"

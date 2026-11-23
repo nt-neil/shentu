@@ -71,8 +71,9 @@ type Limits struct {
 
 // DefaultLimits suit ordinary application files; the caller also caps file size.
 // MaxCallWork is about a second of one rule's work on a busy machine (~10M units
-// a second). MaxWork is MAXWORK_TBD.
-var DefaultLimits = Limits{MaxTokens: 300_000, MaxWork: 30_000_000, MaxTime: 30 * time.Second, MaxCallWork: 10_000_000}
+// a second). MaxWork was set at low load against the 3 seconds MaxTime was:
+// every E7 and cvebench file whose first pass took under them did under 55M.
+var DefaultLimits = Limits{MaxTokens: 300_000, MaxWork: 60_000_000, MaxTime: 30 * time.Second, MaxCallWork: 10_000_000}
 
 // ErrLimit means a file hit Limits (tokens, time or nesting) and was only partly
 // analysed; what was found is still returned.
