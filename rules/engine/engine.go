@@ -452,7 +452,10 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 		proj.scanning = path
 		defer func() { proj.scanning = "" }()
 		// The project's work cap, checked before each file: where calls stop
-		// crossing files depends on the files and their order, not on time.
+		// crossing files depends on the files and their order, not on time. It
+		// is passed by at most one file's calls pass, itself capped per rule
+		// (MaxCallWork); what work does not count (relevance, the call graph)
+		// is bounded by the project's safety clock, an audit's time left.
 		if proj.stopped == "" && proj.work >= proj.opt.MaxWork {
 			proj.stop("following calls across files reached the project's work cap", CutProjectWork)
 		}
