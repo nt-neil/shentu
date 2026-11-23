@@ -2,6 +2,11 @@ package main
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
+	"runtime"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -62,5 +67,34 @@ func TestAccountsUnchecked(t *testing.T) {
 	}
 	if got := accountsUnchecked(tools.Accounts{NotRead: []string{"sudoers"}}); got != "" {
 		t.Errorf("sudoers only: %q", got)
+	}
+}
+
+// M0: on macOS the default watched paths are macOS's own (/etc is
+// /private/etc; Homebrew; launchd jobs).
+func TestMacDefaultWatchPaths(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("macOS only")
+	}
+	p := filepath.Join(t.TempDir(), "shentu.toml")
+	os.WriteFile(p, []byte("state_dir = "+strconv.Quote(t.TempDir())+"\n"), 0o600)
+	cfg, err := loadConfig(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, w := range []string{"/private/etc", "/opt/homebrew/bin", "/Library/LaunchDaemons"} {
+		if !slices.Contains(cfg.Tools.WatchPaths, w) {
+			t.Errorf("watch paths %v lack %s", cfg.Tools.WatchPaths, w)
+		}
+	}
+}
+
+// N-183-1: file_changes' unread paths are "not checked"; none, nothing.
+func TestFileChangesUnchecked(t *testing.T) {
+	if got := fileChangesUnchecked(map[string]any{"unread": []string{"/var/root/.ssh"}}); !strings.Contains(got, "Not checked: file changes under 1 paths") {
+		t.Errorf("unread: %q", got)
+	}
+	if got := fileChangesUnchecked(map[string]any{"missing": []string{"/var/www"}}); got != "" {
+		t.Errorf("missing only: %q", got)
 	}
 }
