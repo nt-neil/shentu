@@ -964,6 +964,30 @@ func winWeb(ws WinSource, svcs []WinService, svcErr error) Obs[Web] {
 	return OK(w)
 }
 
+// IISFastCGI is the program of every FastCGI application IIS is configured
+// with (ParseIISFastCGI). No applicationHost.config is no IIS: none, no
+// error.
+func IISFastCGI(src Source) ([]string, error) {
+	ws, ok := src.(WinSource)
+	if !ok {
+		return nil, errors.New("not a Windows source")
+	}
+	root := `C:\Windows`
+	if v, err := ws.RegValues(KeyCurrentVersion); err == nil {
+		if r := strings.TrimRight(regString(v, "SystemRoot"), `\`); r != "" {
+			root = r
+		}
+	}
+	b, err := ws.ReadFile(root + winIISConfig)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return ParseIISFastCGI(b, root)
+}
+
 func findService(svcs []WinService, name string) (WinService, bool) {
 	for _, s := range svcs {
 		if strings.EqualFold(s.Name, name) {

@@ -29,6 +29,26 @@ Chinese for the zh-TW pages; keep the two in step.
   and `$wpdb->GET_RESULTS(...)` are `php-sqli-wpdb-unprepared`'s sinks, `$wpdb->Prepare(...)`
   cleans, and `DB::RAW(...)` is a sink; a variable keeps its case (`$WPDB` is not `$wpdb`).
 
+- The host survey checks PHP against php.net's releases of 2026-11-19 (8.2.36, 8.3.37, 8.4.28,
+  8.5.13; 8.6.0 and later are fixed). The version is the one each PHP binary names itself with
+  (`php`, `php-fpm`, `php-cgi` and their versioned names, in the distributions' places,
+  `/usr/local` as in the official Docker images, Remi's `/opt/remi`, cPanel's `/opt/cpanel/ea-php*`
+  and CloudLinux's `/opt/alt/php*`), read from the file, not by running it; on Windows, the
+  `php-cgi.exe` IIS runs as a FastCGI application. This covers PHP the package scan does not see:
+  deb.sury.org, the ondrej PPA, Remi's repository, an rpm whose vendor is not the distribution's
+  (IUS, cPanel), Docker images, builds from source and IIS. A binary naming several versions, a
+  program with none, and a FastCGI path that is not a local absolute one are named as not
+  checked. As for nginx, a package whose changelog names a CVE is not warned
+  about for it. CVE-2026-129291 and CVE-2026-129289 are warned about only when php-fpm runs, and
+  CVE-2026-129292 (the status page) only when a pool's `pm.status_path` can be reached from
+  outside: its socket takes connections from other hosts, or nginx (in a server not listening on
+  127.0.0.1 only) or Apache passes the path on to FPM without `deny all` or `Require local`. Each
+  branch reads its own pools; includes are followed and comments left out. CVE-2026-129538 is warned about only when php-cgi
+  runs or IIS runs it. The other fourteen are one line by version. A branch php.net no longer
+  fixes (before 8.2) is noted only when no distribution package holds it, and what could not be
+  read (the process list, a configuration file, IIS's configuration) is named in a line saying
+  which of these could not be checked.
+
 ## v0.5.5 — 2026-11-23
 
 - What a dispatch in progress has already used no longer counts twice near the budget limit: its
