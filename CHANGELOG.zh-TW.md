@@ -7,7 +7,8 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 
 - macOS：`ssh_logins`（以及巡檢的 SSH 檢查）現在從 unified log 讀取 sshd 的登入紀錄（`/usr/bin/log show --info --style ndjson`），計數方式和 Linux 相同，並標為 verified（已驗證）：只算 sshd-session 或 sshd 本身程式路徑、而且由 root 記下（userID 0）的紀錄。
   這兩點已在 macOS 15 的 VM 上確認：有人把程式複製到 /tmp 並取同樣的名字，記下的是它自己的路徑；使用者用自己的設定執行系統的 sshd，記下的是那個使用者的 ID，不是 0。
-  沒有算進來的紀錄，會在結果的 source 寫明筆數和原因（`not_logged_by_root`、`not_sshd_image`、`unreadable_event`）。
+  沒有算進來的紀錄，會在結果的 source 寫明筆數和原因（`not_logged_by_root`、`not_sshd_image`、`no_user_id`、`unreadable_event`）。
+  紀錄沒有 userID 或讀不懂，或是輸出缺少 log show 最後的結束行時，結果會標成不完整（算到的次數只是下限），不會當成完整但次數較少的結果。
   這份 log 只有 root 和 admin 群組讀得到；其他帳號會得到寫明原因的權限錯誤，不會回空結果。
 - macOS：`log_search` 預設讀取 macOS 的文字 log（system.log、install.log）。Homebrew 的 nginx 和 Apache log 不在預設裡，因為這些目錄屬於一般使用者，可以在裡面建連結指到 root 的檔案；要讀的話請自己加進設定。
   放在 /var 的 log 現在可以用 log_paths 寫的路徑讀取（macOS 的 /var 是連到 /private/var 的連結，以前這種路徑會被拒絕）。有一個以上 hard link 的 log 檔會被拒讀，因為連到 log 目錄的 root 專用檔案看起來也是這樣。
