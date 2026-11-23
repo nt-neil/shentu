@@ -34,6 +34,16 @@ Chinese for the zh-TW pages; keep the two in step.
   (netstat or lsof, and ps; no root needed) instead of Linux's /proc, which found nothing there and
   looked like a host with nothing running. An unreadable table is an error, and a partial one says so.
 
+- macOS and Windows: `block_ip` is refused as `unsupported` before any check. From Telegram on macOS
+  it used to read up to a month of the unified log (about two minutes) before refusing a block that
+  nftables cannot make there.
+- Proposal buttons (Linux): the checks run before the buttons are sent end together within 90
+  seconds; a proposal not checked by then is listed as `timeout`, without a button, instead of
+  holding back every button. A check of the dispatch archive cut short by its time limit is
+  `timeout` too, not `state_error`. One address's SSH logins are read once for the archive, the
+  buttons and Telegram's precheck (the answer is reused for two minutes); `block_ip` itself reads
+  them again when it runs.
+
 ## v0.5.3 (unreleased)
 
 - A proposal button pressed always gets an answer (#163): it says at once that it checks the

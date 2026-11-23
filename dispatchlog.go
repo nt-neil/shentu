@@ -232,7 +232,8 @@ var (
 	recReasons  = map[string]bool{reasonOK: true, reasonStepLimit: true, reasonTokenCap: true, reasonBudget: true, reasonTimeout: true,
 		reasonModelError: true, reasonBadReport: true, reasonSaidNot: true, reasonUnsupported: true, reasonOther: true}
 	recGates = map[tools.BlockCode]bool{"": true, tools.BlockOK: true, tools.BlockUnverified: true, tools.BlockOverflow: true, tools.BlockWeak: true,
-		tools.BlockInternal: true, tools.BlockLockout: true, tools.BlockNotCanonical: true, tools.BlockNoEvidence: true, tools.BlockStateError: true}
+		tools.BlockInternal: true, tools.BlockLockout: true, tools.BlockNotCanonical: true, tools.BlockNoEvidence: true, tools.BlockStateError: true,
+		tools.BlockTimeout: true, tools.BlockUnsupported: true}
 )
 
 // check is the record's field checks: every word one of its enumeration,

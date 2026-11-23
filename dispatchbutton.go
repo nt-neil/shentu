@@ -47,6 +47,10 @@ type buttonSet struct {
 	Used map[int]bool   `json:"used,omitempty"`
 }
 
+// offerCheckTimeout bounds the checks offerProposals runs before it sends
+// the buttons (a var for tests).
+var offerCheckTimeout = 90 * time.Second
+
 // The checks and the block itself; tests replace them.
 var (
 	blockCheck = tools.RemoteBlockCheck
@@ -86,9 +90,13 @@ func (b *bot) offerProposals(ctx context.Context, chat int64, id, owner, origin 
 	var lines, unsaved []string // unsaved: the lines if the buttons cannot be kept
 	var rows [][]map[string]string
 	set := &buttonSet{Pair: owner, At: rec.TS, IPs: map[int]string{}}
+	// The checks of all proposals together end by offerCheckTimeout: one
+	// not done by then is listed as timeout, without a button.
+	cctx, cancel := context.WithTimeout(ctx, offerCheckTimeout)
+	defer cancel()
 	for _, s := range rec.Subs {
 		for _, p := range s.Proposals {
-			_, ip, code := b.proposalCode(ctx, p)
+			_, ip, code := b.proposalCode(cctx, p)
 			addr := detect.Printable(p.IP)
 			switch {
 			case code != tools.BlockOK:
@@ -319,4 +327,6 @@ var blockWords = map[tools.BlockCode][2]string{
 	tools.BlockNotCanonical: {"the address was written another way (not_canonical)", "位址寫法不標準（not_canonical）"},
 	tools.BlockNoEvidence:   {"no verified evidence (no_evidence)", "沒有查證過的證據（no_evidence）"},
 	tools.BlockStateError:   {"the records could not be read (state_error)", "紀錄讀不到（state_error）"},
+	tools.BlockTimeout:      {"not checked in time (timeout)", "來不及檢查（timeout）"},
+	tools.BlockUnsupported:  {"blocking does not work on this platform (unsupported)", "這個平台不支援封鎖（unsupported）"},
 }

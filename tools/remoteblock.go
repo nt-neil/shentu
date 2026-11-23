@@ -22,6 +22,8 @@ const (
 	BlockNotCanonical BlockCode = "not_canonical" // the proposal's address was not written in canonical form
 	BlockNoEvidence   BlockCode = "no_evidence"   // no group lists it and sshd logged no logins from it
 	BlockStateError   BlockCode = "state_error"   // the attack state or the logs could not be read
+	BlockTimeout      BlockCode = "timeout"       // the check ran out of time before it could tell
+	BlockUnsupported  BlockCode = "unsupported"   // block_ip does not work on this platform (nftables is Linux's)
 )
 
 // codedError is a refusal with its BlockCode; Error is the message as it
@@ -80,6 +82,7 @@ func RemoteBlockCheck(ctx context.Context, env *Env, ip net.IP) (preview string,
 	if ip == nil {
 		return "", BlockNotCanonical, errors.New("not an IP address")
 	}
+	ctx = withLoginMemo(ctx) // a read-only check: the same address's logins are read once
 	remote := Env{Remote: true}
 	if env != nil {
 		remote = *env

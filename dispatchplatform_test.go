@@ -20,6 +20,7 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	hostGOOS = "linux"
+	tools.HostGOOS = "linux" // block_ip as on Linux; the platform tests switch it
 	os.Exit(m.Run())
 }
 
