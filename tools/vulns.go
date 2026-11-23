@@ -77,10 +77,11 @@ func packageVulnsAll(ctx context.Context, hc *http.Client, detailFor string) (ma
 		out, err := macOSVulns(ctx, hc)
 		return out, nil, err
 	}
-	eco, feed, items, setPartial, err := installedSet(ctx)
+	eco, feed, set, setPartial, err := installedSet(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
+	items := set.Items
 	pkgs := pkgsOf(items)
 	if len(pkgs) == 0 { // a package list that parsed to nothing is not "no vulnerabilities"
 		return nil, nil, fmt.Errorf("cannot tell: no installed packages were read from the %s package list", eco)
@@ -171,6 +172,7 @@ func packageVulnsAll(ctx context.Context, hc *http.Client, detailFor string) (ma
 	if feed.Note != "" {
 		out["ecosystems_note"] = feed.Note
 	}
+	thirdPartyOut(out, set)
 	if len(feed.Ecosystems) > 1 { // SUSE: one per module; ecosystem shows the first only
 		out["ecosystems"] = feed.Ecosystems
 	}
@@ -539,11 +541,11 @@ func upgradeHint(eco string) string {
 // (Debian, Ubuntu, Alpine, Rocky, Alma, SUSE, openSUSE) or ALAS (Amazon
 // Linux). eco names the distribution in the result.
 func installedPackages(ctx context.Context) (string, hostenv.PatchFeed, []pkg, error) {
-	eco, feed, items, _, err := installedSet(ctx)
+	eco, feed, set, _, err := installedSet(ctx)
 	if err != nil {
 		return "", feed, nil, err
 	}
-	return eco, feed, pkgsOf(items), nil
+	return eco, feed, pkgsOf(set.Items), nil
 }
 
 // pkgsOf names each item as the security feed does (dpkg's source
@@ -563,15 +565,15 @@ func pkgsOf(items []hostenv.Package) []pkg {
 // installedSet is the package fact as collected: every item (several
 // versions of one name, with their architecture) and the feed (with the
 // amazon-linux-extras topics on Amazon Linux 2).
-func installedSet(ctx context.Context) (string, hostenv.PatchFeed, []hostenv.Package, string, error) {
+func installedSet(ctx context.Context) (string, hostenv.PatchFeed, hostenv.PackageSet, string, error) {
 	_, osr := hostPlatform()
 	id, ver := osr["ID"], osr["VERSION_ID"]
 	feed := hostenv.PatchFeedFor(osr)
 	if feed.Kind == "" {
 		if id == "amzn" {
-			return "", feed, nil, "", errors.New("cannot tell: Amazon Linux " + ver + " is past its end of life and has no security feed here")
+			return "", feed, hostenv.PackageSet{}, "", errors.New("cannot tell: Amazon Linux " + ver + " is past its end of life and has no security feed here")
 		}
-		return "", feed, nil, "", errors.New("unsupported distribution for package_vulns: " + id + " " + ver)
+		return "", feed, hostenv.PackageSet{}, "", errors.New("unsupported distribution for package_vulns: " + id + " " + ver)
 	}
 	eco := ""
 	if len(feed.Ecosystems) > 0 {
@@ -586,7 +588,7 @@ func installedSet(ctx context.Context) (string, hostenv.PatchFeed, []hostenv.Pac
 		if cmd == "" {
 			cmd = "packages"
 		}
-		return "", feed, nil, "", fmt.Errorf("%s: %s", cmd, set.Detail)
+		return "", feed, hostenv.PackageSet{}, "", fmt.Errorf("%s: %s", cmd, set.Detail)
 	}
 	if set.Value.Feed != nil {
 		feed = *set.Value.Feed
@@ -595,7 +597,39 @@ func installedSet(ctx context.Context) (string, hostenv.PatchFeed, []hostenv.Pac
 	if set.Status == hostenv.StatusPartial {
 		partial = set.Detail
 	}
-	return eco, feed, set.Value.Items, partial, nil
+	return eco, feed, set.Value, partial, nil
+}
+
+// thirdPartyOut names the packages that came from a repository other than
+// the distribution's. OSV publishes the distribution's packages only, so
+// these were compared as if the distribution had built them and matched
+// nothing: that silence is not "no vulnerabilities", and says so.
+func thirdPartyOut(out map[string]any, set hostenv.PackageSet) {
+	type thirdParty struct {
+		Package string `json:"package"`
+		Version string `json:"version"`
+		Origin  string `json:"origin"`
+		FoundBy string `json:"found_by"`
+	}
+	var tp []thirdParty
+	for _, it := range set.Items {
+		if it.Origin != "" {
+			tp = append(tp, thirdParty{it.Name, it.Version, it.Origin, it.OriginBy})
+		}
+	}
+	if len(tp) > 0 {
+		out["third_party_unchecked"] = tp
+		out["third_party_note"] = fmt.Sprintf("%d package(s) came from other repositories than the distribution's; OSV does not cover them, so they were not checked against their own advisories", len(tp))
+	}
+	if len(set.ThirdParty) > 0 {
+		out["third_party_repositories"] = set.ThirdParty
+		if len(tp) == 0 {
+			out["third_party_note"] = "third-party repositories are configured, but which packages they installed is unknown: those packages were checked as the distribution's own, and may not be covered"
+		}
+	}
+	if len(set.OriginNotes) > 0 {
+		out["origin_unread"] = set.OriginNotes
+	}
 }
 
 func uniq(in []pkg) []pkg {

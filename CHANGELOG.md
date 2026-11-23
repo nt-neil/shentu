@@ -81,6 +81,22 @@ Chinese for the zh-TW pages; keep the two in step.
   the English list. Findings from the tools (survey risks, changes since the last survey, the code
   audit) are still in English.
 
+- The package vulnerability check (`vulns`) names the packages that came from a repository other
+  than the distribution's, as `third_party_unchecked` with the repository and how it was told
+  apart. OSV covers the distribution's packages only, so these were compared as if the
+  distribution had built them and matched nothing: that silence is not "no vulnerabilities".
+  A package is told apart by its version (deb.sury.org's `+deb.sury.org`, nginx.org's
+  `-N~codename`), by the package index of a third-party apt repository, or by an rpm vendor that
+  is not the distribution's. Third-party repositories (apt, and Alpine repositories other than
+  main, community and testing) are listed in `third_party_repositories`; when one is configured but its
+  packages cannot be told apart, a note says so. A flat repository (a `Packages` with no `Release`)
+  is third party. An rpm vendor counts as the distribution's only on that distribution (Oracle's
+  MySQL packages on Rocky are third party). Indexes that could not be read, or rpm vendor output
+  cut short, are listed in `origin_unread`. An Origin, a vendor and a repository path are written
+  by whoever publishes the repository, so a third-party repository that names itself after the
+  distribution is taken for it: this check can only add packages to the list, never show that a
+  package is the distribution's.
+
 ### Known issues
 
 - No host check writes CVE-2024-4577 into the surface yet (PHP-CGI on Windows), so on a real host
