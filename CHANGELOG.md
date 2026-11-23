@@ -6,6 +6,16 @@ a release are not written here: they are worked out from the rule snapshots in
 `docs/site-src/rules-history/`. `CHANGELOG.zh-TW.md` holds the same releases in Traditional
 Chinese for the zh-TW pages; keep the two in step.
 
+## v0.5.6 (unreleased)
+
+- A file cut short says what cut it (#172). The code audit's unfinished files carry a `cause`:
+  the token cap, the file's time limit, nesting, a rule's work cap for following calls, the
+  project's cap (its time, memory or tokens), a call that may reach another file with no one
+  callee to follow, or a callee's summary cut short (with why: its own work cap, a chain of
+  summaries too long, too many parameters, or a cut inside it). The CVE bench counts files whose
+  calls were not all followed, which it did not count before, and lists cuts by cause.
+
+
 ## v0.5.5 — 2026-11-23
 
 - What a dispatch in progress has already used no longer counts twice near the budget limit: its
