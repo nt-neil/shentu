@@ -21,6 +21,12 @@ import (
 // compared as if the distribution had built it and nothing matches. The
 // origin lets the check say the package was not checked, instead of
 // letting silence read as "no vulnerabilities".
+//
+// What tells a distribution's package apart (an apt Release's Origin, an
+// rpm vendor, an apk repository path) is written by whoever publishes the
+// repository: a third-party repository that calls itself Debian is taken
+// for Debian. So the origin can only add packages to the "not checked"
+// list; it never shows that a package is the distribution's.
 
 // AptListsDir holds apt's downloaded indexes: one Release or InRelease per
 // repository and one Packages per component, named after the URL.
@@ -35,6 +41,9 @@ const RpmVendorFormat = "%{NAME}\t%{EPOCHNUM}:%{VERSION}-%{RELEASE}\t%{VENDOR}\n
 
 var rpmVendorArgv = []string{"/usr/bin/rpm", "-qa", "--qf", RpmVendorFormat}
 
+// rpm -qa lists every package, as rpmArgv does: the same output cap and time.
+func init() { registerBig(rpmVendorArgv, 16<<20, MaxTimeout) }
+
 // How an origin was found.
 const (
 	OriginByIndex   = "apt-index" // the installed version is in that repository's Packages
@@ -43,9 +52,10 @@ const (
 )
 
 // aptDistroOrigin: the Origin field of the distributions' own archives
-// (Debian, Debian security and backports, Ubuntu, Ubuntu ESM).
+// (Debian and Debian security, Debian Backports, Ubuntu with its security
+// and backports, Ubuntu ESM).
 func aptDistroOrigin(o string) bool {
-	return o == "Debian" || o == "Ubuntu" || strings.HasPrefix(o, "UbuntuESM")
+	return o == "Debian" || o == "Debian Backports" || o == "Ubuntu" || strings.HasPrefix(o, "UbuntuESM")
 }
 
 // AptReleaseOrigin is the Origin field of a Release or InRelease file,
@@ -118,6 +128,7 @@ func aptOrigins(src Source, items []Package) (repos []string, notes []string) {
 		notes = append(notes, AptListsDir+" ("+string(Classify(err))+")")
 	}
 	origin := map[string]string{} // list prefix -> third-party Origin
+	released := map[string]bool{} // list prefixes with a Release or InRelease, read or not
 	for _, n := range names {
 		prefix, ok := strings.CutSuffix(n, "_InRelease")
 		if !ok {
@@ -125,9 +136,10 @@ func aptOrigins(src Source, items []Package) (repos []string, notes []string) {
 				continue
 			}
 		}
-		if _, dup := origin[prefix]; dup {
+		if released[prefix] {
 			continue
 		}
+		released[prefix] = true
 		b, err := src.ReadFile(AptListsDir + "/" + n)
 		if err != nil {
 			notes = append(notes, AptListsDir+"/"+n+" ("+string(Classify(err))+")")
@@ -153,8 +165,20 @@ func aptOrigins(src Source, items []Package) (repos []string, notes []string) {
 				prefix, o = p, po
 			}
 		}
-		if prefix == "" || !strings.Contains(n, "_Packages") {
+		if !strings.Contains(n, "_Packages") {
 			continue
+		}
+		if prefix == "" {
+			if aptReleased(released, n) {
+				continue // the distribution's
+			}
+			// No Release at all: a flat repository apt only installs from
+			// with [trusted=yes]. Every archive of a distribution has a
+			// Release, so this one is a third party, named by its host.
+			o, _, _ = strings.Cut(n, "_")
+			if !slices.Contains(repos, o) {
+				repos = append(repos, o)
+			}
 		}
 		p := AptListsDir + "/" + n
 		var r io.Reader
@@ -202,35 +226,48 @@ func aptOrigins(src Source, items []Package) (repos []string, notes []string) {
 	return repos, notes
 }
 
-// rpmDistroVendors are the vendors of the distributions' own rpm packages,
-// matched case-insensitively as substrings. EPEL's "Fedora Project" is a
-// third party on every distribution but Fedora.
-var rpmDistroVendors = []string{"red hat", "rocky", "almalinux", "amazon", "centos", "oracle", "suse", "openanolis", "openeuler", "eurolinux", "cybertrust"}
-
-func rpmDistroVendor(vendor, osID string) bool {
-	v := strings.ToLower(vendor)
-	if strings.Contains(v, "fedora") {
-		return osID == "fedora"
-	}
-	for _, d := range rpmDistroVendors {
-		if strings.Contains(v, d) {
+// aptReleased: the Packages file n belongs to a repository with a Release.
+func aptReleased(released map[string]bool, n string) bool {
+	for p := range released {
+		if strings.HasPrefix(n, p+"_") {
 			return true
 		}
 	}
 	return false
 }
 
+// rpmDistroVendors is, by os-release ID, the vendor of that distribution's
+// own rpm packages, matched case-insensitively as a substring. Only the
+// host's own distribution counts: Oracle's MySQL packages on Rocky, or
+// Amazon's agents on RHEL, are third party; so is EPEL ("Fedora Project")
+// everywhere but Fedora.
+var rpmDistroVendors = map[string]string{
+	"rhel": "red hat", "centos": "centos", "rocky": "rocky", "almalinux": "almalinux", "ol": "oracle",
+	"amzn": "amazon", "fedora": "fedora", "anolis": "openanolis", "openEuler": "openeuler",
+	"eurolinux": "eurolinux", "miraclelinux": "cybertrust",
+	"sles": "suse", "sled": "suse", "sle-micro": "suse", "opensuse-leap": "suse", "opensuse-tumbleweed": "suse",
+}
+
+func rpmDistroVendor(vendor, osID string) bool {
+	d, ok := rpmDistroVendors[osID]
+	return ok && strings.Contains(strings.ToLower(vendor), d)
+}
+
 // rpmOrigins sets Origin on the packages whose rpm vendor is not the
 // distribution's. A package with no vendor was built locally or by hand:
 // its origin is unknown, and it is named as such.
 func rpmOrigins(ctx context.Context, src Source, items []Package, osID string) (notes []string) {
+	if _, ok := rpmDistroVendors[osID]; !ok {
+		return []string{"rpm vendors (not judged: no known vendor for " + osID + ")"}
+	}
 	res, err := src.Run(ctx, rpmVendorArgv)
+	cut := res.Truncated || errors.Is(err, ErrTruncated) // what was read is used, the rest said
 	switch {
 	case errors.Is(err, ErrNotRecorded):
 		return nil
-	case err != nil:
+	case err != nil && !cut:
 		return []string{"rpm vendors (" + string(Classify(err)) + ")"}
-	case res.ExitCode != 0:
+	case res.ExitCode != 0 && !cut:
 		return []string{"rpm vendors (exit " + strconv.Itoa(res.ExitCode) + ")"}
 	}
 	vendor := map[string]string{}
@@ -240,9 +277,13 @@ func rpmOrigins(ctx context.Context, src Source, items []Package, osID string) (
 			vendor[f[0]+"\x00"+f[1]] = f[2]
 		}
 	}
+	missed := 0
 	for i := range items {
 		it := &items[i]
 		v, ok := vendor[it.Name+"\x00"+it.Version]
+		if !ok && cut && it.Name != "gpg-pubkey" {
+			missed++
+		}
 		switch {
 		case !ok || it.Name == "gpg-pubkey" || rpmDistroVendor(v, osID):
 		case v == "" || v == "(none)":
@@ -250,6 +291,9 @@ func rpmOrigins(ctx context.Context, src Source, items []Package, osID string) (
 		default:
 			it.Origin, it.OriginBy = v, OriginByVendor
 		}
+	}
+	if missed > 0 {
+		return []string{"rpm vendors (output cut short: " + strconv.Itoa(missed) + " packages not told apart, checked as the distribution's)"}
 	}
 	return nil
 }

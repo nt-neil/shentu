@@ -16,8 +16,13 @@ Chinese for the zh-TW pages; keep the two in step.
   `-N~codename`), by the package index of a third-party apt repository, or by an rpm vendor that
   is not the distribution's. Third-party repositories (apt, and Alpine repositories other than
   main, community and testing) are listed in `third_party_repositories`; when one is configured but its
-  packages cannot be told apart, a note says so. Indexes that could not be read are listed in
-  `origin_unread`.
+  packages cannot be told apart, a note says so. A flat repository (a `Packages` with no `Release`)
+  is third party. An rpm vendor counts as the distribution's only on that distribution (Oracle's
+  MySQL packages on Rocky are third party). Indexes that could not be read, or rpm vendor output
+  cut short, are listed in `origin_unread`. An Origin, a vendor and a repository path are written
+  by whoever publishes the repository, so a third-party repository that names itself after the
+  distribution is taken for it: this check can only add packages to the list, never show that a
+  package is the distribution's.
 
 ## v0.5.4 — 2026-11-23
 
