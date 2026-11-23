@@ -48,7 +48,6 @@ Engine.routeRefs	c.requires	1			SAFE	Boolean any over required names.
 Engine.routeRefs	templateNames(args[0])	1			SORTED	ref.Names is slices.Sort-ed right after the loop.
 Project.resolveRoutes	p.files	1			SORTED	Collects paths; slices.Sort(paths) before resolving and appending to routeTo.
 analysis.sourceOnly	s.srcVals	1			SAFE	Writes the same entry under distinct keys per value; order-independent.
-Project.hold	sums	1			SORTED	root.members gets keys in map order, but settle() sorts members by (file,key) and compacts before working the cycle; other users (drop, inUse) are order-free. Caveat: SortFunc is unstable, so among equal (file,key) members with different *analysis the kept one could follow input order, though members from this loop all share fr.a.
 analysis.captured	ns.free	1			SAFE	Boolean any.
 analysis.scopesOf	nonloc	1		value resolve	SAFE	Sets ns.free[...] = true; order-independent. The call not followed is the local closure resolve, which only reads.
 aliasesOf	st	1			SAFE	Result order is unused: callers check len, or treat each alias independently (urlChanged reads/deletes/writes only that alias's own keys; alias pair writes are symmetric).
