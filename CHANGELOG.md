@@ -6,6 +6,27 @@ a release are not written here: they are worked out from the rule snapshots in
 `docs/site-src/rules-history/`. `CHANGELOG.zh-TW.md` holds the same releases in Traditional
 Chinese for the zh-TW pages; keep the two in step.
 
+## v0.5.6 (unreleased)
+
+- block_ip's check of an address's SSH logins no longer reads a month of journal each time. The
+  login events of sshd's units (ssh, sshd, and the socket-activated ssh@ and sshd@) are kept per
+  address in `loginindex.json` in the state directory (0600, written whole and renamed in place),
+  and each check, and the patrol every hour, reads on from the journal cursor where the last read
+  stopped. The rules are the same: an address's events count only when sshd itself (`_COMM` sshd or
+  sshd-session, `_UID` 0) wrote every one of them in the window (the last day if it has any there,
+  else 720 hours), and the text logs are read as before for an address journald has none of.
+  On a VM journal of 1.2 million entries one check had read for about 37 seconds.
+- The index never answers for what it has not read: with no index (the first run, a file of an
+  older format) it starts from 720 hours back, and a window it does not reach back to is read whole,
+  as before. When the journal has dropped the cursor's entry (rotated, vacuumed, or flooded by an
+  attacker) the index reads on by time from that entry, and a window reaching back past the first
+  entry it found is refused as not read in full. A read cut short by the check's time keeps what it
+  read, so a flooded journal is read through over the checks, each within its time. Past 65,536
+  addresses the others' events are counted together, and an address that may be among them is
+  refused, never let through.
+- A ✅ press whose checks ran out of time is refused as not checked in time (`timeout`), no longer as
+  records that could not be read (`state_error`).
+
 ## v0.5.5 (unreleased)
 
 - macOS: `ssh_logins` (and the patrol's SSH check) reads sshd's login events from the unified log

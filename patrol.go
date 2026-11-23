@@ -445,6 +445,7 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 		return err
 	}
 	st := loadState(cfg.StateDir)
+	tools.RefreshLoginIndex(ctx) // block_ip's login check then reads only the last hour
 	all, sshUnchecked := checks(ctx, cfg, env, st, daily)
 	unchecked := uncheckedSection(st.Profile.Risks) + sshUnchecked // listed in every report, never pushed
 	if daily {

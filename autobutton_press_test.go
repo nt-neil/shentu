@@ -80,7 +80,8 @@ func pressTexts(tg *fakeTelegram, n int) []string {
 }
 
 // A press whose checks hang is answered at once, then refused when they
-// run out of time; it is never left without an answer.
+// run out of time, as not checked in time (timeout), not as records that
+// could not be read; it is never left without an answer.
 func TestProposalPressCheckHangs(t *testing.T) {
 	b, tg, _, _, data := offerOne(t, propRec(proposalRecord{IP: "203.0.113.1"}))
 	old, oldT := blockCheck, pressCheckTimeout
@@ -98,13 +99,13 @@ func TestProposalPressCheckHangs(t *testing.T) {
 	}
 	answered(t, b)
 	got := pressTexts(tg, n)
-	if len(got) < 2 || !strings.Contains(got[len(got)-1], b.blockWord(tools.BlockStateError)) {
+	if len(got) < 2 || !strings.Contains(got[len(got)-1], b.blockWord(tools.BlockTimeout)) || strings.Contains(got[len(got)-1], b.blockWord(tools.BlockStateError)) {
 		t.Errorf("after the checks ran out of time: %q", got)
 	}
 	var press, refused bool
 	for _, e := range auditLines(t, b.cfg.StateDir) {
 		press = press || e.Tool == "proposal_press"
-		refused = refused || e.Tool == "block_ip" && strings.Contains(e.Error, "state_error")
+		refused = refused || e.Tool == "block_ip" && strings.Contains(e.Error, "refused at press: timeout")
 	}
 	if !press || !refused {
 		t.Errorf("log: press %v, refused %v", press, refused)

@@ -32,6 +32,38 @@ func init() {
 	for _, a := range journalUnitArgvs() {
 		registerBig(a, 0, JournalTimeout)
 	}
+	for _, a := range sshJournalArgvs() {
+		registerBig(a, 0, JournalTimeout)
+	}
+}
+
+// sshJournalArgv is the read of sshd's units, the socket-activated ones
+// (ssh@, sshd@) with them, as JSON: after a cursor or since a time, with
+// --output-fields or without (as journalUnitArgv).
+func sshJournalArgv(bin string, after, fields bool) []string {
+	a := []string{bin, "-u", "ssh", "-u", "sshd", "-u", "ssh@*", "-u", "sshd@*"}
+	if after {
+		a = append(a, "--after-cursor", SlotCursor)
+	} else {
+		a = append(a, "--since", SlotTime)
+	}
+	a = append(a, "-o", "json", "--all")
+	if fields {
+		a = append(a, journalFields)
+	}
+	return append(a, "--no-pager")
+}
+
+func sshJournalArgvs() [][]string {
+	var out [][]string
+	for _, bin := range []string{"/usr/bin/journalctl", "/bin/journalctl"} {
+		for _, after := range []bool{true, false} {
+			for _, fields := range []bool{true, false} {
+				out = append(out, sshJournalArgv(bin, after, fields))
+			}
+		}
+	}
+	return out
 }
 
 // journalFields are the fields asked for: the message, and those journald
@@ -117,6 +149,24 @@ var ErrStopJournal = errors.New("hostenv: journal read stopped")
 // read without it. A journal hiding the system's entries from this user is
 // a permission error, not an empty journal.
 func ReadJournal(ctx context.Context, src Source, unit, after string, since time.Time, fn func(JournalEntry) error) (last string, err error) {
+	return readJournal(ctx, src, after, since, func(bin string, fields bool) []string {
+		argv := journalUnitArgv(bin, after != "", fields)
+		argv[2] = unit
+		return argv
+	}, fn)
+}
+
+// ReadSSHJournal is ReadJournal over sshd's units (ssh, sshd, and the
+// socket-activated ssh@ and sshd@ instances) in one read.
+func ReadSSHJournal(ctx context.Context, src Source, after string, since time.Time, fn func(JournalEntry) error) (last string, err error) {
+	return readJournal(ctx, src, after, since, func(bin string, fields bool) []string {
+		return sshJournalArgv(bin, after != "", fields)
+	}, fn)
+}
+
+// readJournal runs the read argvFor gives (its cursor or time slot filled
+// in here), as ReadJournal says.
+func readJournal(ctx context.Context, src Source, after string, since time.Time, argvFor func(bin string, fields bool) []string, fn func(JournalEntry) error) (last string, err error) {
 	ctx, cancel := context.WithTimeout(ctx, JournalTimeout)
 	defer cancel()
 	var stop, bad error
@@ -148,12 +198,14 @@ func ReadJournal(ctx context.Context, src Source, unit, after string, since time
 		last, n = e.Cursor, n+1
 	}
 	run := func(bin string, fields bool) (CmdResult, error) {
-		argv := journalUnitArgv(bin, after != "", fields)
-		argv[2] = unit
-		if after != "" {
-			argv[4] = after
-		} else {
-			argv[4] = since.UTC().Format("2006-01-02 15:04:05") + " UTC" // journalctl reads a bare time as local
+		argv := argvFor(bin, fields)
+		for i, a := range argv {
+			switch a {
+			case SlotCursor:
+				argv[i] = after
+			case SlotTime:
+				argv[i] = since.UTC().Format("2006-01-02 15:04:05") + " UTC" // journalctl reads a bare time as local
+			}
 		}
 		res, err := RunLinesCut(ctx, src, argv, MaxJournalLine, line)
 		if err == nil && res.ExitCode != 0 {

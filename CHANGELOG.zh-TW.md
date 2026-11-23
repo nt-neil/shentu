@@ -3,6 +3,17 @@
 CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本與日期必須一致，
 每個版本都要有內容（`go test ./cmd/sitegen` 會檢查）。
 
+## v0.5.6 (unreleased)
+
+- block_ip 檢查一個位址的 SSH 登入時，不再每次都讀一個月的 journal。sshd 那幾個 unit（ssh、sshd，以及 socket 啟動的 ssh@、sshd@）的登入紀錄，會按位址記在 state 目錄的 `loginindex.json`（權限 0600，整份寫完再換上）；每次檢查和每小時的巡檢，都從上次讀到的 journal cursor 接著讀。
+  判斷規則不變：一個位址在時間範圍內（最近一天有紀錄就看最近一天，否則看 720 小時）的每一筆紀錄，都要是 sshd 自己寫的（`_COMM` 是 sshd 或 sshd-session，`_UID` 是 0），才算數；journald 裡沒有紀錄的位址，照舊去讀文字 log。
+  在 VM 上一份 1,200,000 筆的 journal，原本一次檢查要讀大約 37 秒。
+- 沒讀到的部分，索引不會替它回答：沒有索引時（第一次執行，或檔案是舊的格式），從 720 小時前開始讀；索引沒有讀到的時間範圍，照舊整段讀取。
+  journal 已經把 cursor 那一筆刪掉時（輪替、清理，或被攻擊者大量寫入），就從那一筆的時間接著讀；時間範圍開始在讀到的第一筆之前時，回答「讀不完整」，不放行封鎖。
+  讀到一半時間用完，已經讀到的部分會保留，下一次接著讀，所以被大量寫入的 journal 會在幾次檢查之間讀完，每一次都不超過時限。
+  位址超過 65,536 個時，其他位址的紀錄合在一起計算；可能在其中的位址一律不放行封鎖。
+- 按下 ✅ 後檢查來不及做完時，改成以「來不及檢查」（`timeout`）拒絕，不再說成「紀錄讀不到」（`state_error`）。
+
 ## v0.5.5 (unreleased)
 
 - macOS：`ssh_logins`（以及巡檢的 SSH 檢查）現在從 unified log 讀取 sshd 的登入紀錄（`/usr/bin/log show --info --style ndjson`），計數方式和 Linux 相同，並標為 verified（已驗證）：只算 sshd-session 或 sshd 本身程式路徑、而且由 root 記下（userID 0）的紀錄。

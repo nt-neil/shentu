@@ -161,6 +161,11 @@ func loginCheck(ctx context.Context, env *Env, ip net.IP) (verified bool, err er
 	if env != nil {
 		paths = env.LogPaths
 	}
+	// The key is the address and the log paths only. That holds because one
+	// process has one setting: what else decides the answer (the journal
+	// read, its caps, env.Remote) is the same for every check in it. A key
+	// that comes to vary with more of these (an index, other caps, Remote)
+	// must take them in too, or one setting's answer is given to another.
 	key := hostenv.CanonicalIP(ip.String()) + "\x00" + strings.Join(paths, "\x00")
 	if memo {
 		loginMemoMu.Lock()
@@ -191,9 +196,24 @@ func loginCheck(ctx context.Context, env *Env, ip net.IP) (verified bool, err er
 	return verified, err
 }
 
-// loginCheckRead is loginCheck's read of the logs.
+// loginCheckRead is loginCheck's read of the logs: from the login index
+// when it answers (loginindex.go), else by reading the whole window.
 func loginCheckRead(ctx context.Context, env *Env, ip net.IP) (verified bool, err error) {
 	want := hostenv.CanonicalIP(ip.String())
+	x, err := updateLoginIndex(ctx)
+	switch {
+	case err == nil:
+		seen, err := x.indexedLogins(ip, indexNow())
+		if errors.Is(err, errIndexDoesNotCover) {
+			break
+		}
+		if err != nil || seen {
+			return err == nil, err // seen, and sshd itself wrote every event in the window
+		}
+		return textLoginCheck(env, ip, want, false, "journald")
+	case !errors.Is(err, errNoLoginIndex) && ctx.Err() != nil: // the index read on as far as it could in the time: the next check goes on
+		return false, coded(BlockTimeout, fmt.Errorf("refusing to block %s: its SSH logins could not be read in time (%v)", ip, err))
+	}
 	var r map[string]any
 	seen, complete := false, false
 	var summarySince, summaryUntil time.Time // the window the summary last read
@@ -255,6 +275,13 @@ func loginCheckRead(ctx context.Context, env *Env, ip net.IP) (verified bool, er
 		}
 		return true, nil // sshd itself logged the IP: the text logs need not be read
 	}
+	return textLoginCheck(env, ip, want, seen, fmt.Sprint(r["source"]))
+}
+
+// textLoginCheck is the check of the text auth logs, when journald does not
+// show sshd itself logging ip: seen says the logins read had events for it
+// (unverified ones), source what they were read from.
+func textLoginCheck(env *Env, ip net.IP, want string, seen bool, source string) (verified bool, err error) {
 	text, files, unread := textLogins(env, want)
 	switch {
 	case len(unread) > 0:
@@ -264,7 +291,7 @@ func loginCheckRead(ctx context.Context, env *Env, ip net.IP) (verified bool, er
 		// (that is "journald" when journald had other sshd entries).
 		where := strings.Join(files, ", ")
 		if where == "" {
-			where = fmt.Sprint(r["source"])
+			where = source
 		}
 		return false, coded(BlockUnverified, fmt.Errorf("refusing to block %s: its SSH login events come from text logs (%s), which anyone on this host can write to, so they may be forged; check them (journalctl -u ssh, the IP's other traffic) and, if they are real, ask again with override_unverified", ip, where))
 	}
