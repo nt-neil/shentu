@@ -300,14 +300,12 @@ table.num .cid { font: 600 15px/1.4 var(--sans); }
 .era-node:hover, .era-node:focus-within { z-index: 4; }
 .era-node:hover :is(.lamp .ver, .lamp time, .acc), .era-node:focus-within :is(.lamp .ver, .lamp time, .acc) { background: var(--bg); }
 /* a release's lines show above its lamp on hover or focus; the newest stays open below the river */
-.peek { position: absolute; left: 0; bottom: 34px; transform: translate(-50%, 8px); width: 270px; padding: 14px 16px; border: 1px solid var(--line);
+/* the peek moves left by as much of its width as its lamp is across the river (--x %), so it stays inside the river at any width and for any lamp */
+.peek { position: absolute; left: 0; bottom: 34px; transform: translate(calc(var(--x) * -1%), 8px); width: 270px; padding: 14px 16px; border: 1px solid var(--line);
   /* when the lines overflow, a glow at the bottom edge says there is more; a cover riding the end of the content hides it once scrolled to the bottom */
   background: linear-gradient(var(--bg-2), var(--bg-2)) 0 100% / 100% 24px no-repeat local, linear-gradient(transparent, var(--glow)) 0 100% / 100% 24px no-repeat scroll, var(--bg-2); border-top: 2px solid var(--ember);
   opacity: 0; pointer-events: none; transition: opacity .3s, transform .3s; z-index: 3; font-size: 14px; max-height: 190px; overflow-y: auto; overscroll-behavior: contain; }
-.era-node:hover .peek, .era-node:focus-within .peek { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
-.era-node:nth-child(-n+2) .peek { transform: translate(-20%, 8px); } .era-node:nth-child(-n+2):hover .peek, .era-node:nth-child(-n+2):focus-within .peek { transform: translate(-20%, 0); }
-/* the newest node has no peek (its card is below), so the one before it is the rightmost: keep it inside the page */
-.era-node:nth-last-child(2) .peek { transform: translate(-80%, 8px); } .era-node:nth-last-child(2):hover .peek, .era-node:nth-last-child(2):focus-within .peek { transform: translate(-80%, 0); }
+.era-node:hover .peek, .era-node:focus-within .peek { opacity: 1; transform: translate(calc(var(--x) * -1%), 0); pointer-events: auto; }
 .peek .word { margin: 0 0 6px; font: 900 13px/1 var(--serif); letter-spacing: .14em; color: var(--ember); }
 html:not([lang^="zh"]) .peek .word { font-weight: 600; font-family: var(--sans); letter-spacing: .04em; }
 .peek ul { margin: 0; padding-left: 1.1em; } .peek li { margin: 3px 0; max-width: none; } .peek li::marker { color: var(--ember); }
