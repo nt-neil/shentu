@@ -49,16 +49,18 @@ type loginIndex struct {
 	// From: the index has every event of sshd's units since From (the
 	// first read's start).
 	From time.Time `json:"from"`
-	// UnreadableLast is the last entry in sshd's units that sshd did not
-	// write and that could not be read whole (cut for its length, or no
-	// message): it may be a forged event for any address, as the whole
-	// read would count it, so a window holding it is not verified.
+	// UnreadableLast is the last entry in sshd's units too long to read
+	// whole (past MaxSSHJournalMessage, which the whole read cannot read
+	// either and fails on): it may be an event for any address, so a
+	// window holding it is not verified.
 	UnreadableLast time.Time `json:"unreadable_last,omitzero"`
 	// JournalFrom: the journal has sshd's units' entries only from here on,
-	// the rest vacuumed after the index read them (set when the journal is
-	// found moved on past the cursor). The whole read sees nothing before
-	// it, so an address's events there do not make it seen; its forged ones
-	// still count against it (kept: only ever stricter).
+	// the rest vacuumed after the index read them (sshd's units' first
+	// entry, read at each read). The whole read sees nothing before it, so
+	// nothing the index kept from before it counts, for an address or
+	// against it: not its events, its forged ones, an unreadable entry, nor
+	// the overflow. The index answers as strictly as the whole read, and no
+	// more so for what that read cannot see.
 	JournalFrom time.Time `json:"journal_from,omitzero"`
 	// Notes say what the index met, the last maxLoginIndexNotes of them:
 	// the journal moving on past its cursor.
@@ -99,6 +101,11 @@ type loginIndexAddr struct {
 // readSSHJournal is hostenv.ReadSSHJournal (tests replace it).
 var readSSHJournal = func(ctx context.Context, from string, since time.Time, fn func(hostenv.JournalEntry) error) (string, error) {
 	return hostenv.ReadSSHJournal(ctx, hostSource(), from, since, fn)
+}
+
+// sshJournalFirst is hostenv.SSHJournalFirst (tests read their fake through it).
+var sshJournalFirst = func(ctx context.Context) (hostenv.JournalEntry, bool, error) {
+	return hostenv.SSHJournalFirst(ctx, hostSource())
 }
 
 // indexNow is the index's clock (tests replace it).
@@ -260,8 +267,12 @@ func updateLoginIndex(ctx context.Context) (*loginIndex, error) {
 			}
 			if ip, own, ok := hostenv.SSHDLoginEvent(e); ok {
 				x.add(ip, at, own)
-			} else if (e.Cut || e.MessageMissing) && !hostenv.SSHDWrote(e) && at.After(x.UnreadableLast) {
-				x.UnreadableLast = at // N-213-2: what it says cannot be read, nor ruled out
+			} else if e.Cut && at.After(x.UnreadableLast) {
+				// Past the line the whole read takes (MaxSSHJournalMessage):
+				// that read fails on it, whoever wrote it, so a window
+				// holding it is not verified here either (S-213-4). Shorter
+				// entries are read whole and counted for their address.
+				x.UnreadableLast = at
 			}
 			x.Cursor, x.CursorTime = e.Cursor, at // also past entries that are not events
 			return nil
@@ -289,6 +300,22 @@ func updateLoginIndex(ctx context.Context) (*loginIndex, error) {
 			x.JournalFrom = movedTo
 		}
 		x.note(now, "the journal had moved on past the index's position (its entry of "+since.UTC().Format(time.RFC3339)+" is gone): read on from the first entry still there")
+	}
+	if err == nil {
+		// Where the journal starts now, each read (S-213-3): entries older
+		// than sshd's units' first one were vacuumed, even with the
+		// cursor's entry still there, and the whole read no longer sees
+		// them.
+		first, ok, ferr := sshJournalFirst(ctx)
+		start := now // none left
+		if ok {
+			start = first.Time
+		}
+		if ferr != nil {
+			err = fmt.Errorf("where the journal starts: %w", ferr)
+		} else if start.After(x.JournalFrom) {
+			x.JournalFrom = start
+		}
 	}
 	if x.Cursor != "" || err == nil {
 		x.ReadAt = indexNow()
@@ -322,15 +349,15 @@ func (x *loginIndex) indexedLogins(ip net.IP, now time.Time) (seen bool, err err
 		return false, errIndexDoesNotCover
 	// An address's events can be in the overflow only from before the index
 	// kept it (an address kept never overflows): in the window, before Since.
-	case !x.OverflowLast.Before(w) && (a == nil || a.Since.After(w) && x.OverflowFirst.Before(a.Since)):
+	case !x.OverflowLast.Before(w) && !x.OverflowLast.Before(x.JournalFrom) && (a == nil || a.Since.After(w) && x.OverflowFirst.Before(a.Since)):
 		return false, coded(BlockStateError, fmt.Errorf("refusing to block %s: more addresses tried SSH than the login index keeps (%d), and some of its events may be among those not kept; check the logs as root and, if they are real, ask again with override_unverified", ip, maxIndexAddrs))
-	case !x.UnreadableLast.Before(w):
-		return a != nil && !a.Last.Before(w), coded(BlockUnverified, fmt.Errorf("refusing to block %s: since %s an entry in sshd's unit that sshd did not write could not be read whole (too long, or no message), so a forged SSH login event in it cannot be ruled out; check them as root (journalctl -u ssh) and, if the block is right, ask again with override_unverified", ip, w.Format(time.RFC3339)))
+	case !x.UnreadableLast.Before(w) && !x.UnreadableLast.Before(x.JournalFrom):
+		return a != nil && !a.Last.Before(w), coded(BlockUnverified, fmt.Errorf("refusing to block %s: since %s an entry in sshd's unit was too long to read whole (over 1 MiB), so an SSH login event in it, forged or not, cannot be ruled out; check them as root (journalctl -u ssh) and, if the block is right, ask again with override_unverified", ip, w.Format(time.RFC3339)))
 	}
 	if a == nil || a.Last.Before(w) {
 		return false, nil
 	}
-	if !a.ForgedLast.Before(w) {
+	if !a.ForgedLast.Before(w) && !a.ForgedLast.Before(x.JournalFrom) {
 		return true, coded(BlockUnverified, fmt.Errorf("refusing to block %s: some of its SSH login events in journald since %s were not written by sshd itself (they came from another program in sshd's unit, e.g. logger), so they may be forged; check them as root and, if they are real, ask again with override_unverified", ip, w.Format(time.RFC3339)))
 	}
 	if a.Last.Before(x.JournalFrom) {

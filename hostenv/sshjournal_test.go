@@ -119,3 +119,54 @@ func TestReadSSHJournalCutKeepsTime(t *testing.T) {
 		t.Fatalf("%v %+v", err, got)
 	}
 }
+
+// S-213-3: where sshd's units start in the journal is one fixed read,
+// allowlisted, stopped at its first entry.
+func TestSSHJournalFirst(t *testing.T) {
+	r, _ := NewRunner(LinuxCollector{}.Allowlist())
+	for _, fields := range []bool{true, false} {
+		if a := sshJournalFirstArgv("/usr/bin/journalctl", fields); !r.Allowed(a) {
+			t.Errorf("not allowlisted: %q", a)
+		}
+	}
+	h := newFake(true)
+	l := func(c string) string {
+		return `{"__CURSOR":"` + c + `","__REALTIME_TIMESTAMP":"1794700000000000","_UID":"0","_PID":"7","_COMM":"sshd","MESSAGE":"x"}`
+	}
+	h.cmds[argvKey(sshJournalFirstArgv("/usr/bin/journalctl", true))] = CmdResult{Stdout: []byte(l(cur1) + "\n" + l(cur2) + "\n")}
+	e, ok, err := SSHJournalFirst(context.Background(), h)
+	if err != nil || !ok || e.Cursor != cur1 || !e.Time.Equal(time.UnixMicro(1794700000000000)) {
+		t.Errorf("%+v %v %v", e, ok, err)
+	}
+	h.cmds[argvKey(sshJournalFirstArgv("/usr/bin/journalctl", true))] = CmdResult{}
+	if _, ok, err := SSHJournalFirst(context.Background(), h); ok || err != nil {
+		t.Errorf("no entries: %v %v", ok, err)
+	}
+}
+
+// S-213-4: sshd's units are read whole up to what the whole read takes
+// (a 70 KB message is not cut, its address read); past it, cut.
+func TestReadSSHJournalMessageCap(t *testing.T) {
+	h := newFake(true)
+	msg := func(n int) string {
+		return "Failed password for invalid user " + strings.Repeat("x", n) + " from 203.0.113.9 port 22 ssh2"
+	}
+	line := func(c, m string) string {
+		return `{"__CURSOR":"` + c + `","__REALTIME_TIMESTAMP":"1794700000000000","_UID":"1000","_PID":"9","_COMM":"logger","SYSLOG_IDENTIFIER":"sshd","MESSAGE":"` + m + `"}`
+	}
+	h.cmds[argvKey(sshJournalArgvFilled("/usr/bin/journalctl", "", true))] = CmdResult{Stdout: []byte(line(cur1, msg(70<<10)) + "\n" + line(cur2, msg(MaxLineBytes)) + "\n")}
+	var got []JournalEntry
+	_, err := ReadSSHJournal(context.Background(), h, "", time.Date(2026, 11, 15, 0, 0, 0, 0, time.UTC), func(e JournalEntry) error {
+		got = append(got, e)
+		return nil
+	})
+	if err != nil || len(got) != 2 {
+		t.Fatalf("%v, %d entries", err, len(got))
+	}
+	if ip, own, ok := SSHDLoginEvent(got[0]); got[0].Cut || !ok || own || ip != "203.0.113.9" {
+		t.Errorf("70 KB: cut %v, %q own %v ok %v", got[0].Cut, ip, own, ok)
+	}
+	if !got[1].Cut {
+		t.Errorf("past the whole read's line: not cut")
+	}
+}

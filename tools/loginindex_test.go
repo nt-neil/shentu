@@ -25,7 +25,7 @@ import (
 // seeks one: a well-formed cursor whose entry is gone is no error, the read
 // starts at the nearest entry after it; --cursor reads from there,
 // --after-cursor skips one entry more (the cursor's, or the first after the
-// gap: sd_journal_next_skip(j, 2)).
+// gap: sd_journal_next_skip(j, 2)); with neither, from the first entry.
 type fakeJournal struct {
 	mu      sync.Mutex
 	entries []fakeEntry
@@ -119,6 +119,9 @@ func (j *fakeJournal) RunLinesCut(ctx context.Context, argv []string, max int, f
 	}
 	j.mu.Lock()
 	var out []fakeEntry
+	if !strings.Contains(strings.Join(argv, " "), "--since") && !strings.Contains(strings.Join(argv, " "), "cursor") {
+		out = append(out, j.entries...) // from the first entry (where the journal starts): not counted as a read
+	}
 	for i, a := range argv {
 		switch a {
 		case "--since":
