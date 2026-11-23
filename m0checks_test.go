@@ -22,7 +22,7 @@ func checksOnEnv(t *testing.T, src hostenv.Source, st *state, env *tools.Env) ([
 	cfg := &Config{StateDir: t.TempDir()}
 	cfg.Patrol.SSHThreshold = 10
 	out, why := checks(context.Background(), cfg, env, st, false)
-	return out, uncheckedSection(st.Profile.Risks) + why
+	return out, uncheckedSection(st.Profile.Risks, false) + why
 }
 
 // N-177-1, S-177-1, N-180-1 through the patrol's own entry: on a macOS host

@@ -63,6 +63,11 @@ Chinese for the zh-TW pages; keep the two in step.
   configuration file that could not be read is named in a line saying which of these could not
   be checked.
 
+- The daily report and the new-findings report follow `language` now: with a Chinese setting their title, section headings
+  and fixed lines (what was not checked, incomplete vulnerability checks, attack detection, sub-agent dispatches,
+  automatic incident checks, SSH logins) are in Chinese; up to v0.5.4 they were in English whatever `language` said.
+  What a check found, error text and the model's answer are not translated: they are added as they came.
+
 ## v0.5.4 — 2026-11-23
 
 - Shared AI budget (#161): a dispatch from the bot, `shentu chat` or the automatic incident check

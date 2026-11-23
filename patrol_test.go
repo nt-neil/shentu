@@ -71,18 +71,18 @@ func TestUncheckedSection(t *testing.T) {
 		{Key: "firewall:none", Severity: "info", Summary: "no host firewall detected"},
 		{Key: "ssh:password", Severity: "warning", Summary: "SSH accepts passwords"},
 	}
-	s := uncheckedSection(risks)
+	s := uncheckedSection(risks, false)
 	if !strings.Contains(s, "Not checked") || !strings.Contains(s, "sshd_config.d (permission denied)") ||
 		strings.Contains(s, "firewall") || strings.Contains(s, "accepts passwords") {
 		t.Errorf("section %q", s)
 	}
-	if uncheckedSection(risks[1:]) != "" {
+	if uncheckedSection(risks[1:], false) != "" {
 		t.Error("a section with nothing unchecked")
 	}
-	if c := uncheckedConfigs([]string{"/etc/nginx/sites-enabled/a (symlink to /tmp/a, outside /etc)"}); !strings.Contains(c, "not read") || !strings.Contains(c, "outside /etc") {
+	if c := uncheckedConfigs([]string{"/etc/nginx/sites-enabled/a (symlink to /tmp/a, outside /etc)"}, false); !strings.Contains(c, "not read") || !strings.Contains(c, "outside /etc") {
 		t.Errorf("configs %q", c)
 	}
-	if uncheckedConfigs(nil) != "" {
+	if uncheckedConfigs(nil, false) != "" {
 		t.Error("a section with every configuration read")
 	}
 }
@@ -112,10 +112,10 @@ func TestWebrootACLUnknownNotPushed(t *testing.T) {
 	if f := codeAuditFindings(audit); len(f) != 0 {
 		t.Errorf("pushed: %+v", f)
 	}
-	if s := notCheckedSection(audit.NotChecked); !strings.Contains(s, "Not checked by the code audit") || !strings.Contains(s, "cannot tell webroot ACL") {
+	if s := notCheckedSection(audit.NotChecked, false); !strings.Contains(s, "Not checked by the code audit") || !strings.Contains(s, "cannot tell webroot ACL") {
 		t.Errorf("section: %q", s)
 	}
-	if notCheckedSection(nil) != "" {
+	if notCheckedSection(nil, false) != "" {
 		t.Error("nothing to list, no section")
 	}
 }
@@ -138,25 +138,25 @@ func TestKeyFileSymlinkNoUnparsed(t *testing.T) {
 // N-D1: a vulnerability check that failed or covered part goes into the
 // daily report's unchecked section.
 func TestUncheckedVulns(t *testing.T) {
-	if s := uncheckedVulns("installed packages", nil, fmt.Errorf("OSV query failed")); !strings.Contains(s, "Not checked for vulnerabilities: installed packages") || !strings.Contains(s, "OSV query failed") {
+	if s := uncheckedVulns("installed packages", nil, fmt.Errorf("OSV query failed"), false); !strings.Contains(s, "Not checked for vulnerabilities: installed packages") || !strings.Contains(s, "OSV query failed") {
 		t.Errorf("failed: %q", s)
 	}
-	if s := uncheckedVulns("installed packages", map[string]any{"partial": "not checked: extras topic gone"}, nil); !strings.Contains(s, "partly checked") || !strings.Contains(s, "extras topic gone") {
+	if s := uncheckedVulns("installed packages", map[string]any{"partial": "not checked: extras topic gone"}, nil, false); !strings.Contains(s, "partly checked") || !strings.Contains(s, "extras topic gone") {
 		t.Errorf("partial: %q", s)
 	}
 	// N-R2, S-R1: KEV unavailable, a lock file that failed, ecosystems not queried.
 	r := map[string]any{"total_vulns": 3, "kev": "CISA KEV list unavailable: timeout", "files": []tools.AppResult{{Path: "/srv/app/package-lock.json", Error: "OSV query failed"}},
 		"ecosystems_not_queried": []string{"SUSE:Linux Enterprise Desktop 15 SP6 (no such OSV ecosystem; its modules are queried)"}}
-	s := uncheckedVulns("application dependencies", r, nil)
+	s := uncheckedVulns("application dependencies", r, nil, false)
 	for _, want := range []string{"CISA KEV list", "package-lock.json", "OSV query failed", "Linux Enterprise Desktop"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("missing %q in %q", want, s)
 		}
 	}
-	if s := uncheckedVulns("installed packages", map[string]any{"kev": "none of these vulnerabilities is on the CISA KEV list"}, nil); s != "" {
+	if s := uncheckedVulns("installed packages", map[string]any{"kev": "none of these vulnerabilities is on the CISA KEV list"}, nil, false); s != "" {
 		t.Errorf("KEV checked: %q", s)
 	}
-	if s := uncheckedVulns("installed packages", map[string]any{"total_vulns": 0}, nil); s != "" {
+	if s := uncheckedVulns("installed packages", map[string]any{"total_vulns": 0}, nil, false); s != "" {
 		t.Errorf("checked: %q", s)
 	}
 }
@@ -170,7 +170,7 @@ func TestUncheckedVulnsBounded(t *testing.T) {
 		files = append(files, tools.AppResult{Path: fmt.Sprintf("/srv/app%02d/package-lock.json", i), Error: "OSV query failed: " + strings.Repeat("x", 500)})
 	}
 	files = append(files, tools.AppResult{Path: "/srv/other/go.sum", Error: "parse error"})
-	s := uncheckedVulns("application dependencies", map[string]any{"files": files}, nil)
+	s := uncheckedVulns("application dependencies", map[string]any{"files": files}, nil, false)
 	for _, l := range strings.Split(strings.TrimSpace(s), "\n") {
 		if len(l) > maxUncheckedLine+8 {
 			t.Errorf("line of %d bytes", len(l))
@@ -182,10 +182,10 @@ func TestUncheckedVulnsBounded(t *testing.T) {
 	if strings.Contains(s, "app15") {
 		t.Errorf("more than 10 files named")
 	}
-	if s := uncheckedVulns("installed packages", map[string]any{"total_vulns": 0, "kev": "CISA KEV list unavailable: timeout"}, nil); s != "" {
+	if s := uncheckedVulns("installed packages", map[string]any{"total_vulns": 0, "kev": "CISA KEV list unavailable: timeout"}, nil, false); s != "" {
 		t.Errorf("KEV line with no vulnerability: %q", s)
 	}
-	if s := uncheckedVulns("installed packages", map[string]any{"total_vulns": 9, "kev_unchecked": 4}, nil); !strings.Contains(s, "4 vulnerabilities not checked against the CISA KEV list") {
+	if s := uncheckedVulns("installed packages", map[string]any{"total_vulns": 9, "kev_unchecked": 4}, nil, false); !strings.Contains(s, "4 vulnerabilities not checked against the CISA KEV list") {
 		t.Errorf("KEV unchecked: %q", s)
 	}
 }
@@ -200,11 +200,11 @@ func TestUncheckedVulnsErrorLines(t *testing.T) {
 	// Two errors that differ only past the cut are one line.
 	long := strings.Repeat("y", 100)
 	files = append(files, tools.AppResult{Path: "/srv/x/go.sum", Error: long + "1"}, tools.AppResult{Path: "/srv/z/go.sum", Error: long + "2"})
-	s := uncheckedVulns("application dependencies", map[string]any{"files": files}, nil)
+	s := uncheckedVulns("application dependencies", map[string]any{"files": files}, nil, false)
 	if n := strings.Count(s, "- not checked ("); n != 10 || !strings.Contains(s, "and 4 more lock files not checked") {
 		t.Errorf("%d error lines:\n%s", n, s)
 	}
-	s = uncheckedVulns("application dependencies", map[string]any{"files": files[12:]}, nil)
+	s = uncheckedVulns("application dependencies", map[string]any{"files": files[12:]}, nil, false)
 	if strings.Count(s, "- not checked (") != 1 {
 		t.Errorf("errors equal once cut not merged:\n%s", s)
 	}
