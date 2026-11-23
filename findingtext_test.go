@@ -16,7 +16,7 @@ func TestFindingTextEnglish(t *testing.T) {
 	was := map[string]string{
 		"f_ssh":           "%d failed SSH logins from %s in the last hour (successful logins: %d)%s",
 		"f_ssh_text":      "; read from text logs, which anyone on this host can write to: check them before acting",
-		"f_unparsed":      "%s line(s) %s are neither a key nor a comment; sshd ignores them, but check none is a key written in another form",
+		"f_unparsed":      "%s line(s) %s%s are neither a key nor a comment; sshd ignores them, but check none is a key written in another form",
 		"f_unparsed_more": " and %d more (%d in all)",
 		"f_port":          "new listening port %s by %s (%s)",
 		"f_proc":          "suspicious process pid %d (%s): %s",
@@ -55,12 +55,12 @@ func TestFindingTextEnglish(t *testing.T) {
 func TestFindingTextChinese(t *testing.T) {
 	fs := []finding{
 		newFinding("p", "warning", nil, "f_port", "tcp:8080", "nc", "/usr/bin/nc"),
-		newFinding("p", "critical", nil, "f_proc", 42, "deleted_exe", "/tmp/x -c"),
+		procFinding(tools.Proc{PID: 42, Flags: []string{"deleted_exe", "miner"}, Cmdline: "/tmp/x -c"}),
 		newFinding("u", "critical", nil, "f_uid0", "toor"),
 		newFinding("k", "warning", nil, "f_keys", "/root/.ssh/authorized_keys", 2),
 		newFinding("k", "warning", nil, "f_keylink", "/home/a/.ssh/authorized_keys", "/srv/k", 1),
-		newFinding("s", "warning", nil, "f_sharedkey", "SHA256:abc", "a, b"),
-		newFinding("l", "critical", nil, "f_preload", "/lib/x.so"),
+		sharedKeyFinding(tools.SharedKey{Fingerprint: "SHA256:abc", Users: []string{"alice", "bob"}}),
+		preloadFinding([]string{"/lib/x.so", "/lib/y.so"}),
 		newFinding("m", "warning", nil, "f_pam", "/lib/security/pam_x.so", "/lib/security/pam_x.so"),
 		newFinding("w", "critical", nil, "f_webshell", "/var/www/a.php"),
 		newFinding("c", "warning", nil, "f_cert", "example.com:443", 3),
@@ -80,13 +80,56 @@ func TestFindingTextChinese(t *testing.T) {
 	// The values this test puts in (names, versions, a command) are taken
 	// out whole; what is left must be Chinese.
 	out := b.String()
-	for _, v := range []string{"tcp:8080", "nc", "deleted_exe", "/tmp/x -c", "toor", "SHA256:abc", "a, b", "example.com:443",
+	for _, v := range []string{"tcp:8080", "nc", "deleted_exe", "miner", "/tmp/x -c", "toor", "SHA256:abc", "alice", "bob", "example.com:443",
 		"openssl 3.0.1", "CVE-2024-0001", "CVE-2024-0002", "OpenSSL Bug", "Lodash Bug", "apt-get install --only-upgrade openssl",
 		"lodash 4.17.0"} {
 		out = strings.ReplaceAll(out, v, "")
 	}
 	if left := englishLeft(out); len(left) > 0 {
 		t.Errorf("English left: %q in\n%s", left, b.String())
+	}
+}
+
+// Chinese sentences as a report says them, word for word: the lines past
+// the first unparsedLinesMax are counted after the list, inside the one
+// parenthesis, and lists are joined with "、".
+func TestFindingTextChineseVerbatim(t *testing.T) {
+	lines := make([]int, unparsedLinesMax+2)
+	for i := range lines {
+		lines[i] = i + 1
+	}
+	for _, c := range []struct {
+		f    finding
+		want string
+	}{
+		{unparsedKeysFinding(tools.KeyFile{Path: "/root/.ssh/authorized_keys", Unparsed: lines}),
+			"/root/.ssh/authorized_keys 有幾行既不是金鑰也不是註解（第 1、2、3、4、5、6、7、8、9、10、11、12、13、14、15、16、17、18、19、20 行，另外 2 行，共 22 行）；sshd 會略過這些行，但請確認其中沒有用其他格式寫的金鑰"},
+		{unparsedKeysFinding(tools.KeyFile{Path: "/root/.ssh/authorized_keys", Unparsed: []int{3, 7}}),
+			"/root/.ssh/authorized_keys 有幾行既不是金鑰也不是註解（第 3、7 行）；sshd 會略過這些行，但請確認其中沒有用其他格式寫的金鑰"},
+		{procFinding(tools.Proc{PID: 42, Flags: []string{"deleted_executable", "miner"}, Cmdline: "/tmp/x -c"}),
+			"可疑程序 pid 42（deleted_executable、miner）：/tmp/x -c"},
+		{sharedKeyFinding(tools.SharedKey{Fingerprint: "SHA256:abc", Users: []string{"alice", "bob"}}),
+			"同一把 SSH 金鑰（SHA256:abc）出現在 alice、bob 的 authorized_keys 裡；攻擊者常在每個帳號放同一把金鑰，請確認這是你的"},
+		{preloadFinding([]string{"/lib/x.so", "/lib/y.so"}),
+			"/etc/ld.so.preload 會把 /lib/x.so、/lib/y.so 載入每個程式，這是常見的 rootkit 手法；請用 dpkg -S 或 rpm -qf 查出每個函式庫屬於哪個套件，再用 dpkg -V 或 rpm -V 驗證"},
+	} {
+		if got := c.f.said(true); got != c.want {
+			t.Errorf("got  %q\nwant %q", got, c.want)
+		}
+	}
+	// English, as before: ", " and the count right after the list.
+	for _, c := range []struct {
+		f    finding
+		want string
+	}{
+		{unparsedKeysFinding(tools.KeyFile{Path: "/k", Unparsed: []int{3, 7}}), "/k line(s) 3, 7 are neither a key nor a comment; sshd ignores them, but check none is a key written in another form"},
+		{procFinding(tools.Proc{PID: 42, Flags: []string{"deleted_executable", "miner"}, Cmdline: "/tmp/x -c"}), "suspicious process pid 42 (deleted_executable, miner): /tmp/x -c"},
+		{sharedKeyFinding(tools.SharedKey{Fingerprint: "SHA256:abc", Users: []string{"alice", "bob"}}), "one SSH key (SHA256:abc) is in the authorized_keys of alice, bob; attackers plant one key in every account, check that it is yours"},
+		{preloadFinding([]string{"/lib/x.so", "/lib/y.so"}), "/etc/ld.so.preload loads /lib/x.so, /lib/y.so into every program, a common rootkit trick; check each library with dpkg -S or rpm -qf and verify it with dpkg -V or rpm -V"},
+	} {
+		if c.f.Summary != c.want {
+			t.Errorf("got  %q\nwant %q", c.f.Summary, c.want)
+		}
 	}
 }
 

@@ -83,7 +83,7 @@ var dailyText = map[string][2]string{ // English, Chinese
 	// column is the summary as it was before (TestFindingTextEnglish).
 	"f_ssh":           {"%d failed SSH logins from %s in the last hour (successful logins: %d)%s", "過去一小時有 %d 次來自 %s 的 SSH 登入失敗（成功登入：%d 次）%s"},
 	"f_ssh_text":      {"; read from text logs, which anyone on this host can write to: check them before acting", "；這是從文字紀錄讀到的，這台主機上任何人都能寫入，採取行動前請先確認"},
-	"f_unparsed":      {"%s line(s) %s are neither a key nor a comment; sshd ignores them, but check none is a key written in another form", "%s 有幾行既不是金鑰也不是註解（第 %s 行）；sshd 會略過這些行，但請確認其中沒有用其他格式寫的金鑰"},
+	"f_unparsed":      {"%s line(s) %s%s are neither a key nor a comment; sshd ignores them, but check none is a key written in another form", "%s 有幾行既不是金鑰也不是註解（第 %s 行%s）；sshd 會略過這些行，但請確認其中沒有用其他格式寫的金鑰"},
 	"f_unparsed_more": {" and %d more (%d in all)", "，另外 %d 行，共 %d 行"},
 	"f_port":          {"new listening port %s by %s (%s)", "新的監聽埠 %s，由 %s（%s）開啟"},
 	"f_proc":          {"suspicious process pid %d (%s): %s", "可疑程序 pid %d（%s）：%s"},

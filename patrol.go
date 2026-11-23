@@ -35,7 +35,30 @@ type finding struct {
 // newFinding is a finding whose summary is report text key with args, in
 // English and in Chinese.
 func newFinding(key, severity string, evidence any, text string, args ...any) finding {
-	return finding{key, severity, fmt.Sprintf(dt(false, text), args...), evidence, fmt.Sprintf(dt(true, text), args...)}
+	return newFindingIn(key, severity, evidence, text, args, args)
+}
+
+// newFindingIn is newFinding with values said differently in each language,
+// such as a list joined with ", " in English and "、" in Chinese.
+func newFindingIn(key, severity string, evidence any, text string, en, zh []any) finding {
+	return finding{key, severity, fmt.Sprintf(dt(false, text), en...), evidence, fmt.Sprintf(dt(true, text), zh...)}
+}
+
+// procFinding, sharedKeyFinding and preloadFinding list their values with
+// ", " in English and "、" in Chinese.
+func procFinding(p tools.Proc) finding {
+	return newFindingIn(fmt.Sprintf("proc:%s:%s", p.Exe, p.Cmdline), "critical", p, "f_proc",
+		[]any{p.PID, strings.Join(p.Flags, ", "), p.Cmdline}, []any{p.PID, strings.Join(p.Flags, "、"), p.Cmdline})
+}
+
+func sharedKeyFinding(k tools.SharedKey) finding {
+	return newFindingIn("sharedkey:"+k.Fingerprint, "warning", k, "f_sharedkey",
+		[]any{k.Fingerprint, strings.Join(k.Users, ", ")}, []any{k.Fingerprint, strings.Join(k.Users, "、")})
+}
+
+func preloadFinding(libs []string) finding {
+	return newFindingIn("preload:"+strings.Join(libs, ","), "critical", libs, "f_preload",
+		[]any{strings.Join(libs, ", ")}, []any{strings.Join(libs, "、")})
 }
 
 // said is the finding's summary as the report says it.
@@ -294,14 +317,13 @@ func unparsedKeysFinding(k tools.KeyFile) finding {
 	for _, l := range k.Unparsed[:min(len(k.Unparsed), unparsedLinesMax)] {
 		lines = append(lines, strconv.Itoa(l))
 	}
-	list := strings.Join(lines, ", ")
-	listZh := strings.Join(lines, "、")
+	more, moreZh := "", ""
 	if n := len(k.Unparsed); n > unparsedLinesMax {
-		list += fmt.Sprintf(dt(false, "f_unparsed_more"), n-unparsedLinesMax, n)
-		listZh += fmt.Sprintf(dt(true, "f_unparsed_more"), n-unparsedLinesMax, n)
+		more = fmt.Sprintf(dt(false, "f_unparsed_more"), n-unparsedLinesMax, n)
+		moreZh = fmt.Sprintf(dt(true, "f_unparsed_more"), n-unparsedLinesMax, n)
 	}
-	return finding{"authorized_key_unparsed:" + k.Path, "warning",
-		fmt.Sprintf(dt(false, "f_unparsed"), k.Path, list), nil, fmt.Sprintf(dt(true, "f_unparsed"), k.Path, listZh)}
+	return newFindingIn("authorized_key_unparsed:"+k.Path, "warning", nil, "f_unparsed",
+		[]any{k.Path, strings.Join(lines, ", "), more}, []any{k.Path, strings.Join(lines, "、"), moreZh})
 }
 
 // patrolListMax is how many findings one patrol report lists.
@@ -429,7 +451,7 @@ func checks(ctx context.Context, cfg *Config, env *tools.Env, st *state, daily b
 	}
 
 	for _, p := range tools.Processes(false) {
-		out = append(out, newFinding(fmt.Sprintf("proc:%s:%s", p.Exe, p.Cmdline), "critical", p, "f_proc", p.PID, strings.Join(p.Flags, ", "), p.Cmdline))
+		out = append(out, procFinding(p))
 	}
 
 	acc := tools.AccountsAudit()
@@ -445,10 +467,10 @@ func checks(ctx context.Context, cfg *Config, env *tools.Env, st *state, daily b
 	}
 	out = append(out, keyFileFindings(acc.KeyFiles)...)
 	for _, k := range acc.SharedKeys {
-		out = append(out, newFinding("sharedkey:"+k.Fingerprint, "warning", k, "f_sharedkey", k.Fingerprint, strings.Join(k.Users, ", ")))
+		out = append(out, sharedKeyFinding(k))
 	}
 	if len(acc.Preload) > 0 {
-		out = append(out, newFinding("preload:"+strings.Join(acc.Preload, ","), "critical", acc.Preload, "f_preload", strings.Join(acc.Preload, ", ")))
+		out = append(out, preloadFinding(acc.Preload))
 	}
 	for _, m := range acc.UnpackagedPAM {
 		out = append(out, newFinding("pam:"+m, "warning", m, "f_pam", m, m))
