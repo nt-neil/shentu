@@ -54,16 +54,20 @@ type fnInfo struct {
 }
 
 type summary struct {
-	params     []string // the parameters' names, for named arguments
-	rest       bool     // the function takes further arguments
-	sink       [][]loc  // per parameter: the sink lines it reaches, in this or another file (up to the last that reaches one)
-	sinkEmb    uint64   // parameters embedded in a larger string on the way to a sink
-	ret        uint64   // parameters whose input the return value carries
-	retWeak    uint64   // ... only through calls the analysis does not know
-	retEmb     uint64   // ... embedded in a larger string
-	checks     uint64   // parameters the function validates when it returns true (a validator)
-	condChecks uint64   // ... only where the call's other arguments carry no input (the list may be one)
-	retSrc     bool     // the return value carries input of its own
+	params  []string // the parameters' names, for named arguments
+	rest    bool     // the function takes further arguments
+	sink    [][]loc  // per parameter: the sink lines it reaches, in this or another file (up to the last that reaches one)
+	sinkEmb uint64   // parameters embedded in a larger string on the way to a sink
+	// sinkPre: parameters whose sinks all need input at the start (a rule's
+	// leading condition: header("Location: $u")), so an argument that starts
+	// with a fixed text (admin_url('x') . '?a=' . $v) reaches none of them
+	sinkPre    uint64
+	ret        uint64 // parameters whose input the return value carries
+	retWeak    uint64 // ... only through calls the analysis does not know
+	retEmb     uint64 // ... embedded in a larger string
+	checks     uint64 // parameters the function validates when it returns true (a validator)
+	condChecks uint64 // ... only where the call's other arguments carry no input (the list may be one)
+	retSrc     bool   // the return value carries input of its own
 	// pcall: the function calls its parameter N ($callback(...)), and argument
 	// k of that call carries the input of the parameters in pcall[N][k]
 	// (tap($value, $callback): pcall[1][0] = 1<<0); pcallSrc[N][k]: ... input
@@ -78,7 +82,7 @@ type summary struct {
 }
 
 func (s *summary) equal(o *summary) bool {
-	if s.ret != o.ret || s.retSrc != o.retSrc || s.retEmb != o.retEmb || s.retWeak != o.retWeak || s.sinkEmb != o.sinkEmb || s.checks != o.checks || s.condChecks != o.condChecks {
+	if s.ret != o.ret || s.retSrc != o.retSrc || s.retEmb != o.retEmb || s.retWeak != o.retWeak || s.sinkEmb != o.sinkEmb || s.sinkPre != o.sinkPre || s.checks != o.checks || s.condChecks != o.condChecks {
 		return false
 	}
 	if !maps.EqualFunc(s.pcall, o.pcall, slices.Equal[[]uint64]) || !maps.EqualFunc(s.pcallSrc, o.pcallSrc, slices.Equal[[]bool]) {
@@ -1398,6 +1402,12 @@ func (a *analysis) summarize(key string, fi *fnInfo, s *summary) {
 		if s.checks&(1<<i) == 0 && validates(r, i) {
 			s.condChecks |= 1 << i
 		}
+		if a.r.leading && len(r.lines) > 0 {
+			st := state{fi.params[i]: entry{taint: true, pre: true}}
+			if pr := a.runBody(fi, st, false); len(pr.lines) == 0 {
+				s.sinkPre |= 1 << i
+			}
+		}
 		for l := range r.lines {
 			for len(s.sink) <= i {
 				s.sink = append(s.sink, nil)
@@ -1742,6 +1752,9 @@ func (a *analysis) callSinks(st state, t []Token) {
 				continue
 			}
 		}
+		if a.nonced(st) {
+			continue // as at a sink: after a nonce check the request is the site's own (context.go)
+		}
 		key := a.calleeKey(t, i)
 		args := callArgs(t, i+1)
 		for k, p := range a.argIndex(s, args) {
@@ -1758,6 +1771,9 @@ func (a *analysis) callSinks(st state, t []Token) {
 			for q := range s.sink {
 				if p >= 0 && q != p || len(s.sink[q]) == 0 {
 					continue
+				}
+				if s.sinkPre&(1<<q) != 0 && a.fixedStart(st, args[k]) {
+					continue // as at the sink: a fixed start, then the input
 				}
 				lines := s.sink[q]
 				if sub := partialArg(st, args[k]); p >= 0 && sub != nil {
