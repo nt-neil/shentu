@@ -62,6 +62,8 @@ type Project struct {
 	seen                 map[string]bool                  // findings already returned: rule, path, line
 	stopped              string
 	byMachine            bool                       // stopped by the clock or the heap: where depends on the machine
+	stopCut              Cut                        // why calls stopped crossing files (CutProject, with CutClock or CutProjectWork)
+	work                 int                        // the work of the files' calls passes so far, against opt.MaxWork
 	unsteady             bool                       // the current scan met a file it could not read, or parse in time
 	unread               map[string]bool            // files that could not be read, or parsed in time, since indexed
 	skip                 map[string]bool            // ScanCallsPart: rules to leave out
@@ -92,8 +94,12 @@ type ProjectOptions struct {
 	MaxFiles  int           // files indexed (default 30,000)
 	MaxTokens int           // tokens kept parsed in memory at once (default 3,000,000)
 	MaxHeap   uint64        // heap in use past which calls stop crossing files (default 1 GiB)
-	MaxTime   time.Duration // time for indexing and following calls across files (default 90s)
+	MaxWork   int           // work of following calls across files, all files' calls passes together (default DefaultProjectWork): checked before each file, past it calls stop crossing files (CutProjectWork)
+	MaxTime   time.Duration // a safety net for indexing and following calls (default 15 minutes), well past what MaxWork takes on an ordinary machine (CutClock)
 }
+
+// DefaultProjectWork is ProjectOptions.MaxWork's default: PROJECTWORK_TBD.
+const DefaultProjectWork = 900_000_000
 
 // indexVersion changes whenever fileIndex changes, so an old cache is ignored.
 const indexVersion = "9"
@@ -155,7 +161,10 @@ func (e *Engine) NewProject(paths []string, read func(string) ([]byte, error), o
 		opt.MaxHeap = 1 << 30
 	}
 	if opt.MaxTime <= 0 {
-		opt.MaxTime = 90 * time.Second
+		opt.MaxTime = 15 * time.Minute
+	}
+	if opt.MaxWork <= 0 {
+		opt.MaxWork = DefaultProjectWork
 	}
 	p := &Project{e: e, opt: opt, read: read, files: map[string]*fileIndex{}, bySuffix: map[string][]string{}, byClean: map[string]string{},
 		funcs: map[string]map[string][]string{}, classes: map[string]map[string][]string{}, declared: map[string]map[string][]string{},
@@ -178,11 +187,11 @@ func (e *Engine) NewProject(paths []string, read func(string) ([]byte, error), o
 			continue
 		}
 		if n++; n > opt.MaxFiles {
-			p.stop("the project has more than the file limit")
+			p.stop("the project has more than the file limit", 0)
 			break
 		}
 		if time.Now().After(p.deadline) {
-			p.stop("indexing ran out of time")
+			p.stop("indexing ran out of time", CutClock)
 			p.byMachine = true
 			break
 		}
@@ -305,9 +314,9 @@ func (p *Project) Unsteady() bool { return p.unsteady }
 // Stopped tells why calls stopped crossing files, or "" when they did not.
 func (p *Project) Stopped() string { return p.stopped }
 
-func (p *Project) stop(reason string) {
+func (p *Project) stop(reason string, c Cut) {
 	if p.stopped == "" {
-		p.stopped = reason
+		p.stopped, p.stopCut = reason, CutProject|c
 	}
 }
 
@@ -909,7 +918,7 @@ func (p *Project) ok() bool {
 		return false
 	}
 	if time.Now().After(p.deadline) {
-		p.stop("following calls across files ran out of time")
+		p.stop("following calls across files ran out of time", CutClock)
 		p.byMachine = true
 		return false
 	}
@@ -948,7 +957,7 @@ func (p *Project) ok() bool {
 				live = heapLive()
 			}
 			if live > p.opt.MaxHeap/10*7 {
-				p.stop("following calls across files reached the memory limit")
+				p.stop("following calls across files reached the memory limit", 0)
 				p.byMachine = true
 				return false
 			}
