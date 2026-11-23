@@ -79,11 +79,11 @@
   <ol class="eras">
   {{range $i, $r := rev .Releases}}{{$now := eq $i (sub $n 1)}}
     <li class="era-node{{if $now}} now{{end}}" style="--old: {{age $i $n}}; --x: {{xpos $i $n}}" data-lab="{{index $lab $i}}">
-      <a class="lamp" href="{{$.L.Root}}{{if eq $.L.Code "zh-TW"}}zh-TW/{{end}}releases.html#v{{$r.Version}}" aria-describedby="rv-{{$r.Version}}">
+      <a class="lamp" href="{{$.L.Root}}{{if eq $.L.Code "zh-TW"}}zh-TW/{{end}}releases.html#v{{$r.Version}}" aria-describedby="rv-{{$r.Version}}" aria-label="v{{$r.Version}} {{if $r.Date}}{{$r.Date}}{{else}}{{t "soon"}}{{end}}{{$sep := ", "}}{{if eq $.L.Code "zh-TW"}}{{$sep = "，"}}{{end}}{{if gt $r.Rules 0}}{{$sep}}{{$r.Rules}} {{t "hist.rules"}}{{end}}{{with $r.Bench}}{{$sep}}{{.All.Caught}}/{{.All.Cases}} {{t "river.caught"}}{{end}}">
         <i aria-hidden="true"></i><span class="ver">v{{$r.Version}}</span>
         {{if $r.Date}}<time datetime="{{$r.Date}}">{{slice $r.Date 5}}</time>{{else}}<b class="badge">{{t "soon"}}</b>{{end}}
       </a>
-      <p class="acc">{{if gt $r.Rules 0}}<span><b>{{$r.Rules}}</b> {{t "hist.rules"}}</span>{{end}}{{with $r.Bench}}<span><b>{{.All.Caught}}</b>/{{.All.Cases}} {{t "river.caught"}}</span>{{end}}</p>
+      <p class="acc" aria-hidden="true">{{if gt $r.Rules 0}}<span><b>{{$r.Rules}}</b> {{t "hist.rules"}}</span>{{end}}{{with $r.Bench}}<span><b>{{.All.Caught}}</b>/{{.All.Cases}} {{t "river.caught"}}</span>{{end}}</p>
       {{if not $now}}<div class="peek" id="rv-{{$r.Version}}">
         {{$w := chron $r (eq $i 0)}}<p class="word">{{if eq $w "hist.mend"}}{{len $r.Items}} {{t "hist.changes"}}{{else}}{{t $w}}{{end}}</p>
         <ul>{{range $k, $it := $r.Items}}{{if lt $k 3}}<li>{{item $it}}</li>{{end}}{{end}}</ul>

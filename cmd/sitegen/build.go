@@ -287,6 +287,12 @@ func mask(code string) string {
 }
 
 func funcs(l Lang) template.FuncMap {
+	tr := func(k string) string { // as "t" below, for the river's label widths
+		if s, ok := l.T[k]; ok {
+			return s
+		}
+		return k
+	}
 	return template.FuncMap{
 		"t": func(k string) string {
 			if s, ok := l.T[k]; ok {
@@ -331,8 +337,8 @@ func funcs(l Lang) template.FuncMap {
 			return fmt.Sprintf("%.1f", 7+86*float64(i)/float64(n-1))
 		},
 		// from which river width each lamp's label has room (riverlabels.go)
-		"labmin":   labelWidths,
-		"labsteps": func(rs []Release) []int { return labelSteps(labelWidths(rs)) },
+		"labmin":   func(rs []Release) []int { return riverLabels(rs, tr) },
+		"labsteps": func(rs []Release) []int { return labelSteps(riverLabels(rs, tr)) },
 		"groups":   groups,
 		"pct": func(a, b int) string {
 			if b <= 0 {
