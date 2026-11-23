@@ -1,257 +1,283 @@
 {
- "measured": "2026-11-24, integ 2c3d49d's docs/site at 1920px in Chromium (ego), every label made visible; width = the label's version, date and rule-count/bench lines, from the leftmost to the rightmost edge, rounded up",
+ "measured": "2026-11-24, Chrome/156.0.0.0, docs/site at 1920px, every label visible",
  "languages": {
-  "en": [
-   {
-    "version": "0.1.0",
+  "en": {
+   "0.1.0": {
     "date": "2026-11-07",
+    "acc": [],
     "width": 62
    },
-   {
-    "version": "0.1.1",
+   "0.1.1": {
     "date": "2026-11-07",
+    "acc": [],
     "width": 62
    },
-   {
-    "version": "0.2.0",
+   "0.2.0": {
     "date": "2026-11-07",
+    "acc": [],
     "width": 62
    },
-   {
-    "version": "0.2.1",
+   "0.2.1": {
     "date": "2026-11-08",
+    "acc": [],
     "width": 62
    },
-   {
-    "version": "0.2.2",
+   "0.2.2": {
     "date": "2026-11-08",
+    "acc": [],
     "width": 62
    },
-   {
-    "version": "0.2.3",
+   "0.2.3": {
     "date": "2026-11-09",
+    "acc": [],
     "width": 62
    },
-   {
-    "version": "0.2.4",
+   "0.2.4": {
     "date": "2026-11-09",
-    "width": 62,
-    "rules": 33
+    "acc": [
+     "33 rules"
+    ],
+    "width": 62
    },
-   {
-    "version": "0.2.5",
+   "0.2.5": {
     "date": "2026-11-13",
-    "width": 87,
-    "rules": 70,
-    "caught": 15,
-    "cases": 97
+    "acc": [
+     "70 rules",
+     "15/97 caught"
+    ],
+    "width": 87
    },
-   {
-    "version": "0.3.0",
+   "0.3.0": {
     "date": "2026-11-13",
-    "width": 62,
-    "rules": 70
+    "acc": [
+     "70 rules"
+    ],
+    "width": 62
    },
-   {
-    "version": "0.3.1",
+   "0.3.1": {
     "date": "2026-11-16",
-    "width": 87,
-    "rules": 127,
-    "caught": 16,
-    "cases": 97
+    "acc": [
+     "127 rules",
+     "16/97 caught"
+    ],
+    "width": 87
    },
-   {
-    "version": "0.4.0",
+   "0.4.0": {
     "date": "2026-11-18",
-    "width": 66,
-    "rules": 127
+    "acc": [
+     "127 rules"
+    ],
+    "width": 66
    },
-   {
-    "version": "0.4.1",
+   "0.4.1": {
     "date": "2026-11-20",
-    "width": 66,
-    "rules": 127
+    "acc": [
+     "127 rules"
+    ],
+    "width": 66
    },
-   {
-    "version": "0.4.2",
+   "0.4.2": {
     "date": "2026-11-20",
-    "width": 66,
-    "rules": 127
+    "acc": [
+     "127 rules"
+    ],
+    "width": 66
    },
-   {
-    "version": "0.4.3",
+   "0.4.3": {
     "date": "2026-11-20",
-    "width": 66,
-    "rules": 127
+    "acc": [
+     "127 rules"
+    ],
+    "width": 66
    },
-   {
-    "version": "0.5.0",
+   "0.5.0": {
     "date": "2026-11-20",
-    "width": 66,
-    "rules": 127
+    "acc": [
+     "127 rules"
+    ],
+    "width": 66
    },
-   {
-    "version": "0.5.1",
+   "0.5.1": {
     "date": "2026-11-20",
-    "width": 66,
-    "rules": 127
+    "acc": [
+     "127 rules"
+    ],
+    "width": 66
    },
-   {
-    "version": "0.5.2",
+   "0.5.2": {
     "date": "2026-11-20",
-    "width": 66,
-    "rules": 127
+    "acc": [
+     "127 rules"
+    ],
+    "width": 66
    },
-   {
-    "version": "0.5.3",
+   "0.5.3": {
     "date": "2026-11-22",
-    "width": 66,
-    "rules": 127
+    "acc": [
+     "127 rules"
+    ],
+    "width": 66
    },
-   {
-    "version": "0.5.4",
+   "0.5.4": {
     "date": "2026-11-23",
-    "width": 66,
-    "rules": 127
+    "acc": [
+     "127 rules"
+    ],
+    "width": 66
    },
-   {
-    "version": "0.5.5",
+   "0.5.5": {
     "date": "2026-11-23",
-    "width": 66,
-    "rules": 127
+    "acc": [
+     "127 rules"
+    ],
+    "width": 66
    },
-   {
-    "version": "0.5.6",
+   "0.5.6": {
     "date": "2026-11-24",
-    "width": 66,
-    "rules": 127
+    "acc": [
+     "127 rules"
+    ],
+    "width": 66
    }
-  ],
-  "zh-TW": [
-   {
-    "version": "0.1.0",
+  },
+  "zh-TW": {
+   "0.1.0": {
     "date": "2026-11-07",
+    "acc": [],
     "width": 63
    },
-   {
-    "version": "0.1.1",
+   "0.1.1": {
     "date": "2026-11-07",
+    "acc": [],
     "width": 62
    },
-   {
-    "version": "0.2.0",
+   "0.2.0": {
     "date": "2026-11-07",
+    "acc": [],
     "width": 65
    },
-   {
-    "version": "0.2.1",
+   "0.2.1": {
     "date": "2026-11-08",
+    "acc": [],
     "width": 63
    },
-   {
-    "version": "0.2.2",
+   "0.2.2": {
     "date": "2026-11-08",
+    "acc": [],
     "width": 65
    },
-   {
-    "version": "0.2.3",
+   "0.2.3": {
     "date": "2026-11-09",
+    "acc": [],
     "width": 65
    },
-   {
-    "version": "0.2.4",
+   "0.2.4": {
     "date": "2026-11-09",
-    "width": 67,
-    "rules": 33
+    "acc": [
+     "33 條規則"
+    ],
+    "width": 67
    },
-   {
-    "version": "0.2.5",
+   "0.2.5": {
     "date": "2026-11-13",
-    "width": 99,
-    "rules": 70,
-    "caught": 15,
-    "cases": 97
+    "acc": [
+     "70 條規則",
+     "15/97 樣本抓到"
+    ],
+    "width": 99
    },
-   {
-    "version": "0.3.0",
+   "0.3.0": {
     "date": "2026-11-13",
-    "width": 67,
-    "rules": 70
+    "acc": [
+     "70 條規則"
+    ],
+    "width": 67
    },
-   {
-    "version": "0.3.1",
+   "0.3.1": {
     "date": "2026-11-16",
-    "width": 99,
-    "rules": 127,
-    "caught": 16,
-    "cases": 97
+    "acc": [
+     "127 條規則",
+     "16/97 樣本抓到"
+    ],
+    "width": 99
    },
-   {
-    "version": "0.4.0",
+   "0.4.0": {
     "date": "2026-11-18",
-    "width": 77,
-    "rules": 127
+    "acc": [
+     "127 條規則"
+    ],
+    "width": 77
    },
-   {
-    "version": "0.4.1",
+   "0.4.1": {
     "date": "2026-11-20",
-    "width": 77,
-    "rules": 127
+    "acc": [
+     "127 條規則"
+    ],
+    "width": 77
    },
-   {
-    "version": "0.4.2",
+   "0.4.2": {
     "date": "2026-11-20",
-    "width": 77,
-    "rules": 127
+    "acc": [
+     "127 條規則"
+    ],
+    "width": 77
    },
-   {
-    "version": "0.4.3",
+   "0.4.3": {
     "date": "2026-11-20",
-    "width": 77,
-    "rules": 127
+    "acc": [
+     "127 條規則"
+    ],
+    "width": 77
    },
-   {
-    "version": "0.5.0",
+   "0.5.0": {
     "date": "2026-11-20",
-    "width": 77,
-    "rules": 127
+    "acc": [
+     "127 條規則"
+    ],
+    "width": 77
    },
-   {
-    "version": "0.5.1",
+   "0.5.1": {
     "date": "2026-11-20",
-    "width": 77,
-    "rules": 127
+    "acc": [
+     "127 條規則"
+    ],
+    "width": 77
    },
-   {
-    "version": "0.5.2",
+   "0.5.2": {
     "date": "2026-11-20",
-    "width": 77,
-    "rules": 127
+    "acc": [
+     "127 條規則"
+    ],
+    "width": 77
    },
-   {
-    "version": "0.5.3",
+   "0.5.3": {
     "date": "2026-11-22",
-    "width": 77,
-    "rules": 127
+    "acc": [
+     "127 條規則"
+    ],
+    "width": 77
    },
-   {
-    "version": "0.5.4",
+   "0.5.4": {
     "date": "2026-11-23",
-    "width": 77,
-    "rules": 127
+    "acc": [
+     "127 條規則"
+    ],
+    "width": 77
    },
-   {
-    "version": "0.5.5",
+   "0.5.5": {
     "date": "2026-11-23",
-    "width": 77,
-    "rules": 127
+    "acc": [
+     "127 條規則"
+    ],
+    "width": 77
    },
-   {
-    "version": "0.5.6",
+   "0.5.6": {
     "date": "2026-11-24",
-    "width": 77,
-    "rules": 127
+    "acc": [
+     "127 條規則"
+    ],
+    "width": 77
    }
-  ]
+  }
  }
 }

@@ -4,7 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
+
+	"github.com/nt-neil/shentu/rules"
 )
 
 // shownLabels: at river width w, the centre and width of each label that
@@ -101,37 +104,78 @@ func TestRiverLabelsNarrowEdge(t *testing.T) {
 	}
 }
 
-// The estimate is a floor for what browsers draw (S-231r-1): every label of
-// the site as rendered (testdata/river-label-widths.json, measured with
-// testdata/measure-river-labels.js) is no wider than labelWidth says, in
-// both languages. Remeasure after a font or label change.
+// The estimate is a floor for what browsers draw (S-231r-1, S-232-1): every
+// release sitegen builds the river from has a row in
+// testdata/river-label-widths.json, measured with
+// testdata/measure-river-labels.js; the row's date and rule-count/bench
+// lines are the ones the page writes now, and the label as drawn is no wider
+// than labelWidth says, in both languages. A missing or stale row (a new
+// release, a changed translation or label) fails: remeasure on release day,
+// in the release-day commit.
 func TestRiverLabelsAtLeastRendered(t *testing.T) {
 	b, err := os.ReadFile("testdata/river-label-widths.json")
 	if err != nil {
 		t.Fatal(err)
 	}
 	var f struct {
-		Languages map[string][]struct {
-			Version, Date        string
-			Rules, Caught, Cases int
-			Width                float64
+		Languages map[string]map[string]struct {
+			Date  string
+			Acc   []string
+			Width float64
 		}
 	}
 	if err := json.Unmarshal(b, &f); err != nil {
 		t.Fatal(err)
 	}
-	tr := map[string]func(string) string{"en": enT, "zh-TW": func(k string) string { return zh[k] }}
-	for lang, rows := range f.Languages {
-		if tr[lang] == nil || len(rows) == 0 {
-			t.Fatalf("%s: no translation or no rows", lang)
+	rs, err := rules.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	routes, err := rules.LoadRoutes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rels, err := parseChangelog("../../CHANGELOG.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := fillReleases(rels, "../../docs/site-src", currentSnapshot(rs, routes)); err != nil {
+		t.Fatal(err)
+	}
+	trs := map[string]func(string) string{"en": enT, "zh-TW": func(k string) string { return zh[k] }}
+	for lang, tr := range trs {
+		rows := f.Languages[lang]
+		if len(rows) == 0 {
+			t.Errorf("%s: no rows", lang)
+			continue
 		}
-		for _, m := range rows {
-			r := Release{Version: m.Version, Date: m.Date, Rules: m.Rules}
-			if m.Cases > 0 {
-				r.Bench = &Bench{Groups: []BenchRow{{Group: "all", Cases: m.Cases, Caught: m.Caught}}}
+		seen := map[string]bool{}
+		for _, r := range rels {
+			seen[r.Version] = true
+			m, ok := rows[r.Version]
+			if !ok {
+				t.Errorf("%s v%s: not measured; remeasure (testdata/measure-river-labels.js)", lang, r.Version)
+				continue
 			}
-			if est := labelWidth(r, tr[lang]); est < m.Width {
-				t.Errorf("%s v%s: estimated %.0fpx, drawn %.0fpx", lang, m.Version, est, m.Width)
+			var acc []string // as layout.html writes the line under the lamp
+			if r.Rules > 0 {
+				acc = append(acc, fmt.Sprintf("%d %s", r.Rules, tr("hist.rules")))
+			}
+			if r.Bench != nil {
+				a := r.Bench.All()
+				acc = append(acc, fmt.Sprintf("%d/%d %s", a.Caught, a.Cases, tr("river.caught")))
+			}
+			if m.Date != r.Date || strings.Join(m.Acc, "|") != strings.Join(acc, "|") {
+				t.Errorf("%s v%s: measured %q %q, the page writes %q %q; remeasure", lang, r.Version, m.Date, m.Acc, r.Date, acc)
+				continue
+			}
+			if est := labelWidth(r, tr); est < m.Width {
+				t.Errorf("%s v%s: estimated %.0fpx, drawn %.0fpx", lang, r.Version, est, m.Width)
+			}
+		}
+		for v := range rows {
+			if !seen[v] {
+				t.Errorf("%s v%s: measured, but not a release; remeasure", lang, v)
 			}
 		}
 	}
