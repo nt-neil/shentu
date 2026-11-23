@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // Slots of the journal reads: a unit name (never an option: it cannot
@@ -295,6 +296,129 @@ func readJournal(ctx context.Context, src Source, after string, since time.Time,
 // could not give as text (binary, or too large) comes as an array of
 // bytes, or null.
 func parseJournalJSON(l string, maxMsg int) (JournalEntry, error) {
+	if e, ok := parseJournalFlat(l, maxMsg); ok {
+		return e, nil
+	}
+	return parseJournalJSONFull(l, maxMsg)
+}
+
+// parseJournalFlat reads the common line, an object of string fields only,
+// without a map or reflection: a flood is read at the speed it is written.
+// Anything else (a field as bytes or null, a number, a line it does not
+// follow) is false, for parseJournalJSONFull, which reads it the same.
+func parseJournalFlat(l string, maxMsg int) (JournalEntry, bool) {
+	e := JournalEntry{UID: -1, MessageMissing: true}
+	var ts, uid, pid string
+	i := 0
+	ws := func() {
+		for i < len(l) && (l[i] == ' ' || l[i] == '\t' || l[i] == '\r' || l[i] == '\n') {
+			i++
+		}
+	}
+	str := func() (string, bool) { // a JSON string at i, i moved past it
+		if i >= len(l) || l[i] != '"' {
+			return "", false
+		}
+		esc := false
+		for j := i + 1; j < len(l); j++ {
+			switch c := l[j]; {
+			case c == '\\':
+				esc = true
+				j++
+			case c < 0x20:
+				return "", false
+			case c == '"':
+				raw := l[i : j+1]
+				i = j + 1
+				if !utf8.ValidString(raw) {
+					return "", false // json.Unmarshal would replace the bytes: its reading, not this one
+				}
+				if !esc {
+					return raw[1 : len(raw)-1], true
+				}
+				var v string
+				if json.Unmarshal([]byte(raw), &v) != nil {
+					return "", false
+				}
+				return v, true
+			}
+		}
+		return "", false
+	}
+	ws()
+	if i >= len(l) || l[i] != '{' {
+		return e, false
+	}
+	i++
+	for first := true; ; first = false {
+		ws()
+		if i < len(l) && l[i] == '}' {
+			i++
+			break
+		}
+		if !first {
+			if i >= len(l) || l[i] != ',' {
+				return e, false
+			}
+			i++
+			ws()
+		}
+		k, ok := str()
+		if !ok {
+			return e, false
+		}
+		ws()
+		if i >= len(l) || l[i] != ':' {
+			return e, false
+		}
+		i++
+		ws()
+		v, ok := str()
+		if !ok {
+			return e, false // not a string: bytes, null, a number
+		}
+		switch k {
+		case "__CURSOR":
+			e.Cursor = v
+		case "__REALTIME_TIMESTAMP":
+			ts = v
+		case "_SYSTEMD_UNIT":
+			e.Unit = v
+		case "_UID":
+			uid = v
+		case "_PID":
+			pid = v
+		case "_COMM":
+			e.Comm = v
+		case "_EXE":
+			e.Exe = v
+		case "_TRANSPORT":
+			e.Transport = v
+		case "SYSLOG_IDENTIFIER":
+			e.Ident = v
+		case "MESSAGE":
+			e.Message, e.MessageMissing = v, false
+		}
+	}
+	ws()
+	if i != len(l) || e.Cursor == "" {
+		return e, false
+	}
+	if len(e.Message) > maxMsg {
+		e.Message, e.Cut = e.Message[:maxMsg], true
+	}
+	if us, err := strconv.ParseInt(ts, 10, 64); err == nil {
+		e.Time = time.UnixMicro(us).UTC()
+	}
+	if u, err := strconv.Atoi(uid); err == nil {
+		e.UID = u
+	}
+	e.PID, _ = strconv.Atoi(pid)
+	return e, true
+}
+
+// parseJournalJSONFull reads any line journalctl -o json writes.
+func parseJournalJSONFull(l string, maxMsg int) (JournalEntry, error) {
 	var m map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(l), &m); err != nil {
 		return JournalEntry{}, err
