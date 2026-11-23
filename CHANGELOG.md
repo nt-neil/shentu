@@ -68,6 +68,21 @@ Chinese for the zh-TW pages; keep the two in step.
   automatic incident checks, SSH logins) are in Chinese; up to v0.5.4 they were in English whatever `language` said.
   What a check found, error text and the model's answer are not translated: they are added as they came.
 
+- macOS and Windows (#206): `block_ip` is refused as `unsupported` before any check. From Telegram
+  on macOS it used to read up to a month of the unified log (about two minutes) before refusing a
+  block that nftables cannot make there.
+
+- Proposal buttons (Linux, #206): the checks run before the buttons are sent end together within 90
+  seconds; a proposal not checked by then is listed as `timeout`, without a button, instead of
+  holding back every button. A check of the dispatch archive cut short by its time limit is
+  `timeout` too, not `state_error`. One address's SSH logins are read once for the archive, the
+  buttons and Telegram's precheck (the answer is reused for two minutes); `block_ip` itself reads
+  them again when it runs.
+
+- Upgrade note (#206): going back to v0.5.4, that version reads a dispatch record whose gate is
+  `timeout` or `unsupported` as a bad line, and the automatic incident checks can stop for up to 72
+  hours.
+
 ## v0.5.4 — 2026-11-23
 
 - Shared AI budget (#161): a dispatch from the bot, `shentu chat` or the automatic incident check

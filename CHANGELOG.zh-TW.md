@@ -39,6 +39,12 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
   子 Agent 派遣、自動事件調查、SSH 登入）都改用中文；v0.5.4 以前不管 `language` 怎麼設，這些都是英文。檢查找到的內容、錯誤訊息和
   AI 模型寫的回答不會改寫，照原樣附上。
 
+- macOS 和 Windows（#206）：`block_ip` 在任何檢查之前就以 `unsupported` 拒絕。之前在 macOS 上從 Telegram 呼叫時，會先讀最多一個月的 unified log（大約兩分鐘）才拒絕，而 nftables 在這兩個平台上本來就不能封鎖。
+
+- 提案按鈕（Linux，#206）：送出按鈕前的檢查，全部加起來在 90 秒內結束；到時還沒查完的提案列為 `timeout`，不給按鈕，其他提案的按鈕照常送出。派遣存檔的檢查因時限到了而中斷時，也記成 `timeout`，不再是 `state_error`。同一個位址的 SSH 登入，存檔、送按鈕和 Telegram 的事前檢查只讀一次（結果在兩分鐘內沿用）；`block_ip` 真正執行時仍會重新讀。
+
+- 升級須知（#206）：裝回 v0.5.4 時，舊版會把 gate 是 `timeout` 或 `unsupported` 的派遣紀錄當成壞行，自動事件調查最多會停 72 小時。
+
 ## v0.5.4 — 2026-11-23
 
 - 共用 AI 預算（#161）：bot、`shentu chat` 與自動事件調查的每次派遣，執行期間會在 `state_dir/reservations.json`
