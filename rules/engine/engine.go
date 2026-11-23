@@ -554,9 +554,9 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 				// cycle settled through it) are the ones this scan would work out.
 				key := ruleFile{r.rule.ID, path}
 				if old := proj.sums[key]; old != nil {
-					sc.done, sc.rel, sc.direct, sc.cross, sc.keyed, sc.srcMay, sc.srcRel = old.done, old.rel, old.direct, old.cross, old.keyed, old.srcMay, old.srcRel
+					sc.done, sc.rel, sc.direct, sc.cross, sc.keyed, sc.srcMay, sc.srcRel, sc.retUnk = old.done, old.rel, old.direct, old.cross, old.keyed, old.srcMay, old.srcRel, old.retUnk
 				} else if kept := proj.kept[key]; kept != nil {
-					sc.done = kept
+					kept.restore(sc)
 					delete(proj.kept, key)
 				}
 				proj.sums[key] = sc

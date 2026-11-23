@@ -56,10 +56,11 @@ type Project struct {
 	lru                  []string
 	resident             int
 	sums                 map[ruleFile]*summaries
-	kept                 map[ruleFile]map[string]*summary // finished summaries of files no longer kept parsed
-	incl                 map[string][]string              // memo of includes()
-	fnMemo               map[[2]string]string             // memo of function(): {from, name} → file
-	seen                 map[string]bool                  // findings already returned: rule, path, line
+	kept                 map[ruleFile]*keptSums // what was worked out of files no longer kept parsed
+	costs                map[[2]string]int      // firstCost: {rule, summary id} → what the summary cost the first time
+	incl                 map[string][]string    // memo of includes()
+	fnMemo               map[[2]string]string   // memo of function(): {from, name} → file
+	seen                 map[string]bool        // findings already returned: rule, path, line
 	stopped              string
 	byMachine            bool                       // stopped by the clock or the heap: where depends on the machine
 	unsteady             bool                       // the current scan met a file it could not read, or parse in time
@@ -159,7 +160,7 @@ func (e *Engine) NewProject(paths []string, read func(string) ([]byte, error), o
 	}
 	p := &Project{e: e, opt: opt, read: read, files: map[string]*fileIndex{}, bySuffix: map[string][]string{}, byClean: map[string]string{},
 		funcs: map[string]map[string][]string{}, classes: map[string]map[string][]string{}, declared: map[string]map[string][]string{},
-		ctx: map[string]*fileCtx{}, sums: map[ruleFile]*summaries{}, kept: map[ruleFile]map[string]*summary{}, seen: map[string]bool{},
+		ctx: map[string]*fileCtx{}, sums: map[ruleFile]*summaries{}, kept: map[ruleFile]*keptSums{}, costs: map[[2]string]int{}, seen: map[string]bool{},
 		incl: map[string][]string{}, fnMemo: map[[2]string]string{}, deps: map[string]map[string]bool{}, unread: map[string]bool{}, sinkRules: map[string]bool{},
 		deadline: time.Now().Add(opt.MaxTime)}
 	key := e.indexKey()
@@ -797,6 +798,42 @@ func (p *Project) summary(a *analysis, c callee) *summary {
 // ruleFile keys the summaries of one rule in one file.
 type ruleFile struct{ rule, file string }
 
+// keptSums is what the project keeps of a rule's summaries of a file it lets
+// go of: what working them out again would charge again, so that the work a
+// scan is charged, and so where its caps fall, does not depend on which files
+// the project held. done goes when memory is short (shrink(true)); the other
+// two are small and stay.
+type keptSums struct {
+	done   map[string]*summary
+	retUnk map[string]uint8
+	keyed  map[string]*summary
+}
+
+func keptOf(sc *summaries) *keptSums {
+	return &keptSums{done: sc.done, retUnk: sc.retUnk, keyed: sc.keyed}
+}
+
+// restore puts back into sc what was kept of it.
+func (k *keptSums) restore(sc *summaries) {
+	if k.done != nil {
+		sc.done = k.done
+	}
+	sc.retUnk, sc.keyed = k.retUnk, k.keyed
+}
+
+// firstCost is what summary id of rule cost the first time it was worked out:
+// worked out again, after the memory cap let it go, it is the same summary,
+// and is paid for at that cost though what it reads (returnsUnknown) may be
+// ready this time.
+func (p *Project) firstCost(rule, id string, cost int) int {
+	k := [2]string{rule, id}
+	if c, ok := p.costs[k]; ok {
+		return c
+	}
+	p.costs[k] = cost
+	return cost
+}
+
 // analysisFor returns an analysis of file f for the same rule, sharing the
 // caller's budget and the project's summaries of f.
 func (p *Project) analysisFor(a *analysis, f string) *analysis {
@@ -809,8 +846,8 @@ func (p *Project) analysisFor(a *analysis, f string) *analysis {
 	sc, ok := p.sums[key]
 	if !ok {
 		sc = newSummaries(ctx.ff)
-		if done := p.kept[key]; sc != nil && done != nil {
-			sc.done = done // computed before the file was let go
+		if k := p.kept[key]; sc != nil && k != nil {
+			k.restore(sc) // worked out before the file was let go
 			delete(p.kept, key)
 		}
 		p.sums[key] = sc
@@ -877,7 +914,7 @@ func (p *Project) keep(f string, c *fileCtx) {
 			// is still written to it (a cycle being settled) is kept too.
 			for k, sc := range p.sums {
 				if k.file == old {
-					p.kept[k] = sc.done
+					p.kept[k] = keptOf(sc)
 					delete(p.sums, k)
 				}
 			}
@@ -984,18 +1021,24 @@ func (p *Project) shrink(all bool) {
 		// gets them back (analysisFor), as when the LRU lets it go (keep).
 		for k, sc := range p.sums {
 			if !p.inUse(k.file) {
-				p.kept[k] = sc.done
+				p.kept[k] = keptOf(sc)
 				delete(p.sums, k)
 			}
 		}
 		return
 	}
-	for k := range p.sums {
+	// The finished summaries go, and are paid for at their first cost when
+	// worked out again (firstCost); what returnsUnknown and keyedSinks found
+	// stays, small next to them.
+	for k, sc := range p.sums {
 		if !p.inUse(k.file) {
+			p.kept[k] = &keptSums{retUnk: sc.retUnk, keyed: sc.keyed}
 			delete(p.sums, k)
 		}
 	}
-	clear(p.kept)
+	for _, k := range p.kept {
+		k.done = nil
+	}
 }
 
 // resolve finds the file and the function name a call in a's file reaches.
