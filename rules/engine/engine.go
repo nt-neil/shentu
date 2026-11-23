@@ -466,12 +466,16 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 	names := nameSet(toks, map[string]bool{})
 	nextHdrs := base == "js" && importsModule(toks, "next/headers") // h = await headers(): h.get( is a source no text shows (reqalias.go)
 	si := newSrcIndex(toks, b)
+	var strs map[string]bool
 	for _, r := range rs {
 		if time.Now().After(b.deadline) { // cheap: once per rule
 			b.hit, b.timeHit = true, true
 			break
 		}
 		hs := si.names(r.sinks, r.textSinks, names, src) && si.hasSink(r)
+		if !hs && r.rule.Lang == "php" {
+			hs = namedSink(r, strNames(toks, &strs)) // array_map('system', $x): a builtin sink given by name (callbacks.go)
+		}
 		if !hs && proj != nil && !proj.sinkRules[r.rule.ID] {
 			continue // no file of the project holds a sink of it: nothing to reach across files either
 		}

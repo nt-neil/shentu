@@ -30,6 +30,8 @@ func TestPrefilterSound(t *testing.T) {
 		src{"php", "<?php\n$x = <<<EOT\n{${system($_GET['c'])}}\nEOT;\n"},
 		src{"php", "<?php\n$f = 'system';\n$f($_GET['c']);\n"},
 		src{"php", "<?php\ncall_user_func('system', $_GET['c']);\n"},
+		src{"php", "<?php\n$cbs['run'] = 'system';\n$cbs['run']($_GET['c']);\n"},
+		src{"php", "<?php\n$info['filesize'] = 1;\narray_map('file_get_contents', $_GET['f']);\n"},
 		src{"php", "<?php\nSYSTEM($_GET['c']);\n"},
 		src{"php", "<?php\n\\system($_GET['c']);\n"},
 		src{"python", "import os\nx = request.args['c']\ngetattr(os, 'system')(x)\n"},
@@ -45,7 +47,8 @@ func TestPrefilterSound(t *testing.T) {
 		funcs := collectFuncs(tree, c.lang)
 		for _, r := range e.byLang[c.lang] {
 			checked++
-			if hasSink(r, toks) {
+			var strs map[string]bool
+			if hasSink(r, toks) || namedSink(r, strNames(toks, &strs)) { // as the scan keeps a rule
 				continue
 			}
 			skipped++
