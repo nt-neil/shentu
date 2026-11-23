@@ -13,6 +13,8 @@ Chinese for the zh-TW pages; keep the two in step.
   from the same read of the log as the month's use. A reservation that cannot be matched counts in
   full, as before.
 
+- The survey (site_profile) checks the Docker and Podman sockets through the host source, like its
+  other reads: a replay or a fixture is no longer answered by the machine running the survey.
 
 ## v0.5.4 — 2026-11-23
 
