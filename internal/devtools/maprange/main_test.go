@@ -17,7 +17,10 @@ func TestListSample(t *testing.T) {
 		t.Fatal(err)
 	}
 	var got []string
-	for _, s := range sites {
+	for i, s := range sites {
+		if (len(s.body) == 12) != (i != 4) || i > 0 && i < 4 && s.body == sites[i-1].body {
+			t.Errorf("%s: body hash %q: want 12 hex digits for each loop, its own, and none for a maps iterator not ranged over", s.pos, s.body)
+		}
 		got = append(got, fmt.Sprintf("%s %s %s %d [%s] [%s]", s.pos, s.fn, s.expr, s.n, strings.Join(s.reach, ","), strings.Join(s.unknown, ",")))
 	}
 	want := []string{
@@ -33,8 +36,9 @@ func TestListSample(t *testing.T) {
 	}
 }
 
-// Every range over a map in rules/engine is in approved.tsv with what its
-// body reaches, and the list has nothing that is gone. A new one fails here
+// Every range over a map in rules/engine is in approved.tsv with its body's
+// hash and what the body reaches, and the list has nothing that is gone: a
+// loop whose body changed is read again. A new one fails here
 // until it is read and added; `go run ./internal/devtools/maprange rules/engine`
 // prints the current list with positions.
 func TestEngineMapRanges(t *testing.T) {
@@ -47,7 +51,7 @@ func TestEngineMapRanges(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer f.Close()
-	approved := map[string]string{} // function, ranged over, ordinal → reached, not followed
+	approved := map[string]string{} // function, ranged over, ordinal → body, reached, not followed
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {
 		l := sc.Text()
@@ -55,23 +59,23 @@ func TestEngineMapRanges(t *testing.T) {
 			continue
 		}
 		c := strings.Split(l, "\t")
-		if len(c) != 7 || (c[5] != "SAFE" && c[5] != "SORTED") || c[6] == "" {
-			t.Fatalf("approved.tsv: want function, ranged over, ordinal, reached, not followed, SAFE or SORTED, why: %q", l)
+		if len(c) != 8 || (c[6] != "SAFE" && c[6] != "SORTED") || c[7] == "" {
+			t.Fatalf("approved.tsv: want function, ranged over, ordinal, body hash, reached, not followed, SAFE or SORTED, why: %q", l)
 		}
-		approved[strings.Join(c[:3], "\t")] = c[3] + "\t" + c[4]
+		approved[strings.Join(c[:3], "\t")] = strings.Join(c[3:6], "\t")
 	}
 	if err := sc.Err(); err != nil {
 		t.Fatal(err)
 	}
 	for _, s := range sites {
 		k := fmt.Sprintf("%s\t%s\t%d", s.fn, s.expr, s.n)
-		body := strings.Join(s.reach, ",") + "\t" + strings.Join(s.unknown, ",")
+		body := s.body + "\t" + strings.Join(s.reach, ",") + "\t" + strings.Join(s.unknown, ",")
 		a, ok := approved[k]
 		switch {
 		case !ok:
 			t.Errorf("%s: %s ranges over %s in map order (reaches [%s], not followed [%s]); read it and add it to approved.tsv", s.pos, s.fn, s.expr, strings.Join(s.reach, ","), strings.Join(s.unknown, ","))
 		case a != body:
-			t.Errorf("%s: %s over %s now reaches and leaves unfollowed %q, approved.tsv has %q; read it again", s.pos, s.fn, s.expr, body, a)
+			t.Errorf("%s: %s over %s now has body hash, reaches and leaves unfollowed %q, approved.tsv has %q; read it again", s.pos, s.fn, s.expr, body, a)
 		}
 		delete(approved, k)
 	}
