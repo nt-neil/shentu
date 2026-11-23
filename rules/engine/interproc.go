@@ -965,6 +965,9 @@ func (a *analysis) summaryOf(key string) *summary {
 		if s == nil { // nested too deep: not worked out
 			return nil
 		}
+		if keep && a.proj != nil {
+			cost = a.proj.firstCost(a.r.rule.ID, a.file+"\x00"+key, cost)
+		}
 		s.capped, s.capCut, s.height, s.cost, s.id = capped, a.sumCut, height, cost, a.file+"\x00"+key
 		switch {
 		case !keep:
@@ -1009,6 +1012,9 @@ func (a *analysis) summaryOf(key string) *summary {
 	// The members were worked out together, at one cost: an asker using several
 	// of them pays it once (one id for the cycle, by its first function).
 	id := a.file + "\x00" + sc.ff.comps[c][0]
+	if keep && a.proj != nil {
+		cost = a.proj.firstCost(a.r.rule.ID, id, cost)
+	}
 	for _, m := range members {
 		delete(sc.busy, m)
 		sc.done[m].capped, sc.done[m].capCut, sc.done[m].height, sc.done[m].cost, sc.done[m].id = capped, a.sumCut, height, cost, id
@@ -1222,6 +1228,13 @@ func (a *analysis) returnsUnknown(key string) bool {
 		if x.summ.ret.taint && !x.summ.ret.weak {
 			sc.retUnk[key] = 2
 		}
+	}
+	if a.b.hit {
+		// The asker's budget ran out reading the body: what it found is not
+		// all there is, and another asker, with budget left, would read it all.
+		// Not kept, so that one does.
+		delete(sc.retUnk, key)
+		return true
 	}
 	return sc.retUnk[key] == 1
 }
@@ -1560,7 +1573,11 @@ func (a *analysis) keyedSinks(t []Token, i int, key string, p int, sub map[strin
 		if !keep {
 			return nil, false
 		}
-		s = &summary{capped: capped, capCut: x.sumCut, height: height, cost: cost, id: x.file + "\x00keyed\x00" + ck}
+		id := x.file + "\x00keyed\x00" + ck
+		if x.proj != nil {
+			cost = x.proj.firstCost(x.r.rule.ID, id, cost)
+		}
+		s = &summary{capped: capped, capCut: x.sumCut, height: height, cost: cost, id: id}
 		for l := range got {
 			s.sink = append(s.sink, []loc{l})
 		}
