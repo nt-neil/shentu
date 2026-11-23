@@ -58,7 +58,7 @@ func TestWebPackagesEmptyHost(t *testing.T) {
 	if in := nginxVersion(ctx); in.version != "" || in.pkg != "" || in.removed {
 		t.Errorf("nginx on an empty host: %+v", in)
 	}
-	if rs := nginxH2Risk(ctx); len(rs) != 0 {
+	if rs := nginxRisks(ctx); len(rs) != 0 {
 		t.Errorf("nginx risks on an empty host: %v", rs)
 	}
 	if v := apacheVersion(ctx); v != "" {

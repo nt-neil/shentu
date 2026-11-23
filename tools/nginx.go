@@ -7,29 +7,46 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/nt-neil/shentu/hostenv"
 )
 
-// CVE-2026-123007 (memory corruption in HTTP/2 flow control, nginx 1.9.5
-// through 1.31.8) and CVE-2026-123633 (a use-after-free in HTTP/2, 1.19.7
-// through 1.31.8), nginx.org's security advisories: fixed in 1.31.9 and
-// 1.30.7. Only a server that speaks HTTP/2 is exposed. The package scan
-// reports them once the distributions' advisories reach OSV, but not for
-// nginx.org's own packages (their versions compare as newer than the
-// distribution's fix), a PPA's, or an nginx built from source: this check
-// covers those, by version and configuration, until the advisories are in
-// OSV everywhere.
+// nginx.org's security advisories of 2026-11-18, fixed in 1.31.9 and 1.30.7:
+// CVE-2026-123007 (memory corruption in HTTP/2 flow control) and
+// CVE-2026-123633 (a use-after-free in HTTP/2) reach a server that speaks
+// HTTP/2; CVE-2026-118899 (an infinite loop reading a request body over
+// TLS 1.3) one that speaks TLS 1.3, HTTP/2 or not; CVE-2026-113425 (a
+// use-after-free in the mail proxy) one with a mail block. The other six,
+// medium and minor, need features this check does not read (a resolver,
+// HTTP/3, stream, PROXY protocol, alias): they are one line of advice by
+// version. The package scan reports them once the distributions' advisories
+// reach OSV, but not for nginx.org's own packages (their versions compare as
+// newer than the distribution's fix), a PPA's, or an nginx built from
+// source: this check covers those, by version and configuration, until the
+// advisories are in OSV everywhere.
 
-// nginxH2CVE is one HTTP/2 advisory: affected from first up to the fix.
-type nginxH2CVE struct {
+// nginxCVE is one advisory: affected from first up to the fix.
+type nginxCVE struct {
 	id    string
 	first [3]int
 }
 
-var nginxH2CVEs = []nginxH2CVE{{"CVE-2026-123007", [3]int{1, 9, 5}}, {"CVE-2026-123633", [3]int{1, 19, 7}}}
+var (
+	nginxH2CVEs   = []nginxCVE{{"CVE-2026-123007", [3]int{1, 9, 5}}, {"CVE-2026-123633", [3]int{1, 19, 7}}}
+	nginxTLS13CVE = []nginxCVE{{"CVE-2026-118899", [3]int{1, 13, 0}}}
+	nginxMailCVE  = []nginxCVE{{"CVE-2026-113425", [3]int{0, 5, 33}}}
+	// resolver, HTTP/3, stream SNI with client certificates, stream
+	// ssl_preread, try_files with alias, PROXY protocol v2 (mainline only)
+	nginxOtherCVEs = []nginxCVE{{"CVE-2026-123634", [3]int{0, 6, 18}}, {"CVE-2026-121810", [3]int{1, 25, 0}},
+		{"CVE-2026-120967", [3]int{1, 25, 5}}, {"CVE-2026-123640", [3]int{1, 15, 2}}, {"CVE-2026-125283", [3]int{0, 9, 6}},
+		{"CVE-2026-120993", [3]int{1, 31, 4}}}
+)
+
+// nginxTLS13Default is the first nginx whose default ssl_protocols holds TLSv1.3.
+var nginxTLS13Default = [3]int{1, 23, 4}
 
 // nginxRelease is the upstream version in a package's or the binary's
 // version ("1.22.1-9+deb12u2", "1:1.20.1-14.el9_2.1", "1.31.8-1~bookworm").
@@ -58,20 +75,33 @@ func nginxRelease(version string) ([3]int, bool) {
 	return v, true
 }
 
-// nginxH2Affected is the HTTP/2 advisories a version of nginx is in.
-func nginxH2Affected(version string) []string {
+// atLeast reports whether version v is first or later.
+func atLeast(v, first [3]int) bool {
+	for i := range v {
+		if v[i] != first[i] {
+			return v[i] > first[i]
+		}
+	}
+	return true
+}
+
+// nginxAffected is the advisories of list a version of nginx is in.
+func nginxAffected(version string, list []nginxCVE) []string {
 	v, ok := nginxRelease(version)
-	if !ok || v[0] != 1 || v[1] > 31 || v[1] == 31 && v[2] >= 9 || v[1] == 30 && v[2] >= 7 {
+	if !ok || v[0] > 1 || v[0] == 1 && (v[1] > 31 || v[1] == 31 && v[2] >= 9 || v[1] == 30 && v[2] >= 7) {
 		return nil // 1.31.9 and 1.30.7 are fixed, and what comes after them
 	}
 	var out []string
-	for _, c := range nginxH2CVEs {
-		if v[1] > c.first[1] || v[1] == c.first[1] && v[2] >= c.first[2] {
+	for _, c := range list {
+		if atLeast(v, c.first) {
 			out = append(out, c.id)
 		}
 	}
 	return out
 }
+
+// nginxH2Affected is the HTTP/2 advisories a version of nginx is in.
+func nginxH2Affected(version string) []string { return nginxAffected(version, nginxH2CVEs) }
 
 // nginxPackages are the package names nginx is installed under (Debian and
 // Ubuntu split it into nginx-core, -full, -light and -extras before 1.24;
@@ -196,56 +226,88 @@ func mentionsCVE(text, id string) bool {
 	}
 }
 
-// nginxHTTP2 reports whether nginx's configuration at conf speaks HTTP/2.
-var nginxHTTP2 = func(conf string) (on, found bool, unread []string) { return hostenv.NginxHTTP2At(hostSource(), conf) }
+// nginxFeatures reads what of nginx's configuration at conf the advisories need.
+var nginxFeatures = func(conf string) hostenv.NginxFeatures { return hostenv.NginxFeaturesAt(hostSource(), conf) }
 
-// nginxH2Risk is the risk of nginx's HTTP/2 advisories on this server, if any.
-func nginxH2Risk(ctx context.Context) []Risk {
+// nginxRisks is the risk of nginx's 2026-11-18 advisories on this server, if any.
+func nginxRisks(ctx context.Context) []Risk {
 	in := nginxVersion(ctx)
 	v, conf := in.version, in.conf
 	if conf == "" {
 		conf = hostenv.NginxConf
 	}
-	cves := nginxH2Affected(v)
-	if in.pkg != "" && len(cves) > 0 {
-		log := nginxChangelog(ctx, in.pkg, in.dist)
-		var open []string
-		for _, c := range cves {
-			if !mentionsCVE(log, c) {
-				open = append(open, c) // not backported by the package
-			}
-		}
-		cves = open
-	}
-	on, found, unread := nginxHTTP2(conf)
-	if v == "" && found && !in.removed {
+	f := nginxFeatures(conf)
+	if v == "" && f.Found && !in.removed {
 		// nginx is configured, but neither a package nor a binary where one is
 		// looked for gives its version (a build installed elsewhere, a fork);
 		// a package removed without its configuration is no nginx
 		return []Risk{{uncheckedPrefix + "nginx:version", "info", conf + " is there, but the version of nginx could not be found " +
-			"(no package, no binary in " + strings.Join(nginxBinaries, ", ") + "), so whether CVE-2026-123007 and CVE-2026-123633 affect it is unknown"}}
+			"(no package, no binary in " + strings.Join(nginxBinaries, ", ") + "), so whether CVE-2026-123007, CVE-2026-118899 " +
+			"and the other nginx advisories of 2026-11-18 affect it is unknown"}}
 	}
-	if len(cves) == 0 {
-		return nil
+	log := ""
+	if in.pkg != "" && len(nginxAffected(v, slices.Concat(nginxH2CVEs, nginxTLS13CVE, nginxMailCVE, nginxOtherCVEs))) > 0 {
+		log = nginxChangelog(ctx, in.pkg, in.dist)
 	}
-	ids, affect := strings.Join(cves, " and "), " affect"
-	if len(cves) == 1 {
-		affect = " affects"
+	open := func(list []nginxCVE) []string {
+		var out []string
+		for _, c := range nginxAffected(v, list) {
+			if !mentionsCVE(log, c) {
+				out = append(out, c) // not backported by the package
+			}
+		}
+		return out
 	}
-	switch {
-	case on:
-		return []Risk{{"nginx:" + cves[0], "warning", "nginx " + v + " serves HTTP/2, which " + ids + affect + " (HTTP/2 memory corruption: " +
+	rel, _ := nginxRelease(v)
+	tls13 := f.TLS13 || f.TLSDefault && atLeast(rel, nginxTLS13Default)
+	var out []Risk
+	var unknown []string // in range, but the configuration that decides could not all be read
+	for _, g := range []struct {
+		cves []string
+		on   bool
+		why  string
+	}{
+		{open(nginxH2CVEs), f.HTTP2, " serves HTTP/2, which %s (HTTP/2 memory corruption: " +
 			"a client can crash the worker processes; a public proof of concept exists). Upgrade to 1.31.9 (mainline) or 1.30.7 (stable), " +
 			"or to your distribution's fixed package; until then, turning HTTP/2 off (remove http2 from listen, or http2 off;) avoids it, " +
-			"and clients fall back to HTTP/1.1. If your distribution has published a fixed package, its advisory is what counts " +
-			"(an image without package changelogs, such as Ubuntu's minimized ones, keeps this warning after the fix)"}}
-	case !found:
-		return []Risk{{uncheckedPrefix + "nginx:" + cves[0], "info", "nginx " + v + " is in the range of " + ids +
-			", but " + conf + " was not found, so whether it serves HTTP/2 is unknown"}}
-	case len(unread) > 0:
-		// A file not read may be the one turning HTTP/2 on: not "not exposed".
-		return []Risk{{uncheckedPrefix + "nginx:" + cves[0], "info", "nginx " + v + " is in the range of " + ids +
-			", but whether it serves HTTP/2 is unknown: " + strings.Join(unread, ", ") + " could not be read"}}
+			"and clients fall back to HTTP/1.1"},
+		{open(nginxTLS13CVE), tls13, " serves TLS 1.3, which %s (an infinite loop while reading a request body over TLS 1.3: " +
+			"a client can tie up the worker processes). Turning HTTP/2 off does not avoid it; an nginx built with OpenSSL older than 1.1.1 has no TLS 1.3 and is not affected. Upgrade to 1.31.9 (mainline) or 1.30.7 (stable), " +
+			"or to your distribution's fixed package"},
+		{open(nginxMailCVE), f.Mail, " runs the mail proxy (a mail block with a server), which %s (a use-after-free in the mail proxy module). " +
+			"Upgrade to 1.31.9 (mainline) or 1.30.7 (stable), or to your distribution's fixed package; a mail block not needed can be removed"},
+	} {
+		switch {
+		case len(g.cves) == 0:
+		case g.on:
+			out = append(out, Risk{"nginx:" + g.cves[0], "warning", "nginx " + v + fmt.Sprintf(g.why, affects(g.cves)) +
+				". If your distribution has published a fixed package, its advisory is what counts " +
+				"(an image without package changelogs, such as Ubuntu's minimized ones, keeps this warning after the fix)"})
+		case !f.Found || len(f.Unread) > 0:
+			unknown = append(unknown, g.cves...)
+		}
 	}
-	return nil
+	if len(unknown) > 0 {
+		why := conf + " was not found"
+		if f.Found {
+			why = strings.Join(f.Unread, ", ") + " could not be read"
+		}
+		out = append(out, Risk{uncheckedPrefix + "nginx:" + unknown[0], "info", "nginx " + v + " is in the range of " +
+			strings.Join(unknown, ", ") + ", but whether it serves HTTP/2, TLS 1.3 or the mail proxy, which they need, is unknown: " + why})
+	}
+	if other := open(nginxOtherCVEs); len(other) > 0 {
+		out = append(out, Risk{"nginx:" + other[0], "info", "nginx " + v + " is in the range of " + strings.Join(other, ", ") +
+			" (medium and minor: the resolver, HTTP/3, stream with client certificates or ssl_preread, try_files with alias, " +
+			"PROXY protocol v2), which this check does not look for in the configuration. Upgrade to 1.31.9 (mainline) or 1.30.7 (stable), " +
+			"or to your distribution's fixed package"})
+	}
+	return out
+}
+
+// affects is "X affects" or "X and Y affect".
+func affects(cves []string) string {
+	if len(cves) == 1 {
+		return cves[0] + " affects"
+	}
+	return strings.Join(cves, " and ") + " affect"
 }
