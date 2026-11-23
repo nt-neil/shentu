@@ -296,6 +296,7 @@ func (a *analysis) stmt(s *stmt, st state) (state, uint8) {
 		a.stripKeys(st, s.toks)
 		a.markAssign(st, s.toks)
 		a.extractStmt(st, s.toks)
+		a.unsetStmt(st, s.toks)
 		a.recordLit(st, s.toks)
 		return st, a.exitOf(s.toks)
 	case sIf:
@@ -1423,6 +1424,11 @@ func (a *analysis) matchExpr(st state, t []Token, i int, whole bool) (val, int) 
 // carries no injection in any rule.
 var numericCasts = map[string]bool{"int": true, "integer": true, "float": true, "double": true, "bool": true, "boolean": true}
 
+// numericChecks are the PHP checks that hold only for a number or a string of
+// one: is_numeric allows a sign, a decimal point, an exponent and surrounding
+// white space, none of which ends a quoted context or a path segment.
+var numericChecks = words("is_numeric is_int is_integer is_long is_float ctype_digit")
+
 var numericFuncs = map[string]map[string]bool{
 	"php":    words("intval absint floatval boolval"),
 	"python": words("int float bool len"),
@@ -2082,6 +2088,17 @@ func (a *analysis) hasSanitizerWord(w string) bool {
 // sanitizers used as a check (in_array, str_starts_with, .startsWith, .is_relative_to).
 func (a *analysis) checkKeys(st state, atom []Token) []keyRef {
 	n := len(atom)
+	// is_numeric($x), ctype_digit($x): where it holds, $x is a number, which
+	// carries no injection in any rule (numericFuncs), so every rule takes it.
+	// Only a plain path: is_numeric(sanitize_text_field($x)) holds for "<b>1".
+	if a.php && n > 3 && atom[0].Kind == Ident && numericChecks[strings.ToLower(atom[0].Text)] && atom[1].op("(") && closeOf(atom, 1) == n-1 {
+		if args := splitTop(atom[2:n-1], isComma); len(args) == 1 {
+			if _, _, ok := a.pathKey(args[0]); ok {
+				return a.keysOf(args[0])
+			}
+		}
+		// otherwise as before: a rule listing ctype_digit takes ctype_digit((string) $id)
+	}
 	if keys := a.validatorKeys(st, atom); keys != nil {
 		return keys
 	}
