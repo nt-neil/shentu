@@ -111,7 +111,8 @@ func TestRiverLabelsNarrowEdge(t *testing.T) {
 // lines are the ones the page writes now, and the label as drawn is no wider
 // than labelWidth says, in both languages. A missing or stale row (a new
 // release, a changed translation or label) fails: remeasure on release day,
-// in the release-day commit.
+// in the release-day commit. A release not yet dated has no row (its rule
+// count moves with every PR); a row for one fails.
 func TestRiverLabelsAtLeastRendered(t *testing.T) {
 	b, err := os.ReadFile("testdata/river-label-widths.json")
 	if err != nil {
@@ -152,6 +153,19 @@ func TestRiverLabelsAtLeastRendered(t *testing.T) {
 		seen := map[string]bool{}
 		for _, r := range rels {
 			seen[r.Version] = true
+			if r.Date == "" {
+				// Not released yet: its label changes with each PR (the rule
+				// count), so it is measured on release day, once it is dated.
+				// Until then only the floor of the estimate holds, and a row
+				// for it means a release was measured but never dated.
+				if _, ok := rows[r.Version]; ok {
+					t.Errorf("%s v%s: measured, but not released (no date in the CHANGELOG)", lang, r.Version)
+				}
+				if est := labelWidth(r, tr); est < labelLamp || est < textWidth("v"+r.Version, 22) {
+					t.Errorf("%s v%s: estimated %.0fpx, under its own floor", lang, r.Version, est)
+				}
+				continue
+			}
 			m, ok := rows[r.Version]
 			if !ok {
 				t.Errorf("%s v%s: not measured; remeasure (testdata/measure-river-labels.js)", lang, r.Version)
