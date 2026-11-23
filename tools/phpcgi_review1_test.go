@@ -334,4 +334,11 @@ func TestPHPReview200MergeUnread(t *testing.T) {
 	if s, _ := phpWinSurface(context.Background(), nil); len(s) != 1 || s[0].Severity != "critical" {
 		t.Errorf("surface: %+v", s)
 	}
+	// The other order: the one not read first, then the one read whole.
+	h.confs = []string{`C:\Apache24\conf\httpd.conf`, `C:\xampp\apache\conf\httpd.conf`}
+	r = phpRisks(context.Background())
+	if a := phpFind(r, "php8.3:CVE-2024-4577"); a == nil || a.Severity != "critical" ||
+		!strings.Contains(a.Summary, "some of the configuration was not read") {
+		t.Errorf("merged, the one not read first: %v", r)
+	}
 }
