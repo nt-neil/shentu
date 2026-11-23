@@ -26,7 +26,7 @@ Chinese for the zh-TW pages; keep the two in step.
 
 - macOS: `accounts_audit` reads the Mac's accounts (dscl; no root needed) and the authorized_keys of
   the login accounts and root, and sudoers when it can be read. What could not be read is in a note;
-  the Linux-only checks (ld.so.preload, PAM modules from packages) are listed as not applicable.
+  the Linux-only checks (ld.so.preload, PAM modules not from a package) are listed as not applicable.
 
 - macOS: `file_changes` finds a file by its status-change time (a faked modification time no longer
   hides it) with its owner's name, watches macOS's own places by default (/private/etc, Homebrew,
