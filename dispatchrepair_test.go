@@ -55,7 +55,7 @@ func TestDispatchRepair(t *testing.T) {
 	if st, _ := os.Stat(p + ".bad"); runtime.GOOS != "windows" && st.Mode().Perm() != 0o600 {
 		t.Errorf(".bad mode %v", st.Mode())
 	}
-	if line := s.repairedLine(now); !strings.Contains(line, "ran 1 times: 3 unreadable archive lines moved") {
+	if line := s.repairedLine(now, false); !strings.Contains(line, "ran 1 times: 3 unreadable archive lines moved") {
 		t.Errorf("daily line: %q", line)
 	}
 	if err := s.Save(testRecord("000000000004", now)); err != nil {
@@ -197,7 +197,7 @@ func TestDispatchRepairWriteFails(t *testing.T) {
 	if notes := s.repairNotes(now.Add(-time.Hour)); len(notes) != 2 || notes[0].Added != 1 || notes[0].Moved != 0 || notes[1].Moved != 1 || notes[1].Added != 0 {
 		t.Errorf("notes: %+v", notes)
 	}
-	if line := s.repairedLine(now); !strings.Contains(line, "ran 2 times: 1 unreadable archive lines moved out (1 of them new") {
+	if line := s.repairedLine(now, false); !strings.Contains(line, "ran 2 times: 1 unreadable archive lines moved out (1 of them new") {
 		t.Errorf("daily line: %q", line)
 	}
 }

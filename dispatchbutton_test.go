@@ -637,3 +637,44 @@ func TestBotRecordsCanAct(t *testing.T) {
 		t.Error("bot.json says the service can act, though it has no CAP_NET_ADMIN")
 	}
 }
+
+// The checks before the buttons end together by offerCheckTimeout, however
+// many proposals are slow (a month of journald each): the ones not done are
+// listed as timeout, without a button, and the others keep theirs.
+func TestDispatchButtonOfferDeadline(t *testing.T) {
+	stubGate(t, nil)
+	old, oldT := blockCheck, offerCheckTimeout
+	t.Cleanup(func() { blockCheck, offerCheckTimeout = old, oldT })
+	offerCheckTimeout = 200 * time.Millisecond
+	fast := blockCheck
+	blockCheck = func(ctx context.Context, env *tools.Env, ip net.IP) (string, tools.BlockCode, error) {
+		if ip.String() == "203.0.113.1" {
+			return fast(ctx, env, ip)
+		}
+		<-ctx.Done() // a read that would take minutes
+		return "", tools.BlockTimeout, ctx.Err()
+	}
+	rec := propRec(proposalRecord{IP: "203.0.113.1"}, proposalRecord{IP: "203.0.113.2"}, proposalRecord{IP: "203.0.113.3"}, proposalRecord{IP: "203.0.113.4"})
+	b, tg, _ := buttonBot(t, rec)
+	done := make(chan struct{})
+	start := time.Now()
+	go func() {
+		b.offerProposals(context.Background(), pairedChat, testDispatch, owner(b), originTelegram)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the checks before the buttons have no deadline")
+	}
+	if d := time.Since(start); d > 2*time.Second {
+		t.Errorf("three slow proposals took %v: the deadline is not shared", d)
+	}
+	text, data := buttons(tg)
+	if len(data) != 1 {
+		t.Errorf("%d buttons, want 1 (the fast one): %v", len(data), data)
+	}
+	if n := strings.Count(text, "timeout"); n != 3 {
+		t.Errorf("%d proposals said timeout, want 3:\n%s", n, text)
+	}
+}

@@ -32,10 +32,11 @@ import (
 // checked when it starts, then runs its steps), never by one cap per
 // process.
 //
-// What a dispatch in progress has already spent is in log.jsonl and in its
-// reservation both, so near the limit the check stops a little early. That
-// errs on the safe side and is kept: taking it out would need the
-// reservation to know which log lines are its own.
+// What a dispatch in progress has already spent is in log.jsonl and would
+// be in its reservation too: a reservation knows its dispatch and when it
+// started, and the checks take what that dispatch has logged since off it,
+// from the same read of the log as the month's use (S-R-2, usageWithOthers).
+// When that cannot be matched, the reservation counts in full.
 
 const (
 	reservationsFile = "reservations.json"
@@ -52,6 +53,11 @@ type reservation struct {
 	Tokens  int       `json:"tokens"`
 	Cost    float64   `json:"cost,omitempty"` // what it may cost, with [agents] prices set (R2)
 	Expires time.Time `json:"expires"`
+	// S-R-2: the dispatch it is for and when it started; what that dispatch
+	// has logged since is in log.jsonl already, so the others count only
+	// the rest of its reservation.
+	Dispatch string    `json:"dispatch,omitempty"`
+	Started  time.Time `json:"started,omitempty"`
 }
 
 type reservations struct {
@@ -99,6 +105,9 @@ func withReservations(cfg *Config, now time.Time, f func(*reservations)) error {
 	if negativeReservation(r) { // S-R-6: not dropped quietly, like a file that does not parse
 		return fmt.Errorf("%w: %s holds a negative reservation (move it aside to reset it)", errReservations, p)
 	}
+	if sharedDispatch(r) { // S-169-1: what one dispatch logged would be taken off twice
+		return fmt.Errorf("%w: %s holds two reservations for one dispatch (move it aside to reset it)", errReservations, p)
+	}
 	var keep []reservation
 	for _, it := range r.Items {
 		if now.Before(it.Expires) {
@@ -114,6 +123,11 @@ func withReservations(cfg *Config, now time.Time, f func(*reservations)) error {
 // reserve reserves tokens for a dispatch and returns its id and a release.
 // Without a monthly token limit it reserves nothing.
 func reserve(cfg *Config, tokens int, cost float64, now time.Time) (id string, release func(), err error) {
+	return reserveFor(cfg, tokens, cost, "", now)
+}
+
+// reserveFor is reserve for the dispatch with that id (S-R-2), "" for none.
+func reserveFor(cfg *Config, tokens int, cost float64, dispatch string, now time.Time) (id string, release func(), err error) {
 	if cfg.Budget.MonthlyTokens <= 0 {
 		return "", func() {}, nil
 	}
@@ -121,7 +135,7 @@ func reserve(cfg *Config, tokens int, cost float64, now time.Time) (id string, r
 	rand.Read(b)
 	id = hex.EncodeToString(b)
 	err = withReservations(cfg, now, func(r *reservations) {
-		r.Items = append(r.Items, reservation{ID: id, Tokens: tokens, Cost: cost, Expires: now.Add(reserveTTL())})
+		r.Items = append(r.Items, reservation{ID: id, Tokens: tokens, Cost: cost, Expires: now.Add(reserveTTL()), Dispatch: dispatch, Started: now})
 	})
 	if err != nil {
 		return "", func() {}, err
@@ -167,6 +181,9 @@ func peekReserved(cfg *Config, now time.Time) (int, float64, error) {
 	if negativeReservation(r) {
 		return 0, 0, fmt.Errorf("%s holds a negative reservation", p)
 	}
+	if sharedDispatch(r) {
+		return 0, 0, fmt.Errorf("%s holds two reservations for one dispatch", p)
+	}
 	n, c := 0, 0.0
 	for _, it := range r.Items {
 		if now.Before(it.Expires) {
@@ -188,6 +205,23 @@ func negativeReservation(r reservations) bool {
 	return false
 }
 
+// sharedDispatch: two reservations of different ids name one dispatch,
+// which runDispatch never writes (one reservation per dispatch); what that
+// dispatch logged would be taken off both (S-169-1).
+func sharedDispatch(r reservations) bool {
+	seen := map[string]string{}
+	for _, it := range r.Items {
+		if it.Dispatch == "" {
+			continue
+		}
+		if id, ok := seen[it.Dispatch]; ok && id != it.ID {
+			return true
+		}
+		seen[it.Dispatch] = it.ID
+	}
+	return false
+}
+
 // othersReserved is the tokens and the cost the live reservations hold,
 // but self's.
 func othersReserved(cfg *Config, self string, now time.Time) (tokens int, cost float64, err error) {
@@ -202,6 +236,68 @@ func othersReserved(cfg *Config, self string, now time.Time) (tokens int, cost f
 		}
 	})
 	return tokens, cost, err
+}
+
+type spentUse struct {
+	tokens int
+	cost   float64
+}
+
+// monthUse is the month's use and what the others' reservations hold of the
+// rest, from one read of each (S-R-2).
+type monthUse struct {
+	cost         float64
+	tokens       int
+	othersTokens int
+	othersCost   float64
+}
+
+// usageWithOthers reads the reservations (all but self's) under their
+// lock, then log.jsonl once, outside it: the month's use and, in the same
+// pass, what each reserved dispatch has logged since its reservation
+// started (S-R-2), taken off its reservation down to 0 at most. Its
+// correctness does not come from the lock (the log is read after it is
+// let go, and lines may be added meanwhile): it comes from the one scan,
+// in which a line taken off a reservation is always a line the month's sum
+// counted too, as the condition for taking off (the dispatch's id, at or
+// after its start) is stricter than the one for the sum (this month). A
+// reservation without its dispatch's id, or started in the future, counts
+// in full; two for one dispatch make the file untrusted (S-169-1). An
+// untrusted reservation file is an errReservations error; a log that
+// cannot be read, its error.
+func usageWithOthers(cfg *Config, self string, now time.Time) (monthUse, error) {
+	var items []reservation
+	err := withReservations(cfg, now, func(r *reservations) {
+		for _, it := range r.Items {
+			if it.ID != self {
+				items = append(items, it)
+			}
+		}
+	})
+	if err != nil {
+		return monthUse{}, err
+	}
+	started := map[string]time.Time{}
+	for _, it := range items {
+		if len(it.Dispatch) == 12 && !it.Started.IsZero() && !it.Started.After(now) {
+			started[it.Dispatch] = it.Started
+		}
+	}
+	var u monthUse
+	var spent map[string]spentUse
+	u.cost, u.tokens, _, spent, err = monthScan(cfg.StateDir, now, started)
+	if err != nil {
+		return monthUse{}, err
+	}
+	for _, it := range items {
+		s := spentUse{}
+		if _, ok := started[it.Dispatch]; ok {
+			s = spent[it.Dispatch]
+		}
+		u.othersTokens += max(0, it.Tokens-s.tokens)
+		u.othersCost += max(0, it.Cost-s.cost)
+	}
+	return u, nil
 }
 
 // dispatchCost is what a dispatch may cost at most: its whole token cap at

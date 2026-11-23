@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"time"
 
@@ -86,6 +87,18 @@ func loadConfig(path string) (*Config, error) {
 	c.LLM.Timeout = "180s"
 	c.Tools.LogPaths = []string{"/var/log/auth.log", "/var/log/secure", "/var/log/syslog", "/var/log/nginx/*.log", "/var/log/apache2/*.log"}
 	c.Tools.WatchPaths = []string{"/etc", "/usr/bin", "/usr/sbin", "/usr/local/bin", "/var/www", "/root/.ssh"}
+	if runtime.GOOS == "darwin" { // macOS's own places (M0): /etc is /private/etc; Homebrew; launchd jobs
+		// Not each user's ~/Library/LaunchAgents and ~/.ssh: add them to
+		// watch_paths (S-183-2).
+		// macOS's own text logs, in root's /private/var/log; sshd is in the
+		// unified log, which log_search does not read. Not Homebrew's nginx
+		// and Apache logs: their directories belong to the Homebrew user,
+		// who could hard-link a root-only file there (macOS has no
+		// protected_hardlinks) for log_search, run as root, to read. Add
+		// them to log_paths knowingly.
+		c.Tools.LogPaths = []string{"/var/log/system.log", "/var/log/install.log"}
+		c.Tools.WatchPaths = []string{"/private/etc", "/usr/local/bin", "/usr/local/sbin", "/opt/homebrew/bin", "/Library/LaunchDaemons", "/Library/LaunchAgents", "/var/root/.ssh"}
+	}
 	c.Tools.WebUsers = []string{"www-data", "apache", "nginx", "http"}
 	c.Tools.AppPaths = []string{"/var/www", "/srv", "/opt", "/home", "/root"}
 	c.Patrol.SSHThreshold = 10

@@ -41,7 +41,7 @@ func TestSSHSummary(t *testing.T) {
 	// would be read first otherwise.
 	noCmds, _ := hostenv.NewRunner(nil)
 	prevHost := hostSource
-	hostSource = func() hostenv.Source { return &hostenv.Live{Runner: noCmds} }
+	hostSource = func() hostenv.Source { return linuxLive{&hostenv.Live{Runner: noCmds}} }
 	t.Cleanup(func() { hostSource = prevHost })
 	r, err := SSHSummary(context.Background(), &Env{LogPaths: []string{p}}, now.Add(-24*time.Hour), "")
 	if err != nil {
@@ -174,7 +174,7 @@ func TestMinerSigns(t *testing.T) {
 }
 
 // emptyJournal answers journalctl with no entry.
-type emptyJournal struct{ *hostenv.Live }
+type emptyJournal struct{ linuxLive }
 
 func (emptyJournal) RunLinesUnmasked(_ context.Context, _ []string, fn func(string)) (hostenv.CmdResult, error) {
 	fn("-- No entries --")
@@ -188,7 +188,7 @@ func TestSSHSummaryEmptyJournalIncomplete(t *testing.T) {
 	}
 	prevHost := hostSource
 	hostSource = func() hostenv.Source {
-		return emptyJournal{&hostenv.Live{Remap: map[string]string{"/var/log": t.TempDir()}}}
+		return emptyJournal{linuxLive{&hostenv.Live{Remap: map[string]string{"/var/log": t.TempDir()}}}}
 	}
 	t.Cleanup(func() { hostSource = prevHost })
 	r, err := SSHSummary(context.Background(), &Env{LogPaths: []string{"/var/log/auth.log"}}, time.Now().Add(-time.Hour), "")
@@ -197,8 +197,8 @@ func TestSSHSummaryEmptyJournalIncomplete(t *testing.T) {
 	}
 }
 
-// With no journalctl to run and no text auth log, macOS says it has no sshd
-// log source (not the runner's allowlist error); elsewhere the error stays.
+// With no journalctl to run and no text auth log, the runner's allowlist
+// error stays (on macOS ssh_logins reads the unified log: maclogins_test).
 // A text log that cannot be read for want of rights sets permission, so the
 // report advises root only then (review N-3).
 func TestSSHSummaryNoLogSource(t *testing.T) {
@@ -208,7 +208,9 @@ func TestSSHSummaryNoLogSource(t *testing.T) {
 	noCmds, _ := hostenv.NewRunner(nil)
 	dir := t.TempDir()
 	prevHost := hostSource
-	hostSource = func() hostenv.Source { return &hostenv.Live{Runner: noCmds, Remap: map[string]string{"/var/log": dir}} }
+	hostSource = func() hostenv.Source {
+		return linuxLive{&hostenv.Live{Runner: noCmds, Remap: map[string]string{"/var/log": dir}}}
+	}
 	t.Cleanup(func() { hostSource = prevHost })
 	env := &Env{LogPaths: []string{"/var/log/auth.log"}}
 	r, err := SSHSummary(context.Background(), env, time.Now().Add(-time.Hour), "")
@@ -217,11 +219,7 @@ func TestSSHSummaryNoLogSource(t *testing.T) {
 	}
 	src, _ := r["source"].(string)
 	e, _ := r["error"].(string)
-	if runtime.GOOS == "darwin" {
-		if r["unsupported"] != true || e != "" || !strings.Contains(src, "macOS") {
-			t.Errorf("macOS: %v", r)
-		}
-	} else if r["unsupported"] == true || !strings.Contains(e, "allowlist") {
+	if r["unsupported"] == true || !strings.Contains(e, "allowlist") || src == "" {
 		t.Errorf("no journalctl: %v", r)
 	}
 	if r["permission"] == true {

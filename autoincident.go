@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -253,14 +254,11 @@ func autoBudget(cfg *Config, now time.Time) string {
 	if cfg.Budget.MonthlyTokens <= 0 {
 		return autoSkipNoBudget
 	}
-	cost, tokens, _, err := monthUsageStrict(cfg.StateDir, now)
+	u, err := usageWithOthers(cfg, "", now) // R1: what dispatches in progress hold is not room; S-R-2: one read
 	if err != nil {
 		return autoSkipBudgetUnknown
 	}
-	others, othersCost, err := othersReserved(cfg, "", now) // R1: what dispatches in progress hold is not room
-	if err != nil {
-		return autoSkipBudgetUnknown
-	}
+	cost, tokens, others, othersCost := u.cost, u.tokens, u.othersTokens, u.othersCost
 	used := float64(tokens+others+dispatchTokenCap) / float64(cfg.Budget.MonthlyTokens)
 	if cfg.Budget.MonthlyCost > 0 {
 		used = max(used, (cost+othersCost+dispatchCost(cfg))/cfg.Budget.MonthlyCost) // R2: priced caps
@@ -281,25 +279,25 @@ const autoMinTokens = int(dispatchTokenCap / autoBudgetStop)
 // bot starts to serve and on the daily patrol only: the patrol's timer
 // runs often, and every other command would repeat it.
 func warnAutoBudget(cfg *Config) {
-	if w := autoBudgetWarning(cfg); w != "" {
+	if w := autoBudgetWarning(cfg, isZh(cfg)); w != "" {
 		fmt.Fprintln(os.Stderr, "shentu: warning: "+w)
 	}
 }
 
 // autoBudgetWarning says when auto_incident is on but the monthly token
 // limit is too small for any check to start; "" otherwise.
-func autoBudgetWarning(cfg *Config) string {
+func autoBudgetWarning(cfg *Config, zh bool) string {
 	if !cfg.Agents.AutoIncident || cfg.Budget.MonthlyTokens <= 0 || cfg.Budget.MonthlyTokens > autoMinTokens { // at autoMinTokens itself none starts either (N-168-1)
 		return ""
 	}
-	return fmt.Sprintf("auto_incident is on, but [budget] monthly_tokens = %d is not more than %d: an automatic check reserves %d tokens and starts only while that stays under %.0f%% of the limit, so none will ever start; raise monthly_tokens to more than %d", cfg.Budget.MonthlyTokens, autoMinTokens, dispatchTokenCap, autoBudgetStop*100, autoMinTokens)
+	return fmt.Sprintf(dt(zh, "auto_lowbudget"), cfg.Budget.MonthlyTokens, autoMinTokens, dispatchTokenCap, autoBudgetStop*100, autoMinTokens)
 }
 
 // warnAutoNotify says autoNotifyWarning on stderr (the journal), when the
 // bot starts to serve and on the daily patrol only: the patrol's timer
 // runs often, and every other command would repeat it.
 func warnAutoNotify(cfg *Config) {
-	if w := autoNotifyWarning(cfg); w != "" {
+	if w := autoNotifyWarning(cfg, isZh(cfg)); w != "" {
 		fmt.Fprintln(os.Stderr, "shentu: warning: "+w)
 	}
 }
@@ -309,11 +307,11 @@ func warnAutoNotify(cfg *Config) {
 // pushed, and the patrol pushes through the notify url alone (the bot's
 // token does not carry the patrol's alerts or the check's notice), so
 // without one no check ever starts.
-func autoNotifyWarning(cfg *Config) string {
+func autoNotifyWarning(cfg *Config, zh bool) string {
 	if !cfg.Agents.AutoIncident || cfg.Notify.URL != "" {
 		return ""
 	}
-	return "auto_incident is on, but no [notify] url is set: a check starts only from an L3 alert the patrol pushed, and the patrol pushes through the notify url alone, so none will start and nothing would be sent. Set [notify] url (for Telegram telegram://<bot-token>@telegram?chats=<chat id>, the bot's own token works; or a Slack or Discord webhook), for example with `sudo shentu setup`"
+	return dt(zh, "auto_nonotify")
 }
 
 // autoRun dispatches the incident sub-agent for p. runDispatch archives
@@ -414,23 +412,24 @@ func autoIncidentSection(cfg *Config, now time.Time) string {
 	if !cfg.Agents.AutoIncident {
 		return ""
 	}
+	zh := isZh(cfg)
 	var b strings.Builder
-	b.WriteString("\nAutomatic incident checks (L3 alerts, read-only, last day):\n")
-	if w := autoNotifyWarning(cfg); w != "" {
+	b.WriteString(dt(zh, "auto_head"))
+	if w := autoNotifyWarning(cfg, zh); w != "" {
 		b.WriteString("- " + w + "\n")
 	}
 	if cfg.Budget.MonthlyTokens <= 0 {
-		b.WriteString("- none are made: no monthly token budget is set ([budget] monthly_tokens; monthly_cost alone does not stop a local model, which reports no cost)\n")
-	} else if w := autoBudgetWarning(cfg); w != "" {
+		b.WriteString(dt(zh, "auto_nobudget"))
+	} else if w := autoBudgetWarning(cfg, zh); w != "" {
 		b.WriteString("- " + w + "\n")
 	}
-	b.WriteString(autoArchiveLine(cfg, now))
+	b.WriteString(autoArchiveLine(cfg, now, zh))
 	if _, _, long, err := monthUsageStrict(cfg.StateDir, now); err == nil && long > 0 {
-		fmt.Fprintf(&b, "- log.jsonl lines longer than %d KiB skipped when adding up the month's AI use: %d\n", maxLogLine>>10, long)
+		fmt.Fprintf(&b, dt(zh, "auto_longlines"), maxLogLine>>10, long)
 	}
 	st, err := readAutoState(cfg.StateDir)
 	if err != nil {
-		fmt.Fprintf(&b, "- not known: %s could not be read (%s)\n", autoIncidentFile, mask(err.Error()))
+		fmt.Fprintf(&b, dt(zh, "auto_nostate"), autoIncidentFile, mask(err.Error()))
 		return b.String()
 	}
 	since := now.Add(-autoWindow)
@@ -451,34 +450,38 @@ func autoIncidentSection(cfg *Config, now time.Time) string {
 			notArchived++
 		}
 	}
-	fmt.Fprintf(&b, "- dispatched: %d of at most %d (not complete: %d)\n", n, autoDailyCap, incomplete)
+	fmt.Fprintf(&b, dt(zh, "auto_count"), n, autoDailyCap, incomplete)
 	if unfinished > 0 {
-		fmt.Fprintf(&b, "- unfinished: %d (a slot was taken but the dispatch never ended: shentu stopped during it; the slot still counts)\n", unfinished)
+		fmt.Fprintf(&b, dt(zh, "auto_unfinished"), unfinished)
 	}
 	if notArchived > 0 {
-		fmt.Fprintf(&b, "- not saved to the dispatch archive: %d (the slot still counts; see the audit log)\n", notArchived)
+		fmt.Fprintf(&b, dt(zh, "auto_notsaved"), notArchived)
 	}
 	counts := st.skippedSince(since)
 	var parts []string
 	for _, k := range autoSkipOrder {
 		if counts[k] > 0 {
-			parts = append(parts, fmt.Sprintf("%s %d", k, counts[k]))
+			parts = append(parts, fmt.Sprintf("%s %d", enumWord(zh, skipZh, k), counts[k]))
 		}
 	}
 	if len(parts) > 0 {
-		fmt.Fprintf(&b, "- not dispatched: %s\n", strings.Join(parts, ", "))
+		sep := ", "
+		if zh {
+			sep = "、"
+		}
+		fmt.Fprintf(&b, dt(zh, "auto_skipped"), strings.Join(parts, sep))
 	}
 	if counts[autoSkipBudgetUnknown] > 0 {
-		b.WriteString("- the month's AI use could not be read (log.jsonl): none were made\n")
+		b.WriteString(dt(zh, "auto_useunknown"))
 	}
 	if counts[autoSkipPlatform] > 0 {
-		b.WriteString("- automatic incident checks run on Linux only for now: none were made, and no daily slot was used\n")
+		b.WriteString(dt(zh, "auto_platform"))
 	}
 	if counts[autoSkipBudget] > 0 {
-		fmt.Fprintf(&b, "- the month's AI budget reached %d%%: automatic checks stopped until next month\n", int(autoBudgetStop*100))
+		fmt.Fprintf(&b, dt(zh, "auto_budgetstop"), int(autoBudgetStop*100))
 	}
 	if len(st.Pending) > 0 {
-		fmt.Fprintf(&b, "- waiting for a later round: %d\n", len(st.Pending))
+		fmt.Fprintf(&b, dt(zh, "auto_pending"), len(st.Pending))
 	}
 	return b.String()
 }
@@ -487,11 +490,11 @@ func autoIncidentSection(cfg *Config, now time.Time) string {
 // stops automatic dispatches (autoReserve fails closed on it), whether or
 // not an L3 came: why, when it resumes on its own, and how to resume
 // sooner. "" when the archive can be read.
-func autoArchiveLine(cfg *Config, now time.Time) string {
+func autoArchiveLine(cfg *Config, now time.Time, zh bool) string {
 	store := newDispatchStore(cfg)
 	_, bad, err := store.Since(now.Add(-autoWindow))
 	if err != nil {
-		return fmt.Sprintf("- stopped: the dispatch archive (%s) cannot be trusted (%s); none are made until its owner and mode are fixed (0700, files 0600, this service's user)\n",
+		return fmt.Sprintf(dt(zh, "auto_untrusted"),
 			filepath.Join(cfg.StateDir, dispatchDir), mask(err.Error()))
 	}
 	if bad == 0 {
@@ -510,8 +513,12 @@ func autoArchiveLine(cfg *Config, now time.Time) string {
 		}
 	}
 	resume := last.AddDate(0, 0, 3)
-	return fmt.Sprintf("- stopped: %d lines of the dispatch archive could not be read (the newest in %s); none are made until that file leaves the count at %s (at most 72 hours), or sooner after %s (it moves them to *.jsonl.bad in %s)\n",
-		bad, last.Format(time.DateOnly)+".jsonl", resume.Format("2006-01-02 15:04 MST"), repairHint(), filepath.Join(cfg.StateDir, dispatchDir))
+	hint := repairHint()
+	if zh && runtime.GOOS == "windows" {
+		hint = dt(zh, "repair_win")
+	}
+	return fmt.Sprintf(dt(zh, "auto_badlines"),
+		bad, last.Format(time.DateOnly)+".jsonl", resume.Format("2006-01-02 15:04 MST"), hint, filepath.Join(cfg.StateDir, dispatchDir))
 }
 
 func (st *autoState) skip(now time.Time, why string) {
