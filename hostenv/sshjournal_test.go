@@ -201,3 +201,34 @@ func TestParseJournalFlatAgrees(t *testing.T) {
 		t.Error("the common line is not read flat")
 	}
 }
+
+// The flat reader is this package's own parser of untrusted input (what a
+// sender writes in sshd's unit): for any line, it reads exactly what the
+// full reader reads, field for field, or it gives the line up to it.
+func FuzzParseJournalFlat(f *testing.F) {
+	c := `"__CURSOR":"` + cur1 + `"`
+	for _, l := range []string{
+		`{` + c + `,"__REALTIME_TIMESTAMP":"1794700000000000","_UID":"0","_PID":"7","_COMM":"sshd","SYSLOG_IDENTIFIER":"sshd","MESSAGE":"Failed password for root from 203.0.113.9 port 22 ssh2"}`,
+		`{` + c + `,"MESSAGE":"tab\there \"q\" \\ \u00e9 \ud83d\ude00 \/","_UID":"1000"}`,
+		`{` + c + `,"MESSAGE":[104,105]}`,
+		`{` + c + `,"MESSAGE":null,"MESSAGE":"x"}`,
+		` { ` + c + ` , "MESSAGE" : "a" } `,
+		`{` + c + `,"MESSAGE":"` + "\xff" + `"}`,
+		`{"__CURSOR":"\u0073=1","MESSAGE":"\ud800"}`,
+	} {
+		f.Add(l)
+	}
+	f.Fuzz(func(t *testing.T, l string) {
+		e, ok := parseJournalFlat(l, 64)
+		if !ok {
+			return // the full reader's line
+		}
+		full, err := parseJournalJSONFull(l, 64)
+		if err != nil {
+			t.Fatalf("flat read a line the full reader refuses (%v): %q -> %+v", err, l, e)
+		}
+		if e != full {
+			t.Fatalf("%q:\nflat %+v\nfull %+v", l, e, full)
+		}
+	})
+}
