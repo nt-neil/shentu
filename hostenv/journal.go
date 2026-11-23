@@ -184,7 +184,11 @@ func ReadJournal(ctx context.Context, src Source, unit, after string, since time
 // read with its prefix (time, host, tag[pid]: at most 512 bytes here), so
 // the login index reads every event that read does. A longer one fails
 // that read; the index takes it as cut. maxSSHJournalLine is the JSON line
-// that holds such a message with its escapes.
+// that holds such a message with its escapes. The 512 bytes assume a short
+// tag: a tag of hundreds of bytes (logger -t) with a message just under the
+// cap makes a line the whole read stops at (state_error) while the index
+// still reads that entry and judges on. Not a way around the check: the
+// entry is still counted, for its address, as written.
 const (
 	MaxSSHJournalMessage = MaxLineBytes - 512
 	maxSSHJournalLine    = 8 * MaxLineBytes
