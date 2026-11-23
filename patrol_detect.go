@@ -387,9 +387,10 @@ func (r *detectRun) send(ctx context.Context, env *tools.Env) detectSummary {
 		}
 	}
 	if notices != "" {
+		title := nt(isZh(r.cfg), "det_notice_title") // the dry run's title is the notice's own (N-056u-1)
 		if r.dryRun {
-			fmt.Printf("Attack detection notice\n\n%s\n", notices)
-		} else if err := detectNotify(ctx, env, nt(isZh(r.cfg), "det_notice_title"), notices, "warning"); err != nil {
+			fmt.Printf("%s\n\n%s\n", title, notices)
+		} else if err := detectNotify(ctx, env, title, notices, "warning"); err != nil {
 			fail("notify (notices; sent again next round)", err)
 		} else {
 			p.NoticesSent()
