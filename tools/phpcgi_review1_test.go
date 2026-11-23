@@ -312,3 +312,26 @@ func TestPHPWinLocal(t *testing.T) {
 		t.Errorf("phpReadBin through a remote link: %v", err)
 	}
 }
+
+// S3-1: two configurations run one php-cgi.exe; the first is read whole and
+// loads no cgi module, the second has an Include that was not read. That
+// Include may load it: the merged entry stays critical and says so.
+func TestPHPReview200MergeUnread(t *testing.T) {
+	h := newPHPWinHost(t)
+	h.acp = "950"
+	h.xampp("8.3.7")
+	f := `c:\xampp\apache\conf\httpd.conf`
+	h.files[f] = strings.Replace(h.files[f], "LoadModule cgi_module", "#LoadModule cgi_module", 1)
+	h.file(`C:\Apache24\conf\httpd.conf`, "ServerRoot \"C:/Apache24\"\nInclude //files.example/share/modules.conf\n"+
+		"ScriptAlias /php-cgi/ \"C:/xampp/php/\"\n")
+	h.confs = []string{`C:\xampp\apache\conf\httpd.conf`, `C:\Apache24\conf\httpd.conf`}
+	r := phpRisks(context.Background())
+	a := phpFind(r, "php8.3:CVE-2024-4577")
+	if a == nil || a.Severity != "critical" || !strings.Contains(a.Summary, "some of the configuration was not read") ||
+		!strings.Contains(a.Summary, `C:\Apache24\conf\httpd.conf`) {
+		t.Fatalf("merged, one configuration not read: %v", r)
+	}
+	if s, _ := phpWinSurface(context.Background(), nil); len(s) != 1 || s[0].Severity != "critical" {
+		t.Errorf("surface: %+v", s)
+	}
+}
