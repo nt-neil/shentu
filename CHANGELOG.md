@@ -6,6 +6,18 @@ a release are not written here: they are worked out from the rule snapshots in
 `docs/site-src/rules-history/`. `CHANGELOG.zh-TW.md` holds the same releases in Traditional
 Chinese for the zh-TW pages; keep the two in step.
 
+## v0.5.6 (unreleased)
+
+- macOS: a listening socket netstat gives with pid 0 has no owner to name, so the list of listening
+  ports is marked partial and says how many, no longer complete as if every owner were known.
+
+### Known issues
+
+- macOS 27 hides the Internet sockets from netstat for any process started by an ad-hoc signed
+  program, as the release binaries are: `netstat -anv` writes nothing there (exit 0). shentu then
+  lists the listening ports with lsof, which sees only its own user's processes, and marks the list
+  partial. Run from a terminal, netstat shows them. macOS 15 is not affected.
+
 ## v0.5.5 — 2026-11-23
 
 - What a dispatch in progress has already used no longer counts twice near the budget limit: its
