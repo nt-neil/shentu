@@ -67,6 +67,23 @@ Chinese for the zh-TW pages; keep the two in step.
   critical and says so. A path whose links cannot be checked, or with `:` or `?` after the drive
   (an alternate data stream), is not read either.
 
+- Attack detection has a signature for CVE-2024-4577 (#199): php-cgi's command-line options sent
+  in the query string of a `.php` file (with a PATH_INFO or not), the site's index page (`/`) or
+  `/php-cgi/php-cgi.exe` (a soft hyphen, `%AD` or `%C2%AD`, then a one-letter option, or
+  a hyphen and an option letter standing alone). It is matched to the host by the CVE, so it
+  alerts on a host whose surface has CVE-2024-4577, with the KEV mark that entry carries; on any
+  other host its hits are counted as noise.
+
+### Known issues
+
+- No host check writes CVE-2024-4577 into the surface yet (PHP-CGI on Windows), so on a real host
+  the signature's hits stay noise until that check comes.
+
+- On such a host, a one-word query with no `=` that starts with a byte that is not UTF-8 and a
+  letter (a Latin-1, Big5 or Shift-JIS word not sent as UTF-8) matches the CVE-2024-4577
+  signature as `%AD` does: requests are matched decoded, where every such byte reads as U+FFFD
+  (`docs/attack-detection-limits.md`).
+
 ## v0.5.5 — 2026-11-23
 
 - What a dispatch in progress has already used no longer counts twice near the budget limit: its

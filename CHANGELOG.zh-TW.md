@@ -13,6 +13,14 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 
 - Windows 上，主機盤點和每日的弱點面會找出 Apache 以 CGI 執行的 php-cgi.exe（讀 httpd.conf 和它 Include 的檔案，包括 XAMPP 的 `httpd-xampp.conf`：`ScriptAlias` 指到 php-cgi.exe 或它所在的資料夾、`Action` 透過這種 alias 指到它，或那個資料夾設了 `AddHandler cgi-script .exe`），檢查 CVE-2024-4577（8.1.29、8.2.20、8.3.8 修正）和它的 bypass CVE-2024-8926（8.1.30、8.2.24、8.3.12 修正）。是否受影響由系統字碼頁（ACP）決定：CVE-2024-4577 是 932、936 或 950，CVE-2024-8926 是 ANSI 字碼頁被設成 OEM 字碼頁；讀不到字碼頁時用 warning 回報，並註明「字碼頁未確認」。8.1 以前的分支公告沒有列出、也不會修正，用 warning 回報。弱點面只有在 CISA KEV 目錄列出時才標示 KEV。IIS 上的 php-cgi.exe 不為這兩個 CVE 回報，因為公告只寫到 Apache，版本那一行會寫明。Apache 只認服務執行的那一個，以及 XAMPP、Apache Lounge 的固定位置（只有在 httpd.conf 只有系統管理員能寫入時才讀）；設定檔裡的網路路徑或裝置路徑（`\\host\share`）一律不讀，被 Include 的檔案如果是指到這種路徑的 link，也不讀。讀到的設定裡沒有用 `LoadModule` 載入 cgi_module 或 cgid_module 時，Apache 不會執行 CGI，所以用 warning 回報，不是 critical；寫在 `<IfModule>` 裡的也當作已載入。如果有設定檔沒讀到，仍然用 critical 回報，並寫明有設定未讀。路徑上的 link 無法檢查，或是路徑在 `C:` 之後還有 `:` 或 `?`（例如 ADS）時，也不讀。
 
+- 攻擊偵測新增 CVE-2024-4577 的簽章（#199）：在 `.php` 檔（後面有沒有 PATH_INFO 都算）、網站首頁（`/`）或 `/php-cgi/php-cgi.exe` 的查詢字串裡送出 php-cgi 的命令列參數（軟連字號 `%AD` 或 `%C2%AD` 後面接一個英文字的參數，或連字號後面接單獨一個英文字的參數）。這條簽章依 CVE 對應到主機，所以只在 surface 裡有 CVE-2024-4577 的主機上發出告警，並帶上該項目的 KEV 標示；其他主機上的命中只算雜訊。
+
+### 已知問題
+
+- 目前還沒有主機檢查會把 CVE-2024-4577（Windows 上的 PHP-CGI）寫進 surface，所以在實際主機上，這條簽章的命中在那項檢查完成之前都只算雜訊。
+
+- 在這樣的主機上，沒有 `=`、只有一個字的查詢，如果最前面是不是 UTF-8 的位元組再接一個英文字（沒有用 UTF-8 送出的 Latin-1、Big5 或 Shift-JIS 字），會和 `%AD` 一樣比中 CVE-2024-4577 的特徵：請求是解碼後才比對，這類位元組都會讀成 U+FFFD（`docs/attack-detection-limits.zh-TW.md`）。
+
 ## v0.5.5 — 2026-11-23
 
 - 預算接近上限時，進行中派遣已經用掉的部分不再重複計算：預留會記下它屬於哪一次派遣、何時開始，其他派遣只算它剩下的部分，

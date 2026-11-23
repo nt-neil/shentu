@@ -166,10 +166,43 @@ func TestAttackEval(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := []any{e.Version, e.Nuclei, e.Commit, e.Signatures, e.Caught, e.Templates, e.Rate, e.Distinct, e.Requests, e.Routes, e.Apps, e.Upper, e.HostCVEs, e.HostAlerted, e.HostL1}
-	want := []any{"0.4.1", "10.5.2", "5442582a", 27, 1548, 3822, "40.5%", 363, 1216, 152, 8, "0.8%", 10, 3, 2}
+	want := []any{"0.5.6", "10.5.2", "5442582a", 28, 1549, 3822, "40.5%", 363, 1216, 152, 8, "0.8%", 10, 3, 2}
 	for i := range want {
 		if got[i] != want[i] {
 			t.Errorf("field %d: got %v, want %v", i, got[i], want[i])
+		}
+	}
+}
+
+// TestAttackEvalAgrees: the limits document's signature count and detected
+// templates must be the build's and the baseline's, or the page is not made.
+func TestAttackEvalAgrees(t *testing.T) {
+	base, err := os.ReadFile("../../tools/detecteval/baseline.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := os.ReadFile("../../docs/attack-detection-limits.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct{ from, to, want string }{
+		{"Shentu ships 28 attack signatures", "Shentu ships 27 attack signatures", "attack signatures, the build has 28"},
+		{"detected (1549 of 3822)", "detected (1548 of 3822)", "templates detected"},
+	} {
+		root := t.TempDir()
+		for p, b := range map[string][]byte{"tools/detecteval/baseline.json": base, "docs/attack-detection-limits.md": []byte(strings.Replace(string(doc), c.from, c.to, 1))} {
+			if err := os.MkdirAll(filepath.Join(root, filepath.Dir(p)), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(root, p), b, 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if !strings.Contains(string(doc), c.from) {
+			t.Fatalf("the document no longer says %q", c.from)
+		}
+		if _, err := loadAttackEval(root); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%q: %v, want an error saying %q", c.to, err, c.want)
 		}
 	}
 }
