@@ -146,9 +146,11 @@ type fileFuncs struct {
 
 func newFileFuncs(funcs map[string][]*fnInfo, lang string) *fileFuncs {
 	ff := &fileFuncs{php: lang == "php", byKey: funcs, parents: map[string]string{}, traits: map[string][]string{}, tails: map[string]bool{}}
-	for k, infos := range funcs {
+	// in key order: two classes of the file whose names are the same without
+	// their namespace share parents and traits, the last one read setting them
+	for _, k := range slices.Sorted(maps.Keys(funcs)) {
 		ff.addTails(k)
-		for _, fi := range infos {
+		for _, fi := range funcs[k] {
 			if c := fi.f.class; c != "" {
 				c = ff.norm(c)
 				if fi.f.parent != "" {

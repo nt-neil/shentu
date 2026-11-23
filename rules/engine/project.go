@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"cmp"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -383,9 +384,9 @@ func (p *Project) readComposer(f string, b []byte) {
 		return
 	}
 	dir := path.Dir(filepath.ToSlash(f))
-	for ns, d := range c.Autoload.PSR4 {
+	for _, ns := range slices.Sorted(maps.Keys(c.Autoload.PSR4)) {
 		var dirs []string
-		switch v := d.(type) {
+		switch v := c.Autoload.PSR4[ns].(type) {
 		case string:
 			dirs = []string{v}
 		case []any:
@@ -399,6 +400,15 @@ func (p *Project) readComposer(f string, b []byte) {
 			p.psr4 = append(p.psr4, psr4Prefix{strings.TrimSuffix(ns, `\`), path.Join(dir, d)})
 		}
 	}
+	// the longest prefix first, as Composer's autoloader tries them (App\Http\
+	// before App\), whatever order composer.json lists them in; one prefix's
+	// directories keep their order
+	slices.SortStableFunc(p.psr4, func(a, b psr4Prefix) int {
+		if c := cmp.Compare(len(b.ns), len(a.ns)); c != 0 {
+			return c
+		}
+		return strings.Compare(a.ns, b.ns)
+	})
 }
 
 // safeIndex is indexFile; a panic leaves the file out of calls (Limited) rather
@@ -432,8 +442,10 @@ func indexFile(e *Engine, lang string, src []byte) *fileIndex {
 	tree := parse(lang, toks, b)
 	classes := map[string]*classIndex{}
 	var order []string
-	for key, infos := range collectFuncs(tree, lang) {
+	funcs := collectFuncs(tree, lang)
+	for _, key := range slices.Sorted(maps.Keys(funcs)) { // in key order: a class declared twice takes its parent from the same declaration every time
 		name := key[strings.LastIndex(key, ":")+1:]
+		infos := funcs[key]
 		for _, x := range infos {
 			if x.f.class == "" {
 				if !x.f.method {
