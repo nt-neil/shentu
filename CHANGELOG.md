@@ -24,6 +24,10 @@ Chinese for the zh-TW pages; keep the two in step.
   (netstat or lsof, and ps; no root needed) instead of Linux's /proc, which found nothing there and
   looked like a host with nothing running. An unreadable table is an error, and a partial one says so.
 
+- macOS: `accounts_audit` reads the Mac's accounts (dscl; no root needed) and the authorized_keys of
+  the login accounts and root, and sudoers when it can be read. What could not be read is in a note;
+  the Linux-only checks (ld.so.preload, PAM modules from packages) are listed as not applicable.
+
 ## v0.5.4 — 2026-11-23
 
 - Shared AI budget (#161): a dispatch from the bot, `shentu chat` or the automatic incident check

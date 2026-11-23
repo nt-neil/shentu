@@ -46,7 +46,7 @@ type Risk struct {
 // uncheckedRisks are the risks that say a check could not tell (a file it
 // needs could not be read): reports list them apart, every time, and never
 // push them as alerts.
-var uncheckedRisks = map[string]bool{"ssh:unreadable": true, "services:unreadable": true}
+var uncheckedRisks = map[string]bool{"ssh:unreadable": true, "accounts:unreadable": true, "services:unreadable": true}
 
 // uncheckedPrefix marks a risk from a check that could not tell (Windows
 // survey, see surveyFromFacts).
@@ -180,7 +180,11 @@ func Survey(ctx context.Context, env *Env) SiteProfile {
 		p.Containers = append(p.Containers, "podman")
 	}
 	p.CronFiles = cronFiles()
-	p.LoginAccounts = AccountsAudit().LoginAccounts
+	acc := AccountsAudit()
+	p.LoginAccounts = acc.LoginAccounts
+	if slices.Contains(acc.NotRead, "accounts") { // not an empty, clean-looking list (N-180-1)
+		p.Risks = append(p.Risks, Risk{"accounts:unreadable", "info", "cannot tell the login accounts in full: " + Cut(acc.Note, 200)})
+	}
 	return p
 }
 

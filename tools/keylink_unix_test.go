@@ -31,7 +31,7 @@ func TestKeysThroughSymlink(t *testing.T) {
 	for _, d := range []string{"/etc", "/home", "/srv", "/root"} {
 		remap[d] = filepath.Join(root, d)
 	}
-	withHost(t, &hostenv.Live{Remap: remap})
+	withHost(t, linuxLive{&hostenv.Live{Remap: remap}}) // a Linux host, wherever the test runs (M0 reads macOS on a Mac)
 	a := AccountsAudit()
 	got := map[string]KeyFile{}
 	for _, kf := range a.KeyFiles {
@@ -67,7 +67,7 @@ func TestKeysThroughLinkedFolder(t *testing.T) {
 	for _, d := range []string{"/etc", "/home", "/srv", "/data"} {
 		remap[d] = filepath.Join(root, d)
 	}
-	withHost(t, &hostenv.Live{Remap: remap})
+	withHost(t, linuxLive{&hostenv.Live{Remap: remap}}) // a Linux host, wherever the test runs (M0 reads macOS on a Mac)
 	got := map[string]KeyFile{}
 	for _, kf := range AccountsAudit().KeyFiles {
 		got[kf.Path] = kf
@@ -78,4 +78,14 @@ func TestKeysThroughLinkedFolder(t *testing.T) {
 	if k := got["/home/dave/.ssh/authorized_keys"]; k.Keys != 1 || k.SymlinkOutsideHome != "" {
 		t.Errorf("linked home: %+v", k)
 	}
+}
+
+// linuxLive is a Live source that says it is Linux: a Linux host built in a
+// temporary directory, read the same way on a Mac (where Live says darwin).
+type linuxLive struct{ *hostenv.Live }
+
+func (l linuxLive) Info() hostenv.SourceInfo {
+	i := l.Live.Info()
+	i.GOOS = "linux"
+	return i
 }

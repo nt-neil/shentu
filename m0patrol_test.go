@@ -52,3 +52,15 @@ func TestPortBaselineEmptyAfterRead(t *testing.T) {
 		t.Errorf("an old, non-empty baseline: %v", f)
 	}
 }
+
+// N-180-1: accounts or authorized_keys that could not be read are in the
+// patrol's "not checked"; sudoers alone (no root) is not a patrol check.
+func TestAccountsUnchecked(t *testing.T) {
+	got := accountsUnchecked(tools.Accounts{NotRead: []string{"accounts", "authorized_keys", "sudoers"}, Note: "dscl failed"})
+	if !strings.Contains(got, "Not checked: accounts") || !strings.Contains(got, "Not checked: authorized_keys") {
+		t.Errorf("unchecked: %q", got)
+	}
+	if got := accountsUnchecked(tools.Accounts{NotRead: []string{"sudoers"}}); got != "" {
+		t.Errorf("sudoers only: %q", got)
+	}
+}
