@@ -49,12 +49,24 @@ const UnifiedVerified = true
 // admin group: "Could not open local log store: Operation not permitted".
 const unifiedExitDenied = 77
 
-// Why an event was not counted: fixed words, said in the source.
+// Why an event was not counted: fixed words, said in the source. The
+// first two are left out on purpose; the last two are events Shentu
+// cannot read, which may be logins (a macOS that renamed a field): they
+// make the counts incomplete (N-186r-2).
 const (
-	UnifiedDropNotRoot  = "not_logged_by_root" // userID missing or not 0
+	UnifiedDropNotRoot  = "not_logged_by_root" // userID not 0
 	UnifiedDropNotSSHD  = "not_sshd_image"     // process and sender not one of the two sshd images
+	UnifiedDropNoUserID = "no_user_id"         // no userID: whose it is is not known
 	UnifiedDropBadEvent = "unreadable_event"   // not a JSON event with a timestamp and a message
 )
+
+// unifiedEnd is UnifiedToAuthLine's drop for log show's closing line,
+// {"count":N,"finished":1}: not an event (N-186r-1).
+const unifiedEnd = "end"
+
+// ErrUnreadEvents: log show printed sshd events Shentu could not read, or
+// did not print its closing line: the counts are a lower bound.
+var ErrUnreadEvents = errors.New("hostenv: unified log events not read")
 
 var unifiedImages = map[string]string{"/usr/libexec/sshd-session": "sshd-session", "/usr/sbin/sshd": "sshd"}
 
@@ -64,7 +76,8 @@ var reUnifiedTime = regexp.MustCompile(`^(\d{4}-\d\d-\d\d) (\d\d:\d\d:\d\d(?:\.\
 // UnifiedToAuthLine rewrites one log show --style ndjson event as an
 // auth.log line, "<date>T<time+zone> localhost <process>[<pid>]:
 // <message>", which sshdPrefix and ParseLogTime read. drop is why it is
-// not one (a Unified* word), "" for a line that is not an event at all.
+// not one (a Unified* word, or unifiedEnd for log show's closing line),
+// "" for a line that is not an event at all.
 func UnifiedToAuthLine(l string) (line, drop string) {
 	l = strings.TrimSpace(l)
 	if !strings.HasPrefix(l, "{") {
@@ -77,15 +90,25 @@ func UnifiedToAuthLine(l string) (line, drop string) {
 		EventMessage     string `json:"eventMessage"`
 		ProcessID        int64  `json:"processID"`
 		UserID           *int64 `json:"userID"`
+		Finished         *int64 `json:"finished"`
 	}
 	if json.Unmarshal([]byte(l), &e) != nil {
 		return "", UnifiedDropBadEvent
+	}
+	if e.Finished != nil && e.Timestamp == "" && e.ProcessImagePath == "" {
+		if *e.Finished != 1 {
+			return "", UnifiedDropBadEvent // a closing line that says log show did not finish
+		}
+		return "", unifiedEnd
 	}
 	name, ok := unifiedImages[e.ProcessImagePath]
 	if !ok || e.SenderImagePath != e.ProcessImagePath {
 		return "", UnifiedDropNotSSHD
 	}
-	if e.UserID == nil || *e.UserID != 0 {
+	if e.UserID == nil {
+		return "", UnifiedDropNoUserID
+	}
+	if *e.UserID != 0 {
 		return "", UnifiedDropNotRoot
 	}
 	m := reUnifiedTime.FindStringSubmatch(e.Timestamp)
@@ -99,7 +122,9 @@ func UnifiedToAuthLine(l string) (line, drop string) {
 // ScanAuthLogs streams sshd's login events since since from the unified
 // log to a consumer from sink, as auth.log lines. A user outside the
 // admin group is refused (fs.ErrPermission): root or an admin reads them.
-// Events not counted are said in source, with their reasons.
+// Events not counted are said in source, with their reasons; events it
+// cannot read, or no closing line from log show (its output was cut),
+// return ErrUnreadEvents: the counts are then a lower bound.
 func (DarwinCollector) ScanAuthLogs(ctx context.Context, src Source, since time.Time, sink func() func(line string)) (source string, verified bool, err error) {
 	ctx, cancel := context.WithTimeout(ctx, JournalTimeout)
 	defer cancel()
@@ -107,9 +132,14 @@ func (DarwinCollector) ScanAuthLogs(ctx context.Context, src Source, since time.
 	argv := append([]string(nil), UnifiedSSHArgv...)
 	argv[len(argv)-1] = since.Add(-time.Hour).Local().Format("2006-01-02 15:04:05")
 	drops := map[string]int{}
+	ended := false // the closing line was the last one
 	res, err := RunLinesUnmasked(ctx, src, argv, func(l string) {
 		a, drop := UnifiedToAuthLine(l)
+		if strings.TrimSpace(l) != "" {
+			ended = drop == unifiedEnd
+		}
 		switch {
+		case drop == unifiedEnd:
 		case drop != "":
 			drops[drop]++
 		case a != "":
@@ -118,7 +148,7 @@ func (DarwinCollector) ScanAuthLogs(ctx context.Context, src Source, since time.
 	})
 	source = "the unified log (sshd-session, sshd; logged by root)"
 	var said []string
-	for _, w := range []string{UnifiedDropNotRoot, UnifiedDropNotSSHD, UnifiedDropBadEvent} {
+	for _, w := range []string{UnifiedDropNotRoot, UnifiedDropNotSSHD, UnifiedDropNoUserID, UnifiedDropBadEvent} {
 		if n := drops[w]; n > 0 {
 			said = append(said, fmt.Sprintf("%s %d", w, n))
 		}
@@ -133,6 +163,11 @@ func (DarwinCollector) ScanAuthLogs(ctx context.Context, src Source, since time.
 		err = &exitError{res.ExitCode}
 	case errors.Is(err, context.DeadlineExceeded):
 		err = fmt.Errorf("%w: log show took over %s", ErrTimeout, JournalTimeout)
+	case err == nil && drops[UnifiedDropNoUserID]+drops[UnifiedDropBadEvent] > 0:
+		err = fmt.Errorf("%w: %d sshd events could not be read (%s %d, %s %d)", ErrUnreadEvents, drops[UnifiedDropNoUserID]+drops[UnifiedDropBadEvent],
+			UnifiedDropNoUserID, drops[UnifiedDropNoUserID], UnifiedDropBadEvent, drops[UnifiedDropBadEvent])
+	case err == nil && !ended:
+		err = fmt.Errorf("%w: log show did not print its closing line: its output was cut", ErrUnreadEvents)
 	}
 	return source, UnifiedVerified, err
 }

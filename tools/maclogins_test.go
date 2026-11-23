@@ -66,7 +66,8 @@ func TestSSHSummaryMacUnifiedLog(t *testing.T) {
 	lines = append(lines,
 		macEvent(now, sess, "Accepted password for root from "+ip+" port 5000 ssh2", 800, 501),
 		macEvent(now, "/usr/sbin/sshd", "Failed password for root from "+ip+" port 5001 ssh2", 801, 501),
-		macEvent(now, "/private/tmp/sshd-session", "Accepted password for root from "+ip+" port 5002 ssh2", 802, 0))
+		macEvent(now, "/private/tmp/sshd-session", "Accepted password for root from "+ip+" port 5002 ssh2", 802, 0),
+		`{"count":9,"finished":1}`) // log show's closing line: not counted as an event (N-186r-1)
 	m := &macLog{Live: &hostenv.Live{}, lines: lines}
 	withHost(t, m)
 	since := time.Now().Add(-time.Hour)
@@ -80,11 +81,47 @@ func TestSSHSummaryMacUnifiedLog(t *testing.T) {
 	}
 	s, _ := r["source"].(string)
 	if r["verified"] != true || r["complete"] != true || !strings.HasPrefix(s, "the unified log") || r["permission"] == true ||
-		!strings.Contains(s, hostenv.UnifiedDropNotRoot+" 2") || !strings.Contains(s, hostenv.UnifiedDropNotSSHD+" 1") {
+		!strings.HasSuffix(s, "; events not counted: "+hostenv.UnifiedDropNotRoot+" 2, "+hostenv.UnifiedDropNotSSHD+" 1") || r["error"] != nil {
 		t.Errorf("summary: %v", r)
 	}
 	if len(m.argv) == 0 || m.argv[0] != "/usr/bin/log" || m.argv[4] != "ndjson" || m.argv[len(m.argv)-1] != since.Add(-time.Hour).Local().Format("2006-01-02 15:04:05") {
 		t.Errorf("ran %q", m.argv)
+	}
+}
+
+// N-186r-1, N-186r-2: an sshd event with no userID or one that cannot be
+// read may be a login, and output with no closing line was cut: either
+// makes the counts a lower bound (complete false, why in error), never
+// a complete count with fewer events.
+func TestSSHSummaryMacUnreadEvents(t *testing.T) {
+	ip := "198.51.100." + "24"
+	now := time.Now().Add(-10 * time.Minute)
+	const sess = "/usr/libexec/sshd-session"
+	fail := macEvent(now, sess, "Failed password for root from "+ip+" port 4000 ssh2", 700, 0)
+	end := `{"count":2,"finished":1}`
+	for name, c := range map[string]struct {
+		lines []string
+		why   string
+	}{
+		"no userID":    {[]string{fail, macEvent(now, sess, "Failed password for root from "+ip+" port 4001 ssh2", 701, nil), end}, hostenv.UnifiedDropNoUserID + " 1"},
+		"unreadable":   {[]string{fail, `{"timestamp": 1, "processImagePath": "` + sess + `"}`, end}, hostenv.UnifiedDropBadEvent + " 1"},
+		"no end":       {[]string{fail}, "closing line"},
+		"not finished": {[]string{fail, `{"count":1,"finished":0}`}, hostenv.UnifiedDropBadEvent + " 1"},
+		"end not last": {[]string{end, fail}, "closing line"},
+	} {
+		withHost(t, &macLog{Live: &hostenv.Live{}, lines: c.lines})
+		r, err := SSHSummary(context.Background(), &Env{}, time.Now().Add(-time.Hour), "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		e, _ := r["error"].(string)
+		if src := r["sources"].([]SSHSource); r["complete"] != false || !strings.Contains(e, c.why) || r["permission"] == true || len(src) != 1 || src[0].Failed != 1 {
+			t.Errorf("%s: %v", name, r)
+		}
+	}
+	withHost(t, &macLog{Live: &hostenv.Live{}, lines: []string{fail, end}})
+	if r, _ := SSHSummary(context.Background(), &Env{}, time.Now().Add(-time.Hour), ""); r["complete"] != true || r["source"] != "the unified log (sshd-session, sshd; logged by root)" {
+		t.Errorf("read in full: %v", r)
 	}
 }
 
@@ -130,7 +167,9 @@ func TestSSHSummaryMacLive(t *testing.T) {
 		t.Fatal(err)
 	}
 	e, _ := r["error"].(string)
-	if !strings.HasPrefix(r["source"].(string), "the unified log") || (e != "" && r["permission"] != true) {
+	// The predicate keeps other images out, so not_sshd_image here is log
+	// show's closing line counted as an event (N-186r-1).
+	if s := r["source"].(string); !strings.HasPrefix(s, "the unified log") || strings.Contains(s, hostenv.UnifiedDropNotSSHD) || (e != "" && r["permission"] != true) {
 		t.Errorf("source %v, error %d bytes, permission %v", r["source"], len(e), r["permission"])
 	}
 }

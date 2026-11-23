@@ -42,11 +42,13 @@ func TestUnifiedToAuthLine(t *testing.T) {
 	dropped := map[string]string{
 		unifiedEvent(at, sess, sess, "Accepted publickey for alice from "+other+" port 1 ssh2: ED25519 SHA256:x", 900, 501):                         UnifiedDropNotRoot,
 		unifiedEvent(at, sshd, sshd, "Accepted password for root from "+other+" port 2 ssh2", 901, 501):                                             UnifiedDropNotRoot,
-		unifiedEvent(at, sess, sess, "Accepted password for root from "+other+" port 3 ssh2", 902, nil):                                             UnifiedDropNotRoot,
+		unifiedEvent(at, sess, sess, "Accepted password for root from "+other+" port 3 ssh2", 902, nil):                                             UnifiedDropNoUserID,
 		unifiedEvent(at, "/private/tmp/sshd-session", "/private/tmp/sshd-session", "Accepted password for root from "+other+" port 4 ssh2", 903, 0): UnifiedDropNotSSHD,
 		unifiedEvent(at, sess, "/usr/lib/libpam.2.dylib", "in pam_sm_authenticate(): OpenDirectory - The authtok is incorrect.", 812, 0):            UnifiedDropNotSSHD,
 		unifiedEvent("yesterday", sess, sess, "Failed password for root from "+other+" port 5 ssh2", 904, 0):                                        UnifiedDropBadEvent,
 		`{"timestamp": "2026-11-22 03:46:01.123456+0000", "eventMessage": `:                                                                         UnifiedDropBadEvent,
+		`{"count":7,"finished":1}`: unifiedEnd,          // log show's closing line: not an event (N-186r-1)
+		`{"count":7,"finished":0}`: UnifiedDropBadEvent, // one that says it did not finish
 	}
 	for _, l := range kept {
 		a, drop := UnifiedToAuthLine(l)
