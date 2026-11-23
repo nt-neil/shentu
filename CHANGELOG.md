@@ -16,6 +16,10 @@ Chinese for the zh-TW pages; keep the two in step.
 - The survey (site_profile) checks the Docker and Podman sockets through the host source, like its
   other reads: a replay or a fixture is no longer answered by the machine running the survey.
 
+- The nginx and Apache version checks (and nginx's changelog) read the surveyed host through its
+  host source, like every other check: a replay or a fixture is no longer answered by the machine
+  running the survey. Their package queries are exact commands in the allowlist.
+
 ## v0.5.4 — 2026-11-23
 
 - Shared AI budget (#161): a dispatch from the bot, `shentu chat` or the automatic incident check

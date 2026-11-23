@@ -4,9 +4,8 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"fmt"
 	"io"
-	"os"
-	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
@@ -77,7 +76,7 @@ func nginxH2Affected(version string) []string {
 // nginxPackages are the package names nginx is installed under (Debian and
 // Ubuntu split it into nginx-core, -full, -light and -extras before 1.24;
 // OpenResty is nginx with its own release number after nginx's).
-var nginxPackages = []string{"nginx", "nginx-core", "nginx-full", "nginx-light", "nginx-extras", "openresty"}
+var nginxPackages = hostenv.NginxPackages
 
 // nginxBinaries are where nginx is found when no package holds it: the
 // distributions' places (Arch's /usr/bin), a build from source's, and
@@ -100,20 +99,21 @@ type ngxInstall struct {
 }
 
 // ngxRun, ngxRead and ngxExists run a package manager's query, read a binary
-// (up to 64 MiB) and look for a file: variables for the tests.
+// (up to 64 MiB) and look for a file, all through the host source (a
+// replay, or another host's survey, is never answered by the machine
+// running it); variables for the tests. ngxRun takes the query's argv
+// (hostenv's, allowlisted exactly); a command that exits non-zero is an
+// error, its output kept (dpkg-query's "config-files").
 var (
-	ngxRun = func(ctx context.Context, name string, args ...string) ([]byte, error) {
-		return exec.CommandContext(ctx, name, args...).Output()
-	}
-	ngxRead = func(p string) ([]byte, error) {
-		f, err := os.Open(p)
-		if err != nil {
-			return nil, err
+	ngxRun = func(ctx context.Context, argv []string) ([]byte, error) {
+		res, err := hostSource().Run(ctx, argv)
+		if err == nil && res.ExitCode != 0 {
+			err = fmt.Errorf("%s exited %d", argv[0], res.ExitCode)
 		}
-		defer f.Close()
-		return io.ReadAll(io.LimitReader(f, 64<<20))
+		return res.Stdout, err
 	}
-	ngxExists = func(p string) bool { _, err := os.Stat(p); return err == nil }
+	ngxRead   = func(p string) ([]byte, error) { return hostenv.ReadFileMax(hostSource(), p, 64<<20) }
+	ngxExists = func(p string) bool { _, err := hostenv.Stat(hostSource(), p); return err == nil }
 )
 
 // ngxConfOf is the configuration of nginx installed by pkg or at bin:
@@ -130,7 +130,7 @@ func ngxConfOf(pkg, bin string) string {
 var nginxVersion = func(ctx context.Context) ngxInstall {
 	removed := false
 	for _, p := range nginxPackages {
-		out, err := ngxRun(ctx, "dpkg-query", "-W", "-f", "${db:Status-Status} ${Version}", p)
+		out, err := ngxRun(ctx, hostenv.DpkgStatusArgv(p))
 		switch f := strings.Fields(string(out)); {
 		case err == nil && len(f) == 2 && f[0] == "installed":
 			return ngxInstall{version: f[1], pkg: p, dist: "dpkg", conf: ngxConfOf(p, "")}
@@ -138,8 +138,8 @@ var nginxVersion = func(ctx context.Context) ngxInstall {
 			removed = true // dpkg -r without --purge: the configuration stays
 		}
 	}
-	for _, p := range []string{"nginx", "openresty"} {
-		if out, err := ngxRun(ctx, "rpm", "-q", "--qf", "%{EPOCHNUM}:%{VERSION}-%{RELEASE}", p); err == nil {
+	for _, p := range hostenv.NginxRPMs {
+		if out, err := ngxRun(ctx, hostenv.RPMVersionArgv(p)); err == nil {
 			if v := strings.TrimSpace(string(out)); v != "" && !strings.Contains(v, "not installed") {
 				return ngxInstall{version: v, pkg: p, dist: "rpm", conf: ngxConfOf(p, "")}
 			}
@@ -165,7 +165,7 @@ var nginxChangelog = func(ctx context.Context, pkg, dist string) string {
 	switch dist {
 	case "dpkg":
 		for _, n := range []string{pkg, "nginx-common", "nginx"} {
-			if b, err := os.ReadFile("/usr/share/doc/" + n + "/changelog.Debian.gz"); err == nil {
+			if b, err := hostSource().ReadFile("/usr/share/doc/" + n + "/changelog.Debian.gz"); err == nil {
 				if z, err := gzip.NewReader(bytes.NewReader(b)); err == nil {
 					text, _ := io.ReadAll(io.LimitReader(z, 16<<20))
 					return string(text)
@@ -173,7 +173,7 @@ var nginxChangelog = func(ctx context.Context, pkg, dist string) string {
 			}
 		}
 	case "rpm":
-		if out, err := exec.CommandContext(ctx, "rpm", "-q", "--changelog", pkg).Output(); err == nil {
+		if out, err := ngxRun(ctx, hostenv.RPMChangelogArgv(pkg)); err == nil {
 			return string(out)
 		}
 	}

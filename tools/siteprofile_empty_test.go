@@ -36,7 +36,7 @@ func TestSiteProfileEmptyHost(t *testing.T) {
 			// they read the machine running them, e.g. a CI runner's nginx);
 			// here they find nothing, as on the empty host.
 			oldRun, oldRead, oldExists, oldApache := ngxRun, ngxRead, ngxExists, apacheVersion
-			ngxRun = func(context.Context, string, ...string) ([]byte, error) { return nil, os.ErrNotExist }
+			ngxRun = func(context.Context, []string) ([]byte, error) { return nil, os.ErrNotExist }
 			ngxRead = func(string) ([]byte, error) { return nil, os.ErrNotExist }
 			ngxExists = func(string) bool { return false }
 			apacheVersion = func(context.Context) string { return "" }
