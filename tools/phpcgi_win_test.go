@@ -30,8 +30,10 @@ type phpWinHost struct {
 func newPHPWinHost(t *testing.T) *phpWinHost {
 	h := &phpWinHost{files: map[string]string{}, acp: "1252", acpOK: true, kev: map[string]kevEntry{}, kevOK: true}
 	win, fcgi, read, dir, confs, acp, kev := phpWindows, phpWinFastCGI, phpReadBin, phpReadDir, phpWinApacheConfs, phpWinACP, phpLoadKEV
+	apacheRead, stat := phpReadApache, phpStatWin
 	t.Cleanup(func() {
 		phpWindows, phpWinFastCGI, phpReadBin, phpReadDir, phpWinApacheConfs, phpWinACP, phpLoadKEV = win, fcgi, read, dir, confs, acp, kev
+		phpReadApache, phpStatWin = apacheRead, stat
 	})
 	phpWindows = true
 	phpWinFastCGI = func() ([]string, error) { return h.iis, nil }
@@ -44,6 +46,19 @@ func newPHPWinHost(t *testing.T) *phpWinHost {
 			return []byte(s), nil
 		}
 		return nil, os.ErrNotExist
+	}
+	phpReadApache = func(p string, max int64) ([]byte, error) {
+		b, err := phpReadBin(p)
+		if err == nil && int64(len(b)) > max {
+			return b[:max], errTooLarge
+		}
+		return b, err
+	}
+	phpStatWin = func(p string) error {
+		if _, ok := h.files[strings.ToLower(p)]; !ok {
+			return os.ErrNotExist
+		}
+		return nil
 	}
 	phpReadDir = func(d string) ([]string, error) {
 		var out []string
@@ -96,7 +111,7 @@ func (h *phpWinHost) xampp(version string) {
 }
 
 func TestPHPApacheCGI(t *testing.T) {
-	cgi := func(h *phpWinHost) ([]string, []string) { return phpApacheCGI(h.confs[0], phpReadBin, phpReadDir) }
+	cgi := func(h *phpWinHost) ([]string, []string) { e, u, _ := phpApacheCGI(h.confs[0]); return e, u }
 	h := newPHPWinHost(t)
 	h.xampp("8.3.7")
 	if got, un := cgi(h); !slices.Equal(got, []string{`C:\xampp\php\php-cgi.exe`}) || len(un) != 0 {
@@ -326,7 +341,7 @@ func TestPHPApacheCGINotLocal(t *testing.T) {
 		h := newPHPWinHost(t)
 		h.file(`C:\Apache24\conf\httpd.conf`, conf)
 		h.confs = []string{`C:\Apache24\conf\httpd.conf`}
-		exes, un := phpApacheCGI(h.confs[0], phpReadBin, phpReadDir)
+		exes, un, _ := phpApacheCGI(h.confs[0])
 		for _, p := range h.reads {
 			if !phpLocalWinPath(p) {
 				t.Errorf("%q: read %s", conf, p)
@@ -356,11 +371,11 @@ func TestPHPApacheCGIReadCap(t *testing.T) {
 	h.file(`C:\Apache24\conf\extra\php.conf`, "ScriptAlias /php/ \"C:/php/\"\n")
 	h.phpCGI(`C:\php`, "8.3.7")
 	phpApacheMax = 50
-	if exes, un := phpApacheCGI(`C:\Apache24\conf\httpd.conf`, phpReadBin, phpReadDir); len(exes) != 0 || len(un) != 1 || !strings.Contains(un[0], "limit") {
+	if exes, un, _ := phpApacheCGI(`C:\Apache24\conf\httpd.conf`); len(exes) != 0 || len(un) != 1 || !strings.Contains(un[0], "limit") {
 		t.Errorf("past the cap: %q %q", exes, un)
 	}
 	phpApacheMax = max
-	if exes, _ := phpApacheCGI(`C:\Apache24\conf\httpd.conf`, phpReadBin, phpReadDir); len(exes) != 1 {
+	if exes, _, _ := phpApacheCGI(`C:\Apache24\conf\httpd.conf`); len(exes) != 1 {
 		t.Errorf("under the cap: %q", exes)
 	}
 }

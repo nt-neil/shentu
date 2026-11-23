@@ -38,7 +38,10 @@ Chinese for the zh-TW pages; keep the two in step.
   KEV only when the CISA KEV catalog lists it. php-cgi.exe under IIS is not reported for them,
   as the advisories cover Apache only; the version line says so. Apache is the one a service
   runs, or at XAMPP's or Apache Lounge's place when only administrators may write its httpd.conf;
-  a network or device path in the configuration (`\\host\share`) is never read.
+  a network or device path in the configuration (`\\host\share`) is never read, nor an included
+  file whose link leads to one. Without a `LoadModule` of cgi_module or cgid_module in what was
+  read, Apache would not run CGI, so the entry is a warning, not critical (one inside an
+  `<IfModule>` counts as loaded).
 
 ## v0.5.4 (unreleased)
 

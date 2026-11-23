@@ -24,6 +24,8 @@ import (
 // program as its arguments; IIS's FastCGI does not, and no advisory names
 // it. Fixed in 8.1.29, 8.2.20, 8.3.8 and in 8.1.30, 8.2.24, 8.3.12. The
 // branches before 8.1 are not listed and get no fix; 8.4 came out fixed.
+// The surface's severities: 4577 critical (NVD 9.8); 8926 high, the PHP
+// CNA's score (GHSA rates it moderate).
 
 // phpArgInj is one of them: the fixed release of each 8.x branch, and
 // whether a system code page (the ANSI one, ACP) lets it through.
@@ -67,10 +69,11 @@ func phpArgInjAffected(v [3]int, c phpArgInj) (affected, eol bool) {
 // configurations to read, the system code page, the KEV catalog.
 var (
 	phpReadDir = func(d string) ([]string, error) {
-		if !phpLocalWinPath(d) {
-			return nil, errNotLocal
+		r, err := phpWinLocal(d)
+		if err != nil {
+			return nil, err
 		}
-		es, err := os.ReadDir(d)
+		es, err := os.ReadDir(r)
 		var names []string
 		for _, e := range es {
 			names = append(names, e.Name())
@@ -90,6 +93,27 @@ var (
 			return s, nil
 		}
 		return "", fmt.Errorf("no ACP value")
+	}
+	// phpReadApache reads an Apache configuration file, at most max bytes
+	// (errTooLarge, and the first max, past that).
+	phpReadApache = func(p string, max int64) ([]byte, error) {
+		r, err := phpWinLocal(p)
+		if err != nil {
+			return nil, err
+		}
+		return phpReadLimited(r, max)
+	}
+	// phpStatWin says whether a regular file is at p, reading none of it.
+	phpStatWin = func(p string) error {
+		r, err := phpWinLocal(p)
+		if err != nil {
+			return err
+		}
+		st, err := os.Stat(r)
+		if err == nil && !st.Mode().IsRegular() {
+			err = errNotRegular
+		}
+		return err
 	}
 	phpWinApacheConfs = winApacheConfs
 	// phpWinServiceBins are the services' command lines (BinaryPath).
@@ -148,7 +172,7 @@ func winApacheConfs() (confs, unread []string) {
 			continue
 		}
 		seen[k] = true
-		if _, err := phpReadBin(c); err != nil {
+		if phpStatWin(c) != nil {
 			continue
 		}
 		if fixed[k] {
@@ -196,8 +220,10 @@ var phpApacheMax = int64(32 << 20)
 // runs as CGI: a ScriptAlias (or ScriptAliasMatch) onto php-cgi.exe or the
 // folder holding it, an Action whose target is php-cgi.exe under such an
 // alias, or AddHandler cgi-script .exe in the Directory of that folder.
-// unread are the files that are there and could not be read.
-func phpApacheCGI(conf string, read func(string) ([]byte, error), list func(string) ([]string, error)) (exes, unread []string) {
+// unread are the files that are there and could not be read; cgiMod is
+// whether a LoadModule of cgi_module or cgid_module was read (without it
+// Apache does not run CGI programs).
+func phpApacheCGI(conf string) (exes, unread []string, cgiMod bool) {
 	root := winDir(winDir(conf))
 	defines := map[string]string{}
 	aliases := map[string]string{} // URL prefix (lower case) -> folder
@@ -214,14 +240,9 @@ func phpApacheCGI(conf string, read func(string) ([]byte, error), list func(stri
 		}
 		return false
 	}
-	exists := func(p string) bool {
-		if !local(p) {
-			return false
-		}
-		_, err := read(p)
-		return err == nil
-	}
+	exists := func(p string) bool { return local(p) && phpStatWin(p) == nil }
 	total := int64(0) // bytes of configuration read, at most phpApacheMax
+	pastLimit := 0    // files not read past the limits, named once
 	addExe := func(p string) {
 		if k := strings.ToLower(p); !seenExe[k] && exists(p) {
 			seenExe[k] = true
@@ -241,21 +262,27 @@ func phpApacheCGI(conf string, read func(string) ([]byte, error), list func(stri
 			return
 		}
 		if depth > 8 || len(seenFile) >= 256 || total >= phpApacheMax {
-			unread = append(unread, file+" (not read: past the include limit)")
+			if pastLimit++; pastLimit == 1 {
+				unread = append(unread, file+" (not read: past the include limit)")
+			}
 			return
 		}
 		seenFile[strings.ToLower(file)] = true
-		b, err := read(file)
-		if err == nil && int64(len(b)) > phpConfMax {
-			err = errTooLarge
-		}
+		budget := min(phpConfMax, phpApacheMax-total)
+		b, err := phpReadApache(file, budget)
+		total += int64(len(b)) // what was read counts, used or not
 		if err != nil {
-			if !errors.Is(err, fs.ErrNotExist) {
+			switch {
+			case errors.Is(err, fs.ErrNotExist):
+			case errors.Is(err, errTooLarge) && budget < phpConfMax:
+				if pastLimit++; pastLimit == 1 {
+					unread = append(unread, file+" (not read: past the include limit)")
+				}
+			default:
 				unread = append(unread, file+" ("+err.Error()+")")
 			}
 			return
 		}
-		total += int64(len(b))
 		dir := "" // the Directory block the line is in
 		for _, line := range strings.Split(string(b), "\n") {
 			line = strings.TrimSpace(apacheDefine.ReplaceAllStringFunc(line, func(m string) string {
@@ -271,6 +298,8 @@ func phpApacheCGI(conf string, read func(string) ([]byte, error), list func(stri
 			switch name := strings.ToLower(f[0]); {
 			case name == "define" && len(f) >= 3:
 				defines[f[1]] = f[2]
+			case name == "loadmodule" && len(f) >= 2 && (f[1] == "cgi_module" || f[1] == "cgid_module"):
+				cgiMod = true
 			case name == "serverroot" && len(f) >= 2:
 				root = winPath(f[1], root)
 			case (name == "include" || name == "includeoptional") && len(f) >= 2:
@@ -279,7 +308,7 @@ func phpApacheCGI(conf string, read func(string) ([]byte, error), list func(stri
 					if !local(winDir(p)) {
 						continue
 					}
-					names, _ := list(winDir(p))
+					names, _ := phpReadDir(winDir(p))
 					for _, n := range names {
 						if ok, _ := path.Match(strings.ToLower(winBase(p)), strings.ToLower(n)); ok {
 							walk(winDir(p)+`\`+n, depth+1)
@@ -322,7 +351,10 @@ func phpApacheCGI(conf string, read func(string) ([]byte, error), list func(stri
 			}
 		}
 	}
-	return exes, unread
+	if pastLimit > 1 {
+		unread = append(unread, fmt.Sprintf("%d more Apache configuration files (not read: past the include limit)", pastLimit-1))
+	}
+	return exes, unread, cgiMod
 }
 
 // apacheFields splits an Apache directive into its words, quotes kept
@@ -360,6 +392,7 @@ type phpArgInjCheck struct {
 	eol, cpKnown bool
 	acp          string
 	release      [3]int
+	several      bool // another Apache-run php-cgi of the branch: the key names the binary
 }
 
 // phpArgInjChecks are the CVEs that may reach the Apache-run php-cgi
@@ -368,6 +401,12 @@ type phpArgInjCheck struct {
 func phpArgInjChecks(ins []phpInstall) []phpArgInjCheck {
 	var out []phpArgInjCheck
 	acp, acpRead, cpKnown := "", false, false
+	branches := map[[2]int]int{} // Apache-run php-cgi programs per branch
+	for _, in := range ins {
+		if rel, _ := phpRelease(in.version); in.apache {
+			branches[[2]int{rel[0], rel[1]}]++
+		}
+	}
 	for _, in := range ins {
 		if !in.apache {
 			continue
@@ -385,7 +424,8 @@ func phpArgInjChecks(ins []phpInstall) []phpArgInjCheck {
 			if cpKnown && !c.codePage(acp) {
 				continue
 			}
-			out = append(out, phpArgInjCheck{in: in, c: c, eol: eol, cpKnown: cpKnown, acp: acp, release: rel})
+			out = append(out, phpArgInjCheck{in: in, c: c, eol: eol, cpKnown: cpKnown, acp: acp, release: rel,
+				several: branches[[2]int{rel[0], rel[1]}] > 1})
 		}
 	}
 	return out
@@ -394,6 +434,9 @@ func phpArgInjChecks(ins []phpInstall) []phpArgInjCheck {
 // phpArgInjRisk is the survey's line for one check.
 func phpArgInjRisk(k phpArgInjCheck) Risk {
 	key := fmt.Sprintf("php%d.%d:%s", k.release[0], k.release[1], k.c.id)
+	if k.several {
+		key = fmt.Sprintf("php%d.%d@%s:%s", k.release[0], k.release[1], k.in.bin, k.c.id)
+	}
 	what := "PHP " + k.in.version + " (" + k.in.bin + ", run by Apache as CGI from " + k.in.conf + "): " + k.c.id +
 		" (argument injection in PHP-CGI on Windows: a request's query string becomes PHP's command-line options, " +
 		"which can run code)"
@@ -403,6 +446,11 @@ func phpArgInjRisk(k phpArgInjCheck) Risk {
 		sev, cp = "warning", "; the system code page could not be read (code page unconfirmed: it applies only if "+k.c.cpWhy+")"
 	}
 	fix := fmt.Sprintf(". Upgrade to PHP %d.%d.%d or later", k.release[0], k.release[1], k.c.fixed[k.release[1]])
+	if k.in.cgiOff {
+		sev = "warning"
+		cp += "; no LoadModule of cgi_module or cgid_module was found in the configuration read, so Apache may not run it " +
+			"(unconfirmed: a module loaded where Shentu does not read, or a LoadModule inside an <IfModule>, is counted as loaded too)"
+	}
 	if k.eol {
 		sev = "warning"
 		fix = ". This branch is not listed in the advisory and gets no fix (php.net no longer fixes it): move to a branch " +
@@ -432,8 +480,8 @@ func phpWinSurface(ctx context.Context, hc *http.Client) ([]detect.PackageVuln, 
 		if !k.eol {
 			v.Fixed = fmt.Sprintf("%d.%d.%d", k.release[0], k.release[1], k.c.fixed[k.release[1]])
 		}
-		if k.eol || !k.cpKnown {
-			v.Severity = "medium" // not confirmed: not listed, or the code page not read
+		if k.eol || !k.cpKnown || k.in.cgiOff {
+			v.Severity = "medium" // not confirmed: not listed, the code page not read, or cgi_module not seen loaded
 		}
 		if e, ok := kev[k.c.id]; ok {
 			v.KEV, v.KEVSince, v.KEVCVE = true, e.Added, k.c.id

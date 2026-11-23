@@ -108,7 +108,8 @@ type phpInstall struct {
 	vendor                string // an rpm's %{VENDOR}
 	iis                   bool
 	apache                bool   // Apache runs it as CGI (Windows)
-	conf                  string // the httpd.conf that does
+	conf                  string // the httpd.conf files that do, ", " between
+	cgiOff                bool   // none of them loads cgi_module or cgid_module
 }
 
 // phpBinGlobs are where PHP binaries are: the distributions' (Debian's
@@ -195,9 +196,11 @@ var (
 	phpReadBin    = func(p string) ([]byte, error) {
 		full := p
 		if phpWindows {
-			if !phpLocalWinPath(p) {
-				return nil, errNotLocal
+			r, err := phpWinLocal(p)
+			if err != nil {
+				return nil, err
 			}
+			full = r
 		} else {
 			full = filepath.Join(phpRoot, p)
 		}
@@ -234,16 +237,23 @@ func phpInstalls(ctx context.Context) (ins []phpInstall, unread []string) {
 		}
 		confs, cunread := phpWinApacheConfs()
 		unread = append(unread, cunread...)
+		at := map[string]int{} // php-cgi.exe (lower case) -> index in ins: one entry, every conf named
 		for _, conf := range confs {
-			exes, un := phpApacheCGI(conf, phpReadBin, phpReadDir)
+			exes, un, cgiMod := phpApacheCGI(conf)
 			unread = append(unread, un...)
 			for _, a := range exes {
+				if i, ok := at[strings.ToLower(a)]; ok {
+					ins[i].conf += ", " + conf
+					ins[i].cgiOff = ins[i].cgiOff && !cgiMod
+					continue
+				}
 				v, why := phpWinVersion(a)
 				if v == "" {
 					unread = append(unread, a+" ("+why+")")
 					continue
 				}
-				ins = append(ins, phpInstall{bin: a, version: v, sapi: "cgi", apache: true, conf: conf})
+				at[strings.ToLower(a)] = len(ins)
+				ins = append(ins, phpInstall{bin: a, version: v, sapi: "cgi", apache: true, conf: conf, cgiOff: !cgiMod})
 			}
 		}
 		return ins, unread
@@ -332,6 +342,58 @@ func phpWinVersion(exe string) (v, why string) {
 	return "", why
 }
 
+// phpWinLocal is p with its links resolved, refused unless every step is
+// a local absolute path: a symbolic link (or junction) in the path whose
+// target is \\host\share or a device path would make the open connect to
+// another machine (and hand it the host's credentials). Each component is
+// looked at with Lstat before anything below it, and a target is checked
+// before it is looked at, so nothing remote is ever touched. A link whose
+// target cannot be read is not followed.
+func phpWinLocal(p string) (string, error) {
+	for hops := 0; ; hops++ {
+		if !phpLocalWinPath(p) {
+			return "", errNotLocal
+		}
+		if hops > 16 {
+			return "", errors.New("too many links, not read")
+		}
+		parts := strings.Split(strings.TrimRight(p[3:], `\`), `\`)
+		cur, next := p[:2], ""
+		for i, part := range parts {
+			cur += `\` + part
+			st, err := phpLstat(cur)
+			if err != nil {
+				return p, nil // not there: the open says so
+			}
+			if st.Mode()&(os.ModeSymlink|os.ModeIrregular) == 0 {
+				continue
+			}
+			t, err := phpReadlink(cur)
+			if err != nil {
+				return "", errors.New("a reparse point that is not a link, not followed")
+			}
+			switch {
+			case phpLocalWinPath(t):
+			case strings.HasPrefix(t, `\`) && !strings.HasPrefix(t, `\\`): // the root of the same drive
+				t = cur[:2] + t
+			case !strings.HasPrefix(t, `\`) && !strings.Contains(t, ":"): // relative to the link's folder
+				t = winDir(cur) + `\` + t
+			default:
+				return "", errNotLocal
+			}
+			next = strings.Join(append([]string{strings.TrimRight(t, `\`)}, parts[i+1:]...), `\`)
+			break
+		}
+		if next == "" {
+			return p, nil
+		}
+		p = next
+	}
+}
+
+// phpLstat and phpReadlink look at one path component (tests replace them).
+var phpLstat, phpReadlink = os.Lstat, os.Readlink
+
 // phpLocalWinPath reports whether p is a local absolute Windows path (C:\...):
 // not relative, not \\host\share, not a device path (\\?\, \\.\).
 func phpLocalWinPath(p string) bool {
@@ -404,7 +466,7 @@ func phpGroups(ins []phpInstall) []phpGroup {
 	var out []phpGroup
 	at := map[string]int{}
 	for _, in := range ins {
-		k := in.version + "|" + in.pkgVersion
+		k := fmt.Sprintf("%s|%s|%t|%t", in.version, in.pkgVersion, in.iis, in.apache) // IIS, Apache and the rest apart: where() and the notes speak for one
 		if i, ok := at[k]; ok {
 			out[i].ins = append(out[i].ins, in)
 			continue
@@ -427,7 +489,15 @@ func (g phpGroup) where() string {
 	case in.iis:
 		from = "run by IIS as its FastCGI application, which the package scan does not cover"
 	case in.apache:
-		from = "run by Apache as CGI from " + in.conf + ", which the package scan does not cover"
+		var confs []string
+		for _, a := range g.ins {
+			for _, c := range strings.Split(a.conf, ", ") {
+				if !slices.Contains(confs, c) {
+					confs = append(confs, c)
+				}
+			}
+		}
+		from = "run by Apache as CGI from " + strings.Join(confs, ", ") + ", which the package scan does not cover"
 	case strings.Contains(in.pkgVersion, "deb.sury.org"):
 		from = "package " + in.pkg + " " + in.pkgVersion + " from deb.sury.org or the ondrej PPA, which the package scan does not cover"
 	case strings.Contains(in.pkgVersion, "remi") || strings.HasPrefix(in.bin, "/opt/remi/"):
