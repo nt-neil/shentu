@@ -277,7 +277,7 @@ func (b *bot) pressProposal(ctx context.Context, st botState, ref proposalRef) {
 			return
 		}
 		if late {
-			code = tools.BlockStateError // not checked in time: refused, not asked
+			code = tools.BlockTimeout // not checked in time: refused, not asked, and said so
 		}
 		if code != tools.BlockOK {
 			refuse("refused at press: "+string(code), fmt.Sprintf(b.t("prop_refused"), detect.Printable(p.IP), b.blockWord(code)))

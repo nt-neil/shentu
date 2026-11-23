@@ -32,6 +32,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"sort"
 	"time"
 )
 
@@ -134,10 +135,28 @@ func run(base string, write bool, repo, tarball string) int {
 	} else {
 		diff("host", fmt.Sprintf("%+v", st.Host), fmt.Sprintf("%+v", want.Stats.Host))
 	}
-	if want.Stats != nil && bad > 0 { // which counts moved, to help read the change
-		for c, s := range st.Classes {
-			if w := want.Stats.Classes[c]; w == nil || *w != *s {
-				fmt.Printf("  class %s: %+v, baseline %+v\n", c, *s, w)
+	if want.Stats != nil && bad > 0 { // which counts and templates moved, to help read the change
+		for _, c := range sortedClasses(st.Classes, want.Stats.Classes) {
+			s, w := st.Classes[c], want.Stats.Classes[c]
+			if s == nil {
+				s = &ClassStat{}
+			}
+			if w == nil {
+				w = &ClassStat{}
+			}
+			if s.Templates != w.Templates || s.Caught != w.Caught {
+				fmt.Printf("  class %s: templates %d caught %d, baseline templates %d caught %d\n", c, s.Templates, s.Caught, w.Templates, w.Caught)
+			}
+			if w.Caught > 0 && len(w.CaughtIDs) == 0 {
+				fmt.Printf("  class %s: the baseline lists no caught template ids (written before they were kept)\n", c)
+				continue
+			}
+			gained, lost := idDiff(s.CaughtIDs, w.CaughtIDs)
+			for _, id := range gained {
+				fmt.Printf("  class %s: newly caught %s\n", c, id)
+			}
+			for _, id := range lost {
+				fmt.Printf("  class %s: no longer caught %s\n", c, id)
 			}
 		}
 	}
@@ -187,4 +206,47 @@ func explainHost(repo, tarball string) int {
 	}
 	ev.explainHost(files)
 	return 0
+}
+
+// sortedClasses is the classes of a and b, sorted.
+func sortedClasses(a, b map[string]*ClassStat) []string {
+	seen := map[string]bool{}
+	for c := range a {
+		seen[c] = true
+	}
+	for c := range b {
+		seen[c] = true
+	}
+	out := make([]string, 0, len(seen))
+	for c := range seen {
+		out = append(out, c)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// idDiff is the ids of got not in want (gained) and of want not in got
+// (lost), each sorted.
+func idDiff(got, want []string) (gained, lost []string) {
+	in := func(list []string) map[string]bool {
+		m := map[string]bool{}
+		for _, x := range list {
+			m[x] = true
+		}
+		return m
+	}
+	g, w := in(got), in(want)
+	for x := range g {
+		if !w[x] {
+			gained = append(gained, x)
+		}
+	}
+	for x := range w {
+		if !g[x] {
+			lost = append(lost, x)
+		}
+	}
+	sort.Strings(gained)
+	sort.Strings(lost)
+	return gained, lost
 }

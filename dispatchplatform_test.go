@@ -20,7 +20,8 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	hostGOOS = "linux"
-	tools.HostGOOS = "linux" // block_ip as on Linux; the platform tests switch it
+	tools.HostGOOS = "linux"     // block_ip as on Linux; the platform tests switch it
+	tools.KeepLoginIndex = false // the gate's checks never read this host's journal
 	os.Exit(m.Run())
 }
 

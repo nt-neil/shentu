@@ -8,8 +8,9 @@ import (
 	"testing"
 )
 
-// S-181-1: SetHostSourceForTest is in the product binary (other packages'
-// tests need it exported); no product code may use it. The name outside a
+// S-181-1: SetHostSourceForTest (and SetLoginIndexForTest) is in the
+// product binary (other packages' tests need it exported); no product code
+// may use it. The name outside a
 // _test.go file, called or as a value, fails here.
 func TestSetHostSourceForTestOnlyInTests(t *testing.T) {
 	filepath.WalkDir("..", func(p string, d fs.DirEntry, err error) error {
@@ -30,8 +31,10 @@ func TestSetHostSourceForTestOnlyInTests(t *testing.T) {
 			// The name itself, called or taken as a value (S-181r-1), but
 			// for its definition and comments.
 			code, _, _ := strings.Cut(line, "//")
-			if strings.Contains(code, "SetHostSourceForTest") && !strings.HasPrefix(strings.TrimSpace(code), "func SetHostSourceForTest(") {
-				t.Errorf("%s:%d calls SetHostSourceForTest outside a test", p, i+1)
+			for _, name := range []string{"SetHostSourceForTest", "SetLoginIndexForTest"} {
+				if strings.Contains(code, name) && !strings.HasPrefix(strings.TrimSpace(code), "func "+name+"(") {
+					t.Errorf("%s:%d calls %s outside a test", p, i+1, name)
+				}
 			}
 		}
 		return nil

@@ -128,6 +128,11 @@ type PackageSet struct {
 	Ecosystem string     `json:"ecosystem,omitempty"` // OSV ecosystem, e.g. "Debian:12"
 	Feed      *PatchFeed `json:"feed,omitempty"`      // where this distribution's security fixes are published
 	Items     []Package  `json:"items"`
+	// ThirdParty names the repositories configured that are not the
+	// distribution's (apt Origin, apk URL); OriginNotes what could not be
+	// read to tell a package's origin.
+	ThirdParty  []string `json:"third_party,omitempty"`
+	OriginNotes []string `json:"origin_notes,omitempty"`
 }
 
 type Package struct {
@@ -135,6 +140,10 @@ type Package struct {
 	Source  string `json:"source,omitempty"` // source package (dpkg) when it differs
 	Version string `json:"version"`
 	Arch    string `json:"arch,omitempty"`
+	// Origin is the third-party repository the package came from ("" for
+	// the distribution's own or unknown), OriginBy how that was found.
+	Origin   string `json:"origin,omitempty"`
+	OriginBy string `json:"origin_by,omitempty"`
 }
 
 type Patch struct {

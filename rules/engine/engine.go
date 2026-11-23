@@ -161,6 +161,37 @@ func New(rs []rules.Rule) (*Engine, error) {
 	return e, nil
 }
 
+// foldMembers marks the method and class names of PHP sink and sanitizer
+// patterns to match in any case, as PHP calls them: the last name after ->
+// or :: ($wpdb->query matches $wpdb->Query(...), DB::raw DB::RAW(...)) and
+// the class before :: (db::raw). A name followed by "(" is folded already
+// (compilePattern). A name with -> after it is a property ($this->db in
+// $this->db->escape(), which PHP reads by case: $this->DB is another), so
+// it keeps its case; so do variables ($WPDB is not $wpdb) and sources,
+// whose members may be properties.
+func foldMembers(ps []*pat) {
+	for _, p := range ps {
+		if !p.php {
+			continue
+		}
+		for k, t := range p.toks {
+			if t.Kind != Ident {
+				continue
+			}
+			next := Token{}
+			if k+1 < len(p.toks) {
+				next = p.toks[k+1]
+			}
+			if next.op("->") || next.op("?->") {
+				continue // a property on the way: by case
+			}
+			if k > 0 && memberOp(true, p.toks[k-1]) || next.op("::") {
+				p.toks[k].Flags |= FlagFold
+			}
+		}
+	}
+}
+
 func compileRule(r rules.Rule) (*crule, error) {
 	c := &crule{rule: r, args: map[*pat]*argCond{}}
 	text := map[string]bool{}
@@ -214,6 +245,13 @@ func compileRule(r rules.Rule) (*crule, error) {
 	if _, err := compile(r.Sanitizers, &c.sanitizers, &none); err != nil {
 		return nil, err
 	}
+	for _, sp := range c.sanitizers {
+		if sp.php && len(sp.toks) == 1 && sp.toks[0].Kind == Ident {
+			sp.toks[0].Flags |= FlagFold // a sanitizer named alone is a function: EscapeShellArg($x) cleans
+		}
+	}
+	foldMembers(c.sinks)
+	foldMembers(c.sanitizers)
 	for _, a := range r.Args {
 		ac := &argCond{arg: a.Arg, name: a.Name, whole: a.Whole, leading: a.Leading, literal: a.Literal, key: a.Key, keys: a.Keys, minLen: a.MinLen, unlessAt: a.UnlessAt,
 			unlessImports: a.UnlessImports, importsNot: a.UnlessImportsNot, markup: a.Markup}
@@ -417,7 +455,7 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 	b := newBudget(e.Limits)
 	toks := lex(lang, string(src), b)
 	if b.hit {
-		return nil, b.timeHit, ErrLimit
+		return nil, b.timeHit, cutErr(ErrLimit, b.cut())
 	}
 	tree := parse(base, toks, b)
 	ff := newFileFuncs(collectFuncs(tree, base), base)
@@ -466,12 +504,16 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 	names := nameSet(toks, map[string]bool{})
 	nextHdrs := base == "js" && importsModule(toks, "next/headers") // h = await headers(): h.get( is a source no text shows (reqalias.go)
 	si := newSrcIndex(toks, b)
+	var strs map[string]bool
 	for _, r := range rs {
 		if time.Now().After(b.deadline) { // cheap: once per rule
 			b.hit, b.timeHit = true, true
 			break
 		}
 		hs := si.names(r.sinks, r.textSinks, names, src) && si.hasSink(r)
+		if !hs && r.rule.Lang == "php" {
+			hs = namedSink(r, strNames(toks, &strs)) // array_map('system', $x): a builtin sink given by name (callbacks.go)
+		}
 		if !hs && proj != nil && !proj.sinkRules[r.rule.ID] {
 			continue // no file of the project holds a sink of it: nothing to reach across files either
 		}
@@ -508,6 +550,13 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 	limited := b.hit || b.limited || time.Now().After(b.deadline) // the first pass did not finish
 	timed = b.timeHit || time.Now().After(b.deadline)
 	callsCut := false
+	var cut Cut // what cut the scan short (cut.go)
+	if limited {
+		cut = b.cut()
+		if time.Now().After(b.deadline) {
+			cut |= CutTime
+		}
+	}
 	finished := map[*crule]bool{}
 	if !b.hit && (len(ff.byKey) > 0 || proj != nil) {
 		b2 := newBudget(e.Limits)
@@ -588,12 +637,14 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 				// The project stopped during the rule (its clock, its heap): calls
 				// stopped crossing files part way, as with the scan's own clock.
 				callsCut, timed = true, true
+				cut |= CutProject
 				add(r, direct[r])
 				delete(direct, r)
 				break
 			}
 			if b2.hit {
 				callsCut = true
+				cut |= callsCutOf(b2, proj)
 				if b2.timeHit {
 					// Cut short by the clock, the flows found so far are not kept: how
 					// far it got depends on the machine's load, and a summary it had no
@@ -618,6 +669,7 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 				add(r, direct[r], a.lines)
 				delete(direct, r)
 				callsCut = true
+				cut |= CutSummary
 				ruleDone()
 				continue
 			}
@@ -626,11 +678,15 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 			ruleDone()
 		}
 		callsCut = callsCut || b2.hit || b2.limited
+		if b2.hit || b2.limited {
+			cut |= callsCutOf(b2, proj)
+		}
 		timed = timed || b2.timeHit
 	}
 	// Past a project cap calls no longer cross files: say so, not "clean".
 	if proj != nil && proj.stopped != "" {
 		callsCut = true
+		cut |= CutProject
 		timed = timed || proj.byMachine // the clock or the heap, not the file limit
 	}
 	for _, r := range ruleList {
@@ -655,11 +711,11 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 	})
 	switch {
 	case limited:
-		return out, timed, ErrLimit
+		return out, timed, cutErr(ErrLimit, cut)
 	case b.partial:
 		return out, timed, ErrPartial
 	case callsCut:
-		return out, timed, ErrCalls
+		return out, timed, cutErr(ErrCalls, cut)
 	}
 	return out, timed, nil
 }
@@ -784,6 +840,10 @@ func (si *srcIndex) build() {
 			}
 			k := tokKey{t.Kind, t.Text}
 			si.at[k] = append(si.at[k], srcPos{l, int32(i)})
+			if low := strings.ToLower(t.Text); t.Kind == Ident && low != t.Text {
+				k = tokKey{Ident, low} // where a case-folded pattern name looks (FlagFold)
+				si.at[k] = append(si.at[k], srcPos{l, int32(i)})
+			}
 		}
 	}
 	add(si.toks)
@@ -876,6 +936,9 @@ func (si *srcIndex) search(s *pat, strict bool) bool {
 		at = func(toks []Token, i int) bool { return s.at(toks, i, true) } // a sink
 	}
 	if first := s.toks[0]; first.Kind != Str {
+		if first.Flags&FlagFold != 0 {
+			return try(si.at[tokKey{Ident, strings.ToLower(first.Text)}], at)
+		}
 		return try(si.at[tokKey{first.Kind, first.Text}], at)
 	}
 	return try(si.strs, at) // a string literal matches by more than its text (tokEq)

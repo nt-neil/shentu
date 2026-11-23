@@ -26,7 +26,7 @@ may miss is in [attack-detection-limits.md](attack-detection-limits.md).
    gunicorn, uwsgi, node, puma and the like) are read too, but only as evidence of effect. Paths
    come from the configuration on disk; there is nothing to configure. A log seen for the first
    time is read from its tail only.
-3. **The signatures.** 27 attack signatures are matched on each request line, after decoding it
+3. **The signatures.** 28 attack signatures are matched on each request line, after decoding it
    at most twice. Some are classes of attack (path traversal, SQL injection, command injection
    and so on), some are written for one CVE.
 4. **The level.** A request is judged against the surface:
@@ -168,7 +168,7 @@ nothing; the next patrol judges the logs again.
 
 On synthetic requests, not real traffic (`tools/detecteval`, run in CI):
 
-- requests converted from nuclei-templates: a signature of the same class matched 40.5% (1548 of
+- requests converted from nuclei-templates: a signature of the same class matched 40.5% (1549 of
   3822); a match is not an alert;
 - ordinary requests for 152 routes of 8 applications: 0 false alerts on 363 distinct requests,
   a 95% upper bound of about 0.8%;
