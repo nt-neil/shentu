@@ -103,12 +103,12 @@ func TestSSHDLoginEvent(t *testing.T) {
 	}
 }
 
-// N-213-2: an entry past MaxJournalLine is cut, but keeps its time (the
-// field journalctl writes right after the cursor), so what cannot be read
-// of it is still placed in time.
+// N-213-2: an entry past the SSH read's line (maxSSHJournalLine) is cut,
+// but keeps its time (the field journalctl writes right after the cursor),
+// so what cannot be read of it is still placed in time.
 func TestReadSSHJournalCutKeepsTime(t *testing.T) {
 	h := newFake(true)
-	huge := `{"__CURSOR":"` + cur1 + `","__REALTIME_TIMESTAMP":"1794700000000000","_UID":"1000","_COMM":"logger","MESSAGE":"` + strings.Repeat("x", MaxJournalLine+100) + `"}`
+	huge := `{"__CURSOR":"` + cur1 + `","__REALTIME_TIMESTAMP":"1794700000000000","_UID":"1000","_COMM":"logger","MESSAGE":"` + strings.Repeat("x", maxSSHJournalLine+100) + `"}`
 	h.cmds[argvKey(sshJournalArgvFilled("/usr/bin/journalctl", "", true))] = CmdResult{Stdout: []byte(huge + "\n")}
 	var got []JournalEntry
 	_, err := ReadSSHJournal(context.Background(), h, "", time.Date(2026, 11, 15, 0, 0, 0, 0, time.UTC), func(e JournalEntry) error {
