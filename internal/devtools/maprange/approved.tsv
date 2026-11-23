@@ -56,4 +56,4 @@ aliasesOf	st	1	5d42718fda82			SAFE	Result order is unused: callers check len, or
 analysis.stmt	a.pcallSeeds(st, s.toks, s.funcs)	1	554d92029ac6			SAFE	Each function appears once as a key, so seeds[f] is whenSeeds' seeds for f followed by pcallSeeds' for f whatever the order; the functions are then run in s.funcs order.
 sortedKeys2	x	1	3c74d98f564d			SORTED	Key union; slices.Sort(out) before it is returned.
 sortedKeys2	y	1	57d9041aeea7			SORTED	Key union; slices.Sort(out) before it is returned.
-analysis.summarize	r.pcall	1	22973f2486ed			SAFE	Grows s.pcall / s.pcallSrc to length and sets true at [n][k] for each key; setting true is commutative.
+analysis.summarize	r.pcall	1	22973f2486ed			SAFE	Grows s.pcallSrc[n] / s.pcall[n] to length k+1 and sets true / ORs bit at [n][k] for each key: the final lengths are the max and setting true and OR are commutative; no budget is charged in the loop.
