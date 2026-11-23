@@ -6,6 +6,27 @@ a release are not written here: they are worked out from the rule snapshots in
 `docs/site-src/rules-history/`. `CHANGELOG.zh-TW.md` holds the same releases in Traditional
 Chinese for the zh-TW pages; keep the two in step.
 
+## v0.5.7 (unreleased)
+
+- PHP rules read `filter_input()`. A value from `filter_input(INPUT_GET, ...)`, `INPUT_POST` or
+  `INPUT_COOKIE`, and from an application's own method of that name (`->filterInput(`,
+  `->filter_input(`) when its first argument is one of these constants, is request input in each
+  PHP rule that reads `$_GET`, `$_POST` or `$_COOKIE`. A first argument that is a variable or
+  another constant (such as `INPUT_SERVER`) is not. A number or bool filter (`FILTER_VALIDATE_INT`,
+  `FILTER_VALIDATE_BOOL`, `FILTER_SANITIZE_NUMBER_INT` and others) gives a value with no input in
+  it; `FILTER_SANITIZE_SPECIAL_CHARS` cleans in the rules that take `htmlspecialchars()` as a
+  sanitizer; a URL filter does not clean.
+
+### Known issues
+
+- A value read back from the database is input when the query that read it was given input,
+  even escaped (`$row = $db->LoadSingle("... '" . mysqli_real_escape_string($c, $_POST['id']) . "'")`,
+  then `$row['tag']` in another query): the engine takes what an unknown function returns as
+  carrying its arguments' input. YesWiki's despam.php is reported this way.
+- An application's own URL builder for a page of the same site (YesWiki's
+  `$this->wiki->Href('', $name)`, `href()`) is not known as one, so a redirect to it reports as an
+  open redirect (YesWiki's LoginAction.php and DuplicateHandler.php).
+
 ## v0.5.6 — 2026-11-24
 
 - A file cut short says what cut it (#172). The code audit's unfinished files carry a `cause`:
