@@ -74,6 +74,13 @@ Chinese for the zh-TW pages; keep the two in step.
   alerts on a host whose surface has CVE-2024-4577, with the KEV mark that entry carries; on any
   other host its hits are counted as noise.
 
+- What the patrol's own checks found is in Chinese too with a Chinese `language`: new listening ports,
+  suspicious processes, UID 0 accounts, authorized_keys changes, links and shared keys, ld.so.preload,
+  PAM modules, webshells, certificates, SSH login failures, CISA KEV vulnerabilities and unreadable
+  authorized_keys lines. The English text is word for word what it was, and the model is still sent
+  the English list. Findings from the tools (survey risks, changes since the last survey, the code
+  audit) are still in English.
+
 ### Known issues
 
 - No host check writes CVE-2024-4577 into the surface yet (PHP-CGI on Windows), so on a real host
