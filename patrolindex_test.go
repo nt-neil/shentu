@@ -21,7 +21,7 @@ import (
 
 // sshJournalHost is a Linux host where nothing can be read but journald's
 // sshd units, which it answers as journalctl does (-o json, --since,
-// --after-cursor), keeping each read's start.
+// --cursor from that entry on), keeping each read's start.
 type sshJournalHost struct {
 	mu      sync.Mutex
 	entries [][2]string // cursor, JSON line
@@ -58,16 +58,13 @@ func (h *sshJournalHost) RunLinesCut(_ context.Context, argv []string, _ int, fn
 		switch a {
 		case "--since":
 			h.reads = append(h.reads, "since")
-		case "--after-cursor":
-			h.reads = append(h.reads, "after "+argv[i+1])
-			from = -1
+		case "--cursor":
+			h.reads = append(h.reads, "cursor "+argv[i+1])
+			from = len(h.entries)
 			for n, e := range h.entries {
 				if e[0] == argv[i+1] {
-					from = n + 1
+					from = n
 				}
-			}
-			if from < 0 {
-				return hostenv.CmdResult{ExitCode: 1, Stderr: "Failed to seek to cursor\n"}, nil
 			}
 		}
 	}
@@ -105,7 +102,7 @@ func TestPatrolRefreshesLoginIndex(t *testing.T) {
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if len(h.reads) != patrolReads+1 || h.reads[patrolReads] != "after "+h.entries[0][0] {
+	if len(h.reads) != patrolReads+1 || h.reads[patrolReads] != "cursor "+h.entries[0][0] {
 		t.Errorf("the check's read: %q, want one read after the patrol's cursor", h.reads[patrolReads:])
 	}
 }

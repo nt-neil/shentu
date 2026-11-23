@@ -19,12 +19,17 @@ import (
 )
 
 // fakeJournal answers journalctl's reads of sshd's units as journalctl
-// does: -o json, --since a time, --after-cursor a cursor (refused, as
-// "Failed to seek to cursor", when the journal no longer has it).
+// does: only an argv the Linux allowlist takes (hostenv.ErrNotAllowed
+// otherwise, as the live runner), -o json with __CURSOR and
+// __REALTIME_TIMESTAMP first, --since a time, and a cursor as journalctl
+// seeks one: a well-formed cursor whose entry is gone is no error, the read
+// starts at the nearest entry after it; --cursor reads from there,
+// --after-cursor skips one entry more (the cursor's, or the first after the
+// gap: sd_journal_next_skip(j, 2)).
 type fakeJournal struct {
 	mu      sync.Mutex
 	entries []fakeEntry
-	reads   []string // "since <time>" or "after <cursor>", one per read
+	reads   []string // "since <time>", "cursor <c>" or "after <c>", one per read
 	seq     int
 	// hangAfter: a read gives this many entries, then waits for its
 	// context to end (a read cut short); 0: no wait.
@@ -32,24 +37,49 @@ type fakeJournal struct {
 }
 
 type fakeEntry struct {
-	cursor string
-	at     time.Time
-	comm   string
-	uid    int
-	msg    string
+	seq   int
+	at    time.Time
+	comm  string
+	uid   int
+	msg   string
+	noMsg bool // MESSAGE null
 }
 
 func (j *fakeJournal) cursorN(n int) string {
 	return fmt.Sprintf("s=0123456789abcdef0123456789abcdef;i=%x;b=0123456789abcdef0123456789abcdef;m=%x;t=%x;x=%x", n, n, n, n)
 }
 
+// seqOf is the entry number a cursor names (its i=).
+func seqOf(c string) int {
+	_, rest, _ := strings.Cut(c, ";i=")
+	hex, _, _ := strings.Cut(rest, ";")
+	n, _ := strconv.ParseInt(hex, 16, 64)
+	return int(n)
+}
+
 // add appends an entry by comm (uid 0 unless forged by a user) with the
 // tag sshd.
 func (j *fakeJournal) add(at time.Time, comm string, uid int, msg string) {
+	j.addEntry(fakeEntry{at: at, comm: comm, uid: uid, msg: msg})
+}
+
+func (j *fakeJournal) addEntry(e fakeEntry) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	j.seq++
-	j.entries = append(j.entries, fakeEntry{j.cursorN(j.seq), at, comm, uid, msg})
+	e.seq = j.seq
+	j.entries = append(j.entries, e)
+}
+
+// vacuum drops the entries up to entry n, as journalctl --vacuum-* does.
+func (j *fakeJournal) vacuum(n int) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	k := 0
+	for k < len(j.entries) && j.entries[k].seq <= n {
+		k++
+	}
+	j.entries = j.entries[k:]
 }
 
 func (j *fakeJournal) failed(at time.Time, ip string) {
@@ -67,8 +97,24 @@ func (j *fakeJournal) Run(context.Context, []string) (hostenv.CmdResult, error) 
 	return hostenv.CmdResult{}, errors.New("not used: reads stream")
 }
 
+var linuxRunner, _ = hostenv.NewRunner(hostenv.LinuxCollector{}.Allowlist())
+
+// jsonLine is the entry as journalctl -o json writes it.
+func (e fakeEntry) jsonLine() string {
+	msg := []byte("null")
+	if !e.noMsg {
+		msg, _ = json.Marshal(e.msg)
+	}
+	comm, _ := json.Marshal(e.comm)
+	return fmt.Sprintf(`{"__CURSOR":"%s","__REALTIME_TIMESTAMP":"%d","_SYSTEMD_UNIT":"ssh.service","_UID":"%d","_PID":"812","_COMM":%s,"SYSLOG_IDENTIFIER":"sshd","MESSAGE":%s}`,
+		(&fakeJournal{}).cursorN(e.seq), e.at.UnixMicro(), e.uid, comm, msg)
+}
+
 func (j *fakeJournal) RunLinesCut(ctx context.Context, argv []string, max int, fn func(string, bool)) (hostenv.CmdResult, error) {
-	if !strings.HasSuffix(argv[0], "/journalctl") || !strings.Contains(strings.Join(argv, " "), "-u ssh -u sshd -u ssh@* -u sshd@*") {
+	if !linuxRunner.Allowed(argv) {
+		return hostenv.CmdResult{}, fmt.Errorf("%w: %q", hostenv.ErrNotAllowed, argv)
+	}
+	if !strings.Contains(strings.Join(argv, " "), "-u ssh -u sshd -u ssh@* -u sshd@*") {
 		return hostenv.CmdResult{}, fmt.Errorf("unexpected command %q", argv)
 	}
 	j.mu.Lock()
@@ -87,19 +133,20 @@ func (j *fakeJournal) RunLinesCut(ctx context.Context, argv []string, max int, f
 					out = append(out, e)
 				}
 			}
-		case "--after-cursor":
-			j.reads = append(j.reads, "after "+argv[i+1])
-			k := -1
-			for n, e := range j.entries {
-				if e.cursor == argv[i+1] {
-					k = n
-				}
+		case "--cursor", "--after-cursor":
+			word := map[string]string{"--cursor": "cursor ", "--after-cursor": "after "}[a]
+			j.reads = append(j.reads, word+argv[i+1])
+			want := seqOf(argv[i+1])
+			k := 0 // the nearest entry from the cursor's place on
+			for k < len(j.entries) && j.entries[k].seq < want {
+				k++
 			}
-			if k < 0 {
-				j.mu.Unlock()
-				return hostenv.CmdResult{ExitCode: 1, Stderr: "Failed to seek to cursor: Invalid argument\n"}, nil
+			if a == "--after-cursor" {
+				k++ // skip one: the cursor's entry, or the first after the gap
 			}
-			out = append(out, j.entries[k+1:]...)
+			if k < len(j.entries) {
+				out = append(out, j.entries[k:]...)
+			}
 		}
 	}
 	hang := j.hangAfter
@@ -109,12 +156,12 @@ func (j *fakeJournal) RunLinesCut(ctx context.Context, argv []string, max int, f
 			<-ctx.Done()
 			return hostenv.CmdResult{}, ctx.Err()
 		}
-		b, _ := json.Marshal(map[string]string{
-			"__CURSOR": e.cursor, "__REALTIME_TIMESTAMP": strconv.FormatInt(e.at.UnixMicro(), 10),
-			"_SYSTEMD_UNIT": "ssh.service", "_UID": strconv.Itoa(e.uid), "_PID": "812", "_COMM": e.comm,
-			"SYSLOG_IDENTIFIER": "sshd", "MESSAGE": e.msg,
-		})
-		fn(string(b), false)
+		l := e.jsonLine()
+		if len(l) > max {
+			fn(l[:max], true)
+			continue
+		}
+		fn(l, false)
 	}
 	return hostenv.CmdResult{}, nil
 }
@@ -192,7 +239,7 @@ func TestLoginIndexAnswers(t *testing.T) {
 		t.Errorf("first read: %q, want %q", j.reads, want)
 	}
 	for _, r := range j.reads[1:] {
-		if !strings.HasPrefix(r, "after ") {
+		if !strings.HasPrefix(r, "cursor ") {
 			t.Errorf("a later read not from the cursor: %q", r)
 		}
 	}
@@ -222,59 +269,8 @@ func TestLoginIndexReadsOn(t *testing.T) {
 	if v, code, _ := check("203.0.113.10"); v || code != BlockUnverified {
 		t.Errorf("after a forged event: verified %v, %q", v, code)
 	}
-	if r := j.reads[len(j.reads)-1]; r != "after "+last {
-		t.Errorf("second read: %q, want after %s", r, last)
-	}
-}
-
-// A journal that dropped the cursor's entry (vacuumed, flooded) is read on
-// by time from the cursor's entry; the events between it and the first
-// entry still there may be gone, so a window reaching back past that is
-// refused as not read in full. A journal that still has the cursor's time
-// loses nothing.
-func TestLoginIndexCursorRejected(t *testing.T) {
-	now := time.Date(2026, 11, 23, 12, 0, 0, 0, time.UTC)
-	j := &fakeJournal{}
-	j.failed(now.Add(-2*time.Hour), "203.0.113.10")
-	withIndex(t, j, &now)
-	if v, _, err := check("203.0.113.10"); !v {
-		t.Fatalf("first check: %v", err)
-	}
-	cursorAt := now.Add(-2 * time.Hour)
-	// Vacuumed: every entry so far is gone, the cursor's with them.
-	j.mu.Lock()
-	j.entries = nil
-	j.mu.Unlock()
-	now = now.Add(time.Hour)
-	j.failed(now.Add(-10*time.Minute), "203.0.113.10")
-	v, code, err := check("203.0.113.10")
-	if v || code != BlockStateError || !strings.Contains(fmt.Sprint(err), "dropped entries") {
-		t.Errorf("after the journal dropped the cursor: verified %v, %q (%v)", v, code, err)
-	}
-	if r := j.reads[len(j.reads)-1]; r != "since "+cursorAt.Format(time.RFC3339) {
-		t.Errorf("read after the rejection: %q, want since %s", r, cursorAt.Format(time.RFC3339))
-	}
-	// A day later the window no longer reaches the gap.
-	now = now.Add(25 * time.Hour)
-	j.failed(now.Add(-time.Minute), "203.0.113.10")
-	if v, code, err := check("203.0.113.10"); !v || code != BlockOK {
-		t.Errorf("a day after the gap: verified %v, %q (%v)", v, code, err)
-	}
-
-	// Rejected, but the journal still has the cursor's time: no gap.
-	now = time.Date(2026, 11, 23, 12, 0, 0, 0, time.UTC)
-	k := &fakeJournal{}
-	k.failed(now.Add(-2*time.Hour), "203.0.113.20")
-	withIndex(t, k, &now)
-	if v, _, err := check("203.0.113.20"); !v {
-		t.Fatalf("first check: %v", err)
-	}
-	k.mu.Lock()
-	k.seq += 100
-	k.entries[0].cursor = k.cursorN(k.seq) // the same entry under another cursor
-	k.mu.Unlock()
-	if v, code, err := check("203.0.113.20"); !v || code != BlockOK {
-		t.Errorf("rejected cursor, nothing lost: verified %v, %q (%v)", v, code, err)
+	if r := j.reads[len(j.reads)-1]; r != "cursor "+last {
+		t.Errorf("second read: %q, want from %s", r, last)
 	}
 }
 
@@ -353,7 +349,7 @@ func TestLoginIndexCutShort(t *testing.T) {
 	if v, _, err := check("203.0.113.10"); !v {
 		t.Errorf("next check: %v", err)
 	}
-	if r := j.reads[len(j.reads)-1]; r != "after "+j.cursorN(2) {
-		t.Errorf("next read: %q, want after the second entry", r)
+	if r := j.reads[len(j.reads)-1]; r != "cursor "+j.cursorN(2) {
+		t.Errorf("next read: %q, want from the second entry", r)
 	}
 }
