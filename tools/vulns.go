@@ -68,7 +68,11 @@ func packageVulnsAll(ctx context.Context, hc *http.Client, detailFor string) (ma
 	switch hostSource().Info().GOOS { // the host read, so a fixture of another OS is checked as that OS
 	case "windows":
 		out, err := msrcVulns(ctx, hc, cacheDir, winSource())
-		return out, nil, err
+		surface, note := phpWinSurface(ctx, hc) // php-cgi under Apache: CVE-2024-4577, CVE-2024-8926
+		if note != "" && out != nil {
+			out["php_cgi"] = note
+		}
+		return out, surface, err
 	case "darwin":
 		out, err := macOSVulns(ctx, hc)
 		return out, nil, err

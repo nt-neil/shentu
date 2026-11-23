@@ -107,6 +107,10 @@ type phpInstall struct {
 	pkg, pkgVersion, dist string
 	vendor                string // an rpm's %{VENDOR}
 	iis                   bool
+	apache                bool   // Apache runs it as CGI (Windows)
+	conf                  string // the httpd.conf files that do, ", " between
+	cgiOff                bool   // none of them loads cgi_module or cgid_module, all of them read
+	cgiUnread             bool   // none seen loading cgi_module, but some of the configuration was not read
 }
 
 // phpBinGlobs are where PHP binaries are: the distributions' (Debian's
@@ -191,10 +195,17 @@ var (
 	}
 	phpWinFastCGI = func() ([]string, error) { return hostenv.IISFastCGI(winSource()) }
 	phpReadBin    = func(p string) ([]byte, error) {
+		full := p
 		if phpWindows {
-			return hostenv.ReadFileMax(winSource(), p, phpBinMax)
+			r, err := phpWinLocal(p)
+			if err != nil {
+				return nil, err
+			}
+			full = r
+		} else {
+			full = filepath.Join(phpRoot, p)
 		}
-		b, err := phpReadLimited(filepath.Join(phpRoot, p), phpBinMax)
+		b, err := phpReadLimited(full, phpBinMax)
 		if errors.Is(err, errTooLarge) {
 			err = nil // what was read is searched; phpBinVersion knows it was cut
 		}
@@ -212,24 +223,10 @@ func phpInstalls(ctx context.Context) (ins []phpInstall, unread []string) {
 		}
 		for _, a := range apps {
 			a = strings.ReplaceAll(a, "/", `\`) // C:/PHP/php-cgi.exe
-			i := strings.LastIndex(a, `\`)
-			if !strings.EqualFold(a[i+1:], "php-cgi.exe") {
+			if !strings.EqualFold(winBase(a), "php-cgi.exe") {
 				continue
 			}
-			if !(len(a) >= 3 && a[1] == ':' && a[2] == '\\') {
-				// relative, or a network or device path (\\host\share, \\?\): not read, so
-				// that reading it cannot make the host authenticate to another machine
-				unread = append(unread, a+" (not a local absolute path)")
-				continue
-			}
-			v, why := "", "no version found"
-			for _, p := range []string{a[:i+1] + "php8ts.dll", a[:i+1] + "php8.dll", a[:i+1] + "php7ts.dll", a[:i+1] + "php7.dll", a} {
-				if data, err := phpReadBin(p); err == nil {
-					if v, why = phpBinVersion(data); v != "" || strings.HasPrefix(why, "several") {
-						break
-					}
-				}
-			}
+			v, why := phpWinVersion(a)
 			if v == "" {
 				if why == "" {
 					why = "no version found"
@@ -238,6 +235,30 @@ func phpInstalls(ctx context.Context) (ins []phpInstall, unread []string) {
 				continue
 			}
 			ins = append(ins, phpInstall{bin: a, version: v, sapi: "cgi", iis: true})
+		}
+		confs, cunread := phpWinApacheConfs()
+		unread = append(unread, cunread...)
+		at := map[string]int{} // php-cgi.exe (lower case) -> index in ins: one entry, every conf named
+		for _, conf := range confs {
+			exes, un, cgiMod := phpApacheCGI(conf)
+			unread = append(unread, un...)
+			for _, a := range exes {
+				if i, ok := at[strings.ToLower(a)]; ok {
+					ins[i].conf += ", " + conf
+					loaded := cgiMod || !ins[i].cgiOff && !ins[i].cgiUnread
+					partial := ins[i].cgiUnread || len(un) > 0
+					ins[i].cgiOff, ins[i].cgiUnread = !loaded && !partial, !loaded && partial
+					continue
+				}
+				v, why := phpWinVersion(a)
+				if v == "" {
+					unread = append(unread, a+" ("+why+")")
+					continue
+				}
+				at[strings.ToLower(a)] = len(ins)
+				ins = append(ins, phpInstall{bin: a, version: v, sapi: "cgi", apache: true, conf: conf,
+					cgiOff: !cgiMod && len(un) == 0, cgiUnread: !cgiMod && len(un) > 0})
+			}
 		}
 		return ins, unread
 	}
@@ -301,6 +322,116 @@ func phpInstalls(ctx context.Context) (ins []phpInstall, unread []string) {
 		}
 	}
 	return ins, unread
+}
+
+// phpWinVersion is the version of the PHP whose php-cgi.exe is at exe: in
+// PHP's core next to it (php8ts.dll, php8.dll, php7ts.dll, php7.dll), else
+// in the program. why says why there is none: a path that is not a local
+// absolute one (a network or device path is not read, so that reading it
+// cannot make the host authenticate to another machine), several versions,
+// or none found.
+func phpWinVersion(exe string) (v, why string) {
+	if !phpLocalWinPath(exe) {
+		return "", "not a local absolute path"
+	}
+	d := winDir(exe) + `\`
+	why = "no version found"
+	for _, p := range []string{d + "php8ts.dll", d + "php8.dll", d + "php7ts.dll", d + "php7.dll", exe} {
+		if data, err := phpReadBin(p); err == nil {
+			if v, w := phpBinVersion(data); v != "" || strings.HasPrefix(w, "several") {
+				return v, w
+			}
+		}
+	}
+	return "", why
+}
+
+// phpWinLocal is p with its links resolved, refused unless every step is
+// a local absolute path: a symbolic link (or junction) in the path whose
+// target is \\host\share or a device path would make the open connect to
+// another machine (and hand it the host's credentials). Each component is
+// looked at with Lstat before anything below it, and a target is checked
+// before it is looked at, so nothing remote is ever touched. A link whose
+// target cannot be read is not followed. Paths are cleaned first (slashes
+// turned, "." and ".." resolved as Windows does), so the components looked
+// at are the ones the open walks.
+func phpWinLocal(p string) (string, error) {
+	for hops := 0; ; hops++ {
+		p = strings.ReplaceAll(p, "/", `\`)
+		if !phpLocalWinPath(p) {
+			return "", errNotLocal
+		}
+		p = winClean(p)
+		if strings.ContainsAny(p[2:], ":?") { // an alternate data stream, or a device or wildcard spelling
+			return "", errNotLocal
+		}
+		if hops > 16 {
+			return "", errors.New("too many links, not read")
+		}
+		parts := strings.Split(strings.TrimRight(p[3:], `\`), `\`)
+		cur, next := p[:2], ""
+		for i, part := range parts {
+			cur += `\` + part
+			st, err := phpLstat(cur)
+			if errors.Is(err, fs.ErrNotExist) {
+				return p, nil // not there: the open says so
+			}
+			if err != nil {
+				return "", fmt.Errorf("its links could not be checked (%w), not read", err)
+			}
+			if st.Mode()&(os.ModeSymlink|os.ModeIrregular) == 0 {
+				continue
+			}
+			t, err := phpReadlink(cur)
+			if err != nil {
+				return "", errors.New("a reparse point that is not a link, not followed")
+			}
+			t = strings.ReplaceAll(t, "/", `\`)
+			switch {
+			case phpLocalWinPath(t):
+			case strings.HasPrefix(t, `\`) && !strings.HasPrefix(t, `\\`): // the root of the same drive
+				t = cur[:2] + t
+			case !strings.HasPrefix(t, `\`) && !strings.Contains(t, ":"): // relative to the link's folder
+				t = winDir(cur) + `\` + t
+			default:
+				return "", errNotLocal
+			}
+			next = strings.Join(append([]string{strings.TrimRight(t, `\`)}, parts[i+1:]...), `\`)
+			break
+		}
+		if next == "" {
+			return p, nil
+		}
+		p = next
+	}
+}
+
+// winClean is the local absolute path p (backslashes only) with empty,
+// "." and ".." components resolved lexically, as Windows does before an
+// open; ".." stops at the drive's root.
+func winClean(p string) string {
+	var out []string
+	for _, c := range strings.Split(p[3:], `\`) {
+		switch c {
+		case "", ".":
+		case "..":
+			if len(out) > 0 {
+				out = out[:len(out)-1]
+			}
+		default:
+			out = append(out, c)
+		}
+	}
+	return p[:2] + `\` + strings.Join(out, `\`)
+}
+
+// phpLstat and phpReadlink look at one path component (tests replace them).
+var phpLstat, phpReadlink = os.Lstat, os.Readlink
+
+// phpLocalWinPath reports whether p is a local absolute Windows path (C:\...):
+// not relative, not \\host\share, not a device path (\\?\, \\.\).
+func phpLocalWinPath(p string) bool {
+	return len(p) >= 3 && (p[0] >= 'A' && p[0] <= 'Z' || p[0] >= 'a' && p[0] <= 'z') && p[1] == ':' && p[2] == '\\'
 }
 
 // phpPackage is the package holding the binary at p, its version, the
@@ -369,7 +500,7 @@ func phpGroups(ins []phpInstall) []phpGroup {
 	var out []phpGroup
 	at := map[string]int{}
 	for _, in := range ins {
-		k := in.version + "|" + in.pkgVersion
+		k := fmt.Sprintf("%s|%s|%t|%t", in.version, in.pkgVersion, in.iis, in.apache) // IIS, Apache and the rest apart: where() and the notes speak for one
 		if i, ok := at[k]; ok {
 			out[i].ins = append(out[i].ins, in)
 			continue
@@ -391,6 +522,16 @@ func (g phpGroup) where() string {
 	switch {
 	case in.iis:
 		from = "run by IIS as its FastCGI application, which the package scan does not cover"
+	case in.apache:
+		var confs []string
+		for _, a := range g.ins {
+			for _, c := range strings.Split(a.conf, ", ") {
+				if !slices.Contains(confs, c) {
+					confs = append(confs, c)
+				}
+			}
+		}
+		from = "run by Apache as CGI from " + strings.Join(confs, ", ") + ", which the package scan does not cover"
 	case strings.Contains(in.pkgVersion, "deb.sury.org"):
 		from = "package " + in.pkg + " " + in.pkgVersion + " from deb.sury.org or the ondrej PPA, which the package scan does not cover"
 	case strings.Contains(in.pkgVersion, "remi") || strings.HasPrefix(in.bin, "/opt/remi/"):
@@ -411,7 +552,7 @@ func (g phpGroup) where() string {
 // group: not from a package, or from deb.sury.org, the PPA, Remi, IIS.
 func (g phpGroup) thirdParty() bool {
 	in := g.ins[0]
-	return in.pkg == "" || in.iis || strings.Contains(in.pkgVersion, "deb.sury.org") || strings.Contains(in.pkgVersion, "remi") ||
+	return in.pkg == "" || in.iis || in.apache || strings.Contains(in.pkgVersion, "deb.sury.org") || strings.Contains(in.pkgVersion, "remi") ||
 		strings.HasPrefix(in.bin, "/opt/remi/") || in.dist == "rpm" && !phpDistroVendor(in.vendor)
 }
 
@@ -426,7 +567,7 @@ func (g phpGroup) runs(sapi string, procs []hostenv.Process) bool {
 		if in.sapi != sapi {
 			continue
 		}
-		if in.iis {
+		if in.iis || in.apache {
 			return true
 		}
 		for _, p := range procs {
@@ -938,6 +1079,7 @@ func phpRisks(ctx context.Context) []Risk {
 			continue
 		}
 		branch := fmt.Sprintf("%d.%d", rel[0], rel[1])
+		iisNote := phpIISArgInjNote(g, rel)
 		key, name := "php"+branch+":", "PHP "+g.version+" ("+g.where()+")"
 		if branches[branch] > 1 {
 			key = "php" + branch + "@" + g.ins[0].bin + ":" // two builds of one branch: a risk each
@@ -946,7 +1088,7 @@ func phpRisks(ctx context.Context) []Risk {
 			if g.thirdParty() {
 				out = append(out, Risk{key + "eol", "info", name + " is a branch php.net no longer fixes; its fixes of 2026-11-19 " +
 					"(18 CVEs) went into 8.2.36, 8.3.37, 8.4.28, 8.5.13 and 8.6.0. Move to a branch that is still fixed, " +
-					"or ask whoever builds this one whether it carries the fixes"})
+					"or ask whoever builds this one whether it carries the fixes" + iisNote})
 			}
 			continue
 		}
@@ -1018,8 +1160,11 @@ func phpRisks(ctx context.Context) []Risk {
 			switch {
 			case cgiOn:
 				runs := "php-cgi runs"
-				if g.ins[0].iis {
+				switch {
+				case g.ins[0].iis:
 					runs = "IIS runs it through FastCGI"
+				case g.ins[0].apache:
+					runs = "Apache runs it as CGI"
 				}
 				out = append(out, Risk{key + c[0], "warning", name + ": " + runs + ", and " + c[0] + " affects it " +
 					"(out-of-bounds read and write while php-cgi corrects PATH_INFO). " + upgrade + note})
@@ -1034,8 +1179,28 @@ func phpRisks(ctx context.Context) []Risk {
 		if c := open(phpOtherCVEs); len(c) > 0 {
 			out = append(out, Risk{key + c[0], "warning", name + " is in the range of " + phpList(c) + " (the engine and the " +
 				"extensions every PHP has: use-after-frees in Date, Session and SOAP that can lead to remote code execution, " +
-				"a Phar signature downgrade, mixed-case HTTPS and FTPS URLs sent in plaintext, and more). " + upgrade + note})
+				"a Phar signature downgrade, mixed-case HTTPS and FTPS URLs sent in plaintext, and more). " + upgrade + note + iisNote})
+		}
+	}
+	if phpWindows {
+		for _, k := range phpArgInjChecks(ins) {
+			out = append(out, phpArgInjRisk(k))
 		}
 	}
 	return out
+}
+
+// phpIISArgInjNote says, for php-cgi IIS runs whose version is in the range
+// of CVE-2024-4577 or CVE-2024-8926, why they are not reported.
+func phpIISArgInjNote(g phpGroup, rel [3]int) string {
+	if !slices.ContainsFunc(g.ins, func(in phpInstall) bool { return in.iis }) {
+		return ""
+	}
+	for _, c := range phpArgInjCVEs {
+		if aff, _ := phpArgInjAffected(rel, c); aff {
+			return ". CVE-2024-4577 and CVE-2024-8926 (argument injection in PHP-CGI) are not reported for it: their advisories cover " +
+				"PHP-CGI under Apache only, and IIS's FastCGI does not pass the query string as arguments"
+		}
+	}
+	return ""
 }

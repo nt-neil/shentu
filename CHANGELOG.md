@@ -49,6 +49,24 @@ Chinese for the zh-TW pages; keep the two in step.
   read (the process list, a configuration file, IIS's configuration) is named in a line saying
   which of these could not be checked.
 
+- On Windows, the host survey and the daily vulnerability surface look for php-cgi.exe run by
+  Apache as CGI (httpd.conf and what it includes, XAMPP's `httpd-xampp.conf` too: a `ScriptAlias`
+  onto php-cgi.exe or its folder, an `Action` through such an alias, or `AddHandler cgi-script .exe`
+  in that folder) and check it for CVE-2024-4577 (fixed in 8.1.29, 8.2.20, 8.3.8) and its bypass
+  CVE-2024-8926 (8.1.30, 8.2.24, 8.3.12). The system code page (ACP) decides: 932, 936 or 950 for
+  CVE-2024-4577, an OEM code page set as the ANSI one for CVE-2024-8926; when it cannot be read,
+  they are reported as a warning with "code page unconfirmed". Branches before 8.1 are reported as
+  a warning, as the advisories do not list them and they get no fix. The surface marks an entry
+  KEV only when the CISA KEV catalog lists it. php-cgi.exe under IIS is not reported for them,
+  as the advisories cover Apache only; the version line says so. Apache is the one a service
+  runs, or at XAMPP's or Apache Lounge's place when only administrators may write its httpd.conf;
+  a network or device path in the configuration (`\\host\share`) is never read, nor an included
+  file whose link leads to one. Without a `LoadModule` of cgi_module or cgid_module in what was
+  read, Apache would not run CGI, so the entry is a warning, not critical (one inside an
+  `<IfModule>` counts as loaded); when some of the configuration could not be read, it stays
+  critical and says so. A path whose links cannot be checked, or with `:` or `?` after the drive
+  (an alternate data stream), is not read either.
+
 ## v0.5.5 — 2026-11-23
 
 - What a dispatch in progress has already used no longer counts twice near the budget limit: its
