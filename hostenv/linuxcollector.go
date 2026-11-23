@@ -64,6 +64,23 @@ func RPMVersionArgv(pkg string) []string { return []string{rpmPath, "-q", "--qf"
 // RPMChangelogArgv asks rpm for pkg's changelog.
 func RPMChangelogArgv(pkg string) []string { return []string{rpmPath, "-q", "--changelog", pkg} }
 
+// The PHP check's queries (tools), about a binary found on the host or the
+// package holding it: which package owns the file, and that package's
+// status, owner and changelog. The file and the package are slots
+// (SlotPath, SlotPkg), never options.
+var rpmOwnerFmt = "%{NAME} %{EPOCHNUM}:%{VERSION}-%{RELEASE} %{VENDOR}\n"
+
+// DpkgSearchArgv asks dpkg which package holds the file p.
+func DpkgSearchArgv(p string) []string { return []string{dpkgQueryPath, "-S", p} }
+
+// RPMOwnerArgv asks rpm which package holds the file p, with its epoch,
+// version, release and vendor.
+func RPMOwnerArgv(p string) []string { return []string{rpmPath, "-qf", "--qf", rpmOwnerFmt, p} }
+
+func phpPackageArgvs() [][]string {
+	return [][]string{DpkgSearchArgv(SlotPath), DpkgStatusArgv(SlotPkg), RPMOwnerArgv(SlotPath), RPMChangelogArgv(SlotPkg)}
+}
+
 // ApacheVersionArgvs are Apache's version queries, dpkg's then rpm's.
 func ApacheVersionArgvs() [][]string {
 	return [][]string{DpkgVersionArgv(apacheDpkgPkg), RPMVersionArgv(apacheRPMPkg)}
@@ -79,6 +96,8 @@ func init() {
 		registerBig(RPMVersionArgv(p), 0, MaxTimeout)
 	}
 	registerBig(RPMVersionArgv(apacheRPMPkg), 0, MaxTimeout)
+	registerBig(RPMChangelogArgv(SlotPkg), 16<<20, MaxTimeout)
+	registerBig(RPMOwnerArgv(SlotPath), 0, MaxTimeout)
 }
 
 func webPackageArgvs() [][]string {
@@ -89,7 +108,8 @@ func webPackageArgvs() [][]string {
 	for _, p := range NginxRPMs {
 		l = append(l, RPMVersionArgv(p), RPMChangelogArgv(p))
 	}
-	return append(l, ApacheVersionArgvs()...)
+	l = append(l, ApacheVersionArgvs()...)
+	return append(l, phpPackageArgvs()...)
 }
 
 func (c LinuxCollector) Collect(ctx context.Context, src Source) *Facts {

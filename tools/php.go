@@ -9,12 +9,8 @@ import (
 	"io"
 	"io/fs"
 	"net"
-	"os"
-	"os/exec"
 	"path"
-	"path/filepath"
 	"regexp"
-	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -153,24 +149,32 @@ func phpBinVersion(data []byte) (v, why string) {
 	return "", ""
 }
 
-// phpReadLimited reads a regular file, at most max bytes; errTooLarge when
-// there is more. Every read of a binary, a configuration file or a
-// changelog goes through it: it opens without blocking (phpOpenFlags) and
-// checks the open file itself, so a FIFO or a device is not waited on, and
-// nothing can be swapped in between a check and the open.
+// phpSource is the host the PHP check reads: hostSource, or on Windows
+// winSource (as IIS's checks). Never the machine running the check when it
+// reads a replay or another host's survey.
+func phpSource() hostenv.Source {
+	if phpOnWindows() {
+		return winSource()
+	}
+	return hostSource()
+}
+
+// phpOnWindows: the host read is Windows (phpWindows: the tests' say).
+func phpOnWindows() bool { return phpWindows || hostSource().Info().GOOS == "windows" }
+
+// phpReadLimited reads a regular file of the host, at most max bytes;
+// errTooLarge when there is more. Every read of a binary, a configuration
+// file or a changelog goes through it: the host source opens without
+// blocking and checks the open file itself, so a FIFO or a device is not
+// waited on, and nothing can be swapped in between a check and the open.
 func phpReadLimited(p string, max int64) ([]byte, error) {
-	f, err := os.OpenFile(p, phpOpenFlags, 0)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	if st, err := f.Stat(); err != nil {
-		return nil, err
-	} else if !st.Mode().IsRegular() {
+	b, err := hostenv.ReadFileMax(phpSource(), p, max)
+	switch {
+	case errors.Is(err, hostenv.ErrTruncated):
+		return b, errTooLarge
+	case errors.Is(err, hostenv.ErrNotRegular):
 		return nil, errNotRegular
-	}
-	b, err := io.ReadAll(io.LimitReader(f, max+1))
-	if err == nil && int64(len(b)) > max {
+	case err == nil && int64(len(b)) > max: // a source that does not cap
 		return b[:max], errTooLarge
 	}
 	return b, err
@@ -181,13 +185,18 @@ var (
 	errTooLarge   = errors.New("too large")
 )
 
-// The host for the tests: the root the Linux paths are under, the package
-// manager, the process list, IIS's FastCGI applications and reading a binary.
+// The host for the tests: Windows or not, the package manager's queries,
+// the process list, IIS's FastCGI applications and reading a binary. phpRun
+// runs a query (hostenv's argv, allowlisted) on the host source; one that
+// exits non-zero is an error.
 var (
-	phpRoot    = "/"
-	phpWindows = runtime.GOOS == "windows"
-	phpRun     = func(ctx context.Context, name string, args ...string) ([]byte, error) {
-		return exec.CommandContext(ctx, name, args...).Output()
+	phpWindows = false
+	phpRun     = func(ctx context.Context, argv []string) ([]byte, error) {
+		res, err := hostSource().Run(ctx, argv)
+		if err == nil && res.ExitCode != 0 {
+			err = fmt.Errorf("%s exited %d", argv[0], res.ExitCode)
+		}
+		return res.Stdout, err
 	}
 	phpProcs = func() ([]hostenv.Process, bool) {
 		o, _ := linux.Processes(hostSource(), nil)
@@ -196,14 +205,12 @@ var (
 	phpWinFastCGI = func() ([]string, error) { return hostenv.IISFastCGI(winSource()) }
 	phpReadBin    = func(p string) ([]byte, error) {
 		full := p
-		if phpWindows {
+		if phpOnWindows() {
 			r, err := phpWinLocal(p)
 			if err != nil {
 				return nil, err
 			}
 			full = r
-		} else {
-			full = filepath.Join(phpRoot, p)
 		}
 		b, err := phpReadLimited(full, phpBinMax)
 		if errors.Is(err, errTooLarge) {
@@ -216,7 +223,7 @@ var (
 // phpInstalls finds the PHP binaries; unread are the ones that could not be
 // checked (IIS's configuration, a php-cgi.exe without a version).
 func phpInstalls(ctx context.Context) (ins []phpInstall, unread []string) {
-	if phpWindows {
+	if phpOnWindows() {
 		apps, err := phpWinFastCGI()
 		if err != nil {
 			return nil, []string{"applicationHost.config could not be read (" + err.Error() + ")"}
@@ -262,33 +269,26 @@ func phpInstalls(ctx context.Context) (ins []phpInstall, unread []string) {
 		}
 		return ins, unread
 	}
-	root, err := filepath.EvalSymlinks(phpRoot)
-	if err != nil {
-		return nil, nil
-	}
+	src := hostSource()
 	seen := map[string]bool{}
-	var stats []os.FileInfo // of ins, to know a hard link of one
+	var ids []string // of ins, to know a hard link of one ("" when the host cannot tell)
 	for _, g := range phpBinGlobs {
-		matches, _ := filepath.Glob(filepath.Join(root, g))
-		for _, m := range matches {
-			if !phpBinName.MatchString(filepath.Base(m)) {
+		for _, m := range hostenv.Glob(src, g) {
+			if !phpBinName.MatchString(path.Base(m)) {
 				continue
 			}
-			real, err := filepath.EvalSymlinks(m) // /usr/bin/php → /etc/alternatives/php → /usr/bin/php8.3
+			p, err := hostenv.EvalSymlinks(src, m) // /usr/bin/php → /etc/alternatives/php → /usr/bin/php8.3
 			if err != nil {
 				continue
 			}
-			rel, err := filepath.Rel(root, real)
-			if err != nil || strings.HasPrefix(rel, "..") {
-				continue
-			}
-			p := "/" + filepath.ToSlash(rel)
 			if seen[p] {
 				continue
 			}
 			seen[p] = true
-			st, err := os.Stat(real)
-			if err != nil || !st.Mode().IsRegular() {
+			st, err := hostenv.Stat(src, p)
+			switch {
+			case errors.Is(err, hostenv.ErrNoStat): // a replay: the read says whether it is a file
+			case err != nil || !st.Mode.IsRegular():
 				continue
 			}
 			data, err := phpReadBin(p)
@@ -303,21 +303,21 @@ func phpInstalls(ctx context.Context) (ins []phpInstall, unread []string) {
 				continue // a script, or not PHP
 			}
 			in := phpInstall{bin: p, version: v, sapi: "cli"}
-			switch base := filepath.Base(p); {
+			switch base := path.Base(p); {
 			case strings.Contains(base, "fpm"):
 				in.sapi = "fpm"
 			case strings.Contains(base, "cgi") || strings.Contains(p, "/cgi-bin/"):
 				in.sapi = "cgi"
 			}
 			in.pkg, in.pkgVersion, in.dist, in.vendor = phpPackage(ctx, p)
-			if i := slices.IndexFunc(stats, func(o os.FileInfo) bool { return os.SameFile(o, st) }); i >= 0 {
+			if i := slices.Index(ids, st.ID); st.ID != "" && i >= 0 {
 				// a hard link of a binary already found: one binary, the package's
 				if ins[i].pkg == "" && in.pkg != "" {
 					ins[i] = in
 				}
 				continue
 			}
-			stats = append(stats, st)
+			ids = append(ids, st.ID)
 			ins = append(ins, in)
 		}
 	}
@@ -379,7 +379,7 @@ func phpWinLocal(p string) (string, error) {
 			if err != nil {
 				return "", fmt.Errorf("its links could not be checked (%w), not read", err)
 			}
-			if st.Mode()&(os.ModeSymlink|os.ModeIrregular) == 0 {
+			if st&(fs.ModeSymlink|fs.ModeIrregular) == 0 {
 				continue
 			}
 			t, err := phpReadlink(cur)
@@ -426,7 +426,13 @@ func winClean(p string) string {
 }
 
 // phpLstat and phpReadlink look at one path component (tests replace them).
-var phpLstat, phpReadlink = os.Lstat, os.Readlink
+var (
+	phpLstat = func(p string) (fs.FileMode, error) {
+		st, err := hostenv.Lstat(winSource(), p)
+		return st.Mode, err
+	}
+	phpReadlink = func(p string) (string, error) { return winSource().Readlink(p) }
+)
 
 // phpLocalWinPath reports whether p is a local absolute Windows path (C:\...):
 // not relative, not \\host\share, not a device path (\\?\, \\.\).
@@ -437,18 +443,18 @@ func phpLocalWinPath(p string) bool {
 // phpPackage is the package holding the binary at p, its version, the
 // package manager and (rpm) the vendor; "" when none does.
 func phpPackage(ctx context.Context, p string) (pkg, version, dist, vendor string) {
-	if out, err := phpRun(ctx, "dpkg-query", "-S", p); err == nil {
+	if out, err := phpRun(ctx, hostenv.DpkgSearchArgv(p)); err == nil {
 		line, _, _ := strings.Cut(string(out), "\n")
 		if name, _, ok := strings.Cut(line, ": "); ok {
 			name, _, _ = strings.Cut(name, ", ")
-			if o, err := phpRun(ctx, "dpkg-query", "-W", "-f", "${db:Status-Status} ${Version}", name); err == nil {
+			if o, err := phpRun(ctx, hostenv.DpkgStatusArgv(name)); err == nil {
 				if f := strings.Fields(string(o)); len(f) == 2 && f[0] == "installed" {
 					return name, f[1], "dpkg", ""
 				}
 			}
 		}
 	}
-	if out, err := phpRun(ctx, "rpm", "-qf", "--qf", "%{NAME} %{EPOCHNUM}:%{VERSION}-%{RELEASE} %{VENDOR}\n", p); err == nil {
+	if out, err := phpRun(ctx, hostenv.RPMOwnerArgv(p)); err == nil {
 		line, _, _ := strings.Cut(string(out), "\n")
 		if f := strings.Fields(line); len(f) >= 2 && !strings.Contains(line, "not owned") {
 			return f[0], f[1], "rpm", strings.Join(f[2:], " ")
@@ -475,7 +481,7 @@ func phpChangelog(ctx context.Context, in phpInstall, branch string) string {
 	case "dpkg":
 		name, _, _ := strings.Cut(in.pkg, ":") // php8.3-cli:amd64
 		for _, n := range []string{name, "php" + branch + "-common"} {
-			if b, err := phpReadLimited(filepath.Join(phpRoot, "/usr/share/doc", n, "changelog.Debian.gz"), phpConfMax); err == nil {
+			if b, err := phpReadLimited("/usr/share/doc/"+n+"/changelog.Debian.gz", phpConfMax); err == nil {
 				if z, err := gzip.NewReader(bytes.NewReader(b)); err == nil {
 					text, _ := io.ReadAll(io.LimitReader(z, 16<<20))
 					return string(text)
@@ -483,7 +489,7 @@ func phpChangelog(ctx context.Context, in phpInstall, branch string) string {
 			}
 		}
 	case "rpm":
-		if out, err := phpRun(ctx, "rpm", "-q", "--changelog", in.pkg); err == nil {
+		if out, err := phpRun(ctx, hostenv.RPMChangelogArgv(in.pkg)); err == nil {
 			return string(out)
 		}
 	}
@@ -589,24 +595,21 @@ var phpWebGlobs = []string{"/etc/nginx/nginx.conf", "/etc/nginx/conf.d/*.conf", 
 	"/usr/local/openresty/nginx/conf/nginx.conf", "/etc/apache2/apache2.conf", "/etc/apache2/sites-enabled/*",
 	"/etc/apache2/conf-enabled/*", "/etc/httpd/conf/httpd.conf", "/etc/httpd/conf.d/*.conf"}
 
-// phpConfFile is one configuration file read: its path (without phpRoot)
-// and text.
+// phpConfFile is one configuration file read: its path and text.
 type phpConfFile struct{ path, text string }
 
-// phpReadGlobs reads the files of globs under phpRoot, in path order;
+// phpReadGlobs reads the host's files of globs, in path order;
 // unread are those that are there but could not be read (not a regular
 // file, too large, permission).
 func phpReadGlobs(globs []string) (files []phpConfFile, unread []string) {
 	seen := map[string]bool{}
 	for _, g := range globs {
-		matches, _ := filepath.Glob(filepath.Join(phpRoot, g))
-		for _, m := range matches {
-			p := phpRel(m)
+		for _, p := range hostenv.Glob(hostSource(), g) {
 			if seen[p] {
 				continue
 			}
 			seen[p] = true
-			if text, why := phpReadConf(m); why == "" {
+			if text, why := phpReadConf(p); why == "" {
 				files = append(files, phpConfFile{p, text})
 			} else if why != "missing" {
 				unread = append(unread, p+" ("+why+")")
@@ -617,28 +620,11 @@ func phpReadGlobs(globs []string) (files []phpConfFile, unread []string) {
 	return files, unread
 }
 
-// phpResolve is where a path under phpRoot leads, links followed, as the
-// host spells it; false when it leads nowhere (it is then not read anyway).
-// Out of phpRoot ("/" outside the tests) it is a path no root holds.
-func phpResolve(full string) (string, bool) {
-	root, err := filepath.EvalSymlinks(phpRoot)
-	if err != nil {
-		return "", false
-	}
-	real, err := filepath.EvalSymlinks(full)
-	if err != nil {
-		return "", false
-	}
-	rel, err := filepath.Rel(root, real)
-	if err != nil || strings.HasPrefix(rel, "..") {
-		return "(out of " + phpRoot + ")", true
-	}
-	return "/" + filepath.ToSlash(rel), true
-}
-
-// phpRel is a path under phpRoot as the host spells it.
-func phpRel(full string) string {
-	return "/" + strings.TrimPrefix(filepath.ToSlash(strings.TrimPrefix(full, filepath.Clean(phpRoot))), "/")
+// phpResolve is where a host path leads, links followed; false when it
+// leads nowhere (it is then not read anyway).
+func phpResolve(p string) (string, bool) {
+	real, err := hostenv.EvalSymlinks(hostSource(), p)
+	return real, err == nil
 }
 
 // phpReadConf reads a configuration file; why is "" when read, "missing"
@@ -805,11 +791,9 @@ func phpWebConf() ([]phpWebFile, []string) {
 				unread = append(unread, arg+" (included by "+p+", not read: outside "+strings.Join(phpIncludeRoots[nginx], ", ")+")")
 				return ""
 			}
-			matches, _ := filepath.Glob(filepath.Join(phpRoot, arg))
 			var b strings.Builder
-			for _, full := range matches {
-				ip := phpRel(full)
-				if real, ok := phpResolve(full); ok && !slices.ContainsFunc(phpIncludeRoots[nginx], func(r string) bool { return strings.HasPrefix(real, r) }) {
+			for _, ip := range hostenv.Glob(hostSource(), arg) {
+				if real, ok := phpResolve(ip); ok && !slices.ContainsFunc(phpIncludeRoots[nginx], func(r string) bool { return strings.HasPrefix(real, r) }) {
 					// a link out of the server's folders
 					unread = append(unread, ip+" (included by "+p+", not read: it links to "+real+", outside "+strings.Join(phpIncludeRoots[nginx], ", ")+")")
 					continue
@@ -819,7 +803,7 @@ func phpWebConf() ([]phpWebFile, []string) {
 					continue
 				}
 				count++
-				text, why := phpReadConf(full)
+				text, why := phpReadConf(ip)
 				if why != "" {
 					unread = append(unread, ip+" (included by "+p+": "+why+")")
 					continue
@@ -1057,7 +1041,7 @@ func phpRisks(ctx context.Context) []Risk {
 	}
 	var procs []hostenv.Process
 	known := true
-	if !phpWindows {
+	if !phpOnWindows() {
 		procs, known = phpProcs()
 	}
 	type status struct {
@@ -1182,7 +1166,7 @@ func phpRisks(ctx context.Context) []Risk {
 				"a Phar signature downgrade, mixed-case HTTPS and FTPS URLs sent in plaintext, and more). " + upgrade + note + iisNote})
 		}
 	}
-	if phpWindows {
+	if phpOnWindows() {
 		for _, k := range phpArgInjChecks(ins) {
 			out = append(out, phpArgInjRisk(k))
 		}

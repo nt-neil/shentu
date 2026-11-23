@@ -42,7 +42,12 @@ func (h *phpHost) symlink(target, p string) {
 	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 		h.t.Fatal(err)
 	}
-	if err := os.Symlink(filepath.Join(h.root, target), full); err != nil {
+	// relative, so the OS and the host source (rooted at h.root) follow it alike
+	rel, err := filepath.Rel(filepath.Dir(p), target)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	if err := os.Symlink(rel, full); err != nil {
 		h.t.Fatal(err)
 	}
 }
@@ -91,7 +96,7 @@ func TestPHPReview2FIFO(t *testing.T) {
 	})
 	// phpReadLimited itself, on a FIFO.
 	within(t, "phpReadLimited", func() {
-		if _, err := phpReadLimited(filepath.Join(h.root, "/usr/bin/php8.3"), phpConfMax); err != errNotRegular {
+		if _, err := phpReadLimited("/usr/bin/php8.3", phpConfMax); err != errNotRegular {
 			t.Errorf("phpReadLimited on a FIFO: %v", err)
 		}
 	})

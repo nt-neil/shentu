@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
-	"os"
 	"path"
 	"regexp"
 	"strings"
@@ -73,12 +72,7 @@ var (
 		if err != nil {
 			return nil, err
 		}
-		es, err := os.ReadDir(r)
-		var names []string
-		for _, e := range es {
-			names = append(names, e.Name())
-		}
-		return names, err
+		return winSource().ReadDir(r)
 	}
 	phpWinACP = func() (string, error) {
 		ws, ok := winSource().(hostenv.WinSource)
@@ -109,8 +103,8 @@ var (
 		if err != nil {
 			return err
 		}
-		st, err := os.Stat(r)
-		if err == nil && !st.Mode().IsRegular() {
+		st, err := hostenv.Stat(winSource(), r)
+		if err == nil && !st.Mode.IsRegular() {
 			err = errNotRegular
 		}
 		return err
