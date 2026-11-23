@@ -149,15 +149,11 @@ func phpBinVersion(data []byte) (v, why string) {
 	return "", ""
 }
 
-// phpSource is the host the PHP check reads: hostSource, or on Windows
-// winSource (as IIS's checks). Never the machine running the check when it
-// reads a replay or another host's survey.
-func phpSource() hostenv.Source {
-	if phpOnWindows() {
-		return winSource()
-	}
-	return hostSource()
-}
+// phpSource is the host the PHP check reads, Windows or not: hostSource,
+// which is the live host or the replay read. Not winSource, always the live
+// machine: a Windows replay's php-cgi and Apache files would be read on the
+// machine running the check.
+func phpSource() hostenv.Source { return hostSource() }
 
 // phpOnWindows: the host read is Windows (phpWindows: the tests' say).
 func phpOnWindows() bool { return phpWindows || hostSource().Info().GOOS == "windows" }
@@ -202,7 +198,7 @@ var (
 		o, _ := linux.Processes(hostSource(), nil)
 		return o.Value, o.Known()
 	}
-	phpWinFastCGI = func() ([]string, error) { return hostenv.IISFastCGI(winSource()) }
+	phpWinFastCGI = func() ([]string, error) { return hostenv.IISFastCGI(phpSource()) }
 	phpReadBin    = func(p string) ([]byte, error) {
 		full := p
 		if phpOnWindows() {
@@ -428,10 +424,10 @@ func winClean(p string) string {
 // phpLstat and phpReadlink look at one path component (tests replace them).
 var (
 	phpLstat = func(p string) (fs.FileMode, error) {
-		st, err := hostenv.Lstat(winSource(), p)
+		st, err := hostenv.Lstat(phpSource(), p)
 		return st.Mode, err
 	}
-	phpReadlink = func(p string) (string, error) { return winSource().Readlink(p) }
+	phpReadlink = func(p string) (string, error) { return phpSource().Readlink(p) }
 )
 
 // phpLocalWinPath reports whether p is a local absolute Windows path (C:\...):
