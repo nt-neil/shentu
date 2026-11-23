@@ -49,10 +49,20 @@ type loginIndex struct {
 	// From: the index has every event of sshd's units since From (the
 	// first read's start).
 	From time.Time `json:"from"`
-	// GapUntil: events before it may be missing, because the journal had
-	// dropped the cursor's entry (rotated, vacuumed, flooded) when it was
-	// read on. A window starting before it cannot be answered in full.
-	GapUntil time.Time `json:"gap_until,omitzero"`
+	// UnreadableLast is the last entry in sshd's units that sshd did not
+	// write and that could not be read whole (cut for its length, or no
+	// message): it may be a forged event for any address, as the whole
+	// read would count it, so a window holding it is not verified.
+	UnreadableLast time.Time `json:"unreadable_last,omitzero"`
+	// JournalFrom: the journal has sshd's units' entries only from here on,
+	// the rest vacuumed after the index read them (set when the journal is
+	// found moved on past the cursor). The whole read sees nothing before
+	// it, so an address's events there do not make it seen; its forged ones
+	// still count against it (kept: only ever stricter).
+	JournalFrom time.Time `json:"journal_from,omitzero"`
+	// Notes say what the index met, the last maxLoginIndexNotes of them:
+	// the journal moving on past its cursor.
+	Notes []loginIndexNote `json:"notes,omitempty"`
 	// ReadAt is when the last read ended.
 	ReadAt time.Time                  `json:"read_at"`
 	Addrs  map[string]*loginIndexAddr `json:"addrs"`
@@ -60,6 +70,21 @@ type loginIndex struct {
 	// an address the index had no room for.
 	OverflowFirst time.Time `json:"overflow_first,omitzero"`
 	OverflowLast  time.Time `json:"overflow_last,omitzero"`
+}
+
+// loginIndexNote is one note, with when it was made.
+type loginIndexNote struct {
+	At   time.Time `json:"at"`
+	Text string    `json:"text"`
+}
+
+const maxLoginIndexNotes = 20
+
+func (x *loginIndex) note(at time.Time, text string) {
+	x.Notes = append(x.Notes, loginIndexNote{at, text})
+	if len(x.Notes) > maxLoginIndexNotes {
+		x.Notes = x.Notes[len(x.Notes)-maxLoginIndexNotes:]
+	}
 }
 
 // loginIndexAddr is one address's events.
@@ -72,8 +97,8 @@ type loginIndexAddr struct {
 }
 
 // readSSHJournal is hostenv.ReadSSHJournal (tests replace it).
-var readSSHJournal = func(ctx context.Context, after string, since time.Time, fn func(hostenv.JournalEntry) error) (string, error) {
-	return hostenv.ReadSSHJournal(ctx, hostSource(), after, since, fn)
+var readSSHJournal = func(ctx context.Context, from string, since time.Time, fn func(hostenv.JournalEntry) error) (string, error) {
+	return hostenv.ReadSSHJournal(ctx, hostSource(), from, since, fn)
 }
 
 // indexNow is the index's clock (tests replace it).
@@ -132,8 +157,11 @@ func (x *loginIndex) prune(now time.Time) {
 }
 
 // loadLoginIndex reads the index; nil when there is none, it is of another
-// version, or it cannot be read (the index starts again).
-func loadLoginIndex(dir string) *loginIndex {
+// version, or it cannot be read (the index starts again). An address with
+// no entry (null) is dropped, and a cursor not shaped as one (cut short,
+// edited) is dropped too: the read goes on by time from the cursor's entry
+// instead (N-213-3, S-213-2).
+func loadLoginIndex(dir string, now time.Time) *loginIndex {
 	b, err := detect.ReadStateFile(dir, LoginIndexFile, maxLoginIndexBytes)
 	if err != nil {
 		return nil
@@ -141,6 +169,15 @@ func loadLoginIndex(dir string) *loginIndex {
 	var x loginIndex
 	if json.Unmarshal(b, &x) != nil || x.Version != loginIndexVersion || x.From.IsZero() || x.Addrs == nil {
 		return nil
+	}
+	for ip, a := range x.Addrs {
+		if a == nil {
+			delete(x.Addrs, ip)
+		}
+	}
+	if x.Cursor != "" && !hostenv.ValidCursor(x.Cursor) {
+		x.Cursor = ""
+		x.note(now, "the saved journal cursor was not a cursor: read on by time from its entry")
 	}
 	return &x
 }
@@ -182,12 +219,14 @@ var errNoLoginIndex = errors.New("no login index here")
 // even when the read is cut short: the next read goes on from there, so a
 // flooded journal is read through over the checks, each within its time.
 //
-// A cursor the journal no longer has (rotated, vacuumed, flooded) is read
-// on by time from the cursor's entry instead. What the index keeps of an
-// address is its times (Last, ForgedLast are maxima, Since a minimum), so
-// entries read twice change nothing that is judged; the events between the
-// lost cursor and the first entry still there may be gone, which GapUntil
-// marks.
+// The read starts at the cursor's own entry (already counted, so skipped).
+// When the first entry is another one, or none comes, the journal no longer
+// has the cursor's entry (rotated, vacuumed, flooded) and journalctl went to
+// the nearest one still there: everything still there is read, so the index
+// sees what the whole read sees, keeps what it had (it only ever makes an
+// answer stricter), and notes it. A cursor journalctl refuses is read on by
+// time from its entry: an address keeps times (maxima, a minimum), so an
+// entry read twice changes nothing judged.
 func updateLoginIndex(ctx context.Context) (*loginIndex, error) {
 	dir := attackStateDir
 	if !KeepLoginIndex || dir == "" || !journalAll() {
@@ -196,42 +235,60 @@ func updateLoginIndex(ctx context.Context) (*loginIndex, error) {
 	loginIndexMu.Lock()
 	defer loginIndexMu.Unlock()
 	now := indexNow()
-	x := loadLoginIndex(dir)
+	x := loadLoginIndex(dir, now)
 	if x == nil {
 		x = &loginIndex{Version: loginIndexVersion, From: now.Add(-loginGateWindow), Addrs: map[string]*loginIndexAddr{}}
 	}
-	var first time.Time // the first entry this update read
-	read := func(after string, since time.Time) error {
-		_, err := readSSHJournal(ctx, after, since, func(e hostenv.JournalEntry) error {
-			if first.IsZero() {
-				first = e.Time
+	moved := false        // the journal no longer had the cursor's entry
+	var movedTo time.Time // the first entry read after it moved
+	read := func(from string, since time.Time) error {
+		first := true
+		_, err := readSSHJournal(ctx, from, since, func(e hostenv.JournalEntry) error {
+			if first {
+				first = false
+				if from != "" && e.Cursor == from {
+					return nil // the cursor's own entry, counted by the last read
+				}
+				moved = moved || from != ""
+			}
+			at := e.Time
+			if at.IsZero() {
+				at = now // an entry cut before its time: taken as now, the strict side
+			}
+			if moved && movedTo.IsZero() {
+				movedTo = at
 			}
 			if ip, own, ok := hostenv.SSHDLoginEvent(e); ok {
-				x.add(ip, e.Time, own)
+				x.add(ip, at, own)
+			} else if (e.Cut || e.MessageMissing) && !hostenv.SSHDWrote(e) && at.After(x.UnreadableLast) {
+				x.UnreadableLast = at // N-213-2: what it says cannot be read, nor ruled out
 			}
-			x.Cursor, x.CursorTime = e.Cursor, e.Time // also past entries that are not events
+			x.Cursor, x.CursorTime = e.Cursor, at // also past entries that are not events
 			return nil
 		})
+		if err == nil && first && from != "" {
+			moved = true // not even the cursor's entry: it is gone
+		}
 		return err
 	}
-	err := read(x.Cursor, x.From)
-	if errors.Is(err, hostenv.ErrCursorRejected) {
-		since := x.CursorTime
-		if since.Before(x.From) {
-			since = x.From
-		}
-		x.Cursor, first = "", time.Time{}
+	since := x.From
+	if x.CursorTime.After(since) {
+		since = x.CursorTime
+	}
+	err := read(x.Cursor, since)
+	if x.Cursor != "" && (errors.Is(err, hostenv.ErrCursorRejected) || errors.Is(err, hostenv.ErrNotAllowed)) {
+		x.Cursor = ""
+		x.note(now, "journalctl refused the saved cursor: read on by time from its entry")
 		err = read("", since)
-		// Events between the cursor's entry and the first entry read may be
-		// gone (none read: anything up to now). The journal still holding
-		// the cursor's time loses nothing.
-		gap := first
-		if gap.IsZero() {
-			gap = now
+	}
+	if moved {
+		if movedTo.IsZero() {
+			movedTo = now // nothing of sshd's units is left from before now
 		}
-		if gap.After(since) && gap.After(x.GapUntil) {
-			x.GapUntil = gap
+		if movedTo.After(x.JournalFrom) {
+			x.JournalFrom = movedTo
 		}
+		x.note(now, "the journal had moved on past the index's position (its entry of "+since.UTC().Format(time.RFC3339)+" is gone): read on from the first entry still there")
 	}
 	if x.Cursor != "" || err == nil {
 		x.ReadAt = indexNow()
@@ -263,18 +320,21 @@ func (x *loginIndex) indexedLogins(ip net.IP, now time.Time) (seen bool, err err
 	switch {
 	case x.From.After(w):
 		return false, errIndexDoesNotCover
-	case x.GapUntil.After(w):
-		return false, coded(BlockStateError, fmt.Errorf("refusing to block %s: the journal dropped entries the login index had not read yet (rotated, vacuumed, or flooded) since %s, so forged SSH logins in that time cannot be ruled out; check the logs as root and, if they are real, ask again with override_unverified", ip, x.GapUntil.Format(time.RFC3339)))
 	// An address's events can be in the overflow only from before the index
 	// kept it (an address kept never overflows): in the window, before Since.
 	case !x.OverflowLast.Before(w) && (a == nil || a.Since.After(w) && x.OverflowFirst.Before(a.Since)):
 		return false, coded(BlockStateError, fmt.Errorf("refusing to block %s: more addresses tried SSH than the login index keeps (%d), and some of its events may be among those not kept; check the logs as root and, if they are real, ask again with override_unverified", ip, maxIndexAddrs))
+	case !x.UnreadableLast.Before(w):
+		return a != nil && !a.Last.Before(w), coded(BlockUnverified, fmt.Errorf("refusing to block %s: since %s an entry in sshd's unit that sshd did not write could not be read whole (too long, or no message), so a forged SSH login event in it cannot be ruled out; check them as root (journalctl -u ssh) and, if the block is right, ask again with override_unverified", ip, w.Format(time.RFC3339)))
 	}
 	if a == nil || a.Last.Before(w) {
 		return false, nil
 	}
 	if !a.ForgedLast.Before(w) {
 		return true, coded(BlockUnverified, fmt.Errorf("refusing to block %s: some of its SSH login events in journald since %s were not written by sshd itself (they came from another program in sshd's unit, e.g. logger), so they may be forged; check them as root and, if they are real, ask again with override_unverified", ip, w.Format(time.RFC3339)))
+	}
+	if a.Last.Before(x.JournalFrom) {
+		return false, nil // its events are no longer in the journal: as the whole read, not seen
 	}
 	return true, nil
 }

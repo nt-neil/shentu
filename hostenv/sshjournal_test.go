@@ -2,6 +2,7 @@ package hostenv
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 )
@@ -43,6 +44,12 @@ func TestSSHJournalAllowlist(t *testing.T) {
 	for _, a := range sshJournalArgvs() {
 		if !contains(a, "--all") || !contains(a, "ssh@*") || !contains(a, "sshd@*") {
 			t.Errorf("not every unit, or no --all: %q", a)
+		}
+		// N-213-1: from the cursor's own entry, so the read tells when the
+		// journal no longer has it; --after-cursor would skip the first
+		// entry after the gap.
+		if contains(a, "--after-cursor") {
+			t.Errorf("--after-cursor: %q", a)
 		}
 	}
 }
@@ -93,5 +100,22 @@ func TestSSHDLoginEvent(t *testing.T) {
 		if ip != c.ip || own != c.own || ok != c.ok {
 			t.Errorf("%s: %q own %v ok %v, want %q %v %v", c.name, ip, own, ok, c.ip, c.own, c.ok)
 		}
+	}
+}
+
+// N-213-2: an entry past MaxJournalLine is cut, but keeps its time (the
+// field journalctl writes right after the cursor), so what cannot be read
+// of it is still placed in time.
+func TestReadSSHJournalCutKeepsTime(t *testing.T) {
+	h := newFake(true)
+	huge := `{"__CURSOR":"` + cur1 + `","__REALTIME_TIMESTAMP":"1794700000000000","_UID":"1000","_COMM":"logger","MESSAGE":"` + strings.Repeat("x", MaxJournalLine+100) + `"}`
+	h.cmds[argvKey(sshJournalArgvFilled("/usr/bin/journalctl", "", true))] = CmdResult{Stdout: []byte(huge + "\n")}
+	var got []JournalEntry
+	_, err := ReadSSHJournal(context.Background(), h, "", time.Date(2026, 11, 15, 0, 0, 0, 0, time.UTC), func(e JournalEntry) error {
+		got = append(got, e)
+		return nil
+	})
+	if err != nil || len(got) != 1 || !got[0].Cut || !got[0].Time.Equal(time.UnixMicro(1794700000000000)) || SSHDWrote(got[0]) {
+		t.Fatalf("%v %+v", err, got)
 	}
 }

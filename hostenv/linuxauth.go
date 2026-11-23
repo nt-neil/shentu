@@ -532,7 +532,13 @@ func SSHDLoginEvent(e JournalEntry) (ip string, own, ok bool) {
 		return "", false, false
 	}
 	_, ip, _, ok = sshdEvent(l)
-	return ip, ok && e.UID == 0 && (e.Comm == "sshd" || e.Comm == "sshd-session"), ok
+	return ip, ok && SSHDWrote(e), ok
+}
+
+// SSHDWrote: journald says sshd itself sent e (_COMM sshd or sshd-session,
+// _UID 0, both filled in from the sender's credentials).
+func SSHDWrote(e JournalEntry) bool {
+	return e.UID == 0 && (e.Comm == "sshd" || e.Comm == "sshd-session")
 }
 
 // evict drops the least active source that never logged in (a source that

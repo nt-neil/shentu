@@ -16,14 +16,19 @@ Chinese for the zh-TW pages; keep the two in step.
   sshd-session, `_UID` 0) wrote every one of them in the window (the last day if it has any there,
   else 720 hours), and the text logs are read as before for an address journald has none of.
   On a VM journal of 1.2 million entries one check had read for about 37 seconds.
-- The index never answers for what it has not read: with no index (the first run, a file of an
-  older format) it starts from 720 hours back, and a window it does not reach back to is read whole,
-  as before. When the journal has dropped the cursor's entry (rotated, vacuumed, or flooded by an
-  attacker) the index reads on by time from that entry, and a window reaching back past the first
-  entry it found is refused as not read in full. A read cut short by the check's time keeps what it
-  read, so a flooded journal is read through over the checks, each within its time. Past 65,536
-  addresses the others' events are counted together, and an address that may be among them is
-  refused, never let through.
+- The index never answers less strictly than reading the whole window: with no index (the first
+  run, a file of an older format) it starts from 720 hours back, and a window it does not reach back
+  to is read whole, as before. When the journal has moved on past the index's cursor (rotated,
+  vacuumed, or flooded by an attacker), journalctl seeks to the nearest entry without an error: the
+  index reads from its cursor's own entry, sees that it is gone, reads on from the first entry still
+  there (that one included), and notes it; an address whose events were all dropped is no longer
+  taken as seen, as the whole read would not see them, while events not written by sshd stay against
+  it. An entry in sshd's units that sshd did not write and that cannot be read whole (too long, or
+  without a message) makes a window holding it unverified. A read cut short by the check's time keeps
+  what it read, so a flooded journal is read through over the checks, each within its time. Past
+  65,536 addresses the others' events are counted together, and an address that may be among them is
+  refused, never let through. A saved cursor that is not one, or an address saved as null, is dropped
+  when the index is read.
 - A ✅ press whose checks ran out of time is refused as not checked in time (`timeout`), no longer as
   records that could not be read (`state_error`).
 
