@@ -15,27 +15,88 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
   位址超過 65,536 個時，其他位址的紀錄合在一起計算；可能在其中的位址一律不放行封鎖。存下的 cursor 格式不對，或是位址的內容是 null，讀索引時會直接不用。
 - 按下 ✅ 後檢查來不及做完時，改成以「來不及檢查」（`timeout`）拒絕，不再說成「紀錄讀不到」（`state_error`）。
 
-## v0.5.5 (unreleased)
+## v0.5.5 — 2026-11-23
+
+- 預算接近上限時，進行中派遣已經用掉的部分不再重複計算：預留會記下它屬於哪一次派遣、何時開始，其他派遣只算它剩下的部分，
+  而且和本月用量在同一次讀取 log 時算出。對不起來的預留照舊整筆計算。
+
+- survey（site_profile）現在和它的其他讀取一樣，經由主機來源檢查 Docker 和 Podman 的 socket：
+  replay 或 fixture 不會再讀到執行 survey 的那台機器。
+
+- nginx 和 Apache 的版本檢查（以及 nginx 的 changelog）現在和其他檢查一樣，經由主機來源讀取受檢主機：
+  replay 或 fixture 不會再讀到執行檢查的那台機器。套件查詢都是 allowlist 裡的完整指令。
+
+- macOS：`listening_ports`、`processes`（以及巡檢的程序檢查）現在讀取 Mac 本身（netstat 或 lsof，以及 ps；不需要 root），
+  不再讀 Linux 的 /proc。以前在 Mac 上什麼都讀不到，結果和一台什麼都沒在執行的主機一樣。讀不到時會回報錯誤，只讀到一部分也會寫明。
+
+- macOS：`accounts_audit` 現在讀取 Mac 的帳號（dscl；不需要 root）、可登入帳號和 root 的 authorized_keys，
+  sudoers 讀得到時也會讀。讀不到的部分寫在 note；Linux 才有的檢查（ld.so.preload、不是套件安裝的 PAM 模組）會列為不適用。
+
+- macOS：`file_changes` 現在依檔案的狀態變更時間（ctime）找出異動，改過修改時間也藏不住，並附上擁有者名稱；
+  預設檢查 macOS 自己的位置（/private/etc、Homebrew、launchd 的 job），讀不到的目錄會列出來。`cert_expiry` 也會讀 Homebrew 的 certbot。
 
 - macOS：`ssh_logins`（以及巡檢的 SSH 檢查）現在從 unified log 讀取 sshd 的登入紀錄（`/usr/bin/log show --info --style ndjson`），計數方式和 Linux 相同，並標為 verified（已驗證）：只算 sshd-session 或 sshd 本身程式路徑、而且由 root 記下（userID 0）的紀錄。
   這兩點已在 macOS 15 的 VM 上確認：有人把程式複製到 /tmp 並取同樣的名字，記下的是它自己的路徑；使用者用自己的設定執行系統的 sshd，記下的是那個使用者的 ID，不是 0。
   沒有算進來的紀錄，會在結果的 source 寫明筆數和原因（`not_logged_by_root`、`not_sshd_image`、`no_user_id`、`unreadable_event`）。
   紀錄沒有 userID 或讀不懂，或是輸出缺少 log show 最後的結束行時，結果會標成不完整（算到的次數只是下限），不會當成完整但次數較少的結果。
   這份 log 只有 root 和 admin 群組讀得到；其他帳號會得到寫明原因的權限錯誤，不會回空結果。
+
 - macOS：`log_search` 預設讀取 macOS 的文字 log（system.log、install.log）。Homebrew 的 nginx 和 Apache log 不在預設裡，因為這些目錄屬於一般使用者，可以在裡面建連結指到 root 的檔案；要讀的話請自己加進設定。
   放在 /var 的 log 現在可以用 log_paths 寫的路徑讀取（macOS 的 /var 是連到 /private/var 的連結，以前這種路徑會被拒絕）。有一個以上 hard link 的 log 檔會被拒讀，因為連到 log 目錄的 root 專用檔案看起來也是這樣。
   sshd 的紀錄在 unified log 裡，log_search 不讀那裡，工具說明會寫明：在這些檔案裡找不到，不等於沒有 SSH 登入。
-- macOS：`file_changes` 現在依檔案的狀態變更時間（ctime）找出異動，改過修改時間也藏不住，並附上擁有者名稱；
-  預設檢查 macOS 自己的位置（/private/etc、Homebrew、launchd 的 job），讀不到的目錄會列出來。`cert_expiry` 也會讀 Homebrew 的 certbot。
-- macOS：`accounts_audit` 現在讀取 Mac 的帳號（dscl；不需要 root）、可登入帳號和 root 的 authorized_keys，
-  sudoers 讀得到時也會讀。讀不到的部分寫在 note；Linux 才有的檢查（ld.so.preload、不是套件安裝的 PAM 模組）會列為不適用。
-- macOS：`listening_ports`、`processes`（以及巡檢的程序檢查）現在讀取 Mac 本身（netstat 或 lsof，以及 ps；不需要 root），
-  不再讀 Linux 的 /proc。以前在 Mac 上什麼都讀不到，結果和一台什麼都沒在執行的主機一樣。讀不到時會回報錯誤，只讀到一部分也會寫明。
 
-- macOS 和 Windows：`block_ip` 在任何檢查之前就以 `unsupported` 拒絕。之前在 macOS 上從 Telegram 呼叫時，會先讀最多一個月的 unified log（大約兩分鐘）才拒絕，而 nftables 在這兩個平台上本來就不能封鎖。
-- 提案按鈕（Linux）：送出按鈕前的檢查，全部加起來在 90 秒內結束；到時還沒查完的提案列為 `timeout`，不給按鈕，其他提案的按鈕照常送出。派遣存檔的檢查因時限到了而中斷時，也記成 `timeout`，不再是 `state_error`。同一個位址的 SSH 登入，存檔、送按鈕和 Telegram 的事前檢查只讀一次（結果在兩分鐘內沿用）；`block_ip` 真正執行時仍會重新讀。
+- 主機盤點的 nginx 檢查補上 nginx 2026-11-18 公告的其餘項目（#190）。CVE-2026-118899 是透過 TLS 1.3 讀取 request body 時會一直重複、不會停下的問題：nginx 1.13.0～1.31.8 有 TLS 的 server（`listen ... ssl`，或 `ssl on`）會用 TLS 1.3 時就警告，也就是對它生效的 `ssl_protocols`（它自己的，否則是 http 區塊的）列了 `TLSv1.3`，或是沒有設定 `ssl_protocols` 而 nginx 是 1.23.4 以後的版本，預設就包含 TLS 1.3。關掉 HTTP/2 也沒有用。CVE-2026-113425 是 mail proxy 的 use-after-free，只有 `mail` 區塊裡有 server 時才警告。其餘 6 個中低風險項目（resolver、HTTP/3、用用戶端憑證或 `ssl_preread` 的 stream、`try_files` 加上 `alias`、PROXY protocol v2）依版本合成一行建議，因為這項檢查不看這些功能的設定。全部都在 1.31.9 和 1.30.7 修正。和 HTTP/2 的檢查一樣，套件的 changelog 已列出某個 CVE 時，不會為它警告；讀不到的設定檔會列在一行說明裡，指出哪幾項無法檢查。
 
-## v0.5.3 (unreleased)
+- 每日報告和新發現報告現在依照 `language` 設定：設定是中文時，標題、各段標題和固定的說明文字（沒檢查到的項目、漏洞檢查沒做完、攻擊偵測、
+  子 Agent 派遣、自動事件調查、SSH 登入）都改用中文；v0.5.4 以前不管 `language` 怎麼設，這些都是英文。檢查找到的內容、錯誤訊息和
+  AI 模型寫的回答不會改寫，照原樣附上。
+
+- macOS 和 Windows（#206）：`block_ip` 在任何檢查之前就以 `unsupported` 拒絕。之前在 macOS 上從 Telegram 呼叫時，會先讀最多一個月的 unified log（大約兩分鐘）才拒絕，而 nftables 在這兩個平台上本來就不能封鎖。
+
+- 提案按鈕（Linux，#206）：送出按鈕前的檢查，全部加起來在 90 秒內結束；到時還沒查完的提案列為 `timeout`，不給按鈕，其他提案的按鈕照常送出。派遣存檔的檢查因時限到了而中斷時，也記成 `timeout`，不再是 `state_error`。同一個位址的 SSH 登入，存檔、送按鈕和 Telegram 的事前檢查只讀一次（結果在兩分鐘內沿用）；`block_ip` 真正執行時仍會重新讀。
+
+- 升級須知（#206）：裝回 v0.5.4 時，舊版會把 gate 是 `timeout` 或 `unsupported` 的派遣紀錄當成壞行，自動事件調查最多會停 72 小時。
+
+## v0.5.4 — 2026-11-23
+
+- 共用 AI 預算（#161）：bot、`shentu chat` 與自動事件調查的每次派遣，執行期間會在 `state_dir/reservations.json`
+  預留它整份 token 上限，每一道預算檢查都會把其他派遣的預留算進去，所以合計超出 `[budget] monthly_tokens`
+  約一個派遣的上限（12 萬 tokens），再加上進行中的那一個回答。升級須知：派遣進行中時，別處的提問可能會被告知「其他派遣的預留讓本月剩餘預算不夠」
+  （預留最多約 17 分鐘就會釋放）；預留檔不可信時，所有 AI 回答與派遣都會停下，直到把檔案移開（bot 會指出要移開哪個檔案）；`auto_incident` 開啟而
+  `monthly_tokens` 不超過 150000 時，現在會發出警告，因為那樣自動調查永遠不會啟動。
+
+- 模型價格（#162）：`[agents] price_per_mtok_in` 與 `price_per_mtok_out`（每一 M tokens 的價格，以 USD 計）會用來替每次派遣的預留估價：
+  token 上限依兩者中較高的價格計算，所以每月金額上限也和 token 上限一樣由各派遣共用。只有金額上限被其他派遣的預留填滿時，
+  回覆會寫出預留的金額。
+
+- `shentu usage` 與 bot 的 /usage 現在會計入子 Agent 的模型呼叫（以及其他來源的呼叫）（#164）：
+  以前這些呼叫沒有算進總數；派遣的呼叫現在另列一行。
+
+- `auto_incident` 開啟但沒有設 `[notify] url` 時，現在會發出警告（#165），時機是 bot 啟動、每日巡檢與它的報告：
+  自動調查只會從巡檢推送出去的 L3 告警開始，而巡檢只經由 notify url 推送，所以一次也不會啟動。
+
+- 建議按鈕按下後，如果 bot 在檢查過程中或等待確認時被停止，log 會記成 bot 已停止（#166），不再記成被拒絕或操作者沒有確認。
+
+- `shentu dispatch stats --json` 現在有固定版本的格式，供每 7 天的彙整使用：除了天數、計數、角色和建議之外，多了 `v`（1）、`shentu`（版本）、
+  `until`（UTC 日期），角色和建議一律是清單。內容只有數字和固定字詞，不含主機名稱、位址、路徑、派遣 id 或 trigger。
+
+- 同一個呼叫被兩條規則回報時，就算檔案裡的某個呼叫只有其中一條規則會追，也照樣只留下被讓的那條（`yields_to`）（#160）。以前 `DB::select(DB::raw("..." . $_GET['a'] . "..." . col()))` 這種寫法，如果本地的 `col()` 回傳 `get_query_var('o')`（只有 php-sqli-orderby-identifier 讀這個輸入），會同時被 php-sqli-laravel-raw 和 php-sqli-orderby-identifier 回報；讓給 php-sqli-yii-query 的那幾條規則也有同樣的問題。
+
+- JavaScript 的 request 別名（#160）：`if`/`else` 之後，一個名稱的值取自「會繼續執行下去的分支」結尾時的值。所以每個分支都重新指定過的名稱（`let q = req; if (a) { q = {...} } else { q = {...} }`）不再當成 request。return 或 throw 的分支不算；以 `break` 或 `continue` 結尾的分支照樣算。
+
+- URL 檢查保留的唯讀呼叫（#160）：`typeof window`（`typeof` 後面接 `window`、`globalThis` 這類物件）不會再讓整個檔案的唯讀呼叫失效。條件運算式裡 `:` 後面的 `String`（`const S = c ? y : String;`）現在會讓它失效，和把 `String` 當成值來用一樣；以前它被當成 TypeScript 的型別。
+
+- PHP：如果檔案的 `use` 讓 `Request` 指向別的函式庫的類別（`use Httpful\Request`、`use Unirest\Request`、`use Httpful\Http as Request`），`Request::get(` 不再當成 Laravel 的 request facade（#160）。
+
+- 派遣紀錄可以讀有不認得欄位的行（#197）：從 v0.5.4 起，之後的版本加了新欄位寫下的紀錄或回饋，這一版照樣會讀，認得的欄位照舊逐一檢查，不再整行當成讀不到（以前這會讓自動事件調查停到執行 repair 為止）。這種行會在 `shentu dispatch stats`（JSON 是 `unknown_field_lines`）和每日報告裡另外計數；`repair` 不會移動這些行；不認得的欄位內容不會出現在任何輸出。
+
+- 升級須知：裝回 v0.5.4 以前的版本後，v0.5.4 寫下、帶有沒查到項目（`unchecked_why`）的派遣紀錄，舊版讀不到。這些紀錄的建議按鈕會回答派遣紀錄裡沒有這次派遣；`shentu dispatch stats` 會把這些紀錄當成讀不到的行跳過；自動事件調查會因為派遣紀錄有讀不到的行而停止，直到執行 `sudo shentu dispatch repair`，把這些行移到 `*.jsonl.bad`（保留，不會刪除），之後從下一輪巡邏起重新計數。
+
+- 通知改用 `language` 設定的語言（v0.5.3 真 bot 驗收的 F-1、F-4）：自動事件調查、「Approved from Telegram」、配對與解除配對，以及攻擊偵測通知的標題，以前不管設定都是英文；現在 `language` 是中文時改用中文，和 bot 自己的訊息一樣。自動事件調查的通知用一般的說法寫出找到幾項，沒有建議時直接寫「這次沒有建議任何動作」。沒查到的項目只用固定字詞說明，子 Agent 寫的內容照舊不放進通知：子 Agent 現在要寫出是哪個工具，並從 `tool_failed`、`permission_denied`、`not_applicable`、`time_limit` 裡選原因（其他值一律算「其他」），程式另外會加上 `not_available` 和 `findings_cut`，派遣紀錄也會保存（`unchecked_why`）；子 Agent 選的原因在通知裡會標明是子 Agent 回報、未經確認；沒有固定字詞的項目只列數量，請當成「不知道」。確認後的通知先說會發生什麼事（「開始封鎖 192.0.2.30，24 小時後自動解除；是否成功以 bot 的回覆為準」），nft 指令改放在後面。每日報告和新發現報告裡的固定文字還是英文。
+
+- 子 Agent 的建議會留下紀錄（F-3）：可以提出建議的子 Agent 每次回報都會在 log 記一筆 `proposals`（寫了幾項、留下幾項），每一項被拿掉的建議都用固定字詞記下原因：`ip_is_a_network`、`ip_not_one_address`、`action_not_propose_block_ip`、`duplicate_ip`、`too_many_proposals`、`role_cannot_propose`（只列前 20 項，也只記形狀：網段記成標準寫法，其他只留位址會用到的字元；另外記總數；派遣紀錄本身的上限記在 `proposals_cut`）。以前建議被拿掉和根本沒有建議，看起來是一樣的。現在會要求可以提出建議的子 Agent：只對證據明確的位址提出建議（已驗證攻擊群組裡的位址，或已驗證的 SSH 紀錄裡失敗很多次的位址），不要從 header 這類紀錄文字取位址；一個建議只放一個位址，不能放網段。自動事件調查也會向子 Agent 說明，這次的起因是一則已驗證的 L3 警報，而且這則警報的位址會排在最前面；重複的位址不再佔名額。建議仍然只是一顆按鈕：閘門和按下後的檢查都沒有改。
+
+## v0.5.3 — 2026-11-22
 
 - 建議按鈕按下後一定會有回覆（#163）：會先立刻回覆「正在重新檢查這個位址」，檢查之前先在 log 記下這次按下
   （`proposal_press`），重新檢查最多一分鐘，超過時間就用閘門的固定字詞拒絕；過程中出錯也會回覆並記錄。
@@ -57,6 +118,8 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 - 型別名稱以 `Request` 結尾的資料物件（`SearchRequest $request`）會被當成 Laravel 的 request，和 FormRequest 一樣。
 - Next 的 `headers()` 只在檔案自己 import `next/headers` 時才追。
 - 來源是 request 的呼叫時，`in_array($request->query('s'), [...], true) ? $request->query('s') : null` 不會被當成值的檢查（magic property 的同樣寫法會）。
+- `shentu usage` 沒有算進自動調查子 agent（`sub:incident`）的模型呼叫：測試機上 log 有 13 次，usage 只列 9 次；`shentu budget` 有算進去。修正（#164）排在 v0.5.4。
+- 自動調查的通知和「Approved from Telegram」通知不論 `language` 設什麼都是英文。
 
 ## v0.5.2 — 2026-11-20
 

@@ -111,13 +111,13 @@ func TestFileChangesUnchecked(t *testing.T) {
 func TestSSHFindingsMacUnifiedLog(t *testing.T) {
 	r := map[string]any{"source": "the unified log (sshd-session, sshd; logged by root)", "verified": true, "complete": true,
 		"sources": []tools.SSHSource{{IP: "198.51.100.23", Failed: 12}}}
-	f, why := sshFindings(r, nil, 10)
+	f, why := sshFindings(r, nil, 10, false)
 	if len(f) != 1 || strings.Contains(f[0].Summary, "check them") || why != "" {
 		t.Errorf("findings %+v, why %q", f, why)
 	}
 	r = map[string]any{"source": "the unified log (sshd-session, sshd; logged by root)", "verified": true, "complete": false, "permission": true,
 		"error": "permission denied: log show: only root and members of the admin group can read the unified log"}
-	if f, why = sshFindings(r, nil, 10); len(f) != 0 || !strings.Contains(why, "Not checked in full: SSH logins") || !strings.Contains(why, "admin group") {
+	if f, why = sshFindings(r, nil, 10, false); len(f) != 0 || !strings.Contains(why, "Not checked in full: SSH logins") || !strings.Contains(why, "admin group") {
 		t.Errorf("not admin: %+v %q", f, why)
 	}
 }

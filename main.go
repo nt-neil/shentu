@@ -132,14 +132,7 @@ func main() {
 	tools.SetAuditLimits(cfg.Tools.AuditMaxMemoryMB, cfg.Tools.AuditWorkers)
 	tools.SetCacheDir(filepath.Join(cfg.StateDir, "cache"))
 	tools.SetStateDir(cfg.StateDir)
-	env := &tools.Env{
-		LogPaths:    cfg.Tools.LogPaths,
-		WatchPaths:  cfg.Tools.WatchPaths,
-		CertTargets: cfg.Tools.CertTargets,
-		AppPaths:    cfg.Tools.AppPaths,
-		NotifyURL:   cfg.Notify.URL,
-		HTTP:        &http.Client{Timeout: 30 * time.Second},
-	}
+	env := envFor(cfg)
 	switch cmd {
 	case "chat":
 		if err = stateReady(cfg.StateDir); err == nil {
@@ -153,6 +146,10 @@ func main() {
 			fmt.Println(string(b))
 		}
 	case "bot":
+		if len(args) == 0 { // serving: once at start, not on every command (S-R-5)
+			warnAutoBudget(cfg)
+			warnAutoNotify(cfg)
+		}
 		if err = stateReady(cfg.StateDir); err == nil {
 			err = botCommand(ctx, cfg, env, args)
 		}
@@ -165,6 +162,10 @@ func main() {
 		daily := fs.Bool("daily", false, "always send a full daily report")
 		dry := fs.Bool("dry-run", false, "print the report, do not notify")
 		fs.Parse(args)
+		if *daily { // once a day; the daily report says it too
+			warnAutoBudget(cfg)
+			warnAutoNotify(cfg)
+		}
 		err = patrol(ctx, cfg, env, *daily, *dry)
 	case "detect":
 		fs := flag.NewFlagSet("detect", flag.ExitOnError)
@@ -267,4 +268,17 @@ func survey(ctx context.Context, cfg *Config, env *tools.Env) (tools.SiteProfile
 	st := loadState(cfg.StateDir)
 	st.Profile = tools.Survey(ctx, env)
 	return st.Profile, st.save(cfg.StateDir)
+}
+
+// envFor is the tools' Env from the configuration: the commander's, and
+// so the sub-agents' (they copy it).
+func envFor(cfg *Config) *tools.Env {
+	return &tools.Env{
+		LogPaths:    cfg.Tools.LogPaths,
+		WatchPaths:  cfg.Tools.WatchPaths,
+		CertTargets: cfg.Tools.CertTargets,
+		AppPaths:    cfg.Tools.AppPaths,
+		NotifyURL:   cfg.Notify.URL,
+		HTTP:        &http.Client{Timeout: 30 * time.Second},
+	}
 }

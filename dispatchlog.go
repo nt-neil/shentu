@@ -16,6 +16,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"runtime"
 	"sort"
@@ -107,6 +108,9 @@ type subRecord struct {
 	Findings     map[string]int   `json:"findings,omitempty"` // severity -> count
 	Proposals    []proposalRecord `json:"proposals,omitempty"`
 	Unchecked    int              `json:"unchecked"` // how many items it said it did not check
+	// UncheckedWhy is those items in fixed words, one each (records
+	// before v0.5.4 have none): never the model's text.
+	UncheckedWhy []uncheckedWhy `json:"unchecked_why,omitempty"`
 }
 
 // proposalRecord is one proposed action. Seq is unique within the record
@@ -189,6 +193,9 @@ func newDispatchRecord(id, origin, trigger string, start time.Time, used, tokenC
 	for _, r := range reps {
 		sr := subRecord{Role: r.Role, Status: statusIncomplete, Reason: r.code, Steps: r.steps, ToolCalls: r.toolCalls,
 			TokensIn: r.tokIn, TokensOut: r.tokOut, TokensReason: r.tokReason, Unchecked: len(r.Unchecked)}
+		if len(r.why) == len(r.Unchecked) {
+			sr.UncheckedWhy = append([]uncheckedWhy(nil), r.why...)
+		}
 		if r.Status == statusComplete {
 			sr.Status = statusComplete
 			done++
@@ -275,6 +282,14 @@ func (rec *dispatchRecord) check() error {
 		for sev, n := range s.Findings {
 			if (!severities[sev] && sev != "unknown") || n < 0 {
 				return bad("finding")
+			}
+		}
+		if len(s.UncheckedWhy) > s.Unchecked {
+			return bad("unchecked")
+		}
+		for _, u := range s.UncheckedWhy {
+			if _, ok := tools.Find(u.Tool); !uncheckedReasons[u.Reason] || u.Tool != "" && !ok {
+				return bad("unchecked")
 			}
 		}
 		for _, p := range s.Proposals {
@@ -402,20 +417,55 @@ func (s *dispatchStore) prune() {
 // or fails the field checks is skipped and counted in bad. No archive yet
 // is no records.
 func (s *dispatchStore) Since(t time.Time) (recs []dispatchRecord, bad int, err error) {
+	recs, bad, _, err = s.since(t)
+	return recs, bad, err
+}
+
+// decodeArchiveLine reads one archive line into v (a pointer to a zero
+// value). A field this version does not know is ignored and said (extra):
+// a record a later version wrote still counts (an older version refusing
+// it stopped the automatic checks until a repair: v0.5.4's upgrade note).
+// The known fields are checked by the caller as before; the unknown ones
+// reach no output. Anything after the line's one value is an error
+// either way (S-197-1).
+//
+// A rule for later fields (S-197-2): an older version ignores a field it
+// does not know, so a restriction (a proposal withdrawn, used up, revoked)
+// must never be said by a new field alone: an older version would not see
+// it and allow what it forbids. Say it with a value of a known field that
+// the older check() refuses, or keep it in a file of its own.
+func decodeArchiveLine(line []byte, v any) (extra bool, err error) {
+	dec := json.NewDecoder(bytes.NewReader(line))
+	dec.DisallowUnknownFields()
+	if err = dec.Decode(v); err == nil {
+		if _, terr := dec.Token(); terr != io.EOF { // only space may follow ("}", "]" too: S-197b-1)
+			return false, errors.New("json: data after the record")
+		}
+		return false, nil
+	}
+	if !strings.HasPrefix(err.Error(), "json: unknown field ") {
+		return false, err
+	}
+	reflect.ValueOf(v).Elem().SetZero()
+	return true, json.Unmarshal(line, v)
+}
+
+// since is Since with the count of lines that held unknown fields.
+func (s *dispatchStore) since(t time.Time) (recs []dispatchRecord, bad, extra int, err error) {
 	if !filepath.IsAbs(s.dir) {
-		return nil, 0, fmt.Errorf("%w: state_dir is not an absolute path", errArchive)
+		return nil, 0, 0, fmt.Errorf("%w: state_dir is not an absolute path", errArchive)
 	}
 	st, err := os.Lstat(s.dir)
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil, 0, nil
+		return nil, 0, 0, nil
 	}
 	if err != nil || !trusted(st, true) {
-		return nil, 0, fmt.Errorf("%w: %s", errArchive, s.dir)
+		return nil, 0, 0, fmt.Errorf("%w: %s", errArchive, s.dir)
 	}
 	s.prune()
 	ents, err := os.ReadDir(s.dir)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, 0, err
 	}
 	from := t.Local().Add(-24 * time.Hour).Format(time.DateOnly) // a day's file starts at local midnight
 	for _, e := range ents {
@@ -426,17 +476,19 @@ func (s *dispatchStore) Since(t time.Time) (recs []dispatchRecord, bad int, err 
 		p := filepath.Join(s.dir, e.Name())
 		b, err := readTrusted(p)
 		if err != nil {
-			return nil, 0, err
+			return nil, 0, 0, err
 		}
 		sc := bufio.NewScanner(bytes.NewReader(b))
 		sc.Buffer(make([]byte, 64<<10), 1<<20)
 		for sc.Scan() {
 			var rec dispatchRecord
-			dec := json.NewDecoder(bytes.NewReader(sc.Bytes()))
-			dec.DisallowUnknownFields()
-			if dec.Decode(&rec) != nil || rec.check() != nil {
+			x, err := decodeArchiveLine(sc.Bytes(), &rec)
+			if err != nil || rec.check() != nil {
 				bad++
 				continue
+			}
+			if x {
+				extra++
 			}
 			if !rec.TS.Before(t) {
 				recs = append(recs, rec)
@@ -447,7 +499,7 @@ func (s *dispatchStore) Since(t time.Time) (recs []dispatchRecord, bad int, err 
 		}
 	}
 	sort.SliceStable(recs, func(i, j int) bool { return recs[i].TS.Before(recs[j].TS) })
-	return recs, bad, nil
+	return recs, bad, extra, nil
 }
 
 // readTrusted reads p, opened without following a link, when it is a file
@@ -539,8 +591,8 @@ func maskNet(s string) string {
 	return (&net.IPNet{IP: ip.Mask(net.CIDRMask(64, 128)), Mask: net.CIDRMask(64, 128)}).String()
 }
 
-// countLine is "a 2, b 1" in the order of keys.
-func countLine(c map[string]int) string {
+// countLine is "a 2, b 1" in the order of keys, each key as name says it.
+func countLine(c map[string]int, name func(string) string, zh bool) string {
 	keys := make([]string, 0, len(c))
 	for k := range c {
 		keys = append(keys, k)
@@ -548,7 +600,10 @@ func countLine(c map[string]int) string {
 	sort.Strings(keys)
 	parts := make([]string, 0, len(keys))
 	for _, k := range keys {
-		parts = append(parts, fmt.Sprintf("%s %d", k, c[k]))
+		parts = append(parts, fmt.Sprintf("%s %d", name(k), c[k]))
+	}
+	if zh {
+		return strings.Join(parts, "、")
 	}
 	return strings.Join(parts, ", ")
 }
@@ -560,9 +615,9 @@ const maxReportProposals = 10
 // with their addresses masked to /24 (/64 for IPv6), like the attack
 // report. Only enumerations and numbers reach it. An archive error is said,
 // not hidden; no dispatches and no error give "".
-func dispatchSection(recs []dispatchRecord, bad int, err error) string {
+func dispatchSection(recs []dispatchRecord, bad int, err error, zh bool) string {
 	if err != nil {
-		return "\nSub-agent dispatches: the archive could not be read (" + err.Error() + ")\n"
+		return fmt.Sprintf(dt(zh, "disp_unread"), err.Error())
 	}
 	if len(recs) == 0 && bad == 0 {
 		return ""
@@ -577,7 +632,7 @@ func dispatchSection(recs []dispatchRecord, bad int, err error) string {
 		}
 		statuses[r.Status]++
 		for _, s := range r.Subs {
-			roles[s.Role+" "+s.Status]++
+			roles[s.Role+"\x00"+s.Status]++
 			if s.Status != statusComplete {
 				reasons[s.Reason]++
 			}
@@ -586,31 +641,42 @@ func dispatchSection(recs []dispatchRecord, bad int, err error) string {
 					more++
 					continue
 				}
-				props = append(props, fmt.Sprintf("%s (gate %s)", maskNet(p.IP), cmpOr(string(p.Gate), "not checked")))
+				props = append(props, fmt.Sprintf(dt(zh, "disp_prop"), maskNet(p.IP), cmpOr(string(p.Gate), dt(zh, "disp_nogate"))))
 			}
 		}
 	}
+	in := func(m map[string]string) func(string) string {
+		return func(k string) string { return enumWord(zh, m, k) }
+	}
+	roleStatus := func(k string) string {
+		role, status, _ := strings.Cut(k, "\x00")
+		return enumWord(zh, roleZh, role) + " " + enumWord(zh, statusZh, status)
+	}
+	sep := ", "
+	if zh {
+		sep = "、"
+	}
 	var b strings.Builder
-	b.WriteString("\nSub-agent dispatches (last day; reports are the model's, not verified):\n")
-	fmt.Fprintf(&b, "- %d dispatches: %s; %s\n", len(recs), countLine(origins), countLine(statuses))
+	b.WriteString(dt(zh, "disp_head"))
+	fmt.Fprintf(&b, dt(zh, "disp_count"), len(recs), countLine(origins, in(originZh), zh), countLine(statuses, in(statusZh), zh))
 	if external > 0 {
-		fmt.Fprintf(&b, "- %d used the sub-agents' model outside this host ([agents] base_url): masked logs and settings were sent to it\n", external)
+		fmt.Fprintf(&b, dt(zh, "disp_external"), external)
 	}
 	if len(roles) > 0 {
-		fmt.Fprintf(&b, "- sub-agents: %s\n", countLine(roles))
+		fmt.Fprintf(&b, dt(zh, "disp_subs"), countLine(roles, roleStatus, zh))
 	}
 	if len(reasons) > 0 {
-		fmt.Fprintf(&b, "- why incomplete: %s\n", countLine(reasons))
+		fmt.Fprintf(&b, dt(zh, "disp_why"), countLine(reasons, in(reasonZh), zh))
 	}
 	if len(props) > 0 {
-		fmt.Fprintf(&b, "- proposed blocks (suggestions, not actions): %s", strings.Join(props, ", "))
+		fmt.Fprintf(&b, dt(zh, "disp_props"), strings.Join(props, sep))
 		if more > 0 {
-			fmt.Fprintf(&b, ", and %d more", more)
+			fmt.Fprintf(&b, dt(zh, "disp_propmore"), more)
 		}
 		b.WriteString("\n")
 	}
 	if bad > 0 {
-		fmt.Fprintf(&b, "- %d archive lines could not be read and were skipped\n", bad)
+		fmt.Fprintf(&b, dt(zh, "disp_bad"), bad)
 	}
 	return b.String()
 }
@@ -624,12 +690,19 @@ func cmpOr(s, def string) string {
 
 // dispatchDaily is dispatchSection for the day before now, for the daily report.
 func dispatchDaily(cfg *Config, now time.Time) string {
+	zh := isZh(cfg)
 	s := newDispatchStore(cfg)
-	recs, bad, err := s.Since(now.Add(-24 * time.Hour))
-	sec := dispatchSection(recs, bad, err)
-	if line := s.repairedLine(now); line != "" {
+	recs, bad, extra, err := s.since(now.Add(-24 * time.Hour))
+	sec := dispatchSection(recs, bad, err, zh)
+	if extra > 0 {
 		if sec == "" {
-			sec = "\nSub-agent dispatches (last day; reports are the model's, not verified):\n"
+			sec = dt(zh, "disp_head")
+		}
+		sec += fmt.Sprintf(dt(zh, "disp_extra"), extra)
+	}
+	if line := s.repairedLine(now, zh); line != "" {
+		if sec == "" {
+			sec = dt(zh, "disp_head")
 		}
 		sec += line
 	}
@@ -653,17 +726,28 @@ func (a *agent) runDispatch(ctx context.Context, origin, trigger string, tasks [
 	sl, external, modelErr := agentsLLM(a.cfg, a.llm)
 	a.subLLM = sl
 	defer func() { a.subLLM = nil }()
+	resID, release, resErr := reserveFor(a.cfg, dispatchTokenCap, dispatchCost(a.cfg), id, start) // R1, R2: the others see this one; S-R-2: less what it has logged
+	defer release()
+	a.resID = resID
+	defer func() { a.resID = "" }()
+	if resErr != nil && modelErr == nil { // fail closed: no sub-agent without the shared reservation
+		modelErr = resErr
+	}
 
 	dctx, cancel := context.WithTimeout(ctx, dispatchTimeout)
 	defer cancel()
 	left := dispatchTokenCap
-	if modelErr == nil && external && len(tasks) > 1 && !agentsOnThisHost(a.cfg.Agents.BaseURL) && budgetRoom(a.cfg, time.Now()) {
+	if modelErr == nil && external && len(tasks) > 1 && !agentsOnThisHost(a.cfg.Agents.BaseURL) && budgetRoom(a.cfg, time.Now(), resID) {
 		reports, left = a.runSubsParallel(dctx, id, tasks)
 		tasks = nil
 	}
 	for _, t := range tasks {
 		if modelErr != nil { // no sub-agent runs on a model setting that cannot be used
-			reports = append(reports, subReport{Role: t.Role, Status: "incomplete", Reason: clean("the sub-agents' model cannot be used: "+modelErr.Error(), 300), Findings: []subFinding{}, code: reasonModelError})
+			why, code := "the sub-agents' model cannot be used: "+modelErr.Error(), reasonModelError
+			if errors.Is(modelErr, errReservations) {
+				why, code = "the AI budget cannot be checked: "+modelErr.Error(), reasonBudget
+			}
+			reports = append(reports, subReport{Role: t.Role, Status: "incomplete", Reason: clean(why, 300), Findings: []subFinding{}, code: code})
 			continue
 		}
 		if dctx.Err() != nil || left <= 0 {
@@ -680,6 +764,15 @@ func (a *agent) runDispatch(ctx context.Context, origin, trigger string, tasks [
 	}
 
 	rec = newDispatchRecord(id, origin, trigger, start, dispatchTokenCap-left, dispatchTokenCap, reports)
+	for i, r := range reports { // the record's cap on proposals, after parseReport's
+		if i < len(rec.Subs) && len(rec.Subs[i].Proposals) < len(r.Proposals) {
+			var cut subReport
+			for _, p := range r.Proposals[len(rec.Subs[i].Proposals):] {
+				cut.drop(dropTooMany, p.Action, p.IP)
+			}
+			a.logProposalsAs("proposals_cut", id, "sub:"+r.Role, true, len(r.Proposals), len(rec.Subs[i].Proposals), cut.dropped, cut.nDropped)
+		}
+	}
 	rec.External = external && modelErr == nil
 	gctx, gcancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
 	defer gcancel()
@@ -705,15 +798,22 @@ func (a *agent) runDispatch(ctx context.Context, origin, trigger string, tasks [
 // turns, and each one after the first is stopped at the limit as before.
 // A cost limit gets no such reservation (a call's cost is not known ahead),
 // so with one set they run at once only while under half of it.
-func budgetRoom(cfg *Config, now time.Time) bool {
+func budgetRoom(cfg *Config, now time.Time, self string) bool {
 	if cfg.Budget.MonthlyTokens <= 0 {
 		return false
 	}
-	cost, used, _, err := monthUsageStrict(cfg.StateDir, now)
-	if err != nil || used+dispatchTokenCap > cfg.Budget.MonthlyTokens {
+	u, err := usageWithOthers(cfg, self, now) // R1: what other dispatches hold is not room; S-R-2: one read
+	cost, used, others, othersCost := u.cost, u.tokens, u.othersTokens, u.othersCost
+	if err != nil || used+others+dispatchTokenCap > cfg.Budget.MonthlyTokens {
 		return false
 	}
-	return cfg.Budget.MonthlyCost <= 0 || cost < cfg.Budget.MonthlyCost/2
+	if cfg.Budget.MonthlyCost <= 0 {
+		return true
+	}
+	if c := dispatchCost(cfg); c > 0 { // R2: with prices, the room for what this dispatch may cost
+		return cost+othersCost+c <= cfg.Budget.MonthlyCost
+	}
+	return cost+othersCost < cfg.Budget.MonthlyCost/2
 }
 
 // runSubsParallel runs tasks at once, for a model outside this host (on
@@ -868,9 +968,7 @@ func (s *dispatchStore) repairFile(p string) (moved, dropped, added int, err err
 			continue
 		}
 		var rec dispatchRecord
-		dec := json.NewDecoder(bytes.NewReader(line))
-		dec.DisallowUnknownFields()
-		if len(line) <= 1<<20 && dec.Decode(&rec) == nil && rec.check() == nil { // as Since reads it
+		if _, err := decodeArchiveLine(line, &rec); len(line) <= 1<<20 && err == nil && rec.check() == nil { // as Since reads it: unknown fields stay
 			good.Write(line)
 			good.WriteByte('\n')
 			continue
@@ -1024,7 +1122,7 @@ func replaceFile(p string, b []byte) error {
 
 // repairedLine is the daily report's line about what Repair did in the
 // last day; "" when it did nothing.
-func (s *dispatchStore) repairedLine(now time.Time) string {
+func (s *dispatchStore) repairedLine(now time.Time, zh bool) string {
 	moved, dropped, added, runs := 0, 0, 0, 0
 	for _, n := range s.repairNotes(now.Add(-24 * time.Hour)) {
 		moved, dropped, added, runs = moved+n.Moved, dropped+n.Dropped, added+n.Added, runs+1
@@ -1032,7 +1130,7 @@ func (s *dispatchStore) repairedLine(now time.Time) string {
 	if runs == 0 {
 		return ""
 	}
-	return fmt.Sprintf("- `shentu dispatch repair` ran %d times: %d unreadable archive lines moved out (%d of them new to *.jsonl.bad), %d empty lines dropped (%s)\n", runs, moved, added, dropped, s.dir)
+	return fmt.Sprintf(dt(zh, "disp_repaired"), runs, moved, added, dropped, s.dir)
 }
 
 // repairHint is how to run the repair here: as root, or elevated on Windows.

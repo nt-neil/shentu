@@ -125,3 +125,49 @@ func TestProposalPressPanics(t *testing.T) {
 		t.Errorf("answers: %q", got)
 	}
 }
+
+// S-163-3: the bot stopped during a press's checks is logged as that, not
+// as a refusal or a decline.
+func TestProposalPressBotStopsInChecks(t *testing.T) {
+	b, _, _, _, data := offerOne(t, propRec(proposalRecord{IP: "203.0.113.1"}))
+	ctx, cancel := context.WithCancel(context.Background())
+	old := blockCheck
+	blockCheck = func(c context.Context, _ *tools.Env, _ net.IP) (string, tools.BlockCode, error) {
+		cancel() // the bot is stopped while the check runs
+		<-c.Done()
+		return "", tools.BlockStateError, c.Err()
+	}
+	t.Cleanup(func() { blockCheck = old })
+	b.handle(ctx, press(pairedUser, data[0]))
+	answered(t, b)
+	es := buttonEntries(t, b)
+	if len(es) != 1 || es[0].Error != "the bot stopped during the checks" {
+		t.Errorf("audit: %+v", es)
+	}
+}
+
+// S-163-3: the bot stopped while the press waits for ✅ is logged as that.
+func TestProposalPressBotStopsInConfirm(t *testing.T) {
+	b, tg, _, _, data := offerOne(t, propRec(proposalRecord{IP: "203.0.113.1"}))
+	ctx, cancel := context.WithCancel(context.Background())
+	old := blockCheck
+	blockCheck = func(context.Context, *tools.Env, net.IP) (string, tools.BlockCode, error) {
+		return "nft add element inet shentu blocked4 { 203.0.113.1 }", tools.BlockOK, nil
+	}
+	t.Cleanup(func() { blockCheck = old })
+	b.handle(ctx, press(pairedUser, data[0]))
+	waitFor(t, "the confirmation", func() bool {
+		for _, s := range tg.sent() {
+			if strings.Contains(s["text"].(string), "nft add element") {
+				return true
+			}
+		}
+		return false
+	})
+	cancel()
+	answered(t, b)
+	es := buttonEntries(t, b)
+	if len(es) != 1 || es[0].Error != "the bot stopped before it was confirmed" {
+		t.Errorf("audit: %+v", es)
+	}
+}

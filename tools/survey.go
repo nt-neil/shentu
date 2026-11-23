@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
-	"os"
 	"regexp"
 	"runtime"
 	"slices"
@@ -160,21 +159,24 @@ func Survey(ctx context.Context, env *Env) SiteProfile {
 	p.SSH, p.SSHHash, unread = sshdSettings()
 	p.Risks = append(p.Risks, sshRisks(p.SSH, unread)...)
 	p.Risks = append(p.Risks, apacheH2Risk(ctx, apacheConfGlob)...)
-	p.Risks = append(p.Risks, nginxH2Risk(ctx)...)
+	p.Risks = append(p.Risks, nginxRisks(ctx)...)
 	if p.Firewall == "none detected" && hasPublic(p.Services) {
 		p.Risks = append(p.Risks, Risk{"firewall:none", "info", "no host firewall detected (nftables, ufw, firewalld); fine only if a cloud firewall covers this server"})
 	}
 
+	// Through the host source like every other read (S-173r3-1: os.Stat read
+	// the machine running the survey, not the host it surveys, in a replay).
+	src := hostSource()
 	for _, sock := range []string{"/run/docker.sock", "/var/run/docker.sock"} {
-		if st, err := os.Stat(sock); err == nil {
+		if st, err := hostenv.Stat(src, sock); err == nil {
 			p.Containers = append(p.Containers, "docker")
-			if st.Mode().Perm()&0o002 != 0 {
+			if st.Mode.Perm()&0o002 != 0 {
 				p.Risks = append(p.Risks, Risk{"docker:socket", "critical", sock + " is writable by every user, which gives them root"})
 			}
 			break
 		}
 	}
-	if _, err := os.Stat("/run/podman"); err == nil {
+	if _, err := hostenv.Stat(src, "/run/podman"); err == nil {
 		p.Containers = append(p.Containers, "podman")
 	}
 	p.CronFiles = cronFiles()

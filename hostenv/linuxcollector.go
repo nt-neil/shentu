@@ -29,7 +29,67 @@ var (
 )
 
 func (LinuxCollector) Allowlist() [][]string {
-	return append([][]string{dpkgArgv, rpmArgv, rpmQalArgv, nftListArgv, iptablesArgv, iptablesSbin, journalArgv, journalBinArgv, journalSockArgv, journalSockBinArgv, journalSSHDArgv, journalSSHDBinArgv, journalSSHDSockArgv, journalSSHDSockBinArgv}, append(journalUnitArgvs(), sshJournalArgvs()...)...)
+	l := append([][]string{dpkgArgv, rpmArgv, rpmQalArgv, nftListArgv, iptablesArgv, iptablesSbin, journalArgv, journalBinArgv, journalSockArgv, journalSockBinArgv, journalSSHDArgv, journalSSHDBinArgv, journalSSHDSockArgv, journalSSHDSockBinArgv}, append(journalUnitArgvs(), sshJournalArgvs()...)...)
+	return append(l, webPackageArgvs()...)
+}
+
+// The package queries of the web server checks (tools: nginx's and
+// Apache's versions and nginx's changelog), each an exact argv, so they
+// run through the host source like every other read: a replay or another
+// host's survey is never answered by the machine running it.
+var (
+	NginxPackages = []string{"nginx", "nginx-core", "nginx-full", "nginx-light", "nginx-extras", "openresty"}
+	NginxRPMs     = []string{"nginx", "openresty"}
+	dpkgStatusFmt = "${db:Status-Status} ${Version}"
+	rpmVersionFmt = "%{EPOCHNUM}:%{VERSION}-%{RELEASE}"
+	dpkgQueryPath = "/usr/bin/dpkg-query"
+	rpmPath       = "/usr/bin/rpm"
+	apacheDpkgPkg = "apache2"
+	apacheRPMPkg  = "httpd"
+)
+
+// DpkgStatusArgv asks dpkg for pkg's status and version.
+func DpkgStatusArgv(pkg string) []string {
+	return []string{dpkgQueryPath, "-W", "-f", dpkgStatusFmt, pkg}
+}
+
+// DpkgVersionArgv asks dpkg for pkg's version (Apache).
+func DpkgVersionArgv(pkg string) []string {
+	return []string{dpkgQueryPath, "-W", "-f", "${Version}", pkg}
+}
+
+// RPMVersionArgv asks rpm for pkg's epoch, version and release.
+func RPMVersionArgv(pkg string) []string { return []string{rpmPath, "-q", "--qf", rpmVersionFmt, pkg} }
+
+// RPMChangelogArgv asks rpm for pkg's changelog.
+func RPMChangelogArgv(pkg string) []string { return []string{rpmPath, "-q", "--changelog", pkg} }
+
+// ApacheVersionArgvs are Apache's version queries, dpkg's then rpm's.
+func ApacheVersionArgvs() [][]string {
+	return [][]string{DpkgVersionArgv(apacheDpkgPkg), RPMVersionArgv(apacheRPMPkg)}
+}
+
+// A package's changelog can be long, and rpm waits for a locked database:
+// as for the full rpm list, more room and time than the defaults, so the
+// backport evidence is not lost to a cut (S-175-1). Read limits for the
+// binary are the reader's (64 MiB, tools).
+func init() {
+	for _, p := range NginxRPMs {
+		registerBig(RPMChangelogArgv(p), 16<<20, MaxTimeout)
+		registerBig(RPMVersionArgv(p), 0, MaxTimeout)
+	}
+	registerBig(RPMVersionArgv(apacheRPMPkg), 0, MaxTimeout)
+}
+
+func webPackageArgvs() [][]string {
+	var l [][]string
+	for _, p := range NginxPackages {
+		l = append(l, DpkgStatusArgv(p))
+	}
+	for _, p := range NginxRPMs {
+		l = append(l, RPMVersionArgv(p), RPMChangelogArgv(p))
+	}
+	return append(l, ApacheVersionArgvs()...)
 }
 
 func (c LinuxCollector) Collect(ctx context.Context, src Source) *Facts {

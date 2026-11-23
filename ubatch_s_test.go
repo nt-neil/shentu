@@ -172,7 +172,7 @@ func TestDispatchRepairCountsNew(t *testing.T) {
 	if len(notes) != 2 || notes[0].Added != 1 || notes[1].Added != 0 || notes[1].Moved != 1 {
 		t.Errorf("notes: %+v", notes)
 	}
-	if line := s.repairedLine(now); !strings.Contains(line, "2 unreadable archive lines moved out (1 of them new") {
+	if line := s.repairedLine(now, false); !strings.Contains(line, "2 unreadable archive lines moved out (1 of them new") {
 		t.Errorf("daily: %q", line)
 	}
 }

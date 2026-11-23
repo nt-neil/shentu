@@ -33,7 +33,31 @@ Chinese for the zh-TW pages; keep the two in step.
 - A ✅ press whose checks ran out of time is refused as not checked in time (`timeout`), no longer as
   records that could not be read (`state_error`).
 
-## v0.5.5 (unreleased)
+## v0.5.5 — 2026-11-23
+
+- What a dispatch in progress has already used no longer counts twice near the budget limit: its
+  reservation knows the dispatch and when it started, and the others count only the rest of it,
+  from the same read of the log as the month's use. A reservation that cannot be matched counts in
+  full, as before.
+
+- The survey (site_profile) checks the Docker and Podman sockets through the host source, like its
+  other reads: a replay or a fixture is no longer answered by the machine running the survey.
+
+- The nginx and Apache version checks (and nginx's changelog) read the surveyed host through its
+  host source, like every other check: a replay or a fixture is no longer answered by the machine
+  running the survey. Their package queries are exact commands in the allowlist.
+
+- macOS: `listening_ports` and `processes` (and the patrol's process checks) read the Mac itself
+  (netstat or lsof, and ps; no root needed) instead of Linux's /proc, which found nothing there and
+  looked like a host with nothing running. An unreadable table is an error, and a partial one says so.
+
+- macOS: `accounts_audit` reads the Mac's accounts (dscl; no root needed) and the authorized_keys of
+  the login accounts and root, and sudoers when it can be read. What could not be read is in a note;
+  the Linux-only checks (ld.so.preload, PAM modules not from a package) are listed as not applicable.
+
+- macOS: `file_changes` finds a file by its status-change time (a faked modification time no longer
+  hides it) with its owner's name, watches macOS's own places by default (/private/etc, Homebrew,
+  launchd jobs), and lists directories it could not read; `cert_expiry` also reads Homebrew's certbot.
 
 - macOS: `ssh_logins` (and the patrol's SSH check) reads sshd's login events from the unified log
   (`/usr/bin/log show --info --style ndjson`) and counts them as on Linux, marked verified: only
@@ -45,33 +69,138 @@ Chinese for the zh-TW pages; keep the two in step.
   userID or one that cannot be read, or output without log show's closing line, makes the result
   incomplete (the counts are a lower bound), not a complete one with fewer events. Only root and the
   admin group can read that log: anyone else gets a permission error saying so, not an empty result.
+
 - macOS: `log_search` reads macOS's text logs (system.log, install.log) by default, not Homebrew's
   nginx and Apache logs, whose directories their user could link root's files into (add them
   knowingly). A log under /var is found by the path log_paths gives it (on macOS /var is a link to
   /private/var, and such a path used to be refused). A log file with more than one hard link is
   refused (a root-only file linked into a log directory looks the same). sshd is in the unified
   log, which log_search does not read: the tool says no match there says nothing about SSH logins.
-- macOS: `file_changes` finds a file by its status-change time (a faked modification time no longer
-  hides it) with its owner's name, watches macOS's own places by default (/private/etc, Homebrew,
-  launchd jobs), and lists directories it could not read; `cert_expiry` also reads Homebrew's certbot.
-- macOS: `accounts_audit` reads the Mac's accounts (dscl; no root needed) and the authorized_keys of
-  the login accounts and root, and sudoers when it can be read. What could not be read is in a note;
-  the Linux-only checks (ld.so.preload, PAM modules from packages) are listed as not applicable.
-- macOS: `listening_ports` and `processes` (and the patrol's process checks) read the Mac itself
-  (netstat or lsof, and ps; no root needed) instead of Linux's /proc, which found nothing there and
-  looked like a host with nothing running. An unreadable table is an error, and a partial one says so.
 
-- macOS and Windows: `block_ip` is refused as `unsupported` before any check. From Telegram on macOS
-  it used to read up to a month of the unified log (about two minutes) before refusing a block that
-  nftables cannot make there.
-- Proposal buttons (Linux): the checks run before the buttons are sent end together within 90
+- The host survey's nginx check covers the rest of nginx's advisories of 2026-11-18 (#190).
+  CVE-2026-118899, an infinite loop reading a request body over TLS 1.3, is warned about for nginx
+  1.13.0 through 1.31.8 with a TLS server (`listen ... ssl`, or `ssl on`) that speaks TLS 1.3: its
+  `ssl_protocols`, its own or else the http block's, names `TLSv1.3`, or it has none and nginx is
+  1.23.4 or later, whose default includes TLS 1.3. Turning HTTP/2 off does not avoid it.
+  CVE-2026-113425, a use-after-free in the mail proxy, is warned about only when a `mail` block has
+  a server. The six medium and minor ones (the resolver, HTTP/3, stream with client certificates or
+  `ssl_preread`, `try_files` with `alias`, PROXY protocol v2) are one line of advice by version,
+  as the check does not look for those features. All are fixed in 1.31.9 and 1.30.7. As for
+  HTTP/2, a distribution package whose changelog names a CVE is not warned about for it, and a
+  configuration file that could not be read is named in a line saying which of these could not
+  be checked.
+
+- The daily report and the new-findings report follow `language` now: with a Chinese setting their title, section headings
+  and fixed lines (what was not checked, incomplete vulnerability checks, attack detection, sub-agent dispatches,
+  automatic incident checks, SSH logins) are in Chinese; up to v0.5.4 they were in English whatever `language` said.
+  What a check found, error text and the model's answer are not translated: they are added as they came.
+
+- macOS and Windows (#206): `block_ip` is refused as `unsupported` before any check. From Telegram
+  on macOS it used to read up to a month of the unified log (about two minutes) before refusing a
+  block that nftables cannot make there.
+
+- Proposal buttons (Linux, #206): the checks run before the buttons are sent end together within 90
   seconds; a proposal not checked by then is listed as `timeout`, without a button, instead of
   holding back every button. A check of the dispatch archive cut short by its time limit is
   `timeout` too, not `state_error`. One address's SSH logins are read once for the archive, the
   buttons and Telegram's precheck (the answer is reused for two minutes); `block_ip` itself reads
   them again when it runs.
 
-## v0.5.3 (unreleased)
+- Upgrade note (#206): going back to v0.5.4, that version reads a dispatch record whose gate is
+  `timeout` or `unsupported` as a bad line, and the automatic incident checks can stop for up to 72
+  hours.
+
+## v0.5.4 — 2026-11-23
+
+- Shared AI budget (#161): a dispatch from the bot, `shentu chat` or the automatic incident check
+  reserves its whole token cap in `state_dir/reservations.json` while it runs, and every budget
+  check counts the others' reservations, so together they overspend `[budget] monthly_tokens` by
+  about one dispatch's cap (120k tokens) plus the answer in progress. Upgrading: while a dispatch runs, a question elsewhere
+  can be told that its reservation leaves too little of the month's budget (it is released within
+  about 17 minutes); a reservations file that cannot be trusted stops every AI answer and dispatch until it is
+  moved aside (the bot says which file); and `auto_incident` with `monthly_tokens` of 150000 or less now warns, as no automatic
+  check could ever start.
+
+- Model prices (#162): `[agents] price_per_mtok_in` and `price_per_mtok_out` (dollars per million
+  tokens) price each dispatch's reservation at its token cap times the higher of the two, so the
+  monthly cost limit is shared between dispatches as the token limit is. When only the cost limit
+  is filled by the others' reservations, the reply names the dollars reserved.
+
+- `shentu usage` and the bot's /usage count the sub-agents' model calls (and any other actor's) (#164):
+  they were left out of the totals, and a dispatch's calls now have a line of their own.
+
+- `auto_incident` on with no `[notify] url` now warns (#165), when the bot starts, on the daily
+  patrol and in its report: a check starts only from an L3 alert the patrol pushed, and the patrol
+  pushes through the notify url alone, so none would ever start.
+
+- A proposal press cut short by the bot stopping is logged as that (#166): "the bot stopped during
+  the checks" or "before it was confirmed", not as a refusal or as declined by the operator.
+
+- `shentu dispatch stats --json` has a versioned form for the weekly summary: `v` (1), `shentu` (the
+  release), `until` (the UTC date) besides the days, counts, roles and suggestions, which are always
+  lists. It holds numbers and fixed words only: no host name, address, path, dispatch id or trigger.
+
+- One call two rules report stays the rule's it is left to (`yields_to`) also when only one of
+  them follows a call in the file (#160). Before, `DB::select(DB::raw("..." . $_GET['a'] . "..." .
+  col()))` with a local `col()` returning `get_query_var('o')` (input only
+  php-sqli-orderby-identifier reads) was reported by both php-sqli-laravel-raw and
+  php-sqli-orderby-identifier; the rules that yield to php-sqli-yii-query had the same gap.
+
+- JavaScript request aliases (#160): after an `if`/`else`, a name holds what it held at the end of
+  a branch that goes on, so a name reassigned on every branch (`let q = req; if (a) { q = {...} }
+  else { q = {...} }`) is no longer read as the request. A branch that returns or throws drops
+  out; one that ends in `break` or `continue` still counts.
+
+- Read-only calls a URL check keeps (#160): `typeof window` (any global object after `typeof`)
+  no longer ends them for the whole file. `String` after the colon of a conditional
+  (`const S = c ? y : String;`) now does, as `String` used as a value does; before, it was read
+  as a TypeScript type.
+
+- PHP: `Request::get(` in a file whose `use` makes `Request` another library's class
+  (`use Httpful\Request`, `use Unirest\Request`, `use Httpful\Http as Request`) is no longer read
+  as Laravel's request facade (#160).
+
+- The dispatch archive reads fields it does not know (#197): from v0.5.4 a record or feedback
+  line written by a later version with a new field is read, its known fields checked as before,
+  instead of being refused as unreadable (which stopped the automatic incident checks until a
+  repair). Such lines are counted in `shentu dispatch stats` (`unknown_field_lines` in JSON) and in
+  the daily report; `repair` leaves them; the unknown fields' content reaches no output.
+
+- Upgrade note: going back to a version before v0.5.4, the dispatch records v0.5.4 wrote with
+  items not checked (their `unchecked_why`) cannot be read there. Their proposal buttons answer
+  that the dispatch is not in the archive; `shentu dispatch stats` skips them as unreadable lines;
+  and automatic incident checks stop, the archive not being trusted, until
+  `sudo shentu dispatch repair` moves those lines to `*.jsonl.bad` (kept, not deleted), after which
+  they count again from the next patrol.
+
+- Notices follow `language` (F-1, F-4 of the v0.5.3 real-bot round): the automatic incident check,
+  "Approved from Telegram", pairing and unpairing, and the attack detection titles were English
+  whatever the setting said; they now go out in Chinese when `language` is Chinese, as the bot's
+  own messages do. The incident check's notice says in words what it found and what it did not
+  check and, with no proposal, "nothing is suggested this time". What was not checked is said in
+  fixed words only (the sub-agent's own text stays out of a notice, as before): the sub-agent now
+  names the tool and picks a reason (`tool_failed`, `permission_denied`, `not_applicable`,
+  `time_limit`; anything else is "other"), the program adds `not_available` and `findings_cut`, the
+  archive keeps them (`unchecked_why`), the notice marks the sub-agent's picks as its own word,
+  not confirmed, and items with no fixed words are counted, to be treated as unknown. The approval notice says first what happens
+  ("blocking 192.0.2.30, lifted after 24 hours; the bot's reply says whether it worked"), the
+  nft command after it as a detail. The daily and new-finding reports' own lines are not
+  translated yet.
+
+- Sub-agent proposals leave a trace (F-3): every report a role that may propose writes is logged
+  as a `proposals` entry (how many it wrote, how many were kept), and each one dropped says why, in
+  fixed words: `ip_is_a_network`, `ip_not_one_address`, `action_not_propose_block_ip`,
+  `duplicate_ip`, `too_many_proposals`, `role_cannot_propose` (the first 20 listed, in shape only:
+  a network in canonical form, otherwise only an address's characters; the total counted; the
+  archive's own cap logs as `proposals_cut`). Before, a dropped proposal and no proposal looked
+  the same. The sub-agents that may propose are now told to propose only addresses with strong
+  evidence (a verified attack group's, or verified SSH logins with many failures), never one
+  taken from log text such as headers, and one address per proposal, never a network. The
+  automatic check tells its sub-agent it comes from a verified L3 alert, and that alert's address
+  is kept first; duplicates no longer take places. A proposal is still only a button: the gate
+  and the press are unchanged.
+
+## v0.5.3 — 2026-11-22
 
 - A proposal button pressed always gets an answer (#163): it says at once that it checks the
   address again, the log notes the press (`proposal_press`) before the checks, the checks run
@@ -127,6 +256,11 @@ Chinese for the zh-TW pages; keep the two in step.
 - Next's `headers()` is followed only in a file that imports `next/headers` itself.
 - `in_array($request->query('s'), [...], true) ? $request->query('s') : null` is not taken as
   a check of the value, with a request call as the source (the same with a magic property is).
+- `shentu usage` leaves out the model calls of an automatic incident check's sub-agents
+  (`sub:incident`): on a test server it listed 9 calls where the log held 13. `shentu budget`
+  counts them. The fix (#164) is planned for v0.5.4.
+- The automatic incident check's notice and the "Approved from Telegram" notice are in English
+  whatever `language` is set to.
 
 ## v0.5.2 — 2026-11-20
 

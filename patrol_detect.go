@@ -305,9 +305,9 @@ func carryOverLines(dir string) string {
 
 // detectCarryOver is carryOverLines for this report's start. It stays
 // until clearCarryOver, once a report saying it went out.
-func detectCarryOver(dir string) string {
+func detectCarryOver(dir string, zh bool) string {
 	if l := carryOverLines(dir); l != "" {
-		return "\nAttack detection, last patrol(s) — not done after the report:\n" + l + "\n"
+		return "\n" + nt(zh, "det_carry_head") + "\n" + l + "\n"
 	}
 	return ""
 }
@@ -318,7 +318,7 @@ func clearCarryOver(dir string) { os.Remove(filepath.Join(dir, detectLastFile)) 
 // sayCarryOver sends carry, what the last patrol could not do, on its own
 // when this patrol has no report to send it in; forgotten once sent.
 // dryRun prints it and keeps it.
-func sayCarryOver(ctx context.Context, env *tools.Env, dir, carry string, dryRun bool) error {
+func sayCarryOver(ctx context.Context, env *tools.Env, dir, carry string, dryRun, zh bool) error {
 	if carry == "" {
 		return nil
 	}
@@ -326,7 +326,7 @@ func sayCarryOver(ctx context.Context, env *tools.Env, dir, carry string, dryRun
 		fmt.Print(carry)
 		return nil
 	}
-	if err := detectNotify(ctx, env, "Attack detection: last patrol's sends failed", mask(strings.TrimSpace(carry)), "warning"); err != nil {
+	if err := detectNotify(ctx, env, nt(zh, "det_carry_title"), mask(strings.TrimSpace(carry)), "warning"); err != nil {
 		return err
 	}
 	clearCarryOver(dir)
@@ -355,7 +355,7 @@ func (r *detectRun) send(ctx context.Context, env *tools.Env) detectSummary {
 				fmt.Printf("Attack attempts (summary)\n\n%s\n", text)
 				break
 			}
-			if err := detectNotify(ctx, env, fmt.Sprintf("%d more attack attempts", len(rest)), text, notifySeverity(rest[0].Severity)); err != nil {
+			if err := detectNotify(ctx, env, fmt.Sprintf(nt(isZh(r.cfg), "det_more_title"), len(rest)), text, notifySeverity(rest[0].Severity)); err != nil {
 				fail("notify (summary; the groups stay due)", err)
 				break
 			}
@@ -371,7 +371,7 @@ func (r *detectRun) send(ctx context.Context, env *tools.Env) detectSummary {
 			fmt.Printf("Attack attempt\n\n%s\n", text)
 			continue
 		}
-		if err := detectNotify(ctx, env, "Attack attempt", text, notifySeverity(g.Severity)); err != nil {
+		if err := detectNotify(ctx, env, nt(isZh(r.cfg), "det_attempt_title"), text, notifySeverity(g.Severity)); err != nil {
 			fail("notify (the group stays due)", err)
 			break
 		}
@@ -389,7 +389,7 @@ func (r *detectRun) send(ctx context.Context, env *tools.Env) detectSummary {
 	if notices != "" {
 		if r.dryRun {
 			fmt.Printf("Attack detection notice\n\n%s\n", notices)
-		} else if err := detectNotify(ctx, env, "Attack detection notice", notices, "warning"); err != nil {
+		} else if err := detectNotify(ctx, env, nt(isZh(r.cfg), "det_notice_title"), notices, "warning"); err != nil {
 			fail("notify (notices; sent again next round)", err)
 		} else {
 			p.NoticesSent()
@@ -563,22 +563,22 @@ func severityRankOf(s string) int {
 }
 
 // detectSection is the daily report's lines about attack detection.
-func detectSection(s detectSummary) string {
+func detectSection(s detectSummary, zh bool) string {
 	if s.Err == "" && s.Due == 0 && s.ReportPath == "" && s.Round == (detect.Round{}) && len(s.Levels) == 0 {
 		return ""
 	}
 	var b strings.Builder
-	b.WriteString("\nAttack detection:\n")
+	b.WriteString(dt(zh, "det_head"))
 	if len(s.Levels) > 0 {
-		fmt.Fprintf(&b, "- groups seen in the last day: L3 %d, L2 %d, L1 %d (reached a vulnerable route only: counted, not pushed), undetermined %d\n",
+		fmt.Fprintf(&b, dt(zh, "det_levels"),
 			s.Levels[detect.LevelSuccess], s.Levels[detect.LevelPayload], s.Levels[detect.LevelRoute], s.Levels[detect.LevelUnknown])
 	}
-	fmt.Fprintf(&b, "- alerts due this round: %d (pushed on their own after this report, at most %d one by one, the rest in one summary); noise %d, unanchored %d, undetermined (cut) %d\n", s.Due, MaxAlertsPerRound, s.Round.Noise, s.Round.Unanchored, s.Round.Unknown)
+	fmt.Fprintf(&b, dt(zh, "det_due"), s.Due, MaxAlertsPerRound, s.Round.Noise, s.Round.Unanchored, s.Round.Unknown)
 	if s.ReportPath != "" {
-		fmt.Fprintf(&b, "- report (addresses masked): %s\n", s.ReportPath)
+		fmt.Fprintf(&b, dt(zh, "det_report"), s.ReportPath)
 	}
 	if s.Err != "" {
-		fmt.Fprintf(&b, "- not checked: %s\n", s.Err)
+		fmt.Fprintf(&b, dt(zh, "det_notcheck"), s.Err)
 	}
 	return b.String()
 }
@@ -692,10 +692,10 @@ func saveDailySurface(cfg *Config, env *tools.Env, audit tools.CodeAudit, web []
 	failedApps map[string]bool, osFailed bool, partial []string, now time.Time) (unchecked string) {
 	plugins, unreadPlugins := tools.WordPressPlugins(web)
 	if len(unreadPlugins) > 0 { // paths the web account may name: quoted, masked, a few
-		unchecked += "\nAttack detection: WordPress plugin directories not read:\n"
+		unchecked += dt(isZh(cfg), "det_plugins")
 		for i, u := range unreadPlugins {
 			if i == 10 {
-				unchecked += fmt.Sprintf("- (%d more)\n", len(unreadPlugins)-10)
+				unchecked += fmt.Sprintf(dt(isZh(cfg), "det_more"), len(unreadPlugins)-10)
 				break
 			}
 			unchecked += fmt.Sprintf("- %q\n", mask(u))
@@ -709,7 +709,7 @@ func saveDailySurface(cfg *Config, env *tools.Env, audit tools.CodeAudit, web []
 	}
 	surface := keepPrevious(cfg.StateDir, buildSurface(audit, apps, osSurface, plugins), failedApps, osFailed)
 	if err := saveSurface(cfg.StateDir, surface, env.AppPaths, partial, now); err != nil {
-		unchecked += "\nAttack detection: the vulnerability surface could not be saved: " + err.Error() + "\n"
+		unchecked += fmt.Sprintf(dt(isZh(cfg), "det_nosave"), err.Error())
 	}
 	return unchecked
 }
