@@ -29,7 +29,7 @@ var (
 )
 
 func (LinuxCollector) Allowlist() [][]string {
-	l := append([][]string{dpkgArgv, rpmArgv, rpmVendorArgv, rpmQalArgv, nftListArgv, iptablesArgv, iptablesSbin, journalArgv, journalBinArgv, journalSockArgv, journalSockBinArgv, journalSSHDArgv, journalSSHDBinArgv, journalSSHDSockArgv, journalSSHDSockBinArgv}, journalUnitArgvs()...)
+	l := append([][]string{dpkgArgv, rpmArgv, rpmVendorArgv, rpmQalArgv, nftListArgv, iptablesArgv, iptablesSbin, journalArgv, journalBinArgv, journalSockArgv, journalSockBinArgv, journalSSHDArgv, journalSSHDBinArgv, journalSSHDSockArgv, journalSSHDSockBinArgv}, append(journalUnitArgvs(), sshJournalArgvs()...)...)
 	return append(l, webPackageArgvs()...)
 }
 
