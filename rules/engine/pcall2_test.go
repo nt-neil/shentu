@@ -8,7 +8,8 @@ import (
 // c2: the callable a call passes where the callee calls its parameter, when it
 // is written as a value: a function name ('run_cmd', 'Cmd::run'), an array
 // callable ([Cmd::class, 'run'], [$this, 'run']) or a first-class callable
-// (run_cmd(...)). On the code audit's path.
+// (run_cmd(...)); and a closure literal handed to a builtin that calls it
+// (array_map(function ($v) {...}, $items)). On the code audit's path.
 func TestCallableValues(t *testing.T) {
 	e := engineForTest(t)
 	helper := "<?php\nfunction tap2($value, $callback) {\n    $callback($value);\n    return $value;\n}\nfunction run_cmd($s) {\n    system($s);\n}\nclass Cmd {\n    public static function run($s) {\n        system($s);\n    }\n}\n"
@@ -30,6 +31,10 @@ func TestCallableValues(t *testing.T) {
 			"a.php": "<?php\nrequire 'b.php';\nclass Job {\n    public function go() {\n        tap2($_GET['x'], [$this, 'exec1']);\n    }\n    public function exec1($s) {\n        system($s);\n    }\n}\n"}, "a.php", []string{"a.php:8:php-cmdi-shell-exec"}},
 		{"a function name with no input (control)", map[string]string{"b.php": helper,
 			"a.php": "<?php\nrequire 'b.php';\ntap2('ls', 'run_cmd');\n"}, "a.php", nil},
+		{"a closure literal handed to array_map", map[string]string{
+			"a.php": "<?php\narray_map(function ($v) {\n    system($v);\n}, $_GET['a']);\n"}, "a.php", []string{"a.php:3:php-cmdi-shell-exec"}},
+		{"a closure literal handed to usort, items without input (control)", map[string]string{
+			"a.php": "<?php\n$a = ['b', 'a'];\nusort($a, function ($x, $y) {\n    system($x);\n    return 0;\n});\n"}, "a.php", nil},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			var paths []string
