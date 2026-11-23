@@ -60,6 +60,23 @@ func TestSiteProfileEmptyHost(t *testing.T) {
 					t.Errorf("%s holds a value on a host where nothing could be read (risk keys %v)", name, keys)
 				}
 			}
+			// On macOS the listening ports that could not be read are said
+			// (N-177-1), not left as an empty, quiet-looking services list.
+			if goos == "darwin" {
+				said := false
+				for _, r := range p.Risks {
+					if r.Key == "services:unreadable" {
+						said = true
+					}
+				}
+				if !said {
+					var keys []string
+					for _, r := range p.Risks {
+						keys = append(keys, r.Key)
+					}
+					t.Errorf("no services:unreadable risk on an unread macOS host (risk keys %v)", keys)
+				}
+			}
 		})
 	}
 }

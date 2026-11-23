@@ -138,6 +138,10 @@ func TestM1LooksClean(t *testing.T) {
 		{"processes", `[{"pid":1}]`},
 		{"x", `{"ports":[],"note":"could not read the table"}`},
 		{"ssh_logins", `{"sources":[],"unsupported":true}`},
+		// Outside the admin group log show exits 77: ssh_logins says
+		// permission (TestSSHSummaryMacNotAdmin), with or without its error.
+		{"ssh_logins", `{"sources":null,"complete":false,"permission":true,"error":"log show exit 77: not in the admin group"}`},
+		{"ssh_logins", `{"sources":null,"complete":false,"permission":true}`},
 		{"site_profile", `{"time":"t","os":"darwin","services":[{"name":"sshd"}]}`},
 		{"x", `{"total":3}`},
 	} {
