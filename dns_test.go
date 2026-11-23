@@ -27,11 +27,11 @@ func TestNoEDNS0Directive(t *testing.T) {
 // A failed name lookup in the vulnerability check says it is this host's DNS.
 func TestUncheckedVulnsDNSHint(t *testing.T) {
 	err := fmt.Errorf("osv: %w", &net.DNSError{Err: "no such host", Name: "api.osv.dev", Server: "192.168.22.2:53", IsNotFound: true})
-	got := uncheckedVulns("installed packages", nil, err)
+	got := uncheckedVulns("installed packages", nil, err, false)
 	if !strings.Contains(got, "check this host's DNS") || !strings.Contains(got, "getent hosts api.osv.dev") {
 		t.Errorf("%q", got)
 	}
-	if got := uncheckedVulns("installed packages", nil, errors.New("osv: 503")); strings.Contains(got, "DNS") {
+	if got := uncheckedVulns("installed packages", nil, errors.New("osv: 503"), false); strings.Contains(got, "DNS") {
 		t.Errorf("hint on a non-DNS error: %q", got)
 	}
 }
