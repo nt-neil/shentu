@@ -316,8 +316,8 @@ func (a *analysis) pcallSeeds(st state, t []Token, funcs []*fn) map[*fn][]*param
 		if !t[i+1].op("(") || t[i].Kind != Ident && t[i].Kind != Var {
 			continue
 		}
-		if t[i].Kind == Var && (i == 0 || !memberOp(true, t[i-1])) {
-			// $callback(...) of a parameter: the input its arguments carry is
+		if t[i].Kind == Var && (i == 0 || !memberOp(true, t[i-1]) && !newWord(t[i-1])) {
+			// $callback(...) of a parameter (new $class(...) makes an object: no call): the input its arguments carry is
 			// what the function gives the callable (summary.pcall)
 			if a.isParamName(t[i].Text) && a.paramIndex(t[i].Text) < 0 {
 				// a parameter the body assigned again ($cb = wrap($cb)): what it
@@ -446,15 +446,19 @@ func callsParam(fi *fnInfo) bool {
 	return found
 }
 
-// callsParamIn reports whether tokens call one of params ($callback(...)).
+// callsParamIn reports whether tokens call one of params ($callback(...); not
+// new $class(...), which makes an object).
 func callsParamIn(t []Token, params []string) bool {
 	for i := 0; i+1 < len(t); i++ {
-		if t[i].Kind == Var && t[i+1].op("(") && slices.Contains(params, t[i].Text) {
+		if t[i].Kind == Var && t[i+1].op("(") && slices.Contains(params, t[i].Text) && (i == 0 || !newWord(t[i-1])) {
 			return true
 		}
 	}
 	return false
 }
+
+// newWord reports whether t is PHP's new, in any case (NEW $class(...)).
+func newWord(t Token) bool { return t.Kind == Ident && strings.EqualFold(t.Text, "new") }
 
 // byParam puts a PHP call's arguments in the callee's parameter places: by
 // position, then by name for named arguments (tap(callback: fn () => ...,
