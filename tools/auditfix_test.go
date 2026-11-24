@@ -74,13 +74,18 @@ func TestAppCodeAuditWalkCut(t *testing.T) {
 func TestAppCodeAuditStopsBeforeCtx(t *testing.T) {
 	isolateAudit(t)
 	dir, _ := filepath.EvalSymlinks(t.TempDir())
-	for i := range 100 {
-		os.WriteFile(filepath.Join(dir, fmt.Sprintf("a%02d.php", i)), []byte("<?php\nsystem($_GET['a']);\n"), 0o644)
+	// Each file takes 20ms, well under the 150ms the rules leave (a tenth of
+	// the caller's time), so a file begun just before their time is up still
+	// ends in time on a busy machine. All of them take 20s over the workers,
+	// so the rules do run out of time, and an audit that did not stop would
+	// be seconds late.
+	for i := range 1000 {
+		os.WriteFile(filepath.Join(dir, fmt.Sprintf("a%03d.php", i)), []byte("<?php\nsystem($_GET['a']);\n"), 0o644)
 	}
 	scan := engineScan
 	defer func() { engineScan = scan }()
 	engineScan = func(e *engine.Engine, lang, p string, b []byte) ([]engine.Finding, bool, error) {
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(20 * time.Millisecond)
 		return scan(e, lang, p, b)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)

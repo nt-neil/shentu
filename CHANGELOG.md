@@ -6,7 +6,7 @@ a release are not written here: they are worked out from the rule snapshots in
 `docs/site-src/rules-history/`. `CHANGELOG.zh-TW.md` holds the same releases in Traditional
 Chinese for the zh-TW pages; keep the two in step.
 
-## v0.5.6 (unreleased)
+## v0.5.6 — 2026-11-24
 
 - A file cut short says what cut it (#172). The code audit's unfinished files carry a `cause`:
   the token cap, the file's time limit, nesting, a rule's work cap for following calls, the
@@ -28,6 +28,28 @@ Chinese for the zh-TW pages; keep the two in step.
   The method and class names of member patterns match in any case too (#198): `$wpdb->Query(...)`
   and `$wpdb->GET_RESULTS(...)` are `php-sqli-wpdb-unprepared`'s sinks, `$wpdb->Prepare(...)`
   cleans, and `DB::RAW(...)` is a sink; a variable keeps its case (`$WPDB` is not `$wpdb`).
+
+- Calls through callables are followed (#182, #184, #188). A PHP function that calls its own
+  parameter (`$cb($v)`, as `tap()` and `Arr::first()` do) is followed at each caller with what the
+  caller passes: a closure, a function name (`'run_cmd'`, `'Cmd::run'`), an array callable
+  (`[Cmd::class, 'run']`, `[$this, 'run']`) or a first-class callable (`run_cmd(...)`). A closure
+  handed to a PHP builtin that calls it (`array_map`, `array_filter`, `array_walk`, `usort`,
+  `array_reduce`, `preg_replace_callback`, `call_user_func` and others) is analysed with the input
+  the builtin gives it, and a builtin's name given as the callable is that builtin:
+  `array_map('system', $_GET['x'])` and `array_map(function ($v) { system($v); }, $_GET['a'])` now
+  report. Fewer files are left with calls not followed (#174, #178, #179, #182): Python's
+  standard-library imports (`import json` in a package with its own `json.py`) and a closure that
+  cannot leave its function are no longer taken as calls of the project's other files. On the E7
+  corpus, laravel-framework's unfinished files went from 280 to 115 and Django's from 135 to 24.
+
+- Fewer false findings from checks and fixed values (#185, #187). After `unset($x)`,
+  `unset($a['k'])` or `unset($this->p)` the value carries no input; `is_numeric`, `is_int`,
+  `is_float`, `ctype_digit` and the other number checks count as checks in every rule
+  (`if (is_numeric($p)) { ... "WHERE id = " . $p }` no longer reports). `wp_create_nonce()` and
+  `wp_hash()` return a value with no input. A sink inside a function, called after the caller's
+  `check_admin_referer()` or another nonce check, is treated as a sink written in the caller is. A
+  sink that needs the input at its start (`header("Location: $u")`) is not reached through a
+  function when the argument starts with a fixed text (`go(admin_url('x') . '?a=' . $v)`).
 
 - The host survey checks PHP against php.net's releases of 2026-11-19 (8.2.36, 8.3.37, 8.4.28,
   8.5.13; 8.6.0 and later are fixed). The version is the one each PHP binary names itself with
@@ -135,6 +157,10 @@ Chinese for the zh-TW pages; keep the two in step.
   that is not UTF-8 and a letter (a Latin-1, Big5 or Shift-JIS word not sent as UTF-8) matches the
   CVE-2024-4577 signature as `%AD` does: requests are matched decoded, where every such byte reads
   as U+FFFD (`docs/attack-detection-limits.md`).
+
+- `new $var(...)` is taken as a call of the parameter `$var` (#182). A plugin that bundles the
+  Freemius SDK has many files whose calls are marked as not all followed, and a false finding may
+  come of it. No findings were lost on the E7 and CVE bench measurements. To be fixed in v0.5.7.
 
 ## v0.5.5 — 2026-11-23
 

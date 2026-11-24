@@ -382,11 +382,11 @@ func TestPHPApacheCGIReadCap(t *testing.T) {
 
 func TestPHPWinApacheConfs(t *testing.T) {
 	h := newPHPWinHost(t)
-	confs, svc, sec := phpWinApacheConfs, phpWinServiceBins, winFileSecurity
-	defer func() { phpWinApacheConfs, phpWinServiceBins, winFileSecurity = confs, svc, sec }()
+	confs, svc, sec := phpWinApacheConfs, phpWinServiceBins, phpWinSecurity
+	defer func() { phpWinApacheConfs, phpWinServiceBins, phpWinSecurity = confs, svc, sec }()
 	phpWinApacheConfs = winApacheConfs
 	acl := map[string]hostenv.WinFileSecurity{}
-	winFileSecurity = func(p string) (hostenv.WinFileSecurity, error) {
+	phpWinSecurity = func(p string) (hostenv.WinFileSecurity, error) {
 		if s, ok := acl[strings.ToLower(p)]; ok {
 			return s, nil
 		}

@@ -72,10 +72,10 @@ var (
 		if err != nil {
 			return nil, err
 		}
-		return winSource().ReadDir(r)
+		return phpSource().ReadDir(r)
 	}
 	phpWinACP = func() (string, error) {
-		ws, ok := winSource().(hostenv.WinSource)
+		ws, ok := phpSource().(hostenv.WinSource)
 		if !ok {
 			return "", fmt.Errorf("not a Windows source")
 		}
@@ -103,7 +103,7 @@ var (
 		if err != nil {
 			return err
 		}
-		st, err := hostenv.Stat(winSource(), r)
+		st, err := hostenv.Stat(phpSource(), r)
 		if err == nil && !st.Mode.IsRegular() {
 			err = errNotRegular
 		}
@@ -113,7 +113,7 @@ var (
 	// phpWinServiceBins are the services' command lines (BinaryPath).
 	phpWinServiceBins = func() []string {
 		var bins []string
-		if ws, ok := winSource().(hostenv.WinSource); ok {
+		if ws, ok := phpSource().(hostenv.WinSource); ok {
 			if svcs, err := ws.Services(); err == nil {
 				for _, s := range svcs {
 					bins = append(bins, s.BinaryPath)
@@ -123,6 +123,15 @@ var (
 		return bins
 	}
 	phpLoadKEV = loadKEV
+	// phpWinSecurity is who owns and may write a file of the host read (not
+	// winFileSecurity, which is always the live machine's).
+	phpWinSecurity = func(p string) (hostenv.WinFileSecurity, error) {
+		ws, ok := phpSource().(hostenv.WinSource)
+		if !ok {
+			return hostenv.WinFileSecurity{}, errors.New("not a Windows source")
+		}
+		return ws.FileSecurity(p)
+	}
 )
 
 // errNotLocal is a path not read: not a local absolute one.
@@ -170,7 +179,7 @@ func winApacheConfs() (confs, unread []string) {
 			continue
 		}
 		if fixed[k] {
-			sec, err := winFileSecurity(c)
+			sec, err := phpWinSecurity(c)
 			if err != nil {
 				unread = append(unread, c+" (who may write it could not be read: "+err.Error()+"; not read)")
 				continue
