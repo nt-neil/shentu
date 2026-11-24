@@ -35,6 +35,7 @@ var phpNameKinds = map[string]string{
 	"file_get_contents":                    "function",
 	"file_put_contents":                    "function",
 	"filesize":                             "function",
+	"filter_input":                         "function",
 	"fopen":                                "function",
 	"forward_static_call":                  "function",
 	"forward_static_call_array":            "function",

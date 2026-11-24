@@ -570,14 +570,22 @@ func (c DarwinCollector) Listeners(ctx context.Context, src Source) Obs[[]Listen
 }
 
 // macProcNames names the listeners netstat gave a pid alone (macOS 15),
-// from ps. It says why when some stay without a name ("" when none do).
+// from ps. It says why when some stay without a name ("" when none do),
+// pid 0 among them: netstat gave no owner, so none can be named (S-214-2).
 func macProcNames(ctx context.Context, src Source, out []Listener) string {
-	need := false
+	need, noPID := false, 0
 	for _, l := range out {
 		need = need || l.Process == "" && l.PID > 0
+		if l.Process == "" && l.PID <= 0 {
+			noPID++
+		}
+	}
+	var why []string
+	if noPID > 0 {
+		why = append(why, fmt.Sprintf("%d listener(s) netstat gave no owner (pid 0)", noPID))
 	}
 	if !need {
-		return ""
+		return strings.Join(why, "; ")
 	}
 	names := map[int]string{}
 	r, err := src.Run(ctx, macPsArgv)
@@ -604,14 +612,14 @@ func macProcNames(ctx context.Context, src Source, out []Listener) string {
 			}
 		}
 	}
-	if missing == 0 {
-		return ""
+	if missing > 0 {
+		src2 := "not in ps"
+		if err != nil || r.ExitCode != 0 {
+			src2 = "ps: " + cmdErr(err, r).Error()
+		}
+		why = append(why, fmt.Sprintf("%d listener(s) without a process name (%s)", missing, src2))
 	}
-	src2 := "not in ps"
-	if err != nil || r.ExitCode != 0 {
-		src2 = "ps: " + cmdErr(err, r).Error()
-	}
-	return fmt.Sprintf("%d listener(s) without a process name (%s)", missing, src2)
+	return strings.Join(why, "; ")
 }
 
 // lsofListeners parses lsof -F output: p<pid>, c<command>, t<IPv4|IPv6>,

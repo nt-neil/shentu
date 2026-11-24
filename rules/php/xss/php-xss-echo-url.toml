@@ -6,7 +6,7 @@ severity = "medium"
 tier = "info"
 title = "Request input written as a link or source URL without esc_url"
 frameworks = ["wordpress", "laravel"]
-sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "$_SERVER['PHP_SELF']", "$_SERVER['REQUEST_URI']", "$_SERVER['QUERY_STRING']", "$_SERVER['HTTP_", "get_query_var(", "->get_param(", "$request->input(", "$request->query(", "get_search_query(false", "$wp_query->get("]
+sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "$_SERVER['PHP_SELF']", "$_SERVER['REQUEST_URI']", "$_SERVER['QUERY_STRING']", "$_SERVER['HTTP_", "get_query_var(", "->get_param(", "$request->input(", "$request->query(", "get_search_query(false", "$wp_query->get(", "filter_input(", "->filterInput(", "->filter_input("]
 sinks = ["echo", "print"]
 sanitizers = ["check_admin_referer", "check_ajax_referer", "wp_verify_nonce", "current_user_can", "esc_url", "esc_url_raw", "urlencode", "rawurlencode", "absint", "wp_validate_redirect", "wp_http_validate_url", "wp_send_json", "wp_send_json_success", "wp_send_json_error"]
 fix = "Pass URLs through esc_url() (it drops javascript: and other unsafe schemes) or allow only http(s) URLs; esc_attr() and esc_html() leave javascript: links working."
@@ -41,3 +41,9 @@ note = "after a fixed path the value cannot choose the scheme; the attribute rul
 code = '''
 <a href="/search?q=<?php echo urlencode($_GET['q']); ?>">Again</a>
 '''
+
+# filter_input(INPUT_GET, ...) and an application's filterInput(INPUT_POST, ...) wrapper read the request like $_GET and $_POST
+[[source_args]]
+sources = ["filter_input(", "->filterInput(", "->filter_input("]
+arg = 1
+values = ["INPUT_GET", "INPUT_POST", "INPUT_COOKIE"]
