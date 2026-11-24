@@ -23,6 +23,18 @@ Chinese for the zh-TW pages; keep the two in step.
 - `shentu patrol --dry-run` prints all its titles (each attack attempt, the summary past the
   round's limit, the attack detection notice) in the setting's language, as they are sent; they
   were always in English.
+- The package vulnerability check (`vulns`) compares third-party PHP and nginx packages (from
+  deb.sury.org, the ondrej PPA, Remi's repository or nginx.org) with php.net's and nginx.org's
+  releases of 2026-11-19, the tables of the PHP and nginx checks. OSV has only the distributions'
+  advisories, so these packages matched nothing there and were only listed in
+  `third_party_unchecked`. Now each CVE in a package's range is in the vulnerability surface
+  (ecosystem `upstream:php` or `upstream:nginx`, with the fixed version, KEV when CISA lists it)
+  and in `third_party_upstream`; a CVE the package's changelog names (a backported fix) is listed
+  there as backported and not reported. php-fpm also gets the FPM and status page CVEs, php-cgi
+  the CGI one; mod_php and the CLI get the engine's only. A package whose version cannot be read,
+  or on a branch php.net no longer fixes, stays in `third_party_unchecked` with the reason in
+  `why`. The OSV results of these packages are kept: a build can also be older than the
+  distribution's fix.
 
 ### Known issues
 
