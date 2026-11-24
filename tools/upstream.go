@@ -32,6 +32,27 @@ type upstreamHit struct {
 	Affected   []string `json:"affected,omitempty"`
 	Fixed      string   `json:"fixed,omitempty"`
 	Backported []string `json:"backported,omitempty"` // in the range, named in the package's changelog
+	AsOf       string   `json:"as_of"`                // the tables' date: CVEs published since are not known
+}
+
+// upstreamAsOf is the date of the PHP and nginx checks' tables.
+const upstreamAsOf = "2026-11-19"
+
+// newerThanTables: a version past the newest release the tables know (PHP
+// 8.2.36, 8.3.37, 8.4.28, 8.5.13; nginx 1.30.7, 1.31.9) may have CVEs
+// published since; it is not compared, never "none affected".
+var newerThanTables = "newer than the " + upstreamAsOf + " tables: CVEs published since are not known here"
+
+func phpNewer(v [3]int) bool {
+	newest := 0
+	for m := range phpFixed {
+		newest = max(newest, m)
+	}
+	return v[0] > 8 || v[1] > newest || v[2] > phpFixed[v[1]]
+}
+
+func nginxNewer(v [3]int) bool {
+	return v[0] > 1 || v[1] > 31 || v[1] == 31 && v[2] > 9 || v[1] == 30 && v[2] > 7
 }
 
 // phpSAPIPackage: Debian's and sury's php8.3-cli, -fpm, -cgi and
@@ -48,7 +69,7 @@ func upstreamCompare(ctx context.Context, set hostenv.PackageSet) (hits []upstre
 		if it.Origin == "" {
 			continue
 		}
-		h := upstreamHit{Package: it.Name, Version: it.Version, Origin: it.Origin}
+		h := upstreamHit{Package: it.Name, Version: it.Version, Origin: it.Origin, AsOf: upstreamAsOf}
 		var ids []string
 		switch m := phpSAPIPackage.FindStringSubmatch(it.Name); {
 		case m != nil:
@@ -60,6 +81,9 @@ func upstreamCompare(ctx context.Context, set hostenv.PackageSet) (hits []upstre
 				continue
 			case phpEOL(v):
 				why[it.Name] = fmt.Sprintf("PHP %d.%d is a branch php.net no longer fixes", v[0], v[1])
+				continue
+			case phpNewer(v):
+				why[it.Name] = newerThanTables
 				continue
 			}
 			sapi := m[1] + m[2] + m[3] // "" for mod_php: the engine only
@@ -79,6 +103,10 @@ func upstreamCompare(ctx context.Context, set hostenv.PackageSet) (hits []upstre
 			v, ok := nginxRelease(it.Version)
 			if !ok {
 				why[it.Name] = "the nginx version could not be read"
+				continue
+			}
+			if nginxNewer(v) {
+				why[it.Name] = newerThanTables
 				continue
 			}
 			for _, l := range [][]nginxCVE{nginxH2CVEs, nginxTLS13CVE, nginxMailCVE, nginxOtherCVEs} {

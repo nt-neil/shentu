@@ -104,6 +104,10 @@ func TestPackageVulnsUpstream(t *testing.T) {
 			t.Errorf("%s compared, yet listed as not checked", p)
 		}
 	}
+	// N-225-1: the KEV CVE is actively exploited, as an OSV one would be.
+	if !strings.Contains(string(b), `"actively_exploited":[{"package":"php8.3-fpm","version":"8.3.9-1`+sury+`","id":"CVE-2026-129291","cve":"CVE-2026-129291"`) {
+		t.Errorf("upstream KEV not actively exploited: %s", b)
+	}
 	var ups []detect.PackageVuln
 	for _, v := range surface {
 		if strings.HasPrefix(v.Ecosystem, "upstream:") {
@@ -132,5 +136,40 @@ func TestPackageVulnsUpstream(t *testing.T) {
 	}
 	if find("php7.4-fpm", "CVE-2026-129496") != nil || find("php8.3-mysql", "CVE-2026-129496") != nil {
 		t.Errorf("not compared, yet in the surface: %+v", ups)
+	}
+}
+
+// S-225-1: past the newest release the tables know, a version is not
+// compared ("none affected" would grow false as CVEs are published); a
+// compared one says the tables' date.
+func TestUpstreamNewerThanTables(t *testing.T) {
+	withHost(t, memHost{})
+	set := hostenv.PackageSet{Manager: "dpkg", Items: []hostenv.Package{
+		{Name: "php8.3-cli", Version: "8.3.9-1+deb.sury.org+1", Origin: "deb.sury.org"},
+		{Name: "php8.3-fpm", Version: "8.3.37-1+deb.sury.org+1", Origin: "deb.sury.org"}, // the newest known: compared
+		{Name: "php8.3-cgi", Version: "8.3.38-1+deb.sury.org+1", Origin: "deb.sury.org"}, // newer patch
+		{Name: "php8.6-cli", Version: "8.6.0-1+deb.sury.org+1", Origin: "deb.sury.org"},  // newer branch
+		{Name: "php9.0-fpm", Version: "9.0.1-1+deb.sury.org+1", Origin: "deb.sury.org"},  // newer major
+		{Name: "nginx", Version: "1.32.0-1~bookworm", Origin: "nginx"},
+		{Name: "nginx:amd64", Version: "1.30.8-1~bookworm", Origin: "nginx"},
+	}}
+	hits, why := upstreamCompare(context.Background(), set)
+	b, _ := json.Marshal(hits)
+	got := map[string]bool{}
+	for _, h := range hits {
+		got[h.Package] = true
+	}
+	for _, p := range []string{"php8.3-cli", "php8.3-fpm"} {
+		if !got[p] {
+			t.Errorf("%s not compared: %s", p, b)
+		}
+	}
+	if !strings.Contains(string(b), `"as_of":"2026-11-19"`) {
+		t.Errorf("no tables' date: %s", b)
+	}
+	for _, p := range []string{"php8.3-cgi", "php8.6-cli", "php9.0-fpm", "nginx", "nginx:amd64"} {
+		if got[p] || !strings.Contains(why[p], "newer than the 2026-11-19 tables") {
+			t.Errorf("%s newer than the tables: compared %v, why %q", p, got[p], why[p])
+		}
 	}
 }

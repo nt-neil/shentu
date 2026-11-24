@@ -174,6 +174,21 @@ func packageVulnsAll(ctx context.Context, hc *http.Client, detailFor string) (ma
 	}
 	up, upWhy := upstreamCompare(ctx, set) // third-party PHP and nginx, against php.net's and nginx.org's advisories
 	thirdPartyOut(out, set, up, upWhy)
+	// Counted in the summary every reader goes by (the patrol, the report,
+	// the model): an upstream-affected package is affected, as an OSV one is.
+	inFound := map[string]bool{}
+	for _, a := range found {
+		inFound[a.Package] = true
+	}
+	for _, h := range up {
+		if len(h.Affected) > 0 {
+			total += len(h.Affected)
+			if !inFound[h.Package] {
+				out["affected_packages"] = out["affected_packages"].(int) + 1
+			}
+		}
+	}
+	out["total_vulns"] = total
 	if len(feed.Ecosystems) > 1 { // SUSE: one per module; ecosystem shows the first only
 		out["ecosystems"] = feed.Ecosystems
 	}
@@ -216,6 +231,13 @@ func packageVulnsAll(ctx context.Context, hc *http.Client, detailFor string) (ma
 				e.Package, e.Version = a.Package, a.Version
 				exploited[a.Package] = append(exploited[a.Package], e)
 				all = append(all, e)
+			}
+		}
+		for _, h := range up { // upstream's, as OSV's: the patrol's KEV alert reads this list
+			for _, id := range h.Affected {
+				if e, ok := kev[id]; ok {
+					all = append(all, Exploit{Package: h.Package, Version: h.Version, ID: id, CVE: id, Name: e.Name, Added: e.Added, Ransomware: e.Ransomware == "Known"})
+				}
 			}
 		}
 		out["actively_exploited"] = all

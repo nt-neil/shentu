@@ -85,7 +85,7 @@ func TestPackageVulnsThirdParty(t *testing.T) {
 		// PR-B: sury's php8.3-fpm is compared with php.net's advisories now
 		`"third_party_upstream":[{"package":"php8.3-fpm","version":"8.3.9-1+0~20240705.1+debian12~1.gbp1+deb.sury.org+1","origin":"deb.sury.org","upstream":"php"`,
 		`"third_party_repositories":["deb.sury.org"]`,
-		`"affected_packages":0`,
+		`"affected_packages":1`, // N-225-1: sury's php8.3-fpm 8.3.9 is affected upstream
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("missing %s in %s", want, s)

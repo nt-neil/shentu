@@ -504,10 +504,7 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 		}
 		unchecked += uncheckedVulns(dt(zh, "vuln_os"), r, err, zh)
 		if err == nil {
-			list, _ := r["actively_exploited"].([]tools.Exploit)
-			for _, e := range list {
-				all = append(all, newFinding("kev:"+e.Package+":"+e.CVE, "critical", e, "f_kev_os", e.Package, e.Version, e.CVE, e.Name, r["upgrade_command"]))
-			}
+			all = append(all, osKEVFindings(r)...)
 		}
 		// The same for application dependencies (npm, PyPI, Composer, Go, RubyGems).
 		r, err = tools.AppVulns(ctx, env.HTTP, env.AppPaths)
@@ -741,4 +738,16 @@ func fileChangesUnchecked(r map[string]any) string {
 		return ""
 	}
 	return fmt.Sprintf("\n\nNot checked: file changes under %d paths (%q).\n", len(unread), cutLine(mask(strings.Join(unread, ", "))))
+}
+
+// osKEVFindings are the critical findings of the OS packages' actively
+// exploited vulnerabilities (CISA KEV): OSV's and the third-party PHP and
+// nginx compared with their upstream alike.
+func osKEVFindings(r map[string]any) []finding {
+	var out []finding
+	list, _ := r["actively_exploited"].([]tools.Exploit)
+	for _, e := range list {
+		out = append(out, newFinding("kev:"+e.Package+":"+e.CVE, "critical", e, "f_kev_os", e.Package, e.Version, e.CVE, e.Name, r["upgrade_command"]))
+	}
+	return out
 }
