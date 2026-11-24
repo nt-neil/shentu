@@ -30,6 +30,31 @@ Chinese for the zh-TW pages; keep the two in step.
   `phar://` wrapper for the server-side request and phar rules; the path rules still report it. An
   `in_array()` lookup of `basename($p)` or `intval($id)` no longer validates `$p` or `$id`:
   `../../x/log.txt` and `1 OR 1` pass it.
+- `shentu patrol --dry-run` prints all its titles (each attack attempt, the summary past the
+  round's limit, the attack detection notice) in the setting's language, as they are sent; they
+  were always in English.
+- Fixed the v0.5.6 known issue: `new $var(...)` is no longer taken as a call of the parameter
+  `$var`. It makes an object of the class `$var` names and calls no callable, as `NEW $var(...)` in
+  any case does too. A caller passing a variable there is no longer marked as having calls not all
+  followed, and the argument's input no longer reaches the function's return, where it could be
+  reported falsely (`echo get_entity($_GET['a'], $c)` reported `php-xss-echo-html`). Plugins that
+  bundle the Freemius SDK (`fs_get_entity($entity, $class)`) had the most such files.
+- block_ip's login index reads a flood with a lighter read, with the same result as the full read.
+  While the index is full, addresses with no event in the window are pruned at most once an hour of
+  event time, no longer for every event of an address without a slot. A journal line of string
+  fields only is read by a flat reader that gives the same fields as the full one; any other line
+  goes to the full reader as before. The patrol reads on past a read cut short by its time, each
+  read saved, until it has read to the end or spent 15 minutes, so a check between patrols reads
+  only what came since. An address that may be among those past the index's 65,536 is still refused,
+  never let through.
+- The patrol catches the login index up after its checks, its notice and the attack detection
+  alerts, not before them: in a flood the catching up can take up to 15 minutes, and that round's
+  notices no longer wait for it.
+- The site's release river: a release's peek stays inside the river at every width (at 844px the
+  pages scrolled sideways by 3px); the labels under the lamps (version, date, rule count) show only
+  where they have room, the newest and the x.y.0 releases first, and a hidden one shows on hover or
+  focus of its lamp (they ran into each other at 844px and 1440px); each lamp's link reads out its
+  version, date, rule count and bench result.
 
 ### Known issues
 
