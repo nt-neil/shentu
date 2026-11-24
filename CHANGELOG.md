@@ -13,7 +13,8 @@ Chinese for the zh-TW pages; keep the two in step.
   `->filter_input(`) when its first argument is one of these constants, is request input in each
   PHP rule that reads `$_GET`, `$_POST` or `$_COOKIE`. A first argument that is a variable or
   another constant (such as `INPUT_SERVER`) is not. A number or bool filter (`FILTER_VALIDATE_INT`,
-  `FILTER_VALIDATE_BOOL`, `FILTER_SANITIZE_NUMBER_INT` and others) gives a value with no input in
+  `FILTER_VALIDATE_BOOL`, `FILTER_SANITIZE_NUMBER_INT` and others, also with flags such as
+  `| FILTER_NULL_ON_FAILURE` or as a named `filter:` argument) gives a value with no input in
   it; `FILTER_SANITIZE_SPECIAL_CHARS` cleans in the rules that take `htmlspecialchars()` as a
   sanitizer; a URL filter does not clean.
 

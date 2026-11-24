@@ -1624,6 +1624,28 @@ func filterInputAt(s *pat) bool {
 	return n == "filter_input" || n == "filterinput"
 }
 
+// filterOf returns, in lower case, the filter a filter_input call names: the
+// argument named filter:, else the third when it is not named, and of flags
+// or-ed in (FILTER_VALIDATE_INT | FILTER_NULL_ON_FAILURE) the first constant.
+func filterOf(args [][]Token) string {
+	f := stripParens(args[2])
+	for _, x := range args {
+		if x = stripParens(x); len(x) > 1 && x[0].Kind == Ident && x[1].op(":") && strings.EqualFold(x[0].Text, "filter") {
+			f = x
+		}
+	}
+	if len(f) > 1 && f[0].Kind == Ident && f[1].op(":") {
+		if !strings.EqualFold(f[0].Text, "filter") {
+			return "" // the third argument is named, and not filter:
+		}
+		f = f[2:]
+	}
+	if j := slices.IndexFunc(f, func(t Token) bool { return t.op("|") }); j >= 0 {
+		f = f[:j]
+	}
+	return constArg(f)
+}
+
 // numericFilters leave only a number or a bool (or false or null when the
 // value does not pass), none of which carries an injection in any rule.
 var numericFilters = words("filter_validate_int filter_validate_float filter_validate_bool filter_validate_boolean " +
@@ -1674,15 +1696,18 @@ func (a *analysis) srcMatchAt(s *pat, t []Token, i int) (int, bool) {
 		arg = arg[2:] // a named argument: filter: 'raw'
 	}
 	if a.php && filterInputAt(s) && len(args) > 2 {
-		switch f := constArg(stripParens(args[2])); {
+		switch f := filterOf(args); {
 		case numericFilters[f]:
 			return 0, false // filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT): a number, a bool or false/null
 		case escFilters[f] && a.cleansWith("htmlspecialchars"):
-			return 0, false // FILTER_SANITIZE_SPECIAL_CHARS is htmlspecialchars(), where the rule takes that as cleaning
+			// FILTER_SANITIZE_SPECIAL_CHARS is htmlspecialchars(), so it cleans
+			// only where the rule lists htmlspecialchars among its sanitizers: an
+			// XSS rule naming esc_html alone would keep it as input.
+			return 0, false
 		}
 	}
-	if c := constArg(arg); c != "" && s.srcVals[c] {
-		return end, !s.srcVals["!"+c] // a constant named among the values: filter_input(INPUT_POST, ...)
+	if c := constArg(arg); a.php && c != "" && s.srcVals[c] {
+		return end, !s.srcVals["!"+c] // a PHP constant named among the values: filter_input(INPUT_POST, ...); in JS, req.get(host) is a variable
 	}
 	if len(arg) != 1 || arg[0].Kind != Str || len(arg[0].Parts) > 0 {
 		return end, len(arg) > 0 && s.srcVals["?"] // a name not written out: "?" takes it

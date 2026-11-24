@@ -37,6 +37,13 @@ func TestFilterInputSources(t *testing.T) {
 			[]string{"5:php-open-redirect-redirect"}},
 		{"a filterInput whose first argument is a variable (no finding)", "<?php\nheader('Location: ' . $x->filterInput($a, 'k'));\n", nil},
 		{"a filterInput whose first argument is another constant (no finding)", "<?php\nheader('Location: ' . $x->filterInput(MY_FIELDS, 'k'));\n", nil},
+		{"FILTER_VALIDATE_INT | FILTER_NULL_ON_FAILURE (no finding)", "<?php\n$id = filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT | FILTER_NULL_ON_FAILURE);\nmysqli_query($c, \"SELECT * FROM t WHERE id = $id\");\n", nil},
+		{"a named filter: FILTER_VALIDATE_INT (no finding)", "<?php\n$id = filter_input(INPUT_GET, 'id', filter: FILTER_VALIDATE_INT);\nmysqli_query($c, \"SELECT * FROM t WHERE id = $id\");\n", nil},
+		{"every argument named, filter: \\FILTER_VALIDATE_INT (no finding)", "<?php\n$id = filter_input(type: INPUT_GET, var_name: 'id', filter: \\FILTER_VALIDATE_INT);\nmysqli_query($c, \"SELECT * FROM t WHERE id = $id\");\n", nil},
+		{"FILTER_UNSAFE_RAW | FILTER_FLAG_STRIP_LOW is still input", "<?php\n$id = filter_input(INPUT_GET, 'id', FILTER_UNSAFE_RAW | FILTER_FLAG_STRIP_LOW);\nmysqli_query($c, \"SELECT * FROM t WHERE id = $id\");\n",
+			[]string{"3:php-sqli-string-concat"}},
+		{"a named options: third is still input", "<?php\n$id = filter_input(INPUT_GET, 'id', options: FILTER_VALIDATE_INT);\nmysqli_query($c, \"SELECT * FROM t WHERE id = $id\");\n",
+			[]string{"3:php-sqli-string-concat"}},
 		{"$_GET (control)", "<?php\nheader('Location: ' . $_GET['u']);\n", []string{"2:php-open-redirect-redirect"}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -48,6 +55,43 @@ func TestFilterInputSources(t *testing.T) {
 			var got []string
 			for _, f := range append(own, part.Found...) {
 				got = append(got, itoa(f.Line)+":"+f.RuleID)
+			}
+			slices.Sort(got)
+			got = slices.Compact(got)
+			if !slices.Equal(got, c.want) {
+				t.Errorf("reported %v, want %v", got, c.want)
+			}
+		})
+	}
+}
+
+// source_args name constants (INPUT_POST) only in PHP. In JS a name is a
+// variable whose value is unrelated to it, so req.get(host) is not the Host
+// header, while req.get('host') is.
+func TestSourceArgConstantsPHPOnly(t *testing.T) {
+	e := engineForTest(t)
+	express := "const express = require('express');\nconst app = express();\napp.get('/x', async (req, res) => {\n"
+	next := "import { headers } from 'next/headers';\nimport { redirect } from 'next/navigation';\nexport default function Page() {\n"
+	for _, c := range []struct {
+		name, path, src string
+		want            []string
+	}{
+		{"a variable named host (no host-header finding)", "a.js", express + "  const host = pickHeaderName();\n  await fetch('http://' + req.get(host) + '/x');\n});\n", nil},
+		{"a variable HOST holding another header (no host-header finding)", "a.js", express + "  const HOST = 'x-real-ip';\n  await fetch('http://' + req.get(HOST) + '/x');\n});\n", nil},
+		{"Next headers().get(host) (no finding)", "app/page.js", next + "  const host = 'x-target';\n  redirect('https://' + headers().get(host) + '/a');\n}\n", nil},
+		{"req.get('host') (control)", "a.js", express + "  await fetch('http://' + req.get('host') + '/x');\n});\n", []string{"4:js-ssrf-host-header"}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			files := map[string]string{c.path: c.src}
+			pr := e.NewProject([]string{c.path}, func(p string) ([]byte, error) { return []byte(files[p]), nil }, ProjectOptions{})
+			src := []byte(c.src)
+			own, _, _ := e.ScanTimed(LangOf(c.path), c.path, src)
+			part, _ := pr.ScanCallsPart(c.path, src, nil)
+			var got []string
+			for _, f := range append(own, part.Found...) {
+				if f.RuleID == "js-ssrf-host-header" || f.RuleID == "js-open-redirect-next" {
+					got = append(got, itoa(f.Line)+":"+f.RuleID)
+				}
 			}
 			slices.Sort(got)
 			got = slices.Compact(got)
