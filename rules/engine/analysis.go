@@ -1625,8 +1625,11 @@ func filterInputAt(s *pat) bool {
 }
 
 // filterOf returns, in lower case, the filter a filter_input call names: the
-// argument named filter:, else the third when it is not named, and of flags
-// or-ed in (FILTER_VALIDATE_INT | FILTER_NULL_ON_FAILURE) the first constant.
+// argument named filter:, else the third when it is not named. Flags belong in
+// the options argument: or-ed into the filter (FILTER_VALIDATE_INT |
+// FILTER_NULL_ON_FAILURE) they make another ID, which PHP 7 runs as
+// FILTER_DEFAULT (the raw value) and which may be another filter (with
+// FILTER_FLAG_ENCODE_LOW, 257|16 is FILTER_VALIDATE_URL), so it names none.
 func filterOf(args [][]Token) string {
 	f := stripParens(args[2])
 	for _, x := range args {
@@ -1639,9 +1642,6 @@ func filterOf(args [][]Token) string {
 			return "" // the third argument is named, and not filter:
 		}
 		f = f[2:]
-	}
-	if j := slices.IndexFunc(f, func(t Token) bool { return t.op("|") }); j >= 0 {
-		f = f[:j]
 	}
 	return constArg(f)
 }
