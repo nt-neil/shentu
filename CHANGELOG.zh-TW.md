@@ -8,6 +8,9 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 - PHP 規則會讀 `filter_input()`。用 `filter_input(INPUT_GET, ...)`、`INPUT_POST` 或 `INPUT_COOKIE` 取得的值，以及應用程式自己同名的方法（`->filterInput(`、`->filter_input(`）在第一個參數是這幾個常數時取得的值，在每一條會讀 `$_GET`、`$_POST` 或 `$_COOKIE` 的 PHP 規則裡都算請求輸入。第一個參數是變數或其他常數（例如 `INPUT_SERVER`）時不算。數字或 bool 的 filter（`FILTER_VALIDATE_INT`、`FILTER_VALIDATE_BOOL`、`FILTER_SANITIZE_NUMBER_INT` 等，寫成具名參數 `filter:` 也一樣）取得的值不帶輸入，但用 `|` 加上 flag 時不算（`FILTER_VALIDATE_INT | FILTER_NULL_ON_FAILURE` 是另一個 filter ID，PHP 7 會當成 `FILTER_DEFAULT`）；`FILTER_SANITIZE_SPECIAL_CHARS` 在把 `htmlspecialchars()` 當清理函式的規則裡算清理過；URL 的 filter 不算清理。
 - macOS：netstat 給的 pid 是 0 的 listening socket，看不出是哪個程序，所以 listening port 的清單會標成部分（partial），並寫明有幾個，不再當成每個 owner 都知道的完整清單。
 - `shentu patrol --dry-run` 顯示的所有標題（每一組攻擊紀錄、超過單輪上限的合併通知、攻擊偵測的通知）都改用設定的語言，和實際送出的通知一樣；之前一律是英文。
+- 修正 v0.5.6 的已知問題：`new $var(...)` 不再被當成呼叫參數 `$var`。它是用 `$var` 指的類別建立物件，並沒有呼叫 callable；大寫的 `NEW $var(...)` 也一樣。在這個位置傳入變數的呼叫端，不再被標成「呼叫沒有全部追完」，參數帶的輸入也不再被當成流到函式的回傳值，因此不會再出現這類誤報（`echo get_entity($_GET['a'], $c)` 原本會回報 `php-xss-echo-html`）。附帶 Freemius SDK（`fs_get_entity($entity, $class)`）的外掛，這種檔案最多。
+- block_ip 的登入索引在大量登入紀錄之後追得比較快。索引滿的時候，720 小時內沒有事件的位址最多每一小時（以事件時間計）清掉一次，不再每碰到一個沒有位置的位址的事件就清一次。只有字串欄位的 journal 行改用平面的讀法，讀出的欄位和完整讀法相同；其他的行照舊交給完整讀法。巡檢讀到時間用完時，會先存下讀到的部分再接著讀，直到讀到結尾或用掉 15 分鐘，所以兩次巡檢之間的檢查只要讀新進來的部分。可能在索引的 65,536 個位址之外的位址，仍然一律拒絕，不會放行。
+- 網站的發版河道：每個版本的說明框在任何頁面大小下都留在河道裡（原本在 844px 時頁面會多捲動 3px）；燈下的文字（版本、日期、規則數）只在放得下時顯示，最新版和 x.y.0 優先，沒有顯示的在指標移到燈上或用鍵盤選到燈時會出現（原本在 844px 和 1440px 燈下的文字都會擋到下一盞燈的文字）；每盞燈的連結會讀出版本、日期、規則數和 bench 結果。
 - 套件弱點檢查（`vulns`）會把第三方的 PHP 和 nginx 套件（來自 deb.sury.org、ondrej PPA、Remi 的套件庫或 nginx.org）和 php.net、nginx.org 2026-11-19 的版本比對，用的是 PHP 和 nginx 檢查的同一份表格。OSV 只收發行版自己的公告，所以這些套件在 OSV 裡什麼都對不到，以前只會列在 `third_party_unchecked`。現在套件版本範圍內的每個 CVE 都會列進弱點面（ecosystem 是 `upstream:php` 或 `upstream:nginx`，附上修正版本，CISA KEV 有列出的會標示 KEV），也列在 `third_party_upstream`；套件的 changelog 已經列出的 CVE（backport 的修正）在那裡列為 backported，不回報。php-fpm 另外加上 FPM 和狀態頁的 CVE，php-cgi 加上 CGI 的 CVE；mod_php 和 CLI 只比對引擎本身的 CVE。讀不到版本，或是 php.net 已經不再修正的分支，套件仍然列在 `third_party_unchecked`，原因寫在 `why`。這些套件的 OSV 結果照樣保留，因為套件也可能比發行版的修正還舊。
 
 ### 已知問題
@@ -15,6 +18,7 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 - 從資料庫讀回來的值，如果讀它的查詢用了輸入，即使已經用 escape 函式處理過，也會被當成輸入（例如 `$row = $db->LoadSingle("... '" . mysqli_real_escape_string($c, $_POST['id']) . "'")` 之後，把 `$row['tag']` 放進另一個查詢）：引擎把不認得的函式的回傳值，當成帶有參數的輸入。YesWiki 的 despam.php 就是這樣被回報的。
 - 應用程式自己產生同站網址的函式（YesWiki 的 `$this->wiki->Href('', $name)`、`href()`）不會被認出來，所以導向到這種網址也會被回報為 open redirect（YesWiki 的 LoginAction.php、DuplicateHandler.php）。
 - macOS 27 上，由 ad-hoc 簽章的程式（release binary 就是）啟動的程序，netstat 看不到 Internet socket：`netstat -anv` 什麼都不輸出（exit 0）。這時 shentu 改用 lsof 列出 listening port，但 lsof 只看得到同一個使用者的程序，所以清單會標成部分。在 Terminal 裡直接跑 netstat 就看得到。macOS 15 沒有這個問題。
+- 有大量登入紀錄時，巡檢會先追登入索引，最多 15 分鐘，然後才做其他檢查，所以這一輪的其他檢查和通知最多會慢 15 分鐘才開始。
 
 ## v0.5.6 — 2026-11-24
 
