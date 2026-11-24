@@ -189,11 +189,13 @@ func TestSitePackagesPth(t *testing.T) {
 		"__editable__.mixed-1.0.pth":         "import __editable___a_finder; __editable___b_finder.install()\n",
 		"easy-install.pth":                   "import sys; sys.__plen = len(sys.path)\n./foo.egg\n",
 	}
-	files["cr.pth"] = "/opt/lib\rimport os\r"     // Python ends a line at \r too
-	files["bom.pth"] = "\ufeffimport os\n"        // and drops a UTF-8 BOM
-	files["vt.pth"] = "/opt/lib\vimport os\n"     // 3.13 splits as str.splitlines()
-	files["ls.pth"] = "/opt/lib\u2028import os\n" // U+2028 too
-	files["nel.pth"] = "/opt/lib\x85import os\n"  // and 0x85 read in the locale's encoding
+	files["cr.pth"] = "/opt/lib\rimport os\r"               // Python ends a line at \r too
+	files["bom.pth"] = "\ufeffimport os\n"                  // and drops a UTF-8 BOM
+	files["vt.pth"] = "/opt/lib\vimport os\n"               // 3.13 splits as str.splitlines()
+	files["ls.pth"] = "/opt/lib\u2028import os\n"           // U+2028 too
+	files["nel.pth"] = "/opt/lib\x85import os\n"            // and 0x85 read in the locale's encoding
+	files["x-nspkg.pth"] = nspkg + "\v__import__('os')\n"   // known up to \v: 3.12 runs it all
+	files["y-nspkg.pth"] = nspkg + "\x85__import__('os')\n" // known up to 0x85, not UTF-8: 3.12 and UTF-8 run it all
 	for n, c := range files {
 		os.WriteFile(filepath.Join(sp, n), []byte(c), 0o644)
 	}
@@ -238,6 +240,8 @@ func TestSitePackagesPth(t *testing.T) {
 		"vt.pth":                             {ImportLines: 1},
 		"ls.pth":                             {ImportLines: 1},
 		"nel.pth":                            {ImportLines: 1},
+		"x-nspkg.pth":                        {ImportLines: 1},
+		"y-nspkg.pth":                        {ImportLines: 1},
 		"bad/_virtualenv.pth":                {ImportLines: 1},
 		"bad/distutils-precedence.pth":       {ImportLines: 1},
 		"bad/__editable__.mypkg-1.0.pth":     {ImportLines: 1},

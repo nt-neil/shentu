@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/nt-neil/shentu/internal/osutil"
 )
@@ -366,7 +367,11 @@ var pthLineEnd = strings.NewReplacer("\r\n", "\n", "\r", "\n", "\v", "\n", "\f",
 func pthImports(dir, name string, b []byte) (PthFile, bool) {
 	var f PthFile
 	var lines []string
-	s := pthLineEnd.Replace(strings.TrimPrefix(string(b), "\ufeff"))
+	raw := strings.TrimPrefix(string(b), "\ufeff")
+	// A tool's own file is plain UTF-8 lines: one Pythons would split
+	// differently (a byte not UTF-8, another line break) is never known.
+	plain := utf8.ValidString(raw) && !strings.ContainsAny(raw, "\v\f\x1c\x1d\x1e\u0085\u2028\u2029")
+	s := pthLineEnd.Replace(raw)
 	for _, l := range strings.Split(s, "\n") {
 		if strings.HasPrefix(l, "import ") || strings.HasPrefix(l, "import\t") {
 			lines = append(lines, l)
@@ -389,7 +394,7 @@ func pthImports(dir, name string, b []byte) (PthFile, bool) {
 			}
 			all = all && one
 		}
-		if all && (k.verify == nil || k.verify(dir, name, lines)) {
+		if all && plain && (k.verify == nil || k.verify(dir, name, lines)) {
 			f.Known = k.label
 		}
 		break
