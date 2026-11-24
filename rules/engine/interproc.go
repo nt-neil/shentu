@@ -1458,6 +1458,15 @@ func (a *analysis) runBody(fi *fnInfo, st state, sources bool) *summRun {
 	x.paramTypes(fi.f)
 	x.curParams = fi.params
 	x.curMoved = paramsMoved(fi.f.body, fi.params)
+	x.curUnset = unsetParams(fi.f.body, fi.params)
+	for _, p := range fi.params {
+		if e, ok := st[p]; ok && e.taint {
+			if x.curGiven == nil {
+				x.curGiven = map[string]bool{}
+			}
+			x.curGiven[p] = true
+		}
+	}
 	x.summ.pcall = map[[2]int]bool{}
 	a.sc.runs++
 	x.block(fi.f.body, st)

@@ -144,6 +144,8 @@ type analysis struct {
 	seed        []*paramSeed      // the values a callback's parameters are called with (whenSeeds, pcallSeeds), for the next function analysed
 	curParams   []string          // the parameters of the function being analysed (the innermost), by name: $callback(...) of one is no other file's
 	curMoved    map[string]bool   // ... those its body assigns again ($cb = wrap($cb)): no longer what the caller passed
+	curGiven    map[string]bool   // ... in a summary's run, those given input (guardedParams)
+	curUnset    map[string]bool   // ... in a summary's run, those the body unsets (guardedParams)
 	laravelVars map[string]bool   // per PHP variable, whether it may be Laravel's request (laravelRequest)
 	phpUses     map[string]string // PHP: short class name (lower case) to the name a use statement gives it (phpUseOther)
 	branchBlock bool              // the next block is an if's branch, whose request aliases the if joins (block, sIf)
@@ -286,6 +288,7 @@ func (a *analysis) stmt(s *stmt, st state) (state, uint8) {
 						}
 					}
 				}
+				a.guardedParams(st, set)
 				a.summ.checks = append(a.summ.checks, set)
 			}
 		}
@@ -707,6 +710,9 @@ func (a *analysis) assign(st state, t []Token) (val, bool) {
 				st[canonKey+key] = entry{san: true}
 			} else if _, had := st[canonKey+key]; had {
 				delete(st, canonKey+key)
+			}
+			if a.php {
+				a.setRealOf(st, key, rhs, t[k].Text == "=")
 			}
 			a.setURLOf(st, key, rhs, t[k].Text == "=", tg[0].Line)
 			a.urlWrite(st, key, v)
@@ -1941,12 +1947,19 @@ func (a *analysis) cleans(st state, cond []Token, truth bool) ([]keyRef, []strin
 // allowed host validates, for the SSRF rules, the URL it is the host of
 // (urlguard.go).
 func (a *analysis) guard(st state, atom []Token) (bool, []keyRef) {
+	if pos, keys := a.realFound(st, atom); len(keys) > 0 {
+		return pos, a.urlChecked(st, atom, keys)
+	}
 	pos, keys := a.guardAtom(st, atom)
+	if a.callAtom(atom) {
+		keys = a.realOrigins(st, keys) // a check of $real (strpos($real, $base) === 0), not its value ($real === false)
+	}
 	return pos, a.urlChecked(st, atom, keys)
 }
 
 func (a *analysis) guardAtom(st state, atom []Token) (pos bool, keys []keyRef) {
 	pos = true
+	strictZero := false // the atom compared a result with 0 by === or !==
 	atom = stripParens(atom)
 	for len(atom) > 0 && (atom[0].op("!") || a.py && atom[0].word("not")) {
 		pos, atom = !pos, stripParens(atom[1:])
@@ -2040,6 +2053,7 @@ func (a *analysis) guardAtom(st state, atom []Token) (pos bool, keys []keyRef) {
 			if zeroMeansMatch[lhs[0].Text] == ne {
 				pos = !pos
 			}
+			strictZero = op == "===" || op == "!=="
 		case "false", "null", "none":
 			if eq {
 				pos = !pos
@@ -2050,6 +2064,9 @@ func (a *analysis) guardAtom(st state, atom []Token) (pos bool, keys []keyRef) {
 		atom = stripParens(lhs)
 	} else if len(atom) > 0 && zeroIsValid[atom[0].Text] {
 		pos = !pos // if (validate_file($f)) { wp_die(); }: a non-zero result means invalid
+	}
+	if n := len(atom); n > 2 && atom[0].Kind == Ident && posOrFalse[strings.ToLower(atom[0].Text)] && atom[1].op("(") && closeOf(atom, 1) == n-1 && !strictZero {
+		return pos, nil // strpos($p, $base) is 0 at the start, false when absent and true elsewhere: only === 0 says "starts with"
 	}
 	if keys, ok := a.regexPrefix(st, atom); ok {
 		return pos, keys // re.match(re.escape(base) + r'/[a-z]', url): the value starts with base/ and a letter
@@ -2062,6 +2079,11 @@ func (a *analysis) guardAtom(st state, atom []Token) (pos bool, keys []keyRef) {
 	}
 	return pos, a.checkKeys(st, atom)
 }
+
+// posOrFalse are the PHP prefix checks that give a position or false: only a
+// strict comparison with 0 tells "starts with" from "absent" (false == 0) and
+// from "found further on" (a truthy position).
+var posOrFalse = map[string]bool{"strpos": true, "stripos": true}
 
 // zeroIsValid are checks that return 0 for a valid value and an error code otherwise.
 var zeroIsValid = map[string]bool{"validate_file": true}
@@ -2137,7 +2159,7 @@ func (a *analysis) checkKeys(st state, atom []Token) []keyRef {
 	if a.php && n > 2 && (atom[0].word("in_array") || atom[0].word("array_key_exists") || atom[0].word("validate_file")) &&
 		atom[1].op("(") && closeOf(atom, 1) == n-1 {
 		args := splitTop(atom[2:n-1], isComma)
-		if len(args) >= 2 && a.allowlist(st, args[1]) && !(atom[0].word("in_array") && looseNumbers(args)) {
+		if len(args) >= 2 && a.allowlist(st, args[1]) && !(atom[0].word("in_array") && looseNumbers(args)) && !lossyLookup(args[0]) {
 			return a.keysOf(args[0])
 		}
 		return nil
