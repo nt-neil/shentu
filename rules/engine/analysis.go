@@ -1034,11 +1034,12 @@ func (a *analysis) fixedStart(st state, t []Token) bool {
 	case a.php && n == 1 && first[0].Kind == Ident && !a.kw[first[0].Text] && !isLiteral(first):
 		if netClasses[a.r.rule.Class] {
 			// a URL: a constant defined in this file whose text fixes the host, or
-			// one followed by a path segment (WP_CONTENT_DIR . '/uploads/' . $f)
+			// a framework's directory followed by a path segment
+			// (WP_CONTENT_DIR . '/uploads/' . $f)
 			if v, ok := a.defs[first[0].Text]; ok {
 				return a.fixedText(v)
 			}
-			if len(parts) < 2 || len(parts[1]) != 1 || parts[1][0].Kind != Str {
+			if !dirConsts[first[0].Text] || len(parts) < 2 || len(parts[1]) != 1 || parts[1][0].Kind != Str {
 				return false
 			}
 			tk := parts[1][0]
