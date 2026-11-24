@@ -5,7 +5,7 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 
 ## v0.5.7 (unreleased)
 
-- `shentu patrol --dry-run` 在終端機印出攻擊偵測注意事項時，標題改用設定的語言，和實際送出的通知一樣；之前一律是英文的「Attack detection notice」。
+- `shentu patrol --dry-run` 顯示攻擊偵測的通知時，標題改用設定的語言，和實際送出的通知一樣；之前一律是英文的「Attack detection notice」。
 
 ## v0.5.6 — 2026-11-24
 
