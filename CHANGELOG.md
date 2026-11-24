@@ -45,6 +45,14 @@ Chinese for the zh-TW pages; keep the two in step.
   where they have room, the newest and the x.y.0 releases first, and a hidden one shows on hover or
   focus of its lamp (they ran into each other at 844px and 1440px); each lamp's link reads out its
   version, date, rule count and bench result.
+- PHP XSS in a `<script>` body: a value escaped with `esc_attr()`, `esc_url()`, `esc_html()` or
+  `htmlspecialchars(..., ENT_QUOTES)` inside a quoted JS string
+  (`var tab = '<?php echo esc_attr($_GET['tab']); ?>';`) is no longer reported when the text after
+  the PHP block closes that string on the same line: a `<script>` body decodes no entity, so with
+  both quotes and `<` encoded the value stays inside the string. It is still reported in an `on*`
+  attribute (which decodes entities first), in a template literal, after a block that writes a
+  quote or a backslash, on a line ending in a `\` continuation, with `htmlspecialchars()` without
+  `ENT_QUOTES`, and with `sanitize_text_field()`.
 
 ### Known issues
 
