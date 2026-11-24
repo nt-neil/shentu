@@ -411,9 +411,9 @@
   </ol>
 </div>
 
-<div class="newest" id="rv-0.5.7" data-groups="1">
+<div class="newest" id="rv-0.5.7" data-groups="2">
   <div class="newest-head"><p class="word">籌備中</p><span class="ver">v0.5.7</span><b class="badge">即將發布</b></div>
-  <div class="grp grp-reach"><h4><i aria-hidden="true"></i>看得更遠</h4><ul><li><code>shentu patrol --dry-run</code> 顯示攻擊偵測的通知時，標題改用設定的語言，和實際送出的通知一樣；之前一律是英文的「Attack detection notice」。</li></ul></div>
+  <div class="grp grp-reach"><h4><i aria-hidden="true"></i>看得更遠</h4><ul><li>macOS：netstat 給的 pid 是 0 的 listening socket，看不出是哪個程序，所以 listening port 的清單會標成部分（partial），並寫明有幾個，不再當成每個 owner 都知道的完整清單。</li><li><code>shentu patrol --dry-run</code> 顯示攻擊偵測的通知時，標題改用設定的語言，和實際送出的通知一樣；之前一律是英文的「Attack detection notice」。</li></ul></div><div class="grp grp-known"><h4><i aria-hidden="true"></i>已知問題</h4><ul><li>macOS 27 上，由 ad-hoc 簽章的程式（release binary 就是）啟動的程序，netstat 看不到 Internet socket：<code>netstat -anv</code> 什麼都不輸出（exit 0）。這時 shentu 改用 lsof 列出 listening port，但 lsof 只看得到同一個使用者的程序，所以清單會標成部分。在 Terminal 裡直接跑 netstat 就看得到。macOS 15 沒有這個問題。</li></ul></div>
 </div>
 
 

@@ -316,9 +316,9 @@
   </ol>
 </div>
 
-<div class="newest" id="rv-0.5.7" data-groups="1">
+<div class="newest" id="rv-0.5.7" data-groups="2">
   <div class="newest-head"><p class="word">In progress</p><span class="ver">v0.5.7</span><b class="badge">Coming soon</b></div>
-  <div class="grp grp-reach"><h4><i aria-hidden="true"></i>Sees further</h4><ul><li><code>shentu patrol --dry-run</code> prints the attack detection notice under its title in the setting&#39;s language, as the notice itself is sent; it was always &#34;Attack detection notice&#34;.</li></ul></div>
+  <div class="grp grp-reach"><h4><i aria-hidden="true"></i>Sees further</h4><ul><li>macOS: a listening socket netstat gives with pid 0 has no owner to name, so the list of listening ports is marked partial and says how many, no longer complete as if every owner were known.</li><li><code>shentu patrol --dry-run</code> prints the attack detection notice under its title in the setting&#39;s language, as the notice itself is sent; it was always &#34;Attack detection notice&#34;.</li></ul></div><div class="grp grp-known"><h4><i aria-hidden="true"></i>Known issues</h4><ul><li>macOS 27 hides the Internet sockets from netstat for any process started by an ad-hoc signed program, as the release binaries are: <code>netstat -anv</code> writes nothing there (exit 0). shentu then lists the listening ports with lsof, which sees only its own user&#39;s processes, and marks the list partial. Run from a terminal, netstat shows them. macOS 15 is not affected.</li></ul></div>
 </div>
 
 
@@ -676,7 +676,7 @@
       <h2><span class="word">In progress</span> <span class="ver">v0.5.7</span></h2>
     </div>
     <div class="body">
-      <ul class="items"><li><code>shentu patrol --dry-run</code> prints the attack detection notice under its title in the setting&#39;s language, as the notice itself is sent; it was always &#34;Attack detection notice&#34;.</li></ul>
+      <ul class="items"><li>macOS: a listening socket netstat gives with pid 0 has no owner to name, so the list of listening ports is marked partial and says how many, no longer complete as if every owner were known.</li><li><code>shentu patrol --dry-run</code> prints the attack detection notice under its title in the setting&#39;s language, as the notice itself is sent; it was always &#34;Attack detection notice&#34;.</li><li>macOS 27 hides the Internet sockets from netstat for any process started by an ad-hoc signed program, as the release binaries are: <code>netstat -anv</code> writes nothing there (exit 0). shentu then lists the listening ports with lsof, which sees only its own user&#39;s processes, and marks the list partial. Run from a terminal, netstat shows them. macOS 15 is not affected.</li></ul>
       
       <div class="grow">
         <p><span class="bar" style="--w: 100.0%"></span><b>127</b> rules</p>

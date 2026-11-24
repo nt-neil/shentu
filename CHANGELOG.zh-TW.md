@@ -5,7 +5,12 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 
 ## v0.5.7 (unreleased)
 
+- macOS：netstat 給的 pid 是 0 的 listening socket，看不出是哪個程序，所以 listening port 的清單會標成部分（partial），並寫明有幾個，不再當成每個 owner 都知道的完整清單。
 - `shentu patrol --dry-run` 顯示攻擊偵測的通知時，標題改用設定的語言，和實際送出的通知一樣；之前一律是英文的「Attack detection notice」。
+
+### 已知問題
+
+- macOS 27 上，由 ad-hoc 簽章的程式（release binary 就是）啟動的程序，netstat 看不到 Internet socket：`netstat -anv` 什麼都不輸出（exit 0）。這時 shentu 改用 lsof 列出 listening port，但 lsof 只看得到同一個使用者的程序，所以清單會標成部分。在 Terminal 裡直接跑 netstat 就看得到。macOS 15 沒有這個問題。
 
 ## v0.5.6 — 2026-11-24
 

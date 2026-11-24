@@ -8,8 +8,17 @@ Chinese for the zh-TW pages; keep the two in step.
 
 ## v0.5.7 (unreleased)
 
+- macOS: a listening socket netstat gives with pid 0 has no owner to name, so the list of listening
+  ports is marked partial and says how many, no longer complete as if every owner were known.
 - `shentu patrol --dry-run` prints the attack detection notice under its title in the setting's
   language, as the notice itself is sent; it was always "Attack detection notice".
+
+### Known issues
+
+- macOS 27 hides the Internet sockets from netstat for any process started by an ad-hoc signed
+  program, as the release binaries are: `netstat -anv` writes nothing there (exit 0). shentu then
+  lists the listening ports with lsof, which sees only its own user's processes, and marks the list
+  partial. Run from a terminal, netstat shows them. macOS 15 is not affected.
 
 ## v0.5.6 — 2026-11-24
 
