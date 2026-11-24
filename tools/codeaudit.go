@@ -15,7 +15,6 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"runtime/debug"
 	"slices"
 	"sort"
@@ -140,7 +139,7 @@ func WebRoots() []string {
 // WebRootsReport returns the folders nginx or Apache serve, and the
 // configuration files it could not read, each with why ("path (why)").
 func WebRootsReport() (roots, unreadable []string) {
-	if runtime.GOOS == "windows" {
+	if hostSource().Info().GOOS == "windows" { // the host read's OS: a Windows replay has IIS roots
 		return iisWebRoots(winSource())
 	}
 	return webRootsFrom(hostenv.DefaultWebConf.Globs)

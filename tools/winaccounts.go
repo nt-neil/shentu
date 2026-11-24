@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
-	"os"
 	"sort"
 	"strings"
 
@@ -78,9 +77,10 @@ func winAccountsAudit() (WinAccounts, error) {
 	for _, l := range [][]string{a.Administrators, a.LoginAccounts, a.Disabled} {
 		sort.Strings(l)
 	}
-	if st, err := os.Stat(winAdminKeys); err == nil {
-		k := KeyFile{User: "Administrators", Path: winAdminKeys, Modified: st.ModTime()}
-		if b, err := os.ReadFile(winAdminKeys); err == nil {
+	src := winSource() // the key file of the host read, not of the machine running the check
+	if st, err := hostenv.Stat(src, winAdminKeys); err == nil {
+		k := KeyFile{User: "Administrators", Path: winAdminKeys, Modified: st.ModTime}
+		if b, err := src.ReadFile(winAdminKeys); err == nil {
 			sc := bufio.NewScanner(bytes.NewReader(b))
 			for sc.Scan() {
 				if l := strings.TrimSpace(sc.Text()); l != "" && !strings.HasPrefix(l, "#") {
