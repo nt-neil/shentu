@@ -7,6 +7,7 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 
 - PHP 規則會讀 `filter_input()`。用 `filter_input(INPUT_GET, ...)`、`INPUT_POST` 或 `INPUT_COOKIE` 取得的值，以及應用程式自己同名的方法（`->filterInput(`、`->filter_input(`）在第一個參數是這幾個常數時取得的值，在每一條會讀 `$_GET`、`$_POST` 或 `$_COOKIE` 的 PHP 規則裡都算請求輸入。第一個參數是變數或其他常數（例如 `INPUT_SERVER`）時不算。數字或 bool 的 filter（`FILTER_VALIDATE_INT`、`FILTER_VALIDATE_BOOL`、`FILTER_SANITIZE_NUMBER_INT` 等，寫成具名參數 `filter:` 也一樣）取得的值不帶輸入，但用 `|` 加上 flag 時不算（`FILTER_VALIDATE_INT | FILTER_NULL_ON_FAILURE` 是另一個 filter ID，PHP 7 會當成 `FILTER_DEFAULT`）；`FILTER_SANITIZE_SPECIAL_CHARS` 在把 `htmlspecialchars()` 當清理函式的規則裡算清理過；URL 的 filter 不算清理。
 - macOS：netstat 給的 pid 是 0 的 listening socket，看不出是哪個程序，所以 listening port 的清單會標成部分（partial），並寫明有幾個，不再當成每個 owner 都知道的完整清單。
+- PHP 規則認得應用程式自己寫的 guard 函式。一個函式如果只有在檢查過路徑參數之後才回傳 true（白名單，例如 Welcart 的 `usces_is_reserved_file()`，或是 `realpath($p)` 加上 `strpos($real, $base) === 0`），在它回傳 true 的地方（`if (guard($f)) { ... }`，或 `if (!guard($f)) { die(); }` 之後），傳進去的值就算清理過；寫成別的 class 的方法也一樣。guard 裡改寫了參數、在檢查前就回傳 true，或只檢查檔案存在的，都不算。路徑規則把 `strpos(`、`stripos(` 和 `=== 0` 或 `!== 0` 的比較，當成檢查路徑起始的比對。`realpath($p)` 找到檔案的地方，對伺服器端請求和 phar 規則來說，`$p` 不再是 URL 或 `phar://` wrapper；路徑規則照樣回報。用 `in_array()` 查 `basename($p)` 或 `intval($id)`，不再算驗證了 `$p` 或 `$id`：`../../x/log.txt` 和 `1 OR 1` 都會通過這種查表。
 
 ### 已知問題
 

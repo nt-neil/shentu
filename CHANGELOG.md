@@ -20,6 +20,16 @@ Chinese for the zh-TW pages; keep the two in step.
   `htmlspecialchars()` as a sanitizer; a URL filter does not clean.
 - macOS: a listening socket netstat gives with pid 0 has no owner to name, so the list of listening
   ports is marked partial and says how many, no longer complete as if every owner were known.
+- PHP rules know an application's own guard function. A function that returns true only after
+  a check of its path parameter (an allowlist, as Welcart's `usces_is_reserved_file()`, or
+  `realpath($p)` with `strpos($real, $base) === 0`) cleans the value it was given where its result
+  is true (`if (guard($f)) { ... }`, or after `if (!guard($f)) { die(); }`), also as a method of
+  another class. A guard that assigns its parameter, returns true before the check, or only checks
+  that the file exists does not. `strpos(` and `stripos(` compared `=== 0` or `!== 0` are a prefix
+  check in the path rules. Where `realpath($p)` found the file, `$p` is no longer a URL or a
+  `phar://` wrapper for the server-side request and phar rules; the path rules still report it. An
+  `in_array()` lookup of `basename($p)` or `intval($id)` no longer validates `$p` or `$id`:
+  `../../x/log.txt` and `1 OR 1` pass it.
 
 ### Known issues
 
