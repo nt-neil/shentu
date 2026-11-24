@@ -107,7 +107,9 @@ type ProjectOptions struct {
 const DefaultProjectWork = 1_500_000_000
 
 // indexVersion changes whenever fileIndex changes, so an old cache is ignored.
-const indexVersion = "9"
+// 10: Limited means the work cap or the token limit, no longer the 3-second
+// clock, so a file an old cache did not mark may now be cut.
+const indexVersion = "10"
 
 type fileIndex struct {
 	Hash      string            `json:"h"`
@@ -896,8 +898,8 @@ func (p *Project) context(f string) *fileCtx {
 		return nil
 	}
 	c := &fileCtx{lang: fi.Lang, tree: parse(fi.Lang, toks, b), tokens: len(toks), rdefs: fileRecvDefs(fi.Lang, toks), rcls: fileRecvClasses(fi.Lang, toks), ifacts: p.e.importFacts(fi.Lang, toks), defs: phpDefines(fi.Lang, toks)}
-	if b.timeHit {
-		p.unread[f], p.unsteady = true, true
+	if b.hit {
+		p.unread[f], p.unsteady = true, true // the tree was cut short, by the clock or the work cap
 	}
 	c.ff = newFileFuncs(collectFuncs(c.tree, fi.Lang), fi.Lang)
 	p.keep(f, c)
