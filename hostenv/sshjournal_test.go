@@ -232,3 +232,32 @@ func FuzzParseJournalFlat(f *testing.F) {
 		}
 	})
 }
+
+// CursorSeq takes a cursor's s= and i= only from a whole cursor: one cut,
+// with a field missing or twice, or not hex, is not one (times decide).
+func TestCursorSeq(t *testing.T) {
+	const s = "0123456789abcdef0123456789ABCDEF"
+	whole := "s=" + s + ";i=1a2b;b=0123456789abcdef0123456789abcdef;m=5;t=6;x=7"
+	if id, n, ok := CursorSeq(whole); !ok || id != strings.ToLower(s) || n != 0x1a2b {
+		t.Errorf("%q: %q %d %v", whole, id, n, ok)
+	}
+	for _, c := range []string{
+		"", whole[:20], whole[:strings.Index(whole, ";i=")+3], // cut
+		"i=1a2b;b=x;m=5;t=6;x=7",                        // no s=
+		"s=" + s + ";b=x;m=5",                           // no i=
+		"s=" + s[:31] + ";i=1",                          // s= short
+		"s=" + s + "0;i=1",                              // s= long
+		"s=" + strings.Replace(s, "a", "g", 1) + ";i=1", // s= not hex
+		"s=" + s + ";i=xyz",                             // i= not hex
+		"s=" + s + ";i=",                                // i= empty
+		"s=" + s + ";i=0",                               // no entry 0
+		"s=" + s + ";i=10000000000000000",               // past 64 bits
+		"s=" + s + ";i=1;i=2",                           // twice
+		"s=" + s + ";s=" + s + ";i=1",
+		"s=" + s + ";i=1;junk", // a field without =
+	} {
+		if id, n, ok := CursorSeq(c); ok {
+			t.Errorf("%q: taken as %q %d", c, id, n)
+		}
+	}
+}

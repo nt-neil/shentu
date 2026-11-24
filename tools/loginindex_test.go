@@ -32,6 +32,9 @@ type fakeJournal struct {
 	entries []fakeEntry
 	reads   []string // "since <time>", "cursor <c>" or "after <c>", one per read
 	seq     int
+	// sid is the seqnum_id of the entries added from now on ("" the
+	// fixtures' one): a journal made anew.
+	sid string
 	// hangAfter: a read gives this many entries, then waits for its
 	// context to end (a read cut short); 0: no wait.
 	hangAfter int
@@ -39,6 +42,7 @@ type fakeJournal struct {
 
 type fakeEntry struct {
 	seq   int
+	sid   string
 	at    time.Time
 	comm  string
 	uid   int
@@ -47,7 +51,11 @@ type fakeEntry struct {
 }
 
 func (j *fakeJournal) cursorN(n int) string {
-	return fmt.Sprintf("s=0123456789abcdef0123456789abcdef;i=%x;b=0123456789abcdef0123456789abcdef;m=%x;t=%x;x=%x", n, n, n, n)
+	sid := j.sid
+	if sid == "" {
+		sid = "0123456789abcdef0123456789abcdef"
+	}
+	return fmt.Sprintf("s=%s;i=%x;b=0123456789abcdef0123456789abcdef;m=%x;t=%x;x=%x", sid, n, n, n, n)
 }
 
 // seqOf is the entry number a cursor names (its i=).
@@ -68,7 +76,7 @@ func (j *fakeJournal) addEntry(e fakeEntry) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	j.seq++
-	e.seq = j.seq
+	e.seq, e.sid = j.seq, j.sid
 	j.entries = append(j.entries, e)
 }
 
@@ -120,7 +128,7 @@ func (e fakeEntry) jsonLine() string {
 	}
 	comm, _ := json.Marshal(e.comm)
 	return fmt.Sprintf(`{"__CURSOR":"%s","__REALTIME_TIMESTAMP":"%d","_SYSTEMD_UNIT":"ssh.service","_UID":"%d","_PID":"812","_COMM":%s,"SYSLOG_IDENTIFIER":"sshd","MESSAGE":%s}`,
-		(&fakeJournal{}).cursorN(e.seq), e.at.UnixMicro(), e.uid, comm, msg)
+		(&fakeJournal{sid: e.sid}).cursorN(e.seq), e.at.UnixMicro(), e.uid, comm, msg)
 }
 
 func (j *fakeJournal) RunLinesCut(ctx context.Context, argv []string, max int, fn func(string, bool)) (hostenv.CmdResult, error) {
