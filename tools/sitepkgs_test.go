@@ -406,6 +406,20 @@ func TestSitePackagesSystem(t *testing.T) {
 		t.Errorf("a shadow in a folder a .pth adds: %q", k)
 	}
 	os.Remove(filepath.Join(extra, "_distutils_hack.py"))
+	os.WriteFile(filepath.Join(local, "extra.pth"), []byte(extra+"\u3000\x1f\n"), 0o644) // Python strips these too
+	os.WriteFile(filepath.Join(extra, "_distutils_hack.py"), []byte("x"), 0o644)
+	if k := known(); k[managed] != "" {
+		t.Errorf("a path line ending in U+3000: %q", k)
+	}
+	os.Remove(filepath.Join(extra, "_distutils_hack.py"))
+	zip := filepath.Join(t.TempDir(), "hack.zip") // a zip on sys.path is imported from
+	os.WriteFile(zip, []byte("PK"), 0o644)
+	os.WriteFile(filepath.Join(local, "zip.pth"), []byte(zip+"\n"), 0o644)
+	if k := known(); k[managed] != "" {
+		t.Errorf("a zip added: %q", k)
+	}
+	os.Remove(filepath.Join(local, "zip.pth"))
+	os.WriteFile(filepath.Join(local, "extra.pth"), []byte(extra+"\n"), 0o644)
 	os.Chmod(extra, 0) // an added folder that cannot be listed
 	if k := known(); k[managed] != "" && os.Getuid() != 0 {
 		t.Errorf("an added folder not listed: %q", k)

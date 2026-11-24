@@ -14,7 +14,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"syscall"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/nt-neil/shentu/internal/osutil"
@@ -341,8 +341,8 @@ func unverifiedDistutilsHack(dirs []string, complete bool) bool {
 	}
 	for _, d := range all {
 		ents, err := os.ReadDir(d)
-		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
-			continue // not there: nothing to import from it
+		if errors.Is(err, fs.ErrNotExist) {
+			continue // not there: nothing to import from it (a file there, a zip, can be imported from)
 		}
 		if err != nil {
 			return true
@@ -360,6 +360,9 @@ func unverifiedDistutilsHack(dirs []string, complete bool) bool {
 	}
 	return false
 }
+
+// pySpace is what Python's str.isspace() takes as white space.
+func pySpace(r rune) bool { return unicode.IsSpace(r) || r >= 0x1c && r <= 0x1f }
 
 // pthPaths are the folders the path lines of dir's .pth files add to
 // sys.path, read as site.py reads them (a line starting "#" or "import"
@@ -385,7 +388,7 @@ func pthPaths(dir string) (out []string, whole bool) {
 			if strings.HasPrefix(l, "#") || strings.HasPrefix(l, "import ") || strings.HasPrefix(l, "import\t") {
 				continue
 			}
-			if l = strings.TrimRight(l, " \t\f\v"); l == "" {
+			if l = strings.TrimRightFunc(l, pySpace); l == "" {
 				continue
 			}
 			if !filepath.IsAbs(l) {
