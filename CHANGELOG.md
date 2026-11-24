@@ -6,6 +6,11 @@ a release are not written here: they are worked out from the rule snapshots in
 `docs/site-src/rules-history/`. `CHANGELOG.zh-TW.md` holds the same releases in Traditional
 Chinese for the zh-TW pages; keep the two in step.
 
+## v0.5.7 (unreleased)
+
+- `shentu patrol --dry-run` prints the attack detection notice under its title in the setting's
+  language, as the notice itself is sent; it was always "Attack detection notice".
+
 ## v0.5.6 — 2026-11-24
 
 - A file cut short says what cut it (#172). The code audit's unfinished files carry a `cause`:
