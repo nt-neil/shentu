@@ -3,6 +3,8 @@ package tools
 import (
 	"bufio"
 	"bytes"
+	"crypto/sha256"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -184,7 +186,9 @@ func readSitePackages(dir string) sitePkgDir {
 				continue
 			}
 			r.pkgs = append(r.pkgs, pkg{pep503(name), version})
-		case strings.HasSuffix(n, ".pth") && e.Type().IsRegular():
+		case strings.HasSuffix(n, ".pth") && !e.Type().IsRegular():
+			r.notes = append(r.notes, p+" 不是一般檔案（symlink 之類），沒有檢查它會不會執行程式")
+		case strings.HasSuffix(n, ".pth"):
 			b, ok := readHead(p, sitePkgHead+1)
 			if !ok {
 				r.notes = append(r.notes, p+" 讀不到，沒有檢查它會不會執行程式")
@@ -194,7 +198,7 @@ func readSitePackages(dir string) sitePkgDir {
 				r.notes = append(r.notes, fmt.Sprintf("%s 超過 %d KiB，只檢查了前面的部分", p, sitePkgHead>>10))
 				b = b[:sitePkgHead]
 			}
-			if f, ok := pthImports(n, b); ok {
+			if f, ok := pthImports(dir, n, b); ok {
 				f.Path = p
 				r.pth = append(r.pth, f)
 			}
@@ -267,21 +271,62 @@ var pep503Sep = regexp.MustCompile(`[-_.]+`)
 func pep503(n string) string { return strings.ToLower(pep503Sep.ReplaceAllString(n, "-")) }
 
 // knownPth are .pth files tools write themselves: a file named so, all of
-// whose import lines are the tool's own, to the letter. A file of that name
-// with any other line is one to look at.
+// whose import lines are the tool's own, to the letter, and whose module
+// (verify) is the tool's. A file of that name with any other line, or whose
+// module is not the one the tool installed, is one to look at. A module
+// changed after it was installed is out of reach here, as is any installed
+// module changed.
 var knownPth = []struct {
-	name  *regexp.Regexp
-	label string
-	lines []*regexp.Regexp
+	name   *regexp.Regexp
+	label  string
+	lines  []*regexp.Regexp
+	verify func(dir, name string, lines []string) bool
 }{
 	{regexp.MustCompile(`^distutils-precedence\.pth$`), "setuptools", []*regexp.Regexp{
-		regexp.MustCompile(`^import os; var = 'SETUPTOOLS_USE_DISTUTILS'; enabled = os\.environ\.get\(var, '(?:local|stdlib)'\) == 'local'; enabled and __import__\('_distutils_hack'\)\.add_shim\(\); ?$`)}},
-	{regexp.MustCompile(`^_virtualenv\.pth$`), "virtualenv", []*regexp.Regexp{regexp.MustCompile(`^import _virtualenv$`)}},
-	{regexp.MustCompile(`^__editable__\.[A-Za-z0-9_.+-]+\.pth$`), "editable install", []*regexp.Regexp{editableLine}},
+		regexp.MustCompile(`^import os; var = 'SETUPTOOLS_USE_DISTUTILS'; enabled = os\.environ\.get\(var, '(?:local|stdlib)'\) == 'local'; enabled and __import__\('_distutils_hack'\)\.add_shim\(\); ?$`)},
+		func(dir, _ string, _ []string) bool { // the module setuptools installed, as its RECORD has it
+			return recordHas(dir, "setuptools-*.dist-info", "_distutils_hack/__init__.py")
+		}},
+	{regexp.MustCompile(`^_virtualenv\.pth$`), "virtualenv", []*regexp.Regexp{regexp.MustCompile(`^import _virtualenv$`)},
+		func(dir, _ string, _ []string) bool { // virtualenv writes it into the venvs it makes
+			_, err := os.Lstat(filepath.Join(dir, "..", "..", "..", "pyvenv.cfg"))
+			return err == nil
+		}},
+	{regexp.MustCompile(`^__editable__\.[A-Za-z0-9_.+-]+\.pth$`), "editable install", []*regexp.Regexp{editableLine},
+		func(dir, name string, lines []string) bool { // the finder the package's RECORD lists
+			m := editableLine.FindStringSubmatch(lines[0])
+			dist := strings.TrimSuffix(strings.TrimPrefix(name, "__editable__."), ".pth")
+			return len(lines) == 1 && recordHas(dir, dist+".dist-info", m[1]+".py")
+		}},
 	{regexp.MustCompile(`^easy-install\.pth$`), "setuptools", []*regexp.Regexp{
 		regexp.MustCompile(`^import sys; sys\.__plen = len\(sys\.path\)$`),
-		regexp.MustCompile(`^import sys; new = sys\.path\[sys\.__plen:\]; del sys\.path\[sys\.__plen:\]; p = getattr\(sys, '__egginsert', 0\); sys\.path\[p:p\] = new; sys\.__egginsert = p \+ len\(new\)$`)}},
-	{regexp.MustCompile(`^[A-Za-z0-9_.+-]+-nspkg\.pth$`), "setuptools namespace package", []*regexp.Regexp{nspkgLine()}},
+		regexp.MustCompile(`^import sys; new = sys\.path\[sys\.__plen:\]; del sys\.path\[sys\.__plen:\]; p = getattr\(sys, '__egginsert', 0\); sys\.path\[p:p\] = new; sys\.__egginsert = p \+ len\(new\)$`)}, nil},
+	{regexp.MustCompile(`^[A-Za-z0-9_.+-]+-nspkg\.pth$`), "setuptools namespace package", []*regexp.Regexp{nspkgLine()}, nil},
+}
+
+// recordHas: a dist-info matching glob in dir lists rel in its RECORD, and
+// the file there now has the sha256 RECORD gives.
+func recordHas(dir, glob, rel string) bool {
+	ms, _ := filepath.Glob(filepath.Join(dir, glob))
+	for _, m := range ms {
+		rec, ok := readHead(filepath.Join(m, "RECORD"), 4<<20)
+		if !ok {
+			continue
+		}
+		for _, l := range strings.Split(string(rec), "\n") {
+			want, ok := strings.CutPrefix(strings.TrimRight(l, "\r"), rel+",sha256=")
+			if !ok {
+				continue
+			}
+			want, _, _ = strings.Cut(want, ",")
+			b, ok := readHead(filepath.Join(dir, filepath.FromSlash(rel)), 4<<20)
+			sum := sha256.Sum256(b)
+			if ok && want != "" && base64.RawURLEncoding.EncodeToString(sum[:]) == want {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // editableLine is setuptools' editable-install finder line; the module it
@@ -308,12 +353,14 @@ func nspkgLine() *regexp.Regexp {
 }
 
 // pthImports counts the lines Python's site module runs (those starting
-// "import " or "import\t"); ok is false when there are none.
-func pthImports(name string, b []byte) (PthFile, bool) {
+// "import " or "import\t", read as Python reads the file: a UTF-8 BOM
+// dropped, lines ending at \n, \r\n or \r); ok is false when there are none.
+func pthImports(dir, name string, b []byte) (PthFile, bool) {
 	var f PthFile
 	var lines []string
-	for _, l := range strings.Split(string(b), "\n") {
-		l = strings.TrimRight(l, "\r")
+	s := strings.TrimPrefix(string(b), "\ufeff")
+	s = strings.ReplaceAll(strings.ReplaceAll(s, "\r\n", "\n"), "\r", "\n")
+	for _, l := range strings.Split(s, "\n") {
 		if strings.HasPrefix(l, "import ") || strings.HasPrefix(l, "import\t") {
 			lines = append(lines, l)
 		}
@@ -335,7 +382,7 @@ func pthImports(name string, b []byte) (PthFile, bool) {
 			}
 			all = all && one
 		}
-		if all {
+		if all && (k.verify == nil || k.verify(dir, name, lines)) {
 			f.Known = k.label
 		}
 		break

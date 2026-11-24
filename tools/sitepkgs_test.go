@@ -2,7 +2,10 @@ package tools
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -80,6 +83,22 @@ func dist(t *testing.T, dir, folder, name, version, installer string) {
 	if installer != "" {
 		os.WriteFile(filepath.Join(d, "INSTALLER"), []byte(installer+"\n"), 0o644)
 	}
+}
+
+// record writes rel under dir with content, and lists it with its sha256
+// in the RECORD of folder.dist-info, as pip does.
+func record(t *testing.T, dir, folder, rel, content string) {
+	t.Helper()
+	p := filepath.Join(dir, filepath.FromSlash(rel))
+	os.MkdirAll(filepath.Dir(p), 0o755)
+	os.WriteFile(p, []byte(content), 0o644)
+	sum := sha256.Sum256([]byte(content))
+	f, err := os.OpenFile(filepath.Join(dir, folder+".dist-info", "RECORD"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fmt.Fprintf(f, "%s,sha256=%s,%d\n", rel, base64.RawURLEncoding.EncodeToString(sum[:]), len(content))
+	f.Close()
 }
 
 func venvSite(t *testing.T, root, app string) string {
@@ -170,9 +189,27 @@ func TestSitePackagesPth(t *testing.T) {
 		"__editable__.mixed-1.0.pth":         "import __editable___a_finder; __editable___b_finder.install()\n",
 		"easy-install.pth":                   "import sys; sys.__plen = len(sys.path)\n./foo.egg\n",
 	}
+	files["cr.pth"] = "/opt/lib\rimport os\r" // Python ends a line at \r too
+	files["bom.pth"] = "\ufeffimport os\n"    // and drops a UTF-8 BOM
 	for n, c := range files {
 		os.WriteFile(filepath.Join(sp, n), []byte(c), 0o644)
 	}
+	// the modules the known files import, as their tools installed them
+	os.WriteFile(filepath.Join(sp, "..", "..", "..", "pyvenv.cfg"), []byte("home = /usr/bin\n"), 0o644)
+	dist(t, sp, "setuptools-69.0.0", "setuptools", "69.0.0", "pip")
+	record(t, sp, "setuptools-69.0.0", "_distutils_hack/__init__.py", "def add_shim(): pass\n")
+	dist(t, sp, "mypkg-1.0", "mypkg", "1.0", "pip")
+	record(t, sp, "mypkg-1.0", "__editable___mypkg_1_0_finder.py", "def install(): pass\n")
+	// the same files where their module is not their tool's: no venv, no
+	// setuptools RECORD, a finder changed after install
+	bad := venvSite(t, root, "bad")
+	os.WriteFile(filepath.Join(bad, "_virtualenv.pth"), []byte(files["_virtualenv.pth"]), 0o644)
+	os.WriteFile(filepath.Join(bad, "distutils-precedence.pth"), []byte(files["distutils-precedence.pth"]), 0o644)
+	os.WriteFile(filepath.Join(bad, "__editable__.mypkg-1.0.pth"), []byte(files["__editable__.mypkg-1.0.pth"]), 0o644)
+	dist(t, bad, "mypkg-1.0", "mypkg", "1.0", "pip")
+	record(t, bad, "mypkg-1.0", "__editable___mypkg_1_0_finder.py", "def install(): pass\n")
+	os.WriteFile(filepath.Join(bad, "__editable___mypkg_1_0_finder.py"), []byte("import os\n"), 0o644)
+	os.Symlink(filepath.Join(sp, "evil.pth"), filepath.Join(bad, "linked.pth"))
 	out, err := AppVulns(context.Background(), &http.Client{Transport: &pypiFeeds{}}, []string{root})
 	if err != nil {
 		t.Fatal(err)
@@ -180,7 +217,11 @@ func TestSitePackagesPth(t *testing.T) {
 	pth, _ := out["pth"].([]PthFile)
 	got := map[string]PthFile{}
 	for _, f := range pth {
-		got[filepath.Base(f.Path)] = f
+		n := filepath.Base(f.Path)
+		if filepath.Dir(f.Path) == bad {
+			n = "bad/" + n
+		}
+		got[n] = f
 	}
 	want := map[string]PthFile{
 		"distutils-precedence.pth":           {ImportLines: 1, Known: "setuptools"},
@@ -189,6 +230,11 @@ func TestSitePackagesPth(t *testing.T) {
 		"google_auth-2.0.0-py3.12-nspkg.pth": {ImportLines: 1, Known: "setuptools namespace package"},
 		"easy-install.pth":                   {ImportLines: 1, Known: "setuptools"},
 		"__editable__.mixed-1.0.pth":         {ImportLines: 1},
+		"cr.pth":                             {ImportLines: 1},
+		"bom.pth":                            {ImportLines: 1},
+		"bad/_virtualenv.pth":                {ImportLines: 1},
+		"bad/distutils-precedence.pth":       {ImportLines: 1},
+		"bad/__editable__.mypkg-1.0.pth":     {ImportLines: 1},
 		"evil.pth":                           {ImportLines: 2},
 		"__editable__.other-1.0.pth":         {ImportLines: 2},
 		"protobuf-4.0-py3.12-nspkg.pth":      {ImportLines: 1},
@@ -198,9 +244,15 @@ func TestSitePackagesPth(t *testing.T) {
 	}
 	for n, w := range want {
 		g, ok := got[n]
-		if w.Path = filepath.Join(sp, n); !ok || g != w {
+		if w.Path = filepath.Join(sp, n); strings.HasPrefix(n, "bad/") {
+			w.Path = filepath.Join(bad, strings.TrimPrefix(n, "bad/"))
+		}
+		if !ok || g != w {
 			t.Errorf("%s: %+v, want %+v", n, g, w)
 		}
+	}
+	if p, _ := out["partial"].(string); !strings.Contains(p, "linked.pth 不是一般檔案") {
+		t.Errorf("a symlinked .pth is not said: %q", p)
 	}
 	b, _ := json.Marshal(out)
 	if strings.Contains(string(b), secret) || strings.Contains(string(b), "os.system") {
