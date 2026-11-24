@@ -3,6 +3,14 @@
 CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本與日期必須一致，
 每個版本都要有內容（`go test ./cmd/sitegen` 會檢查）。
 
+## v0.5.7 (unreleased)
+
+- macOS：netstat 給的 pid 是 0 的 listening socket，看不出是哪個程序，所以 listening port 的清單會標成部分（partial），並寫明有幾個，不再當成每個 owner 都知道的完整清單。
+
+### 已知問題
+
+- macOS 27 上，由 ad-hoc 簽章的程式（release binary 就是）啟動的程序，netstat 看不到 Internet socket：`netstat -anv` 什麼都不輸出（exit 0）。這時 shentu 改用 lsof 列出 listening port，但 lsof 只看得到同一個使用者的程序，所以清單會標成部分。在 Terminal 裡直接跑 netstat 就看得到。macOS 15 沒有這個問題。
+
 ## v0.5.6 — 2026-11-24
 
 - 沒跑完的檔案會說明是被什麼截斷的（#172）。程式碼稽核列出的未完成檔案多了 `cause`：token 上限、單一檔案的時間上限、巢狀層數超過上限、規則追呼叫的工作量上限、專案的上限（時間、記憶體或 token）、可能呼叫到別的檔案但沒有唯一對象可追的呼叫，或被呼叫函式的 summary 被截斷（並寫出原因：它自己的工作量上限、summary 一層接一層超過上限、參數超過上限，或它裡面另有截斷）。CVE bench 開始計入「呼叫沒有全部追完」的檔案（以前沒算），並依原因列出截斷數。
