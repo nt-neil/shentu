@@ -306,22 +306,75 @@ var knownPth = []struct {
 	{regexp.MustCompile(`^[A-Za-z0-9_.+-]+-nspkg\.pth$`), "setuptools namespace package", []*regexp.Regexp{nspkgLine()}, nil},
 }
 
-// unverifiedDistutilsHack: some folder of dirs holds a _distutils_hack
-// (package or module) that is neither setuptools' by its RECORD nor the
-// system's: on sys.path before the real one it is what
-// distutils-precedence.pth imports, so no such .pth is known then.
-func unverifiedDistutilsHack(dirs []string) bool {
+// unverifiedDistutilsHack: some folder Python may search holds a
+// _distutils_hack that is not setuptools' by its RECORD nor the system's:
+// before the real one on sys.path it is what distutils-precedence.pth
+// imports, so no such .pth is known then. The folders are dirs and those
+// their .pth path lines add; whole only when the walk was (complete).
+// Anything importable by that name counts: the package folder (a real one,
+// verified) or a module of any suffix (.py, .pyc, .so, .cpython-*.so ...).
+func unverifiedDistutilsHack(dirs []string, complete bool) bool {
+	if !complete {
+		return true
+	}
+	seen := map[string]bool{}
+	var all []string
 	for _, d := range dirs {
-		for _, m := range []string{"_distutils_hack", "_distutils_hack.py"} {
-			if _, err := os.Lstat(filepath.Join(d, m)); err != nil {
-				continue
+		if !seen[d] {
+			seen[d] = true
+			all = append(all, d)
+		}
+		for _, p := range pthPaths(d) {
+			if !seen[p] && len(all) < 4*sitePkgDirsMax {
+				seen[p] = true
+				all = append(all, p)
 			}
-			if m == "_distutils_hack.py" || !(recordHas(d, "setuptools-*.dist-info", "_distutils_hack/__init__.py") || systemModule(d, "_distutils_hack/__init__.py")) {
+		}
+	}
+	for _, d := range all {
+		ents, err := os.ReadDir(d)
+		if err != nil {
+			continue // not there: nothing to import from it
+		}
+		for _, e := range ents {
+			n := e.Name()
+			if n == "_distutils_hack" {
+				if !e.IsDir() || !(recordHas(d, "setuptools-*.dist-info", "_distutils_hack/__init__.py") || systemModule(d, "_distutils_hack/__init__.py")) {
+					return true
+				}
+			} else if strings.HasPrefix(n, "_distutils_hack.") {
 				return true
 			}
 		}
 	}
 	return false
+}
+
+// pthPaths are the folders the path lines of dir's .pth files add to
+// sys.path (relative ones taken from dir).
+func pthPaths(dir string) []string {
+	var out []string
+	ents, _ := os.ReadDir(dir)
+	for _, e := range ents {
+		if !strings.HasSuffix(e.Name(), ".pth") || !e.Type().IsRegular() {
+			continue
+		}
+		b, ok := readHead(filepath.Join(dir, e.Name()), sitePkgHead)
+		if !ok {
+			continue
+		}
+		for _, l := range strings.Split(pthLineEnd.Replace(strings.TrimPrefix(string(b), "\ufeff")), "\n") {
+			l = strings.TrimSpace(l)
+			if l == "" || strings.HasPrefix(l, "#") || strings.HasPrefix(l, "import ") || strings.HasPrefix(l, "import\t") {
+				continue
+			}
+			if !filepath.IsAbs(l) {
+				l = filepath.Join(dir, l)
+			}
+			out = append(out, filepath.Clean(l))
+		}
+	}
+	return out
 }
 
 // rootOnly is rootOnlyFile; tests stand in for root.

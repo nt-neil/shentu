@@ -380,10 +380,36 @@ func TestSitePackagesSystem(t *testing.T) {
 	if k := known(); k[managed] != "setuptools" {
 		t.Errorf("before the shadow: %q", k)
 	}
-	os.WriteFile(filepath.Join(local, "_distutils_hack.py"), []byte("import os\n"), 0o644)
-	if k := known(); k[managed] != "" {
-		t.Errorf("a shadowing _distutils_hack.py: %q", k)
+	for _, shadow := range []string{"_distutils_hack.py", "_distutils_hack.cpython-312-x86_64-linux-gnu.so", "_distutils_hack.pyc"} {
+		os.WriteFile(filepath.Join(local, shadow), []byte("x"), 0o644)
+		if k := known(); k[managed] != "" {
+			t.Errorf("a shadowing %s: %q", shadow, k)
+		}
+		os.Remove(filepath.Join(local, shadow))
 	}
+	// one in a folder a .pth path line adds
+	extra := t.TempDir()
+	os.WriteFile(filepath.Join(local, "extra.pth"), []byte(extra+"\n"), 0o644)
+	if k := known(); k[managed] != "setuptools" {
+		t.Errorf("an empty added folder: %q", k)
+	}
+	os.WriteFile(filepath.Join(extra, "_distutils_hack.py"), []byte("x"), 0o644)
+	if k := known(); k[managed] != "" {
+		t.Errorf("a shadow in a folder a .pth adds: %q", k)
+	}
+	os.Remove(filepath.Join(extra, "_distutils_hack.py"))
+	// the walk cut short: not every folder was looked at
+	oldV := sitePkgVisits
+	t.Cleanup(func() { sitePkgVisits = oldV })
+	sitePkgVisits = 0
+	out, _ := AppVulns(context.Background(), &http.Client{Transport: &pypiFeeds{}}, []string{t.TempDir()})
+	pth, _ := out["pth"].([]PthFile)
+	for _, p := range pth {
+		if p.Known != "" {
+			t.Errorf("known after a cut walk: %+v", p)
+		}
+	}
+	sitePkgVisits = oldV
 	f.queries = nil
 	if _, err := appVulnsIn(context.Background(), &http.Client{Transport: f}, []string{t.TempDir()}, false); err != nil || len(f.queries) != 0 {
 		t.Errorf("a path asked about read the system's: %q %v", f.queries, err)

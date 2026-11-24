@@ -171,6 +171,7 @@ func appVulnsIn(ctx context.Context, hc *http.Client, roots []string, system boo
 	files := FindLockfiles(roots)
 	nLock := len(files)
 	siteDirs, partial := findSitePackages(roots, system)
+	walked := len(partial) == 0 // every site-packages folder found
 	var pth []PthFile
 	for _, d := range siteDirs {
 		sd := readSitePackages(d)
@@ -180,7 +181,7 @@ func appVulnsIn(ctx context.Context, hc *http.Client, roots []string, system boo
 			files = append(files, Lockfile{Path: d, Ecosystem: "PyPI", pkgs: sd.pkgs, kind: "site-packages"})
 		}
 	}
-	if unverifiedDistutilsHack(siteDirs) {
+	if unverifiedDistutilsHack(siteDirs, walked) {
 		for i := range pth {
 			if strings.HasSuffix(pth[i].Path, "distutils-precedence.pth") {
 				pth[i].Known = ""
