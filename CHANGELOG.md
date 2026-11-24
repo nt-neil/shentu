@@ -20,8 +20,9 @@ Chinese for the zh-TW pages; keep the two in step.
   `htmlspecialchars()` as a sanitizer; a URL filter does not clean.
 - macOS: a listening socket netstat gives with pid 0 has no owner to name, so the list of listening
   ports is marked partial and says how many, no longer complete as if every owner were known.
-- `shentu patrol --dry-run` prints the attack detection notice under its title in the setting's
-  language, as the notice itself is sent; it was always "Attack detection notice".
+- `shentu patrol --dry-run` prints all its titles (each attack attempt, the summary past the
+  round's limit, the attack detection notice) in the setting's language, as they are sent; they
+  were always in English.
 
 ### Known issues
 

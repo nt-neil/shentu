@@ -217,5 +217,23 @@ func TestDryRunNoticeTitle(t *testing.T) {
 		if !strings.Contains(out, title) || strings.Contains(out, other) {
 			t.Errorf("zh %v: dry run printed %q", zh, out)
 		}
+		// N-236-1: the alerts' titles and the summary's past MaxAlertsPerRound too
+		cfg, logs, _ = detectSetup(t)
+		if zh {
+			zhCfg(cfg)
+		}
+		os.WriteFile(filepath.Join(logs, "access.log"), nil, 0o640)
+		seedDue(t, cfg.StateDir, MaxAlertsPerRound+5, now)
+		out = "\n" + stdout(t, func() error {
+			detectRound(context.Background(), cfg, nil, now, false, true)
+			return nil
+		})
+		attempt, more := "攻擊紀錄", "另外 5 組攻擊紀錄"
+		if !zh {
+			attempt, more = "Attack attempt", "5 more attack attempts"
+		}
+		if n, m := strings.Count(out, "\n"+attempt+"\n\n"), strings.Count(out, "\n"+more+"\n\n"); n != MaxAlertsPerRound || m != 1 {
+			t.Errorf("zh %v: dry run printed %d alerts titled %q, %d summaries titled %q:\n%s", zh, n, attempt, m, more, out)
+		}
 	}
 }
