@@ -6,7 +6,7 @@ severity = "high"
 tier = "info"
 title = "Request input written into a Doctrine DQL or SQL string"
 frameworks = ["symfony", "doctrine"]
-sources = ["$request->query->get(", "$request->request->get(", "$request->get(", "$request->query->all(", "$request->attributes->get(", "$_GET", "$_POST", "$_REQUEST"]
+sources = ["$request->query->get(", "$request->request->get(", "$request->get(", "$request->query->all(", "$request->attributes->get(", "$_GET", "$_POST", "$_REQUEST", "filter_input(", "->filterInput(", "->filter_input("]
 sinks = ["->createQuery(", "->createNativeQuery(", "->executeQuery(", "->executeStatement(", "->fetchAllAssociative(", "->fetchAssociative(", "->fetchOne(", "->fetchFirstColumn(", "->fetchAllKeyValue(", "->where(", "->andWhere(", "->orWhere(", "->having(", "->andHaving(", "->addOrderBy(", "->groupBy(", "->addGroupBy("]
 # ->where(, ->andWhere(, ->orWhere(, ->having(, ->addOrderBy( and ->groupBy(
 # are Yii's calls too: input both read on the same call (Yii's $request->get(,
@@ -130,3 +130,9 @@ class OrderController extends AbstractController
     }
 }
 '''
+
+# filter_input(INPUT_GET, ...) and an application's filterInput(INPUT_POST, ...) wrapper read the request like $_GET and $_POST
+[[source_args]]
+sources = ["filter_input(", "->filterInput(", "->filter_input("]
+arg = 1
+values = ["INPUT_GET", "INPUT_POST"]

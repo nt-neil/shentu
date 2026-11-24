@@ -8,11 +8,28 @@ Chinese for the zh-TW pages; keep the two in step.
 
 ## v0.5.7 (unreleased)
 
+- PHP rules read `filter_input()`. A value from `filter_input(INPUT_GET, ...)`, `INPUT_POST` or
+  `INPUT_COOKIE`, and from an application's own method of that name (`->filterInput(`,
+  `->filter_input(`) when its first argument is one of these constants, is request input in each
+  PHP rule that reads `$_GET`, `$_POST` or `$_COOKIE`. A first argument that is a variable or
+  another constant (such as `INPUT_SERVER`) is not. A number or bool filter (`FILTER_VALIDATE_INT`,
+  `FILTER_VALIDATE_BOOL`, `FILTER_SANITIZE_NUMBER_INT` and others, also as a named `filter:`
+  argument) gives a value with no input in it, but not with flags or-ed into it
+  (`FILTER_VALIDATE_INT | FILTER_NULL_ON_FAILURE` is another filter ID, which PHP 7 reads as
+  `FILTER_DEFAULT`); `FILTER_SANITIZE_SPECIAL_CHARS` cleans in the rules that take
+  `htmlspecialchars()` as a sanitizer; a URL filter does not clean.
 - macOS: a listening socket netstat gives with pid 0 has no owner to name, so the list of listening
   ports is marked partial and says how many, no longer complete as if every owner were known.
 
 ### Known issues
 
+- A value read back from the database is input when the query that read it was given input,
+  even escaped (`$row = $db->LoadSingle("... '" . mysqli_real_escape_string($c, $_POST['id']) . "'")`,
+  then `$row['tag']` in another query): the engine takes what an unknown function returns as
+  carrying its arguments' input. YesWiki's despam.php is reported this way.
+- An application's own URL builder for a page of the same site (YesWiki's
+  `$this->wiki->Href('', $name)`, `href()`) is not known as one, so a redirect to it reports as an
+  open redirect (YesWiki's LoginAction.php and DuplicateHandler.php).
 - macOS 27 hides the Internet sockets from netstat for any process started by an ad-hoc signed
   program, as the release binaries are: `netstat -anv` writes nothing there (exit 0). shentu then
   lists the listening ports with lsof, which sees only its own user's processes, and marks the list

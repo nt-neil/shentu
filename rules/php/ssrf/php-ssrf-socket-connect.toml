@@ -5,7 +5,7 @@ cwe = "CWE-918"
 severity = "high"
 tier = "info"
 title = "Server opens a socket to a host taken from the request"
-sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "->get_param(", "$request->input(", "$request->query->get(", "$request->request->get(", "$request->get("]
+sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "->get_param(", "$request->input(", "$request->query->get(", "$request->request->get(", "$request->get(", "filter_input(", "->filterInput(", "->filter_input("]
 sinks = ["fsockopen(", "pfsockopen(", "stream_socket_client(", "socket_connect("]
 sanitizers = ["in_array", "array_key_exists", "absint", "intval"]
 fix = "Connect only to hosts from a fixed list (in_array($host, $allowed, true)); a check on the name before connecting is not enough, as the name may resolve to another address when the socket opens."
@@ -49,3 +49,9 @@ if (!in_array($host, ['status.example.com', 'api.example.com'], true)) {
 }
 $fp = fsockopen($host, 443, $errno, $errstr, 5);
 '''
+
+# filter_input(INPUT_GET, ...) and an application's filterInput(INPUT_POST, ...) wrapper read the request like $_GET and $_POST
+[[source_args]]
+sources = ["filter_input(", "->filterInput(", "->filter_input("]
+arg = 1
+values = ["INPUT_GET", "INPUT_POST", "INPUT_COOKIE"]
