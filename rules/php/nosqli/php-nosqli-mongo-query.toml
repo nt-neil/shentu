@@ -6,7 +6,7 @@ severity = "high"
 tier = "info"
 title = "Request input placed in a MongoDB query without forcing it to a string"
 frameworks = ["laravel"]
-sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "$request->input(", "$request->all(", "$request->get(", "->get_param(", "json_decode(file_get_contents('php://input'"]
+sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "$request->input(", "$request->all(", "$request->get(", "->get_param(", "json_decode(file_get_contents('php://input'", "filter_input(", "->filterInput(", "->filter_input("]
 sinks = ["->findOne(", "->find(", "->findOneAndUpdate(", "->findOneAndDelete(", "->updateOne(", "->updateMany(", "->deleteOne(", "->deleteMany(", "->countDocuments(", "->count(", "$where"]
 sanitizers = ["(string)", "strval", "intval", "absint", "(int)", "is_string"]
 text = ["$where"]
@@ -52,3 +52,9 @@ $where = $wpdb->prepare('WHERE post_author = %d', $_GET['author']);
 $rows = $wpdb->get_results("SELECT ID FROM {$wpdb->posts} $where");
 $where .= " AND post_status = 'publish'";
 '''
+
+# filter_input(INPUT_GET, ...) and an application's filterInput(INPUT_POST, ...) wrapper read the request like $_GET and $_POST
+[[source_args]]
+sources = ["filter_input(", "->filterInput(", "->filter_input("]
+arg = 1
+values = ["INPUT_GET", "INPUT_POST", "INPUT_COOKIE"]

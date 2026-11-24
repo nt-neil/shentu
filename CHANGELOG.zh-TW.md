@@ -3,11 +3,27 @@
 CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本與日期必須一致，
 每個版本都要有內容（`go test ./cmd/sitegen` 會檢查）。
 
-## v0.5.6 (unreleased)
+## v0.5.7 (unreleased)
+
+- PHP 規則會讀 `filter_input()`。用 `filter_input(INPUT_GET, ...)`、`INPUT_POST` 或 `INPUT_COOKIE` 取得的值，以及應用程式自己同名的方法（`->filterInput(`、`->filter_input(`）在第一個參數是這幾個常數時取得的值，在每一條會讀 `$_GET`、`$_POST` 或 `$_COOKIE` 的 PHP 規則裡都算請求輸入。第一個參數是變數或其他常數（例如 `INPUT_SERVER`）時不算。數字或 bool 的 filter（`FILTER_VALIDATE_INT`、`FILTER_VALIDATE_BOOL`、`FILTER_SANITIZE_NUMBER_INT` 等，寫成具名參數 `filter:` 也一樣）取得的值不帶輸入，但用 `|` 加上 flag 時不算（`FILTER_VALIDATE_INT | FILTER_NULL_ON_FAILURE` 是另一個 filter ID，PHP 7 會當成 `FILTER_DEFAULT`）；`FILTER_SANITIZE_SPECIAL_CHARS` 在把 `htmlspecialchars()` 當清理函式的規則裡算清理過；URL 的 filter 不算清理。
+- macOS：netstat 給的 pid 是 0 的 listening socket，看不出是哪個程序，所以 listening port 的清單會標成部分（partial），並寫明有幾個，不再當成每個 owner 都知道的完整清單。
+- `shentu patrol --dry-run` 顯示的所有標題（每一組攻擊紀錄、超過單輪上限的合併通知、攻擊偵測的通知）都改用設定的語言，和實際送出的通知一樣；之前一律是英文。
+
+### 已知問題
+
+- 從資料庫讀回來的值，如果讀它的查詢用了輸入，即使已經用 escape 函式處理過，也會被當成輸入（例如 `$row = $db->LoadSingle("... '" . mysqli_real_escape_string($c, $_POST['id']) . "'")` 之後，把 `$row['tag']` 放進另一個查詢）：引擎把不認得的函式的回傳值，當成帶有參數的輸入。YesWiki 的 despam.php 就是這樣被回報的。
+- 應用程式自己產生同站網址的函式（YesWiki 的 `$this->wiki->Href('', $name)`、`href()`）不會被認出來，所以導向到這種網址也會被回報為 open redirect（YesWiki 的 LoginAction.php、DuplicateHandler.php）。
+- macOS 27 上，由 ad-hoc 簽章的程式（release binary 就是）啟動的程序，netstat 看不到 Internet socket：`netstat -anv` 什麼都不輸出（exit 0）。這時 shentu 改用 lsof 列出 listening port，但 lsof 只看得到同一個使用者的程序，所以清單會標成部分。在 Terminal 裡直接跑 netstat 就看得到。macOS 15 沒有這個問題。
+
+## v0.5.6 — 2026-11-24
 
 - 沒跑完的檔案會說明是被什麼截斷的（#172）。程式碼稽核列出的未完成檔案多了 `cause`：token 上限、單一檔案的時間上限、巢狀層數超過上限、規則追呼叫的工作量上限、專案的上限（時間、記憶體或 token）、可能呼叫到別的檔案但沒有唯一對象可追的呼叫，或被呼叫函式的 summary 被截斷（並寫出原因：它自己的工作量上限、summary 一層接一層超過上限、參數超過上限，或它裡面另有截斷）。CVE bench 開始計入「呼叫沒有全部追完」的檔案（以前沒算），並依原因列出截斷數。
 
 - PHP 的 sink 和清理函式，函式名稱與方法名稱改成不分大小寫比對，和 PHP 實際呼叫時一樣（#189）。`System($_GET['x'])`、`SYSTEM(...)`、`\SYSTEM(...)`、命名空間裡的 `System(...)`，以及被呼叫函式裡的 `Shell_Exec($c)`，現在都和小寫寫法一樣會回報；寫成 `EscapeShellArg($x)` 的清理函式也會生效。名稱也叫 `system` 的方法（`$o->System(...)`、`Task::SYSTEM(...)`）仍然不算 sink。JavaScript 和 Python 的名稱照舊分大小寫。字串裡用兩個反斜線寫的內建函式名稱（`array_map('\\system', $x)`、`"\\system"`），PHP 讀到的是 `\system`，現在也照內建函式處理。指向 PHP 內建函式的 pattern，不會再對上用 `new` 建立的類別（`new File($p)`、`new System(...)`），也不會對上命名空間裡的函式（`Storage\file($p)`，以及有宣告 namespace 的檔案裡的 `namespace\file($p)`）；以前小寫的 `new file(` 和 `A\file(` 會被對上。`\file($p)` 仍然是內建函式。成員 pattern 的方法名稱和類別名稱也改成不分大小寫比對（#198）：`$wpdb->Query(...)`、`$wpdb->GET_RESULTS(...)` 是 `php-sqli-wpdb-unprepared` 的 sink，`$wpdb->Prepare(...)` 會清理，`DB::RAW(...)` 也是 sink；變數名稱照舊分大小寫（`$WPDB` 不是 `$wpdb`）。
+
+- 透過 callable 的呼叫會追下去（#182、#184、#188）。PHP 函式呼叫自己的參數時（`$cb($v)`，例如 `tap()`、`Arr::first()`），會在每個呼叫它的地方，用呼叫端傳進來的值追下去：closure、函式名稱（`'run_cmd'`、`'Cmd::run'`）、array 寫法的 callable（`[Cmd::class, 'run']`、`[$this, 'run']`），或 first-class callable（`run_cmd(...)`）。交給 PHP 內建函式呼叫的 closure（`array_map`、`array_filter`、`array_walk`、`usort`、`array_reduce`、`preg_replace_callback`、`call_user_func` 等），會用內建函式傳給它的輸入去分析；callable 寫成內建函式的名稱時，就是那個內建函式：`array_map('system', $_GET['x'])` 和 `array_map(function ($v) { system($v); }, $_GET['a'])` 現在都會回報。呼叫沒有追完的檔案也變少了（#174、#178、#179、#182）：Python 的標準函式庫 import（套件裡另有自己的 `json.py` 時的 `import json`），和離不開所在函式的 closure，不再被當成專案裡其他檔案的呼叫對象。在 E7 的語料上，laravel-framework 沒跑完的檔案從 280 個變成 115 個，Django 從 135 個變成 24 個。
+
+- 檢查和固定的值造成的誤報變少了（#185、#187）。`unset($x)`、`unset($a['k'])`、`unset($this->p)` 之後，值不再帶有輸入；`is_numeric`、`is_int`、`is_float`、`ctype_digit` 這類數字檢查在每條規則裡都算檢查（`if (is_numeric($p)) { ... "WHERE id = " . $p }` 不再回報）。`wp_create_nonce()` 和 `wp_hash()` 的回傳值不帶輸入。呼叫端先做過 `check_admin_referer()` 這類 nonce 檢查，再呼叫的函式裡的 sink，和直接寫在呼叫端的 sink 一樣處理；需要輸入出現在最前面的 sink（`header("Location: $u")`），參數最前面是固定文字時（`go(admin_url('x') . '?a=' . $v)`），經過函式也不算到達。
 
 - 主機盤點加上 PHP 版本檢查，對照 php.net 2026-11-19 的版本（8.2.36、8.3.37、8.4.28、8.5.13；8.6.0 以後都已修正）。版本是每個 PHP 執行檔自己寫在檔案裡的版本（`php`、`php-fpm`、`php-cgi` 和帶版本號的名稱，在各發行版的位置、Docker 的 PHP image 用的 `/usr/local`、Remi 的 `/opt/remi`、cPanel 的 `/opt/cpanel/ea-php*`，以及 CloudLinux 的 `/opt/alt/php*`），直接讀檔案，不執行它；Windows 上是 IIS 用 FastCGI 執行的 `php-cgi.exe`。套件掃描看不到的 PHP 這樣也查得到：deb.sury.org、ondrej PPA、Remi 的套件庫、vendor 不是發行版的 rpm（IUS、cPanel）、Docker image、從原始碼 build 的，以及 IIS。執行檔寫了不只一個版本、程式裡找不到版本，或 FastCGI 的路徑不是本機的絕對路徑時，會列為無法檢查。和 nginx 的檢查一樣，套件的 changelog 已列出某個 CVE 時，不會為它警告。CVE-2026-129291 和 CVE-2026-129289 只有 php-fpm 在執行時才警告；CVE-2026-129292（狀態頁）只有 pool 的 `pm.status_path` 從外面連得到時才警告，也就是它的 socket 接受其他主機的連線，或 nginx（server 不是只 listen 127.0.0.1）、Apache 把這個路徑轉給 FPM，而且沒有用 `deny all` 或 `Require local` 限制。每個分支只讀自己的 pool；設定檔的 include 會跟著讀，註解不算。CVE-2026-129538 只有 php-cgi 在執行，或 IIS 會執行它時才警告。其餘 14 個依版本合成一行。php.net 已經不再修正的分支（8.2 以前）只有不是發行版套件時才列出；讀不到的資料（行程清單、設定檔、IIS 的設定）會列在一行說明裡，指出哪幾項無法檢查。
 
@@ -38,6 +54,8 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 - Windows 上只有 Apache 以 CGI 執行的 php-cgi.exe 會把 CVE-2024-4577 寫進 surface（#200）。IIS 用 FastCGI 執行的 php-cgi.exe 不寫，因為公告只寫到 Apache；Shentu 不讀的 Apache 設定也不寫，也就是不是服務執行的、不在 XAMPP 或 Apache Lounge 的固定位置，或是有一般使用者能寫入的。這些主機上，這條簽章的命中仍然只算雜訊。
 
 - 在 surface 有 CVE-2024-4577 的主機上，沒有 `=`、只有一個字的查詢，如果最前面是不是 UTF-8 的位元組再接一個英文字（沒有用 UTF-8 送出的 Latin-1、Big5 或 Shift-JIS 字），會和 `%AD` 一樣比中 CVE-2024-4577 的特徵：請求是解碼後才比對，這類位元組都會讀成 U+FFFD（`docs/attack-detection-limits.zh-TW.md`）。
+
+- `new $var(...)` 會被當成呼叫參數 `$var`（#182）。附帶 Freemius SDK 的外掛會有大量「呼叫沒有全部追完」的檔案，也可能因此出現誤報；在 E7 和 CVE bench 的量測中沒有少報。將在 v0.5.7 修正。
 
 ## v0.5.5 — 2026-11-23
 

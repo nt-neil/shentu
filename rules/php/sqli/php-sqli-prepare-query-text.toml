@@ -6,7 +6,7 @@ severity = "high"
 tier = "info"
 title = "Request input written into the query text of a prepared statement"
 frameworks = ["wordpress", "doctrine"]
-sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "get_query_var", "->get_param(", "$request['", "shortcode_atts(", "$atts[", "$request->query->get(", "$request->request->get(", "$request->get(", "->get_json_params(", "->get_body_params(", "->get_query_params(", "$request->input("]
+sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "get_query_var", "->get_param(", "$request['", "shortcode_atts(", "$atts[", "$request->query->get(", "$request->request->get(", "$request->get(", "->get_json_params(", "->get_body_params(", "->get_query_params(", "$request->input(", "filter_input(", "->filterInput(", "->filter_input("]
 # prepare() binds the values given later to execute() (PDO, mysqli) or after
 # the format ($wpdb->prepare); input written into the statement or format
 # itself is SQL. This rule alone reports it, on any receiver (a receiver the
@@ -176,3 +176,9 @@ function shop_items($req) {
     return $wpdb->get_results($wpdb->prepare("SELECT * FROM {$wpdb->prefix}items WHERE cat = %s LIMIT %d", $req->get_param('cat'), 10));
 }
 '''
+
+# filter_input(INPUT_GET, ...) and an application's filterInput(INPUT_POST, ...) wrapper read the request like $_GET and $_POST
+[[source_args]]
+sources = ["filter_input(", "->filterInput(", "->filter_input("]
+arg = 1
+values = ["INPUT_GET", "INPUT_POST", "INPUT_COOKIE"]
