@@ -506,7 +506,18 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 		return err
 	}
 	st := loadState(cfg.StateDir)
-	tools.RefreshLoginIndex(ctx) // block_ip's login check then reads only the last hour
+	// block_ip's login index is caught up last, after the checks, their
+	// report and the detector's alerts (deferred before finishDetect, so it
+	// runs after it): in a flood its catching up can take loginRefreshBudget,
+	// and the alerts do not wait for it. A check after it then reads only
+	// what came since this patrol (the timer runs every 30 minutes). A
+	// patrol that panics does not spend that time first: it panics on.
+	defer func() {
+		if p := recover(); p != nil {
+			panic(p)
+		}
+		tools.RefreshLoginIndex(ctx)
+	}()
 	zh := isZh(cfg)
 	all, sshUnchecked := checks(ctx, cfg, env, st, daily)
 	unchecked := uncheckedSection(st.Profile.Risks, zh) + sshUnchecked // listed in every report, never pushed

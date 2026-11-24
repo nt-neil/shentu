@@ -379,7 +379,7 @@ func (x *loginIndex) indexedLogins(ip net.IP, now time.Time) (seen bool, err err
 var loginRefreshBudget = 15 * time.Minute
 
 // RefreshLoginIndex reads the login index on, for the patrol: run every
-// hour, it leaves a check only the entries since to read. Where block_ip
+// 30 minutes, it leaves a check only the entries since to read. Where block_ip
 // does not run there is no index; a failure is the next read's to meet.
 func RefreshLoginIndex(ctx context.Context) {
 	if blockUnsupported() != nil {
