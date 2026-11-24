@@ -50,6 +50,7 @@ type fn struct {
 	class  string   // the class a method is declared in
 	parent string   // that class's parent (extends), as written
 	traits []string // PHP traits the class uses (use T;) before the method
+	uses   []Token  // PHP closure: the variables of use (...), as written (sharedOf)
 }
 
 func parse(lang string, toks []Token, b *budget) []*stmt {
@@ -435,9 +436,10 @@ func (p *braceParser) funcRest(fresh bool) *fn {
 		return nil
 	}
 	params, _ := p.group()
+	var uses []Token
 	if p.atWord("use") {
 		p.i++
-		p.group()
+		uses, _ = p.group()
 	}
 	if p.at(":") {
 		p.i++
@@ -447,13 +449,13 @@ func (p *braceParser) funcRest(fresh bool) *fn {
 	}
 	if !p.at("{") {
 		p.skip(";")
-		return &fn{params: params, fresh: fresh}
+		return &fn{params: params, fresh: fresh, uses: uses}
 	}
 	p.i++
 	inClass := p.inClass
 	p.inClass = false
 	defer func() { p.inClass = inClass }()
-	return &fn{params: params, fresh: fresh, body: p.nested(func() []*stmt { return p.block(true) })}
+	return &fn{params: params, fresh: fresh, uses: uses, body: p.nested(func() []*stmt { return p.block(true) })}
 }
 
 func (p *braceParser) classStmt() *stmt {

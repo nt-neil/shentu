@@ -78,9 +78,9 @@
 
 <h2 id="attack">攻擊偵測（合成請求）</h2>
 <p>v0.4.0 起，CI 會用合成請求量攻擊偵測：從 nuclei-templates 轉出的攻擊請求，加上 8 個應用程式、152 條路由的一般請求。這些不是真實流量。「比中」是同類特徵比中這個請求，不等於告警：只有主機真的有那個漏洞，才會告警。</p>
-<p class="meta">量測版本 v0.4.1（nuclei-templates v10.5.2，commit 5442582a），27 條攻擊特徵。</p>
+<p class="meta">量測版本 v0.5.6（nuclei-templates v10.5.2，commit 5442582a），28 條攻擊特徵。</p>
 <dl class="scores">
-  <div><dt>同類特徵比中</dt><dd>1548<small>/ 3822</small><span>40.5%，無法轉換（1143）、未分類（6618）、rce-unspecified（252）的模板不計</span></dd></div>
+  <div><dt>同類特徵比中</dt><dd>1549<small>/ 3822</small><span>40.5%，無法轉換（1143）、未分類（6618）、rce-unspecified（252）的模板不計</span></dd></div>
   <div><dt>一般請求誤報</dt><dd>0<small>/ 363</small><span>1216 個請求中不重複的請求，95% 上限約 0.8%，只來自 152 條路由</span></dd></div>
   <div><dt>測試主機真的有的漏洞</dt><dd>3<small>/ 10</small><span>10 個模板中 3 個告警，其中 2 個只到 L1（攻擊內容在請求本文，access log 沒記）</span></dd></div>
 </dl>

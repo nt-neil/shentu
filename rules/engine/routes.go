@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"maps"
 	"regexp"
 	"slices"
 	"strings"
@@ -360,9 +361,9 @@ func handlerFuncs(php bool, s *stmt, h []Token, ff *fileFuncs) []*fn {
 			name = strings.ToLower(name)
 		}
 		var out []*fn
-		for k, infos := range ff.byKey {
+		for _, k := range slices.Sorted(maps.Keys(ff.byKey)) { // in key order: routeSites keeps the first ones when there are too many
 			if strings.HasSuffix(k, "::"+name) {
-				for _, fi := range infos {
+				for _, fi := range ff.byKey[k] {
 					out = append(out, fi.f)
 				}
 			}
