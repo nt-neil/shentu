@@ -191,3 +191,49 @@ func TestUncheckedLinesProgramOwn(t *testing.T) {
 		t.Errorf("{} kept: %q", r.Unchecked)
 	}
 }
+
+// N-056u-1: patrol --dry-run prints the notice under its title in the
+// setting's language, as the notice is sent; English stays English.
+func TestDryRunNoticeTitle(t *testing.T) {
+	for _, zh := range []bool{true, false} {
+		cfg, logs, _ := detectSetup(t)
+		if zh {
+			zhCfg(cfg)
+		}
+		now := time.Now()
+		var junk strings.Builder
+		for i := 0; i < 30; i++ {
+			junk.WriteString("marker not a request line\n") // most of the log does not parse: a notice
+		}
+		os.WriteFile(filepath.Join(logs, "access.log"), []byte(junk.String()), 0o640)
+		out := stdout(t, func() error {
+			detectRound(context.Background(), cfg, nil, now, false, true)
+			return nil
+		})
+		title, other := "攻擊偵測注意事項\n", "Attack detection notice"
+		if !zh {
+			title, other = "Attack detection notice\n", "攻擊偵測注意事項"
+		}
+		if !strings.Contains(out, title) || strings.Contains(out, other) {
+			t.Errorf("zh %v: dry run printed %q", zh, out)
+		}
+		// N-236-1: the alerts' titles and the summary's past MaxAlertsPerRound too
+		cfg, logs, _ = detectSetup(t)
+		if zh {
+			zhCfg(cfg)
+		}
+		os.WriteFile(filepath.Join(logs, "access.log"), nil, 0o640)
+		seedDue(t, cfg.StateDir, MaxAlertsPerRound+5, now)
+		out = "\n" + stdout(t, func() error {
+			detectRound(context.Background(), cfg, nil, now, false, true)
+			return nil
+		})
+		attempt, more := "攻擊紀錄", "另外 5 組攻擊紀錄"
+		if !zh {
+			attempt, more = "Attack attempt", "5 more attack attempts"
+		}
+		if n, m := strings.Count(out, "\n"+attempt+"\n\n"), strings.Count(out, "\n"+more+"\n\n"); n != MaxAlertsPerRound || m != 1 {
+			t.Errorf("zh %v: dry run printed %d alerts titled %q, %d summaries titled %q:\n%s", zh, n, attempt, m, more, out)
+		}
+	}
+}
