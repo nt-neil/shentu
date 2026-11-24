@@ -6,7 +6,7 @@ severity = "high"
 tier = "info"
 title = "CodeIgniter request input written into SQL text, a raw where() or order_by()"
 sources = ["$this->input->get(", "$this->input->post(", "$this->input->get_post(", "$this->input->cookie(", "$this->request->getGet(", "$this->request->getPost(",
-           "$this->request->getVar(", "$this->request->getJSON(", "request(", "$_GET", "$_POST", "$_REQUEST"]
+           "$this->request->getVar(", "$this->request->getJSON(", "request(", "$_GET", "$_POST", "$_REQUEST", "filter_input(", "->filterInput(", "->filter_input("]
 # SQL text written into $this->db->query( or $db->query( is php-sqli-string-concat's
 # (its ->query( sink), which reads CodeIgniter's input too.
 # CodeIgniter 4's ->orderBy( is php-sqli-orderby-identifier's, as Laravel's and Yii's.
@@ -67,3 +67,9 @@ class Orders_model extends CI_Model
     }
 }
 '''
+
+# filter_input(INPUT_GET, ...) and an application's filterInput(INPUT_POST, ...) wrapper read the request like $_GET and $_POST
+[[source_args]]
+sources = ["filter_input(", "->filterInput(", "->filter_input("]
+arg = 1
+values = ["INPUT_GET", "INPUT_POST"]

@@ -6,7 +6,7 @@ severity = "critical"
 tier = "info"
 title = "Function to call chosen by the request"
 frameworks = ["wordpress", "laravel"]
-sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "->get_param(", "$request['", "$request->input(", "$request->get("]
+sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "->get_param(", "$request['", "$request->input(", "$request->get(", "filter_input(", "->filterInput(", "->filter_input("]
 sinks = ["call_user_func(", "call_user_func_array(", "forward_static_call(", "forward_static_call_array(", "array_map(", "usort(", "uasort(", "uksort(", "array_filter(", "array_walk(", "iterator_apply("]
 sanitizers = ["in_array", "array_key_exists", "absint", "intval", "get_taxonomy(", "get_post_type_object("]
 fix = "Never let the request name a function or method: map the requested action to a fixed list of callbacks (in_array($action, $allowed, true) or a lookup table) before calling it."
@@ -97,3 +97,9 @@ add_action('wp_ajax_nopriv_items', function () {
     wp_send_json(list_items($q));
 });
 '''
+
+# filter_input(INPUT_GET, ...) and an application's filterInput(INPUT_POST, ...) wrapper read the request like $_GET and $_POST
+[[source_args]]
+sources = ["filter_input(", "->filterInput(", "->filter_input("]
+arg = 1
+values = ["INPUT_GET", "INPUT_POST", "INPUT_COOKIE"]

@@ -11,7 +11,7 @@ frameworks = ["laravel"]
 # helper's result), $request->post( and ->all(, and the Request facade.
 sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "$_FILES[*]['name']", "$_FILES[*]['type']", "$_SERVER['HTTP_", "$request->input(", "$request->query(", "$request->getHost()", "$request->header(",
            "$request->query->get(", "$request->attributes->get(", "$request->request->get(", "$request->get(", "$request->query->all(", "->get_param(",
-           "request(", "$request->post(", "$request->all(", "Request::input(", "Request::query("]
+           "request(", "$request->post(", "$request->all(", "Request::input(", "Request::query(", "filter_input(", "->filterInput(", "->filter_input("]
 sinks = ["exec(", "shell_exec(", "system(", "passthru(", "popen(", "proc_open(", "`", "$this->process->execute(", "$this->process->executeAsync(", "Process::run(", "Process::start("]
 # request()->ip() and ->method() are not free text: Symfony's getClientIp() keeps
 # only valid addresses, and getMethod() only letters. ->path() and ->url() are
@@ -260,3 +260,9 @@ class HookController extends Controller
     }
 }
 '''
+
+# filter_input(INPUT_GET, ...) and an application's filterInput(INPUT_POST, ...) wrapper read the request like $_GET and $_POST
+[[source_args]]
+sources = ["filter_input(", "->filterInput(", "->filter_input("]
+arg = 1
+values = ["INPUT_GET", "INPUT_POST", "INPUT_COOKIE"]
