@@ -475,6 +475,30 @@ func checks(ctx context.Context, cfg *Config, env *tools.Env, st *state, daily b
 	return out, sshUnchecked
 }
 
+// appVulnFindings is what app_vulns found to push: dependencies and
+// installed Python packages being exploited, and .pth files that run code
+// at every Python start and are no known tool's own.
+func appVulnFindings(r map[string]any) []finding {
+	var out []finding
+	apps, _ := r["files"].([]tools.AppResult)
+	for _, f := range apps {
+		text := "f_kev_app"
+		if f.Kind == "site-packages" {
+			text = "f_kev_site"
+		}
+		for _, e := range f.Exploited {
+			out = append(out, newFinding("kev:"+f.Path+":"+e.Package+":"+e.CVE, "critical", e, text, f.Path, e.Package, e.Version, e.CVE, e.Name))
+		}
+	}
+	pth, _ := r["pth"].([]tools.PthFile)
+	for _, f := range pth {
+		if f.Known == "" { // a tool's own (setuptools, virtualenv) is listed by app_vulns, not pushed
+			out = append(out, newFinding("pth:"+f.Path, "warning", f, "f_pth", f.Path, f.ImportLines))
+		}
+	}
+	return out
+}
+
 // patrol runs once (from a systemd timer): checks → LLM explanation → notify.
 // With daily set it always reports, using the daily-patrol skill.
 func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool) error {
@@ -526,11 +550,10 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 					partial = append(partial, "應用程式相依套件 "+f.Path+"（"+f.Error+"）")
 				}
 			}
-			for _, f := range apps {
-				for _, e := range f.Exploited {
-					all = append(all, newFinding("kev:"+f.Path+":"+e.Package+":"+e.CVE, "critical", e, "f_kev_app", f.Path, e.Package, e.Version, e.CVE, e.Name))
-				}
+			if p, _ := r["partial"].(string); p != "" {
+				partial = append(partial, "已安裝的 Python 套件只查了一部分（"+p+"）")
 			}
+			all = append(all, appVulnFindings(r)...)
 		}
 		// The applications' own files: exposed secrets, debug mode, webshells, keys in code, injection.
 		web, unread := tools.WebRootsReport()

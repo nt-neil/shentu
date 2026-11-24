@@ -23,6 +23,17 @@ Chinese for the zh-TW pages; keep the two in step.
 - `shentu patrol --dry-run` prints all its titles (each attack attempt, the summary past the
   round's limit, the attack detection notice) in the setting's language, as they are sent; they
   were always in English.
+- `app_vulns` and the daily patrol check the Python packages installed in site-packages folders
+  (venvs under the app paths, `/usr/local/lib/python3*`, and what pip installed in
+  `/usr/lib/python3*`) against OSV as PyPI, with the CISA KEV mark, as they check a lock file. Until
+  now only lock files were read, so a package installed with pip and listed in none was not
+  checked. The scan has bounds (8 folders deep, 100 site-packages folders, 5,000 packages in one,
+  the first 64 KiB of each METADATA, no symlinks followed); what it did not cover is reported as not
+  checked.
+- They also list the `.pth` files there with lines Python runs at every start: the file and how
+  many such lines, not their text. The files setuptools, virtualenv and an editable install write
+  themselves are marked as theirs when every such line is exactly theirs; the patrol pushes the
+  others as warnings.
 
 ### Known issues
 

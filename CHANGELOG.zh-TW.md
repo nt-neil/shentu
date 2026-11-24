@@ -8,6 +8,8 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 - PHP 規則會讀 `filter_input()`。用 `filter_input(INPUT_GET, ...)`、`INPUT_POST` 或 `INPUT_COOKIE` 取得的值，以及應用程式自己同名的方法（`->filterInput(`、`->filter_input(`）在第一個參數是這幾個常數時取得的值，在每一條會讀 `$_GET`、`$_POST` 或 `$_COOKIE` 的 PHP 規則裡都算請求輸入。第一個參數是變數或其他常數（例如 `INPUT_SERVER`）時不算。數字或 bool 的 filter（`FILTER_VALIDATE_INT`、`FILTER_VALIDATE_BOOL`、`FILTER_SANITIZE_NUMBER_INT` 等，寫成具名參數 `filter:` 也一樣）取得的值不帶輸入，但用 `|` 加上 flag 時不算（`FILTER_VALIDATE_INT | FILTER_NULL_ON_FAILURE` 是另一個 filter ID，PHP 7 會當成 `FILTER_DEFAULT`）；`FILTER_SANITIZE_SPECIAL_CHARS` 在把 `htmlspecialchars()` 當清理函式的規則裡算清理過；URL 的 filter 不算清理。
 - macOS：netstat 給的 pid 是 0 的 listening socket，看不出是哪個程序，所以 listening port 的清單會標成部分（partial），並寫明有幾個，不再當成每個 owner 都知道的完整清單。
 - `shentu patrol --dry-run` 顯示的所有標題（每一組攻擊紀錄、超過單輪上限的合併通知、攻擊偵測的通知）都改用設定的語言，和實際送出的通知一樣；之前一律是英文。
+- `app_vulns` 和每日巡檢會檢查 site-packages 裡已安裝的 Python 套件（app 路徑下的 venv、`/usr/local/lib/python3*`，以及 `/usr/lib/python3*` 裡由 pip 安裝的套件），和 lock 檔一樣用 PyPI 比對 OSV，並標出 CISA KEV。之前只讀 lock 檔，用 pip 安裝、但沒有寫在任何 lock 檔裡的套件不會被檢查。掃描有上限（往下 8 層、100 個 site-packages 資料夾、每個資料夾 5,000 個套件、每個 METADATA 只讀前 64 KiB，不跟隨 symlink），超過上限或讀不到的部分會在報告裡寫成沒有檢查。
+- 也會列出那些資料夾裡，含有每次啟動 Python 都會執行的行的 `.pth` 檔：只寫檔案和這種行有幾行，不寫內容。setuptools、virtualenv 和 editable install 自己寫的檔案，要每一行都完全符合，才會標成是那個工具的；其他的由巡檢以 warning 送出通知。
 
 ### 已知問題
 
