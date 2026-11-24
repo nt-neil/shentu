@@ -285,8 +285,9 @@ var knownPth = []struct {
 }{
 	{regexp.MustCompile(`^distutils-precedence\.pth$`), "setuptools", []*regexp.Regexp{
 		regexp.MustCompile(`^import os; var = 'SETUPTOOLS_USE_DISTUTILS'; enabled = os\.environ\.get\(var, '(?:local|stdlib)'\) == 'local'; enabled and __import__\('_distutils_hack'\)\.add_shim\(\); ?$`)},
-		func(dir, _ string, _ []string) bool { // the module setuptools installed, as its RECORD has it
-			return recordHas(dir, "setuptools-*.dist-info", "_distutils_hack/__init__.py")
+		func(dir, name string, _ []string) bool { // the module setuptools installed, as its RECORD has it
+			return recordHas(dir, "setuptools-*.dist-info", "_distutils_hack/__init__.py") ||
+				systemOwned(dir, name, "_distutils_hack/__init__.py") // the system's setuptools (Debian keeps no RECORD)
 		}},
 	{regexp.MustCompile(`^_virtualenv\.pth$`), "virtualenv", []*regexp.Regexp{regexp.MustCompile(`^import _virtualenv$`)},
 		func(dir, _ string, _ []string) bool { // virtualenv writes it into the venvs it makes
@@ -303,6 +304,21 @@ var knownPth = []struct {
 		regexp.MustCompile(`^import sys; sys\.__plen = len\(sys\.path\)$`),
 		regexp.MustCompile(`^import sys; new = sys\.path\[sys\.__plen:\]; del sys\.path\[sys\.__plen:\]; p = getattr\(sys, '__egginsert', 0\); sys\.path\[p:p\] = new; sys\.__egginsert = p \+ len\(new\)$`)}, nil},
 	{regexp.MustCompile(`^[A-Za-z0-9_.+-]+-nspkg\.pth$`), "setuptools namespace package", []*regexp.Regexp{nspkgLine()}, nil},
+}
+
+// rootOnly is rootOnlyFile; tests stand in for root.
+var rootOnly = rootOnlyFile
+
+// systemOwned: in a folder of the system's package manager (under
+// osManagedPrefixes), the folder, the .pth and the module are root's and
+// no one else can write them, as the package manager installed them.
+func systemOwned(dir, name, rel string) bool {
+	managed := false
+	for _, p := range osManagedPrefixes {
+		managed = managed || strings.HasPrefix(dir, p)
+	}
+	return managed && rootOnly(dir, true) && rootOnly(filepath.Join(dir, name), false) &&
+		rootOnly(filepath.Join(dir, filepath.FromSlash(rel)), false)
 }
 
 // recordHas: a dist-info matching glob in dir lists rel in its RECORD, and

@@ -346,6 +346,34 @@ func TestSitePackagesSystem(t *testing.T) {
 	if strings.Join(f.queries, " ") != "frompip@1.0 bylocal@1.0" {
 		t.Errorf("queries %q, want frompip and bylocal only", f.queries)
 	}
+	// The system's own setuptools keeps no RECORD (Debian): its
+	// distutils-precedence.pth is setuptools' where the package manager's
+	// files are root's alone; not in /usr/local, not a file others can write.
+	pthText := "import os; var = 'SETUPTOOLS_USE_DISTUTILS'; enabled = os.environ.get(var, 'local') == 'local'; enabled and __import__('_distutils_hack').add_shim(); \n"
+	for _, d := range []string{managed, local} {
+		os.WriteFile(filepath.Join(d, "distutils-precedence.pth"), []byte(pthText), 0o644)
+		os.MkdirAll(filepath.Join(d, "_distutils_hack"), 0o755)
+		os.WriteFile(filepath.Join(d, "_distutils_hack", "__init__.py"), []byte("def add_shim(): pass\n"), 0o644)
+	}
+	known := func() map[string]string {
+		out, _ := AppVulns(context.Background(), &http.Client{Transport: &pypiFeeds{}}, nil)
+		m := map[string]string{}
+		pth, _ := out["pth"].([]PthFile)
+		for _, p := range pth {
+			m[filepath.Dir(p.Path)] = p.Known
+		}
+		return m
+	}
+	oldRoot := rootOnly
+	t.Cleanup(func() { rootOnly = oldRoot })
+	rootOnly = func(string, bool) bool { return true } // as root installed them
+	if k := known(); k[managed] != "setuptools" || k[local] != "" {
+		t.Errorf("root's own: %q", k)
+	}
+	rootOnly = func(p string, _ bool) bool { return !strings.HasSuffix(p, "__init__.py") } // a module others can write
+	if k := known(); k[managed] != "" {
+		t.Errorf("a module not root's alone: %q", k)
+	}
 	f.queries = nil
 	if _, err := appVulnsIn(context.Background(), &http.Client{Transport: f}, []string{t.TempDir()}, false); err != nil || len(f.queries) != 0 {
 		t.Errorf("a path asked about read the system's: %q %v", f.queries, err)
