@@ -45,6 +45,13 @@ Chinese for the zh-TW pages; keep the two in step.
   where they have room, the newest and the x.y.0 releases first, and a hidden one shows on hover or
   focus of its lamp (they ran into each other at 844px and 1440px); each lamp's link reads out its
   version, date, rule count and bench result.
+- SQL injection and XSS rules take arithmetic as a number, which carries no quote or markup:
+  a page offset `(max($_GET['paged'], 1) - 1) * 20` in a `LIMIT` (as in Welcart), PHP's
+  `$_GET['n'] + 1`, JavaScript's `req.query.n - 1` and Python's `request.args['n'] - 1` are no
+  longer reported there. Arithmetic is `-`, `/`, `*`, `%` and `**` (in Python `-`, `/`, `//` and
+  `**`), and in PHP a `+` next to a number. Still input: PHP `+` of two arrays (their union), `|`
+  of two strings, `.` next to `-`, JavaScript's binary `+`, Python's `*` (which repeats a string),
+  and a number in the path rules.
 
 ### Known issues
 
