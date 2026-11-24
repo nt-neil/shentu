@@ -138,8 +138,41 @@ func (a *analysis) fixedText(text string) bool {
 		return len(text) >= 2 && text[1] != '/' && text[1] != '\\'
 	case strings.HasPrefix(text, "\\"):
 		return false
+	case driveStart(text):
+		return true
 	}
 	return notScheme(text)
+}
+
+// driveStart reports a Windows drive at the start of text (C:\, C:/): a local
+// path, though "C:" alone reads as a scheme to notScheme. No network scheme is
+// one letter long.
+func driveStart(text string) bool {
+	return len(text) >= 3 && (text[0]|0x20 >= 'a' && text[0]|0x20 <= 'z') && text[1] == ':' && (text[2] == '\\' || text[2] == '/')
+}
+
+// segmentAfter reports whether literal text written after a constant of unknown
+// value fixes the host for a URL: a character that is no separator, then "/",
+// "?" or "#" (WP_CONTENT_DIR . '/uploads/'), and no ":". Whatever the constant
+// holds, a host it starts ends in the text, and the input comes after it. A
+// bare "/" or "/a" does not: K = 'http:/' gives "http://" or "http://a", and
+// the input picks or extends the host; "p://" would finish K = 'htt'.
+func segmentAfter(lit string) bool {
+	if strings.IndexByte(lit, ':') >= 0 {
+		return false
+	}
+	seg := false
+	for i := 0; i < len(lit); i++ {
+		switch c := lit[i]; {
+		case c == '/' || c == '?' || c == '#':
+			if seg {
+				return true
+			}
+		case c != '\\':
+			seg = true
+		}
+	}
+	return false
 }
 
 // fixedHost reports whether text starts with a scheme and a host that the input
