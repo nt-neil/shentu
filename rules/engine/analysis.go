@@ -1265,6 +1265,9 @@ func (a *analysis) expr(st state, t []Token, whole bool) val {
 	if a.py && indexTop(t, 0, isOp(":")) >= 0 {
 		return a.anyOf(st, splitTop(t, isOp(":")), whole)
 	}
+	if a.numberOnly() && a.arithmetic(t) {
+		return val{} // ($page - 1) * $per: a number, which carries no quote or markup
+	}
 
 	var v val
 	terms := 0
