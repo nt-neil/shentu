@@ -16,8 +16,10 @@ Chinese for the zh-TW pages; keep the two in step.
   `FILTER_VALIDATE_BOOL`, `FILTER_SANITIZE_NUMBER_INT` and others, also as a named `filter:`
   argument) gives a value with no input in it, but not with flags or-ed into it
   (`FILTER_VALIDATE_INT | FILTER_NULL_ON_FAILURE` is another filter ID, which PHP 7 reads as
-  `FILTER_DEFAULT`); `FILTER_SANITIZE_SPECIAL_CHARS` cleans in the rules that take `htmlspecialchars()` as a
-  sanitizer; a URL filter does not clean.
+  `FILTER_DEFAULT`); `FILTER_SANITIZE_SPECIAL_CHARS` cleans in the rules that take
+  `htmlspecialchars()` as a sanitizer; a URL filter does not clean.
+- macOS: a listening socket netstat gives with pid 0 has no owner to name, so the list of listening
+  ports is marked partial and says how many, no longer complete as if every owner were known.
 
 ### Known issues
 
@@ -28,6 +30,10 @@ Chinese for the zh-TW pages; keep the two in step.
 - An application's own URL builder for a page of the same site (YesWiki's
   `$this->wiki->Href('', $name)`, `href()`) is not known as one, so a redirect to it reports as an
   open redirect (YesWiki's LoginAction.php and DuplicateHandler.php).
+- macOS 27 hides the Internet sockets from netstat for any process started by an ad-hoc signed
+  program, as the release binaries are: `netstat -anv` writes nothing there (exit 0). shentu then
+  lists the listening ports with lsof, which sees only its own user's processes, and marks the list
+  partial. Run from a terminal, netstat shows them. macOS 15 is not affected.
 
 ## v0.5.6 — 2026-11-24
 
