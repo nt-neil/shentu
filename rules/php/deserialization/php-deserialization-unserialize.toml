@@ -6,7 +6,7 @@ severity = "critical"
 title = "unserialize() on data the client can send or tamper with"
 frameworks = ["laravel"]
 sources = ["$_GET", "$_POST", "$_COOKIE", "$_REQUEST", "$_SERVER['HTTP_", "php://input", "$request->cookie(", "$request->input(",
-           "$request->query(", "$request->get(", "request()->cookie(", "request()->input(", "Cookie::get("]
+           "$request->query(", "$request->get(", "request()->cookie(", "request()->input(", "Cookie::get(", "filter_input(", "->filterInput(", "->filter_input("]
 sinks = ["unserialize("]
 sanitizers = []
 text = ["php://input"]
@@ -44,3 +44,9 @@ code = '''
 <?php
 $cart = unserialize(base64_decode($_COOKIE['cart']), ['allowed_classes' => false]);
 '''
+
+# filter_input(INPUT_GET, ...) and an application's filterInput(INPUT_POST, ...) wrapper read the request like $_GET and $_POST
+[[source_args]]
+sources = ["filter_input(", "->filterInput(", "->filter_input("]
+arg = 1
+values = ["INPUT_GET", "INPUT_POST", "INPUT_COOKIE"]

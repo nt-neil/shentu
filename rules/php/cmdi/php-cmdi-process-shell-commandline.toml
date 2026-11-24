@@ -6,7 +6,7 @@ severity = "critical"
 tier = "info"
 title = "Request input in a command line that Symfony Process passes to a shell"
 frameworks = ["symfony", "laravel"]
-sources = ["$request->query->get(", "$request->attributes->get(", "$request->request->get(", "$request->get(", "$request->query->all(", "$request->input(", "$request->query(", "$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "->get_param("]
+sources = ["$request->query->get(", "$request->attributes->get(", "$request->request->get(", "$request->get(", "$request->query->all(", "$request->input(", "$request->query(", "$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "->get_param(", "filter_input(", "->filterInput(", "->filter_input("]
 # Laravel's Process::run( and Process::start( are php-cmdi-shell-exec's.
 sinks = ["Process::fromShellCommandline(", "Process("]
 sanitizers = ["escapeshellarg", "absint", "intval", "in_array", "ctype_digit", "ctype_alnum"]
@@ -68,3 +68,9 @@ class BackupController extends AbstractController
     }
 }
 '''
+
+# filter_input(INPUT_GET, ...) and an application's filterInput(INPUT_POST, ...) wrapper read the request like $_GET and $_POST
+[[source_args]]
+sources = ["filter_input(", "->filterInput(", "->filter_input("]
+arg = 1
+values = ["INPUT_GET", "INPUT_POST", "INPUT_COOKIE"]

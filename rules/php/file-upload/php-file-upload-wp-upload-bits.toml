@@ -6,7 +6,7 @@ severity = "low"
 tier = "info"
 title = "wp_upload_bits() stores a file under the name the client sent"
 frameworks = ["wordpress"]
-sources = ["$_FILES", "$request['", "$_POST", "$_GET", "$_REQUEST", "->get_param(", "->get_file_params("]
+sources = ["$_FILES", "$request['", "$_POST", "$_GET", "$_REQUEST", "->get_param(", "->get_file_params(", "filter_input(", "->filterInput(", "->filter_input("]
 sinks = ["wp_upload_bits("]
 sanitizers = ["uniqid", "md5", "sha1", "wp_generate_uuid4", "random_bytes", "bin2hex", "absint", "intval", "wp_generate_password"]
 fix = "wp_upload_bits() refuses an extension outside the site's allowed types unless the user has unfiltered_upload, but it never looks at the content and an admin, a multisite super admin or an upload_mimes filter widens what passes: choose the stored name on the server (wp_generate_uuid4() plus a fixed extension) or upload through wp_handle_upload() with a mimes allowlist."
@@ -54,3 +54,9 @@ register_rest_route('course/v1', '/attachments', ['methods' => 'POST', 'callback
     return true;
 }]);
 '''
+
+# filter_input(INPUT_GET, ...) and an application's filterInput(INPUT_POST, ...) wrapper read the request like $_GET and $_POST
+[[source_args]]
+sources = ["filter_input(", "->filterInput(", "->filter_input("]
+arg = 1
+values = ["INPUT_GET", "INPUT_POST"]

@@ -8,7 +8,7 @@ title = "Request input concatenated or interpolated into a SQL string"
 # this rule's, not php-sqli-codeigniter-query's (its query builder methods).
 sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "get_query_var(", "->get_param(",
            "$this->input->get(", "$this->input->post(", "$this->input->get_post(", "$this->input->cookie(", "$this->request->getGet(", "$this->request->getPost(",
-           "$this->request->getVar(", "$this->request->getJSON(", "request("]
+           "$this->request->getVar(", "$this->request->getJSON(", "request(", "filter_input(", "->filterInput(", "->filter_input("]
 # Input written into prepare()'s statement or format is php-sqli-prepare-query-text's
 sinks = ["mysqli_query", "mysqli_multi_query(", "mysqli_real_query(", "->query(", "->exec(", "->multi_query(", "->real_query(", "pg_query"]
 # Not $db->escape( or $this->db->escape(: CodeIgniter's quotes the value, but
@@ -112,3 +112,9 @@ class Reports extends CI_Controller
     }
 }
 '''
+
+# filter_input(INPUT_GET, ...) and an application's filterInput(INPUT_POST, ...) wrapper read the request like $_GET and $_POST
+[[source_args]]
+sources = ["filter_input(", "->filterInput(", "->filter_input("]
+arg = 1
+values = ["INPUT_GET", "INPUT_POST", "INPUT_COOKIE"]
