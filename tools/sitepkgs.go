@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"syscall"
 	"unicode/utf8"
 
 	"github.com/nt-neil/shentu/internal/osutil"
@@ -324,8 +325,15 @@ func unverifiedDistutilsHack(dirs []string, complete bool) bool {
 			seen[d] = true
 			all = append(all, d)
 		}
-		for _, p := range pthPaths(d) {
-			if !seen[p] && len(all) < 4*sitePkgDirsMax {
+		added, whole := pthPaths(d)
+		if !whole {
+			return true // a .pth not read whole: a folder it adds is not known
+		}
+		for _, p := range added {
+			if !seen[p] {
+				if len(all) >= 4*sitePkgDirsMax {
+					return true
+				}
 				seen[p] = true
 				all = append(all, p)
 			}
@@ -333,8 +341,11 @@ func unverifiedDistutilsHack(dirs []string, complete bool) bool {
 	}
 	for _, d := range all {
 		ents, err := os.ReadDir(d)
-		if err != nil {
+		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
 			continue // not there: nothing to import from it
+		}
+		if err != nil {
+			return true
 		}
 		for _, e := range ents {
 			n := e.Name()
@@ -351,21 +362,30 @@ func unverifiedDistutilsHack(dirs []string, complete bool) bool {
 }
 
 // pthPaths are the folders the path lines of dir's .pth files add to
-// sys.path (relative ones taken from dir).
-func pthPaths(dir string) []string {
-	var out []string
-	ents, _ := os.ReadDir(dir)
+// sys.path, read as site.py reads them (a line starting "#" or "import"
+// as written is not one; trailing white space dropped; relative ones taken
+// from dir); whole is false when a .pth there was not read whole.
+func pthPaths(dir string) (out []string, whole bool) {
+	ents, err := os.ReadDir(dir)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, false
+	}
 	for _, e := range ents {
-		if !strings.HasSuffix(e.Name(), ".pth") || !e.Type().IsRegular() {
+		if !strings.HasSuffix(e.Name(), ".pth") {
 			continue
 		}
-		b, ok := readHead(filepath.Join(dir, e.Name()), sitePkgHead)
-		if !ok {
-			continue
+		if !e.Type().IsRegular() {
+			return nil, false
+		}
+		b, ok := readHead(filepath.Join(dir, e.Name()), sitePkgHead+1)
+		if !ok || len(b) > sitePkgHead {
+			return nil, false
 		}
 		for _, l := range strings.Split(pthLineEnd.Replace(strings.TrimPrefix(string(b), "\ufeff")), "\n") {
-			l = strings.TrimSpace(l)
-			if l == "" || strings.HasPrefix(l, "#") || strings.HasPrefix(l, "import ") || strings.HasPrefix(l, "import\t") {
+			if strings.HasPrefix(l, "#") || strings.HasPrefix(l, "import ") || strings.HasPrefix(l, "import\t") {
+				continue
+			}
+			if l = strings.TrimRight(l, " \t\f\v"); l == "" {
 				continue
 			}
 			if !filepath.IsAbs(l) {
@@ -374,7 +394,7 @@ func pthPaths(dir string) []string {
 			out = append(out, filepath.Clean(l))
 		}
 	}
-	return out
+	return out, true
 }
 
 // rootOnly is rootOnlyFile; tests stand in for root.

@@ -182,18 +182,18 @@ func TestSitePackagesPth(t *testing.T) {
 		"_virtualenv.pth":                    "import _virtualenv",
 		"__editable__.mypkg-1.0.pth":         "import __editable___mypkg_1_0_finder; __editable___mypkg_1_0_finder.install()\n",
 		"google_auth-2.0.0-py3.12-nspkg.pth": nspkg + "\n",
-		"paths.pth":                          "/opt/lib\n# import nothing\n",
+		"paths.pth":                          "extra-lib\n# import nothing\n",
 		"evil.pth":                           "import os; os.environ['X'] = '" + secret + "'\nimport\tsys\n",
 		"__editable__.other-1.0.pth":         "import __editable___other_1_0_finder; __editable___other_1_0_finder.install()\nimport os; os.system('" + secret + "')\n",
 		"protobuf-4.0-py3.12-nspkg.pth":      strings.Replace(nspkg, "(p not in mp)", "__import__('os').system('x') or (p not in mp)", 1),
 		"__editable__.mixed-1.0.pth":         "import __editable___a_finder; __editable___b_finder.install()\n",
 		"easy-install.pth":                   "import sys; sys.__plen = len(sys.path)\n./foo.egg\n",
 	}
-	files["cr.pth"] = "/opt/lib\rimport os\r"               // Python ends a line at \r too
+	files["cr.pth"] = "extra-lib\rimport os\r"              // Python ends a line at \r too
 	files["bom.pth"] = "\ufeffimport os\n"                  // and drops a UTF-8 BOM
-	files["vt.pth"] = "/opt/lib\vimport os\n"               // 3.13 splits as str.splitlines()
-	files["ls.pth"] = "/opt/lib\u2028import os\n"           // U+2028 too
-	files["nel.pth"] = "/opt/lib\x85import os\n"            // and 0x85 read in the locale's encoding
+	files["vt.pth"] = "extra-lib\vimport os\n"              // 3.13 splits as str.splitlines()
+	files["ls.pth"] = "extra-lib\u2028import os\n"          // U+2028 too
+	files["nel.pth"] = "extra-lib\x85import os\n"           // and 0x85 read in the locale's encoding
 	files["x-nspkg.pth"] = nspkg + "\v__import__('os')\n"   // known up to \v: 3.12 runs it all
 	files["y-nspkg.pth"] = nspkg + "\x85__import__('os')\n" // known up to 0x85, not UTF-8: 3.12 and UTF-8 run it all
 	for n, c := range files {
@@ -214,7 +214,6 @@ func TestSitePackagesPth(t *testing.T) {
 	dist(t, bad, "mypkg-1.0", "mypkg", "1.0", "pip")
 	record(t, bad, "mypkg-1.0", "__editable___mypkg_1_0_finder.py", "def install(): pass\n")
 	os.WriteFile(filepath.Join(bad, "__editable___mypkg_1_0_finder.py"), []byte("import os\n"), 0o644)
-	os.Symlink(filepath.Join(sp, "evil.pth"), filepath.Join(bad, "linked.pth"))
 	out, err := AppVulns(context.Background(), &http.Client{Transport: &pypiFeeds{}}, []string{root})
 	if err != nil {
 		t.Fatal(err)
@@ -261,8 +260,17 @@ func TestSitePackagesPth(t *testing.T) {
 			t.Errorf("%s: %+v, want %+v", n, g, w)
 		}
 	}
+	// a symlinked .pth: said, and the folders it may add are unknown
+	os.Symlink(filepath.Join(sp, "evil.pth"), filepath.Join(bad, "linked.pth"))
+	out, _ = AppVulns(context.Background(), &http.Client{Transport: &pypiFeeds{}}, []string{root})
 	if p, _ := out["partial"].(string); !strings.Contains(p, "linked.pth 不是一般檔案") {
 		t.Errorf("a symlinked .pth is not said: %q", p)
+	}
+	pth, _ = out["pth"].([]PthFile)
+	for _, f := range pth {
+		if filepath.Base(f.Path) == "distutils-precedence.pth" && f.Known != "" {
+			t.Errorf("known with a .pth not read: %+v", f)
+		}
 	}
 	b, _ := json.Marshal(out)
 	if strings.Contains(string(b), secret) || strings.Contains(string(b), "os.system") {
@@ -398,6 +406,19 @@ func TestSitePackagesSystem(t *testing.T) {
 		t.Errorf("a shadow in a folder a .pth adds: %q", k)
 	}
 	os.Remove(filepath.Join(extra, "_distutils_hack.py"))
+	os.Chmod(extra, 0) // an added folder that cannot be listed
+	if k := known(); k[managed] != "" && os.Getuid() != 0 {
+		t.Errorf("an added folder not listed: %q", k)
+	}
+	os.Chmod(extra, 0o755)
+	os.WriteFile(filepath.Join(local, "big.pth"), []byte(strings.Repeat("#\n", 40<<10)), 0o644) // past 64 KiB
+	if k := known(); k[managed] != "" {
+		t.Errorf("a .pth not read whole: %q", k)
+	}
+	os.Remove(filepath.Join(local, "big.pth"))
+	if k := known(); k[managed] != "setuptools" {
+		t.Errorf("after: %q", k)
+	}
 	// the walk cut short: not every folder was looked at
 	oldV := sitePkgVisits
 	t.Cleanup(func() { sitePkgVisits = oldV })
