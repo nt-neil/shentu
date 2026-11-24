@@ -6,7 +6,7 @@ severity = "medium"
 tier = "info"
 title = "Symfony or Laravel redirect response built from a URL taken from the request"
 frameworks = ["symfony", "laravel"]
-sources = ["$request->headers->get('referer'", "$request->headers->get('Referer'", "$request->query->get(", "$request->attributes->get(", "$request->request->get(", "$request->get(", "$request->query->all(", "$request->input(", "$request->query(", "$_GET", "$_POST", "$_REQUEST"]
+sources = ["$request->headers->get('referer'", "$request->headers->get('Referer'", "$request->query->get(", "$request->attributes->get(", "$request->request->get(", "$request->get(", "$request->query->all(", "$request->input(", "$request->query(", "$_GET", "$_POST", "$_REQUEST", "filter_input(", "->filterInput(", "->filter_input("]
 sinks = ["RedirectResponse(", "$this->redirect(", "RedirectResponse::create(", "TrustedRedirectResponse("]
 sanitizers = ["absint", "intval", "in_array", "$this->generateUrl(", "route("]
 fix = "Redirect to a route the server names ($this->redirectToRoute(), redirect()->route()), or accept the requested target only when it is one of a fixed list (in_array($target, $allowed, true)) and fall back to a default otherwise."
@@ -93,3 +93,9 @@ class CartController extends AbstractController
     }
 }
 '''
+
+# filter_input(INPUT_GET, ...) and an application's filterInput(INPUT_POST, ...) wrapper read the request like $_GET and $_POST
+[[source_args]]
+sources = ["filter_input(", "->filterInput(", "->filter_input("]
+arg = 1
+values = ["INPUT_GET", "INPUT_POST"]

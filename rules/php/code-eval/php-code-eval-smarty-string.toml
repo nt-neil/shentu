@@ -5,7 +5,7 @@ cwe = "CWE-1336"
 severity = "critical"
 tier = "info"
 title = "Request input rendered as a Smarty template through the string: or eval: resource"
-sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "$request->input(", "$request->get(", "$request->query->get(", "$request->request->get(", "->get_param("]
+sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "$request->input(", "$request->get(", "$request->query->get(", "$request->request->get(", "->get_param(", "filter_input(", "->filterInput(", "->filter_input("]
 sinks = ["->fetch(", "->display(", "->isCached("]
 sanitizers = []
 fix = "Never render text from a request as a Smarty template: render a template file and pass the input with assign(), where it is data ({$body|escape}). A security policy (enableSecurity()) narrows what a template can call but does not make request text safe to compile."
@@ -59,3 +59,9 @@ $smarty->assign('name', $_GET['name']);
 echo $smarty->fetch('string:Hello {$name|escape}!');
 $row = $stmt->fetch(PDO::FETCH_ASSOC);
 '''
+
+# filter_input(INPUT_GET, ...) and an application's filterInput(INPUT_POST, ...) wrapper read the request like $_GET and $_POST
+[[source_args]]
+sources = ["filter_input(", "->filterInput(", "->filter_input("]
+arg = 1
+values = ["INPUT_GET", "INPUT_POST", "INPUT_COOKIE"]

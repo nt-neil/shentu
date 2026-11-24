@@ -5,7 +5,7 @@ cwe = "CWE-88"
 severity = "critical"
 title = "Request data in the fifth (additional_params) argument of mail()"
 frameworks = ["laravel"]
-sources = ["$_GET", "$_POST", "$_REQUEST", "$_SERVER['HTTP_", "$request->input(", "$request->getHost()", "$request->header("]
+sources = ["$_GET", "$_POST", "$_REQUEST", "$_SERVER['HTTP_", "$request->input(", "$request->getHost()", "$request->header(", "filter_input(", "->filterInput(", "->filter_input("]
 sinks = ["mail("]
 sanitizers = []
 fix = "Leave mail()'s fifth argument out (set sendmail_from in php.ini or with ini_set) or pass only a fixed value; escapeshellarg does not help here because mail() escapes the argument again."
@@ -46,3 +46,9 @@ code = '''
 ini_set('sendmail_from', 'noreply@example.com');
 mail('sales@example.com', 'Contact form', $_POST['message'], 'Reply-To: noreply@example.com');
 '''
+
+# filter_input(INPUT_GET, ...) and an application's filterInput(INPUT_POST, ...) wrapper read the request like $_GET and $_POST
+[[source_args]]
+sources = ["filter_input(", "->filterInput(", "->filter_input("]
+arg = 1
+values = ["INPUT_GET", "INPUT_POST"]
