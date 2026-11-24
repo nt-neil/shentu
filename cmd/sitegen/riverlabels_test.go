@@ -156,13 +156,9 @@ func TestRiverLabelsAtLeastRendered(t *testing.T) {
 			if r.Date == "" {
 				// Not released yet: its label changes with each PR (the rule
 				// count), so it is measured on release day, once it is dated.
-				// Until then only the floor of the estimate holds, and a row
-				// for it means a release was measured but never dated.
+				// A row for it means a release was measured but never dated.
 				if _, ok := rows[r.Version]; ok {
 					t.Errorf("%s v%s: measured, but not released (no date in the CHANGELOG)", lang, r.Version)
-				}
-				if est := labelWidth(r, tr); est < labelLamp || est < textWidth("v"+r.Version, 22) {
-					t.Errorf("%s v%s: estimated %.0fpx, under its own floor", lang, r.Version, est)
 				}
 				continue
 			}

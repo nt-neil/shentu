@@ -38,6 +38,16 @@ func TestDarwinListenersMacOS15(t *testing.T) {
 		t.Errorf("macOS 15 netstat: %+v", got)
 	}
 
+	// S-214-2: a listener netstat gives as pid 0 has no owner to name: the
+	// list is partial, and says so.
+	src0 := fakeMac{cmds: map[string]string{key(netstatTCPArgv): netstat15Head +
+		"tcp4       0      0  *.8022                 *.*                    LISTEN             0            0  131072  131072      0      0 00100 00000006 00000000000004b0 00000000 00000800      1      0 000001\n",
+		key(netstatUDPArgv): netstat15Head, key(macPsArgv): ps}}
+	got = DarwinCollector{}.Listeners(context.Background(), src0)
+	if got.Status != StatusPartial || len(got.Value) != 1 || got.Value[0].Port != 8022 || !strings.Contains(got.Detail, "no owner (pid 0)") {
+		t.Errorf("a pid 0 listener: %+v", got)
+	}
+
 	// ps unreadable: the listeners are all there, unnamed, and that is said.
 	delete(src.cmds, key(macPsArgv))
 	got = DarwinCollector{}.Listeners(context.Background(), src)

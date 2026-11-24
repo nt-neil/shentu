@@ -72,6 +72,11 @@ type loginIndex struct {
 	// an address the index had no room for.
 	OverflowFirst time.Time `json:"overflow_first,omitzero"`
 	OverflowLast  time.Time `json:"overflow_last,omitzero"`
+
+	// prunedAt is the event time the index was last pruned at, while full:
+	// nothing more can age out before an hour later, so a flood of new
+	// addresses past the bound does not walk every kept one per event.
+	prunedAt time.Time
 }
 
 // loginIndexNote is one note, with when it was made.
@@ -126,8 +131,9 @@ var loginIndexMu sync.Mutex
 func (x *loginIndex) add(ip string, at time.Time, own bool) {
 	a := x.Addrs[ip]
 	if a == nil {
-		if len(x.Addrs) >= maxIndexAddrs {
+		if len(x.Addrs) >= maxIndexAddrs && !at.Before(x.prunedAt.Add(time.Hour)) {
 			x.prune(at)
+			x.prunedAt = at
 		}
 		if len(x.Addrs) >= maxIndexAddrs {
 			if x.OverflowFirst.IsZero() || at.Before(x.OverflowFirst) {
@@ -366,11 +372,25 @@ func (x *loginIndex) indexedLogins(ip net.IP, now time.Time) (seen bool, err err
 	return true, nil
 }
 
+// loginRefreshBudget bounds the patrol's catching up: it reads on, one
+// read (JournalTimeout) after the other, each saved, until it has read to
+// the end of the journal or spent this long. An hour of a flood is read in
+// one patrol, so a check between patrols reads only what came since.
+var loginRefreshBudget = 15 * time.Minute
+
 // RefreshLoginIndex reads the login index on, for the patrol: run every
-// hour, it leaves a check only the entries since to read. Where block_ip
+// 30 minutes, it leaves a check only the entries since to read. Where block_ip
 // does not run there is no index; a failure is the next read's to meet.
 func RefreshLoginIndex(ctx context.Context) {
-	if blockUnsupported() == nil {
-		updateLoginIndex(ctx)
+	if blockUnsupported() != nil {
+		return
+	}
+	start := time.Now() // the real clock: the budget is time spent, whatever the index's clock says
+	for {
+		_, err := updateLoginIndex(ctx)
+		cut := errors.Is(err, hostenv.ErrTimeout) || errors.Is(err, context.DeadlineExceeded)
+		if !cut || ctx.Err() != nil || time.Since(start) >= loginRefreshBudget {
+			return
+		}
 	}
 }
