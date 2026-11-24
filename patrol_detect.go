@@ -352,7 +352,7 @@ func (r *detectRun) send(ctx context.Context, env *tools.Env) detectSummary {
 			rest := due[i:]
 			text := alertsSummary(rest)
 			if r.dryRun {
-				fmt.Printf("Attack attempts (summary)\n\n%s\n", text)
+				fmt.Printf("%s\n\n%s\n", fmt.Sprintf(nt(isZh(r.cfg), "det_more_title"), len(rest)), text) // as sent (N-236-1)
 				break
 			}
 			if err := detectNotify(ctx, env, fmt.Sprintf(nt(isZh(r.cfg), "det_more_title"), len(rest)), text, notifySeverity(rest[0].Severity)); err != nil {
@@ -368,7 +368,7 @@ func (r *detectRun) send(ctx context.Context, env *tools.Env) detectSummary {
 		}
 		text := detect.AlertText(g, &r.surface)
 		if r.dryRun {
-			fmt.Printf("Attack attempt\n\n%s\n", text)
+			fmt.Printf("%s\n\n%s\n", nt(isZh(r.cfg), "det_attempt_title"), text)
 			continue
 		}
 		if err := detectNotify(ctx, env, nt(isZh(r.cfg), "det_attempt_title"), text, notifySeverity(g.Severity)); err != nil {
@@ -387,9 +387,10 @@ func (r *detectRun) send(ctx context.Context, env *tools.Env) detectSummary {
 		}
 	}
 	if notices != "" {
+		title := nt(isZh(r.cfg), "det_notice_title") // the dry run's title is the notice's own (N-056u-1)
 		if r.dryRun {
-			fmt.Printf("Attack detection notice\n\n%s\n", notices)
-		} else if err := detectNotify(ctx, env, nt(isZh(r.cfg), "det_notice_title"), notices, "warning"); err != nil {
+			fmt.Printf("%s\n\n%s\n", title, notices)
+		} else if err := detectNotify(ctx, env, title, notices, "warning"); err != nil {
 			fail("notify (notices; sent again next round)", err)
 		} else {
 			p.NoticesSent()

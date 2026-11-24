@@ -8,8 +8,43 @@ Chinese for the zh-TW pages; keep the two in step.
 
 ## v0.5.7 (unreleased)
 
+- PHP rules read `filter_input()`. A value from `filter_input(INPUT_GET, ...)`, `INPUT_POST` or
+  `INPUT_COOKIE`, and from an application's own method of that name (`->filterInput(`,
+  `->filter_input(`) when its first argument is one of these constants, is request input in each
+  PHP rule that reads `$_GET`, `$_POST` or `$_COOKIE`. A first argument that is a variable or
+  another constant (such as `INPUT_SERVER`) is not. A number or bool filter (`FILTER_VALIDATE_INT`,
+  `FILTER_VALIDATE_BOOL`, `FILTER_SANITIZE_NUMBER_INT` and others, also as a named `filter:`
+  argument) gives a value with no input in it, but not with flags or-ed into it
+  (`FILTER_VALIDATE_INT | FILTER_NULL_ON_FAILURE` is another filter ID, which PHP 7 reads as
+  `FILTER_DEFAULT`); `FILTER_SANITIZE_SPECIAL_CHARS` cleans in the rules that take
+  `htmlspecialchars()` as a sanitizer; a URL filter does not clean.
 - macOS: a listening socket netstat gives with pid 0 has no owner to name, so the list of listening
   ports is marked partial and says how many, no longer complete as if every owner were known.
+- `shentu patrol --dry-run` prints all its titles (each attack attempt, the summary past the
+  round's limit, the attack detection notice) in the setting's language, as they are sent; they
+  were always in English.
+- Fixed the v0.5.6 known issue: `new $var(...)` is no longer taken as a call of the parameter
+  `$var`. It makes an object of the class `$var` names and calls no callable, as `NEW $var(...)` in
+  any case does too. A caller passing a variable there is no longer marked as having calls not all
+  followed, and the argument's input no longer reaches the function's return, where it could be
+  reported falsely (`echo get_entity($_GET['a'], $c)` reported `php-xss-echo-html`). Plugins that
+  bundle the Freemius SDK (`fs_get_entity($entity, $class)`) had the most such files.
+- block_ip's login index reads a flood with a lighter read, with the same result as the full read.
+  While the index is full, addresses with no event in the window are pruned at most once an hour of
+  event time, no longer for every event of an address without a slot. A journal line of string
+  fields only is read by a flat reader that gives the same fields as the full one; any other line
+  goes to the full reader as before. The patrol reads on past a read cut short by its time, each
+  read saved, until it has read to the end or spent 15 minutes, so a check between patrols reads
+  only what came since. An address that may be among those past the index's 65,536 is still refused,
+  never let through.
+- The patrol catches the login index up after its checks, its notice and the attack detection
+  alerts, not before them: in a flood the catching up can take up to 15 minutes, and that round's
+  notices no longer wait for it.
+- The site's release river: a release's peek stays inside the river at every width (at 844px the
+  pages scrolled sideways by 3px); the labels under the lamps (version, date, rule count) show only
+  where they have room, the newest and the x.y.0 releases first, and a hidden one shows on hover or
+  focus of its lamp (they ran into each other at 844px and 1440px); each lamp's link reads out its
+  version, date, rule count and bench result.
 - A code audit's scan stops on work done, no longer on time: a file's first pass and a project's
   calls passes each have a work cap (60M and 1.5G), and the clock stays only as a safety net. What
   is followed, and so what is reported, no longer depends on how fast or how loaded the machine
@@ -19,6 +54,13 @@ Chinese for the zh-TW pages; keep the two in step.
 
 ### Known issues
 
+- A value read back from the database is input when the query that read it was given input,
+  even escaped (`$row = $db->LoadSingle("... '" . mysqli_real_escape_string($c, $_POST['id']) . "'")`,
+  then `$row['tag']` in another query): the engine takes what an unknown function returns as
+  carrying its arguments' input. YesWiki's despam.php is reported this way.
+- An application's own URL builder for a page of the same site (YesWiki's
+  `$this->wiki->Href('', $name)`, `href()`) is not known as one, so a redirect to it reports as an
+  open redirect (YesWiki's LoginAction.php and DuplicateHandler.php).
 - macOS 27 hides the Internet sockets from netstat for any process started by an ad-hoc signed
   program, as the release binaries are: `netstat -anv` writes nothing there (exit 0). shentu then
   lists the listening ports with lsof, which sees only its own user's processes, and marks the list

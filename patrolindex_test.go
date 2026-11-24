@@ -7,11 +7,14 @@ import (
 	"fmt"
 	"io/fs"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -104,5 +107,147 @@ func TestPatrolRefreshesLoginIndex(t *testing.T) {
 	defer h.mu.Unlock()
 	if len(h.reads) != patrolReads+1 || h.reads[patrolReads] != "cursor "+h.entries[0][0] {
 		t.Errorf("the check's read: %q, want one read after the patrol's cursor", h.reads[patrolReads:])
+	}
+}
+
+// slowLoginHost is sshJournalHost whose sshd reads are slow, as in a
+// flood: a read started before the patrol's report went out waits for it
+// (up to 2s), and says so.
+type slowLoginHost struct {
+	*sshJournalHost
+	notified    chan struct{}
+	mu          sync.Mutex
+	readsBefore int // sshd reads started before the report was sent
+}
+
+func (h *slowLoginHost) RunLinesCut(ctx context.Context, argv []string, max int, fn func(string, bool)) (hostenv.CmdResult, error) {
+	if strings.Contains(strings.Join(argv, " "), "-u ssh -u sshd -u ssh@* -u sshd@*") {
+		select {
+		case <-h.notified:
+		default:
+			h.mu.Lock()
+			h.readsBefore++
+			h.mu.Unlock()
+			select {
+			case <-h.notified:
+			case <-time.After(2 * time.Second):
+			}
+		}
+	}
+	return h.sshJournalHost.RunLinesCut(ctx, argv, max, fn)
+}
+
+// S-222-1: the patrol's report does not wait for the login index to catch
+// up (up to loginRefreshBudget in a flood): the checks are sent first, and
+// the index is read on after them.
+func TestPatrolNotifiesBeforeLoginCatchUp(t *testing.T) {
+	h := &slowLoginHost{sshJournalHost: &sshJournalHost{}, notified: make(chan struct{})}
+	h.failed(time.Now().Add(-time.Hour), "203.0.113.51")
+	t.Cleanup(tools.SetHostSourceForTest(h))
+	var once sync.Once
+	var sent atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/hook" {
+			http.Error(w, "no model here", http.StatusServiceUnavailable)
+			return
+		}
+		sent.Add(1)
+		once.Do(func() { close(h.notified) })
+	}))
+	t.Cleanup(srv.Close)
+	cfg := &Config{StateDir: t.TempDir()}
+	cfg.LLM.BaseURL, cfg.LLM.Timeout = srv.URL+"/nomodel", "5s"
+	t.Cleanup(tools.SetLoginIndexForTest(cfg.StateDir))
+	old := patrolProcesses
+	patrolProcesses = func(bool) ([]tools.Proc, error) {
+		return []tools.Proc{{PID: 4242, Exe: "/tmp/.x/kworkerds", Cmdline: "/tmp/.x/kworkerds", Flags: []string{"exe_in_tmp"}}}, nil
+	}
+	t.Cleanup(func() { patrolProcesses = old })
+	if err := patrol(context.Background(), cfg, &tools.Env{NotifyURL: srv.URL + "/hook", HTTP: srv.Client()}, false, false); err != nil {
+		t.Logf("patrol: %v", err)
+	}
+	if sent.Load() == 0 {
+		t.Fatal("the patrol sent no report")
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.readsBefore != 0 {
+		t.Errorf("%d sshd reads before the report: the report waited for the login index to catch up", h.readsBefore)
+	}
+	if len(h.reads) == 0 {
+		t.Error("the patrol did not read the login index on after its report")
+	}
+}
+
+// Review 1 of #238 (S-238-1): the detector's alerts, sent after the
+// patrol's report (finishDetect, deferred), do not wait for the login
+// index either: it is read on after them.
+func TestPatrolDetectAlertsBeforeLoginCatchUp(t *testing.T) {
+	cfg, logs, _ := detectSetup(t)
+	now := time.Now()
+	os.WriteFile(filepath.Join(logs, "access.log"), nil, 0o640)
+	seedDue(t, cfg.StateDir, 1, now)
+	h := &slowLoginHost{sshJournalHost: &sshJournalHost{}, notified: make(chan struct{})}
+	h.failed(now.Add(-time.Hour), "203.0.113.52")
+	t.Cleanup(tools.SetHostSourceForTest(h))
+	var alerts atomic.Int32
+	detectNotify = func(_ context.Context, _ *tools.Env, title, _, _ string) error {
+		if title == "Attack attempt" && alerts.Add(1) == 1 {
+			close(h.notified)
+		}
+		return nil
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/hook" {
+			http.Error(w, "no model here", http.StatusServiceUnavailable)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	cfg.LLM.BaseURL, cfg.LLM.Timeout = srv.URL+"/nomodel", "5s"
+	t.Cleanup(tools.SetLoginIndexForTest(cfg.StateDir))
+	old := patrolProcesses
+	patrolProcesses = func(bool) ([]tools.Proc, error) {
+		return []tools.Proc{{PID: 4243, Exe: "/tmp/.x/kworkerds", Cmdline: "/tmp/.x/kworkerds", Flags: []string{"exe_in_tmp"}}}, nil
+	}
+	t.Cleanup(func() { patrolProcesses = old })
+	if err := patrol(context.Background(), cfg, &tools.Env{NotifyURL: srv.URL + "/hook", HTTP: srv.Client()}, false, false); err != nil {
+		t.Logf("patrol: %v", err)
+	}
+	if alerts.Load() == 0 {
+		t.Fatal("the detector sent no alert")
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.readsBefore != 0 {
+		t.Errorf("%d sshd reads before the detector's alert: it waited for the login index to catch up", h.readsBefore)
+	}
+	if len(h.reads) == 0 {
+		t.Error("the patrol did not read the login index on after the alerts")
+	}
+}
+
+// Review 1 of #238 (S-238-2): a patrol that panics panics on, without
+// first catching the login index up (up to loginRefreshBudget).
+func TestPatrolPanicSkipsLoginCatchUp(t *testing.T) {
+	h := &sshJournalHost{}
+	h.failed(time.Now().Add(-time.Hour), "203.0.113.53")
+	t.Cleanup(tools.SetHostSourceForTest(h))
+	cfg := &Config{StateDir: t.TempDir()}
+	t.Cleanup(tools.SetLoginIndexForTest(cfg.StateDir))
+	old := patrolProcesses
+	patrolProcesses = func(bool) ([]tools.Proc, error) { panic("marker panic") }
+	t.Cleanup(func() { patrolProcesses = old })
+	func() {
+		defer func() {
+			if p := recover(); p != "marker panic" {
+				t.Errorf("recovered %v, want the patrol's own panic", p)
+			}
+		}()
+		patrol(context.Background(), cfg, &tools.Env{}, false, true)
+	}()
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if len(h.reads) != 0 {
+		t.Errorf("sshd reads after a panic: %q", h.reads)
 	}
 }

@@ -5,7 +5,7 @@ cwe = "CWE-89"
 severity = "high"
 tier = "info"
 title = "Joomla request input written into a database query without quote() or a cast"
-sources = ["->getString(", "->getRaw(", "->getHtml(", "->getArray(", "->getBase64(", "->getPath(", "->getUserStateFromRequest(", "JRequest::getVar(", "JRequest::getString(", "$_GET", "$_POST", "$_REQUEST"]
+sources = ["->getString(", "->getRaw(", "->getHtml(", "->getArray(", "->getBase64(", "->getPath(", "->getUserStateFromRequest(", "JRequest::getVar(", "JRequest::getString(", "$_GET", "$_POST", "$_REQUEST", "filter_input(", "->filterInput(", "->filter_input("]
 sinks = ["->setQuery(", "->where(", "->orWhere(", "->order(", "->having(", "$query->select(", "$query->group("]
 # ->where(, ->orWhere( and ->having( are Yii's calls too: input both read on
 # the same call ($_GET) is php-sqli-yii-query's (yields.go); Joomla's own
@@ -94,3 +94,9 @@ class ArticlesModelList extends ListModel
     }
 }
 '''
+
+# filter_input(INPUT_GET, ...) and an application's filterInput(INPUT_POST, ...) wrapper read the request like $_GET and $_POST
+[[source_args]]
+sources = ["filter_input(", "->filterInput(", "->filter_input("]
+arg = 1
+values = ["INPUT_GET", "INPUT_POST"]
