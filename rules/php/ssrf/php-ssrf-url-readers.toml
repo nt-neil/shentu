@@ -5,7 +5,7 @@ cwe = "CWE-918"
 severity = "medium"
 tier = "info"
 title = "Function that opens URLs called with a URL taken from the request"
-sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "->get_param(", "$request->input(", "$request->query->get(", "$request->request->get(", "$request->get("]
+sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "->get_param(", "$request->input(", "$request->query->get(", "$request->request->get(", "$request->get(", "filter_input(", "->filterInput(", "->filter_input("]
 sinks = ["get_headers(", "getimagesize(", "exif_read_data(", "exif_imagetype(", "simplexml_load_file(", "SoapClient(", "md5_file(", "sha1_file(", "hash_file(", "imagecreatefromjpeg(", "imagecreatefrompng(", "imagecreatefromgif(", "imagecreatefromwebp(", "$dom->load(", "$doc->load(", "$document->load("]
 sanitizers = ["in_array", "array_key_exists", "absint", "intval", "basename(", "->get_file_params("]
 fix = "These functions follow http:// and ftp:// URLs (get_headers() also follows redirects): accept only URLs from a fixed list (in_array($url, $allowed, true)), build the URL from a fixed host and an id, or take only a local file name joined to a fixed directory."
@@ -74,3 +74,9 @@ function gallery_add($request) {
     return array('md5' => md5_file($files['photo']['tmp_name']));
 }
 '''
+
+# filter_input(INPUT_GET, ...) and an application's filterInput(INPUT_POST, ...) wrapper read the request like $_GET and $_POST
+[[source_args]]
+sources = ["filter_input(", "->filterInput(", "->filter_input("]
+arg = 1
+values = ["INPUT_GET", "INPUT_POST", "INPUT_COOKIE"]

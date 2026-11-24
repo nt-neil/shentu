@@ -6,7 +6,7 @@ severity = "critical"
 tier = "info"
 title = "Request input compiled as a Twig or Blade template"
 frameworks = ["symfony", "laravel"]
-sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "$_SERVER['REQUEST_URI']", "->getRequestUri(", "$request->input(", "$request->get(", "$request->query(", "request()->input(", "request()->get(", "request()->query(", "$request->query->get(", "$request->request->get(", "->get_param("]
+sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "$_SERVER['REQUEST_URI']", "->getRequestUri(", "$request->input(", "$request->get(", "$request->query(", "request()->input(", "request()->get(", "request()->query(", "$request->query->get(", "$request->request->get(", "->get_param(", "filter_input(", "->filterInput(", "->filter_input("]
 sinks = ["->createTemplate(", "Blade::render(", "Blade::compileString(", "->compileString(", "->renderString(", "ArrayLoader("]
 sanitizers = []
 fix = "Never compile text from a request as a template: render a fixed template file and pass the input as a variable ($twig->render('page.html.twig', ['name' => $name]), view('page', ['name' => $name])), where it is escaped as data."
@@ -73,3 +73,9 @@ class PageController extends Controller
     }
 }
 '''
+
+# filter_input(INPUT_GET, ...) and an application's filterInput(INPUT_POST, ...) wrapper read the request like $_GET and $_POST
+[[source_args]]
+sources = ["filter_input(", "->filterInput(", "->filter_input("]
+arg = 1
+values = ["INPUT_GET", "INPUT_POST", "INPUT_COOKIE"]
