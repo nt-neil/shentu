@@ -156,6 +156,12 @@ func (x *loginIndex) alive(at time.Time, seq uint64, refuse bool) bool {
 	if seq != 0 && x.JournalFromSeq != 0 && x.SeqID != "" && x.SeqID == x.JournalFromSeqID {
 		return seq >= x.JournalFromSeq
 	}
+	if refuse && seq != 0 && x.SeqID != "" && x.JournalFromSeqID != "" {
+		// The journal starts in an older sequence than the index's (a
+		// vacuum takes the oldest files first): every entry of the newer
+		// one is still there.
+		return true
+	}
 	if refuse {
 		return !at.Before(x.JournalFrom)
 	}
