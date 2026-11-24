@@ -29,13 +29,17 @@ Chinese for the zh-TW pages; keep the two in step.
   followed, and the argument's input no longer reaches the function's return, where it could be
   reported falsely (`echo get_entity($_GET['a'], $c)` reported `php-xss-echo-html`). Plugins that
   bundle the Freemius SDK (`fs_get_entity($entity, $class)`) had the most such files.
-- block_ip's login index catches up after a flood sooner. While the index is full, addresses with
-  no event in the window are pruned at most once an hour of event time, no longer for every event
-  of an address without a slot. A journal line of string fields only is read by a flat reader that
-  gives the same fields as the full one; any other line goes to the full reader as before. The
-  patrol reads on past a read cut short by its time, each read saved, until it has read to the end
-  or spent 15 minutes, so a check between patrols reads only what came since. An address that may
-  be among those past the index's 65,536 is still refused, never let through.
+- block_ip's login index reads a flood with a lighter read, with the same result as the full read.
+  While the index is full, addresses with no event in the window are pruned at most once an hour of
+  event time, no longer for every event of an address without a slot. A journal line of string
+  fields only is read by a flat reader that gives the same fields as the full one; any other line
+  goes to the full reader as before. The patrol reads on past a read cut short by its time, each
+  read saved, until it has read to the end or spent 15 minutes, so a check between patrols reads
+  only what came since. An address that may be among those past the index's 65,536 is still refused,
+  never let through.
+- The patrol catches the login index up after its checks, its notice and the attack detection
+  alerts, not before them: in a flood the catching up can take up to 15 minutes, and that round's
+  notices no longer wait for it.
 - The site's release river: a release's peek stays inside the river at every width (at 844px the
   pages scrolled sideways by 3px); the labels under the lamps (version, date, rule count) show only
   where they have room, the newest and the x.y.0 releases first, and a hidden one shows on hover or
@@ -47,12 +51,15 @@ Chinese for the zh-TW pages; keep the two in step.
   advisories, so these packages matched nothing there and were only listed in
   `third_party_unchecked`. Now each CVE in a package's range is in the vulnerability surface
   (ecosystem `upstream:php` or `upstream:nginx`, with the fixed version, KEV when CISA lists it)
-  and in `third_party_upstream`; a CVE the package's changelog names (a backported fix) is listed
-  there as backported and not reported. php-fpm also gets the FPM and status page CVEs, php-cgi
-  the CGI one; mod_php and the CLI get the engine's only. A package whose version cannot be read,
-  or on a branch php.net no longer fixes, stays in `third_party_unchecked` with the reason in
-  `why`. The OSV results of these packages are kept: a build can also be older than the
-  distribution's fix.
+  and in `third_party_upstream`, and counts in `total_vulns` and `affected_packages`; one that CISA
+  lists is in `actively_exploited` too, so the daily patrol sends its critical KEV alert as for a
+  distribution's package. A CVE the package's changelog names (a backported fix) is listed as
+  backported and not reported. php-fpm also gets the FPM and status page CVEs, php-cgi the CGI
+  one; mod_php and the CLI get the engine's only. Each compared package says the tables' date
+  (`as_of`). A package whose version cannot be read, on a branch php.net no longer fixes, or newer
+  than the tables' newest release (such as PHP 8.3.38, 9.0 or nginx 1.32) stays in
+  `third_party_unchecked` with the reason in `why`. The OSV results of these packages are kept: a
+  build can also be older than the distribution's fix.
 
 ### Known issues
 
@@ -67,8 +74,6 @@ Chinese for the zh-TW pages; keep the two in step.
   program, as the release binaries are: `netstat -anv` writes nothing there (exit 0). shentu then
   lists the listening ports with lsof, which sees only its own user's processes, and marks the list
   partial. Run from a terminal, netstat shows them. macOS 15 is not affected.
-- In a flood, the patrol catches the login index up before its checks, for up to 15 minutes, so its
-  other checks and notices that round can start that much later.
 
 ## v0.5.6 — 2026-11-24
 
