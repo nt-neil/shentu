@@ -306,6 +306,24 @@ var knownPth = []struct {
 	{regexp.MustCompile(`^[A-Za-z0-9_.+-]+-nspkg\.pth$`), "setuptools namespace package", []*regexp.Regexp{nspkgLine()}, nil},
 }
 
+// unverifiedDistutilsHack: some folder of dirs holds a _distutils_hack
+// (package or module) that is neither setuptools' by its RECORD nor the
+// system's: on sys.path before the real one it is what
+// distutils-precedence.pth imports, so no such .pth is known then.
+func unverifiedDistutilsHack(dirs []string) bool {
+	for _, d := range dirs {
+		for _, m := range []string{"_distutils_hack", "_distutils_hack.py"} {
+			if _, err := os.Lstat(filepath.Join(d, m)); err != nil {
+				continue
+			}
+			if m == "_distutils_hack.py" || !(recordHas(d, "setuptools-*.dist-info", "_distutils_hack/__init__.py") || systemModule(d, "_distutils_hack/__init__.py")) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // rootOnly is rootOnlyFile; tests stand in for root.
 var rootOnly = rootOnlyFile
 
@@ -313,12 +331,17 @@ var rootOnly = rootOnlyFile
 // osManagedPrefixes), the folder, the .pth and the module are root's and
 // no one else can write them, as the package manager installed them.
 func systemOwned(dir, name, rel string) bool {
+	return systemModule(dir, rel) && rootOnly(filepath.Join(dir, name), false)
+}
+
+// systemModule: rel in dir is the system package manager's (systemOwned
+// without the .pth).
+func systemModule(dir, rel string) bool {
 	managed := false
 	for _, p := range osManagedPrefixes {
 		managed = managed || strings.HasPrefix(dir, p)
 	}
-	return managed && rootOnly(dir, true) && rootOnly(filepath.Join(dir, name), false) &&
-		rootOnly(filepath.Join(dir, filepath.FromSlash(rel)), false)
+	return managed && rootOnly(dir, true) && rootOnly(filepath.Join(dir, filepath.FromSlash(rel)), false)
 }
 
 // recordHas: a dist-info matching glob in dir lists rel in its RECORD, and

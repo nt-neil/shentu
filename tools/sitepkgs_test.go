@@ -350,11 +350,10 @@ func TestSitePackagesSystem(t *testing.T) {
 	// distutils-precedence.pth is setuptools' where the package manager's
 	// files are root's alone; not in /usr/local, not a file others can write.
 	pthText := "import os; var = 'SETUPTOOLS_USE_DISTUTILS'; enabled = os.environ.get(var, 'local') == 'local'; enabled and __import__('_distutils_hack').add_shim(); \n"
-	for _, d := range []string{managed, local} {
-		os.WriteFile(filepath.Join(d, "distutils-precedence.pth"), []byte(pthText), 0o644)
-		os.MkdirAll(filepath.Join(d, "_distutils_hack"), 0o755)
-		os.WriteFile(filepath.Join(d, "_distutils_hack", "__init__.py"), []byte("def add_shim(): pass\n"), 0o644)
-	}
+	os.WriteFile(filepath.Join(local, "distutils-precedence.pth"), []byte(pthText), 0o644)
+	os.WriteFile(filepath.Join(managed, "distutils-precedence.pth"), []byte(pthText), 0o644)
+	os.MkdirAll(filepath.Join(managed, "_distutils_hack"), 0o755)
+	os.WriteFile(filepath.Join(managed, "_distutils_hack", "__init__.py"), []byte("def add_shim(): pass\n"), 0o644)
 	known := func() map[string]string {
 		out, _ := AppVulns(context.Background(), &http.Client{Transport: &pypiFeeds{}}, nil)
 		m := map[string]string{}
@@ -373,6 +372,17 @@ func TestSitePackagesSystem(t *testing.T) {
 	rootOnly = func(p string, _ bool) bool { return !strings.HasSuffix(p, "__init__.py") } // a module others can write
 	if k := known(); k[managed] != "" {
 		t.Errorf("a module not root's alone: %q", k)
+	}
+	// another _distutils_hack, earlier on sys.path (/usr/local), not
+	// setuptools': the system's .pth would import it
+	rootOnly = func(string, bool) bool { return true }
+	os.Remove(filepath.Join(local, "distutils-precedence.pth"))
+	if k := known(); k[managed] != "setuptools" {
+		t.Errorf("before the shadow: %q", k)
+	}
+	os.WriteFile(filepath.Join(local, "_distutils_hack.py"), []byte("import os\n"), 0o644)
+	if k := known(); k[managed] != "" {
+		t.Errorf("a shadowing _distutils_hack.py: %q", k)
 	}
 	f.queries = nil
 	if _, err := appVulnsIn(context.Background(), &http.Client{Transport: f}, []string{t.TempDir()}, false); err != nil || len(f.queries) != 0 {

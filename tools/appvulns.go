@@ -180,6 +180,13 @@ func appVulnsIn(ctx context.Context, hc *http.Client, roots []string, system boo
 			files = append(files, Lockfile{Path: d, Ecosystem: "PyPI", pkgs: sd.pkgs, kind: "site-packages"})
 		}
 	}
+	if unverifiedDistutilsHack(siteDirs) {
+		for i := range pth {
+			if strings.HasSuffix(pth[i].Path, "distutils-precedence.pth") {
+				pth[i].Known = ""
+			}
+		}
+	}
 	kev, kevErr := loadKEV(ctx, hc)
 	var results []AppResult
 	total, kevUnchecked := 0, 0
