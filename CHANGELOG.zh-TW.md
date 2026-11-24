@@ -6,10 +6,12 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 ## v0.5.7 (unreleased)
 
 - macOS：netstat 給的 pid 是 0 的 listening socket，看不出是哪個程序，所以 listening port 的清單會標成部分（partial），並寫明有幾個，不再當成每個 owner 都知道的完整清單。
+- 程式碼稽核改成依做了多少工作停下，不再依時間：每個檔案的第一輪和整個專案的呼叫追蹤各有工作量上限（60M 和 1.5G），時鐘只留作安全上限。追到哪裡、回報什麼，不再取決於機器快慢或負載高低；慢的機器會花更多時間跑完，不會提前停下。在 WordPress 7.1.4（2,148 個 PHP 檔）上，沒跑完的檔案從每次都不一樣的約 800 到 1,100 個，變成每次都是 16 個，記憶體沒有上升。
 
 ### 已知問題
 
 - macOS 27 上，由 ad-hoc 簽章的程式（release binary 就是）啟動的程序，netstat 看不到 Internet socket：`netstat -anv` 什麼都不輸出（exit 0）。這時 shentu 改用 lsof 列出 listening port，但 lsof 只看得到同一個使用者的程序，所以清單會標成部分。在 Terminal 裡直接跑 netstat 就看得到。macOS 15 沒有這個問題。
+- 呼叫追得更遠之後，WordPress 會在 `wp_redirect()` 裡的 `Location:` header（`pluggable.php:1542`）回報 `wpmu_admin_do_redirect()` 傳進去的 `ref`；這條資料流在那個函式呼叫 `wp_redirect()` 的地方（`ms-deprecated.php:289` 和 `:306`）已經回報過，同一個輸入會被回報兩次。
 
 ## v0.5.6 — 2026-11-24
 
