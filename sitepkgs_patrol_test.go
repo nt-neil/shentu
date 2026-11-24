@@ -53,6 +53,7 @@ func TestPatrolSitePackagesFindings(t *testing.T) {
 	os.MkdirAll(filepath.Join(sp, "litellm-1.30.0.dist-info"), 0o755)
 	os.WriteFile(filepath.Join(sp, "litellm-1.30.0.dist-info", "METADATA"), []byte("Name: litellm\nVersion: 1.30.0\n"), 0o644)
 	os.WriteFile(filepath.Join(sp, "_virtualenv.pth"), []byte("import _virtualenv\n"), 0o644)
+	os.WriteFile(filepath.Join(root, "app", "venv", "pyvenv.cfg"), []byte("home = /usr/bin\n"), 0o644) // virtualenv's own venv
 	os.WriteFile(filepath.Join(sp, "zz.pth"), []byte("import os\n"), 0o644)
 	r, err := tools.AppVulns(context.Background(), &http.Client{Transport: kevLiteLLM{}}, []string{root})
 	if err != nil {

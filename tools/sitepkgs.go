@@ -352,14 +352,21 @@ func nspkgLine() *regexp.Regexp {
 	return regexp.MustCompile(`^` + strings.Join(parts, `;`) + `(?:;m and setattr\(sys\.modules\[` + pk + `\], ` + pk + `, m\))?$`)
 }
 
+// pthLineEnd splits a .pth as every Python reads one: up to 3.12 its lines
+// end at \n, \r\n or \r; from 3.13 site.py takes str.splitlines() of the
+// text (also \v \f \x1c-\x1e U+0085 U+2028 U+2029), decoded as UTF-8 or,
+// failing that, in the locale's encoding, where the byte 0x85 can be U+0085.
+// Ending a line at any of them finds every line one of them starts.
+var pthLineEnd = strings.NewReplacer("\r\n", "\n", "\r", "\n", "\v", "\n", "\f", "\n", "\x1c", "\n", "\x1d", "\n", "\x1e", "\n",
+	"\u2028", "\n", "\u2029", "\n", "\x85", "\n")
+
 // pthImports counts the lines Python's site module runs (those starting
-// "import " or "import\t", read as Python reads the file: a UTF-8 BOM
-// dropped, lines ending at \n, \r\n or \r); ok is false when there are none.
+// "import " or "import\t", a UTF-8 BOM dropped, lines split as pthLineEnd
+// says); ok is false when there are none.
 func pthImports(dir, name string, b []byte) (PthFile, bool) {
 	var f PthFile
 	var lines []string
-	s := strings.TrimPrefix(string(b), "\ufeff")
-	s = strings.ReplaceAll(strings.ReplaceAll(s, "\r\n", "\n"), "\r", "\n")
+	s := pthLineEnd.Replace(strings.TrimPrefix(string(b), "\ufeff"))
 	for _, l := range strings.Split(s, "\n") {
 		if strings.HasPrefix(l, "import ") || strings.HasPrefix(l, "import\t") {
 			lines = append(lines, l)
