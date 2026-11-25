@@ -51,8 +51,10 @@ func WordPressPlugins(roots []string) ([]WPPlugin, []string) {
 	var out []WPPlugin
 	var unread []string
 	seen := map[string]bool{}
-	src := hostSource() // the host read (a replay, another host's survey), not the machine running the check
+	cutSaid := map[string]bool{} // folders whose cut was said: one line each
+	src := hostSource()          // the host read (a replay, another host's survey), not the machine running the check
 	for _, r := range roots {
+		rootUnread := false // r itself not read: said once, its wp-content not again
 		cands := []string{r}
 		level := []string{r}
 		for depth := 0; depth < wpDepth; depth++ {
@@ -61,9 +63,11 @@ func WordPressPlugins(roots []string) ([]WPPlugin, []string) {
 				ents, err := readDirMax(src, d, wpMaxDirEntries)
 				if errors.Is(err, errTooMany) {
 					unread = append(unread, d+" (more than "+strconv.Itoa(wpMaxDirEntries)+" entries: the rest not looked at)")
+					cutSaid[d] = true
 				} else if err != nil {
 					if depth == 0 {
 						unread = append(unread, d+" ("+err.Error()+")")
+						rootUnread = true
 					}
 					continue
 				}
@@ -89,6 +93,9 @@ func WordPressPlugins(roots []string) ([]WPPlugin, []string) {
 		}
 		for _, root := range cands {
 			dir := filepath.Join(root, "wp-content", "plugins")
+			if rootUnread && root == r {
+				continue // the root itself not read: said once
+			}
 			st, err := hostenv.Lstat(src, dir)
 			switch {
 			case errors.Is(err, fs.ErrNotExist):
@@ -103,7 +110,7 @@ func WordPressPlugins(roots []string) ([]WPPlugin, []string) {
 				continue
 			}
 			seen[dir] = true
-			ps, un := pluginsIn(src, root, dir)
+			ps, un := pluginsIn(src, root, dir, cutSaid[dir])
 			out = append(out, ps...)
 			unread = append(unread, un...)
 		}
@@ -148,7 +155,8 @@ func readDirMax(src hostenv.Source, dir string, n int) ([]dirEnt, error) {
 	return ents, more
 }
 
-func pluginsIn(src hostenv.Source, root, dir string) ([]WPPlugin, []string) {
+// cutSaid: the folder's cut was said already (the search looked at it).
+func pluginsIn(src hostenv.Source, root, dir string, cutSaid bool) ([]WPPlugin, []string) {
 	ents, err := readDirMax(src, dir, wpMaxDirEntries)
 	tooMany := errors.Is(err, errTooMany)
 	if tooMany {
@@ -219,7 +227,7 @@ func pluginsIn(src hostenv.Source, root, dir string) ([]WPPlugin, []string) {
 			}
 		}
 	}
-	if tooMany {
+	if tooMany && !cutSaid {
 		unread = append(unread, dir+" (more than "+strconv.Itoa(wpMaxDirEntries)+" entries: the rest not read)")
 	}
 	return out, unread

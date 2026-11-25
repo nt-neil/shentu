@@ -191,3 +191,77 @@ func TestRootOnlyFileHostSource(t *testing.T) {
 		t.Errorf("a folder: root's alone only as a folder")
 	}
 }
+
+// countHost counts ReadDir and ReadDirMax; a folder in cut gives "more"
+// past its first name, one in denied is unreadable.
+type countHost struct {
+	treeHost
+	dirs, dirMax *int
+	cut, denied  map[string]bool
+}
+
+func (h countHost) ReadDir(p string) ([]string, error) {
+	*h.dirs++
+	if h.denied[p] {
+		return nil, &fs.PathError{Op: "open", Path: p, Err: fs.ErrPermission}
+	}
+	return h.treeHost.ReadDir(p)
+}
+
+// Lstat of what is under a denied folder is denied too, as on a host.
+func (h countHost) Lstat(p string) (hostenv.FileStat, error) {
+	for d := range h.denied {
+		if strings.HasPrefix(p, d+"/") {
+			return hostenv.FileStat{}, &fs.PathError{Op: "lstat", Path: p, Err: fs.ErrPermission}
+		}
+	}
+	return h.treeHost.Lstat(p)
+}
+
+func (h countHost) ReadDirMax(p string, n int) ([]string, bool, error) {
+	*h.dirMax++
+	if h.denied[p] {
+		return nil, false, &fs.PathError{Op: "open", Path: p, Err: fs.ErrPermission}
+	}
+	names, err := h.treeHost.ReadDir(p)
+	if h.cut[p] && len(names) > 1 {
+		return names[:1], true, err
+	}
+	return hostenv.ReadDirMax(h.treeHost, p, n)
+}
+
+// S-257-2: the plugin search reads folders through ReadDirMax only (a web
+// folder a user fills is never read whole); a folder cut, or a root not
+// read, is said once (nit: it was said twice).
+func TestWordPressPluginsDirMaxOnly(t *testing.T) {
+	const r = "/srv/hostsrc-example/site"
+	plugins := r + "/wp-content/plugins"
+	var dirs, dirMax int
+	h := countHost{treeHost: treeHost{files: map[string]string{
+		plugins + "/aaa/aaa.php": "<?php\n/*\nPlugin Name: First Example\n*/\n",
+		plugins + "/bbb/bbb.php": "<?php\n/*\nPlugin Name: Second Example\n*/\n",
+	}}, dirs: &dirs, dirMax: &dirMax, cut: map[string]bool{plugins: true}}
+	withHost(t, h)
+	ps, unread := WordPressPlugins([]string{r})
+	if dirs != 0 || dirMax == 0 {
+		t.Errorf("ReadDir called %d times, ReadDirMax %d: want ReadDirMax only", dirs, dirMax)
+	}
+	if len(ps) != 1 || ps[0].Name != "First Example" {
+		t.Errorf("plugins %+v, want the first one read", ps)
+	}
+	n := 0
+	for _, u := range unread {
+		if strings.HasPrefix(u, plugins+" (") {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Errorf("the cut plugins folder said %d times, want once: %q", n, unread)
+	}
+
+	h.cut, h.denied = nil, map[string]bool{r: true}
+	withHost(t, h)
+	if _, unread := WordPressPlugins([]string{r}); len(unread) != 1 || unread[0] != r+" (open "+r+": permission denied)" {
+		t.Errorf("an unreadable root: %q, want one line", unread)
+	}
+}
