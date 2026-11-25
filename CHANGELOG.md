@@ -45,6 +45,27 @@ Chinese for the zh-TW pages; keep the two in step.
   where they have room, the newest and the x.y.0 releases first, and a hidden one shows on hover or
   focus of its lamp (they ran into each other at 844px and 1440px); each lamp's link reads out its
   version, date, rule count and bench result.
+- A code audit's scan stops on work done, no longer on time: a file's first pass and a project's
+  calls passes each have a work cap (60M and 1.5G), and the clock stays only as a safety net. What
+  is followed, and so what is reported, no longer depends on how fast or how loaded the machine
+  is; a slow machine takes longer instead of stopping sooner. On WordPress 7.1.4 (2,148 PHP files)
+  the files left unfinished went from about 800 to 1,100, different on every run, to 16 on every
+  run, with no rise in memory.
+- `app_vulns` and the daily patrol check the Python packages installed in site-packages folders
+  (venvs under the app paths, `/usr/local/lib/python3*`, and what pip installed in
+  `/usr/lib/python3*`) against OSV as PyPI, with the CISA KEV mark, as they check a lock file. Until
+  now only lock files were read, so a package installed with pip and listed in none was not
+  checked. The scan has bounds (8 folders deep, 100 site-packages folders, 5,000 packages in one,
+  the first 64 KiB of each METADATA, no symlinks followed); what it did not cover is reported as not
+  checked.
+- They also list the `.pth` files there with lines Python runs at every start: the file and how
+  many such lines, not their text. A file is marked as a tool's own (setuptools, virtualenv, an
+  editable install) only when it can be proven: every such line is exactly the tool's, the tool's
+  own record of it is there (a RECORD with the hashes, virtualenv's key in `pyvenv.cfg`, or the
+  system package manager's folder), and the folder, every folder above it and those files can be
+  written by root alone. In a folder a user can write, whoever wrote the file could have written
+  the record too: setuptools', virtualenv's and editable install files there are listed in the
+  daily report as not proven. The patrol pushes the others as warnings.
 - PHP XSS in a `<script>` body: a value escaped with `esc_attr()`, `esc_url()`, `esc_html()` or
   `htmlspecialchars(..., ENT_QUOTES)` inside a quoted JS string
   (`var tab = '<?php echo esc_attr($_GET['tab']); ?>';`) is no longer reported when the text after
@@ -67,6 +88,10 @@ Chinese for the zh-TW pages; keep the two in step.
   program, as the release binaries are: `netstat -anv` writes nothing there (exit 0). shentu then
   lists the listening ports with lsof, which sees only its own user's processes, and marks the list
   partial. Run from a terminal, netstat shows them. macOS 15 is not affected.
+- With calls followed further, WordPress reports the `Location:` header inside `wp_redirect()`
+  (`pluggable.php:1542`) for the `ref` that `wpmu_admin_do_redirect()` passes it, a flow already
+  reported where that function calls `wp_redirect()` (`ms-deprecated.php:289` and `:306`): the
+  same input is reported twice.
 
 ## v0.5.6 — 2026-11-24
 

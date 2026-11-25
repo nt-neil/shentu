@@ -12,6 +12,9 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 - block_ip 的登入索引讀大量登入紀錄時，改用做的事較少的讀法，結果和完整讀取相同。索引滿的時候，720 小時內沒有事件的位址最多每一小時（以事件時間計）清掉一次，不再每碰到一個沒有位置的位址的事件就清一次。只有字串欄位的 journal 行改用平面的讀法，讀出的欄位和完整讀法相同；其他的行照舊交給完整讀法。巡檢讀到時間用完時，會先存下讀到的部分再接著讀，直到讀到結尾或用掉 15 分鐘，所以兩次巡檢之間的檢查只要讀新進來的部分。可能在索引的 65,536 個位址之外的位址，仍然一律拒絕，不會放行。
 - 巡檢改成在其他檢查、通知和攻擊偵測的通知都送出之後，才追登入索引。有大量登入紀錄時，追索引最多要 15 分鐘，這一輪的通知不必再等它。
 - 網站的發版河道：每個版本的說明框在任何頁面大小下都留在河道裡（原本在 844px 時頁面會多捲動 3px）；燈下的文字（版本、日期、規則數）只在放得下時顯示，最新版和 x.y.0 優先，沒有顯示的在指標移到燈上或用鍵盤選到燈時會出現（原本在 844px 和 1440px 燈下的文字都會擋到下一盞燈的文字）；每盞燈的連結會讀出版本、日期、規則數和 bench 結果。
+- 程式碼稽核改成依做了多少工作停下，不再依時間：每個檔案的第一輪和整個專案的呼叫追蹤各有工作量上限（60M 和 1.5G），時鐘只留作安全上限。追到哪裡、回報什麼，不再取決於機器快慢或負載高低；慢的機器會花更多時間跑完，不會提前停下。在 WordPress 7.1.4（2,148 個 PHP 檔）上，沒跑完的檔案從每次都不一樣的約 800 到 1,100 個，變成每次都是 16 個，記憶體沒有上升。
+- `app_vulns` 和每日巡檢會檢查 site-packages 裡已安裝的 Python 套件（app 路徑下的 venv、`/usr/local/lib/python3*`，以及 `/usr/lib/python3*` 裡由 pip 安裝的套件），和 lock 檔一樣用 PyPI 比對 OSV，並標出 CISA KEV。之前只讀 lock 檔，用 pip 安裝、但沒有寫在任何 lock 檔裡的套件不會被檢查。掃描有上限（往下 8 層、100 個 site-packages 資料夾、每個資料夾 5,000 個套件、每個 METADATA 只讀前 64 KiB，不跟隨 symlink），超過上限或讀不到的部分會在報告裡寫成沒有檢查。
+- 也會列出那些資料夾裡，含有每次啟動 Python 都會執行的行的 `.pth` 檔：只寫檔案和這種行有幾行，不寫內容。要能證明是工具（setuptools、virtualenv、editable install）自己寫的，才會標成是那個工具的：每一行都完全符合，工具自己的紀錄也在（記有 sha256 的 RECORD、`pyvenv.cfg` 裡 virtualenv 的 key，或系統套件管理的資料夾），而且資料夾、上面每一層資料夾和這些檔案都只有 root 能寫。在一般使用者也能寫的資料夾裡，寫得了 .pth 的人也寫得了那些紀錄，所以 setuptools、virtualenv 和 editable install 的檔案會在每日報告裡列為無法證明；其他的由巡檢以 warning 送出通知。
 - PHP 在 `<script>` 內容裡的 XSS：放在 JS 引號字串裡、用 `esc_attr()`、`esc_url()`、`esc_html()` 或 `htmlspecialchars(..., ENT_QUOTES)` 處理過的值（`var tab = '<?php echo esc_attr($_GET['tab']); ?>';`），如果 PHP 區塊後面的文字在同一行把這個字串關起來，就不再回報：`<script>` 內容不會解碼 entity，兩種引號和 `<` 都編碼過，值就留在字串裡。以下情況照樣回報：`on*` 屬性（會先解碼 entity）、template literal、前面的區塊寫出引號或反斜線、行尾用 `\` 接到下一行、`htmlspecialchars()` 沒有 `ENT_QUOTES`，以及 `sanitize_text_field()`。
 
 ### 已知問題
@@ -19,6 +22,7 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 - 從資料庫讀回來的值，如果讀它的查詢用了輸入，即使已經用 escape 函式處理過，也會被當成輸入（例如 `$row = $db->LoadSingle("... '" . mysqli_real_escape_string($c, $_POST['id']) . "'")` 之後，把 `$row['tag']` 放進另一個查詢）：引擎把不認得的函式的回傳值，當成帶有參數的輸入。YesWiki 的 despam.php 就是這樣被回報的。
 - 應用程式自己產生同站網址的函式（YesWiki 的 `$this->wiki->Href('', $name)`、`href()`）不會被認出來，所以導向到這種網址也會被回報為 open redirect（YesWiki 的 LoginAction.php、DuplicateHandler.php）。
 - macOS 27 上，由 ad-hoc 簽章的程式（release binary 就是）啟動的程序，netstat 看不到 Internet socket：`netstat -anv` 什麼都不輸出（exit 0）。這時 shentu 改用 lsof 列出 listening port，但 lsof 只看得到同一個使用者的程序，所以清單會標成部分。在 Terminal 裡直接跑 netstat 就看得到。macOS 15 沒有這個問題。
+- 呼叫追得更遠之後，WordPress 會在 `wp_redirect()` 裡的 `Location:` header（`pluggable.php:1542`）回報 `wpmu_admin_do_redirect()` 傳進去的 `ref`；這條資料流在那個函式呼叫 `wp_redirect()` 的地方（`ms-deprecated.php:289` 和 `:306`）已經回報過，同一個輸入會被回報兩次。
 
 ## v0.5.6 — 2026-11-24
 

@@ -63,19 +63,21 @@ func (t Token) word(text string) bool          { return t.Kind == Ident && t.Tex
 // Limits bound the work done on one file, so a huge or hostile file cannot stall a scan.
 type Limits struct {
 	MaxTokens int           // tokens per file, counting those inside string interpolations
-	MaxTime   time.Duration // lexing, parsing and analysis of one file, all rules together
+	MaxWork   int           // lexing, parsing and analysis of one file, all rules together, in units of work (tokens scanned): where it cuts depends on the file only (CutWork)
+	MaxTime   time.Duration // a safety net for what work does not count, well past the time MaxWork takes on an ordinary machine (CutClock)
 	// MaxCallWork caps the work of following one rule's calls in one file
 	// (tokens read, summaries included). Unlike MaxTime it does not depend on how
 	// busy the machine is, so the same code gives the same result every time;
 	// and being per rule, more rules do not leave each one less. In a project
-	// the clock for following calls is the project's (ProjectOptions.MaxTime).
+	// following calls across files is capped as well (ProjectOptions.MaxWork).
 	MaxCallWork int
 }
 
 // DefaultLimits suit ordinary application files; the caller also caps file size.
 // MaxCallWork is about a second of one rule's work on a busy machine (~10M units
-// a second).
-var DefaultLimits = Limits{MaxTokens: 300_000, MaxTime: 3 * time.Second, MaxCallWork: 10_000_000}
+// a second). MaxWork was set at low load against the 3 seconds MaxTime was:
+// every E7 and cvebench file whose first pass took under them did under 55M.
+var DefaultLimits = Limits{MaxTokens: 300_000, MaxWork: 60_000_000, MaxTime: 30 * time.Second, MaxCallWork: 10_000_000}
 
 // ErrLimit means a file hit Limits (tokens, time or nesting) and was only partly
 // analysed; what was found is still returned.
@@ -105,6 +107,7 @@ type budget struct {
 	next     int             // work at which the clock is read again
 	hit      bool            // over tokens, work or time: stop
 	maxWork  int             // work cap (0: none)
+	workCut  Cut             // the cause maxWork stands for: CutWork for a file, CutCallWork (the default) for a rule's calls
 	sumWork  int             // the work cap of each summary, worked out in a budget of its own (own)
 	charged  map[string]bool // summaries whose cost this budget paid, by file and key (used)
 	paid     int             // the work those costs came to
@@ -121,7 +124,10 @@ func newBudget(l Limits) *budget {
 	if l.MaxTime <= 0 {
 		l.MaxTime = DefaultLimits.MaxTime
 	}
-	return &budget{maxTok: l.MaxTokens, deadline: time.Now().Add(l.MaxTime)}
+	if l.MaxWork <= 0 {
+		l.MaxWork = DefaultLimits.MaxWork
+	}
+	return &budget{maxTok: l.MaxTokens, maxWork: l.MaxWork, workCut: CutWork, deadline: time.Now().Add(l.MaxTime)}
 }
 
 // token counts one token; false once the cap is hit.
