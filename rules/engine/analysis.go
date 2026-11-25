@@ -1912,6 +1912,11 @@ type keyRef struct {
 var prefixChecks = map[string]bool{"str_starts_with": true, "strncmp": true, "strncasecmp": true, "strpos": true,
 	"stripos": true, "startsWith": true, "startswith": true}
 
+// symmetricPrefix are the prefix checks that compare their first two
+// arguments alike: strncmp($real, $base, n) and strncmp($base, $real, n) say
+// the same, so either may be the value checked.
+var symmetricPrefix = map[string]bool{"strncmp": true, "strncasecmp": true}
+
 // predicates are the sanitizers that answer yes or no about a value, so using
 // them as a condition validates it. A transforming sanitizer (intval, basename,
 // Number) cleans only its result: if (intval($x)) says nothing about $x.
@@ -2259,7 +2264,7 @@ func (a *analysis) checkKeys(st state, atom []Token) []keyRef {
 		if prefixChecks[s.name] && netClasses[a.r.rule.Class] {
 			return a.plainSubject(args) // str_starts_with($u, '/x/'): only $u, and only a plain path
 		}
-		if prefixChecks[s.name] {
+		if prefixChecks[s.name] && !symmetricPrefix[s.name] {
 			if len(args) == 0 {
 				return nil
 			}
@@ -2291,9 +2296,6 @@ func (a *analysis) checkKeys(st state, atom []Token) []keyRef {
 			}
 			if prefixChecks[s.name] && netClasses[a.r.rule.Class] {
 				return a.plainSubject([][]Token{atom[:m]}) // u.startswith('/x/'): only u, and only a plain path
-			}
-			if prefixChecks[s.name] {
-				return a.keysOf(atom[:m]) // p.startswith(base) checks p; '/var/logs/'.startswith(p) holds for a parent
 			}
 			return append(a.keysOf(atom[:m]), a.keysOf(inside(atom, open, end-1))...)
 		}

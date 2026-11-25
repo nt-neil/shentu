@@ -74,6 +74,8 @@ func TestGuardFunctions(t *testing.T) {
 			"function ok($p) {\n    $real = realpath($p);\n    if ($real === false || strpos('/var/logs/', $real) !== 0) {\n        return false;\n    }\n    return true;\n}\n" + read + "if (ok($f)) {\n    $wp_filesystem->delete($f, true);\n}\n", []string{"11:php-path-traversal-wp-filesystem"}},
 		{"str_starts_with turned round, then the folder is deleted",
 			read + "$real = realpath($f);\nif ($real !== false && str_starts_with('/var/logs/', $real)) {\n    $wp_filesystem->rmdir($f, true);\n}\n", []string{"5:php-path-traversal-wp-filesystem"}},
+		{"str_starts_with turned round on the value itself, then the folder is deleted",
+			read + "if (str_starts_with('/var/logs/', $f)) {\n    $wp_filesystem->rmdir($f, true);\n}\n", []string{"4:php-path-traversal-wp-filesystem"}},
 		{"str_starts_with the right way round (no finding)",
 			read + "$real = realpath($f);\nif ($real !== false && str_starts_with($real, '/var/logs/')) {\n    $wp_filesystem->rmdir($f, true);\n}\n", nil},
 		{"the guard's result not used",

@@ -26,7 +26,8 @@ Chinese for the zh-TW pages; keep the two in step.
   is true (`if (guard($f)) { ... }`, or after `if (!guard($f)) { die(); }`), also as a method of
   another class. A guard that assigns its parameter, returns true before the check, or only checks
   that the file exists does not. `strpos(` and `stripos(` compared `=== 0` or `!== 0` are a prefix
-  check in the path rules. Where `realpath($p)` found the file, `$p` is no longer a URL or a
+  check in the path rules, of their first argument only (`strpos('/var/logs/', $real)` holds for
+  `/` and `/var`). Where `realpath($p)` found the file, `$p` is no longer a URL or a
   `phar://` wrapper for the server-side request and phar rules; the path rules still report it. An
   `in_array()` lookup of `basename($p)` or `intval($id)` no longer validates `$p` or `$id`:
   `../../x/log.txt` and `1 OR 1` pass it.
