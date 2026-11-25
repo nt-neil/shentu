@@ -206,8 +206,10 @@ func TestSitePackagesPth(t *testing.T) {
 	os.WriteFile(filepath.Join(sp, "_virtualenv.py"), []byte("def x(): pass\n"), 0o644)
 	dist(t, sp, "setuptools-69.0.0", "setuptools", "69.0.0", "pip")
 	record(t, sp, "setuptools-69.0.0", "_distutils_hack/__init__.py", "def add_shim(): pass\n")
+	record(t, sp, "setuptools-69.0.0", "distutils-precedence.pth", files["distutils-precedence.pth"])
 	dist(t, sp, "mypkg-1.0", "mypkg", "1.0", "pip")
 	record(t, sp, "mypkg-1.0", "__editable___mypkg_1_0_finder.py", "def install(): pass\n")
+	record(t, sp, "mypkg-1.0", "__editable__.mypkg-1.0.pth", files["__editable__.mypkg-1.0.pth"])
 	dist(t, sp, "google_auth-2.0.0", "google-auth", "2.0.0", "pip")
 	record(t, sp, "google_auth-2.0.0", "google_auth-2.0.0-py3.12-nspkg.pth", files["google_auth-2.0.0-py3.12-nspkg.pth"])
 	// another venv root's alone: B1 (a plain venv, no virtualenv key),
@@ -227,6 +229,7 @@ func TestSitePackagesPth(t *testing.T) {
 	os.WriteFile(filepath.Join(bad, "distutils-precedence.pth"), []byte(files["distutils-precedence.pth"]), 0o644)
 	dist(t, bad, "setuptools-99.0.0", "setuptools", "99.0.0", "pip")
 	record(t, bad, "setuptools-99.0.0", "_distutils_hack/__init__.py", "import os\n")
+	record(t, bad, "setuptools-99.0.0", "distutils-precedence.pth", files["distutils-precedence.pth"])
 	os.WriteFile(filepath.Join(bad, "__editable__.mypkg-1.0.pth"), []byte(files["__editable__.mypkg-1.0.pth"]), 0o644)
 	dist(t, bad, "mypkg-1.0", "mypkg", "1.0", "pip")
 	record(t, bad, "mypkg-1.0", "__editable___mypkg_1_0_finder.py", "def install(): pass\n")
@@ -236,11 +239,21 @@ func TestSitePackagesPth(t *testing.T) {
 	app3 := venvSite(t, root, "app3")
 	dist(t, app3, "eggs-1.0", "eggs", "1.0", "pip")
 	record(t, app3, "eggs-1.0", "easy-install.pth", "import sys; sys.__plen = len(sys.path)\neggs-dir\n")
+	// S-239r-1: a .pth written next to a real install, which its RECORD
+	// does not list: setuptools' module listed, not the .pth; an editable
+	// install's finder listed, not its .pth
+	os.WriteFile(filepath.Join(app3, "distutils-precedence.pth"), []byte(files["distutils-precedence.pth"]), 0o644)
+	dist(t, app3, "setuptools-69.0.0", "setuptools", "69.0.0", "pip")
+	record(t, app3, "setuptools-69.0.0", "_distutils_hack/__init__.py", "def add_shim(): pass\n")
+	os.WriteFile(filepath.Join(app3, "__editable__.lone-1.0.pth"), []byte("import __editable___lone_1_0_finder; __editable___lone_1_0_finder.install()\n"), 0o644)
+	dist(t, app3, "lone-1.0", "lone", "1.0", "pip")
+	record(t, app3, "lone-1.0", "__editable___lone_1_0_finder.py", "def install(): pass\n")
 	// upper: the folder and its files root's, a folder above it a user's
 	upper := venvSite(t, root, "upper")
 	os.WriteFile(filepath.Join(upper, "distutils-precedence.pth"), []byte(files["distutils-precedence.pth"]), 0o644)
 	dist(t, upper, "setuptools-69.0.0", "setuptools", "69.0.0", "pip")
 	record(t, upper, "setuptools-69.0.0", "_distutils_hack/__init__.py", "def add_shim(): pass\n")
+	record(t, upper, "setuptools-69.0.0", "distutils-precedence.pth", files["distutils-precedence.pth"])
 	// root's alone: app, app2, app3, the folders above them, and the
 	// site-packages of upper (not the folders above it); bad is a user's
 	appDir, app2Dir := filepath.Join(root, "app"), filepath.Join(root, "app2")
@@ -290,6 +303,8 @@ func TestSitePackagesPth(t *testing.T) {
 		"app2/_virtualenv.pth":               {ImportLines: 1}, // B1
 		"app2/easy-install.pth":              {ImportLines: 1, Known: "setuptools"},
 		"app3/easy-install.pth":              {ImportLines: 1},                         // a folder in it
+		"app3/distutils-precedence.pth":      {ImportLines: 1},                         // S-239r-1: not in setuptools' RECORD
+		"app3/__editable__.lone-1.0.pth":     {ImportLines: 1},                         // S-239r-1: not in the package's RECORD
 		"upper/distutils-precedence.pth":     {ImportLines: 1, Unproven: "setuptools"}, // a folder above a user's
 		"__editable__.mixed-1.0.pth":         {ImportLines: 1},
 		"cr.pth":                             {ImportLines: 1},
@@ -556,6 +571,7 @@ func TestSitePackagesShadowFoldersAbove(t *testing.T) {
 	os.WriteFile(filepath.Join(local, "distutils-precedence.pth"), []byte("import os; var = 'SETUPTOOLS_USE_DISTUTILS'; enabled = os.environ.get(var, 'local') == 'local'; enabled and __import__('_distutils_hack').add_shim(); \n"), 0o644)
 	dist(t, local, "setuptools-69.0.0", "setuptools", "69.0.0", "pip")
 	record(t, local, "setuptools-69.0.0", "_distutils_hack/__init__.py", "def add_shim(): pass\n")
+	record(t, local, "setuptools-69.0.0", "distutils-precedence.pth", "import os; var = 'SETUPTOOLS_USE_DISTUTILS'; enabled = os.environ.get(var, 'local') == 'local'; enabled and __import__('_distutils_hack').add_shim(); \n")
 	t.Cleanup(SetSitePackagesForTest([]string{managed, local}))
 	oldP, oldRoot := osManagedPrefixes, rootOnly
 	t.Cleanup(func() { osManagedPrefixes, rootOnly = oldP, oldRoot })
