@@ -6,6 +6,7 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 ## v0.5.8 (unreleased)
 
 - 用 `apt-mark hold` 鎖住的 Debian 或 Ubuntu 套件（dpkg 狀態 `hi`），以及標成要移除、但還裝著的套件（`ri`、`pi`），現在和已安裝的套件一樣會被檢查。以前套件清單只收 dpkg 的 `ii`，所以鎖住的套件不會被檢查，也不會被列出來（v0.5.7 的已知問題）。dpkg 知道、但沒有完整安裝的套件，會連同狀態列在 `packages_not_checked`。只裝了一半的套件（half-installed、unpacked、half-configured、triggers awaited、triggers pending）還會讓套件清單標成部分（partial）；只剩設定檔的套件（config-files）只會被列出來。最多列 20 個，其餘的數量寫在 `packages_not_checked_more`。
+- 網站首頁：捲動時才出現的區塊（統計、開放原始碼、最新版本和河道），從中段進入頁面時（例如從連到頁內位置的連結、回到上一頁，或直接跳到中段）不再一直空白。區塊只要有任何一部分看得到就會出現；頁面一打開就看得到的區塊，以及從頁內位置打開的頁面上的每個區塊，都會立刻出現。
 
 ## v0.5.7 — 2026-11-26
 
