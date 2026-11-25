@@ -37,7 +37,8 @@ Project.add	fi.Imports	1			SAFE	Only ORs the nestjs/koa flags.
 Project.keep	p.sums	1			SAFE	Moves every sums entry of the evicted file to kept; per-key independent.
 Project.shrink	p.ctx	1			SAFE	Drops every ctx not in use; resulting set and resident total are order-independent.
 Project.shrink	p.sums	1			SAFE	Moves every not-in-use entry to kept; per-key independent.
-Project.shrink	p.sums	2			SAFE	Deletes every not-in-use entry; per-key independent.
+Project.shrink	p.sums	2			SAFE	Moves every not-in-use entry to kept without its done summaries (retUnk and keyed stay); per-key independent.
+Project.shrink	p.kept	1			SAFE	Forgets each kept entry's done summaries (retUnk and keyed stay); per entry, no budget, order-free.
 Project.exported	fi.Imports	1			SORTED	Collects star-import keys; sort.Strings(stars) before the first-match search.
 recvClasses	bad	1			SAFE	Deletes names from out; order-independent.
 analysis.build	sc.funcs	1			SORTED	Only collects keys; slices.Sort(keys) before reading functions.
