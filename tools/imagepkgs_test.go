@@ -289,7 +289,12 @@ func TestImagePackagesNotChecked(t *testing.T) {
 		t.Errorf("relative data-root: %q", partial(out))
 	}
 
-	// a path asked about leaves the images out
+	// a path asked about leaves the images out (a store there to read)
+	dockerRoot, dockerDaemonJSON = other.root, filepath.Join(t.TempDir(), "none.json")
+	f = &pypiFeeds{}
+	if imageResults(t, f); len(f.queries) != 1 {
+		t.Fatalf("the store is not read: %q", f.queries)
+	}
 	f = &pypiFeeds{}
 	if out, _ := appVulnsIn(context.Background(), &http.Client{Transport: f}, []string{t.TempDir()}, false); out["docker_images"] != nil || len(f.queries) != 0 {
 		t.Errorf("a path asked about read the images: %v %q", out["docker_images"], f.queries)
