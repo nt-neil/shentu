@@ -6,6 +6,15 @@ a release are not written here: they are worked out from the rule snapshots in
 `docs/site-src/rules-history/`. `CHANGELOG.zh-TW.md` holds the same releases in Traditional
 Chinese for the zh-TW pages; keep the two in step.
 
+## v0.5.8 (unreleased)
+
+- A Debian or Ubuntu package held with `apt-mark hold` (dpkg state `hi`), or marked for removal but
+  still installed (`ri`, `pi`), is checked as an installed one is. The package list went by dpkg's
+  `ii` only, so a held package was neither checked nor said (the v0.5.7 known issue). A package dpkg
+  knows but has not installed in full is listed in `packages_not_checked` with its state. One half on
+  the disk (half-installed, unpacked, half-configured, triggers pending) also marks the package list
+  partial; one with only its configuration left (config-files) is listed only.
+
 ## v0.5.7 (unreleased)
 
 - PHP rules read `filter_input()`. A value from `filter_input(INPUT_GET, ...)`, `INPUT_POST` or
