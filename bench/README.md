@@ -38,6 +38,7 @@ One file per vulnerability, `cves/<id>.toml` (TypeScript cases in `cves-ts/`, ru
 | `[[fix_files]]` | each file the fix commit or changeset changed: `path` from the package root, and `vulnerable` / `fixed` lists of `[first, last]` lines it changed in each release |
 | `source_url` | the advisory on CVE.org, NVD, GitHub Advisory or OSV |
 | `note` | one plain sentence in our own words |
+| `[[sinks]]` | optional, one per case: the call the fix protects, when it is not within 10 lines of a changed range (the engine reports a cross-file flow at the callee's sink): `path` from the package root, `vulnerable` and `fixed` (0 when the fix removed the call) its line in each release, `shared = true` for a helper or wrapper other flows reach too. A `# basis: ...` comment right above `[[sinks]]` says which upstream change protects that call and why it is the one (with "shared helper" when shared); the tool fails a case without it |
 | `known_gap` | optional: why the rules cannot catch the case yet (its input is not a source they read, say). Such a case is still run, but it is left out of the catch and fixed-FP rates and listed under "Known gaps" in the report, so a known blind spot neither dilutes the rates nor gets forgotten: a gap that shows as caught there is a change to look at. |
 
 Only cases with a public fix commit or changeset belong here. Open the fix and
@@ -67,4 +68,8 @@ whether an improvement measured on `cves/` carries over.
 - fixed FP: a rule that caught the case still reports within 10 lines of a
   changed range in the fixed release (the rate is over caught cases);
 - in fix files: reports of the case's class anywhere in the fix files, near the
-  fix or not, to tell "found but elsewhere" from "found nothing".
+  fix or not, to tell "found but elsewhere" from "found nothing";
+- with sink lines: caught and fixed FP again, a report of the class on the very
+  line of the case's `[[sinks]]` (no window) also counting, in the vulnerable and
+  the fixed release. Always shown next to the main verdict, never in its place;
+  the comparison with other tools uses the same rule for every tool.
