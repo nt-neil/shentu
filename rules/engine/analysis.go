@@ -2259,6 +2259,15 @@ func (a *analysis) checkKeys(st state, atom []Token) []keyRef {
 		if prefixChecks[s.name] && netClasses[a.r.rule.Class] {
 			return a.plainSubject(args) // str_starts_with($u, '/x/'): only $u, and only a plain path
 		}
+		if prefixChecks[s.name] {
+			if len(args) == 0 {
+				return nil
+			}
+			// strpos($real, '/var/logs/') === 0 checks $real, the haystack. Turned
+			// round, strpos('/var/logs/', $real) === 0 holds for / and /var: a
+			// parent of the base, not a path under it.
+			return a.keysOf(args[0])
+		}
 		return a.keysOf(atom)
 	}
 	depth := 0
@@ -2282,6 +2291,9 @@ func (a *analysis) checkKeys(st state, atom []Token) []keyRef {
 			}
 			if prefixChecks[s.name] && netClasses[a.r.rule.Class] {
 				return a.plainSubject([][]Token{atom[:m]}) // u.startswith('/x/'): only u, and only a plain path
+			}
+			if prefixChecks[s.name] {
+				return a.keysOf(atom[:m]) // p.startswith(base) checks p; '/var/logs/'.startswith(p) holds for a parent
 			}
 			return append(a.keysOf(atom[:m]), a.keysOf(inside(atom, open, end-1))...)
 		}

@@ -70,6 +70,12 @@ func TestGuardFunctions(t *testing.T) {
 			read + "$real = realpath($f);\nif ($real === false) {\n    $t = file_get_contents($f);\n}\n", all("5")},
 		{"where realpath() found it, a URL or wrapper is not the path (path rules still report)",
 			read + "$real = realpath($f);\nif ($real !== false) {\n    $t = file_get_contents($f);\n}\n", []string{"5:php-path-traversal-file-read"}},
+		{"a guard with strpos turned round: '/var/logs/' starts with / and /var, and the folder is deleted",
+			"function ok($p) {\n    $real = realpath($p);\n    if ($real === false || strpos('/var/logs/', $real) !== 0) {\n        return false;\n    }\n    return true;\n}\n" + read + "if (ok($f)) {\n    $wp_filesystem->delete($f, true);\n}\n", []string{"11:php-path-traversal-wp-filesystem"}},
+		{"str_starts_with turned round, then the folder is deleted",
+			read + "$real = realpath($f);\nif ($real !== false && str_starts_with('/var/logs/', $real)) {\n    $wp_filesystem->rmdir($f, true);\n}\n", []string{"5:php-path-traversal-wp-filesystem"}},
+		{"str_starts_with the right way round (no finding)",
+			read + "$real = realpath($f);\nif ($real !== false && str_starts_with($real, '/var/logs/')) {\n    $wp_filesystem->rmdir($f, true);\n}\n", nil},
 		{"the guard's result not used",
 			prefix + read + "in_logs($f);\n$t = file_get_contents($f);\n", all("11")},
 	} {
