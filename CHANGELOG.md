@@ -108,10 +108,6 @@ Chinese for the zh-TW pages; keep the two in step.
   program, as the release binaries are: `netstat -anv` writes nothing there (exit 0). shentu then
   lists the listening ports with lsof, which sees only its own user's processes, and marks the list
   partial. Run from a terminal, netstat shows them. macOS 15 is not affected.
-- With calls followed further, WordPress reports the `Location:` header inside `wp_redirect()`
-  (`pluggable.php:1542`) for the `ref` that `wpmu_admin_do_redirect()` passes it, a flow already
-  reported where that function calls `wp_redirect()` (`ms-deprecated.php:289` and `:306`): the
-  same input is reported twice.
 
 ## v0.5.6 — 2026-11-24
 
