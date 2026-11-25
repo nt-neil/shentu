@@ -2,8 +2,11 @@
 // river-label-widths.json as it is (TestRiverLabelsAtLeastRendered): every
 // release's date, its rule-count/bench lines and its label's width, edge to
 // edge, every label made visible, at a 1920px-wide page. Run it on release
-// day, after go generate, with docs/site served on 127.0.0.1:8785:
-//   ego-browser nodejs < cmd/sitegen/testdata/measure-river-labels.js > cmd/sitegen/testdata/river-label-widths.json
+// day, after go generate, with docs/site served on 127.0.0.1:8785. ego-browser
+// nodejs prints the script's console.log on stderr (stdout stays empty), so
+// take the JSON from stderr, check that it parses, and drop the last blank line:
+//   ego-browser nodejs < cmd/sitegen/testdata/measure-river-labels.js 2> /tmp/widths.json
+//   python3 -c 'import json,sys; s=open(sys.argv[1]).read(); json.loads(s); open(sys.argv[2],"w").write(s.rstrip("\n")+"\n")' /tmp/widths.json cmd/sitegen/testdata/river-label-widths.json
 const task = await taskSpace("shentu river label widths", { profileId: "Default" });
 const out = { measured: "", languages: {} };
 try {
