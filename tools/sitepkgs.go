@@ -305,9 +305,9 @@ var knownPth = []struct {
 }{
 	{regexp.MustCompile(`^distutils-precedence\.pth$`), "setuptools", []*regexp.Regexp{
 		regexp.MustCompile(`^import os; var = 'SETUPTOOLS_USE_DISTUTILS'; enabled = os\.environ\.get\(var, '(?:local|stdlib)'\) == 'local'; enabled and __import__\('_distutils_hack'\)\.add_shim\(\); ?$`)}, true,
-		func(dir, _ string, _ []string, _ []byte) []string { // the module setuptools installed, as its RECORD has it
+		func(dir, name string, _ []string, _ []byte) []string { // the module and the .pth setuptools installed, as its RECORD has them
 			mod := filepath.Join(dir, "_distutils_hack", "__init__.py")
-			if rec, ok := recordHas(dir, "setuptools-*.dist-info", "_distutils_hack/__init__.py"); ok {
+			if rec, ok := recordHas(dir, "setuptools-*.dist-info", "_distutils_hack/__init__.py"); ok && sameRecordHas(dir, rec, name) {
 				return []string{rec, mod}
 			}
 			if managedDir(dir) { // the system's setuptools (Debian keeps no RECORD)
@@ -325,10 +325,10 @@ var knownPth = []struct {
 			return []string{filepath.Clean(cfg), filepath.Join(dir, "_virtualenv.py")}
 		}},
 	{regexp.MustCompile(`^__editable__\.[A-Za-z0-9_.+-]+\.pth$`), "editable install", []*regexp.Regexp{editableLine}, true,
-		func(dir, name string, lines []string, _ []byte) []string { // the finder the package's RECORD lists
+		func(dir, name string, lines []string, _ []byte) []string { // the finder and the .pth the package's RECORD lists
 			m := editableLine.FindStringSubmatch(lines[0])
 			dist := strings.TrimSuffix(strings.TrimPrefix(name, "__editable__."), ".pth")
-			if rec, ok := recordHas(dir, dist+".dist-info", m[1]+".py"); ok && len(lines) == 1 {
+			if rec, ok := recordHas(dir, dist+".dist-info", m[1]+".py"); ok && len(lines) == 1 && sameRecordHas(dir, rec, name) {
 				return []string{rec, filepath.Join(dir, m[1]+".py")}
 			}
 			return nil
@@ -349,6 +349,14 @@ var knownPth = []struct {
 }
 
 var virtualenvKey = regexp.MustCompile(`(?m)^virtualenv\s*=`)
+
+// sameRecordHas: the RECORD rec (of a dist-info in dir) lists the .pth
+// name too, with its hash: a .pth written next to a real install, which
+// no RECORD lists, is not that install's (S-239r-1).
+func sameRecordHas(dir, rec, name string) bool {
+	_, ok := recordHas(dir, filepath.Base(filepath.Dir(rec)), name)
+	return ok
+}
 
 // pthRecord is the RECORD that lists dir's .pth name with its hash, or,
 // in the system package manager's folders (no RECORD there), none needed.
