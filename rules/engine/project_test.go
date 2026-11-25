@@ -134,8 +134,11 @@ func TestProject(t *testing.T) {
 			"lib.php": P + "class Cols {\n  static function valid($c) { return in_array($c, array('id', 'name'), true); }\n}\n",
 		}, nil, nil},
 		{"php function that is not always a check", map[string]string{
-			"a.php": P + "function valid_col($c) { if ($c == 'all') { return true; } return in_array($c, array('id'), true); }\n$c = $_GET['c'];\nif (!valid_col($c)) { return; }\nmysqli_query($db, \"SELECT * FROM t ORDER BY $c\");\n",
+			"a.php": P + "function valid_col($c) { if (strlen($c) > 40) { return true; } return in_array($c, array('id'), true); }\n$c = $_GET['c'];\nif (!valid_col($c)) { return; }\nmysqli_query($db, \"SELECT * FROM t ORDER BY $c\");\n",
 		}, []string{"a.php:5"}, nil},
+		{"php function whose every true return follows a check", map[string]string{
+			"a.php": P + "function valid_col($c) { if ($c == 'all') { return true; } return in_array($c, array('id'), true); }\n$c = $_GET['c'];\nif (!valid_col($c)) { return; }\nmysqli_query($db, \"SELECT * FROM t ORDER BY $c\");\n",
+		}, nil, nil},
 		{"php allowlist from an unknown call given no input", map[string]string{
 			"a.php": P + "function edit($args) {\n  $f = $args['f'];\n  $theme = get_theme('default');\n  if (0 !== validate_file($f, array_keys($theme->files()))) { return; }\n  file_get_contents('/t/' . $f);\n}\n",
 			"b.php": P + "edit($_POST);\n",
