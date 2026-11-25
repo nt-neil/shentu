@@ -23,13 +23,15 @@ func TestCutCauses(t *testing.T) {
 		{"token cap", Limits{MaxTokens: 1000, MaxTime: time.Minute}, nil,
 			"<?php\n" + R("$a = $b . $c;\n", 1000), ErrLimit, CutTokens},
 		{"clock", Limits{MaxTokens: 1 << 20, MaxTime: time.Nanosecond}, nil,
-			"<?php\n" + R("foreach ($a as $b) { foreach ($b as $c) { $d = $c . $_GET['x']; } }\n", 2000), ErrLimit, CutTime},
+			"<?php\n" + R("foreach ($a as $b) { foreach ($b as $c) { $d = $c . $_GET['x']; } }\n", 2000), ErrLimit, CutClock},
+		{"the file's work cap", Limits{MaxTokens: 1 << 20, MaxWork: 1000, MaxTime: time.Minute}, nil,
+			"<?php\n" + R("foreach ($a as $b) { foreach ($b as $c) { $d = $c . $_GET['x']; } }\n", 2000), ErrLimit, CutWork},
 		{"nesting", DefaultLimits, nil,
 			"<?php\nsystem(" + R("(", 100) + "$_GET['c']" + R(")", 100) + ");\n", ErrLimit, CutNesting},
 		{"a rule's call work cap", Limits{MaxTokens: 1 << 20, MaxTime: time.Minute, MaxCallWork: 1}, nil,
 			calls, ErrCalls, CutCallWork},
 		{"the project's clock", DefaultLimits, &ProjectOptions{MaxTime: time.Nanosecond},
-			calls, ErrCalls, CutProject},
+			calls, ErrCalls, CutProject | CutClock},
 	} {
 		e := engineForTest(t)
 		e.Limits = c.limits
@@ -44,16 +46,28 @@ func TestCutCauses(t *testing.T) {
 			t.Errorf("%s: err %v, want %v", c.name, err, c.err)
 			continue
 		}
-		if got := CutOf(err); got&c.want == 0 {
+		if got := CutOf(err); got&c.want != c.want {
 			t.Errorf("%s: cut %q, want it to name %q", c.name, got, c.want)
-		} else if c.proj != nil && got&CutTime != 0 {
-			t.Errorf("%s: cut %q: the project's clock is not the file's time limit", c.name, got)
+		} else if c.want&CutClock == 0 && got&CutClock != 0 {
+			t.Errorf("%s: cut %q: the clock is only a safety net, not what cut this", c.name, got)
 		}
+	}
+	// The project's work cap is checked before each file: past it, the next
+	// file's calls no longer cross files, and that is what it names.
+	e := engineForTest(t)
+	src := map[string]string{"a.php": calls, "b.php": "<?php\nf($_GET['y']);\n"}
+	pr := e.NewProject([]string{"a.php", "b.php"}, func(p string) ([]byte, error) { return []byte(src[p]), nil }, ProjectOptions{MaxWork: 1})
+	if _, err := pr.Scan("a.php", []byte(src["a.php"])); err != nil {
+		t.Errorf("a.php, within the project's work cap: %v", err)
+	}
+	_, timed, err := pr.ScanCallsTimed("b.php", []byte(src["b.php"]))
+	if !errors.Is(err, ErrCalls) || CutOf(err) != CutProject|CutProjectWork || !timed {
+		t.Errorf("b.php, past the project's work cap: err %v, cut %q, timed %v; want ErrCalls, project,project-work, timed (a later audit goes on)", err, CutOf(err), timed)
 	}
 	if CutOf(nil) != 0 || CutOf(ErrPartial) != 0 {
 		t.Errorf("no cut: CutOf(nil) = %v, CutOf(ErrPartial) = %v", CutOf(nil), CutOf(ErrPartial))
 	}
-	if s := (CutTime | CutProject | CutAmbiguous).String(); s != "time,project,ambiguous-call" {
+	if s := (CutClock | CutProject | CutAmbiguous | CutProjectWork).String(); s != "safety-clock,project,ambiguous-call,project-work" {
 		t.Errorf("String: %q", s)
 	}
 }
