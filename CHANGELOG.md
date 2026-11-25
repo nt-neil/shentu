@@ -6,7 +6,7 @@ a release are not written here: they are worked out from the rule snapshots in
 `docs/site-src/rules-history/`. `CHANGELOG.zh-TW.md` holds the same releases in Traditional
 Chinese for the zh-TW pages; keep the two in step.
 
-## v0.5.7 (unreleased)
+## v0.5.7 — 2026-11-26
 
 - PHP rules read `filter_input()`. A value from `filter_input(INPUT_GET, ...)`, `INPUT_POST` or
   `INPUT_COOKIE`, and from an application's own method of that name (`->filterInput(`,
