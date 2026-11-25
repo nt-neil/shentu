@@ -92,6 +92,9 @@ func mergeInto(x, y state) state {
 		if e, ok := s.get(k); ok {
 			return e
 		}
+		if x, ok := s[extractKey]; ok && extractable(k) {
+			return x // a variable extract() of input may have set on that path (context.go)
+		}
 		return entry{taint: src, src: src, raw: src}
 	}
 	both := func(a, b entry) entry {
