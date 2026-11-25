@@ -187,7 +187,8 @@ func TestSitePackagesPth(t *testing.T) {
 		"__editable__.other-1.0.pth":         "import __editable___other_1_0_finder; __editable___other_1_0_finder.install()\nimport os; os.system('" + secret + "')\n",
 		"protobuf-4.0-py3.12-nspkg.pth":      strings.Replace(nspkg, "(p not in mp)", "__import__('os').system('x') or (p not in mp)", 1),
 		"__editable__.mixed-1.0.pth":         "import __editable___a_finder; __editable___b_finder.install()\n",
-		"easy-install.pth":                   "import sys; sys.__plen = len(sys.path)\n./foo.egg\n",
+		"easy-install.pth":                   "import sys; sys.__plen = len(sys.path)\n./foo.egg\n", // B3: a folder put first
+		"evil2-nspkg.pth":                    nspkg + "\n",                                          // B2: the template, no package behind it
 	}
 	files["cr.pth"] = "extra-lib\rimport os\r"              // Python ends a line at \r too
 	files["bom.pth"] = "\ufeffimport os\n"                  // and drops a UTF-8 BOM
@@ -199,21 +200,49 @@ func TestSitePackagesPth(t *testing.T) {
 	for n, c := range files {
 		os.WriteFile(filepath.Join(sp, n), []byte(c), 0o644)
 	}
-	// the modules the known files import, as their tools installed them
-	os.WriteFile(filepath.Join(sp, "..", "..", "..", "pyvenv.cfg"), []byte("home = /usr/bin\n"), 0o644)
+	// the tools' own records of the known files: virtualenv's key, the
+	// RECORDs of setuptools, of the editable install and of the nspkg's
+	os.WriteFile(filepath.Join(sp, "..", "..", "..", "pyvenv.cfg"), []byte("home = /usr/bin\nvirtualenv = 20.25.0\n"), 0o644)
+	os.WriteFile(filepath.Join(sp, "_virtualenv.py"), []byte("def x(): pass\n"), 0o644)
 	dist(t, sp, "setuptools-69.0.0", "setuptools", "69.0.0", "pip")
 	record(t, sp, "setuptools-69.0.0", "_distutils_hack/__init__.py", "def add_shim(): pass\n")
 	dist(t, sp, "mypkg-1.0", "mypkg", "1.0", "pip")
 	record(t, sp, "mypkg-1.0", "__editable___mypkg_1_0_finder.py", "def install(): pass\n")
-	// the same files where their module is not their tool's: no venv, no
-	// setuptools RECORD, a finder changed after install
+	dist(t, sp, "google_auth-2.0.0", "google-auth", "2.0.0", "pip")
+	record(t, sp, "google_auth-2.0.0", "google_auth-2.0.0-py3.12-nspkg.pth", files["google_auth-2.0.0-py3.12-nspkg.pth"])
+	// another venv root's alone: B1 (a plain venv, no virtualenv key),
+	// and an easy-install.pth with no folder that its RECORD lists
+	app2 := venvSite(t, root, "app2")
+	os.WriteFile(filepath.Join(app2, "..", "..", "..", "pyvenv.cfg"), []byte("home = /usr/bin\n"), 0o644)
+	os.WriteFile(filepath.Join(app2, "_virtualenv.pth"), []byte("import _virtualenv\n"), 0o644)
+	os.WriteFile(filepath.Join(app2, "_virtualenv.py"), []byte("import os\n"), 0o644)
+	dist(t, app2, "eggs-1.0", "eggs", "1.0", "pip")
+	record(t, app2, "eggs-1.0", "easy-install.pth", "import sys; sys.__plen = len(sys.path)\n")
+	// a venv a user can write: the same files, records and all, are not
+	// proven (B4: a RECORD written next to its module); a finder changed
+	// after install, no virtualenv key: ones to look at
 	bad := venvSite(t, root, "bad")
+	os.WriteFile(filepath.Join(bad, "..", "..", "..", "pyvenv.cfg"), []byte("virtualenv = 20.25.0\n"), 0o644)
 	os.WriteFile(filepath.Join(bad, "_virtualenv.pth"), []byte(files["_virtualenv.pth"]), 0o644)
 	os.WriteFile(filepath.Join(bad, "distutils-precedence.pth"), []byte(files["distutils-precedence.pth"]), 0o644)
+	dist(t, bad, "setuptools-99.0.0", "setuptools", "99.0.0", "pip")
+	record(t, bad, "setuptools-99.0.0", "_distutils_hack/__init__.py", "import os\n")
 	os.WriteFile(filepath.Join(bad, "__editable__.mypkg-1.0.pth"), []byte(files["__editable__.mypkg-1.0.pth"]), 0o644)
 	dist(t, bad, "mypkg-1.0", "mypkg", "1.0", "pip")
 	record(t, bad, "mypkg-1.0", "__editable___mypkg_1_0_finder.py", "def install(): pass\n")
 	os.WriteFile(filepath.Join(bad, "__editable___mypkg_1_0_finder.py"), []byte("import os\n"), 0o644)
+	// root's alone: app and app2, the folders above them; bad is a user's
+	appDir, app2Dir := filepath.Join(root, "app"), filepath.Join(root, "app2")
+	oldRoot := rootOnly
+	t.Cleanup(func() { rootOnly = oldRoot })
+	rootOnly = func(p string, _ bool) bool {
+		for _, d := range []string{appDir, app2Dir} {
+			if p == d || strings.HasPrefix(p, d+string(filepath.Separator)) || strings.HasPrefix(d, p+string(filepath.Separator)) || p == string(filepath.Separator) {
+				return true
+			}
+		}
+		return false
+	}
 	out, err := AppVulns(context.Background(), &http.Client{Transport: &pypiFeeds{}}, []string{root})
 	if err != nil {
 		t.Fatal(err)
@@ -222,8 +251,11 @@ func TestSitePackagesPth(t *testing.T) {
 	got := map[string]PthFile{}
 	for _, f := range pth {
 		n := filepath.Base(f.Path)
-		if filepath.Dir(f.Path) == bad {
+		switch filepath.Dir(f.Path) {
+		case bad:
 			n = "bad/" + n
+		case app2:
+			n = "app2/" + n
 		}
 		got[n] = f
 	}
@@ -232,7 +264,10 @@ func TestSitePackagesPth(t *testing.T) {
 		"_virtualenv.pth":                    {ImportLines: 1, Known: "virtualenv"},
 		"__editable__.mypkg-1.0.pth":         {ImportLines: 1, Known: "editable install"},
 		"google_auth-2.0.0-py3.12-nspkg.pth": {ImportLines: 1, Known: "setuptools namespace package"},
-		"easy-install.pth":                   {ImportLines: 1, Known: "setuptools"},
+		"easy-install.pth":                   {ImportLines: 1}, // B3
+		"evil2-nspkg.pth":                    {ImportLines: 1}, // B2
+		"app2/_virtualenv.pth":               {ImportLines: 1}, // B1
+		"app2/easy-install.pth":              {ImportLines: 1, Known: "setuptools"},
 		"__editable__.mixed-1.0.pth":         {ImportLines: 1},
 		"cr.pth":                             {ImportLines: 1},
 		"bom.pth":                            {ImportLines: 1},
@@ -241,8 +276,8 @@ func TestSitePackagesPth(t *testing.T) {
 		"nel.pth":                            {ImportLines: 1},
 		"x-nspkg.pth":                        {ImportLines: 1},
 		"y-nspkg.pth":                        {ImportLines: 1},
-		"bad/_virtualenv.pth":                {ImportLines: 1},
-		"bad/distutils-precedence.pth":       {ImportLines: 1},
+		"bad/_virtualenv.pth":                {ImportLines: 1, Unproven: "virtualenv"},
+		"bad/distutils-precedence.pth":       {ImportLines: 1, Unproven: "setuptools"}, // B4
 		"bad/__editable__.mypkg-1.0.pth":     {ImportLines: 1},
 		"evil.pth":                           {ImportLines: 2},
 		"__editable__.other-1.0.pth":         {ImportLines: 2},
@@ -253,8 +288,11 @@ func TestSitePackagesPth(t *testing.T) {
 	}
 	for n, w := range want {
 		g, ok := got[n]
-		if w.Path = filepath.Join(sp, n); strings.HasPrefix(n, "bad/") {
+		switch w.Path = filepath.Join(sp, n); {
+		case strings.HasPrefix(n, "bad/"):
 			w.Path = filepath.Join(bad, strings.TrimPrefix(n, "bad/"))
+		case strings.HasPrefix(n, "app2/"):
+			w.Path = filepath.Join(app2, strings.TrimPrefix(n, "app2/"))
 		}
 		if !ok || g != w {
 			t.Errorf("%s: %+v, want %+v", n, g, w)
@@ -268,7 +306,7 @@ func TestSitePackagesPth(t *testing.T) {
 	}
 	pth, _ = out["pth"].([]PthFile)
 	for _, f := range pth {
-		if filepath.Base(f.Path) == "distutils-precedence.pth" && f.Known != "" {
+		if filepath.Base(f.Path) == "distutils-precedence.pth" && (f.Known != "" || f.Unproven != "") {
 			t.Errorf("known with a .pth not read: %+v", f)
 		}
 	}
@@ -306,6 +344,15 @@ func TestSitePackagesBounds(t *testing.T) {
 	p := partial(out)
 	if !strings.Contains(p, "1 個套件的 METADATA 讀不到") || !strings.Contains(p, "huge.pth 超過 64 KiB") {
 		t.Errorf("partial %q", p)
+	}
+
+	// a venv 8 folders below the root: not looked into, and said (N-239-2)
+	deepRoot := t.TempDir()
+	deepSP := venvSite(t, filepath.Join(deepRoot, "a", "b", "c", "d", "e", "f", "g", "h"), "app")
+	dist(t, deepSP, "litellm-1.30.0", "litellm", "1.30.0", "pip")
+	out, _ = AppVulns(context.Background(), feeds, []string{deepRoot})
+	if p := partial(out); !strings.Contains(p, "超過 8 層") || out["site_packages"] != 0 {
+		t.Errorf("deep venv: site_packages %v, partial %q", out["site_packages"], p)
 	}
 
 	old := [3]int{sitePkgDistMax, sitePkgVisits, sitePkgDirsMax}
@@ -419,6 +466,20 @@ func TestSitePackagesSystem(t *testing.T) {
 		t.Errorf("a zip added: %q", k)
 	}
 	os.Remove(filepath.Join(local, "zip.pth"))
+	os.WriteFile(filepath.Join(local, "extra.pth"), []byte(extra+"\n"), 0o644)
+	// a path line in UTF-8 with 0x85 in a character (Å is C3 85): one
+	// folder, not cut there (S-239-1)
+	aring := filepath.Join(t.TempDir(), "hackÅdir")
+	os.MkdirAll(aring, 0o755)
+	os.WriteFile(filepath.Join(local, "extra.pth"), []byte(aring+"\n"), 0o644)
+	if k := known(); k[managed] != "setuptools" {
+		t.Errorf("an empty folder named with Å: %q", k)
+	}
+	os.WriteFile(filepath.Join(aring, "_distutils_hack.py"), []byte("x"), 0o644)
+	if k := known(); k[managed] != "" {
+		t.Errorf("a shadow in a folder named with Å: %q", k)
+	}
+	os.Remove(filepath.Join(aring, "_distutils_hack.py"))
 	os.WriteFile(filepath.Join(local, "extra.pth"), []byte(extra+"\n"), 0o644)
 	os.Chmod(extra, 0) // an added folder that cannot be listed
 	if k := known(); k[managed] != "" && os.Getuid() != 0 {

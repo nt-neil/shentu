@@ -45,7 +45,8 @@ func (kevLiteLLM) RoundTrip(r *http.Request) (*http.Response, error) {
 
 // The daily patrol pushes an installed Python package being exploited, as
 // installed (not "pins"), and a .pth that runs code no known tool wrote; a
-// tool's own .pth is not pushed.
+// file that looks like a tool's own, in a folder a user can write, is said
+// in the daily report, not pushed.
 func TestPatrolSitePackagesFindings(t *testing.T) {
 	t.Cleanup(tools.SetSitePackagesForTest(nil))
 	root := t.TempDir()
@@ -53,7 +54,7 @@ func TestPatrolSitePackagesFindings(t *testing.T) {
 	os.MkdirAll(filepath.Join(sp, "litellm-1.30.0.dist-info"), 0o755)
 	os.WriteFile(filepath.Join(sp, "litellm-1.30.0.dist-info", "METADATA"), []byte("Name: litellm\nVersion: 1.30.0\n"), 0o644)
 	os.WriteFile(filepath.Join(sp, "_virtualenv.pth"), []byte("import _virtualenv\n"), 0o644)
-	os.WriteFile(filepath.Join(root, "app", "venv", "pyvenv.cfg"), []byte("home = /usr/bin\n"), 0o644) // virtualenv's own venv
+	os.WriteFile(filepath.Join(root, "app", "venv", "pyvenv.cfg"), []byte("home = /usr/bin\nvirtualenv = 20.25.0\n"), 0o644) // virtualenv's own venv, in a folder a user can write
 	os.WriteFile(filepath.Join(sp, "zz.pth"), []byte("import os\n"), 0o644)
 	r, err := tools.AppVulns(context.Background(), &http.Client{Transport: kevLiteLLM{}}, []string{root})
 	if err != nil {
@@ -73,5 +74,9 @@ func TestPatrolSitePackagesFindings(t *testing.T) {
 	}
 	if len(got) != 2 {
 		t.Errorf("findings %v", got)
+	}
+	// virtualenv's file there is not proven: said in the daily report, not pushed
+	if l := pthUnproven(r, true); !strings.Contains(l, "1 個 .pth 看起來是工具自己寫的") || !strings.Contains(l, filepath.Join(sp, "_virtualenv.pth")+" (virtualenv)") {
+		t.Errorf("daily line %q", l)
 	}
 }

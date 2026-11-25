@@ -58,9 +58,16 @@ var sitePkgSkip = map[string]bool{"node_modules": true, ".git": true, "__pycache
 type PthFile struct {
 	Path        string `json:"path"`
 	ImportLines int    `json:"import_lines"`
-	// Known names the tool whose own .pth this is, to the letter (setuptools,
-	// virtualenv, an editable install); empty is one to look at.
+	// Known names the tool whose own file it is, proven: its lines the
+	// tool's to the letter, the tool's own record of it, and the folder,
+	// every folder above it and those files root's alone (no one else could
+	// have written them). Empty is one to look at.
 	Known string `json:"known,omitempty"`
+	// Unproven names the tool it looks like (setuptools' distutils hook,
+	// virtualenv, an editable install: in most venvs), its record there
+	// too, in a folder a user can write: whoever can write the .pth can
+	// write the record, so it is said (info), not proven.
+	Unproven string `json:"unproven,omitempty"`
 }
 
 // sitePkgDir is one site-packages folder read.
@@ -97,7 +104,7 @@ func findSitePackages(roots []string, system bool) (dirs []string, notes []strin
 			}
 		}
 	}
-	visits, unread := 0, 0
+	visits, unread, deep := 0, 0, 0
 	for _, root := range roots {
 		if full {
 			break
@@ -123,7 +130,11 @@ func findSitePackages(roots []string, system bool) (dirs []string, notes []strin
 				}
 				return filepath.SkipDir
 			}
-			if sitePkgSkip[d.Name()] || strings.Count(p, string(filepath.Separator))-base >= sitePkgDepth {
+			if sitePkgSkip[d.Name()] {
+				return filepath.SkipDir
+			}
+			if strings.Count(p, string(filepath.Separator))-base >= sitePkgDepth {
+				deep++ // its folders not looked into: said (N-239-2)
 				return filepath.SkipDir
 			}
 			return nil
@@ -137,6 +148,9 @@ func findSitePackages(roots []string, system bool) (dirs []string, notes []strin
 	}
 	if unread > 0 {
 		notes = append(notes, fmt.Sprintf("找 site-packages 時有 %d 個資料夾讀不到，裡面沒有檢查", unread))
+	}
+	if deep > 0 {
+		notes = append(notes, fmt.Sprintf("找 site-packages 時有 %d 個資料夾超過 %d 層，裡面沒有檢查", deep, sitePkgDepth))
 	}
 	return dirs, notes
 }
@@ -273,38 +287,102 @@ var pep503Sep = regexp.MustCompile(`[-_.]+`)
 func pep503(n string) string { return strings.ToLower(pep503Sep.ReplaceAllString(n, "-")) }
 
 // knownPth are .pth files tools write themselves: a file named so, all of
-// whose import lines are the tool's own, to the letter, and whose module
-// (verify) is the tool's. A file of that name with any other line, or whose
-// module is not the one the tool installed, is one to look at. A module
-// changed after it was installed is out of reach here, as is any installed
-// module changed.
+// whose import lines are the tool's own, to the letter, plain UTF-8, and
+// for which the tool's own record says so (record: its files, nil when
+// there is none). Only with the folder, every folder above it, the .pth
+// and those files root's alone is that proof (Known); in a folder a user
+// can write, whoever wrote the .pth could have written the record too.
+// Then a tool whose file is in most venvs (info) is said as Unproven, and
+// the others are ones to look at: nspkg and easy-install lines run code or
+// put folders first on sys.path. A module changed after it was installed
+// is out of reach here, as is any installed module changed.
 var knownPth = []struct {
 	name   *regexp.Regexp
 	label  string
 	lines  []*regexp.Regexp
-	verify func(dir, name string, lines []string) bool
+	info   bool
+	record func(dir, name string, lines []string, b []byte) []string
 }{
 	{regexp.MustCompile(`^distutils-precedence\.pth$`), "setuptools", []*regexp.Regexp{
-		regexp.MustCompile(`^import os; var = 'SETUPTOOLS_USE_DISTUTILS'; enabled = os\.environ\.get\(var, '(?:local|stdlib)'\) == 'local'; enabled and __import__\('_distutils_hack'\)\.add_shim\(\); ?$`)},
-		func(dir, name string, _ []string) bool { // the module setuptools installed, as its RECORD has it
-			return recordHas(dir, "setuptools-*.dist-info", "_distutils_hack/__init__.py") ||
-				systemOwned(dir, name, "_distutils_hack/__init__.py") // the system's setuptools (Debian keeps no RECORD)
+		regexp.MustCompile(`^import os; var = 'SETUPTOOLS_USE_DISTUTILS'; enabled = os\.environ\.get\(var, '(?:local|stdlib)'\) == 'local'; enabled and __import__\('_distutils_hack'\)\.add_shim\(\); ?$`)}, true,
+		func(dir, _ string, _ []string, _ []byte) []string { // the module setuptools installed, as its RECORD has it
+			mod := filepath.Join(dir, "_distutils_hack", "__init__.py")
+			if rec, ok := recordHas(dir, "setuptools-*.dist-info", "_distutils_hack/__init__.py"); ok {
+				return []string{rec, mod}
+			}
+			if managedDir(dir) { // the system's setuptools (Debian keeps no RECORD)
+				return []string{mod}
+			}
+			return nil
 		}},
-	{regexp.MustCompile(`^_virtualenv\.pth$`), "virtualenv", []*regexp.Regexp{regexp.MustCompile(`^import _virtualenv$`)},
-		func(dir, _ string, _ []string) bool { // virtualenv writes it into the venvs it makes
-			_, err := os.Lstat(filepath.Join(dir, "..", "..", "..", "pyvenv.cfg"))
-			return err == nil
+	{regexp.MustCompile(`^_virtualenv\.pth$`), "virtualenv", []*regexp.Regexp{regexp.MustCompile(`^import _virtualenv$`)}, true,
+		func(dir, _ string, _ []string, _ []byte) []string { // a venv virtualenv made says so in its pyvenv.cfg
+			cfg := filepath.Join(dir, "..", "..", "..", "pyvenv.cfg")
+			b, ok := readHead(cfg, sitePkgHead)
+			if !ok || !virtualenvKey.Match(b) {
+				return nil
+			}
+			return []string{filepath.Clean(cfg), filepath.Join(dir, "_virtualenv.py")}
 		}},
-	{regexp.MustCompile(`^__editable__\.[A-Za-z0-9_.+-]+\.pth$`), "editable install", []*regexp.Regexp{editableLine},
-		func(dir, name string, lines []string) bool { // the finder the package's RECORD lists
+	{regexp.MustCompile(`^__editable__\.[A-Za-z0-9_.+-]+\.pth$`), "editable install", []*regexp.Regexp{editableLine}, true,
+		func(dir, name string, lines []string, _ []byte) []string { // the finder the package's RECORD lists
 			m := editableLine.FindStringSubmatch(lines[0])
 			dist := strings.TrimSuffix(strings.TrimPrefix(name, "__editable__."), ".pth")
-			return len(lines) == 1 && recordHas(dir, dist+".dist-info", m[1]+".py")
+			if rec, ok := recordHas(dir, dist+".dist-info", m[1]+".py"); ok && len(lines) == 1 {
+				return []string{rec, filepath.Join(dir, m[1]+".py")}
+			}
+			return nil
 		}},
 	{regexp.MustCompile(`^easy-install\.pth$`), "setuptools", []*regexp.Regexp{
 		regexp.MustCompile(`^import sys; sys\.__plen = len\(sys\.path\)$`),
-		regexp.MustCompile(`^import sys; new = sys\.path\[sys\.__plen:\]; del sys\.path\[sys\.__plen:\]; p = getattr\(sys, '__egginsert', 0\); sys\.path\[p:p\] = new; sys\.__egginsert = p \+ len\(new\)$`)}, nil},
-	{regexp.MustCompile(`^[A-Za-z0-9_.+-]+-nspkg\.pth$`), "setuptools namespace package", []*regexp.Regexp{nspkgLine()}, nil},
+		regexp.MustCompile(`^import sys; new = sys\.path\[sys\.__plen:\]; del sys\.path\[sys\.__plen:\]; p = getattr\(sys, '__egginsert', 0\); sys\.path\[p:p\] = new; sys\.__egginsert = p \+ len\(new\)$`)}, false,
+		func(dir, name string, _ []string, b []byte) []string {
+			// Its lines put the folders between them first on sys.path:
+			// with any folder there it is one to look at.
+			if len(pthPathLines(dir, b)) > 0 {
+				return nil
+			}
+			return pthRecord(dir, name)
+		}},
+	{regexp.MustCompile(`^[A-Za-z0-9_.+-]+-nspkg\.pth$`), "setuptools namespace package", []*regexp.Regexp{nspkgLine()}, false,
+		func(dir, name string, _ []string, _ []byte) []string { return pthRecord(dir, name) }},
+}
+
+var virtualenvKey = regexp.MustCompile(`(?m)^virtualenv\s*=`)
+
+// pthRecord is the RECORD that lists dir's .pth name with its hash, or,
+// in the system package manager's folders (no RECORD there), none needed.
+func pthRecord(dir, name string) []string {
+	if rec, ok := recordHas(dir, "*.dist-info", name); ok {
+		return []string{rec}
+	}
+	if managedDir(dir) {
+		return []string{}
+	}
+	return nil
+}
+
+// managedDir: dir is under the system package manager's prefixes.
+func managedDir(dir string) bool {
+	for _, p := range osManagedPrefixes {
+		if strings.HasPrefix(dir, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// rootChain: dir and every folder above it are root's alone (rootOnly), so
+// nothing in it was written by another user.
+func rootChain(dir string) bool {
+	for p := filepath.Clean(dir); ; p = filepath.Dir(p) {
+		if !rootOnly(p, true) {
+			return false
+		}
+		if filepath.Dir(p) == p {
+			return true
+		}
+	}
 }
 
 // unverifiedDistutilsHack: some folder Python may search holds a
@@ -350,7 +428,7 @@ func unverifiedDistutilsHack(dirs []string, complete bool) bool {
 		for _, e := range ents {
 			n := e.Name()
 			if n == "_distutils_hack" {
-				if !e.IsDir() || !(recordHas(d, "setuptools-*.dist-info", "_distutils_hack/__init__.py") || systemModule(d, "_distutils_hack/__init__.py")) {
+				if _, rec := recordHas(d, "setuptools-*.dist-info", "_distutils_hack/__init__.py"); !e.IsDir() || !(rec || systemModule(d, "_distutils_hack/__init__.py")) {
 					return true
 				}
 			} else if strings.HasPrefix(n, "_distutils_hack.") {
@@ -359,6 +437,15 @@ func unverifiedDistutilsHack(dirs []string, complete bool) bool {
 		}
 	}
 	return false
+}
+
+func allRootOnly(files []string) bool {
+	for _, f := range files {
+		if !rootOnly(f, false) {
+			return false
+		}
+	}
+	return true
 }
 
 // pySpace is what Python's str.isspace() takes as white space.
@@ -384,18 +471,7 @@ func pthPaths(dir string) (out []string, whole bool) {
 		if !ok || len(b) > sitePkgHead {
 			return nil, false
 		}
-		for _, l := range strings.Split(pthLineEnd.Replace(strings.TrimPrefix(string(b), "\ufeff")), "\n") {
-			if strings.HasPrefix(l, "#") || strings.HasPrefix(l, "import ") || strings.HasPrefix(l, "import\t") {
-				continue
-			}
-			if l = strings.TrimRightFunc(l, pySpace); l == "" {
-				continue
-			}
-			if !filepath.IsAbs(l) {
-				l = filepath.Join(dir, l)
-			}
-			out = append(out, filepath.Clean(l))
-		}
+		out = append(out, pthPathLines(dir, b)...)
 	}
 	return out, true
 }
@@ -410,26 +486,22 @@ func systemOwned(dir, name, rel string) bool {
 	return systemModule(dir, rel) && rootOnly(filepath.Join(dir, name), false)
 }
 
-// systemModule: rel in dir is the system package manager's (systemOwned
-// without the .pth).
+// systemModule: rel in dir is the system package manager's: under its
+// prefixes, the folders up to / and the file root's alone.
 func systemModule(dir, rel string) bool {
-	managed := false
-	for _, p := range osManagedPrefixes {
-		managed = managed || strings.HasPrefix(dir, p)
-	}
-	return managed && rootOnly(dir, true) && rootOnly(filepath.Join(dir, filepath.FromSlash(rel)), false)
+	return managedDir(dir) && rootChain(dir) && rootOnly(filepath.Join(dir, filepath.FromSlash(rel)), false)
 }
 
 // recordHas: a dist-info matching glob in dir lists rel in its RECORD, and
-// the file there now has the sha256 RECORD gives.
-func recordHas(dir, glob, rel string) bool {
+// the file there now has the sha256 RECORD gives; rec is that RECORD.
+func recordHas(dir, glob, rel string) (rec string, ok bool) {
 	ms, _ := filepath.Glob(filepath.Join(dir, glob))
 	for _, m := range ms {
-		rec, ok := readHead(filepath.Join(m, "RECORD"), 4<<20)
+		b, ok := readHead(filepath.Join(m, "RECORD"), 4<<20)
 		if !ok {
 			continue
 		}
-		for _, l := range strings.Split(string(rec), "\n") {
+		for _, l := range strings.Split(string(b), "\n") {
 			want, ok := strings.CutPrefix(strings.TrimRight(l, "\r"), rel+",sha256=")
 			if !ok {
 				continue
@@ -438,11 +510,11 @@ func recordHas(dir, glob, rel string) bool {
 			b, ok := readHead(filepath.Join(dir, filepath.FromSlash(rel)), 4<<20)
 			sum := sha256.Sum256(b)
 			if ok && want != "" && base64.RawURLEncoding.EncodeToString(sum[:]) == want {
-				return true
+				return filepath.Join(m, "RECORD"), true
 			}
 		}
 	}
-	return false
+	return "", false
 }
 
 // editableLine is setuptools' editable-install finder line; the module it
@@ -474,7 +546,36 @@ func nspkgLine() *regexp.Regexp {
 // failing that, in the locale's encoding, where the byte 0x85 can be U+0085.
 // Ending a line at any of them finds every line one of them starts.
 var pthLineEnd = strings.NewReplacer("\r\n", "\n", "\r", "\n", "\v", "\n", "\f", "\n", "\x1c", "\n", "\x1d", "\n", "\x1e", "\n",
-	"\u2028", "\n", "\u2029", "\n", "\x85", "\n")
+	"\u0085", "\n", "\u2028", "\n", "\u2029", "\n")
+
+// pthLines are a .pth's lines as pthLineEnd ends them; the byte 0x85 too
+// only when the text is not UTF-8 (in UTF-8 it is part of a character: Å
+// is C3 85), as Python then reads it in the locale's encoding (S-239-1).
+func pthLines(raw string) []string {
+	s := pthLineEnd.Replace(raw)
+	if !utf8.ValidString(raw) {
+		s = strings.ReplaceAll(s, "\x85", "\n")
+	}
+	return strings.Split(s, "\n")
+}
+
+// pthPathLines are the folders b's path lines add (pthPaths, one file).
+func pthPathLines(dir string, b []byte) []string {
+	var out []string
+	for _, l := range pthLines(strings.TrimPrefix(string(b), "\ufeff")) {
+		if strings.HasPrefix(l, "#") || strings.HasPrefix(l, "import ") || strings.HasPrefix(l, "import\t") {
+			continue
+		}
+		if l = strings.TrimRightFunc(l, pySpace); l == "" {
+			continue
+		}
+		if !filepath.IsAbs(l) {
+			l = filepath.Join(dir, l)
+		}
+		out = append(out, filepath.Clean(l))
+	}
+	return out
+}
 
 // pthImports counts the lines Python's site module runs (those starting
 // "import " or "import\t", a UTF-8 BOM dropped, lines split as pthLineEnd
@@ -486,8 +587,7 @@ func pthImports(dir, name string, b []byte) (PthFile, bool) {
 	// A tool's own file is plain UTF-8 lines: one Pythons would split
 	// differently (a byte not UTF-8, another line break) is never known.
 	plain := utf8.ValidString(raw) && !strings.ContainsAny(raw, "\v\f\x1c\x1d\x1e\u0085\u2028\u2029")
-	s := pthLineEnd.Replace(raw)
-	for _, l := range strings.Split(s, "\n") {
+	for _, l := range pthLines(raw) {
 		if strings.HasPrefix(l, "import ") || strings.HasPrefix(l, "import\t") {
 			lines = append(lines, l)
 		}
@@ -509,8 +609,16 @@ func pthImports(dir, name string, b []byte) (PthFile, bool) {
 			}
 			all = all && one
 		}
-		if all && plain && (k.verify == nil || k.verify(dir, name, lines)) {
+		if !all || !plain {
+			break
+		}
+		files := k.record(dir, name, lines, b)
+		switch {
+		case files == nil:
+		case rootChain(dir) && rootOnly(filepath.Join(dir, name), false) && allRootOnly(files):
 			f.Known = k.label
+		case k.info:
+			f.Unproven = k.label
 		}
 		break
 	}

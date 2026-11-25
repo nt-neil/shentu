@@ -492,11 +492,32 @@ func appVulnFindings(r map[string]any) []finding {
 	}
 	pth, _ := r["pth"].([]tools.PthFile)
 	for _, f := range pth {
-		if f.Known == "" { // a tool's own (setuptools, virtualenv) is listed by app_vulns, not pushed
+		if f.Known == "" && f.Unproven == "" { // a tool's own is not pushed; one that looks so is said in the daily report (pthUnproven)
 			out = append(out, newFinding("pth:"+f.Path, "warning", f, "f_pth", f.Path, f.ImportLines))
 		}
 	}
 	return out
+}
+
+// pthUnproven says, in the daily report, the .pth files that look like a
+// tool's own (in most venvs) in folders a user can write, where that
+// cannot be proven: listed, not pushed (N-239-1).
+func pthUnproven(r map[string]any, zh bool) string {
+	pth, _ := r["pth"].([]tools.PthFile)
+	var lines []string
+	for _, f := range pth {
+		if f.Known == "" && f.Unproven != "" {
+			lines = append(lines, "- "+cutLine(f.Path+" ("+f.Unproven+")"))
+		}
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+	n := len(lines)
+	if n > uncheckedFiles {
+		lines = append(lines[:uncheckedFiles], fmt.Sprintf(dt(zh, "pth_unproven_more"), n-uncheckedFiles))
+	}
+	return fmt.Sprintf(dt(zh, "pth_unproven"), n) + strings.Join(lines, "\n") + "\n"
 }
 
 // patrol runs once (from a systemd timer): checks → LLM explanation → notify.
@@ -547,6 +568,9 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 		// The same for application dependencies (npm, PyPI, Composer, Go, RubyGems).
 		r, err = tools.AppVulns(ctx, env.HTTP, env.AppPaths)
 		unchecked += uncheckedVulns(dt(zh, "vuln_app"), r, err, zh)
+		if err == nil {
+			unchecked += pthUnproven(r, zh)
+		}
 		var apps []tools.AppResult
 		failedApps := map[string]bool{} // lock files whose check failed: their entries are yesterday's
 		if err != nil {

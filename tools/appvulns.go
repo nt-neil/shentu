@@ -184,7 +184,7 @@ func appVulnsIn(ctx context.Context, hc *http.Client, roots []string, system boo
 	if unverifiedDistutilsHack(siteDirs, walked) {
 		for i := range pth {
 			if strings.HasSuffix(pth[i].Path, "distutils-precedence.pth") {
-				pth[i].Known = ""
+				pth[i].Known, pth[i].Unproven = "", "" // its module may be another's: one to look at
 			}
 		}
 	}
