@@ -1119,7 +1119,7 @@ func (a *analysis) own(work func(x *analysis)) (capped, keep bool, height, cost 
 	if nb.timeHit {
 		// The clock: nothing to keep, and the asker is cut by it as well.
 		if a.proj != nil {
-			a.proj.stop("following calls across files ran out of time")
+			a.proj.stop("following calls across files ran out of time", CutClock)
 			a.proj.byMachine = true
 		}
 		a.b.hit, a.b.timeHit = true, true

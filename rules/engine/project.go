@@ -63,6 +63,8 @@ type Project struct {
 	seen                 map[string]bool        // findings already returned: rule, path, line
 	stopped              string
 	byMachine            bool                       // stopped by the clock or the heap: where depends on the machine
+	stopCut              Cut                        // why calls stopped crossing files (CutProject, with CutClock or CutProjectWork)
+	work                 int                        // the work of the files' calls passes so far, against opt.MaxWork
 	unsteady             bool                       // the current scan met a file it could not read, or parse in time
 	unread               map[string]bool            // files that could not be read, or parsed in time, since indexed
 	skip                 map[string]bool            // ScanCallsPart: rules to leave out
@@ -93,11 +95,21 @@ type ProjectOptions struct {
 	MaxFiles  int           // files indexed (default 30,000)
 	MaxTokens int           // tokens kept parsed in memory at once (default 3,000,000)
 	MaxHeap   uint64        // heap in use past which calls stop crossing files (default 1 GiB)
-	MaxTime   time.Duration // time for indexing and following calls across files (default 90s)
+	MaxWork   int           // work of following calls across files, all files' calls passes together (default DefaultProjectWork): checked before each file, past it calls stop crossing files (CutProjectWork)
+	MaxTime   time.Duration // a safety net for indexing and following calls (default 15 minutes), well past what MaxWork takes on an ordinary machine (CutClock)
 }
 
+// DefaultProjectWork is ProjectOptions.MaxWork's default. Every project of E7
+// and cvebench that finished within the 90 seconds it replaces did under 600M;
+// WordPress (2,148 files) needs more than 750M, where 880 of its files stopped
+// following calls, and finishes under 1.5G, with the same findings at 3G and
+// no rise in memory (about 1.3 GB either way).
+const DefaultProjectWork = 1_500_000_000
+
 // indexVersion changes whenever fileIndex changes, so an old cache is ignored.
-const indexVersion = "9"
+// 10: Limited means the work cap or the token limit, no longer the 3-second
+// clock, so a file an old cache did not mark may now be cut.
+const indexVersion = "10"
 
 type fileIndex struct {
 	Hash      string            `json:"h"`
@@ -156,7 +168,10 @@ func (e *Engine) NewProject(paths []string, read func(string) ([]byte, error), o
 		opt.MaxHeap = 1 << 30
 	}
 	if opt.MaxTime <= 0 {
-		opt.MaxTime = 90 * time.Second
+		opt.MaxTime = 15 * time.Minute
+	}
+	if opt.MaxWork <= 0 {
+		opt.MaxWork = DefaultProjectWork
 	}
 	p := &Project{e: e, opt: opt, read: read, files: map[string]*fileIndex{}, bySuffix: map[string][]string{}, byClean: map[string]string{},
 		funcs: map[string]map[string][]string{}, classes: map[string]map[string][]string{}, declared: map[string]map[string][]string{},
@@ -179,11 +194,11 @@ func (e *Engine) NewProject(paths []string, read func(string) ([]byte, error), o
 			continue
 		}
 		if n++; n > opt.MaxFiles {
-			p.stop("the project has more than the file limit")
+			p.stop("the project has more than the file limit", 0)
 			break
 		}
 		if time.Now().After(p.deadline) {
-			p.stop("indexing ran out of time")
+			p.stop("indexing ran out of time", CutClock)
 			p.byMachine = true
 			break
 		}
@@ -306,9 +321,9 @@ func (p *Project) Unsteady() bool { return p.unsteady }
 // Stopped tells why calls stopped crossing files, or "" when they did not.
 func (p *Project) Stopped() string { return p.stopped }
 
-func (p *Project) stop(reason string) {
+func (p *Project) stop(reason string, c Cut) {
 	if p.stopped == "" {
-		p.stopped = reason
+		p.stopped, p.stopCut = reason, CutProject|c
 	}
 }
 
@@ -883,8 +898,8 @@ func (p *Project) context(f string) *fileCtx {
 		return nil
 	}
 	c := &fileCtx{lang: fi.Lang, tree: parse(fi.Lang, toks, b), tokens: len(toks), rdefs: fileRecvDefs(fi.Lang, toks), rcls: fileRecvClasses(fi.Lang, toks), ifacts: p.e.importFacts(fi.Lang, toks), defs: phpDefines(fi.Lang, toks)}
-	if b.timeHit {
-		p.unread[f], p.unsteady = true, true
+	if b.hit {
+		p.unread[f], p.unsteady = true, true // the tree was cut short, by the clock or the work cap
 	}
 	c.ff = newFileFuncs(collectFuncs(c.tree, fi.Lang), fi.Lang)
 	p.keep(f, c)
@@ -946,7 +961,7 @@ func (p *Project) ok() bool {
 		return false
 	}
 	if time.Now().After(p.deadline) {
-		p.stop("following calls across files ran out of time")
+		p.stop("following calls across files ran out of time", CutClock)
 		p.byMachine = true
 		return false
 	}
@@ -985,7 +1000,7 @@ func (p *Project) ok() bool {
 				live = heapLive()
 			}
 			if live > p.opt.MaxHeap/10*7 {
-				p.stop("following calls across files reached the memory limit")
+				p.stop("following calls across files reached the memory limit", 0)
 				p.byMachine = true
 				return false
 			}

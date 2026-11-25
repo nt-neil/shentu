@@ -8,8 +8,8 @@
 //	go run ./internal/devtools/maprange [-reach F,G] DIR
 //
 // prints file:line, the enclosing function, what is ranged over, its ordinal
-// among the same function's ranges over the same expression, the functions
-// reached and the calls not followed. The test next to it compares the list of
+// among the same function's ranges over the same expression, a hash of the
+// loop's body, the functions reached and the calls not followed. The test next to it compares the list of
 // rules/engine with approved.tsv, so a new range over a map fails until it is
 // classified.
 //
@@ -21,11 +21,13 @@
 package main
 
 import (
+	"crypto/sha256"
 	"flag"
 	"fmt"
 	"go/ast"
 	"go/importer"
 	"go/parser"
+	"go/scanner"
 	"go/token"
 	"go/types"
 	"os"
@@ -43,6 +45,7 @@ type site struct {
 	fn      string // enclosing function, Type.method for a method
 	expr    string // what is ranged over
 	n       int    // ordinal among fn's ranges over expr, from 1
+	body    string // hash of the loop body's tokens, comments and line breaks left out; "" for a maps iterator that is not ranged over
 	reach   []string
 	unknown []string
 }
@@ -60,7 +63,7 @@ func main() {
 		os.Exit(1)
 	}
 	for _, s := range sites {
-		fmt.Printf("%s\t%s\t%s\t%d\t%s\t%s\n", s.pos, s.fn, s.expr, s.n, strings.Join(s.reach, ","), strings.Join(s.unknown, ","))
+		fmt.Printf("%s\t%s\t%s\t%d\t%s\t%s\t%s\n", s.pos, s.fn, s.expr, s.n, s.body, strings.Join(s.reach, ","), strings.Join(s.unknown, ","))
 	}
 }
 
@@ -72,15 +75,40 @@ func list(dir string, reachNames []string) ([]site, error) {
 	}
 	slices.Sort(names)
 	var files []*ast.File
+	srcs := map[string][]byte{}
 	for _, m := range names {
 		if strings.HasSuffix(m, "_test.go") {
 			continue
 		}
-		f, err := parser.ParseFile(fset, m, nil, 0)
+		src, err := os.ReadFile(m)
 		if err != nil {
 			return nil, err
 		}
-		files = append(files, f)
+		f, err := parser.ParseFile(fset, m, src, 0)
+		if err != nil {
+			return nil, err
+		}
+		files, srcs[m] = append(files, f), src
+	}
+	// bodyHash identifies a loop's body by its tokens, so that a loop taken
+	// out and another put in its place, over the same thing and reaching the
+	// same, is not taken for the one approved.
+	bodyHash := func(body ast.Node) string {
+		p, e := fset.Position(body.Pos()), fset.Position(body.End())
+		var sc scanner.Scanner
+		h := sha256.New()
+		sc.Init(token.NewFileSet().AddFile("", -1, e.Offset-p.Offset), srcs[p.Filename][p.Offset:e.Offset], nil, 0)
+		for {
+			_, tok, lit := sc.Scan()
+			if tok == token.EOF {
+				break
+			}
+			if tok == token.SEMICOLON && lit == "\n" {
+				continue
+			}
+			fmt.Fprintf(h, "%s %s\n", tok, lit)
+		}
+		return fmt.Sprintf("%x", h.Sum(nil))[:12]
 	}
 	if len(files) == 0 {
 		return nil, fmt.Errorf("%s: no Go files", dir)
@@ -224,6 +252,7 @@ func list(dir string, reachNames []string) ([]site, error) {
 		seen[k]++
 		s.n = seen[k]
 		if body != nil {
+			s.body = bodyHash(body)
 			cs, unk := funcsIn(body)
 			for _, c := range cs {
 				if reaches[c] && !slices.Contains(s.reach, name(c)) {
