@@ -400,13 +400,13 @@
     </li>
   
     <li class="era-node" style="--old: 0.05; --x: 89.1" data-lab="2360">
-      <a class="lamp" href="../zh-TW/releases.html#v0.5.7" aria-describedby="rv-0.5.7" aria-label="v0.5.7 即將發布，127 條規則">
+      <a class="lamp" href="../zh-TW/releases.html#v0.5.7" aria-describedby="rv-0.5.7" aria-label="v0.5.7 2026-11-26，127 條規則">
         <i aria-hidden="true"></i><span class="ver">v0.5.7</span>
-        <b class="badge">即將發布</b>
+        <time datetime="2026-11-26">11-26</time>
       </a>
       <p class="acc" aria-hidden="true"><span><b>127</b> 條規則</span></p>
       <div class="peek" id="rv-0.5.7">
-        <p class="word">籌備中</p>
+        <p class="word">20 項改變</p>
         <ul><li>PHP 規則會讀 <code>filter_input()</code>。用 <code>filter_input(INPUT_GET, ...)</code>、<code>INPUT_POST</code> 或 <code>INPUT_COOKIE</code> 取得的值，以及應用程式自己同名的方法（<code>-&gt;filterInput(</code>、<code>-&gt;filter_input(</code>）在第一個參數是這幾個常數時取得的值，在每一條會讀 <code>$_GET</code>、<code>$_POST</code> 或 <code>$_COOKIE</code> 的 PHP 規則裡都算請求輸入。第一個參數是變數或其他常數（例如 <code>INPUT_SERVER</code>）時不算。數字或 bool 的 filter（<code>FILTER_VALIDATE_INT</code>、<code>FILTER_VALIDATE_BOOL</code>、<code>FILTER_SANITIZE_NUMBER_INT</code> 等，寫成具名參數 <code>filter:</code> 也一樣）取得的值不帶輸入，但用 <code>|</code> 加上 flag 時不算（<code>FILTER_VALIDATE_INT | FILTER_NULL_ON_FAILURE</code> 是另一個 filter ID，PHP 7 會當成 <code>FILTER_DEFAULT</code>）；<code>FILTER_SANITIZE_SPECIAL_CHARS</code> 在把 <code>htmlspecialchars()</code> 當清理函式的規則裡算清理過；URL 的 filter 不算清理。</li><li>macOS：netstat 給的 pid 是 0 的 listening socket，看不出是哪個程序，所以 listening port 的清單會標成部分（partial），並寫明有幾個，不再當成每個 owner 都知道的完整清單。</li><li>PHP 規則認得應用程式自己寫的 guard 函式。一個函式如果只有在檢查過路徑參數之後才回傳 true（白名單，例如 Welcart 的 <code>usces_is_reserved_file()</code>，或是 <code>realpath($p)</code> 加上 <code>strpos($real, $base) === 0</code>），在它回傳 true 的地方（<code>if (guard($f)) { ... }</code>，或 <code>if (!guard($f)) { die(); }</code> 之後），傳進去的值就算清理過；寫成別的 class 的方法也一樣。guard 裡改寫了參數、在檢查前就回傳 true，或只檢查檔案存在的，都不算。路徑規則把 <code>strpos(</code>、<code>stripos(</code> 和 <code>=== 0</code> 或 <code>!== 0</code> 的比較，當成檢查路徑起始的比對，而且只檢查第一個參數（<code>strpos(&#39;/var/logs/&#39;, $real)</code> 在 <code>/</code> 和 <code>/var</code> 時也成立）。<code>realpath($p)</code> 找到檔案的地方，對伺服器端請求和 phar 規則來說，<code>$p</code> 不再是 URL 或 <code>phar://</code> wrapper；路徑規則照樣回報。用 <code>in_array()</code> 查 <code>basename($p)</code> 或 <code>intval($id)</code>，不再算驗證了 <code>$p</code> 或 <code>$id</code>：<code>../../x/log.txt</code> 和 <code>1 OR 1</code> 都會通過這種查表。</li></ul>
       </div>
     </li>

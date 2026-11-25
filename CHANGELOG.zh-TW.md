@@ -7,7 +7,7 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 
 - 用 `apt-mark hold` 鎖住的 Debian 或 Ubuntu 套件（dpkg 狀態 `hi`），以及標成要移除、但還裝著的套件（`ri`、`pi`），現在和已安裝的套件一樣會被檢查。以前套件清單只收 dpkg 的 `ii`，所以鎖住的套件不會被檢查，也不會被列出來（v0.5.7 的已知問題）。dpkg 知道、但沒有完整安裝的套件，會連同狀態列在 `packages_not_checked`。只裝了一半的套件（half-installed、unpacked、half-configured、triggers awaited、triggers pending）還會讓套件清單標成部分（partial）；只剩設定檔的套件（config-files）只會被列出來。最多列 20 個，其餘的數量寫在 `packages_not_checked_more`。
 
-## v0.5.7 (unreleased)
+## v0.5.7 — 2026-11-26
 
 - PHP 規則會讀 `filter_input()`。用 `filter_input(INPUT_GET, ...)`、`INPUT_POST` 或 `INPUT_COOKIE` 取得的值，以及應用程式自己同名的方法（`->filterInput(`、`->filter_input(`）在第一個參數是這幾個常數時取得的值，在每一條會讀 `$_GET`、`$_POST` 或 `$_COOKIE` 的 PHP 規則裡都算請求輸入。第一個參數是變數或其他常數（例如 `INPUT_SERVER`）時不算。數字或 bool 的 filter（`FILTER_VALIDATE_INT`、`FILTER_VALIDATE_BOOL`、`FILTER_SANITIZE_NUMBER_INT` 等，寫成具名參數 `filter:` 也一樣）取得的值不帶輸入，但用 `|` 加上 flag 時不算（`FILTER_VALIDATE_INT | FILTER_NULL_ON_FAILURE` 是另一個 filter ID，PHP 7 會當成 `FILTER_DEFAULT`）；`FILTER_SANITIZE_SPECIAL_CHARS` 在把 `htmlspecialchars()` 當清理函式的規則裡算清理過；URL 的 filter 不算清理。
 - macOS：netstat 給的 pid 是 0 的 listening socket，看不出是哪個程序，所以 listening port 的清單會標成部分（partial），並寫明有幾個，不再當成每個 owner 都知道的完整清單。

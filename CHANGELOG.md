@@ -16,7 +16,7 @@ Chinese for the zh-TW pages; keep the two in step.
   the package list partial; one with only its configuration left (config-files) is listed only. The
   first 20 are listed, the rest counted in `packages_not_checked_more`.
 
-## v0.5.7 (unreleased)
+## v0.5.7 — 2026-11-26
 
 - PHP rules read `filter_input()`. A value from `filter_input(INPUT_GET, ...)`, `INPUT_POST` or
   `INPUT_COOKIE`, and from an application's own method of that name (`->filterInput(`,
