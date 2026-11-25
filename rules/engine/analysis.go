@@ -3,6 +3,7 @@ package engine
 import (
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -1912,10 +1913,45 @@ type keyRef struct {
 var prefixChecks = map[string]bool{"str_starts_with": true, "strncmp": true, "strncasecmp": true, "strpos": true,
 	"stripos": true, "startsWith": true, "startswith": true}
 
-// symmetricPrefix are the prefix checks that compare their first two
-// arguments alike: strncmp($real, $base, n) and strncmp($base, $real, n) say
-// the same, so either may be the value checked.
+// symmetricPrefix are the prefix checks that compare the first n bytes of
+// their first two arguments alike (strncmp, strncasecmp): which one is the
+// base, and so which one is checked, the length n tells (strncmpValue).
 var symmetricPrefix = map[string]bool{"strncmp": true, "strncasecmp": true}
+
+// strncmpValue reads strncmp(a, b, n) === 0 as a check that the value starts
+// with the base, and returns the value. The base is the argument whose length
+// n is: strlen() of it (strlen('/var/logs/'), strlen($base)), or a number equal
+// to the length of a literal base. Any other n checks less than the base
+// (strncmp($real, '/var/logs/', 3) passes /var/www) or asks whether the value
+// is a prefix of the base (n = strlen($real): / and /var pass), and a base
+// made of input checks nothing.
+func (a *analysis) strncmpValue(st state, args [][]Token) ([]Token, bool) {
+	if len(args) != 3 {
+		return nil, false
+	}
+	pair := [2][]Token{stripParens(args[0]), stripParens(args[1])}
+	n := stripParens(args[2])
+	base := -1
+	switch {
+	case len(n) > 3 && n[0].Kind == Ident && strings.EqualFold(n[0].Text, "strlen") && n[1].op("(") && closeOf(n, 1) == len(n)-1:
+		of := stripParens(n[2 : len(n)-1])
+		for i, x := range pair {
+			if tokensEqual(of, x) {
+				base = i
+			}
+		}
+	case len(n) == 1 && n[0].Kind == Num:
+		for i, x := range pair {
+			if len(x) == 1 && x[0].Kind == Str && len(x[0].Parts) == 0 && !strings.Contains(x[0].Text, "\\") && strconv.Itoa(len(x[0].Text)) == n[0].Text {
+				base = i
+			}
+		}
+	}
+	if base < 0 || a.expr(st, pair[base], false).taint {
+		return nil, false
+	}
+	return pair[1-base], true
+}
 
 // predicates are the sanitizers that answer yes or no about a value, so using
 // them as a condition validates it. A transforming sanitizer (intval, basename,
@@ -2261,10 +2297,20 @@ func (a *analysis) checkKeys(st state, atom []Token) []keyRef {
 		if s.name == "validate_file" && (len(args) < 2 || !a.allowlist(st, args[1])) {
 			return nil // without a list of allowed files it lets /etc/passwd through
 		}
+		if symmetricPrefix[s.name] {
+			v, ok := a.strncmpValue(st, args)
+			switch {
+			case !ok:
+				return nil
+			case netClasses[a.r.rule.Class]:
+				return a.plainSubject([][]Token{v})
+			}
+			return a.keysOf(v)
+		}
 		if prefixChecks[s.name] && netClasses[a.r.rule.Class] {
 			return a.plainSubject(args) // str_starts_with($u, '/x/'): only $u, and only a plain path
 		}
-		if prefixChecks[s.name] && !symmetricPrefix[s.name] {
+		if prefixChecks[s.name] {
 			if len(args) == 0 {
 				return nil
 			}
