@@ -133,6 +133,10 @@ type PackageSet struct {
 	// read to tell a package's origin.
 	ThirdParty  []string `json:"third_party,omitempty"`
 	OriginNotes []string `json:"origin_notes,omitempty"`
+	// NotChecked are the packages the manager knows but has not installed
+	// in full ("name version (state)": dpkg's config-files, half-installed,
+	// unpacked...): not in Items, so not checked, and said.
+	NotChecked []string `json:"not_checked,omitempty"`
 }
 
 type Package struct {
