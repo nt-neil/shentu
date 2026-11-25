@@ -181,6 +181,13 @@ func appVulnsIn(ctx context.Context, hc *http.Client, roots []string, system boo
 			files = append(files, Lockfile{Path: d, Ecosystem: "PyPI", pkgs: sd.pkgs, kind: "site-packages"})
 		}
 	}
+	var img imageScan
+	if system { // the host's Docker images: the whole host's check, not a path asked about
+		img = scanImages()
+		files = append(files, img.files...)
+		pth = append(pth, img.pth...)
+		partial = append(partial, img.partial...)
+	}
 	if unverifiedDistutilsHack(siteDirs, walked) {
 		for i := range pth {
 			if strings.HasSuffix(pth[i].Path, "distutils-precedence.pth") {
@@ -232,6 +239,12 @@ func appVulnsIn(ctx context.Context, hc *http.Client, roots []string, system boo
 		results = append(results, r)
 	}
 	out := map[string]any{"searched": roots, "lock_files": nLock, "site_packages": len(siteDirs), "total_vulns": total, "files": results}
+	if system {
+		out["docker_images"] = img.images
+		if img.none != "" {
+			out["docker_images_note"] = img.none // nothing to check: not a part left out
+		}
+	}
 	if len(pth) > 0 {
 		out["pth"] = pth // .pth files that run code at every Python start; Known: a tool's own
 	}

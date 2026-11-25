@@ -483,8 +483,11 @@ func appVulnFindings(r map[string]any) []finding {
 	apps, _ := r["files"].([]tools.AppResult)
 	for _, f := range apps {
 		text := "f_kev_app"
-		if f.Kind == "site-packages" {
+		switch f.Kind {
+		case "site-packages":
 			text = "f_kev_site"
+		case "image":
+			text = "f_kev_image"
 		}
 		for _, e := range f.Exploited {
 			out = append(out, newFinding("kev:"+f.Path+":"+e.Package+":"+e.CVE, "critical", e, text, f.Path, e.Package, e.Version, e.CVE, e.Name))
