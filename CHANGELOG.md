@@ -112,6 +112,21 @@ Chinese for the zh-TW pages; keep the two in step.
   arrays (their union), `|` of two strings, `.` next to `-`, JavaScript's binary `+`, Python's `*`
   (which repeats a string), Python's `-` of two sets or two `Counter`s (their difference, as in
   `set(request.args.getlist('id')) - {'0'}`), and a number in the path rules.
+- The package vulnerability check (`vulns`) compares third-party PHP and nginx packages (from
+  deb.sury.org, the ondrej PPA, Remi's repository or nginx.org) with php.net's and nginx.org's
+  releases of 2026-11-19, the tables of the PHP and nginx checks. OSV has only the distributions'
+  advisories, so these packages matched nothing there and were only listed in
+  `third_party_unchecked`. Now each CVE in a package's range is in the vulnerability surface
+  (ecosystem `upstream:php` or `upstream:nginx`, with the fixed version, KEV when CISA lists it)
+  and in `third_party_upstream`, and counts in `total_vulns` and `affected_packages`, once per source package and CVE with
+  OSV's; one that CISA lists is in `actively_exploited` too (one entry naming the binaries), so the daily patrol sends its critical KEV alert as for a
+  distribution's package. A CVE the package's changelog names (a backported fix) is listed as
+  backported and not reported. php-fpm also gets the FPM and status page CVEs, php-cgi the CGI
+  one; mod_php and the CLI get the engine's only. Each compared package says the tables' date
+  (`as_of`). A package whose version cannot be read, on a branch php.net no longer fixes, or newer
+  than the tables' newest release (such as PHP 8.3.38, 9.0 or nginx 1.32) stays in
+  `third_party_unchecked` with the reason in `why`. The OSV results of these packages are kept: a
+  build can also be older than the distribution's fix.
 
 ### Known issues
 

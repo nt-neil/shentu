@@ -172,7 +172,8 @@ func packageVulnsAll(ctx context.Context, hc *http.Client, detailFor string) (ma
 	if feed.Note != "" {
 		out["ecosystems_note"] = feed.Note
 	}
-	thirdPartyOut(out, set)
+	up, upWhy := upstreamCompare(ctx, set) // third-party PHP and nginx, against php.net's and nginx.org's advisories
+	thirdPartyOut(out, set, up, upWhy)
 	if len(feed.Ecosystems) > 1 { // SUSE: one per module; ecosystem shows the first only
 		out["ecosystems"] = feed.Ecosystems
 	}
@@ -201,8 +202,42 @@ func packageVulnsAll(ctx context.Context, hc *http.Client, detailFor string) (ma
 		}
 		return c, ok
 	}
+	// The upstream hits, counted in the summary every reader goes by (the
+	// patrol, the report, the model) as OSV's are: by source package and CVE.
+	// The binaries of one source (php8.3-fpm, -cli) are one affected package,
+	// as OSV names them, and a CVE OSV already reports for that source (also
+	// as an advisory's alias, a DSA's CVE) is not counted again.
+	ups := upstreamBySource(up)
+	osvHas := map[srcCVE]bool{}
+	inFound := map[string]bool{}
+	for _, a := range found {
+		inFound[a.Package] = true
+		if !ups.sources[a.Package] {
+			continue
+		}
+		for _, id := range a.IDs {
+			cves := cveRe.FindAllString(strings.ToUpper(id), -1)
+			if len(cves) == 0 {
+				cves, _ = cvesOf(id)
+			}
+			for _, c := range cves {
+				osvHas[srcCVE{a.Package, c}] = true
+			}
+		}
+	}
+	newSources := map[string]bool{}
+	for _, k := range ups.order {
+		if !osvHas[k] {
+			total++
+			if !inFound[k.src] {
+				newSources[k.src] = true
+			}
+		}
+	}
+	out["total_vulns"], out["affected_packages"] = total, len(found)+len(newSources)
 	exploited := map[string][]Exploit{} // package -> KEV matches
-	if kev, err := loadKEV(ctx, hc); err != nil {
+	kev, kevErr := loadKEV(ctx, hc)     // kept for the upstream entries of the surface
+	if err := kevErr; err != nil {
 		out["kev"] = "CISA KEV list unavailable: " + err.Error()
 	} else {
 		var all []Exploit
@@ -215,6 +250,21 @@ func packageVulnsAll(ctx context.Context, hc *http.Client, detailFor string) (ma
 				exploited[a.Package] = append(exploited[a.Package], e)
 				all = append(all, e)
 			}
+		}
+		// Upstream's, as OSV's (the patrol's KEV alert reads this list): one
+		// per source package and CVE, naming the binaries; OSV's own entry
+		// for it, when there is one, gets them instead of a second entry.
+		for _, k := range ups.order {
+			e, ok := kev[k.cve]
+			if !ok {
+				continue
+			}
+			if i := slices.IndexFunc(all, func(x Exploit) bool { return x.Package == k.src && x.CVE == k.cve }); i >= 0 {
+				all[i].Binaries = ups.binaries[k]
+				continue
+			}
+			all = append(all, Exploit{Package: k.src, Version: ups.version[k.src], ID: k.cve, CVE: k.cve, Name: e.Name, Added: e.Added,
+				Ransomware: e.Ransomware == "Known", Binaries: ups.binaries[k]})
 		}
 		out["actively_exploited"] = all
 		switch {
@@ -261,6 +311,7 @@ func packageVulnsAll(ctx context.Context, hc *http.Client, detailFor string) (ma
 			surface = append(surface, v)
 		}
 	}
+	surface = append(surface, upstreamSurface(up, kev)...)
 	if forSurface {
 		// The KEV check did not look up every advisory's CVEs (the list
 		// unavailable, or past 300 for one package): those it did not,
@@ -394,6 +445,9 @@ type Exploit struct {
 	Name       string `json:"name"`
 	Added      string `json:"kev_since"`
 	Ransomware bool   `json:"used_by_ransomware,omitempty"`
+	// Binaries are the installed packages of Package (a source package) the
+	// upstream compare found affected (php8.3-fpm, php8.3-cli).
+	Binaries []string `json:"binaries,omitempty"`
 }
 
 // surfaceCVEs fills the CVEs of surface's entries neither their id nor
@@ -553,11 +607,7 @@ func installedPackages(ctx context.Context) (string, hostenv.PatchFeed, []pkg, e
 func pkgsOf(items []hostenv.Package) []pkg {
 	var pkgs []pkg
 	for _, p := range items {
-		name := p.Name
-		if p.Source != "" {
-			name = p.Source
-		}
-		pkgs = append(pkgs, pkg{name, p.Version})
+		pkgs = append(pkgs, pkg{sourceOf(p), p.Version})
 	}
 	return uniq(pkgs)
 }
@@ -604,18 +654,26 @@ func installedSet(ctx context.Context) (string, hostenv.PatchFeed, hostenv.Packa
 // the distribution's. OSV publishes the distribution's packages only, so
 // these were compared as if the distribution had built them and matched
 // nothing: that silence is not "no vulnerabilities", and says so.
-func thirdPartyOut(out map[string]any, set hostenv.PackageSet) {
+func thirdPartyOut(out map[string]any, set hostenv.PackageSet, up []upstreamHit, why map[string]string) {
 	type thirdParty struct {
 		Package string `json:"package"`
 		Version string `json:"version"`
 		Origin  string `json:"origin"`
 		FoundBy string `json:"found_by"`
+		Why     string `json:"why,omitempty"` // a PHP or nginx package not compared with its upstream: why
+	}
+	compared := map[string]bool{}
+	for _, h := range up {
+		compared[h.Package] = true
 	}
 	var tp []thirdParty
 	for _, it := range set.Items {
-		if it.Origin != "" {
-			tp = append(tp, thirdParty{it.Name, it.Version, it.Origin, it.OriginBy})
+		if it.Origin != "" && !compared[it.Name] {
+			tp = append(tp, thirdParty{it.Name, it.Version, it.Origin, it.OriginBy, why[it.Name]})
 		}
+	}
+	if len(up) > 0 {
+		out["third_party_upstream"] = up
 	}
 	if len(tp) > 0 {
 		out["third_party_unchecked"] = tp
