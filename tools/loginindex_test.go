@@ -92,15 +92,19 @@ func (j *fakeJournal) inTimeOrder() {
 	j.seq = len(j.entries)
 }
 
-// vacuum drops the entries up to entry n, as journalctl --vacuum-* does.
+// vacuum drops the first n entries, as journalctl --vacuum-* does (the
+// oldest first; entry n of a journal numbered from 1 in one sequence).
 func (j *fakeJournal) vacuum(n int) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
-	k := 0
-	for k < len(j.entries) && j.entries[k].seq <= n {
-		k++
-	}
-	j.entries = j.entries[k:]
+	j.entries = j.entries[min(n, len(j.entries)):]
+}
+
+// sidOf is the seqnum_id a cursor names (its s=).
+func sidOf(c string) string {
+	_, rest, _ := strings.Cut(c, "s=")
+	sid, _, _ := strings.Cut(rest, ";")
+	return sid
 }
 
 func (j *fakeJournal) failed(at time.Time, ip string) {
@@ -119,6 +123,9 @@ func (j *fakeJournal) Run(context.Context, []string) (hostenv.CmdResult, error) 
 }
 
 var linuxRunner, _ = hostenv.NewRunner(hostenv.LinuxCollector{}.Allowlist())
+
+// cursorSid is the seqnum_id e's cursor carries.
+func (e fakeEntry) cursorSid() string { return sidOf((&fakeJournal{sid: e.sid}).cursorN(e.seq)) }
 
 // jsonLine is the entry as journalctl -o json writes it.
 func (e fakeEntry) jsonLine() string {
@@ -160,10 +167,19 @@ func (j *fakeJournal) RunLinesCut(ctx context.Context, argv []string, max int, f
 		case "--cursor", "--after-cursor":
 			word := map[string]string{"--cursor": "cursor ", "--after-cursor": "after "}[a]
 			j.reads = append(j.reads, word+argv[i+1])
-			want := seqOf(argv[i+1])
-			k := 0 // the nearest entry from the cursor's place on
-			for k < len(j.entries) && j.entries[k].seq < want {
+			want, sid := seqOf(argv[i+1]), sidOf(argv[i+1])
+			k := 0 // the nearest entry from the cursor's place on, in its sequence
+			for k < len(j.entries) && (j.entries[k].cursorSid() != sid || j.entries[k].seq < want) {
 				k++
+			}
+			if k == len(j.entries) {
+				k = 0 // a sequence no longer there: from the first entry
+				for _, e := range j.entries {
+					if e.cursorSid() == sid {
+						k = len(j.entries) // its entries all before the cursor's place
+						break
+					}
+				}
 			}
 			if a == "--after-cursor" {
 				k++ // skip one: the cursor's entry, or the first after the gap

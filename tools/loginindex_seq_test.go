@@ -104,13 +104,13 @@ func tiedJournal(rng *rand.Rand, j *fakeJournal, now time.Time, ips []string, la
 		j.inTimeOrder()
 		return
 	}
-	// numbered on, in time order among themselves: numbers never change
+	// numbered from 1 in the new sequence, in time order among themselves
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	add := j.entries[len(j.entries)-k0:]
 	sort.SliceStable(add, func(a, b int) bool { return add[a].at.Before(add[b].at) })
 	for i := range add {
-		add[i].seq = j.seq - len(add) + 1 + i
+		add[i].seq = i + 1
 	}
 }
 
@@ -222,5 +222,41 @@ func TestLoginIndexOldFormatSameTime(t *testing.T) {
 	}
 	if _, err := x.indexedLogins([]byte{203, 0, 113, 30}, now); codeOf(err) != BlockUnverified {
 		t.Errorf("forged event at JournalFrom: %v, want refused", err)
+	}
+}
+
+// alive by numbers in one sequence; another sequence's numbers are made
+// unknown (a journal made anew numbers from 1 again: an old number is no
+// place in it); with the journal's first entry in an older sequence than
+// an entry that refuses, that entry is there (a vacuum takes the oldest
+// first), whatever its time; else times, on the strict side.
+func TestLoginIndexAliveSequences(t *testing.T) {
+	t0 := time.Date(2026, 11, 25, 9, 0, 0, 0, time.UTC)
+	const a, b = "0123456789abcdef0123456789abcdef", "fedcba9876543210fedcba9876543210"
+	cur := func(sid string, n int) string { return (&fakeJournal{sid: sid}).cursorN(n) }
+	x := &loginIndex{Addrs: map[string]*loginIndexAddr{"203.0.113.10": {LastSeq: 7, ForgedLastSeq: 7}}}
+	x.seqOf(cur(a, 7))
+	x.UnreadableLastSeq, x.OverflowLastSeq = 7, 7
+	x.setJournalFrom(t0, cur(a, 5))
+	if !x.alive(t0.Add(-time.Hour), 7, false) || x.alive(t0.Add(time.Hour), 4, true) {
+		t.Errorf("one sequence: by numbers, not times")
+	}
+	// the journal made anew: numbers from 1 in b
+	if n := x.seqOf(cur(b, 2)); n != 2 || x.SeqID != b {
+		t.Fatalf("seqOf: %d %q", n, x.SeqID)
+	}
+	if ad := x.Addrs["203.0.113.10"]; ad.LastSeq != 0 || ad.ForgedLastSeq != 0 || x.UnreadableLastSeq != 0 || x.OverflowLastSeq != 0 {
+		t.Errorf("numbers of sequence a kept: %+v, unreadable %d, overflow %d", ad, x.UnreadableLastSeq, x.OverflowLastSeq)
+	}
+	// the journal's first entry still in a (older): an entry of b refuses
+	// whatever its time; one that lets a block through goes by time
+	if !x.alive(t0.Add(-time.Hour), 2, true) {
+		t.Errorf("an entry of the newer sequence that refuses: not there")
+	}
+	if x.alive(t0, 2, false) || !x.alive(t0.Add(time.Second), 2, false) {
+		t.Errorf("an event that lets a block through: not by time on the strict side")
+	}
+	if !x.alive(t0, 0, true) || x.alive(t0.Add(-time.Second), 0, true) {
+		t.Errorf("a refusal with no number: not by time on the strict side")
 	}
 }
