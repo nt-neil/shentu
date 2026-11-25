@@ -894,18 +894,22 @@ func phpDefines(lang string, toks []Token) map[string]string {
 		}
 	}
 	for i := 0; i+5 < len(toks); i++ {
-		if !toks[i].word("define") || !toks[i+1].op("(") || toks[i+2].Kind != Str || !toks[i+3].op(",") || toks[i+4].Kind != Str ||
-			len(toks[i+4].Parts) > 0 || !toks[i+5].op(")") || i > 0 && memberOp(true, toks[i-1]) {
+		if !toks[i].word("define") || !toks[i+1].op("(") || toks[i+2].Kind != Str || !toks[i+3].op(",") || i > 0 && memberOp(true, toks[i-1]) {
 			continue
 		}
 		if out == nil {
 			out = map[string]string{}
 		}
-		if _, dup := out[toks[i+2].Text]; dup {
-			out[toks[i+2].Text] = "" // defined twice: not known
-			continue
+		// a value that is no plain string (define('ABSPATH', $_GET['b'])) is not
+		// known: the name is still this file's, so it is no framework constant
+		v := ""
+		if toks[i+4].Kind == Str && len(toks[i+4].Parts) == 0 && toks[i+5].op(")") {
+			v = toks[i+4].Text
 		}
-		out[toks[i+2].Text] = toks[i+4].Text
+		if _, dup := out[toks[i+2].Text]; dup {
+			v = "" // defined twice: not known
+		}
+		out[toks[i+2].Text] = v
 	}
 	return out
 }

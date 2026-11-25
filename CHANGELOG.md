@@ -101,8 +101,9 @@ Chinese for the zh-TW pages; keep the two in step.
   server-side request; the path rules still report it. The constants are `__DIR__`,
   `DIRECTORY_SEPARATOR` and the directory constants of WordPress, Drupal and Joomla (`ABSPATH`,
   `WP_CONTENT_DIR`, `DRUPAL_ROOT`, `JPATH_ROOT` and others). Still reported: a plugin's own
-  constant, a constant defined from input, a bare `/` or `/a` after the constant, `C:` alone, a
-  `\\` start, and an escape such as `\x3a` in the literal.
+  constant, a constant defined from input (also one of these names, as in
+  `define('ABSPATH', $_GET['b'])`), a bare `/` or `/a` after the constant, `C:` alone, a `\\`
+  start, and an escape such as `\x3a` in the literal.
 - SQL injection and XSS rules take arithmetic as a number, which carries no quote or markup:
   a page offset `(max($_GET['paged'], 1) - 1) * 20` in a `LIMIT` (as in Welcart), PHP's
   `$_GET['n'] + 1`, JavaScript's `req.query.n - 1` and Python's `request.args['n'] - 1` are no
