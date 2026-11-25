@@ -103,6 +103,14 @@ Chinese for the zh-TW pages; keep the two in step.
   `WP_CONTENT_DIR`, `DRUPAL_ROOT`, `JPATH_ROOT` and others). Still reported: a plugin's own
   constant, a constant defined from input, a bare `/` or `/a` after the constant, `C:` alone, a
   `\\` start, and an escape such as `\x3a` in the literal.
+- SQL injection and XSS rules take arithmetic as a number, which carries no quote or markup:
+  a page offset `(max($_GET['paged'], 1) - 1) * 20` in a `LIMIT` (as in Welcart), PHP's
+  `$_GET['n'] + 1`, JavaScript's `req.query.n - 1` and Python's `request.args['n'] - 1` are no
+  longer reported there. Arithmetic is `-`, `/`, `*`, `%` and `**`, with a `+` next to a number
+  in PHP; in Python it is `//`, `**`, and `-` or `/` next to a number. Still input: PHP `+` of two
+  arrays (their union), `|` of two strings, `.` next to `-`, JavaScript's binary `+`, Python's `*`
+  (which repeats a string), Python's `-` of two sets or two `Counter`s (their difference, as in
+  `set(request.args.getlist('id')) - {'0'}`), and a number in the path rules.
 
 ### Known issues
 
