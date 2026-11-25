@@ -542,3 +542,40 @@ func TestSitePackagesSystem(t *testing.T) {
 		t.Errorf("a path asked about read the system's: %q %v", f.queries, err)
 	}
 }
+
+// A _distutils_hack in the system package manager's folder is the system's
+// only with every folder above it root's alone: else it may shadow
+// setuptools' own, and no distutils-precedence.pth is known.
+func TestSitePackagesShadowFoldersAbove(t *testing.T) {
+	sys := t.TempDir()
+	managed := filepath.Join(sys, "usr", "lib", "python3.12", "dist-packages")
+	local := filepath.Join(sys, "usr", "local", "lib", "python3.12", "dist-packages")
+	os.MkdirAll(filepath.Join(managed, "_distutils_hack"), 0o755)
+	os.WriteFile(filepath.Join(managed, "_distutils_hack", "__init__.py"), []byte("def add_shim(): pass\n"), 0o644)
+	os.MkdirAll(local, 0o755)
+	os.WriteFile(filepath.Join(local, "distutils-precedence.pth"), []byte("import os; var = 'SETUPTOOLS_USE_DISTUTILS'; enabled = os.environ.get(var, 'local') == 'local'; enabled and __import__('_distutils_hack').add_shim(); \n"), 0o644)
+	dist(t, local, "setuptools-69.0.0", "setuptools", "69.0.0", "pip")
+	record(t, local, "setuptools-69.0.0", "_distutils_hack/__init__.py", "def add_shim(): pass\n")
+	t.Cleanup(SetSitePackagesForTest([]string{managed, local}))
+	oldP, oldRoot := osManagedPrefixes, rootOnly
+	t.Cleanup(func() { osManagedPrefixes, rootOnly = oldP, oldRoot })
+	osManagedPrefixes = []string{filepath.Join(sys, "usr", "lib") + "/"}
+	known := func() string {
+		out, _ := AppVulns(context.Background(), &http.Client{Transport: &pypiFeeds{}}, nil)
+		pth, _ := out["pth"].([]PthFile)
+		for _, p := range pth {
+			if filepath.Dir(p.Path) == local {
+				return p.Known
+			}
+		}
+		return "not listed"
+	}
+	rootOnly = func(string, bool) bool { return true }
+	if k := known(); k != "setuptools" {
+		t.Errorf("all root's: %q", k)
+	}
+	rootOnly = func(p string, _ bool) bool { return p != filepath.Join(sys, "usr", "lib") }
+	if k := known(); k != "" {
+		t.Errorf("the system's _distutils_hack under a folder a user can write: %q", k)
+	}
+}
