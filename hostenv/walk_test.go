@@ -233,7 +233,7 @@ func TestReadDirMax(t *testing.T) {
 		t.Errorf("missing: %v", err)
 	}
 	if runtime.GOOS == "windows" {
-		return // a fixture masks the user's profile path (C:\Users\...): replayed at another path, as TestLstatRecordReplay skips
+		return // the fixture's Masker rewrites the user's profile path (C:\Users\<name>): the replay is asked another path; replay itself is OS-independent, covered on Linux and macOS
 	}
 	rec := NewRecorder(l)
 	ReadDirMax(rec, d, 3)
