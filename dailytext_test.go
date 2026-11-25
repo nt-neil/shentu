@@ -37,7 +37,7 @@ func TestDailyTextVerbs(t *testing.T) {
 var reportWords = map[string]bool{
 	"Agent": true, "AI": true, "token": true, "tokens": true, "KiB": true, "L1": true, "L2": true, "L3": true, "IP": true,
 	"SSH": true, "DNS": true, "CISA": true, "KEV": true, "OSV": true, "root": true, "LocalSystem": true, "Linux": true,
-	"WordPress": true, "Telegram": true, "Slack": true, "Discord": true, "webhook": true, "bot": true,
+	"WordPress": true, "Python": true, "Telegram": true, "Slack": true, "Discord": true, "webhook": true, "bot": true,
 	"sshd": true, "PAM": true, "UID": true, "pid": true, "rootkit": true, "webshell": true,
 }
 

@@ -31,7 +31,7 @@ func TestSetHostSourceForTestOnlyInTests(t *testing.T) {
 			// The name itself, called or taken as a value (S-181r-1), but
 			// for its definition and comments.
 			code, _, _ := strings.Cut(line, "//")
-			for _, name := range []string{"SetHostSourceForTest", "SetLoginIndexForTest"} {
+			for _, name := range []string{"SetHostSourceForTest", "SetLoginIndexForTest", "SetSitePackagesForTest"} {
 				if strings.Contains(code, name) && !strings.HasPrefix(strings.TrimSpace(code), "func "+name+"(") {
 					t.Errorf("%s:%d calls %s outside a test", p, i+1, name)
 				}

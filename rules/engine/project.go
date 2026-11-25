@@ -56,12 +56,15 @@ type Project struct {
 	lru                  []string
 	resident             int
 	sums                 map[ruleFile]*summaries
-	kept                 map[ruleFile]map[string]*summary // finished summaries of files no longer kept parsed
-	incl                 map[string][]string              // memo of includes()
-	fnMemo               map[[2]string]string             // memo of function(): {from, name} → file
-	seen                 map[string]bool                  // findings already returned: rule, path, line
+	kept                 map[ruleFile]*keptSums // what was worked out of files no longer kept parsed
+	costs                map[[2]string]int      // firstCost: {rule, summary id} → what the summary cost the first time
+	incl                 map[string][]string    // memo of includes()
+	fnMemo               map[[2]string]string   // memo of function(): {from, name} → file
+	seen                 map[string]bool        // findings already returned: rule, path, line
 	stopped              string
 	byMachine            bool                       // stopped by the clock or the heap: where depends on the machine
+	stopCut              Cut                        // why calls stopped crossing files (CutProject, with CutClock or CutProjectWork)
+	work                 int                        // the work of the files' calls passes so far, against opt.MaxWork
 	unsteady             bool                       // the current scan met a file it could not read, or parse in time
 	unread               map[string]bool            // files that could not be read, or parsed in time, since indexed
 	skip                 map[string]bool            // ScanCallsPart: rules to leave out
@@ -92,11 +95,21 @@ type ProjectOptions struct {
 	MaxFiles  int           // files indexed (default 30,000)
 	MaxTokens int           // tokens kept parsed in memory at once (default 3,000,000)
 	MaxHeap   uint64        // heap in use past which calls stop crossing files (default 1 GiB)
-	MaxTime   time.Duration // time for indexing and following calls across files (default 90s)
+	MaxWork   int           // work of following calls across files, all files' calls passes together (default DefaultProjectWork): checked before each file, past it calls stop crossing files (CutProjectWork)
+	MaxTime   time.Duration // a safety net for indexing and following calls (default 15 minutes), well past what MaxWork takes on an ordinary machine (CutClock)
 }
 
+// DefaultProjectWork is ProjectOptions.MaxWork's default. Every project of E7
+// and cvebench that finished within the 90 seconds it replaces did under 600M;
+// WordPress (2,148 files) needs more than 750M, where 880 of its files stopped
+// following calls, and finishes under 1.5G, with the same findings at 3G and
+// no rise in memory (about 1.3 GB either way).
+const DefaultProjectWork = 1_500_000_000
+
 // indexVersion changes whenever fileIndex changes, so an old cache is ignored.
-const indexVersion = "9"
+// 10: Limited means the work cap or the token limit, no longer the 3-second
+// clock, so a file an old cache did not mark may now be cut.
+const indexVersion = "10"
 
 type fileIndex struct {
 	Hash      string            `json:"h"`
@@ -155,11 +168,14 @@ func (e *Engine) NewProject(paths []string, read func(string) ([]byte, error), o
 		opt.MaxHeap = 1 << 30
 	}
 	if opt.MaxTime <= 0 {
-		opt.MaxTime = 90 * time.Second
+		opt.MaxTime = 15 * time.Minute
+	}
+	if opt.MaxWork <= 0 {
+		opt.MaxWork = DefaultProjectWork
 	}
 	p := &Project{e: e, opt: opt, read: read, files: map[string]*fileIndex{}, bySuffix: map[string][]string{}, byClean: map[string]string{},
 		funcs: map[string]map[string][]string{}, classes: map[string]map[string][]string{}, declared: map[string]map[string][]string{},
-		ctx: map[string]*fileCtx{}, sums: map[ruleFile]*summaries{}, kept: map[ruleFile]map[string]*summary{}, seen: map[string]bool{},
+		ctx: map[string]*fileCtx{}, sums: map[ruleFile]*summaries{}, kept: map[ruleFile]*keptSums{}, costs: map[[2]string]int{}, seen: map[string]bool{},
 		incl: map[string][]string{}, fnMemo: map[[2]string]string{}, deps: map[string]map[string]bool{}, unread: map[string]bool{}, sinkRules: map[string]bool{},
 		deadline: time.Now().Add(opt.MaxTime)}
 	key := e.indexKey()
@@ -178,11 +194,11 @@ func (e *Engine) NewProject(paths []string, read func(string) ([]byte, error), o
 			continue
 		}
 		if n++; n > opt.MaxFiles {
-			p.stop("the project has more than the file limit")
+			p.stop("the project has more than the file limit", 0)
 			break
 		}
 		if time.Now().After(p.deadline) {
-			p.stop("indexing ran out of time")
+			p.stop("indexing ran out of time", CutClock)
 			p.byMachine = true
 			break
 		}
@@ -305,9 +321,9 @@ func (p *Project) Unsteady() bool { return p.unsteady }
 // Stopped tells why calls stopped crossing files, or "" when they did not.
 func (p *Project) Stopped() string { return p.stopped }
 
-func (p *Project) stop(reason string) {
+func (p *Project) stop(reason string, c Cut) {
 	if p.stopped == "" {
-		p.stopped = reason
+		p.stopped, p.stopCut = reason, CutProject|c
 	}
 }
 
@@ -797,6 +813,42 @@ func (p *Project) summary(a *analysis, c callee) *summary {
 // ruleFile keys the summaries of one rule in one file.
 type ruleFile struct{ rule, file string }
 
+// keptSums is what the project keeps of a rule's summaries of a file it lets
+// go of: what working them out again would charge again, so that the work a
+// scan is charged, and so where its caps fall, does not depend on which files
+// the project held. done goes when memory is short (shrink(true)); the other
+// two are small and stay.
+type keptSums struct {
+	done   map[string]*summary
+	retUnk map[string]uint8
+	keyed  map[string]*summary
+}
+
+func keptOf(sc *summaries) *keptSums {
+	return &keptSums{done: sc.done, retUnk: sc.retUnk, keyed: sc.keyed}
+}
+
+// restore puts back into sc what was kept of it.
+func (k *keptSums) restore(sc *summaries) {
+	if k.done != nil {
+		sc.done = k.done
+	}
+	sc.retUnk, sc.keyed = k.retUnk, k.keyed
+}
+
+// firstCost is what summary id of rule cost the first time it was worked out:
+// worked out again, after the memory cap let it go, it is the same summary,
+// and is paid for at that cost though what it reads (returnsUnknown) may be
+// ready this time.
+func (p *Project) firstCost(rule, id string, cost int) int {
+	k := [2]string{rule, id}
+	if c, ok := p.costs[k]; ok {
+		return c
+	}
+	p.costs[k] = cost
+	return cost
+}
+
 // analysisFor returns an analysis of file f for the same rule, sharing the
 // caller's budget and the project's summaries of f.
 func (p *Project) analysisFor(a *analysis, f string) *analysis {
@@ -809,8 +861,8 @@ func (p *Project) analysisFor(a *analysis, f string) *analysis {
 	sc, ok := p.sums[key]
 	if !ok {
 		sc = newSummaries(ctx.ff)
-		if done := p.kept[key]; sc != nil && done != nil {
-			sc.done = done // computed before the file was let go
+		if k := p.kept[key]; sc != nil && k != nil {
+			k.restore(sc) // worked out before the file was let go
 			delete(p.kept, key)
 		}
 		p.sums[key] = sc
@@ -846,8 +898,8 @@ func (p *Project) context(f string) *fileCtx {
 		return nil
 	}
 	c := &fileCtx{lang: fi.Lang, tree: parse(fi.Lang, toks, b), tokens: len(toks), rdefs: fileRecvDefs(fi.Lang, toks), rcls: fileRecvClasses(fi.Lang, toks), ifacts: p.e.importFacts(fi.Lang, toks), defs: phpDefines(fi.Lang, toks)}
-	if b.timeHit {
-		p.unread[f], p.unsteady = true, true
+	if b.hit {
+		p.unread[f], p.unsteady = true, true // the tree was cut short, by the clock or the work cap
 	}
 	c.ff = newFileFuncs(collectFuncs(c.tree, fi.Lang), fi.Lang)
 	p.keep(f, c)
@@ -877,7 +929,7 @@ func (p *Project) keep(f string, c *fileCtx) {
 			// is still written to it (a cycle being settled) is kept too.
 			for k, sc := range p.sums {
 				if k.file == old {
-					p.kept[k] = sc.done
+					p.kept[k] = keptOf(sc)
 					delete(p.sums, k)
 				}
 			}
@@ -909,7 +961,7 @@ func (p *Project) ok() bool {
 		return false
 	}
 	if time.Now().After(p.deadline) {
-		p.stop("following calls across files ran out of time")
+		p.stop("following calls across files ran out of time", CutClock)
 		p.byMachine = true
 		return false
 	}
@@ -948,7 +1000,7 @@ func (p *Project) ok() bool {
 				live = heapLive()
 			}
 			if live > p.opt.MaxHeap/10*7 {
-				p.stop("following calls across files reached the memory limit")
+				p.stop("following calls across files reached the memory limit", 0)
 				p.byMachine = true
 				return false
 			}
@@ -984,18 +1036,24 @@ func (p *Project) shrink(all bool) {
 		// gets them back (analysisFor), as when the LRU lets it go (keep).
 		for k, sc := range p.sums {
 			if !p.inUse(k.file) {
-				p.kept[k] = sc.done
+				p.kept[k] = keptOf(sc)
 				delete(p.sums, k)
 			}
 		}
 		return
 	}
-	for k := range p.sums {
+	// The finished summaries go, and are paid for at their first cost when
+	// worked out again (firstCost); what returnsUnknown and keyedSinks found
+	// stays, small next to them.
+	for k, sc := range p.sums {
 		if !p.inUse(k.file) {
+			p.kept[k] = &keptSums{retUnk: sc.retUnk, keyed: sc.keyed}
 			delete(p.sums, k)
 		}
 	}
-	clear(p.kept)
+	for _, k := range p.kept {
+		k.done = nil
+	}
 }
 
 // resolve finds the file and the function name a call in a's file reaches.
