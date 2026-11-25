@@ -231,12 +231,29 @@ func TestSitePackagesPth(t *testing.T) {
 	dist(t, bad, "mypkg-1.0", "mypkg", "1.0", "pip")
 	record(t, bad, "mypkg-1.0", "__editable___mypkg_1_0_finder.py", "def install(): pass\n")
 	os.WriteFile(filepath.Join(bad, "__editable___mypkg_1_0_finder.py"), []byte("import os\n"), 0o644)
-	// root's alone: app and app2, the folders above them; bad is a user's
+	// app3, root's alone: an easy-install.pth its RECORD lists, with a
+	// folder in it (put first on sys.path)
+	app3 := venvSite(t, root, "app3")
+	dist(t, app3, "eggs-1.0", "eggs", "1.0", "pip")
+	record(t, app3, "eggs-1.0", "easy-install.pth", "import sys; sys.__plen = len(sys.path)\n/opt/eggs\n")
+	// upper: the folder and its files root's, a folder above it a user's
+	upper := venvSite(t, root, "upper")
+	os.WriteFile(filepath.Join(upper, "distutils-precedence.pth"), []byte(files["distutils-precedence.pth"]), 0o644)
+	dist(t, upper, "setuptools-69.0.0", "setuptools", "69.0.0", "pip")
+	record(t, upper, "setuptools-69.0.0", "_distutils_hack/__init__.py", "def add_shim(): pass\n")
+	// root's alone: app, app2, app3, the folders above them, and the
+	// site-packages of upper (not the folders above it); bad is a user's
 	appDir, app2Dir := filepath.Join(root, "app"), filepath.Join(root, "app2")
 	oldRoot := rootOnly
 	t.Cleanup(func() { rootOnly = oldRoot })
 	rootOnly = func(p string, _ bool) bool {
-		for _, d := range []string{appDir, app2Dir} {
+		if p == upper || strings.HasPrefix(p, upper+string(filepath.Separator)) {
+			return true
+		}
+		if strings.HasPrefix(p, filepath.Join(root, "upper")) {
+			return false
+		}
+		for _, d := range []string{appDir, app2Dir, filepath.Join(root, "app3")} {
 			if p == d || strings.HasPrefix(p, d+string(filepath.Separator)) || strings.HasPrefix(d, p+string(filepath.Separator)) || p == string(filepath.Separator) {
 				return true
 			}
@@ -256,6 +273,10 @@ func TestSitePackagesPth(t *testing.T) {
 			n = "bad/" + n
 		case app2:
 			n = "app2/" + n
+		case app3:
+			n = "app3/" + n
+		case upper:
+			n = "upper/" + n
 		}
 		got[n] = f
 	}
@@ -268,6 +289,8 @@ func TestSitePackagesPth(t *testing.T) {
 		"evil2-nspkg.pth":                    {ImportLines: 1}, // B2
 		"app2/_virtualenv.pth":               {ImportLines: 1}, // B1
 		"app2/easy-install.pth":              {ImportLines: 1, Known: "setuptools"},
+		"app3/easy-install.pth":              {ImportLines: 1},                         // a folder in it
+		"upper/distutils-precedence.pth":     {ImportLines: 1, Unproven: "setuptools"}, // a folder above a user's
 		"__editable__.mixed-1.0.pth":         {ImportLines: 1},
 		"cr.pth":                             {ImportLines: 1},
 		"bom.pth":                            {ImportLines: 1},
@@ -293,6 +316,10 @@ func TestSitePackagesPth(t *testing.T) {
 			w.Path = filepath.Join(bad, strings.TrimPrefix(n, "bad/"))
 		case strings.HasPrefix(n, "app2/"):
 			w.Path = filepath.Join(app2, strings.TrimPrefix(n, "app2/"))
+		case strings.HasPrefix(n, "app3/"):
+			w.Path = filepath.Join(app3, strings.TrimPrefix(n, "app3/"))
+		case strings.HasPrefix(n, "upper/"):
+			w.Path = filepath.Join(upper, strings.TrimPrefix(n, "upper/"))
 		}
 		if !ok || g != w {
 			t.Errorf("%s: %+v, want %+v", n, g, w)
@@ -427,6 +454,10 @@ func TestSitePackagesSystem(t *testing.T) {
 	rootOnly = func(p string, _ bool) bool { return !strings.HasSuffix(p, "__init__.py") } // a module others can write
 	if k := known(); k[managed] != "" {
 		t.Errorf("a module not root's alone: %q", k)
+	}
+	rootOnly = func(p string, _ bool) bool { return p != filepath.Join(sys, "usr", "lib") } // a folder above a user's
+	if k := known(); k[managed] != "" {
+		t.Errorf("a folder above not root's alone: %q", k)
 	}
 	// another _distutils_hack, earlier on sys.path (/usr/local), not
 	// setuptools': the system's .pth would import it
