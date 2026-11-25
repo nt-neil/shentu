@@ -1966,6 +1966,17 @@ var predicates = map[string]bool{"in_array": true, "array_key_exists": true, "is
 	"isBasePath": true, "isAbsolute": true, // Symfony Path::isBasePath($base, $path), Path::isAbsolute($path)
 	"isInternal": true} // Joomla Uri::isInternal($url): the URL stays on this site
 
+// zeroIsMatch reports a call of a zeroMeansMatch function that returns an int
+// (strncmp, strcmp and their kin), not a position or false (strpos, which
+// posOrFalse reads apart): its truthy result means "different".
+func zeroIsMatch(t []Token) bool {
+	if len(t) < 3 || t[0].Kind != Ident || !t[1].op("(") || closeOf(t, 1) != len(t)-1 {
+		return false
+	}
+	n := strings.ToLower(t[0].Text)
+	return zeroMeansMatch[n] && !posOrFalse[n]
+}
+
 // zeroMeansMatch are comparisons for which "=== 0" means the check passed.
 var zeroMeansMatch = map[string]bool{"strncmp": true, "strncasecmp": true, "strcmp": true, "strcasecmp": true,
 	"strpos": true, "stripos": true, "validate_file": true}
@@ -2158,26 +2169,34 @@ func (a *analysis) guardAtom(st state, atom []Token) (pos bool, keys []keyRef) {
 			}
 			return pos, a.keysOf(lhs[1:])
 		}
-		switch strings.ToLower(rhs[0].Text) {
-		case "true":
-			if ne {
+		// strncmp() and its kin return an int that is 0 on a match: truthy means
+		// different, so == true and != false say "different", == false says
+		// "the same", and === true or === false never holds.
+		zeroOK := zeroIsMatch(lhs)
+		switch v := strings.ToLower(rhs[0].Text); {
+		case (v == "true" || v == "false") && zeroOK && (op == "===" || op == "!=="):
+			return pos, nil
+		case v == "true":
+			if ne != zeroOK {
 				pos = !pos
 			}
-		case "0":
+		case v == "0":
 			if zeroMeansMatch[lhs[0].Text] == ne {
 				pos = !pos
 			}
 			strictZero = op == "===" || op == "!=="
-		case "false", "null", "none":
-			if eq {
+		case v == "false" || v == "null" || v == "none":
+			if eq != zeroOK {
 				pos = !pos
 			}
 		default:
 			return pos, nil
 		}
 		atom = stripParens(lhs)
-	} else if len(atom) > 0 && zeroIsValid[atom[0].Text] {
-		pos = !pos // if (validate_file($f)) { wp_die(); }: a non-zero result means invalid
+	} else if len(atom) > 0 && (zeroIsValid[atom[0].Text] || zeroIsMatch(atom)) {
+		// if (validate_file($f)) { wp_die(); }: a non-zero result means invalid;
+		// if (strncmp($real, $base, n)) { die(); }: a non-zero result means different
+		pos = !pos
 	}
 	if n := len(atom); n > 2 && atom[0].Kind == Ident && posOrFalse[strings.ToLower(atom[0].Text)] && atom[1].op("(") && closeOf(atom, 1) == n-1 && !strictZero {
 		return pos, nil // strpos($p, $base) is 0 at the start, false when absent and true elsewhere: only === 0 says "starts with"
