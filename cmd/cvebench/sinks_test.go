@@ -61,8 +61,10 @@ func TestSinkBasis(t *testing.T) {
 		{"no comment", head + sink, false},
 		{"a comment that is no basis", head + "# the sink\n" + sink, false},
 		{"a basis too short to say anything", head + "# basis: see fix\n" + sink, false},
-		{"a shared helper says so", head + "# basis: shared helper; the fix casts the id in a.php:10 before lib/db.php:40 runs it\n" + sink + "shared = true\n", true},
+		{"a shared helper says so", head + "# basis: shared helper: the fix casts the id in a.php:10 before lib/db.php:40 runs it\n" + sink + "shared = true\n", true},
 		{"a shared helper that does not say so", head + "# basis: the fix casts the id in a.php:10 before lib/db.php:40 runs it\n" + sink + "shared = true\n", false},
+		{"the words alone are no marker", head + "# basis: not a shared helper; the fix casts the id in a.php:10 before lib/db.php:40 runs it\n" + sink + "shared = true\n", false},
+		{"the marker without shared = true", head + "# basis: shared helper: the fix casts the id in a.php:10 before lib/db.php:40 runs it\n" + sink, false},
 		{"two sinks", head + "# basis: the fix casts the id in a.php:10 before lib/db.php:40 runs it\n" + sink + "\n# basis: the same cast also guards the count query at lib/db.php:50\n[[sinks]]\npath = \"lib/db.php\"\nvulnerable = 50\nfixed = 52\n", false},
 	} {
 		dir := t.TempDir()

@@ -39,7 +39,8 @@ type Case struct {
 	// file or far from the change). A finding of the class on that very line counts
 	// as caught in the "with sink lines" columns only, never in the main verdict.
 	// Each [[sinks]] is preceded by a "# basis:" comment saying which upstream fix
-	// protects that call and why it is the one.
+	// protects that call and why it is the one; a shared one starts it with
+	// "shared helper: ", and only a shared one does.
 	Sinks []SinkLine `toml:"sinks"`
 
 	file string
@@ -211,8 +212,8 @@ func (c Case) checkSinks() error {
 		if i == 0 || !strings.HasPrefix(strings.TrimSpace(lines[i-1]), "# basis: ") || len(strings.TrimSpace(lines[i-1])) < len("# basis: ")+20 {
 			return fmt.Errorf("[[sinks]] at line %d needs a \"# basis: ...\" comment right above it (the upstream fix and why it protects this call)", i+1)
 		}
-		if c.Sinks[n-1].Shared && !strings.Contains(lines[i-1], "shared helper") {
-			return fmt.Errorf("[[sinks]] at line %d is shared: its basis says \"shared helper\"", i+1)
+		if shared := strings.HasPrefix(strings.TrimSpace(lines[i-1]), "# basis: shared helper: "); shared != c.Sinks[n-1].Shared {
+			return fmt.Errorf("[[sinks]] at line %d: shared = true and a basis starting \"shared helper: \" go together", i+1)
 		}
 	}
 	if n != len(c.Sinks) {
