@@ -425,7 +425,7 @@
 
 <div class="newest" id="rv-0.5.8" data-groups="1">
   <div class="newest-head"><p class="word">籌備中</p><span class="ver">v0.5.8</span><b class="badge">即將發布</b></div>
-  <div class="grp grp-sharp"><h4><i aria-hidden="true"></i>看得更準</h4><ul><li>用 <code>apt-mark hold</code> 鎖住的 Debian 或 Ubuntu 套件（dpkg 狀態 <code>hi</code>），以及標成要移除、但還裝著的套件（<code>ri</code>、<code>pi</code>），現在和已安裝的套件一樣會被檢查。以前套件清單只收 dpkg 的 <code>ii</code>，所以鎖住的套件不會被檢查，也不會被列出來（v0.5.7 的已知問題）。dpkg 知道、但沒有完整安裝的套件，會連同狀態列在 <code>packages_not_checked</code>。只裝了一半的套件（half-installed、unpacked、half-configured、triggers pending）還會讓套件清單標成部分（partial）；只剩設定檔的套件（config-files）只會被列出來。</li></ul></div>
+  <div class="grp grp-sharp"><h4><i aria-hidden="true"></i>看得更準</h4><ul><li>用 <code>apt-mark hold</code> 鎖住的 Debian 或 Ubuntu 套件（dpkg 狀態 <code>hi</code>），以及標成要移除、但還裝著的套件（<code>ri</code>、<code>pi</code>），現在和已安裝的套件一樣會被檢查。以前套件清單只收 dpkg 的 <code>ii</code>，所以鎖住的套件不會被檢查，也不會被列出來（v0.5.7 的已知問題）。dpkg 知道、但沒有完整安裝的套件，會連同狀態列在 <code>packages_not_checked</code>。只裝了一半的套件（half-installed、unpacked、half-configured、triggers awaited、triggers pending）還會讓套件清單標成部分（partial）；只剩設定檔的套件（config-files）只會被列出來。最多列 20 個，其餘的數量寫在 <code>packages_not_checked_more</code>。</li></ul></div>
 </div>
 
 

@@ -12,8 +12,9 @@ Chinese for the zh-TW pages; keep the two in step.
   still installed (`ri`, `pi`), is checked as an installed one is. The package list went by dpkg's
   `ii` only, so a held package was neither checked nor said (the v0.5.7 known issue). A package dpkg
   knows but has not installed in full is listed in `packages_not_checked` with its state. One half on
-  the disk (half-installed, unpacked, half-configured, triggers pending) also marks the package list
-  partial; one with only its configuration left (config-files) is listed only.
+  the disk (half-installed, unpacked, half-configured, triggers awaited, triggers pending) also marks
+  the package list partial; one with only its configuration left (config-files) is listed only. The
+  first 20 are listed, the rest counted in `packages_not_checked_more`.
 
 ## v0.5.7 (unreleased)
 

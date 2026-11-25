@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -28,5 +29,29 @@ func TestPackageVulnsHeld(t *testing.T) {
 	}
 	if !strings.Contains(string(b), `"packages_not_checked":["apache2-data 2.4.62-1~deb12u2 (config-files)"]`) {
 		t.Errorf("config-files not said: %s", b)
+	}
+}
+
+// A long-run host may keep dozens of packages with only their configuration
+// left (old kernels): the first 20 are listed, the rest counted.
+func TestPackageVulnsNotCheckedCapped(t *testing.T) {
+	old := kevURL
+	kevURL = "https://kev.example.test/kev.json"
+	t.Cleanup(func() { kevURL = old })
+	dpkg := "bash\t\t5.2.15-2+b7\tarm64\tii \n"
+	for i := 1; i <= 25; i++ {
+		dpkg += fmt.Sprintf("linux-image-6.1.0-%d-arm64\t\t6.1.%d-1\tarm64\trc \n", i, i)
+	}
+	withHost(t, debianThirdParty(dpkg))
+	out, err := PackageVulns(context.Background(), &http.Client{Transport: emptyFeeds{}}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	nc, _ := out["packages_not_checked"].([]string)
+	if len(nc) != 20 || nc[19] != "linux-image-6.1.0-20-arm64 6.1.20-1 (config-files)" {
+		t.Errorf("packages_not_checked %d %q, want the first 20", len(nc), nc)
+	}
+	if n, _ := out["packages_not_checked_more"].(int); n != 5 {
+		t.Errorf("packages_not_checked_more %v, want 5", out["packages_not_checked_more"])
 	}
 }

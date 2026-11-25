@@ -40,9 +40,9 @@ func TestDpkgHeldInstalled(t *testing.T) {
 // (nothing to run is left), half-installed and unpacked ones there and the
 // list partial (their programs may be on the disk); purged ones are gone.
 func TestDpkgOtherStatesSaid(t *testing.T) {
-	_, other := ParseDpkgQueryStates([]byte(dpkgStatesOut + "oddpkg\t\t1-1\tarm64\ti? \n"))
+	_, other := ParseDpkgQueryStates([]byte(dpkgStatesOut + "oddpkg\t\t1-1\tarm64\ti? \n" + "nostate\t\t2-1\tarm64\t\n"))
 	want := []string{"apache2-data 2.4.62-1~deb12u2 (config-files)", "halfpkg 0.9-1 (half-installed)",
-		"unpackedpkg 0.8-1 (unpacked)", "oddpkg 1-1 (state i? not read)"}
+		"unpackedpkg 0.8-1 (unpacked)", "oddpkg 1-1 (state i? not read)", "nostate 2-1 (state not read)"}
 	if !slices.Equal(other, want) {
 		t.Errorf("not installed in full %q, want %q", other, want)
 	}

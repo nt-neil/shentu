@@ -195,7 +195,11 @@ func ParseDpkgQueryStates(b []byte) (pkgs []Package, other []string) {
 			other = append(other, f[0]+" "+f[2]+" ("+dpkgStates[st[1]]+")")
 			continue
 		default:
-			other = append(other, f[0]+" "+f[2]+" (state "+strings.TrimSpace(st)+" not read)")
+			state := "state not read"
+			if t := strings.TrimSpace(st); t != "" {
+				state = "state " + t + " not read"
+			}
+			other = append(other, f[0]+" "+f[2]+" ("+state+")")
 			continue
 		}
 		p := Package{Name: f[0], Version: f[2], Arch: f[3]}
