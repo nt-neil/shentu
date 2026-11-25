@@ -34,7 +34,7 @@ type fixture struct {
 }
 
 type entry struct {
-	Op        string    `json:"op"` // file, dir, link, stat, cmd
+	Op        string    `json:"op"` // file, dir, link, stat, lstat, cmd
 	Path      string    `json:"path,omitempty"`
 	Argv      []string  `json:"argv,omitempty"`
 	Err       string    `json:"err,omitempty"` // not_exist, permission, truncated, timeout, not_allowed, other:<text>
@@ -138,6 +138,20 @@ func (r *Recorder) Stat(path string) (FileStat, error) {
 	if err == nil {
 		kept := st
 		kept.ID = "" // device and inode, or volume serial and file index: not for a fixture
+		e.Stat = &kept
+	}
+	r.put(e)
+	return st, err
+}
+
+// Lstat records under its own op: a fixture made before it has none, and
+// its replay says such a path was not recorded (never "not there").
+func (r *Recorder) Lstat(path string) (FileStat, error) {
+	st, err := Lstat(r.Inner, path)
+	e := &entry{Op: "lstat", Path: path, Err: errCode(err)}
+	if err == nil {
+		kept := st
+		kept.ID = "" // device and inode: not for a fixture
 		e.Stat = &kept
 	}
 	r.put(e)
@@ -343,6 +357,20 @@ func (rp *Replay) ReadFile(path string) ([]byte, error) {
 
 func (rp *Replay) Stat(path string) (FileStat, error) {
 	e, err := rp.find("stat", path, nil)
+	if err != nil {
+		return FileStat{}, err
+	}
+	if e.Stat == nil {
+		return FileStat{}, codeErr(e.Err, path)
+	}
+	return *e.Stat, codeErr(e.Err, path)
+}
+
+// Lstat answers what was recorded; a path not recorded (a fixture made
+// before lstat was, or one the collector never asked) is ErrNotRecorded:
+// unread, not "not there".
+func (rp *Replay) Lstat(path string) (FileStat, error) {
+	e, err := rp.find("lstat", path, nil)
 	if err != nil {
 		return FileStat{}, err
 	}

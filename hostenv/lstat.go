@@ -27,7 +27,9 @@ func (l *Live) Lstat(path string) (FileStat, error) {
 	if err != nil {
 		return FileStat{}, err
 	}
-	return FileStat{Mode: st.Mode(), Size: st.Size(), ModTime: st.ModTime(), UID: fileUID(st), GID: fileGID(st)}, nil
+	// ID and Born as Stat gives them: ReadFileIfSame compares the file read
+	// with the one a walk saw (the link itself here, never what it names).
+	return FileStat{Mode: st.Mode(), Size: st.Size(), ModTime: st.ModTime(), UID: fileUID(st), GID: fileGID(st), ID: pathFileID(l.path(path), st), Born: pathBorn(l.path(path))}, nil
 }
 
 // ACLReader is implemented by Sources that can tell whether a path carries

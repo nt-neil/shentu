@@ -108,6 +108,25 @@ func ReadFileIfSame(src Source, path string, want FileStat) ([]byte, error) {
 	return ReadFileNoFollow(src, path)
 }
 
+// SameMaxReader is a SameReader with a size limit of the caller's.
+type SameMaxReader interface {
+	ReadFileIfSameMax(path string, want FileStat, max int64) ([]byte, error)
+}
+
+// ReadFileIfSameMax is ReadFileIfSame reading up to max bytes: past it,
+// the first max bytes and ErrTruncated. Sources without the check
+// (fixtures) read it as is, the limit applied to what they hold.
+func ReadFileIfSameMax(src Source, path string, want FileStat, max int64) ([]byte, error) {
+	if s, ok := src.(SameMaxReader); ok {
+		return s.ReadFileIfSameMax(path, want, max)
+	}
+	b, err := ReadFileNoFollow(src, path)
+	if err == nil && int64(len(b)) > max {
+		return b[:max], ErrTruncated
+	}
+	return b, err
+}
+
 // Stater is implemented by Sources that can stat a path (following links).
 type Stater interface {
 	Stat(path string) (FileStat, error)
@@ -184,6 +203,13 @@ func (l *Live) ReadFileIfSame(path string, want FileStat) ([]byte, error) {
 		return nil, &fs.PathError{Op: "read", Path: path, Err: fmt.Errorf("%w (file ID unknown, not compared)", ErrChanged)}
 	}
 	return l.readFile(path, true, MaxFileBytes, want.ID)
+}
+
+func (l *Live) ReadFileIfSameMax(path string, want FileStat, max int64) ([]byte, error) {
+	if want.ID == "" { // no ID to compare: say so, never read unchecked
+		return nil, &fs.PathError{Op: "read", Path: path, Err: fmt.Errorf("%w (file ID unknown, not compared)", ErrChanged)}
+	}
+	return l.readFile(path, true, max, want.ID)
 }
 
 func (l *Live) read(path string, noFollow bool, max int64) ([]byte, error) {
