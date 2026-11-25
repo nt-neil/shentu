@@ -215,6 +215,54 @@ func SSHJournalFirst(ctx context.Context, src Source) (e JournalEntry, ok bool, 
 	return e, ok, err
 }
 
+// CursorSeq is where a journal cursor's entry is in its journal: s=, the
+// seqnum_id (32 hex digits), the sequence the journal numbers its entries
+// in, and i=, the entry's number in it (hex). Entries of one seqnum_id are
+// numbered in the order written, so one numbered before the journal's
+// first is gone; a seqnum_id changes when the journal is made anew (a new
+// machine ID, the files removed). ok is false for a cursor not of that
+// form (cut, a field missing or twice, not hex): the caller then compares
+// times, on the strict side.
+func CursorSeq(c string) (id string, seq uint64, ok bool) {
+	var s, i string
+	var haveS, haveI bool
+	for _, f := range strings.Split(c, ";") {
+		k, v, found := strings.Cut(f, "=")
+		if !found {
+			return "", 0, false
+		}
+		switch k {
+		case "s":
+			if haveS {
+				return "", 0, false
+			}
+			s, haveS = v, true
+		case "i":
+			if haveI {
+				return "", 0, false
+			}
+			i, haveI = v, true
+		}
+	}
+	if !haveS || !haveI || len(s) != 32 || !allHex(s) || len(i) == 0 || len(i) > 16 || !allHex(i) {
+		return "", 0, false
+	}
+	n, err := strconv.ParseUint(i, 16, 64)
+	if err != nil || n == 0 {
+		return "", 0, false
+	}
+	return strings.ToLower(s), n, true
+}
+
+func allHex(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if !isHex(s[i]) {
+			return false
+		}
+	}
+	return true
+}
+
 // readJournal runs the read argvFor gives (its cursor or time slot filled
 // in here), as ReadJournal says.
 func readJournal(ctx context.Context, src Source, after string, since time.Time, maxLine, maxMsg int, argvFor func(bin string, fields bool) []string, fn func(JournalEntry) error) (last string, err error) {

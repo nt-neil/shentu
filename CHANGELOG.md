@@ -51,6 +51,14 @@ Chinese for the zh-TW pages; keep the two in step.
 - The patrol catches the login index up after its checks, its notice and the attack detection
   alerts, not before them: in a flood the catching up can take up to 15 minutes, and that round's
   notices no longer wait for it.
+- block_ip's login index tells journal entries of the same time apart by their numbers in the
+  journal (the cursor's `s=` and `i=`). After a vacuum that removed an entry with the same time as
+  the first one left, the index took the removed entry as still there. An address whose event was
+  removed was then seen as sshd's own, where the whole read sees nothing, and a forged event that
+  was removed still refused the block. When a number is not known (an index saved by an older
+  version, a cursor not of that form, a journal made anew), times decide on the strict side: an
+  entry that refuses the block counts as there at the first entry's own time, and an event that
+  lets it through does not.
 - The site's release river: a release's peek stays inside the river at every width (at 844px the
   pages scrolled sideways by 3px); the labels under the lamps (version, date, rule count) show only
   where they have room, the newest and the x.y.0 releases first, and a hidden one shows on hover or
