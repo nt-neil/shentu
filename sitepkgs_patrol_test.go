@@ -76,7 +76,7 @@ func TestPatrolSitePackagesFindings(t *testing.T) {
 		t.Errorf("findings %v", got)
 	}
 	// virtualenv's file there is not proven: said in the daily report, not pushed
-	if l := pthUnproven(r, true); !strings.Contains(l, "1 個 .pth 看起來是工具自己寫的") || !strings.Contains(l, filepath.Join(sp, "_virtualenv.pth")+" (virtualenv)") {
+	if l := pthUnproven(r, true); !strings.Contains(l, "1 個 `.pth` 看起來是工具自己寫的") || !strings.Contains(l, filepath.Join(sp, "_virtualenv.pth")+" (virtualenv)") {
 		t.Errorf("daily line %q", l)
 	}
 }

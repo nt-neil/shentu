@@ -38,7 +38,7 @@ var dailyText = map[string][2]string{ // English, Chinese
 	"vuln_filemore":     {" and %d more", "（另外 %d 個）"},
 	"vuln_otherfiles":   {"- and %d more lock files not checked, with other errors", "- 另外還有 %d 個 lock 檔因為其他錯誤沒檢查"},
 	"vuln_noeco":        {"- not queried (OSV has no such ecosystem): %q", "- 沒有查詢（OSV 沒有這個套件生態系）：%q"},
-	"pth_unproven":      {"\n\n%d .pth file(s) look like a tool's own (setuptools, virtualenv, an editable install), in folders a user can write, so that cannot be proven; they run code at every Python start:\n", "\n\n%d 個 .pth 看起來是工具自己寫的（setuptools、virtualenv、editable install），但在一般使用者也能寫的資料夾裡，無法證明；它們會在每次啟動 Python 時執行：\n"},
+	"pth_unproven":      {"\n\n%d .pth file(s) look like a tool's own (setuptools, virtualenv, an editable install), in folders a user can write, so that cannot be proven; they run code at every Python start:\n", "\n\n%d 個 `.pth` 看起來是工具自己寫的（`setuptools`、`virtualenv`、`editable install`），但在一般使用者也能寫的資料夾裡，無法證明；它們會在每次啟動 Python 時執行：\n"},
 	"pth_unproven_more": {"- and %d more", "- 另外還有 %d 個"},
 	"vuln_head":         {"\n\nVulnerability check of %s incomplete:\n", "\n\n%s的漏洞檢查沒有做完：\n"},
 
