@@ -408,8 +408,8 @@ func (p *Project) ScanCalls(path string, src []byte) ([]Finding, error) {
 // ScanCallsTimed is ScanCalls for a result kept from one audit to the next:
 // every finding of the file is returned, also those another file's scan
 // returned already, and timed tells whether the clock, or another of the
-// project's caps that depend on the machine (heap), cut it short. See also
-// Unsteady.
+// project's caps that depend on the machine (heap), cut it short, or the
+// project's work cap, which a later audit goes on past. See also Unsteady.
 func (p *Project) ScanCallsTimed(path string, src []byte) ([]Finding, bool, error) {
 	return p.e.scan(LangOf(path), path, src, p, true, false)
 }
@@ -420,7 +420,7 @@ type CallsPart struct {
 	Done  []string  // the rules whose calls were followed to their end
 	At    string    // the rule the clock cut short ("" when it did not)
 	Cut   bool      // a cap cut one of Done short (as ErrCalls)
-	Timed bool      // the clock or the heap cut the scan short (as ScanCallsTimed)
+	Timed bool      // the clock, the heap or the project's work cap cut the scan short (as ScanCallsTimed)
 	// FileTime: only the file's own time limit (Limits.MaxTime) cut it short,
 	// not the project's clock or heap: other files can still be followed.
 	FileTime bool
@@ -451,6 +451,14 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 		proj.unsteady = false
 		proj.scanning = path
 		defer func() { proj.scanning = "" }()
+		// The project's work cap, checked before each file: where calls stop
+		// crossing files depends on the files and their order, not on time. It
+		// is passed by at most one file's calls pass, itself capped per rule
+		// (MaxCallWork); what work does not count (relevance, the call graph)
+		// is bounded by the project's safety clock, an audit's time left.
+		if proj.stopped == "" && proj.work >= proj.opt.MaxWork {
+			proj.stop("following calls across files reached the project's work cap", CutProjectWork)
+		}
 	}
 	b := newBudget(e.Limits)
 	toks := lex(lang, string(src), b)
@@ -554,12 +562,13 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 	if limited {
 		cut = b.cut()
 		if time.Now().After(b.deadline) {
-			cut |= CutTime
+			cut |= CutClock
 		}
 	}
 	finished := map[*crule]bool{}
 	if !b.hit && (len(ff.byKey) > 0 || proj != nil) {
 		b2 := newBudget(e.Limits)
+		b2.workCut = CutCallWork
 		b2.deadline = b.deadline // one file stays within MaxTime in all
 		if proj != nil {
 			// Across files the project's clock applies (an audit's time left):
@@ -603,9 +612,9 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 				// cycle settled through it) are the ones this scan would work out.
 				key := ruleFile{r.rule.ID, path}
 				if old := proj.sums[key]; old != nil {
-					sc.done, sc.rel, sc.direct, sc.cross, sc.keyed, sc.srcMay, sc.srcRel = old.done, old.rel, old.direct, old.cross, old.keyed, old.srcMay, old.srcRel
+					sc.done, sc.rel, sc.direct, sc.cross, sc.keyed, sc.srcMay, sc.srcRel, sc.retUnk = old.done, old.rel, old.direct, old.cross, old.keyed, old.srcMay, old.srcRel, old.retUnk
 				} else if kept := proj.kept[key]; kept != nil {
-					sc.done = kept
+					kept.restore(sc)
 					delete(proj.kept, key)
 				}
 				proj.sums[key] = sc
@@ -637,7 +646,7 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 				// The project stopped during the rule (its clock, its heap): calls
 				// stopped crossing files part way, as with the scan's own clock.
 				callsCut, timed = true, true
-				cut |= CutProject
+				cut |= proj.stopCut
 				add(r, direct[r])
 				delete(direct, r)
 				break
@@ -682,12 +691,17 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 			cut |= callsCutOf(b2, proj)
 		}
 		timed = timed || b2.timeHit
+		if proj != nil {
+			proj.work += b2.work
+		}
 	}
 	// Past a project cap calls no longer cross files: say so, not "clean".
 	if proj != nil && proj.stopped != "" {
 		callsCut = true
-		cut |= CutProject
-		timed = timed || proj.byMachine // the clock or the heap, not the file limit
+		cut |= proj.stopCut
+		// The clock or the heap, or the work cap a later audit goes on past;
+		// not the file limit.
+		timed = timed || proj.byMachine || proj.stopCut&CutProjectWork != 0
 	}
 	for _, r := range ruleList {
 		if lines, ok := direct[r]; ok && !finished[r] {
