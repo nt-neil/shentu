@@ -1775,6 +1775,9 @@ func (a *analysis) callSinks(st state, t []Token) {
 		if s == nil || !s.reachesSink() {
 			continue
 		}
+		if a.directSinkReported(t, i) {
+			continue // wp_redirect($_GET['ref']) reported as the rule's sink: the header() inside wp_redirect is the same flow again
+		}
 		// A JSON responder the rule lists as a sanitizer does not take its
 		// arguments into its body's sinks: wp_send_json echoes, but as JSON, then
 		// ends the request. Other sanitizer names (e, count) still do, so a helper
@@ -1821,6 +1824,24 @@ func (a *analysis) callSinks(st state, t []Token) {
 			}
 		}
 	}
+}
+
+// directSinkReported reports whether the call at t[i] is itself a sink of the
+// rule, by name (not a member sink, which yields to the project's own method in
+// sinkWith), and was reported at its line in this pass: the callee's sinks of
+// the same rule then hold the same input again. A callee sink of another rule
+// is another rule's summary and still reports.
+func (a *analysis) directSinkReported(t []Token, i int) bool {
+	for _, s := range a.r.sinks {
+		if s.text == nil && !s.member && s.at(t, i, true) {
+			l := loc{a.file, t[i].Line}
+			if a.summ != nil {
+				return a.summ.lines[l]
+			}
+			return a.seen[l]
+		}
+	}
+	return false
 }
 
 // libParams taints the parameters of a public function in library mode.
