@@ -42,6 +42,12 @@ func TestScriptStringEscape(t *testing.T) {
 			"<script>\nvar t = '<?php echo htmlspecialchars($_GET['t']); ?>';\n</script>\n", []int{2}},
 		{"sanitize_text_field leaves quotes",
 			"<script>\nvar t = '<?php echo sanitize_text_field($_GET['t']); ?>';\n</script>\n", []int{2}},
+		{"esc_html in an onclick string: the attribute decodes &#039; before the script runs",
+			"<button onclick=\"var a='<?php echo esc_html($_GET['x']) ?>'\">Go</button>\n", []int{1}},
+		{"esc_html in a template literal: ${...} is code",
+			"<script>\nvar t = `<?php echo esc_html($_GET['t']) ?>`;\n</script>\n", []int{2}},
+		{"esc_html not in a string",
+			"<script>\nvar a = <?php echo esc_html($_GET['x']) ?>;\n</script>\n", []int{2}},
 		{"not in a string",
 			"<script>\nvar n = <?php echo esc_attr($_GET['n']); ?>;\n</script>\n", []int{2}},
 	} {
