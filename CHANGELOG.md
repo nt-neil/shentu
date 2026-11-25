@@ -6,6 +6,18 @@ a release are not written here: they are worked out from the rule snapshots in
 `docs/site-src/rules-history/`. `CHANGELOG.zh-TW.md` holds the same releases in Traditional
 Chinese for the zh-TW pages; keep the two in step.
 
+## v0.5.8 (unreleased)
+
+- `app_vulns` and the daily patrol check the Python packages in Docker images against OSV as PyPI,
+  with the CISA KEV mark. They are read from Docker's overlay2 image store on disk; no container is
+  started and the daemon is not asked. Each tagged image's layers are stacked as overlayfs stacks
+  them: a higher layer's file replaces a lower one's, a deleted file (a whiteout) removes only that
+  name in its own folder, and an opaque folder hides the lower layers' files in it. Until now a
+  package inside an image was not checked at all. A store that is there but could not be read
+  (not root, a file not read, past the bounds of 50 images, 200 layers or 200,000 files) is
+  reported as not checked; a host with no Docker store says so apart. A `.pth` in an image is
+  never taken as a tool's own.
+
 ## v0.5.7 (unreleased)
 
 - PHP rules read `filter_input()`. A value from `filter_input(INPUT_GET, ...)`, `INPUT_POST` or

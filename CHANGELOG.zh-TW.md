@@ -3,6 +3,10 @@
 CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本與日期必須一致，
 每個版本都要有內容（`go test ./cmd/sitegen` 會檢查）。
 
+## v0.5.8 (unreleased)
+
+- `app_vulns` 和每日巡檢會檢查 Docker image 裡的 Python 套件，用 PyPI 比對 OSV，並標出 CISA KEV。套件是從磁碟上 Docker 的 overlay2 image 庫讀出來的，不會啟動容器，也不會問 Docker daemon。每個有 tag 的 image，照 overlayfs 的方式把各層依序合在一起：同一個檔案以上層的為準；刪除的標記只刪掉同一個資料夾裡的同名檔案；不透明的資料夾會讓下層在它裡面的檔案都看不到。之前 image 裡的套件完全不會被檢查。image 庫存在但讀不到時（不是 root、有檔案讀不到、超過 50 個 image、200 層或 200,000 個檔案的上限），會在報告裡寫成沒有檢查；這台沒有 Docker image 庫時會另外說明。image 裡的 `.pth` 一律不會被當成工具自己的。
+
 ## v0.5.7 (unreleased)
 
 - PHP 規則會讀 `filter_input()`。用 `filter_input(INPUT_GET, ...)`、`INPUT_POST` 或 `INPUT_COOKIE` 取得的值，以及應用程式自己同名的方法（`->filterInput(`、`->filter_input(`）在第一個參數是這幾個常數時取得的值，在每一條會讀 `$_GET`、`$_POST` 或 `$_COOKIE` 的 PHP 規則裡都算請求輸入。第一個參數是變數或其他常數（例如 `INPUT_SERVER`）時不算。數字或 bool 的 filter（`FILTER_VALIDATE_INT`、`FILTER_VALIDATE_BOOL`、`FILTER_SANITIZE_NUMBER_INT` 等，寫成具名參數 `filter:` 也一樣）取得的值不帶輸入，但用 `|` 加上 flag 時不算（`FILTER_VALIDATE_INT | FILTER_NULL_ON_FAILURE` 是另一個 filter ID，PHP 7 會當成 `FILTER_DEFAULT`）；`FILTER_SANITIZE_SPECIAL_CHARS` 在把 `htmlspecialchars()` 當清理函式的規則裡算清理過；URL 的 filter 不算清理。
