@@ -88,6 +88,9 @@ func winAccountsAudit() (WinAccounts, error) {
 		if pe := (*fs.PathError)(nil); errors.As(err, &pe) {
 			return pe.Err.Error()
 		}
+		if errors.Is(err, hostenv.ErrNotRecorded) { // Replay's says the request, the path in it
+			return hostenv.ErrNotRecorded.Error()
+		}
 		return err.Error()
 	}
 	st, err := hostenv.Stat(src, winAdminKeys)

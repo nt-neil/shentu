@@ -55,3 +55,24 @@ func TestPackageVulnsNotCheckedCapped(t *testing.T) {
 		t.Errorf("packages_not_checked_more %v, want 5", out["packages_not_checked_more"])
 	}
 }
+
+// S-251-3: with more than 20 not checked, the half-installed one is listed,
+// not counted in packages_not_checked_more behind configuration-only ones.
+func TestPackageVulnsHalfListedFirst(t *testing.T) {
+	old := kevURL
+	kevURL = "https://kev.example.test/kev.json"
+	t.Cleanup(func() { kevURL = old })
+	dpkg := "bash\t\t5.2.15-2+b7\tarm64\tii \n"
+	for i := 1; i <= 20; i++ {
+		dpkg += fmt.Sprintf("linux-image-6.1.0-%d-arm64\t\t6.1.%d-1\tarm64\trc \n", i, i)
+	}
+	withHost(t, debianThirdParty(dpkg+"halfpkg\t\t0.9-1\tarm64\tiH \n"))
+	out, err := PackageVulns(context.Background(), &http.Client{Transport: emptyFeeds{}}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	nc, _ := out["packages_not_checked"].([]string)
+	if len(nc) != 20 || nc[0] != "halfpkg 0.9-1 (half-installed)" || out["packages_not_checked_more"] != 1 {
+		t.Errorf("packages_not_checked %q, more %v", nc, out["packages_not_checked_more"])
+	}
+}

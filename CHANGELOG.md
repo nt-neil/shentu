@@ -11,10 +11,13 @@ Chinese for the zh-TW pages; keep the two in step.
 - A Debian or Ubuntu package held with `apt-mark hold` (dpkg state `hi`), or marked for removal but
   still installed (`ri`, `pi`), is checked as an installed one is. The package list went by dpkg's
   `ii` only, so a held package was neither checked nor said (the v0.5.7 known issue). A package dpkg
-  knows but has not installed in full is listed in `packages_not_checked` with its state. One half on
-  the disk (half-installed, unpacked, half-configured, triggers awaited, triggers pending) also marks
-  the package list partial; one with only its configuration left (config-files) is listed only. The
-  first 20 are listed, the rest counted in `packages_not_checked_more`.
+  has on the disk but not installed in full marks the package list partial, named there with its
+  state (20 at most, the rest counted). One whose files are all unpacked (unpacked, half-configured,
+  triggers awaited, triggers pending) is checked at the version dpkg records. One half-installed, or
+  in a state not read, is not checked: it is listed in `packages_not_checked` with its state, before
+  the ones with only their configuration left (config-files), which are listed only. The first 20
+  are listed, the rest counted in `packages_not_checked_more`. The tool's description says both
+  fields.
 - The site's home page: a section that rises into view (the tally, open source, the latest release
   with the river) no longer stays blank when the page is reached in its middle, as from a link to
   an anchor, by going back to the page, or by a jump. A section shows once any part of it is in the

@@ -20,7 +20,8 @@ import (
 var packageVulns = Tool{
 	Name: "package_vulns",
 	Description: "Checks installed OS packages against the OSV vulnerability database (online, api.osv.dev) and marks vulnerabilities that CISA lists as actively exploited (KEV); fix those first. Without arguments returns affected packages, vulnerability IDs and the exploited ones; with package set, returns the summary, severity and fixed version of that package's vulnerabilities. " +
-		"partial says what could not be checked (an advisory feed or topic that failed): those packages may have fixes pending. ecosystems_not_queried lists ecosystems the host may have that OSV does not carry; ecosystems lists every one queried when there are several (SUSE). kev_unchecked counts vulnerabilities not checked against KEV (lookups failed, or over 300 for one package): exploited ones among them are not marked.",
+		"partial says what could not be checked (an advisory feed or topic that failed): those packages may have fixes pending. ecosystems_not_queried lists ecosystems the host may have that OSV does not carry; ecosystems lists every one queried when there are several (SUSE). kev_unchecked counts vulnerabilities not checked against KEV (lookups failed, or over 300 for one package): exploited ones among them are not marked. " +
+		"packages_not_checked lists packages the package manager knows but that were not checked, with their state: half-installed or a state not read (no version known to be on the disk), then config-files (only their configuration left); the first 20, packages_not_checked_more counts the rest. Packages not fully installed (unpacked, half-configured...) are checked at the version recorded, and named in partial.",
 	Params: schema(`{"type":"object","properties":{
 		"package":{"type":"string","description":"show details for this package"}}}`),
 	Run: func(ctx context.Context, env *Env, args json.RawMessage) (any, error) {
