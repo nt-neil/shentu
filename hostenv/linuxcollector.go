@@ -221,12 +221,12 @@ func (c LinuxCollector) Packages(ctx context.Context, src Source, osr map[string
 	return set
 }
 
-// packages is Packages, and on Alpine which OpenRC scripts apk installed
-// (nil: unknown), from the same single pass over apk's database.
 // maxHalfListed is how many packages not fully installed the partial
 // detail names; the rest are counted.
 const maxHalfListed = 20
 
+// packages is Packages, and on Alpine which OpenRC scripts apk installed
+// (nil: unknown), from the same single pass over apk's database.
 func (LinuxCollector) packages(ctx context.Context, src Source, osr map[string]string) (Obs[PackageSet], map[string]bool) {
 	if osr == nil {
 		return Unknown[PackageSet](ReasonNotCollected, "no os-release, distribution unknown"), nil
