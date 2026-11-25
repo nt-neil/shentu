@@ -158,6 +158,21 @@ func (r *Recorder) Lstat(path string) (FileStat, error) {
 	return st, err
 }
 
+// ReadFileNoFollowMax records under the same key as ReadFile.
+func (r *Recorder) ReadFileNoFollowMax(path string, max int64) ([]byte, error) {
+	b, err := ReadFileNoFollowMax(r.Inner, path, max)
+	r.put(&entry{Op: "file", Path: path, Err: errCode(err), data: b})
+	return b, err
+}
+
+// ReadFileIfSameMax passes the comparison to Inner and records under the
+// same key as ReadFile.
+func (r *Recorder) ReadFileIfSameMax(path string, want FileStat, max int64) ([]byte, error) {
+	b, err := ReadFileIfSameMax(r.Inner, path, want, max)
+	r.put(&entry{Op: "file", Path: path, Err: errCode(err), data: b})
+	return b, err
+}
+
 // ReadFileMax records under the same key as ReadFile.
 func (r *Recorder) ReadFileMax(path string, max int64) ([]byte, error) {
 	b, err := ReadFileMax(r.Inner, path, max)

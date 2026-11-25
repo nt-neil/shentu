@@ -24,6 +24,14 @@ Chinese for the zh-TW pages; keep the two in step.
   them there but not read now refuses the block (`state_error`); before, the error was dropped and the
   list taken for empty, so the gateway or DNS server could be blocked. A file absent (no
   systemd-resolved, no IPv6) is still no entry.
+- app_code_audit, app_vulns (lock files and site-packages) and the WordPress plugin list walk the
+  host source, as the web roots they start from already came from it: a replay or another host's
+  survey is never answered by the machine running the check. Links are still not followed, a file
+  is read only if it is the one the walk saw, and the limits are the same. A web root or app path
+  there but not read (no permission, or a replay that lacks it) is now listed in the audit's
+  `not_checked`; before, it was audited as an empty folder. A replay of a fixture recorded before
+  this version says every such path not read, never "not there". In a plugin folder of more than
+  4096 entries, the first 4096 by name are read (before, the first the system listed).
 - The site's home page: a section that rises into view (the tally, open source, the latest release
   with the river) no longer stays blank when the page is reached in its middle, as from a link to
   an anchor, by going back to the page, or by a jump. A section shows once any part of it is in the

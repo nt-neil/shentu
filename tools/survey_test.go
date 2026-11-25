@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/nt-neil/shentu/hostenv"
 )
 
 func TestLockfileParsers(t *testing.T) {
@@ -140,13 +142,19 @@ func TestLockfileHostileInput(t *testing.T) {
 	app := filepath.Join(root, "app")
 	os.MkdirAll(app, 0o755)
 	os.Symlink(secret, filepath.Join(app, "requirements.txt"))
-	if _, ok := readSmallRegular(filepath.Join(app, "requirements.txt"), 1<<20, nil); ok {
-		t.Errorf("a symlinked lock file was followed")
+	src := hostSource()
+	link := filepath.Join(app, "requirements.txt")
+	if st, _ := hostenv.Lstat(src, link); true {
+		if _, ok := readAt(src, link, 1<<20, st); ok {
+			t.Errorf("a symlinked lock file was followed")
+		}
 	}
 	big := filepath.Join(app, "composer.lock")
 	os.WriteFile(big, make([]byte, 2048), 0o644)
-	if _, ok := readSmallRegular(big, 1024, nil); ok {
-		t.Errorf("size cap ignored")
+	if st, _ := hostenv.Lstat(src, big); true {
+		if _, ok := readAt(src, big, 1024, st); ok {
+			t.Errorf("size cap ignored")
+		}
 	}
 }
 
@@ -159,16 +167,17 @@ func TestBriefHidesUnknownNames(t *testing.T) {
 	}
 }
 
-func TestReadSmallRegularChecksIdentity(t *testing.T) {
+func TestReadAtChecksIdentity(t *testing.T) {
 	dir := t.TempDir()
 	a, b := filepath.Join(dir, "a"), filepath.Join(dir, "b")
 	os.WriteFile(a, []byte("x"), 0o644)
 	os.WriteFile(b, []byte("y"), 0o644)
-	seenA, _ := os.Lstat(a)
-	if _, ok := readSmallRegular(b, 10, seenA); ok {
+	src := hostSource()
+	seenA, _ := hostenv.Lstat(src, a)
+	if _, ok := readAt(src, b, 10, seenA); ok {
 		t.Errorf("read a different file than the one the walk saw")
 	}
-	if _, ok := readSmallRegular(a, 10, seenA); !ok {
+	if _, ok := readAt(src, a, 10, seenA); !ok {
 		t.Errorf("same file refused")
 	}
 }

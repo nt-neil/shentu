@@ -305,7 +305,7 @@ var varWWW = "/var/www"
 // siteFolder reports whether dir holds a site's front page.
 func siteFolder(dir string) bool {
 	for _, f := range []string{"index.php", "index.html", "index.htm", "wp-config.php"} {
-		if _, err := os.Lstat(filepath.Join(dir, f)); err == nil {
+		if _, err := hostenv.Lstat(hostSource(), filepath.Join(dir, f)); err == nil {
 			return true
 		}
 	}
@@ -590,7 +590,7 @@ func AppCodeAudit(ctx context.Context, roots, webRoots []string) CodeAudit {
 	res := auditUnlocked(ctx, roots, webRoots)
 	acl := webrootFindings(webRoots)
 	res.Findings = append(acl, res.Findings...)
-	res.NotChecked = notChecked(acl)
+	res.NotChecked = append(res.NotChecked, notChecked(acl)...) // after the roots the walk could not read
 	return res
 }
 
@@ -675,7 +675,8 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 	notReached := 0              // rule-language files the injection rules had not reached when it did
 	late := 0                    // ... nor before their own time limit
 	var code []string            // rule-language files, scanned once all are known
-	seen := map[string]fs.FileInfo{}
+	seen := map[string]hostenv.FileStat{}
+	src := hostSource()         // the host read (a replay, another host's survey), not the machine running the audit
 	hash := map[string]string{} // content of the rule-language files, for the results kept between audits
 	deadline := time.Now().Add(injectionMaxTime)
 	// The rules stop before the caller's time does, so what they found is put
@@ -697,7 +698,7 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 	// rules' deadline is for the injection rules). Cut short, it goes on from
 	// where it stopped in the next audit, to the end and round from the start
 	// again, so a few audits cover every file.
-	var walkEntry func(root string, base int, p string, d fs.DirEntry, err error) error
+	var walkEntry func(root string, base int, p string, st hostenv.FileStat, err error) error
 	posFile := walkPosFile(roots)
 	pos, resumed := loadWalkPos(posFile)
 	posRoot := slices.Index(roots, pos.Root)
@@ -731,7 +732,7 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 				continue
 			}
 			base := depth(filepath.Clean(root))
-			filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+			hostenv.Walk(src, root, func(p string, st hostenv.FileStat, err error) error {
 				if ctx.Err() != nil {
 					stopAt(second, ri, p)
 					walkCut = append(walkCut, UnfinishedFile{root, "walk", ""})
@@ -743,22 +744,27 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 						return filepath.SkipAll // round to where it started
 					}
 					if !second && before {
-						if d != nil && d.IsDir() && !(ri == posRoot && walkHolds(p, pos.Path)) {
+						if err == nil && st.Mode.IsDir() && !(ri == posRoot && walkHolds(p, pos.Path)) {
 							return filepath.SkipDir
 						}
 						return nil
 					}
 				}
-				return walkEntry(root, base, p, d, err)
+				return walkEntry(root, base, p, st, err)
 			})
 		}
 	}
-	walkEntry = func(root string, base int, p string, d fs.DirEntry, err error) error {
+	walkEntry = func(root string, base int, p string, st hostenv.FileStat, err error) error {
 		if err != nil {
+			// A root there but not read (no permission, or a replay that
+			// lacks it) is said: an audit of nothing is not a clean one.
+			if p == root && !errors.Is(err, fs.ErrNotExist) {
+				res.NotChecked = append(res.NotChecked, root+" could not be read ("+errText(err)+"): not audited")
+			}
 			return nil
 		}
-		name := d.Name()
-		if d.IsDir() {
+		name := filepath.Base(p)
+		if st.Mode.IsDir() {
 			if name == ".git" && served(p, webRoots) {
 				add(finding("exposed", "critical", p, 0, exposedNames[1].detail, exposedNames[1].fix))
 			}
@@ -767,7 +773,7 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 			}
 			return nil
 		}
-		if !d.Type().IsRegular() {
+		if !st.Mode.IsRegular() {
 			return nil
 		}
 		web := served(p, webRoots)
@@ -797,15 +803,11 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 			res.Truncated = true
 			return filepath.SkipAll
 		}
-		info, err := d.Info()
-		if err != nil {
-			return nil
-		}
-		b, ok := readSmallRegular(p, auditMaxSize, info)
+		b, ok := readAt(src, p, auditMaxSize, st)
 		// A rule-language file is read even with a NUL byte: PHP runs such a file.
 		// An ASP page may be UTF-16, full of NULs; IIS still runs it.
 		if !ok || lang == "" && !aspPage(name) && bytes.IndexByte(b, 0) >= 0 {
-			if lang != "" && eng != nil && info.Size() > auditMaxSize {
+			if lang != "" && eng != nil && st.Size > auditMaxSize {
 				partial = append(partial, UnfinishedFile{p, "size", ""})
 			}
 			return nil
@@ -814,7 +816,7 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 		auditContent(p, name, b, web, isPHP, add)
 		if lang != "" && eng != nil || name == "composer.json" {
 			code = append(code, p)
-			seen[p] = info
+			seen[p] = st
 			if lang != "" {
 				sum := sha256.Sum256(b)
 				hash[p] = hex.EncodeToString(sum[:])
@@ -835,7 +837,7 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 		// Read again the way the walk did (no symlinks, regular files under the
 		// size cap), and only the file the walk saw: one swapped since is skipped.
 		read := func(p string) ([]byte, error) {
-			b, ok := readSmallRegular(p, auditMaxSize, seen[p])
+			b, ok := readAt(src, p, auditMaxSize, seen[p])
 			if !ok {
 				return nil, errors.New("not read")
 			}

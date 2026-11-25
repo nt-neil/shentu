@@ -17,7 +17,7 @@ import (
 func walkTree(t *testing.T) string {
 	t.Helper()
 	d := t.TempDir()
-	for _, f := range []string{"a.php", "b/c.php", "b/d/e.txt", "b/z.php", "skip/x.php", "y/1.txt", "y/2.txt", "y/3.txt"} {
+	for _, f := range []string{"a.php", "b/c.php", "b/d/e.txt", "b/z.php", "skip/x.php", "y/1.txt", "y/2.txt", "y/3.txt", "zz/stop.php", "zz/after.php"} {
 		p := filepath.Join(d, f)
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 			t.Fatal(err)
@@ -56,8 +56,8 @@ func TestWalkAsWalkDir(t *testing.T) {
 			return fs.SkipDir // a folder
 		case filepath.Base(p) == "1.txt":
 			return fs.SkipDir // a file: the rest of y/
-		case filepath.Base(p) == "z.php":
-			return fs.SkipAll
+		case filepath.Base(p) == "after.php":
+			return fs.SkipAll // zz/after.php sorts before zz/stop.php
 		}
 		return nil
 	}
@@ -165,6 +165,28 @@ func TestReadFileIfSameMax(t *testing.T) {
 		}
 		if _, err := ReadFileIfSameMax(l, p, st, 10); !errors.Is(err, ErrChanged) {
 			t.Errorf("a swapped file: %v, want ErrChanged", err)
+		}
+	}
+	// Through a Recorder the comparison is still made; a Source that cannot
+	// make it refuses a want with an ID.
+	if runtime.GOOS != "windows" {
+		if _, err := ReadFileIfSameMax(NewRecorder(l), p, st, 10); !errors.Is(err, ErrChanged) {
+			t.Errorf("a swapped file through a Recorder: %v, want ErrChanged", err)
+		}
+	}
+	if _, err := ReadFileIfSameMax(memSrc{p: "x"}, p, st, 10); !errors.Is(err, ErrChanged) {
+		t.Errorf("an ID nobody compares: %v, want ErrChanged", err)
+	}
+	if runtime.GOOS != "windows" {
+		ln := filepath.Join(d, "link.lock")
+		if err := os.Symlink(p, ln); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := ReadFileNoFollowMax(l, ln, 10); !errors.Is(err, ErrSymlink) {
+			t.Errorf("a link read without following: %v, want ErrSymlink", err)
+		}
+		if b, err := ReadFileNoFollowMax(l, p, 3); !errors.Is(err, ErrTruncated) || string(b) != "swa" {
+			t.Errorf("a head: %q %v", b, err)
 		}
 	}
 	m := memSrc{p: "0123456789"}

@@ -108,17 +108,40 @@ func ReadFileIfSame(src Source, path string, want FileStat) ([]byte, error) {
 	return ReadFileNoFollow(src, path)
 }
 
+// NoFollowMaxReader reads without following a final link, up to max.
+type NoFollowMaxReader interface {
+	ReadFileNoFollowMax(path string, max int64) ([]byte, error)
+}
+
+// ReadFileNoFollowMax reads path, not past a final link, up to max bytes:
+// past it, the first max and ErrTruncated (a head is what the caller
+// wanted). A fixture reads what it holds, the limit applied to it.
+func ReadFileNoFollowMax(src Source, path string, max int64) ([]byte, error) {
+	if s, ok := src.(NoFollowMaxReader); ok {
+		return s.ReadFileNoFollowMax(path, max)
+	}
+	b, err := ReadFileNoFollow(src, path)
+	if err == nil && int64(len(b)) > max {
+		return b[:max], ErrTruncated
+	}
+	return b, err
+}
+
 // SameMaxReader is a SameReader with a size limit of the caller's.
 type SameMaxReader interface {
 	ReadFileIfSameMax(path string, want FileStat, max int64) ([]byte, error)
 }
 
 // ReadFileIfSameMax is ReadFileIfSame reading up to max bytes: past it,
-// the first max bytes and ErrTruncated. Sources without the check
-// (fixtures) read it as is, the limit applied to what they hold.
+// the first max bytes and ErrTruncated. A fixture (no ID kept) reads it as
+// is, the limit applied to what it holds; a want with an ID that src cannot
+// compare is refused (ErrChanged), never read unchecked.
 func ReadFileIfSameMax(src Source, path string, want FileStat, max int64) ([]byte, error) {
 	if s, ok := src.(SameMaxReader); ok {
 		return s.ReadFileIfSameMax(path, want, max)
+	}
+	if want.ID != "" {
+		return nil, &fs.PathError{Op: "read", Path: path, Err: fmt.Errorf("%w (this source cannot compare file IDs)", ErrChanged)}
 	}
 	b, err := ReadFileNoFollow(src, path)
 	if err == nil && int64(len(b)) > max {
@@ -203,6 +226,10 @@ func (l *Live) ReadFileIfSame(path string, want FileStat) ([]byte, error) {
 		return nil, &fs.PathError{Op: "read", Path: path, Err: fmt.Errorf("%w (file ID unknown, not compared)", ErrChanged)}
 	}
 	return l.readFile(path, true, MaxFileBytes, want.ID)
+}
+
+func (l *Live) ReadFileNoFollowMax(path string, max int64) ([]byte, error) {
+	return l.read(path, true, max)
 }
 
 func (l *Live) ReadFileIfSameMax(path string, want FileStat, max int64) ([]byte, error) {
