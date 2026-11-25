@@ -172,6 +172,9 @@ func packageVulnsAll(ctx context.Context, hc *http.Client, detailFor string) (ma
 	if feed.Note != "" {
 		out["ecosystems_note"] = feed.Note
 	}
+	if len(set.NotChecked) > 0 { // known to the package manager, not installed in full: not checked, said
+		out["packages_not_checked"] = set.NotChecked
+	}
 	up, upWhy := upstreamCompare(ctx, set) // third-party PHP and nginx, against php.net's and nginx.org's advisories
 	thirdPartyOut(out, set, up, upWhy)
 	if len(feed.Ecosystems) > 1 { // SUSE: one per module; ecosystem shows the first only
