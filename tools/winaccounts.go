@@ -84,11 +84,17 @@ func winAccountsAudit() (WinAccounts, error) {
 	unread := func(why string) {
 		a.Partial = strings.TrimPrefix(a.Partial+"; "+winAdminKeys+" "+why, "; ")
 	}
+	errText := func(err error) string { // the path is said once, before it
+		if pe := (*fs.PathError)(nil); errors.As(err, &pe) {
+			return pe.Err.Error()
+		}
+		return err.Error()
+	}
 	st, err := hostenv.Stat(src, winAdminKeys)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 	case err != nil:
-		unread("could not be checked (" + err.Error() + "): administrators' keys unknown")
+		unread("could not be checked (" + errText(err) + "): administrators' keys unknown")
 	default:
 		k := KeyFile{User: "Administrators", Path: winAdminKeys, Modified: st.ModTime}
 		b, err := src.ReadFile(winAdminKeys)
@@ -96,8 +102,9 @@ func winAccountsAudit() (WinAccounts, error) {
 		case errors.Is(err, hostenv.ErrTruncated):
 			unread(fmt.Sprintf("read in part (over %d MiB): keys past it not counted", hostenv.MaxFileBytes>>20))
 		case err != nil:
-			unread("could not be read (" + err.Error() + "): its keys not counted")
+			unread("could not be read (" + errText(err) + "): its keys not counted")
 		}
+		b = bytes.TrimPrefix(b, []byte("\xef\xbb\xbf")) // a UTF-8 BOM (Notepad): its first line is a comment still
 		sc := bufio.NewScanner(bytes.NewReader(b))
 		sc.Buffer(nil, len(b)+1)
 		for sc.Scan() {

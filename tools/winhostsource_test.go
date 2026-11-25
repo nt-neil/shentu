@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"os"
 	"runtime"
@@ -48,7 +49,7 @@ func (w winRead) ReadFile(p string) ([]byte, error) {
 	w.log("ReadFile %s", p)
 	if s, ok := w.files[p]; ok {
 		if s == "\x00denied" {
-			return nil, os.ErrPermission
+			return nil, &fs.PathError{Op: "open", Path: p, Err: os.ErrPermission} // as Live
 		}
 		if len(s) > hostenv.MaxFileBytes { // as Live: the first MaxFileBytes, said cut
 			return []byte(s[:hostenv.MaxFileBytes]), hostenv.ErrTruncated
@@ -304,7 +305,22 @@ func TestWinAdminKeysUnreadSaid(t *testing.T) {
 	w = newWinRead()
 	w.files[winAdminKeys] = "\x00denied"
 	withHost(t, w)
-	if a, err := winAccountsAudit(); err != nil || !strings.Contains(a.Partial, winAdminKeys+" could not be read") {
-		t.Errorf("an unreadable key file: %+v, partial %q, %v", a.AdminKeys, a.Partial, err)
+	if a, err := winAccountsAudit(); err != nil || !strings.Contains(a.Partial, winAdminKeys+" could not be read (permission denied)") ||
+		strings.Count(a.Partial, winAdminKeys) != 1 {
+		t.Errorf("an unreadable key file, its path said once: %+v, partial %q, %v", a.AdminKeys, a.Partial, err)
+	}
+	// A line past bufio's 64 KB default is a key, and the keys after it are counted.
+	w = newWinRead()
+	w.files[winAdminKeys] = "ssh-rsa AAAA" + strings.Repeat("B", 70<<10) + " big@example.test\n" + line
+	withHost(t, w)
+	if a, err := winAccountsAudit(); err != nil || a.AdminKeys == nil || a.AdminKeys.Keys != 2 || a.Partial != "" {
+		t.Errorf("a key line over 64 KB: keys %+v, partial %q, %v", a.AdminKeys, a.Partial, err)
+	}
+	// A file saved with a UTF-8 BOM (Notepad): its first line, a comment, is no key.
+	w = newWinRead()
+	w.files[winAdminKeys] = "\ufeff# ops keys\n" + line
+	withHost(t, w)
+	if a, err := winAccountsAudit(); err != nil || a.AdminKeys == nil || a.AdminKeys.Keys != 1 {
+		t.Errorf("a BOM before a comment: keys %+v, %v", a.AdminKeys, err)
 	}
 }
