@@ -156,6 +156,9 @@ func TestPatrolKEVOfUpstreamPHP(t *testing.T) {
 	}
 	kev := kevKeys(r)
 	f, ok := kev["kev:php8.3:"+cve]
+	if n := len(osKEVFindings(r)); n != 1 { // not two of the same key
+		t.Errorf("%d KEV findings, want 1: %v", n, r["actively_exploited"])
+	}
 	if len(kev) != 1 || !ok || f.Severity != "critical" || !strings.Contains(f.Summary, "php8.3-fpm") {
 		t.Errorf("one KEV finding for php8.3 naming php8.3-fpm: %v", kev)
 	}
