@@ -232,6 +232,9 @@ func TestReadDirMax(t *testing.T) {
 	if _, _, err := ReadDirMax(l, filepath.Join(d, "none"), 3); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("missing: %v", err)
 	}
+	if runtime.GOOS == "windows" {
+		return // a fixture masks the user's profile path (C:\Users\...): replayed at another path, as TestLstatRecordReplay skips
+	}
 	rec := NewRecorder(l)
 	ReadDirMax(rec, d, 3)
 	fx := filepath.Join(t.TempDir(), "fx")
