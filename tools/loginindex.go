@@ -62,6 +62,21 @@ type loginIndex struct {
 	// the overflow. The index answers as strictly as the whole read, and no
 	// more so for what that read cannot see.
 	JournalFrom time.Time `json:"journal_from,omitzero"`
+	// JournalFromSeq is that first entry's number in the journal's
+	// sequence JournalFromSeqID (its cursor's i= and s=). With the same
+	// sequence an entry the index kept, numbered below it, is gone and one
+	// at or above it is still there, whatever their times (two entries of
+	// one microsecond: S-222-2). Zero: not known, and times are compared,
+	// each on its strict side (alive).
+	JournalFromSeq   uint64 `json:"journal_from_seq,omitempty"`
+	JournalFromSeqID string `json:"journal_from_seq_id,omitempty"`
+	// SeqID is the sequence the seq numbers kept below are in: entries of
+	// another (the journal made anew) make them all unknown.
+	SeqID string `json:"seq_id,omitempty"`
+	// UnreadableLastSeq and OverflowLastSeq are the numbers of the last
+	// such entries read.
+	UnreadableLastSeq uint64 `json:"unreadable_last_seq,omitempty"`
+	OverflowLastSeq   uint64 `json:"overflow_last_seq,omitempty"`
 	// Notes say what the index met, the last maxLoginIndexNotes of them:
 	// the journal moving on past its cursor.
 	Notes []loginIndexNote `json:"notes,omitempty"`
@@ -101,6 +116,10 @@ type loginIndexAddr struct {
 	ForgedLast time.Time `json:"forged_last,omitzero"` // its last event sshd did not write itself
 	Events     int       `json:"events"`
 	Forged     int       `json:"forged,omitempty"`
+	// LastSeq and ForgedLastSeq are the numbers (in the index's SeqID) of
+	// its last event and last forged one read; zero when not known.
+	LastSeq       uint64 `json:"last_seq,omitempty"`
+	ForgedLastSeq uint64 `json:"forged_last_seq,omitempty"`
 }
 
 // readSSHJournal is hostenv.ReadSSHJournal (tests replace it).
@@ -127,8 +146,50 @@ var KeepLoginIndex = true
 // counted twice or lost.
 var loginIndexMu sync.Mutex
 
+// alive: an entry the index kept (its time and number) is still in the
+// journal, as the whole read would see it. By numbers when both are known
+// in one sequence; else by time, on the strict side for what it decides:
+// an entry that refuses (refuse: forged, unreadable, the overflow) is
+// there at JournalFrom's own time, an address's event that lets a block
+// through is not.
+func (x *loginIndex) alive(at time.Time, seq uint64, refuse bool) bool {
+	if seq != 0 && x.JournalFromSeq != 0 && x.SeqID != "" && x.SeqID == x.JournalFromSeqID {
+		return seq >= x.JournalFromSeq
+	}
+	if refuse && seq != 0 && x.SeqID != "" && x.JournalFromSeqID != "" {
+		// The journal starts in an older sequence than the index's (a
+		// vacuum takes the oldest files first): every entry of the newer
+		// one is still there.
+		return true
+	}
+	if refuse {
+		return !at.Before(x.JournalFrom)
+	}
+	return at.After(x.JournalFrom)
+}
+
+// seqOf is where entry e is in the index's sequence, zero when not known.
+// An entry of another sequence (the journal made anew) starts it: every
+// number kept before is in the old one, so they are all made unknown.
+func (x *loginIndex) seqOf(cursor string) uint64 {
+	id, n, ok := hostenv.CursorSeq(cursor)
+	if !ok {
+		return 0
+	}
+	if id != x.SeqID {
+		if x.SeqID != "" {
+			for _, a := range x.Addrs {
+				a.LastSeq, a.ForgedLastSeq = 0, 0
+			}
+			x.UnreadableLastSeq, x.OverflowLastSeq = 0, 0
+		}
+		x.SeqID = id
+	}
+	return n
+}
+
 // add counts one event.
-func (x *loginIndex) add(ip string, at time.Time, own bool) {
+func (x *loginIndex) add(ip string, at time.Time, own bool, seq uint64) {
 	a := x.Addrs[ip]
 	if a == nil {
 		if len(x.Addrs) >= maxIndexAddrs && !at.Before(x.prunedAt.Add(time.Hour)) {
@@ -142,20 +203,22 @@ func (x *loginIndex) add(ip string, at time.Time, own bool) {
 			if at.After(x.OverflowLast) {
 				x.OverflowLast = at
 			}
+			x.OverflowLastSeq = seq // the last read: journal order
 			return
 		}
 		a = &loginIndexAddr{Since: at}
 		x.Addrs[ip] = a
 	}
 	a.Events++
-	if at.After(a.Last) {
-		a.Last = at
+	if !at.Before(a.Last) { // the number of the event Last is: gone, it is not seen (the strict side)
+		a.Last, a.LastSeq = at, seq
 	}
 	if !own {
 		a.Forged++
 		if at.After(a.ForgedLast) {
 			a.ForgedLast = at
 		}
+		a.ForgedLastSeq = seq // the last read, journal order: there while any is (the strict side)
 	}
 }
 
@@ -254,6 +317,7 @@ func updateLoginIndex(ctx context.Context) (*loginIndex, error) {
 	}
 	moved := false        // the journal no longer had the cursor's entry
 	var movedTo time.Time // the first entry read after it moved
+	var movedToCursor string
 	read := func(from string, since time.Time) error {
 		first := true
 		_, err := readSSHJournal(ctx, from, since, func(e hostenv.JournalEntry) error {
@@ -269,16 +333,20 @@ func updateLoginIndex(ctx context.Context) (*loginIndex, error) {
 				at = now // an entry cut before its time: taken as now, the strict side
 			}
 			if moved && movedTo.IsZero() {
-				movedTo = at
+				movedTo, movedToCursor = at, e.Cursor
 			}
+			seq := x.seqOf(e.Cursor)
 			if ip, own, ok := hostenv.SSHDLoginEvent(e); ok {
-				x.add(ip, at, own)
-			} else if e.Cut && at.After(x.UnreadableLast) {
+				x.add(ip, at, own, seq)
+			} else if e.Cut {
 				// Past the line the whole read takes (MaxSSHJournalMessage):
 				// that read fails on it, whoever wrote it, so a window
 				// holding it is not verified here either (S-213-4). Shorter
 				// entries are read whole and counted for their address.
-				x.UnreadableLast = at
+				if at.After(x.UnreadableLast) {
+					x.UnreadableLast = at
+				}
+				x.UnreadableLastSeq = seq // the last read, as ForgedLastSeq
 			}
 			x.Cursor, x.CursorTime = e.Cursor, at // also past entries that are not events
 			return nil
@@ -302,8 +370,8 @@ func updateLoginIndex(ctx context.Context) (*loginIndex, error) {
 		if movedTo.IsZero() {
 			movedTo = now // nothing of sshd's units is left from before now
 		}
-		if movedTo.After(x.JournalFrom) {
-			x.JournalFrom = movedTo
+		if !movedTo.Before(x.JournalFrom) {
+			x.setJournalFrom(movedTo, movedToCursor)
 		}
 		x.note(now, "the journal had moved on past the index's position (its entry of "+since.UTC().Format(time.RFC3339)+" is gone): read on from the first entry still there")
 	}
@@ -313,14 +381,14 @@ func updateLoginIndex(ctx context.Context) (*loginIndex, error) {
 		// cursor's entry still there, and the whole read no longer sees
 		// them.
 		first, ok, ferr := sshJournalFirst(ctx)
-		start := now // none left
+		start, startCursor := now, "" // none left
 		if ok {
-			start = first.Time
+			start, startCursor = first.Time, first.Cursor
 		}
 		if ferr != nil {
 			err = fmt.Errorf("where the journal starts: %w", ferr)
-		} else if start.After(x.JournalFrom) {
-			x.JournalFrom = start
+		} else if !start.Before(x.JournalFrom) {
+			x.setJournalFrom(start, startCursor)
 		}
 	}
 	if x.Cursor != "" || err == nil {
@@ -334,6 +402,16 @@ func updateLoginIndex(ctx context.Context) (*loginIndex, error) {
 		return nil, err
 	}
 	return x, nil
+}
+
+// setJournalFrom sets where the journal starts: at, and the number of the
+// entry cursor names (none known for an empty cursor, one not of that
+// form, or another sequence than the index's).
+func (x *loginIndex) setJournalFrom(at time.Time, cursor string) {
+	x.JournalFrom, x.JournalFromSeq, x.JournalFromSeqID = at, 0, ""
+	if id, n, ok := hostenv.CursorSeq(cursor); ok {
+		x.JournalFromSeq, x.JournalFromSeqID = n, id
+	}
 }
 
 // errIndexDoesNotCover: the index does not reach back to the window.
@@ -355,18 +433,18 @@ func (x *loginIndex) indexedLogins(ip net.IP, now time.Time) (seen bool, err err
 		return false, errIndexDoesNotCover
 	// An address's events can be in the overflow only from before the index
 	// kept it (an address kept never overflows): in the window, before Since.
-	case !x.OverflowLast.Before(w) && !x.OverflowLast.Before(x.JournalFrom) && (a == nil || a.Since.After(w) && x.OverflowFirst.Before(a.Since)):
+	case !x.OverflowLast.Before(w) && x.alive(x.OverflowLast, x.OverflowLastSeq, true) && (a == nil || a.Since.After(w) && x.OverflowFirst.Before(a.Since)):
 		return false, coded(BlockStateError, fmt.Errorf("refusing to block %s: more addresses tried SSH than the login index keeps (%d), and some of its events may be among those not kept; check the logs as root and, if they are real, ask again with override_unverified", ip, maxIndexAddrs))
-	case !x.UnreadableLast.Before(w) && !x.UnreadableLast.Before(x.JournalFrom):
+	case !x.UnreadableLast.Before(w) && x.alive(x.UnreadableLast, x.UnreadableLastSeq, true):
 		return a != nil && !a.Last.Before(w), coded(BlockUnverified, fmt.Errorf("refusing to block %s: since %s an entry in sshd's unit was too long to read whole (over 1 MiB), so an SSH login event in it, forged or not, cannot be ruled out; check them as root (journalctl -u ssh) and, if the block is right, ask again with override_unverified", ip, w.Format(time.RFC3339)))
 	}
 	if a == nil || a.Last.Before(w) {
 		return false, nil
 	}
-	if !a.ForgedLast.Before(w) && !a.ForgedLast.Before(x.JournalFrom) {
+	if !a.ForgedLast.Before(w) && x.alive(a.ForgedLast, a.ForgedLastSeq, true) {
 		return true, coded(BlockUnverified, fmt.Errorf("refusing to block %s: some of its SSH login events in journald since %s were not written by sshd itself (they came from another program in sshd's unit, e.g. logger), so they may be forged; check them as root and, if they are real, ask again with override_unverified", ip, w.Format(time.RFC3339)))
 	}
-	if a.Last.Before(x.JournalFrom) {
+	if !x.alive(a.Last, a.LastSeq, false) {
 		return false, nil // its events are no longer in the journal: as the whole read, not seen
 	}
 	return true, nil
