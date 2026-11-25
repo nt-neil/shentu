@@ -638,13 +638,14 @@ func (a *analysis) extractStmt(st state, t []Token) {
 	}
 	inner := stripParens(args[0])
 	lit := inner
+	ats := false // shortcode_atts: the keys of its defaults only
 	if len(inner) > 2 && inner[0].word("shortcode_atts") && inner[1].op("(") {
 		if xs := splitTop(inside(inner, 1, closeOf(inner, 1)), isComma); len(xs) > 0 {
-			lit = a.litArray(st, stripParens(xs[0]))
+			lit, ats = a.litArray(st, stripParens(xs[0])), true
 		}
 	} else if len(inner) == 1 && inner[0].Kind == Var {
 		if _, ok := st[atsKey+inner[0].Text]; ok && a.atsDefs[inner[0].Text] != nil {
-			lit = a.atsDefs[inner[0].Text] // $r = shortcode_atts($defaults, $atts); extract($r)
+			lit, ats = a.litArray(st, a.atsDefs[inner[0].Text]), true // $r = shortcode_atts($defaults, $atts); extract($r)
 		}
 	}
 	var body []Token
@@ -654,7 +655,11 @@ func (a *analysis) extractStmt(st state, t []Token) {
 	case len(lit) > 2 && lit[0].word("array") && lit[1].op("("):
 		body = inside(lit, 1, closeOf(lit, 1))
 	default:
-		a.extractAny(st, args, a.expr(st, inner, false))
+		keep := ""
+		if ats && len(lit) == 1 && lit[0].Kind == Var {
+			keep = lit[0].Text // its keys are not known here, but none of them is the defaults variable itself
+		}
+		a.extractAny(st, args, a.expr(st, inner, false), keep)
 		return
 	}
 	v := a.expr(st, inner, false)
@@ -665,8 +670,8 @@ func (a *analysis) extractStmt(st state, t []Token) {
 	}
 }
 
-// atsKey marks a variable assigned shortcode_atts(<array written out>, ...): it
-// holds the keys of that array only, kept in a.atsDefs.
+// atsKey marks a variable assigned shortcode_atts($defaults, ...): it holds the
+// keys of $defaults only; the defaults expression is kept in a.atsDefs.
 const atsKey = "\x00ats:"
 
 // litArray returns t, or the array a variable holds when recordLit knows it
@@ -680,8 +685,8 @@ func (a *analysis) litArray(st state, t []Token) []Token {
 	return t
 }
 
-// atsAssign records $r = shortcode_atts(<array written out>, ...) for extract($r);
-// any other assignment to $r forgets it.
+// atsAssign records $r = shortcode_atts(<array written out, or a variable>, ...)
+// for extract($r); any other assignment to $r forgets it.
 func (a *analysis) atsAssign(st state, t []Token) {
 	if !a.php || len(t) < 4 || t[0].Kind != Var || !t[1].op("=") {
 		return
@@ -698,9 +703,9 @@ func (a *analysis) atsAssign(st state, t []Token) {
 	if len(xs) == 0 {
 		return
 	}
-	d := a.litArray(st, stripParens(xs[0]))
-	if !(len(d) > 1 && d[0].op("[") || len(d) > 2 && d[0].word("array") && d[1].op("(")) {
-		return
+	d := stripParens(xs[0])
+	if !(len(d) == 1 && d[0].Kind == Var || len(d) > 1 && d[0].op("[") || len(d) > 2 && d[0].word("array") && d[1].op("(")) {
+		return // the defaults are an array written out or a variable (its array looked up at extract())
 	}
 	if a.atsDefs == nil {
 		a.atsDefs = map[string][]Token{}
@@ -724,7 +729,7 @@ const extractKey = "\x00extract"
 // already defined ($template_name after extract($args) in a template loader).
 // wp_parse_args($in, $defaults) keeps the keys of $in, so it lands here too.
 // Superglobals and $this are not variables extract() can set.
-func (a *analysis) extractAny(st state, args [][]Token, v val) {
+func (a *analysis) extractAny(st state, args [][]Token, v val, keep string) {
 	if !v.taint {
 		return
 	}
@@ -742,7 +747,7 @@ func (a *analysis) extractAny(st state, args [][]Token, v val) {
 	}
 	if overwrite {
 		for k, e := range st {
-			if extractable(k) {
+			if extractable(k) && (keep == "" || k != keep && !strings.HasPrefix(k, keep+sepCh)) {
 				st[k] = join(e)
 			}
 		}
