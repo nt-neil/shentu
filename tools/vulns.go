@@ -174,21 +174,6 @@ func packageVulnsAll(ctx context.Context, hc *http.Client, detailFor string) (ma
 	}
 	up, upWhy := upstreamCompare(ctx, set) // third-party PHP and nginx, against php.net's and nginx.org's advisories
 	thirdPartyOut(out, set, up, upWhy)
-	// Counted in the summary every reader goes by (the patrol, the report,
-	// the model): an upstream-affected package is affected, as an OSV one is.
-	inFound := map[string]bool{}
-	for _, a := range found {
-		inFound[a.Package] = true
-	}
-	for _, h := range up {
-		if len(h.Affected) > 0 {
-			total += len(h.Affected)
-			if !inFound[h.Package] {
-				out["affected_packages"] = out["affected_packages"].(int) + 1
-			}
-		}
-	}
-	out["total_vulns"] = total
 	if len(feed.Ecosystems) > 1 { // SUSE: one per module; ecosystem shows the first only
 		out["ecosystems"] = feed.Ecosystems
 	}
@@ -217,6 +202,39 @@ func packageVulnsAll(ctx context.Context, hc *http.Client, detailFor string) (ma
 		}
 		return c, ok
 	}
+	// The upstream hits, counted in the summary every reader goes by (the
+	// patrol, the report, the model) as OSV's are: by source package and CVE.
+	// The binaries of one source (php8.3-fpm, -cli) are one affected package,
+	// as OSV names them, and a CVE OSV already reports for that source (also
+	// as an advisory's alias, a DSA's CVE) is not counted again.
+	ups := upstreamBySource(up)
+	osvHas := map[srcCVE]bool{}
+	inFound := map[string]bool{}
+	for _, a := range found {
+		inFound[a.Package] = true
+		if !ups.sources[a.Package] {
+			continue
+		}
+		for _, id := range a.IDs {
+			cves := cveRe.FindAllString(strings.ToUpper(id), -1)
+			if len(cves) == 0 {
+				cves, _ = cvesOf(id)
+			}
+			for _, c := range cves {
+				osvHas[srcCVE{a.Package, c}] = true
+			}
+		}
+	}
+	newSources := map[string]bool{}
+	for _, k := range ups.order {
+		if !osvHas[k] {
+			total++
+			if !inFound[k.src] {
+				newSources[k.src] = true
+			}
+		}
+	}
+	out["total_vulns"], out["affected_packages"] = total, len(found)+len(newSources)
 	exploited := map[string][]Exploit{} // package -> KEV matches
 	kev, kevErr := loadKEV(ctx, hc)     // kept for the upstream entries of the surface
 	if err := kevErr; err != nil {
@@ -233,12 +251,20 @@ func packageVulnsAll(ctx context.Context, hc *http.Client, detailFor string) (ma
 				all = append(all, e)
 			}
 		}
-		for _, h := range up { // upstream's, as OSV's: the patrol's KEV alert reads this list
-			for _, id := range h.Affected {
-				if e, ok := kev[id]; ok {
-					all = append(all, Exploit{Package: h.Package, Version: h.Version, ID: id, CVE: id, Name: e.Name, Added: e.Added, Ransomware: e.Ransomware == "Known"})
-				}
+		// Upstream's, as OSV's (the patrol's KEV alert reads this list): one
+		// per source package and CVE, naming the binaries; OSV's own entry
+		// for it, when there is one, gets them instead of a second entry.
+		for _, k := range ups.order {
+			e, ok := kev[k.cve]
+			if !ok {
+				continue
 			}
+			if i := slices.IndexFunc(all, func(x Exploit) bool { return x.Package == k.src && x.CVE == k.cve }); i >= 0 {
+				all[i].Binaries = ups.binaries[k]
+				continue
+			}
+			all = append(all, Exploit{Package: k.src, Version: ups.version[k.src], ID: k.cve, CVE: k.cve, Name: e.Name, Added: e.Added,
+				Ransomware: e.Ransomware == "Known", Binaries: ups.binaries[k]})
 		}
 		out["actively_exploited"] = all
 		switch {
@@ -419,6 +445,9 @@ type Exploit struct {
 	Name       string `json:"name"`
 	Added      string `json:"kev_since"`
 	Ransomware bool   `json:"used_by_ransomware,omitempty"`
+	// Binaries are the installed packages of Package (a source package) the
+	// upstream compare found affected (php8.3-fpm, php8.3-cli).
+	Binaries []string `json:"binaries,omitempty"`
 }
 
 // surfaceCVEs fills the CVEs of surface's entries neither their id nor
@@ -578,11 +607,7 @@ func installedPackages(ctx context.Context) (string, hostenv.PatchFeed, []pkg, e
 func pkgsOf(items []hostenv.Package) []pkg {
 	var pkgs []pkg
 	for _, p := range items {
-		name := p.Name
-		if p.Source != "" {
-			name = p.Source
-		}
-		pkgs = append(pkgs, pkg{name, p.Version})
+		pkgs = append(pkgs, pkg{sourceOf(p), p.Version})
 	}
 	return uniq(pkgs)
 }

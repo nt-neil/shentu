@@ -105,8 +105,8 @@ func TestPackageVulnsUpstream(t *testing.T) {
 		}
 	}
 	// N-225-1: the KEV CVE is actively exploited, as an OSV one would be.
-	if !strings.Contains(string(b), `"actively_exploited":[{"package":"php8.3-fpm","version":"8.3.9-1`+sury+`","id":"CVE-2026-129291","cve":"CVE-2026-129291"`) {
-		t.Errorf("upstream KEV not actively exploited: %s", b)
+	if !strings.Contains(string(b), `"actively_exploited":[{"package":"php8.3","version":"8.3.9-1`+sury+`","id":"CVE-2026-129291","cve":"CVE-2026-129291"`) {
+		t.Errorf("upstream KEV not actively exploited (by source package): %s", b)
 	}
 	var ups []detect.PackageVuln
 	for _, v := range surface {

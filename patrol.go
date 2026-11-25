@@ -758,7 +758,11 @@ func osKEVFindings(r map[string]any) []finding {
 	var out []finding
 	list, _ := r["actively_exploited"].([]tools.Exploit)
 	for _, e := range list {
-		out = append(out, newFinding("kev:"+e.Package+":"+e.CVE, "critical", e, "f_kev_os", e.Package, e.Version, e.CVE, e.Name, r["upgrade_command"]))
+		name := e.Package // one finding per source package and CVE; its binaries named
+		if len(e.Binaries) > 0 {
+			name += " (" + strings.Join(e.Binaries, ", ") + ")"
+		}
+		out = append(out, newFinding("kev:"+e.Package+":"+e.CVE, "critical", e, "f_kev_os", name, e.Version, e.CVE, e.Name, r["upgrade_command"]))
 	}
 	return out
 }

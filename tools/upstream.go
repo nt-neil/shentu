@@ -26,6 +26,7 @@ import (
 // upstreamHit is a third-party package compared with its upstream.
 type upstreamHit struct {
 	Package    string   `json:"package"`
+	Source     string   `json:"source"` // the source package, as OSV is asked (php8.3 for php8.3-fpm)
 	Version    string   `json:"version"`
 	Origin     string   `json:"origin"`
 	Upstream   string   `json:"upstream"` // php or nginx
@@ -69,7 +70,7 @@ func upstreamCompare(ctx context.Context, set hostenv.PackageSet) (hits []upstre
 		if it.Origin == "" {
 			continue
 		}
-		h := upstreamHit{Package: it.Name, Version: it.Version, Origin: it.Origin, AsOf: upstreamAsOf}
+		h := upstreamHit{Package: it.Name, Source: sourceOf(it), Version: it.Version, Origin: it.Origin, AsOf: upstreamAsOf}
 		var ids []string
 		switch m := phpSAPIPackage.FindStringSubmatch(it.Name); {
 		case m != nil:
@@ -179,4 +180,43 @@ func upstreamSurface(hits []upstreamHit, kev map[string]kevEntry) []detect.Packa
 		}
 	}
 	return out
+}
+
+// sourceOf is the name OSV is asked about: dpkg's source package when it
+// differs, else the package's own.
+func sourceOf(p hostenv.Package) string {
+	if p.Source != "" {
+		return p.Source
+	}
+	return p.Name
+}
+
+// srcCVE is one CVE of one source package.
+type srcCVE struct{ src, cve string }
+
+// upstreamSources are the hits' affected CVEs by source package and CVE, in
+// the hits' order, with the binaries each is found in.
+type upstreamSources struct {
+	order    []srcCVE
+	binaries map[srcCVE][]string
+	version  map[string]string // source -> the version of its first affected binary
+	sources  map[string]bool
+}
+
+func upstreamBySource(hits []upstreamHit) upstreamSources {
+	u := upstreamSources{binaries: map[srcCVE][]string{}, version: map[string]string{}, sources: map[string]bool{}}
+	for _, h := range hits {
+		for _, id := range h.Affected {
+			k := srcCVE{h.Source, id}
+			if _, ok := u.binaries[k]; !ok {
+				u.order = append(u.order, k)
+			}
+			u.binaries[k] = append(u.binaries[k], h.Package)
+			if _, ok := u.version[h.Source]; !ok {
+				u.version[h.Source] = h.Version
+			}
+			u.sources[h.Source] = true
+		}
+	}
+	return u
 }
