@@ -2,6 +2,7 @@ package engine
 
 import (
 	"cmp"
+	"maps"
 	"slices"
 )
 
@@ -86,8 +87,8 @@ func (p *Project) hold(fr *sumFrame, sums map[string]*summary) {
 		p.held[fr.a.sc] = map[string]heldSum{}
 	}
 	root := p.stack[fr.root]
-	for k, s := range sums {
-		p.held[fr.a.sc][k] = heldSum{s, fr.root}
+	for _, k := range slices.Sorted(maps.Keys(sums)) {
+		p.held[fr.a.sc][k] = heldSum{sums[k], fr.root}
 		root.members = append(root.members, sumMember{fr.a, k})
 	}
 	root.members = append(root.members, fr.members...)
@@ -117,10 +118,7 @@ func (p *Project) settle(fr *sumFrame, key string) *summary {
 	for _, k := range fr.keys {
 		members = append(members, sumMember{fr.a, k})
 	}
-	slices.SortFunc(members, func(x, y sumMember) int {
-		return cmp.Or(cmp.Compare(x.a.file, y.a.file), cmp.Compare(x.key, y.key))
-	})
-	members = slices.CompactFunc(members, func(x, y sumMember) bool { return x.a.sc == y.a.sc && x.key == y.key })
+	members = cycleOrder(members)
 	for _, m := range members {
 		delete(p.held[m.a.sc], m.key)
 		m.a.sc.done[m.key] = &summary{} // the fixed point starts from "does nothing"
@@ -160,6 +158,29 @@ func (p *Project) settle(fr *sumFrame, key string) *summary {
 		d.capped, d.capCut, d.height, d.cost, d.id = capped, capCut, height, cost[m], m.a.file+"\x00"+m.key
 	}
 	return fr.a.sc.done[key]
+}
+
+// cycleOrder is the order a cycle's members are worked out in: by file, then
+// key. Each member is there once, the first time it joined, and members alike
+// in file and key keep the order they joined in, so which one is kept and
+// which goes first do not depend on the sort.
+func cycleOrder(members []sumMember) []sumMember {
+	type id struct {
+		sc  *summaries
+		key string
+	}
+	seen := map[id]bool{}
+	var out []sumMember
+	for _, m := range members {
+		if k := (id{m.a.sc, m.key}); !seen[k] {
+			seen[k] = true
+			out = append(out, m)
+		}
+	}
+	slices.SortStableFunc(out, func(x, y sumMember) int {
+		return cmp.Or(cmp.Compare(x.a.file, y.a.file), cmp.Compare(x.key, y.key))
+	})
+	return out
 }
 
 // drop forgets the members a frame collected, when its cycle cannot be

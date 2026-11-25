@@ -45,6 +45,12 @@ Chinese for the zh-TW pages; keep the two in step.
   where they have room, the newest and the x.y.0 releases first, and a hidden one shows on hover or
   focus of its lamp (they ran into each other at 844px and 1440px); each lamp's link reads out its
   version, date, rule count and bench result.
+- A code audit's scan stops on work done, no longer on time: a file's first pass and a project's
+  calls passes each have a work cap (60M and 1.5G), and the clock stays only as a safety net. What
+  is followed, and so what is reported, no longer depends on how fast or how loaded the machine
+  is; a slow machine takes longer instead of stopping sooner. On WordPress 7.1.4 (2,148 PHP files)
+  the files left unfinished went from about 800 to 1,100, different on every run, to 16 on every
+  run, with no rise in memory.
 
 ### Known issues
 
@@ -59,6 +65,10 @@ Chinese for the zh-TW pages; keep the two in step.
   program, as the release binaries are: `netstat -anv` writes nothing there (exit 0). shentu then
   lists the listening ports with lsof, which sees only its own user's processes, and marks the list
   partial. Run from a terminal, netstat shows them. macOS 15 is not affected.
+- With calls followed further, WordPress reports the `Location:` header inside `wp_redirect()`
+  (`pluggable.php:1542`) for the `ref` that `wpmu_admin_do_redirect()` passes it, a flow already
+  reported where that function calls `wp_redirect()` (`ms-deprecated.php:289` and `:306`): the
+  same input is reported twice.
 
 ## v0.5.6 — 2026-11-24
 
