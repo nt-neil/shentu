@@ -44,6 +44,15 @@ code = '''
 <button onclick="select('<?php echo esc_js($_GET['tab']); ?>')">Go</button>
 '''
 
+[[samples]]
+kind = "safe"
+note = "a <script> body decodes no entity: with both quotes and < encoded, the value stays in the string the line closes"
+code = '''
+<script>
+var tab = '<?php echo esc_attr($_GET['tab']); ?>';
+</script>
+'''
+
 # filter_input(INPUT_GET, ...) and an application's filterInput(INPUT_POST, ...) wrapper read the request like $_GET and $_POST
 [[source_args]]
 sources = ["filter_input(", "->filterInput(", "->filter_input("]

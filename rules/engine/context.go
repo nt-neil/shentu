@@ -138,9 +138,52 @@ func (a *analysis) fixedText(text string) bool {
 		return len(text) >= 2 && text[1] != '/' && text[1] != '\\'
 	case strings.HasPrefix(text, "\\"):
 		return false
+	case driveStart(text):
+		return true
 	}
 	return notScheme(text)
 }
+
+// driveStart reports a Windows drive at the start of text (C:\, C:/): a local
+// path, though "C:" alone reads as a scheme to notScheme. No network scheme is
+// one letter long.
+func driveStart(text string) bool {
+	return len(text) >= 3 && (text[0]|0x20 >= 'a' && text[0]|0x20 <= 'z') && text[1] == ':' && (text[2] == '\\' || text[2] == '/')
+}
+
+// segmentAfter reports whether literal text written after a directory constant
+// (dirConsts) fixes the host for a URL: a character that is no separator, then "/",
+// "?" or "#" (WP_CONTENT_DIR . '/uploads/'), and no ":". Whatever the constant
+// holds, a host it starts ends in the text, and the input comes after it. A
+// bare "/" or "/a" does not: K = 'http:/' gives "http://" or "http://a", and
+// the input picks or extends the host; "p://" would finish K = 'htt'.
+// The text is read as written: an escape ("\x3a//" is "://") or a blank (a
+// URL parser drops tabs and line breaks: 'http:/' . "\t/" is http://) leaves
+// it unknown.
+func segmentAfter(lit string) bool {
+	seg := false
+	for i := 0; i < len(lit); i++ {
+		switch c := lit[i]; {
+		case c == ':' || c == '\\' || c <= ' ' || c >= 0x7f:
+			return false
+		case c == '/' || c == '?' || c == '#':
+			if seg {
+				return true
+			}
+		default:
+			seg = true
+		}
+	}
+	return false
+}
+
+// dirConsts are the directories PHP and the frameworks define themselves, an
+// absolute local path whatever the site: no request sets them. A plugin's own
+// constants are left out (one defined from input elsewhere would be missed),
+// and so are the *_URL ones, which a site may build from the Host header.
+var dirConsts = words("__DIR__ DIRECTORY_SEPARATOR ABSPATH WPINC WP_CONTENT_DIR WP_PLUGIN_DIR WPMU_PLUGIN_DIR " +
+	"WP_LANG_DIR TEMPLATEPATH STYLESHEETPATH DRUPAL_ROOT JPATH_ROOT JPATH_BASE JPATH_SITE JPATH_ADMINISTRATOR " +
+	"JPATH_LIBRARIES JPATH_PLUGINS JPATH_CACHE")
 
 // fixedHost reports whether text starts with a scheme and a host that the input
 // after it cannot change ("https://api.example.com/v1?q="): the host ends with

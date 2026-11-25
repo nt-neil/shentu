@@ -20,6 +20,17 @@ Chinese for the zh-TW pages; keep the two in step.
   `htmlspecialchars()` as a sanitizer; a URL filter does not clean.
 - macOS: a listening socket netstat gives with pid 0 has no owner to name, so the list of listening
   ports is marked partial and says how many, no longer complete as if every owner were known.
+- PHP rules know an application's own guard function. A function that returns true only after
+  a check of its path parameter (an allowlist, as Welcart's `usces_is_reserved_file()`, or
+  `realpath($p)` with `strpos($real, $base) === 0`) cleans the value it was given where its result
+  is true (`if (guard($f)) { ... }`, or after `if (!guard($f)) { die(); }`), also as a method of
+  another class. A guard that assigns its parameter, returns true before the check, or only checks
+  that the file exists does not. `strpos(` and `stripos(` compared `=== 0` or `!== 0` are a prefix
+  check in the path rules, of their first argument only (`strpos('/var/logs/', $real)` holds for
+  `/` and `/var`). Where `realpath($p)` found the file, `$p` is no longer a URL or a
+  `phar://` wrapper for the server-side request and phar rules; the path rules still report it. An
+  `in_array()` lookup of `basename($p)` or `intval($id)` no longer validates `$p` or `$id`:
+  `../../x/log.txt` and `1 OR 1` pass it.
 - `shentu patrol --dry-run` prints all its titles (each attack attempt, the summary past the
   round's limit, the attack detection notice) in the setting's language, as they are sent; they
   were always in English.
@@ -40,6 +51,14 @@ Chinese for the zh-TW pages; keep the two in step.
 - The patrol catches the login index up after its checks, its notice and the attack detection
   alerts, not before them: in a flood the catching up can take up to 15 minutes, and that round's
   notices no longer wait for it.
+- block_ip's login index tells journal entries of the same time apart by their numbers in the
+  journal (the cursor's `s=` and `i=`). After a vacuum that removed an entry with the same time as
+  the first one left, the index took the removed entry as still there. An address whose event was
+  removed was then seen as sshd's own, where the whole read sees nothing, and a forged event that
+  was removed still refused the block. When a number is not known (an index saved by an older
+  version, a cursor not of that form, a journal made anew), times decide on the strict side: an
+  entry that refuses the block counts as there at the first entry's own time, and an event that
+  lets it through does not.
 - The site's release river: a release's peek stays inside the river at every width (at 844px the
   pages scrolled sideways by 3px); the labels under the lamps (version, date, rule count) show only
   where they have room, the newest and the x.y.0 releases first, and a hidden one shows on hover or
@@ -51,6 +70,47 @@ Chinese for the zh-TW pages; keep the two in step.
   is; a slow machine takes longer instead of stopping sooner. On WordPress 7.1.4 (2,148 PHP files)
   the files left unfinished went from about 800 to 1,100, different on every run, to 16 on every
   run, with no rise in memory.
+- `app_vulns` and the daily patrol check the Python packages installed in site-packages folders
+  (venvs under the app paths, `/usr/local/lib/python3*`, and what pip installed in
+  `/usr/lib/python3*`) against OSV as PyPI, with the CISA KEV mark, as they check a lock file. Until
+  now only lock files were read, so a package installed with pip and listed in none was not
+  checked. The scan has bounds (8 folders deep, 100 site-packages folders, 5,000 packages in one,
+  the first 64 KiB of each METADATA, no symlinks followed); what it did not cover is reported as not
+  checked.
+- They also list the `.pth` files there with lines Python runs at every start: the file and how many
+  such lines, not their text. A file is marked as a tool's own (setuptools, virtualenv, an editable
+  install) only when it can be proven: every such line is exactly the tool's, the tool's own record
+  of it is there (a RECORD that lists the file itself, and its module, with their hashes,
+  virtualenv's key in `pyvenv.cfg`, or the system package manager's folder), and the folder, every
+  folder above it and those files can be written by root alone. In a folder a user can write,
+  whoever wrote the file could have written the record too: setuptools', virtualenv's and editable
+  install files there are listed in the daily report as not proven. The patrol pushes the others as
+  warnings.
+- PHP XSS in a `<script>` body: a value escaped with `esc_attr()`, `esc_url()`, `esc_html()` or
+  `htmlspecialchars(..., ENT_QUOTES)` inside a quoted JS string
+  (`var tab = '<?php echo esc_attr($_GET['tab']); ?>';`) is no longer reported when the text after
+  the PHP block closes that string on the same line: a `<script>` body decodes no entity, so with
+  both quotes and `<` encoded the value stays inside the string. It is still reported in an `on*`
+  attribute (which decodes entities first), in a template literal, after a block that writes a
+  quote or a backslash, on a line ending in a `\` continuation, with `htmlspecialchars()` without
+  `ENT_QUOTES`, and with `sanitize_text_field()`.
+- PHP's server-side request rule takes a start that is a local path as fixed: a directory
+  constant then a literal with a path segment (`WP_CONTENT_DIR . '/uploads/' . $name`, also through
+  a variable that holds it, as in Welcart) or a drive (`'C:\\data\\' . $name`). The input then
+  cannot choose a scheme or a host, so `file_get_contents()` of it is no longer reported as a
+  server-side request; the path rules still report it. The constants are `__DIR__`,
+  `DIRECTORY_SEPARATOR` and the directory constants of WordPress, Drupal and Joomla (`ABSPATH`,
+  `WP_CONTENT_DIR`, `DRUPAL_ROOT`, `JPATH_ROOT` and others). Still reported: a plugin's own
+  constant, a constant defined from input, a bare `/` or `/a` after the constant, `C:` alone, a
+  `\\` start, and an escape such as `\x3a` in the literal.
+- SQL injection and XSS rules take arithmetic as a number, which carries no quote or markup:
+  a page offset `(max($_GET['paged'], 1) - 1) * 20` in a `LIMIT` (as in Welcart), PHP's
+  `$_GET['n'] + 1`, JavaScript's `req.query.n - 1` and Python's `request.args['n'] - 1` are no
+  longer reported there. Arithmetic is `-`, `/`, `*`, `%` and `**`, with a `+` next to a number
+  in PHP; in Python it is `//`, `**`, and `-` or `/` next to a number. Still input: PHP `+` of two
+  arrays (their union), `|` of two strings, `.` next to `-`, JavaScript's binary `+`, Python's `*`
+  (which repeats a string), Python's `-` of two sets or two `Counter`s (their difference, as in
+  `set(request.args.getlist('id')) - {'0'}`), and a number in the path rules.
 - The package vulnerability check (`vulns`) compares third-party PHP and nginx packages (from
   deb.sury.org, the ondrej PPA, Remi's repository or nginx.org) with php.net's and nginx.org's
   releases of 2026-11-19, the tables of the PHP and nginx checks. OSV has only the distributions'
@@ -80,10 +140,6 @@ Chinese for the zh-TW pages; keep the two in step.
   program, as the release binaries are: `netstat -anv` writes nothing there (exit 0). shentu then
   lists the listening ports with lsof, which sees only its own user's processes, and marks the list
   partial. Run from a terminal, netstat shows them. macOS 15 is not affected.
-- With calls followed further, WordPress reports the `Location:` header inside `wp_redirect()`
-  (`pluggable.php:1542`) for the `ref` that `wpmu_admin_do_redirect()` passes it, a flow already
-  reported where that function calls `wp_redirect()` (`ms-deprecated.php:289` and `:306`): the
-  same input is reported twice.
 
 ## v0.5.6 — 2026-11-24
 
