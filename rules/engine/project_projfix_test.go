@@ -1,6 +1,8 @@
 package engine
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -100,5 +102,28 @@ func TestProjectIndexCacheKey(t *testing.T) {
 	small.Limits.MaxTokens = 5
 	if fi := small.NewProject([]string{"r.php"}, read, ProjectOptions{CacheFile: cache}).files["r.php"]; fi == nil || !fi.Limited {
 		t.Errorf("with a 5-token limit, from the cache: %+v; want Limited", fi)
+	}
+}
+
+// A cache of index version 9 is not used: there Limited meant the 3-second
+// clock, and a file it did not mark may now be cut by the work cap.
+func TestProjectIndexCacheVersion9(t *testing.T) {
+	e := engineForTest(t)
+	src := "<?php\nfunction f($x) { return $x; }\n"
+	read := func(string) ([]byte, error) { return []byte(src), nil }
+	_, rest, ok := strings.Cut(e.indexKey(), "-")
+	if !ok {
+		t.Fatalf("index key %q", e.indexKey())
+	}
+	sum := sha256.Sum256([]byte(src))
+	old := map[string]*fileIndex{"a.php": {Lang: "php", Hash: hex.EncodeToString(sum[:]), Limited: true}}
+	cache := filepath.Join(t.TempDir(), "codeindex.json")
+	saveIndexCache(cache, "9-"+rest, old)
+	if fi := e.NewProject([]string{"a.php"}, read, ProjectOptions{CacheFile: cache}).files["a.php"]; fi == nil || fi.Limited {
+		t.Errorf("a.php from a version 9 cache: %+v; want it indexed again, not Limited", fi)
+	}
+	saveIndexCache(cache, e.indexKey(), old)
+	if fi := e.NewProject([]string{"a.php"}, read, ProjectOptions{CacheFile: cache}).files["a.php"]; fi == nil || !fi.Limited {
+		t.Errorf("a.php from a cache of this version: %+v; want the cached entry (Limited)", fi)
 	}
 }

@@ -6,7 +6,7 @@ severity = "high"
 tier = "info"
 title = "Request input written into raw SQL of the Laravel query builder"
 frameworks = ["laravel"]
-sources = ["$request->input(", "$request['", "$request->get(", "$request->query(", "$request->post(", "$request->all(", "$request->string(", "request(", "request()->input(", "Request::input(", "$_GET", "$_POST", "$_REQUEST"]
+sources = ["$request->input(", "$request['", "$request->get(", "$request->query(", "$request->post(", "$request->all(", "$request->string(", "request(", "request()->input(", "Request::input(", "$_GET", "$_POST", "$_REQUEST", "filter_input(", "->filterInput(", "->filter_input("]
 sinks = ["DB::select(", "DB::selectOne(", "DB::statement(", "DB::unprepared(", "DB::insert(", "DB::update(", "DB::delete(", "DB::cursor(",
          "->whereRaw(", "->orWhereRaw(", "->selectRaw(", "->havingRaw(", "->orHavingRaw(", "->groupByRaw(",
          "::whereRaw(", "::orWhereRaw(", "::selectRaw(", "::havingRaw("]
@@ -73,3 +73,9 @@ class ProductController extends Controller
     }
 }
 '''
+
+# filter_input(INPUT_GET, ...) and an application's filterInput(INPUT_POST, ...) wrapper read the request like $_GET and $_POST
+[[source_args]]
+sources = ["filter_input(", "->filterInput(", "->filter_input("]
+arg = 1
+values = ["INPUT_GET", "INPUT_POST"]

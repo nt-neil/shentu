@@ -6,7 +6,7 @@ severity = "critical"
 tier = "info"
 title = "maybe_unserialize() on data the client sends"
 frameworks = ["wordpress"]
-sources = ["$_GET", "$_FILES", "$request['", "shortcode_atts(", "$atts[", "$_POST", "$_REQUEST", "$_COOKIE", "$_SERVER['HTTP_", "php://input", "->get_param(", "->get_body(", "->get_json_params(", "->get_body_params("]
+sources = ["$_GET", "$_FILES", "$request['", "shortcode_atts(", "$atts[", "$_POST", "$_REQUEST", "$_COOKIE", "$_SERVER['HTTP_", "php://input", "->get_param(", "->get_body(", "->get_json_params(", "->get_body_params(", "filter_input(", "->filterInput(", "->filter_input("]
 sinks = ["maybe_unserialize("]
 sanitizers = []
 text = ["php://input"]
@@ -42,3 +42,9 @@ add_action('wp_ajax_nopriv_save_cart', function () {
     update_option('pending_cart', is_array($cart) ? $cart : []);
 });
 '''
+
+# filter_input(INPUT_GET, ...) and an application's filterInput(INPUT_POST, ...) wrapper read the request like $_GET and $_POST
+[[source_args]]
+sources = ["filter_input(", "->filterInput(", "->filter_input("]
+arg = 1
+values = ["INPUT_GET", "INPUT_POST", "INPUT_COOKIE"]

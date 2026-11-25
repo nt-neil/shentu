@@ -5,9 +5,9 @@ cwe = "CWE-22"
 severity = "high"
 tier = "info"
 title = "Joomla file API deletes, reads or writes a path taken from the request"
-sources = ["->getString(", "->getRaw(", "->getPath(", "->getArray(", "JRequest::getVar(", "$_GET", "$_POST", "$_REQUEST"]
+sources = ["->getString(", "->getRaw(", "->getPath(", "->getArray(", "JRequest::getVar(", "$_GET", "$_POST", "$_REQUEST", "filter_input(", "->filterInput(", "->filter_input("]
 sinks = ["File::delete(", "JFile::delete(", "Folder::delete(", "JFolder::delete(", "File::write(", "JFile::write(", "File::read(", "Folder::create(", "JFolder::create(", "Folder::files(", "Folder::folders(", "File::copy(", "JFile::copy(", "File::move(", "JFile::move(", "File::upload(", "JFile::upload("]
-sanitizers = ["basename(", "File::makeSafe(", "JFile::makeSafe(", "Path::check(", "str_starts_with(", "strpos(", "in_array", "absint", "intval"]
+sanitizers = ["basename(", "File::makeSafe(", "JFile::makeSafe(", "Path::check(", "str_starts_with(", "strpos(", "stripos(", "strpos(", "in_array", "absint", "intval"]
 fix = "Joomla input filters do not stop ../ in a path: keep only a file name (File::makeSafe(), basename()), or resolve the path with realpath() and check that it starts with the allowed directory followed by a separator."
 refs = ["CVE-2019-10945"]
 
@@ -66,3 +66,9 @@ class MediaController extends BaseController
     }
 }
 '''
+
+# filter_input(INPUT_GET, ...) and an application's filterInput(INPUT_POST, ...) wrapper read the request like $_GET and $_POST
+[[source_args]]
+sources = ["filter_input(", "->filterInput(", "->filter_input("]
+arg = 1
+values = ["INPUT_GET", "INPUT_POST"]

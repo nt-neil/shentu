@@ -6,6 +6,145 @@ a release are not written here: they are worked out from the rule snapshots in
 `docs/site-src/rules-history/`. `CHANGELOG.zh-TW.md` holds the same releases in Traditional
 Chinese for the zh-TW pages; keep the two in step.
 
+## v0.5.7 — 2026-11-26
+
+- PHP rules read `filter_input()`. A value from `filter_input(INPUT_GET, ...)`, `INPUT_POST` or
+  `INPUT_COOKIE`, and from an application's own method of that name (`->filterInput(`,
+  `->filter_input(`) when its first argument is one of these constants, is request input in each
+  PHP rule that reads `$_GET`, `$_POST` or `$_COOKIE`. A first argument that is a variable or
+  another constant (such as `INPUT_SERVER`) is not. A number or bool filter (`FILTER_VALIDATE_INT`,
+  `FILTER_VALIDATE_BOOL`, `FILTER_SANITIZE_NUMBER_INT` and others, also as a named `filter:`
+  argument) gives a value with no input in it, but not with flags or-ed into it
+  (`FILTER_VALIDATE_INT | FILTER_NULL_ON_FAILURE` is another filter ID, which PHP 7 reads as
+  `FILTER_DEFAULT`); `FILTER_SANITIZE_SPECIAL_CHARS` cleans in the rules that take
+  `htmlspecialchars()` as a sanitizer; a URL filter does not clean.
+- macOS: a listening socket netstat gives with pid 0 has no owner to name, so the list of listening
+  ports is marked partial and says how many, no longer complete as if every owner were known.
+- PHP rules know an application's own guard function. A function that returns true only after
+  a check of its path parameter (an allowlist, as Welcart's `usces_is_reserved_file()`, or
+  `realpath($p)` with `strpos($real, $base) === 0`) cleans the value it was given where its result
+  is true (`if (guard($f)) { ... }`, or after `if (!guard($f)) { die(); }`), also as a method of
+  another class. A guard that assigns its parameter, returns true before the check, or only checks
+  that the file exists does not. `strpos(` and `stripos(` compared `=== 0` or `!== 0` are a prefix
+  check in the path rules, of their first argument only (`strpos('/var/logs/', $real)` holds for
+  `/` and `/var`). Where `realpath($p)` found the file, `$p` is no longer a URL or a
+  `phar://` wrapper for the server-side request and phar rules; the path rules still report it. An
+  `in_array()` lookup of `basename($p)` or `intval($id)` no longer validates `$p` or `$id`:
+  `../../x/log.txt` and `1 OR 1` pass it.
+- `shentu patrol --dry-run` prints all its titles (each attack attempt, the summary past the
+  round's limit, the attack detection notice) in the setting's language, as they are sent; they
+  were always in English.
+- Fixed the v0.5.6 known issue: `new $var(...)` is no longer taken as a call of the parameter
+  `$var`. It makes an object of the class `$var` names and calls no callable, as `NEW $var(...)` in
+  any case does too. A caller passing a variable there is no longer marked as having calls not all
+  followed, and the argument's input no longer reaches the function's return, where it could be
+  reported falsely (`echo get_entity($_GET['a'], $c)` reported `php-xss-echo-html`). Plugins that
+  bundle the Freemius SDK (`fs_get_entity($entity, $class)`) had the most such files.
+- block_ip's login index reads a flood with a lighter read, with the same result as the full read.
+  While the index is full, addresses with no event in the window are pruned at most once an hour of
+  event time, no longer for every event of an address without a slot. A journal line of string
+  fields only is read by a flat reader that gives the same fields as the full one; any other line
+  goes to the full reader as before. The patrol reads on past a read cut short by its time, each
+  read saved, until it has read to the end or spent 15 minutes, so a check between patrols reads
+  only what came since. An address that may be among those past the index's 65,536 is still refused,
+  never let through.
+- The patrol catches the login index up after its checks, its notice and the attack detection
+  alerts, not before them: in a flood the catching up can take up to 15 minutes, and that round's
+  notices no longer wait for it.
+- block_ip's login index tells journal entries of the same time apart by their numbers in the
+  journal (the cursor's `s=` and `i=`). After a vacuum that removed an entry with the same time as
+  the first one left, the index took the removed entry as still there. An address whose event was
+  removed was then seen as sshd's own, where the whole read sees nothing, and a forged event that
+  was removed still refused the block. When a number is not known (an index saved by an older
+  version, a cursor not of that form, a journal made anew), times decide on the strict side: an
+  entry that refuses the block counts as there at the first entry's own time, and an event that
+  lets it through does not.
+- The site's release river: a release's peek stays inside the river at every width (at 844px the
+  pages scrolled sideways by 3px); the labels under the lamps (version, date, rule count) show only
+  where they have room, the newest and the x.y.0 releases first, and a hidden one shows on hover or
+  focus of its lamp (they ran into each other at 844px and 1440px); each lamp's link reads out its
+  version, date, rule count and bench result.
+- A code audit's scan stops on work done, no longer on time: a file's first pass and a project's
+  calls passes each have a work cap (60M and 1.5G), and the clock stays only as a safety net. What
+  is followed, and so what is reported, no longer depends on how fast or how loaded the machine
+  is; a slow machine takes longer instead of stopping sooner. On WordPress 7.1.4 (2,148 PHP files)
+  the files left unfinished went from about 800 to 1,100, different on every run, to 16 on every
+  run, with no rise in memory.
+- `app_vulns` and the daily patrol check the Python packages installed in site-packages folders
+  (venvs under the app paths, `/usr/local/lib/python3*`, and what pip installed in
+  `/usr/lib/python3*`) against OSV as PyPI, with the CISA KEV mark, as they check a lock file. Until
+  now only lock files were read, so a package installed with pip and listed in none was not
+  checked. The scan has bounds (8 folders deep, 100 site-packages folders, 5,000 packages in one,
+  the first 64 KiB of each METADATA, no symlinks followed); what it did not cover is reported as not
+  checked.
+- They also list the `.pth` files there with lines Python runs at every start: the file and how many
+  such lines, not their text. A file is marked as a tool's own (setuptools, virtualenv, an editable
+  install) only when it can be proven: every such line is exactly the tool's, the tool's own record
+  of it is there (a RECORD that lists the file itself, and its module, with their hashes,
+  virtualenv's key in `pyvenv.cfg`, or the system package manager's folder), and the folder, every
+  folder above it and those files can be written by root alone. In a folder a user can write,
+  whoever wrote the file could have written the record too: setuptools', virtualenv's and editable
+  install files there are listed in the daily report as not proven. The patrol pushes the others as
+  warnings.
+- PHP XSS in a `<script>` body: a value escaped with `esc_attr()`, `esc_url()`, `esc_html()` or
+  `htmlspecialchars(..., ENT_QUOTES)` inside a quoted JS string
+  (`var tab = '<?php echo esc_attr($_GET['tab']); ?>';`) is no longer reported when the text after
+  the PHP block closes that string on the same line: a `<script>` body decodes no entity, so with
+  both quotes and `<` encoded the value stays inside the string. It is still reported in an `on*`
+  attribute (which decodes entities first), in a template literal, after a block that writes a
+  quote or a backslash, on a line ending in a `\` continuation, with `htmlspecialchars()` without
+  `ENT_QUOTES`, and with `sanitize_text_field()`.
+- PHP's server-side request rule takes a start that is a local path as fixed: a directory
+  constant then a literal with a path segment (`WP_CONTENT_DIR . '/uploads/' . $name`, also through
+  a variable that holds it, as in Welcart) or a drive (`'C:\\data\\' . $name`). The input then
+  cannot choose a scheme or a host, so `file_get_contents()` of it is no longer reported as a
+  server-side request; the path rules still report it. The constants are `__DIR__`,
+  `DIRECTORY_SEPARATOR` and the directory constants of WordPress, Drupal and Joomla (`ABSPATH`,
+  `WP_CONTENT_DIR`, `DRUPAL_ROOT`, `JPATH_ROOT` and others). Still reported: a plugin's own
+  constant, a constant defined from input (also one of these names, as in
+  `define('ABSPATH', $_GET['b'])`), a bare `/` or `/a` after the constant, `C:` alone, a `\\`
+  start, and an escape such as `\x3a` in the literal.
+- SQL injection and XSS rules take arithmetic as a number, which carries no quote or markup:
+  a page offset `(max($_GET['paged'], 1) - 1) * 20` in a `LIMIT` (as in Welcart), PHP's
+  `$_GET['n'] + 1`, JavaScript's `req.query.n - 1` and Python's `request.args['n'] - 1` are no
+  longer reported there. Arithmetic is `-`, `/`, `*`, `%` and `**`, with a `+` next to a number
+  in PHP; in Python it is `//`, `**`, and `-` or `/` next to a number. Still input: PHP `+` of two
+  arrays (their union), `|` of two strings, `.` next to `-`, JavaScript's binary `+`, Python's `*`
+  (which repeats a string), Python's `-` of two sets or two `Counter`s (their difference, as in
+  `set(request.args.getlist('id')) - {'0'}`), and a number in the path rules.
+- The package vulnerability check (`vulns`) compares third-party PHP and nginx packages (from
+  deb.sury.org, the ondrej PPA, Remi's repository or nginx.org) with php.net's and nginx.org's
+  releases of 2026-11-19, the tables of the PHP and nginx checks. OSV has only the distributions'
+  advisories, so these packages matched nothing there and were only listed in
+  `third_party_unchecked`. Now each CVE in a package's range is in the vulnerability surface
+  (ecosystem `upstream:php` or `upstream:nginx`, with the fixed version, KEV when CISA lists it)
+  and in `third_party_upstream`, and counts in `total_vulns` and `affected_packages`, once per source package and CVE with
+  OSV's; one that CISA lists is in `actively_exploited` too (one entry naming the binaries), so the daily patrol sends its critical KEV alert as for a
+  distribution's package. A CVE the package's changelog names (a backported fix) is listed as
+  backported and not reported. php-fpm also gets the FPM and status page CVEs, php-cgi the CGI
+  one; mod_php and the CLI get the engine's only. Each compared package says the tables' date
+  (`as_of`). A package whose version cannot be read, on a branch php.net no longer fixes, or newer
+  than the tables' newest release (such as PHP 8.3.38, 9.0 or nginx 1.32) stays in
+  `third_party_unchecked` with the reason in `why`. The OSV results of these packages are kept: a
+  build can also be older than the distribution's fix.
+
+### Known issues
+
+- A value read back from the database is input when the query that read it was given input,
+  even escaped (`$row = $db->LoadSingle("... '" . mysqli_real_escape_string($c, $_POST['id']) . "'")`,
+  then `$row['tag']` in another query): the engine takes what an unknown function returns as
+  carrying its arguments' input. YesWiki's despam.php is reported this way.
+- An application's own URL builder for a page of the same site (YesWiki's
+  `$this->wiki->Href('', $name)`, `href()`) is not known as one, so a redirect to it reports as an
+  open redirect (YesWiki's LoginAction.php and DuplicateHandler.php).
+- macOS 27 hides the Internet sockets from netstat for any process started by an ad-hoc signed
+  program, as the release binaries are: `netstat -anv` writes nothing there (exit 0). shentu then
+  lists the listening ports with lsof, which sees only its own user's processes, and marks the list
+  partial. Run from a terminal, netstat shows them. macOS 15 is not affected.
+- A Debian or Ubuntu package held with `apt-mark hold` (dpkg status `hi`) is not checked: the
+  package list keeps only `ii` packages, so `vulns`, the daily patrol and the vulnerability surface
+  do not see it, and it is not listed as not checked either. The next release fixes this.
+
 ## v0.5.6 — 2026-11-24
 
 - A file cut short says what cut it (#172). The code audit's unfinished files carry a `cause`:

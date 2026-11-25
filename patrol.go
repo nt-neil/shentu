@@ -475,6 +475,51 @@ func checks(ctx context.Context, cfg *Config, env *tools.Env, st *state, daily b
 	return out, sshUnchecked
 }
 
+// appVulnFindings is what app_vulns found to push: dependencies and
+// installed Python packages being exploited, and .pth files that run code
+// at every Python start and are no known tool's own.
+func appVulnFindings(r map[string]any) []finding {
+	var out []finding
+	apps, _ := r["files"].([]tools.AppResult)
+	for _, f := range apps {
+		text := "f_kev_app"
+		if f.Kind == "site-packages" {
+			text = "f_kev_site"
+		}
+		for _, e := range f.Exploited {
+			out = append(out, newFinding("kev:"+f.Path+":"+e.Package+":"+e.CVE, "critical", e, text, f.Path, e.Package, e.Version, e.CVE, e.Name))
+		}
+	}
+	pth, _ := r["pth"].([]tools.PthFile)
+	for _, f := range pth {
+		if f.Known == "" && f.Unproven == "" { // a tool's own is not pushed; one that looks so is said in the daily report (pthUnproven)
+			out = append(out, newFinding("pth:"+f.Path, "warning", f, "f_pth", f.Path, f.ImportLines))
+		}
+	}
+	return out
+}
+
+// pthUnproven says, in the daily report, the .pth files that look like a
+// tool's own (in most venvs) in folders a user can write, where that
+// cannot be proven: listed, not pushed (N-239-1).
+func pthUnproven(r map[string]any, zh bool) string {
+	pth, _ := r["pth"].([]tools.PthFile)
+	var lines []string
+	for _, f := range pth {
+		if f.Known == "" && f.Unproven != "" {
+			lines = append(lines, "- "+cutLine(f.Path+" ("+f.Unproven+")"))
+		}
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+	n := len(lines)
+	if n > uncheckedFiles {
+		lines = append(lines[:uncheckedFiles], fmt.Sprintf(dt(zh, "pth_unproven_more"), n-uncheckedFiles))
+	}
+	return fmt.Sprintf(dt(zh, "pth_unproven"), n) + strings.Join(lines, "\n") + "\n"
+}
+
 // patrol runs once (from a systemd timer): checks → LLM explanation → notify.
 // With daily set it always reports, using the daily-patrol skill.
 func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool) error {
@@ -482,7 +527,18 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 		return err
 	}
 	st := loadState(cfg.StateDir)
-	tools.RefreshLoginIndex(ctx) // block_ip's login check then reads only the last hour
+	// block_ip's login index is caught up last, after the checks, their
+	// report and the detector's alerts (deferred before finishDetect, so it
+	// runs after it): in a flood its catching up can take loginRefreshBudget,
+	// and the alerts do not wait for it. A check after it then reads only
+	// what came since this patrol (the timer runs every 30 minutes). A
+	// patrol that panics does not spend that time first: it panics on.
+	defer func() {
+		if p := recover(); p != nil {
+			panic(p)
+		}
+		tools.RefreshLoginIndex(ctx)
+	}()
 	zh := isZh(cfg)
 	all, sshUnchecked := checks(ctx, cfg, env, st, daily)
 	unchecked := uncheckedSection(st.Profile.Risks, zh) + sshUnchecked // listed in every report, never pushed
@@ -504,14 +560,14 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 		}
 		unchecked += uncheckedVulns(dt(zh, "vuln_os"), r, err, zh)
 		if err == nil {
-			list, _ := r["actively_exploited"].([]tools.Exploit)
-			for _, e := range list {
-				all = append(all, newFinding("kev:"+e.Package+":"+e.CVE, "critical", e, "f_kev_os", e.Package, e.Version, e.CVE, e.Name, r["upgrade_command"]))
-			}
+			all = append(all, osKEVFindings(r)...)
 		}
 		// The same for application dependencies (npm, PyPI, Composer, Go, RubyGems).
 		r, err = tools.AppVulns(ctx, env.HTTP, env.AppPaths)
 		unchecked += uncheckedVulns(dt(zh, "vuln_app"), r, err, zh)
+		if err == nil {
+			unchecked += pthUnproven(r, zh)
+		}
 		var apps []tools.AppResult
 		failedApps := map[string]bool{} // lock files whose check failed: their entries are yesterday's
 		if err != nil {
@@ -526,11 +582,10 @@ func patrol(ctx context.Context, cfg *Config, env *tools.Env, daily, dryRun bool
 					partial = append(partial, "應用程式相依套件 "+f.Path+"（"+f.Error+"）")
 				}
 			}
-			for _, f := range apps {
-				for _, e := range f.Exploited {
-					all = append(all, newFinding("kev:"+f.Path+":"+e.Package+":"+e.CVE, "critical", e, "f_kev_app", f.Path, e.Package, e.Version, e.CVE, e.Name))
-				}
+			if p, _ := r["partial"].(string); p != "" {
+				partial = append(partial, "已安裝的 Python 套件只查了一部分（"+p+"）")
 			}
+			all = append(all, appVulnFindings(r)...)
 		}
 		// The applications' own files: exposed secrets, debug mode, webshells, keys in code, injection.
 		web, unread := tools.WebRootsReport()
@@ -741,4 +796,20 @@ func fileChangesUnchecked(r map[string]any) string {
 		return ""
 	}
 	return fmt.Sprintf("\n\nNot checked: file changes under %d paths (%q).\n", len(unread), cutLine(mask(strings.Join(unread, ", "))))
+}
+
+// osKEVFindings are the critical findings of the OS packages' actively
+// exploited vulnerabilities (CISA KEV): OSV's and the third-party PHP and
+// nginx compared with their upstream alike.
+func osKEVFindings(r map[string]any) []finding {
+	var out []finding
+	list, _ := r["actively_exploited"].([]tools.Exploit)
+	for _, e := range list {
+		name := e.Package // one finding per source package and CVE; its binaries named
+		if len(e.Binaries) > 0 {
+			name += " (" + strings.Join(e.Binaries, ", ") + ")"
+		}
+		out = append(out, newFinding("kev:"+e.Package+":"+e.CVE, "critical", e, "f_kev_os", name, e.Version, e.CVE, e.Name, r["upgrade_command"]))
+	}
+	return out
 }

@@ -965,6 +965,9 @@ func (a *analysis) summaryOf(key string) *summary {
 		if s == nil { // nested too deep: not worked out
 			return nil
 		}
+		if keep && a.proj != nil {
+			cost = a.proj.firstCost(a.r.rule.ID, a.file+"\x00"+key, cost)
+		}
 		s.capped, s.capCut, s.height, s.cost, s.id = capped, a.sumCut, height, cost, a.file+"\x00"+key
 		switch {
 		case !keep:
@@ -1009,6 +1012,9 @@ func (a *analysis) summaryOf(key string) *summary {
 	// The members were worked out together, at one cost: an asker using several
 	// of them pays it once (one id for the cycle, by its first function).
 	id := a.file + "\x00" + sc.ff.comps[c][0]
+	if keep && a.proj != nil {
+		cost = a.proj.firstCost(a.r.rule.ID, id, cost)
+	}
 	for _, m := range members {
 		delete(sc.busy, m)
 		sc.done[m].capped, sc.done[m].capCut, sc.done[m].height, sc.done[m].cost, sc.done[m].id = capped, a.sumCut, height, cost, id
@@ -1113,7 +1119,7 @@ func (a *analysis) own(work func(x *analysis)) (capped, keep bool, height, cost 
 	if nb.timeHit {
 		// The clock: nothing to keep, and the asker is cut by it as well.
 		if a.proj != nil {
-			a.proj.stop("following calls across files ran out of time")
+			a.proj.stop("following calls across files ran out of time", CutClock)
 			a.proj.byMachine = true
 		}
 		a.b.hit, a.b.timeHit = true, true
@@ -1222,6 +1228,13 @@ func (a *analysis) returnsUnknown(key string) bool {
 		if x.summ.ret.taint && !x.summ.ret.weak {
 			sc.retUnk[key] = 2
 		}
+	}
+	if a.b.hit {
+		// The asker's budget ran out reading the body: what it found is not
+		// all there is, and another asker, with budget left, would read it all.
+		// Not kept, so that one does.
+		delete(sc.retUnk, key)
+		return true
 	}
 	return sc.retUnk[key] == 1
 }
@@ -1458,6 +1471,15 @@ func (a *analysis) runBody(fi *fnInfo, st state, sources bool) *summRun {
 	x.paramTypes(fi.f)
 	x.curParams = fi.params
 	x.curMoved = paramsMoved(fi.f.body, fi.params)
+	x.curUnset = unsetParams(fi.f.body, fi.params)
+	for _, p := range fi.params {
+		if e, ok := st[p]; ok && e.taint {
+			if x.curGiven == nil {
+				x.curGiven = map[string]bool{}
+			}
+			x.curGiven[p] = true
+		}
+	}
 	x.summ.pcall = map[[2]int]bool{}
 	a.sc.runs++
 	x.block(fi.f.body, st)
@@ -1560,7 +1582,11 @@ func (a *analysis) keyedSinks(t []Token, i int, key string, p int, sub map[strin
 		if !keep {
 			return nil, false
 		}
-		s = &summary{capped: capped, capCut: x.sumCut, height: height, cost: cost, id: x.file + "\x00keyed\x00" + ck}
+		id := x.file + "\x00keyed\x00" + ck
+		if x.proj != nil {
+			cost = x.proj.firstCost(x.r.rule.ID, id, cost)
+		}
+		s = &summary{capped: capped, capCut: x.sumCut, height: height, cost: cost, id: id}
 		for l := range got {
 			s.sink = append(s.sink, []loc{l})
 		}
@@ -1749,6 +1775,9 @@ func (a *analysis) callSinks(st state, t []Token) {
 		if s == nil || !s.reachesSink() {
 			continue
 		}
+		if a.directSinkReported(t, i) {
+			continue // wp_redirect($_GET['ref']) reported as the rule's sink: the header() inside wp_redirect is the same flow again
+		}
 		// A JSON responder the rule lists as a sanitizer does not take its
 		// arguments into its body's sinks: wp_send_json echoes, but as JSON, then
 		// ends the request. Other sanitizer names (e, count) still do, so a helper
@@ -1795,6 +1824,24 @@ func (a *analysis) callSinks(st state, t []Token) {
 			}
 		}
 	}
+}
+
+// directSinkReported reports whether the call at t[i] is itself a sink of the
+// rule, by name (not a member sink, which yields to the project's own method in
+// sinkWith), and was reported at its line in this pass: the callee's sinks of
+// the same rule then hold the same input again. A callee sink of another rule
+// is another rule's summary and still reports.
+func (a *analysis) directSinkReported(t []Token, i int) bool {
+	for _, s := range a.r.sinks {
+		if s.text == nil && !s.member && s.at(t, i, true) {
+			l := loc{a.file, t[i].Line}
+			if a.summ != nil {
+				return a.summ.lines[l]
+			}
+			return a.seen[l]
+		}
+	}
+	return false
 }
 
 // libParams taints the parameters of a public function in library mode.

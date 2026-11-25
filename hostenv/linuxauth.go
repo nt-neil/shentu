@@ -523,6 +523,10 @@ func SSHDLoginEvent(e JournalEntry) (ip string, own, ok bool) {
 	if e.MessageMissing || e.Cut || e.PID <= 0 {
 		return "", false, false
 	}
+	// Cheap tests first, as Add: most entries are not login events.
+	if m := e.Message; !(strings.Contains(m, "Failed ") || strings.Contains(m, "Invalid user ") || strings.Contains(m, "Accepted ")) {
+		return "", false, false
+	}
 	tag := e.Ident
 	if tag == "" {
 		tag = e.Comm

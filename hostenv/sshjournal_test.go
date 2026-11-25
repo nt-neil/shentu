@@ -170,3 +170,94 @@ func TestReadSSHJournalMessageCap(t *testing.T) {
 		t.Errorf("past the whole read's line: not cut")
 	}
 }
+
+// The flat reading of a journal line is the full one's, field for field,
+// for every line it takes; any other line goes to the full one.
+func TestParseJournalFlatAgrees(t *testing.T) {
+	c := `"__CURSOR":"` + cur1 + `"`
+	for _, l := range []string{
+		`{` + c + `,"__REALTIME_TIMESTAMP":"1794700000000000","_UID":"0","_PID":"7","_COMM":"sshd","SYSLOG_IDENTIFIER":"sshd","MESSAGE":"Failed password for root from 203.0.113.9 port 22 ssh2"}`,
+		`{` + c + `,"MESSAGE":"tab\there \"q\" \\ \u00e9 \u4e2d \ud83d\ude00 \/","_UID":"1000"}`,
+		`{` + c + `,"MESSAGE":"é中文"}`,
+		`{` + c + `}`,
+		`{` + c + `,"MESSAGE":"a","MESSAGE":"b"}`,
+		`{` + c + `,"MESSAGE":[104,105]}`,
+		`{` + c + `,"MESSAGE":null}`,
+		`{` + c + `,"_UID":0}`,
+		`{` + c + `,"MESSAGE":"` + "\xff\xfe" + `"}`,
+		`{` + c + `,"MESSAGE":"a"} x`,
+		`{` + c + `,"MESSAGE":"` + strings.Repeat("m", 300) + `"}`,
+		` { ` + c + ` , "MESSAGE" : "spaced" } `,
+		`{"MESSAGE":"no cursor"}`,
+		`{` + c + `,"MESSAGE":"unterminated}`,
+	} {
+		full, ferr := parseJournalJSONFull(l, 100)
+		got, gerr := parseJournalJSON(l, 100)
+		if (ferr == nil) != (gerr == nil) || ferr == nil && got != full {
+			t.Errorf("%.60q:\nflat %+v %v\nfull %+v %v", l, got, gerr, full, ferr)
+		}
+	}
+	if _, ok := parseJournalFlat(`{`+c+`,"MESSAGE":"x","_UID":"0","_PID":"7"}`, 100); !ok {
+		t.Error("the common line is not read flat")
+	}
+}
+
+// The flat reader is this package's own parser of untrusted input (what a
+// sender writes in sshd's unit): for any line, it reads exactly what the
+// full reader reads, field for field, or it gives the line up to it.
+func FuzzParseJournalFlat(f *testing.F) {
+	c := `"__CURSOR":"` + cur1 + `"`
+	for _, l := range []string{
+		`{` + c + `,"__REALTIME_TIMESTAMP":"1794700000000000","_UID":"0","_PID":"7","_COMM":"sshd","SYSLOG_IDENTIFIER":"sshd","MESSAGE":"Failed password for root from 203.0.113.9 port 22 ssh2"}`,
+		`{` + c + `,"MESSAGE":"tab\there \"q\" \\ \u00e9 \ud83d\ude00 \/","_UID":"1000"}`,
+		`{` + c + `,"MESSAGE":[104,105]}`,
+		`{` + c + `,"MESSAGE":null,"MESSAGE":"x"}`,
+		` { ` + c + ` , "MESSAGE" : "a" } `,
+		`{` + c + `,"MESSAGE":"` + "\xff" + `"}`,
+		`{"__CURSOR":"\u0073=1","MESSAGE":"\ud800"}`,
+	} {
+		f.Add(l)
+	}
+	f.Fuzz(func(t *testing.T, l string) {
+		e, ok := parseJournalFlat(l, 64)
+		if !ok {
+			return // the full reader's line
+		}
+		full, err := parseJournalJSONFull(l, 64)
+		if err != nil {
+			t.Fatalf("flat read a line the full reader refuses (%v): %q -> %+v", err, l, e)
+		}
+		if e != full {
+			t.Fatalf("%q:\nflat %+v\nfull %+v", l, e, full)
+		}
+	})
+}
+
+// CursorSeq takes a cursor's s= and i= only from a whole cursor: one cut,
+// with a field missing or twice, or not hex, is not one (times decide).
+func TestCursorSeq(t *testing.T) {
+	const s = "0123456789abcdef0123456789ABCDEF"
+	whole := "s=" + s + ";i=1a2b;b=0123456789abcdef0123456789abcdef;m=5;t=6;x=7"
+	if id, n, ok := CursorSeq(whole); !ok || id != strings.ToLower(s) || n != 0x1a2b {
+		t.Errorf("%q: %q %d %v", whole, id, n, ok)
+	}
+	for _, c := range []string{
+		"", whole[:20], whole[:strings.Index(whole, ";i=")+3], // cut
+		"i=1a2b;b=x;m=5;t=6;x=7",                        // no s=
+		"s=" + s + ";b=x;m=5",                           // no i=
+		"s=" + s[:31] + ";i=1",                          // s= short
+		"s=" + s + "0;i=1",                              // s= long
+		"s=" + strings.Replace(s, "a", "g", 1) + ";i=1", // s= not hex
+		"s=" + s + ";i=xyz",                             // i= not hex
+		"s=" + s + ";i=",                                // i= empty
+		"s=" + s + ";i=0",                               // no entry 0
+		"s=" + s + ";i=10000000000000000",               // past 64 bits
+		"s=" + s + ";i=1;i=2",                           // twice
+		"s=" + s + ";s=" + s + ";i=1",
+		"s=" + s + ";i=1;junk", // a field without =
+	} {
+		if id, n, ok := CursorSeq(c); ok {
+			t.Errorf("%q: taken as %q %d", c, id, n)
+		}
+	}
+}

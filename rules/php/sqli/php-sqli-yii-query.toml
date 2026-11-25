@@ -5,7 +5,7 @@ cwe = "CWE-89"
 severity = "high"
 tier = "info"
 title = "Yii request input written into SQL text, a string condition or a sort expression"
-sources = ["->request->get(", "->request->post(", "->request->getQueryParam(", "->request->getBodyParam(", "->request->getParam(", "->request->getQuery(", "->request->getPost(", "->getRequest()->get(", "->getRequest()->post(", "->getRequest()->getParam(", "$request->get(", "$request->post(", "$request->getQueryParam(", "$request->getBodyParam(", "$_GET", "$_POST", "$_REQUEST"]
+sources = ["->request->get(", "->request->post(", "->request->getQueryParam(", "->request->getBodyParam(", "->request->getParam(", "->request->getQuery(", "->request->getPost(", "->getRequest()->get(", "->getRequest()->post(", "->getRequest()->getParam(", "$request->get(", "$request->post(", "$request->getQueryParam(", "$request->getBodyParam(", "$_GET", "$_POST", "$_REQUEST", "filter_input(", "->filterInput(", "->filter_input("]
 # ->orderBy( is php-sqli-orderby-identifier's (Yii's key form included), which reads Yii's request too.
 sinks = ["->createCommand(", "->addOrderBy(", "->where(", "->andWhere(", "->orWhere(", "->having(", "->addCondition(", "->groupBy("]
 sanitizers = ["intval", "(int)", "in_array", "array_key_exists", "->quoteValue(", "->quoteColumnName("]
@@ -77,3 +77,9 @@ class SearchController extends Controller
     }
 }
 '''
+
+# filter_input(INPUT_GET, ...) and an application's filterInput(INPUT_POST, ...) wrapper read the request like $_GET and $_POST
+[[source_args]]
+sources = ["filter_input(", "->filterInput(", "->filter_input("]
+arg = 1
+values = ["INPUT_GET", "INPUT_POST"]

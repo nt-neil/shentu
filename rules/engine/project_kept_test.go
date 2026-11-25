@@ -94,7 +94,7 @@ func TestProjectScanCallsPartAfterTheClock(t *testing.T) {
 	pr := e.NewProject([]string{"a.php", "b.php"}, read, ProjectOptions{})
 	// The project's clock (or heap) stopped calls crossing files during the
 	// scan; the scan's own clock, read every few thousand steps, has not yet.
-	pr.stop("following calls across files ran out of time")
+	pr.stop("following calls across files ran out of time", CutClock)
 	pr.byMachine = true
 	part, _ := pr.ScanCallsPart("a.php", []byte(files["a.php"]), nil)
 	if !part.Timed || len(part.Done) != 0 || len(part.Found) != 0 {

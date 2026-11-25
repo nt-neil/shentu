@@ -22,3 +22,13 @@ func SetLoginIndexForTest(dir string) (restore func()) {
 	journalAll = func() bool { return true }
 	return func() { attackStateDir, KeepLoginIndex, journalAll = oldDir, oldKeep, oldAll }
 }
+
+// SetSitePackagesForTest makes app_vulns take globs as the system's
+// site-packages (none: the test machine's Python is not read) and returns
+// how to undo it. For other packages' tests only, under the same rule as
+// SetHostSourceForTest.
+func SetSitePackagesForTest(globs []string) (restore func()) {
+	old := systemSitePackages
+	systemSitePackages = globs
+	return func() { systemSitePackages = old }
+}
