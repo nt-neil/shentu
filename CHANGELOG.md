@@ -18,6 +18,11 @@ Chinese for the zh-TW pages; keep the two in step.
   the ones with only their configuration left (config-files), which are listed only. The first 20
   are listed, the rest counted in `packages_not_checked_more`. The tool's description says both
   fields.
+- The site's home page: a section that rises into view (the tally, open source, the latest release
+  with the river) no longer stays blank when the page is reached in its middle, as from a link to
+  an anchor, by going back to the page, or by a jump. A section shows once any part of it is in the
+  window; sections in the window when the page loads, and every section on a page opened at an
+  anchor, show at once.
 
 ## v0.5.7 — 2026-11-26
 
