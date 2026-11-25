@@ -13,7 +13,7 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 - 巡檢改成在其他檢查、通知和攻擊偵測的通知都送出之後，才追登入索引。有大量登入紀錄時，追索引最多要 15 分鐘，這一輪的通知不必再等它。
 - 網站的發版河道：每個版本的說明框在任何頁面大小下都留在河道裡（原本在 844px 時頁面會多捲動 3px）；燈下的文字（版本、日期、規則數）只在放得下時顯示，最新版和 x.y.0 優先，沒有顯示的在指標移到燈上或用鍵盤選到燈時會出現（原本在 844px 和 1440px 燈下的文字都會擋到下一盞燈的文字）；每盞燈的連結會讀出版本、日期、規則數和 bench 結果。
 - `app_vulns` 和每日巡檢會檢查 site-packages 裡已安裝的 Python 套件（app 路徑下的 venv、`/usr/local/lib/python3*`，以及 `/usr/lib/python3*` 裡由 pip 安裝的套件），和 lock 檔一樣用 PyPI 比對 OSV，並標出 CISA KEV。之前只讀 lock 檔，用 pip 安裝、但沒有寫在任何 lock 檔裡的套件不會被檢查。掃描有上限（往下 8 層、100 個 site-packages 資料夾、每個資料夾 5,000 個套件、每個 METADATA 只讀前 64 KiB，不跟隨 symlink），超過上限或讀不到的部分會在報告裡寫成沒有檢查。
-- 也會列出那些資料夾裡，含有每次啟動 Python 都會執行的行的 `.pth` 檔：只寫檔案和這種行有幾行，不寫內容。setuptools、virtualenv 和 editable install 自己寫的檔案，要每一行都完全符合，才會標成是那個工具的；其他的由巡檢以 warning 送出通知。
+- 也會列出那些資料夾裡，含有每次啟動 Python 都會執行的行的 `.pth` 檔：只寫檔案和這種行有幾行，不寫內容。要能證明是工具（setuptools、virtualenv、editable install）自己寫的，才會標成是那個工具的：每一行都完全符合，工具自己的紀錄也在（記有 sha256 的 RECORD、`pyvenv.cfg` 裡 virtualenv 的 key，或系統套件管理的資料夾），而且資料夾、上面每一層資料夾和這些檔案都只有 root 能寫。在一般使用者也能寫的資料夾裡，寫得了 .pth 的人也寫得了那些紀錄，所以 setuptools、virtualenv 和 editable install 的檔案會在每日報告裡列為無法證明；其他的由巡檢以 warning 送出通知。
 
 ### 已知問題
 

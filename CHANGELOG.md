@@ -53,9 +53,13 @@ Chinese for the zh-TW pages; keep the two in step.
   the first 64 KiB of each METADATA, no symlinks followed); what it did not cover is reported as not
   checked.
 - They also list the `.pth` files there with lines Python runs at every start: the file and how
-  many such lines, not their text. The files setuptools, virtualenv and an editable install write
-  themselves are marked as theirs when every such line is exactly theirs; the patrol pushes the
-  others as warnings.
+  many such lines, not their text. A file is marked as a tool's own (setuptools, virtualenv, an
+  editable install) only when it can be proven: every such line is exactly the tool's, the tool's
+  own record of it is there (a RECORD with the hashes, virtualenv's key in `pyvenv.cfg`, or the
+  system package manager's folder), and the folder, every folder above it and those files can be
+  written by root alone. In a folder a user can write, whoever wrote the file could have written
+  the record too: setuptools', virtualenv's and editable install files there are listed in the
+  daily report as not proven. The patrol pushes the others as warnings.
 
 ### Known issues
 
