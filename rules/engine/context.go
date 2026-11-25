@@ -640,7 +640,11 @@ func (a *analysis) extractStmt(st state, t []Token) {
 	lit := inner
 	if len(inner) > 2 && inner[0].word("shortcode_atts") && inner[1].op("(") {
 		if xs := splitTop(inside(inner, 1, closeOf(inner, 1)), isComma); len(xs) > 0 {
-			lit = stripParens(xs[0])
+			lit = a.litArray(st, stripParens(xs[0]))
+		}
+	} else if len(inner) == 1 && inner[0].Kind == Var {
+		if _, ok := st[atsKey+inner[0].Text]; ok && a.atsDefs[inner[0].Text] != nil {
+			lit = a.atsDefs[inner[0].Text] // $r = shortcode_atts($defaults, $atts); extract($r)
 		}
 	}
 	var body []Token
@@ -659,6 +663,54 @@ func (a *analysis) extractStmt(st state, t []Token) {
 			a.setTarget(st, []Token{{Kind: Var, Text: "$" + item[0].Text, Line: t[0].Line}}, v, "=", false)
 		}
 	}
+}
+
+// atsKey marks a variable assigned shortcode_atts(<array written out>, ...): it
+// holds the keys of that array only, kept in a.atsDefs.
+const atsKey = "\x00ats:"
+
+// litArray returns t, or the array a variable holds when recordLit knows it
+// ($defaults = array(...); shortcode_atts($defaults, $atts)).
+func (a *analysis) litArray(st state, t []Token) []Token {
+	if len(t) == 1 && t[0].Kind == Var {
+		if _, ok := st[litKey+t[0].Text]; ok && a.lits[t[0].Text] != nil {
+			return stripParens(a.lits[t[0].Text])
+		}
+	}
+	return t
+}
+
+// atsAssign records $r = shortcode_atts(<array written out>, ...) for extract($r);
+// any other assignment to $r forgets it.
+func (a *analysis) atsAssign(st state, t []Token) {
+	if !a.php || len(t) < 4 || t[0].Kind != Var || !t[1].op("=") {
+		return
+	}
+	delete(st, atsKey+t[0].Text)
+	rhs := t[2:]
+	if n := len(rhs); n > 0 && rhs[n-1].op(";") {
+		rhs = rhs[:n-1]
+	}
+	if len(rhs) < 3 || !rhs[0].word("shortcode_atts") || !rhs[1].op("(") || closeOf(rhs, 1) != len(rhs)-1 {
+		return
+	}
+	xs := splitTop(inside(rhs, 1, len(rhs)-1), isComma)
+	if len(xs) == 0 {
+		return
+	}
+	d := a.litArray(st, stripParens(xs[0]))
+	if !(len(d) > 1 && d[0].op("[") || len(d) > 2 && d[0].word("array") && d[1].op("(")) {
+		return
+	}
+	if a.atsDefs == nil {
+		a.atsDefs = map[string][]Token{}
+	}
+	if old, seen := a.atsDefs[t[0].Text]; seen && (old == nil || !tokensEqual(old, d)) {
+		a.atsDefs[t[0].Text] = nil // two different arrays: not known
+		return
+	}
+	a.atsDefs[t[0].Text] = d
+	st[atsKey+t[0].Text] = entry{}
 }
 
 // extractKey marks, in a state, that extract() of input defined variables whose

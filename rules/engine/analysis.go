@@ -185,10 +185,11 @@ type analysis struct {
 	cparents map[string]string
 	cproj    *Project // the project, for those classes' parents in other files, also in the pass that follows no calls
 
-	lits   map[string][]Token // values written in the code, kept for argument conditions (context.go)
-	locals map[string]bool    // names of the file's own functions and methods (context.go)
-	defs   map[string]string  // PHP: define('NAME', 'text') in this file (context.go)
-	fname  string             // name of the function being analysed
+	lits    map[string][]Token // values written in the code, kept for argument conditions (context.go)
+	atsDefs map[string][]Token // $r = shortcode_atts(<array>, ...): the array, for extract($r) (context.go)
+	locals  map[string]bool    // names of the file's own functions and methods (context.go)
+	defs    map[string]string  // PHP: define('NAME', 'text') in this file (context.go)
+	fname   string             // name of the function being analysed
 
 	file  string            // the file analysed, for findings and for calls into other files
 	proj  *Project          // the project the file belongs to, or nil (project.go)
@@ -309,6 +310,7 @@ func (a *analysis) stmt(s *stmt, st state) (state, uint8) {
 		a.extractStmt(st, s.toks)
 		a.unsetStmt(st, s.toks)
 		a.recordLit(st, s.toks)
+		a.atsAssign(st, s.toks)
 		return st, a.exitOf(s.toks)
 	case sIf:
 		a.sinks(st, s.toks)
