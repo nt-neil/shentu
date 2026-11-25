@@ -82,10 +82,10 @@ func TestPackageVulnsThirdParty(t *testing.T) {
 	b, _ := json.Marshal(out)
 	s := string(b)
 	for _, want := range []string{
-		`"third_party_unchecked":[{"package":"php8.3-fpm","version":"8.3.9-1+0~20240705.1+debian12~1.gbp1+deb.sury.org+1","origin":"deb.sury.org","found_by":"version"}]`,
+		// PR-B: sury's php8.3-fpm is compared with php.net's advisories now
+		`"third_party_upstream":[{"package":"php8.3-fpm","source":"php8.3","version":"8.3.9-1+0~20240705.1+debian12~1.gbp1+deb.sury.org+1","origin":"deb.sury.org","upstream":"php"`,
 		`"third_party_repositories":["deb.sury.org"]`,
-		`1 package(s) came from other repositories`,
-		`"affected_packages":0`,
+		`"affected_packages":1`, // N-225-1: sury's php8.3-fpm 8.3.9 is affected upstream
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("missing %s in %s", want, s)
