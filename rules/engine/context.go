@@ -684,9 +684,9 @@ func (a *analysis) extractAny(st state, args [][]Token, v val) {
 			}
 		}
 	}
-	add := entry{taint: true, raw: v.raw, emb: v.emb, weak: v.weak}
+	add := entry{taint: true, raw: v.raw, emb: v.emb, weak: v.weak, ext: true}
 	join := func(e entry) entry {
-		return entry{taint: true, sep: false, pre: false, raw: e.raw || add.raw, emb: e.emb || add.emb, weak: weakOf(e.taint, e.weak, true, add.weak)}
+		return entry{taint: true, raw: e.raw || add.raw, emb: e.emb || add.emb, weak: weakOf(e.taint, e.weak, true, add.weak), ext: !e.taint || e.ext}
 	}
 	if overwrite {
 		for k, e := range st {

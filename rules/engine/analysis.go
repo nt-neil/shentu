@@ -35,6 +35,7 @@ type entry struct {
 	emb   bool // the input is embedded in a larger string ("WHERE id = " . $id), not passed as is
 	weak  bool // all the input came through the result of a call the analysis does not know (get_post($id))
 	keys  bool // an array tainted only by what was written under literal keys ($q['a'] = $in): another literal key it does not hold reads clean (get)
+	ext   bool // tainted only by extract() of input, which sets strings and arrays: a property of it ($wpdb->prefix) holds no input (postfix)
 }
 
 type state map[string]entry
@@ -100,7 +101,8 @@ func mergeInto(x, y state) state {
 	both := func(a, b entry) entry {
 		return entry{taint: a.taint || b.taint, src: a.src || b.src, sep: a.sep && b.sep, san: a.san && b.san, pre: a.pre && b.pre,
 			raw: a.raw || b.raw, emb: a.emb || b.emb, weak: weakOf(a.taint, a.weak, b.taint, b.weak),
-			keys: (a.taint || b.taint) && (!a.taint || a.keys) && (!b.taint || b.keys)} // tainted only under literal keys on every path that taints it
+			keys: (a.taint || b.taint) && (!a.taint || a.keys) && (!b.taint || b.keys), // tainted only under literal keys on every path that taints it
+			ext:  (a.taint || b.taint) && (!a.taint || a.ext) && (!b.taint || b.ext)}
 	}
 	type add struct {
 		k string
@@ -1489,6 +1491,7 @@ func (a *analysis) postfix(st state, t []Token, start, baseEnd int, v val, whole
 	}
 	srcEnd := -1
 	byKeys, litIdx := false, false // the value so far is an array tainted only under literal keys; the last access is a literal index
+	ext := false                   // the value so far is tainted only by extract(): a string or an array
 	source := func(pos int) {
 		if a.noSrc {
 			return
@@ -1507,10 +1510,12 @@ func (a *analysis) postfix(st state, t []Token, start, baseEnd int, v val, whole
 			if e, ok := st[key]; ok {
 				v = val{taint: e.taint || a.raw && e.raw, san: e.san, emb: e.emb, weak: e.weak}
 				byKeys = e.keys && e.taint
+				ext = e.ext && e.taint
 			} else if byKeys && litIdx {
 				v, byKeys = val{}, false // a literal key an array tainted only under other literal keys does not hold
 			} else if x, ok := st[extractKey]; ok && a.php && pos == baseEnd && extractable(key) {
 				v = val{taint: x.taint, raw: x.raw, emb: x.emb, weak: x.weak} // a variable extract() of input may have defined (context.go)
+				ext = true
 			}
 		}
 	}
@@ -1532,6 +1537,9 @@ func (a *analysis) postfix(st state, t []Token, start, baseEnd int, v val, whole
 		}
 		switch {
 		case memberOp(a.php, tk) && j+1 < len(t) && (t[j+1].Kind == Ident || t[j+1].Kind == Var):
+			if ext {
+				v, ext = val{}, false // a property or method of a string or an array extract() set: no value from the input
+			}
 			// flask.request.form, self.request.GET: a source can start at a member.
 			source(j + 1)
 			if key != "" {
