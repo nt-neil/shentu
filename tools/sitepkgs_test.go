@@ -235,7 +235,7 @@ func TestSitePackagesPth(t *testing.T) {
 	// folder in it (put first on sys.path)
 	app3 := venvSite(t, root, "app3")
 	dist(t, app3, "eggs-1.0", "eggs", "1.0", "pip")
-	record(t, app3, "eggs-1.0", "easy-install.pth", "import sys; sys.__plen = len(sys.path)\n/opt/eggs\n")
+	record(t, app3, "eggs-1.0", "easy-install.pth", "import sys; sys.__plen = len(sys.path)\neggs-dir\n")
 	// upper: the folder and its files root's, a folder above it a user's
 	upper := venvSite(t, root, "upper")
 	os.WriteFile(filepath.Join(upper, "distutils-precedence.pth"), []byte(files["distutils-precedence.pth"]), 0o644)
