@@ -94,6 +94,15 @@ Chinese for the zh-TW pages; keep the two in step.
   attribute (which decodes entities first), in a template literal, after a block that writes a
   quote or a backslash, on a line ending in a `\` continuation, with `htmlspecialchars()` without
   `ENT_QUOTES`, and with `sanitize_text_field()`.
+- PHP's server-side request rule takes a start that is a local path as fixed: a directory
+  constant then a literal with a path segment (`WP_CONTENT_DIR . '/uploads/' . $name`, also through
+  a variable that holds it, as in Welcart) or a drive (`'C:\\data\\' . $name`). The input then
+  cannot choose a scheme or a host, so `file_get_contents()` of it is no longer reported as a
+  server-side request; the path rules still report it. The constants are `__DIR__`,
+  `DIRECTORY_SEPARATOR` and the directory constants of WordPress, Drupal and Joomla (`ABSPATH`,
+  `WP_CONTENT_DIR`, `DRUPAL_ROOT`, `JPATH_ROOT` and others). Still reported: a plugin's own
+  constant, a constant defined from input, a bare `/` or `/a` after the constant, `C:` alone, a
+  `\\` start, and an escape such as `\x3a` in the literal.
 
 ### Known issues
 
