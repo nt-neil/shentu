@@ -13,9 +13,11 @@ import (
 var beforeOpen = func(string) {}
 
 // openRead on Windows refuses a reparse point (symlink or junction) in the
-// last element: Windows has no O_NOFOLLOW, so it Lstats, opens, and
-// compares the opened file with what the Lstat saw (as osutil.OpenNoFollow
-// does): one swapped in between is refused, never read.
+// last element: Windows has no O_NOFOLLOW, so it Lstats, takes the file's
+// ID then (volume and index, by a handle of its own), opens, and compares
+// that with the opened handle's ID: one swapped in between is refused,
+// never read. os.SameFile cannot tell: on Windows it reads a Lstat's ID
+// from the path only when asked, so after the swap, the new file's.
 func openRead(path string, noFollow bool) (*os.File, error) {
 	if !noFollow {
 		return os.Open(path)
@@ -27,17 +29,13 @@ func openRead(path string, noFollow bool) (*os.File, error) {
 	if lst.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
 		return nil, fmt.Errorf("%w: %s", ErrSymlink, path)
 	}
+	id := pathFileID(path, lst)
 	beforeOpen(path)
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
-	st, err := f.Stat()
-	if err != nil {
-		f.Close()
-		return nil, err
-	}
-	if !os.SameFile(lst, st) {
+	if id == "" || openedFileID(f, nil) != id {
 		f.Close()
 		return nil, &fs.PathError{Op: "open", Path: path, Err: ErrChanged}
 	}
