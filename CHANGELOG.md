@@ -106,10 +106,11 @@ Chinese for the zh-TW pages; keep the two in step.
 - SQL injection and XSS rules take arithmetic as a number, which carries no quote or markup:
   a page offset `(max($_GET['paged'], 1) - 1) * 20` in a `LIMIT` (as in Welcart), PHP's
   `$_GET['n'] + 1`, JavaScript's `req.query.n - 1` and Python's `request.args['n'] - 1` are no
-  longer reported there. Arithmetic is `-`, `/`, `*`, `%` and `**` (in Python `-`, `/`, `//` and
-  `**`), and in PHP a `+` next to a number. Still input: PHP `+` of two arrays (their union), `|`
-  of two strings, `.` next to `-`, JavaScript's binary `+`, Python's `*` (which repeats a string),
-  and a number in the path rules.
+  longer reported there. Arithmetic is `-`, `/`, `*`, `%` and `**`, with a `+` next to a number
+  in PHP; in Python it is `//`, `**`, and `-` or `/` next to a number. Still input: PHP `+` of two
+  arrays (their union), `|` of two strings, `.` next to `-`, JavaScript's binary `+`, Python's `*`
+  (which repeats a string), Python's `-` of two sets or two `Counter`s (their difference, as in
+  `set(request.args.getlist('id')) - {'0'}`), and a number in the path rules.
 
 ### Known issues
 

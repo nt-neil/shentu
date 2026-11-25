@@ -42,6 +42,12 @@ func TestArithmeticIsNumber(t *testing.T) {
 			js + "app.get('/x', (req, res) => {\n  const n = req.query.n + 1;\n  pool.query('SELECT * FROM t WHERE a = ' + n);\n});\n", []int{5}},
 		{"Python * repeats a string", "python", "a.py",
 			py + "@app.route('/x')\ndef x():\n    q = request.args['q'] * 2\n    cur.execute(\"SELECT * FROM t WHERE a = '\" + q + \"'\")\n", []int{6}},
+		{"Python - of two sets is their difference (N-247-1)", "python", "a.py",
+			py + "@app.route('/x')\ndef x():\n    ids = set(request.args.getlist('id')) - {'0'}\n    cur.execute('SELECT * FROM t WHERE id IN (' + ','.join(ids) + ')')\n", []int{6}},
+		{"Python - of two Counters keeps the input's keys", "python", "a.py",
+			py + "from collections import Counter\n@app.route('/x')\ndef x():\n    c = Counter(request.args.getlist('id')) - Counter(['0'])\n    cur.execute('SELECT * FROM t WHERE id IN (' + ','.join(c) + ')')\n", []int{7}},
+		{"Python unary - of a Counter keeps the input's keys", "python", "a.py",
+			py + "from collections import Counter\n@app.route('/x')\ndef x():\n    c = -Counter(request.args.getlist('id'))\n    cur.execute('SELECT * FROM t WHERE id IN (' + ','.join(c) + ')')\n", []int{7}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			own, _, _ := e.ScanTimed(c.lang, c.path, []byte(c.src))
