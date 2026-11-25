@@ -86,6 +86,14 @@ Chinese for the zh-TW pages; keep the two in step.
   whoever wrote the file could have written the record too: setuptools', virtualenv's and editable
   install files there are listed in the daily report as not proven. The patrol pushes the others as
   warnings.
+- PHP XSS in a `<script>` body: a value escaped with `esc_attr()`, `esc_url()`, `esc_html()` or
+  `htmlspecialchars(..., ENT_QUOTES)` inside a quoted JS string
+  (`var tab = '<?php echo esc_attr($_GET['tab']); ?>';`) is no longer reported when the text after
+  the PHP block closes that string on the same line: a `<script>` body decodes no entity, so with
+  both quotes and `<` encoded the value stays inside the string. It is still reported in an `on*`
+  attribute (which decodes entities first), in a template literal, after a block that writes a
+  quote or a backslash, on a line ending in a `\` continuation, with `htmlspecialchars()` without
+  `ENT_QUOTES`, and with `sanitize_text_field()`.
 
 ### Known issues
 

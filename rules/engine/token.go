@@ -33,6 +33,10 @@ const (
 	flagCtxShift  = 8                // PHP echo or print after inline HTML: bits 8-10 hold the HTML context it writes into (htmlctx.go)
 )
 
+// flagStrClosed marks a PHP echo or print in a quoted string of a <script> body
+// that the text after its block closes on the line (htmlctx.go).
+const flagStrClosed uint16 = 1 << 11
+
 // Token is one lexical unit. Comments are dropped. A string literal keeps its raw
 // content in Text (between the quotes, escapes untouched); its interpolations
 // ("$x", "{$x}", f"{x}", `${x}`) are lexed as code into Parts.
@@ -209,6 +213,8 @@ type scanner struct {
 	htmlCtx uint8    // PHP: 1 + the context the current code block writes into, 0 outside one
 	inEcho  bool     // PHP: in an echo or print statement
 	echoPar int      // PHP: brackets open in it
+	strEcho []int    // PHP: the echo and print tokens of the current block written into a quoted string of a <script> body
+	strBad  bool     // PHP: literal text the block wrote holds a quote, a backslash or a line break
 }
 
 func (s *scanner) peek(off int) byte {
