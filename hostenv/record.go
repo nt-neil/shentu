@@ -194,6 +194,14 @@ func (r *Recorder) ReadDir(path string) ([]string, error) {
 	return n, err
 }
 
+// ReadDirMax records the names read under the dir key: a replay gives
+// those (it cannot tell there were more).
+func (r *Recorder) ReadDirMax(path string, n int) ([]string, bool, error) {
+	names, more, err := ReadDirMax(r.Inner, path, n)
+	r.put(&entry{Op: "dir", Path: path, Err: errCode(err), Names: names})
+	return names, more, err
+}
+
 func (r *Recorder) Readlink(path string) (string, error) {
 	t, err := r.Inner.Readlink(path)
 	r.put(&entry{Op: "link", Path: path, Err: errCode(err), Target: t})

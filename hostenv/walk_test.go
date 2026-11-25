@@ -210,3 +210,36 @@ func (memSrc) Readlink(string) (string, error)  { return "", fs.ErrNotExist }
 func (memSrc) Run(context.Context, []string) (CmdResult, error) {
 	return CmdResult{}, fs.ErrNotExist
 }
+
+// ReadDirMax reads at most n names (a folder a user can fill is never read
+// whole), sorted; more when there are others. A fixture gives the first n
+// of what it holds.
+func TestReadDirMax(t *testing.T) {
+	d := t.TempDir()
+	for i := 0; i < 10; i++ {
+		if err := os.WriteFile(filepath.Join(d, string(rune('a'+i))+".php"), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	l, _ := NewLive(nil)
+	names, more, err := ReadDirMax(l, d, 3)
+	if err != nil || !more || len(names) != 3 || !slices.IsSorted(names) {
+		t.Errorf("n=3: %q more %v %v", names, more, err)
+	}
+	if names, more, err := ReadDirMax(l, d, 10); err != nil || more || len(names) != 10 {
+		t.Errorf("n=10: %q more %v %v", names, more, err)
+	}
+	if _, _, err := ReadDirMax(l, filepath.Join(d, "none"), 3); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("missing: %v", err)
+	}
+	rec := NewRecorder(l)
+	ReadDirMax(rec, d, 3)
+	fx := filepath.Join(t.TempDir(), "fx")
+	if err := rec.Save(fx, &Masker{}); err != nil {
+		t.Fatal(err)
+	}
+	rp, _ := LoadReplay(fx)
+	if got, _, err := ReadDirMax(rp, d, 2); err != nil || len(got) != 2 {
+		t.Errorf("replay: %q %v", got, err)
+	}
+}

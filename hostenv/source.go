@@ -108,6 +108,26 @@ func ReadFileIfSame(src Source, path string, want FileStat) ([]byte, error) {
 	return ReadFileNoFollow(src, path)
 }
 
+// DirMaxReader reads at most n names of a folder: one a user can fill
+// (a web folder) is never read whole to keep n of it.
+type DirMaxReader interface {
+	ReadDirMax(path string, n int) (names []string, more bool, err error)
+}
+
+// ReadDirMax reads at most n names of path through src, sorted; more when
+// the folder holds others (not read). A fixture holds the names it
+// recorded: the first n of those.
+func ReadDirMax(src Source, path string, n int) ([]string, bool, error) {
+	if d, ok := src.(DirMaxReader); ok {
+		return d.ReadDirMax(path, n)
+	}
+	names, err := src.ReadDir(path)
+	if len(names) > n {
+		return names[:n], true, err
+	}
+	return names, false, err
+}
+
 // NoFollowMaxReader reads without following a final link, up to max.
 type NoFollowMaxReader interface {
 	ReadFileNoFollowMax(path string, max int64) ([]byte, error)
@@ -297,6 +317,25 @@ func (l *Live) ReadDir(path string) ([]string, error) {
 	names, err := f.Readdirnames(-1)
 	sort.Strings(names)
 	return names, err
+}
+
+// ReadDirMax reads n+1 names, the first the system lists, and stops.
+func (l *Live) ReadDirMax(path string, n int) ([]string, bool, error) {
+	f, err := os.Open(l.path(path))
+	if err != nil {
+		return nil, false, err
+	}
+	defer f.Close()
+	names, err := f.Readdirnames(n + 1)
+	if errors.Is(err, io.EOF) {
+		err = nil
+	}
+	more := len(names) > n
+	if more {
+		names = names[:n]
+	}
+	sort.Strings(names)
+	return names, more, err
 }
 
 func (l *Live) Readlink(path string) (string, error) { return os.Readlink(l.path(path)) }

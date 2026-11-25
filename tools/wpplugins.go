@@ -128,16 +128,17 @@ const (
 
 var errTooMany = errors.New("more entries than are read")
 
-// readDirMax reads the first n entries of dir by name through src, each
-// with its Lstat (errTooMany when there are more: those read are given).
+// readDirMax reads at most n entries of dir through src (the folder is
+// never read whole), sorted by name, each with its Lstat (errTooMany when
+// there are more: those read are given).
 func readDirMax(src hostenv.Source, dir string, n int) ([]dirEnt, error) {
-	names, err := src.ReadDir(dir)
+	names, over, err := hostenv.ReadDirMax(src, dir, n)
 	if err != nil {
 		return nil, err
 	}
 	var more error
-	if len(names) > n {
-		names, more = names[:n], errTooMany
+	if over {
+		more = errTooMany
 	}
 	ents := make([]dirEnt, 0, len(names))
 	for _, nm := range names {
