@@ -51,8 +51,8 @@ Chinese for the zh-TW pages; keep the two in step.
   advisories, so these packages matched nothing there and were only listed in
   `third_party_unchecked`. Now each CVE in a package's range is in the vulnerability surface
   (ecosystem `upstream:php` or `upstream:nginx`, with the fixed version, KEV when CISA lists it)
-  and in `third_party_upstream`, and counts in `total_vulns` and `affected_packages`; one that CISA
-  lists is in `actively_exploited` too, so the daily patrol sends its critical KEV alert as for a
+  and in `third_party_upstream`, and counts in `total_vulns` and `affected_packages`, once per source package and CVE with
+  OSV's; one that CISA lists is in `actively_exploited` too (one entry naming the binaries), so the daily patrol sends its critical KEV alert as for a
   distribution's package. A CVE the package's changelog names (a backported fix) is listed as
   backported and not reported. php-fpm also gets the FPM and status page CVEs, php-cgi the CGI
   one; mod_php and the CLI get the engine's only. Each compared package says the tables' date
