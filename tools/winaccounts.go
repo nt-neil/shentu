@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
+	"fmt"
+	"io/fs"
 	"sort"
 	"strings"
 
@@ -78,14 +80,29 @@ func winAccountsAudit() (WinAccounts, error) {
 		sort.Strings(l)
 	}
 	src := winSource() // the key file of the host read, not of the machine running the check
-	if st, err := hostenv.Stat(src, winAdminKeys); err == nil {
+	// A key file not read in full is said: its count is a floor, never "no keys".
+	unread := func(why string) {
+		a.Partial = strings.TrimPrefix(a.Partial+"; "+winAdminKeys+" "+why, "; ")
+	}
+	st, err := hostenv.Stat(src, winAdminKeys)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+	case err != nil:
+		unread("could not be checked (" + err.Error() + "): administrators' keys unknown")
+	default:
 		k := KeyFile{User: "Administrators", Path: winAdminKeys, Modified: st.ModTime}
-		if b, err := src.ReadFile(winAdminKeys); err == nil {
-			sc := bufio.NewScanner(bytes.NewReader(b))
-			for sc.Scan() {
-				if l := strings.TrimSpace(sc.Text()); l != "" && !strings.HasPrefix(l, "#") {
-					k.Keys++
-				}
+		b, err := src.ReadFile(winAdminKeys)
+		switch {
+		case errors.Is(err, hostenv.ErrTruncated):
+			unread(fmt.Sprintf("read in part (over %d MiB): keys past it not counted", hostenv.MaxFileBytes>>20))
+		case err != nil:
+			unread("could not be read (" + err.Error() + "): its keys not counted")
+		}
+		sc := bufio.NewScanner(bytes.NewReader(b))
+		sc.Buffer(nil, len(b)+1)
+		for sc.Scan() {
+			if l := strings.TrimSpace(sc.Text()); l != "" && !strings.HasPrefix(l, "#") {
+				k.Keys++
 			}
 		}
 		a.AdminKeys = &k

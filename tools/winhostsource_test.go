@@ -47,6 +47,12 @@ func (w winRead) Info() hostenv.SourceInfo {
 func (w winRead) ReadFile(p string) ([]byte, error) {
 	w.log("ReadFile %s", p)
 	if s, ok := w.files[p]; ok {
+		if s == "\x00denied" {
+			return nil, os.ErrPermission
+		}
+		if len(s) > hostenv.MaxFileBytes { // as Live: the first MaxFileBytes, said cut
+			return []byte(s[:hostenv.MaxFileBytes]), hostenv.ErrTruncated
+		}
 		return []byte(s), nil
 	}
 	return nil, os.ErrNotExist
@@ -280,5 +286,25 @@ func TestWinChecksSameOutput(t *testing.T) {
 		if viaHost[k] != v {
 			t.Errorf("%s differs:\n direct    %s\n host read %s", k, v, viaHost[k])
 		}
+	}
+}
+
+// A key file read in part (over 8 MiB) or not at all is said, never a
+// count of 0 that reads as "no administrators' keys" (#241 review).
+func TestWinAdminKeysUnreadSaid(t *testing.T) {
+	line := "ssh-ed25519 AAAAexample ops@example.test\n"
+	w := newWinRead()
+	w.files[winAdminKeys] = strings.Repeat(line, hostenv.MaxFileBytes/len(line)+10)
+	withHost(t, w)
+	a, err := winAccountsAudit()
+	if err != nil || a.AdminKeys == nil || a.AdminKeys.Keys < hostenv.MaxFileBytes/len(line)-1 ||
+		!strings.Contains(a.Partial, winAdminKeys+" read in part (over 8 MiB)") {
+		t.Errorf("a key file over 8 MiB: keys %+v, partial %q, %v", a.AdminKeys, a.Partial, err)
+	}
+	w = newWinRead()
+	w.files[winAdminKeys] = "\x00denied"
+	withHost(t, w)
+	if a, err := winAccountsAudit(); err != nil || !strings.Contains(a.Partial, winAdminKeys+" could not be read") {
+		t.Errorf("an unreadable key file: %+v, partial %q, %v", a.AdminKeys, a.Partial, err)
 	}
 }
