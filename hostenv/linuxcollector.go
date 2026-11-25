@@ -251,7 +251,7 @@ func (LinuxCollector) packages(ctx context.Context, src Source, osr map[string]s
 	case "debian":
 		set.Manager = "dpkg"
 		if res, err = src.Run(ctx, dpkgArgv); err == nil && res.ExitCode == 0 {
-			items = ParseDpkgQuery(res.Stdout)
+			items, set.NotChecked = ParseDpkgQueryStates(res.Stdout)
 		}
 	case "rhel", "suse":
 		set.Manager = "rpm"
@@ -287,6 +287,18 @@ func (LinuxCollector) packages(ctx context.Context, src Source, osr map[string]s
 	}
 	if extrasErr != "" {
 		return Partial(set, extrasReason, "not fully read: "+extrasErr), apkOwned
+	}
+	// A package half on the disk (half-installed, unpacked...) may have its
+	// programs there: the list is partial. One with only its configuration
+	// left (config-files) has none; it is listed in NotChecked only.
+	var half []string
+	for _, n := range set.NotChecked {
+		if !strings.HasSuffix(n, "(config-files)") {
+			half = append(half, n)
+		}
+	}
+	if len(half) > 0 {
+		return Partial(set, ReasonNotInstalled, fmt.Sprintf("%d package(s) not fully installed, not checked: %s", len(half), strings.Join(half, ", "))), apkOwned
 	}
 	return OK(set), apkOwned
 }

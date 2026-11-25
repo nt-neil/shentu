@@ -60,6 +60,9 @@ const surfaceDetail = "\x00surface"
 // KEV check (KEV unavailable, or past its 300 per package).
 const surfaceCVELookups = 3000
 
+// maxNotChecked is how many packages_not_checked lists; the rest are counted.
+const maxNotChecked = 20
+
 func packageVulnsAll(ctx context.Context, hc *http.Client, detailFor string) (map[string]any, []detect.PackageVuln, error) {
 	forSurface := detailFor == surfaceDetail
 	if forSurface {
@@ -171,6 +174,14 @@ func packageVulnsAll(ctx context.Context, hc *http.Client, detailFor string) (ma
 	}
 	if feed.Note != "" {
 		out["ecosystems_note"] = feed.Note
+	}
+	if len(set.NotChecked) > 0 { // known to the package manager, not installed in full: not checked, said
+		nc := set.NotChecked
+		if len(nc) > maxNotChecked { // a long-run host may keep dozens of config-files (old kernels)
+			out["packages_not_checked_more"] = len(nc) - maxNotChecked
+			nc = nc[:maxNotChecked]
+		}
+		out["packages_not_checked"] = nc
 	}
 	up, upWhy := upstreamCompare(ctx, set) // third-party PHP and nginx, against php.net's and nginx.org's advisories
 	thirdPartyOut(out, set, up, upWhy)
