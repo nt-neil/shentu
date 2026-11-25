@@ -3,6 +3,7 @@ package engine
 import (
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -144,6 +145,8 @@ type analysis struct {
 	seed        []*paramSeed      // the values a callback's parameters are called with (whenSeeds, pcallSeeds), for the next function analysed
 	curParams   []string          // the parameters of the function being analysed (the innermost), by name: $callback(...) of one is no other file's
 	curMoved    map[string]bool   // ... those its body assigns again ($cb = wrap($cb)): no longer what the caller passed
+	curGiven    map[string]bool   // ... in a summary's run, those given input (guardedParams)
+	curUnset    map[string]bool   // ... in a summary's run, those the body unsets (guardedParams)
 	laravelVars map[string]bool   // per PHP variable, whether it may be Laravel's request (laravelRequest)
 	phpUses     map[string]string // PHP: short class name (lower case) to the name a use statement gives it (phpUseOther)
 	branchBlock bool              // the next block is an if's branch, whose request aliases the if joins (block, sIf)
@@ -286,6 +289,7 @@ func (a *analysis) stmt(s *stmt, st state) (state, uint8) {
 						}
 					}
 				}
+				a.guardedParams(st, set)
 				a.summ.checks = append(a.summ.checks, set)
 			}
 		}
@@ -707,6 +711,9 @@ func (a *analysis) assign(st state, t []Token) (val, bool) {
 				st[canonKey+key] = entry{san: true}
 			} else if _, had := st[canonKey+key]; had {
 				delete(st, canonKey+key)
+			}
+			if a.php {
+				a.setRealOf(st, key, rhs, t[k].Text == "=")
 			}
 			a.setURLOf(st, key, rhs, t[k].Text == "=", tg[0].Line)
 			a.urlWrite(st, key, v)
@@ -1909,6 +1916,46 @@ type keyRef struct {
 var prefixChecks = map[string]bool{"str_starts_with": true, "strncmp": true, "strncasecmp": true, "strpos": true,
 	"stripos": true, "startsWith": true, "startswith": true}
 
+// symmetricPrefix are the prefix checks that compare the first n bytes of
+// their first two arguments alike (strncmp, strncasecmp): which one is the
+// base, and so which one is checked, the length n tells (strncmpValue).
+var symmetricPrefix = map[string]bool{"strncmp": true, "strncasecmp": true}
+
+// strncmpValue reads strncmp(a, b, n) === 0 as a check that the value starts
+// with the base, and returns the value. The base is the argument whose length
+// n is: strlen() of it (strlen('/var/logs/'), strlen($base)), or a number equal
+// to the length of a literal base. Any other n checks less than the base
+// (strncmp($real, '/var/logs/', 3) passes /var/www) or asks whether the value
+// is a prefix of the base (n = strlen($real): / and /var pass), and a base
+// made of input checks nothing.
+func (a *analysis) strncmpValue(st state, args [][]Token) ([]Token, bool) {
+	if len(args) != 3 {
+		return nil, false
+	}
+	pair := [2][]Token{stripParens(args[0]), stripParens(args[1])}
+	n := stripParens(args[2])
+	base := -1
+	switch {
+	case len(n) > 3 && n[0].Kind == Ident && strings.EqualFold(n[0].Text, "strlen") && n[1].op("(") && closeOf(n, 1) == len(n)-1:
+		of := stripParens(n[2 : len(n)-1])
+		for i, x := range pair {
+			if tokensEqual(of, x) {
+				base = i
+			}
+		}
+	case len(n) == 1 && n[0].Kind == Num:
+		for i, x := range pair {
+			if len(x) == 1 && x[0].Kind == Str && len(x[0].Parts) == 0 && !strings.Contains(x[0].Text, "\\") && strconv.Itoa(len(x[0].Text)) == n[0].Text {
+				base = i
+			}
+		}
+	}
+	if base < 0 || a.expr(st, pair[base], false).taint {
+		return nil, false
+	}
+	return pair[1-base], true
+}
+
 // predicates are the sanitizers that answer yes or no about a value, so using
 // them as a condition validates it. A transforming sanitizer (intval, basename,
 // Number) cleans only its result: if (intval($x)) says nothing about $x.
@@ -1921,6 +1968,17 @@ var predicates = map[string]bool{"in_array": true, "array_key_exists": true, "is
 	"allowed_file": true, "is_string": true, "isinstance": true, "wp_check_jsonp_callback": true,
 	"isBasePath": true, "isAbsolute": true, // Symfony Path::isBasePath($base, $path), Path::isAbsolute($path)
 	"isInternal": true} // Joomla Uri::isInternal($url): the URL stays on this site
+
+// zeroIsMatch reports a call of a zeroMeansMatch function that returns an int
+// (strncmp, strcmp and their kin), not a position or false (strpos, which
+// posOrFalse reads apart): its truthy result means "different".
+func zeroIsMatch(t []Token) bool {
+	if len(t) < 3 || t[0].Kind != Ident || !t[1].op("(") || closeOf(t, 1) != len(t)-1 {
+		return false
+	}
+	n := strings.ToLower(t[0].Text)
+	return zeroMeansMatch[n] && !posOrFalse[n]
+}
 
 // zeroMeansMatch are comparisons for which "=== 0" means the check passed.
 var zeroMeansMatch = map[string]bool{"strncmp": true, "strncasecmp": true, "strcmp": true, "strcasecmp": true,
@@ -2017,12 +2075,19 @@ func (a *analysis) cleans(st state, cond []Token, truth bool) ([]keyRef, []strin
 // allowed host validates, for the SSRF rules, the URL it is the host of
 // (urlguard.go).
 func (a *analysis) guard(st state, atom []Token) (bool, []keyRef) {
+	if pos, keys := a.realFound(st, atom); len(keys) > 0 {
+		return pos, a.urlChecked(st, atom, keys)
+	}
 	pos, keys := a.guardAtom(st, atom)
+	if a.callAtom(atom) {
+		keys = a.realOrigins(st, keys) // a check of $real (strpos($real, $base) === 0), not its value ($real === false)
+	}
 	return pos, a.urlChecked(st, atom, keys)
 }
 
 func (a *analysis) guardAtom(st state, atom []Token) (pos bool, keys []keyRef) {
 	pos = true
+	strictZero := false // the atom compared a result with 0 by === or !==
 	atom = stripParens(atom)
 	for len(atom) > 0 && (atom[0].op("!") || a.py && atom[0].word("not")) {
 		pos, atom = !pos, stripParens(atom[1:])
@@ -2107,25 +2172,37 @@ func (a *analysis) guardAtom(st state, atom []Token) (pos bool, keys []keyRef) {
 			}
 			return pos, a.keysOf(lhs[1:])
 		}
-		switch strings.ToLower(rhs[0].Text) {
-		case "true":
-			if ne {
+		// strncmp() and its kin return an int that is 0 on a match: truthy means
+		// different, so == true and != false say "different", == false says
+		// "the same", and === true or === false never holds.
+		zeroOK := zeroIsMatch(lhs)
+		switch v := strings.ToLower(rhs[0].Text); {
+		case (v == "true" || v == "false") && zeroOK && (op == "===" || op == "!=="):
+			return pos, nil
+		case v == "true":
+			if ne != zeroOK {
 				pos = !pos
 			}
-		case "0":
+		case v == "0":
 			if zeroMeansMatch[lhs[0].Text] == ne {
 				pos = !pos
 			}
-		case "false", "null", "none":
-			if eq {
+			strictZero = op == "===" || op == "!=="
+		case v == "false" || v == "null" || v == "none":
+			if eq != zeroOK {
 				pos = !pos
 			}
 		default:
 			return pos, nil
 		}
 		atom = stripParens(lhs)
-	} else if len(atom) > 0 && zeroIsValid[atom[0].Text] {
-		pos = !pos // if (validate_file($f)) { wp_die(); }: a non-zero result means invalid
+	} else if len(atom) > 0 && (zeroIsValid[atom[0].Text] || zeroIsMatch(atom)) {
+		// if (validate_file($f)) { wp_die(); }: a non-zero result means invalid;
+		// if (strncmp($real, $base, n)) { die(); }: a non-zero result means different
+		pos = !pos
+	}
+	if n := len(atom); n > 2 && atom[0].Kind == Ident && posOrFalse[strings.ToLower(atom[0].Text)] && atom[1].op("(") && closeOf(atom, 1) == n-1 && !strictZero {
+		return pos, nil // strpos($p, $base) is 0 at the start, false when absent and true elsewhere: only === 0 says "starts with"
 	}
 	if keys, ok := a.regexPrefix(st, atom); ok {
 		return pos, keys // re.match(re.escape(base) + r'/[a-z]', url): the value starts with base/ and a letter
@@ -2138,6 +2215,11 @@ func (a *analysis) guardAtom(st state, atom []Token) (pos bool, keys []keyRef) {
 	}
 	return pos, a.checkKeys(st, atom)
 }
+
+// posOrFalse are the PHP prefix checks that give a position or false: only a
+// strict comparison with 0 tells "starts with" from "absent" (false == 0) and
+// from "found further on" (a truthy position).
+var posOrFalse = map[string]bool{"strpos": true, "stripos": true}
 
 // zeroIsValid are checks that return 0 for a valid value and an error code otherwise.
 var zeroIsValid = map[string]bool{"validate_file": true}
@@ -2213,7 +2295,7 @@ func (a *analysis) checkKeys(st state, atom []Token) []keyRef {
 	if a.php && n > 2 && (atom[0].word("in_array") || atom[0].word("array_key_exists") || atom[0].word("validate_file")) &&
 		atom[1].op("(") && closeOf(atom, 1) == n-1 {
 		args := splitTop(atom[2:n-1], isComma)
-		if len(args) >= 2 && a.allowlist(st, args[1]) && !(atom[0].word("in_array") && looseNumbers(args)) {
+		if len(args) >= 2 && a.allowlist(st, args[1]) && !(atom[0].word("in_array") && looseNumbers(args)) && !lossyLookup(args[0]) {
 			return a.keysOf(args[0])
 		}
 		return nil
@@ -2237,8 +2319,27 @@ func (a *analysis) checkKeys(st state, atom []Token) []keyRef {
 		if s.name == "validate_file" && (len(args) < 2 || !a.allowlist(st, args[1])) {
 			return nil // without a list of allowed files it lets /etc/passwd through
 		}
+		if symmetricPrefix[s.name] {
+			v, ok := a.strncmpValue(st, args)
+			switch {
+			case !ok:
+				return nil
+			case netClasses[a.r.rule.Class]:
+				return a.plainSubject([][]Token{v})
+			}
+			return a.keysOf(v)
+		}
 		if prefixChecks[s.name] && netClasses[a.r.rule.Class] {
 			return a.plainSubject(args) // str_starts_with($u, '/x/'): only $u, and only a plain path
+		}
+		if prefixChecks[s.name] {
+			if len(args) == 0 {
+				return nil
+			}
+			// strpos($real, '/var/logs/') === 0 checks $real, the haystack. Turned
+			// round, strpos('/var/logs/', $real) === 0 holds for / and /var: a
+			// parent of the base, not a path under it.
+			return a.keysOf(args[0])
 		}
 		return a.keysOf(atom)
 	}

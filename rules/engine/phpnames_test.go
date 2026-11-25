@@ -98,6 +98,7 @@ var phpNameKinds = map[string]string{
 	"sodium_crypto_secretbox_open":                      "function",
 	"str_starts_with":                                   "function",
 	"stream_socket_client":                              "function",
+	"stripos":                                           "function",
 	"strncmp":                                           "function",
 	"strpos":                                            "function",
 	"system":                                            "function",

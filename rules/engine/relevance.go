@@ -160,7 +160,7 @@ func (a *analysis) build() bool {
 	}
 	if rb.timeHit {
 		if a.proj != nil {
-			a.proj.stop("following calls across files ran out of time")
+			a.proj.stop("following calls across files ran out of time", CutClock)
 			a.proj.byMachine = true
 		}
 		a.b.hit, a.b.timeHit = true, true

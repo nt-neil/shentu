@@ -1,57 +1,61 @@
 # Every range over a map in rules/engine (non-test files), and maps.Keys/Values/All not sorted at once.
-# Columns: function, ranged over, ordinal, functions of engineReach reached, calls not followed, class, why.
+# Columns: function, ranged over, ordinal, body hash, functions of engineReach reached, calls not followed, class, why.
 # SAFE: the result does not depend on the order. SORTED: the keys or results are sorted before they are used.
-# A new range over a map fails TestEngineMapRanges until it is added here, read and classified.
-state.del	s	1			SAFE	Deletes every key equal to or under key; deletion during range is allowed and the resulting set does not depend on order.
-mergeInto	y	1		value both,value look	SAFE	Collects adds for keys only y has; x is not modified in this loop and keys are distinct, so the later application is order-independent. The calls not followed are the local closures look and both, which only read.
-mergeInto	x	1		value both,value look	SAFE	Each key of x is rewritten from its own entry and y's (y is read-only), or deleted; per-key independent, no budget. The calls not followed are the local closures look and both, which only read.
-analysis.cleans	common	1			SAFE	cleaned is sorted (slices.Sort) right after; edits order is irrelevant because applyCleans is commutative per key (taint=false, src OR) and edits keys are distinct. applyCleans sets taint=false and ORs src into each edit's own key, so applying edits in any order gives the same state; the edits are used by applyCleans only (refine, refineInPlace).
-analysis.allValidate	common	1			SAFE	Returned keyRefs feed cleans' edits/cleaned; edits are applied commutatively (applyCleans) and cleaned is used only to fill sets (summ.checks set, a.guards map).
-analysis.localFunc	a.sc.funcs	1			SAFE	Builds a name set.
-(package)	map[string][]string{…}	1			SAFE	Init-time canonFuncs: out[lang] is appended per language in the fixed per-language list order; languages never interleave.
-analysis.relativeOf	st	1			SORTED	Budget is charged len(st) once before the loop; out is sorted by key (slices.SortFunc) before return.
-analysis.setRelative	st	1			SAFE	Charge len(st) before the loop, then delete matching keys; order-independent.
-analysis.setRelative	st	2			SAFE	Charge len(st) before the loop, then delete matching keys; order-independent.
-New	c.args	1			SAFE	Only adds to the e.watch set.
-New	e.byLang	1			SAFE	Builds byID; last-write-wins would matter only for duplicate rule IDs, which rules_test forbids (seen[r.ID] check). Values within each lang slice are in append order.
-New	byID	1		value level	SAFE	max over yielders: commutative while yields_to is acyclic (rules_test checks no cycle); a cycle would make levels depend on start order, but shipped rules cannot have one. The call not followed is the local closure level, which writes only yieldLevel.
-New	byID	2		value level	SAFE	Memoized longest-path levels on an acyclic graph are the same whatever key is started first (same caveat: cycles forbidden by rules_test). The call not followed is the local closure level, which writes only yieldLevel.
-compileRule	maps.Values(c.args)	1			SAFE	The collected conditions are only read to set c.leading = true when one has a URL context; an OR over them, so order does not matter.
-compileRule	c.argsMore	1			SAFE	all is only scanned to set c.leading = true (any); no order-sensitive use.
-fileFuncs.varClasses	ff.byKey	1			SAFE	A name assigned two different classes anywhere ends in `two` and is deleted; every other name has a single class, so the final map is order-independent.
-fileFuncs.varClasses	two	1			SAFE	Deletes from vcls; order-independent.
-fileFuncs.descendants	ff.classes()	1			SORTED	desc[a] lists are in map order, but their only user, this(), filters them with pure memoized checks (callsParent) and slices.Sort(subs) before building the union key and infos.
-fileFuncs.classes	ff.byKey	1			SAFE	Builds a class set.
-fileFuncs.classes	ff.parents	1			SAFE	Builds a class set.
-fileFuncs.components	ff.byKey	1			SORTED	Only collects keys; slices.Sort(keys) before the budgeted walk that builds edges/callers.
-analysis.crossNeeded	sc.funcs	1			SORTED	Only collects keys; slices.Sort(keys) before the relevant() checks.
-analysis.summarize	r.lines	1			SORTED	s.sink[i] is deduped then sorted by (path,line) right after the loop (slices.SortFunc on s.sinkOf(i)); loc has only path and line, so the order is total. sinkEmb is an OR.
-partialArg	st	1			SAFE	Builds sub map; the early `return nil` fires if any tainted non-literal member exists, which is order-independent.
-analysis.keyedSinks	sub	1			SORTED	parts are slices.Sort-ed before forming the cache key ck.
-analysis.keyedSinks	sub	2			SAFE	Builds the initial state map from sub; distinct keys.
-analysis.keyedSinks	y.runBody(fi, st, false).lines	1			SAFE	Adds to the got set.
-analysis.keyedSinks	got	1			SORTED	s.sink is sorted by (path,line) right after (slices.SortFunc); total order.
-Project.Deps	p.deps[f]	1			SORTED	sort.Strings(out) before return.
-Project.IndexDigest	p.files	1			SORTED	sort.Strings(paths) before hashing.
-Project.add	fi.Imports	1			SAFE	Only ORs the nestjs/koa flags.
-Project.keep	p.sums	1			SAFE	Moves every sums entry of the evicted file to kept; per-key independent.
-Project.shrink	p.ctx	1			SAFE	Drops every ctx not in use; resulting set and resident total are order-independent.
-Project.shrink	p.sums	1			SAFE	Moves every not-in-use entry to kept; per-key independent.
-Project.shrink	p.sums	2			SAFE	Deletes every not-in-use entry; per-key independent.
-Project.exported	fi.Imports	1			SORTED	Collects star-import keys; sort.Strings(stars) before the first-match search.
-recvClasses	bad	1			SAFE	Deletes names from out; order-independent.
-analysis.build	sc.funcs	1			SORTED	Only collects keys; slices.Sort(keys) before reading functions.
-unionReqs	before	1			SAFE	Each name is merged independently (cur then ps, both slices); order across names does not matter.
-croute.field	c.applies	1			SAFE	Boolean any over roots.
-Engine.routeRefs	c.requires	1			SAFE	Boolean any over required names.
-Engine.routeRefs	templateNames(args[0])	1			SORTED	ref.Names is slices.Sort-ed right after the loop.
-Project.resolveRoutes	p.files	1			SORTED	Collects paths; slices.Sort(paths) before resolving and appending to routeTo.
-analysis.sourceOnly	s.srcVals	1			SAFE	Writes the same entry under distinct keys per value; order-independent.
-Project.hold	sums	1			SORTED	root.members gets keys in map order, but settle() sorts members by (file,key) and compacts before working the cycle; other users (drop, inUse) are order-free. Caveat: SortFunc is unstable, so among equal (file,key) members with different *analysis the kept one could follow input order, though members from this loop all share fr.a.
-analysis.captured	ns.free	1			SAFE	Boolean any.
-analysis.scopesOf	nonloc	1		value resolve	SAFE	Sets ns.free[...] = true; order-independent. The call not followed is the local closure resolve, which only reads.
-aliasesOf	st	1			SAFE	Result order is unused: callers check len, or treat each alias independently (urlChanged reads/deletes/writes only that alias's own keys; alias pair writes are symmetric).
-analysis.stmt	a.pcallSeeds(st, s.toks, s.funcs)	1			SAFE	Each function appears once as a key, so seeds[f] is whenSeeds' seeds for f followed by pcallSeeds' for f whatever the order; the functions are then run in s.funcs order.
-sortedKeys2	x	1			SORTED	Key union; slices.Sort(out) before it is returned.
-sortedKeys2	y	1			SORTED	Key union; slices.Sort(out) before it is returned.
-analysis.summarize	r.pcall	1			SAFE	Grows s.pcallSrc[n] / s.pcall[n] to length k+1 and sets true / ORs bit at [n][k] for each key: the final lengths are the max and setting true and OR are commutative; no budget is charged in the loop.
+# A new range over a map fails TestEngineMapRanges until it is added here, read and classified;
+# so does one whose body changed (its tokens, comments and line breaks aside), until it is read again
+# and its new hash, from `go run ./internal/devtools/maprange rules/engine`, written here.
+state.del	s	1	48c217caf1ef			SAFE	Deletes every key equal to or under key; deletion during range is allowed and the resulting set does not depend on order.
+mergeInto	y	1	2b17ebdee4e5		value both,value look	SAFE	Collects adds for keys only y has; x is not modified in this loop and keys are distinct, so the later application is order-independent. The calls not followed are the local closures look and both, which only read.
+mergeInto	x	1	026f827bc086		value both,value look	SAFE	Each key of x is rewritten from its own entry and y's (y is read-only), or deleted; per-key independent, no budget. The calls not followed are the local closures look and both, which only read.
+analysis.cleans	common	1	2f333d000a67			SAFE	cleaned is sorted (slices.Sort) right after; edits order is irrelevant because applyCleans is commutative per key (taint=false, src OR) and edits keys are distinct. applyCleans sets taint=false and ORs src into each edit's own key, so applying edits in any order gives the same state; the edits are used by applyCleans only (refine, refineInPlace).
+analysis.allValidate	common	1	3c74d98f564d			SAFE	Returned keyRefs feed cleans' edits/cleaned; edits are applied commutatively (applyCleans) and cleaned is used only to fill sets (summ.checks set, a.guards map).
+analysis.localFunc	a.sc.funcs	1	d77c08f6f602			SAFE	Builds a name set.
+(package)	map[string][]string{…}	1	0321165d22c9			SAFE	Init-time canonFuncs: out[lang] is appended per language in the fixed per-language list order; languages never interleave.
+analysis.relativeOf	st	1	945405ba0c49			SORTED	Budget is charged len(st) once before the loop; out is sorted by key (slices.SortFunc) before return.
+analysis.setRelative	st	1	2c92f63b4386			SAFE	Charge len(st) before the loop, then delete matching keys; order-independent.
+analysis.setRelative	st	2	c4a42515c37b			SAFE	Charge len(st) before the loop, then delete matching keys; order-independent.
+New	c.args	1	0dac73bcb041			SAFE	Only adds to the e.watch set.
+New	e.byLang	1	ee65e04297d4			SAFE	Builds byID; last-write-wins would matter only for duplicate rule IDs, which rules_test forbids (seen[r.ID] check). Values within each lang slice are in append order.
+New	byID	1	b96b02b90757		value level	SAFE	max over yielders: commutative while yields_to is acyclic (rules_test checks no cycle); a cycle would make levels depend on start order, but shipped rules cannot have one. The call not followed is the local closure level, which writes only yieldLevel.
+New	byID	2	8a35339161b4		value level	SAFE	Memoized longest-path levels on an acyclic graph are the same whatever key is started first (same caveat: cycles forbidden by rules_test). The call not followed is the local closure level, which writes only yieldLevel.
+compileRule	maps.Values(c.args)	1				SAFE	The collected conditions are only read to set c.leading = true when one has a URL context; an OR over them, so order does not matter.
+compileRule	c.argsMore	1	9fb24ba553d6			SAFE	all is only scanned to set c.leading = true (any); no order-sensitive use.
+fileFuncs.varClasses	ff.byKey	1	ba40361159bc			SAFE	A name assigned two different classes anywhere ends in `two` and is deleted; every other name has a single class, so the final map is order-independent.
+fileFuncs.varClasses	two	1	39747031b482			SAFE	Deletes from vcls; order-independent.
+fileFuncs.descendants	ff.classes()	1	0b54d6ddbdcd			SORTED	desc[a] lists are in map order, but their only user, this(), filters them with pure memoized checks (callsParent) and slices.Sort(subs) before building the union key and infos.
+fileFuncs.classes	ff.byKey	1	6a7d6e78d16d			SAFE	Builds a class set.
+fileFuncs.classes	ff.parents	1	fb7f6be2ec63			SAFE	Builds a class set.
+fileFuncs.components	ff.byKey	1	83f53e821d0b			SORTED	Only collects keys; slices.Sort(keys) before the budgeted walk that builds edges/callers.
+analysis.crossNeeded	sc.funcs	1	83f53e821d0b			SORTED	Only collects keys; slices.Sort(keys) before the relevant() checks.
+analysis.summarize	r.lines	1	00f7cf44c498			SORTED	s.sink[i] is deduped then sorted by (path,line) right after the loop (slices.SortFunc on s.sinkOf(i)); loc has only path and line, so the order is total. sinkEmb is an OR.
+partialArg	st	1	dfaf0cc46fff			SAFE	Builds sub map; the early `return nil` fires if any tainted non-literal member exists, which is order-independent.
+analysis.keyedSinks	sub	1	8e5dd68e44df			SORTED	parts are slices.Sort-ed before forming the cache key ck.
+analysis.keyedSinks	sub	2	a97a0a3a7fc3			SAFE	Builds the initial state map from sub; distinct keys.
+analysis.keyedSinks	y.runBody(fi, st, false).lines	1	974c99c13a4f			SAFE	Adds to the got set.
+analysis.keyedSinks	got	1	be25dd476f4f			SORTED	s.sink is sorted by (path,line) right after (slices.SortFunc); total order.
+Project.Deps	p.deps[f]	1	e9b39b68e023			SORTED	sort.Strings(out) before return.
+Project.IndexDigest	p.files	1	3ca6c7d8419b			SORTED	sort.Strings(paths) before hashing.
+Project.add	fi.Imports	1	6a257c452a60			SAFE	Only ORs the nestjs/koa flags.
+Project.keep	p.sums	1	71e41b00ff90			SAFE	Moves every sums entry of the evicted file to kept; per-key independent.
+Project.shrink	p.ctx	1	8b5c1196e1e2			SAFE	Drops every ctx not in use; resulting set and resident total are order-independent.
+Project.shrink	p.sums	1	10b49027b4cc			SAFE	Moves every not-in-use entry to kept; per-key independent.
+Project.shrink	p.sums	2	c924417cb1ce			SAFE	Moves every not-in-use entry to kept without its done summaries (retUnk and keyed stay); per-key independent.
+Project.shrink	p.kept	1	4ad58e6c0fd5			SAFE	Forgets each kept entry's done summaries (retUnk and keyed stay); per entry, no budget, order-free.
+Project.exported	fi.Imports	1	7ba79685b910			SORTED	Collects star-import keys; sort.Strings(stars) before the first-match search.
+recvClasses	bad	1	58e99114185a			SAFE	Deletes names from out; order-independent.
+analysis.build	sc.funcs	1	83f53e821d0b			SORTED	Only collects keys; slices.Sort(keys) before reading functions.
+unionReqs	before	1	552e556c9f57			SAFE	Each name is merged independently (cur then ps, both slices); order across names does not matter.
+croute.field	c.applies	1	fcdbee268b00			SAFE	Boolean any over roots.
+Engine.routeRefs	c.requires	1	9dbd70d68d0a			SAFE	Boolean any over required names.
+Engine.routeRefs	templateNames(args[0])	1	98f70461a54c			SORTED	ref.Names is slices.Sort-ed right after the loop.
+Project.resolveRoutes	p.files	1	d97b81790cbf			SORTED	Collects paths; slices.Sort(paths) before resolving and appending to routeTo.
+analysis.sourceOnly	s.srcVals	1	abb5af927719			SAFE	Writes the same entry under distinct keys per value; order-independent.
+analysis.captured	ns.free	1	b5c07c97c57e			SAFE	Boolean any.
+analysis.scopesOf	nonloc	1	0993bca164ff		value resolve	SAFE	Sets ns.free[...] = true; order-independent. The call not followed is the local closure resolve, which only reads.
+aliasesOf	st	1	5d42718fda82			SAFE	Result order is unused: callers check len, or treat each alias independently (urlChanged reads/deletes/writes only that alias's own keys; alias pair writes are symmetric).
+analysis.stmt	a.pcallSeeds(st, s.toks, s.funcs)	1	554d92029ac6			SAFE	Each function appears once as a key, so seeds[f] is whenSeeds' seeds for f followed by pcallSeeds' for f whatever the order; the functions are then run in s.funcs order.
+sortedKeys2	x	1	3c74d98f564d			SORTED	Key union; slices.Sort(out) before it is returned.
+sortedKeys2	y	1	57d9041aeea7			SORTED	Key union; slices.Sort(out) before it is returned.
+analysis.summarize	r.pcall	1	22973f2486ed			SAFE	Grows s.pcallSrc[n] / s.pcall[n] to length k+1 and sets true / ORs bit at [n][k] for each key: the final lengths are the max and setting true and OR are commutative; no budget is charged in the loop.
+analysis.setRealOf	st	1	e1ab6416fc0a			SAFE	Charge len(st) once before the loop, then delete the real-path keys the assignment invalidates; each key is judged on its own text, so the deleted set does not depend on order.
+analysis.realOrigins	st	1	233a98f875b1			SORTED	Charge len(st) once before the loops; the origins found are sorted by key before they are appended.

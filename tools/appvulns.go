@@ -22,7 +22,7 @@ import (
 
 var appVulns = Tool{
 	Name:        "app_vulns",
-	Description: "Finds application dependency lock files (npm package-lock.json, composer.lock, requirements.txt, Pipfile.lock, poetry.lock, go.mod, Gemfile.lock) under the configured app paths and checks them against OSV, marking vulnerabilities that CISA lists as actively exploited. Use it for web apps and services, which package_vulns (OS packages) does not cover.",
+	Description: "Finds application dependency lock files (npm package-lock.json, composer.lock, requirements.txt, Pipfile.lock, poetry.lock, go.mod, Gemfile.lock) under the configured app paths and checks them against OSV, marking vulnerabilities that CISA lists as actively exploited. The Python packages installed in site-packages folders (venvs under the app paths, and the system's when no path is given) are checked the same way, and .pth files there that run code at every Python start are listed (known names the tool whose own file it is; one without it is worth a look). Use it for web apps and services, which package_vulns (OS packages) does not cover.",
 	Params: schema(`{"type":"object","properties":{
 		"path":{"type":"string","description":"only lock files under this directory (must be inside the app paths)"}}}`),
 	Run: func(ctx context.Context, env *Env, args json.RawMessage) (any, error) {
@@ -40,7 +40,7 @@ var appVulns = Tool{
 			}
 			roots = []string{clean}
 		}
-		return AppVulns(ctx, env.HTTP, roots)
+		return appVulnsIn(ctx, env.HTTP, roots, a.Path == "") // the system's site-packages only when not asked about one path
 	},
 }
 
@@ -49,6 +49,7 @@ type Lockfile struct {
 	Path      string `json:"path"`
 	Ecosystem string `json:"ecosystem"`
 	pkgs      []pkg
+	kind      string // "site-packages": a folder of installed packages, not a lock file
 }
 
 var lockParsers = map[string]struct {
@@ -150,20 +151,48 @@ type AppResult struct {
 	Affected  []AppHit  `json:"affected,omitempty"`
 	Exploited []Exploit `json:"actively_exploited,omitempty"`
 	Error     string    `json:"error,omitempty"`
+	// Kind is "site-packages" for a folder of installed packages
+	// (Path is the folder), empty for a lock file.
+	Kind string `json:"kind,omitempty"`
 	// cves: the CVEs each advisory id stands for, as OSV answered the KEV
 	// check (a GHSA and a PYSEC id of one vulnerability name the same CVE);
 	// for detect (SurfaceApps), not the model.
 	cves map[string][]string
 }
 
-// AppVulns checks every lock file under roots against OSV and CISA KEV.
+// AppVulns checks every lock file under roots against OSV and CISA KEV, and
+// the Python packages installed in site-packages folders under roots and
+// the system's.
 func AppVulns(ctx context.Context, hc *http.Client, roots []string) (map[string]any, error) {
+	return appVulnsIn(ctx, hc, roots, true)
+}
+
+func appVulnsIn(ctx context.Context, hc *http.Client, roots []string, system bool) (map[string]any, error) {
 	files := FindLockfiles(roots)
+	nLock := len(files)
+	siteDirs, partial := findSitePackages(roots, system)
+	walked := len(partial) == 0 // every site-packages folder found
+	var pth []PthFile
+	for _, d := range siteDirs {
+		sd := readSitePackages(d)
+		partial = append(partial, sd.notes...)
+		pth = append(pth, sd.pth...)
+		if len(sd.pkgs) > 0 {
+			files = append(files, Lockfile{Path: d, Ecosystem: "PyPI", pkgs: sd.pkgs, kind: "site-packages"})
+		}
+	}
+	if unverifiedDistutilsHack(siteDirs, walked) {
+		for i := range pth {
+			if strings.HasSuffix(pth[i].Path, "distutils-precedence.pth") {
+				pth[i].Known, pth[i].Unproven = "", "" // its module may be another's: one to look at
+			}
+		}
+	}
 	kev, kevErr := loadKEV(ctx, hc)
 	var results []AppResult
 	total, kevUnchecked := 0, 0
 	for _, f := range files {
-		r := AppResult{Path: f.Path, Ecosystem: f.Ecosystem, Packages: len(f.pkgs), cves: map[string][]string{}}
+		r := AppResult{Path: f.Path, Ecosystem: f.Ecosystem, Packages: len(f.pkgs), Kind: f.kind, cves: map[string][]string{}}
 		var cmu sync.Mutex
 		lookup := func(id string) ([]string, bool) { // matchKEV asks concurrently
 			list, ok := osvCVEs(ctx, hc, id)
@@ -202,7 +231,13 @@ func AppVulns(ctx context.Context, hc *http.Client, roots []string) (map[string]
 		}
 		results = append(results, r)
 	}
-	out := map[string]any{"searched": roots, "lock_files": len(files), "total_vulns": total, "files": results}
+	out := map[string]any{"searched": roots, "lock_files": nLock, "site_packages": len(siteDirs), "total_vulns": total, "files": results}
+	if len(pth) > 0 {
+		out["pth"] = pth // .pth files that run code at every Python start; Known: a tool's own
+	}
+	if len(partial) > 0 {
+		out["partial"] = strings.Join(partial, "；")
+	}
 	if len(files) == 0 {
 		out["note"] = "no lock files found; set [tools] app_paths to where your apps live"
 	}
