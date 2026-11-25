@@ -61,6 +61,9 @@ func (w winRead) ReadFile(p string) ([]byte, error) {
 func (w winRead) Stat(p string) (hostenv.FileStat, error) {
 	w.log("Stat %s", p)
 	if s, ok := w.files[p]; ok {
+		if s == "\x00unrecorded" { // as Replay, asked what the fixture lacks
+			return hostenv.FileStat{}, fmt.Errorf("%w: stat %s", hostenv.ErrNotRecorded, p)
+		}
 		return hostenv.FileStat{Mode: 0o644, Size: int64(len(s)), ModTime: time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)}, nil
 	}
 	return hostenv.FileStat{}, os.ErrNotExist
@@ -308,6 +311,14 @@ func TestWinAdminKeysUnreadSaid(t *testing.T) {
 	if a, err := winAccountsAudit(); err != nil || !strings.Contains(a.Partial, winAdminKeys+" could not be read (permission denied)") ||
 		strings.Count(a.Partial, winAdminKeys) != 1 {
 		t.Errorf("an unreadable key file, its path said once: %+v, partial %q, %v", a.AdminKeys, a.Partial, err)
+	}
+	// Not in the fixture: Replay's error names the path; it is said once.
+	w = newWinRead()
+	w.files[winAdminKeys] = "\x00unrecorded"
+	withHost(t, w)
+	if a, err := winAccountsAudit(); err != nil || !strings.Contains(a.Partial, winAdminKeys+" could not be checked (hostenv: not in fixture)") ||
+		strings.Count(a.Partial, winAdminKeys) != 1 {
+		t.Errorf("a key file not in the fixture, its path said once: partial %q, %v", a.Partial, err)
 	}
 	// A line past bufio's 64 KB default is a key, and the keys after it are counted.
 	w = newWinRead()
