@@ -150,6 +150,9 @@ Chinese for the zh-TW pages; keep the two in step.
   program, as the release binaries are: `netstat -anv` writes nothing there (exit 0). shentu then
   lists the listening ports with lsof, which sees only its own user's processes, and marks the list
   partial. Run from a terminal, netstat shows them. macOS 15 is not affected.
+- A Debian or Ubuntu package held with `apt-mark hold` (dpkg status `hi`) is not checked: the
+  package list keeps only `ii` packages, so `vulns`, the daily patrol and the vulnerability surface
+  do not see it, and it is not listed as not checked either. The next release fixes this.
 
 ## v0.5.6 — 2026-11-24
 

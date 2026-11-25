@@ -31,6 +31,7 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 - 從資料庫讀回來的值，如果讀它的查詢用了輸入，即使已經用 escape 函式處理過，也會被當成輸入（例如 `$row = $db->LoadSingle("... '" . mysqli_real_escape_string($c, $_POST['id']) . "'")` 之後，把 `$row['tag']` 放進另一個查詢）：引擎把不認得的函式的回傳值，當成帶有參數的輸入。YesWiki 的 despam.php 就是這樣被回報的。
 - 應用程式自己產生同站網址的函式（YesWiki 的 `$this->wiki->Href('', $name)`、`href()`）不會被認出來，所以導向到這種網址也會被回報為 open redirect（YesWiki 的 LoginAction.php、DuplicateHandler.php）。
 - macOS 27 上，由 ad-hoc 簽章的程式（release binary 就是）啟動的程序，netstat 看不到 Internet socket：`netstat -anv` 什麼都不輸出（exit 0）。這時 shentu 改用 lsof 列出 listening port，但 lsof 只看得到同一個使用者的程序，所以清單會標成部分。在 Terminal 裡直接跑 netstat 就看得到。macOS 15 沒有這個問題。
+- 用 `apt-mark hold` 鎖住的 Debian 或 Ubuntu 套件（dpkg 狀態是 `hi`）不會被檢查：套件清單只收狀態是 `ii` 的套件，所以 `vulns`、每日巡檢和弱點面都看不到它，也不會列為未檢查。下一版會修正。
 
 ## v0.5.6 — 2026-11-24
 
