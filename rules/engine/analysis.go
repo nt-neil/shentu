@@ -1506,6 +1506,8 @@ func (a *analysis) postfix(st state, t []Token, start, baseEnd int, v val, whole
 				byKeys = e.keys && e.taint
 			} else if byKeys && litIdx {
 				v, byKeys = val{}, false // a literal key an array tainted only under other literal keys does not hold
+			} else if x, ok := st[extractKey]; ok && a.php && pos == baseEnd && extractable(key) {
+				v = val{taint: x.taint, raw: x.raw, emb: x.emb, weak: x.weak} // a variable extract() of input may have defined (context.go)
 			}
 		}
 	}

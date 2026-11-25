@@ -139,7 +139,12 @@ How the engine reads them:
   - `array_map('absint', $x)` (any sanitizer of the rule, or a number cast, as the
     callback) returns sanitized values, with the keys of `$x`;
   - `extract(shortcode_atts(array('id' => 0, ...), $atts))` and `extract(array(...))`
-    define one variable per literal key;
+    define one variable per literal key; `extract()` of any other array that holds
+    input (`extract($args)`, `extract(wp_parse_args($atts, [...]))`, which keeps
+    every key of `$atts`) may define any variable and overwrite the ones already
+    defined, so after it every variable of the scope holds that input until it is
+    assigned again, a variable never assigned before included (`EXTR_SKIP` and the
+    `EXTR_PREFIX_*` flags overwrite nothing);
   - in the SSRF rules, a check of a parsed URL's host against an allowlist that
     is surely a collection (`.has(`, `.includes(`, `in` on a list, set, tuple
     or array written out, `new Set(...)`, `set(...)` or `frozenset(...)` of one

@@ -650,6 +650,7 @@ func (a *analysis) extractStmt(st state, t []Token) {
 	case len(lit) > 2 && lit[0].word("array") && lit[1].op("("):
 		body = inside(lit, 1, closeOf(lit, 1))
 	default:
+		a.extractAny(st, args, a.expr(st, inner, false))
 		return
 	}
 	v := a.expr(st, inner, false)
@@ -658,6 +659,57 @@ func (a *analysis) extractStmt(st state, t []Token) {
 			a.setTarget(st, []Token{{Kind: Var, Text: "$" + item[0].Text, Line: t[0].Line}}, v, "=", false)
 		}
 	}
+}
+
+// extractKey marks, in a state, that extract() of input defined variables whose
+// names are not known here: a plain variable the state does not hold reads as
+// that input (postfix). Joined across paths like any key.
+const extractKey = "\x00extract"
+
+// extractAny follows extract($arr) of an array not written out: it may define a
+// variable for any key ($team_id, never assigned here, after extract($opts)) and,
+// unless a flag says otherwise (EXTR_SKIP, EXTR_PREFIX_*), overwrite the ones
+// already defined ($template_name after extract($args) in a template loader).
+// wp_parse_args($in, $defaults) keeps the keys of $in, so it lands here too.
+// Superglobals and $this are not variables extract() can set.
+func (a *analysis) extractAny(st state, args [][]Token, v val) {
+	if !v.taint {
+		return
+	}
+	overwrite := true
+	if len(args) > 1 {
+		for _, tk := range args[1] {
+			if tk.Kind == Ident && strings.HasPrefix(tk.Text, "EXTR_") && tk.Text != "EXTR_OVERWRITE" && tk.Text != "EXTR_REFS" {
+				overwrite = false
+			}
+		}
+	}
+	add := entry{taint: true, raw: v.raw, emb: v.emb, weak: v.weak}
+	join := func(e entry) entry {
+		return entry{taint: true, sep: false, pre: false, raw: e.raw || add.raw, emb: e.emb || add.emb, weak: weakOf(e.taint, e.weak, true, add.weak)}
+	}
+	if overwrite {
+		for k, e := range st {
+			if extractable(k) {
+				st[k] = join(e)
+			}
+		}
+	}
+	if e, ok := st[extractKey]; ok {
+		st[extractKey] = join(e)
+	} else {
+		st[extractKey] = add
+	}
+}
+
+// extractable reports whether a state key is a plain PHP variable or a path
+// under one, which extract() can set.
+func extractable(k string) bool {
+	root := k
+	if i := strings.Index(k, sepCh); i >= 0 {
+		root = k[:i]
+	}
+	return len(root) > 1 && root[0] == '$' && root != "$this" && root != "$GLOBALS" && !strings.HasPrefix(root, "$_")
 }
 
 func isIdentName(s string) bool {
