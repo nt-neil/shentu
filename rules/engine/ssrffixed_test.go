@@ -34,11 +34,12 @@ func TestSSRFFixedStart(t *testing.T) {
 		{"a backslash: \\\\evil\\share", "'\\\\\\\\' . ", true},
 		{"a drive letter alone", "'C:' . ", true},
 		{"a constant the file defines from input", "BASE . '/uploads/' . ", true},
+		{"a framework constant the file defines from input (S-246-1)", "ABSPATH . 'a/' . ", true},
 		{"a plugin's own constant (it may be defined from input elsewhere)", "MY_DIR . '/uploads/' . ", true},
 		{"an escape: \\x3a is :", "WP_CONTENT_DIR . \"a\\x3a//\" . ", true},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			src := "<?php\ndefine('BASE', $_GET['u']);\n$base = WP_CONTENT_DIR . '/uploads/';\n$x = $_GET['x'];\n$t = file_get_contents(" + c.start + "$x);\n"
+			src := "<?php\ndefine('BASE', $_GET['u']); define('ABSPATH', $_GET['b']);\n$base = WP_CONTENT_DIR . '/uploads/';\n$x = $_GET['x'];\n$t = file_get_contents(" + c.start + "$x);\n"
 			own, _, _ := e.ScanTimed("php", "a.php", []byte(src))
 			var gotS, gotR bool
 			for _, f := range own {
