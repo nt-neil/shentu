@@ -49,7 +49,7 @@ func TestLoginIndexOverflowFloodCost(t *testing.T) {
 	x := &loginIndex{Version: loginIndexVersion, From: now.Add(-loginGateWindow), Addrs: map[string]*loginIndexAddr{}}
 	start := time.Now()
 	for i := 0; i < 120000; i++ {
-		x.add(fmt.Sprintf("198.18.%d.%d", i/256%256, i%256), now.Add(time.Duration(i)*time.Millisecond), false)
+		x.add(fmt.Sprintf("198.18.%d.%d", i/256%256, i%256), now.Add(time.Duration(i)*time.Millisecond), false, 0)
 	}
 	if len(x.Addrs) != maxIndexAddrs || x.OverflowLast.IsZero() {
 		t.Fatalf("kept %d, overflow %v", len(x.Addrs), x.OverflowLast)
