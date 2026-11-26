@@ -698,9 +698,10 @@ or `ErrPartial`, and the audit marks its findings `generated` and counts them ap
 Before the analysis, a rule is skipped for a file that holds none of the names of its
 sinks or, outside library mode, of its sources: patterns match token by token, so
 such a file cannot give it a finding. In a project, a file without a sink is kept
-for a rule when it holds one of its sources, or names a function or method declared
-in a file that does (a plugin's own request helper, `get_request_data('id')`): the
-input it returns can go on to another file's sink. PHP's `array(...)` holds its
+for a rule when it holds one of its sources, or names a function or method whose
+own body holds one and returns a value (a plugin's own request helper,
+`get_request_data('id')`): the input it returns can go on to another file's sink.
+A helper that only calls such a helper of a third file is not one. PHP's `array(...)` holds its
 values as `[...]` does, not as a call the engine does not know. Both
 come with the findings made so far.
 
