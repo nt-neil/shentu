@@ -149,8 +149,9 @@ How the engine reads them:
     set only `prefix_` names. A closure's own scope sees what extract() set
     around it only through its `use (...)`, and its parameters are the caller's
     values; an arrow function sees the scope around it. After `preg_match($p, $s,
-    $m)`, `parse_str($q, $out)` or `exec($c, $output)` the variable written holds
-    what the call put there, and a `catch (E $e)` variable is the exception;
+    $m)`, `parse_str($q, $out)` or `exec($c, $output)` the variable written is the
+    call's (what extract() set there is gone; whether it holds the subject's input
+    is not followed), and a `catch (E $e)` variable is the exception;
   - in the SSRF rules, a check of a parsed URL's host against an allowlist that
     is surely a collection (`.has(`, `.includes(`, `in` on a list, set, tuple
     or array written out, `new Set(...)`, `set(...)` or `frozenset(...)` of one

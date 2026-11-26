@@ -61,10 +61,9 @@ Chinese for the zh-TW pages; keep the two in step.
   only `prefix_` names. A closure sees what `extract()` set around it only through its `use (...)`,
   and its parameters are the caller's values.
 - PHP rules: after `preg_match($p, $s, $m)`, `preg_match_all()`, `parse_str($q, $out)` or
-  `exec($c, $output)`, the variable written by reference holds what the call put there: parts of the
-  subject or string for the first three, which are input when that is (before, `$m[1]` of an input
-  subject carried no input), the command's output for `exec`. A `catch (E $e)` variable is the
-  exception, not what the name held before.
+  `exec($c, $output)`, the variable written by reference is the call's, so a value `extract()` set
+  there before is gone; whether it holds the subject's input is still not followed. A `catch (E $e)`
+  variable is the exception, not what the name held before.
 
 ### Known issues
 

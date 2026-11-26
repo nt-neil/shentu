@@ -831,18 +831,14 @@ func (a *analysis) extractAny(st state, m extractMode, v val, keep string) {
 	}
 }
 
-// outParams are PHP functions that write a variable passed by reference: the
-// argument written (from 1) and the argument whose value it holds parts of (0:
-// none, the variable holds no input of the call's arguments).
-var outParams = map[string][][2]int{
-	"preg_match": {{3, 2}}, "preg_match_all": {{3, 2}}, "parse_str": {{2, 1}},
-	"exec": {{2, 0}, {3, 0}},
-}
+// outParams are PHP functions that write a variable passed by reference, by
+// the argument written (from 1).
+var outParams = map[string][]int{"preg_match": {3}, "preg_match_all": {3}, "parse_str": {2}, "exec": {2, 3}}
 
 // outParamStmt: after preg_match($p, $s, $m), parse_str($q, $out) or
-// exec($c, $output), the variable written holds what the call put there, not
-// what it held before (a value extract() set, say): parts of the subject for
-// preg_match and parse_str, the command's output or status for exec.
+// exec($c, $output), the variable written is defined by the call, so what it
+// held before (a value extract() set, say) is gone. Whether it holds parts of
+// the subject's input is not followed, as before: it reads as clean.
 func (a *analysis) outParamStmt(st state, t []Token) {
 	if !a.php {
 		return
@@ -858,18 +854,12 @@ func (a *analysis) outParamStmt(st state, t []Token) {
 		}
 		args := splitTop(inside(t, i+1, c), isComma)
 		for _, x := range w {
-			if len(args) < x[0] {
+			if len(args) < x {
 				continue
 			}
-			tg := stripParens(args[x[0]-1])
-			if len(tg) != 1 || tg[0].Kind != Var {
-				continue
+			if tg := stripParens(args[x-1]); len(tg) == 1 && tg[0].Kind == Var {
+				a.setTarget(st, tg, val{}, "=", false)
 			}
-			var v val
-			if x[1] > 0 && len(args) >= x[1] {
-				v = a.expr(st, args[x[1]-1], false)
-			}
-			a.setTarget(st, tg, v, "=", false)
 		}
 	}
 }

@@ -12,7 +12,7 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 - Ubuntu 上的 package_vulns：一則 USN 會包括它修正的每一個版本，它的 alias 會列出只有其他版本才有的 CVE（USN-7980-1 列了 CVE-2025-11187，OSV 只把它列在 25.10 和 26.04，不在 24.04）。現在一則 USN 只算 OSV 對這個套件、在主機這個版本上也列出的 CVE，所以其他版本的 CVE 不會再在這台主機上標成正在被利用（KEV），也不會算進弱點面；第三方 PHP 或 nginx 和 php.net、nginx.org 的公告比對時，也不會被當成 OSV 已經列出的 CVE。一則 USN 所屬的套件如果沒有任何以 CVE 命名的公告可以判斷版本，這則 USN 會算進 `kev_unchecked` 並寫出名稱，不會沒有說明就不算。
 - 網站首頁：捲動時才出現的區塊（統計、開放原始碼、最新版本和河道），從中段進入頁面時（例如從連到頁內位置的連結、回到上一頁，或直接跳到中段）不再一直空白。區塊只要有任何一部分看得到就會出現；頁面一打開就看得到的區塊，以及從頁內位置打開的頁面上的每個區塊，都會立刻出現。
 - PHP 規則會追蹤參數不是寫在程式裡的 array 的 `extract()`。`extract($args)`、`extract($_POST)`，或 `extract(wp_parse_args($atts, [...]))`（`$atts` 的每個 key 都會保留）之後，函式裡的每個變數都可能是那份輸入，直到再被指派為止：包括之前定義過的（樣板載入函式的 `$template_name` 會被 `extract($args)` 改寫），以及從沒指派過的（`extract($opts)` 之後的 `$team_id`）。以前一個變數都不會設定，所以 shortcode 的屬性經過這種寫法進到 `include` 或 `call_user_func()` 時不會回報（CVE-2023-6996）。`extract(shortcode_atts($defaults, $atts))` 只會設定 `$defaults` 的 key，也不會改寫 `$defaults` 本身；`EXTR_SKIP` 和 `EXTR_PREFIX_*` 不會改寫任何變數；`extract()` 設定的值，讀它的屬性（`global $wpdb` 之後的 `$wpdb->prefix`）不算輸入，讀它的索引仍然算。flag 照 PHP 的讀法：`EXTR_SKIP` 和 `EXTR_PREFIX_SAME` 不會改寫任何變數，`EXTR_IF_EXISTS` 會改寫但不建立變數，`EXTR_PREFIX_ALL` 和 `EXTR_PREFIX_IF_EXISTS` 只設定名稱以 `prefix_` 起始的變數。closure 只透過它的 `use (...)` 看到外面 `extract()` 設定的值，它的參數是呼叫端給的值。
-- PHP 規則：`preg_match($p, $s, $m)`、`preg_match_all()`、`parse_str($q, $out)` 或 `exec($c, $output)` 之後，傳進去被寫入的變數是這個呼叫放進去的值：前三個是 subject 或字串的一部分，subject 是輸入時也算輸入（以前輸入 subject 的 `$m[1]` 不算輸入），`exec` 則是指令的輸出。`catch (E $e)` 的變數是例外物件，不是這個名稱之前的值。
+- PHP 規則：`preg_match($p, $s, $m)`、`preg_match_all()`、`parse_str($q, $out)` 或 `exec($c, $output)` 之後，傳進去被寫入的變數是這個呼叫設定的值，之前 `extract()` 設在那裡的值就不算了；它是否帶有 subject 的輸入，仍然不追蹤。`catch (E $e)` 的變數是例外物件，不是這個名稱之前的值。
 
 ### 已知問題
 
