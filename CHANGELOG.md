@@ -51,6 +51,32 @@ Chinese for the zh-TW pages; keep the two in step.
   an anchor, by going back to the page, or by a jump. A section shows once any part of it is in the
   window; sections in the window when the page loads, and every section on a page opened at an
   anchor, show at once.
+- PHP rules follow `extract()` of an array not written out. After `extract($args)`,
+  `extract($_POST)` or `extract(wp_parse_args($atts, [...]))` (which keeps every key of `$atts`),
+  each variable of the function may hold that input until it is assigned again: one defined before
+  (a template loader's `$template_name`, overwritten by `extract($args)`) and one never assigned
+  (`$team_id` after `extract($opts)`). Before, no variable was set, so a shortcode's attributes
+  passed this way reached `include` or `call_user_func()` unreported (CVE-2023-6996).
+  `extract(shortcode_atts($defaults, $atts))` sets the keys of `$defaults` only, and never
+  `$defaults` itself; `EXTR_SKIP` and the `EXTR_PREFIX_*` flags overwrite nothing; a property of a
+  value `extract()` set (`$wpdb->prefix` after `global $wpdb`) holds no input, an index of it does.
+  The flags count as PHP reads them: `EXTR_SKIP` and `EXTR_PREFIX_SAME` overwrite nothing,
+  `EXTR_IF_EXISTS` overwrites but creates nothing, `EXTR_PREFIX_ALL` and `EXTR_PREFIX_IF_EXISTS` set
+  only `prefix_` names (any such name when the prefix is not written out). A variable `extract()`
+  creates around a closure is seen in it only through its `use (...)`, and its parameters are the
+  caller's values.
+- PHP rules: after `preg_match($p, $s, $m)`, `preg_match_all()`, `parse_str($q, $out)` or
+  `exec($c, $output)`, the variable written by reference is the call's, so a value `extract()` set
+  there before is gone; whether it holds the subject's input is still not followed, but a variable
+  that is the subject itself (`preg_match($p, $m, $m)`, `parse_str($q, $q)`) keeps what it held.
+  A `catch (E $e)` variable is the exception, not what the name held before.
+
+### Known issues
+
+- After `extract()` of input, a property of a variable it set (`$cfg->path`) reads as no input:
+  `extract()` of request data sets strings and arrays. `extract((array) json_decode($in))` and
+  `extract(get_object_vars(json_decode($in)))` can set objects whose properties are input, and these
+  are missed.
 
 ## v0.5.7 — 2026-11-26
 
