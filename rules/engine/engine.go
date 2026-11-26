@@ -534,8 +534,9 @@ func (e *Engine) scan(lang, path string, src []byte, proj *Project, callsOnly, d
 		// In a project a file without a sink may pass input, its own or a route
 		// handler's parameters, to another file's sink; on its own it has nothing
 		// to find.
-		if !hs && (proj == nil || len(routeFns) == 0 && (len(r.sources) == 0 && len(r.textSources) == 0 || !si.hasSource(r))) {
-			continue
+		if !hs && (proj == nil || len(routeFns) == 0 && (len(r.sources) == 0 && len(r.textSources) == 0 ||
+			!si.hasSource(r) && !proj.callsSource(base, r.rule.ID, names))) {
+			continue // no source either, nor a call of another file's function holding one
 		}
 		// No source of it in the file: nothing to find, in either pass. Only for
 		// a file on its own without route handlers or Koa middleware: in a project

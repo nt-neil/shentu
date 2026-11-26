@@ -127,6 +127,7 @@ type fileIndex struct {
 	Laravel   bool              `json:"lv,omitempty"` // PHP: names Illuminate (any case, any use form: use Illuminate\{...}, \Illuminate\...)
 	Routes    []routeRef        `json:"rt,omitempty"` // registrations naming a handler, maybe in another file (routes.go)
 	Sinks     []string          `json:"s,omitempty"`  // rules some sink of which the file may hold (sinkNames): one no file holds finds nothing across files
+	Srcs      []string          `json:"sr,omitempty"` // rules with sources some source of which the file may hold (sourceNames)
 }
 
 type classIndex struct {
@@ -453,6 +454,9 @@ func indexFile(e *Engine, lang string, src []byte) *fileIndex {
 	for _, r := range e.byLang[lang] {
 		if sinkNames(r, names, src) {
 			fi.Sinks = append(fi.Sinks, r.rule.ID)
+		}
+		if (len(r.sources) > 0 || len(r.textSources) > 0) && sourceNames(r, names, src) {
+			fi.Srcs = append(fi.Srcs, r.rule.ID)
 		}
 	}
 	tree := parse(lang, toks, b)
@@ -785,6 +789,26 @@ func indexJS(t []Token, fi *fileIndex) {
 // ---- resolution ----
 
 // summary returns the summary of the function a call reaches in another file.
+// callsSource reports whether a file naming names may call a function or
+// method declared in a file holding a source of the rule (fileIndex.Srcs): a
+// plugin's own helper returning $_REQUEST[$k] gives input to a file that names
+// no source itself (ig_es_get_request_data('db')), which then passes it to
+// another file's sink.
+func (p *Project) callsSource(lang, id string, names map[string]bool) bool {
+	decl := p.declared[lang]
+	for name := range names {
+		if lang == "php" {
+			name = strings.ToLower(name)
+		}
+		for _, f := range decl[name] {
+			if fi := p.files[f]; fi != nil && slices.Contains(fi.Srcs, id) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (p *Project) summary(a *analysis, c callee) *summary {
 	f, name := p.resolve(a, c)
 	if f == "" {

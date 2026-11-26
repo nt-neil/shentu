@@ -70,6 +70,11 @@ Chinese for the zh-TW pages; keep the two in step.
   there before is gone; whether it holds the subject's input is still not followed, but a variable
   that is the subject itself (`preg_match($p, $m, $m)`, `parse_str($q, $q)`) keeps what it held.
   A `catch (E $e)` variable is the exception, not what the name held before.
+- PHP rules, across files: request input returned by a plugin's own helper declared in another file
+  (`$id = get_request_data('id')`, the helper reading `$_REQUEST`) and passed on to a function of a
+  third file is followed into that function's sink. Before, a file naming neither a source nor a sink
+  of the rule was skipped for it. Input put in `array(...)` and passed to another function keeps its
+  input as `[...]` did (`edit_status(array($_REQUEST['id']))`); before, it was lost.
 
 ### Known issues
 
