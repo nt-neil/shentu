@@ -59,7 +59,18 @@ func wpdbProps(toks []Token) []Token {
 	}
 	// is reports whether the property is $wpdb in the scope: assigned there or
 	// in the traits it uses, and only ever $wpdb.
+	// Each scope and property is worked out once, and a class with more than
+	// maxTraits traits is not looked into: a use is then a map lookup.
+	memo := map[string]bool{}
 	is := func(sc, prop string) bool {
+		key := sc + "\x00" + prop
+		if v, ok := memo[key]; ok {
+			return v
+		}
+		if len(traits[sc]) > maxTraits {
+			memo[key] = false
+			return false
+		}
 		ok, any := true, false
 		for k := -1; k < len(traits[sc]); k++ {
 			s := sc
@@ -70,6 +81,7 @@ func wpdbProps(toks []Token) []Token {
 				ok, any = ok && v, true
 			}
 		}
+		memo[key] = ok && any
 		return ok && any
 	}
 	var out []Token
@@ -153,6 +165,7 @@ func phpClassScopes(toks []Token, cl []int) (scope []string, traits map[string][
 	match := func(j int) int { return min(cl[j], len(toks)-1) }
 	scope = make([]string, len(toks))
 	traits = map[string][]string{}
+	seen := map[string]bool{} // scope + trait, once
 	var fill func(from, to int, name string, depth int)
 	fill = func(from, to int, name string, depth int) {
 		for i := from; i < to && i < len(toks); i++ {
@@ -194,7 +207,8 @@ func phpClassScopes(toks []Token, cl []int) (scope []string, traits map[string][
 							last = toks[k].Text
 						}
 						if toks[k+1].op(",") || toks[k+1].op(";") || toks[k+1].op("{") {
-							if last != "" && !slices.Contains(traits[inner], last) {
+							if k := inner + "\x00" + last; last != "" && !seen[k] {
+								seen[k] = true
 								traits[inner] = append(traits[inner], last)
 							}
 							last = ""
@@ -215,6 +229,9 @@ func phpClassScopes(toks []Token, cl []int) (scope []string, traits map[string][
 	fill(0, len(toks), "", 0)
 	return scope, traits
 }
+
+// maxTraits bounds the traits a class is looked into for a $wpdb property.
+const maxTraits = 64
 
 // phpAssignOps are the operators assigning to what is on their left.
 var phpAssignOps = map[string]bool{"=": true, ".=": true, "+=": true, "-=": true, "*=": true, "/=": true, "%=": true,

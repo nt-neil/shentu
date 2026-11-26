@@ -637,7 +637,8 @@ rule of its language.
    `$wpdb` wherever the class uses it as an object (`$this->wpdb->get_results(...)`),
    so the rules' `$wpdb` sinks and `$wpdb->prepare` match it. A property belongs
    to the class, trait, interface or enum it is written in, together with the
-   traits of the file the class uses; `self::` and `static::` name the same one.
+   traits of the file the class uses (a class using more than 64 is not looked
+   into); `self::` and `static::` name the same one.
    A destructuring (`[$this->db] = ...`, `list($a, $this->db) = ...`), a reference
    (`&$this->db`) or a foreach target (`as $this->db`) counts as giving it
    something else. The property's name says nothing on its own. Not read: a
