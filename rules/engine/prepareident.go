@@ -11,9 +11,10 @@ import "strings"
 // placeholders (%s) take the values in order, numbered ones (%2$s) the value
 // they name. The format is read from the strings written in the first argument
 // (or held by a variable assigned only a literal); its other parts are not
-// read, so a placeholder they would hold is not seen. SQL comments (/* */,
-// -- and # to the end of the line) are skipped: their quotes are no SQL's;
-// MySQL runs the text of a /*! ... */ one, which is read as SQL.
+// read, so a placeholder they would hold is not seen. In SQL comments (/* */,
+// -- and # to the end of the line) quotes are no SQL's, but prepare() still
+// fills their placeholders, which take their values in turn; MySQL runs the
+// text of a /*! ... */ one, which is read as SQL.
 // A number past the values names none (%0$s, %99999999999999999999$s).
 func (a *analysis) identArgs(st state, splitArgs [][]Token) []int {
 	if len(splitArgs) < 2 {
@@ -23,21 +24,60 @@ func (a *analysis) identArgs(st state, splitArgs [][]Token) []int {
 	var out []int
 	seq := 0
 	var quote byte
+	// placeholder reads the one at f[i] ('%') and returns where it ends; one
+	// in backticks (ident) whose value is a request's is listed.
+	placeholder := func(i int, ident bool) int {
+		if i+1 < len(f) && f[i+1] == '%' {
+			return i + 1
+		}
+		j, n, numbered := i+1, 0, false
+		for j < len(f) && f[j] >= '0' && f[j] <= '9' {
+			if n <= len(splitArgs) { // past the values the number names none: it stops growing (no overflow)
+				n = n*10 + int(f[j]-'0')
+			}
+			j++
+		}
+		if j < len(f) && f[j] == '$' && j > i+1 {
+			j, numbered = j+1, true
+		} else {
+			j, n = i+1, 0 // no number: a sequential placeholder
+		}
+		for j < len(f) && (f[j] == '-' || f[j] == '+' || f[j] == ' ' || f[j] == '0' || f[j] == '.' || f[j] >= '1' && f[j] <= '9') {
+			j++ // flags, width and precision
+		}
+		if j >= len(f) || !(f[j] == 's' || f[j] == 'd' || f[j] == 'f' || f[j] == 'F' || f[j] == 'i') {
+			return i
+		}
+		if !numbered {
+			seq++
+			n = seq
+		}
+		if ident && f[j] == 's' && n >= 1 && n < len(splitArgs) { // %0$s names no value
+			out = append(out, n)
+		}
+		return j
+	}
+	comment := -1 // inside an SQL comment up to this index: quotes are no SQL's, placeholders still take values
 	for i := 0; i < len(f); i++ {
 		c := f[i]
+		if i < comment {
+			if c == '%' {
+				i = placeholder(i, false)
+			}
+			continue
+		}
 		switch {
 		case quote == 0 && c == '/' && i+1 < len(f) && f[i+1] == '*' && !(i+2 < len(f) && f[i+2] == '!'):
-			end := strings.Index(f[i+2:], "*/")
-			if end < 0 {
-				return out // the rest is a comment
+			comment = len(f)
+			if end := strings.Index(f[i+2:], "*/"); end >= 0 {
+				comment = i + 2 + end + 2
 			}
-			i += end + 3 // a comment: its quotes and placeholders are no SQL
+			i++
 		case quote == 0 && (c == '#' || c == '-' && i+1 < len(f) && f[i+1] == '-' && (i+2 == len(f) || f[i+2] == ' ' || f[i+2] == '\t' || f[i+2] == '\n')):
-			end := strings.IndexByte(f[i:], '\n')
-			if end < 0 {
-				return out
+			comment = len(f)
+			if end := strings.IndexByte(f[i:], '\n'); end >= 0 {
+				comment = i + end
 			}
-			i += end // a comment to the end of the line
 		case c == '\\' && quote != '`':
 			i++ // an escaped character in an SQL string
 		case c == '\'' || c == '"' || c == '`':
@@ -48,36 +88,7 @@ func (a *analysis) identArgs(st state, splitArgs [][]Token) []int {
 				quote = 0
 			}
 		case c == '%':
-			if i+1 < len(f) && f[i+1] == '%' {
-				i++
-				continue
-			}
-			j, n, numbered := i+1, 0, false
-			for j < len(f) && f[j] >= '0' && f[j] <= '9' {
-				if n <= len(splitArgs) { // past the values the number names none: it stops growing (no overflow)
-					n = n*10 + int(f[j]-'0')
-				}
-				j++
-			}
-			if j < len(f) && f[j] == '$' && j > i+1 {
-				j, numbered = j+1, true
-			} else {
-				j, n = i+1, 0 // no number: a sequential placeholder
-			}
-			for j < len(f) && (f[j] == '-' || f[j] == '+' || f[j] == ' ' || f[j] == '0' || f[j] == '.' || f[j] >= '1' && f[j] <= '9') {
-				j++ // flags, width and precision
-			}
-			if j >= len(f) || !(f[j] == 's' || f[j] == 'd' || f[j] == 'f' || f[j] == 'F' || f[j] == 'i') {
-				continue
-			}
-			if !numbered {
-				seq++
-				n = seq
-			}
-			if f[j] == 's' && quote == '`' && n >= 1 && n < len(splitArgs) { // %0$s names no value
-				out = append(out, n)
-			}
-			i = j
+			i = placeholder(i, quote == '`')
 		}
 	}
 	return out
