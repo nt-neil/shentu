@@ -37,13 +37,14 @@ func TestRouteSamples(t *testing.T) {
 			if err != nil {
 				t.Errorf("%s sample %d: %v", r.ID, i, err)
 			}
+			fs = taintOnly(fs)
 			switch s.Kind {
 			case "vulnerable":
 				if len(fs) == 0 && !missingClasses(e, r) {
 					t.Errorf("%s sample %d (vulnerable): not reported", r.ID, i)
 				}
 				if len(r.Sources) == 0 && len(r.Clears) == 0 { // a model that only adds sources or clears shows its effect in the safe sample
-					if without, _ := bare.Scan(r.Lang, ext[r.Lang], []byte(s.Code)); len(without) != 0 {
+					if without, _ := bare.Scan(r.Lang, ext[r.Lang], []byte(s.Code)); len(taintOnly(without)) != 0 {
 						t.Errorf("%s sample %d: reported without the route model too (%v): it shows nothing", r.ID, i, without)
 					}
 				}
@@ -128,7 +129,7 @@ func TestRouteRegisteredInAnotherFile(t *testing.T) {
 			var at []string
 			for _, p := range paths {
 				fs, _ := pr.ScanCalls(p, []byte(files[p]))
-				for _, f := range fs {
+				for _, f := range taintOnly(fs) {
 					at = append(at, fmt.Sprintf("%s:%d", f.Path, f.Line))
 				}
 			}

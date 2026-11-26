@@ -59,7 +59,7 @@ func r20run(t *testing.T, cases []r20case) {
 			fs, err := e.Scan(c.lang, "t."+c.lang, []byte(c.src))
 			got := false
 			var ids []string
-			for _, f := range fs {
+			for _, f := range taintOnly(fs) {
 				ids = append(ids, f.RuleID)
 				if strings.HasPrefix(f.RuleID, c.prefix) {
 					got = true
