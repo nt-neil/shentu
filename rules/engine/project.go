@@ -128,6 +128,7 @@ type fileIndex struct {
 	Routes    []routeRef        `json:"rt,omitempty"` // registrations naming a handler, maybe in another file (routes.go)
 	Sinks     []string          `json:"s,omitempty"`  // rules some sink of which the file may hold (sinkNames): one no file holds finds nothing across files
 	Srcs      []string          `json:"sr,omitempty"` // rules with sources some source of which the file may hold (sourceNames)
+	SrcFns    []string          `json:"sf,omitempty"` // functions and methods whose body holds a source of one of Srcs and returns a value
 }
 
 type classIndex struct {
@@ -463,6 +464,9 @@ func indexFile(e *Engine, lang string, src []byte) *fileIndex {
 	classes := map[string]*classIndex{}
 	var order []string
 	funcs := collectFuncs(tree, lang)
+	if len(fi.Srcs) > 0 {
+		fi.SrcFns = srcFuncs(e, lang, funcs, fi.Srcs)
+	}
 	for _, key := range slices.Sorted(maps.Keys(funcs)) { // in key order: a class declared twice takes its parent from the same declaration every time
 		name := key[strings.LastIndex(key, ":")+1:]
 		infos := funcs[key]
@@ -789,8 +793,45 @@ func indexJS(t []Token, fi *fileIndex) {
 // ---- resolution ----
 
 // summary returns the summary of the function a call reaches in another file.
+// srcFuncs lists the functions and methods of a file whose own body names a
+// source of one of the rules and returns a value: a request helper
+// (return $_REQUEST[$k]). A function merely declared in such a file is not one.
+func srcFuncs(e *Engine, lang string, funcs map[string][]*fnInfo, ids []string) []string {
+	var rs []*crule
+	for _, r := range e.byLang[lang] {
+		if slices.Contains(ids, r.rule.ID) {
+			rs = append(rs, r)
+		}
+	}
+	var out []string
+	for _, key := range slices.Sorted(maps.Keys(funcs)) {
+		name := key[strings.LastIndex(key, ":")+1:]
+		for _, x := range funcs[key] {
+			if x.f.name == "" {
+				continue
+			}
+			names, returns := map[string]bool{}, false
+			walkToks(x.f.body, 0, func(t []Token) {
+				nameSet(t, names)
+				returns = returns || len(t) > 1 && t[0].word("return") && !t[1].op(";")
+			})
+			if !returns {
+				continue
+			}
+			for _, r := range rs {
+				if anyName(r.sources, nil, names, func(*pat) bool { return false }) {
+					out = append(out, name)
+					break
+				}
+			}
+		}
+	}
+	return slices.Compact(out)
+}
+
 // callsSource reports whether a file naming names may call a function or
-// method declared in a file holding a source of the rule (fileIndex.Srcs): a
+// method whose own body holds a source of the rule and returns a value
+// (fileIndex.SrcFns, in a file listing the rule in Srcs): a
 // plugin's own helper returning $_REQUEST[$k] gives input to a file that names
 // no source itself (ig_es_get_request_data('db')), which then passes it to
 // another file's sink.
@@ -801,7 +842,9 @@ func (p *Project) callsSource(lang, id string, names map[string]bool) bool {
 			name = strings.ToLower(name)
 		}
 		for _, f := range decl[name] {
-			if fi := p.files[f]; fi != nil && slices.Contains(fi.Srcs, id) {
+			if fi := p.files[f]; fi != nil && slices.Contains(fi.Srcs, id) && slices.ContainsFunc(fi.SrcFns, func(n string) bool {
+				return n == name || lang == "php" && strings.EqualFold(n, name)
+			}) {
 				return true
 			}
 		}
