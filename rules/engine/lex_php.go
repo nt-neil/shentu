@@ -148,7 +148,7 @@ func (s *scanner) phpSingle() {
 		}
 		s.advance(1)
 	}
-	t := Token{Kind: Str, Text: s.src[start:min(s.pos, len(s.src))], Line: line}
+	t := Token{Kind: Str, Flags: flagPHPSingle, Text: s.src[start:min(s.pos, len(s.src))], Line: line}
 	if s.pos < len(s.src) {
 		s.pos++
 	} else {
@@ -232,6 +232,8 @@ func (s *scanner) heredoc() bool {
 	t := Token{Kind: Str, Line: line, Text: strings.TrimSuffix(s.src[bodyStart:bodyEnd], "\r")}
 	if quote != '\'' {
 		t.Parts = s.phpParts(bodyStart, bodyEnd, 0)
+	} else {
+		t.Flags |= flagPHPNowdoc
 	}
 	s.advance(after - s.pos)
 	if open {

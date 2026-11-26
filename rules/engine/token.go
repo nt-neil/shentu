@@ -37,6 +37,14 @@ const (
 // that the text after its block closes on the line (htmlctx.go).
 const flagStrClosed uint16 = 1 << 11
 
+// flagPHPSingle marks a PHP '...' string, whose only escapes are \\ and \';
+// flagPHPNowdoc a nowdoc, which has none. Other PHP strings ("...", heredoc)
+// have the double-quoted escapes. Their Text keeps the escapes as written.
+const (
+	flagPHPSingle uint16 = 1 << 12
+	flagPHPNowdoc uint16 = 1 << 13
+)
+
 // Token is one lexical unit. Comments are dropped. A string literal keeps its raw
 // content in Text (between the quotes, escapes untouched); its interpolations
 // ("$x", "{$x}", f"{x}", `${x}`) are lexed as code into Parts.
