@@ -104,6 +104,7 @@ type argCond struct {
 	notReceiver    []*pat   // nor on an object surely of one of these classes (receiver.go)
 	recvFrom       []*pat   // only on a receiver made by one of these, or of one of recvNames (recvMadeBy)
 	recvNames      []string // the names recvFrom takes when the file does not show what made the receiver
+	identPh        bool     // a value after the format counts only for a placeholder in backticks (identArgs)
 	unlessCT       []string // nor once the response's Content-Type is one of these on every path (ctype.go)
 	unlessImports  []string // nor in a file importing one of these modules (imports.go)
 	importsNot     []string // ... unless the file or the receiver names one of these
@@ -256,7 +257,7 @@ func compileRule(r rules.Rule) (*crule, error) {
 	foldMembers(c.sinks)
 	foldMembers(c.sanitizers)
 	for _, a := range r.Args {
-		ac := &argCond{arg: a.Arg, name: a.Name, whole: a.Whole, leading: a.Leading, literal: a.Literal, notLiteral: a.NotLiteral, recvNames: a.ReceiverNames, key: a.Key, keys: a.Keys, minLen: a.MinLen, unlessAt: a.UnlessAt,
+		ac := &argCond{arg: a.Arg, name: a.Name, whole: a.Whole, leading: a.Leading, literal: a.Literal, notLiteral: a.NotLiteral, recvNames: a.ReceiverNames, identPh: a.IdentPlaceholder, key: a.Key, keys: a.Keys, minLen: a.MinLen, unlessAt: a.UnlessAt,
 			unlessImports: a.UnlessImports, importsNot: a.UnlessImportsNot, markup: a.Markup}
 		switch {
 		case a.UnlessAt != "" && a.UnlessAt != "start" && a.UnlessAt != "top":

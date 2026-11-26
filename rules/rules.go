@@ -113,6 +113,10 @@ type Args struct {
 	ReceiverFrom []string `toml:"receiver_from"`
 	// ReceiverNames: see ReceiverFrom.
 	ReceiverNames []string `toml:"receiver_names"`
+	// IdentPlaceholder (a prepare()-style sink, without arg): a value after the
+	// format counts only when the format, written in the first argument, puts
+	// its placeholder inside backticks (`%s`, `%2$s`): an identifier there.
+	IdentPlaceholder bool `toml:"ident_placeholder"`
 	// UnlessAfter: the SQL text (or other text) does not count when every
 	// value from the input in it comes after one of these texts (any case)
 	// in a string written in the call: "... ORDER BY $col" is

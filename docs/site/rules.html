@@ -37,7 +37,7 @@
   <label>Language <select id="fl"><option value="">All</option><option value="php">PHP</option><option value="python">Python</option><option value="js">JavaScript / TypeScript</option></select></label>
   <label>Class <select id="fc"><option value="">All</option><option value="cmdi">Command injection</option><option value="code-eval">Code evaluation</option><option value="deserialization">Unsafe deserialization</option><option value="file-upload">Dangerous file upload</option><option value="hardcoded-secret">Hard-coded credentials</option><option value="ldapi">LDAP injection</option><option value="nosqli">NoSQL injection</option><option value="open-redirect">Open redirect</option><option value="path-traversal">Path traversal</option><option value="sqli">SQL injection</option><option value="ssrf">Server-side request forgery</option><option value="weak-crypto">Weak cryptography</option><option value="xss">Cross-site scripting</option><option value="xxe">XML external entities</option></select></label>
   <label>Severity <select id="fs"><option value="">All</option><option value="critical">critical</option><option value="high">high</option><option value="medium">medium</option><option value="low">low</option></select></label>
-  <p class="count" aria-live="polite"><strong id="shown">130</strong> / 130 rules</p>
+  <p class="count" aria-live="polite"><strong id="shown">131</strong> / 131 rules</p>
 </form>
 <section class="routes">
   <h2>Route models</h2>
@@ -751,6 +751,27 @@ $dir = $request-&gt;input(&#39;dir&#39;) === &#39;asc&#39; ? &#39;asc&#39; : &#3
 return Payment::query()-&gt;orderBy($sort, $dir)-&gt;paginate();</code></pre></div>
     </div>
     <p class="fix"><strong>Fix</strong> Identifiers cannot be bound as parameters: map the requested sort key to a fixed allowlist of column names and force the direction to ASC or DESC.</p>
+  </details>
+  
+  <details class="rule" id="php-sqli-prepare-identifier" data-rule-id="php-sqli-prepare-identifier" data-lang="php" data-class="sqli" data-sev="high" data-text="php-sqli-prepare-identifier CWE-89 Request input passed to prepare() for a placeholder inside backticks, where it is a column or table name">
+    <summary><span class="sev high"><i aria-hidden="true">高</i><b>high</b></span><span class="head"><code class="rid">php-sqli-prepare-identifier</code> <span class="cwe">CWE-89</span><span class="title">Request input passed to prepare() for a placeholder inside backticks, where it is a column or table name</span></span></summary>
+    <p class="meta">Frameworks: wordpress</p>
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">Reported</h3><p class="note">the numbered placeholders %2$s and %3$s sit inside backticks: the column comes from the REST request</p><pre><code>&lt;?php
+function track( $request ) {
+    global $wpdb;
+    $col = $request-&gt;get_params()[&#39;type&#39;];
+    $wpdb-&gt;query( $wpdb-&gt;prepare( &#39;UPDATE %1$s SET `%2$s` = `%3$s` &#43; 1 WHERE id = %4$d&#39;, $wpdb-&gt;prefix . &#39;stats&#39;, $col, $col, 1 ) );
+}</code></pre></div>
+      <div class="sample good-s"><h3 class="good">Fixed</h3><p class="note">%s standing alone, between quotes, after ORDER BY or in LIMIT is quoted as a string: no identifier</p><pre><code>&lt;?php
+global $wpdb;
+$a = $wpdb-&gt;get_results( $wpdb-&gt;prepare( &#34;SELECT * FROM t WHERE a = %s&#34;, $_GET[&#39;a&#39;] ) );
+$b = $wpdb-&gt;get_results( $wpdb-&gt;prepare( &#34;SELECT * FROM t WHERE b = &#39;%s&#39;&#34;, $_GET[&#39;b&#39;] ) );
+$c = $wpdb-&gt;get_results( $wpdb-&gt;prepare( &#34;SELECT * FROM t ORDER BY %s&#34;, $_GET[&#39;c&#39;] ) );
+$d = $wpdb-&gt;get_results( $wpdb-&gt;prepare( &#34;SELECT * FROM t LIMIT %d&#34;, $_GET[&#39;d&#39;] ) );
+$e = $wpdb-&gt;get_results( $wpdb-&gt;prepare( &#34;SELECT * FROM t LIMIT %s&#34;, $_GET[&#39;e&#39;] ) );</code></pre></div>
+    </div>
+    <p class="fix"><strong>Fix</strong> Map the column or table name to a fixed allowlist, or use the %i placeholder (WordPress 6.2&#43;), which escapes an identifier; %s quotes a string.</p>
   </details>
   
   <details class="rule" id="php-sqli-prepare-query-text" data-rule-id="php-sqli-prepare-query-text" data-lang="php" data-class="sqli" data-sev="high" data-text="php-sqli-prepare-query-text CWE-89 Request input written into the query text of a prepared statement">

@@ -1,0 +1,67 @@
+id = "php-sqli-prepare-identifier"
+lang = "php"
+class = "sqli"
+cwe = "CWE-89"
+severity = "high"
+tier = "info"
+title = "Request input passed to prepare() for a placeholder inside backticks, where it is a column or table name"
+frameworks = ["wordpress"]
+sources = ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "get_query_var", "->get_param(", "->get_params(", "$request['", "shortcode_atts(", "$atts[", "->get_json_params(", "->get_body_params(", "->get_query_params(", "filter_input("]
+# $wpdb->prepare quotes a %s value as a string ('...'), which is safe between
+# SQL quotes or standing alone; inside backticks the value is an identifier and
+# the string escaping does not stop it from closing the backticks. The other
+# prepare() rule reports input written into the format itself.
+sinks = ["->prepare("]
+sanitizers = ["absint", "intval", "(int)", "sanitize_key", "sanitize_sql_orderby", "in_array"]
+fix = "Map the column or table name to a fixed allowlist, or use the %i placeholder (WordPress 6.2+), which escapes an identifier; %s quotes a string."
+refs = ["CVE-2024-1698"]
+
+[[args]]
+sinks = ["->prepare("]
+ident_placeholder = true
+
+[[samples]]
+kind = "vulnerable"
+note = "the numbered placeholders %2$s and %3$s sit inside backticks: the column comes from the REST request"
+code = '''
+<?php
+function track( $request ) {
+    global $wpdb;
+    $col = $request->get_params()['type'];
+    $wpdb->query( $wpdb->prepare( 'UPDATE %1$s SET `%2$s` = `%3$s` + 1 WHERE id = %4$d', $wpdb->prefix . 'stats', $col, $col, 1 ) );
+}
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+<?php
+global $wpdb;
+$rows = $wpdb->get_results( $wpdb->prepare( "SELECT * FROM {$wpdb->prefix}posts ORDER BY `%s` LIMIT %d", $_GET['orderby'], 10 ) );
+'''
+
+[[samples]]
+kind = "safe"
+note = "%s standing alone, between quotes, after ORDER BY or in LIMIT is quoted as a string: no identifier"
+code = '''
+<?php
+global $wpdb;
+$a = $wpdb->get_results( $wpdb->prepare( "SELECT * FROM t WHERE a = %s", $_GET['a'] ) );
+$b = $wpdb->get_results( $wpdb->prepare( "SELECT * FROM t WHERE b = '%s'", $_GET['b'] ) );
+$c = $wpdb->get_results( $wpdb->prepare( "SELECT * FROM t ORDER BY %s", $_GET['c'] ) );
+$d = $wpdb->get_results( $wpdb->prepare( "SELECT * FROM t LIMIT %d", $_GET['d'] ) );
+$e = $wpdb->get_results( $wpdb->prepare( "SELECT * FROM t LIMIT %s", $_GET['e'] ) );
+'''
+
+[[samples]]
+kind = "safe"
+note = "a number or a key-cleaned name in backticks, a placeholder in backticks inside an SQL string, and %i"
+code = '''
+<?php
+global $wpdb;
+$a = $wpdb->query( $wpdb->prepare( "UPDATE t SET `%s` = 1", sanitize_key( $_GET['col'] ) ) );
+$b = $wpdb->query( $wpdb->prepare( "UPDATE t SET `%d` = 1", $_GET['n'] ) );
+$c = $wpdb->query( $wpdb->prepare( "UPDATE t SET note = 'a `%s` b'", $_GET['note'] ) );
+$d = $wpdb->query( $wpdb->prepare( "UPDATE t SET %i = 1", $_GET['col'] ) );
+$e = $wpdb->query( $wpdb->prepare( "UPDATE t SET `%s` = %s", 'status', $_GET['v'] ) );
+'''

@@ -2757,6 +2757,15 @@ func (a *analysis) sinkWith(st state, t []Token, i int, s *pat, cond *argCond) b
 		tainted = hit(a.expr(st, recv, false))
 	case open >= 0:
 		args := splitTop(region, isComma)
+		if cond != nil && cond.identPh {
+			for _, k := range a.identArgs(st, args) {
+				if reaches(args[k]) {
+					tainted = true
+					break
+				}
+			}
+			break
+		}
 		if cond != nil && (cond.arg != nil || cond.name != "") {
 			if arg, ok := a.condArg(args, cond); ok {
 				tainted = reaches(arg)

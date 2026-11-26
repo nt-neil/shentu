@@ -76,6 +76,11 @@ Chinese for the zh-TW pages; keep the two in step.
   before, only `$wpdb` itself was a sink. The class (or a trait of the file it uses) must show the
   assignment: a property named `wpdb` or `db` alone, one set in another file (a parent class), or
   one another class of the file gives `$wpdb` is not read as `$wpdb`.
+- PHP rules: request input passed to `$wpdb->prepare()` for a `%s` placeholder written inside
+  backticks, where the value is a column or table name (also a numbered `%2$s`), is reported
+  (`php-sqli-prepare-identifier`): `prepare()` quotes the value as a string, which does not protect
+  an identifier. Before, `prepare()` counted as escaping every value. A `%s` between quotes, standing
+  alone, after `ORDER BY` or in `LIMIT`, `%d` and `%i` are not reported.
 
 ### Known issues
 

@@ -254,8 +254,11 @@ func checkText(t *testing.T, r Rule) {
 func checkArgs(t *testing.T, r Rule) {
 	covered := map[string]bool{}
 	for i, a := range r.Args {
-		if a.Arg == nil && len(a.When) == 0 && len(a.Unless) == 0 && !a.Whole && !a.Leading && len(a.Context) == 0 && !a.Literal && !a.NotLiteral && a.Key == "" && !a.Keys && len(a.Receiver) == 0 && len(a.NotReceiver) == 0 && len(a.ReceiverFrom) == 0 && len(a.UnlessAfter) == 0 {
-			t.Errorf("%s: args %d sets none of arg, when, unless, whole, leading, context, literal, not_literal, key, keys, receiver, not_receiver, receiver_from, unless_after", r.File, i)
+		if a.Arg == nil && len(a.When) == 0 && len(a.Unless) == 0 && !a.Whole && !a.Leading && len(a.Context) == 0 && !a.Literal && !a.NotLiteral && a.Key == "" && !a.Keys && len(a.Receiver) == 0 && len(a.NotReceiver) == 0 && len(a.ReceiverFrom) == 0 && !a.IdentPlaceholder && len(a.UnlessAfter) == 0 {
+			t.Errorf("%s: args %d sets none of arg, when, unless, whole, leading, context, literal, not_literal, key, keys, receiver, not_receiver, receiver_from, ident_placeholder, unless_after", r.File, i)
+		}
+		if a.IdentPlaceholder && (a.Arg != nil || a.Name != "") {
+			t.Errorf("%s: args %d: ident_placeholder picks the values itself, with no arg", r.File, i)
 		}
 		if len(a.ReceiverNames) > 0 && len(a.ReceiverFrom) == 0 || len(a.ReceiverFrom) > 0 && r.Lang != "python" {
 			t.Errorf("%s: args %d: receiver_names needs receiver_from, which is for Python", r.File, i)
