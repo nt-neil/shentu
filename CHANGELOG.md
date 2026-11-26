@@ -70,6 +70,11 @@ Chinese for the zh-TW pages; keep the two in step.
   there before is gone; whether it holds the subject's input is still not followed, but a variable
   that is the subject itself (`preg_match($p, $m, $m)`, `parse_str($q, $q)`) keeps what it held.
   A `catch (E $e)` variable is the exception, not what the name held before.
+- PHP rules: WordPress's `$wpdb` kept in a property (`$this->wpdb = $wpdb`, `$this->db = &$wpdb`,
+  `self::$mysqli =& $wpdb`) is `$wpdb` wherever the same file queries through it
+  (`$this->wpdb->get_results(...)`), so request input concatenated into such a query is reported;
+  before, only `$wpdb` itself was a sink. The file must show the assignment: a property named
+  `wpdb` or `db` alone, or one set in another file (a parent class), is not read as `$wpdb`.
 
 ### Known issues
 

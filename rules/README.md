@@ -632,6 +632,12 @@ rule of its language.
    heredoc (nowdoc stays text) and backticks; Python f-strings; JavaScript
    template literals, nested to any depth. Unterminated strings and comments end
    at the end of the line or file.
+   A PHP property every assignment of the file gives WordPress's `$wpdb`
+   (`$this->wpdb = $wpdb`, `= &$wpdb`, `self::$mysqli =& $wpdb`) is read as
+   `$wpdb` wherever the file uses it as an object (`$this->wpdb->get_results(...)`),
+   so the rules' `$wpdb` sinks and `$wpdb->prepare` match it. The property's name
+   says nothing on its own, and one set in another file (a parent class's
+   constructor) is not seen.
 2. **Statements and scopes.** Statements, `if`/`else`, loops, `try` and function
    bodies (braces in PHP and JavaScript, indentation in Python). Closures and arrow
    functions are scopes of their own that see the variables around them; PHP
