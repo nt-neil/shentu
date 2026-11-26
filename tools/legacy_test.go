@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"net"
 	"os"
@@ -31,6 +32,7 @@ import (
 	"time"
 
 	"github.com/nt-neil/shentu/hostenv"
+	"github.com/nt-neil/shentu/internal/osutil"
 )
 
 // fixtures replays every Linux fixture of hostenv/testdata.
@@ -1089,4 +1091,25 @@ func TestLegacyWebRoots(t *testing.T) {
 	if len(wantUnread) < 4 || !reflect.DeepEqual(gotUnread, wantUnread) {
 		t.Errorf("unreadable:\n got %q\nwant %q", gotUnread, wantUnread)
 	}
+}
+
+// readSmallRegular (v0.2.5, the legacy check above) reads a file that app users may control: it does not follow a
+// symlink swapped in after the walk, checks the open file itself, and reads at most max.
+// When seen is set, the opened file must be the same file the walk saw, so a parent
+// folder swapped for a symlink in between cannot redirect the read.
+func readSmallRegular(p string, max int64, seen os.FileInfo) ([]byte, bool) {
+	f, err := osutil.OpenNoFollow(p, os.O_RDONLY, 0, true)
+	if err != nil {
+		return nil, false
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil || !st.Mode().IsRegular() || st.Size() > max || (seen != nil && !os.SameFile(seen, st)) {
+		return nil, false
+	}
+	b, err := io.ReadAll(io.LimitReader(f, max+1))
+	if err != nil || int64(len(b)) > max {
+		return nil, false
+	}
+	return b, true
 }

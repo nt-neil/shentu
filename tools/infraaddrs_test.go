@@ -57,7 +57,7 @@ func (h deniedHost) ReadFile(p string) ([]byte, error) {
 func TestInfraAddrsUnreadRefuses(t *testing.T) {
 	for _, f := range []string{"/etc/resolv.conf", "/run/systemd/resolve/resolv.conf", "/proc/net/route", "/proc/net/ipv6_route"} {
 		h := deniedHost{memHost{"/etc/resolv.conf": "nameserver 192.0.2.53\n"}, f}
-		if _, err := infraAddrs(h); err == nil || !strings.Contains(err.Error(), f+" could not be read") {
+		if _, err := infraAddrs(h); err == nil || err.Error() != f+" could not be read (permission denied)" {
 			t.Errorf("%s unread: %v", f, err)
 		}
 		withHost(t, h)
