@@ -28,11 +28,15 @@ func wpdbProps(toks []Token) []Token {
 		return toks
 	}
 	cl := closers(toks) // every bracket's match, once: the passes below stay linear on any file
-	scope, traits := phpClassScopes(toks, cl)
-	only := map[string]bool{} // scope + property → every assignment gives it $wpdb
-	set := func(key string, ok bool) {
+	scope, traits, uses := phpClassScopes(toks, cl)
+	only := map[string]bool{}         // scope + property → every assignment gives it $wpdb
+	assigned := map[string][]string{} // property → the scopes assigning it
+	set := func(sc, prop string, ok bool) {
+		key := sc + "\x00" + prop
 		if prev, seen := only[key]; seen {
 			ok = ok && prev
+		} else {
+			assigned[prop] = append(assigned[prop], sc)
 		}
 		only[key] = ok
 	}
@@ -41,9 +45,8 @@ func wpdbProps(toks []Token) []Token {
 		if n == 0 || i+n >= len(toks) {
 			continue
 		}
-		key := scope[i] + "\x00" + prop
 		if indirectWrite(toks, cl, i) {
-			set(key, false)
+			set(scope[i], prop, false)
 			continue
 		}
 		op := toks[i+n]
@@ -54,31 +57,36 @@ func wpdbProps(toks []Token) []Token {
 		if op.Text == "=" && k < len(toks) && toks[k].op("&") {
 			k++ // = &$wpdb
 		}
-		set(key, op.Text == "=" && k < len(toks) && toks[k].Kind == Var && toks[k].Text == "$wpdb" &&
+		set(scope[i], prop, op.Text == "=" && k < len(toks) && toks[k].Kind == Var && toks[k].Text == "$wpdb" &&
 			(k+1 == len(toks) || toks[k+1].op(";")))
 	}
 	// is reports whether the property is $wpdb in the scope: assigned there or
 	// in the traits it uses, and only ever $wpdb.
-	// Each scope and property is worked out once, and a class with more than
-	// maxTraits traits is not looked into: a use is then a map lookup.
+	// Each scope and property is worked out once, going through the class's
+	// traits or the scopes assigning the property, whichever are fewer: a
+	// use is then a map lookup, and a class of many traits is still read.
 	memo := map[string]bool{}
 	is := func(sc, prop string) bool {
 		key := sc + "\x00" + prop
 		if v, ok := memo[key]; ok {
 			return v
 		}
-		if len(traits[sc]) > maxTraits {
-			memo[key] = false
-			return false
-		}
 		ok, any := true, false
-		for k := -1; k < len(traits[sc]); k++ {
-			s := sc
-			if k >= 0 {
-				s = traits[sc][k]
-			}
+		take := func(s string) {
 			if v, seen := only[s+"\x00"+prop]; seen {
 				ok, any = ok && v, true
+			}
+		}
+		take(sc)
+		if ts := traits[sc]; len(ts) <= len(assigned[prop]) {
+			for _, t := range ts {
+				take(t)
+			}
+		} else {
+			for _, s := range assigned[prop] {
+				if s != sc && uses[sc+"\x00"+s] {
+					take(s)
+				}
 			}
 		}
 		memo[key] = ok && any
@@ -161,11 +169,11 @@ func indirectWrite(toks []Token, cl []int, i int) bool {
 // phpClassScopes names, for each token, the class, trait, interface or enum
 // it is written in ("" outside any; an anonymous class by its position), and
 // gives each scope the traits of the file it uses (use T1, T2; in its body).
-func phpClassScopes(toks []Token, cl []int) (scope []string, traits map[string][]string) {
+func phpClassScopes(toks []Token, cl []int) (scope []string, traits map[string][]string, uses map[string]bool) {
 	match := func(j int) int { return min(cl[j], len(toks)-1) }
 	scope = make([]string, len(toks))
 	traits = map[string][]string{}
-	seen := map[string]bool{} // scope + trait, once
+	uses = map[string]bool{} // scope + trait: the scope uses the trait
 	var fill func(from, to int, name string, depth int)
 	fill = func(from, to int, name string, depth int) {
 		for i := from; i < to && i < len(toks); i++ {
@@ -207,8 +215,8 @@ func phpClassScopes(toks []Token, cl []int) (scope []string, traits map[string][
 							last = toks[k].Text
 						}
 						if toks[k+1].op(",") || toks[k+1].op(";") || toks[k+1].op("{") {
-							if k := inner + "\x00" + last; last != "" && !seen[k] {
-								seen[k] = true
+							if k := inner + "\x00" + last; last != "" && !uses[k] {
+								uses[k] = true
 								traits[inner] = append(traits[inner], last)
 							}
 							last = ""
@@ -227,11 +235,8 @@ func phpClassScopes(toks []Token, cl []int) (scope []string, traits map[string][
 		}
 	}
 	fill(0, len(toks), "", 0)
-	return scope, traits
+	return scope, traits, uses
 }
-
-// maxTraits bounds the traits a class is looked into for a $wpdb property.
-const maxTraits = 64
 
 // phpAssignOps are the operators assigning to what is on their left.
 var phpAssignOps = map[string]bool{"=": true, ".=": true, "+=": true, "-=": true, "*=": true, "/=": true, "%=": true,
