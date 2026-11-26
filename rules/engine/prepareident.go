@@ -12,7 +12,8 @@ import "strings"
 // they name. The format is read from the strings written in the first argument
 // (or held by a variable assigned only a literal); its other parts are not
 // read, so a placeholder they would hold is not seen. SQL comments (/* */,
-// -- and # to the end of the line) are skipped: their quotes are no SQL's.
+// -- and # to the end of the line) are skipped: their quotes are no SQL's;
+// MySQL runs the text of a /*! ... */ one, which is read as SQL.
 // A number past the values names none (%0$s, %99999999999999999999$s).
 func (a *analysis) identArgs(st state, splitArgs [][]Token) []int {
 	if len(splitArgs) < 2 {
@@ -25,7 +26,7 @@ func (a *analysis) identArgs(st state, splitArgs [][]Token) []int {
 	for i := 0; i < len(f); i++ {
 		c := f[i]
 		switch {
-		case quote == 0 && c == '/' && i+1 < len(f) && f[i+1] == '*':
+		case quote == 0 && c == '/' && i+1 < len(f) && f[i+1] == '*' && !(i+2 < len(f) && f[i+2] == '!'):
 			end := strings.Index(f[i+2:], "*/")
 			if end < 0 {
 				return out // the rest is a comment
@@ -100,37 +101,88 @@ func (a *analysis) formatText(st state, arg []Token) string {
 		at := 0
 		for _, p := range tk.Parts {
 			off := min(max(p.Off, at), len(tk.Text))
-			b = a.unescapeStr(b, tk.Text[at:off])
+			b = a.unescapeStr(b, tk.Text[at:off], tk.Flags)
 			b = append(b, 0) // an interpolated value
 			at = off
 		}
-		b = a.unescapeStr(b, tk.Text[at:])
+		b = a.unescapeStr(b, tk.Text[at:], tk.Flags)
 	}
 	return string(b)
 }
 
 // unescapeStr appends a string literal's text as the string holds it: the
-// lexer keeps PHP's escapes (\', \", \\, \n, \t), which are not SQL's.
-func (a *analysis) unescapeStr(b []byte, s string) []byte {
-	if !a.php {
+// lexer keeps PHP's escapes, which are not SQL's. A '...' string has only \\
+// and \'; a nowdoc none; a "..." string or heredoc the double-quoted ones (\\,
+// \", \$, \n, \t, \r, \v, \e, \f, \xHH, octal \NNN, \u{...}), where \' stays
+// two characters.
+func (a *analysis) unescapeStr(b []byte, s string, flags uint16) []byte {
+	if !a.php || flags&flagPHPNowdoc != 0 {
 		return append(b, s...)
 	}
+	single := flags&flagPHPSingle != 0
 	for i := 0; i < len(s); i++ {
 		if s[i] != '\\' || i+1 == len(s) {
 			b = append(b, s[i])
 			continue
 		}
-		switch s[i+1] {
-		case '\\', '\'', '"':
-			b = append(b, s[i+1])
-		case 'n':
-			b = append(b, '\n')
-		case 't':
-			b = append(b, '\t')
-		default:
-			b = append(b, s[i], s[i+1])
+		c := s[i+1]
+		if single {
+			if c == '\\' || c == '\'' {
+				b, i = append(b, c), i+1
+			} else {
+				b = append(b, '\\')
+			}
+			continue
 		}
-		i++
+		switch c {
+		case '\\', '"', '$':
+			b, i = append(b, c), i+1
+		case 'n', 't', 'r', 'v', 'e', 'f':
+			b, i = append(b, phpEscapes[c]), i+1
+		case 'x':
+			j, v := i+2, 0
+			for ; j < len(s) && j < i+4 && isHexDigit(s[j]); j++ {
+				v = v*16 + hexVal(s[j])
+			}
+			if j == i+2 {
+				b = append(b, '\\') // \x without a digit stays
+				continue
+			}
+			b, i = append(b, byte(v)), j-1
+		case '0', '1', '2', '3', '4', '5', '6', '7':
+			j, v := i+1, 0
+			for ; j < len(s) && j < i+4 && s[j] >= '0' && s[j] <= '7'; j++ {
+				v = v*8 + int(s[j]-'0')
+			}
+			b, i = append(b, byte(v)), j-1
+		case 'u':
+			if i+2 < len(s) && s[i+2] == '{' {
+				if end := strings.IndexByte(s[i+3:], '}'); end >= 0 {
+					b, i = append(b, 0), i+3+end // a code point: no quote of SQL's
+					continue
+				}
+			}
+			b = append(b, '\\')
+		default:
+			b = append(b, '\\') // not an escape: the backslash stays, the next character is read next
+		}
 	}
 	return b
+}
+
+// phpEscapes are the one-letter escapes of a PHP "..." string.
+var phpEscapes = map[byte]byte{'n': '\n', 't': '\t', 'r': '\r', 'v': '\v', 'e': 0x1b, 'f': '\f'}
+
+func isHexDigit(c byte) bool {
+	return c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F'
+}
+
+func hexVal(c byte) int {
+	switch {
+	case c >= 'a':
+		return int(c-'a') + 10
+	case c >= 'A':
+		return int(c-'A') + 10
+	}
+	return int(c - '0')
 }
