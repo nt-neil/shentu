@@ -19,6 +19,9 @@ func lexPHP(src string, b *budget, code bool) []Token {
 		s.phpHTML()
 	}
 	s.php(false)
+	if !code {
+		return wpdbProps(s.toks)
+	}
 	return s.toks
 }
 

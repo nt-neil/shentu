@@ -44,6 +44,21 @@ func TestHostileGrowth(t *testing.T) {
 		{"php literal before operands", "php", "a.php", 250, func(n int) string {
 			return "<?php $a = $_GET['a']; ?>\n<a href=\"<?php echo '" + R("X", 256*n) + "'" + R(" . $b", n) + " . $a; ?>\">x</a>\n"
 		}},
+		{"php $wpdb properties in one array", "php", "a.php", 1000, func(n int) string {
+			return "<?php\nclass A {\nfunction m() { global $wpdb; $this->db = $wpdb; $x = [" + R("$this->db, ", n) + "1];\n$this->db->get_results('SELECT 1 ' . $_GET['x']);\n}\n}\n"
+		}},
+		{"php $wpdb, a class of many traits", "php", "a.php", 1000, func(n int) string {
+			var b strings.Builder
+			b.WriteString("<?php\nclass A {\nuse ")
+			for i := range n {
+				fmt.Fprintf(&b, "T%d, ", i)
+			}
+			b.WriteString("T;\nfunction m() { global $wpdb; $this->db = $wpdb;\n" + R("$this->db->q();\n", n) + "}\n}\nsystem($_GET['x']);\n")
+			return b.String()
+		}},
+		{"php $wpdb and many classes", "php", "a.php", 300, func(n int) string {
+			return "<?php\n$wpdb->query('SELECT 1');\n" + R("class C { use T; function m() { $this->db->q(); } }\nnew class { };\n", n) + "system($_GET['x']);\n"
+		}},
 		{"js ${\"{\"} in a template", "js", "a.js", 2000, func(n int) string {
 			return "app.get('/x', (req, res) => {\n  res.send(`<p>" + R("${\"{\"}", n) + "${req.query.x}</p>`);\n});\n"
 		}},

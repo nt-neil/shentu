@@ -633,6 +633,17 @@ rule of its language.
    heredoc (nowdoc stays text) and backticks; Python f-strings; JavaScript
    template literals, nested to any depth. Unterminated strings and comments end
    at the end of the line or file.
+   A PHP property every assignment of its class gives WordPress's `$wpdb`
+   (`$this->wpdb = $wpdb`, `= &$wpdb`, `self::$mysqli =& $wpdb`) is read as
+   `$wpdb` wherever the class uses it as an object (`$this->wpdb->get_results(...)`),
+   so the rules' `$wpdb` sinks and `$wpdb->prepare` match it. A property belongs
+   to the class, trait, interface or enum it is written in, together with the
+   traits of the file the class uses; `self::` and `static::` name the same one.
+   A destructuring (`[$this->db] = ...`, `list($a, $this->db) = ...`), a reference
+   (`&$this->db`) or a foreach target (`as $this->db`) counts as giving it
+   something else. The property's name says nothing on its own. Not read: a
+   property set in another file (a parent class's constructor), `ClassName::$db`,
+   `parent::$db` and `$GLOBALS['wpdb']`.
 2. **Statements and scopes.** Statements, `if`/`else`, loops, `try` and function
    bodies (braces in PHP and JavaScript, indentation in Python). Closures and arrow
    functions are scopes of their own that see the variables around them; PHP
