@@ -793,9 +793,12 @@ func indexJS(t []Token, fi *fileIndex) {
 // ---- resolution ----
 
 // summary returns the summary of the function a call reaches in another file.
-// srcFuncs lists the functions and methods of a file whose own body names a
-// source of one of the rules and returns a value: a request helper
-// (return $_REQUEST[$k]). A function merely declared in such a file is not one.
+// srcFuncs lists the functions and methods of a file that return a source of
+// one of the rules, written in the return statement: a request helper
+// (return $_REQUEST[$k], return get_data($_REQUEST, $k)). One that returns a
+// variable it set from a source before, or a function merely declared in a
+// file with sources, is not one: WordPress names $_GET in many functions that
+// return something else, and following them all cost three times the time.
 func srcFuncs(e *Engine, lang string, funcs map[string][]*fnInfo, ids []string) []string {
 	var rs []*crule
 	for _, r := range e.byLang[lang] {
@@ -810,12 +813,13 @@ func srcFuncs(e *Engine, lang string, funcs map[string][]*fnInfo, ids []string) 
 			if x.f.name == "" {
 				continue
 			}
-			names, returns := map[string]bool{}, false
+			names := map[string]bool{} // the names of its return statements
 			walkToks(x.f.body, 0, func(t []Token) {
-				nameSet(t, names)
-				returns = returns || len(t) > 1 && t[0].word("return") && !t[1].op(";")
+				if len(t) > 1 && t[0].word("return") && !t[1].op(";") {
+					nameSet(t, names)
+				}
 			})
-			if !returns {
+			if len(names) == 0 {
 				continue
 			}
 			for _, r := range rs {
