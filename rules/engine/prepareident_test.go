@@ -6,20 +6,33 @@ import (
 	"testing"
 )
 
+// sqlPlace is where a value stands in SQL text.
+type sqlPlace int
+
+const (
+	sqlQuoted sqlPlace = iota // inside a string literal ('...', "...")
+	sqlBare                   // standing alone: a number, a keyword's operand
+	sqlIdent                  // inside backticks: a column or table name
+)
+
 // sqlQuoteContexts are the places a value can take in SQL text, shared by the
 // tests of what quoting protects: prepare()'s %s here, esc_sql() inside
-// quotes later. "{}" marks the value; backtick tells an identifier.
+// quotes later. "{}" marks the value.
 var sqlQuoteContexts = []struct {
 	name, sql string
-	backtick  bool
+	place     sqlPlace
 }{
-	{"between single quotes", "SELECT * FROM t WHERE a = '{}'", false},
-	{"standing alone", "SELECT * FROM t WHERE a = {}", false},
-	{"in backticks", "SELECT `{}` FROM t", true},
-	{"after ORDER BY", "SELECT * FROM t ORDER BY {}", false},
-	{"after ORDER BY, in backticks", "SELECT * FROM t ORDER BY `{}`", true},
-	{"in LIMIT", "SELECT * FROM t LIMIT {}", false},
-	{"in backticks inside an SQL string", "UPDATE t SET note = 'a `{}` b'", false},
+	{"between single quotes", "SELECT * FROM t WHERE a = '{}'", sqlQuoted},
+	{"between double quotes", `SELECT * FROM t WHERE a = "{}"`, sqlQuoted},
+	{"in an IN list", "SELECT * FROM t WHERE a IN ('{}')", sqlQuoted},
+	{"in a LIKE pattern", "SELECT * FROM t WHERE a LIKE '%{}%'", sqlQuoted},
+	{"standing alone", "SELECT * FROM t WHERE a = {}", sqlBare},
+	{"in an IN list without quotes", "SELECT * FROM t WHERE a IN ({})", sqlBare},
+	{"in backticks", "SELECT `{}` FROM t", sqlIdent},
+	{"after ORDER BY", "SELECT * FROM t ORDER BY {}", sqlBare},
+	{"after ORDER BY, in backticks", "SELECT * FROM t ORDER BY `{}`", sqlIdent},
+	{"in LIMIT", "SELECT * FROM t LIMIT {}", sqlBare},
+	{"in backticks inside an SQL string", "UPDATE t SET note = 'a `{}` b'", sqlQuoted},
 }
 
 // prepare()'s %s is quoted as a string; inside backticks it is an identifier
@@ -35,10 +48,10 @@ func TestPrepareIdentifier(t *testing.T) {
 	}
 	var cases []tc
 	for _, c := range sqlQuoteContexts {
-		q := strings.ReplaceAll(c.sql, "{}", "%s")
+		q := strings.ReplaceAll(strings.ReplaceAll(c.sql, "%", "%%"), "{}", "%s") // a literal % is %% in a format
 		cases = append(cases, tc{"%s " + c.name,
-			map[string]string{"a.php": "<?php\nglobal $wpdb;\n$r = $wpdb->get_results($wpdb->prepare(\"" + q + "\", $_GET['v']));\n"},
-			"a.php", 3, c.backtick})
+			map[string]string{"a.php": "<?php\nglobal $wpdb;\n$r = $wpdb->get_results($wpdb->prepare('" + strings.ReplaceAll(q, "'", "\\'") + "', $_GET['v']));\n"},
+			"a.php", 3, c.place == sqlIdent})
 	}
 	cases = append(cases,
 		tc{"numbered placeholders in backticks (notificationx shape)",
@@ -64,6 +77,51 @@ func TestPrepareIdentifier(t *testing.T) {
 		tc{"%i, WordPress's identifier placeholder",
 			map[string]string{"a.php": "<?php\nglobal $wpdb;\n$wpdb->query($wpdb->prepare(\"UPDATE t SET %i = 1\", $_GET['c']));\n"},
 			"a.php", 3, false},
+		tc{"a numbered placeholder past int's range",
+			map[string]string{"a.php": "<?php\nglobal $wpdb;\n$wpdb->query($wpdb->prepare('UPDATE t SET `%18446744073709551615$s` = 1, `%s` = 2', $_GET['c']));\n"},
+			"a.php", 3, true},
+		tc{"%0$s names no value",
+			map[string]string{"a.php": "<?php\nglobal $wpdb;\n$wpdb->query($wpdb->prepare('UPDATE t SET `%0$s` = 1 WHERE a = %s', $_GET['c']));\n"},
+			"a.php", 3, false},
+		tc{"a backtick in a /* */ comment before a bare %s (review S-265-1)",
+			map[string]string{"a.php": "<?php\nglobal $wpdb;\n$wpdb->query($wpdb->prepare('SELECT * FROM t /* the `x` column */ WHERE a = %s', $_GET['c']));\n"},
+			"a.php", 3, false},
+		tc{"a backtick in a -- comment before a bare %s",
+			map[string]string{"a.php": "<?php\nglobal $wpdb;\n$wpdb->query($wpdb->prepare('SELECT * FROM t -- the `x\nWHERE a = %s', $_GET['c']));\n"},
+			"a.php", 3, false},
+		tc{"a backtick in a # comment before a bare %s",
+			map[string]string{"a.php": "<?php\nglobal $wpdb;\n$wpdb->query($wpdb->prepare('SELECT * FROM t # the `x\nWHERE a = %s', $_GET['c']));\n"},
+			"a.php", 3, false},
+		tc{"a quote in a comment before %s in backticks",
+			map[string]string{"a.php": "<?php\nglobal $wpdb;\n$wpdb->query($wpdb->prepare('/* don\\'t */ UPDATE t SET `%s` = 1', $_GET['c']));\n"},
+			"a.php", 3, true},
+		tc{"\\n in a '...' string is no line end: the -- comment goes on",
+			map[string]string{"a.php": "<?php\nglobal $wpdb;\n$wpdb->query($wpdb->prepare('SELECT 1 -- note\\n, `%s` FROM t', $_GET['c']));\n"},
+			"a.php", 3, false},
+		tc{"\\n in a \"...\" string ends the -- comment",
+			map[string]string{"a.php": "<?php\nglobal $wpdb;\n$wpdb->query($wpdb->prepare(\"SELECT 1 -- note\\n, `%s` FROM t\", $_GET['c']));\n"},
+			"a.php", 3, true},
+		tc{"\\' in a \"...\" string stays two characters",
+			map[string]string{"a.php": "<?php\nglobal $wpdb;\n$wpdb->query($wpdb->prepare(\"UPDATE t SET a = \\' , `%s` = 1\", $_GET['c']));\n"},
+			"a.php", 3, true},
+		tc{"a /*! */ comment is SQL MySQL runs",
+			map[string]string{"a.php": "<?php\nglobal $wpdb;\n$wpdb->query($wpdb->prepare('SELECT /*! `%s` */ FROM t', $_GET['c']));\n"},
+			"a.php", 3, true},
+		tc{"\\\" in a '...' string stays two characters (review N-266-1)",
+			map[string]string{"a.php": "<?php\nglobal $wpdb;\n$wpdb->query($wpdb->prepare('SELECT * FROM t WHERE a = \"x\\\" AND `%s`', $_GET['c']));\n"},
+			"a.php", 3, false},
+		tc{"a nowdoc keeps \\' as written (review N-266-1)",
+			map[string]string{"a.php": "<?php\nglobal $wpdb;\n$q = <<<'SQL'\nSELECT * FROM t WHERE a = 'x\\' AND `%s`\nSQL;\n$wpdb->query($wpdb->prepare($q, $_GET['c']));\n"},
+			"a.php", 6, false},
+		tc{"\\x60 in a \"...\" string is a backtick (review N-266-1)",
+			map[string]string{"a.php": "<?php\nglobal $wpdb;\n$wpdb->query($wpdb->prepare(\"SELECT \\x60%s\\x60 FROM t\", $_GET['c']));\n"},
+			"a.php", 3, true},
+		tc{"a placeholder in a comment still takes its value (review N-266-2)",
+			map[string]string{"a.php": "<?php\nglobal $wpdb;\n$wpdb->query($wpdb->prepare('/* %s */ SELECT `%s` FROM t', 'a', $_GET['c']));\n"},
+			"a.php", 3, true},
+		tc{"a /*!50000 */ comment is SQL (review S-266-1)",
+			map[string]string{"a.php": "<?php\nglobal $wpdb;\n$wpdb->query($wpdb->prepare('SELECT /*!50000 `%s` */ FROM t', $_GET['c']));\n"},
+			"a.php", 3, true},
 		tc{"%% before the placeholder",
 			map[string]string{"a.php": "<?php\nglobal $wpdb;\n$wpdb->query($wpdb->prepare(\"SELECT * FROM t WHERE a LIKE '50%%' AND `%s` = 1\", $_GET['c']));\n"},
 			"a.php", 3, true},
