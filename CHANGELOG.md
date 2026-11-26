@@ -73,8 +73,9 @@ Chinese for the zh-TW pages; keep the two in step.
 - PHP rules: WordPress's `$wpdb` kept in a property (`$this->wpdb = $wpdb`, `$this->db = &$wpdb`,
   `self::$mysqli =& $wpdb`) is `$wpdb` wherever the same file queries through it
   (`$this->wpdb->get_results(...)`), so request input concatenated into such a query is reported;
-  before, only `$wpdb` itself was a sink. The file must show the assignment: a property named
-  `wpdb` or `db` alone, or one set in another file (a parent class), is not read as `$wpdb`.
+  before, only `$wpdb` itself was a sink. The class (or a trait of the file it uses) must show the
+  assignment: a property named `wpdb` or `db` alone, one set in another file (a parent class), or
+  one another class of the file gives `$wpdb` is not read as `$wpdb`.
 
 ### Known issues
 
