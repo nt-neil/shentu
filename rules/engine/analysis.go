@@ -2625,6 +2625,9 @@ func (a *analysis) sinkWith(st state, t []Token, i int, s *pat, cond *argCond) b
 		if s.member && cond != nil && len(cond.recvFrom) > 0 && !a.recvMadeBy(cond.recvFrom, cond.recvNames, t[a.chainStart(t, i):i]) {
 			return false // Engine().from_string(x): a Django template, not Jinja
 		}
+		if !s.member && cond != nil && len(cond.recvFrom) > 0 && !a.recvMadeBy(cond.recvFrom, nil, t[i:open]) {
+			return false // md5(x) of a function the file does not import from hashlib
+		}
 		a.span = spanText(t, i, end, open)
 		a.report(t[i].Line)
 		return true
@@ -2653,6 +2656,9 @@ func (a *analysis) sinkWith(st state, t []Token, i int, s *pat, cond *argCond) b
 		if cond != nil && len(cond.unlessImports) > 0 && a.importsLeaveOut(cond, recv) {
 			return false // a TypeORM repository on an SQL database: where becomes bound parameters
 		}
+	}
+	if !s.member && cond != nil && len(cond.recvFrom) > 0 && !a.recvMadeBy(cond.recvFrom, nil, t[i:open]) {
+		return false // md5(x) of a function the file does not import from hashlib
 	}
 	whole := cond != nil && cond.whole
 	emb := false

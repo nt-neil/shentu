@@ -6,7 +6,7 @@ severity = "medium"
 tier = "reference"
 title = "Data hashed with MD5 or SHA-1, which no longer resist collisions"
 sources = []
-sinks = ["hashlib.md5(", "hashlib.sha1(", "hashes.MD5(", "hashes.SHA1(", "MD5.new(", "SHA1.new("]
+sinks = ["hashlib.md5(", "hashlib.sha1(", "hashes.MD5(", "hashes.SHA1(", "MD5.new(", "SHA1.new(", "hashlib.new(", ".md5(", ".sha1(", "md5(", "sha1("]
 sanitizers = []
 fix = "Use SHA-256 or stronger (hashlib.sha256); for passwords use a password hash (argon2, bcrypt, hashlib.scrypt). A hash that is no security measure (a cache key, a file checksum) can say so: hashlib.md5(data, usedforsecurity=False)."
 refs = ["CVE-2021-39182"]
@@ -14,6 +14,16 @@ refs = ["CVE-2021-39182"]
 [[args]]
 sinks = ["hashlib.md5(", "hashlib.sha1("]
 unless = ["usedforsecurity=False"]   # Python 3.9+: the caller says the hash is not a security measure
+
+[[args]]
+sinks = [".md5(", ".sha1(", "md5(", "sha1("]
+unless = ["usedforsecurity=False"]
+receiver_from = ["hashlib"]   # import hashlib as h; h.md5(x) / from hashlib import md5; md5(x)
+
+[[args]]
+sinks = ["hashlib.new("]
+when = ["'md5'", '"md5"', "'MD5'", '"MD5"', "'sha1'", '"sha1"', "'SHA1'", '"SHA1"']
+unless = ["usedforsecurity=False"]
 
 [[samples]]
 kind = "vulnerable"
@@ -41,4 +51,38 @@ kind = "safe"
 code = '''
 def fingerprint(data):
     return hashlib.sha256(data.encode()).hexdigest()
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+def etag(data):
+    return hashlib.new('md5', data).hexdigest()
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+from hashlib import md5
+
+def etag(data):
+    return md5(data).hexdigest()
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+import hashlib as h
+
+def etag(data):
+    return h.sha1(data).hexdigest()
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+from .util import md5
+
+def etag(data):
+    return hashlib.new('sha256', data).hexdigest() + md5(data)
 '''

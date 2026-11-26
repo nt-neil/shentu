@@ -6,7 +6,7 @@ severity = "medium"
 tier = "reference"
 title = "A shell command line built from values the code does not write out"
 sources = []
-sinks = ["os.system(", "os.popen(", "subprocess.getoutput(", "subprocess.getstatusoutput(", "subprocess.run(", "subprocess.Popen(", "subprocess.call(", "subprocess.check_call(", "subprocess.check_output("]
+sinks = ["os.system(", "os.popen(", "subprocess.getoutput(", "subprocess.getstatusoutput(", "subprocess.run(", "subprocess.Popen(", "subprocess.call(", "subprocess.check_call(", "subprocess.check_output(", "system(", "popen("]
 sanitizers = []
 fix = "Run the program with a list of arguments and no shell (subprocess.run([prog, arg])); if a shell is needed, wrap each value in shlex.quote()."
 refs = ["CVE-2025-1753"]
@@ -21,6 +21,12 @@ sinks = ["subprocess.run(", "subprocess.Popen(", "subprocess.call(", "subprocess
 arg = 1
 not_literal = true
 when = ["shell="]   # shell= with any value but a literal False
+
+[[args]]
+sinks = ["system(", "popen("]
+arg = 1
+not_literal = true
+receiver_from = ["os"]   # from os import system
 
 [[samples]]
 kind = "vulnerable"
@@ -55,4 +61,22 @@ kind = "safe"
 code = '''
 def ping(host):
     subprocess.run(["ping", "-c", "1", host])
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+from os import system
+
+def show(d):
+    system('ls ' + d)
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+from .remote import system
+
+def show(d):
+    system('ls ' + d)
 '''

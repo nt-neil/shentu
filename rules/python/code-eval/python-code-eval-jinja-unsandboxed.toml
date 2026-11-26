@@ -6,7 +6,7 @@ severity = "medium"
 tier = "reference"
 title = "Text the code does not write out compiled as a Jinja2 template outside a sandbox"
 sources = []
-sinks = ["jinja2.Template(", ".from_string(", "render_template_string("]
+sinks = ["jinja2.Template(", ".from_string(", "render_template_string(", "Template("]
 sanitizers = ["SandboxedEnvironment", "ImmutableSandboxedEnvironment"]
 fix = "Render fixed templates and pass values as variables; a template whose text may come from a user or a setting belongs in jinja2.sandbox.SandboxedEnvironment."
 refs = ["CVE-2026-33154"]
@@ -25,6 +25,12 @@ not_literal = true
 # own template language
 receiver_from = ["jinja2"]
 receiver_names = ["env", "jinja_env", "environment", "jinja_environment"]
+
+[[args]]
+sinks = ["Template("]
+arg = 1
+not_literal = true
+receiver_from = ["jinja2"]   # from jinja2 import Template
 
 [[samples]]
 kind = "vulnerable"
@@ -131,4 +137,55 @@ jinja_env = SandboxedEnvironment()
 
 def render_setting(value, **context):
     return jinja_env.from_string(value).render(**context)
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+from jinja2 import Template
+
+def page(body):
+    return Template(body).render()
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+from mako.template import Template
+
+def page(body):
+    return Template(body).render()
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+from jinja2.sandbox import SandboxedEnvironment as SE
+
+env = SE()
+
+def page(body):
+    return env.from_string(body).render()
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+from django.template import engines
+
+env = engines['django']
+
+def page(body):
+    return env.from_string(body).render()
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+from django.template import Engine
+
+env = Engine.get_default()
+
+def page(body):
+    return env.from_string(body).render()
 '''

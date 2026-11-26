@@ -52,6 +52,7 @@ type partResult struct {
 	Rules []string         `json:"r"`
 	Found []engine.Finding `json:"f,omitempty"` // at most auditMaxPerFile of one rule in one file
 	Over  int              `json:"n,omitempty"` // the findings the cap left out
+	Ref   int              `json:"m,omitempty"` // ... of reference-tier rules, not in Over
 	Cut   bool             `json:"c,omitempty"` // a cap cut one of them short
 	Tries map[string]int   `json:"t,omitempty"` // rule → audits in a row the clock cut it short
 }
@@ -59,6 +60,7 @@ type partResult struct {
 type passResult struct {
 	Found  []engine.Finding `json:"f,omitempty"` // at most auditMaxPerFile of one rule in one file
 	Over   int              `json:"n,omitempty"` // the findings the cap left out
+	Ref    int              `json:"m,omitempty"` // ... of reference-tier rules, not in Over
 	Reason string           `json:"r,omitempty"` // unfinishedReason; "" when it ran to the end
 	Cause  string           `json:"c,omitempty"` // engine.CutOf(err), when Reason is limit or calls
 	Gen    bool             `json:"g,omitempty"` // the file is minified or bundled JavaScript

@@ -52,7 +52,9 @@ func recvDefs(toks []Token) map[string][][]Token {
 			mod := line[1:k]
 			for _, part := range splitTop(stripParens(line[k+1:]), isComma) {
 				if n := len(part); n > 0 && part[n-1].Kind == Ident {
-					defs[part[n-1].Text] = append(defs[part[n-1].Text], mod)
+					// the module and the name imported from it, also under an
+					// alias: from jinja2.sandbox import SandboxedEnvironment as SE
+					defs[part[n-1].Text] = append(defs[part[n-1].Text], append(slices.Clone(mod), part[0]))
 				}
 			}
 			continue
@@ -164,11 +166,14 @@ func (a *analysis) recvIs(ps []*pat, recv []Token) bool {
 // recvMadeBy is the receiver_from condition: the receiver, or what its root
 // is assigned or imported with in the file (followed as recvIs does), names
 // one of from; or else nothing on the way is a call of a class (a capitalised
-// name: Engine(), Engine(debug=True)) and the receiver's last name is one of
-// names. A receiver made by another class, or by one of the rule's sanitizers
+// name: Engine(), Engine(debug=True)) or a value of another known package
+// (engines['django'], Engine.get_default() after from django.template import
+// ...), and the receiver's last name is one of names. A receiver made by
+// another class, by another package or by one of the rule's sanitizers
 // (jinja_env = SandboxedEnvironment() at the top of the file, used in a
-// function), is not one; one the file says nothing about is one only by its
-// name.
+// function; SE() after from jinja2.sandbox import SandboxedEnvironment as SE)
+// is not one. One the file says nothing about, an attribute (app.jinja_env)
+// or what a function returns (make_env()) is one only by its last name.
 func (a *analysis) recvMadeBy(from []*pat, names []string, recv []Token) bool {
 	if a.rdefs == nil {
 		a.rdefs = recvDefs(a.ftoks)
@@ -193,10 +198,21 @@ func (a *analysis) recvMadeBy(from []*pat, names []string, recv []Token) bool {
 		if len(t) == 0 || t[0].Kind != Ident {
 			return false, len(t) > 0 // a literal
 		}
-		class := len(t) > 1 && t[1].op("(") && t[0].Text[0] >= 'A' && t[0].Text[0] <= 'Z'
 		key := t[0].Text
-		if (key == "self" || key == "cls") && len(t) > 2 && t[1].op(".") && t[2].Kind == Ident {
+		self := (key == "self" || key == "cls") && len(t) > 2 && t[1].op(".") && t[2].Kind == Ident
+		if self {
 			key = "self." + t[2].Text
+		}
+		if notMongo[key] {
+			return false, true // a value of another known package: engines['django'], Engine.get_default() after from django.template import ...
+		}
+		if len(t) > 1 && t[1].op(".") && !(self && len(t) == 3) && !slices.ContainsFunc(t, func(x Token) bool { return x.op("(") || x.op("[") }) {
+			return false, false // app.jinja_env: an attribute, whatever its root holds
+		}
+		call := len(t) > 1 && t[1].op("(")
+		class := call && t[0].Text[0] >= 'A' && t[0].Text[0] <= 'Z'
+		if call && !class {
+			return false, false // what a function returns is not known here (make_env(), environment_cls(**options))
 		}
 		if depth >= 4 || seen[key] {
 			return false, class

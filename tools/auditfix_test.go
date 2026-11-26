@@ -758,3 +758,28 @@ func TestAppCodeAuditReference(t *testing.T) {
 		}
 	}
 }
+
+// Reference findings over the cap of one rule in one file are counted with
+// the reference findings only: not as injection findings, and with no note
+// that the list was cut, which the patrol would push (review N-263-2).
+func TestAppCodeAuditReferenceOverCap(t *testing.T) {
+	isolateAudit(t)
+	dir, _ := filepath.EvalSymlinks(t.TempDir())
+	src := "import hashlib, os\nfrom flask import Flask, request\napp = Flask(__name__)\n\n"
+	for i := range 25 {
+		src += fmt.Sprintf("def h%d(data):\n    return hashlib.md5(data).hexdigest()\n\n", i)
+	}
+	src += "@app.route('/ls')\ndef g():\n    os.system('ls ' + request.args['d'])\n"
+	os.WriteFile(filepath.Join(dir, "a.py"), []byte(src), 0o644)
+	res := AppCodeAudit(context.Background(), []string{dir}, nil)
+	listed := false
+	for _, f := range res.Findings {
+		if f.Kind == "audit" {
+			t.Errorf("a note that would be pushed: %s", f.Detail)
+		}
+		listed = listed || f.Rule == "python-cmdi-shell"
+	}
+	if res.Injection != 1 || res.Reference != 26 || res.Truncated || !listed {
+		t.Errorf("injection %d, reference %d, truncated %v, injection listed %v", res.Injection, res.Reference, res.Truncated, listed)
+	}
+}
