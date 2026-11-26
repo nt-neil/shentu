@@ -267,7 +267,7 @@ func packageVulnsAll(ctx context.Context, hc *http.Client, detailFor string) (ma
 			cves := cveRe.FindAllString(strings.ToUpper(id), -1)
 			if len(cves) == 0 {
 				cves, _ = cvesOf(id)
-				cves = releaseCVEs(id, cves, a.IDs)
+				cves, _ = releaseCVEs(id, cves, a.IDs)
 			}
 			for _, c := range cves {
 				osvHas[srcCVE{a.Package, c}] = true
@@ -291,11 +291,20 @@ func packageVulnsAll(ctx context.Context, hc *http.Client, detailFor string) (ma
 	} else {
 		var all []Exploit
 		unchecked := 0
+		var unsureMu sync.Mutex
+		var unsure []string // USNs whose CVEs could not be told to apply here
 		for _, a := range found {
 			ids := a.IDs
 			list, n := matchKEV(kev, ids, func(id string) ([]string, bool) {
 				c, ok := cvesOf(id)
-				return releaseCVEs(id, c, ids), ok // a USN's CVEs of other releases are not this host's
+				c, u := releaseCVEs(id, c, ids) // a USN's CVEs of other releases are not this host's
+				if u {
+					unsureMu.Lock()
+					unsure = append(unsure, id)
+					unsureMu.Unlock()
+					return nil, false // not checked against KEV: counted in kev_unchecked
+				}
+				return c, ok
 			})
 			unchecked += n
 			for _, e := range list {
@@ -324,6 +333,10 @@ func packageVulnsAll(ctx context.Context, hc *http.Client, detailFor string) (ma
 		case unchecked > 0:
 			out["kev_unchecked"] = unchecked
 			out["kev"] = fmt.Sprintf("%d vulnerabilities could not be checked against the CISA KEV list (their CVEs could not be looked up, or over 300 for one package): exploited ones among them are not marked", unchecked)
+			if len(unsure) > 0 {
+				slices.Sort(unsure)
+				out["kev"] = out["kev"].(string) + fmt.Sprintf("; for %s, whether its CVEs apply to this release could not be told (the package has no CVE-named advisory to tell by)", strings.Join(slices.Compact(unsure), ", "))
+			}
 		case len(all) == 0:
 			out["kev"] = "none of these vulnerabilities is on the CISA KEV list of actively exploited vulnerabilities"
 		}
@@ -347,7 +360,7 @@ func packageVulnsAll(ctx context.Context, hc *http.Client, detailFor string) (ma
 			v.CVEs = cveRe.FindAllString(strings.ToUpper(id), -1)
 			if len(v.CVEs) == 0 {
 				cveMu.Lock()
-				v.CVEs = releaseCVEs(id, cveMemo[id], a.IDs)
+				v.CVEs = cveMemo[id] // a USN's: this release's kept below
 				cveMu.Unlock()
 				if v.CVEs == nil && advisories != nil {
 					v.CVEs = advisories[id].CVEs
@@ -365,13 +378,30 @@ func packageVulnsAll(ctx context.Context, hc *http.Client, detailFor string) (ma
 		}
 	}
 	surface = append(surface, upstreamSurface(up, kev)...)
+	missing := 0
 	if forSurface {
 		// The KEV check did not look up every advisory's CVEs (the list
 		// unavailable, or past 300 for one package): those it did not,
 		// looked up now; those still unknown are said.
-		if missing := surfaceCVEs(surface, cveMemo, &cveMu, lookup); missing > 0 {
-			out["surface_cves_missing"] = missing
+		missing = surfaceCVEs(surface, cveMemo, &cveMu, lookup)
+	}
+	// A USN's CVEs, from the KEV check or the lookup just made, are every
+	// release's: this release's kept, as for KEV (N-258-1); a USN that
+	// cannot tell is missing.
+	idsOf := map[string][]string{}
+	for _, a := range found {
+		idsOf[a.Package] = a.IDs
+	}
+	for i := range surface {
+		if v := &surface[i]; v.Source == "os" && strings.HasPrefix(v.ID, "USN-") {
+			var u bool
+			if v.CVEs, u = releaseCVEs(v.ID, v.CVEs, idsOf[v.Package]); u {
+				missing++
+			}
 		}
+	}
+	if forSurface && missing > 0 {
+		out["surface_cves_missing"] = missing
 	}
 	for i := range surface {
 		if v := &surface[i]; v.CVE == "" && len(v.CVEs) > 0 {
@@ -623,9 +653,13 @@ func matchKEV(kev map[string]kevEntry, ids []string, cves func(id string) ([]str
 // this package, as UBUNTU-CVE-... or the CVE itself (ids, the package's
 // advisories), are kept. A CVE of another release is never marked
 // exploited on this host. Other advisories are per release already.
-func releaseCVEs(id string, cves, ids []string) []string {
+//
+// unsure: the package has no CVE-named advisory to tell by, so none of the
+// USN's CVEs is known to apply (nor kept: that would bring other releases'
+// back); the caller says so.
+func releaseCVEs(id string, cves, ids []string) (out []string, unsure bool) {
 	if !strings.HasPrefix(id, "USN-") {
-		return cves
+		return cves, false
 	}
 	has := map[string]bool{}
 	for _, x := range ids {
@@ -633,13 +667,15 @@ func releaseCVEs(id string, cves, ids []string) []string {
 			has[c] = true
 		}
 	}
-	var out []string
+	if len(has) == 0 {
+		return nil, len(cves) > 0
+	}
 	for _, c := range cves {
 		if has[c] {
 			out = append(out, c)
 		}
 	}
-	return out
+	return out, false
 }
 
 // osvCVEs returns the CVEs an OSV advisory covers (aliases and upstream).
