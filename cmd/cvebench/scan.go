@@ -116,9 +116,11 @@ const window = 10
 
 // ruleResult is one rule's verdict on one case.
 type ruleResult struct {
-	Rule  string
-	Vuln  bool // reported in the vulnerable release, at the fix
-	Fixed bool // reported in the fixed release, at the fix
+	Rule      string
+	Vuln      bool // reported in the vulnerable release, at the fix
+	Fixed     bool // reported in the fixed release, at the fix
+	VulnSink  bool // reported on a sink line of the case in the vulnerable release (with sink lines only)
+	FixedSink bool // reported on that sink's line in the fixed release
 }
 
 type caseResult struct {
@@ -129,8 +131,12 @@ type caseResult struct {
 	Rules      []ruleResult // every rule of the case's language and class
 	Caught     bool         // some rule reported at the fix in the vulnerable release
 	FixedFP    bool         // a rule that caught it still reports there in the fixed release
-	InFixFiles int          // findings of the case's class anywhere in the fix files (vulnerable release)
-	Err        string
+	// With sink lines: as Caught and FixedFP, a finding on one of the case's sink
+	// lines also counting. Reported next to the main verdict, never in place of it.
+	CaughtSink  bool
+	FixedFPSink bool
+	InFixFiles  int // findings of the case's class anywhere in the fix files (vulnerable release)
+	Err         string
 
 	vulnDir, fixedDir string
 }
@@ -165,10 +171,28 @@ func judge(r *caseResult, rs []rules.Rule) {
 			rr.Vuln = rr.Vuln || near(r.Vuln.Findings, rule.ID, ff.Path, ff.Vulnerable)
 			rr.Fixed = rr.Fixed || near(r.FixedScan.Findings, rule.ID, ff.Path, ff.Fixed)
 		}
+		for _, sl := range r.Sinks {
+			vs := onLine(r.Vuln.Findings, rule.ID, sl.Path, sl.Vulnerable)
+			rr.VulnSink = rr.VulnSink || vs
+			rr.FixedSink = rr.FixedSink || vs && sl.Fixed > 0 && onLine(r.FixedScan.Findings, rule.ID, sl.Path, sl.Fixed)
+		}
 		r.Caught = r.Caught || rr.Vuln
 		r.FixedFP = r.FixedFP || rr.Vuln && rr.Fixed
+		r.CaughtSink = r.CaughtSink || rr.Vuln || rr.VulnSink
+		r.FixedFPSink = r.FixedFPSink || rr.Vuln && rr.Fixed || rr.VulnSink && rr.FixedSink
 		r.Rules = append(r.Rules, rr)
 	}
+}
+
+// onLine reports whether rule has a finding in file on that very line: a sink
+// line counts only where the call is, not around it.
+func onLine(fs []engine.Finding, rule, file string, line int) bool {
+	for _, f := range fs {
+		if f.RuleID == rule && f.Path == file && f.Line == line {
+			return true
+		}
+	}
+	return false
 }
 
 // near reports whether rule has a finding in file within window lines of a range.
