@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -23,7 +24,11 @@ import (
 // giving it something else. ClassName::$db, parent::$db and $GLOBALS['wpdb']
 // are not read.
 func wpdbProps(toks []Token) []Token {
-	scope, traits := phpClassScopes(toks)
+	if !slices.ContainsFunc(toks, func(t Token) bool { return t.Kind == Var && t.Text == "$wpdb" }) {
+		return toks
+	}
+	cl := closers(toks) // every bracket's match, once: the passes below stay linear on any file
+	scope, traits := phpClassScopes(toks, cl)
 	only := map[string]bool{} // scope + property → every assignment gives it $wpdb
 	set := func(key string, ok bool) {
 		if prev, seen := only[key]; seen {
@@ -37,7 +42,7 @@ func wpdbProps(toks []Token) []Token {
 			continue
 		}
 		key := scope[i] + "\x00" + prop
-		if indirectWrite(toks, i, n) {
+		if indirectWrite(toks, cl, i) {
 			set(key, false)
 			continue
 		}
@@ -56,7 +61,11 @@ func wpdbProps(toks []Token) []Token {
 	// in the traits it uses, and only ever $wpdb.
 	is := func(sc, prop string) bool {
 		ok, any := true, false
-		for _, s := range append([]string{sc}, traits[sc]...) {
+		for k := -1; k < len(traits[sc]); k++ {
+			s := sc
+			if k >= 0 {
+				s = traits[sc][k]
+			}
 			if v, seen := only[s+"\x00"+prop]; seen {
 				ok, any = ok && v, true
 			}
@@ -107,7 +116,7 @@ func wpdbPropAt(toks []Token, i int) (string, int) {
 // other way than by an assignment operator after it: taken by reference
 // (&$this->db), a foreach target (as $this->db) or a destructured item
 // ([$this->db] = ..., list($a, $this->db) = ...).
-func indirectWrite(toks []Token, i, n int) bool {
+func indirectWrite(toks []Token, cl []int, i int) bool {
 	if i == 0 {
 		return false
 	}
@@ -129,7 +138,7 @@ func indirectWrite(toks []Token, i, n int) bool {
 			if toks[j].op("[") && j > 0 && (toks[j-1].Kind == Var || toks[j-1].Kind == Ident || toks[j-1].op("]") || toks[j-1].op(")") || toks[j-1].op("}")) {
 				return false // $rows[$this->db]: an index, read
 			}
-			c := closeOf(toks, j)
+			c := cl[j]
 			assigned := c+1 < len(toks) && toks[c+1].op("=")
 			return assigned && (toks[j].op("[") || toks[j].op("(") && j > 0 && toks[j-1].word("list"))
 		}
@@ -140,11 +149,12 @@ func indirectWrite(toks []Token, i, n int) bool {
 // phpClassScopes names, for each token, the class, trait, interface or enum
 // it is written in ("" outside any; an anonymous class by its position), and
 // gives each scope the traits of the file it uses (use T1, T2; in its body).
-func phpClassScopes(toks []Token) (scope []string, traits map[string][]string) {
+func phpClassScopes(toks []Token, cl []int) (scope []string, traits map[string][]string) {
+	match := func(j int) int { return min(cl[j], len(toks)-1) }
 	scope = make([]string, len(toks))
 	traits = map[string][]string{}
-	var fill func(from, to int, name string)
-	fill = func(from, to int, name string) {
+	var fill func(from, to int, name string, depth int)
+	fill = func(from, to int, name string, depth int) {
 		for i := from; i < to && i < len(toks); i++ {
 			scope[i] = name
 			tk := toks[i]
@@ -161,20 +171,20 @@ func phpClassScopes(toks []Token) (scope []string, traits map[string][]string) {
 				continue
 			}
 			open := i + 1
-			for open < len(toks) && !toks[open].op("{") && !toks[open].op(";") {
-				open++
+			for open < len(toks) && open-i < 256 && !toks[open].op("{") && !toks[open].op(";") {
+				open++ // a class header is short: extends and implements lists
 			}
 			if open >= len(toks) || !toks[open].op("{") {
 				continue
 			}
-			end := closeOf(toks, open)
+			end := match(open)
 			for j := i; j < open; j++ {
 				scope[j] = name
 			}
 			// use T1, \N\T2; at the top of the body
 			for j := open + 1; j < end; j++ {
 				if toks[j].op("{") {
-					j = closeOf(toks, j)
+					j = match(j)
 					continue
 				}
 				if toks[j].word("use") && j+1 < end && !toks[j+1].op("(") {
@@ -184,7 +194,7 @@ func phpClassScopes(toks []Token) (scope []string, traits map[string][]string) {
 							last = toks[k].Text
 						}
 						if toks[k+1].op(",") || toks[k+1].op(";") || toks[k+1].op("{") {
-							if last != "" {
+							if last != "" && !slices.Contains(traits[inner], last) {
 								traits[inner] = append(traits[inner], last)
 							}
 							last = ""
@@ -192,11 +202,17 @@ func phpClassScopes(toks []Token) (scope []string, traits map[string][]string) {
 					}
 				}
 			}
-			fill(open, end+1, inner)
+			if depth < maxNest {
+				fill(open, end+1, inner, depth+1)
+			} else {
+				for j := open; j <= end; j++ {
+					scope[j] = inner // nested too deep to look into: one scope
+				}
+			}
 			i = end
 		}
 	}
-	fill(0, len(toks), "")
+	fill(0, len(toks), "", 0)
 	return scope, traits
 }
 
