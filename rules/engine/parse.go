@@ -35,6 +35,7 @@ type stmt struct {
 	fn    *fn
 
 	handlers   [][]*stmt // try: catch / except bodies
+	catchVars  []string  // try: the variable each handler binds (PHP catch (E $e)), "" for none
 	orelse     []*stmt   // try: Python else
 	cases      [][]*stmt // switch
 	hasDefault bool      // switch
@@ -51,6 +52,7 @@ type fn struct {
 	parent string   // that class's parent (extends), as written
 	traits []string // PHP traits the class uses (use T;) before the method
 	uses   []Token  // PHP closure: the variables of use (...), as written (sharedOf)
+	arrow  bool     // PHP fn (...) => ...: sees the enclosing scope by value
 }
 
 func parse(lang string, toks []Token, b *budget) []*stmt {
@@ -185,10 +187,15 @@ func (p *braceParser) statement() *stmt {
 		s := &stmt{kind: sTry, body: p.bodyStmt()}
 		for p.atWord("catch") {
 			p.i++
+			cv := ""
 			if p.at("(") {
-				p.group()
+				g, _ := p.group()
+				if n := len(g); p.php && n > 0 && g[n-1].Kind == Var {
+					cv = g[n-1].Text
+				}
 			}
 			s.handlers = append(s.handlers, p.bodyStmt())
+			s.catchVars = append(s.catchVars, cv)
 		}
 		if p.atWord("finally") {
 			p.i++
@@ -693,10 +700,10 @@ func (p *braceParser) funcLiteral(out *[]Token) (*fn, bool) {
 			p.i++
 		}
 		if !p.at("=>") {
-			return &fn{params: params}, true
+			return &fn{params: params, arrow: true}, true
 		}
 		p.i++
-		return &fn{params: params, body: p.arrowBody()}, true
+		return &fn{params: params, body: p.arrowBody(), arrow: true}, true
 	case !p.php && t.op("=>"):
 		o := *out
 		var params []Token

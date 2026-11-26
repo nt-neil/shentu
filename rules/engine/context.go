@@ -648,6 +648,7 @@ func (a *analysis) extractStmt(st state, t []Token) {
 			lit, ats = a.litArray(st, a.atsDefs[inner[0].Text]), true // $r = shortcode_atts($defaults, $atts); extract($r)
 		}
 	}
+	m := extractFlags(args)
 	var body []Token
 	switch {
 	case len(lit) > 1 && lit[0].op("["):
@@ -659,15 +660,77 @@ func (a *analysis) extractStmt(st state, t []Token) {
 		if ats && len(lit) == 1 && lit[0].Kind == Var {
 			keep = lit[0].Text // its keys are not known here, but none of them is the defaults variable itself
 		}
-		a.extractAny(st, args, a.expr(st, inner, false), keep)
+		a.extractAny(st, m, a.expr(st, inner, false), keep)
 		return
 	}
 	v := a.expr(st, inner, false)
 	for _, item := range splitTop(body, isComma) {
 		if len(item) > 2 && item[0].Kind == Str && len(item[0].Parts) == 0 && item[1].op("=>") && isIdentName(item[0].Text) {
-			a.setTarget(st, []Token{{Kind: Var, Text: "$" + item[0].Text, Line: t[0].Line}}, v, "=", false)
+			if name := m.target(item[0].Text, a.defined(st, "$"+item[0].Text)); name != "" {
+				a.setTarget(st, []Token{{Kind: Var, Text: "$" + name, Line: t[0].Line}}, v, "=", false)
+			}
 		}
 	}
+}
+
+// extractMode is what extract()'s flags make it do with a key: overwrite a
+// variable already defined, create one not defined, or set prefix_key instead.
+type extractMode struct {
+	overwrite, create bool   // the key's own name, when defined / when not
+	prefix            string // the prefix (third argument) when written out
+	prefixAll         bool   // EXTR_PREFIX_ALL: every key as prefix_key
+	prefixSame        bool   // EXTR_PREFIX_SAME: a defined name as prefix_key
+	prefixIfExists    bool   // EXTR_PREFIX_IF_EXISTS: a defined name as prefix_key, nothing else
+}
+
+// extractFlags reads extract()'s second and third arguments. A flag not
+// written as one of PHP's constants counts as the default, EXTR_OVERWRITE.
+func extractFlags(args [][]Token) extractMode {
+	m := extractMode{overwrite: true, create: true}
+	if len(args) > 1 {
+		for _, tk := range args[1] {
+			switch tk.Text {
+			case "EXTR_SKIP":
+				m.overwrite = false
+			case "EXTR_PREFIX_SAME":
+				m.overwrite, m.prefixSame = false, true
+			case "EXTR_PREFIX_ALL":
+				m.overwrite, m.create, m.prefixAll = false, false, true
+			case "EXTR_IF_EXISTS":
+				m.create = false
+			case "EXTR_PREFIX_IF_EXISTS":
+				m.overwrite, m.create, m.prefixIfExists = false, false, true
+			}
+		}
+	}
+	if len(args) > 2 && len(args[2]) == 1 && args[2][0].Kind == Str && len(args[2][0].Parts) == 0 && isIdentName(args[2][0].Text) {
+		m.prefix = args[2][0].Text
+	}
+	return m
+}
+
+// target is the variable a key sets, without its "$" ("" for none), given
+// whether a variable of the key's name is defined.
+func (m extractMode) target(key string, defined bool) string {
+	switch {
+	case m.prefixAll || m.prefixIfExists && defined || m.prefixSame && defined:
+		if m.prefix == "" {
+			return ""
+		}
+		return m.prefix + "_" + key
+	case defined && m.overwrite || !defined && m.create:
+		return key
+	}
+	return ""
+}
+
+// defined reports whether a variable is defined here: in the state, or a
+// parameter of the function being analysed.
+func (a *analysis) defined(st state, name string) bool {
+	if _, ok := st[name]; ok {
+		return true
+	}
+	return slices.Contains(a.curParams, name)
 }
 
 // atsKey marks a variable assigned shortcode_atts($defaults, ...): it holds the
@@ -679,7 +742,9 @@ const atsKey = "\x00ats:"
 func (a *analysis) litArray(st state, t []Token) []Token {
 	if len(t) == 1 && t[0].Kind == Var {
 		if _, ok := st[litKey+t[0].Text]; ok && a.lits[t[0].Text] != nil {
-			return stripParens(a.lits[t[0].Text])
+			if d := stripParens(a.lits[t[0].Text]); len(d) > 1 && d[0].op("[") || len(d) > 2 && d[0].word("array") && d[1].op("(") {
+				return d // only an array written out; a call's value ($defaults = apply_filters(...)) is no known keys
+			}
 		}
 	}
 	return t
@@ -725,38 +790,112 @@ const extractKey = "\x00extract"
 
 // extractAny follows extract($arr) of an array not written out: it may define a
 // variable for any key ($team_id, never assigned here, after extract($opts)) and,
-// unless a flag says otherwise (EXTR_SKIP, EXTR_PREFIX_*), overwrite the ones
-// already defined ($template_name after extract($args) in a template loader).
+// as its flags say, overwrite the ones already defined ($template_name after
+// extract($args) in a template loader): EXTR_SKIP and the EXTR_PREFIX_* flags
+// overwrite none, EXTR_IF_EXISTS and EXTR_PREFIX_ALL create no variable of a
+// key's own name, and a prefix creates only prefix_ names.
 // wp_parse_args($in, $defaults) keeps the keys of $in, so it lands here too.
 // Superglobals and $this are not variables extract() can set.
-func (a *analysis) extractAny(st state, args [][]Token, v val, keep string) {
+func (a *analysis) extractAny(st state, m extractMode, v val, keep string) {
 	if !v.taint {
 		return
-	}
-	overwrite := true
-	if len(args) > 1 {
-		for _, tk := range args[1] {
-			if tk.Kind == Ident && strings.HasPrefix(tk.Text, "EXTR_") && tk.Text != "EXTR_OVERWRITE" && tk.Text != "EXTR_REFS" {
-				overwrite = false
-			}
-		}
 	}
 	add := entry{taint: true, raw: v.raw, emb: v.emb, weak: v.weak, ext: true}
 	join := func(e entry) entry {
 		return entry{taint: true, raw: e.raw || add.raw, emb: e.emb || add.emb, weak: weakOf(e.taint, e.weak, true, add.weak), ext: !e.taint || e.ext}
 	}
-	if overwrite {
+	mark := func(k string) {
+		if e, ok := st[k]; ok {
+			st[k] = join(e)
+		} else {
+			st[k] = add
+		}
+	}
+	if m.overwrite {
 		for k, e := range st {
 			if extractable(k) && (keep == "" || k != keep && !strings.HasPrefix(k, keep+sepCh)) {
 				st[k] = join(e)
 			}
 		}
+		for _, p := range a.curParams {
+			if _, ok := st[p]; !ok && extractable(p) && p != keep && !m.create {
+				st[p] = add // EXTR_IF_EXISTS: a parameter is defined
+			}
+		}
 	}
-	if e, ok := st[extractKey]; ok {
-		st[extractKey] = join(e)
-	} else {
-		st[extractKey] = add
+	if m.create {
+		mark(extractKey)
 	}
+	if (m.prefixAll || m.prefixSame || m.prefixIfExists) && m.prefix != "" {
+		mark(extractKey + ":" + m.prefix + "_") // prefix_key for any key (a defined one, for the IF_EXISTS form)
+	}
+}
+
+// outParams are PHP functions that write a variable passed by reference: the
+// argument written (from 1) and the argument whose value it holds parts of (0:
+// none, the variable holds no input of the call's arguments).
+var outParams = map[string][][2]int{
+	"preg_match": {{3, 2}}, "preg_match_all": {{3, 2}}, "parse_str": {{2, 1}},
+	"exec": {{2, 0}, {3, 0}},
+}
+
+// outParamStmt: after preg_match($p, $s, $m), parse_str($q, $out) or
+// exec($c, $output), the variable written holds what the call put there, not
+// what it held before (a value extract() set, say): parts of the subject for
+// preg_match and parse_str, the command's output or status for exec.
+func (a *analysis) outParamStmt(st state, t []Token) {
+	if !a.php {
+		return
+	}
+	for i := 0; i+1 < len(t); i++ {
+		w, ok := outParams[t[i].Text]
+		if !ok || t[i].Kind != Ident || !t[i+1].op("(") || i > 0 && (memberOp(true, t[i-1]) || t[i-1].word("function")) {
+			continue
+		}
+		c := closeOf(t, i+1)
+		if c < 0 {
+			continue
+		}
+		args := splitTop(inside(t, i+1, c), isComma)
+		for _, x := range w {
+			if len(args) < x[0] {
+				continue
+			}
+			tg := stripParens(args[x[0]-1])
+			if len(tg) != 1 || tg[0].Kind != Var {
+				continue
+			}
+			var v val
+			if x[1] > 0 && len(args) >= x[1] {
+				v = a.expr(st, args[x[1]-1], false)
+			}
+			a.setTarget(st, tg, v, "=", false)
+		}
+	}
+}
+
+// extractEntry is what a variable the state does not hold reads as after
+// extract() of input set variables whose names are not known: the input, when
+// an extractKey marker covers its name.
+func extractEntry(s state, k string) (entry, bool) {
+	if !extractable(k) {
+		return entry{}, false
+	}
+	if e, ok := s[extractKey]; ok {
+		return e, true
+	}
+	root := k
+	if i := strings.Index(k, sepCh); i >= 0 {
+		root = k[:i]
+	}
+	for i := 2; i < len(root); i++ {
+		if root[i] == '_' {
+			if e, ok := s[extractKey+":"+root[1:i+1]]; ok {
+				return e, true
+			}
+		}
+	}
+	return entry{}, false
 }
 
 // extractable reports whether a state key is a plain PHP variable or a path

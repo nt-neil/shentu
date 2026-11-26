@@ -56,6 +56,22 @@ Chinese for the zh-TW pages; keep the two in step.
   `extract(shortcode_atts($defaults, $atts))` sets the keys of `$defaults` only, and never
   `$defaults` itself; `EXTR_SKIP` and the `EXTR_PREFIX_*` flags overwrite nothing; a property of a
   value `extract()` set (`$wpdb->prefix` after `global $wpdb`) holds no input, an index of it does.
+  The flags count as PHP reads them: `EXTR_SKIP` and `EXTR_PREFIX_SAME` overwrite nothing,
+  `EXTR_IF_EXISTS` overwrites but creates nothing, `EXTR_PREFIX_ALL` and `EXTR_PREFIX_IF_EXISTS` set
+  only `prefix_` names. A closure sees what `extract()` set around it only through its `use (...)`,
+  and its parameters are the caller's values.
+- PHP rules: after `preg_match($p, $s, $m)`, `preg_match_all()`, `parse_str($q, $out)` or
+  `exec($c, $output)`, the variable written by reference holds what the call put there: parts of the
+  subject or string for the first three, which are input when that is (before, `$m[1]` of an input
+  subject carried no input), the command's output for `exec`. A `catch (E $e)` variable is the
+  exception, not what the name held before.
+
+### Known issues
+
+- After `extract()` of input, a property of a variable it set (`$cfg->path`) reads as no input:
+  `extract()` of request data sets strings and arrays. `extract((array) json_decode($in))` and
+  `extract(get_object_vars(json_decode($in)))` can set objects whose properties are input, and these
+  are missed.
 
 ## v0.5.7 — 2026-11-26
 

@@ -93,7 +93,7 @@ func mergeInto(x, y state) state {
 		if e, ok := s.get(k); ok {
 			return e
 		}
-		if x, ok := s[extractKey]; ok && extractable(k) {
+		if x, ok := extractEntry(s, k); ok {
 			return x // a variable extract() of input may have set on that path (context.go)
 		}
 		return entry{taint: src, src: src, raw: src}
@@ -309,12 +309,14 @@ func (a *analysis) stmt(s *stmt, st state) (state, uint8) {
 		a.markAssign(st, s.toks)
 		a.extractStmt(st, s.toks)
 		a.unsetStmt(st, s.toks)
+		a.outParamStmt(st, s.toks)
 		a.recordLit(st, s.toks)
 		a.atsAssign(st, s.toks)
 		return st, a.exitOf(s.toks)
 	case sIf:
 		a.sinks(st, s.toks)
 		a.condAssign(st, s.toks)
+		a.outParamStmt(st, s.toks)
 		t1, _ := a.refine(st, s.toks, true)
 		a.nonceCond(t1, s.toks, true)
 		// request aliases (reqalias.go): each branch starts from what held
@@ -402,6 +404,28 @@ func (a *analysis) stmt(s *stmt, st state) (state, uint8) {
 	return st, noExit
 }
 
+// closureScope: a PHP closure has a scope of its own, which sees only the
+// variables of its use (...): what extract() of input may have set around it
+// reaches the closure through those, and its own parameters and other names
+// are not the input (the markers are dropped).
+func closureScope(x state, f *fn) {
+	for _, u := range f.uses {
+		if u.Kind != Var {
+			continue
+		}
+		if _, ok := x[u.Text]; !ok {
+			if e, ok := extractEntry(x, u.Text); ok {
+				x[u.Text] = e
+			}
+		}
+	}
+	for k := range x {
+		if strings.HasPrefix(k, extractKey) {
+			delete(x, k)
+		}
+	}
+}
+
 // try: the body may stop at any statement, so a handler starts from what the
 // state was before or after it; the code after continues from every path that
 // did not exit.
@@ -418,8 +442,12 @@ func (a *analysis) try(s *stmt, st state) (state, uint8) {
 	} else {
 		exit = min(exit, e1)
 	}
-	for _, h := range s.handlers {
-		sh, eh := a.block(h, from.clone())
+	for i, h := range s.handlers {
+		in := from.clone()
+		if i < len(s.catchVars) && s.catchVars[i] != "" {
+			a.setTarget(in, []Token{{Kind: Var, Text: s.catchVars[i]}}, val{}, "=", false) // the exception object the catch binds
+		}
+		sh, eh := a.block(h, in)
 		if eh == noExit {
 			outs = append(outs, sh)
 		} else {
@@ -496,6 +524,9 @@ func (a *analysis) function(f *fn, st state) {
 	x := state{}
 	if !f.fresh {
 		x = st.clone()
+		if a.php && !f.arrow {
+			closureScope(x, f)
+		}
 	}
 	for _, p := range f.params {
 		if p.Kind == Var || p.Kind == Ident {
@@ -512,6 +543,13 @@ func (a *analysis) function(f *fn, st state) {
 		}
 	}
 	a.seed = nil
+	if a.php && !f.fresh {
+		for _, p := range fnParamNames(f) {
+			if _, ok := x[p]; !ok && p != "" {
+				x[p] = entry{} // a parameter is the caller's value, not what extract() set around the closure
+			}
+		}
+	}
 	curParams, curMoved := a.curParams, a.curMoved
 	a.curParams = fnParamNames(f)
 	a.curMoved = paramsMoved(f.body, a.curParams)
@@ -1515,7 +1553,7 @@ func (a *analysis) postfix(st state, t []Token, start, baseEnd int, v val, whole
 				ext = e.ext && e.taint
 			} else if byKeys && litIdx {
 				v, byKeys = val{}, false // a literal key an array tainted only under other literal keys does not hold
-			} else if x, ok := st[extractKey]; ok && a.php && pos == baseEnd && extractable(key) {
+			} else if x, ok := extractEntry(st, key); ok && a.php && pos == baseEnd {
 				v = val{taint: x.taint, raw: x.raw, emb: x.emb, weak: x.weak} // a variable extract() of input may have defined (context.go)
 				ext = true
 			}

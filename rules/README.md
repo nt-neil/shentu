@@ -143,8 +143,14 @@ How the engine reads them:
     input (`extract($args)`, `extract(wp_parse_args($atts, [...]))`, which keeps
     every key of `$atts`) may define any variable and overwrite the ones already
     defined, so after it every variable of the scope holds that input until it is
-    assigned again, a variable never assigned before included (`EXTR_SKIP` and the
-    `EXTR_PREFIX_*` flags overwrite nothing);
+    assigned again, a variable never assigned before included. The flags count:
+    `EXTR_SKIP` and `EXTR_PREFIX_SAME` overwrite nothing, `EXTR_IF_EXISTS`
+    overwrites but creates nothing, `EXTR_PREFIX_ALL` and `EXTR_PREFIX_IF_EXISTS`
+    set only `prefix_` names. A closure's own scope sees what extract() set
+    around it only through its `use (...)`, and its parameters are the caller's
+    values; an arrow function sees the scope around it. After `preg_match($p, $s,
+    $m)`, `parse_str($q, $out)` or `exec($c, $output)` the variable written holds
+    what the call put there, and a `catch (E $e)` variable is the exception;
   - in the SSRF rules, a check of a parsed URL's host against an allowlist that
     is surely a collection (`.has(`, `.includes(`, `in` on a list, set, tuple
     or array written out, `new Set(...)`, `set(...)` or `frozenset(...)` of one
