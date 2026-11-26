@@ -20,11 +20,12 @@ func markdown(results []caseResult, rs []rules.Rule, now time.Time) string {
 	b.WriteString("- in fix files: reports of the case's class anywhere in the fix files of the vulnerable release, near the fix or not.\n")
 	b.WriteString("- findings and time: every report of every rule on the whole release, and the time to scan it.\n")
 	b.WriteString("- known gaps: cases the rules cannot catch yet (known_gap says why), run and listed apart, out of the rates.\n")
+	b.WriteString("- with sink lines: as caught and fixed FP, a finding of the class on the very line of the call the fix protects also counting (a case's [[sinks]], one per case, with the upstream fix as its basis). A cross-file flow is reported at the callee's sink, outside the fix files. Shown next to the main verdict, which does not count them. \"shared helper\": other flows reach that line too.\n")
 	b.WriteString("- unfinished files: files a limit cut short, or too big to read; calls cut: files checked to the end whose calls were not all followed (cross-file findings may be missing). Cuts by cause count both.\n\n")
 
 	b.WriteString("## Summary\n\n")
-	b.WriteString("| group | cases | caught | catch rate | fixed FP | fixed FP rate | findings per release (vulnerable / fixed) | scan time per release |\n")
-	b.WriteString("|---|---|---|---|---|---|---|---|\n")
+	b.WriteString("| group | cases | caught | catch rate | fixed FP | fixed FP rate | findings per release (vulnerable / fixed) | scan time per release | caught with sink lines | fixed FP with sink lines |\n")
+	b.WriteString("|---|---|---|---|---|---|---|---|---|---|\n")
 	groups := []struct {
 		name string
 		in   func(caseResult) bool
@@ -46,7 +47,7 @@ func markdown(results []caseResult, rs []rules.Rule, now time.Time) string {
 		}{key, func(r caseResult) bool { return r.Class == key }})
 	}
 	for _, g := range groups {
-		var n, caught, fp, vf, ff int
+		var n, caught, fp, vf, ff, cs, fs int
 		var t time.Duration
 		for _, r := range results {
 			if r.Err != "" || r.KnownGap != "" || !g.in(r) {
@@ -59,6 +60,12 @@ func markdown(results []caseResult, rs []rules.Rule, now time.Time) string {
 			if r.FixedFP {
 				fp++
 			}
+			if r.CaughtSink {
+				cs++
+			}
+			if r.FixedFPSink {
+				fs++
+			}
 			vf += len(r.Vuln.Findings)
 			ff += len(r.FixedScan.Findings)
 			t += r.Vuln.Time + r.FixedScan.Time
@@ -66,8 +73,8 @@ func markdown(results []caseResult, rs []rules.Rule, now time.Time) string {
 		if n == 0 {
 			continue
 		}
-		fmt.Fprintf(&b, "| %s | %d | %d | %s | %d | %s | %.1f / %.1f | %.1fs |\n", g.name, n, caught, pct(caught, n), fp, pct(fp, caught),
-			float64(vf)/float64(n), float64(ff)/float64(n), t.Seconds()/float64(2*n))
+		fmt.Fprintf(&b, "| %s | %d | %d | %s | %d | %s | %.1f / %.1f | %.1fs | %d (%s) | %d (%s) |\n", g.name, n, caught, pct(caught, n), fp, pct(fp, caught),
+			float64(vf)/float64(n), float64(ff)/float64(n), t.Seconds()/float64(2*n), cs, pct(cs, n), fs, pct(fs, cs))
 	}
 
 	var gaps []caseResult
@@ -106,8 +113,8 @@ func markdown(results []caseResult, rs []rules.Rule, now time.Time) string {
 		fmt.Fprintf(&b, "| %s | %d / %d |\n", c, v, f)
 	}
 	b.WriteString("\n## Cases\n\n")
-	b.WriteString("| case | package | releases | class | group | rule | vulnerable | fixed | in fix files | findings | unfinished files | scan time | calls cut | cuts by cause |\n")
-	b.WriteString("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n")
+	b.WriteString("| case | package | releases | class | group | rule | vulnerable | fixed | in fix files | findings | unfinished files | scan time | calls cut | cuts by cause | at sink line (vulnerable / fixed) |\n")
+	b.WriteString("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n")
 	for _, r := range results {
 		group := "independent"
 		if r.RuleSource {
@@ -116,18 +123,33 @@ func markdown(results []caseResult, rs []rules.Rule, now time.Time) string {
 		pkg := r.Ecosystem + " " + r.Package
 		rel := r.Vulnerable + " → " + r.Fixed
 		if r.Err != "" {
-			fmt.Fprintf(&b, "| %s | %s | %s | %s | %s | error | | | | | | | | |\n", r.ID, pkg, rel, r.Class, group)
+			fmt.Fprintf(&b, "| %s | %s | %s | %s | %s | error | | | | | | | | | |\n", r.ID, pkg, rel, r.Class, group)
 			continue
 		}
 		for _, rr := range r.Rules {
-			fmt.Fprintf(&b, "| %s | %s | %s | %s | %s | %s | %s | %s | %d | %d / %d | %d / %d | %.1fs / %.1fs | %d / %d | %s / %s |\n",
+			fmt.Fprintf(&b, "| %s | %s | %s | %s | %s | %s | %s | %s | %d | %d / %d | %d / %d | %.1fs / %.1fs | %d / %d | %s / %s | %s |\n",
 				r.ID, pkg, rel, r.Class, group, rr.Rule, mark(rr.Vuln, "caught"), mark(rr.Fixed, "still reports"), r.InFixFiles,
 				len(r.Vuln.Findings), len(r.FixedScan.Findings), r.Vuln.Unfinished, r.FixedScan.Unfinished,
 				r.Vuln.Time.Seconds(), r.FixedScan.Time.Seconds(), r.Vuln.CallsCut, r.FixedScan.CallsCut,
-				cutCell(r.Vuln.Cuts), cutCell(r.FixedScan.Cuts))
+				cutCell(r.Vuln.Cuts), cutCell(r.FixedScan.Cuts), sinkCell(r, rr))
 		}
 	}
 	return b.String()
+}
+
+// sinkCell is "-" for a case with no sink lines, else whether the rule reports
+// on one in the vulnerable and in the fixed release.
+func sinkCell(r caseResult, rr ruleResult) string {
+	if len(r.Sinks) == 0 {
+		return "-"
+	}
+	out := mark(rr.VulnSink, "caught") + " / " + mark(rr.FixedSink, "still reports")
+	for _, sl := range r.Sinks {
+		if sl.Shared {
+			return out + " (shared helper)"
+		}
+	}
+	return out
 }
 
 // cutCauses lists the causes any release was cut short by, sorted.
