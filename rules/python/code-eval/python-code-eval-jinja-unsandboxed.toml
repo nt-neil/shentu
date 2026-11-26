@@ -121,3 +121,14 @@ def page(body):
     return env.from_string(body).render()
 '''
 
+[[samples]]
+kind = "safe"
+code = '''
+import jinja2
+from jinja2.sandbox import SandboxedEnvironment
+
+jinja_env = SandboxedEnvironment()
+
+def render_setting(value, **context):
+    return jinja_env.from_string(value).render(**context)
+'''

@@ -165,8 +165,10 @@ func (a *analysis) recvIs(ps []*pat, recv []Token) bool {
 // is assigned or imported with in the file (followed as recvIs does), names
 // one of from; or else nothing on the way is a call of a class (a capitalised
 // name: Engine(), Engine(debug=True)) and the receiver's last name is one of
-// names. A receiver made by another class is not one; one the file says
-// nothing about is one only by its name.
+// names. A receiver made by another class, or by one of the rule's sanitizers
+// (jinja_env = SandboxedEnvironment() at the top of the file, used in a
+// function), is not one; one the file says nothing about is one only by its
+// name.
 func (a *analysis) recvMadeBy(from []*pat, names []string, recv []Token) bool {
 	if a.rdefs == nil {
 		a.rdefs = recvDefs(a.ftoks)
@@ -174,6 +176,13 @@ func (a *analysis) recvMadeBy(from []*pat, names []string, recv []Token) bool {
 	seen := map[string]bool{}
 	var walk func(t []Token, depth int) (made, other bool)
 	walk = func(t []Token, depth int) (bool, bool) {
+		for i := range t {
+			for _, p := range a.r.sanitizers {
+				if p.at(t, i, false) {
+					return false, true
+				}
+			}
+		}
 		for i := range t {
 			for _, p := range from {
 				if p.at(t, i, false) {
