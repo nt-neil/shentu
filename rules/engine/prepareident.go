@@ -73,8 +73,9 @@ func (a *analysis) identArgs(st state, splitArgs [][]Token) []int {
 				comment = i + 2 + end + 2
 			}
 			i++
-		case quote == 0 && (c == '#' || c == '-' && i+1 < len(f) && f[i+1] == '-' && (i+2 == len(f) || f[i+2] <= ' ' || f[i+2] == 0x7f)):
-			// MySQL: -- then a space or control character starts a comment
+		case quote == 0 && (c == '#' || c == '-' && i+1 < len(f) && f[i+1] == '-' && (i+2 == len(f) || f[i+2] != 0 && f[i+2] <= ' ' || f[i+2] == 0x7f)):
+			// MySQL: -- then a space or control character starts a comment; a part
+			// not written out (0) may be anything, so it starts none
 			comment = len(f)
 			if end := strings.IndexByte(f[i:], '\n'); end >= 0 {
 				comment = i + end
