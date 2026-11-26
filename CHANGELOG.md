@@ -18,6 +18,30 @@ Chinese for the zh-TW pages; keep the two in step.
   the ones with only their configuration left (config-files), which are listed only. The first 20
   are listed, the rest counted in `packages_not_checked_more`. The tool's description says both
   fields.
+- block_ip reads the server's DNS servers and default gateways (`/etc/resolv.conf`, systemd-resolved's
+  copy, `/proc/net/route`, `/proc/net/ipv6_route`) through the host source, as the SSH sessions it
+  also checks: a replay or another host's survey is never answered by the machine running it. One of
+  them there but not read now refuses the block (`state_error`); before, the error was dropped and the
+  list taken for empty, so the gateway or DNS server could be blocked. A file absent (no
+  systemd-resolved, no IPv6) is still no entry.
+- app_code_audit, app_vulns (lock files and site-packages) and the WordPress plugin list walk the
+  host source, as the web roots they start from already came from it: a replay or another host's
+  survey is never answered by the machine running the check. Links are still not followed, a file
+  is read only if it is the one the walk saw, and the limits are the same. A web root or app path
+  there but not read (no permission, or a replay that lacks it) is now listed in the audit's
+  `not_checked`; before, it was audited as an empty folder. A replay of a fixture recorded before
+  this version says every such path not read, never "not there".
+- package_vulns reads every page of OSV's answer: OSV gives at most 1000 advisories a query and
+  names the next page; only the first was read, so the kernel's list stopped at 1000 (on Ubuntu
+  24.04, 383 CVEs fewer than another scanner found). Past 10 pages a package's rest is said in
+  `partial`, never cut quietly.
+- package_vulns on Ubuntu: a USN covers every release it fixed, and its aliases name CVEs some other
+  release has only (USN-7980-1 names CVE-2025-11187, which OSV has for 25.10 and 26.04, not 24.04).
+  Of a USN only the CVEs OSV also lists for that package on the host's release count now, so a CVE
+  of another release is no longer marked actively exploited (KEV) on this host, nor counted on the
+  surface, nor taken for a CVE OSV already reports when a third-party PHP or nginx is compared with
+  upstream. A USN whose package has no CVE-named advisory to tell its CVEs' release by is counted in
+  `kev_unchecked` and named, never dropped quietly.
 - The site's home page: a section that rises into view (the tally, open source, the latest release
   with the river) no longer stays blank when the page is reached in its middle, as from a link to
   an anchor, by going back to the page, or by a jump. A section shows once any part of it is in the

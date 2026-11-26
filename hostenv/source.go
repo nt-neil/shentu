@@ -108,6 +108,68 @@ func ReadFileIfSame(src Source, path string, want FileStat) ([]byte, error) {
 	return ReadFileNoFollow(src, path)
 }
 
+// DirMaxReader reads at most n names of a folder: one a user can fill
+// (a web folder) is never read whole to keep n of it.
+type DirMaxReader interface {
+	ReadDirMax(path string, n int) (names []string, more bool, err error)
+}
+
+// ReadDirMax reads at most n names of path through src, sorted; more when
+// the folder holds others (not read). A fixture holds the names it
+// recorded: the first n of those.
+func ReadDirMax(src Source, path string, n int) ([]string, bool, error) {
+	if d, ok := src.(DirMaxReader); ok {
+		return d.ReadDirMax(path, n)
+	}
+	names, err := src.ReadDir(path)
+	if len(names) > n {
+		return names[:n], true, err
+	}
+	return names, false, err
+}
+
+// NoFollowMaxReader reads without following a final link, up to max.
+type NoFollowMaxReader interface {
+	ReadFileNoFollowMax(path string, max int64) ([]byte, error)
+}
+
+// ReadFileNoFollowMax reads path, not past a final link, up to max bytes:
+// past it, the first max and ErrTruncated (a head is what the caller
+// wanted). A fixture reads what it holds, the limit applied to it.
+func ReadFileNoFollowMax(src Source, path string, max int64) ([]byte, error) {
+	if s, ok := src.(NoFollowMaxReader); ok {
+		return s.ReadFileNoFollowMax(path, max)
+	}
+	b, err := ReadFileNoFollow(src, path)
+	if err == nil && int64(len(b)) > max {
+		return b[:max], ErrTruncated
+	}
+	return b, err
+}
+
+// SameMaxReader is a SameReader with a size limit of the caller's.
+type SameMaxReader interface {
+	ReadFileIfSameMax(path string, want FileStat, max int64) ([]byte, error)
+}
+
+// ReadFileIfSameMax is ReadFileIfSame reading up to max bytes: past it,
+// the first max bytes and ErrTruncated. A fixture (no ID kept) reads it as
+// is, the limit applied to what it holds; a want with an ID that src cannot
+// compare is refused (ErrChanged), never read unchecked.
+func ReadFileIfSameMax(src Source, path string, want FileStat, max int64) ([]byte, error) {
+	if s, ok := src.(SameMaxReader); ok {
+		return s.ReadFileIfSameMax(path, want, max)
+	}
+	if want.ID != "" {
+		return nil, &fs.PathError{Op: "read", Path: path, Err: fmt.Errorf("%w (this source cannot compare file IDs)", ErrChanged)}
+	}
+	b, err := ReadFileNoFollow(src, path)
+	if err == nil && int64(len(b)) > max {
+		return b[:max], ErrTruncated
+	}
+	return b, err
+}
+
 // Stater is implemented by Sources that can stat a path (following links).
 type Stater interface {
 	Stat(path string) (FileStat, error)
@@ -186,6 +248,17 @@ func (l *Live) ReadFileIfSame(path string, want FileStat) ([]byte, error) {
 	return l.readFile(path, true, MaxFileBytes, want.ID)
 }
 
+func (l *Live) ReadFileNoFollowMax(path string, max int64) ([]byte, error) {
+	return l.read(path, true, max)
+}
+
+func (l *Live) ReadFileIfSameMax(path string, want FileStat, max int64) ([]byte, error) {
+	if want.ID == "" { // no ID to compare: say so, never read unchecked
+		return nil, &fs.PathError{Op: "read", Path: path, Err: fmt.Errorf("%w (file ID unknown, not compared)", ErrChanged)}
+	}
+	return l.readFile(path, true, max, want.ID)
+}
+
 func (l *Live) read(path string, noFollow bool, max int64) ([]byte, error) {
 	return l.readFile(path, noFollow, max, "")
 }
@@ -244,6 +317,25 @@ func (l *Live) ReadDir(path string) ([]string, error) {
 	names, err := f.Readdirnames(-1)
 	sort.Strings(names)
 	return names, err
+}
+
+// ReadDirMax reads n+1 names, the first the system lists, and stops.
+func (l *Live) ReadDirMax(path string, n int) ([]string, bool, error) {
+	f, err := os.Open(l.path(path))
+	if err != nil {
+		return nil, false, err
+	}
+	defer f.Close()
+	names, err := f.Readdirnames(n + 1)
+	if errors.Is(err, io.EOF) {
+		err = nil
+	}
+	more := len(names) > n
+	if more {
+		names = names[:n]
+	}
+	sort.Strings(names)
+	return names, more, err
 }
 
 func (l *Live) Readlink(path string) (string, error) { return os.Readlink(l.path(path)) }

@@ -38,8 +38,10 @@ func TestCases(t *testing.T) {
 			wp++
 		}
 	}
-	if 2*wp <= n {
-		t.Errorf("%d of %d cases in the first five classes are WordPress plugins, want more than half", wp, n)
+	// WordPress plugins are the bulk of the set: at least half of the first five
+	// classes (exactly half since CVE-2023-41330, a Composer case, joined).
+	if 2*wp < n {
+		t.Errorf("%d of %d cases in the first five classes are WordPress plugins, want at least half", wp, n)
 	}
 }
 

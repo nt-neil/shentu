@@ -6,6 +6,10 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 ## v0.5.8 (unreleased)
 
 - 用 `apt-mark hold` 鎖住的 Debian 或 Ubuntu 套件（dpkg 狀態 `hi`），以及標成要移除、但還裝著的套件（`ri`、`pi`），現在和已安裝的套件一樣會被檢查。以前套件清單只收 dpkg 的 `ii`，所以鎖住的套件不會被檢查，也不會被列出來（v0.5.7 的已知問題）。已經放到磁碟上、但沒有完整安裝的套件，會讓套件清單標成部分（partial），並在那裡寫出名稱和狀態（最多 20 個，其餘只寫數量）。檔案都已解開的套件（unpacked、half-configured、triggers awaited、triggers pending）會照 dpkg 記錄的版本檢查。half-installed 或狀態讀不懂的套件不檢查，會連同狀態列在 `packages_not_checked`，排在只剩設定檔的套件（config-files，只會被列出來）前面。最多列 20 個，其餘的數量寫在 `packages_not_checked_more`。工具說明也寫了這兩個欄位。
+- block_ip 讀伺服器的 DNS 伺服器和預設閘道（`/etc/resolv.conf`、systemd-resolved 的那一份、`/proc/net/route`、`/proc/net/ipv6_route`）時，和它檢查的 SSH 連線一樣改經主機來源讀取：replay 或其他主機的盤點，不會拿跑檢查的這台機器來回答。這幾個檔案有在、但讀不到時，現在會拒絕封鎖（`state_error`）；以前讀不到也照樣往下做，把清單當成空的，所以閘道或 DNS 伺服器可能被封鎖。檔案不存在（沒有 systemd-resolved、沒有 IPv6）仍然只是沒有這一項。
+- app_code_audit、app_vulns（lock 檔和 site-packages）以及 WordPress 外掛清單，現在讀的是主機來源裡的檔案，和一開始用到的 web root 一樣：replay 或其他主機的盤點，不會拿跑檢查的這台機器來回答。symlink 仍然不跟隨，檔案只在還是掃描時看到的那一個時才讀，上限也都相同。web root 或 app 路徑有在、但讀不到時（沒有權限，或 replay 裡沒有它），現在會列在稽核的 `not_checked`；以前會當成空的資料夾稽核過去。用這一版之前錄的 fixture 做 replay 時，這些路徑都會說讀不到，不會說成不存在。
+- package_vulns 會讀完 OSV 回答的每一頁：OSV 一次查詢最多給 1000 筆公告，並寫明下一頁；以前只讀第一頁，所以 kernel 的清單停在 1000 筆（在 Ubuntu 24.04 上，比另一套掃描工具少了 383 個 CVE）。一個套件超過 10 頁時，其餘的會寫在 `partial`，不會默默截斷。
+- Ubuntu 上的 package_vulns：一則 USN 會包括它修正的每一個版本，它的 alias 會列出只有其他版本才有的 CVE（USN-7980-1 列了 CVE-2025-11187，OSV 只把它列在 25.10 和 26.04，不在 24.04）。現在一則 USN 只算 OSV 對這個套件、在主機這個版本上也列出的 CVE，所以其他版本的 CVE 不會再在這台主機上標成正在被利用（KEV），也不會算進弱點面；第三方 PHP 或 nginx 和 php.net、nginx.org 的公告比對時，也不會被當成 OSV 已經列出的 CVE。一則 USN 所屬的套件如果沒有任何以 CVE 命名的公告可以判斷版本，這則 USN 會算進 `kev_unchecked` 並寫出名稱，不會沒有說明就不算。
 - 網站首頁：捲動時才出現的區塊（統計、開放原始碼、最新版本和河道），從中段進入頁面時（例如從連到頁內位置的連結、回到上一頁，或直接跳到中段）不再一直空白。區塊只要有任何一部分看得到就會出現；頁面一打開就看得到的區塊，以及從頁內位置打開的頁面上的每個區塊，都會立刻出現。
 
 ## v0.5.7 — 2026-11-26
