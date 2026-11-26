@@ -5,10 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"io/fs"
 	"net/http"
-	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -17,7 +14,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 
-	"github.com/nt-neil/shentu/internal/osutil"
+	"github.com/nt-neil/shentu/hostenv"
 )
 
 var appVulns = Tool{
@@ -68,30 +65,29 @@ var lockParsers = map[string]struct {
 var skipDirs = map[string]bool{"node_modules": true, ".git": true, "vendor": true, "venv": true, ".venv": true,
 	"__pycache__": true, "site-packages": true, ".cache": true, "proc": true}
 
-// FindLockfiles walks roots (at most 6 levels deep) and returns up to 100 lock files.
+// FindLockfiles walks roots (at most 6 levels deep) through the host source
+// and returns up to 100 lock files.
 func FindLockfiles(roots []string) []Lockfile {
 	var out []Lockfile
+	src := hostSource()
 	for _, root := range roots {
 		base := strings.Count(filepath.Clean(root), string(filepath.Separator))
-		filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		hostenv.Walk(src, root, func(p string, st hostenv.FileStat, err error) error {
 			if err != nil {
 				return nil
 			}
-			if d.IsDir() {
-				if skipDirs[d.Name()] || strings.Count(p, string(filepath.Separator))-base > 6 {
+			name := filepath.Base(p)
+			if st.Mode.IsDir() {
+				if skipDirs[name] || strings.Count(p, string(filepath.Separator))-base > 6 {
 					return filepath.SkipDir
 				}
 				return nil
 			}
-			lp, ok := lockParsers[d.Name()]
-			if !ok || !d.Type().IsRegular() {
+			lp, ok := lockParsers[name]
+			if !ok || !st.Mode.IsRegular() {
 				return nil
 			}
-			seen, err := d.Info() // lstat from the walk
-			if err != nil {
-				return nil
-			}
-			b, ok := readSmallRegular(p, 20<<20, seen)
+			b, ok := readAt(src, p, 20<<20, st) // the file the walk's lstat saw
 			if !ok {
 				return nil
 			}
@@ -105,25 +101,15 @@ func FindLockfiles(roots []string) []Lockfile {
 	return out
 }
 
-// readSmallRegular reads a file that app users may control: it does not follow a
-// symlink swapped in after the walk, checks the open file itself, and reads at most max.
-// When seen is set, the opened file must be the same file the walk saw, so a parent
-// folder swapped for a symlink in between cannot redirect the read.
-func readSmallRegular(p string, max int64, seen os.FileInfo) ([]byte, bool) {
-	f, err := osutil.OpenNoFollow(p, os.O_RDONLY, 0, true)
-	if err != nil {
+// readAt reads, through src, the regular file at p a walk's Lstat saw (st):
+// not past a link, only if it is still that file, at most max bytes; as
+// v0.2.5 readSmallRegular did on the machine.
+func readAt(src hostenv.Source, p string, max int64, st hostenv.FileStat) ([]byte, bool) {
+	if !st.Mode.IsRegular() || st.Size > max {
 		return nil, false
 	}
-	defer f.Close()
-	st, err := f.Stat()
-	if err != nil || !st.Mode().IsRegular() || st.Size() > max || (seen != nil && !os.SameFile(seen, st)) {
-		return nil, false
-	}
-	b, err := io.ReadAll(io.LimitReader(f, max+1))
-	if err != nil || int64(len(b)) > max {
-		return nil, false
-	}
-	return b, true
+	b, err := hostenv.ReadFileIfSameMax(src, p, st, max)
+	return b, err == nil
 }
 
 // safeParse keeps one malformed lock file from stopping the scan or the patrol.

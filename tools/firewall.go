@@ -456,7 +456,7 @@ func infraAddrs(src hostenv.Source) (map[string]bool, error) {
 			return "", nil
 		}
 		if err != nil {
-			return "", fmt.Errorf("%s could not be read (%v)", f, err)
+			return "", fmt.Errorf("%s could not be read (%s)", f, errText(err)) // the path said once
 		}
 		return string(b), nil
 	}

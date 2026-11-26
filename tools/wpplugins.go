@@ -4,7 +4,6 @@ import (
 	"errors"
 	"io"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -52,29 +51,34 @@ func WordPressPlugins(roots []string) ([]WPPlugin, []string) {
 	var out []WPPlugin
 	var unread []string
 	seen := map[string]bool{}
+	cutSaid := map[string]bool{} // folders whose cut was said: one line each
+	src := hostSource()          // the host read (a replay, another host's survey), not the machine running the check
 	for _, r := range roots {
+		rootUnread := false // r itself not read: said once, its wp-content not again
 		cands := []string{r}
 		level := []string{r}
 		for depth := 0; depth < wpDepth; depth++ {
 			var next []string
 			for _, d := range level {
-				ents, err := readDirMax(d, wpMaxDirEntries)
+				ents, err := readDirMax(src, d, wpMaxDirEntries)
 				if errors.Is(err, errTooMany) {
 					unread = append(unread, d+" (more than "+strconv.Itoa(wpMaxDirEntries)+" entries: the rest not looked at)")
+					cutSaid[d] = true
 				} else if err != nil {
 					if depth == 0 {
 						unread = append(unread, d+" ("+err.Error()+")")
+						rootUnread = true
 					}
 					continue
 				}
 				for _, e := range ents {
-					p := filepath.Join(d, e.Name())
+					p := filepath.Join(d, e.name)
 					switch {
-					case e.Type()&os.ModeSymlink != 0:
-						if st, err := os.Stat(filepath.Join(p, "wp-content")); err == nil && st.IsDir() {
+					case e.isLink():
+						if st, err := hostenv.Stat(src, filepath.Join(p, "wp-content")); err == nil && st.Mode.IsDir() {
 							unread = append(unread, p+" (a link to a WordPress, not followed)")
 						}
-					case e.IsDir():
+					case e.isDir():
 						if len(cands)+len(next) >= wpMaxCandidates {
 							continue
 						}
@@ -89,21 +93,24 @@ func WordPressPlugins(roots []string) ([]WPPlugin, []string) {
 		}
 		for _, root := range cands {
 			dir := filepath.Join(root, "wp-content", "plugins")
-			st, err := os.Lstat(dir)
+			if rootUnread && root == r {
+				continue // the root itself not read: said once
+			}
+			st, err := hostenv.Lstat(src, dir)
 			switch {
 			case errors.Is(err, fs.ErrNotExist):
 				continue
 			case err != nil:
 				unread = append(unread, dir+" ("+err.Error()+")")
 				continue
-			case st.Mode()&os.ModeSymlink != 0:
+			case st.Mode&fs.ModeSymlink != 0:
 				unread = append(unread, dir+" (a link, not followed)")
 				continue
-			case !st.IsDir() || seen[dir]:
+			case !st.Mode.IsDir() || seen[dir]:
 				continue
 			}
 			seen[dir] = true
-			ps, un := pluginsIn(root, dir)
+			ps, un := pluginsIn(src, root, dir, cutSaid[dir])
 			out = append(out, ps...)
 			unread = append(unread, un...)
 		}
@@ -128,28 +135,29 @@ const (
 
 var errTooMany = errors.New("more entries than are read")
 
-// readDirMax reads at most n entries of dir, sorted by name (errTooMany
-// when there are more: those read are given).
-func readDirMax(dir string, n int) ([]os.DirEntry, error) {
-	f, err := os.Open(dir)
+// readDirMax reads at most n entries of dir through src (the folder is
+// never read whole), sorted by name, each with its Lstat (errTooMany when
+// there are more: those read are given).
+func readDirMax(src hostenv.Source, dir string, n int) ([]dirEnt, error) {
+	names, over, err := hostenv.ReadDirMax(src, dir, n)
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
-	ents, err := f.ReadDir(n + 1)
-	if err != nil && !errors.Is(err, io.EOF) {
-		return nil, err
-	}
 	var more error
-	if len(ents) > n {
-		ents, more = ents[:n], errTooMany
+	if over {
+		more = errTooMany
 	}
-	sort.Slice(ents, func(i, j int) bool { return ents[i].Name() < ents[j].Name() })
+	ents := make([]dirEnt, 0, len(names))
+	for _, nm := range names {
+		st, err := hostenv.Lstat(src, filepath.Join(dir, nm))
+		ents = append(ents, dirEnt{nm, st, err})
+	}
 	return ents, more
 }
 
-func pluginsIn(root, dir string) ([]WPPlugin, []string) {
-	ents, err := readDirMax(dir, wpMaxDirEntries)
+// cutSaid: the folder's cut was said already (the search looked at it).
+func pluginsIn(src hostenv.Source, root, dir string, cutSaid bool) ([]WPPlugin, []string) {
+	ents, err := readDirMax(src, dir, wpMaxDirEntries)
 	tooMany := errors.Is(err, errTooMany)
 	if tooMany {
 		err = nil // the entries read are looked at, the rest said below
@@ -164,12 +172,12 @@ func pluginsIn(root, dir string) ([]WPPlugin, []string) {
 			unread = append(unread, dir+" (more than "+strconv.Itoa(wpMaxPlugins)+" plugins)")
 			break
 		}
-		p := filepath.Join(dir, e.Name())
+		p := filepath.Join(dir, e.name)
 		switch {
-		case e.Type()&os.ModeSymlink != 0:
+		case e.isLink():
 			unread = append(unread, p+" (a link, not followed)")
-		case e.IsDir():
-			files, err := readDirMax(p, wpMaxDirEntries)
+		case e.isDir():
+			files, err := readDirMax(src, p, wpMaxDirEntries)
 			if err != nil && !errors.Is(err, errTooMany) {
 				unread = append(unread, p+" ("+err.Error()+")")
 				continue
@@ -177,26 +185,26 @@ func pluginsIn(root, dir string) ([]WPPlugin, []string) {
 			n, found := 0, false
 			var failed []string
 			for _, f := range files {
-				if !strings.HasSuffix(strings.ToLower(f.Name()), ".php") {
+				if !strings.HasSuffix(strings.ToLower(f.name), ".php") {
 					continue
 				}
-				if f.Type()&os.ModeSymlink != 0 {
-					failed = append(failed, f.Name()+": a link, not followed")
+				if f.isLink() {
+					failed = append(failed, f.name+": a link, not followed")
 					continue
 				}
-				if !f.Type().IsRegular() {
+				if !f.isRegular() {
 					continue
 				}
 				if n++; n > wpMaxFilesEach {
 					failed = append(failed, "more than "+strconv.Itoa(wpMaxFilesEach)+" .php files: the rest not read")
 					break
 				}
-				pl, ok, err := pluginHeader(filepath.Join(p, f.Name()))
+				pl, ok, err := pluginHeader(src, filepath.Join(p, f.name))
 				if err != nil {
-					failed = append(failed, f.Name()+": "+err.Error())
+					failed = append(failed, f.name+": "+err.Error())
 				}
 				if ok {
-					pl.Root, pl.Slug = root, e.Name()
+					pl.Root, pl.Slug = root, e.name
 					out = append(out, pl)
 					found = true
 					break
@@ -208,18 +216,18 @@ func pluginsIn(root, dir string) ([]WPPlugin, []string) {
 			case !found && n > 0:
 				unread = append(unread, p+" (.php files but no plugin header found)")
 			}
-		case e.Type().IsRegular() && strings.HasSuffix(strings.ToLower(e.Name()), ".php"):
-			pl, ok, err := pluginHeader(p)
+		case e.isRegular() && strings.HasSuffix(strings.ToLower(e.name), ".php"):
+			pl, ok, err := pluginHeader(src, p)
 			if err != nil {
 				unread = append(unread, p+" ("+err.Error()+")")
 			}
 			if ok {
-				pl.Root, pl.Slug = root, strings.TrimSuffix(e.Name(), filepath.Ext(e.Name()))
+				pl.Root, pl.Slug = root, strings.TrimSuffix(e.name, filepath.Ext(e.name))
 				out = append(out, pl)
 			}
 		}
 	}
-	if tooMany {
+	if tooMany && !cutSaid {
 		unread = append(unread, dir+" (more than "+strconv.Itoa(wpMaxDirEntries)+" entries: the rest not read)")
 	}
 	return out, unread
@@ -230,9 +238,9 @@ func pluginsIn(root, dir string) ([]WPPlugin, []string) {
 // not be read. The directory is the web account's to write: the file is
 // opened without following a link, without blocking (a FIFO left there
 // cannot hold the patrol), and read only when what was opened is a
-// regular file.
-func pluginHeader(p string) (WPPlugin, bool, error) {
-	f, err := (&hostenv.Live{}).OpenLogNoFollow(p)
+// regular file. It is read through the host source (S-256-1).
+func pluginHeader(src hostenv.Source, p string) (WPPlugin, bool, error) {
+	f, err := hostenv.OpenLogNoFollow(src, p)
 	if err != nil {
 		return WPPlugin{}, false, err
 	}
