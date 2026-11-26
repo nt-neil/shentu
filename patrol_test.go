@@ -19,7 +19,7 @@ func TestReplaceOrAppend(t *testing.T) {
 	}
 }
 
-// Findings of info-tier rules and the summary of unfinished files are not pushed;
+// Findings of info- and reference-tier rules and the summary of unfinished files are not pushed;
 // alert-tier findings are, keyed by path, line and rule.
 func TestCodeAuditFindings(t *testing.T) {
 	audit := tools.CodeAudit{Findings: []tools.CodeFinding{
@@ -27,6 +27,7 @@ func TestCodeAuditFindings(t *testing.T) {
 		{Kind: "injection", Severity: "warning", Path: "/a.php", Line: 3, Detail: "t", Fix: "f", Rule: "php-x-loud", CWE: "CWE-78", Tier: "alert"},
 		{Kind: "injection", Severity: "info", Tier: "info", Detail: "2 file(s) were too large", Files: []tools.UnfinishedFile{{Path: "/b.php", Reason: "size"}}},
 		{Kind: "injection", Severity: "critical", Path: "/e.php", Line: 1, Detail: "t", Fix: "f", Rule: "php-x-untiered"}, // no tier: not pushed
+		{Kind: "injection", Severity: "critical", Path: "/r.py", Line: 1, Detail: "t", Fix: "f", Rule: "python-x-ref", CWE: "CWE-328", Tier: "reference"},
 		{Kind: "secret", Severity: "warning", Path: "/k.js", Line: 2, Detail: "d", Fix: "f"},
 		{Kind: "webshell", Severity: "critical", Path: "/w.php", Line: 1, Detail: "d", Fix: "f"},
 		{Kind: "audit", Severity: "info", Detail: "the audit is unfinished: its time ran out"}, // pushed as a warning, after the findings
@@ -117,6 +118,23 @@ func TestWebrootACLUnknownNotPushed(t *testing.T) {
 	}
 	if notCheckedSection(nil, false) != "" {
 		t.Error("nothing to list, no section")
+	}
+}
+
+// The daily report's reference block is one line with the count, never the
+// findings; nothing when there are none.
+func TestReferenceSection(t *testing.T) {
+	for _, zh := range []bool{false, true} {
+		s := referenceSection(7, zh)
+		if strings.Count(strings.TrimSpace(s), "\n") != 0 || !strings.Contains(s, "7") {
+			t.Errorf("zh %v: %q", zh, s)
+		}
+	}
+	if !strings.Contains(referenceSection(7, true), "參考") {
+		t.Errorf("no reference head: %q", referenceSection(7, true))
+	}
+	if referenceSection(0, false) != "" {
+		t.Error("nothing to count, no section")
 	}
 }
 

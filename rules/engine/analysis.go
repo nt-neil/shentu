@@ -2675,7 +2675,19 @@ func (a *analysis) sinkWith(st state, t []Token, i int, s *pat, cond *argCond) b
 	if cond != nil && cond.literal && !a.literalArg(st, cond, region, open) {
 		return false
 	}
+	if cond != nil && cond.notLiteral && a.literalArg(st, cond, region, open) {
+		return false // os.system("make clean"): a command written out in full
+	}
 	if a.noSources() {
+		if s.member && len(a.r.sanitizers) > 0 && a.expr(st, t[a.chainStart(t, i):i], false).san {
+			return false // SandboxedEnvironment().from_string(x): an object a sanitizer made
+		}
+		if s.member && cond != nil && len(cond.recvFrom) > 0 && !a.recvMadeBy(cond.recvFrom, cond.recvNames, t[a.chainStart(t, i):i]) {
+			return false // Engine().from_string(x): a Django template, not Jinja
+		}
+		if !s.member && cond != nil && len(cond.recvFrom) > 0 && !a.recvMadeBy(cond.recvFrom, nil, t[i:open]) {
+			return false // md5(x) of a function the file does not import from hashlib
+		}
 		a.span = spanText(t, i, end, open)
 		a.report(t[i].Line)
 		return true
@@ -2695,12 +2707,18 @@ func (a *analysis) sinkWith(st state, t []Token, i int, s *pat, cond *argCond) b
 		if cond != nil && len(cond.receiver) > 0 && !a.recvIs(cond.receiver, recv) {
 			return false // finders.find(path) is not a MongoDB collection
 		}
+		if cond != nil && len(cond.recvFrom) > 0 && !a.recvMadeBy(cond.recvFrom, cond.recvNames, recv) {
+			return false // Engine().from_string(x): a Django template, not Jinja
+		}
 		if cond != nil && len(cond.notReceiver) > 0 && a.recvSurely(cond.notReceiver, recv) {
 			return false // (new WP_Query)->query($args): a query built from an arguments array, not SQL
 		}
 		if cond != nil && len(cond.unlessImports) > 0 && a.importsLeaveOut(cond, recv) {
 			return false // a TypeORM repository on an SQL database: where becomes bound parameters
 		}
+	}
+	if !s.member && cond != nil && len(cond.recvFrom) > 0 && !a.recvMadeBy(cond.recvFrom, nil, t[i:open]) {
+		return false // md5(x) of a function the file does not import from hashlib
 	}
 	whole := cond != nil && cond.whole
 	emb := false

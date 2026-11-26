@@ -7,11 +7,13 @@ import "github.com/nt-neil/shentu/detect"
 // step is wired up: PackageVulns gives a summary for the model, not the
 // per-advisory list detect needs.
 
-// SurfaceCode is the injection findings of a code audit as code sinks.
+// SurfaceCode is the injection findings of a code audit as code sinks. A
+// reference-tier finding is left out: it says how a call is made, not that
+// input reaches it.
 func SurfaceCode(fs []CodeFinding) []detect.CodeSink {
 	var out []detect.CodeSink
 	for _, f := range fs {
-		if f.Kind != "injection" || f.Rule == "" {
+		if f.Kind != "injection" || f.Rule == "" || f.Tier == "reference" {
 			continue
 		}
 		out = append(out, detect.CodeSink{Rule: f.Rule, CWE: f.CWE, Severity: f.Severity, Path: f.Path, Line: f.Line,

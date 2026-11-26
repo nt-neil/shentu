@@ -8,6 +8,10 @@ Chinese for the zh-TW pages; keep the two in step.
 
 ## v0.5.8 (unreleased)
 
+- A new rule tier, `reference`, for a rule about how a call is made rather than about input reaching
+  it (only a rule with `sources = []` may have it). app_code_audit and chat list its findings after
+  the others, marked as reference; the daily report gives them one line with their count. They are
+  never pushed and never given to attack detection. The `info` and `alert` tiers are unchanged.
 - A Debian or Ubuntu package held with `apt-mark hold` (dpkg state `hi`), or marked for removal but
   still installed (`ri`, `pi`), is checked as an installed one is. The package list went by dpkg's
   `ii` only, so a held package was neither checked nor said (the v0.5.7 known issue). A package dpkg
@@ -73,6 +77,12 @@ Chinese for the zh-TW pages; keep the two in step.
   `extract()` of request data sets strings and arrays. `extract((array) json_decode($in))` and
   `extract(get_object_vars(json_decode($in)))` can set objects whose properties are input, and these
   are missed.
+- A `reference` rule misreads a few forms. A command written out in full is still reported when it
+  is split into adjacent string literals (`os.system('ls ' '-l')`, which Python joins into one) or
+  joined from a list of literals (`' '.join(['ls', '-l'])`). An attribute receiver
+  (`h.env.from_string(s)`) is known by its name only, even where the file assigns it
+  (`h.env = Engine()`). `o.system(cmd)` after `import os as o`, and a function imported under
+  another name (`m(x)` after `from hashlib import md5 as m`), are not reported.
 
 ## v0.5.7 — 2026-11-26
 

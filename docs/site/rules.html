@@ -37,7 +37,7 @@
   <label>Language <select id="fl"><option value="">All</option><option value="php">PHP</option><option value="python">Python</option><option value="js">JavaScript / TypeScript</option></select></label>
   <label>Class <select id="fc"><option value="">All</option><option value="cmdi">Command injection</option><option value="code-eval">Code evaluation</option><option value="deserialization">Unsafe deserialization</option><option value="file-upload">Dangerous file upload</option><option value="hardcoded-secret">Hard-coded credentials</option><option value="ldapi">LDAP injection</option><option value="nosqli">NoSQL injection</option><option value="open-redirect">Open redirect</option><option value="path-traversal">Path traversal</option><option value="sqli">SQL injection</option><option value="ssrf">Server-side request forgery</option><option value="weak-crypto">Weak cryptography</option><option value="xss">Cross-site scripting</option><option value="xxe">XML external entities</option></select></label>
   <label>Severity <select id="fs"><option value="">All</option><option value="critical">critical</option><option value="high">high</option><option value="medium">medium</option><option value="low">low</option></select></label>
-  <p class="count" aria-live="polite"><strong id="shown">127</strong> / 127 rules</p>
+  <p class="count" aria-live="polite"><strong id="shown">130</strong> / 130 rules</p>
 </form>
 <section class="routes">
   <h2>Route models</h2>
@@ -1177,6 +1177,18 @@ def checkout():
     <p class="fix"><strong>Fix</strong> Call subprocess.run with a list of arguments and no shell; if a shell is unavoidable wrap each value in shlex.quote().</p>
   </details>
   
+  <details class="rule" id="python-cmdi-shell-built" data-rule-id="python-cmdi-shell-built" data-lang="python" data-class="cmdi" data-sev="medium" data-text="python-cmdi-shell-built CWE-78 A shell command line built from values the code does not write out">
+    <summary><span class="sev medium"><i aria-hidden="true">中</i><b>medium</b></span><span class="head"><code class="rid">python-cmdi-shell-built</code> <span class="cwe">CWE-78</span><span class="title">A shell command line built from values the code does not write out</span></span></summary>
+    
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">Reported</h3><pre><code>def build(path):
+    args = [&#34;make&#34;, &#34;-C&#34;, f&#34;--dir {path}&#34;]
+    os.system(&#34; &#34;.join(args))</code></pre></div>
+      <div class="sample good-s"><h3 class="good">Fixed</h3><pre><code>os.system(&#34;make clean&#34;)</code></pre></div>
+    </div>
+    <p class="fix"><strong>Fix</strong> Run the program with a list of arguments and no shell (subprocess.run([prog, arg])); if a shell is needed, wrap each value in shlex.quote().</p>
+  </details>
+  
 </section>
 
 <section class="group" data-lang="python" data-class="code-eval">
@@ -1220,6 +1232,24 @@ def filter_items():
     return {&#34;items&#34;: load(ids)}</code></pre></div>
     </div>
     <p class="fix"><strong>Fix</strong> Parse data instead of evaluating it: json.loads or ast.literal_eval for literals, a small expression parser for formulas; SymPy parse_expr and sympify call eval internally.</p>
+  </details>
+  
+  <details class="rule" id="python-code-eval-jinja-unsandboxed" data-rule-id="python-code-eval-jinja-unsandboxed" data-lang="python" data-class="code-eval" data-sev="medium" data-text="python-code-eval-jinja-unsandboxed CWE-1336 Text the code does not write out compiled as a Jinja2 template outside a sandbox">
+    <summary><span class="sev medium"><i aria-hidden="true">中</i><b>medium</b></span><span class="head"><code class="rid">python-code-eval-jinja-unsandboxed</code> <span class="cwe">CWE-1336</span><span class="title">Text the code does not write out compiled as a Jinja2 template outside a sandbox</span></span></summary>
+    
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">Reported</h3><pre><code>from jinja2 import Environment
+
+env = Environment()
+
+def render_setting(value, **context):
+    return env.from_string(value).render(**context)</code></pre></div>
+      <div class="sample good-s"><h3 class="good">Fixed</h3><pre><code>env = SandboxedEnvironment()
+
+def render_setting(value, **context):
+    return env.from_string(value).render(**context)</code></pre></div>
+    </div>
+    <p class="fix"><strong>Fix</strong> Render fixed templates and pass values as variables; a template whose text may come from a user or a setting belongs in jinja2.sandbox.SandboxedEnvironment.</p>
   </details>
   
   <details class="rule" id="python-code-eval-numexpr" data-rule-id="python-code-eval-numexpr" data-lang="python" data-class="code-eval" data-sev="critical" data-text="python-code-eval-numexpr CWE-95 Request text evaluated by numexpr.evaluate, pandas.eval or DataFrame.query/eval">
@@ -1680,6 +1710,18 @@ token = cipher.encrypt(pad(data, 16))</code></pre></div>
 ct, tag = cipher.encrypt_and_digest(data)</code></pre></div>
     </div>
     <p class="fix"><strong>Fix</strong> Use an authenticated mode such as AES-GCM (cryptography&#39;s AESGCM) or Fernet with a random nonce; DES, 3DES, RC4, Blowfish and ECB mode do not keep data secret.</p>
+  </details>
+  
+  <details class="rule" id="python-weak-crypto-md5-hash" data-rule-id="python-weak-crypto-md5-hash" data-lang="python" data-class="weak-crypto" data-sev="medium" data-text="python-weak-crypto-md5-hash CWE-328 Data hashed with MD5 or SHA-1, which no longer resist collisions">
+    <summary><span class="sev medium"><i aria-hidden="true">中</i><b>medium</b></span><span class="head"><code class="rid">python-weak-crypto-md5-hash</code> <span class="cwe">CWE-328</span><span class="title">Data hashed with MD5 or SHA-1, which no longer resist collisions</span></span></summary>
+    
+    <div class="samples">
+      <div class="sample bad-s"><h3 class="bad">Reported</h3><pre><code>def fingerprint(data):
+    return hashlib.md5(data.encode()).hexdigest()</code></pre></div>
+      <div class="sample good-s"><h3 class="good">Fixed</h3><pre><code>def cache_key(path):
+    return hashlib.md5(path.encode(), usedforsecurity=False).hexdigest()</code></pre></div>
+    </div>
+    <p class="fix"><strong>Fix</strong> Use SHA-256 or stronger (hashlib.sha256); for passwords use a password hash (argon2, bcrypt, hashlib.scrypt). A hash that is no security measure (a cache key, a file checksum) can say so: hashlib.md5(data, usedforsecurity=False).</p>
   </details>
   
   <details class="rule" id="python-weak-crypto-password-hash" data-rule-id="python-weak-crypto-password-hash" data-lang="python" data-class="weak-crypto" data-sev="high" data-text="python-weak-crypto-password-hash CWE-916 Password from the request hashed with a fast, unsalted hash">

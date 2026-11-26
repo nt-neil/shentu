@@ -5,6 +5,7 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 
 ## v0.5.8 (unreleased)
 
+- 新增 `reference` 等級，給只看呼叫寫法、不看輸入的規則用（只有 `sources = []` 的規則可以用）。app_code_audit 和聊天會把這類發現排在其他發現之後，另外標示出來；每日報告只用一行寫出筆數。這類發現不會主動送出通知，也不交給攻擊偵測。`info` 和 `alert` 兩個等級不變。
 - 用 `apt-mark hold` 鎖住的 Debian 或 Ubuntu 套件（dpkg 狀態 `hi`），以及標成要移除、但還裝著的套件（`ri`、`pi`），現在和已安裝的套件一樣會被檢查。以前套件清單只收 dpkg 的 `ii`，所以鎖住的套件不會被檢查，也不會被列出來（v0.5.7 的已知問題）。已經放到磁碟上、但沒有完整安裝的套件，會讓套件清單標成部分（partial），並在那裡寫出名稱和狀態（最多 20 個，其餘只寫數量）。檔案都已解開的套件（unpacked、half-configured、triggers awaited、triggers pending）會照 dpkg 記錄的版本檢查。half-installed 或狀態讀不懂的套件不檢查，會連同狀態列在 `packages_not_checked`，排在只剩設定檔的套件（config-files，只會被列出來）前面。最多列 20 個，其餘的數量寫在 `packages_not_checked_more`。工具說明也寫了這兩個欄位。
 - block_ip 讀伺服器的 DNS 伺服器和預設閘道（`/etc/resolv.conf`、systemd-resolved 的那一份、`/proc/net/route`、`/proc/net/ipv6_route`）時，和它檢查的 SSH 連線一樣改經主機來源讀取：replay 或其他主機的盤點，不會拿跑檢查的這台機器來回答。這幾個檔案有在、但讀不到時，現在會拒絕封鎖（`state_error`）；以前讀不到也照樣往下做，把清單當成空的，所以閘道或 DNS 伺服器可能被封鎖。檔案不存在（沒有 systemd-resolved、沒有 IPv6）仍然只是沒有這一項。
 - app_code_audit、app_vulns（lock 檔和 site-packages）以及 WordPress 外掛清單，現在讀的是主機來源裡的檔案，和一開始用到的 web root 一樣：replay 或其他主機的盤點，不會拿跑檢查的這台機器來回答。symlink 仍然不跟隨，檔案只在還是掃描時看到的那一個時才讀，上限也都相同。web root 或 app 路徑有在、但讀不到時（沒有權限，或 replay 裡沒有它），現在會列在稽核的 `not_checked`；以前會當成空的資料夾稽核過去。用這一版之前錄的 fixture 做 replay 時，這些路徑都會說讀不到，不會說成不存在。
@@ -17,6 +18,7 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 ### 已知問題
 
 - 對輸入 `extract()` 之後，它設定的變數讀屬性（`$cfg->path`）不算輸入，因為 request 資料只會設定字串和 array。`extract((array) json_decode($in))` 和 `extract(get_object_vars(json_decode($in)))` 可能設定物件，它的屬性是輸入，這兩種會漏報。
+- `reference` 規則有幾種寫法判斷不準：指令其實整行寫在程式裡，但拆成幾個中間沒有 `+` 的字串（`os.system('ls ' '-l')`，Python 會自動接成一個），或用 `' '.join()` 接起全是字面值的串列，仍然會報；屬性形式的物件（`h.env.from_string(s)`）只看名稱判斷，就算檔案裡寫了 `h.env = Engine()` 也一樣；`import os as o` 之後的 `o.system(cmd)`，以及換了名稱 import 的函式（`from hashlib import md5 as m` 之後的 `m(x)`），不會報。
 
 ## v0.5.7 — 2026-11-26
 

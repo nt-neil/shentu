@@ -39,7 +39,8 @@ func TestCases(t *testing.T) {
 		}
 	}
 	// WordPress plugins are the bulk of the set: at least half of the first five
-	// classes (exactly half since CVE-2023-41330, a Composer case, joined).
+	// classes (CVE-2023-41330, a Composer case, made it exactly half; the
+	// hold-out cases moved in for v0.5.8 brought five more and three others).
 	if 2*wp < n {
 		t.Errorf("%d of %d cases in the first five classes are WordPress plugins, want at least half", wp, n)
 	}
@@ -296,6 +297,23 @@ func TestJudge(t *testing.T) {
 	judge(&r, rs)
 	if r.Caught || r.FixedFP {
 		t.Errorf("a finding 11 lines before the range counted: %+v", r)
+	}
+
+	// A reference-tier rule at the fix counts with reference only, not in the
+	// main verdict nor with sink lines.
+	rs = append(rs, rules.Rule{ID: "php-sqli-ref", Lang: "php", Class: "sqli", Tier: "reference"})
+	r = caseResult{Case: r.Case}
+	r.Sinks = []SinkLine{{Path: "a.php", Vulnerable: 101}}
+	r.Vuln.Findings = []engine.Finding{{RuleID: "php-sqli-ref", Path: "a.php", Line: 101}}
+	r.FixedScan.Findings = []engine.Finding{{RuleID: "php-sqli-ref", Path: "a.php", Line: 101}}
+	judge(&r, rs)
+	if r.Caught || r.FixedFP || r.CaughtSink || r.FixedFPSink || !r.CaughtRef || !r.FixedFPRef || !r.Rules[2].Vuln || !r.Rules[2].Reference {
+		t.Errorf("reference rule: %+v", r)
+	}
+	md := markdown([]caseResult{r}, rs, time.Unix(0, 0))
+	if !strings.Contains(md, "| all | 1 | 0 | 0.0% | 0 | - |") || !strings.Contains(md, "| 0 (0.0%) | 0 (-) | 1 (100.0%) | 1 (100.0%) |") ||
+		!strings.Contains(md, "| php-sqli-ref | caught (reference) |") {
+		t.Errorf("reference columns:\n%s", md)
 	}
 }
 
