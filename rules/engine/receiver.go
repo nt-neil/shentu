@@ -1,6 +1,9 @@
 package engine
 
-import "strings"
+import (
+	"slices"
+	"strings"
+)
 
 // recvDefs maps, for one file, a name to what the code says it holds: the
 // right side of each assignment to it (x = ..., self.x = ..., with or without
@@ -156,6 +159,60 @@ func (a *analysis) recvIs(ps []*pat, recv []Token) bool {
 		return false
 	}
 	return is(recv, 0)
+}
+
+// recvMadeBy is the receiver_from condition: the receiver, or what its root
+// is assigned or imported with in the file (followed as recvIs does), names
+// one of from; or else nothing on the way is a call of a class (a capitalised
+// name: Engine(), Engine(debug=True)) and the receiver's last name is one of
+// names. A receiver made by another class is not one; one the file says
+// nothing about is one only by its name.
+func (a *analysis) recvMadeBy(from []*pat, names []string, recv []Token) bool {
+	if a.rdefs == nil {
+		a.rdefs = recvDefs(a.ftoks)
+	}
+	seen := map[string]bool{}
+	var walk func(t []Token, depth int) (made, other bool)
+	walk = func(t []Token, depth int) (bool, bool) {
+		for i := range t {
+			for _, p := range from {
+				if p.at(t, i, false) {
+					return true, false
+				}
+			}
+		}
+		if len(t) == 0 || t[0].Kind != Ident {
+			return false, len(t) > 0 // a literal
+		}
+		class := len(t) > 1 && t[1].op("(") && t[0].Text[0] >= 'A' && t[0].Text[0] <= 'Z'
+		key := t[0].Text
+		if (key == "self" || key == "cls") && len(t) > 2 && t[1].op(".") && t[2].Kind == Ident {
+			key = "self." + t[2].Text
+		}
+		if depth >= 4 || seen[key] {
+			return false, class
+		}
+		seen[key] = true
+		other := class
+		for _, d := range a.rdefs[key] {
+			m, o := walk(d, depth+1)
+			if m {
+				return true, false
+			}
+			other = other || o
+		}
+		return false, other
+	}
+	made, other := walk(recv, 0)
+	if made || other {
+		return made
+	}
+	for i := len(recv) - 1; i >= 0; i-- {
+		if recv[i].Kind == Ident {
+			return slices.Contains(names, recv[i].Text)
+		}
+	}
+	return false
 }
 
 // recvSurely reports whether the receiver of a method sink is surely an object

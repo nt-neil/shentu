@@ -102,6 +102,8 @@ type argCond struct {
 	unlessAt       string   // where unless looks: "" anywhere, "start", "top" (rules.Args.UnlessAt)
 	receiver       []*pat   // a method sink counts only on a receiver these name (receiver.go)
 	notReceiver    []*pat   // nor on an object surely of one of these classes (receiver.go)
+	recvFrom       []*pat   // only on a receiver made by one of these, or of one of recvNames (recvMadeBy)
+	recvNames      []string // the names recvFrom takes when the file does not show what made the receiver
 	unlessCT       []string // nor once the response's Content-Type is one of these on every path (ctype.go)
 	unlessImports  []string // nor in a file importing one of these modules (imports.go)
 	importsNot     []string // ... unless the file or the receiver names one of these
@@ -254,7 +256,7 @@ func compileRule(r rules.Rule) (*crule, error) {
 	foldMembers(c.sinks)
 	foldMembers(c.sanitizers)
 	for _, a := range r.Args {
-		ac := &argCond{arg: a.Arg, name: a.Name, whole: a.Whole, leading: a.Leading, literal: a.Literal, notLiteral: a.NotLiteral, key: a.Key, keys: a.Keys, minLen: a.MinLen, unlessAt: a.UnlessAt,
+		ac := &argCond{arg: a.Arg, name: a.Name, whole: a.Whole, leading: a.Leading, literal: a.Literal, notLiteral: a.NotLiteral, recvNames: a.ReceiverNames, key: a.Key, keys: a.Keys, minLen: a.MinLen, unlessAt: a.UnlessAt,
 			unlessImports: a.UnlessImports, importsNot: a.UnlessImportsNot, markup: a.Markup}
 		switch {
 		case a.UnlessAt != "" && a.UnlessAt != "start" && a.UnlessAt != "top":
@@ -301,7 +303,7 @@ func compileRule(r rules.Rule) (*crule, error) {
 		for _, list := range []struct {
 			raw []string
 			out *[]*pat
-		}{{a.When, &ac.when}, {a.Unless, &ac.unless}, {a.Receiver, &ac.receiver}, {a.NotReceiver, &ac.notReceiver}, {a.UnlessSubscript, &ac.unlessSub}} {
+		}{{a.When, &ac.when}, {a.Unless, &ac.unless}, {a.Receiver, &ac.receiver}, {a.NotReceiver, &ac.notReceiver}, {a.ReceiverFrom, &ac.recvFrom}, {a.UnlessSubscript, &ac.unlessSub}} {
 			for _, raw := range list.raw {
 				p, err := compilePattern(r.Lang, raw, false)
 				if err != nil {

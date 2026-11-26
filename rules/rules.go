@@ -104,6 +104,15 @@ type Args struct {
 	// NotLiteral: the argument arg names must not be one (literal's opposite):
 	// a command or template made from a value the code does not write out.
 	NotLiteral bool `toml:"not_literal"`
+	// ReceiverFrom (Python method sinks): the call counts on a receiver the
+	// file shows made by one of these (env = jinja2.Environment(), or
+	// Environment imported from jinja2), followed as receiver is. A receiver
+	// the file shows made by a class of another name (Engine()) does not
+	// count; one the file shows nothing about counts when its last name is
+	// one of ReceiverNames (env, app.jinja_env).
+	ReceiverFrom []string `toml:"receiver_from"`
+	// ReceiverNames: see ReceiverFrom.
+	ReceiverNames []string `toml:"receiver_names"`
 	// UnlessAfter: the SQL text (or other text) does not count when every
 	// value from the input in it comes after one of these texts (any case)
 	// in a string written in the call: "... ORDER BY $col" is

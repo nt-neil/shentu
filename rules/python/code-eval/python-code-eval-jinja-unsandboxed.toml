@@ -12,12 +12,25 @@ fix = "Render fixed templates and pass values as variables; a template whose tex
 refs = ["CVE-2026-33154"]
 
 [[args]]
+sinks = ["jinja2.Template(", "render_template_string("]
 arg = 1   # the template source; values passed to render are data
 not_literal = true
+
+[[args]]
+sinks = [".from_string("]
+arg = 1
+not_literal = true
+# a Jinja environment: made by jinja2, or, where the file does not show what
+# made it, named as Jinja and Flask name one; Engine().from_string is Django's
+# own template language
+receiver_from = ["jinja2"]
+receiver_names = ["env", "jinja_env", "environment", "jinja_environment"]
 
 [[samples]]
 kind = "vulnerable"
 code = '''
+from jinja2 import Environment
+
 env = Environment()
 
 def render_setting(value, **context):
@@ -46,3 +59,65 @@ code = '''
 def greet(name):
     return env.from_string("Hello {{ name }}").render(name=name)
 '''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+import jinja2
+
+def page(body):
+    return jinja2.Environment().from_string(body).render()
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+def preview(app, source):
+    return app.jinja_env.from_string(source).render()
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+from jinja2.sandbox import SandboxedEnvironment
+
+def page(body):
+    return SandboxedEnvironment().from_string(body).render()
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+from django.template import Engine
+
+def page(body):
+    return Engine().from_string(body).render()
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+from django.template import Engine
+
+class Page:
+    def __init__(self):
+        self.engine = Engine(debug=True)
+
+    def render(self, body):
+        return self.engine.from_string(body)
+
+    def other(self, body):
+        return self.loader.from_string(body)
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+from jinja2 import Environment
+
+env = Engine()
+
+def page(body):
+    return env.from_string(body).render()
+'''
+

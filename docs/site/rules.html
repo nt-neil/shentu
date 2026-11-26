@@ -1238,7 +1238,9 @@ def filter_items():
     <summary><span class="sev medium"><i aria-hidden="true">中</i><b>medium</b></span><span class="head"><code class="rid">python-code-eval-jinja-unsandboxed</code> <span class="cwe">CWE-1336</span><span class="title">Text the code does not write out compiled as a Jinja2 template outside a sandbox</span></span></summary>
     
     <div class="samples">
-      <div class="sample bad-s"><h3 class="bad">Reported</h3><pre><code>env = Environment()
+      <div class="sample bad-s"><h3 class="bad">Reported</h3><pre><code>from jinja2 import Environment
+
+env = Environment()
 
 def render_setting(value, **context):
     return env.from_string(value).render(**context)</code></pre></div>

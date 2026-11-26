@@ -2622,6 +2622,9 @@ func (a *analysis) sinkWith(st state, t []Token, i int, s *pat, cond *argCond) b
 		if s.member && len(a.r.sanitizers) > 0 && a.expr(st, t[a.chainStart(t, i):i], false).san {
 			return false // SandboxedEnvironment().from_string(x): an object a sanitizer made
 		}
+		if s.member && cond != nil && len(cond.recvFrom) > 0 && !a.recvMadeBy(cond.recvFrom, cond.recvNames, t[a.chainStart(t, i):i]) {
+			return false // Engine().from_string(x): a Django template, not Jinja
+		}
 		a.span = spanText(t, i, end, open)
 		a.report(t[i].Line)
 		return true
@@ -2640,6 +2643,9 @@ func (a *analysis) sinkWith(st state, t []Token, i int, s *pat, cond *argCond) b
 		}
 		if cond != nil && len(cond.receiver) > 0 && !a.recvIs(cond.receiver, recv) {
 			return false // finders.find(path) is not a MongoDB collection
+		}
+		if cond != nil && len(cond.recvFrom) > 0 && !a.recvMadeBy(cond.recvFrom, cond.recvNames, recv) {
+			return false // Engine().from_string(x): a Django template, not Jinja
 		}
 		if cond != nil && len(cond.notReceiver) > 0 && a.recvSurely(cond.notReceiver, recv) {
 			return false // (new WP_Query)->query($args): a query built from an arguments array, not SQL

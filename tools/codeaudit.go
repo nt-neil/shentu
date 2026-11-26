@@ -119,6 +119,9 @@ type CodeAudit struct {
 	// Reference-tier findings, counted here only (at most auditMaxPerFile of a
 	// rule in one file): about how a call is made, not about input.
 	Reference int `json:"reference_findings"`
+	// Reference-tier findings under test and example folders, counted apart
+	// as the injection findings there are.
+	ReferenceTestPaths int `json:"reference_findings_in_test_paths"`
 	// The memory the audit kept to: its heap budget and Go's memory limit
 	// while it ran (MiB).
 	MemoryBudgetMB int `json:"memory_budget_mb"`
@@ -611,6 +614,8 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 	add := func(f CodeFinding) {
 		if f.Kind == "injection" {
 			switch {
+			case f.Tier == "reference" && f.TestPath:
+				res.ReferenceTestPaths++
 			case f.Tier == "reference":
 				res.Reference++
 			case f.TestPath:
