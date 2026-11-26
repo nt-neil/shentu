@@ -330,6 +330,14 @@ it. An `alert` rule is pushed as well. Every new rule starts as `info`; it becom
 `alert` only after it has been run on real, clean projects and its false-positive
 rate is low, and the change says which measurement justified it.
 
+A `reference` rule is about how a call is made, not about input reaching it (an
+MD5 hash, a template rendered without a sandbox), so only a rule with
+`sources = []` may have this tier (`rules_test` checks it). `app_code_audit` and
+chat list its findings after the others, marked as reference; the daily report
+gives them one line with their count. They are never pushed and never given to
+attack detection, and cvebench counts them only in its "with reference" columns,
+never in the main verdict.
+
 ### Text in strings
 
 Some sources and sinks are not code but text inside a string literal: an SQL

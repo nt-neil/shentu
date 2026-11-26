@@ -33,7 +33,7 @@ type Finding struct {
 	Title    string `json:"title"`
 	CWE      string `json:"cwe"`
 	Fix      string `json:"fix"`
-	Tier     string `json:"tier"` // the rule's tier: "info" or "alert"
+	Tier     string `json:"tier"` // the rule's tier: "info", "alert" or "reference"
 	// Routes: the routes registering the handler the sink sits in, when the
 	// file says so for certain (routerefs.go); absent otherwise.
 	Routes []RouteRef `json:"routes,omitempty"`

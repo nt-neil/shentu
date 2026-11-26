@@ -475,18 +475,22 @@ func TestSetDepsReplaces(t *testing.T) {
 }
 
 // When the list is full, alerts outrank info-tier injection findings (and
-// those in test or generated code) whatever their severity (N10).
+// those in test or generated code) whatever their severity (N10), and those
+// outrank reference-tier ones.
 func TestListRank(t *testing.T) {
 	alertCrit := CodeFinding{Kind: "injection", Severity: "critical", Tier: "alert", Rule: "r"}
 	infoCrit := CodeFinding{Kind: "injection", Severity: "critical", Tier: "info", Rule: "r"}
 	testCrit := CodeFinding{Kind: "injection", Severity: "critical", Tier: "alert", Rule: "r", TestPath: true}
 	minCrit := CodeFinding{Kind: "injection", Severity: "critical", Tier: "alert", Rule: "r", Generated: true}
+	refCrit := CodeFinding{Kind: "injection", Severity: "critical", Tier: "reference", Rule: "r"}
+	infoWarn := CodeFinding{Kind: "injection", Severity: "warning", Tier: "info", Rule: "r"}
 	secret := CodeFinding{Kind: "secret", Severity: "warning"}
 	exposed := CodeFinding{Kind: "exposed", Severity: "critical"}
 	if !(listRank(exposed) == listRank(alertCrit) && listRank(alertCrit) < listRank(secret) && listRank(secret) < listRank(infoCrit) &&
-		listRank(infoCrit) == listRank(testCrit) && listRank(testCrit) == listRank(minCrit)) {
-		t.Errorf("ranks: alert %d, exposed %d, secret %d, info %d, test %d, minified %d", listRank(alertCrit), listRank(exposed),
-			listRank(secret), listRank(infoCrit), listRank(testCrit), listRank(minCrit))
+		listRank(infoCrit) == listRank(testCrit) && listRank(testCrit) == listRank(minCrit) && listRank(infoWarn) < listRank(refCrit) &&
+		listRank(refCrit) < len([9]int{})) {
+		t.Errorf("ranks: alert %d, exposed %d, secret %d, info %d, test %d, minified %d, info warning %d, reference %d", listRank(alertCrit), listRank(exposed),
+			listRank(secret), listRank(infoCrit), listRank(testCrit), listRank(minCrit), listRank(infoWarn), listRank(refCrit))
 	}
 }
 

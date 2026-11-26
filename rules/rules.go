@@ -26,7 +26,7 @@ type Rule struct {
 	Class      string   `toml:"class"`
 	CWE        string   `toml:"cwe"`
 	Severity   string   `toml:"severity"`
-	Tier       string   `toml:"tier"` // "info" (the default): shown in app_code_audit and chat only; "alert": also in the patrol report
+	Tier       string   `toml:"tier"` // "info" (the default): shown in app_code_audit and chat only; "alert": also in the patrol report; "reference" (no sources only): listed last, counted in one line of the daily report, never given to attack detection
 	Title      string   `toml:"title"`
 	Frameworks []string `toml:"frameworks"`
 	// RouteInput false: a route handler's parameters are not this rule's

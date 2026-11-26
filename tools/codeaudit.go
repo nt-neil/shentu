@@ -34,7 +34,9 @@ var appCodeAudit = Tool{
 		"(.env, .git, SQL dumps, archives, phpinfo), debug mode left on (Django, Laravel, Flask, PHP display_errors), webshells and " +
 		"PHP files in upload folders, keys or passwords written into the code (reported by file, line and type; the value is never shown), " +
 		"and injection flaws in PHP, Python and JavaScript found by Shentu's rules (rule, CWE, file and line; no code is shown). " +
-		"Each finding has a fix. It reads files only and sends nothing anywhere.",
+		"Each finding has a fix. An injection finding of tier \"reference\" is about how a call is made, not about input reaching it " +
+		"(a weak hash, a template rendered without a sandbox): list such findings after the others, marked as reference. " +
+		"It reads files only and sends nothing anywhere.",
 	Params: schema(`{"type":"object","properties":{
 		"path":{"type":"string","description":"only audit under this directory (must be inside the app paths)"}}}`),
 	Run: func(ctx context.Context, env *Env, args json.RawMessage) (any, error) {
@@ -69,7 +71,7 @@ type CodeFinding struct {
 	Fix       string           `json:"fix"`
 	Rule      string           `json:"rule,omitempty"`      // injection: the rule id
 	CWE       string           `json:"cwe,omitempty"`       // injection: the weakness
-	Tier      string           `json:"tier,omitempty"`      // injection: "info" is not pushed by the patrol report, "alert" is
+	Tier      string           `json:"tier,omitempty"`      // injection: "info" is not pushed by the patrol report, "alert" is; "reference": listed last, counted apart
 	Files     []UnfinishedFile `json:"files,omitempty"`     // the files the summary of unfinished files is about (at most 10)
 	TestPath  bool             `json:"test_path,omitempty"` // injection: the file is under tests/, test/, examples/ or __tests__/
 	Generated bool             `json:"generated,omitempty"` // injection: the file is minified or bundled JavaScript
@@ -114,6 +116,9 @@ type CodeAudit struct {
 	Injection          int `json:"injection_findings"`
 	InjectionTestPaths int `json:"injection_findings_in_test_paths"`
 	InjectionGenerated int `json:"injection_findings_in_generated_code"` // minified or bundled JavaScript
+	// Reference-tier findings, counted here only (at most auditMaxPerFile of a
+	// rule in one file): about how a call is made, not about input.
+	Reference int `json:"reference_findings"`
 	// The memory the audit kept to: its heap budget and Go's memory limit
 	// while it ran (MiB).
 	MemoryBudgetMB int `json:"memory_budget_mb"`
@@ -601,11 +606,13 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 	// At most auditMaxPerFile findings of one rule or check in one file and
 	// auditMaxFindings in all are listed; the injection counts take them all.
 	perFile, left := map[string]int{}, 0
-	var ranks [6]int // listed findings by listRank
+	var ranks [9]int // listed findings by listRank
 	worst := 0       // the lowest rank listed
 	add := func(f CodeFinding) {
 		if f.Kind == "injection" {
 			switch {
+			case f.Tier == "reference":
+				res.Reference++
 			case f.TestPath:
 				res.InjectionTestPaths++
 			case f.Generated:
@@ -622,7 +629,8 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 		if len(res.Findings) >= auditMaxFindings {
 			// Full: a finding of a higher rank takes the place of one of the
 			// lowest listed, so alerts are never left out for info-tier
-			// findings, nor critical ones for warnings.
+			// findings, info-tier ones for reference ones, nor critical ones
+			// for warnings.
 			r := listRank(f)
 			if r >= worst {
 				left++
@@ -1098,6 +1106,9 @@ func auditUnlocked(ctx context.Context, roots, webRoots []string) CodeAudit {
 	}
 	sort.SliceStable(res.Findings, func(i, j int) bool {
 		a, b := res.Findings[i], res.Findings[j]
+		if ra, rb := a.Tier == "reference", b.Tier == "reference"; ra != rb {
+			return rb // reference findings last
+		}
 		if ra, rb := severityRank(a.Severity), severityRank(b.Severity); ra != rb {
 			return ra < rb
 		}
@@ -1131,10 +1142,14 @@ func capFound(found []engine.Finding) (kept []engine.Finding, over int) {
 }
 
 // listRank orders findings for the list's cap: alerts before info-tier
-// injection findings (and those in test or generated code), then by severity.
+// injection findings (and those in test or generated code), those before
+// reference-tier ones, then by severity.
 func listRank(f CodeFinding) int {
 	r := severityRank(f.Severity)
-	if f.Kind == "injection" && (f.Tier != "alert" || f.TestPath || f.Generated) {
+	switch {
+	case f.Kind == "injection" && f.Tier == "reference":
+		r += 6
+	case f.Kind == "injection" && (f.Tier != "alert" || f.TestPath || f.Generated):
 		r += 3
 	}
 	return r

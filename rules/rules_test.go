@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"fmt"
 	"path"
 	"regexp"
 	"slices"
@@ -39,6 +40,41 @@ var (
 	idRe  = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)+$`)
 )
 
+// tierProblem is what is wrong with a rule's tier, or "". A reference rule is
+// about how a call is made, not about input: it must have no sources.
+func tierProblem(r Rule) string {
+	switch r.Tier {
+	case "info", "alert":
+		return ""
+	case "reference":
+		if len(r.Sources) > 0 {
+			return fmt.Sprintf("tier reference is for a rule with no sources (sources = []), not %d", len(r.Sources))
+		}
+		return ""
+	}
+	return fmt.Sprintf("tier %q must be info, alert or reference", r.Tier)
+}
+
+func TestTierProblem(t *testing.T) {
+	for _, c := range []struct {
+		tier    string
+		sources []string
+		bad     bool
+	}{
+		{"info", nil, false},
+		{"info", []string{"$_GET"}, false},
+		{"alert", []string{"$_GET"}, false},
+		{"reference", nil, false},
+		{"reference", []string{}, false},
+		{"reference", []string{"$_GET"}, true}, // a reference rule that reads input
+		{"warning", nil, true},
+	} {
+		if got := tierProblem(Rule{Tier: c.tier, Sources: c.sources}); (got != "") != c.bad {
+			t.Errorf("tier %q, sources %v: %q, want a problem %v", c.tier, c.sources, got, c.bad)
+		}
+	}
+}
+
 func TestRulesLoad(t *testing.T) {
 	rs, err := Load()
 	if err != nil {
@@ -50,7 +86,7 @@ func TestRulesLoad(t *testing.T) {
 }
 
 var (
-	tierRank = map[string]int{"info": 0, "alert": 1}
+	tierRank = map[string]int{"reference": -1, "info": 0, "alert": 1}
 	sevRank  = map[string]int{"low": 0, "medium": 1, "high": 2, "critical": 3}
 )
 
@@ -176,8 +212,8 @@ func TestRulesValid(t *testing.T) {
 		if !severities[r.Severity] {
 			t.Errorf("%s: severity %q not allowed", f, r.Severity)
 		}
-		if r.Tier != "info" && r.Tier != "alert" {
-			t.Errorf("%s: tier %q must be info or alert", f, r.Tier)
+		if msg := tierProblem(r); msg != "" {
+			t.Errorf("%s: %s", f, msg)
 		}
 		for _, fw := range r.Frameworks {
 			if !frameworks[fw] {

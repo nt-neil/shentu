@@ -8,6 +8,10 @@ Chinese for the zh-TW pages; keep the two in step.
 
 ## v0.5.8 (unreleased)
 
+- A new rule tier, `reference`, for a rule about how a call is made rather than about input reaching
+  it (only a rule with `sources = []` may have it). app_code_audit and chat list its findings after
+  the others, marked as reference; the daily report gives them one line with their count. They are
+  never pushed and never given to attack detection. The `info` and `alert` tiers are unchanged.
 - A Debian or Ubuntu package held with `apt-mark hold` (dpkg state `hi`), or marked for removal but
   still installed (`ri`, `pi`), is checked as an installed one is. The package list went by dpkg's
   `ii` only, so a held package was neither checked nor said (the v0.5.7 known issue). A package dpkg
