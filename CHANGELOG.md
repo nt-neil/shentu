@@ -70,6 +70,17 @@ Chinese for the zh-TW pages; keep the two in step.
   there before is gone; whether it holds the subject's input is still not followed, but a variable
   that is the subject itself (`preg_match($p, $m, $m)`, `parse_str($q, $q)`) keeps what it held.
   A `catch (E $e)` variable is the exception, not what the name held before.
+- PHP rules: WordPress's `$wpdb` kept in a property (`$this->wpdb = $wpdb`, `$this->db = &$wpdb`,
+  `self::$mysqli =& $wpdb`) is `$wpdb` wherever the same file queries through it
+  (`$this->wpdb->get_results(...)`), so request input concatenated into such a query is reported;
+  before, only `$wpdb` itself was a sink. The class (or a trait of the file it uses) must show the
+  assignment: a property named `wpdb` or `db` alone, one set in another file (a parent class), or
+  one another class of the file gives `$wpdb` is not read as `$wpdb`.
+- PHP rules: request input passed to `$wpdb->prepare()` for a `%s` placeholder written inside
+  backticks, where the value is a column or table name (also a numbered `%2$s`), is reported
+  (`php-sqli-prepare-identifier`): `prepare()` quotes the value as a string, which does not protect
+  an identifier. Before, `prepare()` counted as escaping every value. A `%s` between quotes, standing
+  alone, after `ORDER BY` or in `LIMIT`, `%d` and `%i` are not reported.
 - PHP rules, across files: request input returned by a plugin's own helper declared in another file
   (`$id = get_request_data('id')`, the helper reading `$_REQUEST`) and passed on to a function of a
   third file is followed into that function's sink. Before, a file naming neither a source nor a sink
