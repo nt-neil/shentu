@@ -1827,7 +1827,8 @@ func (a *analysis) argsTaint(st state, inner []Token, fn string) bool {
 var passFuncs = map[string]map[string]bool{
 	"php": words("trim ltrim rtrim base64_decode urldecode rawurldecode stripslashes stripcslashes strtolower strtoupper " +
 		"ucfirst ucwords lcfirst str_replace str_ireplace substr strrev str_pad hex2bin html_entity_decode " +
-		"htmlspecialchars_decode wp_unslash gzinflate gzuncompress gzdecode str_rot13 convert_uudecode strval"),
+		"htmlspecialchars_decode wp_unslash gzinflate gzuncompress gzdecode str_rot13 convert_uudecode strval " +
+		"array"), // array(...): the values themselves, as [...] holds them
 	"python": words("unquote unquote_plus b64decode urlsafe_b64decode decode str bytes"),
 	"js":     words("decodeURIComponent decodeURI unescape atob String trim from"),
 }
