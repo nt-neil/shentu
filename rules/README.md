@@ -336,7 +336,9 @@ MD5 hash, a template rendered without a sandbox), so only a rule with
 chat list its findings after the others, marked as reference; the daily report
 gives them one line with their count. They are never pushed and never given to
 attack detection, and cvebench counts them only in its "with reference" columns,
-never in the main verdict.
+never in the main verdict. Such a rule may list sanitizers too: a method sink on
+an object one of them made (`SandboxedEnvironment().from_string(x)`) is not
+reported.
 
 ### Text in strings
 
@@ -372,6 +374,7 @@ arguments, not the options).
 | `key` | the argument is an object, dict or array literal (`{ Location: v }`, `['Location' => v]`): only the value under this key, in any case, counts; without the key the call is not this sink |
 | `keys` | an argument that is an array, object or dict literal counts by its keys only: Yii's `orderBy([$column => SORT_ASC])` puts the key in the query, while the value only picks a direction. An item without a key (`[$column]`) counts as a key; an argument that is not a literal counts whole |
 | `literal` | the argument named by `arg`, or the value of a `when` option (`password=`, `password:`), must be a non-empty string written in the code; used by rules without sources. The string may be reached through a variable, a constant, a PHP class constant (`self::KEY`), a property declared with it (`$this->key`, `self::$key`; not when the file assigns the property elsewhere), a concatenation, or a call that only reshapes it (`hash('sha256', '...')`, `base64_decode`, `substr`...), at most four steps deep; a name given two different values in the file is not known |
+| `not_literal` | with `arg`, rules without sources only: the argument must not be what `literal` accepts, so a command or template written out in full (`os.system("make clean")`, or through a name holding it) is not reported, and one made from a value the code does not write out (`os.system(" ".join(args))`, a parameter) is. Such a rule's tier is `reference` |
 | `min_len` | with `literal`: one of the strings the value is made from must be at least this long |
 | `exclude` | with `literal`: regular expressions (any case); a string matching one does not count, so `exclude = ["^[a-z0-9_]+-(sha\|md5)[0-9]*$"]` leaves out a purpose label such as `'wp-sha384'` |
 | `receiver` | method sinks only: the call does not count when the file shows its receiver is another kind of object than these. The receiver qualifies when one of the fragments appears in it, or in what its root name (`db`, `self._files`) is assigned, annotated or imported with in the file (`db = MongoClient(url).shop`, `def __init__(self, db: Database)`, `from pymongo.collection import Collection`), followed up to four steps; an import says what a name holds only when it comes from the standard library or a well-known package that is not MongoDB (`os`, `re`, `django`, `flask`...). A root the file says nothing about (no assignment, an import from a module of the project such as `from app.db import mongo` or `from .db import mongo`, a parameter without a type) still counts. So `finders.find(path)` after `from django.contrib.staticfiles import finders`, `'abc'.find(x)` and `data['text'].find(x)` after `data = request.get_json()` are not MongoDB queries, while `mongo.find(x)` after `from app.db import mongo` is; a `.find(` on an object of the project that is not a collection is then still reported (a false positive, kept over a miss) |

@@ -254,8 +254,8 @@ func checkText(t *testing.T, r Rule) {
 func checkArgs(t *testing.T, r Rule) {
 	covered := map[string]bool{}
 	for i, a := range r.Args {
-		if a.Arg == nil && len(a.When) == 0 && len(a.Unless) == 0 && !a.Whole && !a.Leading && len(a.Context) == 0 && !a.Literal && a.Key == "" && !a.Keys && len(a.Receiver) == 0 && len(a.NotReceiver) == 0 && len(a.UnlessAfter) == 0 {
-			t.Errorf("%s: args %d sets none of arg, when, unless, whole, leading, context, literal, key, keys, receiver, not_receiver, unless_after", r.File, i)
+		if a.Arg == nil && len(a.When) == 0 && len(a.Unless) == 0 && !a.Whole && !a.Leading && len(a.Context) == 0 && !a.Literal && !a.NotLiteral && a.Key == "" && !a.Keys && len(a.Receiver) == 0 && len(a.NotReceiver) == 0 && len(a.UnlessAfter) == 0 {
+			t.Errorf("%s: args %d sets none of arg, when, unless, whole, leading, context, literal, not_literal, key, keys, receiver, not_receiver, unless_after", r.File, i)
 		}
 		if a.UnlessAt != "" && (a.UnlessAt != "start" && a.UnlessAt != "top" || len(a.Unless) == 0) {
 			t.Errorf("%s: args %d: unless_at must be start or top, with unless", r.File, i)
@@ -273,6 +273,9 @@ func checkArgs(t *testing.T, r Rule) {
 			if !contexts[c] {
 				t.Errorf("%s: args %d: context %q must be html, attr, url or js", r.File, i, c)
 			}
+		}
+		if a.NotLiteral && (a.Arg == nil || a.Literal || len(r.Sources) > 0) {
+			t.Errorf("%s: args %d: not_literal needs arg, not literal, and a rule with no sources", r.File, i)
 		}
 		if a.Literal && a.Arg == nil && !hasOption(a.When) {
 			t.Errorf("%s: args %d: literal needs arg or a when option (password=, secret:)", r.File, i)

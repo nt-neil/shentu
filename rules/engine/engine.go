@@ -94,6 +94,7 @@ type argCond struct {
 	context        []uint8 // output contexts that count (ctxHTML ...); empty: any
 	markup         bool    // context: only input after markup written in the same value (contextTaint)
 	literal        bool
+	notLiteral     bool   // the argument must not be what literal accepts
 	key            string // the value under this key of an object argument (keyValue)
 	keys           bool   // an array, object or dict literal argument counts by its keys (keysVal)
 	minLen         int    // literal: the shortest string that counts
@@ -253,7 +254,7 @@ func compileRule(r rules.Rule) (*crule, error) {
 	foldMembers(c.sinks)
 	foldMembers(c.sanitizers)
 	for _, a := range r.Args {
-		ac := &argCond{arg: a.Arg, name: a.Name, whole: a.Whole, leading: a.Leading, literal: a.Literal, key: a.Key, keys: a.Keys, minLen: a.MinLen, unlessAt: a.UnlessAt,
+		ac := &argCond{arg: a.Arg, name: a.Name, whole: a.Whole, leading: a.Leading, literal: a.Literal, notLiteral: a.NotLiteral, key: a.Key, keys: a.Keys, minLen: a.MinLen, unlessAt: a.UnlessAt,
 			unlessImports: a.UnlessImports, importsNot: a.UnlessImportsNot, markup: a.Markup}
 		switch {
 		case a.UnlessAt != "" && a.UnlessAt != "start" && a.UnlessAt != "top":
@@ -271,6 +272,9 @@ func compileRule(r rules.Rule) (*crule, error) {
 		}
 		if (a.MinLen != 0 || len(a.Exclude) > 0) && !a.Literal {
 			return nil, fmt.Errorf("args: min_len and exclude need literal")
+		}
+		if a.NotLiteral && (a.Arg == nil || a.Literal) {
+			return nil, fmt.Errorf("args: not_literal needs arg, and not literal")
 		}
 		for _, x := range a.Exclude {
 			re, err := regexp.Compile("(?i)" + x)

@@ -1,0 +1,48 @@
+id = "python-code-eval-jinja-unsandboxed"
+lang = "python"
+class = "code-eval"
+cwe = "CWE-1336"
+severity = "medium"
+tier = "reference"
+title = "Text the code does not write out compiled as a Jinja2 template outside a sandbox"
+sources = []
+sinks = ["jinja2.Template(", ".from_string(", "render_template_string("]
+sanitizers = ["SandboxedEnvironment", "ImmutableSandboxedEnvironment"]
+fix = "Render fixed templates and pass values as variables; a template whose text may come from a user or a setting belongs in jinja2.sandbox.SandboxedEnvironment."
+refs = ["CVE-2026-33154"]
+
+[[args]]
+arg = 1   # the template source; values passed to render are data
+not_literal = true
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+env = Environment()
+
+def render_setting(value, **context):
+    return env.from_string(value).render(**context)
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+def page(body):
+    return jinja2.Template(body).render()
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+env = SandboxedEnvironment()
+
+def render_setting(value, **context):
+    return env.from_string(value).render(**context)
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+def greet(name):
+    return env.from_string("Hello {{ name }}").render(name=name)
+'''

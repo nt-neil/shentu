@@ -2615,7 +2615,13 @@ func (a *analysis) sinkWith(st state, t []Token, i int, s *pat, cond *argCond) b
 	if cond != nil && cond.literal && !a.literalArg(st, cond, region, open) {
 		return false
 	}
+	if cond != nil && cond.notLiteral && a.literalArg(st, cond, region, open) {
+		return false // os.system("make clean"): a command written out in full
+	}
 	if a.noSources() {
+		if s.member && len(a.r.sanitizers) > 0 && a.expr(st, t[a.chainStart(t, i):i], false).san {
+			return false // SandboxedEnvironment().from_string(x): an object a sanitizer made
+		}
 		a.span = spanText(t, i, end, open)
 		a.report(t[i].Line)
 		return true

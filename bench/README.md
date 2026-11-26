@@ -60,11 +60,12 @@ design a rule goes in `cves/`, never in `holdout/`, and that rule cites it in
 (`go run ./cmd/cvebench -cases bench/holdout`). No rule may cite a hold-out case
 and none may repeat a case of `cves/`; a test checks both. Its numbers tell
 whether an improvement measured on `cves/` carries over.
-A hold-out case whose miss is then used to design a change moves to `cves/`, with
-a comment above its `id` naming the change, so `holdout/` keeps only untuned
-cases. v0.5.8 moved eight this way (CVE-2023-6996, CVE-2024-1698, CVE-2024-3211,
-CVE-2024-3342, CVE-2024-5756, CVE-2025-1753, CVE-2026-32593, CVE-2026-33154);
-a run before the move compares with a later one only on the cases both have.
+A hold-out case whose miss or false positive is then used to design a change
+moves to `cves/`, with a comment above its `id` naming the change, so `holdout/`
+keeps only untuned cases. v0.5.8 moved eight this way (CVE-2023-6996,
+CVE-2024-1698, CVE-2024-3211, CVE-2024-3342, CVE-2024-5756, CVE-2025-1753,
+CVE-2026-32593, CVE-2026-33154); a run before the move compares with a later one
+only on the cases both have.
 
 `-library` scans Composer, PyPI and npm cases in the engine's library mode
 (public parameters are input); WordPress plugins stay in application mode.

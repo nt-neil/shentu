@@ -101,6 +101,9 @@ type Args struct {
 	// receiver the file says nothing about still counts. An entry written as a
 	// variable ($wpdb) names the object itself: WordPress's global wpdb.
 	NotReceiver []string `toml:"not_receiver"`
+	// NotLiteral: the argument arg names must not be one (literal's opposite):
+	// a command or template made from a value the code does not write out.
+	NotLiteral bool `toml:"not_literal"`
 	// UnlessAfter: the SQL text (or other text) does not count when every
 	// value from the input in it comes after one of these texts (any case)
 	// in a string written in the call: "... ORDER BY $col" is

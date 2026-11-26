@@ -1,0 +1,44 @@
+id = "python-weak-crypto-md5-hash"
+lang = "python"
+class = "weak-crypto"
+cwe = "CWE-328"
+severity = "medium"
+tier = "reference"
+title = "Data hashed with MD5 or SHA-1, which no longer resist collisions"
+sources = []
+sinks = ["hashlib.md5(", "hashlib.sha1(", "hashes.MD5(", "hashes.SHA1(", "MD5.new(", "SHA1.new("]
+sanitizers = []
+fix = "Use SHA-256 or stronger (hashlib.sha256); for passwords use a password hash (argon2, bcrypt, hashlib.scrypt). A hash that is no security measure (a cache key, a file checksum) can say so: hashlib.md5(data, usedforsecurity=False)."
+refs = ["CVE-2021-39182"]
+
+[[args]]
+sinks = ["hashlib.md5(", "hashlib.sha1("]
+unless = ["usedforsecurity=False"]   # Python 3.9+: the caller says the hash is not a security measure
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+def fingerprint(data):
+    return hashlib.md5(data.encode()).hexdigest()
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+digest = hashes.Hash(hashes.SHA1())
+digest.update(token)
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+def cache_key(path):
+    return hashlib.md5(path.encode(), usedforsecurity=False).hexdigest()
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+def fingerprint(data):
+    return hashlib.sha256(data.encode()).hexdigest()
+'''

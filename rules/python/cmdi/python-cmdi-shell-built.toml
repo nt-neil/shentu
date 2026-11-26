@@ -1,0 +1,58 @@
+id = "python-cmdi-shell-built"
+lang = "python"
+class = "cmdi"
+cwe = "CWE-78"
+severity = "medium"
+tier = "reference"
+title = "A shell command line built from values the code does not write out"
+sources = []
+sinks = ["os.system(", "os.popen(", "subprocess.getoutput(", "subprocess.getstatusoutput(", "subprocess.run(", "subprocess.Popen(", "subprocess.call(", "subprocess.check_call(", "subprocess.check_output("]
+sanitizers = []
+fix = "Run the program with a list of arguments and no shell (subprocess.run([prog, arg])); if a shell is needed, wrap each value in shlex.quote()."
+refs = ["CVE-2025-1753"]
+
+[[args]]
+sinks = ["os.system(", "os.popen(", "subprocess.getoutput(", "subprocess.getstatusoutput("]
+arg = 1
+not_literal = true
+
+[[args]]
+sinks = ["subprocess.run(", "subprocess.Popen(", "subprocess.call(", "subprocess.check_call(", "subprocess.check_output("]
+arg = 1
+not_literal = true
+when = ["shell="]   # shell= with any value but a literal False
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+def build(path):
+    args = ["make", "-C", f"--dir {path}"]
+    os.system(" ".join(args))
+'''
+
+[[samples]]
+kind = "vulnerable"
+code = '''
+def ping(host):
+    subprocess.run("ping -c 1 " + host, shell=True)
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+os.system("make clean")
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+CMD = "uptime"
+out = subprocess.check_output(CMD, shell=True)
+'''
+
+[[samples]]
+kind = "safe"
+code = '''
+def ping(host):
+    subprocess.run(["ping", "-c", "1", host])
+'''

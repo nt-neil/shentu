@@ -731,3 +731,28 @@ func TestDropStaleUnreadableIsNotGone(t *testing.T) {
 		t.Errorf("unreadable b taken as gone: dropped %v, b kept %v", bad, st.Files[b] != nil)
 	}
 }
+
+// A reference-tier finding (MD5) is counted apart from the injection
+// findings, listed after the others, and never given to attack detection.
+func TestAppCodeAuditReference(t *testing.T) {
+	isolateAudit(t)
+	dir, _ := filepath.EvalSymlinks(t.TempDir())
+	os.WriteFile(filepath.Join(dir, "a.py"), []byte("import hashlib, os\nfrom flask import Flask, request\napp = Flask(__name__)\n\n"+
+		"def f(data):\n    return hashlib.md5(data).hexdigest()\n\n"+
+		"@app.route('/ls')\ndef g():\n    os.system('ls ' + request.args['d'])\n"), 0o644)
+	res := AppCodeAudit(context.Background(), []string{dir}, nil)
+	var rules []string
+	for _, f := range res.Findings {
+		if f.Kind == "injection" && f.Rule != "" {
+			rules = append(rules, f.Tier+" "+f.Rule)
+		}
+	}
+	if res.Reference != 2 || len(rules) < 2 || !strings.HasPrefix(rules[len(rules)-1], "reference ") || strings.HasPrefix(rules[0], "reference ") {
+		t.Errorf("reference %d, injection %d, rules %v", res.Reference, res.Injection, rules)
+	}
+	for _, s := range SurfaceCode(res.Findings) {
+		if strings.HasPrefix(s.Rule, "python-weak-crypto-md5") || s.Rule == "python-cmdi-shell-built" {
+			t.Errorf("a reference finding in the surface: %+v", s)
+		}
+	}
+}
