@@ -47,6 +47,15 @@ Chinese for the zh-TW pages; keep the two in step.
   an anchor, by going back to the page, or by a jump. A section shows once any part of it is in the
   window; sections in the window when the page loads, and every section on a page opened at an
   anchor, show at once.
+- PHP rules follow `extract()` of an array not written out. After `extract($args)`,
+  `extract($_POST)` or `extract(wp_parse_args($atts, [...]))` (which keeps every key of `$atts`),
+  each variable of the function may hold that input until it is assigned again: one defined before
+  (a template loader's `$template_name`, overwritten by `extract($args)`) and one never assigned
+  (`$team_id` after `extract($opts)`). Before, no variable was set, so a shortcode's attributes
+  passed this way reached `include` or `call_user_func()` unreported (CVE-2023-6996).
+  `extract(shortcode_atts($defaults, $atts))` sets the keys of `$defaults` only, and never
+  `$defaults` itself; `EXTR_SKIP` and the `EXTR_PREFIX_*` flags overwrite nothing; a property of a
+  value `extract()` set (`$wpdb->prefix` after `global $wpdb`) holds no input, an index of it does.
 
 ## v0.5.7 — 2026-11-26
 
