@@ -14,6 +14,7 @@ CHANGELOG.md 的繁體中文版，網站的繁中頁讀這份。兩份的版本�
 - 網站首頁：捲動時才出現的區塊（統計、開放原始碼、最新版本和河道），從中段進入頁面時（例如從連到頁內位置的連結、回到上一頁，或直接跳到中段）不再一直空白。區塊只要有任何一部分看得到就會出現；頁面一打開就看得到的區塊，以及從頁內位置打開的頁面上的每個區塊，都會立刻出現。
 - PHP 規則會追蹤參數不是寫在程式裡的 array 的 `extract()`。`extract($args)`、`extract($_POST)`，或 `extract(wp_parse_args($atts, [...]))`（`$atts` 的每個 key 都會保留）之後，函式裡的每個變數都可能是那份輸入，直到再被指派為止：包括之前定義過的（樣板載入函式的 `$template_name` 會被 `extract($args)` 改寫），以及從沒指派過的（`extract($opts)` 之後的 `$team_id`）。以前一個變數都不會設定，所以 shortcode 的屬性經過這種寫法進到 `include` 或 `call_user_func()` 時不會回報（CVE-2023-6996）。`extract(shortcode_atts($defaults, $atts))` 只會設定 `$defaults` 的 key，也不會改寫 `$defaults` 本身；`EXTR_SKIP` 和 `EXTR_PREFIX_*` 不會改寫任何變數；`extract()` 設定的值，讀它的屬性（`global $wpdb` 之後的 `$wpdb->prefix`）不算輸入，讀它的索引仍然算。flag 照 PHP 的讀法：`EXTR_SKIP` 和 `EXTR_PREFIX_SAME` 不會改寫任何變數，`EXTR_IF_EXISTS` 會改寫但不建立變數，`EXTR_PREFIX_ALL` 和 `EXTR_PREFIX_IF_EXISTS` 只設定名稱以 `prefix_` 起始的變數（prefix 不是寫在程式裡時，任何這種名稱都算）。`extract()` 在 closure 外面新建的變數，closure 只透過它的 `use (...)` 看得到，它的參數是呼叫端給的值。
 - PHP 規則：`preg_match($p, $s, $m)`、`preg_match_all()`、`parse_str($q, $out)` 或 `exec($c, $output)` 之後，傳進去被寫入的變數是這個呼叫設定的值，之前 `extract()` 設在那裡的值就不算了；它是否帶有 subject 的輸入，仍然不追蹤；但被寫入的變數就是 subject 本身時（`preg_match($p, $m, $m)`、`parse_str($q, $q)`），它保留原本的值。`catch (E $e)` 的變數是例外物件，不是這個名稱之前的值。
+- PHP 規則：request 輸入透過 `$wpdb->prepare()` 傳給寫在反引號裡的 `%s`（這時值是欄位或資料表名稱，有編號的 `%2$s` 也一樣）時，現在會回報（`php-sqli-prepare-identifier`）：`prepare()` 把值當字串加上引號，擋不住欄位或資料表名稱。以前 `prepare()` 一律當成每個值都已處理。放在引號裡、單獨出現、在 `ORDER BY` 後面或 `LIMIT` 裡的 `%s`，以及 `%d` 和 `%i`，都不會回報。
 
 ### 已知問題
 
