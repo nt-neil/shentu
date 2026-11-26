@@ -70,6 +70,11 @@ Chinese for the zh-TW pages; keep the two in step.
   there before is gone; whether it holds the subject's input is still not followed, but a variable
   that is the subject itself (`preg_match($p, $m, $m)`, `parse_str($q, $q)`) keeps what it held.
   A `catch (E $e)` variable is the exception, not what the name held before.
+- PHP rules: request input passed to `$wpdb->prepare()` for a `%s` placeholder written inside
+  backticks, where the value is a column or table name (also a numbered `%2$s`), is reported
+  (`php-sqli-prepare-identifier`): `prepare()` quotes the value as a string, which does not protect
+  an identifier. Before, `prepare()` counted as escaping every value. A `%s` between quotes, standing
+  alone, after `ORDER BY` or in `LIMIT`, `%d` and `%i` are not reported.
 
 ### Known issues
 
