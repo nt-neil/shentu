@@ -8,6 +8,8 @@ import (
 	"os"
 	"syscall"
 	"unsafe"
+
+	"golang.org/x/sys/windows"
 )
 
 var (
@@ -103,21 +105,49 @@ func OpenNoFollow(path string, flag int, perm os.FileMode, nonblock bool) (*os.F
 	if flag&os.O_CREATE != 0 && perm&0o200 == 0 {
 		attrs |= syscall.FILE_ATTRIBUTE_READONLY
 	}
+	share := uint32(syscall.FILE_SHARE_READ | syscall.FILE_SHARE_WRITE | syscall.FILE_SHARE_DELETE)
 	beforeOpen(path)
-	h, err := syscall.CreateFile(p16, access, syscall.FILE_SHARE_READ|syscall.FILE_SHARE_WRITE|syscall.FILE_SHARE_DELETE, nil, create, attrs, 0)
+	h, err := syscall.CreateFile(p16, access, share, nil, create, attrs, 0)
 	if err != nil {
 		return nil, &os.PathError{Op: "open", Path: path, Err: err}
 	}
-	var fi syscall.ByHandleFileInformation
-	if err := syscall.GetFileInformationByHandle(h, &fi); err != nil {
+	var ti struct{ FileAttributes, ReparseTag uint32 } // FILE_ATTRIBUTE_TAG_INFO
+	if err := windows.GetFileInformationByHandleEx(windows.Handle(h), windows.FileAttributeTagInfo, (*byte)(unsafe.Pointer(&ti)), uint32(unsafe.Sizeof(ti))); err != nil {
 		syscall.CloseHandle(h)
 		return nil, &os.PathError{Op: "open", Path: path, Err: err}
 	}
-	if fi.FileAttributes&syscall.FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+	switch kind := ReparseKind(ti.FileAttributes, ti.ReparseTag); {
+	case kind == "link":
 		syscall.CloseHandle(h)
 		return nil, &os.PathError{Op: "open", Path: path, Err: fmt.Errorf("symlink or junction not followed")}
+	case kind != "":
+		syscall.CloseHandle(h)
+		return nil, &os.PathError{Op: "open", Path: path, Err: errors.New(kind)}
+	case ti.FileAttributes&FileAttributeReparsePoint == 0:
+		return os.NewFile(uintptr(h), path), nil
 	}
-	return os.NewFile(uintptr(h), path), nil
+	// Deduplicated (Data Deduplication): a regular file, opened again
+	// through its filter, and used only if it is the same file.
+	id, ok := handleID(h)
+	syscall.CloseHandle(h)
+	h2, err := syscall.CreateFile(p16, access, share, nil, syscall.OPEN_EXISTING, attrs&^fileFlagOpenReparsePoint, 0)
+	if err != nil {
+		return nil, &os.PathError{Op: "open", Path: path, Err: err}
+	}
+	if id2, ok2 := handleID(h2); !ok || !ok2 || id2 != id {
+		syscall.CloseHandle(h2)
+		return nil, &os.PathError{Op: "open", Path: path, Err: fmt.Errorf("file changed while opening")}
+	}
+	return os.NewFile(uintptr(h2), path), nil
+}
+
+// handleID is the volume and file index of an open handle.
+func handleID(h syscall.Handle) ([3]uint32, bool) {
+	var fi syscall.ByHandleFileInformation
+	if syscall.GetFileInformationByHandle(h, &fi) != nil {
+		return [3]uint32{}, false
+	}
+	return [3]uint32{fi.VolumeSerialNumber, fi.FileIndexHigh, fi.FileIndexLow}, true
 }
 
 // fileFlagOpenReparsePoint is FILE_FLAG_OPEN_REPARSE_POINT (syscall lacks it).
