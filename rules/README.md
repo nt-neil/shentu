@@ -146,12 +146,16 @@ How the engine reads them:
     assigned again, a variable never assigned before included. The flags count:
     `EXTR_SKIP` and `EXTR_PREFIX_SAME` overwrite nothing, `EXTR_IF_EXISTS`
     overwrites but creates nothing, `EXTR_PREFIX_ALL` and `EXTR_PREFIX_IF_EXISTS`
-    set only `prefix_` names. A closure's own scope sees what extract() set
-    around it only through its `use (...)`, and its parameters are the caller's
-    values; an arrow function sees the scope around it. After `preg_match($p, $s,
-    $m)`, `parse_str($q, $out)` or `exec($c, $output)` the variable written is the
+    set only `prefix_` names (any such name when the prefix is not written out).
+    A variable extract() creates around a closure is seen in it only through its
+    `use (...)`, and its parameters are the caller's values; an arrow function
+    sees the scope around it. (A variable defined before the closure is still
+    copied into it, as for any PHP closure.) The keys of `$defaults` are those it
+    is given in the same function. After `preg_match($p, $s, $m)`,
+    `parse_str($q, $out)` or `exec($c, $output)` the variable written is the
     call's (what extract() set there is gone; whether it holds the subject's input
-    is not followed), and a `catch (E $e)` variable is the exception;
+    is not followed), unless it is the subject itself (`preg_match($p, $m, $m)`),
+    which keeps what it held; a `catch (E $e)` variable is the exception;
   - in the SSRF rules, a check of a parsed URL's host against an allowlist that
     is surely a collection (`.has(`, `.includes(`, `in` on a list, set, tuple
     or array written out, `new Set(...)`, `set(...)` or `frozenset(...)` of one

@@ -58,12 +58,14 @@ Chinese for the zh-TW pages; keep the two in step.
   value `extract()` set (`$wpdb->prefix` after `global $wpdb`) holds no input, an index of it does.
   The flags count as PHP reads them: `EXTR_SKIP` and `EXTR_PREFIX_SAME` overwrite nothing,
   `EXTR_IF_EXISTS` overwrites but creates nothing, `EXTR_PREFIX_ALL` and `EXTR_PREFIX_IF_EXISTS` set
-  only `prefix_` names. A closure sees what `extract()` set around it only through its `use (...)`,
-  and its parameters are the caller's values.
+  only `prefix_` names (any such name when the prefix is not written out). A variable `extract()`
+  creates around a closure is seen in it only through its `use (...)`, and its parameters are the
+  caller's values.
 - PHP rules: after `preg_match($p, $s, $m)`, `preg_match_all()`, `parse_str($q, $out)` or
   `exec($c, $output)`, the variable written by reference is the call's, so a value `extract()` set
-  there before is gone; whether it holds the subject's input is still not followed. A `catch (E $e)`
-  variable is the exception, not what the name held before.
+  there before is gone; whether it holds the subject's input is still not followed, but a variable
+  that is the subject itself (`preg_match($p, $m, $m)`, `parse_str($q, $q)`) keeps what it held.
+  A `catch (E $e)` variable is the exception, not what the name held before.
 
 ### Known issues
 

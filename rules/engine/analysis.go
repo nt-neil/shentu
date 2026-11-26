@@ -187,6 +187,7 @@ type analysis struct {
 
 	lits    map[string][]Token // values written in the code, kept for argument conditions (context.go)
 	atsDefs map[string][]Token // $r = shortcode_atts(<array>, ...): the array, for extract($r) (context.go)
+	arrs    map[string][]Token // x = <value with no input> in the function being analysed, for litArray (context.go)
 	locals  map[string]bool    // names of the file's own functions and methods (context.go)
 	defs    map[string]string  // PHP: define('NAME', 'text') in this file (context.go)
 	fname   string             // name of the function being analysed
@@ -551,6 +552,9 @@ func (a *analysis) function(f *fn, st state) {
 		}
 	}
 	curParams, curMoved := a.curParams, a.curMoved
+	arrs, atsDefs := a.arrs, a.atsDefs // what a function assigns is its own: another function's $defaults says nothing here
+	a.arrs, a.atsDefs = maps.Clone(arrs), maps.Clone(atsDefs)
+	defer func() { a.arrs, a.atsDefs = arrs, atsDefs }()
 	a.curParams = fnParamNames(f)
 	a.curMoved = paramsMoved(f.body, a.curParams)
 	defer func() { a.curParams, a.curMoved = curParams, curMoved }()

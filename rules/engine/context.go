@@ -671,6 +671,9 @@ func (a *analysis) extractStmt(st state, t []Token) {
 			}
 		}
 	}
+	if (m.prefixAll || m.prefixSame || m.prefixIfExists) && m.prefix == "" {
+		a.extractAny(st, extractMode{prefixAll: true}, v, "") // prefix_key with a prefix not written out
+	}
 }
 
 // extractMode is what extract()'s flags make it do with a key: overwrite a
@@ -738,11 +741,13 @@ func (a *analysis) defined(st state, name string) bool {
 const atsKey = "\x00ats:"
 
 // litArray returns t, or the array a variable holds when recordLit knows it
-// ($defaults = array(...); shortcode_atts($defaults, $atts)).
+// ($defaults = array(...); shortcode_atts($defaults, $atts)), from the function
+// being analysed only (a.arrs), so another function's $defaults in the file
+// does not make its keys unknown.
 func (a *analysis) litArray(st state, t []Token) []Token {
 	if len(t) == 1 && t[0].Kind == Var {
-		if _, ok := st[litKey+t[0].Text]; ok && a.lits[t[0].Text] != nil {
-			if d := stripParens(a.lits[t[0].Text]); len(d) > 1 && d[0].op("[") || len(d) > 2 && d[0].word("array") && d[1].op("(") {
+		if _, ok := st[litKey+t[0].Text]; ok && a.arrs[t[0].Text] != nil {
+			if d := stripParens(a.arrs[t[0].Text]); len(d) > 1 && d[0].op("[") || len(d) > 2 && d[0].word("array") && d[1].op("(") {
 				return d // only an array written out; a call's value ($defaults = apply_filters(...)) is no known keys
 			}
 		}
@@ -826,19 +831,32 @@ func (a *analysis) extractAny(st state, m extractMode, v val, keep string) {
 	if m.create {
 		mark(extractKey)
 	}
-	if (m.prefixAll || m.prefixSame || m.prefixIfExists) && m.prefix != "" {
-		mark(extractKey + ":" + m.prefix + "_") // prefix_key for any key (a defined one, for the IF_EXISTS form)
+	if m.prefixAll || m.prefixSame || m.prefixIfExists {
+		p := anyPrefix // the prefix not written out: any name with a "_" after its first letter may be prefix_key
+		if m.prefix != "" {
+			p = m.prefix + "_"
+		}
+		mark(extractKey + ":" + p) // prefix_key for any key (a defined one, for the IF_EXISTS form)
 	}
 }
+
+// anyPrefix is the extractKey suffix for a prefix extract() was given but not
+// written out (extract($_GET, EXTR_PREFIX_ALL, $px)).
+const anyPrefix = "*"
 
 // outParams are PHP functions that write a variable passed by reference, by
 // the argument written (from 1).
 var outParams = map[string][]int{"preg_match": {3}, "preg_match_all": {3}, "parse_str": {2}, "exec": {2, 3}}
 
+// outSubject is the argument (from 1) each of outParams reads.
+var outSubject = map[string]int{"preg_match": 2, "preg_match_all": 2, "parse_str": 1, "exec": 1}
+
 // outParamStmt: after preg_match($p, $s, $m), parse_str($q, $out) or
 // exec($c, $output), the variable written is defined by the call, so what it
 // held before (a value extract() set, say) is gone. Whether it holds parts of
-// the subject's input is not followed, as before: it reads as clean.
+// the subject's input is not followed, as before: it reads as clean, unless
+// the variable written is the subject itself (preg_match($p, $m, $m),
+// parse_str($q, $q)): then it keeps what it held.
 func (a *analysis) outParamStmt(st state, t []Token) {
 	if !a.php {
 		return
@@ -853,11 +871,15 @@ func (a *analysis) outParamStmt(st state, t []Token) {
 			continue
 		}
 		args := splitTop(inside(t, i+1, c), isComma)
+		var subj []Token
+		if n := outSubject[t[i].Text]; len(args) >= n {
+			subj = stripParens(args[n-1])
+		}
 		for _, x := range w {
 			if len(args) < x {
 				continue
 			}
-			if tg := stripParens(args[x-1]); len(tg) == 1 && tg[0].Kind == Var {
+			if tg := stripParens(args[x-1]); len(tg) == 1 && tg[0].Kind == Var && !(len(subj) == 1 && subj[0].Kind == Var && subj[0].Text == tg[0].Text) {
 				a.setTarget(st, tg, val{}, "=", false)
 			}
 		}
@@ -881,6 +903,9 @@ func extractEntry(s state, k string) (entry, bool) {
 	for i := 2; i < len(root); i++ {
 		if root[i] == '_' {
 			if e, ok := s[extractKey+":"+root[1:i+1]]; ok {
+				return e, true
+			}
+			if e, ok := s[extractKey+":"+anyPrefix]; ok {
 				return e, true
 			}
 		}
@@ -944,6 +969,14 @@ func (a *analysis) recordLit(st state, t []Token) {
 		a.lits[name] = nil // two different values: not known
 	} else {
 		a.lits[name] = rhs
+	}
+	if a.arrs == nil {
+		a.arrs = map[string][]Token{}
+	}
+	if old, seen := a.arrs[name]; seen && (old == nil || !tokensEqual(old, rhs)) {
+		a.arrs[name] = nil // the same, within the function (litArray)
+	} else {
+		a.arrs[name] = rhs
 	}
 	st[litKey+name] = entry{san: true}
 }
