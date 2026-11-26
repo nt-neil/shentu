@@ -553,7 +553,10 @@ func (a *analysis) function(f *fn, st state) {
 	}
 	curParams, curMoved := a.curParams, a.curMoved
 	arrs, atsDefs := a.arrs, a.atsDefs // what a function assigns is its own: another function's $defaults says nothing here
-	a.arrs, a.atsDefs = maps.Clone(arrs), maps.Clone(atsDefs)
+	a.arrs, a.atsDefs = nil, nil       // a PHP named function sees nothing of the code around it
+	if !f.fresh {
+		a.arrs, a.atsDefs = maps.Clone(arrs), maps.Clone(atsDefs) // a closure or arrow function sees the enclosing scope's
+	}
 	defer func() { a.arrs, a.atsDefs = arrs, atsDefs }()
 	a.curParams = fnParamNames(f)
 	a.curMoved = paramsMoved(f.body, a.curParams)
