@@ -20,6 +20,7 @@ import (
 var packageVulns = Tool{
 	Name: "package_vulns",
 	Description: "Checks installed OS packages against the OSV vulnerability database (online, api.osv.dev) and marks vulnerabilities that CISA lists as actively exploited (KEV); fix those first. Without arguments returns affected packages, vulnerability IDs and the exploited ones; with package set, returns the summary, severity and fixed version of that package's vulnerabilities. " +
+		"fix_available counts the vulnerabilities a fix is known to be out for; fix_unconfirmed the rest, not known either way (unconfirmed is not \"no fix\"; fix_note says how each is told). " +
 		"partial says what could not be checked (an advisory feed or topic that failed): those packages may have fixes pending. ecosystems_not_queried lists ecosystems the host may have that OSV does not carry; ecosystems lists every one queried when there are several (SUSE). kev_unchecked counts vulnerabilities not checked against KEV (lookups failed, or over 300 for one package): exploited ones among them are not marked. " +
 		"packages_not_checked lists packages the package manager knows but that were not checked, with their state: half-installed or a state not read (no version known to be on the disk), then config-files (only their configuration left); the first 20, packages_not_checked_more counts the rest. Packages not fully installed (unpacked, half-configured...) are checked at the version recorded, and named in partial.",
 	Params: schema(`{"type":"object","properties":{
@@ -284,6 +285,28 @@ func packageVulnsAll(ctx context.Context, hc *http.Client, detailFor string) (ma
 		}
 	}
 	out["total_vulns"], out["affected_packages"] = total, len(found)+len(newSources)
+	// Of them, those a fix is known to be out for, told without reading each
+	// advisory (I-8): the rest are not known either way, never "no fix".
+	fixed := 0
+	for _, a := range found {
+		fixed += fixKnownCount(a.IDs, advisories)
+	}
+	upFixed := map[srcCVE]bool{}
+	for _, h := range up {
+		for _, id := range h.Affected {
+			if h.Fixed != "" {
+				upFixed[srcCVE{h.Source, id}] = true
+			}
+		}
+	}
+	for _, k := range ups.order {
+		if !osvHas[k] && upFixed[k] {
+			fixed++
+		}
+	}
+	if total > 0 {
+		out["fix_available"], out["fix_unconfirmed"], out["fix_note"] = fixed, total-fixed, fixNote
+	}
 	exploited := map[string][]Exploit{} // package -> KEV matches
 	kev, kevErr := loadKEV(ctx, hc)     // kept for the upstream entries of the surface
 	if err := kevErr; err != nil {
@@ -432,6 +455,7 @@ func packageVulnsAll(ctx context.Context, hc *http.Client, detailFor string) (ma
 			Count   int      `json:"vulns"`
 			Sample  []string `json:"sample_ids"`
 			Exploit int      `json:"actively_exploited,omitempty"`
+			Fixed   int      `json:"fix_available"`
 		}
 		var rows []row
 		for i, a := range found {
@@ -439,7 +463,7 @@ func packageVulnsAll(ctx context.Context, hc *http.Client, detailFor string) (ma
 				out["top"] = "only the 20 packages with the most vulnerabilities are listed; call again with package set for details"
 				break
 			}
-			rows = append(rows, row{a.Package, a.Version, len(a.IDs), a.IDs[:min(3, len(a.IDs))], len(exploited[a.Package])})
+			rows = append(rows, row{a.Package, a.Version, len(a.IDs), a.IDs[:min(3, len(a.IDs))], len(exploited[a.Package]), fixKnownCount(a.IDs, advisories)})
 		}
 		out["affected"] = rows
 		return out, surface, nil
@@ -508,6 +532,31 @@ func packageVulnsAll(ctx context.Context, hc *http.Client, detailFor string) (ma
 	out["package"] = detailFor
 	out["vulns"] = details
 	return out, surface, nil
+}
+
+// fixPrefixes are advisories that are a distribution's update notice, issued
+// with the fixed package: one listed for the installed version means a fix
+// is out.
+var fixPrefixes = []string{"DSA-", "DLA-", "USN-", "RLSA-", "ALSA-", "SUSE-SU-", "openSUSE-SU-"}
+
+const fixNote = "fix_available: the advisory is a distribution's update notice (DSA, DLA, USN, RLSA, ALSA, SUSE-SU) or names a fixed version newer than the installed one (ALAS, php.net, nginx.org), so a fixed package is out. " +
+	"fix_unconfirmed: whether a fix is out was not read (the overview does not fetch each advisory's OSV record); unconfirmed does not mean there is no fix. Call with package set for each one's fixed_version."
+
+// fixKnownCount counts the advisories of ids a fix is known to be out for:
+// an update notice (fixPrefixes), or an ALAS (listed only when its fixed
+// version is newer than the installed one).
+func fixKnownCount(ids []string, alas map[string]hostenv.Advisory) int {
+	n := 0
+	for _, id := range ids {
+		_, ok := alas[id]
+		for _, p := range fixPrefixes {
+			ok = ok || strings.HasPrefix(id, p)
+		}
+		if ok {
+			n++
+		}
+	}
+	return n
 }
 
 // kevURL is CISA's catalog of vulnerabilities known to be exploited in the wild.

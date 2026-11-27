@@ -62,6 +62,13 @@ Chinese for the zh-TW pages; keep the two in step.
   more unchecked risk, `unchecked:notyet:apache:windows`: Apache there is not checked yet, so
   CVE-2026-119618 (HTTP/2) is not evaluated. The daily report lists it under "Not checked by this
   release yet", not under the missing-permission heading.
+- package_vulns' overview tells how many of the vulnerabilities a fix is known to be out for
+  (`fix_available`, also per package) and how many it is not known for (`fix_unconfirmed`). A
+  fix is known when the advisory is a distribution's update notice (DSA, DLA, USN, RLSA, ALSA,
+  SUSE-SU), an ALAS, or a php.net or nginx.org entry naming the fixed release. The rest, such as
+  a CVE entry of Debian's or Ubuntu's tracker, are unconfirmed: the overview does not fetch each
+  advisory to tell, and `fix_note` says that unconfirmed is not "no fix". Until now the count
+  mixed them; `package` set still gives each one's `fixed_version`.
 - The site's home page: a section that rises into view (the tally, open source, the latest release
   with the river) no longer stays blank when the page is reached in its middle, as from a link to
   an anchor, by going back to the page, or by a jump. A section shows once any part of it is in the

@@ -230,3 +230,41 @@ func TestPackageVulnsUSNUpstreamDedupe(t *testing.T) {
 		t.Errorf("total_vulns %v, want 13 (OSV's 2, php.net's 11 with 129291): %v", out["total_vulns"], out)
 	}
 }
+
+// I-8: the overview tells the advisories a fix is known to be out for (an
+// update notice, USN-) from the rest, which are unconfirmed, never "no fix".
+func TestPackageVulnsFixSplit(t *testing.T) {
+	out, _ := pagedRun(t, "openssl\t\t3.0.13-0ubuntu3\tarm64\tii \nlinux-image-6.8.0-1-generic\tlinux\t6.8.0-1.1\tarm64\tii \n")
+	if out["total_vulns"] != 5 || out["fix_available"] != 1 || out["fix_unconfirmed"] != 4 {
+		t.Errorf("total %v, fix_available %v, fix_unconfirmed %v; want 5, 1 (USN-9999-1), 4: %v", out["total_vulns"], out["fix_available"], out["fix_unconfirmed"], out)
+	}
+	if n, _ := out["fix_note"].(string); !strings.Contains(n, "unconfirmed does not mean there is no fix") {
+		t.Errorf("fix_note %q", n)
+	}
+	b, _ := json.Marshal(out["affected"])
+	for _, want := range []string{`"package":"openssl","version":"3.0.13-0ubuntu3","vulns":2,"sample_ids":["USN-9999-1","UBUNTU-CVE-2099-0010"],"actively_exploited":1,"fix_available":1`, `"package":"linux","version":"6.8.0-1.1","vulns":3,"sample_ids":["UBUNTU-CVE-2099-0001","UBUNTU-CVE-2099-0002","UBUNTU-CVE-2099-0003"],"fix_available":0`} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("affected %s, want %s", b, want)
+		}
+	}
+	none, _ := pagedRun(t, "zlib\t\t1.3-1\tarm64\tii \n")
+	if _, ok := none["fix_unconfirmed"]; ok {
+		t.Errorf("fix counts with nothing found: %v", none)
+	}
+}
+
+// php.net's entries name the fixed release: counted as a fix out, as the
+// USN is; OSV's UBUNTU-CVE- stays unconfirmed.
+func TestPackageVulnsFixSplitUpstream(t *testing.T) {
+	old := kevURL
+	kevURL = "https://kev.example.test/kev.json"
+	t.Cleanup(func() { kevURL = old })
+	withHost(t, ubuntuHost("php8.3-fpm\tphp8.3\t8.3.9-1+ubuntu24.04.1+deb.sury.org+1\tarm64\tii \n"))
+	out, err := PackageVulns(context.Background(), &http.Client{Transport: pagedOSV{asked: new([]string)}}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out["total_vulns"] != 13 || out["fix_available"] != 12 || out["fix_unconfirmed"] != 1 {
+		t.Errorf("total %v, fix_available %v, fix_unconfirmed %v; want 13, 12, 1", out["total_vulns"], out["fix_available"], out["fix_unconfirmed"])
+	}
+}
