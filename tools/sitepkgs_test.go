@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -422,6 +423,9 @@ func TestSitePackagesBounds(t *testing.T) {
 // too: only a package pip (or its like) wrote INSTALLER for is read there;
 // /usr/local's are all read. A path asked about leaves the system's out.
 func TestSitePackagesSystem(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Debian's Python layout (/usr/lib/python3*/dist-packages, a folder only root writes) built in a temporary folder: Unix's")
+	}
 	sys := t.TempDir()
 	managed := filepath.Join(sys, "usr", "lib", "python3.12", "dist-packages")
 	local := filepath.Join(sys, "usr", "local", "lib", "python3.12", "dist-packages")
@@ -434,7 +438,7 @@ func TestSitePackagesSystem(t *testing.T) {
 	dist(t, local, "bylocal-1.0", "bylocal", "1.0", "")
 	t.Cleanup(SetSitePackagesForTest([]string{filepath.Join(sys, "usr", "lib", "python3*", "dist-packages"), filepath.Join(sys, "usr", "local", "lib", "python3*", "dist-packages")}))
 	oldP := osManagedPrefixes
-	osManagedPrefixes = []string{filepath.Join(sys, "usr", "lib") + string(filepath.Separator)}
+	osManagedPrefixes = []string{filepath.Join(sys, "usr", "lib") + "/"}
 	t.Cleanup(func() { osManagedPrefixes = oldP })
 	f := &pypiFeeds{}
 	if _, err := AppVulns(context.Background(), &http.Client{Transport: f}, nil); err != nil {
@@ -562,6 +566,9 @@ func TestSitePackagesSystem(t *testing.T) {
 // only with every folder above it root's alone: else it may shadow
 // setuptools' own, and no distutils-precedence.pth is known.
 func TestSitePackagesShadowFoldersAbove(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Debian's Python layout (/usr/lib/python3*/dist-packages, a folder only root writes) built in a temporary folder: Unix's")
+	}
 	sys := t.TempDir()
 	managed := filepath.Join(sys, "usr", "lib", "python3.12", "dist-packages")
 	local := filepath.Join(sys, "usr", "local", "lib", "python3.12", "dist-packages")
@@ -575,7 +582,7 @@ func TestSitePackagesShadowFoldersAbove(t *testing.T) {
 	t.Cleanup(SetSitePackagesForTest([]string{managed, local}))
 	oldP, oldRoot := osManagedPrefixes, rootOnly
 	t.Cleanup(func() { osManagedPrefixes, rootOnly = oldP, oldRoot })
-	osManagedPrefixes = []string{filepath.Join(sys, "usr", "lib") + string(filepath.Separator)}
+	osManagedPrefixes = []string{filepath.Join(sys, "usr", "lib") + "/"}
 	known := func() string {
 		out, _ := AppVulns(context.Background(), &http.Client{Transport: &pypiFeeds{}}, nil)
 		pth, _ := out["pth"].([]PthFile)

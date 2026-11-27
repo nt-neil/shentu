@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -285,7 +286,9 @@ func TestLoginIndexAnswers(t *testing.T) {
 		}
 	}
 	st, err := os.Stat(filepath.Join(dir, LoginIndexFile))
-	if err != nil || st.Mode().Perm() != 0o600 {
+	// 0600 on Unix; Windows has no mode bits (the state folder's ACL keeps
+	// it): it reports 0666 for any writable file
+	if err != nil || runtime.GOOS != "windows" && st.Mode().Perm() != 0o600 {
 		t.Fatalf("index file: %v %v", st, err)
 	}
 	b, _ := os.ReadFile(filepath.Join(dir, LoginIndexFile))
