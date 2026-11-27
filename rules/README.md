@@ -716,7 +716,9 @@ nonce check whose result is kept in a variable, treat a check on a value derived
 after `$ext = pathinfo($name, ...)`) as a check on the original (but for a URL's
 host in the SSRF rules, see above), while a check on part
 of a value written in place counts for all of it (`in_array(pathinfo($n, PATHINFO_EXTENSION), ...)`
-cleans `$n` for every rule, path traversal included), know framework semantics beyond
+cleans `$n` for every rule, path traversal included), tell apart the elements of an array
+indexed by a variable (a check on `$a[$i]`, `in_array($a[$i], ...)` included, counts for
+`$a[$j]` too: a key not written as a literal is `*`), know framework semantics beyond
 the rules (a lookup in a constant dict is not an allowlist), look into options
 kept in a variable assigned differently on two paths, or prove a
 finding.
