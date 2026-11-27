@@ -7,6 +7,9 @@ tier = "info"
 title = "Uploaded file written under the name the client sent, without checking its type"
 frameworks = ["express"]
 sources = [".originalname"]
+# Only the client's file name: other request values (a header, the query) in the path are the
+# path-traversal rules', and the body is the file's content.
+route_input = false
 sinks = ["fs.createWriteStream(", "fs.writeFile(", "fs.writeFileSync(", "fs.promises.writeFile("]
 sanitizers = ["crypto.randomUUID(", "randomUUID(", "uuidv4(", "nanoid("]
 fix = "Check the extension and MIME type against an allowlist before writing, and write the file under a name the server makes (crypto.randomUUID() plus a fixed extension) outside the web root."
