@@ -20,9 +20,11 @@ func Walk(src Source, root string, fn WalkFunc) error {
 	return walkWith(Lstat, src, root, fn)
 }
 
-// WalkNoID is Walk with no file ID in the stats (FileStat.ID ""): no file
-// is opened (on Windows Lstat opens every regular file for it), for a walk
-// that reads no file by the ID it saw (file_changes, S-276-1).
+// WalkNoID is Walk with no file ID asked for: no file is opened (on
+// Windows Lstat opens every regular file for it), for a walk that reads no
+// file by the ID it saw (file_changes, the site-packages search; S-276-1).
+// A source without LstatNoID falls back to Lstat: a replay's stats can
+// still carry an ID, so a caller must not take ID "" for granted.
 func WalkNoID(src Source, root string, fn WalkFunc) error {
 	return walkWith(lstatNoID, src, root, fn)
 }

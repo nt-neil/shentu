@@ -113,7 +113,9 @@ Chinese for the zh-TW pages; keep the two in step.
 - file_changes and log_search's hard-link check read the host as the other checks do, through the
   host source: a replay or another host's survey reads that host's files, not the machine running
   the check, a Linux or macOS host's recording read on a Windows machine too (its paths keep their
-  "/": the walks, the log allowlist and the site-packages search spell them as the host does). The host source's file details now carry the status-change time (ctime, which
+  "/": the walks, the log allowlist, the site-packages search, the WordPress plugin search,
+  app_vulns' and app_code_audit's path argument, and the audit resuming where it stopped spell them
+  as the host does). The host source's file details now carry the status-change time (ctime, which
   file_changes counts as before: a file whose mtime was set back still shows) and the hard links;
   these checks are made on Unix only (on Windows the details say they do not apply, never 0).
 - A file app_code_audit, app_vulns' lock-file search or the WordPress plugin search would read that
@@ -185,6 +187,12 @@ Chinese for the zh-TW pages; keep the two in step.
   `fs.createWriteStream()`, `fs.writeFile()`, `fs.writeFileSync()` or `fs.promises.writeFile()` under
   the name the client sent (multer's `file.originalname`) is reported. express-fileupload's `.name` is
   not read.
+- cvebench scans as app_code_audit does by default (`-scanpath product`): each file on its own,
+  then the calls across files, merged. Before, it decided each flow with the calls across files
+  (`Project.Scan`, now `-scanpath project`), so a check written in another file took a finding away
+  that app_code_audit still shows. The rules are the same; the bench's fixed false positives
+  usually rise, closer to what a user sees (measured on v0.5.8's cases: nothing reported
+  fewer). The report's header names the scan path and the project caps.
 
 ### Known issues
 
@@ -215,7 +223,9 @@ Chinese for the zh-TW pages; keep the two in step.
   (`h.env = Engine()`). `o.system(cmd)` after `import os as o`, and a function imported under
   another name (`m(x)` after `from hashlib import md5 as m`), are not reported.
 - On a non-Windows machine replaying a Windows host's recording, the code audit's ASP check, its
-  web-root ACL check and its case-insensitive path comparison are not turned on yet (v0.5.9).
+  web-root ACL check and its case-insensitive path comparison are not turned on yet, and
+  app_vulns' and app_code_audit's path argument is refused unless it is one of the app paths
+  exactly (v0.5.9).
 
 ## v0.5.7 — 2026-11-26
 

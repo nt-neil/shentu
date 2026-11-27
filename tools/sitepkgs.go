@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/csv"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -110,7 +111,7 @@ func findSitePackages(roots []string, system bool) (dirs []string, notes []strin
 			break
 		}
 		base := strings.Count(hp.Clean(root), hp.Sep)
-		hostenv.Walk(src, root, func(p string, st hostenv.FileStat, err error) error {
+		hostenv.WalkNoID(src, root, func(p string, st hostenv.FileStat, err error) error { // folders and names only: no file opened for an ID (t12)
 			if err != nil {
 				if !errors.Is(err, fs.ErrNotExist) {
 					unread++
@@ -532,6 +533,38 @@ func systemModule(dir, rel string) bool {
 
 // recordHas: a dist-info matching glob in dir lists rel in its RECORD, and
 // the file there now has the sha256 RECORD gives; rec is that RECORD.
+// recordRow is a RECORD line: a file's path and its sha256 ("" if none).
+type recordRow struct{ path, sha256 string }
+
+// recordRows reads a RECORD as the CSV it is (PEP 376): a path with a
+// comma or a quote is quoted (S-272-5: a split at ",sha256=" kept the
+// quotes, and such a file was never matched). A line it cannot parse (a
+// bare quote, a RECORD cut at its size cap) is skipped and the rest read:
+// stopping there would leave the files after it unverified (S-285-1).
+func recordRows(b []byte) []recordRow {
+	r := csv.NewReader(bytes.NewReader(b))
+	r.FieldsPerRecord = -1
+	var out []recordRow
+	for {
+		f, err := r.Read()
+		var pe *csv.ParseError
+		if errors.As(err, &pe) {
+			continue
+		}
+		if err != nil {
+			return out // io.EOF
+		}
+		if len(f) < 2 {
+			continue
+		}
+		h, _ := strings.CutPrefix(f[1], "sha256=")
+		if h == f[1] {
+			h = "" // another algorithm, or none: not verified
+		}
+		out = append(out, recordRow{f[0], h})
+	}
+}
+
 func recordHas(src hostenv.Source, dir, glob, rel string) (rec string, ok bool) {
 	// glob is one name (a dist-info folder): matched against dir's entries,
 	// so the host's path form does not matter (hostenv.Glob is POSIX-only:
@@ -556,16 +589,14 @@ func recordHas(src hostenv.Source, dir, glob, rel string) (rec string, ok bool) 
 		if !ok {
 			continue
 		}
-		for _, l := range strings.Split(string(b), "\n") {
-			l = strings.TrimRight(l, "\r")
-			p, want, ok := strings.Cut(l, ",sha256=")
+		for _, row := range recordRows(b) {
+			p, want := row.path, row.sha256
 			if win {
 				p = strings.ReplaceAll(p, `\`, "/")
 			}
-			if !ok || fold(p) != fold(rel) {
+			if want == "" || fold(p) != fold(rel) {
 				continue
 			}
-			want, _, _ = strings.Cut(want, ",")
 			b, ok := readHead(src, hostJoin(src, dir, rel), 4<<20)
 			sum := sha256.Sum256(b)
 			if ok && want != "" && base64.RawURLEncoding.EncodeToString(sum[:]) == want {

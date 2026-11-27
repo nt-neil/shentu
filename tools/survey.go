@@ -185,8 +185,7 @@ func Survey(ctx context.Context, env *Env) SiteProfile {
 	if p.Firewall == "none detected" && hasPublic(p.Services) {
 		p.Risks = append(p.Risks, Risk{"firewall:none", "info", "no host firewall detected (nftables, ufw, firewalld); fine only if a cloud firewall covers this server"})
 	}
-	p.Risks = append(p.Risks, phpRisks(ctx)...)
-	p.Risks = append(p.Risks, ContainerdNotYet(hostSource())...)
+	p.Risks = append(p.Risks, hostRisksTail(ctx, hostSource())...)
 
 	// Through the host source like every other read (S-173r3-1: os.Stat read
 	// the machine running the survey, not the host it surveys, in a replay).
@@ -212,6 +211,14 @@ func Survey(ctx context.Context, env *Env) SiteProfile {
 	p.Risks = append(p.Risks, sudoRisks(hostenv.SudoNopasswd(src))...)
 	p.Risks = append(p.Risks, rebootRisks(hostenv.Reboot(src, plat.Family, plat.Kernel))...)
 	return p
+}
+
+// hostRisksTail are the survey's PHP risks and containerd's store not
+// checked yet: a function of its own so a test can call it without
+// surveying the machine it runs on (S-244-4: a lost call would drop
+// containerd from the daily report with no test failing).
+func hostRisksTail(ctx context.Context, src hostenv.Source) []Risk {
+	return append(phpRisks(ctx), ContainerdNotYet(src)...)
 }
 
 func hasPublic(s []Service) bool {
