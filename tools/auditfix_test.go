@@ -589,7 +589,9 @@ func TestAppCodeAuditWalkResumes(t *testing.T) {
 	if _, ok := loadWalkPos(walkPosFile(roots)); !ok {
 		t.Error("a cut walk kept no place")
 	}
-	cmp := func(a, b string) int { return pathCmp(filepath.FromSlash(a), filepath.FromSlash(b)) }
+	cmp := func(a, b string) int {
+		return pathCmp(filepath.FromSlash(a), filepath.FromSlash(b), string(filepath.Separator))
+	}
 	if cmp("/r/a/b", "/r/a-c") >= 0 || cmp("/r/a", "/r/a/b") >= 0 || cmp("/r/b", "/r/a/z") <= 0 {
 		t.Error("pathCmp does not follow WalkDir's order")
 	}
@@ -702,7 +704,7 @@ func TestAppCodeAuditWalkResumesRootSpelling(t *testing.T) {
 		{dir, dir + "-other" + sep + "x", false},
 		{filepath.Join(dir, "a"), filepath.Join(dir, "ab", "x"), false},
 	} {
-		if got := walkHolds(c.dir, c.path); got != c.want {
+		if got := walkHolds(c.dir, c.path, sep); got != c.want {
 			t.Errorf("walkHolds(%q, %q) = %v", c.dir, c.path, got)
 		}
 	}
