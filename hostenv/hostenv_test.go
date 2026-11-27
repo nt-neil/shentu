@@ -438,8 +438,15 @@ func TestMaskKeepsNOPASSWD(t *testing.T) {
 		"ALL=NOPASSWD: /bin/ls token=" + fakeSecret():    "ALL=NOPASSWD: /bin/ls token=[REDACTED]",
 		// An upper-case name right after "=...PASSWD:" stays masked: it
 		// cannot be told from a secret there (a rule then is every command).
-		"deploy ALL=NOPASSWD: DEPLOY":                   "deploy ALL=NOPASSWD: [REDACTED]",
-		"ALL=NOPASSWD:" + strings.ToUpper(fakeSecret()): "ALL=NOPASSWD:[REDACTED]",
+		"deploy ALL=NOPASSWD: DEPLOY": "deploy ALL=NOPASSWD: [REDACTED]",
+		// An upper-case name is kept only after a rule's "=(run-as)" or a
+		// sudoers tag: after another ")" or "FOO:" it is masked.
+		"(x) PASSWD: " + strings.ToUpper(fakeSecret()):          "(x) PASSWD: [REDACTED]",
+		"FOO: PASSWD: " + strings.ToUpper(fakeSecret()):         "FOO: PASSWD: [REDACTED]",
+		"note (see) NOPASSWD: " + strings.ToUpper(fakeSecret()): "note (see) NOPASSWD: [REDACTED]",
+		"%deploy ALL=(root) SETENV: NOPASSWD: DEPLOY":           "%deploy ALL=(root) SETENV: NOPASSWD: DEPLOY",
+		"bob ALL = (root:adm) NOPASSWD: CWD=/tmp /bin/ls":       "bob ALL = (root:adm) NOPASSWD: CWD=/tmp /bin/ls",
+		"ALL=NOPASSWD:" + strings.ToUpper(fakeSecret()):         "ALL=NOPASSWD:[REDACTED]",
 	} {
 		if got := MaskSecrets(in); got != want {
 			t.Errorf("MaskSecrets(%q) = %q, want %q", in, got, want)

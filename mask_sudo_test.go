@@ -25,6 +25,8 @@ func TestMaskKeepsSudoTags(t *testing.T) {
 		"deploy ALL=NOPASSWD: " + secret:                      "deploy ALL=NOPASSWD: [REDACTED]",
 		"x=PASSWD: " + strings.ToUpper(secret):                "x=PASSWD: [REDACTED]",
 		"(root) PASSWD: " + secret:                            "(root) PASSWD: [REDACTED]",
+		"(x) PASSWD: " + strings.ToUpper(secret):              "(x) PASSWD: [REDACTED]",
+		"FOO: PASSWD: " + strings.ToUpper(secret):             "FOO: PASSWD: [REDACTED]",
 	} {
 		if got := mask(in); got != want {
 			t.Errorf("mask(%q) = %q, want %q", in, got, want)

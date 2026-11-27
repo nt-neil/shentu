@@ -45,10 +45,11 @@ func mask(s string) string {
 func replaceOutsideSudoTags(s string, re *regexp.Regexp, repl string) string {
 	var tags [][]int
 	for _, m := range sudoTag.FindAllStringSubmatchIndex(s, -1) {
-		if m[2] >= 0 {
-			tags = append(tags, m[2:4])
-		} else {
-			tags = append(tags, m[4:6])
+		for g := 2; g+1 < len(m); g += 2 { // the one group that matched
+			if m[g] >= 0 {
+				tags = append(tags, m[g:g+2])
+				break
+			}
 		}
 	}
 	if len(tags) == 0 {
@@ -88,16 +89,19 @@ func tagAt(tags [][]int, i int) []int {
 }
 
 // sudoTag is a sudoers NOPASSWD: or PASSWD: tag where sudoers puts one,
-// in group 1 or 2:
-//   - after a run-as list ")" or another tag, before a command: ALL, an
-//     absolute path, "!", sudoedit, another tag, a command alias or an
-//     option (an upper-case name: DEPLOY, CWD=);
-//   - after the '=' of a rule with no run-as list, before ALL, an absolute
-//     path, "!", sudoedit or another tag (not an upper-case name: "x=PASSWD:
-//     <SECRET>" is no sudoers rule).
+// in group 1, 2 or 3:
+//  1. after a run-as list ")" or another tag, before ALL, an absolute
+//     path, "!", sudoedit or another tag;
+//  2. after a rule's "=(run-as)" or a sudoers tag (SETENV:, NOEXEC:...),
+//     before an upper-case name: a command alias or an option (DEPLOY,
+//     CWD=). Only there: "(x) PASSWD: <UPPER-CASE SECRET>" or
+//     "FOO: PASSWD: <UPPER-CASE SECRET>" is no sudoers rule, and masked;
+//  3. after the "=" of a rule with no run-as list, before ALL, an absolute
+//     path, "!", sudoedit or another tag (an upper-case name there stays
+//     masked: "x=PASSWD: <SECRET>" cannot be told from an alias).
 //
 // "PASSWD: x" or "X-PASSWD: x" elsewhere is not a tag and is masked as a
 // secret would be; what follows a tag is masked like any other text. (A
 // double-quoted pattern, so the rule-parity test, which reads back-quoted
 // patterns, skips it; TestSudoTagMatchesRoot compares it.)
-var sudoTag = regexp.MustCompile("(?:\\)|[A-Z]+:)[ \\t]*((?:NO)?PASSWD:)[ \\t]*(?:/|!|sudoedit\\b|[A-Z][A-Z0-9_]*\\b)|=[ \\t]*((?:NO)?PASSWD:)[ \\t]*(?:ALL\\b|/|!|sudoedit\\b|[A-Z]+:)")
+var sudoTag = regexp.MustCompile("(?:\\)|[A-Z]+:)[ \\t]*((?:NO)?PASSWD:)[ \\t]*(?:ALL\\b|/|!|sudoedit\\b|[A-Z]+:)|(?:=[ \\t]*\\([^)\\n]*\\)|\\b(?:NOEXEC|EXEC|SETENV|NOSETENV|LOG_INPUT|NOLOG_INPUT|LOG_OUTPUT|NOLOG_OUTPUT|MAIL|NOMAIL|FOLLOW|NOFOLLOW|INTERCEPT|NOINTERCEPT|NOPASSWD|PASSWD):)[ \\t]*((?:NO)?PASSWD:)[ \\t]*[A-Z][A-Z0-9_]*\\b|=[ \\t]*((?:NO)?PASSWD:)[ \\t]*(?:ALL\\b|/|!|sudoedit\\b|[A-Z]+:)")
