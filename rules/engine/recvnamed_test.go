@@ -132,3 +132,55 @@ func TestReceiversFrameworkSQL(t *testing.T) {
 		})
 	}
 }
+
+// A rule that yields_to another (php-sqli-codeigniter-query yields ->where()
+// to php-sqli-yii-query) is judged by its own receivers when the other's are
+// what leave the call out: it is not reported in the other's place because the
+// other was left out, and it is when the project names its own library. The
+// condition is made in another file, as nextgen-gallery's, where both rules
+// report the same ->where() and CodeIgniter's yields.
+func TestReceiversYieldsTo(t *testing.T) {
+	const ci, yii = "php-sqli-codeigniter-query", "php-sqli-yii-query"
+	hooks := "<?php\nrequire 'model.php';\nadd_action('wp_ajax_list', 'list_items');\n"
+	model := "<?php\nfunction list_items() {\n  global $Db;\n  $c = build_cond();\n  return $Db->where($c);\n}\n"
+	cond := "<?php\nfunction build_cond() {\n  return \"name = '\" . $_GET['f'] . \"'\";\n}\n"
+	own := "<?php\nclass Item_Query {\n  function where($w) {\n    return $this;\n  }\n}\n"
+	for _, c := range []struct {
+		name    string
+		extra   map[string]string
+		own     bool
+		ci, yii bool
+	}{
+		{"neither library named", nil, true, false, false},
+		{"CodeIgniter named: its rule, not Yii's", map[string]string{"m.php": "<?php\n$CI =& get_instance();\n"}, true, true, false},
+		{"Yii named: Yii's rule, CodeIgniter yields", map[string]string{"m.php": "<?php\n$db = Yii::$app->db;\n"}, true, false, true},
+		{"both named: Yii's rule, CodeIgniter yields", map[string]string{"m.php": "<?php\n$CI =& get_instance();\n$db = Yii::$app->db;\n"}, true, false, true},
+		{"no class declares where(): Yii's rule, CodeIgniter yields", nil, false, false, true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			e := engineForTest(t)
+			files := map[string]string{"hooks.php": hooks, "model.php": model, "cond.php": cond}
+			paths := []string{"hooks.php", "model.php", "cond.php"}
+			if c.own {
+				files["q.php"], paths = own, append(paths, "q.php")
+			}
+			for p, b := range c.extra {
+				files[p] = b
+				paths = append(paths, p)
+			}
+			pr := e.NewProject(paths, func(p string) ([]byte, error) { return []byte(files[p]), nil }, ProjectOptions{})
+			got := map[string]bool{}
+			var all []string
+			for _, p := range paths {
+				for _, f := range taintOnly(auditPath(t, e, pr, p, []byte(files[p]))) {
+					at := f.Path + ":" + strconv.Itoa(f.Line)
+					all = append(all, at+" "+f.RuleID)
+					got[f.RuleID] = got[f.RuleID] || at == "model.php:5"
+				}
+			}
+			if got[ci] != c.ci || got[yii] != c.yii {
+				t.Errorf("at model.php:5 %s %v, %s %v; want %v, %v; all: %v", ci, got[ci], yii, got[yii], c.ci, c.yii, all)
+			}
+		})
+	}
+}
