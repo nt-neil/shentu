@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -270,4 +271,62 @@ func TestWalkNoID(t *testing.T) {
 	if n, id := ids(WalkNoID); n != 1 || id != "" {
 		t.Errorf("WalkNoID: %d files, ID %q (an ID means the file was opened for it)", n, id)
 	}
+}
+
+// S-272-2: a Linux host read is walked with its own separator on any
+// machine: a Windows one joined "\" into its paths.
+func TestWalkHostSeparator(t *testing.T) {
+	src := memDirSrc{"/srv/w/a.txt": "x", "/srv/w/b/c.txt": "y"}
+	var seen []string
+	Walk(src, "/srv/w", func(p string, st FileStat, err error) error {
+		seen = append(seen, p)
+		return nil
+	})
+	want := []string{"/srv/w", "/srv/w/a.txt", "/srv/w/b", "/srv/w/b/c.txt"}
+	if strings.Join(seen, " ") != strings.Join(want, " ") {
+		t.Errorf("walked %q, want %q", seen, want)
+	}
+	if PathFor(src).Sep != "/" || PathFor(src).Join("/a", "b") != "/a/b" || PathFor(src).IsAbs("/a") != true {
+		t.Error("PathFor of a Linux host")
+	}
+}
+
+// memDirSrc is a Linux host read of files, folders implied, with Lstat.
+type memDirSrc map[string]string
+
+func (memDirSrc) Info() SourceInfo { return SourceInfo{GOOS: "linux"} }
+func (m memDirSrc) ReadFile(p string) ([]byte, error) {
+	if s, ok := m[p]; ok {
+		return []byte(s), nil
+	}
+	return nil, fs.ErrNotExist
+}
+func (m memDirSrc) ReadDir(p string) ([]string, error) {
+	seen := map[string]bool{}
+	var out []string
+	for f := range m {
+		if rest, ok := strings.CutPrefix(f, p+"/"); ok {
+			if n := strings.SplitN(rest, "/", 2)[0]; !seen[n] {
+				seen[n] = true
+				out = append(out, n)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out, nil
+}
+func (memDirSrc) Readlink(string) (string, error) { return "", fs.ErrInvalid }
+func (memDirSrc) Run(context.Context, []string) (CmdResult, error) {
+	return CmdResult{}, fs.ErrNotExist
+}
+func (m memDirSrc) Lstat(p string) (FileStat, error) {
+	if _, ok := m[p]; ok {
+		return FileStat{Mode: 0o644}, nil
+	}
+	for f := range m {
+		if strings.HasPrefix(f, p+"/") {
+			return FileStat{Mode: fs.ModeDir | 0o755}, nil
+		}
+	}
+	return FileStat{}, fs.ErrNotExist
 }
